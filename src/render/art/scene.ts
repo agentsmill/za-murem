@@ -34,8 +34,12 @@ export interface BStyle {
   accent: number;
 }
 
-export interface Scene {
-  w: World;
+/** budynek w zakresie, którego potrzebuje rysowanie kawałków */
+export type ArtBuilding = Pick<WorldBuilding, 'id' | 'cls' | 'x0' | 'y0' | 'x1' | 'y1' | 'entrances'>;
+
+/** to, czego potrzebuje rysowanie kawałków: bez reszty świata, więc da się to wysłać do workera */
+export interface ChunkScene {
+  w: Pick<World, 'size' | 'terr' | 'bid'> & { buildings: ArtBuilding[] };
   /** dla kafelka budynku: ile kafelków budynku jest pod nim w tej samej kolumnie (0 = dolny) */
   south: Int16Array;
   /** długość pionowego ciągu kafelków budynku, do którego należy kafelek */
@@ -48,6 +52,30 @@ export interface Scene {
   /** drzewa w kawałkach (z zapasem na koronę), indeks cy*n + cx */
   treesBy: Tree[][];
   chunks: number;
+}
+
+export interface Scene extends ChunkScene {
+  w: World;
+}
+
+/** wyciąg ze sceny do workera: same dane rysowania, bez nazw, tagów i siatek symulacji */
+export function chunkSceneOf(sc: Scene): ChunkScene {
+  const { size, terr, bid, buildings } = sc.w;
+  return {
+    w: {
+      size,
+      terr,
+      bid,
+      buildings: buildings.map(({ id, cls, x0, y0, x1, y1, entrances }) => ({ id, cls, x0, y0, x1, y1, entrances })),
+    },
+    south: sc.south,
+    run: sc.run,
+    styles: sc.styles,
+    shadow: sc.shadow,
+    doors: sc.doors,
+    treesBy: sc.treesBy,
+    chunks: sc.chunks,
+  };
 }
 
 export const heightM = (levels: number) => levels * 2.8 + 1;

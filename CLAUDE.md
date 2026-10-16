@@ -43,14 +43,14 @@ Wersja 0.4 (gałąź `m0-fundament`): Vite 8, TypeScript 7, PixiJS 8, Vitest, Pl
 
 ```bash
 npm install
-npm run dev          # serwer deweloperski, http://localhost:5173 (?demo=przymorze|lanciego|zielonki)
+npm run dev          # serwer deweloperski, http://localhost:5173 (?demo=przymorze|lanciego|zielonki, &worker=0 bez workerów)
 npm test             # testy jednostkowe (Vitest), m.in. porównanie z oryginałem 0.3 w node:vm
 npm run lint         # Biome
 npm run build        # typy + build do dist/ (z dist/v03/)
 npm run bot          # nowa symulacja 45 dni bez przeglądarki
 npm run bot:v03      # wzorzec balansu na oryginale 0.3: [-- ziarno [dni]]
 npm run shots        # zrzuty w Chromium do shots/: [-- filtr] [--dist]
-npm run perf         # klatki ze 150 pionkami: [-- pionki [tempo 1-3]]
+npm run perf         # klatki ze 150 pionkami: [-- pionki [tempo 1-3]] [--no-worker]
 npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
 ```
 

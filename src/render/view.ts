@@ -1,19 +1,30 @@
 /* Widok gry w PixiJS 8: kamera, kawałki mapy w dwóch poziomach szczegółów, pionki.
-   Rysowanie tylko czyta stan symulacji. Kawałki z bliska (32 px/kafelek) robią się na żądanie,
-   najwyżej kilka na klatkę, i są wyrzucane, gdy jest ich za dużo. Z daleka (8 px/kafelek)
-   są wszystkie, liczone na starcie. */
+   Rysowanie tylko czyta stan symulacji. Kawałki rysują na zamówienie workery (OffscreenCanvas),
+   a bez nich główny wątek w limicie czasu na klatkę. Z bliska (32 px/kafelek) tylko widoczne,
+   wyrzucane, gdy jest ich za dużo. Z daleka (8 px/kafelek) wszystkie, zamawiane na starcie. */
 
 import { Application, Container, Graphics, Rectangle, Sprite, Texture, TextureStyle } from 'pixi.js';
 import type { Pawn, SimState } from '../sim/sim.ts';
-import { drawChunk } from './art/chunkArt.ts';
 import { FH, FRAMES, FW, LOOKS, makePeopleAtlas } from './art/people.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
+import {
+  type ChunkPainter,
+  chunksByDistance,
+  type Done,
+  InlinePainter,
+  LOD_FAR,
+  LOD_NEAR,
+  planOrders,
+  poolSize,
+  spawnChunkWorker,
+  WorkerPainter,
+  workersAvailable,
+} from './chunks.ts';
 
-const LOD_NEAR = 32;
-const LOD_FAR = 8;
-/** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna);
+const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+/** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna albo ImageBitmap);
     na telefonach mniej, bo Safari ma twardy limit pamięci płócien */
-const MAX_NEAR = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? 16 : 48;
+const MAX_NEAR = PHONE ? 16 : 48;
 
 interface ChunkSlot {
   sprite: Sprite;
@@ -46,14 +57,19 @@ export class GameView {
   private prev = new Map<number, [number, number]>();
   private frameNo = 0;
   private nearIsLinear = false;
-  /** milisekundy rysowania kawałków w ostatniej klatce */
+  private painter: ChunkPainter = new InlinePainter();
+  /** milisekundy pracy przy kawałkach w głównym wątku w ostatniej klatce
+      (z workerami tylko zamawianie i wstawianie gotowych) */
   chunkMs = 0;
+  /** kawałki wstawione od startu (do pomiarów) */
+  chunksMade = 0;
   chunksNear = 0;
   pendingFar = 0;
   /** czy wszystkie widoczne kawałki mają już właściwy poziom szczegółów */
   complete = false;
 
-  async init(host: HTMLElement): Promise<void> {
+  /** workers: false wymusza rysowanie kawałków w głównym wątku (adres ?worker=0) */
+  async init(host: HTMLElement, opts: { workers?: boolean } = {}): Promise<void> {
     TextureStyle.defaultOptions.scaleMode = 'nearest';
     await this.app.init({
       resizeTo: host,
@@ -72,6 +88,13 @@ export class GameView {
     for (let look = 0; look < LOOKS; look++)
       for (let k = 0; k < 4 * FRAMES; k++)
         this.frames.push(new Texture({ source: atlas.source, frame: new Rectangle(k * FW, look * FH, FW, FH) }));
+    if (opts.workers !== false && workersAvailable())
+      this.painter = new WorkerPainter(spawnChunkWorker, poolSize(navigator.hardwareConcurrency || 4, PHONE));
+  }
+
+  /** gdzie się rysują kawałki (do pomiarów) */
+  get painting(): string {
+    return this.painter.kind;
   }
 
   get width() {
@@ -83,13 +106,14 @@ export class GameView {
 
   setScene(sc: Scene): void {
     for (const s of this.slots) {
-      s.near?.destroy(true);
-      s.far?.destroy(true);
+      if (s.near) dropTex(s.near);
+      if (s.far) dropTex(s.far);
       s.sprite.destroy();
     }
     this.slots = [];
     this.terrain.removeChildren();
     this.scene = sc;
+    this.painter.setScene(sc);
     const n = sc.chunks;
     for (let cy = 0; cy < n; cy++)
       for (let cx = 0; cx < n; cx++) {
@@ -126,15 +150,32 @@ export class GameView {
     this.cam.y = Math.max(0, Math.min(side, this.cam.y));
   }
 
-  private makeTex(cx: number, cy: number, s: number): Texture {
-    const c = document.createElement('canvas');
-    drawChunk(this.scene!, cx, cy, s, c);
-    const t = Texture.from(c);
-    t.source.scaleMode = s === LOD_FAR ? 'linear' : this.nearIsLinear ? 'linear' : 'nearest';
-    return t;
+  /** gotowe kawałki do slotów jako tekstury */
+  private install(done: Done[]): void {
+    for (const d of done) {
+      const s = this.slots[d.k];
+      const isNear = d.s === LOD_NEAR;
+      // podwójne zamówienie nie powinno się zdarzyć; gdyby, zostaje tekstura, która już jest
+      if ((isNear ? s.near : s.far) !== null) {
+        freeSrc(d.src);
+        continue;
+      }
+      const t = Texture.from(d.src);
+      // pamięcią rządzi limit bliskich kawałków, nie sprzątanie PixiJS (dla ImageBitmap domyślnie włączone)
+      t.source.autoGarbageCollect = false;
+      t.source.scaleMode = !isNear || this.nearIsLinear ? 'linear' : 'nearest';
+      this.chunksMade++;
+      if (isNear) {
+        s.near = t;
+        this.chunksNear++;
+      } else {
+        s.far = t;
+        this.pendingFar--;
+      }
+    }
   }
 
-  /** dorabia kawałki: najpierw widoczne, w limicie czasu na klatkę */
+  /** zamawia brakujące kawałki (najpierw widoczne, od środka ekranu) i pokazuje gotowe */
   private updateChunks(budgetMs: number): void {
     const sc = this.scene!;
     const n = sc.chunks;
@@ -145,39 +186,35 @@ export class GameView {
       this.nearIsLinear = linear;
       for (const s of this.slots) if (s.near) s.near.source.scaleMode = linear ? 'linear' : 'nearest';
     }
+    const t0 = performance.now();
+    // gotowe od poprzedniej klatki; jeśli workery padły, dalej rysuje główny wątek
+    this.install(this.painter.take());
+    if (this.painter.failed) {
+      this.painter = new InlinePainter();
+      this.painter.setScene(sc);
+    }
     const [x0, y0] = this.toWorld(0, 0);
     const [x1, y1] = this.toWorld(this.width, this.height);
     const span = CHUNK * TILE;
-    const cx0 = Math.max(0, Math.floor(x0 / span));
-    const cy0 = Math.max(0, Math.floor(y0 / span));
-    const cx1 = Math.min(n - 1, Math.floor(x1 / span));
-    const cy1 = Math.min(n - 1, Math.floor(y1 / span));
-    const t0 = performance.now();
-    const ccx = (this.cam.x / span) | 0;
-    const ccy = (this.cam.y / span) | 0;
-    // kolejność: od środka ekranu
-    const order: number[] = [];
-    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) order.push(cy * n + cx);
-    order.sort((a, b) => {
-      const da = Math.abs((a % n) - ccx) + Math.abs(((a / n) | 0) - ccy);
-      const db = Math.abs((b % n) - ccx) + Math.abs(((b / n) | 0) - ccy);
-      return da - db;
-    });
-    for (const s of this.slots) s.sprite.visible = false;
+    const order = chunksByDistance(
+      n,
+      Math.max(0, Math.floor(x0 / span)),
+      Math.max(0, Math.floor(y0 / span)),
+      Math.min(n - 1, Math.floor(x1 / span)),
+      Math.min(n - 1, Math.floor(y1 / span)),
+      (this.cam.x / span) | 0,
+      (this.cam.y / span) | 0,
+    );
+    const slots = this.slots;
+    const has = (k: number, s: number) => (s === LOD_NEAR ? slots[k].near : slots[k].far) !== null;
+    // nowa lista zastępuje starą: kawałki, które wyszły z ekranu, wypadają z kolejki
+    this.painter.order(planOrders(order, slots.length, has, near), budgetMs);
+    this.install(this.painter.take());
+    for (const s of slots) s.sprite.visible = false;
     let complete = true;
     for (const k of order) {
-      const s = this.slots[k];
-      const cx = k % n;
-      const cy = (k / n) | 0;
+      const s = slots[k];
       s.used = this.frameNo;
-      if (near && !s.near && performance.now() - t0 < budgetMs) {
-        s.near = this.makeTex(cx, cy, LOD_NEAR);
-        this.chunksNear++;
-      }
-      if (!s.far && (!near || !s.near) && performance.now() - t0 < budgetMs) {
-        s.far = this.makeTex(cx, cy, LOD_FAR);
-        this.pendingFar--;
-      }
       const tex = near && s.near ? s.near : s.far;
       if ((near && !s.near) || (!near && !s.far)) complete = false;
       if (tex) {
@@ -187,15 +224,6 @@ export class GameView {
         s.sprite.visible = true;
       }
     }
-    // reszta dalekich kawałków w tle, żeby oddalenie było od razu gotowe
-    if (this.pendingFar > 0)
-      for (let k = 0; k < this.slots.length && performance.now() - t0 < budgetMs; k++) {
-        const s = this.slots[k];
-        if (!s.far) {
-          s.far = this.makeTex(k % n, (k / n) | 0, LOD_FAR);
-          this.pendingFar--;
-        }
-      }
     // limit pamięci: najdawniej widziane bliskie kawałki idą do kosza
     if (this.chunksNear > MAX_NEAR) {
       const withNear = this.slots.filter((s) => s.near && s.used !== this.frameNo).sort((a, b) => a.used - b.used);
@@ -204,7 +232,7 @@ export class GameView {
           s.sprite.texture = s.far ?? Texture.EMPTY;
           s.sprite.scale.set(LOD_NEAR / LOD_FAR);
         }
-        s.near!.destroy(true);
+        dropTex(s.near!);
         s.near = null;
         this.chunksNear--;
       }
@@ -302,4 +330,16 @@ export class GameView {
     const ty = Math.max(0, Math.min(size - 1, Math.floor(wy / TILE)));
     return ty * size + tx;
   }
+}
+
+/** zwalnia ImageBitmap od razu, bez czekania na odśmiecanie (zwykłe płótno nie ma czego zamknąć) */
+function freeSrc(src: unknown): void {
+  if (typeof ImageBitmap !== 'undefined' && src instanceof ImageBitmap) src.close();
+}
+
+/** niszczy teksturę kawałka razem z jej obrazem */
+function dropTex(t: Texture): void {
+  const src: unknown = t.source.resource;
+  t.destroy(true);
+  freeSrc(src);
 }

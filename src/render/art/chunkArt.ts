@@ -3,15 +3,16 @@
    32 px na kafelek (z bliska) i 8 px na kafelek (z daleka). */
 
 import { T } from '../../world/world.ts';
+import { type AnyCanvas, type Ctx2D, ctx2d } from './canvas.ts';
 import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
-import { type BStyle, CHUNK, type Scene, SUB, TILE } from './scene.ts';
+import { type BStyle, CHUNK, type ChunkScene, SUB, TILE } from './scene.ts';
 import { treeSprite } from './trees.ts';
 
 const PAVED = new Set<number>([T.ROAD, T.PARKING]);
 
 /** kolor terenu (0xRRGGBB) w punkcie grafiki (ax, ay) na kafelku i o kodzie t */
-function groundColor(sc: Scene, t: number, i: number, ax: number, ay: number, px: number, py: number): number {
+function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: number, px: number, py: number): number {
   const w = sc.w;
   const size = w.size;
   const x = i % size;
@@ -201,7 +202,7 @@ function facadeColor(st: BStyle, ax: number, fy: number, door: boolean, px: numb
 }
 
 function roofColor(
-  sc: Scene,
+  sc: ChunkScene,
   st: BStyle,
   i: number,
   ax: number,
@@ -267,7 +268,7 @@ function roofColor(
 }
 
 /** czy punkt grafiki (px, py) leży na dachu budynku bid (poza fasadą) */
-function onRoof(sc: Scene, bid: number, px: number, py: number, margin: number): boolean {
+function onRoof(sc: ChunkScene, bid: number, px: number, py: number, margin: number): boolean {
   const size = sc.w.size;
   for (const [dx, dy] of [
     [-margin, -margin],
@@ -287,7 +288,7 @@ function onRoof(sc: Scene, bid: number, px: number, py: number, margin: number):
 }
 
 /** kominy wentylacyjne w rzędzie wzdłuż bloku, wyłazy nad klatkami, anteny i talerze */
-function roofDetails(ctx: CanvasRenderingContext2D, sc: Scene, bid: number): void {
+function roofDetails(ctx: Ctx2D, sc: ChunkScene, bid: number): void {
   const b = sc.w.buildings[bid];
   const st = sc.styles[bid];
   const horiz = b.x1 - b.x0 >= b.y1 - b.y0;
@@ -358,14 +359,15 @@ function roofDetails(ctx: CanvasRenderingContext2D, sc: Scene, bid: number): voi
 
 /**
  * Rysuje kawałek (cx, cy) w skali s pikseli na kafelek (32 albo 8) do płótna o boku CHUNK*s.
+ * Płótno może być zwykłe (główny wątek) albo OffscreenCanvas (worker).
  */
-export function drawChunk(sc: Scene, cx: number, cy: number, s: number, canvas: HTMLCanvasElement): void {
+export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, canvas: AnyCanvas): void {
   const w = sc.w;
   const size = w.size;
   const side = CHUNK * s;
   canvas.width = side;
   canvas.height = side;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = ctx2d(canvas);
   const img = ctx.createImageData(side, side);
   const out = new Uint32Array(img.data.buffer);
   const step = TILE / s;

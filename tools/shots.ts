@@ -7,6 +7,7 @@ import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
+import { decodePng } from './png.ts';
 
 const OUT = path.resolve(import.meta.dirname, '../shots');
 fs.mkdirSync(OUT, { recursive: true });
@@ -175,6 +176,37 @@ const SHOTS: Shot[] = [
       });
       console.log(`  kawałki ze złą skalą: ${bad.wrong}, bliskich w pamięci: ${bad.near}`);
       if (bad.wrong) throw new Error(`${bad.wrong} kawałków ze złą skalą po wyrzuceniu bliskich`);
+    },
+  },
+  {
+    // ten sam widok z kawałkami z workerów i z głównego wątku (zapas bez OffscreenCanvas)
+    // musi być identyczny co do piksela; licznik klatek ukryty, bo zależy od chwili zrzutu
+    // (nie zasłona Playwrighta: ta ma szerokość tekstu, więc „4 kl/s” i „52 kl/s” dają różne prostokąty)
+    name: 'worker-zgodnosc',
+    query: '',
+    run: async (page, base) => {
+      const snap = async (q: string) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&${q}`);
+        await waitIdle(page);
+        const painting = await page.evaluate(() => window.zm!.view.painting);
+        await page.addStyleTag({ content: '#fps { visibility: hidden !important; }' });
+        return { painting, img: decodePng(await page.screenshot()) };
+      };
+      for (const cam of ['hq,1', 'hq,0.6', 'all']) {
+        const a = await snap(`cam=${cam}`);
+        const b = await snap(`cam=${cam}&worker=0`);
+        if (!a.painting.startsWith('worker')) throw new Error(`kawałki rysuje ${a.painting} zamiast workerów`);
+        let diff = 0;
+        for (let i = 0; i < a.img.rgba.length; i += 4)
+          if (
+            a.img.rgba[i] !== b.img.rgba[i] ||
+            a.img.rgba[i + 1] !== b.img.rgba[i + 1] ||
+            a.img.rgba[i + 2] !== b.img.rgba[i + 2]
+          )
+            diff++;
+        console.log(`  cam=${cam}: ${a.painting} i ${b.painting}, różnych pikseli: ${diff}`);
+        if (diff) throw new Error(`cam=${cam}: obraz z workerów i z głównego wątku różni się w ${diff} pikselach`);
+      }
     },
   },
   {

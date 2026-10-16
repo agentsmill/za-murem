@@ -1,12 +1,14 @@
 /* Drzewa rysowane kodem (grafika zapasowa): korona z kilku plam, światło z dołu i z lewej
-   strony (od południa), ciemny obrys, jesienne kolory. Sprite'y w pamięci podręcznej. */
+   strony (od południa), ciemny obrys, jesienne kolory. Sprite'y w pamięci podręcznej
+   (osobnej w każdym workerze). */
 
 import type { Tree } from '../../world/world.ts';
+import { type AnyCanvas, ctx2d, newCanvas } from './canvas.ts';
 import { h2 } from './hash.ts';
 import { C, shade } from './palette.ts';
 
 export interface TreeSprite {
-  canvas: HTMLCanvasElement;
+  canvas: AnyCanvas;
   /** punkt zaczepienia (pień) w pikselach sprite'a */
   ax: number;
   ay: number;
@@ -40,10 +42,8 @@ export function treeSprite(t: Tree): TreeSprite {
   const lift = t.kind === 2 ? 0.3 * PX : 1.2 * PX; // korona nad pniem
   const W = Math.ceil(R * 2 + 8);
   const H = Math.ceil(R * 2 + lift + 12);
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
+  const canvas = newCanvas(W, H);
+  const ctx = ctx2d(canvas);
   const img = ctx.createImageData(W, H);
   const out = new Uint32Array(img.data.buffer);
   const cx = W / 2;

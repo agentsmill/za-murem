@@ -22,7 +22,7 @@ i wejść na http://localhost:5173. Przykłady bez sieci: `?demo=przymorze`, `?d
 - `npm run bot`: nowa symulacja przez 45 dni bez przeglądarki.
 - `npm run bot:v03`: wzorzec balansu na oryginalnym kodzie 0.3.
 - `npm run shots`: zrzuty ekranu w Chromium do `shots/` (`-- --dist` dla zbudowanej wersji).
-- `npm run perf`: pomiar klatek ze 150 pionkami (laptop i telefon z procesorem zdławionym 4×).
+- `npm run perf`: pomiar klatek ze 150 pionkami (laptop i telefon z procesorem zdławionym 4×); `-- --no-worker` rysuje kawałki mapy w głównym wątku, jak przeglądarka bez OffscreenCanvas w workerze.
 - `npm run demos`: dema offline w `public/demo/` z kafelków testowych.
 
 ## Struktura
@@ -31,7 +31,7 @@ i wejść na http://localhost:5173. Przykłady bez sieci: `?demo=przymorze`, `?d
 - `src/content`: treść z 0.3 (dane, ludzie, 24 wydarzenia) jako moduły TypeScript.
 - `src/world`: geokodowanie, kafelki wektorowe, Overpass, obrót mapy, siatka 1 m, klasy budynków.
 - `src/sim`: zegar, symulacja pionków, ścieżki (A* i regiony).
-- `src/render`: PixiJS, kamera, grafika zapasowa rysowana kodem.
+- `src/render`: PixiJS, kamera, grafika zapasowa rysowana kodem; kawałki mapy rysują workery na OffscreenCanvas.
 - `src/main.ts`: start, pętla gry, sterowanie.
 - `tools`: boty, zrzuty, pomiar wydajności, dema.
 - `tests`: testy jednostkowe i dane testowe offline (kafelki OpenFreeMap dla trzech adresów, odpowiedź Overpass).

@@ -445,7 +445,8 @@ window.addEventListener('blur', () => keys.clear());
     chunksPending: () => view.pendingFar,
     idle: () => view.complete && view.pendingFar === 0,
   };
-  await view.init($('stage'));
+  // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
+  await view.init($('stage'), { workers: params.get('worker') !== '0' });
   view.app.ticker.add((t) => frame(performance.now(), t.deltaMS));
   const demo = params.get('demo');
   if (demo) await start(() => loadDemo(demo));
