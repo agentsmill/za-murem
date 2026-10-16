@@ -39,7 +39,7 @@ describe('symulacja jest deterministyczna', () => {
     const a1 = run(42, 10 * TICKS_PER_DAY, script(world));
     const a2 = run(42, 10 * TICKS_PER_DAY, script(world));
     expect(a1.hash()).toBe(a2.hash());
-    expect(a1.st.stats.paths).toBeGreaterThan(100);
+    expect(a1.stats.paths).toBeGreaterThan(100);
     const b = run(43, 10 * TICKS_PER_DAY, script(world));
     expect(b.hash()).not.toBe(a1.hash());
   });
@@ -63,5 +63,31 @@ describe('symulacja jest deterministyczna', () => {
     expect(dist).toBeLessThan(6);
     expect(sim.st.people).toHaveLength(1);
     expect(sim.st.people[0].name.length).toBeGreaterThan(3);
+  });
+
+  it('grupa dostaje różne cele obok kliknięcia, także przy krawędzi mapy', () => {
+    const sim = new Sim(world, createSim(world, 5, { core: 4 }));
+    const s = world.size;
+    const ids = sim.st.pawns.filter((p) => p.kind === 'core').map((p) => p.id);
+    for (const [tx, ty] of [
+      [s - 1, 200],
+      [170, 160],
+    ]) {
+      sim.push({ t: 'move', ids, to: ty * s + tx });
+      sim.step();
+      const ends = sim.st.pawns.filter((p) => ids.includes(p.id)).map((p) => p.path[p.path.length - 1]);
+      expect(new Set(ends).size).toBe(ids.length);
+      for (const e of ends) {
+        expect(Math.abs((e % s) - tx)).toBeLessThanOrEqual(6);
+        expect(Math.abs(Math.floor(e / s) - ty)).toBeLessThanOrEqual(6);
+      }
+    }
+  });
+
+  it('statystyki ścieżek nie wchodzą do stanu (skrót stanu nie zależy od wnętrza A*)', () => {
+    const sim = new Sim(world, createSim(world, 9, { core: 2, crowd: 2 }));
+    for (let k = 0; k < 300; k++) sim.step();
+    expect(Object.keys(sim.st)).not.toContain('stats');
+    expect(sim.stats.paths).toBeGreaterThan(0);
   });
 });

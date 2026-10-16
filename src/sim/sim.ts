@@ -47,9 +47,23 @@ export interface SimState {
   nextId: number;
   /** licznik identyfikatorów pionków */
   nextPawn: number;
-  /** statystyki do pomiarów */
-  stats: { paths: number; failed: number; nodes: number };
 }
+
+/** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
+export interface SimStats {
+  paths: number;
+  failed: number;
+  nodes: number;
+  /** cele z innego obszaru mapy zamienione na najbliższy osiągalny kafelek */
+  substituted: number;
+}
+
+/** przesunięcia celów dla grupy: spirala wokół kliknięcia, najbliższe najpierw */
+const SPREAD: [number, number][] = (() => {
+  const out: [number, number][] = [];
+  for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) out.push([dx, dy]);
+  return out.sort((a, b) => a[0] ** 2 + a[1] ** 2 - (b[0] ** 2 + b[1] ** 2) || a[1] - b[1] || a[0] - b[0]);
+})();
 
 export type Command = { t: 'move'; ids: number[]; to: number };
 
@@ -80,7 +94,6 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     pawns: [],
     nextId: 1,
     nextPawn: 1,
-    stats: { paths: 0, failed: 0, nodes: 0 },
   };
   const rnd = rngOf(st.rng);
   const hq = w.buildings[w.hq];
@@ -150,6 +163,7 @@ function newPawn(
 export class Sim {
   readonly w: World;
   st: SimState;
+  stats: SimStats = { paths: 0, failed: 0, nodes: 0, substituted: 0 };
   private pf: PathFinder;
   private queue: Command[] = [];
   /** spójne obszary mapy: cel z innego obszaru zamieniamy na najbliższy osiągalny kafelek */
@@ -170,16 +184,27 @@ export class Sim {
     return Math.floor(p.y) * this.w.size + Math.floor(p.x);
   }
 
-  private route(p: Pawn, goal: number): boolean {
+  /** cel do wyznaczenia drogi: wolny kafelek w tym samym obszarze co pionek, −1 gdy go nie ma */
+  private goalFor(p: Pawn, goal: number): number {
     const w = this.w;
     const s = nearestFree(w.blocked, w.size, this.tileOf(p));
-    let g = nearestFree(w.blocked, w.size, goal);
-    if (this.reg[g] !== this.reg[s]) g = nearestInRegion(this.reg, w.size, g, this.reg[s]);
-    const path = g < 0 ? null : this.pf.find(w.blocked, s, g);
-    this.st.stats.paths++;
-    this.st.stats.nodes += this.pf.expanded;
+    const g = nearestFree(w.blocked, w.size, goal);
+    if (this.reg[g] === this.reg[s]) return g;
+    this.stats.substituted++;
+    return nearestInRegion(this.reg, w.size, g, this.reg[s]);
+  }
+
+  private routeTo(p: Pawn, g: number): boolean {
+    const w = this.w;
+    this.stats.paths++;
+    if (g < 0) {
+      this.stats.failed++;
+      return false;
+    }
+    const path = this.pf.find(w.blocked, nearestFree(w.blocked, w.size, this.tileOf(p)), g);
+    this.stats.nodes += this.pf.expanded;
     if (!path) {
-      this.st.stats.failed++;
+      this.stats.failed++;
       return false;
     }
     p.path = path;
@@ -195,13 +220,25 @@ export class Sim {
     const rnd = () => nextRandom(st.rng);
     for (const c of this.queue.splice(0)) {
       if (c.t === 'move') {
-        c.ids.forEach((id, k) => {
+        // kilka osób naraz: każda dostaje inny wolny kafelek z spirali wokół kliknięcia
+        const tx = c.to % size;
+        const ty = Math.floor(c.to / size);
+        const taken = new Set<number>();
+        let oi = 0;
+        for (const id of c.ids) {
           const p = st.pawns.find((q) => q.id === id);
-          if (!p) return;
-          // kilka osób naraz: rozstawione obok siebie
-          const off = k === 0 ? 0 : (k % 3) - 1 + Math.floor(k / 3) * size;
-          if (this.route(p, Math.max(0, Math.min(size * size - 1, c.to + off)))) p.want = -1;
-        });
+          if (!p) continue;
+          while (oi < SPREAD.length) {
+            const [dx, dy] = SPREAD[oi++];
+            const x = Math.max(0, Math.min(size - 1, tx + dx));
+            const y = Math.max(0, Math.min(size - 1, ty + dy));
+            const g = this.goalFor(p, y * size + x);
+            if (g < 0 || taken.has(g)) continue;
+            taken.add(g);
+            if (this.routeTo(p, g)) p.want = -1;
+            break;
+          }
+        }
       }
     }
     let budget = PATHS_PER_TICK;
@@ -221,7 +258,7 @@ export class Sim {
       }
       if (budget <= 0) continue;
       budget--;
-      this.route(p, p.want);
+      this.routeTo(p, this.goalFor(p, p.want));
       p.want = -1;
       p.wait = st.tick + 60 + Math.floor(rnd() * 240);
     }

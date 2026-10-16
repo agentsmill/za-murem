@@ -45,7 +45,7 @@ try {
             const zm = window.zm!;
             const st = zm.sim!.st;
             const tick0 = st.tick;
-            const paths0 = st.stats.paths;
+            const paths0 = zm.sim!.stats.paths;
             const times: number[] = [];
             const t0 = performance.now();
             let last = t0;
@@ -69,7 +69,7 @@ try {
                   worst: sorted[sorted.length - 1],
                   slow: sorted.filter((x) => x > 33.4).length,
                   ticks: st.tick - tick0,
-                  paths: st.stats.paths - paths0,
+                  paths: zm.sim!.stats.paths - paths0,
                 });
               }
             };

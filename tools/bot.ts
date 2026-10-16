@@ -22,7 +22,7 @@ console.log(
   `Bot 0.4, ${demo.name}: ${world.buildings.length} budynków, ${world.trees.length} drzew, świat w ${Math.round(performance.now() - t0)} ms`,
 );
 console.log(`Rdzeń: ${sim.st.people.map((p) => `${p.name} (${p.prof.toLowerCase()})`).join(', ')}; tłum: ${CROWD}`);
-console.log(' dzień  ścieżki  nieudane  węzłów/ścieżkę  ms/dzień  idzie');
+console.log(' dzień  ścieżki  nieudane  zamienione  węzłów/ścieżkę  ms/dzień  idzie');
 
 // polecenia bota: co dwie godziny gry losowy cel dla losowej osoby z rdzenia (z ziarnem bota)
 const brng = { s: SEED * 7919 };
@@ -30,6 +30,7 @@ const size = world.size;
 let lastP = 0;
 let lastF = 0;
 let lastN = 0;
+let lastS = 0;
 for (let d = 1; d <= DAYS; d++) {
   const start = performance.now();
   const end = d * TICKS_PER_DAY;
@@ -42,14 +43,15 @@ for (let d = 1; d <= DAYS; d++) {
     }
     sim.step();
   }
-  const s = sim.st.stats;
+  const s = sim.stats;
   const n = s.paths - lastP;
   const moving = sim.st.pawns.filter((p) => p.pi < p.path.length).length;
   console.log(
-    `${String(dayOf(sim.st.tick) - 1).padStart(6)} ${String(n).padStart(8)} ${String(s.failed - lastF).padStart(9)} ${String(Math.round((s.nodes - lastN) / Math.max(1, n))).padStart(15)} ${String(Math.round(performance.now() - start)).padStart(9)} ${String(moving).padStart(6)}`,
+    `${String(dayOf(sim.st.tick) - 1).padStart(6)} ${String(n).padStart(8)} ${String(s.failed - lastF).padStart(9)} ${String(s.substituted - lastS).padStart(11)} ${String(Math.round((s.nodes - lastN) / Math.max(1, n))).padStart(15)} ${String(Math.round(performance.now() - start)).padStart(9)} ${String(moving).padStart(6)}`,
   );
   lastP = s.paths;
   lastF = s.failed;
   lastN = s.nodes;
+  lastS = s.substituted;
 }
 console.log(`Koniec: dzień ${dayOf(sim.st.tick)} ${clockOf(sim.st.tick)}, skrót stanu ${sim.hash()}`);
