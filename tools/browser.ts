@@ -48,10 +48,14 @@ export async function openSession(opts: { headless?: boolean; dist?: boolean } =
 
 /** czeka, aż gra wczyta osiedle i dorysuje widoczne kawałki */
 export async function waitIdle(page: Page, timeout = 60_000): Promise<void> {
+  const twoFrames = () =>
+    page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await page.waitForFunction(() => window.zm?.ready && window.zm.sim, null, { timeout });
+  // najpierw klatka z obecną kamerą: idle() bez niej mówi jeszcze o widoku sprzed setCam
+  await twoFrames();
   await page.waitForFunction(() => window.zm?.idle(), null, { timeout, polling: 100 });
   // dwie klatki zapasu
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await twoFrames();
 }
 
 export async function webglRenderer(page: Page): Promise<string> {
