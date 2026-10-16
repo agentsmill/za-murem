@@ -34,6 +34,23 @@ Repo: github.com/agentsmill/za-murem (publiczne), strona: agentsmill.github.io/z
 
 ## Stan na 16.10.2026
 
-Wersja 0.3: vanilla JS bez bundlera, pliki `index.html`, `style.css`, `js/*.js` (data, osm, mvt, art, sim, gazetka, ui, main), `data/sample.js` (Przymorze z Overpass), `tools/simtest.js`, `tools/make-sample.js`. Pages serwuje gałąź main z katalogu głównego. Uruchomienie lokalne: `python3 -m http.server 8000`.
+Wersja 0.3: vanilla JS bez bundlera, przeniesiona do `public/v03/` (`index.html`, `style.css`, `js/*.js`, `data/sample.js`); po buildzie działa pod `/v03/`. Surowe dane Przymorza z Overpass są w `tests/fixtures/overpass/`. `tools/simtest.js` nigdy nie trafił do repo; wzorzec balansu odtwarza `npm run bot:v03`.
 
-Komendy dla nowej wersji dopisz tutaj, gdy powstaną (dev, test, build, zrzuty, bot).
+Wersja 0.4 (gałąź `m0-fundament`): Vite 8, TypeScript 7, PixiJS 8, Vitest, Playwright, Biome. Postęp i decyzje w `docs/POSTEP.md`.
+
+## Komendy (wersja 0.4)
+
+```bash
+npm install
+npm run dev          # serwer deweloperski, http://localhost:5173 (?demo=przymorze|lanciego|zielonki)
+npm test             # testy jednostkowe (Vitest), m.in. porównanie z oryginałem 0.3 w node:vm
+npm run lint         # Biome
+npm run build        # typy + build do dist/ (z dist/v03/)
+npm run bot          # nowa symulacja 45 dni bez przeglądarki
+npm run bot:v03      # wzorzec balansu na oryginale 0.3: [-- ziarno [dni]]
+npm run shots        # zrzuty w Chromium do shots/: [-- filtr] [--dist]
+npm run perf         # klatki ze 150 pionkami: [-- pionki [tempo 1-3]]
+npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
+```
+
+Skrypty w `tools/` to TypeScript uruchamiany wprost przez Node (bez kompilacji), więc importy mają rozszerzenie `.ts`, a kod używa tylko składni wymazywalnej (bez enumów i przestrzeni nazw).
