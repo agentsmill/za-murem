@@ -1,1 +1,9 @@
 .DS_Store
+node_modules/
+dist/
+shots/
+test-results/
+playwright-report/
+.playwright-mcp/
+.superpowers/
+*.log

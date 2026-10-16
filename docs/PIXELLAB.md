@@ -1,0 +1,105 @@
+# PixelLab: jak go używamy
+
+PixelLab (pixellab.ai) generuje pixel art: postacie w 4 albo 8 kierunkach z animacjami, kafelki terenu z przejściami, obiekty na mapę, moduły budynków, elementy interfejsu. Ma serwer MCP, więc Claude Code woła jego narzędzia bezpośrednio, bez pisania klienta API.
+
+Stan wiedzy z 16.10.2026, z dokumentacji MCP (api.pixellab.ai/mcp/docs), opisu API v2 (api.pixellab.ai/v2/llms.txt) i strony cennika API (pixellab.ai/pixellab-api). Przed większym zamówieniem sprawdź, czy coś się nie zmieniło.
+
+## Podłączenie do Claude Code
+
+1. Mateusz bierze token z https://api.pixellab.ai/mcp (konto PixelLab).
+2. W terminalu, w folderze projektu:
+
+```bash
+claude mcp add --transport http pixellab https://api.pixellab.ai/mcp --header "Authorization: Bearer TU_TOKEN"
+```
+
+3. W Claude Code `/mcp` i sprawdzić, czy przy `pixellab` jest ptaszek. Z terminala: `claude mcp list`.
+
+Domyślny zakres to `local`, konfiguracja ląduje w `~/.claude.json`, a nie w repo. Tak ma zostać, bo repo jest publiczne. Tokena nigdy nie zapisujemy w plikach projektu ani w `.mcp.json`.
+
+Jeśli narzędzi PixelLab nie widać, trzeba powiedzieć Mateuszowi, że MCP nie jest podłączony. Dokumentacja PixelLab wprost prosi, żeby wtedy nie obchodzić tego przez curl albo API v2.
+
+## Co jest do dyspozycji (wybór)
+
+Postacie
+- `create_character`: tryby standard, pro i v3; 4 albo 8 kierunków; widok `low top-down` (około 20°, klasyczne 3/4 RPG), `high top-down` (około 35°), `side`, `oblique` (beta, tylko 4 kierunki). Rozmiar do 128 px (standard i pro) albo 256 px (v3).
+- `animate_character`: animacje z szablonów (np. `walking-8-frames`, `running-6-frames`, `breathing-idle`, `crouched-walking`) albo z opisu tekstem (v3: 4 do 16 klatek, parzyście). Animacja z szablonu kosztuje 1 generację na kierunek.
+- `create_character_state`: wariant istniejącej postaci (inne ubranie, ranna, w zimowej kurtce).
+- Spójny styl postaci: `style_character_id` (tylko tryb pro, postać wzorcowa musi mieć 8 kierunków).
+
+Teren
+- `create_topdown_tileset`: kafelki Wanga z przejściem między dwoma terenami, 16 albo 32 px (64 w pro). Kolejne zestawy łączy się przez `lower_base_tile_id` i `upper_base_tile_id`, żeby przejścia pasowały do siebie.
+- `create_tiles_pro`: kafelki 16-128 px, typy `square_topdown`, `oblique`, `isometric`, hex; `tile_feature: "tileset"` daje łączący się teren; `style_images` dopasowuje styl do wzorca.
+- `create_path_tiles`: ścieżki i chodniki, dla `square_topdown` dokładnie 32 px.
+
+Budynki
+- `create_building_kit`: zestaw modułów budynku. `tile_type` może być `square_topdown`, `oblique` (kwadratowy dach i ściany ścięte w dół w prawo) albo `isometric`; `tile_size` 16-96; `wall_tiles` 1-3 (wysokość ściany w kafelkach); `layout: materials` daje bardziej spójne kawałki. To jest klucz do składania bloków z obrysów OSM z modułów zamiast rysowania każdego budynku osobno.
+
+Obiekty
+- `create_map_object`: obiekt na mapę, widok `low top-down`, `high top-down` (domyślny) albo `side`, opcjonalnie dopasowany do tła.
+- `create_1_direction_object` (16-256 px) i `create_8_direction_object` (24-168 px), `animate_object`, `create_object_state` (np. koza zimna i koza rozpalona). Spójny styl przez `style_object_id` albo `style_image_base64`.
+
+Inne
+- `create_ui_asset` (panele 192-688 px), `create_font`, `create_portrait_character` (portrety do kart ludzi), obrazy pixflux, pixen i pro, edycja, inpainting.
+- Większość narzędzi przyjmuje `palette`, `palette_name` i `max_colors`. Tego używamy, żeby wszystko miało jedną paletę.
+
+Praca jest asynchroniczna: narzędzie oddaje identyfikator od razu, wynik jest po około 2-5 minutach (kafelki około 100 s), stan sprawdza się odpowiednim `get_*`. Pliki do pobrania nie wymagają logowania. Animacje można kolejkować zaraz po utworzeniu postaci.
+
+## Generowanie map (Mateusz ma wyższy plan od 16.10.2026)
+
+PixelLab ma narzędzie Create map (model Pixflux): mapa w widoku z góry albo z boku z opisu tekstem, z obrazem startowym (init image) i z paletą. Limit powierzchni płótna zależy od planu: darmowy 200×200, tier 1 320×320, tier 2 i wyżej 400×400 px. W MCP odpowiada temu `create_image_pixflux` z `init_image_url` (obraz musi mieć dokładnie zadany rozmiar, `init_image_strength` 150 to już prawdziwa edycja). Są też narzędzia do rozszerzania mapy (Extend map) w edytorze. Sprawdź w `search_help`, które z nich są dostępne przez MCP.
+
+Do czego tego używamy:
+- Pocztówka z osiedla. Rysujemy własny układ osiedla gracza w skali 1 px na metr (384 m to 384×384 px, mieści się w limicie) z kolorami jako mapą znaczeń: bloki, ulice, zieleń, woda. Podajemy to jako obraz startowy i dostajemy pikselową mapę „twoje osiedle w 2051”. Na ekran startowy, do gazetki i do udostępniania. To mocny element wiralowy, bo każdy dostaje obrazek swojego prawdziwego osiedla.
+- Widok całego osiedla po maksymalnym oddaleniu kamery, jeśli wygląda lepiej niż pomniejszone kafelki.
+- Grafiki koncepcyjne przy ustalaniu kotwicy stylu.
+
+Do czego nie:
+- Do grywalnego świata 1 m. Przy 32 px na metr obszar 384 m to ponad 12 tysięcy pikseli w bok, czyli setki osobnych obrazów, które nie trzymałyby jednego stylu i nie dałyby się zmieniać w trakcie gry (ścięte drzewo, nowa grządka, zbita szyba). Świat gry składamy z kafelków, modułów budynków i obiektów.
+
+Pocztówki generuje gra na żywo dla każdego gracza? Nie. Klucz API nie może trafić do przeglądarki, a backendu nie mamy. Na start pocztówki robimy dla przykładowych osiedli i do materiałów. Pocztówka na żądanie dla każdego adresu wymagałaby małego serwera pośredniczącego i zgody Mateusza na koszty.
+
+## Koszty jednostkowe (szacunki PixelLab, USD)
+
+- Postać 8 kierunków 64×64: około 0,017 (v2), 0,041 (v3 64×64), 0,08-0,15 (pro).
+- Animacja na kierunek: v3 4 klatki 64×64 około 0,013; szablon 64×64 około 0,032.
+- Zestaw kafelków top-down 32 px: około 0,01.
+- Kafelki pro: 0,08-0,15.
+
+Pierwsza fala z listy niżej to według tych stawek rząd 15-40 USD z poprawkami. To mój szacunek, nie cena PixelLab. Abonament i limity generacji sprawdzić na pixellab.ai przed startem. Warunki licencji na wygenerowane assety (publiczne repo, ewentualnie komercyjne użycie) też sprawdzić i zapisać tutaj.
+
+## Zasady stylu
+
+1. Najpierw kotwica stylu: jeden kafelek trawy z chodnikiem, jeden obiekt (trzepak), jedna postać (emeryt w kurtce), jeden kawałek bloku z modułów. Pokazać Mateuszowi, poprawić, zatwierdzić.
+2. Z kotwicy zapisać paletę (około 32 kolory) w `assets/palette.json` i podawać ją do każdego kolejnego zamówienia.
+3. Kafelek 32 px = 1 m. Widok `low top-down` dla wszystkiego, co stoi na mapie. Postacie na płótnie 48 albo 64 px, 8 kierunków.
+4. Każdy następny asset z referencją stylu (`style_images`, `style_object_id`, `style_character_id`) do zatwierdzonej kotwicy.
+5. Warianty pór roku przez `create_object_state` i osobne zestawy kafelków (śnieg), nie przez filtr koloru.
+
+## Jak trzymać assety w repo
+
+- `assets/manifest.json`: każdy asset ma id, narzędzie, prompt, parametry, identyfikator PixelLab, koszt, status (zamówiony, gotowy, zatwierdzony, odrzucony), ścieżkę pliku.
+- `assets/raw/<id>/`: pliki dokładnie tak, jak przyszły z PixelLab. Nie edytować ręcznie.
+- `public/assets/`: atlasy i arkusze sprite'ów zrobione skryptem z `assets/raw`.
+- Każdy typ obiektu ma też grafikę zapasową rysowaną kodem, żeby gra działała bez assetów i żeby można było budować mechanikę przed grafiką.
+- Przed każdą większą paczką zamówień policzyć koszt z manifestu i zapytać Mateusza. Budżet na etap ustala Mateusz.
+
+## Pierwsza fala assetów (wycinek pionowy)
+
+Teren (zestawy Wanga 32 px, połączone ze sobą):
+trawa / ubita ziemia; trawa / asfalt; asfalt / chodnik z płyt; trawa / piasek (piaskownica); ziemia / grządki; trawa / woda; wersje zimowe ze śniegiem.
+
+Budynki (`create_building_kit`, oblique, 32 px):
+wielka płyta szara z balkonami; wielka płyta po termomodernizacji w pastelach; dom jednorodzinny (tynk i dachówka); garaż blaszak; pawilon handlowy. Wnętrza (`create_tiles_pro`, square_topdown, 32 px): lastryko z klatki, panele, linoleum z PRL, beton piwnicy, płytki w łazience, ściany działowe, drzwi, okna.
+
+Obiekty na zewnątrz:
+trzepak, ławka, altana śmietnikowa, piaskownica, huśtawka, latarnia, drzewo liściaste (lato, jesień, zima, suche), sosna, krzak, ognisko (animowane), beczka z ogniem (animowana), stos drewna, stos złomu, barykada, grządka (etapy wzrostu), maluch bez kół, polonez, garaż otwarty, gołębnik, kapliczka. Satyra: martwy paczkomat, hulajnoga, Tesla z blokadą, siłownia plenerowa, ławka z ładowarką USB, panele na balkonie, antena satelitarna, pranie na sznurku (animowane).
+
+Obiekty we wnętrzach:
+koza (zimna i rozpalona) z rurą, wersalka, łóżko, meblościanka, stół z krzesłami, kuchenka, lodówka na abonament (martwa), wanna, regał, skrzynia, warsztat z imadłem, generator, radio, serwer.
+
+Postacie (`create_character` v3, 8 kierunków, low top-down):
+emerytka, emeryt, złota rączka, pielęgniarka, informatyk w bluzie, licealistka, dziecko, dresiarz, kucharka, influencer survivalowy, prompt engineer, doradca ESG, ochroniarz, pies (czworonóg). Warianty ubrań przez `create_character_state`.
+
+Animacje dla każdej postaci rdzenia:
+chód (8 kierunków), stanie (breathing-idle), rąbanie, noszenie skrzyni, gotowanie przy kuchni, siedzenie przy ogniu, spanie, ranny na ziemi. Dla tłumu wystarczy chód i stanie.
