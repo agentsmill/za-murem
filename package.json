@@ -1,0 +1,35 @@
+{
+  "name": "za-murem",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Za Murem: spółdzielnia po upadku. Pikselowa gra na prawdziwym osiedlu z OpenStreetMap.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "bot": "node tools/bot.ts",
+    "bot:v03": "node tools/bot-v03.ts",
+    "demos": "node tools/make-demos.ts",
+    "shots": "node tools/shots.ts",
+    "perf": "node tools/perf.ts"
+  },
+  "dependencies": {
+    "pixi.js": "8.22.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@playwright/test": "1.64.1",
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}

@@ -1,6 +1,6 @@
-// node tools/make-sample.js <overpass.json> <lat> <lon> <name> <out.js>
+// node tools/make-sample.cjs <overpass.json> <lat> <lon> <name> <out.js>
 global.window={};const fs=require('fs');
-eval(fs.readFileSync(__dirname+'/../js/data.js','utf8'));eval(fs.readFileSync(__dirname+'/../js/osm.js','utf8'));
+eval(fs.readFileSync(__dirname+'/../public/v03/js/data.js','utf8'));eval(fs.readFileSync(__dirname+'/../public/v03/js/osm.js','utf8'));
 const G=window.G;const [,,inp,lat,lon,name,out]=process.argv;
 const geo=G.OSM.toGeo(JSON.parse(fs.readFileSync(inp,'utf8')),+lat,+lon);
 geo.name=name;
