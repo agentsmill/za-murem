@@ -893,7 +893,7 @@ export const ADS: readonly string[] = [
 
 /* Celowo inne niż w 0.3: od 17.10.2026 upadek przez bakterię od miedzi (docs/GDD.md, sekcja Lore). */
 export const LORE: string =
-  'Rok 2051. Wszystko zaczęło się sypać, kiedy prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję, a dolar przeszedł na abonament. Potem ekologiczny startup poprosił swój model AI o bakterię, która odzyska miedź z elektrośmieci. Model się postarał. Szczep uciekł z laboratorium i zjadł kable w ścianach, pod ziemią i na słupach. Razem z siecią padła chmura: lodówki, samochody i domofony do dziś czekają na aktualizację. Unia zakazała palenia drewnem dzień przed tym, jak zgasł prąd. Influencerzy przeszli na survival, a doradcy ds. ESG na kaszę. Przetrwało to, co szczelne, i jedna instytucja: spółdzielnia mieszkaniowa. Zarząd to teraz wy.';
+  'Rok 2051. Wszystko zaczęło się ćwierć wieku temu, w 2026 roku, kiedy ekologiczny startup poprosił swój model AI o bakterię, która odzyska miedź z elektrośmieci. Model się postarał. Szczep uciekł z laboratorium i zaczął jeść kable w ścianach, pod ziemią i na słupach. Przez trzy lata wszyscy zwalali awarie na złodziei złomu, a kiedy ktoś połączył kropki, bakteria jeździła już po świecie w kontenerach z elektrośmieciami. Potem sypało się powoli: prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję, dolar przeszedł na abonament, padła chmura, a lodówki, samochody i domofony do dziś czekają na aktualizację. Unia zakazała palenia drewnem dzień przed tym, jak zgasł prąd. Influencerzy przeszli na survival, a doradcy ds. ESG na kaszę. Przetrwało to, co szczelne, i jedna instytucja: spółdzielnia mieszkaniowa. Zarząd to teraz wy.';
 
 /* Z js/sim.js (0.3): opuszczone mieszkania jako cel przeszukania */
 POICAT.mieszkania = {

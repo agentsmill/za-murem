@@ -25,7 +25,8 @@ Repo: github.com/agentsmill/za-murem (publiczne), strona: agentsmill.github.io/z
 
 - Nic nie idzie na zewnątrz bez wyraźnego OK Mateusza: push do GitHuba, deploy, publiczne posty, zamówienia w PixelLab ponad ustalony budżet. Lokalne commity rób swobodnie.
 - Tokenów i kluczy nigdy nie zapisuj w repo. PixelLab jest podłączony przez `claude mcp add` w zakresie local.
-- Lore: rok 2051, prezydent USA z dziesiątej kadencji bez imienia, żadnych nazwisk prawdziwych polityków, satyra na dzisiejszą technologię i ekologię. Bez Wielkiego Mrozu. Gra otwarta, zakończenia ze ścieżek uchwał.
+- Lore: rok 2051, prezydent USA z dziesiątej kadencji bez imienia, żadnych nazwisk prawdziwych polityków, satyra na dzisiejszą technologię i ekologię. Bez Wielkiego Mrozu. Gra otwarta, zakończenia ze ścieżek uchwał. Upadek przez bakterię od miedzi, rok zero 2026, szczegóły w sekcji Lore w `docs/GDD.md`.
+- Mieszkańcy z adresu są zawsze zmyśleni (RODO). Z prawdziwego świata bierzemy tylko miejsca z OSM i statystyki zbiorcze. Nigdy nie robimy postaci z nazw firm (jednoosobowe mają imię i nazwisko właściciela). Postaci przypinamy do klatki, nie do numeru mieszkania.
 - Atrybucja map zawsze widoczna: © współtwórcy OpenStreetMap, OpenFreeMap, OpenMapTiles.
 - Symulacja jest oddzielona od rysowania i deterministyczna. Musi dać się puścić w Node bez przeglądarki.
 - Po każdej zmianie wizualnej zrób zrzut ekranu w Playwright i obejrzyj go, zanim powiesz, że działa.

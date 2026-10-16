@@ -16,7 +16,11 @@ Wpisujesz swój adres, widzisz swój prawdziwy blok albo dom w pikselach, w śro
 
 ## Lore (ustalone, nie zmieniać bez Mateusza)
 
-Rok 2051. Wszystko zaczęło się sypać, kiedy prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję po zmianie konstytucji, a dolar przeszedł na abonament. Potem ekologiczny startup od recyklingu elektrośmieci poprosił swój model AI o bakterię, która oddzieli miedź od plastiku. Model zrobił to za dobrze. Szczep uciekł z laboratorium i zjada izolację i miedź wszędzie, gdzie ma wilgoć i powietrze: w ścianach, pod ziemią, na słupach. Sieci energetycznej nie da się odbudować, bo kilometrów kabli nikt nie upilnuje. Razem z nią padła chmura, łączność i łańcuchy dostaw. Jedyna instytucja, która przetrwała, to spółdzielnia mieszkaniowa. Zarząd to teraz wy.
+Rok 2051. Wszystko zaczęło się w 2026 roku, czyli w roku zero, w którym gracz wpisuje swój adres. Ekologiczny startup od recyklingu elektrośmieci poprosił swój model AI o bakterię, która oddzieli miedź od plastiku. Model zrobił to za dobrze. Szczep uciekł z laboratorium i zjada izolację i miedź wszędzie, gdzie ma wilgoć i powietrze: w ścianach, pod ziemią, na słupach. Przez dwa, trzy lata nikt tego nie zauważył, bo kable psują się zawsze, a awarie zwalano na starą instalację i złodziei złomu. Kiedy ktoś połączył kropki, szczep jeździł już po świecie w kontenerach z elektrośmieciami i było za późno.
+
+Potem przyszło ćwierć wieku powolnego rozpadu. Sieci energetyczne padały region po regionie, łatane i zjadane od nowa, bo kilometrów kabli nikt nie upilnuje. W tym czasie prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję po zmianie konstytucji, dolar przeszedł na abonament, padła chmura, łączność i łańcuchy dostaw. Jedyna instytucja, która przetrwała, to spółdzielnia mieszkaniowa. Zarząd to teraz wy.
+
+Oś czasu, z której liczy generator mieszkańców: 2026 rok zero, około 2029 odkrycie, lata trzydzieste i czterdzieste rozpad, 2051 gra. Dzisiejsze osiedle gracza to dla postaci „dawne czasy”, a mieszkańcy to dzieci i wnuki dzisiejszych lokatorów, a nie oni sami.
 
 Zasada świata: przetrwało to, co szczelne. Uzwojenia pod lakierem w generatorach i silnikach, ogniwa zalane szkłem i laminatem w panelach, chipy w żywicy, transformatory w oleju, sucha i klimatyzowana serwerownia banku. Dlatego generator w piwnicy i panele na dachu dają prąd, krótką instalację w bloku da się łatać i chronić, a lokalny model językowy jest z dysków banku. To, co gołe i wilgotne, zjadła bakteria.
 
