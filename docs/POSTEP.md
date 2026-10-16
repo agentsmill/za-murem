@@ -46,14 +46,17 @@ Przegląd końcowy (osobny agent, model Opus, cała gałąź) i poprawki. Pięć
 - Liczniki ścieżek wyszły ze stanu gry, więc skrót stanu nie zależy od wnętrza A*.
 - Drobne: limit pamięci kawałków na telefonie (16 zamiast 48), dymki z opisem cech, spacja na ekranie startowym, link do 0.3 w trybie dev, przesuwanie dwoma palcami, kod wyjścia `shots` przy błędach strony, flaga Metal tylko na Macu, uruchamianie `bot:v03` w ścieżkach z polskimi literami, scenariusz dotykowy w `shots`.
 
+### Wdrożenie, 17.10.2026 (po OK Mateusza)
+
+Gałąź `m0-fundament` wypchnięta i połączona z main (przewinięcie, bez wymuszania). Pages przełączone z trybu „legacy” na GitHub Actions. CI na gałęzi i workflow Pages na main przeszły (instalacja, lint, testy, build, wdrożenie w 11 s). Na żywo pod agentsmill.github.io/za-murem: od wpisania adresu „Obrońców Wybrzeża 4, Gdańsk” do gry 2,8 s, siedziba „Obrońców Wybrzeża 4B”, 61 budynków, bez błędów w konsoli. Wersja 0.3 działa pod `/v03/`.
+
 ## Następne
 
-1. Mateusz ogląda zrzuty (`docs/postep/`) i daje OK na bramkę M0: push gałęzi, połączenie z main, przełączenie Pages na GitHub Actions.
-2. M1: rysowanie kawałków w Web Workerze (`OffscreenCanvas`), żeby zniknęły przycięcia przy przesuwaniu mapy.
-3. M1: przekrój siedziby. Dach znika z bliska albo po zaznaczeniu, parter z klatką, mieszkaniami, kuchnią i kozą z szablonów.
-4. M1: potrzeby (głód, ciepło, sen, nastrój) i dwa łańcuchy z planu: drzewo → rąbanie → drewno → skład → koza → ciepło; zapasy → gotowanie → posiłek.
-5. M1: tłum z planem dnia, noc z prawdziwą ciemnością i światłem kozy i ogniska, pierwsze trzy minuty z GDD.
-6. M1: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
+1. M1: rysowanie kawałków w Web Workerze (`OffscreenCanvas`), żeby zniknęły przycięcia przy przesuwaniu mapy. W toku w osobnej sesji, gałąź `worker-kawalki`.
+2. M1: przekrój siedziby. Dach znika z bliska albo po zaznaczeniu, parter z klatką, mieszkaniami, kuchnią i kozą z szablonów.
+3. M1: potrzeby (głód, ciepło, sen, nastrój) i dwa łańcuchy z planu: drzewo → rąbanie → drewno → skład → koza → ciepło; zapasy → gotowanie → posiłek.
+4. M1: tłum z planem dnia, noc z prawdziwą ciemnością i światłem kozy i ogniska, pierwsze trzy minuty z GDD.
+5. M1: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
 
 ## Decyzje
 
@@ -81,6 +84,7 @@ Przegląd końcowy (osobny agent, model Opus, cała gałąź) i poprawki. Pięć
 
 ## Zaparkowane
 
+- GitHub Actions ostrzega: `actions/checkout@v4` i `actions/setup-node@v4` celują w wycofywany Node 20 (GitHub uruchamia je na 24), a `ubuntu-latest` przechodzi na Ubuntu 26 od 19.10.2026. Podbić wersje akcji przy najbliższej zmianie workflow.
 - Tryb zombie do wyboru w menu (pomysł Mateusza, 17.10.2026): apokalipsa zombie, start z jednego chronionego budynku, teren powiększany budową zasieków.
 - Własny serwer, np. VPS na Hetznerze (pytanie Mateusza, 17.10.2026): konta i zapisy w chmurze, pocztówki z PixelLab na żądanie, pamięć geokodowania i kafelków, z czasem multiplayer asynchroniczny (sąsiednie osiedla innych graczy). Gra dalej statyczna na Pages, serwer jako małe API obok. Zmienia decyzję „bez backendu i kont”, wrócić po M1.
 - Pocztówka z osiedla: mapa znaczeń 1 px = 1 m już jest (`src/world/semantic.ts`), gotowa jako obraz startowy do PixelLab. Stan konta PixelLab z 17.10.2026 (sprawdzony przez MCP, nic nie zamówione): abonament Tier 1 „Pixel Apprentice”, 2000 generacji do 16.11.2026, 0 USD kredytów. Tier 1 to według `docs/PIXELLAB.md` mapy do 320×320 px, a nie 400×400, więc pocztówka 384 m w skali 1 px na metr się nie zmieści. Albo skala 1,2 m na piksel, albo wyższy plan.
