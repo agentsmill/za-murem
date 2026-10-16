@@ -371,6 +371,8 @@ const ROADCLS: Record<string, string> = {
   path: 'footway',
   busway: 'service',
 };
+/** klasy tuneli, które bywają przejściami przez budynki (nie tunele pod drogami szybkiego ruchu) */
+const PASSCLS = new Set(['path', 'service', 'minor', 'track']);
 function areaKindT(layer: string, t: Record<string, TagValue>) {
   const c = t.class;
   const s = t.subclass;
@@ -505,7 +507,15 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
         }
         if (lname === 'transportation' || lname === 'waterway') {
           if (F.type !== 2) continue;
-          if (t.brunnel === 'tunnel') continue;
+          if (t.brunnel === 'tunnel') {
+            // 0.3 pomijało tunele; prześwity i bramy przez budynki zachowujemy jako przejścia
+            if (lname === 'transportation' && PASSCLS.has(t.class as string))
+              for (const line of fg) {
+                const pts = line.map(P);
+                if (pts.length >= 2 && near(pts)) (geo.pass ||= []).push({ l: pts, h: ROADCLS[t.class as string] });
+              }
+            continue;
+          }
           for (const line of fg) {
             const pts = line.map(P);
             if (pts.length < 2 || !near(pts)) continue;

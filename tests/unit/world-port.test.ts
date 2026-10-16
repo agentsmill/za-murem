@@ -45,7 +45,8 @@ describe('kafelki wektorowe (mvt.ts) jak w 0.3', () => {
       });
 
       it('geometria (toGeoT) jest identyczna z 0.3 przy promieniu 230 m', () => {
-        const now = toGeoT(decodedTiles(a), a.lat, a.lon, 230);
+        // przejścia przez budynki (pass) to dodatek 0.4, reszta ma być identyczna z 0.3
+        const { pass: _pass, ...now } = toGeoT(decodedTiles(a), a.lat, a.lon, 230);
         const oldTiles = a.tiles.map(([x, y]) => ({ x, y, L: G.MVT.decode(tileBytes(x, y), WANT) }));
         const old = G.MVT.toGeoT(oldTiles, a.lat, a.lon);
         expect(plain(now)).toEqual(plain(old));
@@ -117,9 +118,8 @@ describe('kafelki wektorowe (mvt.ts) jak w 0.3', () => {
 describe('Overpass i osiedle zapasowe (osm.ts) jak w 0.3', () => {
   it('toGeo z zapisanej odpowiedzi Overpass', () => {
     const json = overpassJson();
-    expect(plain(toGeo(json as Parameters<typeof toGeo>[0], 54.4093, 18.5991))).toEqual(
-      plain(G.OSM.toGeo(json, 54.4093, 18.5991)),
-    );
+    const { pass: _pass, ...now } = toGeo(json as Parameters<typeof toGeo>[0], 54.4093, 18.5991);
+    expect(plain(now)).toEqual(plain(G.OSM.toGeo(json, 54.4093, 18.5991)));
   });
 
   it('kategorie miejsc i terenów', () => {

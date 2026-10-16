@@ -174,6 +174,8 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
     }
     if (t.highway) {
       geo.r.push({ l: pts, h: t.highway });
+      // przejście przez budynek (nowe w 0.4): wytniemy je w budynku po rasteryzacji
+      if (t.tunnel === 'building_passage' || t.covered === 'yes') (geo.pass ||= []).push({ l: pts, h: t.highway });
       continue;
     }
     if (t.waterway) {

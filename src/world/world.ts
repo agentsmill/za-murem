@@ -4,6 +4,7 @@
 
 import type { BuildingClass } from '../content/data.ts';
 import { mulberry } from '../core/rng.ts';
+import { labelRegions } from '../sim/path.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
 import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea } from './geo.ts';
 import { fillRing, stampLine } from './raster.ts';
@@ -201,6 +202,19 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
       blocked[i] = 1;
     }
   });
+  // 5a. przejścia przez budynki (bramy, prześwity): wycięte w budynku jako chodnik albo jezdnia
+  for (const r of geo.pass || []) {
+    const car = r.h === 'service' || r.h === 'residential';
+    stampLine(r.l, car ? 3.5 : 2.5, size, (i) => {
+      if (bid[i] < 0) return;
+      bid[i] = -1;
+      blocked[i] = 0;
+      terr[i] = car ? T.ROAD : T.SIDEWALK;
+    });
+  }
+  kept.forEach((o, id) => {
+    o.tiles = o.tiles.filter((i) => bid[i] === id);
+  });
   for (let i = 0; i < N; i++) if (terr[i] === T.WATER) blocked[i] = 1;
 
   // 6. miejsca: punkt w budynku albo najbliższy budynek do 6 m
@@ -240,6 +254,7 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     let y0 = size;
     let x1 = -1;
     let y1 = -1;
+    if (!o.tiles.length) x0 = y0 = x1 = y1 = 0;
     for (const i of o.tiles) {
       const x = i % size;
       const y = (i - x) / size;
@@ -314,22 +329,120 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
       b.name = opts.street && num ? `${opts.street} ${num}` : nameOf(b.tags, b.cls, null, 1);
   }
 
-  // 9. drzewa (przed wejściami, żeby drzewo nie zasłoniło drzwi, sprawdzamy potem)
-  const trees = plantTrees(terr, blocked, size, opts.seed);
+  // 9. drzewa
+  const planted = plantTrees(terr, blocked, size, opts.seed);
 
-  // 10. wejścia
+  // 9a. spójność: duży obszar odcięty budynkami (brak przejścia w danych) łączymy bramą
+  // przez najcieńszą ścianę; drzewa na drodze bramy znikają
+  const removed = connectRegions(terr, bid, blocked, size, planted);
+  const trees = removed.size ? planted.filter((_, k) => !removed.has(k)) : planted;
+  for (const b of buildings) b.tiles = 0;
+  for (let i = 0; i < N; i++) if (bid[i] >= 0) buildings[bid[i]].tiles++;
+
+  // 10. wejścia (pnie stoją co najmniej 2 m od budynków, więc nie wchodzą w drzwi)
   for (const b of buildings) b.entrances = findEntrances(b, terr, bid, blocked, size);
-  // drzewo nie stoi w drzwiach
-  const doorOut = new Set<number>();
-  for (const b of buildings) for (const e of b.entrances) doorOut.add(e.out);
-  const keptTrees = trees.filter((t) => {
-    const i = Math.floor(t.y) * size + Math.floor(t.x);
-    if (!doorOut.has(i)) return true;
-    blocked[i] = 0;
-    return false;
-  });
 
-  return { size, angle, terr, bid, blocked, buildings, trees: keptTrees, pois, hq, seed: opts.seed };
+  return { size, angle, terr, bid, blocked, buildings, trees, pois, hq, seed: opts.seed };
+}
+
+/** Łączy z największym obszarem każdy obszar większy niż 0,5% wolnej mapy (najwyżej 12 bram).
+    BFS 0-1: wolny kafelek kosztuje 0, budynek albo drzewo 1, woda jest nieprzechodnia.
+    Zwraca numery usuniętych drzew. */
+function connectRegions(
+  terr: Uint8Array,
+  bid: Int32Array,
+  blocked: Uint8Array,
+  size: number,
+  trees: Tree[],
+): Set<number> {
+  const N = size * size;
+  const treeAt = new Map<number, number>();
+  trees.forEach((t, k) => {
+    treeAt.set(Math.floor(t.y) * size + Math.floor(t.x), k);
+  });
+  const removed = new Set<number>();
+  const carvable = (i: number) => terr[i] === T.BUILDING || treeAt.has(i);
+  const carve = (i: number) => {
+    if (bid[i] >= 0) {
+      bid[i] = -1;
+      terr[i] = T.SIDEWALK;
+    }
+    const t = treeAt.get(i);
+    if (t !== undefined) {
+      removed.add(t);
+      treeAt.delete(i);
+    }
+    blocked[i] = 0;
+  };
+  const dist = new Int32Array(N);
+  const prev = new Int32Array(N);
+  for (let iter = 0; iter < 12; iter++) {
+    const reg = labelRegions(blocked, size);
+    const counts = new Map<number, number>();
+    let free = 0;
+    for (let i = 0; i < N; i++)
+      if (reg[i] >= 0) {
+        counts.set(reg[i], (counts.get(reg[i]) || 0) + 1);
+        free++;
+      }
+    let main = -1;
+    let mainN = 0;
+    for (const [r, n] of counts)
+      if (n > mainN) {
+        main = r;
+        mainN = n;
+      }
+    let target = -1;
+    let tn = 0;
+    for (const [r, n] of counts)
+      if (r !== main && n > tn && n >= Math.max(200, free * 0.005)) {
+        target = r;
+        tn = n;
+      }
+    if (target < 0) break;
+    dist.fill(-1);
+    let cur: number[] = [];
+    for (let i = 0; i < N; i++)
+      if (reg[i] === target) {
+        dist[i] = 0;
+        prev[i] = -1;
+        cur.push(i);
+      }
+    let found = -1;
+    for (let d = 0; cur.length && found < 0; d++) {
+      const next: number[] = [];
+      for (let qi = 0; qi < cur.length && found < 0; qi++) {
+        const c = cur[qi];
+        if (dist[c] !== d) continue;
+        if (reg[c] === main) {
+          found = c;
+          break;
+        }
+        const x = c % size;
+        for (const n of [x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1, c - size, c + size]) {
+          if (n < 0 || n >= N) continue;
+          const cost = blocked[n] ? (carvable(n) ? 1 : -1) : 0;
+          if (cost < 0) continue;
+          const nd = d + cost;
+          if (dist[n] >= 0 && dist[n] <= nd) continue;
+          dist[n] = nd;
+          prev[n] = c;
+          (cost ? next : cur).push(n);
+        }
+      }
+      cur = next;
+    }
+    if (found < 0) break;
+    // brama: kafelki zablokowane na drodze, budynki na szerokość dwóch kafelków
+    for (let k = found; k >= 0 && reg[k] !== target; k = prev[k]) {
+      if (!blocked[k]) continue;
+      const p = prev[k];
+      carve(k);
+      const side = p >= 0 && Math.abs(p - k) === size ? k + 1 : k + size;
+      if (side < N && bid[side] >= 0 && (side % size !== 0 || side === k + size)) carve(side);
+    }
+  }
+  return removed;
 }
 
 /** Drzewa z siatki z losowym przesunięciem: gęsto w lesie, rzadziej w parku i na trawnikach. */

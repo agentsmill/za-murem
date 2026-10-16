@@ -121,6 +121,7 @@ export function rotateGeo(geo: Geo, phi: number): Geo {
     ...geo,
     b: geo.b.map((b) => ({ ...b, p: b.p.map(R), ...(b.pp ? { pp: b.pp.map((q) => q.map(R)) } : {}) })),
     r: geo.r.map((r) => ({ ...r, l: r.l.map(R) })),
+    ...(geo.pass ? { pass: geo.pass.map((r) => ({ ...r, l: r.l.map(R) })) } : {}),
     a: geo.a.map((a) => ({ ...a, p: a.p.map(R) })),
     w: geo.w.map((w) => ({ ...w, l: w.l.map(R) })),
     poi: geo.poi.map((p) => {

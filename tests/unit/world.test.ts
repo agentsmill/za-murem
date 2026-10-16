@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
+import { labelRegions } from '../../src/sim/path.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { type Geo, type Pt, polyArea } from '../../src/world/geo.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
@@ -161,4 +162,25 @@ describe('świat z geometrii', () => {
     });
     expect(() => buildWorld(g, { seed: 1, size: 128 })).toThrow(/budynk/);
   });
+
+  for (const a of ADDRESSES) {
+    it(`${a.key}: z drzwi siedziby da się dojść prawie wszędzie (przejścia przez budynki)`, () => {
+      const geo = toGeoT(decodedTiles(a), a.lat, a.lon, 192 * 1.5);
+      const w = buildWorld(geo, { seed: 1 });
+      const reg = labelRegions(w.blocked, w.size);
+      const hq = w.buildings[w.hq];
+      const home = reg[hq.entrances[0].out];
+      let free = 0;
+      let inHome = 0;
+      for (let i = 0; i < reg.length; i++)
+        if (reg[i] >= 0) {
+          free++;
+          if (reg[i] === home) inHome++;
+        }
+      expect(inHome / free).toBeGreaterThanOrEqual(0.95);
+      const doors = w.buildings.filter((b) => b.cls === 'blok' || b.cls === 'dom').flatMap((b) => b.entrances);
+      const reachable = doors.filter((e) => reg[e.out] === home).length;
+      expect(reachable / doors.length).toBeGreaterThanOrEqual(0.95);
+    });
+  }
 });

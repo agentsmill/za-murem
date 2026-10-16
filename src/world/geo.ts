@@ -35,6 +35,8 @@ export interface Geo {
   a: GeoArea[];
   w: GeoWater[];
   poi: GeoPoi[];
+  /** przejścia przez budynki (bramy, prześwity, tunele piesze i serwisowe); nowe w 0.4 */
+  pass?: GeoRoad[];
   src?: string;
   proc?: boolean;
   name?: string;
