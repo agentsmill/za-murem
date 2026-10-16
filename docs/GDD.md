@@ -62,17 +62,25 @@ Pora roku. Jesień to zapasy, zima testuje ogrzewanie, wiosna to sadzenie, lato 
 
 Długo. Przyłączanie sąsiednich bloków (zaufanie plus jedzenie i opał na start), uchwały i ścieżki (Porządek, Wspólnota, Technokracja), badania z fachowców i książek, zakończenia.
 
-## Prąd i bakteria (propozycje, do ustalenia)
+## Prąd i bakteria
 
-Nic z tego nie jest jeszcze postanowione. Wynika z lore i ma sens najwcześniej w M3, kiedy systemy z 0.3 przechodzą na nowy świat. W 0.3 prąd to jedna liczba w magazynie, więc każdy z tych pomysłów zmienia balans i trzeba go sprawdzić botem.
+Wynika z lore i ma sens najwcześniej w M3, kiedy systemy z 0.3 przechodzą na nowy świat. W 0.3 prąd to jedna liczba w magazynie, więc wszystko poniżej zmienia balans i trzeba to sprawdzić botem.
+
+Ustalone z Mateuszem (17.10.2026):
+
+- Szczep jest słaby. Dźwiga dodatkowe geny, więc na wolności przegrywa z dzikimi bakteriami i nie tworzy przetrwalników. Ginie przy gotowaniu, od chloru, spirytusu, wysuszenia i słońca. Ochrona jest tania, ale wymaga dyscypliny, więc zagrożeniem jest niedbalstwo. Uchwały o higienie kosztują wkurzenie.
+- Na mapie widać tylko to, co zarząd wie. Znane ogniska pokazuje nakładka włączana jak warstwy w RimWorldzie, a w przekroju piwnicy widać zielonkawy nalot na kablach. O nieznanych ogniskach zarząd dowiaduje się z wypraw, z wydarzeń albo od kogoś z umiejętnością `med` lub `uprawa`, kto umie zrobić posiew (np. student biotechnologii). Wiedza o ogniskach jest stanem symulacji, nakładka ją tylko rysuje.
+- Szczep można przynieść do domu. Ekipa z ogniska niesie go na narzędziach i ubraniach, chyba że przy bramie stoi myjka: wygotowanie ubrań za Opał albo spirytus za Leki. Bez myjki zdarza się wydarzenie z nalotem na kablach w piwnicy i wyborem: spalić instalację w tej klatce czy ryzykować resztę.
+- Ognisko to cecha miejsca na mapie, obok ryzyka i łupu w `POICAT`, a nie osobny system.
+- Bakteriofag na dwie drogi, po jednej na ścieżkę. Wspólnota: fagi wyławia się ze ścieków, tak jak robi się to naprawdę, więc ktoś od medycyny grzebie w szambie, aż trafi na faga, który działa. Wolno i losowo. Technokracja: lokalny model zna projekt szczepu, bo zrobił go model AI, i projektuje faga od ręki. AI zrobiło bakterię i AI ją leczy, jeśli mu zaufacie.
+- Model wie też, że szczep miał wyłącznik bezpieczeństwa, tylko startup sprzedawał go w pakiecie premium.
+
+Propozycje, do ustalenia:
 
 - Instalacja zamiast liczby. Prąd płynie kablami od źródła (generator, panele, wiatrak) do odbiorców (serwerownia, LED-y na klatkach, pompy ciepła). Bakteria podgryza kable, tym szybciej, im jest wilgotniej: jesień, piwnica, zalana klatka. Naprawa to zadanie dla kogoś z umiejętnością `elek` i kosztuje Części albo Złom. Kable można chronić smarem, rurkami i trzymaniem w suchym.
 - Łup szczelny i goły. Bank, serwerownia, magazyn i przychodnia dają szczelne części, które nadają się do elektroniki. Mieszkania i garaże dają głównie gołe, czyli złom. Badania z `elek` i `it` potrzebują szczelnych części.
 - Serwer w oleju. Serwerownię zanurza się w oleju, tak jak chłodzi się dziś niektóre prawdziwe serwerownie. Olej chroni przed bakterią i obniża zużycie prądu, ale trzeba go zdobyć: z transformatorów, z warsztatów samochodowych. Na mapie wygląda to jak akwarium z olejem w piwnicy.
-- Zakażenie z wyprawy. Ekipa może przynieść szczep na narzędziach i rękach. Wydarzenie: na kablach w piwnicy pojawia się zielonkawy nalot. Wybór: spalić instalację w tej klatce czy ryzykować całą resztę.
 - Satyra przy okazji, przykłady do ogłoszeń: „Zamienię przedłużacz w słoiku z olejem na worek ziemniaków”, „Startup od recyklingu przeprasza za niedogodności”.
-
-Do ustalenia z Mateuszem: czy bakterię widać na mapie (nalot na kablach w przekroju piwnicy) i czy model AI na końcu ścieżki Technokracji wie, skąd się wzięła.
 
 ## Sterowanie
 
