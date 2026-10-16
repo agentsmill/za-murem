@@ -122,12 +122,14 @@ describe('świat z geometrii', () => {
       expect(Math.hypot(cx - w.size / 2, cy - w.size / 2)).toBeLessThan(80);
       expect(['blok', 'dom']).toContain(hq.cls);
       expect(hq.entrances.length).toBeGreaterThan(0);
-      // każdy budynek mieszkalny ma wejście z wolnym kafelkiem przed drzwiami
-      for (const b of w.buildings)
+      // każdy budynek mieszkalny ma wejście, a przed każdymi drzwiami jest wolny kafelek
+      for (const b of w.buildings) {
+        if (b.cls === 'blok' || b.cls === 'dom') expect(b.entrances.length, b.name).toBeGreaterThan(0);
         for (const e of b.entrances) {
           expect(w.bid[e.tile]).toBe(b.id);
           expect(w.blocked[e.out]).toBe(0);
         }
+      }
     });
   }
 

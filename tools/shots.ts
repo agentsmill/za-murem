@@ -114,6 +114,36 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // telefon: stuknięcie w osobę zaznacza, stuknięcie w teren wysyła
+    name: 'dotyk',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const pos = () =>
+        page.evaluate(() => {
+          const zm = window.zm!;
+          const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+          const v = zm.view;
+          return {
+            x: (p.x * 32 - v.cam.x) * v.cam.zoom + v.width / 2,
+            y: (p.y * 32 - 18 - v.cam.y) * v.cam.zoom + v.height / 2,
+            tile: Math.floor(p.y) * zm.sim!.w.size + Math.floor(p.x),
+          };
+        });
+      const a = await pos();
+      await page.touchscreen.tap(a.x, a.y);
+      await page.touchscreen.tap(a.x - 5 * 32, a.y + 4 * 32);
+      await page.evaluate(() => (document.querySelector('#speed button[data-s="1"]') as HTMLButtonElement).click());
+      await page.waitForTimeout(1500);
+      const b = await pos();
+      if (b.tile === a.tile) throw new Error('dotyk: pionek się nie ruszył');
+      console.log(`  dotyk: kafelek ${a.tile} → ${b.tile}`);
+    },
+  },
+  {
     // jazda kamerą po całej mapie (ponad limit bliskich kawałków), potem oddalenie:
     // każdy widoczny kawałek musi mieć skalę zgodną ze swoją teksturą
     name: 'pamiec-kawalkow',
@@ -186,6 +216,8 @@ try {
     const file = path.join(OUT, `${shot.name}.png`);
     await page.screenshot({ path: file });
     console.log(`${shot.name}: ${Date.now() - t0} ms${errors.length ? `, BŁĘDY: ${errors.join(' | ')}` : ''}`);
+    // błąd na stronie to nieudany zrzut, także dla CI
+    if (errors.length) process.exitCode = 1;
     if (shot === SHOTS[0]) console.log(`  WebGL: ${await webglRenderer(page)}`);
     await page.close();
   }

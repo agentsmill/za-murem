@@ -213,6 +213,14 @@ function frame(now: number, dtMs: number) {
   }
 }
 
+let cardHtml = '';
+/** karta przerysowana tylko po zmianie treści, inaczej dymki z opisem cech nigdy się nie pokażą */
+function setCard(html: string) {
+  if (html === cardHtml) return;
+  cardHtml = html;
+  $('card').innerHTML = html;
+}
+
 function hud(now: number) {
   if (!sim) return;
   const st = sim.st;
@@ -228,9 +236,11 @@ function hud(now: number) {
   }
   card.hidden = false;
   if (sel.length > 1) {
-    card.innerHTML = `<h2>Zaznaczeni: ${sel.length}</h2><p class="sub">${sel
-      .map((p) => esc(st.people[p.person]?.name ?? 'lokator'))
-      .join(', ')}</p><p class="doing">Prawy przycisk: idźcie tam.</p>`;
+    setCard(
+      `<h2>Zaznaczeni: ${sel.length}</h2><p class="sub">${sel
+        .map((p) => esc(st.people[p.person]?.name ?? 'lokator'))
+        .join(', ')}</p><p class="doing">Prawy przycisk: idźcie tam.</p>`,
+    );
     return;
   }
   const p = sel[0];
@@ -243,7 +253,9 @@ function hud(now: number) {
     .map((t) => `<span class="tag" title="${esc(TRAITS[t].desc)}">${esc(TRAITS[t].name)}</span>`)
     .join('');
   const doing = p.pi < p.path.length ? 'Idzie.' : 'Stoi i czeka na polecenie.';
-  card.innerHTML = `<h2>${esc(who.name)}</h2><p class="sub">${esc(who.prof)}, ${wiek(who.age)}</p><div class="tags">${skills}${traits}</div><p class="doing">${doing}</p>`;
+  setCard(
+    `<h2>${esc(who.name)}</h2><p class="sub">${esc(who.prof)}, ${wiek(who.age)}</p><div class="tags">${skills}${traits}</div><p class="doing">${doing}</p>`,
+  );
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -286,7 +298,7 @@ let drag: {
   type: string;
   moved: boolean;
 } | null = null;
-let pinch: { d: number; z: number } | null = null;
+let pinch: { d: number; z: number; mx: number; my: number } | null = null;
 const box = $('box');
 
 stage.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -296,7 +308,7 @@ stage.addEventListener('pointerdown', (e) => {
   fly = null;
   if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
-    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: view.cam.zoom };
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: view.cam.zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
     drag = null;
     return;
   }
@@ -317,8 +329,16 @@ stage.addEventListener('pointermove', (e) => {
   if (pinch && pointers.size === 2) {
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y);
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
     const target = (pinch.z * d) / pinch.d;
-    view.zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, target / view.cam.zoom);
+    view.zoomAt(mx, my, target / view.cam.zoom);
+    // dwa palce przesuwają też mapę
+    view.cam.x -= (mx - pinch.mx) / view.cam.zoom;
+    view.cam.y -= (my - pinch.my) / view.cam.zoom;
+    view.clampCam();
+    pinch.mx = mx;
+    pinch.my = my;
     return;
   }
   if (!drag || drag.id !== e.pointerId) return;
@@ -390,7 +410,10 @@ stage.addEventListener(
   { passive: false },
 );
 window.addEventListener('keydown', (e) => {
-  if ((e.target as HTMLElement).tagName === 'INPUT') return;
+  // klawisze gry tylko w grze i nie na polach ani przyciskach (spacja ma działać na przyciskach)
+  const tag = (e.target as HTMLElement).tagName;
+  if (!sim || $('app').hidden || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (tag === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return;
   keys.add(e.code);
   if (e.code === 'Space') {
     e.preventDefault();

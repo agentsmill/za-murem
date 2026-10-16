@@ -28,7 +28,12 @@ export async function openSession(opts: { headless?: boolean; dist?: boolean } =
   }
   const browser = await chromium.launch({
     headless: opts.headless ?? true,
-    args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--use-angle=metal'],
+    // Metal tylko na Macu; gdzie indziej Chromium sam wybiera GPU albo SwiftShader
+    args: [
+      '--enable-gpu-rasterization',
+      '--ignore-gpu-blocklist',
+      ...(process.platform === 'darwin' ? ['--use-angle=metal'] : []),
+    ],
   });
   return {
     server,

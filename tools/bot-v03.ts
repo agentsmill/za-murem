@@ -3,6 +3,7 @@
    nowej wersji (bramka M3: „balans zbliżony do 0.3” liczymy tą samą polityką).
    Uruchomienie: npm run bot:v03 [-- ziarno [dni]] */
 
+import { pathToFileURL } from 'node:url';
 import { type G03, loadV03 } from './v03.ts';
 
 const SEED = Number(process.argv[2]) || 1;
@@ -215,7 +216,7 @@ export function playV03(seed: number, days: number, log?: (r: DayRow) => void) {
   return { rows, over: S.over as string | null, ending: S.ending as string | null, day: Sim.day(S) };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const pad = (v: unknown, n: number) => String(v).padStart(n);
   if (!QUIET) {
     console.log(`Bot 0.3, Przymorze (przykład z Overpass), ziarno ${SEED}, ${DAYS} dni`);

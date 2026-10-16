@@ -98,7 +98,8 @@ describe('A* na siatce 1 m', () => {
     }
     const ms = (performance.now() - t0) / 50;
     expect(n).toBe(50);
-    expect(ms).toBeLessThan(15);
+    // lokalnie około 2 ms; zapas na wolniejsze maszyny CI
+    expect(ms).toBeLessThan(50);
   });
 
   it('regiony: spójne obszary w 4 kierunkach, zajęte mają −1', () => {
