@@ -11,7 +11,9 @@ import { CHUNK, type Scene, TILE } from './art/scene.ts';
 
 const LOD_NEAR = 32;
 const LOD_FAR = 8;
-const MAX_NEAR = 48;
+/** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna);
+    na telefonach mniej, bo Safari ma twardy limit pamięci płócien */
+const MAX_NEAR = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? 16 : 48;
 
 interface ChunkSlot {
   sprite: Sprite;
@@ -179,10 +181,9 @@ export class GameView {
       const tex = near && s.near ? s.near : s.far;
       if ((near && !s.near) || (!near && !s.far)) complete = false;
       if (tex) {
-        if (s.sprite.texture !== tex) {
-          s.sprite.texture = tex;
-          s.sprite.scale.set(tex === s.far ? LOD_NEAR / LOD_FAR : 1);
-        }
+        if (s.sprite.texture !== tex) s.sprite.texture = tex;
+        // skala co klatkę: po wyrzuceniu bliskiego kawałka sprite może już mieć daleką teksturę
+        s.sprite.scale.set(tex === s.far ? LOD_NEAR / LOD_FAR : 1);
         s.sprite.visible = true;
       }
     }
@@ -199,7 +200,10 @@ export class GameView {
     if (this.chunksNear > MAX_NEAR) {
       const withNear = this.slots.filter((s) => s.near && s.used !== this.frameNo).sort((a, b) => a.used - b.used);
       for (const s of withNear.slice(0, this.chunksNear - MAX_NEAR)) {
-        if (s.sprite.texture === s.near) s.sprite.texture = s.far ?? Texture.EMPTY;
+        if (s.sprite.texture === s.near) {
+          s.sprite.texture = s.far ?? Texture.EMPTY;
+          s.sprite.scale.set(LOD_NEAR / LOD_FAR);
+        }
         s.near!.destroy(true);
         s.near = null;
         this.chunksNear--;

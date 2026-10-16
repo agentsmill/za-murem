@@ -114,6 +114,40 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // jazda kamerą po całej mapie (ponad limit bliskich kawałków), potem oddalenie:
+    // każdy widoczny kawałek musi mieć skalę zgodną ze swoją teksturą
+    name: 'pamiec-kawalkow',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.6`);
+      await waitIdle(page);
+      for (let y = 40; y < 384; y += 48)
+        for (let x = 40; x < 384; x += 64) {
+          await page.evaluate(([cx, cy]) => window.zm!.setCam(cx, cy, 0.6), [x, y]);
+          await waitIdle(page);
+        }
+      await page.evaluate(() => window.zm!.setCam(192, 192, 0.3));
+      await waitIdle(page);
+      const bad = await page.evaluate(() => {
+        type Slot = {
+          sprite: { visible: boolean; texture: unknown; scale: { x: number } };
+          near: unknown;
+          far: unknown;
+        };
+        const v = window.zm!.view as unknown as { slots: Slot[]; chunksNear: number };
+        let wrong = 0;
+        for (const s of v.slots) {
+          if (!s.sprite.visible) continue;
+          const want = s.sprite.texture === s.far ? 4 : 1;
+          if (s.sprite.scale.x !== want) wrong++;
+        }
+        return { wrong, near: v.chunksNear };
+      });
+      console.log(`  kawałki ze złą skalą: ${bad.wrong}, bliskich w pamięci: ${bad.near}`);
+      if (bad.wrong) throw new Error(`${bad.wrong} kawałków ze złą skalą po wyrzuceniu bliskich`);
+    },
+  },
+  {
     name: 'v03',
     query: '',
     run: async (page, base) => {
