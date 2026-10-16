@@ -41,8 +41,12 @@ export function levelsOf(b: GeoBuilding, cls: BuildingClass, area: number): numb
 }
 
 /** nazwa budynku jak w 0.3: nazwa z OSM, adres, numer, nazwa sklepu w środku albo kolejny numer typu */
-export function nameOf(b: GeoBuilding, cls: BuildingClass, namedPoi: string | null, counter: number): string {
-  const t = b.t;
+export function nameOf(
+  t: Record<string, string>,
+  cls: BuildingClass,
+  namedPoi: string | null,
+  counter: number,
+): string {
   if (t.name) return t.name;
   if (t['addr:street'] && t['addr:housenumber']) return `${t['addr:street']} ${t['addr:housenumber']}`;
   if (t['addr:housenumber']) return `${CLS[cls]} nr ${t['addr:housenumber']}`;
