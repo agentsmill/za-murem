@@ -131,7 +131,7 @@ describe('Overpass i osiedle zapasowe (osm.ts) jak w 0.3', () => {
       n++;
     }
     expect(n).toBeGreaterThan(100);
-    for (const t of [
+    const tags: Record<string, string>[] = [
       { landuse: 'grass' },
       { natural: 'water' },
       { leisure: 'playground' },
@@ -141,9 +141,8 @@ describe('Overpass i osiedle zapasowe (osm.ts) jak w 0.3', () => {
       { landuse: 'allotments' },
       { natural: 'scrub' },
       { landuse: 'retail' },
-    ]) {
-      expect(areaKind(t)).toBe(G.OSM.areaKind(t));
-    }
+    ];
+    for (const t of tags) expect(areaKind(t)).toBe(G.OSM.areaKind(t));
   });
 
   it('osiedle zapasowe dla tych samych ziaren', () => {

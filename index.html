@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Za Murem</title>
+<meta name="description" content="Pikselowa gra o spółdzielni mieszkaniowej po upadku cywilizacji. Wpisz adres i poprowadź swoje prawdziwe osiedle.">
+<meta property="og:title" content="Za Murem: spółdzielnia po upadku">
+<meta property="og:description" content="Wpisz adres swojego osiedla i sprawdź, ile dni przetrwa wasza spółdzielnia.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232457a8'/%3E%3Crect x='3' y='5' width='10' height='9' fill='%23f4f3ee'/%3E%3Crect x='5' y='7' width='2' height='2' fill='%232457a8'/%3E%3Crect x='9' y='7' width='2' height='2' fill='%232457a8'/%3E%3C/svg%3E">
+</head>
+<body>
+<div class="start" id="start">
+  <div class="start-card">
+    <div><div class="sign big"><h1>Za Murem</h1><small>spółdzielnia po upadku</small></div></div>
+    <p class="lore" id="lore"></p>
+    <form id="startForm">
+      <label for="addr">Adres twojego osiedla</label>
+      <div class="row"><input id="addr" name="addr" placeholder="np. Wołoska 12, Warszawa" autocomplete="street-address"><button class="btn go" type="submit">Wczytaj osiedle</button></div>
+    </form>
+    <div class="alt" id="demos"></div>
+    <p class="status" id="startStatus" aria-live="polite"></p>
+    <p class="fine">Wersja 0.4 w budowie: na razie chodzicie po osiedlu. Poprzednia, pełna wersja gry jest pod <a href="v03/">Za Murem 0.3</a>. Adres trafia do wyszukiwarki OpenStreetMap (Nominatim), mapę pobieramy z darmowych kafelków <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Dane mapy © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, kafelki © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>.</p>
+  </div>
+</div>
+
+<div class="app" id="app" hidden>
+  <div class="stage" id="stage"></div>
+  <header class="top">
+    <div class="sign"><b id="osName">Spółdzielnia</b><small>Za Murem</small></div>
+    <div class="clock"><span id="hDay"></span><span id="hTime"></span><span id="hSeason" class="season">jesień 2051</span></div>
+    <div class="speed" id="speed" role="group" aria-label="Tempo gry">
+      <button class="btn" data-s="0">Pauza</button><button class="btn" data-s="1">1×</button><button class="btn" data-s="2">3×</button><button class="btn" data-s="3">6×</button>
+    </div>
+    <div class="spacer"></div>
+    <span class="fps" id="fps"></span>
+    <button class="btn ghost" id="btnMenu">Menu</button>
+  </header>
+  <aside class="card" id="card" hidden></aside>
+  <p class="hint" id="hint"></p>
+  <div class="box" id="box" hidden></div>
+  <div class="mapctl"><button id="zIn" aria-label="Przybliż">+</button><button id="zOut" aria-label="Oddal">−</button><button id="zHome" aria-label="Pokaż siedzibę zarządu">⌂</button></div>
+  <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">współtwórcy OpenStreetMap</a> · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a></div>
+</div>
+
+<script type="module" src="./src/main.ts"></script>
+</body>
+</html>

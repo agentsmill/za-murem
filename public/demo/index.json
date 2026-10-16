@@ -1,0 +1,20 @@
+[
+ {
+  "key": "przymorze",
+  "name": "Przymorze Wielkie",
+  "addr": "Obrońców Wybrzeża 2, Gdańsk",
+  "label": "Obrońców Wybrzeża, Gdańsk (falowiec, wielka płyta)"
+ },
+ {
+  "key": "lanciego",
+  "name": "Ursynów Północny",
+  "addr": "Lanciego 10G, Warszawa",
+  "label": "Lanciego 10G, Warszawa Ursynów (bloki i szeregowce)"
+ },
+ {
+  "key": "zielonki",
+  "name": "Batowice",
+  "addr": "Spacerowa 10, Zielonki",
+  "label": "Spacerowa 10, Batowice, gm. Zielonki (domy jednorodzinne)"
+ }
+]

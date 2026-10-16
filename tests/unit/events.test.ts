@@ -60,7 +60,7 @@ function host03(S: S03, rng: Rng): EventHost {
         kind === 'home'
           ? (b: S03) => G.RESIDENTIAL.has(b.cls) && b.pop > 0
           : (b: S03) => b.status === 'nasz' && b.heated && b.pop > 0;
-      const b = pick(Sim.ours(S).filter(f), rng);
+      const b: S03 = pick(Sim.ours(S).filter(f), rng);
       return b ? b.idx : null;
     },
     anyHeated: () => S.bldgs.some((b: S03) => b.status === 'nasz' && b.heated),
