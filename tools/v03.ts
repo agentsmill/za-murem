@@ -5,9 +5,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
-import { mulberry, type Rng } from '../../src/core/rng.ts';
+import { mulberry, type Rng } from '../src/core/rng.ts';
 
-const ROOT = path.resolve(import.meta.dirname, '../..');
+const ROOT = path.resolve(import.meta.dirname, '..');
 const V03 = path.join(ROOT, 'public/v03');
 
 // biome-ignore lint/suspicious/noExplicitAny: obiekt G z 0.3 nie ma typów

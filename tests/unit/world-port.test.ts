@@ -3,8 +3,8 @@ import { classify, levelsOf } from '../../src/world/classify.ts';
 import { type Geo, type Pt, pip, polyArea } from '../../src/world/geo.ts';
 import { decode, tilesFor, toGeoT, WANT, Z } from '../../src/world/mvt.ts';
 import { areaKind, genProc, poiCat, query, toGeo } from '../../src/world/osm.ts';
+import { loadV03, plain } from '../../tools/v03.ts';
 import { ADDRESSES, decodedTiles, overpassJson, tileBytes } from './fixtures.ts';
-import { loadV03, plain } from './v03.ts';
 
 const v = loadV03(undefined, [
   [

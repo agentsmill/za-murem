@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findPath, nearestFree, PathFinder } from '../../src/sim/path.ts';
+import { findPath, labelRegions, nearestFree, nearestInRegion, PathFinder } from '../../src/sim/path.ts';
 
 /** siatka z napisu: '#' zajęte, '.' wolne, S start, G cel */
 function grid(rows: string[]) {
@@ -99,5 +99,23 @@ describe('A* na siatce 1 m', () => {
     const ms = (performance.now() - t0) / 50;
     expect(n).toBe(50);
     expect(ms).toBeLessThan(15);
+  });
+
+  it('regiony: spójne obszary w 4 kierunkach, zajęte mają −1', () => {
+    const g = grid(['S.#..', '..#..', '###..', '.....', '....G']);
+    const r = labelRegions(g.blocked, g.size);
+    expect(r[g.s]).toBeGreaterThanOrEqual(0);
+    expect(r[g.s]).not.toBe(r[g.g]);
+    expect(r[2]).toBe(-1);
+    // lewy górny róg to jeden region z czterech kafelków
+    expect(new Set([r[0], r[1], r[5], r[6]]).size).toBe(1);
+  });
+
+  it('najbliższy kafelek w regionie startu, gdy cel jest odcięty', () => {
+    const g = grid(['S.#..', '..#..', '###..', '.....', '....G']);
+    const r = labelRegions(g.blocked, g.size);
+    const t = nearestInRegion(r, g.size, g.g, r[g.s]);
+    expect(r[t]).toBe(r[g.s]);
+    expect(findPath(g.blocked, g.size, g.s, t)).not.toBeNull();
   });
 });

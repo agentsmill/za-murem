@@ -172,3 +172,62 @@ export function nearestFree(blocked: Uint8Array, size: number, i: number): numbe
   }
   return i;
 }
+
+/** Regiony: numery spójnych obszarów wolnych kafelków (−1: zajęty). Przy ruchu w 8 kierunkach
+    bez ścinania narożników spójność jest taka sama jak w 4 kierunkach, więc wystarczy BFS 4-kierunkowy.
+    Dwa kafelki w różnych regionach: drogi nie ma i nie trzeba jej szukać. */
+export function labelRegions(blocked: Uint8Array, size: number): Int32Array {
+  const N = size * size;
+  const reg = new Int32Array(N).fill(-1);
+  const q = new Int32Array(N);
+  let label = 0;
+  for (let i = 0; i < N; i++) {
+    if (blocked[i] || reg[i] >= 0) continue;
+    let head = 0;
+    let tail = 0;
+    q[tail++] = i;
+    reg[i] = label;
+    while (head < tail) {
+      const c = q[head++];
+      const x = c % size;
+      if (x > 0 && !blocked[c - 1] && reg[c - 1] < 0) {
+        reg[c - 1] = label;
+        q[tail++] = c - 1;
+      }
+      if (x < size - 1 && !blocked[c + 1] && reg[c + 1] < 0) {
+        reg[c + 1] = label;
+        q[tail++] = c + 1;
+      }
+      if (c >= size && !blocked[c - size] && reg[c - size] < 0) {
+        reg[c - size] = label;
+        q[tail++] = c - size;
+      }
+      if (c < N - size && !blocked[c + size] && reg[c + size] < 0) {
+        reg[c + size] = label;
+        q[tail++] = c + size;
+      }
+    }
+    label++;
+  }
+  return reg;
+}
+
+/** najbliższy (BFS po wszystkich kafelkach) kafelek z regionu label; −1, gdy go nie ma */
+export function nearestInRegion(reg: Int32Array, size: number, from: number, label: number, maxSteps = 60_000): number {
+  if (reg[from] === label) return from;
+  const seen = new Uint8Array(size * size);
+  const q = [from];
+  seen[from] = 1;
+  for (let qi = 0; qi < q.length && qi < maxSteps; qi++) {
+    const c = q[qi];
+    if (reg[c] === label) return c;
+    const x = c % size;
+    const n = [x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1, c - size, c + size];
+    for (const k of n) {
+      if (k < 0 || k >= size * size || seen[k]) continue;
+      seen[k] = 1;
+      q.push(k);
+    }
+  }
+  return -1;
+}

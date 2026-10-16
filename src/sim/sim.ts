@@ -7,7 +7,7 @@ import { makePerson, type Person } from '../content/people.ts';
 import { hashString, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { World } from '../world/world.ts';
 import { TICKS_PER_SECOND } from './clock.ts';
-import { nearestFree, PathFinder } from './path.ts';
+import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
 
 /** kafelków na tick: 4 kafelki na sekundę przy 1× */
 export const WALK_SPEED = 4 / TICKS_PER_SECOND;
@@ -152,11 +152,14 @@ export class Sim {
   st: SimState;
   private pf: PathFinder;
   private queue: Command[] = [];
+  /** spójne obszary mapy: cel z innego obszaru zamieniamy na najbliższy osiągalny kafelek */
+  private reg: Int32Array;
 
   constructor(w: World, st: SimState) {
     this.w = w;
     this.st = st;
     this.pf = new PathFinder(w.size);
+    this.reg = labelRegions(w.blocked, w.size);
   }
 
   push(c: Command): void {
@@ -169,9 +172,10 @@ export class Sim {
 
   private route(p: Pawn, goal: number): boolean {
     const w = this.w;
-    const g = nearestFree(w.blocked, w.size, goal);
     const s = nearestFree(w.blocked, w.size, this.tileOf(p));
-    const path = this.pf.find(w.blocked, s, g);
+    let g = nearestFree(w.blocked, w.size, goal);
+    if (this.reg[g] !== this.reg[s]) g = nearestInRegion(this.reg, w.size, g, this.reg[s]);
+    const path = g < 0 ? null : this.pf.find(w.blocked, s, g);
     this.st.stats.paths++;
     this.st.stats.nodes += this.pf.expanded;
     if (!path) {

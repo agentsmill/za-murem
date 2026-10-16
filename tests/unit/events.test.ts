@@ -3,7 +3,7 @@ import type { Cost, Dom, Res, TechDom } from '../../src/content/data.ts';
 import { EVENTS, type EventHost, pickEvent } from '../../src/content/events.ts';
 import { type MakePersonOpts, makePerson, type Person } from '../../src/content/people.ts';
 import { pick, type Rng } from '../../src/core/rng.ts';
-import { loadV03, plain } from './v03.ts';
+import { loadV03, plain } from '../../tools/v03.ts';
 
 const v = loadV03();
 const G = v.G;

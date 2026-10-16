@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as D from '../../src/content/data.ts';
 import { makePerson } from '../../src/content/people.ts';
 import { mulberry } from '../../src/core/rng.ts';
-import { loadV03, plain } from './v03.ts';
+import { loadV03, plain } from '../../tools/v03.ts';
 
 const v = loadV03();
 const G = v.G;
