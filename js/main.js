@@ -44,15 +44,26 @@
     try {
       status('Szukam adresu…');
       const g = await G.OSM.geocode(q);
-      status(`Jest: ${g.label.split(',').slice(0, 3).join(',')}. Pobieram budynki z OpenStreetMap, to trwa kilka sekund…`);
-      const json = await G.OSM.overpass(g.lat, g.lon, status);
-      const geo = G.OSM.toGeo(json, g.lat, g.lon);
+      const where = g.label.split(',').slice(0, 3).join(',');
+      status(`Jest: ${where}. Pobieram mapę…`);
+      let geo = null;
+      // najpierw kafelki wektorowe (szybkie, z CDN), a jak padną, to Overpass
+      try { geo = await G.MVT.load(g.lat, g.lon, m => status(`Jest: ${where}. ${m}`)); }
+      catch (e1) {
+        console.warn('kafelki', e1);
+        let note = '', sec = 0;
+        const tick = setInterval(() => { sec++; status(`Jest: ${where}. Serwer kafelków nie odpowiada, pytam serwer Overpass: ${sec} s. To bywa wolne, czasem pół minuty.${note ? ' ' + note : ''}`); }, 1000);
+        let json;
+        try { json = await G.OSM.overpass(g.lat, g.lon, m => { note = m; }); } finally { clearInterval(tick); }
+        geo = G.OSM.toGeo(json, g.lat, g.lon);
+      }
       if (geo.b.length < 4) throw new Error('W promieniu 230 m OpenStreetMap prawie nie ma budynków. Spróbujcie adresu w środku osiedla.');
       status('Rysuję osiedle…');
       start(geo, { name: g.area || g.street || q, addr: g.label, src: 'osm' });
       status('');
     } catch (err) {
-      const msg = err && err.name === 'TypeError' ? 'Nie mogę połączyć się z OpenStreetMap: brak sieci albo strona blokuje połączenia.' : (err && err.message) || 'Coś poszło nie tak.';
+      const m = (err && err.message) || '';
+      const msg = err && (err.name === 'TypeError' || err.name === 'AbortError') ? 'Nie mogę połączyć się z serwerami map: brak sieci albo serwery są przeciążone.' : /^HTTP \d+/.test(m) ? `Serwery map są teraz przeciążone (${m}). Spróbujcie za kilka minut.` : m || 'Coś poszło nie tak.';
       status(msg + ' Możecie zagrać na przykładowym albo losowym osiedlu.');
     }
     busy = false;

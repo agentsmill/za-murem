@@ -27,7 +27,7 @@
       <button class="btn" id="btnProc">Losowe osiedle</button>
     </div>
     <p class="status" id="startStatus" aria-live="polite"></p>
-    <p class="fine">Adres trafia tylko do OpenStreetMap (wyszukiwarka Nominatim i serwer Overpass), żeby pobrać obrysy budynków w promieniu 230 m. Gra zapisuje się wyłącznie w twojej przeglądarce. Dane mapy © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</p>
+    <p class="fine">Adres trafia do wyszukiwarki OpenStreetMap (Nominatim). Mapę okolicy pobieramy z darmowych kafelków <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>, a gdy nie odpowiadają, z serwera Overpass. Gra zapisuje się wyłącznie w twojej przeglądarce. Dane mapy © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, kafelki © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>.</p>
   </div>
 </div>
 
@@ -52,7 +52,7 @@
     <section class="mapwrap" id="mapwrap">
       <canvas id="map" aria-label="Mapa osiedla"></canvas>
       <div class="mapctl"><button id="zIn" aria-label="Przybliż">+</button><button id="zOut" aria-label="Oddal">−</button><button id="zHome" aria-label="Pokaż siedzibę zarządu">⌂</button></div>
-      <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></div>
+      <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a></div>
       <div class="placebar" id="placebar" hidden></div>
       <div class="toasts" id="toasts" aria-live="polite"></div>
     </section>
@@ -68,6 +68,7 @@
 <script src="js/data.js"></script>
 <script src="data/sample.js"></script>
 <script src="js/osm.js"></script>
+<script src="js/mvt.js"></script>
 <script src="js/art.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/gazetka.js"></script>

@@ -3,15 +3,15 @@
   'use strict';
   const R = G.R, TM = G.TM, N = G.N;
   const ENDPOINTS = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+    ['https://overpass-api.de/api/interpreter', 35000],
+    ['https://overpass.private.coffee/api/interpreter', 35000],
+    ['https://maps.mail.ru/osm/tools/overpass/api/interpreter', 35000]
   ];
   const AM = 'school|kindergarten|clinic|doctors|pharmacy|hospital|library|bank|fire_station|police|townhall|marketplace|post_office|fuel|place_of_worship|community_centre';
 
   function query(lat, lon) {
     const a = `(around:${R},${lat},${lon})`, b = `(around:700,${lat},${lon})`;
-    return `[out:json][timeout:40];(way["building"]${a};way["highway"]${a};way["landuse"]${a};way["leisure"]${a};way["natural"]${a};way["amenity"="parking"]${a};way["waterway"]${a};node["shop"]${b};node["amenity"~"${AM}"]${b};way["shop"]${b};way["amenity"~"${AM}"]${b};);out geom qt;`;
+    return `[out:json][timeout:30];(way["building"]${a};way["highway"]${a};way["landuse"]${a};way["leisure"]${a};way["natural"]${a};way["amenity"="parking"]${a};way["waterway"]${a};node["shop"]${b};node["amenity"~"${AM}"]${b};way["shop"]${b};way["amenity"~"${AM}"]${b};);out geom qt;`;
   }
 
   async function geocode(q) {
@@ -27,17 +27,17 @@
 
   async function overpass(lat, lon, onStatus) {
     let last;
-    for (const ep of ENDPOINTS) {
+    for (const [ep, ms] of ENDPOINTS) {
       try {
         const ctrl = new AbortController();
-        const to = setTimeout(() => ctrl.abort(), 45000);
+        const to = setTimeout(() => ctrl.abort(), ms);
         const r = await fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(query(lat, lon)), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctrl.signal });
         clearTimeout(to);
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return await r.json();
       } catch (e) {
         last = e;
-        if (onStatus) onStatus('Serwer map nie odpowiada, próbuję innego…');
+        if (onStatus) onStatus('Serwer map nie odpowiada, próbuję zapasowego…');
       }
     }
     throw last || new Error('Brak połączenia z serwerami map.');
@@ -228,7 +228,7 @@
     const btiles = [];
     geo.b.forEach((b, k) => {
       const tiles = [];
-      fillPoly(b.p, i => { if (bid[i] === -1) { terr[i] = T.BLD; bid[i] = k; tiles.push(i); } });
+      for (const p of b.pp ? [b.p].concat(b.pp) : [b.p]) fillPoly(p, i => { if (bid[i] === -1) { terr[i] = T.BLD; bid[i] = k; tiles.push(i); } });
       if (!tiles.length) {
         let sx = 0, sy = 0; for (const [x, y] of b.p) { sx += x; sy += y; }
         const tx = Math.floor(toT(sx / b.p.length)), ty = Math.floor(toT(sy / b.p.length));

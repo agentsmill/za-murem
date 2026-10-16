@@ -163,6 +163,18 @@
   /* ---------- nowa gra ---------- */
   function classify(b, area, cats) {
     const t = b.t.building, am = b.t.amenity;
+    if (b.t.guess) {
+      // kafelki wektorowe nie mają typu budynku: zgadujemy po wysokości, powierzchni i punktach w środku
+      const lv = parseInt(b.t['building:levels'], 10) || 1;
+      if (cats.includes('szkola')) return 'szkola';
+      if (cats.includes('kosciol')) return 'kosciol';
+      if ((lv >= 4 && area > 80) || (lv >= 3 && area > 250)) return 'blok';
+      if (cats.includes('przychodnia')) return 'przychodnia';
+      if (cats.length) return 'sklep';
+      if (area > 400) return lv >= 2 ? 'blok' : 'hala';
+      if (area < 40) return 'garaz';
+      return 'dom';
+    }
     if (['garage', 'garages', 'carport', 'shed'].includes(t)) return 'garaz';
     if (t === 'school' || t === 'kindergarten' || t === 'university' || am === 'school' || am === 'kindergarten') return 'szkola';
     if (t === 'church' || t === 'chapel' || am === 'place_of_worship') return 'kosciol';
