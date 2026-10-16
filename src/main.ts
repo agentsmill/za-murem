@@ -53,6 +53,7 @@ demoList().then((list) => {
   const box = $('demos');
   for (const d of list) {
     const b = document.createElement('button');
+    b.type = 'button';
     b.className = 'btn';
     b.textContent = `Przykład: ${d.name}`;
     b.title = d.label;
@@ -130,8 +131,11 @@ async function enter(data: Loaded) {
   if (params.has('speed')) speed = Number(params.get('speed'));
   const first = st.pawns[0];
   if (first) selected.add(first.id);
+  const touch = matchMedia('(pointer: coarse)').matches;
   say(
-    `To wasz zarząd. Kliknij człowieka, a potem prawym przyciskiem miejsce, gdzie ma iść. Ramką zaznaczysz kilku.`,
+    touch
+      ? 'To wasz zarząd. Stuknij człowieka, potem miejsce, gdzie ma iść. Jednym palcem przesuwasz mapę, dwoma przybliżasz.'
+      : 'To wasz zarząd. Kliknij człowieka, a potem prawym przyciskiem miejsce, gdzie ma iść. Ramką zaznaczysz kilku.',
     9000,
   );
   renderSpeed();

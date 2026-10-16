@@ -32,17 +32,18 @@
   <header class="top">
     <div class="sign"><b id="osName">Spółdzielnia</b><small>Za Murem</small></div>
     <div class="clock"><span id="hDay"></span><span id="hTime"></span><span id="hSeason" class="season">jesień 2051</span></div>
-    <div class="speed" id="speed" role="group" aria-label="Tempo gry">
-      <button class="btn" data-s="0">Pauza</button><button class="btn" data-s="1">1×</button><button class="btn" data-s="2">3×</button><button class="btn" data-s="3">6×</button>
-    </div>
+    <fieldset class="speed" id="speed">
+      <legend class="sr">Tempo gry</legend>
+      <button type="button" class="btn" data-s="0">Pauza</button><button type="button" class="btn" data-s="1">1×</button><button type="button" class="btn" data-s="2">3×</button><button type="button" class="btn" data-s="3">6×</button>
+    </fieldset>
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
-    <button class="btn ghost" id="btnMenu">Menu</button>
+    <button type="button" class="btn ghost" id="btnMenu">Menu</button>
   </header>
   <aside class="card" id="card" hidden></aside>
   <p class="hint" id="hint"></p>
   <div class="box" id="box" hidden></div>
-  <div class="mapctl"><button id="zIn" aria-label="Przybliż">+</button><button id="zOut" aria-label="Oddal">−</button><button id="zHome" aria-label="Pokaż siedzibę zarządu">⌂</button></div>
+  <div class="mapctl"><button type="button" id="zIn" aria-label="Przybliż">+</button><button type="button" id="zOut" aria-label="Oddal">−</button><button type="button" id="zHome" aria-label="Pokaż siedzibę zarządu">⌂</button></div>
   <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">współtwórcy OpenStreetMap</a> · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a></div>
 </div>
 

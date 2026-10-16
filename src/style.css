@@ -33,9 +33,17 @@ a {
   outline: 2px solid var(--lamp);
   outline-offset: 2px;
 }
-/* biome-ignore lint/complexity/noImportantStyles: atrybut hidden ma wygrywać z każdym display */
 [hidden] {
+  /* biome-ignore lint/complexity/noImportantStyles: atrybut hidden ma wygrywać z każdym display */
   display: none !important;
+}
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .btn {
@@ -251,6 +259,10 @@ a {
 .speed {
   display: flex;
   gap: 4px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
 }
 .spacer {
   flex: 1;
@@ -359,6 +371,10 @@ a {
 }
 
 @media (max-width: 640px) {
+  .top {
+    padding: 5px 8px;
+    gap: 6px 10px;
+  }
   .top .sign {
     max-width: 150px;
   }
@@ -372,11 +388,16 @@ a {
   .top .season {
     display: none;
   }
+  .mapctl {
+    top: auto;
+    bottom: 200px;
+  }
   .card {
-    bottom: 64px;
+    bottom: 36px;
   }
   .hint {
-    bottom: 34px;
+    top: 104px;
+    bottom: auto;
     font-size: 13px;
   }
 }

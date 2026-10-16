@@ -1,20 +1,31 @@
 /* Wspólne dla narzędzi z przeglądarką: serwer Vite w tym samym procesie i Chromium z Playwright. */
 
 import { type Browser, chromium, type Page } from '@playwright/test';
-import { createServer, type ViteDevServer } from 'vite';
+import { createServer, preview } from 'vite';
 
 export interface Session {
-  server: ViteDevServer;
+  server: { close: () => Promise<void> };
   browser: Browser;
   base: string;
   close: () => Promise<void>;
 }
 
-export async function openSession(opts: { headless?: boolean } = {}): Promise<Session> {
-  const server = await createServer({ server: { host: '127.0.0.1', port: 0, strictPort: false }, logLevel: 'error' });
-  await server.listen();
-  const addr = server.httpServer!.address();
-  const port = typeof addr === 'object' && addr ? addr.port : 5173;
+/** dist: true serwuje zbudowaną wersję (vite preview), inaczej serwer deweloperski */
+export async function openSession(opts: { headless?: boolean; dist?: boolean } = {}): Promise<Session> {
+  let server: Session['server'];
+  let port: number;
+  if (opts.dist) {
+    const pv = await preview({ preview: { host: '127.0.0.1', port: 0, strictPort: false }, logLevel: 'error' });
+    const addr = pv.httpServer.address();
+    port = typeof addr === 'object' && addr ? addr.port : 4173;
+    server = { close: () => pv.close() };
+  } else {
+    const dev = await createServer({ server: { host: '127.0.0.1', port: 0, strictPort: false }, logLevel: 'error' });
+    await dev.listen();
+    const addr = dev.httpServer!.address();
+    port = typeof addr === 'object' && addr ? addr.port : 5173;
+    server = dev;
+  }
   const browser = await chromium.launch({
     headless: opts.headless ?? true,
     args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--use-angle=metal'],
