@@ -24,17 +24,17 @@ Prototyp M1:
 - Noc na razie jako przyciemnienie ekranu.
 
 Liczby:
-- Testy: 181 zielonych. Build: 312 KB JS (100 KB po gzip).
+- Testy: 182 zielone. Build: 312 KB JS (100 KB po gzip).
 - Wydajność (`npm run perf`, 150 pionków + 4 z rdzenia, Przymorze, zoom 1, Chromium z GPU Apple M5):
 
 | urządzenie | kamera | 1× | 6× |
 |---|---|---|---|
 | laptop | stoi | 59,9 kl/s, najgorsza klatka 17 ms | 59,9 kl/s, 17 ms |
-| laptop | jedzie | 58,7 kl/s, 50 ms | 58,9 kl/s, 50 ms |
-| telefon (CPU 4×, 390×844) | stoi | 59,7 kl/s, 33 ms | 55,6 kl/s, 67 ms |
-| telefon (CPU 4×, 390×844) | jedzie | 53,4 kl/s, 167 ms | 47,8 kl/s, 233 ms |
+| laptop | jedzie | 58,6 kl/s, 50 ms | 58,6 kl/s, 67 ms |
+| telefon (CPU 4×, 390×844) | stoi | 60,0 kl/s, 17 ms | 59,9 kl/s, 17 ms |
+| telefon (CPU 4×, 390×844) | jedzie | 54,0 kl/s, 167 ms | 53,9 kl/s, 167 ms |
 
-  Cel z planu (50 i 30 kl/s) spełniony. Przycięcia przy jeździe kamerą to rysowanie nowego kawałka w głównym wątku. Dławienie CPU nie udaje słabego GPU telefonu, więc prawdziwy telefon trzeba sprawdzić na urządzeniu.
+  Pomiar po dodaniu regionów. Cel z planu (50 i 30 kl/s) spełniony. Jedyne przycięcia to rysowanie nowego kawałka w głównym wątku przy jeździe kamerą (około 40 ms bez dławienia, 160 ms przy CPU 4×). Dławienie CPU nie udaje słabego GPU telefonu, więc prawdziwy telefon trzeba sprawdzić na urządzeniu.
 - Bot nowej symulacji (`npm run bot`, 4 + 40 pionków): 45 dni w 5,4 s, około 3400 ścieżek dziennie, 0 nieudanych, około 285 węzłów A* na ścieżkę. Przed regionami było 24% nieudanych i 5 s procesora na dzień gry.
 - Wzorzec 0.3 (`npm run bot:v03`, przykład Przymorza z Overpass): 5 z 5 ziaren przechodzi 45 dni. Ziarno 1: jedynym trudnym okresem jest pierwsza zima (dni 11–20: jedzenie spada do 0, wkurzenie do 39), potem gospodarka się rozpędza (dzień 45: 222 osoby, jedzenie 582, zaufanie 100, wkurzenie 1, zero zgonów).
 
