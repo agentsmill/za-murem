@@ -282,19 +282,26 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
         hq = b;
       }
     }
-  if (hq < 0) {
+  if (!buildings.length)
+    throw new Error('W tym miejscu mapa nie ma żadnego budynku. Spróbujcie adresu bliżej domów albo bloków.');
+  // najbliższy mieszkalny, a gdy takiego nie ma (strefa przemysłowa), najbliższy jakikolwiek
+  const nearest = (pred: (b: WorldBuilding) => boolean) => {
+    let best = -1;
     let bd = Number.POSITIVE_INFINITY;
     for (const b of buildings) {
-      if (b.cls !== 'blok' && b.cls !== 'dom') continue;
+      if (!pred(b)) continue;
       const dx = Math.max(b.x0 - c, 0, c - b.x1);
       const dy = Math.max(b.y0 - c, 0, c - b.y1);
       const d = Math.hypot(dx, dy);
       if (d < bd) {
         bd = d;
-        hq = b.id;
+        best = b.id;
       }
     }
-  }
+    return best;
+  };
+  if (hq < 0) hq = nearest((b) => b.cls === 'blok' || b.cls === 'dom');
+  if (hq < 0) hq = nearest(() => true);
   if (hq >= 0) {
     const b = buildings[hq];
     // tu mieszkacie: siedziba zawsze jest mieszkalna

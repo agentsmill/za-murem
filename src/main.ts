@@ -97,13 +97,14 @@ async function enter(data: Loaded) {
   const world = buildWorld(data.geo, { seed, street: data.street });
   const scene = buildScene(world);
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
+  const crowd = params.has('perf') ? Number(params.get('perf')) : 24;
+  // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
+  const st = createSim(world, seed, { core: 4, crowd });
   $('start').hidden = true;
   $('app').hidden = false;
   // płótno mierzy element; był ukryty, więc trzeba przeliczyć rozmiar po odsłonięciu
   view.app.resize();
   view.setScene(scene);
-  const crowd = params.has('perf') ? Number(params.get('perf')) : 24;
-  const st = createSim(world, seed, { core: 4, crowd });
   const hour = params.get('hour');
   if (hour !== null)
     st.tick = Math.round(

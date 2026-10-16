@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
+import { createSim, Sim } from '../../src/sim/sim.ts';
 import { type Geo, type Pt, polyArea } from '../../src/world/geo.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { fillRing, stampSegment } from '../../src/world/raster.ts';
@@ -128,4 +129,36 @@ describe('świat z geometrii', () => {
         }
     });
   }
+
+  it('bez budynków mieszkalnych siedzibą zostaje najbliższy budynek (przemysł, adres na ulicy)', () => {
+    const g = emptyGeo();
+    for (let k = 0; k < 6; k++) g.b.push({ p: rect(-90 + k * 32, 20, 24, 18), t: { building: 'industrial' } });
+    g.r.push({
+      l: [
+        [-120, 0],
+        [120, 0],
+      ],
+      h: 'residential',
+    });
+    const w = buildWorld(g, { seed: 3, size: 256 });
+    expect(w.hq).toBeGreaterThanOrEqual(0);
+    expect(['blok', 'dom']).toContain(w.buildings[w.hq].cls);
+    expect(w.buildings[w.hq].entrances.length).toBeGreaterThan(0);
+    // symulacja startuje (wcześniej: TypeError w createSim i czarny ekran)
+    const sim = new Sim(w, createSim(w, 1, { core: 4, crowd: 3 }));
+    for (let k = 0; k < 50; k++) sim.step();
+    expect(sim.st.pawns).toHaveLength(7);
+  });
+
+  it('bez żadnego budynku: czytelny błąd zamiast czarnego ekranu', () => {
+    const g = emptyGeo();
+    g.r.push({
+      l: [
+        [-60, 0],
+        [60, 0],
+      ],
+      h: 'residential',
+    });
+    expect(() => buildWorld(g, { seed: 1, size: 128 })).toThrow(/budynk/);
+  });
 });
