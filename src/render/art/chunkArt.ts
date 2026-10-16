@@ -472,8 +472,21 @@ export function drawChunk(sc: Scene, cx: number, cy: number, s: number, canvas: 
       }
     }
   }
+  // cienie drzew: miękkie elipsy w jednej ścieżce, żeby nakładające się nie ciemniały podwójnie
+  const trees = sc.treesBy[cy * sc.chunks + cx];
+  if (trees.length) {
+    ctx.beginPath();
+    for (const t of trees) {
+      const sx = (t.x + t.r * 0.45) * TILE;
+      const sy = (t.y - 1.2 - t.r * 0.55) * TILE;
+      ctx.moveTo(sx + t.r * TILE * 0.95, sy);
+      ctx.ellipse(sx, sy, t.r * TILE * 0.95, t.r * TILE * 0.76, 0, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = 'rgba(16,22,34,0.30)';
+    ctx.fill();
+  }
   // drzewa od tyłu do przodu
-  for (const t of sc.treesBy[cy * sc.chunks + cx]) {
+  for (const t of trees) {
     const sp = treeSprite(t);
     ctx.drawImage(sp.canvas, t.x * TILE - sp.ax, t.y * TILE - sp.ay);
   }

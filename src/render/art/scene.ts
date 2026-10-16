@@ -181,19 +181,6 @@ export function buildScene(w: World): Scene {
       }
     }
   }
-  // drzewa rzucają okrągły cień
-  for (const t of w.trees) {
-    const cx = (t.x + t.r * 0.45) * SUB;
-    const cy = (t.y - 1.2 - t.r * 0.55) * SUB;
-    const rr = t.r * SUB * 0.95;
-    for (let y = Math.floor(cy - rr); y <= Math.ceil(cy + rr); y++)
-      for (let x = Math.floor(cx - rr); x <= Math.ceil(cx + rr); x++) {
-        if (x < 0 || y < 0 || x >= S || y >= S) continue;
-        const dx = (x + 0.5 - cx) / rr;
-        const dy = (y + 0.5 - cy) / (rr * 0.8);
-        if (dx * dx + dy * dy <= 1) shadow[y * S + x] = 1;
-      }
-  }
   // cień nie leży na dachach
   for (let i = 0; i < N; i++) {
     if (w.terr[i] !== T.BUILDING) continue;

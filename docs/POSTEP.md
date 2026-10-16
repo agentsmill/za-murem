@@ -72,6 +72,5 @@ Liczby:
 - Wersja 0.2 do porównań: dopisać `<!doctype html>` i `<meta charset="utf-8">`, żeby działała poza artefaktem.
 - Falowiec na Przymorzu ma około 860 m, w kwadracie 384 m widać tylko jego część. Rozważyć przesunięcie kwadratu tak, żeby siedziba mieściła się cała.
 - Automatyczne chodniki na wsi wyglądają miejsko. Pomijać je tam, gdzie przeważają domy.
-- Cienie drzew na asfalcie są schodkowe (oczka 8 px), zmiękczyć.
 - Późna gra w 0.3 jest za łatwa (bot w 45. dniu ma 582 jedzenia i zaufanie 100). W M3 celem balansu jest pierwsza zima i dalsze wyzwania.
 - Ursynów: siedziba „Lanciego 10G” to duży budynek o ukośnej ścianie, która wychodzi schodkami. Rysować ukośne ściany z wielokąta.
