@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Za Murem</title>
+<meta name="description" content="Pikselowa gra o spółdzielni mieszkaniowej po upadku cywilizacji. Wpisz adres i poprowadź swoje prawdziwe osiedle.">
+<meta property="og:title" content="Za Murem: spółdzielnia po upadku">
+<meta property="og:description" content="Wpisz adres swojego osiedla i sprawdź, ile dni przetrwa wasza spółdzielnia.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="start" id="start">
+  <div class="start-card">
+    <div><div class="sign big"><h1>Za Murem</h1><small>spółdzielnia po upadku</small></div></div>
+    <p class="lore" id="lore"></p>
+    <form id="startForm">
+      <label for="addr">Adres twojego osiedla</label>
+      <div class="row"><input id="addr" name="addr" placeholder="np. Wołoska 12, Warszawa" autocomplete="street-address"><button class="btn go" type="submit">Wczytaj osiedle</button></div>
+    </form>
+    <div class="alt">
+      <button class="btn" id="btnContinue" hidden>Kontynuuj</button>
+      <button class="btn" id="btnSample">Przykład: falowiec na Przymorzu</button>
+      <button class="btn" id="btnProc">Losowe osiedle</button>
+    </div>
+    <p class="status" id="startStatus" aria-live="polite"></p>
+    <p class="fine">Adres trafia tylko do OpenStreetMap (wyszukiwarka Nominatim i serwer Overpass), żeby pobrać obrysy budynków w promieniu 230 m. Gra zapisuje się wyłącznie w twojej przeglądarce. Dane mapy © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</p>
+  </div>
+</div>
+
+<div class="app" id="app" hidden>
+  <header class="top">
+    <div class="sign"><b id="osName">Spółdzielnia</b><small>Za Murem</small></div>
+    <div class="clock"><span id="hDay"></span><span id="hTime"></span><span id="hTemp"></span><span id="hSeason" class="season"></span></div>
+    <div class="speed" id="speed" role="group" aria-label="Tempo gry">
+      <button class="btn" data-s="0">Pauza</button><button class="btn" data-s="1">1×</button><button class="btn" data-s="2">2×</button><button class="btn" data-s="3">4×</button>
+    </div>
+    <div class="meters">
+      <div class="meter" title="Zaufanie do zarządu. Przy zerze ludzie odchodzą."><span>Zaufanie</span><i><b id="mTrust"></b></i><em id="vTrust"></em></div>
+      <div class="meter anger" title="Wkurzenie na klatkach. Przy stu walne odwołuje zarząd."><span>Wkurzenie</span><i><b id="mAnger"></b></i><em id="vAnger"></em></div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="btnGaz">Gazetka</button>
+    <button class="btn ghost" id="btnMenu">Menu</button>
+  </header>
+  <div class="res" id="res"></div>
+  <div class="people" id="people"></div>
+  <main class="board">
+    <section class="mapwrap" id="mapwrap">
+      <canvas id="map" aria-label="Mapa osiedla"></canvas>
+      <div class="mapctl"><button id="zIn" aria-label="Przybliż">+</button><button id="zOut" aria-label="Oddal">−</button><button id="zHome" aria-label="Pokaż siedzibę zarządu">⌂</button></div>
+      <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></div>
+      <div class="placebar" id="placebar" hidden></div>
+      <div class="toasts" id="toasts" aria-live="polite"></div>
+    </section>
+    <aside class="panel">
+      <nav class="ptabs" id="ptabs" role="tablist" aria-label="Zarząd"></nav>
+      <div class="pbody" id="pbody"></div>
+    </aside>
+  </main>
+</div>
+
+<div class="overlay" id="overlay" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div></div>
+
+<script src="js/data.js"></script>
+<script src="data/sample.js"></script>
+<script src="js/osm.js"></script>
+<script src="js/art.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/gazetka.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

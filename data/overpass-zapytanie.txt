@@ -1,0 +1,15 @@
+[out:json][timeout:40];
+(
+  way["building"](around:230,54.4093,18.5991);
+  way["highway"](around:230,54.4093,18.5991);
+  way["landuse"](around:230,54.4093,18.5991);
+  way["leisure"](around:230,54.4093,18.5991);
+  way["natural"](around:230,54.4093,18.5991);
+  way["amenity"="parking"](around:230,54.4093,18.5991);
+  way["waterway"](around:230,54.4093,18.5991);
+  node["shop"](around:700,54.4093,18.5991);
+  node["amenity"~"school|kindergarten|clinic|doctors|pharmacy|hospital|library|bank|fire_station|police|townhall|marketplace|post_office|fuel|place_of_worship|community_centre"](around:700,54.4093,18.5991);
+  way["shop"](around:700,54.4093,18.5991);
+  way["amenity"~"school|kindergarten|clinic|doctors|pharmacy|hospital|library|bank|fire_station|police|townhall|marketplace|post_office|fuel|place_of_worship|community_centre"](around:700,54.4093,18.5991);
+);
+out geom qt;

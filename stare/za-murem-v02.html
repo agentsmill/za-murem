@@ -1,0 +1,1628 @@
+<title>Za Murem</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: enamel street-sign masthead over a "wielka płyta" concrete wall; tabbed board (dom / okolica / technologie) left, operations column right */
+:root{
+  --slab:#2a2f32;
+  --slab-deep:#212528;
+  --slab-raised:#353b3f;
+  --seam:#32383b;
+  --line:#454c51;
+  --ink:#e7e4dc;
+  --ink-dim:#a3a7a2;
+  --enamel:#2457a8;
+  --enamel-rim:#f4f3ee;
+  --lamp:#e6a540;
+  --good:#86b25e;
+  --bad:#de5a43;
+  --paper:#d8d4c7;
+  --paper-ink:#20242a;
+  --paper-dim:#4c5156;
+  --paper-line:#b3ae9f;
+  --f-sign:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"Barlow","Segoe UI",system-ui,sans-serif;
+  color-scheme:dark;
+}
+html,body{background:var(--slab)}
+body{
+  color:var(--ink);font:400 15px/1.45 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:18px 40px;
+  background-color:var(--slab);
+  background-image:linear-gradient(var(--seam) 2px,transparent 2px),linear-gradient(90deg,var(--seam) 2px,transparent 2px);
+  background-size:100% 190px,320px 100%;
+}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.mast{display:flex;flex-wrap:wrap;align-items:center;gap:12px 22px}
+.sign{position:relative;background:var(--enamel);color:var(--enamel-rim);border-radius:9px;padding:7px 26px 8px;
+  box-shadow:inset 0 0 0 3px var(--enamel),inset 0 0 0 5px var(--enamel-rim),0 3px 0 #15181a}
+.sign::before,.sign::after{content:"";position:absolute;top:50%;width:5px;height:5px;border-radius:50%;background:#c3c7cc;transform:translateY(-50%)}
+.sign::before{left:10px}.sign::after{right:10px}
+.sign h1{margin:0;font:700 36px/1 var(--f-sign);letter-spacing:.07em;text-transform:uppercase}
+.sign small{display:block;font:600 12px/1.3 var(--f-sign);letter-spacing:.18em;text-transform:uppercase;opacity:.85;margin-top:2px}
+.tagline{margin:0;max-width:64ch;color:var(--ink-dim);font-size:15px;text-wrap:pretty}
+.hud{display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;background:var(--slab-deep);border:1px solid var(--line);border-radius:6px;padding:8px 12px}
+.clock{display:flex;align-items:baseline;gap:10px;font:600 22px/1 var(--f-sign);font-variant-numeric:tabular-nums}
+.clock .season{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--lamp)}
+.speed{display:flex;gap:4px}
+.gauge{display:flex;align-items:center;gap:8px;font:600 13px/1 var(--f-sign);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)}
+.gbar{display:block;width:90px;height:6px;background:#15181a;border-radius:3px;overflow:hidden}
+.gbar b{display:block;height:100%;background:var(--good);transition:width .3s}
+.gauge strong{color:var(--ink);font-size:16px;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+.hud .spacer{flex:1 1 0}
+.btn{font:600 14px/1 var(--f-sign);letter-spacing:.04em;background:var(--slab-raised);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:7px 11px;cursor:pointer}
+.btn:hover:not(:disabled){border-color:var(--ink-dim)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn[aria-pressed="true"]{background:var(--lamp);border-color:var(--lamp);color:#1d1a14}
+.btn.go{background:var(--enamel);border-color:var(--enamel);color:#fff}
+.btn.ghost{background:transparent}
+:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+.board{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:16px;align-items:start}
+.board.wide{grid-template-columns:minmax(0,1fr)}
+@media (max-width:920px){.board{grid-template-columns:minmax(0,1fr)}}
+.stage{display:flex;flex-direction:column;gap:8px;min-width:0}
+.tabs{display:flex;gap:2px;border-bottom:2px solid var(--line)}
+.tabs button{font:600 16px/1 var(--f-sign);letter-spacing:.06em;text-transform:uppercase;background:transparent;color:var(--ink-dim);border:0;border-bottom:3px solid transparent;margin-bottom:-2px;padding:9px 14px 8px;cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--lamp)}
+.tabs button:hover{color:var(--ink)}
+.res{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--slab-deep);border:1px solid var(--line);border-radius:4px;padding:3px 9px 3px 5px;font:600 14px/1.2 var(--f-sign);letter-spacing:.02em;color:var(--ink-dim)}
+.chip img{width:18px;height:18px;image-rendering:pixelated}
+.chip b{color:var(--ink);font-variant-numeric:tabular-nums;min-width:1.4ch}
+.chip.flash b{color:var(--lamp)}
+.screen{border:4px solid #15181a;border-radius:4px;background:#15181a;box-shadow:0 0 0 1px var(--line)}
+canvas{display:block;width:100%;height:auto;image-rendering:pixelated;touch-action:manipulation;cursor:pointer}
+.hint{margin:0;color:var(--ink-dim);font-size:14.5px;min-height:1.45em}
+.mapinfo{background:var(--slab-deep);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.mapinfo h3{margin:0 0 4px;font:700 22px/1.1 var(--f-sign)}
+.mapinfo p{margin:4px 0;max-width:70ch;font-size:14.5px}
+.mapinfo .meta{color:var(--ink-dim);font-size:13.5px}
+.mapinfo .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.relbar{display:inline-block;width:120px;height:6px;background:#15181a;border-radius:3px;overflow:hidden;vertical-align:middle;margin:0 6px}
+.relbar b{display:block;height:100%;background:var(--good)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--ink-dim);font-size:13px;margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;margin-right:6px;border:1px solid #15181a;vertical-align:-1px}
+.tech{display:flex;flex-direction:column;gap:10px}
+.tech-intro{margin:0;color:var(--ink-dim);max-width:80ch}
+.branches{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+@media (max-width:1180px){.branches{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:760px){.branches{grid-template-columns:minmax(0,1fr)}}
+.branch h3{margin:0 0 8px;font:600 13px/1 var(--f-sign);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim)}
+.nodes{display:flex;flex-direction:column;gap:14px;position:relative}
+.node{position:relative;background:var(--slab-deep);border:1px solid var(--line);border-radius:5px;padding:9px 10px}
+.node+.node::before{content:"";position:absolute;left:18px;top:-15px;width:2px;height:14px;background:var(--line)}
+.node.built{border-color:#4d6b3a}
+.node.site{border-color:var(--lamp)}
+.node.ok{border-color:var(--enamel);box-shadow:inset 0 0 0 1px var(--enamel)}
+.node.lock,.node.item,.node.clear{opacity:.62}
+.node-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.node-top b{font:600 17px/1.15 var(--f-sign)}
+.node p{margin:3px 0 6px;font-size:13px;color:var(--ink-dim)}
+.node .nreq{margin:2px 0;font-size:12.5px}
+.nreq .have{color:var(--good)}
+.node .tier{font:600 11px var(--f-sign);letter-spacing:.12em;color:var(--ink-dim);text-transform:uppercase}
+.st{font:500 12px/1 var(--f-sign);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);white-space:nowrap}
+.built .st{color:var(--good)}.site .st{color:var(--lamp)}.ok .st{color:#8fb1ea}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.c{display:inline-flex;gap:4px;align-items:center;font:600 13.5px/1.2 var(--f-sign);padding:2px 7px 2px 4px;border-radius:3px;background:var(--slab-raised)}
+.c img{width:14px;height:14px;image-rendering:pixelated}
+.c.miss{color:var(--bad)}
+.prog{flex:1 1 60px;height:6px;background:#15181a;border-radius:3px;overflow:hidden;min-width:40px}
+.prog b{display:block;height:100%;background:var(--lamp)}
+.pct{font:600 13px var(--f-sign);color:var(--lamp);font-variant-numeric:tabular-nums}
+.side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.box{background:var(--slab-deep);border:1px solid var(--line);border-radius:6px;padding:12px}
+.box h2{margin:0;font:600 13px/1 var(--f-sign);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim)}
+.box-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 12px;margin-bottom:10px}
+.mini{display:inline-flex;gap:6px;align-items:center;font-size:13px;color:var(--ink-dim);cursor:pointer}
+.mini input{accent-color:var(--lamp)}
+.crew{display:grid;gap:8px}
+.card{display:grid;grid-template-columns:32px minmax(0,1fr);gap:2px 10px;text-align:left;width:100%;background:var(--slab-raised);border:1px solid var(--line);border-radius:5px;padding:7px 8px;color:inherit;font:inherit;cursor:pointer}
+.card[aria-pressed="true"]{border-color:var(--lamp);background:#3d3a32}
+.card:disabled{opacity:.5;cursor:default}
+.card.away{border-style:dashed}
+.ava{width:32px;height:32px;image-rendering:pixelated;grid-row:span 2;background:#1b1e20;border-radius:3px}
+.nm{font:600 17px/1.1 var(--f-sign)}
+.nm small{font-weight:500;font-size:13.5px;color:var(--ink-dim);margin-left:7px;letter-spacing:.03em}
+.task{font-size:13px;color:var(--ink-dim);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bars{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:3px}
+.bar>span{display:block;font:500 11px/1.3 var(--f-sign);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim)}
+.bar i{display:block;height:5px;background:#15181a;border-radius:2px;overflow:hidden}
+.bar i b{display:block;height:100%;background:var(--good)}
+.bar.mid i b{background:var(--lamp)}
+.bar.low i b{background:var(--bad)}
+.todo{display:flex;flex-direction:column;gap:8px}
+.todo-item{display:flex;flex-direction:column;gap:5px;padding-top:8px;border-top:1px solid var(--line)}
+.todo-item:first-child{border-top:0;padding-top:0}
+.todo-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.todo-top b{font:600 16px/1.15 var(--f-sign)}
+.muted{margin:8px 0 0;font-size:13.5px;color:var(--ink-dim)}
+.goal{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:14.5px;color:var(--ink-dim)}
+.goal li{display:flex;gap:9px;align-items:center}
+.tick{width:12px;height:12px;border:1.5px solid var(--ink-dim);border-radius:2px;flex:none}
+.goal .done{color:var(--ink)}
+.goal .done .tick{background:var(--good);border-color:var(--good)}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:13.5px;max-height:240px;overflow:auto}
+.log time{font:600 12px var(--f-sign);color:var(--ink-dim);margin-right:7px;font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.overlay{position:fixed;inset:0;z-index:50;background:rgba(12,14,16,.74);display:flex;justify-content:center;align-items:flex-start;overflow:auto;
+  padding:max(28px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(28px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.sheet{position:relative;width:100%;max-width:720px;background:var(--paper);color:var(--paper-ink);color-scheme:light;border-radius:3px;padding:24px 22px 20px;box-shadow:0 12px 40px rgba(0,0,0,.5);
+  background-image:repeating-linear-gradient(transparent 0 27px,rgba(0,0,0,.045) 27px 28px)}
+.sheet::before{content:"";position:absolute;top:-11px;left:50%;width:120px;height:24px;transform:translateX(-50%) rotate(-2deg);background:rgba(222,212,170,.8);box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.kicker{margin:0;font:600 12.5px/1.2 var(--f-sign);letter-spacing:.18em;text-transform:uppercase;color:var(--paper-dim)}
+.sheet h2{margin:4px 0 8px;font:700 32px/1.05 var(--f-sign);text-wrap:balance}
+.sheet h3{margin:18px 0 4px;padding-top:10px;border-top:1px solid var(--paper-line);font:600 14px/1 var(--f-sign);letter-spacing:.16em;text-transform:uppercase;color:var(--paper-dim)}
+.sheet p{margin:6px 0;max-width:64ch}
+.lead{font-weight:600}
+.small{font-size:13.5px;color:var(--paper-dim)}
+.ai{border-left:3px solid var(--enamel);padding-left:10px;font-style:italic}
+.prow{display:flex;flex-direction:column;gap:7px;padding:10px 0;border-bottom:1px dashed var(--paper-line)}
+.who b{font:600 19px/1.1 var(--f-sign)}
+.who .role{font-size:13px;color:var(--paper-dim);margin-left:6px}
+.stats{font-size:13.5px;color:var(--paper-dim);font-variant-numeric:tabular-nums}
+.stats .low{color:#b0331f;font-weight:600}
+.ctrl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.sheet .btn{background:#efece4;color:var(--paper-ink);border-color:#8d897c}
+.sheet .btn[aria-pressed="true"]{background:var(--paper-ink);border-color:var(--paper-ink);color:var(--paper)}
+.sheet .btn.go{background:var(--enamel);border-color:var(--enamel);color:#fff;font-size:17px;padding:10px 18px}
+.sheet .btn.choice{font-size:16px;padding:10px 14px;text-align:left}
+.sheet select{font:500 14px/1.2 var(--f-body);padding:6px 8px;border:1px solid #8d897c;border-radius:4px;background:#efece4;color:var(--paper-ink);max-width:100%;min-width:0}
+.check{display:flex;gap:8px;align-items:center;font-size:14.5px;cursor:pointer;margin:6px 0}
+.check input{width:17px;height:17px;accent-color:var(--enamel)}
+.events{margin:10px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.foot{display:flex;justify-content:flex-end;margin-top:18px}
+.choices{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:14px}
+.ms{margin:10px 0 4px}
+.stamp{display:inline-block;border:3px solid var(--enamel);color:var(--enamel);padding:5px 12px;font:700 22px/1 var(--f-sign);letter-spacing:.1em;text-transform:uppercase;transform:rotate(-2.5deg);border-radius:3px}
+.sr{position:absolute;left:-9999px}
+@media (prefers-reduced-motion:reduce){.gbar b{transition:none}}
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="sign"><h1>Za Murem</h1><small>osiedle · dom nr 7 · wersja 0.2</small></div>
+    <p class="tagline">Prąd nie wrócił od wiosny. Dom z garażem na osiedlu za dziurawą siatką. Za dnia rozbieracie gruz, budujecie i chodzicie na wypady, o 20:00 decydujecie o nocy. W zakładce Okolica jest mapa i osady z radia, w Technologiach całe drzewko.</p>
+  </header>
+
+  <div class="hud">
+    <div class="clock"><span id="hud-day">Dzień 1</span><span id="hud-time">06:00</span><span class="season" id="hud-season">jesień</span></div>
+    <div class="speed" role="group" aria-label="Tempo gry">
+      <button class="btn" data-speed="0" id="sp0">Pauza</button>
+      <button class="btn" data-speed="1" id="sp1">1×</button>
+      <button class="btn" data-speed="2" id="sp2">2×</button>
+      <button class="btn" data-speed="3" id="sp3">3×</button>
+    </div>
+    <div class="gauge" title="Nastrój domu wpływa na tempo pracy"><span>Nastrój</span><span class="gbar"><b id="hud-morale"></b></span></div>
+    <div class="gauge" title="Poziom muru osiedla"><span>Mur</span><strong id="hud-wall">0/5</strong></div>
+    <div class="gauge" title="Obrona domu bez warty"><span>Obrona</span><strong id="hud-def">0</strong></div>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="new-game">Nowa gra</button>
+  </div>
+
+  <div class="board" id="board">
+    <section class="stage">
+      <div class="tabs" role="tablist" aria-label="Widok">
+        <button role="tab" id="tab-dom" data-tab="dom" aria-selected="true">Dom</button>
+        <button role="tab" id="tab-mapa" data-tab="mapa" aria-selected="false">Okolica</button>
+        <button role="tab" id="tab-tech" data-tab="tech" aria-selected="false">Technologie</button>
+      </div>
+      <div class="res" id="res"></div>
+      <div class="screen" id="screen"><canvas id="cv" width="960" height="576" tabindex="0" aria-label="Plansza gry"></canvas></div>
+      <div class="mapinfo" id="mapinfo" hidden></div>
+      <div class="tech" id="tech" hidden>
+        <p class="tech-intro">Każda kolumna to gałąź. Kafelek z niebieską ramką można zacząć od razu. Ulepszenie stawia się w miejscu starej rzeczy, a rzeczy z warsztatu robi się przy stole z imadłem. Niektóre plany wymagają przedmiotu z mapy.</p>
+        <div class="branches" id="branches"></div>
+      </div>
+      <p class="hint" id="hint" aria-live="polite"></p>
+    </section>
+    <aside class="side">
+      <div class="box"><div class="box-head"><h2>Mieszkańcy</h2><label class="mini"><input type="checkbox" id="rule-eat" checked> jedzą za dnia, gdy głodni</label></div><div class="crew" id="crew"></div></div>
+      <div class="box"><div class="box-head"><h2>Do zbudowania</h2><button class="btn ghost" id="open-tech">Całe drzewko</button></div><div class="todo" id="todo"></div></div>
+      <div class="box"><div class="box-head"><h2>Cel wersji 0.2</h2></div><ul class="goal" id="goal"></ul><p class="muted">Zima przychodzi w dniu 8. Spacja pauzuje, klawisze 1 do 3 zmieniają tempo.</p></div>
+      <div class="box"><div class="box-head"><h2>Dziennik</h2></div><ol class="log" id="log"></ol></div>
+    </aside>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"></div>
+</div>
+
+<script>
+(function(){
+'use strict';
+const T=16,W=30,H=18,S=2,SEC_PER_HOUR=6,DAY_START=360,DAY_END=1200,WALK=24,SAVE_KEY='za-murem-v2',MAXP=8;
+const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
+const RES=['drewno','zlom','elektronika','jedzenie','woda','leki','prad'];
+const RL={drewno:'Drewno',zlom:'Złom',elektronika:'Elektronika',jedzenie:'Jedzenie',woda:'Woda',leki:'Leki',prad:'Prąd'};
+const ITEMS={kury:'Kury',pompa:'Pompa głębinowa',ogniwa:'Ogniwa LiFePO4',dyski:'Macierz dyskowa'};
+const BRANCHES=[['dom','Dom i warsztat'],['jedz','Jedzenie i woda'],['obr','Obrona'],['en','Energia'],['ai','Łączność i AI']];
+
+const N={
+  warsztat:{name:'Warsztat',br:'dom',tier:0,req:[],cost:{drewno:3,zlom:2},work:3,at:[7,10,2,1],desc:'Stół z imadłem. Od niego zaczyna się całe drzewko.'},
+  piec:{name:'Koza',br:'dom',tier:1,req:['warsztat'],cost:{zlom:5},work:3,at:[16,10,1,1],desc:'Piecyk z beczki w kuchni. Grzeje dom za dnia, nocą za Drewno 2. Posiłki sycą bardziej.'},
+  lozka:{name:'Prycze',br:'dom',tier:1,req:['warsztat'],cost:{drewno:6},work:2,at:[18,15,4,2],desc:'Cztery prycze z palet. Na pryczy Siły +55 przez noc, na podłodze +35.'},
+  skrytka:{name:'Skrytka pod podłogą',br:'dom',tier:1,req:['warsztat'],cost:{drewno:2},work:1,at:[15,16,1,1],walk:true,desc:'Schowek w kuchni. Szabrownicy zabierają o połowę mniej.'},
+  kuchnia:{name:'Kuchnia polowa',br:'dom',tier:2,req:['piec'],up:'piec',cost:{zlom:4,drewno:2},work:3,desc:'Posiłki sycą najmocniej, a nocne ogrzewanie bierze tylko Drewno 1.'},
+  lozka2:{name:'Piętrowe prycze',br:'dom',tier:2,req:['lozka'],up:'lozka',cost:{drewno:6,zlom:2},work:3,desc:'Osiem miejsc do spania zamiast czterech.'},
+  warsztat2:{name:'Spawarka',br:'dom',tier:2,req:['warsztat','panel'],up:'warsztat',cost:{zlom:6,elektronika:2},work:4,elec:true,desc:'Spawarka na prąd. Każda budowa idzie 1,25× szybciej, otwiera stalowe konstrukcje.'},
+  grzadki:{name:'Grządki',br:'jedz',tier:1,req:['warsztat'],cost:{drewno:4,woda:1},work:2,at:[2,10,3,3],desc:'Skrzynie z ziemią w ogrodzie. Jedzenie +1 co noc, zimą nic.'},
+  filtr:{name:'Filtr deszczówki',br:'jedz',tier:1,req:['warsztat'],cost:{zlom:3,drewno:2},work:2,at:[4,7,1,1],desc:'Beczka, piasek i węgiel. Woda +2 co noc, zimą +1.'},
+  szklarnia:{name:'Szklarnia z folii',br:'jedz',tier:2,req:['grzadki'],up:'grzadki',cost:{drewno:4,zlom:2},work:3,desc:'Folia na stelażu nad grządkami. Jedzenie +2 co noc, także zimą.'},
+  zbiornik:{name:'Zbiornik z mauzera',br:'jedz',tier:2,req:['filtr'],up:'filtr',cost:{zlom:4},work:2,desc:'Tysiąc litrów w stalowej klatce. Woda +3 co noc, zimą +2.'},
+  kurnik:{name:'Kurnik',br:'jedz',tier:3,req:['grzadki'],item:'kury',cost:{drewno:5,zlom:1},work:3,at:[2,14,2,2],desc:'Kurnik w ogrodzie. Jedzenie +1 co noc i lepszy nastrój.'},
+  studnia:{name:'Studnia głębinowa',br:'jedz',tier:3,req:['zbiornik','warsztat2'],up:'filtr',item:'pompa',cost:{zlom:6,elektronika:2},work:5,elec:true,desc:'Pompa w odwiercie. Woda +5 co noc bez względu na pogodę, bierze Prąd 2.'},
+  barykada:{name:'Barykada',br:'obr',tier:1,req:['warsztat'],cost:{drewno:5,zlom:3},work:3,at:[14,9,1,1],walk:true,desc:'Deski na oknach i drzwiach. Obrona +3.'},
+  alarm:{name:'Alarm z puszek',br:'obr',tier:1,req:['warsztat'],bench:true,cost:{zlom:2,drewno:1},work:1,desc:'Puszki na sznurku wzdłuż muru. Obrona +2, nikt nie podejdzie po cichu.'},
+  wieza:{name:'Wieża przy bramie',br:'obr',tier:2,req:['barykada'],cost:{drewno:6,zlom:2},work:3,at:[16,1,1,1],desc:'Warta liczy się 1,5×, a wieczorem znacie dokładne ryzyko napadu.'},
+  okiennice:{name:'Stalowe okiennice',br:'obr',tier:2,req:['barykada','warsztat2'],up:'barykada',cost:{zlom:6},work:3,desc:'Blacha na zawiasach zamiast desek. Obrona +3 więcej.'},
+  panel:{name:'Panel słoneczny',br:'en',tier:1,req:['warsztat'],cost:{zlom:2,elektronika:3},work:3,at:[21,1,2,2],elec:true,desc:'Zdjęty z dachu pawilonu. Prąd od 8 do 17, zimą słabiej.'},
+  akumulator:{name:'Bank akumulatorów',br:'en',tier:1,req:['warsztat'],cost:{zlom:3,elektronika:3},work:3,at:[11,10,1,1],elec:true,desc:'Akumulatory z wraków. Mieści Prąd 30 zamiast 5.'},
+  panel2:{name:'Druga para paneli',br:'en',tier:2,req:['panel','akumulator'],cost:{zlom:2,elektronika:3},work:3,at:[23,1,2,2],elec:true,desc:'Dwa razy więcej prądu za dnia.'},
+  turbina:{name:'Wiatrak z alternatora',br:'en',tier:2,req:['panel'],cost:{zlom:5,elektronika:2,drewno:2},work:4,at:[26,2,1,1],elec:true,desc:'Kręci się w dzień i w nocy, zimą też. Nocą daje Prąd 5.'},
+  generator:{name:'Generator na drewno',br:'en',tier:3,req:['warsztat2'],clear:'garaz',cost:{zlom:6,elektronika:1},work:4,at:[25,14,1,1],elec:true,desc:'Stoi w garażu. Wieczorem możecie spalić Drewno 2 i mieć Prąd 6.'},
+  akumulator2:{name:'Ogniwa LiFePO4',br:'en',tier:3,req:['akumulator'],up:'akumulator',item:'ogniwa',cost:{elektronika:4,zlom:2},work:3,elec:true,desc:'Ogniwa z hurtowni zamiast kwasówek. Mieści Prąd 80.'},
+  radio:{name:'Krótkofalówka',br:'ai',tier:1,req:['warsztat'],cost:{elektronika:4,zlom:1},work:3,at:[13,10,1,1],elec:true,desc:'Słychać osady w okolicy. Z każdą można raz dziennie handlować przez radio.'},
+  antena:{name:'Antena kierunkowa',br:'ai',tier:2,req:['radio'],up:'radio',cost:{zlom:3,elektronika:2},work:2,elec:true,desc:'Antena na dachu. Słychać dalsze osady.'},
+  serwer:{name:'Serwer AI z odzysku',br:'ai',tier:3,req:['panel','akumulator'],cost:{elektronika:10,zlom:4},work:6,at:[7,15,2,2],elec:true,desc:'Co noc bierze Prąd 6. Prognozuje napady, doradza, sąsiedzi płacą jedzeniem za porady.'},
+  dron:{name:'Dron zwiadowczy',br:'ai',tier:3,req:['antena','akumulator'],bench:true,cost:{elektronika:5,zlom:2},work:4,elec:true,desc:'Co noc za Prąd 2 odkrywa jedno nowe miejsce na mapie.'},
+  model:{name:'Lokalny model językowy',br:'ai',tier:4,req:['serwer','antena'],up:'serwer',item:'dyski',cost:{elektronika:6},work:5,elec:true,desc:'Model z dysków banku. Co noc bierze Prąd 8, cała robota idzie 10% szybciej, sąsiedzi płacą więcej.'}
+};
+const NK=Object.keys(N);
+const WALL=[
+  {name:'Palisada z desek',cost:{drewno:6}},
+  {name:'Blachy na palisadzie',cost:{zlom:5,drewno:2}},
+  {name:'Płyty z gruzu',cost:{zlom:4,drewno:3}},
+  {name:'Drut kolczasty',cost:{zlom:5}},
+  {name:'Stalowa brama i latarnia',cost:{zlom:5,elektronika:2}}
+];
+const LOCS={
+  garaze:{name:'Garaże za blokiem',dist:1,x:202,y:126,risk:.12,loot:{zlom:[2,4],drewno:[0,2]},known:true,desc:'Rząd blaszaków. Ktoś już tu był, ale złomu nie brakuje.'},
+  szkola:{name:'Szkoła nr 3',dist:1,x:256,y:118,risk:.15,loot:{drewno:[1,3],elektronika:[1,3],zlom:[1,2]},known:true,desc:'Pracownia komputerowa, ławki, piwnica.'},
+  pawilon:{name:'Pawilon spożywczy',dist:1,x:262,y:176,risk:.25,loot:{jedzenie:[2,4],woda:[1,3]},known:true,desc:'Splądrowany, ale na zapleczu bywają zgrzewki.'},
+  przychodnia:{name:'Przychodnia rejonowa',dist:2,x:306,y:196,risk:.22,loot:{leki:[1,2],woda:[0,2],elektronika:[0,2]},known:true,desc:'Gabinety i apteka na parterze.'},
+  las:{name:'Las za obwodnicą',dist:2,x:62,y:80,risk:.10,loot:{drewno:[3,6],jedzenie:[0,2]},known:true,desc:'Drewno i grzyby. Spokojnie, ale daleko.'},
+  zlomowisko:{name:'Złomowisko przy torach',dist:2,x:158,y:236,risk:.2,loot:{zlom:[4,8],elektronika:[0,1]},item:'pompa',desc:'Góry złomu i budka skupu. Najlepsze miejsce na materiał do muru.'},
+  elektrocieplownia:{name:'Elektrociepłownia',dist:3,x:62,y:254,risk:.3,loot:{zlom:[3,6],elektronika:[1,3]},desc:'Kominy, rozdzielnie, kable. Pełno miedzi.'},
+  hurtownia:{name:'Hurtownia elektroniki',dist:3,x:412,y:240,risk:.35,loot:{elektronika:[3,5]},item:'ogniwa',desc:'Magazyn z regałami po sufit.'},
+  serwerownia:{name:'Serwerownia banku',dist:3,x:402,y:60,risk:.4,loot:{elektronika:[4,7],zlom:[1,2]},item:'dyski',desc:'Klimatyzowana sala w podziemiach banku. Ktoś jej pilnuje.'}
+};
+const SETL={
+  skarpa:{name:'Osiedle Na Skarpie',dist:2,x:332,y:86,how:'radio',trade:{give:{elektronika:3},take:{jedzenie:3}},reqs:[{take:{leki:1},give:{elektronika:2}},{take:{woda:3},give:{zlom:4}},{take:{drewno:4},give:{elektronika:2}}],ally:'Co noc dają Elektronika 1 i dzielą się prognozą napadów.',desc:'Kilkanaście rodzin w blokach nad rzeką. Mają warsztat RTV.'},
+  dzialki:{name:'Ogródki działkowe',dist:2,x:142,y:112,how:'radio',trade:{give:{jedzenie:4},take:{elektronika:2}},reqs:[{take:{zlom:3},give:{jedzenie:3}},{take:{leki:1},give:{jedzenie:4}},{take:{drewno:3},give:{jedzenie:3}}],special:{item:'kury',take:{elektronika:3},rel:30},ally:'Co noc podrzucają Jedzenie 2.',desc:'Działkowcy, którzy nie wrócili do miasta. Warzywa, słoiki i kury.'},
+  osp:{name:'Remiza OSP',dist:3,x:440,y:150,how:'antena',trade:{give:{leki:2},take:{jedzenie:3}},reqs:[{take:{zlom:4},give:{leki:2}},{take:{jedzenie:3},give:{leki:2}}],ally:'Pilnują drogi, obrona +2. Raz przyślą wam człowieka.',desc:'Strażacy ochotnicy z wozem bez paliwa. Mają apteczki i dyscyplinę.'},
+  zajezdnia:{name:'Zajezdnia MPK',dist:2,x:314,y:252,how:'raid',hostile:true,tribute:{jedzenie:3,woda:2},desc:'Stąd przychodzą szabrownicy. Można im zapłacić, żeby przez trzy noce dali spokój.'}
+};
+const OFFERS=[
+  {who:'Pani Halina spod piątki',give:{jedzenie:3},take:{zlom:3}},
+  {who:'Pan Zbyszek spod dwójki',give:{zlom:5},take:{drewno:3}},
+  {who:'Pan Zbyszek spod dwójki',give:{elektronika:2},take:{jedzenie:2}},
+  {who:'Kowalczykowie z naprzeciwka',give:{drewno:4},take:{woda:2}},
+  {who:'Młody z dziewiątki',give:{woda:3},take:{drewno:3}},
+  {who:'Pani Halina spod piątki',give:{leki:1},take:{jedzenie:2}},
+  {who:'Młody z dziewiątki',give:{zlom:4},take:{jedzenie:2}}
+];
+const TRADER=[{give:{elektronika:2},take:{jedzenie:2}},{give:{zlom:5},take:{drewno:3}},{give:{leki:1},take:{zlom:3}},{give:{jedzenie:3},take:{elektronika:1,zlom:1}},{give:{woda:4},take:{drewno:2}},{give:{zlom:6},take:{jedzenie:2,woda:1}}];
+const ROLES={
+  ele:{m:'Elektryk',f:'Elektryczka',perk:'Elektronikę buduje 1,5× szybciej.'},
+  raczka:{m:'Złota rączka',f:'Złota rączka',perk:'Resztę buduje 1,5× szybciej i sprawniej rozbiera gruz.'},
+  med:{m:'Ratownik',f:'Ratowniczka',perk:'Leki działają mocniej, na wyprawach rzadziej obrywa.'},
+  cook:{m:'Kucharz',f:'Kucharka',perk:'Każdy posiłek w domu syci o 10 więcej.'},
+  garden:{m:'Ogrodnik',f:'Ogrodniczka',perk:'Grządki i szklarnia dają Jedzenie +1 więcej.'},
+  guard:{m:'Ochroniarz',f:'Ochroniarka',perk:'Na warcie liczy się podwójnie, na wyprawach rzadziej obrywa.'},
+  scav:{m:'Zbieracz',f:'Zbieraczka',perk:'Z wypraw przynosi 30% więcej, szybciej rozbiera gruz.'}
+};
+const NAMES={m:['Tomek','Krzysiek','Piotr','Janusz','Rafał','Wojtek','Darek','Kuba','Staszek','Grzesiek','Adam','Bogdan'],f:['Kasia','Ewa','Magda','Gośka','Asia','Renata','Iwona','Zosia','Hania','Dorota','Ula','Jola']};
+const PAL=[['#7a5aa0','#5a4078'],['#a0763a','#7a5628'],['#3a6aa0','#2a4e78'],['#a03a4a','#782a36'],['#5a8a7a','#3e6a5c'],['#8a8a3a','#6a6a28'],['#6a6f78','#4c5058']];
+const HAIR=['#2b1d16','#5e4128','#8a6a3a','#1c1c1c','#9a9792','#a3522a'];
+const RUBBLE=[
+  {id:'szopa',name:'Zawalona szopa',acc:'zawaloną szopę',done:'Po szopie zostało gołe miejsce.',x:2,y:2,w:3,h:2,left:{drewno:8,zlom:5}},
+  {id:'palety',name:'Sterta palet',acc:'stertę palet',done:'Palety rozebrane do ostatniej deski.',x:7,y:2,w:2,h:1,left:{drewno:10}},
+  {id:'meble',name:'Meble z bloku',acc:'stare meble',done:'Z mebli zostały drzazgi.',x:10,y:3,w:2,h:1,left:{drewno:6,zlom:1}},
+  {id:'gruz',name:'Gruz i blachy',acc:'gruz i blachy',done:'Gruz przebrany do końca.',x:8,y:5,w:2,h:1,left:{zlom:8}},
+  {id:'wrak',name:'Wrak auta',acc:'wrak auta',done:'Z wraku nic więcej nie wyciągniecie.',x:17,y:3,w:3,h:2,left:{zlom:10,elektronika:3}},
+  {id:'elektro',name:'Elektrośmieci',acc:'elektrośmieci',done:'Elektrośmieci rozebrane do ostatniej płytki.',x:21,y:5,w:1,h:1,left:{elektronika:4,zlom:1}},
+  {id:'zlomplot',name:'Złom pod płotem',acc:'złom pod płotem',done:'Pod płotem czysto.',x:24,y:6,w:2,h:1,left:{zlom:6}},
+  {id:'garaz',name:'Graty w garażu',acc:'graty w garażu',done:'Garaż pusty. Jest miejsce na generator.',x:24,y:11,w:3,h:2,left:{zlom:10,elektronika:3,drewno:3}}
+];
+const TREES=[[3,6],[12,1],[26,5]];
+const FURN=[[14,13],[15,13]];
+const WINDOWS=[[8,9],[10,9],[19,9],[21,9],[6,12],[6,14],[22,12],[22,14]];
+const BED_SPOTS=[[18,14],[19,14],[20,14],[21,14],[18,13],[19,13],[20,13],[21,13]];
+const GATE=[[14,1],[15,1]];
+const OS={x:230,y:150};
+
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const ri=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+const sum=o=>Object.values(o).reduce((a,b)=>a+b,0);
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const g=(p,m,f)=>p.f?f:m;
+const costText=o=>Object.entries(o).filter(([,v])=>v>0).map(([k,v])=>`${RL[k]} ${v}`).join(', ');
+const hhmm=t=>{const h=Math.floor(t/60),m=Math.floor(t%60);return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')};
+const reduceMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const distWord=d=>d===1?'blisko':d===2?'średnio daleko':'daleko';
+const riskWord=r=>r<.15?'niskie':r<.3?'średnie':'wysokie';
+
+/* ---------- geometry ---------- */
+const inHouse=(x,y)=>x>=6&&x<=22&&y>=9&&y<=17;
+const isDoor=(x,y)=>x===14&&y===9;
+const isInnerDoor=(x,y)=>(x===12||x===17)&&y===13;
+const isHouseWall=(x,y)=>inHouse(x,y)&&!isDoor(x,y)&&!isInnerDoor(x,y)&&(y===9||y===17||x===6||x===22||x===12||x===17);
+const inGarage=(x,y)=>x>=23&&x<=27&&y>=10&&y<=15;
+const isGarageDoor=(x,y)=>y===10&&x>=24&&x<=26;
+const isGarageWall=(x,y)=>inGarage(x,y)&&!isGarageDoor(x,y)&&(y===10||y===15||x===23||x===27);
+const isWall=(x,y)=>isHouseWall(x,y)||isGarageWall(x,y);
+const isNeighbor=x=>x<=1||x>=28;
+const indoor=(x,y)=>(inHouse(x,y)&&!isHouseWall(x,y)&&!isDoor(x,y))||(inGarage(x,y)&&!isGarageWall(x,y)&&!isGarageDoor(x,y));
+const isPath=(x,y)=>((x===14||x===15)&&y>=1&&y<=8)||(y===8&&x>=4&&x<=26)||(y===9&&x>=24&&x<=26);
+function rectTiles(x,y,w,h){const o=[];for(let j=0;j<h;j++)for(let i=0;i<w;i++)o.push([x+i,y+j]);return o}
+function areaOf(id){const b=N[id];if(b.up)return areaOf(b.up);if(b.bench)return areaOf('warsztat');return rectTiles(b.at[0],b.at[1],b.at[2],b.at[3])}
+function blocksOf(id){const b=N[id];return(b.walk||b.up||b.bench)?[]:areaOf(id)}
+function siteTiles(id){const b=N[id];return b.walk?[[b.at[0],b.at[1]]]:areaOf(id)}
+
+/* ---------- state ---------- */
+let state;
+function mkPerson(s,o,x,y){
+  return Object.assign({id:'p'+(s.nextId++),perk:ROLES[o.role].perk,x:x+.5,y:y+.5,sat:70,warm:75,en:85,hp:100,dead:false,task:null,path:[],acc:0,face:1,walkT:0,away:false,back:0,sick:false,resume:null,eatT:0},o);
+}
+function newGame(){
+  const s={v:2,day:1,t:DAY_START,speed:0,phase:'day',winter:false,started:false,
+    res:{drewno:3,zlom:1,elektronika:0,jedzenie:6,woda:6,leki:1,prad:0},
+    built:{},sites:{},rubble:RUBBLE.map(r=>Object.assign({},r,{left:Object.assign({},r.left)})),
+    people:[],nextId:1,morale:55,wall:0,locs:{},setl:{},items:{},flags:{},rules:{dayEat:true},
+    log:[],sel:null,serverOnline:false,ms:{},plan:null,offer:null,offerDone:false,wallDone:false,report:null,raidChance:0,
+    event:null,evAt:-1,tribute:0,panelBroken:0};
+  for(const k in LOCS)s.locs[k]={known:!!LOCS[k].known,visits:0};
+  for(const k in SETL)s.setl[k]={known:false,rel:SETL[k].hostile?0:15,traded:0,req:0,reqDone:false};
+  s.people=[
+    mkPerson(s,{name:'Ola',f:true,role:'ele',roleName:'Elektroniczka',col:'#3f8a96',dark:'#2c6670',hair:'#2b1d16'},7,12),
+    mkPerson(s,{name:'Marek',f:false,role:'raczka',roleName:'Złota rączka',col:'#c86a2a',dark:'#9a4f1d',hair:'#5e4128'},14,11),
+    mkPerson(s,{name:'Basia',f:true,role:'med',roleName:'Ratowniczka',col:'#5b8a42',dark:'#3f6630',hair:'#9a9792'},19,12)
+  ];
+  s.sel=s.people[0].id;
+  return s;
+}
+const living=()=>state.people.filter(p=>!p.dead);
+const home=()=>living().filter(p=>!p.away);
+const P=id=>state.people.find(p=>p.id===id);
+const selPerson=()=>{const p=state.sel&&P(state.sel);return p&&!p.dead?p:null};
+const B=k=>!!state.built[k];
+const cap=()=>B('akumulator2')?80:B('akumulator')?30:5;
+const beds=()=>B('lozka2')?8:B('lozka')?4:0;
+const hasRole=r=>home().some(p=>p.role===r);
+const allied=id=>state.setl[id].known&&!SETL[id].hostile&&state.setl[id].rel>=60;
+const defenseBase=()=>(B('barykada')?3:0)+(B('okiennice')?3:0)+(B('alarm')?2:0)+state.wall+(allied('osp')?2:0);
+const mealVal=()=>(B('kuchnia')?65:B('piec')?55:40)+(hasRole('cook')?10:0);
+const heatCost=()=>B('kuchnia')?1:2;
+const srvNeed=()=>B('model')?8:6;
+const buildMult=()=>(B('warsztat2')?1.25:1)*(B('model')&&state.serverOnline?1.1:1);
+function gain(o){for(const[k,v]of Object.entries(o)){state.res[k]+=v;if(k==='prad')state.res.prad=Math.min(cap(),state.res.prad)}}
+function have(cost){return Object.entries(cost).every(([k,v])=>state.res[k]>=v)}
+function pay(cost){for(const[k,v]of Object.entries(cost))state.res[k]-=v}
+function makeStranger(role){
+  const f=Math.random()<.5,used=new Set(state.people.map(p=>p.name));
+  const pool=NAMES[f?'f':'m'].filter(n=>!used.has(n));
+  const rk=role||pick(Object.keys(ROLES)),pal=pick(PAL);
+  return{name:pick(pool.length?pool:NAMES[f?'f':'m']),f,role:rk,roleName:ROLES[rk][f?'f':'m'],col:pal[0],dark:pal[1],hair:pick(HAIR)};
+}
+function admit(o,x,y){
+  const p=mkPerson(state,o,x,y);state.people.push(p);crewDirty=true;
+  state.morale=clamp(state.morale+3,0,100);log(`${p.name} ${g(p,'zamieszkał','zamieszkała')} z wami.`);
+  return p;
+}
+
+/* ---------- grid & paths ---------- */
+const blocked=new Uint8Array(W*H);
+function rebuildBlocked(){
+  blocked.fill(0);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(y===0||isNeighbor(x)||isWall(x,y))blocked[y*W+x]=1;
+  for(const rb of state.rubble)for(const[x,y]of rectTiles(rb.x,rb.y,rb.w,rb.h))blocked[y*W+x]=1;
+  for(const k of Object.keys(state.built))for(const[x,y]of blocksOf(k))blocked[y*W+x]=1;
+  for(const k of Object.keys(state.sites))for(const[x,y]of blocksOf(k))blocked[y*W+x]=1;
+  for(const[x,y]of TREES.concat(FURN))blocked[y*W+x]=1;
+}
+const walkable=(x,y)=>x>=0&&y>=0&&x<W&&y<H&&!blocked[y*W+x];
+function bfs(sx,sy,goals){
+  const start=sy*W+sx;if(goals.has(start))return[];
+  const prev=new Int16Array(W*H).fill(-1);prev[start]=start;const q=[start];let qi=0;
+  while(qi<q.length){
+    const c=q[qi++],cx=c%W,cy=(c-cx)/W;
+    for(const[dx,dy]of DIRS){
+      const nx=cx+dx,ny=cy+dy;if(nx<0||ny<0||nx>=W||ny>=H)continue;
+      const n=ny*W+nx;if(prev[n]!==-1||blocked[n])continue;prev[n]=c;
+      if(goals.has(n)){const path=[];let k=n;while(k!==start){path.push([k%W,(k-k%W)/W]);k=prev[k]}return path.reverse()}
+      q.push(n);
+    }
+  }
+  return null;
+}
+function around(tiles,self){
+  const s=new Set();
+  for(const[x,y]of tiles){if(self&&walkable(x,y))s.add(y*W+x);for(const[dx,dy]of DIRS){const nx=x+dx,ny=y+dy;if(walkable(nx,ny))s.add(ny*W+nx)}}
+  return s;
+}
+function goalsFor(task){
+  switch(task.type){
+    case 'salvage':{const rb=state.rubble.find(r=>r.id===task.id);return rb?around(rectTiles(rb.x,rb.y,rb.w,rb.h),false):null}
+    case 'build':{if(!state.sites[task.key])return null;return around(siteTiles(task.key),!!N[task.key].walk)}
+    case 'near':{if(!B(task.key))return null;return around(areaOf(task.key),!!N[task.key].walk)}
+    case 'eat':return around(FURN,false);
+    case 'trip':return task.stage==='out'?new Set(GATE.map(([x,y])=>y*W+x)):null;
+    case 'goto':return walkable(task.tx,task.ty)?new Set([task.ty*W+task.tx]):null;
+  }
+  return null;
+}
+const tileOf=p=>[Math.floor(p.x),Math.floor(p.y)];
+function route(p,task){
+  const goals=goalsFor(task);if(!goals||!goals.size)return false;
+  const[sx,sy]=tileOf(p);const path=bfs(sx,sy,goals);if(!path)return false;
+  p.task=task;p.path=path;p.acc=0;return true;
+}
+function nudge(p){
+  const[x,y]=tileOf(p);if(walkable(x,y))return;
+  const wasIn=indoor(x,y)||inHouse(x,y);let best=null,bd=1e9;
+  for(let j=0;j<H;j++)for(let i=0;i<W;i++)if(walkable(i,j)){let d=Math.abs(i-x)+Math.abs(j-y);if(wasIn!==indoor(i,j))d+=6;if(d<bd){bd=d;best=[i,j]}}
+  if(best){p.x=best[0]+.5;p.y=best[1]+.5}
+}
+let bgDirty=true,crewDirty=true,logDirty=true,todoSig='',goalSig='',techSig='',mapSig='';
+function worldChanged(){
+  rebuildBlocked();bgDirty=true;
+  for(const p of home())nudge(p);
+  for(const p of home())if(p.task&&!route(p,p.task)){p.task=null;p.path=[]}
+  todoSig='';techSig='';mapSig='';
+}
+
+/* ---------- log, hint, floats ---------- */
+const $=id=>document.getElementById(id);
+const hintEl=$('hint');
+function hint(t){hintEl.textContent=t}
+function log(txt,t){state.log.unshift({d:state.day,t:t===undefined?Math.floor(state.t):t,txt});if(state.log.length>50)state.log.length=50;logDirty=true}
+const floats=[];
+function floatAt(x,y,txt,col){floats.push({x,y,txt,col:col||'#f4e7c2',life:1.5})}
+const flashes={};
+function flash(k){flashes[k]=performance.now()}
+
+/* ---------- actions ---------- */
+let lastSpeed=1;
+function setSpeed(v){state.speed=v;if(v>0){lastSpeed=v;state.started=true}}
+function kickoff(){if(!state.started||state.speed===0)setSpeed(lastSpeed||1)}
+function select(id){
+  state.sel=id;crewDirty=true;todoSig='';techSig='';mapSig='';
+  const p=P(id);if(!p)return;
+  hint(p.away?`${p.name} jest poza domem, wraca ok. ${hhmm(p.back)}.`:`Wybrano: ${p.name}. Stuknij cel na planszy albo miejsce na mapie okolicy.`);
+}
+function nodeState(id){
+  const b=N[id];
+  if(B(id))return'built';
+  if(state.sites[id])return'site';
+  if(b.req.some(x=>!B(x)))return'lock';
+  if(b.item&&!state.items[b.item])return'item';
+  if(b.clear&&state.rubble.some(r=>r.id===b.clear))return'clear';
+  if(!have(b.cost))return'miss';
+  return'ok';
+}
+function sendBuild(p,k){
+  if(p.away){hint(`${p.name} jest poza domem.`);return}
+  if(route(p,{type:'build',key:k})){hint(`${p.name} ${g(p,'poszedł','poszła')} budować: ${N[k].name}.`);kickoff()}
+  else hint(`${p.name} nie ma jak tam dojść.`);
+}
+function startBuild(k){
+  if(state.phase!=='day'||nodeState(k)!=='ok')return;
+  pay(N[k].cost);state.sites[k]={p:0};worldChanged();log(`Zaczynacie budowę: ${N[k].name}.`);
+  const p=selPerson();if(p&&!p.away)sendBuild(p,k);else hint('Plac budowy gotowy. Wybierz mieszkańca i stuknij plac.');
+}
+function reveal(id,txt){
+  if(state.locs[id]&&!state.locs[id].known){state.locs[id].known=true;if(txt)log(txt);mapSig='';return true}
+  return false;
+}
+function revealSetl(id,txt){const st=state.setl[id];if(st.known)return;st.known=true;st.req=Math.floor(Math.random()*(SETL[id].reqs?SETL[id].reqs.length:1));log(txt||`Przez radio słychać: ${SETL[id].name}.`);mapSig=''}
+function complete(k){
+  delete state.sites[k];state.built[k]=true;state.morale=clamp(state.morale+5,0,100);
+  log(`Gotowe: ${N[k].name}.`);
+  for(const p of state.people)if(p.task&&p.task.type==='build'&&p.task.key===k){p.task=null;p.path=[]}
+  const a=areaOf(k);floatAt((a[0][0]+.5)*T,a[0][1]*T,'Gotowe','#9fd27a');
+  if(k==='radio'){revealSetl('skarpa','Radio złapało Osiedle Na Skarpie.');revealSetl('dzialki','Radio złapało Ogródki działkowe.')}
+  if(k==='antena'){revealSetl('osp','Antena złapała Remizę OSP.');reveal('hurtownia','Ktoś w eterze wspomina hurtownię elektroniki przy obwodnicy.')}
+  if(k==='serwer')hint('Serwer stoi. Wieczorem potrzebuje Prąd 6, żeby ruszyć.');
+  worldChanged();
+}
+function rate(p,kind,key){
+  if(p.sick)return 0;
+  let r=1;
+  if(kind==='salvage'){if(p.role==='raczka')r*=1.25;if(p.role==='scav')r*=1.3}
+  if(kind==='build'){const e=!!N[key].elec;if(e&&p.role==='ele')r*=1.5;if(!e&&p.role==='raczka')r*=1.5;r*=buildMult()}
+  if(state.morale<25)r*=.7;else if(state.morale>75)r*=1.15;
+  if(p.en<10)r*=.4;if(p.hp<30)r*=.6;
+  return r;
+}
+function die(p){
+  p.dead=true;p.task=null;p.path=[];p.hp=0;p.away=false;state.morale=clamp(state.morale-25,0,100);
+  log(`${p.name} nie ${g(p,'przeżył','przeżyła')}.`);
+  if(state.sel===p.id){const o=living()[0];state.sel=o?o.id:null}
+  crewDirty=true;
+  if(!living().length){state.phase='over';state.report=null;state.event=null;try{localStorage.removeItem(SAVE_KEY)}catch(e){}openSheet()}
+}
+function sendTrip(p,k){
+  const L=LOCS[k];
+  if(p.away){hint(`${p.name} już jest poza domem.`);return}
+  if(L.dist>2){hint('Za daleko na wypad za dnia. Wyprawę zaplanujecie o 20:00.');return}
+  const hrs=L.dist===1?4:7;
+  if(state.t+hrs*60+45>DAY_END){hint(`Za późno, ${p.name} nie ${g(p,'zdążyłby','zdążyłaby')} wrócić przed 20:00.`);return}
+  if(route(p,{type:'trip',loc:k,stage:'out',hrs})){hint(`${p.name} ${g(p,'poszedł','poszła')} do bramy, potem: ${L.name}. Wróci ok. ${hhmm(state.t+hrs*60+30)}.`);kickoff();crewDirty=true;mapSig=''}
+  else hint(`${p.name} nie ma jak dojść do bramy.`);
+}
+function returnTrip(p){
+  const k=p.task&&p.task.loc;const ev=[];
+  if(k)expedition(p,k,ev,'day');
+  p.away=false;p.x=14.5;p.y=1.5;p.task=null;p.path=[];
+  for(const e of ev)log(e);if(ev.length)hint(ev.join(' '));
+  floatAt(14.5*T,1.5*T-12,'Powrót');crewDirty=true;mapSig='';
+  if(p.hp<=0){die(p);return}
+  if(state.phase==='day')route(p,{type:'goto',tx:14,ty:10});
+}
+
+/* ---------- simulation ---------- */
+function step(dt){
+  if(state.phase!=='day'||state.speed===0||state.event)return;
+  const dMin=dt*state.speed*60/SEC_PER_HOUR,dh=dMin/60;
+  const h0=Math.floor(state.t/60);state.t=Math.min(DAY_END,state.t+dMin);const h1=Math.floor(state.t/60);
+  for(let h=h0+1;h<=h1;h++)onHour(h);
+  for(const p of living())updatePerson(p,dh);
+  for(const p of living())if(p.away&&state.t>=p.back)returnTrip(p);
+  if(state.phase==='day'&&!state.event&&state.t>=DAY_END)enterEvening();
+}
+function onHour(h){
+  let gen=0;
+  if(B('panel')&&!state.panelBroken&&h>=8&&h<=17)gen+=(state.winter?.7:1.2)*(B('panel2')?2:1);
+  if(B('turbina'))gen+=.4;
+  state.res.prad=Math.min(cap(),state.res.prad+gen);
+  if(h===state.evAt&&state.phase==='day'){state.evAt=-1;state.event=makeEvent();openSheet()}
+}
+function updatePerson(p,dh){
+  if(p.away){
+    p.sat=clamp(p.sat-2*dh,0,100);p.warm=clamp(p.warm+(state.winter?-3:-1.5)*dh,0,100);p.en=clamp(p.en-2*dh,0,100);
+    if(p.sat<=0)p.hp-=4*dh;if(p.warm<=0)p.hp-=4*dh;if(p.hp<=0)die(p);
+    return;
+  }
+  if(state.rules.dayEat&&p.sat<30&&state.res.jedzenie>=1&&!(p.task&&(p.task.type==='eat'||p.task.type==='trip'))){
+    const prev=p.task;if(route(p,{type:'eat'})){p.resume=prev&&prev.type!=='goto'?prev:null;p.eatT=0}
+  }
+  if(p.path.length){
+    const[tx,ty]=p.path[0];const cx=tx+.5,cy=ty+.5,dx=cx-p.x,dy=cy-p.y,d=Math.hypot(dx,dy),st=WALK*dh;
+    if(Math.abs(dx)>.01)p.face=dx>0?1:-1;
+    if(d<=st){p.x=cx;p.y=cy;p.path.shift()}else{p.x+=dx/d*st;p.y+=dy/d*st}
+    p.walkT+=dh*30;p.en-=dh;
+  }else if(p.task){
+    const k=p.task;
+    if(k.type==='salvage')salvage(p,dh);
+    else if(k.type==='build')buildTick(p,dh);
+    else if(k.type==='near'){p.en+=(k.key==='lozka'?8:4)*dh;if(k.key==='piec')p.warm+=3*dh}
+    else if(k.type==='eat'){
+      p.eatT+=dh;
+      if(p.eatT>=.5){
+        if(state.res.jedzenie>=1){state.res.jedzenie--;p.sat=Math.min(100,p.sat+mealVal());floatAt(p.x*T,p.y*T-14,'Posiłek');flash('jedzenie')}
+        p.task=null;const r=p.resume;p.resume=null;if(r)route(p,r);
+      }
+    }
+    else if(k.type==='trip'&&k.stage==='out'){p.away=true;p.back=state.t+k.hrs*60;k.stage='away';log(`${p.name} ${g(p,'wyszedł','wyszła')}: ${LOCS[k.loc].name}.`);crewDirty=true;mapSig='';return}
+    else p.task=null;
+  }else{const[x,y]=tileOf(p);p.en+=(indoor(x,y)?4:2)*dh}
+  if(p.dead)return;
+  const[x,y]=tileOf(p);
+  p.sat-=2*dh;
+  const dw=indoor(x,y)?(B('piec')&&!inGarage(x,y)?1:(state.winter?-1:-.4)):(state.winter?-3:-1.5);
+  p.warm+=dw*dh;
+  p.sat=clamp(p.sat,0,100);p.warm=clamp(p.warm,0,100);p.en=clamp(p.en,0,100);
+  if(p.sat<=0)p.hp-=4*dh;if(p.warm<=0)p.hp-=4*dh;
+  if(p.hp<=0)die(p);
+}
+function salvage(p,dh){
+  const rb=state.rubble.find(r=>r.id===p.task.id);
+  if(!rb){p.task=null;return}
+  p.en-=4*dh;p.acc+=dh*rate(p,'salvage');
+  while(p.acc>=1){
+    p.acc-=1;
+    const keys=Object.keys(rb.left).filter(k=>rb.left[k]>0);if(!keys.length)break;
+    keys.sort((a,b)=>rb.left[b]-rb.left[a]);const k=keys[0];
+    rb.left[k]--;state.res[k]++;floatAt(p.x*T,p.y*T-14,`+1 ${RL[k]}`);flash(k);
+    if(sum(rb.left)<=0){state.rubble=state.rubble.filter(r=>r!==rb);log(`${p.name}: ${rb.done}`);p.task=null;worldChanged();break}
+  }
+}
+function buildTick(p,dh){
+  const k=p.task.key,site=state.sites[k];if(!site){p.task=null;return}
+  p.en-=5*dh;site.p+=dh*rate(p,'build',k);
+  if(site.p>=N[k].work)complete(k);
+}
+
+/* ---------- map knowledge & expeditions ---------- */
+const mult=k=>Math.max(.3,1-.15*(state.locs[k].visits||0));
+function expedition(p,k,ev,mode){
+  const L=LOCS[k],st=state.locs[k],m=mult(k);st.visits++;
+  const lootMul=(mode==='day'?.7:1)*(p.role==='scav'?1.3:1)*(p.en<25?.7:1);
+  const got={};for(const[r,[a,b]]of Object.entries(L.loot)){const v=Math.round(ri(a,b)*m*lootMul);if(v>0)got[r]=v}
+  const risk=L.risk*(p.role==='med'||p.role==='guard'?.6:1)*(p.en<35?1.4:1)*(state.winter?1.2:1)*(mode==='day'?.5:1);
+  if(mode==='night')p.en-=[0,15,20,30][L.dist];
+  const tag=mode==='day'?'':' nocą';
+  if(Math.random()<risk){
+    p.hp=Math.max(5,p.hp-ri(20,40));
+    for(const r of Object.keys(got)){got[r]=Math.floor(got[r]/2);if(!got[r])delete got[r]}
+    const has=Object.keys(got).length;
+    ev.push(`${p.name} ${g(p,'trafił','trafiła')}${tag} na szabrowników ${L.name.toLowerCase().startsWith('las')?'w lesie':'w miejscu: '+L.name}. ${g(p,'Uciekł','Uciekła')}, ale ${g(p,'jest ranny','jest ranna')}.`+(has?` ${g(p,'Przyniósł','Przyniosła')}: ${costText(got)}.`:` Wszystko ${g(p,'zgubił','zgubiła')} po drodze.`));
+  }else{
+    ev.push(Object.keys(got).length?`${p.name} ${g(p,'wrócił','wróciła')}${tag} z miejsca ${L.name}: ${costText(got)}.`:`${p.name} ${g(p,'wrócił','wróciła')}${tag} z miejsca ${L.name} z pustymi rękami.`);
+    if(L.item&&!state.items[L.item]&&Math.random()<(st.visits>=2?1:.5)){state.items[L.item]=true;ev.push(`Przy okazji ${g(p,'znalazł','znalazła')}: ${ITEMS[L.item]}.`);techSig=''}
+  }
+  gain(got);
+}
+function unknownLocs(){return Object.keys(LOCS).filter(k=>!state.locs[k].known).sort((a,b)=>LOCS[a].dist-LOCS[b].dist)}
+function scout(p,ev){
+  p.en-=15;
+  if(Math.random()<.12){p.hp=Math.max(5,p.hp-ri(15,30));ev.push(`${p.name} ${g(p,'wpadł','wpadła')} na zwiadzie na szabrowników i ${g(p,'wrócił ranny','wróciła ranna')}.`);return}
+  const u=unknownLocs();
+  if(!u.length){ev.push(`${p.name} ${g(p,'obszedł','obeszła')} okolicę. Nic nowego.`);return}
+  const k=u.filter(x=>LOCS[x].dist===LOCS[u[0]].dist);const id=pick(k);reveal(id);
+  ev.push(`${p.name} ${g(p,'wrócił','wróciła')} ze zwiadu: ${LOCS[id].name}. Jest na mapie.`);
+}
+function relUp(id,n){
+  const st=state.setl[id],before=st.rel;st.rel=clamp(st.rel+n,0,100);
+  if(before<60&&st.rel>=60){log(`Sojusz: ${SETL[id].name}.`);state.morale=clamp(state.morale+5,0,100)}
+  if(id==='skarpa'&&st.rel>=30)reveal('serwerownia','Na Skarpie mówią o serwerowni banku w centrum. Ktoś jej pilnuje.');
+  mapSig='';
+}
+
+/* ---------- day events ---------- */
+function makeEvent(){
+  const s=state,al=home(),pool=[];
+  if(living().length<MAXP)pool.push(['arrival',living().length<Math.max(beds(),3)?4:2]);
+  pool.push(['trader',2],['kids',2],['neighbor',1]);
+  if(!s.flags.cat)pool.push(['cat',1]);
+  if(al.length>=2)pool.push(['fever',1]);
+  if(al.length>=3)pool.push(['quarrel',1]);
+  if(B('panel')&&!s.panelBroken)pool.push(['hail',1]);
+  if(!s.flags.cellar&&al.length)pool.push(['cellar',1]);
+  const tot=pool.reduce((a,x)=>a+x[1],0);let r=Math.random()*tot,id=pool[0][0];
+  for(const[k,w]of pool){if((r-=w)<0){id=k;break}}
+  const d={};
+  if(id==='arrival')d.cand=makeStranger();
+  if(id==='trader'){const o=TRADER.slice().sort(()=>Math.random()-.5);d.offers=[o[0],o[1]]}
+  if(id==='fever'||id==='cellar')d.pid=pick(al).id;
+  if(id==='quarrel'){const sh=al.slice().sort(()=>Math.random()-.5);d.a=sh[0].id;d.b=sh[1].id}
+  return{id,d};
+}
+function evView(e){
+  const s=state,d=e.d,mor=n=>{s.morale=clamp(s.morale+n,0,100)};
+  switch(e.id){
+    case 'arrival':{const c=d.cand;return{title:'Ktoś stoi przy bramie',text:`${c.name}, ${c.roleName.toLowerCase()}. ${g(c,'Szedł','Szła')} trzy dni od strony obwodnicy i prosi o dach nad głową. ${ROLES[c.role].perk} Miejsc na pryczach: ${beds()}, was jest ${living().length}.`,choices:[
+      {label:'Przyjąć do domu',ok:true,run:()=>{const p=admit(c,14,1);route(p,{type:'goto',tx:14,ty:10})}},
+      {label:'Dać Jedzenie 1 i odprawić',ok:s.res.jedzenie>=1,run:()=>{s.res.jedzenie--;mor(2);log(`${c.name} ${g(c,'dostał','dostała')} jedzenie na drogę.`)}},
+      {label:'Odprawić',ok:true,run:()=>{mor(-1);log(`${c.name} ${g(c,'poszedł','poszła')} dalej.`)}}]}}
+    case 'trader':return{title:'Handlarz z wózkiem',text:'Pod bramą stoi facet z wózkiem z marketu. Wymieni jedną rzecz i idzie dalej.',choices:d.offers.map(o=>({label:`Dostać ${costText(o.give)} za ${costText(o.take)}`,ok:have(o.take),run:()=>{pay(o.take);gain(o.give);log('Wymiana z handlarzem.')}})).concat([{label:'Nic nie bierzemy',ok:true,run:()=>{}}])};
+    case 'cat':return{title:'Kot pod drzwiami',text:'Chudy rudy kot siedzi pod drzwiami kuchni i patrzy w okno.',choices:[
+      {label:'Przygarnąć, dać Jedzenie 1',ok:s.res.jedzenie>=1,run:()=>{s.res.jedzenie--;s.flags.cat=1;s.flags.catOwned=1;mor(6);log('W domu jest kot.')}},
+      {label:'Przegonić',ok:true,run:()=>{s.flags.cat=1}}]};
+    case 'kids':return{title:'Dzieciaki ze złomem',text:'Dzieciaki sąsiadów przyciągnęły wózek blach i rur z rozbiórki pawilonu. Chcą coś do jedzenia.',choices:[
+      {label:'Złom 4 za Jedzenie 1',ok:s.res.jedzenie>=1,run:()=>{s.res.jedzenie-=1;gain({zlom:4});flash('zlom');log('Dzieciaki przyniosły złom.')}},
+      {label:'Złom 7 za Jedzenie 2',ok:s.res.jedzenie>=2,run:()=>{s.res.jedzenie-=2;gain({zlom:7});flash('zlom');log('Dzieciaki przyniosły złom.')}},
+      {label:'Nie teraz',ok:true,run:()=>{}}]};
+    case 'neighbor':return{title:'Pani Halina prosi o leki',text:'Wnuczka ma gorączkę i boli ją ucho. Pani Halina pyta, czy macie coś przeciwbólowego.',choices:[
+      {label:'Dać Leki 1',ok:s.res.leki>=1,run:()=>{s.res.leki--;mor(6);log('Pani Halina dostała leki dla wnuczki.')}},
+      {label:'Odmówić',ok:true,run:()=>{mor(-4)}}]};
+    case 'fever':{const p=P(d.pid);if(!p||p.dead||p.away)return{title:'Spokojny dzień',text:'Nic się nie dzieje.',choices:[{label:'Dobrze',ok:true,run:()=>{}}]};
+      return{title:`${p.name} ma gorączkę`,text:'Dreszcze i prawie czterdzieści stopni. Można dać leki albo położyć do wieczora.',choices:[
+      {label:'Dać Leki 1',ok:s.res.leki>=1,run:()=>{s.res.leki--;log(`${p.name} ${g(p,'dostał','dostała')} leki na gorączkę.`)}},
+      {label:'Niech leży do wieczora',ok:true,run:()=>{p.sick=true;p.hp=Math.max(5,p.hp-8);p.task=null;p.path=[];if(B('lozka'))route(p,{type:'near',key:'lozka'});crewDirty=true}},
+      {label:'Niech pracuje dalej',ok:true,run:()=>{p.hp=Math.max(5,p.hp-22)}}]}}
+    case 'quarrel':{const a=P(d.a),b=P(d.b);if(!a||!b||a.dead||b.dead)return{title:'Spokojny dzień',text:'Nic się nie dzieje.',choices:[{label:'Dobrze',ok:true,run:()=>{}}]};
+      return{title:'Kłótnia o racje',text:`${a.name} mówi, że ${b.name} je więcej, niż robi. Robi się głośno.`,choices:[
+      {label:'Zebranie przy stole, godzina dla wszystkich',ok:true,run:()=>{s.t=Math.min(DAY_END-1,s.t+60);mor(5);log('Zebranie przy stole. Atmosfera lepsza.')}},
+      {label:'Uciąć temat',ok:true,run:()=>{mor(-4)}}]}}
+    case 'hail':return{title:'Grad',text:'Grad wielkości orzechów zbił szybę w panelu słonecznym.',choices:[
+      {label:'Naprawić od razu: Złom 1, Elektronika 1',ok:have({zlom:1,elektronika:1}),run:()=>{pay({zlom:1,elektronika:1});log('Panel naprawiony.')}},
+      {label:'Zostawić, panel nie ładuje przez 2 dni',ok:true,run:()=>{s.panelBroken=2;log('Panel zbity, przez 2 dni nie ładuje.')}}]};
+    case 'cellar':{const p=P(d.pid);const nm=p?p.name:'Ktoś';return{title:'Zamurowana piwnica',text:`${nm} ${p?g(p,'znalazł','znalazła'):'znalazł'} za regałem zamurowane przejście do piwnicy sąsiedniego bloku.`,choices:[
+      {label:'Rozkuć przejście',ok:true,run:()=>{gain({jedzenie:3,woda:2,zlom:2,elektronika:1});if(p)p.en=Math.max(0,p.en-20);s.flags.cellar=1;log('W piwnicy były słoiki, woda i trochę złomu.')}},
+      {label:'Zostawić',ok:true,run:()=>{s.flags.cellar=1}}]}}
+  }
+  return{title:'',text:'',choices:[{label:'Dobrze',ok:true,run:()=>{}}]};
+}
+
+/* ---------- evening & night ---------- */
+function raidChance(){if(state.day<=1)return 0;let c=clamp(.12+.025*state.day-.045*state.wall,.04,.6);if(state.tribute>0)c*=.35;return c}
+function guardValue(p){return(p.hp<20?.5:(p.en>30?2.5:1.5))*(B('wieza')?1.5:1)*(p.role==='guard'?2:1)}
+const medAmount=()=>hasRole('med')?50:30;
+function enterEvening(){
+  for(const p of living())if(p.away)returnTrip(p);
+  if(state.phase!=='day')return;
+  state.t=DAY_END;state.phase='evening';
+  for(const p of state.people){p.task=null;p.path=[];p.resume=null}
+  state.raidChance=raidChance();
+  const pl={ppl:{},heat:B('piec')&&state.res.drewno>=heatCost(),gen:false};
+  let f=state.res.jedzenie,w=state.res.woda;
+  for(const p of living()){const e=f>=1,d=w>=1;if(e)f--;if(d)w--;pl.ppl[p.id]={eat:e,drink:d,night:'sleep'}}
+  state.plan=pl;
+  state.offer=pick(OFFERS);state.offerDone=false;state.wallDone=false;
+  openSheet();
+}
+function normalizePlan(){
+  const pl=state.plan,al=living();
+  for(const key of['eat','drink']){
+    const res=key==='eat'?'jedzenie':'woda';let n=al.filter(p=>pl.ppl[p.id][key]).length;
+    for(let i=al.length-1;i>=0&&n>state.res[res];i--)if(pl.ppl[al[i].id][key]){pl.ppl[al[i].id][key]=false;n--}
+  }
+  if(state.res.drewno<heatCost())pl.heat=false;
+  const woodNeed=(pl.heat?heatCost():0)+2;
+  if(pl.gen&&(!B('generator')||state.res.drewno<woodNeed))pl.gen=false;
+}
+function names(list){const n=list.map(p=>p.name);return n.length<2?n[0]:n.slice(0,-1).join(', ')+' i '+n[n.length-1]}
+function verbPl(list,m,f,mp,fp){if(list.length===1)return g(list[0],m,f);return list.every(p=>p.f)?fp:mp}
+function exactForecast(){return B('wieza')||(B('serwer')&&state.res.prad>=srvNeed())||allied('skarpa')}
+function forecast(){
+  const c=state.raidChance;
+  if(exactForecast())return `Ryzyko napadu tej nocy: ${Math.round(c*100)}%.${state.tribute>0?' Zajezdnia ma zapłacone.':''}`;
+  if(B('radio'))return c>.3?'Radio: szabrownicy kręcą się po okolicy.':'Radio: w okolicy spokojnie.';
+  return c===0?'Pierwsza noc. Nikt jeszcze nie wie, że tu jesteście.':'Nie wiecie, czy ktoś dziś przyjdzie.';
+}
+function advice(){
+  const s=state,n=living().length;
+  if(s.raidChance>.3&&defenseBase()<6)return 'Wystawcie dziś wartę. Szansa napadu jest wysoka, a obrona słaba.';
+  if(s.res.jedzenie<n*2)return 'Jedzenia jest na krótko. Najbliżej jest pawilon, a Ogródki działkowe handlują przez radio.';
+  if(s.res.woda<n*2&&!B('zbiornik'))return 'Woda się kończy. Zbiornik z mauzera rozwiąże sprawę na stałe.';
+  if(unknownLocs().length&&!B('dron'))return 'Na mapie są jeszcze białe plamy. Wyślijcie kogoś na zwiad.';
+  if(s.wall<5)return `Następny poziom muru to ${WALL[s.wall].name}: ${costText(WALL[s.wall].cost)}. Złom najszybciej przyniesie wypad do garaży albo na złomowisko.`;
+  return 'Wszystko w normie. Dbajcie o sojuszników.';
+}
+function resolveNight(){
+  const s=state,pl=s.plan,ev=[],al=living(),ms=[];
+  normalizePlan();
+  for(const p of al){
+    const pp=pl.ppl[p.id];
+    if(pp.eat&&s.res.jedzenie>=1){s.res.jedzenie--;p.sat=Math.min(100,p.sat+mealVal())}
+    else ev.push(`${p.name} ${g(p,'poszedł','poszła')} spać o pustym żołądku.`);
+    if(pp.drink&&s.res.woda>=1)s.res.woda--;
+    else{p.hp-=12;p.en-=15;ev.push(`${p.name} nie ${g(p,'pił','piła')} od rana. Pragnienie odbiera siły.`)}
+  }
+  let heated=false;
+  if(B('piec')&&pl.heat&&s.res.drewno>=heatCost()){s.res.drewno-=heatCost();heated=true;ev.push('W kozie paliło się do rana.')}
+  else ev.push(B('piec')?'Koza stała zimna. W domu było zimno.':'Bez ogrzewania noc była zimna.');
+  if(B('generator')&&pl.gen&&s.res.drewno>=2){s.res.drewno-=2;gain({prad:6});ev.push('Generator w garażu dał Prąd 6.')}
+  if(B('turbina'))gain({prad:5});
+  const guards=al.filter(p=>pl.ppl[p.id].night==='guard');
+  const defense=defenseBase()+guards.reduce((a,p)=>a+guardValue(p),0);
+  for(const p of al){const nt=pl.ppl[p.id].night;if(nt.startsWith('exp:'))expedition(p,nt.slice(4),ev,'night');else if(nt==='scout')scout(p,ev)}
+  if(Math.random()<s.raidChance){
+    const attack=2+Math.random()*(2+s.day*.55);
+    if(defense>=attack){
+      s.morale+=8;
+      ev.push(guards.length?`W nocy szabrownicy podeszli od strony garaży. ${names(guards)} ${verbPl(guards,'przegonił','przegoniła','przegonili','przegoniły')} ich.`:'Ktoś kręcił się w nocy pod oknami, ale obrona wytrzymała.');
+    }else{
+      const taken={},frac=B('skrytka')?.17:.35;
+      for(const r of['jedzenie','woda','drewno','zlom']){const v=Math.floor(s.res[r]);if(v>=1){const t=Math.max(1,Math.floor(v*frac));taken[r]=t;s.res[r]-=t}}
+      const e=Math.floor(s.res.elektronika*frac*.6);if(e>0){taken.elektronika=e;s.res.elektronika-=e}
+      s.morale-=12;
+      ev.push(`Szabrownicy weszli na podwórko i zabrali: ${costText(taken)||'niewiele, bo nic nie było'}.${B('skrytka')?' Skrytka uratowała resztę.':''}`);
+      if(guards.length){const v=pick(guards);v.hp=Math.max(5,v.hp-25);ev.push(`${v.name} ${g(v,'oberwał','oberwała')} przy drzwiach.`)}
+    }
+    if(!s.setl.zajezdnia.known){s.setl.zajezdnia.known=true;ev.push('Ślady prowadzą do zajezdni MPK. Jest na mapie.')}
+  }else ev.push('Nikt nie próbował wejść.');
+  if(s.tribute>0)s.tribute--;
+  const sleepers=al.filter(p=>pl.ppl[p.id].night==='sleep');let bedsLeft=beds();
+  for(const p of al){
+    const nt=pl.ppl[p.id].night,out=nt.startsWith('exp:')||nt==='scout';
+    p.sat-=10;
+    if(!out)p.warm=heated?Math.min(100,p.warm+35):p.warm-(s.winter?30:15);else p.warm-=s.winter?25:12;
+    if(nt==='sleep'){if(bedsLeft>0){bedsLeft--;p.en+=55}else p.en+=35}
+    else if(nt==='guard')p.en+=10;
+  }
+  if(sleepers.length>beds()&&beds()>0)ev.push(`Na pryczach zabrakło miejsca dla ${sleepers.length-beds()} osób.`);
+  if(B('studnia')){if(s.res.prad>=2){s.res.prad-=2;s.res.woda+=5;ev.push('Studnia dała Woda 5.')}else{s.res.woda+=3;ev.push('Pompa stała bez prądu, zbiornik dał Woda 3.')}}
+  else if(B('zbiornik')){const w=s.winter?2:3;s.res.woda+=w;ev.push(`Zbiornik nazbierał: Woda ${w}.`)}
+  else if(B('filtr')){const w=s.winter?1:2;s.res.woda+=w;ev.push(`Filtr nazbierał: Woda ${w}.`)}
+  let food=0;
+  if(B('szklarnia'))food+=2;else if(B('grzadki')&&!s.winter)food+=1;
+  if(food&&hasRole('garden'))food+=1;
+  if(B('kurnik')){food+=1;s.morale+=1}
+  if(food){s.res.jedzenie+=food;ev.push(`Z ogrodu: Jedzenie ${food}.`)}
+  else if(B('grzadki')&&s.winter)ev.push('Grządki zamarzły. Bez szklarni zimą nic nie urośnie.');
+  if(B('radio'))s.morale+=2;
+  if(s.flags.catOwned)s.morale+=1;
+  s.serverOnline=false;
+  if(B('serwer')){
+    const need=srvNeed();
+    if(s.res.prad>=need){
+      s.res.prad-=need;s.serverOnline=true;const pay2=B('model')?3:2;s.res.jedzenie+=pay2;s.morale+=3;
+      ev.push(`${B('model')?'Model':'Serwer'} liczył całą noc. Sąsiedzi przynieśli Jedzenie ${pay2} za porady.`);
+      if(!s.ms.server){s.ms.server=true;ms.push('server')}
+      if(B('model')&&Math.random()<.3){const u=unknownLocs();if(u.length){const id=u[0];reveal(id);ev.push(`Model przeczytał logi z radia i znalazł: ${LOCS[id].name}.`)}}
+    }else{ev.push(`Brakło prądu, ${B('model')?'model':'serwer'} stał wyłączony.`);s.morale-=4}
+  }
+  if(B('dron')&&s.res.prad>=2){const u=unknownLocs();if(u.length){s.res.prad-=2;const id=u[0];reveal(id);ev.push(`Dron obleciał okolicę i znalazł: ${LOCS[id].name}.`)}}
+  if(allied('skarpa')){s.res.elektronika+=1;ev.push('Na Skarpie przysłali Elektronika 1.')}
+  if(allied('dzialki')){s.res.jedzenie+=2;ev.push('Z Ogródków przyszło Jedzenie 2.')}
+  for(const p of al){
+    p.sat=clamp(p.sat,0,100);p.warm=clamp(p.warm,0,100);p.en=clamp(p.en,0,100);
+    if(p.sat<=0){p.hp-=20;s.morale-=6;ev.push(`${p.name} ${g(p,'jest wygłodzony','jest wygłodzona')}.`)}
+    if(p.warm<=0){p.hp-=20;s.morale-=4;ev.push(`${p.name} ${g(p,'przemarzł','przemarzła')} do kości.`)}
+    if(p.sat>40&&p.warm>40)p.hp+=8;
+    p.hp=clamp(p.hp,0,100);p.sick=false;
+  }
+  s.morale-=2;
+  for(const p of al)if(p.hp<=0){p.dead=true;p.task=null;s.morale-=25;ev.push(`${p.name} nie ${g(p,'doczekał','doczekała')} rana.`)}
+  if(allied('osp')&&!s.flags.ospPerson&&living().length<MAXP){
+    s.flags.ospPerson=1;const c=makeStranger('guard');c.roleName=c.f?'Strażaczka':'Strażak';
+    admit(c,14,1);ev.push(`Remiza przysłała do was: ${c.name}, ${c.roleName.toLowerCase()}.`);
+  }
+  if(s.panelBroken>0)s.panelBroken--;
+  s.morale=clamp(s.morale,0,100);
+  for(const e of ev)log(e,'noc');
+  s.day++;
+  if(s.day>=8&&!s.winter){s.winter=true;bgDirty=true;ev.push('Spadł pierwszy śnieg. Na dworze szybciej się marznie, grządki bez szklarni nic nie dadzą, a panel daje mniej prądu.')}
+  const anyAlly=Object.keys(SETL).some(allied);
+  if(!s.ms.final&&s.wall>=5&&B('model')&&s.serverOnline&&anyAlly&&living().length>=5){s.ms.final=true;ms.push('final')}
+  s.report={events:ev,ms};
+  if(!selPerson()){const o=living()[0];s.sel=o?o.id:null}
+  crewDirty=true;mapSig='';techSig='';todoSig='';
+  if(!living().length){s.phase='over';try{localStorage.removeItem(SAVE_KEY)}catch(e){}}
+  else s.phase='report';
+  openSheet();
+}
+function startDay(){
+  const s=state;s.phase='day';s.t=DAY_START;s.plan=null;s.report=null;
+  living().forEach((p,i)=>{const sp=BED_SPOTS[i%BED_SPOTS.length];p.x=sp[0]+.5;p.y=sp[1]+.5;p.task=null;p.path=[];p.away=false;p.resume=null});
+  if(!selPerson()){const o=living()[0];s.sel=o?o.id:null}
+  for(const k in s.setl){const st=s.setl[k];if(st.known&&SETL[k].reqs&&(st.reqDone||s.day%3===0)){st.req=Math.floor(Math.random()*SETL[k].reqs.length);st.reqDone=false}}
+  s.evAt=s.day>=2&&Math.random()<.85?ri(9,16):-1;
+  if(s.speed===0)setSpeed(lastSpeed||1);
+  closeSheet();worldChanged();crewDirty=true;save();
+  hint(`Dzień ${s.day}. Wybierz mieszkańca i daj mu robotę.`);
+}
+
+/* ---------- sheet ---------- */
+const overlay=$('overlay'),sheet=$('sheet');
+function stat(label,v){return `<span class="${v<25?'low':''}">${label} ${Math.round(v)}</span>`}
+function nightOptions(p,cur){
+  const sel=v=>cur===v?' selected':'';
+  let o=`<option value="sleep"${sel('sleep')}>Śpi</option><option value="guard"${sel('guard')}>Pilnuje domu</option>`;
+  const can=p.en>=20&&p.hp>=25;
+  o+=`<option value="scout"${sel('scout')}${can?'':' disabled'}>Zwiad: szukać nowych miejsc</option>`;
+  for(const k of Object.keys(LOCS).filter(x=>state.locs[x].known).sort((a,b)=>LOCS[a].dist-LOCS[b].dist)){
+    const L=LOCS[k],ok=can&&(L.dist<3||p.en>=35),pct=Math.round((1-mult(k))*100);
+    o+=`<option value="exp:${k}"${sel('exp:'+k)}${ok?'':' disabled'}>Wyprawa: ${L.name} (${distWord(L.dist)}, ryzyko ${riskWord(L.risk)}${pct?`, przeszukane w ${pct}%`:''})</option>`;
+  }
+  return o;
+}
+function renderEvening(){
+  normalizePlan();
+  const s=state,pl=s.plan,al=living();
+  const eatN=al.filter(p=>pl.ppl[p.id].eat).length,drinkN=al.filter(p=>pl.ppl[p.id].drink).length;
+  let h=`<p class="kicker">Wieczór · 20:00 · ${s.winter?'zima':'jesień'}</p>
+  <h2 id="sheet-title">Dzień ${s.day}. Co robicie w nocy?</h2>
+  <p class="lead">${forecast()}</p>`;
+  if(B('serwer')&&s.res.prad>=srvNeed())h+=`<p class="ai">${B('model')?'Model':'Serwer'} radzi: ${advice()}</p>`;
+  h+=`<p class="small">Obrona bez warty: ${defenseBase()}. Każda osoba na warcie dodaje od 1,5 do 2,5${B('wieza')?', z wieży półtora raza więcej':''}. Po kolacji zostaje Jedzenie ${s.res.jedzenie-eatN}, Woda ${s.res.woda-drinkN}. Miejsc na pryczach: ${beds()}.</p>
+  <h3>Ludzie</h3>`;
+  for(const p of al){
+    const pp=pl.ppl[p.id];
+    const canEat=pp.eat||s.res.jedzenie-eatN>=1,canDrink=pp.drink||s.res.woda-drinkN>=1;
+    h+=`<div class="prow"><div class="who"><b>${p.name}</b><span class="role">${p.roleName}</span>
+      <div class="stats">${stat('Najedzenie',p.sat)} · ${stat('Ciepło',p.warm)} · ${stat('Siły',p.en)} · ${stat('Zdrowie',p.hp)}</div></div>
+      <div class="ctrl">
+        <button class="btn" data-act="eat" data-id="${p.id}" id="eat-${p.id}" aria-pressed="${pp.eat}"${canEat?'':' disabled'}>Kolacja</button>
+        <button class="btn" data-act="drink" data-id="${p.id}" id="drink-${p.id}" aria-pressed="${pp.drink}"${canDrink?'':' disabled'}>Woda</button>
+        <select data-act="night" data-id="${p.id}" id="night-${p.id}" aria-label="Noc: ${p.name}">${nightOptions(p,pp.night)}</select>
+        ${p.hp<100?`<button class="btn" data-act="med" data-id="${p.id}" id="med-${p.id}"${s.res.leki>=1?'':' disabled'}>Leki, Zdrowie +${medAmount()}</button>`:''}
+      </div></div>`;
+  }
+  h+=`<p class="small">Leki w domu: ${s.res.leki}. Wyprawa wymaga Siły co najmniej 20 i Zdrowia 25, daleka Siły 35.</p><h3>Dom</h3>`;
+  if(B('piec'))h+=`<label class="check"><input type="checkbox" id="heat"${pl.heat?' checked':''}${s.res.drewno>=heatCost()?'':' disabled'}> Palić w kozie całą noc (Drewno ${heatCost()}, w domu: ${s.res.drewno})</label>`;
+  else h+=`<p>Bez kozy noc będzie zimna: Ciepło −${s.winter?30:15} dla każdego w domu.</p>`;
+  if(B('generator'))h+=`<label class="check"><input type="checkbox" id="gen"${pl.gen?' checked':''}> Odpalić generator: Drewno 2 na Prąd 6 (prąd: ${Math.floor(s.res.prad)}/${cap()})</label>`;
+  if(B('serwer'))h+=`<p class="small">${B('model')?'Model':'Serwer'} potrzebuje w nocy Prąd ${srvNeed()}, jest ${Math.floor(s.res.prad)}${B('turbina')?', wiatrak dorzuci 5':''}.</p>`;
+  h+=`<h3>Osiedle</h3>`;
+  if(s.wall>=5)h+=`<p>Mur osiedla gotowy, poziom 5 z 5.</p>`;
+  else{const L=WALL[s.wall];h+=`<p>Mur osiedla: poziom ${s.wall} z 5. Następny: ${L.name}. Każdy poziom to mniej napadów i obrona +1. Sąsiedzi dają robociznę, wy materiał.</p><div class="ctrl">`;
+    h+=s.wallDone?`<span>Dziś już dołożyliście.</span>`:`<button class="btn" data-act="wall" id="wall-btn"${have(L.cost)?'':' disabled'}>Dołóż: ${costText(L.cost)}</button>`;h+=`</div>`}
+  const o=s.offer;
+  if(o){h+=`<p>${o.who} da ${costText(o.give)} za ${costText(o.take)}.</p><div class="ctrl">${s.offerDone?'<span>Wymienione.</span>':`<button class="btn" data-act="offer" id="offer-btn"${have(o.take)?'':' disabled'}>Wymień</button>`}</div>`}
+  h+=`<div class="foot"><button class="btn go" data-act="night-go" id="night-go">Zacznij noc</button></div>`;
+  return h;
+}
+function renderReport(){
+  const r=state.report;
+  let h=`<p class="kicker">Rano · 06:00 · ${state.winter?'zima':'jesień'}</p><h2 id="sheet-title">Dzień ${state.day}</h2>`;
+  if(r.ms.includes('server'))h+=`<div class="ms"><span class="stamp">Serwer działa</span><p>Pierwsze AI na osiedlu. Wieczorem znacie ryzyko napadu i dostajecie radę, a sąsiedzi płacą jedzeniem za porady.</p></div>`;
+  if(r.ms.includes('final'))h+=`<div class="ms"><span class="stamp">Osiedle samodzielne</span><p>Mur stoi, jest sojusznik, pięcioro ludzi i własny model językowy. Tu kończy się wersja 0.2. Możecie grać dalej.</p></div>`;
+  h+=`<ul class="events">${r.events.map(e=>`<li>${e}</li>`).join('')}</ul><div class="foot"><button class="btn go" data-act="morning" id="morning">Do roboty</button></div>`;
+  return h;
+}
+function renderOver(){
+  let h=`<p class="kicker">Koniec</p><h2 id="sheet-title">Dom opustoszał</h2><p>Przetrwaliście do dnia ${state.day}.</p>`;
+  if(state.report)h+=`<ul class="events">${state.report.events.map(e=>`<li>${e}</li>`).join('')}</ul>`;
+  return h+`<div class="foot"><button class="btn go" data-act="restart" id="restart">Nowa gra</button></div>`;
+}
+function renderEvent(){
+  const v=evView(state.event);
+  return `<p class="kicker">Za dnia · ${hhmm(state.t)}</p><h2 id="sheet-title">${v.title}</h2><p>${v.text}</p><div class="choices">${v.choices.map((c,i)=>`<button class="btn choice${i===0?' go':''}" data-act="ev" data-i="${i}" id="ev-${i}"${c.ok?'':' disabled'}>${c.label}</button>`).join('')}</div>`;
+}
+function renderSheet(){
+  const a=document.activeElement,fid=a&&sheet.contains(a)?a.id:null;
+  const ph=state.phase;
+  sheet.innerHTML=ph==='over'?renderOver():state.event?renderEvent():ph==='evening'?renderEvening():ph==='report'?renderReport():'';
+  if(fid){const el=document.getElementById(fid);if(el&&!el.disabled)el.focus({preventScroll:true})}
+}
+function openSheet(){overlay.hidden=false;renderSheet();overlay.scrollTop=0;const b=sheet.querySelector('.btn.go:not(:disabled)')||sheet.querySelector('.btn:not(:disabled)');if(b)b.focus({preventScroll:true})}
+function closeSheet(){overlay.hidden=true;sheet.innerHTML=''}
+sheet.addEventListener('click',e=>{
+  const b=e.target.closest('button[data-act]');if(!b||b.disabled)return;
+  const s=state,id=b.dataset.id,act=b.dataset.act;
+  if(act==='ev'){
+    if(!s.event)return;const v=evView(s.event),c=v.choices[+b.dataset.i];if(!c||!c.ok)return;
+    s.event=null;c.run();s.morale=clamp(s.morale,0,100);closeSheet();crewDirty=true;todoSig='';techSig='';mapSig='';
+    if(s.phase==='day'&&s.t>=DAY_END)enterEvening();
+    return;
+  }
+  if(act==='eat'||act==='drink'){
+    const res=act==='eat'?'jedzenie':'woda',pp=s.plan.ppl[id];
+    if(!pp[act]){const n=living().filter(p=>s.plan.ppl[p.id][act]).length;if(s.res[res]-n<1)return}
+    pp[act]=!pp[act];
+  }else if(act==='med'){
+    const p=P(id);if(s.res.leki<1)return;s.res.leki--;p.hp=Math.min(100,p.hp+medAmount());log(`${p.name} ${g(p,'dostał','dostała')} leki.`);
+  }else if(act==='wall'){
+    const L=WALL[s.wall];if(!L||s.wallDone||!have(L.cost))return;pay(L.cost);s.wall++;s.wallDone=true;s.morale=clamp(s.morale+4,0,100);bgDirty=true;log(`Mur osiedla: ${L.name}. Poziom ${s.wall}.`);
+  }else if(act==='offer'){
+    const o=s.offer;if(s.offerDone||!have(o.take))return;pay(o.take);gain(o.give);s.offerDone=true;s.morale=clamp(s.morale+2,0,100);log(`Wymiana: ${o.who}.`);
+  }else if(act==='night-go'){resolveNight();return}
+  else if(act==='morning'){startDay();return}
+  else if(act==='restart'){restart();return}
+  renderSheet();
+});
+sheet.addEventListener('change',e=>{
+  const t=e.target;if(!state.plan)return;
+  if(t.dataset&&t.dataset.act==='night'){state.plan.ppl[t.dataset.id].night=t.value;renderSheet()}
+  else if(t.id==='heat'){state.plan.heat=t.checked;renderSheet()}
+  else if(t.id==='gen'){state.plan.gen=t.checked;renderSheet()}
+});
+
+/* ---------- save ---------- */
+function save(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(state))}catch(e){}}
+function load(){try{const t=localStorage.getItem(SAVE_KEY);if(!t)return null;const s=JSON.parse(t);if(s&&s.v===2&&Array.isArray(s.people)&&s.phase==='day'&&!s.event)return s}catch(e){}return null}
+const INTRO='Wybierz mieszkańca (karta po prawej albo postać na planszy), potem stuknij gruz na podwórku. Na Warsztat brakuje jeszcze Złomu 1.';
+function restart(){
+  try{localStorage.removeItem(SAVE_KEY)}catch(e){}
+  state=newGame();floats.length=0;closeSheet();mapSel=null;worldChanged();crewDirty=true;logDirty=true;goalSig='';
+  log('Prąd nie wrócił od wiosny. Trzeba się urządzić przed zimą.');hint(INTRO);
+}
+
+/* ---------- pixel art: lot ---------- */
+function r(c,x,y,w,h,col){c.fillStyle=col;c.fillRect(x,y,w,h)}
+function mk(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c}
+const ground=mk(W*T,H*T),bg=mk(W*T,H*T),world=mk(W*T,H*T),mapBg=mk(W*T,H*T);
+const gctx=ground.getContext('2d'),bctx=bg.getContext('2d'),wctx=world.getContext('2d'),mctx=mapBg.getContext('2d');
+function grass(c,X,Y,R){r(c,X,Y,16,16,'#535a39');const pal=['#495031','#5f6741','#666e45','#6b5b44','#47402f'];for(let i=0;i<16;i++)r(c,X+Math.floor(R()*16),Y+Math.floor(R()*16),1,1,pal[Math.floor(R()*pal.length)]);if(R()<.4){const tx=X+Math.floor(R()*13),ty=Y+Math.floor(R()*13);r(c,tx,ty,1,2,'#727b4a');r(c,tx+2,ty-1,1,3,'#727b4a')}}
+function slab(c,X,Y,R){r(c,X,Y,16,16,'#7a7c76');r(c,X,Y,16,1,'#8b8d87');r(c,X,Y+15,16,1,'#5f615c');r(c,X+15,Y,1,16,'#5f615c');for(let i=0;i<5;i++)r(c,X+Math.floor(R()*15),Y+Math.floor(R()*15),1,1,R()<.5?'#666862':'#868882');if(R()<.3)r(c,X+Math.floor(R()*12),Y+14,3,1,'#5d6a3e')}
+function drawGround(){
+  const c=gctx,R=mulberry(20261016);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const X=x*T,Y=y*T;
+    if(y===0){r(c,X,Y,16,16,'#3f3a30');continue}
+    if(isNeighbor(x)){r(c,X,Y,16,16,'#4a5133');for(let i=0;i<10;i++)r(c,X+Math.floor(R()*16),Y+Math.floor(R()*16),1,1,R()<.5?'#424a2e':'#57603c');continue}
+    if(inHouse(x,y)||inGarage(x,y))continue;
+    if(isPath(x,y))slab(c,X,Y,R);else grass(c,X,Y,R);
+  }
+  // neighbours: roofs and fences
+  r(c,0,9*T,32,7*T,'#7d4434');for(let k=0;k<7*T;k+=4)r(c,0,9*T+k+3,32,1,'#6a3a2c');r(c,30,9*T,2,7*T,'#5e3226');
+  r(c,28*T,8*T,32,7*T,'#7d4434');for(let k=0;k<7*T;k+=4)r(c,28*T,8*T+k+3,32,1,'#6a3a2c');r(c,28*T,8*T,2,7*T,'#5e3226');
+  for(let y=1;y<H;y++){r(c,2*T-2,y*T,2,16,'#6b5034');r(c,28*T,y*T+5,2,2,'#6b5034');r(c,2*T-3,y*T+4,1,2,'#8c6a44');r(c,28*T,y*T,2,16,y>=8&&y<=14?'#5e3226':'#6b5034')}
+  // house
+  for(let y=9;y<=17;y++)for(let x=6;x<=22;x++){
+    const X=x*T,Y=y*T;
+    if(isHouseWall(x,y)){
+      r(c,X,Y,16,16,'#7f4a35');
+      for(let k=0;k<4;k++){r(c,X,Y+k*4+3,16,1,'#5a3226');const off=((k+x+y)%2)*4;for(let j=off;j<16;j+=8)r(c,X+j,Y+k*4,1,3,'#5a3226')}
+      for(let i=0;i<4;i++)r(c,X+Math.floor(R()*16),Y+Math.floor(R()*16),1,1,'#93573f');
+    }else if(isDoor(x,y)){
+      r(c,X,Y,16,16,'#7b8784');r(c,X,Y+1,3,14,'#5b3b22');r(c,X+1,Y+2,1,12,'#6e4a2c');r(c,X+2,Y+8,1,1,'#c9b26a');r(c,X,Y,16,1,'#4e5152');
+    }else if(x<=11){
+      r(c,X,Y,16,16,'#6b6e6a');for(let i=0;i<10;i++)r(c,X+Math.floor(R()*16),Y+Math.floor(R()*16),1,1,R()<.5?'#626562':'#767975');
+      if(R()<.2)r(c,X+3+Math.floor(R()*8),Y+4+Math.floor(R()*8),4,2,'#545756');
+    }else if(x<=16){
+      for(let j=0;j<4;j++)for(let i=0;i<4;i++)r(c,X+i*4,Y+j*4,4,4,(i+j)%2?'#7b8784':'#6d7875');
+    }else{
+      r(c,X,Y,16,16,'#6f5034');for(let k=0;k<4;k++){r(c,X,Y+k*4+3,16,1,'#5a3f28');if(R()<.6)r(c,X+Math.floor(R()*15),Y+k*4,1,3,'#5a3f28')}
+    }
+  }
+  // garage
+  for(let y=10;y<=15;y++)for(let x=23;x<=27;x++){
+    const X=x*T,Y=y*T;
+    if(isGarageWall(x,y)){r(c,X,Y,16,16,'#8a8d88');for(let k=0;k<4;k++){r(c,X,Y+k*4+3,16,1,'#6d706b');const off=((k+x)%2)*6;for(let j=off;j<16;j+=12)r(c,X+j,Y+k*4,1,3,'#6d706b')}}
+    else{r(c,X,Y,16,16,'#686b67');for(let i=0;i<8;i++)r(c,X+Math.floor(R()*16),Y+Math.floor(R()*16),1,1,'#5f625e');if(R()<.3)r(c,X+4,Y+6,5,3,'#4f5250')}
+  }
+  for(let x=24;x<=26;x++)r(c,x*T,10*T,16,2,'#4e5152');
+  // windows
+  for(const[x,y]of WINDOWS){const X=x*T,Y=y*T;
+    if(y===9){r(c,X+3,Y+5,10,6,'#2e3a40');r(c,X+4,Y+6,8,4,'#58798a');r(c,X+8,Y+6,1,4,'#2e3a40');r(c,X+5,Y+7,2,1,'#b9d0da')}
+    else{r(c,X+5,Y+3,6,10,'#2e3a40');r(c,X+6,Y+4,4,8,'#58798a');r(c,X+6,Y+8,4,1,'#2e3a40');r(c,X+7,Y+5,1,2,'#b9d0da')}}
+  // kitchen table and stools
+  r(c,14*T+1,13*T+3,30,11,'#6b4f31');r(c,14*T+2,13*T+3,28,9,'#8c6a44');r(c,14*T+2,13*T+7,28,1,'#7d5d3a');r(c,14*T+9,13*T+5,4,3,'#d8d4c7');r(c,14*T+19,13*T+6,3,2,'#7a8288');
+  r(c,13*T+9,13*T+6,5,5,'#5b4129');r(c,16*T+2,13*T+6,5,5,'#5b4129');
+}
+function snowPass(c){
+  const R=mulberry(99);
+  for(let y=1;y<H;y++)for(let x=0;x<W;x++){
+    if(inHouse(x,y)||inGarage(x,y))continue;const X=x*T,Y=y*T;
+    for(let i=0;i<26;i++)r(c,X+Math.floor(R()*16),Y+Math.floor(R()*16),1,1,R()<.5?'#e6ecef':'#cdd6db');
+    if(R()<.5)r(c,X+Math.floor(R()*11),Y+Math.floor(R()*13),5,3,'#dfe6ea');
+  }
+}
+function drawWallRow(c,L){
+  for(let x=0;x<W;x++){
+    if(x===14||x===15)continue;const X=x*T;
+    if(L<=0){
+      const hole=(x===5||x===22),ymax=hole?7:14;
+      for(let yy=3;yy<ymax;yy++)for(let xx=0;xx<16;xx++)if(((xx+yy)%4===0)||((xx-yy+64)%4===0))r(c,X+xx,yy,1,1,'#7c8186');
+      r(c,X,3,16,1,'#8a8f94');if(x%3===0){r(c,X+7,1,2,14,'#5d6165');r(c,X+7,1,2,1,'#8a8f94')}
+    }
+    if(L===1||L===2){
+      for(let k=0;k<16;k+=4){r(c,X+k,2,3,12,'#8c6a44');r(c,X+k,2,3,1,'#a5825a');r(c,X+k+1,1,1,1,'#8c6a44')}
+      r(c,X,6,16,1,'#5b4129');r(c,X,11,16,1,'#5b4129');
+    }
+    if(L===2){const grey=x%4===1;r(c,X,5,16,9,grey?'#7d8287':'#8a5d3c');for(let k=1;k<16;k+=3)r(c,X+k,5,1,9,grey?'#666b70':'#6e4a30');if((x*7)%5===0)r(c,X+4,8,4,3,'#a3622f');r(c,X,5,16,1,'#a5aaae')}
+    if(L>=3){r(c,X,2,16,12,'#9e9d95');r(c,X,2,16,1,'#bab9b0');r(c,X+15,2,1,12,'#7d7c75');r(c,X,13,16,1,'#7d7c75');if(x%3===1)r(c,X+3,6,2,5,'#8c8b83');if(x%5===2)r(c,X+9,4,1,6,'#86857d')}
+    if(L>=4){for(let k=0;k<16;k+=2)r(c,X+k,k%4===0?0:1,1,1,'#5b5f63');r(c,X,1,16,1,'#6c7075')}
+  }
+  const GX=14*T;
+  if(L<3){for(const X0 of[GX,GX+16]){r(c,X0+1,3,14,10,'#7a4a2c');r(c,X0+2,4,12,8,'#3f3a30');for(let k=0;k<4;k++)r(c,X0+3+k*3,4,1,8,'#7a4a2c')}r(c,GX+15,3,2,10,'#3f3a30')}
+  else{r(c,GX,2,32,12,'#55606a');r(c,GX,2,32,1,'#7d8994');r(c,GX+15,2,2,12,'#3f4850');r(c,GX,7,32,2,'#47515a');for(let k=0;k<5;k++){r(c,GX+3+k*6,4,1,1,'#8a96a0');r(c,GX+3+k*6,11,1,1,'#8a96a0')}}
+  r(c,GX-2,0,2,16,'#4a4e52');r(c,GX+32,0,2,16,'#4a4e52');
+  if(L>=5){r(c,GX-5,0,2,15,'#3c3f42');r(c,GX-7,0,6,2,'#e6a540')}
+}
+function drawTree(c,x,y,winter){
+  const X=x*T,Y=y*T;r(c,X+3,Y+12,11,3,'rgba(0,0,0,.25)');r(c,X+7,Y+10,2,4,'#4a3526');
+  if(!winter){r(c,X+3,Y+3,10,8,'#7b5a26');r(c,X+2,Y+5,12,4,'#7b5a26');r(c,X+5,Y+2,6,10,'#7b5a26');r(c,X+4,Y+4,4,3,'#a3672b');r(c,X+9,Y+6,3,3,'#a3672b');r(c,X+6,Y+9,3,2,'#94742e');r(c,X+5,Y+3,2,1,'#b9813a')}
+  else{r(c,X+7,Y+2,2,10,'#4a3526');r(c,X+3,Y+5,10,1,'#4a3526');r(c,X+4,Y+3,1,2,'#4a3526');r(c,X+11,Y+3,1,2,'#4a3526');r(c,X+5,Y+8,6,1,'#4a3526');r(c,X+3,Y+4,3,1,'#e6ecef');r(c,X+9,Y+4,3,1,'#e6ecef');r(c,X+7,Y+1,2,1,'#e6ecef')}
+}
+function drawRubble(c,rb){
+  const X=rb.x*T,Y=rb.y*T;
+  switch(rb.id){
+    case 'palety':r(c,X+3,Y+12,27,3,'rgba(0,0,0,.25)');r(c,X+3,Y+2,26,11,'#5e452c');for(let k=0;k<6;k++)r(c,X+3+k*5,Y+2,3,11,'#a07b4f');r(c,X+3,Y+2,26,1,'#b8915f');r(c,X+6,Y+5,21,2,'#b08757');r(c,X+6,Y+9,21,2,'#b08757');break;
+    case 'meble':r(c,X+2,Y+12,28,3,'rgba(0,0,0,.25)');r(c,X+2,Y+3,12,10,'#6b4a2e');r(c,X+3,Y+4,10,3,'#8a6440');r(c,X+3,Y+8,10,4,'#7a5636');r(c,X+7,Y+9,2,1,'#c9b26a');r(c,X+16,Y+5,13,7,'#7b6a5a');r(c,X+17,Y+6,11,5,'#8f7d6a');r(c,X+18,Y+2,2,4,'#5b4129');r(c,X+26,Y+2,2,4,'#5b4129');break;
+    case 'szopa':r(c,X+2,Y+5,44,24,'rgba(0,0,0,.2)');r(c,X+3,Y+3,26,14,'#8a5a3a');for(let k=0;k<26;k+=3)r(c,X+3+k,Y+3,1,14,'#6d4630');r(c,X+8,Y+6,4,3,'#a3622f');r(c,X+20,Y+11,3,4,'#a3622f');r(c,X+3,Y+3,26,1,'#a87150');r(c,X+6,Y+19,30,3,'#8c6a44');r(c,X+6,Y+19,30,1,'#a5825a');r(c,X+14,Y+24,26,3,'#7a5a3a');r(c,X+34,Y+5,3,20,'#8c6a44');r(c,X+2,Y+21,3,9,'#5b4129');break;
+    case 'gruz':r(c,X+2,Y+12,28,3,'rgba(0,0,0,.25)');r(c,X+2,Y+6,8,7,'#8b8c88');r(c,X+2,Y+6,8,1,'#a8a9a4');r(c,X+9,Y+3,9,10,'#76786f');r(c,X+9,Y+3,9,1,'#94958f');r(c,X+17,Y+7,10,6,'#9a9b95');r(c,X+20,Y+4,6,4,'#6f716d');r(c,X+12,Y+1,1,6,'#7a3f2a');r(c,X+12,Y+1,4,1,'#7a3f2a');r(c,X+24,Y+2,1,5,'#7a3f2a');break;
+    case 'wrak':r(c,X+4,Y+6,42,25,'rgba(0,0,0,.28)');r(c,X+3,Y+4,41,23,'#8e3b30');r(c,X+5,Y+2,37,27,'#8e3b30');r(c,X+5,Y+2,37,1,'#a8524a');r(c,X+14,Y+7,15,17,'#a3463a');r(c,X+30,Y+6,6,19,'#2e3c43');r(c,X+31,Y+9,1,1,'#b8cdd6');r(c,X+32,Y+10,1,2,'#b8cdd6');r(c,X+9,Y+8,4,15,'#2e3c43');r(c,X+8,Y+6,6,4,'#a3622f');r(c,X+33,Y+21,7,5,'#9a5a2c');r(c,X+20,Y+24,5,3,'#a3622f');r(c,X+9,Y,6,2,'#1c1c1c');r(c,X+9,Y+29,6,2,'#1c1c1c');r(c,X+32,Y,6,2,'#1c1c1c');r(c,X+32,Y+29,6,2,'#1c1c1c');r(c,X+43,Y+8,2,3,'#d8c98a');break;
+    case 'elektro':r(c,X+1,Y+12,14,3,'rgba(0,0,0,.25)');r(c,X+1,Y+3,9,8,'#cfcac0');r(c,X+2,Y+4,7,5,'#2a3034');r(c,X+8,Y+9,7,5,'#3f7a46');r(c,X+10,Y+10,3,2,'#1b1d1f');r(c,X+1,Y+12,6,1,'#2b2b2b');r(c,X+11,Y+2,1,6,'#b33a2a');r(c,X+12,Y+2,3,1,'#b33a2a');break;
+    case 'zlomplot':r(c,X+2,Y+12,28,3,'rgba(0,0,0,.25)');r(c,X+2,Y+5,10,7,'#7d8287');for(let k=2;k<12;k+=3)r(c,X+k,Y+5,1,7,'#666b70');r(c,X+12,Y+3,8,9,'#8a5d3c');r(c,X+20,Y+7,9,5,'#6f716d');r(c,X+4,Y+2,18,1,'#55595d');r(c,X+22,Y+4,1,8,'#55595d');r(c,X+16,Y+6,3,2,'#a3622f');break;
+    case 'garaz':r(c,X+2,Y+3,44,26,'rgba(0,0,0,.2)');r(c,X+2,Y+2,14,12,'#6b4a2e');r(c,X+3,Y+3,12,10,'#8a6440');r(c,X+18,Y+3,12,8,'#7d8287');r(c,X+19,Y+4,10,6,'#8f949a');r(c,X+32,Y+2,12,13,'#3f4245');r(c,X+33,Y+3,10,5,'#2b2d2f');r(c,X+6,Y+17,16,10,'#7a5a3a');r(c,X+7,Y+18,14,2,'#93704a');r(c,X+26,Y+18,6,9,'#b33a2a');r(c,X+27,Y+19,4,2,'#d8d4c7');r(c,X+36,Y+18,8,8,'#55595d');r(c,X+38,Y+20,4,4,'#2b2b2b');break;
+  }
+}
+function drawBuilt(c,k){
+  const b=N[k],X=b.at[0]*T,Y=b.at[1]*T;
+  switch(k){
+    case 'warsztat':
+      r(c,X+1,Y+2,30,12,'#6b4f31');r(c,X+2,Y+3,28,10,'#8c6a44');r(c,X+2,Y+6,28,1,'#7d5d3a');r(c,X+2,Y+10,28,1,'#7d5d3a');
+      r(c,X+3,Y+3,6,5,'#7a8288');r(c,X+4,Y+4,4,1,'#a7aeb3');r(c,X+12,Y+9,10,2,'#c1c6ca');
+      if(B('warsztat2')){r(c,X+23,Y+3,7,6,'#d9b23a');r(c,X+24,Y+4,5,2,'#2b2b2b');r(c,X+28,Y+7,1,1,'#de5a43');r(c,X+20,Y+11,8,1,'#2b2b2b')}
+      else{r(c,X+20,Y+4,3,3,'#9aa1a6');r(c,X+14,Y+5,8,1,'#5b4129')}
+      if(B('dron')){for(const[dx,dy]of[[11,3],[18,3],[11,8],[18,8]])r(c,X+dx,Y+dy,3,2,'#3a3d40');r(c,X+14,Y+5,4,3,'#d8d4c7');r(c,X+13,Y+4,6,1,'#2b2b2b');r(c,X+13,Y+8,6,1,'#2b2b2b')}
+      break;
+    case 'piec':
+      if(B('kuchnia')){r(c,X+1,Y+3,14,12,'#7a4a35');for(let k2=0;k2<3;k2++)r(c,X+1,Y+6+k2*3,14,1,'#5a3226');r(c,X+2,Y+3,12,3,'#2b2b2b');r(c,X+3,Y+1,5,4,'#7a8288');r(c,X+4,Y+1,3,1,'#9aa1a6');r(c,X+9,Y+2,4,2,'#3c3f42');r(c,X+5,Y+9,6,4,'#202224')}
+      else{r(c,X+3,Y+4,10,10,'#2f3133');r(c,X+4,Y+3,8,12,'#3c3f42');r(c,X+4,Y+3,8,1,'#55595d');r(c,X+6,Y+9,4,3,'#202224');r(c,X+7,Y,2,4,'#55595d')}
+      break;
+    case 'lozka':{
+      const cols=[['#5b6f8f','#71859f'],['#8f5b5b','#a57272'],['#6f8f5b','#86a372'],['#8f7a4a','#a5905e']];
+      for(let i=0;i<4;i++){const X2=X+i*T;r(c,X2+1,Y+1,14,30,'#7a5a38');r(c,X2+2,Y+2,12,28,'#a9a49a');r(c,X2+3,Y+3,10,5,'#d6d1c4');r(c,X2+2,Y+12,12,18,cols[i][0]);r(c,X2+2,Y+12,12,2,cols[i][1]);
+        if(B('lozka2')){r(c,X2+1,Y+1,2,30,'#5b4129');r(c,X2+13,Y+1,2,30,'#5b4129');for(let k2=0;k2<4;k2++)r(c,X2+13,Y+12+k2*4,2,1,'#8c6a44');r(c,X2+3,Y+30,10,1,'#3a2a1c')}}
+      break;}
+    case 'skrytka':r(c,X+3,Y+3,10,10,'#5d432b');r(c,X+3,Y+3,10,1,'#7a5a38');r(c,X+3,Y+7,10,1,'#4a3622');r(c,X+11,Y+7,1,2,'#9aa0a5');break;
+    case 'barykada':{
+      const steel=B('okiennice');
+      for(const[x,y]of WINDOWS){const WX=x*T,WY=y*T;
+        if(steel){if(y===9){r(c,WX+2,WY+5,12,7,'#6d757c');r(c,WX+2,WY+5,12,1,'#8a939a');r(c,WX+4,WY+8,1,1,'#3a3d40');r(c,WX+11,WY+8,1,1,'#3a3d40')}else{r(c,WX+4,WY+2,8,12,'#6d757c');r(c,WX+4,WY+2,1,12,'#8a939a');r(c,WX+7,WY+4,1,1,'#3a3d40');r(c,WX+7,WY+11,1,1,'#3a3d40')}}
+        else{if(y===9){r(c,WX+2,WY+6,12,2,'#9a7748');r(c,WX+2,WY+9,12,2,'#8a6a3e')}else{r(c,WX+6,WY+2,2,12,'#9a7748');r(c,WX+9,WY+2,2,12,'#8a6a3e')}}}
+      r(c,X,Y,16,2,steel?'#6d757c':'#9a7748');r(c,X+14,Y+1,2,14,steel?'#5a6168':'#8a6a3e');
+      break;}
+    case 'grzadki':
+      for(let i=0;i<3;i++){const YY=Y+i*16;r(c,X+1,YY+1,46,14,'#7a5a38');r(c,X+2,YY+2,44,12,'#3b2e22');
+        for(let k2=0;k2<10;k2++){r(c,X+4+k2*4,YY+4,3,3,state.winter&&!B('szklarnia')?'#5a4a32':'#6f9a4a');r(c,X+4+k2*4,YY+9,3,3,state.winter&&!B('szklarnia')?'#4a3e2a':'#4f7a35')}}
+      if(B('szklarnia')){r(c,X,Y,48,48,'rgba(210,225,232,.28)');for(let k2=0;k2<48;k2+=8)r(c,X+k2,Y,1,48,'rgba(235,240,242,.6)');r(c,X,Y,48,1,'#c9d3d8');r(c,X,Y+47,48,1,'#c9d3d8')}
+      break;
+    case 'filtr':
+      if(B('studnia')){r(c,X+1,Y+2,14,13,'#9e9d95');r(c,X+3,Y+4,10,9,'#2b3f4b');r(c,X+4,Y+5,8,7,'#3b5566');r(c,X+12,Y,2,8,'#55595d');r(c,X+9,Y,5,2,'#55595d');r(c,X+2,Y+13,4,3,'#4f6b3a')}
+      else if(B('zbiornik')){r(c,X+1,Y+1,14,14,'#d9dbd7');r(c,X+2,Y+8,12,6,'#9fc3d8');for(let k2=1;k2<16;k2+=4){r(c,X+k2,Y+1,1,14,'#7d8287');r(c,X+1,Y+k2,14,1,'#7d8287')}r(c,X+6,Y+3,4,2,'#3a3d40')}
+      else{r(c,X+3,Y+13,11,2,'rgba(0,0,0,.25)');r(c,X+3,Y+2,10,12,'#2c4e6d');r(c,X+4,Y+1,8,14,'#3d6890');r(c,X+4,Y+5,8,1,'#2c4e6d');r(c,X+4,Y+10,8,1,'#2c4e6d');r(c,X+6,Y+2,4,3,'#9aa0a5')}
+      break;
+    case 'kurnik':r(c,X+1,Y+1,30,30,'#5b4129');r(c,X+2,Y+2,18,14,'#8c6a44');r(c,X+2,Y+2,18,2,'#a5825a');r(c,X+9,Y+12,4,4,'#3a2a1c');r(c,X+2,Y+17,28,13,'#6b5a44');for(let k2=2;k2<30;k2+=3)r(c,X+k2,Y+17,1,13,'#8a8f94');break;
+    case 'wieza':r(c,X-1,Y+1,18,16,'rgba(0,0,0,.25)');r(c,X,Y,16,14,'#8c6a44');for(let k2=0;k2<14;k2+=3)r(c,X,Y+k2,16,1,'#6b4f31');r(c,X,Y,2,14,'#5b4129');r(c,X+14,Y,2,14,'#5b4129');r(c,X+2,Y-2,12,2,'#5e4128');break;
+    case 'panel':case 'panel2':
+      r(c,X+4,Y+24,2,7,'#55595d');r(c,X+26,Y+24,2,7,'#55595d');r(c,X+1,Y+2,30,24,'#b5b9bd');r(c,X+2,Y+3,28,22,state.panelBroken?'#2a3542':'#1e3557');
+      for(let k2=1;k2<4;k2++)r(c,X+2+k2*7,Y+3,1,22,'#5a7aa0');for(let k2=1;k2<3;k2++)r(c,X+2,Y+3+k2*7,28,1,'#5a7aa0');
+      r(c,X+4,Y+5,4,1,'#9fb7d4');if(state.panelBroken&&k==='panel'){r(c,X+12,Y+8,1,8,'#e6ecef');r(c,X+13,Y+12,6,1,'#e6ecef')}
+      break;
+    case 'turbina':r(c,X+6,Y+6,4,4,'#55595d');r(c,X+4,Y+12,8,3,'#3c3f42');break;
+    case 'akumulator':
+      if(B('akumulator2')){r(c,X+1,Y+1,14,14,'#2b2d2f');for(let k2=0;k2<4;k2++)r(c,X+2,Y+2+k2*3,12,2,'#2c5d8a');r(c,X+12,Y+2,2,1,'#5fd06a')}
+      else{for(const[bx,by]of[[1,2],[9,2],[1,9],[9,9]]){r(c,X+bx,Y+by,6,6,'#262626');r(c,X+bx,Y+by,6,1,'#3a3a3a');r(c,X+bx+1,Y+by+1,1,1,'#c0392b')}}
+      break;
+    case 'radio':r(c,X+1,Y+5,14,10,'#8c6a44');r(c,X+1,Y+5,14,1,'#a5825a');r(c,X+3,Y+6,10,6,'#4a4a3a');r(c,X+4,Y+7,4,3,'#d9c27a');r(c,X+10,Y+8,2,2,'#1e1e1e');
+      if(B('antena')){r(c,X+11,Y-14,1,20,'#9aa0a5');r(c,X+6,Y-12,11,1,'#9aa0a5');r(c,X+7,Y-9,9,1,'#9aa0a5');r(c,X+8,Y-6,7,1,'#9aa0a5')}else r(c,X+11,Y,1,6,'#9aa0a5');
+      break;
+    case 'serwer':r(c,X+2,Y+1,28,30,'#3a3d40');r(c,X+3,Y+2,26,28,'#1d1f21');for(let k2=0;k2<7;k2++){r(c,X+4,Y+4+k2*4,24,2,'#2c2f32');r(c,X+4,Y+4+k2*4,24,1,'#34383c')}
+      if(B('model')){r(c,X+3,Y+2,26,1,'#2457a8');r(c,X+18,Y+26,9,3,'#2457a8')}else r(c,X+20,Y+27,6,2,'#d8d4c7');break;
+    case 'generator':r(c,X+2,Y+3,12,10,'#4f6b3a');r(c,X+2,Y+3,12,1,'#6b8a52');r(c,X+4,Y+6,5,4,'#2b2b2b');r(c,X+12,Y,2,5,'#55595d');r(c,X+10,Y+7,2,2,'#d9b23a');break;
+  }
+}
+function rebuildBg(){
+  bctx.drawImage(ground,0,0);
+  if(state.winter)snowPass(bctx);
+  drawWallRow(bctx,state.wall);
+  if(state.winter&&state.wall>=3)for(let x=0;x<W;x++)if(x!==14&&x!==15)r(bctx,x*T,2,16,1,'#e6ecef');
+  if(B('alarm')){r(bctx,2*T,17,26*T,1,'#c8c3a8');for(let x=2*T+6;x<28*T;x+=22)if(x<14*T||x>16*T){r(bctx,x,18,2,3,'#b9bec3');r(bctx,x,18,2,1,'#e0e3e6')}}
+  for(const[x,y]of TREES)drawTree(bctx,x,y,state.winter);
+  for(const rb of state.rubble)drawRubble(bctx,rb);
+  for(const k of NK)if(N[k].at&&B(k))drawBuilt(bctx,k);
+  bgDirty=false;
+}
+function accessory(c,p,x,y){
+  if(p.role==='raczka')r(c,x+1,y+8,6,1,'#e8e0b8');
+  else if(p.role==='med')r(c,x+3,y+6,2,4,'#e8e6e0');
+  else if(p.role==='ele')r(c,x+1,y+9,6,1,'#3a2d22');
+  else if(p.role==='cook')r(c,x+2,y+7,4,3,'#ecebe6');
+  else if(p.role==='guard')r(c,x+1,y,6,1,'#2b2e33');
+  else if(p.role==='garden')r(c,x,y,8,1,'#c9a95a');
+  else if(p.role==='scav')r(c,x+5,y+6,3,4,'#5b4129');
+}
+function drawSprite(c,p,x,y,step,face){
+  const lc='#2f3238';
+  if(step===1){r(c,x+1,y+10,2,2,lc);r(c,x+5,y+10,2,1,lc)}else if(step===2){r(c,x+1,y+10,2,1,lc);r(c,x+5,y+10,2,2,lc)}else{r(c,x+1,y+10,2,2,lc);r(c,x+5,y+10,2,2,lc)}
+  r(c,x,y+6,8,4,p.col);r(c,x,y+6,1,4,p.dark);r(c,x+7,y+6,1,4,p.dark);
+  r(c,x+1,y+1,6,5,'#d9a987');r(c,x+1,y,6,2,p.hair);
+  if(face>0)r(c,x+1,y+2,1,2,p.hair);else r(c,x+6,y+2,1,2,p.hair);
+  if(p.f)r(c,face>0?x:x+7,y+1,1,4,p.hair);
+  const ex=face>0?3:2;r(c,x+ex,y+3,1,1,'#2a2422');r(c,x+ex+2,y+3,1,1,'#2a2422');
+  accessory(c,p,x,y);
+}
+function drawPerson(c,p,t){
+  const fx=Math.round(p.x*T),fy=Math.round(p.y*T);
+  const moving=p.path.length>0,working=!moving&&p.task&&(p.task.type==='salvage'||p.task.type==='build');
+  const step=moving?1+(Math.floor(p.walkT)%2):0,bob=working?(Math.floor(t*6)%2):0;
+  const x=fx-4,y=fy-10+bob;
+  r(c,fx-4,fy+1,8,2,'rgba(0,0,0,.35)');
+  drawSprite(c,p,x,y,step,p.face);
+  if(working&&Math.floor(t*8)%3===0)r(c,p.face>0?x+8:x-1,y+7,1,1,'#f2d27a');
+  if(p.sick&&Math.floor(t*2)%2)r(c,x+3,y-3,2,2,'#de5a43');
+  if(state.sel===p.id&&state.phase==='day'){
+    if(Math.floor(t*3)%2===0){r(c,fx-2,y-5,5,1,'#e6a540');r(c,fx-1,y-4,3,1,'#e6a540');r(c,fx,y-3,1,1,'#e6a540')}
+    r(c,fx-5,fy+3,10,1,'#e6a540');
+  }
+}
+function bbox(tiles){let x0=99,y0=99,x1=-1,y1=-1;for(const[x,y]of tiles){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y)}return[x0,y0,x1,y1]}
+function drawSites(c,t){
+  for(const k of Object.keys(state.sites)){
+    const[x0,y0,x1,y1]=bbox(siteTiles(k));
+    const X=x0*T,Y=y0*T,w=(x1-x0+1)*T,h=(y1-y0+1)*T,col=Math.floor(t*2)%2?'#e6a540':'#c98a2c';
+    for(let i=0;i<w;i+=4){r(c,X+i,Y,2,1,col);r(c,X+i,Y+h-1,2,1,col)}
+    for(let j=0;j<h;j+=4){r(c,X,Y+j,1,2,col);r(c,X+w-1,Y+j,1,2,col)}
+    if(!N[k].walk&&!N[k].up&&!N[k].bench){const cx=X+w/2|0,cy=Y+h/2|0;r(c,cx-5,cy-1,10,2,'#a07b4f');r(c,cx-4,cy+1,8,2,'#8b8c88')}
+    const pr=Math.min(1,state.sites[k].p/N[k].work),by=Y>=4?Y-3:Y+h+1;
+    r(c,X,by,w,2,'#15181a');r(c,X,by,Math.max(1,Math.round(w*pr)),2,'#e6a540');
+  }
+}
+function drawDyn(c,t){
+  if(B('piec')){const X=16*T,Y=10*T;if(B('kuchnia')){r(c,X+6,Y+10,4,2,Math.sin(t*9)>0?'#e3842a':'#f2b04a');if(Math.floor(t*2)%2)r(c,X+5,Y-2-(Math.floor(t*4)%3),1,1,'#e6ecef')}else{r(c,X+6,Y+9,4,3,Math.sin(t*9)>0?'#e3842a':'#f2b04a');r(c,X+7,Y+10,2,1,'#ffd27a')}}
+  if(B('serwer')){
+    const X=7*T,Y=15*T,blue=B('model');
+    for(let k=0;k<7;k++){
+      const on=state.serverOnline?(Math.floor(t*4+k*1.7)%3!==0):(state.res.prad>=srvNeed()&&Math.floor(t*1.5+k)%2===0);
+      const col=state.serverOnline?(on?(blue?'#6fa8ff':'#5fd06a'):'#2f3a33'):(state.res.prad>=srvNeed()?(on?'#e6a540':'#6a4a1e'):'#5a2a20');
+      r(c,X+6,Y+4+k*4,1,1,col);r(c,X+8,Y+4+k*4,1,1,state.serverOnline&&on&&k%2?col:'#2c2f32');
+    }
+  }
+  if(B('radio')&&Math.floor(t*2)%2)r(c,13*T+11,10*T+(B('antena')?-14:0),1,1,'#de5a43');
+  if(B('akumulator')){const X=11*T,Y=10*T,fill=state.res.prad/cap();r(c,X+1,Y+15,14,1,'#15181a');r(c,X+1,Y+15,Math.round(14*fill),1,'#f2c94c')}
+  if(B('turbina')){const cx=26*T+8,cy=2*T+8,a=reduceMotion?0:t*3;for(let k=0;k<3;k++){const an=a+k*2.094;for(let s2=2;s2<12;s2++)r(c,Math.round(cx+Math.cos(an)*s2),Math.round(cy+Math.sin(an)*s2),1,1,'#d8d4c7')}r(c,cx-1,cy-1,3,3,'#3c3f42')}
+  if(B('kurnik')){const X=2*T,Y=14*T;for(let k=0;k<3;k++){const px=X+4+((Math.floor(t*1.3+k*5)%20)),py=Y+20+(k*3);r(c,px,py,3,2,'#ecebe6');r(c,px+(k%2?2:0),py-1,1,1,'#de5a43')}}
+  if(B('generator')&&Math.floor(t*2)%2)r(c,25*T+10,14*T+7,2,2,'#5fd06a');
+}
+const flakes=[];for(let i=0;i<110;i++)flakes.push({x:Math.random()*W*T,y:Math.random()*H*T,v:6+Math.random()*9});
+
+/* ---------- pixel art: district map ---------- */
+const RIVER=[[0,30],[90,40],[170,96],[262,72],[360,108],[480,92]];
+const RING=[[112,0],[104,140],[118,288]];
+const RAIL=[[0,224],[480,212]];
+const STREETS=[[[104,150],[480,150]],[[118,124],[480,124]],[[230,0],[230,288]],[[362,0],[362,288]],[[290,124],[290,212]],[[118,192],[480,192]]];
+function thick(c,pts,w,col){c.fillStyle=col;for(let i=0;i<pts.length-1;i++){const[x0,y0]=pts[i],[x1,y1]=pts[i+1],L=Math.hypot(x1-x0,y1-y0);for(let s2=0;s2<=L;s2++){const x=x0+(x1-x0)*s2/L,y=y0+(y1-y0)*s2/L;c.fillRect(Math.round(x-w/2),Math.round(y-w/2),w,w)}}}
+function segDist(px,py,pts){let d=1e9;for(let i=0;i<pts.length-1;i++){const[x0,y0]=pts[i],[x1,y1]=pts[i+1],dx=x1-x0,dy=y1-y0,t=clamp(((px-x0)*dx+(py-y0)*dy)/(dx*dx+dy*dy),0,1);d=Math.min(d,Math.hypot(px-(x0+t*dx),py-(y0+t*dy)))}return d}
+function drawMapBg(){
+  const c=mctx,R=mulberry(777),gp=['#454c31','#525a3b','#57603f','#5a5340'];
+  r(c,0,0,W*T,H*T,'#4b5236');
+  for(let i=0;i<3200;i++)r(c,R()*480|0,R()*288|0,1,1,gp[R()*4|0]);
+  for(let i=0;i<6;i++)for(let j=0;j<3;j++){const x=4+i*16,y=148+j*20;r(c,x,y,14,17,['#5c5a3a','#66633f','#56603a'][(i+j)%3]);for(let k=1;k<17;k+=3)r(c,x,y+k,14,1,'#4f4d32')}
+  for(let i=0;i<190;i++){const x=R()*100|0,y=20+R()*120|0;if(segDist(x,y,RIVER)<10)continue;r(c,x,y,5,4,'#34432a');r(c,x+1,y-1,3,1,'#46562f');r(c,x+1,y+1,2,1,'#6b5a2a')}
+  thick(c,RIVER,12,'#2b3f4b');thick(c,RIVER,8,'#3b5566');
+  for(let i=0;i<6000;i++){const x=R()*480,y=R()*288;if(segDist(x,y,RIVER)<2.5)r(c,x|0,y|0,2,1,'#55768a')}
+  thick(c,RING,7,'#55585b');thick(c,RING,5,'#606366');
+  for(let i=0;i<RING.length-1;i++){const[x0,y0]=RING[i],[x1,y1]=RING[i+1],L=Math.hypot(x1-x0,y1-y0);for(let s2=0;s2<L;s2+=9)r(c,Math.round(x0+(x1-x0)*s2/L),Math.round(y0+(y1-y0)*s2/L),1,3,'#c8c3a8')}
+  thick(c,RAIL,5,'#4d443c');for(let x=0;x<480;x+=4){const y=224-12*x/480;r(c,x,Math.round(y)-3,1,6,'#3a322b')}
+  thick(c,[[0,222],[480,210]],1,'#8a8f94');thick(c,[[0,226],[480,214]],1,'#8a8f94');
+  for(const st of STREETS){thick(c,st,6,'#35373a');thick(c,st,4,'#3f4244')}
+  for(const st of STREETS.concat([RING])){for(let i=0;i<st.length-1;i++){const[x0,y0]=st[i],[x1,y1]=st[i+1],L=Math.hypot(x1-x0,y1-y0);for(let s2=0;s2<=L;s2++){const x=x0+(x1-x0)*s2/L,y=y0+(y1-y0)*s2/L;if(segDist(x,y,RIVER)<6)r(c,Math.round(x-4),Math.round(y-3),8,6,'#77736a')}}}
+  for(let gx=122;gx<474;gx+=24)for(let gy=4;gy<282;gy+=19){
+    if(R()<.28)continue;const w=9+(R()*12|0),h=7+(R()*7|0),x=gx+(R()*4|0),y=gy+(R()*4|0),cx=x+w/2,cy=y+h/2;
+    if(segDist(cx,cy,RIVER)<14||segDist(cx,cy,RAIL)<10||Math.hypot(cx-OS.x,cy-OS.y)<30)continue;
+    let bad=false;for(const st of STREETS)if(segDist(cx,cy,st)<Math.max(w,h)/2+4)bad=true;if(bad)continue;
+    r(c,x+1,y+1,w,h,'rgba(0,0,0,.3)');r(c,x,y,w,h,'#85857f');r(c,x,y,w,1,'#a1a19a');r(c,x+w-1,y,1,h,'#6a6a64');for(let k=2;k<w-2;k+=4)r(c,x+k,y+2,2,1,'#6f6f69');
+  }
+  r(c,OS.x-22,OS.y-16,44,32,'#58603f');
+  for(let i=0;i<6;i++){const x=OS.x-17+(i%3)*13,y=OS.y-11+Math.floor(i/3)*13;r(c,x,y,8,7,'#8a4a3a');r(c,x,y,8,1,'#a35e4a')}
+  r(c,OS.x-23,OS.y-17,46,1,'#c9c8bf');r(c,OS.x-23,OS.y+16,46,1,'#c9c8bf');r(c,OS.x-23,OS.y-17,1,34,'#c9c8bf');r(c,OS.x+22,OS.y-17,1,34,'#c9c8bf');
+  r(c,4,4,3,1,'#c8c3a8');
+}
+function mapMarkers(){
+  const m=[{id:'ours',x:OS.x,y:OS.y,kind:'ours',name:'Wasze osiedle'}];
+  for(const k in LOCS)if(state.locs[k].known)m.push({id:k,x:LOCS[k].x,y:LOCS[k].y,kind:'loot',name:LOCS[k].name});
+  for(const k in SETL)if(state.setl[k].known)m.push({id:k,x:SETL[k].x,y:SETL[k].y,kind:SETL[k].hostile?'hostile':(allied(k)?'ally':'setl'),name:SETL[k].name});
+  return m;
+}
+function drawMarker(c,x,y,kind,sel){
+  const col=kind==='ours'?'#2457a8':kind==='ally'?'#86b25e':kind==='setl'?'#5f8f45':kind==='hostile'?'#b5432f':'#c98a2c';
+  r(c,x-6,y-6,13,13,'#15181a');r(c,x-5,y-5,11,11,col);
+  if(kind==='loot'){r(c,x-3,y-3,7,6,'#f2e6c4');r(c,x-3,y-1,7,1,col)}
+  else if(kind==='hostile'){for(let i=-3;i<=3;i++){r(c,x+i,y+i,1,1,'#f2e6c4');r(c,x+i,y-i,1,1,'#f2e6c4')}}
+  else if(kind==='ours'){r(c,x-3,y-3,7,7,'#f4f3ee');r(c,x-2,y-2,5,5,'#2457a8');r(c,x-1,y-1,3,3,'#f4f3ee')}
+  else{r(c,x-3,y-1,7,5,'#f2e6c4');r(c,x-2,y-3,5,2,'#f2e6c4');r(c,x-1,y-4,3,1,'#f2e6c4')}
+  if(sel){const a='#e6a540';r(c,x-8,y-8,17,1,a);r(c,x-8,y+8,17,1,a);r(c,x-8,y-8,1,17,a);r(c,x+8,y-8,1,17,a)}
+}
+
+/* ---------- main canvas ---------- */
+const cv=$('cv'),ctx=cv.getContext('2d');
+let hover=null,tab='dom',mapSel=null;
+function ptr(e){const rc=cv.getBoundingClientRect();return{fx:(e.clientX-rc.left)/rc.width*W,fy:(e.clientY-rc.top)/rc.height*H}}
+function personAt(fx,fy){let best=null,bd=.8;for(const p of home()){const d=Math.hypot(p.x-fx,(p.y-.35)-fy);if(d<bd){bd=d;best=p}}return best}
+function objectAt(tx,ty){
+  for(const rb of state.rubble)if(tx>=rb.x&&tx<rb.x+rb.w&&ty>=rb.y&&ty<rb.y+rb.h)return{type:'rubble',rb};
+  for(const k of Object.keys(state.sites))if(siteTiles(k).some(([x,y])=>x===tx&&y===ty))return{type:'site',key:k};
+  for(const k of Object.keys(state.built)){if(!N[k].at||N[k].walk)continue;if(areaOf(k).some(([x,y])=>x===tx&&y===ty))return{type:'built',key:k}}
+  if(FURN.some(([x,y])=>x===tx&&y===ty))return{type:'table'};
+  return null;
+}
+function topName(k){const order={piec:['kuchnia'],lozka:['lozka2'],barykada:['okiennice'],grzadki:['szklarnia'],filtr:['studnia','zbiornik'],akumulator:['akumulator2'],radio:['antena'],serwer:['model'],warsztat:['warsztat2']};for(const u of order[k]||[])if(B(u))return N[u].name;return N[k].name}
+function taskText(p){
+  if(p.dead)return 'Nie żyje';
+  const k=p.task,moving=p.path.length>0;
+  if(p.away)return `Poza domem: ${k&&k.loc?LOCS[k.loc].name:''}, wraca ok. ${hhmm(p.back)}`;
+  if(p.sick&&!k)return 'Leży z gorączką';
+  if(!k){const[x,y]=tileOf(p);return indoor(x,y)?'Odpoczywa w domu':'Stoi na podwórku'}
+  if(k.type==='salvage'){const rb=state.rubble.find(r=>r.id===k.id);return rb?(moving?'Idzie do: ':'Rozbiera: ')+rb.name:'Stoi'}
+  if(k.type==='build'){const s=state.sites[k.key];return s?(moving?'Idzie budować: ':'Buduje: ')+N[k.key].name+` (${Math.floor(s.p/N[k.key].work*100)}%)`:'Stoi'}
+  if(k.type==='near')return k.key==='lozka'?(p.sick?'Leży z gorączką':'Odpoczywa na pryczy'):k.key==='piec'?'Grzeje się przy kozie':'Przy: '+topName(k.key);
+  if(k.type==='eat')return 'Je posiłek przy stole';
+  if(k.type==='trip')return 'Idzie do bramy: '+LOCS[k.loc].name;
+  return 'Idzie';
+}
+function describe(o){
+  if(o.type==='rubble')return `${o.rb.name} · ${costText(o.rb.left)}`;
+  if(o.type==='site')return `${N[o.key].name} · budowa ${Math.floor(state.sites[o.key].p/N[o.key].work*100)}%`;
+  if(o.type==='table')return `Stół · tu się je w ciągu dnia, posiłek daje Najedzenie +${mealVal()}`;
+  if(o.type==='built'){
+    const k=o.key;
+    if(k==='akumulator')return `${topName(k)} · Prąd ${Math.floor(state.res.prad)}/${cap()}`;
+    if(k==='serwer')return state.serverOnline?`${topName(k)} · działa`:`${topName(k)} · w nocy potrzebuje Prąd ${srvNeed()}, jest ${Math.floor(state.res.prad)}`;
+    if(k==='panel'||k==='panel2')return state.panelBroken?'Panel słoneczny · zbity gradem':'Panel słoneczny · ładuje od 8 do 17';
+    if(k==='lozka')return `${topName(k)} · miejsc: ${beds()}`;
+    return topName(k);
+  }
+  return '';
+}
+function lotClick(fx,fy){
+  const tx=Math.floor(fx),ty=Math.floor(fy);
+  const who=personAt(fx,fy);if(who){select(who.id);return}
+  const p=selPerson(),obj=objectAt(tx,ty);
+  if(!p){hint(obj?describe(obj)+'. Najpierw wybierz mieszkańca.':'Najpierw wybierz mieszkańca: kartę po prawej albo postać na planszy.');return}
+  if(p.away){hint(`${p.name} jest poza domem, wraca ok. ${hhmm(p.back)}.`);return}
+  if(p.sick){hint(`${p.name} ma gorączkę i dziś nie pracuje.`);return}
+  const fail=()=>hint(`${p.name} nie ma jak tam dojść.`);
+  if(obj&&obj.type==='rubble'){if(route(p,{type:'salvage',id:obj.rb.id})){hint(`${p.name} ${g(p,'poszedł','poszła')} rozbierać ${obj.rb.acc}.`);kickoff()}else fail();return}
+  if(obj&&obj.type==='site'){sendBuild(p,obj.key);return}
+  if(obj&&obj.type==='table'){if(state.res.jedzenie<1){hint('Nie ma co jeść.');return}if(route(p,{type:'eat'})){p.eatT=0;p.resume=null;hint(`${p.name} ${g(p,'poszedł','poszła')} zjeść.`);kickoff()}else fail();return}
+  if(obj&&obj.type==='built'){const NEAR={lozka:'odpocząć na pryczy',piec:'ogrzać się przy kozie'};if(route(p,{type:'near',key:obj.key})){hint(`${p.name} ${g(p,'poszedł','poszła')} ${NEAR[obj.key]||'do: '+topName(obj.key)}.`);kickoff()}else fail();return}
+  if(walkable(tx,ty)){if(route(p,{type:'goto',tx,ty})){hint(`${p.name} ${g(p,'poszedł','poszła')} tam.`);kickoff()}else fail();return}
+  hint('Tam nie da się przejść.');
+}
+function mapClick(fx,fy){
+  const wx=fx*T,wy=fy*T;let best=null,bd=12;
+  for(const m of mapMarkers()){const d=Math.hypot(m.x-wx,m.y-wy);if(d<bd){bd=d;best=m}}
+  mapSel=best?best.id:null;mapSig='';renderMapInfo();
+}
+cv.addEventListener('click',e=>{
+  if(state.phase!=='day'||state.event)return;
+  const{fx,fy}=ptr(e);
+  if(tab==='mapa')mapClick(fx,fy);else lotClick(fx,fy);
+});
+cv.addEventListener('pointermove',e=>{if(e.pointerType==='mouse')hover=ptr(e)});
+cv.addEventListener('pointerleave',()=>{hover=null});
+
+function label(txt,x,y,center,size){
+  ctx.font=`600 ${size||20}px "Barlow", "Segoe UI", sans-serif`;ctx.textAlign='left';
+  const w=ctx.measureText(txt).width+20,h=(size||20)+14;let bx=x-w/2;bx=clamp(bx,4,cv.width-w-4);const by=clamp(y-h/2,4,cv.height-h-4);
+  ctx.fillStyle='rgba(18,20,22,.88)';ctx.fillRect(bx,by,w,h);if(center){ctx.fillStyle='#e6a540';ctx.fillRect(bx,by+h-3,w,3)}
+  ctx.fillStyle='#ece8de';ctx.textBaseline='middle';ctx.fillText(txt,bx+10,by+h/2);
+}
+function drawLot(t,dt){
+  if(bgDirty)rebuildBg();
+  const w=wctx;
+  w.drawImage(bg,0,0);drawSites(w,t);drawDyn(w,t);
+  for(const p of home().sort((a,b)=>a.y-b.y))drawPerson(w,p,t);
+  if(state.winter&&!reduceMotion){for(let i=0;i<flakes.length;i++){const f=flakes[i];f.y+=f.v*dt;f.x+=Math.sin(t*.8+i)*.15;if(f.y>H*T){f.y=-2;f.x=Math.random()*W*T}r(w,f.x|0,f.y|0,1,1,'#eef3f6')}}
+  ctx.imageSmoothingEnabled=false;ctx.drawImage(world,0,0,cv.width,cv.height);
+  const hr=(state.phase==='day'?state.t:DAY_END)/60;
+  if(hr<8){ctx.fillStyle=`rgba(255,150,70,${(.2*(8-hr)/2).toFixed(3)})`;ctx.fillRect(0,0,cv.width,cv.height)}
+  if(hr>16){
+    const a=.42*Math.min(1,(hr-16)/4);ctx.fillStyle=`rgba(28,24,64,${a.toFixed(3)})`;ctx.fillRect(0,0,cv.width,cv.height);
+    const glow=(gx,gy,rad,al)=>{const gr=ctx.createRadialGradient(gx,gy,0,gx,gy,rad);gr.addColorStop(0,`rgba(255,170,70,${al})`);gr.addColorStop(1,'rgba(255,170,70,0)');ctx.fillStyle=gr;ctx.fillRect(gx-rad,gy-rad,rad*2,rad*2)};
+    if(B('piec'))glow(16.5*T*S,10.6*T*S,90,(.35*a/.42).toFixed(3));
+    if(state.wall>=5)glow((14*T-6)*S,2*S,100,(.45*a/.42).toFixed(3));
+  }
+  ctx.textBaseline='middle';
+  for(let i=floats.length-1;i>=0;i--){
+    const f=floats[i];f.life-=dt;f.y-=9*dt;if(f.life<=0){floats.splice(i,1);continue}
+    ctx.globalAlpha=Math.min(1,f.life*1.4);ctx.font='700 20px "Barlow Condensed", "Arial Narrow", sans-serif';ctx.textAlign='center';
+    ctx.lineWidth=4;ctx.strokeStyle='rgba(15,17,19,.85)';ctx.strokeText(f.txt,f.x*S,f.y*S);ctx.fillStyle=f.col;ctx.fillText(f.txt,f.x*S,f.y*S);
+  }
+  ctx.globalAlpha=1;
+  if(hover&&state.phase==='day'){
+    const who=personAt(hover.fx,hover.fy);let txt='';
+    if(who)txt=`${who.name} · ${taskText(who)}`;else{const o=objectAt(Math.floor(hover.fx),Math.floor(hover.fy));if(o)txt=describe(o)}
+    if(txt)label(txt,hover.fx*T*S,hover.fy*T*S-30,false,18);
+  }
+}
+function drawMap(t){
+  const w=wctx;w.drawImage(mapBg,0,0);
+  const ms=mapMarkers();
+  for(const m of ms)drawMarker(w,m.x,m.y,m.kind,mapSel===m.id);
+  const aw=living().filter(p=>p.away&&p.task&&p.task.loc);
+  aw.forEach((p,i)=>{const L=LOCS[p.task.loc];const x=L.x+9+i*5,y=L.y-6;r(w,x,y,4,7,'#15181a');r(w,x+1,y+1,2,2,'#d9a987');r(w,x+1,y+3,2,3,p.col)});
+  ctx.imageSmoothingEnabled=false;ctx.drawImage(world,0,0,cv.width,cv.height);
+  if(mapSel){const m=ms.find(x=>x.id===mapSel);if(m&&m.id!=='ours'){ctx.save();ctx.setLineDash([8,8]);ctx.lineDashOffset=reduceMotion?0:-t*20;ctx.strokeStyle='rgba(230,165,64,.85)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(OS.x*S,OS.y*S);ctx.lineTo(m.x*S,m.y*S);ctx.stroke();ctx.restore()}}
+  for(const m of ms){
+    ctx.font='600 15px "Barlow Condensed", "Arial Narrow", sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    const tw=ctx.measureText(m.name).width+10,x=clamp(m.x*S,tw/2+2,cv.width-tw/2-2),y=m.y*S+24;
+    ctx.fillStyle=mapSel===m.id?'rgba(230,165,64,.95)':'rgba(18,20,22,.8)';ctx.fillRect(x-tw/2,y-10,tw,20);
+    ctx.fillStyle=mapSel===m.id?'#1d1a14':'#ece8de';ctx.fillText(m.name,x,y+1);
+  }
+  const unk=unknownLocs().length;
+  label(unk?`Nieodkrytych miejsc: ${unk}`:'Okolica odkryta',150,cv.height-30,false,17);
+}
+function draw(t,dt){
+  if(tab==='tech')return;
+  if(tab==='mapa')drawMap(t);else drawLot(t,dt);
+  if(state.phase==='day'&&state.speed===0&&!state.event)label(state.started?'Pauza · spacja albo 1× wznawia':'Wybierz mieszkańca, potem stuknij stertę na podwórku',cv.width/2,cv.height-80,true,20);
+}
+
+/* ---------- DOM panels ---------- */
+const ICON={};
+(function(){
+  const d={
+    drewno:c=>{r(c,1,3,7,4,'#8a5a32');r(c,1,3,7,1,'#a8733f');r(c,7,3,2,4,'#d9b27c');r(c,8,4,1,2,'#a8733f');r(c,0,4,1,2,'#6b4423');r(c,2,6,5,1,'#6b4423')},
+    zlom:c=>{r(c,1,2,8,6,'#8d9196');r(c,1,2,8,1,'#b4b8bc');r(c,2,6,3,2,'#6b6f73');r(c,6,4,2,2,'#4d5155');r(c,3,3,1,1,'#b4b8bc');r(c,7,7,2,1,'#a3622f')},
+    elektronika:c=>{r(c,1,1,8,8,'#2f6b3c');r(c,3,3,4,4,'#1b1d1f');r(c,2,2,1,1,'#d8b24a');r(c,7,7,1,1,'#d8b24a');r(c,7,2,1,1,'#d8b24a');r(c,2,7,1,1,'#d8b24a');r(c,4,4,1,1,'#4a4d50')},
+    jedzenie:c=>{r(c,2,1,6,8,'#a3a7ab');r(c,2,3,6,4,'#b5432f');r(c,2,1,6,1,'#c9cdd1');r(c,3,4,4,2,'#e8d8b0')},
+    woda:c=>{r(c,4,1,2,1,'#5ea6dd');r(c,3,2,4,2,'#5ea6dd');r(c,2,4,6,3,'#3f86c4');r(c,3,7,4,1,'#2f6ea6');r(c,3,3,1,2,'#bfe2fb')},
+    leki:c=>{r(c,1,2,8,6,'#e9e7e1');r(c,1,7,8,1,'#b9b6ae');r(c,4,3,2,4,'#3f9a55');r(c,3,4,4,2,'#3f9a55')},
+    prad:c=>{r(c,5,0,3,1,'#f2c94c');r(c,4,1,3,2,'#f2c94c');r(c,3,3,5,1,'#f2c94c');r(c,5,4,2,2,'#f2c94c');r(c,4,6,2,2,'#f2c94c');r(c,3,8,2,2,'#e0a92a')}
+  };
+  for(const k of RES){const c=mk(10,10);d[k](c.getContext('2d'));ICON[k]=c.toDataURL()}
+})();
+const AVA={};
+function ava(p){if(!AVA[p.id]){const c=mk(12,14);drawSprite(c.getContext('2d'),p,2,1,0,1);AVA[p.id]=c.toDataURL()}return AVA[p.id]}
+const resEl=$('res');
+resEl.innerHTML=RES.map(k=>`<span class="chip" id="chip-${k}" title="${RL[k]}"><img src="${ICON[k]}" alt=""><span>${RL[k]}</span><b id="r-${k}">0</b></span>`).join('');
+const crewEl=$('crew'),todoEl=$('todo'),goalEl=$('goal'),logEl=$('log'),mapInfo=$('mapinfo'),techEl=$('tech'),branchesEl=$('branches'),boardEl=$('board'),screenEl=$('screen');
+const costChips=cost=>Object.entries(cost).map(([k,v])=>`<span class="c${state.res[k]<v?' miss':''}"><img src="${ICON[k]}" alt="">${RL[k]} ${v}</span>`).join('');
+
+function buildCrew(){
+  crewEl.innerHTML=state.people.filter(p=>!p.dead).concat(state.people.filter(p=>p.dead)).map(p=>`<button class="card" data-id="${p.id}" aria-pressed="${state.sel===p.id}"${p.dead?' disabled':''}>
+    <img class="ava" src="${ava(p)}" alt="">
+    <span class="nm">${p.name}<small>${p.roleName}</small></span>
+    <span class="task" data-f="task"></span>
+    <span class="bars">
+      <span class="bar" data-f="sat"><span>Najedzenie</span><i><b></b></i></span>
+      <span class="bar" data-f="warm"><span>Ciepło</span><i><b></b></i></span>
+      <span class="bar" data-f="en"><span>Siły</span><i><b></b></i></span>
+      <span class="bar" data-f="hp"><span>Zdrowie</span><i><b></b></i></span>
+    </span></button>`).join('');
+  crewDirty=false;
+}
+crewEl.addEventListener('click',e=>{const b=e.target.closest('.card');if(!b||b.disabled)return;select(b.dataset.id)});
+function updateCrew(){
+  if(crewDirty)buildCrew();
+  for(const card of crewEl.children){
+    const p=P(card.dataset.id);if(!p)continue;
+    card.setAttribute('aria-pressed',String(state.sel===p.id));card.classList.toggle('away',!!p.away);card.title=p.perk;
+    card.querySelector('[data-f="task"]').textContent=taskText(p);
+    for(const f of['sat','warm','en','hp']){const el=card.querySelector(`[data-f="${f}"]`),v=p.dead?0:p[f];el.className='bar'+(v<25?' low':v<50?' mid':'');el.querySelector('b').style.width=Math.round(v)+'%'}
+  }
+}
+const ST_LABEL={built:'zbudowane',site:'w budowie',lock:'zablokowane',item:'brak przedmiotu',clear:'najpierw sprzątnąć',miss:'brakuje surowców',ok:'można zacząć'};
+function itemWhere(it){
+  const where={pompa:'zlomowisko',ogniwa:'hurtownia',dyski:'serwerownia'}[it];
+  if(it==='kury')return state.setl.dzialki.known?'wymiana w Ogródkach działkowych':'ktoś w okolicy hoduje kury';
+  return state.locs[where].known?`do znalezienia: ${LOCS[where].name}`:'gdzieś w okolicy, trzeba znaleźć miejsce';
+}
+function updateTodo(){
+  const sp=selPerson();
+  const sig=NK.map(nodeState).join()+'|'+(sp?sp.id+(sp.away?'a':''):'-')+'|'+Object.keys(state.sites).map(k=>k+Math.floor(state.sites[k].p*4)).join();
+  if(sig===todoSig)return;todoSig=sig;
+  const ids=NK.filter(k=>state.sites[k]).concat(NK.filter(k=>nodeState(k)==='ok').sort((a,b)=>N[a].tier-N[b].tier));
+  let h='';
+  for(const id of ids.slice(0,7)){
+    const b=N[id],st=nodeState(id);let ctl;
+    if(st==='site'){const pct=Math.floor(state.sites[id].p/b.work*100);ctl=`<span class="prog"><b style="width:${pct}%"></b></span><span class="pct">${pct}%</span><button class="btn" data-assign="${id}"${sp&&!sp.away?'':' disabled'}>${sp?'Wyślij: '+sp.name:'Wybierz kogoś'}</button>`}
+    else ctl=costChips(b.cost)+`<button class="btn go" data-build="${id}">Buduj</button>`;
+    h+=`<div class="todo-item"><div class="todo-top"><b>${b.name}</b><span class="st">${b.up?'ulepszenie':b.bench?'z warsztatu':ST_LABEL[st]}</span></div><div class="row">${ctl}</div></div>`;
+  }
+  const missN=NK.filter(k=>nodeState(k)==='miss').length,lockN=NK.filter(k=>['lock','item','clear'].includes(nodeState(k))).length;
+  if(!h)h='<p class="muted" style="margin:0">Na nic teraz nie starcza. Rozbierajcie gruz albo idźcie na wypad.</p>';
+  h+=`<p class="muted">Czeka na surowce: ${missN}. Zablokowanych w drzewku: ${lockN}.</p>`;
+  todoEl.innerHTML=h;
+}
+function onBuildClick(e){
+  const b=e.target.closest('button');if(!b||b.disabled||state.phase!=='day'||state.event)return;
+  if(b.dataset.build)startBuild(b.dataset.build);
+  else if(b.dataset.assign){const p=selPerson();if(p)sendBuild(p,b.dataset.assign)}
+  todoSig='';techSig='';
+}
+todoEl.addEventListener('click',onBuildClick);
+branchesEl.addEventListener('click',onBuildClick);
+function nodeCard(id){
+  const b=N[id],st=nodeState(id),sp=selPerson();
+  let extra='';
+  if(b.up)extra+=`<p class="nreq">Ulepszenie: ${N[b.up].name}</p>`;
+  if(b.bench)extra+=`<p class="nreq">Robi się przy warsztacie</p>`;
+  const reqs=b.req.filter(x=>x!==b.up);
+  if(reqs.length)extra+=`<p class="nreq">Wymaga: ${reqs.map(x=>`<span class="${B(x)?'have':''}">${N[x].name}</span>`).join(', ')}</p>`;
+  if(b.item)extra+=`<p class="nreq">Przedmiot: <span class="${state.items[b.item]?'have':''}">${ITEMS[b.item]}</span>${state.items[b.item]?'':', '+itemWhere(b.item)}</p>`;
+  if(b.clear&&state.rubble.some(r=>r.id===b.clear))extra+=`<p class="nreq">Najpierw rozbierzcie graty w garażu.</p>`;
+  let ctl='';
+  if(st==='site'){const pct=Math.floor(state.sites[id].p/b.work*100);ctl=`<span class="prog"><b style="width:${pct}%"></b></span><span class="pct">${pct}%</span><button class="btn" data-assign="${id}"${sp&&!sp.away?'':' disabled'}>${sp?'Wyślij: '+sp.name:'Wybierz kogoś'}</button>`}
+  else if(st!=='built')ctl=costChips(b.cost)+(st==='ok'?`<button class="btn go" data-build="${id}">Buduj</button>`:'');
+  return `<article class="node ${st}"><div class="node-top"><b>${b.name}</b><span class="st">${ST_LABEL[st]}</span></div><span class="tier">Poziom ${b.tier}</span><p>${b.desc}</p>${extra}${ctl?`<div class="row">${ctl}</div>`:''}</article>`;
+}
+function renderTech(){
+  const sp=selPerson();
+  const sig=NK.map(nodeState).join()+JSON.stringify(state.res)+(sp?sp.id:'')+JSON.stringify(state.items)+Object.keys(state.sites).map(k=>k+Math.floor(state.sites[k].p*4)).join()+state.rubble.length;
+  if(sig===techSig)return;techSig=sig;
+  let h='';
+  for(const[br,lab]of BRANCHES){
+    const ids=NK.filter(k=>N[k].br===br).sort((a,b)=>N[a].tier-N[b].tier);
+    h+=`<section class="branch"><h3>${lab}</h3><div class="nodes">${ids.map(nodeCard).join('')}</div></section>`;
+  }
+  branchesEl.innerHTML=h;
+}
+function renderMapInfo(){
+  const s=state,sp=selPerson();
+  const sig=[mapSel,s.day,Math.floor(s.t/20),sp?sp.id+(sp.away?'a':''):'',JSON.stringify(s.res),JSON.stringify(s.setl),JSON.stringify(s.locs),B('radio'),s.tribute,JSON.stringify(s.items)].join('|');
+  if(sig===mapSig)return;mapSig=sig;
+  let h='';
+  if(!mapSel){
+    h=`<h3>Okolica</h3><p>Stuknij znacznik. Blisko i średnio daleko można iść na wypad za dnia, w daleką wyprawę tylko nocą, z wieczornej kartki. Nowe miejsca odkrywa zwiad, radio, dron i model AI.</p>
+    <div class="legend"><span><i style="background:#2457a8"></i>wasze osiedle</span><span><i style="background:#c98a2c"></i>miejsce na wyprawę</span><span><i style="background:#5f8f45"></i>osada</span><span><i style="background:#86b25e"></i>sojusznik</span><span><i style="background:#b5432f"></i>wrogowie</span></div>`;
+  }else if(mapSel==='ours'){
+    h=`<h3>Wasze osiedle</h3><p>Dom nr 7 i kilka domów sąsiadów za wspólnym murem. Mur: poziom ${s.wall} z 5.${s.wall<5?` Następny poziom: ${WALL[s.wall].name}, ${costText(WALL[s.wall].cost)}. Dokładacie wieczorem.`:''}</p><p class="meta">Obrona domu bez warty: ${defenseBase()}. Mieszkańców: ${living().length}, miejsc na pryczach: ${beds()}.</p>`;
+  }else if(LOCS[mapSel]){
+    const L=LOCS[mapSel],st=s.locs[mapSel],pct=Math.round((1-mult(mapSel))*100);
+    h=`<h3>${L.name}</h3><p>${L.desc}</p><p class="meta">${distWord(L.dist)} · ryzyko ${riskWord(L.risk)} · przeszukane w ${pct}% · można tu znaleźć: ${Object.keys(L.loot).map(k=>RL[k]).join(', ')}</p>`;
+    if(L.item&&!s.items[L.item])h+=`<p class="meta">Ktoś mówił, że jest tu: ${ITEMS[L.item]}.</p>`;
+    h+=`<div class="row">`;
+    if(L.dist<=2){const hrs=L.dist===1?4:7,late=s.t+hrs*60+45>DAY_END;
+      h+=`<button class="btn go" data-trip="${mapSel}"${sp&&!sp.away&&!sp.sick&&!late?'':' disabled'}>${sp?`Wypad za dnia: ${sp.name}`:'Wybierz kogoś na wypad'}</button><span class="meta">${late?'Dziś już za późno, nie zdąży wrócić przed 20:00.':`ok. ${hrs} h, za dnia o połowę bezpieczniej, ale łup mniejszy`}</span>`}
+    else h+=`<span class="meta">Za daleko na wypad za dnia. Wyprawę zaplanujecie o 20:00.</span>`;
+    h+=`</div>`;
+    if(st.visits)h+=`<p class="meta">Byliście tu ${st.visits} razy.</p>`;
+  }else if(SETL[mapSel]){
+    const S2=SETL[mapSel],st=s.setl[mapSel];
+    h=`<h3>${S2.name}</h3><p>${S2.desc}</p>`;
+    if(S2.hostile){
+      h+=`<div class="row">${s.tribute>0?`<span class="meta">Zapłacone, jeszcze ${s.tribute} noce spokoju.</span>`:`<button class="btn" data-tribute="1"${have(S2.tribute)?'':' disabled'}>Zapłacić za spokój: ${costText(S2.tribute)}</button>`}</div>`;
+    }else{
+      const word=st.rel>=60?'sojusznicy':st.rel>=30?'znajomi':'obcy';
+      h+=`<p class="meta">Relacje: ${word}<span class="relbar"><b style="width:${st.rel}%"></b></span>${st.rel}/100. Przy 60 zostajecie sojusznikami: ${S2.ally}</p>`;
+      if(!B('radio'))h+=`<p class="meta">Bez krótkofalówki nie pogadacie.</p>`;
+      else{
+        h+=`<div class="row"><button class="btn" data-trade="${mapSel}"${st.traded===s.day||!have(S2.trade.take)?' disabled':''}>Wymiana przez radio: dostaniecie ${costText(S2.trade.give)} za ${costText(S2.trade.take)}</button>${st.traded===s.day?'<span class="meta">Dziś już handlowaliście.</span>':''}</div>`;
+        const rq=S2.reqs[st.req];
+        if(rq)h+=`<p>Prośba: potrzebują ${costText(rq.take)}. W zamian ${costText(rq.give)} i lepsze relacje.</p><div class="row">${st.reqDone?'<span class="meta">Spełnione. Nowa prośba za kilka dni.</span>':`<button class="btn go" data-req="${mapSel}"${have(rq.take)?'':' disabled'}>Wysłać im to</button>`}</div>`;
+        if(S2.special&&!s.items[S2.special.item])h+=`<p>Mają kury na wymianę za ${costText(S2.special.take)}${st.rel<S2.special.rel?`, ale tylko dla znajomych (relacje ${S2.special.rel}+)`:''}.</p><div class="row"><button class="btn" data-special="${mapSel}"${st.rel>=S2.special.rel&&have(S2.special.take)?'':' disabled'}>Wziąć kury</button></div>`;
+      }
+    }
+  }
+  mapInfo.innerHTML=h;
+}
+mapInfo.addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b||b.disabled||state.phase!=='day'||state.event)return;
+  const s=state;
+  const sid=b.dataset.trade||b.dataset.req||b.dataset.special;
+  if(sid&&(!s.setl[sid].known||!B('radio')))return;
+  if(b.dataset.trip){const p=selPerson();if(p)sendTrip(p,b.dataset.trip)}
+  else if(b.dataset.trade){const id=b.dataset.trade,S2=SETL[id],st=s.setl[id];if(st.traded===s.day||!have(S2.trade.take))return;pay(S2.trade.take);gain(S2.trade.give);st.traded=s.day;log(`Wymiana przez radio: ${S2.name}.`);relUp(id,6)}
+  else if(b.dataset.req){const id=b.dataset.req,S2=SETL[id],st=s.setl[id],rq=S2.reqs[st.req];if(st.reqDone||!have(rq.take))return;pay(rq.take);gain(rq.give);st.reqDone=true;log(`${S2.name}: prośba spełniona.`);relUp(id,15)}
+  else if(b.dataset.special){const id=b.dataset.special,sp2=SETL[id].special;if(s.setl[id].rel<sp2.rel||!have(sp2.take))return;pay(sp2.take);s.items[sp2.item]=true;log('Macie kury. Można stawiać kurnik.');relUp(id,4)}
+  else if(b.dataset.tribute){const S2=SETL.zajezdnia;if(!have(S2.tribute))return;pay(S2.tribute);s.tribute=3;log('Zapłaciliście zajezdni. Trzy noce spokoju.')}
+  mapSig='';techSig='';todoSig='';renderMapInfo();
+});
+function updateGoal(){
+  const items=[['Warsztat',B('warsztat')],['Serwer AI z odzysku działa',!!state.ms.server],[`Mur osiedla ${state.wall}/5`,state.wall>=5],['Sojusz z sąsiednią osadą',Object.keys(SETL).some(allied)],[`Pięcioro mieszkańców (${living().length})`,living().length>=5],['Lokalny model językowy',B('model')]];
+  const sig=items.map(i=>i[0]+i[1]).join();if(sig===goalSig)return;goalSig=sig;
+  goalEl.innerHTML=items.map(([t,d])=>`<li class="${d?'done':''}"><span class="tick" aria-hidden="true"></span>${t}${d?'<span class="sr"> (zrobione)</span>':''}</li>`).join('');
+}
+function updateLog(){
+  if(!logDirty)return;logDirty=false;
+  logEl.innerHTML=state.log.slice(0,18).map(l=>`<li><time>D${l.d} ${typeof l.t==='number'?hhmm(l.t):l.t}</time>${l.txt}</li>`).join('');
+}
+function updateHud(){
+  $('hud-day').textContent=`Dzień ${state.day}`;
+  $('hud-time').textContent=hhmm(state.phase==='day'?state.t:DAY_END);
+  $('hud-season').textContent=state.winter?'zima':'jesień';
+  const m=$('hud-morale');m.style.width=Math.round(state.morale)+'%';m.style.background=state.morale<25?'var(--bad)':state.morale<50?'var(--lamp)':'var(--good)';
+  $('hud-wall').textContent=`${state.wall}/5`;$('hud-def').textContent=defenseBase();
+  for(let i=0;i<4;i++)$('sp'+i).setAttribute('aria-pressed',String(state.speed===i));
+  const now=performance.now();
+  for(const k of RES){$('r-'+k).textContent=k==='prad'?`${Math.floor(state.res.prad)}/${cap()}`:Math.floor(state.res[k]);$('chip-'+k).classList.toggle('flash',!!flashes[k]&&now-flashes[k]<700)}
+  const re=$('rule-eat');if(re.checked!==state.rules.dayEat)re.checked=state.rules.dayEat;
+}
+function ui(){updateHud();updateCrew();updateTodo();updateGoal();updateLog();if(tab==='mapa')renderMapInfo();if(tab==='tech')renderTech()}
+function setTab(t){
+  tab=t;hover=null;mapSig='';techSig='';
+  for(const b of document.querySelectorAll('.tabs button'))b.setAttribute('aria-selected',String(b.dataset.tab===t));
+  screenEl.hidden=t==='tech';mapInfo.hidden=t!=='mapa';techEl.hidden=t!=='tech';boardEl.classList.toggle('wide',t==='tech');
+  cv.setAttribute('aria-label',t==='mapa'?'Mapa okolicy':'Plansza: dom i podwórko na osiedlu');
+  ui();
+}
+document.querySelector('.tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(b)setTab(b.dataset.tab)});
+$('open-tech').addEventListener('click',()=>setTab('tech'));
+$('rule-eat').addEventListener('change',e=>{state.rules.dayEat=e.target.checked;hint(e.target.checked?'Głodni będą sami chodzić do stołu.':'Jedzą tylko przy kolacji, chyba że wyślesz kogoś do stołu.')});
+document.querySelector('.speed').addEventListener('click',e=>{const b=e.target.closest('button[data-speed]');if(b)setSpeed(+b.dataset.speed)});
+const ng=$('new-game');let ngArm=0;
+ng.addEventListener('click',()=>{
+  if(Date.now()-ngArm<3000){ngArm=0;ng.textContent='Nowa gra';restart();return}
+  ngArm=Date.now();ng.textContent='Na pewno? Kliknij znowu';
+  setTimeout(()=>{if(ngArm&&Date.now()-ngArm>=2900){ngArm=0;ng.textContent='Nowa gra'}},3000);
+});
+document.addEventListener('keydown',e=>{
+  if(!overlay.hidden||e.altKey||e.ctrlKey||e.metaKey)return;
+  const a=document.activeElement,free=a===document.body||a===cv||!a;
+  if(e.key===' '&&free){e.preventDefault();setSpeed(state.speed?0:(lastSpeed||1))}
+  else if(e.key==='1'||e.key==='2'||e.key==='3')setSpeed(+e.key);
+  else if(e.key==='0'||e.key==='p')setSpeed(0);
+});
+
+/* ---------- loop & boot ---------- */
+let last=performance.now(),uiAcc=1;
+function frame(now){
+  const dt=Math.min(.1,Math.max(0,(now-last)/1000));last=now;
+  step(dt);draw(now/1000,dt);
+  uiAcc+=dt;if(uiAcc>.2){uiAcc=0;ui()}
+  requestAnimationFrame(frame);
+}
+let booted=false;
+function boot(data){
+  if(booted)return;booted=true;
+  const hotState=data&&data.s&&data.s.v===2?data.s:null;
+  const saved=hotState||load();
+  state=saved||newGame();
+  if(!hotState&&saved)state.speed=0;
+  if(state.speed>0)lastSpeed=state.speed;
+  drawGround();drawMapBg();rebuildBlocked();bgDirty=true;crewDirty=true;logDirty=true;
+  if(!saved){log('Prąd nie wrócił od wiosny. Trzeba się urządzić przed zimą.');hint(INTRO)}
+  else hint(state.phase==='day'?`Dzień ${state.day}. Gra wczytana. Wciśnij 1×, żeby ruszyć.`:'');
+  if(state.phase!=='day'||state.event)openSheet();
+  ui();requestAnimationFrame(frame);
+}
+const hot=window.claude&&window.claude.hot;
+if(hot&&typeof hot.snapshot==='function')hot.snapshot(()=>({s:state}));
+if(hot&&typeof hot.ready==='function')hot.ready(boot);else boot((hot&&hot.data)||{});
+})();
+</script>
