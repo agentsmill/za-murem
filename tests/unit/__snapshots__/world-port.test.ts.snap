@@ -1,0 +1,38 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`kafelki wektorowe (mvt.ts) jak w 0.3 > liczba budynków i klasy na trzech adresach (obszar 384 m) 1`] = `
+{
+  "lanciego": {
+    "b": 124,
+    "counts": {
+      "blok": 43,
+      "dom": 47,
+      "garaz": 25,
+      "hala": 1,
+      "sklep": 4,
+      "szkola": 4,
+    },
+  },
+  "przymorze": {
+    "b": 86,
+    "counts": {
+      "blok": 70,
+      "dom": 2,
+      "garaz": 4,
+      "hala": 2,
+      "przychodnia": 1,
+      "sklep": 5,
+      "szkola": 2,
+    },
+  },
+  "zielonki": {
+    "b": 79,
+    "counts": {
+      "dom": 60,
+      "garaz": 14,
+      "hala": 4,
+      "przychodnia": 1,
+    },
+  },
+}
+`;

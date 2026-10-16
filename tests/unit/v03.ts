@@ -20,12 +20,24 @@ export interface V03 {
   seed(s: number): void;
 }
 
-export function loadV03(files = ['js/data.js', 'data/sample.js', 'js/osm.js', 'js/mvt.js', 'js/sim.js']): V03 {
+/** patches: [plik, tekst, zamiennik], np. żeby wystawić funkcję wewnętrzną do porównania */
+export function loadV03(
+  files = ['js/data.js', 'data/sample.js', 'js/osm.js', 'js/mvt.js', 'js/sim.js'],
+  patches: [string, string, string][] = [],
+): V03 {
   let cur = mulberry(1);
   const random: Rng = () => cur();
   const ctx = vm.createContext({ window: {}, console, TextDecoder, __random: random });
   vm.runInContext('Math.random = __random;', ctx);
-  for (const f of files) vm.runInContext(fs.readFileSync(path.join(V03, f), 'utf8'), ctx, { filename: f });
+  for (const f of files) {
+    let src = fs.readFileSync(path.join(V03, f), 'utf8');
+    for (const [pf, from, to] of patches) {
+      if (pf !== f) continue;
+      if (!src.includes(from)) throw new Error(`łatka nie pasuje do ${f}: ${from}`);
+      src = src.replace(from, to);
+    }
+    vm.runInContext(src, ctx, { filename: f });
+  }
   return {
     G: (ctx as { window: { G: G03 } }).window.G,
     random,

@@ -91,7 +91,11 @@ function host03(S: S03, rng: Rng): EventHost {
 }
 
 function newState(seed: number): S03 {
-  return Sim.newGame(JSON.parse(JSON.stringify(G.SAMPLE)), { seed, name: 'Przymorze', src: 'sample' });
+  const S = Sim.newGame(JSON.parse(JSON.stringify(G.SAMPLE)), { seed, name: 'Przymorze', src: 'sample' });
+  // geometria mapy nie jest potrzebna wydarzeniom, a spowalnia kopiowanie stanu
+  S.geo = null;
+  for (const b of S.bldgs) b.tiles = [];
+  return S;
 }
 
 /** Kilka stanów, żeby wagi i warunki wydarzeń przeszły przez różne gałęzie. */
