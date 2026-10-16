@@ -34,7 +34,7 @@ describe('treść z 0.3 przeniesiona bez zmian', () => {
     'TRAITS',
     'TRAIT_PAIRS',
     'ADS',
-    'LORE',
+    // bez LORE: w 0.4 celowo nowe lore z bakterią od miedzi (docs/GDD.md)
   ] as const;
   for (const n of names) {
     it(n, () => {

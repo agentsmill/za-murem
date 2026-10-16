@@ -16,7 +16,13 @@ Wpisujesz swój adres, widzisz swój prawdziwy blok albo dom w pikselach, w śro
 
 ## Lore (ustalone, nie zmieniać bez Mateusza)
 
-Rok 2051. Wszystko zaczęło się sypać, kiedy prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję po zmianie konstytucji, a dolar przeszedł na abonament. Potem padła chmura, sieci, łańcuchy dostaw. Jedyna instytucja, która przetrwała, to spółdzielnia mieszkaniowa. Zarząd to teraz wy. Nie ma Wielkiego Mrozu ani jednego kataklizmu na koniec. Gra jest otwarta, toczy się przez pory roku, a kończy się zakończeniem ścieżki uchwał albo porażką (odwołanie zarządu, exodus, pustka).
+Rok 2051. Wszystko zaczęło się sypać, kiedy prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję po zmianie konstytucji, a dolar przeszedł na abonament. Potem ekologiczny startup od recyklingu elektrośmieci poprosił swój model AI o bakterię, która oddzieli miedź od plastiku. Model zrobił to za dobrze. Szczep uciekł z laboratorium i zjada izolację i miedź wszędzie, gdzie ma wilgoć i powietrze: w ścianach, pod ziemią, na słupach. Sieci energetycznej nie da się odbudować, bo kilometrów kabli nikt nie upilnuje. Razem z nią padła chmura, łączność i łańcuchy dostaw. Jedyna instytucja, która przetrwała, to spółdzielnia mieszkaniowa. Zarząd to teraz wy.
+
+Zasada świata: przetrwało to, co szczelne. Uzwojenia pod lakierem w generatorach i silnikach, ogniwa zalane szkłem i laminatem w panelach, chipy w żywicy, transformatory w oleju, sucha i klimatyzowana serwerownia banku. Dlatego generator w piwnicy i panele na dachu dają prąd, krótką instalację w bloku da się łatać i chronić, a lokalny model językowy jest z dysków banku. To, co gołe i wilgotne, zjadła bakteria.
+
+AI da się zbudować i to jest ironia ścieżki Technokracji: model AI zaprojektował bakterię, a zarząd w 2051 składa własny model z tego, co bakteria oszczędziła.
+
+Nie ma Wielkiego Mrozu ani jednego kataklizmu na koniec. Bakteria to przyczyna upadku z przeszłości, a nie zagrożenie, które kończy grę. Gra jest otwarta, toczy się przez pory roku, a kończy się zakończeniem ścieżki uchwał albo porażką (odwołanie zarządu, exodus, pustka).
 
 ## Dwie warstwy ludzi
 
@@ -55,6 +61,18 @@ Doba. Za dnia wyprawy: ekipa wychodzi bramą, idzie do pawilonu na mapie albo zn
 Pora roku. Jesień to zapasy, zima testuje ogrzewanie, wiosna to sadzenie, lato to upał, susza i choroby.
 
 Długo. Przyłączanie sąsiednich bloków (zaufanie plus jedzenie i opał na start), uchwały i ścieżki (Porządek, Wspólnota, Technokracja), badania z fachowców i książek, zakończenia.
+
+## Prąd i bakteria (propozycje, do ustalenia)
+
+Nic z tego nie jest jeszcze postanowione. Wynika z lore i ma sens najwcześniej w M3, kiedy systemy z 0.3 przechodzą na nowy świat. W 0.3 prąd to jedna liczba w magazynie, więc każdy z tych pomysłów zmienia balans i trzeba go sprawdzić botem.
+
+- Instalacja zamiast liczby. Prąd płynie kablami od źródła (generator, panele, wiatrak) do odbiorców (serwerownia, LED-y na klatkach, pompy ciepła). Bakteria podgryza kable, tym szybciej, im jest wilgotniej: jesień, piwnica, zalana klatka. Naprawa to zadanie dla kogoś z umiejętnością `elek` i kosztuje Części albo Złom. Kable można chronić smarem, rurkami i trzymaniem w suchym.
+- Łup szczelny i goły. Bank, serwerownia, magazyn i przychodnia dają szczelne części, które nadają się do elektroniki. Mieszkania i garaże dają głównie gołe, czyli złom. Badania z `elek` i `it` potrzebują szczelnych części.
+- Serwer w oleju. Serwerownię zanurza się w oleju, tak jak chłodzi się dziś niektóre prawdziwe serwerownie. Olej chroni przed bakterią i obniża zużycie prądu, ale trzeba go zdobyć: z transformatorów, z warsztatów samochodowych. Na mapie wygląda to jak akwarium z olejem w piwnicy.
+- Zakażenie z wyprawy. Ekipa może przynieść szczep na narzędziach i rękach. Wydarzenie: na kablach w piwnicy pojawia się zielonkawy nalot. Wybór: spalić instalację w tej klatce czy ryzykować całą resztę.
+- Satyra przy okazji, przykłady do ogłoszeń: „Zamienię przedłużacz w słoiku z olejem na worek ziemniaków”, „Startup od recyklingu przeprasza za niedogodności”.
+
+Do ustalenia z Mateuszem: czy bakterię widać na mapie (nalot na kablach w przekroju piwnicy) i czy model AI na końcu ścieżki Technokracji wie, skąd się wzięła.
 
 ## Sterowanie
 

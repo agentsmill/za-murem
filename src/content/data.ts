@@ -891,8 +891,9 @@ export const ADS: readonly string[] = [
   'Sprzedam pompę ciepła na subskrypcję. Subskrypcja wygasła.',
 ];
 
+/* Celowo inne niż w 0.3: od 17.10.2026 upadek przez bakterię od miedzi (docs/GDD.md, sekcja Lore). */
 export const LORE: string =
-  'Rok 2051. Wszystko zaczęło się sypać, kiedy prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję, a dolar przeszedł na abonament. Potem padła chmura: lodówki, samochody i domofony do dziś czekają na aktualizację. Unia zakazała palenia drewnem dzień przed tym, jak zgasł prąd. Influencerzy przeszli na survival, a doradcy ds. ESG na kaszę. Jedyna instytucja, która przetrwała, to spółdzielnia mieszkaniowa. Zarząd to teraz wy.';
+  'Rok 2051. Wszystko zaczęło się sypać, kiedy prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję, a dolar przeszedł na abonament. Potem ekologiczny startup poprosił swój model AI o bakterię, która odzyska miedź z elektrośmieci. Model się postarał. Szczep uciekł z laboratorium i zjadł kable w ścianach, pod ziemią i na słupach. Razem z siecią padła chmura: lodówki, samochody i domofony do dziś czekają na aktualizację. Unia zakazała palenia drewnem dzień przed tym, jak zgasł prąd. Influencerzy przeszli na survival, a doradcy ds. ESG na kaszę. Przetrwało to, co szczelne, i jedna instytucja: spółdzielnia mieszkaniowa. Zarząd to teraz wy.';
 
 /* Z js/sim.js (0.3): opuszczone mieszkania jako cel przeszukania */
 POICAT.mieszkania = {
