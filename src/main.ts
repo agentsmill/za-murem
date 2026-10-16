@@ -113,15 +113,17 @@ async function enter(data: Loaded) {
   $('osName').textContent = data.name;
   document.title = `Za Murem · ${data.name}`;
   const hq = world.buildings[world.hq];
-  const hx = ((hq.x0 + hq.x1 + 1) / 2) * TILE;
-  const hy = ((hq.y0 + hq.y1 + 1) / 2) * TILE;
+  // kamera na drzwi siedziby, przy których stoi zarząd (środek rdzenia)
+  const core = st.pawns.filter((p) => p.kind === 'core');
+  const hx = core.length ? (core.reduce((a, p) => a + p.x, 0) / core.length) * TILE : ((hq.x0 + hq.x1 + 1) / 2) * TILE;
+  const hy = core.length ? (core.reduce((a, p) => a + p.y, 0) / core.length) * TILE : ((hq.y0 + hq.y1 + 1) / 2) * TILE;
   const cam = params.get('cam');
   if (cam) {
     // cam=x,y,zoom w kafelkach albo cam=hq,zoom (siedziba) albo cam=all (całe osiedle)
     const parts = cam.split(',');
     if (parts[0] === 'all')
       Object.assign(view.cam, { x: (world.size * TILE) / 2, y: (world.size * TILE) / 2, zoom: view.minZoom });
-    else if (parts[0] === 'hq') Object.assign(view.cam, { x: hx, y: hy + 120, zoom: Number(parts[1]) || 1 });
+    else if (parts[0] === 'hq') Object.assign(view.cam, { x: hx, y: hy, zoom: Number(parts[1]) || 1 });
     else {
       const [x, y, z] = parts.map(Number);
       Object.assign(view.cam, { x: x * TILE, y: y * TILE, zoom: z || 1 });
@@ -129,7 +131,7 @@ async function enter(data: Loaded) {
   } else {
     // najpierw całe osiedle, potem zjazd do siedziby
     Object.assign(view.cam, { x: (world.size * TILE) / 2, y: (world.size * TILE) / 2, zoom: view.minZoom });
-    flyTo(hx, hy + 120, 1, 2400);
+    flyTo(hx, hy, 1, 2400);
   }
   if (params.has('speed')) speed = Number(params.get('speed'));
   const first = st.pawns[0];
