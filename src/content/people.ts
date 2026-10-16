@@ -77,3 +77,11 @@ export function makePerson(
 
 /** Odmiana przez płeć: g(p, 'poszedł', 'poszła'). */
 export const g = (p: { f: boolean }, m: string, f: string): string => (p.f ? f : m);
+
+/** wiek z poprawną odmianą: 1 rok, 2–4 lata (bez 12–14), reszta lat */
+export function wiek(n: number): string {
+  if (n === 1) return '1 rok';
+  const d = n % 10;
+  const dd = n % 100;
+  return `${n} ${d >= 2 && d <= 4 && (dd < 12 || dd > 14) ? 'lata' : 'lat'}`;
+}

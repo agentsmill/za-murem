@@ -72,3 +72,19 @@ describe('treść z 0.3 przeniesiona bez zmian', () => {
     }
   });
 });
+
+describe('odmiana wieku', () => {
+  it('rok, lata, lat', async () => {
+    const { wiek } = await import('../../src/content/people.ts');
+    expect(wiek(1)).toBe('1 rok');
+    expect(wiek(2)).toBe('2 lata');
+    expect(wiek(4)).toBe('4 lata');
+    expect(wiek(5)).toBe('5 lat');
+    expect(wiek(12)).toBe('12 lat');
+    expect(wiek(14)).toBe('14 lat');
+    expect(wiek(22)).toBe('22 lata');
+    expect(wiek(62)).toBe('62 lata');
+    expect(wiek(65)).toBe('65 lat');
+    expect(wiek(112)).toBe('112 lat');
+  });
+});

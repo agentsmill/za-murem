@@ -2,6 +2,8 @@
 
 import './style.css';
 import { DOM, LORE, TRAITS } from './content/data.ts';
+import { wiek } from './content/people.ts';
+import { hashString } from './core/rng.ts';
 import { buildScene, TILE } from './render/art/scene.ts';
 import { GameView } from './render/view.ts';
 import {
@@ -89,7 +91,8 @@ async function start(get: () => Promise<Loaded>) {
 }
 
 async function enter(data: Loaded) {
-  const seed = Number(params.get('seed')) || 2051;
+  // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
+  const seed = Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051;
   const t0 = performance.now();
   const world = buildWorld(data.geo, { seed, street: data.street });
   const scene = buildScene(world);
@@ -237,7 +240,7 @@ function hud(now: number) {
     .map((t) => `<span class="tag" title="${esc(TRAITS[t].desc)}">${esc(TRAITS[t].name)}</span>`)
     .join('');
   const doing = p.pi < p.path.length ? 'Idzie.' : 'Stoi i czeka na polecenie.';
-  card.innerHTML = `<h2>${esc(who.name)}</h2><p class="sub">${esc(who.prof)}, ${who.age} lat</p><div class="tags">${skills}${traits}</div><p class="doing">${doing}</p>`;
+  card.innerHTML = `<h2>${esc(who.name)}</h2><p class="sub">${esc(who.prof)}, ${wiek(who.age)}</p><div class="tags">${skills}${traits}</div><p class="doing">${doing}</p>`;
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
