@@ -1,12 +1,13 @@
 /* Świat gry: siatka 1 m wokół adresu, zbudowana z geometrii OSM.
    Kolejność: obrót mapy, prostowanie budynków, teren, wody, ścieżki, chodniki, jezdnie,
-   budynki, drzewa. Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. */
+   budynki, drzewa, wnętrze siedziby. Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. */
 
 import type { BuildingClass } from '../content/data.ts';
 import { mulberry } from '../core/rng.ts';
 import { labelRegions } from '../sim/path.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
 import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea } from './geo.ts';
+import { buildInterior, IN, type Interior } from './interior.ts';
 import { fillRing, stampLine } from './raster.ts';
 import { dominantAngle, rotateGeo, straighten } from './rotate.ts';
 
@@ -86,6 +87,8 @@ export interface World {
   /** numer budynku siedziby zarządu */
   hq: number;
   seed: number;
+  /** wnętrze siedziby (parter); reszta budynków to bryły z dachem */
+  interior: Interior;
 }
 
 const ROAD_W: Record<string, number> = {
@@ -342,7 +345,14 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   // 10. wejścia (pnie stoją co najmniej 2 m od budynków, więc nie wchodzą w drzwi)
   for (const b of buildings) b.entrances = findEntrances(b, terr, bid, blocked, size);
 
-  return { size, angle, terr, bid, blocked, buildings, trees, pois, hq, seed: opts.seed };
+  // 11. wnętrze siedziby: ściany i schody blokują, posadzki, drzwi i meble na razie nie
+  const interior = buildInterior({ size, bid, blocked, building: buildings[hq], seed: opts.seed });
+  for (let i = 0; i < N; i++) {
+    const c = interior.cell[i];
+    if (c !== IN.NONE) blocked[i] = c === IN.WALL || c === IN.STAIRS ? 1 : 0;
+  }
+
+  return { size, angle, terr, bid, blocked, buildings, trees, pois, hq, seed: opts.seed, interior };
 }
 
 /** Łączy z największym obszarem każdy obszar większy niż 0,5% wolnej mapy (najwyżej 12 bram).
