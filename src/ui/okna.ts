@@ -167,7 +167,7 @@ export function nightSheet(card: NightCard, assign: Record<string, string>, odds
     title: first ? 'Pierwsza noc za siatką' : `Noc ${card.day}`,
     body: `<p class="lead">${
       first
-        ? 'Dym z kozy widać z daleka. Kto śpi, kto pilnuje siatki albo kozy, a kto idzie po zapasy?'
+        ? 'Dym z kozy widać z daleka. Kto śpi, kto pilnuje, a kto idzie po zapasy?'
         : 'Kto śpi, kto pilnuje siatki albo kozy, a kto idzie po zapasy?'
     }</p><div data-odds>${oddsHtml(card, assign, odds, names)}</div><ul class="crew">${rows}</ul>${
       card.advice
