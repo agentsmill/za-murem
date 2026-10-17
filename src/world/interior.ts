@@ -1,17 +1,23 @@
-/* Wnętrze siedziby: parter z klatkami, mieszkaniami i meblami, ułożony z szablonów na obrysie z OSM.
+/* Wnętrze budynku: parter z klatkami, mieszkaniami i meblami, ułożony z szablonów na obrysie z OSM.
    Ściany mają grubość jednego kafelka, brzeg obrysu to ściana zewnętrzna albo drzwi.
    - Blok: sekcja na każdą klatkę (granice w połowie między wejściami). Trzon klatki 3 m przez całą
      głębokość, schody w głębi, po obu stronach mieszkanie w pasach: od wejścia kuchnia z łazienką,
      przedpokój 2 m, pokoje od przeciwległej fasady. Głęboki budynek ma kilka rzędów mieszkań
      (ostatni odwrócony, kuchnią do tylnej fasady), płytki prostszy układ bez przedpokoju.
    - Dom (i kawałek bloku bez klatki): przedpokój od drzwi w głąb, po bokach kuchnia, łazienka, pokoje.
+   - Sklep, szkoła, przychodnia i reszta: sala od wejścia, w głębokim budynku zaplecze z toaletą
+     pod tylną ścianą; garaż i hala to jedna hala. Bardzo mały budynek to jedno pomieszczenie.
    Nieregularny obrys przycina szablon. Drzwi łączą potem pomieszczenia od wejść w głąb (klatka,
    przedpokój, reszta mieszkania); czego nie da się połączyć drzwiami, łączy się z sąsiadem,
-   dostaje drzwi na zewnątrz albo zostaje zamurowane.
-   Deterministycznie: ten sam świat i ziarno dają to samo wnętrze. */
+   dostaje drzwi na zewnątrz albo zostaje zamurowane. Koza, skład drewna i mieszkanie zarządu
+   tylko w siedzibie (opts.home).
+   Wnętrze wynika wyłącznie ze świata (siatka budynków, teren, wejścia), numeru budynku i ziarna,
+   więc nie trzeba go zapisywać: odtworzy się takie samo. */
 
 import { clamp, mulberry, type Rng } from '../core/rng.ts';
-import type { Dir, WorldBuilding } from './world.ts';
+import { labelRegions } from '../sim/path.ts';
+import { T } from './terrain.ts';
+import type { Dir, World, WorldBuilding } from './world.ts';
 
 /** kody kafelka wnętrza */
 export const IN = {
@@ -23,8 +29,10 @@ export const IN = {
 } as const;
 export type InCode = (typeof IN)[keyof typeof IN];
 
-export type RoomKind = 'klatka' | 'przedpokoj' | 'pokoj' | 'kuchnia' | 'lazienka';
-export type FloorKind = 'lastryko' | 'panele' | 'linoleum' | 'kafle';
+/** pomieszczenia mieszkalne, a w budynkach bez mieszkań: sala (sklep, szkoła, przychodnia),
+    hala (garaż, magazyn, warsztat) i zaplecze */
+export type RoomKind = 'klatka' | 'przedpokoj' | 'pokoj' | 'kuchnia' | 'lazienka' | 'sala' | 'hala' | 'zaplecze';
+export type FloorKind = 'lastryko' | 'panele' | 'linoleum' | 'kafle' | 'beton';
 
 /** posadzka wynika z rodzaju pomieszczenia */
 export const FLOOR_OF: Record<RoomKind, FloorKind> = {
@@ -33,6 +41,9 @@ export const FLOOR_OF: Record<RoomKind, FloorKind> = {
   kuchnia: 'linoleum',
   pokoj: 'panele',
   lazienka: 'kafle',
+  sala: 'lastryko',
+  hala: 'beton',
+  zaplecze: 'linoleum',
 };
 
 export type FurnitureKind =
@@ -79,14 +90,14 @@ export interface Room {
   /** równy indeksowi w rooms */
   id: number;
   kind: RoomKind;
-  /** numer mieszkania, −1 dla klatki */
+  /** numer mieszkania, −1 dla klatki i w budynkach bez mieszkań */
   apt: number;
   /** kafelków posadzki (bez schodów) */
   area: number;
 }
 
 export interface Interior {
-  /** numer budynku siedziby */
+  /** numer budynku */
   building: number;
   /** kod kafelka (IN), size×size */
   cell: Uint8Array;
@@ -98,20 +109,18 @@ export interface Interior {
   /** kafelki ścian zewnętrznych z oknem, rosnąco */
   windows: number[];
   furniture: Furniture[];
-  /** wolne kafelki składu drewna przy kozie */
+  /** wolne kafelki składu drewna przy kozie (tylko w siedzibie) */
   sklad: number[];
-  /** numer mieszkania zarządu */
+  /** numer mieszkania zarządu, −1 poza siedzibą */
   home: number;
 }
 
-export interface InteriorInput {
-  size: number;
-  /** numer budynku na kafelku albo −1 */
-  bid: Int32Array;
-  /** przechodniość świata przed wnętrzem (wolne miejsce przed nowymi drzwiami) */
-  blocked: Uint8Array;
-  building: WorldBuilding;
-  seed: number;
+/** z czego powstaje wnętrze: niezmienne dane świata i ziarno (bez blocked, które zmienia się w grze) */
+export type InteriorWorld = Pick<World, 'size' | 'terr' | 'bid' | 'buildings' | 'seed'>;
+
+export interface InteriorOpts {
+  /** siedziba: mieszkanie zarządu z kozą, składem drewna i miejscami do spania */
+  home?: boolean;
 }
 
 type Rot = 0 | 1 | 2 | 3;
@@ -130,9 +139,10 @@ interface Proto {
 interface Ctx {
   size: number;
   bid: Int32Array;
+  terr: Uint8Array;
   id: number;
   b: WorldBuilding;
-  blocked: Uint8Array;
+  home: boolean;
   rnd: Rng;
   cell: Uint8Array;
   /** pomieszczenie z szablonu na kafelku albo −1 */
@@ -142,16 +152,20 @@ interface Ctx {
   apts: number;
 }
 
-export function buildInterior(inp: InteriorInput): Interior {
-  const { size, building: b } = inp;
+/** Wnętrze budynku id. Siedziba (opts.home) dostaje mieszkanie zarządu z kozą i składem drewna;
+    inne budynki home = −1 i pusty skład. Na świat nakłada je applyInterior. */
+export function buildInterior(w: InteriorWorld, id: number, opts: InteriorOpts = {}): Interior {
+  const { size } = w;
+  const b = w.buildings[id];
   const N = size * size;
   const ctx: Ctx = {
     size,
-    bid: inp.bid,
-    id: b.id,
+    bid: w.bid,
+    terr: w.terr,
+    id,
     b,
-    blocked: inp.blocked,
-    rnd: mulberry(((inp.seed * 7919) ^ (b.id * 104729) ^ 0x1e7e21) >>> 0),
+    home: !!opts.home,
+    rnd: mulberry(((w.seed * 7919) ^ (id * 104729) ^ 0x1e7e21) >>> 0),
     cell: new Uint8Array(N),
     owner: new Int32Array(N).fill(-1),
     protos: [],
@@ -161,7 +175,7 @@ export function buildInterior(inp: InteriorInput): Interior {
   const outer: number[] = [];
   for (const comp of components(ctx)) layoutComponent(ctx, comp, outer);
   // 2. pomieszczenia: spójne kawałki pomieszczeń z szablonu
-  const R = roomsOf(ctx);
+  const R = roomsOf(ctx, outer);
   // 3. drzwi frontowe, potem drzwi od wejść w głąb
   for (const t of outer) ctx.cell[t] = IN.DOOR;
   connectRooms(ctx, R, outer);
@@ -189,6 +203,19 @@ export function buildInterior(inp: InteriorInput): Interior {
     home: f.home,
   };
 }
+
+/** Nakłada wnętrze na świat: ściany i schody blokują, posadzki, drzwi i meble (na razie) nie.
+    Zwraca regiony policzone od nowa, bo wnętrze łączy się z podwórkiem przez drzwi. */
+export function applyInterior(w: Pick<World, 'size' | 'blocked'>, it: Interior): Int32Array {
+  for (let i = 0; i < it.cell.length; i++) {
+    const c = it.cell[i];
+    if (c !== IN.NONE) w.blocked[i] = c === IN.WALL || c === IN.STAIRS ? 1 : 0;
+  }
+  return labelRegions(w.blocked, w.size);
+}
+
+/** wolny teren tuż za ścianą: nie budynek i nie woda (drzewa i trzepak stoją co najmniej 2 m od budynków) */
+const outside = (ctx: Ctx, o: number) => ctx.bid[o] < 0 && ctx.terr[o] !== T.WATER;
 
 /** sąsiad w kierunku d (0 góra, 1 prawo, 2 dół, 3 lewo) albo −1 za brzegiem mapy */
 function nb(size: number, i: number, d: number): number {
@@ -281,6 +308,7 @@ function layoutComponent(ctx: Ctx, comp: number[], outer: number[]): void {
   const { size, b } = ctx;
   const inComp = new Set(comp);
   let doors: { tile: number; dir: Dir }[] = b.entrances.filter((e) => inComp.has(e.tile));
+  const residential = b.cls === 'blok' || b.cls === 'dom';
   const staircase = b.cls === 'blok' && doors.length > 0;
   if (!doors.length) {
     const d = extraDoor(ctx, comp, b.entrances[0]?.dir);
@@ -325,7 +353,13 @@ function layoutComponent(ctx: Ctx, comp: number[], outer: number[]): void {
   const local = doors
     .map((d) => toUV(f, d.tile % size, Math.floor(d.tile / size)))
     .sort((p, q) => p[0] - q[0] || p[1] - q[1]);
-  if (staircase) blockLayout(ctx, g, local);
+  let area = 0;
+  for (let k = 0; k < n; k++) if (g.inside[k] && !g.edge[k]) area++;
+  const big = b.cls === 'garaz' || b.cls === 'hala' ? 'hala' : 'sala';
+  // bardzo mały budynek: jedno pomieszczenie
+  if (area < 16) single(ctx, g, residential ? 'pokoj' : big, residential ? ctx.apts++ : -1);
+  else if (!residential) hallLayout(ctx, g, local[0][1], big);
+  else if (staircase) blockLayout(ctx, g, local);
   else domLayout(ctx, g, local[0][0], local[0][1]);
   for (const i of comp) {
     const k = at(i);
@@ -338,7 +372,7 @@ function layoutComponent(ctx: Ctx, comp: number[], outer: number[]): void {
 /** drzwi do kawałka bez wejścia (np. między przejściami falowca): środek ściany z wolnym terenem przed nią,
     najpierw od strony wejść budynku */
 function extraDoor(ctx: Ctx, comp: number[], prefer: Dir | undefined): { tile: number; dir: Dir } | null {
-  const { size, bid, id, blocked } = ctx;
+  const { size, bid, id } = ctx;
   const order: Dir[] = [];
   for (const d of [prefer, 'S', 'E', 'W', 'N'] as (Dir | undefined)[]) if (d && !order.includes(d)) order.push(d);
   const inMap = (x: number, y: number) => x >= 0 && y >= 0 && x < size && y < size;
@@ -352,7 +386,7 @@ function extraDoor(ctx: Ctx, comp: number[], prefer: Dir | undefined): { tile: n
       if (!inMap(x + dx, y + dy) || !inMap(x - dx, y - dy)) continue;
       const o = (y + dy) * size + x + dx;
       const inner = (y - dy) * size + x - dx;
-      if (bid[o] === id || blocked[o] || bid[inner] !== id || isEdge(ctx, inner)) continue;
+      if (!outside(ctx, o) || bid[inner] !== id || isEdge(ctx, inner)) continue;
       // w prostej ścianie, nie w narożniku
       if (!inMap(x + dy, y + dx) || !inMap(x - dy, y - dx)) continue;
       if (bid[(y + dx) * size + x + dy] !== id || bid[(y - dx) * size + x - dy] !== id) continue;
@@ -370,6 +404,38 @@ function extraDoor(ctx: Ctx, comp: number[], prefer: Dir | undefined): { tile: n
     return { tile: cands[0], dir: d };
   }
   return null;
+}
+
+/** jedno pomieszczenie na całe wnętrze */
+function single(ctx: Ctx, g: Grid, kind: RoomKind, apt: number): void {
+  const p = newProto(ctx, kind, apt, true);
+  for (let k = 0; k < g.U * g.V; k++) if (g.inside[k] && !g.edge[k]) g.lab[k] = p;
+}
+
+/** budynek bez mieszkań: sala (albo hala) od wejścia; w głębokim i szerokim budynku pod tylną ścianą
+    pas zaplecza 3 m podzielony co około 5 m, jedno z pomieszczeń to toaleta */
+function hallLayout(ctx: Ctx, g: Grid, ve: number, kind: 'sala' | 'hala'): void {
+  const { U, V, inside, edge, lab } = g;
+  const main = newProto(ctx, kind, -1, true);
+  let vb = ve;
+  for (let k = 0; k < U * V; k++) if (inside[k]) vb = Math.max(vb, Math.floor(k / U));
+  const back = kind === 'sala' && vb - ve + 1 >= 11 && U >= 8 ? vb - 4 : -1;
+  const m = Math.max(1, Math.floor((U - 1) / 6));
+  const walls: number[] = [];
+  for (let j = 1; j < m; j++) walls.push(Math.round((j * (U - 1)) / m));
+  const rooms: number[] = [];
+  if (back >= 0) {
+    const wc = m > 1 ? (ctx.rnd() < 0.5 ? 0 : m - 1) : -1;
+    for (let j = 0; j < m; j++) rooms.push(newProto(ctx, j === wc ? 'lazienka' : 'zaplecze', -1, false));
+  }
+  for (let v = 0; v < V; v++)
+    for (let u = 0; u < U; u++) {
+      const k = v * U + u;
+      if (!inside[k] || edge[k]) continue;
+      if (back < 0 || v < back) lab[k] = main;
+      else if (v === back || walls.includes(u)) lab[k] = WALL;
+      else lab[k] = rooms[walls.filter((x) => u > x).length];
+    }
 }
 
 /** blok: sekcja na każde wejście, granice (mur) w połowie między wejściami */
@@ -641,22 +707,28 @@ interface Rooms {
   list: RoomInfo[];
 }
 
-function roomsOf(ctx: Ctx): Rooms {
-  const { size, owner, b } = ctx;
+function roomsOf(ctx: Ctx, outer: number[]): Rooms {
+  const { size, owner, cell, b } = ctx;
   const roomOf = new Int32Array(size * size).fill(-1);
   const list: RoomInfo[] = [];
+  // kawałki liczone po samej posadzce: schody blokują, więc kieszeń za nimi to osobny kawałek
+  const stairs: number[] = [];
   for (let y = b.y0; y <= b.y1; y++)
     for (let x = b.x0; x <= b.x1; x++) {
       const s = y * size + x;
       const o = owner[s];
       if (o < 0 || roomOf[s] >= 0) continue;
+      if (cell[s] === IN.STAIRS) {
+        stairs.push(s);
+        continue;
+      }
       const id = list.length;
       const tiles = [s];
       roomOf[s] = id;
       for (let k = 0; k < tiles.length; k++)
         for (let d = 0; d < 4; d++) {
           const n = nb(size, tiles[k], d);
-          if (n >= 0 && owner[n] === o && roomOf[n] < 0) {
+          if (n >= 0 && owner[n] === o && cell[n] === IN.FLOOR && roomOf[n] < 0) {
             roomOf[n] = id;
             tiles.push(n);
           }
@@ -664,9 +736,45 @@ function roomsOf(ctx: Ctx): Rooms {
       const p = ctx.protos[o];
       list.push({ kind: p.kind, apt: p.apt, entry: p.entry, tiles, gone: false });
     }
+  // cały blok schodów należy do największego przyległego kawałka klatki; bez niego zostaje murem
+  const inBlock = new Set<number>();
+  for (const s of stairs) {
+    if (inBlock.has(s)) continue;
+    inBlock.add(s);
+    const block = [s];
+    let best = -1;
+    for (let k = 0; k < block.length; k++)
+      for (let d = 0; d < 4; d++) {
+        const n = nb(size, block[k], d);
+        if (n < 0 || owner[n] !== owner[s]) continue;
+        if (cell[n] === IN.STAIRS) {
+          if (!inBlock.has(n)) {
+            inBlock.add(n);
+            block.push(n);
+          }
+        } else if (roomOf[n] >= 0 && (best < 0 || list[roomOf[n]].tiles.length > list[best].tiles.length))
+          best = roomOf[n];
+      }
+    for (const t of block) {
+      if (best < 0) cell[t] = IN.WALL;
+      else {
+        roomOf[t] = best;
+        list[best].tiles.push(t);
+      }
+    }
+  }
   const R = { roomOf, list };
-  // resztki po przycięciu (do 2 m² posadzki) zamurowujemy
-  for (const r of list) if (floorCount(ctx, r) <= 2) wallUp(ctx, R, r);
+  // resztki po przycięciu (do 2 m² posadzki) zamurowujemy; to, do czego prowadzą drzwi zewnętrzne
+  // (np. jedyna izdebka małego budynku), zostaje
+  const atDoor = new Set<number>();
+  for (const t of outer)
+    for (let d = 0; d < 4; d++) {
+      const n = nb(size, t, d);
+      if (n >= 0 && roomOf[n] >= 0) atDoor.add(roomOf[n]);
+    }
+  list.forEach((r, k) => {
+    if (!atDoor.has(k) && floorCount(ctx, r) <= 2) wallUp(ctx, R, r);
+  });
   return R;
 }
 
@@ -686,6 +794,8 @@ function wallUp(ctx: Ctx, R: Rooms, r: RoomInfo): void {
 
 /** pierwszeństwo drzwi z osiągniętego pomieszczenia n do nieosiągniętego r (mniej znaczy lepiej) */
 function prio(r: RoomInfo, n: RoomInfo): number {
+  // budynek bez mieszkań: wszystko z sali albo hali
+  if (n.kind === 'sala' || n.kind === 'hala') return 0;
   if (r.apt >= 0 && r.apt === n.apt) {
     if (n.kind === 'przedpokoj') return r.kind === 'lazienka' ? 1 : 0;
     if (n.kind === 'lazienka') return 6;
@@ -845,7 +955,7 @@ function cornerLink(ctx: Ctx, R: Rooms, reached: Uint8Array): boolean {
 
 /** ostatnia deska ratunku przed zamurowaniem: drzwi na zewnątrz, jeśli przed ścianą jest wolny teren */
 function outerDoor(ctx: Ctx, R: Rooms, reached: Uint8Array, outer: number[]): boolean {
-  const { size, cell, bid, id } = ctx;
+  const { size, cell } = ctx;
   const { list } = R;
   for (let k = 0; k < list.length; k++) {
     const r = list[k];
@@ -855,7 +965,7 @@ function outerDoor(ctx: Ctx, R: Rooms, reached: Uint8Array, outer: number[]): bo
       for (let d = 0; d < 4; d++) {
         const w = nb(size, t, d);
         const o = w >= 0 ? nb(size, w, d) : -1;
-        if (o < 0 || cell[w] !== IN.WALL || bid[o] === id || ctx.blocked[o]) continue;
+        if (o < 0 || cell[w] !== IN.WALL || !outside(ctx, o)) continue;
         cell[w] = IN.DOOR;
         outer.push(w);
         reached[k] = 1;
@@ -897,6 +1007,8 @@ function placeWindows(ctx: Ctx, rooms: Room[], room: Int16Array): Uint8Array {
   const { size, cell, bid, id, b } = ctx;
   const win = new Uint8Array(size * size);
   const period = ctx.rnd() < 0.5 ? 2 : 3;
+  // garaże są bez okien
+  if (b.cls === 'garaz') return win;
   const cands: { o: number; line: number; along: number; r: number; t: number }[] = [];
   for (let y = b.y0; y <= b.y1; y++)
     for (let x = b.x0; x <= b.x1; x++) {
@@ -1036,7 +1148,7 @@ function furnish(ctx: Ctx, rooms: Room[], room: Int16Array, win: Uint8Array) {
   const aptArea = aptRooms.map((ids) => ids.reduce((s, r) => s + rooms[r].area, 0));
   const order = aptRooms.map((_, a) => a).sort((p, q) => aptDist[p] - aptDist[q] || aptArea[q] - aptArea[p] || p - q);
   let home = -1;
-  for (const relaxed of [false, true]) {
+  for (const relaxed of ctx.home ? [false, true] : []) {
     for (const a of order) {
       const m = snapshot(F);
       const done = furnishHome(F, rooms, aptRooms[a], relaxed);
@@ -1049,14 +1161,16 @@ function furnish(ctx: Ctx, rooms: Room[], room: Int16Array, win: Uint8Array) {
     }
     if (home >= 0) break;
   }
-  if (home < 0) home = order[0] ?? 0;
+  // nie ma gdzie postawić kozy: zarząd i tak mieszka najbliżej drzwi
+  if (ctx.home && home < 0) home = order[0] ?? -1;
   // reszta mieszkań: z losowością z ziarna
   for (const r of rooms) {
     if (F.done[r.id]) continue;
     F.done[r.id] = 1;
     if (r.kind === 'kuchnia') kitchenItems(F, r.id, 2 + Math.floor(F.rnd() * 2));
     else if (r.kind === 'lazienka') {
-      placeWall(F, r.id, 'wanna');
+      // wanna tylko w mieszkaniu; toaleta w sklepie czy szkole bez niej
+      if (r.apt >= 0) placeWall(F, r.id, 'wanna');
       if (F.rnd() < 0.85) placeWall(F, r.id, 'sedes');
       if (F.rnd() < 0.85) placeWall(F, r.id, 'umywalka');
     } else if (r.kind === 'pokoj') {

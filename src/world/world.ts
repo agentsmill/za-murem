@@ -8,31 +8,18 @@ import { mulberry } from '../core/rng.ts';
 import { labelRegions, nearestFree } from '../sim/path.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
 import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea } from './geo.ts';
-import { buildInterior, IN, type Interior } from './interior.ts';
+import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { fillRing, stampLine } from './raster.ts';
 import { dominantAngle, rotateGeo, straighten } from './rotate.ts';
+import { T } from './terrain.ts';
+
+/** kody terenu */
+export { T, type TerrainCode } from './terrain.ts';
 
 /** bok obszaru gry w metrach (= kafelkach) */
 export const SIZE = 384;
 /** promień pobierania danych: z zapasem na obrót mapy o 45° */
 export const LOAD_RADIUS = Math.ceil((SIZE / 2) * 1.5);
-
-/** kody terenu */
-export const T = {
-  GRASS: 0,
-  PARK: 1,
-  WOOD: 2,
-  ROAD: 3,
-  SIDEWALK: 4,
-  PATH: 5,
-  PARKING: 6,
-  WATER: 7,
-  PLAY: 8,
-  PITCH: 9,
-  ALLOT: 10,
-  BUILDING: 11,
-} as const;
-export type TerrainCode = (typeof T)[keyof typeof T];
 
 export type Dir = 'N' | 'S' | 'E' | 'W';
 export interface Entrance {
@@ -361,15 +348,13 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   // 10. wejścia (pnie stoją co najmniej 2 m od budynków, więc nie wchodzą w drzwi)
   for (const b of buildings) b.entrances = findEntrances(b, terr, bid, blocked, size);
 
-  // 11. wnętrze siedziby: ściany i schody blokują, posadzki, drzwi i meble na razie nie
-  const interior = buildInterior({ size, bid, blocked, building: buildings[hq], seed: opts.seed });
-  for (let i = 0; i < N; i++) {
-    const c = interior.cell[i];
-    if (c !== IN.NONE) blocked[i] = c === IN.WALL || c === IN.STAIRS ? 1 : 0;
-  }
+  // 11. wnętrze siedziby (z mieszkaniem zarządu) nałożone na świat; inne budynki dostaną wnętrze,
+  // kiedy spółdzielnia je zajmie
+  const interior = buildInterior({ size, terr, bid, buildings, seed: opts.seed }, hq, { home: true });
+  const reg = applyInterior({ size, blocked }, interior);
 
   // 12. suche drzewo przy trzepaku: cel pierwszego polecenia (regiony już z wnętrzem)
-  const yard = dryTreeAndTrzepak(terr, bid, blocked, size, trees, buildings, hq, opts.seed);
+  const yard = dryTreeAndTrzepak(terr, bid, blocked, reg, size, trees, buildings, hq, opts.seed);
 
   return {
     size,
@@ -410,6 +395,7 @@ function dryTreeAndTrzepak(
   terr: Uint8Array,
   bid: Int32Array,
   blocked: Uint8Array,
+  reg: Int32Array,
   size: number,
   trees: Tree[],
   buildings: WorldBuilding[],
@@ -423,7 +409,6 @@ function dryTreeAndTrzepak(
   const ax = (at % size) + 0.5;
   const ay = Math.floor(at / size) + 0.5;
   const [fx, fy] = door ? DIRS[door.dir] : [0, 0];
-  const reg = labelRegions(blocked, size);
   const home = reg[door ? door.out : nearestFree(blocked, size, at)];
   // obok kafelka jest wolny kafelek, do którego dojdzie się z drzwi
   const reachable = (i: number) => {
