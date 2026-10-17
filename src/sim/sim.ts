@@ -115,6 +115,8 @@ export const PATCH_TICKS = TICKS_PER_HOUR / 2;
 export const CAMPFIRE_WOOD = 2;
 export const BUILD_TICKS = TICKS_PER_HOUR / 4;
 export const CAMPFIRE_CAP = 6;
+/** przyjęci ruszają spod bramy co tyle ticków (1,5 s przy 1×) */
+export const ARRIVE_GAP = 30;
 /** sen na podłodze: nastrój rano (punkty), siły mieszkańca po nocy w łóżku */
 export const FLOOR_MOOD = -5;
 export const RESIDENT_REST = 70;
@@ -824,6 +826,19 @@ export function addResidents(st: SimState, w: World, n: number, arrive = false):
   const rnd = rngOf(st.rng);
   const { resident } = composeLayers(w, [], null, st.fence, homeMask(h, size));
   const exit = arrive ? exitOf(w) : -1;
+  // przyjęci czekają za bramą obok siebie (nie na jednym kafelku) i ruszają po kolei, gęsiego
+  const yard = new Set(fenceShape(w)?.yard ?? []);
+  const gate = gateTiles(w);
+  const wait: number[] = [];
+  if (exit >= 0)
+    for (const [dx, dy] of SPREAD) {
+      const x = (exit % size) + dx;
+      const y = Math.floor(exit / size) + dy;
+      const i = y * size + x;
+      if (x < 0 || y < 0 || x >= size || y >= size || w.blocked[i] || w.bid[i] >= 0 || yard.has(i) || gate.includes(i))
+        continue;
+      wait.push(i);
+    }
   let added = 0;
   for (let k = 0; k < n; k++) {
     const have = st.pawns.filter((p) => p.kind === 'resident');
@@ -841,7 +856,7 @@ export function addResidents(st: SimState, w: World, n: number, arrive = false):
     }
     const at = free[Math.floor(idx / Math.max(1, apts.length)) % Math.max(1, free.length)] ?? free[0];
     if (at === undefined) break;
-    const start = exit >= 0 ? exit : at;
+    const start = exit >= 0 ? (wait[k % Math.max(1, wait.length)] ?? exit) : at;
     const p = newPawn(st, w, 'resident', -1, start, start, 4 + Math.floor(rnd() * 12));
     p.apt = apt;
     p.needs = { food: 70, warm: 60, rest: 70, health: 100, safe: 60, mood: 0 };
@@ -855,7 +870,7 @@ export function addResidents(st: SimState, w: World, n: number, arrive = false):
         phase: 0,
         from: -1,
         t0: st.tick,
-        until: 0,
+        until: st.tick + k * ARRIVE_GAP,
         order: false,
         n: 0,
         what: '',
@@ -2444,7 +2459,8 @@ export class Sim {
       case 'build':
         return this.buildWork(p, j, at);
       case 'arrive':
-        // przyjęty: zza bramy do swojego mieszkania, potem plan dnia jak każdy mieszkaniec
+        // przyjęty: zza bramy do swojego mieszkania (po kolei, gęsiego), potem plan dnia jak każdy mieszkaniec
+        if (tick < j.until) return true;
         return !at && this.go(p, j.tile);
       case 'leave':
         // za bramą znika; wraca poleceniem 'back'
