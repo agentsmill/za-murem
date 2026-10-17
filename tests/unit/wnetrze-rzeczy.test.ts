@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { rgba } from '../../src/render/art/palette.ts';
 import {
   BASE,
+  BUILD_KINDS,
   deadTreeSprite,
   FIRE_FRAMES,
   FURNITURE_KINDS,
@@ -102,6 +103,11 @@ function allSpecs(): ThingSpec[] {
     for (const table of [false, true]) for (const seed of [0, 1, 2, 3]) s.push({ kind: 'posilek', size, table, seed });
   for (const model of WRECK_MODELS)
     for (const rot of ROTS) for (const seed of [0, 1, 5, 11]) s.push({ kind: 'wrak', model, rot, seed });
+  // budowle M2, śmieci i zepsute meble
+  for (const kind of BUILD_KINDS) for (const rot of ROTS) for (const seed of [0, 3, 8]) s.push({ kind, rot, seed });
+  for (const size of [1, 2, 3] as const) for (const seed of [0, 4, 9]) s.push({ kind: 'smieci', size, seed });
+  for (const kind of FURNITURE_KINDS) for (const rot of ROTS) s.push({ kind, rot, seed: 6, broken: true });
+  for (const rot of ROTS) s.push({ kind: 'kuchenka', rot, seed: 6, burnt: true });
   return s;
 }
 
@@ -125,6 +131,8 @@ function sizeKey(s: ThingSpec): string {
       return `posilek ${!!s.table}`;
     case 'wrak':
       return `wrak ${s.model} ${s.rot}`;
+    case 'smieci':
+      return `smieci ${s.size}`;
     default:
       return `${s.kind} ${s.rot}`;
   }
