@@ -57,6 +57,7 @@ import { FeedWatch, type PoseView, poseOf } from './poses.ts';
 import { burning, IN, specOf, type ThingLike } from './section.ts';
 import { smokeSources } from './smoke.ts';
 import { SmokeLayer } from './smokeLayer.ts';
+import { TreeLayer, type Walker } from './treeLayer.ts';
 import { fenceThings, mockWrecks } from './yard.ts';
 
 const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -101,6 +102,10 @@ export class GameView {
   terrain = new Container();
   marks = new Graphics();
   actors = new Container();
+  /** drzewa z bliska jako sprite'y w warstwie pionków (z daleka są w kawałkach) */
+  readonly trees = new TreeLayer(this.actors);
+  /** pionki z ostatniej klatki (korony nad zarządem półprzezroczyste) */
+  private walkers: readonly Walker[] = [];
   /** noc: mapa światła nad światem */
   light = new LightLayer();
   /**
@@ -522,7 +527,9 @@ export class GameView {
         s.stale &= ~(NEAR_BIT | CUT_BIT);
       }
     }
-    this.complete = complete && !this.thingsPending;
+    // drzewa z bliska jako sprite'y z widocznych kawałków, z daleka schowane (są w kawałkach)
+    this.trees.update(sc, order, near, linear, this.walkers);
+    this.complete = complete && !this.thingsPending && !this.trees.pending;
     this.chunkMs = performance.now() - t0;
   }
 
@@ -538,6 +545,7 @@ export class GameView {
     this.root.scale.set(z);
     this.root.position.set(Math.round(this.width / 2 - this.cam.x * z), Math.round(this.height / 2 - this.cam.y * z));
     this.cutOn = this.scene.section !== null && z >= (this.cutOn ? CUT_OFF : CUT_ON);
+    this.walkers = st.pawns.filter((p) => !p.away);
     this.updateChunks(this.frameNo < 3 ? 400 : 10);
     // światła: z gry i dodatki (ten sam ogień nie świeci dwa razy); we wnętrzu tylko w przekroju
     const time = performance.now() / 1000;

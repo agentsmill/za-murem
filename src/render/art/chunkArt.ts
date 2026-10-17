@@ -524,40 +524,53 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       }
     }
   }
-  // cienie drzew: miękkie elipsy w jednej ścieżce, żeby nakładające się nie ciemniały podwójnie;
-  // ścięte drzewa (treeGone) już się nie rysują, suche (bez liści) ma cień lżejszy i mniejszy
+  // cienie drzew: miękkie elipsy w trzech warstwach (każda w jednej ścieżce, żeby nakładające się
+  // nie ciemniały podwójnie), od szerokiej i jasnej do węższej i ciemniejszej w środku; ścięte drzewa
+  // (treeGone) już się nie rysują, suche (bez liści) ma cień lżejszy i mniejszy
   const list = sc.treesBy[cy * sc.chunks + cx].filter((k) => !sc.treeGone[k]);
-  const shade = (ks: number[], k: number, fill: string) => {
+  const shade = (ks: number[], k: number, a: number) => {
     if (!ks.length) return;
-    ctx.beginPath();
-    for (const ti of ks) {
-      const t = w.trees[ti];
-      const sx = (t.x + t.r * 0.45) * TILE;
-      const sy = (t.y - 1.2 - t.r * 0.55) * TILE;
-      ctx.moveTo(sx + t.r * TILE * 0.95 * k, sy);
-      ctx.ellipse(sx, sy, t.r * TILE * 0.95 * k, t.r * TILE * 0.76 * k, 0, 0, Math.PI * 2);
+    for (const [m, f] of SOFT) {
+      ctx.beginPath();
+      for (const ti of ks) {
+        const t = w.trees[ti];
+        const sx = (t.x + t.r * 0.45) * TILE;
+        const sy = (t.y - 1.2 - t.r * 0.55) * TILE;
+        const rx = t.r * TILE * 0.95 * k * m;
+        ctx.moveTo(sx + rx, sy);
+        ctx.ellipse(sx, sy, rx, t.r * TILE * 0.76 * k * m, 0, 0, Math.PI * 2);
+      }
+      ctx.fillStyle = `rgba(16,22,34,${(a * f).toFixed(3)})`;
+      ctx.fill();
     }
-    ctx.fillStyle = fill;
-    ctx.fill();
   };
   shade(
     list.filter((k) => k !== sc.dryTree),
     1,
-    'rgba(16,22,34,0.30)',
+    0.3,
   );
   shade(
     list.filter((k) => k === sc.dryTree),
     0.8,
-    'rgba(16,22,34,0.13)',
+    0.13,
   );
-  // drzewa od tyłu do przodu
-  for (const k of list) {
-    const t = w.trees[k];
-    const sp = k === sc.dryTree ? deadTree(t) : treeSprite(t);
-    ctx.drawImage(sp.canvas, t.x * TILE - sp.ax, t.y * TILE - sp.ay);
-  }
+  // drzewa od tyłu do przodu, ale tylko z daleka: z bliska stoją jako sprite'y w warstwie pionków
+  // (treeLayer.ts), sortowane po y razem z pionkami
+  if (s < TILE)
+    for (const k of list) {
+      const t = w.trees[k];
+      const sp = k === sc.dryTree ? deadTree(t) : treeSprite(t);
+      ctx.drawImage(sp.canvas, t.x * TILE - sp.ax, t.y * TILE - sp.ay);
+    }
   ctx.restore();
 }
+
+/** warstwy miękkiego cienia drzewa: skala elipsy i udział krycia (razem w środku pełne krycie) */
+const SOFT: readonly (readonly [number, number])[] = [
+  [1.12, 0.3],
+  [0.96, 0.35],
+  [0.78, 0.5],
+];
 
 const deadCache = new Map<string, { canvas: AnyCanvas; ax: number; ay: number }>();
 
