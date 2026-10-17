@@ -25,10 +25,14 @@ export interface ThingLike {
   h: number;
   /** ściana, przy której stoi: 0 góra, 1 prawo, 2 dół, 3 lewo */
   rot: number;
-  /** sztuki (drewno, jedzenie) */
+  /** sztuki (drewno, jedzenie, porcje w garnku, sterty materiału) */
   n?: number;
   /** ogień (koza, ognisko): pali się, gdy więcej niż 0 */
   fuel?: number;
+  /** wrak samochodu: 'maluch' albo 'polonez' */
+  model?: string;
+  /** stoi na stole (garnek z posiłkiem): dolna krawędź stołu w kafelkach, rysuje się na blacie po stole */
+  table?: number;
   spec?: ThingSpec;
 }
 
@@ -163,7 +167,13 @@ const FURNITURE = new Set([
 export const burning = (t: ThingLike) => (t.kind === 'koza' || t.kind === 'ognisko') && (t.fuel ?? 0) > 0;
 
 /** stos 1–2 sztuk to mały, 3–5 średni, więcej duży */
-const pileSize = (n = 1): 1 | 2 | 3 => (n >= 6 ? 3 : n >= 3 ? 2 : 1);
+export const pileSize = (n = 1): 1 | 2 | 3 => (n >= 6 ? 3 : n >= 3 ? 2 : 1);
+
+/** garnek: pusty, na dnie (1–2 porcje), do połowy (3–5), pełny */
+export const potSize = (n = 0): 0 | 1 | 2 | 3 => (n <= 0 ? 0 : n >= 6 ? 3 : n >= 3 ? 2 : 1);
+
+/** tyle wyglądów wraku na model: ziarno z miejsca zawija się, żeby tekstur nie było więcej niż trzeba */
+export const WRECK_LOOKS = 12;
 
 /** ziarno drobiazgów z miejsca rzeczy (ten sam mebel zawsze wygląda tak samo) */
 const seedOf = (t: ThingLike) => ((Math.imul(t.x, 73856093) ^ Math.imul(t.y, 19349663)) >>> 0) & 0xffff;
@@ -181,7 +191,14 @@ export function specOf(t: ThingLike, fire = 0): ThingSpec | null {
   switch (t.kind) {
     case 'drewno':
     case 'jedzenie':
+    case 'gruz':
+    case 'deski':
+    case 'zlom':
       return { kind: t.kind, size: pileSize(t.n), seed };
+    case 'posilek':
+      return { kind: 'posilek', size: potSize(t.n), table: t.table !== undefined, seed };
+    case 'wrak':
+      return { kind: 'wrak', model: t.model === 'polonez' ? 'polonez' : 'maluch', rot, seed: seed % WRECK_LOOKS };
     case 'pien':
       return { kind: 'pien', seed };
     case 'trzepak':

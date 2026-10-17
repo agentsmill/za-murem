@@ -34,6 +34,8 @@ import {
   GAME_KINDS,
   type GameLike,
   gameLights,
+  HEAPS,
+  onTables,
   STRANGERS,
   strangerVisibility,
   type WindowSpot,
@@ -42,9 +44,11 @@ import {
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
 import { burning, IN, specOf, type ThingLike } from './section.ts';
-import { fenceThings } from './yard.ts';
+import { fenceThings, mockWrecks } from './yard.ts';
 
 const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+/** nowych tekstur rzeczy na klatkę (wrak to około 1 ms): reszta w następnych, bez zacięcia na starcie */
+const NEW_ART_PER_FRAME = 8;
 /** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna albo ImageBitmap);
     na telefonach mniej, bo Safari ma twardy limit pamięci płócien */
 const MAX_NEAR = PHONE ? 16 : 48;
@@ -111,8 +115,10 @@ export class GameView {
   chunksMade = 0;
   chunksNear = 0;
   pendingFar = 0;
-  /** czy wszystkie widoczne kawałki mają już właściwy poziom szczegółów */
+  /** czy wszystkie widoczne kawałki mają już właściwy poziom szczegółów (i rzeczy swoje sprite'y) */
   complete = false;
+  /** rzeczy czekające na teksturę (limit nowych tekstur na klatkę) */
+  private thingsPending = false;
   /** czy widać przekrój (zbliżenie nad budynkiem z wnętrzem) */
   private cutOn = false;
   /** kawałki nad budynkiem z wnętrzem */
@@ -123,7 +129,10 @@ export class GameView {
   private thingArt = new Map<string, { tex: Texture; sp: ArtSprite }>();
   /** rzeczy spoza gry (setThings: podgląd); w trybie gry bez rodzajów, które daje gra */
   private extras: readonly ThingLike[] = [];
-  /** stan gry z ostatniego syncGame: rzeczy (st.things, trzepak, siatka) i rzeczy niezmienne do pamięci kluczy */
+  /**
+   * stan gry z ostatniego syncGame: rzeczy (st.things, rzeczy ze świata, siatka) i rzeczy niezmienne
+   * do pamięci kluczy; simHeaps: symulacja trzyma sterty u siebie, więc tych ze świata już nie ma
+   */
   private game: {
     sim: GameLike;
     windows: WindowSpot[];
@@ -131,7 +140,10 @@ export class GameView {
     fence: ThingLike[];
     codes: Uint8Array | null;
     things: ThingLike[];
+    simHeaps: boolean;
   } | null = null;
+  /** atrapa wraków do podglądu (?wraki=atrapa), dopóki świat ich nie rozstawia */
+  private mockWrecks = false;
   /** światła ze stanu gry (koza, okna, ognisko, warta); view.lights to dodatki (podgląd) */
   private gameLights: Light[] = [];
   /** rzeczy, które się nie zmieniają (trzepak, siatka) i ich klucze: bez liczenia opisu co klatkę */
@@ -141,6 +153,7 @@ export class GameView {
   /** workers: false wymusza rysowanie kawałków w głównym wątku (adres ?worker=0) */
   async init(host: HTMLElement, opts: { workers?: boolean } = {}): Promise<void> {
     TextureStyle.defaultOptions.scaleMode = 'nearest';
+    this.mockWrecks = typeof location !== 'undefined' && new URLSearchParams(location.search).get('wraki') === 'atrapa';
     await this.app.init({
       resizeTo: host,
       background: '#16181a',
@@ -251,25 +264,27 @@ export class GameView {
 
   /**
    * Rysowanie stanu gry, wołane co klatkę przed render: rzeczy z st.things (meble, drewno, zapasy,
-   * pnie, koza z ogniem) plus trzepak i siatka ze stanem z sim.blocked (łaty, dziury, brama), ścięte
-   * drzewa (przerysowanie kawałków), światła z gry (koza we wnętrzu, okna pomieszczeń z sim.light,
-   * ognisko, lampy warty). Rzeczy i światła z setThings i view.lights zostają jako dodatki.
+   * pnie, koza z ogniem, garnek z posiłkiem na blacie stołu) plus rzeczy ze świata (trzepak, wraki,
+   * sterty materiału, dopóki symulacja nie trzyma ich u siebie) i siatka ze stanem z sim.blocked
+   * (łaty, dziury, brama), ścięte drzewa (przerysowanie kawałków), światła z gry (koza we wnętrzu,
+   * okna pomieszczeń z sim.light, ognisko, lampy warty). Rzeczy i światła z setThings
+   * i view.lights zostają jako dodatki.
    */
   syncGame(sim: GameLike): void {
     if (!this.scene) return;
     const w = sim.w;
     let g = this.game;
     if (!g || g.sim !== sim) {
-      g = {
-        sim,
-        windows: windowSpots(w),
-        props: w.props.map((p) => ({ ...p, rot: 0 })),
-        fence: [],
-        codes: null,
-        things: [],
-      };
+      const props: ThingLike[] = w.props.map((p) => ({ rot: 0, ...p }));
+      if (this.mockWrecks && !props.some((p) => p.kind === 'wrak')) props.push(...mockWrecks(w));
+      g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simHeaps: false };
       for (const t of g.props) this.fixed.add(t);
       this.game = g;
+    }
+    // sterty rysowane ze świata, dopóki symulacja nie zrobi z nich rzeczy; potem tylko ze stanu gry
+    if (!g.simHeaps && sim.st.things.some((t) => HEAPS.has(t.kind))) {
+      g.simHeaps = true;
+      g.props = g.props.filter((t) => !HEAPS.has(t.kind));
     }
     this.syncFelled(sim.st.felled);
     // siatka liczona od nowa tylko po zmianie w blocked (łata, nowa dziura, brama)
@@ -279,7 +294,7 @@ export class GameView {
       g.fence = fenceThings(w.fence, w, fenceStateFn(w.fence, codes), codes[codes.length - 1] === 1);
       for (const t of g.fence) this.fixed.add(t);
     }
-    g.things = [...sim.st.things, ...g.props, ...g.fence];
+    g.things = [...onTables(sim.st.things), ...g.props, ...g.fence];
     this.applyThings();
     this.gameLights = gameLights(sim, g.windows);
   }
@@ -289,6 +304,8 @@ export class GameView {
     const g = this.game;
     const list = g ? [...g.things, ...this.extras.filter((t) => !GAME_KINDS.has(t.kind))] : this.extras;
     const seen = new Set<string>();
+    let fresh = 0;
+    this.thingsPending = false;
     for (const t of list) {
       let key = this.fixedKeys.get(t);
       if (key === undefined) {
@@ -300,11 +317,16 @@ export class GameView {
       seen.add(key);
       if (this.things.has(key)) continue;
       const spec = specOf(t, 0)!;
+      if (!this.thingArt.has(JSON.stringify(spec)) && ++fresh > NEW_ART_PER_FRAME) {
+        this.thingsPending = true;
+        continue;
+      }
       const art = this.artOf(spec);
       const sprite = new Sprite(art.tex);
       sprite.anchor.set(art.sp.ax / art.sp.w, art.sp.ay / art.sp.h);
       sprite.position.set((t.x + t.w / 2) * TILE, (t.y + t.h) * TILE);
-      sprite.zIndex = t.y + t.h;
+      // rzecz na stole rysuje się po stole (na blacie), reszta po dolnej krawędzi podstawy
+      sprite.zIndex = t.table !== undefined ? t.table + 0.01 : t.y + t.h;
       const inside = this.underRoof(t.x + 0.5, t.y + t.h - 0.5);
       sprite.visible = !inside || this.cutOn;
       this.actors.addChild(sprite);
@@ -474,7 +496,7 @@ export class GameView {
         s.stale &= ~(NEAR_BIT | CUT_BIT);
       }
     }
-    this.complete = complete;
+    this.complete = complete && !this.thingsPending;
     this.chunkMs = performance.now() - t0;
   }
 

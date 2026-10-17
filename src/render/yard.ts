@@ -1,10 +1,13 @@
 /* Siatka z bramą wokół podwórka jako rzeczy w warstwie pionków (sprite'y z art/podworko.ts przez
    thingSprite). Dane według kontraktu siatki z docs/M1-wycinek.md (World.fence, tura 2); póki
    świat ich nie daje, atrapa do podglądu (?siatka=atrapa): prostokąt wokół siedziby, suchego
-   drzewa i trzepaka, brama od strony pierwszego wejścia, trzy dziury. Czyste funkcje bez DOM. */
+   drzewa i trzepaka, brama od strony pierwszego wejścia, trzy dziury. Do tego atrapa wraków
+   (?wraki=atrapa) na parkingach przy siedzibie, dopóki świat ich nie rozstawia. Czyste funkcje bez DOM. */
 
+import { T } from '../world/terrain.ts';
 import type { World } from '../world/world.ts';
-import type { FenceState } from './art/rzeczy.ts';
+import { h2 } from './art/hash.ts';
+import { type FenceState, type Rot, WRECK_BASE, WRECK_MODELS, type WreckModel } from './art/rzeczy.ts';
 import { NB } from './art/wnetrze.ts';
 import type { ThingLike } from './section.ts';
 
@@ -140,4 +143,88 @@ export function mockFence(
   for (let y = y0 + 1; y < y1; y++)
     for (let x = x0 + 1; x < x1; x++) if (w.bid[y * size + x] < 0) yard.push(y * size + x);
   return { tiles, hole: hole.sort((p, q) => p - q), gate, yard };
+}
+
+/** wrak w World.props (kontrakt ze świata): maluch 3×2 albo polonez 4×2 przy rot 0 i 2, przy 1 i 3 odwrotnie */
+export interface WreckLike {
+  kind: 'wrak';
+  model: WreckModel;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rot: Rot;
+}
+
+/**
+ * Atrapa wraków do podglądu, dopóki świat ich nie rozstawia: do max sztuk najbliżej siedziby, na
+ * wolnych kafelkach parkingu albo jezdni przy krawężniku (wzdłuż drogi, prawym bokiem do
+ * krawężnika, jak parkuje się w Polsce), poza podwórkiem i siatką, z odstępem między autami.
+ * Model na zmianę, na parkingu ustawienie z ziarna świata i miejsca. Deterministycznie.
+ */
+export function mockWrecks(
+  w: Pick<World, 'size' | 'terr' | 'blocked' | 'bid' | 'buildings' | 'hq' | 'fence' | 'seed'>,
+  max = 4,
+): WreckLike[] {
+  const size = w.size;
+  const b = w.buildings[w.hq];
+  const hx = (b.x0 + b.x1) / 2;
+  const hy = (b.y0 + b.y1) / 2;
+  const off = new Uint8Array(size * size);
+  for (const i of [...w.fence.yard, ...w.fence.tiles]) off[i] = 1;
+  for (let dy = 0; dy < w.fence.gate.h; dy++)
+    for (let dx = 0; dx < w.fence.gate.w; dx++) off[(w.fence.gate.y + dy) * size + w.fence.gate.x + dx] = 1;
+  const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < size && y < size;
+  const paved = (i: number) => w.terr[i] === T.PARKING || w.terr[i] === T.ROAD;
+  const free = (x: number, y: number) => {
+    if (!inside(x, y)) return false;
+    const i = y * size + x;
+    return paved(i) && !w.blocked[i] && w.bid[i] < 0 && !off[i];
+  };
+  /** krawężnik: za kafelkiem jezdni już nie jezdnia ani parking */
+  const curb = (x: number, y: number) => inside(x, y) && !paved(y * size + x);
+  const spots: number[] = [];
+  for (let i = 0; i < size * size; i++) if (paved(i)) spots.push(i);
+  const dist = (i: number) => ((i % size) - hx) ** 2 + (Math.floor(i / size) - hy) ** 2;
+  spots.sort((p, q) => dist(p) - dist(q) || p - q);
+  const out: WreckLike[] = [];
+  for (const i of spots) {
+    if (out.length >= max) break;
+    const x = i % size;
+    const y = (i - x) / size;
+    const model = WRECK_MODELS[(out.length + w.seed) & 1];
+    const [a, c] = WRECK_BASE[model];
+    const first = h2(x, y, w.seed + 77) < 0.5 ? 0 : 1;
+    for (const across of [first, first ^ 1]) {
+      const fw = across ? c : a;
+      const fh = across ? a : c;
+      let fits = true;
+      let lot = true;
+      for (let dy = 0; dy < fh && fits; dy++)
+        for (let dx = 0; dx < fw && fits; dx++) {
+          fits = free(x + dx, y + dy);
+          lot &&= w.terr[(y + dy) * size + x + dx] === T.PARKING;
+        }
+      if (!fits) continue;
+      let rot: Rot;
+      if (lot) rot = (across + (h2(x, y, w.seed + 78) < 0.5 ? 0 : 2)) as Rot;
+      else {
+        // na jezdni tylko przy krawężniku, wzdłuż niego: prawy bok auta od strony krawężnika
+        const side = (n: number, at: (k: number) => boolean) => {
+          for (let k = 0; k < n; k++) if (!at(k)) return false;
+          return true;
+        };
+        if (!across && side(fw, (k) => curb(x + k, y + fh))) rot = 0;
+        else if (!across && side(fw, (k) => curb(x + k, y - 1))) rot = 2;
+        else if (across && side(fh, (k) => curb(x - 1, y + k))) rot = 1;
+        else if (across && side(fh, (k) => curb(x + fw, y + k))) rot = 3;
+        else continue;
+      }
+      out.push({ kind: 'wrak', model, x, y, w: fw, h: fh, rot });
+      for (let dy = -2; dy <= fh + 1; dy++)
+        for (let dx = -2; dx <= fw + 1; dx++) if (inside(x + dx, y + dy)) off[(y + dy) * size + x + dx] = 1;
+      break;
+    }
+  }
+  return out;
 }

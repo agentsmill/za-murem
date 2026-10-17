@@ -1,5 +1,6 @@
 /* Rysowanie stanu gry: z symulacji i świata powstają rzeczy, światła i stan siatki dla widoku.
-   Rzeczy to st.things (meble, drewno, zapasy, pnie, koza z ogniem) plus trzepak ze świata i siatka.
+   Rzeczy to st.things (meble, drewno, zapasy, pnie, koza z ogniem, garnek z posiłkiem na stole) plus
+   ze świata trzepak, wraki, siatka i sterty materiału (te ze świata, dopóki symulacja ich nie przejmie).
    Światła dają koza z ogniem (we wnętrzu), okna pomieszczeń oświetlonych ogniem (sim.light, plama
    na ziemi za oknem), ognisko i lampy warty. Stan siatki wynika z kopii blocked w symulacji, jak
    w kontrakcie siatki: łata na dziurze i zamknięta brama to blocked = 1, dziura to blocked = 0.
@@ -41,7 +42,28 @@ export const GAME_KINDS: ReadonlySet<string> = new Set([
   'trzepak',
   'siatka',
   'brama',
+  'gruz',
+  'deski',
+  'zlom',
+  'wrak',
 ]);
+
+/** sterty materiału: ze świata (World.props), dopóki symulacja nie trzyma ich u siebie jako rzeczy */
+export const HEAPS: ReadonlySet<string> = new Set(['gruz', 'deski', 'zlom']);
+
+/**
+ * Garnki z posiłkiem na stołach: table to dolna krawędź stołu, na którym stoi garnek, żeby rysował
+ * się na blacie i po stole. Bez garnka zwraca tę samą listę (nic nie alokuje co klatkę).
+ */
+export function onTables(things: readonly ThingLike[]): readonly ThingLike[] {
+  if (!things.some((t) => t.kind === 'posilek')) return things;
+  const tables = things.filter((t) => t.kind === 'stol');
+  return things.map((t) => {
+    if (t.kind !== 'posilek') return t;
+    const s = tables.find((q) => t.x >= q.x && t.x < q.x + q.w && t.y >= q.y && t.y < q.y + q.h);
+    return s ? { ...t, table: s.y + s.h } : t;
+  });
+}
 
 /** rodzaje pionków obcych: widać je tylko w świetle (symulacja doda je z siatką i nocą) */
 export const STRANGERS: ReadonlySet<string> = new Set(['obcy', 'szabrownik', 'wedrowiec', 'zombie']);
