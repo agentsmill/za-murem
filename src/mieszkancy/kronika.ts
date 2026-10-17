@@ -16,15 +16,17 @@
    i jeden zamykający w 2051. Reszta to miejsca z mapy (5-8) i zdarzenia ogólne: spółdzielnia, osiedle, ulice, satyra
    (hulajnogi na minuty, paczkomaty, lodówki na abonament, dolar na abonament). Kategorie miejsc (szkoła, przedszkole,
    żłobek, przychodnia, apteka, sklep spożywczy, sklep z elektroniką, z ubraniami, z narzędziami, ogrodniczy, lokal, bank,
-   stacja paliw, kościół, biblioteka, placówka) mają po 4-5 szablonów z różnych epok, a do tego jest siedem szablonów
+   stacja paliw, kościół, biblioteka, placówka) mają po 4 szablony z różnych epok, a do tego jest siedem szablonów
    neutralnych, pasujących do każdej kategorii.
    Gwarancja miejsc: gdy na mapie jest choć jedno POI z niepustą nazwą (z obszaru gry albo, gdy żadnego tam nie ma,
    najbliższe), wpisów z `miejsce` jest co najmniej pięć. Najpierw idą szablony kategorii (po kolei po kategoriach, w
    kolejnych rundach kolejne szablony), a gdy ich zabraknie, szablony neutralne. To samo miejsce może więc wystąpić kilka
-   razy, zawsze z innym zdarzeniem i innym rokiem. Bez żadnego nazwanego POI wpisów z miejscem nie ma, a kronika ma te
-   same 12-16 wpisów. Pierwszeństwo mają miejsca z obszaru gry (|x|, |y| do 192 m wokół `geo.c`); w rodzinie kategorii
-   (szkoła, przedszkole i żłobek to jedna), w której nie ma żadnego, bierzemy trzy najbliższe. Różne POI o tej samej
-   nazwie (sieć sklepów) to jedno miejsce. Nazwy dłuższe niż 48 znaków wypadają, jeśli jest coś krótszego.
+   razy, zawsze z innym zdarzeniem i z innego roku: rok szablonu losuje się spośród lat jego okna, w których miejsce nie ma
+   jeszcze wpisu (`wolnyRok`; gdyby okno było wyczerpane, bierze się najbliższy wolny rok w [2026, 2051], a w praktyce to się
+   nie zdarza: 30 000 przebiegów z jednym POI nie użyło tej drogi). Bez żadnego nazwanego POI wpisów z miejscem nie ma, a
+   kronika ma te same 12-16 wpisów. Pierwszeństwo mają miejsca z obszaru gry (|x|, |y| do 192 m wokół `geo.c`); w rodzinie
+   kategorii (szkoła, przedszkole i żłobek to jedna), w której nie ma żadnego, bierzemy trzy najbliższe. Różne POI o tej
+   samej nazwie (sieć sklepów) to jedno miejsce. Nazwy dłuższe niż 48 znaków wypadają, jeśli jest coś krótszego.
 
    Odmiana: nazw własnych nie odmieniamy, bo nie mamy skąd wziąć poprawnych form. Miejsce stoi w mianowniku w nawiasie
    po rzeczowniku kategorii w miejscowniku ("W szkole (Szkoła Podstawowa nr 12) odwołano lekcje informatyki"), albo
@@ -45,25 +47,29 @@
       po którym po samych odstępach stoi słowo z wielkiej litery (także inicjał): "Jan Nowak", "Salon Anna K.";
    2. samodzielne "u" albo "U", po którym po odstępach stoi słowo z wielkiej litery: "Kwiaciarnia u Moniki", "U Sylwii".
       Ten wzór nie zależy od listy imion, bo "u Jana" to dopełniacz, którego lista imion (mianowniki) nie zawiera;
-   3. tytuł, po którym (po odstępie albo kropce i odstępie) stoi słowo z wielkiej litery: "Apteka Dr Nowak", "Gabinet lek.
-      Nowak", "Gabinet lek. med. Kowalski", "Praktyka prof. Kowalski", "mgr inż. Nowak". Tytuły bez kropki: dr, mgr, prof,
-      inż; ze skrótem (kropka obowiązkowa, bo bez niej to zwykłe słowa, np. "Med Plus"): lek, med, dent, stom, wet, hab,
-      doc. Wyjątek dla znanych sieci i marek: "Dr Max", "Dr. Max", "Dr Irena Eris", "Dr. Martens", "Dr. Oetker",
-      "Dr. Scholl" zostają (lista `MARKI_Z_TYTULEM`; inne "Dr X" nie).
+   3. tytuł, po którym (po odstępie albo po kropce, ze spacją lub bez) stoi słowo z wielkiej litery: "Apteka Dr Nowak",
+      "Apteka Dr.Nowak", "Gabinet lek. Nowak", "Gabinet lek. med. Kowalski", "Apteka mgr farm. Nowak", "Praktyka prof. dr hab.
+      n. med. Kowalski". Tytuły bez kropki: dr, mgr, prof, inż; ze skrótem (kropka obowiązkowa, bo bez niej to zwykłe
+      słowa, np. "Med Plus", "Farm Plus"): lek, med, dent, stom, wet, hab, doc, farm, n, spec, specj. W ciągu tytułów łapie
+      ostatni, po którym stoi nazwisko. Wyjątek dla znanych sieci i marek: "Dr Max", "Dr. Max", "Dr Irena Eris", "Dr.
+      Martens", "Dr. Oetker", "Dr. Scholl" zostają (lista `MARKI_Z_TYTULEM`; inne "Dr X" nie), ale tylko gdy po marce nie
+      stoi słowo z wielkiej litery: "Dr Max Kowalski" to osoba, więc jest łapane.
    Nazwa jest też porządkowana do wyświetlenia: jedna spacja między słowami, pauzy otoczone spacjami (" - ", " – ", " — ")
    zamieniają się na ", " (w tekstach dla gracza nie ma pauz), a patron po "im." albo "imienia" odpada ("Szkoła
    Podstawowa Nr 44 im. Adama Mickiewicza" to "Szkoła Podstawowa Nr 44"), bo kronika nie wymienia osób, a patronami bywają
    też politycy. Osoba przed patronem nadal się liczy.
-   NIE jest łapane (nie ma jak odróżnić od marek bez słownika nazwisk i odmiany; każdy przypadek jest przypięty testem
-   "granice filtra"): samo imię ("Jubiler Monika", "Roland"), samo nazwisko ("Mielnik", "Gzella"), inicjał i nazwisko
-   ("PHU J. Nowak"; "E. Leclerc" to marka), imię złożone ("Anna-Maria Nowak": dopasowanie jest co do słowa, a "Anna-Maria"
-   nie ma w liście), odwrócona kolejność ("Nowak Jan"), imię i nazwisko w innym przypadku niż mianownik ("Gabinet Anny Nowak",
-   "Zakład Piotra Nowaka"; poza tym, gdy forma odmieniona sama jest imieniem z listy, jak "Jana"; pełna odmiana dałaby
-   błędne trafienia w nazwach kościołów, np. "Świętego Jana Chrzciciela"), patron bez "im." ("Szkoła Podstawowa Jana Pawła
-   II", "Parafia św. Józefa"), imię spoza listy PESEL (zdrobnienia, obce: "Kasia Nowak"), pisownia wielkimi albo małymi
-   literami ("JAN NOWAK", "jan nowak"; sam tytuł wielkimi literami łapany jest), imię i słowo rozdzielone przecinkiem,
-   cudzysłowem albo znakiem ("Anna & Jan", "Jan, Nowak"). Odwrotnie, marka zaczynająca się od imienia i słowa z wielkiej
-   litery ("Tom Tailor") zamieni się na opis; to koszt filtra, który woli nie wymienić marki, niż wymienić osobę.
+   NIE jest łapane (nie ma jak odróżnić od marek bez słownika nazwisk i odmiany; każdy przypadek jest przypięty testem,
+   w "granice filtra" albo w "po imieniu musi stać słowo z wielkiej litery"): samo imię ("Jubiler Monika", "Roland"),
+   samo nazwisko ("Mielnik", "Gzella"), inicjał i nazwisko ("PHU J. Nowak"; "E. Leclerc" to marka), imię złożone ("Gabinet
+   Anna-Maria Nowak": dopasowanie jest co do słowa, a "Anna-Maria" nie ma w liście), odwrócona kolejność ("Nowak Jan"),
+   imię i nazwisko w innym przypadku niż mianownik ("Gabinet Anny Nowak", "Zakład Piotra Nowaka"; wyjątkiem jest forma, która
+   sama jest imieniem z listy, jak "Jana"; pełna odmiana dałaby błędne trafienia w nazwach kościołów, np. "Świętego Jana
+   Chrzciciela"), patron bez "im." ("Parafia św. Józefa", "Zespół Szkół Adama Mickiewicza"; "Szkoła Podstawowa Jana Pawła II"
+   wpada tylko dlatego, że "Jana" jest też żeńskim imieniem na liście), imię spoza listy PESEL (zdrobnienia, obce: "Hair
+   Studio Kasia Nowak"), pisownia wielkimi albo małymi literami ("JAN NOWAK", "jan nowak"; sam tytuł wielkimi literami jest
+   łapany), imię i słowo rozdzielone przecinkiem, cudzysłowem albo znakiem ("Jan, Nowak i spółka", "Jan & Nowak").
+   Odwrotnie, marka zaczynająca się od imienia z listy i słowa z wielkiej litery ("Hugo Boss", "Max Mara") zamieni się na
+   opis; to koszt filtra, który woli nie wymienić marki, niż wymienić osobę (pinuje to test "granice filtra").
 
    `zbiorImion` składa zbiór imion z `lata`, `koszyki`, `powracajace` i `przyjezdni` w tabelach imion. */
 
@@ -80,6 +86,8 @@ export interface WpisKroniki {
   miejsce?: string;
 }
 
+const ROK_OD = 2026;
+const ROK_DO = 2051;
 /** Pół boku kwadratu gry (jak POL_KWADRATU w generuj.ts, bez importu, żeby nie robić cyklu), m. */
 const POL_OBSZARU = 192;
 const MAX_DLUGOSC_NAZWY = 48;
@@ -216,18 +224,31 @@ function oczyscNazwe(n: string): string {
   return n.replace(WZORZEC_PAUZY, ', ').replace(/\s+/g, ' ').trim();
 }
 
-/** Tytuły przed nazwiskiem w nazwach aptek i gabinetów: "Apteka Dr Nowak", "Gabinet lek. med. Nowak". Część pisze się
-    bez kropki (dr, mgr, prof, inż), reszta tylko ze skrótem, bo bez kropki to zwykłe słowa ("Med Plus", "Lek" jako marka). */
+/** Tytuły przed nazwiskiem w nazwach aptek i gabinetów: "Apteka Dr Nowak", "Gabinet lek. med. Nowak", "Apteka mgr farm.
+    Nowak". Część pisze się bez kropki (dr, mgr, prof, inż), reszta tylko ze skrótem, bo bez kropki to zwykłe słowa ("Med
+    Plus", "Farm Plus", "Lek" jako marka). Ciąg tytułów łapie ostatni z nich: po nim stoi nazwisko z wielkiej litery,
+    a wcześniejsze przechodzą dalej, bo po nich stoi mała litera ("prof. dr hab. n. med. Kowalski"). Spacja po kropce
+    nie jest wymagana ("Dr.Nowak"). */
 const TYTULY_BEZ_KROPKI = new Set(['dr', 'mgr', 'prof', 'inż', 'inz']);
-const TYTULY_Z_KROPKA = new Set(['lek', 'med', 'dent', 'stom', 'wet', 'hab', 'doc']);
-const ODSTEP_PO_TYTULE = /^\.?\s+$/;
-const ODSTEP_PO_SKROCIE = /^\.\s+$/;
-/** Znane sieci i marki z "Dr" w nazwie: zostają, bo nie są osobą (i muszą zostać, żeby "Dr Max" nie zniknął z mapy). */
-const MARKI_Z_TYTULEM = /(^|[^\p{L}])dr\.?\s+(?:max|irena\s+eris|martens|oetker|scholl)(?![\p{L}])/giu;
+const TYTULY_Z_KROPKA = new Set(['lek', 'med', 'dent', 'stom', 'wet', 'hab', 'doc', 'farm', 'n', 'spec', 'specj']);
+const ODSTEP_PO_TYTULE = /^(?:\.\s*|\s+)$/;
+const ODSTEP_PO_SKROCIE = /^\.\s*$/;
+/** Znane sieci i marki z "Dr" w nazwie: zostają, bo nie są osobą (i muszą zostać, żeby "Dr Max" nie zniknął z mapy).
+    Marka, po której stoi jeszcze słowo z wielkiej litery ("Dr Max Kowalski"), nie jest wyjątkiem: to osoba. */
+const MARKI_Z_TYTULEM = /(^|[^\p{L}])dr(?:\.\s*|\s+)(?:max|irena\s+eris|martens|oetker|scholl)(?![\p{L}])/giu;
+const WIELKA_PO_ODSTEPIE = /^\s+\p{Lu}/u;
+
+/** Nazwa bez znanych marek z "Dr" (zastąpionych kropką pośrodku, żeby sąsiednie słowa się nie zlały); marka z wielką
+    literą tuż po niej zostaje, żeby filtr zobaczył "Dr Max Kowalski". */
+function bezMarekZTytulem(nazwa: string): string {
+  return nazwa.replace(MARKI_Z_TYTULEM, (cala, przed: string, pozycja: number, wszystko: string) =>
+    WIELKA_PO_ODSTEPIE.test(wszystko.slice(pozycja + cala.length)) ? cala : `${przed}·`,
+  );
+}
 
 /** Czy nazwa (już bez patrona) wygląda na osobę: wzorce w nagłówku. */
 function maOsobe(nazwa: string, imiona: ReadonlySet<string>): boolean {
-  const tekst = nazwa.replace(MARKI_Z_TYTULEM, '$1·');
+  const tekst = bezMarekZTytulem(nazwa);
   const s = slowa(tekst);
   for (let i = 0; i + 1 < s.length; i++) {
     const nastepne = s[i + 1];
@@ -287,7 +308,7 @@ interface SzablonMiejsca {
 }
 const sz = (od: number, doRoku: number, tekst: (m: Miejsce) => string): SzablonMiejsca => ({ od, do: doRoku, tekst });
 
-/** Zdarzenia przypięte do miejsca, po 4-5 na kategorię, z różnych epok. Czasowniki w czasie teraźniejszym, bo
+/** Zdarzenia przypięte do miejsca, po 4 na kategorię, z różnych epok. Czasowniki w czasie teraźniejszym, bo
     zgoda rodzaju z nazwą własną nie jest możliwa; wyjątek "przeszła na dyżury", gdzie rodzaj bierzemy z rzeczownika. */
 const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
   szkola: [
@@ -405,7 +426,7 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
       2040,
       2048,
       (m) =>
-        `${m.Gdzie} na książki o hodowli, studniach i lutowaniu zapisuje się kolejka dłuższa niż kiedyś na romanse.`,
+        `${m.Gdzie} na książki o hodowli, studniach i lutowaniu zapisują się ludzie, a kolejka jest dłuższa niż kiedyś na romanse.`,
     ),
   ],
   bank: [
@@ -417,7 +438,11 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
         `${m.Gdzie} została sucha serwerownia z dyskami. Jako jedna z nielicznych rzeczy w okolicy nie zjadła jej bakteria.`,
     ),
     sz(2047, 2050, (m) => `${m.kto} nie wydaje pieniędzy, ale wydaje zaświadczenia, kto komu ile jest winien.`),
-    sz(2029, 2032, (m) => `${m.Gdzie} aplikacja przestała pokazywać saldo, a pracownicy zapewniali, że to chwilowo.`),
+    sz(
+      2029,
+      2032,
+      (m) => `${m.Gdzie} aplikacja przestała pokazywać saldo, a pracownicy zapewniali, że to tylko chwilowe.`,
+    ),
   ],
   stacja: [
     sz(2030, 2034, (m) => `${m.Gdzie} pompy stanęły bez prądu, a paliwo wydawano kanistrem, na słowo honoru.`),
@@ -455,8 +480,8 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
     np. na mapie z jednym nazwanym POI. Każdy użyty najwyżej raz w kronice, więc to samo miejsce może wystąpić kilka razy. */
 const SZABLONY_NEUTRALNE: readonly SzablonMiejsca[] = [
   sz(
-    2029,
-    2032,
+    2026,
+    2028,
     (m) => `${m.Gdzie} po raz pierwszy zgasło światło na cały dzień i nikt jeszcze nie wiedział dlaczego.`,
   ),
   sz(2033, 2037, (m) => `${m.Gdzie} zawisła kartka: „Nie działa, wrócimy, jak będzie prąd”.`),
@@ -763,6 +788,29 @@ function przetasuj<T>(r: Rng, lista: readonly T[]): T[] {
   return wynik;
 }
 
+/** Rok wpisu dla miejsca, które ma już wpisy z lat `zajete`: losowy (`losuj(ile)` zwraca indeks 0..ile-1) z wolnych lat
+    okna szablonu [od, doRoku], więc jedno miejsce nigdy nie ma dwóch wpisów z tego samego roku. Gdy okno jest wyczerpane,
+    najbliższy wolny rok w [2026, 2051] bez losowania: w rosnącej odległości od okna, przy remisie najpierw rok po oknie, potem
+    rok przed nim. Gdy
+    zajęte są wszystkie lata, `od` (nieosiągalne: miejsce ma najwyżej osiem wpisów). */
+export function wolnyRok(
+  zajete: ReadonlySet<number>,
+  od: number,
+  doRoku: number,
+  losuj: (ile: number) => number,
+): number {
+  const wolne: number[] = [];
+  for (let rok = od; rok <= doRoku; rok++) if (!zajete.has(rok)) wolne.push(rok);
+  if (wolne.length) return wolne[losuj(wolne.length)];
+  for (let odleglosc = 1; odleglosc <= ROK_DO - ROK_OD; odleglosc++) {
+    const wolny = [doRoku + odleglosc, od - odleglosc].find(
+      (rok) => rok >= ROK_OD && rok <= ROK_DO && !zajete.has(rok),
+    );
+    if (wolny !== undefined) return wolny;
+  }
+  return od;
+}
+
 interface Surowy {
   rok: number;
   tekst: string;
@@ -813,8 +861,11 @@ export function kronika(
     uzycia.set(`${klucz}|${wybrany.nazwa}`, najmniej + 1);
     return wybrany;
   };
+  const latMiejsc = new Map<string, Set<number>>();
   const dodajMiejsce = (szablon: SzablonMiejsca, wybrany: Kandydat): void => {
-    const rok = calkowita(r, szablon.od, szablon.do);
+    const zajete = latMiejsc.get(wybrany.nazwa) ?? new Set<number>();
+    const rok = wolnyRok(zajete, szablon.od, szablon.do, (ile) => calkowita(r, 0, ile - 1));
+    latMiejsc.set(wybrany.nazwa, zajete.add(rok));
     miejsca.push({ rok, tekst: szablon.tekst(miejsceWTekscie(wybrany)), miejsce: wybrany.nazwa });
   };
   for (let runda = 0; miejsca.length < celMiejsc; runda++) {

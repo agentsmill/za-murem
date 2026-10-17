@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { budynkiZGeo } from '../../src/mieszkancy/budynki.ts';
-import { kronika, nazwaMiejsca, type WpisKroniki, zbiorImion } from '../../src/mieszkancy/kronika.ts';
+import { kronika, nazwaMiejsca, type WpisKroniki, wolnyRok, zbiorImion } from '../../src/mieszkancy/kronika.ts';
 import type { TabeleGminy, TabeleImion, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
 import type { Budynek } from '../../src/mieszkancy/typy.ts';
 import type { Geo, GeoPoi } from '../../src/world/geo.ts';
@@ -205,12 +205,66 @@ describe('nazwaMiejsca: imię i nazwisko w nazwie zamienia się na opis kategori
     for (const [c, przed, po] of opisy) expect(nazwaMiejsca(poi(c, przed), imiona), przed).toBe(po);
   });
 
+  it('tytuł bez spacji po kropce też jest tytułem: „Apteka Dr.Nowak”, „Gabinet lek.Nowak”', () => {
+    const opisy: [string, string, string][] = [
+      ['apteka', 'Apteka Dr.Nowak', 'apteka'],
+      ['apteka', 'Apteka dr.Nowak', 'apteka'],
+      ['przychodnia', 'Gabinet lek.Nowak', 'gabinet lekarski'],
+      ['przychodnia', 'Gabinet lek. med.Nowak', 'gabinet lekarski'],
+      ['przychodnia', 'Gabinet mgr.Nowak', 'gabinet lekarski'],
+      ['przychodnia', 'Praktyka prof.Kowalski', 'gabinet lekarski'],
+      ['apteka', 'Apteka mgr farm.Nowak', 'apteka'],
+    ];
+    for (const [c, przed, po] of opisy) expect(nazwaMiejsca(poi(c, przed), imiona), przed).toBe(po);
+  });
+
+  it('„farm.” jest tytułem, także w ciągu tytułów: „mgr farm. Nowak”, „dr n. farm. Nowak”', () => {
+    const opisy: [string, string, string][] = [
+      ['apteka', 'Apteka mgr farm. Nowak', 'apteka'],
+      ['apteka', 'Apteka mgr. farm. Kowalska', 'apteka'],
+      ['apteka', 'Apteka Dr n. farm. Nowak', 'apteka'],
+      ['apteka', 'Apteka mgr inż. farm. Nowak', 'apteka'],
+      ['przychodnia', 'Gabinet prof. dr hab. n. med. Kowalski', 'gabinet lekarski'],
+      ['przychodnia', 'Gabinet lek. med. dent. Nowak', 'gabinet lekarski'],
+      ['przychodnia', 'Gabinet lek. specj. Nowak', 'gabinet lekarski'],
+    ];
+    for (const [c, przed, po] of opisy) expect(nazwaMiejsca(poi(c, przed), imiona), przed).toBe(po);
+    // „farm” bez kropki to zwykłe słowo
+    expect(nazwaMiejsca(poi('apteka', 'Centrum Farm Plus'), imiona)).toBe('Centrum Farm Plus');
+  });
+
   it('sieci z tytułem w nazwie zostają (lista wyjątków), reszta „Dr” nie', () => {
-    for (const n of ['Dr. Max', 'Dr Max', 'Apteka Dr. Max', 'DR. MAX', 'Dr Irena Eris', 'Dr. Martens', 'Dr. Oetker'])
+    for (const n of [
+      'Dr. Max',
+      'Dr Max',
+      'Dr.Max',
+      'Apteka Dr. Max',
+      'DR. MAX',
+      'Dr Irena Eris',
+      'Dr. Martens',
+      'Dr. Oetker',
+      'Dr. Max, Gdańsk',
+      'Dr. Max (Przymorze)',
+    ])
       expect(nazwaMiejsca(poi('apteka', n), imiona), n).toBe(n);
     // wyjątek dotyczy tylko znanej sieci, nie każdego „Dr”
     expect(nazwaMiejsca(poi('apteka', 'Apteka Dr Maxymilian Nowak'), imiona)).toBe('apteka');
     expect(nazwaMiejsca(poi('apteka', 'Dr Maxwell'), imiona)).toBe('apteka');
+  });
+
+  it('sieć z tytułem i słowo z wielkiej litery po niej to nadal osoba: „Dr Max Kowalski”', () => {
+    for (const n of [
+      'Dr Max Kowalski',
+      'Dr. Max Nowak',
+      'Dr.Max Nowak',
+      'Apteka Dr Max Nowak',
+      'Dr Martens Nowak',
+      'Dr. Martens Kowalska',
+      'Dr Irena Eris Nowak',
+      'Dr. Oetker Nowak',
+      'Dr. Scholl Nowak',
+    ])
+      expect(nazwaMiejsca(poi('apteka', n), imiona), n).toBe('apteka');
   });
 
   it('tytuł bez wielkiej litery po nim albo „med” bez kropki nie jest osobą', () => {
@@ -234,8 +288,17 @@ describe('nazwaMiejsca: imię i nazwisko w nazwie zamienia się na opis kategori
       ['przychodnia', 'Gabinet Anny Nowak'],
       ['sklep', 'JAN NOWAK'], // wielkie litery
       ['sklep', 'Hair Studio Kasia Nowak'], // zdrobnienie spoza listy PESEL
+      ['spozywczy', 'Gzella'], // samo nazwisko
+      ['kosciol', 'Parafia św. Józefa'], // patron bez „im.”
+      ['szkola', 'Zespół Szkół Adama Mickiewicza'], // patron bez „im.”
+      ['sklep', 'jan nowak'], // małe litery
     ];
     for (const [c, n] of zostaje) expect(nazwaMiejsca(poi(c, n), imiona), n).toBe(n);
+    // odwrotnie, koszt filtra: marka zaczynająca się od imienia z listy i wielkiej litery też zamienia się na opis
+    expect(nazwaMiejsca(poi('ubrania', 'Hugo Boss'), imiona)).toBe('sklep z ubraniami');
+    expect(nazwaMiejsca(poi('ubrania', 'Max Mara'), imiona)).toBe('sklep z ubraniami');
+    // patron bez „im.” wpada tylko wtedy, gdy jego imię samo jest na liście: „Jana” to też żeńskie imię w PESEL
+    expect(nazwaMiejsca(poi('szkola', 'Szkoła Podstawowa Jana Pawła II'), imiona)).toBe('placówka oświatowa');
   });
 
   it('nazwa pusta zostaje pusta', () => {
@@ -346,6 +409,11 @@ describe('kronika: kilkanaście wspólnych zdarzeń z lat 2026 do 2051', () => {
         expect(k.filter((w) => WZORZEC_KABLI.test(w.tekst)).length, opis).toBeGreaterThanOrEqual(5);
         expect(k.filter((w) => w.miejsce).length, opis).toBeGreaterThanOrEqual(5);
         expect(new Set(k.map((w) => w.tekst)).size, opis).toBe(k.length);
+        // to samo miejsce nie ma dwóch wpisów z tego samego roku
+        for (const m of new Set(k.filter((w) => w.miejsce).map((w) => w.miejsce))) {
+          const lata = k.filter((w) => w.miejsce === m).map((w) => w.rok);
+          expect(new Set(lata).size, `${opis}: ${m}`).toBe(lata.length);
+        }
       }
     }
   });
@@ -509,7 +577,8 @@ describe('kronika: kilkanaście wspólnych zdarzeń z lat 2026 do 2051', () => {
       const k = kronika(geo, [], imiona, z).filter((w) => w.miejsce);
       expect(k.length, z).toBeGreaterThanOrEqual(5);
       expect(new Set(k.map((w) => w.tekst)).size).toBe(k.length);
-      expect(new Set(k.map((w) => w.rok)).size).toBeGreaterThanOrEqual(3);
+      // to samo miejsce nigdy nie ma dwóch wpisów z tego samego roku
+      expect(new Set(k.map((w) => w.rok)).size, z).toBe(k.length);
       for (const w of k) expect(w.miejsce).toBe('Centrum Medyczne Batowice');
     }
   });
@@ -543,6 +612,10 @@ describe('kronika: kilkanaście wspólnych zdarzeń z lat 2026 do 2051', () => {
         expect(zMiejscem.length, `${n} / ${z}`).toBeGreaterThanOrEqual(5);
         expect(new Set(zMiejscem.map((w) => w.miejsce)).size, n).toBe(1);
         expect(new Set(zMiejscem.map((w) => w.tekst)).size, n).toBe(zMiejscem.length);
+        expect(new Set(zMiejscem.map((w) => w.rok)).size, `${n} / ${z}`).toBe(zMiejscem.length);
+        // szablon sprzed odkrycia („nikt jeszcze nie wiedział dlaczego”) nie wypada po wpisie z 2029
+        for (const w of zMiejscem)
+          if (/nikt jeszcze nie wiedział/.test(w.tekst)) expect(w.rok, w.tekst).toBeLessThan(2029);
         expect(k.length).toBeGreaterThanOrEqual(12);
         expect(k.length).toBeLessThanOrEqual(16);
         expect(k.filter((w) => WZORZEC_KABLI.test(w.tekst)).length).toBeGreaterThanOrEqual(5);
@@ -568,6 +641,10 @@ describe('kronika: kilkanaście wspólnych zdarzeń z lat 2026 do 2051', () => {
         (n) => k.filter((w) => w.miejsce === n).length,
       );
       expect(Math.abs(liczby[0] - liczby[1]), z).toBeLessThanOrEqual(1);
+      for (const n of ['Szkoła Podstawowa nr 12', 'Szkoła Podstawowa nr 44']) {
+        const lata = k.filter((w) => w.miejsce === n).map((w) => w.rok);
+        expect(new Set(lata).size, `${z}: ${n}`).toBe(lata.length);
+      }
     }
   });
 
@@ -715,6 +792,28 @@ describe('kronika: kilkanaście wspólnych zdarzeń z lat 2026 do 2051', () => {
     expect(tla(domy).some((t) => /Domy jednorodzinne/.test(t))).toBe(true);
     expect(tla(domy).some((t) => /Windy|Wielka płyta/.test(t))).toBe(false);
     expect(tla(bloki).some((t) => /Domy jednorodzinne/.test(t))).toBe(false);
+  });
+
+  it('wolnyRok: losuje tylko z wolnych lat okna, a gdy okno jest wyczerpane, bierze najbliższy wolny rok', () => {
+    const pierwszy = (): number => 0;
+    const ostatni = (ile: number): number => ile - 1;
+    // okno [2030, 2033], zajęte 2030 i 2032: do wyboru 2031 i 2033
+    expect(wolnyRok(new Set([2030, 2032]), 2030, 2033, pierwszy)).toBe(2031);
+    expect(wolnyRok(new Set([2030, 2032]), 2030, 2033, ostatni)).toBe(2033);
+    // okno wyczerpane: najpierw rok po oknie, potem przed nim, w rosnącej odległości
+    expect(wolnyRok(new Set([2030, 2031, 2032]), 2030, 2032, pierwszy)).toBe(2033);
+    expect(wolnyRok(new Set([2030, 2031, 2032, 2033]), 2030, 2032, pierwszy)).toBe(2029);
+    expect(wolnyRok(new Set([2029, 2030, 2031, 2032, 2033]), 2030, 2032, pierwszy)).toBe(2034);
+    // na końcu zakresu zostaje strona przed oknem, na początku strona po oknie
+    expect(wolnyRok(new Set([2049, 2050, 2051]), 2049, 2051, pierwszy)).toBe(2048);
+    expect(wolnyRok(new Set([2026, 2027]), 2026, 2027, pierwszy)).toBe(2028);
+    // wyczerpane okno nie losuje: wynik nie zależy od funkcji losującej
+    expect(wolnyRok(new Set([2030, 2031]), 2030, 2031, pierwszy)).toBe(
+      wolnyRok(new Set([2030, 2031]), 2030, 2031, ostatni),
+    );
+    // wszystkie lata zajęte (nieosiągalne w kronice): początek okna, bez wyjątku
+    const wszystkie = new Set(Array.from({ length: 26 }, (_, i) => 2026 + i));
+    expect(wolnyRok(wszystkie, 2040, 2042, pierwszy)).toBe(2040);
   });
 
   it('wydajność: kronika całego dema liczy się w ułamku sekundy', () => {
