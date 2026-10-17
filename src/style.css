@@ -507,12 +507,8 @@ a.btn {
     padding: 5px 8px;
     gap: 6px 8px;
   }
-  /* na telefonie 390 px: szyld i zegar w pierwszym wierszu, tempo, alarm, budowa i menu razem w drugim,
-     stan pod nimi (order w .stats) */
-  .top .clock {
-    flex: 1 0 auto;
-    min-width: calc(100% - 160px);
-  }
+  /* na telefonie 390 px: szyld i zegar w pierwszym wierszu (zegar dopełnia wiersz, niżej), tempo, alarm,
+     budowa i menu razem w drugim, stan pod nimi (order w .stats) */
   .top .btn {
     padding: 6px 6px;
     font-size: 13px;
@@ -527,6 +523,8 @@ a.btn {
     font-size: 17px;
   }
   .clock {
+    flex: 1 0 auto;
+    min-width: calc(100% - 160px);
     font-size: 16px;
   }
   .fps,
