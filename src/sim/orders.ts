@@ -1,0 +1,85 @@
+/* Polecenia z kliknięcia i opisy prac do karty osoby. Czyste funkcje stanu i świata: interfejs pyta,
+   co znaczy kliknięcie prawym przyciskiem na kafelku, i dostaje gotowe polecenie dla symulacji. */
+
+import type { World } from '../world/world.ts';
+import { dryTreeOf, houseOf } from './house.ts';
+import type { Command, Pawn, SimState, Thing } from './sim.ts';
+
+export interface MenuItem {
+  cmd: Command;
+  label: string;
+}
+
+/** drzewo pod kursorem: najbliższy pień w zasięgu korony (najwyżej 2,5 m), także sam kafelek pnia; −1: brak */
+export function treeAt(st: SimState, w: World, tile: number): number {
+  const cx = (tile % w.size) + 0.5;
+  const cy = Math.floor(tile / w.size) + 0.5;
+  let best = -1;
+  let bd = Number.POSITIVE_INFINITY;
+  w.trees.forEach((t, k) => {
+    const d = Math.hypot(t.x - cx, t.y - cy);
+    if (d > Math.max(0.75, Math.min(t.r, 2.5)) || d >= bd || st.felled.includes(k)) return;
+    bd = d;
+    best = k;
+  });
+  return best;
+}
+
+const thingAt = (st: SimState, w: World, tile: number, kind: string): Thing | undefined => {
+  const x = tile % w.size;
+  const y = Math.floor(tile / w.size);
+  return st.things.find((t) => t.kind === kind && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+};
+
+/** Polecenia, które mają sens na klikniętym kafelku, najpierw domyślne (menu kontekstowe z GDD).
+    Drewno poza składem: zanieść do składu. Koza, gdy jest skąd wziąć drewno: dołożyć. Drzewo: ściąć.
+    Zawsze na końcu „Idź tu”. Polecenia przyjmuje tylko zarząd: bez nikogo z rdzenia lista jest pusta. */
+export function commandsAt(st: SimState, w: World, ids: readonly number[], tile: number): MenuItem[] {
+  const core = ids.filter((id) => st.pawns.some((p) => p.id === id && p.kind === 'core'));
+  if (!core.length) return [];
+  const out: MenuItem[] = [];
+  const sklad = houseOf(w)?.sklad ?? [];
+  const pile = thingAt(st, w, tile, 'drewno');
+  if (pile && sklad.length && !sklad.includes(tile))
+    out.push({ cmd: { t: 'haul', ids: core, thing: pile.id }, label: 'Zanieść do składu' });
+  const koza = thingAt(st, w, tile, 'koza');
+  const wood = st.things.some((t) => t.kind === 'drewno' && t.n > 0) || st.pawns.some((p) => p.carry > 0);
+  if (koza && wood) out.push({ cmd: { t: 'refuel', ids: core, thing: koza.id }, label: 'Dołożyć do kozy' });
+  const tree = treeAt(st, w, tile);
+  if (tree >= 0) out.push({ cmd: { t: 'chop', ids: core, tree }, label: 'Ściąć drzewo' });
+  out.push({ cmd: { t: 'move', ids: core, to: tile }, label: 'Idź tu' });
+  return out;
+}
+
+/** domyślne polecenie dla klikniętego kafelka (pojedyncza oczywista akcja) albo null bez nikogo z zarządu */
+export function commandFor(st: SimState, w: World, ids: readonly number[], tile: number): Command | null {
+  return commandsAt(st, w, ids, tile)[0]?.cmd ?? null;
+}
+
+/** co robi osoba: krótki opis do karty */
+export function jobText(_st: SimState, w: World, p: Pawn): string {
+  const j = p.job;
+  if (!j) return p.pi < p.path.length ? 'Idzie.' : 'Stoi i czeka na polecenie.';
+  const walking = j.phase === 0;
+  switch (j.t) {
+    case 'go':
+      return walking ? 'Idzie.' : 'Czeka na miejscu.';
+    case 'chop': {
+      const dry = j.target === dryTreeOf(w);
+      if (walking) return dry ? 'Idzie do suchego drzewa.' : 'Idzie ściąć drzewo.';
+      return dry ? 'Rąbie suche drzewo.' : 'Ścina drzewo.';
+    }
+    case 'haul':
+      return walking ? 'Idzie po drewno.' : 'Niesie drewno do składu.';
+    case 'refuel':
+      return walking ? 'Idzie po drewno do kozy.' : 'Dokłada do kozy.';
+    case 'warm':
+      return walking ? 'Idzie ogrzać się przy kozie.' : 'Grzeje się przy kozie.';
+    case 'eat':
+      if (walking) return 'Idzie coś zjeść.';
+      return j.target >= 0 ? 'Je przy stole.' : 'Je.';
+    case 'sleep':
+      if (walking) return 'Idzie spać.';
+      return j.target >= 0 ? 'Śpi.' : 'Śpi na podłodze.';
+  }
+}
