@@ -88,13 +88,107 @@ Liczby:
 
 Wdrożenie (po OK Mateusza): gałąź przeniesiona na aktualny main (lore z bakterią; konflikty tylko w tym dzienniku), main przewinięty i wypchnięty (`2102c65..7bf8617`). Workflow Pages przeszedł w minutę: lint, testy, build, wdrożenie. Na żywo pod agentsmill.github.io/za-murem na komputerze rysują 3 workery, na telefonie (emulacja 390×844) 2, plik workera się pobiera, w konsoli nie ma błędów ani ostrzeżeń. 10 s jazdy kamerą przy CPU 4×: najgorsza klatka 17 ms (komputer 9 nowych kawałków, telefon 4), z `?worker=0` 300 ms. Przy przenoszeniu wyszedł błąd w nowym scenariuszu `worker-zgodnosc`: zasłona Playwrighta na liczniku klatek ma szerokość tekstu, więc „4 kl/s” i „52 kl/s” dawały 84 różne piksele w pasku u góry. Licznik jest teraz ukrywany przez CSS, a scenariusz dalej łapie zmianę 3×3 piksele.
 
+### M1, 17.10.2026: podział na sesje (gałąź `m1-pierwsze-minuty`)
+
+Projekt techniczny wycinka „pierwsze trzy minuty” jest w `docs/M1-wycinek.md`: wnętrze siedziby, rzeczy, prace, ciepło, potrzeby, rysowanie i sprawdzanie. Pierwsza tura idzie równolegle w trzech sesjach, każda na własnej gałęzi z main (2102c65). Świat (`m1-swiat`) robi generator wnętrz, suche drzewo i trzepak. Symulacja (`claude/m1-symulacja-ccd058`) robi rzeczy, prace, polecenia, ciepło, potrzeby i stan samouczka. Grafika zastępcza (`claude/m1-grafika-7e0158`) robi kafelki wnętrza i meble jako czyste funkcje z arkuszem podglądu. Pliki się nie pokrywają, a kontrakt wnętrza jest w projekcie. Czerwony test wnętrza (`tests/unit/interior.test.ts`) przejęła sesja świata.
+
+Gałąź `m1-pierwsze-minuty` przeniesiona na main z workerem kawałków (adcf075, po OK Mateusza). Na niej testy 203/203, Biome, build, bot 45 dni (skrót stanu 6f1b43a8) i wszystkie zrzuty bez błędów, w `worker-zgodnosc` 0 różnych pikseli. Obejrzane `przymorze-siedziba` i `przymorze-blisko`.
+
+### M1 tura 1, noc 17/18.10.2026: połączone świat, grafika i noc
+
+Do `m1-pierwsze-minuty` weszły lokalnie, bez konfliktów, trzy gałęzie sesji (szczegóły w ich notatkach):
+- `m1-swiat`: `buildInterior(w, bid, { home })` dla dowolnego budynku (blok i dom z mieszkaniami, sklep, szkoła i inne z salą i zapleczem, garaż i hala), `applyInterior` z regionami, wnętrze siedziby w `w.interior`, suche drzewo i trzepak w zasięgu przyszłego podwórka (Przymorze dostało nowe drzewo 8 m przed wejściem). Jeden budynek średnio 0,39 ms, falowiec 3,9 ms.
+- `claude/m1-grafika-7e0158`: czyste funkcje do bufora: kafelki wnętrza (posadzki, ściany z frontem, drzwi, okna dzienne i nocne, schody) i sprite'y rzeczy (meble w czterech ustawieniach, koza z ogniem, drewno, jedzenie, pień, suche drzewo, trzepak, siatka z dziurą i łatą, brama, ognisko, gruz, deski, złom, budka, fotel, lampa). Arkusz: `node tools/arkusz-wnetrza.ts`.
+- `m1-rysowanie-nocy`: mapa światła z godziny gry (`view.lights`, `?godzina=22&swiatla=test`), przerysowanie kawałków pod zmianą (`view.redraw`, `view.syncFelled`), szkielet przekroju od zoomu 0,6 jako wariant kawałka w workerach (na razie atrapa wnętrza i płaskie kolory, `?wnetrze=atrapa`).
+
+Na połączonej gałęzi: testy 260/260, Biome, build, bot 45 dni (skrót 7a031373, 0 nieudanych ścieżek), wszystkie zrzuty bez błędów; obejrzane `przymorze-siedziba` i `przekroj-noc`. Stan przejściowy: pionki wchodzą do siedziby pod dachem, a przekrój nie jest jeszcze podpięty do prawdziwego wnętrza i grafiki. Plamy światła wyglądają topornie i za zielono na trawie, do poprawy przy podpinaniu.
+
+### M1 tura 2, noc 17/18.10.2026: symulacja, siatka, przekrój i zarząd
+
+Do `m1-pierwsze-minuty` weszły lokalnie, bez konfliktów, cztery gałęzie:
+- `claude/m1-symulacja-ccd058`: rzeczy w stanie gry (meble z wnętrza, drewno, jedzenie, posiłki, pnie), prace zarządu (ścinanie, noszenie, dokładanie, gotowanie, jedzenie, sen, grzanie się, palenie mebli), koza zjada drewno, ciepło w pomieszczeniach, potrzeby z bezpieczeństwem i nastrojami, menu pod prawym przyciskiem (`commandsAt`), opisy prac (`jobText`), stan samouczka, odczyt `snapshot` dla zarządu. Start o 15:00.
+- `m1-siatka`: `World.fence` (siatka z 2–4 dziurami, brama od ulicy, podwórko) według kontraktu; przy zamkniętej bramie bez dziur podwórko jest odcięte.
+- `m1-przekroj`: przekrój na prawdziwym wnętrzu z grafiką zastępczą (domyślnie od zoomu 0,6), meble, suche drzewo, trzepak, siatka i brama jako sprite'y, cieplejsze i drobniejsze światło.
+- `m1-zarzad`: `src/gov`: karta nocy, uchwały z zaufaniem i wkurzeniem, wydarzenia w tempie przy ekranie, `node tools/trzy-noce.ts`.
+
+Na połączonej gałęzi: testy 371/371, Biome, build, bot (skrót 0842047d), wszystkie zrzuty bez błędów. Obejrzane `przymorze-siedziba` (przekrój w dzień: zarząd w kuchni z kozą, łazienka, klatka z lastrykiem, pokoje z łóżkami, suche drzewo z trzepakiem, siatka) i `przymorze-przekroj-noc`. Bot pokazuje presję: pierwszego wieczoru opał kończy się o 18:49, bot pali meblościankę, a bez gracza od drugiego dnia koza nie grzeje i nastrój spada do 30. Jeszcze nie połączone ze sobą: rzeczy z symulacji w rysowaniu, zarząd z symulacją, karta osoby i okna decyzji w interfejsie.
+
+### M1 tura 3, część 1, noc 17/18.10.2026: materiały i rysowanie stanu gry
+
+Do `m1-pierwsze-minuty` weszły lokalnie, bez konfliktów:
+- `m1-materialy`: 3–6 stert gruzu, desek i złomu w `World.props` (`src/world/heaps.ts`), przechodnie, poza ścieżkami do bramy i suchego drzewa. Deski i złom starczają na 1–2 łaty.
+- `m1-rysowanie-gry`: `view.syncGame(sim)` co klatkę (rzeczy ze stanu gry, ścięte drzewa, światła z kozy, okien ogrzanych pomieszczeń i ogniska, siatka ze stanu `sim.blocked`), obcy widoczni nocą tylko w świetle, lekki pas postapo na terenie.
+
+Na połączonej gałęzi: testy 386/386, Biome, build, bot (skróty 0842047d i b1759110 bez zmian), 41 zrzutów bez błędów; obejrzane `noc-gra` (koza ze stanu gry świeci w kuchni, ciepła plama za oknem) i `przymorze-calosc`. Jeszcze nie rysowane: sterty materiałów i garnek z posiłkiem.
+
+### M1 tura 3, część 2, noc 17/18.10.2026: interfejs i wraki
+
+Do `m1-pierwsze-minuty` weszły lokalnie:
+- `m1-wraki-swiat`: 4–10 wraków maluchów i polonezów w `World.props` do 100 m od siedziby, poza siatką, przy jezdni (3 m przejazdu) albo na parkingach, bez rozcinania osiedla.
+- `m1-wraki`: sterty ze świata i ze stanu gry, garnek z posiłkiem na stole, wraki w czterech ustawieniach (rdza, bez kół, wybite szyby).
+- `m1-interfejs`: zarząd spięty z grą w main.ts (krok co sekundę przy ekranie, pauza przy decyzji), karta osoby z paskami potrzeb i nastrojami, menu pod prawym przyciskiem z potwierdzeniem palenia mebli, karta nocy o 20:00 (ryzyko wejścia z wartą i bez, co zabiorą, przydział do dziur i bramy, rada zarządu), okna uchwały, wydarzenia i porannego raportu, cele pierwszego dnia ze znacznikiem suchego drzewa, pasek z temperaturą, drewnem, jedzeniem, zaufaniem i wkurzeniem, własne Menu, zapis w przeglądarce. Skutki zarządu stosuje na razie adapter z interfejsu (zapasy, potrzeby, nastroje); prawdziwe `applyGov` przyjdzie z symulacją nocy.
+
+Przy łączeniu interfejsu rozwiązałem konflikt w main.ts (krok zarządu z interfejsu, rysowanie stanu przez `view.syncGame`, bez tymczasowego malowania, które gubiło obrót wraków) i w tools/shots.ts (scenariusze z obu gałęzi). Scenariusz `sterty` liczył po dołączeniu wraków wszystkie props poza trzepakiem; teraz tylko gruz, deski i złom. Na połączonej gałęzi: testy 417/417, Biome, build, bot (skróty 175d3cc8 i d342966e), 61 zrzutów bez błędów; obejrzane `m1-karta-nocy` i `m1-karta-osoby`.
+
+### M1 tura 3, część 3, rano 18.10.2026: noc w symulacji, dym, playtest i spięcie
+
+Do `m1-pierwsze-minuty` weszły lokalnie, bez konfliktów:
+- `m1-noc-symulacja`: mieszkańcy siedziby zamiast tłumu (3–8, plan dnia, nocą w domu), stan siatki (wytrzymałość, dziury, łaty, brama otwarta albo zamknięta), prace: warta z lampą, łatanie dziury deskami i złomem ze stert, ognisko na podwórku, wyprawy bramą; szabrownicy podchodzą pod najsłabsze miejsce, warta ze światłem ich płoszy, bez warty kradną; `applyGov` i `govInput` w src/sim/gov.ts. Po niezależnym przeglądzie kodu poprawione trzy błędy z testami (m.in. ognisko na progu zamykało dom na zawsze). Bot z zarządem: 1,7 decyzji na minutę przy zawsze obsadzonej warcie; 30 nocy, 7 napadów (2 odparte, 5 wtargnięć).
+- `m1-dym`: dym z rury kozy (przez okno) i z ogniska, widoczny z daleka i nocą; pozy pracy pionków (rąbanie, naręcze drewna, dokładanie, sen, siedzenie, warta z lampą).
+- `m1-playtest`: playtest pierwszych minut jak nowy gracz (Playwright, komputer i telefon): przy 1× od wjazdu do porannego raportu 291 s, 2,5 decyzji na minutę przy ekranie (było 1,9), wydarzeń w pierwszą noc 1 zamiast 8. Noc po karcie biegnie w 6×, po decyzji 20 s ciszy, cel „Przygotujcie drewno na noc”, ostrzeżenie o zimnej kozie. Nagranie 2:08 (1440×900): `.claude/worktrees/m1-grafika-7e0158/shots/m1-nagranie.mp4` i `.webm` (poza repo, sprzed spięcia z nocą w symulacji).
+
+Spięcie (koordynator): main.ts bierze `applyGov` i `govInput` z symulacji zamiast adaptera interfejsu; nazwy dziur z interfejsu, stan ze stanu gry; uchwały do symulacji po podpisaniu (nie przy wczytaniu, bo `setLaws` wstawia polecenie do stanu i zapis przestawał się zgadzać); w grze bez tłumu obcych; etykiety nowych poleceń; zapis ze stanem w wersji 3; w rysowaniu warta to `'guard'` jak w symulacji, ludzi na wyprawie nie rysujemy. Dwa scenariusze zrzutów z gałęzi rysowania (sterty z gry, pozy) poprawione pod prawdziwą symulację. Na połączonej gałęzi: testy 466/466, Biome, build, bot (skrót 7bdadd8c), 70 zrzutów bez błędów; obejrzane `warta-noc` i `dym-dzien`.
+
+### M1 tura 4, rano 18.10.2026: dyżur przy kozie, drzewa z pionkami, noc gracza
+
+Do `m1-pierwsze-minuty` weszły lokalnie:
+- `m1-noc-poprawki`: dyżur przy kozie jako warta z posterunkiem `'koza'` (czuwający dokłada w nocy). Bot: z dyżurem kuchnia o 6:00 średnio 21,0°C i koza pali się przez całą noc 22–6, bez dyżuru 14,6°C i 17% nocy. Samouczek nie czeka już na marsz do składu.
+- `m1-drzewa`: z bliska drzewa jako sprite'y sortowane po y z pionkami (pionek za koroną się chowa, przed nią stoi), korona nad kimś z zarządu półprzezroczysta, miękkie cienie; z daleka drzewa dalej w kawałkach.
+- `m1-noc-gracz`: w zarządzie jawny wynik napadu, siła napadu i warta z menu liczona w obronie (pola opcjonalne); noc zwalnia do 1×, gdy warta widzi szabrowników w świetle. Playtest na spiętej grze: przy 1× 2,69 decyzji na minutę, najdłuższy przestój w dzień 35 s (było 57 s); raport napadu zgodny z tym, co odegrała symulacja. Nowe nagranie w `.claude/worktrees/m1-grafika-7e0158/shots/`.
+
+Konflikt w tools/shots.ts (scenariusze drzew i napadu w tym samym miejscu): zostały oba. Na połączonej gałęzi: testy 474/474, Biome, build, bot, 77 zrzutów; obejrzane `m1-napad-w-swietle` i `drzewa-zarzad`. Znany błąd rysowania: mapa światła rozciąga się po przybliżeniu (`LightLayer.update` zmienia `tex.frame` bez `tex.orig`), do poprawy. Karta nocy nie ma jeszcze opcji dyżuru przy kozie (jest w menu kozy), a symulacja nie czyta jeszcze nowych pól zarządu.
+
+### M1 tura 5, rano 18.10.2026: dyżur w karcie nocy, napad z zarządu, światło po przybliżeniu
+
+Do `m1-pierwsze-minuty` weszły lokalnie:
+- `m1-napad-api`: symulacja bierze wynik napadu z zarządu (`raidResult`), liczbę szabrowników z planu, a wartownicy, którzy zasnęli według zarządu, przysypiają na posterunku; `govInput` daje wartę, która stoi (z karty, z menu i przy kozie). Bot: z wartą 30 nocy, 8 napadów (5 odpartych, 3 wtargnięcia), bez warty 17 napadów (7 i 10); raport zgadza się z tym, co odegrali szabrownicy.
+- `m1-swiatlo-zoom`: mapa światła po przybliżeniu już się nie rozciąga (tekstury mapy światła dynamiczne; scenariusz `swiatlo-po-przyblizeniu` łapał błąd przed poprawką), poza czuwającego przy kozie (klęczy przy ogniu, bez latarni), zarys osoby z zarządu za koroną drzewa zamiast półprzezroczystej korony.
+- `m1-karta-koza`: w karcie nocy opcja „Czuwa przy kozie” z pasem „Koza w nocy” (kto czuwa, drewno, ile zje noc), rada zarządu i poranny raport o kuchni.
+
+Konflikt w tools/shots.ts (scenariusze w tym samym miejscu): zostały wszystkie. Na połączonej gałęzi: testy 488/488, Biome, build, bot, 83 zrzuty; obejrzane `m1-karta-koza-karta` i `czuwanie-koza`.
+
+### M1 tura 6, rano 18.10.2026: uchwały o jedzeniu, przegląd wizualny, ekran startowy
+
+Do `m1-pierwsze-minuty` weszły lokalnie:
+- `m1-uchwaly-racje`: racje, wspólny kocioł i wspólne posiłki działają w symulacji przez `setLaws`. Bot po 3 dniach: przy racjach zapasy starczają, ale najedzenie spada do około 38; przy kotle najedzenie i nastrój wyżej, a jedzenie kończy się czwartego dnia w 5 z 5 przebiegów.
+- `m1-przeglad-wizualny`: przegląd trzech adresów w dzień, w nocy i na telefonie, cztery poprawki rysowania (łącznik siatki w narożniku, zaznaczenie nocą nad mapą światła, latarnia na zasięg warty z symulacji, przygaszony dym nad przekrojem).
+- `m1-karta-koza` (drugi commit): alarm napadu z widoczności rysowania, krótszy wstęp karty nocy. Nowe nagranie 2:48 w `.claude/worktrees/m1-grafika-7e0158/shots/m1-nagranie.mp4` (25 MB).
+- `start-wersja-03` (ekran startowy z PR #1) z tekstem pod M1: „pierwszy dzień i pierwsza noc za siatką”, pełna gospodarka z budową, badaniami i zimą na razie w 0.3.
+
+Na połączonej gałęzi: testy 495/495, Biome, build, bot (skrót 8b3f7206), 87 zrzutów; na telefonie formularz adresu kończy się na 826 px z 844.
+
+Z przeglądu zostało dla świata, interfejsu i symulacji: na Przymorzu suche drzewo stoi tuż za bramą i jego korona ją zasłania, a etykieta „SUCHE DRZEWO” leży na bramie; siatka przecina chodniki (Przymorze 22 kafelki, Zielonki 20); wraki stoją w połowie na chodniku; Zielonki (dom jednorodzinny) nie mają mieszkańców.
+
+### M1 poprawki z przeglądu, rano 18.10.2026
+
+Do `m1-pierwsze-minuty` weszła `m1-brama-chodniki` (przewinięcie): suche drzewo co najmniej 5 m od bramy i z dala od przejścia, siatka obok chodników zamiast w poprzek (Przymorze 22 kafelki na chodniku → 2, Lanciego i Zielonki 0), wraki całe na jezdni. Testy 498/498, Biome, build, bot (skrót a5336d7c), wszystkie zrzuty.
+
+Gałąź `m1-etykieta` (etykieta „Suche drzewo” z boku korony) powstała równolegle na starym położeniu drzewa i po połączeniu z poprawką świata 7 jej testów i scenariusz zrzutów padały (wybierała stronę, pod którą teraz jest siatka). Scalenie cofnąłem lokalnie przed wypchnięciem; etykietę dopasuje jej autorka na nowej gałęzi M1.
+
+Potem weszła `m1-etykieta-2`: etykieta „Suche drzewo” szuka wolnego miejsca wokół korony (w razie potrzeby z kreską do drzewa) i nie zasłania bramy, siatki, rzeczy, budynków ani ludzi; testy i zrzuty sprawdzają te własności na trzech adresach w dzień, w nocy i na telefonie, a nie konkretną stronę. Testy 506/506, Biome, build, bot, wszystkie zrzuty; obejrzane `m1-etykieta-przymorze-noc`.
+
+### CI na PR #2: tasowanie zależne od silnika JS, 18.10.2026
+
+CI (Node 24) padało na teście zarządu „plan ma siłę i liczbę szabrowników…”: napad przychodził pod bramę zamiast pod zaplanowaną dziurę, a lokalnie (Node 25) test przechodził. Przyczyna: trzy wydarzenia z 0.3 tasują listy przez `sort(() => h.rng() - 0.5)`, a kolejność wywołań porównania zależy od wersji silnika, więc ten sam stan i ziarno dawały inną noc w Node 24 i 25 (i dawałyby w różnych przeglądarkach). Poprawka: `EventHost.shuffle` (opcjonalne); zarząd daje tasowanie Fishera-Yatesa ze swojego ziarna, a bez `shuffle` (adapter testu zgodności z 0.3) zostaje stare zachowanie, więc zgodność z 0.3 się nie zmienia. Lokalnie: testy 506/506, Biome, build, bot, wszystkie zrzuty.
+
 ## Następne
 
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
-2. M1: przekrój siedziby. Dach znika z bliska albo po zaznaczeniu, parter z klatką, mieszkaniami, kuchnią i kozą z szablonów.
-3. M1: potrzeby (głód, ciepło, sen, nastrój) i dwa łańcuchy z planu: drzewo → rąbanie → drewno → skład → koza → ciepło; zapasy → gotowanie → posiłek.
-4. M1: tłum z planem dnia, noc z prawdziwą ciemnością i światłem kozy i ogniska, pierwsze trzy minuty z GDD.
-5. M1: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
+2. Bramka M1: Mateusz gra na swoim adresie i mówi, czy chce dalej. Przed tym nowe nagranie po spięciu (noc z wartą, szabrownikami i dymem) i bramka w minutach przy ekranie.
+3. Z playtestu dla symulacji: warta może nocą dokładać do kozy (teraz koza gaśnie około północy), krok „zanieść drewno do składu” przy 1× czeka kilka sekund na polecenie. Propozycje API zarządu od symulacji: jawny wynik napadu, siła napadu, warta spoza karty nocy.
+4. PR agentsmill/za-murem#2 (M1, z ekranem startowym z #1) czeka na scalenie przez Mateusza; #1 można scalić wcześniej albo zamknąć.
+5. Z przeglądu wizualnego zostało: mieszkańcy w domach jednorodzinnych (Zielonki ich nie mają, decyzja dla Mateusza).
+5. Przy okazji: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
 
 ## Decyzje
 
@@ -119,20 +213,33 @@ Wdrożenie (po OK Mateusza): gałąź przeniesiona na aktualny main (lore z bakt
 - Siedziba: budynek pod adresem (do 4 m), inaczej najbliższy mieszkalny. Zawsze mieszkalna, nazwa z ulicy z geokodera i numeru z mapy.
 - Wzorzec 0.3 liczony moją polityką bota (opisana w `tools/bot-v03.ts`), bo oryginalnego `simtest.js` nie ma. Bramka M3 („balans zbliżony do 0.3”) musi używać tej samej polityki.
 - Przegląd końcowy: uwagi przeważone według skutku dla gracza w pierwszych 10 minutach. Poprawione wszystkie krytyczne i ważne oraz tanie drobne, które gracz albo narzędzia odczują (lista wyżej).
+- M1 robią równoległe sesje z rozdzielonymi plikami, a kontrakt wnętrza spisany jest w `docs/M1-wycinek.md`. Łączy je koordynator po bramce. Koszt pomyłki: rozjazd z kontraktem do poprawienia przy łączeniu.
+- Generator wnętrz działa dla każdego budynku, bo przy zbliżeniu ma być widać wnętrza wszystkich zajętych budynków (Mateusz, 17.10.2026). Wnętrze wynika tylko ze świata, numeru budynku i ziarna, więc nie trafia do zapisu gry; przeróbki zarządu pójdą do zapisu jako zmiany.
+- Polecenia przyjmuje tylko zarząd, tłum to tło (GDD).
+- M1 stoi na main z workerem kawałków (OK Mateusza, 17.10.2026).
+- Kierunek po playteście (Mateusz, noc z 17 na 18.10.2026): trochę RimWorlda, trochę pierwszej wersji z jednym domem za dziurawą siatką, trochę RTS i Cywilizacji, klimat postapo, start z siatką wokół podwórka, szabrownicy, przemyślane budowanie, wnętrza z życiem. Szczegóły w `docs/M1-wycinek.md`.
+- M1 to teraz „Pierwsza noc za siatką”: kończy się nocą z decyzją (karta nocy o 20:00, warta, szabrownicy, pierwsza uchwała), a nie rozpaloną kozą. Koszt pomyłki: dłuższe M1, ale bez niego bramka „Mateusz chce dalej” by nie przeszła.
+- M2 i M3 zamienione: najpierw systemy z 0.3 na nowym świecie, potem grafika z PixelLab. Kotwica stylu może iść wcześniej.
+- Tłum obcych zastąpią mieszkańcy siedziby z planem dnia. Obcy pojawiają się tylko jako wydarzenie.
+- Bramki liczone w minutach przy ekranie: w M1 decyzja co najmniej raz na minutę, w M2 trudna pierwsza zima zamiast balansu jak w 0.3.
+- Na noc z 17 na 18.10.2026 Mateusz zostawił decyzje koordynatorowi, bez pytań do rana. Bez wydatków w PixelLab.
+- Potem tej samej nocy Mateusz napisał: „Rób PR i merguj też automatycznie”. PR-y otwiera koordynator. Scalenie do main zablokował klasyfikator trybu auto („Merge Without Review”), a automatyczne scalanie jest wyłączone w ustawieniach repozytorium; tych ustawień nie zmieniam. Dlatego PR-y do main czekają na scalenie przez Mateusza (albo na regułę uprawnień dla `gh pr merge`), a prace sesji koordynator łączy lokalnie w `m1-pierwsze-minuty` i wypycha tę gałąź do szkicowego PR-a M1.
+- Ekran startowy: ramka „To podgląd wersji 0.4” z przyciskiem „Zagraj w pełną wersję 0.3”, na telefonie krótsza, żeby formularz adresu został na pierwszym ekranie (nowy scenariusz zrzutów `start-telefon`). PR agentsmill/za-murem#1 czeka na scalenie.
 - Odłożone drobne z przeglądu (koszt, jeśli to błąd: tylko przy funkcjach, których jeszcze nie ma):
   - kolejka poleceń jest poza stanem i bez numeru kroku; przed zapisami gry przenieść ją do stanu i dodać log poleceń do odtwarzania,
   - `setScene` nie zeruje liczników i pionków; dziś scena ładuje się raz na stronę,
   - `pointercancel` traktowany jak puszczenie palca; rzadkie, bo plansza ma `touch-action: none`,
-  - tasowanie przez `sort` i `Math.hypot`/`sin`/`cos` mogą dawać różne wyniki w różnych przeglądarkach; ważne, gdy zapisy będą przechodzić między przeglądarkami.
+  - tasowanie przez `sort` i `Math.hypot`/`sin`/`cos` mogą dawać różne wyniki w różnych przeglądarkach; ważne, gdy zapisy będą przechodzić między przeglądarkami. Tasowanie w wydarzeniach zarządu poprawione 18.10.2026 (CI na Node 24); `Math.hypot`/`sin`/`cos` w decyzjach symulacji do sprawdzenia.
 
 ## Zaparkowane
 
 - GitHub Actions ostrzega: `actions/checkout@v4` i `actions/setup-node@v4` celują w wycofywany Node 20 (GitHub uruchamia je na 24), a `ubuntu-latest` przechodzi na Ubuntu 26 od 19.10.2026. Podbić wersje akcji przy najbliższej zmianie workflow.
-- Tryb zombie do wyboru w menu (pomysł Mateusza, 17.10.2026): apokalipsa zombie, start z jednego chronionego budynku, teren powiększany budową zasieków.
-- Własny serwer, np. VPS na Hetznerze (pytanie Mateusza, 17.10.2026): konta i zapisy w chmurze, pocztówki z PixelLab na żądanie, pamięć geokodowania i kafelków, z czasem multiplayer asynchroniczny (sąsiednie osiedla innych graczy). Gra dalej statyczna na Pages, serwer jako małe API obok. Zmienia decyzję „bez backendu i kont”, wrócić po M1.
+- Tryb zombie do wyboru w menu (pomysł Mateusza, 17.10.2026): apokalipsa zombie, start z jednego chronionego budynku, teren powiększany budową zasieków. Od nocy 17/18.10 w planie M4, na tej samej obronie co noc z szabrownikami w M1.
+- Własny serwer, np. VPS na Hetznerze (pytanie Mateusza, 17.10.2026, przypomniane tego samego dnia: „coś bardziej dewowego niż GitHub”): konta i zapisy w chmurze, pocztówki z PixelLab na żądanie, pamięć geokodowania i kafelków, z czasem multiplayer asynchroniczny (sąsiednie osiedla innych graczy). Gra dalej statyczna na Pages, serwer jako małe API obok. Opcje do porównania przy wyborze (ceny sprawdzić u dostawców): Cloudflare Workers z bazą i magazynem plików (lekkie API, pamięć podręczna, bez utrzymywania maszyny); VPS na Hetznerze z Dockerem albo Coolify (pełna kontrola, multiplayer w czasie rzeczywistym, ale utrzymanie i bezpieczeństwo po naszej stronie); hosting kontenerów typu Fly.io. Zmienia decyzję „bez backendu i kont”, wrócić po M1.
 - Pocztówka z osiedla: mapa znaczeń 1 px = 1 m już jest (`src/world/semantic.ts`), gotowa jako obraz startowy do PixelLab. Stan konta PixelLab z 17.10.2026 (sprawdzony przez MCP, nic nie zamówione): abonament Tier 1 „Pixel Apprentice”, 2000 generacji do 16.11.2026, 0 USD kredytów. Tier 1 to według `docs/PIXELLAB.md` mapy do 320×320 px, a nie 400×400, więc pocztówka 384 m w skali 1 px na metr się nie zmieści. Albo skala 1,2 m na piksel, albo wyższy plan.
 - Falowiec na Przymorzu ma około 860 m, w kwadracie 384 m widać tylko jego część. Rozważyć przesunięcie kwadratu tak, żeby siedziba mieściła się cała.
 - Automatyczne chodniki na wsi wyglądają miejsko. Pomijać je tam, gdzie przeważają domy.
 - Późna gra w 0.3 jest za łatwa (bot w 45. dniu ma 582 jedzenia i zaufanie 100). W M3 celem balansu jest pierwsza zima i dalsze wyzwania.
 - Ursynów: siedziba „Lanciego 10G” to duży budynek o ukośnej ścianie, która wychodzi schodkami. Rysować ukośne ściany z wielokąta.
-- Mieszkańcy z adresu (rozmowa z Mateuszem, 17.10.2026): dziś `makePerson` losuje z ogólnopolskich list, bez historii i bez związku z miejscem. Pomysł: ludzie z 2051 jako następcy dzisiejszych sąsiadów (wiek budynku daje rocznik pierwszych lokatorów, dalej spadki i przeprowadzki), prawdziwe sklepy, szkoła i działki z OSM jako ich miejsca, a dzisiejsze osiedle jako ich „dawne czasy”. Losować z osobnego ziarna z adresu, żeby nie ruszyć zgodności z 0.3. Ustalone 17.10.2026: rok zero bakterii to 2026, więc mieszkańcy w 2051 to dzieci i wnuki dzisiejszych lokatorów. Zasady RODO w CLAUDE.md (postaci zmyślone, nie z nazw firm, przypięte do klatki).
+- Mieszkańcy z adresu (rozmowa z Mateuszem, 17.10.2026): dziś `makePerson` losuje z ogólnopolskich list, bez historii i bez związku z miejscem. Pomysł: ludzie z 2051 jako następcy dzisiejszych sąsiadów (wiek budynku daje rocznik pierwszych lokatorów, dalej spadki i przeprowadzki), prawdziwe sklepy, szkoła i działki z OSM jako ich miejsca, a dzisiejsze osiedle jako ich „dawne czasy”. Losować z osobnego ziarna z adresu, żeby nie ruszyć zgodności z 0.3. Ustalone 17.10.2026: rok zero bakterii to 2026, więc mieszkańcy w 2051 to dzieci i wnuki dzisiejszych lokatorów. Zasady RODO w CLAUDE.md (postaci zmyślone, nie z nazw firm, przypięte do klatki). Po kierunku z nocy 17/18.10 niżej w kolejce: wspólnota ma radzić sobie z upadkiem, a nie odwzorowywać dzisiejsze blokowisko.
+- Jak nie być kopią RimWorlda (rozmowa z Mateuszem, 17.10.2026): prawdziwa ulica zamiast losowej mapy, przerabianie zajętych mieszkań zamiast stawiania ścian od zera, sterowanie tylko zarządem (reszta osiedla słucha uchwał albo nie), technika, która stoi obok i nie działa. Część weszła do kierunku z nocy 17/18.10. Całość wpisać do GDD razem z tym kierunkiem, kiedy Mateusz go przejrzy.

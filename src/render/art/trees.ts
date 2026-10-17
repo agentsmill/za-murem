@@ -1,6 +1,6 @@
 /* Drzewa rysowane kodem (grafika zapasowa): korona z kilku plam, światło z dołu i z lewej
    strony (od południa), ciemny obrys, jesienne kolory. Sprite'y w pamięci podręcznej
-   (osobnej w każdym workerze). */
+   (osobnej w każdym workerze i w głównym wątku, gdzie z bliska stoją w warstwie pionków). */
 
 import type { Tree } from '../../world/world.ts';
 import { type AnyCanvas, ctx2d, newCanvas } from './canvas.ts';
@@ -31,11 +31,19 @@ function colors(kind: number, sch: number): [number, number, number, number] {
   return [C.canopy0, C.canopy1, C.canopy2, C.canopyHi];
 }
 
+/** klucz wyglądu drzewa: drzewa o tym samym kluczu mają ten sam sprite */
+export function treeKey(t: Tree): string {
+  return `${t.kind}:${Math.round(t.r * 4) / 4}:${t.seed % 6}:${scheme(t)}`;
+}
+
+/** czy sprite drzewa już jest w pamięci (bez rysowania) */
+export const treeReady = (t: Tree): boolean => cache.has(treeKey(t));
+
 export function treeSprite(t: Tree): TreeSprite {
   const variant = t.seed % 6;
   const rb = Math.round(t.r * 4) / 4;
   const sch = scheme(t);
-  const key = `${t.kind}:${rb}:${variant}:${sch}`;
+  const key = treeKey(t);
   const hit = cache.get(key);
   if (hit) return hit;
   const R = rb * PX;

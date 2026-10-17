@@ -84,42 +84,46 @@ Każdy etap kończy się bramką. Nie przechodzisz dalej, dopóki bramka nie jes
 - GitHub Actions budują i wdrażają na Pages. Wersja 0.3 skopiowana do `public/v03/` i dalej działa.
 - Bramka: testy zielone, build działa, `/v03/` działa lokalnie, zrzuty pustej mapy 1 m dla trzech adresów testowych. Push i przełączenie Pages na Actions dopiero po OK Mateusza.
 
-### M1. Wycinek: mój dom i podwórko
+### M1. Pierwsza noc za siatką
 
-Najważniejszy etap. Ma powstać coś, w co chce się grać przez 10 minut, nawet na grafice zapasowej.
+Najważniejszy etap. Ma powstać coś, w co chce się grać przez 10 minut, nawet na grafice zapasowej: pierwszy dzień i pierwsza noc za dziurawą siatką, z decyzją co najmniej raz na minutę. Kierunek po playteście z 17.10.2026 i plan pracy są w `docs/M1-wycinek.md`.
 
 - Mapa 1 m z obrotem, teren, ulice, chodniki, drzewa, budynki z modułowej grafiki zapasowej, która już wygląda jak blok i jak dom (balkony, klatki, okna, dachy).
-- Siedziba z przekrojem: parter, klatka albo pokoje, kuchnia, koza.
-- Rdzeń: 4 osoby z imionami i zawodami z obecnych generatorów. Chodzą, śpią, jedzą, marzną. Potrzeby: głód, ciepło, sen, nastrój.
-- Sterowanie: zaznaczanie kliknięciem i ramką, menu pod prawym przyciskiem, domyślne polecenie na telefonie, pauza i tempa.
-- Jeden pełny łańcuch: suche drzewo → rąbanie → drewno na ziemi → noszenie do składu → palenie w kozie → ciepło w mieszkaniu → lepszy nastrój. Drugi łańcuch: jedzenie z zapasów → gotowanie → posiłek przy stole.
-- Tłum: 20 do 40 pionków tła z prostym planem dnia.
-- Dzień i noc z prawdziwą ciemnością i światłem z kozy i ogniska.
-- Pierwsze trzy minuty jak w GDD.
-- Bramka: nagranie wideo z Playwright (2-3 minuty gry) i zrzuty dla Mateusza. Mateusz gra na swoim adresie i mówi, że chce dalej. Wydajność w granicach z prototypu.
+- Od startu dziurawa siatka wokół podwórka i siedziby, z bramą. Łatanie siatki i ognisko to pierwsze budowanie.
+- Siedziba z przekrojem przy zbliżeniu: klatka, mieszkania, kuchnia, koza. W mieszkaniach mieszkają ludzie i widać, co robią. Generator wnętrz działa dla każdego budynku.
+- Rdzeń: 4 osoby z imionami i zawodami z obecnych generatorów. Chodzą, śpią, jedzą, marzną, boją się. Potrzeby: głód, ciepło, sen, bezpieczeństwo, nastrój.
+- Mieszkańcy zamiast tłumu obcych: kilka osób z mieszkań siedziby z planem dnia, nocą w środku. Obcy pojawiają się rzadko i z powodem (szabrownicy, wędrowcy).
+- Sterowanie: zaznaczanie kliknięciem i ramką, menu pod prawym przyciskiem, domyślne polecenie na telefonie, pauza i tempa. Polecenia dostaje tylko zarząd.
+- Łańcuchy: suche drzewo → rąbanie → drewno → skład → koza, która zjada drewno → ciepło → nastrój; zapasy → gotowanie → posiłek przy stole. Palenie mebli jako wybór: ciepło od razu, gorszy nastrój.
+- O 20:00 karta nocy jak w 0.1 i 0.2: kto śpi, kto trzyma wartę, kto idzie po opał albo części (wyprawa poza mapę). Wieczorem pierwsza uchwała z treści 0.3, do tego zaufanie i wkurzenie.
+- Noc z prawdziwą ciemnością i światłem z kozy, okien i ogniska. Szabrownicy próbują wejść przez najsłabsze miejsce siatki, a warta ze światłem ich płoszy.
+- Pierwsze trzy minuty jak w GDD (samouczek), potem cel na pierwszy dzień i noc.
+- Bramka: bot mierzy w minutach przy ekranie, że w pierwszych 10 minutach decyzja wypada co najmniej raz na minutę, a noc bez warty kosztuje. Nagranie wideo z Playwright (2-3 minuty gry) i zrzuty. Mateusz gra na swoim adresie i mówi, że chce dalej. Wydajność w granicach z prototypu.
 
-### M2. Grafika z PixelLab
+### M2. Systemy z 0.3 na nowym świecie (zamienione z grafiką 17.10.2026)
+
+- Budowanie według zasad z `docs/M1-wycinek.md`: stanowiska w pasujących pomieszczeniach, podwórko za siatką, obwód (siatka, zasieki, mur). Zasoby jako przedmioty na ziemi i w strefach składowania.
+- Dyżury mieszkańców per klatka, zakładka Praca z priorytetami.
+- Badania z wiedzy fachowców i książek, uchwały w stylu Frostpunka z odnowieniem, zaufanie i wkurzenie, zakończenia.
+- Wyprawy poza mapę jak w 0.3, bo bez nich gospodarka z 0.3 traci źródło jedzenia i opału.
+- Wydarzenia z 0.3 podpięte pod miejsca na mapie, tam gdzie to ma sens (influencerka nagrywa pod bramą, dron dostawczy spada na trawnik). Reszta zostaje tekstowa. Tempo wydarzeń dobrane do nowego zegara, a nie przeniesione wprost z godzin gry.
+- Gazetka „Głos Klatki” z wycinkiem mapy waszego osiedla.
+- Bramka: bot gra 45 dni bez błędu, każdy system ma test. Pierwsza zima jest trudna, a późna gra nie jest za łatwa jak w 0.3. Decyzja co minutę także po pierwszej godzinie gry przy ekranie.
+
+### M3. Grafika z PixelLab (zamieniona z systemami 17.10.2026)
 
 - Sprawdź `/mcp`. Jeśli PixelLab nie jest podłączony, podaj Mateuszowi komendę z `docs/PIXELLAB.md` i poczekaj.
-- Kotwica stylu (4 assety), akceptacja Mateusza, zapis palety, potem pierwsza fala z `docs/PIXELLAB.md`.
+- Kotwica stylu (4 assety), akceptacja Mateusza, zapis palety, potem pierwsza fala z `docs/PIXELLAB.md`. Kotwicę stylu można zrobić wcześniej, równolegle z M1 i M2.
 - Manifest z kosztami. Przed każdą paczką powyżej 5 USD pytasz o zgodę. Budżet na etap ustala Mateusz.
-- Atlasy, animacje postaci, stany obiektów (koza zimna i rozpalona, drzewo zdrowe i ścięte), zima, dym, pranie, noc.
+- Atlasy, animacje postaci, stany obiektów (koza zimna i rozpalona, drzewo zdrowe i ścięte, siatka cała i dziurawa), zima, dym, pranie, noc.
 - Mateusz ma wyższy plan PixelLab z generowaniem map (do 400×400 px). Użyj go do pocztówki z osiedla: nasz układ w skali 1 px na metr jako obraz startowy, wynik na ekran startowy i do gazetki. Szczegóły i granice w `docs/PIXELLAB.md`, sekcja „Generowanie map”. Świata gry z tego nie składamy.
 - Bramka: zrzuty przed i po w tych samych miejscach, Mateusz akceptuje wygląd.
-
-### M3. Systemy z 0.3 na nowym świecie
-
-- Zasoby jako przedmioty na ziemi i w strefach składowania. Stanowiska jako obiekty w konkretnych pomieszczeniach.
-- Dyżury tłumu per klatka, zakładka Praca z priorytetami.
-- Badania z wiedzy fachowców i książek, uchwały w stylu Frostpunka z odnowieniem, zaufanie i wkurzenie, zakończenia.
-- Wydarzenia z 0.3 podpięte pod miejsca na mapie, tam gdzie to ma sens (influencerka nagrywa pod bramą, dron dostawczy spada na trawnik). Reszta zostaje tekstowa.
-- Gazetka „Głos Klatki” z wycinkiem mapy waszego osiedla.
-- Bramka: bot gra 45 dni bez błędu, balans zbliżony do 0.3, każdy system ma test.
 
 ### M4. Skala osiedla
 
 - Przyłączanie sąsiednich bloków, wyprawy widoczne na mapie (wyjście bramą, powrót z łupem), cele poza mapą, nocne najazdy z trybem Alarm, przełącznik pięter, osada domków.
-- Bramka: trzy typy adresów grywalne (wielka płyta, falowiec, domki). Najazd da się obronić ręcznie.
+- Tryb zombie do wyboru w menu: start z jednego chronionego budynku, teren powiększany zasiekami. Korzysta z tej samej obrony co noc z szabrownikami.
+- Bramka: trzy typy adresów grywalne (wielka płyta, falowiec, domki). Najazd da się obronić ręcznie. W trybie zombie da się utrzymać osadę przez pierwszy tydzień.
 
 ### M5. Szlif i wiralowość
 

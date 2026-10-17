@@ -3,13 +3,27 @@
    32 px na kafelek (z bliska) i 8 px na kafelek (z daleka). */
 
 import { T } from '../../world/world.ts';
-import { type AnyCanvas, type Ctx2D, ctx2d } from './canvas.ts';
+import { describeTile, IN } from '../section.ts';
+import { type AnyCanvas, type Ctx2D, ctx2d, newCanvas } from './canvas.ts';
 import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
+import { deadTreeSprite } from './rzeczy.ts';
 import { type BStyle, CHUNK, type ChunkScene, SUB, TILE } from './scene.ts';
 import { treeSprite } from './trees.ts';
+import { type InteriorTile, interiorColor } from './wnetrze.ts';
 
 const PAVED = new Set<number>([T.ROAD, T.PARKING]);
+
+/** drobne śmieci po latach bez sprzątania: papier, folia, puszka, butelka */
+const TRASH = [0xd8d2c0, 0x5a7fa0, 0xa04a38, 0x5e7a44] as const;
+/** wyschnięta, niekoszona trawa */
+const STRAW = 0x8a8648;
+
+/** pęknięcie w asfalcie: wąska kręta linia z szumu, w niej czasem chwast */
+function asphaltCrack(c: number, ax: number, ay: number): number {
+  if (Math.abs(vnoise(ax, ay, 70, 27) - 0.5) >= 0.008) return c;
+  return h2(ax >> 1, ay >> 1, 28) < 0.15 ? C.grass0 : 0x26272a;
+}
 
 /** kolor terenu (0xRRGGBB) w punkcie grafiki (ax, ay) na kafelku i o kodzie t */
 function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: number, px: number, py: number): number {
@@ -48,6 +62,14 @@ function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: numbe
       if (k < 0.02) c = shade(base, 0.86);
       else if (k > 0.996) c = h2(ax >> 1, ay >> 1, 11) < 0.5 ? C.leaf0 : C.leaf1;
       if (t === T.WOOD && h2(ax >> 1, ay >> 1, 13) < 0.06) c = C.leaf2;
+      else if (t !== T.WOOD) {
+        // nikt nie kosi: płaty suchej trawy, kępy chwastów, gdzieniegdzie śmieć
+        const dry = vnoise(ax, ay, 260, 17);
+        if (dry > 0.6) c = mix(c, STRAW, (dry - 0.6) * 0.9);
+        if (h2(ax >> 3, ay >> 3, 18) < 0.012 && h2(ax, ay, 19) < 0.45)
+          c = h2(ax >> 1, ay, 20) < 0.7 ? 0x3d5426 : 0x9a8a50;
+        if (h2(ax >> 1, ay >> 1, 21) < 0.0009) c = TRASH[Math.floor(h2(ax >> 1, ay >> 1, 22) * 4)];
+      }
       // trawa przy budynku zacieniona
       break;
     }
@@ -57,6 +79,7 @@ function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: numbe
       c = n < 0.35 ? C.asph0 : n < 0.8 ? C.asph1 : C.asph2;
       if (r < 0.05) c = shade(c, 0.85);
       else if (r > 0.96) c = shade(c, 1.15);
+      c = asphaltCrack(c, ax, ay);
       // rynsztok przy krawężniku
       const e = edgeTo((n2) => !PAVED.has(n2) && n2 !== T.ROAD);
       if (e < 2) c = C.gutter;
@@ -69,6 +92,7 @@ function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: numbe
       // linie miejsc parkingowych co 2,5 m
       if (ax % 80 < 2 && (ay & 63) < 52) c = shade(C.line, 0.85);
       if (h2(ax >> 3, ay >> 3, 25) < 0.01) c = 0x2a2a2a;
+      c = asphaltCrack(c, ax, ay);
       break;
     }
     case T.SIDEWALK: {
@@ -78,10 +102,24 @@ function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: numbe
       const r = h2(sx, sy, 31);
       c = r < 0.3 ? C.slab1 : r > 0.85 ? C.slab2 : C.slab0;
       if (h2(sx, sy, 32) < 0.03) c = shade(c, 0.82);
-      if ((ax & 15) === 0 || (ay & 15) === 0) {
+      const u = ax & 15;
+      const v = ay & 15;
+      if (u === 0 || v === 0) {
         c = C.seam;
         if (h2(ax, ay, 33) < 0.25) c = C.grass0;
-      } else if (h2(ax, ay, 34) < 0.04) c = shade(c, 0.92);
+      } else if (h2(sx, sy, 38) < 0.02) {
+        // zapadnięta płyta: ziemia z trawą
+        c = h2(ax, ay, 39) < 0.35 ? C.grass1 : C.dirt1;
+      } else {
+        if (h2(ax, ay, 34) < 0.04) c = shade(c, 0.92);
+        // pęknięta płyta: zygzak od krawędzi do krawędzi
+        if (h2(sx, sy, 36) < 0.12) {
+          const dir = h2(sx, sy, 37) < 0.5 ? 1 : -1;
+          if (u === ((3 + Math.floor(h2(sx, sy, 40) * 10) + ((v * dir) >> 2)) & 15)) c = shade(c, 0.72);
+        }
+        // liście nawiane na chodnik
+        if (h2(ax >> 1, ay >> 1, 41) < 0.01) c = h2(ax >> 2, ay >> 2, 42) < 0.5 ? C.leaf0 : C.leaf1;
+      }
       // krawężnik od jezdni
       const er = edgeTo((n2) => n2 === T.ROAD || n2 === T.PARKING);
       if (er < 3) c = er === 0 ? shade(C.curb, 0.8) : C.curb;
@@ -359,9 +397,10 @@ function roofDetails(ctx: Ctx2D, sc: ChunkScene, bid: number): void {
 
 /**
  * Rysuje kawałek (cx, cy) w skali s pikseli na kafelek (32 albo 8) do płótna o boku CHUNK*s.
- * Płótno może być zwykłe (główny wątek) albo OffscreenCanvas (worker).
+ * Płótno może być zwykłe (główny wątek) albo OffscreenCanvas (worker). cut: przekrój, czyli
+ * nad wnętrzem sc.section kafelki wnętrza zamiast dachu i fasady.
  */
-export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, canvas: AnyCanvas): void {
+export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, canvas: AnyCanvas, cut = false): void {
   const w = sc.w;
   const size = w.size;
   const side = CHUNK * s;
@@ -372,6 +411,8 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
   const out = new Uint32Array(img.data.buffer);
   const step = TILE / s;
   const off = step >> 1;
+  const sec = cut ? sc.section : null;
+  const facade = sec ? sc.styles[sec.building].wall : 0;
   for (let ty = 0; ty < CHUNK; ty++) {
     const y = cy * CHUNK + ty;
     if (y >= size) break;
@@ -383,6 +424,8 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       const bid = w.bid[i];
       const st = bid >= 0 ? sc.styles[bid] : null;
       const door = bid >= 0 && sc.doors.get(i) === 'S';
+      // przekrój: opis kafelka wnętrza raz na kafelek, piksele z grafiki zastępczej (wnetrze.ts)
+      const inner: InteriorTile | null = sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, facade) : null;
       for (let oy = 0; oy < s; oy++) {
         const py = oy * step + off;
         const ay = y * TILE + py;
@@ -391,7 +434,8 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
           const px = ox * step + off;
           const ax = x * TILE + px;
           let c: number;
-          if (st) {
+          if (inner) c = interiorColor(inner, x, y, px, py, sec!.seed);
+          else if (st) {
             const fy = sc.south[i] * TILE + (31 - py);
             const fh = Math.min(st.facade, sc.run[i] * TILE - 8);
             if (fy < fh) c = facadeColor(st, ax, fy, door && sc.south[i] === 0, px);
@@ -416,7 +460,9 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
   for (const b of w.buildings) {
     if (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1) continue;
     const st = sc.styles[b.id];
-    if (b.cls === 'blok' && st.levels >= 5) {
+    // otwarty w przekroju: bez maszynowni, kominów i anten (daszki nad wejściami zostają)
+    const open = sec !== null && b.id === sec.building;
+    if (!open && b.cls === 'blok' && st.levels >= 5) {
       for (const e of b.entrances) {
         const ex = e.tile % size;
         const ey = (e.tile - ex) / size;
@@ -441,10 +487,14 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
         ctx.fillRect(bx + 30, by + 68, 20, 10);
       }
     }
-    if (st.roof === 'tar' && (b.cls === 'blok' || b.cls === 'inne' || b.cls === 'przychodnia' || b.cls === 'szkola')) {
+    if (
+      !open &&
+      st.roof === 'tar' &&
+      (b.cls === 'blok' || b.cls === 'inne' || b.cls === 'przychodnia' || b.cls === 'szkola')
+    ) {
       roofDetails(ctx, sc, b.id);
     }
-    if (b.cls === 'dom') {
+    if (!open && b.cls === 'dom') {
       const vx = b.x0 + Math.floor((b.x1 - b.x0) * (0.25 + h2(b.id, 9, 3) * 0.5));
       const vy = b.y0 + 1;
       ctx.fillStyle = '#2f2d2b66';
@@ -474,23 +524,69 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       }
     }
   }
-  // cienie drzew: miękkie elipsy w jednej ścieżce, żeby nakładające się nie ciemniały podwójnie
-  const trees = sc.treesBy[cy * sc.chunks + cx];
-  if (trees.length) {
-    ctx.beginPath();
-    for (const t of trees) {
-      const sx = (t.x + t.r * 0.45) * TILE;
-      const sy = (t.y - 1.2 - t.r * 0.55) * TILE;
-      ctx.moveTo(sx + t.r * TILE * 0.95, sy);
-      ctx.ellipse(sx, sy, t.r * TILE * 0.95, t.r * TILE * 0.76, 0, 0, Math.PI * 2);
+  // cienie drzew: miękkie elipsy w trzech warstwach (każda w jednej ścieżce, żeby nakładające się
+  // nie ciemniały podwójnie), od szerokiej i jasnej do węższej i ciemniejszej w środku; ścięte drzewa
+  // (treeGone) już się nie rysują, suche (bez liści) ma cień lżejszy i mniejszy
+  const list = sc.treesBy[cy * sc.chunks + cx].filter((k) => !sc.treeGone[k]);
+  const shade = (ks: number[], k: number, a: number) => {
+    if (!ks.length) return;
+    for (const [m, f] of SOFT) {
+      ctx.beginPath();
+      for (const ti of ks) {
+        const t = w.trees[ti];
+        const sx = (t.x + t.r * 0.45) * TILE;
+        const sy = (t.y - 1.2 - t.r * 0.55) * TILE;
+        const rx = t.r * TILE * 0.95 * k * m;
+        ctx.moveTo(sx + rx, sy);
+        ctx.ellipse(sx, sy, rx, t.r * TILE * 0.76 * k * m, 0, 0, Math.PI * 2);
+      }
+      ctx.fillStyle = `rgba(16,22,34,${(a * f).toFixed(3)})`;
+      ctx.fill();
     }
-    ctx.fillStyle = 'rgba(16,22,34,0.30)';
-    ctx.fill();
-  }
-  // drzewa od tyłu do przodu
-  for (const t of trees) {
-    const sp = treeSprite(t);
-    ctx.drawImage(sp.canvas, t.x * TILE - sp.ax, t.y * TILE - sp.ay);
-  }
+  };
+  shade(
+    list.filter((k) => k !== sc.dryTree),
+    1,
+    0.3,
+  );
+  shade(
+    list.filter((k) => k === sc.dryTree),
+    0.8,
+    0.13,
+  );
+  // drzewa od tyłu do przodu, ale tylko z daleka: z bliska stoją jako sprite'y w warstwie pionków
+  // (treeLayer.ts), sortowane po y razem z pionkami
+  if (s < TILE)
+    for (const k of list) {
+      const t = w.trees[k];
+      const sp = k === sc.dryTree ? deadTree(t) : treeSprite(t);
+      ctx.drawImage(sp.canvas, t.x * TILE - sp.ax, t.y * TILE - sp.ay);
+    }
   ctx.restore();
+}
+
+/** warstwy miękkiego cienia drzewa: skala elipsy i udział krycia (razem w środku pełne krycie) */
+const SOFT: readonly (readonly [number, number])[] = [
+  [1.12, 0.3],
+  [0.96, 0.35],
+  [0.78, 0.5],
+];
+
+const deadCache = new Map<string, { canvas: AnyCanvas; ax: number; ay: number }>();
+
+/** suche drzewo z grafiki zastępczej (rzeczy.ts) jako płótno, w tej samej ramce co żywe */
+function deadTree(t: { x: number; y: number; r: number; kind: 0 | 1 | 2; seed: number }) {
+  const key = `${t.kind}:${t.r}:${t.seed}`;
+  let hit = deadCache.get(key);
+  if (!hit) {
+    const sp = deadTreeSprite(t);
+    const canvas = newCanvas(sp.w, sp.h);
+    const ctx = ctx2d(canvas);
+    const img = ctx.createImageData(sp.w, sp.h);
+    new Uint32Array(img.data.buffer).set(sp.px);
+    ctx.putImageData(img, 0, 0);
+    hit = { canvas, ax: sp.ax, ay: sp.ay };
+    deadCache.set(key, hit);
+  }
+  return hit;
 }

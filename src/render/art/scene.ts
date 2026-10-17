@@ -6,6 +6,7 @@
 import type { Pt } from '../../world/geo.ts';
 import { fillRing } from '../../world/raster.ts';
 import { type Dir, T, type Tree, type World, type WorldBuilding } from '../../world/world.ts';
+import type { SectionScene } from '../section.ts';
 import { h2 } from './hash.ts';
 import { C, HOUSE_WALLS, shade, WALLS } from './palette.ts';
 
@@ -39,7 +40,7 @@ export type ArtBuilding = Pick<WorldBuilding, 'id' | 'cls' | 'x0' | 'y0' | 'x1' 
 
 /** to, czego potrzebuje rysowanie kawałków: bez reszty świata, więc da się to wysłać do workera */
 export interface ChunkScene {
-  w: Pick<World, 'size' | 'terr' | 'bid'> & { buildings: ArtBuilding[] };
+  w: Pick<World, 'size' | 'terr' | 'bid' | 'trees'> & { buildings: ArtBuilding[] };
   /** dla kafelka budynku: ile kafelków budynku jest pod nim w tej samej kolumnie (0 = dolny) */
   south: Int16Array;
   /** długość pionowego ciągu kafelków budynku, do którego należy kafelek */
@@ -49,8 +50,14 @@ export interface ChunkScene {
   shadow: Uint8Array;
   /** drzwi: kafelek → kierunek */
   doors: Map<number, Dir>;
-  /** drzewa w kawałkach (z zapasem na koronę), indeks cy*n + cx */
-  treesBy: Tree[][];
+  /** numery drzew (w w.trees) w kawałkach, z zapasem na koronę i cień; indeks cy*n + cx */
+  treesBy: number[][];
+  /** 1 = drzewa już nie ma (ścięte), kawałki rysują się bez niego */
+  treeGone: Uint8Array;
+  /** suche drzewo (bez liści) albo −1 */
+  dryTree: number;
+  /** wnętrze budynku do przekroju (w M1 siedziba) albo null */
+  section: SectionScene | null;
   chunks: number;
 }
 
@@ -60,12 +67,13 @@ export interface Scene extends ChunkScene {
 
 /** wyciąg ze sceny do workera: same dane rysowania, bez nazw, tagów i siatek symulacji */
 export function chunkSceneOf(sc: Scene): ChunkScene {
-  const { size, terr, bid, buildings } = sc.w;
+  const { size, terr, bid, trees, buildings } = sc.w;
   return {
     w: {
       size,
       terr,
       bid,
+      trees,
       buildings: buildings.map(({ id, cls, x0, y0, x1, y1, entrances }) => ({ id, cls, x0, y0, x1, y1, entrances })),
     },
     south: sc.south,
@@ -74,8 +82,23 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
     shadow: sc.shadow,
     doors: sc.doors,
     treesBy: sc.treesBy,
+    treeGone: sc.treeGone,
+    dryTree: sc.dryTree,
+    section: sc.section,
     chunks: sc.chunks,
   };
+}
+
+/** kawałki, w których rysuje się drzewo (korona sięga w górę, cień w górę i w prawo) */
+export function treeChunks(t: Tree, chunks: number): number[] {
+  const m = t.r + 2;
+  const cx0 = Math.max(0, Math.floor((t.x - m) / CHUNK));
+  const cx1 = Math.min(chunks - 1, Math.floor((t.x + m) / CHUNK));
+  const cy0 = Math.max(0, Math.floor((t.y - m - 2) / CHUNK));
+  const cy1 = Math.min(chunks - 1, Math.floor((t.y + 1) / CHUNK));
+  const out: number[] = [];
+  for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) out.push(cy * chunks + cx);
+  return out;
 }
 
 export const heightM = (levels: number) => levels * 2.8 + 1;
@@ -218,15 +241,12 @@ export function buildScene(w: World): Scene {
   }
 
   const chunks = Math.ceil(size / CHUNK);
-  const treesBy: Tree[][] = Array.from({ length: chunks * chunks }, () => []);
-  for (const t of w.trees) {
-    const m = t.r + 2;
-    const cx0 = Math.max(0, Math.floor((t.x - m) / CHUNK));
-    const cx1 = Math.min(chunks - 1, Math.floor((t.x + m) / CHUNK));
-    const cy0 = Math.max(0, Math.floor((t.y - m - 2) / CHUNK));
-    const cy1 = Math.min(chunks - 1, Math.floor((t.y + 1) / CHUNK));
-    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) treesBy[cy * chunks + cx].push(t);
-  }
-  for (const list of treesBy) list.sort((a, b) => a.y - b.y || a.x - b.x);
-  return { w, south, run, styles, shadow, doors, treesBy, chunks };
+  const treesBy: number[][] = Array.from({ length: chunks * chunks }, () => []);
+  w.trees.forEach((t, k) => {
+    for (const c of treeChunks(t, chunks)) treesBy[c].push(k);
+  });
+  const tr = w.trees;
+  for (const list of treesBy) list.sort((a, b) => tr[a].y - tr[b].y || tr[a].x - tr[b].x);
+  const treeGone = new Uint8Array(w.trees.length);
+  return { w, south, run, styles, shadow, doors, treesBy, treeGone, dryTree: w.dryTree, section: null, chunks };
 }

@@ -49,6 +49,15 @@ export function polyArea(p: readonly Pt[]): number {
   return Math.abs(a / 2);
 }
 
+/** odległość punktu (px, py) od odcinka (ax, ay)–(bx, by) */
+export function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)) : 0;
+  return Math.hypot(ax + t * dx - px, ay + t * dy - py);
+}
+
 /** punkt w wielokącie (parzystość przecięć), jak pip w 0.3 */
 export function pip(x: number, y: number, poly: readonly Pt[]): boolean {
   let inside = false;
