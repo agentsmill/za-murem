@@ -1,0 +1,22 @@
+# Za Murem na serwerze Hetznera: Caddy z HTTPS serwuje zbudowaną grę (www/ to kopia dist/).
+# Adres strony (SITE) i adres IP (IP) siedzą w pliku .env na serwerze, nie w repozytorium.
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - SITE=${SITE}
+      - IP=${IP}
+    volumes:
+      - ./conf:/etc/caddy:ro
+      - ./www:/srv/www:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
