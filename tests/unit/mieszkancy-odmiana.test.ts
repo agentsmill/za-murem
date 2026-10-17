@@ -917,6 +917,11 @@ describe('tabele z surowego pliku SGJP', () => {
     DLUGO,
   );
 
+  // Uwaga: to nie jest pomiar bez przecieku. Listy wyjątków reguł (Z_E_RUCHOMYM_ER, NII, PLUS_N, PRZYM_E) pochodzą
+  // z badań, w których dobrano je na wszystkich imionach SGJP, także na odłożonych, więc 96% dla reguł i 98% dla
+  // `pewne` są optymistyczne (bez list badania dawały 95,4%). Wynik `pewne` dotyczy polskich imion, które słownik
+  // i tak pokrywa; dla 343 obcych imion spoza słownika nie ma wzorca poprawności. Jedyną liczbą bez przecieku jest
+  // test powyżej: tablica końcówek na odłożonych imionach.
   it.skipIf(!jestSgjp)(
     'reguły na wszystkich imionach SGJP, a oznaczenie pewne ma dokładność co najmniej 98% na odłożonych',
     () => {
