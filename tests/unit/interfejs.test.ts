@@ -425,7 +425,19 @@ describe('pasek i karta osoby', () => {
   it('stan osiedla na starcie: zimna kuchnia, brak drewna', () => {
     const { sim, w, seed } = fresh();
     const s = statsOf(snapshot(sim.st, w), newGov(seed));
-    expect(s.map((x) => x.id)).toEqual(['sOut', 'sKit', 'sFire', 'sWood', 'sFood', 'sTrust', 'sAnger']);
+    expect(s.map((x) => x.id)).toEqual([
+      'sOut',
+      'sKit',
+      'sFire',
+      'sWood',
+      'sBoards',
+      'sScrap',
+      'sParts',
+      'sMats',
+      'sFood',
+      'sTrust',
+      'sAnger',
+    ]);
     const by = Object.fromEntries(s.map((x) => [x.id, x]));
     expect(by.sKit.level).toBe('bad');
     expect(by.sFire).toMatchObject({ value: 'zimna', level: 'bad' });

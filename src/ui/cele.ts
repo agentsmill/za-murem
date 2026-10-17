@@ -3,12 +3,14 @@
    do bieżącego kroku. */
 
 import type { GovState } from '../gov/typy.ts';
+import { BUILDS } from '../sim/budowle.ts';
 import type { SimState } from '../sim/sim.ts';
 import { TUT_STEPS, type TutStep, WARM_ENOUGH } from '../sim/tutorial.ts';
+import { aptsGame, costText } from './budowa.ts';
 import { deg } from './tekst.ts';
 
 export interface Goal {
-  key: TutStep | 'drewno' | 'noc';
+  key: TutStep | 'drewno' | 'noc' | 'przeszukaj' | 'warsztat' | 'obwod' | 'drewno2';
   text: string;
   /** jak to zrobić (tylko bieżący krok ma sens) */
   how: string;
@@ -111,3 +113,61 @@ export const currentGoal = (goals: Goal[]): Goal | null => goals.find((g) => !g.
 
 /** znacznik nad suchym drzewem: dopóki zarząd go nie zetnie */
 export const markTree = (st: SimState): boolean => st.tut.step >= 0 && st.tut.step <= TUT_STEPS.indexOf('sciete');
+
+/** drewno na drugą noc: noc 22–6 zjada około 16 sztuk (2 na godzinę), także z dyżurem przy kozie */
+export const DAY2_WOOD = 16;
+
+/** czy to już drugi dzień: po pierwszym raporcie rano, do raportu po drugiej nocy */
+export const isDay2 = (gov: GovState | null): boolean => !!gov && gov.reports.length === 1;
+
+/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie, zbudować warsztat, wzmocnić obwód,
+    mieć drewno na noc. Co przeszukane, daje stan gry (st.apts); warsztat i zasieki to gotowe budowle
+    w st.things; obwód liczy się też, gdy żadna dziura nie jest otwarta. */
+export function goalsDay2(
+  st: SimState,
+  gov: GovState | null,
+  o: {
+    touch: boolean;
+    /** drewno na zapas teraz i czy zapas na noc już raz był */
+    wood: number;
+    woodReady: boolean;
+    /** otwarte dziury w siatce */
+    holes: number;
+  },
+): Goal[] {
+  const searched = aptsGame(st).some((a) => (a.searched?.length ?? 0) > 0);
+  const built = (kind: string) => st.things.some((t) => t.kind === kind);
+  const late = !!gov?.night?.confirmed || (gov?.reports.length ?? 0) > 1;
+  const b = o.touch ? 'Przycisk Budowa u góry' : 'Budowa (przycisk u góry albo B)';
+  return [
+    {
+      key: 'przeszukaj',
+      text: 'Przeszukajcie puste mieszkanie.',
+      how: o.touch
+        ? 'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.'
+        : 'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
+      done: searched,
+    },
+    {
+      key: 'warsztat',
+      text: 'Zbudujcie warsztat.',
+      how: `${b}: Warsztat w pokoju naszego mieszkania (${costText(BUILDS.warsztat.cost)}). Zarząd sam przyniesie materiały i zbuduje.`,
+      done: built('warsztat'),
+    },
+    {
+      key: 'obwod',
+      text: 'Wzmocnijcie obwód.',
+      how: `${b}: Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)}) albo załatajcie dziury${
+        o.touch ? ' (przytrzymajcie palec na dziurze)' : ' (prawy przycisk na dziurze)'
+      }. Otwartych dziur: ${o.holes}.`,
+      done: built('zasieki') || o.holes === 0,
+    },
+    {
+      key: 'drewno2',
+      text: 'Przygotujcie drewno na noc.',
+      how: `Drewna na zapas: ${o.wood} z ${DAY2_WOOD}. Noc zjada około 2 sztuk na godzinę, a przy kozie może ktoś czuwać.`,
+      done: o.woodReady || late,
+      missed: !o.woodReady && late,
+    },
+  ];
+}

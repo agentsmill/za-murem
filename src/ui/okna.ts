@@ -304,6 +304,36 @@ export function menuSheet(note: string): Sheet {
   };
 }
 
+/** pomoc o budowie i pustych mieszkaniach (M2, fala 1) */
+function buildHelp(touch: boolean): string {
+  const items = touch
+    ? [
+        'Przycisk Budowa u góry otwiera menu budowy: pomieszczenie, podwórko i obwód, z kosztem, czasem pracy i działaniem.',
+        'Po wyborze plan budowy jedzie za palcem: stuknięcie stawia, przyciski na dole obracają i anulują. Zielony plan da się postawić, czerwony mówi, czemu nie.',
+        'Zarząd sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.',
+        'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+      ]
+    : [
+        'Przycisk Budowa u góry albo klawisz B otwiera menu budowy: pomieszczenie, podwórko i obwód, z kosztem, czasem pracy i działaniem.',
+        'Po wyborze plan budowy jedzie za kursorem: lewy klik stawia, R obraca, prawy klik albo Esc anuluje, z Shiftem stawia się kilka naraz. Zielony plan da się postawić, czerwony mówi, czemu nie.',
+        'Zarząd sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.',
+        'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+      ];
+  return `<h3 class="help-h">Budowa i puste mieszkania</h3><ul class="help">${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
+}
+
+/** potwierdzenie polecenia, którego nie da się cofnąć (rozbiórka, zajęcie mieszkania; palenie ma własne okno) */
+export function confirmSheet(label: string): Sheet {
+  return {
+    tone: 'ogien',
+    kicker: 'Na pewno?',
+    title: esc(label),
+    body: '<p>Tego nie da się cofnąć.</p>',
+    foot: `${btn('confirm-no', 'Nie', 'btn ghost')}${btn('confirm-yes', label, 'btn go')}`,
+    closable: true,
+  };
+}
+
 export function helpSheet(touch: boolean): Sheet {
   const ctl = touch
     ? '<li>Stuknięcie w człowieka z zarządu zaznacza go.</li><li>Stuknięcie w miejsce wydaje najprostsze polecenie: idź, zetnij, zanieś, dołóż.</li><li>Przytrzymanie palca pokazuje wszystkie polecenia w tym miejscu, także palenie mebli.</li><li>Jeden palec przesuwa mapę, dwa przybliżają.</li>'
@@ -312,7 +342,7 @@ export function helpSheet(touch: boolean): Sheet {
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: 'Jak grać',
-    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul><h3 class="help-h">Zarząd</h3><ul class="help"><li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li></ul><h3 class="help-h">Na razie</h3><p>Wersja 0.4 kończy się na pierwszej nocy za siatką. Dalej gra toczy się, ale bez nowych systemów. Pełna gra z budowaniem i badaniami jest w wersji 0.3.</p>`,
+    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul>${buildHelp(touch)}<h3 class="help-h">Zarząd</h3><ul class="help"><li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li></ul><h3 class="help-h">Na razie</h3><p>Wersja 0.4 kończy się na pierwszej nocy za siatką. Dalej gra toczy się, ale bez nowych systemów. Pełna gra z budowaniem i badaniami jest w wersji 0.3.</p>`,
     foot: btn('help-back', 'Wróć', 'btn go'),
     closable: true,
   };

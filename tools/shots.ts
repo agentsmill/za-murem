@@ -1646,6 +1646,213 @@ const SHOTS: Shot[] = [
       await look();
     },
   },
+  // M2, fala 1: menu budowy z przycisku i klawisza B (kategorie, koszt, czas, działanie, niedostępne z powodem)
+  {
+    name: 'm2-menu-budowy',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      const menu = () =>
+        page.evaluate(() => ({
+          open: !document.getElementById('modal')!.hidden,
+          cats: [...document.querySelectorAll('#sheet .bcat-h')].map((h) => h.textContent ?? ''),
+          items: [...document.querySelectorAll('#sheet .build')].map((b) => ({
+            name: b.querySelector('.build-n')?.textContent ?? '',
+            ok: b.classList.contains('ok'),
+            meta: b.querySelector('.build-m')?.textContent ?? '',
+            effect: b.querySelector('.build-d')?.textContent ?? '',
+            button: !!b.querySelector('[data-act="build"]'),
+            why: b.querySelector('.build-why')?.textContent ?? '',
+          })),
+        }));
+      await page.click('#btnBuild');
+      await page.waitForSelector('#sheet .bcat');
+      const m = await menu();
+      for (const b of m.items) console.log(`  ${b.name}: ${b.ok ? 'można' : b.why} (${b.meta})`);
+      if (m.cats.join('|') !== 'Pomieszczenie|Podwórko|Obwód') throw new Error(`kategorie: ${m.cats.join(', ')}`);
+      if (m.items.length !== 6) throw new Error(`budowli w menu: ${m.items.length}`);
+      for (const b of m.items) {
+        if (!b.meta.includes('pracy') || !b.effect) throw new Error(`${b.name}: bez czasu albo działania`);
+        if (b.ok !== b.button || (!b.ok && !b.why)) throw new Error(`${b.name}: niedostępna bez powodu`);
+      }
+      if (!m.items.some((b) => b.ok) || !m.items.some((b) => !b.ok))
+        throw new Error('menu bez dostępnych albo bez wyszarzonych');
+      await page.screenshot({ path: path.join(OUT, 'm2-menu-budowy-okno.png') });
+      await page.keyboard.press('Escape');
+      if ((await menu()).open) throw new Error('Esc nie zamknął menu budowy');
+      await page.keyboard.press('b');
+      await page.waitForSelector('#sheet .bcat');
+      await page.click('#sheet [data-act="build-close"]');
+      if ((await menu()).open) throw new Error('przycisk Zamknij nie zamknął menu budowy');
+    },
+  },
+  // tryb stawiania myszą: duch za kursorem (zielony, gdzie wolno, czerwony z powodem), R obraca, prawy klik
+  // i Esc anulują, lewy klik stawia plan (polecenie budowy w kolejce symulacji na pauzie)
+  {
+    name: 'm2-stawianie',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      const choose = async (kind: string) => {
+        await page.keyboard.press('b');
+        await page.waitForSelector('#sheet .bcat');
+        await page.click(`#sheet [data-act="build"][data-arg="${kind}"]`);
+      };
+      const state = () =>
+        page.evaluate(() => ({
+          p: window.zm!.placing(),
+          ghost: !document.getElementById('ghost')!.hidden,
+          bad: document.getElementById('ghost')!.classList.contains('bad'),
+          bar: !document.getElementById('placeBar')!.hidden,
+          text: document.getElementById('placeText')!.textContent ?? '',
+        }));
+      /** kamera i kursor na kafelku (x, y) */
+      const point = async (x: number, y: number) => {
+        await page.evaluate(([x, y]) => window.zm!.setCam(x + 1, y + 1, 1.6), [x, y]);
+        await waitIdle(page);
+        const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [x, y]);
+        await page.mouse.move(sx, sy);
+        await page.waitForTimeout(150);
+        return [sx, sy] as const;
+      };
+      await choose('warsztat');
+      const p0 = await page.evaluate(() => window.zm!.placing());
+      if (!p0 || p0.allowed < 1) throw new Error('warsztat bez dozwolonego miejsca');
+      const size = await page.evaluate(() => window.zm!.sim!.w.size);
+      const spot = [p0.first % size, Math.floor(p0.first / size)] as const;
+      const [sx, sy] = await point(spot[0], spot[1]);
+      const good = await state();
+      console.log(`  dobre miejsce ${spot.join(',')}: ${good.text}`);
+      if (!good.p?.ok || !good.ghost || good.bad || !good.bar)
+        throw new Error('duch na dozwolonym miejscu nie jest zielony');
+      await page.screenshot({ path: path.join(OUT, 'm2-stawianie-dobrze.png') });
+      // podwórko nie jest pokojem: duch czerwony, a pasek mówi czemu
+      const yard = await page.evaluate(() => window.zm!.sim!.w.fence.yard[0]);
+      await point(yard % size, Math.floor(yard / size));
+      const bad = await state();
+      console.log(`  podwórko: ${bad.text}`);
+      if (bad.p?.ok || !bad.bad || !bad.text.includes('w pokoju naszego mieszkania'))
+        throw new Error('duch poza pokojem nie mówi, czemu nie');
+      await page.screenshot({ path: path.join(OUT, 'm2-stawianie-zle.png') });
+      await page.keyboard.press('r');
+      if ((await state()).p?.rot !== 1) throw new Error('R nie obrócił planu');
+      await page.mouse.click(sx, sy, { button: 'right' });
+      if ((await state()).p || (await state()).bar) throw new Error('prawy klik nie anulował planu');
+      await choose('warsztat');
+      await page.keyboard.press('Escape');
+      if ((await state()).p) throw new Error('Esc nie anulował planu');
+      // lewy klik stawia plan na dozwolonym miejscu
+      await choose('warsztat');
+      const [px, py] = await point(spot[0], spot[1]);
+      await page.mouse.click(px, py);
+      const cmds = await page.evaluate(() =>
+        window.zm!.sim!.st.cmds.filter((c) => (c as { t: string }).t === 'build').map((c) => ({ ...(c as object) })),
+      );
+      console.log(`  postawione: ${JSON.stringify(cmds)}`);
+      const c = cmds[0] as { kind?: string; x?: number; y?: number; rot?: number } | undefined;
+      if (c?.kind !== 'warsztat' || c.x !== spot[0] || c.y !== spot[1] || c.rot !== 0)
+        throw new Error('lewy klik nie postawił planu warsztatu');
+      if ((await state()).p) throw new Error('po postawieniu tryb stawiania został');
+    },
+  },
+  // tryb stawiania na telefonie: stuknięcie stawia, przyciski na dole obracają i anulują
+  {
+    name: 'm2-stawianie-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      const placing = () => page.evaluate(() => window.zm!.placing());
+      const choose = async () => {
+        await page.tap('#btnBuild');
+        await page.waitForSelector('#sheet .bcat');
+        await page.tap('#sheet [data-act="build"][data-arg="zasieki"]');
+        await page.waitForTimeout(150);
+      };
+      await choose();
+      const bar = await page.evaluate(() => ({
+        shown: !document.getElementById('placeBar')!.hidden,
+        buttons: [...document.querySelectorAll('#placeBar [data-place]')].map((b) => b.textContent),
+      }));
+      if (!bar.shown || bar.buttons.join('|') !== 'Obróć|Anuluj')
+        throw new Error(`pasek stawiania: ${bar.buttons.join(', ')}`);
+      await page.tap('#placeBar [data-place="rot"]');
+      if ((await placing())?.rot !== 1) throw new Error('przycisk Obróć nie obrócił planu');
+      await page.tap('#placeBar [data-place="cancel"]');
+      if (await placing()) throw new Error('przycisk Anuluj nie anulował planu');
+      await choose();
+      const p = (await placing())!;
+      const size = await page.evaluate(() => window.zm!.sim!.w.size);
+      const spot = [p.first % size, Math.floor(p.first / size)] as const;
+      await page.evaluate(([x, y]) => window.zm!.setCam(x + 0.5, y + 2, 1.6), spot);
+      await waitIdle(page);
+      await page.screenshot({ path: path.join(OUT, 'm2-stawianie-telefon-plan.png') });
+      const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), spot);
+      await page.touchscreen.tap(sx, sy);
+      await page.waitForTimeout(150);
+      const cmds = await page.evaluate(() =>
+        window.zm!.sim!.st.cmds.filter((c) => (c as { t: string }).t === 'build').map((c) => ({ ...(c as object) })),
+      );
+      console.log(`  postawione stuknięciem: ${JSON.stringify(cmds)}`);
+      const c = cmds[0] as { kind?: string; x?: number; y?: number } | undefined;
+      if (c?.kind !== 'zasieki' || c.x !== spot[0] || c.y !== spot[1])
+        throw new Error('stuknięcie nie postawiło zasieków');
+      if (await placing()) throw new Error('po postawieniu tryb stawiania został');
+    },
+  },
+  // karta pustego mieszkania po kliknięciu w nie: stan, powód, co do naprawy, co już przeszukane
+  {
+    name: 'm2-karta-mieszkania',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      // puste mieszkanie z uszkodzeniami (ze świata albo z atrapy interfejsu): środek jego największego pokoju
+      const target = await page.evaluate(() => {
+        const zm = window.zm!;
+        const w = zm.sim!.w;
+        const i = w.interior;
+        const apt = zm.apts().find((a) => a.state === 'puste' && a.why && a.why !== 'wyjazd' && a.why !== 'wymarcie');
+        if (!apt) return null;
+        const room = i.rooms.filter((r) => r.apt === apt.apt && r.kind === 'pokoj').sort((a, b) => b.area - a.area)[0];
+        const tiles: number[] = [];
+        i.room.forEach((r, t) => {
+          if (r === room.id && !w.blocked[t]) tiles.push(t);
+        });
+        const t = tiles[Math.floor(tiles.length / 2)];
+        return { apt: apt.apt, x: t % w.size, y: Math.floor(t / w.size) };
+      });
+      if (!target) throw new Error('nie ma pustego mieszkania z uszkodzeniami');
+      await page.evaluate(([x, y]) => window.zm!.setCam(x + 3, y, 1.6), [target.x, target.y]);
+      await waitIdle(page);
+      const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [target.x, target.y]);
+      await page.mouse.click(sx, sy);
+      await page.waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 });
+      // textContent: nagłówki karty są wielkimi literami tylko w CSS
+      const card = await page.evaluate(() => document.getElementById('card')!.textContent ?? '');
+      console.log(
+        `  ${await page.evaluate(() => document.getElementById('card')!.innerText.split('\n').filter(Boolean).slice(0, 6).join(' | '))}`,
+      );
+      for (const want of [
+        `Mieszkanie ${target.apt + 1}`,
+        'Puste od',
+        'Do naprawy',
+        'Przeszukane: 0 z',
+        'Prawy przycisk w mieszkaniu',
+      ])
+        if (!card.includes(want)) throw new Error(`karta mieszkania bez „${want}”`);
+      await page.screenshot({ path: path.join(OUT, 'm2-karta-mieszkania-karta.png') });
+      // Esc zamyka kartę
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      if (await page.evaluate(() => !document.getElementById('card')!.hidden))
+        throw new Error('Esc nie zamknął karty mieszkania');
+    },
+  },
 ];
 
 /** n klatek przeglądarki */
