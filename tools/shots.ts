@@ -87,6 +87,20 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // na telefonie formularz adresu ma się mieścić na pierwszym ekranie
+    name: 'start-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await page.goto(base);
+      await page.waitForSelector('#demos button');
+      const bottom = await page.$eval('#startForm', (f) => f.getBoundingClientRect().bottom);
+      console.log(`  formularz kończy się na ${Math.round(bottom)} px z 844`);
+      if (bottom > 844) throw new Error('formularz adresu poza pierwszym ekranem telefonu');
+    },
+  },
+  {
     name: 'adres-offline',
     query: '',
     run: async (page, base) => {
