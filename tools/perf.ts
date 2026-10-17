@@ -1,8 +1,9 @@
 /* Pomiar wydajności: 150 pionków z A* i animacją, klatki na sekundę przez 10 s.
    Laptop: Chromium bez dławienia. Telefon: ekran 390×844 i procesor zdławiony 4× (CDP).
    Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
-   Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-3]] [--no-worker]
-   (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze) */
+   Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-3]] [--no-worker] [--noc]
+   (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
+   --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła) */
 
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 
@@ -11,6 +12,7 @@ const PAWNS = Number(args[0]) || 150;
 /** tempo: 1 = 1×, 2 = 3×, 3 = 6× */
 const SPEED = Number(args[1]) || 1;
 const NO_WORKER = process.argv.includes('--no-worker');
+const NIGHT = process.argv.includes('--noc');
 const SECONDS = 10;
 
 interface Result {
@@ -37,7 +39,9 @@ try {
       hasTouch: dev.cpu > 1,
     });
     const page = await ctx.newPage();
-    await page.goto(`${s.base}?demo=przymorze&perf=${PAWNS}&cam=hq,1&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}`);
+    await page.goto(
+      `${s.base}?demo=przymorze&perf=${PAWNS}&cam=hq,1&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}`,
+    );
     await waitIdle(page);
     if (rows.length === 0) console.log(`WebGL: ${await webglRenderer(page)}`);
     console.log(`${dev.name}: kawałki rysuje ${await page.evaluate(() => window.zm!.view.painting)}`);

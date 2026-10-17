@@ -2,19 +2,24 @@
    a malarz je rysuje: pula workerów z OffscreenCanvas (kilka kawałków naraz, poza głównym wątkiem)
    albo, gdy przeglądarka tego nie umie, główny wątek w limicie czasu na klatkę, jak dawniej.
    Zamówienie, które jeszcze nie trafiło do workera, a zniknęło z nowej listy (kawałek wyszedł
-   z ekranu), przepada. Moduł nie zależy od PixiJS, więc da się go sprawdzić w Node. */
+   z ekranu), przepada. Zmiana na mapie (ścięte drzewo, inny teren) idzie do workerów jako łatka
+   sceny, a dotknięte kawałki dostają nową wersję: kawałek narysowany ze starych danych przepada.
+   Moduł nie zależy od PixiJS, więc da się go sprawdzić w Node. */
 
 import { drawChunk } from './art/chunkArt.ts';
-import { type ChunkScene, chunkSceneOf, type Scene } from './art/scene.ts';
+import { CHUNK, type ChunkScene, chunkSceneOf, type Scene, treeChunks } from './art/scene.ts';
 
 /** pikseli grafiki na kafelek: z bliska i z daleka */
 export const LOD_NEAR = 32;
 export const LOD_FAR = 8;
 
-/** zamówienie: kawałek k (cy*n + cx) w skali s */
+/** zamówienie: kawałek k (cy*n + cx) w skali s, w wersji v (rośnie po każdej zmianie na mapie) */
 export interface Order {
   k: number;
   s: number;
+  v: number;
+  /** przekrój: wnętrze zamiast dachu (tylko z bliska) */
+  cut?: boolean;
 }
 
 /** gotowy kawałek: płótno z głównego wątku albo ImageBitmap z workera */
@@ -42,25 +47,85 @@ export function chunksByDistance(
  * Lista zamówień, najważniejsze pierwsze:
  * 1. widoczne kawałki bez żadnej pasującej tekstury dostają szybki daleki (16 razy mniej pikseli),
  *    żeby zamiast dziury od razu coś było widać,
- * 2. z bliska: widoczne kawałki bez bliskiej tekstury,
+ * 2. z bliska: widoczne kawałki bez bliskiej tekstury, a gdzie trzeba przekroju (cutOf), bez
+ *    przekroju (dach z bliska wystarczy do tego czasu jako zaślepka),
  * 3. reszta dalekich w tle, żeby oddalenie było od razu gotowe.
  */
 export function planOrders(
   vis: readonly number[],
   total: number,
-  has: (k: number, s: number) => boolean,
+  has: (k: number, s: number, cut?: boolean) => boolean,
   near: boolean,
+  ver: (k: number) => number = () => 0,
+  cutOf: (k: number) => boolean = () => false,
 ): Order[] {
   const out: Order[] = [];
   const queued = new Uint8Array(total);
   for (const k of vis)
-    if (!has(k, LOD_FAR) && !(near && has(k, LOD_NEAR))) {
-      out.push({ k, s: LOD_FAR });
+    if (!has(k, LOD_FAR) && !(near && (has(k, LOD_NEAR) || (cutOf(k) && has(k, LOD_NEAR, true))))) {
+      out.push({ k, s: LOD_FAR, v: ver(k) });
       queued[k] = 1;
     }
-  if (near) for (const k of vis) if (!has(k, LOD_NEAR)) out.push({ k, s: LOD_NEAR });
-  for (let k = 0; k < total; k++) if (!queued[k] && !has(k, LOD_FAR)) out.push({ k, s: LOD_FAR });
+  if (near)
+    for (const k of vis) {
+      if (cutOf(k)) {
+        if (!has(k, LOD_NEAR, true)) out.push({ k, s: LOD_NEAR, v: ver(k), cut: true });
+      } else if (!has(k, LOD_NEAR)) out.push({ k, s: LOD_NEAR, v: ver(k) });
+    }
+  for (let k = 0; k < total; k++) if (!queued[k] && !has(k, LOD_FAR)) out.push({ k, s: LOD_FAR, v: ver(k) });
   return out;
+}
+
+/** zmiana na mapie, po której trzeba przerysować kawałki */
+export interface MapChange {
+  /** kafelki ze zmienionym terenem (w.terr już zmienione); przerysują się też sąsiedzi */
+  tiles?: readonly number[];
+  /** drzewa, które zniknęły, np. ścięte (numery w w.trees) */
+  felled?: readonly number[];
+}
+
+/**
+ * Kawałki do przerysowania po zmianie, rosnąco: kafelek z ośmioma sąsiadami (krawędzie terenu
+ * i ścian zależą od sąsiadów, także za granicą kawałka) i drzewo ze wszystkimi kawałkami,
+ * w których rysuje się jego korona albo cień.
+ */
+export function chunksTouched(sc: ChunkScene, ch: MapChange): number[] {
+  const size = sc.w.size;
+  const n = sc.chunks;
+  const set = new Set<number>();
+  for (const i of ch.tiles ?? []) {
+    const x = i % size;
+    const y = (i - x) / size;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= size || yy >= size) continue;
+        set.add(Math.floor(yy / CHUNK) * n + Math.floor(xx / CHUNK));
+      }
+  }
+  for (const k of ch.felled ?? []) for (const c of treeChunks(sc.w.trees[k], n)) set.add(c);
+  return [...set].sort((a, b) => a - b);
+}
+
+/** łatka sceny dla workerów: nowe wartości zmienionych kafelków i ścięte drzewa */
+export interface ScenePatch {
+  tiles: number[];
+  terr: number[];
+  felled: number[];
+}
+
+export function scenePatchOf(sc: ChunkScene, ch: MapChange): ScenePatch {
+  const tiles = [...(ch.tiles ?? [])];
+  return { tiles, terr: tiles.map((i) => sc.w.terr[i]), felled: [...(ch.felled ?? [])] };
+}
+
+/** nakłada łatkę na kopię sceny w workerze */
+export function applyScenePatch(sc: ChunkScene, p: ScenePatch): void {
+  p.tiles.forEach((i, k) => {
+    sc.w.terr[i] = p.terr[k];
+  });
+  for (const k of p.felled) sc.treeGone[k] = 1;
 }
 
 export interface ChunkPainter {
@@ -71,6 +136,8 @@ export interface ChunkPainter {
   setScene(sc: Scene): void;
   /** nowa lista zamówień zastępuje poprzednią; budżet (ms) dotyczy rysowania w głównym wątku */
   order(list: readonly Order[], budgetMs: number): void;
+  /** zmiana na mapie: kopie sceny poza głównym wątkiem dostają łatkę przed następnymi zamówieniami */
+  patch(p: ScenePatch): void;
   /** gotowe kawałki od ostatniego wywołania */
   take(): Done[];
   destroy(): void;
@@ -95,10 +162,13 @@ export class InlinePainter implements ChunkPainter {
     for (const o of list) {
       if (performance.now() - t0 >= budgetMs) break;
       const c = document.createElement('canvas');
-      drawChunk(sc, o.k % sc.chunks, (o.k / sc.chunks) | 0, o.s, c);
-      this.done.push({ k: o.k, s: o.s, src: c });
+      drawChunk(sc, o.k % sc.chunks, (o.k / sc.chunks) | 0, o.s, c, o.cut);
+      this.done.push({ k: o.k, s: o.s, v: o.v, cut: o.cut, src: c });
     }
   }
+
+  /** główny wątek rysuje z tej samej sceny, którą zmienia gra, więc nie ma czego łatać */
+  patch(): void {}
 
   take(): Done[] {
     const d = this.done;
@@ -110,12 +180,15 @@ export class InlinePainter implements ChunkPainter {
 }
 
 /** wiadomości do workera */
-export type ToWorker = { t: 'scene'; gen: number; sc: ChunkScene } | { t: 'draw'; gen: number; k: number; s: number };
+export type ToWorker =
+  | { t: 'scene'; gen: number; sc: ChunkScene }
+  | { t: 'draw'; gen: number; k: number; s: number; v: number; cut?: boolean }
+  | { t: 'patch'; gen: number; p: ScenePatch };
 
 /** wiadomości od workera */
 export type FromWorker =
   | { t: 'ready'; ok: boolean }
-  | { t: 'done'; gen: number; k: number; s: number; bmp: ImageBitmap; ms: number }
+  | { t: 'done'; gen: number; k: number; s: number; v: number; cut?: boolean; bmp: ImageBitmap; ms: number }
   | { t: 'fail'; err: string };
 
 /** to, czego pula potrzebuje od workera (w testach podróbka) */
@@ -126,7 +199,7 @@ export interface WorkerLike {
   terminate(): void;
 }
 
-const key = (k: number, s: number) => k * 64 + s;
+const key = (k: number, s: number, cut?: boolean) => (k * 64 + s) * 2 + (cut ? 1 : 0);
 
 interface Hand {
   w: WorkerLike;
@@ -186,7 +259,7 @@ export class WorkerPainter implements ChunkPainter {
   }
 
   order(list: readonly Order[]): void {
-    this.queue = list.filter((o) => !this.busy.has(key(o.k, o.s)));
+    this.queue = list.filter((o) => !this.busy.has(key(o.k, o.s, o.cut)));
     this.pump();
   }
 
@@ -194,6 +267,11 @@ export class WorkerPainter implements ChunkPainter {
     const d = this.done;
     this.done = [];
     return d;
+  }
+
+  patch(p: ScenePatch): void {
+    if (this.failed) return;
+    for (const h of this.hands) h.w.postMessage({ t: 'patch', gen: this.gen, p });
   }
 
   destroy(): void {
@@ -207,9 +285,9 @@ export class WorkerPainter implements ChunkPainter {
       if (!h.ready || h.job >= 0) continue;
       const o = this.queue.shift();
       if (!o) return;
-      h.job = key(o.k, o.s);
+      h.job = key(o.k, o.s, o.cut);
       this.busy.add(h.job);
-      h.w.postMessage({ t: 'draw', gen: this.gen, k: o.k, s: o.s });
+      h.w.postMessage({ t: 'draw', gen: this.gen, k: o.k, s: o.s, v: o.v, cut: o.cut });
     }
   }
 
@@ -227,8 +305,8 @@ export class WorkerPainter implements ChunkPainter {
     } else {
       h.job = -1;
       if (m.gen === this.gen) {
-        this.busy.delete(key(m.k, m.s));
-        this.done.push({ k: m.k, s: m.s, src: m.bmp });
+        this.busy.delete(key(m.k, m.s, m.cut));
+        this.done.push({ k: m.k, s: m.s, v: m.v, cut: m.cut, src: m.bmp });
         this.workMs += m.ms;
       } else m.bmp.close(); // kawałek poprzedniej sceny
     }

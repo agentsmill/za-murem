@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildScene, chunkSceneOf, type Scene } from '../../src/render/art/scene.ts';
 import {
+  applyScenePatch,
   chunksByDistance,
+  chunksTouched,
   type FromWorker,
   LOD_FAR,
   LOD_NEAR,
   type Order,
   planOrders,
   poolSize,
+  scenePatchOf,
   type ToWorker,
   type WorkerLike,
   WorkerPainter,
@@ -53,14 +56,14 @@ class FakeWorker implements WorkerLike {
     this.onmessage?.({ data: m } as MessageEvent);
   }
   draws(): Order[] {
-    return this.sent.flatMap((m) => (m.t === 'draw' ? [{ k: m.k, s: m.s }] : []));
+    return this.sent.flatMap((m) => (m.t === 'draw' ? [{ k: m.k, s: m.s, v: m.v }] : []));
   }
   /** oddaje ostatnie zamówienie jako gotowe */
   finish(): Bitmap {
     const d = this.sent.findLast((m) => m.t === 'draw');
     if (d?.t !== 'draw') throw new Error('worker nic nie rysuje');
     const bmp = bitmap();
-    this.reply({ t: 'done', gen: d.gen, k: d.k, s: d.s, bmp, ms: 1 });
+    this.reply({ t: 'done', gen: d.gen, k: d.k, s: d.s, v: d.v, bmp, ms: 1 });
     return bmp;
   }
 }
@@ -75,8 +78,8 @@ function pool(count: number) {
   return { p, fakes };
 }
 
-const near = (k: number): Order => ({ k, s: LOD_NEAR });
-const far = (k: number): Order => ({ k, s: LOD_FAR });
+const near = (k: number, v = 0): Order => ({ k, s: LOD_NEAR, v });
+const far = (k: number, v = 0): Order => ({ k, s: LOD_FAR, v });
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -100,7 +103,7 @@ describe('dane sceny dla workera', () => {
 
   it('niosą tylko to, czego potrzebuje rysowanie (bez siatek symulacji, nazw i tagów)', () => {
     const cs = chunkSceneOf(przymorze());
-    expect(Object.keys(cs.w).sort()).toEqual(['bid', 'buildings', 'size', 'terr']);
+    expect(Object.keys(cs.w).sort()).toEqual(['bid', 'buildings', 'size', 'terr', 'trees']);
     expect(Object.keys(cs.w.buildings[0]).sort()).toEqual(['cls', 'entrances', 'id', 'x0', 'x1', 'y0', 'y1']);
   });
 });
@@ -226,5 +229,57 @@ describe('pula workerów', () => {
     expect(poolSize(3, false)).toBe(2);
     expect(poolSize(1, false)).toBe(1);
     expect(poolSize(8, true)).toBe(2);
+  });
+});
+
+describe('przerysowanie po zmianie na mapie', () => {
+  it('kafelek w środku kawałka dotyka tylko jego, kafelek w narożniku czterech', () => {
+    const sc = przymorze();
+    const n = sc.chunks;
+    const size = sc.w.size;
+    // kawałek (3, 2), kafelek (3·32 + 10, 2·32 + 10)
+    expect(chunksTouched(sc, { tiles: [(2 * 32 + 10) * size + 3 * 32 + 10] })).toEqual([2 * n + 3]);
+    // kafelek (64, 64) leży w kawałku (2, 2), ale jego sąsiedzi także w (1, 1), (2, 1) i (1, 2)
+    expect(chunksTouched(sc, { tiles: [64 * size + 64] })).toEqual([n + 1, n + 2, 2 * n + 1, 2 * n + 2]);
+  });
+
+  it('ścięte drzewo dotyka dokładnie tych kawałków, w których się rysuje', () => {
+    const sc = przymorze();
+    for (const t of [0, 7, 99, sc.w.trees.length - 1]) {
+      const drawnIn = sc.treesBy.flatMap((list, k) => (list.includes(t) ? [k] : []));
+      expect(chunksTouched(sc, { felled: [t] })).toEqual(drawnIn);
+    }
+  });
+
+  it('łatka przenosi nowy teren i ścięte drzewa do kopii sceny w workerze', () => {
+    const sc = przymorze();
+    const copy = structuredClone(chunkSceneOf(sc));
+    const i = 100 * sc.w.size + 120;
+    const was = sc.w.terr[i];
+    sc.w.terr[i] = was === 5 ? 0 : 5;
+    applyScenePatch(copy, scenePatchOf(sc, { tiles: [i], felled: [3] }));
+    expect(copy.w.terr[i]).toBe(sc.w.terr[i]);
+    expect(copy.treeGone[3]).toBe(1);
+    expect(copy.w.terr).toEqual(sc.w.terr);
+    sc.w.terr[i] = was;
+  });
+
+  it('po zmianie zamawiany jest tylko dotknięty kawałek, w nowej wersji', () => {
+    const vis = [5, 4, 6];
+    const dirty = new Set([4]);
+    const ver = (k: number) => (k === 4 ? 1 : 0);
+    const list = planOrders(vis, 9, (k) => !dirty.has(k), true, ver);
+    expect(list).toEqual([far(4, 1), near(4, 1)]);
+  });
+
+  it('łatka idzie do każdego workera przed następnymi zamówieniami, wersja wraca z wynikiem', () => {
+    const { p, fakes } = pool(2);
+    p.setScene(przymorze());
+    for (const f of fakes) f.reply({ t: 'ready', ok: true });
+    p.patch({ tiles: [5], terr: [3], felled: [] });
+    p.order([near(1, 2), near(2, 7)]);
+    for (const f of fakes) expect(f.sent.map((m) => m.t)).toEqual(['scene', 'patch', 'draw']);
+    fakes[0].finish();
+    expect(p.take()).toEqual([expect.objectContaining({ k: 1, s: LOD_NEAR, v: 2 })]);
   });
 });
