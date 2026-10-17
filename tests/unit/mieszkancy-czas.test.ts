@@ -11,7 +11,7 @@ import { DZWIGNIE, PRZEJSCIA } from '../../src/mieszkancy/dzwignie.ts';
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
 import { obsadzBudynek, obsadzRejon } from '../../src/mieszkancy/spis.ts';
 import type { TabeleGminy, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
-import type { Osoba, WynikBudynku } from '../../src/mieszkancy/typy.ts';
+import type { Gospodarstwo, Osoba, Wpis, WynikBudynku } from '../../src/mieszkancy/typy.ts';
 import type { Geo } from '../../src/world/geo.ts';
 
 const KORZEN = path.resolve(import.meta.dirname, '../..');
@@ -274,6 +274,79 @@ describe('postarz bez upadku: rejon 182350 z Przymorza, 20 000 osób', () => {
   });
 });
 
+// ---------------------------------------------------------------- szanse na krok nie zależą od późnych zdarzeń
+
+/** Sztuczny budynek: `pary` gospodarstw, w każdym kobieta i mężczyzna z jednego rocznika 1989-1992 (w latach
+    2021-2025 mają 29-36 lat, cały czas w progu emigracji 25-39), bez dzieci i bez rodziców. */
+function sztucznePary(pary: number, klucz: string): WynikBudynku {
+  const osoby: Osoba[] = [];
+  const gospodarstwa: Gospodarstwo[] = [];
+  for (let i = 0; i < pary; i++) {
+    const rocznik = 1989 + (i % 4);
+    const k: Osoba = { id: `${klucz}/o${2 * i}`, plec: 'K', rocznik, imie: '', nazwisko: '', stan: 'tu' };
+    const m: Osoba = { id: `${klucz}/o${2 * i + 1}`, plec: 'M', rocznik, imie: '', nazwisko: '', stan: 'tu' };
+    k.partner = m.id;
+    m.partner = k.id;
+    osoby.push(k, m);
+    gospodarstwa.push({ id: `${klucz}/g${i}`, budynek: klucz, klatka: 1, czlonkowie: [k.id, m.id], odOddania: false });
+  }
+  const budynek = {
+    klucz,
+    lat: 0,
+    lon: 0,
+    rejon: '',
+    typ: 'blok' as const,
+    kondygnacje: 0,
+    pole: 0,
+    szerokosc: 0,
+    dlugosc: 0,
+    klatki: 1,
+    mieszkania: pary,
+  };
+  return { budynek, osoby, gospodarstwa, dziennik: [], puste: 0 };
+}
+
+describe('szansa na krok: późne zdarzenie w kroku nie obcina szansy', () => {
+  // Cztery niezależne budynki po 15 000 par (różne klucze, więc różne ziarna): w grupie z noworodkiem jest wtedy
+  // około 14 000 par, a odchylenie różnicy grup około 0,25 pp.
+  const budynki = ['synt-1', 'synt-2', 'synt-3', 'synt-4'].map((klucz) => {
+    const spis = sztucznePary(15000, klucz);
+    return { spis, po: postarz(spis, 2026, kraj, 'miasto100k', false) };
+  });
+
+  it('emigracja w wieku 25-39 z noworodkiem i bez różni się o mniej niż 1 pp, a całość to 5,5% ±0,7 pp', () => {
+    // Liczymy osoby, które dotrwały do etapu emigracji: emigrowały albo mieszkają tu do końca kroku bez żadnego
+    // wyjazdu (bez zmarłych i bez przeprowadzek, które idą wcześniej). Rodzic noworodka to matka albo ojciec
+    // dziecka urodzonego w kroku.
+    const grupy = { z: { ile: 0, emigr: 0 }, bez: { ile: 0, emigr: 0 } };
+    for (const { spis, po } of budynki) {
+      const wpisy = new Map<string, Wpis[]>();
+      for (const d of po.dziennik) wpisy.set(d.kto, [...(wpisy.get(d.kto) ?? []), d]);
+      const rodzice = new Set<string>();
+      for (const o of po.osoby) {
+        if (!wpisy.get(o.id)?.some((d) => d.typ === 'urodzenie')) continue;
+        for (const r of [o.matka, o.ojciec]) if (r !== undefined) rodzice.add(r);
+      }
+      const wg = new Map(po.osoby.map((o) => [o.id, o]));
+      for (const o of spis.osoby) {
+        const w = wpisy.get(o.id) ?? [];
+        const emigrowal = w.some((d) => d.typ === 'emigracja');
+        const wyjechal = w.some((d) => d.typ === 'wyprowadzka' || d.typ === 'zgon');
+        if (!emigrowal && (wyjechal || wg.get(o.id)!.stan !== 'tu')) continue;
+        const g = rodzice.has(o.id) ? grupy.z : grupy.bez;
+        g.ile++;
+        if (emigrowal) g.emigr++;
+      }
+    }
+    expect(grupy.z.ile).toBeGreaterThan(20000);
+    const z = grupy.z.emigr / grupy.z.ile;
+    const bez = grupy.bez.emigr / grupy.bez.ile;
+    const razem = (grupy.z.emigr + grupy.bez.emigr) / (grupy.z.ile + grupy.bez.ile);
+    expect(Math.abs(z - bez), `z noworodkiem ${z}, bez ${bez}`).toBeLessThan(0.01);
+    expect(Math.abs(razem - PRZEJSCIA.emigracja[1][1] / 10000), `razem ${razem}`).toBeLessThanOrEqual(0.007);
+  });
+});
+
 // ---------------------------------------------------------------- trzy dema z upadkiem
 
 describe('postarz z upadkiem: trzy dema do 2051', () => {
@@ -445,6 +518,99 @@ describe('postarz z upadkiem: trzy dema do 2051', () => {
     const pusty = postarz(obsadzRejon(kraj.polska, 0, kraj, 'czas-pusty'), 2051, kraj, 'miasto', true);
     expect(pusty.osoby).toEqual([]);
     expect(pusty.puste).toBe(0);
+  });
+
+  it('dzieci spoza domu (R28): spisowe matki od 35 lat mają dorosłe dzieci z wyjazdem sprzed 2021', () => {
+    for (const [nazwa] of DEMA) {
+      let ile = 0;
+      for (const w of z2051.get(nazwa)!) {
+        const wg = new Map(w.osoby.map((o) => [o.id, o]));
+        const spisowe = new Set(
+          spisy
+            .get(nazwa)!
+            .find((x) => x.budynek.klucz === w.budynek.klucz)!
+            .osoby.map((o) => o.id),
+        );
+        const pierwszy = new Map<string, Wpis>();
+        for (const d of w.dziennik) if (!pierwszy.has(d.kto)) pierwszy.set(d.kto, d);
+        for (const o of w.osoby) {
+          const d = pierwszy.get(o.id);
+          if (spisowe.has(o.id) || !d || d.rok > 2020) continue;
+          ile++;
+          expect(['wyprowadzka', 'emigracja'], o.id).toContain(d.typ);
+          expect(d.dokad, o.id).toBeTruthy();
+          expect(d.rok - o.rocznik, o.id).toBeGreaterThanOrEqual(18);
+          const matka = wg.get(o.matka!)!;
+          expect(spisowe.has(matka.id), o.id).toBe(true);
+          expect(2020 - matka.rocznik, o.id).toBeGreaterThanOrEqual(35);
+          expect(o.rocznik - matka.rocznik, o.id).toBeGreaterThanOrEqual(18);
+          expect(o.rocznik - matka.rocznik, o.id).toBeLessThanOrEqual(42);
+          // nie mieszka tu, dopóki nie ma wpisu powrotu
+          const wrocil = w.dziennik.some((x) => x.kto === o.id && (x.typ === 'powrot' || x.typ === 'powrotOpieka'));
+          if (!wrocil) expect(o.stan, o.id).toBe('wyjechal');
+        }
+      }
+      expect(ile, nazwa).toBeGreaterThan(nazwa === 'zielonki' ? 20 : 500);
+    }
+  });
+
+  it('bez upadku w krokach 2026-2041 dzieci wracają do opieki, a samotnych 75+ w 2026 jest mniej niż 40% osób 75+', () => {
+    for (const [nazwa] of DEMA) {
+      const opieka = bez2051
+        .get(nazwa)!
+        .reduce(
+          (n, w) => n + w.dziennik.filter((d) => d.typ === 'powrotOpieka' && d.rok >= 2026 && d.rok <= 2040).length,
+          0,
+        );
+      expect(opieka, nazwa).toBeGreaterThan(0);
+    }
+    for (const [nazwa, g] of DEMA.slice(0, 2)) {
+      const w2026 = postarzWszystkie(spisy.get(nazwa)!, 2026, obszarGminy(g), false);
+      let osob75 = 0;
+      let sami = 0;
+      for (const w of w2026) {
+        const wg = new Map(w.osoby.map((o) => [o.id, o]));
+        for (const o of w.osoby) if (o.stan === 'tu' && 2025 - o.rocznik >= 75) osob75++;
+        for (const x of w.gospodarstwa)
+          if (x.czlonkowie.length === 1 && 2025 - wg.get(x.czlonkowie[0])!.rocznik >= 75) sami++;
+      }
+      expect(sami / osob75, nazwa).toBeLessThan(0.4);
+    }
+  });
+
+  it('powrót do opieki nigdy przed rokiem, w którym rodzic został sam (R28b)', () => {
+    // Domownik ze spisu nie przeprowadza się w budynku, więc do pierwszego wyjazdu albo zgonu mieszka z rodzicem,
+    // dopóki rodzic sam nie wyjechał (po powrocie rodzic mieszka w innym gospodarstwie). Wszyscy domownicy rodzica
+    // ze spisu muszą więc mieć pierwsze odejście najpóźniej w roku powrotu do opieki, jeśli rodzic nie wyjeżdżał.
+    let sprawdzone = 0;
+    for (const mapa of [z2051, bez2051]) {
+      for (const [nazwa] of DEMA) {
+        mapa.get(nazwa)!.forEach((w, i) => {
+          const spis = spisy.get(nazwa)![i];
+          const domSpisu = new Map<string, string[]>();
+          for (const g of spis.gospodarstwa) for (const id of g.czlonkowie) domSpisu.set(id, g.czlonkowie);
+          const odejscie = new Map<string, number>();
+          for (const d of w.dziennik) {
+            if ((d.typ === 'zgon' || d.typ === 'wyprowadzka' || d.typ === 'emigracja') && !odejscie.has(d.kto)) {
+              odejscie.set(d.kto, d.rok);
+            }
+          }
+          for (const d of w.dziennik) {
+            if (d.typ !== 'powrotOpieka' || !domSpisu.has(d.z!)) continue;
+            if ((odejscie.get(d.z!) ?? Number.POSITIVE_INFINITY) <= d.rok) continue;
+            sprawdzone++;
+            for (const id of domSpisu.get(d.z!)!) {
+              if (id === d.z) continue;
+              expect(
+                odejscie.get(id) ?? Number.POSITIVE_INFINITY,
+                `${d.kto} wraca do ${d.z} w ${d.rok}, a ${id}`,
+              ).toBeLessThanOrEqual(d.rok);
+            }
+          }
+        });
+      }
+    }
+    expect(sprawdzone).toBeGreaterThan(20);
   });
 
   it('całe demo (spis i postarz do 2051) w Node poniżej 600 ms (cel 200 ms, mediana z 3)', () => {

@@ -30,6 +30,10 @@ export interface Stan {
   dzieci: Map<string, Osoba[]>;
   /** Ostatni wpis wyjazdu (`wyprowadzka` albo `emigracja`) każdej osoby, która kiedyś wyjechała. */
   wyjazdy: Map<string, Wpis>;
+  /** Kto wyjechał razem z daną osobą (wpis z `z` = ta osoba), w kolejności wpisów. Lista może mieć osoby, które
+      już wróciły albo wyjechały potem z kimś innym; `wroc` bierze tylko tych, których ostatni wyjazd ma `z` = ta
+      osoba i którzy nadal są poza domem. */
+  towarzysze: Map<string, Osoba[]>;
   dziennik: Wpis[];
   nastepnaOsoba: number;
   nastepneGospodarstwo: number;
@@ -52,6 +56,13 @@ const numer = (id: string, prefiks: string): number => {
   const n = Number(id.slice(prefiks.length));
   return Number.isInteger(n) ? n : -1;
 };
+
+/** Dopisuje osobę do listy pod kluczem. */
+function dopisz(m: Map<string, Osoba[]>, klucz: string, o: Osoba): void {
+  const lista = m.get(klucz);
+  if (lista) lista.push(o);
+  else m.set(klucz, [o]);
+}
 
 /** Stan z wyniku: kopie osób, gospodarstw, wpisów i budynku, indeksy i liczniki identyfikatorów (dalej od
     największego numeru osoby i gospodarstwa, także gospodarstw, które już opuściły mieszkanie). */
@@ -82,10 +93,13 @@ export function stanZ(w: WynikBudynku): Stan {
   }
   const dziennik = w.dziennik.map((d) => ({ ...d }));
   const wyjazdy = new Map<string, Wpis>();
+  const towarzysze = new Map<string, Osoba[]>();
   for (const d of dziennik) {
     if (d.typ === 'wyprowadzka' || d.typ === 'emigracja') wyjazdy.set(d.kto, d);
     if (d.typ === 'opuszczone') nastepneGospodarstwo = Math.max(nastepneGospodarstwo, numer(d.kto, `${klucz}/g`) + 1);
   }
+  // towarzysze tylko z ostatniego wyjazdu każdej osoby, w kolejności wpisów (tak jak dopisuje ich `wyjedz`)
+  for (const d of dziennik) if (d.z !== undefined && wyjazdy.get(d.kto) === d) dopisz(towarzysze, d.z, wg.get(d.kto)!);
   return {
     budynek: { ...w.budynek },
     mieszkania: w.budynek.mieszkania ?? w.gospodarstwa.length + w.puste,
@@ -96,6 +110,7 @@ export function stanZ(w: WynikBudynku): Stan {
     dom,
     dzieci,
     wyjazdy,
+    towarzysze,
     dziennik,
     nastepnaOsoba,
     nastepneGospodarstwo,
@@ -147,7 +162,8 @@ export function koniecKroku(s: Stan): void {
 
 export function wpis(s: Stan, d: Wpis): Wpis {
   s.wpisy.push(d);
-  for (const id of [d.kto, d.z]) if (id !== undefined) s.ostatni.set(id, Math.max(d.rok, s.ostatni.get(id) ?? d.rok));
+  s.ostatni.set(d.kto, Math.max(d.rok, s.ostatni.get(d.kto) ?? d.rok));
+  if (d.z !== undefined) s.ostatni.set(d.z, Math.max(d.rok, s.ostatni.get(d.z) ?? d.rok));
   return d;
 }
 
@@ -165,10 +181,14 @@ export function zProgow(progi: Progi, wiek: number): number {
   return p;
 }
 
-/** Zdarzenie z szansą na krok 5-letni. `stawka(rok)` to szansa na 10 000, gdyby obowiązywała przez cały krok; rok
-    przed `od` i rok ze stawką 0 się nie liczą. Szansa to suma stawek przez 5, a rok wypada z wagami stawek. Zwraca
-    rok zdarzenia albo -1. Bez żadnej stawki nie zużywa losowania. */
-export function zdarzenie(s: Stan, r: Rng, od: number, stawka: (rok: number) => number): number {
+/** Zdarzenie z szansą na krok 5-letni. `stawka(rok)` to szansa na 10 000, gdyby obowiązywała przez cały krok.
+    Szansa to suma stawek z lat od `od` przez 5: `od` to tylko granica z natury rzeczy (rok po wyjeździe, rok, od
+    którego rodzic jest sam, rok zwolnienia mieszkania), a wiek i dźwignie wchodzą przez stawkę. `po` (domyślnie `od`)
+    to najwcześniejszy rok zgodny z wcześniejszymi wpisami uczestników w tym kroku (urodzenie dziecka, owdowienie):
+    nie zmienia szansy, tylko rok, w którym zdarzenie wypada, losowany z wagami stawek od `po`. Gdy od `po` żadna
+    stawka nie zostaje (górny próg wieku albo dźwignia zero już minęły), zdarzenia nie ma. Zwraca rok albo -1. Bez
+    żadnej stawki nie zużywa losowania. */
+export function zdarzenie(s: Stan, r: Rng, od: number, stawka: (rok: number) => number, po = od): number {
   const wagi = s.wagiLat;
   let suma = 0;
   for (let i = 0; i < LATA_KROKU; i++) {
@@ -178,7 +198,12 @@ export function zdarzenie(s: Stan, r: Rng, od: number, stawka: (rok: number) => 
     suma += v;
   }
   if (suma === 0 || !szansa(r, Math.round(suma / LATA_KROKU))) return -1;
-  return s.poczatek + wazony(r, wagi);
+  let zostaje = 0;
+  for (let i = 0; i < LATA_KROKU; i++) {
+    if (s.poczatek + i < po) wagi[i] = 0;
+    zostaje += wagi[i];
+  }
+  return zostaje === 0 ? -1 : s.poczatek + wazony(r, wagi);
 }
 
 /** Partner, który tu mieszka i nadal jest partnerem tej osoby. */
@@ -190,7 +215,10 @@ export function partnerTu(s: Stan, o: Osoba): Osoba | undefined {
 /** Czy osoba mieszka w jednym gospodarstwie z matką albo ojcem. */
 export function zRodzicami(s: Stan, o: Osoba): boolean {
   const dom = s.dom.get(o.id);
-  return dom !== undefined && [o.matka, o.ojciec].some((id) => id !== undefined && s.dom.get(id) === dom);
+  if (dom === undefined) return false;
+  return (
+    (o.matka !== undefined && s.dom.get(o.matka) === dom) || (o.ojciec !== undefined && s.dom.get(o.ojciec) === dom)
+  );
 }
 
 /** Kto wyjeżdża razem z osobą w roku `rok`: ona, partner z tego samego gospodarstwa i ich małoletnie dzieci z tego
@@ -208,12 +236,10 @@ export function jednostka(s: Stan, o: Osoba, rok: number): Osoba[] {
   return razem;
 }
 
-/** Najwcześniejszy rok wyjazdu osoby z jednostką: jednostka z początku i z końca kroku (małoletni z obu). */
+/** Najwcześniejszy rok wyjazdu osoby z jednostką, liczony na jednostce z początku kroku: kto jest małoletni w którymś
+    roku kroku, jest nim też na początku (także dzieci urodzone w kroku), więc to największa możliwa jednostka. */
 export function najwczesniejJednostki(s: Stan, o: Osoba): number {
-  return Math.max(
-    najwczesniej(s, jednostka(s, o, s.poczatek)),
-    najwczesniej(s, jednostka(s, o, s.poczatek + LATA_KROKU - 1)),
-  );
+  return najwczesniej(s, jednostka(s, o, s.poczatek));
 }
 
 /** Usuwa mieszkańca z jego gospodarstwa. Gospodarstwo, z którego odeszli wszyscy, dostaje wpis `opuszczone`
@@ -247,6 +273,7 @@ export function wyjedz(s: Stan, jednostka: readonly Osoba[], rok: number, typ: T
   for (const o of jednostka) {
     const d = wpis(s, o === lider ? { rok, typ, kto: o.id, dokad } : { rok, typ, kto: o.id, z: lider.id, dokad });
     s.wyjazdy.set(o.id, d);
+    if (o !== lider) dopisz(s.towarzysze, lider.id, o);
     o.stan = 'wyjechal';
     o.dokad = dokad;
     usun(s, o, rok);
@@ -266,7 +293,10 @@ export function przyjmij(s: Stan, o: Osoba, dom: Gospodarstwo): void {
     typ `typ` i `z` (krewny, do którego wraca), wpisy towarzyszy typ `powrot` i `z` = ta osoba; `dokad` to miejsce,
     z którego wracają. */
 export function wroc(s: Stan, lider: Osoba, dom: Gospodarstwo, rok: number, typ: TypWpisu, z?: string): void {
-  const towarzysze = s.osoby.filter((o) => o !== lider && o.stan === 'wyjechal' && s.wyjazdy.get(o.id)?.z === lider.id);
+  const towarzysze = (s.towarzysze.get(lider.id) ?? []).filter(
+    (o) => o.stan === 'wyjechal' && s.wyjazdy.get(o.id)?.z === lider.id,
+  );
+  s.towarzysze.delete(lider.id);
   const dokad = lider.dokad ?? '';
   wpis(s, z === undefined ? { rok, typ, kto: lider.id, dokad } : { rok, typ, kto: lider.id, z, dokad });
   przyjmij(s, lider, dom);

@@ -14,6 +14,7 @@
 
 import type { Rng } from '../core/rng.ts';
 import type { Obszar } from './czas-dokad.ts';
+import { dzieciSpozaDomu } from './czas-dzieci.ts';
 import { emigracje, type Kontekst, powroty, przeprowadzki, wyprowadzki, zasiedlenie, zwiazki } from './czas-ruch.ts';
 import {
   koniecKroku,
@@ -156,7 +157,8 @@ function krok(s: Stan, doRoku: number, kt: Kontekst): void {
 }
 
 /** Budynek postarzony do `doRoku` (2026 albo 2051) krokami po 5 lat. `w` to wynik spisu (obsadzBudynek,
-    obsadzRejon) albo wcześniejszego `postarz` (`w.rok`); dalszy rok niż `doRoku` to RangeError. `obszar` z
+    obsadzRejon) albo wcześniejszego `postarz` (`w.rok`); dalszy rok niż `doRoku` to RangeError. Wynik spisu dostaje
+    najpierw dorosłe dzieci spoza domu (czas-dzieci.ts), ze `stan: 'wyjechal'` i wyjazdem sprzed 2021. `obszar` z
     `obszarGminy(g)` wybiera tablicę trwania życia (miasta albo wieś), mnożnik płodności i kierunki wyjazdów.
     `upadek` włącza dźwignie upadku (dzwignie.ts) od kroku 2026→2031; krok 2021→2026 jest zawsze bez upadku. */
 export function postarz(
@@ -170,6 +172,8 @@ export function postarz(
   if (od > doRoku)
     throw new RangeError(`budynek ${w.budynek.klucz} jest już w roku ${od}, nie cofniemy go do ${doRoku}`);
   const s = stanZ(w);
+  // wynik spisu: raz dopisujemy dorosłe dzieci, które wyprowadziły się przed 2021 (R28)
+  if (w.rok === undefined) dzieciSpozaDomu(s, losDla('czas', s.budynek.klucz, 'dzieci'), k, obszar);
   for (const cel of KROKI) {
     if (cel <= od || cel > doRoku) continue;
     krok(s, cel, { k, obszar, upadek: upadek && cel > KROKI[0] });

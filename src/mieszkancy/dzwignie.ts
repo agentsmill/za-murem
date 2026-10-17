@@ -84,6 +84,30 @@ export const PRZEJSCIA = {
   },
   /** Małoletni do tylu lat jadą z rodzicami, a sami w mieszkaniu wyjeżdżają do krewnych. */
   dorosly: 18,
+  /** Dorosłe dzieci spoza domu (R28) dla każdej kobiety ze spisu od `odWieku` lat (wiek `2020 - rocznik`), tworzone
+      raz przed pierwszym krokiem. Bezdzietność definitywna według rocznika matki (OECD Family Database SF2.5):
+      10,7% dla 1960, 16,2% dla 1970, 19,9% dla 1975, między nimi liniowo, wcześniej i później stała. Liczba dzieci
+      matki z kolejności urodzeń GUS 2024 (`k.kolejnosc`): matek z co najmniej n dziećmi jest tyle, ile urodzeń n-tych,
+      więc jedno dziecko ma (o1 - o2) / o1 matek, dwoje (o2 - o3) / o1, troje (o3 - o4) / o1, czworo o4 / o1, średnio
+      2,19; dla rocznika 1975 daje to 1,75 dziecka na kobietę wobec dzietności kohortowej 1,67 (OECD), o 5% za dużo,
+      w granicach prostego modelu. Dzieci w gospodarstwie się liczą: matka z dzieckiem w domu ma co najmniej tyle
+      dzieci, ile tu mieszka (losowanie tylko z liczb nie mniejszych), a reszta to dzieci spoza domu. Dziecko spoza
+      domu ma co najmniej 18 lat, matka miała przy porodzie 18-42 lata, wyjechało w wieku 19-30 lat, najpóźniej
+      w 2020 roku; emigrantów wśród nich 10% (decyzja generatora: 1,51 mln emigrantów, najwięcej w wieku 30-44 lat,
+      GUS 2025). Ojciec to partner matki z gospodarstwa, jeśli jest. */
+  dzieciSpozaDomu: {
+    odWieku: 35,
+    bezdzietnosc: [
+      [1960, 1070],
+      [1970, 1620],
+      [1975, 1990],
+    ] as Progi,
+    matkaOd: 18,
+    matkaDo: 42,
+    wyjazdOd: 19,
+    wyjazdDo: 30,
+    emigranci: 1000,
+  },
 } as const;
 
 /** Upadek: ustawienia od roku zero bakterii (2026), odkrycia około 2029 i rozpadu w latach trzydziestych i

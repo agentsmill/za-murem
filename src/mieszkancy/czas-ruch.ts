@@ -56,7 +56,7 @@ function wyjazdJednostki(
   typ: 'wyprowadzka' | 'emigracja',
   gdzie: () => string,
 ): void {
-  const rok = zdarzenie(s, r, najwczesniejJednostki(s, o), stawka);
+  const rok = zdarzenie(s, r, s.poczatek, stawka, najwczesniejJednostki(s, o));
   if (rok >= 0) wyjedz(s, jednostka(s, o, rok), rok, typ, gdzie());
 }
 
@@ -89,7 +89,8 @@ export function zwiazki(s: Stan, r: Rng): void {
     const wiek = koniec(s) - o.rocznik;
     if (wiek < progi[0][0] || wiek - LATA_KROKU + 1 > progi[progi.length - 1][0]) continue;
     const mnoznik = zRodzicami(s, o) ? PRZEJSCIA.zwiazekZRodzicami : 10000;
-    const rok = zdarzenie(s, r, najwczesniej(s, [o]), (rok) => (zProgow(progi, rok - o.rocznik) * mnoznik) / 10000);
+    const stawka = (rok: number): number => (zProgow(progi, rok - o.rocznik) * mnoznik) / 10000;
+    const rok = zdarzenie(s, r, s.poczatek, stawka, najwczesniej(s, [o]));
     if (rok < 0) continue;
     const roznica = PRZEJSCIA.partnerRoznicaLat;
     const p = nowaOsoba(s, przeciwna(o.plec), o.rocznik + calkowita(r, -roznica, roznica));
@@ -125,7 +126,8 @@ export function przeprowadzki(s: Stan, r: Rng, kt: Kontekst): void {
     const g = s.gospodarstwa[i];
     if (g.czlonkowie.length === 0) continue;
     const osoby = g.czlonkowie.map((id) => s.wg.get(id)!);
-    const rok = zdarzenie(s, r, najwczesniej(s, osoby), (rok) => (rok >= w.od ? szansaWyjazdu : 0));
+    const stawka = (rok: number): number => (rok >= w.od ? szansaWyjazdu : 0);
+    const rok = zdarzenie(s, r, s.poczatek, stawka, najwczesniej(s, osoby));
     if (rok >= 0) wyjedz(s, osoby, rok, 'wyprowadzka', cel(s, r, kt, 'wyludnienie'));
   }
 }
@@ -181,8 +183,10 @@ export function powroty(s: Stan, r: Rng, kt: Kontekst): void {
     if (koniec(s) < odWieku) continue;
     const dzieci = (s.dzieci.get(rodzic.id) ?? []).filter((d) => d.stan === 'wyjechal');
     if (dzieci.length === 0) continue;
-    const od = Math.max(najwczesniej(s, [rodzic]), odWieku);
-    const rok = zdarzenie(s, r, od, (rok) => (dzieci.some((d) => mozeWrocic(s, d, rok)) ? stawkaOpieki(rok) : 0));
+    // rodzic jest sam od ostatniego odejścia z gospodarstwa w tym kroku (zgon, wyjazd), a wcześniej przez cały krok
+    const od = Math.max(s.poczatek, odWieku, s.odejscia.get(g.id) ?? s.poczatek);
+    const stawka = (rok: number): number => (dzieci.some((d) => mozeWrocic(s, d, rok)) ? stawkaOpieki(rok) : 0);
+    const rok = zdarzenie(s, r, od, stawka, Math.max(od, najwczesniej(s, [rodzic])));
     if (rok < 0) continue;
     const wagi = dzieci.map((d) =>
       mozeWrocic(s, d, rok) ? (d.plec === 'K' ? PRZEJSCIA.opieka.corka : PRZEJSCIA.opieka.syn) : 0,
@@ -198,10 +202,10 @@ export function powroty(s: Stan, r: Rng, kt: Kontekst): void {
     if (o.stan !== 'wyjechal' || !wyjazd || wyjazd.z !== undefined) continue;
     const emigrant = wyjazd.typ === 'emigracja';
     const baza = emigrant ? pw.emigranci : pw.kraj;
-    const od = Math.max(najwczesniej(s, [o]), wyjazd.rok + 1);
+    const od = Math.max(s.poczatek, wyjazd.rok + 1);
     const stawka = (rok: number): number =>
       mozeWrocic(s, o, rok) ? dzwignia(baza, kt, rok, DZWIGNIE.falaPowrotow) : 0;
-    const rok = zdarzenie(s, r, od, stawka);
+    const rok = zdarzenie(s, r, od, stawka, Math.max(od, najwczesniej(s, [o])));
     if (rok < 0) continue;
     const krewny = krewnyTu(s, o);
     if (krewny) {
