@@ -892,6 +892,32 @@ describe('M2: poprawki z przeglądu', () => {
     expect(capOf(st, w)).toBe(cap0 + 1 + 2);
   });
 
+  it('zapis i wczytanie w trakcie przeszukania, rozbiórki, naprawy i zajęcia daje ten sam dalszy przebieg', () => {
+    const jobs: [string, (st: SimState, id: number) => Parameters<Sim['push']>[0]][] = [
+      ['search', (_st, id) => ({ t: 'search', ids: [id], room: roomOf(2, 'pokoj') })],
+      ['dismantle', (st, id) => ({ t: 'dismantle', ids: [id], thing: st.things.find((t) => t.kind === 'smieci')!.id })],
+      ['repair', (st, id) => ({ t: 'repair', ids: [id], damage: st.damage.findIndex((d) => d.kind === 'okno') })],
+      ['claim', (_st, id) => ({ t: 'claim', ids: [id], apt: 3 })],
+    ];
+    for (const [kind, cmd] of jobs) {
+      const st = createSim(w, 3, { core: 1 });
+      for (const a of st.apts)
+        if (a.state === 'puste')
+          a.searched = kind === 'search' ? [] : h.rooms.filter((r) => r.apt === a.apt).map((r) => r.id);
+      const sim = new Sim(w, st);
+      const [p] = core(st);
+      sim.push(cmd(st, p.id));
+      run(sim, () => p.job?.t === kind && p.job.phase >= 1, 6000);
+      expect(p.job?.t).toBe(kind);
+      const copy = new Sim(w, JSON.parse(JSON.stringify(st)));
+      for (let k = 0; k < 1500; k++) {
+        sim.step();
+        copy.step();
+      }
+      expect(copy.hash()).toBe(sim.hash());
+    }
+  });
+
   it('budowę, do której zarząd wziął się sam, przerywa noc; plan czeka do rana z doniesionym materiałem', async () => {
     const st = createSim(w, 3, { core: 1 });
     st.tick = atHour(1, 21.5);
