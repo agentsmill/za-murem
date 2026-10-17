@@ -181,6 +181,10 @@ Potem weszła `m1-etykieta-2`: etykieta „Suche drzewo” szuka wolnego miejsca
 
 CI (Node 24) padało na teście zarządu „plan ma siłę i liczbę szabrowników…”: napad przychodził pod bramę zamiast pod zaplanowaną dziurę, a lokalnie (Node 25) test przechodził. Przyczyna: trzy wydarzenia z 0.3 tasują listy przez `sort(() => h.rng() - 0.5)`, a kolejność wywołań porównania zależy od wersji silnika, więc ten sam stan i ziarno dawały inną noc w Node 24 i 25 (i dawałyby w różnych przeglądarkach). Poprawka: `EventHost.shuffle` (opcjonalne); zarząd daje tasowanie Fishera-Yatesa ze swojego ziarna, a bez `shuffle` (adapter testu zgodności z 0.3) zostaje stare zachowanie, więc zgodność z 0.3 się nie zmienia. Lokalnie: testy 506/506, Biome, build, bot, wszystkie zrzuty.
 
+### Poprawka po wdrożeniu M1: przeciąganie myszą, 18.10.2026
+
+Mateusz po pierwszym graniu na żywo: „nie mogę nic klikać w domu i budować czy ścinać”. Przyczyna: przeciąganie lewym przyciskiem myszy rysowało ramkę zaznaczenia zamiast przesuwać mapę (choć podpowiedź mówi „Przeciąganie przesuwa mapę”), a ramka na pustym miejscu czyściła zaznaczenie. Kto próbował dojechać do suchego drzewa, tracił zaznaczoną osobę i prawy przycisk przestawał działać. Teraz lewe przeciąganie przesuwa mapę, ramka zaznacza z Shiftem (pomoc w grze to mówi), prawe przeciąganie i WASD zostają. Nowy scenariusz `mysz-przesuwanie` padał na starym kodzie (mapa 0 px, zaznaczenie zgubione), z poprawką przechodzi (200 px, zaznaczenie zostaje, ramka z Shiftem zaznacza 4 z 4). Budowania jeszcze nie ma, przychodzi w M2.
+
 ## Następne
 
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
