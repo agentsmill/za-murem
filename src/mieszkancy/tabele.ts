@@ -43,9 +43,10 @@ export interface TabeleGminy {
   obrysy: Record<string, [number, number][][]>;
   /** Suma rejonów, zapas dla punktów poza obrysami. */
   gmina: Marginesy;
-  /** Mieszkania zamieszkane i ludność w nich, wg epoki budowy (P4386). Okres nieznany nie wchodzi do żadnej epoki. */
+  /** Mieszkania ogółem (P4386) i ludność w mieszkaniach zamieszkanych, wg epoki budowy. Mieszkania o nieznanym
+      okresie budowy GUS liczy tylko w „ogółem”, więc nie wchodzą do żadnej epoki. */
   epoki: Record<Epoka, { mieszkania: number; osoby: number }>;
-  /** Średni metraż mieszkania w epoce, m²: suma powierzchni użytkowej przez sumę mieszkań (P4386). */
+  /** Średni metraż mieszkania w epoce, m²: powierzchnia użytkowa mieszkań ogółem przez mieszkania ogółem (P4386). */
   metraz: Record<Epoka, number>;
   /** Ludność rezydująca NSP 2021 (P4253): 5-latki 0-4 … 80-84, 85+ (18 grup), osobno mężczyźni i kobiety. */
   wiek2021: { M: number[]; K: number[] };
