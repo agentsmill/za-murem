@@ -203,7 +203,7 @@ Daty w dzienniku poprawione: praca nad M1 szła w nocy z 16 na 17.10.2026, nie z
 
 Po poprawce myszy sterowanie i przybliżanie działają. Uwagi Mateusza i co z nimi:
 
-- Na Macu Ctrl+klik działał jak lewy klik, a gładzik tylko przybliżał. Poprawka idzie osobno na main przez sesję interfejsu, tak jak PR agentsmill/za-murem#3.
+- Na Macu Ctrl+klik działał jak lewy klik, a gładzik tylko przybliżał. Poprawka weszła na main jako PR agentsmill/za-murem#4 i jest na żywo od wieczora 17.10.2026: Ctrl+klik to prawy przycisk, dwa palce przesuwają mapę, szczypanie przybliża (w Safari też), kółko myszy dalej przybliża. Na iPhonie szczypanie nie przybliża już podwójnie. Na prawdziwym gładziku i w Safari sprawdzi Mateusz.
 - „Przyjmujemy ludzi, ale ich nie widzę.” `addResidents` przerywa na `st.cap`, więc nadmiar przyjętych znika po cichu, a nowi pojawiają się od razu pod dachem. Naprawa w fali 1 (symulacja): przyjęci przychodzą przez bramę, a bez łóżka śpią na podłodze z karą do nastroju.
 - Na razie da się tylko ściąć drzewo, a dookoła jest tyle rzeczy. Przeszukiwanie, rozbiórka, naprawy i budowa przychodzą w fali 1.
 - Chce chodzić do sąsiednich budynków i próbować się do nich włamać. Dopóki nie otoczy ich wspólnym płotem, w nocy może tam wejść ktoś inny. W innych budynkach mogą być lokatorzy, o których wiadomo albo nie, spotykani w dzień albo w nocy, z różnymi intencjami i emocjami. To będzie fala 2 M2. Nowa sesja „Włamania do sąsiednich budynków i wspólny płot” ustala z Mateuszem projekt w `docs/M2-fala-2.md` i od razu robi część świata.
