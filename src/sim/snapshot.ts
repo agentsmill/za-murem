@@ -47,6 +47,8 @@ export interface SimPerson {
   tile: number;
   /** sztuki drewna w rękach */
   carry: number;
+  /** na wyprawie poza mapą */
+  away: boolean;
 }
 
 export interface SimStock {
@@ -148,9 +150,10 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
         job: p.job ? p.job.t : null,
         doing: jobText(st, w, p),
         asleep: p.job?.t === 'sleep' && p.job.phase === 1,
-        inside: !!h && (h.room[tile] >= 0 || h.doors.includes(tile)),
+        inside: !p.away && !!h && (h.room[tile] >= 0 || h.doors.includes(tile)),
         tile,
         carry: p.carry,
+        away: p.away,
       };
     });
   const woodCarried = people.reduce((a, p) => a + p.carry, 0);
@@ -191,7 +194,8 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
         : { holes: [], durability: 1, gateOpen: true },
     light: {
       campfire: st.things.some((t) => t.kind === 'ognisko' && t.fuel > 0),
-      gateLamp: false,
+      // warta przy bramie stoi z lampą
+      gateLamp: st.pawns.some((p) => !p.away && p.job?.t === 'guard' && p.job.phase === 1 && p.job.target === 0),
     },
     residents: st.pawns.filter((p) => p.kind === 'resident').length,
     cap: st.cap,

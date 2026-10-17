@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { commandFor, commandsAt, jobText } from '../../src/sim/orders.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { mockBlock, mockHouse } from './interior-mock.ts';
@@ -151,5 +152,249 @@ describe('mieszkańcy zamiast tłumu', () => {
         if (r >= 0) expect(w.interior.rooms[r].apt).not.toBe(w.interior.home);
       }
     }
+  });
+});
+
+describe('prace na noc i podwórko', () => {
+  const atHour = (day: number, h: number) => Math.round(((day - 1) * 24 + h - 15) * 800);
+  const core = (sim: Sim) => sim.st.pawns.filter((p) => p.kind === 'core');
+  const tileOf = (p: { x: number; y: number }) => Math.floor(p.y) * size + Math.floor(p.x);
+  const yard = new Set(w.fence.yard);
+  const near = (a: number, b: number, d: number) =>
+    Math.max(Math.abs((a % size) - (b % size)), Math.abs(Math.floor(a / size) - Math.floor(b / size))) <= d;
+
+  it('warta przy bramie: stoi z lampą od strony podwórka, nie śpi do rana, światło dla zarządu', () => {
+    const st = createSim(w, 3, { core: 3 });
+    st.tick = atHour(1, 21);
+    const sim = new Sim(w, st);
+    const [g] = core(sim);
+    sim.push({ t: 'guard', ids: [g.id], post: 'brama' });
+    while (st.tick < atHour(2, 2)) sim.step();
+    expect(g.job?.t).toBe('guard');
+    expect(g.job?.phase).toBe(1);
+    expect(yard.has(tileOf(g))).toBe(true);
+    expect(gateTiles().some((t) => near(t, tileOf(g), 1))).toBe(true);
+    expect(jobText(st, w, g)).toBe('Trzyma wartę przy bramie.');
+    const s = snapshot(st, w);
+    expect(s.light.gateLamp).toBe(true);
+    expect(s.people.find((p) => p.pawn === g.id)?.asleep).toBe(false);
+    // pozostali śpią, ale czują się bezpieczniej, bo ktoś trzyma wartę
+    expect(core(sim)[1].job?.t).toBe('sleep');
+    while (st.tick < atHour(2, 6.5)) sim.step();
+    expect(g.job?.t).not.toBe('guard');
+  });
+
+  it('łatanie dziury: deski albo złom ze sterty, potem dziura zamknięta dla wszystkich', () => {
+    const st = createSim(w, 3, { core: 2 });
+    const mat = () => st.things.filter((t) => t.kind === 'deski' || t.kind === 'zlom').reduce((a, t) => a + t.n, 0);
+    const before = mat();
+    const hole = st.fence!.holes[0];
+    const sim = new Sim(w, st);
+    const [p] = core(sim);
+    sim.push({ t: 'patch', ids: [p.id], hole: hole.id });
+    const texts = new Set<string>();
+    for (let k = 0; k < 4000 && !hole.patch; k++) {
+      sim.step();
+      texts.add(jobText(st, w, p));
+    }
+    expect(hole.patch).toBeGreaterThan(0);
+    expect(mat()).toBe(before - 3);
+    expect(texts).toContain('Łata dziurę w siatce.');
+    for (const t of hole.tiles) expect(sim.canWalk('stranger', t)).toBe(false);
+    expect(snapshot(st, w).fence.holes.some((h) => h.id === hole.id)).toBe(false);
+  });
+
+  it('ognisko na podwórku: z dwóch sztuk drewna, świeci i grzeje na dworze, można dokładać', () => {
+    const st = createSim(w, 3, { core: 1 });
+    const y5 = w.fence.yard[5];
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'drewno',
+      x: y5 % size,
+      y: Math.floor(y5 / size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 5,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    const free = (i: number) =>
+      !w.blocked[i] && !st.things.some((t) => t.x === i % size && t.y === Math.floor(i / size));
+    const spot = w.fence.yard.find((i, k) => k > 20 && free(i))!;
+    st.tick = atHour(1, 19);
+    const sim = new Sim(w, st);
+    const [a] = core(sim);
+    sim.push({ t: 'campfire', ids: [a.id], at: spot });
+    const texts = new Set<string>();
+    for (let k = 0; k < 2000 && !st.things.some((t) => t.kind === 'ognisko'); k++) {
+      sim.step();
+      texts.add(jobText(st, w, a));
+    }
+    expect(texts).toContain('Rozpala ognisko.');
+    const fire = st.things.find((t) => t.kind === 'ognisko')!;
+    expect(fire).toBeTruthy();
+    expect([fire.x, fire.y]).toEqual([spot % size, Math.floor(spot / size)]);
+    expect(fire.fuel).toBeGreaterThan(0);
+    expect(st.things.filter((t) => t.kind === 'drewno').reduce((x, t) => x + t.n, 0) + a.carry).toBe(3);
+    expect(snapshot(st, w).light.campfire).toBe(true);
+    // na ognisko się nie wchodzi
+    expect(sim.canWalk('core', spot)).toBe(false);
+    // dokładanie do ogniska z menu
+    const menu = commandsAt(st, w, [a.id], spot);
+    expect(menu[0].label).toBe('Dołożyć do ogniska');
+    const fuel0 = fire.fuel;
+    sim.push(menu[0].cmd);
+    for (let k = 0; k < 1500 && fire.fuel <= fuel0; k++) sim.step();
+    expect(fire.fuel).toBeGreaterThan(fuel0);
+    // przy ognisku na dworze ciepło rośnie mimo nocy, a w jego świetle nie jest ciemno
+    a.needs!.warm = 20;
+    a.x = fire.x + 1.5;
+    a.y = fire.y + 0.5;
+    a.path = [];
+    a.pi = 0;
+    a.job = {
+      t: 'go',
+      target: -1,
+      tile: tileOf(a),
+      phase: 1,
+      from: -1,
+      t0: st.tick,
+      until: st.tick + 2000,
+      order: true,
+      n: 0,
+      what: '',
+    };
+    for (let k = 0; k < 400; k++) sim.step();
+    expect(a.needs!.warm).toBeGreaterThan(30);
+  });
+
+  it('warta przy dziurze: stoi na podwórku tuż przy niej, bez lampy przy bramie', () => {
+    const st = createSim(w, 3, { core: 2 });
+    st.tick = atHour(1, 21);
+    const sim = new Sim(w, st);
+    const [g] = core(sim);
+    const hole = st.fence!.holes[0];
+    sim.push({ t: 'guard', ids: [g.id], post: `d${hole.id}` });
+    for (let k = 0; k < 2000; k++) sim.step();
+    expect(g.job?.t).toBe('guard');
+    expect(g.job?.phase).toBe(1);
+    expect(yard.has(tileOf(g))).toBe(true);
+    expect(hole.tiles.some((t) => near(t, tileOf(g), 1))).toBe(true);
+    expect(jobText(st, w, g)).toBe('Trzyma wartę przy dziurze.');
+    expect(snapshot(st, w).light.gateLamp).toBe(false);
+    // nieznany posterunek: nic się nie dzieje
+    const [, b] = core(sim);
+    const before = JSON.stringify(b.job);
+    sim.push({ t: 'guard', ids: [b.id], post: 'd99' });
+    sim.step();
+    expect(JSON.stringify(b.job)).toBe(before);
+  });
+
+  it('przerwane łatanie: deski zostają na stercie obok, nic nie ginie', () => {
+    const st = createSim(w, 3, { core: 1 });
+    const mat = () => st.things.filter((t) => t.kind === 'deski' || t.kind === 'zlom').reduce((a, t) => a + t.n, 0);
+    const before = mat();
+    const sim = new Sim(w, st);
+    const [p] = core(sim);
+    sim.push({ t: 'patch', ids: [p.id], hole: st.fence!.holes[0].id });
+    for (let k = 0; k < 3000 && p.job?.phase !== 1; k++) sim.step();
+    expect(p.job?.t).toBe('patch');
+    expect(p.job?.n).toBe(3);
+    expect(mat()).toBe(before - 3);
+    expect(jobText(st, w, p)).toBe('Niesie materiał do dziury.');
+    sim.push({ t: 'move', ids: [p.id], to: w.buildings[w.hq].entrances[0].out });
+    sim.step();
+    expect(mat()).toBe(before);
+    expect(st.fence!.holes[0].patch).toBe(0);
+  });
+
+  it('wyprawa: wychodzi bramą, znika za mapą, potrzeby stoją, wraca pod drzwi siedziby', () => {
+    const st = createSim(w, 3, { core: 2 });
+    const sim = new Sim(w, st);
+    const [p] = core(sim);
+    const gate = gateTiles();
+    sim.push({ t: 'away', ids: [p.id] });
+    let out = false;
+    for (let k = 0; k < 3000 && !p.away; k++) {
+      sim.step();
+      if (gate.includes(tileOf(p))) out = true;
+    }
+    expect(p.away).toBe(true);
+    expect(out).toBe(true);
+    expect(yard.has(tileOf(p))).toBe(false);
+    expect(jobText(st, w, p)).toBe('Na wyprawie.');
+    const sp = snapshot(st, w).people.find((q) => q.pawn === p.id)!;
+    expect(sp.away).toBe(true);
+    expect(sp.inside).toBe(false);
+    // poza mapą nikt go nie widzi, polecenia go nie ruszają, potrzeby stoją
+    const needs = { ...p.needs! };
+    const at = [p.x, p.y];
+    sim.push({ t: 'move', ids: [p.id], to: w.fence.yard[0] });
+    for (let k = 0; k < 2000; k++) sim.step();
+    expect(p.away).toBe(true);
+    expect([p.x, p.y]).toEqual(at);
+    expect(p.needs).toEqual(needs);
+    sim.push({ t: 'back', ids: [p.id] });
+    sim.step();
+    expect(p.away).toBe(false);
+    let back = false;
+    for (let k = 0; k < 3000 && p.job?.t === 'go'; k++) {
+      sim.step();
+      if (gate.includes(tileOf(p))) back = true;
+    }
+    expect(back).toBe(true);
+    expect(near(tileOf(p), w.buildings[w.hq].entrances[0].out, 1)).toBe(true);
+  });
+
+  it('menu: dziura (łata, gdy jest materiał, i warta), brama (warta, kłódka), ognisko tylko z menu', () => {
+    const st = createSim(w, 3, { core: 2 });
+    const ids = core(new Sim(w, st)).map((p) => p.id);
+    const hole = st.fence!.holes[0];
+    const m = commandsAt(st, w, ids, hole.tiles[0]);
+    expect(m[0]).toEqual({ cmd: { t: 'patch', ids, hole: hole.id }, label: 'Załatać dziurę', quick: true });
+    expect(m.map((x) => x.label)).toContain('Pilnować tutaj');
+    expect(m.find((x) => x.label === 'Pilnować tutaj')!.cmd).toEqual({ t: 'guard', ids, post: `d${hole.id}` });
+    const g = commandsAt(st, w, ids, gateTiles()[0]);
+    expect(g.find((x) => x.label === 'Pilnować bramy')?.cmd).toEqual({ t: 'guard', ids, post: 'brama' });
+    expect(g.find((x) => x.label === 'Zamknąć bramę')?.cmd).toEqual({ t: 'gate', ids, open: false });
+    // kliknięcie w bramę to nadal „idź tu”
+    expect(commandFor(st, w, ids, gateTiles()[0])?.t).toBe('move');
+    const free = w.fence.yard.find(
+      (i, k) => k > 10 && !w.blocked[i] && !st.things.some((t) => t.x === i % size && t.y === Math.floor(i / size)),
+    )!;
+    expect(commandsAt(st, w, ids, free).map((x) => x.label)).not.toContain('Rozpalić ognisko tutaj');
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'drewno',
+      x: 0,
+      y: 0,
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 2,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    const f = commandsAt(st, w, ids, free).find((x) => x.label === 'Rozpalić ognisko tutaj');
+    expect(f).toEqual({ cmd: { t: 'campfire', ids, at: free }, label: 'Rozpalić ognisko tutaj', quick: false });
+    // bez desek i złomu nie ma czym łatać
+    st.things = st.things.filter((t) => t.kind !== 'deski' && t.kind !== 'zlom');
+    expect(commandsAt(st, w, ids, hole.tiles[0]).map((x) => x.label)).not.toContain('Załatać dziurę');
+    st.fence!.gateOpen = false;
+    expect(commandsAt(st, w, ids, gateTiles()[0]).map((x) => x.label)).toContain('Otworzyć bramę');
+  });
+
+  it('uchwała o bramie: zamknięta od 20:00 do rana', () => {
+    const st = createSim(w, 3, { core: 2 });
+    st.tick = atHour(1, 19.5);
+    const sim = new Sim(w, st);
+    sim.setLaws({ gateClosed: true, burnMood: 1, workStart: 8 });
+    while (st.tick < atHour(1, 20.1)) sim.step();
+    expect(st.fence!.gateOpen).toBe(false);
+    while (st.tick < atHour(2, 6.1)) sim.step();
+    expect(st.fence!.gateOpen).toBe(true);
   });
 });

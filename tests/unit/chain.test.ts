@@ -913,7 +913,18 @@ describe('palenie mebli', () => {
       const i = free[k % free.length];
       p.x = (i % w.size) + 0.5;
       p.y = Math.floor(i / w.size) + 0.5;
-      p.job = { t: 'eat', target: table.id, tile: i, phase: 1, from: -1, t0: 0, until: 1e9, order: false };
+      p.job = {
+        t: 'eat',
+        target: table.id,
+        tile: i,
+        phase: 1,
+        from: -1,
+        t0: 0,
+        until: 1e9,
+        order: false,
+        n: 0,
+        what: '',
+      };
     });
     const sim = new Sim(w, st);
     sim.push({ t: 'burn', ids: [st.pawns[0].id], thing: table.id });
