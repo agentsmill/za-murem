@@ -6,7 +6,8 @@
    wieczoru: gotowanie, kolacja, koniec opału i decyzja bota (spala meblościankę), sen; potem trzy doby.
    Na koniec gra z zarządem (src/gov) dwiema politykami karty nocy, zawsze warta i nigdy warty: decyzje na minutę
    przy ekranie w pierwszych 10 minutach (okna zarządu, zmiany na karcie, polecenia, których wymaga gra) i skutki
-   napadów. Tłum za siatką jest już tylko do pomiaru wydajności (npm run perf), w grze są mieszkańcy siedziby.
+   napadów, a potem noce z dyżurem przy kozie i bez niego (temperatura w kuchni o 6:00, jak długo pali się koza).
+   Tłum za siatką jest już tylko do pomiaru wydajności (npm run perf), w grze są mieszkańcy siedziby.
    Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] */
 
 import fs from 'node:fs';
@@ -277,5 +278,30 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
   const r0 = runs[0];
   console.log(`    pierwsze 10 min, ziarno ${GOV_SEEDS[0]}:`);
   for (const d of first(r0)) console.log(`      ${f1(d.s).padStart(6)} s  ${d.kind.padEnd(10)} ${d.text.slice(0, 90)}`);
+}
+
+/* ---------- noc przy kozie: dyżur z menu kozy (w karcie przyszły klucz 'warta:koza') i bez niego ---------- */
+
+const KOZA_DAYS = 3;
+console.log(
+  `\nNoc przy kozie, ${govName}: ${GOV_SEEDS.length} ziaren × ${KOZA_DAYS} noce, zawsze warta, wieczorem 16 sztuk drewna w zapasie`,
+);
+const kozaRuns = (koza: boolean) =>
+  GOV_SEEDS.flatMap((seed) => playWithGov(govWorld, seed, 'zawsze-warta', KOZA_DAYS, 4, { koza, evening: 16 }).nights);
+const withDuty = kozaRuns(true);
+const without = kozaRuns(false);
+const k6 = (list: NightLog[]) => list.map((n) => n.kitchen6 ?? 0);
+for (const [name, list] of [
+  ['z dyżurem przy kozie', withDuty],
+  ['bez dyżuru', without],
+] as const)
+  console.log(
+    `  ${name.padEnd(21)} kuchnia o 6:00 średnio ${f1(mean(k6(list)))}°C (od ${f1(Math.min(...k6(list)))} do ${f1(Math.max(...k6(list)))}), koza paliła się przez ${Math.round(100 * mean(list.map((n) => n.fire)))}% nocy 22–6`,
+  );
+const warm = mean(k6(withDuty));
+const cold = mean(k6(without));
+if (warm < 18 || cold > warm - 3) {
+  console.log('  BŁĄD: z dyżurem rano nie jest wyraźnie cieplej niż bez niego');
+  fail = true;
 }
 if (fail) process.exit(1);

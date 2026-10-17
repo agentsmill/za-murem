@@ -45,6 +45,18 @@ export interface NightLog {
   /** średnie bezpieczeństwo rano o 7:00: zarząd i mieszkańcy */
   safeCore: number;
   safeRes: number;
+  /** ktoś czuwał przy kozie (dyżur z menu kozy, w karcie przyszły klucz 'warta:koza') */
+  koza: boolean;
+  /** temperatura w kuchni zarządu o 6:00 rano (°C) i część nocy 22–6, w której koza się paliła */
+  kitchen6: number | null;
+  fire: number;
+}
+
+export interface PlayOpts {
+  /** dyżur przy kozie każdej nocy: najbardziej wypoczęty z tych, którzy śpią */
+  koza?: boolean;
+  /** od 16:00 bot ścina drzewa, dopóki zapasu drewna (bez kozy) nie ma tyle; rano i w południe zawsze 6 */
+  evening?: number;
 }
 
 export interface PlayResult {
@@ -120,7 +132,14 @@ function nextTree(sim: Sim, w: World, skip: ReadonlySet<number>): number {
 }
 
 /** cała gra z zarządem przez `days` dni od 15:00 pierwszego dnia */
-export function playWithGov(w: World, seed: number, policy: Policy, days: number, core = 4): PlayResult {
+export function playWithGov(
+  w: World,
+  seed: number,
+  policy: Policy,
+  days: number,
+  core = 4,
+  opts: PlayOpts = {},
+): PlayResult {
   const st = createSim(w, seed, { core });
   const sim = new Sim(w, st);
   const gov = newGov(seed);
@@ -141,6 +160,7 @@ export function playWithGov(w: World, seed: number, policy: Policy, days: number
     if (c) order(c, 'ścinaj suche drzewo');
   }
   let night: NightLog | null = null;
+  let fireN = 0;
   /** drzewa, do których nie dało się dojść, i drzewo z ostatniego polecenia (−1: brak) */
   const skip = new Set<number>();
   let asked = -1;
@@ -155,22 +175,47 @@ export function playWithGov(w: World, seed: number, policy: Policy, days: number
       if (!p) break;
       const text = answer(gov, sim, w, p, policy, s, decisions);
       decisions.push({ s, kind: p.k, text });
-      if (p.k === 'karta')
+      if (p.k === 'karta') {
+        const assign = gov.night?.assign ?? {};
         night = {
           day: p.card.day,
-          guards: Object.values(gov.night?.assign ?? {}).filter((x) => x.startsWith('warta:')).length,
+          guards: Object.values(assign).filter((x) => x.startsWith('warta:')).length,
           raid: null,
           report: null,
           stolen: { wood: 0, supplies: 0, scrap: 0 },
           safeCore: 0,
           safeRes: 0,
+          koza: false,
+          kitchen6: null,
+          fire: 0,
         };
+        // dyżur przy kozie: dopóki karta nie ma 'warta:koza', gracz daje go z menu kozy
+        if (opts.koza) {
+          const sleepers = cores().filter((q) => (assign[st.people[q.person].id] ?? 'sen') === 'sen');
+          const best = sleepers.sort((a, b) => b.needs!.rest - a.needs!.rest || a.id - b.id)[0];
+          if (best) {
+            sim.push({ t: 'guard', ids: [best.id], post: 'koza' });
+            decisions.push({ s, kind: 'przydział', text: `${st.people[best.person].name}: dyżur przy kozie` });
+            night.koza = true;
+          }
+        }
+      }
       if (p.k === 'raport' && night) {
         night.report = p.report.raid;
         night.stolen = { wood: p.report.stolen.wood, supplies: p.report.stolen.supplies, scrap: p.report.stolen.scrap };
       }
     }
     const h = hourOf(st.tick);
+    // noc 22–6: jak długo pali się koza zarządu; o 6:00 temperatura w kuchni
+    if (night && (h >= 22 || h < 6)) {
+      night.fire += snapshot(st, w).kozaLit ? 1 : 0;
+      fireN++;
+    }
+    if (night && h === 6 && night.kitchen6 === null && dayOf(st.tick) === night.day + 1) {
+      night.kitchen6 = snapshot(st, w).kitchen;
+      night.fire = fireN ? night.fire / fireN : 0;
+      fireN = 0;
+    }
     // rano o 7:00 noc się liczy: napad w symulacji i bezpieczeństwo
     if (night && h === 7 && dayOf(st.tick) === night.day + 1 && st.tick % (TICKS_PER_SECOND * 60) === 0) {
       const r = st.raid;
@@ -184,12 +229,14 @@ export function playWithGov(w: World, seed: number, policy: Policy, days: number
     }
     // polecenia, których wymaga gra: za dnia, gdy opału zostaje mało, następne drzewo
     if (st.tick % (TICKS_PER_SECOND * 10) === 0 && h >= 7 && h < 21) {
-      const wood = snapshot(st, w).stock.wood;
+      const sn = snapshot(st, w).stock;
+      const wood = h >= 16 && opts.evening ? sn.woodSklad + sn.woodLoose + sn.woodCarried : sn.wood;
+      const want = h >= 16 && opts.evening ? opts.evening : 6;
       const chopping = st.pawns.some((p) => p.job?.t === 'chop');
       // drzewo z poprzedniego polecenia, którego nikt nie zaczął ścinać, jest nieosiągalne: następnym razem inne
       if (asked >= 0 && !chopping && !st.felled.includes(asked)) skip.add(asked);
       asked = -1;
-      if (wood < 6 && !chopping) {
+      if (wood < want && !chopping) {
         const k = nextTree(sim, w, skip);
         const who = cores().find((p) => p.job?.t !== 'sleep' && p.job?.t !== 'guard') ?? cores()[0];
         if (k >= 0 && who) {
