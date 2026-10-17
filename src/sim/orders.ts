@@ -11,6 +11,7 @@ import {
   campfireSpotOk,
   canCookIn,
   FURNITURE_ACC,
+  isEnemy,
   KOZA_POST,
   PATCH_COST,
   type Pawn,
@@ -62,6 +63,22 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   const core = ids.filter((id) => st.pawns.some((p) => p.id === id && p.kind === 'core'));
   if (!core.length) return [];
   const out: MenuItem[] = [];
+  // wróg pod kursorem (najwyżej metr od środka kafelka): atak jako pierwsze, domyślne polecenie
+  const cx = (tile % w.size) + 0.5;
+  const cy = Math.floor(tile / w.size) + 0.5;
+  let foe: Pawn | undefined;
+  let fd = 1;
+  for (const p of st.pawns)
+    if (isEnemy(p) && !p.away && Math.hypot(p.x - cx, p.y - cy) <= fd) {
+      fd = Math.hypot(p.x - cx, p.y - cy);
+      foe = p;
+    }
+  if (foe)
+    out.push({
+      cmd: { t: 'attack', ids: core, target: foe.id },
+      label: foe.kind === 'zombie' ? 'Atakuj szwendacza' : 'Atakuj szabrownika',
+      quick: true,
+    });
   const sklad = houseOf(w)?.sklad ?? [];
   const pile = thingAt(st, w, tile, 'drewno');
   if (pile && sklad.length && !sklad.includes(tile))
@@ -194,5 +211,7 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return walking ? 'Wychodzi na wyprawę.' : 'Na wyprawie.';
     case 'raid':
       return ['Skrada się pod siatkę.', 'Czai się za siatką.', 'Kradnie.', 'Ucieka.', 'Ucieka.'][j.phase] ?? 'Ucieka.';
+    case 'fight':
+      return walking ? 'Idzie walczyć.' : 'Walczy.';
   }
 }

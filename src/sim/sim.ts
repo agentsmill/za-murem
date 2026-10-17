@@ -7,7 +7,7 @@ import { PROFS } from '../content/data.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
-import { type AmmoKey, noAmmo, START_KIT, type WeaponId } from './bron.ts';
+import { type AmmoKey, hitChance, noAmmo, START_KIT, WEAPONS, type Weapon, type WeaponId, weaponOf } from './bron.ts';
 import {
   daylight,
   hourOf,
@@ -124,6 +124,24 @@ const STAY_AFTER_ORDER = TICKS_PER_HOUR;
 const WARM_MAX = TICKS_PER_HOUR;
 /** z tej odległości od kozy (m) człowiek się przy niej grzeje */
 const FIRE_REACH = 2.5;
+/** życie szabrownika; poniżej FLEE_HP ucieka (wolniej, bo ranny) */
+export const STRANGER_HP = 70;
+export const FLEE_HP = 35;
+/** hałas słychać przez 2 sekundy gry, efekty walki (dla rysowania) też tyle trwają */
+export const NOISE_TICKS = 2 * TICKS_PER_SECOND;
+export const FX_TICKS = 2 * TICKS_PER_SECOND;
+/** martwy szwendacz leży dobę, plama krwi 6 godzin, zwłoki człowieka (które nie wstaną) dwie doby */
+export const CORPSE_TICKS = TICKS_PER_DAY;
+export const BLOOD_TICKS = 6 * TICKS_PER_HOUR;
+export const BODY_TICKS = 2 * TICKS_PER_DAY;
+const BLOOD_MAX = 40;
+/** zarząd broni się sam przed wrogiem do 6 m, mieszkańcy uciekają przed wrogiem do 8 m */
+export const DEFEND_REACH = 6;
+export const RESIDENT_FLEE = 8;
+/** walka bez ciosu przez 20 sekund gry (nie da się dojść) się kończy */
+const FIGHT_GIVEUP = 20 * TICKS_PER_SECOND;
+/** rzeczy, które leżą, ale niczego nie zajmują (można na nich stanąć, nie są meblami) */
+const GHOST = new Set(['zwloki', 'trup', 'krew']);
 
 export type Facing = 0 | 1 | 2 | 3; // dół, góra, lewo, prawo
 
@@ -142,7 +160,8 @@ export type JobKind =
   | 'patch'
   | 'build'
   | 'leave'
-  | 'raid';
+  | 'raid'
+  | 'fight';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -204,7 +223,10 @@ export interface Job {
 
 /** zarząd (rdzeń, polecenia), tłum (tylko do pomiaru wydajności, za siatką), mieszkańcy siedziby
     (tło z planem dnia), szabrownicy (obcy z napadu; nazwa jak w liście obcych rysowania, src/render/game.ts) */
-export type PawnKind = 'core' | 'crowd' | 'resident' | 'szabrownik';
+export type PawnKind = 'core' | 'crowd' | 'resident' | 'szabrownik' | 'zombie';
+
+/** wróg: szabrownik albo szwendacz (do ataku z menu i obrony) */
+export const isEnemy = (p: Pick<Pawn, 'kind'>): boolean => p.kind === 'szabrownik' || p.kind === 'zombie';
 
 export interface Pawn {
   id: number;
@@ -266,8 +288,10 @@ export interface Thing {
   fuel: number;
   /** pionek, który ma tę rzecz w pracy (−1: wolna) */
   by: number;
-  /** właściciel mebla (pionek), −1: wspólny albo niczyj; spalenie boli go najbardziej */
+  /** właściciel mebla (pionek), −1: wspólny albo niczyj; spalenie boli go najbardziej; zwłoki: wpis w state.dead */
   owner: number;
+  /** tick, o którym rzecz znika (krew, trupy, zwłoki); brak: zostaje */
+  until?: number;
 }
 
 /** spalony mebel: co, z którego mieszkania (−1: klatka), kto i kiedy */
@@ -307,7 +331,46 @@ export type Command =
   /** łaty z zarządu: n największych otwartych dziur od razu załatanych (materiał policzył zarząd) */
   | { t: 'mend'; ids: number[]; n: number }
   /** broń z magazynu do rąk (stara wraca do magazynu); null: odłożyć broń */
-  | { t: 'arm'; ids: number[]; weapon: WeaponId | null };
+  | { t: 'arm'; ids: number[]; weapon: WeaponId | null }
+  /** atak na wroga (id pionka szabrownika albo szwendacza) */
+  | { t: 'attack'; ids: number[]; target: number };
+
+export interface Noise {
+  x: number;
+  y: number;
+  /** promień w metrach */
+  r: number;
+  until: number;
+}
+
+export interface Fx {
+  t: 'cios' | 'strzal' | 'trafienie' | 'ugryzienie' | 'smierc';
+  x: number;
+  y: number;
+  tick: number;
+  /** cel ciosu albo strzału */
+  tx?: number;
+  ty?: number;
+}
+
+export interface Dead {
+  /** id osoby z zarządu (s1…), pusty napis dla innych */
+  id: string;
+  name: string;
+  look: number;
+  kind: PawnKind;
+  tick: number;
+  cause: 'rany' | 'gorączka' | 'amputacja';
+}
+
+export interface Tally {
+  killed: number;
+  breaches: number;
+  bites: number;
+  deaths: number;
+}
+
+const zeroTally = (): Tally => ({ killed: 0, breaches: 0, bites: 0, deaths: 0 });
 
 /** łup w sztukach: drewno, porcje zapasów, złom */
 export interface Loot {
@@ -387,6 +450,14 @@ export interface SimState {
   store: { parts: number; meds: number; arms?: WeaponId[]; ammo?: Record<AmmoKey, number> };
   /** tryb gry; brak w starym zapisie: zwykły */
   mode?: GameMode;
+  /** hałas z ostatnich 2 sekund (strzały, ciosy): szwendacze idą na niego */
+  noise?: Noise[];
+  /** efekty walki z ostatnich 2 sekund dla rysowania */
+  fx?: Fx[];
+  /** zmarli po kolei (ludzie: zarząd, mieszkańcy, szabrownicy) */
+  dead?: Dead[];
+  /** liczniki: zabici wrogowie, przerwania siatki, ugryzienia, zgony naszych */
+  tally?: Tally;
   /** ułamek porcji zjedzony ponad całe porcje (racje i kocioł zjadają po 0,75 i 1,1 porcji na posiłek) */
   portion: number;
 }
@@ -444,6 +515,8 @@ function homeTiles(w: World): number[] {
 function newThing(st: SimState, kind: string, x: number, y: number, w = 1, h = 1, rot = 0): Thing {
   return { id: st.nextThing++, kind, x, y, w, h, rot, n: 0, fuel: 0, by: -1, owner: -1 };
 }
+
+const round2 = (v: number) => Math.round(v * 100) / 100;
 
 const covers = (t: Thing, x: number, y: number) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
 
@@ -512,6 +585,10 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     raid: null,
     store: { parts: 0, meds: 0, arms: [], ammo: noAmmo() },
     mode: opts.mode ?? 'zwykly',
+    noise: [],
+    fx: [],
+    dead: [],
+    tally: zeroTally(),
   };
   const kit = START_KIT[modeOf(st)];
   st.store.arms = [...kit.store];
@@ -650,7 +727,7 @@ export function campfireSpotOk(st: SimState, w: World, at: number): boolean {
   const size = w.size;
   const x = at % size;
   const y = Math.floor(at / size);
-  if (st.things.some((t) => covers(t, x, y))) return false;
+  if (st.things.some((t) => !GHOST.has(t.kind) && covers(t, x, y))) return false;
   const near = (k: number) => Math.max(Math.abs((k % size) - x), Math.abs(Math.floor(k / size) - y)) <= 1;
   const h = houseOf(w);
   for (const b of w.buildings) for (const e of b.entrances) if (near(e.out)) return false;
@@ -733,7 +810,7 @@ export function addResidents(st: SimState, w: World, n: number): number {
       if (aptAt(h, i) !== apt || resident[i]) continue;
       const x = i % size;
       const y = Math.floor(i / size);
-      if (!st.things.some((t) => !LOOSE.has(t.kind) && covers(t, x, y))) free.push(i);
+      if (!st.things.some((t) => !LOOSE.has(t.kind) && !GHOST.has(t.kind) && covers(t, x, y))) free.push(i);
     }
     const at = free[Math.floor(idx / apts.length) % Math.max(1, free.length)] ?? free[0];
     if (at === undefined) break;
@@ -931,7 +1008,10 @@ export class Sim {
   /** przechodniość i obszary pozostałych: mieszkańcy (bez dziur, bramy i mieszkania zarządu), obcy (dziurami tak,
       zamkniętą bramą nie), tłum do pomiarów (za siatką, bez mieszkania zarządu), obcy po stronie ulicy (bez podwórka
       i wnętrz: tak podchodzą pod siatkę i uciekają spod niej, nie skracając sobie drogi przez podwórko) */
-  private lay: Record<'resident' | 'szabrownik' | 'crowd' | 'outside', { blocked: Uint8Array; reg: Int32Array }>;
+  private lay: Record<
+    'resident' | 'szabrownik' | 'zombie' | 'crowd' | 'outside',
+    { blocked: Uint8Array; reg: Int32Array }
+  >;
   /** mieszkanie zarządu z drzwiami (1) albo null */
   private readonly mask: Uint8Array | null;
   /** pora wspólnego posiłku: mieszkańcy mogą wejść do mieszkania zarządu, do stołu */
@@ -950,6 +1030,10 @@ export class Sim {
   readonly exitTile: number;
   /** kafelek przed drzwiami siedziby, do którego wraca wyprawa */
   private readonly door: number;
+  /** kafelki siatki i bramy (1): przez nie da się sięgnąć tylko dzidą, kuszą i bronią palną */
+  private readonly fenceMask: Uint8Array;
+  /** zabici w bieżącym kroku (znikają po pętli pionków) */
+  private readonly graveyard = new Set<number>();
 
   constructor(w: World, st: SimState) {
     this.w = w;
@@ -957,6 +1041,10 @@ export class Sim {
     // zapis sprzed broni: pusty magazyn i bez amunicji (bez losowania, żeby skrót zależał tylko od stanu)
     st.store.arms ??= [];
     st.store.ammo ??= noAmmo();
+    st.noise ??= [];
+    st.fx ??= [];
+    st.dead ??= [];
+    st.tally ??= zeroTally();
     this.pf = new PathFinder(w.size);
     this.house = houseOf(w);
     this.trunk = Int32Array.from(w.trees, (t) => trunkOf(w, t));
@@ -1025,6 +1113,9 @@ export class Sim {
       }
     }
     this.exitTile = exit;
+    this.fenceMask = new Uint8Array(size * size);
+    for (const t of shape?.tiles ?? []) this.fenceMask[t] = 1;
+    for (const t of gate) this.fenceMask[t] = 1;
     if (h) {
       const fires = this.fires();
       this.boost = heatBoost(this.kinds, this.links, fires, this.outdoor());
@@ -1080,9 +1171,16 @@ export class Sim {
     for (const t of shape?.hole ?? []) outside[t] = 1;
     for (const t of gateTiles(this.w)) outside[t] = 1;
     if (this.house) for (let i = 0; i < outside.length; i++) if (this.house.room[i] >= 0) outside[i] = 1;
+    // szwendacze jak obcy (dziurami tak, zamkniętą bramą nie), ale do budynków nie wchodzą: drzwi są zamknięte
+    const zombie = stranger.slice();
+    if (this.house) {
+      for (let i = 0; i < zombie.length; i++) if (this.house.room[i] >= 0) zombie[i] = 1;
+      for (const d of this.house.doors) zombie[d] = 1;
+    }
     this.lay = {
       resident: res,
       szabrownik: { blocked: stranger, reg: labelRegions(stranger, size) },
+      zombie: { blocked: zombie, reg: labelRegions(zombie, size) },
       crowd: res,
       outside: { blocked: outside, reg: labelRegions(outside, size) },
     };
@@ -1156,10 +1254,23 @@ export class Sim {
     if (st.tick % TICKS_PER_HOUR === 0 && hourOf(st.tick) === 6) for (const p of st.pawns) p.ate = 0;
     if (st.tick % (TICKS_PER_HOUR / 2) === 0) this.syncMealDoor();
     if (st.raid) this.raidTick(st.raid);
+    if (st.noise!.length) st.noise = st.noise!.filter((n) => n.until > st.tick);
+    if (st.fx!.length) st.fx = st.fx!.filter((f) => f.tick + FX_TICKS > st.tick);
     let budget = PATHS_PER_TICK;
     let gone = false;
     for (const p of st.pawns) {
-      if (p.away) continue;
+      if (p.away || this.graveyard.has(p.id)) continue;
+      if (p.kind === 'core' || p.kind === 'resident') {
+        // wróg blisko: zarząd z bronią walczy, reszta ucieka do domu (co sekundę, każdy w innym kroku)
+        if ((st.tick + p.id) % THINK_EVERY === 0 && this.react(p)) {
+          if (p.pi < p.path.length) this.walk(p);
+          continue;
+        }
+        if (p.job?.t === 'fight') {
+          this.fightTick(p, p.job);
+          continue;
+        }
+      }
       if (p.pi < p.path.length) {
         this.walk(p);
         continue;
@@ -1198,13 +1309,28 @@ export class Sim {
     }
     // szabrownicy, którzy doszli tam, skąd przyszli, znikają
     if (gone) st.pawns = st.pawns.filter((p) => !(p.kind === 'szabrownik' && p.job?.phase === 4));
+    // zabici w tym kroku znikają ze stanu (zostają po nich zwłoki)
+    if (this.graveyard.size) {
+      for (const id of this.graveyard) {
+        const p = st.pawns.find((q) => q.id === id);
+        if (p) dropPawn(st, p);
+      }
+      this.graveyard.clear();
+    }
     if (st.tick % HEAT_EVERY === 0) this.slow();
     st.tick++;
   }
 
+  /** prędkość względem człowieka: ranny szabrownik wlecze się */
+  private speedOf(p: Pawn): number {
+    if (p.kind === 'szabrownik' && (p.hp ?? STRANGER_HP) < FLEE_HP) return 0.6;
+    return 1;
+  }
+
   private walk(p: Pawn): void {
     const size = this.w.size;
-    let left = WALK_SPEED;
+    const speed = WALK_SPEED * this.speedOf(p);
+    let left = speed;
     while (left > 1e-9 && p.pi < p.path.length) {
       const t = p.path[p.pi];
       const tx = (t % size) + 0.5;
@@ -1225,7 +1351,7 @@ export class Sim {
         left = 0;
       }
     }
-    p.walk += WALK_SPEED - left;
+    p.walk += speed - left;
     if (p.pi >= p.path.length) {
       p.path = [];
       p.pi = 0;
@@ -1286,6 +1412,7 @@ export class Sim {
     else if (c.t === 'patch') this.orderPatch(pawns, c.hole);
     else if (c.t === 'campfire') this.orderCampfire(pawns, c.at);
     else if (c.t === 'away') for (const p of pawns) this.startLeave(p);
+    else if (c.t === 'attack') this.orderAttack(pawns, c.target);
   }
 
   /** Pora wspólnego posiłku (uchwała o kotle), w której mieszkańcy mogą wejść do mieszkania zarządu: pół godziny
@@ -1633,11 +1760,11 @@ export class Sim {
   }
 
   private furnitureAt(x: number, y: number): boolean {
-    return this.st.things.some((t) => !LOOSE.has(t.kind) && covers(t, x, y));
+    return this.st.things.some((t) => !LOOSE.has(t.kind) && !GHOST.has(t.kind) && covers(t, x, y));
   }
 
   private thingAt(x: number, y: number): boolean {
-    return this.st.things.some((t) => covers(t, x, y));
+    return this.st.things.some((t) => !GHOST.has(t.kind) && covers(t, x, y));
   }
 
   /** kafelki, na których stoją albo pracują inni z rdzenia */
@@ -2051,6 +2178,8 @@ export class Sim {
         // nie śpi do rana; schodzi z posterunku tylko wtedy, gdy zdrowie siada
         if (j.phase === 1) {
           if (tick >= j.until || p.needs!.health < 30) return false;
+          // warta bije każdego wroga w zasięgu swojej broni, nie schodząc z posterunku
+          if ((tick + p.id) % 5 === 0) this.guardStrike(p);
           // przy kozie: kiedy ognia zostaje mało, idzie po drewno i dokłada
           if (j.target === KOZA_POST && tick % THINK_EVERY === 0) this.tendKoza(p, j);
           return true;
@@ -2183,6 +2312,9 @@ export class Sim {
       case 'raid':
         // szabrownicy mają własny krok (strangerTick)
         return false;
+      case 'fight':
+        // walka ma własny krok (fightTick)
+        return true;
       case 'leave':
         // za bramą znika; wraca poleceniem 'back'
         if (j.phase === 1) return true;
@@ -2776,6 +2908,258 @@ export class Sim {
     j.n = 0;
   }
 
+  /* ---------- walka ---------- */
+
+  /** żywy wróg z mapy (nie na wyprawie, nie zabity w tym kroku) */
+  private enemy(id: number): Pawn | undefined {
+    const t = this.st.pawns.find((q) => q.id === id);
+    return t && isEnemy(t) && !t.away && !this.graveyard.has(t.id) ? t : undefined;
+  }
+
+  /** atak na polecenie: każdy idzie do wroga i bije, póki wróg żyje */
+  private orderAttack(pawns: Pawn[], target: number): void {
+    if (!this.enemy(target)) return;
+    for (const p of pawns) {
+      const j = this.newJob('fight', target, -1, true);
+      j.until = this.st.tick + FIGHT_GIVEUP;
+      this.setJob(p, j, false);
+      p.path = [];
+      p.pi = 0;
+    }
+  }
+
+  /** broń, którą pionek naprawdę uderzy: broń palna bez amunicji bije jak gołe ręce */
+  private armed(p: Pawn): Weapon {
+    const w = weaponOf(p.weapon);
+    if (w.ammo && (this.st.store.ammo?.[w.ammo] ?? 0) <= 0) return WEAPONS.piesci;
+    return w;
+  }
+
+  /** Co jest na linii między dwoma punktami (bez kafelków obu końców): 'wall' ściana, drzewo albo inna przeszkoda,
+      'fence' siatka, łata albo zamknięta brama, 'clear' nic. Próbki co 0,25 m. */
+  private lineCheck(ax: number, ay: number, bx: number, by: number): 'clear' | 'fence' | 'wall' {
+    const size = this.w.size;
+    const a = Math.floor(ay) * size + Math.floor(ax);
+    const b = Math.floor(by) * size + Math.floor(bx);
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 0.25));
+    let fence = false;
+    for (let k = 1; k < n; k++) {
+      const x = ax + ((bx - ax) * k) / n;
+      const y = ay + ((by - ay) * k) / n;
+      const i = Math.floor(y) * size + Math.floor(x);
+      if (i === a || i === b || !this.blocked[i]) continue;
+      if (this.fenceMask[i]) fence = true;
+      else return 'wall';
+    }
+    return fence ? 'fence' : 'clear';
+  }
+
+  /** czy p dosięgnie t bronią w: zasięg, nic po drodze, a przez siatkę tylko broń, która przez nią sięga */
+  private canHit(p: Pawn, t: Pawn, w: Weapon): boolean {
+    if (Math.hypot(t.x - p.x, t.y - p.y) > w.reach + 0.2) return false;
+    const los = this.lineCheck(p.x, p.y, t.x, t.y);
+    return los === 'clear' || (los === 'fence' && w.fence);
+  }
+
+  /** cios albo strzał: celność z umiejętności i sił, amunicja, hałas, efekt; true: trafił */
+  private strike(p: Pawn, t: Pawn, w: Weapon): boolean {
+    const st = this.st;
+    p.cd = st.tick + w.cd;
+    this.face(p, t.x, t.y);
+    const who = p.person >= 0 ? st.people[p.person] : undefined;
+    const chance = hitChance(w, who?.skills.obrona ?? 0, p.needs?.rest ?? 100, false);
+    if (w.ammo) st.store.ammo![w.ammo] = Math.max(0, st.store.ammo![w.ammo] - 1);
+    this.addFx(w.ammo ? 'strzal' : 'cios', p.x, p.y, t.x, t.y);
+    if (w.noise > 0) this.addNoise(p.x, p.y, w.noise);
+    if (nextRandom(st.rng) >= chance) return false;
+    // bełt w połowie przypadków da się wyciągnąć
+    if (w.ammo === 'belty' && nextRandom(st.rng) < 0.5) st.store.ammo!.belty++;
+    this.hurt(t, w.dmg, p);
+    return true;
+  }
+
+  /** obrażenia: ludzie z potrzebami tracą zdrowie, reszta życie; ranny szabrownik ucieka */
+  private hurt(t: Pawn, dmg: number, by: Pawn | null): void {
+    this.addFx('trafienie', t.x, t.y);
+    if (t.needs) {
+      t.needs.health = Math.max(0, t.needs.health - dmg);
+      if (t.needs.health <= 0) this.die(t, 'rany', by);
+      return;
+    }
+    t.hp = (t.hp ?? 100) - dmg;
+    if (t.hp <= 0) this.die(t, 'rany', by);
+    else if (t.kind === 'szabrownik' && t.hp < FLEE_HP && this.st.raid && t.job && t.job.phase < 3)
+      this.leaveRaid(t, this.st.raid);
+  }
+
+  /** Śmierć: pionek znika po kroku, zostają zwłoki (człowiek) albo trup (szwendacz) i krew. Śmierć kogoś z naszych
+      boli wszystkich, zabicie człowieka boli tego, kto zabił. */
+  private die(p: Pawn, cause: Dead['cause'], by: Pawn | null): void {
+    const st = this.st;
+    if (this.graveyard.has(p.id)) return;
+    this.graveyard.add(p.id);
+    const tick = st.tick;
+    const x = Math.floor(p.x);
+    const y = Math.floor(p.y);
+    this.addFx('smierc', p.x, p.y);
+    this.release(p);
+    this.dropLoad(p);
+    this.dropCarry(p);
+    this.addBlood(x, y);
+    if (p.kind === 'zombie') {
+      const body = newThing(st, 'trup', x, y);
+      body.n = p.look;
+      body.until = tick + CORPSE_TICKS;
+      st.things.push(body);
+      st.tally!.killed++;
+      return;
+    }
+    const who = p.person >= 0 ? st.people[p.person] : undefined;
+    const name = who?.name ?? (p.kind === 'szabrownik' ? 'Szabrownik' : 'Mieszkaniec');
+    st.dead!.push({ id: who?.id ?? '', name, look: p.look, kind: p.kind, tick, cause });
+    const body = newThing(st, 'zwloki', x, y);
+    body.n = p.look;
+    body.owner = st.dead!.length - 1;
+    body.until = tick + BODY_TICKS;
+    st.things.push(body);
+    if (p.kind === 'szabrownik') {
+      st.tally!.killed++;
+      if (by?.needs) this.addMood(by, 'Zabiłem człowieka', -6, TICKS_PER_DAY);
+      return;
+    }
+    st.tally!.deaths++;
+    const first = who?.first ?? 'sąsiad';
+    for (const q of st.pawns)
+      if (q !== p && q.needs && !q.away && !this.graveyard.has(q.id))
+        this.addMood(q, `Śmierć: ${first}`, -10, TICKS_PER_DAY);
+  }
+
+  private addNoise(x: number, y: number, r: number): void {
+    const st = this.st;
+    st.noise!.push({ x: round2(x), y: round2(y), r, until: st.tick + NOISE_TICKS });
+    if (st.noise!.length > 20) st.noise!.shift();
+  }
+
+  private addFx(t: Fx['t'], x: number, y: number, tx?: number, ty?: number): void {
+    const st = this.st;
+    const f: Fx = { t, x: round2(x), y: round2(y), tick: st.tick };
+    if (tx !== undefined && ty !== undefined) {
+      f.tx = round2(tx);
+      f.ty = round2(ty);
+    }
+    st.fx!.push(f);
+    if (st.fx!.length > 40) st.fx!.shift();
+  }
+
+  /** plama krwi na kafelku (najwyżej 40 naraz, najstarsza znika) */
+  private addBlood(x: number, y: number): void {
+    const st = this.st;
+    const blood = newThing(st, 'krew', x, y);
+    blood.until = st.tick + BLOOD_TICKS;
+    st.things.push(blood);
+    const all = st.things.filter((t) => t.kind === 'krew');
+    if (all.length > BLOOD_MAX) st.things.splice(st.things.indexOf(all[0]), 1);
+  }
+
+  /** Walka: w zasięgu bije (co tyle kroków, ile każe broń), poza zasięgiem idzie do wroga (droga od nowa co sekundę).
+      Koniec, gdy wróg zginie, zniknie albo przez 20 sekund nie da się go uderzyć. */
+  private fightTick(p: Pawn, j: Job): void {
+    const tick = this.st.tick;
+    const t = this.enemy(j.target);
+    if (!t || tick > j.until) {
+      p.path = [];
+      p.pi = 0;
+      this.done(p);
+      return;
+    }
+    const w = this.armed(p);
+    if (this.canHit(p, t, w)) {
+      p.path = [];
+      p.pi = 0;
+      j.phase = 1;
+      if (tick >= (p.cd ?? 0)) {
+        this.strike(p, t, w);
+        j.until = tick + FIGHT_GIVEUP;
+      } else this.face(p, t.x, t.y);
+      return;
+    }
+    j.phase = 0;
+    if (p.pi >= p.path.length || tick % THINK_EVERY === 0) {
+      const g = this.goalFor(p, this.tileOf(t));
+      if (g >= 0 && g !== this.tileOf(p)) this.routeTo(p, g);
+      j.tile = g;
+    }
+    if (p.pi < p.path.length) this.walk(p);
+  }
+
+  /** warta na posterunku: najbliższy wróg w zasięgu broni */
+  private guardStrike(p: Pawn): void {
+    if (this.st.tick < (p.cd ?? 0)) return;
+    const w = this.armed(p);
+    let best: Pawn | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.pawns) {
+      if (!isEnemy(t) || t.away || this.graveyard.has(t.id)) continue;
+      const d = Math.hypot(t.x - p.x, t.y - p.y);
+      if (d < bd && this.canHit(p, t, w)) {
+        bd = d;
+        best = t;
+      }
+    }
+    if (best) this.strike(p, best, w);
+  }
+
+  /** najbliższy wróg w promieniu r, którego widać bez siatki i ściany po drodze (ta sama strona siatki) */
+  private threat(p: Pawn, r: number): Pawn | undefined {
+    let best: Pawn | undefined;
+    let bd = r;
+    for (const t of this.st.pawns) {
+      if (!isEnemy(t) || t.away || this.graveyard.has(t.id)) continue;
+      const d = Math.hypot(t.x - p.x, t.y - p.y);
+      if (d <= bd && this.lineCheck(p.x, p.y, t.x, t.y) === 'clear') {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** Wróg blisko kogoś na dworze: zarząd z bronią i zdrowiem ponad 40 walczy, reszta ucieka do domu. W środku
+      (pomieszczenia siedziby) jest bezpiecznie. true: pionek dostał nową pracę. */
+  private react(p: Pawn): boolean {
+    const j = p.job;
+    if (j && (j.t === 'fight' || j.t === 'guard' || j.t === 'leave')) return false;
+    if (this.inRoom(this.tileOf(p))) return false;
+    const resident = p.kind === 'resident';
+    const e = this.threat(p, resident ? RESIDENT_FLEE : DEFEND_REACH);
+    if (!e) return false;
+    if (j?.t === 'stay' && j.target === STAY_HOME) return false;
+    if (!resident && p.weapon && this.armed(p).id !== 'piesci' && (p.needs?.health ?? 0) > 40) {
+      const f = this.newJob('fight', e.id, -1, false);
+      f.until = this.st.tick + FIGHT_GIVEUP;
+      this.setJob(p, f, false);
+      p.path = [];
+      p.pi = 0;
+      return true;
+    }
+    if (j?.t === 'go' && !j.order && this.inRoom(j.tile)) return false;
+    const spot = resident ? this.homeSpot(p) : this.shelterSpot(p);
+    if (spot < 0 || !this.go(p, spot)) return false;
+    const run = this.newJob(resident ? 'stay' : 'go', resident ? STAY_HOME : spot, spot, false);
+    run.until = this.st.tick + 600;
+    this.setJob(p, run, false);
+    return true;
+  }
+
+  /** schronienie dla zarządu: kafelek w mieszkaniu zarządu */
+  private shelterSpot(p: Pawn): number {
+    const h = this.house;
+    if (!h) return -1;
+    const tiles: number[] = [];
+    for (const r of h.rooms) if (r.apt === h.home) tiles.push(...this.roomTiles[r.id]);
+    return this.pickSpot(p, tiles);
+  }
+
   /* ---------- szabrownicy ---------- */
 
   /** napad: pojawienie się za siatką, rozstrzygnięcie (bez zarządu albo gdy zarząd milczy), płoszenie, koniec */
@@ -2899,6 +3283,7 @@ export class Sim {
     for (let k = 0; k < r.n; k++) {
       const look = 16 + Math.floor(nextRandom(st.rng) * 4);
       const p = newPawn(st, this.w, 'szabrownik', -1, starts[k] ?? r.from, r.from, look);
+      p.hp = STRANGER_HP;
       p.job = this.newJob('raid', tg.post, waits[k] ?? r.spot, false);
       st.pawns.push(p);
       this.go(p, p.job.tile);
@@ -3074,6 +3459,9 @@ export class Sim {
     const fires = this.fires();
     for (const t of st.things)
       if ((t.kind === 'koza' || t.kind === 'ognisko') && t.fuel > 0) t.fuel = Math.max(0, t.fuel - HEAT_EVERY);
+    // krew, trupy i zwłoki z czasem znikają
+    if (st.things.some((t) => t.until !== undefined && t.until <= st.tick))
+      st.things = st.things.filter((t) => t.until === undefined || t.until > st.tick);
     this.boost = heatStep(st.temps, this.kinds, this.links, fires, tout);
     this.light = roomLight(this.kinds.length, this.links, fires);
     const hours = HEAT_EVERY / TICKS_PER_HOUR;

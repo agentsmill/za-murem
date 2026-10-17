@@ -861,6 +861,7 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   raid: ['', ''],
   mend: ['', ''],
   arm: ['', ''],
+  attack: ['Atakuje.', 'Atakują.'],
 };
 
 function run(m: MenuItem) {
