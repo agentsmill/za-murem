@@ -20,7 +20,7 @@ import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/cl
 import { applyGov, govInput, lawsFrom } from '../../src/sim/gov.ts';
 import { dryTreeOf } from '../../src/sim/house.ts';
 import { commandFor } from '../../src/sim/orders.ts';
-import { type Command, createSim, type Loot, Sim, type SimState, trunkOf } from '../../src/sim/sim.ts';
+import { type Command, createSim, type Laws, type Loot, Sim, type SimState, trunkOf } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import type { World } from '../../src/world/world.ts';
 
@@ -263,4 +263,95 @@ export function playWithGov(
     }
   }
   return { decisions, nights, gov, st, hash: sim.hash() };
+}
+
+export interface LawsRun {
+  /** zapasy jedzenia (surowe i w garnku) po dniach, na koniec */
+  supplies: number;
+  /** średnie najedzenie i nastrój zarządu przez cały przebieg, nastrój mieszkańców */
+  food: number;
+  mood: number;
+  resMood: number;
+  /** ile razy gotowano, ile posiłków zjedzono, czy zapasy skończyły się przed końcem (dzień albo null) */
+  cooks: number;
+  meals: number;
+  emptyDay: number | null;
+}
+
+/** Gra bez zarządu z uchwałami o jedzeniu od startu: samouczek i drzewo na opał, kiedy drewna mało (jak w playWithGov),
+    przez `days` dni od 15:00. Do porównania racji, kotła i wspólnych posiłków. */
+export function playLaws(w: World, seed: number, laws: Partial<Laws>, days: number): LawsRun {
+  const st = createSim(w, seed, { core: 4 });
+  const sim = new Sim(w, st);
+  sim.setLaws(laws);
+  const cores = () => st.pawns.filter((p) => p.kind === 'core' && !p.away);
+  const dry = dryTreeOf(w);
+  if (dry >= 0) {
+    const who = cores()[0];
+    sim.push({ t: 'select', ids: [who.id] });
+    const c = commandFor(st, w, [who.id], trunkOf(w, w.trees[dry]));
+    if (c) sim.push(c);
+  }
+  const skip = new Set<number>();
+  let asked = -1;
+  let cooks = 0;
+  let wasCooking = false;
+  let meals = 0;
+  let food = 0;
+  let mood = 0;
+  let resMood = 0;
+  let n = 0;
+  let rn = 0;
+  let emptyDay: number | null = null;
+  const end = days * TICKS_PER_DAY;
+  while (st.tick < end) {
+    const last = cores().map((p) => p.lastMeal);
+    sim.step();
+    cores().forEach((p, k) => {
+      if (p.lastMeal !== last[k]) meals++;
+    });
+    const cooking = cores().some((p) => p.job?.t === 'cook' && p.job.phase === 1);
+    if (cooking && !wasCooking) cooks++;
+    wasCooking = cooking;
+    if (st.tick % TICKS_PER_SECOND) continue;
+    if (st.tick % (TICKS_PER_SECOND * 10) === 0) {
+      for (const p of cores()) {
+        food += p.needs!.food;
+        mood += p.needs!.mood;
+        n++;
+      }
+      for (const p of st.pawns)
+        if (p.kind === 'resident') {
+          resMood += p.needs!.mood;
+          rn++;
+        }
+      const s = snapshot(st, w).stock;
+      if (emptyDay === null && s.supplies + s.meals === 0) emptyDay = dayOf(st.tick);
+      // drewno na opał za dnia, jak w playWithGov
+      const h = hourOf(st.tick);
+      if (h >= 7 && h < 21) {
+        const chopping = st.pawns.some((p) => p.job?.t === 'chop');
+        if (asked >= 0 && !chopping && !st.felled.includes(asked)) skip.add(asked);
+        asked = -1;
+        if (s.wood < 6 && !chopping) {
+          const k = nextTree(sim, w, skip);
+          const who = cores().find((p) => p.job?.t !== 'sleep') ?? cores()[0];
+          if (k >= 0 && who) {
+            sim.push({ t: 'chop', ids: [who.id], tree: k });
+            asked = k;
+          }
+        }
+      }
+    }
+  }
+  const s = snapshot(st, w).stock;
+  return {
+    supplies: s.supplies + s.meals,
+    food: food / Math.max(1, n),
+    mood: mood / Math.max(1, n),
+    resMood: resMood / Math.max(1, rn),
+    cooks,
+    meals,
+    emptyDay,
+  };
 }

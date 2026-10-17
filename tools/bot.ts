@@ -6,7 +6,8 @@
    wieczoru: gotowanie, kolacja, koniec opału i decyzja bota (spala meblościankę), sen; potem trzy doby.
    Na koniec gra z zarządem (src/gov) dwiema politykami karty nocy, zawsze warta i nigdy warty: decyzje na minutę
    przy ekranie w pierwszych 10 minutach (okna zarządu, zmiany na karcie, polecenia, których wymaga gra) i skutki
-   napadów, a potem noce z dyżurem przy kozie i bez niego (temperatura w kuchni o 6:00, jak długo pali się koza).
+   napadów, a potem noce z dyżurem przy kozie i bez niego (temperatura w kuchni o 6:00, jak długo pali się koza)
+   i trzy doby z uchwałami o jedzeniu (racje, wspólny kocioł) i bez nich: zapasy, najedzenie, nastrój, gotowanie.
    Tłum za siatką jest już tylko do pomiaru wydajności (npm run perf), w grze są mieszkańcy siedziby.
    Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] */
 
@@ -16,11 +17,11 @@ import { nextRandom } from '../src/core/rng.ts';
 import { clockOf, dayOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
 import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
-import { BURNABLE, createSim, Sim, woodFrom } from '../src/sim/sim.ts';
+import { BURNABLE, createSim, type Laws, Sim, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
-import { type Decision, type NightLog, type Policy, playWithGov } from '../tests/unit/gov-play.ts';
+import { type Decision, type NightLog, type Policy, playLaws, playWithGov } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 
 const SEED = Number(process.argv[2]) || 1;
@@ -306,6 +307,48 @@ const warm = mean(k6(withDuty));
 const cold = mean(k6(without));
 if (warm < 18 || cold > warm - 3) {
   console.log('  BŁĄD: z dyżurem rano nie jest wyraźnie cieplej niż bez niego');
+  fail = true;
+}
+
+/* ---------- uchwały o jedzeniu: racje, wspólny kocioł i bez nich ---------- */
+
+const LAW_DAYS = 3;
+console.log(
+  `\nUchwały o jedzeniu, ${govName}: ${GOV_SEEDS.length} ziaren × ${LAW_DAYS} doby bez zarządu, zapasy na start 24 porcje`,
+);
+console.log('  uchwała                 zapasy  najedz.  nastrój  nastrój miesz.  gotowania  posiłki  koniec zapasów');
+const lawRuns: [string, Partial<Laws>][] = [
+  ['bez uchwały', {}],
+  ['racje głodowe', { foodMult: 0.75 }],
+  ['wspólny kocioł', { foodMult: 1.1, sharedMeals: true }],
+  ['racje i kocioł', { foodMult: 0.825, sharedMeals: true }],
+];
+const lawStats = lawRuns.map(([name, laws]) => {
+  const runs = GOV_SEEDS.map((seed) => playLaws(govWorld, seed, laws, LAW_DAYS));
+  const empty = runs.filter((r) => r.emptyDay !== null).map((r) => r.emptyDay as number);
+  const row = {
+    supplies: mean(runs.map((r) => r.supplies)),
+    food: mean(runs.map((r) => r.food)),
+    mood: mean(runs.map((r) => r.mood)),
+    resMood: mean(runs.map((r) => r.resMood)),
+    cooks: mean(runs.map((r) => r.cooks)),
+    meals: mean(runs.map((r) => r.meals)),
+  };
+  console.log(
+    `  ${name.padEnd(22)} ${f1(row.supplies).padStart(6)}  ${f1(row.food).padStart(7)}  ${f1(row.mood).padStart(7)}  ${f1(row.resMood).padStart(14)}  ${f1(row.cooks).padStart(9)}  ${f1(row.meals).padStart(7)}  ${empty.length ? `w ${empty.length} z ${runs.length} (dzień ${Math.min(...empty)}–${Math.max(...empty)})` : 'starczyło'}`,
+  );
+  return row;
+});
+const [none, rations, cauldron] = lawStats;
+if (
+  !(
+    rations.supplies > none.supplies &&
+    rations.mood < none.mood &&
+    cauldron.supplies < none.supplies &&
+    cauldron.mood > none.mood
+  )
+) {
+  console.log('  BŁĄD: racje mają oszczędzać i obniżać nastrój, a kocioł zjadać więcej i podnosić nastrój');
   fail = true;
 }
 if (fail) process.exit(1);
