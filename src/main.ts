@@ -933,6 +933,8 @@ let drag: {
   cy: number;
   button: number;
   type: string;
+  /** Shift przy wciśnięciu: przeciąganie lewym przyciskiem rysuje ramkę zamiast przesuwać mapę */
+  shift: boolean;
   moved: boolean;
 } | null = null;
 let pinch: { d: number; z: number; mx: number; my: number } | null = null;
@@ -974,6 +976,7 @@ stage.addEventListener('pointerdown', (e) => {
     cy: view.cam.y,
     button: e.button,
     type: e.pointerType,
+    shift: e.shiftKey,
     moved: false,
   };
   if (e.pointerType !== 'mouse') {
@@ -1014,7 +1017,8 @@ stage.addEventListener('pointermove', (e) => {
     endPress();
   }
   if (!drag.moved) return;
-  const boxSelect = drag.type === 'mouse' && drag.button === 0;
+  // przeciąganie przesuwa mapę (jak podpowiedź), ramka tylko z Shiftem
+  const boxSelect = drag.type === 'mouse' && drag.button === 0 && drag.shift;
   if (boxSelect) {
     box.hidden = false;
     Object.assign(box.style, {
@@ -1047,8 +1051,8 @@ const endPointer = (e: PointerEvent) => {
   box.hidden = true;
   if (e.type === 'pointercancel') return;
   if (d.moved) {
-    if (d.type === 'mouse' && d.button === 0) {
-      // ramka: zaznacza ludzi z rdzenia
+    if (d.type === 'mouse' && d.button === 0 && d.shift) {
+      // ramka z Shiftem: zaznacza ludzi z rdzenia
       const [x0, y0] = view.toWorld(Math.min(d.x, e.offsetX), Math.min(d.y, e.offsetY));
       const [x1, y1] = view.toWorld(Math.max(d.x, e.offsetX), Math.max(d.y, e.offsetY));
       if (!e.shiftKey) selected.clear();
