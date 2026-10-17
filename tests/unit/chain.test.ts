@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
-import { homeMask, inHomeApt, type RoomKind } from '../../src/sim/house.ts';
+import { type HouseLike, homeMask, inHomeApt, type RoomKind } from '../../src/sim/house.ts';
 import { commandFor, commandsAt, jobText } from '../../src/sim/orders.ts';
 import {
   BURN_TICKS,
@@ -652,7 +652,7 @@ describe('poprawki z przeglądu kodu', () => {
   const out = w.buildings[w.hq].entrances[0].out;
   const covers = (t: Thing, x: number, y: number) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
   const LOOSE = ['drewno', 'jedzenie', 'posilek', 'pien'];
-  const variant = (patch: Partial<MockWorld['interior']>, extra: Partial<MockWorld> = {}) =>
+  const variant = (patch: Partial<HouseLike>, extra: Partial<MockWorld> = {}) =>
     ({ ...w, ...extra, interior: { ...w.interior, ...patch } }) as MockWorld;
 
   it('dwa osobne polecenia ścięcia tego samego drzewa: jedno ścięcie i tyle drewna, ile z drzewa', () => {
@@ -718,7 +718,7 @@ describe('poprawki z przeglądu kodu', () => {
     const q = w.interior.rooms.find((r) => r.apt !== w.interior.home && r.kind === 'pokoj')!;
     let qi = -1;
     for (let i = w.size * w.size - 1; i >= 0; i--) if (w.interior.room[i] === q.id && !w.blocked[i]) qi = i;
-    const other = { kind: 'koza', x: qi % w.size, y: Math.floor(qi / w.size), w: 1, h: 1, rot: 0 };
+    const other = { kind: 'koza' as const, x: qi % w.size, y: Math.floor(qi / w.size), w: 1, h: 1, rot: 0 as const };
     const w2 = variant({ furniture: [other, ...w.interior.furniture] });
     const st = createSim(w2, 3, { core: 4 });
     const kozy = st.things.filter((t) => t.kind === 'koza');
