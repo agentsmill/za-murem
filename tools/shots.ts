@@ -1025,6 +1025,55 @@ const SHOTS: Shot[] = [
       if (lamps < 1) throw new Error('wartownik nie ma światła latarni');
     },
   },
+  // drzewa z bliska jako sprite'y sortowane z pionkami: za drzewem i przed nim, korona nad zarządem, z daleka
+  {
+    name: 'drzewa-przed-za',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await treeStage(page, false);
+      console.log(
+        `  drzewo ${r.tree}: za nim z=${r.behind}, pień z=${r.trunk}, przed nim z=${r.front}, krycie korony ${r.alpha}`,
+      );
+      if (!(r.behind < r.trunk && r.trunk < r.front)) throw new Error('drzewo nie sortuje się z pionkami');
+      if (r.alpha !== 1) throw new Error('korona nad mieszkańcem nie powinna znikać');
+    },
+  },
+  {
+    // ktoś z zarządu za koroną: korona półprzezroczysta
+    name: 'drzewa-zarzad',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await treeStage(page, true);
+      console.log(`  drzewo ${r.tree}: krycie korony nad zarządem ${r.alpha}`);
+      if (r.alpha >= 1) throw new Error('korona zasłania kogoś z zarządu');
+    },
+  },
+  {
+    name: 'drzewa-daleko',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.4`);
+      await waitIdle(page);
+      const n = await page.evaluate(() => (window.zm!.view as unknown as { trees: { count: number } }).trees.count);
+      console.log(`  sprite'ów drzew z daleka: ${n} (drzewa są w kawałkach)`);
+      if (n !== 0) throw new Error(`z daleka drzewa nie powinny być sprite'ami`);
+    },
+  },
+  {
+    name: 'drzewa-blisko',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=lanciego&speed=0&cam=hq,1.5`);
+      await waitIdle(page);
+      const n = await page.evaluate(() => (window.zm!.view as unknown as { trees: { count: number } }).trees.count);
+      console.log(`  sprite'ów drzew z bliska: ${n}`);
+      if (n < 5) throw new Error(`z bliska nie ma drzew jako sprite'ów`);
+    },
+  },
 ];
 
 /** klucze rzeczy narysowanych w warstwie pionków (miejsce i opis sprite'a) */
@@ -1245,6 +1294,56 @@ async function poseCheck(page: Page, want: string[]) {
 function poseAt(x: number): string {
   for (const pose of [...POSES].reverse()) if (x >= frameRect(0, pose, 0, 0)[0]) return pose;
   return '?';
+}
+
+/**
+ * Pionki przy żywym drzewie najbliżej siedziby: jeden metr za pniem (na północ, pod koroną) i pół metra
+ * przed nim; zarzad: za drzewem stoi ktoś z zarządu, inaczej mieszkaniec. Zwraca kolejność rysowania
+ * (zIndex) obu pionków i pnia oraz krycie korony.
+ */
+async function treeStage(page: Page, zarzad: boolean) {
+  await page.evaluate((zarzad) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const w = sim.w;
+    const b = w.buildings[w.hq];
+    const hx = (b.x0 + b.x1) / 2;
+    const hy = (b.y0 + b.y1) / 2;
+    const k = w.trees
+      .map((t, i) => ({ t, i }))
+      .filter(({ t, i }) => t.kind === 0 && t.r >= 1.4 && i !== w.dryTree && !sim.st.felled.includes(i))
+      .sort((a, c) => (a.t.x - hx) ** 2 + (a.t.y - hy) ** 2 - ((c.t.x - hx) ** 2 + (c.t.y - hy) ** 2))[0].i;
+    const t = w.trees[k];
+    const core = sim.st.pawns.filter((p) => p.kind === 'core' && !p.away);
+    const other = sim.st.pawns.filter((p) => p.kind !== 'core' && !p.away);
+    const put = (p: (typeof core)[number], x: number, y: number) =>
+      Object.assign(p, { x, y, path: [], pi: 0, job: null, carry: 0, dir: 0, wait: sim.st.tick + 99999 });
+    put(zarzad ? core[0] : other[0], t.x, t.y - 1);
+    put(zarzad ? core[1] : other[1], t.x + 0.3, t.y + 0.6);
+    // reszta zarządu z dala od drzewa (żeby nie zmieniała krycia korony)
+    for (const p of core.slice(zarzad ? 2 : 0)) put(p, t.x + 6, t.y + 4);
+    (window as unknown as { __tree: number }).__tree = k;
+    zm.setCam(t.x, t.y - 1, 2);
+  }, zarzad);
+  await waitIdle(page);
+  return page.evaluate((zarzad) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const k = (window as unknown as { __tree: number }).__tree;
+    const view = zm.view as unknown as {
+      trees: { sprites: Map<number, { zIndex: number; alpha: number }> };
+      pawnSprites: Map<number, { zIndex: number }>;
+    };
+    const sp = view.trees.sprites.get(k)!;
+    const pick = sim.st.pawns.filter((p) => (zarzad ? p.kind === 'core' : p.kind !== 'core') && !p.away);
+    return {
+      tree: k,
+      behind: view.pawnSprites.get(pick[0].id)!.zIndex,
+      trunk: sp.zIndex,
+      front: view.pawnSprites.get(pick[1].id)!.zIndex,
+      alpha: sp.alpha,
+    };
+  }, zarzad);
 }
 
 const dist = process.argv.includes('--dist');
