@@ -56,9 +56,13 @@ export function mood(st: GovState, dTrust: number, dAnger: number): void {
   if (dAnger) st.anger = round2(clamp(st.anger + dAnger, 0, 100));
 }
 
+/** po decyzji gracza najbliższe wydarzenie najwcześniej po tylu sekundach przy ekranie (bez okien jedno po drugim) */
+export const QUIET = 20;
+
 export function decision(st: GovState, i: GovInput, k: string): void {
   st.decisions.push({ s: i.screen, k });
   if (st.decisions.length > 400) st.decisions.splice(0, st.decisions.length - 400);
+  st.ev.next = Math.max(st.ev.next, i.screen + QUIET);
 }
 
 export function addNeeds(fx: GovEffects, id: string, d: Partial<GovNeeds>): void {

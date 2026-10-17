@@ -800,6 +800,142 @@ const SHOTS: Shot[] = [
           if (bad.length) throw new Error(`telefon: ${bad.join('; ')}`);
         },
       },
+      // po playteście: noc w tempie 6× i powrót tempa rano, cel „drewno na noc”, podpowiedź o zimnej kozie
+      {
+        name: 'm1-noc-szybciej',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base, '&godzina=19.5');
+          await page.click('#speed button[data-s="1"]');
+          await page.evaluate(() => window.zm!.govTick());
+          await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+          await page.evaluate(() => window.zm!.ff(31));
+          await page.click('#sheet [data-act="night-go"]');
+          await page.waitForTimeout(300);
+          const night = await page.evaluate(() => ({
+            speed: window.zm!.speed(),
+            hint: document.getElementById('hint')!.textContent,
+          }));
+          if (night.speed !== 3 || !night.hint?.includes('6×'))
+            throw new Error(`noc: tempo ${night.speed}, podpowiedź „${night.hint}”`);
+          console.log(`  noc: ${night.hint}`);
+          await page.screenshot({ path: path.join(OUT, 'm1-noc-szybciej-6x.png') });
+          await toReport(page);
+          await page.click('#sheet [data-act="report-ok"]');
+          const morning = await page.evaluate(() => window.zm!.speed());
+          if (morning !== 1) throw new Error(`rano tempo ${morning} zamiast 1×`);
+          await page.evaluate(() => {
+            const zm = window.zm!;
+            const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+            zm.setCam(p.x, p.y, 1.1);
+          });
+          await waitIdle(page);
+        },
+      },
+      ...(() => {
+        /** samouczek przez interfejs: zaznaczenie i ścięcie z menu, dalej przewijanie do ciepłej kuchni */
+        const tutorial = async (page: Page, base: string) => {
+          await game(page, base);
+          await select(page);
+          const t = await dryTree(page);
+          await page.mouse.click(t.x, t.y, { button: 'right' });
+          await page.click('#ctx .ctx-item:has-text("Ściąć drzewo")');
+          for (let k = 0; k < 60; k++) {
+            if (await page.evaluate(() => window.zm!.sim!.st.tut.step >= 6)) return;
+            const p = await page.evaluate(() => window.zm!.ff(10));
+            if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+            else if (p) throw new Error(`w samouczku okno: ${p}`);
+          }
+          throw new Error('samouczek się nie skończył');
+        };
+        const goal = (page: Page) => page.evaluate(() => document.querySelector('#goals .goal.now')?.textContent ?? '');
+        return [
+          {
+            name: 'm1-drewno-na-noc',
+            query: '',
+            run: async (page: Page, base: string) => {
+              await tutorial(page, base);
+              await page.waitForTimeout(400);
+              const g = await goal(page);
+              if (!g.startsWith('Przygotujcie drewno na noc.') || !g.includes('Drewna na zapas:'))
+                throw new Error(`po samouczku cel: ${g}`);
+              console.log(`  cel: ${g}`);
+              await page.evaluate(() => {
+                const zm = window.zm!;
+                const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+                zm.setCam(p.x + 6, p.y - 2, 1);
+              });
+              await waitIdle(page);
+              await page.screenshot({ path: path.join(OUT, 'm1-drewno-na-noc-cel.png') });
+              // drugie drzewo z menu, potem zapas na noc i następny cel
+              const t = await page.evaluate(() => {
+                const zm = window.zm!;
+                const w = zm.sim!.w;
+                const st = zm.sim!.st;
+                const h = w.interior;
+                const k = st.things.find(
+                  (q) => q.kind === 'koza' && h.rooms[h.room[q.y * w.size + q.x]]?.apt === h.home,
+                )!;
+                let best = -1;
+                let bd = 1e9;
+                w.trees.forEach((q, i) => {
+                  if (i === w.dryTree || q.kind === 2 || q.r < 1.5 || st.felled.includes(i)) return;
+                  const d = Math.hypot(q.x - k.x, q.y - k.y);
+                  if (d < bd) {
+                    bd = d;
+                    best = i;
+                  }
+                });
+                const q = w.trees[best];
+                zm.setCam(q.x, q.y - 1, 1.3);
+                return [q.x, q.y];
+              });
+              await waitIdle(page);
+              const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y), t);
+              await page.mouse.click(sx, sy, { button: 'right' });
+              await page.click('#ctx .ctx-item:has-text("Ściąć drzewo")');
+              for (let k = 0; k < 30 && !(await goal(page)).startsWith('Przetrwajcie'); k++) {
+                const p = await page.evaluate(() => window.zm!.ff(10));
+                if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+                else if (p) break;
+              }
+              const after = await goal(page);
+              console.log(`  po drugim drzewie: ${after}`);
+              if (!after.startsWith('Przetrwajcie')) throw new Error(`zapas drewna nie zaliczył celu: ${after}`);
+            },
+          },
+          {
+            name: 'm1-koza-zimna',
+            query: '',
+            run: async (page: Page, base: string) => {
+              await tutorial(page, base);
+              // bez drugiego drzewa koza zjada resztę drewna; gra mówi o tym wprost
+              let hint = '';
+              for (let k = 0; k < 50 && !hint.includes('Koza wygasła'); k++) {
+                const p = await page.evaluate(() => window.zm!.ff(10));
+                if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+                else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
+                else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
+                else if (p) throw new Error(`okno ${p} przed zgaśnięciem kozy`);
+                hint = (await page.textContent('#hint')) ?? '';
+              }
+              if (!hint.includes('Koza wygasła')) throw new Error('nie było podpowiedzi o zgasłej kozie');
+              const fire = await page.textContent('#sFire .stat-v');
+              console.log(`  ${await page.textContent('#hTime')}: ${hint} (koza: ${fire})`);
+              if (fire !== 'zimna') throw new Error(`na pasku koza: ${fire}`);
+              await page.evaluate(() => {
+                const zm = window.zm!;
+                const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+                zm.setCam(p.x, p.y, 1.2);
+              });
+              await waitIdle(page);
+              // ostrzeżenie zostaje na ekranie, dopóki koza jest zimna (nie znika pod innymi podpowiedziami)
+              const still = await page.evaluate(() => document.getElementById('hint')!.className);
+              if (!still.includes('warn')) throw new Error('ostrzeżenie o zimnej kozie zniknęło');
+            },
+          },
+        ];
+      })(),
     ];
   })(),
 ];

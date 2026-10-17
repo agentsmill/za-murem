@@ -165,8 +165,11 @@ export function chooseEvent(st: GovState, i: GovInput, k: number): GovEffects {
   return fx;
 }
 
-export function ackReport(st: GovState): void {
+/** raport przeczytany; z odczytem gry także cisza po nim (najbliższe wydarzenie najwcześniej po QUIET s) */
+export function ackReport(st: GovState, i?: GovInput): void {
+  if (!st.report) return;
   st.report = null;
+  if (i) decision(st, i, 'raport');
 }
 
 export const lawOptions = (st: GovState, i: GovInput): LawOption[] => optionsOfLaws(st, i);
