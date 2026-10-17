@@ -227,6 +227,13 @@ function parySasiadow(segmenty: readonly Segment[]): [number, number][] {
 
 const zaokr5 = (v: number): number => Math.round(v * 1e5) / 1e5;
 
+/** Metry na stopień długości (`kx`) i szerokości (`ky`) geograficznej przy szerokości `lat0` (środek mapy `geo.c`).
+    Jedyne miejsce z trygonometrią w module: z niego budynki dostają szerokość i długość geograficzną, a generuj.ts
+    liczy z nich z powrotem środek budynku w metrach mapy. */
+export function metryNaStopien(lat0: number): { kx: number; ky: number } {
+  return { kx: 111320 * Math.cos((lat0 * Math.PI) / 180), ky: 110574 };
+}
+
 /** Klatki bloku: tyle, ile sklejonych segmentów, a pojedynczy obrys ma jedną klatkę na każde 20 m długości. */
 const klatkiBloku = (segmenty: number, dlugosc: number): number =>
   segmenty > 1 ? segmenty : Math.max(1, Math.round(dlugosc / DLUGOSC_KLATKI));
@@ -250,8 +257,7 @@ export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Bu
   const segmenty = segmentyMieszkalne(geo);
   const korzenie = grupy(segmenty.length, parySasiadow(segmenty));
   const [lat0, lon0] = geo.c;
-  const kx = 111320 * Math.cos((lat0 * Math.PI) / 180);
-  const ky = 110574;
+  const { kx, ky } = metryNaStopien(lat0);
 
   // grupy w kolejności mapy: pierwszy członek to najmniejsza pozycja
   const czlonkowie = new Map<number, Segment[]>();
