@@ -10,6 +10,7 @@ import { C, shade, WALLS } from '../src/render/art/palette.ts';
 import { FH, FW, makePeopleAtlas } from '../src/render/art/people.ts';
 import {
   deadTreeSprite,
+  type FenceState,
   FIRE_FRAMES,
   FURNITURE_KINDS,
   type FurnitureKind,
@@ -426,6 +427,131 @@ heading('suche drzewo (liściaste, iglaste, krzak) obok żywego z trees.ts, w te
   y += rowH + 20;
 }
 
+// ---------------------------------------------------------------- podwórko
+
+/** rzecz z kotwicą w punkcie (x, y) arkusza */
+function put(spec: ThingSpec, x: number, y: number) {
+  const sp = thingSprite(spec);
+  p.blit(sp, x - sp.ax, y - sp.ay);
+}
+
+/** siatka na kafelkach: maska z sąsiadów, które są siatką, bramą albo ścianą */
+function fenceMask(cells: Set<string>, x: number, y: number): number {
+  const has = (dx: number, dy: number) => cells.has(`${x + dx},${y + dy}`);
+  return (has(0, -1) ? NB.N : 0) | (has(1, 0) ? NB.E : 0) | (has(0, 1) ? NB.S : 0) | (has(-1, 0) ? NB.W : 0);
+}
+
+heading('siatka: wszystkie maski sąsiadów (słupek na narożnikach, końcach i rozgałęzieniach)');
+{
+  let x = 32;
+  for (let mask = 0; mask < 16; mask++) {
+    grass(p, x, y, T, 2 * T);
+    put({ kind: 'siatka', mask, seed: mask }, x + T / 2, y + 2 * T);
+    p.text(x + 2, y + 2 * T + 4, String(mask), DIM);
+    x += T + 12;
+  }
+  y += 2 * T + 18;
+}
+
+heading('siatka: odcinek cały (ze słupkiem i bez), z dziurą, załatany deskami i drutem; poziomo i pionowo');
+{
+  let x = 32;
+  for (const [state, post] of [
+    ['cala', true],
+    ['cala', false],
+    ['dziura', undefined],
+    ['lata', undefined],
+  ] as [FenceState, boolean | undefined][]) {
+    grass(p, x, y, 3 * T, 2 * T);
+    put({ kind: 'siatka', mask: NB.E, seed: 1 }, x + T / 2, y + 2 * T);
+    put({ kind: 'siatka', mask: NB.E | NB.W, state, post, seed: 2 }, x + 1.5 * T, y + 2 * T);
+    put({ kind: 'siatka', mask: NB.W, seed: 3 }, x + 2.5 * T, y + 2 * T);
+    x += 3 * T + 12;
+  }
+  for (const state of ['cala', 'dziura', 'lata'] as FenceState[]) {
+    grass(p, x, y - 16, T, 3 * T + 16);
+    put({ kind: 'siatka', mask: NB.S, seed: 4 }, x + T / 2, y + T - 16);
+    put({ kind: 'siatka', mask: NB.N | NB.S, state, seed: 5 }, x + T / 2, y + 2 * T - 16);
+    put({ kind: 'siatka', mask: NB.N, seed: 6 }, x + T / 2, y + 3 * T - 16);
+    x += T + 16;
+  }
+  y += 3 * T + 8;
+}
+
+heading('brama dwuskrzydłowa: zamknięta (łańcuch, kłódka, tabliczka) i otwarta, w czterech ustawieniach');
+{
+  let x = 32;
+  let rowH = 0;
+  for (const rot of [0, 1, 2, 3] as Rot[])
+    for (const open of [false, true]) {
+      if (rot === 0 || rot === 2) {
+        grass(p, x, y, 4 * T, 3 * T);
+        const by = y + 2 * T;
+        put({ kind: 'siatka', mask: NB.E, seed: 1 }, x + T / 2, by);
+        put({ kind: 'brama', rot, open, seed: rot }, x + 2 * T, by);
+        put({ kind: 'siatka', mask: NB.W, seed: 2 }, x + 3.5 * T, by);
+        x += 4 * T + 12;
+        rowH = Math.max(rowH, 3 * T);
+      } else {
+        grass(p, x, y, 2 * T, 4 * T + 16);
+        put({ kind: 'siatka', mask: NB.S, seed: 3 }, x + T, y + T + 16);
+        put({ kind: 'brama', rot, open, seed: rot }, x + T, y + 3 * T + 16);
+        put({ kind: 'siatka', mask: NB.N, seed: 4 }, x + T, y + 4 * T + 16);
+        x += 2 * T + 12;
+        rowH = Math.max(rowH, 4 * T + 16);
+      }
+    }
+  y += rowH + 12;
+}
+
+heading('ognisko w kręgu kamieni i w beczce: zimne i trzy klatki ognia');
+{
+  let x = 32;
+  for (const style of ['krag', 'beczka'] as const)
+    for (const fire of [undefined, 0, 1, 2]) {
+      grass(p, x, y, 2 * T, 2 * T);
+      put({ kind: 'ognisko', style, fire, seed: 3 }, x + T, y + 1.75 * T);
+      x += 2 * T + 8;
+    }
+  y += 2 * T + 16;
+}
+
+heading('materiały z odzysku: gruz, deski, złom w trzech wielkościach');
+{
+  let x = 32;
+  for (const kind of ['gruz', 'deski', 'zlom'] as const)
+    for (const size of [1, 2, 3] as const) {
+      grass(p, x, y, 2 * T, 2 * T);
+      put({ kind, size, seed: size + 10 }, x + T, y + 1.75 * T);
+      x += 2 * T + 8;
+    }
+  y += 2 * T + 16;
+}
+
+heading('warta: budka (latarnia zgaszona, zapalona), fotel w czterech ustawieniach, lampa naftowa na skrzynce');
+{
+  let x = 32;
+  for (const rot of [0, 1, 2, 3] as Rot[]) {
+    grass(p, x, y, 2 * T, 3 * T);
+    put({ kind: 'budka', rot, lit: rot === 0, seed: 1 }, x + T, y + 2.5 * T);
+    x += 2 * T + 8;
+  }
+  grass(p, x, y, 2 * T, 3 * T);
+  put({ kind: 'budka', rot: 0, lit: false, seed: 1 }, x + T, y + 2.5 * T);
+  x += 2 * T + 16;
+  for (const rot of [0, 1, 2, 3] as Rot[]) {
+    grass(p, x, y + T, 2 * T, 2 * T);
+    put({ kind: 'fotel', rot, seed: rot + 1 }, x + T, y + 2.5 * T);
+    x += 2 * T + 8;
+  }
+  for (const lit of [false, true]) {
+    grass(p, x, y + T, 2 * T, 2 * T);
+    put({ kind: 'lampa', lit, seed: 1 }, x + T, y + 2.5 * T);
+    x += 2 * T + 8;
+  }
+  y += 3 * T + 16;
+}
+
 // ---------------------------------------------------------------- sceny
 
 const atlas = fromCanvas(makePeopleAtlas());
@@ -555,6 +681,121 @@ const scenesTop = y;
   ];
   for (const t of things.sort((a, b) => a.y - b.y)) p.blit(t.sp, 32 + t.x - t.sp.ax, y + t.y - t.sp.ay);
   p.text(32, y + H * T + 4, 'podwórko: suche drzewo przy trzepaku, pień po ściętym, drewno na ziemi, żywe drzewo', DIM);
+  y += H * T + 20;
+}
+{
+  // pierwsza noc za siatką: podwórko siedziby w dzień (brama otwarta, ognisko zimne) i w nocy
+  const W = 14;
+  const H = 12;
+  const PLAN_TOP = ['kkkkk+ppppp+cc', '##w##w###w#D##'];
+  const fenceCells = new Set<string>();
+  for (let y2 = 2; y2 <= 9; y2++) {
+    fenceCells.add(`0,${y2}`);
+    fenceCells.add(`13,${y2}`);
+  }
+  for (let x2 = 0; x2 < W; x2++) fenceCells.add(`${x2},9`);
+  const gateAt = [6, 7];
+  for (const gx of gateAt) fenceCells.delete(`${gx},9`);
+  const linked = new Set([
+    ...fenceCells,
+    ...gateAt.map((gx) => `${gx},9`),
+    ...Array.from({ length: W }, (_, i) => `${i},1`),
+  ]);
+  const holes: Record<string, FenceState> = { '0,5': 'dziura', '10,9': 'dziura', '3,9': 'lata', '13,6': 'lata' };
+  const yardScene = (x0: number, y0: number, nightTime: boolean) => {
+    // ulica i chodnik pod siatką, podwórko z trawą i wydeptaną ścieżką
+    for (let j = 2; j < H; j++)
+      for (let i = 0; i < W; i++) {
+        const px0 = x0 + i * T;
+        const py0 = y0 + j * T;
+        if (j >= 10) {
+          for (let v = 0; v < T; v++)
+            for (let u = 0; u < T; u++) {
+              const ax = i * T + u;
+              const ay = j * T + v;
+              const r = h2(ax >> 4, ay >> 4, 31);
+              let c: number = r < 0.3 ? C.slab1 : r > 0.85 ? C.slab2 : C.slab0;
+              if ((ax & 15) === 0 || (ay & 15) === 0) c = h2(ax, ay, 33) < 0.25 ? C.grass0 : C.seam;
+              p.rect(px0 + u, py0 + v, 1, 1, c);
+            }
+        } else {
+          grass(p, px0, py0, T, T);
+          if ((i === 6 || i === 7 || (i === 11 && j <= 3)) && j < 9)
+            for (let v = 0; v < T; v++)
+              for (let u = 0; u < T; u++) {
+                // wydeptana ścieżka jak PATH na mapie: ziemia w oczkach 2×2, przy brzegach trawa
+                const ax = i * T + u;
+                const ay = j * T + v;
+                const edge = i === 6 ? u : i === 7 ? T - 1 - u : Math.min(u, T - 1 - u);
+                if (edge < 5 && h2(ax >> 1, ay >> 1, 43) < (5 - edge) * 0.18) continue;
+                const r2 = h2(ax >> 1, ay >> 1, 41);
+                p.rect(px0 + u, py0 + v, 1, 1, r2 < 0.3 ? C.dirt0 : r2 > 0.8 ? C.dirt2 : C.dirt1);
+              }
+        }
+      }
+    drawPlan(p, x0, y0, PLAN_TOP, (_x, _y, r) => nightTime && (r === 'kuchnia' || r === 'pokoj'));
+    const things: Placed[] = [];
+    for (const key of fenceCells) {
+      const [fx, fy] = key.split(',').map(Number);
+      const mask = fenceMask(linked, fx, fy);
+      const state = holes[key] ?? 'cala';
+      const straight = mask === (NB.E | NB.W) || mask === (NB.N | NB.S);
+      things.push(
+        at(
+          {
+            kind: 'siatka',
+            mask,
+            state,
+            post: straight && state === 'cala' ? (fx + fy) % 3 === 0 : undefined,
+            seed: fx * 31 + fy,
+          },
+          fx,
+          fy,
+        ),
+      );
+    }
+    things.push(at({ kind: 'brama', rot: 0, open: !nightTime, seed: 2 }, 6, 9));
+    const dead: Tree = { x: 3.4, y: 6.4, kind: 0, r: 2.4, seed: 4242 };
+    things.push(tree(deadTreeSprite(dead), dead));
+    things.push(at({ kind: 'trzepak', rot: 0, seed: 1 }, 4, 4));
+    things.push(at({ kind: 'ognisko', style: 'krag', fire: nightTime ? 1 : undefined, seed: 2 }, 9, 6));
+    things.push(at({ kind: 'budka', rot: 0, lit: nightTime, seed: 3 }, 5, 8));
+    things.push(at({ kind: 'fotel', rot: 0, seed: 4 }, 8, 8));
+    things.push(at({ kind: 'lampa', lit: nightTime, seed: 5 }, 12, 7));
+    things.push(at({ kind: 'gruz', size: 3, seed: 6 }, 11, 3));
+    things.push(at({ kind: 'gruz', size: 1, seed: 7 }, 12, 4));
+    things.push(at({ kind: 'deski', size: 2, seed: 8 }, 1, 3));
+    things.push(at({ kind: 'zlom', size: 2, seed: 9 }, 2, 3));
+    things.push(at({ kind: 'drewno', size: 2, seed: 10 }, 10, 2));
+    things.push(at({ kind: 'ognisko', style: 'beczka', fire: nightTime ? 2 : undefined, seed: 11 }, 1, 8));
+    if (nightTime) {
+      things.push(person(2, 3, 8.6, 6.9));
+      things.push(person(7, 2, 10.5, 6.8));
+      things.push(person(11, 1, 9.5, 7.7));
+      things.push(person(4, 0, 5.6, 9.45)); // wartownik przed budką, za siatką
+    } else {
+      things.push(person(2, 3, 2.6, 7.2));
+      things.push(person(7, 0, 11.4, 5.2));
+    }
+    for (const t of things.sort((a, b) => a.y - b.y)) p.blit(t.sp, x0 + t.x - t.sp.ax, y0 + t.y - t.sp.ay);
+    if (nightTime)
+      night(x0, y0, W * T, H * T, [
+        [9.5 * T, 6.6 * T, 5.5 * T, 1.25],
+        [5.7 * T, 8.4 * T, 3 * T, 0.75],
+        [12.5 * T, 7.5 * T, 3 * T, 0.75],
+        [1.5 * T, 8.4 * T, 3.5 * T, 0.9],
+        ...[2, 5, 9].map((wx) => [(wx + 0.5) * T, 1.6 * T, 2.2 * T, 0.5] as [number, number, number, number]),
+      ]);
+  };
+  yardScene(32, y, false);
+  yardScene(32 + W * T + 24, y, true);
+  p.text(32, y + H * T + 4, 'pierwsza noc za siatką, dzień: brama otwarta, ognisko zimne, gruz i dziury w siatce', DIM);
+  p.text(
+    32 + W * T + 24,
+    y + H * T + 4,
+    'noc: brama zamknięta, warta przy budce, ognisko i lampy (przybliżenie mapy światła)',
+    DIM,
+  );
   y += H * T + 20;
 }
 const scenesBottom = y;

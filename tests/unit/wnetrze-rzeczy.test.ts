@@ -80,7 +80,44 @@ function allSpecs(): ThingSpec[] {
     }
   for (const r of [1, 2.2, 3.6]) for (const seed of [0, 5]) s.push({ kind: 'pien', r, seed });
   for (const rot of ROTS) for (const seed of [0, 1, 2, 3]) s.push({ kind: 'trzepak', rot, seed });
+  // podwórko: siatka we wszystkich maskach i stanach, brama, ognisko, materiały, warta
+  for (let mask = 0; mask < 16; mask++)
+    for (const state of ['cala', 'dziura', 'lata'] as const)
+      for (const post of [undefined, true, false]) s.push({ kind: 'siatka', mask, state, post, seed: mask * 7 + 1 });
+  for (const rot of ROTS)
+    for (const open of [false, true]) for (const seed of [0, 9]) s.push({ kind: 'brama', rot, open, seed });
+  for (const style of ['krag', 'beczka'] as const)
+    for (const fire of [undefined, 0, 1, 2]) for (const seed of [0, 4]) s.push({ kind: 'ognisko', style, fire, seed });
+  for (const kind of ['gruz', 'deski', 'zlom'] as const)
+    for (const size of [1, 2, 3] as const) for (const seed of [0, 1, 2, 77]) s.push({ kind, size, seed });
+  for (const rot of ROTS)
+    for (const seed of [0, 3]) {
+      s.push({ kind: 'budka', rot, lit: seed > 0, seed });
+      s.push({ kind: 'fotel', rot, seed });
+    }
+  for (const lit of [false, true]) for (const seed of [0, 2]) s.push({ kind: 'lampa', lit, seed });
   return s;
+}
+
+/** klucz rozmiaru: co wolno zmieniać rozmiar sprite'a (rodzaj, ustawienie, wielkość, styl) */
+function sizeKey(s: ThingSpec): string {
+  switch (s.kind) {
+    case 'drewno':
+    case 'jedzenie':
+    case 'gruz':
+    case 'deski':
+    case 'zlom':
+      return `${s.kind} ${s.size}`;
+    case 'pien':
+      return `pien ${s.r}`;
+    case 'siatka':
+    case 'lampa':
+      return s.kind;
+    case 'ognisko':
+      return `ognisko ${s.style}`;
+    default:
+      return `${s.kind} ${s.rot}`;
+  }
 }
 
 function allTrees(): Tree[] {
@@ -194,17 +231,11 @@ describe('rzeczy', () => {
   });
 
   it('rozmiar i kotwica zależą tylko od rodzaju i ustawienia, nie od ziarna ani ognia', () => {
-    const key = (s: ThingSpec) =>
-      s.kind === 'drewno' || s.kind === 'jedzenie'
-        ? `${s.kind} ${s.size}`
-        : s.kind === 'pien'
-          ? `pien ${s.r}`
-          : `${s.kind} ${s.rot}`;
     const seen = new Map<string, string>();
     for (const spec of allSpecs()) {
       const sp = thingSprite(spec);
       const dims = `${sp.w}×${sp.h} @${sp.ax},${sp.ay}`;
-      const k = key(spec);
+      const k = sizeKey(spec);
       if (!seen.has(k)) seen.set(k, dims);
       expect(dims, k).toBe(seen.get(k));
     }
@@ -219,8 +250,9 @@ describe('rzeczy', () => {
       const y0 = sp.ay - fp.h * 32;
       expect(Number.isInteger(x0) && Number.isInteger(y0)).toBe(true);
       expect(x0 >= 0 && y0 >= 0 && x0 + fp.w * 32 <= sp.w && sp.ay <= sp.h, JSON.stringify(spec)).toBe(true);
-      // nic poza obrysem nie wystaje pod podstawę (rura kozy przy ścianie od południa idzie w okno)
-      if (!(spec.kind === 'koza' && spec.rot === 2))
+      // nic poza obrysem nie wystaje pod podstawę (rura kozy przy ścianie od południa idzie w okno,
+      // brama otwierana na południe ma tam skrzydła)
+      if (!((spec.kind === 'koza' || spec.kind === 'brama') && spec.rot === 2))
         expect(lowestOpaqueRow(sp), JSON.stringify(spec)).toBeLessThanOrEqual(sp.ay);
       // przezroczyste piksele są całe zerowe
       expect(sp.px.every((v) => v >>> 24 !== 0 || v === 0)).toBe(true);
@@ -250,6 +282,10 @@ describe('rzeczy', () => {
     expect(footprint({ kind: 'drewno', size: 3 })).toEqual({ w: 1, h: 1 });
     expect(footprint({ kind: 'jedzenie', size: 1 })).toEqual({ w: 1, h: 1 });
     expect(footprint({ kind: 'pien', r: 3 })).toEqual({ w: 1, h: 1 });
+    expect(footprint({ kind: 'brama', rot: 0 })).toEqual({ w: 2, h: 1 });
+    expect(footprint({ kind: 'brama', rot: 3 })).toEqual({ w: 1, h: 2 });
+    for (const kind of ['gruz', 'deski', 'zlom'] as const) expect(footprint({ kind, size: 2 })).toEqual({ w: 1, h: 1 });
+    expect(footprint({ kind: 'siatka', mask: NB.E | NB.W })).toEqual({ w: 1, h: 1 });
   });
 
   it('warianty się różnią: ustawienia, klatki ognia, wielkości stosu', () => {
@@ -259,7 +295,26 @@ describe('rzeczy', () => {
     }
     const fire = new Set([undefined, 0, 1, 2].map((f) => fnv(thingSprite({ kind: 'koza', rot: 0, fire: f }).px)));
     expect(fire.size).toBe(4);
-    for (const kind of ['drewno', 'jedzenie'] as const) {
+    // podwórko: stany naprawdę się różnią
+    const sum = (spec: ThingSpec) => fnv(thingSprite(spec).px);
+    const states = new Set(
+      (['cala', 'dziura', 'lata'] as const).map((state) => sum({ kind: 'siatka', mask: NB.E | NB.W, state })),
+    );
+    expect(states.size).toBe(3);
+    const vStates = new Set(
+      (['cala', 'dziura', 'lata'] as const).map((state) => sum({ kind: 'siatka', mask: NB.N | NB.S, state })),
+    );
+    expect(vStates.size).toBe(3);
+    const masks = new Set(Array.from({ length: 16 }, (_, mask) => sum({ kind: 'siatka', mask })));
+    expect(masks.size).toBe(16);
+    for (const rot of ROTS) expect(sum({ kind: 'brama', rot, open: true })).not.toBe(sum({ kind: 'brama', rot }));
+    for (const style of ['krag', 'beczka'] as const) {
+      const fires = new Set([undefined, 0, 1, 2].map((fire) => sum({ kind: 'ognisko', style, fire })));
+      expect(fires.size, style).toBe(4);
+    }
+    expect(sum({ kind: 'lampa', lit: true })).not.toBe(sum({ kind: 'lampa' }));
+    expect(sum({ kind: 'budka', rot: 0, lit: true })).not.toBe(sum({ kind: 'budka', rot: 0 }));
+    for (const kind of ['drewno', 'jedzenie', 'gruz', 'deski', 'zlom'] as const) {
       const piles = new Set([1, 2, 3].map((size) => fnv(thingSprite({ kind, size: size as 1 | 2 | 3 }).px)));
       expect(piles.size, kind).toBe(3);
     }
