@@ -56,10 +56,13 @@ async function offlineNetwork(page: Page) {
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
 const SHOTS: Shot[] = [
+  // przy zoomie od 0,6 nad siedzibą widać przekrój (wnętrze ze świata) zamiast dachu
   ...DEMOS.flatMap((d) => [
     { name: `${d}-calosc`, query: `demo=${d}&speed=0&cam=all` },
     { name: `${d}-siedziba`, query: `demo=${d}&speed=0&cam=hq,1` },
     { name: `${d}-blisko`, query: `demo=${d}&speed=0&cam=hq,2` },
+    { name: `${d}-przekroj`, query: `demo=${d}&speed=0&cam=hq,0.75` },
+    { name: `${d}-przekroj-noc`, query: `demo=${d}&speed=0&cam=hq,1.3&godzina=22&swiatla=test` },
   ]),
   { name: 'przymorze-noc', query: 'demo=przymorze&speed=0&cam=hq,1&hour=22' },
   // noc z trzema światłami przy siedzibie (ognisko, okno z kozą, latarka warty) i zmierzch
@@ -68,10 +71,8 @@ const SHOTS: Shot[] = [
   { name: 'noc-swiatla-telefon', query: 'demo=przymorze&speed=0&cam=hq,1&godzina=22&swiatla=test', w: 390, h: 844 },
   { name: 'zmierzch', query: 'demo=przymorze&speed=0&cam=hq,1&godzina=18.5&swiatla=test' },
   // przekrój siedziby z atrapą wnętrza: z bliska wnętrze zamiast dachu, w nocy z kozą, przy 0,5 dach
-  { name: 'przekroj', query: 'demo=przymorze&speed=0&cam=hq,0.75&wnetrze=atrapa' },
-  { name: 'przekroj-blisko', query: 'demo=przymorze&speed=0&cam=hq,1.3&wnetrze=atrapa' },
-  { name: 'przekroj-noc', query: 'demo=przymorze&speed=0&cam=hq,1.3&wnetrze=atrapa&godzina=22&swiatla=test' },
-  { name: 'przekroj-dach', query: 'demo=przymorze&speed=0&cam=hq,0.5&wnetrze=atrapa' },
+  { name: 'przekroj-dach', query: 'demo=przymorze&speed=0&cam=hq,0.5' },
+  { name: 'przekroj-wylaczony', query: 'demo=przymorze&speed=0&cam=hq,1&przekroj=0' },
   { name: 'przymorze-telefon', query: 'demo=przymorze&speed=0&cam=hq,1', w: 390, h: 844 },
   {
     name: 'start',
@@ -202,7 +203,7 @@ const SHOTS: Shot[] = [
         await page.addStyleTag({ content: '#fps { visibility: hidden !important; }' });
         return { painting, img: decodePng(await page.screenshot()) };
       };
-      for (const cam of ['hq,1', 'hq,0.6', 'all', 'hq,1&wnetrze=atrapa']) {
+      for (const cam of ['hq,1', 'hq,0.6', 'all', 'hq,1.5', 'hq,1&przekroj=0']) {
         const a = await snap(`cam=${cam}`);
         const b = await snap(`cam=${cam}&worker=0`);
         if (!a.painting.startsWith('worker')) throw new Error(`kawałki rysuje ${a.painting} zamiast workerów`);

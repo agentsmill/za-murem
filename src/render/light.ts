@@ -1,10 +1,11 @@
-/* Noc i światło: mapa światła mnożona przez obraz świata. Ciemność z godziny gry (łagodny
-   zmierzch i świt), na niej źródła światła ze zgaśnięciem ku brzegowi i migotaniem. Mapa ma
-   niską rozdzielczość w siatce przypiętej do świata (komórka od 4 do 128 px grafiki zależnie
-   od zoomu), skalowana bez wygładzania. Jasność światła idzie w kilku pasach (pełny środek,
-   potem równe stopnie), a tylko wąski szew między pasami ma dithering 4×4; odcień zostaje
-   cały, bo pasy liczą się z jasności, nie z każdego kanału osobno. Siatka jest przypięta do
-   świata, więc światło nie pływa przy przesuwaniu mapy. Czyste funkcje bez DOM. */
+/* Noc i światło: mapa światła nad obrazem świata. Ciemność z godziny gry (łagodny zmierzch
+   i świt) daje kolor otoczenia, a źródła światła dwie rzeczy: mnożnik, który rozjaśnia i barwi
+   obraz w kolorze światła (trawa w świetle ogniska robi się ciepła, a nie zielona), i nocną
+   poświatę dodawaną na wierzch (ogień świeci, a nie tylko odsłania). Jasność łagodnie gaśnie ku
+   brzegowi i idzie w pasach; zewnętrzny pas jest cały w ditheringu 4×4, więc brzeg jest miękki,
+   a wnętrze pasów równe. Mapa ma niską rozdzielczość (komórka około 4 px ekranu) w siatce
+   przypiętej do świata i skaluje się bez wygładzania, więc wygląda pikselowo i nie pływa przy
+   przesuwaniu mapy. Czyste funkcje bez DOM. */
 
 import { h2 } from './art/hash.ts';
 
@@ -48,9 +49,9 @@ export function ambientOf(d: number): [number, number, number] {
   return [DUSK[0] + (NIGHT[0] - DUSK[0]) * t, DUSK[1] + (NIGHT[1] - DUSK[1]) * t, DUSK[2] + (NIGHT[2] - DUSK[2]) * t];
 }
 
-/** bok komórki mapy światła w pikselach grafiki: najbliższa potęga dwójki do 6 px ekranu, od 4 do 128 */
+/** bok komórki mapy światła w pikselach grafiki: najbliższa potęga dwójki do 4 px ekranu, od 4 do 128 */
 export function lightCell(zoom: number): number {
-  const want = 6 / Math.max(zoom, 1e-3);
+  const want = 4 / Math.max(zoom, 1e-3);
   return Math.min(128, Math.max(4, 2 ** Math.round(Math.log2(want))));
 }
 
@@ -59,11 +60,13 @@ const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => 
 const bayer = (ix: number, iy: number) => BAYER[((iy & 3) << 2) | (ix & 3)];
 
 /** ile pasów jasności ma światło */
-export const LIGHT_LEVELS = 4;
-/** szerokość szwu z ditheringiem między pasami (część pasa) */
-const SEAM = 0.3;
-/** część promienia, na której światło świeci pełną siłą */
-const CORE = 0.4;
+export const LIGHT_LEVELS = 6;
+/** szerokość szwu z ditheringiem między wewnętrznymi pasami (część pasa) */
+const SEAM = 0.35;
+/** jak mocno światło barwi obraz przy mnożeniu: 0 tylko rozjaśnia, 1 pełny kolor światła */
+const TINT = 1;
+/** ile koloru światła dochodzi nocą na wierzch (poświata) */
+const GLOW = 0.2;
 
 /** mnożnik migotania światła numer k w chwili t (sekundy): 1 − flicker·szum, szum płynny ~8 razy na s */
 export function flickerOf(l: Light, k: number, t: number): number {
@@ -85,13 +88,23 @@ export interface LightGrid {
   cell: number;
 }
 
+/** bajty RGBA (wiersz za wierszem, szerokość wiersza stride komórek) */
+const pack = (r: number, g: number, b: number) =>
+  ((255 << 24) |
+    (Math.round(Math.min(1, b) * 255) << 16) |
+    (Math.round(Math.min(1, g) * 255) << 8) |
+    Math.round(Math.min(1, r) * 255)) >>>
+  0;
+
 /**
- * Liczy mapę światła do out (RGBA, bajty, wiersz po wierszu, szerokość wiersza stride komórek):
- * otoczenie z ciemności d plus suma świateł w pasach z ditheringiem, przycięta do bieli.
- * acc to bufor roboczy (co najmniej 3·w·h liczb). px to pikseli grafiki na metr.
+ * Liczy mapę światła: mul (mnożnik: otoczenie plus światła w pasach) i glow (nocna poświata do
+ * dodania, czarna poza światłem) jako RGBA w buforach o szerokości wiersza stride komórek.
+ * acc to bufor roboczy (co najmniej 6·w·h liczb). px to pikseli grafiki na metr. inside mówi, czy
+ * kafelek (x, y) leży we wnętrzu: światła inside (koza) świecą tylko tam, nie przez ściany na podwórko.
  */
 export function renderLightMap(
-  out: Uint8Array,
+  mul: Uint8Array,
+  glow: Uint8Array | null,
   stride: number,
   acc: Float32Array,
   g: LightGrid,
@@ -99,64 +112,92 @@ export function renderLightMap(
   lights: readonly Light[],
   time: number,
   px = 32,
+  inside?: (x: number, y: number) => boolean,
 ): void {
   const { gx, gy, w, h, cell } = g;
-  acc.fill(0, 0, w * h * 3);
+  const [ar, ag, ab] = ambientOf(d);
+  const mul32 = new Uint32Array(mul.buffer, mul.byteOffset, mul.byteLength >> 2);
+  const glow32 = glow ? new Uint32Array(glow.buffer, glow.byteOffset, glow.byteLength >> 2) : null;
+  // poza światłem: równe otoczenie i brak poświaty (szybkie wypełnienie całych wierszy)
+  const base = pack(ar, ag, ab);
+  for (let j = 0; j < h; j++) {
+    mul32.fill(base, j * stride, j * stride + w);
+    glow32?.fill(0, j * stride, j * stride + w);
+  }
   const m = cell / px; // metrów na komórkę
-  for (let k = 0; k < lights.length; k++) {
-    const l = lights[k];
-    const amp = l.strength * flickerOf(l, k, time);
-    if (amp <= 0 || l.r <= 0) continue;
-    const lr = ((l.color >> 16) & 255) / 255;
-    const lg = ((l.color >> 8) & 255) / 255;
-    const lb = (l.color & 255) / 255;
-    // komórki pod kołem światła (środek komórki w metrach: (gx + i + 0,5)·m)
+  // prostokąt komórek pod wszystkimi światłami
+  let bi0 = w;
+  let bi1 = -1;
+  let bj0 = h;
+  let bj1 = -1;
+  const boxes: [number, number, number, number][] = [];
+  for (const l of lights) {
     const i0 = Math.max(0, Math.floor((l.x - l.r) / m - gx));
     const i1 = Math.min(w - 1, Math.floor((l.x + l.r) / m - gx));
     const j0 = Math.max(0, Math.floor((l.y - l.r) / m - gy));
     const j1 = Math.min(h - 1, Math.floor((l.y + l.r) / m - gy));
+    boxes.push([i0, i1, j0, j1]);
+    if (i0 > i1 || j0 > j1 || l.r <= 0) continue;
+    bi0 = Math.min(bi0, i0);
+    bi1 = Math.max(bi1, i1);
+    bj0 = Math.min(bj0, j0);
+    bj1 = Math.max(bj1, j1);
+  }
+  if (bi1 < bi0) return;
+  const bw = bi1 - bi0 + 1;
+  acc.fill(0, 0, bw * (bj1 - bj0 + 1) * 6);
+  for (let k = 0; k < lights.length; k++) {
+    const l = lights[k];
+    const amp = l.strength * flickerOf(l, k, time);
+    const [i0, i1, j0, j1] = boxes[k];
+    if (amp <= 0 || l.r <= 0 || i0 > i1 || j0 > j1) continue;
+    const cr = ((l.color >> 16) & 255) / 255;
+    const cg = ((l.color >> 8) & 255) / 255;
+    const cb = (l.color & 255) / 255;
+    // przy mnożeniu kolor światła rozjaśniony o (1 − TINT), żeby obraz nie tonął w barwie
+    const mr = 1 + (cr - 1) * TINT;
+    const mg = 1 + (cg - 1) * TINT;
+    const mb = 1 + (cb - 1) * TINT;
     const inv = 1 / l.r;
+    const clip = l.inside && inside ? inside : null;
     for (let j = j0; j <= j1; j++) {
-      const dy = (gy + j + 0.5) * m - l.y;
+      const cy = (gy + j + 0.5) * m;
+      const dy = cy - l.y;
       for (let i = i0; i <= i1; i++) {
-        const dx = (gx + i + 0.5) * m - l.x;
+        const cx = (gx + i + 0.5) * m;
+        const dx = cx - l.x;
         const q = 1 - Math.sqrt(dx * dx + dy * dy) * inv;
         if (q <= 0) continue;
-        // pełny środek, potem liniowo do zera na brzegu
-        const v = amp * Math.min(1, q / (1 - CORE));
-        const o = (j * w + i) * 3;
-        acc[o] += lr * v;
-        acc[o + 1] += lg * v;
-        acc[o + 2] += lb * v;
+        if (clip && !clip(Math.floor(cx), Math.floor(cy))) continue;
+        // gaśnie łagodnie, ale z wąskim brzegiem: jasny środek, krótki kropkowany skraj
+        const v = amp * smooth(q) ** 0.7;
+        const o = ((j - bj0) * bw + i - bi0) * 6;
+        acc[o] += mr * v;
+        acc[o + 1] += mg * v;
+        acc[o + 2] += mb * v;
+        acc[o + 3] += cr * v;
+        acc[o + 4] += cg * v;
+        acc[o + 5] += cb * v;
       }
     }
   }
-  const [ar, ag, ab] = ambientOf(d);
   const N = LIGHT_LEVELS;
-  for (let j = 0; j < h; j++) {
-    let o = j * stride * 4;
-    let a = j * w * 3;
-    for (let i = 0; i < w; i++) {
-      // pasy tylko w świetle (równa ciemność zostaje równa) i liczone z jasności, żeby nie zmieniać odcienia
-      let r = ar;
-      let gg = ag;
-      let b = ab;
-      const top = Math.max(acc[a], acc[a + 1], acc[a + 2]);
-      if (top > 0) {
-        const t = 0.5 + (bayer(gx + i, gy + j) - 0.5) * SEAM;
-        const k = Math.floor(top * N + t) / N / top;
-        r += acc[a] * k;
-        gg += acc[a + 1] * k;
-        b += acc[a + 2] * k;
-      }
-      out[o] = r >= 1 ? 255 : Math.round(r * 255);
-      out[o + 1] = gg >= 1 ? 255 : Math.round(gg * 255);
-      out[o + 2] = b >= 1 ? 255 : Math.round(b * 255);
-      out[o + 3] = 255;
-      o += 4;
-      a += 3;
+  const gk = GLOW * d;
+  for (let j = bj0; j <= bj1; j++)
+    for (let i = bi0; i <= bi1; i++) {
+      const o = ((j - bj0) * bw + i - bi0) * 6;
+      const top = Math.max(acc[o], acc[o + 1], acc[o + 2]);
+      if (top <= 0) continue;
+      // pasy z jasności (bez zmiany odcienia); zewnętrzny pas cały w ditheringu, wewnętrzne tylko w szwie
+      const b = bayer(gx + i, gy + j);
+      const t = top * N < 1 ? b : 0.5 + (b - 0.5) * SEAM;
+      const kq = Math.floor(top * N + t) / N / top;
+      if (kq === 0) continue;
+      const c = j * stride + i;
+      // światło zamiast otoczenia, a nie na nim: granat nocy nie wraca trawie zieleni w blasku ognia
+      mul32[c] = pack(Math.max(ar, acc[o] * kq), Math.max(ag, acc[o + 1] * kq), Math.max(ab, acc[o + 2] * kq));
+      if (glow32 && gk > 0) glow32[c] = pack(acc[o + 3] * kq * gk, acc[o + 4] * kq * gk, acc[o + 5] * kq * gk);
     }
-  }
 }
 
 /** siatka komórek pokrywająca prostokąt świata [x0, x1]×[y0, y1] (piksele grafiki) z zapasem jednej komórki */

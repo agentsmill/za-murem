@@ -10,6 +10,7 @@ import { Application, BufferImageSource, Container, Graphics, Rectangle, Sprite,
 import { minutesAt } from '../sim/clock.ts';
 import type { Pawn, SimState } from '../sim/sim.ts';
 import { FH, FRAMES, FW, LOOKS, makePeopleAtlas } from './art/people.ts';
+import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec, thingSprite } from './art/rzeczy.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
 import {
   type ChunkPainter,
@@ -29,7 +30,7 @@ import {
 } from './chunks.ts';
 import { darknessAt, type Light } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
-import { flatThingSprite, IN, type PixelSprite, type ThingLike } from './section.ts';
+import { burning, IN, specOf, type ThingLike } from './section.ts';
 
 const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 /** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna albo ImageBitmap);
@@ -104,8 +105,10 @@ export class GameView {
   private cutOn = false;
   /** kawałki nad budynkiem z wnętrzem */
   private cutChunks = new Set<number>();
-  private thingSprites = new Map<string, Sprite>();
-  private thingTex = new Map<string, { tex: Texture; sp: PixelSprite }>();
+  /** rzeczy w warstwie pionków: sprite, czy stoi we wnętrzu (widać ją tylko w przekroju), czy się pali */
+  private things = new Map<string, { sprite: Sprite; thing: ThingLike; inside: boolean; fire: boolean }>();
+  /** tekstury rzeczy po opisie sprite'a (rozmiar i kotwica zależą tylko od rodzaju i ustawienia) */
+  private thingArt = new Map<string, { tex: Texture; sp: ArtSprite }>();
 
   /** workers: false wymusza rysowanie kawałków w głównym wątku (adres ?worker=0) */
   async init(host: HTMLElement, opts: { workers?: boolean } = {}): Promise<void> {
@@ -120,7 +123,7 @@ export class GameView {
     });
     host.appendChild(this.app.canvas);
     this.app.canvas.classList.add('game-canvas');
-    this.root.addChild(this.terrain, this.marks, this.actors, this.light.sprite);
+    this.root.addChild(this.terrain, this.marks, this.actors, this.light.sprite, this.light.glowSprite);
     this.actors.sortableChildren = true;
     this.app.stage.addChild(this.root);
     const atlas = Texture.from(makePeopleAtlas());
@@ -207,38 +210,50 @@ export class GameView {
   }
 
   /**
-   * Meble i inne rzeczy przekroju (np. interior.furniture, potem st.things z symulacji) jako
-   * sprite'y w warstwie pionków, sortowane po y dolnej krawędzi. Wołać, gdy lista się zmieni;
-   * rzeczy porównuje po rodzaju, miejscu i ustawieniu, więc tanio też co klatkę.
+   * Rzeczy (meble z interior.furniture, trzepak z world.props, potem st.things z symulacji) jako
+   * sprite'y z grafiki zastępczej (thingSprite) w warstwie pionków, sortowane po y dolnej krawędzi.
+   * Meble we wnętrzu widać tylko w przekroju, rzeczy na podwórku zawsze; koza i ognisko z ogniem
+   * mają animację. Wołać, gdy lista się zmieni; rzeczy porównuje po miejscu i opisie sprite'a,
+   * więc tanio też co klatkę.
    */
   setThings(list: readonly ThingLike[]): void {
     const seen = new Set<string>();
     for (const t of list) {
-      const key = `${t.kind}:${t.x}:${t.y}:${t.w}:${t.h}:${t.rot}`;
+      const spec = specOf(t, 0);
+      if (!spec) continue;
+      const key = `${t.x}:${t.y}:${JSON.stringify(spec)}`;
       seen.add(key);
-      if (this.thingSprites.has(key)) continue;
-      const tk = `${t.kind}:${t.w}:${t.h}:${t.rot}`;
-      let art = this.thingTex.get(tk);
-      if (!art) {
-        // tu podpiąć thingSprite z grafiki zastępczej: ten sam format { w, h, ax, ay, px }
-        const sp = flatThingSprite(t);
-        art = { tex: pixelTexture(sp), sp };
-        this.thingTex.set(tk, art);
-      }
+      if (this.things.has(key)) continue;
+      const art = this.artOf(spec);
       const sprite = new Sprite(art.tex);
       sprite.anchor.set(art.sp.ax / art.sp.w, art.sp.ay / art.sp.h);
       sprite.position.set((t.x + t.w / 2) * TILE, (t.y + t.h) * TILE);
       sprite.zIndex = t.y + t.h;
-      sprite.visible = this.cutOn;
+      const inside = this.underRoof(t.x + 0.5, t.y + t.h - 0.5);
+      sprite.visible = !inside || this.cutOn;
       this.actors.addChild(sprite);
-      this.thingSprites.set(key, sprite);
+      this.things.set(key, { sprite, thing: t, inside, fire: burning(t) });
     }
-    for (const [key, sprite] of this.thingSprites)
+    for (const [key, e] of this.things)
       if (!seen.has(key)) {
-        sprite.destroy();
-        this.thingSprites.delete(key);
+        e.sprite.destroy();
+        this.things.delete(key);
       }
   }
+
+  private artOf(spec: ThingSpec): { tex: Texture; sp: ArtSprite } {
+    const key = JSON.stringify(spec);
+    let art = this.thingArt.get(key);
+    if (!art) {
+      const sp = thingSprite(spec);
+      art = { tex: pixelTexture(sp), sp };
+      this.thingArt.set(key, art);
+    }
+    return art;
+  }
+
+  /** czy kafelek leży we wnętrzu przekroju (dla świateł inside) */
+  private insideFn = (x: number, y: number) => this.underRoof(x + 0.5, y + 0.5);
 
   /** czy punkt (metry) leży we wnętrzu przekroju, czyli pod dachem, gdy przekroju nie widać */
   private underRoof(x: number, y: number): boolean {
@@ -400,7 +415,12 @@ export class GameView {
     this.root.position.set(Math.round(this.width / 2 - this.cam.x * z), Math.round(this.height / 2 - this.cam.y * z));
     this.cutOn = this.scene.section !== null && z >= (this.cutOn ? CUT_OFF : CUT_ON);
     this.updateChunks(this.frameNo < 3 ? 400 : 10);
-    for (const sprite of this.thingSprites.values()) sprite.visible = this.cutOn;
+    // rzeczy: meble tylko w przekroju, ogień w kozie i ognisku co 150 ms następna klatka
+    const flame = Math.floor(performance.now() / 150) % FIRE_FRAMES;
+    for (const e of this.things.values()) {
+      e.sprite.visible = !e.inside || this.cutOn;
+      if (e.fire && e.sprite.visible) e.sprite.texture = this.artOf(specOf(e.thing, flame)!).tex;
+    }
     // pionki
     const seen = new Set<number>();
     this.marks.clear();
@@ -436,7 +456,7 @@ export class GameView {
     const [x1, y1] = this.toWorld(this.width, this.height);
     // światła we wnętrzu (koza) świecą tylko w przekroju; pod dachem robią to okna
     const lights = this.cutOn ? this.lights : this.lights.filter((l) => !l.inside);
-    this.light.update(x0, y0, x1, y1, z, this.darkness, lights, performance.now() / 1000);
+    this.light.update(x0, y0, x1, y1, z, this.darkness, lights, performance.now() / 1000, this.insideFn);
   }
 
   private markPawn(p: Pawn, x: number, y: number): void {
@@ -499,7 +519,7 @@ function dropTex(t: Texture): void {
 }
 
 /** tekstura z bufora pikseli rgba() (0 przezroczysty), bez wygładzania */
-function pixelTexture(sp: PixelSprite): Texture {
+function pixelTexture(sp: ArtSprite): Texture {
   const source = new BufferImageSource({
     resource: new Uint8Array(sp.px.buffer, sp.px.byteOffset, sp.px.byteLength),
     width: sp.w,

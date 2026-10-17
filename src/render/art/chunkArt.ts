@@ -3,12 +3,14 @@
    32 px na kafelek (z bliska) i 8 px na kafelek (z daleka). */
 
 import { T } from '../../world/world.ts';
-import { describeTile, flatInteriorColor, IN, type InteriorTileDesc } from '../section.ts';
-import { type AnyCanvas, type Ctx2D, ctx2d } from './canvas.ts';
+import { describeTile, IN } from '../section.ts';
+import { type AnyCanvas, type Ctx2D, ctx2d, newCanvas } from './canvas.ts';
 import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
+import { deadTreeSprite } from './rzeczy.ts';
 import { type BStyle, CHUNK, type ChunkScene, SUB, TILE } from './scene.ts';
 import { treeSprite } from './trees.ts';
+import { type InteriorTile, interiorColor } from './wnetrze.ts';
 
 const PAVED = new Set<number>([T.ROAD, T.PARKING]);
 
@@ -387,8 +389,8 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       const bid = w.bid[i];
       const st = bid >= 0 ? sc.styles[bid] : null;
       const door = bid >= 0 && sc.doors.get(i) === 'S';
-      // przekrój: opis kafelka wnętrza raz na kafelek; tu podpiąć interiorColor z grafiki zastępczej
-      const inner: InteriorTileDesc | null = sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, facade) : null;
+      // przekrój: opis kafelka wnętrza raz na kafelek, piksele z grafiki zastępczej (wnetrze.ts)
+      const inner: InteriorTile | null = sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, facade) : null;
       for (let oy = 0; oy < s; oy++) {
         const py = oy * step + off;
         const ay = y * TILE + py;
@@ -397,7 +399,7 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
           const px = ox * step + off;
           const ax = x * TILE + px;
           let c: number;
-          if (inner) c = flatInteriorColor(inner, x, y, px, py);
+          if (inner) c = interiorColor(inner, x, y, px, py, sec!.seed);
           else if (st) {
             const fy = sc.south[i] * TILE + (31 - py);
             const fh = Math.min(st.facade, sc.run[i] * TILE - 8);
@@ -488,23 +490,55 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
     }
   }
   // cienie drzew: miękkie elipsy w jednej ścieżce, żeby nakładające się nie ciemniały podwójnie;
-  // ścięte drzewa (treeGone) już się nie rysują
-  const trees = sc.treesBy[cy * sc.chunks + cx].filter((k) => !sc.treeGone[k]).map((k) => w.trees[k]);
-  if (trees.length) {
+  // ścięte drzewa (treeGone) już się nie rysują, suche (bez liści) ma cień lżejszy i mniejszy
+  const list = sc.treesBy[cy * sc.chunks + cx].filter((k) => !sc.treeGone[k]);
+  const shade = (ks: number[], k: number, fill: string) => {
+    if (!ks.length) return;
     ctx.beginPath();
-    for (const t of trees) {
+    for (const ti of ks) {
+      const t = w.trees[ti];
       const sx = (t.x + t.r * 0.45) * TILE;
       const sy = (t.y - 1.2 - t.r * 0.55) * TILE;
-      ctx.moveTo(sx + t.r * TILE * 0.95, sy);
-      ctx.ellipse(sx, sy, t.r * TILE * 0.95, t.r * TILE * 0.76, 0, 0, Math.PI * 2);
+      ctx.moveTo(sx + t.r * TILE * 0.95 * k, sy);
+      ctx.ellipse(sx, sy, t.r * TILE * 0.95 * k, t.r * TILE * 0.76 * k, 0, 0, Math.PI * 2);
     }
-    ctx.fillStyle = 'rgba(16,22,34,0.30)';
+    ctx.fillStyle = fill;
     ctx.fill();
-  }
+  };
+  shade(
+    list.filter((k) => k !== sc.dryTree),
+    1,
+    'rgba(16,22,34,0.30)',
+  );
+  shade(
+    list.filter((k) => k === sc.dryTree),
+    0.8,
+    'rgba(16,22,34,0.13)',
+  );
   // drzewa od tyłu do przodu
-  for (const t of trees) {
-    const sp = treeSprite(t);
+  for (const k of list) {
+    const t = w.trees[k];
+    const sp = k === sc.dryTree ? deadTree(t) : treeSprite(t);
     ctx.drawImage(sp.canvas, t.x * TILE - sp.ax, t.y * TILE - sp.ay);
   }
   ctx.restore();
+}
+
+const deadCache = new Map<string, { canvas: AnyCanvas; ax: number; ay: number }>();
+
+/** suche drzewo z grafiki zastępczej (rzeczy.ts) jako płótno, w tej samej ramce co żywe */
+function deadTree(t: { x: number; y: number; r: number; kind: 0 | 1 | 2; seed: number }) {
+  const key = `${t.kind}:${t.r}:${t.seed}`;
+  let hit = deadCache.get(key);
+  if (!hit) {
+    const sp = deadTreeSprite(t);
+    const canvas = newCanvas(sp.w, sp.h);
+    const ctx = ctx2d(canvas);
+    const img = ctx.createImageData(sp.w, sp.h);
+    new Uint32Array(img.data.buffer).set(sp.px);
+    ctx.putImageData(img, 0, 0);
+    hit = { canvas, ax: sp.ax, ay: sp.ay };
+    deadCache.set(key, hit);
+  }
+  return hit;
 }
