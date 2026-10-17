@@ -41,6 +41,9 @@ describe('odczyt stanu dla modułu zarządu', () => {
       boards: heap('deski'),
       parts: 0,
       meds: 0,
+      // broń zwykłego trybu: nóż i łom w magazynie (siekiera u pierwszej osoby), bez amunicji
+      arms: ['noz', 'lom'],
+      ammo: { naboje: 0, loftki: 0, belty: 0 },
     });
     expect(s.burned).toEqual([]);
   });

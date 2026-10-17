@@ -7,6 +7,7 @@ import { PROFS } from '../content/data.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
+import { type AmmoKey, noAmmo, START_KIT, type WeaponId } from './bron.ts';
 import {
   daylight,
   hourOf,
@@ -46,6 +47,7 @@ import {
 } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
 import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP } from './perimeter.ts';
+import { type GameMode, modeOf } from './tryb.ts';
 import { TUT_STEPS, type Tutorial, type TutStep, tutAdvance, WARM_ENOUGH } from './tutorial.ts';
 
 /** kafelków na tick: 4 kafelki na sekundę przy 1× */
@@ -237,6 +239,12 @@ export interface Pawn {
   /** posiłki od 6:00 (racje) i tick ostatniego posiłku (wspólny posiłek raz na porę) */
   ate: number;
   lastMeal: number;
+  /** broń w rękach (zarząd); brak albo null: gołe ręce */
+  weapon?: WeaponId | null;
+  /** życie pionków bez potrzeb (szabrownicy, szwendacze); ludzie z potrzebami mają zdrowie */
+  hp?: number;
+  /** tick, od którego może znowu uderzyć albo strzelić */
+  cd?: number;
 }
 
 /** Rzecz na mapie: meble z wnętrza (kopiowane przy starcie, żeby dało się je kiedyś przestawić albo spalić),
@@ -297,7 +305,9 @@ export type Command =
   /** napad bez zarządu (testy, bot, podgląd): tick, o którym są przy siatce, i posterunek 'brama' / 'd<id>' */
   | { t: 'raid'; ids: number[]; at: number; post: string }
   /** łaty z zarządu: n największych otwartych dziur od razu załatanych (materiał policzył zarząd) */
-  | { t: 'mend'; ids: number[]; n: number };
+  | { t: 'mend'; ids: number[]; n: number }
+  /** broń z magazynu do rąk (stara wraca do magazynu); null: odłożyć broń */
+  | { t: 'arm'; ids: number[]; weapon: WeaponId | null };
 
 /** łup w sztukach: drewno, porcje zapasów, złom */
 export interface Loot {
@@ -373,8 +383,10 @@ export interface SimState {
   laws: Laws;
   /** napad tej nocy albo ostatni (phase 3), null: nie było */
   raid: Raid | null;
-  /** zapasy bez rzeczy na mapie (z zarządu): części i leki */
-  store: { parts: number; meds: number };
+  /** zapasy bez rzeczy na mapie (z zarządu): części i leki; broń w magazynie i amunicja (stary zapis: brak) */
+  store: { parts: number; meds: number; arms?: WeaponId[]; ammo?: Record<AmmoKey, number> };
+  /** tryb gry; brak w starym zapisie: zwykły */
+  mode?: GameMode;
   /** ułamek porcji zjedzony ponad całe porcje (racje i kocioł zjadają po 0,75 i 1,1 porcji na posiłek) */
   portion: number;
 }
@@ -413,6 +425,8 @@ export interface SimOpts {
   residents?: number;
   /** tłum za siatką, tylko do pomiaru wydajności (npm run perf); w grze 0 */
   crowd?: number;
+  /** tryb gry, domyślnie zwykły */
+  mode?: GameMode;
 }
 
 /** wolne kafelki przed wejściami do budynków mieszkalnych, najbliżej siedziby najpierw */
@@ -496,8 +510,12 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     laws: { gateClosed: false, burnMood: 1, workStart: WORK_START, foodMult: 1, sharedMeals: false },
     portion: 0,
     raid: null,
-    store: { parts: 0, meds: 0 },
+    store: { parts: 0, meds: 0, arms: [], ammo: noAmmo() },
+    mode: opts.mode ?? 'zwykly',
   };
+  const kit = START_KIT[modeOf(st)];
+  st.store.arms = [...kit.store];
+  st.store.ammo = { ...kit.ammo };
   const rnd = rngOf(st.rng);
   const size = w.size;
   const hq = w.buildings[w.hq];
@@ -570,6 +588,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     if (k < spots.length) at = spots[k];
     const pawn = newPawn(st, w, 'core', st.people.length - 1, at, door, k);
     pawn.needs = startNeeds();
+    pawn.weapon = kit.core[k] ?? null;
     st.pawns.push(pawn);
   }
   // łóżka w mieszkaniu zarządu mają właścicieli: po jednym dla każdego z zarządu, po kolei
@@ -935,6 +954,9 @@ export class Sim {
   constructor(w: World, st: SimState) {
     this.w = w;
     this.st = st;
+    // zapis sprzed broni: pusty magazyn i bez amunicji (bez losowania, żeby skrót zależał tylko od stanu)
+    st.store.arms ??= [];
+    st.store.ammo ??= noAmmo();
     this.pf = new PathFinder(w.size);
     this.house = houseOf(w);
     this.trunk = Int32Array.from(w.trees, (t) => trunkOf(w, t));
@@ -1228,6 +1250,10 @@ export class Sim {
       if (open.length && c.n > 0) this.rebuild();
       return;
     }
+    if (c.t === 'arm') {
+      this.arm(c.ids, c.weapon);
+      return;
+    }
     if (c.t === 'laws') {
       const was = st.laws.gateClosed;
       st.laws = { ...st.laws, ...c.laws };
@@ -1310,6 +1336,23 @@ export class Sim {
   }
 
   /** uchwały od razu (interfejs woła po podpisaniu; w kolejce poleceń, żeby zapis i powtórka ich nie gubiły) */
+  /** broń z magazynu do rąk osób z zarządu po kolei; stara wraca do magazynu; null odkłada broń */
+  private arm(ids: readonly number[], weapon: WeaponId | null): void {
+    const st = this.st;
+    const arms = st.store.arms!;
+    for (const id of ids) {
+      const p = st.pawns.find((q) => q.id === id && q.kind === 'core');
+      if (!p || (p.weapon ?? null) === weapon) continue;
+      if (weapon !== null) {
+        const k = arms.indexOf(weapon);
+        if (k < 0) continue;
+        arms.splice(k, 1);
+      }
+      if (p.weapon) arms.push(p.weapon);
+      p.weapon = weapon;
+    }
+  }
+
   setLaws(laws: Partial<Laws>): void {
     this.push({ t: 'laws', ids: [], laws });
   }

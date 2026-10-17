@@ -4,6 +4,7 @@
 
 import type { Dom } from '../content/data.ts';
 import type { World } from '../world/world.ts';
+import { type AmmoKey, noAmmo, type WeaponId } from './bron.ts';
 import {
   clockOf,
   daylight,
@@ -51,6 +52,8 @@ export interface SimPerson {
   away: boolean;
   /** posterunek warty tej nocy ('brama', 'd<id>', 'koza') albo null */
   post: string | null;
+  /** broń w rękach albo null (gołe ręce) */
+  weapon: WeaponId | null;
 }
 
 export interface SimStock {
@@ -73,6 +76,9 @@ export interface SimStock {
   /** części i leki (bez rzeczy na mapie, z zarządu) */
   parts: number;
   meds: number;
+  /** broń w magazynie i amunicja */
+  arms: WeaponId[];
+  ammo: Record<AmmoKey, number>;
 }
 
 /** stan siatki dla zarządu (GovFence): otwarte dziury, średnia wytrzymałość, brama; kafelki dziury, żeby interfejs
@@ -174,6 +180,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
         carry: p.carry,
         away: p.away,
         post: p.job?.t === 'guard' ? postKey(p.job.target) : null,
+        weapon: p.weapon ?? null,
       };
     });
   const woodCarried = people.reduce((a, p) => a + p.carry, 0);
@@ -206,6 +213,8 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       boards,
       parts: st.store.parts,
       meds: st.store.meds,
+      arms: [...(st.store.arms ?? [])],
+      ammo: { ...noAmmo(), ...st.store.ammo },
     },
     burned: st.burned.map((b) => ({ ...b })),
     fence:
