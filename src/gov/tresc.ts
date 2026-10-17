@@ -6,6 +6,7 @@ import { LAW, type LawPath } from '../content/data.ts';
 import type { EventChoice, EventHost } from '../content/events.ts';
 import { g } from '../content/people.ts';
 import { pick } from '../core/rng.ts';
+import type { Words } from './miejsce.ts';
 import type { GovNeeds, GovPerson, GovPlace, LootKey } from './typy.ts';
 
 // ---------------------------------------------------------------- uchwały
@@ -220,6 +221,12 @@ export interface GovHost extends EventHost {
   guarded(): boolean;
   /** skutek na rano: zmiana zapasów i linia do raportu */
   later(stock: Partial<Record<LootKey, number>>, line: string): void;
+  /** miejsce siedziby i słownik wspólnoty (w domu ulica i komitet ulicy) */
+  place(): GovPlace;
+  words(): Words;
+  /** skąd przychodzi sąsiad: „z waszej klatki” (blok z mieszkańcami), „z bloku obok” albo „zza płotu” według
+      sąsiadów; null, gdy w okolicy nie ma nikogo */
+  neighbour(): string | null;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: dane wydarzenia mają różne kształty
@@ -229,6 +236,8 @@ export interface GEventDef<D = any> {
   /** najmniej tyle godzin gry między powtórkami (domyślnie REPEAT_GAP) */
   gap?: number;
   when: readonly Pora[];
+  /** dozwolone pierwszego dnia po ciszy i pierwszej nocy (do 8:00 drugiego dnia): siatka, obcy, noc */
+  first?: boolean;
   w: (h: GovHost) => number;
   make: (h: GovHost) => D | null;
   title: (h: GovHost, d: D) => string;
@@ -237,7 +246,7 @@ export interface GEventDef<D = any> {
 }
 
 /** wydarzenia z 0.3, które pasują do pierwszych nocy, z porą dnia; w zastępuje wagę z 0.3 */
-export const OLD_EVENTS: { id: string; when: readonly Pora[]; w?: (h: GovHost) => number }[] = [
+export const OLD_EVENTS: { id: string; when: readonly Pora[]; w?: (h: GovHost) => number; first?: boolean }[] = [
   { id: 'handlarz', when: ['dzien'] },
   { id: 'dzieci', when: ['dzien'] },
   { id: 'lodowka', when: ['dzien'] },
@@ -258,7 +267,7 @@ export const OLD_EVENTS: { id: string; when: readonly Pora[]; w?: (h: GovHost) =
   { id: 'wesele', when: ['dzien', 'wieczor'] },
   { id: 'odejscie', when: ['dzien', 'wieczor'] },
   // w 0.3 od piątego dnia; w M1 pierwsza noc jest o szabrownikach, więc już po południu pierwszego
-  { id: 'obserwacja', when: ['dzien'], w: (h) => (h.hour() >= 13 ? 1.2 : 0) },
+  { id: 'obserwacja', when: ['dzien'], w: (h) => (h.hour() >= 13 ? 1.2 : 0), first: true },
 ];
 
 const names = (list: GovPerson[]) =>
@@ -273,6 +282,7 @@ const names = (list: GovPerson[]) =>
 export const NEW_EVENTS: GEventDef[] = [
   {
     id: 'wedrowiec',
+    first: true,
     gap: 30,
     when: ['wieczor', 'noc'],
     w: (h) => (h.gateClosed() ? 0.4 : 1),
@@ -314,6 +324,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'slady',
+    first: true,
     gap: 20,
     when: ['dzien', 'wieczor'],
     w: (h) => (h.holes() > 0 && h.hour() >= 15 ? 1.4 : 0),
@@ -344,6 +355,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'pies',
+    first: true,
     once: true,
     when: ['wieczor', 'noc'],
     w: () => 0.7,
@@ -366,6 +378,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'halas',
+    first: true,
     gap: 4,
     when: ['noc'],
     w: (h) => (h.hour() >= 22 || h.hour() < 4 ? 1 : 0),
@@ -406,6 +419,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'krzyk',
+    first: true,
     when: ['noc'],
     w: () => 0.9,
     make: (h) => ({ help: h.rng() < 0.5 }),
@@ -443,6 +457,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'bezsennosc',
+    first: true,
     when: ['noc'],
     w: (h) => (h.alive().length ? 0.8 : 0),
     make: (h) => {
@@ -481,6 +496,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'sygnal',
+    first: true,
     once: true,
     when: ['noc'],
     w: () => 0.8,
@@ -511,6 +527,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'kot',
+    first: true,
     once: true,
     when: ['noc'],
     w: () => 0.8,
@@ -540,6 +557,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'ulewa',
+    first: true,
     gap: 24,
     when: ['noc'],
     w: (h) => (h.res.opal >= 3 ? 0.8 : 0),
@@ -565,6 +583,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'przymrozek',
+    first: true,
     gap: 24,
     when: ['noc'],
     w: (h) => (h.season() <= 1 ? 0.7 : 0),
@@ -595,6 +614,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'latarka',
+    first: true,
     once: true,
     when: ['dzien', 'wieczor'],
     w: () => 0.9,
@@ -650,34 +670,53 @@ export const NEW_EVENTS: GEventDef[] = [
     ],
   },
   {
-    id: 'sasiadka',
+    // z sytuacji, nie z losowania: koza pierwszy raz się pali, ktoś widzi dym i przychodzi (wydarzenia.ts, eventTick)
+    id: 'dym',
     once: true,
-    when: ['wieczor'],
-    w: () => 1,
+    when: ['dzien', 'wieczor', 'noc'],
+    w: () => 0,
     make: () => ({}),
-    title: () => 'Słoik od sąsiadki',
-    text: () =>
-      'Pani Krysia z czwartego piętra przyniosła słoik powideł z 2049 roku. Pyta, czy może posiedzieć przy kozie, bo u niej w mieszkaniu jest sześć stopni.',
-    choices: (h) => [
-      {
-        label: 'Zaprosić do kozy',
-        ok: true,
-        run: () => {
-          h.addRes('jedzenie', 2);
-          h.mood(2, 0);
-          h.log('Pani Krysia opowiada, jak wyglądało osiedle, kiedy jeszcze jeździły autobusy.');
+    title: () => 'Dym z komina',
+    text: (h) => {
+      const from = h.neighbour() ?? 'zza płotu';
+      const home = from === 'zza płotu' ? 'w domu' : 'w mieszkaniu';
+      const smoke =
+        h.place().kind === 'dom'
+          ? 'Nad dachem idzie dym z komina. Ktoś go zobaczył: do drzwi puka'
+          : 'Nad kuchnią idzie dym z rury wystawionej przez okno. Ktoś go zobaczył: puka';
+      return `${smoke} pani Krysia ${from}, ze słoikiem powideł z 2049 roku. Pyta, czy może posiedzieć przy kozie, bo u niej ${home} jest sześć stopni.`;
+    },
+    choices: (h) => {
+      const from = h.neighbour() ?? 'zza płotu';
+      return [
+        {
+          label: 'Zaprosić do kozy',
+          ok: true,
+          run: () => {
+            h.addRes('jedzenie', 2);
+            h.mood(2, 0);
+            h.log(
+              `Pani Krysia opowiada, jak ${h.place().kind === 'dom' ? 'wyglądała ulica' : 'wyglądało osiedle'}, kiedy jeszcze jeździły autobusy.`,
+            );
+          },
         },
-      },
-      {
-        label: 'Wziąć słoik i podziękować',
-        ok: true,
-        run: () => {
-          h.addRes('jedzenie', 2);
-          h.mood(-1, 1);
-          h.log('Pani Krysia wróciła do zimnego mieszkania. Na klatce już o tym wiedzą.');
+        {
+          label: 'Wziąć słoik i podziękować',
+          ok: true,
+          run: () => {
+            h.addRes('jedzenie', 2);
+            h.mood(-1, 1);
+            h.log(
+              from === 'zza płotu'
+                ? 'Pani Krysia wróciła do zimnego domu. Cała ulica już o tym wie.'
+                : from === 'z bloku obok'
+                  ? 'Pani Krysia wróciła do zimnego mieszkania. W bloku obok już o tym wiedzą.'
+                  : 'Pani Krysia wróciła do zimnego mieszkania. Na klatce już o tym wiedzą.',
+            );
+          },
         },
-      },
-    ],
+      ];
+    },
   },
 ];
 

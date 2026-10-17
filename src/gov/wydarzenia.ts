@@ -2,12 +2,16 @@
    Harmonogram liczony w sekundach przy ekranie, nie w godzinach gry: w 0.3 wydarzenie przychodziło co
    14–30 godzin gry, czyli co 35–75 s, a przy nowym zegarze (godzina gry trwa 40 s) byłoby to co 9–20
    minut. Przez pierwsze 10 minut wydarzenie co 38–56 s, potem co 100–180 s. Nowe nie przychodzi,
-   kiedy na decyzję czeka karta nocy, uchwała, raport albo poprzednie wydarzenie. */
+   kiedy na decyzję czeka karta nocy, uchwała, raport albo poprzednie wydarzenie.
+   Pierwszy dzień (decyzja Mateusza, 17.10.2026): dopóki kuchnia się nie nagrzeje, cisza bez losowych wydarzeń;
+   koza pierwszy raz się pali, więc po chwili ktoś widzi dym i przychodzi; do rana drugiego dnia tylko wydarzenia
+   pierwszej nocy (siatka, obcy, noc), reszta od drugiego dnia. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { rngOf } from '../core/rng.ts';
+import { placeIn, wordsOf } from './miejsce.ts';
 import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, LootKey, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
@@ -31,6 +35,28 @@ export const FIRST_EVENT = 70;
 export const EARLY = 600;
 /** po nieudanym losowaniu (nic nie pasowało) następna próba po tylu sekundach przy ekranie */
 export const RETRY = 8;
+/** dym z komina po tylu sekundach przy ekranie od pierwszego rozpalenia kozy (przy 1× w środku czekania na ciepło) */
+export const DYM_DELAY = 30;
+/** po ciszy pierwsze losowe wydarzenie najwcześniej po tylu sekundach (nie razem z nowym celem samouczka) */
+export const AFTER_WARM = 10;
+/** cisza pierwszego dnia trwa do ciepłej kuchni, najpóźniej do tej godziny */
+export const CALM_END = 18;
+/** od tylu stopni kuchnia jest ciepła (jak WARM_ENOUGH w samouczku) */
+export const WARM_KITCHEN = 18;
+
+/** pierwszy dzień i pierwsza noc, do 8:00 drugiego dnia: tylko wydarzenia z flagą first */
+export const firstNight = (i: Pick<GovInput, 'day' | 'hour'>): boolean => i.day === 1 || (i.day === 2 && i.hour < 8);
+
+/** Cisza pierwszego dnia: do pierwszej ciepłej kuchni, najpóźniej do CALM_END. Przy okazji zapisuje jej koniec
+    (ev.warm); bez kuchni (świat bez wnętrza) i od drugiego dnia ciszy nie ma. */
+export function calm(st: GovState, i: GovInput): boolean {
+  if (st.ev.warm !== undefined) return false;
+  if (i.day > 1 || i.kitchen === null || i.kitchen >= WARM_KITCHEN || i.hour >= CALM_END) {
+    st.ev.warm = i.screen;
+    return false;
+  }
+  return true;
+}
 
 const RES_KEY: Record<Res, StockKey | null> = {
   opal: 'wood',
@@ -46,7 +72,7 @@ export const M1_EVENTS: GEventDef[] = [
   ...OLD_EVENTS.map((o): GEventDef => {
     const d = eventDef(o.id);
     if (!d) throw new Error(`brak wydarzenia ${o.id} w treści 0.3`);
-    return { ...d, when: o.when, w: o.w ?? d.w };
+    return { ...d, when: o.when, w: o.w ?? d.w, first: o.first };
   }),
   ...NEW_EVENTS,
 ];
@@ -187,15 +213,34 @@ export function makeHost(st: GovState, i: GovInput, fx: GovEffects): GovHost {
     later: (stock, line) => {
       st.later.push({ day: nd, stock: stock as Partial<Record<LootKey, number>>, line });
     },
+    place: () => placeIn(i),
+    words: () => wordsOf(placeIn(i)),
+    neighbour: () => {
+      const p = placeIn(i);
+      if (p.kind === 'blok' && (i.residents ?? 0) > 0) return 'z waszej klatki';
+      if (p.near === 'nikt') return null;
+      return p.near === 'bloki' ? 'z bloku obok' : 'zza płotu';
+    },
   };
   return h;
 }
 
-/** losowanie wydarzenia z puli pory dnia, jak pickEvent w 0.3 */
-function pickGovEvent(st: GovState, h: GovHost, pora: Pora): ActiveEvent | null {
+/** wydarzenie przychodzi: dane z make (null: nie przychodzi), wpis do ewidencji powtórek */
+function activate(st: GovState, h: GovHost, e: GEventDef): ActiveEvent | null {
+  const d = e.make(h);
+  if (!d) return null;
+  st.ev.done[e.id] = true;
+  st.ev.last[e.id] = h.t;
+  return { id: e.id, d };
+}
+
+/** losowanie wydarzenia z puli pory dnia, jak pickEvent w 0.3; pierwszej nocy tylko z flagą first */
+function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): ActiveEvent | null {
   const fresh = (e: GEventDef) =>
     st.ev.last[e.id] === undefined || h.t - st.ev.last[e.id] >= (e.gap ?? REPEAT_GAP) * 60;
-  const pool = M1_EVENTS.filter((e) => e.when.includes(pora) && !(e.once && st.ev.done[e.id]) && fresh(e))
+  const pool = M1_EVENTS.filter(
+    (e) => e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e),
+  )
     .map((e) => [e, e.w(h)] as const)
     .filter((x) => x[1] > 0);
   const tot = pool.reduce((a, x) => a + x[1], 0);
@@ -203,33 +248,48 @@ function pickGovEvent(st: GovState, h: GovHost, pora: Pora): ActiveEvent | null 
   let r = h.rng() * tot;
   for (const [e, w] of pool) {
     r -= w;
-    if (r <= 0) {
-      const d = e.make(h);
-      if (!d) return null;
-      st.ev.done[e.id] = true;
-      st.ev.last[e.id] = h.t;
-      return { id: e.id, d };
-    }
+    if (r <= 0) return activate(st, h, e);
   }
   return null;
 }
+
+/** dym z komina czeka: koza paliła się pierwszego dnia (albo pierwszej nocy), dymu jeszcze nie było, sąsiad jest */
+const dymWaits = (st: GovState, h: GovHost): boolean =>
+  !st.ev.done.dym && (st.ev.lit ?? -1) >= 0 && h.neighbour() !== null;
 
 /** odstęp do następnego wydarzenia w sekundach przy ekranie */
 export const nextGap = (st: GovState, screen: number): number =>
   screen < EARLY ? 38 + Math.floor(rnd(st) * 19) : 100 + Math.floor(rnd(st) * 81);
 
-/** harmonogram: nowe wydarzenie, gdy minął odstęp, jest pora dnia z pulą i nic nie czeka na decyzję */
+/** harmonogram: nowe wydarzenie, gdy minął odstęp, jest pora dnia z pulą i nic nie czeka na decyzję; pierwszego
+    dnia cisza do ciepłej kuchni i dym z komina z sytuacji */
 export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boolean): void {
-  if (st.ev.active || busy || i.screen < st.ev.next) return;
+  // pierwsze rozpalenie kozy widać zawsze; dym tylko wtedy, gdy stało się pierwszego dnia albo pierwszej nocy
+  if (st.ev.lit === undefined && i.kozaLit) st.ev.lit = firstNight(i) ? i.screen : -1;
+  const quiet = calm(st, i);
+  if (st.ev.active || busy) return;
+  const h = makeHost(st, i, fx);
+  if (dymWaits(st, h)) {
+    const def = byId.get('dym');
+    if (def && i.screen >= (st.ev.lit ?? 0) + DYM_DELAY && poraOf(i.hour)) show(st, i, fx, activate(st, h, def));
+    return;
+  }
+  if (quiet || i.screen < st.ev.next || i.screen < (st.ev.warm ?? 0) + AFTER_WARM) return;
   const pora = poraOf(i.hour);
   if (!pora) return;
   st.ev.next = i.screen + nextGap(st, i.screen);
-  const ev = pickGovEvent(st, makeHost(st, i, fx), pora);
+  const ev = pickGovEvent(st, h, pora, firstNight(i));
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
   if (!ev) {
     st.ev.next = i.screen + RETRY;
     return;
   }
+  show(st, i, fx, ev);
+}
+
+/** wydarzenie czeka na decyzję gracza; tytuł do kroniki */
+function show(st: GovState, i: GovInput, fx: GovEffects, ev: ActiveEvent | null): void {
+  if (!ev) return;
   st.ev.active = ev;
   st.ev.when = i.screen;
   const def = byId.get(ev.id)!;

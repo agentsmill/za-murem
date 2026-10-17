@@ -101,7 +101,8 @@ describe('karta nocy', () => {
     let reports = 0;
     let back = 0;
     for (let seed = 1; seed <= 20; seed++) {
-      const { gov, steps } = run(seed, 'zawsze-warta', at(2, 6, 30));
+      // dwie noce: wyprawę zarząd proponuje przy brakach, a pierwszego dnia nie ma już losowych wydarzeń, które je robiły
+      const { gov, steps } = run(seed, 'zawsze-warta', at(3, 6, 30));
       const r = gov.reports[0];
       expect(r, `ziarno ${seed}`).toBeTruthy();
       expect(['brak', 'odparty', 'wtargnięcie']).toContain(r.raid);
@@ -112,10 +113,14 @@ describe('karta nocy', () => {
       const slept = r.lines.some((l) => /zasn(ął|ęła) na warcie/.test(l));
       expect(r.tired.length > 0 || slept, `ziarno ${seed}`).toBe(true);
       reports++;
-      if (steps.some((s) => s.kind === 'karta' && s.text.includes('wyprawa'))) {
-        back++;
-        expect(r.lines.some((l) => l.includes('wrócił') || l.includes('wróciła') || l.includes('trafił'))).toBe(true);
-      }
+      steps
+        .filter((s) => s.kind === 'karta')
+        .forEach((card, n) => {
+          if (!card.text.includes('wyprawa')) return;
+          back++;
+          const lines = gov.reports[n].lines;
+          expect(lines.some((l) => l.includes('wrócił') || l.includes('wróciła') || l.includes('trafił'))).toBe(true);
+        });
     }
     expect(reports).toBe(20);
     expect(back).toBeGreaterThan(0);
@@ -233,7 +238,7 @@ describe('uchwały, zaufanie i wkurzenie', () => {
 });
 
 describe('wydarzenia', () => {
-  it('pierwsze po około 70 s przy ekranie, potem gęsto przez 10 minut, zawsze w swojej porze dnia', () => {
+  it('pierwsze to dym z komina 30 s po rozpaleniu kozy, potem gęsto przez 10 minut, zawsze w swojej porze dnia', () => {
     for (let seed = 1; seed <= 10; seed++) {
       const gov = newGov(seed);
       const atr = new Atrapa(seed);
@@ -263,8 +268,8 @@ describe('wydarzenia', () => {
         else if (p?.k === 'karta') atr.apply(confirmNight(gov, atr.input()));
         else if (p?.k === 'raport') gov.report = null;
       }
-      expect(seen[0].s).toBeGreaterThanOrEqual(70);
-      expect(seen[0].s).toBeLessThanOrEqual(81);
+      // atrapa zapala kozę o 17:00 (80 s) i ma wtedy 18°C w kuchni: cisza do 80 s, dym w 110 s
+      expect(seen[0]).toMatchObject({ s: 110, id: 'dym' });
       for (const e of seen) {
         const def = M1_EVENTS.find((d) => d.id === e.id)!;
         expect(def.when, `${e.id} o ${e.hour}`).toContain(poraOf(e.hour));
@@ -338,6 +343,8 @@ describe('stan', () => {
   it('nowe wydarzenie nie przychodzi, kiedy czeka uchwała albo raport', () => {
     const gov = newGov(1);
     const i = input({ day: 1, hour: 16, minute: 0, screen: 500 });
+    // cisza pierwszego dnia minęła (kuchnia ciepła): tu sprawdzamy decyzje, które czekają
+    gov.ev.warm = 0;
     gov.lawPending = true;
     gov.lawDay = 1;
     govUpdate(gov, i);
