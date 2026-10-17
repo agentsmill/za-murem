@@ -671,11 +671,18 @@ function hud(now: number) {
   const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
   const afterKoza = st.tut.step < 0 || st.tut.step > TUT_STEPS.indexOf('koza');
   const cold = afterKoza && !snap.kozaLit && !wood && snap.hour >= 6 && snap.hour < 22;
-  const warn = cold
-    ? touchUI
-      ? 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).'
-      : 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (prawy przycisk na meblu).'
+  // gorączka po ugryzieniu: niecałe 2 godziny do śmierci, a zmarły wstaje, więc ktoś z bronią powinien być przy nim
+  const dying = snap.people.find((p) => p.bite && p.bite.left < 2 * TICKS_PER_HOUR);
+  const fever = dying
+    ? `${dying.name} umiera w gorączce. Po śmierci wstanie: niech ktoś z bronią będzie obok, żeby dobić.`
     : '';
+  const warn = fever
+    ? fever
+    : cold
+      ? touchUI
+        ? 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).'
+        : 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (prawy przycisk na meblu).'
+      : '';
   $('hint').textContent = warn || (now < hintUntil ? hint : '');
   $('hint').classList.toggle('warn', !!warn);
   renderStats(statsOf(snap, gov));

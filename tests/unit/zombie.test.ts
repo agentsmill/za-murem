@@ -16,7 +16,7 @@ import {
   spawnZombie,
 } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
-import { ambientCount, distField, hordeSize, MAX_ZOMBIES, ZOMBIE_HP } from '../../src/sim/zombie.ts';
+import { ambientCount, BITE_CD, distField, hordeSize, MAX_ZOMBIES, ZOMBIE_HP } from '../../src/sim/zombie.ts';
 import { mockBlock } from './interior-mock.ts';
 
 const w = mockBlock();
@@ -105,6 +105,22 @@ describe('szwendacze', () => {
     expect(snapshot(st, w).fence.durability).toBeLessThan(1);
   });
 
+  it('o 21:00 stado zbiera snujących się, a z krawędzi mapy dochodzi tylko brakująca reszta', () => {
+    const { st, sim } = zombieSim(15);
+    runTo(sim, atHour(1, 20.5));
+    expect(zombies(st)).toHaveLength(ambientCount(1));
+    runTo(sim, atHour(2, 1.5));
+    // pierwszej nocy stado (8) to dokładnie ci, którzy się snuli (8): nikt nowy nie przychodzi
+    expect(zombies(st).filter((z) => z.job?.what === 'stado')).toHaveLength(hordeSize(1));
+    expect(zombies(st)).toHaveLength(Math.max(ambientCount(1), hordeSize(1)));
+    // drugiej nocy stado 14: snujący się plus nowi do 14
+    runTo(sim, atHour(2, 20.5));
+    const before = zombies(st).length;
+    runTo(sim, atHour(3, 1.5));
+    expect(zombies(st).filter((z) => z.job?.what === 'stado')).toHaveLength(hordeSize(2));
+    expect(zombies(st).length).toBe(Math.max(before, hordeSize(2)));
+  });
+
   it('kafelek siatki z wytrzymałością 0 staje się dziurą: szwendacze wchodzą na podwórko, ale nie do budynków', () => {
     const { st, sim } = zombieSim(20.9);
     runTo(sim, atHour(2, 2));
@@ -141,6 +157,10 @@ describe('szwendacze', () => {
 
   it('nigdy więcej niż 80 szwendaczy naraz', () => {
     const { st, sim } = zombieSim(15, 20);
+    sim.step();
+    // tłum ponad stado: 50 szwendaczy więcej przy krawędzi mapy, w środku stado dochodzi tylko do limitu
+    const edge = Array.from({ length: size }, (_, x) => x).filter((x) => sim.canWalk('zombie', x));
+    for (let k = 0; k < 50; k++) spawnZombie(st, w, edge[k % edge.length], k % 16);
     let peak = 0;
     runTo(sim, atHour(21, 2), () => {
       peak = Math.max(peak, zombies(st).length);
@@ -228,6 +248,89 @@ describe('ugryzienia, gorączka, wstawanie, dobijanie, amputacja', () => {
     expect(nz.look).toBe(p.look);
   });
 
+  it('szwendacz najpierw łapie (pół przerwy między ugryzieniami), a kogoś, kto walczy, gryzie rzadziej', () => {
+    const { st, sim } = zombieSim(23);
+    const g = coreOf(st)[0];
+    g.weapon = null;
+    sim.push({ t: 'guard', ids: [g.id], post: 'brama' });
+    runTo(sim, st.tick + 600);
+    expect(g.job?.t).toBe('guard');
+    const near = w.fence.yard.find(
+      (i) => sim.canWalk('zombie', i) && Math.hypot((i % size) + 0.5 - g.x, Math.floor(i / size) + 0.5 - g.y) <= 1,
+    )!;
+    const z = spawnZombie(st, w, near, 2);
+    z.hp = 100000;
+    z.job!.phase = 3;
+    z.job!.target = g.id;
+    const t0 = st.tick;
+    let first = -1;
+    let tries = 0;
+    const hits0 = st.tally!.bites;
+    runTo(sim, t0 + 3000, () => {
+      g.needs!.health = 100;
+      delete g.bite;
+      const f = st.fx!.filter((x) => x.t === 'ugryzienie' && x.tick === st.tick - 1);
+      if (f.length && first < 0) first = st.tick - 1 - t0;
+      tries += f.length;
+    });
+    const rate = (st.tally!.bites - hits0) / tries;
+    expect(first).toBeGreaterThanOrEqual(BITE_CD / 2);
+    expect(tries).toBeGreaterThan(40);
+    expect(rate).toBeGreaterThan(0.2);
+    expect(rate).toBeLessThan(0.5);
+  });
+
+  it('broń zmarłego wraca do magazynu', () => {
+    const { st, sim } = zombieSim(10, 2);
+    const [p] = coreOf(st);
+    expect(p.weapon).toBe('rewolwer');
+    infect(st, p, false);
+    runTo(sim, st.tick + FEVER_TICKS + 1);
+    expect(st.pawns.includes(p)).toBe(false);
+    expect(st.store.arms).toContain('rewolwer');
+  });
+
+  it('uzbrojony z zarządu, który nic nie robi, sam dobija zwłoki w pobliżu, zanim wstaną', () => {
+    const { st, sim } = zombieSim(10, 2);
+    const [p, q] = coreOf(st);
+    q.weapon = 'noz';
+    infect(st, p, false);
+    runTo(sim, st.tick + FEVER_TICKS + 1);
+    const body = st.things.find((t) => t.kind === 'zwloki')!;
+    expect(body.fuel).toBeGreaterThan(0);
+    // q stoi bezczynnie dwa, trzy metry od zwłok w tym samym pomieszczeniu
+    const room = w.interior.room[body.y * size + body.x];
+    const spot = [...Array(size * size).keys()].find((i) => {
+      const d = Math.hypot((i % size) - body.x, Math.floor(i / size) - body.y);
+      return sim.canWalk('core', i) && w.interior.room[i] === room && d >= 2 && d <= 3;
+    })!;
+    Object.assign(q, { x: (spot % size) + 0.5, y: Math.floor(spot / size) + 0.5, path: [], pi: 0, job: null, wait: 0 });
+    q.needs!.rest = 90;
+    q.needs!.food = 90;
+    q.needs!.warm = 90;
+    runTo(sim, st.tick + 400);
+    expect(body.fuel).toBe(0);
+  });
+
+  it('ktoś z bronią czekający na miejscu przy umierającym dobija go, gdy umrze', () => {
+    const { st, sim } = zombieSim(10, 2);
+    const [p, q] = coreOf(st);
+    q.weapon = 'noz';
+    p.weapon = null;
+    infect(st, p, false);
+    const t0 = st.tick;
+    runTo(sim, t0 + FEVER_TICKS - 200);
+    const at = Math.floor(p.y) * size + Math.floor(p.x);
+    // syty, ciepły i wyspany: nic pilnego nie przerwie czekania
+    Object.assign(q.needs!, { food: 95, warm: 95, rest: 95 });
+    sim.push({ t: 'move', ids: [q.id], to: at });
+    // czekanie po rozkazie trwa godzinę gry, więc zwłoki trzeba dobić w trakcie czekania
+    runTo(sim, t0 + FEVER_TICKS + 300);
+    const body = st.things.find((t) => t.kind === 'zwloki');
+    expect(body).toBeTruthy();
+    expect(body!.fuel).toBe(0);
+  });
+
   it('dobicie przed wstaniem: zwłoki już nie wstaną', () => {
     const { st, sim } = zombieSim(10, 2);
     const [p, q] = coreOf(st);
@@ -285,27 +388,33 @@ describe('ugryzienia, gorączka, wstawanie, dobijanie, amputacja', () => {
     }
   });
 
-  it('ugryzienie przy trafieniu zaraża w części przypadków (tylko w trybie zombie)', () => {
-    const { st, sim } = zombieSim(10, 2);
-    const victims = coreOf(st);
-    // szwendacz tuż obok kogoś z zarządu na podwórku
-    let bitten = 0;
-    for (let k = 0; k < 40; k++) {
-      const p = victims[0];
-      if (!st.pawns.includes(p)) break;
-      p.needs!.health = 100;
-      delete p.bite;
-      const spot = w.fence.yard.find((i) => sim.canWalk('core', i) && sim.canWalk('zombie', i))!;
-      Object.assign(p, { x: (spot % size) + 0.5, y: Math.floor(spot / size) + 0.5, path: [], pi: 0, weapon: null });
-      const z = spawnZombie(st, w, spot, 1);
-      z.job!.phase = 3;
-      z.job!.target = p.id;
-      for (let s = 0; s < 40 && p.bite === undefined; s++) sim.step();
-      if (p.bite !== undefined) bitten++;
-      st.pawns = st.pawns.filter((x) => x !== z);
-    }
-    expect(bitten).toBeGreaterThan(0);
-    expect(bitten).toBeLessThan(40);
+  it('ugryzienie przy trafieniu zaraża w około 35% przypadków', () => {
+    const { st, sim } = zombieSim(23);
+    const g = coreOf(st)[0];
+    g.weapon = null;
+    sim.push({ t: 'guard', ids: [g.id], post: 'brama' });
+    runTo(sim, st.tick + 600);
+    const near = w.fence.yard.find(
+      (i) => sim.canWalk('zombie', i) && Math.hypot((i % size) + 0.5 - g.x, Math.floor(i / size) + 0.5 - g.y) <= 1,
+    )!;
+    const z = spawnZombie(st, w, near, 1);
+    z.hp = 100000;
+    z.job!.phase = 3;
+    z.job!.target = g.id;
+    const hits0 = st.tally!.bites;
+    let infected = 0;
+    runTo(sim, st.tick + 8000, () => {
+      g.needs!.health = 100;
+      if (g.bite !== undefined) {
+        infected++;
+        delete g.bite;
+        delete g.limb;
+      }
+    });
+    const hits = st.tally!.bites - hits0;
+    expect(hits).toBeGreaterThan(40);
+    expect(infected / hits).toBeGreaterThan(0.2);
+    expect(infected / hits).toBeLessThan(0.5);
     expect(BITE_INFECT).toBe(0.35);
   });
 });
@@ -366,6 +475,58 @@ describe('praca za dnia i alarm', () => {
       expect(all[0].job?.target).toBe(mode === 'zombie' ? SIATKA_POST : 0);
       expect(snapshot(st, w).people[0].post).toBe(mode === 'zombie' ? 'siatka' : 'brama');
     }
+  });
+
+  it('ranny wartownik ze szwendaczem tuż obok po tej samej stronie siatki ucieka do środka', () => {
+    const { st, sim } = zombieSim(23);
+    const g = coreOf(st)[0];
+    // gołe ręce: wartownik nie zastrzeli szwendacza, zanim ten podejdzie
+    g.weapon = null;
+    sim.push({ t: 'guard', ids: [g.id], post: 'brama' });
+    runTo(sim, st.tick + 600);
+    expect(g.job?.t).toBe('guard');
+    g.needs!.health = 40;
+    const near = w.fence.yard.find(
+      (i) => sim.canWalk('zombie', i) && Math.hypot((i % size) + 0.5 - g.x, Math.floor(i / size) + 0.5 - g.y) <= 1.5,
+    )!;
+    expect(near).toBeDefined();
+    spawnZombie(st, w, near, 2);
+    runTo(sim, st.tick + 40);
+    expect(g.job?.t).not.toBe('guard');
+  });
+
+  it('dwie warty przy siatce idą do dwóch różnych miejsc naporu', () => {
+    const { st, sim } = zombieSim(23);
+    const [a, b] = coreOf(st);
+    a.weapon = null;
+    b.weapon = null;
+    const outOf = (t: number) =>
+      [t - size, t + size, t - 1, t + 1].find((n) => !yard.has(n) && sim.canWalk('zombie', n));
+    const d = (x: number, y: number) =>
+      Math.hypot((x % size) - (y % size), Math.floor(x / size) - Math.floor(y / size));
+    // kafelki z wolnym miejscem po obu stronach: za siatką dla szwendaczy, na podwórku dla warty
+    const inside = (t: number) =>
+      [t - size, t + size, t - 1, t + 1, t - size - 1, t - size + 1, t + size - 1, t + size + 1].some(
+        (n) => yard.has(n) && sim.canWalk('core', n),
+      );
+    const spots = w.fence.tiles.filter((t) => outOf(t) !== undefined && inside(t));
+    const p1 = spots[0];
+    const p2 = spots.reduce((m, t) => (d(t, p1) > d(m, p1) ? t : m));
+    expect(d(p1, p2)).toBeGreaterThan(7);
+    // szwendacze już napierają: trzech na p1, dwóch na p2
+    const press = (t: number, n: number) => {
+      for (let k = 0; k < n; k++) {
+        const z = spawnZombie(st, w, outOf(t)!, k, true);
+        z.job!.phase = 2;
+        z.job!.target = t;
+      }
+    };
+    press(p1, 3);
+    press(p2, 2);
+    sim.push({ t: 'guard', ids: [a.id, b.id], post: 'siatka' });
+    sim.step();
+    const near = (g: Pawn, t: number) => d(g.job!.tile, t) <= 3;
+    expect(near(a, p1) && near(b, p2)).toBe(true);
   });
 
   it('warta przy siatce przechodzi tam, gdzie napierają szwendacze', () => {

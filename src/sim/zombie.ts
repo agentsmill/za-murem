@@ -19,6 +19,8 @@ export const BITE_REACH = 1.1;
 export const BITE_CD = 30;
 export const BITE_DMG = 15;
 export const BITE_HIT = 0.7;
+/** kto walczy albo trzyma wartę (patrzy na szwendacza), tego trudniej ugryźć */
+export const BITE_HIT_FIGHTING = 0.35;
 /** stado wychodzi z krawędzi mapy od 21:00 do 1:00, o 6:00 się rozchodzi */
 export const HORDE_FROM = 21;
 export const HORDE_HOURS = 4;

@@ -86,6 +86,12 @@ Propozycje, do ustalenia:
 - Serwer w oleju. Serwerownię zanurza się w oleju, tak jak chłodzi się dziś niektóre prawdziwe serwerownie. Olej chroni przed bakterią i obniża zużycie prądu, ale trzeba go zdobyć: z transformatorów, z warsztatów samochodowych. Na mapie wygląda to jak akwarium z olejem w piwnicy.
 - Satyra przy okazji, przykłady do ogłoszeń: „Zamienię przedłużacz w słoiku z olejem na worek ziemniaków”, „Startup od recyklingu przeprasza za niedogodności”.
 
+## Tryb zombie
+
+Drugi tryb gry, wybierany na ekranie startowym (decyzja Mateusza z 17.10.2026, wzór: serial The Walking Dead). Ten sam adres, mapa i zarząd. Siatka od startu cała i wzmocniona deskami, brama zamknięta. Za siatką snują się szwendacze: wolni i głupi, groźni w kupie, idą za hałasem i za tym, co widzą. Nocą przychodzi stado, każdej nocy większe, i napiera na siatkę, aż puści. Ugryzienie to gorączka i śmierć w niecałą dobę, każdy zmarły wstaje, chyba że ktoś go dobije, a ugryzionego w rękę albo nogę ratuje amputacja. Dzida sięga przez siatkę, strzał zabija od razu, ale ściąga stado. Szczegóły i liczby w `docs/superpowers/specs/2026-10-17-tryb-zombie-design.md`.
+
+Broń jest w obu trybach: każdy z zarządu ma jedną, zapasowa leży w magazynie, warta bije sama, a gracz może kazać atakować.
+
 ## Sterowanie
 
 - Lewy przycisk zaznacza człowieka, przeciąganie ramką zaznacza kilku.

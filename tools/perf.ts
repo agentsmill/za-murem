@@ -1,7 +1,7 @@
 /* Pomiar wydajności: 150 pionków z A* i animacją, klatki na sekundę przez 10 s.
    Laptop: Chromium bez dławienia. Telefon: ekran 390×844 i procesor zdławiony 4× (CDP).
    Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
-   Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-4]] [--no-worker] [--noc] [--zoom=0.5]
+   Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5]
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
    --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła). Zawsze z dymem: koza
    zarządu rozpalona w stanie gry i ognisko na podwórku. */
@@ -14,6 +14,8 @@ const PAWNS = Number(args[0]) || 150;
 const SPEED = Number(args[1]) || 1;
 const NO_WORKER = process.argv.includes('--no-worker');
 const NIGHT = process.argv.includes('--noc');
+/** --zombie: tryb zombie z 60 szwendaczami pod siatką o 23:00 */
+const ZOMBIE = process.argv.includes('--zombie');
 /** --zoom=0.5: kamera przy progu bliskich kawałków, gdzie z bliska widać najwięcej drzew jako sprite'ów */
 const ZOOM = Number(process.argv.find((a) => a.startsWith('--zoom='))?.slice(7)) || 1;
 const SECONDS = 10;
@@ -43,7 +45,7 @@ try {
     });
     const page = await ctx.newPage();
     await page.goto(
-      `${s.base}?demo=przymorze&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}`,
+      `${s.base}?demo=przymorze&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}${ZOMBIE ? '&tryb=zombie&stado=60&godzina=23' : ''}`,
     );
     await waitIdle(page);
     // dym: koza zarządu rozpalona w stanie gry i ognisko na podwórku

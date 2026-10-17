@@ -55,6 +55,7 @@ import {
   BITE_CD,
   BITE_DMG,
   BITE_HIT,
+  BITE_HIT_FIGHTING,
   BITE_REACH,
   CHASE_SPEED,
   DISPERSE,
@@ -1684,10 +1685,12 @@ export class Sim {
   /** gdzie stoi warta: przy bramie najbliżej jej środka, przy dziurze tuż obok od strony podwórka, przy kozie przed nią */
   private guardStand(p: Pawn, post: number): number {
     if (post === SIATKA_POST) {
-      const hot = this.hotTile();
+      const hot = this.hotTile(p);
       if (hot >= 0) {
         const s = this.standBy(p, [hot], 1);
         if (s >= 0) return s;
+        const s2 = this.standBy(p, [hot], 2);
+        if (s2 >= 0) return s2;
       }
       post = 0;
     }
@@ -2675,6 +2678,9 @@ export class Sim {
       return;
     }
     const n = p.needs!;
+    // zwłoki, które wstaną, w pobliżu: uzbrojony dobija je odruchowo (nóż w głowę); przy wrogu na podwórku
+    // tylko te w budynku
+    if (p.weapon && this.startFinish(p, this.yardDanger())) return;
     // wróg na podwórku: tylko to, co w środku (sen, jedzenie, ciepło przy kozie, gotowanie)
     if (this.yardDanger() && !this.inRoom(this.tileOf(p))) {
       const s = this.shelterSpot(p);
@@ -3266,6 +3272,11 @@ export class Sim {
     this.dropLoad(p);
     this.dropCarry(p);
     this.addBlood(x, y);
+    // broń zmarłego ktoś podnosi i odnosi do magazynu
+    if (p.weapon) {
+      st.store.arms?.push(p.weapon);
+      p.weapon = null;
+    }
     if (p.kind === 'zombie') {
       const body = newThing(st, 'trup', x, y);
       body.n = p.look;
@@ -3401,7 +3412,35 @@ export class Sim {
       (pomieszczenia siedziby) jest bezpiecznie. true: pionek dostał nową pracę. */
   private react(p: Pawn): boolean {
     const j = p.job;
-    if (j && (j.t === 'fight' || j.t === 'guard' || j.t === 'leave' || j.t === 'amputate')) return false;
+    // warta i walczący: odwrót do środka, gdy wróg jest tuż obok po tej samej stronie, a sił mało albo wrogów kilku
+    if (j && (j.t === 'guard' || j.t === 'fight')) {
+      const close = this.threat(p, 1.6);
+      if (!close) return false;
+      let crowd = 0;
+      for (const t of this.st.pawns)
+        if (
+          isEnemy(t) &&
+          !t.away &&
+          Math.hypot(t.x - p.x, t.y - p.y) <= 2 &&
+          this.lineCheck(p.x, p.y, t.x, t.y) === 'clear'
+        )
+          crowd++;
+      if ((p.needs?.health ?? 100) >= (j.t === 'guard' ? 50 : 30) && crowd < 3) return false;
+      const spot = this.shelterSpot(p);
+      if (spot < 0 || !this.go(p, spot)) return false;
+      this.setJob(p, this.newJob('go', spot, spot, false), false);
+      return true;
+    }
+    if (j && (j.t === 'leave' || j.t === 'amputate')) return false;
+    // uzbrojony, który czeka albo grzeje się w pobliżu zwłok, dobija je odruchowo, zanim wstaną
+    if (
+      p.kind === 'core' &&
+      p.weapon &&
+      (!j || j.t === 'go' || j.t === 'warm' || j.t === 'stay') &&
+      !this.threat(p, DEFEND_REACH) &&
+      this.startFinish(p, this.yardDanger())
+    )
+      return true;
     const inside = this.inRoom(this.tileOf(p));
     const resident = p.kind === 'resident';
     let e = this.threat(p, resident ? RESIDENT_FLEE : DEFEND_REACH);
@@ -3463,7 +3502,19 @@ export class Sim {
     const h = hourOf(tick);
     const day = dayOf(tick);
     if (hourStart && h >= DISPERSE && h < HORDE_FROM) this.topUp(day);
-    if (hourStart && h === HORDE_FROM) st.horde = { day, left: hordeSize(day), next: tick };
+    // o 21:00 stado: najpierw ci, którzy już się snują (poza budynkami), a z krawędzi mapy tylko brakująca reszta
+    if (hourStart && h === HORDE_FROM) {
+      const want = hordeSize(day);
+      let have = 0;
+      for (const p of st.pawns) {
+        if (have >= want) break;
+        if (p.kind !== 'zombie' || !p.job || p.job.what === 'stado' || this.inRoom(this.tileOf(p))) continue;
+        p.job.what = 'stado';
+        if (p.job.phase === 0) p.job.phase = 1;
+        have++;
+      }
+      st.horde = { day, left: want - have, next: tick };
+    }
     const hd = st.horde;
     if (hd && hd.left > 0 && tick >= hd.next) {
       const groups = 8;
@@ -3636,9 +3687,14 @@ export class Sim {
         p.path = [];
         p.pi = 0;
         this.face(p, t.x, t.y);
-        if (tick >= (p.cd ?? 0)) this.bite(p, t);
+        // najpierw łapie (pół przerwy między ugryzieniami), potem gryzie
+        if (!j.n) {
+          j.n = 1;
+          p.cd = Math.max(p.cd ?? 0, tick + BITE_CD / 2);
+        } else if (tick >= (p.cd ?? 0)) this.bite(p, t);
         return;
       }
+      j.n = 0;
     }
     if ((tick + p.id) % THINK_EVERY === 0) this.zombieSense(p, j);
     if (p.pi < p.path.length) {
@@ -3697,7 +3753,8 @@ export class Sim {
     const st = this.st;
     p.cd = st.tick + BITE_CD;
     this.addFx('ugryzienie', t.x, t.y, p.x, p.y);
-    if (nextRandom(st.rng) >= BITE_HIT) return;
+    const facing = t.job?.t === 'fight' || (t.job?.t === 'guard' && t.job.phase === 1);
+    if (nextRandom(st.rng) >= (facing ? BITE_HIT_FIGHTING : BITE_HIT)) return;
     st.tally!.bites++;
     this.hurt(t, BITE_DMG, p);
     if (this.graveyard.has(t.id) || modeOf(st) !== 'zombie') return;
@@ -3879,29 +3936,50 @@ export class Sim {
     this.orderGuard(able, modeOf(this.st) === 'zombie' && this.st.fence ? 'siatka' : 'brama');
   }
 
-  /** kafelek siatki, na który napiera najwięcej szwendaczy (−1: nikt nie napiera) */
-  private hotTile(): number {
+  /** Kafelek siatki, na który napiera najwięcej szwendaczy (−1: nikt nie napiera). Dla wartownika p: najpierw
+      miejsca, których nie pilnuje już inna warta przy siatce (do 3 m od niej albo od miejsca, do którego idzie). */
+  private hotTile(p?: Pawn): number {
+    const size = this.w.size;
     const count = new Map<number, number>();
-    for (const p of this.st.pawns)
-      if (p.kind === 'zombie' && p.job?.phase === 2 && p.job.target >= 0)
-        count.set(p.job.target, (count.get(p.job.target) ?? 0) + 1);
+    for (const q of this.st.pawns)
+      if (q.kind === 'zombie' && q.job?.phase === 2 && q.job.target >= 0)
+        count.set(q.job.target, (count.get(q.job.target) ?? 0) + 1);
+    const others = p
+      ? this.st.pawns.filter((q) => q !== p && !q.away && q.job?.t === 'guard' && q.job.target === SIATKA_POST)
+      : [];
+    const near = (t: number, x: number, y: number) =>
+      Math.hypot((t % size) + 0.5 - x, Math.floor(t / size) + 0.5 - y) <= 3;
+    const kept = (t: number) =>
+      others.some(
+        (q) =>
+          near(t, q.x, q.y) ||
+          (q.job!.tile >= 0 && near(t, (q.job!.tile % size) + 0.5, Math.floor(q.job!.tile / size) + 0.5)),
+      );
     let best = -1;
     let bn = 0;
-    for (const [t, n] of count)
+    let free = -1;
+    let fn = 0;
+    for (const [t, n] of count) {
       if (n > bn || (n === bn && t < best)) {
         best = t;
         bn = n;
       }
-    return best;
+      if (!kept(t) && (n > fn || (n === fn && t < free))) {
+        free = t;
+        fn = n;
+      }
+    }
+    return free >= 0 ? free : best;
   }
 
   /** warta przy siatce przechodzi do miejsca największego naporu, gdy stoi od niego dalej niż 2,5 m */
   private followPressure(p: Pawn, j: Job): void {
-    const hot = this.hotTile();
+    const hot = this.hotTile(p);
     if (hot < 0) return;
     const size = this.w.size;
     if (Math.hypot((hot % size) + 0.5 - p.x, Math.floor(hot / size) + 0.5 - p.y) <= 2.5) return;
-    const stand = this.standBy(p, [hot], 1);
+    let stand = this.standBy(p, [hot], 1);
+    if (stand < 0) stand = this.standBy(p, [hot], 2);
     if (stand < 0 || stand === this.tileOf(p) || !this.go(p, stand)) return;
     j.tile = stand;
     j.phase = 0;
@@ -3918,6 +3996,25 @@ export class Sim {
       const z = spawnZombie(st, this.w, body.y * this.w.size + body.x, body.n);
       this.addFx('smierc', z.x, z.y);
     }
+  }
+
+  /** sam z siebie: najbliższe zwłoki do 12 m, które wstaną i których nikt jeszcze nie dobija */
+  private startFinish(p: Pawn, indoorOnly: boolean): boolean {
+    let body: Thing | undefined;
+    let bd = 12;
+    for (const t of this.st.things) {
+      if (t.kind !== 'zwloki' || t.fuel <= 0) continue;
+      if (indoorOnly && !this.inRoom(t.y * this.w.size + t.x)) continue;
+      const d = Math.hypot(t.x + 0.5 - p.x, t.y + 0.5 - p.y);
+      if (d > bd || this.st.pawns.some((q) => q.job?.t === 'finish' && q.job.target === t.id)) continue;
+      bd = d;
+      body = t;
+    }
+    if (!body) return false;
+    const stand = this.beside(p, body);
+    if (stand < 0 || !this.go(p, stand)) return false;
+    this.setJob(p, this.newJob('finish', body.id, stand, false), false);
+    return true;
   }
 
   /** dobić zwłoki: pierwsza osoba idzie obok i wbija nóż */

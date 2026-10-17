@@ -48,9 +48,10 @@ npm test             # testy jednostkowe (Vitest), m.in. porównanie z oryginał
 npm run lint         # Biome
 npm run build        # typy + build do dist/ (z dist/v03/)
 npm run bot          # nowa symulacja 45 dni bez przeglądarki
+npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce]]
 npm run bot:v03      # wzorzec balansu na oryginale 0.3: [-- ziarno [dni]]
 npm run shots        # zrzuty w Chromium do shots/: [-- filtr] [--dist]
-npm run perf         # klatki ze 150 pionkami: [-- pionki [tempo 1-4]] [--no-worker]
+npm run perf         # klatki ze 150 pionkami: [-- pionki [tempo 1-4]] [--no-worker] [--zombie]
 npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
 ```
 
