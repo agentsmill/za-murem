@@ -1759,7 +1759,9 @@ const SHOTS: Shot[] = [
     },
   },
   {
-    name: 'm2-stawianie',
+    // podgląd stawiania w mapie (view.setPlacement) w kształcie z interfejsu, w dzień; nazwy inne niż
+    // scenariusze interfejsu m2-stawianie*, żeby obrazy się nie nadpisywały
+    name: 'm2-podglad',
     query: '',
     run: async (page, base) => {
       await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
@@ -1769,7 +1771,8 @@ const SHOTS: Shot[] = [
     },
   },
   {
-    name: 'm2-stawianie-zle',
+    // podgląd stawiania w niedozwolonym miejscu, nocą (nad mapą światła)
+    name: 'm2-podglad-noc',
     query: '',
     run: async (page, base) => {
       await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6&godzina=22`);
