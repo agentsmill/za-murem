@@ -170,6 +170,17 @@ export const RISE_TICKS = TICKS_PER_HOUR;
 /** amputacja: najwyżej 2 godziny gry po ugryzieniu, trwa pół godziny */
 export const AMPUTATE_WINDOW = 2 * TICKS_PER_HOUR;
 export const AMPUTATE_TICKS = TICKS_PER_HOUR / 2;
+/** dzida z 2 desek i 1 złomu, godzina pracy; wzmocnienie siatki: 2 deski albo 2 złomu, 20 minut, +50 */
+export const SPEAR_BOARDS = 2;
+export const SPEAR_SCRAP = 1;
+export const CRAFT_TICKS = TICKS_PER_HOUR;
+export const BRACE_COST = 2;
+export const BRACE_TICKS = Math.round(TICKS_PER_HOUR / 3);
+export const BRACE_HP = 50;
+/** posterunek warty „przy siatce”: tam, gdzie napiera najwięcej szwendaczy (klucz 'siatka') */
+export const SIATKA_POST = -2;
+/** co tyle kroków warta przy siatce sprawdza, czy napór się nie przesunął */
+const SIATKA_EVERY = 10 * TICKS_PER_SECOND;
 /** dobicie zwłok (nóż w głowę) trwa sekundę */
 const FINISH_TICKS = TICKS_PER_SECOND;
 const FEVER_MOOD = 'Gorączka po ugryzieniu';
@@ -197,7 +208,9 @@ export type JobKind =
   | 'fight'
   | 'zombie'
   | 'finish'
-  | 'amputate';
+  | 'amputate'
+  | 'craft'
+  | 'brace';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -377,7 +390,13 @@ export type Command =
   /** dobić zwłoki (id rzeczy 'zwloki'), żeby nie wstały */
   | { t: 'finish'; ids: number[]; thing: number }
   /** amputacja ugryzionej ręki albo nogi (id pionka chorego) */
-  | { t: 'amputate'; ids: number[]; patient: number };
+  | { t: 'amputate'; ids: number[]; patient: number }
+  /** zrobić broń z materiałów ze stert (dzida: 2 deski i 1 złom) */
+  | { t: 'craft'; ids: number[]; item: 'dzida' }
+  /** wzmocnić kafelek siatki deskami albo złomem */
+  | { t: 'brace'; ids: number[]; tile: number }
+  /** do broni: cały zdolny zarząd na wartę (przy siatce w trybie zombie, przy bramie w zwykłym) */
+  | { t: 'alarm'; ids: number[] };
 
 export interface Noise {
   x: number;
@@ -816,7 +835,7 @@ export function dozeOff(st: SimState, ids: readonly number[]): void {
 
 /** klucz posterunku warty z Job.target, jak w karcie nocy zarządu: 'brama', 'd<id>', 'koza' */
 export const postKey = (target: number): string =>
-  target === KOZA_POST ? 'koza' : target === 0 ? 'brama' : `d${target}`;
+  target === KOZA_POST ? 'koza' : target === SIATKA_POST ? 'siatka' : target === 0 ? 'brama' : `d${target}`;
 
 /** mieszkania inne niż zarządu, do których z podwórka da się dojść bez wychodzenia za siatkę, rosnąco */
 function residentApts(st: SimState, w: World, h: HouseLike): number[] {
@@ -1546,6 +1565,9 @@ export class Sim {
     else if (c.t === 'attack') this.orderAttack(pawns, c.target);
     else if (c.t === 'finish') this.orderFinish(pawns, c.thing);
     else if (c.t === 'amputate') this.orderAmputate(pawns, c.patient);
+    else if (c.t === 'craft') this.orderCraft(pawns);
+    else if (c.t === 'brace') this.orderBrace(pawns, c.tile);
+    else if (c.t === 'alarm') this.orderAlarm(pawns);
   }
 
   /** Pora wspólnego posiłku (uchwała o kotle), w której mieszkańcy mogą wejść do mieszkania zarządu: pół godziny
@@ -1629,6 +1651,7 @@ export class Sim {
   private postOf(post: string): number | null {
     if (post === 'brama') return this.gateStand.length ? 0 : null;
     if (post === 'koza') return this.koza() ? KOZA_POST : null;
+    if (post === 'siatka') return this.st.fence ? SIATKA_POST : null;
     const id = /^d(\d+)$/.exec(post)?.[1];
     return id && this.holeById(Number(id)) ? Number(id) : null;
   }
@@ -1660,6 +1683,14 @@ export class Sim {
 
   /** gdzie stoi warta: przy bramie najbliżej jej środka, przy dziurze tuż obok od strony podwórka, przy kozie przed nią */
   private guardStand(p: Pawn, post: number): number {
+    if (post === SIATKA_POST) {
+      const hot = this.hotTile();
+      if (hot >= 0) {
+        const s = this.standBy(p, [hot], 1);
+        if (s >= 0) return s;
+      }
+      post = 0;
+    }
     if (post === KOZA_POST) {
       const koza = this.koza();
       return koza ? this.kozaStand(p, koza) : -1;
@@ -2313,6 +2344,8 @@ export class Sim {
           if (tick >= j.until || p.needs!.health < 30) return false;
           // warta bije każdego wroga w zasięgu swojej broni, nie schodząc z posterunku
           if ((tick + p.id) % 5 === 0) this.guardStrike(p);
+          // przy siatce: idzie tam, gdzie napór się przesunął
+          if (j.target === SIATKA_POST && (tick + p.id) % SIATKA_EVERY === 0) this.followPressure(p, j);
           // przy kozie: kiedy ognia zostaje mało, idzie po drewno i dokłada
           if (j.target === KOZA_POST && tick % THINK_EVERY === 0) this.tendKoza(p, j);
           return true;
@@ -2347,7 +2380,8 @@ export class Sim {
         if (koza) this.face(p, koza.x + koza.w / 2, koza.y + koza.h / 2);
         else {
           const hole = j.target > 0 ? this.holeById(j.target) : undefined;
-          const look = hole ? hole.tiles : gateTiles(this.w);
+          const hot = j.target === SIATKA_POST ? this.hotTile() : -1;
+          const look = hole ? hole.tiles : hot >= 0 ? [hot] : gateTiles(this.w);
           if (look.length) this.face(p, (look[0] % size) + 0.5, Math.floor(look[0] / size) + 0.5);
         }
         return true;
@@ -2454,6 +2488,60 @@ export class Sim {
       case 'amputate':
         // amputacja ma własny krok (amputateTick)
         return true;
+      case 'craft': {
+        if (j.phase === 0) {
+          if (!at || !this.takeHeaps('deski', SPEAR_BOARDS, j.from) || !this.takeHeaps('zlom', SPEAR_SCRAP, -1))
+            return false;
+          j.phase = 1;
+          j.until = tick + CRAFT_TICKS;
+          return true;
+        }
+        if (tick < j.until) return true;
+        st.store.arms!.push('dzida');
+        return false;
+      }
+      case 'brace': {
+        const f = st.fence;
+        const k = this.fenceIndex.get(j.target);
+        if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100) return false;
+        const size = this.w.size;
+        if (j.phase === 0) {
+          const heap = this.thing(j.from);
+          if (!at || !heap || heap.by !== p.id) return false;
+          const take = Math.min(heap.n, BRACE_COST - j.n);
+          heap.n -= take;
+          heap.by = -1;
+          j.n += take;
+          if (!j.what) j.what = heap.kind;
+          if (heap.n <= 0) st.things.splice(st.things.indexOf(heap), 1);
+          if (j.n < BRACE_COST) {
+            const next = this.heapFor(p, j.what);
+            const nt = next ? next.y * size + next.x : -1;
+            if (!next || !this.go(p, nt)) return false;
+            j.from = next.id;
+            j.tile = nt;
+            next.by = p.id;
+            return true;
+          }
+          const stand = this.standBy(p, [j.target], 1);
+          if (stand < 0 || !this.go(p, stand)) return false;
+          j.phase = 1;
+          j.from = -1;
+          j.tile = stand;
+          return true;
+        }
+        if (j.phase === 1) {
+          if (!at) return false;
+          j.phase = 2;
+          j.until = tick + BRACE_TICKS;
+          this.face(p, (j.target % size) + 0.5, Math.floor(j.target / size) + 0.5);
+          return true;
+        }
+        if (tick < j.until) return true;
+        f.hp[k] = Math.min(100, f.hp[k] + BRACE_HP);
+        j.n = 0;
+        return false;
+      }
       case 'finish': {
         const body = this.thing(j.target);
         if (body?.kind !== 'zwloki' || body.fuel <= 0) return false;
@@ -2966,7 +3054,7 @@ export class Sim {
 
   /** Wolna sterta desek albo złomu najbliżej pionka, do której dojdzie. Łata jest z jednego materiału: kind zawęża
       do niego, a bez kind tylko materiał, którego w osiągalnych stertach starczy na całą łatę. */
-  private heapFor(p: Pawn, kind = ''): Thing | undefined {
+  private heapFor(p: Pawn, kind = '', need = PATCH_COST): Thing | undefined {
     const size = this.w.size;
     const region = this.regionOf(p);
     const free = (t: Thing) =>
@@ -2974,8 +3062,7 @@ export class Sim {
       t.n > 0 &&
       (t.by < 0 || t.by === p.id) &&
       this.reg[t.y * size + t.x] === region;
-    const enough = (k: string) =>
-      this.st.things.reduce((a, t) => a + (t.kind === k && free(t) ? t.n : 0), 0) >= PATCH_COST;
+    const enough = (k: string) => this.st.things.reduce((a, t) => a + (t.kind === k && free(t) ? t.n : 0), 0) >= need;
     let best: Thing | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.things) {
@@ -3714,6 +3801,94 @@ export class Sim {
   private breach(): void {
     this.st.tally!.breaches++;
     this.rebuild();
+  }
+
+  /* ---------- praca za dnia: dzidy, wzmacnianie siatki, alarm ---------- */
+
+  /** materiał ze stert: n sztuk danego rodzaju (najpierw ze sterty first), false, gdy nie starczy */
+  private takeHeaps(kind: string, n: number, first: number): boolean {
+    const st = this.st;
+    const heaps = st.things
+      .filter((t) => t.kind === kind && t.n > 0)
+      .sort((a, b) => (a.id === first ? -1 : b.id === first ? 1 : a.id - b.id));
+    if (heaps.reduce((a, t) => a + t.n, 0) < n) return false;
+    let left = n;
+    for (const t of heaps) {
+      const k = Math.min(t.n, left);
+      t.n -= k;
+      left -= k;
+      if (t.by >= 0) t.by = -1;
+      if (left <= 0) break;
+    }
+    st.things = st.things.filter((t) => !(t.kind === kind && t.n <= 0));
+    return true;
+  }
+
+  /** dzida: do sterty desek, potem godzina pracy na miejscu */
+  private orderCraft(pawns: Pawn[]): void {
+    const total = (k: string) => this.st.things.reduce((a, t) => a + (t.kind === k ? t.n : 0), 0);
+    if (total('deski') < SPEAR_BOARDS || total('zlom') < SPEAR_SCRAP) return;
+    const p = pawns[0];
+    const heap = this.heapFor(p, 'deski');
+    if (!heap) return;
+    const ht = heap.y * this.w.size + heap.x;
+    if (!this.go(p, ht)) return;
+    const j = this.newJob('craft', -1, ht, true);
+    j.from = heap.id;
+    this.setJob(p, j, false);
+    heap.by = p.id;
+  }
+
+  /** wzmocnienie kafelka siatki: po materiał na stertę (2 sztuki jednego rodzaju), potem do siatki od podwórka */
+  private orderBrace(pawns: Pawn[], tile: number): void {
+    const f = this.st.fence;
+    const k = this.fenceIndex.get(tile);
+    if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100) return;
+    if (f.holes.some((h) => h.tiles.includes(tile))) return;
+    const p = pawns[0];
+    const heap = this.heapFor(p, '', BRACE_COST);
+    if (!heap) return;
+    const ht = heap.y * this.w.size + heap.x;
+    if (!this.go(p, ht)) return;
+    const j = this.newJob('brace', tile, ht, true);
+    j.from = heap.id;
+    this.setJob(p, j, false);
+    heap.by = p.id;
+  }
+
+  /** do broni: każdy z zarządu ze zdrowiem ponad 30 na wartę */
+  private orderAlarm(pawns: Pawn[]): void {
+    const able = pawns.filter((p) => (p.needs?.health ?? 0) > 30);
+    if (!able.length) return;
+    this.orderGuard(able, modeOf(this.st) === 'zombie' && this.st.fence ? 'siatka' : 'brama');
+  }
+
+  /** kafelek siatki, na który napiera najwięcej szwendaczy (−1: nikt nie napiera) */
+  private hotTile(): number {
+    const count = new Map<number, number>();
+    for (const p of this.st.pawns)
+      if (p.kind === 'zombie' && p.job?.phase === 2 && p.job.target >= 0)
+        count.set(p.job.target, (count.get(p.job.target) ?? 0) + 1);
+    let best = -1;
+    let bn = 0;
+    for (const [t, n] of count)
+      if (n > bn || (n === bn && t < best)) {
+        best = t;
+        bn = n;
+      }
+    return best;
+  }
+
+  /** warta przy siatce przechodzi do miejsca największego naporu, gdy stoi od niego dalej niż 2,5 m */
+  private followPressure(p: Pawn, j: Job): void {
+    const hot = this.hotTile();
+    if (hot < 0) return;
+    const size = this.w.size;
+    if (Math.hypot((hot % size) + 0.5 - p.x, Math.floor(hot / size) + 0.5 - p.y) <= 2.5) return;
+    const stand = this.standBy(p, [hot], 1);
+    if (stand < 0 || stand === this.tileOf(p) || !this.go(p, stand)) return;
+    j.tile = stand;
+    j.phase = 0;
   }
 
   /* ---------- zakażenie, wstawanie, dobijanie, amputacja ---------- */

@@ -5,6 +5,7 @@ import type { World } from '../world/world.ts';
 import { dryTreeOf, houseOf, inHomeApt } from './house.ts';
 import { gateTiles } from './perimeter.ts';
 import {
+  BRACE_COST,
   BURNABLE,
   CAMPFIRE_WOOD,
   type Command,
@@ -15,13 +16,17 @@ import {
   KOZA_POST,
   PATCH_COST,
   type Pawn,
+  SIATKA_POST,
   type SimState,
+  SPEAR_BOARDS,
+  SPEAR_SCRAP,
   STAY_FIRE,
   STAY_MEAL,
   STAY_YARD,
   type Thing,
   trunkOf,
 } from './sim.ts';
+import { modeOf } from './tryb.ts';
 
 export interface MenuItem {
   cmd: Command;
@@ -105,6 +110,21 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     if (mat('deski') >= PATCH_COST || mat('zlom') >= PATCH_COST)
       out.push({ cmd: { t: 'patch', ids: core, hole: hole.id }, label: 'Załatać dziurę', quick: true });
     out.push({ cmd: { t: 'guard', ids: core, post: `d${hole.id}` }, label: 'Pilnować tutaj', quick: false });
+  }
+  // siatka: wzmocnić uszkodzony kafelek (2 deski albo 2 złomu ze stert), w trybie zombie pilnować przy siatce
+  const k = w.fence?.tiles.indexOf(tile) ?? -1;
+  if (st.fence && k >= 0 && !st.fence.holes.some((h) => h.tiles.includes(tile))) {
+    const mat = (kind: string) => st.things.reduce((a, t) => a + (t.kind === kind ? t.n : 0), 0);
+    if (st.fence.hp[k] > 0 && st.fence.hp[k] < 100 && (mat('deski') >= BRACE_COST || mat('zlom') >= BRACE_COST))
+      out.push({ cmd: { t: 'brace', ids: core, tile }, label: 'Wzmocnić siatkę', quick: true });
+    if (modeOf(st) === 'zombie')
+      out.push({ cmd: { t: 'guard', ids: core, post: 'siatka' }, label: 'Pilnować przy siatce', quick: false });
+  }
+  // sterta desek albo złomu: dzida, gdy starczy materiału
+  if (thingAt(st, w, tile, 'deski') || thingAt(st, w, tile, 'zlom')) {
+    const mat = (kind: string) => st.things.reduce((a, t) => a + (t.kind === kind ? t.n : 0), 0);
+    if (mat('deski') >= SPEAR_BOARDS && mat('zlom') >= SPEAR_SCRAP)
+      out.push({ cmd: { t: 'craft', ids: core, item: 'dzida' }, label: 'Zrobić dzidę', quick: false });
   }
   if (st.fence && gateTiles(w).includes(tile)) {
     out.push({ cmd: { t: 'guard', ids: core, post: 'brama' }, label: 'Pilnować bramy', quick: false });
@@ -202,6 +222,7 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         if (j.phase === 3) return 'Dokłada do kozy.';
         return walking ? 'Idzie czuwać przy kozie.' : 'Czuwa przy kozie.';
       }
+      if (j.target === SIATKA_POST) return walking ? 'Idzie na wartę przy siatce.' : 'Trzyma wartę przy siatce.';
       if (walking) return j.target === 0 ? 'Idzie na wartę przy bramie.' : 'Idzie na wartę przy dziurze.';
       return j.target === 0 ? 'Trzyma wartę przy bramie.' : 'Trzyma wartę przy dziurze.';
     case 'patch':
@@ -218,6 +239,11 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return walking ? 'Idzie walczyć.' : 'Walczy.';
     case 'finish':
       return walking ? 'Idzie dobić zwłoki.' : 'Dobija zwłoki.';
+    case 'craft':
+      return walking ? 'Idzie po deski na dzidę.' : 'Robi dzidę.';
+    case 'brace':
+      if (j.phase === 0) return 'Idzie po deski i złom.';
+      return j.phase === 1 ? 'Niesie materiał do siatki.' : 'Wzmacnia siatkę.';
     case 'amputate':
       return walking ? 'Idzie amputować.' : 'Amputuje.';
     case 'zombie':

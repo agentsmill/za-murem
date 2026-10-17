@@ -9,6 +9,7 @@ import {
   infect,
   type Pawn,
   RISE_TICKS,
+  SIATKA_POST,
   Sim,
   type SimState,
   STAY_YARD,
@@ -306,5 +307,92 @@ describe('ugryzienia, gorączka, wstawanie, dobijanie, amputacja', () => {
     expect(bitten).toBeGreaterThan(0);
     expect(bitten).toBeLessThan(40);
     expect(BITE_INFECT).toBe(0.35);
+  });
+});
+
+describe('praca za dnia i alarm', () => {
+  const coreOf = (st: SimState) => st.pawns.filter((p) => p.kind === 'core');
+  const heap = (st: SimState, kind: string) => st.things.filter((t) => t.kind === kind).reduce((a, t) => a + t.n, 0);
+
+  it('dzida z 2 desek i 1 złomu: godzina pracy, potem w magazynie', () => {
+    const { st, sim } = zombieSim(9, 2);
+    const a = coreOf(st)[0];
+    const deski = st.things.find((t) => t.kind === 'deski')!;
+    const menu = commandsAt(st, w, [a.id], deski.y * size + deski.x);
+    const craft = menu.find((m) => m.cmd.t === 'craft');
+    expect(craft?.cmd).toEqual({ t: 'craft', ids: [a.id], item: 'dzida' });
+    expect(craft?.label).toBe('Zrobić dzidę');
+    const arms0 = st.store.arms!.filter((x) => x === 'dzida').length;
+    const d0 = heap(st, 'deski');
+    const z0 = heap(st, 'zlom');
+    sim.push(craft!.cmd);
+    runTo(sim, st.tick + TICKS_PER_HOUR + 600);
+    expect(st.store.arms!.filter((x) => x === 'dzida').length).toBe(arms0 + 1);
+    expect(heap(st, 'deski')).toBe(d0 - 2);
+    expect(heap(st, 'zlom')).toBe(z0 - 1);
+  });
+
+  it('wzmocnienie siatki: 2 deski albo 2 złomu, +50 wytrzymałości', () => {
+    const { st, sim } = zombieSim(9, 2);
+    const a = coreOf(st)[0];
+    const k = Math.floor(w.fence.tiles.length / 3);
+    const tile = w.fence.tiles[k];
+    sim.damageFence(tile, 60);
+    expect(st.fence!.hp[k]).toBe(40);
+    const brace = commandsAt(st, w, [a.id], tile).find((m) => m.cmd.t === 'brace');
+    expect(brace?.cmd).toEqual({ t: 'brace', ids: [a.id], tile });
+    expect(brace?.label).toBe('Wzmocnić siatkę');
+    const m0 = heap(st, 'deski') + heap(st, 'zlom');
+    sim.push(brace!.cmd);
+    runTo(sim, st.tick + 2500);
+    expect(st.fence!.hp[k]).toBe(90);
+    expect(heap(st, 'deski') + heap(st, 'zlom')).toBe(m0 - 2);
+    // cała siatka: nic do wzmocnienia
+    const fresh = w.fence.tiles[k + 1];
+    expect(commandsAt(st, w, [a.id], fresh).some((m) => m.cmd.t === 'brace')).toBe(false);
+  });
+
+  it('alarm: cały zdolny zarząd na wartę przy siatce (zombie) albo przy bramie (zwykły tryb)', () => {
+    for (const mode of ['zombie', 'zwykly'] as const) {
+      const st = createSim(w, 3, { core: 3, mode });
+      const sim = new Sim(w, st);
+      const all = coreOf(st);
+      all[2].needs!.health = 20;
+      sim.push({ t: 'alarm', ids: all.map((p) => p.id) });
+      sim.step();
+      expect(all[0].job?.t).toBe('guard');
+      expect(all[1].job?.t).toBe('guard');
+      expect(all[2].job?.t).not.toBe('guard');
+      expect(all[0].job?.target).toBe(mode === 'zombie' ? SIATKA_POST : 0);
+      expect(snapshot(st, w).people[0].post).toBe(mode === 'zombie' ? 'siatka' : 'brama');
+    }
+  });
+
+  it('warta przy siatce przechodzi tam, gdzie napierają szwendacze', () => {
+    const { st, sim } = zombieSim(23);
+    const g = coreOf(st)[0];
+    // gołe ręce nie sięgają przez siatkę: warta ich nie wybije, więc widać, gdzie stanie
+    g.weapon = null;
+    // kafelek siatki najdalej od bramy i kafelek tuż za nim po stronie ulicy
+    const gx = w.fence.gate.x;
+    const gy = w.fence.gate.y;
+    const far = [...w.fence.tiles].sort(
+      (a, b) =>
+        Math.hypot((b % size) - gx, Math.floor(b / size) - gy) - Math.hypot((a % size) - gx, Math.floor(a / size) - gy),
+    );
+    let out = -1;
+    for (const t of far) {
+      out = [t - size, t + size, t - 1, t + 1].find((n) => !yard.has(n) && sim.canWalk('zombie', n)) ?? -1;
+      if (out >= 0) break;
+    }
+    expect(out).toBeGreaterThanOrEqual(0);
+    sim.push({ t: 'guard', ids: [g.id], post: 'siatka' });
+    for (let k = 0; k < 3; k++) spawnZombie(st, w, out, k, true);
+    runTo(sim, st.tick + 1200);
+    const pressing = zombies(st).filter((z) => z.job?.phase === 2);
+    expect(pressing.length).toBeGreaterThan(0);
+    const d = Math.min(...pressing.map((z) => Math.hypot(z.x - g.x, z.y - g.y)));
+    expect(d).toBeLessThanOrEqual(3);
+    expect(g.job?.t).toBe('guard');
   });
 });

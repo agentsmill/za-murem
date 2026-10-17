@@ -864,6 +864,9 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   attack: ['Atakuje.', 'Atakują.'],
   finish: ['Dobije zwłoki.', 'Dobiją zwłoki.'],
   amputate: ['Amputuje.', 'Amputują.'],
+  craft: ['Zrobi dzidę.', 'Zrobią dzidę.'],
+  brace: ['Wzmocni siatkę.', 'Wzmocnią siatkę.'],
+  alarm: ['Do broni!', 'Do broni!'],
 };
 
 function run(m: MenuItem) {
