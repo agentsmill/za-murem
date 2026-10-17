@@ -239,7 +239,7 @@ describe('uchwały, zaufanie i wkurzenie', () => {
 });
 
 describe('wydarzenia', () => {
-  it('pierwsze to dym z komina 30 s po rozpaleniu kozy, potem gęsto przez 10 minut, zawsze w swojej porze dnia', () => {
+  it('pierwsze to dym z komina 20 s po rozpaleniu kozy, potem gęsto przez 10 minut, zawsze w swojej porze dnia', () => {
     for (let seed = 1; seed <= 10; seed++) {
       const gov = newGov(seed);
       const atr = new Atrapa(seed);
@@ -269,8 +269,8 @@ describe('wydarzenia', () => {
         else if (p?.k === 'karta') atr.apply(confirmNight(gov, atr.input()));
         else if (p?.k === 'raport') gov.report = null;
       }
-      // atrapa zapala kozę o 17:00 (80 s) i ma wtedy 18°C w kuchni: cisza do 80 s, dym w 110 s
-      expect(seen[0]).toMatchObject({ s: 110, id: 'dym' });
+      // atrapa zapala kozę o 17:00 (80 s) i ma wtedy 18°C w kuchni: cisza do 80 s, dym w 100 s
+      expect(seen[0]).toMatchObject({ s: 100, id: 'dym' });
       for (const e of seen) {
         const def = M1_EVENTS.find((d) => d.id === e.id)!;
         expect(def.when, `${e.id} o ${e.hour}`).toContain(poraOf(e.hour));

@@ -75,7 +75,7 @@ describe('cisza do ciepłej kuchni', () => {
 
   it('po ciszy pierwsze wydarzenie najwcześniej 10 s po nagrzaniu kuchni', () => {
     const { seen } = play(fresh(), 1, 140, (s) => ({ kozaLit: s >= 40, kitchen: s < 105 ? 12 : 18 }));
-    expect(seen[0]).toEqual({ s: 70, id: 'dym' });
+    expect(seen[0]).toEqual({ s: 60, id: 'dym' });
     expect(seen[1].s).toBeGreaterThanOrEqual(115);
     expect(seen[1].s).toBeLessThanOrEqual(130);
   });
@@ -104,11 +104,11 @@ describe('cisza do ciepłej kuchni', () => {
 });
 
 describe('dym z komina', () => {
-  it('30 s po pierwszym rozpaleniu kozy, raz na grę', () => {
+  it('20 s po pierwszym rozpaleniu kozy, raz na grę', () => {
     const gov = fresh();
     const lit = (s: number) => s >= 40 && (s <= 75 || s >= 90);
     const { seen } = play(gov, 1, 100, (s) => ({ kozaLit: lit(s), kitchen: 12 }));
-    expect(seen).toEqual([{ s: 70, id: 'dym' }]);
+    expect(seen).toEqual([{ s: 60, id: 'dym' }]);
   });
 
   it('koza rozpalona pierwszy raz o 6:30 drugiego dnia: dym dopiero od 8:00', () => {
@@ -117,13 +117,13 @@ describe('dym z komina', () => {
     expect(seen[0]).toEqual({ s: sec(2, 8), id: 'dym' });
   });
 
-  /** okno dymu w 70 s (koza od 40 s), przed odpowiedzią */
+  /** okno dymu w 60 s (koza od 40 s), przed odpowiedzią */
   const dymText = (over: Partial<GovInput>) => {
     const gov = fresh();
     const f = (s: number) => ({ kozaLit: s >= 40, kitchen: 12, ...over });
-    play(gov, 1, 69, f);
-    govUpdate(gov, inp(70, f(70)));
-    const p = pending(gov, inp(70, f(70)));
+    play(gov, 1, 59, f);
+    govUpdate(gov, inp(60, f(60)));
+    const p = pending(gov, inp(60, f(60)));
     return p?.k === 'wydarzenie' ? `${p.title}: ${p.text}` : '';
   };
 

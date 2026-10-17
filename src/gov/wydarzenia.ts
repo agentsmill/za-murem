@@ -37,8 +37,9 @@ export const FIRST_EVENT = 70;
 export const EARLY = 600;
 /** po nieudanym losowaniu (nic nie pasowało) następna próba po tylu sekundach przy ekranie */
 export const RETRY = 8;
-/** dym z komina po tylu sekundach przy ekranie od pierwszego rozpalenia kozy (przy 1× w środku czekania na ciepło) */
-export const DYM_DELAY = 30;
+/** dym z komina po tylu sekundach przy ekranie od pierwszego rozpalenia kozy (przy 1× w środku czekania na ciepło,
+    tak żeby od poleceń samouczka do pierwszego okna i od dymu do pierwszego wydarzenia nie mijała więcej niż minuta) */
+export const DYM_DELAY = 20;
 /** po ciszy pierwsze losowe wydarzenie najwcześniej po tylu sekundach (nie razem z nowym celem samouczka) */
 export const AFTER_WARM = 10;
 /** cisza pierwszego dnia trwa do ciepłej kuchni, najpóźniej do tej godziny */

@@ -2193,7 +2193,118 @@ const SHOTS: Shot[] = [
       if (!card) throw new Error('po szczypaniu stuknięcie nie zaznaczyło osoby');
     },
   },
+  // wydarzenia z miejsca: dym z komina pierwszego dnia w bloku i w domu, wydarzenie drugiego dnia i karta nocy w domu
+  wydarzeniaDym('wydarzenia-blok-dym', 'przymorze', 'z waszej klatki'),
+  wydarzeniaDym('wydarzenia-dom-dym', 'zielonki', 'zza płotu'),
+  {
+    name: 'wydarzenia-dom-dzien2',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await chopDryTree(page);
+      // do raportu i dalej do pierwszego wydarzenia drugiego dnia od 8:00 (okna po drodze: pierwsza odpowiedź)
+      for (let k = 0; k < 200; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(15));
+        const day2 = await page.evaluate(() => {
+          const st = window.zm!.sim!.st;
+          return st.tick >= (24 + 8 - 15) * 800;
+        });
+        if (p === 'wydarzenie' && day2) {
+          const t = await sheetText(page);
+          console.log(`  wydarzenie drugiego dnia w domu: ${t.slice(0, 160)}`);
+          if (FORBIDDEN_DOM.test(t)) throw new Error(`w domu słowa z bloku: ${t}`);
+          return;
+        }
+        if (p) await answerFirst(page, p);
+      }
+      throw new Error('drugiego dnia nie było wydarzenia');
+    },
+  },
+  {
+    name: 'wydarzenia-dom-karta',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await chopDryTree(page);
+      for (let k = 0; k < 120; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(10));
+        if (p === 'karta') {
+          const t = await sheetText(page);
+          console.log(
+            `  karta nocy w domu: ${
+              t
+                .match(/Wyprawa[^\n]*/g)
+                ?.slice(0, 2)
+                .join(' | ') ?? t.slice(0, 120)
+            }`,
+          );
+          if (/blok|trzepak|pawilon/i.test(t)) throw new Error(`karta nocy w domu z blokowiskiem: ${t}`);
+          if (!t.includes('opuszczony dom obok')) throw new Error('na karcie nie ma wyprawy do opuszczonego domu obok');
+          return;
+        }
+        if (p) await answerFirst(page, p);
+      }
+      throw new Error('karta nocy się nie pokazała');
+    },
+  },
 ];
+
+/** słowa, których w domu jednorodzinnym nie ma w tekstach zarządu (jak FORBIDDEN_DOM w testach) */
+const FORBIDDEN_DOM = /klatk|piętr|spółdziel|pawilon|szlaban|świetlic|czynsz|blok|mieszkani/i;
+
+/** samouczek bez klikania: pierwszy z zarządu ścina suche drzewo (jak polecenie z menu) */
+async function chopDryTree(page: Page) {
+  await page.evaluate(() => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const who = sim.st.pawns.find((p) => p.kind === 'core')!;
+    sim.push({ t: 'select', ids: [who.id] });
+    sim.push({ t: 'chop', ids: [who.id], tree: sim.w.dryTree });
+  });
+}
+
+/** tytuł i treść otwartego okna */
+const sheetText = (page: Page) =>
+  page.evaluate(
+    () =>
+      `${document.querySelector('#sheet .sheet-title')?.textContent ?? ''}\n${document.querySelector('#sheet')?.textContent ?? ''}`,
+  );
+
+/** odpowiedź na okno zarządu, żeby gra szła dalej: pierwszy dostępny wybór, bez uchwały, karta jak proponuje */
+async function answerFirst(page: Page, p: string) {
+  if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+  else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
+  else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
+  else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
+}
+
+/** okno „Dym z komina” po rozpaleniu kozy pierwszego dnia, z sąsiadem z miejsca */
+function wydarzeniaDym(name: string, demo: string, from: string): Shot {
+  return {
+    name,
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=${demo}&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await chopDryTree(page);
+      for (let k = 0; k < 80; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(5));
+        if (p === 'wydarzenie') {
+          const t = await sheetText(page);
+          console.log(`  ${t.replace(/\s+/g, ' ').slice(0, 200)}`);
+          if (!t.startsWith('Dym z komina')) throw new Error(`pierwsze okno to nie dym z komina: ${t.slice(0, 80)}`);
+          if (!t.includes(`pani Krysia ${from}`)) throw new Error(`w dymie nie ma sąsiadki ${from}`);
+          await waitIdle(page);
+          return;
+        }
+        if (p) throw new Error(`przed dymem okno: ${p}`);
+      }
+      throw new Error('dym z komina się nie pokazał');
+    },
+  };
+}
 
 /** kamera na uszkodzoną podłogę (atrapa) w pustym mieszkaniu o danej przyczynie */
 function m2Floor(name: string, why: string): Shot {

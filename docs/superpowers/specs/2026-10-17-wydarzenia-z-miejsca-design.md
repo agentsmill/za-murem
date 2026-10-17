@@ -85,7 +85,7 @@ Dokładne nazwy pól w kodzie zostają budującemu; tabela mówi, jakie słowa i
 ## 3. Tempo pierwszego dnia (Mateusz)
 
 - Cisza: pierwszego dnia, dopóki kuchnia pierwszy raz nie dojdzie do 18°C, nie ma losowych wydarzeń. Zarząd rozpoznaje to sam z `kitchen` w wejściu. Bez kuchni (świat bez wnętrza, `kitchen` równe `null`) ciszy nie ma. Najpóźniej o 18:00 pierwszego dnia cisza się kończy, nawet jeśli kuchnia jest zimna (moja decyzja).
-- Dym z komina: kiedy koza pierwszy raz się pali (`kozaLit`), po 30 s przy ekranie przychodzi wydarzenie „Dym z komina”. Raz na grę. To dawne „Słoik od sąsiadki” z nowym początkiem i z tymi samymi wyborami i skutkami: przy 1× wypada około 70 s, w środku czekania na ciepło (moja decyzja co do 30 s: przy 10 s między dymem a pierwszym wydarzeniem po ciszy byłoby ponad minutę bez decyzji).
+- Dym z komina: kiedy koza pierwszy raz się pali (`kozaLit`), po 20 s przy ekranie przychodzi wydarzenie „Dym z komina”. Raz na grę. To dawne „Słoik od sąsiadki” z nowym początkiem i z tymi samymi wyborami i skutkami: przy 1× wypada około 60 s, w środku czekania na ciepło (moja decyzja co do 20 s, po pomiarze na czterech miejscach: tak od poleceń samouczka do dymu i od dymu do pierwszego wydarzenia po ciszy mija najwyżej około minuty).
 - Po ciszy pierwszego dnia, aż do pierwszego raportu rano, tylko wydarzenia pierwszej nocy: o siatce, o obcych za płotem i o nocy. Pierwsze po ciszy najwcześniej 10 s po nagrzaniu kuchni i 20 s po poprzedniej decyzji (moja decyzja, żeby nie zderzyło się z nowym celem samouczka).
 - Od drugiego dnia cała pula z warunkami miejsca.
 
