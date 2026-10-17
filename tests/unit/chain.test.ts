@@ -99,6 +99,31 @@ describe('łańcuch drewna: polecenie, drewno, skład, koza, ciepło', () => {
     expect(woodFrom({ ...t, r: 2 })).toBeGreaterThanOrEqual(2);
     expect(woodFrom({ ...t, kind: 2, r: 1.4 })).toBeLessThan(woodFrom({ ...t, r: 1.8 }));
   });
+
+  it('koza zjada drewno: suche drzewo starcza na kilka godzin, opał kończy się pierwszego wieczoru', () => {
+    for (const r of [2, 2.5, 3, 3.3]) {
+      const hours = (woodFrom({ ...block.trees[0], kind: 0, r }) * BURN_TICKS) / TICKS_PER_HOUR;
+      expect(hours).toBeGreaterThanOrEqual(3);
+      expect(hours).toBeLessThanOrEqual(5.5);
+    }
+    const w = block;
+    const sim = new Sim(w, createSim(w, 11, { core: 4 }));
+    const st = sim.st;
+    sim.push({ t: 'chop', ids: [core(sim)[0].id], tree: w.dryTree });
+    let lit = false;
+    let out = -1;
+    for (let k = 0; k < TICKS_PER_DAY && out < 0; k++) {
+      sim.step();
+      if (kozaOf(st).fuel > 0) lit = true;
+      else if (lit && !st.things.some((t) => t.kind === 'drewno') && core(sim).every((p) => p.carry === 0))
+        out = st.tick;
+    }
+    // bez drewna koza gaśnie wieczorem pierwszego dnia: gracz musi zdecydować, skąd wziąć opał
+    const hour = START_MINUTES / 60 + out / TICKS_PER_HOUR;
+    expect(out).toBeGreaterThan(0);
+    expect(hour).toBeGreaterThan(18);
+    expect(hour).toBeLessThan(22.5);
+  });
 });
 
 describe('zarząd sam', () => {
@@ -131,7 +156,8 @@ describe('zarząd sam', () => {
     const st = createSim(w, 3, { core: 4 });
     addWood(st, w.buildings[w.hq].entrances[0].out + 4 * w.size, w.size, 4);
     const sim = new Sim(w, st);
-    for (let k = 0; k < 3000; k++) sim.step();
+    // minuta realna: drewno już w składzie albo w kozie, ale jeszcze się nie wypaliło
+    for (let k = 0; k < 1200; k++) sim.step();
     const sklad = w.interior.sklad;
     const outside = st.things.filter((t) => t.kind === 'drewno' && !sklad.includes(t.y * w.size + t.x));
     expect(outside).toHaveLength(0);
@@ -247,8 +273,8 @@ describe('polecenia', () => {
 
   it('polecenie w trakcie noszenia: drewno zostaje na ziemi, nic nie ginie', () => {
     const st = createSim(w, 3, { core: 1 });
-    // koza pełna, więc nikt nic nie spali i drewna musi być cały czas tyle samo
-    kozaOf(st).fuel = 4 * BURN_TICKS;
+    // bez kozy nikt nic nie spali, więc drewna musi być cały czas tyle samo
+    st.things = st.things.filter((t) => t.kind !== 'koza');
     addWood(st, w.buildings[w.hq].entrances[0].out + 6 * w.size, w.size, 5);
     const sim = new Sim(w, st);
     const [p] = core(sim);
@@ -260,7 +286,7 @@ describe('polecenia', () => {
     sim.step();
     expect(p.carry).toBe(0);
     expect(total()).toBe(5);
-    // po godzinie czekania na miejscu sam zanosi upuszczone drewno do składu (koza wciąż pełna)
+    // po godzinie czekania na miejscu sam zanosi upuszczone drewno do składu
     for (let k = 0; k < 1500; k++) sim.step();
     expect(total()).toBe(5);
     expect(woodOn(st, w.size, w.interior.sklad)).toBe(5);
@@ -300,10 +326,12 @@ describe('polecenia', () => {
       const end = p.path[p.path.length - 1];
       expect(Math.hypot((end % w.size) + 0.5 - t.x, Math.floor(end / w.size) + 0.5 - t.y)).toBeLessThan(5);
     }
-    // po ścięciu pomocnicy od razu biorą się do noszenia, zamiast stać godzinę tam, gdzie doszli
+    // po ścięciu pomocnicy od razu biorą się do noszenia, zamiast stać godzinę tam, gdzie doszli:
+    // po dwóch sekundach każdy stos ktoś już niesie albo po niego idzie
     while (!sim.st.felled.includes(w.dryTree)) sim.step();
     for (let k = 0; k < 2 * TICKS_PER_SECOND; k++) sim.step();
-    for (const p of [b, c]) expect(p.job?.t === 'haul' || p.carry > 0).toBe(true);
+    expect(sim.st.things.filter((t) => t.kind === 'drewno' && t.by < 0)).toEqual([]);
+    expect([b, c].some((p) => p.job?.t === 'haul')).toBe(true);
   });
 });
 

@@ -33,8 +33,9 @@ export const PATHS_PER_TICK = 4;
 export const CARRY = 6;
 /** tyle sztuk drewna na jednym kafelku składu */
 export const STACK = 10;
-/** sztuka drewna pali się w kozie godzinę gry */
-export const BURN_TICKS = TICKS_PER_HOUR;
+/** sztuka drewna pali się w kozie pół godziny gry (20 s przy 1×): suche drzewo starcza na 3–5 godzin,
+    więc pierwszego wieczoru trzeba zdecydować, skąd wziąć opał */
+export const BURN_TICKS = TICKS_PER_HOUR / 2;
 /** koza mieści naraz tyle sztuk */
 export const KOZA_CAP = 4;
 /** porcje jedzenia w kuchni na start: dwa posiłki dziennie dla czterech osób przez trzy dni */
@@ -172,9 +173,9 @@ const SPREAD: [number, number][] = (() => {
 const LOOSE = new Set(['drewno', 'jedzenie', 'pien']);
 const BEDS = new Set(['lozko', 'wersalka']);
 
-/** drewno ze ściętego drzewa: więcej z większej korony, z krzaka mało */
+/** drewno ze ściętego drzewa: 3 sztuki na metr korony, z krzaka mało */
 export const woodFrom = (t: Tree): number =>
-  t.kind === 2 ? Math.max(1, Math.round(t.r * 1.5)) : Math.max(2, Math.round(t.r * 4));
+  t.kind === 2 ? Math.max(1, Math.round(t.r * 1.5)) : Math.max(2, Math.round(t.r * 3));
 /** rąbanie trwa od kilkunastu do trzydziestu kilku sekund realnych przy 1× */
 export const chopTicks = (t: Tree): number => Math.round(160 + 120 * t.r);
 
