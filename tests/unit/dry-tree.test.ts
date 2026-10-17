@@ -44,11 +44,29 @@ const count = (reg: Int32Array, label: number) => {
   return n;
 };
 
+/** kroki od wyjścia z drzwi po wolnych kafelkach bez jezdni (przyszłe podwórko za siatką); −1 poza zasięgiem */
+function yardSteps(w: World, from: number): Int32Array {
+  const size = w.size;
+  const steps = new Int32Array(size * size).fill(-1);
+  const q = [from];
+  steps[from] = 0;
+  for (let k = 0; k < q.length; k++) {
+    const c = q[k];
+    const x = c % size;
+    for (const n of [x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1, c - size, c + size]) {
+      if (n < 0 || n >= size * size || steps[n] >= 0 || w.blocked[n] || w.terr[n] === T.ROAD) continue;
+      steps[n] = steps[c] + 1;
+      q.push(n);
+    }
+  }
+  return steps;
+}
+
 /** wspólne sprawdzenia suchego drzewa i trzepaka */
 function checkYard(w: World) {
   const size = w.size;
   const door = w.buildings[w.hq].entrances[0];
-  // suche drzewo: jest, to nie krzak, stoi 6–25 m od pierwszych drzwi frontowych
+  // suche drzewo: jest, to nie krzak, stoi 6–16 m od pierwszych drzwi frontowych
   expect(w.dryTree).toBeGreaterThanOrEqual(0);
   const t = w.trees[w.dryTree];
   expect(t).toBeTruthy();
@@ -57,12 +75,16 @@ function checkYard(w: World) {
   const ay = Math.floor(door.tile / size) + 0.5;
   const d = Math.hypot(t.x - ax, t.y - ay);
   expect(d).toBeGreaterThanOrEqual(6);
-  expect(d).toBeLessThanOrEqual(25);
+  expect(d).toBeLessThanOrEqual(16);
   // da się do niego dojść z drzwi: obok pnia wolny kafelek w tym samym obszarze co wyjście z drzwi
   const reg = labelRegions(w.blocked, size);
   const ti = Math.floor(t.y) * size + Math.floor(t.x);
   expect(w.blocked[ti]).toBe(1);
   expect([ti - 1, ti + 1, ti - size, ti + size].some((k) => !w.blocked[k] && reg[k] === reg[door.out])).toBe(true);
+  // w przyszłym podwórku za siatką: od drzwi do pnia najwyżej 24 kroki i bez przechodzenia przez jezdnię
+  const yard = yardSteps(w, door.out);
+  const near = (i: number) => yard[i] >= 0 && yard[i] <= 24;
+  expect([ti - 1, ti + 1, ti - size, ti + size].some(near), 'suche drzewo poza podwórkiem').toBe(true);
   // trzepak: jeden, 3×1 m, 2–4 m od pnia
   const trzepaki = w.props.filter((p) => p.kind === 'trzepak');
   expect(trzepaki).toHaveLength(1);
@@ -82,6 +104,10 @@ function checkYard(w: World) {
   }
   // blokują tylko słupki na końcach, pod drążkiem da się przejść
   expect(tiles.map((i) => w.blocked[i])).toEqual([1, 0, 1]);
+  // trzepak też na podwórku i nie przy samej jezdni
+  expect(near(tiles[1]), 'trzepak poza podwórkiem').toBe(true);
+  for (let y = p.y - 1; y <= p.y + p.h; y++)
+    for (let x = p.x - 1; x <= p.x + p.w; x++) expect(w.terr[y * size + x], 'trzepak przy jezdni').not.toBe(T.ROAD);
   // słupki niczego nie odcinają: bez nich obszar drzwi jest większy dokładnie o te dwa kafelki
   const open = w.blocked.slice();
   open[tiles[0]] = 0;
