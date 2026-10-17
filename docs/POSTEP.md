@@ -121,6 +121,15 @@ Do `m1-pierwsze-minuty` weszły lokalnie, bez konfliktów:
 
 Na połączonej gałęzi: testy 386/386, Biome, build, bot (skróty 0842047d i b1759110 bez zmian), 41 zrzutów bez błędów; obejrzane `noc-gra` (koza ze stanu gry świeci w kuchni, ciepła plama za oknem) i `przymorze-calosc`. Jeszcze nie rysowane: sterty materiałów i garnek z posiłkiem.
 
+### M1 tura 3, część 2, noc 17/18.10.2026: interfejs i wraki
+
+Do `m1-pierwsze-minuty` weszły lokalnie:
+- `m1-wraki-swiat`: 4–10 wraków maluchów i polonezów w `World.props` do 100 m od siedziby, poza siatką, przy jezdni (3 m przejazdu) albo na parkingach, bez rozcinania osiedla.
+- `m1-wraki`: sterty ze świata i ze stanu gry, garnek z posiłkiem na stole, wraki w czterech ustawieniach (rdza, bez kół, wybite szyby).
+- `m1-interfejs`: zarząd spięty z grą w main.ts (krok co sekundę przy ekranie, pauza przy decyzji), karta osoby z paskami potrzeb i nastrojami, menu pod prawym przyciskiem z potwierdzeniem palenia mebli, karta nocy o 20:00 (ryzyko wejścia z wartą i bez, co zabiorą, przydział do dziur i bramy, rada zarządu), okna uchwały, wydarzenia i porannego raportu, cele pierwszego dnia ze znacznikiem suchego drzewa, pasek z temperaturą, drewnem, jedzeniem, zaufaniem i wkurzeniem, własne Menu, zapis w przeglądarce. Skutki zarządu stosuje na razie adapter z interfejsu (zapasy, potrzeby, nastroje); prawdziwe `applyGov` przyjdzie z symulacją nocy.
+
+Przy łączeniu interfejsu rozwiązałem konflikt w main.ts (krok zarządu z interfejsu, rysowanie stanu przez `view.syncGame`, bez tymczasowego malowania, które gubiło obrót wraków) i w tools/shots.ts (scenariusze z obu gałęzi). Scenariusz `sterty` liczył po dołączeniu wraków wszystkie props poza trzepakiem; teraz tylko gruz, deski i złom. Na połączonej gałęzi: testy 417/417, Biome, build, bot (skróty 175d3cc8 i d342966e), 61 zrzutów bez błędów; obejrzane `m1-karta-nocy` i `m1-karta-osoby`.
+
 ## Następne
 
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
