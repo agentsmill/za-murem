@@ -1,12 +1,13 @@
 /* Świat gry: siatka 1 m wokół adresu, zbudowana z geometrii OSM.
    Kolejność: obrót mapy, prostowanie budynków, teren, wody, ścieżki, chodniki, jezdnie,
-   budynki, drzewa, wnętrze siedziby, suche drzewo z trzepakiem. Wszystko deterministyczne:
-   ten sam adres i ziarno dają ten sam świat. */
+   budynki, drzewa, wnętrze siedziby, suche drzewo z trzepakiem, siatka z bramą wokół podwórka.
+   Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. */
 
 import type { BuildingClass } from '../content/data.ts';
 import { mulberry } from '../core/rng.ts';
 import { labelRegions, nearestFree } from '../sim/path.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
+import { applyFence, buildFence, type Fence } from './fence.ts';
 import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea } from './geo.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { fillRing, stampLine } from './raster.ts';
@@ -92,6 +93,8 @@ export interface World {
   dryTree: number;
   /** rzeczy na podwórku: trzepak przy suchym drzewie (blokują tylko słupki na końcach) */
   props: Prop[];
+  /** dziurawa siatka z bramą wokół siedziby i podwórka; stan zmienny (łaty, nowe dziury, brama) trzyma symulacja */
+  fence: Fence;
 }
 
 const ROAD_W: Record<string, number> = {
@@ -354,7 +357,23 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   const reg = applyInterior({ size, blocked }, interior);
 
   // 12. suche drzewo przy trzepaku: cel pierwszego polecenia (regiony już z wnętrzem)
-  const yard = dryTreeAndTrzepak(terr, bid, blocked, reg, size, trees, buildings, hq, opts.seed);
+  const dry = dryTreeAndTrzepak(terr, bid, blocked, reg, size, trees, buildings, hq, opts.seed);
+
+  // 13. dziurawa siatka z bramą wokół siedziby i podwórka z suchym drzewem i trzepakiem
+  const fence = buildFence({
+    size,
+    terr,
+    bid,
+    blocked,
+    buildings,
+    hq,
+    interior,
+    trees,
+    dryTree: dry.tree,
+    props: dry.props,
+    seed: opts.seed,
+  });
+  applyFence({ blocked }, fence);
 
   return {
     size,
@@ -368,8 +387,9 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     hq,
     seed: opts.seed,
     interior,
-    dryTree: yard.tree,
-    props: yard.props,
+    dryTree: dry.tree,
+    props: dry.props,
+    fence,
   };
 }
 
