@@ -18,6 +18,7 @@
     "bot": "node tools/bot.ts",
     "bot:v03": "node tools/bot-v03.ts",
     "demos": "node tools/make-demos.ts",
+    "dane:gminy": "node tools/dane-gminy.ts",
     "shots": "node tools/shots.ts",
     "perf": "node tools/perf.ts"
   },
