@@ -5,9 +5,9 @@
 
 import { PROFS } from '../content/data.ts';
 import { makePerson, type Person } from '../content/people.ts';
-import { hashString, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
+import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
-import type { BuildPlan } from './budowle.ts';
+import type { BuildKind, BuildPlan, Mat } from './budowle.ts';
 import {
   daylight,
   hourOf,
@@ -33,7 +33,19 @@ import {
   roomLinks,
   START_TEMP,
 } from './house.ts';
-import { type AptGame, aptsFrom, type DamageGame, damageFrom } from './mieszkania.ts';
+import {
+  type AptGame,
+  aptsFrom,
+  type DamageGame,
+  DISMANTLE,
+  damageFrom,
+  dismantleTicks,
+  lootOf,
+  REPAIR,
+  RUBBISH,
+  searchTicks,
+  yieldOf,
+} from './mieszkania.ts';
 import {
   COLD,
   HUNGRY,
@@ -101,6 +113,8 @@ export const PATCH_TICKS = TICKS_PER_HOUR / 2;
 export const CAMPFIRE_WOOD = 2;
 export const BUILD_TICKS = TICKS_PER_HOUR / 4;
 export const CAMPFIRE_CAP = 6;
+/** zajęcie mieszkania (oznaczenie drzwi i spis) trwa kwadrans gry */
+export const CLAIM_TICKS = TICKS_PER_HOUR / 4;
 /** warta trwa do tej godziny rano */
 export const GUARD_UNTIL = 6;
 /** posterunek warty przy kozie zarządu (Job.target), klucz 'koza': czuwa w kuchni i dokłada, kiedy ognia mało */
@@ -140,7 +154,12 @@ export type JobKind =
   | 'stay'
   | 'guard'
   | 'patch'
+  | 'campfire'
   | 'build'
+  | 'search'
+  | 'dismantle'
+  | 'repair'
+  | 'claim'
   | 'leave'
   | 'raid';
 
@@ -301,7 +320,16 @@ export type Command =
   /** napad bez zarządu (testy, bot, podgląd): tick, o którym są przy siatce, i posterunek 'brama' / 'd<id>' */
   | { t: 'raid'; ids: number[]; at: number; post: string }
   /** łaty z zarządu: n największych otwartych dziur od razu załatanych (materiał policzył zarząd) */
-  | { t: 'mend'; ids: number[]; n: number };
+  | { t: 'mend'; ids: number[]; n: number }
+  /** M2: plan budowy w miejscu (albo przydział do planu, który tam już jest), odwołanie planu albo budowli */
+  | { t: 'build'; ids: number[]; kind: BuildKind; x: number; y: number; rot: number }
+  | { t: 'unbuild'; ids: number[]; id: number }
+  /** M2: przeszukać pomieszczenie, rozebrać rzecz na materiał, naprawić uszkodzenie (indeks w st.damage),
+      zająć puste mieszkanie */
+  | { t: 'search'; ids: number[]; room: number }
+  | { t: 'dismantle'; ids: number[]; thing: number }
+  | { t: 'repair'; ids: number[]; damage: number }
+  | { t: 'claim'; ids: number[]; apt: number };
 
 /** łup w sztukach: drewno, porcje zapasów, złom */
 export interface Loot {
@@ -716,6 +744,34 @@ function residentApts(st: SimState, w: World, h: HouseLike): number[] {
       apts.push(a);
   }
   return apts.sort((a, b) => a - b);
+}
+
+/** Miejsca dla mieszkańców: po trzy na mieszkanie mieszkańców (najwyżej 8, jak w M1), do tego łóżka w zajętych
+    i naprawionych pustych mieszkaniach i po dwa w każdych łóżkach piętrowych w naszych mieszkaniach. */
+export function capOf(st: SimState, w: World): number {
+  const h = houseOf(w);
+  if (!h) return st.cap;
+  const size = w.size;
+  const lives = residentApts(st, w, h).filter((a) => st.apts.find((g) => g.apt === a)?.state !== 'puste');
+  let cap = Math.min(8, 3 * lives.length);
+  const aptOfThing = (t: Thing) => aptAt(h, t.y * size + t.x);
+  for (const g of st.apts) {
+    if (!g.ours || g.state !== 'puste' || !repaired(st, g.apt)) continue;
+    cap += st.things.filter((t) => BEDS.has(t.kind) && !t.broken && aptOfThing(t) === g.apt).length;
+  }
+  for (const t of st.things)
+    if (t.kind === 'lozka_pietrowe' && st.apts.find((g) => g.apt === aptOfThing(t))?.ours) cap += 2;
+  return cap;
+}
+
+/** Czy rzecz da się rozebrać na materiał: śmieci i gruz zawsze, meble z tabeli tylko w pustych mieszkaniach (meble
+    zarządu można spalić, mieszkańców się nie rusza). Dla menu i polecenia. */
+export function dismantlable(st: SimState, w: World, t: Thing): boolean {
+  if (RUBBISH.has(t.kind)) return true;
+  const h = houseOf(w);
+  if (!DISMANTLE[t.kind] || !h) return false;
+  const apt = aptAt(h, t.y * w.size + t.x);
+  return st.apts.find((a) => a.apt === apt)?.state === 'puste';
 }
 
 /** wszystkie uszkodzenia mieszkania naprawione */
@@ -1305,6 +1361,10 @@ export class Sim {
     else if (c.t === 'patch') this.orderPatch(pawns, c.hole);
     else if (c.t === 'campfire') this.orderCampfire(pawns, c.at);
     else if (c.t === 'away') for (const p of pawns) this.startLeave(p);
+    else if (c.t === 'search') this.startSearch(pawns[0], c.room);
+    else if (c.t === 'dismantle') this.startDismantle(pawns[0], c.thing);
+    else if (c.t === 'repair') this.startRepair(pawns[0], c.damage);
+    else if (c.t === 'claim') this.startClaim(pawns[0], c.apt);
   }
 
   /** Pora wspólnego posiłku (uchwała o kotle), w której mieszkańcy mogą wejść do mieszkania zarządu: pół godziny
@@ -1461,7 +1521,7 @@ export class Sim {
   /** na tym kafelku można teraz rozpalić ognisko (campfireSpotOk) i nikt tam nie pracuje */
   siteOk(at: number): boolean {
     if (!campfireSpotOk(this.st, this.w, at)) return false;
-    return !this.st.pawns.some((q) => q.job && (q.job.tile === at || (q.job.t === 'build' && q.job.target === at)));
+    return !this.st.pawns.some((q) => q.job && (q.job.tile === at || (q.job.t === 'campfire' && q.job.target === at)));
   }
 
   /** kilka osób naraz: każda dostaje inny wolny kafelek ze spirali wokół celu;
@@ -2136,7 +2196,7 @@ export class Sim {
         this.rebuild();
         return false;
       }
-      case 'build': {
+      case 'campfire': {
         const size = this.w.size;
         const site = j.target;
         const sx = site % size;
@@ -2184,6 +2244,54 @@ export class Sim {
       }
       case 'raid':
         // szabrownicy mają własny krok (strangerTick)
+        return false;
+      case 'search': {
+        const g = this.aptOfRoom(j.target);
+        if (!g || g.searched.includes(j.target)) return false;
+        if (j.phase === 0) {
+          if (!at) return false;
+          j.phase = 1;
+          j.t0 = tick;
+          j.until = tick + searchTicks(this.roomTiles[j.target].length);
+          return true;
+        }
+        if (tick < j.until) return true;
+        this.searchDone(j.target, g, j.tile);
+        return false;
+      }
+      case 'dismantle': {
+        const t = this.thing(j.target);
+        if (!t || t.by !== p.id) return false;
+        if (j.phase === 0) {
+          if (!at) return false;
+          j.phase = 1;
+          j.t0 = tick;
+          j.until = tick + dismantleTicks(t.kind, t.w, t.h, t.n);
+          this.face(p, t.x + t.w / 2, t.y + t.h / 2);
+          return true;
+        }
+        if (tick < j.until) return true;
+        this.dismantleDone(t, j.tile);
+        return false;
+      }
+      case 'repair':
+        return this.repairWork(p, j, at);
+      case 'claim': {
+        const g = this.st.apts.find((a) => a.apt === j.target);
+        if (!g || g.ours || g.state !== 'puste') return false;
+        if (j.phase === 0) {
+          if (!at) return false;
+          j.phase = 1;
+          j.t0 = tick;
+          j.until = tick + CLAIM_TICKS;
+          return true;
+        }
+        if (tick < j.until) return true;
+        g.ours = true;
+        this.updateCap();
+        return false;
+      }
+      case 'build':
         return false;
       case 'leave':
         // za bramą znika; wraca poleceniem 'back'
@@ -2712,14 +2820,14 @@ export class Sim {
     if (p.carry >= CAMPFIRE_WOOD) {
       const stand = this.siteStand(p, site);
       if (stand < 0 || !this.go(p, stand)) return false;
-      this.setJob(p, this.newJob('build', site, stand, true, 1), true);
+      this.setJob(p, this.newJob('campfire', site, stand, true, 1), true);
       return true;
     }
     const pile = this.pileFor(p, 'any');
     if (!pile) return false;
     const pt = pile.y * size + pile.x;
     if (!this.go(p, pt)) return false;
-    const j = this.newJob('build', site, pt, true);
+    const j = this.newJob('campfire', site, pt, true);
     j.from = pile.id;
     this.setJob(p, j, true);
     pile.by = p.id;
@@ -2752,6 +2860,289 @@ export class Sim {
     p.pi = 0;
     p.wait = this.st.tick;
     if (this.door >= 0 && this.go(p, this.door)) this.setJob(p, this.newJob('go', this.door, this.door, false), false);
+  }
+
+  /* ---------- M2: przeszukanie, rozbiórka, naprawa, zajęcie ---------- */
+
+  /** mieszkanie pomieszczenia (stan w grze) albo undefined dla klatki */
+  private aptOfRoom(room: number): AptGame | undefined {
+    const r = this.house?.rooms[room];
+    return r && r.apt >= 0 ? this.st.apts.find((a) => a.apt === r.apt) : undefined;
+  }
+
+  /** wolny kafelek pomieszczenia najbliżej pionka, na którym nikt nie pracuje */
+  private roomSpot(p: Pawn, room: number): number {
+    const size = this.w.size;
+    const taken = this.taken(p);
+    const region = this.regionOf(p);
+    const cand = this.roomTiles[room].filter(
+      (i) => this.reg[i] === region && !taken.includes(i) && !this.furnitureAt(i % size, Math.floor(i / size)),
+    );
+    return this.nearest(p, cand.length ? cand : this.roomTiles[room].filter((i) => this.reg[i] === region));
+  }
+
+  /** przeszukać pomieszczenie pustego mieszkania (raz; nie gdy ktoś już je przeszukuje) */
+  private startSearch(p: Pawn, room: number): void {
+    const g = this.aptOfRoom(room);
+    if (g?.state !== 'puste' || g.searched.includes(room)) return;
+    if (this.st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room)) return;
+    const spot = this.roomSpot(p, room);
+    if (spot < 0 || !this.go(p, spot)) return;
+    this.setJob(p, this.newJob('search', room, spot, true), false);
+  }
+
+  /** łup z przeszukania: z tabeli według powodu opuszczenia, deterministycznie z ziarna gry i pomieszczenia */
+  private searchDone(room: number, g: AptGame, at: number): void {
+    const h = this.house!;
+    const rnd = mulberry((Math.imul(this.st.seed | 0, 9973) ^ Math.imul(room + 1, 7919) ^ 0x51ab) >>> 0);
+    const loot = lootOf(g.why ?? 'wyjazd', h.rooms[room].kind, this.roomTiles[room].length, rnd);
+    for (const [m, n] of Object.entries(loot) as [Mat, number][]) if (n > 0) this.dropMat(at, m, n, room);
+    g.searched.push(room);
+    g.searched.sort((a, b) => a - b);
+  }
+
+  canDismantle(t: Thing): boolean {
+    return dismantlable(this.st, this.w, t);
+  }
+
+  private startDismantle(p: Pawn, id: number): void {
+    const t = this.thing(id);
+    if (!t || !this.canDismantle(t) || (t.by >= 0 && t.by !== p.id)) return;
+    const size = this.w.size;
+    // na stercie się stoi, przy meblu obok
+    const stand = RUBBISH.has(t.kind) ? t.y * size + t.x : this.beside(p, t);
+    if (stand < 0 || !this.go(p, stand)) return;
+    this.setJob(p, this.newJob('dismantle', t.id, stand, true), false);
+    t.by = p.id;
+  }
+
+  /** rzecz znika, materiały zostają obok (z warsztatem półtora raza więcej) */
+  private dismantleDone(t: Thing, at: number): void {
+    const st = this.st;
+    const bonus = this.hasBuilt('warsztat');
+    const out = yieldOf(t.kind, t.n, !!t.broken);
+    st.things.splice(st.things.indexOf(t), 1);
+    for (const [m, n] of Object.entries(out) as [Mat, number][]) {
+      const k = bonus ? Math.round(n * 1.5) : n;
+      if (k > 0) this.dropMat(at, m, k);
+    }
+  }
+
+  /** gotowa budowla danego rodzaju stoi */
+  private hasBuilt(kind: BuildKind): boolean {
+    return this.st.things.some((t) => t.kind === kind);
+  }
+
+  /** kafelek, z którego się naprawia: samo uszkodzenie, gdy da się na nim stanąć, inaczej sąsiedni w mieszkaniu
+      albo na klatce */
+  private repairStand(p: Pawn, d: DamageGame): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const x = d.tile % size;
+    const y = Math.floor(d.tile / size);
+    const cand: number[] = [];
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const i = (y + dy) * size + x + dx;
+        if (i < 0 || i >= size * size || this.coreBlocked[i] || this.reg[i] !== region) continue;
+        if (this.furnitureAt(i % size, Math.floor(i / size))) continue;
+        cand.push(i);
+      }
+    return cand.includes(d.tile) ? d.tile : this.nearest(p, cand);
+  }
+
+  /** materiałów do naprawy (brakujących) jest dość w stertach, do których zarząd dojdzie */
+  private enoughFor(p: Pawn, need: Partial<Record<Mat, number>>, have: Partial<Record<Mat, number>>): boolean {
+    for (const [m, v] of Object.entries(need) as [Mat, number][]) {
+      const left = v - (have[m] ?? 0) - (p.job?.what === m ? p.job.n : 0);
+      if (left > 0 && this.reachableMat(p, m) < left) return false;
+    }
+    return true;
+  }
+
+  /** ile sztuk materiału leży w stertach, do których pionek dojdzie (wolnych albo jego) */
+  private reachableMat(p: Pawn, m: Mat): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    let n = 0;
+    for (const t of this.st.things)
+      if (t.kind === m && t.n > 0 && (t.by < 0 || t.by === p.id) && this.reg[t.y * size + t.x] === region) n += t.n;
+    return n;
+  }
+
+  /** najbliższa sterta materiału (wolna albo pionka) w jego obszarze */
+  private matStack(p: Pawn, m: Mat): Thing | undefined {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    let best: Thing | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.things) {
+      if (t.kind !== m || t.n <= 0 || (t.by >= 0 && t.by !== p.id)) continue;
+      const i = t.y * size + t.x;
+      if (this.reg[i] !== region) continue;
+      const d = this.dist2(p, i);
+      if (d < bd || (d === bd && best && t.id < best.id)) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** Następny kurs po materiał na budowę albo naprawę: pierwszy brakujący materiał, którego sterta jest w zasięgu.
+      Faza 0: idzie do sterty (from, what). false: nic nie brakuje albo nie ma skąd wziąć. */
+  private fetchNext(p: Pawn, j: Job, need: Partial<Record<Mat, number>>, have: Partial<Record<Mat, number>>): boolean {
+    for (const [m, v] of Object.entries(need) as [Mat, number][]) {
+      if (v - (have[m] ?? 0) <= 0) continue;
+      const pile = this.matStack(p, m);
+      if (!pile) continue;
+      const pt = pile.y * this.w.size + pile.x;
+      if (!this.go(p, pt)) continue;
+      j.phase = 0;
+      j.from = pile.id;
+      j.what = m;
+      j.tile = pt;
+      pile.by = p.id;
+      return true;
+    }
+    return false;
+  }
+
+  /** Przy stercie: bierze, ile brakuje (do CARRY), i niesie na miejsce pracy (faza 1). false: nie da się. */
+  private takeFor(p: Pawn, j: Job, need: number, stand: number): boolean {
+    const pile = this.thing(j.from);
+    if (!pile || pile.by !== p.id || pile.kind !== j.what) return false;
+    const take = Math.min(pile.n, CARRY, need);
+    pile.n -= take;
+    pile.by = -1;
+    if (pile.n <= 0) this.st.things.splice(this.st.things.indexOf(pile), 1);
+    j.n += take;
+    j.from = -1;
+    if (stand < 0 || !this.go(p, stand)) return false;
+    j.phase = 1;
+    j.tile = stand;
+    return true;
+  }
+
+  /** naprawić uszkodzenie: materiałów musi być dość (doniesione plus w stertach w zasięgu) */
+  private startRepair(p: Pawn, k: number): void {
+    const d = this.st.damage[k];
+    if (!d || d.fixed) return;
+    if (this.st.pawns.some((q) => q.job?.t === 'repair' && q.job.target === k)) return;
+    const cost = REPAIR[d.kind].cost;
+    if (!this.enoughFor(p, cost, d.have)) return;
+    const j = this.newJob('repair', k, this.tileOf(p), true);
+    this.setJob(p, j, false);
+    if (this.fetchNext(p, j, cost, d.have)) return;
+    // wszystko już doniesione: od razu do pracy
+    const stand = this.repairStand(p, d);
+    if (stand < 0 || !this.go(p, stand)) {
+      p.job = null;
+      return;
+    }
+    j.phase = 2;
+    j.tile = stand;
+  }
+
+  /** naprawa: kursy po materiał (faza 0 i 1), potem praca (faza 2, z warsztatem półtora raza szybciej) */
+  private repairWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const d = st.damage[j.target];
+    if (!d || d.fixed) return false;
+    const def = REPAIR[d.kind];
+    if (j.phase === 0) {
+      if (!at) return false;
+      const m = j.what as Mat;
+      return this.takeFor(p, j, (def.cost[m] ?? 0) - (d.have[m] ?? 0), this.repairStand(p, d));
+    }
+    if (j.phase === 1) {
+      if (!at) return false;
+      // materiał zostaje przy uszkodzeniu
+      const m = j.what as Mat;
+      d.have[m] = (d.have[m] ?? 0) + j.n;
+      j.n = 0;
+      j.what = '';
+      if (this.fetchNext(p, j, def.cost, d.have)) return true;
+      for (const [mm, v] of Object.entries(def.cost) as [Mat, number][]) if ((d.have[mm] ?? 0) < v) return false;
+      j.phase = 2;
+      j.t0 = st.tick;
+      j.until = st.tick + Math.round(def.work / (this.hasBuilt('warsztat') ? 1.5 : 1));
+      this.face(p, (d.tile % this.w.size) + 0.5, Math.floor(d.tile / this.w.size) + 0.5);
+      return true;
+    }
+    if (st.tick < j.until) return true;
+    d.fixed = true;
+    d.have = {};
+    this.updateCap();
+    return false;
+  }
+
+  /** zająć puste mieszkanie: wejść do niego i oznaczyć je jako nasze */
+  private startClaim(p: Pawn, apt: number): void {
+    const g = this.st.apts.find((a) => a.apt === apt);
+    if (!g || g.ours || g.state !== 'puste' || !this.house) return;
+    const rooms = this.house.rooms.filter((r) => r.apt === apt).map((r) => r.id);
+    const spots = rooms.map((r) => this.roomSpot(p, r)).filter((i) => i >= 0);
+    const spot = this.nearest(p, spots);
+    if (spot < 0 || !this.go(p, spot)) return;
+    this.setJob(p, this.newJob('claim', apt, spot, true), false);
+  }
+
+  /** miejsca dla mieszkańców od nowa (zajęcie, naprawa, budowa) */
+  private updateCap(): void {
+    this.st.cap = capOf(this.st, this.w);
+  }
+
+  /** Materiał na ziemię przy kafelku: na stertę tego samego rodzaju, która się jeszcze zmieści (do STACK), albo na
+      najbliższy wolny kafelek w tym samym obszarze (room: najpierw w tym pomieszczeniu). */
+  private dropMat(from: number, kind: string, n: number, room = -1): void {
+    const st = this.st;
+    const size = this.w.size;
+    let left = n;
+    const at = nearestFree(this.coreBlocked, size, from);
+    const tiles: number[] = [];
+    if (room >= 0) tiles.push(...this.roomTiles[room]);
+    for (const [dx, dy] of SPREAD) {
+      const x = (at % size) + dx;
+      const y = Math.floor(at / size) + dy;
+      if (x < 0 || y < 0 || x >= size || y >= size) continue;
+      tiles.push(y * size + x);
+    }
+    // najpierw kafelki pomieszczenia od najbliższego
+    if (room >= 0) {
+      const ax = at % size;
+      const ay = Math.floor(at / size);
+      tiles.splice(
+        0,
+        this.roomTiles[room].length,
+        ...[...this.roomTiles[room]].sort(
+          (a, b) =>
+            Math.abs((a % size) - ax) +
+              Math.abs(Math.floor(a / size) - ay) -
+              (Math.abs((b % size) - ax) + Math.abs(Math.floor(b / size) - ay)) || a - b,
+        ),
+      );
+    }
+    for (const i of tiles) {
+      if (left <= 0) break;
+      if (this.coreBlocked[i] || this.reg[i] !== this.reg[at]) continue;
+      const x = i % size;
+      const y = Math.floor(i / size);
+      const same = st.things.find((t) => t.kind === kind && t.x === x && t.y === y);
+      if (same) {
+        const k = Math.min(left, STACK - same.n);
+        if (k > 0) {
+          same.n += k;
+          left -= k;
+        }
+        continue;
+      }
+      if (this.thingAt(x, y)) continue;
+      const t = newThing(st, kind, x, y);
+      t.n = Math.min(left, STACK);
+      left -= t.n;
+      st.things.push(t);
+    }
   }
 
   /** deski albo złom z rąk zostają na stercie obok (przerwane łatanie) */
