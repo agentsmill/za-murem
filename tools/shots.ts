@@ -1646,6 +1646,73 @@ const SHOTS: Shot[] = [
       await look();
     },
   },
+  {
+    // mysz: przeciąganie lewym przyciskiem przesuwa mapę i nie gubi zaznaczenia, Shift i przeciąganie to ramka
+    name: 'mysz-przesuwanie',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      // karta osoby odświeża się w pętli klatek, więc po kliknięciu trzeba na nią poczekać
+      const cardOn = () => page.evaluate(() => !document.getElementById('card')!.hidden);
+      const cardShown = () =>
+        page
+          .waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 })
+          .then(() => true)
+          .catch(() => false);
+      const core = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm
+          .sim!.st.pawns.filter((q) => q.kind === 'core')
+          .map((q) => {
+            const [x, y] = zm.screenOf(q.x, q.y - 0.6);
+            return { x, y };
+          });
+      });
+      await page.mouse.click(core[0].x, core[0].y);
+      if (!(await cardShown())) throw new Error('kliknięcie nie zaznaczyło nikogo z zarządu');
+      const cam0 = await page.evaluate(() => ({ ...window.zm!.view.cam }));
+      await page.mouse.move(700, 420);
+      await page.mouse.down();
+      await page.mouse.move(700, 620, { steps: 10 });
+      await page.mouse.up();
+      const cam1 = await page.evaluate(() => ({ ...window.zm!.view.cam }));
+      await page.waitForTimeout(500);
+      const moved = Math.round((cam0.y - cam1.y) * cam0.zoom);
+      const kept = await cardOn();
+      console.log(`  przeciąganie: mapa o ${moved} px ekranu, zaznaczenie zostało: ${kept}`);
+      if (moved < 150) throw new Error('przeciąganie lewym przyciskiem nie przesunęło mapy');
+      if (!kept) throw new Error('przeciąganie zgubiło zaznaczenie');
+      // Shift i przeciąganie: ramka wokół całego zarządu zaznacza wszystkich
+      const pts = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm.sim!.st.pawns.filter((q) => q.kind === 'core').map((q) => zm.screenOf(q.x, q.y - 0.6));
+      });
+      const xs = pts.map((p) => p[0]);
+      const ys = pts.map((p) => p[1]);
+      await page.keyboard.down('Shift');
+      await page.mouse.move(Math.min(...xs) - 30, Math.min(...ys) - 30);
+      await page.mouse.down();
+      await page.mouse.move(Math.max(...xs) + 30, Math.max(...ys) + 30, { steps: 10 });
+      await page.mouse.up();
+      await page.keyboard.up('Shift');
+      const cam2 = await page.evaluate(() => ({ ...window.zm!.view.cam }));
+      // karta grupy („Zaznaczeni: N”) pojawia się po odświeżeniu w pętli klatek
+      const group = await page
+        .waitForFunction(
+          () => /Zaznaczeni: (\d+)/.exec(document.getElementById('card')!.textContent ?? '')?.[1],
+          null,
+          {
+            timeout: 3000,
+          },
+        )
+        .then((h) => h.jsonValue())
+        .catch(() => '0');
+      console.log(`  ramka z Shiftem: zaznaczonych ${group} z ${pts.length}`);
+      if (cam2.x !== cam1.x || cam2.y !== cam1.y) throw new Error('ramka z Shiftem przesunęła mapę');
+      if (Number(group) !== pts.length) throw new Error('ramka z Shiftem nie zaznaczyła całego zarządu');
+    },
+  },
   // M2, fala 1: menu budowy z przycisku i klawisza B (kategorie, koszt, czas, działanie, niedostępne z powodem)
   {
     name: 'm2-menu-budowy',
