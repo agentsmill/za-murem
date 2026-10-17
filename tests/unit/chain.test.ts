@@ -238,7 +238,7 @@ describe('polecenia', () => {
     expect(crowd[0].path).toHaveLength(0);
   });
 
-  it('kilka osób na jedno drzewo: jedna ścina, reszta idzie obok', () => {
+  it('kilka osób na jedno drzewo: jedna ścina, reszta idzie obok i potem nosi drewno', () => {
     const sim = new Sim(w, createSim(w, 3, { core: 3 }));
     const ids = core(sim).map((p) => p.id);
     sim.push({ t: 'chop', ids, tree: w.dryTree });
@@ -251,6 +251,10 @@ describe('polecenia', () => {
       const end = p.path[p.path.length - 1];
       expect(Math.hypot((end % w.size) + 0.5 - t.x, Math.floor(end / w.size) + 0.5 - t.y)).toBeLessThan(5);
     }
+    // po ścięciu pomocnicy od razu biorą się do noszenia, zamiast stać godzinę tam, gdzie doszli
+    while (!sim.st.felled.includes(w.dryTree)) sim.step();
+    for (let k = 0; k < 2 * TICKS_PER_SECOND; k++) sim.step();
+    for (const p of [b, c]) expect(p.job?.t === 'haul' || p.carry > 0).toBe(true);
   });
 });
 

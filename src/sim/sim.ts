@@ -69,7 +69,8 @@ export interface Job {
   /** tick początku i końca pracy (chop, eat, warm, go z polecenia) */
   t0: number;
   until: number;
-  /** z polecenia gracza */
+  /** z polecenia gracza „idź tu”: po dojściu czeka na miejscu godzinę gry (pomocnicy wysłani razem
+      z drwalem albo do kozy mają false i od razu biorą się do własnej pracy) */
   order: boolean;
 }
 
@@ -537,14 +538,16 @@ export class Sim {
     }
     if (!pawns.length) return;
     this.tutEvent('zaznacz');
-    if (c.t === 'move') this.orderMove(pawns, c.to, []);
+    if (c.t === 'move') this.orderMove(pawns, c.to, [], true);
     else if (c.t === 'chop') this.orderChop(pawns, c.tree);
     else if (c.t === 'haul') this.orderHaul(pawns, c.thing);
     else if (c.t === 'refuel') this.orderRefuel(pawns, c.thing);
   }
 
-  /** kilka osób naraz: każda dostaje inny wolny kafelek ze spirali wokół celu */
-  private orderMove(pawns: Pawn[], to: number, taken: number[]): void {
+  /** kilka osób naraz: każda dostaje inny wolny kafelek ze spirali wokół celu;
+      stay: po dojściu czeka na miejscu (zwykłe „idź tu”), inaczej od razu bierze się do własnej pracy
+      (pomocnicy przy drzewie albo kozie) */
+  private orderMove(pawns: Pawn[], to: number, taken: number[], stay: boolean): void {
     const size = this.w.size;
     const tx = to % size;
     const ty = Math.floor(to / size);
@@ -559,7 +562,7 @@ export class Sim {
         taken.push(g);
         if (this.routeTo(p, g)) {
           p.want = -1;
-          this.setJob(p, this.newJob('go', g, g, true), false);
+          this.setJob(p, this.newJob('go', g, g, stay), false);
         }
         break;
       }
@@ -570,7 +573,7 @@ export class Sim {
   private orderChop(pawns: Pawn[], k: number): void {
     if (!(k >= 0 && k < this.w.trees.length)) return;
     if (this.st.felled.includes(k)) {
-      this.orderMove(pawns, this.trunk[k], []);
+      this.orderMove(pawns, this.trunk[k], [], true);
       return;
     }
     const [first, ...rest] = pawns;
@@ -581,7 +584,7 @@ export class Sim {
       taken.push(stand);
       if (k === this.dry) this.tutEvent('rozkaz');
     } else rest.unshift(first);
-    if (rest.length) this.orderMove(rest, this.trunk[k], taken);
+    if (rest.length) this.orderMove(rest, this.trunk[k], taken, false);
   }
 
   /** pierwsza osoba bierze kliknięty stos, kolejne wolne stosy obok */
@@ -591,7 +594,7 @@ export class Sim {
     if (pile?.kind !== 'drewno') return;
     const tile = pile.y * size + pile.x;
     if (this.dropTile() < 0 || this.house?.sklad.includes(tile)) {
-      this.orderMove(pawns, tile, []);
+      this.orderMove(pawns, tile, [], true);
       return;
     }
     const taken: number[] = [];
@@ -599,7 +602,7 @@ export class Sim {
       const target = k === 0 ? pile : this.pileFor(p, 'outside', tile);
       const pt = target ? target.y * size + target.x : -1;
       if (!target || !this.go(p, pt)) {
-        this.orderMove([p], tile, taken);
+        this.orderMove([p], tile, taken, false);
         return;
       }
       this.setJob(p, this.newJob('haul', target.id, pt, true), true);
@@ -615,7 +618,7 @@ export class Sim {
     const taken: number[] = [];
     if (this.startRefuel(first, true, koza)) taken.push(first.job!.tile);
     else rest.unshift(first);
-    if (rest.length) this.orderMove(rest, koza.y * this.w.size + koza.x, taken);
+    if (rest.length) this.orderMove(rest, koza.y * this.w.size + koza.x, taken, false);
   }
 
   /* ---------- prace ---------- */
@@ -823,8 +826,9 @@ export class Sim {
     return Math.floor((KOZA_CAP * BURN_TICKS - koza.fuel) / BURN_TICKS);
   }
 
-  /** drzewo pada: zostaje pień, kafelek się zwalnia, drewno leży w stosach dookoła */
-  private fell(k: number): void {
+  /** drzewo pada: zostaje pień, kafelek się zwalnia, drewno leży w stosach dookoła, po tej stronie,
+      z której rąbał drwal (stand), żeby dało się do niego dojść */
+  private fell(k: number, stand: number): void {
     const st = this.st;
     const size = this.w.size;
     const t = this.trunk[k];
@@ -844,11 +848,12 @@ export class Sim {
       const y = Math.floor(t / size) + dy;
       if ((!dx && !dy) || x < 0 || y < 0 || x >= size || y >= size) continue;
       const i = y * size + x;
-      if (this.blocked[i] || this.thingAt(x, y)) continue;
+      if (this.blocked[i] || this.reg[i] !== this.reg[stand] || this.thingAt(x, y)) continue;
       const n = Math.min(CARRY, left);
       this.addWood(i, n);
       left -= n;
     }
+    if (left > 0) this.addWood(stand, left);
   }
 
   private coreTick(p: Pawn): void {
@@ -877,7 +882,7 @@ export class Sim {
         const tree = this.w.trees[j.target];
         if (j.phase === 1) {
           if (tick < j.until) return true;
-          this.fell(j.target);
+          this.fell(j.target, j.tile);
           return false;
         }
         if (!at || st.felled.includes(j.target)) return false;
