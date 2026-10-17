@@ -8,6 +8,7 @@ import { buildScene, TILE } from './render/art/scene.ts';
 import type { Light } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
+import { type FenceLike, fenceThings, mockFence } from './render/yard.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { createSim, Sim } from './sim/sim.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
@@ -133,10 +134,14 @@ async function enter(data: Loaded) {
   // meble z wnętrza i trzepak (do czasu rzeczy z symulacji); ?swiatla=test zapala kozę i stawia
   // przy zarządzie ognisko i lampę warty, ze światłami
   const preview = params.get('swiatla') === 'test' ? previewNight(world, hx / TILE, hy / TILE) : null;
+  // siatka z bramą: ze świata, gdy już ją ma (kontrakt World.fence), albo atrapa (?siatka=atrapa)
+  const fence: FenceLike | null =
+    'fence' in world ? (world.fence as FenceLike) : params.get('siatka') === 'atrapa' ? mockFence(world) : null;
   view.setThings([
     ...world.interior.furniture.map((f) => (preview && f.kind === 'koza' ? { ...f, fuel: 1 } : f)),
     ...world.props.map((p) => ({ ...p, rot: 0 })),
     ...(preview?.things ?? []),
+    ...(fence ? fenceThings(fence, world) : []),
   ]);
   if (preview) view.lights = preview.lights;
   if (params.has('speed')) speed = Number(params.get('speed'));
