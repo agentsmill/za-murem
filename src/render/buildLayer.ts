@@ -32,8 +32,11 @@ export interface Placement {
   rot: number;
   /** czy da się tu postawić (canPlace) */
   ok: boolean;
-  /** kafelki do podświetlenia: dozwolone na zielono, niedozwolone na czerwono */
+  /** kafelki do podświetlenia (indeksy y * size + x): dozwolone na zielono, niedozwolone na czerwono */
   tiles?: { ok?: readonly number[]; bad?: readonly number[] };
+  /** dozwolone miejsca jak w interfejsie (allowedAnchors): lewe górne kafelki, od których budowla się
+      zmieści; podświetlone na zielono jak tiles.ok */
+  allowed?: readonly number[];
 }
 
 type ArtOf = (spec: ThingSpec) => { tex: Texture; sp: ArtSprite };
@@ -64,6 +67,8 @@ export class BuildLayer {
   private readonly actors: Container;
   private plans = new Map<number, { sprite: Sprite; key: string }>();
   private placement: Placement | null = null;
+  /** podgląd stawiania do przerysowania (po setPlacement), bez przerysowania co klatkę */
+  private placementDirty = false;
 
   constructor(actors: Container, overlay: Container) {
     this.actors = actors;
@@ -79,6 +84,7 @@ export class BuildLayer {
 
   setPlacement(p: Placement | null): void {
     this.placement = p;
+    this.placementDirty = true;
   }
 
   /**
@@ -127,7 +133,10 @@ export class BuildLayer {
         e.sprite.destroy();
         this.plans.delete(id);
       }
-    this.drawPlacement(artOf);
+    if (this.placementDirty) {
+      this.placementDirty = false;
+      this.drawPlacement(artOf);
+    }
   }
 
   private drawPlacement(artOf: ArtOf): void {
@@ -146,6 +155,7 @@ export class BuildLayer {
     };
     const w = this.mapSize;
     for (const i of p.tiles?.ok ?? []) cell(i, w, 0x5ac85a, 0.18);
+    for (const i of p.allowed ?? []) cell(i, w, 0x5ac85a, 0.18);
     for (const i of p.tiles?.bad ?? []) cell(i, w, 0xd8584a, 0.18);
     const color = p.ok ? 0x5ac85a : 0xd8584a;
     g.rect(p.x * TILE, p.y * TILE, fp.w * TILE, fp.h * TILE)

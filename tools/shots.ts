@@ -1908,15 +1908,21 @@ const SHOTS: Shot[] = [
         const zm = window.zm!;
         const v = zm.view as unknown as { scene: { section: { damage?: Map<number, string> } }; chunksMade: number };
         const dmg = v.scene.section.damage!;
-        const tile = [...dmg.keys()][0];
+        const [a, b] = [...dmg.keys()];
         const before = dmg.size;
-        (zm.sim!.st as unknown as { fixed: number[] }).fixed = [tile];
+        // jak symulacja M2: uszkodzenie w st.damage z fixed; i lista naprawionych kafelków st.fixed
+        const st = zm.sim!.st as unknown as { damage?: unknown[]; fixed?: number[] };
+        if (!st.damage) st.damage = [];
+        st.damage.push({ kind: dmg.get(a), tile: a, apt: -1, fixed: true, have: {} });
+        st.fixed = [b];
         await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
-        return { tile, before, after: dmg.size, gone: !dmg.has(tile) };
+        return { a, b, before, after: dmg.size, gone: !dmg.has(a) && !dmg.has(b) };
       });
       await waitIdle(page);
-      console.log(`  uszkodzeń ${r.before} → ${r.after}, kafelek ${r.tile} naprawiony: ${r.gone}`);
-      if (!r.gone || r.after !== r.before - 1) throw new Error('naprawa nie zdejmuje uszkodzenia z przekroju');
+      console.log(
+        `  uszkodzeń ${r.before} → ${r.after}, kafelki ${r.a} (st.damage) i ${r.b} (st.fixed) naprawione: ${r.gone}`,
+      );
+      if (!r.gone || r.after !== r.before - 2) throw new Error('naprawa nie zdejmuje uszkodzeń z przekroju');
     },
   },
   {
@@ -2091,14 +2097,12 @@ async function m2Stage(page: Page, what: 'budowle' | 'plany' | 'stawianie-ok' | 
       for (let i = 0; i < size * size; i++) if (roomOk('pokoj')(i) && !busy.has(i)) ok.push(i);
       const bad = [...busy].filter((i) => int.room[i] >= 0 && int.rooms[int.room[i]].apt === home).slice(0, 12);
       const at = what === 'stawianie-ok' ? spot(2, 1, roomOk('pokoj'))! : [bad[0] % size, Math.floor(bad[0] / size)];
-      view.setPlacement({
-        kind: 'warsztat',
-        x: at[0],
-        y: at[1],
-        rot: 0,
-        ok: what === 'stawianie-ok',
-        tiles: { ok, bad },
-      });
+      // dzienny podgląd w kształcie z interfejsu (allowed: dozwolone miejsca), nocny z tiles (ok i bad)
+      view.setPlacement(
+        what === 'stawianie-ok'
+          ? { kind: 'warsztat', x: at[0], y: at[1], rot: 0, ok: true, allowed: ok }
+          : { kind: 'warsztat', x: at[0], y: at[1], rot: 0, ok: false, tiles: { ok, bad } },
+      );
       zm.setCam(at[0] + 1, at[1] + 0.5, 1.8);
     } else zm.setCam(koza.x, koza.y + 2, 1.6);
     return { placed };

@@ -371,12 +371,14 @@ export class GameView {
         g.simKinds.add(t.kind);
         g.props = g.props.filter((p) => p.kind !== t.kind);
       }
-    // naprawione uszkodzenia (st.fixed: kafelki z w.damage) znikają z przekroju
-    const fixed = (sim.st as { fixed?: readonly number[] }).fixed;
-    if (fixed?.length) {
-      const fresh = fixed.filter((i) => !this.fixedSeen.has(i));
+    // naprawione uszkodzenia znikają z przekroju: st.damage z fixed (symulacja M2) albo st.fixed (kafelki)
+    const st2 = sim.st as { fixed?: readonly number[]; damage?: readonly { tile: number; fixed?: boolean }[] };
+    const fresh: number[] = [];
+    for (const i of st2.fixed ?? []) if (!this.fixedSeen.has(i)) fresh.push(i);
+    for (const d of st2.damage ?? []) if (d.fixed && !this.fixedSeen.has(d.tile)) fresh.push(d.tile);
+    if (fresh.length) {
       for (const i of fresh) this.fixedSeen.add(i);
-      if (fresh.length) this.redraw({ fixed: fresh });
+      this.redraw({ fixed: fresh });
     }
     this.plans = (sim.st as { builds?: readonly BuildPlan[] }).builds ?? [];
     this.syncFelled(sim.st.felled);
