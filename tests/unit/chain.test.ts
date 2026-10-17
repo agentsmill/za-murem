@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
+import { homeMask } from '../../src/sim/house.ts';
 import { commandFor, commandsAt, jobText } from '../../src/sim/orders.ts';
 import { BURN_TICKS, createSim, type Pawn, Sim, type SimState, type Thing, woodFrom } from '../../src/sim/sim.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
@@ -107,10 +108,23 @@ describe('zarząd sam', () => {
     const st = createSim(w, 3, { core: 4 });
     addWood(st, w.interior.sklad[0], w.size, 5);
     const sim = new Sim(w, st);
+    // dokłada z kafelka przed kozą (kontrakt: jest wolny), czyli od strony przeciwnej do ściany z oknem
+    const kz = kozaOf(st);
+    const front = [
+      (kz.y + 1) * w.size + kz.x,
+      kz.y * w.size + kz.x - 1,
+      (kz.y - 1) * w.size + kz.x,
+      kz.y * w.size + kz.x + 1,
+    ][kz.rot];
+    const stands = new Set<number>();
     let k = 0;
-    while (kozaOf(st).fuel === 0 && k++ < 600) sim.step();
+    while (kozaOf(st).fuel === 0 && k++ < 600) {
+      for (const p of core(sim)) if (p.job?.t === 'refuel' && p.job.phase === 1) stands.add(p.job.tile);
+      sim.step();
+    }
     expect(kozaOf(st).fuel).toBeGreaterThan(0);
     expect(k).toBeLessThan(300);
+    expect([...stands]).toEqual([front]);
   });
 
   it('zanosi leżące drewno do składu', () => {
@@ -379,6 +393,12 @@ describe('determinizm i zapis z pracami w toku', () => {
 });
 
 describe('tłum', () => {
+  it('wnętrze bez mieszkania zarządu (home −1) nie zamyka tłumowi klatki', () => {
+    const mask = homeMask({ ...block.interior, home: -1 }, block.size);
+    expect(mask.includes(1)).toBe(false);
+    expect(homeMask(block.interior, block.size).includes(1)).toBe(true);
+  });
+
   it('tłum nie wchodzi do mieszkania zarządu', () => {
     const w = block;
     const sim = new Sim(w, createSim(w, 8, { core: 4, crowd: 30 }));

@@ -120,6 +120,27 @@ describe('ciepło w pomieszczeniach', () => {
     expect(Math.abs(temps[3] - 14)).toBeLessThan(0.5);
   });
 
+  it('pomieszczenia spoza mieszkań (sala, hala, zaplecze) też mają temperaturę', () => {
+    const k = ['kuchnia', 'sala', 'hala', 'zaplecze'] as RoomKind[];
+    const temps = [9, 9, 9, 9];
+    for (let s = 0; s < 4 * PER_HOUR; s++)
+      heatStep(
+        temps,
+        k,
+        [
+          [0, 1],
+          [1, 2],
+          [2, 3],
+        ],
+        [0],
+        10,
+      );
+    for (const t of temps) {
+      expect(Number.isFinite(t)).toBe(true);
+      expect(t).toBeGreaterThan(9);
+    }
+  });
+
   it('po zgaszeniu kozy kuchnia stygnie stopniowo, bez skoku', () => {
     const temps = [9, 9, 9, 9, 9];
     for (let k = 0; k < 8 * PER_HOUR; k++) heatStep(temps, kinds, links, [0], 12);

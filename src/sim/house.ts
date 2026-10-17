@@ -6,7 +6,8 @@
 import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
 
-export type RoomKind = 'klatka' | 'przedpokoj' | 'pokoj' | 'kuchnia' | 'lazienka';
+/** jak w kontrakcie: pomieszczenia mieszkań i klatki, a w budynkach usługowych sala, hala i zaplecze */
+export type RoomKind = 'klatka' | 'przedpokoj' | 'pokoj' | 'kuchnia' | 'lazienka' | 'sala' | 'hala' | 'zaplecze';
 
 export interface RoomLike {
   /** równe indeksowi w rooms */
@@ -62,10 +63,10 @@ export function dryTreeOf(w: World): number {
   return k !== undefined && k >= 0 && k < w.trees.length ? k : -1;
 }
 
-/** kafelek w mieszkaniu zarządu */
+/** kafelek w mieszkaniu zarządu (wnętrze bez mieszkania zarządu ma home −1, a klatki i sale apt −1) */
 export function inHomeApt(h: HouseLike, i: number): boolean {
   const r = h.room[i];
-  return r >= 0 && h.rooms[r].apt === h.home;
+  return h.home >= 0 && r >= 0 && h.rooms[r].apt === h.home;
 }
 
 /** kafelki mieszkania zarządu (1): jego pomieszczenia i drzwi, które do nich prowadzą */
@@ -113,8 +114,20 @@ export const KOZA_TARGET = 21;
 export const KOZA_MAX = 16;
 /** co tyle ticków liczy się ciepło i potrzeby (półtorej minuty gry, sekunda realna przy 1×) */
 export const HEAT_EVERY = 20;
-/** izolacja: o tyle stopni pomieszczenie bez ogrzewania jest cieplejsze niż na zewnątrz */
-export const INSUL: Record<RoomKind, number> = { klatka: 0, przedpokoj: 2, pokoj: 2, kuchnia: 2, lazienka: 2 };
+/** izolacja: o tyle stopni pomieszczenie bez ogrzewania jest cieplejsze niż na zewnątrz
+    (klatka i hala z bramą są otwarte na dwór) */
+export const INSUL: Record<RoomKind, number> = {
+  klatka: 0,
+  przedpokoj: 2,
+  pokoj: 2,
+  kuchnia: 2,
+  lazienka: 2,
+  sala: 2,
+  hala: 0,
+  zaplecze: 2,
+};
+/** izolacja pomieszczenia; rodzaj, którego jeszcze nie znamy (nowy w generatorze), jak pokój */
+const insul = (k: RoomKind): number => INSUL[k] ?? 2;
 /** ułamek różnicy do celu na krok: przy ogniu stała czasowa 1,25 h (zimna kuchnia ma 18°C po około
     1,7 h gry, czyli 70 s przy 1×), bez ognia 10 h, bo beton trzyma temperaturę;
     stałe zamiast Math.exp, żeby wynik nie zależał od przeglądarki */
@@ -139,7 +152,7 @@ export function heatBoost(
 ): number[] {
   const boost = new Array<number>(kinds.length).fill(0);
   for (const r of fires)
-    boost[r] = Math.max(boost[r], Math.min(KOZA_MAX, Math.max(0, KOZA_TARGET - tout - INSUL[kinds[r]])));
+    boost[r] = Math.max(boost[r], Math.min(KOZA_MAX, Math.max(0, KOZA_TARGET - tout - insul(kinds[r]))));
   // połowa przez drzwi; wygrywa największe ocieplenie, więc relaksacja aż do ustalenia
   for (let changed = fires.length > 0; changed; ) {
     changed = false;
@@ -169,7 +182,7 @@ export function heatStep(
 ): number[] {
   const boost = heatBoost(kinds, links, fires, tout);
   for (let r = 0; r < temps.length; r++) {
-    const base = tout + INSUL[kinds[r]];
+    const base = tout + insul(kinds[r]);
     const f = F_DRIFT + (F_FIRE - F_DRIFT) * Math.min(1, boost[r] / FULL_BOOST);
     temps[r] += (base + boost[r] - temps[r]) * f;
   }

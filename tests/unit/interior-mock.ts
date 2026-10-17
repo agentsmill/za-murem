@@ -97,7 +97,7 @@ const HOUSE: Layout = {
     { kind: 'lodowka', x: 5, y: 2, w: 1, h: 1, rot: 3 },
     { kind: 'stol', x: 8, y: 3, w: 2, h: 1, rot: 2 },
     { kind: 'krzeslo', x: 7, y: 3, w: 1, h: 1, rot: 2 },
-    { kind: 'krzeslo', x: 8, y: 2, w: 1, h: 1, rot: 0 },
+    { kind: 'krzeslo', x: 9, y: 2, w: 1, h: 1, rot: 0 },
     { kind: 'lozko', x: 1, y: 1, w: 1, h: 2, rot: 3 },
     { kind: 'lozko', x: 3, y: 1, w: 1, h: 2, rot: 1 },
     { kind: 'lozko', x: 3, y: 7, w: 1, h: 2, rot: 1 },
@@ -228,9 +228,14 @@ function pickDryTree(w: World, blocked: Uint8Array, from: number): number {
   return best;
 }
 
-/** ten sam sztuczny świat z blokiem, ale bez wnętrza (tak jak dziś) */
-export const plainBlock = (seed = 5): World =>
-  buildWorld(geoWith(rect(-24, -6, 48, 13), 'apartments', '5'), { seed, size: 128 });
+/** ten sam sztuczny świat z blokiem, ale bez wnętrza, jak przed M1: budynek cały zablokowany.
+    Po połączeniu z gałęzią wnętrza buildWorld zawsze je dodaje, więc tu jest zdejmowane jawnie. */
+export function plainBlock(seed = 5): World {
+  const w = buildWorld(geoWith(rect(-24, -6, 48, 13), 'apartments', '5'), { seed, size: 128 });
+  const blocked = w.blocked.slice();
+  for (let i = 0; i < blocked.length; i++) if (w.bid[i] >= 0) blocked[i] = 1;
+  return { ...w, blocked, interior: null, dryTree: -1, props: [] } as unknown as World;
+}
 
 /** sztuczny świat z blokiem i ulicą oraz atrapą wnętrza */
 export function mockBlock(seed = 5): MockWorld {

@@ -785,7 +785,8 @@ export class Sim {
     return best;
   }
 
-  /** kafelek przy kozie, z którego się do niej dokłada (skład też się nadaje) */
+  /** kafelek, z którego się dokłada do kozy: najchętniej ten przed nią (kontrakt wnętrza trzyma go wolnym,
+      to strona przeciwna do ściany z oknem, rot), a gdy zajęty, najbliższy wolny obok (skład też się nadaje) */
   private kozaStand(p: Pawn, koza: Thing): number {
     const h = this.house!;
     const size = this.w.size;
@@ -799,7 +800,15 @@ export class Sim {
         if (h.room[i] !== room || this.blocked[i] || this.furnitureAt(x, y) || taken.includes(i)) continue;
         cand.push(i);
       }
-    return this.nearest(p, cand);
+    const cx = koza.x + (koza.w >> 1);
+    const cy = koza.y + (koza.h >> 1);
+    const front = [
+      (koza.y + koza.h) * size + cx,
+      cy * size + koza.x - 1,
+      (koza.y - 1) * size + cx,
+      cy * size + koza.x + koza.w,
+    ][koza.rot];
+    return cand.includes(front) ? front : this.nearest(p, cand);
   }
 
   /** miejsce do grzania się: do FIRE_REACH od kozy, w jej pomieszczeniu, poza meblami i składem */
