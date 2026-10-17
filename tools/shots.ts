@@ -381,7 +381,157 @@ const SHOTS: Shot[] = [
       if (lata !== 1 || !closed) throw new Error('siatka nie pokazuje stanu z symulacji');
     },
   },
+  // sterty materiału ze świata, potem przejęte przez symulację; garnek na stole; wraki z atrapy
+  {
+    name: 'sterty',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const heaps = zm.sim!.w.props.filter((p) => p.kind !== 'trzepak');
+        const cx = heaps.reduce((a, p) => a + p.x, 0) / heaps.length;
+        const cy = heaps.reduce((a, p) => a + p.y, 0) / heaps.length;
+        zm.setCam(cx + 0.5, cy + 0.5, 1.6);
+      });
+      await waitIdle(page);
+      const n = await heapSprites(page);
+      console.log(`  sterty ze świata: ${n.props}, narysowane: ${n.drawn} (${n.kinds})`);
+      if (n.props < 3 || n.drawn !== n.props) throw new Error('nie widać stert ze świata');
+    },
+  },
+  {
+    // symulacja trzyma sterty u siebie (jedną już zabrano): rysują się tylko te ze stanu gry
+    name: 'sterty-z-gry',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const heaps = sim.w.props.filter((p) => p.kind !== 'trzepak');
+        heaps.slice(1).forEach((p, k) => {
+          const n = 'n' in p ? p.n : 1;
+          sim.st.things.push({
+            id: 990000 + k,
+            kind: p.kind,
+            x: p.x,
+            y: p.y,
+            w: 1,
+            h: 1,
+            rot: 0,
+            n,
+            fuel: 0,
+            by: -1,
+            owner: -1,
+          });
+        });
+        zm.setCam(heaps[0].x + 0.5, heaps[0].y + 0.5, 1.6);
+      });
+      await waitIdle(page);
+      const n = await heapSprites(page);
+      console.log(`  sterty ze świata: ${n.props}, narysowane ze stanu gry: ${n.drawn}`);
+      if (n.drawn !== n.props - 1) throw new Error('sterty ze świata nie ustąpiły tym ze stanu gry');
+    },
+  },
+  {
+    name: 'garnek',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        // stół najbliżej kozy zarządu, jak w symulacji (garnek na stole w mieszkaniu zarządu)
+        const koza = sim.st.things.find((t) => t.kind === 'koza')!;
+        const tables = sim.st.things.filter((t) => t.kind === 'stol');
+        const d = (t: { x: number; y: number }) => (t.x - koza.x) ** 2 + (t.y - koza.y) ** 2;
+        const table = tables.sort((a, b) => d(a) - d(b))[0];
+        sim.st.things.push({
+          id: 991000,
+          kind: 'posilek',
+          x: table.x,
+          y: table.y,
+          w: 1,
+          h: 1,
+          rot: 0,
+          n: 4,
+          fuel: 0,
+          by: -1,
+          owner: -1,
+        });
+        zm.setCam(table.x + table.w / 2, table.y + table.h / 2, 2.4);
+      });
+      await waitIdle(page);
+      const keys = await thingKeys(page);
+      const pot = keys.find((k) => k.includes('"posilek"'));
+      console.log(`  garnek: ${pot ?? 'brak'}`);
+      if (!pot?.includes('"table":true') || !pot.includes('"size":2')) throw new Error('garnka nie ma na stole');
+    },
+  },
+  {
+    name: 'wraki',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1&wraki=atrapa`);
+      await waitIdle(page);
+      const w = await wrecks(page, 1.4);
+      console.log(`  wraki: ${w.n} (${w.models}), kamera na ${w.at}`);
+      if (w.n < 2 || !w.models.includes('maluch') || !w.models.includes('polonez')) throw new Error('nie widać wraków');
+    },
+  },
+  {
+    name: 'wraki-daleko',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1&wraki=atrapa`);
+      await waitIdle(page);
+      const w = await wrecks(page, 0.7);
+      if (w.n < 2) throw new Error('nie widać wraków');
+    },
+  },
 ];
+
+/** klucze rzeczy narysowanych w warstwie pionków (miejsce i opis sprite'a) */
+async function thingKeys(page: Page): Promise<string[]> {
+  return page.evaluate(() => [...(window.zm!.view as unknown as { things: Map<string, unknown> }).things.keys()]);
+}
+
+/** ile stert jest w świecie i ile narysowano (ze świata albo ze stanu gry) */
+async function heapSprites(page: Page) {
+  const props = await page.evaluate(() => window.zm!.sim!.w.props.filter((p) => p.kind !== 'trzepak').length);
+  const heaps = (await thingKeys(page)).filter((k) => /"kind":"(gruz|deski|zlom)"/.test(k));
+  const kinds = heaps.map((k) => /"kind":"(\w+)"/.exec(k)![1]).join(', ');
+  return { props, drawn: heaps.length, kinds };
+}
+
+/** wraki narysowane w warstwie pionków; kamera na ich środek w powiększeniu zoom */
+async function wrecks(page: Page, zoom: number) {
+  const r = await page.evaluate((z) => {
+    const zm = window.zm!;
+    const list = [
+      ...(
+        zm.view as unknown as {
+          things: Map<string, { thing: { kind: string; x: number; y: number; w: number; h: number; model?: string } }>;
+        }
+      ).things.values(),
+    ]
+      .map((e) => e.thing)
+      .filter((t) => t.kind === 'wrak');
+    if (!list.length) return { n: 0, models: '', at: '' };
+    // najbliższe dwa wraki: kamera między nimi
+    const pair = list.slice(0, 2);
+    const cx = pair.reduce((a, t) => a + t.x + t.w / 2, 0) / pair.length;
+    const cy = pair.reduce((a, t) => a + t.y + t.h / 2, 0) / pair.length;
+    zm.setCam(cx, cy, z);
+    return { n: list.length, models: [...new Set(list.map((t) => t.model))].join(', '), at: `${cx}, ${cy}` };
+  }, zoom);
+  await waitIdle(page);
+  return r;
+}
 
 const fmt = (v: { visible: boolean; alpha: number }) => `${v.visible ? 'widać' : 'nie widać'} (${v.alpha})`;
 

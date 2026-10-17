@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { footprint, WRECK_BASE } from '../../src/render/art/rzeczy.ts';
 import {
   fenceCodes,
   fenceStateFn,
   GAME_KINDS,
   gameLights,
+  HEAPS,
+  onTables,
   STRANGERS,
   strangerVisibility,
   windowSpots,
 } from '../../src/render/game.ts';
-import { IN, type ThingLike } from '../../src/render/section.ts';
+import { IN, specOf, type ThingLike, WRECK_LOOKS } from '../../src/render/section.ts';
+import { mockWrecks } from '../../src/render/yard.ts';
+import type { Heap } from '../../src/world/heaps.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
+import { T } from '../../src/world/terrain.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
 
@@ -123,5 +129,78 @@ describe('obcy w nocy', () => {
   it('rzeczy gry: meble, zapasy, trzepak i siatka są z gry, podgląd tych rodzajów się pomija', () => {
     for (const k of ['koza', 'drewno', 'pien', 'trzepak', 'siatka', 'brama']) expect(GAME_KINDS.has(k)).toBe(true);
     for (const k of ['ognisko', 'lampa']) expect(GAME_KINDS.has(k)).toBe(false);
+  });
+});
+
+describe('sterty, garnek i wraki', () => {
+  it('sterty ze świata mają wielkość z liczby sztuk, jak drewno', () => {
+    const w = przymorze();
+    const heaps = w.props.filter((p): p is Heap => HEAPS.has(p.kind));
+    expect(heaps.length).toBeGreaterThanOrEqual(3);
+    for (const h of heaps) {
+      const spec = specOf({ rot: 0, ...h });
+      expect(spec).toMatchObject({ kind: h.kind, size: h.n >= 6 ? 3 : h.n >= 3 ? 2 : 1 });
+    }
+    for (const k of ['gruz', 'deski', 'zlom', 'wrak']) expect(GAME_KINDS.has(k)).toBe(true);
+  });
+
+  it('garnek stoi na stole, pod którym jest, i ma wielkość z porcji', () => {
+    const stol: ThingLike = { kind: 'stol', x: 10, y: 5, w: 1, h: 2, rot: 1 };
+    const pot: ThingLike = { kind: 'posilek', x: 10, y: 5, w: 1, h: 1, rot: 0, n: 4 };
+    const floor: ThingLike = { kind: 'posilek', x: 3, y: 3, w: 1, h: 1, rot: 0, n: 0 };
+    const list = onTables([stol, pot, floor]);
+    expect(list[1].table).toBe(7);
+    expect(list[2].table).toBeUndefined();
+    expect(specOf(list[1])).toMatchObject({ kind: 'posilek', size: 2, table: true });
+    expect(specOf(list[2])).toMatchObject({ kind: 'posilek', size: 0, table: false });
+    // bez garnka ta sama lista, nic nowego co klatkę
+    const plain = [stol];
+    expect(onTables(plain)).toBe(plain);
+  });
+
+  it('wrak z kontraktu świata: model, ustawienie i jeden z wyglądów', () => {
+    const t: ThingLike = { kind: 'wrak', x: 40, y: 22, w: 2, h: 4, rot: 3, model: 'polonez' };
+    const spec = specOf(t)!;
+    expect(spec).toMatchObject({ kind: 'wrak', model: 'polonez', rot: 3 });
+    expect(spec.seed).toBeGreaterThanOrEqual(0);
+    expect(spec.seed).toBeLessThan(WRECK_LOOKS);
+    expect(footprint(spec)).toEqual({ w: 2, h: 4 });
+  });
+
+  it('atrapa wraków stoi na parkingu albo przy krawężniku jezdni, poza podwórkiem, bez nakładania', () => {
+    const w = przymorze();
+    const list = mockWrecks(w);
+    expect(list.length).toBeGreaterThanOrEqual(2);
+    expect(mockWrecks(w)).toEqual(list);
+    const used = new Set<number>();
+    const off = new Set([...w.fence.yard, ...w.fence.tiles]);
+    for (const c of list) {
+      const [a, b] = WRECK_BASE[c.model];
+      expect([c.w, c.h]).toEqual(c.rot & 1 ? [b, a] : [a, b]);
+      for (let dy = 0; dy < c.h; dy++)
+        for (let dx = 0; dx < c.w; dx++) {
+          const i = (c.y + dy) * w.size + c.x + dx;
+          expect([T.PARKING, T.ROAD]).toContain(w.terr[i]);
+          expect(w.blocked[i]).toBe(0);
+          expect(off.has(i)).toBe(false);
+          expect(used.has(i)).toBe(false);
+          used.add(i);
+        }
+    }
+    expect(new Set(list.map((c) => c.model)).size).toBe(2);
+    // na jezdni prawy bok przy krawężniku: za nim już nie jezdnia (rot 0: na południe, 1: na zachód…)
+    const paved = (x: number, y: number) => [T.ROAD, T.PARKING].includes(w.terr[y * w.size + x] as 3 | 6);
+    for (const c of list.filter((q) => w.terr[q.y * w.size + q.x] === T.ROAD)) {
+      const along = c.rot & 1 ? c.h : c.w;
+      for (let k = 0; k < along; k++) {
+        const [x, y] = [
+          [c.x + k, c.y + c.h],
+          [c.x - 1, c.y + k],
+          [c.x + k, c.y - 1],
+          [c.x + c.w, c.y + k],
+        ][c.rot];
+        expect(paved(x, y)).toBe(false);
+      }
+    }
   });
 });

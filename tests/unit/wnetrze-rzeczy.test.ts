@@ -18,6 +18,7 @@ import {
   stumpSprite,
   type ThingSpec,
   thingSprite,
+  WRECK_MODELS,
 } from '../../src/render/art/rzeczy.ts';
 import { treeSprite } from '../../src/render/art/trees.ts';
 import {
@@ -96,6 +97,11 @@ function allSpecs(): ThingSpec[] {
       s.push({ kind: 'fotel', rot, seed });
     }
   for (const lit of [false, true]) for (const seed of [0, 2]) s.push({ kind: 'lampa', lit, seed });
+  // garnek z posiłkiem (na podłodze i na stole) i wraki we wszystkich ustawieniach
+  for (const size of [0, 1, 2, 3] as const)
+    for (const table of [false, true]) for (const seed of [0, 1, 2, 3]) s.push({ kind: 'posilek', size, table, seed });
+  for (const model of WRECK_MODELS)
+    for (const rot of ROTS) for (const seed of [0, 1, 5, 11]) s.push({ kind: 'wrak', model, rot, seed });
   return s;
 }
 
@@ -115,6 +121,10 @@ function sizeKey(s: ThingSpec): string {
       return s.kind;
     case 'ognisko':
       return `ognisko ${s.style}`;
+    case 'posilek':
+      return `posilek ${!!s.table}`;
+    case 'wrak':
+      return `wrak ${s.model} ${s.rot}`;
     default:
       return `${s.kind} ${s.rot}`;
   }

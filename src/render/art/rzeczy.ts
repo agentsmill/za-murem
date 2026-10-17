@@ -40,10 +40,12 @@ import {
   lampSprite,
   pileSprite,
 } from './podworko.ts';
+import { WRECK_BASE, type WreckModel, wreckSprite } from './wraki.ts';
 
 export type { Rot, Sprite } from './bryly.ts';
 export { FIRE_FRAMES } from './bryly.ts';
 export { FENCE_H, FENCE_X, FENCE_Y, type FenceState, type FireStyle, type Pile } from './podworko.ts';
+export { WRECK_BASE, WRECK_MODELS, type WreckModel } from './wraki.ts';
 
 /** pikseli ekranu na metr wysokości: połowa skali poziomej, jak w niskim rzucie z góry */
 export const ZPX = 16;
@@ -100,7 +102,11 @@ export const BASE: Record<FurnitureKind, readonly [number, number]> = {
  * - brama: dwuskrzydłowa 2×1 (rot 0 i 2) albo 1×2, rot to strona, w którą otwierają się skrzydła;
  * - ognisko: w kręgu kamieni albo w beczce, fire jak w kozie;
  * - gruz, deski, zlom: stos materiału w trzech wielkościach;
- * - budka (rot jak meble, z lampą lit), fotel (rot jak meble), lampa naftowa (lit).
+ * - budka (rot jak meble, z lampą lit), fotel (rot jak meble), lampa naftowa (lit);
+ * - posilek: garnek z ugotowanym posiłkiem, size 0 pusty do 3 pełny (z miskami); table: stoi na
+ *   blacie stołu (rysowany na wysokości TABLE_TOP, bez cienia na podłodze);
+ * - wrak: maluch 3×2 albo polonez 4×2 przy rot 0 i 2 (1 i 3 odwrotnie), przodem na wschód przy
+ *   rot 0, na południe przy 1, na zachód przy 2, na północ przy 3.
  */
 export type ThingSpec =
   | { kind: FurnitureKind; rot: Rot; seed?: number; fire?: number }
@@ -116,7 +122,9 @@ export type ThingSpec =
   | { kind: 'zlom'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'budka'; rot: Rot; lit?: boolean; seed?: number }
   | { kind: 'fotel'; rot: Rot; seed?: number }
-  | { kind: 'lampa'; lit?: boolean; seed?: number };
+  | { kind: 'lampa'; lit?: boolean; seed?: number }
+  | { kind: 'posilek'; size: 0 | 1 | 2 | 3; table?: boolean; seed?: number }
+  | { kind: 'wrak'; model: WreckModel; rot: Rot; seed?: number };
 
 /** podstawa rzeczy w kafelkach (w × h na mapie) */
 export function footprint(spec: ThingSpec): { w: number; h: number } {
@@ -125,6 +133,11 @@ export function footprint(spec: ThingSpec): { w: number; h: number } {
       return spec.rot & 1 ? { w: 1, h: 3 } : { w: 3, h: 1 };
     case 'brama':
       return spec.rot & 1 ? { w: 1, h: 2 } : { w: 2, h: 1 };
+    case 'wrak': {
+      const [a, b] = WRECK_BASE[spec.model];
+      return spec.rot & 1 ? { w: b, h: a } : { w: a, h: b };
+    }
+    case 'posilek':
     case 'drewno':
     case 'jedzenie':
     case 'pien':
@@ -793,6 +806,74 @@ function jedzenie(size: 1 | 2 | 3, seed: number): Sprite {
   return renderBoxes(b, PX, PX, 0);
 }
 
+/** wysokość blatu stołu w pikselach ekranu (blat stołu ze stol() leży od 10 do 12) */
+export const TABLE_TOP = 12;
+
+/** emaliowane garnki: kolor i brzeg; czerwony bywa w białe kropki */
+const ENAMEL: readonly (readonly [number, number])[] = [
+  [0xe6dfca, 0x2f4a6a],
+  [0xb8392e, 0xe8e2d4],
+  [0x4a74a8, 0xe8e2d4],
+  [0x6f8a52, 0x2f3a28],
+];
+/** gulasz, grochówka, pomidorowa, kapuśniak */
+const STEW = [0x8a4a28, 0xa89a48, 0xb8482a, 0xb39a5e] as const;
+
+/**
+ * Garnek z ugotowanym posiłkiem: emaliowany, z obtłuczeniami, w środku tyle, ile zostało porcji,
+ * chochla i miski obok, gdy jest więcej. Na stole stoi na wysokości blatu i nie rzuca cienia na
+ * podłogę (widok rysuje go po stole).
+ */
+function posilek(size: 0 | 1 | 2 | 3, table: boolean, seed: number): Sprite {
+  const r = rnd(seed, 951);
+  const [enamel, rim] = pick(ENAMEL, r(1));
+  const dots = enamel === ENAMEL[1][0];
+  const stew = pick(STEW, r(2));
+  const z0 = table ? TABLE_TOP : 0;
+  const o: Partial<Box> = table ? { flat: true } : {};
+  const side: Paint = (u, v) => {
+    if (v === 0) return rim;
+    if (h2(u, v, seed + 952) < 0.07) return M.ironD; // obtłuczona emalia
+    if (dots && v > 1 && (u + v * 2) % 4 === 0) return 0xe8e2d4;
+    return enamel;
+  };
+  const fill = [0, 0.38, 0.7, 1.1][size];
+  const inner = enamel === ENAMEL[0][0] ? 0xcfc8b4 : shade(enamel, 0.55);
+  const food = (u: number, v: number) => {
+    const k = h2(u, v, seed + 953);
+    return k < 0.18 ? shade(stew, 1.25) : k > 0.85 ? shade(stew, 0.75) : stew;
+  };
+  const top: Paint = (u, v, w, h) => {
+    if (u === 0 || v === 0 || u === w - 1 || v === h - 1) return rim;
+    const e = ((u + 0.5 - w / 2) / (w / 2 - 1)) ** 2 + ((v + 0.5 - h / 2) / (h / 2 - 1)) ** 2;
+    return e < fill ? food(u, v) : inner;
+  };
+  const b: Box[] = [
+    box(7, 13, z0, 19, 21, z0 + 6, enamel, {
+      ...o,
+      round: true,
+      top,
+      front: side,
+      back: side,
+      left: side,
+      right: side,
+    }),
+    // ucha
+    box(5, 16, z0 + 4, 7, 18, z0 + 5, rim, o),
+    box(19, 16, z0 + 4, 21, 18, z0 + 5, rim, o),
+  ];
+  if (size > 0) b.push(box(15, 15, z0 + 5, 16, 16, z0 + 11, M.steel, { ...o, round: true })); // chochla
+  const bowl = (x: number, y: number, k: number) => {
+    const c = r(10 + k) < 0.5 ? 0xe8e4d8 : 0x8a5a3a;
+    const inside: Paint = (u, v, w, h) => (u === 0 || v === 0 || u === w - 1 || v === h - 1 ? c : food(u + x, v + y));
+    b.push(box(x, y, z0, x + 6, y + 5, z0 + 2, c, { ...o, round: true, top: inside }));
+  };
+  if (size >= 2) bowl(21, 20, 0);
+  if (size >= 3) bowl(22, 12, 1);
+  // granice niezależne od porcji i ziarna: ten sam rozmiar i kotwica dla każdego garnka
+  return renderBoxes(b, PX, PX, 0, [box(5, 12, z0, 28, 25, z0 + 11, 0, o)]);
+}
+
 // ---------------------------------------------------------------- drzewa
 
 /** wymiary jak w treeSprite z trees.ts, żeby suche drzewo i pień stały tam, gdzie żywe drzewo */
@@ -1018,6 +1099,8 @@ export function thingSprite(spec: ThingSpec): Sprite {
   if (spec.kind === 'budka') return boothSprite(spec.rot, !!spec.lit, seed);
   if (spec.kind === 'fotel') return armchairSprite(spec.rot, seed);
   if (spec.kind === 'lampa') return lampSprite(!!spec.lit, seed);
+  if (spec.kind === 'posilek') return posilek(spec.size, !!spec.table, seed);
+  if (spec.kind === 'wrak') return wreckSprite(spec.model, spec.rot, seed);
   const [a, b] = BASE[spec.kind];
   const fire = spec.kind === 'koza' && spec.fire !== undefined && spec.fire >= 0 ? spec.fire : -1;
   return renderBoxes(furniture(spec.kind, spec.rot, seed, fire), a * PX, b * PX, spec.rot);
