@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { footprint, thingSprite } from '../../src/render/art/rzeczy.ts';
 import { buildScene, chunkSceneOf } from '../../src/render/art/scene.ts';
+import { NB } from '../../src/render/art/wnetrze.ts';
 import { LOD_FAR, LOD_NEAR, planOrders } from '../../src/render/chunks.ts';
-import { describeTile, flatThingSprite, IN, NB, sectionOf } from '../../src/render/section.ts';
-import { mockInterior } from '../../src/render/sectionMock.ts';
+import { describeTile, IN, sectionOf, specOf } from '../../src/render/section.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
@@ -18,144 +19,94 @@ function world(key: string): World {
   return w;
 }
 
-describe('atrapa wnętrza (podgląd przekroju)', () => {
+const STEP: Record<string, [number, number]> = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] };
+
+describe('opis kafelka z prawdziwego wnętrza siedziby (wejście dla grafiki zastępczej)', () => {
   for (const key of ['przymorze', 'lanciego', 'zielonki']) {
-    it(`${key}: wnętrze w obrysie siedziby, ściany na brzegu, drzwi w wejściach, meble na posadzce`, () => {
+    it(`${key}: posadzki, fronty ścian, okna, drzwi frontowe i schody zgodne z kontraktem`, () => {
       const w = world(key);
-      const int = mockInterior(w, w.hq);
+      const int = w.interior;
+      const sec = sectionOf(w);
       const size = w.size;
-      const b = w.buildings[w.hq];
-      let floor = 0;
+      const entrances = new Set(w.buildings[int.building].entrances.map((e) => e.tile));
+      const counts: Record<string, number> = {};
       for (let i = 0; i < int.cell.length; i++) {
-        if (int.cell[i] === IN.NONE) continue;
-        expect(w.bid[i]).toBe(w.hq);
-        if (int.cell[i] === IN.FLOOR) floor++;
-        // posadzka nie dotyka świata poza budynkiem
-        const x = i % size;
-        const y = (i - x) / size;
-        if (int.cell[i] === IN.FLOOR)
-          for (const [dx, dy] of [
-            [1, 0],
-            [-1, 0],
-            [0, 1],
-            [0, -1],
-          ])
-            expect(w.bid[(y + dy) * size + x + dx]).toBe(w.hq);
+        const d = describeTile(sec, i, size, 0xaabbcc);
+        if (int.cell[i] === IN.NONE) {
+          expect(d).toBeNull();
+          continue;
+        }
+        if (!d) throw new Error(`brak opisu kafelka ${i}`);
+        counts[d.kind] = (counts[d.kind] ?? 0) + 1;
+        const s = i + size;
+        if (d.kind === 'floor') expect(d.room).toBe(int.rooms[int.room[i]].kind);
+        if (d.kind === 'wall') {
+          if (int.cell[s] === IN.FLOOR) expect(d.face).toBe(int.rooms[int.room[s]].kind);
+          if (int.cell[s] === IN.NONE) expect([d.face, d.facade, d.out! & NB.S]).toEqual(['out', 0xaabbcc, NB.S]);
+          if (int.cell[s] === IN.WALL) expect(d.face).toBeUndefined();
+        }
+        if (d.kind === 'window') {
+          const [dx, dy] = d.out === NB.N ? [0, -1] : d.out === NB.S ? [0, 1] : d.out === NB.E ? [1, 0] : [-1, 0];
+          expect(int.cell[i + dy * size + dx]).toBe(IN.NONE);
+          expect(d.room).toBe(int.rooms[int.room[i - dy * size - dx]].kind);
+        }
+        if (d.kind === 'door') expect(d.entrance).toBe(entrances.has(i));
+        if (d.kind === 'stairs') {
+          // w dół schodów (przeciwnie do up) dochodzi się do posadzki
+          const [dx, dy] = STEP[d.up];
+          let j = i;
+          while (int.cell[j] === IN.STAIRS) j -= dy * size + dx;
+          expect(int.cell[j]).toBe(IN.FLOOR);
+        }
       }
-      expect(floor).toBeGreaterThan(10);
-      for (const e of b.entrances) expect(int.cell[e.tile]).toBe(IN.DOOR);
-      expect(int.rooms.some((r) => r.kind === 'klatka')).toBe(true);
-      // każde pomieszczenie ma posadzkę, numery pomieszczeń zgodne z kolejnością
-      int.rooms.forEach((r, k) => {
-        expect(r.id).toBe(k);
-        expect(int.room.some((v, i) => v === k && int.cell[i] !== IN.WALL)).toBe(true);
-      });
-      // meble na wolnej posadzce swojego mieszkania, bez nakładania
-      const used = new Set<number>();
-      for (const f of int.furniture)
-        for (let dy = 0; dy < f.h; dy++)
-          for (let dx = 0; dx < f.w; dx++) {
-            const i = (f.y + dy) * size + f.x + dx;
-            expect(int.cell[i]).toBe(IN.FLOOR);
-            expect(used.has(i)).toBe(false);
-            used.add(i);
-          }
-      // koza stoi tyłem do okna
-      const koza = int.furniture.find((f) => f.kind === 'koza');
-      if (koza) {
-        const [dx, dy] = [
-          [0, -1],
-          [1, 0],
-          [0, 1],
-          [-1, 0],
-        ][koza.rot];
-        expect(int.windows).toContain((koza.y + dy) * size + koza.x + dx);
-      }
+      expect(counts.floor).toBeGreaterThan(20);
+      expect(counts.wall).toBeGreaterThan(20);
+      expect(counts.door).toBeGreaterThan(0);
+      expect(counts.window).toBe(int.windows.length);
     });
   }
 
-  it('Przymorze: mieszkania z kuchnią i pokojem, koza i skład w kuchni zarządu', () => {
-    const w = world('przymorze');
-    const int = mockInterior(w, w.hq);
-    expect(int.rooms.filter((r) => r.kind === 'kuchnia').length).toBeGreaterThanOrEqual(2);
-    expect(int.rooms.filter((r) => r.kind === 'pokoj').length).toBeGreaterThanOrEqual(2);
-    expect(int.furniture.map((f) => f.kind)).toEqual(expect.arrayContaining(['koza', 'stol', 'lozko']));
-    expect(int.sklad.length).toBeGreaterThan(0);
-    expect(int.home).toBeGreaterThanOrEqual(0);
-  });
-});
-
-describe('opis kafelka wnętrza (wejście dla grafiki zastępczej)', () => {
-  const w = world('przymorze');
-  const int = mockInterior(w, w.hq);
-  const sec = sectionOf(int);
-  const size = w.size;
-  const desc = (i: number) => describeTile(sec, i, size, 0xaabbcc)!;
-
-  it('poza wnętrzem nic, posadzka z rodzajem pomieszczenia', () => {
-    const outside = int.cell.indexOf(IN.NONE);
-    expect(describeTile(sec, outside, size, 0)).toBeNull();
-    const i = int.cell.findIndex((c, k) => c === IN.FLOOR && int.room[k] >= 0);
-    expect(desc(i)).toMatchObject({ kind: 'floor', room: int.rooms[int.room[i]].kind });
-  });
-
-  it('ściana nad pomieszczeniem ma front w jego kolorze, ściana zewnętrzna wie, gdzie jest ulica', () => {
-    let checked = 0;
-    for (let i = 0; i < int.cell.length && checked < 50; i++) {
-      if (int.cell[i] !== IN.WALL || int.windows.includes(i)) continue;
-      const d = desc(i);
-      expect(d.kind).toBe('wall');
-      if (d.kind !== 'wall') continue;
-      const s = i + size;
-      if (int.cell[s] === IN.FLOOR) expect(d.face).toBe(int.rooms[int.room[s]].kind);
-      if (int.cell[s] === IN.NONE) {
-        expect(d.face).toBe('out');
-        expect(d.facade).toBe(0xaabbcc);
-        expect(d.out! & NB.S).toBeTruthy();
-      }
-      if (int.cell[s] === IN.WALL) expect(d.face).toBeUndefined();
-      checked++;
-    }
-    expect(checked).toBeGreaterThan(10);
-  });
-
-  it('drzwi frontowe to wejście, okno wie, z której strony jest ulica i jakie pomieszczenie za nim', () => {
-    const e = w.buildings[w.hq].entrances[0];
-    expect(desc(e.tile)).toMatchObject({ kind: 'door', entrance: true });
-    expect(int.windows.length).toBeGreaterThan(3);
-    for (const wi of int.windows) {
-      const d = desc(wi);
-      expect(d.kind).toBe('window');
-      if (d.kind !== 'window') continue;
-      const [dx, dy] = d.out === NB.N ? [0, -1] : d.out === NB.S ? [0, 1] : d.out === NB.E ? [1, 0] : [-1, 0];
-      expect(int.cell[wi + dy * size + dx]).toBe(IN.NONE);
-      expect(d.room).toBe(int.rooms[int.room[wi - dy * size - dx]].kind);
-    }
-  });
-
   it('scena z przekrojem przechodzi przez structuredClone (do workera)', () => {
+    const w = world('przymorze');
     const sc = buildScene(w);
-    sc.section = sec;
+    sc.section = sectionOf(w);
     const copy = structuredClone(chunkSceneOf(sc));
-    expect(copy.section!.cell).toEqual(sec.cell);
-    expect([...copy.section!.windows]).toEqual([...sec.windows]);
+    expect(copy.section!.cell).toEqual(w.interior.cell);
+    expect([...copy.section!.windows]).toEqual(w.interior.windows);
+    expect(copy.dryTree).toBe(w.dryTree);
   });
 });
 
-describe('meble i zamówienia przekroju', () => {
-  it('sprite mebla: wierzch nad podstawą, kotwica na środku dolnej krawędzi', () => {
-    const sp = flatThingSprite({ kind: 'stol', x: 3, y: 4, w: 2, h: 1, rot: 0 });
-    expect(sp.w).toBe(64);
-    expect(sp.h).toBeGreaterThan(32);
-    expect(sp.ax).toBe(32);
-    expect(sp.ay).toBe(sp.h);
-    expect(sp.px.length).toBe(sp.w * sp.h);
-    expect(sp.px.every((v) => v !== 0)).toBe(true);
+describe('rzeczy jako sprite’y grafiki zastępczej', () => {
+  it('meble z wnętrza: opis sprite’a ma te same wymiary co mebel na mapie', () => {
+    for (const key of ['przymorze', 'lanciego', 'zielonki']) {
+      const w = world(key);
+      for (const f of w.interior.furniture) {
+        const spec = specOf(f);
+        expect(spec, f.kind).not.toBeNull();
+        expect(footprint(spec!), `${key} ${f.kind} rot ${f.rot}`).toEqual({ w: f.w, h: f.h });
+        const sp = thingSprite(spec!);
+        // kotwica (środek dolnej krawędzi podstawy) w sprite'cie, który mieści co najmniej podstawę
+        expect(sp.w).toBeGreaterThanOrEqual(f.w * 32);
+        expect(sp.ax).toBeGreaterThan(0);
+        expect(sp.ax).toBeLessThan(sp.w);
+        expect(sp.ay).toBeLessThanOrEqual(sp.h);
+      }
+    }
+  });
+
+  it('koza z ogniem ma klatki ognia, trzepak ustawienie z wymiarów, stos wielkość ze sztuk', () => {
+    const koza = { kind: 'koza', x: 3, y: 4, w: 1, h: 1, rot: 0 };
+    expect(specOf(koza)).toMatchObject({ kind: 'koza', fire: undefined });
+    expect(specOf({ ...koza, fuel: 5 }, 4)).toMatchObject({ kind: 'koza', fire: 1 });
+    expect(specOf({ kind: 'trzepak', x: 0, y: 0, w: 1, h: 3, rot: 0 })).toMatchObject({ kind: 'trzepak', rot: 1 });
+    expect(specOf({ kind: 'trzepak', x: 0, y: 0, w: 3, h: 1, rot: 0 })).toMatchObject({ kind: 'trzepak', rot: 0 });
+    expect(specOf({ kind: 'drewno', x: 0, y: 0, w: 1, h: 1, rot: 0, n: 4 })).toMatchObject({ size: 2 });
+    expect(specOf({ kind: 'nieznane', x: 0, y: 0, w: 1, h: 1, rot: 0 })).toBeNull();
   });
 
   it('nad siedzibą z bliska zamawia przekrój zamiast dachu, dach z bliska wystarcza za zaślepkę', () => {
     const cutOf = (k: number) => k === 4;
-    // nic nie ma: dalekie zaślepki, potem przekrój dla 4 i bliski dla 5
     expect(
       planOrders(
         [4, 5],
@@ -171,7 +122,6 @@ describe('meble i zamówienia przekroju', () => {
       { k: 4, s: LOD_NEAR, v: 0, cut: true },
       { k: 5, s: LOD_NEAR, v: 0 },
     ]);
-    // jest dach z bliska: bez dalekiej zaślepki, zostaje tylko przekrój
     const has = (k: number, s: number, cut?: boolean) => s === LOD_FAR || (k === 4 && s === LOD_NEAR && !cut);
     expect(planOrders([4], 6, has, true, () => 0, cutOf)).toEqual([{ k: 4, s: LOD_NEAR, v: 0, cut: true }]);
   });

@@ -54,6 +54,8 @@ export interface ChunkScene {
   treesBy: number[][];
   /** 1 = drzewa już nie ma (ścięte), kawałki rysują się bez niego */
   treeGone: Uint8Array;
+  /** suche drzewo (bez liści) albo −1 */
+  dryTree: number;
   /** wnętrze budynku do przekroju (w M1 siedziba) albo null */
   section: SectionScene | null;
   chunks: number;
@@ -81,6 +83,7 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
     doors: sc.doors,
     treesBy: sc.treesBy,
     treeGone: sc.treeGone,
+    dryTree: sc.dryTree,
     section: sc.section,
     chunks: sc.chunks,
   };
@@ -245,5 +248,5 @@ export function buildScene(w: World): Scene {
   const tr = w.trees;
   for (const list of treesBy) list.sort((a, b) => tr[a].y - tr[b].y || tr[a].x - tr[b].x);
   const treeGone = new Uint8Array(w.trees.length);
-  return { w, south, run, styles, shadow, doors, treesBy, treeGone, section: null, chunks };
+  return { w, south, run, styles, shadow, doors, treesBy, treeGone, dryTree: w.dryTree, section: null, chunks };
 }

@@ -6,13 +6,13 @@ import { wiek } from './content/people.ts';
 import { hashString } from './core/rng.ts';
 import { buildScene, TILE } from './render/art/scene.ts';
 import type { Light } from './render/light.ts';
-import { type InteriorLike, sectionOf } from './render/section.ts';
-import { mockInterior } from './render/sectionMock.ts';
+import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
+import { type FenceLike, fenceThings, mockFence } from './render/yard.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { createSim, Sim } from './sim/sim.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
-import { buildWorld } from './world/world.ts';
+import { buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -90,9 +90,8 @@ async function enter(data: Loaded) {
   const t0 = performance.now();
   const world = buildWorld(data.geo, { seed, street: data.street });
   const scene = buildScene(world);
-  // ?wnetrze=atrapa: przekrój siedziby z atrapą wnętrza (podgląd rysowania, zanim przyjdzie generator ze świata)
-  const interior = params.get('wnetrze') === 'atrapa' ? mockInterior(world, world.hq) : null;
-  if (interior) scene.section = sectionOf(interior);
+  // przekrój siedziby z wnętrzem ze świata; ?przekroj=0 zostawia dach (do porównań)
+  if (params.get('przekroj') !== '0') scene.section = sectionOf(world);
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
   const crowd = params.has('perf') ? Number(params.get('perf')) : 24;
   // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
@@ -102,7 +101,6 @@ async function enter(data: Loaded) {
   // płótno mierzy element; był ukryty, więc trzeba przeliczyć rozmiar po odsłonięciu
   view.app.resize();
   view.setScene(scene);
-  if (interior) view.setThings(interior.furniture);
   // ?godzina=22 (albo ?hour=22, także z ułamkiem: 18.5 to 18:30): pora dnia na start
   const hour = params.get('godzina') ?? params.get('hour');
   if (hour !== null)
@@ -133,8 +131,19 @@ async function enter(data: Loaded) {
     Object.assign(view.cam, { x: (world.size * TILE) / 2, y: (world.size * TILE) / 2, zoom: view.minZoom });
     flyTo(hx, hy, 1, 2400);
   }
-  // ?swiatla=test: trzy światła przy siedzibie do podglądu nocy
-  if (params.get('swiatla') === 'test') view.lights = testLights(hx / TILE, hy / TILE, interior);
+  // meble z wnętrza i trzepak (do czasu rzeczy z symulacji); ?swiatla=test zapala kozę i stawia
+  // przy zarządzie ognisko i lampę warty, ze światłami
+  const preview = params.get('swiatla') === 'test' ? previewNight(world, hx / TILE, hy / TILE) : null;
+  // siatka z bramą: ze świata, gdy już ją ma (kontrakt World.fence), albo atrapa (?siatka=atrapa)
+  const fence: FenceLike | null =
+    'fence' in world ? (world.fence as FenceLike) : params.get('siatka') === 'atrapa' ? mockFence(world) : null;
+  view.setThings([
+    ...world.interior.furniture.map((f) => (preview && f.kind === 'koza' ? { ...f, fuel: 1 } : f)),
+    ...world.props.map((p) => ({ ...p, rot: 0 })),
+    ...(preview?.things ?? []),
+    ...(fence ? fenceThings(fence, world) : []),
+  ]);
+  if (preview) view.lights = preview.lights;
   if (params.has('speed')) speed = Number(params.get('speed'));
   const first = st.pawns[0];
   if (first) selected.add(first.id);
@@ -149,18 +158,48 @@ async function enter(data: Loaded) {
   if (window.zm) window.zm.sim = sim;
 }
 
-/** światła do podglądu wokół punktu (x, y) w metrach: ognisko, okno z kozą, latarka warty, a z wnętrzem koza */
-function testLights(x: number, y: number, interior: InteriorLike | null): Light[] {
-  const koza = interior?.furniture.find((f) => f.kind === 'koza');
-  const inside: Light[] = koza
-    ? [{ x: koza.x + 0.5, y: koza.y + 0.5, r: 4.5, color: 0xff8a3c, strength: 1.1, flicker: 0.3, inside: true }]
-    : [];
-  return [
-    ...inside,
-    { x: x + 4, y: y - 3, r: 7, color: 0xff9a3c, strength: 1.15, flicker: 0.35 },
-    { x: x + 1, y: y + 0.8, r: 3, color: 0xffc46b, strength: 0.8, flicker: 0.12 },
-    { x: x - 6, y: y - 1.5, r: 4.5, color: 0xcfdcff, strength: 0.9, flicker: 0 },
-  ];
+/**
+ * Podgląd nocy przy zarządzie stojącym w (x, y) metrów: ognisko i lampa warty na najbliższych
+ * wolnych kafelkach trawy, paląca się koza w mieszkaniu zarządu, do tego ich światła (promienie
+ * jak na arkuszu grafiki: ognisko 5,5 m, lampa 3 m, koza w pokoju 4 m).
+ */
+function previewNight(w: World, x: number, y: number): { things: ThingLike[]; lights: Light[] } {
+  const size = w.size;
+  const taken = new Set<number>();
+  const spot = (offs: [number, number][]) => {
+    for (const [dx, dy] of offs) {
+      const tx = Math.floor(x + dx);
+      const ty = Math.floor(y + dy);
+      const i = ty * size + tx;
+      if (tx < 0 || ty < 0 || tx >= size || ty >= size || taken.has(i)) continue;
+      if (w.blocked[i] || w.bid[i] >= 0 || (w.terr[i] !== T.GRASS && w.terr[i] !== T.PARK)) continue;
+      taken.add(i);
+      return [tx, ty] as const;
+    }
+    return null;
+  };
+  const ring = (r: number): [number, number][] =>
+    Array.from({ length: 16 }, (_, k) => [
+      Math.round(Math.cos((k / 16) * 6.283) * r),
+      Math.round(Math.sin((k / 16) * 6.283) * r - 1),
+    ]);
+  const things: ThingLike[] = [];
+  const lights: Light[] = [];
+  const fire = spot([...ring(4), ...ring(5), ...ring(6)]);
+  if (fire) {
+    things.push({ kind: 'ognisko', x: fire[0], y: fire[1], w: 1, h: 1, rot: 0, fuel: 1 });
+    lights.push({ x: fire[0] + 0.5, y: fire[1] + 0.6, r: 5.5, color: 0xff8a30, strength: 1.1, flicker: 0.35 });
+  }
+  // lampa warty po drugiej stronie zarządu niż ognisko, żeby światła się nie zlewały
+  const lamp = spot([...ring(3), ...ring(4)].reverse());
+  if (lamp) {
+    things.push({ kind: 'lampa', x: lamp[0], y: lamp[1], w: 1, h: 1, rot: 0, spec: { kind: 'lampa', lit: true } });
+    lights.push({ x: lamp[0] + 0.5, y: lamp[1] + 0.6, r: 3, color: 0xffb060, strength: 0.75, flicker: 0.08 });
+  }
+  const koza = w.interior.furniture.find((f) => f.kind === 'koza');
+  if (koza)
+    lights.push({ x: koza.x + 0.5, y: koza.y + 0.5, r: 4, color: 0xff8a30, strength: 1, flicker: 0.3, inside: true });
+  return { things, lights };
 }
 
 /* ---------- kamera ---------- */

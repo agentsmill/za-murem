@@ -20,25 +20,31 @@ const lamp = (x: number, y: number, over: Partial<Light> = {}): Light => ({
   ...over,
 });
 
-/** mapa światła dla prostokąta 16×16 m przy zoomie 1, jako tablica bajtów */
+/** mapa światła dla prostokąta 16×16 m przy zoomie 1: mnożnik, poświata i odczyty w metrach */
 function map(lights: Light[], d = 1, time = 0) {
   const g = gridFor(0, 0, 16 * 32, 16 * 32, 1);
-  const out = new Uint8Array(g.w * g.h * 4);
-  renderLightMap(out, g.w, new Float32Array(g.w * g.h * 3), g, d, lights, time);
-  /** jasność komórki pod punktem (x, y) w metrach: suma kanałów */
+  const mul = new Uint8Array(g.w * g.h * 4);
+  const glow = new Uint8Array(g.w * g.h * 4);
+  renderLightMap(mul, glow, g.w, new Float32Array(g.w * g.h * 6), g, d, lights, time);
+  const idx = (x: number, y: number) =>
+    ((Math.floor((y * 32) / g.cell) - g.gy) * g.w + Math.floor((x * 32) / g.cell) - g.gx) * 4;
+  /** jasność mnożnika w komórce pod punktem (x, y): suma kanałów */
   const at = (x: number, y: number) => {
-    const i = Math.floor((x * 32) / g.cell) - g.gx;
-    const j = Math.floor((y * 32) / g.cell) - g.gy;
-    const o = (j * g.w + i) * 4;
-    return out[o] + out[o + 1] + out[o + 2];
+    const o = idx(x, y);
+    return mul[o] + mul[o + 1] + mul[o + 2];
   };
-  /** średnia jasność metra kwadratowego od (x, y): przy zoomie 1 to 4×4 komórki, pełny okres ditheringu */
+  const glowAt = (x: number, y: number) => {
+    const o = idx(x, y);
+    return [glow[o], glow[o + 1], glow[o + 2]];
+  };
+  /** średnia jasność metra kwadratowego od (x, y): wszystkie komórki, czyli pełne okresy ditheringu */
   const block = (x: number, y: number) => {
+    const n = 32 / g.cell;
     let s = 0;
-    for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) s += at(x + (i + 0.5) / 4, y + (j + 0.5) / 4);
-    return s / 16;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) s += at(x + (i + 0.5) / n, y + (j + 0.5) / n);
+    return s / (n * n);
   };
-  return { g, out, at, block };
+  return { g, mul, glow, at, glowAt, block };
 }
 
 describe('ciemność z godziny', () => {
@@ -76,8 +82,35 @@ describe('mapa światła', () => {
   });
 
   it('w dzień bez świateł mapa jest biała, czyli obraz się nie zmienia', () => {
-    const { out } = map([], 0);
-    expect(out.every((v) => v === 255)).toBe(true);
+    const { mul } = map([], 0);
+    expect(mul.every((v) => v === 255)).toBe(true);
+  });
+
+  it('w dzień światła nie dają poświaty, nocą ogień świeci ciepło i mocniej w środku', () => {
+    expect(map([lamp(8, 8)], 0).glow.every((v) => v === 0)).toBe(true);
+    const { glowAt } = map([lamp(8, 8, { color: 0xff8a30 })]);
+    const [r, g, b] = glowAt(8.1, 8.1);
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(b);
+    expect(r).toBeGreaterThan(glowAt(10.6, 8.1)[0]);
+    expect(glowAt(1, 1)).toEqual([0, 0, 0]);
+  });
+
+  it('brzeg światła jest miękki: w zewnętrznym pasie część komórek świeci, część nie', () => {
+    const { g, at } = map([lamp(8, 8)]);
+    const dark = at(1, 1);
+    let lit = 0;
+    let all = 0;
+    for (let k = 0; k < 200; k++) {
+      const a = (k / 200) * Math.PI * 2;
+      const x = 8 + Math.cos(a) * 3.75;
+      const y = 8 + Math.sin(a) * 3.75;
+      all++;
+      if (at(x, y) > dark) lit++;
+    }
+    expect(g.cell).toBe(4);
+    expect(lit).toBeGreaterThan(0);
+    expect(lit).toBeLessThan(all);
   });
 
   it('światło rozjaśnia wokół siebie i gaśnie ku brzegowi, poza zasięgiem jest noc', () => {
@@ -106,7 +139,7 @@ describe('mapa światła', () => {
     const b = gridFor(37, 101, 549, 613, 1);
     const draw = (g: typeof a) => {
       const out = new Uint8Array(g.w * g.h * 4);
-      renderLightMap(out, g.w, new Float32Array(g.w * g.h * 3), g, 1, l, 0);
+      renderLightMap(out, null, g.w, new Float32Array(g.w * g.h * 6), g, 1, l, 0);
       return (x: number, y: number) => out[((Math.floor(y / g.cell) - g.gy) * g.w + Math.floor(x / g.cell) - g.gx) * 4];
     };
     const pa = draw(a);
