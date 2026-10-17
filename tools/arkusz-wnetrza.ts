@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { h2 } from '../src/render/art/hash.ts';
 import { C, shade, WALLS } from '../src/render/art/palette.ts';
-import { FH, FW, makePeopleAtlas } from '../src/render/art/people.ts';
+import { FH, FW, frameRect, makePeopleAtlas } from '../src/render/art/people.ts';
 import {
   deadTreeSprite,
   type FenceState,
@@ -558,8 +558,8 @@ const atlas = fromCanvas(makePeopleAtlas());
 /** pionek z atlasu people.ts: wygląd, kierunek (0 dół, 1 góra, 2 lewo, 3 prawo), klatka */
 function pawn(look: number, dir: number, f = 0): Sprite {
   const px = new Uint32Array(FW * FH);
-  for (let j = 0; j < FH; j++)
-    for (let i = 0; i < FW; i++) px[j * FW + i] = atlas.px[(look * FH + j) * atlas.w + (dir * 4 + f) * FW + i];
+  const [x0, y0] = frameRect(look, 'walk', dir, f);
+  for (let j = 0; j < FH; j++) for (let i = 0; i < FW; i++) px[j * FW + i] = atlas.px[(y0 + j) * atlas.w + x0 + i];
   return { w: FW, h: FH, ax: 16, ay: 45, px };
 }
 

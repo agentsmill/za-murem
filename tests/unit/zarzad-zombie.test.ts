@@ -68,15 +68,16 @@ describe('zarząd w trybie zombie', () => {
   });
 
   it('w zwykłym trybie plan napadu pierwszej nocy jest taki jak przed trybem zombie', () => {
+    // wzorzec zwykłego trybu po M2 (sama gałąź m2-razem, bez trybu zombie, daje te same liczby, 18.10.2026)
     const before = [
-      [1, false, 1452, 'd1', 0],
-      [2, false, 1425, 'd1', 0],
-      [3, false, 1662, 'd2', 0],
-      [4, true, 1401, 'd1', 3.7],
-      [5, false, 1498, 'd2', 0],
-      [6, false, 1447, 'd1', 0],
-      [7, false, 1421, 'd1', 0],
-      [8, true, 1533, 'd3', 4.4],
+      [1, false, 1608, 'd1', 0],
+      [2, true, 1596, 'brama', 2.3],
+      [3, false, 1594, 'd1', 0],
+      [4, false, 1509, 'd2', 0],
+      [5, true, 1558, 'd2', 3.9],
+      [6, false, 1424, 'd3', 0],
+      [7, false, 1502, 'd1', 0],
+      [8, true, 1508, 'd2', 4.1],
     ];
     for (const [seed, come, atMin, post, attack] of before) {
       const { gov } = run(seed as number, 'zawsze-warta', at(1, 22, 30));

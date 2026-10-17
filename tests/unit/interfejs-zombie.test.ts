@@ -20,7 +20,20 @@ describe('interfejs trybu zombie', () => {
     const z = new Sim(w, createSim(w, 3, { core: 2, mode: 'zombie' }));
     z.step();
     const ids = statsOf(snapshot(z.st, w), newGov(3, 'zombie')).map((s) => s.id);
-    expect(ids).toEqual(['sFence', 'sHorde', 'sKit', 'sFire', 'sWood', 'sFood', 'sTrust', 'sAnger']);
+    expect(ids).toEqual([
+      'sFence',
+      'sHorde',
+      'sKit',
+      'sFire',
+      'sWood',
+      'sBoards',
+      'sScrap',
+      'sParts',
+      'sMats',
+      'sFood',
+      'sTrust',
+      'sAnger',
+    ]);
     const by = Object.fromEntries(statsOf(snapshot(z.st, w), null).map((s) => [s.id, s]));
     expect(by.sFence).toMatchObject({ value: '100%', level: 'ok' });
     expect(by.sHorde.value).toBe(String(snapshot(z.st, w).zombies.near));
@@ -30,6 +43,10 @@ describe('interfejs trybu zombie', () => {
       'sKit',
       'sFire',
       'sWood',
+      'sBoards',
+      'sScrap',
+      'sParts',
+      'sMats',
       'sFood',
       'sTrust',
       'sAnger',

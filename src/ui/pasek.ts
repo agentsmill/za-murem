@@ -1,4 +1,5 @@
-/* Górny pasek: temperatura na dworze i w kuchni, ogień w kozie (godziny), drewno na zapas, jedzenie, zaufanie i wkurzenie. Wartości
+/* Górny pasek: temperatura na dworze i w kuchni, ogień w kozie (godziny), drewno na zapas, deski, złom
+   i części, jedzenie, zaufanie i wkurzenie. Wartości
    i progi liczy czysta funkcja (do testów), DOM zmienia się tylko po zmianie tekstu. */
 
 import type { GovState } from '../gov/typy.ts';
@@ -79,6 +80,31 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
       value: String(spare),
       level: spare === 0 ? 'bad' : spare < 6 ? 'mid' : 'ok',
       title: `Drewno na zapas: w składzie ${k.woodSklad}, luzem ${k.woodLoose}, w rękach ${k.woodCarried}`,
+    },
+    // materiały z odzysku: deski, złom i części; na telefonie jedno pole zbiorcze (CSS chowa jedno albo drugie)
+    {
+      id: 'sBoards',
+      value: String(k.boards),
+      level: k.boards ? 'ok' : 'mid',
+      title: `Deski: ${k.boards}. Na łaty, naprawy i budowę. Dają je przeszukiwanie pustych mieszkań i rozbiórka mebli.`,
+    },
+    {
+      id: 'sScrap',
+      value: String(k.scrap),
+      level: k.scrap ? 'ok' : 'mid',
+      title: `Złom: ${k.scrap}. Na łaty, zasieki i naprawy rur i pieców. Dają go przeszukiwanie i rozbiórka śmieci.`,
+    },
+    {
+      id: 'sParts',
+      value: String(k.parts),
+      level: k.parts ? 'ok' : 'mid',
+      title: `Części: ${k.parts}. Do rur, pieców i kuchni społecznej. Dają je przeszukiwanie i rozbiórka sprzętów.`,
+    },
+    {
+      id: 'sMats',
+      value: `${k.boards}·${k.scrap}·${k.parts}`,
+      level: k.boards || k.scrap || k.parts ? 'ok' : 'mid',
+      title: `Deski ${k.boards}, złom ${k.scrap}, części ${k.parts}. Dają je przeszukiwanie i rozbiórka.`,
     },
     {
       id: 'sFood',

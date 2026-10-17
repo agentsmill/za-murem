@@ -8,7 +8,8 @@
 
 import { g } from '../content/people.ts';
 import { clamp } from '../core/rng.ts';
-import { type ExpTarget, peopleNames, TARGETS } from './tresc.ts';
+import { placeIn, wordsOf } from './miejsce.ts';
+import { type ExpTarget, peopleNames, TARGETS, targetName } from './tresc.ts';
 import type {
   Arm,
   GovEffects,
@@ -94,7 +95,7 @@ export function postsOf(i: GovInput, zombie = false): Post[] {
     name: `przy dziurze ${h.name}`,
     weak: round2(h.size + 0.2),
   }));
-  posts.push({ key: 'brama', name: 'przy bramie', weak: round2(0.15 + 0.35 * (1 - f.durability)) });
+  posts.push({ key: 'brama', name: wordsOf(placeIn(i)).brama.przy, weak: round2(0.15 + 0.35 * (1 - f.durability)) });
   if (zombie) posts.push({ key: 'siatka', name: 'przy siatce', weak: 2 });
   return posts.sort((a, b) => b.weak - a.weak || (a.key < b.key ? -1 : 1));
 }
@@ -272,7 +273,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
       const ok = canGo(p, t);
       opts.push({
         key: `wyprawa:${t.range}`,
-        label: `Wyprawa ${t.range}: ${t.name}`,
+        label: `Wyprawa ${t.range}: ${targetName(t, placeIn(i))}`,
         ok,
         why: ok
           ? undefined
@@ -488,7 +489,7 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
   logGov(
     st,
     i,
-    `${auto ? 'Zarząd nie zdążył się naradzić, zostaje propozycja. ' : ''}Noc: ${parts.join(', ')}.`,
+    `${auto ? `${wordsOf(placeIn(i)).Zarzad} nie zdążył się naradzić, zostaje propozycja. ` : ''}Noc: ${parts.join(', ')}.`,
     false,
     fx,
   );
@@ -522,15 +523,15 @@ function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[
     if (bitten) (fx.bitten ??= []).push(hurt.id);
     const harm = bitten ? g(hurt, 'jest ugryziony', 'jest ugryziona') : g(hurt, 'jest ranny', 'jest ranna');
     n.lines.push(
-      `${who} ${verbPl(ppl, 'trafił', 'trafiła', 'trafili', 'trafiły')} na ${zombie ? 'szwendaczy' : 'szabrowników'} (${t.name}). ${hurt.name} ${harm}.${has ? ` Udało się przynieść: ${has}.` : ' Wszystko zostało po drodze.'}`,
+      `${who} ${verbPl(ppl, 'trafił', 'trafiła', 'trafili', 'trafiły')} na ${zombie ? 'szwendaczy' : 'szabrowników'} (${targetName(t, placeIn(i))}). ${hurt.name} ${harm}.${has ? ` Udało się przynieść: ${has}.` : ' Wszystko zostało po drodze.'}`,
     );
     for (const p of ppl) fx.moods.push({ id: p.id, why: g(p, 'Ledwo uciekłem', 'Ledwo uciekłam'), d: -6, hours: 12 });
   } else {
     const has = stockText(got);
     n.lines.push(
       has
-        ? `${who} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${t.name}. ${verbPl(ppl, 'Przyniósł', 'Przyniosła', 'Przynieśli', 'Przyniosły')}: ${has}.`
-        : `${who} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${t.name} z pustymi rękami.`,
+        ? `${who} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${targetName(t, placeIn(i))}. ${verbPl(ppl, 'Przyniósł', 'Przyniosła', 'Przynieśli', 'Przyniosły')}: ${has}.`
+        : `${who} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${targetName(t, placeIn(i))} z pustymi rękami.`,
     );
     if (has) {
       mood(st, 1, 0);

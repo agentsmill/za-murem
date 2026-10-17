@@ -1,10 +1,14 @@
 /* Ludzie rysowani kodem (grafika zapasowa): 16 wyglądów, każdy w 4 kierunkach. Chód (4 klatki)
    i pozy pracy: niesienie naręcza drewna (4 klatki chodu), rąbanie siekierą (zamach, cios, uderzenie),
    klęczenie przy kozie (grzanie rąk, polano w ręce, polano wsunięte), gotowanie (mieszanie),
-   siedzenie na krześle, warta z lampą (kołysze się). Do tego leżenie w 4 ułożeniach: w łóżku pod
-   kocem (głowa na poduszce, pod kocem tylko zarys ciała) i na podłodze w ubraniu.
+   siedzenie na krześle, warta z lampą (kołysze się), grzebanie na kolanach (przeszukiwanie,
+   przebieranie śmieci, praca przy podłodze i grządkach), młotek (naprawa, budowa, łatanie),
+   niesienie desek i złomu (4 klatki chodu) i drzemka na siedząco (wartownik, który przysnął).
+   Do tego leżenie w 4 ułożeniach: w łóżku pod kocem (głowa na poduszce, pod kocem tylko zarys ciała)
+   i na podłodze w ubraniu.
    Klatka 32×48 px (osoba ma około 1,4 m wysokości w skali gry), leżenie 48×48. Jeden atlas,
-   rysowany samymi prostokątami (działa też z atrapą płótna w narzędziach). */
+   rysowany samymi prostokątami (działa też z atrapą płótna w narzędziach); każdy wygląd zajmuje dwa
+   wiersze, żeby atlas mieścił się w teksturze 4096 px także na telefonie. */
 
 import { handOf } from './bron.ts';
 import { type AnyCanvas, ctx2d, newCanvas } from './canvas.ts';
@@ -17,8 +21,37 @@ export const LOOKS = 16;
 export const FRAMES = 4;
 
 /** pozy w atlasie (kolumny po kolei: kierunek × klatki) */
-export type Pose = 'walk' | 'carry' | 'chop' | 'crouch' | 'cook' | 'sit' | 'guard' | 'swing' | 'aim';
-export const POSES: readonly Pose[] = ['walk', 'carry', 'chop', 'crouch', 'cook', 'sit', 'guard', 'swing', 'aim'];
+export type Pose =
+  | 'walk'
+  | 'carry'
+  | 'chop'
+  | 'crouch'
+  | 'cook'
+  | 'sit'
+  | 'guard'
+  | 'swing'
+  | 'aim'
+  | 'search'
+  | 'hammer'
+  | 'planks'
+  | 'scrap'
+  | 'doze';
+export const POSES: readonly Pose[] = [
+  'walk',
+  'carry',
+  'chop',
+  'crouch',
+  'cook',
+  'sit',
+  'guard',
+  'swing',
+  'aim',
+  'search',
+  'hammer',
+  'planks',
+  'scrap',
+  'doze',
+];
 export const POSE_FRAMES: Record<Pose, number> = {
   walk: 4,
   carry: 4,
@@ -29,6 +62,11 @@ export const POSE_FRAMES: Record<Pose, number> = {
   guard: 2,
   swing: 3,
   aim: 2,
+  search: 2,
+  hammer: 2,
+  planks: 4,
+  scrap: 4,
+  doze: 1,
 };
 const POSE_COL = {} as Record<Pose, number>;
 let cols = 0;
@@ -41,17 +79,22 @@ const COLS = cols;
 /** leżenie: w łóżku pod kocem albo na podłodze; komórka LIE × LIE */
 export type Lie = 'bed' | 'floor';
 export const LIE = 48;
-export const ATLAS_W = COLS * FW + 8 * LIE;
-export const ATLAS_H = LOOKS * FH;
+/** wiersze atlasu na wygląd: klatki póz idą wierszami, leżenie na końcu ostatniego wiersza */
+const ROWS = 2;
+const PER_ROW = Math.ceil((COLS * FW + 8 * LIE) / (ROWS * FW));
+export const ATLAS_W = PER_ROW * FW;
+export const ATLAS_H = LOOKS * ROWS * FH;
 
 /** klatka pozy w atlasie: x, y, szerokość, wysokość (kotwica jak w chodzie: stopy w (16, 45)) */
 export function frameRect(look: number, pose: Pose, dir: number, f: number): [number, number, number, number] {
-  return [(POSE_COL[pose] + dir * POSE_FRAMES[pose] + f) * FW, look * FH, FW, FH];
+  const c = POSE_COL[pose] + dir * POSE_FRAMES[pose] + f;
+  return [(c % PER_ROW) * FW, (look * ROWS + Math.floor(c / PER_ROW)) * FH, FW, FH];
 }
 
 /** komórka leżenia; o to strona głowy: 0 góra, 1 prawo, 2 dół, 3 lewo */
 export function lieRect(look: number, lie: Lie, o: number): [number, number, number, number] {
-  return [COLS * FW + ((lie === 'bed' ? 0 : 4) + o) * LIE, look * FH, LIE, LIE];
+  const x = (COLS - (ROWS - 1) * PER_ROW) * FW + ((lie === 'bed' ? 0 : 4) + o) * LIE;
+  return [x, (look * ROWS + ROWS - 1) * FH, LIE, LIE];
 }
 
 /** środek głowy w komórce leżenia (kotwica: tę kropkę kładzie się na poduszce) */
@@ -575,6 +618,251 @@ function guard(r: Rect, L: Look, dir: number, f: number) {
   lantern(r, 20 + s, 30);
 }
 
+const PLANK = 0xb48c5c;
+const PLANK_D = 0x8a6a44;
+const SCRAP = 0x7d8288;
+const SCRAP_HI = 0xa3a8ad;
+const RUST = 0x8a5232;
+
+/** nogi klęczącego jak przy kozie (crouch): od przodu kolana, od tyłu podeszwy, z boku jedno kolano w górze */
+function kneel(r: Rect, L: Look, dir: number) {
+  if (dir === 0) {
+    r(9, 39, 6, 6, OUT);
+    r(17, 39, 6, 6, OUT);
+    r(10, 40, 4, 4, L.pants);
+    r(18, 40, 4, 4, L.pants);
+  } else if (dir === 1) {
+    r(9, 41, 6, 4, OUT);
+    r(17, 41, 6, 4, OUT);
+    r(10, 42, 4, 2, SHOE);
+    r(18, 42, 4, 2, SHOE);
+  } else {
+    r(10, 41, 10, 4, OUT);
+    r(11, 42, 8, 2, shade(L.pants, 0.8));
+    r(17, 36, 7, 5, OUT);
+    r(18, 37, 5, 3, L.pants);
+    r(19, 38, 5, 7, OUT);
+    r(20, 39, 3, 5, L.pants);
+    r(20, 43, 5, 2, SHOE);
+  }
+}
+
+/** puszka w dłoni (znalezisko) */
+function can(r: Rect, x: number, y: number) {
+  r(x, y, 4, 5, OUT);
+  r(x + 1, y + 1, 2, 3, STEEL);
+}
+
+/**
+ * Grzebanie na kolanach (przeszukiwanie, przebieranie śmieci, praca przy podłodze, rurze i grządkach):
+ * f 0 ręce nisko przed sobą, f 1 jedna ręka podnosi znalezisko.
+ */
+function search(r: Rect, L: Look, dir: number, f: number) {
+  const dy = 8;
+  kneel(r, L, dir);
+  if (dir === 0) {
+    torso(r, L, 0, dy, 13);
+    head(r, L, 0, dy + 1);
+    arm(r, L, 8, 30, 10);
+    if (f === 0) arm(r, L, 21, 30, 10);
+    else {
+      arm(r, L, 21, 27, 7);
+      can(r, 21, 31);
+    }
+    return;
+  }
+  if (dir === 1) {
+    torso(r, L, 1, dy, 13);
+    head(r, L, 1, dy + 1);
+    // od tyłu łokcie na boki, ręce pracują przed sobą
+    arm(r, L, 6 + f, 28, 8);
+    arm(r, L, 23 - f, 28 + f, 8);
+    return;
+  }
+  torso(r, L, 3, dy, 11);
+  head(r, L, 3, dy + 1);
+  if (f === 0) {
+    // ręka w dół przed siebie, dłoń przy ziemi
+    r(19, 30, 5, 11, OUT);
+    r(20, 31, 3, 8, shade(L.jacket, 0.85));
+    r(20, 39, 3, 2, L.skin);
+  } else {
+    armSide(r, L, 15, 29, 10);
+    can(r, 24, 27);
+  }
+}
+
+/** młotek w dłoni (x, y): w górę (zamach) albo w przód (uderzenie), obuch w poprzek trzonka */
+function hammerTool(r: Rect, x: number, y: number, up: boolean) {
+  if (up) {
+    r(x, y - 8, 2, 9, HANDLE);
+    r(x - 3, y - 11, 8, 4, OUT);
+    r(x - 2, y - 10, 6, 2, STEEL);
+  } else {
+    r(x, y, 6, 2, HANDLE);
+    r(x + 5, y - 3, 4, 8, OUT);
+    r(x + 6, y - 2, 2, 6, STEEL);
+  }
+}
+
+/** młotek (naprawa, budowa, łatanie siatki, zajmowanie mieszkania): f 0 zamach, f 1 uderzenie */
+function hammer(r: Rect, L: Look, dir: number, f: number) {
+  if (dir === 0) {
+    legs(r, L, 0);
+    torso(r, L, 0, 0);
+    head(r, L, 0, 0);
+    // lewa ręka przytrzymuje, prawa z młotkiem
+    arm(r, L, 7, 21, 9);
+    if (f === 0) {
+      arm(r, L, 22, 12, 8);
+      hammerTool(r, 23, 13, true);
+    } else {
+      arm(r, L, 19, 21, 9);
+      r(17, 29, 8, 5, OUT);
+      r(18, 30, 6, 3, STEEL);
+    }
+    return;
+  }
+  if (dir === 1) {
+    legs(r, L, 1);
+    torso(r, L, 1, 0);
+    if (f === 0) hammerTool(r, 23, 13, true);
+    head(r, L, 1, 0);
+    arm(r, L, 6, 21, 10);
+    if (f === 0) arm(r, L, 22, 12, 8);
+    else arm(r, L, 20, 21, 8);
+    return;
+  }
+  legs(r, L, 3);
+  torso(r, L, 3, 0);
+  head(r, L, 3, 0);
+  if (f === 0) {
+    // ręka uniesiona przed twarzą, młotek nad nią
+    arm(r, L, 22, 12, 8);
+    hammerTool(r, 23, 13, true);
+  } else {
+    armSide(r, L, 15, 25, 9);
+    hammerTool(r, 22, 26, false);
+  }
+}
+
+/** niesienie desek: chód z dwiema deskami w rękach, dłuższymi niż rozstaw ramion */
+function planks(r: Rect, L: Look, dir: number, f: number) {
+  const step = f === 1 ? 1 : f === 3 ? -1 : 0;
+  const bob = f === 1 || f === 3 ? 1 : 0;
+  legs(r, L, dir, step, bob);
+  torso(r, L, dir, bob);
+  if (dir === 0) {
+    head(r, L, dir, bob);
+    // stos desek na wysokości pasa, szerszy niż rozstaw rąk
+    r(0, 27 + bob, 32, 7, OUT);
+    r(1, 28 + bob, 30, 2, PLANK);
+    r(1, 31 + bob, 30, 2, PLANK_D);
+    r(1, 28 + bob, 1, 5, shade(PLANK, 1.2));
+    r(30, 28 + bob, 1, 5, shade(PLANK, 1.2));
+    arm(r, L, 5, 21 + bob, 9);
+    arm(r, L, 24, 21 + bob, 9);
+  } else if (dir === 1) {
+    head(r, L, dir, bob);
+    // od tyłu: końce desek wystają po bokach
+    for (const x of [0, 26]) {
+      r(x, 23 + bob, 6, 8, OUT);
+      r(x + 1, 24 + bob, 4, 2, PLANK);
+      r(x + 1, 28 + bob, 4, 2, PLANK_D);
+    }
+    arm(r, L, 5, 21 + bob, 8);
+    arm(r, L, 24, 21 + bob, 8);
+  } else {
+    head(r, L, 3, bob);
+    // z boku: deski wzdłuż, przed i za plecami, dłoń pod spodem
+    r(1, 23 + bob, 31, 6, OUT);
+    r(2, 24 + bob, 29, 2, PLANK);
+    r(2, 26 + bob, 29, 2, PLANK_D);
+    armSide(r, L, 15, 28 + bob, 10);
+  }
+}
+
+/** niesienie złomu: chód z blachą i rurą w rękach */
+function scrap(r: Rect, L: Look, dir: number, f: number) {
+  const step = f === 1 ? 1 : f === 3 ? -1 : 0;
+  const bob = f === 1 || f === 3 ? 1 : 0;
+  legs(r, L, dir, step, bob);
+  torso(r, L, dir, bob);
+  if (dir === 0) {
+    head(r, L, dir, bob);
+    // blacha z rdzą przed piersią, rura na wierzchu
+    r(6, 23 + bob, 20, 10, OUT);
+    r(7, 24 + bob, 18, 8, SCRAP);
+    r(9, 26 + bob, 3, 2, RUST);
+    r(18, 29 + bob, 4, 2, RUST);
+    r(3, 22 + bob, 26, 3, OUT);
+    r(4, 23 + bob, 24, 1, SCRAP_HI);
+    arm(r, L, 4, 21 + bob, 9);
+    arm(r, L, 25, 21 + bob, 9);
+  } else if (dir === 1) {
+    head(r, L, dir, bob);
+    // od tyłu: brzeg blachy i koniec rury po bokach
+    r(2, 23 + bob, 5, 9, OUT);
+    r(3, 24 + bob, 3, 7, SCRAP);
+    r(25, 22 + bob, 6, 3, OUT);
+    r(26, 23 + bob, 4, 1, SCRAP_HI);
+    arm(r, L, 5, 21 + bob, 8);
+    arm(r, L, 24, 21 + bob, 8);
+  } else {
+    head(r, L, 3, bob);
+    // z boku: blacha przed sobą, krótka rura na wierzchu
+    r(16, 21 + bob, 12, 12, OUT);
+    r(17, 22 + bob, 10, 10, SCRAP);
+    r(19, 24 + bob, 3, 2, RUST);
+    r(15, 20 + bob, 14, 3, OUT);
+    r(16, 21 + bob, 12, 1, SCRAP_HI);
+    armSide(r, L, 13, 28 + bob, 11);
+  }
+}
+
+/** drzemka na siedząco: siedzi na ziemi z kolanami w górze, głowa opadła na pierś, oczy zamknięte */
+function doze(r: Rect, L: Look, dir: number) {
+  const dy = 11;
+  const hd = dy + 2;
+  if (dir === 0) {
+    torso(r, L, 0, dy, 10);
+    head(r, L, 0, hd, false);
+    r(12, 13 + hd, 2, 1, EYE);
+    r(16, 13 + hd, 2, 1, EYE);
+    // kolana przed tułowiem, buty na ziemi, ręce oparte na kolanach
+    r(9, 33, 6, 10, OUT);
+    r(17, 33, 6, 10, OUT);
+    r(10, 34, 4, 8, L.pants);
+    r(18, 34, 4, 8, L.pants);
+    r(9, 42, 6, 3, SHOE);
+    r(17, 42, 6, 3, SHOE);
+    arm(r, L, 7, 31, 6);
+    arm(r, L, 22, 31, 6);
+    return;
+  }
+  if (dir === 1) {
+    r(7, 42, 6, 3, OUT);
+    r(19, 42, 6, 3, OUT);
+    r(8, 43, 4, 1, SHOE);
+    r(20, 43, 4, 1, SHOE);
+    torso(r, L, 1, dy, 10);
+    head(r, L, 1, dy + 1);
+    arm(r, L, 6, 31, 7);
+    arm(r, L, 23, 31, 7);
+    return;
+  }
+  torso(r, L, 3, dy, 10);
+  head(r, L, 3, hd, false);
+  r(19, 13 + hd, 2, 1, EYE);
+  // udo w górę do kolana, łydka w dół, ręka na kolanie
+  r(14, 33, 11, 6, OUT);
+  r(15, 34, 9, 4, L.pants);
+  r(21, 34, 5, 10, OUT);
+  r(22, 35, 3, 8, L.pants);
+  r(21, 42, 6, 2, SHOE);
+  armSide(r, L, 14, 31, 9);
+}
+
 /** leżenie w komórce LIE × LIE: ciało wzdłuż u (od głowy), w poprzek v (−7..7); o: strona głowy */
 function lie(ctx: CanvasRenderingContext2D, ox: number, oy: number, L: Look, kind: Lie, o: number) {
   // prostokąt w układzie ciała (u, v, du, dv) zamieniony na prostokąt komórki przy obrocie o 90°
@@ -824,7 +1112,10 @@ export function makePeopleAtlas(): HTMLCanvasElement {
   for (let look = 0; look < LOOKS; look++) {
     const L = lookOf(look);
     for (let dir = 0; dir < 4; dir++)
-      for (let f = 0; f < FRAMES; f++) drawFrame(ctx, (dir * FRAMES + f) * FW, look * FH, L, dir, f);
+      for (let f = 0; f < FRAMES; f++) {
+        const [x, y] = frameRect(look, 'walk', dir, f);
+        drawFrame(ctx, x, y, L, dir, f);
+      }
     for (const pose of POSES) {
       if (pose === 'walk') continue;
       for (let dir = 0; dir < 4; dir++)
@@ -832,7 +1123,8 @@ export function makePeopleAtlas(): HTMLCanvasElement {
           const [x, y] = frameRect(look, pose, dir, f);
           const r = painter(ctx, x, y, FW, dir === 2);
           const d = dir === 2 ? 3 : dir;
-          shadowAt(ctx, x + 16, y + 45, pose === 'crouch' || pose === 'sit' ? 10 : 9, 3);
+          const low = pose === 'crouch' || pose === 'sit' || pose === 'search' || pose === 'doze';
+          shadowAt(ctx, x + 16, y + 45, low ? 10 : 9, 3);
           if (pose === 'carry') carry(r, L, d, f);
           else if (pose === 'chop') chop(r, L, d, f);
           else if (pose === 'crouch') crouch(r, L, d, f);
@@ -840,6 +1132,11 @@ export function makePeopleAtlas(): HTMLCanvasElement {
           else if (pose === 'sit') sit(r, L, d);
           else if (pose === 'swing') swing(r, L, d, f);
           else if (pose === 'aim') aim(r, L, d, f);
+          else if (pose === 'search') search(r, L, d, f);
+          else if (pose === 'hammer') hammer(r, L, d, f);
+          else if (pose === 'planks') planks(r, L, d, f);
+          else if (pose === 'scrap') scrap(r, L, d, f);
+          else if (pose === 'doze') doze(r, L, d);
           else guard(r, L, d, f);
         }
     }

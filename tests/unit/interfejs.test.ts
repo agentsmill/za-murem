@@ -43,7 +43,7 @@ import { statsOf } from '../../src/ui/pasek.ts';
 import { govFence, govLight } from '../../src/ui/siatka.ts';
 import { deg, esc, num, pct, signed } from '../../src/ui/tekst.ts';
 import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSave } from '../../src/ui/zapis.ts';
-import { crownOf, markSpot } from '../../src/ui/znacznik.ts';
+import { crownOf, markSpot, under } from '../../src/ui/znacznik.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
@@ -195,6 +195,18 @@ describe('etykieta suchego drzewa', () => {
     }
   });
 
+  it('śmieci w mieszkaniach (rzeczy w budynkach) nie liczą się pod etykietą, rzeczy na podwórku tak', () => {
+    const { w } = demo('przymorze');
+    const at = (p: { x: number; y: number }) => w.bid[p.y * w.size + p.x];
+    const inside = w.props.find((p) => p.kind === 'smieci' && at(p) >= 0)!;
+    expect(inside).toBeTruthy();
+    const r1 = [inside.x, inside.y, inside.x + 1, inside.y + 1] as const;
+    expect(under(w, r1)).toBe(under({ ...w, props: w.props.filter((p) => p !== inside) }, r1));
+    const outside = w.props.find((p) => at(p) < 0)!;
+    const r2 = [outside.x, outside.y, outside.x + 1, outside.y + 1] as const;
+    expect(under(w, r2)).toBeGreaterThan(under({ ...w, props: w.props.filter((p) => p !== outside) }, r2));
+  });
+
   it('bez suchego drzewa nie ma etykiety', () => {
     const { w } = demo('przymorze');
     expect(markSpot({ ...w, dryTree: -1 })).toBeNull();
@@ -340,6 +352,8 @@ describe('rytm zarządu po playteście', () => {
     // wszystkie wydarzenia „przed chwilą”: żadne nie jest świeże
     for (const e of M1_EVENTS) gov.ev.last[e.id] = gameMin(i);
     gov.ev.next = 0;
+    // 16:00 pierwszego dnia z zimną kuchnią to cisza pierwszego dnia: tu sprawdzamy rytm po niej
+    gov.ev.warm = 0;
     eventTick(gov, i, emptyEffects(), false);
     expect(gov.ev.active).toBeNull();
     expect(gov.ev.next).toBe(200 + RETRY);
@@ -425,7 +439,19 @@ describe('pasek i karta osoby', () => {
   it('stan osiedla na starcie: zimna kuchnia, brak drewna', () => {
     const { sim, w, seed } = fresh();
     const s = statsOf(snapshot(sim.st, w), newGov(seed));
-    expect(s.map((x) => x.id)).toEqual(['sOut', 'sKit', 'sFire', 'sWood', 'sFood', 'sTrust', 'sAnger']);
+    expect(s.map((x) => x.id)).toEqual([
+      'sOut',
+      'sKit',
+      'sFire',
+      'sWood',
+      'sBoards',
+      'sScrap',
+      'sParts',
+      'sMats',
+      'sFood',
+      'sTrust',
+      'sAnger',
+    ]);
     const by = Object.fromEntries(s.map((x) => [x.id, x]));
     expect(by.sKit.level).toBe('bad');
     expect(by.sFire).toMatchObject({ value: 'zimna', level: 'bad' });

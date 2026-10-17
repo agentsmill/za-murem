@@ -209,8 +209,8 @@ describe('atlas ludzi z pozami', () => {
           seen.add(`${x},${y}`);
         }
     }
-    // chód tam, gdzie był: kierunek × 4 klatki od lewej
-    expect(frameRect(3, 'walk', 2, 1)).toEqual([(2 * 4 + 1) * FW, 3 * FH, FW, FH]);
+    // chód na początku pierwszego wiersza wyglądu: kierunek × 4 klatki od lewej
+    expect(frameRect(3, 'walk', 2, 1)).toEqual([(2 * 4 + 1) * FW, 3 * (ATLAS_H / LOOKS), FW, FH]);
   });
 
   it('każda klatka pozy ma postać (nieprzezroczyste piksele), atlas rysuje się w Node', () => {

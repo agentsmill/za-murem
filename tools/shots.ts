@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { frameRect, LIE, POSES } from '../src/render/art/people.ts';
+import { frameRect, LIE, LOOKS, POSE_FRAMES, POSES } from '../src/render/art/people.ts';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { decodePng } from './png.ts';
@@ -1409,16 +1409,18 @@ const SHOTS: Shot[] = [
         const zm = window.zm!;
         const view = zm.view as unknown as {
           gameLights: { r: number; inside?: boolean }[];
-          pawnSprites: Map<number, { texture: { frame: { x: number } } }>;
+          pawnSprites: Map<number, { texture: { frame: { x: number; y: number } } }>;
         };
         const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        const f = view.pawnSprites.get(p.id)!.texture.frame;
         return {
           lamps: view.gameLights.filter((l) => l.r === 5).length,
           fire: view.gameLights.filter((l) => l.inside).length,
-          x: view.pawnSprites.get(p.id)!.texture.frame.x,
+          x: f.x,
+          y: f.y,
         };
       });
-      const pose = poseAt(r.x);
+      const pose = poseAt(r.x, r.y);
       console.log(`  czuwa przy kozie: poza ${pose}, latarnie ${r.lamps}, ogień kozy ${r.fire}`);
       if (pose !== 'crouch' && pose !== 'walk') throw new Error(`czuwający w pozie ${pose}`);
       if (r.lamps !== 0) throw new Error('czuwający przy kozie ma latarnię');
@@ -1875,6 +1877,246 @@ const SHOTS: Shot[] = [
       if (Number(group) !== pts.length) throw new Error('ramka z Shiftem nie zaznaczyła całego zarządu');
     },
   },
+  // M2, fala 1: budowle, duchy planów, podgląd stawiania, puste mieszkania w przekroju (atrapy do czasu świata i symulacji)
+  {
+    name: 'm2-budowle',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
+      await waitIdle(page);
+      const r = await m2Stage(page, 'budowle');
+      await waitIdle(page);
+      const keys = await thingKeys(page);
+      const kinds = ['warsztat', 'kuchnia_spoleczna', 'magazyn', 'lozka_pietrowe', 'ogrodek', 'zasieki'];
+      const drawn = kinds.filter((k) => keys.some((key) => key.includes(`"kind":"${k}"`)));
+      console.log(`  postawione: ${r.placed.join(', ')}; narysowane: ${drawn.join(', ')}`);
+      if (drawn.length !== r.placed.length || drawn.length < 5) throw new Error('nie wszystkie budowle się rysują');
+    },
+  },
+  {
+    // ogródek na podwórku i zasieki w linii siatki (zamiast jej odcinka)
+    name: 'm2-budowle-podworko',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
+      await waitIdle(page);
+      await m2Stage(page, 'budowle');
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const t = zm.sim!.st.things.find((q) => q.kind === 'ogrodek')!;
+        zm.setCam(t.x + 1.5, t.y + 1, 1.6);
+      });
+      await waitIdle(page);
+    },
+  },
+  {
+    name: 'm2-duch',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
+      await waitIdle(page);
+      await m2Stage(page, 'plany');
+      await waitIdle(page);
+      const n = await page.evaluate(() => (window.zm!.view as unknown as { builds: { count: number } }).builds.count);
+      console.log(`  duchów planów: ${n}`);
+      if (n < 3) throw new Error('nie widać planów budowy');
+    },
+  },
+  {
+    // podgląd stawiania w mapie (view.setPlacement) w dzień; nazwy inne niż scenariusze interfejsu
+    // m2-stawianie*, żeby obrazy się nie nadpisywały
+    name: 'm2-podglad',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
+      await waitIdle(page);
+      await m2Stage(page, 'stawianie-ok');
+      await waitIdle(page);
+    },
+  },
+  {
+    // podgląd stawiania w niedozwolonym miejscu, nocą (nad mapą światła)
+    name: 'm2-podglad-noc',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6&godzina=22`);
+      await waitIdle(page);
+      await m2Stage(page, 'stawianie-zle');
+      await waitIdle(page);
+    },
+  },
+  {
+    // puste mieszkania z atrapy: wyważone drzwi, wybite okno, spalenizna, zalana podłoga, cieknąca rura, śmieci, zepsute meble
+    name: 'm2-puste-mieszkania',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as {
+          scene: { section: { damage?: Map<number, string>; why?: Map<number, string> } | null; w: { size: number } };
+          things: Map<string, unknown>;
+        };
+        const sec = v.scene.section!;
+        const size = v.scene.w.size;
+        const kinds = [...new Set(sec.damage!.values())].sort();
+        const whys = [...new Set(sec.why!.values())].sort();
+        const keys = [...v.things.keys()];
+        // kamera na uszkodzenie wybitego okna (spalone mieszkanie)
+        const okno = [...sec.damage!.entries()].find(([, k]) => k === 'okno');
+        if (okno) zm.setCam((okno[0] % size) + 0.5, Math.floor(okno[0] / size) + 2.5, 1.7);
+        return {
+          kinds,
+          whys,
+          trash: keys.filter((k) => k.includes('"smieci"')).length,
+          broken: keys.filter((k) => k.includes('"broken":true')).length,
+        };
+      });
+      await waitIdle(page);
+      console.log(
+        `  uszkodzenia: ${r.kinds.join(', ')}; ślady: ${r.whys.join(', ')}; śmieci ${r.trash}, zepsutych ${r.broken}`,
+      );
+      if (r.kinds.length < 4 || r.whys.length < 3 || r.trash < 1 || r.broken < 1)
+        throw new Error('puste mieszkania bez śladów');
+    },
+  },
+  {
+    name: 'm2-puste-zalanie',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as { scene: { section: { damage?: Map<number, string> }; w: { size: number } } };
+        const size = v.scene.w.size;
+        const rura = [...v.scene.section.damage!.entries()].find(([, k]) => k === 'rura');
+        if (rura) zm.setCam((rura[0] % size) + 0.5, Math.floor(rura[0] / size) + 0.5, 1.9);
+      });
+      await waitIdle(page);
+    },
+  },
+  {
+    // spalone mieszkanie: okopcona kuchenka (piec na jej kafelku, jak w świecie) z sadzą na posadzce obok
+    // i zwęglona podłoga w pokoju
+    name: 'm2-puste-pozar',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      const tile = await page.evaluate(() => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as { scene: { section: { damage?: Map<number, string> }; w: { size: number } } };
+        const size = v.scene.w.size;
+        const piec = [...v.scene.section.damage!.entries()].find(([, k]) => k === 'piec');
+        if (piec) zm.setCam((piec[0] % size) + 0.5, Math.floor(piec[0] / size) + 1, 1.9);
+        return piec ? piec[0] : -1;
+      });
+      await waitIdle(page);
+      const r = await page.evaluate((i) => {
+        const v = window.zm!.view as unknown as { scene: { w: { size: number } }; things: Map<string, unknown> };
+        const size = v.scene.w.size;
+        const at = `${i % size}:${Math.floor(i / size)}:`;
+        return [...v.things.keys()].find((k) => k.startsWith(at)) ?? '';
+      }, tile);
+      console.log(
+        `  piec na kafelku ${tile}: ${r.replace(/:\{.*/, '')} ${r.includes('"burnt":true') ? 'okopcony' : 'cały'}`,
+      );
+      if (tile < 0 || !r.includes('"kuchenka"') || !r.includes('"burnt":true'))
+        throw new Error('kuchenka na kafelku uszkodzenia piec nie jest okopcona');
+    },
+  },
+  // uszkodzona podłoga według przyczyny: wyrwane deski po wyjeździe, zwęglone deski po pożarze
+  m2Floor('m2-puste-deski', 'wyjazd'),
+  m2Floor('m2-puste-zweglone', 'pozar'),
+  {
+    // puste mieszkania z prawdziwego świata, bez atrapy: widać tyle, ile świat daje (bez danych sam przekrój)
+    name: 'm2-puste-swiat',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as {
+          scene: { section: { damage?: Map<number, string>; why?: Map<number, string> }; w: { size: number } };
+          things: Map<string, unknown>;
+        };
+        const sec = v.scene.section;
+        const size = v.scene.w.size;
+        const dmg = [...(sec.damage ?? new Map<number, string>()).entries()];
+        const keys = [...v.things.keys()];
+        // kamera na uszkodzenie, najchętniej na okno albo drzwi
+        const pick = dmg.find(([, k]) => k === 'okno' || k === 'drzwi') ?? dmg[0];
+        if (pick) zm.setCam((pick[0] % size) + 0.5, Math.floor(pick[0] / size) + 1.5, 1.6);
+        return {
+          kinds: [...new Set(dmg.map(([, k]) => k))].sort(),
+          whys: [...new Set((sec.why ?? new Map<number, string>()).values())].sort(),
+          trash: keys.filter((k) => k.includes('"smieci"')).length,
+          broken: keys.filter((k) => k.includes('"broken":true')).length,
+          burnt: keys.filter((k) => k.includes('"burnt":true')).length,
+        };
+      });
+      await waitIdle(page);
+      console.log(
+        `  ze świata: uszkodzenia ${r.kinds.join(', ') || 'brak'}; ślady ${r.whys.join(', ') || 'brak'}; śmieci ${r.trash}, zepsutych ${r.broken}, okopconych ${r.burnt}`,
+      );
+    },
+  },
+  {
+    // naprawa jak w symulacji M2: wpis st.damage z fixed równym true znika z przekroju (przerysowują się
+    // tylko jego kawałki), wpis z fixed równym false zostaje
+    name: 'm2-naprawa',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      const r = await page.evaluate(async () => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as { scene: { section: { damage?: Map<number, string> } }; chunksMade: number };
+        const dmg = v.scene.section.damage!;
+        const [a, b, c] = [...dmg.keys()];
+        const before = dmg.size;
+        const st = zm.sim!.st as unknown as { damage?: unknown[] };
+        if (!st.damage) st.damage = [];
+        for (const [tile, fixed] of [
+          [a, true],
+          [b, true],
+          [c, false],
+        ] as const)
+          st.damage.push({ kind: dmg.get(tile), tile, apt: -1, fixed, have: {} });
+        await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+        return { a, b, c, before, after: dmg.size, gone: !dmg.has(a) && !dmg.has(b), kept: dmg.has(c) };
+      });
+      await waitIdle(page);
+      console.log(
+        `  uszkodzeń ${r.before} → ${r.after}: kafelki ${r.a} i ${r.b} naprawione: ${r.gone}, ${r.c} bez naprawy zostaje: ${r.kept}`,
+      );
+      if (!r.gone || !r.kept || r.after !== r.before - 2)
+        throw new Error('naprawa ze st.damage nie działa w przekroju');
+    },
+  },
+  {
+    // atrapa pustych mieszkań w przekroju: obraz z workerów i z głównego wątku ten sam
+    name: 'm2-zgodnosc',
+    query: '',
+    run: async (page, base) => {
+      const snap = async (q: string) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.5&mieszkania=atrapa${q}`);
+        await waitIdle(page);
+        await page.addStyleTag({ content: '#fps { visibility: hidden !important; }' });
+        return decodePng(await page.screenshot());
+      };
+      const a = await snap('');
+      const b = await snap('&worker=0');
+      let diff = 0;
+      for (let i = 0; i < a.rgba.length; i += 4)
+        if (a.rgba[i] !== b.rgba[i] || a.rgba[i + 1] !== b.rgba[i + 1] || a.rgba[i + 2] !== b.rgba[i + 2]) diff++;
+      console.log(`  puste mieszkania: worker i główny wątek, różnych pikseli: ${diff}`);
+      if (diff) throw new Error(`obraz z workerów i z głównego wątku różni się w ${diff} pikselach`);
+    },
+  },
   {
     // Mac: Ctrl+klik to prawy przycisk, dwa palce na gładziku przesuwają mapę, szczypanie (wheel z ctrlKey
     // w Chrome i Firefoksie, gesturechange w Safari) i kółko myszy przybliżają
@@ -2115,7 +2357,1136 @@ const SHOTS: Shot[] = [
       if (!card) throw new Error('po szczypaniu stuknięcie nie zaznaczyło osoby');
     },
   },
+  {
+    // pozy prac M2 w mieszkaniu zarządu: przeszukuje na kolanach, naprawia okno młotkiem, niesie deski,
+    // śpi na górnym łóżku piętrowym
+    name: 'm2-pozy',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await m2PoseStage(page, 'dom');
+      await waitIdle(page);
+      await poseCheck(page, ['search', 'hammer', 'planks', 'lie']);
+    },
+  },
+  {
+    // pozy prac M2 na podwórku: grządki na kolanach, zasieki młotkiem, niesie złom, wartownik drzemie
+    name: 'm2-pozy-podworko',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await m2PoseStage(page, 'podworko');
+      await waitIdle(page);
+      await poseCheck(page, ['search', 'hammer', 'scrap', 'doze']);
+    },
+  },
+  {
+    // przyjęci (praca 'arrive' z symulacji) idą zza bramy do mieszkań jak każdy mieszkaniec: widać ich, chód
+    name: 'm2-przyjeci',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const got = await page.evaluate(async () => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const w = sim.w;
+        const size = w.size;
+        const g = w.fence.gate;
+        const yard = new Set(w.fence.yard);
+        // dwa kafelki za bramą, po stronie ulicy
+        const out = [
+          [g.x, g.y - 2],
+          [g.x, g.y + 2],
+          [g.x - 2, g.y],
+          [g.x + 2, g.y],
+        ].find(([x, y]) => !yard.has(y * size + x) && !sim.blocked[y * size + x])!;
+        const res = st.pawns.filter((p) => p.kind === 'resident').slice(0, 2);
+        res.forEach((p, k) => {
+          const dest = Math.floor(p.y) * size + Math.floor(p.x);
+          Object.assign(p, {
+            x: out[0] + 0.5 + k,
+            y: out[1] + 0.5,
+            path: [],
+            pi: 0,
+            job: {
+              t: 'arrive',
+              target: -1,
+              tile: dest,
+              phase: 0,
+              from: -1,
+              t0: st.tick,
+              until: st.tick,
+              order: false,
+              n: 0,
+              what: '',
+            },
+          });
+        });
+        for (let k = 0; k < 30; k++) sim.step();
+        zm.setCam(g.x + 1, g.y + 0.5, 2.2);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const sprites = (
+          zm.view as unknown as {
+            pawnSprites: Map<number, { visible: boolean; texture: { frame: { x: number; y: number } } }>;
+          }
+        ).pawnSprites;
+        return res.map((p) => {
+          const sp = sprites.get(p.id)!;
+          return {
+            x: sp.texture.frame.x,
+            y: sp.texture.frame.y,
+            visible: sp.visible,
+            moving: p.pi < p.path.length,
+            job: p.job?.t ?? '',
+          };
+        });
+      });
+      await waitIdle(page);
+      const poses = got.map((g) => poseAt(g.x, g.y));
+      console.log(
+        `  przyjęci: ${got.map((g, k) => `${g.job} ${poses[k]}${g.moving ? ' w drodze' : ''}${g.visible ? '' : ' niewidoczny'}`).join(', ')}`,
+      );
+      if (
+        got.length < 2 ||
+        got.some((g) => !g.visible || g.job !== 'arrive' || !g.moving) ||
+        poses.some((q) => q !== 'walk')
+      )
+        throw new Error('przyjęci nie idą jak mieszkańcy');
+    },
+  },
+  // M2, fala 1: menu budowy z przycisku i klawisza B (kategorie, koszt, czas, działanie, niedostępne z powodem)
+  {
+    name: 'm2-menu-budowy',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      const menu = () =>
+        page.evaluate(() => ({
+          open: !document.getElementById('modal')!.hidden,
+          cats: [...document.querySelectorAll('#sheet .bcat-h')].map((h) => h.textContent ?? ''),
+          items: [...document.querySelectorAll('#sheet .build')].map((b) => ({
+            name: b.querySelector('.build-n')?.textContent ?? '',
+            ok: b.classList.contains('ok'),
+            meta: b.querySelector('.build-m')?.textContent ?? '',
+            effect: b.querySelector('.build-d')?.textContent ?? '',
+            button: !!b.querySelector('[data-act="build"]'),
+            why: b.querySelector('.build-why')?.textContent ?? '',
+          })),
+        }));
+      // koszty i czasy z symulacji (stroi je bot), więc porównuję z BUILDS, a nie z liczbami wpisanymi tutaj
+      const { BUILDS } = await import('../src/sim/budowle.ts');
+      const { costText, workText } = await import('../src/ui/budowa.ts');
+      const check = (m: Awaited<ReturnType<typeof menu>>) => {
+        if (m.cats.join('|') !== 'Pomieszczenie|Podwórko|Obwód') throw new Error(`kategorie: ${m.cats.join(', ')}`);
+        if (m.items.length !== 6) throw new Error(`budowli w menu: ${m.items.length}`);
+        for (const b of m.items) {
+          const d = Object.values(BUILDS).find((x) => x.name === b.name);
+          if (!d) throw new Error(`nieznana budowla: ${b.name}`);
+          if (!b.meta.includes(costText(d.cost)) || !b.meta.includes(workText(d.work)) || !b.effect)
+            throw new Error(`${b.name}: koszt, czas albo działanie nie jak w BUILDS (${b.meta})`);
+          if (b.ok !== b.button || (!b.ok && !b.why)) throw new Error(`${b.name}: niedostępna bez powodu`);
+        }
+      };
+      // start gry: zapas nie starcza na nic, każda budowla wyszarzona z powodem
+      await page.click('#btnBuild');
+      await page.waitForSelector('#sheet .bcat');
+      const m0 = await menu();
+      for (const b of m0.items) console.log(`  start, ${b.name}: ${b.ok ? 'można' : b.why} (${b.meta})`);
+      check(m0);
+      if (m0.items.some((b) => b.ok)) throw new Error('na starcie gry coś da się postawić, a koszty są z bota');
+      await page.screenshot({ path: path.join(OUT, 'm2-menu-budowy-start.png') });
+      await page.keyboard.press('Escape');
+      // zapas dokładnie na warsztat: warsztat i tańsze można, magazyn (więcej desek) dalej z powodem
+      await stockUp(page, BUILDS.warsztat.cost);
+      await page.keyboard.press('b');
+      await page.waitForSelector('#sheet .bcat');
+      const m = await menu();
+      for (const b of m.items) console.log(`  z zapasem na warsztat, ${b.name}: ${b.ok ? 'można' : b.why}`);
+      check(m);
+      const by = (name: string) => m.items.find((b) => b.name === name)!;
+      if (!by(BUILDS.warsztat.name).ok || by(BUILDS.magazyn.name).ok)
+        throw new Error('przy zapasie na warsztat warsztat niedostępny albo magazyn dostępny');
+      await page.screenshot({ path: path.join(OUT, 'm2-menu-budowy-okno.png') });
+      await page.keyboard.press('Escape');
+      if ((await menu()).open) throw new Error('Esc nie zamknął menu budowy');
+      await page.keyboard.press('b');
+      await page.waitForSelector('#sheet .bcat');
+      await page.click('#sheet [data-act="build-close"]');
+      if ((await menu()).open) throw new Error('przycisk Zamknij nie zamknął menu budowy');
+    },
+  },
+  // tryb stawiania myszą: duch za kursorem (zielony, gdzie wolno, czerwony z powodem), R obraca, prawy klik
+  // i Esc anulują, lewy klik stawia plan (polecenie budowy w kolejce symulacji na pauzie)
+  {
+    name: 'm2-stawianie',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      // zapas na warsztat (koszty z bota są wyższe niż zapas na starcie)
+      const { BUILDS } = await import('../src/sim/budowle.ts');
+      await stockUp(page, BUILDS.warsztat.cost);
+      const choose = async (kind: string) => {
+        await page.keyboard.press('b');
+        await page.waitForSelector('#sheet .bcat');
+        await page.click(`#sheet [data-act="build"][data-arg="${kind}"]`);
+      };
+      const state = () =>
+        page.evaluate(() => {
+          // podgląd z rysowania: co dostał view.setPlacement i czy duch stoi na mapie; duch z DOM to atrapa
+          const b = window.zm!.view.builds as unknown as {
+            placement: { kind: string; x: number; y: number; ok: boolean; tiles?: { ok?: readonly number[] } } | null;
+            ghost: { visible: boolean };
+          };
+          const v = b.placement;
+          return {
+            p: window.zm!.placing(),
+            view: v && { kind: v.kind, x: v.x, y: v.y, ok: v.ok, tiles: v.tiles?.ok?.length ?? 0 },
+            drawn: b.ghost.visible,
+            dom: !document.getElementById('ghost')!.hidden,
+            bar: !document.getElementById('placeBar')!.hidden,
+            text: document.getElementById('placeText')!.textContent ?? '',
+          };
+        });
+      /** kamera i kursor na kafelku (x, y) */
+      const point = async (x: number, y: number) => {
+        await page.evaluate(([x, y]) => window.zm!.setCam(x + 1, y + 1, 1.6), [x, y]);
+        await waitIdle(page);
+        const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [x, y]);
+        await page.mouse.move(sx, sy);
+        await page.waitForTimeout(150);
+        return [sx, sy] as const;
+      };
+      await choose('warsztat');
+      const p0 = await page.evaluate(() => window.zm!.placing());
+      if (!p0 || p0.allowed < 1) throw new Error('warsztat bez dozwolonego miejsca');
+      const size = await page.evaluate(() => window.zm!.sim!.w.size);
+      const spot = [p0.first % size, Math.floor(p0.first / size)] as const;
+      const [sx, sy] = await point(spot[0], spot[1]);
+      const good = await state();
+      console.log(
+        `  dobre miejsce ${spot.join(',')}: ${good.text} (podgląd ${JSON.stringify(good.view)}, duch na mapie: ${good.drawn}, atrapa z DOM: ${good.dom ? 'widoczna' : 'schowana'})`,
+      );
+      if (
+        !good.p?.ok ||
+        !good.view?.ok ||
+        good.view.kind !== 'warsztat' ||
+        good.view.x !== spot[0] ||
+        good.view.y !== spot[1]
+      )
+        throw new Error('podgląd na dozwolonym miejscu nie jest zielony albo stoi gdzie indziej');
+      if (good.view.tiles < 1 || !good.drawn || good.dom || !good.bar)
+        throw new Error('podgląd bez dozwolonych kafelków, bez ducha na mapie albo z atrapą z DOM');
+      await page.screenshot({ path: path.join(OUT, 'm2-stawianie-dobrze.png') });
+      // podwórko nie jest pokojem: duch czerwony, a pasek mówi czemu
+      const yard = await page.evaluate(() => window.zm!.sim!.w.fence.yard[0]);
+      await point(yard % size, Math.floor(yard / size));
+      const bad = await state();
+      console.log(`  podwórko: ${bad.text}`);
+      if (bad.p?.ok || bad.view?.ok !== false || !bad.drawn || bad.dom)
+        throw new Error('podgląd poza pokojem nie jest czerwony albo została atrapa z DOM');
+      // powód z canPlace symulacji („Tylko w pokoju w naszym mieszkaniu.”) stoi na pasku
+      const why = (bad.p?.why ?? '').replace(/\.$/, '').toLowerCase();
+      if (!why || !bad.text.toLowerCase().includes(why)) throw new Error('pasek nie mówi, czemu tu nie wolno');
+      await page.screenshot({ path: path.join(OUT, 'm2-stawianie-zle.png') });
+      await page.keyboard.press('r');
+      if ((await state()).p?.rot !== 1) throw new Error('R nie obrócił planu');
+      await page.mouse.click(sx, sy, { button: 'right' });
+      await frames(page, 2);
+      const off = await state();
+      if (off.p || off.bar) throw new Error('prawy klik nie anulował planu');
+      if (off.view || off.drawn) throw new Error('po anulowaniu podgląd został na mapie');
+      await choose('warsztat');
+      await page.keyboard.press('Escape');
+      if ((await state()).p) throw new Error('Esc nie anulował planu');
+      // Ctrl+klik (Mac: prawy przycisk na gładziku) anuluje plan jak prawy klik i nie otwiera menu poleceń
+      await choose('warsztat');
+      const [kx, ky] = await point(spot[0], spot[1]);
+      await page.keyboard.down('Control');
+      await page.mouse.click(kx, ky);
+      await page.keyboard.up('Control');
+      await frames(page, 2);
+      const ctrl = await page.evaluate(() => ({
+        placing: !!window.zm!.placing(),
+        menu: !document.getElementById('ctx')!.hidden,
+        cmds: window.zm!.sim!.st.cmds.filter((c) => (c as { t: string }).t === 'build').length,
+      }));
+      console.log(
+        `  Ctrl+klik: plan ${ctrl.placing ? 'został' : 'anulowany'}, menu poleceń ${ctrl.menu ? 'otwarte' : 'zamknięte'}, postawionych ${ctrl.cmds}`,
+      );
+      if (ctrl.placing || ctrl.menu || ctrl.cmds) throw new Error('Ctrl+klik nie anulował planu jak prawy klik');
+      // przeciąganie w trybie stawiania przesuwa mapę i niczego nie stawia (klik bez przeciągnięcia stawia)
+      await choose('warsztat');
+      await point(spot[0], spot[1]);
+      const cam0 = await page.evaluate(() => ({ ...window.zm!.view.cam }));
+      await page.mouse.down();
+      await page.mouse.move(sx + 120, sy + 160, { steps: 10 });
+      await page.mouse.up();
+      const dragged = await page.evaluate(
+        ([x, y]) => ({
+          moved: Math.round(
+            Math.hypot(window.zm!.view.cam.x - x, window.zm!.view.cam.y - y) * window.zm!.view.cam.zoom,
+          ),
+          placing: !!window.zm!.placing(),
+          cmds: window.zm!.sim!.st.cmds.filter((c) => (c as { t: string }).t === 'build').length,
+        }),
+        [cam0.x, cam0.y],
+      );
+      console.log(
+        `  przeciąganie w trybie stawiania: mapa o ${dragged.moved} px, plan ${dragged.placing ? 'dalej w ręku' : 'zgubiony'}, postawionych ${dragged.cmds}`,
+      );
+      if (dragged.moved < 100 || !dragged.placing || dragged.cmds)
+        throw new Error('przeciąganie w trybie stawiania postawiło plan albo nie przesunęło mapy');
+      // lewy klik stawia plan na dozwolonym miejscu
+      const [px, py] = await point(spot[0], spot[1]);
+      await page.mouse.click(px, py);
+      const cmds = await page.evaluate(() =>
+        window.zm!.sim!.st.cmds.filter((c) => (c as { t: string }).t === 'build').map((c) => ({ ...(c as object) })),
+      );
+      console.log(`  postawione: ${JSON.stringify(cmds)}`);
+      const c = cmds[0] as { kind?: string; x?: number; y?: number; rot?: number } | undefined;
+      if (c?.kind !== 'warsztat' || c.x !== spot[0] || c.y !== spot[1] || c.rot !== 0)
+        throw new Error('lewy klik nie postawił planu warsztatu');
+      if ((await state()).p) throw new Error('po postawieniu tryb stawiania został');
+      // plan w grze (chwila symulacji): z zaznaczoną osobą prawy klik na planie daje „Odwołać plan”, a „Budować
+      // warsztat” wtedy, gdy symulacja je przyjmie (materiału starczy, nikt inny przy planie nie pracuje)
+      const prompt = await page.evaluate(() => window.zm!.ff(1));
+      if (prompt) throw new Error(`minuta gry otworzyła okno: ${prompt}`);
+      const pawn = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+        zm.setCam(p.x, p.y, 1.6);
+        return { id: p.id, x: p.x, y: p.y };
+      });
+      await waitIdle(page);
+      const [qx, qy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.6), [pawn.x, pawn.y]);
+      await page.mouse.click(qx, qy);
+      await page.waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 });
+      const [rx, ry] = await point(spot[0], spot[1]);
+      await page.mouse.click(rx, ry, { button: 'right' });
+      await page.waitForSelector('#ctx:not([hidden])');
+      const planMenu = await page.evaluate((who) => {
+        const plan = window.zm!.sim!.st.builds.find((b) => b.kind === 'warsztat');
+        return {
+          items: [...document.querySelectorAll('#ctx .ctx-item')].map((b) => b.textContent ?? ''),
+          by: plan ? plan.by : -2,
+          free: !!plan && (plan.by < 0 || plan.by === who),
+        };
+      }, pawn.id);
+      console.log(`  menu na planie: ${planMenu.items.join(' | ')} (pracuje przy nim: ${planMenu.by})`);
+      if (planMenu.by === -2) throw new Error('planu warsztatu nie ma w grze po chwili symulacji');
+      if (!planMenu.items.some((t) => t.startsWith('Odwołać plan')))
+        throw new Error('w menu planu nie ma „Odwołać plan”');
+      if (planMenu.free !== planMenu.items.some((t) => t.startsWith('Budować warsztat')))
+        throw new Error('„Budować warsztat” w menu planu nie zgadza się z tym, czy symulacja je przyjmie');
+      await page.screenshot({ path: path.join(OUT, 'm2-stawianie-plan-menu.png') });
+      await page.click('#ctx .ctx-item:has-text("Odwołać plan")');
+      await page.evaluate(() => window.zm!.ff(1));
+      if (await page.evaluate(() => window.zm!.sim!.st.builds.some((b) => b.kind === 'warsztat')))
+        throw new Error('„Odwołać plan” nie usunął planu');
+    },
+  },
+  // tryb stawiania na telefonie: stuknięcie stawia, przyciski na dole obracają i anulują
+  {
+    name: 'm2-stawianie-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      // zapas na zasieki (koszty z bota są wyższe niż zapas na starcie)
+      const { BUILDS } = await import('../src/sim/budowle.ts');
+      await stockUp(page, BUILDS.zasieki.cost);
+      const placing = () => page.evaluate(() => window.zm!.placing());
+      const choose = async () => {
+        await page.tap('#btnBuild');
+        await page.waitForSelector('#sheet .bcat');
+        await page.tap('#sheet [data-act="build"][data-arg="zasieki"]');
+        await page.waitForTimeout(150);
+      };
+      await choose();
+      const bar = await page.evaluate(() => ({
+        shown: !document.getElementById('placeBar')!.hidden,
+        buttons: [...document.querySelectorAll('#placeBar [data-place]')].map((b) => b.textContent),
+      }));
+      if (!bar.shown || bar.buttons.join('|') !== 'Obróć|Anuluj')
+        throw new Error(`pasek stawiania: ${bar.buttons.join(', ')}`);
+      await page.tap('#placeBar [data-place="rot"]');
+      if ((await placing())?.rot !== 1) throw new Error('przycisk Obróć nie obrócił planu');
+      await page.tap('#placeBar [data-place="cancel"]');
+      if (await placing()) throw new Error('przycisk Anuluj nie anulował planu');
+      await choose();
+      const size = await page.evaluate(() => window.zm!.sim!.w.size);
+      // stuknięcie w złe miejsce (podwórko, a zasieki stoją tylko na siatce): powód nad paskiem stawiania, nie pod nim
+      const yard = await page.evaluate(() => window.zm!.sim!.w.fence.yard[0]);
+      await page.evaluate(([x, y]) => window.zm!.setCam(x + 0.5, y + 0.5, 1.6), [yard % size, Math.floor(yard / size)]);
+      await waitIdle(page);
+      const [bx, by] = await page.evaluate(
+        ([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5),
+        [yard % size, Math.floor(yard / size)],
+      );
+      await page.touchscreen.tap(bx, by);
+      // podpowiedź odświeża się co 200 ms, a wcześniej wisi jeszcze „Budowa anulowana.” z przycisku Anuluj
+      await page
+        .waitForFunction(
+          () => {
+            const t = document.getElementById('hint')!.textContent;
+            return !!t && t !== 'Budowa anulowana.';
+          },
+          null,
+          { timeout: 2000 },
+        )
+        .catch(() => null);
+      const why = await page.evaluate(() => {
+        const h = document.getElementById('hint')!;
+        const b = document.getElementById('placeBar')!.getBoundingClientRect();
+        return { text: h.textContent ?? '', bottom: h.getBoundingClientRect().bottom, barTop: b.top };
+      });
+      console.log(
+        `  stuknięcie w podwórko: „${why.text}”, podpowiedź kończy się na ${Math.round(why.bottom)} px, pasek zaczyna na ${Math.round(why.barTop)} px`,
+      );
+      if (!why.text || why.text === 'Budowa anulowana.' || !(await placing()))
+        throw new Error('stuknięcie w złe miejsce nie powiedziało czemu albo zgubiło plan');
+      if (why.bottom > why.barTop) throw new Error('powód odmowy chowa się pod paskiem stawiania');
+      const p = (await placing())!;
+      const spot = [p.first % size, Math.floor(p.first / size)] as const;
+      await page.evaluate(([x, y]) => window.zm!.setCam(x + 0.5, y + 2, 1.6), spot);
+      await waitIdle(page);
+      // na telefonie też podgląd z rysowania (celownik na środku ekranu), a atrapa z DOM schowana
+      const shown = await page.evaluate(() => {
+        const b = window.zm!.view.builds as unknown as {
+          placement: { kind: string; tiles?: { ok?: readonly number[] } } | null;
+          ghost: { visible: boolean };
+        };
+        return {
+          kind: b.placement?.kind,
+          tiles: b.placement?.tiles?.ok?.length ?? 0,
+          drawn: b.ghost.visible,
+          dom: !document.getElementById('ghost')!.hidden,
+        };
+      });
+      console.log(`  podgląd na telefonie: ${JSON.stringify(shown)}`);
+      if (shown.kind !== 'zasieki' || shown.tiles < 1 || !shown.drawn || shown.dom)
+        throw new Error('na telefonie nie ma podglądu z rysowania albo została atrapa z DOM');
+      await page.screenshot({ path: path.join(OUT, 'm2-stawianie-telefon-plan.png') });
+      const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), spot);
+      await page.touchscreen.tap(sx, sy);
+      await page.waitForTimeout(150);
+      const cmds = await page.evaluate(() =>
+        window.zm!.sim!.st.cmds.filter((c) => (c as { t: string }).t === 'build').map((c) => ({ ...(c as object) })),
+      );
+      console.log(`  postawione stuknięciem: ${JSON.stringify(cmds)}`);
+      const c = cmds[0] as { kind?: string; x?: number; y?: number } | undefined;
+      if (c?.kind !== 'zasieki' || c.x !== spot[0] || c.y !== spot[1])
+        throw new Error('stuknięcie nie postawiło zasieków');
+      if (await placing()) throw new Error('po postawieniu tryb stawiania został');
+    },
+  },
+  // karta pustego mieszkania po kliknięciu w nie: stan, powód, co do naprawy, co już przeszukane
+  {
+    name: 'm2-karta-mieszkania',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      // puste mieszkanie z uszkodzeniami (ze świata albo z atrapy interfejsu): środek jego największego pokoju
+      const target = await page.evaluate(() => {
+        const zm = window.zm!;
+        const w = zm.sim!.w;
+        const i = w.interior;
+        const apt = zm.apts().find((a) => a.state === 'puste' && a.why && a.why !== 'wyjazd' && a.why !== 'wymarcie');
+        if (!apt) return null;
+        const room = i.rooms.filter((r) => r.apt === apt.apt && r.kind === 'pokoj').sort((a, b) => b.area - a.area)[0];
+        const tiles: number[] = [];
+        i.room.forEach((r, t) => {
+          if (r === room.id && !w.blocked[t]) tiles.push(t);
+        });
+        const t = tiles[Math.floor(tiles.length / 2)];
+        return { apt: apt.apt, x: t % w.size, y: Math.floor(t / w.size) };
+      });
+      if (!target) throw new Error('nie ma pustego mieszkania z uszkodzeniami');
+      await page.evaluate(([x, y]) => window.zm!.setCam(x + 3, y, 1.6), [target.x, target.y]);
+      await waitIdle(page);
+      const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [target.x, target.y]);
+      await page.mouse.click(sx, sy);
+      await page.waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 });
+      // textContent: nagłówki karty są wielkimi literami tylko w CSS
+      const card = await page.evaluate(() => document.getElementById('card')!.textContent ?? '');
+      console.log(
+        `  ${await page.evaluate(() => document.getElementById('card')!.innerText.split('\n').filter(Boolean).slice(0, 6).join(' | '))}`,
+      );
+      // liczby jak w stanie gry: uszkodzenia bez fixed (st.damage) i pomieszczenia mieszkania bez klatki
+      const nums = await page.evaluate((apt) => {
+        const zm = window.zm!;
+        return {
+          damaged: zm.sim!.st.damage.filter((d) => d.apt === apt && !d.fixed).length,
+          rooms: zm.sim!.w.interior.rooms.filter((r) => r.apt === apt && r.kind !== 'klatka').length,
+        };
+      }, target.apt);
+      for (const want of [
+        `Mieszkanie ${target.apt + 1}`,
+        'Puste od',
+        `Do naprawy (${nums.damaged})`,
+        `Przeszukane: 0 z ${nums.rooms}`,
+        'Prawy przycisk w mieszkaniu',
+      ])
+        if (!card.includes(want)) throw new Error(`karta mieszkania bez „${want}”`);
+      await page.screenshot({ path: path.join(OUT, 'm2-karta-mieszkania-karta.png') });
+      // karta idzie za stanem gry: przeszukany pokój i naprawione uszkodzenie widać przy następnym odświeżeniu
+      await page.evaluate((apt) => {
+        const zm = window.zm!;
+        const room = zm.sim!.w.interior.rooms.find((r) => r.apt === apt && r.kind === 'pokoj')!;
+        zm.sim!.st.apts.find((a) => a.apt === apt)!.searched.push(room.id);
+        zm.sim!.st.damage.find((d) => d.apt === apt && !d.fixed)!.fixed = true;
+      }, target.apt);
+      const after = await page
+        .waitForFunction(
+          (rooms) => {
+            const t = document.getElementById('card')!.textContent ?? '';
+            return t.includes(`Przeszukane: 1 z ${rooms}`) && t.includes('naprawione') ? t : '';
+          },
+          nums.rooms,
+          { timeout: 3000 },
+        )
+        .then((h) => h.jsonValue())
+        .catch(() => '');
+      console.log(`  po przeszukaniu pokoju i naprawie: ${after ? 'karta odświeżona' : 'karta bez zmian'}`);
+      if (!after) throw new Error('karta mieszkania nie poszła za stanem gry (st.apts, st.damage)');
+      const left = nums.damaged - 1;
+      if (!after.includes(left ? `Do naprawy (${left})` : 'Do naprawy'))
+        throw new Error(`karta mieszkania nie liczy napraw jak symulacja (zostało ${left})`);
+      await page.screenshot({ path: path.join(OUT, 'm2-karta-mieszkania-postep.png') });
+      // Esc zamyka kartę
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      if (await page.evaluate(() => !document.getElementById('card')!.hidden))
+        throw new Error('Esc nie zamknął karty mieszkania');
+    },
+  },
+  // przyjęci przez zarząd idą zza bramy: komunikat „N osób idzie od bramy” z przyciskiem „Pokaż”, który przesuwa
+  // kamerę do nich; po dojściu do mieszkań komunikat znika
+  {
+    name: 'm2-przybycie',
+    query: '',
+    run: async (page, base) => arrivals(page, base, false),
+  },
+  {
+    name: 'm2-przybycie-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => arrivals(page, base, true),
+  },
+  // wydarzenia z miejsca: dym z komina pierwszego dnia w bloku i w domu, wydarzenie drugiego dnia i karta nocy w domu
+  wydarzeniaDym('wydarzenia-blok-dym', 'przymorze', 'z waszej klatki'),
+  wydarzeniaDym('wydarzenia-dom-dym', 'zielonki', 'zza płotu'),
+  {
+    name: 'wydarzenia-dom-dzien2',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await chopDryTree(page);
+      // do raportu i dalej do pierwszego wydarzenia drugiego dnia od 8:00 (okna po drodze: pierwsza odpowiedź)
+      for (let k = 0; k < 200; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(15));
+        const day2 = await page.evaluate(() => {
+          const st = window.zm!.sim!.st;
+          return st.tick >= (24 + 8 - 15) * 800;
+        });
+        if (p === 'wydarzenie' && day2) {
+          const t = await sheetText(page);
+          console.log(`  wydarzenie drugiego dnia w domu: ${t.slice(0, 160)}`);
+          if (FORBIDDEN_DOM.test(t)) throw new Error(`w domu słowa z bloku: ${t}`);
+          return;
+        }
+        if (p) await answerFirst(page, p);
+      }
+      throw new Error('drugiego dnia nie było wydarzenia');
+    },
+  },
+  {
+    name: 'wydarzenia-dom-karta',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await chopDryTree(page);
+      for (let k = 0; k < 120; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(10));
+        if (p === 'karta') {
+          const t = await sheetText(page);
+          console.log(
+            `  karta nocy w domu: ${
+              t
+                .match(/Wyprawa[^\n]*/g)
+                ?.slice(0, 2)
+                .join(' | ') ?? t.slice(0, 120)
+            }`,
+          );
+          if (/blok|trzepak|pawilon/i.test(t)) throw new Error(`karta nocy w domu z blokowiskiem: ${t}`);
+          if (!t.includes('opuszczony dom obok')) throw new Error('na karcie nie ma wyprawy do opuszczonego domu obok');
+          return;
+        }
+        if (p) await answerFirst(page, p);
+      }
+      throw new Error('karta nocy się nie pokazała');
+    },
+  },
+  {
+    // ogród domu: arkusz rzeczy (sznur z praniem i bez, kompost, buda, huśtawka, ławka) w czterech ustawieniach
+    name: 'ogrod-arkusz',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await ogrodStage(page, 'arkusz');
+      await waitIdle(page);
+      console.log(`  narysowane: ${r.drawn.join(', ')}`);
+      if (r.missing.length) throw new Error(`brak w rysowaniu: ${r.missing.join(', ')}`);
+    },
+  },
+  {
+    // ogród domu w Zielonkach bez trzepaka: sznur z praniem na jego miejscu, kompost, buda, huśtawka, ławka
+    name: 'ogrod-dom',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await ogrodStage(page, 'dom');
+      await waitIdle(page);
+      console.log(`  narysowane: ${r.drawn.join(', ')}`);
+      if (r.missing.length) throw new Error(`brak w rysowaniu: ${r.missing.join(', ')}`);
+    },
+  },
 ];
+
+/**
+ * Zarząd przy pracach M2 (prace ze stanu gry jak w symulacji M2: search, repair, build, guard w fazie 4,
+ * sen na łóżkach piętrowych). dom: w mieszkaniu zarządu, podworko: na podwórku i przy bramie.
+ */
+async function m2PoseStage(page: Page, where: 'dom' | 'podworko') {
+  await page.evaluate((where) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const st = sim.st as typeof sim.st & {
+      damage?: { kind: string; tile: number; apt: number; fixed: boolean; have: object }[];
+      builds?: {
+        id: number;
+        kind: string;
+        x: number;
+        y: number;
+        rot: number;
+        need: object;
+        have: object;
+        work: number;
+        by: number;
+      }[];
+    };
+    const w = sim.w;
+    const size = w.size;
+    const int = w.interior;
+    const core = st.pawns.filter((p) => p.kind === 'core');
+    type Job = NonNullable<(typeof core)[number]['job']>;
+    const job = (t: string, phase: number, target: number, n = 0, what = ''): Job =>
+      ({
+        t,
+        phase,
+        target,
+        tile: -1,
+        from: -1,
+        t0: st.tick,
+        until: st.tick + 99999,
+        order: false,
+        n,
+        what,
+      }) as unknown as Job;
+    const put = (k: number, i: number, dir: number, j: Job | null) => {
+      Object.assign(core[k], {
+        x: (i % size) + 0.5,
+        y: Math.floor(i / size) + 0.5,
+        path: [],
+        pi: 0,
+        dir,
+        job: j,
+        carry: 0,
+        wait: st.tick + 99999,
+      });
+    };
+    const covered = (i: number) =>
+      st.things.some((t) => {
+        const x = i % size;
+        const y = Math.floor(i / size);
+        return x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
+      });
+    const free = (i: number) => !sim.blocked[i] && !covered(i);
+    let id = 995000;
+    if (where === 'dom') {
+      const koza = st.things.find((t) => t.kind === 'koza')!;
+      const home = int.rooms[int.room[koza.y * size + koza.x]].apt;
+      // wolna posadzka (IN.FLOOR = 4) pomieszczenia danego rodzaju w mieszkaniu zarządu
+      const tiles = (kind: string) => {
+        const out: number[] = [];
+        for (let i = 0; i < size * size; i++) {
+          const r = int.room[i];
+          if (r >= 0 && int.rooms[r].apt === home && int.rooms[r].kind === kind && int.cell[i] === 4 && free(i))
+            out.push(i);
+        }
+        return out;
+      };
+      const room = tiles('pokoj');
+      // łóżko piętrowe na dwóch wolnych kafelkach jeden pod drugim, z dala od reszty
+      const bunkAt = room.find((i) => room.includes(i + size)) ?? room[0];
+      const bx = bunkAt % size;
+      const by = Math.floor(bunkAt / size);
+      const bunk = {
+        id: id++,
+        kind: 'lozka_pietrowe',
+        x: bx,
+        y: by,
+        w: 1,
+        h: 2,
+        rot: 0,
+        n: 0,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      };
+      st.things.push(bunk as (typeof st.things)[number]);
+      const left = room.filter((i) => i !== bunkAt && i !== bunkAt + size && Math.abs((i % size) - bx) >= 2);
+      // okno mieszkania zarządu: kafelek posadzki pod nim
+      const win = int.windows.find((wi) => [wi + size, wi - size, wi + 1, wi - 1].some((j) => left.includes(j)));
+      const atWin =
+        win !== undefined ? [win + size, win - size, win + 1, win - 1].find((j) => left.includes(j))! : left[0];
+      if (!st.damage) st.damage = [];
+      const k = st.damage.push({ kind: 'okno', tile: win ?? atWin, apt: home, fixed: false, have: {} }) - 1;
+      const rest = left.filter((i) => i !== atWin);
+      put(0, rest[Math.floor(rest.length / 2)], 0, job('search', 1, int.room[rest[0]]));
+      // twarzą do okna: okno nad, pod, po prawej albo po lewej
+      const toWin = win === atWin - size ? 1 : win === atWin + 1 ? 3 : win === atWin - 1 ? 2 : 0;
+      put(1, atWin, toWin, job('repair', 2, k));
+      put(2, rest[rest.length - 1], 0, job('repair', 1, k, 2, 'deski'));
+      put(3, bunkAt + size, 0, job('sleep', 1, bunk.id));
+      zm.setCam(bx + 0.5, by + 1, 2);
+    } else {
+      const yard = w.fence.yard.filter(free);
+      const at = (f: number) => yard[Math.floor(yard.length * f)];
+      if (!st.builds) st.builds = [];
+      const g = at(0.35);
+      const garden = {
+        id: id++,
+        kind: 'ogrodek',
+        x: g % size,
+        y: Math.floor(g / size),
+        rot: 0,
+        need: {},
+        have: {},
+        work: 30,
+        by: -1,
+      };
+      const wire = w.fence.tiles.find((i) => i !== w.fence.gate.y * size + w.fence.gate.x && !covered(i)) ?? at(0.8);
+      const fence = {
+        id: id++,
+        kind: 'zasieki',
+        x: wire % size,
+        y: Math.floor(wire / size),
+        rot: 0,
+        need: {},
+        have: {},
+        work: 10,
+        by: -1,
+      };
+      st.builds.push(garden, fence);
+      const gx = garden.x;
+      const gy = garden.y;
+      put(0, (gy + 2) * size + gx + 1, 1, job('build', 2, garden.id));
+      const near = yard.filter((i) => Math.abs((i % size) - fence.x) + Math.abs(Math.floor(i / size) - fence.y) === 1);
+      put(1, near[0] ?? at(0.7), 0, job('build', 2, fence.id));
+      put(2, (gy + 2) * size + gx + 3, 3, job('build', 1, garden.id, 2, 'zlom'));
+      const gate = w.fence.gate;
+      put(3, (gate.y + (gate.rot === 0 ? -1 : 1)) * size + gate.x, 0, job('guard', 4, 0));
+      zm.setCam(gx + 1.5, gy + 1.5, 2);
+    }
+  }, where);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+/** słowa, których w domu jednorodzinnym nie ma w tekstach zarządu (jak FORBIDDEN_DOM w testach) */
+const FORBIDDEN_DOM = /klatk|piętr|spółdziel|pawilon|szlaban|świetlic|czynsz|blok|mieszkani/i;
+
+/** samouczek bez klikania: pierwszy z zarządu ścina suche drzewo (jak polecenie z menu) */
+async function chopDryTree(page: Page) {
+  await page.evaluate(() => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const who = sim.st.pawns.find((p) => p.kind === 'core')!;
+    sim.push({ t: 'select', ids: [who.id] });
+    sim.push({ t: 'chop', ids: [who.id], tree: sim.w.dryTree });
+  });
+}
+
+/** tytuł i treść otwartego okna */
+const sheetText = (page: Page) =>
+  page.evaluate(
+    () =>
+      `${document.querySelector('#sheet .sheet-title')?.textContent ?? ''}\n${document.querySelector('#sheet')?.textContent ?? ''}`,
+  );
+
+/** odpowiedź na okno zarządu, żeby gra szła dalej: pierwszy dostępny wybór, bez uchwały, karta jak proponuje */
+async function answerFirst(page: Page, p: string) {
+  if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+  else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
+  else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
+  else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
+}
+
+/** okno „Dym z komina” po rozpaleniu kozy pierwszego dnia, z sąsiadem z miejsca */
+function wydarzeniaDym(name: string, demo: string, from: string): Shot {
+  return {
+    name,
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=${demo}&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await chopDryTree(page);
+      for (let k = 0; k < 80; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(5));
+        if (p === 'wydarzenie') {
+          const t = await sheetText(page);
+          console.log(`  ${t.replace(/\s+/g, ' ').slice(0, 200)}`);
+          if (!t.startsWith('Dym z komina')) throw new Error(`pierwsze okno to nie dym z komina: ${t.slice(0, 80)}`);
+          if (!t.includes(`pani Krysia ${from}`)) throw new Error(`w dymie nie ma sąsiadki ${from}`);
+          await waitIdle(page);
+          return;
+        }
+        if (p) throw new Error(`przed dymem okno: ${p}`);
+      }
+      throw new Error('dym z komina się nie pokazał');
+    },
+  };
+}
+
+/**
+ * Rzeczy z ogrodu domu w stanie gry (st.things, jak postawi je świat): arkusz w wolnym miejscu obok
+ * domu (rodzaj w wierszu, ustawienia 0–3 w kolumnach, sznur z praniem i bez) albo ogród domu bez
+ * trzepaka (sznur z praniem na jego miejscu, reszta na wolnych kafelkach ogrodu). Zwraca, czego nie
+ * narysowano.
+ */
+async function ogrodStage(page: Page, what: 'arkusz' | 'dom') {
+  await page.evaluate((what) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const st = sim.st;
+    const w = sim.w;
+    const size = w.size;
+    const view = zm.view as unknown as {
+      game: { props: { kind: string; x: number; y: number; w: number; h: number }[] } | null;
+    };
+    const props = view.game?.props ?? [];
+    const covers = (t: { x: number; y: number; w: number; h: number }, x: number, y: number) =>
+      x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
+    const taken = (x: number, y: number) =>
+      x < 1 ||
+      y < 1 ||
+      x >= size - 1 ||
+      y >= size - 1 ||
+      sim.blocked[y * size + x] === 1 ||
+      w.bid[y * size + x] >= 0 ||
+      st.things.some((t) => covers(t, x, y)) ||
+      props.some((t) => covers(t, x, y));
+    const fits = (x: number, y: number, bw: number, bh: number, pad = 0) => {
+      for (let dy = -pad; dy < bh + pad; dy++)
+        for (let dx = -pad; dx < bw + pad; dx++) if (taken(x + dx, y + dy)) return false;
+      return true;
+    };
+    let id = 996000;
+    const put = (kind: string, x: number, y: number, rot: number, n = 0) => {
+      const two = kind === 'hustawka' || kind === 'lawka';
+      const long = kind === 'sznur';
+      const [bw, bh] = long ? (rot & 1 ? [1, 3] : [3, 1]) : two ? (rot & 1 ? [1, 2] : [2, 1]) : [1, 1];
+      st.things.push({
+        id: id++,
+        kind,
+        x,
+        y,
+        w: bw,
+        h: bh,
+        rot,
+        n,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      } as (typeof st.things)[number]);
+      return [bw, bh];
+    };
+    const hq = w.buildings[w.interior.building];
+    const hx = (hq.x0 + hq.x1) / 2;
+    const hy = (hq.y0 + hq.y1) / 2;
+    // trawa albo park (T.GRASS = 0, T.PARK = 1): arkusz nie na drodze ani chodniku
+    const green = (x: number, y: number, bw: number, bh: number) => {
+      for (let dy = 0; dy < bh; dy++)
+        for (let dx = 0; dx < bw; dx++) if (w.terr[(y + dy) * size + x + dx] > 1) return false;
+      return true;
+    };
+    // drzewo (korona) nad prostokątem: wtedy przesłania rzeczy
+    const underTree = (x: number, y: number, bw: number, bh: number) =>
+      w.trees.some((t) => t.x > x - t.r - 1 && t.x < x + bw + t.r + 1 && t.y > y - 1 && t.y < y + bh + t.r + 2);
+    // kamera na prostokąt świata, przybliżenie dobrane tak, żeby się zmieścił
+    const frame = (x0: number, y0: number, x1: number, y1: number) => {
+      const z = Math.min(1.5, 1440 / ((x1 - x0 + 4) * 32), 800 / ((y1 - y0 + 4) * 32));
+      zm.setCam((x0 + x1) / 2, (y0 + y1) / 2 + 0.5, z);
+    };
+    if (what === 'arkusz') {
+      // wolny prostokąt 18 × 20 kafelków trawy bez drzew, najbliżej domu
+      let best: [number, number] | null = null;
+      let bd = Number.POSITIVE_INFINITY;
+      for (let y = 1; y < size - 21; y += 2)
+        for (let x = 1; x < size - 19; x += 2) {
+          const d = (x + 9 - hx) ** 2 + (y + 10 - hy) ** 2;
+          if (d < bd && fits(x, y, 18, 20) && green(x, y, 18, 20) && !underTree(x, y, 18, 20)) {
+            bd = d;
+            best = [x, y];
+          }
+        }
+      const [ox, oy] = best ?? [Math.round(hx) + 6, Math.round(hy)];
+      const rows: [string, number][] = [
+        ['sznur', 6],
+        ['sznur', 0],
+        ['kompost', 0],
+        ['buda', 0],
+        ['hustawka', 0],
+        ['lawka', 0],
+      ];
+      let y = oy + 2;
+      for (const [kind, n] of rows) {
+        for (let rot = 0; rot < 4; rot++) put(kind, ox + 1 + rot * 4, y, rot, n);
+        y += kind === 'sznur' ? 4 : 3;
+      }
+      frame(ox, oy, ox + 17, y);
+    } else {
+      // trzepak znika z podglądu, sznur z praniem staje w jego miejscu (ten sam obrys 3 × 1)
+      const trz = props.find((p) => p.kind === 'trzepak');
+      if (view.game) view.game.props = props.filter((p) => p.kind !== 'trzepak');
+      const yard = [...w.fence.yard].map((i) => [i % size, Math.floor(i / size)] as [number, number]);
+      // odległość od ściany domu (prostokąt budynku) w kafelkach
+      const gap = (x: number, y: number) => Math.max(hq.x0 - x, 0, x - hq.x1) + Math.max(hq.y0 - y, 0, y - hq.y1);
+      // plecami do domu: rot to strona, po której jest dom
+      const backTo = (x: number, y: number) => {
+        const dx = x - hx;
+        const dy = y - hy;
+        return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 3 : 1) : dy > 0 ? 0 : 2;
+      };
+      const size2 = (kind: string, rot: number) =>
+        kind === 'hustawka' || kind === 'lawka' ? (rot & 1 ? [1, 2] : [2, 1]) : [1, 1];
+      const placed: [number, number, number, number][] = [];
+      if (trz) {
+        put('sznur', trz.x, trz.y, trz.w >= trz.h ? 0 : 1, 7);
+        placed.push([trz.x, trz.y, trz.x + trz.w, trz.y + trz.h]);
+      }
+      // buda i ławka przy ścianie domu, huśtawka na trawniku dalej, kompost w najdalszym kącie
+      const plan: [string, (x: number, y: number) => boolean, 'blisko' | 'daleko'][] = [
+        ['buda', (x, y) => gap(x, y) === 2, 'blisko'],
+        ['lawka', (x, y) => gap(x, y) === 2, 'blisko'],
+        ['hustawka', (x, y) => gap(x, y) >= 4 && gap(x, y) <= 7, 'blisko'],
+        ['kompost', () => true, 'daleko'],
+      ];
+      for (const [kind, ok, how] of plan) {
+        const cands = yard
+          .filter(([x, y]) => ok(x, y))
+          .map(([x, y]) => {
+            const rot = kind === 'hustawka' || kind === 'kompost' ? 0 : backTo(x, y);
+            const [bw, bh] = size2(kind, rot);
+            return { x, y, rot, bw, bh, d: gap(x, y) };
+          })
+          .filter((c) => fits(c.x, c.y, c.bw, c.bh, 1))
+          .sort((a, b) => (how === 'daleko' ? b.d - a.d : a.d - b.d) || a.y - b.y || a.x - b.x);
+        const c = cands[0];
+        if (!c) continue;
+        put(kind, c.x, c.y, c.rot);
+        placed.push([c.x, c.y, c.x + c.bw, c.y + c.bh]);
+      }
+      const xs = placed.flatMap((p) => [p[0], p[2]]).concat([hq.x0, hq.x1]);
+      const ys = placed.flatMap((p) => [p[1], p[3]]).concat([hq.y0, hq.y1]);
+      frame(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys));
+    }
+  }, what);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  return page.evaluate(() => {
+    const keys = [...(window.zm!.view as unknown as { things: Map<string, unknown> }).things.keys()];
+    const kinds = ['sznur', 'kompost', 'buda', 'hustawka', 'lawka'];
+    const drawn = kinds.map((k) => `${k} ${keys.filter((key) => key.includes(`"kind":"${k}"`)).length}`);
+    const missing = kinds.filter((k) => !keys.some((key) => key.includes(`"kind":"${k}"`)));
+    return { drawn, missing };
+  });
+}
+
+/** kamera na uszkodzoną podłogę (atrapa) w pustym mieszkaniu o danej przyczynie */
+function m2Floor(name: string, why: string): Shot {
+  return {
+    name,
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      const ok = await page.evaluate((why) => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as {
+          scene: {
+            section: { damage?: Map<number, string>; why?: Map<number, string>; room: Int16Array; roomApt?: number[] };
+            w: { size: number };
+          };
+        };
+        const sec = v.scene.section;
+        const size = v.scene.w.size;
+        const hit = [...sec.damage!.entries()].find(
+          ([i, k]) => k === 'podloga' && sec.why!.get(sec.roomApt![sec.room[i]]) === why,
+        );
+        if (hit) zm.setCam((hit[0] % size) + 0.5, Math.floor(hit[0] / size) + 0.5, 1.9);
+        return !!hit;
+      }, why);
+      await waitIdle(page);
+      if (!ok) throw new Error(`brak uszkodzonej podłogi w mieszkaniu (${why})`);
+    },
+  };
+}
+
+/**
+ * Atrapy M2 w stanie gry: gotowe budowle (rzeczy w st.things), plany (st.builds) i podgląd stawiania.
+ * Budowle w mieszkaniu zarządu na wolnych kafelkach posadzki pokoju i kuchni, ogródek na podwórku,
+ * zasieki zamiast odcinka siatki.
+ */
+async function m2Stage(page: Page, what: 'budowle' | 'plany' | 'stawianie-ok' | 'stawianie-zle') {
+  return page.evaluate((what) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const st = sim.st;
+    const w = sim.w;
+    const size = w.size;
+    const int = w.interior;
+    const koza = st.things.find((t) => t.kind === 'koza')!;
+    const home = int.rooms[int.room[koza.y * size + koza.x]].apt;
+    const busy = new Set<number>();
+    for (const t of st.things)
+      for (let dy = 0; dy < t.h; dy++) for (let dx = 0; dx < t.w; dx++) busy.add((t.y + dy) * size + t.x + dx);
+    const yard = new Set(w.fence.yard);
+    const fits = (x: number, y: number, fw: number, fh: number, ok: (i: number) => boolean) => {
+      for (let dy = 0; dy < fh; dy++)
+        for (let dx = 0; dx < fw; dx++) {
+          const i = (y + dy) * size + x + dx;
+          if (busy.has(i) || !ok(i)) return false;
+        }
+      return true;
+    };
+    const roomOk = (kind: string) => (i: number) =>
+      int.cell[i] === 4 &&
+      int.room[i] >= 0 &&
+      int.rooms[int.room[i]].apt === home &&
+      int.rooms[int.room[i]].kind === kind;
+    const spot = (fw: number, fh: number, ok: (i: number) => boolean) => {
+      for (let y = 0; y < size - fh; y++) for (let x = 0; x < size - fw; x++) if (fits(x, y, fw, fh, ok)) return [x, y];
+      return null;
+    };
+    // z kafelkiem odstępu, żeby budowle nie stały jedna na drugiej
+    const take = (x: number, y: number, fw: number, fh: number) => {
+      for (let dy = -1; dy <= fh; dy++) for (let dx = -1; dx <= fw; dx++) busy.add((y + dy) * size + x + dx);
+    };
+    const list: [string, number, number, number, (i: number) => boolean][] = [
+      ['warsztat', 2, 1, 0, roomOk('pokoj')],
+      ['lozka_pietrowe', 1, 2, 0, roomOk('pokoj')],
+      ['magazyn', 2, 2, 0, roomOk('pokoj')],
+      ['kuchnia_spoleczna', 2, 1, 0, (i) => roomOk('kuchnia')(i) || roomOk('pokoj')(i)],
+      ['ogrodek', 3, 2, 0, (i) => yard.has(i) && !w.blocked[i]],
+    ];
+    const placed: string[] = [];
+    let id = 995000;
+    const plans: unknown[] = [];
+    for (const [kind, fw, fh, rot, ok] of what === 'budowle' || what === 'plany' ? list : []) {
+      const at = spot(fw, fh, ok) ?? spot(fh, fw, ok);
+      if (!at) continue;
+      const turned = !fits(at[0], at[1], fw, fh, ok);
+      const [ww, hh] = turned ? [fh, fw] : [fw, fh];
+      take(at[0], at[1], ww, hh);
+      placed.push(kind);
+      if (what === 'budowle')
+        st.things.push({
+          id: id++,
+          kind,
+          x: at[0],
+          y: at[1],
+          w: ww,
+          h: hh,
+          rot: turned ? 1 : rot,
+          n: 0,
+          fuel: 0,
+          by: -1,
+          owner: -1,
+        });
+      else
+        plans.push({
+          id: id++,
+          kind,
+          x: at[0],
+          y: at[1],
+          rot: turned ? 1 : rot,
+          need: { deski: 4, zlom: 2 },
+          have: { deski: placed.length % 3, zlom: 1 },
+          work: (placed.length * 400) % 900,
+          by: -1,
+        });
+    }
+    // zasieki w miejscu odcinka siatki najbliżej bramy
+    const g = w.fence.gate;
+    const wire = w.fence.tiles
+      .filter((i) => !w.fence.hole.includes(i))
+      .sort(
+        (a, b) =>
+          Math.hypot((a % size) - g.x, Math.floor(a / size) - g.y) -
+          Math.hypot((b % size) - g.x, Math.floor(b / size) - g.y),
+      )[3];
+    const wx = wire % size;
+    const wy = Math.floor(wire / size);
+    const horizontal = w.fence.tiles.includes(wire - 1) || w.fence.tiles.includes(wire + 1);
+    if (what === 'budowle') {
+      st.things.push({
+        id: id++,
+        kind: 'zasieki',
+        x: wx,
+        y: wy,
+        w: 1,
+        h: 1,
+        rot: horizontal ? 0 : 1,
+        n: 0,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      });
+      placed.push('zasieki');
+    }
+    if (what === 'plany') (st as unknown as { builds: unknown[] }).builds = plans;
+    const view = zm.view as unknown as { setPlacement: (p: unknown) => void };
+    if (what === 'stawianie-ok' || what === 'stawianie-zle') {
+      // wolne kafelki pokoju zarządu jako dozwolone, kilka zajętych obok jako niedozwolone
+      const ok: number[] = [];
+      for (let i = 0; i < size * size; i++) if (roomOk('pokoj')(i) && !busy.has(i)) ok.push(i);
+      const bad = [...busy].filter((i) => int.room[i] >= 0 && int.rooms[int.room[i]].apt === home).slice(0, 12);
+      const at = what === 'stawianie-ok' ? spot(2, 1, roomOk('pokoj'))! : [bad[0] % size, Math.floor(bad[0] / size)];
+      // w dzień same dozwolone miejsca (jak z interfejsu), nocą dozwolone i zajęte
+      view.setPlacement(
+        what === 'stawianie-ok'
+          ? { kind: 'warsztat', x: at[0], y: at[1], rot: 0, ok: true, tiles: { ok } }
+          : { kind: 'warsztat', x: at[0], y: at[1], rot: 0, ok: false, tiles: { ok, bad } },
+      );
+      zm.setCam(at[0] + 1, at[1] + 0.5, 1.8);
+    } else zm.setCam(koza.x, koza.y + 2, 1.6);
+    return { placed };
+  }, what);
+}
 
 /** n klatek przeglądarki */
 async function frames(page: Page, n: number) {
@@ -2413,23 +3784,31 @@ async function poseCheck(page: Page, want: string[]) {
   const got = await page.evaluate(() => {
     const zm = window.zm!;
     const sprites = (
-      zm.view as unknown as { pawnSprites: Map<number, { texture: { frame: { x: number; width: number } } }> }
+      zm.view as unknown as {
+        pawnSprites: Map<number, { texture: { frame: { x: number; y: number; width: number } } }>;
+      }
     ).pawnSprites;
     return zm
       .sim!.st.pawns.filter((p) => p.kind === 'core')
       .map((p) => {
         const f = sprites.get(p.id)!.texture.frame;
-        return { x: f.x, w: f.width };
+        return { x: f.x, y: f.y, w: f.width };
       });
   });
-  const names = got.map((f) => (f.w === LIE ? 'lie' : poseAt(f.x)));
+  const names = got.map((f) => (f.w === LIE ? 'lie' : poseAt(f.x, f.y)));
   console.log(`  pozy: ${names.join(', ')}`);
   if (names.join() !== want.join()) throw new Error(`pozy ${names.join()} zamiast ${want.join()}`);
 }
 
-/** poza z kolumny atlasu ludzi */
-function poseAt(x: number): string {
-  for (const pose of [...POSES].reverse()) if (x >= frameRect(0, pose, 0, 0)[0]) return pose;
+/** poza z klatki atlasu ludzi (lewy górny róg klatki) */
+function poseAt(x: number, y: number): string {
+  for (let look = 0; look < LOOKS; look++)
+    for (const pose of POSES)
+      for (let d = 0; d < 4; d++)
+        for (let f = 0; f < POSE_FRAMES[pose]; f++) {
+          const [fx, fy] = frameRect(look, pose, d, f);
+          if (fx === x && fy === y) return pose;
+        }
   return '?';
 }
 
@@ -2520,4 +3899,112 @@ try {
   }
 } finally {
   await s.close();
+}
+
+/** Sterty materiałów na wolnych kafelkach podwórka, od jego końca (po 10, jak w składzie): koszty budowli stroi bot
+    i są wyższe niż zapas na starcie gry, a scenariusze fali 1 stawiają prawdziwe plany */
+async function stockUp(page: Page, cost: Partial<Record<string, number>>) {
+  await page.evaluate((cost) => {
+    const zm = window.zm!;
+    const st = zm.sim!.st;
+    const w = zm.sim!.w;
+    const taken = (i: number) =>
+      st.things.some(
+        (t) =>
+          i % w.size >= t.x &&
+          i % w.size < t.x + t.w &&
+          Math.floor(i / w.size) >= t.y &&
+          Math.floor(i / w.size) < t.y + t.h,
+      );
+    const free = w.fence.yard.filter((i) => !taken(i)).reverse();
+    for (const [kind, all] of Object.entries(cost))
+      for (let n = all ?? 0; n > 0; n -= 10) {
+        const i = free.shift();
+        if (i === undefined) throw new Error('brak miejsca na podwórku na materiały');
+        st.things.push({
+          id: st.nextThing++,
+          kind,
+          x: i % w.size,
+          y: Math.floor(i / w.size),
+          w: 1,
+          h: 1,
+          rot: 0,
+          n: Math.min(10, n),
+          fuel: 0,
+          by: -1,
+          owner: -1,
+        });
+      }
+  }, cost);
+}
+
+/** Przybysze (M2, fala 1): zarząd przyjmuje 3 osoby (zm.admit, jak po decyzji), komunikat z odmianą i „Pokaż”, który
+    nie zasłania paska ani listy celów (na telefonie stoi pod listą); „Pokaż” przesuwa kamerę na środek grupy bez
+    zmiany przybliżenia, a po dojściu do mieszkań (około 20 minut gry) komunikat znika */
+async function arrivals(page: Page, base: string, phone: boolean) {
+  await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+  await waitIdle(page);
+  const n = await page.evaluate(() => window.zm!.admit(3));
+  if (n !== 3) throw new Error(`przyjętych: ${n} z 3`);
+  const text = await page
+    .waitForFunction(
+      () => {
+        const b = document.getElementById('arrive')!;
+        return !b.hidden && (b.textContent ?? '');
+      },
+      null,
+      { timeout: 3000 },
+    )
+    .then((h) => h.jsonValue() as Promise<string>)
+    .catch(() => '');
+  console.log(`  komunikat: ${text}`);
+  if (!text.includes('3 osoby idą od bramy') || !text.includes('Pokaż'))
+    throw new Error('nie ma komunikatu o przybyszach z „Pokaż”');
+  // etykieta suchego drzewa ustawia się co klatkę: po dwóch klatkach stoi już pod komunikatem, a nie pod nim schowana
+  await frames(page, 2);
+  const lay = await page.evaluate(() => {
+    const r = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+    const a = r('arrive');
+    const hit = (b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    const mark = document.getElementById('treeMark')!;
+    return {
+      top: hit(r('top')),
+      goals: hit(r('goals')),
+      mark: !mark.hidden && hit(mark.getBoundingClientRect()),
+      inside: a.left >= 0 && a.right <= innerWidth,
+    };
+  });
+  if (lay.top || lay.goals || lay.mark || !lay.inside)
+    throw new Error(`komunikat na pasku, na celach, na etykiecie albo poza ekranem: ${JSON.stringify(lay)}`);
+  await page.screenshot({ path: path.join(OUT, `m2-przybycie${phone ? '-telefon' : ''}-komunikat.png`) });
+  // „Pokaż”: kamera jedzie na środek grupy, przybliżenie bez zmian
+  const zoom = await page.evaluate(() => window.zm!.view.cam.zoom);
+  if (phone) await page.tap('#arriveShow');
+  else await page.click('#arriveShow');
+  await page.waitForTimeout(1400);
+  const r = await page.evaluate(() => {
+    const zm = window.zm!;
+    const coming = zm.sim!.st.pawns.filter((p) => p.kind === 'resident' && p.job?.t === 'arrive');
+    const [sx, sy] = zm.screenOf(
+      coming.reduce((a, p) => a + p.x, 0) / coming.length,
+      coming.reduce((a, p) => a + p.y, 0) / coming.length,
+    );
+    return { sx, sy, w: zm.view.width, h: zm.view.height, zoom: zm.view.cam.zoom };
+  });
+  const off = Math.round(Math.hypot(r.sx - r.w / 2, r.sy - r.h / 2));
+  console.log(`  po „Pokaż”: grupa ${off} px od środka mapy, zoom ${zoom.toFixed(2)} → ${r.zoom.toFixed(2)}`);
+  if (off > 40) throw new Error('„Pokaż” nie przesunął kamery do przybyszów');
+  if (Math.abs(r.zoom - zoom) > 1e-6) throw new Error('„Pokaż” zmienił przybliżenie');
+  await page.screenshot({ path: path.join(OUT, `m2-przybycie${phone ? '-telefon' : ''}-pokaz.png`) });
+  // po dojściu do mieszkań komunikat znika
+  for (let k = 0; k < 6 && (await page.evaluate(() => !document.getElementById('arrive')!.hidden)); k++) {
+    const p = await page.evaluate(() => window.zm!.ff(10));
+    if (p) throw new Error(`w trakcie przybycia otworzyło się okno: ${p}`);
+  }
+  const left = await page.evaluate(() => ({
+    hidden: document.getElementById('arrive')!.hidden,
+    n: window.zm!.sim!.st.pawns.filter((p) => p.kind === 'resident' && p.job?.t === 'arrive').length,
+  }));
+  console.log(`  po godzinie gry: idzie jeszcze ${left.n}, komunikat ${left.hidden ? 'schowany' : 'widoczny'}`);
+  if (!left.hidden || left.n) throw new Error('komunikat o przybyszach nie zniknął po dojściu');
 }

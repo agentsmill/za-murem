@@ -6,7 +6,8 @@ import { LAW, type LawPath } from '../content/data.ts';
 import type { EventChoice, EventHost } from '../content/events.ts';
 import { g } from '../content/people.ts';
 import { pick } from '../core/rng.ts';
-import type { GovNeeds, GovPerson, LootKey } from './typy.ts';
+import type { Words } from './miejsce.ts';
+import type { GovNeeds, GovPerson, GovPlace, LootKey } from './typy.ts';
 
 // ---------------------------------------------------------------- uchwały
 
@@ -19,6 +20,8 @@ export interface M1Law {
   imm?: [number, number];
   /** codziennie rano: [zaufanie, wkurzenie] */
   daily?: [number, number];
+  /** w domu jednorodzinnym (ulica i komitet ulicy): inna nazwa albo opis; liczby te same */
+  dom?: { name?: string; desc?: string };
 }
 
 /**
@@ -30,6 +33,10 @@ export const M1_LAWS: Record<string, M1Law> = {
     name: LAW.u_warty.name,
     path: LAW.u_warty.path,
     desc: 'Co noc przy bramie stoi ktoś z mieszkańców, a warta zarządu pilnuje lepiej. Obrona przy bramie +1,5, warta mocniejsza o ćwierć, szansa napadu −5 punktów.',
+    dom: {
+      name: 'Warty przy furtce',
+      desc: 'Co noc przy furtce stoi ktoś z domowników, a warta komitetu pilnuje lepiej. Obrona przy furtce +1,5, warta mocniejsza o ćwierć, szansa napadu −5 punktów.',
+    },
   },
   u_brama: {
     name: 'Brama na kłódkę od 20:00',
@@ -37,12 +44,17 @@ export const M1_LAWS: Record<string, M1Law> = {
     req: ['u_warty'],
     desc: 'Po zmroku nikt nie wchodzi ani nie wychodzi, klucz ma tylko zarząd. Szansa napadu −8 punktów, wędrowców spod bramy nikt nie wpuszcza. Wkurzenie +0,2 dziennie.',
     daily: [0, 0.2],
+    dom: {
+      name: 'Furtka na kłódkę od 20:00',
+      desc: 'Po zmroku nikt nie wchodzi ani nie wychodzi, klucz ma tylko komitet. Szansa napadu −8 punktów, wędrowców spod furtki nikt nie wpuszcza. Wkurzenie +0,2 dziennie.',
+    },
   },
   u_zebrania: {
     name: LAW.u_zebrania.name,
     path: LAW.u_zebrania.path,
     desc: LAW.u_zebrania.desc,
     daily: [0.4, 0],
+    dom: { name: 'Zebrania przy kozie' },
   },
   u_kociol: {
     name: 'Wspólny kocioł',
@@ -63,8 +75,17 @@ export const M1_LAWS: Record<string, M1Law> = {
     desc: 'Meble z pustych mieszkań idą do kozy bez pytania o zgodę. Palenie cudzych mebli boli połowę mniej, ale wkurzenie +2 od razu i +0,1 dziennie.',
     imm: [0, 2],
     daily: [0, 0.1],
+    dom: {
+      desc: 'Meble idą do kozy bez pytania domowników o zgodę. Palenie mebli boli połowę mniej, ale wkurzenie +2 od razu i +0,1 dziennie.',
+    },
   },
 };
+
+/** nazwa uchwały według miejsca (w domu furtka i komitet zamiast bramy, klatek i zarządu) */
+export const lawName = (id: string, p: GovPlace): string =>
+  (p.kind === 'dom' ? M1_LAWS[id].dom?.name : undefined) ?? M1_LAWS[id].name;
+export const lawDesc = (id: string, p: GovPlace): string =>
+  (p.kind === 'dom' ? M1_LAWS[id].dom?.desc : undefined) ?? M1_LAWS[id].desc;
 
 /** pierwsza uchwała, wieczorem pierwszego dnia: warta, dzielenie jedzenia, palenie mebli */
 export const FIRST_LAWS = ['u_warty', 'u_kociol', 'u_meble'] as const;
@@ -126,8 +147,35 @@ export const TARGETS: ExpTarget[] = [
   },
 ];
 
+/** nazwa celu wyprawy według miejsca: w domu bez bloku obok, trzepaka i pawilonu; ryzyko i łup te same */
+export function targetName(t: ExpTarget, p: GovPlace): string {
+  if (t.id === 'mieszkania' && p.near !== 'bloki') return 'opuszczony dom obok';
+  if (p.kind !== 'dom') return t.name;
+  if (t.id === 'garaze') return p.garages === null ? 'szopy w ogrodach obok' : 'garaże obok';
+  if (t.id === 'pawilon') return 'sklep przy głównej drodze';
+  return t.name;
+}
+
 /** nazwy dziur w siatce, kiedy świat ich nie poda */
 export const HOLE_NAMES = ['przy garażach', 'za trzepakiem', 'od ulicy', 'przy śmietniku', 'od strony bloku obok'];
+/** to samo przy domu jednorodzinnym */
+export const HOLE_NAMES_DOM = ['przy garażu', 'za szopą', 'od ulicy', 'przy kompostowniku', 'od strony domu obok'];
+
+/** zakończenia gry, które M1 może dać, w domu jednorodzinnym (w bloku zostają te z 0.3 o walnym i klatkach) */
+export const KONIEC_DOM: Record<'odwolanie' | 'exodus' | 'pustka', { title: string; text: string }> = {
+  odwolanie: {
+    title: 'Zebranie ulicy odwołało komitet',
+    text: 'Wkurzenie przelało się przez płoty. Sąsiedzi zebrali się przy furtce i odwołali was przez aklamację. Nowy komitet zaczął od wymiany kłódki.',
+  },
+  exodus: {
+    title: 'Ulica opustoszała',
+    text: 'Ludzie przestali wierzyć, że z wami przetrwają. Dom po domu odchodzili na inne ulice. Zostały puste ogrody i list z banku o racie kredytu z 2047 roku.',
+  },
+  pustka: {
+    title: 'Nikt nie przeżył',
+    text: 'Ostatni domownik zgasił kozę. Ulica stoi pusta, a dron dostawczy dalej krąży nad dachem.',
+  },
+};
 
 export const LOOT_LABEL: Record<LootKey, string> = {
   wood: 'Drewno',
@@ -173,6 +221,19 @@ export interface GovHost extends EventHost {
   guarded(): boolean;
   /** skutek na rano: zmiana zapasów i linia do raportu */
   later(stock: Partial<Record<LootKey, number>>, line: string): void;
+  /** miejsce siedziby i słownik wspólnoty (w domu ulica i komitet ulicy) */
+  place(): GovPlace;
+  words(): Words;
+  /** skąd przychodzi sąsiad: „z waszej klatki” (blok z mieszkańcami), „z bloku obok” albo „zza płotu” według
+      sąsiadów; null, gdy w okolicy nie ma nikogo */
+  neighbour(): string | null;
+  /** jacy sąsiedzi są w okolicy: bloki, domy albo nikt (null); jak sasiedzi() w miejsce.ts */
+  neighbours(): 'bloki' | 'domy' | null;
+  /** wolne miejsca dla mieszkańców, mieszkańcy siedziby, temperatura na dworze, ognisko na podwórku */
+  free(): number;
+  residents(): number;
+  outdoor(): number;
+  campfire(): boolean;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: dane wydarzenia mają różne kształty
@@ -182,6 +243,10 @@ export interface GEventDef<D = any> {
   /** najmniej tyle godzin gry między powtórkami (domyślnie REPEAT_GAP) */
   gap?: number;
   when: readonly Pora[];
+  /** dozwolone pierwszego dnia po ciszy i pierwszej nocy (do 8:00 drugiego dnia): siatka, obcy, noc */
+  first?: boolean;
+  /** zwroty do podmiany w kronice z wyborów tego wydarzenia (według miejsca) */
+  log?: (h: GovHost) => Record<string, string> | null;
   w: (h: GovHost) => number;
   make: (h: GovHost) => D | null;
   title: (h: GovHost, d: D) => string;
@@ -189,30 +254,8 @@ export interface GEventDef<D = any> {
   choices: (h: GovHost, d: D) => EventChoice[];
 }
 
-/** wydarzenia z 0.3, które pasują do pierwszych nocy, z porą dnia; w zastępuje wagę z 0.3 */
-export const OLD_EVENTS: { id: string; when: readonly Pora[]; w?: (h: GovHost) => number }[] = [
-  { id: 'handlarz', when: ['dzien'] },
-  { id: 'dzieci', when: ['dzien'] },
-  { id: 'lodowka', when: ['dzien'] },
-  { id: 'dron', when: ['dzien'] },
-  { id: 'automat', when: ['dzien'] },
-  { id: 'auto', when: ['dzien'] },
-  { id: 'czynsz', when: ['dzien', 'wieczor'] },
-  { id: 'krypto', when: ['dzien'] },
-  { id: 'ksiazki', when: ['dzien'] },
-  { id: 'aktywisci', when: ['dzien'] },
-  { id: 'influencer', when: ['dzien'] },
-  // obcy pod bramą dopiero od drugiego dnia
-  { id: 'uchodzcy', when: ['dzien'], w: (h) => (h.day() >= 2 ? 0.8 : 0) },
-  { id: 'fachowiec', when: ['wieczor'] },
-  { id: 'klotnia', when: ['wieczor'] },
-  { id: 'pozar', when: ['wieczor', 'noc'] },
-  { id: 'kradziez', when: ['noc'] },
-  { id: 'wesele', when: ['dzien', 'wieczor'] },
-  { id: 'odejscie', when: ['dzien', 'wieczor'] },
-  // w 0.3 od piątego dnia; w M1 pierwsza noc jest o szabrownikach, więc już po południu pierwszego
-  { id: 'obserwacja', when: ['dzien'], w: (h) => (h.hour() >= 13 ? 1.2 : 0) },
-];
+/** wydarzenia z 0.3 z porą dnia, warunkami miejsca i wariantami tekstów (nakładki w warianty.ts) */
+export { OLD_EVENTS, type OldEvent } from './warianty.ts';
 
 const names = (list: GovPerson[]) =>
   list.length < 2
@@ -222,10 +265,18 @@ const names = (list: GovPerson[]) =>
         .map((p) => p.name)
         .join(', ')} i ${list[list.length - 1].name}`;
 
-/** nowe wydarzenia M1: obcy jako wydarzenie, siatka, noc */
+const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
+const dom = (h: GovHost) => h.place().kind === 'dom';
+/** sąsiedzi to domy: dom obok zamiast bloku obok (w samotnym miejscu wydarzenia z sąsiadami nie przychodzą) */
+const domyObok = (h: GovHost) => h.neighbours() === 'domy';
+/** gdzie mieszka sąsiad, który przychodzi: zza płotu w domu, inaczej w mieszkaniu */
+const uNiej = (h: GovHost) => (h.neighbour() === 'zza płotu' ? 'w domu' : 'w mieszkaniu');
+
+/** nowe wydarzenia M1: obcy jako wydarzenie, siatka, noc; teksty według miejsca (w domu ulica i komitet ulicy) */
 export const NEW_EVENTS: GEventDef[] = [
   {
     id: 'wedrowiec',
+    first: true,
     gap: 30,
     when: ['wieczor', 'noc'],
     w: (h) => (h.gateClosed() ? 0.4 : 1),
@@ -236,9 +287,11 @@ export const NEW_EVENTS: GEventDef[] = [
         h.rng,
       ),
     }),
-    title: () => 'Wędrowiec pod bramą',
-    text: (h, d) =>
-      `Pod bramą stoi chudy facet z plecakiem i psem na sznurku. Prosi, żeby mógł przenocować przy waszym ogniu. Mówi, że idzie ${d.dest}.${h.gateClosed() ? ' Brama jest zamknięta na kłódkę, klucz ma zarząd.' : ''}`,
+    title: (h) => `Wędrowiec ${h.words().brama.pod}`,
+    text: (h, d) => {
+      const s = h.words();
+      return `${wielka(s.brama.pod)} stoi chudy facet z plecakiem i psem na sznurku. Prosi, żeby mógł przenocować przy waszym ogniu. Mówi, że idzie ${d.dest}.${h.gateClosed() ? ` ${wielka(s.brama.m)} jest zamknięta na kłódkę, klucz ma ${s.zarzad.krotko}.` : ''}`;
+    },
     choices: (h, d) => [
       {
         label: 'Wpuścić na noc',
@@ -267,6 +320,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'slady',
+    first: true,
     gap: 20,
     when: ['dzien', 'wieczor'],
     w: (h) => (h.holes() > 0 && h.hour() >= 15 ? 1.4 : 0),
@@ -297,6 +351,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'pies',
+    first: true,
     once: true,
     when: ['wieczor', 'noc'],
     w: () => 0.7,
@@ -311,7 +366,7 @@ export const NEW_EVENTS: GEventDef[] = [
           h.addRes('jedzenie', -1);
           h.setFlag('dog');
           h.moodAll('Mamy psa', 4, 24);
-          h.log('Pies dostał imię Abonament. Śpi przy bramie i warczy na obcych.', true);
+          h.log(`Pies dostał imię Abonament. Śpi ${h.words().brama.przy} i warczy na obcych.`, true);
         },
       },
       { label: 'Przegonić', ok: true, run: () => h.log('Pies poszedł szczekać pod inny płot.') },
@@ -319,15 +374,19 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'halas',
+    first: true,
     gap: 4,
     when: ['noc'],
     w: (h) => (h.hour() >= 22 || h.hour() < 4 ? 1 : 0),
     make: (h) => ({ cat: h.rng() < 0.45 }),
-    title: () => 'Hałas za garażami',
-    text: (h) =>
-      h.guarded()
-        ? 'Coś łupnęło za garażami. Może kot, może ktoś. Wartownik patrzy w ciemność i nic nie widzi.'
-        : 'Ktoś przy oknie usłyszał łomot za garażami. Może kot, może ktoś. Wszyscy inni śpią.',
+    // za garażami tam, gdzie garaże są w okolicy, inaczej za płotem
+    title: (h) => `Hałas ${h.place().garages === null ? 'za płotem' : 'za garażami'}`,
+    text: (h) => {
+      const where = h.place().garages === null ? 'za płotem' : 'za garażami';
+      return h.guarded()
+        ? `Coś łupnęło ${where}. Może kot, może ktoś. Wartownik patrzy w ciemność i nic nie widzi.`
+        : `Ktoś przy oknie usłyszał łomot ${where}. Może kot, może ktoś. Wszyscy inni śpią.`;
+    },
     choices: (h, d) => [
       {
         label: 'Sprawdzić z latarką',
@@ -359,11 +418,16 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'krzyk',
+    first: true,
     when: ['noc'],
-    w: () => 0.9,
+    // krzyk niesie się od sąsiadów: bez nich w okolicy nie ma skąd
+    w: (h) => (h.place().near === 'nikt' ? 0 : 0.9),
     make: (h) => ({ help: h.rng() < 0.5 }),
-    title: () => 'Krzyk z bloku obok',
-    text: () => 'Z bloku obok niesie się krzyk, potem cisza. Na trzecim piętrze ktoś świeci latarką i zaraz ją gasi.',
+    title: (h) => (domyObok(h) ? 'Krzyk z domu obok' : 'Krzyk z bloku obok'),
+    text: (h) =>
+      domyObok(h)
+        ? 'Z domu obok niesie się krzyk, potem cisza. W oknie na poddaszu ktoś świeci latarką i zaraz ją gasi.'
+        : 'Z bloku obok niesie się krzyk, potem cisza. Na trzecim piętrze ktoś świeci latarką i zaraz ją gasi.',
     choices: (h, d) => [
       {
         label: 'Wysłać kogoś sprawdzić',
@@ -376,7 +440,9 @@ export const NEW_EVENTS: GEventDef[] = [
             h.mood(2, 0);
             h.later(
               { supplies: 3 },
-              'Rano przyszedł sąsiad z bloku obok z workiem ziemniaków. W nocy spadł ze schodów, a wasz człowiek odprowadził go do mieszkania.',
+              domyObok(h)
+                ? 'Rano przyszedł sąsiad z domu obok z workiem ziemniaków. W nocy spadł ze schodów, a wasz człowiek odprowadził go do łóżka.'
+                : 'Rano przyszedł sąsiad z bloku obok z workiem ziemniaków. W nocy spadł ze schodów, a wasz człowiek odprowadził go do mieszkania.',
             );
           } else {
             h.needsAll({ safe: -3 });
@@ -396,6 +462,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'bezsennosc',
+    first: true,
     when: ['noc'],
     w: (h) => (h.alive().length ? 0.8 : 0),
     make: (h) => {
@@ -405,7 +472,7 @@ export const NEW_EVENTS: GEventDef[] = [
     title: () => 'Ktoś nie może spać',
     text: (h, d) => {
       const p = h.spec(d.p)!;
-      return `${p.name} siedzi przy kozie i nie może zasnąć. Mówi, że ciągle słyszy kroki na klatce.`;
+      return `${p.name} siedzi przy kozie i nie może zasnąć. Mówi, że ciągle słyszy kroki ${dom(h) ? 'na strychu' : 'na klatce'}.`;
     },
     choices: (h, d) => {
       const p = h.spec(d.p)!;
@@ -434,12 +501,16 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'sygnal',
+    first: true,
     once: true,
     when: ['noc'],
-    w: () => 0.8,
+    w: (h) => (h.place().near === 'nikt' ? 0 : 0.8),
     make: () => ({}),
     title: () => 'Światło w oknie naprzeciwko',
-    text: () => 'W bloku naprzeciwko ktoś miga latarką: trzy krótkie, trzy długie, trzy krótkie.',
+    text: (h) =>
+      domyObok(h)
+        ? 'W domu naprzeciwko, w oknie na poddaszu, ktoś miga latarką: trzy krótkie, trzy długie, trzy krótkie.'
+        : 'W bloku naprzeciwko ktoś miga latarką: trzy krótkie, trzy długie, trzy krótkie.',
     choices: (h) => [
       {
         label: 'Odmigać latarką',
@@ -448,7 +519,7 @@ export const NEW_EVENTS: GEventDef[] = [
           h.mood(1, 0);
           h.later(
             {},
-            'Rano pod bramą stał chłopak z bloku naprzeciwko. Mieszka z babcią i dwoma kocami. Dziękował, że ktoś w ogóle odpowiedział.',
+            `Rano ${h.words().brama.pod} stał chłopak z ${domyObok(h) ? 'domu' : 'bloku'} naprzeciwko. Mieszka z babcią i dwoma kocami. Dziękował, że ktoś w ogóle odpowiedział.`,
           );
         },
       },
@@ -464,35 +535,37 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'kot',
+    first: true,
     once: true,
     when: ['noc'],
     w: () => 0.8,
     make: () => ({}),
-    title: () => 'Kot w piwnicy',
-    text: () =>
-      'Z piwnicy dobiega miauczenie. Rudy kot zaplątał się w starą siatkę na ziemniaki. Na obroży wydrapane: „Algorytm”.',
+    title: (h) => (dom(h) ? 'Kot w szopie' : 'Kot w piwnicy'),
+    text: (h) =>
+      `${dom(h) ? 'Z szopy' : 'Z piwnicy'} dobiega miauczenie. Rudy kot zaplątał się w starą siatkę na ziemniaki. Na obroży wydrapane: „Algorytm”.`,
     choices: (h) => [
       {
         label: 'Uwolnić i przygarnąć',
         ok: true,
         run: () => {
           h.moodAll('Algorytm się znalazł', 3, 24);
-          h.log('Kot z ogłoszenia się znalazł. Śpi na kozie i nie reaguje na nic poza kaszą.');
+          h.log('Algorytm ma nowy dom. Śpi na kozie i nie reaguje na nic poza kaszą.');
         },
       },
       {
-        label: 'Niech łapie myszy w piwnicy',
+        label: `Niech łapie myszy ${dom(h) ? 'w szopie' : 'w piwnicy'}`,
         ok: true,
         run: () =>
           h.later(
             { supplies: 1 },
-            'Kot przez noc wyłapał myszy w piwnicy. Zapasy całe, jeden słoik nawet się znalazł.',
+            `Kot przez noc wyłapał myszy ${dom(h) ? 'w szopie' : 'w piwnicy'}. Zapasy całe, jeden słoik nawet się znalazł.`,
           ),
       },
     ],
   },
   {
     id: 'ulewa',
+    first: true,
     gap: 24,
     when: ['noc'],
     w: (h) => (h.res.opal >= 3 ? 0.8 : 0),
@@ -518,13 +591,15 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'przymrozek',
+    first: true,
     gap: 24,
     when: ['noc'],
-    w: (h) => (h.season() <= 1 ? 0.7 : 0),
+    // szron tylko przy mrozie na dworze (pierwsze jesienne noce mają kilka stopni), sąsiadka tylko, gdy jest skąd
+    w: (h) => (h.outdoor() <= 1 && h.neighbour() !== null ? 0.7 : 0),
     make: () => ({}),
     title: () => 'Przymrozek',
-    text: () =>
-      'Na siatce szron. Sąsiadka z drugiego piętra puka do drzwi: u niej w mieszkaniu zamarzła woda w wiadrze, a mąż kaszle.',
+    text: (h) =>
+      `Na siatce szron. Sąsiadka ${h.neighbour() ?? 'zza płotu'} puka do drzwi: u niej ${uNiej(h)} zamarzła woda w wiadrze, a mąż kaszle.`,
     choices: (h) => [
       {
         label: 'Dać drewno (Drewno 2)',
@@ -548,20 +623,21 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'latarka',
+    first: true,
     once: true,
     when: ['dzien', 'wieczor'],
-    w: () => 0.9,
+    w: (h) => (h.neighbour() === null ? 0 : 0.9),
     make: () => ({}),
     title: () => 'Latarka na korbkę',
-    text: () =>
-      'Pani Halina z trzeciego piętra przyniosła latarkę na korbkę. Minuta kręcenia daje pięć minut światła, a ona już nie ma siły kręcić.',
+    text: (h) =>
+      `Pani Halina ${h.neighbour() ?? 'zza płotu'} przyniosła latarkę na korbkę. Minuta kręcenia daje pięć minut światła, a ona już nie ma siły kręcić.`,
     choices: (h) => [
       {
         label: 'Dla warty',
         ok: true,
         run: () => {
           h.setFlag('flashlight');
-          h.log('Latarka wisi przy bramie. Warta ze światłem płoszy lepiej.');
+          h.log(`Latarka wisi ${h.words().brama.przy}. Warta ze światłem płoszy lepiej.`);
         },
       },
       {
@@ -569,7 +645,9 @@ export const NEW_EVENTS: GEventDef[] = [
         ok: true,
         run: () => {
           h.setFlag('torch');
-          h.log('Latarka idzie na wyprawy. Mniej potykania się po ciemnych klatkach.');
+          h.log(
+            `Latarka idzie na wyprawy. Mniej potykania się po ${dom(h) ? 'ciemnych piwnicach i garażach' : 'ciemnych klatkach'}.`,
+          );
         },
       },
     ],
@@ -580,9 +658,11 @@ export const NEW_EVENTS: GEventDef[] = [
     when: ['dzien'],
     w: () => 0.8,
     make: () => ({}),
-    title: () => 'Domofon przy bramie ożył',
-    text: () =>
-      'Domofon przy bramie zapiszczał pierwszy raz od lat. Na ekraniku: „Twoja subskrypcja Bezpieczne Osiedle wygasła. Odnów za 49,99 kredytów miesięcznie”.',
+    title: (h) => (dom(h) ? 'Wideodomofon przy furtce ożył' : 'Domofon przy bramie ożył'),
+    text: (h) =>
+      dom(h)
+        ? 'Wideodomofon przy furtce zapiszczał pierwszy raz od lat. Na ekraniku: „Twoja subskrypcja Bezpieczny Dom wygasła. Odnów za 49,99 kredytów miesięcznie”.'
+        : 'Domofon przy bramie zapiszczał pierwszy raz od lat. Na ekraniku: „Twoja subskrypcja Bezpieczne Osiedle wygasła. Odnów za 49,99 kredytów miesięcznie”.',
     choices: (h) => [
       {
         label: 'Rozkręcić na części',
@@ -603,34 +683,53 @@ export const NEW_EVENTS: GEventDef[] = [
     ],
   },
   {
-    id: 'sasiadka',
+    // z sytuacji, nie z losowania: koza pierwszy raz się pali, ktoś widzi dym i przychodzi (wydarzenia.ts, eventTick)
+    id: 'dym',
     once: true,
-    when: ['wieczor'],
-    w: () => 1,
+    when: ['dzien', 'wieczor', 'noc'],
+    w: () => 0,
     make: () => ({}),
-    title: () => 'Słoik od sąsiadki',
-    text: () =>
-      'Pani Krysia z czwartego piętra przyniosła słoik powideł z 2049 roku. Pyta, czy może posiedzieć przy kozie, bo u niej w mieszkaniu jest sześć stopni.',
-    choices: (h) => [
-      {
-        label: 'Zaprosić do kozy',
-        ok: true,
-        run: () => {
-          h.addRes('jedzenie', 2);
-          h.mood(2, 0);
-          h.log('Pani Krysia opowiada, jak wyglądało osiedle, kiedy jeszcze jeździły autobusy.');
+    title: () => 'Dym z komina',
+    text: (h) => {
+      const from = h.neighbour() ?? 'zza płotu';
+      const home = from === 'zza płotu' ? 'w domu' : 'w mieszkaniu';
+      const smoke =
+        h.place().kind === 'dom'
+          ? 'Nad dachem idzie dym z komina. Ktoś go zobaczył: do drzwi puka'
+          : 'Nad kuchnią idzie dym z rury wystawionej przez okno. Ktoś go zobaczył: puka';
+      return `${smoke} pani Krysia ${from}, ze słoikiem powideł z 2049 roku. Pyta, czy może posiedzieć przy kozie, bo u niej ${home} jest sześć stopni.`;
+    },
+    choices: (h) => {
+      const from = h.neighbour() ?? 'zza płotu';
+      return [
+        {
+          label: 'Zaprosić do kozy',
+          ok: true,
+          run: () => {
+            h.addRes('jedzenie', 2);
+            h.mood(2, 0);
+            h.log(
+              `Pani Krysia opowiada, jak ${h.place().kind === 'dom' ? 'wyglądała ulica' : 'wyglądało osiedle'}, kiedy jeszcze jeździły autobusy.`,
+            );
+          },
         },
-      },
-      {
-        label: 'Wziąć słoik i podziękować',
-        ok: true,
-        run: () => {
-          h.addRes('jedzenie', 2);
-          h.mood(-1, 1);
-          h.log('Pani Krysia wróciła do zimnego mieszkania. Na klatce już o tym wiedzą.');
+        {
+          label: 'Wziąć słoik i podziękować',
+          ok: true,
+          run: () => {
+            h.addRes('jedzenie', 2);
+            h.mood(-1, 1);
+            h.log(
+              from === 'zza płotu'
+                ? 'Pani Krysia wróciła do zimnego domu. Cała ulica już o tym wie.'
+                : from === 'z bloku obok'
+                  ? 'Pani Krysia wróciła do zimnego mieszkania. W bloku obok już o tym wiedzą.'
+                  : 'Pani Krysia wróciła do zimnego mieszkania. Na klatce już o tym wiedzą.',
+            );
+          },
         },
-      },
-    ],
+      ];
+    },
   },
 ];
 
