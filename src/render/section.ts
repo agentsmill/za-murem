@@ -205,6 +205,8 @@ export function specOf(t: ThingLike, fire = 0): ThingSpec | null {
       return { kind: 'trzepak', rot: t.w >= t.h ? 0 : 1, seed };
     case 'ognisko':
       return { kind: 'ognisko', fire: f, seed };
+    case 'krew':
+      return { kind: 'krew', seed: seed % 8 };
     default:
       return null;
   }

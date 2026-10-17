@@ -118,6 +118,7 @@ function sizeKey(s: ThingSpec): string {
       return `pien ${s.r}`;
     case 'siatka':
     case 'lampa':
+    case 'krew':
       return s.kind;
     case 'ognisko':
       return `ognisko ${s.style}`;

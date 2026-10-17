@@ -498,7 +498,13 @@ a.btn {
 @media (max-width: 640px) {
   .top {
     padding: 5px 8px;
-    gap: 6px 10px;
+    gap: 6px 8px;
+  }
+  /* tempo, alarm i menu w jednym wierszu na telefonie 390 px */
+  .top .btn.alarm,
+  #btnMenu {
+    padding-left: 7px;
+    padding-right: 7px;
   }
   .top .sign {
     max-width: 150px;

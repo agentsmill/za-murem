@@ -138,6 +138,131 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    name: 'zombie-noc',
+    query: '',
+    run: async (page, base) => zombieNight(page, base),
+  },
+  {
+    name: 'zombie-noc-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => zombieNight(page, base),
+  },
+  {
+    name: 'zombie-walka',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=11&stado=10&cam=hq,1`);
+      await waitIdle(page);
+      // siatka puszcza przy szwendaczach, zarząd z bronią na podwórku walczy
+      const info = await page.evaluate(() => {
+        const sim = window.zm!.sim!;
+        const st = sim.st;
+        const zs = st.pawns.filter((p) => p.kind === 'zombie');
+        const fence = sim.w.fence.tiles;
+        const size = sim.w.size;
+        const z0 = zs[0];
+        const tile = fence.reduce((b, t) =>
+          Math.hypot((t % size) - z0.x, Math.floor(t / size) - z0.y) <
+          Math.hypot((b % size) - z0.x, Math.floor(b / size) - z0.y)
+            ? t
+            : b,
+        );
+        sim.damageFence(tile, 500);
+        const core = st.pawns.filter((p) => p.kind === 'core');
+        core[0].weapon = 'lom';
+        core[1].weapon = 'dzida';
+        // szwendacze wchodzą na podwórko, potem zarząd dostaje rozkaz ataku na najbliższych
+        for (let k = 0; k < 900; k++) sim.step();
+        const yard = new Set(sim.w.fence.yard);
+        const inYard = () =>
+          st.pawns.filter((p) => p.kind === 'zombie' && yard.has(Math.floor(p.y) * size + Math.floor(p.x)));
+        for (const c of core.slice(0, 2)) {
+          const z = inYard().sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
+          if (z) sim.push({ t: 'attack', ids: [c.id], target: z.id });
+        }
+        let fights = 0;
+        for (let k = 0; k < 1600 && fights < 1; k++) {
+          sim.step();
+          if (st.fx?.some((f) => f.t === 'cios' && st.tick - f.tick < 2)) fights++;
+        }
+        const busy = st.pawns.filter((p) => p.job?.t === 'fight');
+        const at = busy.length ? busy : st.pawns.filter((p) => p.kind === 'zombie');
+        const x = at.reduce((a, p) => a + p.x, 0) / at.length;
+        const y = at.reduce((a, p) => a + p.y, 0) / at.length;
+        window.zm!.setCam(x, y, 2.2);
+        return {
+          fights,
+          killed: st.tally?.killed ?? 0,
+          bodies: st.things.filter((t) => t.kind === 'trup' || t.kind === 'zwloki').length,
+          blood: st.things.filter((t) => t.kind === 'krew').length,
+        };
+      });
+      console.log(`  walka: ${JSON.stringify(info)}`);
+      if (!info.fights) throw new Error('nikt nie walczył');
+      await waitIdle(page);
+      // pasek u góry odświeża się co 200 ms
+      await page.waitForTimeout(350);
+    },
+  },
+  {
+    name: 'arkusz-walki',
+    query: '',
+    w: 1300,
+    h: 900,
+    run: async (page, base) => {
+      await page.goto(base);
+      await page.waitForSelector('#demos button');
+      // arkusz z modułów grafiki (serwer Vite podaje je jako ESM): człowiek z każdą bronią w każdej pozie
+      // i kierunku oraz szwendacze, powiększone 3 razy
+      await page.evaluate(async () => {
+        const load = (path: string) => import(/* @vite-ignore */ path);
+        const people = (await load('/src/render/art/people.ts')) as typeof import('../src/render/art/people.ts');
+        const bron = (await load('/src/render/art/bron.ts')) as typeof import('../src/render/art/bron.ts');
+        const atlas = people.makePeopleAtlas();
+        const zat = people.makeZombieAtlas() as HTMLCanvasElement;
+        const wat = bron.makeWeaponAtlas() as HTMLCanvasElement;
+        const S = 3;
+        const c = document.createElement('canvas');
+        c.width = 1300;
+        c.height = 900;
+        const g = c.getContext('2d')!;
+        g.imageSmoothingEnabled = false;
+        g.fillStyle = '#5d7a45';
+        g.fillRect(0, 0, c.width, c.height);
+        const poses = [
+          ['walk', 'hold', 0],
+          ['swing', 'swing', 0],
+          ['swing', 'swing', 1],
+          ['aim', 'aim', 0],
+          ['aim', 'aim', 1],
+        ] as const;
+        bron.ARMED.forEach((id, row) => {
+          let col = 0;
+          for (const [pose, arm, f] of poses)
+            for (const dir of [0, 3, 1]) {
+              const x = 10 + col * 26 * S * 0.55;
+              const y = 10 + row * 52 * S * 0.68;
+              const [ax, ay, aw, ah] = people.frameRect(5 + row, pose, dir, f);
+              g.drawImage(atlas, ax, ay, aw, ah, x + 16 * S * 0.5, y + 8 * S * 0.5, aw * S * 0.5, ah * S * 0.5);
+              const [wx, wy, ww, wh] = bron.weaponRect(id, arm, dir, f);
+              g.drawImage(wat, wx, wy, ww, wh, x, y, ww * S * 0.5, wh * S * 0.5);
+              col++;
+            }
+        });
+        for (let k = 0; k < 8; k++) {
+          const pose = k < 4 ? 'lurch' : 'bite';
+          const [ax, ay, aw, ah] = people.zFrameRect(k * 2, pose, k % 4, k < 4 ? 1 : 1);
+          g.drawImage(zat, ax, ay, aw, ah, 760 + (k % 4) * 40 * S, 60 + Math.floor(k / 4) * 60 * S, aw * S, ah * S);
+        }
+        document.body.innerHTML = '';
+        document.body.style.margin = '0';
+        document.body.appendChild(c);
+      });
+    },
+  },
+  {
     name: 'adres-offline',
     query: '',
     run: async (page, base) => {
@@ -1794,6 +1919,33 @@ async function wrecks(page: Page, zoom: number) {
 }
 
 const fmt = (v: { visible: boolean; alpha: number }) => `${v.visible ? 'widać' : 'nie widać'} (${v.alpha})`;
+
+/** noc w trybie zombie: stado pod siatką przy siedzibie, alarm, warta z dzidami, kamera na najgorętszym miejscu */
+async function zombieNight(page: Page, base: string) {
+  await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=23&stado=24&cam=hq,1`);
+  await waitIdle(page);
+  const info = await page.evaluate(() => {
+    const sim = window.zm!.sim!;
+    const st = sim.st;
+    const core = st.pawns.filter((p) => p.kind === 'core');
+    core[0].weapon = 'dzida';
+    core[1].weapon = 'dzida';
+    sim.push({ t: 'alarm', ids: core.map((p) => p.id) });
+    for (let k = 0; k < 900; k++) sim.step();
+    const press = st.pawns.filter((p) => p.kind === 'zombie' && p.job?.phase === 2);
+    const guards = st.pawns.filter((p) => p.job?.t === 'guard');
+    const at = press.length ? press : st.pawns.filter((p) => p.kind === 'zombie');
+    const x = at.reduce((a, p) => a + p.x, 0) / at.length;
+    const y = at.reduce((a, p) => a + p.y, 0) / at.length;
+    // panel celów zasłania lewą część ekranu: kamera trochę w prawo od miejsca naporu
+    window.zm!.setCam(x - 4, y, 2);
+    return { press: press.length, guards: guards.length, killed: st.tally?.killed ?? 0 };
+  });
+  console.log(`  noc: ${JSON.stringify(info)}`);
+  if (!info.guards) throw new Error('nikt nie stoi na warcie');
+  await waitIdle(page);
+  await page.waitForTimeout(350);
+}
 
 /** rozpala kozę zarządu w stanie gry i puszcza symulację do najbliższego przeliczenia ciepła i światła */
 async function nightWithFire(page: Page) {

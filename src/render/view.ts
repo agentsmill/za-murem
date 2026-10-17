@@ -17,9 +17,25 @@ import {
   type TextureSource,
   TextureStyle,
 } from 'pixi.js';
+import type { WeaponId } from '../sim/bron.ts';
 import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
-import type { Pawn, SimState } from '../sim/sim.ts';
-import { FH, frameRect, LIE, LOOKS, lieHead, lieRect, makePeopleAtlas, outlineAtlas, POSES } from './art/people.ts';
+import { NOISE_TICKS, type Pawn, type SimState } from '../sim/sim.ts';
+import { ZOMBIE_HP } from '../sim/zombie.ts';
+import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, weaponRect } from './art/bron.ts';
+import {
+  FH,
+  frameRect,
+  LIE,
+  LOOKS,
+  lieHead,
+  lieRect,
+  makePeopleAtlas,
+  makeZombieAtlas,
+  outlineAtlas,
+  POSES,
+  zFrameRect,
+  zLieRect,
+} from './art/people.ts';
 import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec, thingSprite } from './art/rzeczy.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
 import {
@@ -129,6 +145,14 @@ export class GameView {
   /** ten sam układ klatek, sam zarys postaci (do pokazania kogoś za koroną) */
   private outline: TextureSource | null = null;
   private outlineTex = new Map<number, Texture>();
+  /** atlas szwendaczy i nakładek broni z teksturami klatek */
+  private zatlas: TextureSource | null = null;
+  private zTex = new Map<number, Texture>();
+  private warms: TextureSource | null = null;
+  private wTex = new Map<string, Texture>();
+  /** broń w ręce (nakładka) i zwłoki, trupy na ziemi: po id pionka i id rzeczy */
+  private weaponSprites = new Map<number, Sprite>();
+  private corpseSprites = new Map<number, Sprite>();
   /** dokładanie do kozy widać chwilę po wrzuceniu drewna */
   private feed = new FeedWatch();
   /** dym z kozy i ogniska nad mapą światła */
@@ -210,6 +234,8 @@ export class GameView {
     const people = makePeopleAtlas();
     this.atlas = Texture.from(people).source;
     this.outline = Texture.from(outlineAtlas(people) as HTMLCanvasElement).source;
+    this.zatlas = Texture.from(makeZombieAtlas() as HTMLCanvasElement).source;
+    this.warms = Texture.from(makeWeaponAtlas() as HTMLCanvasElement).source;
     if (opts.workers !== false && workersAvailable())
       this.painter = new WorkerPainter(spawnChunkWorker, poolSize(navigator.hardwareConcurrency || 4, PHONE));
   }
@@ -327,7 +353,7 @@ export class GameView {
     }
     this.syncFelled(sim.st.felled);
     // siatka liczona od nowa tylko po zmianie w blocked (łata, nowa dziura, brama)
-    const codes = fenceCodes(w.fence, sim.blocked, w.size);
+    const codes = fenceCodes(w.fence, sim.blocked, w.size, sim.st.fence);
     if (!g.codes || codes.length !== g.codes.length || codes.some((c, k) => c !== g!.codes![k])) {
       g.codes = codes;
       g.fence = fenceThings(w.fence, w, fenceStateFn(w.fence, codes), codes[codes.length - 1] === 1);
@@ -365,8 +391,8 @@ export class GameView {
       const sprite = new Sprite(art.tex);
       sprite.anchor.set(art.sp.ax / art.sp.w, art.sp.ay / art.sp.h);
       sprite.position.set((t.x + t.w / 2) * TILE, (t.y + t.h) * TILE);
-      // rzecz na stole rysuje się po stole (na blacie), reszta po dolnej krawędzi podstawy
-      sprite.zIndex = t.table !== undefined ? t.table + 0.01 : t.y + t.h;
+      // rzecz na stole rysuje się po stole (na blacie), krew pod wszystkim, reszta po dolnej krawędzi podstawy
+      sprite.zIndex = t.table !== undefined ? t.table + 0.01 : t.kind === 'krew' ? -1 : t.y + t.h;
       const inside = this.underRoof(t.x + 0.5, t.y + t.h - 0.5);
       sprite.visible = !inside || this.cutOn;
       this.actors.addChild(sprite);
@@ -594,7 +620,9 @@ export class GameView {
       const x = pv ? pv[0] + (p.x - pv[0]) * alpha : p.x;
       const y = pv ? pv[1] + (p.y - pv[1]) * alpha : p.y;
       const pose = poseOf(p, gameT, st.things, p.kind === 'core' && this.feed.feeding(p, st.tick));
-      sp.texture = this.frameTexture(this.poseTex, this.atlas!, p.look % LOOKS, pose);
+      sp.texture = pose.zpose
+        ? this.zombieTexture(p.look, pose)
+        : this.frameTexture(this.poseTex, this.atlas!, p.look % LOOKS, pose);
       if (pose.lie) {
         const [hx, hy] = lieHead(pose.lie.o);
         sp.anchor.set(hx / LIE, hy / LIE);
@@ -616,6 +644,21 @@ export class GameView {
         sp.tint = (c << 16) | (c << 8) | Math.min(255, c + 8);
       }
       if (selected.has(p.id) && sp.visible) this.markPawn(p, x, y);
+      // broń w ręce: nakładka w tej samej klatce co postać (za plecami, gdy idzie od patrzącego)
+      const wid = p.kind === 'core' && !pose.lie ? (p.weapon ?? null) : null;
+      let ws = this.weaponSprites.get(p.id);
+      if (wid && pose.arm && sp.visible) {
+        if (!ws) {
+          ws = new Sprite(Texture.EMPTY);
+          this.actors.addChild(ws);
+          this.weaponSprites.set(p.id, ws);
+        }
+        ws.texture = this.weaponTexture(wid, pose.arm, pose.dir, pose.frame);
+        ws.anchor.set(0.5, ANCHOR_Y / CELL);
+        ws.position.copyFrom(sp.position);
+        ws.zIndex = sp.zIndex + (pose.dir === 1 ? -0.001 : 0.001);
+        ws.visible = true;
+      } else if (ws) ws.visible = false;
       // ktoś z zarządu za koroną drzewa: jego zarys na wierzchu (korona zostaje pełna); nocą zaznaczeni
       // dostają słabszy zarys, żeby nie ginęli w ciemności
       const behind = p.kind === 'core' && sp.visible && !pose.lie && this.trees.covering(x, y);
@@ -641,7 +684,11 @@ export class GameView {
         this.feed.forget(id);
         this.xraySprites.get(id)?.destroy();
         this.xraySprites.delete(id);
+        this.weaponSprites.get(id)?.destroy();
+        this.weaponSprites.delete(id);
       }
+    this.drawCorpses(st);
+    this.drawCombat(st);
     // dym z kozy (przez okno) i z ogniska, z czasu gry; widać go także przy dachu
     this.smoke.update(
       smokeSources(this.drawn, this.scene.w),
@@ -654,6 +701,100 @@ export class GameView {
     const [x0, y0] = this.toWorld(0, 0);
     const [x1, y1] = this.toWorld(this.width, this.height);
     this.light.update(x0, y0, x1, y1, z, this.darkness, lights, time, this.insideFn);
+  }
+
+  /** klatka atlasu szwendaczy: chód albo ugryzienie, kierunek, klatka */
+  private zombieTexture(look: number, pv: PoseView): Texture {
+    const k = ((((look % 16) * 2 + (pv.zpose === 'bite' ? 1 : 0)) * 4 + pv.dir) * 4 + pv.frame) | 0;
+    let tex = this.zTex.get(k);
+    if (!tex) {
+      const [x, y, w, h] = zFrameRect(look, pv.zpose ?? 'lurch', pv.dir, pv.frame);
+      tex = new Texture({ source: this.zatlas!, frame: new Rectangle(x, y, w, h) });
+      this.zTex.set(k, tex);
+    }
+    return tex;
+  }
+
+  /** komórka nakładki broni */
+  private weaponTexture(id: WeaponId, pose: ArmPose, dir: number, f: number): Texture {
+    const k = `${id}:${pose}:${dir}:${f}`;
+    let tex = this.wTex.get(k);
+    if (!tex) {
+      const [x, y, w, h] = weaponRect(id, pose, dir, f);
+      tex = new Texture({ source: this.warms!, frame: new Rectangle(x, y, w, h) });
+      this.wTex.set(k, tex);
+    }
+    return tex;
+  }
+
+  /** zwłoki ludzi (atlas ludzi, leżenie na podłodze) i trupy szwendaczy (atlas szwendaczy) na ziemi */
+  private drawCorpses(st: SimState): void {
+    const seen = new Set<number>();
+    for (const t of st.things) {
+      if (t.kind !== 'zwloki' && t.kind !== 'trup') continue;
+      seen.add(t.id);
+      let sp = this.corpseSprites.get(t.id);
+      if (!sp) {
+        const o = t.id & 3;
+        let tex: Texture;
+        if (t.kind === 'trup') {
+          const [x, y, w, h] = zLieRect(t.n, o);
+          tex = new Texture({ source: this.zatlas!, frame: new Rectangle(x, y, w, h) });
+        } else
+          tex = this.frameTexture(this.poseTex, this.atlas!, t.n % LOOKS, {
+            pose: 'walk',
+            dir: 0,
+            frame: 0,
+            lie: { kind: 'floor', o, x: 0, y: 0 },
+          });
+        sp = new Sprite(tex);
+        sp.anchor.set(0.5, 0.5);
+        sp.position.set((t.x + 0.5) * TILE, (t.y + 0.5) * TILE);
+        // leży na ziemi: rysuje się przed tymi, którzy stoją nad nim
+        sp.zIndex = t.y + 0.3;
+        this.actors.addChild(sp);
+        this.corpseSprites.set(t.id, sp);
+      }
+      sp.visible = this.cutOn || !this.underRoof(t.x + 0.5, t.y + 0.5);
+    }
+    for (const [id, sp] of this.corpseSprites)
+      if (!seen.has(id)) {
+        sp.destroy();
+        this.corpseSprites.delete(id);
+      }
+  }
+
+  /** paski życia rannych w walce i krąg hałasu po strzale (w warstwie zaznaczeń) */
+  private drawCombat(st: SimState): void {
+    const g = this.marks;
+    for (const p of st.pawns) {
+      if (p.away) continue;
+      const sp = this.pawnSprites.get(p.id);
+      if (!sp?.visible || sp.alpha < 0.3) continue;
+      const max = p.kind === 'zombie' ? ZOMBIE_HP : p.kind === 'szabrownik' ? 70 : 100;
+      const hp = p.needs ? p.needs.health : (p.hp ?? max);
+      const busy =
+        p.kind === 'zombie' ||
+        p.kind === 'szabrownik' ||
+        p.job?.t === 'fight' ||
+        (p.job?.t === 'guard' && p.job.phase === 1) ||
+        p.bite !== undefined;
+      if (!busy || hp >= max) continue;
+      const v = Math.max(0, hp / max);
+      const x = sp.x - 10;
+      const y = sp.y - 46;
+      g.rect(x - 1, y - 1, 22, 5).fill({ color: 0x14100e, alpha: 0.85 });
+      g.rect(x, y, 20 * v, 3).fill({ color: v > 0.6 ? 0x7cc46a : v > 0.3 ? 0xe6a540 : 0xde5a43 });
+    }
+    for (const n of st.noise ?? []) {
+      if (n.r < 20) continue;
+      const age = Math.min(1, (st.tick - (n.until - NOISE_TICKS)) / NOISE_TICKS);
+      g.circle(n.x * TILE, n.y * TILE, Math.max(1, n.r * TILE * age)).stroke({
+        width: 3,
+        color: 0xffe0a0,
+        alpha: 0.45 * (1 - age),
+      });
+    }
   }
 
   /** klatka atlasu ludzi (albo zarysów) dla pozy; tekstury tworzone przy pierwszym użyciu */

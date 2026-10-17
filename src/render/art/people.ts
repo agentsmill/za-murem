@@ -6,9 +6,10 @@
    Klatka 32×48 px (osoba ma około 1,4 m wysokości w skali gry), leżenie 48×48. Jeden atlas,
    rysowany samymi prostokątami (działa też z atrapą płótna w narzędziach). */
 
+import { handOf } from './bron.ts';
 import { type AnyCanvas, ctx2d, newCanvas } from './canvas.ts';
 import { h2 } from './hash.ts';
-import { css, shade } from './palette.ts';
+import { css, mix, shade } from './palette.ts';
 
 export const FW = 32;
 export const FH = 48;
@@ -16,9 +17,19 @@ export const LOOKS = 16;
 export const FRAMES = 4;
 
 /** pozy w atlasie (kolumny po kolei: kierunek × klatki) */
-export type Pose = 'walk' | 'carry' | 'chop' | 'crouch' | 'cook' | 'sit' | 'guard';
-export const POSES: readonly Pose[] = ['walk', 'carry', 'chop', 'crouch', 'cook', 'sit', 'guard'];
-export const POSE_FRAMES: Record<Pose, number> = { walk: 4, carry: 4, chop: 3, crouch: 3, cook: 2, sit: 1, guard: 2 };
+export type Pose = 'walk' | 'carry' | 'chop' | 'crouch' | 'cook' | 'sit' | 'guard' | 'swing' | 'aim';
+export const POSES: readonly Pose[] = ['walk', 'carry', 'chop', 'crouch', 'cook', 'sit', 'guard', 'swing', 'aim'];
+export const POSE_FRAMES: Record<Pose, number> = {
+  walk: 4,
+  carry: 4,
+  chop: 3,
+  crouch: 3,
+  cook: 2,
+  sit: 1,
+  guard: 2,
+  swing: 3,
+  aim: 2,
+};
 const POSE_COL = {} as Record<Pose, number>;
 let cols = 0;
 for (const p of POSES) {
@@ -620,6 +631,190 @@ function lie(ctx: CanvasRenderingContext2D, ox: number, oy: number, L: Look, kin
   r(8, -1, 1, 2, shade(L.skin, 0.75));
 }
 
+// ---------------------------------------------------------------- walka
+
+/** ręka od barku (x0, y0) do dłoni (x1, y1): rękaw kwadracikami wzdłuż linii, dłoń na końcu */
+function limb(r: Rect, L: Look, x0: number, y0: number, x1: number, y1: number) {
+  const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0)));
+  for (const pass of [0, 1])
+    for (let k = 0; k <= n; k++) {
+      const x = Math.round(x0 + ((x1 - x0) * k) / n) - 1;
+      const y = Math.round(y0 + ((y1 - y0) * k) / n) - 1;
+      if (pass === 0) r(x - 1, y - 1, 5, 5, OUT);
+      else r(x, y, 3, 3, k >= n - 1 ? L.skin : shade(L.jacket, 0.88));
+    }
+}
+
+/** cios bronią do walki wręcz: zamach, uderzenie, dokończenie; ręka do dłoni z handOf (broń to nakładka) */
+function swing(r: Rect, L: Look, dir: number, f: number) {
+  const h = handOf('swing', dir, f);
+  legs(r, L, dir, dir === 3 && f === 1 ? 1 : 0, 0);
+  if (dir === 3) {
+    arm(r, L, 13, 21, 9, 0.75);
+    torso(r, L, dir, f === 1 ? 1 : 0);
+    head(r, L, dir, f === 1 ? 1 : 0);
+    limb(r, L, 16, 21, h.x, h.y);
+  } else if (dir === 0) {
+    torso(r, L, dir, 0);
+    arm(r, L, 5, 20, 11);
+    head(r, L, dir, 0);
+    limb(r, L, 24, 21, h.x, h.y);
+  } else {
+    limb(r, L, 8, 21, h.x, h.y);
+    torso(r, L, dir, 0);
+    arm(r, L, 23, 20, 11);
+    head(r, L, dir, 0);
+  }
+}
+
+/** celowanie oburącz (broń palna, kusza) albo pchnięcie dzidą; druga klatka to odrzut */
+function aim(r: Rect, L: Look, dir: number, f: number) {
+  const h = handOf('aim', dir, f);
+  legs(r, L, dir, 0, 0);
+  if (dir === 3) {
+    limb(r, L, 14, 22, h.x - 2, h.y + 1);
+    torso(r, L, dir, 0);
+    head(r, L, dir, 0);
+    limb(r, L, 17, 21, h.x, h.y);
+  } else if (dir === 0) {
+    torso(r, L, dir, 0);
+    head(r, L, dir, 0);
+    limb(r, L, 8, 21, h.x - 1, h.y);
+    limb(r, L, 24, 21, h.x + 1, h.y);
+  } else {
+    limb(r, L, 8, 21, h.x - 1, h.y);
+    limb(r, L, 24, 21, h.x + 1, h.y);
+    torso(r, L, dir, 0);
+    head(r, L, dir, 0);
+  }
+}
+
+// ---------------------------------------------------------------- szwendacze
+
+/** wiersze atlasu szwendaczy: zgniłe wersje tych samych 16 wyglądów (zmarły sąsiad wstaje w swoim ubraniu) */
+export const ZLOOKS = 16;
+export type ZPose = 'lurch' | 'bite';
+export const ZPOSE_FRAMES: Record<ZPose, number> = { lurch: 4, bite: 2 };
+const ZCOLS = 4 * ZPOSE_FRAMES.lurch + 4 * ZPOSE_FRAMES.bite;
+export const ZATLAS_W = ZCOLS * FW + 4 * LIE;
+export const ZATLAS_H = ZLOOKS * FH;
+
+const ZSKIN = [0x8f9c7a, 0x7f8c6c, 0x9aa088, 0x76846a];
+const ROT = 0x2a1c18;
+const DEAD_EYE = 0xd8d0a0;
+const MOUTH = 0x3a0c0c;
+const BLOOD = 0x6a1612;
+
+/** wygląd szwendacza: szarozielona skóra, wyblakłe i brudne ubranie, przyprószone włosy */
+export function zombieLook(i: number): Look {
+  const L = lookOf(i % LOOKS);
+  return {
+    ...L,
+    skin: ZSKIN[i % ZSKIN.length],
+    jacket: mix(L.jacket, 0x55554c, 0.45),
+    pants: mix(L.pants, 0x3a3a34, 0.4),
+    hair: shade(L.hair, 0.8),
+    hat: L.hat === null ? null : mix(L.hat, 0x55554c, 0.4),
+  };
+}
+
+export function zFrameRect(look: number, pose: ZPose, dir: number, f: number): [number, number, number, number] {
+  const col = pose === 'lurch' ? dir * ZPOSE_FRAMES.lurch + f : 4 * ZPOSE_FRAMES.lurch + dir * ZPOSE_FRAMES.bite + f;
+  return [col * FW, (look % ZLOOKS) * FH, FW, FH];
+}
+
+/** trup szwendacza na ziemi; o to strona głowy */
+export function zLieRect(look: number, o: number): [number, number, number, number] {
+  return [ZCOLS * FW + (o & 3) * LIE, (look % ZLOOKS) * FH, LIE, LIE];
+}
+
+/** twarz szwendacza: zapadnięte oczy z bielmem, otwarte usta, krew na brodzie */
+function zface(r: Rect, dir: number, dy: number, open = 0) {
+  if (dir === 0) {
+    r(11, 11 + dy, 4, 3, ROT);
+    r(16, 11 + dy, 4, 3, ROT);
+    r(12, 12 + dy, 2, 1, DEAD_EYE);
+    r(17, 12 + dy, 2, 1, DEAD_EYE);
+    r(12, 15 + dy, 6, 2 + open, MOUTH);
+    r(13, 17 + dy + open, 1, 2, BLOOD);
+  } else if (dir === 3) {
+    r(18, 11 + dy, 3, 3, ROT);
+    r(19, 12 + dy, 1, 1, DEAD_EYE);
+    r(18, 15 + dy, 4, 2 + open, MOUTH);
+    r(20, 17 + dy + open, 1, 2, BLOOD);
+  }
+}
+
+/** plamy i dziury w ubraniu */
+function stains(r: Rect, dir: number, dy: number, seed: number) {
+  const side = dir >= 2;
+  const x0 = side ? 11 : 9;
+  for (let k = 0; k < 4; k++) {
+    const x = x0 + Math.floor(h2(seed, k, 4401) * (side ? 9 : 13));
+    const y = 21 + dy + Math.floor(h2(seed, k, 4402) * 9);
+    r(x, y, 1 + (k & 1), 2, k < 2 ? BLOOD : ROT);
+  }
+}
+
+/** chwiejny chód z rękami przed sobą; bite: rzut z ugryzieniem (głowa niżej i do przodu) */
+function lurch(r: Rect, L: Look, dir: number, f: number, seed: number, lunge = 0) {
+  const step = lunge ? 0 : f === 1 ? 1 : f === 3 ? -1 : 0;
+  const bob = lunge ? 1 : f === 1 || f === 3 ? 1 : 0;
+  const dy = bob + 1 + lunge;
+  legs(r, L, dir, step, bob);
+  if (dir === 3) {
+    // głowa wysunięta do przodu
+    const fw: Rect = (x, y, w, h, c) => r(x + 2 + lunge, y, w, h, c);
+    armSide(r, L, 13, 23 + bob, 13 + lunge * 2);
+    torso(r, L, dir, bob);
+    stains(r, dir, bob, seed);
+    head(fw, L, dir, dy, false);
+    zface(fw, dir, dy, lunge);
+    armSide(r, L, 15, 22 + bob, 13 + lunge * 2);
+  } else if (dir === 0) {
+    torso(r, L, dir, bob);
+    stains(r, dir, bob, seed);
+    arm(r, L, 6, 20 + bob, 7 + lunge * 2);
+    arm(r, L, 23, 20 + bob, 7 + lunge * 2);
+    head(r, L, dir, dy, false);
+    zface(r, dir, dy, lunge);
+  } else {
+    torso(r, L, dir, bob);
+    r(5, 19 + bob, 4, 5, OUT);
+    r(23, 19 + bob, 4, 5, OUT);
+    r(6, 20 + bob, 2, 3, shade(L.jacket, 0.85));
+    r(24, 20 + bob, 2, 3, shade(L.jacket, 0.85));
+    head(r, L, dir, dy, false);
+  }
+}
+
+/** atlas szwendaczy: wiersz = wygląd; kolumny: chód (kierunek × 4), ugryzienie (kierunek × 2), trup × 4 */
+export function makeZombieAtlas(): AnyCanvas {
+  const c = newCanvas(ZATLAS_W, ZATLAS_H);
+  const ctx = ctx2d(c) as CanvasRenderingContext2D;
+  for (let look = 0; look < ZLOOKS; look++) {
+    const L = zombieLook(look);
+    for (const pose of ['lurch', 'bite'] as const)
+      for (let dir = 0; dir < 4; dir++)
+        for (let f = 0; f < ZPOSE_FRAMES[pose]; f++) {
+          const [x, y] = zFrameRect(look, pose, dir, f);
+          const r = painter(ctx, x, y, FW, dir === 2);
+          shadowAt(ctx, x + 16, y + 45, 9, 3);
+          lurch(r, L, dir === 2 ? 3 : dir, f, look * 7 + dir, pose === 'bite' ? 1 + f : 0);
+        }
+    for (let o = 0; o < 4; o++) {
+      const [x, y] = zLieRect(look, o);
+      // kałuża pod trupem
+      ctx.fillStyle = 'rgba(52,10,8,0.5)';
+      ctx.beginPath();
+      ctx.ellipse(x + 24, y + 25, 12, 6, (o & 1) * (Math.PI / 2), 0, Math.PI * 2);
+      ctx.fill();
+      lie(ctx, x, y, L, 'floor', o);
+    }
+  }
+  return c;
+}
+
 /** atlas: wiersz = wygląd; kolumny: pozy (kierunek × klatki), potem leżenie (w łóżku, na podłodze) × 4 */
 export function makePeopleAtlas(): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -643,6 +838,8 @@ export function makePeopleAtlas(): HTMLCanvasElement {
           else if (pose === 'crouch') crouch(r, L, d, f);
           else if (pose === 'cook') cook(r, L, d, f);
           else if (pose === 'sit') sit(r, L, d);
+          else if (pose === 'swing') swing(r, L, d, f);
+          else if (pose === 'aim') aim(r, L, d, f);
           else guard(r, L, d, f);
         }
     }

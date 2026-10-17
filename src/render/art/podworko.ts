@@ -28,7 +28,7 @@ export const FENCE_H = 24;
 export const FENCE_Y = 28;
 export const FENCE_X = 16;
 
-export type FenceState = 'cala' | 'dziura' | 'lata';
+export type FenceState = 'cala' | 'dziura' | 'lata' | 'wzm';
 export type FireStyle = 'krag' | 'beczka';
 export type Pile = 'gruz' | 'deski' | 'zlom';
 
@@ -91,7 +91,7 @@ function fence(mask: number, state: FenceState, postIn: boolean | undefined, see
   const s = !!(mask & NB.S);
   const w = !!(mask & NB.W);
   const straight = (e && w && !n && !s) || (n && s && !e && !w);
-  const holey = state !== 'cala';
+  const holey = state === 'dziura' || state === 'lata';
   const post = postIn ?? (!straight && !holey);
   const horiz = e || w;
   // dziura: owal od ziemi do dwóch trzecich wysokości, przy węźle kafelka
@@ -145,6 +145,17 @@ function fence(mask: number, state: FenceState, postIn: boolean | undefined, see
       return HOLE;
     };
     b.push(box(hx - 10, FENCE_Y + 1, 0, hx + 10, FENCE_Y + 2, Math.round(H * 0.72), Y.plank, { front: cross }));
+  }
+  // wzmocniona (tryb zombie): deski przybite w poprzek siatki
+  if (state === 'wzm') {
+    const plank: Paint = (u, v) => (h2(u, v, seed + 971) < 0.06 ? Y.nail : v === 0 ? Y.plankHi : Y.plank);
+    if (horiz)
+      for (const z of [Math.round(H * 0.22), Math.round(H * 0.58)])
+        b.push(box(w ? 0 : FENCE_X, FENCE_Y + 1, z, e ? PX : FENCE_X, FENCE_Y + 2, z + 4, Y.plank, { front: plank }));
+    else {
+      const z = Math.round(H * 0.35);
+      b.push(box(FENCE_X - 2, 1, z, FENCE_X + 2, PX - 1, z + 4, Y.plank, { top: plank, front: plankSide(seed) }));
+    }
   }
   // dziura: trochę zerwanej siatki leży na ziemi
   if (state === 'dziura' && horiz)

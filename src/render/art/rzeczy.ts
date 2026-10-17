@@ -124,7 +124,8 @@ export type ThingSpec =
   | { kind: 'fotel'; rot: Rot; seed?: number }
   | { kind: 'lampa'; lit?: boolean; seed?: number }
   | { kind: 'posilek'; size: 0 | 1 | 2 | 3; table?: boolean; seed?: number }
-  | { kind: 'wrak'; model: WreckModel; rot: Rot; seed?: number };
+  | { kind: 'wrak'; model: WreckModel; rot: Rot; seed?: number }
+  | { kind: 'krew'; seed?: number };
 
 /** podstawa rzeczy w kafelkach (w × h na mapie) */
 export function footprint(spec: ThingSpec): { w: number; h: number } {
@@ -149,6 +150,7 @@ export function footprint(spec: ThingSpec): { w: number; h: number } {
     case 'budka':
     case 'fotel':
     case 'lampa':
+    case 'krew':
       return { w: 1, h: 1 };
     default: {
       const [a, b] = BASE[spec.kind];
@@ -1081,8 +1083,28 @@ export function deadTreeSprite(t: Tree): Sprite {
 // ---------------------------------------------------------------- wejście
 
 /** sprite rzeczy; te same argumenty dają te same piksele */
+/** plama krwi na ziemi: kilka kropli wokół środka kafelka, półprzezroczysta, ciemnieje do brzegu */
+function krew(seed: number): Sprite {
+  const px = new Uint32Array(PX * PX);
+  const blob = (cx: number, cy: number, r: number) => {
+    for (let y = Math.floor(cy - r); y <= cy + r; y++)
+      for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+        if (x < 0 || y < 0 || x >= PX || y >= PX) continue;
+        const d = Math.hypot(x - cx, (y - cy) * 1.3) / r;
+        if (d > 1 + 0.25 * (h2(x, y, seed + 990) - 0.5)) continue;
+        const c = d > 0.75 ? 0x3e0c0a : h2(x, y, seed + 991) < 0.15 ? 0x6e1a14 : 0x581210;
+        // półprzezroczysta (alfa 0xb0), kolejność bajtów jak w rgba()
+        px[y * PX + x] = ((0xb0 << 24) | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff)) >>> 0;
+      }
+  };
+  blob(16, 18, 6 + 3 * h2(seed, 1, 992));
+  for (let k = 0; k < 5; k++) blob(6 + 20 * h2(seed, k, 993), 8 + 18 * h2(seed, k, 994), 1 + 2 * h2(seed, k, 995));
+  return { w: PX, h: PX, ax: PX / 2, ay: PX, px };
+}
+
 export function thingSprite(spec: ThingSpec): Sprite {
   const seed = (spec.seed ?? 0) | 0;
+  if (spec.kind === 'krew') return krew(seed);
   if (spec.kind === 'drewno') return drewno(spec.size, seed);
   if (spec.kind === 'jedzenie') return jedzenie(spec.size, seed);
   if (spec.kind === 'pien') {

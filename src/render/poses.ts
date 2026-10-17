@@ -5,7 +5,10 @@
    Dokładanie do kozy trwa w symulacji jeden tick, więc widok pamięta je chwilę (FeedWatch).
    Czyste funkcje bez PixiJS. */
 
-import { FRAMES, type Lie, lieHead, type Pose } from './art/people.ts';
+import { type WeaponId, weaponOf } from '../sim/bron.ts';
+import { BITE_CD } from '../sim/zombie.ts';
+import { type ArmPose, thrusts } from './art/bron.ts';
+import { FRAMES, type Lie, lieHead, type Pose, type ZPose } from './art/people.ts';
 import type { ThingLike } from './section.ts';
 
 /** to, czego poza potrzebuje z pionka (Pawn z symulacji pasuje bez zmian) */
@@ -21,6 +24,9 @@ export interface PawnLike {
   path: { length: number };
   carry: number;
   job: { t: string; phase: number; target: number } | null;
+  /** broń w rękach i tick, od którego znowu uderzy (z niego: kiedy był ostatni cios) */
+  weapon?: WeaponId | null;
+  cd?: number;
 }
 
 export type ThingWithId = ThingLike & { id?: number };
@@ -33,6 +39,10 @@ export interface PoseView {
   lie?: { kind: Lie; o: number; x: number; y: number };
   /** kolejność rysowania, gdy inna niż y pionka (po łóżku, przed albo po krześle) */
   z?: number;
+  /** nakładka broni: trzymanie, cios, celowanie (klatka jak frame); brak: broni nie widać */
+  arm?: ArmPose;
+  /** szwendacz: klatka z atlasu szwendaczy (chód albo ugryzienie) */
+  zpose?: ZPose;
 }
 
 const TILE = 32;
@@ -71,6 +81,23 @@ export function poseOf(p: PawnLike, t: number, things: readonly ThingWithId[], f
   // pionki nie pracują w takt
   const tt = t + (p.id % 7) * 0.13;
   const j = p.job;
+  const tick = t * 20;
+  if (p.kind === 'zombie') {
+    // tuż po ugryzieniu rzut; stojąc (przy siatce) kołysze się, w drodze chwiejny chód
+    const since = BITE_CD - ((p.cd ?? 0) - tick);
+    if (!moving && j?.phase === 3 && since >= 0 && since < 12)
+      return { pose: 'walk', dir, frame: since < 5 ? 0 : 1, zpose: 'bite' };
+    return { pose: 'walk', dir, frame: moving ? step : Math.floor(tt * 1.6) % FRAMES, zpose: 'lurch' };
+  }
+  // walka: cios albo strzał; warta pokazuje go chwilę po ciosie, potem wraca do pozy z lampą
+  const w = weaponOf(p.weapon);
+  const since = w.cd - ((p.cd ?? Number.NEGATIVE_INFINITY) - tick);
+  const struck = since >= 0 && since < 12;
+  if (!moving && j?.phase === 1 && (j.t === 'fight' || (j.t === 'guard' && struck))) {
+    if (w.ammo || thrusts(p.weapon)) return { pose: 'aim', dir, frame: since >= 0 && since < 4 ? 1 : 0, arm: 'aim' };
+    const frame = since >= 0 && since < 4 ? 1 : since >= 0 && since < 10 ? 2 : 0;
+    return { pose: 'swing', dir, frame, arm: 'swing' };
+  }
   if (!moving && feeding) return { pose: 'crouch', dir, frame: 1 + (Math.floor(tt * 2.5) % 2) };
   if (!moving && j && j.phase === 1)
     switch (j.t) {
@@ -82,7 +109,7 @@ export function poseOf(p: PawnLike, t: number, things: readonly ThingWithId[], f
       case 'cook':
         return { pose: 'cook', dir, frame: Math.floor(tt * 2) % 2 };
       case 'guard': {
-        if (j.target !== KOZA_POST) return { pose: 'guard', dir, frame: Math.floor(tt) % 2 };
+        if (j.target !== KOZA_POST) return { pose: 'guard', dir, frame: Math.floor(tt) % 2, arm: 'hold' };
         // czuwanie przy kozie: na krześle siedzi, bez krzesła klęczy przy ogniu i co jakiś czas wstaje
         const chair = things.find((c) => c.kind === 'krzeslo' && covers(c, p.x, p.y));
         if (chair) return { pose: 'sit', dir, frame: 0, z: chair.y + chair.h + (dir === 1 ? -0.01 : 0.01) };
@@ -114,7 +141,7 @@ export function poseOf(p: PawnLike, t: number, things: readonly ThingWithId[], f
       }
     }
   if (p.carry > 0) return { pose: 'carry', dir, frame: step };
-  return { pose: 'walk', dir, frame: step };
+  return { pose: 'walk', dir, frame: step, arm: 'hold' };
 }
 
 /** jak długo widać dokładanie do kozy po wrzuceniu drewna: 2 s gry (20 ticków na sekundę) */

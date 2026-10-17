@@ -15,8 +15,23 @@ import { IN, type ThingLike } from './section.ts';
 import type { FenceLike } from './yard.ts';
 
 /** to, czego rysowanie potrzebuje z symulacji (Sim pasuje bez zmian) */
+/** stan siatki z symulacji, którego potrzebuje rysowanie (FenceState z src/sim/perimeter.ts pasuje) */
+export interface FenceStateLike {
+  hp: readonly number[];
+  holes: readonly { tiles: readonly number[]; patch: number }[];
+  reinforced?: boolean;
+}
+
 export interface GameLike {
-  st: { things: readonly ThingLike[]; felled: readonly number[]; tick: number; pawns?: readonly PawnLike[] };
+  st: {
+    things: readonly ThingLike[];
+    felled: readonly number[];
+    tick: number;
+    pawns?: readonly PawnLike[];
+    /** efekty walki z ostatnich 2 sekund (błysk strzału) */
+    fx?: readonly { t: string; x: number; y: number; tick: number }[];
+    fence?: FenceStateLike | null;
+  };
   w: World;
   /** światło pomieszczeń od ognia: 1 w pomieszczeniu z palącą się kozą, 0,5 przez drzwi */
   light: readonly number[];
@@ -48,6 +63,7 @@ export const GAME_KINDS: ReadonlySet<string> = new Set([
   'deski',
   'zlom',
   'wrak',
+  'krew',
 ]);
 
 /** sterty materiału: ze świata (World.props), dopóki symulacja nie trzyma ich u siebie jako rzeczy */
@@ -77,6 +93,8 @@ const FIRE = 0xff8a30;
 const LAMP = 0xffb060;
 /** ciepłe światło ognia przez szybę */
 const PANE = 0xffa850;
+/** błysk wystrzału */
+const MUZZLE = 0xffe0a0;
 
 /** okno siedziby: pomieszczenie za nim i punkt na ziemi przed nim (metry), tam pada światło */
 export interface WindowSpot {
@@ -132,6 +150,10 @@ export function gameLights(g: Pick<GameLike, 'st' | 'light'>, windows: readonly 
   for (const p of g.st.pawns ?? [])
     if (p.job?.t === 'guard' && p.job.phase === 1 && p.job.target !== KOZA_POST)
       out.push({ x: p.x + 0.25, y: p.y - 0.1, r: GUARD_LAMP_R, color: LAMP, strength: 0.75, flicker: 0.1 });
+  // błysk wystrzału przez 3 kroki
+  for (const f of g.st.fx ?? [])
+    if (f.t === 'strzal' && g.st.tick - f.tick <= 3)
+      out.push({ x: f.x, y: f.y - 0.3, r: 4, color: MUZZLE, strength: 1.3, flicker: 0 });
   for (const s of windows) {
     const lv = g.light[s.room] ?? 0;
     if (lv > 0) out.push({ x: s.x, y: s.y, r: 2.5, color: PANE, strength: 0.55 * Math.min(1, lv), flicker: 0.12 });
@@ -139,15 +161,20 @@ export function gameLights(g: Pick<GameLike, 'st' | 'light'>, windows: readonly 
   return out;
 }
 
+/** wzmocniony kafelek traci deski poniżej takiej wytrzymałości */
+const BOARDS_HP = 50;
+
 /**
- * Kody stanu siatki z blocked symulacji: 0 cała, 1 dziura, 2 łata (dziura ze startu zablokowana),
+ * Kody stanu siatki z blocked symulacji: 0 cała, 1 dziura, 2 łata (dziura ze startu albo po naporze
+ * zablokowana), 3 wzmocniona deskami (tryb zombie, póki kafelek ma co najmniej 50 wytrzymałości),
  * a na końcu brama: 1 otwarta, 0 zamknięta. Do porównania między klatkami i do fenceThings.
  */
-export function fenceCodes(f: FenceLike, blocked: Uint8Array, size: number): Uint8Array {
+export function fenceCodes(f: FenceLike, blocked: Uint8Array, size: number, fs?: FenceStateLike | null): Uint8Array {
   const holes = new Set(f.hole);
+  for (const h of fs?.holes ?? []) if (h.patch > 0) for (const t of h.tiles) holes.add(t);
   const out = new Uint8Array(f.tiles.length + 1);
   f.tiles.forEach((i, k) => {
-    out[k] = blocked[i] === 0 ? 1 : holes.has(i) ? 2 : 0;
+    out[k] = blocked[i] === 0 ? 1 : holes.has(i) ? 2 : fs?.reinforced && (fs.hp[k] ?? 0) >= BOARDS_HP ? 3 : 0;
   });
   let open = 1;
   for (let dy = 0; dy < f.gate.h; dy++)
@@ -156,7 +183,7 @@ export function fenceCodes(f: FenceLike, blocked: Uint8Array, size: number): Uin
   return out;
 }
 
-const STATE: readonly FenceState[] = ['cala', 'dziura', 'lata'];
+const STATE: readonly FenceState[] = ['cala', 'dziura', 'lata', 'wzm'];
 
 /** stan kafelka siatki z kodów fenceCodes (dla fenceThings) */
 export function fenceStateFn(f: FenceLike, codes: Uint8Array): (tile: number) => FenceState {
