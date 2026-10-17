@@ -92,6 +92,28 @@ export function celWieku(m: Marginesy, g: TabeleGminy | null, k: TabeleKraju, mi
   return { udzial, grupy };
 }
 
+/** Rozkład wieku przechylony mnożnikami grup 10-letnich (`czynniki[grupa]`, 9 liczb, jak w sklonnosci.ts) i znowu
+    sprowadzony do sumy 1. Mnożniki zerowe albo ujemne dają rozkład bez zmian. */
+export function przechylCel(cel: CelWieku, czynniki: readonly number[]): CelWieku {
+  const udzial: [Float64Array, Float64Array] = [new Float64Array(WIEKI), new Float64Array(WIEKI)];
+  let razem = 0;
+  for (let p = 0; p < 2; p++) {
+    for (let w = 0; w <= MAX_WIEK; w++) {
+      udzial[p][w] = cel.udzial[p][w] * Math.max(0, czynniki[grupaWieku(w)] ?? 1);
+      razem += udzial[p][w];
+    }
+  }
+  if (!(razem > 0)) return cel;
+  const grupy: [Float64Array, Float64Array] = [new Float64Array(LICZBA_GRUP), new Float64Array(LICZBA_GRUP)];
+  for (let p = 0; p < 2; p++) {
+    for (let w = 0; w <= MAX_WIEK; w++) {
+      udzial[p][w] /= razem;
+      grupy[p][grupaWieku(w)] += udzial[p][w];
+    }
+  }
+  return { udzial, grupy };
+}
+
 // ---------------------------------------------------------------- pula wieku
 
 /** Do kwot grup dodajemy tyle osób „na zapas”, rozłożonych jak rejon. W małym budynku zapas przeważa i losowanie
@@ -175,6 +197,8 @@ export interface Szkic {
   obok?: number;
   /** Dziecko rodziców, którzy nie muszą mieć 60+, więc może być małoletnie (`oznaczMaloletnich`). */
   dziecko?: boolean;
+  /** Tylko u głowy gospodarstwa z 60+ i co najmniej 3 osobami: czy wylosowało trzy pokolenia (do kalibracji). */
+  trzy?: boolean;
 }
 
 /** Wagi rodzin rejonu: pary bez dzieci i z dziećmi (małżeństwa i związki razem), samotne matki i ojcowie, liczba
@@ -293,10 +317,11 @@ const wagiTypuRodziny = (wr: WagiRodzin): number[] => {
 
 /** Gospodarstwo jako lista szkiców osób, pierwsza to głowa (najstarsze pokolenie). `f60`: w gospodarstwie jest osoba
     60+ (głowa albo dziadek ma co najmniej 60 lat), bez niej wszyscy mają najwyżej 59. Nierodzinne: głowa 20+
-    i współlokatorzy ±15 lat. Jednorodzinne: para albo samotny rodzic z dziećmi, reszta to osoby spoza rodziny, a gdy
-    w gospodarstwie 60+ jest na nie miejsce, w połowie przypadków pierwsza z nich to dziadek albo babcia (matka albo
-    ojciec głowy rodziny). Dwu- i trzyrodzinne: starsze pokolenie (para albo samotny rodzic z niezamężnym dzieckiem)
-    i jedna albo dwie rodziny ich dzieci z wnukami, czyli trzy pokolenia. */
+    i współlokatorzy ±15 lat. Jednorodzinne: para albo samotny rodzic z dziećmi, reszta to osoby spoza rodziny.
+    Dwu- i trzyrodzinne: starsze pokolenie (para albo samotny rodzic z niezamężnym dzieckiem) i jedna albo dwie rodziny
+    ich dzieci z wnukami. Gospodarstwo z osobą 60+ i co najmniej trzema osobami jest z szansą `pTrzy` (na 10 000,
+    kalibruje spis.ts) trzypokoleniowe jak u GUS: ma kogoś w wieku 0-29, 30-59 i 60+; w jednorodzinnym pierwsza osoba
+    spoza rodziny to wtedy dziadek albo babcia (rodzic głowy rodziny). */
 export function szkicGospodarstwa(
   r: Rng,
   sklad: string,
@@ -304,21 +329,20 @@ export function szkicGospodarstwa(
   n: number,
   wr: WagiRodzin,
   jedno: OpcjeJedno,
+  pTrzy: number,
 ): Szkic[] {
   const lista: Szkic[] = [];
   const gora = f60 ? MAX_WIEK : 59;
   const dodaj = (s: Szkic): number => lista.push(s) - 1;
   const plecRodzica = (typ: number): number => (typ === 2 ? K : typ === 3 ? M : Z_PULI);
+  const trzy = f60 && n >= 3 && szansa(r, pTrzy);
 
   if (sklad === 'nier1' || sklad === 'nier+') {
     const glowa = dodaj({ plec: Z_PULI, od: f60 ? 60 : 20, do: gora });
     for (let i = 1; i < n; i++) dodaj({ plec: Z_PULI, od: 18, do: gora, obok: glowa });
-    return lista;
-  }
-
-  if (sklad === 'jedno') {
+  } else if (sklad === 'jedno') {
     const o = jedno.opcje[Math.max(0, wazony(r, jedno.wagi))];
-    const dziadek = f60 && o.inni > 0 && szansa(r, 5000);
+    const dziadek = trzy && o.inni > 0;
     const rodzice: number[] = [];
     if (dziadek) rodzice.push(dodaj({ plec: Z_PULI, od: 60, do: MAX_WIEK }));
     const glowaRodziny = dodaj({
@@ -332,35 +356,96 @@ export function szkicGospodarstwa(
     const moze = !(f60 && !dziadek);
     for (let i = 0; i < o.dzieci; i++) dodaj({ plec: Z_PULI, od: 0, do: gora, rodzice: dzieciRodzice, dziecko: moze });
     for (let i = dziadek ? 1 : 0; i < o.inni; i++) dodaj({ plec: Z_PULI, od: 18, do: gora, obok: glowaRodziny });
-    return lista;
+  } else {
+    // dwu- i trzyrodzinne: starsze pokolenie, potem rodziny dzieci
+    const typy = wagiTypuRodziny(wr);
+    const rodzinStarszych = wazony(r, typy);
+    const najstarszy = dodaj({
+      plec: rodzinStarszych === 0 ? Z_PULI : rodzinStarszych === 1 ? K : M,
+      od: f60 ? 60 : 36,
+      do: gora,
+    });
+    const starsi = [najstarszy];
+    if (rodzinStarszych === 0) starsi.push(dodaj({ plec: Z_PULI, od: 36, do: gora, partner: najstarszy }));
+    else dodaj({ plec: Z_PULI, od: 0, do: gora, rodzice: starsi, dziecko: !f60 });
+    const mlodsze = sklad === 'dwu' ? 1 : 2;
+    const rodziceWnukow: number[][] = [];
+    for (let j = 0; j < mlodsze; j++) {
+      const typ = wazony(r, typy);
+      const glowa = dodaj({ plec: typ === 0 ? Z_PULI : typ === 1 ? K : M, od: 18, do: gora, rodzice: starsi });
+      const rodzina = [glowa];
+      if (typ === 0) rodzina.push(dodaj({ plec: Z_PULI, od: 18, do: gora, partner: glowa }));
+      // samotny rodzic ma co najmniej jedno dziecko
+      else dodaj({ plec: Z_PULI, od: 0, do: gora, rodzice: rodzina, dziecko: true });
+      rodziceWnukow.push(rodzina);
+    }
+    const wolne = n - lista.length;
+    for (let i = 0; i < wolne; i++) {
+      dodaj({ plec: Z_PULI, od: 0, do: gora, rodzice: rodziceWnukow[i % mlodsze], dziecko: true });
+    }
   }
-
-  // dwu- i trzyrodzinne: starsze pokolenie, potem rodziny dzieci
-  const typy = wagiTypuRodziny(wr);
-  const rodzinStarszych = wazony(r, typy);
-  const najstarszy = dodaj({
-    plec: rodzinStarszych === 0 ? Z_PULI : rodzinStarszych === 1 ? K : M,
-    od: f60 ? 60 : 36,
-    do: gora,
-  });
-  const starsi = [najstarszy];
-  if (rodzinStarszych === 0) starsi.push(dodaj({ plec: Z_PULI, od: 36, do: gora, partner: najstarszy }));
-  else dodaj({ plec: Z_PULI, od: 0, do: gora, rodzice: starsi, dziecko: !f60 });
-  const mlodsze = sklad === 'dwu' ? 1 : 2;
-  const rodziceWnukow: number[][] = [];
-  for (let j = 0; j < mlodsze; j++) {
-    const typ = wazony(r, typy);
-    const glowa = dodaj({ plec: typ === 0 ? Z_PULI : typ === 1 ? K : M, od: 18, do: gora, rodzice: starsi });
-    const rodzina = [glowa];
-    if (typ === 0) rodzina.push(dodaj({ plec: Z_PULI, od: 18, do: gora, partner: glowa }));
-    else dodaj({ plec: Z_PULI, od: 0, do: gora, rodzice: rodzina, dziecko: true }); // samotny rodzic: co najmniej jedno
-    rodziceWnukow.push(rodzina);
-  }
-  const wolne = n - lista.length;
-  for (let i = 0; i < wolne; i++) {
-    dodaj({ plec: Z_PULI, od: 0, do: gora, rodzice: rodziceWnukow[i % mlodsze], dziecko: true });
-  }
+  if (f60 && n >= 3) lista[0].trzy = trzy;
+  if (trzy) trzyPokolenia(lista);
   return lista;
+}
+
+/** Zawęża przedział szkicu do [od, doW]; `false` (bez zmiany), gdy wyszedłby pusty. */
+function zawez(s: Szkic, od: number, doW: number): boolean {
+  const nOd = Math.max(s.od, od);
+  const nDo = Math.min(s.do, doW);
+  if (nOd > nDo) return false;
+  s.od = nOd;
+  s.do = nDo;
+  return true;
+}
+
+/** Przenosi przedziały w górę drzewa: rodzic jest starszy od dziecka o 18-42 lata (ojciec do 50), partner różni się
+    o najwyżej 5 lat. `false`, gdy któryś przedział wyszedłby pusty (wtedy część zawężeń już zaszła). */
+function wGore(lista: Szkic[]): boolean {
+  let ok = true;
+  for (let i = lista.length - 1; i >= 0; i--) {
+    const s = lista[i];
+    for (const p of s.rodzice ?? []) ok = zawez(lista[p], s.od + 18, s.do + (lista[p].plec === M ? 50 : 42)) && ok;
+    if (s.partner !== undefined) ok = zawez(lista[s.partner], s.od - 5, s.do + 5) && ok;
+  }
+  return ok;
+}
+
+/** Ustawia gospodarstwo z głową 60+ jako trzypokoleniowe: najmłodsze dziecko (a bez dzieci ostatnia osoba) dostaje
+    wiek 0-29, jego rodzic spoza głowy (albo partner, albo inna osoba) 30-59; obie osoby tracą wiązanie „±15 lat od
+    głowy”. Gdy krewni na to nie pozwalają, szkic zostaje bez zmian. */
+function trzyPokolenia(lista: Szkic[]): void {
+  if (lista.length < 3 || lista[0].od < 60) return;
+  let mlody = lista.length - 1;
+  for (let i = lista.length - 1; i >= 1; i--) {
+    if (lista[i].rodzice) {
+      mlody = i;
+      break;
+    }
+  }
+  let sredni = (lista[mlody].rodzice ?? []).find((p) => p !== 0) ?? -1;
+  if (sredni < 0 && lista[mlody].partner !== undefined && lista[mlody].partner !== 0) sredni = lista[mlody].partner!;
+  if (sredni < 0) sredni = mlody === 1 ? 2 : 1;
+  const kopia = lista.map((s) => ({ ...s }));
+  delete lista[mlody].obok;
+  delete lista[sredni].obok;
+  if (!(zawez(lista[mlody], 0, 29) && zawez(lista[sredni], 30, 59) && wGore(lista))) {
+    for (let i = 0; i < lista.length; i++) lista[i] = kopia[i];
+  }
+}
+
+/** Gospodarstwo trzypokoleniowe jak u GUS: ktoś w wieku 0-29, ktoś 30-59 i ktoś 60+ (wiek `2020 - rocznik`). */
+export function czyTrzyPokolenia(osoby: readonly Osoba[]): boolean {
+  let mlodzi = false;
+  let srodek = false;
+  let starsi = false;
+  for (const o of osoby) {
+    const w = ROK_WIEKU - o.rocznik;
+    if (w <= 29) mlodzi = true;
+    else if (w <= 59) srodek = true;
+    else starsi = true;
+  }
+  return mlodzi && srodek && starsi;
 }
 
 /** Przedział wieku osoby ze szkicu, gdy krewni wcześniej na liście mają już wiek `wiek` i płeć `plec`. */
@@ -401,25 +486,13 @@ export function mozliweMaloletnie(budynek: readonly Szkic[][]): number {
     o 18-42 lata (ojciec do 50), partner różni się o najwyżej 5 lat. Zawężenie, które dałoby pusty przedział,
     pomijamy. */
 export function oznaczMaloletnich(r: Rng, budynek: readonly Szkic[][], p10k: number): void {
-  const zawez = (s: Szkic, od: number, doW: number): void => {
-    const nOd = Math.max(s.od, od);
-    const nDo = Math.min(s.do, doW);
-    if (nOd <= nDo) {
-      s.od = nOd;
-      s.do = nDo;
-    }
-  };
   for (const lista of budynek) {
     for (const s of lista) {
       if (!s.dziecko) continue;
       if (szansa(r, p10k)) zawez(s, 0, 17);
       else zawez(s, 18, MAX_WIEK);
     }
-    for (let i = lista.length - 1; i >= 0; i--) {
-      const s = lista[i];
-      for (const p of s.rodzice ?? []) zawez(lista[p], s.od + 18, s.do + (lista[p].plec === M ? 50 : 42));
-      if (s.partner !== undefined) zawez(lista[s.partner], s.od - 5, s.do + 5);
-    }
+    wGore(lista);
   }
 }
 

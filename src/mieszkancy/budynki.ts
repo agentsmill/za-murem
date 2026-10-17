@@ -32,7 +32,7 @@ const EPOKI: readonly Epoka[] = ['przedwojenna', 'powojenna', 'plyta', 'transfor
     1918-1944 (609 766 + 695 121), powojenna = 1945-1970, plyta = 1971-1978 i 1979-1988 (1 315 794 + 1 541 768),
     transformacja = 1989-2002 i 2003-2011 (1 228 348 + 814 837), nowa = 2012-2016 i 2017-2021 z budynkami w budowie
     (431 551 + 459 042 + 11 986), tak jak w P4386. */
-const WAGI_KRAJOWE: Record<Epoka, number> = {
+export const WAGI_KRAJOWE: Record<Epoka, number> = {
   przedwojenna: 1_304_887,
   powojenna: 1_841_703,
   plyta: 2_857_562,

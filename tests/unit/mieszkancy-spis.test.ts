@@ -8,9 +8,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { budynkiZGeo } from '../../src/mieszkancy/budynki.ts';
 import { rozkladGospodarstw } from '../../src/mieszkancy/ipf.ts';
+import { czyTrzyPokolenia } from '../../src/mieszkancy/osoby.ts';
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
+import { SKLONNOSCI, sklonnosc } from '../../src/mieszkancy/sklonnosci.ts';
 import { obsadzBudynek, obsadzRejon } from '../../src/mieszkancy/spis.ts';
-import type { GrupaWieku, Marginesy, TabeleGminy, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
+import type { Epoka, GrupaWieku, Marginesy, TabeleGminy, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
 import type { Budynek, Osoba, WynikBudynku } from '../../src/mieszkancy/typy.ts';
 import type { Geo } from '../../src/world/geo.ts';
 
@@ -406,6 +408,141 @@ describe('rodziny i przydział', () => {
     expect(zPrzydzialem).toBeGreaterThan(10);
     const powojenny = obsadz({ ...blok, epoka: 'powojenna', startDate: undefined, klucz: 'test-pow' }, gdansk);
     for (const d of powojenny.dziennik) expect(d.rok).toBe(1958);
+  });
+});
+
+// ---------------------------------------------------------------- skłonności budynków i trzy pokolenia (R26)
+
+describe('skłonności typu i epoki budynku', () => {
+  const EPOKI: Epoka[] = ['przedwojenna', 'powojenna', 'plyta', 'transformacja', 'nowa'];
+  /** Sztuczny budynek w rejonie, z gotową epoką i liczbą mieszkań. */
+  const sztuczny = (rejon: string, typ: Budynek['typ'], epoka: Epoka, mieszkania: number, klucz: string): Budynek => ({
+    klucz,
+    lat: 0,
+    lon: 0,
+    rejon,
+    typ,
+    kondygnacje: typ === 'dom' ? 2 : 5,
+    pole: 100,
+    szerokosc: 10,
+    dlugosc: 10,
+    klatki: 1,
+    epoka,
+    mieszkania,
+  });
+  /** Co najmniej 3 000 gospodarstw jednego rodzaju w rejonie 398600: 3 100 domów po jednym mieszkaniu albo 10 bloków
+      po 310 mieszkań. */
+  const rodzaj = (typ: Budynek['typ'], epoka: Epoka): WynikBudynku[] =>
+    typ === 'dom'
+      ? Array.from({ length: 3100 }, (_, i) => obsadz(sztuczny('398600', 'dom', epoka, 1, `d-${epoka}-${i}`), zielonki))
+      : Array.from({ length: 10 }, (_, i) =>
+          obsadz(sztuczny('398600', 'blok', epoka, 310, `b-${epoka}-${i}`), zielonki),
+        );
+  const udzial = (wyniki: WynikBudynku[], czy: (w: number) => boolean): number => {
+    const osoby = wyniki.flatMap((w) => w.osoby);
+    return osoby.filter((o) => czy(wiek(o))).length / osoby.length;
+  };
+  const glowy2539 = (wyniki: WynikBudynku[]): number => {
+    let ile = 0;
+    let razem = 0;
+    for (const w of wyniki) {
+      const wg = new Map(w.osoby.map((o) => [o.id, o]));
+      for (const g of w.gospodarstwa) {
+        const x = wiek(wg.get(g.czlonkowie[0])!);
+        razem++;
+        if (x >= 25 && x <= 39) ile++;
+      }
+    }
+    return ile / razem;
+  };
+  const domPrzedwojenny = rodzaj('dom', 'przedwojenna');
+  const domNowy = rodzaj('dom', 'nowa');
+  const blokZPlyty = rodzaj('blok', 'plyta');
+  const blokNowy = rodzaj('blok', 'nowa');
+
+  it('każdy rodzaj ma co najmniej 3 000 gospodarstw', () => {
+    for (const w of [domPrzedwojenny, domNowy, blokZPlyty, blokNowy]) {
+      expect(w.reduce((a, x) => a + x.gospodarstwa.length, 0)).toBeGreaterThanOrEqual(3000);
+    }
+  });
+
+  it('398600: osób 60+ w starych domach o co najmniej 10 pp więcej niż w nowych', () => {
+    expect(udzial(domPrzedwojenny, (x) => x >= 60) - udzial(domNowy, (x) => x >= 60)).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it('398600: osób 70+ w blokach z płyty o co najmniej 8 pp więcej niż w blokach po 2011', () => {
+    expect(udzial(blokZPlyty, (x) => x >= 70) - udzial(blokNowy, (x) => x >= 70)).toBeGreaterThanOrEqual(0.08);
+  });
+
+  it('398600: głów gospodarstw w wieku 25-39 w blokach po 2011 o co najmniej 10 pp więcej niż w płycie', () => {
+    expect(glowy2539(blokNowy) - glowy2539(blokZPlyty)).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it('182350: bloki wszystkich epok w proporcjach mieszkań Gdańska trzymają 60+ w ±3 pp i 80+ w ±2 pp rejonu', () => {
+    const mieszkan = EPOKI.reduce((a, e) => a + gdansk.epoki[e].mieszkania, 0);
+    const wyniki: WynikBudynku[] = [];
+    for (const e of EPOKI) {
+      const bloki = Math.round((3000 * gdansk.epoki[e].mieszkania) / mieszkan / 100);
+      for (let i = 0; i < bloki; i++) wyniki.push(obsadz(sztuczny('182350', 'blok', e, 100, `a-${e}-${i}`), gdansk));
+    }
+    const ludnosc = suma(przymorze.wiek.M) + suma(przymorze.wiek.K);
+    const cel = (grupy: GrupaWieku[]): number =>
+      grupy.reduce((a, g) => a + przymorze.wiek.M[g] + przymorze.wiek.K[g], 0) / ludnosc;
+    expect(Math.abs(udzial(wyniki, (x) => x >= 60) - cel(['60-69', '70-79', '80+']))).toBeLessThanOrEqual(0.03);
+    expect(Math.abs(udzial(wyniki, (x) => x >= 80) - cel(['80+']))).toBeLessThanOrEqual(0.02);
+  });
+
+  it('skłonności znormowane po epokach gminy: budynki wszystkich epok razem oddają profil wieku gminy', () => {
+    const grupy = GRUPY.map((g) => gdansk.gmina.wiek.M[g] + gdansk.gmina.wiek.K[g]);
+    const c = grupy.map((v) => v / grupy.reduce((a, x) => a + x, 0));
+    const osoby = EPOKI.map((e) => gdansk.epoki[e].osoby);
+    const w = osoby.map((v) => v / osoby.reduce((a, x) => a + x, 0));
+    for (const typ of ['dom', 'blok'] as const) {
+      const razem = c.map(() => 0);
+      EPOKI.forEach((e, ie) => {
+        const t = sklonnosc(gdansk, kraj, typ, e).wiek;
+        const z = t.reduce((a, x, i) => a + c[i] * x, 0);
+        t.forEach((x, i) => {
+          razem[i] += (w[ie] * c[i] * x) / z;
+        });
+      });
+      for (let i = 0; i < c.length; i++) expect(Math.abs(razem[i] - c[i]), `${typ} ${GRUPY[i]}`).toBeLessThan(1e-9);
+      // kierunek z tabeli zostaje: płyta i stare domy starsze niż nowe budynki
+      expect(sklonnosc(gdansk, kraj, typ, 'nowa').wiek[7]).toBeLessThan(sklonnosc(gdansk, kraj, typ, 'plyta').wiek[7]);
+    }
+    expect(Object.keys(SKLONNOSCI.dom)).toEqual(EPOKI);
+  });
+});
+
+describe('gospodarstwa trzypokoleniowe (osoby 0-29, 30-59 i 60+ razem)', () => {
+  const udzialTrzech = (wyniki: WynikBudynku[]): number => {
+    let ile = 0;
+    let razem = 0;
+    for (const w of wyniki) {
+      const wg = new Map(w.osoby.map((o) => [o.id, o]));
+      for (const g of w.gospodarstwa) {
+        razem++;
+        if (czyTrzyPokolenia(g.czlonkowie.map((id) => wg.get(id)!))) ile++;
+      }
+    }
+    return ile / razem;
+  };
+
+  it('Przymorze (wszystkie budynki dema): w ±3 pp od udziału dla miast z NSP 2021 (9,9%)', () => {
+    expect(Math.abs(udzialTrzech(wynikiPrzymorza) - kraj.trojpokoleniowe.miasta / 10000)).toBeLessThanOrEqual(0.03);
+  });
+
+  it('Zielonki (gmina wiejska, domy): w ±5 pp od udziału dla wsi (24,3%)', () => {
+    expect(zielonki.miejska).toBe(false);
+    expect(Math.abs(udzialTrzech(wynikiZielonek) - kraj.trojpokoleniowe.wies / 10000)).toBeLessThanOrEqual(0.05);
+  });
+
+  it('domy mają więcej trzech pokoleń niż bloki tej samej gminy i epoki', () => {
+    const typu = (typ: Budynek['typ']): WynikBudynku[] =>
+      Array.from({ length: 1500 }, (_, i) =>
+        obsadz({ ...budynkiPrzymorza[0], typ, epoka: 'transformacja', mieszkania: 1, klucz: `t-${typ}-${i}` }, gdansk),
+      );
+    expect(udzialTrzech(typu('dom'))).toBeGreaterThan(udzialTrzech(typu('blok')));
   });
 });
 
