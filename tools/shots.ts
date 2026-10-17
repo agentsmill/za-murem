@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { frameRect, LIE, POSES } from '../src/render/art/people.ts';
+import { frameRect, LIE, LOOKS, POSE_FRAMES, POSES } from '../src/render/art/people.ts';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { decodePng } from './png.ts';
@@ -1247,16 +1247,18 @@ const SHOTS: Shot[] = [
         const zm = window.zm!;
         const view = zm.view as unknown as {
           gameLights: { r: number; inside?: boolean }[];
-          pawnSprites: Map<number, { texture: { frame: { x: number } } }>;
+          pawnSprites: Map<number, { texture: { frame: { x: number; y: number } } }>;
         };
         const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        const f = view.pawnSprites.get(p.id)!.texture.frame;
         return {
           lamps: view.gameLights.filter((l) => l.r === 5).length,
           fire: view.gameLights.filter((l) => l.inside).length,
-          x: view.pawnSprites.get(p.id)!.texture.frame.x,
+          x: f.x,
+          y: f.y,
         };
       });
-      const pose = poseAt(r.x);
+      const pose = poseAt(r.x, r.y);
       console.log(`  czuwa przy kozie: poza ${pose}, latarnie ${r.lamps}, ogień kozy ${r.fire}`);
       if (pose !== 'crouch' && pose !== 'walk') throw new Error(`czuwający w pozie ${pose}`);
       if (r.lamps !== 0) throw new Error('czuwający przy kozie ma latarnię');
@@ -1953,7 +1955,182 @@ const SHOTS: Shot[] = [
       if (diff) throw new Error(`obraz z workerów i z głównego wątku różni się w ${diff} pikselach`);
     },
   },
+  {
+    // pozy prac M2 w mieszkaniu zarządu: przeszukuje na kolanach, naprawia okno młotkiem, niesie deski,
+    // śpi na górnym łóżku piętrowym
+    name: 'm2-pozy',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await m2PoseStage(page, 'dom');
+      await waitIdle(page);
+      await poseCheck(page, ['search', 'hammer', 'planks', 'lie']);
+    },
+  },
+  {
+    // pozy prac M2 na podwórku: grządki na kolanach, zasieki młotkiem, niesie złom, wartownik drzemie
+    name: 'm2-pozy-podworko',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await m2PoseStage(page, 'podworko');
+      await waitIdle(page);
+      await poseCheck(page, ['search', 'hammer', 'scrap', 'doze']);
+    },
+  },
 ];
+
+/**
+ * Zarząd przy pracach M2 (prace ze stanu gry jak w symulacji M2: search, repair, build, guard w fazie 4,
+ * sen na łóżkach piętrowych). dom: w mieszkaniu zarządu, podworko: na podwórku i przy bramie.
+ */
+async function m2PoseStage(page: Page, where: 'dom' | 'podworko') {
+  await page.evaluate((where) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const st = sim.st as typeof sim.st & {
+      damage?: { kind: string; tile: number; apt: number; fixed: boolean; have: object }[];
+      builds?: {
+        id: number;
+        kind: string;
+        x: number;
+        y: number;
+        rot: number;
+        need: object;
+        have: object;
+        work: number;
+        by: number;
+      }[];
+    };
+    const w = sim.w;
+    const size = w.size;
+    const int = w.interior;
+    const core = st.pawns.filter((p) => p.kind === 'core');
+    type Job = NonNullable<(typeof core)[number]['job']>;
+    const job = (t: string, phase: number, target: number, n = 0, what = ''): Job =>
+      ({
+        t,
+        phase,
+        target,
+        tile: -1,
+        from: -1,
+        t0: st.tick,
+        until: st.tick + 99999,
+        order: false,
+        n,
+        what,
+      }) as unknown as Job;
+    const put = (k: number, i: number, dir: number, j: Job | null) => {
+      Object.assign(core[k], {
+        x: (i % size) + 0.5,
+        y: Math.floor(i / size) + 0.5,
+        path: [],
+        pi: 0,
+        dir,
+        job: j,
+        carry: 0,
+        wait: st.tick + 99999,
+      });
+    };
+    const covered = (i: number) =>
+      st.things.some((t) => {
+        const x = i % size;
+        const y = Math.floor(i / size);
+        return x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
+      });
+    const free = (i: number) => !sim.blocked[i] && !covered(i);
+    let id = 995000;
+    if (where === 'dom') {
+      const koza = st.things.find((t) => t.kind === 'koza')!;
+      const home = int.rooms[int.room[koza.y * size + koza.x]].apt;
+      // wolna posadzka (IN.FLOOR = 4) pomieszczenia danego rodzaju w mieszkaniu zarządu
+      const tiles = (kind: string) => {
+        const out: number[] = [];
+        for (let i = 0; i < size * size; i++) {
+          const r = int.room[i];
+          if (r >= 0 && int.rooms[r].apt === home && int.rooms[r].kind === kind && int.cell[i] === 4 && free(i))
+            out.push(i);
+        }
+        return out;
+      };
+      const room = tiles('pokoj');
+      // łóżko piętrowe na dwóch wolnych kafelkach jeden pod drugim, z dala od reszty
+      const bunkAt = room.find((i) => room.includes(i + size)) ?? room[0];
+      const bx = bunkAt % size;
+      const by = Math.floor(bunkAt / size);
+      const bunk = {
+        id: id++,
+        kind: 'lozka_pietrowe',
+        x: bx,
+        y: by,
+        w: 1,
+        h: 2,
+        rot: 0,
+        n: 0,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      };
+      st.things.push(bunk as (typeof st.things)[number]);
+      const left = room.filter((i) => i !== bunkAt && i !== bunkAt + size && Math.abs((i % size) - bx) >= 2);
+      // okno mieszkania zarządu: kafelek posadzki pod nim
+      const win = int.windows.find((wi) => [wi + size, wi - size, wi + 1, wi - 1].some((j) => left.includes(j)));
+      const atWin =
+        win !== undefined ? [win + size, win - size, win + 1, win - 1].find((j) => left.includes(j))! : left[0];
+      if (!st.damage) st.damage = [];
+      const k = st.damage.push({ kind: 'okno', tile: win ?? atWin, apt: home, fixed: false, have: {} }) - 1;
+      const rest = left.filter((i) => i !== atWin);
+      put(0, rest[Math.floor(rest.length / 2)], 0, job('search', 1, int.room[rest[0]]));
+      // twarzą do okna: okno nad, pod, po prawej albo po lewej
+      const toWin = win === atWin - size ? 1 : win === atWin + 1 ? 3 : win === atWin - 1 ? 2 : 0;
+      put(1, atWin, toWin, job('repair', 2, k));
+      put(2, rest[rest.length - 1], 0, job('repair', 1, k, 2, 'deski'));
+      put(3, bunkAt + size, 0, job('sleep', 1, bunk.id));
+      zm.setCam(bx + 0.5, by + 1, 2);
+    } else {
+      const yard = w.fence.yard.filter(free);
+      const at = (f: number) => yard[Math.floor(yard.length * f)];
+      if (!st.builds) st.builds = [];
+      const g = at(0.35);
+      const garden = {
+        id: id++,
+        kind: 'ogrodek',
+        x: g % size,
+        y: Math.floor(g / size),
+        rot: 0,
+        need: {},
+        have: {},
+        work: 30,
+        by: -1,
+      };
+      const wire = w.fence.tiles.find((i) => i !== w.fence.gate.y * size + w.fence.gate.x && !covered(i)) ?? at(0.8);
+      const fence = {
+        id: id++,
+        kind: 'zasieki',
+        x: wire % size,
+        y: Math.floor(wire / size),
+        rot: 0,
+        need: {},
+        have: {},
+        work: 10,
+        by: -1,
+      };
+      st.builds.push(garden, fence);
+      const gx = garden.x;
+      const gy = garden.y;
+      put(0, (gy + 2) * size + gx + 1, 1, job('build', 2, garden.id));
+      const near = yard.filter((i) => Math.abs((i % size) - fence.x) + Math.abs(Math.floor(i / size) - fence.y) === 1);
+      put(1, near[0] ?? at(0.7), 0, job('build', 2, fence.id));
+      put(2, (gy + 2) * size + gx + 3, 3, job('build', 1, garden.id, 2, 'zlom'));
+      const gate = w.fence.gate;
+      put(3, (gate.y + (gate.rot === 0 ? -1 : 1)) * size + gate.x, 0, job('guard', 4, 0));
+      zm.setCam(gx + 1.5, gy + 1.5, 2);
+    }
+  }, where);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
 
 /** kamera na uszkodzoną podłogę (atrapa) w pustym mieszkaniu o danej przyczynie */
 function m2Floor(name: string, why: string): Shot {
@@ -2386,23 +2563,31 @@ async function poseCheck(page: Page, want: string[]) {
   const got = await page.evaluate(() => {
     const zm = window.zm!;
     const sprites = (
-      zm.view as unknown as { pawnSprites: Map<number, { texture: { frame: { x: number; width: number } } }> }
+      zm.view as unknown as {
+        pawnSprites: Map<number, { texture: { frame: { x: number; y: number; width: number } } }>;
+      }
     ).pawnSprites;
     return zm
       .sim!.st.pawns.filter((p) => p.kind === 'core')
       .map((p) => {
         const f = sprites.get(p.id)!.texture.frame;
-        return { x: f.x, w: f.width };
+        return { x: f.x, y: f.y, w: f.width };
       });
   });
-  const names = got.map((f) => (f.w === LIE ? 'lie' : poseAt(f.x)));
+  const names = got.map((f) => (f.w === LIE ? 'lie' : poseAt(f.x, f.y)));
   console.log(`  pozy: ${names.join(', ')}`);
   if (names.join() !== want.join()) throw new Error(`pozy ${names.join()} zamiast ${want.join()}`);
 }
 
-/** poza z kolumny atlasu ludzi */
-function poseAt(x: number): string {
-  for (const pose of [...POSES].reverse()) if (x >= frameRect(0, pose, 0, 0)[0]) return pose;
+/** poza z klatki atlasu ludzi (lewy górny róg klatki) */
+function poseAt(x: number, y: number): string {
+  for (let look = 0; look < LOOKS; look++)
+    for (const pose of POSES)
+      for (let d = 0; d < 4; d++)
+        for (let f = 0; f < POSE_FRAMES[pose]; f++) {
+          const [fx, fy] = frameRect(look, pose, d, f);
+          if (fx === x && fy === y) return pose;
+        }
   return '?';
 }
 

@@ -55,7 +55,7 @@ import {
 } from './game.ts';
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
-import { FeedWatch, type PoseView, poseOf } from './poses.ts';
+import { FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
 import { burning, IN, setWear, specOf, type ThingLike } from './section.ts';
 import { smokeSources } from './smoke.ts';
 import { SmokeLayer } from './smokeLayer.ts';
@@ -338,6 +338,23 @@ export class GameView {
    */
   setPlacement(p: Placement | null): void {
     this.builds.setPlacement(p);
+  }
+
+  /** uszkodzenia, plany i łóżka piętrowe z dwojgiem śpiących do póz prac M2 i snu (co klatkę) */
+  private poseCtx(st: SimState): PoseCtx {
+    let sleepers: Map<number, number> | null = null;
+    for (const p of st.pawns)
+      if (p.job?.t === 'sleep' && p.job.phase === 1 && p.job.target >= 0) {
+        sleepers ??= new Map();
+        sleepers.set(p.job.target, (sleepers.get(p.job.target) ?? 0) + 1);
+      }
+    const bunkFull = new Set<number>();
+    for (const [id, n] of sleepers ?? []) if (n > 1) bunkFull.add(id);
+    return {
+      damage: (st as { damage?: readonly { kind: string }[] }).damage,
+      builds: this.plans,
+      bunkFull,
+    };
   }
 
   /**
@@ -663,10 +680,12 @@ export class GameView {
       (spec) => this.artOf(spec),
       (x, y) => !this.cutOn && this.underRoof(x, y),
     );
-    // pionki: poza z pracy (rąbie, niesie drewno, klęczy przy kozie, gotuje, siedzi, śpi, wartuje)
+    // pionki: poza z pracy (rąbie, niesie drewno albo materiał, klęczy, gotuje, siedzi, śpi, wartuje,
+    // przeszukuje, naprawia, buduje); prace M2 biorą rodzaj uszkodzenia i planu ze stanu gry
     const seen = new Set<number>();
     this.marks.clear();
     const gameT = (st.tick + alpha) / TICKS_PER_SECOND;
+    const ctx = this.poseCtx(st);
     for (const p of st.pawns) {
       // na wyprawie poza mapą: nie rysujemy
       if (p.away) continue;
@@ -680,7 +699,7 @@ export class GameView {
       const pv = this.prev.get(p.id);
       const x = pv ? pv[0] + (p.x - pv[0]) * alpha : p.x;
       const y = pv ? pv[1] + (p.y - pv[1]) * alpha : p.y;
-      const pose = poseOf(p, gameT, st.things, p.kind === 'core' && this.feed.feeding(p, st.tick));
+      const pose = poseOf(p, gameT, st.things, p.kind === 'core' && this.feed.feeding(p, st.tick), ctx);
       sp.texture = this.frameTexture(this.poseTex, this.atlas!, p.look % LOOKS, pose);
       if (pose.lie) {
         const [hx, hy] = lieHead(pose.lie.o);
