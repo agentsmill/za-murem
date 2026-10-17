@@ -215,6 +215,84 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // zmiana na mapie przerysowuje tylko swoje kawałki: 2×2 m trawy przy środku ekranu staje się
+    // ścieżką i znika drzewo najbliżej środka; poza dotkniętymi kawałkami obraz zostaje co do
+    // piksela, z workerami i bez nich
+    name: 'przerysowanie',
+    query: '',
+    run: async (page, base) => {
+      for (const q of ['', '&worker=0']) {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.6${q}`);
+        await waitIdle(page);
+        await page.addStyleTag({ content: '#fps { visibility: hidden !important; }' });
+        const before = decodePng(await page.screenshot());
+        const r = await page.evaluate(() => {
+          const v = window.zm!.view;
+          const sc = v.scene!;
+          const size = sc.w.size;
+          const span = 32 * 32;
+          const cx = v.cam.x / 32;
+          const cy = v.cam.y / 32;
+          let tree = -1;
+          let bd = Number.POSITIVE_INFINITY;
+          sc.w.trees.forEach((t, k) => {
+            const d = Math.hypot(t.x - cx, t.y - cy);
+            if (d < bd && !sc.treeGone[k]) {
+              bd = d;
+              tree = k;
+            }
+          });
+          // trawa (kod 0) w kawałku pod środkiem ekranu, z dala od jego brzegów
+          const x0 = Math.floor(cx / 32) * 32;
+          const y0 = Math.floor(cy / 32) * 32;
+          let tile = -1;
+          for (let y = y0 + 4; y < y0 + 27 && tile < 0; y++)
+            for (let x = x0 + 4; x < x0 + 27 && tile < 0; x++) {
+              const i = y * size + x;
+              if (sc.w.terr[i] === 0 && sc.w.terr[i + 1] === 0 && sc.w.terr[i + size] === 0) tile = i;
+            }
+          const tiles = [tile, tile + 1, tile + size, tile + size + 1];
+          for (const i of tiles) sc.w.terr[i] = 5; // ścieżka
+          const made = v.chunksMade;
+          const touched = v.redraw({ tiles, felled: [tree] });
+          const n = sc.chunks;
+          const z = v.cam.zoom;
+          const rects = touched.map((k) => [
+            ((k % n) * span - v.cam.x) * z + v.width / 2,
+            (Math.floor(k / n) * span - v.cam.y) * z + v.height / 2,
+            span * z,
+          ]);
+          return { rects, made, painting: v.painting };
+        });
+        await waitIdle(page);
+        const redrawn = await page.evaluate(() => window.zm!.view.chunksMade);
+        const after = decodePng(await page.screenshot());
+        let inside = 0;
+        let outside = 0;
+        const w = after.width;
+        for (let i = 0; i < after.rgba.length; i += 4) {
+          if (
+            after.rgba[i] === before.rgba[i] &&
+            after.rgba[i + 1] === before.rgba[i + 1] &&
+            after.rgba[i + 2] === before.rgba[i + 2]
+          )
+            continue;
+          const x = (i / 4) % w;
+          const y = Math.floor(i / 4 / w);
+          // margines 1 px: brzeg kawałka wypada w ułamku piksela
+          const hit = r.rects.some(([rx, ry, sz]) => x >= rx - 1 && x < rx + sz + 1 && y >= ry - 1 && y < ry + sz + 1);
+          if (hit) inside++;
+          else outside++;
+        }
+        console.log(
+          `  ${r.painting}: przerysowanych kawałków ${r.rects.length} (nowych tekstur ${redrawn - r.made}), zmienionych pikseli w nich ${inside}, poza nimi ${outside}`,
+        );
+        if (!inside) throw new Error(`${r.painting}: zmiany nie widać na obrazie`);
+        if (outside) throw new Error(`${r.painting}: ${outside} pikseli zmienionych poza przerysowanymi kawałkami`);
+      }
+    },
+  },
+  {
     name: 'v03',
     query: '',
     run: async (page, base) => {

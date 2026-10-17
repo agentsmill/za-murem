@@ -12,12 +12,15 @@ import { CHUNK, type Scene, TILE } from './art/scene.ts';
 import {
   type ChunkPainter,
   chunksByDistance,
+  chunksTouched,
   type Done,
   InlinePainter,
   LOD_FAR,
   LOD_NEAR,
+  type MapChange,
   planOrders,
   poolSize,
+  scenePatchOf,
   spawnChunkWorker,
   WorkerPainter,
   workersAvailable,
@@ -35,7 +38,15 @@ interface ChunkSlot {
   near: Texture | null;
   far: Texture | null;
   used: number;
+  /** wersja: rośnie po każdej zmianie na mapie w tym kawałku */
+  ver: number;
+  /** tekstury sprzed zmiany (bity NEAR_BIT, FAR_BIT): widać je, dopóki nie przyjdą nowe */
+  stale: number;
 }
+
+const NEAR_BIT = 1;
+const FAR_BIT = 2;
+const bitOf = (s: number) => (s === LOD_NEAR ? NEAR_BIT : FAR_BIT);
 
 export interface Camera {
   /** środek widoku w pikselach grafiki */
@@ -133,11 +144,38 @@ export class GameView {
         sprite.position.set(cx * CHUNK * TILE, cy * CHUNK * TILE);
         sprite.visible = false;
         this.terrain.addChild(sprite);
-        this.slots.push({ sprite, near: null, far: null, used: 0 });
+        this.slots.push({ sprite, near: null, far: null, used: 0, ver: 0, stale: 0 });
       }
     this.pendingFar = n * n;
     const side = sc.w.size * TILE;
     this.minZoom = Math.min(this.width, this.height) / side / 1.05;
+  }
+
+  /**
+   * Przerysowuje kawałki pod zmianą na mapie, z workerami i bez: ścięte drzewa (felled) i kafelki
+   * ze zmienionym terenem (tiles; w.terr trzeba zmienić przed wywołaniem). Do czasu nowych tekstur
+   * widać stare, więc nic nie miga. Zwraca numery przerysowywanych kawałków.
+   */
+  redraw(ch: MapChange): number[] {
+    const sc = this.scene;
+    if (!sc) return [];
+    for (const k of ch.felled ?? []) sc.treeGone[k] = 1;
+    const touched = chunksTouched(sc, ch);
+    this.painter.patch(scenePatchOf(sc, ch));
+    for (const k of touched) {
+      const s = this.slots[k];
+      s.ver++;
+      s.stale = (s.near ? NEAR_BIT : 0) | (s.far ? FAR_BIT : 0);
+    }
+    return touched;
+  }
+
+  /** ścięte drzewa ze stanu gry (np. st.felled): przerysowuje kawałki tylko dla nowych */
+  syncFelled(felled: readonly number[]): void {
+    const sc = this.scene;
+    if (!sc) return;
+    const fresh = felled.filter((k) => !sc.treeGone[k]);
+    if (fresh.length) this.redraw({ felled: fresh });
   }
 
   /** z ekranu (piksele CSS) do pikseli grafiki */
@@ -167,8 +205,10 @@ export class GameView {
     for (const d of done) {
       const s = this.slots[d.k];
       const isNear = d.s === LOD_NEAR;
-      // podwójne zamówienie nie powinno się zdarzyć; gdyby, zostaje tekstura, która już jest
-      if ((isNear ? s.near : s.far) !== null) {
+      const bit = bitOf(d.s);
+      const old = isNear ? s.near : s.far;
+      // narysowany ze starych danych (zmiana przyszła w trakcie) albo podwójny: zostaje to, co jest
+      if (d.v !== s.ver || (old && !(s.stale & bit))) {
         freeSrc(d.src);
         continue;
       }
@@ -179,10 +219,15 @@ export class GameView {
       this.chunksMade++;
       if (isNear) {
         s.near = t;
-        this.chunksNear++;
+        if (!old) this.chunksNear++;
       } else {
         s.far = t;
-        this.pendingFar--;
+        if (!old) this.pendingFar--;
+      }
+      s.stale &= ~bit;
+      if (old) {
+        if (s.sprite.texture === old) s.sprite.texture = t;
+        dropTex(old);
       }
     }
   }
@@ -218,9 +263,14 @@ export class GameView {
       (this.cam.y / span) | 0,
     );
     const slots = this.slots;
-    const has = (k: number, s: number) => (s === LOD_NEAR ? slots[k].near : slots[k].far) !== null;
+    // tekstura sprzed zmiany na mapie się nie liczy: kawałek trzeba zamówić od nowa
+    const has = (k: number, s: number) =>
+      (s === LOD_NEAR ? slots[k].near : slots[k].far) !== null && !(slots[k].stale & bitOf(s));
     // nowa lista zastępuje starą: kawałki, które wyszły z ekranu, wypadają z kolejki
-    this.painter.order(planOrders(order, slots.length, has, near), budgetMs);
+    this.painter.order(
+      planOrders(order, slots.length, has, near, (k) => slots[k].ver),
+      budgetMs,
+    );
     this.install(this.painter.take());
     for (const s of slots) s.sprite.visible = false;
     let complete = true;
@@ -228,7 +278,7 @@ export class GameView {
       const s = slots[k];
       s.used = this.frameNo;
       const tex = near && s.near ? s.near : s.far;
-      if ((near && !s.near) || (!near && !s.far)) complete = false;
+      if ((near && !has(k, LOD_NEAR)) || (!near && !has(k, LOD_FAR))) complete = false;
       if (tex) {
         if (s.sprite.texture !== tex) s.sprite.texture = tex;
         // skala co klatkę: po wyrzuceniu bliskiego kawałka sprite może już mieć daleką teksturę
@@ -246,6 +296,7 @@ export class GameView {
         }
         dropTex(s.near!);
         s.near = null;
+        s.stale &= ~NEAR_BIT;
         this.chunksNear--;
       }
     }

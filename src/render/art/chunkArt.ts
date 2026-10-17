@@ -474,8 +474,9 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       }
     }
   }
-  // cienie drzew: miękkie elipsy w jednej ścieżce, żeby nakładające się nie ciemniały podwójnie
-  const trees = sc.treesBy[cy * sc.chunks + cx];
+  // cienie drzew: miękkie elipsy w jednej ścieżce, żeby nakładające się nie ciemniały podwójnie;
+  // ścięte drzewa (treeGone) już się nie rysują
+  const trees = sc.treesBy[cy * sc.chunks + cx].filter((k) => !sc.treeGone[k]).map((k) => w.trees[k]);
   if (trees.length) {
     ctx.beginPath();
     for (const t of trees) {
