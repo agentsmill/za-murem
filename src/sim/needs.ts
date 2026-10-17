@@ -47,6 +47,8 @@ export interface NeedCtx {
   holes?: number;
   /** obcy w zasięgu wzroku */
   strangers?: number;
+  /** szabrownicy weszli na podwórko tej nocy: strach zostaje do rana */
+  raided?: boolean;
 }
 
 /** poniżej tej temperatury ciepło spada (o punkt na godzinę za każdy stopień), powyżej rośnie */
@@ -87,6 +89,7 @@ export function safeTarget(c: NeedCtx): number {
   const holes = Math.min(15, 5 * (c.holes ?? 0));
   t -= c.inside ? holes / 3 : holes;
   t -= 25 * (c.strangers ?? 0);
+  if (c.raided) t -= 15;
   return clamp100(t);
 }
 

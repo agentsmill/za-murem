@@ -398,3 +398,157 @@ describe('prace na noc i podwórko', () => {
     expect(st.fence!.gateOpen).toBe(true);
   });
 });
+
+describe('szabrownicy', () => {
+  const atHour = (day: number, h: number) => Math.round(((day - 1) * 24 + h - 15) * 800);
+  const tileOf = (p: { x: number; y: number }) => Math.floor(p.y) * size + Math.floor(p.x);
+  const yard = new Set(w.fence.yard);
+  const sklad = w.interior.sklad;
+  const strangers = (sim: Sim) => sim.st.pawns.filter((p) => p.kind === 'stranger');
+  const pile = (st: ReturnType<typeof createSim>, i: number, n: number) =>
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'drewno',
+      x: i % size,
+      y: Math.floor(i / size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+  const wood = (st: ReturnType<typeof createSim>, where: 'loose' | 'sklad') =>
+    st.things
+      .filter((t) => t.kind === 'drewno' && sklad.includes(t.y * size + t.x) === (where === 'sklad'))
+      .reduce((a, t) => a + t.n, 0);
+  const food = (st: ReturnType<typeof createSim>) =>
+    st.things.filter((t) => t.kind === 'jedzenie').reduce((a, t) => a + t.n, 0);
+  /** noc z napadem o 23:00 na pierwszą dziurę; drewno luzem na podwórku i w składzie */
+  const night = (guard: boolean) => {
+    const st = createSim(w, 3, { core: 2 });
+    const looseAt = w.fence.yard.find(
+      (i, k) => k > 30 && !w.blocked[i] && !st.things.some((t) => t.x === i % size && t.y === Math.floor(i / size)),
+    )!;
+    // więcej drewna, niż uniosą w workach: widać, co biorą najpierw
+    pile(st, looseAt, 5);
+    pile(st, sklad[0], 10);
+    pile(st, sklad[1], 10);
+    st.tick = atHour(1, 22);
+    const sim = new Sim(w, st);
+    const hole = st.fence!.holes[0];
+    if (guard) sim.push({ t: 'guard', ids: [st.pawns[0].id], post: `d${hole.id}` });
+    sim.push({ t: 'raid', ids: [], at: atHour(1, 23), post: `d${hole.id}` });
+    return { st, sim, hole };
+  };
+
+  it('bez warty: podchodzą z zewnątrz do dziury, wchodzą nią, kradną drewno luzem, potem skład, i odchodzą', () => {
+    const { st, sim, hole } = night(false);
+    const loose0 = wood(st, 'loose');
+    const sklad0 = wood(st, 'sklad');
+    const food0 = food(st);
+    // pojawiają się pół godziny przed napadem daleko za siatką
+    while (!strangers(sim).length && st.tick < atHour(1, 23)) sim.step();
+    expect(st.tick).toBe(atHour(1, 22.5) + 1);
+    const s0 = strangers(sim);
+    expect(s0.length).toBeGreaterThanOrEqual(1);
+    expect(s0.length).toBeLessThanOrEqual(3);
+    for (const p of s0) {
+      expect(yard.has(tileOf(p))).toBe(false);
+      expect(
+        Math.min(...hole.tiles.map((t) => Math.hypot((t % size) - p.x, Math.floor(t / size) - p.y))),
+      ).toBeGreaterThan(8);
+    }
+    expect(snapshot(st, w).strangers).toBe(s0.length);
+    // przed północą czekają za siatką pod dziurą, nikt nie wszedł
+    while (st.tick < atHour(1, 22.95)) sim.step();
+    for (const p of strangers(sim)) {
+      expect(yard.has(tileOf(p))).toBe(false);
+      expect(p.job?.phase).toBe(1);
+      expect(jobText(st, w, p)).toBe('Czai się za siatką.');
+      expect(
+        Math.min(...hole.tiles.map((t) => Math.hypot((t % size) + 0.5 - p.x, Math.floor(t / size) + 0.5 - p.y))),
+      ).toBeLessThan(4);
+    }
+    let inHole = false;
+    let inYard = false;
+    while (st.tick < atHour(2, 2)) {
+      sim.step();
+      for (const p of strangers(sim)) {
+        if (hole.tiles.includes(tileOf(p))) inHole = true;
+        if (yard.has(tileOf(p))) inYard = true;
+      }
+    }
+    expect(inHole).toBe(true);
+    expect(inYard).toBe(true);
+    expect(strangers(sim)).toHaveLength(0);
+    const r = st.raid!;
+    expect(r.outcome).toBe('wtargnięcie');
+    expect(r.took.wood).toBeGreaterThan(0);
+    // najpierw drewno luzem, potem skład, potem jedzenie
+    expect(wood(st, 'loose')).toBe(0);
+    expect(wood(st, 'sklad')).toBeGreaterThan(0);
+    expect(food(st)).toBe(food0);
+    expect(r.took.wood).toBe(r.n * 8);
+    expect(loose0 + sklad0 - wood(st, 'loose') - wood(st, 'sklad')).toBe(r.took.wood);
+    expect(food0 - food(st)).toBe(r.took.supplies);
+  });
+
+  it('bezpieczeństwo mieszkańców po kradzieży spada', () => {
+    const calm = (() => {
+      const st = createSim(w, 3, { core: 2 });
+      st.tick = atHour(1, 22);
+      const sim = new Sim(w, st);
+      while (st.tick < atHour(2, 2)) sim.step();
+      return st.pawns.filter((p) => p.kind === 'resident').map((p) => p.needs!.safe);
+    })();
+    const { st, sim } = night(false);
+    while (st.tick < atHour(2, 2)) sim.step();
+    const hit = st.pawns.filter((p) => p.kind === 'resident').map((p) => p.needs!.safe);
+    const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+    expect(avg(hit)).toBeLessThan(avg(calm) - 10);
+  });
+
+  it('warta z lampą przy dziurze płoszy ich: odchodzą bez łupu i nie wchodzą na podwórko', () => {
+    const { st, sim } = night(true);
+    const loose0 = wood(st, 'loose');
+    const sklad0 = wood(st, 'sklad');
+    let seen = 0;
+    let inYard = false;
+    while (st.tick < atHour(2, 2)) {
+      sim.step();
+      seen = Math.max(seen, strangers(sim).length);
+      for (const p of strangers(sim)) if (yard.has(tileOf(p))) inYard = true;
+    }
+    expect(seen).toBeGreaterThan(0);
+    expect(inYard).toBe(false);
+    expect(strangers(sim)).toHaveLength(0);
+    expect(st.raid!.outcome).toBe('odparty');
+    expect(wood(st, 'loose')).toBe(loose0);
+    expect(wood(st, 'sklad')).toBe(sklad0);
+  });
+
+  it('zapis i wczytanie w trakcie napadu, warty i ogniska daje ten sam dalszy przebieg', () => {
+    const { st, sim } = night(false);
+    const spot = w.fence.yard.find(
+      (i, k) => k > 40 && !w.blocked[i] && !st.things.some((t) => t.x === i % size && t.y === Math.floor(i / size)),
+    )!;
+    sim.push({ t: 'campfire', ids: [st.pawns[1].id], at: spot });
+    sim.push({ t: 'guard', ids: [st.pawns[0].id], post: 'brama' });
+    while (st.tick < atHour(1, 23.1)) sim.step();
+    expect(strangers(sim).length).toBeGreaterThan(0);
+    const copy = new Sim(w, JSON.parse(JSON.stringify(st)));
+    for (let k = 0; k < 3000; k++) {
+      sim.step();
+      copy.step();
+    }
+    expect(copy.hash()).toBe(sim.hash());
+    // i drugi raz od zera: ten sam wynik
+    const again = night(false);
+    again.sim.push({ t: 'campfire', ids: [again.st.pawns[1].id], at: spot });
+    again.sim.push({ t: 'guard', ids: [again.st.pawns[0].id], post: 'brama' });
+    while (again.st.tick < sim.st.tick) again.sim.step();
+    expect(again.sim.hash()).toBe(sim.hash());
+  });
+});

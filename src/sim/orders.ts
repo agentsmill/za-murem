@@ -181,5 +181,7 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return j.phase === 1 ? 'Niesie drewno na ognisko.' : 'Rozpala ognisko.';
     case 'leave':
       return walking ? 'Wychodzi na wyprawę.' : 'Na wyprawie.';
+    case 'raid':
+      return ['Skrada się pod siatkę.', 'Czai się za siatką.', 'Kradnie.', 'Ucieka.', 'Ucieka.'][j.phase] ?? 'Ucieka.';
   }
 }

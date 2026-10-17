@@ -107,6 +107,11 @@ export interface SimSnapshot {
   /** mieszkańcy siedziby poza zarządem i ilu się zmieści */
   residents: number;
   cap: number;
+  /** obcy (szabrownicy) na mapie */
+  strangers: number;
+  /** napad tej nocy albo ostatni: faza (0 czekają, 1 za siatką, 2 wchodzą albo uciekają, 3 po wszystkim),
+      rozstrzygnięcie i co wynieśli; null: nie było */
+  raid: { phase: number; outcome: string; took: { wood: number; supplies: number; scrap: number } } | null;
 }
 
 export function snapshot(st: SimState, w: World): SimSnapshot {
@@ -199,5 +204,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     },
     residents: st.pawns.filter((p) => p.kind === 'resident').length,
     cap: st.cap,
+    strangers: st.pawns.filter((p) => p.kind === 'stranger').length,
+    raid: st.raid ? { phase: st.raid.phase, outcome: st.raid.outcome, took: { ...st.raid.took } } : null,
   };
 }

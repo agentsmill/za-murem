@@ -95,6 +95,14 @@ export const GUARD_UNTIL = 6;
 /** zasięg światła (m): lampa warty i ognisko; w nim nie jest ciemno, a szabrownicy się płoszą */
 export const LAMP_REACH = 5;
 export const CAMPFIRE_LIGHT = 6;
+/** szabrownicy pokazują się za siatką pół godziny gry przed napadem i czekają w ciemności */
+export const SNEAK_TICKS = TICKS_PER_HOUR / 2;
+/** tyle sztuk wynosi jeden szabrownik naraz (worek) */
+export const LOOT_CARRY = 8;
+/** z zarządem: tyle czekają na jego rozstrzygnięcie, potem symulacja rozstrzyga sama */
+export const GOV_WAIT = TICKS_PER_HOUR / 2;
+/** skąd przychodzą: mniej więcej tyle kroków od siatki */
+const RAID_FROM = 22;
 /** bezczynny rdzeń rozgląda się za pracą co sekundę realną */
 const THINK_EVERY = TICKS_PER_SECOND;
 /** po poleceniu „idź tu” czeka na miejscu godzinę gry, chyba że coś pilnego */
@@ -120,7 +128,8 @@ export type JobKind =
   | 'guard'
   | 'patch'
   | 'build'
-  | 'leave';
+  | 'leave'
+  | 'raid';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -254,7 +263,38 @@ export type Command =
   | { t: 'away'; ids: number[] }
   | { t: 'back'; ids: number[] }
   /** uchwały, które zmieniają symulację (ids puste) */
-  | { t: 'laws'; ids: number[]; laws: Partial<Laws> };
+  | { t: 'laws'; ids: number[]; laws: Partial<Laws> }
+  /** napad bez zarządu (testy, bot, podgląd): tick, o którym są przy siatce, i posterunek 'brama' / 'd<id>' */
+  | { t: 'raid'; ids: number[]; at: number; post: string };
+
+/** łup w sztukach: drewno, porcje zapasów, złom */
+export interface Loot {
+  wood: number;
+  supplies: number;
+  scrap: number;
+}
+
+/** Napad szabrowników tej nocy. Z zarządem (gov) rozstrzyga zarząd, a symulacja to odgrywa: przy 'odparty' uciekają
+    spod siatki, przy 'wtargnięcie' wchodzą i wynoszą dokładnie to, co policzył zarząd. Bez zarządu rozstrzyga
+    symulacja: warta z lampą albo ognisko w zasięgu ich płoszy, inaczej każdy wynosi pełny worek. */
+export interface Raid {
+  /** tick, o którym są przy siatce (w tej minucie zarząd rozstrzyga napad) */
+  at: number;
+  /** posterunek z planu: 'brama' albo 'd<id dziury>' (załatana dziura: idą do bramy) */
+  post: string;
+  /** ilu ich jest (1–3, losowane przy pojawieniu się) */
+  n: number;
+  /** 0 czekają na swoją porę, 1 są za siatką, 2 rozstrzygnięty (wchodzą albo uciekają), 3 po wszystkim */
+  phase: number;
+  outcome: '' | 'odparty' | 'wtargnięcie';
+  gov: boolean;
+  /** ile mają wynieść (z zarządu; bez zarządu tyle, ile uniosą) i ile już wynieśli */
+  loot: Loot;
+  took: Loot;
+  /** kafelek, z którego przyszli i do którego wracają, i kafelek za siatką, pod którym czekają (−1: jeszcze nie) */
+  from: number;
+  spot: number;
+}
 
 /** ciągłe skutki uchwał, których potrzebuje symulacja (część LawEffects z src/gov) */
 export interface Laws {
@@ -293,6 +333,8 @@ export interface SimState {
   /** ilu mieszkańców zmieści się w mieszkaniach siedziby połączonych z podwórkiem */
   cap: number;
   laws: Laws;
+  /** napad tej nocy albo ostatni (phase 3), null: nie było */
+  raid: Raid | null;
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -410,6 +452,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     fence: initFence(w),
     cap: 0,
     laws: { gateClosed: false, burnMood: 1, workStart: WORK_START },
+    raid: null,
   };
   const rnd = rngOf(st.rng);
   const size = w.size;
@@ -506,6 +549,35 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     st.pawns.push(p);
   }
   return st;
+}
+
+/** Zabiera ze stanu do n sztuk: drewno (najpierw luzem, potem ze składu), zapasy (najpierw surowe, potem garnek)
+    albo złom ze stert; zwraca, ile naprawdę zabrał. Dla zarządu (wydatki) i dla napadu (czego nie wynieśli). */
+export function takeStock(st: SimState, w: World, key: keyof Loot, n: number): number {
+  const size = w.size;
+  const sklad = houseOf(w)?.sklad ?? [];
+  const order: ((t: Thing) => boolean)[] =
+    key === 'wood'
+      ? [(t) => t.kind === 'drewno' && !sklad.includes(t.y * size + t.x), (t) => t.kind === 'drewno']
+      : key === 'supplies'
+        ? [(t) => t.kind === 'jedzenie', (t) => t.kind === 'posilek']
+        : [(t) => t.kind === 'zlom'];
+  let left = n;
+  for (const ok of order)
+    for (const t of st.things.filter(ok)) {
+      if (left <= 0) break;
+      const k = Math.min(t.n, left);
+      t.n -= k;
+      left -= k;
+    }
+  st.things = st.things.filter((t) => !(LOOSE.has(t.kind) && t.kind !== 'pien' && t.n <= 0));
+  return n - left;
+}
+
+/** napad zaplanowany na tick at przy posterunku post ('brama' / 'd<id>'); gov: rozstrzyga zarząd */
+export function planRaid(st: SimState, at: number, post: string, gov: boolean): void {
+  const zero = (): Loot => ({ wood: 0, supplies: 0, scrap: 0 });
+  st.raid = { at, post, n: 0, phase: 0, outcome: '', gov, loot: zero(), took: zero(), from: -1, spot: -1 };
 }
 
 /** Mieszkańcy siedziby (tło) w mieszkaniach innych niż zarządu, do których z podwórka da się dojść bez wychodzenia
@@ -648,6 +720,8 @@ interface Around {
   /** palące się ogniska */
   fires: Thing[];
   strangers: Pawn[];
+  /** szabrownicy weszli tej nocy */
+  raided: boolean;
 }
 
 /** Sim trzyma poza stanem tylko to, co da się odtworzyć ze świata i stanu: bufor A*, przechodniość
@@ -669,8 +743,9 @@ export class Sim {
   /** spójne obszary mapy dla zarządu: cel z innego obszaru zamieniamy na najbliższy osiągalny kafelek */
   private reg: Int32Array;
   /** przechodniość i obszary pozostałych: mieszkańcy (bez dziur, bramy i mieszkania zarządu), obcy (dziurami tak,
-      zamkniętą bramą nie), tłum do pomiarów (za siatką, bez mieszkania zarządu) */
-  private lay: Record<'resident' | 'stranger' | 'crowd', { blocked: Uint8Array; reg: Int32Array }>;
+      zamkniętą bramą nie), tłum do pomiarów (za siatką, bez mieszkania zarządu), obcy po stronie ulicy (bez podwórka
+      i wnętrz: tak podchodzą pod siatkę i uciekają spod niej, nie skracając sobie drogi przez podwórko) */
+  private lay: Record<'resident' | 'stranger' | 'crowd' | 'outside', { blocked: Uint8Array; reg: Int32Array }>;
   /** mieszkanie zarządu z drzwiami (1) albo null */
   private readonly mask: Uint8Array | null;
   private readonly trunk: Int32Array;
@@ -800,12 +875,27 @@ export class Sim {
     this.reg = labelRegions(this.blocked, size);
     // tłum do pomiarów chodzi tam, gdzie mieszkańcy nie: za siatką; warstwa ta sama, obszary rozłączne
     const res = { blocked: resident, reg: labelRegions(resident, size) };
-    this.lay = { resident: res, stranger: { blocked: stranger, reg: labelRegions(stranger, size) }, crowd: res };
+    const outside = stranger.slice();
+    for (const t of fenceShape(this.w)?.yard ?? []) outside[t] = 1;
+    if (this.house) for (let i = 0; i < outside.length; i++) if (this.house.room[i] >= 0) outside[i] = 1;
+    this.lay = {
+      resident: res,
+      stranger: { blocked: stranger, reg: labelRegions(stranger, size) },
+      crowd: res,
+      outside: { blocked: outside, reg: labelRegions(outside, size) },
+    };
   }
 
   /** przechodniość i obszary dla danego rodzaju pionka */
   private layer(kind: PawnKind): { blocked: Uint8Array; reg: Int32Array } {
     return kind === 'core' ? { blocked: this.blocked, reg: this.reg } : this.lay[kind];
+  }
+
+  /** warstwa do drogi pionka: szabrownik po stronie ulicy (podchodzi, czeka, ucieka) chodzi tylko tamtędy */
+  private layerOf(p: Pawn): { blocked: Uint8Array; reg: Int32Array } {
+    if (p.kind === 'stranger' && p.job?.phase !== 2 && !this.lay.outside.blocked[this.tileOf(p)])
+      return this.lay.outside;
+    return this.layer(p.kind);
   }
 
   /** czy pionek danego rodzaju przejdzie przez kafelek (do testów i podglądu) */
@@ -816,7 +906,7 @@ export class Sim {
   /** cel do wyznaczenia drogi: wolny kafelek w tym samym obszarze co pionek, −1 gdy go nie ma */
   private goalFor(p: Pawn, goal: number): number {
     const size = this.w.size;
-    const { blocked, reg } = this.layer(p.kind);
+    const { blocked, reg } = this.layerOf(p);
     const s = nearestFree(blocked, size, this.tileOf(p));
     const g = nearestFree(blocked, size, goal);
     if (reg[g] === reg[s]) return g;
@@ -830,7 +920,7 @@ export class Sim {
       this.stats.failed++;
       return false;
     }
-    const { blocked } = this.layer(p.kind);
+    const { blocked } = this.layerOf(p);
     const path = this.pf.find(blocked, nearestFree(blocked, this.w.size, this.tileOf(p)), g);
     this.stats.nodes += this.pf.expanded;
     if (!path) {
@@ -860,7 +950,9 @@ export class Sim {
       if (h === 20) this.setGate(false);
       else if (h === GUARD_UNTIL) this.setGate(true);
     }
+    if (st.raid) this.raidTick(st.raid);
     let budget = PATHS_PER_TICK;
+    let gone = false;
     for (const p of st.pawns) {
       if (p.away) continue;
       if (p.pi < p.path.length) {
@@ -869,6 +961,10 @@ export class Sim {
       }
       if (p.kind === 'core' || p.kind === 'resident') {
         this.coreTick(p);
+        continue;
+      }
+      if (p.kind === 'stranger') {
+        if (this.strangerTick(p)) gone = true;
         continue;
       }
       if (st.tick < p.wait) continue;
@@ -886,6 +982,8 @@ export class Sim {
       p.want = -1;
       p.wait = st.tick + 60 + Math.floor(rnd() * 240);
     }
+    // szabrownicy, którzy doszli tam, skąd przyszli, znikają
+    if (gone) st.pawns = st.pawns.filter((p) => !(p.kind === 'stranger' && p.job?.phase === 4));
     if (st.tick % HEAT_EVERY === 0) this.slow();
     st.tick++;
   }
@@ -926,6 +1024,10 @@ export class Sim {
     const st = this.st;
     if (c.t === 'gate') {
       this.setGate(c.open);
+      return;
+    }
+    if (c.t === 'raid') {
+      planRaid(st, c.at, c.post, false);
       return;
     }
     if (c.t === 'laws') {
@@ -1741,6 +1843,9 @@ export class Sim {
         this.rebuild();
         return false;
       }
+      case 'raid':
+        // szabrownicy mają własny krok (strangerTick)
+        return false;
       case 'leave':
         // za bramą znika; wraca poleceniem 'back'
         if (j.phase === 1) return true;
@@ -2206,6 +2311,289 @@ export class Sim {
     j.n = 0;
   }
 
+  /* ---------- szabrownicy ---------- */
+
+  /** napad: pojawienie się za siatką, rozstrzygnięcie (bez zarządu albo gdy zarząd milczy), płoszenie, koniec */
+  private raidTick(r: Raid): void {
+    const st = this.st;
+    const tick = st.tick;
+    if (r.phase === 0 && (tick >= r.at - SNEAK_TICKS || r.outcome)) this.spawnRaid(r);
+    if (r.phase === 1) {
+      if (!r.outcome && tick >= r.at + (r.gov ? GOV_WAIT : 0)) this.decideRaid(r);
+      if (r.outcome) this.onOutcome(r);
+    } else if (r.phase === 2) {
+      const left = st.pawns.filter((p) => p.kind === 'stranger');
+      if (!left.length) this.finishRaid(r);
+      // bez zarządu światło płoszy ich także w środku: uciekają z tym, co mają w workach
+      else if (!r.gov && tick % THINK_EVERY === 0)
+        for (const p of left) if (p.job?.phase === 2 && this.litNear(p.x, p.y)) this.leaveRaid(p, r);
+    }
+  }
+
+  /** lampa warty albo palące się ognisko w zasięgu */
+  private litNear(x: number, y: number): boolean {
+    for (const q of this.st.pawns)
+      if (!q.away && q.job?.t === 'guard' && q.job.phase === 1 && Math.hypot(q.x - x, q.y - y) <= LAMP_REACH)
+        return true;
+    return this.st.things.some(
+      (t) => t.kind === 'ognisko' && t.fuel > 0 && Math.hypot(t.x + 0.5 - x, t.y + 0.5 - y) <= CAMPFIRE_LIGHT,
+    );
+  }
+
+  /** gdzie uderzają: otwarta dziura z planu, a gdy załatana, brama; bez bramy największa otwarta dziura */
+  private raidTarget(r: Raid): { post: number; tiles: number[] } | null {
+    const gate = gateTiles(this.w);
+    const id = /^d(\d+)$/.exec(r.post)?.[1];
+    const hole = id ? this.holeById(Number(id)) : undefined;
+    if (hole && !hole.patch) return { post: hole.id, tiles: hole.tiles };
+    if (gate.length) return { post: 0, tiles: gate };
+    const open = (this.st.fence?.holes ?? []).filter((h) => !h.patch).sort((a, b) => b.size - a.size || a.id - b.id);
+    return open.length ? { post: open[0].id, tiles: open[0].tiles } : null;
+  }
+
+  private inRoom(i: number): boolean {
+    return !!this.house && this.house.room[i] >= 0;
+  }
+
+  /** kafelki tuż za siatką przy danych kafelkach (od strony ulicy), przechodnie dla obcych */
+  private outsideOf(tiles: readonly number[]): number[] {
+    const size = this.w.size;
+    const yard = new Set(fenceShape(this.w)?.yard ?? []);
+    const { blocked } = this.lay.outside;
+    const out: number[] = [];
+    for (const t of tiles)
+      for (const d of [-size, size, -1, 1]) {
+        const o = t + d;
+        if (o < 0 || o >= size * size || ((d === 1 || d === -1) && Math.floor(o / size) !== Math.floor(t / size)))
+          continue;
+        if (yard.has(o) || tiles.includes(o) || blocked[o] || this.inRoom(o) || out.includes(o)) continue;
+        out.push(o);
+      }
+    return out;
+  }
+
+  /** skąd przychodzą: losowy kafelek RAID_FROM kroków od siatki po stronie ulicy (albo najdalszy, jaki jest) */
+  private farFrom(spot: number): number {
+    const size = this.w.size;
+    const { blocked } = this.lay.outside;
+    const dist = new Map<number, number>([[spot, 0]]);
+    const q = [spot];
+    const ring: number[] = [];
+    let last = spot;
+    for (let qi = 0; qi < q.length; qi++) {
+      const c = q[qi];
+      const d = dist.get(c)!;
+      if (d === RAID_FROM) {
+        ring.push(c);
+        continue;
+      }
+      last = c;
+      const x = c % size;
+      for (const n of [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1]) {
+        if (n < 0 || n >= size * size || dist.has(n) || blocked[n]) continue;
+        dist.set(n, d + 1);
+        q.push(n);
+      }
+    }
+    return ring.length ? ring[Math.floor(nextRandom(this.st.rng) * ring.length)] : last;
+  }
+
+  /** n wolnych kafelków po stronie ulicy wokół środka, w tym samym obszarze dla obcych */
+  private tilesAround(center: number, n: number): number[] {
+    const size = this.w.size;
+    const { blocked, reg } = this.lay.outside;
+    const out: number[] = [];
+    for (const [dx, dy] of SPREAD) {
+      if (out.length >= n) break;
+      const x = (center % size) + dx;
+      const y = Math.floor(center / size) + dy;
+      if (x < 0 || y < 0 || x >= size || y >= size) continue;
+      const i = y * size + x;
+      if (blocked[i] || reg[i] !== reg[center]) continue;
+      out.push(i);
+    }
+    return out;
+  }
+
+  /** pół godziny przed napadem 1–3 obcych pojawia się daleko za siatką i podchodzi pod nią po ciemku */
+  private spawnRaid(r: Raid): void {
+    const st = this.st;
+    const tg = this.raidTarget(r);
+    const outs = tg ? this.outsideOf(tg.tiles) : [];
+    if (!tg || !outs.length) {
+      // nie ma skąd podejść (świat bez siatki): nic z tego
+      r.phase = 3;
+      if (!r.outcome) r.outcome = 'odparty';
+      return;
+    }
+    r.spot = outs[0];
+    r.from = this.farFrom(r.spot);
+    r.n = 1 + Math.floor(nextRandom(st.rng) * 3);
+    const waits = this.tilesAround(r.spot, r.n);
+    const starts = this.tilesAround(r.from, r.n);
+    for (let k = 0; k < r.n; k++) {
+      const look = 16 + Math.floor(nextRandom(st.rng) * 4);
+      const p = newPawn(st, this.w, 'stranger', -1, starts[k] ?? r.from, r.from, look);
+      p.job = this.newJob('raid', tg.post, waits[k] ?? r.spot, false);
+      st.pawns.push(p);
+      this.go(p, p.job.tile);
+    }
+    r.phase = 1;
+  }
+
+  /** bez zarządu: warta z lampą albo ognisko przy miejscu, pod którym czekają, albo brama na kłódkę ich płoszy;
+      inaczej wchodzą i każdy wynosi pełny worek */
+  private decideRaid(r: Raid): void {
+    const size = this.w.size;
+    const sx = (r.spot % size) + 0.5;
+    const sy = Math.floor(r.spot / size) + 0.5;
+    const locked = this.raidTarget(r)?.post === 0 && !this.st.fence?.gateOpen;
+    const scared =
+      locked || this.litNear(sx, sy) || this.st.pawns.some((p) => p.kind === 'stranger' && this.litNear(p.x, p.y));
+    r.outcome = scared ? 'odparty' : 'wtargnięcie';
+    if (!scared) {
+      const cap = r.n * LOOT_CARRY;
+      r.loot = { wood: cap, supplies: cap, scrap: 0 };
+    }
+  }
+
+  /** ile jeden szabrownik uniesie: bez zarządu worek, z zarządem tyle, żeby wynieśli, co policzył zarząd */
+  private sack(r: Raid): number {
+    if (!r.gov) return LOOT_CARRY;
+    return Math.max(LOOT_CARRY, Math.ceil((r.loot.wood + r.loot.supplies + r.loot.scrap) / Math.max(1, r.n)));
+  }
+
+  /** rozstrzygnięte: wchodzą po łup albo uciekają; strach u mieszkańców (i u zarządu, gdy nie liczy go zarząd) */
+  private onOutcome(r: Raid): void {
+    const st = this.st;
+    r.phase = 2;
+    const entered = r.outcome === 'wtargnięcie';
+    for (const p of st.pawns) {
+      if (p.kind !== 'stranger' || !p.job) continue;
+      if (!entered || !this.nextLoot(p, r)) this.leaveRaid(p, r);
+    }
+    const tg = this.raidTarget(r);
+    for (const p of st.pawns) {
+      if (!p.needs || p.away || (p.kind === 'core' && r.gov)) continue;
+      const n = p.needs;
+      n.safe = Math.max(
+        0,
+        Math.min(100, n.safe + (entered ? (p.kind === 'core' ? -25 : -20) : p.kind === 'core' ? 8 : 4)),
+      );
+      if (entered) this.addMood(p, 'Szabrownicy weszli na podwórko', -8, 12 * TICKS_PER_HOUR);
+      else if (p.job?.t === 'guard' && p.job.target === tg?.post)
+        this.addMood(p, 'Przegoniliśmy szabrowników', 6, 12 * TICKS_PER_HOUR);
+    }
+  }
+
+  /** najbliższy łup w kolejności: drewno luzem, drewno w składzie, jedzenie, złom (tylko to, co jeszcze mają wziąć) */
+  private lootFor(p: Pawn, r: Raid): Thing | undefined {
+    const size = this.w.size;
+    const sklad = this.house?.sklad ?? [];
+    const { blocked, reg } = this.lay.stranger;
+    const region = reg[nearestFree(blocked, size, this.tileOf(p))];
+    const left = (k: keyof Loot) => r.loot[k] - r.took[k] > 0;
+    const tiers: ((t: Thing) => boolean)[] = [
+      (t) => t.kind === 'drewno' && !sklad.includes(t.y * size + t.x) && left('wood'),
+      (t) => t.kind === 'drewno' && sklad.includes(t.y * size + t.x) && left('wood'),
+      (t) => t.kind === 'jedzenie' && left('supplies'),
+      (t) => t.kind === 'zlom' && left('scrap'),
+    ];
+    for (const ok of tiers) {
+      let best: Thing | undefined;
+      let bd = Number.POSITIVE_INFINITY;
+      for (const t of this.st.things) {
+        if (t.n <= 0 || (t.by >= 0 && t.by !== p.id) || !ok(t)) continue;
+        const i = t.y * size + t.x;
+        if (reg[i] !== region) continue;
+        const d = this.dist2(p, i);
+        if (d < bd || (d === bd && best && t.id < best.id)) {
+          bd = d;
+          best = t;
+        }
+      }
+      if (best) return best;
+    }
+    return undefined;
+  }
+
+  /** do następnego łupu, póki worek nie pełny; false: nie ma po co albo nie ma jak */
+  private nextLoot(p: Pawn, r: Raid): boolean {
+    const j = p.job!;
+    if (j.n >= this.sack(r)) return false;
+    const t = this.lootFor(p, r);
+    if (!t) return false;
+    const ti = t.y * this.w.size + t.x;
+    // po łup chodzi się już przez siatkę (warstwa obcych, nie sama ulica)
+    j.phase = 2;
+    if (!this.go(p, ti)) return false;
+    j.target = t.id;
+    j.tile = ti;
+    t.by = p.id;
+    return true;
+  }
+
+  /** przy łupie: do worka, ile się zmieści i ile jeszcze mają wziąć; potem następny łup albo w nogi */
+  private takeLoot(p: Pawn, r: Raid): void {
+    const st = this.st;
+    const j = p.job!;
+    const t = this.thing(j.target);
+    if (t && t.by === p.id && this.tileOf(p) === j.tile) {
+      const k: keyof Loot = t.kind === 'drewno' ? 'wood' : t.kind === 'jedzenie' ? 'supplies' : 'scrap';
+      const take = Math.max(0, Math.min(t.n, this.sack(r) - j.n, r.loot[k] - r.took[k]));
+      t.n -= take;
+      t.by = -1;
+      if (t.n <= 0) st.things.splice(st.things.indexOf(t), 1);
+      j.n += take;
+      r.took[k] += take;
+      if (!j.what) j.what = t.kind;
+    } else if (t?.by === p.id) t.by = -1;
+    if (!this.nextLoot(p, r)) this.leaveRaid(p, r);
+  }
+
+  /** w nogi: tam, skąd przyszli (z łupem w workach) */
+  private leaveRaid(p: Pawn, r: Raid): void {
+    const j = p.job!;
+    const t = this.thing(j.target);
+    if (j.phase === 2 && t?.by === p.id) t.by = -1;
+    j.phase = 3;
+    j.target = -1;
+    const g = this.goalFor(p, r.from);
+    if (g >= 0 && this.routeTo(p, g)) j.tile = g;
+    else j.phase = 4;
+  }
+
+  /** szabrownik bez drogi: doszedł pod siatkę i czeka, przy łupie bierze, u siebie znika; true: zniknął */
+  private strangerTick(p: Pawn): boolean {
+    const r = this.st.raid;
+    const j = p.job;
+    if (!r || !j) {
+      p.job = this.newJob('raid', -1, this.tileOf(p), false, 4);
+      return true;
+    }
+    if (j.phase === 0) {
+      j.phase = 1;
+      if (r.spot >= 0) this.face(p, (r.spot % this.w.size) + 0.5, Math.floor(r.spot / this.w.size) + 0.5);
+      return false;
+    }
+    if (j.phase === 2) {
+      this.takeLoot(p, r);
+      return p.job?.phase === 4;
+    }
+    if (j.phase === 3) j.phase = 4;
+    return j.phase === 4;
+  }
+
+  /** koniec napadu; z zarządem: czego nie zdążyli wynieść, i tak zniknęło (zarząd już to policzył) */
+  private finishRaid(r: Raid): void {
+    r.phase = 3;
+    if (!r.gov || r.outcome !== 'wtargnięcie') return;
+    for (const k of ['wood', 'supplies', 'scrap'] as const) {
+      const left = r.loot[k] - r.took[k];
+      if (left > 0) r.took[k] += takeStock(this.st, this.w, k, left);
+    }
+  }
+
   /* ---------- co krok ciepła: ogień, ciepło, potrzeby, samouczek ---------- */
 
   private slow(): void {
@@ -2253,7 +2641,10 @@ export class Sim {
     const fires = st.things.filter((t) => t.kind === 'ognisko' && t.fuel > 0);
     const holes = st.fence ? st.fence.holes.filter((x) => !x.patch).length : 0;
     const strangers = st.pawns.filter((q) => q.kind === 'stranger' && !q.away);
-    return { guard: on && lamps.length > 0, holes: on ? holes : 0, lamps, fires, strangers };
+    // po wtargnięciu strach zostaje do rana (12 godzin)
+    const r = st.raid;
+    const raided = !!r && r.outcome === 'wtargnięcie' && st.tick < r.at + 12 * TICKS_PER_HOUR;
+    return { guard: on && lamps.length > 0, holes: on ? holes : 0, lamps, fires, strangers, raided };
   }
 
   private needCtx(p: Pawn, tout: number, a: Around = this.nightAround()): NeedCtx {
@@ -2292,6 +2683,7 @@ export class Sim {
       guard: a.guard,
       holes: a.holes,
       strangers,
+      raided: a.raided,
     };
   }
 
