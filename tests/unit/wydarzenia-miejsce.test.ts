@@ -5,7 +5,6 @@
 import { describe, expect, it } from 'vitest';
 import { eventDef } from '../../src/content/events.ts';
 import { BLOK, placeOf } from '../../src/gov/miejsce.ts';
-import { OLD_EVENTS } from '../../src/gov/tresc.ts';
 import type { GovInput, GovPlace } from '../../src/gov/typy.ts';
 import { admitWeight, osobyNaPodlodze } from '../../src/gov/warianty.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
@@ -43,8 +42,7 @@ const labels = (id: string, d: unknown, over: Partial<GovInput> = {}) =>
     .choices(setup(over).h, d)
     .map((c) => c.label);
 
-describe('w domu wydarzenia z 0.3 nie mówią o bloku', () => {
-  const old = new Set(OLD_EVENTS.map((o) => o.id));
+describe('w domu żadne wydarzenie nie mówi o bloku', () => {
   const places: GovPlace[] = [zielonki, { ...zielonki, shop: 70 }];
   it.each(places.map((p, k) => [k, p] as const))('miejsce %i', (_k, place) => {
     let seen = 0;
@@ -52,7 +50,6 @@ describe('w domu wydarzenia z 0.3 nie mówią o bloku', () => {
       for (const hour of [10, 16, 20, 23])
         for (const trust of [50, 30])
           for (const e of M1_EVENTS) {
-            if (!old.has(e.id)) continue;
             const over = { hour, place, residents: 0, cap: 0, light: { campfire: false, gateLamp: false } };
             const { h } = setup(over, seed, trust);
             if (e.w(h) <= 0) continue;
@@ -66,7 +63,7 @@ describe('w domu wydarzenia z 0.3 nie mówią o bloku', () => {
             });
             for (const t of texts) expect(t, e.id).not.toMatch(FORBIDDEN_DOM);
           }
-    expect(seen).toBeGreaterThan(50);
+    expect(seen).toBeGreaterThan(80);
   });
 });
 
@@ -236,5 +233,47 @@ describe('przyjęcia według wolnych miejsc', () => {
       '22 osoby będą',
     ]);
     expect([0, 1, 3, 4, 9].map(admitWeight)).toEqual([0.15, 0.5, 0.5, 1, 1]);
+  });
+});
+
+describe('nowe wydarzenia M1 według sąsiadów i wydarzenia ulicy domów', () => {
+  const street = ['kury', 'kosiarka', 'szopa', 'plot', 'panele'];
+
+  it('ulica domów: tylko w domu i od drugiego dnia, kury przy dziurze, spór o płot przy domach obok', () => {
+    for (const id of street) {
+      expect(def(id).w(setup({ place: BLOK }).h), id).toBe(0);
+      expect(def(id).w(setup({ place: zielonki, day: 1 }).h), id).toBe(0);
+      expect(def(id).w(setup({ place: zielonki }).h), id).toBeGreaterThan(0);
+    }
+    expect(def('kury').w(setup({ place: zielonki, fence: { holes: [], durability: 0.5 } }).h)).toBe(0);
+    expect(def('plot').w(setup({ place: { ...zielonki, near: 'bloki' } }).h)).toBe(0);
+  });
+
+  it('jabłka jesienią, kartka na przychodni tam, gdzie jest przychodnia', () => {
+    expect(def('jablka').w(setup({ season: 0 }).h)).toBeGreaterThan(0);
+    expect(def('jablka').w(setup({ season: 1 }).h)).toBe(0);
+    expect(def('przychodnia').w(setup({ place: zielonki }).h)).toBeGreaterThan(0);
+    expect(def('przychodnia').w(setup({ place: { ...zielonki, clinic: null } }).h)).toBe(0);
+  });
+
+  it('przymrozek tylko przy mrozie', () => {
+    expect(def('przymrozek').w(setup({ outdoor: 8 }).h)).toBe(0);
+    expect(def('przymrozek').w(setup({ outdoor: 0 }).h)).toBeGreaterThan(0);
+  });
+
+  it('krzyk i światło w oknie według sąsiadów', () => {
+    const { h } = setup({ place: zielonki });
+    expect(def('krzyk').title(h, {})).toBe('Krzyk z domu obok');
+    expect(def('sygnal').text(h, {})).toContain('W domu naprzeciwko');
+    const blok = setup().h;
+    expect(def('krzyk').title(blok, {})).toBe('Krzyk z bloku obok');
+  });
+
+  it('skutki: deski z szopy, łata po kurach, części z falownika', () => {
+    const dom = { place: zielonki };
+    const k = (id: string, label: string) => labels(id, {}, dom).findIndex((l) => l.startsWith(label));
+    expect(pick('szopa', {}, k('szopa', 'Zabrać deski'), dom).fx.stock.wood).toBe(3);
+    expect(pick('kury', {}, k('kury', 'Załatać dziurę'), dom).fx.patch).toBe(1);
+    expect(pick('panele', {}, k('panele', 'Rozkręcić falownik'), dom).fx.stock.parts).toBe(2);
   });
 });

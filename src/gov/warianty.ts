@@ -290,6 +290,7 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'pozar',
     when: ['wieczor', 'noc'],
+    first: true,
     text: (h) => (dom(h) ? 'Od źle postawionej kozy zajęła się podłoga w kuchni. Dym idzie na cały dom.' : null),
     labels: (h) => (dom(h) ? [null, 'Uciekać do ogrodu'] : []),
     log: (h) =>
@@ -302,7 +303,7 @@ export const OLD_EVENTS: OldEvent[] = [
         : null,
   },
   // złodziej z piwnicy to ktoś z mieszkańców: bez nich byłby nim ktoś z domowników
-  { id: 'kradziez', when: ['noc'], w: (h, base) => (h.residents() > 0 ? base : 0) },
+  { id: 'kradziez', when: ['noc'], first: true, w: (h, base) => (h.residents() > 0 ? base : 0) },
   // dwoje losowych z zarządu i „pierwszy od upadku” (upadek trwał 25 lat): wróci z parami z generatora mieszkańców
   { id: 'wesele', when: ['dzien', 'wieczor'], w: () => 0 },
   {

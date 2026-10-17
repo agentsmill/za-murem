@@ -15,6 +15,7 @@ import { freePlaces, placeIn, wordsOf } from './miejsce.ts';
 import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, LootKey, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
+import { STREET_EVENTS } from './ulica.ts';
 import { drewno } from './warianty.ts';
 import {
   addNeeds,
@@ -94,6 +95,7 @@ export const M1_EVENTS: GEventDef[] = [
     };
   }),
   ...NEW_EVENTS,
+  ...STREET_EVENTS,
 ];
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
 

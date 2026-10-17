@@ -89,7 +89,7 @@ Dokładne nazwy pól w kodzie zostają budującemu; tabela mówi, jakie słowa i
 - Po ciszy pierwszego dnia, aż do pierwszego raportu rano, tylko wydarzenia pierwszej nocy: o siatce, o obcych za płotem i o nocy. Pierwsze po ciszy najwcześniej 10 s po nagrzaniu kuchni i 20 s po poprzedniej decyzji (moja decyzja, żeby nie zderzyło się z nowym celem samouczka).
 - Od drugiego dnia cała pula z warunkami miejsca.
 
-Wydarzenia pierwszej nocy (moja decyzja, z regułą Mateusza): ślady przy siatce, latarka na korbkę, ktoś was obserwuje, wędrowiec, pies, hałas, krzyk, bezsenność, światło w oknie, kot, ulewa, przymrozek. Bez pożaru od kozy i bez kradzieży z piwnicy: pierwsza noc ma być o siatce i szabrownikach, nie o karze za kozę ani o złodzieju wśród swoich.
+Wydarzenia pierwszej nocy (moja decyzja, z regułą Mateusza): ślady przy siatce, latarka na korbkę, ktoś was obserwuje, wędrowiec, pies, hałas, krzyk, bezsenność, światło w oknie, kot, ulewa, przymrozek, a w nocy także pożar od kozy i kradzież z piwnicy (tylko z mieszkańcami). Te dwa były w M1 od początku; bez nich noc przy tempie 1× nie dawała decyzji w każdej minucie (bramka M1). Satyra na technikę i ludzie spod bramy od drugiego dnia.
 
 Decyzja co minutę w pierwszych 10 minutach zostaje: przy 1× polecenia samouczka w pierwszych sekundach i rozpalenie kozy około 40 s, dym około 70 s, pierwsze wydarzenie po ciszy około 115 s (w Zamościu, gdzie kuchnia grzeje się dłużej, około 135 s), następne około 160 s, uchwała 180 s, karta 200 s, w nocy jedno, dwa, raport około 267 s, potem dzień drugi z wydarzeniem co 38–56 s. Sprawdzamy to na prawdziwej symulacji (pomiar na czterech miejscach: najdłuższa przerwa bez decyzji w pierwszych 10 minutach przy 1×) i testem z kuchnią, która grzeje się stopniowo. Atrapa w `tests/unit/gov-atrapa.ts` zostaje bez zmian (zapala kozę i ma 18°C w tej samej chwili, o 17:00), a test „decyzja zarządu w każdej minucie od drugiej do dziesiątej” na niej zostaje.
 
@@ -125,8 +125,8 @@ Gdzie skutek z 0.3 nie ma w domu sensu (dokwaterowanie czterech aktywistów do d
 | ludzie pod bramą | od 2. dnia, waga według wolnych miejsc (punkt 5a) | „pod bramą”, „Wolnych miejsc w bloku: N”, przyciski z liczbą na podłodze | rodzina 2–4 osób spod furtki, „W domu nie ma wolnych łóżek…”, rzadko |
 | ktoś się na czymś zna | od 2. dnia, w bloku tylko z mieszkańcami | „przy kozie” zamiast „przy ognisku”; mieszkaniec przechodzi do zarządu | „Sąsiad zza płotu… przyznał przy kozie…”, dołącza do domowników |
 | kłótnia o grafik | od 2. dnia | bez zmian | „Reszta domu słucha zza ściany”, „Mediacja przy stole”, „wyprowadził się na inną ulicę” |
-| pożar od kozy | od 2. dnia, koza się pali | bez zmian | „zajęła się podłoga w kuchni, dym idzie na cały dom”, „Uciekać do ogrodu” |
-| kradzież z piwnicy | od 2. dnia, tylko z mieszkańcami | bez zmian | nie ma (bez mieszkańców złodziejem byłby ktoś z domowników) |
+| pożar od kozy | pierwsza noc, koza się pali | bez zmian | „zajęła się podłoga w kuchni, dym idzie na cały dom”, „Uciekać do ogrodu” |
+| kradzież z piwnicy | pierwsza noc, tylko z mieszkańcami | bez zmian | nie ma (bez mieszkańców złodziejem byłby ktoś z domowników) |
 | wesele na klatce | wyjęte z M1 | nie ma | nie ma; wróci z parami z generatora mieszkańców |
 | ktoś chce odejść | od 2. dnia, zaufanie poniżej 35 | bez zmian | „na sąsiedniej ulicy jest lepiej”, „wyprowadził się z ulicy” |
 | ktoś was obserwuje | od 13:00, pierwsza noc | z dachu najwyższego budynku z opisu miejsca, „na wasz blok” | to samo, „na wasz dom”; bez wysokiego budynku „zza krzaków na końcu ulicy” |
