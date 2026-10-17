@@ -207,7 +207,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
   };
   const assign = propose(i, card, st.lastGuards);
   for (const cp of card.people) cp.proposal = assign[cp.id];
-  card.advice = advice(i, card, assign);
+  card.advice = nightAdvice(i, card, assign);
   return { card, assign };
 }
 
@@ -240,13 +240,18 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
   return a;
 }
 
-function advice(i: GovInput, card: NightCard, assign: Record<string, string>): string {
+/** rada zarządu do przydziału na karcie (interfejs liczy ją na nowo po każdej zmianie) */
+export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): string {
   const guards = Object.values(assign).filter((k) => k.startsWith('warta:'));
+  const kept = new Set(guards.map((k) => k.slice(6)));
   const loss = stockText(card.loss);
+  const weak = card.posts[0];
   if (card.chance >= 0.25 && !guards.length)
-    return `Bez warty ${card.posts[0].name} szabrownicy wejdą bez trudu${loss ? ` i mogą zabrać: ${loss}` : ''}.`;
-  if (guards.length && card.posts.length > guards.length)
-    return `Warta pilnuje ${card.posts[0].name}, ale dziur jest więcej. Za dnia warto łatać siatkę.`;
+    return `Bez warty ${weak.name} szabrownicy wejdą bez trudu${loss ? ` i mogą zabrać: ${loss}` : ''}.`;
+  if (guards.length && !kept.has(weak.key))
+    return `Najsłabsze miejsce, ${weak.name}, zostaje bez warty. Tam najpewniej spróbują wejść.`;
+  if (guards.length && card.posts.some((p) => !kept.has(p.key)))
+    return `Warta stoi ${weak.name}, ale dziur jest więcej. Za dnia warto łatać siatkę.`;
   if (i.stock.supplies < i.people.length * 2)
     return 'Jedzenia jest na krótko. Wyprawa blisko jest bezpieczniejsza, daleka przynosi więcej.';
   return 'Wyśpijcie się. Jutro dzień pracy przy siatce.';
@@ -348,7 +353,7 @@ function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[
     const has = stockText(got);
     n.lines.push(
       has
-        ? `${who} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${t.name}. Przynieśli: ${has}.`
+        ? `${who} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${t.name}. ${verbPl(ppl, 'Przyniósł', 'Przyniosła', 'Przynieśli', 'Przyniosły')}: ${has}.`
         : `${who} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${t.name} z pustymi rękami.`,
     );
     if (has) {
