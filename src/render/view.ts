@@ -19,7 +19,7 @@ import {
 } from 'pixi.js';
 import type { WeaponId } from '../sim/bron.ts';
 import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
-import { NOISE_TICKS, type Pawn, type SimState } from '../sim/sim.ts';
+import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
 import { ZOMBIE_HP } from '../sim/zombie.ts';
 import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, weaponRect } from './art/bron.ts';
 import {
@@ -33,6 +33,7 @@ import {
   makeZombieAtlas,
   outlineAtlas,
   POSES,
+  ZLOOKS,
   zFrameRect,
   zLieRect,
 } from './art/people.ts';
@@ -821,6 +822,18 @@ export class GameView {
     return tex;
   }
 
+  /** trup szwendacza na ziemi (wygląd, strona głowy): w zTex pod ujemnym kluczem, jak leżenie w frameTexture */
+  private zombieLieTexture(look: number, o: number): Texture {
+    const k = -1 - ((look % ZLOOKS) * 4 + (o & 3));
+    let tex = this.zTex.get(k);
+    if (!tex) {
+      const [x, y, w, h] = zLieRect(look, o);
+      tex = new Texture({ source: this.zatlas!, frame: new Rectangle(x, y, w, h) });
+      this.zTex.set(k, tex);
+    }
+    return tex;
+  }
+
   /** komórka nakładki broni */
   private weaponTexture(id: WeaponId, pose: ArmPose, dir: number, f: number): Texture {
     const k = `${id}:${pose}:${dir}:${f}`;
@@ -842,17 +855,15 @@ export class GameView {
       let sp = this.corpseSprites.get(t.id);
       if (!sp) {
         const o = t.id & 3;
-        let tex: Texture;
-        if (t.kind === 'trup') {
-          const [x, y, w, h] = zLieRect(t.n, o);
-          tex = new Texture({ source: this.zatlas!, frame: new Rectangle(x, y, w, h) });
-        } else
-          tex = this.frameTexture(this.poseTex, this.atlas!, t.n % LOOKS, {
-            pose: 'walk',
-            dir: 0,
-            frame: 0,
-            lie: { kind: 'floor', o, x: 0, y: 0 },
-          });
+        const tex =
+          t.kind === 'trup'
+            ? this.zombieLieTexture(t.n, o)
+            : this.frameTexture(this.poseTex, this.atlas!, t.n % LOOKS, {
+                pose: 'walk',
+                dir: 0,
+                frame: 0,
+                lie: { kind: 'floor', o, x: 0, y: 0 },
+              });
         sp = new Sprite(tex);
         sp.anchor.set(0.5, 0.5);
         sp.position.set((t.x + 0.5) * TILE, (t.y + 0.5) * TILE);
@@ -877,7 +888,7 @@ export class GameView {
       if (p.away) continue;
       const sp = this.pawnSprites.get(p.id);
       if (!sp?.visible || sp.alpha < 0.3) continue;
-      const max = p.kind === 'zombie' ? ZOMBIE_HP : p.kind === 'szabrownik' ? 70 : 100;
+      const max = p.kind === 'zombie' ? ZOMBIE_HP : p.kind === 'szabrownik' ? STRANGER_HP : 100;
       const hp = p.needs ? p.needs.health : (p.hp ?? max);
       const busy =
         p.kind === 'zombie' ||
