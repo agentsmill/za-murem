@@ -246,6 +246,7 @@ function frame(now: number, dtMs: number) {
     n++;
   }
   if (n === 40) acc = 0;
+  view.syncGame(sim);
   view.render(sim.st, mult ? acc : 1, selected);
   fpsFrames++;
   if (now - fpsT >= 1000) {
