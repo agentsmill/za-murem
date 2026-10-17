@@ -1048,8 +1048,12 @@ const SHOTS: Shot[] = [
       await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
       await waitIdle(page);
       const r = await treeStage(page, true);
-      console.log(`  drzewo ${r.tree}: krycie korony nad zarządem ${r.alpha}`);
-      if (r.alpha >= 1) throw new Error('korona zasłania kogoś z zarządu');
+      console.log(
+        `  drzewo ${r.tree}: krycie korony ${r.alpha}, zarys za koroną: ${r.xray}, przed nią: ${r.xrayFront}`,
+      );
+      if (r.alpha !== 1) throw new Error('korona ma zostać pełna');
+      if (!r.xray) throw new Error('kogoś z zarządu za koroną nie widać (brak zarysu)');
+      if (r.xrayFront) throw new Error('zarys przy kimś, kto stoi przed drzewem');
     },
   },
   {
@@ -1125,7 +1129,195 @@ const SHOTS: Shot[] = [
       if (!s.seen.some((a) => a > 0.3)) throw new Error('szabrowników nie widać w świetle lampy');
     },
   },
+  // mapa światła po przybliżeniu: start z oddalenia (bufor rośnie), potem przybliżenie na wartownika z lampą;
+  // ziemia przy lampie ma być jaśniejsza niż 7 m dalej, a rogi ekranu zaciemnione
+  {
+    name: 'swiatlo-po-przyblizeniu',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.12&godzina=22`);
+      await waitIdle(page);
+      const at = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const size = sim.w.size;
+        // wartownik z latarnią przy bramie, od strony podwórka (skrzydła otwierają się w stronę rot)
+        const gate = sim.w.fence.gate;
+        const [dx, dy] = [
+          [0, -1],
+          [1, 0],
+          [0, 1],
+          [-1, 0],
+        ][gate.rot];
+        const x = gate.x + 0.5 + dx * (gate.w > 1 ? 0 : 1) + (gate.w > 1 ? 0.5 : 0);
+        const y = gate.y + 0.5 + dy * (gate.h > 1 ? 0 : 1) + (gate.h > 1 ? 0.5 : 0);
+        const p = st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        const tile = Math.floor(y) * size + Math.floor(x);
+        const job = {
+          t: 'guard',
+          target: 0,
+          tile,
+          phase: 1,
+          from: -1,
+          t0: st.tick,
+          until: st.tick + 99999,
+          order: true,
+        };
+        Object.assign(p, { x, y, path: [], pi: 0, dir: 0, carry: 0, wait: st.tick + 99999, job });
+        return { x, y };
+      });
+      await frames(page, 4);
+      for (const z of [0.3, 0.7, 1.3, 1.7]) {
+        await page.evaluate(([x, y, z]) => window.zm!.setCam(x, y, z), [at.x, at.y, z] as const);
+        await frames(page, 3);
+      }
+      await waitIdle(page);
+      const r = await lampCheck(page, 1.7);
+      console.log(
+        `  przy lampie ${r.lamp}, 7 m dalej ${r.dark} (mediana), rogi ${r.corners.join(', ')}, warstwa ${r.layer}`,
+      );
+      if (r.lamp < r.dark * 1.6) throw new Error('po przybliżeniu nie ma światła lampy w miejscu lampy');
+      if (Math.max(...r.corners) > r.dark * 2.2) throw new Error('po przybliżeniu przy krawędzi zostaje jasny pas');
+    },
+  },
+  {
+    // czuwanie przy kozie (guard na posterunku koza): klęczy przy ogniu, bez latarni i bez jej światła
+    name: 'czuwanie-koza',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2.2&godzina=23`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const size = sim.w.size;
+        const koza = st.things.find((t) => t.kind === 'koza')!;
+        koza.fuel = 1200;
+        const [dx, dy] = [
+          [0, -1],
+          [1, 0],
+          [0, 1],
+          [-1, 0],
+        ][(koza.rot + 2) % 4];
+        const x = koza.x + dx + 0.5;
+        const y = koza.y + dy + 0.5;
+        const p = st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        const tile = Math.floor(y) * size + Math.floor(x);
+        const job = {
+          t: 'guard',
+          target: -1,
+          tile,
+          phase: 1,
+          from: -1,
+          t0: st.tick,
+          until: st.tick + 99999,
+          order: true,
+        };
+        Object.assign(p, {
+          x,
+          y,
+          path: [],
+          pi: 0,
+          dir: dy < 0 ? 0 : dy > 0 ? 1 : dx < 0 ? 3 : 2,
+          carry: 0,
+          wait: st.tick + 99999,
+          job,
+        });
+        for (let k = 0; k < 20 && !sim.light.some((v) => v > 0); k++) sim.step();
+        zm.setCam(x, y, 2.2);
+      });
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const view = zm.view as unknown as {
+          gameLights: { r: number; inside?: boolean }[];
+          pawnSprites: Map<number, { texture: { frame: { x: number } } }>;
+        };
+        const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        return {
+          lamps: view.gameLights.filter((l) => l.r === 3).length,
+          fire: view.gameLights.filter((l) => l.inside).length,
+          x: view.pawnSprites.get(p.id)!.texture.frame.x,
+        };
+      });
+      const pose = poseAt(r.x);
+      console.log(`  czuwa przy kozie: poza ${pose}, latarnie ${r.lamps}, ogień kozy ${r.fire}`);
+      if (pose !== 'crouch' && pose !== 'walk') throw new Error(`czuwający w pozie ${pose}`);
+      if (r.lamps !== 0) throw new Error('czuwający przy kozie ma latarnię');
+      if (r.fire !== 1) throw new Error('brak ognia kozy');
+    },
+  },
 ];
+
+/** n klatek przeglądarki */
+async function frames(page: Page, n: number) {
+  await page.evaluate(
+    (n) =>
+      new Promise<void>((done) => {
+        let k = 0;
+        const f = () => (++k >= n ? done() : requestAnimationFrame(f));
+        requestAnimationFrame(f);
+      }),
+    n,
+  );
+}
+
+/**
+ * Jasność zrzutu: pierścień ziemi 0,8–1,4 m od środka ekranu (lampa w ręce wartownika na środku, bez samego
+ * pionka), mediana czterech miejsc 7 m dalej i cztery rogi ekranu; do tego rozmiar sprite'a mapy światła
+ * wobec widoku (ile komórek pokazuje).
+ */
+async function lampCheck(page: Page, zoom: number) {
+  const layer = await page.evaluate(() => {
+    const l = (window.zm!.view as unknown as { light: { sprite: { width: number; height: number } } }).light;
+    return `${Math.round(l.sprite.width)}×${Math.round(l.sprite.height)} px świata`;
+  });
+  const img = decodePng(await page.screenshot());
+  const lum = (x0: number, y0: number, r: number) => {
+    let s = 0;
+    let n = 0;
+    for (let y = Math.max(0, y0 - r); y < Math.min(img.height, y0 + r); y++)
+      for (let x = Math.max(0, x0 - r); x < Math.min(img.width, x0 + r); x++) {
+        const o = (y * img.width + x) * 4;
+        s += img.rgba[o] + img.rgba[o + 1] + img.rgba[o + 2];
+        n++;
+      }
+    return Math.round(s / Math.max(1, n) / 3);
+  };
+  const cx = img.width >> 1;
+  const cy = img.height >> 1;
+  const m = 32 * zoom;
+  const ring = [
+    [-1.1, 0.3],
+    [1.2, 0.2],
+    [0.2, 1.1],
+    [-0.9, 0.9],
+    [1, 0.9],
+  ].map(([dx, dy]) => lum(Math.round(cx + dx * m), Math.round(cy + dy * m), 8));
+  const far = [
+    [-7, 0],
+    [7, 0],
+    [0, -7],
+    [0, 7],
+  ]
+    .map(([dx, dy]) => lum(Math.round(cx + dx * m), Math.round(cy + dy * m), 10))
+    .sort((a, b) => a - b);
+  // rogi mapy z dala od paska, panelu celów, przycisków zoomu i podpisu atrybucji
+  const corners = [
+    [340, 110],
+    [img.width - 100, 110],
+    [40, img.height - 40],
+    [img.width - 40, img.height - 60],
+  ].map(([x, y]) => lum(x, y, 20));
+  return {
+    lamp: Math.round(ring.reduce((a, b) => a + b, 0) / ring.length),
+    dark: Math.round((far[1] + far[2]) / 2),
+    corners,
+    layer,
+  };
+}
 
 /** klucze rzeczy narysowanych w warstwie pionków (miejsce i opis sprite'a) */
 async function thingKeys(page: Page): Promise<string[]> {
@@ -1312,7 +1504,8 @@ async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
         const gate = sim.w.fence.gate;
         put(0, tx - 1, ty, 3, job('chop', sim.w.dryTree, ty * size + tx - 1));
         put(1, tx + 2, ty + 1, 0, null, 3);
-        put(2, gate.x, gate.y + (gate.rot === 0 ? -1 : 1), 0, job('guard', -1, 0));
+        // warta z latarnią przy bramie (posterunek 0); -1 to czuwanie przy kozie, bez latarni
+        put(2, gate.x, gate.y + (gate.rot === 0 ? -1 : 1), 0, job('guard', 0, 0));
         put(3, tx - 2, ty + 2, 3, null, 2);
         zm.setCam(tx, ty + 1, 2);
       }
@@ -1384,6 +1577,7 @@ async function treeStage(page: Page, zarzad: boolean) {
     const view = zm.view as unknown as {
       trees: { sprites: Map<number, { zIndex: number; alpha: number }> };
       pawnSprites: Map<number, { zIndex: number }>;
+      xraySprites: Map<number, { visible: boolean }>;
     };
     const sp = view.trees.sprites.get(k)!;
     const pick = sim.st.pawns.filter((p) => (zarzad ? p.kind === 'core' : p.kind !== 'core') && !p.away);
@@ -1393,6 +1587,8 @@ async function treeStage(page: Page, zarzad: boolean) {
       trunk: sp.zIndex,
       front: view.pawnSprites.get(pick[1].id)!.zIndex,
       alpha: sp.alpha,
+      xray: !!view.xraySprites.get(pick[0].id)?.visible,
+      xrayFront: !!view.xraySprites.get(pick[1].id)?.visible,
     };
   }, zarzad);
 }

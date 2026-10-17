@@ -101,7 +101,7 @@ describe('pozy pracy', () => {
     expect(poseOf(pawn({ job: job('haul', 1), carry: 3, path: [1, 2] }), 1, []).pose).toBe('carry');
     expect(poseOf(pawn({ job: job('warm') }), 1, [])).toMatchObject({ pose: 'crouch', frame: 0 });
     expect(poseOf(pawn({ job: job('cook') }), 1, []).pose).toBe('cook');
-    expect(poseOf(pawn({ job: job('guard') }), 1, []).pose).toBe('guard');
+    expect(poseOf(pawn({ job: job('guard', 1, 0) }), 1, []).pose).toBe('guard');
     expect(poseOf(pawn(), 1, []).pose).toBe('walk');
     // dokładanie do kozy: klęczy z polanem
     expect([1, 2]).toContain(poseOf(pawn(), 1, [], true).frame);
@@ -176,7 +176,10 @@ describe('pozy pracy', () => {
 
   it('wartownik z lampą świeci w nocy', () => {
     const ls = gameLights(
-      { st: { things: [], felled: [], tick: 0, pawns: [pawn({ job: job('guard') }), pawn({ id: 2 })] }, light: [] },
+      {
+        st: { things: [], felled: [], tick: 0, pawns: [pawn({ job: job('guard', 1, 0) }), pawn({ id: 2 })] },
+        light: [],
+      },
       [],
     );
     expect(ls).toHaveLength(1);

@@ -1,7 +1,7 @@
 /* Pozy pionków z pracy w symulacji (pawn.job: t, phase) i z rąk (carry): rąbanie i rozbieranie mebla
    siekierą, niesienie naręcza drewna, klęczenie przy kozie (grzanie rąk, dokładanie drewna),
    gotowanie, siedzenie na krześle przy stole, sen w łóżku pod kocem albo na podłodze, warta z lampą
-   (praca 'warta', gdy symulacja ją doda). Klatki liczone z czasu gry, bez stanu w symulacji.
+   (praca 'guard' przy bramie albo dziurze) i czuwanie przy kozie (guard na posterunku KOZA_POST). Klatki liczone z czasu gry, bez stanu w symulacji.
    Dokładanie do kozy trwa w symulacji jeden tick, więc widok pamięta je chwilę (FeedWatch).
    Czyste funkcje bez PixiJS. */
 
@@ -39,6 +39,11 @@ const TILE = 32;
 const BEDS = new Set(['lozko', 'wersalka']);
 /** wierzch materaca łóżka i siedziska wersalki w pikselach ekranu (lozko, wersalka w rzeczy.ts) */
 const MATTRESS = 9;
+/** posterunek warty przy kozie zarządu (KOZA_POST w sim.ts): czuwa przy ogniu, bez latarni */
+export const KOZA_POST = -1;
+/** cykl czuwania przy kozie (s gry): tyle klęczy przy ogniu, resztę stoi */
+const VIGIL = 19;
+const VIGIL_KNEEL = 14;
 /** ułożenie śpiącego na podłodze według kierunku: głową w górę, w górę, w lewo, w prawo */
 const FLOOR_O = [0, 0, 3, 1] as const;
 
@@ -76,8 +81,15 @@ export function poseOf(p: PawnLike, t: number, things: readonly ThingWithId[], f
         return { pose: 'crouch', dir, frame: 0 };
       case 'cook':
         return { pose: 'cook', dir, frame: Math.floor(tt * 2) % 2 };
-      case 'guard':
-        return { pose: 'guard', dir, frame: Math.floor(tt) % 2 };
+      case 'guard': {
+        if (j.target !== KOZA_POST) return { pose: 'guard', dir, frame: Math.floor(tt) % 2 };
+        // czuwanie przy kozie: na krześle siedzi, bez krzesła klęczy przy ogniu i co jakiś czas wstaje
+        const chair = things.find((c) => c.kind === 'krzeslo' && covers(c, p.x, p.y));
+        if (chair) return { pose: 'sit', dir, frame: 0, z: chair.y + chair.h + (dir === 1 ? -0.01 : 0.01) };
+        return (tt + p.id * 3.7) % VIGIL < VIGIL_KNEEL
+          ? { pose: 'crouch', dir, frame: 0 }
+          : { pose: 'walk', dir, frame: 0 };
+      }
       case 'eat': {
         // na krześle siedzi; plecami do patrzącego za oparciem (krzesło rysuje się po nim)
         const chair = things.find((c) => c.kind === 'krzeslo' && covers(c, p.x, p.y));
@@ -109,9 +121,10 @@ export function poseOf(p: PawnLike, t: number, things: readonly ThingWithId[], f
 export const FEED_TICKS = 40;
 
 /**
- * Dokładanie do kozy: w symulacji drewno z rąk trafia do kozy w jednym ticku i praca refuel się kończy.
- * Widok zauważa spadek drewna w rękach po pracy refuel w drodze i pokazuje klęczenie z polanem przez
- * FEED_TICKS, dopóki pionek stoi w miejscu.
+ * Dokładanie do kozy: w symulacji drewno z rąk trafia do kozy w jednym ticku (koniec pracy refuel albo
+ * powrót czuwającego na posterunek). Widok zauważa spadek drewna w rękach po drodze z drewnem do kozy
+ * (refuel w fazie 1, guard w fazie 3) i pokazuje klęczenie z polanem przez FEED_TICKS, dopóki pionek
+ * stoi w miejscu.
  */
 export class FeedWatch {
   private last = new Map<number, { carry: number; refuel: boolean }>();
@@ -119,7 +132,9 @@ export class FeedWatch {
 
   feeding(p: PawnLike, tick: number): boolean {
     const prev = this.last.get(p.id);
-    const refuel = !!p.job && p.job.t === 'refuel' && p.job.phase === 1;
+    // drewno do kozy niesie praca refuel (faza 1) albo czuwający przy kozie (guard, faza 3)
+    const refuel =
+      !!p.job && ((p.job.t === 'refuel' && p.job.phase === 1) || (p.job.t === 'guard' && p.job.phase === 3));
     if (prev?.refuel && p.carry < prev.carry) this.until.set(p.id, { tick: tick + FEED_TICKS, x: p.x, y: p.y });
     this.last.set(p.id, { carry: p.carry, refuel });
     const f = this.until.get(p.id);

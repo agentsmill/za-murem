@@ -6,6 +6,7 @@
    Klatka 32×48 px (osoba ma około 1,4 m wysokości w skali gry), leżenie 48×48. Jeden atlas,
    rysowany samymi prostokątami (działa też z atrapą płótna w narzędziach). */
 
+import { type AnyCanvas, ctx2d, newCanvas } from './canvas.ts';
 import { h2 } from './hash.ts';
 import { css, shade } from './palette.ts';
 
@@ -652,4 +653,35 @@ export function makePeopleAtlas(): HTMLCanvasElement {
       }
   }
   return c;
+}
+
+/** kolor zarysu pionka widzianego przez koronę drzewa */
+const XRAY: readonly [number, number, number] = [246, 231, 176];
+
+/**
+ * Zarys postaci z atlasu: brzeg sylwetki szeroki na piksel w kolorze XRAY, reszta przezroczysta, w tym
+ * cień pod stopami (półprzezroczysty). Ten sam układ klatek co atlas. Widok rysuje go na wierzchu, gdy
+ * ktoś z zarządu stoi za koroną drzewa, zamiast przyciemniać całą koronę. Tylko w przeglądarce
+ * (czyta piksele płótna).
+ */
+export function outlineAtlas(src: AnyCanvas): AnyCanvas {
+  const w = src.width;
+  const h = src.height;
+  const a = ctx2d(src).getImageData(0, 0, w, h).data;
+  const out = newCanvas(w, h);
+  const ctx = ctx2d(out);
+  const img = ctx.createImageData(w, h);
+  const o = img.data;
+  const solid = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && a[(y * w + x) * 4 + 3] >= 200;
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      if (!solid(x, y) || (solid(x - 1, y) && solid(x + 1, y) && solid(x, y - 1) && solid(x, y + 1))) continue;
+      const i = (y * w + x) * 4;
+      o[i] = XRAY[0];
+      o[i + 1] = XRAY[1];
+      o[i + 2] = XRAY[2];
+      o[i + 3] = 255;
+    }
+  ctx.putImageData(img, 0, 0);
+  return out;
 }

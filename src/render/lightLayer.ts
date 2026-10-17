@@ -92,7 +92,10 @@ export class LightLayer {
         autoGarbageCollect: false,
       });
       this.sources.push(source);
-      sp.texture = new Texture({ source, frame: new Rectangle(0, 0, 1, 1) });
+      // dynamic: ramka zmienia się przy zoomowaniu (bufor nie maleje), a sprite w PixiJS 8 przelicza
+      // swój kształt po tex.update() tylko dla tekstur dynamicznych; bez tego po przybliżeniu z oddalenia
+      // mapa światła miała rozmiar starej ramki i światła lądowały obok swoich miejsc
+      sp.texture = new Texture({ source, frame: new Rectangle(0, 0, 1, 1), dynamic: true });
       if (old !== Texture.EMPTY) old.destroy(true);
     }
   }
