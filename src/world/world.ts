@@ -50,6 +50,11 @@ export interface WorldBuilding {
   cats: string[];
   entrances: Entrance[];
   tags: Record<string, string>;
+  /** identyfikator OSM budynku („w123” droga, „r45” relacja), gdy źródło go podaje: Overpass zawsze, kafelki
+      dla budynku niesklejonego z innymi albo z adresem na samym budynku */
+  osmId?: string;
+  /** data budowy z tagu start_date w OSM, bez zmian („1975”, „1970s”, „~1965”); tylko z Overpass */
+  startDate?: string;
 }
 
 export interface Tree {
@@ -303,6 +308,8 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
       cats,
       entrances: [],
       tags: o.b.t,
+      ...(o.b.t.id ? { osmId: o.b.t.id } : {}),
+      ...(o.b.t.start_date ? { startDate: o.b.t.start_date } : {}),
     };
   });
 
