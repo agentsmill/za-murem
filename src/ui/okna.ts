@@ -322,7 +322,7 @@ const ZOMBIE_HELP =
 export function helpSheet(touch: boolean, zombie = false): Sheet {
   const ctl = touch
     ? '<li>Stuknięcie w człowieka z zarządu zaznacza go.</li><li>Stuknięcie w miejsce wydaje najprostsze polecenie: idź, zetnij, zanieś, dołóż.</li><li>Przytrzymanie palca pokazuje wszystkie polecenia w tym miejscu, także palenie mebli.</li><li>Jeden palec przesuwa mapę, dwa przybliżają.</li>'
-    : '<li>Klik zaznacza człowieka z zarządu, ramka kilku naraz.</li><li>Prawy przycisk pokazuje polecenia w tym miejscu: idź, zetnij, zanieś do składu, dołóż do kozy, gotuj, spal mebel.</li><li>Kółko przybliża, przeciąganie przesuwa mapę, WASD też.</li><li>Spacja to pauza, 1–4 tempo (do 8×).</li>';
+    : '<li>Klik zaznacza człowieka z zarządu, Shift i przeciąganie zaznacza ramką kilku naraz.</li><li>Prawy przycisk pokazuje polecenia w tym miejscu: idź, zetnij, zanieś do składu, dołóż do kozy, gotuj, spal mebel.</li><li>Kółko przybliża, przeciąganie przesuwa mapę, WASD też.</li><li>Na gładziku kliknięcie dwoma palcami albo Ctrl+klik to prawy przycisk, szczypanie przybliża, dwa palce przesuwają mapę.</li><li>Spacja to pauza, 1–4 tempo (do 8×).</li>';
   return {
     tone: 'menu',
     kicker: 'Za Murem 0.4',

@@ -214,6 +214,10 @@ Przegląd całej gałęzi (osobny recenzent, model Opus): stare zapisy, zapis w 
 
 CLAUDE.md dostał architekturę (świat z adresu, symulacja, most do zarządu, rysowanie w workerach, `window.zm`), zasady determinizmu i zapisu, uruchamianie pojedynczych testów, parametry adresu gry i obejście `npm run lint` przy drzewach sesji w `.claude/worktrees/`. Nieaktualny „Stan na 16.10.2026” zastąpiła sekcja „Wersje i gałęzie”. Kod bez zmian; opisane komendy sprawdzone (pojedynczy test, filtr `-t`, Biome na katalogach, `tools/trzy-noce.ts`).
 
+### Poprawka po wdrożeniu M1: przeciąganie myszą, 18.10.2026
+
+Mateusz po pierwszym graniu na żywo: „nie mogę nic klikać w domu i budować czy ścinać”. Przyczyna: przeciąganie lewym przyciskiem myszy rysowało ramkę zaznaczenia zamiast przesuwać mapę (choć podpowiedź mówi „Przeciąganie przesuwa mapę”), a ramka na pustym miejscu czyściła zaznaczenie. Kto próbował dojechać do suchego drzewa, tracił zaznaczoną osobę i prawy przycisk przestawał działać. Teraz lewe przeciąganie przesuwa mapę, ramka zaznacza z Shiftem (pomoc w grze to mówi), prawe przeciąganie i WASD zostają. Nowy scenariusz `mysz-przesuwanie` padał na starym kodzie (mapa 0 px, zaznaczenie zgubione), z poprawką przechodzi (200 px, zaznaczenie zostaje, ramka z Shiftem zaznacza 4 z 4). Budowania jeszcze nie ma, przychodzi w M2.
+
 ## Następne
 
 0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia.
