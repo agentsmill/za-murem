@@ -346,6 +346,10 @@ a.btn {
 .hint:empty {
   display: none;
 }
+.hint.warn {
+  border-color: var(--bad);
+  color: #f3c4b8;
+}
 .box {
   position: absolute;
   border: 1px solid var(--lamp);
@@ -517,6 +521,16 @@ a.btn {
   border-color: var(--good);
   background: var(--good);
   color: #18200f;
+}
+.goal.missed {
+  --tone: #8f8576;
+  text-decoration: line-through;
+  text-decoration-color: rgb(222 90 67 / 0.6);
+}
+.goal.missed::before {
+  content: "✗";
+  border-color: var(--bad);
+  color: var(--bad);
 }
 .goal.now {
   --tone: var(--ink);

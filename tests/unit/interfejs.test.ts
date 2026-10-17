@@ -6,7 +6,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
 import type { GovInput, GovState, Prompt } from '../../src/gov/typy.ts';
-import { emptyEffects } from '../../src/gov/wspolne.ts';
+import { emptyEffects, gameMin, QUIET } from '../../src/gov/wspolne.ts';
+import { eventTick, M1_EVENTS, RETRY } from '../../src/gov/wydarzenia.ts';
 import {
   ackReport,
   chooseEvent,
@@ -183,7 +184,7 @@ describe('cele pierwszego dnia', () => {
     const st = sim.st;
     const o = { touch: false, kitchen: 9, hour: 15 };
     let g = goalsOf(st, null, o);
-    expect(g.map((x) => x.key)).toEqual([...TUT_STEPS, 'noc']);
+    expect(g.map((x) => x.key)).toEqual([...TUT_STEPS, 'drewno', 'noc']);
     expect(currentGoal(g)?.key).toBe('zaznacz');
     expect(currentGoal(goalsOf(st, null, { ...o, selected: true }))?.key).toBe('rozkaz');
     expect(goalsOf(st, null, { ...o, touch: true })[0].how).not.toBe(g[0].how);
@@ -196,7 +197,15 @@ describe('cele pierwszego dnia', () => {
     expect(currentGoal(goalsOf(st, null, o))?.how).toContain('W kuchni teraz 9°C');
     st.tut.step = TUT_STEPS.length;
     const gov = newGov(1);
-    expect(currentGoal(goalsOf(st, gov, o))?.key).toBe('noc');
+    // drewno na noc: postęp w podpowiedzi, zaliczone raz osiągnięte, przepada z kartą nocy
+    const wood = currentGoal(goalsOf(st, gov, { ...o, wood: 2 }))!;
+    expect(wood.key).toBe('drewno');
+    expect(wood.how).toContain('Drewna na zapas: 2 z 6');
+    expect(currentGoal(goalsOf(st, gov, { ...o, wood: 1, woodReady: true }))?.key).toBe('noc');
+    gov.night = { confirmed: true } as GovState['night'];
+    const lapsed = goalsOf(st, gov, o).find((x) => x.key === 'drewno')!;
+    expect(lapsed).toMatchObject({ done: true, missed: true });
+    gov.night = null;
     gov.reports.push({} as GovState['reports'][number]);
     expect(currentGoal(goalsOf(st, gov, o))).toBeNull();
     st.tut.step = -1;
@@ -284,13 +293,43 @@ describe('okna zarządu', () => {
   });
 });
 
+describe('rytm zarządu po playteście', () => {
+  it('po uchwale, karcie i raporcie najbliższe wydarzenie najwcześniej po QUIET s (bez okien jedno po drugim)', () => {
+    const { sim, seed } = fresh();
+    sim.st.tick = tickAt(19.5);
+    const gov = newGov(seed);
+    gov.ev.next = 0;
+    govUpdate(gov, input(sim, 180));
+    signLaw(gov, input(sim, 181), 'u_warty');
+    expect(gov.ev.next).toBeGreaterThanOrEqual(181 + QUIET);
+    gov.report = {} as GovState['report'];
+    gov.ev.next = 0;
+    ackReport(gov, input(sim, 300));
+    expect(gov.report).toBeNull();
+    expect(gov.ev.next).toBe(300 + QUIET);
+  });
+  it('gdy żadne wydarzenie nie pasuje, następna próba po RETRY s, a nie po pełnym odstępie', () => {
+    const { sim, seed } = fresh();
+    sim.st.tick = tickAt(16);
+    const gov = newGov(seed);
+    const i = input(sim, 200);
+    // wszystkie wydarzenia „przed chwilą”: żadne nie jest świeże
+    for (const e of M1_EVENTS) gov.ev.last[e.id] = gameMin(i);
+    gov.ev.next = 0;
+    eventTick(gov, i, emptyEffects(), false);
+    expect(gov.ev.active).toBeNull();
+    expect(gov.ev.next).toBe(200 + RETRY);
+  });
+});
+
 describe('pasek i karta osoby', () => {
   it('stan osiedla na starcie: zimna kuchnia, brak drewna', () => {
     const { sim, w, seed } = fresh();
     const s = statsOf(snapshot(sim.st, w), newGov(seed));
-    expect(s.map((x) => x.id)).toEqual(['sOut', 'sKit', 'sWood', 'sFood', 'sTrust', 'sAnger']);
+    expect(s.map((x) => x.id)).toEqual(['sOut', 'sKit', 'sFire', 'sWood', 'sFood', 'sTrust', 'sAnger']);
     const by = Object.fromEntries(s.map((x) => [x.id, x]));
     expect(by.sKit.level).toBe('bad');
+    expect(by.sFire).toMatchObject({ value: 'zimna', level: 'bad' });
     expect(by.sWood).toMatchObject({ value: '0', level: 'bad' });
     expect(by.sTrust).toMatchObject({ value: '50', level: 'ok' });
     expect(statsOf(snapshot(sim.st, w), null).find((x) => x.id === 'sTrust')?.value).toBe('–');

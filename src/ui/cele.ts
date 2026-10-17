@@ -1,5 +1,6 @@
-/* Cele pierwszego dnia: kroki samouczka ze stanu symulacji (st.tut) i „przetrwać noc” z raportów zarządu.
-   Czyste funkcje bez DOM: interfejs dostaje listę z tekstem celu i podpowiedzią do bieżącego kroku. */
+/* Cele pierwszego dnia: kroki samouczka ze stanu symulacji (st.tut), drewno na noc i „przetrwać noc”
+   z raportów zarządu. Czyste funkcje bez DOM: interfejs dostaje listę z tekstem celu i podpowiedzią
+   do bieżącego kroku. */
 
 import type { GovState } from '../gov/typy.ts';
 import type { SimState } from '../sim/sim.ts';
@@ -7,12 +8,17 @@ import { TUT_STEPS, type TutStep, WARM_ENOUGH } from '../sim/tutorial.ts';
 import { deg } from './tekst.ts';
 
 export interface Goal {
-  key: TutStep | 'noc';
+  key: TutStep | 'drewno' | 'noc';
   text: string;
   /** jak to zrobić (tylko bieżący krok ma sens) */
   how: string;
   done: boolean;
+  /** cel przepadł (noc przyszła bez zapasu drewna): skreślony, ale bez ptaszka */
+  missed?: boolean;
 }
+
+/** tyle drewna na zapas (w składzie, luzem i w rękach) wystarcza, żeby koza dotrwała do snu */
+export const NIGHT_WOOD = 6;
 
 const STEPS: Record<TutStep, { text: string; mouse: string; touch: string }> = {
   zaznacz: {
@@ -27,8 +33,8 @@ const STEPS: Record<TutStep, { text: string; mouse: string; touch: string }> = {
   },
   sciete: {
     text: 'Zetnijcie suche drzewo.',
-    mouse: 'Rąbanie trwa chwilę. Drewno zostanie przy pniu.',
-    touch: 'Rąbanie trwa chwilę. Drewno zostanie przy pniu.',
+    mouse: 'Rąbanie trwa chwilę. Przycisk 3× u góry przyspiesza czekanie.',
+    touch: 'Rąbanie trwa chwilę. Przycisk 3× u góry przyspiesza czekanie.',
   },
   sklad: {
     text: 'Zanieście drewno do składu przy kozie.',
@@ -42,8 +48,8 @@ const STEPS: Record<TutStep, { text: string; mouse: string; touch: string }> = {
   },
   cieplo: {
     text: `Ogrzejcie kuchnię do ${WARM_ENOUGH}°C.`,
-    mouse: 'Koza grzeje powoli. Pilnujcie, żeby nie wygasła.',
-    touch: 'Koza grzeje powoli. Pilnujcie, żeby nie wygasła.',
+    mouse: 'Koza grzeje powoli, a 3× u góry przyspiesza czekanie.',
+    touch: 'Koza grzeje powoli, a 3× u góry przyspiesza czekanie.',
   },
 };
 
@@ -51,7 +57,15 @@ const STEPS: Record<TutStep, { text: string; mouse: string; touch: string }> = {
 export function goalsOf(
   st: SimState,
   gov: GovState | null,
-  o: { touch: boolean; kitchen: number | null; hour: number; selected?: boolean },
+  o: {
+    touch: boolean;
+    kitchen: number | null;
+    hour: number;
+    selected?: boolean;
+    /** drewno na zapas teraz i czy zapas na noc już raz był */
+    wood?: number;
+    woodReady?: boolean;
+  },
 ): Goal[] {
   const out: Goal[] = [];
   const t = st.tut;
@@ -64,6 +78,21 @@ export function goalsOf(
       out.push({ key, text: s.text, how, done: k < t.step || (key === 'zaznacz' && !!o.selected) });
     });
   const survived = !!gov && gov.reports.length > 0;
+  // drewno na noc: po samouczku koza zjada resztę drewna do wieczora; cel liczy się, kiedy zapas raz był
+  if (t.step >= 0) {
+    const late = survived || !!gov?.night?.confirmed;
+    out.push({
+      key: 'drewno',
+      text: 'Przygotujcie drewno na noc.',
+      how: `Drewna na zapas: ${o.wood ?? 0} z ${NIGHT_WOOD}. ${
+        o.touch
+          ? 'Stuknijcie pień dowolnego drzewa albo przytrzymajcie palec na meblu, żeby go spalić.'
+          : 'Prawy przycisk na dowolnym drzewie: „Ściąć drzewo”. W ostateczności spalcie mebel.'
+      }`,
+      done: !!o.woodReady || late,
+      missed: !o.woodReady && late,
+    });
+  }
   const night = o.hour >= 20 || o.hour < 6;
   out.push({
     key: 'noc',

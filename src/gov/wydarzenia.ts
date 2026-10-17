@@ -29,6 +29,8 @@ import {
 export const FIRST_EVENT = 70;
 /** do tej chwili gęściej: decyzja co minutę w pierwszych 10 minutach */
 export const EARLY = 600;
+/** po nieudanym losowaniu (nic nie pasowało) następna próba po tylu sekundach przy ekranie */
+export const RETRY = 8;
 
 const RES_KEY: Record<Res, StockKey | null> = {
   opal: 'wood',
@@ -215,7 +217,11 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   if (!pora) return;
   st.ev.next = i.screen + nextGap(st, i.screen);
   const ev = pickGovEvent(st, makeHost(st, i, fx), pora);
-  if (!ev) return;
+  // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
+  if (!ev) {
+    st.ev.next = i.screen + RETRY;
+    return;
+  }
   st.ev.active = ev;
   st.ev.when = i.screen;
   const def = byId.get(ev.id)!;

@@ -1,4 +1,4 @@
-/* Górny pasek: temperatura na dworze i w kuchni, drewno, jedzenie, zaufanie i wkurzenie. Wartości
+/* Górny pasek: temperatura na dworze i w kuchni, ogień w kozie (godziny), drewno na zapas, jedzenie, zaufanie i wkurzenie. Wartości
    i progi liczy czysta funkcja (do testów), DOM zmienia się tylko po zmianie tekstu. */
 
 import type { GovState } from '../gov/typy.ts';
@@ -17,6 +17,8 @@ export interface Stat {
 export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
   const k = s.stock;
   const food = k.supplies + k.meals;
+  // drewno na zapas, bez tego, co już się pali (ogień ma swoje pole)
+  const spare = k.woodSklad + k.woodLoose + k.woodCarried;
   const ppl = Math.max(1, s.people.length);
   const kit = s.kitchen;
   const trust = gov ? Math.round(gov.trust) : null;
@@ -38,10 +40,18 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
           : `W kuchni zarządu ${deg(kit)}${s.kozaLit ? `, koza pali się jeszcze ${num(k.fireHours)} h` : ', koza zimna'}`,
     },
     {
+      id: 'sFire',
+      value: s.kozaLit ? `${num(k.fireHours)} h` : 'zimna',
+      level: !s.kozaLit ? (kit !== null && kit < WARM_ENOUGH ? 'bad' : 'mid') : k.fireHours < 0.5 ? 'mid' : 'ok',
+      title: s.kozaLit
+        ? `Ognia w kozie na ${num(k.fireHours)} h. Zarząd sam dokłada, póki jest drewno.`
+        : 'Koza zimna. Bez ognia kuchnia stygnie: zetnijcie drzewo albo spalcie mebel.',
+    },
+    {
       id: 'sWood',
-      value: String(k.wood),
-      level: k.wood < 2 ? 'bad' : k.wood < 6 ? 'mid' : 'ok',
-      title: `Drewno: w składzie ${k.woodSklad}, luzem ${k.woodLoose}, w rękach ${k.woodCarried}, w kozie na ${num(k.fireHours)} h`,
+      value: String(spare),
+      level: spare === 0 ? 'bad' : spare < 6 ? 'mid' : 'ok',
+      title: `Drewno na zapas: w składzie ${k.woodSklad}, luzem ${k.woodLoose}, w rękach ${k.woodCarried}`,
     },
     {
       id: 'sFood',

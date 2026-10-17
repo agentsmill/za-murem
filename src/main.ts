@@ -25,7 +25,8 @@ import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, T
 import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { createSim, Sim } from './sim/sim.ts';
 import { type SimSnapshot, snapshot } from './sim/snapshot.ts';
-import { currentGoal, goalsOf, markTree } from './ui/cele.ts';
+import { TUT_STEPS } from './sim/tutorial.ts';
+import { currentGoal, goalsOf, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
 import {
@@ -69,11 +70,17 @@ declare global {
       idle: () => boolean;
       /** krok zarządu teraz (jakby minęła sekunda przy ekranie); zwraca rodzaj decyzji, która czeka */
       govTick: () => string | null;
-      /** przewija grę o tyle minut gry; staje na decyzji zarządu i zwraca jej rodzaj */
-      ff: (minutes: number) => string | null;
+      /** przewija grę o tyle minut gry (czas przy ekranie jak w tempie mult, domyślnie 1×); staje na decyzji
+          zarządu i zwraca jej rodzaj */
+      ff: (minutes: number, mult?: number) => string | null;
       /** punkt na ekranie dla miejsca w metrach (kafelkach) */
       screenOf: (x: number, y: number) => [number, number];
       save: () => boolean;
+      /** sekundy przy ekranie bez pauzy i bieżące tempo (do pomiarów rytmu gry) */
+      screen: () => number;
+      speed: () => number;
+      /** płynny przejazd kamery do miejsca w metrach (do nagrań) */
+      fly: (x: number, y: number, zoom: number, ms: number) => void;
     };
   }
 }
@@ -91,6 +98,9 @@ let govAt = 0;
 let speed = 1;
 /** tempo sprzed okna, które zatrzymało grę */
 let hold: number | null = null;
+/** noc po karcie biegnie w tym tempie (indeks SPEEDS: 6×), rano wraca tempo dnia */
+const NIGHT_PACE = 3;
+let dayPace: number | null = null;
 let acc = 0;
 let savedHour = -1;
 const selected = new Set<number>();
@@ -306,11 +316,12 @@ function input(): GovInput {
 }
 
 /** skutki zarządu do symulacji; ostatni wpis kroniki jako podpowiedź (bez niej, gdy zaraz otworzy się okno) */
-function applyFx(fx: ReturnType<typeof govUpdate>, hint = true) {
-  if (!sim) return;
+function applyFx(fx: ReturnType<typeof govUpdate>, hint = true): string {
+  if (!sim) return '';
   applyGov(sim.st, sim.w, fx);
-  const last = fx.log[fx.log.length - 1];
+  const last = fx.log[fx.log.length - 1] ?? '';
   if (last && hint) say(last, 7000);
+  return last;
 }
 
 /** krok zarządu: skutki do symulacji, potem decyzja do pokazania (show: od razu okno) */
@@ -365,7 +376,11 @@ function showPrompt(p: Prompt) {
   if (p.k === 'raport')
     modal.show(reportSheet(p.report), (act) => {
       if (act !== 'report-ok') return;
-      ackReport(g);
+      ackReport(g, input());
+      if (dayPace !== null) {
+        hold = dayPace;
+        dayPace = null;
+      }
       decided();
     });
   else if (p.k === 'uchwala')
@@ -408,7 +423,13 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
       for (const c of card.people) setNight(g, c.id, c.proposal);
       showNight(p);
     } else if (act === 'night-go') {
-      applyFx(confirmNight(g, input()));
+      const line = applyFx(confirmNight(g, input()));
+      // zarząd idzie spać: do rana czas płynie szybciej, potem wraca tempo dnia (chyba że gracz sam je zmieni)
+      if (hold !== null && hold > 0 && hold < NIGHT_PACE) {
+        dayPace = hold;
+        hold = NIGHT_PACE;
+        say(`${line ? `${line} ` : ''}Do rana czas płynie szybciej (6×).`, 9000);
+      }
       decided();
     }
   });
@@ -541,8 +562,19 @@ function hud(now: number) {
   $('hDay').textContent = `Dzień ${dayOf(st.tick)}`;
   $('hTime').textContent = clockOf(st.tick);
   $('fps').textContent = `${Math.round(fps)} kl/s`;
-  $('hint').textContent = now < hintUntil ? hint : '';
   const snap = snapshot(st, sim.w);
+  // koza wygasła po samouczku, a drewna nie ma: decyzja gracza (drzewo albo mebel), więc ostrzeżenie wisi,
+  // dopóki problem trwa (w dzień, kiedy zarząd nie śpi), i ma pierwszeństwo przed zwykłymi podpowiedziami
+  const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
+  const afterKoza = st.tut.step < 0 || st.tut.step > TUT_STEPS.indexOf('koza');
+  const cold = afterKoza && !snap.kozaLit && !wood && snap.hour >= 6 && snap.hour < 22;
+  const warn = cold
+    ? touchUI
+      ? 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).'
+      : 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (prawy przycisk na meblu).'
+    : '';
+  $('hint').textContent = warn || (now < hintUntil ? hint : '');
+  $('hint').classList.toggle('warn', !!warn);
   renderStats(statsOf(snap, gov));
   renderGoals(snap);
   const card = $('card');
@@ -563,14 +595,20 @@ function hud(now: number) {
 }
 
 let goalsHtml = '';
+/** zapas drewna na noc był choć raz (cel się nie cofa, kiedy koza zje drewno) */
+let woodReady = false;
 function renderGoals(snap: SimSnapshot) {
   const el = $('goals');
   if (!sim) return;
+  const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
+  if (wood >= NIGHT_WOOD && sim.st.tut.step >= TUT_STEPS.length) woodReady = true;
   const list = goalsOf(sim.st, gov, {
     touch: touchUI,
     kitchen: snap.kitchen,
     hour: snap.hour,
     selected: snap.people.some((p) => selected.has(p.pawn)),
+    wood,
+    woodReady,
   });
   const cur = currentGoal(list);
   // po samouczku i pierwszej nocy lista znika
@@ -583,7 +621,7 @@ function renderGoals(snap: SimSnapshot) {
   const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>Pierwszy dzień</span><b class="goals-n">${done}/${list.length}</b></button><ol class="goal-list">${list
     .map(
       (g, k) =>
-        `<li class="goal${g.done ? ' done' : g === cur ? ' now' : ''}" data-n="${k + 1}">${esc(g.text)}${
+        `<li class="goal${g.missed ? ' missed' : g.done ? ' done' : g === cur ? ' now' : ''}" data-n="${k + 1}">${esc(g.text)}${
           g === cur ? `<small class="goal-how">${esc(g.how)}</small>` : ''
         }</li>`,
     )
@@ -644,6 +682,7 @@ $('speed').addEventListener('click', (e) => {
   if (!b) return;
   speed = Number(b.dataset.s);
   hold = null;
+  dayPace = null;
   renderSpeed();
 });
 $('zIn').onclick = () => view.zoomAt(view.width / 2, view.height / 2, 1.5);
@@ -937,11 +976,13 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     speed = speed ? 0 : 1;
     hold = null;
+    dayPace = null;
     renderSpeed();
   }
   if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
     speed = Number(e.code.slice(-1));
     hold = null;
+    dayPace = null;
     renderSpeed();
   }
   if (e.code === 'Escape') selected.clear();
@@ -980,14 +1021,15 @@ bars.observe($('card'));
       govAt = screen;
       return govStep(true)?.k ?? null;
     },
-    ff: (minutes) => {
+    ff: (minutes, mult = 1) => {
       if (!sim || !gov || modal.open) return modal.tone;
       const ticks = Math.round((minutes / 60) * TICKS_PER_HOUR);
+      const perSecond = Math.max(1, Math.round(TICKS_PER_SECOND * mult));
       let p: Prompt | null = null;
       for (let k = 1; k <= ticks && !p && !gov.over; k++) {
         view.beforeStep(sim.st);
         sim.step();
-        if (k % TICKS_PER_SECOND === 0) {
+        if (k % perSecond === 0) {
           screen += 1;
           govAt = screen;
           p = govStep(false);
@@ -1002,6 +1044,9 @@ bars.observe($('card'));
     },
     screenOf,
     save,
+    screen: () => screen,
+    speed: () => speed,
+    fly: (x, y, zoom, ms) => flyTo(x * TILE, y * TILE, zoom, ms),
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });
