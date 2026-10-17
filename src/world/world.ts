@@ -14,6 +14,7 @@ import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { fillRing, stampLine } from './raster.ts';
 import { dominantAngle, rotateGeo, straighten } from './rotate.ts';
 import { T } from './terrain.ts';
+import { placeWrecks, type Wreck } from './wrecks.ts';
 
 /** kody terenu */
 export { T, type TerrainCode } from './terrain.ts';
@@ -72,8 +73,9 @@ export interface Trzepak {
   h: number;
 }
 
-/** rzecz na podwórku: trzepak albo sterta materiału z odzysku (gruz, deski, złom; przechodnia) */
-export type Prop = Trzepak | Heap;
+/** rzecz na mapie: trzepak, sterta materiału z odzysku (gruz, deski, złom; przechodnia)
+    albo wrak auta (maluch, polonez; podstawa blokuje przejście) */
+export type Prop = Trzepak | Heap | Wreck;
 
 export interface World {
   size: number;
@@ -393,6 +395,11 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     seed: opts.seed,
   });
 
+  // 15. wraki maluchów i polonezów w okolicy siedziby, poza siatką: podstawa blokuje przejście
+  const wrecks = placeWrecks({ size, terr, blocked, buildings, hq, fence, seed: opts.seed });
+  for (const k of wrecks)
+    for (let y = k.y; y < k.y + k.h; y++) for (let x = k.x; x < k.x + k.w; x++) blocked[y * size + x] = 1;
+
   return {
     size,
     angle,
@@ -406,7 +413,7 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     seed: opts.seed,
     interior,
     dryTree: dry.tree,
-    props: [...dry.props, ...heaps],
+    props: [...dry.props, ...heaps, ...wrecks],
     fence,
   };
 }
