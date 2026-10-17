@@ -2,7 +2,7 @@
 
 Projekt techniczny i plan pracy M1. Rano 17.10.2026 był to wycinek „pierwsze trzy minuty”. Po playteście tej samej nocy Mateusz poszerzył kierunek (niżej), więc M1 kończy się pierwszą nocą, a nie rozpaloną kozą.
 
-## Kierunek (Mateusz, noc z 17 na 18.10.2026)
+## Kierunek (Mateusz, noc z 16 na 17.10.2026)
 
 - Mieszanka: trochę RimWorlda (ludzie na mapie, potrzeby, prace, wnętrza z życiem), trochę pierwszej wersji z jednym domem za dziurawą siatką (0.1 i 0.2: za dnia praca, o 20:00 decyzja o nocy, nocne napady), trochę RTS (bezpośrednie sterowanie, obrona), trochę Cywilizacji (drzewko technologii, rozrost, ścieżki i zakończenia). Lore: bakteria od miedzi. Tryb zombie, w którym obrona osady jest priorytetem, korzysta z tej samej obrony.
 - Klimat postapo, a nie dzisiejsze osiedle. Żadnego tłumu obcych biegających po okolicy. Mieszkańcy siedzą w mieszkaniach i na podwórku za siatką, chodzą z konkretnym celem, nocą chowają się do środka. Obcy są rzadcy i podejrzani: szabrownicy, wędrowcy.
@@ -99,7 +99,7 @@ Kontrakt wnętrza (`src/world/interior.ts`):
 
 Do połączenia symulacja pracuje na atrapie wnętrza zgodnej z kontraktem, a grafika na nazwach z kontraktu. Polecenia przyjmuje tylko zarząd, tłum to tło (GDD).
 
-Kontrakt siatki (tura 2, decyzja koordynatora z nocy 17/18.10, zgodna ze sprite'ami z `src/render/art/podworko.ts`):
+Kontrakt siatki (tura 2, decyzja koordynatora z nocy 16/17.10, zgodna ze sprite'ami z `src/render/art/podworko.ts`):
 
 - `World.fence: { tiles: number[]; hole: number[]; gate: { x, y, w, h, rot }; yard: number[] }`. `tiles` to kafelki siatki bez bramy (rosnąco), `hole` to kafelki z dziurą na starcie (podzbiór `tiles`, 2–4 sztuki, rozrzucone, nie przy bramie), `gate` to brama 2×1 albo 1×2 w linii siatki, a `rot` to strona otwierania skrzydeł, czyli w stronę podwórka. `yard` to kafelki podwórka za siatką bez budynków (rosnąco).
 - Siatka obejmuje siedzibę i podwórko z suchym drzewem i trzepakiem. Brama stoi od strony ulicy albo chodnika przed pierwszym wejściem. Siatka może dochodzić do ścian budynków.

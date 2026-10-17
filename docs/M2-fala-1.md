@@ -1,6 +1,6 @@
 # M2, fala 1: przeszukiwanie, naprawy i budowa
 
-Cel: po pierwszej nocy gracz ma co robić co minutę. Przeszukuje i naprawia puste mieszkania (materiały, nowe miejsca dla ludzi), stawia pierwsze budowle w pomieszczeniach i na podwórku, wzmacnia obwód. To odpowiedź na pierwszą uwagę Mateusza po playteście („nie wiedziałem, co budować”) i na jego pomysł z 18.10.2026: „W tych mieszkaniach to w sumie powinny być śmieci często do odzyskania albo coś do naprawienia”.
+Cel: po pierwszej nocy gracz ma co robić co minutę. Przeszukuje i naprawia puste mieszkania (materiały, nowe miejsca dla ludzi), stawia pierwsze budowle w pomieszczeniach i na podwórku, wzmacnia obwód. To odpowiedź na pierwszą uwagę Mateusza po playteście („nie wiedziałem, co budować”) i na jego pomysł z 17.10.2026: „W tych mieszkaniach to w sumie powinny być śmieci często do odzyskania albo coś do naprawienia”.
 
 Rozstrzygnięcia w tym dokumencie są koordynatora, do zmiany przez Mateusza. Zasady budowania z `docs/M1-wycinek.md` obowiązują.
 
@@ -12,7 +12,7 @@ Rozstrzygnięcia w tym dokumencie są koordynatora, do zmiany przez Mateusza. Za
 
 ## Mieszkania
 
-- Każde mieszkanie siedziby ma stan: `zarzad` (mieszkanie zarządu), `mieszkancy` (mieszkają ludzie), `puste` (z powodem `why` i rokiem `year` opuszczenia). Mniej więcej połowa pustych (potwierdzone przez Mateusza 18.10.2026).
+- Każde mieszkanie siedziby ma stan: `zarzad` (mieszkanie zarządu), `mieszkancy` (mieszkają ludzie), `puste` (z powodem `why` i rokiem `year` opuszczenia). Mniej więcej połowa pustych (potwierdzone przez Mateusza 17.10.2026).
 - Powody (`why`): `wyjazd` (meble zostały), `wymarcie` (meble i rzeczy osobiste, stęchlizna), `splądrowanie` (przewrócone meble, śmieci, wyważone drzwi), `zalanie` (zalana podłoga, zniszczone meble, cieknąca rura), `pozar` (spalenizna, wybite okno, część mebli spalona).
 - Do czasu generatora mieszkańców (sesja „Generowanie historii postaci w grze”, gałąź `mieszkancy-z-adresu`) stany losuje świat deterministycznie z ziarna budynku, w tym samym kształcie. Generator podmieni je w swoim kroku 5.
 
