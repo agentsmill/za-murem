@@ -20,12 +20,20 @@ import { BUILDS, type Mat } from '../src/sim/budowle.ts';
 import { clockOf, dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
 import { MAT_ACC } from '../src/sim/mieszkania.ts';
+import { HUNGRY } from '../src/sim/needs.ts';
 import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
-import { BURNABLE, createSim, type Laws, Sim, woodFrom } from '../src/sim/sim.ts';
+import { BURNABLE, createSim, FOOD_START, type Laws, REST_UNTIL, Sim, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
-import { type Decision, type NightLog, type Policy, playLaws, playWithGov } from '../tests/unit/gov-play.ts';
+import {
+  type Decision,
+  type Hunger,
+  type NightLog,
+  type Policy,
+  playLaws,
+  playWithGov,
+} from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
 
@@ -295,6 +303,31 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
     console.log('    BŁĄD: przyjętych przez zarząd i nowych pionków jest różnie');
     fail = true;
   }
+  // głód zarządu: poranki, w których jedzenia brakło dla głodnych, i czas z najedzeniem poniżej 10
+  const hun = (k: keyof Hunger) => runs.reduce((a, r) => a + r.hunger[k], 0);
+  console.log(
+    `    jedzenie zarządu (bez przeszukiwania, tylko wydarzenia): rano brakło dla głodnych w ${hun('short')} z ${hun('mornings')} poranków, ktoś głodny (najedzenie < 10) przez ${Math.round((100 * hun('starving')) / Math.max(1, hun('samples')))}% czasu`,
+  );
+  // wartownik po nocy: głodny najpierw je, potem odsypia; liczą się poranki, w których jedzenia starczało dla
+  // wszystkich głodnych w zarządzie (przy niedoborze zjadają inni, to sprawa gospodarki, nie wartownika)
+  const morns = runs.flatMap((r) => r.mornings);
+  const fed = morns.filter((m) => m.food6 < HUNGRY && m.stock6 >= m.hungry6);
+  const ateAt = fed.filter((m) => m.ateAt >= 0).map((m) => m.ateAt);
+  // zjadł przed 8:00 albo nie głodował (najedzenie co najmniej 15, czekał na ciepły posiłek)
+  const late = fed.filter((m) => (m.ateAt < 0 || m.ateAt >= 8) && m.minFood < 15).length;
+  const tiredFed = fed.filter((m) => m.rest6 < REST_UNTIL);
+  const napped = tiredFed.filter((m) => m.napped).length;
+  const hhmm = (v: number) => {
+    const m = Math.round(v * 60);
+    return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+  };
+  console.log(
+    `    wartownicy rano (6–14): ${morns.length} poranków, głodnych przy jedzeniu dla wszystkich ${fed.length}: zjedli przed 8:00 ${fed.filter((m) => m.ateAt >= 0 && m.ateAt < 8).length}, później bez głodowania ${fed.filter((m) => !(m.ateAt >= 0 && m.ateAt < 8) && m.minFood >= 15).length}, głodowali ${late} (pierwszy posiłek średnio o ${ateAt.length ? hhmm(mean(ateAt)) : '—'}), zmęczeni po posiłku odsypiali ${napped} z ${tiredFed.length}; przy niedoborze ${morns.filter((m) => m.food6 < HUNGRY && m.stock6 < m.hungry6).length}`,
+  );
+  if (late || napped < tiredFed.length) {
+    console.log('    BŁĄD: głodny wartownik ma rano najpierw zjeść, a potem odsypiać');
+    fail = true;
+  }
   const r0 = runs[0];
   console.log(`    pierwsze 10 min, ziarno ${GOV_SEEDS[0]}:`);
   for (const d of first(r0)) console.log(`      ${f1(d.s).padStart(6)} s  ${d.kind.padEnd(10)} ${d.text.slice(0, 90)}`);
@@ -329,7 +362,7 @@ if (warm < 18 || cold > warm - 3) {
 
 const LAW_DAYS = 3;
 console.log(
-  `\nUchwały o jedzeniu, ${govName}: ${GOV_SEEDS.length} ziaren × ${LAW_DAYS} doby bez zarządu, zapasy na start 24 porcje`,
+  `\nUchwały o jedzeniu, ${govName}: ${GOV_SEEDS.length} ziaren × ${LAW_DAYS} doby bez zarządu, zapasy na start ${FOOD_START} porcji`,
 );
 console.log('  uchwała                 zapasy  najedz.  nastrój  nastrój miesz.  gotowania  posiłki  koniec zapasów');
 const lawRuns: [string, Partial<Laws>][] = [
@@ -426,6 +459,7 @@ const m2Runs = (search: boolean) =>
       work: cover(r.decisions, 21),
       evening: cover(r.decisions, 22),
       mats: snapshot(r.st, w).stock.mats,
+      hunger: r.hunger,
     };
   });
 const range = (a: number[]) => `${f1(mean(a))} (${Math.min(...a)}–${Math.max(...a)})`;
@@ -440,6 +474,10 @@ const m2Line = (name: string, runs: ReturnType<typeof m2Runs>) => {
   const pct = (a: number[]) => `${Math.round(100 * mean(a))}% (najmniej ${Math.round(100 * Math.min(...a))}%)`;
   console.log(
     `    decyzje w dniach 2–3 od 7:00 do 21:00: ${f1(mean(runs.map((r) => r.work.perMin)))} na minutę, minut z decyzją ${pct(runs.map((r) => r.work.covered))}, najdłuższa przerwa ${Math.round(Math.max(...runs.map((r) => r.work.gap)))} s; z wieczorem do 22:00 (zarząd zmęczony idzie spać, warta na posterunku) minut z decyzją ${pct(runs.map((r) => r.evening.covered))}`,
+  );
+  const hs = (k: keyof Hunger) => runs.reduce((a, r) => a + r.hunger[k], 0);
+  console.log(
+    `    jedzenie zarządu: rano brakło dla głodnych w ${hs('short')} z ${hs('mornings')} poranków, ktoś głodny (najedzenie < 10) przez ${Math.round((100 * hs('starving')) / Math.max(1, hs('samples')))}% czasu`,
   );
   const r0 = runs[0];
   console.log(
@@ -456,6 +494,17 @@ console.log(`  (${Math.round(performance.now() - t2)} ms)`);
 const by3 = m2With.map((r) => r.by(3));
 if (Math.min(...by3) < 2 || mean(by3) > 3.5 || Math.max(...m2Without.map((r) => r.by(3))) >= 2) {
   console.log('  BŁĄD: z przeszukiwaniem ma stanąć 2–3 budowle do końca dnia 3, bez niego mniej niż 2');
+  fail = true;
+}
+// jedzenie: z przeszukiwaniem (konserwy z kuchni) zarząd głoduje najwyżej 15% czasu
+const starving =
+  m2With.reduce((a, r) => a + r.hunger.starving, 0) /
+  Math.max(
+    1,
+    m2With.reduce((a, r) => a + r.hunger.samples, 0),
+  );
+if (starving > 0.15) {
+  console.log(`  BŁĄD: z przeszukiwaniem zarząd głoduje przez ${Math.round(100 * starving)}% czasu (najwyżej 15%)`);
   fail = true;
 }
 if (mean(m2With.map((r) => r.work.perMin)) < 1 || Math.min(...m2With.map((r) => r.work.covered)) < 0.9) {

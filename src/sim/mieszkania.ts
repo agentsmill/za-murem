@@ -100,7 +100,7 @@ const LOOT: Record<AptWhy, [Mat, number, number, number][]> = {
     ['deski', 0.7, 1, 2],
     ['zlom', 0.5, 1, 1],
     ['czesci', 0.35, 1, 1],
-    ['jedzenie', 0.4, 1, 2],
+    ['jedzenie', 0.45, 2, 4],
     ['leki', 0.2, 1, 1],
   ],
   wymarcie: [
@@ -108,31 +108,33 @@ const LOOT: Record<AptWhy, [Mat, number, number, number][]> = {
     ['zlom', 0.5, 1, 2],
     ['czesci', 0.3, 1, 1],
     ['leki', 0.5, 1, 2],
-    ['jedzenie', 0.25, 1, 1],
+    ['jedzenie', 0.35, 1, 3],
   ],
   splądrowanie: [
     ['deski', 0.6, 1, 2],
     ['zlom', 0.6, 1, 2],
     ['czesci', 0.15, 1, 1],
     ['leki', 0.05, 1, 1],
-    ['jedzenie', 0.05, 1, 1],
+    ['jedzenie', 0.1, 1, 2],
   ],
   zalanie: [
     ['deski', 0.3, 1, 1],
     ['zlom', 0.6, 1, 2],
     ['czesci', 0.35, 1, 1],
     ['leki', 0.25, 1, 1],
+    ['jedzenie', 0.1, 1, 2],
   ],
   pozar: [
     ['deski', 0.2, 1, 1],
     ['zlom', 0.7, 1, 3],
     ['czesci', 0.3, 1, 1],
+    ['jedzenie', 0.05, 1, 1],
   ],
 };
 
 /** dodatkowa szansa według rodzaju pomieszczenia: w kuchni jedzenie, w łazience leki, w pokoju deski */
 const ROOM_BONUS: Partial<Record<RoomKind, Partial<Record<Mat, number>>>> = {
-  kuchnia: { jedzenie: 0.3, zlom: 0.1 },
+  kuchnia: { jedzenie: 0.5, zlom: 0.1 },
   lazienka: { leki: 0.3, czesci: 0.1 },
   pokoj: { deski: 0.15 },
 };
