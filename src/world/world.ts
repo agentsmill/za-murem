@@ -9,6 +9,7 @@ import { labelRegions, nearestFree } from '../sim/path.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
 import { applyFence, buildFence, type Fence } from './fence.ts';
 import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea } from './geo.ts';
+import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { fillRing, stampLine } from './raster.ts';
 import { dominantAngle, rotateGeo, straighten } from './rotate.ts';
@@ -60,8 +61,8 @@ export interface Tree {
   seed: number;
 }
 
-/** rzecz na podwórku zajmująca kilka kafelków */
-export interface Prop {
+/** trzepak przy suchym drzewie: blokują tylko słupki na końcach */
+export interface Trzepak {
   kind: 'trzepak';
   /** lewy górny kafelek */
   x: number;
@@ -70,6 +71,9 @@ export interface Prop {
   w: number;
   h: number;
 }
+
+/** rzecz na podwórku: trzepak albo sterta materiału z odzysku (gruz, deski, złom; przechodnia) */
+export type Prop = Trzepak | Heap;
 
 export interface World {
   size: number;
@@ -91,7 +95,7 @@ export interface World {
   interior: Interior;
   /** numer suchego drzewa w trees (cel pierwszego polecenia); −1, gdy nie ma żadnego */
   dryTree: number;
-  /** rzeczy na podwórku: trzepak przy suchym drzewie (blokują tylko słupki na końcach) */
+  /** rzeczy na podwórku: najpierw trzepak przy suchym drzewie, potem sterty gruzu, desek i złomu */
   props: Prop[];
   /** dziurawa siatka z bramą wokół siedziby i podwórka; stan zmienny (łaty, nowe dziury, brama) trzyma symulacja */
   fence: Fence;
@@ -375,6 +379,20 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   });
   applyFence({ blocked }, fence);
 
+  // 14. sterty z odzysku na podwórku: deski i złom na pierwsze łaty siatki, gruz do rozbierania
+  const heaps = placeHeaps({
+    size,
+    bid,
+    blocked,
+    buildings,
+    hq,
+    trees,
+    dryTree: dry.tree,
+    props: dry.props,
+    fence,
+    seed: opts.seed,
+  });
+
   return {
     size,
     angle,
@@ -388,7 +406,7 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     seed: opts.seed,
     interior,
     dryTree: dry.tree,
-    props: dry.props,
+    props: [...dry.props, ...heaps],
     fence,
   };
 }
@@ -425,7 +443,7 @@ function dryTreeAndTrzepak(
   buildings: WorldBuilding[],
   hq: number,
   seed: number,
-): { tree: number; props: Prop[] } {
+): { tree: number; props: Trzepak[] } {
   const b = buildings[hq];
   const door = b.entrances[0];
   // punkt odniesienia: środek kafelka drzwi (budynek bez wejścia: jego środek)
@@ -479,8 +497,8 @@ function dryTreeAndTrzepak(
 
   // trzepak poziomy albo pionowy; w ramce 1 m wokół nic nie blokuje i nie ma wyjścia z drzwi;
   // w podwórku (tight) stoi na kafelkach podwórka i nie przy samej jezdni
-  const trzepak = (tx: number, ty: number, tight: boolean): Prop | null => {
-    let best: Prop | null = null;
+  const trzepak = (tx: number, ty: number, tight: boolean): Trzepak | null => {
+    let best: Trzepak | null = null;
     let bs = Number.NEGATIVE_INFINITY;
     for (const [w, h] of [
       [3, 1],
@@ -511,7 +529,7 @@ function dryTreeAndTrzepak(
         }
     return best;
   };
-  const finish = (tree: number, p: Prop) => {
+  const finish = (tree: number, p: Trzepak) => {
     blocked[p.y * size + p.x] = 1;
     blocked[(p.y + p.h - 1) * size + p.x + p.w - 1] = 1;
     return { tree, props: [p] };

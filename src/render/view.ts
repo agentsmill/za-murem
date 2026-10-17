@@ -28,9 +28,21 @@ import {
   WorkerPainter,
   workersAvailable,
 } from './chunks.ts';
-import { darknessAt, type Light } from './light.ts';
+import {
+  fenceCodes,
+  fenceStateFn,
+  GAME_KINDS,
+  type GameLike,
+  gameLights,
+  STRANGERS,
+  strangerVisibility,
+  type WindowSpot,
+  windowSpots,
+} from './game.ts';
+import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
 import { burning, IN, specOf, type ThingLike } from './section.ts';
+import { fenceThings } from './yard.ts';
 
 const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 /** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna albo ImageBitmap);
@@ -109,6 +121,22 @@ export class GameView {
   private things = new Map<string, { sprite: Sprite; thing: ThingLike; inside: boolean; fire: boolean }>();
   /** tekstury rzeczy po opisie sprite'a (rozmiar i kotwica zależą tylko od rodzaju i ustawienia) */
   private thingArt = new Map<string, { tex: Texture; sp: ArtSprite }>();
+  /** rzeczy spoza gry (setThings: podgląd); w trybie gry bez rodzajów, które daje gra */
+  private extras: readonly ThingLike[] = [];
+  /** stan gry z ostatniego syncGame: rzeczy (st.things, trzepak, siatka) i rzeczy niezmienne do pamięci kluczy */
+  private game: {
+    sim: GameLike;
+    windows: WindowSpot[];
+    props: ThingLike[];
+    fence: ThingLike[];
+    codes: Uint8Array | null;
+    things: ThingLike[];
+  } | null = null;
+  /** światła ze stanu gry (koza, okna, ognisko, warta); view.lights to dodatki (podgląd) */
+  private gameLights: Light[] = [];
+  /** rzeczy, które się nie zmieniają (trzepak, siatka) i ich klucze: bez liczenia opisu co klatkę */
+  private fixed = new WeakSet<ThingLike>();
+  private fixedKeys = new WeakMap<ThingLike, string | null>();
 
   /** workers: false wymusza rysowanie kawałków w głównym wątku (adres ?worker=0) */
   async init(host: HTMLElement, opts: { workers?: boolean } = {}): Promise<void> {
@@ -217,13 +245,61 @@ export class GameView {
    * więc tanio też co klatkę.
    */
   setThings(list: readonly ThingLike[]): void {
+    this.extras = list;
+    this.applyThings();
+  }
+
+  /**
+   * Rysowanie stanu gry, wołane co klatkę przed render: rzeczy z st.things (meble, drewno, zapasy,
+   * pnie, koza z ogniem) plus trzepak i siatka ze stanem z sim.blocked (łaty, dziury, brama), ścięte
+   * drzewa (przerysowanie kawałków), światła z gry (koza we wnętrzu, okna pomieszczeń z sim.light,
+   * ognisko, lampy warty). Rzeczy i światła z setThings i view.lights zostają jako dodatki.
+   */
+  syncGame(sim: GameLike): void {
+    if (!this.scene) return;
+    const w = sim.w;
+    let g = this.game;
+    if (!g || g.sim !== sim) {
+      g = {
+        sim,
+        windows: windowSpots(w),
+        props: w.props.map((p) => ({ ...p, rot: 0 })),
+        fence: [],
+        codes: null,
+        things: [],
+      };
+      for (const t of g.props) this.fixed.add(t);
+      this.game = g;
+    }
+    this.syncFelled(sim.st.felled);
+    // siatka liczona od nowa tylko po zmianie w blocked (łata, nowa dziura, brama)
+    const codes = fenceCodes(w.fence, sim.blocked, w.size);
+    if (!g.codes || codes.length !== g.codes.length || codes.some((c, k) => c !== g!.codes![k])) {
+      g.codes = codes;
+      g.fence = fenceThings(w.fence, w, fenceStateFn(w.fence, codes), codes[codes.length - 1] === 1);
+      for (const t of g.fence) this.fixed.add(t);
+    }
+    g.things = [...sim.st.things, ...g.props, ...g.fence];
+    this.applyThings();
+    this.gameLights = gameLights(sim, g.windows);
+  }
+
+  /** rzeczy gry i dodatki do warstwy pionków (diff po miejscu i opisie sprite'a) */
+  private applyThings(): void {
+    const g = this.game;
+    const list = g ? [...g.things, ...this.extras.filter((t) => !GAME_KINDS.has(t.kind))] : this.extras;
     const seen = new Set<string>();
     for (const t of list) {
-      const spec = specOf(t, 0);
-      if (!spec) continue;
-      const key = `${t.x}:${t.y}:${JSON.stringify(spec)}`;
+      let key = this.fixedKeys.get(t);
+      if (key === undefined) {
+        const spec = specOf(t, 0);
+        key = spec ? `${t.x}:${t.y}:${JSON.stringify(spec)}` : null;
+        if (this.fixed.has(t)) this.fixedKeys.set(t, key);
+      }
+      if (!key) continue;
       seen.add(key);
       if (this.things.has(key)) continue;
+      const spec = specOf(t, 0)!;
       const art = this.artOf(spec);
       const sprite = new Sprite(art.tex);
       sprite.anchor.set(art.sp.ax / art.sp.w, art.sp.ay / art.sp.h);
@@ -415,6 +491,18 @@ export class GameView {
     this.root.position.set(Math.round(this.width / 2 - this.cam.x * z), Math.round(this.height / 2 - this.cam.y * z));
     this.cutOn = this.scene.section !== null && z >= (this.cutOn ? CUT_OFF : CUT_ON);
     this.updateChunks(this.frameNo < 3 ? 400 : 10);
+    // światła: z gry i dodatki (ten sam ogień nie świeci dwa razy); we wnętrzu tylko w przekroju
+    const time = performance.now() / 1000;
+    const all = this.gameLights.length
+      ? [
+          ...this.gameLights,
+          ...this.lights.filter(
+            (l) => !this.gameLights.some((g) => !!g.inside === !!l.inside && Math.hypot(g.x - l.x, g.y - l.y) < 0.5),
+          ),
+        ]
+      : this.lights;
+    const lights = this.cutOn ? all : all.filter((l) => !l.inside);
+    this.darkness = darknessAt(minutesAt(st.tick));
     // rzeczy: meble tylko w przekroju, ogień w kozie i ognisku co 150 ms następna klatka
     const flame = Math.floor(performance.now() / 150) % FIRE_FRAMES;
     for (const e of this.things.values()) {
@@ -443,6 +531,15 @@ export class GameView {
       sp.zIndex = y;
       // pod dachem nie widać nikogo; w przekroju tak
       sp.visible = this.cutOn || !this.underRoof(x, y);
+      // obcych widać tylko w świetle: w półmroku sam ciemny zarys, w ciemności nic
+      if (STRANGERS.has(p.kind)) {
+        const vis = strangerVisibility(this.darkness, lightAt(x, y - 0.5, lights, time, this.insideFn));
+        sp.visible &&= vis > 0.08;
+        sp.alpha = Math.min(1, vis * 1.6);
+        const v = Math.min(1, vis * 1.4);
+        const c = Math.round(24 + 231 * v);
+        sp.tint = (c << 16) | (c << 8) | Math.min(255, c + 8);
+      }
       if (selected.has(p.id) && sp.visible) this.markPawn(p, x, y);
     }
     for (const [id, sp] of this.pawnSprites)
@@ -450,13 +547,10 @@ export class GameView {
         sp.destroy();
         this.pawnSprites.delete(id);
       }
-    // noc: ciemność z godziny gry, światła z listy
-    this.darkness = darknessAt(minutesAt(st.tick));
+    // noc: ciemność z godziny gry, światła z gry i z listy
     const [x0, y0] = this.toWorld(0, 0);
     const [x1, y1] = this.toWorld(this.width, this.height);
-    // światła we wnętrzu (koza) świecą tylko w przekroju; pod dachem robią to okna
-    const lights = this.cutOn ? this.lights : this.lights.filter((l) => !l.inside);
-    this.light.update(x0, y0, x1, y1, z, this.darkness, lights, performance.now() / 1000, this.insideFn);
+    this.light.update(x0, y0, x1, y1, z, this.darkness, lights, time, this.insideFn);
   }
 
   private markPawn(p: Pawn, x: number, y: number): void {

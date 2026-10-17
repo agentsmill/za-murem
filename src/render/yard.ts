@@ -20,11 +20,13 @@ export interface FenceLike {
  * Kafelki siatki i brama jako rzeczy do view.setThings. Maska kafelka to sąsiedzi N/E/S/W będący
  * siatką, bramą albo ścianą budynku; stan z state (ze stanu symulacji: łaty, nowe dziury), a bez
  * niego dziury ze startu. Słupki na prostych odcinkach co trzy kafelki, resztę stawia sprite.
+ * open: brama otwarta (skrzydła odchylone do podwórka), bez podania zamknięta.
  */
 export function fenceThings(
   f: FenceLike,
   w: Pick<World, 'size' | 'bid'>,
   state?: (tile: number) => FenceState | undefined,
+  open?: boolean,
 ): ThingLike[] {
   const size = w.size;
   const fence = new Set(f.tiles);
@@ -60,7 +62,7 @@ export function fenceThings(
   }
   const g = f.gate;
   const rot = (g.rot & 3) as 0 | 1 | 2 | 3;
-  out.push({ kind: 'brama', x: g.x, y: g.y, w: g.w, h: g.h, rot, spec: { kind: 'brama', rot } });
+  out.push({ kind: 'brama', x: g.x, y: g.y, w: g.w, h: g.h, rot, spec: { kind: 'brama', rot, open } });
   return out;
 }
 

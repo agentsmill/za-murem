@@ -14,6 +14,17 @@ import { type InteriorTile, interiorColor } from './wnetrze.ts';
 
 const PAVED = new Set<number>([T.ROAD, T.PARKING]);
 
+/** drobne śmieci po latach bez sprzątania: papier, folia, puszka, butelka */
+const TRASH = [0xd8d2c0, 0x5a7fa0, 0xa04a38, 0x5e7a44] as const;
+/** wyschnięta, niekoszona trawa */
+const STRAW = 0x8a8648;
+
+/** pęknięcie w asfalcie: wąska kręta linia z szumu, w niej czasem chwast */
+function asphaltCrack(c: number, ax: number, ay: number): number {
+  if (Math.abs(vnoise(ax, ay, 70, 27) - 0.5) >= 0.008) return c;
+  return h2(ax >> 1, ay >> 1, 28) < 0.15 ? C.grass0 : 0x26272a;
+}
+
 /** kolor terenu (0xRRGGBB) w punkcie grafiki (ax, ay) na kafelku i o kodzie t */
 function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: number, px: number, py: number): number {
   const w = sc.w;
@@ -51,6 +62,14 @@ function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: numbe
       if (k < 0.02) c = shade(base, 0.86);
       else if (k > 0.996) c = h2(ax >> 1, ay >> 1, 11) < 0.5 ? C.leaf0 : C.leaf1;
       if (t === T.WOOD && h2(ax >> 1, ay >> 1, 13) < 0.06) c = C.leaf2;
+      else if (t !== T.WOOD) {
+        // nikt nie kosi: płaty suchej trawy, kępy chwastów, gdzieniegdzie śmieć
+        const dry = vnoise(ax, ay, 260, 17);
+        if (dry > 0.6) c = mix(c, STRAW, (dry - 0.6) * 0.9);
+        if (h2(ax >> 3, ay >> 3, 18) < 0.012 && h2(ax, ay, 19) < 0.45)
+          c = h2(ax >> 1, ay, 20) < 0.7 ? 0x3d5426 : 0x9a8a50;
+        if (h2(ax >> 1, ay >> 1, 21) < 0.0009) c = TRASH[Math.floor(h2(ax >> 1, ay >> 1, 22) * 4)];
+      }
       // trawa przy budynku zacieniona
       break;
     }
@@ -60,6 +79,7 @@ function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: numbe
       c = n < 0.35 ? C.asph0 : n < 0.8 ? C.asph1 : C.asph2;
       if (r < 0.05) c = shade(c, 0.85);
       else if (r > 0.96) c = shade(c, 1.15);
+      c = asphaltCrack(c, ax, ay);
       // rynsztok przy krawężniku
       const e = edgeTo((n2) => !PAVED.has(n2) && n2 !== T.ROAD);
       if (e < 2) c = C.gutter;
@@ -72,6 +92,7 @@ function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: numbe
       // linie miejsc parkingowych co 2,5 m
       if (ax % 80 < 2 && (ay & 63) < 52) c = shade(C.line, 0.85);
       if (h2(ax >> 3, ay >> 3, 25) < 0.01) c = 0x2a2a2a;
+      c = asphaltCrack(c, ax, ay);
       break;
     }
     case T.SIDEWALK: {
@@ -81,10 +102,24 @@ function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: numbe
       const r = h2(sx, sy, 31);
       c = r < 0.3 ? C.slab1 : r > 0.85 ? C.slab2 : C.slab0;
       if (h2(sx, sy, 32) < 0.03) c = shade(c, 0.82);
-      if ((ax & 15) === 0 || (ay & 15) === 0) {
+      const u = ax & 15;
+      const v = ay & 15;
+      if (u === 0 || v === 0) {
         c = C.seam;
         if (h2(ax, ay, 33) < 0.25) c = C.grass0;
-      } else if (h2(ax, ay, 34) < 0.04) c = shade(c, 0.92);
+      } else if (h2(sx, sy, 38) < 0.02) {
+        // zapadnięta płyta: ziemia z trawą
+        c = h2(ax, ay, 39) < 0.35 ? C.grass1 : C.dirt1;
+      } else {
+        if (h2(ax, ay, 34) < 0.04) c = shade(c, 0.92);
+        // pęknięta płyta: zygzak od krawędzi do krawędzi
+        if (h2(sx, sy, 36) < 0.12) {
+          const dir = h2(sx, sy, 37) < 0.5 ? 1 : -1;
+          if (u === ((3 + Math.floor(h2(sx, sy, 40) * 10) + ((v * dir) >> 2)) & 15)) c = shade(c, 0.72);
+        }
+        // liście nawiane na chodnik
+        if (h2(ax >> 1, ay >> 1, 41) < 0.01) c = h2(ax >> 2, ay >> 2, 42) < 0.5 ? C.leaf0 : C.leaf1;
+      }
       // krawężnik od jezdni
       const er = edgeTo((n2) => n2 === T.ROAD || n2 === T.PARKING);
       if (er < 3) c = er === 0 ? shade(C.curb, 0.8) : C.curb;
