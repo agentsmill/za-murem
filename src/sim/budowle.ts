@@ -1,7 +1,11 @@
 /* Budowle fali 1 M2 (docs/M2-fala-1.md): rodzaj, miejsce, rozmiar, koszt w materiałach i czas pracy.
    Kontrakt dla symulacji (właściciel), interfejsu i rysowania (tylko czytają). Koszty i czasy stroi bot. */
 
+import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
+import { houseOf } from './house.ts';
+import { fenceShape, gateTiles } from './perimeter.ts';
+import type { SimState } from './sim.ts';
 
 /** materiały z odzysku i zapasy */
 export type Mat = 'drewno' | 'deski' | 'zlom' | 'czesci' | 'jedzenie' | 'leki';
@@ -100,4 +104,68 @@ export interface BuildPlan {
 export function footprint(kind: BuildKind, rot: number): { w: number; h: number } {
   const d = BUILDS[kind];
   return rot % 2 ? { w: d.h, h: d.w } : { w: d.w, h: d.h };
+}
+
+/** kafelki budowli (lewy górny róg x, y, obrót rot) */
+export function buildTiles(kind: BuildKind, x: number, y: number, rot: number, size: number): number[] {
+  const { w, h } = footprint(kind, rot);
+  const out: number[] = [];
+  for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) out.push((y + dy) * size + x + dx);
+  return out;
+}
+
+const WHY: Record<BuildPlace, string> = {
+  pokoj: 'Tylko w pokoju w naszym mieszkaniu.',
+  kuchnia: 'Tylko w kuchni w naszym mieszkaniu.',
+  podworko: 'Tylko na podwórku za siatką, z dala od bramy, dziur i drzwi.',
+  obwod: 'Tylko na odcinku siatki.',
+};
+
+/** Czy budowlę wolno postawić (podgląd trybu stawiania i polecenie 'build'): w pomieszczeniu właściwego rodzaju
+    w naszym mieszkaniu (bez składu drewna), na wolnym podwórku z dala od bramy, dziur i wejść albo na odcinku siatki
+    (także na dziurze, nie na bramie); nie na rzeczach i nie na innym planie. Czysta funkcja stanu i świata. */
+export function canPlace(
+  st: SimState,
+  w: World,
+  kind: BuildKind,
+  x: number,
+  y: number,
+  rot: number,
+): { ok: boolean; why?: string } {
+  const def = BUILDS[kind];
+  const size = w.size;
+  const { w: bw, h: bh } = footprint(kind, rot);
+  if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: 'Poza mapą.' };
+  const tiles = buildTiles(kind, x, y, rot, size);
+  const no = { ok: false, why: WHY[def.place] };
+  const h = houseOf(w);
+  const shape = fenceShape(w);
+  if (def.place === 'pokoj' || def.place === 'kuchnia') {
+    if (!h) return no;
+    for (const i of tiles) {
+      const r = h.room[i];
+      if (r < 0 || w.blocked[i] || h.sklad.includes(i) || h.rooms[r].kind !== def.place) return no;
+      if (!st.apts.find((a) => a.apt === h.rooms[r].apt)?.ours) return no;
+    }
+  } else if (def.place === 'podworko') {
+    if (!shape) return no;
+    const keep = [...gateTiles(w), ...shape.hole, ...w.buildings.flatMap((b) => b.entrances.map((e) => e.out))];
+    const near = (a: number, b: number) =>
+      Math.max(Math.abs((a % size) - (b % size)), Math.abs(Math.floor(a / size) - Math.floor(b / size))) <= 1;
+    for (const i of tiles) if (!shape.yard.includes(i) || w.blocked[i] || keep.some((k) => near(k, i))) return no;
+  } else {
+    if (!shape || tiles.length !== 1 || !shape.tiles.includes(tiles[0]) || gateTiles(w).includes(tiles[0])) return no;
+  }
+  const covers = (t: { x: number; y: number; w: number; h: number }, i: number) => {
+    const ix = i % size;
+    const iy = Math.floor(i / size);
+    return ix >= t.x && ix < t.x + t.w && iy >= t.y && iy < t.y + t.h;
+  };
+  for (const i of tiles) if (st.things.some((t) => covers(t, i))) return { ok: false, why: 'Tu coś stoi.' };
+  for (const b of st.builds) {
+    const f = footprint(b.kind, b.rot);
+    if (tiles.some((i) => covers({ x: b.x, y: b.y, w: f.w, h: f.h }, i)))
+      return { ok: false, why: 'Tu już jest plan budowy.' };
+  }
+  return { ok: true };
 }

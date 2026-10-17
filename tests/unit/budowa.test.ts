@@ -265,3 +265,123 @@ describe('M2: przeszukanie, rozbiórka, naprawa i zajęcie mieszkania', () => {
     expect(l1.some((l) => l.startsWith('Przeszukać') || l === 'Zająć mieszkanie')).toBe(false);
   });
 });
+
+describe('M2: budowa', () => {
+  const core = (st: SimState) => st.pawns.filter((p) => p.kind === 'core');
+  const mat = (st: SimState, k: string) => st.things.filter((t) => t.kind === k).reduce((a, t) => a + t.n, 0);
+  const run = (sim: Sim, ok: () => boolean, max = 8000) => {
+    for (let k = 0; k < max && !ok(); k++) sim.step();
+  };
+  const hq = w.buildings[w.hq];
+  /** wolne miejsce na budowlę w pomieszczeniu: pierwszy kafelek, przy którym canPlace się zgadza */
+  const spotIn = async (st: SimState, kind: import('../../src/sim/budowle.ts').BuildKind, room: number) => {
+    const { canPlace } = await import('../../src/sim/budowle.ts');
+    for (let i = 0; i < size * size; i++)
+      if (h.room[i] === room && canPlace(st, w, kind, i % size, Math.floor(i / size), 0).ok) return i;
+    return -1;
+  };
+  const homeRoom = (kind: string) => h.rooms.find((r) => r.apt === 0 && r.kind === kind)!.id;
+
+  it('canPlace: pokój i kuchnia w naszym mieszkaniu, podwórko, odcinek siatki; powody odmowy', async () => {
+    const { canPlace } = await import('../../src/sim/budowle.ts');
+    const st = createSim(w, 3, { core: 2 });
+    const p = await spotIn(st, 'warsztat', homeRoom('pokoj'));
+    expect(p).toBeGreaterThanOrEqual(0);
+    // pokój w cudzym mieszkaniu
+    const b = h.rooms.find((r) => r.apt === 2 && r.kind === 'pokoj')!.id;
+    let bt = -1;
+    for (let i = 0; i < size * size && bt < 0; i++)
+      if (h.room[i] === b && !w.blocked[i] && !st.things.some((t) => t.x === i % size && t.y === Math.floor(i / size)))
+        bt = i;
+    expect(canPlace(st, w, 'lozka_pietrowe', bt % size, Math.floor(bt / size), 0)).toEqual({
+      ok: false,
+      why: 'Tylko w pokoju w naszym mieszkaniu.',
+    });
+    st.apts[2].ours = true;
+    expect(await spotIn(st, 'lozka_pietrowe', b)).toBeGreaterThanOrEqual(0);
+    // kuchnia społeczna tylko w kuchni, nie w pokoju
+    expect(canPlace(st, w, 'kuchnia_spoleczna', p % size, Math.floor(p / size), 0).why).toBe(
+      'Tylko w kuchni w naszym mieszkaniu.',
+    );
+    expect(await spotIn(st, 'kuchnia_spoleczna', homeRoom('kuchnia'))).toBeGreaterThanOrEqual(0);
+    // na meblu nie
+    const bed = st.things.find((t) => t.kind === 'lozko' && aptOf(t.y * size + t.x) === 0)!;
+    expect(canPlace(st, w, 'lozka_pietrowe', bed.x, bed.y, 0)).toEqual({ ok: false, why: 'Tu coś stoi.' });
+    // ogródek na podwórku, zasieki na odcinku siatki (także na dziurze), nie na bramie
+    const yardOk = w.fence.yard.some((i) => canPlace(st, w, 'ogrodek', i % size, Math.floor(i / size), 0).ok);
+    expect(yardOk).toBe(true);
+    expect(canPlace(st, w, 'ogrodek', hq.x0 + 2, hq.y0 + 2, 0).ok).toBe(false);
+    const fenceTile = w.fence.tiles.find((t) => !w.fence.hole.includes(t))!;
+    expect(canPlace(st, w, 'zasieki', fenceTile % size, Math.floor(fenceTile / size), 0)).toEqual({ ok: true });
+    const holeTile = w.fence.hole[0];
+    expect(canPlace(st, w, 'zasieki', holeTile % size, Math.floor(holeTile / size), 0).ok).toBe(true);
+    expect(canPlace(st, w, 'zasieki', w.fence.gate.x, w.fence.gate.y, 0)).toEqual({
+      ok: false,
+      why: 'Tylko na odcinku siatki.',
+    });
+    expect(canPlace(st, w, 'zasieki', w.fence.yard[0] % size, Math.floor(w.fence.yard[0] / size), 0).why).toBe(
+      'Tylko na odcinku siatki.',
+    );
+  });
+
+  it('plan warsztatu: zarząd przynosi deski i złom, buduje, gotowy warsztat to rzecz, materiały schodzą', async () => {
+    const { jobText } = await import('../../src/sim/orders.ts');
+    const st = createSim(w, 3, { core: 1 });
+    const sim = new Sim(w, st);
+    const [p] = core(st);
+    const at = await spotIn(st, 'warsztat', homeRoom('pokoj'));
+    const d0 = mat(st, 'deski');
+    const z0 = mat(st, 'zlom');
+    sim.push({ t: 'build', ids: [p.id], kind: 'warsztat', x: at % size, y: Math.floor(at / size), rot: 0 });
+    sim.step();
+    expect(st.builds).toHaveLength(1);
+    const id = st.builds[0].id;
+    const texts = new Set<string>();
+    run(sim, () => {
+      texts.add(jobText(st, w, p));
+      return !st.builds.length;
+    });
+    const t = st.things.find((q) => q.kind === 'warsztat')!;
+    expect(t).toMatchObject({ id, x: at % size, y: Math.floor(at / size), w: 2, h: 1 });
+    expect([mat(st, 'deski'), mat(st, 'zlom')]).toEqual([d0 - 4, z0 - 2]);
+    expect(texts).toContain('Idzie po deski na warsztat.');
+    expect(texts).toContain('Niesie deski na warsztat.');
+    expect(texts).toContain('Buduje warsztat.');
+    expect(snapshot(st, w).builds).toEqual([]);
+  });
+
+  it('plan bez wskazanej osoby: zarząd sam bierze się do budowy; odwołany plan oddaje doniesione materiały', async () => {
+    const st = createSim(w, 3, { core: 2 });
+    st.tick = Math.round((24 + 9 - 15) * 800);
+    const sim = new Sim(w, st);
+    const at = await spotIn(st, 'lozka_pietrowe', homeRoom('pokoj'));
+    sim.push({ t: 'build', ids: [], kind: 'lozka_pietrowe', x: at % size, y: Math.floor(at / size), rot: 0 });
+    run(sim, () => (st.builds[0]?.have.deski ?? 0) >= 1, 4000);
+    expect(st.builds[0].have.deski).toBeGreaterThanOrEqual(1);
+    const s = snapshot(st, w).builds[0];
+    expect(s.kind).toBe('lozka_pietrowe');
+    expect(s.missing.deski).toBeLessThan(4);
+    const d =
+      mat(st, 'deski') +
+      st.builds[0].have.deski! +
+      core(st).reduce((a, q) => a + (q.job?.what === 'deski' ? q.job.n : 0), 0);
+    sim.push({ t: 'unbuild', ids: [], id: st.builds[0].id });
+    sim.step();
+    expect(st.builds).toEqual([]);
+    expect(mat(st, 'deski')).toBe(d);
+  });
+
+  it('zapis i wczytanie w trakcie budowy daje ten sam dalszy przebieg', async () => {
+    const st = createSim(w, 3, { core: 2 });
+    const sim = new Sim(w, st);
+    const at = await spotIn(st, 'warsztat', homeRoom('pokoj'));
+    sim.push({ t: 'build', ids: [core(st)[0].id], kind: 'warsztat', x: at % size, y: Math.floor(at / size), rot: 0 });
+    run(sim, () => (st.builds[0]?.have.deski ?? 0) >= 2, 4000);
+    const copy = new Sim(w, JSON.parse(JSON.stringify(st)));
+    for (let k = 0; k < 3000; k++) {
+      sim.step();
+      copy.step();
+    }
+    expect(copy.hash()).toBe(sim.hash());
+  });
+});

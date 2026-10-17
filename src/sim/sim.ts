@@ -7,7 +7,7 @@ import { PROFS } from '../content/data.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
-import type { BuildKind, BuildPlan, Mat } from './budowle.ts';
+import { BUILDS, type BuildKind, type BuildPlan, canPlace, footprint, type Mat } from './budowle.ts';
 import {
   daylight,
   hourOf,
@@ -113,6 +113,8 @@ export const PATCH_TICKS = TICKS_PER_HOUR / 2;
 export const CAMPFIRE_WOOD = 2;
 export const BUILD_TICKS = TICKS_PER_HOUR / 4;
 export const CAMPFIRE_CAP = 6;
+/** wytrzymałość zasieków (siatka 45–75, świeża łata 70) */
+export const ZASIEKI_HP = 100;
 /** zajęcie mieszkania (oznaczenie drzwi i spis) trwa kwadrans gry */
 export const CLAIM_TICKS = TICKS_PER_HOUR / 4;
 /** warta trwa do tej godziny rano */
@@ -1348,6 +1350,15 @@ export class Sim {
       for (const p of pawns) this.comeBack(p);
       return;
     }
+    // plan budowy i jego odwołanie nie potrzebują nikogo z zarządu (plan czeka, aż ktoś się nim zajmie)
+    if (c.t === 'build') {
+      this.orderBuild(pawns, c.kind, c.x, c.y, c.rot);
+      return;
+    }
+    if (c.t === 'unbuild') {
+      this.unbuild(c.id);
+      return;
+    }
 
     if (!pawns.length) return;
     this.tutEvent('zaznacz');
@@ -1514,7 +1525,7 @@ export class Sim {
   private orderCampfire(pawns: Pawn[], at: number): void {
     if (!this.siteOk(at)) return;
     let rest = pawns;
-    if (this.startBuild(pawns[0], at)) rest = pawns.slice(1);
+    if (this.startCampfire(pawns[0], at)) rest = pawns.slice(1);
     if (rest.length) this.orderMove(rest, at, [at], true);
   }
 
@@ -1648,9 +1659,10 @@ export class Sim {
     return { t, target, tile, phase, from: -1, t0: this.st.tick, until: 0, order, n: 0, what: '' };
   }
 
-  /** zwalnia rzeczy zajęte przez pionek */
+  /** zwalnia rzeczy i plany budowy zajęte przez pionek */
   private release(p: Pawn): void {
     for (const t of this.st.things) if (t.by === p.id) t.by = -1;
+    for (const b of this.st.builds) if (b.by === p.id) b.by = -1;
   }
 
   /** nowa praca zamiast starej; drewno z rąk zostaje na ziemi, chyba że nowa praca go potrzebuje */
@@ -2292,7 +2304,7 @@ export class Sim {
         return false;
       }
       case 'build':
-        return false;
+        return this.buildWork(p, j, at);
       case 'leave':
         // za bramą znika; wraca poleceniem 'back'
         if (j.phase === 1) return true;
@@ -2418,6 +2430,8 @@ export class Sim {
     if (this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
     if (this.startRefuel(p, false) || this.startHaul(p)) return;
     if (this.shouldCook() && this.startCook(p, false)) return;
+    // plany budowy czekają: za dnia wolny zarząd sam przynosi materiały i buduje
+    if (!this.night() && this.startAnyBuild(p)) return;
     if (n.warm < COLD && this.startWarm(p)) return;
     p.wait = this.st.tick + THINK_EVERY;
   }
@@ -2815,7 +2829,7 @@ export class Sim {
   }
 
   /** ognisko: z drewnem w rękach od razu na miejsce, inaczej najpierw po drewno na najbliższy stos */
-  private startBuild(p: Pawn, site: number): boolean {
+  private startCampfire(p: Pawn, site: number): boolean {
     const size = this.w.size;
     if (p.carry >= CAMPFIRE_WOOD) {
       const stand = this.siteStand(p, site);
@@ -2860,6 +2874,174 @@ export class Sim {
     p.pi = 0;
     p.wait = this.st.tick;
     if (this.door >= 0 && this.go(p, this.door)) this.setJob(p, this.newJob('go', this.door, this.door, false), false);
+  }
+
+  /* ---------- M2: budowa ---------- */
+
+  /** plan budowy w miejscu (albo ten, który tam już jest); pierwsza wskazana osoba od razu się nim zajmuje */
+  private orderBuild(pawns: Pawn[], kind: BuildKind, x: number, y: number, rot: number): void {
+    const st = this.st;
+    if (!BUILDS[kind]) return;
+    let plan = st.builds.find((b) => b.kind === kind && b.x === x && b.y === y && b.rot === rot);
+    if (!plan) {
+      if (!canPlace(st, this.w, kind, x, y, rot).ok) return;
+      plan = { id: st.nextThing++, kind, x, y, rot, need: { ...BUILDS[kind].cost }, have: {}, work: 0, by: -1 };
+      st.builds.push(plan);
+    }
+    if (pawns[0]) this.startBuild(pawns[0], plan);
+  }
+
+  /** środkowy kafelek planu albo budowli */
+  private buildCenter(kind: BuildKind, x: number, y: number, rot: number): number {
+    const { w: bw, h: bh } = footprint(kind, rot);
+    return (y + (bh >> 1)) * this.w.size + x + (bw >> 1);
+  }
+
+  /** Odwołanie planu (doniesione materiały zostają obok) albo rozbiórka gotowej budowli (wraca połowa kosztu,
+      zasieki przestają trzymać siatkę). */
+  private unbuild(id: number): void {
+    const st = this.st;
+    const k = st.builds.findIndex((b) => b.id === id);
+    if (k >= 0) {
+      const b = st.builds[k];
+      st.builds.splice(k, 1);
+      const at = this.buildCenter(b.kind, b.x, b.y, b.rot);
+      for (const [m, n] of Object.entries(b.have) as [Mat, number][]) if (n > 0) this.dropMat(at, m, n);
+      // kto przy nim pracował, oddaje to, co niesie (dropLoad przy końcu pracy)
+      return;
+    }
+    const t = st.things.find((q) => q.id === id && q.kind in BUILDS);
+    if (!t) return;
+    const kind = t.kind as BuildKind;
+    st.things.splice(st.things.indexOf(t), 1);
+    const at = this.buildCenter(kind, t.x, t.y, t.rot);
+    for (const [m, n] of Object.entries(BUILDS[kind].cost) as [Mat, number][]) {
+      const back = Math.floor(n / 2);
+      if (back > 0) this.dropMat(at, m, back);
+    }
+    if (kind === 'zasieki') this.fenceAt(t.y * this.w.size + t.x, false);
+    this.updateCap();
+  }
+
+  /** materiały planu doniesione w całości */
+  private ready(b: BuildPlan): boolean {
+    return (Object.entries(b.need) as [Mat, number][]).every(([m, v]) => (b.have[m] ?? 0) >= v);
+  }
+
+  /** skąd się buduje: obok budowli, a zasieki od strony podwórka */
+  private buildStand(p: Pawn, b: BuildPlan): number {
+    const { w: bw, h: bh } = footprint(b.kind, b.rot);
+    if (BUILDS[b.kind].place === 'obwod') {
+      const s = this.standBy(p, [b.y * this.w.size + b.x], 1);
+      if (s >= 0) return s;
+    }
+    return this.beside(p, { x: b.x, y: b.y, w: bw, h: bh } as Thing);
+  }
+
+  /** zająć się planem: z materiałami od razu do pracy, inaczej po pierwszy brakujący materiał; false, gdy plan ma
+      kogoś innego albo nie ma skąd wziąć materiału */
+  private startBuild(p: Pawn, b: BuildPlan): boolean {
+    if (b.by >= 0 && b.by !== p.id) return false;
+    const j = this.newJob('build', b.id, this.tileOf(p), true);
+    if (this.ready(b)) {
+      const stand = this.buildStand(p, b);
+      if (stand < 0 || !this.go(p, stand)) return false;
+      this.setJob(p, j, false);
+      j.phase = 2;
+      j.tile = stand;
+      b.by = p.id;
+      return true;
+    }
+    this.setJob(p, j, false);
+    if (!this.fetchNext(p, j, b.need, b.have)) {
+      p.job = null;
+      return false;
+    }
+    b.by = p.id;
+    return true;
+  }
+
+  /** wolny zarząd: najstarszy plan bez nikogo, który da się zacząć (materiały są albo da się po nie pójść) */
+  private startAnyBuild(p: Pawn): boolean {
+    for (const b of this.st.builds) {
+      if (b.by >= 0) continue;
+      if (
+        !this.ready(b) &&
+        !(Object.entries(b.need) as [Mat, number][]).some(([m, v]) => (b.have[m] ?? 0) < v && this.matStack(p, m))
+      )
+        continue;
+      if (this.startBuild(p, b)) return true;
+    }
+    return false;
+  }
+
+  /** budowa: kursy po materiały (faza 0 i 1), potem praca (faza 2), na koniec gotowa budowla */
+  private buildWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const b = st.builds.find((q) => q.id === j.target);
+    if (!b) return false;
+    b.by = p.id;
+    if (j.phase === 0) {
+      if (!at) return false;
+      const m = j.what as Mat;
+      return this.takeFor(p, j, (b.need[m] ?? 0) - (b.have[m] ?? 0), this.buildStand(p, b));
+    }
+    if (j.phase === 1) {
+      if (!at) return false;
+      const m = j.what as Mat;
+      b.have[m] = (b.have[m] ?? 0) + j.n;
+      j.n = 0;
+      j.what = '';
+      if (this.fetchNext(p, j, b.need, b.have)) return true;
+      if (!this.ready(b)) return false;
+      j.phase = 2;
+      j.t0 = st.tick;
+      return true;
+    }
+    if (!at) return false;
+    b.work += 1;
+    const c = this.buildCenter(b.kind, b.x, b.y, b.rot);
+    this.face(p, (c % this.w.size) + 0.5, Math.floor(c / this.w.size) + 0.5);
+    if (b.work < BUILDS[b.kind].work) return true;
+    this.finishBuild(b);
+    return false;
+  }
+
+  /** gotowa budowla: plan znika, rzecz o tym samym id staje na mapie, działanie od razu */
+  private finishBuild(b: BuildPlan): void {
+    const st = this.st;
+    st.builds.splice(st.builds.indexOf(b), 1);
+    const { w: bw, h: bh } = footprint(b.kind, b.rot);
+    st.things.push({
+      id: b.id,
+      kind: b.kind,
+      x: b.x,
+      y: b.y,
+      w: bw,
+      h: bh,
+      rot: b.rot,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    if (b.kind === 'zasieki') this.fenceAt(b.y * this.w.size + b.x, true);
+    this.updateCap();
+  }
+
+  /** zasieki na odcinku siatki: dziura pod nimi zamknięta, cała siatka twardsza (on: false zdejmuje to z powrotem) */
+  private fenceAt(tile: number, on: boolean): void {
+    const f = this.st.fence;
+    const shape = fenceShape(this.w);
+    if (!f || !shape) return;
+    const hole = f.holes.find((x) => x.tiles.includes(tile));
+    if (hole) {
+      hole.patch = on ? ZASIEKI_HP : 0;
+      this.rebuild();
+      return;
+    }
+    const k = shape.tiles.indexOf(tile);
+    if (k >= 0) f.hp[k] = on ? ZASIEKI_HP : 50;
   }
 
   /* ---------- M2: przeszukanie, rozbiórka, naprawa, zajęcie ---------- */
