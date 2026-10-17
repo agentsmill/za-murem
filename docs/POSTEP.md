@@ -235,12 +235,34 @@ Do poprawy:
 - Wydarzenia przyjmują ludzi bez patrzenia na miejsca. Po 6 dniach jest 16–20 mieszkańców przy 6 miejscach i nadmiar śpi na podłodze.
 - Magazyn w grze nic nie daje, bo łup z napadu liczy zarząd w `src/gov/noc.ts` bez zapasu magazynu.
 
+### M2 razem, noc z 17 na 18.10.2026: pięć gałęzi w jednej (gałąź `m2-razem`, lokalnie)
+
+Na zlecenie koordynatora połączyłem lokalnie w `m2-razem` (od origin/main, b2cef4a) pięć gałęzi M2: `m2-budowa-rysowanie`, `m2-budowa-ui`, `m2-wartownik-sniadanie`, `claude/wydarzenia-z-miejsca-6a1d07` i `m2-ogrod-rysowanie`. Pierwsze cztery stoją na `m2-fala-1`, więc ona też jest w środku. Każda gałąź weszła osobnym scaleniem, żeby w razie czego dało się ją cofnąć jednym `git revert -m 1`. Nic nie jest wypchnięte. Tryb zombie, mieszkańcy z adresu i `wartownik-i-jedzenie` zostały poza tą gałęzią.
+
+Co jest w środku:
+- rysowanie: pozy prac fali 1 (przeszukiwanie na kolanach, młotek, niesienie desek i złomu, drzemka wartownika), łóżka piętrowe, przyjęci idą zza bramy jak mieszkańcy;
+- interfejs: menu budowy (przycisk i klawisz B), stawianie z podglądem, karta pustego mieszkania, komunikat „N osób idzie od bramy” z „Pokaż”, wszystko na prawdziwej symulacji;
+- wartownik po nocy najpierw je, potem odsypia; 40 porcji na start i konserwy w kuchniach pustych mieszkań;
+- wydarzenia z miejsca: słownik wspólnoty (w domu ulica i komitet ulicy), pierwszy dzień bez losowych wydarzeń z dymem z komina, warianty wydarzeń z 0.3 według miejsca, wydarzenia ulicy domów, przyjęcia według wolnych miejsc (pierwsza rzecz „do poprawy” z wpisu wyżej);
+- ogród domu: sznur na pranie, kompostownik, buda, huśtawka i ławka.
+
+Konflikty były tylko w `tools/shots.ts`, trzy razy: interfejs z rysowaniem, wydarzenia z resztą i ogród z resztą. Za każdym razem obie strony dopisały scenariusze na końcu listy i pomocników w tym samym miejscu pliku. Zostały wszystkie, a skrypt sprawdził, że każda linia dopisana przez którąkolwiek gałąź jest w wyniku. Konfliktu z wydarzeniami nie było w próbie z 00:44, bo commit `a402fda` ze zrzutami wydarzeń przyszedł o 00:51. `tests/unit/interfejs.test.ts` zmieniały interfejs i wydarzenia w różnych miejscach i git połączył je sam.
+
+Po pierwszym scaleniu sesja wydarzeń dopisała o 01:23 commit `32dff6d` (poprawki po przeglądzie: sklepy i przychodnie liczone od środka mapy, stare zapisy ze „Słoikiem od sąsiadki”, jedno źródło słów o sąsiadach). Łączył się czysto, więc wszedł osobnym scaleniem i całą bramkę puściłem jeszcze raz. Pozostałe cztery gałęzie od początku łączenia (01:16) się nie ruszyły, więc o 01:33 `m2-razem` zawierała końcówki wszystkich pięciu.
+
+Bramka na końcowym stanie `m2-razem`: testy 671/671, Biome (`src tests tools index.html`), build, bot (skrót `eeaf68c1`), zrzuty: 112 scenariuszy (140 plików) bez błędów. Przed `32dff6d` było tak samo, tylko testów 660. Bot trzyma liczby z bramki fali 1: z przeszukiwaniem 2 budowle do końca dnia 2 i średnio 2,2 do końca dnia 3, bez przeszukiwania 0,8; decyzja w 98% minut dni 2–3; zarząd głodny przez 3% czasu, rano zabrakło jedzenia w 0 z 25 poranków. Wydajności (`npm run perf`) i grania na żywo nie sprawdzałem.
+
+Obejrzałem zrzuty M2: budowle w mieszkaniu i na podwórku, pozy prac, menu budowy z powodami, stawianie warsztatu z kartą osoby („Idzie po deski na budowlę”), kartę mieszkania po pożarze z naprawą i przeszukaniem, przybyszów z „Pokaż”, dym z komina w bloku i w domu, kartę nocy w domu i ogród domu w Batowicach. Wszystko jest na swoim miejscu. Do dalszej pracy, ale nie z łączenia:
+- w domu okno wydarzenia ma nagłówek „Na osiedlu”, samouczek każe iść „do suchego drzewa przy trzepaku”, a pomoc mówi o zarządzie spółdzielni, bo teksty spoza `src/gov` nie biorą jeszcze słów z `wordsOf` (to samo opis łóżek piętrowych w `src/sim/budowle.ts`: „w spółdzielni zmieści się więcej ludzi”); teraz, kiedy wydarzenia i interfejs są na jednej gałęzi, da się to podpiąć;
+- pomoc w grze dalej mówi, że 0.4 kończy się na pierwszej nocy i budowanie jest tylko w 0.3;
+- na Przymorzu kuchnia społeczna nie ma miejsca w kuchni zarządu („brak wolnego miejsca w kuchni naszego mieszkania”), bot stawia ją dopiero 5. dnia; do sprawdzenia w playteście.
+
 ## Następne
 
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
 2. Bramka M1: Mateusz gra na żywo na swoim adresie (M1 z poprawką myszy jest na Pages od 17.10.2026) i mówi, czy chce dalej.
 3. Z playtestu dla symulacji: warta może nocą dokładać do kozy (teraz koza gaśnie około północy), krok „zanieść drewno do składu” przy 1× czeka kilka sekund na polecenie. Propozycje API zarządu od symulacji: jawny wynik napadu, siła napadu, warta spoza karty nocy.
-4. M2 fala 1: połączyć symulację, potem rysowanie i interfejs, bramka fali z `docs/M2-fala-1.md`, PR do main.
+4. M2: fala 1 z rysowaniem i interfejsem, wydarzenia z miejsca, śniadanie wartownika i ogród są razem w `m2-razem` (lokalnie, 18.10.2026). Przed PR do main: decyzja Mateusza o trybie zombie (według koordynatora gryzie się z M2 w 9–12 plikach, w tym `src/sim/sim.ts`), dociągnięcie tego, co sesje M2 dopiszą po scaleniu, wydajność i playtest z bramki fali w `docs/M2-fala-1.md`.
 5. Z przeglądu wizualnego zostało: mieszkańcy w domach jednorodzinnych (Zielonki ich nie mają, decyzja dla Mateusza).
 6. Przy okazji: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
 
