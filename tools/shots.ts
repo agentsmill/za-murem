@@ -390,7 +390,7 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       await page.evaluate(() => {
         const zm = window.zm!;
-        const heaps = zm.sim!.w.props.filter((p) => p.kind !== 'trzepak');
+        const heaps = zm.sim!.w.props.filter((p) => p.kind === 'gruz' || p.kind === 'deski' || p.kind === 'zlom');
         const cx = heaps.reduce((a, p) => a + p.x, 0) / heaps.length;
         const cy = heaps.reduce((a, p) => a + p.y, 0) / heaps.length;
         zm.setCam(cx + 0.5, cy + 0.5, 1.6);
@@ -411,7 +411,7 @@ const SHOTS: Shot[] = [
       await page.evaluate(() => {
         const zm = window.zm!;
         const sim = zm.sim!;
-        const heaps = sim.w.props.filter((p) => p.kind !== 'trzepak');
+        const heaps = sim.w.props.filter((p) => p.kind === 'gruz' || p.kind === 'deski' || p.kind === 'zlom');
         heaps.slice(1).forEach((p, k) => {
           const n = 'n' in p ? p.n : 1;
           sim.st.things.push({
@@ -811,7 +811,9 @@ async function thingKeys(page: Page): Promise<string[]> {
 
 /** ile stert jest w świecie i ile narysowano (ze świata albo ze stanu gry) */
 async function heapSprites(page: Page) {
-  const props = await page.evaluate(() => window.zm!.sim!.w.props.filter((p) => p.kind !== 'trzepak').length);
+  const props = await page.evaluate(
+    () => window.zm!.sim!.w.props.filter((p) => p.kind === 'gruz' || p.kind === 'deski' || p.kind === 'zlom').length,
+  );
   const heaps = (await thingKeys(page)).filter((k) => /"kind":"(gruz|deski|zlom)"/.test(k));
   const kinds = heaps.map((k) => /"kind":"(\w+)"/.exec(k)![1]).join(', ');
   return { props, drawn: heaps.length, kinds };
