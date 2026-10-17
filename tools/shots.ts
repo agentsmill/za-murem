@@ -1019,7 +1019,7 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       const lamps = await page.evaluate(
         () =>
-          (window.zm!.view as unknown as { gameLights: { r: number }[] }).gameLights.filter((l) => l.r === 3).length,
+          (window.zm!.view as unknown as { gameLights: { r: number }[] }).gameLights.filter((l) => l.r === 5).length,
       );
       console.log(`  latarnie w rękach: ${lamps}`);
       if (lamps < 1) throw new Error('wartownik nie ma światła latarni');
@@ -1237,7 +1237,7 @@ const SHOTS: Shot[] = [
         };
         const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
         return {
-          lamps: view.gameLights.filter((l) => l.r === 3).length,
+          lamps: view.gameLights.filter((l) => l.r === 5).length,
           fire: view.gameLights.filter((l) => l.inside).length,
           x: view.pawnSprites.get(p.id)!.texture.frame.x,
         };
@@ -1359,6 +1359,136 @@ const SHOTS: Shot[] = [
       if (!line.startsWith(who.name) || !rep.kitchen.startsWith('Kuchnia rano'))
         throw new Error(`raport bez kuchni: ${rep.lines.join(' ')}`);
       await page.screenshot({ path: path.join(OUT, 'm1-karta-koza-raport.png') });
+    },
+  },
+  // przegląd wizualny przed playtestem: poprawki w rysowaniu
+  {
+    // siatka schodzi po skosie (Zielonki, wzdłuż podjazdu): łączniki w narożnikach, linia bez przerw
+    name: 'przeglad-siatka-schodki',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const f = zm.sim!.w.fence;
+        const keys = [...(zm.view as unknown as { things: Map<string, unknown> }).things.keys()];
+        zm.setCam(f.gate.x - 6, f.gate.y + 5, 1.6);
+        return { tiles: f.tiles.length, drawn: keys.filter((k) => k.includes('"siatka"')).length };
+      });
+      await waitIdle(page);
+      console.log(`  kafelków siatki ${r.tiles}, narysowanych z łącznikami ${r.drawn}`);
+      if (r.drawn <= r.tiles) throw new Error('brak łączników siatki na schodkach');
+    },
+  },
+  {
+    // nocą zaznaczony ktoś z zarządu w ciemności: obwódka nad mapą światła i zarys
+    name: 'przeglad-zaznaczenie-noc',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=23`);
+      await waitIdle(page);
+      const at = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const p = sim.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        const g = sim.w.fence.gate;
+        Object.assign(p, { x: g.x + 0.5, y: g.y + 4.5, path: [], pi: 0, job: null, wait: sim.st.tick + 99999 });
+        zm.setCam(p.x, p.y, 1.6);
+        return { id: p.id };
+      });
+      await waitIdle(page);
+      await page.mouse.click(720, 430);
+      await frames(page, 3);
+      const r = await page.evaluate((id) => {
+        const v = window.zm!.view as unknown as {
+          root: { getChildIndex: (c: unknown) => number };
+          marks: unknown;
+          light: { sprite: unknown };
+          xraySprites: Map<number, { visible: boolean }>;
+        };
+        return {
+          marksAbove: v.root.getChildIndex(v.marks) > v.root.getChildIndex(v.light.sprite),
+          outline: !!v.xraySprites.get(id)?.visible,
+        };
+      }, at.id);
+      console.log(`  obwódka nad mapą światła: ${r.marksAbove}, zarys zaznaczonego: ${r.outline}`);
+      if (!r.marksAbove || !r.outline) throw new Error('zaznaczony nocą ginie w ciemności');
+    },
+  },
+  {
+    // latarnia warty świeci tak daleko, jak warta widzi (LAMP_REACH): szabrownika 3 m dalej widać
+    name: 'przeglad-latarnia-zasieg',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=23`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const size = sim.w.size;
+        const g = sim.w.fence.gate;
+        const x = g.x + 1;
+        const y = g.y + 2.5;
+        const p = st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        const tile = Math.floor(y) * size + Math.floor(x);
+        const job = {
+          t: 'guard',
+          target: 0,
+          tile,
+          phase: 1,
+          from: -1,
+          t0: st.tick,
+          until: st.tick + 99999,
+          order: true,
+        };
+        Object.assign(p, { x, y, path: [], pi: 0, dir: 1, carry: 0, wait: st.tick + 99999, job });
+        const base = st.pawns.find((q) => q.kind === 'resident') ?? st.pawns[0];
+        st.pawns.push({
+          ...base,
+          id: 990101,
+          kind: 'szabrownik',
+          x: x + 3,
+          y,
+          path: [],
+          pi: 0,
+          job: null,
+          away: false,
+        });
+        zm.setCam(x + 1.5, y, 1.6);
+      });
+      await waitIdle(page);
+      const a = await page.evaluate(() => {
+        const sp = (
+          window.zm!.view as unknown as { pawnSprites: Map<number, { visible: boolean; alpha: number }> }
+        ).pawnSprites.get(990101)!;
+        return sp.visible ? Math.round(sp.alpha * 100) / 100 : 0;
+      });
+      console.log(`  szabrownik 3 m od wartownika: krycie ${a}`);
+      if (a < 0.6) throw new Error('szabrownika w zasięgu warty nie widać');
+    },
+  },
+  {
+    // dym z okna od ulicy przy odkrytym przekroju nie zasłania pokoi (Lanciego, koza przy oknie od południa)
+    name: 'przeglad-dym-przekroj',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=lanciego&speed=0&cam=hq,1.3&godzina=22`);
+      await nightWithFire(page);
+      const r = await page.evaluate(() => {
+        const v = window.zm!.view as unknown as {
+          smoke: { container: { children: { visible: boolean; x: number; y: number; alpha: number }[] } };
+          scene: { section: { cell: Uint8Array } | null; w: { size: number } };
+        };
+        const sec = v.scene.section!;
+        const size = v.scene.w.size;
+        const vis = v.smoke.container.children.filter((c) => c.visible);
+        const over = vis.filter((c) => sec.cell[Math.floor(c.y / 32) * size + Math.floor(c.x / 32)] !== 0);
+        return { all: vis.length, over: over.length, max: Math.max(0, ...over.map((c) => c.alpha)) };
+      });
+      console.log(`  kłębów ${r.all}, nad wnętrzem ${r.over}, największe krycie nad wnętrzem ${r.max.toFixed(2)}`);
+      if (r.over > 0 && r.max > 0.25) throw new Error('dym zasłania odkryte wnętrze');
     },
   },
 ];

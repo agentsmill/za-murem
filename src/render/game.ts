@@ -70,6 +70,9 @@ export function onTables(things: readonly ThingLike[]): readonly ThingLike[] {
 /** rodzaje pionków obcych: widać je tylko w świetle (symulacja doda je z siatką i nocą) */
 export const STRANGERS: ReadonlySet<string> = new Set(['obcy', 'szabrownik', 'wedrowiec', 'zombie']);
 
+/** zasięg latarni wartownika w metrach: tyle, ile warta widzi w symulacji (LAMP_REACH w sim.ts) */
+export const GUARD_LAMP_R = 5;
+
 const FIRE = 0xff8a30;
 const LAMP = 0xffb060;
 /** ciepłe światło ognia przez szybę */
@@ -124,10 +127,11 @@ export function gameLights(g: Pick<GameLike, 'st' | 'light'>, windows: readonly 
     else if ((t.kind === 'lampa' || t.kind === 'budka') && (t.fuel ?? 1) > 0)
       out.push({ x: t.x + 0.5, y: t.y + 0.6, r: 3, color: LAMP, strength: 0.75, flicker: 0.08 });
   }
-  // latarnia wartownika na posterunku (brama, dziura): w ręce, z boku; czuwający przy kozie ma jej ogień
+  // latarnia wartownika na posterunku (brama, dziura): w ręce, z boku, świeci tak daleko, jak warta
+  // widzi w symulacji (gracz ma widzieć to, co widzi warta); czuwający przy kozie ma jej ogień
   for (const p of g.st.pawns ?? [])
     if (p.job?.t === 'guard' && p.job.phase === 1 && p.job.target !== KOZA_POST)
-      out.push({ x: p.x + 0.25, y: p.y - 0.1, r: 3, color: LAMP, strength: 0.7, flicker: 0.1 });
+      out.push({ x: p.x + 0.25, y: p.y - 0.1, r: GUARD_LAMP_R, color: LAMP, strength: 0.75, flicker: 0.1 });
   for (const s of windows) {
     const lv = g.light[s.room] ?? 0;
     if (lv > 0) out.push({ x: s.x, y: s.y, r: 2.5, color: PANE, strength: 0.55 * Math.min(1, lv), flicker: 0.12 });

@@ -183,7 +183,7 @@ describe('pozy pracy', () => {
       [],
     );
     expect(ls).toHaveLength(1);
-    expect(ls[0]).toMatchObject({ r: 3 });
+    expect(ls[0]).toMatchObject({ r: 5 });
   });
 });
 
