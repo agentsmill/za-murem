@@ -227,6 +227,11 @@ export interface GovHost extends EventHost {
   /** skąd przychodzi sąsiad: „z waszej klatki” (blok z mieszkańcami), „z bloku obok” albo „zza płotu” według
       sąsiadów; null, gdy w okolicy nie ma nikogo */
   neighbour(): string | null;
+  /** wolne miejsca dla mieszkańców, mieszkańcy siedziby, temperatura na dworze, ognisko na podwórku */
+  free(): number;
+  residents(): number;
+  outdoor(): number;
+  campfire(): boolean;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: dane wydarzenia mają różne kształty
@@ -238,6 +243,8 @@ export interface GEventDef<D = any> {
   when: readonly Pora[];
   /** dozwolone pierwszego dnia po ciszy i pierwszej nocy (do 8:00 drugiego dnia): siatka, obcy, noc */
   first?: boolean;
+  /** zwroty do podmiany w kronice z wyborów tego wydarzenia (według miejsca) */
+  log?: (h: GovHost) => Record<string, string> | null;
   w: (h: GovHost) => number;
   make: (h: GovHost) => D | null;
   title: (h: GovHost, d: D) => string;
@@ -245,30 +252,8 @@ export interface GEventDef<D = any> {
   choices: (h: GovHost, d: D) => EventChoice[];
 }
 
-/** wydarzenia z 0.3, które pasują do pierwszych nocy, z porą dnia; w zastępuje wagę z 0.3 */
-export const OLD_EVENTS: { id: string; when: readonly Pora[]; w?: (h: GovHost) => number; first?: boolean }[] = [
-  { id: 'handlarz', when: ['dzien'] },
-  { id: 'dzieci', when: ['dzien'] },
-  { id: 'lodowka', when: ['dzien'] },
-  { id: 'dron', when: ['dzien'] },
-  { id: 'automat', when: ['dzien'] },
-  { id: 'auto', when: ['dzien'] },
-  { id: 'czynsz', when: ['dzien', 'wieczor'] },
-  { id: 'krypto', when: ['dzien'] },
-  { id: 'ksiazki', when: ['dzien'] },
-  { id: 'aktywisci', when: ['dzien'] },
-  { id: 'influencer', when: ['dzien'] },
-  // obcy pod bramą dopiero od drugiego dnia
-  { id: 'uchodzcy', when: ['dzien'], w: (h) => (h.day() >= 2 ? 0.8 : 0) },
-  { id: 'fachowiec', when: ['wieczor'] },
-  { id: 'klotnia', when: ['wieczor'] },
-  { id: 'pozar', when: ['wieczor', 'noc'] },
-  { id: 'kradziez', when: ['noc'] },
-  { id: 'wesele', when: ['dzien', 'wieczor'] },
-  { id: 'odejscie', when: ['dzien', 'wieczor'] },
-  // w 0.3 od piątego dnia; w M1 pierwsza noc jest o szabrownikach, więc już po południu pierwszego
-  { id: 'obserwacja', when: ['dzien'], w: (h) => (h.hour() >= 13 ? 1.2 : 0), first: true },
-];
+/** wydarzenia z 0.3 z porą dnia, warunkami miejsca i wariantami tekstów (nakładki w warianty.ts) */
+export { OLD_EVENTS, type OldEvent } from './warianty.ts';
 
 const names = (list: GovPerson[]) =>
   list.length < 2

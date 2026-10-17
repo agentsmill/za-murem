@@ -11,10 +11,11 @@ import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { rngOf } from '../core/rng.ts';
-import { placeIn, wordsOf } from './miejsce.ts';
+import { freePlaces, placeIn, wordsOf } from './miejsce.ts';
 import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, LootKey, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
+import { drewno } from './warianty.ts';
 import {
   addNeeds,
   addStock,
@@ -67,12 +68,30 @@ const RES_KEY: Record<Res, StockKey | null> = {
   prad: null,
 };
 
-/** wydarzenia M1: z 0.3 (z porą i ewentualnie nową wagą) i nowe */
+/** wydarzenia M1: z 0.3 z nakładką (pora, waga z miejscem, teksty według miejsca, drewno zamiast opału) i nowe */
 export const M1_EVENTS: GEventDef[] = [
   ...OLD_EVENTS.map((o): GEventDef => {
     const d = eventDef(o.id);
     if (!d) throw new Error(`brak wydarzenia ${o.id} w treści 0.3`);
-    return { ...d, when: o.when, w: o.w ?? d.w, first: o.first };
+    const base = (h: GovHost, x: unknown) => d.choices(h, x).map((c) => ({ ...c, label: drewno(c.label) }));
+    const w = o.w;
+    return {
+      id: d.id,
+      once: d.once,
+      when: o.when,
+      first: o.first,
+      w: w ? (h) => w(h, d.w(h)) : d.w,
+      make: o.make ?? d.make,
+      title: (h, x) => o.title?.(h, x) ?? drewno(d.title(h, x)),
+      text: (h, x) => o.text?.(h, x) ?? drewno(d.text(h, x)),
+      choices: (h, x) => {
+        const b = base(h, x);
+        if (o.choices) return o.choices(h, x, b);
+        const ls = o.labels?.(h, x) ?? [];
+        return b.map((c, k) => ({ ...c, label: ls[k] ?? c.label }));
+      },
+      log: o.log,
+    };
   }),
   ...NEW_EVENTS,
 ];
@@ -94,8 +113,9 @@ const toPerson = (p: GovPerson): Person => ({
   gone: false,
 });
 
-/** EventHost z 0.3 na stanie zarządu: zapasy z wejścia, zmiany idą do skutków fx */
-export function makeHost(st: GovState, i: GovInput, fx: GovEffects): GovHost {
+/** EventHost z 0.3 na stanie zarządu: zapasy z wejścia, zmiany idą do skutków fx; z wydarzeniem ev wpisy do kroniki
+    z jego wyborów mają drewno zamiast opału i zwroty według miejsca */
+export function makeHost(st: GovState, i: GovInput, fx: GovEffects, ev?: GEventDef): GovHost {
   const people = i.people.map(toPerson);
   const away = new Set(st.night?.confirmed ? st.night.exp.flatMap((e) => e.ids) : []);
   const res = (): Record<Res, number> => {
@@ -156,7 +176,11 @@ export function makeHost(st: GovState, i: GovInput, fx: GovEffects): GovHost {
     addSick: (n) => {
       fx.sick += n;
     },
-    log: (txt, big) => logGov(st, i, txt, !!big, fx),
+    log: (txt, big) => {
+      let line = drewno(txt);
+      for (const [a, b] of Object.entries(ev?.log?.(h) ?? {})) line = line.replaceAll(a, b);
+      logGov(st, i, line, !!big, fx);
+    },
     hqName: () => i.hqName ?? 'siedziby',
     buildingName: (b) => (b === 0 ? (i.hqName ?? 'siedziby') : 'z sąsiedztwa'),
     pickBuilding: (kind) => (kind === 'heated' ? (i.kozaLit ? 0 : null) : 0),
@@ -214,6 +238,10 @@ export function makeHost(st: GovState, i: GovInput, fx: GovEffects): GovHost {
       st.later.push({ day: nd, stock: stock as Partial<Record<LootKey, number>>, line });
     },
     place: () => placeIn(i),
+    free: () => freePlaces(i),
+    residents: () => i.residents ?? 0,
+    outdoor: () => i.outdoor,
+    campfire: () => !!i.light?.campfire,
     words: () => wordsOf(placeIn(i)),
     neighbour: () => {
       const p = placeIn(i);
@@ -314,7 +342,7 @@ export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): bo
   const ev = st.ev.active;
   if (!ev) return false;
   const def = byId.get(ev.id)!;
-  const h = makeHost(st, i, fx);
+  const h = makeHost(st, i, fx, def);
   const c = def.choices(h, ev.d)[k];
   if (!c?.ok) return false;
   st.ev.active = null;
