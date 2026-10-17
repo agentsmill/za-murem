@@ -65,6 +65,12 @@ export interface SimStock {
   meals: number;
   /** na ile gotowań starczy gazu w butli */
   gasCooks: number;
+  /** złom w stertach na podwórku (sztuki), deski tak samo */
+  scrap: number;
+  boards: number;
+  /** części i leki (bez rzeczy na mapie, z zarządu) */
+  parts: number;
+  meds: number;
 }
 
 /** stan siatki dla zarządu (GovFence): otwarte dziury, średnia wytrzymałość, brama */
@@ -128,12 +134,16 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   let woodLoose = 0;
   let supplies = 0;
   let meals = 0;
+  let scrap = 0;
+  let boards = 0;
   for (const t of st.things) {
     if (t.kind === 'drewno') {
       if (sklad.includes(t.y * size + t.x)) woodSklad += t.n;
       else woodLoose += t.n;
     } else if (t.kind === 'jedzenie') supplies += t.n;
     else if (t.kind === 'posilek') meals += t.n;
+    else if (t.kind === 'zlom') scrap += t.n;
+    else if (t.kind === 'deski') boards += t.n;
   }
   const people: SimPerson[] = st.pawns
     .filter((p) => p.kind === 'core')
@@ -187,6 +197,10 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       supplies,
       meals,
       gasCooks: Math.floor((stove?.fuel ?? 0) / COOK_TICKS),
+      scrap,
+      boards,
+      parts: st.store.parts,
+      meds: st.store.meds,
     },
     burned: st.burned.map((b) => ({ ...b })),
     fence:

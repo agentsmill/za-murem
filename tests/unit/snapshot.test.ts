@@ -32,6 +32,11 @@ describe('odczyt stanu dla modułu zarządu', () => {
       supplies: 24,
       meals: 0,
       gasCooks: 6,
+      // sterty z atrapy świata: deski 4, złom 4
+      scrap: 4,
+      boards: 4,
+      parts: 0,
+      meds: 0,
     });
     expect(s.burned).toEqual([]);
   });

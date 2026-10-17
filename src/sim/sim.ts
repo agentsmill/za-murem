@@ -265,7 +265,9 @@ export type Command =
   /** uchwały, które zmieniają symulację (ids puste) */
   | { t: 'laws'; ids: number[]; laws: Partial<Laws> }
   /** napad bez zarządu (testy, bot, podgląd): tick, o którym są przy siatce, i posterunek 'brama' / 'd<id>' */
-  | { t: 'raid'; ids: number[]; at: number; post: string };
+  | { t: 'raid'; ids: number[]; at: number; post: string }
+  /** łaty z zarządu: n największych otwartych dziur od razu załatanych (materiał policzył zarząd) */
+  | { t: 'mend'; ids: number[]; n: number };
 
 /** łup w sztukach: drewno, porcje zapasów, złom */
 export interface Loot {
@@ -335,6 +337,8 @@ export interface SimState {
   laws: Laws;
   /** napad tej nocy albo ostatni (phase 3), null: nie było */
   raid: Raid | null;
+  /** zapasy bez rzeczy na mapie (z zarządu): części i leki */
+  store: { parts: number; meds: number };
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -453,6 +457,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     cap: 0,
     laws: { gateClosed: false, burnMood: 1, workStart: WORK_START },
     raid: null,
+    store: { parts: 0, meds: 0 },
   };
   const rnd = rngOf(st.rng);
   const size = w.size;
@@ -535,7 +540,11 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
       if (k < beds.length) beds[k].owner = p.id;
     });
   }
-  if (house) spawnResidents(st, w, house, opts.residents, rnd);
+  if (house) {
+    const apts = residentApts(st, w, house);
+    st.cap = Math.min(8, 3 * apts.length);
+    addResidents(st, w, opts.residents ?? (apts.length ? Math.min(8, Math.max(3, 2 * apts.length + 1)) : 0));
+  }
   const homes = homeTiles(w);
   const crowd = opts.crowd ?? 0;
   const mask = house && crowd ? homeMask(house, size) : null;
@@ -580,26 +589,39 @@ export function planRaid(st: SimState, at: number, post: string, gov: boolean): 
   st.raid = { at, post, n: 0, phase: 0, outcome: '', gov, loot: zero(), took: zero(), from: -1, spot: -1 };
 }
 
-/** Mieszkańcy siedziby (tło) w mieszkaniach innych niż zarządu, do których z podwórka da się dojść bez wychodzenia
-    za siatkę: 3–8 osób (po dwie na mieszkanie i jedna więcej), każdy z łóżkiem z mebli swojego mieszkania. */
-function spawnResidents(st: SimState, w: World, h: HouseLike, want: number | undefined, rnd: () => number): void {
+/** mieszkania inne niż zarządu, do których z podwórka da się dojść bez wychodzenia za siatkę, rosnąco */
+function residentApts(st: SimState, w: World, h: HouseLike): number[] {
   const size = w.size;
   const fence = (w as { fence?: World['fence'] }).fence;
   const { resident } = composeLayers(w, [], null, st.fence, homeMask(h, size));
   const reg = labelRegions(resident, size);
   const yardTile = fence?.yard.find((i) => !resident[i]);
-  if (yardTile === undefined) return;
-  const area = reg[yardTile];
+  if (yardTile === undefined) return [];
   const apts: number[] = [];
   for (let i = 0; i < size * size; i++) {
     const a = aptAt(h, i);
-    if (a >= 0 && a !== h.home && !resident[i] && reg[i] === area && !apts.includes(a)) apts.push(a);
+    if (a >= 0 && a !== h.home && !resident[i] && reg[i] === reg[yardTile] && !apts.includes(a)) apts.push(a);
   }
-  apts.sort((a, b) => a - b);
-  st.cap = Math.min(8, 3 * apts.length);
-  const n = Math.min(st.cap, want ?? (apts.length ? Math.min(8, Math.max(3, 2 * apts.length + 1)) : 0));
+  return apts.sort((a, b) => a - b);
+}
+
+/** Mieszkańcy siedziby (tło) w mieszkaniach połączonych z podwórkiem, po kolei po mieszkaniach, najwyżej do st.cap
+    (3–8 na start: po dwóch na mieszkanie i jeden więcej); każdy z łóżkiem z mebli swojego mieszkania, gdy jest wolne.
+    Zarząd dokłada ich zdarzeniami (fx.residents). Zwraca, ilu przybyło. */
+export function addResidents(st: SimState, w: World, n: number): number {
+  const h = houseOf(w);
+  if (!h || n <= 0) return 0;
+  const size = w.size;
+  const apts = residentApts(st, w, h);
+  if (!apts.length) return 0;
+  const rnd = rngOf(st.rng);
+  const { resident } = composeLayers(w, [], null, st.fence, homeMask(h, size));
+  let added = 0;
   for (let k = 0; k < n; k++) {
-    const apt = apts[k % apts.length];
+    const have = st.pawns.filter((p) => p.kind === 'resident');
+    if (have.length >= st.cap) break;
+    const idx = have.length;
+    const apt = apts[idx % apts.length];
     const free: number[] = [];
     for (let i = 0; i < size * size; i++) {
       if (aptAt(h, i) !== apt || resident[i]) continue;
@@ -607,16 +629,69 @@ function spawnResidents(st: SimState, w: World, h: HouseLike, want: number | und
       const y = Math.floor(i / size);
       if (!st.things.some((t) => !LOOSE.has(t.kind) && covers(t, x, y))) free.push(i);
     }
-    const at = free[Math.floor(k / apts.length) % Math.max(1, free.length)] ?? yardTile;
+    const at = free[Math.floor(idx / apts.length) % Math.max(1, free.length)] ?? free[0];
+    if (at === undefined) break;
     const p = newPawn(st, w, 'resident', -1, at, at, 4 + Math.floor(rnd() * 12));
     p.apt = apt;
     p.needs = { food: 70, warm: 60, rest: 70, health: 100, safe: 60, mood: 0 };
     p.needs.mood = 0.25 * 70 + 0.25 * 60 + 0.15 * 70 + 0.15 * 100 + 0.2 * 60;
     st.pawns.push(p);
+    added++;
     // łóżko w swoim mieszkaniu
     const bed = st.things.find((t) => BEDS.has(t.kind) && t.owner < 0 && aptAt(h, t.y * size + t.x) === apt);
     if (bed) bed.owner = p.id;
   }
+  return added;
+}
+
+/** wyprowadzka: ostatni mieszkańcy znikają (łóżka wolne); zwraca, ilu ubyło */
+export function removeResidents(st: SimState, n: number): number {
+  let gone = 0;
+  for (let k = st.pawns.length - 1; k >= 0 && gone < n; k--) {
+    const p = st.pawns[k];
+    if (p.kind !== 'resident') continue;
+    dropPawn(st, p);
+    gone++;
+  }
+  return gone;
+}
+
+/** pionek znika ze stanu: rzeczy, które zajmował, i jego meble są wolne */
+function dropPawn(st: SimState, p: Pawn): void {
+  for (const t of st.things) {
+    if (t.by === p.id) t.by = -1;
+    if (t.owner === p.id) t.owner = -1;
+  }
+  st.pawns.splice(st.pawns.indexOf(p), 1);
+}
+
+/** nowa osoba w zarządzie (zdarzenie): staje przed drzwiami siedziby z potrzebami jak po drodze */
+export function addCore(st: SimState, w: World, person: Person): Pawn {
+  const hq = w.buildings[w.hq];
+  const door = hq?.entrances[0]?.out ?? nearestFree(w.blocked, w.size, ((w.size / 2) | 0) * (w.size + 1));
+  st.people.push(person);
+  const rnd = rngOf(st.rng);
+  const p = newPawn(
+    st,
+    w,
+    'core',
+    st.people.length - 1,
+    nearestFree(w.blocked, w.size, door),
+    door,
+    Math.floor(rnd() * 4),
+  );
+  p.needs = { food: 50, warm: 50, rest: 60, health: 90, safe: 50, mood: 0 };
+  p.needs.mood = 0.25 * 50 + 0.25 * 50 + 0.15 * 60 + 0.15 * 90 + 0.2 * 50;
+  st.pawns.push(p);
+  return p;
+}
+
+/** osoba odchodzi ze spółdzielni (zdarzenie): pionek znika, osoba zostaje w state.people (indeksy innych) */
+export function removeCore(st: SimState, id: string): boolean {
+  const p = st.pawns.find((q) => q.kind === 'core' && st.people[q.person]?.id === id);
+  if (!p) return false;
+  dropPawn(st, p);
+  return true;
 }
 
 function spawnNear(w: World, i: number, k: number, rnd: () => number): number {
@@ -1028,6 +1103,12 @@ export class Sim {
     }
     if (c.t === 'raid') {
       planRaid(st, c.at, c.post, false);
+      return;
+    }
+    if (c.t === 'mend') {
+      const open = (st.fence?.holes ?? []).filter((h) => !h.patch).sort((a, b) => b.size - a.size || a.id - b.id);
+      for (const h of open.slice(0, Math.max(0, c.n))) h.patch = PATCH_HP;
+      if (open.length && c.n > 0) this.rebuild();
       return;
     }
     if (c.t === 'laws') {
