@@ -236,6 +236,8 @@ Zielonki mieszczą się dopiero w progu dla gminy rosnącej (R30). To gmina podm
 
 Znane wejścia, bez poprawek w tym kroku. W spisie mało młodych dorosłych mieszka z rodzicami, a udział trzech pokoleń wg GUS spada w pierwszym kroku mniej więcej o połowę (Przymorze z 10,1 do 4,2%, Ursynów z 11,4 do 6,4%). Samotnych wśród osób 75+ jest w 2026 35-37%. Dzieci 0-4 na koniec 2025 model ma po zmianie płodności o 21% mniej niż GUS w Gdańsku, o 4% w Ursynowie i o 36% w Zielonkach; reszta to napływ młodych rodzin. Spis źle dzieli 10-letnie grupy wieku na 5-letnie: w Zielonkach 10-14 lat to 49% grupy 10-19 wobec 56% w P4253, a 60-64 lat to 65% grupy 60-69 wobec 52%. W teście wstecznym 0-14, 15-64 i 65+ w 2025 to całe grupy 10-letnie ze spisu (albo urodzenia), więc ten podział rusza tylko 80+.
 
+Rozstrzygnięcia o wyludnieniu (około połowy mieszkań pustych w 2051) i o fachach na 2051 potwierdził Mateusz 18.10.2026: „Tak, zostaw oba rozstrzygnięcia: połowa mieszkań pusta i fachy na 2051.” Projekt ma je teraz zapisane jako potwierdzone.
+
 ## Następne
 
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
@@ -289,6 +291,7 @@ Znane wejścia, bez poprawek w tym kroku. W spisie mało młodych dorosłych mie
 
 ## Zaparkowane
 
+- Stan pustych mieszkań (pomysł Mateusza, 18.10.2026): każde puste mieszkanie dostaje z historii generatora rok i rodzaj opuszczenia (wyjazd z meblami, wymarcie, splądrowanie, zalanie, pożar), a M2 zamieni to na śmieci do odzysku i rzeczy do naprawy. Zapis stanu w generatorze trafi do planu kroku 5.
 - GitHub Actions ostrzega: `actions/checkout@v4` i `actions/setup-node@v4` celują w wycofywany Node 20 (GitHub uruchamia je na 24), a `ubuntu-latest` przechodzi na Ubuntu 26 od 19.10.2026. Podbić wersje akcji przy najbliższej zmianie workflow.
 - Tryb zombie do wyboru w menu (pomysł Mateusza, 17.10.2026): apokalipsa zombie, start z jednego chronionego budynku, teren powiększany budową zasieków. Od nocy 17/18.10 w planie M4, na tej samej obronie co noc z szabrownikami w M1.
 - Własny serwer, np. VPS na Hetznerze (pytanie Mateusza, 17.10.2026, przypomniane tego samego dnia: „coś bardziej dewowego niż GitHub”): konta i zapisy w chmurze, pocztówki z PixelLab na żądanie, pamięć geokodowania i kafelków, z czasem multiplayer asynchroniczny (sąsiednie osiedla innych graczy). Gra dalej statyczna na Pages, serwer jako małe API obok. Opcje do porównania przy wyborze (ceny sprawdzić u dostawców): Cloudflare Workers z bazą i magazynem plików (lekkie API, pamięć podręczna, bez utrzymywania maszyny); VPS na Hetznerze z Dockerem albo Coolify (pełna kontrola, multiplayer w czasie rzeczywistym, ale utrzymanie i bezpieczeństwo po naszej stronie); hosting kontenerów typu Fly.io. Zmienia decyzję „bez backendu i kont”, wrócić po M1.

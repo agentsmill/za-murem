@@ -145,6 +145,8 @@ Dźwignie upadku to decyzje gry, nie dane, i każda jest jedną liczbą w tabeli
 
 Uczciwa linia bazowa bez upadku już daje w 2051 osiedle starych ludzi: dzietność 2025 (1,068) jest poniżej najczarniejszego scenariusza GUS, a z kobiet z rocznika 1975 co piąta jest bezdzietna. Dźwignie dodają głównie powroty i wspólne mieszkanie, a nie dodatkową śmierć.
 
+Stan pustych mieszkań (pomysł Mateusza z 18.10.2026: „W tych mieszkaniach to w sumie powinny być śmieci często do odzyskania albo coś do naprawienia.”). Generator wie, dlaczego mieszkanie opustoszało, więc każde puste mieszkanie dostaje z historii swój stan: klatkę, rok opuszczenia i rodzaj, np. rodzina wyjechała i zostawiła meble, lokatorzy wymarli, mieszkanie splądrowano, zalało je, był pożar. Rodzaj wynika z dziennika (wyjazd, zgon, wyludnienie) i z losowania z ziarna budynku dla zdarzeń z lat upadku. Zawartość wnętrza, śmieci do odzysku i rzeczy do naprawy robi z tego stanu M2 (wnętrza i symulacja); generator daje tylko stan.
+
 ## 6. Imiona i nazwiska
 
 Imiona według rocznika:
@@ -229,7 +231,7 @@ Formaty plików i podział na pliki, szczegóły IPF, konkretne wartości parame
 
 ## Rozstrzygnięte pytania z przeglądu
 
-Oba pytania rozstrzygnęła 18.10.2026 sesja koordynująca prace przy grze („Analiza folderu i realizacja planu”), z kierunku, który Mateusz dał w nocy: „świat upada i trzeba sobie radzić”, a wspólnota nie musi być wiernym odbiciem dzisiejszego blokowiska. Mateusz może każde z nich zmienić.
+Oba pytania rozstrzygnęła 18.10.2026 sesja koordynująca prace przy grze („Analiza folderu i realizacja planu”), z kierunku, który Mateusz dał w nocy: „świat upada i trzeba sobie radzić”, a wspólnota nie musi być wiernym odbiciem dzisiejszego blokowiska. Oba potwierdzone przez Mateusza 18.10.2026: „Tak, zostaw oba rozstrzygnięcia: połowa mieszkań pusta i fachy na 2051.”
 
 1. Wyludnienie: mocne. W 2051 stoi pusta mniej więcej połowa mieszkań. To dźwignia w silniku strojona botem (ludzie wyjechali na wieś po jedzenie, umarli w zimach lat trzydziestych). Puste mieszkania stają się celami przeszukiwania jako „Opuszczone mieszkania”. Spółdzielnia na start to siedziba, reszta osiedla to gospodarstwa per klatka na przyszłe zajmowanie budynków.
 2. Zawód: generator ma własne fachy na 2051, czyli to, co ktoś umie dziś robić na osiedlu, z dziedzinami umiejętności z 0.3 (`bud`, `cieplo`, `elek`, `med`, `uprawa`, `it`, `obrona`). Zawód sprzed upadku zostaje jako linijka historii i satyra („dawniej prompt engineer”). `PROFS` z 0.3 zostaje nietknięty dla testu zgodności.
