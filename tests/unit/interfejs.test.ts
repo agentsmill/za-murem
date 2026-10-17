@@ -43,7 +43,7 @@ import { statsOf } from '../../src/ui/pasek.ts';
 import { govFence, govLight } from '../../src/ui/siatka.ts';
 import { deg, esc, num, pct, signed } from '../../src/ui/tekst.ts';
 import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSave } from '../../src/ui/zapis.ts';
-import { crownOf, markSpot } from '../../src/ui/znacznik.ts';
+import { crownOf, markSpot, under } from '../../src/ui/znacznik.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
@@ -193,6 +193,18 @@ describe('etykieta suchego drzewa', () => {
         key,
       ).toBe(false);
     }
+  });
+
+  it('śmieci w mieszkaniach (rzeczy w budynkach) nie liczą się pod etykietą, rzeczy na podwórku tak', () => {
+    const { w } = demo('przymorze');
+    const at = (p: { x: number; y: number }) => w.bid[p.y * w.size + p.x];
+    const inside = w.props.find((p) => p.kind === 'smieci' && at(p) >= 0)!;
+    expect(inside).toBeTruthy();
+    const r1 = [inside.x, inside.y, inside.x + 1, inside.y + 1] as const;
+    expect(under(w, r1)).toBe(under({ ...w, props: w.props.filter((p) => p !== inside) }, r1));
+    const outside = w.props.find((p) => at(p) < 0)!;
+    const r2 = [outside.x, outside.y, outside.x + 1, outside.y + 1] as const;
+    expect(under(w, r2)).toBeGreaterThan(under({ ...w, props: w.props.filter((p) => p !== outside) }, r2));
   });
 
   it('bez suchego drzewa nie ma etykiety', () => {

@@ -9,6 +9,7 @@ import { BUILDS, type BuildKind, type BuildPlace, type Mat } from '../sim/budowl
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimStock } from '../sim/snapshot.ts';
+import type { AptState, Damage } from '../world/apts.ts';
 import type { World } from '../world/world.ts';
 import type { Sheet } from './okna.ts';
 import { esc } from './tekst.ts';
@@ -23,26 +24,64 @@ export interface PlaceCheck {
 /** sprawdzenie miejsca jak canPlace z kontraktu: lewy górny kafelek (x, y) i obrót */
 export type CanPlace = (st: SimState, w: World, kind: BuildKind, x: number, y: number, rot: Rot) => PlaceCheck;
 
-/** plan budowy w stanie gry (st.builds z kontraktu); interfejs czyta tylko miejsce */
-interface PlanLike {
+/** plan albo budowa w toku w stanie gry (st.builds, kształt od symulacji): miejsce, materiały potrzebne
+    i już przyniesione, praca od 0 do BUILDS[kind].work */
+export interface PlanGame {
+  id: number;
   kind: BuildKind;
   x: number;
   y: number;
   rot: number;
+  need: Partial<Record<Mat, number>>;
+  have: Partial<Record<Mat, number>>;
+  work: number;
+  by: number;
 }
 
-/** mieszkanie w stanie gry (st.apts z kontraktu): nasze, przeszukane pomieszczenia, naprawione uszkodzenia */
+/** mieszkanie siedziby w stanie gry (st.apts, kształt od symulacji, bez bid): stan, nasze, przeszukane
+    pomieszczenia */
 export interface AptGame {
-  bid: number;
   apt: number;
-  ours?: boolean;
-  searched?: number[];
-  repaired?: number[];
+  state: 'zarzad' | 'mieszkancy' | 'puste';
+  why?: AptState['why'];
+  year?: number;
+  ours: boolean;
+  searched: number[];
 }
 
-/** stan gry z polami fali 1 (dopóki symulacja ich nie ma, są puste) */
-export const plansOf = (st: SimState): PlanLike[] => (st as unknown as { builds?: PlanLike[] }).builds ?? [];
-export const aptsGame = (st: SimState): AptGame[] => (st as unknown as { apts?: AptGame[] }).apts ?? [];
+/** uszkodzenie w stanie gry (st.damage, kształt od symulacji): naprawione albo nie, materiały przyniesione */
+export interface DamageGame {
+  kind: Damage['kind'];
+  tile: number;
+  apt: number;
+  fixed: boolean;
+  have?: Partial<Record<Mat, number>>;
+}
+
+/** stan gry z polami fali 1 (dopóki symulacja ich nie ma, undefined) */
+export const plansOf = (st: SimState): PlanGame[] => (st as unknown as { builds?: PlanGame[] }).builds ?? [];
+export const aptsGame = (st: SimState): AptGame[] | undefined => (st as unknown as { apts?: AptGame[] }).apts;
+export const damageGame = (st: SimState): DamageGame[] | undefined =>
+  (st as unknown as { damage?: DamageGame[] }).damage;
+
+/** materiały, które plany jeszcze zabiorą ze składu: potrzebne minus przyniesione, z każdego planu */
+export function reservedOf(st: SimState): Partial<Record<Mat, number>> {
+  const out: Partial<Record<Mat, number>> = {};
+  for (const p of plansOf(st))
+    for (const [m, n] of Object.entries(p.need ?? {}) as [Mat, number][]) {
+      const left = n - (p.have?.[m] ?? 0);
+      if (left > 0) out[m] = (out[m] ?? 0) + left;
+    }
+  return out;
+}
+
+/** materiały do menu budowy: zapas minus to, co zarezerwowały plany */
+export function availableOf(st: SimState, s: SimStock): Record<Mat, number> {
+  const have = matsOf(s);
+  const r = reservedOf(st);
+  for (const m of Object.keys(have) as Mat[]) have[m] = Math.max(0, have[m] - (r[m] ?? 0));
+  return have;
+}
 
 /** rozmiar w kafelkach po obrocie (przy 1 i 3 zamienione) */
 export function footprint(kind: BuildKind, rot: Rot): { w: number; h: number } {
@@ -54,7 +93,7 @@ export function footprint(kind: BuildKind, rot: Rot): { w: number; h: number } {
 export function ourApts(st: SimState, w: World): number[] {
   const i = w.interior;
   const out = i.home >= 0 ? [i.home] : [];
-  for (const a of aptsGame(st)) if (a.ours && a.bid === i.building && !out.includes(a.apt)) out.push(a.apt);
+  for (const a of aptsGame(st) ?? []) if (a.ours && !out.includes(a.apt)) out.push(a.apt);
   return out;
 }
 
@@ -109,6 +148,14 @@ export const canPlaceAtrapa: CanPlace = (st, w, kind, x, y, rot) => {
 const CAN_PLACE = 'canPlace';
 export const placeCheck: CanPlace =
   ((budowle as unknown as Record<string, unknown>)[CAN_PLACE] as CanPlace | undefined) ?? canPlaceAtrapa;
+
+/** kafelki, na których budowla może stanąć: suma podstaw z dozwolonych zakotwiczeń (dla view.setPlacement) */
+export function okTilesOf(anchors: readonly number[], kind: BuildKind, rot: Rot, size: number): number[] {
+  const { w: fw, h: fh } = footprint(kind, rot);
+  const out = new Set<number>();
+  for (const a of anchors) for (let dy = 0; dy < fh; dy++) for (let dx = 0; dx < fw; dx++) out.add(a + dy * size + dx);
+  return [...out].sort((x, y) => x - y);
+}
 
 /** kafelki, od których (jako lewego górnego) budowla się zmieści: do podświetlenia w trybie stawiania */
 export function allowedAnchors(st: SimState, w: World, kind: BuildKind, rot: Rot, check = placeCheck): number[] {

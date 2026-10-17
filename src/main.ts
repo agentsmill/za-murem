@@ -29,7 +29,16 @@ import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { type Command, createSim, Sim } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
-import { allowedAnchors, buildMenu, buildSheet, footprint, matsOf, placeCheck, type Rot } from './ui/budowa.ts';
+import {
+  allowedAnchors,
+  availableOf,
+  buildMenu,
+  buildSheet,
+  footprint,
+  okTilesOf,
+  placeCheck,
+  type Rot,
+} from './ui/budowa.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
@@ -991,17 +1000,27 @@ let placing: {
   ok: boolean;
   why?: string;
   allowed: number[];
+  /** kafelki, na których ta budowla może stanąć (suma podstaw z dozwolonych zakotwiczeń) */
+  okTiles: number[];
 } | null = null;
 /** mieszkanie na karcie (klik w mieszkanie siedziby, gdy nikt nie jest zaznaczony) albo −1 */
 let aptFocus = -1;
 
 /** podgląd stawiania w rysowaniu (view.setPlacement, robi sesja rysowania); bez niego duch z DOM */
-type PlacementView = { kind: BuildKind; x: number; y: number; rot: Rot; ok: boolean; allowed: number[] } | null;
+/** kształt podglądu od rysowania: kafelki jako indeksy y * size + x; bad zostaje puste, bo duch i tak jest czerwony */
+type PlacementView = {
+  kind: BuildKind;
+  x: number;
+  y: number;
+  rot: Rot;
+  ok: boolean;
+  tiles?: { ok?: number[]; bad?: number[] };
+} | null;
 let placementKey = '';
 function setPlacementView(p: PlacementView): boolean {
   const fn = (view as unknown as { setPlacement?: (p: PlacementView) => void }).setPlacement;
   if (typeof fn !== 'function') return false;
-  const key = p ? `${p.kind},${p.x},${p.y},${p.rot},${p.ok}` : '';
+  const key = p ? `${p.kind},${p.x},${p.y},${p.rot},${p.ok},${p.tiles?.ok?.length ?? 0}` : '';
   if (key !== placementKey) {
     placementKey = key;
     fn.call(view, p);
@@ -1017,7 +1036,8 @@ function openBuild() {
   ctx.close();
   const room = (k: BuildKind) =>
     allowedAnchors(s.st, s.w, k, 0).length > 0 || allowedAnchors(s.st, s.w, k, 1).length > 0;
-  modal.show(buildSheet(buildMenu(matsOf(snapshot(s.st, s.w).stock), room), touchUI), (act, arg) => {
+  // materiały bez tego, co plany jeszcze zabiorą ze składu
+  modal.show(buildSheet(buildMenu(availableOf(s.st, snapshot(s.st, s.w).stock), room), touchUI), (act, arg) => {
     if (act === 'build') {
       modal.close();
       startPlacing(arg as BuildKind);
@@ -1031,7 +1051,8 @@ function openBuild() {
 
 function startPlacing(kind: BuildKind) {
   if (!sim) return;
-  placing = { kind, rot: 0, x: 0, y: 0, ok: false, allowed: allowedAnchors(sim.st, sim.w, kind, 0) };
+  const allowed = allowedAnchors(sim.st, sim.w, kind, 0);
+  placing = { kind, rot: 0, x: 0, y: 0, ok: false, allowed, okTiles: okTilesOf(allowed, kind, 0, sim.w.size) };
   // plan na środku ekranu, dopóki kursor albo palec nie pokaże miejsca
   aimAt(view.width / 2, view.height / 2);
   $('placeBar').hidden = false;
@@ -1058,6 +1079,7 @@ function rotatePlacing() {
   const cy = placing.y + Math.floor((fh - 1) / 2);
   placing.rot = ((placing.rot + 1) % 4) as Rot;
   placing.allowed = allowedAnchors(sim.st, sim.w, placing.kind, placing.rot);
+  placing.okTiles = okTilesOf(placing.allowed, placing.kind, placing.rot, sim.w.size);
   const [sx, sy] = screenOf(cx + 0.5, cy + 0.5);
   aimAt(sx, sy);
 }
@@ -1092,6 +1114,7 @@ function placeClick(sx: number, sy: number, button: number, type: string, shift:
   say(`Plan: ${BUILDS[kind].name}. Zarząd przyniesie materiały i zbuduje.`, 3000);
   if (shift && type === 'mouse') {
     placing.allowed = allowedAnchors(sim.st, sim.w, kind, rot);
+    placing.okTiles = okTilesOf(placing.allowed, kind, rot, sim.w.size);
     aimAt(sx, sy);
   } else cancelPlacing(false);
   return true;
@@ -1120,7 +1143,7 @@ function placeGhost() {
   // na dotyku nie ma kursora: plan stoi na środku ekranu jak celownik, a mapa przesuwa się pod nim
   if (touchUI) aimAt(view.width / 2, view.height / 2);
   const p = placing;
-  if (setPlacementView({ kind: p.kind, x: p.x, y: p.y, rot: p.rot, ok: p.ok, allowed: p.allowed })) {
+  if (setPlacementView({ kind: p.kind, x: p.x, y: p.y, rot: p.rot, ok: p.ok, tiles: { ok: p.okTiles } })) {
     g.hidden = true;
     return;
   }

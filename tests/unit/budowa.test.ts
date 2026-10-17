@@ -14,19 +14,21 @@ import { createSim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import {
   allowedAnchors,
+  availableOf,
   buildMenu,
   buildSheet,
   canPlaceAtrapa,
   footprint,
   matsOf,
+  okTilesOf,
   ourApts,
   placeCheck,
+  reservedOf,
   workText,
 } from '../../src/ui/budowa.ts';
 import { DAY2_WOOD, goalsDay2, isDay2 } from '../../src/ui/cele.ts';
 import { aptAt, aptCard, aptsOf, aptView, damageOf, REPAIR, WHY_TEXT } from '../../src/ui/mieszkania.ts';
 import { statsOf } from '../../src/ui/pasek.ts';
-import type { AptState } from '../../src/world/apts.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'] as const;
@@ -46,8 +48,9 @@ const fresh = (key = 'przymorze') => {
   const { w, seed } = demo(key);
   return { w, st: createSim(w, seed, { core: 4 }) };
 };
-/** stan gry z polami fali 1 (st.apts, st.builds), których symulacja jeszcze nie ma */
-const withApts = (st: SimState, apts: unknown[]) => Object.assign(st, { apts }) as SimState;
+/** stan gry z polami fali 1 (st.apts, st.damage, st.builds) w kształcie od symulacji, której jeszcze nie ma */
+const withGame = (st: SimState, more: { apts?: unknown[]; damage?: unknown[]; builds?: unknown[] }) =>
+  Object.assign(structuredClone(st), more) as SimState;
 
 describe('menu budowy', () => {
   it('trzy kategorie, każda budowla z kosztem, czasem pracy, działaniem i miejscem z BUILDS', () => {
@@ -186,40 +189,45 @@ describe('sprawdzanie miejsca (atrapa canPlace)', () => {
 });
 
 describe('mieszkania siedziby', () => {
-  it.each(DEMOS)('%s: zarząd, mieszkańcy z symulacji, reszta puste z powodem i rokiem (atrapa świata)', (key) => {
+  it.each(DEMOS)('%s: stany ze świata (zarząd, mieszkańcy, puste z powodem i rokiem), a w grze ze st.apts', (key) => {
     const { w, st } = fresh(key);
     const apts = aptsOf(st, w);
+    expect(apts).toEqual(w.apts);
     expect(apts.find((a) => a.apt === w.interior.home)?.state).toBe('zarzad');
-    const lived = new Set(st.pawns.filter((p) => p.kind === 'resident').map((p) => p.apt));
-    for (const a of apts) {
-      if (a.apt === w.interior.home) continue;
-      expect(a.state).toBe(lived.has(a.apt) ? 'mieszkancy' : 'puste');
-      if (a.state === 'puste') {
-        expect(Object.keys(WHY_TEXT)).toContain(a.why);
-        expect(a.year).toBeGreaterThanOrEqual(2026);
-        expect(a.year).toBeLessThanOrEqual(2051);
-      }
+    for (const a of apts.filter((x) => x.state === 'puste')) {
+      expect(Object.keys(WHY_TEXT)).toContain(a.why);
+      expect(a.year).toBeGreaterThanOrEqual(2026);
+      expect(a.year).toBeLessThanOrEqual(2051);
     }
-    // ten sam świat, te same stany
-    expect(aptsOf(st, w)).toEqual(apts);
+    // stan gry (kształt od symulacji, bez bid) wygrywa ze światem
+    const empty = apts.find((a) => a.state === 'puste');
+    if (!empty) return;
+    const st2 = withGame(st, {
+      apts: [{ apt: empty.apt, state: 'puste', why: empty.why, year: empty.year, ours: true, searched: [] }],
+    });
+    expect(aptsOf(st2, w)).toEqual([
+      { bid: w.interior.building, apt: empty.apt, state: 'puste', why: empty.why, year: empty.year },
+    ]);
+    expect(ourApts(st2, w)).toEqual([w.interior.home, empty.apt]);
   });
 
-  it('świat z World.apts i World.damage wygrywa z atrapą', () => {
+  it('naprawy: ze świata (World.damage), w grze ze st.damage z fixed', () => {
     const { w, st } = fresh();
-    const apt = aptsOf(st, w).find((a) => a.apt !== w.interior.home)!.apt;
-    const real: AptState[] = [{ bid: w.interior.building, apt, state: 'puste', why: 'pozar', year: 2040 }];
-    const tile = w.interior.room.findIndex((r) => r >= 0 && w.interior.rooms[r].apt === apt);
-    const w2 = Object.assign(Object.create(Object.getPrototypeOf(w)), w, {
-      apts: real,
-      damage: [{ kind: 'piec', tile, bid: w.interior.building, apt }],
-    }) as World;
-    expect(aptsOf(st, w2)).toEqual(real);
-    expect(damageOf(st, w2, apt).map((d) => d.kind)).toEqual(['piec']);
+    const a = w.damage[0];
+    expect(a).toBeTruthy();
+    expect(damageOf(st, w, a.apt)).toEqual(
+      w.damage.filter((d) => d.apt === a.apt).map((d) => ({ ...d, fixed: false })),
+    );
+    const st2 = withGame(st, { damage: [{ kind: a.kind, tile: a.tile, apt: a.apt, fixed: true, have: {} }] });
+    expect(damageOf(st2, w, a.apt)).toEqual([
+      { kind: a.kind, tile: a.tile, bid: w.interior.building, apt: a.apt, fixed: true },
+    ]);
   });
 
   it('karta pustego mieszkania: stan, powód, co do naprawy z kosztem, co już przeszukane', () => {
     const { w, st } = fresh();
     const empty = aptsOf(st, w).find((a) => a.state === 'puste' && damageOf(st, w, a.apt).length)!;
+    expect(empty).toBeTruthy();
     const v = aptView(st, w, empty.apt)!;
     // klik w pokój tego mieszkania trafia w nie, w klatkę nie
     const tile = w.interior.room.indexOf(v.rooms[0].id);
@@ -230,26 +238,83 @@ describe('mieszkania siedziby', () => {
     expect(html).toContain(`<h2>Mieszkanie ${empty.apt + 1}</h2>`);
     expect(html).toContain(`Puste od ${empty.year}`);
     expect(html).toContain(WHY_TEXT[empty.why!](empty.year!));
+    expect(html).toContain(`Do naprawy (${v.damages.length})`);
     for (const d of v.damages) expect(html).toContain(REPAIR[d.kind].name);
     expect(html).toContain(`Przeszukane: 0 z ${v.rooms.length}`);
     expect(html).toContain('Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.');
-    // stan gry (st.apts z kontraktu): pokój przeszukany, uszkodzenie naprawione, mieszkanie nasze
-    const st2 = withApts(st, [
-      {
-        bid: w.interior.building,
-        apt: empty.apt,
-        ours: true,
-        searched: [v.rooms[0].id],
-        repaired: [v.damages[0].tile],
-      },
-    ]);
+    // stan gry: mieszkanie nasze, pokój przeszukany, pierwsze uszkodzenie naprawione
+    const d0 = v.damages[0];
+    const st2 = withGame(st, {
+      apts: aptsOf(st, w).map((a) => ({
+        apt: a.apt,
+        state: a.state,
+        why: a.why,
+        year: a.year,
+        ours: a.apt === empty.apt,
+        searched: a.apt === empty.apt ? [v.rooms[0].id] : [],
+      })),
+      damage: w.damage.map((d) => ({
+        kind: d.kind,
+        tile: d.tile,
+        apt: d.apt,
+        fixed: d.tile === d0.tile && d.kind === d0.kind,
+        have: {},
+      })),
+    });
     const v2 = aptView(st2, w, empty.apt)!;
     html = aptCard(v2, true);
     expect(html).toContain(`Zajęte przez zarząd od ${empty.year}`);
     expect(html).toContain(`Przeszukane: 1 z ${v.rooms.length}`);
+    // do naprawy tylko nienaprawione
+    expect(html).toContain(v.damages.length > 1 ? `Do naprawy (${v.damages.length - 1})` : 'Do naprawy');
     expect(html).toContain('naprawione');
     expect(html).toContain('Przytrzymajcie palec w mieszkaniu');
-    expect(ourApts(st2, w)).toContain(empty.apt);
+  });
+});
+
+describe('plany budowy w menu i podglądzie', () => {
+  it('menu odejmuje materiały zarezerwowane przez plany (potrzebne minus przyniesione)', () => {
+    const { w, st } = fresh();
+    const stock = snapshot(st, w).stock;
+    expect(availableOf(st, stock)).toEqual(matsOf(stock));
+    const st2 = withGame(st, {
+      builds: [
+        {
+          id: 1,
+          kind: 'warsztat',
+          x: 0,
+          y: 0,
+          rot: 0,
+          need: { deski: 4, zlom: 2 },
+          have: { deski: 1 },
+          work: 0,
+          by: -1,
+        },
+        { id: 2, kind: 'zasieki', x: 1, y: 0, rot: 0, need: { zlom: 3 }, have: { zlom: 3 }, work: 10, by: -1 },
+      ],
+    });
+    expect(reservedOf(st2)).toEqual({ deski: 3, zlom: 2 });
+    const left = availableOf(st2, stock);
+    expect(left.deski).toBe(Math.max(0, stock.boards - 3));
+    expect(left.zlom).toBe(Math.max(0, stock.scrap - 2));
+    // przy 4 deskach i planie warsztatu, który zabierze jeszcze 3, łóżka piętrowe (4 deski) są wyszarzone
+    const lozka = buildMenu({ ...left, deski: 1 }, () => true)
+      .flatMap((c) => c.items)
+      .find((b) => b.kind === 'lozka_pietrowe')!;
+    expect(lozka.why).toMatch(/^Brakuje: deski 3\./);
+  });
+
+  it('kafelki dla view.setPlacement: suma podstaw z dozwolonych zakotwiczeń, bez powtórzeń', () => {
+    const { w, st } = fresh();
+    for (const kind of ['warsztat', 'ogrodek', 'zasieki'] as const) {
+      const anchors = allowedAnchors(st, w, kind, 1, canPlaceAtrapa);
+      const tiles = okTilesOf(anchors, kind, 1, w.size);
+      expect(new Set(tiles).size).toBe(tiles.length);
+      const { w: fw, h: fh } = footprint(kind, 1);
+      for (const a of anchors)
+        for (let dy = 0; dy < fh; dy++) for (let dx = 0; dx < fw; dx++) expect(tiles).toContain(a + dy * w.size + dx);
+    }
+    expect(okTilesOf([0], 'ogrodek', 0, 100)).toEqual([0, 1, 2, 100, 101, 102]);
   });
 });
 
@@ -274,7 +339,7 @@ describe('cele drugiego dnia', () => {
       `Drewna na zapas: 3 z ${DAY2_WOOD}. Noc zjada około 2 sztuk na godzinę, a przy kozie może ktoś czuwać.`,
     );
     // przeszukane pomieszczenie, gotowy warsztat i zasieki, zapas drewna
-    const st2 = withApts(st, [{ bid: 0, apt: 2, searched: [5] }]);
+    const st2 = withGame(st, { apts: [{ apt: 2, state: 'puste', ours: false, searched: [5] }] });
     st2.things.push({ ...st2.things[0], id: 9001, kind: 'warsztat' }, { ...st2.things[0], id: 9002, kind: 'zasieki' });
     g = goalsDay2(st2, gov, { ...o, woodReady: true });
     expect(g.every((x) => x.done)).toBe(true);

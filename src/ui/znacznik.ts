@@ -113,7 +113,11 @@ export function under(w: World, [x0, y0, x1, y1]: readonly [number, number, numb
         if (yy >= w.size) continue;
         if (x >= g.x && x < g.x + g.w && yy >= g.y && yy < g.y + g.h) sum += COST.gate;
         else if (fence.has(yy * w.size + x)) sum += COST.fence;
-        if (w.props.some((p) => x >= p.x && x < p.x + p.w && yy >= p.y && yy < p.y + p.h)) sum += COST.prop;
+        // rzeczy w budynkach (śmieci w mieszkaniach siedziby) nie liczą się: etykieta i tak nie wchodzi na budynek
+        if (
+          w.props.some((p) => x >= p.x && x < p.x + p.w && yy >= p.y && yy < p.y + p.h && w.bid[p.y * w.size + p.x] < 0)
+        )
+          sum += COST.prop;
       }
       if (w.bid[y * w.size + x] >= 0) sum += COST.building;
     }

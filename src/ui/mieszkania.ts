@@ -1,103 +1,34 @@
 /* Mieszkania siedziby w interfejsie (docs/M2-fala-1.md): stan (zarząd, mieszkańcy, puste z powodem i rokiem),
-   uszkodzenia do naprawy, przeszukane pomieszczenia i karta mieszkania. Stan i uszkodzenia daje świat
-   (World.apts, World.damage), co przeszukane i co nasze daje stan gry (st.apts); do czasu, aż je podadzą
-   sesje świata i symulacji, atrapa: mieszkania z mieszkańcami z symulacji, reszta puste z powodem
-   z ziarna. Czyste funkcje stanu i świata, bez DOM. */
+   uszkodzenia do naprawy, przeszukane pomieszczenia i karta mieszkania. Stan i uszkodzenia na starcie daje
+   świat (World.apts, World.damage); w grze stan, nasze i przeszukane daje st.apts, a naprawy st.damage
+   (kształty od symulacji). Czyste funkcje stanu i świata, bez DOM. */
 
-import { h2 } from '../render/art/hash.ts';
 import type { Mat } from '../sim/budowle.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { AptState, AptWhy, Damage, DamageKind } from '../world/apts.ts';
 import type { RoomKind } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
-import { type AptGame, aptsGame, costText } from './budowa.ts';
+import { aptsGame, costText, damageGame } from './budowa.ts';
 import { esc } from './tekst.ts';
 
-/** świat z polami fali 1 (dopóki świat ich nie daje, są puste) */
-const worldApts = (w: World): AptState[] | undefined => (w as unknown as { apts?: AptState[] }).apts;
-const worldDamage = (w: World): Damage[] | undefined => (w as unknown as { damage?: Damage[] }).damage;
-
-const WHYS: readonly AptWhy[] = ['wyjazd', 'wymarcie', 'splądrowanie', 'zalanie', 'pozar'];
-
-/** numery mieszkań siedziby (pokoje z apt ≥ 0) */
-export function aptNumbers(w: World): number[] {
-  const out: number[] = [];
-  for (const r of w.interior.rooms) if (r.apt >= 0 && !out.includes(r.apt)) out.push(r.apt);
-  return out.sort((a, b) => a - b);
-}
-
-/** Stan mieszkań siedziby: ze świata, a bez niego atrapa (zarząd, mieszkania z mieszkańcami z symulacji,
-    reszta puste z powodem i rokiem z ziarna świata) */
+/** Stan mieszkań siedziby: ze stanu gry (st.apts), a zanim symulacja go poda, ze świata */
 export function aptsOf(st: SimState, w: World): AptState[] {
-  const real = worldApts(w);
-  if (real) return real;
-  const i = w.interior;
-  const lived = new Set(st.pawns.filter((p) => p.kind === 'resident' && p.apt >= 0).map((p) => p.apt));
-  return aptNumbers(w).map((apt): AptState => {
-    if (apt === i.home) return { bid: i.building, apt, state: 'zarzad' };
-    if (lived.has(apt)) return { bid: i.building, apt, state: 'mieszkancy' };
-    const r = h2(w.seed, apt, 7151);
-    return {
-      bid: i.building,
-      apt,
-      state: 'puste',
-      why: WHYS[Math.floor(r * WHYS.length) % WHYS.length],
-      year: 2026 + Math.floor(h2(w.seed, apt, 7152) * 26),
-    };
-  });
+  const game = aptsGame(st);
+  if (!game) return w.apts;
+  const bid = w.interior.building;
+  return game.map((a) => ({ bid, apt: a.apt, state: a.state, why: a.why, year: a.year }));
 }
 
 /** pomieszczenia mieszkania (bez klatki), od wejścia */
 const roomsOf = (w: World, apt: number) => w.interior.rooms.filter((r) => r.apt === apt && r.kind !== 'klatka');
 
-/** kafelki sąsiadujące z pomieszczeniami mieszkania (drzwi, okna w ścianie) */
-function besideApt(w: World, apt: number, list: readonly number[]): number[] {
-  const i = w.interior;
-  const ids = new Set(roomsOf(w, apt).map((r) => r.id));
-  return list.filter((t) =>
-    [1, -1, w.size, -w.size].some((d) => {
-      const n = t + d;
-      return n >= 0 && n < i.room.length && ids.has(i.room[n]);
-    }),
-  );
-}
-
-/** pierwszy kafelek posadzki w pomieszczeniu danego rodzaju (albo w dowolnym pomieszczeniu mieszkania) */
-function floorOf(w: World, apt: number, kind?: RoomKind): number {
-  const i = w.interior;
-  const rooms = roomsOf(w, apt);
-  const want = rooms.find((r) => r.kind === kind) ?? rooms[0];
-  if (!want) return -1;
-  return i.room.indexOf(want.id);
-}
-
-/** uszkodzenia, jakie zostawia powód opuszczenia (atrapa do czasu World.damage) */
-const DAMAGE_BY_WHY: Record<AptWhy, DamageKind[]> = {
-  wyjazd: [],
-  wymarcie: [],
-  splądrowanie: ['drzwi', 'okno'],
-  zalanie: ['rura', 'podloga'],
-  pozar: ['okno', 'podloga'],
-};
-
-/** uszkodzenia mieszkania: ze świata, a bez niego atrapa z powodu opuszczenia */
-export function damageOf(st: SimState, w: World, apt: number): Damage[] {
-  const real = worldDamage(w);
+/** uszkodzenia mieszkania z tym, czy naprawione: ze stanu gry (st.damage), a bez niego ze świata */
+export function damageOf(st: SimState, w: World, apt: number): (Damage & { fixed: boolean })[] {
   const bid = w.interior.building;
-  if (real) return real.filter((d) => d.bid === bid && d.apt === apt);
-  const a = aptsOf(st, w).find((x) => x.apt === apt);
-  if (a?.state !== 'puste' || !a.why) return [];
-  const out: Damage[] = [];
-  for (const kind of DAMAGE_BY_WHY[a.why]) {
-    const tile =
-      kind === 'drzwi'
-        ? (besideApt(w, apt, w.interior.doors)[0] ?? -1)
-        : kind === 'okno'
-          ? (besideApt(w, apt, w.interior.windows)[0] ?? -1)
-          : floorOf(w, apt, kind === 'rura' ? 'lazienka' : 'pokoj');
-    if (tile >= 0) out.push({ kind, tile, bid, apt });
-  }
-  return out;
+  const game = damageGame(st);
+  if (game)
+    return game.filter((d) => d.apt === apt).map((d) => ({ kind: d.kind, tile: d.tile, bid, apt, fixed: d.fixed }));
+  return w.damage.filter((d) => d.bid === bid && d.apt === apt).map((d) => ({ ...d, fixed: false }));
 }
 
 /** naprawy z projektu fali: nazwa uszkodzenia i koszt (symulacja liczy je naprawdę) */
@@ -144,7 +75,7 @@ export interface AptView {
   /** zajęte przez zarząd w grze (st.apts) */
   ours: boolean;
   rooms: { id: number; name: string; area: number; searched: boolean }[];
-  damages: (Damage & { name: string; cost: string; repaired: boolean })[];
+  damages: (Damage & { name: string; cost: string; fixed: boolean })[];
   /** łóżka w mieszkaniu: tyle miejsc dla nowych mieszkańców po zajęciu i naprawie */
   beds: number;
 }
@@ -162,9 +93,8 @@ export function aptAt(w: World, tile: number): number {
 export function aptView(st: SimState, w: World, apt: number): AptView | null {
   const a = aptsOf(st, w).find((x) => x.apt === apt);
   if (!a) return null;
-  const game: AptGame | undefined = aptsGame(st).find((g) => g.bid === a.bid && g.apt === apt);
+  const game = aptsGame(st)?.find((g) => g.apt === apt);
   const searched = new Set(game?.searched ?? []);
-  const repaired = new Set(game?.repaired ?? []);
   const ids = new Set(roomsOf(w, apt).map((r) => r.id));
   // miejsca do spania jak w symulacji: łóżka i wersalki
   const beds = w.interior.furniture.filter(
@@ -187,7 +117,6 @@ export function aptView(st: SimState, w: World, apt: number): AptView | null {
       ...d,
       name: REPAIR[d.kind].name,
       cost: costText(REPAIR[d.kind].cost),
-      repaired: repaired.has(d.tile),
     })),
     beds,
   };
@@ -204,14 +133,15 @@ export function aptState(v: AptView): string {
 /** karta mieszkania (w miejscu karty osoby): stan, powód opuszczenia, co do naprawy, co już przeszukane */
 export function aptCard(v: AptView, touch: boolean): string {
   const empty = v.state === 'puste';
-  const fix = v.damages.filter((d) => !d.repaired);
-  const done = v.damages.filter((d) => d.repaired);
+  // do naprawy: uszkodzenia tego mieszkania, których jeszcze nie naprawiono
+  const fix = v.damages.filter((d) => !d.fixed);
+  const done = v.damages.filter((d) => d.fixed);
   const damages = v.damages.length
     ? `<ul class="apt-list">${v.damages
         .map(
           (d) =>
-            `<li class="apt-i${d.repaired ? ' done' : ''}"><span>${esc(d.name)}</span><b class="apt-c">${
-              d.repaired ? 'naprawione' : esc(d.cost)
+            `<li class="apt-i${d.fixed ? ' done' : ''}"><span>${esc(d.name)}</span><b class="apt-c">${
+              d.fixed ? 'naprawione' : esc(d.cost)
             }</b></li>`,
         )
         .join('')}</ul>`

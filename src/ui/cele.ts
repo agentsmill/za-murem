@@ -135,7 +135,7 @@ export function goalsDay2(
     holes: number;
   },
 ): Goal[] {
-  const searched = aptsGame(st).some((a) => (a.searched?.length ?? 0) > 0);
+  const searched = (aptsGame(st) ?? []).some((a) => a.searched.length > 0);
   const built = (kind: string) => st.things.some((t) => t.kind === kind);
   const late = !!gov?.night?.confirmed || (gov?.reports.length ?? 0) > 1;
   const b = o.touch ? 'Przycisk Budowa u góry' : 'Budowa (przycisk u góry albo B)';
