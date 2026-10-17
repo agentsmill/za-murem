@@ -73,9 +73,10 @@ export interface SimStock {
   meds: number;
 }
 
-/** stan siatki dla zarządu (GovFence): otwarte dziury, średnia wytrzymałość, brama */
+/** stan siatki dla zarządu (GovFence): otwarte dziury, średnia wytrzymałość, brama; kafelki dziury, żeby interfejs
+    mógł nadać jej nazwę miejsca (name) przed podaniem zarządowi */
 export interface SimFence {
-  holes: { id: number; size: number; name?: string }[];
+  holes: { id: number; size: number; tiles: number[]; name?: string }[];
   durability: number;
   gateOpen: boolean;
 }
@@ -206,7 +207,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     fence:
       st.fence && fenceShape(w)
         ? {
-            holes: st.fence.holes.filter((x) => !x.patch).map((x) => ({ id: x.id, size: x.size })),
+            holes: st.fence.holes.filter((x) => !x.patch).map((x) => ({ id: x.id, size: x.size, tiles: [...x.tiles] })),
             durability: durability(w, st.fence),
             gateOpen: st.fence.gateOpen,
           }

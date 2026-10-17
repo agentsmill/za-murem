@@ -37,6 +37,7 @@ describe('siatka w symulacji', () => {
     }
     const s = snapshot(st, w);
     expect(s.fence.holes.map((h) => h.id)).toEqual(f.holes.map((h) => h.id));
+    expect(s.fence.holes.map((h) => h.tiles)).toEqual(f.holes.map((h) => h.tiles));
     expect(s.fence.durability).toBeGreaterThan(0.3);
     expect(s.fence.durability).toBeLessThan(0.85);
     expect(s.fence.gateOpen).toBe(true);
