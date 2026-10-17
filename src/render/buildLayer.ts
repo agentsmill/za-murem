@@ -34,9 +34,6 @@ export interface Placement {
   ok: boolean;
   /** kafelki do podświetlenia (indeksy y * size + x): dozwolone na zielono, niedozwolone na czerwono */
   tiles?: { ok?: readonly number[]; bad?: readonly number[] };
-  /** dozwolone miejsca jak w interfejsie (allowedAnchors): lewe górne kafelki, od których budowla się
-      zmieści; podświetlone na zielono jak tiles.ok */
-  allowed?: readonly number[];
 }
 
 type ArtOf = (spec: ThingSpec) => { tex: Texture; sp: ArtSprite };
@@ -155,7 +152,6 @@ export class BuildLayer {
     };
     const w = this.mapSize;
     for (const i of p.tiles?.ok ?? []) cell(i, w, 0x5ac85a, 0.18);
-    for (const i of p.allowed ?? []) cell(i, w, 0x5ac85a, 0.18);
     for (const i of p.tiles?.bad ?? []) cell(i, w, 0xd8584a, 0.18);
     const color = p.ok ? 0x5ac85a : 0xd8584a;
     g.rect(p.x * TILE, p.y * TILE, fp.w * TILE, fp.h * TILE)

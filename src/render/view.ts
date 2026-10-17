@@ -166,7 +166,7 @@ export class GameView {
   /**
    * stan gry z ostatniego syncGame: rzeczy (st.things, rzeczy ze świata, siatka) i rzeczy niezmienne
    * do pamięci kluczy; simKinds: rodzaje stert, które symulacja trzyma u siebie (tych ze świata już
-   * nie ma); broken: zepsute meble po miejscu "x,y" (ze świata albo z atrapy)
+   * nie ma)
    */
   private game: {
     sim: GameLike;
@@ -176,14 +176,16 @@ export class GameView {
     codes: Uint8Array | null;
     things: ThingLike[];
     simKinds: Set<string>;
-    broken: Set<string>;
   } | null = null;
   /** atrapa wraków do podglądu (?wraki=atrapa), dopóki świat ich nie rozstawia */
   private mockWrecks = false;
-  /** atrapa pustych mieszkań (?mieszkania=atrapa): zastępuje stany, uszkodzenia, śmieci i zepsucia ze świata */
+  /**
+   * atrapa pustych mieszkań (?mieszkania=atrapa): zastępuje stany, uszkodzenia, śmieci i zepsucia ze świata
+   * i ze stanu gry
+   */
   private mockWearOn = false;
   private wearMock: WearMock | null = null;
-  /** naprawione uszkodzenia już zdjęte z przekroju */
+  /** naprawione uszkodzenia (st.damage z fixed) już zdjęte z przekroju */
   private fixedSeen = new Set<number>();
   /** plany budowy z ostatniego syncGame (st.builds) */
   private plans: readonly BuildPlan[] = [];
@@ -350,35 +352,33 @@ export class GameView {
     if (!this.scene) return;
     const w = sim.w;
     let g = this.game;
+    // z atrapą pustych mieszkań śmieci i zepsute meble tylko z atrapy, bez tych ze świata i ze stanu gry
+    const mock = this.wearMock;
     if (!g || g.sim !== sim) {
-      // z atrapą pustych mieszkań śmieci i zepsute meble tylko z atrapy, bez tych ze świata
-      const mock = this.wearMock;
       const props: ThingLike[] = w.props
         .filter((p) => !mock || (p.kind as string) !== 'smieci')
         .map((p) => ({ rot: 0, ...p }));
       if (this.mockWrecks && !props.some((p) => p.kind === 'wrak')) props.push(...mockWrecks(w));
       if (mock) props.push(...mock.trash);
-      const broken = new Set<string>(mock?.broken ?? []);
-      if (!mock)
-        for (const f of w.interior.furniture) if ((f as { broken?: boolean }).broken) broken.add(`${f.x},${f.y}`);
-      g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simKinds: new Set(), broken };
+      g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simKinds: new Set() };
       for (const t of g.props) this.fixed.add(t);
       this.game = g;
     }
     // sterty i śmieci rysowane ze świata, dopóki symulacja nie zrobi z nich rzeczy; potem tylko ze stanu gry
     for (const t of sim.st.things)
-      if (HEAPS.has(t.kind) && !g.simKinds.has(t.kind)) {
+      if (HEAPS.has(t.kind) && !g.simKinds.has(t.kind) && !(mock && t.kind === 'smieci')) {
         g.simKinds.add(t.kind);
         g.props = g.props.filter((p) => p.kind !== t.kind);
       }
-    // naprawione uszkodzenia znikają z przekroju: st.damage z fixed (symulacja M2) albo st.fixed (kafelki)
-    const st2 = sim.st as { fixed?: readonly number[]; damage?: readonly { tile: number; fixed?: boolean }[] };
-    const fresh: number[] = [];
-    for (const i of st2.fixed ?? []) if (!this.fixedSeen.has(i)) fresh.push(i);
-    for (const d of st2.damage ?? []) if (d.fixed && !this.fixedSeen.has(d.tile)) fresh.push(d.tile);
-    if (fresh.length) {
-      for (const i of fresh) this.fixedSeen.add(i);
-      this.redraw({ fixed: fresh });
+    // naprawione uszkodzenia znikają z przekroju: wpisy st.damage z fixed (zmienia się tylko na true)
+    const damage = (sim.st as { damage?: readonly { tile: number; fixed: boolean }[] }).damage;
+    if (damage) {
+      const fresh: number[] = [];
+      for (const d of damage) if (d.fixed && !this.fixedSeen.has(d.tile)) fresh.push(d.tile);
+      if (fresh.length) {
+        for (const i of fresh) this.fixedSeen.add(i);
+        this.redraw({ fixed: fresh });
+      }
     }
     this.plans = (sim.st as { builds?: readonly BuildPlan[] }).builds ?? [];
     this.syncFelled(sim.st.felled);
@@ -389,13 +389,14 @@ export class GameView {
       g.fence = fenceThings(w.fence, w, fenceStateFn(w.fence, codes), codes[codes.length - 1] === 1);
       for (const t of g.fence) this.fixed.add(t);
     }
-    // zepsute meble ze świata i okopcona kuchenka na kafelku uszkodzenia piec (po naprawie znowu cała);
-    // zasieki stoją zamiast odcinka siatki
+    // zepsute meble ze stanu gry (symulacja przepisuje broken z mebli świata), z atrapą tylko z atrapy;
+    // okopcona kuchenka na kafelku uszkodzenia piec (po naprawie znowu cała); zasieki stoją zamiast
+    // odcinka siatki
     let things = onTables(sim.st.things);
+    if (mock) things = things.filter((t) => t.kind !== 'smieci');
     const stoves: number[] = [];
     for (const [i, k] of this.scene.section?.damage ?? []) if (k === 'piec') stoves.push(i);
-    if (g.broken.size || stoves.length) {
-      const br = g.broken;
+    if (mock || stoves.length) {
       const size = w.size;
       const onStove = (t: ThingLike) =>
         stoves.some((i) => {
@@ -404,11 +405,11 @@ export class GameView {
           return x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
         });
       things = things.map((t) => {
-        const broken = !t.broken && br.has(`${t.x},${t.y}`);
-        const burnt = !t.burnt && onStove(t);
-        return broken || burnt
-          ? { ...t, broken: t.broken || broken || undefined, burnt: t.burnt || burnt || undefined }
-          : t;
+        const broken = mock ? mock.broken.has(`${t.x},${t.y}`) : !!t.broken;
+        const burnt = !!t.burnt || onStove(t);
+        return broken === !!t.broken && burnt === !!t.burnt
+          ? t
+          : { ...t, broken: broken || undefined, burnt: burnt || undefined };
       });
     }
     const wire = new Set(sim.st.things.filter((t) => t.kind === 'zasieki').map((t) => t.y * w.size + t.x));

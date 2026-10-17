@@ -1759,8 +1759,8 @@ const SHOTS: Shot[] = [
     },
   },
   {
-    // podgląd stawiania w mapie (view.setPlacement) w kształcie z interfejsu, w dzień; nazwy inne niż
-    // scenariusze interfejsu m2-stawianie*, żeby obrazy się nie nadpisywały
+    // podgląd stawiania w mapie (view.setPlacement) w dzień; nazwy inne niż scenariusze interfejsu
+    // m2-stawianie*, żeby obrazy się nie nadpisywały
     name: 'm2-podglad',
     query: '',
     run: async (page, base) => {
@@ -1901,7 +1901,8 @@ const SHOTS: Shot[] = [
     },
   },
   {
-    // naprawa: uszkodzenie z st.fixed znika z przekroju, przerysowują się tylko jego kawałki
+    // naprawa jak w symulacji M2: wpis st.damage z fixed równym true znika z przekroju (przerysowują się
+    // tylko jego kawałki), wpis z fixed równym false zostaje
     name: 'm2-naprawa',
     query: '',
     run: async (page, base) => {
@@ -1911,21 +1912,25 @@ const SHOTS: Shot[] = [
         const zm = window.zm!;
         const v = zm.view as unknown as { scene: { section: { damage?: Map<number, string> } }; chunksMade: number };
         const dmg = v.scene.section.damage!;
-        const [a, b] = [...dmg.keys()];
+        const [a, b, c] = [...dmg.keys()];
         const before = dmg.size;
-        // jak symulacja M2: uszkodzenie w st.damage z fixed; i lista naprawionych kafelków st.fixed
-        const st = zm.sim!.st as unknown as { damage?: unknown[]; fixed?: number[] };
+        const st = zm.sim!.st as unknown as { damage?: unknown[] };
         if (!st.damage) st.damage = [];
-        st.damage.push({ kind: dmg.get(a), tile: a, apt: -1, fixed: true, have: {} });
-        st.fixed = [b];
+        for (const [tile, fixed] of [
+          [a, true],
+          [b, true],
+          [c, false],
+        ] as const)
+          st.damage.push({ kind: dmg.get(tile), tile, apt: -1, fixed, have: {} });
         await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
-        return { a, b, before, after: dmg.size, gone: !dmg.has(a) && !dmg.has(b) };
+        return { a, b, c, before, after: dmg.size, gone: !dmg.has(a) && !dmg.has(b), kept: dmg.has(c) };
       });
       await waitIdle(page);
       console.log(
-        `  uszkodzeń ${r.before} → ${r.after}, kafelki ${r.a} (st.damage) i ${r.b} (st.fixed) naprawione: ${r.gone}`,
+        `  uszkodzeń ${r.before} → ${r.after}: kafelki ${r.a} i ${r.b} naprawione: ${r.gone}, ${r.c} bez naprawy zostaje: ${r.kept}`,
       );
-      if (!r.gone || r.after !== r.before - 2) throw new Error('naprawa nie zdejmuje uszkodzeń z przekroju');
+      if (!r.gone || !r.kept || r.after !== r.before - 2)
+        throw new Error('naprawa ze st.damage nie działa w przekroju');
     },
   },
   {
@@ -2100,10 +2105,10 @@ async function m2Stage(page: Page, what: 'budowle' | 'plany' | 'stawianie-ok' | 
       for (let i = 0; i < size * size; i++) if (roomOk('pokoj')(i) && !busy.has(i)) ok.push(i);
       const bad = [...busy].filter((i) => int.room[i] >= 0 && int.rooms[int.room[i]].apt === home).slice(0, 12);
       const at = what === 'stawianie-ok' ? spot(2, 1, roomOk('pokoj'))! : [bad[0] % size, Math.floor(bad[0] / size)];
-      // dzienny podgląd w kształcie z interfejsu (allowed: dozwolone miejsca), nocny z tiles (ok i bad)
+      // w dzień same dozwolone miejsca (jak z interfejsu), nocą dozwolone i zajęte
       view.setPlacement(
         what === 'stawianie-ok'
-          ? { kind: 'warsztat', x: at[0], y: at[1], rot: 0, ok: true, allowed: ok }
+          ? { kind: 'warsztat', x: at[0], y: at[1], rot: 0, ok: true, tiles: { ok } }
           : { kind: 'warsztat', x: at[0], y: at[1], rot: 0, ok: false, tiles: { ok, bad } },
       );
       zm.setCam(at[0] + 1, at[1] + 0.5, 1.8);

@@ -1,6 +1,7 @@
 /* Atrapa pustych mieszkań do podglądu (?mieszkania=atrapa): zamiast World.apts, World.damage, śmieci
-   w World.props i Furniture.broken ze świata (kontrakt M2, src/world/apts.ts), także gdy świat już je
-   daje, żeby scenariusze pokazywały każdy wygląd niezależnie od losowania świata. Mieszkanie
+   w World.props i Furniture.broken ze świata (kontrakt M2, src/world/apts.ts) oraz śmieci i zepsuć
+   ze stanu gry, także gdy świat i symulacja już je dają, żeby scenariusze pokazywały każdy wygląd
+   niezależnie od losowania świata. Mieszkanie
    z kozą zarządu jest zarządu, pozostałe na przemian zamieszkane i puste z kolejnymi przyczynami,
    a puste dostają uszkodzenia, śmieci i zepsute meble według przyczyny. Miejsca uszkodzeń jak
    w świecie (piec na kafelku kuchenki, rura przy ścianie łazienki albo kuchni), ale tak, żeby było
