@@ -11,6 +11,7 @@ import { buildWorld, type World } from '../../src/world/world.ts';
 /** kody komórek z kontraktu; symulacja ich nie czyta, korzysta z blocked, room, doors i sklad */
 export const IN = { NONE: 0, WALL: 1, DOOR: 2, STAIRS: 3, FLOOR: 4 } as const;
 
+/** świat z atrapą; przed połączeniem World nie ma tych pól, po nim ma je z typami z interior.ts */
 export type MockWorld = World & { interior: HouseLike; dryTree: number; props: PropLike[] };
 
 interface Layout {
@@ -144,7 +145,7 @@ function overlay(w: World, L: Layout): MockWorld {
   const room = new Int16Array(N).fill(-1);
   const blocked = w.blocked.slice();
   const keys = Object.keys(L.rooms);
-  const rooms = keys.map((ch, id) => ({ id, kind: L.rooms[ch].kind, apt: L.rooms[ch].apt }));
+  const rooms = keys.map((ch, id) => ({ id, kind: L.rooms[ch].kind, apt: L.rooms[ch].apt, area: 0 }));
   const doors: number[] = [];
   const windows: number[] = [];
   for (let i = 0; i < N; i++) if (w.bid[i] === w.hq) cell[i] = IN.WALL;
@@ -166,6 +167,7 @@ function overlay(w: World, L: Layout): MockWorld {
         if (id < 0) throw new Error(`atrapa: nieznane pomieszczenie ${ch}`);
         cell[i] = IN.FLOOR;
         room[i] = id;
+        rooms[id].area++;
       }
     });
   });
@@ -188,7 +190,8 @@ function overlay(w: World, L: Layout): MockWorld {
     sklad,
     home: L.home,
   };
-  return { ...w, blocked, interior, dryTree, props };
+  // dubel testowy: kształt z kontraktu bez typów z interior.ts, których przed połączeniem nie ma
+  return { ...w, blocked, interior, dryTree, props } as unknown as MockWorld;
 }
 
 /** suche drzewo: najbliższe drzwiom (po drodze) drzewo, nie krzak, z koroną od 2 m */
