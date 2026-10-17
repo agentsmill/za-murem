@@ -7,3 +7,6 @@ playwright-report/
 .playwright-mcp/
 .superpowers/
 *.log
+
+# surowe pliki z badań danych: duże, część bez otwartej licencji, nie do publicznego repo
+dane-surowe/

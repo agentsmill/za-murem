@@ -58,6 +58,10 @@ Tego samego dnia ustalone z Mateuszem i wpisane do sekcji „Prąd i bakteria”
 
 Potem oś czasu: rok zero bakterii to 2026, odkrycie około 2029, ćwierć wieku powolnego rozpadu, gra dalej w 2051. Nowa kolejność w tekście na ekranie startowym (najpierw bakteria, potem dziesiąta kadencja i dolar na abonament). Testy 188/188, build i Biome czyste, zrzuty obejrzane. Na telefonie 390×844 formularz kończy się na 709 px, więc tekst startowy nie powinien już rosnąć.
 
+### Dane do generatora mieszkańców, 17.10.2026
+
+Przegląd publicznych danych pod mieszkańców z adresu: raport w `reports/Dane do generatora mieszkańców.md`, notatki z pięciu tematów w `research_notes/Dane do generatora mieszkańców/`. Surowe pobrania (1,3 GB) leżą w `dane-surowe/`, który jest w `.gitignore`. Najważniejsze: NSP 2021 ma gospodarstwa i wiek dla rejonów statystycznych (granice BREC 2021), tablica trwania życia 2025, prognoza GUS dla gmin do 2060, imiona i nazwiska z PESEL na CC0 (nazwiska według województw), odmiana z SGJP na BSD-2. Luki: brak otwartych imion według rocznika sprzed 2000 i brak roku budowy budynków (zastępczo zbiór budynków z map z lat 80., Szubert i in. 2024, jeszcze niepobrany).
+
 ### Sesja 2, 17.10.2026: kawałki mapy w workerach (gałąź `worker-kawalki`)
 
 Rysowanie kawałków mapy przeniesione do Web Workerów z OffscreenCanvas, żeby przesuwanie mapy nie przycinało klatek.
