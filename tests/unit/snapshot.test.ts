@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { outdoorTemp } from '../../src/sim/clock.ts';
+import type { PropLike } from '../../src/sim/house.ts';
 import { BURN_TICKS, createSim, Sim } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { mockBlock, plainBlock } from './interior-mock.ts';
 
 const w = mockBlock();
+/** sztuki w stertach danego rodzaju na podwórku świata */
+const heap = (kind: string) =>
+  (w.props as readonly PropLike[]).filter((p) => p.kind === kind).reduce((a, p) => a + (p.n ?? 0), 0);
 
 describe('odczyt stanu dla modułu zarządu', () => {
   it('na starcie: czas, ludzie zarządu z potrzebami i umiejętnościami, zapasy', () => {
@@ -32,9 +36,9 @@ describe('odczyt stanu dla modułu zarządu', () => {
       supplies: 24,
       meals: 0,
       gasCooks: 6,
-      // sterty z atrapy świata: deski 4, złom 4
-      scrap: 4,
-      boards: 4,
+      // sterty ze świata (prawdziwe albo z atrapy, gdy świat ich nie ma)
+      scrap: heap('zlom'),
+      boards: heap('deski'),
       parts: 0,
       meds: 0,
     });
