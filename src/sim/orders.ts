@@ -36,7 +36,7 @@ const ROOM_ACC: Record<RoomKind, string> = {
   hala: 'halę',
   zaplecze: 'zaplecze',
 };
-const THING_ACC: Record<string, string> = {
+export const THING_ACC: Record<string, string> = {
   ...FURNITURE_ACC,
   kuchenka: 'kuchenkę',
   lodowka: 'lodówkę',

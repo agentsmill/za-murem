@@ -779,13 +779,15 @@ export function capOf(st: SimState, w: World): number {
 }
 
 /** Czy rzecz da się rozebrać na materiał: śmieci i gruz zawsze, meble z tabeli tylko w pustych mieszkaniach (meble
-    zarządu można spalić, mieszkańców się nie rusza). Dla menu i polecenia. */
+    zarządu można spalić, mieszkańców się nie rusza). W pustym mieszkaniu dopiero po przeszukaniu pomieszczenia:
+    najpierw trzeba zajrzeć, co tam jest (przeszukanie to główne źródło materiałów). Dla menu i polecenia. */
 export function dismantlable(st: SimState, w: World, t: Thing): boolean {
-  if (RUBBISH.has(t.kind)) return true;
   const h = houseOf(w);
-  if (!DISMANTLE[t.kind] || !h) return false;
-  const apt = aptAt(h, t.y * w.size + t.x);
-  return st.apts.find((a) => a.apt === apt)?.state === 'puste';
+  const room = h ? h.room[t.y * w.size + t.x] : -1;
+  const g = h && room >= 0 ? st.apts.find((a) => a.apt === h.rooms[room].apt) : undefined;
+  if (g?.state === 'puste' && !g.searched.includes(room)) return false;
+  if (RUBBISH.has(t.kind)) return true;
+  return !!DISMANTLE[t.kind] && g?.state === 'puste';
 }
 
 /** wszystkie uszkodzenia mieszkania naprawione */

@@ -23,6 +23,7 @@ import { commandFor } from '../../src/sim/orders.ts';
 import { type Command, createSim, type Laws, type Loot, Sim, type SimState, trunkOf } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import type { World } from '../../src/world/world.ts';
+import type { Player } from './m2-play.ts';
 
 export type Policy = 'zawsze-warta' | 'nigdy-warty';
 
@@ -61,6 +62,9 @@ export interface PlayOpts {
   koza?: boolean;
   /** od 16:00 bot ścina drzewa, dopóki zapasu drewna (bez kozy) nie ma tyle; rano i w południe zawsze 6 */
   evening?: number;
+  /** gracz z dodatkowymi poleceniami (np. prace fali 1 M2), co sekundę przy ekranie; jego polecenia to decyzje
+      rodzaju 'praca' */
+  player?: Player;
 }
 
 export interface PlayResult {
@@ -221,6 +225,10 @@ export function playWithGov(
         night.stolen = { wood: p.report.stolen.wood, supplies: p.report.stolen.supplies, scrap: p.report.stolen.scrap };
       }
     }
+    opts.player?.(sim, w, s, (c, text) => {
+      sim.push(c);
+      decisions.push({ s, kind: 'praca', text });
+    });
     const h = hourOf(st.tick);
     // noc 22–6: jak długo pali się koza zarządu; o 6:00 temperatura w kuchni
     if (night && (h >= 22 || h < 6)) {

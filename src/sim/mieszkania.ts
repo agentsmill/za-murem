@@ -46,11 +46,11 @@ export const MAT_ACC: Record<Mat, string> = {
 
 /** naprawy: koszt, czas pracy jednego pionka (ticki) i nazwy do menu i opisów */
 export const REPAIR: Record<DamageKind, { cost: Partial<Record<Mat, number>>; work: number; acc: string }> = {
-  okno: { cost: { deski: 2 }, work: 300, acc: 'okno' },
-  drzwi: { cost: { deski: 3 }, work: 400, acc: 'drzwi' },
-  rura: { cost: { zlom: 1, czesci: 1 }, work: 300, acc: 'rurę' },
-  podloga: { cost: { deski: 2 }, work: 400, acc: 'podłogę' },
-  piec: { cost: { zlom: 2, czesci: 1 }, work: 500, acc: 'piec' },
+  okno: { cost: { deski: 2 }, work: 800, acc: 'okno' },
+  drzwi: { cost: { deski: 3 }, work: 1000, acc: 'drzwi' },
+  rura: { cost: { zlom: 1, czesci: 1 }, work: 800, acc: 'rurę' },
+  podloga: { cost: { deski: 2 }, work: 1000, acc: 'podłogę' },
+  piec: { cost: { zlom: 2, czesci: 1 }, work: 1200, acc: 'piec' },
 };
 
 /** materiały z rozbiórki mebli (zepsute dają połowę); sterty śmieci i gruzu według liczby sztuk */
@@ -89,10 +89,10 @@ export function yieldOf(kind: string, n: number, broken: boolean): Partial<Recor
 
 /** czas rozbiórki w tickach: meble według wielkości, śmieci według liczby sztuk */
 export const dismantleTicks = (kind: string, w: number, h: number, n: number): number =>
-  RUBBISH.has(kind) ? 60 + 40 * n : 150 * Math.max(1, w * h);
+  RUBBISH.has(kind) ? 160 + 100 * n : 400 * Math.max(1, w * h);
 
 /** czas przeszukania pomieszczenia według jego wielkości (kafelki posadzki) */
-export const searchTicks = (area: number): number => Math.max(200, Math.min(800, 160 + 8 * area));
+export const searchTicks = (area: number): number => Math.max(600, Math.min(1600, 400 + 20 * area));
 
 /** łup z przeszukania: dla każdego materiału szansa i zakres sztuk, według powodu opuszczenia mieszkania */
 const LOOT: Record<AptWhy, [Mat, number, number, number][]> = {
