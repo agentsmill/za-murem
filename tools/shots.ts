@@ -2193,7 +2193,187 @@ const SHOTS: Shot[] = [
       if (!card) throw new Error('po szczypaniu stuknięcie nie zaznaczyło osoby');
     },
   },
+  {
+    // ogród domu: arkusz rzeczy (sznur z praniem i bez, kompost, buda, huśtawka, ławka) w czterech ustawieniach
+    name: 'ogrod-arkusz',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await ogrodStage(page, 'arkusz');
+      await waitIdle(page);
+      console.log(`  narysowane: ${r.drawn.join(', ')}`);
+      if (r.missing.length) throw new Error(`brak w rysowaniu: ${r.missing.join(', ')}`);
+    },
+  },
+  {
+    // ogród domu w Zielonkach bez trzepaka: sznur z praniem na jego miejscu, kompost, buda, huśtawka, ławka
+    name: 'ogrod-dom',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await ogrodStage(page, 'dom');
+      await waitIdle(page);
+      console.log(`  narysowane: ${r.drawn.join(', ')}`);
+      if (r.missing.length) throw new Error(`brak w rysowaniu: ${r.missing.join(', ')}`);
+    },
+  },
 ];
+
+/**
+ * Rzeczy z ogrodu domu w stanie gry (st.things, jak postawi je świat): arkusz w wolnym miejscu obok
+ * domu (rodzaj w wierszu, ustawienia 0–3 w kolumnach, sznur z praniem i bez) albo ogród domu bez
+ * trzepaka (sznur z praniem na jego miejscu, reszta na wolnych kafelkach ogrodu). Zwraca, czego nie
+ * narysowano.
+ */
+async function ogrodStage(page: Page, what: 'arkusz' | 'dom') {
+  await page.evaluate((what) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const st = sim.st;
+    const w = sim.w;
+    const size = w.size;
+    const view = zm.view as unknown as {
+      game: { props: { kind: string; x: number; y: number; w: number; h: number }[] } | null;
+    };
+    const props = view.game?.props ?? [];
+    const covers = (t: { x: number; y: number; w: number; h: number }, x: number, y: number) =>
+      x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
+    const taken = (x: number, y: number) =>
+      x < 1 ||
+      y < 1 ||
+      x >= size - 1 ||
+      y >= size - 1 ||
+      sim.blocked[y * size + x] === 1 ||
+      w.bid[y * size + x] >= 0 ||
+      st.things.some((t) => covers(t, x, y)) ||
+      props.some((t) => covers(t, x, y));
+    const fits = (x: number, y: number, bw: number, bh: number, pad = 0) => {
+      for (let dy = -pad; dy < bh + pad; dy++)
+        for (let dx = -pad; dx < bw + pad; dx++) if (taken(x + dx, y + dy)) return false;
+      return true;
+    };
+    let id = 996000;
+    const put = (kind: string, x: number, y: number, rot: number, n = 0) => {
+      const two = kind === 'hustawka' || kind === 'lawka';
+      const long = kind === 'sznur';
+      const [bw, bh] = long ? (rot & 1 ? [1, 3] : [3, 1]) : two ? (rot & 1 ? [1, 2] : [2, 1]) : [1, 1];
+      st.things.push({
+        id: id++,
+        kind,
+        x,
+        y,
+        w: bw,
+        h: bh,
+        rot,
+        n,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      } as (typeof st.things)[number]);
+      return [bw, bh];
+    };
+    const hq = w.buildings[w.interior.building];
+    const hx = (hq.x0 + hq.x1) / 2;
+    const hy = (hq.y0 + hq.y1) / 2;
+    // trawa albo park (T.GRASS = 0, T.PARK = 1): arkusz nie na drodze ani chodniku
+    const green = (x: number, y: number, bw: number, bh: number) => {
+      for (let dy = 0; dy < bh; dy++)
+        for (let dx = 0; dx < bw; dx++) if (w.terr[(y + dy) * size + x + dx] > 1) return false;
+      return true;
+    };
+    // drzewo (korona) nad prostokątem: wtedy przesłania rzeczy
+    const underTree = (x: number, y: number, bw: number, bh: number) =>
+      w.trees.some((t) => t.x > x - t.r - 1 && t.x < x + bw + t.r + 1 && t.y > y - 1 && t.y < y + bh + t.r + 2);
+    // kamera na prostokąt świata, przybliżenie dobrane tak, żeby się zmieścił
+    const frame = (x0: number, y0: number, x1: number, y1: number) => {
+      const z = Math.min(1.5, 1440 / ((x1 - x0 + 4) * 32), 800 / ((y1 - y0 + 4) * 32));
+      zm.setCam((x0 + x1) / 2, (y0 + y1) / 2 + 0.5, z);
+    };
+    if (what === 'arkusz') {
+      // wolny prostokąt 18 × 20 kafelków trawy bez drzew, najbliżej domu
+      let best: [number, number] | null = null;
+      let bd = Number.POSITIVE_INFINITY;
+      for (let y = 1; y < size - 21; y += 2)
+        for (let x = 1; x < size - 19; x += 2) {
+          const d = (x + 9 - hx) ** 2 + (y + 10 - hy) ** 2;
+          if (d < bd && fits(x, y, 18, 20) && green(x, y, 18, 20) && !underTree(x, y, 18, 20)) {
+            bd = d;
+            best = [x, y];
+          }
+        }
+      const [ox, oy] = best ?? [Math.round(hx) + 6, Math.round(hy)];
+      const rows: [string, number][] = [
+        ['sznur', 6],
+        ['sznur', 0],
+        ['kompost', 0],
+        ['buda', 0],
+        ['hustawka', 0],
+        ['lawka', 0],
+      ];
+      let y = oy + 2;
+      for (const [kind, n] of rows) {
+        for (let rot = 0; rot < 4; rot++) put(kind, ox + 1 + rot * 4, y, rot, n);
+        y += kind === 'sznur' ? 4 : 3;
+      }
+      frame(ox, oy, ox + 17, y);
+    } else {
+      // trzepak znika z podglądu, sznur z praniem staje w jego miejscu (ten sam obrys 3 × 1)
+      const trz = props.find((p) => p.kind === 'trzepak');
+      if (view.game) view.game.props = props.filter((p) => p.kind !== 'trzepak');
+      const yard = [...w.fence.yard].map((i) => [i % size, Math.floor(i / size)] as [number, number]);
+      // odległość od ściany domu (prostokąt budynku) w kafelkach
+      const gap = (x: number, y: number) => Math.max(hq.x0 - x, 0, x - hq.x1) + Math.max(hq.y0 - y, 0, y - hq.y1);
+      // plecami do domu: rot to strona, po której jest dom
+      const backTo = (x: number, y: number) => {
+        const dx = x - hx;
+        const dy = y - hy;
+        return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 3 : 1) : dy > 0 ? 0 : 2;
+      };
+      const size2 = (kind: string, rot: number) =>
+        kind === 'hustawka' || kind === 'lawka' ? (rot & 1 ? [1, 2] : [2, 1]) : [1, 1];
+      const placed: [number, number, number, number][] = [];
+      if (trz) {
+        put('sznur', trz.x, trz.y, trz.w >= trz.h ? 0 : 1, 7);
+        placed.push([trz.x, trz.y, trz.x + trz.w, trz.y + trz.h]);
+      }
+      // buda i ławka przy ścianie domu, huśtawka na trawniku dalej, kompost w najdalszym kącie
+      const plan: [string, (x: number, y: number) => boolean, 'blisko' | 'daleko'][] = [
+        ['buda', (x, y) => gap(x, y) === 2, 'blisko'],
+        ['lawka', (x, y) => gap(x, y) === 2, 'blisko'],
+        ['hustawka', (x, y) => gap(x, y) >= 4 && gap(x, y) <= 7, 'blisko'],
+        ['kompost', () => true, 'daleko'],
+      ];
+      for (const [kind, ok, how] of plan) {
+        const cands = yard
+          .filter(([x, y]) => ok(x, y))
+          .map(([x, y]) => {
+            const rot = kind === 'hustawka' || kind === 'kompost' ? 0 : backTo(x, y);
+            const [bw, bh] = size2(kind, rot);
+            return { x, y, rot, bw, bh, d: gap(x, y) };
+          })
+          .filter((c) => fits(c.x, c.y, c.bw, c.bh, 1))
+          .sort((a, b) => (how === 'daleko' ? b.d - a.d : a.d - b.d) || a.y - b.y || a.x - b.x);
+        const c = cands[0];
+        if (!c) continue;
+        put(kind, c.x, c.y, c.rot);
+        placed.push([c.x, c.y, c.x + c.bw, c.y + c.bh]);
+      }
+      const xs = placed.flatMap((p) => [p[0], p[2]]).concat([hq.x0, hq.x1]);
+      const ys = placed.flatMap((p) => [p[1], p[3]]).concat([hq.y0, hq.y1]);
+      frame(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys));
+    }
+  }, what);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  return page.evaluate(() => {
+    const keys = [...(window.zm!.view as unknown as { things: Map<string, unknown> }).things.keys()];
+    const kinds = ['sznur', 'kompost', 'buda', 'hustawka', 'lawka'];
+    const drawn = kinds.map((k) => `${k} ${keys.filter((key) => key.includes(`"kind":"${k}"`)).length}`);
+    const missing = kinds.filter((k) => !keys.some((key) => key.includes(`"kind":"${k}"`)));
+    return { drawn, missing };
+  });
+}
 
 /** kamera na uszkodzoną podłogę (atrapa) w pustym mieszkaniu o danej przyczynie */
 function m2Floor(name: string, why: string): Shot {

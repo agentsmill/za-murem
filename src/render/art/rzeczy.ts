@@ -38,6 +38,7 @@ import {
   smieciEnv,
 } from './budowle.ts';
 import { h2, vnoise } from './hash.ts';
+import { budaSprite, hustawkaSprite, kompostSprite, lawkaSprite, sznurSprite } from './ogrod.ts';
 import { mix, rgba, shade } from './palette.ts';
 import {
   armchairSprite,
@@ -121,7 +122,10 @@ export const BASE: Record<FurnitureKind, readonly [number, number]> = {
  * - budowle M2 (budowle.ts): warsztat, kuchnia_spoleczna, magazyn, lozka_pietrowe, ogrodek, zasieki;
  * - smieci: sterta śmieci z pustego mieszkania w trzech wielkościach;
  * - meble z broken: zepsute (pociemniałe, popękane, drzazgi wokół); z burnt: okopcone (prawie czarne
- *   od sadzy, kuchenka na kafelku uszkodzenia piec).
+ *   od sadzy, kuchenka na kafelku uszkodzenia piec);
+ * - ogród domu (ogrod.ts): sznur na pranie 3×1 (pranie: z praniem), kompost 1×1, buda 1×1 (rot jak
+ *   meble, wejście z przodu), hustawka 2×1 i lawka 2×1 (rot jak meble, oparcie od strony rot);
+ *   przy rot 1 i 3 wymiary odwrotnie.
  */
 export type ThingSpec =
   | { kind: FurnitureKind; rot: Rot; seed?: number; fire?: number; broken?: boolean; burnt?: boolean }
@@ -141,13 +145,22 @@ export type ThingSpec =
   | { kind: 'posilek'; size: 0 | 1 | 2 | 3; table?: boolean; seed?: number }
   | { kind: 'wrak'; model: WreckModel; rot: Rot; seed?: number }
   | { kind: BuildKind; rot: Rot; seed?: number }
-  | { kind: 'smieci'; size: 1 | 2 | 3; seed?: number };
+  | { kind: 'smieci'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'sznur'; rot: Rot; pranie?: boolean; seed?: number }
+  | { kind: 'kompost'; rot: Rot; seed?: number }
+  | { kind: 'buda'; rot: Rot; seed?: number }
+  | { kind: 'hustawka'; rot: Rot; seed?: number }
+  | { kind: 'lawka'; rot: Rot; seed?: number };
 
 /** podstawa rzeczy w kafelkach (w × h na mapie) */
 export function footprint(spec: ThingSpec): { w: number; h: number } {
   switch (spec.kind) {
     case 'trzepak':
+    case 'sznur':
       return spec.rot & 1 ? { w: 1, h: 3 } : { w: 3, h: 1 };
+    case 'hustawka':
+    case 'lawka':
+      return spec.rot & 1 ? { w: 1, h: 2 } : { w: 2, h: 1 };
     case 'brama':
       return spec.rot & 1 ? { w: 1, h: 2 } : { w: 2, h: 1 };
     case 'wrak': {
@@ -176,6 +189,8 @@ export function footprint(spec: ThingSpec): { w: number; h: number } {
     case 'budka':
     case 'fotel':
     case 'lampa':
+    case 'kompost':
+    case 'buda':
       return { w: 1, h: 1 };
     default: {
       const [a, b] = BASE[spec.kind];
@@ -1118,6 +1133,11 @@ export function thingSprite(spec: ThingSpec): Sprite {
     return stump(rr, seed, PX / 2, PX / 2 + 2, PX, PX, PX / 2, PX);
   }
   if (spec.kind === 'trzepak') return trzepak(spec.rot, seed);
+  if (spec.kind === 'sznur') return sznurSprite(spec.rot, !!spec.pranie, seed);
+  if (spec.kind === 'kompost') return kompostSprite(spec.rot, seed);
+  if (spec.kind === 'buda') return budaSprite(spec.rot, seed);
+  if (spec.kind === 'hustawka') return hustawkaSprite(spec.rot, seed);
+  if (spec.kind === 'lawka') return lawkaSprite(spec.rot, seed);
   if (spec.kind === 'siatka') return fenceSprite(spec.mask, spec.state ?? 'cala', spec.post, seed);
   if (spec.kind === 'brama') return gateSprite(spec.rot, !!spec.open, seed);
   if (spec.kind === 'ognisko') return campfireSprite(spec.style ?? 'krag', spec.fire ?? -1, seed);

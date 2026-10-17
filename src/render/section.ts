@@ -247,6 +247,17 @@ export function specOf(t: ThingLike, fire = 0): ThingSpec | null {
       return { kind: 'pien', seed };
     case 'trzepak':
       return { kind: 'trzepak', rot: t.w >= t.h ? 0 : 1, seed };
+    // ogród domu: sznur na pranie z praniem, gdy n > 0 (sztuki prania); huśtawka ułożona z w i h;
+    // buda, ławka i kompost stoją plecami do strony rot, ułożenie zgodne z w i h
+    case 'sznur':
+      return { kind: 'sznur', rot: t.w >= t.h ? 0 : 1, pranie: (t.n ?? 0) > 0 || undefined, seed: seed % 8 };
+    case 'hustawka':
+      return { kind: 'hustawka', rot: t.w >= t.h ? 0 : 1, seed: seed % 4 };
+    case 'lawka':
+      return { kind: 'lawka', rot: t.w >= t.h ? (rot === 2 ? 2 : 0) : rot === 3 ? 3 : 1, seed: seed % 4 };
+    case 'kompost':
+    case 'buda':
+      return { kind: t.kind, rot, seed: seed % 4 };
     case 'ognisko':
       return { kind: 'ognisko', fire: f, seed };
     default:
