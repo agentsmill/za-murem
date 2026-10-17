@@ -27,12 +27,15 @@ export interface FurnitureLike {
   rot: number;
 }
 
+/** rzeczy świata poza wnętrzem (World.props): trzepak, a od tury 3 sterty materiałów na podwórku
+    (deski, zlom, gruz) z liczbą sztuk n */
 export interface PropLike {
   kind: string;
   x: number;
   y: number;
   w: number;
   h: number;
+  n?: number;
 }
 
 /** Interior z src/world/interior.ts. Tablice mają rozmiar size × size. */

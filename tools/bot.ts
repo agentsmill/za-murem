@@ -4,6 +4,9 @@
    Dopóki świat z OSM nie ma wnętrza siedziby (gałąź wnętrza), scenariusz biegnie na sztucznych światach
    z atrapą wnętrza z testów; kiedy wnętrze jest, bierze prawdziwą siedzibę. Po samouczku kronika pierwszego
    wieczoru: gotowanie, kolacja, koniec opału i decyzja bota (spala meblościankę), sen; potem trzy doby.
+   Na koniec gra z zarządem (src/gov) dwiema politykami karty nocy, zawsze warta i nigdy warty: decyzje na minutę
+   przy ekranie w pierwszych 10 minutach (okna zarządu, zmiany na karcie, polecenia, których wymaga gra) i skutki
+   napadów. Tłum za siatką jest już tylko do pomiaru wydajności (npm run perf), w grze są mieszkańcy siedziby.
    Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] */
 
 import fs from 'node:fs';
@@ -16,11 +19,12 @@ import { BURNABLE, createSim, Sim, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
+import { type Decision, type NightLog, type Policy, playWithGov } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 
 const SEED = Number(process.argv[2]) || 1;
 const DAYS = Number(process.argv[3]) || 45;
-const CROWD = Number(process.argv[4]) || 40;
+const CROWD = Number(process.argv[4]) || 0;
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../public/demo/przymorze.json'), 'utf8'));
 const t0 = performance.now();
@@ -29,7 +33,9 @@ const sim = new Sim(world, createSim(world, SEED, { core: 4, crowd: CROWD }));
 console.log(
   `Bot 0.4, ${demo.name}: ${world.buildings.length} budynków, ${world.trees.length} drzew, świat w ${Math.round(performance.now() - t0)} ms`,
 );
-console.log(`Rdzeń: ${sim.st.people.map((p) => `${p.name} (${p.prof.toLowerCase()})`).join(', ')}; tłum: ${CROWD}`);
+console.log(
+  `Rdzeń: ${sim.st.people.map((p) => `${p.name} (${p.prof.toLowerCase()})`).join(', ')}; mieszkańców ${sim.st.pawns.filter((p) => p.kind === 'resident').length}, tłum: ${CROWD}`,
+);
 console.log(' dzień  ścieżki  nieudane  zamienione  węzłów/ścieżkę  ms/dzień  idzie');
 
 // polecenia bota: co dwie godziny gry losowy cel dla losowej osoby z rdzenia (z ziarnem bota)
@@ -218,4 +224,58 @@ const worlds: [string, World][] = real
     ];
 let fail = false;
 for (const [name, w] of worlds) if (!firstMinutes(name, w)) fail = true;
+
+/* ---------- gra z zarządem: decyzje na minutę i napady ---------- */
+
+const GOV_SEEDS = [1, 2, 3, 4, 5].map((k) => SEED * 10 + k);
+const GOV_DAYS = 6;
+const [govName, govWorld] = worlds[0];
+console.log(
+  `\nGra z zarządem, ${govName}: ${GOV_SEEDS.length} ziaren × ${GOV_DAYS} dni, zarząd co sekundę przy ekranie (1×)`,
+);
+const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+const f1 = (v: number) => v.toFixed(1);
+for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
+  const t1 = performance.now();
+  const runs = GOV_SEEDS.map((seed) => playWithGov(govWorld, seed, policy, GOV_DAYS));
+  const first = (r: { decisions: Decision[] }) => r.decisions.filter((d) => d.s < 600);
+  const perMin = runs.map((r) => first(r).length / 10);
+  const kinds = (k: (d: Decision) => boolean) => mean(runs.map((r) => first(r).filter(k).length));
+  const nights: NightLog[] = runs.flatMap((r) => r.nights);
+  const raided = nights.filter((n) => n.raid);
+  const entered = raided.filter((n) => n.raid!.outcome === 'wtargnięcie');
+  const repelled = raided.filter((n) => n.raid!.outcome === 'odparty');
+  const quiet = nights.filter((n) => !n.raid);
+  const mismatch = nights.filter(
+    (n) =>
+      (n.report === 'brak') !== !n.raid ||
+      (n.raid && n.report !== n.raid.outcome) ||
+      (n.report === 'wtargnięcie' && JSON.stringify(n.raid!.took) !== JSON.stringify(n.stolen)),
+  ).length;
+  console.log(`  ${policy} (${Math.round(performance.now() - t1)} ms):`);
+  console.log(
+    `    decyzje na minutę w pierwszych 10 min: średnio ${f1(mean(perMin))} (od ${f1(Math.min(...perMin))} do ${f1(Math.max(...perMin))}); w tym okna zarządu ${f1(kinds((d) => d.kind !== 'polecenie' && d.kind !== 'przydział'))}, zmiany na karcie ${f1(kinds((d) => d.kind === 'przydział'))}, polecenia w grze ${f1(kinds((d) => d.kind === 'polecenie'))} (na 10 min)`,
+  );
+  console.log(
+    `    noce ${nights.length}, napady ${raided.length}: odparte ${repelled.length}, wtargnięcia ${entered.length}; szabrowników średnio ${f1(mean(raided.map((n) => n.raid!.n)))}`,
+  );
+  if (entered.length)
+    console.log(
+      `    na wtargnięcie wynieśli średnio drewna ${f1(mean(entered.map((n) => n.raid!.took.wood)))}, jedzenia ${f1(mean(entered.map((n) => n.raid!.took.supplies)))}, złomu ${f1(mean(entered.map((n) => n.raid!.took.scrap)))}`,
+    );
+  const safe = (list: NightLog[]) =>
+    list.length
+      ? `zarząd ${Math.round(mean(list.map((n) => n.safeCore)))}, mieszkańcy ${Math.round(mean(list.map((n) => n.safeRes)))}`
+      : '—';
+  console.log(
+    `    bezpieczeństwo rano o 7:00: po wtargnięciu ${safe(entered)}; po odparciu ${safe(repelled)}; po spokojnej nocy ${safe(quiet)}`,
+  );
+  console.log(
+    `    raport zarządu a to, co odegrała symulacja: ${mismatch ? `${mismatch} niezgodnych nocy` : 'zgodne w każdej nocy'}`,
+  );
+  if (mismatch) fail = true;
+  const r0 = runs[0];
+  console.log(`    pierwsze 10 min, ziarno ${GOV_SEEDS[0]}:`);
+  for (const d of first(r0)) console.log(`      ${f1(d.s).padStart(6)} s  ${d.kind.padEnd(10)} ${d.text.slice(0, 90)}`);
+}
 if (fail) process.exit(1);

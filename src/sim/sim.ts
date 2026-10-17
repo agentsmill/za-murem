@@ -7,7 +7,7 @@ import { PROFS } from '../content/data.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
-import { daylight, hourOf, outdoorTemp, TICKS_PER_HOUR, TICKS_PER_SECOND } from './clock.ts';
+import { daylight, hourOf, minutesAt, outdoorTemp, START_MINUTES, TICKS_PER_HOUR, TICKS_PER_SECOND } from './clock.ts';
 import {
   dryTreeOf,
   HEAT_EVERY,
@@ -17,13 +17,26 @@ import {
   homeMask,
   houseOf,
   inHomeApt,
+  type PropLike,
   type RoomKind,
   roomLight,
   roomLinks,
   START_TEMP,
 } from './house.ts';
-import { COLD, HUNGRY, type NeedCtx, type Needs, PECKISH, startNeeds, stepNeeds, TIRED, WARMED } from './needs.ts';
+import {
+  COLD,
+  HUNGRY,
+  type NeedCtx,
+  type Needs,
+  PECKISH,
+  startNeeds,
+  stepNeeds,
+  stepSafe,
+  TIRED,
+  WARMED,
+} from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
+import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP } from './perimeter.ts';
 import { TUT_STEPS, type Tutorial, type TutStep, tutAdvance, WARM_ENOUGH } from './tutorial.ts';
 
 /** kafelków na tick: 4 kafelki na sekundę przy 1× */
@@ -68,6 +81,28 @@ const MINE: Record<string, string> = {
 };
 /** rozbicie mebla na opał trwa kwadrans gry (10 s przy 1×) */
 export const BREAK_TICKS = TICKS_PER_HOUR / 4;
+/** od tej godziny mieszkańcy pracują na podwórku (uchwała o zebraniach przesuwa to na 9:00) */
+export const WORK_START = 8;
+/** łata na dziurę: trzy sztuki desek albo złomu ze sterty, robota na pół godziny gry */
+export const PATCH_COST = 3;
+export const PATCH_TICKS = TICKS_PER_HOUR / 2;
+/** ognisko z dwóch sztuk drewna, rozpalanie trwa kwadrans gry; mieści naraz więcej niż koza */
+export const CAMPFIRE_WOOD = 2;
+export const BUILD_TICKS = TICKS_PER_HOUR / 4;
+export const CAMPFIRE_CAP = 6;
+/** warta trwa do tej godziny rano */
+export const GUARD_UNTIL = 6;
+/** zasięg światła (m): lampa warty i ognisko; w nim nie jest ciemno, a szabrownicy się płoszą */
+export const LAMP_REACH = 5;
+export const CAMPFIRE_LIGHT = 6;
+/** szabrownicy pokazują się za siatką pół godziny gry przed napadem i czekają w ciemności */
+export const SNEAK_TICKS = TICKS_PER_HOUR / 2;
+/** tyle sztuk wynosi jeden szabrownik naraz (worek) */
+export const LOOT_CARRY = 8;
+/** z zarządem: tyle czekają na jego rozstrzygnięcie; gdy zarząd milczy, odchodzą sami bez łupu */
+export const GOV_WAIT = TICKS_PER_HOUR;
+/** skąd przychodzą: mniej więcej tyle kroków od siatki */
+const RAID_FROM = 22;
 /** bezczynny rdzeń rozgląda się za pracą co sekundę realną */
 const THINK_EVERY = TICKS_PER_SECOND;
 /** po poleceniu „idź tu” czeka na miejscu godzinę gry, chyba że coś pilnego */
@@ -79,7 +114,27 @@ const FIRE_REACH = 2.5;
 
 export type Facing = 0 | 1 | 2 | 3; // dół, góra, lewo, prawo
 
-export type JobKind = 'go' | 'chop' | 'haul' | 'refuel' | 'warm' | 'eat' | 'sleep' | 'burn' | 'cook';
+export type JobKind =
+  | 'go'
+  | 'chop'
+  | 'haul'
+  | 'refuel'
+  | 'warm'
+  | 'eat'
+  | 'sleep'
+  | 'burn'
+  | 'cook'
+  | 'stay'
+  | 'guard'
+  | 'patch'
+  | 'build'
+  | 'leave'
+  | 'raid';
+
+/** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
+export const STAY_HOME = 0;
+export const STAY_YARD = 1;
+export const STAY_FIRE = 2;
 
 /** chwilowy nastrój (spalone meble, ciepły posiłek): dodaje się do nastroju z potrzeb do ticku until */
 export interface Mood {
@@ -93,15 +148,18 @@ export interface Mood {
 /** praca pionka rdzenia */
 export interface Job {
   t: JobKind;
-  /** cel: numer drzewa (chop), id rzeczy (haul: stos drewna, refuel i warm: koza, eat: stół, sleep: łóżko,
-      burn: mebel, cook: kuchenka albo koza),
-      −1, gdy celu nie ma (haul z drewnem w rękach, eat bez stołu, sleep na podłodze), kafelek (go) */
+  /** cel: numer drzewa (chop), id rzeczy (haul: stos drewna, refuel: koza albo ognisko, warm: koza, eat: stół,
+      sleep: łóżko, burn: mebel, cook: kuchenka albo koza), posterunek (guard: 0 brama, inaczej id dziury),
+      id dziury (patch), kafelek ogniska (build), kafelek (go), zajęcie mieszkańca (stay),
+      −1, gdy celu nie ma (haul z drewnem w rękach, eat bez stołu, sleep na podłodze) */
   target: number;
   /** kafelek, na który idzie albo na którym pracuje */
   tile: number;
-  /** 0: idzie do celu; 1: pracuje albo czeka (chop, warm, eat, sleep, go) lub niesie drewno (haul, refuel) */
+  /** 0: idzie do celu; 1: pracuje albo czeka (chop, warm, eat, sleep, go, guard), niesie drewno (haul, refuel),
+      niesie materiał (patch, build) albo jest za mapą (leave); 2: łata albo rozpala (patch, build) */
   phase: number;
-  /** skąd bierze: stos drewna do kozy (refuel; −1: niesie własne), garnek albo zapasy (eat) */
+  /** skąd bierze: stos drewna do kozy, ogniska albo na ognisko (refuel, build; −1: niesie własne), garnek albo
+      zapasy (eat), sterta desek albo złomu (patch) */
   from: number;
   /** tick początku i końca pracy (chop, eat, warm, go z polecenia) */
   t0: number;
@@ -109,11 +167,19 @@ export interface Job {
   /** z polecenia gracza „idź tu”: po dojściu czeka na miejscu godzinę gry (pomocnicy wysłani razem
       z drwalem albo do kozy mają false i od razu biorą się do własnej pracy) */
   order: boolean;
+  /** sztuki w rękach poza drewnem: deski albo złom na łatę (patch) */
+  n: number;
+  /** co to za sztuki ('deski', 'zlom'; pusty napis: nic) */
+  what: string;
 }
+
+/** zarząd (rdzeń, polecenia), tłum (tylko do pomiaru wydajności, za siatką), mieszkańcy siedziby
+    (tło z planem dnia), szabrownicy (obcy z napadu; nazwa jak w liście obcych rysowania, src/render/game.ts) */
+export type PawnKind = 'core' | 'crowd' | 'resident' | 'szabrownik';
 
 export interface Pawn {
   id: number;
-  kind: 'core' | 'crowd';
+  kind: PawnKind;
   /** osoba z rdzenia (indeks w state.people) albo −1 */
   person: number;
   look: number;
@@ -133,10 +199,14 @@ export interface Pawn {
   job: Job | null;
   /** potrzeby (tylko rdzeń) */
   needs: Needs | null;
-  /** chwilowe nastroje (tylko rdzeń) */
+  /** chwilowe nastroje (rdzeń i mieszkańcy) */
   moods: Mood[];
   /** sztuki drewna w rękach */
   carry: number;
+  /** mieszkaniec: numer jego mieszkania w siedzibie (−1: inni) */
+  apt: number;
+  /** na wyprawie poza mapą: nie rysuje się, potrzeby stoją, wraca poleceniem 'back' */
+  away: boolean;
 }
 
 /** Rzecz na mapie: meble z wnętrza (kopiowane przy starcie, żeby dało się je kiedyś przestawić albo spalić),
@@ -174,16 +244,72 @@ export type Command =
   | { t: 'move'; ids: number[]; to: number }
   /** zaznaczenie kogoś z zarządu: nic nie robi z pionkami, tylko prowadzi samouczek */
   | { t: 'select'; ids: number[] }
+  /** brama otwarta albo zamknięta (od razu; ids może być puste) */
+  | { t: 'gate'; ids: number[]; open: boolean }
   | { t: 'chop'; ids: number[]; tree: number }
   | { t: 'haul'; ids: number[]; thing: number }
   | { t: 'refuel'; ids: number[]; thing: number }
   /** rozbić mebel na opał (interfejs pyta wcześniej o potwierdzenie) */
   | { t: 'burn'; ids: number[]; thing: number }
   /** ugotować posiłek z zapasów (na kuchence, a bez gazu na palącej się kozie) */
-  | { t: 'cook'; ids: number[] };
+  | { t: 'cook'; ids: number[] }
+  /** warta do rana: 'brama' albo 'd<id dziury>' (jak klucze warty w karcie nocy zarządu) */
+  | { t: 'guard'; ids: number[]; post: string }
+  /** załatać dziurę deskami albo złomem ze sterty */
+  | { t: 'patch'; ids: number[]; hole: number }
+  /** rozpalić ognisko na kafelku podwórka */
+  | { t: 'campfire'; ids: number[]; at: number }
+  /** wyjść bramą na wyprawę (znika za mapą) i wrócić z niej */
+  | { t: 'away'; ids: number[] }
+  | { t: 'back'; ids: number[] }
+  /** uchwały, które zmieniają symulację (ids puste) */
+  | { t: 'laws'; ids: number[]; laws: Partial<Laws> }
+  /** napad bez zarządu (testy, bot, podgląd): tick, o którym są przy siatce, i posterunek 'brama' / 'd<id>' */
+  | { t: 'raid'; ids: number[]; at: number; post: string }
+  /** łaty z zarządu: n największych otwartych dziur od razu załatanych (materiał policzył zarząd) */
+  | { t: 'mend'; ids: number[]; n: number };
+
+/** łup w sztukach: drewno, porcje zapasów, złom */
+export interface Loot {
+  wood: number;
+  supplies: number;
+  scrap: number;
+}
+
+/** Napad szabrowników tej nocy. Z zarządem (gov) rozstrzyga zarząd, a symulacja to odgrywa: przy 'odparty' uciekają
+    spod siatki, przy 'wtargnięcie' wchodzą i wynoszą dokładnie to, co policzył zarząd. Bez zarządu rozstrzyga
+    symulacja: warta z lampą albo ognisko w zasięgu ich płoszy, inaczej każdy wynosi pełny worek. */
+export interface Raid {
+  /** tick, o którym są przy siatce (w tej minucie zarząd rozstrzyga napad) */
+  at: number;
+  /** posterunek z planu: 'brama' albo 'd<id dziury>' (załatana dziura: idą do bramy) */
+  post: string;
+  /** ilu ich jest (1–3, losowane przy pojawieniu się) */
+  n: number;
+  /** 0 czekają na swoją porę, 1 są za siatką, 2 rozstrzygnięty (wchodzą albo uciekają), 3 po wszystkim */
+  phase: number;
+  outcome: '' | 'odparty' | 'wtargnięcie';
+  gov: boolean;
+  /** ile mają wynieść (z zarządu; bez zarządu tyle, ile uniosą) i ile już wynieśli */
+  loot: Loot;
+  took: Loot;
+  /** kafelek, z którego przyszli i do którego wracają, i kafelek za siatką, pod którym czekają (−1: jeszcze nie) */
+  from: number;
+  spot: number;
+}
+
+/** ciągłe skutki uchwał, których potrzebuje symulacja (część LawEffects z src/gov) */
+export interface Laws {
+  /** brama na kłódkę od 20:00 do 6:00 */
+  gateClosed: boolean;
+  /** mnożnik kary w nastroju za palenie mebli */
+  burnMood: number;
+  /** od tej godziny mieszkańcy pracują na podwórku */
+  workStart: number;
+}
 
 export interface SimState {
-  v: 2;
+  v: 3;
   seed: number;
   tick: number;
   rng: RngState;
@@ -204,6 +330,15 @@ export interface SimState {
   tut: Tutorial;
   /** spalone meble, po kolei */
   burned: Burned[];
+  /** siatka: wytrzymałość, dziury i łaty, brama (null: świat bez siatki) */
+  fence: FenceState | null;
+  /** ilu mieszkańców zmieści się w mieszkaniach siedziby połączonych z podwórkiem */
+  cap: number;
+  laws: Laws;
+  /** napad tej nocy albo ostatni (phase 3), null: nie było */
+  raid: Raid | null;
+  /** zapasy bez rzeczy na mapie (z zarządu): części i leki */
+  store: { parts: number; meds: number };
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -222,8 +357,10 @@ const SPREAD: [number, number][] = (() => {
   return out.sort((a, b) => a[0] ** 2 + a[1] ** 2 - (b[0] ** 2 + b[1] ** 2) || a[1] - b[1] || a[0] - b[0]);
 })();
 
-/** rzeczy, które leżą luzem; reszta to meble */
-const LOOSE = new Set(['drewno', 'jedzenie', 'posilek', 'pien']);
+/** sterty materiałów na podwórku ze świata (World.props): deski i złom na łaty, gruz */
+const HEAPS = new Set(['deski', 'zlom', 'gruz']);
+/** rzeczy, które leżą luzem; reszta to meble (ognisko też: nie staje się na nim) */
+const LOOSE = new Set(['drewno', 'jedzenie', 'posilek', 'pien', ...HEAPS]);
 const BEDS = new Set(['lozko', 'wersalka']);
 
 /** drewno ze ściętego drzewa: 3 sztuki na metr korony, z krzaka mało */
@@ -234,6 +371,9 @@ export const chopTicks = (t: Tree): number => Math.round(160 + 120 * t.r);
 
 export interface SimOpts {
   core?: number;
+  /** mieszkańcy siedziby; domyślnie 3–8 według mieszkań połączonych z podwórkiem */
+  residents?: number;
+  /** tłum za siatką, tylko do pomiaru wydajności (npm run perf); w grze 0 */
   crowd?: number;
 }
 
@@ -298,7 +438,7 @@ function freeIn(w: World, h: HouseLike, rooms: number[], things: Thing[]): numbe
 
 export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState {
   const st: SimState = {
-    v: 2,
+    v: 3,
     seed,
     tick: 0,
     rng: { s: seed | 0 },
@@ -313,6 +453,11 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     temps: [],
     tut: { step: -1, at: [] },
     burned: [],
+    fence: initFence(w),
+    cap: 0,
+    laws: { gateClosed: false, burnMood: 1, workStart: WORK_START },
+    raid: null,
+    store: { parts: 0, meds: 0 },
   };
   const rnd = rngOf(st.rng);
   const size = w.size;
@@ -363,6 +508,13 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     if (dryTreeOf(w) >= 0 && homeKoza(house, size, house.furniture) && house.sklad.length)
       st.tut = { step: 0, at: TUT_STEPS.map(() => -1) };
   }
+  // sterty materiałów ze świata: ubywa z nich przy łataniu, więc są w stanie
+  for (const pr of (w as { props?: PropLike[] }).props ?? [])
+    if (HEAPS.has(pr.kind)) {
+      const t = newThing(st, pr.kind, pr.x, pr.y, pr.w, pr.h);
+      t.n = pr.n ?? 1;
+      st.things.push(t);
+    }
   // rdzeń: zarząd z fachem w podstawowych dziedzinach, jak na starcie 0.3
   const need = ['cieplo', 'bud', 'med', 'uprawa'] as const;
   const core = opts.core ?? 4;
@@ -388,6 +540,11 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
       if (k < beds.length) beds[k].owner = p.id;
     });
   }
+  if (house) {
+    const apts = residentApts(st, w, house);
+    st.cap = Math.min(8, 3 * apts.length);
+    addResidents(st, w, opts.residents ?? (apts.length ? Math.min(8, Math.max(3, 2 * apts.length + 1)) : 0));
+  }
   const homes = homeTiles(w);
   const crowd = opts.crowd ?? 0;
   const mask = house && crowd ? homeMask(house, size) : null;
@@ -401,6 +558,169 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     st.pawns.push(p);
   }
   return st;
+}
+
+/** Zabiera ze stanu do n sztuk: drewno (najpierw luzem, potem ze składu), zapasy (najpierw surowe, potem garnek)
+    albo złom ze stert; zwraca, ile naprawdę zabrał. Dla zarządu (wydatki) i dla napadu (czego nie wynieśli). */
+export function takeStock(st: SimState, w: World, key: keyof Loot, n: number): number {
+  const size = w.size;
+  const sklad = houseOf(w)?.sklad ?? [];
+  const order: ((t: Thing) => boolean)[] =
+    key === 'wood'
+      ? [(t) => t.kind === 'drewno' && !sklad.includes(t.y * size + t.x), (t) => t.kind === 'drewno']
+      : key === 'supplies'
+        ? [(t) => t.kind === 'jedzenie', (t) => t.kind === 'posilek']
+        : [(t) => t.kind === 'zlom'];
+  let left = n;
+  for (const ok of order)
+    for (const t of st.things.filter(ok)) {
+      if (left <= 0) break;
+      const k = Math.min(t.n, left);
+      t.n -= k;
+      left -= k;
+    }
+  st.things = st.things.filter((t) => !(LOOSE.has(t.kind) && t.kind !== 'pien' && t.n <= 0));
+  return n - left;
+}
+
+/** Czy na kafelku można rozpalić ognisko: wolny kafelek podwórka, nie przy wejściach do budynków, drzwiach, bramie
+    i dziurach (przejścia zostają wolne), i taki, że ognisko (blokuje) nie rozetnie przejść zarządu ani mieszkańców:
+    jego przechodni sąsiedzi zostają połączeni inną drogą. Dla menu i dla polecenia. */
+export function campfireSpotOk(st: SimState, w: World, at: number): boolean {
+  const shape = fenceShape(w);
+  if (!shape?.yard.includes(at) || w.blocked[at]) return false;
+  const size = w.size;
+  const x = at % size;
+  const y = Math.floor(at / size);
+  if (st.things.some((t) => covers(t, x, y))) return false;
+  const near = (k: number) => Math.max(Math.abs((k % size) - x), Math.abs(Math.floor(k / size) - y)) <= 1;
+  const h = houseOf(w);
+  for (const b of w.buildings) for (const e of b.entrances) if (near(e.out)) return false;
+  if (h?.doors.some(near) || gateTiles(w).some(near) || shape.hole.some(near)) return false;
+  const trunk = Int32Array.from(w.trees, (t) => trunkOf(w, t));
+  const solid = st.things.filter((t) => t.kind === 'ognisko').map((t) => t.y * size + t.x);
+  const lay = composeLayers(w, st.felled, trunk, st.fence, h ? homeMask(h, size) : null, solid);
+  for (const blocked of [lay.core, lay.resident]) {
+    if (blocked[at]) return false;
+    blocked[at] = 1;
+    const ns = [y > 0 ? at - size : -1, y < size - 1 ? at + size : -1, x > 0 ? at - 1 : -1, x < size - 1 ? at + 1 : -1];
+    const open = ns.filter((n) => n >= 0 && !blocked[n]);
+    if (open.length < 2) continue;
+    const reg = labelRegions(blocked, size);
+    if (open.some((n) => reg[n] !== reg[open[0]])) return false;
+  }
+  return true;
+}
+
+/** napad zaplanowany na tick at przy posterunku post ('brama' / 'd<id>'); gov: rozstrzyga zarząd */
+export function planRaid(st: SimState, at: number, post: string, gov: boolean): void {
+  const zero = (): Loot => ({ wood: 0, supplies: 0, scrap: 0 });
+  st.raid = { at, post, n: 0, phase: 0, outcome: '', gov, loot: zero(), took: zero(), from: -1, spot: -1 };
+}
+
+/** mieszkania inne niż zarządu, do których z podwórka da się dojść bez wychodzenia za siatkę, rosnąco */
+function residentApts(st: SimState, w: World, h: HouseLike): number[] {
+  const size = w.size;
+  const fence = (w as { fence?: World['fence'] }).fence;
+  const { resident } = composeLayers(w, [], null, st.fence, homeMask(h, size));
+  const reg = labelRegions(resident, size);
+  const yardTile = fence?.yard.find((i) => !resident[i]);
+  if (yardTile === undefined) return [];
+  const apts: number[] = [];
+  for (let i = 0; i < size * size; i++) {
+    const a = aptAt(h, i);
+    if (a >= 0 && a !== h.home && !resident[i] && reg[i] === reg[yardTile] && !apts.includes(a)) apts.push(a);
+  }
+  return apts.sort((a, b) => a - b);
+}
+
+/** Mieszkańcy siedziby (tło) w mieszkaniach połączonych z podwórkiem, po kolei po mieszkaniach, najwyżej do st.cap
+    (3–8 na start: po dwóch na mieszkanie i jeden więcej); każdy z łóżkiem z mebli swojego mieszkania, gdy jest wolne.
+    Zarząd dokłada ich zdarzeniami (fx.residents). Zwraca, ilu przybyło. */
+export function addResidents(st: SimState, w: World, n: number): number {
+  const h = houseOf(w);
+  if (!h || n <= 0) return 0;
+  const size = w.size;
+  const apts = residentApts(st, w, h);
+  if (!apts.length) return 0;
+  const rnd = rngOf(st.rng);
+  const { resident } = composeLayers(w, [], null, st.fence, homeMask(h, size));
+  let added = 0;
+  for (let k = 0; k < n; k++) {
+    const have = st.pawns.filter((p) => p.kind === 'resident');
+    if (have.length >= st.cap) break;
+    const idx = have.length;
+    const apt = apts[idx % apts.length];
+    const free: number[] = [];
+    for (let i = 0; i < size * size; i++) {
+      if (aptAt(h, i) !== apt || resident[i]) continue;
+      const x = i % size;
+      const y = Math.floor(i / size);
+      if (!st.things.some((t) => !LOOSE.has(t.kind) && covers(t, x, y))) free.push(i);
+    }
+    const at = free[Math.floor(idx / apts.length) % Math.max(1, free.length)] ?? free[0];
+    if (at === undefined) break;
+    const p = newPawn(st, w, 'resident', -1, at, at, 4 + Math.floor(rnd() * 12));
+    p.apt = apt;
+    p.needs = { food: 70, warm: 60, rest: 70, health: 100, safe: 60, mood: 0 };
+    p.needs.mood = 0.25 * 70 + 0.25 * 60 + 0.15 * 70 + 0.15 * 100 + 0.2 * 60;
+    st.pawns.push(p);
+    added++;
+    // łóżko w swoim mieszkaniu
+    const bed = st.things.find((t) => BEDS.has(t.kind) && t.owner < 0 && aptAt(h, t.y * size + t.x) === apt);
+    if (bed) bed.owner = p.id;
+  }
+  return added;
+}
+
+/** wyprowadzka: ostatni mieszkańcy znikają (łóżka wolne); zwraca, ilu ubyło */
+export function removeResidents(st: SimState, n: number): number {
+  let gone = 0;
+  for (let k = st.pawns.length - 1; k >= 0 && gone < n; k--) {
+    const p = st.pawns[k];
+    if (p.kind !== 'resident') continue;
+    dropPawn(st, p);
+    gone++;
+  }
+  return gone;
+}
+
+/** pionek znika ze stanu: rzeczy, które zajmował, i jego meble są wolne */
+function dropPawn(st: SimState, p: Pawn): void {
+  for (const t of st.things) {
+    if (t.by === p.id) t.by = -1;
+    if (t.owner === p.id) t.owner = -1;
+  }
+  st.pawns.splice(st.pawns.indexOf(p), 1);
+}
+
+/** nowa osoba w zarządzie (zdarzenie): staje przed drzwiami siedziby z potrzebami jak po drodze */
+export function addCore(st: SimState, w: World, person: Person): Pawn {
+  const hq = w.buildings[w.hq];
+  const door = hq?.entrances[0]?.out ?? nearestFree(w.blocked, w.size, ((w.size / 2) | 0) * (w.size + 1));
+  st.people.push(person);
+  const rnd = rngOf(st.rng);
+  const p = newPawn(
+    st,
+    w,
+    'core',
+    st.people.length - 1,
+    nearestFree(w.blocked, w.size, door),
+    door,
+    Math.floor(rnd() * 4),
+  );
+  p.needs = { food: 50, warm: 50, rest: 60, health: 90, safe: 50, mood: 0 };
+  p.needs.mood = 0.25 * 50 + 0.25 * 50 + 0.15 * 60 + 0.15 * 90 + 0.2 * 50;
+  st.pawns.push(p);
+  return p;
+}
+
+/** osoba odchodzi ze spółdzielni (zdarzenie): pionek znika, osoba zostaje w state.people (indeksy innych) */
+export function removeCore(st: SimState, id: string): boolean {
+  const p = st.pawns.find((q) => q.kind === 'core' && st.people[q.person]?.id === id);
+  if (!p) return false;
+  dropPawn(st, p);
+  return true;
 }
 
 function spawnNear(w: World, i: number, k: number, rnd: () => number): number {
@@ -439,8 +759,45 @@ function newPawn(
     needs: null,
     moods: [],
     carry: 0,
+    apt: -1,
+    away: false,
   };
 }
+
+/** Przechodniość według rodzaju pionka. Baza: świat, ścięte drzewa wolne, łaty i ogniska zablokowane. Zarząd bez otwartych
+    dziur (nie przełazi, a przez zamkniętą bramę przechodzi, bo ma klucz), mieszkańcy dodatkowo bez bramy i mieszkania
+    zarządu (zostają za siatką), obcy z dziurami, ale bez zamkniętej bramy. */
+function composeLayers(
+  w: World,
+  felled: readonly number[],
+  trunk: Int32Array | null,
+  fence: FenceState | null,
+  mask: Uint8Array | null,
+  solid: readonly number[] = [],
+): { core: Uint8Array; resident: Uint8Array; stranger: Uint8Array } {
+  const base = w.blocked.slice();
+  if (trunk) for (const k of felled) base[trunk[k]] = 0;
+  for (const t of solid) base[t] = 1;
+  const open: number[] = [];
+  if (fence)
+    for (const hole of fence.holes)
+      for (const t of hole.tiles) {
+        if (hole.patch > 0) base[t] = 1;
+        else open.push(t);
+      }
+  const gate = gateTiles(w);
+  const core = base.slice();
+  for (const t of open) core[t] = 1;
+  const resident = core.slice();
+  for (const t of gate) resident[t] = 1;
+  if (mask) for (let i = 0; i < resident.length; i++) if (mask[i]) resident[i] = 1;
+  const stranger = base;
+  if (fence && !fence.gateOpen) for (const t of gate) stranger[t] = 1;
+  return { core, resident, stranger };
+}
+
+/** numer mieszkania pod kafelkiem albo −1 */
+const aptAt = (h: HouseLike, i: number): number => (h.room[i] >= 0 ? h.rooms[h.room[i]].apt : -1);
 
 /** kafelek pnia: współrzędne drzew są zaokrąglone do 0,01 m, więc pień na granicy kafelków bywa o jeden w lewo
     albo w górę; wybieramy kafelek, który świat naprawdę zablokował */
@@ -456,6 +813,21 @@ export function trunkOf(w: World, t: Tree): number {
   return Math.floor(t.y) * size + Math.floor(t.x);
 }
 
+/** nocne otoczenie do potrzeb (liczone raz na krok potrzeb) */
+interface Around {
+  /** ktoś trzyma wartę (20–6) */
+  guard: boolean;
+  /** otwarte dziury w siatce (20–6; za dnia nie straszą) */
+  holes: number;
+  /** lampy warty (x, y) */
+  lamps: [number, number][];
+  /** palące się ogniska */
+  fires: Thing[];
+  strangers: Pawn[];
+  /** szabrownicy weszli tej nocy */
+  raided: boolean;
+}
+
 /** Sim trzyma poza stanem tylko to, co da się odtworzyć ze świata i stanu: bufor A*, przechodniość
     z wyciętymi drzewami, regiony, połączenia pomieszczeń. */
 export class Sim {
@@ -464,18 +836,25 @@ export class Sim {
   stats: SimStats = { paths: 0, failed: 0, nodes: 0, substituted: 0 };
   /** wnętrze siedziby albo null (świat sprzed M1) */
   readonly house: HouseLike | null;
-  /** przechodniość świata z wyciętymi ściętymi drzewami; przy wczytaniu odtwarzana ze st.felled */
+  /** przechodniość fizyczna według kontraktu siatki (dla rysowania i podglądu): świat z wyciętymi drzewami,
+      dziura 0, łata 1, zamknięta brama 1, ognisko 1; przy wczytaniu odtwarzana ze stanu, tablica ta sama */
   readonly blocked: Uint8Array;
+  /** przechodniość dla zarządu: jak fizyczna, ale otwarte dziury zablokowane (zarząd przez nie nie przełazi),
+      a brama przechodnia nawet zamknięta (klucz) */
+  private readonly coreBlocked: Uint8Array;
   /** ocieplenie pomieszczeń od kóz w °C; liczone co krok ciepła i od razu przy wczytaniu */
   boost: number[] = [];
   /** światło z palących się kóz w pomieszczeniach, 0–1 (dla rysowania: świecące okna nocą) */
   light: number[] = [];
   private pf: PathFinder;
-  /** spójne obszary mapy: cel z innego obszaru zamieniamy na najbliższy osiągalny kafelek */
+  /** spójne obszary mapy dla zarządu: cel z innego obszaru zamieniamy na najbliższy osiągalny kafelek */
   private reg: Int32Array;
-  /** przechodniość i obszary dla tłumu: mieszkanie zarządu zamknięte (bez wnętrza to te same tablice) */
-  private crowdBlocked: Uint8Array;
-  private crowdReg: Int32Array;
+  /** przechodniość i obszary pozostałych: mieszkańcy (bez dziur, bramy i mieszkania zarządu), obcy (dziurami tak,
+      zamkniętą bramą nie), tłum do pomiarów (za siatką, bez mieszkania zarządu), obcy po stronie ulicy (bez podwórka
+      i wnętrz: tak podchodzą pod siatkę i uciekają spod niej, nie skracając sobie drogi przez podwórko) */
+  private lay: Record<'resident' | 'szabrownik' | 'crowd' | 'outside', { blocked: Uint8Array; reg: Int32Array }>;
+  /** mieszkanie zarządu z drzwiami (1) albo null */
+  private readonly mask: Uint8Array | null;
   private readonly trunk: Int32Array;
   private readonly links: [number, number][];
   private readonly kinds: RoomKind[];
@@ -484,32 +863,33 @@ export class Sim {
   /** pomieszczenie pod nogami: jak interior.room, ale drzwi należą do sąsiedniego pomieszczenia */
   private readonly roomOf: Int16Array;
   private readonly dry: number;
+  /** kafelki podwórka przy bramie, na których stoi warta (najbliżej środka bramy najpierw) */
+  private readonly gateStand: number[];
+  /** kafelek za bramą, na którym znika i pojawia się wyprawa (−1: świat bez siatki) */
+  readonly exitTile: number;
+  /** kafelek przed drzwiami siedziby, do którego wraca wyprawa */
+  private readonly door: number;
 
   constructor(w: World, st: SimState) {
     this.w = w;
     this.st = st;
     this.pf = new PathFinder(w.size);
     this.house = houseOf(w);
-    this.blocked = w.blocked.slice();
     this.trunk = Int32Array.from(w.trees, (t) => trunkOf(w, t));
-    for (const k of st.felled) this.blocked[this.trunk[k]] = 0;
-    this.reg = labelRegions(this.blocked, w.size);
     const h = this.house;
-    this.crowdBlocked = this.blocked;
-    this.crowdReg = this.reg;
-    if (h) {
-      const mask = homeMask(h, w.size);
-      this.crowdBlocked = this.blocked.slice();
-      for (let i = 0; i < mask.length; i++) if (mask[i]) this.crowdBlocked[i] = 1;
-      this.crowdReg = labelRegions(this.crowdBlocked, w.size);
-    }
+    this.mask = h ? homeMask(h, w.size) : null;
+    this.blocked = new Uint8Array(w.size * w.size);
+    this.coreBlocked = new Uint8Array(w.size * w.size);
+    this.reg = new Int32Array(0);
+    this.lay = {} as Sim['lay'];
+    this.rebuild();
     this.links = h ? roomLinks(h, w.size) : [];
     this.kinds = h ? h.rooms.map((r) => r.kind) : [];
     this.roomTiles = h ? h.rooms.map(() => []) : [];
     if (h)
       for (let i = 0; i < w.size * w.size; i++) {
         const r = h.room[i];
-        if (r >= 0 && !this.blocked[i]) this.roomTiles[r].push(i);
+        if (r >= 0 && !this.coreBlocked[i]) this.roomTiles[r].push(i);
       }
     this.roomOf = h ? h.room.slice() : new Int16Array(0);
     if (h)
@@ -523,6 +903,43 @@ export class Sim {
           }
       }
     this.dry = dryTreeOf(w);
+    const hq = w.buildings[w.hq];
+    this.door = hq?.entrances[0]?.out ?? -1;
+    const shape = fenceShape(w);
+    const gate = gateTiles(w);
+    const size = w.size;
+    const cheb = (a: number, b: number) =>
+      Math.max(Math.abs((a % size) - (b % size)), Math.abs(Math.floor(a / size) - Math.floor(b / size)));
+    const gx = gate.reduce((a, g) => a + (g % size) + 0.5, 0) / Math.max(1, gate.length);
+    const gy = gate.reduce((a, g) => a + Math.floor(g / size) + 0.5, 0) / Math.max(1, gate.length);
+    const dg = (i: number) => ((i % size) + 0.5 - gx) ** 2 + (Math.floor(i / size) + 0.5 - gy) ** 2;
+    // posterunek i wyjście liczone ze świata (z dziurami zamkniętymi), nie ze stanu: ścięte drzewo albo ognisko nie może
+    // ich przesunąć, bo gra wczytana z zapisu musi iść dalej tak samo
+    const still = w.blocked.slice();
+    for (const t of shape?.hole ?? []) still[t] = 1;
+    this.gateStand = (shape?.yard ?? [])
+      .filter((i) => !still[i] && gate.some((g) => cheb(g, i) <= 1))
+      .sort((a, b) => dg(a) - dg(b) || a - b);
+    // za bramą: sąsiad kafelka bramy spoza podwórka, potem kilka kroków dalej od siatki
+    let exit = -1;
+    if (shape) {
+      const yard = new Set(shape.yard);
+      for (const g of gate) {
+        for (const d of [-size, size, -1, 1]) {
+          const o = g + d;
+          if (o < 0 || o >= size * size || yard.has(o) || gate.includes(o) || still[o]) continue;
+          exit = o;
+          for (let k = 0; k < 6; k++) {
+            const nx = exit + d;
+            if (nx < 0 || nx >= size * size || still[nx] || Math.abs((nx % size) - (exit % size)) > 1) break;
+            exit = nx;
+          }
+          break;
+        }
+        if (exit >= 0) break;
+      }
+    }
+    this.exitTile = exit;
     if (h) {
       const fires = this.fires();
       this.boost = heatBoost(this.kinds, this.links, fires, this.outdoor());
@@ -549,11 +966,64 @@ export class Sim {
     return r >= 0 ? this.st.temps[r] : this.outdoor();
   }
 
+  /** Przechodniość od nowa: baza ze świata, ścięte drzewa wolne, łaty i ogniska zablokowane; zarząd bez otwartych
+      dziur, mieszkańcy dodatkowo bez bramy i mieszkania zarządu, obcy z dziurami, ale bez zamkniętej bramy, tłum jak
+      mieszkańcy. Woła się przy starcie, po ścięciu drzewa, łacie, nowym ognisku i zmianie bramy. */
+  private rebuild(): void {
+    const size = this.w.size;
+    const solid = this.st.things
+      .filter((t) => t.kind === 'ognisko')
+      .map((t) => t.y * size + t.x)
+      .sort((a, b) => a - b);
+    const { core, resident, stranger } = composeLayers(
+      this.w,
+      this.st.felled,
+      this.trunk,
+      this.st.fence,
+      this.mask,
+      solid,
+    );
+    this.coreBlocked.set(core);
+    this.blocked.set(stranger);
+    this.reg = labelRegions(this.coreBlocked, size);
+    // tłum do pomiarów chodzi tam, gdzie mieszkańcy nie: za siatką; warstwa ta sama, obszary rozłączne
+    const res = { blocked: resident, reg: labelRegions(resident, size) };
+    const outside = stranger.slice();
+    const shape = fenceShape(this.w);
+    // strona ulicy: bez podwórka, a dziury i brama to przejście, nie miejsce, w którym się czeka
+    for (const t of shape?.yard ?? []) outside[t] = 1;
+    for (const t of shape?.hole ?? []) outside[t] = 1;
+    for (const t of gateTiles(this.w)) outside[t] = 1;
+    if (this.house) for (let i = 0; i < outside.length; i++) if (this.house.room[i] >= 0) outside[i] = 1;
+    this.lay = {
+      resident: res,
+      szabrownik: { blocked: stranger, reg: labelRegions(stranger, size) },
+      crowd: res,
+      outside: { blocked: outside, reg: labelRegions(outside, size) },
+    };
+  }
+
+  /** przechodniość i obszary dla danego rodzaju pionka */
+  private layer(kind: PawnKind): { blocked: Uint8Array; reg: Int32Array } {
+    return kind === 'core' ? { blocked: this.coreBlocked, reg: this.reg } : this.lay[kind];
+  }
+
+  /** warstwa do drogi pionka: szabrownik po stronie ulicy (podchodzi, czeka, ucieka) chodzi tylko tamtędy */
+  private layerOf(p: Pawn): { blocked: Uint8Array; reg: Int32Array } {
+    if (p.kind === 'szabrownik' && p.job?.phase !== 2 && !this.lay.outside.blocked[this.tileOf(p)])
+      return this.lay.outside;
+    return this.layer(p.kind);
+  }
+
+  /** czy pionek danego rodzaju przejdzie przez kafelek (do testów i podglądu) */
+  canWalk(kind: PawnKind, tile: number): boolean {
+    return !this.layer(kind).blocked[tile];
+  }
+
   /** cel do wyznaczenia drogi: wolny kafelek w tym samym obszarze co pionek, −1 gdy go nie ma */
   private goalFor(p: Pawn, goal: number): number {
     const size = this.w.size;
-    const blocked = p.kind === 'crowd' ? this.crowdBlocked : this.blocked;
-    const reg = p.kind === 'crowd' ? this.crowdReg : this.reg;
+    const { blocked, reg } = this.layerOf(p);
     const s = nearestFree(blocked, size, this.tileOf(p));
     const g = nearestFree(blocked, size, goal);
     if (reg[g] === reg[s]) return g;
@@ -567,7 +1037,7 @@ export class Sim {
       this.stats.failed++;
       return false;
     }
-    const blocked = p.kind === 'crowd' ? this.crowdBlocked : this.blocked;
+    const { blocked } = this.layerOf(p);
     const path = this.pf.find(blocked, nearestFree(blocked, this.w.size, this.tileOf(p)), g);
     this.stats.nodes += this.pf.expanded;
     if (!path) {
@@ -591,14 +1061,27 @@ export class Sim {
     const size = this.w.size;
     const rnd = () => nextRandom(st.rng);
     for (const c of st.cmds.splice(0)) this.apply(c);
+    // uchwała o bramie: kłódka o 20:00, otwarcie o 6:00 (w międzyczasie zarząd może otworzyć sam)
+    if (st.laws.gateClosed && st.tick % TICKS_PER_HOUR === 0) {
+      const h = hourOf(st.tick);
+      if (h === 20) this.setGate(false);
+      else if (h === GUARD_UNTIL) this.setGate(true);
+    }
+    if (st.raid) this.raidTick(st.raid);
     let budget = PATHS_PER_TICK;
+    let gone = false;
     for (const p of st.pawns) {
+      if (p.away) continue;
       if (p.pi < p.path.length) {
         this.walk(p);
         continue;
       }
-      if (p.kind === 'core') {
+      if (p.kind === 'core' || p.kind === 'resident') {
         this.coreTick(p);
+        continue;
+      }
+      if (p.kind === 'szabrownik') {
+        if (this.strangerTick(p)) gone = true;
         continue;
       }
       if (st.tick < p.wait) continue;
@@ -616,6 +1099,8 @@ export class Sim {
       p.want = -1;
       p.wait = st.tick + 60 + Math.floor(rnd() * 240);
     }
+    // szabrownicy, którzy doszli tam, skąd przyszli, znikają
+    if (gone) st.pawns = st.pawns.filter((p) => !(p.kind === 'szabrownik' && p.job?.phase === 4));
     if (st.tick % HEAT_EVERY === 0) this.slow();
     st.tick++;
   }
@@ -654,11 +1139,37 @@ export class Sim {
 
   private apply(c: Command): void {
     const st = this.st;
-    // polecenia przyjmuje tylko zarząd, tłum to tło
+    if (c.t === 'gate') {
+      this.setGate(c.open);
+      return;
+    }
+    if (c.t === 'raid') {
+      planRaid(st, c.at, c.post, false);
+      return;
+    }
+    if (c.t === 'mend') {
+      const open = (st.fence?.holes ?? []).filter((h) => !h.patch).sort((a, b) => b.size - a.size || a.id - b.id);
+      for (const h of open.slice(0, Math.max(0, c.n))) h.patch = PATCH_HP;
+      if (open.length && c.n > 0) this.rebuild();
+      return;
+    }
+    if (c.t === 'laws') {
+      const was = st.laws.gateClosed;
+      st.laws = { ...st.laws, ...c.laws };
+      // podpisana nocą: kłódka od razu
+      const h = hourOf(st.tick);
+      if (!was && st.laws.gateClosed && (h >= 20 || h < GUARD_UNTIL)) this.setGate(false);
+      return;
+    }
+    // polecenia przyjmuje tylko zarząd, tłum to tło; kto jest na wyprawie, słucha tylko wezwania z powrotem
     const pawns: Pawn[] = [];
     for (const id of c.ids) {
       const p = st.pawns.find((q) => q.id === id);
-      if (p && p.kind === 'core' && !pawns.includes(p)) pawns.push(p);
+      if (p && p.kind === 'core' && p.away === (c.t === 'back') && !pawns.includes(p)) pawns.push(p);
+    }
+    if (c.t === 'back') {
+      for (const p of pawns) this.comeBack(p);
+      return;
     }
     if (!pawns.length) return;
     this.tutEvent('zaznacz');
@@ -668,6 +1179,115 @@ export class Sim {
     else if (c.t === 'refuel') this.orderRefuel(pawns, c.thing);
     else if (c.t === 'burn') this.orderBurn(pawns, c.thing);
     else if (c.t === 'cook') this.orderCook(pawns);
+    else if (c.t === 'guard') this.orderGuard(pawns, c.post);
+    else if (c.t === 'patch') this.orderPatch(pawns, c.hole);
+    else if (c.t === 'campfire') this.orderCampfire(pawns, c.at);
+    else if (c.t === 'away') for (const p of pawns) this.startLeave(p);
+  }
+
+  /** uchwały od razu (interfejs woła po podpisaniu; w kolejce poleceń, żeby zapis i powtórka ich nie gubiły) */
+  setLaws(laws: Partial<Laws>): void {
+    this.push({ t: 'laws', ids: [], laws });
+  }
+
+  /** brama otwarta albo zamknięta; przechodniość od nowa tylko przy zmianie */
+  private setGate(open: boolean): void {
+    const f = this.st.fence;
+    if (!f || f.gateOpen === open) return;
+    f.gateOpen = open;
+    this.rebuild();
+  }
+
+  /** posterunek warty z klucza 'brama' / 'd<id>': 0 brama, id dziury, −1 nie ma takiego */
+  private postOf(post: string): number {
+    if (post === 'brama') return this.gateStand.length ? 0 : -1;
+    const id = /^d(\d+)$/.exec(post)?.[1];
+    return id && this.holeById(Number(id)) ? Number(id) : -1;
+  }
+
+  private holeById(id: number): Hole | undefined {
+    return this.st.fence?.holes.find((h) => h.id === id);
+  }
+
+  /** wolny kafelek podwórka (dla zarządu) najwyżej reach od któregoś z kafelków, najbliżej pionka; −1: brak */
+  private standBy(p: Pawn, tiles: readonly number[], reach: number): number {
+    const shape = fenceShape(this.w);
+    if (!shape || !tiles.length) return -1;
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const cand = shape.yard.filter(
+      (i) =>
+        !this.coreBlocked[i] &&
+        this.reg[i] === region &&
+        !taken.includes(i) &&
+        !this.thingAt(i % size, Math.floor(i / size)) &&
+        tiles.some(
+          (t) =>
+            Math.max(Math.abs((t % size) - (i % size)), Math.abs(Math.floor(t / size) - Math.floor(i / size))) <= reach,
+        ),
+    );
+    return this.nearest(p, cand);
+  }
+
+  /** gdzie stoi warta: przy bramie najbliżej jej środka, przy dziurze tuż obok od strony podwórka */
+  private guardStand(p: Pawn, post: number): number {
+    if (post === 0) {
+      const taken = this.taken(p);
+      const region = this.regionOf(p);
+      const free = this.gateStand.find((i) => !this.coreBlocked[i] && !taken.includes(i) && this.reg[i] === region);
+      return free ?? this.standBy(p, gateTiles(this.w), 2);
+    }
+    const hole = this.holeById(post);
+    if (!hole) return -1;
+    const s = this.standBy(p, hole.tiles, 1);
+    return s >= 0 ? s : this.standBy(p, hole.tiles, 2);
+  }
+
+  /** tick najbliższej pełnej godziny h (dziś albo jutro) */
+  private nextHour(h: number): number {
+    const m = minutesAt(this.st.tick);
+    let at = m - (m % 1440) + h * 60;
+    if (at <= m) at += 1440;
+    return Math.round(((at - START_MINUTES) * TICKS_PER_HOUR) / 60);
+  }
+
+  /** warta do rana: każdy na swoim kafelku przy posterunku */
+  private orderGuard(pawns: Pawn[], key: string): void {
+    const post = this.postOf(key);
+    if (post < 0) return;
+    for (const p of pawns) {
+      const stand = this.guardStand(p, post);
+      if (stand < 0 || !this.go(p, stand)) continue;
+      const j = this.newJob('guard', post, stand, true);
+      j.until = this.nextHour(GUARD_UNTIL);
+      this.setJob(p, j, false);
+    }
+  }
+
+  /** pierwsza osoba łata, reszta idzie obok; gdy ktoś już łata tę dziurę, nowi idą pomóc */
+  private orderPatch(pawns: Pawn[], id: number): void {
+    const hole = this.holeById(id);
+    if (!hole || hole.patch > 0) return;
+    let rest = pawns;
+    const busy = this.st.pawns.some((q) => q.job?.t === 'patch' && q.job.target === id);
+    if (!busy && this.startPatch(pawns[0], hole)) rest = pawns.slice(1);
+    const stand = rest.length ? this.standBy(rest[0], hole.tiles, 2) : -1;
+    if (rest.length && stand >= 0) this.orderMove(rest, stand, [], true);
+  }
+
+  /** ognisko na wolnym kafelku podwórka; pierwsza osoba rozpala, reszta idzie obok */
+  private orderCampfire(pawns: Pawn[], at: number): void {
+    if (!this.siteOk(at)) return;
+    let rest = pawns;
+    if (this.startBuild(pawns[0], at)) rest = pawns.slice(1);
+    if (rest.length) this.orderMove(rest, at, [at], true);
+  }
+
+  /** na tym kafelku można teraz rozpalić ognisko (campfireSpotOk) i nikt tam nie pracuje */
+  siteOk(at: number): boolean {
+    if (!campfireSpotOk(this.st, this.w, at)) return false;
+    return !this.st.pawns.some((q) => q.job && (q.job.tile === at || (q.job.t === 'build' && q.job.target === at)));
   }
 
   /** kilka osób naraz: każda dostaje inny wolny kafelek ze spirali wokół celu;
@@ -748,7 +1368,7 @@ export class Sim {
 
   private orderRefuel(pawns: Pawn[], id: number): void {
     const koza = this.thing(id);
-    if (koza?.kind !== 'koza') return;
+    if (koza?.kind !== 'koza' && koza?.kind !== 'ognisko') return;
     const [first, ...rest] = pawns;
     const taken: number[] = [];
     if (this.startRefuel(first, true, koza)) taken.push(first.job!.tile);
@@ -791,7 +1411,7 @@ export class Sim {
   /* ---------- prace ---------- */
 
   private newJob(t: JobKind, target: number, tile: number, order: boolean, phase = 0): Job {
-    return { t, target, tile, phase, from: -1, t0: this.st.tick, until: 0, order };
+    return { t, target, tile, phase, from: -1, t0: this.st.tick, until: 0, order, n: 0, what: '' };
   }
 
   /** zwalnia rzeczy zajęte przez pionek */
@@ -802,6 +1422,7 @@ export class Sim {
   /** nowa praca zamiast starej; drewno z rąk zostaje na ziemi, chyba że nowa praca go potrzebuje */
   private setJob(p: Pawn, j: Job, keepCarry: boolean): void {
     this.release(p);
+    this.dropLoad(p);
     if (!keepCarry) this.dropCarry(p);
     p.job = j;
   }
@@ -809,6 +1430,7 @@ export class Sim {
   /** koniec pracy: rzeczy wolne, od razu rozgląda się za następną */
   private done(p: Pawn): void {
     this.release(p);
+    this.dropLoad(p);
     p.job = null;
     p.wait = this.st.tick;
     if (this.house && p.needs) this.think(p);
@@ -831,7 +1453,7 @@ export class Sim {
 
   /** obszar mapy, w którym stoi pionek */
   private regionOf(p: Pawn): number {
-    return this.reg[nearestFree(this.blocked, this.w.size, this.tileOf(p))];
+    return this.reg[nearestFree(this.coreBlocked, this.w.size, this.tileOf(p))];
   }
 
   private food(): Thing | undefined {
@@ -894,7 +1516,7 @@ export class Sim {
         const y = ty + dy;
         if ((!dx && !dy) || x < 0 || y < 0 || x >= size || y >= size) continue;
         const i = y * size + x;
-        if (!this.blocked[i] && this.reg[i] === region && !taken.includes(i)) cand.push(i);
+        if (!this.coreBlocked[i] && this.reg[i] === region && !taken.includes(i)) cand.push(i);
       }
     return this.nearest(p, cand);
   }
@@ -906,7 +1528,7 @@ export class Sim {
     const size = this.w.size;
     const region = this.regionOf(p);
     for (const i of h.sklad) {
-      if (this.blocked[i] || this.reg[i] !== region) continue;
+      if (this.coreBlocked[i] || this.reg[i] !== region) continue;
       const pile = this.pileAt(i);
       if (pile ? pile.n < STACK : !this.thingAt(i % size, Math.floor(i / size))) return i;
     }
@@ -949,7 +1571,7 @@ export class Sim {
       for (let x = t.x - 1; x <= t.x + t.w; x++) {
         if (x < 0 || y < 0 || x >= size || y >= size || covers(t, x, y)) continue;
         const i = y * size + x;
-        if (this.blocked[i] || this.reg[i] !== region || this.furnitureAt(x, y)) continue;
+        if (this.coreBlocked[i] || this.reg[i] !== region || this.furnitureAt(x, y)) continue;
         (taken.includes(i) ? busy : free).push(i);
       }
     return this.nearest(p, free.length ? free : busy);
@@ -959,7 +1581,7 @@ export class Sim {
       się jeszcze zmieści, albo na pusty */
   private spotNear(from: number, n: number): number {
     const size = this.w.size;
-    const at = nearestFree(this.blocked, size, from);
+    const at = nearestFree(this.coreBlocked, size, from);
     const ax = at % size;
     const ay = Math.floor(at / size);
     for (const [dx, dy] of SPREAD) {
@@ -967,7 +1589,7 @@ export class Sim {
       const y = ay + dy;
       if (x < 0 || y < 0 || x >= size || y >= size) continue;
       const i = y * size + x;
-      if (this.blocked[i] || this.reg[i] !== this.reg[at]) continue;
+      if (this.coreBlocked[i] || this.reg[i] !== this.reg[at]) continue;
       const pile = this.pileAt(i);
       if (pile ? pile.n + n <= STACK : !this.thingAt(x, y)) return i;
     }
@@ -983,7 +1605,8 @@ export class Sim {
     let best: Thing | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.things) {
-      if (t.kind !== 'drewno' || t.n <= 0 || t.by >= 0) continue;
+      // własny stos (np. niesie go właśnie do składu) też się liczy
+      if (t.kind !== 'drewno' || t.n <= 0 || (t.by >= 0 && t.by !== p.id)) continue;
       const i = t.y * size + t.x;
       // stos, do którego nie da się dojść, nie zasłania osiągalnych
       if (this.reg[i] !== region) continue;
@@ -1012,15 +1635,16 @@ export class Sim {
       front !== undefined &&
       front >= 0 &&
       front < size * size &&
-      !this.blocked[front] &&
+      !this.coreBlocked[front] &&
       this.reg[front] === region &&
       !this.furnitureAt(front % size, Math.floor(front / size)) &&
       !this.taken(p).includes(front);
     return ok ? front : this.beside(p, t);
   }
 
+  /** skąd dokłada: do kozy od frontu, do ogniska z dowolnej strony */
   private kozaStand(p: Pawn, koza: Thing): number {
-    return this.frontOf(p, koza);
+    return koza.kind === 'ognisko' ? this.beside(p, koza) : this.frontOf(p, koza);
   }
 
   /** gdzie się gotuje: kuchenka zarządu z gazem, a bez gazu paląca się koza (undefined: nie da się) */
@@ -1058,9 +1682,10 @@ export class Sim {
     return this.nearest(p, cand);
   }
 
-  /** ile sztuk drewna jeszcze wejdzie do kozy */
+  /** ile sztuk drewna jeszcze wejdzie do kozy albo ogniska */
   private kozaRoom(koza: Thing): number {
-    return Math.floor((KOZA_CAP * BURN_TICKS - koza.fuel) / BURN_TICKS);
+    const cap = koza.kind === 'ognisko' ? CAMPFIRE_CAP : KOZA_CAP;
+    return Math.floor((cap * BURN_TICKS - koza.fuel) / BURN_TICKS);
   }
 
   /** drzewo pada: zostaje pień, kafelek się zwalnia, drewno leży w stosach dookoła, po tej stronie,
@@ -1071,12 +1696,7 @@ export class Sim {
     const t = this.trunk[k];
     st.felled.push(k);
     st.felled.sort((a, b) => a - b);
-    this.blocked[t] = 0;
-    this.reg = labelRegions(this.blocked, size);
-    if (this.crowdBlocked !== this.blocked) {
-      this.crowdBlocked[t] = 0;
-      this.crowdReg = labelRegions(this.crowdBlocked, size);
-    } else this.crowdReg = this.reg;
+    this.rebuild();
     st.things.push(newThing(st, 'pien', t % size, Math.floor(t / size)));
     let left = woodFrom(this.w.trees[k]);
     for (const [dx, dy] of SPREAD) {
@@ -1085,7 +1705,7 @@ export class Sim {
       const y = Math.floor(t / size) + dy;
       if ((!dx && !dy) || x < 0 || y < 0 || x >= size || y >= size) continue;
       const i = y * size + x;
-      if (this.blocked[i] || this.reg[i] !== this.reg[stand] || this.thingAt(x, y)) continue;
+      if (this.coreBlocked[i] || this.reg[i] !== this.reg[stand] || this.thingAt(x, y)) continue;
       const n = Math.min(CARRY, left);
       this.addWood(i, n);
       left -= n;
@@ -1236,6 +1856,125 @@ export class Sim {
         if (stove.kind === 'kuchenka') stove.fuel = Math.max(0, stove.fuel - COOK_TICKS);
         return false;
       }
+      case 'stay':
+        if (j.phase === 1) return tick < j.until;
+        if (!at) return false;
+        j.phase = 1;
+        return true;
+      case 'guard': {
+        // nie śpi do rana; schodzi z posterunku tylko wtedy, gdy zdrowie siada
+        if (j.phase === 1) return tick < j.until && p.needs!.health >= 30;
+        if (!at) return false;
+        j.phase = 1;
+        j.t0 = tick;
+        const hole = j.target > 0 ? this.holeById(j.target) : undefined;
+        const look = hole ? hole.tiles : gateTiles(this.w);
+        const size = this.w.size;
+        if (look.length) this.face(p, (look[0] % size) + 0.5, Math.floor(look[0] / size) + 0.5);
+        return true;
+      }
+      case 'patch': {
+        const hole = this.holeById(j.target);
+        if (!hole || hole.patch > 0) return false;
+        const size = this.w.size;
+        if (j.phase === 0) {
+          const heap = this.thing(j.from);
+          if (!at || !heap || heap.by !== p.id) return false;
+          const take = Math.min(heap.n, PATCH_COST - j.n);
+          heap.n -= take;
+          heap.by = -1;
+          j.n += take;
+          if (!j.what) j.what = heap.kind;
+          if (heap.n <= 0) st.things.splice(st.things.indexOf(heap), 1);
+          if (j.n < PATCH_COST) {
+            // za mało na jednej stercie: następna tego samego materiału
+            const next = this.heapFor(p, j.what);
+            const nt = next ? next.y * size + next.x : -1;
+            if (!next || !this.go(p, nt)) return false;
+            j.from = next.id;
+            j.tile = nt;
+            next.by = p.id;
+            return true;
+          }
+          const stand = this.standBy(p, hole.tiles, 1);
+          if (stand < 0 || !this.go(p, stand)) return false;
+          j.phase = 1;
+          j.from = -1;
+          j.tile = stand;
+          return true;
+        }
+        if (j.phase === 1) {
+          if (!at) return false;
+          j.phase = 2;
+          j.t0 = tick;
+          j.until = tick + PATCH_TICKS;
+          this.face(p, (hole.tiles[0] % size) + 0.5, Math.floor(hole.tiles[0] / size) + 0.5);
+          return true;
+        }
+        if (tick < j.until) return true;
+        hole.patch = PATCH_HP;
+        j.n = 0;
+        this.rebuild();
+        return false;
+      }
+      case 'build': {
+        const size = this.w.size;
+        const site = j.target;
+        const sx = site % size;
+        const sy = Math.floor(site / size);
+        // ktoś postawił tam coś innego
+        if (this.thingAt(sx, sy)) return false;
+        if (j.phase === 0) {
+          const pile = this.thing(j.from);
+          if (!at || !pile || pile.by !== p.id) return false;
+          const take = Math.min(pile.n, CAMPFIRE_WOOD - p.carry);
+          this.takeWood(pile, take);
+          p.carry += take;
+          if (p.carry < CAMPFIRE_WOOD) {
+            const next = this.pileFor(p, 'any');
+            const nt = next ? next.y * size + next.x : -1;
+            if (!next || !this.go(p, nt)) return false;
+            j.from = next.id;
+            j.tile = nt;
+            next.by = p.id;
+            return true;
+          }
+          const stand = this.siteStand(p, site);
+          if (stand < 0 || !this.go(p, stand)) return false;
+          j.phase = 1;
+          j.from = -1;
+          j.tile = stand;
+          return true;
+        }
+        if (j.phase === 1) {
+          if (!at || p.carry < CAMPFIRE_WOOD) return false;
+          j.phase = 2;
+          j.t0 = tick;
+          j.until = tick + BUILD_TICKS;
+          this.face(p, sx + 0.5, sy + 0.5);
+          return true;
+        }
+        if (tick < j.until) return true;
+        if (p.carry < CAMPFIRE_WOOD) return false;
+        p.carry -= CAMPFIRE_WOOD;
+        const fire = newThing(st, 'ognisko', sx, sy);
+        fire.fuel = CAMPFIRE_WOOD * BURN_TICKS;
+        st.things.push(fire);
+        this.rebuild();
+        return false;
+      }
+      case 'raid':
+        // szabrownicy mają własny krok (strangerTick)
+        return false;
+      case 'leave':
+        // za bramą znika; wraca poleceniem 'back'
+        if (j.phase === 1) return true;
+        if (!at) return false;
+        j.phase = 1;
+        p.away = true;
+        p.path = [];
+        p.pi = 0;
+        return true;
       case 'burn': {
         const f = this.thing(j.target);
         if (!f || f.by !== p.id) return false;
@@ -1272,16 +2011,19 @@ export class Sim {
     const take = Math.min(wood, CARRY - p.carry);
     p.carry += take;
     if (wood > take) this.addWood(this.spotNear(i, wood - take), wood - take);
+    // uchwała może złagodzić albo zaostrzyć karę (mnożnik z zarządu)
+    const k = st.laws.burnMood;
     for (const q of st.pawns)
       if (q.needs)
         this.addMood(
           q,
           mine ? 'Palimy meble' : 'Rozbieramy cudze mieszkanie',
-          mine ? -6 : -10,
+          Math.round((mine ? -6 : -10) * k),
           (mine ? 12 : 24) * TICKS_PER_HOUR,
         );
     const owner = st.pawns.find((q) => q.id === f.owner);
-    if (owner?.needs) this.addMood(owner, `Spalili ${MINE[f.kind] ?? 'moją rzecz'}`, -18, 48 * TICKS_PER_HOUR);
+    if (owner?.needs)
+      this.addMood(owner, `Spalili ${MINE[f.kind] ?? 'moją rzecz'}`, Math.round(-18 * k), 48 * TICKS_PER_HOUR);
   }
 
   /** garnek z porcjami na stole zarządu (bez stołu obok miejsca gotowania) */
@@ -1311,7 +2053,7 @@ export class Sim {
     const size = this.w.size;
     for (const i of this.house?.sklad ?? []) {
       if (p.carry <= 0) break;
-      if (this.blocked[i]) continue;
+      if (this.coreBlocked[i]) continue;
       const pile = this.pileAt(i);
       if (!pile && this.thingAt(i % size, Math.floor(i / size))) continue;
       const n = Math.min(p.carry, STACK - (pile ? pile.n : 0));
@@ -1336,6 +2078,10 @@ export class Sim {
       zanosi leżące drewno do składu i grzeje się przy kozie, kiedy mu zimno. Sam nie ścina drzew:
       to polecenie gracza (samouczek). */
   private think(p: Pawn): void {
+    if (p.kind === 'resident') {
+      this.plan(p);
+      return;
+    }
     const n = p.needs!;
     if (p.carry > 0) {
       if (this.startRefuel(p, false) || this.startHaul(p)) return;
@@ -1349,16 +2095,86 @@ export class Sim {
     p.wait = this.st.tick + THINK_EVERY;
   }
 
+  /** Plan dnia mieszkańca: nocą śpi w swoim mieszkaniu, rano siedzi w domu, od WORK_START do 18:00 pracuje na
+      podwórku (za siatką, nie przełazi dziurami), od 18:00 grzeje się przy ognisku, jeśli się pali, potem wraca do domu. */
+  private plan(p: Pawn): void {
+    const st = this.st;
+    const h = hourOf(st.tick);
+    if (this.night() && this.startSleep(p)) return;
+    let kind = STAY_HOME;
+    if (!this.night() && h >= st.laws.workStart && h < 18) kind = STAY_YARD;
+    else if (h >= 18 && h < 20 && this.campfire()) kind = STAY_FIRE;
+    const spot = kind === STAY_YARD ? this.yardSpot(p) : kind === STAY_FIRE ? this.fireSpot(p) : this.homeSpot(p);
+    if (spot >= 0 && this.go(p, spot)) {
+      const j = this.newJob('stay', kind, spot, false);
+      j.until = st.tick + (kind === STAY_YARD ? 400 + Math.floor(nextRandom(st.rng) * 600) : 600);
+      this.setJob(p, j, false);
+      return;
+    }
+    p.wait = st.tick + THINK_EVERY;
+  }
+
+  /** paląca się ognisko albo undefined */
+  private campfire(): Thing | undefined {
+    return this.st.things.find((t) => t.kind === 'ognisko' && t.fuel > 0);
+  }
+
+  /** losowy wolny kafelek z listy w obszarze pionka (jego warstwa), bez rzeczy i cudzych miejsc pracy */
+  private pickSpot(p: Pawn, tiles: readonly number[]): number {
+    const size = this.w.size;
+    const lay = this.layer(p.kind);
+    const region = lay.reg[nearestFree(lay.blocked, size, this.tileOf(p))];
+    const taken = this.taken(p);
+    const cand = tiles.filter(
+      (i) =>
+        !lay.blocked[i] && lay.reg[i] === region && !taken.includes(i) && !this.thingAt(i % size, Math.floor(i / size)),
+    );
+    return cand.length ? cand[Math.floor(nextRandom(this.st.rng) * cand.length)] : -1;
+  }
+
+  /** miejsce pracy mieszkańca na podwórku */
+  private yardSpot(p: Pawn): number {
+    return this.pickSpot(p, (this.w as { fence?: World['fence'] }).fence?.yard ?? []);
+  }
+
+  /** miejsce w domu mieszkańca (w jego mieszkaniu) */
+  private homeSpot(p: Pawn): number {
+    const h = this.house;
+    if (!h) return -1;
+    const tiles: number[] = [];
+    for (const r of h.rooms) if (r.apt === p.apt && p.apt >= 0) tiles.push(...this.roomTiles[r.id]);
+    return this.pickSpot(p, tiles);
+  }
+
+  /** miejsce przy palącym się ognisku */
+  private fireSpot(p: Pawn): number {
+    const fire = this.campfire();
+    if (!fire) return -1;
+    const size = this.w.size;
+    const tiles: number[] = [];
+    for (let dy = -2; dy <= 2; dy++)
+      for (let dx = -2; dx <= 2; dx++) {
+        const x = fire.x + dx;
+        const y = fire.y + dy;
+        if ((dx || dy) && x >= 0 && y >= 0 && x < size && y < size && Math.hypot(dx, dy) <= FIRE_REACH)
+          tiles.push(y * size + x);
+      }
+    return this.pickSpot(p, tiles);
+  }
+
   private startSleep(p: Pawn): boolean {
     const h = this.house!;
     const size = this.w.size;
     const taken = this.taken(p);
+    // zarząd śpi w swoim mieszkaniu, mieszkaniec w swoim
+    const apt = p.kind === 'resident' ? p.apt : h.home;
     // najpierw własne łóżko, potem niczyje, na końcu cudze
     let bed: Thing | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.things) {
       const i = t.y * size + t.x;
-      if (!BEDS.has(t.kind) || !inHomeApt(h, i) || this.blocked[i] || taken.includes(i)) continue;
+      if (!BEDS.has(t.kind) || apt < 0 || aptAt(h, i) !== apt || this.layer(p.kind).blocked[i] || taken.includes(i))
+        continue;
       const d = this.dist2(p, i) + (t.owner === p.id ? 0 : t.owner < 0 ? 1e6 : 2e6);
       if (d < bd) {
         bd = d;
@@ -1371,7 +2187,7 @@ export class Sim {
       const floorIn = (pokoj: boolean) => {
         const out: number[] = [];
         for (const r of h.rooms)
-          if (h.home >= 0 && r.apt === h.home && (!pokoj || r.kind === 'pokoj'))
+          if (apt >= 0 && r.apt === apt && (!pokoj || r.kind === 'pokoj'))
             for (const i of this.roomTiles[r.id])
               if (!taken.includes(i) && !this.thingAt(i % size, Math.floor(i / size))) out.push(i);
         return out;
@@ -1436,7 +2252,7 @@ export class Sim {
       for (let y = tb.y - 1; y <= tb.y + tb.h; y++)
         for (let x = tb.x - 1; x <= tb.x + tb.w; x++) {
           const i = y * size + x;
-          if (covers(tb, x, y) || h.room[i] !== room || this.blocked[i] || this.furnitureAt(x, y)) continue;
+          if (covers(tb, x, y) || h.room[i] !== room || this.coreBlocked[i] || this.furnitureAt(x, y)) continue;
           seats.push(i);
         }
     } else seats.push(fi);
@@ -1504,6 +2320,411 @@ export class Sim {
     return true;
   }
 
+  /** Wolna sterta desek albo złomu najbliżej pionka, do której dojdzie. Łata jest z jednego materiału: kind zawęża
+      do niego, a bez kind tylko materiał, którego w osiągalnych stertach starczy na całą łatę. */
+  private heapFor(p: Pawn, kind = ''): Thing | undefined {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const free = (t: Thing) =>
+      (t.kind === 'deski' || t.kind === 'zlom') &&
+      t.n > 0 &&
+      (t.by < 0 || t.by === p.id) &&
+      this.reg[t.y * size + t.x] === region;
+    const enough = (k: string) =>
+      this.st.things.reduce((a, t) => a + (t.kind === k && free(t) ? t.n : 0), 0) >= PATCH_COST;
+    let best: Thing | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.things) {
+      if (!free(t) || (kind ? t.kind !== kind : !enough(t.kind))) continue;
+      const d = this.dist2(p, t.y * size + t.x);
+      if (d < bd || (d === bd && best && t.id < best.id)) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** łatanie: po deski albo złom na najbliższą stertę, potem do dziury */
+  private startPatch(p: Pawn, hole: Hole): boolean {
+    const heap = this.heapFor(p);
+    if (!heap) return false;
+    const size = this.w.size;
+    const ht = heap.y * size + heap.x;
+    if (!this.go(p, ht)) return false;
+    const j = this.newJob('patch', hole.id, ht, true);
+    j.from = heap.id;
+    this.setJob(p, j, false);
+    heap.by = p.id;
+    return true;
+  }
+
+  /** kafelek obok miejsca na ognisko */
+  private siteStand(p: Pawn, site: number): number {
+    const size = this.w.size;
+    return this.beside(p, { x: site % size, y: Math.floor(site / size), w: 1, h: 1 } as Thing);
+  }
+
+  /** ognisko: z drewnem w rękach od razu na miejsce, inaczej najpierw po drewno na najbliższy stos */
+  private startBuild(p: Pawn, site: number): boolean {
+    const size = this.w.size;
+    if (p.carry >= CAMPFIRE_WOOD) {
+      const stand = this.siteStand(p, site);
+      if (stand < 0 || !this.go(p, stand)) return false;
+      this.setJob(p, this.newJob('build', site, stand, true, 1), true);
+      return true;
+    }
+    const pile = this.pileFor(p, 'any');
+    if (!pile) return false;
+    const pt = pile.y * size + pile.x;
+    if (!this.go(p, pt)) return false;
+    const j = this.newJob('build', site, pt, true);
+    j.from = pile.id;
+    this.setJob(p, j, true);
+    pile.by = p.id;
+    return true;
+  }
+
+  /** wyprawa: idzie bramą za siatkę i tam znika */
+  private startLeave(p: Pawn): void {
+    if (this.exitTile < 0 || !this.go(p, this.exitTile)) {
+      // bez drogi za bramę (świat bez siatki): znika od razu tam, gdzie stoi
+      this.setJob(p, this.newJob('leave', -1, this.tileOf(p), true, 1), false);
+      p.away = true;
+      p.path = [];
+      p.pi = 0;
+      return;
+    }
+    this.setJob(p, this.newJob('leave', -1, this.exitTile, true), false);
+  }
+
+  /** powrót z wyprawy: pojawia się za bramą i idzie pod drzwi siedziby; w drodze tam po prostu zawraca */
+  private comeBack(p: Pawn): void {
+    p.away = false;
+    const size = this.w.size;
+    if (p.job?.t === 'leave' && p.job.phase === 1 && this.exitTile >= 0) {
+      p.x = (this.exitTile % size) + 0.5;
+      p.y = Math.floor(this.exitTile / size) + 0.5;
+    }
+    p.job = null;
+    p.path = [];
+    p.pi = 0;
+    p.wait = this.st.tick;
+    if (this.door >= 0 && this.go(p, this.door)) this.setJob(p, this.newJob('go', this.door, this.door, false), false);
+  }
+
+  /** deski albo złom z rąk zostają na stercie obok (przerwane łatanie) */
+  private dropLoad(p: Pawn): void {
+    const j = p.job;
+    if (!j || j.n <= 0 || !j.what) return;
+    const size = this.w.size;
+    const at = nearestFree(this.coreBlocked, size, this.tileOf(p));
+    for (const [dx, dy] of SPREAD) {
+      const x = (at % size) + dx;
+      const y = Math.floor(at / size) + dy;
+      if (x < 0 || y < 0 || x >= size || y >= size) continue;
+      const i = y * size + x;
+      if (this.coreBlocked[i] || this.reg[i] !== this.reg[at]) continue;
+      const same = this.st.things.find((t) => t.kind === j.what && t.x === x && t.y === y);
+      if (same) same.n += j.n;
+      else if (!this.thingAt(x, y)) {
+        const t = newThing(this.st, j.what, x, y);
+        t.n = j.n;
+        this.st.things.push(t);
+      } else continue;
+      break;
+    }
+    j.n = 0;
+  }
+
+  /* ---------- szabrownicy ---------- */
+
+  /** napad: pojawienie się za siatką, rozstrzygnięcie (bez zarządu albo gdy zarząd milczy), płoszenie, koniec */
+  private raidTick(r: Raid): void {
+    const st = this.st;
+    const tick = st.tick;
+    if (r.phase === 0 && (tick >= r.at - SNEAK_TICKS || r.outcome)) this.spawnRaid(r);
+    if (r.phase === 1) {
+      if (!r.outcome && tick >= r.at + (r.gov ? GOV_WAIT : 0)) this.decideRaid(r);
+      if (r.outcome) this.onOutcome(r);
+    } else if (r.phase === 2) {
+      const left = st.pawns.filter((p) => p.kind === 'szabrownik');
+      if (!left.length) this.finishRaid(r);
+      // bez zarządu światło płoszy ich także w środku: uciekają z tym, co mają w workach
+      else if (!r.gov && tick % THINK_EVERY === 0)
+        for (const p of left) if (p.job?.phase === 2 && this.litNear(p.x, p.y)) this.leaveRaid(p, r);
+    }
+  }
+
+  /** lampa warty albo palące się ognisko w zasięgu */
+  private litNear(x: number, y: number): boolean {
+    for (const q of this.st.pawns)
+      if (!q.away && q.job?.t === 'guard' && q.job.phase === 1 && Math.hypot(q.x - x, q.y - y) <= LAMP_REACH)
+        return true;
+    return this.st.things.some(
+      (t) => t.kind === 'ognisko' && t.fuel > 0 && Math.hypot(t.x + 0.5 - x, t.y + 0.5 - y) <= CAMPFIRE_LIGHT,
+    );
+  }
+
+  /** gdzie uderzają: otwarta dziura z planu, a gdy załatana, brama; bez bramy największa otwarta dziura */
+  private raidTarget(r: Raid): { post: number; tiles: number[] } | null {
+    const gate = gateTiles(this.w);
+    const id = /^d(\d+)$/.exec(r.post)?.[1];
+    const hole = id ? this.holeById(Number(id)) : undefined;
+    if (hole && !hole.patch) return { post: hole.id, tiles: hole.tiles };
+    if (gate.length) return { post: 0, tiles: gate };
+    const open = (this.st.fence?.holes ?? []).filter((h) => !h.patch).sort((a, b) => b.size - a.size || a.id - b.id);
+    return open.length ? { post: open[0].id, tiles: open[0].tiles } : null;
+  }
+
+  private inRoom(i: number): boolean {
+    return !!this.house && this.house.room[i] >= 0;
+  }
+
+  /** kafelki tuż za siatką przy danych kafelkach (od strony ulicy), przechodnie dla obcych */
+  private outsideOf(tiles: readonly number[]): number[] {
+    const size = this.w.size;
+    const yard = new Set(fenceShape(this.w)?.yard ?? []);
+    const { blocked } = this.lay.outside;
+    const out: number[] = [];
+    for (const t of tiles)
+      for (const d of [-size, size, -1, 1]) {
+        const o = t + d;
+        if (o < 0 || o >= size * size || ((d === 1 || d === -1) && Math.floor(o / size) !== Math.floor(t / size)))
+          continue;
+        if (yard.has(o) || tiles.includes(o) || blocked[o] || this.inRoom(o) || out.includes(o)) continue;
+        out.push(o);
+      }
+    return out;
+  }
+
+  /** skąd przychodzą: losowy kafelek RAID_FROM kroków od siatki po stronie ulicy (albo najdalszy, jaki jest) */
+  private farFrom(spot: number): number {
+    const size = this.w.size;
+    const { blocked } = this.lay.outside;
+    const dist = new Map<number, number>([[spot, 0]]);
+    const q = [spot];
+    const ring: number[] = [];
+    let last = spot;
+    for (let qi = 0; qi < q.length; qi++) {
+      const c = q[qi];
+      const d = dist.get(c)!;
+      if (d === RAID_FROM) {
+        ring.push(c);
+        continue;
+      }
+      last = c;
+      const x = c % size;
+      for (const n of [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1]) {
+        if (n < 0 || n >= size * size || dist.has(n) || blocked[n]) continue;
+        dist.set(n, d + 1);
+        q.push(n);
+      }
+    }
+    return ring.length ? ring[Math.floor(nextRandom(this.st.rng) * ring.length)] : last;
+  }
+
+  /** n wolnych kafelków po stronie ulicy wokół środka, w tym samym obszarze dla obcych */
+  private tilesAround(center: number, n: number): number[] {
+    const size = this.w.size;
+    const { blocked, reg } = this.lay.outside;
+    const out: number[] = [];
+    for (const [dx, dy] of SPREAD) {
+      if (out.length >= n) break;
+      const x = (center % size) + dx;
+      const y = Math.floor(center / size) + dy;
+      if (x < 0 || y < 0 || x >= size || y >= size) continue;
+      const i = y * size + x;
+      if (blocked[i] || reg[i] !== reg[center]) continue;
+      out.push(i);
+    }
+    return out;
+  }
+
+  /** pół godziny przed napadem 1–3 obcych pojawia się daleko za siatką i podchodzi pod nią po ciemku */
+  private spawnRaid(r: Raid): void {
+    const st = this.st;
+    const tg = this.raidTarget(r);
+    const outs = tg ? this.outsideOf(tg.tiles) : [];
+    if (!tg || !outs.length) {
+      // nie ma skąd podejść (świat bez siatki): nic z tego
+      r.phase = 3;
+      if (!r.outcome) r.outcome = 'odparty';
+      return;
+    }
+    r.spot = outs[0];
+    r.from = this.farFrom(r.spot);
+    r.n = 1 + Math.floor(nextRandom(st.rng) * 3);
+    const waits = this.tilesAround(r.spot, r.n);
+    const starts = this.tilesAround(r.from, r.n);
+    for (let k = 0; k < r.n; k++) {
+      const look = 16 + Math.floor(nextRandom(st.rng) * 4);
+      const p = newPawn(st, this.w, 'szabrownik', -1, starts[k] ?? r.from, r.from, look);
+      p.job = this.newJob('raid', tg.post, waits[k] ?? r.spot, false);
+      st.pawns.push(p);
+      this.go(p, p.job.tile);
+    }
+    r.phase = 1;
+  }
+
+  /** Bez zarządu: warta z lampą albo ognisko przy miejscu, pod którym czekają, albo brama na kłódkę ich płoszy;
+      inaczej wchodzą i każdy wynosi pełny worek. Z zarządem, który nie odpowiedział w porę: odchodzą sami bez łupu
+      (gdyby zarząd potem policzył straty, applyGov zdejmie je ze stanu raz, bez szabrowników). */
+  private decideRaid(r: Raid): void {
+    if (r.gov) {
+      r.outcome = 'odparty';
+      return;
+    }
+    const size = this.w.size;
+    const sx = (r.spot % size) + 0.5;
+    const sy = Math.floor(r.spot / size) + 0.5;
+    const locked = this.raidTarget(r)?.post === 0 && !this.st.fence?.gateOpen;
+    const scared =
+      locked || this.litNear(sx, sy) || this.st.pawns.some((p) => p.kind === 'szabrownik' && this.litNear(p.x, p.y));
+    r.outcome = scared ? 'odparty' : 'wtargnięcie';
+    if (!scared) {
+      const cap = r.n * LOOT_CARRY;
+      r.loot = { wood: cap, supplies: cap, scrap: 0 };
+    }
+  }
+
+  /** ile jeden szabrownik uniesie: bez zarządu worek, z zarządem tyle, żeby wynieśli, co policzył zarząd */
+  private sack(r: Raid): number {
+    if (!r.gov) return LOOT_CARRY;
+    return Math.max(LOOT_CARRY, Math.ceil((r.loot.wood + r.loot.supplies + r.loot.scrap) / Math.max(1, r.n)));
+  }
+
+  /** rozstrzygnięte: wchodzą po łup albo uciekają; strach u mieszkańców (i u zarządu, gdy nie liczy go zarząd) */
+  private onOutcome(r: Raid): void {
+    const st = this.st;
+    r.phase = 2;
+    const entered = r.outcome === 'wtargnięcie';
+    for (const p of st.pawns) {
+      if (p.kind !== 'szabrownik' || !p.job) continue;
+      if (!entered || !this.nextLoot(p, r)) this.leaveRaid(p, r);
+    }
+    const tg = this.raidTarget(r);
+    for (const p of st.pawns) {
+      if (!p.needs || p.away || (p.kind === 'core' && r.gov)) continue;
+      const n = p.needs;
+      n.safe = Math.max(
+        0,
+        Math.min(100, n.safe + (entered ? (p.kind === 'core' ? -25 : -20) : p.kind === 'core' ? 8 : 4)),
+      );
+      if (entered) this.addMood(p, 'Szabrownicy weszli na podwórko', -8, 12 * TICKS_PER_HOUR);
+      else if (p.job?.t === 'guard' && p.job.target === tg?.post)
+        this.addMood(p, 'Przegoniliśmy szabrowników', 6, 12 * TICKS_PER_HOUR);
+    }
+  }
+
+  /** najbliższy łup w kolejności: drewno luzem, drewno w składzie, jedzenie, złom (tylko to, co jeszcze mają wziąć) */
+  private lootFor(p: Pawn, r: Raid): Thing | undefined {
+    const size = this.w.size;
+    const sklad = this.house?.sklad ?? [];
+    const { blocked, reg } = this.lay.szabrownik;
+    const region = reg[nearestFree(blocked, size, this.tileOf(p))];
+    const left = (k: keyof Loot) => r.loot[k] - r.took[k] > 0;
+    const tiers: ((t: Thing) => boolean)[] = [
+      (t) => t.kind === 'drewno' && !sklad.includes(t.y * size + t.x) && left('wood'),
+      (t) => t.kind === 'drewno' && sklad.includes(t.y * size + t.x) && left('wood'),
+      (t) => t.kind === 'jedzenie' && left('supplies'),
+      (t) => t.kind === 'zlom' && left('scrap'),
+    ];
+    for (const ok of tiers) {
+      let best: Thing | undefined;
+      let bd = Number.POSITIVE_INFINITY;
+      for (const t of this.st.things) {
+        if (t.n <= 0 || (t.by >= 0 && t.by !== p.id) || !ok(t)) continue;
+        const i = t.y * size + t.x;
+        if (reg[i] !== region) continue;
+        const d = this.dist2(p, i);
+        if (d < bd || (d === bd && best && t.id < best.id)) {
+          bd = d;
+          best = t;
+        }
+      }
+      if (best) return best;
+    }
+    return undefined;
+  }
+
+  /** do następnego łupu, póki worek nie pełny; false: nie ma po co albo nie ma jak */
+  private nextLoot(p: Pawn, r: Raid): boolean {
+    const j = p.job!;
+    if (j.n >= this.sack(r)) return false;
+    const t = this.lootFor(p, r);
+    if (!t) return false;
+    const ti = t.y * this.w.size + t.x;
+    // po łup chodzi się już przez siatkę (warstwa obcych, nie sama ulica)
+    j.phase = 2;
+    if (!this.go(p, ti)) return false;
+    j.target = t.id;
+    j.tile = ti;
+    t.by = p.id;
+    return true;
+  }
+
+  /** przy łupie: do worka, ile się zmieści i ile jeszcze mają wziąć; potem następny łup albo w nogi */
+  private takeLoot(p: Pawn, r: Raid): void {
+    const st = this.st;
+    const j = p.job!;
+    const t = this.thing(j.target);
+    if (t && t.by === p.id && this.tileOf(p) === j.tile) {
+      const k: keyof Loot = t.kind === 'drewno' ? 'wood' : t.kind === 'jedzenie' ? 'supplies' : 'scrap';
+      const take = Math.max(0, Math.min(t.n, this.sack(r) - j.n, r.loot[k] - r.took[k]));
+      t.n -= take;
+      t.by = -1;
+      if (t.n <= 0) st.things.splice(st.things.indexOf(t), 1);
+      j.n += take;
+      r.took[k] += take;
+      if (!j.what) j.what = t.kind;
+    } else if (t?.by === p.id) t.by = -1;
+    if (!this.nextLoot(p, r)) this.leaveRaid(p, r);
+  }
+
+  /** w nogi: tam, skąd przyszli (z łupem w workach) */
+  private leaveRaid(p: Pawn, r: Raid): void {
+    const j = p.job!;
+    const t = this.thing(j.target);
+    if (j.phase === 2 && t?.by === p.id) t.by = -1;
+    j.phase = 3;
+    j.target = -1;
+    const g = this.goalFor(p, r.from);
+    if (g >= 0 && this.routeTo(p, g)) j.tile = g;
+    else j.phase = 4;
+  }
+
+  /** szabrownik bez drogi: doszedł pod siatkę i czeka, przy łupie bierze, u siebie znika; true: zniknął */
+  private strangerTick(p: Pawn): boolean {
+    const r = this.st.raid;
+    const j = p.job;
+    if (!r || !j) {
+      p.job = this.newJob('raid', -1, this.tileOf(p), false, 4);
+      return true;
+    }
+    if (j.phase === 0) {
+      j.phase = 1;
+      if (r.spot >= 0) this.face(p, (r.spot % this.w.size) + 0.5, Math.floor(r.spot / this.w.size) + 0.5);
+      return false;
+    }
+    if (j.phase === 2) {
+      this.takeLoot(p, r);
+      return p.job?.phase === 4;
+    }
+    if (j.phase === 3) j.phase = 4;
+    return j.phase === 4;
+  }
+
+  /** koniec napadu; z zarządem: czego nie zdążyli wynieść, i tak zniknęło (zarząd już to policzył) */
+  private finishRaid(r: Raid): void {
+    r.phase = 3;
+    if (!r.gov || r.outcome !== 'wtargnięcie') return;
+    for (const k of ['wood', 'supplies', 'scrap'] as const) {
+      const left = r.loot[k] - r.took[k];
+      if (left > 0) r.took[k] += takeStock(this.st, this.w, k, left);
+    }
+  }
+
   /* ---------- co krok ciepła: ogień, ciepło, potrzeby, samouczek ---------- */
 
   private slow(): void {
@@ -1512,16 +2733,19 @@ export class Sim {
     const tout = this.outdoor();
     // pali się to, co paliło się na początku kroku
     const fires = this.fires();
-    for (const t of st.things) if (t.kind === 'koza' && t.fuel > 0) t.fuel = Math.max(0, t.fuel - HEAT_EVERY);
+    for (const t of st.things)
+      if ((t.kind === 'koza' || t.kind === 'ognisko') && t.fuel > 0) t.fuel = Math.max(0, t.fuel - HEAT_EVERY);
     this.boost = heatStep(st.temps, this.kinds, this.links, fires, tout);
     this.light = roomLight(this.kinds.length, this.links, fires);
     const hours = HEAT_EVERY / TICKS_PER_HOUR;
+    const night = this.nightAround();
     for (const p of st.pawns) {
-      if (!p.needs) continue;
+      if (!p.needs || p.away) continue;
       // chwilowe nastroje wygasają, reszta dodaje się do nastroju z potrzeb
       if (p.moods.length) p.moods = p.moods.filter((m) => m.until > st.tick);
       const bonus = p.moods.reduce((a, m) => a + m.d, 0);
-      stepNeeds(p.needs, this.needCtx(p, tout), hours, bonus);
+      if (p.kind === 'resident') stepSafe(p.needs, this.needCtx(p, tout, night), hours, bonus);
+      else stepNeeds(p.needs, this.needCtx(p, tout, night), hours, bonus);
     }
     this.tutCheck();
   }
@@ -1538,33 +2762,59 @@ export class Sim {
     return out;
   }
 
-  private needCtx(p: Pawn, tout: number): NeedCtx {
+  /** co nocą straszy i co uspokaja, liczone raz na krok potrzeb: warta z lampą, ogniska, otwarte dziury, obcy */
+  private nightAround(): Around {
+    const st = this.st;
+    const h = hourOf(st.tick);
+    const on = h >= 20 || h < GUARD_UNTIL;
+    const lamps: [number, number][] = [];
+    for (const q of st.pawns) if (!q.away && q.job?.t === 'guard' && q.job.phase === 1) lamps.push([q.x, q.y]);
+    const fires = st.things.filter((t) => t.kind === 'ognisko' && t.fuel > 0);
+    const holes = st.fence ? st.fence.holes.filter((x) => !x.patch).length : 0;
+    const strangers = st.pawns.filter((q) => q.kind === 'szabrownik' && !q.away);
+    // po wtargnięciu strach zostaje do rana (12 godzin)
+    const r = st.raid;
+    const raided = !!r && r.outcome === 'wtargnięcie' && st.tick < r.at + 12 * TICKS_PER_HOUR;
+    return { guard: on && lamps.length > 0, holes: on ? holes : 0, lamps, fires, strangers, raided };
+  }
+
+  private needCtx(p: Pawn, tout: number, a: Around = this.nightAround()): NeedCtx {
     const h = this.house!;
     const size = this.w.size;
     const r = this.roomOf[this.tileOf(p)];
-    let fire = false;
-    for (const t of this.st.things)
-      if (
-        t.kind === 'koza' &&
-        t.fuel > 0 &&
-        h.room[t.y * size + t.x] === r &&
-        Math.hypot(p.x - (t.x + t.w / 2), p.y - (t.y + t.h / 2)) <= FIRE_REACH + 0.5
-      )
-        fire = true;
-    const j = p.job;
     const inside = r >= 0;
-    // ciemno: noc, a w pomieszczeniu nie świeci koza ani przez drzwi
-    const dark = daylight(this.st.tick) < 0.5 && !(inside && (this.light[r] ?? 0) >= 0.5) && !fire;
+    let fire = false;
+    for (const t of this.st.things) {
+      if (t.fuel <= 0 || (t.kind !== 'koza' && t.kind !== 'ognisko')) continue;
+      const near = Math.hypot(p.x - (t.x + t.w / 2), p.y - (t.y + t.h / 2)) <= FIRE_REACH + 0.5;
+      // koza grzeje w swoim pomieszczeniu, ognisko na dworze
+      if (near && (t.kind === 'koza' ? h.room[t.y * size + t.x] === r : !inside)) fire = true;
+    }
+    const lit =
+      a.lamps.some(([x, y]) => Math.hypot(p.x - x, p.y - y) <= LAMP_REACH) ||
+      a.fires.some((t) => Math.hypot(p.x - (t.x + 0.5), p.y - (t.y + 0.5)) <= CAMPFIRE_LIGHT);
+    const j = p.job;
+    const asleep = !!j && j.t === 'sleep' && j.phase === 1;
+    // ciemno: noc, a w pomieszczeniu nie świeci koza ani przez drzwi, na dworze ognisko ani lampa warty
+    const dark = daylight(this.st.tick) < 0.5 && !(inside && (this.light[r] ?? 0) >= 0.5) && !fire && !lit;
     let company = 0;
-    for (const q of this.st.pawns) if (q !== p && Math.hypot(q.x - p.x, q.y - p.y) <= 4) company++;
+    for (const q of this.st.pawns)
+      if (q !== p && !q.away && q.kind !== 'szabrownik' && Math.hypot(q.x - p.x, q.y - p.y) <= 4) company++;
+    // obcych widać z dworu z daleka, z wnętrza tylko bliżej (przez okno); śpiący ich nie widzi
+    let strangers = 0;
+    if (!asleep) for (const q of a.strangers) if (Math.hypot(q.x - p.x, q.y - p.y) <= (inside ? 8 : 16)) strangers++;
     return {
       temp: inside ? this.st.temps[r] : tout,
-      fire: fire && inside,
-      asleep: !!j && j.t === 'sleep' && j.phase === 1,
-      busy: (!!j && j.t === 'chop' && j.phase === 1) || p.carry > 0,
+      fire,
+      asleep,
+      busy: (!!j && ((j.t === 'chop' && j.phase === 1) || (j.t === 'patch' && j.phase === 2))) || p.carry > 0,
       dark,
       inside,
       company,
+      guard: a.guard,
+      holes: a.holes,
+      strangers,
+      raided: a.raided,
     };
   }
 

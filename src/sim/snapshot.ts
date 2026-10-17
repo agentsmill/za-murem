@@ -18,6 +18,7 @@ import {
 import { houseOf, inHomeApt } from './house.ts';
 import type { Needs } from './needs.ts';
 import { jobText } from './orders.ts';
+import { durability, fenceShape } from './perimeter.ts';
 import { BURN_TICKS, type Burned, COOK_TICKS, type JobKind, type Mood, type SimState } from './sim.ts';
 
 export interface SimPerson {
@@ -46,6 +47,8 @@ export interface SimPerson {
   tile: number;
   /** sztuki drewna w rękach */
   carry: number;
+  /** na wyprawie poza mapą */
+  away: boolean;
 }
 
 export interface SimStock {
@@ -62,6 +65,26 @@ export interface SimStock {
   meals: number;
   /** na ile gotowań starczy gazu w butli */
   gasCooks: number;
+  /** złom w stertach na podwórku (sztuki), deski tak samo */
+  scrap: number;
+  boards: number;
+  /** części i leki (bez rzeczy na mapie, z zarządu) */
+  parts: number;
+  meds: number;
+}
+
+/** stan siatki dla zarządu (GovFence): otwarte dziury, średnia wytrzymałość, brama; kafelki dziury, żeby interfejs
+    mógł nadać jej nazwę miejsca (name) przed podaniem zarządowi */
+export interface SimFence {
+  holes: { id: number; size: number; tiles: number[]; name?: string }[];
+  durability: number;
+  gateOpen: boolean;
+}
+
+/** światło na podwórku dla zarządu (GovLight) */
+export interface SimLight {
+  campfire: boolean;
+  gateLamp: boolean;
 }
 
 export interface SimSnapshot {
@@ -86,6 +109,16 @@ export interface SimSnapshot {
   stock: SimStock;
   /** spalone meble, po kolei */
   burned: Burned[];
+  fence: SimFence;
+  light: SimLight;
+  /** mieszkańcy siedziby poza zarządem i ilu się zmieści */
+  residents: number;
+  cap: number;
+  /** obcy (szabrownicy) na mapie */
+  strangers: number;
+  /** napad tej nocy albo ostatni: faza (0 czekają, 1 za siatką, 2 wchodzą albo uciekają, 3 po wszystkim),
+      rozstrzygnięcie i co wynieśli; null: nie było */
+  raid: { phase: number; outcome: string; took: { wood: number; supplies: number; scrap: number } } | null;
 }
 
 export function snapshot(st: SimState, w: World): SimSnapshot {
@@ -102,12 +135,16 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   let woodLoose = 0;
   let supplies = 0;
   let meals = 0;
+  let scrap = 0;
+  let boards = 0;
   for (const t of st.things) {
     if (t.kind === 'drewno') {
       if (sklad.includes(t.y * size + t.x)) woodSklad += t.n;
       else woodLoose += t.n;
     } else if (t.kind === 'jedzenie') supplies += t.n;
     else if (t.kind === 'posilek') meals += t.n;
+    else if (t.kind === 'zlom') scrap += t.n;
+    else if (t.kind === 'deski') boards += t.n;
   }
   const people: SimPerson[] = st.pawns
     .filter((p) => p.kind === 'core')
@@ -129,9 +166,10 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
         job: p.job ? p.job.t : null,
         doing: jobText(st, w, p),
         asleep: p.job?.t === 'sleep' && p.job.phase === 1,
-        inside: !!h && (h.room[tile] >= 0 || h.doors.includes(tile)),
+        inside: !p.away && !!h && (h.room[tile] >= 0 || h.doors.includes(tile)),
         tile,
         carry: p.carry,
+        away: p.away,
       };
     });
   const woodCarried = people.reduce((a, p) => a + p.carry, 0);
@@ -160,7 +198,28 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       supplies,
       meals,
       gasCooks: Math.floor((stove?.fuel ?? 0) / COOK_TICKS),
+      scrap,
+      boards,
+      parts: st.store.parts,
+      meds: st.store.meds,
     },
     burned: st.burned.map((b) => ({ ...b })),
+    fence:
+      st.fence && fenceShape(w)
+        ? {
+            holes: st.fence.holes.filter((x) => !x.patch).map((x) => ({ id: x.id, size: x.size, tiles: [...x.tiles] })),
+            durability: durability(w, st.fence),
+            gateOpen: st.fence.gateOpen,
+          }
+        : { holes: [], durability: 1, gateOpen: true },
+    light: {
+      campfire: st.things.some((t) => t.kind === 'ognisko' && t.fuel > 0),
+      // warta przy bramie stoi z lampą
+      gateLamp: st.pawns.some((p) => !p.away && p.job?.t === 'guard' && p.job.phase === 1 && p.job.target === 0),
+    },
+    residents: st.pawns.filter((p) => p.kind === 'resident').length,
+    cap: st.cap,
+    strangers: st.pawns.filter((p) => p.kind === 'szabrownik').length,
+    raid: st.raid ? { phase: st.raid.phase, outcome: st.raid.outcome, took: { ...st.raid.took } } : null,
   };
 }

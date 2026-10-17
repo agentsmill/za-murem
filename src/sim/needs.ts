@@ -41,12 +41,14 @@ export interface NeedCtx {
   inside: boolean;
   /** ilu ludzi jest blisko (do 4 m) */
   company: number;
-  /** tura 2: ktoś trzyma wartę przy bramie */
+  /** ktoś trzyma wartę (nocą) */
   guard?: boolean;
-  /** tura 2: dziury w siatce */
+  /** otwarte dziury w siatce (nocą) */
   holes?: number;
-  /** tura 2: obcy widoczni za siatką */
+  /** obcy w zasięgu wzroku */
   strangers?: number;
+  /** szabrownicy weszli na podwórko tej nocy: strach zostaje do rana */
+  raided?: boolean;
 }
 
 /** poniżej tej temperatury ciepło spada (o punkt na godzinę za każdy stopień), powyżej rośnie */
@@ -75,8 +77,8 @@ export function moodOf(n: Needs): number {
   return clamp100(m);
 }
 
-/** do tego poziomu dąży bezpieczeństwo: światło, dach, ludzie i ogień uspokajają, ciemność, samotność,
-    dziury w siatce i obcy straszą; warta, dziury i obcy przyjdą z siatką w turze 2 */
+/** do tego poziomu dąży bezpieczeństwo: światło, dach, ludzie, ogień i warta uspokajają, ciemność, samotność,
+    dziury w siatce i obcy straszą; dziury najwyżej o 15 punktów, a w środku, za ścianami, o jedną trzecią tego */
 export function safeTarget(c: NeedCtx): number {
   let t = 50;
   t += c.dark ? -20 : 10;
@@ -84,9 +86,17 @@ export function safeTarget(c: NeedCtx): number {
   t += c.company >= 2 ? 15 : c.company === 1 ? 8 : -10;
   if (c.fire) t += 10;
   if (c.guard) t += 10;
-  t -= 6 * (c.holes ?? 0);
+  const holes = Math.min(15, 5 * (c.holes ?? 0));
+  t -= c.inside ? holes / 3 : holes;
   t -= 25 * (c.strangers ?? 0);
+  if (c.raided) t -= 15;
   return clamp100(t);
+}
+
+/** mieszkańcy (tło): zmienia się tylko bezpieczeństwo, reszta potrzeb stoi; nastrój z potrzeb i chwilowych */
+export function stepSafe(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
+  n.safe = clamp100(n.safe + (safeTarget(c) - n.safe) * Math.min(1, h / 2));
+  n.mood = clamp100(moodOf(n) + bonus);
 }
 
 /** h: godziny gry od ostatniego kroku; bonus: suma chwilowych nastrojów (punkty) */

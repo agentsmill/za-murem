@@ -3,13 +3,19 @@
 
 import type { World } from '../world/world.ts';
 import { dryTreeOf, houseOf } from './house.ts';
+import { gateTiles } from './perimeter.ts';
 import {
   BURNABLE,
+  CAMPFIRE_WOOD,
   type Command,
+  campfireSpotOk,
   canCookIn,
   FURNITURE_ACC,
+  PATCH_COST,
   type Pawn,
   type SimState,
+  STAY_FIRE,
+  STAY_YARD,
   type Thing,
   trunkOf,
 } from './sim.ts';
@@ -45,9 +51,11 @@ const thingAt = (st: SimState, w: World, tile: number, kind: string): Thing | un
 };
 
 /** Polecenia, które mają sens na klikniętym kafelku (menu kontekstowe z GDD), „Idź tu” zawsze na końcu.
-    Drewno poza składem: zanieść do składu. Koza, gdy jest skąd wziąć drewno: dołożyć. Drzewo: ściąć, od razu
-    tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie w las ma znaczyć „idź”.
-    Polecenia przyjmuje tylko zarząd: bez nikogo z rdzenia lista jest pusta. */
+    Drewno poza składem: zanieść do składu. Koza albo ognisko, gdy jest skąd wziąć drewno: dołożyć. Drzewo: ściąć,
+    od razu tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie w las ma znaczyć „idź”.
+    Dziura w siatce: załatać (gdy na stertach starczy desek i złomu) i pilnować. Brama: pilnować, zamknąć albo
+    otworzyć. Wolny kafelek podwórka: rozpalić ognisko (tylko z menu). Polecenia przyjmuje tylko zarząd: bez nikogo
+    z rdzenia lista jest pusta. */
 export function commandsAt(st: SimState, w: World, ids: readonly number[], tile: number): MenuItem[] {
   const core = ids.filter((id) => st.pawns.some((p) => p.id === id && p.kind === 'core'));
   if (!core.length) return [];
@@ -60,6 +68,27 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   const wood = st.things.some((t) => t.kind === 'drewno' && t.n > 0) || st.pawns.some((p) => p.carry > 0);
   if (koza && wood)
     out.push({ cmd: { t: 'refuel', ids: core, thing: koza.id }, label: 'Dołożyć do kozy', quick: true });
+  const fire = thingAt(st, w, tile, 'ognisko');
+  if (fire && wood)
+    out.push({ cmd: { t: 'refuel', ids: core, thing: fire.id }, label: 'Dołożyć do ogniska', quick: true });
+  // dziura w siatce: łata z desek albo złomu ze sterty, warta przy niej
+  const hole = st.fence?.holes.find((h) => !h.patch && h.tiles.includes(tile));
+  if (hole) {
+    // łata jest z jednego materiału: desek albo złomu musi starczyć na całą
+    const mat = (k: string) => st.things.reduce((a, t) => a + (t.kind === k ? t.n : 0), 0);
+    if (mat('deski') >= PATCH_COST || mat('zlom') >= PATCH_COST)
+      out.push({ cmd: { t: 'patch', ids: core, hole: hole.id }, label: 'Załatać dziurę', quick: true });
+    out.push({ cmd: { t: 'guard', ids: core, post: `d${hole.id}` }, label: 'Pilnować tutaj', quick: false });
+  }
+  if (st.fence && gateTiles(w).includes(tile)) {
+    out.push({ cmd: { t: 'guard', ids: core, post: 'brama' }, label: 'Pilnować bramy', quick: false });
+    const open = st.fence.gateOpen;
+    out.push({
+      cmd: { t: 'gate', ids: core, open: !open },
+      label: open ? 'Zamknąć bramę' : 'Otworzyć bramę',
+      quick: false,
+    });
+  }
   const tree = treeAt(st, w, tile);
   if (tree >= 0) {
     const trunk = trunkOf(w, w.trees[tree]);
@@ -81,6 +110,11 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       quick: false,
       confirm: true,
     });
+  // ognisko na wolnym kafelku podwórka, gdy jest z czego (drewno luzem albo w rękach)
+  const woodN =
+    st.things.reduce((a, t) => a + (t.kind === 'drewno' ? t.n : 0), 0) + st.pawns.reduce((a, p) => a + p.carry, 0);
+  if (woodN >= CAMPFIRE_WOOD && campfireSpotOk(st, w, tile))
+    out.push({ cmd: { t: 'campfire', ids: core, at: tile }, label: 'Rozpalić ognisko tutaj', quick: false });
   out.push({ cmd: { t: 'move', ids: core, to: tile }, label: 'Idź tu', quick: true });
   return out;
 }
@@ -106,8 +140,11 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     }
     case 'haul':
       return walking ? 'Idzie po drewno.' : 'Niesie drewno do składu.';
-    case 'refuel':
+    case 'refuel': {
+      const fire = st.things.find((t) => t.id === j.target)?.kind === 'ognisko';
+      if (fire) return walking ? 'Idzie po drewno do ogniska.' : 'Dokłada do ogniska.';
       return walking ? 'Idzie po drewno do kozy.' : 'Dokłada do kozy.';
+    }
     case 'warm':
       return walking ? 'Idzie ogrzać się przy kozie.' : 'Grzeje się przy kozie.';
     case 'eat':
@@ -116,6 +153,10 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     case 'sleep':
       if (walking) return 'Idzie spać.';
       return j.target >= 0 ? 'Śpi.' : 'Śpi na podłodze.';
+    case 'stay':
+      if (j.target === STAY_YARD) return walking ? 'Idzie na podwórko.' : 'Pracuje na podwórku.';
+      if (j.target === STAY_FIRE) return walking ? 'Idzie do ogniska.' : 'Grzeje się przy ognisku.';
+      return walking ? 'Idzie do domu.' : 'Siedzi w domu.';
     case 'cook': {
       if (walking) return 'Idzie gotować.';
       return st.things.find((t) => t.id === j.target)?.kind === 'koza' ? 'Gotuje na kozie.' : 'Gotuje na kuchence.';
@@ -125,5 +166,18 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       const what = f ? (FURNITURE_ACC[f.kind] ?? 'mebel') : 'mebel';
       return walking ? `Idzie rozbić ${what} na opał.` : `Rozbiera ${what} na opał.`;
     }
+    case 'guard':
+      if (walking) return j.target === 0 ? 'Idzie na wartę przy bramie.' : 'Idzie na wartę przy dziurze.';
+      return j.target === 0 ? 'Trzyma wartę przy bramie.' : 'Trzyma wartę przy dziurze.';
+    case 'patch':
+      if (j.phase === 0) return 'Idzie po deski i złom.';
+      return j.phase === 1 ? 'Niesie materiał do dziury.' : 'Łata dziurę w siatce.';
+    case 'build':
+      if (j.phase === 0) return 'Idzie po drewno na ognisko.';
+      return j.phase === 1 ? 'Niesie drewno na ognisko.' : 'Rozpala ognisko.';
+    case 'leave':
+      return walking ? 'Wychodzi na wyprawę.' : 'Na wyprawie.';
+    case 'raid':
+      return ['Skrada się pod siatkę.', 'Czai się za siatką.', 'Kradnie.', 'Ucieka.', 'Ucieka.'][j.phase] ?? 'Ucieka.';
   }
 }
