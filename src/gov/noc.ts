@@ -224,7 +224,8 @@ function expGain(st: GovState, t: ExpTarget): Partial<Record<LootKey, [number, n
 }
 
 const canGo = (p: GovPerson, t: ExpTarget) =>
-  t.range === 'daleko' ? p.needs.rest >= 40 && p.needs.health >= 45 : p.needs.rest >= 25 && p.needs.health >= 30;
+  !p.bitten &&
+  (t.range === 'daleko' ? p.needs.rest >= 40 && p.needs.health >= 45 : p.needs.rest >= 25 && p.needs.health >= 30);
 
 // ---------------------------------------------------------------- karta
 
@@ -273,7 +274,13 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
         key: `wyprawa:${t.range}`,
         label: `Wyprawa ${t.range}: ${t.name}`,
         ok,
-        why: ok ? undefined : t.range === 'daleko' ? 'Za mało sił na daleką wyprawę.' : 'Za mało sił na wyprawę.',
+        why: ok
+          ? undefined
+          : p.bitten
+            ? g(p, 'Ugryziony, w gorączce: nie wróci z wyprawy.', 'Ugryziona, w gorączce: nie wróci z wyprawy.')
+            : t.range === 'daleko'
+              ? 'Za mało sił na daleką wyprawę.'
+              : 'Za mało sił na wyprawę.',
         risk: expRisk(st, p, t),
         gain: expGain(st, t),
         target: t.id,

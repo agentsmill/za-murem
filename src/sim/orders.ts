@@ -2,6 +2,7 @@
    co znaczy kliknięcie prawym przyciskiem na kafelku, i dostaje gotowe polecenie dla symulacji. */
 
 import type { World } from '../world/world.ts';
+import { weaponOf } from './bron.ts';
 import { dryTreeOf, houseOf, inHomeApt } from './house.ts';
 import { gateTiles } from './perimeter.ts';
 import {
@@ -78,9 +79,11 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       fd = Math.hypot(p.x - cx, p.y - cy);
       foe = p;
     }
-  if (foe)
+  // wróg za siatką: atak tylko dla tych, których broń sięga przez siatkę (nikt nie wychodzi na ulicę)
+  const fighters = foe && acrossFence(st, w, core, foe) ? core.filter((id) => reachesThrough(st, id)) : core;
+  if (foe && fighters.length)
     out.push({
-      cmd: { t: 'attack', ids: core, target: foe.id },
+      cmd: { t: 'attack', ids: fighters, target: foe.id },
       label: foe.kind === 'zombie' ? 'Atakuj szwendacza' : 'Atakuj szabrownika',
       quick: true,
     });
@@ -163,6 +166,32 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     out.push({ cmd: { t: 'campfire', ids: core, at: tile }, label: 'Rozpalić ognisko tutaj', quick: false });
   out.push({ cmd: { t: 'move', ids: core, to: tile }, label: 'Idź tu', quick: true });
   return out;
+}
+
+/** po stronie podwórka: podwórko, budynek siedziby, otwarta dziura albo otwarta brama; bez siatki jedna strona */
+function insideOf(st: SimState, w: World, tile: number): boolean {
+  if (!st.fence || !w.fence?.tiles.length) return true;
+  const h = houseOf(w);
+  if (w.fence.yard.includes(tile)) return true;
+  if (h && (h.room[tile] >= 0 || h.doors.includes(tile))) return true;
+  if (st.fence.holes.some((x) => !x.patch && x.tiles.includes(tile))) return true;
+  return st.fence.gateOpen && gateTiles(w).includes(tile);
+}
+
+/** wróg po drugiej stronie siatki niż zaznaczony zarząd */
+function acrossFence(st: SimState, w: World, ids: readonly number[], foe: Pawn): boolean {
+  const tileOf = (p: Pawn) => Math.floor(p.y) * w.size + Math.floor(p.x);
+  const side = insideOf(st, w, tileOf(foe));
+  return ids.some((id) => {
+    const p = st.pawns.find((q) => q.id === id);
+    return !!p && insideOf(st, w, tileOf(p)) !== side;
+  });
+}
+
+/** broń osoby sięga przez siatkę (dzida, a kusza i broń palna tylko z amunicją) */
+function reachesThrough(st: SimState, id: number): boolean {
+  const w = weaponOf(st.pawns.find((p) => p.id === id)?.weapon);
+  return w.fence && (!w.ammo || (st.store.ammo?.[w.ammo] ?? 0) > 0);
 }
 
 /** domyślne polecenie dla klikniętego kafelka (pierwsze, które można wykonać od razu) albo null bez nikogo

@@ -321,6 +321,8 @@ export interface Pawn {
   bite?: number;
   limb?: boolean;
   maimed?: boolean;
+  /** szabrownik: łup w worku według rodzaju (zabity zostawia go na podwórku) */
+  sack?: Partial<Loot>;
 }
 
 /** Rzecz na mapie: meble z wnętrza (kopiowane przy starcie, żeby dało się je kiedyś przestawić albo spalić),
@@ -1396,12 +1398,13 @@ export class Sim {
     let budget = PATHS_PER_TICK;
     let gone = false;
     for (const p of st.pawns) {
-      if (p.away || this.graveyard.has(p.id)) continue;
-      // gorączka po ugryzieniu: śmierć dokładnie po FEVER_TICKS
+      if (this.graveyard.has(p.id)) continue;
+      // gorączka po ugryzieniu: śmierć dokładnie po FEVER_TICKS, także na wyprawie
       if (p.bite !== undefined && st.tick >= p.bite + FEVER_TICKS) {
         this.die(p, 'gorączka', null);
         continue;
       }
+      if (p.away) continue;
       if (p.kind === 'core' && p.job?.t === 'amputate') {
         this.amputateTick(p, p.job);
         continue;
@@ -2492,15 +2495,22 @@ export class Sim {
         // amputacja ma własny krok (amputateTick)
         return true;
       case 'craft': {
+        // materiał zużywa się dopiero na końcu: przerwana praca niczego nie zjada
+        const need: [string, number][] = [
+          ['deski', SPEAR_BOARDS],
+          ['zlom', SPEAR_SCRAP],
+        ];
         if (j.phase === 0) {
-          if (!at || !this.takeHeaps('deski', SPEAR_BOARDS, j.from) || !this.takeHeaps('zlom', SPEAR_SCRAP, -1))
-            return false;
+          if (!at || !this.haveHeaps(p, need)) return false;
           j.phase = 1;
           j.until = tick + CRAFT_TICKS;
           return true;
         }
         if (tick < j.until) return true;
-        st.store.arms!.push('dzida');
+        if (this.haveHeaps(p, need)) {
+          for (const [kind, n] of need) this.takeHeaps(p, kind, n, j.from);
+          st.store.arms!.push('dzida');
+        }
         return false;
       }
       case 'brace': {
@@ -2678,6 +2688,14 @@ export class Sim {
       return;
     }
     const n = p.needs!;
+    // w trybie zombie za siatką bez zajęcia nikt nie stoi: wraca do siedziby
+    if (modeOf(this.st) === 'zombie' && !this.insideAt(this.tileOf(p))) {
+      const s = this.shelterSpot(p);
+      if (s >= 0 && this.go(p, s)) {
+        this.setJob(p, this.newJob('go', s, s, false), false);
+        return;
+      }
+    }
     // zwłoki, które wstaną, w pobliżu: uzbrojony dobija je odruchowo (nóż w głowę); przy wrogu na podwórku
     // tylko te w budynku
     if (p.weapon && this.startFinish(p, this.yardDanger())) return;
@@ -3244,6 +3262,59 @@ export class Sim {
     return true;
   }
 
+  /** obrażenia z zewnątrz (zdarzenia, testy) */
+  wound(p: Pawn, dmg: number): void {
+    if (this.st.pawns.includes(p) && !this.graveyard.has(p.id)) this.hurt(p, dmg, null);
+  }
+
+  /** łup zabitego szabrownika zostaje na podwórku według rodzaju i przestaje się liczyć jako skradziony */
+  private dropSack(p: Pawn): void {
+    const st = this.st;
+    const size = this.w.size;
+    const kinds: [keyof Loot, string][] = [
+      ['wood', 'drewno'],
+      ['supplies', 'jedzenie'],
+      ['scrap', 'zlom'],
+    ];
+    for (const [k, kind] of kinds) {
+      const n = p.sack?.[k] ?? 0;
+      if (n <= 0) continue;
+      if (kind === 'drewno') this.addWood(this.spotNear(this.tileOf(p), n), n);
+      else {
+        const at = this.spotNear(this.tileOf(p), 0);
+        const t = st.things.find((q) => q.kind === kind && q.x === at % size && q.y === Math.floor(at / size));
+        if (t) t.n += n;
+        else {
+          const heap = newThing(st, kind, at % size, Math.floor(at / size));
+          heap.n = n;
+          st.things.push(heap);
+        }
+      }
+      if (st.raid) {
+        st.raid.took[k] = Math.max(0, st.raid.took[k] - n);
+        st.raid.loot[k] = Math.max(0, st.raid.loot[k] - n);
+      }
+    }
+    p.sack = undefined;
+    if (p.job) p.job.n = 0;
+  }
+
+  /** po której stronie siatki: true na podwórku, w budynku siedziby i w otwartej dziurze albo bramie; bez siatki jedna strona */
+  private insideAt(tile: number): boolean {
+    if (!this.st.fence) return true;
+    return (
+      this.yardMask[tile] === 1 ||
+      (!!this.house && this.roomOf[tile] >= 0) ||
+      (this.fenceMask[tile] === 1 && !this.blocked[tile])
+    );
+  }
+
+  /** a i b po różnych stronach siatki */
+  private across(a: Pawn, bx: number, by: number): boolean {
+    const size = this.w.size;
+    return this.insideAt(this.tileOf(a)) !== this.insideAt(Math.floor(by) * size + Math.floor(bx));
+  }
+
   /** obrażenia: ludzie z potrzebami tracą zdrowie, reszta życie; ranny szabrownik ucieka */
   private hurt(t: Pawn, dmg: number, by: Pawn | null): void {
     this.addFx('trafienie', t.x, t.y);
@@ -3267,11 +3338,16 @@ export class Sim {
     const tick = st.tick;
     const x = Math.floor(p.x);
     const y = Math.floor(p.y);
-    this.addFx('smierc', p.x, p.y);
+    // na wyprawie: umiera poza mapą, bez zwłok i krwi przy bramie
+    const away = p.away;
     this.release(p);
-    this.dropLoad(p);
-    this.dropCarry(p);
-    this.addBlood(x, y);
+    if (p.sack) this.dropSack(p);
+    if (!away) {
+      this.addFx('smierc', p.x, p.y);
+      this.dropLoad(p);
+      this.dropCarry(p);
+      this.addBlood(x, y);
+    }
     // broń zmarłego ktoś podnosi i odnosi do magazynu
     if (p.weapon) {
       st.store.arms?.push(p.weapon);
@@ -3288,6 +3364,14 @@ export class Sim {
     const who = p.person >= 0 ? st.people[p.person] : undefined;
     const name = who?.name ?? (p.kind === 'szabrownik' ? 'Szabrownik' : 'Mieszkaniec');
     st.dead!.push({ id: who?.id ?? '', name, look: p.look, kind: p.kind, tick, cause });
+    if (away) {
+      st.tally!.deaths++;
+      const first = who?.first ?? 'sąsiad';
+      for (const q of st.pawns)
+        if (q !== p && q.needs && !q.away && !this.graveyard.has(q.id))
+          this.addMood(q, `Śmierć: ${first}`, -10, TICKS_PER_DAY);
+      return;
+    }
     const body = newThing(st, 'zwloki', x, y);
     body.n = p.look;
     body.owner = st.dead!.length - 1;
@@ -3357,12 +3441,51 @@ export class Sim {
       return;
     }
     j.phase = 0;
+    // wróg za siatką: nikt nie wychodzi; dzida, kusza i broń palna podchodzą do siatki od swojej strony,
+    // reszta odpuszcza
+    if (this.across(p, t.x, t.y)) {
+      if (!w.fence) {
+        p.path = [];
+        p.pi = 0;
+        this.done(p);
+        return;
+      }
+      if (p.pi >= p.path.length || tick % THINK_EVERY === 0) {
+        const stand = this.fenceStand(p, t);
+        if (stand < 0) {
+          this.done(p);
+          return;
+        }
+        if (stand !== this.tileOf(p) && stand !== j.tile) this.go(p, stand);
+        j.tile = stand;
+      }
+      if (p.pi < p.path.length) this.walk(p);
+      return;
+    }
     if (p.pi >= p.path.length || tick % THINK_EVERY === 0) {
       const g = this.goalFor(p, this.tileOf(t));
       if (g >= 0 && g !== this.tileOf(p)) this.routeTo(p, g);
       j.tile = g;
     }
     if (p.pi < p.path.length) this.walk(p);
+  }
+
+  /** miejsce po stronie podwórka przy kafelku siatki najbliżej wroga za siatką (−1: nie ma gdzie stanąć) */
+  private fenceStand(p: Pawn, t: Pawn): number {
+    const size = this.w.size;
+    let best = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < this.fenceMask.length; i++) {
+      if (!this.fenceMask[i]) continue;
+      const d = Math.hypot((i % size) + 0.5 - t.x, Math.floor(i / size) + 0.5 - t.y);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    if (best < 0) return -1;
+    const s = this.standBy(p, [best], 1);
+    return s >= 0 ? s : this.standBy(p, [best], 2);
   }
 
   /** warta na posterunku: najbliższy wróg w zasięgu broni */
@@ -3870,20 +3993,28 @@ export class Sim {
         Math.hypot((a % size) + 0.5 - nx, Math.floor(a / size) + 0.5 - ny) -
           Math.hypot((b % size) + 0.5 - nx, Math.floor(b / size) + 0.5 - ny) || a - b,
     );
+    const room = Math.max(0, Math.min(n, MAX_ZOMBIES - this.zombieCount()));
     let k = 0;
-    for (; k < Math.min(n, MAX_ZOMBIES - this.zombieCount()) && spots.length; k++)
-      spawnZombie(this.st, this.w, spots[k % spots.length], k % 16, true);
+    for (; k < room && spots.length; k++) spawnZombie(this.st, this.w, spots[k % spots.length], k % 16, true);
     return k;
   }
 
   /* ---------- praca za dnia: dzidy, wzmacnianie siatki, alarm ---------- */
 
+  /** sterty, które pionek może wziąć: jego albo niczyje */
+  private freeHeaps(p: Pawn, kind: string): Thing[] {
+    return this.st.things.filter((t) => t.kind === kind && t.n > 0 && (t.by < 0 || t.by === p.id));
+  }
+
+  /** czy na wolnych stertach starczy każdego materiału */
+  private haveHeaps(p: Pawn, need: readonly [string, number][]): boolean {
+    return need.every(([kind, n]) => this.freeHeaps(p, kind).reduce((a, t) => a + t.n, 0) >= n);
+  }
+
   /** materiał ze stert: n sztuk danego rodzaju (najpierw ze sterty first), false, gdy nie starczy */
-  private takeHeaps(kind: string, n: number, first: number): boolean {
+  private takeHeaps(p: Pawn, kind: string, n: number, first: number): boolean {
     const st = this.st;
-    const heaps = st.things
-      .filter((t) => t.kind === kind && t.n > 0)
-      .sort((a, b) => (a.id === first ? -1 : b.id === first ? 1 : a.id - b.id));
+    const heaps = this.freeHeaps(p, kind).sort((a, b) => (a.id === first ? -1 : b.id === first ? 1 : a.id - b.id));
     if (heaps.reduce((a, t) => a + t.n, 0) < n) return false;
     let left = n;
     for (const t of heaps) {
@@ -3899,9 +4030,14 @@ export class Sim {
 
   /** dzida: do sterty desek, potem godzina pracy na miejscu */
   private orderCraft(pawns: Pawn[]): void {
-    const total = (k: string) => this.st.things.reduce((a, t) => a + (t.kind === k ? t.n : 0), 0);
-    if (total('deski') < SPEAR_BOARDS || total('zlom') < SPEAR_SCRAP) return;
     const p = pawns[0];
+    if (
+      !this.haveHeaps(p, [
+        ['deski', SPEAR_BOARDS],
+        ['zlom', SPEAR_SCRAP],
+      ])
+    )
+      return;
     const heap = this.heapFor(p, 'deski');
     if (!heap) return;
     const ht = heap.y * this.w.size + heap.x;
@@ -4005,6 +4141,8 @@ export class Sim {
     for (const t of this.st.things) {
       if (t.kind !== 'zwloki' || t.fuel <= 0) continue;
       if (indoorOnly && !this.inRoom(t.y * this.w.size + t.x)) continue;
+      // nie za siatkę
+      if (this.across(p, t.x + 0.5, t.y + 0.5)) continue;
       const d = Math.hypot(t.x + 0.5 - p.x, t.y + 0.5 - p.y);
       if (d > bd || this.st.pawns.some((q) => q.job?.t === 'finish' && q.job.target === t.id)) continue;
       bd = d;
@@ -4337,6 +4475,8 @@ export class Sim {
       if (t.n <= 0) st.things.splice(st.things.indexOf(t), 1);
       j.n += take;
       r.took[k] += take;
+      p.sack ??= {};
+      p.sack[k] = (p.sack[k] ?? 0) + take;
       if (!j.what) j.what = t.kind;
     } else if (t?.by === p.id) t.by = -1;
     if (!this.nextLoot(p, r)) this.leaveRaid(p, r);
