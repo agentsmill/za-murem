@@ -33,6 +33,8 @@ export interface NeedCtx {
   /** stoi przy palącej się kozie */
   fire: boolean;
   asleep: boolean;
+  /** śpi na podłodze (bez łóżka): wypoczywa wolniej */
+  floor?: boolean;
   /** ciężka praca: rąbanie, noszenie */
   busy: boolean;
   /** ciemno: noc i żadnego światła obok (koza, później ognisko i latarka) */
@@ -104,7 +106,7 @@ export function stepSafe(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
 /** h: godziny gry od ostatniego kroku; bonus: suma chwilowych nastrojów (punkty) */
 export function stepNeeds(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
   n.food = clamp100(n.food - (c.asleep ? 2 : 4) * (c.hunger ?? 1) * h);
-  n.rest = clamp100(n.rest + (c.asleep ? 12 : c.busy ? -9 : -5) * h);
+  n.rest = clamp100(n.rest + (c.asleep ? (c.floor ? 8 : 12) : c.busy ? -9 : -5) * h);
   // pod kocem o 6°C cieplej; przy palącej się kozie grzeje się szybko bez względu na pokój
   const t = c.temp + (c.asleep ? 6 : 0);
   const dw = c.fire ? 40 : t >= COMFORT ? 15 : t - COMFORT;

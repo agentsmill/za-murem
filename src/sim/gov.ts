@@ -17,6 +17,7 @@ import {
   dozeOff,
   type Laws,
   type Loot,
+  onPlan,
   type Pawn,
   planRaid,
   postKey,
@@ -118,10 +119,24 @@ function yardSpot(st: SimState, w: World, kind: string, n: number): number {
     const x = i % size;
     const y = Math.floor(i / size);
     if (gate.some((g) => Math.max(Math.abs((g % size) - x), Math.abs(Math.floor(g / size) - y)) < 2)) continue;
+    if (onPlan(st, size, i)) continue;
     const here = st.things.filter((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
     if (!here.length || (here.length === 1 && here[0].kind === kind && here[0].n + n <= STACK)) return i;
   }
   return nearestFree(w.blocked, size, from);
+}
+
+/** zdejmuje n sztuk rzeczy danego rodzaju ze stert na mapie (puste sterty znikają) */
+function takeKind(st: SimState, kind: string, n: number): void {
+  let left = n;
+  for (const t of st.things) {
+    if (left <= 0) break;
+    if (t.kind !== kind) continue;
+    const k = Math.min(t.n, left);
+    t.n -= k;
+    left -= k;
+  }
+  st.things = st.things.filter((t) => t.kind !== kind || t.n > 0);
 }
 
 /** dokłada n sztuk na stos danego rodzaju na kafelku (nowy albo istniejący) */
@@ -196,8 +211,9 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   if (fx.away.length) cmd({ t: 'away', ids: ids(fx.away.map((a) => a.id)) });
   if (fx.back.length) cmd({ t: 'back', ids: ids(fx.back) });
   for (const g of fx.guards) cmd({ t: 'guard', ids: ids([g.id]), post: g.post });
-  for (const id of fx.leave) removeCore(st, id);
-  if (fx.residents > 0) addResidents(st, w, fx.residents);
+  for (const id of fx.leave) removeCore(st, id, w);
+  // przyjęci przychodzą zza bramy; nikt nie znika, kto nie ma łóżka, śpi na podłodze
+  if (fx.residents > 0) addResidents(st, w, fx.residents, true);
   else if (fx.residents < 0) removeResidents(st, -fx.residents);
   // zapasy (bez łupu napadu, który wyniosą szabrownicy)
   for (const k of ['wood', 'supplies', 'scrap'] as const) {
@@ -205,8 +221,22 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
     if (d > 0) give(st, w, k, d);
     else if (d < 0) takeStock(st, w, k, -d);
   }
-  st.store.parts = Math.max(0, st.store.parts + fx.stock.parts);
-  st.store.meds = Math.max(0, st.store.meds + fx.stock.meds);
+  // części i leki: wydatek najpierw z zapasu zarządu (store), potem z rzeczy na mapie (łup z przeszukania);
+  // przybytek leży przy bramie jako rzeczy, żeby budowa i naprawy mogły go użyć
+  for (const [k, kind] of [
+    ['parts', 'czesci'],
+    ['meds', 'leki'],
+  ] as const) {
+    const d = fx.stock[k];
+    for (let left = d; left > 0; left -= STACK) {
+      const part = Math.min(STACK, left);
+      heapAt(st, w, kind, yardSpot(st, w, kind, part), part);
+    }
+    if (d >= 0) continue;
+    const own = Math.min(st.store[k], -d);
+    st.store[k] -= own;
+    takeKind(st, kind, -d - own);
+  }
   if (fx.patch > 0) cmd({ t: 'mend', ids: [], n: fx.patch });
   if (fx.fire) stairFire(st, w);
   if (fx.sick > 0) sicken(st, fx.sick);

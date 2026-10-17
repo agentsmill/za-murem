@@ -2,7 +2,9 @@
    co znaczy kliknięcie prawym przyciskiem na kafelku, i dostaje gotowe polecenie dla symulacji. */
 
 import type { World } from '../world/world.ts';
-import { dryTreeOf, houseOf, inHomeApt } from './house.ts';
+import type { BuildKind, Mat } from './budowle.ts';
+import { dryTreeOf, houseOf, inHomeApt, type RoomKind } from './house.ts';
+import { MAT_ACC, REPAIR, RUBBISH } from './mieszkania.ts';
 import { gateTiles } from './perimeter.ts';
 import {
   BURNABLE,
@@ -10,6 +12,7 @@ import {
   type Command,
   campfireSpotOk,
   canCookIn,
+  dismantlable,
   FURNITURE_ACC,
   KOZA_POST,
   PATCH_COST,
@@ -21,6 +24,36 @@ import {
   type Thing,
   trunkOf,
 } from './sim.ts';
+
+/** nazwy w bierniku do menu i opisów: pomieszczenia, rzeczy do rozebrania, budowle */
+const ROOM_ACC: Record<RoomKind, string> = {
+  klatka: 'klatkę',
+  przedpokoj: 'przedpokój',
+  pokoj: 'pokój',
+  kuchnia: 'kuchnię',
+  lazienka: 'łazienkę',
+  sala: 'salę',
+  hala: 'halę',
+  zaplecze: 'zaplecze',
+};
+export const THING_ACC: Record<string, string> = {
+  ...FURNITURE_ACC,
+  kuchenka: 'kuchenkę',
+  lodowka: 'lodówkę',
+  wanna: 'wannę',
+  umywalka: 'umywalkę',
+  koza: 'kozę',
+  smieci: 'śmieci',
+  gruz: 'gruz',
+};
+const BUILD_ACC: Record<BuildKind, string> = {
+  warsztat: 'warsztat',
+  kuchnia_spoleczna: 'kuchnię społeczną',
+  magazyn: 'magazyn',
+  lozka_pietrowe: 'łóżka piętrowe',
+  ogrodek: 'ogródek',
+  zasieki: 'zasieki',
+};
 
 export interface MenuItem {
   cmd: Command;
@@ -116,6 +149,39 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       quick: false,
       confirm: true,
     });
+  // M2: rozbiórka na materiał (śmieci i gruz od razu, meble pustych mieszkań z menu), naprawa uszkodzenia, gdy
+  // materiałów starczy, przeszukanie pomieszczenia i zajęcie pustego mieszkania
+  const things = st.things.filter((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+  for (const t of things)
+    if (dismantlable(st, w, t)) {
+      const rubbish = RUBBISH.has(t.kind);
+      const item: MenuItem = {
+        cmd: { t: 'dismantle', ids: core, thing: t.id },
+        label: `Rozebrać ${THING_ACC[t.kind] ?? 'to'}`,
+        quick: rubbish,
+      };
+      if (rubbish) out.unshift(item);
+      else out.push(item);
+    }
+  const have = (m: Mat) => st.things.reduce((a, t) => a + (t.kind === m ? t.n : 0), 0);
+  st.damage.forEach((d, k) => {
+    if (d.fixed || d.tile !== tile) return;
+    const def = REPAIR[d.kind];
+    const ok = (Object.entries(def.cost) as [Mat, number][]).every(([m, v]) => have(m) + (d.have[m] ?? 0) >= v);
+    if (ok) out.push({ cmd: { t: 'repair', ids: core, damage: k }, label: `Naprawić ${def.acc}`, quick: false });
+  });
+  const hq = houseOf(w);
+  const room = hq && hq.room[tile] >= 0 ? hq.rooms[hq.room[tile]] : null;
+  const g = room ? st.apts.find((a) => a.apt === room.apt) : undefined;
+  if (room && g?.state === 'puste') {
+    if (!g.searched.includes(room.id))
+      out.push({
+        cmd: { t: 'search', ids: core, room: room.id },
+        label: `Przeszukać ${ROOM_ACC[room.kind]}`,
+        quick: false,
+      });
+    if (!g.ours) out.push({ cmd: { t: 'claim', ids: core, apt: g.apt }, label: 'Zająć mieszkanie', quick: false });
+  }
   // ognisko na wolnym kafelku podwórka, gdy jest z czego (drewno luzem albo w rękach)
   const woodN =
     st.things.reduce((a, t) => a + (t.kind === 'drewno' ? t.n : 0), 0) + st.pawns.reduce((a, p) => a + p.carry, 0);
@@ -187,9 +253,37 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     case 'patch':
       if (j.phase === 0) return 'Idzie po deski i złom.';
       return j.phase === 1 ? 'Niesie materiał do dziury.' : 'Łata dziurę w siatce.';
-    case 'build':
+    case 'campfire':
       if (j.phase === 0) return 'Idzie po drewno na ognisko.';
       return j.phase === 1 ? 'Niesie drewno na ognisko.' : 'Rozpala ognisko.';
+    case 'search': {
+      const r = houseOf(w)?.rooms[j.target];
+      const where = r ? ROOM_ACC[r.kind] : 'pomieszczenie';
+      return walking ? `Idzie przeszukać ${where}.` : `Przeszukuje ${where}.`;
+    }
+    case 'dismantle': {
+      const t = st.things.find((q) => q.id === j.target);
+      const what = t ? (THING_ACC[t.kind] ?? 'to') : 'to';
+      return walking ? `Idzie rozebrać ${what}.` : `Rozbiera ${what}.`;
+    }
+    case 'repair': {
+      const d = st.damage[j.target];
+      const what = d ? REPAIR[d.kind].acc : 'uszkodzenie';
+      if (j.phase === 0) return `Idzie po ${MAT_ACC[j.what as Mat] ?? 'materiał'} do naprawy.`;
+      if (j.phase === 1) return `Niesie ${MAT_ACC[j.what as Mat] ?? 'materiał'} do naprawy.`;
+      return `Naprawia ${what}.`;
+    }
+    case 'claim':
+      return walking ? 'Idzie zająć mieszkanie.' : 'Zajmuje mieszkanie.';
+    case 'arrive':
+      return 'Przychodzi do siedziby.';
+    case 'build': {
+      const b = st.builds.find((q) => q.id === j.target);
+      const what = b ? BUILD_ACC[b.kind] : 'budowlę';
+      if (j.phase === 0) return `Idzie po ${MAT_ACC[j.what as Mat] ?? 'materiał'} na ${what}.`;
+      if (j.phase === 1) return `Niesie ${MAT_ACC[j.what as Mat] ?? 'materiał'} na ${what}.`;
+      return `Buduje ${what}.`;
+    }
     case 'leave':
       return walking ? 'Wychodzi na wyprawę.' : 'Na wyprawie.';
     case 'raid':
