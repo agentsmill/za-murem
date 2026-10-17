@@ -7,7 +7,15 @@ import { mockWear } from '../../src/render/atrapy.ts';
 import { buildFootprint, planProgress } from '../../src/render/buildLayer.ts';
 import { applyScenePatch, chunksTouched, scenePatchOf } from '../../src/render/chunks.ts';
 import { GAME_KINDS, HEAPS } from '../../src/render/game.ts';
-import { IN, sectionOf, setWear, specOf, type ThingLike } from '../../src/render/section.ts';
+import {
+  describeTile,
+  IN,
+  sectionOf,
+  setWear,
+  specOf,
+  type ThingLike,
+  type WorldWear,
+} from '../../src/render/section.ts';
 import { BUILDS } from '../../src/sim/budowle.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
@@ -165,6 +173,22 @@ describe('puste mieszkania w przekroju', () => {
     // kuchenka na północ od kafelka (bit 1): ciemno przy górnej krawędzi, czysto przy dolnej
     expect(wearColor(c, floor, undefined, undefined, 50, 50, 15, 1, 1, 0, 1)).not.toBe(c);
     expect(wearColor(c, floor, undefined, undefined, 50, 50, 15, 30, 1, 0, 1)).toBe(c);
+  });
+
+  it('uszkodzenia ze świata (gdy je daje) trafiają w kafelki, które przekrój rysuje', () => {
+    const w = przymorze() as World & WorldWear;
+    const sec = sectionOf(w);
+    const size = w.size;
+    const mine = (w.damage ?? []).filter((d) => d.bid === sec.building);
+    if (w.damage?.length) expect(mine.length).toBeGreaterThan(0);
+    for (const d of mine) {
+      const t = describeTile(sec, d.tile, size, 0x888888);
+      if (d.kind === 'okno') expect(t).toMatchObject({ kind: 'window', broken: true });
+      else if (d.kind === 'drzwi') expect(t).toMatchObject({ kind: 'door', broken: true });
+      else expect(t?.kind).toBe('floor');
+      if (d.kind === 'piec')
+        expect(w.interior.furniture.some((f) => f.kind === 'kuchenka' && f.y * size + f.x === d.tile)).toBe(true);
+    }
   });
 
   it('naprawa: łatka sceny zdejmuje uszkodzenie i przerysowuje jego kawałek', () => {
