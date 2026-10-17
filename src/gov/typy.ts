@@ -100,6 +100,9 @@ export interface GovInput {
   burned?: number | readonly unknown[];
   /** nazwa siedziby do tekstów, np. „Obrońców Wybrzeża 4” */
   hqName?: string;
+  /** warta spoza karty nocy (polecenie z menu): kto stoi i gdzie ('brama' albo 'd<id dziury>'); bez pola
+      zarząd bierze osoby z pracą 'guard' za wartę w nieznanym miejscu */
+  guards?: { id: string; post: string }[];
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -142,6 +145,8 @@ export interface GovEffects {
   guards: { id: string; post: string }[];
   /** wpisy do kroniki */
   log: string[];
+  /** rozstrzygnięcie napadu w tym wywołaniu (w minucie napadu); null albo brak, gdy nic się nie rozstrzygnęło */
+  raidResult?: RaidResult | null;
 }
 
 export interface RaidPlan {
@@ -151,6 +156,24 @@ export interface RaidPlan {
   /** 'brama' albo 'd<id dziury>' */
   post: string;
   where: string;
+  /** siła napadu (ta sama, z którą zarząd rozstrzygnie napad) */
+  attack?: number;
+  /** ilu szabrowników przychodzi (1–3, z siły) */
+  people?: number;
+}
+
+/** wynik napadu dla symulacji: co się stało, gdzie, przy jakiej sile i obronie, co zabrali */
+export interface RaidResult {
+  day: number;
+  outcome: 'odparty' | 'wtargnięcie';
+  post: string;
+  where: string;
+  attack: number;
+  defense: number;
+  /** zabrane zapasy w liczbach dodatnich (przy odparciu same zera) */
+  stolen: StockDelta;
+  /** wartownicy, którzy zasnęli (nie bronili) */
+  slept: string[];
 }
 
 /** ciągłe skutki podpisanych uchwał dla symulacji */

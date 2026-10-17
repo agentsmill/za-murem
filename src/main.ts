@@ -24,7 +24,7 @@ import { GameView } from './render/view.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
-import { createSim, Sim } from './sim/sim.ts';
+import { CAMPFIRE_LIGHT, createSim, LAMP_REACH, Sim } from './sim/sim.ts';
 import { type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { currentGoal, goalsOf, markTree, NIGHT_WOOD } from './ui/cele.ts';
@@ -100,6 +100,10 @@ let hold: number | null = null;
 /** noc po karcie biegnie w tym tempie (indeks SPEEDS: 6×), rano wraca tempo dnia */
 const NIGHT_PACE = 3;
 let dayPace: number | null = null;
+/** napad, o którym warta już dała znać (tick z planu), i tempo nocy sprzed zwolnienia na czas napadu */
+let raidSeen = -1;
+let raidHeard = -1;
+let raidHold: number | null = null;
 let acc = 0;
 let savedHour = -1;
 const selected = new Set<number>();
@@ -320,6 +324,11 @@ function input(): GovInput {
     const tiles = s.st.fence?.holes.find((x) => x.id === h.id)?.tiles ?? [];
     h.name ??= tiles.map((t) => names.get(t)).find(Boolean);
   }
+  // warta z zarządu, która stoi przy siatce (także z menu): praca 'guard', target 0 to brama, inaczej id dziury;
+  // kiedy govInput z symulacji poda to pole sam, zostaje jego wersja
+  i.guards ??= s.st.pawns
+    .filter((p) => p.kind === 'core' && p.job?.t === 'guard' && !p.away)
+    .map((p) => ({ id: s.st.people[p.person].id, post: p.job!.target === 0 ? 'brama' : `d${p.job!.target}` }));
   return i;
 }
 
@@ -472,6 +481,62 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') save();
 });
 
+/**
+ * Napad w nocy: kiedy szabrownicy czają się za siatką, a ktoś z zarządu stoi na warcie, warta to słyszy i gra mówi
+ * gdzie. Jeśli są w świetle (lampa warty, ognisko), kamera jedzie na miejsce, a gdy tempo nocy ustawiła gra (6× po
+ * karcie), noc zwalnia do 1× do końca napadu. Bez warty nikt nic nie słyszy: o napadzie mówi kronika i raport.
+ */
+function watchRaid() {
+  if (!sim) return;
+  const r = sim.st.raid;
+  if (raidHold !== null && (!r || r.phase >= 3)) {
+    // po napadzie noc znowu biegnie szybciej
+    if (!modal.open) {
+      speed = raidHold;
+      renderSpeed();
+    } else hold = raidHold;
+    raidHold = null;
+    say('Szabrownicy odeszli. Do rana znowu szybciej (6×).', 5000);
+  }
+  if (r?.phase !== 1 || raidSeen === r.at || modal.open) return;
+  const st = sim.st;
+  const lamps = st.pawns.filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase === 1);
+  const them = st.pawns.filter((p) => p.kind === 'szabrownik');
+  if (!lamps.length || !them.length) return;
+  // widać ich tylko w świetle: lampa warty albo palące się ognisko blisko; w ciemności warta tylko słyszy
+  const lit = them.some(
+    (q) =>
+      lamps.some((l) => Math.hypot(l.x - q.x, l.y - q.y) <= LAMP_REACH) ||
+      st.things.some(
+        (t) => t.kind === 'ognisko' && t.fuel > 0 && Math.hypot(t.x + 0.5 - q.x, t.y + 0.5 - q.y) <= CAMPFIRE_LIGHT,
+      ),
+  );
+  const where = () => {
+    const hole = input().fence?.holes.find((h) => `d${h.id}` === r.post);
+    return r.post === 'brama' ? 'przy bramie' : `przy dziurze ${hole?.name ?? 'w siatce'}`;
+  };
+  // w ciemności warta tylko słyszy (raz); patrzymy dalej, bo zaraz mogą wejść w światło lampy
+  if (!lit) {
+    if (raidHeard !== r.at) {
+      raidHeard = r.at;
+      say(`Warta słyszy coś ${where()}, ale tam ciemno. Światło przy siatce pokazałoby, kto to.`, 8000);
+    }
+    return;
+  }
+  raidSeen = r.at;
+  const slow = dayPace !== null && speed > 1;
+  if (slow) {
+    raidHold = speed;
+    speed = 1;
+    renderSpeed();
+  }
+  say(`Warta widzi szabrowników ${where()}.${slow ? ' Czas zwalnia do 1×.' : ''}`, 9000);
+  const x = them.reduce((a, p) => a + p.x, 0) / them.length;
+  const y = them.reduce((a, p) => a + p.y, 0) / them.length;
+  // bez zmiany przybliżenia: kamera tylko przesuwa się na miejsce
+  flyTo(x * TILE, y * TILE, view.cam.zoom, 1200);
+}
+
 /* ---------- kamera ---------- */
 let fly: { x0: number; y0: number; z0: number; x1: number; y1: number; z1: number; t0: number; ms: number } | null =
   null;
@@ -527,6 +592,7 @@ function frame(now: number, dtMs: number) {
     govAt = screen;
     govStep(true);
   }
+  watchRaid();
   drawState();
   view.render(sim.st, mult ? acc : 1, selected);
   placeMarker();
@@ -692,6 +758,7 @@ $('speed').addEventListener('click', (e) => {
   speed = Number(b.dataset.s);
   hold = null;
   dayPace = null;
+  raidHold = null;
   renderSpeed();
 });
 $('zIn').onclick = () => view.zoomAt(view.width / 2, view.height / 2, 1.5);
@@ -996,12 +1063,14 @@ window.addEventListener('keydown', (e) => {
     speed = speed ? 0 : 1;
     hold = null;
     dayPace = null;
+    raidHold = null;
     renderSpeed();
   }
   if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
     speed = Number(e.code.slice(-1));
     hold = null;
     dayPace = null;
+    raidHold = null;
     renderSpeed();
   }
   if (e.code === 'Escape') selected.clear();

@@ -1025,6 +1025,57 @@ const SHOTS: Shot[] = [
       if (lamps < 1) throw new Error('wartownik nie ma światła latarni');
     },
   },
+  {
+    // napad w świetle: warta z menu stoi tam, gdzie przyjdą; noc (6× po karcie) zwalnia do 1×, kamera na miejscu,
+    // szabrowników widać w świetle lampy
+    name: 'm1-napad-w-swietle',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=19.5`);
+      await waitIdle(page);
+      await page.click('#speed button[data-s="1"]');
+      await page.evaluate(() => window.zm!.govTick());
+      await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+      await page.evaluate(() => window.zm!.ff(31));
+      for (const sel of await page.locator('#sheet select.pick').all()) await sel.selectOption('sen');
+      await page.click('#sheet [data-act="night-go"]');
+      const plan = await page.evaluate(() => {
+        const zm = window.zm!;
+        const r = zm.gov!.night!.raid!;
+        const core = zm.sim!.st.pawns.find((p) => p.kind === 'core' && !p.away)!;
+        // bez napadu w planie zarządu napad z samej symulacji przy bramie, półtorej godziny później
+        const post = r.come ? r.post : 'brama';
+        if (!r.come) zm.sim!.push({ t: 'raid', ids: [], at: zm.sim!.st.tick + 1200, post });
+        zm.sim!.push({ t: 'guard', ids: [core.id], post });
+        return { come: r.come, post };
+      });
+      await page.waitForFunction(() => document.getElementById('hint')!.textContent!.includes('Warta widzi'), null, {
+        timeout: 90_000,
+      });
+      await page.waitForTimeout(2200);
+      const s = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sprites = (zm.view as unknown as { pawnSprites: Map<number, { visible: boolean; alpha: number }> })
+          .pawnSprites;
+        return {
+          speed: zm.speed(),
+          hint: document.getElementById('hint')!.textContent,
+          clock: document.getElementById('hTime')!.textContent,
+          seen: zm
+            .sim!.st.pawns.filter((p) => p.kind === 'szabrownik')
+            .map((p) => {
+              const sp = sprites.get(p.id);
+              return Math.round((sp?.visible ? sp.alpha : 0) * 100) / 100;
+            }),
+        };
+      });
+      console.log(
+        `  ${s.clock} (${plan.come ? 'napad z planu' : 'napad z symulacji'} ${plan.post}): ${s.hint}; widać: ${s.seen.join(', ')}`,
+      );
+      if (s.speed !== 1) throw new Error(`w czasie napadu tempo ${s.speed} zamiast 1×`);
+      if (!s.seen.some((a) => a > 0.3)) throw new Error('szabrowników nie widać w świetle lampy');
+    },
+  },
 ];
 
 /** klucze rzeczy narysowanych w warstwie pionków (miejsce i opis sprite'a) */

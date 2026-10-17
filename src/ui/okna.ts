@@ -3,7 +3,7 @@
    (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts. */
 
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
-import { deterrence } from '../gov/noc.ts';
+import { deterrence, watchersOf } from '../gov/noc.ts';
 import type {
   GovInput,
   GovState,
@@ -91,9 +91,10 @@ export interface NightOdds {
   watchers: number;
 }
 
-/** szansa napadu przy obecnym przydziale: warta i światło odstraszają jak przy zatwierdzeniu */
+/** szansa napadu przy obecnym przydziale: warta (z karty i ta, która już stoi z menu) i światło odstraszają
+    jak przy zatwierdzeniu */
 export function nightOdds(gov: GovState, i: GovInput, card: NightCard, assign: Record<string, string>): NightOdds {
-  const watchers = Object.values(assign).filter((k) => k.startsWith('warta:')).length;
+  const watchers = watchersOf(i, assign);
   return { chance: card.chance, now: card.chance * deterrence(gov, i, watchers), watchers };
 }
 
