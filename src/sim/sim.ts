@@ -24,6 +24,7 @@ import {
 } from './house.ts';
 import { COLD, HUNGRY, type NeedCtx, type Needs, PECKISH, startNeeds, stepNeeds, TIRED, WARMED } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
+import { type FenceState, gateTiles, initFence } from './perimeter.ts';
 import { TUT_STEPS, type Tutorial, type TutStep, tutAdvance, WARM_ENOUGH } from './tutorial.ts';
 
 /** kafelków na tick: 4 kafelki na sekundę przy 1× */
@@ -111,9 +112,13 @@ export interface Job {
   order: boolean;
 }
 
+/** zarząd (rdzeń, polecenia), tłum (tylko do pomiaru wydajności, za siatką), mieszkańcy siedziby
+    (tło z planem dnia), obcy (szabrownicy z wydarzeń) */
+export type PawnKind = 'core' | 'crowd' | 'resident' | 'stranger';
+
 export interface Pawn {
   id: number;
-  kind: 'core' | 'crowd';
+  kind: PawnKind;
   /** osoba z rdzenia (indeks w state.people) albo −1 */
   person: number;
   look: number;
@@ -174,6 +179,8 @@ export type Command =
   | { t: 'move'; ids: number[]; to: number }
   /** zaznaczenie kogoś z zarządu: nic nie robi z pionkami, tylko prowadzi samouczek */
   | { t: 'select'; ids: number[] }
+  /** brama otwarta albo zamknięta (od razu; ids może być puste) */
+  | { t: 'gate'; ids: number[]; open: boolean }
   | { t: 'chop'; ids: number[]; tree: number }
   | { t: 'haul'; ids: number[]; thing: number }
   | { t: 'refuel'; ids: number[]; thing: number }
@@ -183,7 +190,7 @@ export type Command =
   | { t: 'cook'; ids: number[] };
 
 export interface SimState {
-  v: 2;
+  v: 3;
   seed: number;
   tick: number;
   rng: RngState;
@@ -204,6 +211,8 @@ export interface SimState {
   tut: Tutorial;
   /** spalone meble, po kolei */
   burned: Burned[];
+  /** siatka: wytrzymałość, dziury i łaty, brama (null: świat bez siatki) */
+  fence: FenceState | null;
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -298,7 +307,7 @@ function freeIn(w: World, h: HouseLike, rooms: number[], things: Thing[]): numbe
 
 export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState {
   const st: SimState = {
-    v: 2,
+    v: 3,
     seed,
     tick: 0,
     rng: { s: seed | 0 },
@@ -313,6 +322,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     temps: [],
     tut: { step: -1, at: [] },
     burned: [],
+    fence: initFence(w),
   };
   const rnd = rngOf(st.rng);
   const size = w.size;
@@ -464,18 +474,21 @@ export class Sim {
   stats: SimStats = { paths: 0, failed: 0, nodes: 0, substituted: 0 };
   /** wnętrze siedziby albo null (świat sprzed M1) */
   readonly house: HouseLike | null;
-  /** przechodniość świata z wyciętymi ściętymi drzewami; przy wczytaniu odtwarzana ze st.felled */
+  /** przechodniość dla zarządu: świat z wyciętymi drzewami i łatami, otwarte dziury zablokowane (zarząd przez nie
+      nie przełazi), brama przechodnia nawet zamknięta (klucz); przy wczytaniu odtwarzana ze stanu */
   readonly blocked: Uint8Array;
   /** ocieplenie pomieszczeń od kóz w °C; liczone co krok ciepła i od razu przy wczytaniu */
   boost: number[] = [];
   /** światło z palących się kóz w pomieszczeniach, 0–1 (dla rysowania: świecące okna nocą) */
   light: number[] = [];
   private pf: PathFinder;
-  /** spójne obszary mapy: cel z innego obszaru zamieniamy na najbliższy osiągalny kafelek */
+  /** spójne obszary mapy dla zarządu: cel z innego obszaru zamieniamy na najbliższy osiągalny kafelek */
   private reg: Int32Array;
-  /** przechodniość i obszary dla tłumu: mieszkanie zarządu zamknięte (bez wnętrza to te same tablice) */
-  private crowdBlocked: Uint8Array;
-  private crowdReg: Int32Array;
+  /** przechodniość i obszary pozostałych: mieszkańcy (bez dziur, bramy i mieszkania zarządu), obcy (dziurami tak,
+      zamkniętą bramą nie), tłum do pomiarów (za siatką, bez mieszkania zarządu) */
+  private lay: Record<'resident' | 'stranger' | 'crowd', { blocked: Uint8Array; reg: Int32Array }>;
+  /** mieszkanie zarządu z drzwiami (1) albo null */
+  private readonly mask: Uint8Array | null;
   private readonly trunk: Int32Array;
   private readonly links: [number, number][];
   private readonly kinds: RoomKind[];
@@ -490,19 +503,13 @@ export class Sim {
     this.st = st;
     this.pf = new PathFinder(w.size);
     this.house = houseOf(w);
-    this.blocked = w.blocked.slice();
     this.trunk = Int32Array.from(w.trees, (t) => trunkOf(w, t));
-    for (const k of st.felled) this.blocked[this.trunk[k]] = 0;
-    this.reg = labelRegions(this.blocked, w.size);
     const h = this.house;
-    this.crowdBlocked = this.blocked;
-    this.crowdReg = this.reg;
-    if (h) {
-      const mask = homeMask(h, w.size);
-      this.crowdBlocked = this.blocked.slice();
-      for (let i = 0; i < mask.length; i++) if (mask[i]) this.crowdBlocked[i] = 1;
-      this.crowdReg = labelRegions(this.crowdBlocked, w.size);
-    }
+    this.mask = h ? homeMask(h, w.size) : null;
+    this.blocked = new Uint8Array(w.size * w.size);
+    this.reg = new Int32Array(0);
+    this.lay = {} as Sim['lay'];
+    this.rebuild();
     this.links = h ? roomLinks(h, w.size) : [];
     this.kinds = h ? h.rooms.map((r) => r.kind) : [];
     this.roomTiles = h ? h.rooms.map(() => []) : [];
@@ -549,11 +556,52 @@ export class Sim {
     return r >= 0 ? this.st.temps[r] : this.outdoor();
   }
 
+  /** Przechodniość od nowa: baza ze świata, ścięte drzewa wolne, łaty zablokowane; zarząd bez otwartych dziur,
+      mieszkańcy dodatkowo bez bramy i mieszkania zarządu, obcy z dziurami, ale bez zamkniętej bramy, tłum jak
+      mieszkańcy. Woła się przy starcie, po ścięciu drzewa, łacie i zmianie bramy. */
+  private rebuild(): void {
+    const w = this.w;
+    const size = w.size;
+    const st = this.st;
+    const base = w.blocked.slice();
+    for (const k of st.felled) base[this.trunk[k]] = 0;
+    const f = st.fence;
+    const open: number[] = [];
+    if (f)
+      for (const hole of f.holes)
+        for (const t of hole.tiles) {
+          if (hole.patch > 0) base[t] = 1;
+          else open.push(t);
+        }
+    const gate = gateTiles(w);
+    const closed = !!f && !f.gateOpen;
+    this.blocked.set(base);
+    for (const t of open) this.blocked[t] = 1;
+    this.reg = labelRegions(this.blocked, size);
+    const resident = this.blocked.slice();
+    for (const t of gate) resident[t] = 1;
+    if (this.mask) for (let i = 0; i < resident.length; i++) if (this.mask[i]) resident[i] = 1;
+    const stranger = base.slice();
+    if (closed) for (const t of gate) stranger[t] = 1;
+    // tłum do pomiarów chodzi tam, gdzie mieszkańcy nie: za siatką; warstwa ta sama, obszary rozłączne
+    const res = { blocked: resident, reg: labelRegions(resident, size) };
+    this.lay = { resident: res, stranger: { blocked: stranger, reg: labelRegions(stranger, size) }, crowd: res };
+  }
+
+  /** przechodniość i obszary dla danego rodzaju pionka */
+  private layer(kind: PawnKind): { blocked: Uint8Array; reg: Int32Array } {
+    return kind === 'core' ? { blocked: this.blocked, reg: this.reg } : this.lay[kind];
+  }
+
+  /** czy pionek danego rodzaju przejdzie przez kafelek (do testów i podglądu) */
+  canWalk(kind: PawnKind, tile: number): boolean {
+    return !this.layer(kind).blocked[tile];
+  }
+
   /** cel do wyznaczenia drogi: wolny kafelek w tym samym obszarze co pionek, −1 gdy go nie ma */
   private goalFor(p: Pawn, goal: number): number {
     const size = this.w.size;
-    const blocked = p.kind === 'crowd' ? this.crowdBlocked : this.blocked;
-    const reg = p.kind === 'crowd' ? this.crowdReg : this.reg;
+    const { blocked, reg } = this.layer(p.kind);
     const s = nearestFree(blocked, size, this.tileOf(p));
     const g = nearestFree(blocked, size, goal);
     if (reg[g] === reg[s]) return g;
@@ -567,7 +615,7 @@ export class Sim {
       this.stats.failed++;
       return false;
     }
-    const blocked = p.kind === 'crowd' ? this.crowdBlocked : this.blocked;
+    const { blocked } = this.layer(p.kind);
     const path = this.pf.find(blocked, nearestFree(blocked, this.w.size, this.tileOf(p)), g);
     this.stats.nodes += this.pf.expanded;
     if (!path) {
@@ -659,6 +707,13 @@ export class Sim {
     for (const id of c.ids) {
       const p = st.pawns.find((q) => q.id === id);
       if (p && p.kind === 'core' && !pawns.includes(p)) pawns.push(p);
+    }
+    if (c.t === 'gate') {
+      if (st.fence && st.fence.gateOpen !== c.open) {
+        st.fence.gateOpen = c.open;
+        this.rebuild();
+      }
+      return;
     }
     if (!pawns.length) return;
     this.tutEvent('zaznacz');
@@ -1071,12 +1126,7 @@ export class Sim {
     const t = this.trunk[k];
     st.felled.push(k);
     st.felled.sort((a, b) => a - b);
-    this.blocked[t] = 0;
-    this.reg = labelRegions(this.blocked, size);
-    if (this.crowdBlocked !== this.blocked) {
-      this.crowdBlocked[t] = 0;
-      this.crowdReg = labelRegions(this.crowdBlocked, size);
-    } else this.crowdReg = this.reg;
+    this.rebuild();
     st.things.push(newThing(st, 'pien', t % size, Math.floor(t / size)));
     let left = woodFrom(this.w.trees[k]);
     for (const [dx, dy] of SPREAD) {

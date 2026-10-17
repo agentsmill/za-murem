@@ -18,6 +18,7 @@ import {
 import { houseOf, inHomeApt } from './house.ts';
 import type { Needs } from './needs.ts';
 import { jobText } from './orders.ts';
+import { durability, fenceShape } from './perimeter.ts';
 import { BURN_TICKS, type Burned, COOK_TICKS, type JobKind, type Mood, type SimState } from './sim.ts';
 
 export interface SimPerson {
@@ -64,6 +65,19 @@ export interface SimStock {
   gasCooks: number;
 }
 
+/** stan siatki dla zarządu (GovFence): otwarte dziury, średnia wytrzymałość, brama */
+export interface SimFence {
+  holes: { id: number; size: number; name?: string }[];
+  durability: number;
+  gateOpen: boolean;
+}
+
+/** światło na podwórku dla zarządu (GovLight) */
+export interface SimLight {
+  campfire: boolean;
+  gateLamp: boolean;
+}
+
 export interface SimSnapshot {
   tick: number;
   day: number;
@@ -86,6 +100,8 @@ export interface SimSnapshot {
   stock: SimStock;
   /** spalone meble, po kolei */
   burned: Burned[];
+  fence: SimFence;
+  light: SimLight;
 }
 
 export function snapshot(st: SimState, w: World): SimSnapshot {
@@ -162,5 +178,17 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       gasCooks: Math.floor((stove?.fuel ?? 0) / COOK_TICKS),
     },
     burned: st.burned.map((b) => ({ ...b })),
+    fence:
+      st.fence && fenceShape(w)
+        ? {
+            holes: st.fence.holes.filter((x) => !x.patch).map((x) => ({ id: x.id, size: x.size })),
+            durability: durability(w, st.fence),
+            gateOpen: st.fence.gateOpen,
+          }
+        : { holes: [], durability: 1, gateOpen: true },
+    light: {
+      campfire: st.things.some((t) => t.kind === 'ognisko' && t.fuel > 0),
+      gateLamp: false,
+    },
   };
 }
