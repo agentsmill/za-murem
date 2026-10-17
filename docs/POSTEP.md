@@ -209,6 +209,18 @@ Po poprawce myszy sterowanie i przybliżanie działają. Uwagi Mateusza i co z n
 - Chce chodzić do sąsiednich budynków i próbować się do nich włamać. Dopóki nie otoczy ich wspólnym płotem, w nocy może tam wejść ktoś inny. W innych budynkach mogą być lokatorzy, o których wiadomo albo nie, spotykani w dzień albo w nocy, z różnymi intencjami i emocjami. To będzie fala 2 M2. Nowa sesja „Włamania do sąsiednich budynków i wspólny płot” ustala z Mateuszem projekt w `docs/M2-fala-2.md` i od razu robi część świata.
 - Wspólnota jest trochę naciągana: w domu jednorodzinnym po chwili przychodzi wydarzenie z automatem paczkowym przy pawilonie, a start w domu w Zamościu ma za bardzo klimat blokowiska. Przyczyna: wydarzenia losują się tylko według pory dnia, pierwsze po 38–57 s przy ekranie, a treść z 0.3 zakłada spółdzielnię i blokowisko. Nowa sesja „Wydarzenia i wspólnota osadzone w miejscu” przejrzy wydarzenia na trzech demach i w domu w Zamościu. Potem zaproponuje Mateuszowi warunki wydarzeń z miejsca, tempo i obraz wspólnoty w domu i w bloku, a po jego OK wdroży je w `src/gov`.
 
+### M2 fala 1, wieczór 17.10.2026: rysowanie połączone
+
+Do `m2-fala-1` weszła gałąź rysowania `m2-budowa-rysowanie`. Są w niej sprite'y sześciu budowli, śmieci w trzech wielkościach, zepsute i okopcone meble oraz uszkodzenia w przekroju: wyważone drzwi, wybite okno, cieknąca rura, zalana albo spalona podłoga i okopcony piec. Do tego plany budowy jako duchy z paskami materiałów i pracy oraz podgląd stawiania. Próbne połączenie z gałęzią symulacji przeszło bez konfliktów.
+
+Sesja wydarzeń ustaliła z Mateuszem dwie rzeczy:
+- w domu jednorodzinnym gra mówi „ulica” i „komitet ulicy” zamiast „spółdzielnia” i „zarząd”, a w bloku zostaje po staremu;
+- pierwszego dnia, do nagrzania kuchni, nie ma losowych wydarzeń, jest tylko jedno, które wynika z dymu z komina.
+
+Żeby zarząd wiedział, gdzie jest, `govInput` w `src/sim/gov.ts` dostaje pole `place` (wyjątek od podziału plików za zgodą koordynatora). Teksty spoza `src/gov` (samouczek z trzepakiem, „Na osiedlu”, pomoc o walnym, „Sprawy spółdzielni”) przejdą na słownik zależny od miejsca po połączeniu gałęzi wydarzeń.
+
+Symulacja zrobiła przyjmowanie ludzi: przyjęci przychodzą zza bramy, nikt nie znika, a bez łóżka śpią na podłodze. Czeka to na jej gałęzi na połączenie fali.
+
 ## Następne
 
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
