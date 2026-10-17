@@ -92,40 +92,60 @@ const pustePrzypadki = (): Record<Przypadek, FormaSgjp[]> => ({
 /** Czy kolumna klasy ma token `imię` albo `nazwisko` (tokeny rozdziela `|`; `nazwisko_(odojcowskie)` to inny). */
 const KLASA = /(?:^|\|)(?:imię|nazwisko)(?:\||$)/;
 
-/** Parsuje rozpakowany plik SGJP. Zachowuje tylko leksemy z klasą `imię` albo `nazwisko` i tylko ich formy `subst`. */
+/** Parsuje rozpakowany plik SGJP. Zachowuje tylko leksemy z klasą `imię` albo `nazwisko` i tylko ich formy `subst`.
+    Plik ma ponad 400 MB, więc nie zamieniamy go na jeden napis: bajty przeszukujemy natywnie w poszukiwaniu `imię`
+    i `nazwisko` (tylko w linii z klasą taki napis ma sens), a dekodujemy wyłącznie linie z trafieniem. */
 export function parsujSgjp(bajty: Buffer): Sgjp {
-  const tekst = bajty.toString('utf8');
-  const naglowek = /^#!DICT-ID\s+(\S+)/m.exec(tekst.slice(0, 20000));
-  const nota = /#<COPYRIGHT>\r?\n([\s\S]*?)\r?\n#<\/COPYRIGHT>/.exec(tekst.slice(0, 20000));
+  const poczatek = bajty.subarray(0, Math.min(bajty.length, 20000)).toString('utf8');
+  const naglowek = /^#!DICT-ID\s+(\S+)/m.exec(poczatek);
+  const nota = /#<COPYRIGHT>\r?\n([\s\S]*?)\r?\n#<\/COPYRIGHT>/.exec(poczatek);
   if (!naglowek || !nota) throw new Error('SGJP: brak #!DICT-ID albo bloku #<COPYRIGHT> w nagłówku pliku');
   const leksemy = new Map<string, Leksem>();
-  let poczatek = 0;
-  while (poczatek < tekst.length) {
-    let koniec = tekst.indexOf('\n', poczatek);
-    if (koniec < 0) koniec = tekst.length;
-    const linia = tekst.slice(poczatek, koniec);
-    poczatek = koniec + 1;
-    if (linia === '' || linia.charCodeAt(0) === 35) continue; // '#': nagłówek i komentarze
-    const kol = linia.split('\t');
-    const klasa = kol[3] ?? '';
-    if (!KLASA.test(klasa)) continue;
-    const znacznik = kol[2].split(':');
-    if (znacznik[0] !== 'subst' || znacznik.length < 4) continue;
-    const liczby = znacznik[1].split('.');
-    const przypadki = znacznik[2].split('.');
-    let l = leksemy.get(kol[1]);
-    if (!l) {
-      l = { lemat: kol[1], klasy: klasa.split('|'), rodzaj: znacznik[3], sg: pustePrzypadki(), mnN: [] };
-      leksemy.set(kol[1], l);
-    }
-    const f: FormaSgjp = { forma: kol[0], kwal: kol[4] ? kol[4].split('|') : [] };
-    // piąty element znacznika (`pt`, `ncol`) oznacza pluralia tantum i zbiorowe: nie dla liczby pojedynczej
-    if (liczby.includes('sg') && znacznik.length === 4) {
-      for (const p of przypadki) if (Object.hasOwn(PRZYPADKI_SGJP, p)) l.sg[PRZYPADKI_SGJP[p]].push(f);
-    }
-    if (liczby.includes('pl') && przypadki.includes('nom') && znacznik.length === 4) l.mnN.push(f);
+  const IMIE = Buffer.from('imię');
+  const NAZWISKO = Buffer.from('nazwisko');
+  let poz = 0;
+  let nastepneImie = 0; // pozycja następnego trafienia, -1: nie ma już żadnych
+  let nastepneNazwisko = 0;
+  while (poz < bajty.length) {
+    if (nastepneImie !== -1 && nastepneImie < poz) nastepneImie = bajty.indexOf(IMIE, poz);
+    if (nastepneNazwisko !== -1 && nastepneNazwisko < poz) nastepneNazwisko = bajty.indexOf(NAZWISKO, poz);
+    if (nastepneImie === -1 && nastepneNazwisko === -1) break;
+    const trafienie =
+      nastepneImie === -1
+        ? nastepneNazwisko
+        : nastepneNazwisko === -1
+          ? nastepneImie
+          : Math.min(nastepneImie, nastepneNazwisko);
+    const start = bajty.lastIndexOf(10, trafienie) + 1;
+    let koniec = bajty.indexOf(10, trafienie);
+    if (koniec < 0) koniec = bajty.length;
+    poz = koniec + 1;
+    if (bajty[start] === 35) continue; // '#': nagłówek i komentarze
+    dodajLinie(leksemy, bajty.toString('utf8', start, koniec).replace(/\r$/, ''));
   }
   return { leksemy, idSlownika: naglowek[1], nota: nota[1].trim().replace(/\r\n/g, '\n') };
+}
+
+/** Jedna linia SGJP do leksemów: pomija inne klasy niż `imię` i `nazwisko` oraz znaczniki inne niż `subst`. */
+function dodajLinie(leksemy: Map<string, Leksem>, linia: string): void {
+  const kol = linia.split('\t');
+  const klasa = kol[3] ?? '';
+  if (!KLASA.test(klasa)) return;
+  const znacznik = kol[2].split(':');
+  if (znacznik[0] !== 'subst' || znacznik.length < 4) return;
+  const liczby = znacznik[1].split('.');
+  const przypadki = znacznik[2].split('.');
+  let l = leksemy.get(kol[1]);
+  if (!l) {
+    l = { lemat: kol[1], klasy: klasa.split('|'), rodzaj: znacznik[3], sg: pustePrzypadki(), mnN: [] };
+    leksemy.set(kol[1], l);
+  }
+  const f: FormaSgjp = { forma: kol[0], kwal: kol[4] ? kol[4].split('|') : [] };
+  // piąty element znacznika (`pt`, `ncol`) oznacza pluralia tantum i zbiorowe: nie dla liczby pojedynczej
+  if (liczby.includes('sg') && znacznik.length === 4) {
+    for (const p of przypadki) if (Object.hasOwn(PRZYPADKI_SGJP, p)) l.sg[PRZYPADKI_SGJP[p]].push(f);
+  }
+  if (liczby.includes('pl') && przypadki.includes('nom') && znacznik.length === 4) l.mnN.push(f);
 }
 
 /** Wczytuje i parsuje `sgjp-*.tab.gz`. */
