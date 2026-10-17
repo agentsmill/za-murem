@@ -47,8 +47,8 @@ export const NB = { N: 1, E: 2, S: 4, W: 8, NE: 16, SE: 32, SW: 64, NW: 128 } as
 export type InteriorTile =
   | { kind: 'floor'; room: RoomKind; walls?: number }
   | { kind: 'wall'; mask: number; outer?: boolean; out?: number; face?: Face; facade?: number }
-  | { kind: 'door'; vertical: boolean; entrance?: boolean; face?: Face; facade?: number }
-  | { kind: 'window'; mask: number; out: number; room: RoomKind; lit?: boolean; facade?: number }
+  | { kind: 'door'; vertical: boolean; entrance?: boolean; face?: Face; facade?: number; broken?: boolean }
+  | { kind: 'window'; mask: number; out: number; room: RoomKind; lit?: boolean; facade?: number; broken?: boolean }
   | { kind: 'stairs'; up: Dir; mask?: number };
 
 /** kolory wnętrza; bazowe z palette.ts */
@@ -141,6 +141,9 @@ const K = {
 } as const;
 
 /** lamperia w klatce (olejna do wysokości półtora metra): zielona, niebieska, brązowa, oliwkowa */
+/** kolory szyb (wybite okno zamienia je na dziurę z resztkami szkła) */
+const GLASS = new Set<number>([K.glass, K.glassHi, K.nightGlass, K.nightGlint, C.window, C.windowHi, C.windowLit]);
+
 const LAMP = [0x5f7356, 0x4f6a7a, 0x7a5f45, 0x7d8a5a] as const;
 /** zasłony */
 const CURTAIN = [0x8a3b32, 0x5d6b45, 0xa58a4a, 0x4a5a7a] as const;
@@ -460,6 +463,14 @@ function doorColor(
       // front: ościeżnica, skrzydło, nad nim kawałek ściany
       const f = py - FT;
       const face = t.face ?? 'pokoj';
+      // wyważone: skrzydło wisi krzywo na dolnym zawiasie, w ościeżnicy ciemny otwór i drzazgi
+      if (t.broken && px >= 3 && px <= 28 && f >= 2 && f <= 11) {
+        if (px === 3 || px === 28) return h2(px, f, s + 711) < 0.4 ? K.ven1 : K.frame;
+        const hang = px - 4 < (f - 3) * 1.6;
+        if (hang && px <= 12) return h2(px, f, s + 712) < 0.2 ? shade(K.ven0, 0.7) : K.ven0;
+        if (f === 11) return shade(K.threshold, 0.8);
+        return h2(px >> 1, f, s + 713) < 0.06 ? 0x5a4a38 : 0x1e1a17;
+      }
       if (px <= 2 || px >= 29 || f < 2) {
         // domofon przy drzwiach frontowych: czeka na aktualizację
         if (ent && px >= 29 && f >= 3 && f <= 8) {
@@ -486,6 +497,7 @@ function doorColor(
       // przecięte skrzydło widziane z góry
       if (px <= 2 || px >= 29) return capWithEdges(ent, NB.E | NB.W, 0, facade, ax, ay, px, py, FT, s);
       if (px === 3 || px === 28) return ent ? shade(K.alu, 0.8) : K.frame;
+      if (t.broken && px > 9) return threshold(ent, ax, ay, s);
       return py === FT - 2 ? shade(leaf, 1.15) : leaf;
     }
     // ościeże: kawałki ściany po bokach, w środku próg
@@ -502,6 +514,8 @@ function doorColor(
   }
   if (px >= 14 && px <= 16) {
     if (py === 3 || py === 28) return ent ? shade(K.alu, 0.8) : K.frame;
+    // wyważone: skrzydło zostało tylko przy zawiasie, dalej drzazgi
+    if (t.broken && py > 9) return h2(px, py, s + 714) < 0.25 ? K.ven1 : threshold(ent, ax, ay, s);
     return px === 14 ? shade(leaf, 1.15) : px === 16 ? shade(leaf, 0.75) : leaf;
   }
   return threshold(ent, ax, ay, s);
@@ -577,7 +591,21 @@ function windowColor(
   py: number,
   s: number,
 ) {
-  const lit = !!t.lit;
+  const c = windowPixel(t, ax, ay, px, py, s);
+  // wybite: zamiast szyby ciemna dziura, przy ramie ostre resztki szkła
+  if (t.broken && GLASS.has(c)) return h2(ax, ay, s + 721) < 0.22 ? K.glassHi : 0x16181a;
+  return c;
+}
+
+function windowPixel(
+  t: Extract<InteriorTile, { kind: 'window' }>,
+  ax: number,
+  ay: number,
+  px: number,
+  py: number,
+  s: number,
+) {
+  const lit = !!t.lit && !t.broken;
   const facade = t.facade ?? C.wallGrey;
   const vertical = (t.out & (NB.E | NB.W)) !== 0;
   const front = !(t.mask & NB.S);

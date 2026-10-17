@@ -120,7 +120,7 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     expect(x.away).toBe(false);
   });
 
-  it('nowa osoba dochodzi do zarządu, odchodząca znika, mieszkańców przybywa i ubywa w granicach miejsc', () => {
+  it('nowa osoba dochodzi do zarządu, odchodząca znika, mieszkańców przybywa i ubywa tylu, ilu podał zarząd', () => {
     const st = createSim(w, 3, { core: 2 });
     const r0 = st.pawns.filter((p) => p.kind === 'resident').length;
     const p = makePerson(mulberry(9), new Set(), () => 101);
@@ -138,13 +138,14 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     expect(s.people.map((q) => q.id)).toContain(p.id);
     expect(s.people.map((q) => q.id)).not.toContain(gone);
     expect(s.people).toHaveLength(2);
-    expect(s.residents).toBe(Math.min(st.cap, r0 + 1));
+    // przyjęci nie znikają przy pełnych miejscach (kto nie ma łóżka, śpi na podłodze)
+    expect(s.residents).toBe(r0 + 1);
     applyGov(
       st,
       w,
       fx((e) => (e.residents = -2)),
     );
-    expect(snapshot(st, w).residents).toBe(Math.min(st.cap, r0 + 1) - 2);
+    expect(snapshot(st, w).residents).toBe(r0 + 1 - 2);
     // nowa osoba żyje w symulacji: ma potrzeby i chodzi
     const sim = new Sim(w, st);
     for (let k = 0; k < 400; k++) sim.step();

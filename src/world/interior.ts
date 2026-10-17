@@ -84,6 +84,8 @@ export interface Furniture {
   h: number;
   /** ściana, przy której stoi: 0 góra, 1 prawo, 2 dół, 3 lewo; wolnostojące 0; krzesło: strona oparcia */
   rot: 0 | 1 | 2 | 3;
+  /** zniszczony (tylko w pustych mieszkaniach siedziby, zob. apts.ts) */
+  broken?: true;
 }
 
 export interface Room {

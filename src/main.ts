@@ -861,6 +861,12 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   laws: ['', ''],
   raid: ['', ''],
   mend: ['', ''],
+  build: ['Weźmie się do budowy.', 'Wezmą się do budowy.'],
+  unbuild: ['', ''],
+  search: ['Przeszuka pomieszczenie.', 'Przeszukają pomieszczenie.'],
+  dismantle: ['Rozbierze na materiał.', 'Rozbiorą na materiał.'],
+  repair: ['Naprawi.', 'Naprawią.'],
+  claim: ['Zajmie mieszkanie.', 'Zajmą mieszkanie.'],
 };
 
 function run(m: MenuItem) {

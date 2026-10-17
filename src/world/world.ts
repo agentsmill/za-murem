@@ -6,6 +6,7 @@
 import type { BuildingClass } from '../content/data.ts';
 import { mulberry } from '../core/rng.ts';
 import { labelRegions, nearestFree } from '../sim/path.ts';
+import { type AptState, applyApts, type Damage, type Smieci, settleApts } from './apts.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
 import { applyFence, buildFence, type Fence, type Gate, gateCrowded, yardEdges } from './fence.ts';
 import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea, segDist } from './geo.ts';
@@ -73,9 +74,9 @@ export interface Trzepak {
   h: number;
 }
 
-/** rzecz na mapie: trzepak, sterta materiału z odzysku (gruz, deski, złom; przechodnia)
-    albo wrak auta (maluch, polonez; podstawa blokuje przejście) */
-export type Prop = Trzepak | Heap | Wreck;
+/** rzecz na mapie: trzepak, sterta materiału z odzysku (gruz, deski, złom; przechodnia), wrak auta (maluch,
+    polonez; podstawa blokuje przejście) albo sterta śmieci w pustym mieszkaniu siedziby (przechodnia) */
+export type Prop = Trzepak | Heap | Wreck | Smieci;
 
 export interface World {
   size: number;
@@ -101,6 +102,10 @@ export interface World {
   props: Prop[];
   /** dziurawa siatka z bramą wokół siedziby i podwórka; stan zmienny (łaty, nowe dziury, brama) trzyma symulacja */
   fence: Fence;
+  /** stany mieszkań siedziby (zarząd, mieszkańcy, puste z powodem i rokiem), po numerze mieszkania */
+  apts: AptState[];
+  /** uszkodzenia w pustych mieszkaniach siedziby (okno, drzwi, rura, podłoga, piec); naprawy trzyma symulacja */
+  damage: Damage[];
 }
 
 const ROAD_W: Record<string, number> = {
@@ -144,6 +149,8 @@ export interface BuildOpts {
   size?: number;
   /** ulica z geokodera: nazwa siedziby, gdy mapa ma tylko numer domu */
   street?: string;
+  /** stany mieszkań siedziby z zewnątrz (generator mieszkańców); bez nich świat losuje je z ziarna */
+  apts?: readonly AptState[];
 }
 
 export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
@@ -424,7 +431,7 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   for (const k of wrecks)
     for (let y = k.y; y < k.y + k.h; y++) for (let x = k.x; x < k.x + k.w; x++) blocked[y * size + x] = 1;
 
-  return {
+  const world: World = {
     size,
     angle,
     terr,
@@ -439,7 +446,14 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     dryTree: dry.tree,
     props: [...dry.props, ...heaps, ...wrecks],
     fence,
+    apts: [],
+    damage: [],
   };
+
+  // 16. mieszkania siedziby: zarząd, mieszkańcy i puste (około połowy, z powodem i rokiem), a w pustych zepsute
+  // meble, sterty śmieci i uszkodzenia; stany może podać generator mieszkańców (opts.apts)
+  applyApts(world, settleApts(world, opts.apts));
+  return world;
 }
 
 /** grunt pod trzepak: trawa (lepiej) albo chodnik */

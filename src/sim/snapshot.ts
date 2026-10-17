@@ -4,6 +4,7 @@
 
 import type { Dom } from '../content/data.ts';
 import type { World } from '../world/world.ts';
+import { BUILDS, type BuildKind, footprint, type Mat } from './budowle.ts';
 import {
   clockOf,
   daylight,
@@ -16,6 +17,7 @@ import {
   TICKS_PER_HOUR,
 } from './clock.ts';
 import { houseOf, inHomeApt } from './house.ts';
+import type { AptGame } from './mieszkania.ts';
 import type { Needs } from './needs.ts';
 import { jobText } from './orders.ts';
 import { durability, fenceShape } from './perimeter.ts';
@@ -70,9 +72,39 @@ export interface SimStock {
   /** złom w stertach na podwórku (sztuki), deski tak samo */
   scrap: number;
   boards: number;
-  /** części i leki (bez rzeczy na mapie, z zarządu) */
+  /** części i leki (rzeczy na mapie i zapas z zarządu sprzed M2) */
   parts: number;
   meds: number;
+  /** wszystkie materiały w sztukach (rzeczy na mapie): drewno bez kozy, deski, złom, części, jedzenie, leki */
+  mats: Record<Mat, number>;
+}
+
+/** mieszkanie siedziby dla interfejsu (karta mieszkania) */
+export interface SimApt {
+  apt: number;
+  state: 'zarzad' | 'mieszkancy' | 'puste';
+  why?: AptGame['why'];
+  year?: number;
+  /** nasze: zarząd albo zajęte */
+  ours: boolean;
+  /** uszkodzenia do naprawy, pomieszczenia i ile z nich przeszukane */
+  damaged: number;
+  rooms: number;
+  searched: number;
+}
+
+/** plan budowy dla interfejsu i rysowania (duch z paskiem postępu) */
+export interface SimBuild {
+  id: number;
+  kind: BuildKind;
+  x: number;
+  y: number;
+  rot: number;
+  w: number;
+  h: number;
+  /** postęp pracy 0–1 i materiały, których jeszcze brakuje */
+  progress: number;
+  missing: Partial<Record<Mat, number>>;
 }
 
 /** stan siatki dla zarządu (GovFence): otwarte dziury, średnia wytrzymałość, brama; kafelki dziury, żeby interfejs
@@ -118,12 +150,16 @@ export interface SimSnapshot {
   cap: number;
   /** obcy (szabrownicy) na mapie */
   strangers: number;
+  /** mieszkania siedziby (M2) i plany budowy */
+  apts: SimApt[];
+  builds: SimBuild[];
   /** napad tej nocy albo ostatni: faza (0 czekają, 1 za siatką, 2 wchodzą albo uciekają, 3 po wszystkim),
       rozstrzygnięcie i co wynieśli; null: nie było */
   raid: { phase: number; outcome: string; took: { wood: number; supplies: number; scrap: number } } | null;
 }
 
 export function snapshot(st: SimState, w: World): SimSnapshot {
+  const count = (k: string) => st.things.reduce((a, t) => a + (t.kind === k ? t.n : 0), 0);
   const h = houseOf(w);
   const size = w.size;
   const tick = st.tick;
@@ -204,8 +240,16 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       gasCooks: Math.floor((stove?.fuel ?? 0) / COOK_TICKS),
       scrap,
       boards,
-      parts: st.store.parts,
-      meds: st.store.meds,
+      parts: count('czesci') + st.store.parts,
+      meds: count('leki') + st.store.meds,
+      mats: {
+        drewno: woodSklad + woodLoose + woodCarried,
+        deski: boards,
+        zlom: scrap,
+        czesci: count('czesci') + st.store.parts,
+        jedzenie: supplies,
+        leki: count('leki') + st.store.meds,
+      },
     },
     burned: st.burned.map((b) => ({ ...b })),
     fence:
@@ -224,6 +268,38 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     residents: st.pawns.filter((p) => p.kind === 'resident').length,
     cap: st.cap,
     strangers: st.pawns.filter((p) => p.kind === 'szabrownik').length,
+    apts: st.apts.map((a) => {
+      const out: SimApt = {
+        apt: a.apt,
+        state: a.state,
+        ours: a.ours,
+        damaged: st.damage.filter((d) => d.apt === a.apt && !d.fixed).length,
+        rooms: h ? h.rooms.filter((r) => r.apt === a.apt).length : 0,
+        searched: a.searched.length,
+      };
+      if (a.why) out.why = a.why;
+      if (a.year) out.year = a.year;
+      return out;
+    }),
+    builds: st.builds.map((b) => {
+      const { w: bw, h: bh } = footprint(b.kind, b.rot);
+      const missing: Partial<Record<Mat, number>> = {};
+      for (const [m, v] of Object.entries(b.need) as [Mat, number][]) {
+        const left = v - (b.have[m] ?? 0);
+        if (left > 0) missing[m] = left;
+      }
+      return {
+        id: b.id,
+        kind: b.kind,
+        x: b.x,
+        y: b.y,
+        rot: b.rot,
+        w: bw,
+        h: bh,
+        progress: Math.min(1, b.work / BUILDS[b.kind].work),
+        missing,
+      };
+    }),
     raid: st.raid ? { phase: st.raid.phase, outcome: st.raid.outcome, took: { ...st.raid.took } } : null,
   };
 }
