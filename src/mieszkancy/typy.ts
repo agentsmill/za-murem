@@ -27,7 +27,7 @@ export interface Osoba {
   plec: Plec;
   rocznik: number;
   imie: string;
-  nazwisko: string; // puste do Task 12
+  nazwisko: string; // imię i nazwisko puste, dopóki generator nie dostanie tabel nazw (imiona.ts)
   matka?: string;
   ojciec?: string;
   partner?: string;

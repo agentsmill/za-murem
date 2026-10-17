@@ -7,7 +7,13 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { marginesyDla, rejonDla } from '../../src/mieszkancy/rejon.ts';
 import { type TabeleGminy, WERSJA_TABEL } from '../../src/mieszkancy/tabele.ts';
-import { wczytajGmine, wczytajKraj } from '../../src/mieszkancy/wczytaj.ts';
+import {
+  wczytajGmine,
+  wczytajImiona,
+  wczytajKraj,
+  wczytajNazwiska,
+  wczytajNazwiskaDlaGminy,
+} from '../../src/mieszkancy/wczytaj.ts';
 import { wWielokacie } from '../../tools/dane/gminy.ts';
 import { ADDRESSES } from './fixtures.ts';
 
@@ -339,5 +345,107 @@ describe('wczytajKraj', () => {
     vi.stubGlobal('fetch', plikowy(zapytania));
     expect((await wczytajKraj()).wersja).toBe(WERSJA_TABEL);
     expect(zapytania).toEqual(['data/mieszkancy/kraj.json']);
+  });
+});
+
+describe('wczytajImiona', () => {
+  it('czyta data/mieszkancy/imiona.json względem strony', async () => {
+    const zapytania: string[] = [];
+    const t = await wczytajImiona(plikowy(zapytania));
+    expect(zapytania).toEqual(['data/mieszkancy/imiona.json']);
+    expect(t?.wersja).toBe(WERSJA_TABEL);
+    expect(Object.keys(t?.lata ?? {})).toHaveLength(26);
+    expect(t?.koszyki['1946-1959'].K.length).toBeGreaterThan(10);
+  });
+
+  it('brak pliku, błąd HTTP, błąd sieci, zły JSON i inna wersja: null z ostrzeżeniem, nigdy wyjątek', async () => {
+    const ostrzezenie = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await wczytajImiona(odpowiedz('brak', 404))).toBeNull();
+    expect(await wczytajImiona(odpowiedz('błąd', 500))).toBeNull();
+    expect(await wczytajImiona(odpowiedz('<html>'))).toBeNull();
+    expect(await wczytajImiona(odpowiedz('null'))).toBeNull();
+    const siec = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    expect(await wczytajImiona(siec)).toBeNull();
+    expect(await wczytajImiona(odpowiedz(JSON.stringify({ wersja: WERSJA_TABEL + 1 })))).toBeNull();
+    expect(ostrzezenie).toHaveBeenCalledTimes(6);
+    expect(String(ostrzezenie.mock.calls[5][0])).toContain('wersja');
+  });
+
+  it('bez podanego fetch używa globalnego', async () => {
+    const zapytania: string[] = [];
+    vi.stubGlobal('fetch', plikowy(zapytania));
+    expect((await wczytajImiona())?.wersja).toBe(WERSJA_TABEL);
+    expect(zapytania).toEqual(['data/mieszkancy/imiona.json']);
+  });
+});
+
+describe('wczytajNazwiska', () => {
+  it('czyta plik województwa z nazwą bez polskich liter, względem strony', async () => {
+    const zapytania: string[] = [];
+    expect((await wczytajNazwiska('pomorskie', plikowy(zapytania)))?.woj).toBe('pomorskie');
+    expect((await wczytajNazwiska('łódzkie', plikowy(zapytania)))?.woj).toBe('łódzkie');
+    expect((await wczytajNazwiska('warmińsko-mazurskie', plikowy(zapytania)))?.woj).toBe('warmińsko-mazurskie');
+    expect(zapytania).toEqual([
+      'data/mieszkancy/nazwiska/pomorskie.json',
+      'data/mieszkancy/nazwiska/lodzkie.json',
+      'data/mieszkancy/nazwiska/warminsko-mazurskie.json',
+    ]);
+  });
+
+  it('nieznane województwo: null z ostrzeżeniem i bez zapytania do sieci', async () => {
+    const ostrzezenie = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const zapytania: string[] = [];
+    for (const zle of ['atlantyda', '', '../kraj', 'Pomorskie', 'constructor', '__proto__']) {
+      expect(await wczytajNazwiska(zle, plikowy(zapytania)), zle).toBeNull();
+    }
+    expect(zapytania).toEqual([]);
+    expect(ostrzezenie).toHaveBeenCalledTimes(6);
+  });
+
+  it('błąd HTTP, sieci, zły JSON i inna wersja: null z ostrzeżeniem', async () => {
+    const ostrzezenie = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await wczytajNazwiska('pomorskie', odpowiedz('brak', 404))).toBeNull();
+    expect(await wczytajNazwiska('pomorskie', odpowiedz('<html>'))).toBeNull();
+    const siec = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    expect(await wczytajNazwiska('pomorskie', siec)).toBeNull();
+    expect(await wczytajNazwiska('pomorskie', odpowiedz(JSON.stringify({ wersja: WERSJA_TABEL + 1 })))).toBeNull();
+    expect(ostrzezenie).toHaveBeenCalledTimes(4);
+  });
+
+  it('bez podanego fetch używa globalnego', async () => {
+    const zapytania: string[] = [];
+    vi.stubGlobal('fetch', plikowy(zapytania));
+    expect((await wczytajNazwiska('mazowieckie'))?.woj).toBe('mazowieckie');
+    expect(zapytania).toEqual(['data/mieszkancy/nazwiska/mazowieckie.json']);
+  });
+});
+
+describe('wczytajNazwiskaDlaGminy (R35)', () => {
+  it('gmina z tabelą: nazwiska jej województwa z pulą lokalną', async () => {
+    const t = await wczytajNazwiska('pomorskie', plikowy());
+    const dla = await wczytajNazwiskaDlaGminy(gdansk, plikowy());
+    expect(dla).toEqual(t);
+    expect(dla?.lokalne.length).toBeGreaterThan(0);
+    expect(dla?.udzialLokalnych).toBe(2020);
+  });
+
+  it('bez gminy: mazowieckie bez losowania lokalnego, a plik na dysku bez zmian', async () => {
+    const zapytania: string[] = [];
+    const dla = await wczytajNazwiskaDlaGminy(null, plikowy(zapytania));
+    expect(zapytania).toEqual(['data/mieszkancy/nazwiska/mazowieckie.json']);
+    expect(dla?.woj).toBe('mazowieckie');
+    expect(dla?.udzialLokalnych).toBe(0);
+    expect(dla?.lokalne).toEqual([]);
+    expect(dla?.ogolne.length).toBe(300);
+  });
+
+  it('plik, którego nie da się wczytać: null', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await wczytajNazwiskaDlaGminy(null, odpowiedz('błąd', 500))).toBeNull();
+    expect(await wczytajNazwiskaDlaGminy(gdansk, odpowiedz('błąd', 500))).toBeNull();
   });
 });
