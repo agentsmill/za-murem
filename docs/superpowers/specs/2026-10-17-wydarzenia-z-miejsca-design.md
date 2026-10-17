@@ -64,21 +64,23 @@ Odległości na liczbach całkowitych (kwadrat odległości zamiast `Math.hypot`
 
 Liczby na czterech miejscach z analizy: Przymorze i Lanciego to blok z blokami obok, sklepem, garażami i szkołą; Zielonki to dom z domami obok, garażem i przychodnią, bez sklepu w zasięgu; dom w Zamościu to dom z domami obok (47 domów i jeden niski blok w promieniu 120 m, więc sąsiedzi to domy), sklepem 68 m i przychodnią 40 m.
 
-Wejście: nowe opcjonalne pole `GovInput.place`. Bez niego zarząd zakłada blok z blokami obok, sklepem i garażami, czyli dzisiejsze zachowanie (atrapa w testach, stare zapisy). W grze pole wypełnia jedna linijka w `govInput()` w `src/sim/gov.ts`: `place: placeOf(w)`. To plik sesji symulacji, więc o zgodę pytam koordynatora. Ilu ludzi zarząd wie już dziś (`people`, `residents`, `cap`).
+Wejście: nowe opcjonalne pole `GovInput.place`. Bez niego zarząd zakłada blok z blokami obok, sklepem i garażami, czyli dzisiejsze zachowanie (atrapa w testach, stare zapisy). W grze pole wypełnia `govInput()` w `src/sim/gov.ts`: `place: placeOf(w)`. Koordynator się zgodził (17.10.2026): na tej gałęzi w tym pliku tylko import i to jedno pole, nic więcej; `govInput` woła też bot w Node. Ilu ludzi zarząd wie już dziś (`people`, `residents`, `cap`).
 
 ## 2. Słownik wspólnoty
 
-Jedna funkcja w zarządzie daje słowa według miejsca (formy, których potrzebują teksty):
+`wordsOf(place)` w `src/gov/miejsce.ts`, obok `placeOf`, daje słowa według miejsca. To kontrakt także dla innych sesji (prośba koordynatora z 17.10.2026): po połączeniu tej gałęzi sesje fali 1 zamienią swoje teksty z listy na końcu na ten słownik, a do tego czasu ich nie ruszam. Bez opisu miejsca słownik daje blok.
 
-| | blok | dom |
-|---|---|---|
-| wspólnota | spółdzielnia | ulica |
-| organ | zarząd, zarządu, Zarząd | komitet, komitetu, Komitet |
-| zebranie | zebranie zarządu | zebranie komitetu |
-| walne | walne | zebranie ulicy |
-| sąsiedzi | z klatki, z bloku obok | zza płotu, z domu obok |
+| Klucz | blok | dom | Przykład użycia |
+|---|---|---|---|
+| `wspolnota` (M, D, w czym) | spółdzielnia, spółdzielni, w spółdzielni | ulica, ulicy, na ulicy | „Sprawy spółdzielni”, „w spółdzielni zmieści się więcej ludzi” |
+| `zarzad` (M, D, N, krótko) | zarząd, zarządu, zarządem, zarząd | komitet ulicy, komitetu ulicy, komitetem ulicy, komitet | „Prowadzicie zarząd spółdzielni”, „Zebranie zarządu, dzień 2”, „To wasz zarząd” |
+| `Zarzad` (wielką literą, M) | Zarząd | Komitet ulicy | „Zarząd odłożył uchwałę na później.” |
+| `walne` (M) | walne | zebranie ulicy | „walne odwoła zarząd” |
+| `naglowek` | Na osiedlu | Na ulicy | nagłówek okna wydarzenia |
+| `mieszkancy` (M, D) | mieszkańcy, mieszkańców | sąsiedzi, sąsiadów | „Wkurzenie mieszkańców (0–100)” |
+| `sasiad` (skąd) | z waszej klatki, z bloku obok | zza płotu, z domu obok | wydarzenia z sąsiadami |
 
-Z niej korzystają teksty zarządu: kronika („Zebranie zarządu przy kozie: pierwsza uchwała.”, „Zarząd odłożył uchwałę na później.”, „Uchwała zarządu: …”), karta nocy („Zarząd nie zdążył się naradzić…”), opisy uchwał („klucz ma tylko zarząd”) i wydarzenia.
+Dokładne nazwy pól w kodzie zostają budującemu; tabela mówi, jakie słowa i formy słownik musi mieć. Z niego korzystają też teksty zarządu: kronika („Zebranie zarządu przy kozie: pierwsza uchwała.”, „Zarząd odłożył uchwałę na później.”, „Uchwała zarządu: …”), karta nocy („Zarząd nie zdążył się naradzić…”), opisy uchwał („klucz ma tylko zarząd”) i wydarzenia.
 
 ## 3. Tempo pierwszego dnia (Mateusz)
 
@@ -180,9 +182,9 @@ Rata kredytu jest wariantem czynszu dla domu (tabela wyżej), a nie osobnym wyda
 
 ## Lista dla koordynatora: poza src/gov
 
-Do zrobienia przez sesje fali 1 według ustalonej nazwy (w domu ulica i komitet ulicy, w bloku spółdzielnia i zarząd):
+Do zrobienia przez sesje fali 1 według ustalonej nazwy (w domu ulica i komitet ulicy, w bloku spółdzielnia i zarząd), ze słownikiem `wordsOf(place)` z punktu 2. Koordynator rozda to po połączeniu tej gałęzi. Pole `place: placeOf(w)` w `govInput()` dopisuję sam na tej gałęzi, za zgodą koordynatora. Rodzina domowników i sąsiedzi z ulicy jako ludzie w symulacji to decyzja koordynatora na później, razem z generatorem mieszkańców i sesją włamań.
 
-- `src/sim/gov.ts`: pole `place: placeOf(w)` w `govInput()` (jedna linijka i import), bez tego zarząd zakłada blok; powód nastroju „Sprawy spółdzielni”.
+- `src/sim/gov.ts`: powód nastroju „Sprawy spółdzielni”.
 - `src/ui/cele.ts`: „Wyślijcie go do suchego drzewa przy trzepaku.” W domu bez trzepaka.
 - Świat (`props`): trzepak przy suchym drzewie także w ogrodzie domu; w domu coś z ogrodu (sznur na pranie, kompostownik, psia buda, huśtawka).
 - `src/ui/siatka.ts`: nazwa dziury „za trzepakiem”.
