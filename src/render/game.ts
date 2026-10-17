@@ -10,7 +10,7 @@
 import type { World } from '../world/world.ts';
 import type { FenceState } from './art/rzeczy.ts';
 import type { Light } from './light.ts';
-import type { PawnLike } from './poses.ts';
+import { KOZA_POST, type PawnLike } from './poses.ts';
 import { IN, type ThingLike } from './section.ts';
 import type { FenceLike } from './yard.ts';
 
@@ -124,9 +124,9 @@ export function gameLights(g: Pick<GameLike, 'st' | 'light'>, windows: readonly 
     else if ((t.kind === 'lampa' || t.kind === 'budka') && (t.fuel ?? 1) > 0)
       out.push({ x: t.x + 0.5, y: t.y + 0.6, r: 3, color: LAMP, strength: 0.75, flicker: 0.08 });
   }
-  // latarnia wartownika (praca 'warta' na miejscu): w ręce, z boku
+  // latarnia wartownika na posterunku (brama, dziura): w ręce, z boku; czuwający przy kozie ma jej ogień
   for (const p of g.st.pawns ?? [])
-    if (p.job?.t === 'guard' && p.job.phase === 1)
+    if (p.job?.t === 'guard' && p.job.phase === 1 && p.job.target !== KOZA_POST)
       out.push({ x: p.x + 0.25, y: p.y - 0.1, r: 3, color: LAMP, strength: 0.7, flicker: 0.1 });
   for (const s of windows) {
     const lv = g.light[s.room] ?? 0;

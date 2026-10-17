@@ -2,8 +2,8 @@
    pionek za drzewem chowa się za koroną, przed drzewem stoi przed nią. Bliskie kawałki mapy
    (32 px na kafelek, także przekrój) rysują już tylko cień drzewa, dalekie (8 px) mają drzewa
    w sobie, więc przy oddaleniu sprite'ów nie ma i nic nie kosztują. Suche drzewo z grafiki
-   zastępczej, ścięte (treeGone) znikają. Korona, za którą stoi ktoś z zarządu, robi się
-   półprzezroczysta, żeby nie zgubić swoich ludzi. */
+   zastępczej, ścięte (treeGone) znikają. Za koroną ktoś z zarządu nie ginie: widok rysuje jego
+   zarys na wierzchu (covering mówi, czy punkt leży za którąś z koron). */
 
 import { BufferImageSource, type Container, Sprite, Texture } from 'pixi.js';
 import type { Tree } from '../world/world.ts';
@@ -14,8 +14,6 @@ import { treeKey, treeReady, treeSprite } from './art/trees.ts';
 const TILE = 32;
 /** nowych tekstur drzew na klatkę (zwykle kilkadziesiąt wyglądów na całą mapę) */
 const NEW_PER_FRAME = 12;
-/** krycie korony nad kimś z zarządu */
-const SEE_THROUGH = 0.5;
 
 interface Art {
   tex: Texture;
@@ -24,13 +22,6 @@ interface Art {
   ay: number;
   w: number;
   h: number;
-}
-
-/** to, czego warstwa drzew potrzebuje z pionka */
-export interface Walker {
-  kind: string;
-  x: number;
-  y: number;
 }
 
 /**
@@ -49,6 +40,7 @@ export class TreeLayer {
   private wanted: number[] = [];
   private sig = '';
   private linear = false;
+  private trees: readonly Tree[] = [];
   /** drzewa czekające na teksturę (limit nowych tekstur na klatkę) */
   pending = false;
 
@@ -65,12 +57,18 @@ export class TreeLayer {
     return n;
   }
 
+  /** czy punkt (metry) leży za koroną któregoś z widocznych drzew */
+  covering(x: number, y: number): boolean {
+    for (const [k, sp] of this.sprites) if (sp.visible && behindCrown(this.trees[k], x, y)) return true;
+    return false;
+  }
+
   /**
    * Drzewa z kawałków order jako sprite'y; near false (z daleka) chowa je wszystkie. linear:
-   * wygładzanie jak w bliskich kawałkach (przy zoomie poniżej 1). people: pionki, za których
-   * koronami korona robi się półprzezroczysta (tylko zarząd).
+   * wygładzanie jak w bliskich kawałkach (przy zoomie poniżej 1).
    */
-  update(sc: ChunkScene, order: readonly number[], near: boolean, linear: boolean, people: readonly Walker[]): void {
+  update(sc: ChunkScene, order: readonly number[], near: boolean, linear: boolean): void {
+    this.trees = sc.w.trees;
     if (!near) {
       for (const s of this.sprites.values()) s.visible = false;
       this.pending = false;
@@ -94,7 +92,6 @@ export class TreeLayer {
         }
     }
     const trees = sc.w.trees;
-    const core = people.filter((p) => p.kind === 'core');
     let fresh = 0;
     this.pending = false;
     for (const k of this.wanted) {
@@ -129,13 +126,6 @@ export class TreeLayer {
         this.sprites.set(k, sp);
       }
       sp.visible = true;
-      let see = false;
-      for (const p of core)
-        if (behindCrown(t, p.x, p.y)) {
-          see = true;
-          break;
-        }
-      sp.alpha = see ? SEE_THROUGH : 1;
     }
   }
 }
