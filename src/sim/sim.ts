@@ -1472,7 +1472,10 @@ export class Sim {
       zanosi leżące drewno do składu i grzeje się przy kozie, kiedy mu zimno. Sam nie ścina drzew:
       to polecenie gracza (samouczek). */
   private think(p: Pawn): void {
-    if (p.kind === 'resident') return this.plan(p);
+    if (p.kind === 'resident') {
+      this.plan(p);
+      return;
+    }
     const n = p.needs!;
     if (p.carry > 0) {
       if (this.startRefuel(p, false) || this.startHaul(p)) return;
