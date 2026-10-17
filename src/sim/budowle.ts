@@ -43,7 +43,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
     place: 'kuchnia',
     w: 2,
     h: 1,
-    cost: { zlom: 14, czesci: 8 },
+    cost: { zlom: 14, czesci: 10 },
     work: (3 * TICKS_PER_HOUR) / 2,
     effect: 'Jedno gotowanie dla wszystkich, mniej jedzenia na osobę.',
   },
@@ -81,7 +81,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
     h: 1,
     cost: { zlom: 10 },
     work: (3 * TICKS_PER_HOUR) / 4,
-    effect: 'Mocniejsze od siatki, szabrownik się na nich rani.',
+    effect: 'Mocniejsze od siatki i łaty, zamykają dziurę.',
   },
 };
 

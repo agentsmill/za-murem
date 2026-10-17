@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BUILDS } from '../../src/sim/budowle.ts';
+import { BUILDS, type BuildKind, buildTiles } from '../../src/sim/budowle.ts';
+import { REPAIR, searchTicks } from '../../src/sim/mieszkania.ts';
 import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { mockBlock, mockBlockM2 } from './interior-mock.ts';
@@ -107,14 +108,19 @@ describe('M2: przeszukanie, rozbiórka, naprawa i zajęcie mieszkania', () => {
       const [p] = core(st);
       sim.push({ t: 'search', ids: [p.id], room });
       const texts = new Set<string>();
+      let t1 = -1;
       run(sim, () => {
         texts.add(jobText(st, w, p));
+        if (t1 < 0 && p.job?.t === 'search' && p.job.phase === 1) t1 = st.tick;
         return st.apts[2].searched.includes(room);
       });
-      return { st, sim, p, texts };
+      // czas przeszukania według wielkości pomieszczenia (kafelki, po których da się chodzić)
+      const area = (sim as unknown as { roomTiles: number[][] }).roomTiles[room].length;
+      return { st, sim, p, texts, took: st.tick - t1, area };
     };
     const a = once();
     expect(a.st.apts[2].searched).toEqual([room]);
+    expect(Math.abs(a.took - searchTicks(a.area))).toBeLessThanOrEqual(2);
     expect(a.texts).toContain('Przeszukuje pokój.');
     const loot = inRoom(a.st, room).map((t) => [t.kind, t.n]);
     expect(loot.length).toBeGreaterThan(0);
@@ -674,5 +680,257 @@ describe('M2: działanie budowli', () => {
     expect(base.eaten).toBe(base.meals);
     expect(k.meals).toBeGreaterThan(10);
     expect(k.eaten).toBeLessThanOrEqual(Math.ceil(k.meals * 0.85));
+  });
+});
+
+describe('M2: poprawki z przeglądu', () => {
+  const core = (st: SimState) => st.pawns.filter((p) => p.kind === 'core');
+  const mat = (st: SimState, k: string) => st.things.filter((t) => t.kind === k).reduce((a, t) => a + t.n, 0);
+  const run = (sim: Sim, ok: () => boolean, max = 12000) => {
+    for (let k = 0; k < max && !ok(); k++) sim.step();
+  };
+  const atHour = (day: number, hh: number) => Math.round(((day - 1) * 24 + hh - 15) * 800);
+  const roomOf = (apt: number, kind: string) => h.rooms.find((r) => r.apt === apt && r.kind === kind)!.id;
+  const covered = (st: SimState, i: number) =>
+    st.things.some(
+      (t) => i % size >= t.x && i % size < t.x + t.w && Math.floor(i / size) >= t.y && Math.floor(i / size) < t.y + t.h,
+    );
+  const freeIn = (st: SimState, room: number) => {
+    const out: number[] = [];
+    for (let i = 0; i < size * size; i++)
+      if (h.room[i] === room && !w.blocked[i] && !h.sklad.includes(i) && !covered(st, i)) out.push(i);
+    return out;
+  };
+  const pile = (st: SimState, kind: string, i: number, n: number) =>
+    st.things.push({
+      id: st.nextThing++,
+      kind,
+      x: i % size,
+      y: Math.floor(i / size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+  /** materiały luzem w mieszkaniu zarządu poza pomieszczeniem `avoid` (po 10 w stercie) */
+  const stockUp = (st: SimState, cost: Partial<Record<string, number>>, avoid: number) => {
+    const free = h.rooms.filter((r) => r.apt === 0 && r.id !== avoid).flatMap((r) => freeIn(st, r.id));
+    for (const [kind, all] of Object.entries(cost))
+      for (let n = all ?? 0; n > 0; n -= 10) pile(st, kind, free.shift()!, Math.min(10, n));
+  };
+  const spotFor = async (st: SimState, kind: BuildKind, room: number) => {
+    const { canPlace } = await import('../../src/sim/budowle.ts');
+    for (let i = 0; i < size * size; i++)
+      if (h.room[i] === room && canPlace(st, w, kind, i % size, Math.floor(i / size), 0).ok) return i;
+    return -1;
+  };
+
+  it('naprawa z materiałem już przy uszkodzeniu trwa pełny czas od dojścia', () => {
+    const st = createSim(w, 3, { core: 1 });
+    const sim = new Sim(w, st);
+    const [p] = core(st);
+    const k = st.damage.findIndex((d) => d.kind === 'okno');
+    st.damage[k].have = { deski: 2 };
+    sim.push({ t: 'repair', ids: [p.id], damage: k });
+    let start = -1;
+    run(sim, () => {
+      if (start < 0 && p.job?.t === 'repair' && p.pi >= p.path.length) start = st.tick;
+      return st.damage[k].fixed;
+    });
+    expect(st.damage[k].fixed).toBe(true);
+    expect(st.tick - start).toBeGreaterThanOrEqual(REPAIR.okno.work - 1);
+  });
+
+  it('zarząd płaci lekami i częściami także z rzeczy na mapie, a przybytek kładzie jako rzeczy', async () => {
+    const { applyGov } = await import('../../src/sim/gov.ts');
+    const { emptyEffects } = await import('../../src/gov/wspolne.ts');
+    const st = createSim(w, 3, { core: 1 });
+    pile(st, 'leki', freeIn(st, roomOf(0, 'pokoj'))[0], 3);
+    const c0 = mat(st, 'czesci');
+    const fx = emptyEffects();
+    fx.stock.meds = -3;
+    fx.stock.parts = 5;
+    applyGov(st, w, fx);
+    expect([mat(st, 'leki'), st.store.meds]).toEqual([0, 0]);
+    expect([mat(st, 'czesci'), st.store.parts]).toEqual([c0 + 5, 0]);
+  });
+
+  it('osoba, która odchodzi w trakcie budowy, zwalnia plan i zostawia niesiony materiał', async () => {
+    const { removeCore } = await import('../../src/sim/sim.ts');
+    const st = createSim(w, 3, { core: 2 });
+    const sim = new Sim(w, st);
+    const room = roomOf(0, 'pokoj');
+    const at = await spotFor(st, 'lozka_pietrowe', room);
+    stockUp(st, BUILDS.lozka_pietrowe.cost, room);
+    const [p] = core(st);
+    sim.push({ t: 'build', ids: [p.id], kind: 'lozka_pietrowe', x: at % size, y: Math.floor(at / size), rot: 0 });
+    run(sim, () => p.job?.t === 'build' && p.job.phase === 1 && p.job.n > 0);
+    const b = st.builds[0];
+    const total = mat(st, 'deski') + (b.have.deski ?? 0) + p.job!.n;
+    expect(removeCore(st, st.people[p.person].id, w)).toBe(true);
+    expect(b.by).toBe(-1);
+    expect(mat(st, 'deski') + (b.have.deski ?? 0)).toBe(total);
+  });
+
+  it('zapis sprzed M2 w świecie ze stanami mieszkań: mieszkańcy zostają u siebie, ognisko w toku to campfire, kopie idą tak samo', () => {
+    const old = mockBlock();
+    const save = JSON.parse(JSON.stringify(createSim(old, 3, { core: 2 }))) as SimState;
+    const raw = save as unknown as Record<string, unknown>;
+    delete raw.apts;
+    delete raw.damage;
+    delete raw.builds;
+    const resApt = save.pawns.find((p) => p.kind === 'resident')!.apt;
+    const c = save.pawns.find((p) => p.kind === 'core')!;
+    const tile = Math.floor(c.y) * old.size + Math.floor(c.x);
+    // w M1 praca ogniska nazywała się 'build'
+    c.job = { t: 'build', target: tile, tile, phase: 0, from: -1, t0: 0, until: 0, order: true, n: 0, what: '' };
+    const bid = old.interior.building;
+    const now = {
+      ...old,
+      apts: [
+        { bid, apt: 0, state: 'zarzad' },
+        { bid, apt: resApt, state: 'puste', why: 'wyjazd', year: 2030 },
+      ],
+    } as unknown as typeof old;
+    const a = new Sim(now, JSON.parse(JSON.stringify(save)));
+    const g = a.st.apts.find((x) => x.apt === resApt)!;
+    expect([g.state, g.why, g.year]).toEqual(['mieszkancy', undefined, undefined]);
+    expect(a.st.pawns.find((p) => p.id === c.id)!.job?.t).toBe('campfire');
+    const b = new Sim(now, JSON.parse(JSON.stringify(save)));
+    for (let k = 0; k < 2000; k++) {
+      a.step();
+      b.step();
+    }
+    expect(a.hash()).toBe(b.hash());
+  });
+
+  it('dwa plany na jeden zapas: zarząd kończy jeden, zamiast rozkładać materiał na oba', async () => {
+    const st = createSim(w, 3, { core: 2 });
+    st.tick = atHour(2, 9);
+    st.things = st.things.filter((t) => t.kind !== 'deski');
+    st.apts[2].ours = true;
+    const sim = new Sim(w, st);
+    const a = await spotFor(st, 'lozka_pietrowe', roomOf(0, 'pokoj'));
+    const b = await spotFor(st, 'lozka_pietrowe', roomOf(2, 'pokoj'));
+    expect(Math.min(a, b)).toBeGreaterThanOrEqual(0);
+    for (const i of [a, b])
+      sim.push({ t: 'build', ids: [], kind: 'lozka_pietrowe', x: i % size, y: Math.floor(i / size), rot: 0 });
+    sim.step();
+    expect(st.builds).toHaveLength(2);
+    stockUp(st, { deski: BUILDS.lozka_pietrowe.cost.deski }, roomOf(0, 'pokoj'));
+    run(sim, () => st.things.some((t) => t.kind === 'lozka_pietrowe'), 16000);
+    expect(st.things.filter((t) => t.kind === 'lozka_pietrowe')).toHaveLength(1);
+    expect(st.builds).toHaveLength(1);
+    expect(st.builds[0].have.deski ?? 0).toBe(0);
+  });
+
+  it('plan bez kompletu materiałów nie zabiera osoby z warty', async () => {
+    const st = createSim(w, 3, { core: 1 });
+    st.tick = atHour(1, 21);
+    const sim = new Sim(w, st);
+    const [p] = core(st);
+    sim.push({ t: 'guard', ids: [p.id], post: 'brama' });
+    run(sim, () => p.job?.t === 'guard' && p.job.phase === 1, 4000);
+    expect(p.job?.t).toBe('guard');
+    // kuchnia społeczna: złom jest, części nie ma
+    const at = await spotFor(st, 'kuchnia_spoleczna', roomOf(0, 'kuchnia'));
+    sim.push({ t: 'build', ids: [p.id], kind: 'kuchnia_spoleczna', x: at % size, y: Math.floor(at / size), rot: 0 });
+    sim.step();
+    expect(st.builds).toHaveLength(1);
+    expect(p.job?.t).toBe('guard');
+  });
+
+  it('rozbiórka zasieków przywraca łatę albo siatkę sprzed nich', async () => {
+    const { canPlace } = await import('../../src/sim/budowle.ts');
+    const st = createSim(w, 3, { core: 1 });
+    const hole = st.fence!.holes[0];
+    hole.patch = 70;
+    const k = w.fence.tiles.findIndex(
+      (i) => !w.fence.hole.includes(i) && canPlace(st, w, 'zasieki', i % size, Math.floor(i / size), 0).ok,
+    );
+    st.fence!.hp[k] = 63;
+    const sim = new Sim(w, st);
+    const [p] = core(st);
+    for (const t of [hole.tiles[0], w.fence.tiles[k]]) {
+      st.things.find((q) => q.kind === 'zlom')!.n = BUILDS.zasieki.cost.zlom!;
+      sim.push({ t: 'build', ids: [p.id], kind: 'zasieki', x: t % size, y: Math.floor(t / size), rot: 0 });
+      run(sim, () => st.things.some((q) => q.kind === 'zasieki'));
+      const z = st.things.find((q) => q.kind === 'zasieki')!;
+      sim.push({ t: 'unbuild', ids: [], id: z.id });
+      sim.step();
+    }
+    expect(hole.patch).toBe(70);
+    expect(st.fence!.hp[k]).toBe(63);
+  });
+
+  it('łóżka piętrowe w zajętym pustym mieszkaniu liczą się raz i dopiero po naprawie', async () => {
+    const { capOf } = await import('../../src/sim/sim.ts');
+    const st = createSim(w, 3, { core: 1 });
+    const cap0 = capOf(st, w);
+    st.apts[3].ours = true;
+    const at = await spotFor(st, 'lozka_pietrowe', roomOf(3, 'pokoj'));
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'lozka_pietrowe',
+      x: at % size,
+      y: Math.floor(at / size),
+      w: 1,
+      h: 2,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    // nienaprawione: nikt tam nie zamieszka
+    expect(capOf(st, w)).toBe(cap0);
+    for (const d of st.damage) if (d.apt === 3) d.fixed = true;
+    // jedno całe łóżko (wersalka zepsuta) i dwa miejsca w piętrowych
+    expect(capOf(st, w)).toBe(cap0 + 1 + 2);
+  });
+
+  it('budowę, do której zarząd wziął się sam, przerywa noc; plan czeka do rana z doniesionym materiałem', async () => {
+    const st = createSim(w, 3, { core: 1 });
+    st.tick = atHour(1, 21.5);
+    const sim = new Sim(w, st);
+    const room = roomOf(0, 'pokoj');
+    const at = await spotFor(st, 'warsztat', room);
+    stockUp(st, BUILDS.warsztat.cost, room);
+    sim.push({ t: 'build', ids: [], kind: 'warsztat', x: at % size, y: Math.floor(at / size), rot: 0 });
+    let started = false;
+    while (st.tick < atHour(1, 22.5)) {
+      sim.step();
+      if (core(st)[0].job?.t === 'build') started = true;
+    }
+    expect(started).toBe(true);
+    expect(core(st)[0].job?.t).not.toBe('build');
+    expect(st.builds).toHaveLength(1);
+    expect(st.builds[0].by).toBe(-1);
+  });
+
+  it('odwołany plan oddaje materiał obok obrysu, a na planie nie rozpali się ogniska', async () => {
+    const { canPlace } = await import('../../src/sim/budowle.ts');
+    const { campfireSpotOk } = await import('../../src/sim/sim.ts');
+    const st = createSim(w, 3, { core: 1 });
+    const sim = new Sim(w, st);
+    const [p] = core(st);
+    const room = roomOf(0, 'pokoj');
+    const at = await spotFor(st, 'warsztat', room);
+    stockUp(st, BUILDS.warsztat.cost, room);
+    sim.push({ t: 'build', ids: [p.id], kind: 'warsztat', x: at % size, y: Math.floor(at / size), rot: 0 });
+    run(sim, () => (st.builds[0]?.have.deski ?? 0) >= 6);
+    expect(st.builds[0].have.deski).toBeGreaterThanOrEqual(6);
+    sim.push({ t: 'unbuild', ids: [], id: st.builds[0].id });
+    sim.step();
+    expect(canPlace(st, w, 'warsztat', at % size, Math.floor(at / size), 0).ok).toBe(true);
+    const g = w.fence.yard.find((i) => canPlace(st, w, 'ogrodek', i % size, Math.floor(i / size), 0).ok)!;
+    sim.push({ t: 'build', ids: [], kind: 'ogrodek', x: g % size, y: Math.floor(g / size), rot: 0 });
+    sim.step();
+    expect(buildTiles('ogrodek', g % size, Math.floor(g / size), 0, size).some((i) => campfireSpotOk(st, w, i))).toBe(
+      false,
+    );
   });
 });

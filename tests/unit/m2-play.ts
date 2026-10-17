@@ -47,19 +47,32 @@ export function m2Player(opts: M2Opts): { player: Player; log: M2Log } {
   /** cele, których nie dało się zacząć (nieosiągalne): klucz 'rodzaj:cel' */
   const bad = new Set<string>();
   let last: { pawn: number; key: string; job: string } | null = null;
+  /** ile było do rozebrania na starcie */
+  let start = -1;
 
   const player: Player = (sim, w, s, order) => {
     const st = sim.st;
+    const hs = houseOf(w);
+    if (!hs) return;
+    const size = w.size;
     for (const t of st.things)
       if (t.kind in BUILDS && !seen.has(t.id)) {
         seen.add(t.id);
         if (st.tick > 0) log.built.push({ kind: t.kind as BuildKind, tick: st.tick });
       }
+    // liczniki ze stanu gry (zrobione prace, nie wydane polecenia); do rozebrania: śmieci i meble w pustych
+    const left = st.things.filter((t) => {
+      const r = hs.room[t.y * size + t.x];
+      const apt = r >= 0 ? hs.rooms[r].apt : -1;
+      return RUBBISH.has(t.kind) || (DISMANTLE[t.kind] && st.apts.find((a) => a.apt === apt)?.state === 'puste');
+    }).length;
+    if (start < 0) start = left;
+    log.dismantled = start - left;
+    log.searched = st.apts.reduce((a, g) => a + g.searched.length, 0);
+    log.repaired = st.damage.filter((d) => d.fixed).length;
+    log.claimed = st.apts.filter((g) => g.ours && g.state === 'puste').length;
     const h = hourOf(st.tick);
     if (dayOf(st.tick) < 2 || h < 7 || h >= 22 || s % EVERY) return;
-    const hs = houseOf(w);
-    if (!hs) return;
-    const size = w.size;
     // poprzednie polecenie nie ruszyło: cel nieosiągalny, następnym razem inny
     if (last) {
       const p = st.pawns.find((q) => q.id === last!.pawn);
@@ -117,7 +130,6 @@ export function m2Player(opts: M2Opts): { player: Player; log: M2Log } {
         covers(REPAIR[d.kind].cost, need),
     );
     if (fix >= 0) {
-      log.repaired++;
       const d = st.damage[fix];
       return send(
         { t: 'repair', ids: [p.id], damage: fix },
@@ -141,7 +153,6 @@ export function m2Player(opts: M2Opts): { player: Player; log: M2Log } {
       };
       const r = nearest(rooms, firstTile);
       if (r) {
-        log.searched++;
         return send({ t: 'search', ids: [p.id], room: r.id }, `search:${r.id}`, 'search', `przeszukanie: ${r.kind}`);
       }
     }
@@ -165,7 +176,6 @@ export function m2Player(opts: M2Opts): { player: Player; log: M2Log } {
           )
         : undefined);
     if (pick) {
-      log.dismantled++;
       return send(
         { t: 'dismantle', ids: [p.id], thing: pick.id },
         `dismantle:${pick.id}`,
@@ -183,7 +193,6 @@ export function m2Player(opts: M2Opts): { player: Player; log: M2Log } {
         !st.things.some((t) => RUBBISH.has(t.kind) && aptOf(tile(t)) === a.apt),
     );
     if (done && !busy('claim', done.apt)) {
-      log.claimed++;
       return send({ t: 'claim', ids: [p.id], apt: done.apt }, `claim:${done.apt}`, 'claim', 'zajęcie mieszkania');
     }
   };
