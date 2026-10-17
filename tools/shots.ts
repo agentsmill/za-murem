@@ -1713,6 +1713,115 @@ const SHOTS: Shot[] = [
       if (Number(group) !== pts.length) throw new Error('ramka z Shiftem nie zaznaczyła całego zarządu');
     },
   },
+  {
+    // Mac: Ctrl+klik to prawy przycisk, dwa palce na gładziku przesuwają mapę, szczypanie (wheel z ctrlKey
+    // w Chrome i Firefoksie, gesturechange w Safari) i kółko myszy przybliżają
+    name: 'mysz-mac',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const cardShown = () =>
+        page
+          .waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 })
+          .then(() => true)
+          .catch(() => false);
+      const [px, py] = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+        return zm.screenOf(p.x, p.y - 0.6);
+      });
+      await page.mouse.click(px, py);
+      if (!(await cardShown())) throw new Error('kliknięcie nie zaznaczyło nikogo z zarządu');
+      // Ctrl+klik w suche drzewo: menu poleceń jak prawy przycisk, zaznaczenie zostaje
+      const tree = await page.evaluate(() => {
+        const zm = window.zm!;
+        const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
+        zm.setCam(t.x, t.y - 1, 1.3);
+        return [t.x, t.y] as [number, number];
+      });
+      await waitIdle(page);
+      const [tx, ty] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.3), tree);
+      await page.keyboard.down('Control');
+      await page.mouse.click(tx, ty);
+      await page.keyboard.up('Control');
+      const menu = await page.evaluate(() => ({
+        open: !document.getElementById('ctx')!.hidden,
+        items: [...document.querySelectorAll('#ctx .ctx-item')].map((b) => b.textContent ?? ''),
+        card: !document.getElementById('card')!.hidden,
+      }));
+      console.log(
+        `  Ctrl+klik w suche drzewo: menu ${menu.open ? menu.items.join(' | ') : 'zamknięte'}, zaznaczenie ${menu.card ? 'zostało' : 'zgubione'}`,
+      );
+      if (!menu.open || !menu.items.some((t) => t.startsWith('Ściąć drzewo')))
+        throw new Error('Ctrl+klik nie otworzył menu poleceń');
+      if (!menu.card) throw new Error('Ctrl+klik zgubił zaznaczenie');
+      await page.screenshot({ path: path.join(OUT, 'mysz-mac-menu.png') });
+      await page.keyboard.press('Escape');
+      // zdarzenia wheel i gest Safari na środku mapy (Playwright nie ma gładzika ani Safari)
+      const wheel = (o: { dx?: number; dy?: number; mode?: number; ctrl?: boolean }) =>
+        page.evaluate((o) => {
+          const c = document.querySelector('#stage canvas')!;
+          const r = c.getBoundingClientRect();
+          c.dispatchEvent(
+            new WheelEvent('wheel', {
+              deltaX: o.dx ?? 0,
+              deltaY: o.dy ?? 0,
+              deltaMode: o.mode ?? 0,
+              ctrlKey: !!o.ctrl,
+              clientX: r.left + r.width / 2,
+              clientY: r.top + r.height / 2,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          const cam = window.zm!.view.cam;
+          return { x: cam.x, y: cam.y, zoom: cam.zoom };
+        }, o);
+      const cam = () => page.evaluate(() => ({ ...window.zm!.view.cam }));
+      const c0 = await cam();
+      // szczypanie w Chrome i Firefoksie: wheel z ctrlKey przybliża
+      const c1 = await wheel({ dy: -8, ctrl: true });
+      // gładzik: mała delta i delta w poziomie przesuwają mapę bez zmiany zoomu
+      await wheel({ dy: 6 });
+      const c2 = await wheel({ dx: 30, dy: 2 });
+      // kółko myszy po przerwie w geście gładzika: deltaY 100 oddala, -100 przybliża
+      await page.waitForTimeout(400);
+      const c3 = await wheel({ dy: 100 });
+      const c4 = await wheel({ dy: -100 });
+      // Firefox z kółkiem: linie
+      await page.waitForTimeout(50);
+      const c5 = await wheel({ dy: -3, mode: 1 });
+      // Safari: gesturestart, gesturechange ze scale, gestureend (z preventDefault, żeby nie rosła cała strona)
+      const g = await page.evaluate(() => {
+        const c = document.querySelector('#stage canvas')!;
+        const r = c.getBoundingClientRect();
+        const ev = (type: string, scale: number) => {
+          const e = new Event(type, { bubbles: true, cancelable: true });
+          Object.assign(e, { scale, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+          c.dispatchEvent(e);
+          return e.defaultPrevented;
+        };
+        const z0 = window.zm!.view.cam.zoom;
+        const p0 = ev('gesturestart', 1);
+        const p1 = ev('gesturechange', 1.5);
+        const z1 = window.zm!.view.cam.zoom;
+        const p2 = ev('gestureend', 1.5);
+        return { z0, z1, prevented: p0 && p1 && p2 };
+      });
+      const f = (n: number) => n.toFixed(3);
+      console.log(
+        `  zoom: start ${f(c0.zoom)}, szczypanie ${f(c1.zoom)}, gładzik ${f(c2.zoom)} (mapa o ${Math.round(Math.hypot(c2.x - c1.x, c2.y - c1.y))} px świata), kółko +100 ${f(c3.zoom)}, -100 ${f(c4.zoom)}, linie ${f(c5.zoom)}, Safari ${f(g.z0)} → ${f(g.z1)}`,
+      );
+      if (!(c1.zoom > c0.zoom)) throw new Error('wheel z ctrlKey (szczypanie) nie przybliżył');
+      if (c2.zoom !== c1.zoom || (c2.x === c1.x && c2.y === c1.y))
+        throw new Error('gładzik zmienił zoom albo nie przesunął mapy');
+      if (!(c3.zoom < c2.zoom) || !(c4.zoom > c3.zoom)) throw new Error('kółko myszy (deltaY ±100) nie zmienia zoomu');
+      if (!(c5.zoom > c4.zoom)) throw new Error('kółko w liniach nie przybliżyło');
+      if (!(g.z1 > g.z0 * 1.4) || !g.prevented)
+        throw new Error('gest Safari (gesturechange) nie przybliżył albo nie zablokował strony');
+    },
+  },
 ];
 
 /** n klatek przeglądarki */
