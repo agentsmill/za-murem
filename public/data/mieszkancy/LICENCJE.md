@@ -4,7 +4,7 @@ Tabele w katalogu `public/data/mieszkancy/` to przeliczone agregaty z otwartych 
 
 ## Co zrobiliśmy z danymi
 
-Informacja o przetworzeniu, której wymaga CC BY 4.0 i dobry zwyczaj przy danych GUS: dane zostały przeliczone na małe tablice JSON. Współczynniki są zaokrąglone do liczb całkowitych (umieralność na 100 000, płodność na 10 000). Tablice rejonów statystycznych NSP 2021 są zsumowane do gmin i do kraju, z plików obwodów spisowych nie korzystamy. Granice rejonów są uproszczone do 5 metrów. Struktura wieku jest złożona w 10-letnie grupy. Wartości w tabelach nie są oficjalnymi publikacjami GUS ani Eurostatu i nie wolno ich tak cytować.
+Informacja o przetworzeniu, której wymaga CC BY 4.0 i dobry zwyczaj przy danych GUS: dane zostały przeliczone na małe tablice JSON. Współczynniki są zaokrąglone do liczb całkowitych (umieralność na 100 000, płodność na 10 000). Tablice rejonów statystycznych NSP 2021 są zsumowane do gmin i do kraju, z plików obwodów spisowych nie korzystamy. Granice rejonów są uproszczone do 5 metrów. Struktura wieku jest złożona w 10-letnie grupy. Mnożniki płodności są przeliczone tak, żeby krzywa Eurostatu dawała dzietność GUS dla miast i wsi, a udziały kolejności urodzeń przeskalowane do 100% wśród urodzeń o znanej kolejności. Wartości w tabelach nie są oficjalnymi publikacjami GUS ani Eurostatu i nie wolno ich tak cytować.
 
 ## Źródła i warunki
 

@@ -66,11 +66,13 @@ export interface TabeleKraju {
   /** Urodzenia na 10 000 kobiet rocznie w wieku 15-49 lat (35 wartości). Eurostat demo_frate, Polska 2024.
       Suma to TFR Eurostatu (1,14), nieco wyższy od TFR GUS 1,099, bo baza ludności jest inna. */
   plodnosc: number[];
-  /** TFR obszaru podzielony przez TFR kraju, na 10 000: miasta 100 tys.+ 1,000, miasta 1,069, wieś 1,149 wobec
-      1,099 (GUS 2024). Mnożnik stosuje się do krzywej `plodnosc`; jej suma jest o ok. 3,5% wyższa niż 1,099. */
+  /** Mnożnik krzywej `plodnosc` na 10 000: TFR obszaru według GUS 2024 (miasta 100 tys.+ 1,000, miasta 1,069, wieś
+      1,149) podzielony przez TFR samej krzywej (jej suma / 10 000, ok. 1,138). Dzięki temu krzywa x mnożnik / 10 000
+      daje dokładnie TFR GUS danego obszaru. */
   mnoznikPlodnosci: { miasto100k: number; miasto: number; wies: number };
-  /** Urodzenia według kolejności w 2024 (GUS): pierwsze, drugie, trzecie, czwarte i dalsze, na 10 000. Suma to
-      9 650, bo 3,5% urodzeń ma w GUS kolejność nieustaloną; brakujące 350 czytelnik tabeli dolicza do 3+. */
+  /** Udziały urodzeń według kolejności (pierwsze, drugie, trzecie, czwarte i dalsze) na 10 000, suma dokładnie
+      10 000. GUS 2024 podaje 44,1 / 33,9 / 12,4 / 6,1% (razem 96,5%, reszta ma kolejność nieustaloną), więc tu są
+      udziały wśród urodzeń o znanej kolejności, przeskalowane do 100%. */
   kolejnosc: [number, number, number, number];
   /** Liczba gospodarstw domowych w Polsce wg NSP 2021: klucz `${Wielkosc}|${Sklad}|${'60+' | 'bez60'}`, gdzie
       „60+” znaczy, że w gospodarstwie jest osoba w wieku 60 lat i więcej, a „bez60”, że nie ma żadnej. Bez kluczy

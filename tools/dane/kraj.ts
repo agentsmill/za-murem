@@ -106,6 +106,34 @@ export function plodnoscZCsv(csv: string): number[] {
   return wartosci;
 }
 
+/** Mnożnik płodności obszaru na 10 000, taki że krzywa `plodnosc` x mnożnik / 10 000 daje TFR obszaru według GUS.
+    `tfrTys` to TFR obszaru w tysięcznych (np. 1069), `plodnosc` to krzywa na 10 000 kobiet (jej suma / 10 000 to
+    jej własny TFR, u Eurostatu o ok. 3,5% wyższy niż GUS). Mnożnik = TFR obszaru / TFR krzywej, więc
+    10 000 x (tfrTys / 1000) / (suma / 10 000) = 100 000 x tfrTys / suma. */
+export function mnoznikTfr(tfrTys: number, plodnosc: readonly number[]): number {
+  const s = sumuj(plodnosc);
+  if (s <= 0) throw new Error('Mnożnik płodności: krzywa płodności ma zerową sumę');
+  return Math.round((100000 * tfrTys) / s);
+}
+
+/** Wartości przeskalowane tak, żeby dawały dokładnie `cel` (np. 10 000): metoda największych reszt na liczbach
+    całkowitych, remis rozstrzyga niższy indeks. Wejście to liczby nieujemne o dodatniej sumie. */
+export function normalizujDo(wartosci: readonly number[], cel: number): number[] {
+  if (wartosci.some((v) => v < 0)) throw new Error('Normalizacja: wartość ujemna');
+  const razem = sumuj(wartosci);
+  if (razem <= 0) throw new Error('Normalizacja: suma wartości musi być dodatnia');
+  const iloczyny = wartosci.map((v) => v * cel);
+  const wynik = iloczyny.map((n) => (n - (n % razem)) / razem);
+  let brak = cel - sumuj(wynik);
+  const wgReszty = [...wartosci.keys()].sort((a, b) => (iloczyny[b] % razem) - (iloczyny[a] % razem) || a - b);
+  for (const i of wgReszty) {
+    if (brak <= 0) break;
+    wynik[i]++;
+    brak--;
+  }
+  return wynik;
+}
+
 // ---------------------------------------------------------------- szablon gospodarstw (aneks „Rodziny w Polsce”)
 
 type Obszar = 'miasta' | 'wies';

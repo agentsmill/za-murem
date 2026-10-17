@@ -11,6 +11,8 @@ import { type KluczQx, type TabeleKraju, WERSJA_TABEL } from '../../src/mieszkan
 import { pustyMarginesy, sumaTablicy } from '../../tools/dane/gminy.ts';
 import {
   ARKUSZE_QX,
+  mnoznikTfr,
+  normalizujDo,
   notaSgjp,
   plodnoscZCsv,
   qxZArkusza,
@@ -109,10 +111,27 @@ describe('tabele krajowe (kraj.json)', () => {
     expect(kraj.plodnosc[34]).toBeLessThanOrEqual(1); // 49 lat: 0,00005 na kobietę, czyli 0,5 na 10 000
   });
 
-  it('mnożniki płodności to TFR obszaru wobec TFR kraju 1,099 (GUS 2024), kolejność urodzeń z rocznika GUS', () => {
-    expect(kraj.mnoznikPlodnosci).toEqual({ miasto100k: 9099, miasto: 9727, wies: 10455 });
-    expect(kraj.kolejnosc).toEqual([4410, 3390, 1240, 610]);
-    expect(suma(kraj.kolejnosc)).toBeLessThanOrEqual(10000);
+  it('mnożniki płodności: krzywa x mnożnik daje TFR obszaru wg GUS 2024 (1,000 / 1,069 / 1,149, ±0,002)', () => {
+    const { miasto100k, miasto, wies } = kraj.mnoznikPlodnosci;
+    expect(kraj.mnoznikPlodnosci).toEqual({ miasto100k: 8787, miasto: 9394, wies: 10097 });
+    const tfr = (m: number): number => (suma(kraj.plodnosc) * m) / 10000 / 10000;
+    expect(Math.abs(tfr(miasto100k) - 1.0)).toBeLessThanOrEqual(0.002);
+    expect(Math.abs(tfr(miasto) - 1.069)).toBeLessThanOrEqual(0.002);
+    expect(Math.abs(tfr(wies) - 1.149)).toBeLessThanOrEqual(0.002);
+    expect(miasto100k).toBeLessThan(miasto);
+    expect(miasto).toBeLessThan(wies);
+  });
+
+  it('kolejność urodzeń: udziały wśród urodzeń o znanej kolejności (GUS 2024) sumują się do 10 000', () => {
+    expect(kraj.kolejnosc).toEqual([4570, 3513, 1285, 632]);
+    expect(suma(kraj.kolejnosc)).toBe(10000);
+    // proporcje jak w GUS: 44,1 / 33,9 / 12,4 / 6,1 (razem 96,5%, reszta ma kolejność nieustaloną)
+    [4410, 3390, 1240, 610].forEach((gus, i) => {
+      expect(Math.abs(kraj.kolejnosc[i] - (10000 * gus) / 9650)).toBeLessThanOrEqual(1);
+    });
+  });
+
+  it('gospodarstwa trzypokoleniowe: miasta 9,9%, wieś 24,3% (NSP 2021, na 10 000)', () => {
     expect(kraj.trojpokoleniowe).toEqual({ miasta: 990, wies: 2430 });
   });
 
@@ -510,6 +529,30 @@ describe('wiekZPrognozy: ludność 2022 według płci i wieku', () => {
     expect(() => wiekZPrognozy(tabl1(), '2035')).toThrow(/2035/);
     expect(() => wiekZPrognozy(tabl1(5))).toThrow(/suma/);
     expect(() => wiekZPrognozy(tabl1().slice(0, 3 + 102 + 102))).toThrow(/Kobiety/);
+  });
+});
+
+describe('mnoznikTfr i normalizujDo: przeliczenia stałych z GUS na krzywą Eurostatu', () => {
+  it('mnożnik na 10 000 sprawia, że krzywa x mnożnik daje TFR obszaru', () => {
+    const krzywa = [1000, 3000, 2000, 5000]; // TFR krzywej 1,1
+    expect(mnoznikTfr(1100, krzywa)).toBe(10000);
+    expect(mnoznikTfr(1000, krzywa)).toBe(9091);
+    expect(mnoznikTfr(1210, krzywa)).toBe(11000);
+    expect(() => mnoznikTfr(1000, [0, 0])).toThrow(/krzyw/);
+  });
+
+  it('normalizacja do 10 000 metodą największych reszt: suma dokładna, proporcje zachowane', () => {
+    expect(normalizujDo([4410, 3390, 1240, 610], 10000)).toEqual([4570, 3513, 1285, 632]);
+    expect(normalizujDo([1, 1, 1], 10)).toEqual([4, 3, 3]); // reszta trafia do pierwszej z równych
+    expect(normalizujDo([2, 0, 6], 8)).toEqual([2, 0, 6]);
+    for (const w of [
+      [7, 11, 13],
+      [1, 2, 3, 4],
+      [99, 1],
+    ])
+      expect(suma(normalizujDo(w, 10000))).toBe(10000);
+    expect(() => normalizujDo([0, 0], 10)).toThrow(/suma/);
+    expect(() => normalizujDo([1, -1, 3], 10)).toThrow(/ujemn/);
   });
 });
 

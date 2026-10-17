@@ -17,6 +17,8 @@ import { ARKUSZ_REJONOW, PLIKI_TABLIC, type Pole, pustyMarginesy, sumaTablicy } 
 import {
   ARKUSZE_QX,
   e0ZQx,
+  mnoznikTfr,
+  normalizujDo,
   notaSgjp,
   plodnoscZCsv,
   przezycieZQx,
@@ -42,26 +44,25 @@ const POCZATEK_SGJP = 32 * 1024;
 
 // ---------------------------------------------------------------- stałe spoza plików
 
-/** TFR 2024 według GUS w tysięcznych, żeby liczyć na liczbach całkowitych: Polska 1,099, miasta 1,069, wieś 1,149,
-    miasta 100 tys.+ 1,000. GUS, Rocznik Demograficzny 2025, tabl. 76 i 78
+/** TFR 2024 według GUS w tysięcznych, żeby liczyć na liczbach całkowitych: miasta 100 tys.+ 1,000, miasta 1,069,
+    wieś 1,149 (Polska 1,099, ale mnożniki nie są liczone wobec niego, patrz `mnoznikTfr`). GUS, Rocznik
+    Demograficzny 2025, tabl. 76 i 78
     (https://stat.gov.pl/download/gfx/portalinformacyjny/pl/defaultaktualnosci/5515/3/19/1/rocznik_demograficzny_2025_tablice.zip),
     zebrane w research_notes/Dane do generatora mieszkańców/demografia_dynamika.md. */
-const TFR_GUS_2024 = { kraj: 1099, miasto100k: 1000, miasto: 1069, wies: 1149 };
+const TFR_GUS_2024 = { miasto100k: 1000, miasto: 1069, wies: 1149 };
 
-/** Urodzenia według kolejności w 2024: pierwsze 44,1%, drugie 33,9%, trzecie 12,4%, czwarte i dalsze 6,1%, na
-    10 000. Suma to 96,5%: resztę GUS podaje bez ustalonej kolejności, czytelnik tabeli dolicza ją do 3+. GUS, Rocznik
-    Demograficzny 2025, tabl. 57
+/** Urodzenia według kolejności w 2024: pierwsze 44,1%, drugie 33,9%, trzecie 12,4%, czwarte i dalsze 6,1% (w setnych
+    procenta: 4410, 3390, 1240, 610). Razem 96,5%, bo urodzenia o nieustalonej kolejności GUS zostawia poza tą
+    strukturą; do tabeli idą udziały wśród urodzeń o znanej kolejności, normalizowane do dokładnie 10 000. GUS,
+    Rocznik Demograficzny 2025, tabl. 57
     (https://stat.gov.pl/obszary-tematyczne/roczniki-statystyczne/roczniki-statystyczne/rocznik-demograficzny-2025,3,19.html). */
-const KOLEJNOSC_URODZEN: TabeleKraju['kolejnosc'] = [4410, 3390, 1240, 610];
+const KOLEJNOSC_URODZEN_GUS = [4410, 3390, 1240, 610];
 
 /** Gospodarstwa trzypokoleniowe (osoby młode, w średnim wieku i starsze razem), NSP 2021: miasta 9,9%, wieś 24,3%,
     na 10 000. GUS, Rodziny w Polsce w świetle wyników NSP 2021, tabl. 3.6, s. 34
     (https://stat.gov.pl/download/gfx/portalinformacyjny/pl/defaultaktualnosci/6536/7/2/1/rodziny_w_polsce_w_swietle_wynikow_nsp2021.pdf);
     liczby sprawdzone w pliku PDF z surowych danych. */
 const TROJPOKOLENIOWE: TabeleKraju['trojpokoleniowe'] = { miasta: 990, wies: 2430 };
-
-/** Mnożnik płodności: TFR obszaru wobec TFR kraju, na 10 000, zaokrąglony do całości. */
-const mnoznik = (tfrObszaru: number): number => Math.round((10000 * tfrObszaru) / TFR_GUS_2024.kraj);
 
 // ---------------------------------------------------------------- odczyt
 
@@ -129,11 +130,11 @@ function main(): void {
     qx,
     plodnosc,
     mnoznikPlodnosci: {
-      miasto100k: mnoznik(TFR_GUS_2024.miasto100k),
-      miasto: mnoznik(TFR_GUS_2024.miasto),
-      wies: mnoznik(TFR_GUS_2024.wies),
+      miasto100k: mnoznikTfr(TFR_GUS_2024.miasto100k, plodnosc),
+      miasto: mnoznikTfr(TFR_GUS_2024.miasto, plodnosc),
+      wies: mnoznikTfr(TFR_GUS_2024.wies, plodnosc),
     },
-    kolejnosc: KOLEJNOSC_URODZEN,
+    kolejnosc: normalizujDo(KOLEJNOSC_URODZEN_GUS, 10000) as TabeleKraju['kolejnosc'],
     szablonGospodarstw,
     trojpokoleniowe: TROJPOKOLENIOWE,
     polska,
