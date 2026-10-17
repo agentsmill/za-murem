@@ -202,7 +202,7 @@ const SHOTS: Shot[] = [
         await page.addStyleTag({ content: '#fps { visibility: hidden !important; }' });
         return { painting, img: decodePng(await page.screenshot()) };
       };
-      for (const cam of ['hq,1', 'hq,0.6', 'all']) {
+      for (const cam of ['hq,1', 'hq,0.6', 'all', 'hq,1&wnetrze=atrapa']) {
         const a = await snap(`cam=${cam}`);
         const b = await snap(`cam=${cam}&worker=0`);
         if (!a.painting.startsWith('worker')) throw new Error(`kawałki rysuje ${a.painting} zamiast workerów`);
