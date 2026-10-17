@@ -2,7 +2,7 @@
    co znaczy kliknięcie prawym przyciskiem na kafelku, i dostaje gotowe polecenie dla symulacji. */
 
 import type { World } from '../world/world.ts';
-import { dryTreeOf, houseOf } from './house.ts';
+import { dryTreeOf, houseOf, inHomeApt } from './house.ts';
 import { gateTiles } from './perimeter.ts';
 import {
   BURNABLE,
@@ -11,6 +11,7 @@ import {
   campfireSpotOk,
   canCookIn,
   FURNITURE_ACC,
+  KOZA_POST,
   PATCH_COST,
   type Pawn,
   type SimState,
@@ -68,6 +69,10 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   const wood = st.things.some((t) => t.kind === 'drewno' && t.n > 0) || st.pawns.some((p) => p.carry > 0);
   if (koza && wood)
     out.push({ cmd: { t: 'refuel', ids: core, thing: koza.id }, label: 'Dołożyć do kozy', quick: true });
+  // dyżur przy kozie zarządu do rana (warta z posterunkiem 'koza'; w karcie nocy klucz 'warta:koza')
+  const house = houseOf(w);
+  if (koza && house && inHomeApt(house, koza.y * w.size + koza.x))
+    out.push({ cmd: { t: 'guard', ids: core, post: 'koza' }, label: 'Czuwać przy kozie', quick: false });
   const fire = thingAt(st, w, tile, 'ognisko');
   if (fire && wood)
     out.push({ cmd: { t: 'refuel', ids: core, thing: fire.id }, label: 'Dołożyć do ogniska', quick: true });
@@ -167,6 +172,11 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return walking ? `Idzie rozbić ${what} na opał.` : `Rozbiera ${what} na opał.`;
     }
     case 'guard':
+      if (j.target === KOZA_POST) {
+        if (j.phase === 2) return 'Idzie po drewno do kozy.';
+        if (j.phase === 3) return 'Dokłada do kozy.';
+        return walking ? 'Idzie czuwać przy kozie.' : 'Czuwa przy kozie.';
+      }
       if (walking) return j.target === 0 ? 'Idzie na wartę przy bramie.' : 'Idzie na wartę przy dziurze.';
       return j.target === 0 ? 'Trzyma wartę przy bramie.' : 'Trzyma wartę przy dziurze.';
     case 'patch':

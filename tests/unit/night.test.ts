@@ -814,3 +814,122 @@ describe('poprawki z przeglądu', () => {
     expect(commandsAt(st, w, [p.id], st.fence!.holes[0].tiles[0]).map((m) => m.label)).not.toContain('Załatać dziurę');
   });
 });
+
+describe('poprawki z playtestu: dyżur przy kozie i samouczek', () => {
+  const atHour = (day: number, h: number) => Math.round(((day - 1) * 24 + h - 15) * 800);
+  const coreOf = (st: ReturnType<typeof createSim>) => st.pawns.filter((p) => p.kind === 'core');
+  const sklad = w.interior.sklad;
+  const kozaOf = (st: ReturnType<typeof createSim>) =>
+    st.things.find(
+      (t) => t.kind === 'koza' && w.interior.rooms[w.interior.room[t.y * size + t.x]]?.apt === w.interior.home,
+    )!;
+  const kitchenTemp = (sim: Sim) => {
+    const k = kozaOf(sim.st);
+    return sim.st.temps[w.interior.room[k.y * size + k.x]];
+  };
+  /** wieczór o 20:00, w składzie 20 sztuk drewna, koza pali się jeszcze godzinę */
+  const evening = (duty: boolean) => {
+    const st = createSim(w, 3, { core: 3 });
+    for (const i of sklad)
+      st.things.push({
+        id: st.nextThing++,
+        kind: 'drewno',
+        x: i % size,
+        y: Math.floor(i / size),
+        w: 1,
+        h: 1,
+        rot: 0,
+        n: 10,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      });
+    kozaOf(st).fuel = 2 * 400;
+    st.tick = atHour(1, 20);
+    const sim = new Sim(w, st);
+    if (duty) sim.push({ t: 'guard', ids: [coreOf(st)[0].id], post: 'koza' });
+    return { st, sim };
+  };
+
+  it('czuwający przy kozie nie śpi i dokłada w nocy ze składu: rano ciepło; bez dyżuru koza gaśnie i rano zimno', () => {
+    const a = evening(true);
+    const watcher = coreOf(a.st)[0];
+    let slept = false;
+    let lit = 0;
+    let samples = 0;
+    const texts = new Set<string>();
+    while (a.st.tick < atHour(2, 6)) {
+      a.sim.step();
+      texts.add(jobText(a.st, w, watcher));
+      if (a.st.tick % 100) continue;
+      if (watcher.job?.t === 'sleep' && watcher.job.phase === 1) slept = true;
+      samples++;
+      if (kozaOf(a.st).fuel > 0) lit++;
+    }
+    expect(slept).toBe(false);
+    expect(texts).toContain('Czuwa przy kozie.');
+    expect(texts).toContain('Dokłada do kozy.');
+    expect(lit / samples).toBeGreaterThan(0.9);
+    const s = snapshot(a.st, w).people.find((p) => p.pawn === watcher.id)!;
+    expect(s.job).toBe('guard');
+    expect(s.post).toBe('koza');
+    // bez dyżuru: koza gaśnie przed północą, rano w kuchni dużo zimniej
+    const b = evening(false);
+    while (b.st.tick < atHour(2, 6)) b.sim.step();
+    expect(kozaOf(b.st).fuel).toBe(0);
+    expect(kitchenTemp(a.sim)).toBeGreaterThan(kitchenTemp(b.sim) + 3);
+    expect(kitchenTemp(a.sim)).toBeGreaterThanOrEqual(17);
+    // dyżur kończy się rano
+    while (a.st.tick < atHour(2, 6.5)) a.sim.step();
+    expect(watcher.job?.t).not.toBe('guard');
+  });
+
+  it('dyżur przy kozie z menu kozy, a zarząd daje go wartą z posterunkiem koza', async () => {
+    const { applyGov } = await import('../../src/sim/gov.ts');
+    const { emptyEffects } = await import('../../src/gov/wspolne.ts');
+    const { st, sim } = evening(false);
+    const ids = coreOf(st).map((p) => p.id);
+    const k = kozaOf(st);
+    const m = commandsAt(st, w, ids, k.y * size + k.x).find((x) => x.label === 'Czuwać przy kozie');
+    expect(m).toEqual({ cmd: { t: 'guard', ids, post: 'koza' }, label: 'Czuwać przy kozie', quick: false });
+    const fx = emptyEffects();
+    fx.guards.push({ id: st.people[coreOf(st)[1].person].id, post: 'koza' });
+    applyGov(st, w, fx);
+    for (let n = 0; n < 600; n++) sim.step();
+    expect(coreOf(st)[1].job?.t).toBe('guard');
+    expect(coreOf(st)[1].job?.target).toBe(-1);
+    // lampy przy bramie z tego nie ma
+    expect(snapshot(st, w).light.gateLamp).toBe(false);
+  });
+
+  it('bez drewna czuwa dalej, a koza gaśnie; zapis i wczytanie w trakcie dyżuru daje ten sam dalszy przebieg', () => {
+    const { st, sim } = evening(true);
+    while (st.tick < atHour(2, 0.5)) sim.step();
+    const copy = new Sim(w, JSON.parse(JSON.stringify(st)));
+    for (let n = 0; n < 3000; n++) {
+      sim.step();
+      copy.step();
+    }
+    expect(copy.hash()).toBe(sim.hash());
+    // bez drewna
+    const dry = evening(true);
+    dry.st.things = dry.st.things.filter((t) => t.kind !== 'drewno');
+    while (dry.st.tick < atHour(2, 3)) dry.sim.step();
+    expect(coreOf(dry.st)[0].job?.t).toBe('guard');
+    expect(kozaOf(dry.st).fuel).toBe(0);
+  });
+
+  it('samouczek: drewno w drodze do składu zalicza krok w ciągu sekundy od ścięcia', () => {
+    const st = createSim(w, 3, { core: 2 });
+    const sim = new Sim(w, st);
+    const [p] = coreOf(st);
+    sim.push({ t: 'select', ids: [p.id] });
+    sim.push({ t: 'chop', ids: [p.id], tree: w.dryTree });
+    while (!st.felled.includes(w.dryTree) && st.tick < 4000) sim.step();
+    const felled = st.tick;
+    const sk = 3; // indeks kroku 'sklad'
+    while (st.tut.step <= sk && st.tick < felled + 400) sim.step();
+    expect(st.tut.step).toBeGreaterThan(sk);
+    expect(st.tut.at[sk] - felled).toBeLessThanOrEqual(40);
+  });
+});

@@ -369,7 +369,12 @@ describe('polecenia', () => {
     expect(commandFor(st, w, ids, floor)).toEqual({ t: 'move', ids, to: floor });
     // menu kontekstowe: domyślne polecenie pierwsze, „Idź tu” zawsze na końcu
     expect(commandsAt(st, w, ids, trunk).map((m) => m.label)).toEqual(['Ściąć drzewo', 'Idź tu']);
-    expect(commandsAt(st, w, ids, kzTile).map((m) => m.label)).toEqual(['Dołożyć do kozy', 'Idź tu']);
+    // przy kozie zarządu także dyżur na noc (tylko z menu)
+    expect(commandsAt(st, w, ids, kzTile).map((m) => m.label)).toEqual([
+      'Dołożyć do kozy',
+      'Czuwać przy kozie',
+      'Idź tu',
+    ]);
   });
 
   it('„Gotować” na kuchence, gdy są zapasy i gaz', () => {

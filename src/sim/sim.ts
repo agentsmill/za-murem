@@ -92,6 +92,8 @@ export const BUILD_TICKS = TICKS_PER_HOUR / 4;
 export const CAMPFIRE_CAP = 6;
 /** warta trwa do tej godziny rano */
 export const GUARD_UNTIL = 6;
+/** posterunek warty przy kozie zarządu (Job.target), klucz 'koza': czuwa w kuchni i dokłada, kiedy ognia mało */
+export const KOZA_POST = -1;
 /** zasięg światła (m): lampa warty i ognisko; w nim nie jest ciemno, a szabrownicy się płoszą */
 export const LAMP_REACH = 5;
 export const CAMPFIRE_LIGHT = 6;
@@ -1198,11 +1200,12 @@ export class Sim {
     this.rebuild();
   }
 
-  /** posterunek warty z klucza 'brama' / 'd<id>': 0 brama, id dziury, −1 nie ma takiego */
-  private postOf(post: string): number {
-    if (post === 'brama') return this.gateStand.length ? 0 : -1;
+  /** posterunek warty z klucza 'brama' / 'd<id>' / 'koza': 0 brama, id dziury, KOZA_POST, null: nie ma takiego */
+  private postOf(post: string): number | null {
+    if (post === 'brama') return this.gateStand.length ? 0 : null;
+    if (post === 'koza') return this.koza() ? KOZA_POST : null;
     const id = /^d(\d+)$/.exec(post)?.[1];
-    return id && this.holeById(Number(id)) ? Number(id) : -1;
+    return id && this.holeById(Number(id)) ? Number(id) : null;
   }
 
   private holeById(id: number): Hole | undefined {
@@ -1230,8 +1233,12 @@ export class Sim {
     return this.nearest(p, cand);
   }
 
-  /** gdzie stoi warta: przy bramie najbliżej jej środka, przy dziurze tuż obok od strony podwórka */
+  /** gdzie stoi warta: przy bramie najbliżej jej środka, przy dziurze tuż obok od strony podwórka, przy kozie przed nią */
   private guardStand(p: Pawn, post: number): number {
+    if (post === KOZA_POST) {
+      const koza = this.koza();
+      return koza ? this.kozaStand(p, koza) : -1;
+    }
     if (post === 0) {
       const taken = this.taken(p);
       const region = this.regionOf(p);
@@ -1255,7 +1262,7 @@ export class Sim {
   /** warta do rana: każdy na swoim kafelku przy posterunku */
   private orderGuard(pawns: Pawn[], key: string): void {
     const post = this.postOf(key);
-    if (post < 0) return;
+    if (post === null) return;
     for (const p of pawns) {
       const stand = this.guardStand(p, post);
       if (stand < 0 || !this.go(p, stand)) continue;
@@ -1863,14 +1870,43 @@ export class Sim {
         return true;
       case 'guard': {
         // nie śpi do rana; schodzi z posterunku tylko wtedy, gdy zdrowie siada
-        if (j.phase === 1) return tick < j.until && p.needs!.health >= 30;
+        if (j.phase === 1) {
+          if (tick >= j.until || p.needs!.health < 30) return false;
+          // przy kozie: kiedy ognia zostaje mało, idzie po drewno i dokłada
+          if (j.target === KOZA_POST && tick % THINK_EVERY === 0) this.tendKoza(p, j);
+          return true;
+        }
+        if (j.phase === 2) {
+          // przy stosie: drewno do rąk, potem do kozy
+          const koza = this.koza();
+          const pile = this.thing(j.from);
+          if (!koza || !at || !pile || pile.by !== p.id) return this.backToPost(p, j);
+          const take = Math.min(pile.n, CARRY - p.carry, Math.max(1, this.kozaRoom(koza)));
+          this.takeWood(pile, take);
+          p.carry += take;
+          return this.carryToKoza(p, j, koza);
+        }
+        if (j.phase === 3) {
+          const koza = this.koza();
+          if (koza && at) {
+            const add = Math.min(p.carry, this.kozaRoom(koza));
+            koza.fuel += add * BURN_TICKS;
+            p.carry -= add;
+            this.face(p, koza.x + koza.w / 2, koza.y + koza.h / 2);
+          }
+          return this.backToPost(p, j);
+        }
         if (!at) return false;
         j.phase = 1;
         j.t0 = tick;
-        const hole = j.target > 0 ? this.holeById(j.target) : undefined;
-        const look = hole ? hole.tiles : gateTiles(this.w);
         const size = this.w.size;
-        if (look.length) this.face(p, (look[0] % size) + 0.5, Math.floor(look[0] / size) + 0.5);
+        const koza = j.target === KOZA_POST ? this.koza() : undefined;
+        if (koza) this.face(p, koza.x + koza.w / 2, koza.y + koza.h / 2);
+        else {
+          const hole = j.target > 0 ? this.holeById(j.target) : undefined;
+          const look = hole ? hole.tiles : gateTiles(this.w);
+          if (look.length) this.face(p, (look[0] % size) + 0.5, Math.floor(look[0] / size) + 0.5);
+        }
         return true;
       }
       case 'patch': {
@@ -2317,6 +2353,53 @@ export class Sim {
     const spot = this.warmSpot(p, koza);
     if (spot < 0 || !this.go(p, spot)) return false;
     this.setJob(p, this.newJob('warm', koza.id, spot, false), false);
+    return true;
+  }
+
+  /** Czuwający przy kozie: gdy ognia zostaje mniej niż na pół godziny, a do kozy coś wejdzie, idzie po drewno (najpierw
+      ze składu, potem z każdego stosu) albo od razu dokłada z rąk. Koza jest wtedy jego (by), żeby nikt nie szedł
+      z drugim naręczem. */
+  private tendKoza(p: Pawn, j: Job): void {
+    const koza = this.koza();
+    if (!koza || koza.fuel >= BURN_TICKS || this.kozaRoom(koza) < 1 || (koza.by >= 0 && koza.by !== p.id)) return;
+    if (p.carry > 0) {
+      this.carryToKoza(p, j, koza);
+      return;
+    }
+    const pile = this.pileFor(p, 'any');
+    if (!pile) return;
+    const pt = pile.y * this.w.size + pile.x;
+    if (!this.go(p, pt)) return;
+    j.phase = 2;
+    j.tile = pt;
+    j.from = pile.id;
+    pile.by = p.id;
+    koza.by = p.id;
+  }
+
+  /** z drewnem w rękach do kozy (faza 3); bez drogi z powrotem na posterunek */
+  private carryToKoza(p: Pawn, j: Job, koza: Thing): boolean {
+    const stand = this.kozaStand(p, koza);
+    if (stand < 0 || !this.go(p, stand)) return this.backToPost(p, j);
+    j.phase = 3;
+    j.tile = stand;
+    j.from = -1;
+    koza.by = p.id;
+    return true;
+  }
+
+  /** po przerwie z powrotem na posterunek (rzeczy wolne); bez drogi zostaje tam, gdzie stoi */
+  private backToPost(p: Pawn, j: Job): boolean {
+    this.release(p);
+    j.from = -1;
+    const stand = this.guardStand(p, j.target);
+    if (stand >= 0 && stand !== this.tileOf(p) && this.go(p, stand)) {
+      j.phase = 0;
+      j.tile = stand;
+    } else {
+      j.phase = 1;
+      j.tile = this.tileOf(p);
+    }
     return true;
   }
 
@@ -2834,7 +2917,13 @@ export class Sim {
     const kr = koza ? h.room[koza.y * size + koza.x] : -1;
     tutAdvance(tut, st.tick, (s) => {
       if (s === 'sciete') return st.felled.includes(this.dry);
-      if (s === 'sklad') return lit || st.things.some((t) => t.kind === 'drewno' && h.sklad.includes(t.y * size + t.x));
+      // drewno w składzie albo już w drodze do niego (albo prosto do kozy): krok nie czeka na koniec marszu
+      if (s === 'sklad')
+        return (
+          lit ||
+          st.things.some((t) => t.kind === 'drewno' && h.sklad.includes(t.y * size + t.x)) ||
+          st.pawns.some((p) => p.kind === 'core' && p.carry > 0 && (p.job?.t === 'haul' || p.job?.t === 'refuel'))
+        );
       if (s === 'koza') return lit;
       if (s === 'cieplo') return kr >= 0 && st.temps[kr] >= WARM_ENOUGH;
       return false;

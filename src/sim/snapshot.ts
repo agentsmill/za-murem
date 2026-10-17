@@ -19,7 +19,7 @@ import { houseOf, inHomeApt } from './house.ts';
 import type { Needs } from './needs.ts';
 import { jobText } from './orders.ts';
 import { durability, fenceShape } from './perimeter.ts';
-import { BURN_TICKS, type Burned, COOK_TICKS, type JobKind, type Mood, type SimState } from './sim.ts';
+import { BURN_TICKS, type Burned, COOK_TICKS, type JobKind, KOZA_POST, type Mood, type SimState } from './sim.ts';
 
 export interface SimPerson {
   /** id pionka: do poleceń dla symulacji */
@@ -49,6 +49,8 @@ export interface SimPerson {
   carry: number;
   /** na wyprawie poza mapą */
   away: boolean;
+  /** posterunek warty tej nocy ('brama', 'd<id>', 'koza') albo null */
+  post: string | null;
 }
 
 export interface SimStock {
@@ -121,6 +123,9 @@ export interface SimSnapshot {
   raid: { phase: number; outcome: string; took: { wood: number; supplies: number; scrap: number } } | null;
 }
 
+/** klucz posterunku warty z Job.target (jak w karcie nocy zarządu) */
+const postKey = (target: number): string => (target === KOZA_POST ? 'koza' : target === 0 ? 'brama' : `d${target}`);
+
 export function snapshot(st: SimState, w: World): SimSnapshot {
   const h = houseOf(w);
   const size = w.size;
@@ -170,6 +175,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
         tile,
         carry: p.carry,
         away: p.away,
+        post: p.job?.t === 'guard' ? postKey(p.job.target) : null,
       };
     });
   const woodCarried = people.reduce((a, p) => a + p.carry, 0);
