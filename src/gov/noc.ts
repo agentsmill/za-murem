@@ -10,6 +10,7 @@ import { g } from '../content/people.ts';
 import { clamp } from '../core/rng.ts';
 import { type ExpTarget, peopleNames, TARGETS } from './tresc.ts';
 import type {
+  Arm,
   GovEffects,
   GovInput,
   GovPerson,
@@ -81,8 +82,12 @@ interface Post {
   weak: number;
 }
 
-/** miejsca do pilnowania od najsłabszego: dziury (większa łatwiejsza) i brama (słabsza przy kiepskiej siatce) */
-export function postsOf(i: GovInput): Post[] {
+/** tryb zombie (stan zarządu) */
+export const zombieMode = (st: Pick<GovState, 'mode'>): boolean => st.mode === 'zombie';
+
+/** miejsca do pilnowania od najsłabszego: dziury (większa łatwiejsza) i brama (słabsza przy kiepskiej siatce);
+    w trybie zombie najpierw „przy siatce” (warta idzie tam, gdzie napiera stado) */
+export function postsOf(i: GovInput, zombie = false): Post[] {
   const f = fenceOf(i);
   const posts: Post[] = f.holes.map((h) => ({
     key: `d${h.id}`,
@@ -90,6 +95,7 @@ export function postsOf(i: GovInput): Post[] {
     weak: round2(h.size + 0.2),
   }));
   posts.push({ key: 'brama', name: 'przy bramie', weak: round2(0.15 + 0.35 * (1 - f.durability)) });
+  if (zombie) posts.push({ key: 'siatka', name: 'przy siatce', weak: 2 });
   return posts.sort((a, b) => b.weak - a.weak || (a.key < b.key ? -1 : 1));
 }
 
@@ -145,11 +151,16 @@ export function deterrence(st: GovState, i: GovInput, watchers: number): number 
 
 export const chanceWord = (c: number): string => (c < 0.25 ? 'niska' : c < 0.5 ? 'średnia' : 'wysoka');
 
-/** ile obrony daje osoba na warcie (guardValue z 0.2): wypoczęta więcej, ze światłem półtora raza */
+/** broń w warcie: gołe ręce × 1, wręcz × 1,25, dzida × 1,4, broń palna albo kusza z amunicją × 1,5 */
+const ARM_FACTOR: Record<Arm, number> = { brak: 1, wrecz: 1.25, dzida: 1.4, palna: 1.5 };
+export const weaponFactor = (p: Pick<GovPerson, 'arm'>): number => ARM_FACTOR[p.arm ?? 'brak'];
+
+/** ile obrony daje osoba na warcie (guardValue z 0.2): wypoczęta więcej, ze światłem półtora raza, z bronią więcej */
 export function guardValue(st: GovState, i: GovInput, p: GovPerson, post: string): number {
   const n = p.needs;
   let v = n.health < 20 ? 0.5 : n.rest > 30 ? 2.5 : 1.5;
   v *= 1 + 0.25 * (p.skills.obrona ?? 0);
+  v *= weaponFactor(p);
   if (p.traits.includes('odwazny')) v *= 1.2;
   if (p.traits.includes('tchorz')) v *= 0.7;
   if (law(st, 'u_warty')) v *= 1.25;
@@ -195,6 +206,10 @@ function expRisk(st: GovState, p: GovPerson, t: ExpTarget, together = 1): number
   r *= 1 - 0.1 * (p.skills.obrona ?? 0);
   if (st.flags.torch) r *= 0.85;
   if (together > 1) r *= 0.75;
+  // uzbrojonym łatwiej, a w trybie zombie każde wyjście za siatkę jest groźniejsze
+  if (p.arm === 'palna') r *= 0.75;
+  else if (p.arm === 'wrecz' || p.arm === 'dzida') r *= 0.85;
+  if (zombieMode(st)) r *= 1.6;
   return clamp(round2(r), 0.02, 0.9);
 }
 
@@ -214,8 +229,10 @@ const canGo = (p: GovPerson, t: ExpTarget) =>
 // ---------------------------------------------------------------- karta
 
 export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: Record<string, string> } {
-  const posts = postsOf(i);
-  const chance = raidChance(st, i);
+  const zombie = zombieMode(st);
+  const posts = postsOf(i, zombie);
+  // w trybie zombie stado przychodzi zawsze: zarząd proponuje dwie warty przy siatce
+  const chance = zombie ? 0.9 : raidChance(st, i);
   const targets = tonightTargets(st);
   // dyżur przy kozie tylko przy kozie zarządu (kuchnia z kozą w siedzibie)
   const wood = i.kitchen !== null ? nightWood(i) : undefined;
@@ -242,7 +259,12 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
         ok,
         why: ok ? undefined : g(p, 'Za słaby na wartę.', 'Za słaba na wartę.'),
         guard: guardValue(st, i, p, post.key),
-        note: p.needs.rest < 30 ? `${g(p, 'Zmęczony', 'Zmęczona')}: może zasnąć na warcie.` : 'Nie wyśpi się.',
+        note:
+          zombie && post.key !== 'brama' && (p.arm === 'brak' || p.arm === 'wrecz' || !p.arm)
+            ? 'Z tą bronią nie sięgnie szwendaczy przez siatkę.'
+            : p.needs.rest < 30
+              ? `${g(p, 'Zmęczony', 'Zmęczona')}: może zasnąć na warcie.`
+              : 'Nie wyśpi się.',
       });
     }
     for (const t of targets) {
@@ -260,21 +282,29 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
     }
     return { id: p.id, name: p.name, needs: { ...p.needs }, proposal: 'sen', options: opts };
   });
-  const loss = lossIfEntered(i);
+  const loss = zombie ? { wood: 0, supplies: 0 } : lossIfEntered(i);
   const nd = nightDay(i);
   const pct = Math.round(chance * 20) * 5;
   const first = nd === 1 ? 'Pierwsza noc za siatką. Dym z kozy widać z daleka. ' : '';
+  const fence = fenceOf(i).durability;
+  const size = i.horde?.tonight ?? 0;
+  const word = size < 15 ? 'małe' : size < 35 ? 'duże' : 'ogromne';
+  const near = i.horde?.near ?? 0;
+  const forecast = zombie
+    ? `${first}Nocą przyjdzie stado: około ${size} szwendaczy (${word}). Siatka trzyma w ${Math.round(fence * 100)}%.${near ? ` Już teraz przy siatce: ${near}.` : ''} Strzał ściągnie ich więcej.`
+    : `${first}Szansa, że szabrownicy spróbują wejść: około ${pct}% (${chanceWord(chance)}), z jedną osobą na warcie około ${Math.round(chance * deterrence(st, i, 1) * 20) * 5}%. Najsłabsze miejsce: ${posts[0].name}.`;
   const card: NightCard = {
     day: nd,
     chance,
-    chanceWord: chanceWord(chance),
-    forecast: `${first}Szansa, że szabrownicy spróbują wejść: około ${pct}% (${chanceWord(chance)}), z jedną osobą na warcie około ${Math.round(chance * deterrence(st, i, 1) * 20) * 5}%. Najsłabsze miejsce: ${posts[0].name}.`,
+    chanceWord: zombie ? 'pewne' : chanceWord(chance),
+    forecast,
     posts: posts.map((p) => ({ key: p.key, name: p.name, weak: p.weak })),
     loss,
     people,
     advice: '',
     wood,
   };
+  if (zombie) card.horde = { size, word, fence };
   const assign = propose(i, card, st.lastGuards);
   for (const cp of card.people) cp.proposal = assign[cp.id];
   card.advice = nightAdvice(i, card, assign);
@@ -310,7 +340,7 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
   const open = card.posts.filter((p) => !Object.values(a).includes(`warta:${p.key}`));
   if (card.chance >= 0.25 && free.length && open.length && !fence) a[free.shift()!.id] = `warta:${open[0].key}`;
   if (card.chance >= 0.55 && free.length >= 3 && open.length > 1 && fence < 2)
-    a[free.shift()!.id] = `warta:${open[fence ? 0 : 1].key}`;
+    a[free.shift()!.id] = card.horde ? 'warta:siatka' : `warta:${open[fence ? 0 : 1].key}`;
   const short = i.stock.supplies < i.people.length * 2 || i.stock.wood < 4;
   const key = nightDay(i) === 1 ? 'wyprawa:blisko' : 'wyprawa:daleko';
   if (short && free.length >= 2) {
@@ -325,6 +355,7 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
 
 /** rada zarządu do przydziału na karcie (interfejs liczy ją na nowo po każdej zmianie) */
 export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): string {
+  if (card.horde) return hordeAdvice(i, card, assign);
   const guards = Object.values(assign).filter(isFenceGuard);
   const kept = new Set(guards.map((k) => k.slice(6)));
   const loss = stockText(card.loss);
@@ -341,6 +372,18 @@ export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string,
   if (i.stock.supplies < i.people.length * 2)
     return 'Jedzenia jest na krótko. Wyprawa blisko jest bezpieczniejsza, daleka przynosi więcej.';
   return 'Wyśpijcie się. Jutro dzień pracy przy siatce.';
+}
+
+/** rada w trybie zombie: warta przy siatce i broń, która przez nią sięga; potem koza */
+function hordeAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): string {
+  const guards = i.people.filter((p) => isFenceGuard(assign[p.id] ?? ''));
+  const pct = Math.round((card.horde?.fence ?? 1) * 100);
+  let fence: string;
+  if (!guards.length) fence = `Bez warty stado będzie napierać na siatkę do rana. Siatka trzyma w ${pct}%.`;
+  else if (!guards.some((p) => p.arm === 'dzida' || p.arm === 'palna'))
+    fence = 'Warta bez dzidy ani broni palnej nie sięgnie szwendaczy przez siatkę. Dajcie komuś dzidę.';
+  else fence = 'Dzida sięga przez siatkę. Strzelajcie tylko w ostateczności: strzał ściąga stado.';
+  return [fence, kozaAdvice(i, card, assign)].filter(Boolean).join(' ');
 }
 
 /** rada o kozie, kiedy w kuchni zrobi się zimno, a jest drewno: bez dyżuru koza gaśnie w nocy (nikt nie
@@ -396,6 +439,13 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
     const t = TARGETS.find((x) => x.id === gr.target)!;
     for (const id of gr.ids) fx.away.push({ id, day: n.day + 1, hour: t.back });
   }
+  // tryb zombie: bez szabrowników; liczniki przy siatce na początek nocy (do raportu rano)
+  if (zombieMode(st)) {
+    n.raid = null;
+    n.z0 = { killed: i.horde?.killed ?? 0, breaches: i.horde?.breaches ?? 0, bites: i.horde?.bites ?? 0 };
+    n.bit0 = i.people.filter((p) => p.bitten).map((p) => p.id);
+    n.zpeak = i.horde?.near ?? 0;
+  }
   // napad: czy, gdzie i o której (zawsze te same trzy losowania); warta ze światłem odstrasza, także ta z menu
   const watchers = watchersOf(i, n.assign);
   const come = rnd(st) < raidChance(st, i) * deterrence(st, i, watchers);
@@ -412,8 +462,10 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
   const at = atHour(n.day, RAID_FROM) + Math.floor(rnd(st) * RAID_SPAN);
   // siła losowana od razu: symulacja pokaże tylu szabrowników, ilu przyszło, a rozstrzygnięcie użyje tej samej
   const attack = come ? round1(2 + rnd(st) * (2 + 0.55 * n.day)) : 0;
-  n.raid = { come, at, post: post.key, resolved: false, outcome: 'brak', attack, defense: 0, stolen: zeroStock() };
-  if (come) fx.raid = { day: n.day, at, post: post.key, where: post.name, attack, people: raidersOf(attack) };
+  if (!zombieMode(st)) {
+    n.raid = { come, at, post: post.key, resolved: false, outcome: 'brak', attack, defense: 0, stolen: zeroStock() };
+    if (come) fx.raid = { day: n.day, at, post: post.key, where: post.name, attack, people: raidersOf(attack) };
+  }
   // kronika
   n.fire = { on: 0, all: 0, at: gameMin(i) };
   n.koza = [];
@@ -457,8 +509,13 @@ function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[
     addNeeds(fx, hurt.id, { health: d });
     n.hurt.push({ id: hurt.id, d });
     const has = stockText(got);
+    const zombie = zombieMode(st);
+    // w trybie zombie kłopoty to szwendacze, a co trzeci kłopot kończy się ugryzieniem
+    const bitten = zombie && rnd(st) < 0.35;
+    if (bitten) (fx.bitten ??= []).push(hurt.id);
+    const harm = bitten ? g(hurt, 'jest ugryziony', 'jest ugryziona') : g(hurt, 'jest ranny', 'jest ranna');
     n.lines.push(
-      `${who} ${verbPl(ppl, 'trafił', 'trafiła', 'trafili', 'trafiły')} na szabrowników (${t.name}). ${hurt.name} ${g(hurt, 'jest ranny', 'jest ranna')}.${has ? ` Udało się przynieść: ${has}.` : ' Wszystko zostało po drodze.'}`,
+      `${who} ${verbPl(ppl, 'trafił', 'trafiła', 'trafili', 'trafiły')} na ${zombie ? 'szwendaczy' : 'szabrowników'} (${t.name}). ${hurt.name} ${harm}.${has ? ` Udało się przynieść: ${has}.` : ' Wszystko zostało po drodze.'}`,
     );
     for (const p of ppl) fx.moods.push({ id: p.id, why: g(p, 'Ledwo uciekłem', 'Ledwo uciekłam'), d: -6, hours: 12 });
   } else {
@@ -478,8 +535,45 @@ function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[
     fx.stock[k] += got[k];
     n.loot[k] += got[k];
   }
+  const found = finds(st, fx);
+  if (found.length)
+    n.lines.push(`${verbPl(ppl, 'Znalazł', 'Znalazła', 'Znaleźli', 'Znalazły')} też: ${found.join(', ')}.`);
   for (const p of ppl) addNeeds(fx, p.id, { rest: t.range === 'daleko' ? -30 : -15 });
   fx.back.push(...ppl.map((p) => p.id));
+}
+
+/** nazwy broni w bierniku do raportu (te same id co w src/sim/bron.ts) */
+const ARM_ACC: Record<string, string> = {
+  noz: 'nóż',
+  lom: 'łom',
+  kij: 'kij z gwoździami',
+  strzelba: 'strzelbę',
+  kusza: 'kuszę',
+  rewolwer: 'rewolwer',
+};
+
+/** Znaleziska z wyprawy: amunicja (w trybie zombie w 30% wypraw, w zwykłym w 10%) i broń (12% i 8%). */
+function finds(st: GovState, fx: GovEffects): string[] {
+  const zombie = zombieMode(st);
+  const out: string[] = [];
+  const ammo = (k: 'naboje' | 'loftki' | 'belty', n: number) => {
+    fx.ammo ??= {};
+    fx.ammo[k] = (fx.ammo[k] ?? 0) + n;
+  };
+  if (rnd(st) < (zombie ? 0.3 : 0.1)) {
+    const n = rint(st, 2, 8);
+    ammo('naboje', n);
+    out.push(`${n} naboi`);
+  }
+  if (rnd(st) < (zombie ? 0.12 : 0.08)) {
+    const pool = zombie ? ['noz', 'lom', 'kij', 'strzelba', 'kusza'] : ['noz', 'lom', 'kij'];
+    const w = pool[rint(st, 0, pool.length - 1)];
+    (fx.arms ??= []).push(w);
+    out.push(ARM_ACC[w]);
+    if (w === 'strzelba') ammo('loftki', rint(st, 4, 8));
+    if (w === 'kusza') ammo('belty', rint(st, 6, 10));
+  }
+  return out;
 }
 
 function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
@@ -598,6 +692,7 @@ function morning(st: GovState, i: GovInput, fx: GovEffects): void {
   // kuchnia rano: ile nocy paliła się koza i kto przy niej czuwał
   const fire = n.fire?.all ? round2(n.fire.on / n.fire.all) : undefined;
   if (i.kitchen !== null && fire !== undefined) n.lines.push(kitchenLine(i.kitchen, fire, koza, i.stock.wood));
+  if (zombieMode(st)) n.lines.push(...hordeLines(i, n));
   if (!n.lines.length) n.lines.push('Spokojna noc.');
   dailyDrift(st, i);
   const far = n.exp.filter((e) => TARGETS.find((t) => t.id === e.target)?.range === 'daleko').flatMap((e) => e.ids);
@@ -630,6 +725,23 @@ function morning(st: GovState, i: GovInput, fx: GovEffects): void {
   );
 }
 
+/** raport z nocy w trybie zombie: ilu było przy siatce, ilu zabitych, ile razy siatka puściła, kto ugryziony */
+function hordeLines(i: GovInput, n: NonNullable<GovState['night']>): string[] {
+  const h = i.horde;
+  if (!h) return [];
+  const z0 = n.z0 ?? { killed: 0, breaches: 0, bites: 0 };
+  const out: string[] = [];
+  const peak = Math.max(n.zpeak ?? 0, h.near);
+  out.push(peak ? `W nocy przy siatce było do ${peak} szwendaczy.` : 'W nocy przy siatce było spokojnie.');
+  const killed = h.killed - z0.killed;
+  if (killed > 0) out.push(`Zabitych szwendaczy: ${killed}.`);
+  const broke = h.breaches - z0.breaches;
+  if (broke > 0) out.push(`Siatka puściła w ${broke} ${broke === 1 ? 'miejscu' : 'miejscach'}. Trzeba łatać.`);
+  const bit = i.people.filter((p) => p.bitten && !(n.bit0 ?? []).includes(p.id));
+  if (bit.length) out.push(`Ugryzieni: ${peopleNames(bit)}. Gorączka zabija w niecałą dobę.`);
+  return out;
+}
+
 /** przebieg nocy po zatwierdzeniu: powroty z wypraw, napad o swojej godzinie, raport o 6:00 */
 export function nightTick(st: GovState, i: GovInput, fx: GovEffects): void {
   const n = st.night;
@@ -640,6 +752,7 @@ export function nightTick(st: GovState, i: GovInput, fx: GovEffects): void {
     if (!n.returned.includes(gr.target) && t >= atHour(n.day + 1, tg.back)) returnExp(st, i, fx, gr);
   }
   if (n.raid && !n.raid.resolved && t >= n.raid.at) resolveRaid(st, i, fx);
+  if (i.horde) n.zpeak = Math.max(n.zpeak ?? 0, i.horde.near);
   // ogień w kozie od 22:00 do rana w minutach gry (do raportu: czy w kuchni było ciepło) i kto przy niej stał
   if (n.fire && i.kitchen !== null) {
     const from = Math.max(n.fire.at, atHour(n.day, 22));

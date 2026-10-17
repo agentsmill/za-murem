@@ -12,7 +12,7 @@
 
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } from './noc.ts';
 import { FIRST_LAWS } from './tresc.ts';
-import type { GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
+import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
 import { lawEffects as effectsOfLaws, lawState, lawOptions as optionsOfLaws, sign } from './uchwaly.ts';
 import { atHour, decision, emptyEffects, gameMin, logGov, mood, rnd, zeroStock } from './wspolne.ts';
 import { choose, eventTick, eventView, FIRST_EVENT } from './wydarzenia.ts';
@@ -22,7 +22,7 @@ export const GOV_VERSION = 1;
 export const LAW_HOUR = 19;
 export const LAW_MINUTE = 30;
 
-export function newGov(seed: number): GovState {
+export function newGov(seed: number, mode: GameMode = 'zwykly'): GovState {
   const st: GovState = {
     v: 1,
     seed,
@@ -48,6 +48,8 @@ export function newGov(seed: number): GovState {
     decisions: [],
     log: [],
     over: null,
+    mode,
+    deadN: 0,
   };
   st.ev.next = FIRST_EVENT + Math.floor(rnd(st) * 11);
   return st;
@@ -102,9 +104,28 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   }
   if (st.night && !st.night.confirmed && (i.hour >= CARD_DEADLINE || i.day > st.night.day)) confirm(st, i, fx, true);
   nightTick(st, i, fx);
+  mourn(st, i, fx);
   eventTick(st, i, fx, busy(st));
   checkOver(st, i, fx);
   return fx;
+}
+
+const CAUSE: Record<string, string> = { rany: 'od ran', gorączka: 'po ugryzieniu', amputacja: 'przy amputacji' };
+
+/** nowe zgony: ktoś z zarządu to zaufanie −5 i wkurzenie +8, mieszkaniec −2 i +3; raz na zgon, linia do raportu */
+function mourn(st: GovState, i: GovInput, fx: GovEffects): void {
+  const dead = i.dead ?? [];
+  const from = st.deadN ?? 0;
+  if (dead.length <= from) return;
+  st.deadN = dead.length;
+  for (const d of dead.slice(from)) {
+    const why = CAUSE[d.cause] ?? d.cause;
+    const line = d.id ? `${d.name} nie żyje, ${why}.` : `Nie żyje jeden z mieszkańców, ${why}.`;
+    if (d.id) mood(st, -5, 8);
+    else mood(st, -2, 3);
+    if (st.night?.confirmed) st.night.lines.push(line);
+    logGov(st, i, line, true, fx);
+  }
 }
 
 function checkOver(st: GovState, i: GovInput, fx: GovEffects): void {

@@ -38,7 +38,16 @@ export interface GovPerson {
   /** posterunek warty, jeśli stoi ('brama', 'd<id>', 'koza'), jak SimPerson.post. Z tym polem zarząd wie, że
       symulacja sama prowadzi noc na posterunku (kto stoi, ten nie śpi), więc rano nie odejmuje już sił */
   post?: string | null;
+  /** broń (id z src/sim/bron.ts) i jej rodzaj do warty i wypraw: gołe ręce (albo broń palna bez amunicji),
+      broń do walki wręcz, dzida (sięga przez siatkę), broń palna albo kusza z amunicją */
+  weapon?: string | null;
+  arm?: Arm;
+  /** ugryziony (zakażony) */
+  bitten?: boolean;
 }
+
+export type Arm = 'brak' | 'wrecz' | 'dzida' | 'palna';
+export type GameMode = 'zwykly' | 'zombie';
 
 /** zapasy: drewno i jedzenie jak SimStock, materiały do łatania siatki przyjdą w turze 2 */
 export interface GovStock {
@@ -106,6 +115,11 @@ export interface GovInput {
   /** warta spoza karty nocy (polecenie z menu): kto stoi i gdzie ('brama' albo 'd<id dziury>'); bez pola
       zarząd bierze osoby z pracą 'guard' za wartę w nieznanym miejscu */
   guards?: { id: string; post: string }[];
+  /** tryb zombie: szwendacze przy siatce (do 12 m), napierający, liczniki od początku gry (zabici, przerwania
+      siatki, ugryzienia) i wielkość stada tej nocy */
+  horde?: { near: number; pressing: number; killed: number; breaches: number; bites: number; tonight: number };
+  /** zmarli (zarząd z id, mieszkańcy z pustym id) od początku gry, po kolei; lista tylko rośnie */
+  dead?: { id: string; name: string; cause: string; tick: number }[];
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -150,6 +164,11 @@ export interface GovEffects {
   log: string[];
   /** rozstrzygnięcie napadu w tym wywołaniu (w minucie napadu); null albo brak, gdy nic się nie rozstrzygnęło */
   raidResult?: RaidResult | null;
+  /** znaleziona broń (id z src/sim/bron.ts) i amunicja do magazynu */
+  arms?: string[];
+  ammo?: Partial<Record<'naboje' | 'loftki' | 'belty', number>>;
+  /** ugryzieni na wyprawie (zakażeni) */
+  bitten?: string[];
 }
 
 export interface RaidPlan {
@@ -234,6 +253,8 @@ export interface NightCard {
   posts: { key: string; name: string; weak: number }[];
   /** spodziewane straty, jeśli wejdą (do porównania z wartą) */
   loss: { wood: number; supplies: number };
+  /** tryb zombie: ilu szwendaczy przyjdzie w stadzie, słowo do tego i wytrzymałość siatki 0–1 */
+  horde?: { size: number; word: string; fence: number };
   people: NightCardPerson[];
   advice: string;
   /** koza zarządu na noc (bez kozy brak): drewno w zapasie razem z tym w kozie, ile zje do 6:00 przy dyżurze
@@ -310,6 +331,10 @@ export interface NightPlan {
   fire?: { on: number; all: number; at: number };
   /** kto w nocy stał przy kozie (id z posterunków symulacji, także z menu kozy) */
   koza?: string[];
+  /** tryb zombie: liczniki przy zatwierdzeniu karty, ugryzieni wtedy i najwięcej szwendaczy przy siatce w nocy */
+  z0?: { killed: number; breaches: number; bites: number };
+  bit0?: string[];
+  zpeak?: number;
 }
 
 export interface GovState {
@@ -350,4 +375,8 @@ export interface GovState {
   decisions: { s: number; k: string }[];
   log: { day: number; clock: string; txt: string; big: boolean }[];
   over: EndingId | null;
+  /** tryb gry; stary zapis: zwykły */
+  mode?: GameMode;
+  /** ile zgonów z GovInput.dead zarząd już opłakał */
+  deadN?: number;
 }
