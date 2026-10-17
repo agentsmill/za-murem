@@ -4,7 +4,9 @@
    75+, puste mieszkania i czas generowania. Na końcu test wsteczny 2021→2025 dla gmin dem: każdy rejon gminy
    obsadzony na spis (`obsadzRejon`, tyle gospodarstw, ile ma rejon), postarzony bez upadku do końca 2025 i porównany
    z ludnością GUS na 31.12.2025 (P2137, `wiek2025`): udziały 0-14, 15-64, 65+ i 80+ w granicach 2 pp, inaczej kod
-   wyjścia 1.
+   wyjścia 1. Wyjątek (R30): gmina rosnąca, w której w latach 2021-2025 przybyło co najmniej 5% mieszkań i co
+   najmniej 5% ludności, ma próg 3,5 pp, bo silnik ma stałą liczbę mieszkań i nie odda rodzin, które wprowadzają się
+   do nowych domów.
    Wiek w roku stanu `rok` to `rok - 1 - rocznik` (wiek ukończony na koniec poprzedniego roku), tak jak w silniku:
    spis w skali `2020 - rocznik`, krok „2026” to stan na koniec 2025, a „2051” na 1 stycznia 2051.
    Gminę dema wskazuje `rejonDla` dla punktu adresu (`geo.c`) po wszystkich tabelach gmin z repo; TERYT z listy
@@ -30,6 +32,19 @@ const WYBRANE = ARGS.filter((a) => !a.startsWith('--'));
 /** Zapas na wypadek, gdyby punkt adresu dema nie trafił w żaden obrys z tabel gmin: TERYT gminy dema. */
 const ZAPAS_TERYT: Record<string, string> = { przymorze: '2261011', lanciego: '1465138', zielonki: '1206172' };
 const PROG_PP = 2;
+/** Próg dla gminy rosnącej (R30) i progi przyrostu mieszkań i ludności, od których gmina jest rosnąca. */
+const PROG_ROSNACEJ_PP = 3.5;
+const PRZYROST_ROSNACEJ = 0.05;
+/** Mieszkania ogółem na koniec roku według BDL (P2166, zmienna 60811 „ogółem, mieszkania”), z plików
+    gus/bdl-api/dane-przyklady/<gmina>__zasoby_mieszkaniowe_P1719_P2166.json w surowych danych. Okres to koniec 2020
+    do końca 2025, czyli mieszkania oddane w latach 2021-2025; Ursynów nie ma jeszcze 2025 roku w pliku, więc do
+    końca 2024. Gmina bez wpisu nie jest rosnąca. Ludność bierzemy z tabel gminy (P4253 na spis, P2137 na koniec
+    2025). Sam przyrost mieszkań nie wystarcza: w Gdańsku mieszkań przybyło 12,8%, a ludności 2,5%. */
+const MIESZKANIA_BDL: Record<string, { od: [number, number]; do: [number, number] }> = {
+  '2261011': { od: [2020, 243910], do: [2025, 275062] },
+  '1465138': { od: [2020, 76028], do: [2024, 77894] },
+  '1206172': { od: [2020, 9394], do: [2025, 10084] },
+};
 const CEL_MS = 200;
 /** Szerokość słupka piramidy dla największej grupy (w znakach). */
 const SZEROKOSC = 22;
@@ -339,8 +354,27 @@ function testWsteczny(g: TabeleGminy, k: TabeleKraju): Wsteczny {
   return { g, model, gus, spis, ms: performance.now() - t0 };
 }
 
+/** Próg testu dla gminy i dwie linijki opisu: czy gmina jest rosnąca, przyrost mieszkań (BDL, `MIESZKANIA_BDL`)
+    i ludności (tabele gminy) od spisu do końca 2025. */
+function progGminy(g: TabeleGminy): { prog: number; opis: string[] } {
+  const b = MIESZKANIA_BDL[g.teryt];
+  const ludnosc = (suma(g.wiek2025.M) + suma(g.wiek2025.K)) / (suma(g.wiek2021.M) + suma(g.wiek2021.K)) - 1;
+  const zmiana = (x: number): string => `${x >= 0 ? '+' : '-'}${procent(Math.abs(x))}`;
+  const zLudnoscia = (m: string): string => `${m}, ludność ${zmiana(ludnosc)} od spisu do końca 2025`;
+  const tekst = (prog: number): string => `próg ±${String(prog).replace('.', ',')} pp`;
+  if (!b) return { prog: PROG_PP, opis: [tekst(PROG_PP), zLudnoscia('przyrost mieszkań nieznany')] };
+  const mieszkania = b.do[1] / b.od[1] - 1;
+  const przyrost = zLudnoscia(`mieszkań ${zmiana(mieszkania)} od końca ${b.od[0]} do końca ${b.do[0]} (BDL)`);
+  if (mieszkania >= PRZYROST_ROSNACEJ && ludnosc >= PRZYROST_ROSNACEJ) {
+    const prog = PROG_ROSNACEJ_PP;
+    return { prog, opis: [`${tekst(prog)}, gmina rosnąca: nowe mieszkania nie są modelowane`, przyrost] };
+  }
+  return { prog: PROG_PP, opis: [tekst(PROG_PP), przyrost] };
+}
+
 function wypiszWsteczne(testy: readonly Wsteczny[]): boolean {
-  console.log(`\n=== Test wsteczny 2021→2025, próg ±${PROG_PP} pp ===`);
+  const progRosnacej = String(PROG_ROSNACEJ_PP).replace('.', ',');
+  console.log(`\n=== Test wsteczny 2021→2025, próg ±${PROG_PP} pp, gmina rosnąca ±${progRosnacej} pp ===`);
   console.log(
     '  Rejony gminy obsadzone na spis, postarzone bez upadku do końca 2025, wobec GUS na 31.12.2025 (P2137).',
   );
@@ -349,11 +383,12 @@ function wypiszWsteczne(testy: readonly Wsteczny[]): boolean {
   );
   let dobrze = true;
   for (const t of testy) {
+    const { prog, opis } = progGminy(t.g);
     for (const [i, [nazwa, od, doGrupy]] of SZEROKIE.entries()) {
       const m = suma(t.model.slice(od, doGrupy + 1)) / suma(t.model);
       const r = suma(t.gus.slice(od, doGrupy + 1)) / suma(t.gus);
       const pp = 100 * (m - r);
-      const przekroczony = Math.abs(pp) > PROG_PP;
+      const przekroczony = Math.abs(pp) > prog;
       if (przekroczony) dobrze = false;
       const gmina = i === 0 ? `${t.g.nazwa} (${t.g.teryt})` : '';
       console.log(
@@ -363,8 +398,9 @@ function wypiszWsteczne(testy: readonly Wsteczny[]): boolean {
     console.log(
       `  ${''.padEnd(30)}ludność: spis ${liczba(t.spis)}, model 2025 ${liczba(suma(t.model))}, GUS 2025 ${liczba(suma(t.gus))}; ${Math.round(t.ms)} ms`,
     );
+    for (const linia of opis) console.log(`  ${''.padEnd(30)}${linia}`);
   }
-  console.log(dobrze ? '  Wynik: wszystkie udziały w progu.' : `  Wynik: przekroczony próg ±${PROG_PP} pp.`);
+  console.log(dobrze ? '  Wynik: wszystkie udziały w progu.' : '  Wynik: przekroczony próg.');
   return dobrze;
 }
 

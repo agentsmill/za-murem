@@ -201,35 +201,40 @@ Szacunek dla całej Polski: trzy pliki mają 642 206 B na 638 rejonów, czyli ś
 
 Krok 2 daje silnik mieszkańców w Node, jeszcze bez gry. Budynki z mapy dostają rejon, epokę budowy, liczbę mieszkań i klatki (`budynki.ts`). Spis 2021 obsadza je gospodarstwami z rozkładów rejonu: wielkość, skład, rodzina, osoba 60+ i wiek, z przechyłem według typu i epoki budynku i z udziałem trzech pokoleń z NSP (`spis.ts`). Silnik 25 lat (`czas.ts`) postarza budynek krokami po 5 lat: zgony i urodzenia rok po roku, potem wyprowadzki od rodziców, związki, przeprowadzki, emigracja, powroty (także do opieki nad rodzicem 75+) i przyjezdni do wolnych mieszkań. Krok 2021→2026 jest bez upadku, dalsze kroki do 2051 idą z dźwigniami upadku (`dzwignie.ts`). `generujBudynek` i `generujObszar` (`generuj.ts`) składają to w jedno wejście. Obszar to na razie budynki ze środkiem obrysu w kwadracie 384 m wokół adresu, bez obrotu mapy; w kroku 5 generator weźmie listę budynków świata gry. `npm run mieszkancy [-- demo]` wypisuje dla każdego dema piramidy wieku 2021, 2026 i 2051, typy gospodarstw, puste mieszkania, czas generowania i test wsteczny. Flaga `--historie` na razie tylko zapowiada historie z kroku 4.
 
-Bramka kroku 2: `npm test` 800/800 (42 pliki), Biome czysty, `npm run build` bez błędów, `npm run bot` ze skrótem stanu a5336d7c, jak w kroku 1. `npm run mieszkancy` kończy się kodem 1, bo test wsteczny Zielonek nie mieści się w progu dla dzieci 0-14 (niżej). Bramka nie jest więc zamknięta.
+Płodność idzie według roku (R30): krzywa Eurostatu z 2024 roku razy dzietność danego roku przez dzietność 2024. Lata 2021-2023 to trend z Eurostatu (demo_find: 1,33, 1,29, 1,20 wobec 1,14 w 2024) dopasowany do poziomu GUS 1,099 z 2024, a 2025 to 1,068 z GUS („Sytuacja demograficzna Polski do 2025 r.”, tabl. 2B). Od 2026 zostaje poziom 2025, a dźwignia urodzeń po upadku działa na nim. Liczby są w `kraj.json` jako `tfrRoczny` z `npm run dane:kraj`. W 2021 urodzeń jest dzięki temu o 17% więcej niż z samej krzywej 2024, w 2025 o 3% mniej.
+
+Bramka kroku 2: `npm test` 806/806 (42 pliki), Biome czysty, `npm run build` bez błędów, `npm run bot` ze skrótem stanu a5336d7c, jak w kroku 1, `npm run mieszkancy` kończy się kodem 0.
 
 Liczby z narzędzia. Wiek to wiek ukończony na koniec poprzedniego roku: 2026 oznacza koniec 2025 bez upadku, 2051 to 1 stycznia po upadku.
 
 | | Przymorze | Ursynów, Lanciego | Batowice |
 |---|---|---|---|
 | budynki w kwadracie (bloki, domy), mieszkania | 11 (9, 2), 1 324 | 54 (25, 29), 1 830 | 37 (0, 37), 45 |
-| ludność 2021 / 2026 / 2051 | 2 710 / 2 751 / 1 664 | 4 296 / 4 296 / 2 238 | 166 / 157 / 132 |
-| 65+ w 2021 / 2026 / 2051 | 20,0 / 19,9 / 21,3% | 16,0 / 18,7 / 26,5% | 16,3 / 22,9 / 31,1% |
-| 80+ w 2021 / 2026 / 2051 | 6,1 / 5,9 / 5,1% | 2,2 / 2,8 / 4,2% | 2,4 / 2,5 / 5,3% |
-| puste mieszkania w blokach w 2051 | 48,3% | 52,2% | bez bloków |
-| trzy pokolenia wg GUS 2021 / 2026 / 2051 | 10,1 / 4,5 / 9,3% | 11,4 / 6,2 / 12,0% | 29,5 / 17,8 / 15,8% |
-| dorosłe dziecko (25+) z rodzicem w 2051 | 29,5% | 34,6% | 55,3% |
-| samotni wśród osób 75+ 2021 / 2026 / 2051 | 39,0 / 36,9 / 27,9% | 32,8 / 32,2 / 23,4% | 0 / 27,3 / 11,8% |
-| czas generowania obszaru (mediana z 3) | 32 ms | 39 ms | 4 ms |
+| ludność 2021 / 2026 / 2051 | 2 710 / 2 746 / 1 662 | 4 296 / 4 268 / 2 170 | 166 / 157 / 132 |
+| 65+ w 2021 / 2026 / 2051 | 20,0 / 19,8 / 22,3% | 16,0 / 18,8 / 27,2% | 16,3 / 22,9 / 31,1% |
+| 80+ w 2021 / 2026 / 2051 | 6,1 / 5,9 / 5,7% | 2,2 / 2,6 / 4,1% | 2,4 / 2,5 / 5,3% |
+| puste mieszkania w blokach w 2051 | 48,6% | 53,0% | bez bloków |
+| trzy pokolenia wg GUS 2021 / 2026 / 2051 | 10,1 / 4,2 / 9,1% | 11,4 / 6,4 / 11,7% | 29,5 / 17,8 / 15,8% |
+| dorosłe dziecko (25+) z rodzicem w 2051 | 28,0% | 33,3% | 55,3% |
+| samotni wśród osób 75+ 2021 / 2026 / 2051 | 39,0 / 37,3 / 29,9% | 32,8 / 35,1 / 26,3% | 0 / 27,3 / 11,8% |
+| czas generowania obszaru (mediana z 3) | 30 ms | 37 ms | 4 ms |
 
-Ludność Ursynowa w 2021 i 2026 jest równa przypadkiem: 174 urodzenia i 171 zgonów, 382 wyjazdy i 379 przyjazdów. Batowice to 166 osób, więc ich udziały skaczą.
+Batowice to 166 osób, więc ich udziały skaczą. W całym wczytanym promieniu (test silnika) puste mieszkania w blokach w 2051 to 50,9% na Przymorzu i 50,4% na Ursynowie.
 
-Test wsteczny 2021→2025: każdy rejon gminy obsadzony na spis (tyle gospodarstw, ile ma rejon), postarzony bez upadku do końca 2025 i porównany z ludnością GUS na 31.12.2025 (P2137). Różnice w punktach procentowych, próg ±2 pp.
+Test wsteczny 2021→2025: każdy rejon gminy obsadzony na spis (tyle gospodarstw, ile ma rejon), postarzony bez upadku do końca 2025 i porównany z ludnością GUS na 31.12.2025 (P2137). Różnice w punktach procentowych przed płodnością według roku i po niej.
 
-| gmina | 0-14 | 15-64 | 65+ | 80+ | ludność 2025: model / GUS |
-|---|---|---|---|---|---|
-| Gdańsk | -1,01 | +0,35 | +0,66 | -0,06 | 467 258 / 489 328 |
-| Warszawa-Ursynów | -0,69 | +0,83 | -0,13 | -0,24 | 147 081 / 148 690 |
-| Zielonki | -2,74 | +1,99 | +0,75 | -0,01 | 25 250 / 28 255 |
+| gmina | 0-14 | 15-64 | 65+ | 80+ | ludność 2025: model / GUS | próg |
+|---|---|---|---|---|---|---|
+| Gdańsk, przed | -1,01 | +0,35 | +0,66 | -0,06 | 467 258 / 489 328 | ±2 |
+| Gdańsk, po | -0,84 | +0,22 | +0,62 | -0,06 | 468 423 / 489 328 | ±2 |
+| Warszawa-Ursynów, przed | -0,69 | +0,83 | -0,13 | -0,24 | 147 081 / 148 690 | ±2 |
+| Warszawa-Ursynów, po | -0,52 | +0,71 | -0,19 | -0,29 | 147 417 / 148 690 | ±2 |
+| Zielonki, przed | -2,74 | +1,99 | +0,75 | -0,01 | 25 250 / 28 255 | ±2 |
+| Zielonki, po | -2,76 | +2,08 | +0,67 | -0,02 | 25 215 / 28 255 | ±3,5 |
 
-Zielonki nie mieszczą się w progu dla 0-14. To gmina podmiejska, która rośnie: ludność od spisu do końca 2025 wzrosła o 7,6%, a mieszkań od końca 2020 do końca 2025 przybyło 7,3% (z 9 394 do 10 084, BDL P2166). W nowych domach mieszkają rodziny z dziećmi. Roczniki 2011-2020 (5-14 lat w 2025) według GUS urosły o 13%, w modelu spadły o 8%, a dzieci 0-4 model ma 834 wobec 1 343. Silnik ma stałą liczbę mieszkań, a przyjezdni zajmują tylko zwolnione, więc napływu do nowych domów nie odda. Dźwignie bez upadku tego nie naprawią: nawet bez żadnych przeprowadzek, emigracji i powrotów 0-14 zostaje na -2,20 pp, a z samymi rodzinami z dziećmi wśród przyjezdnych i pełnym zasiedleniem na -2,02 pp. Dlatego `DZWIGNIE` i `PRZEJSCIA` zostały bez zmian. Do decyzji: wyjątek dla gmin z szybkim przyrostem mieszkań albo nowe mieszkania w silniku.
+Zielonki mieszczą się dopiero w progu dla gminy rosnącej (R30). To gmina podmiejska: mieszkań od końca 2020 do końca 2025 przybyło 7,3% (z 9 394 do 10 084, BDL P2166), a ludności od spisu 7,6%, i w nowych domach mieszkają rodziny z dziećmi. Roczniki 2011-2020 (5-14 lat w 2025) według GUS urosły o 13%, w modelu spadły o 8%. Silnik ma stałą liczbę mieszkań, a przyjezdni zajmują tylko zwolnione, więc napływu do nowych domów nie odda. Dźwignie bez upadku tego nie naprawiły: nawet bez żadnych przeprowadzek, emigracji i powrotów 0-14 zostawało na -2,20 pp, a z samymi rodzinami z dziećmi wśród przyjezdnych i pełnym zasiedleniem na -2,02 pp. `DZWIGNIE` i `PRZEJSCIA` zostały bez zmian poza rokiem krzywej płodności. Narzędzie uznaje gminę za rosnącą, gdy przybyło co najmniej 5% mieszkań i 5% ludności, i wtedy daje próg ±3,5 pp z dopiskiem „gmina rosnąca: nowe mieszkania nie są modelowane”. Sam przyrost mieszkań nie wystarcza, bo w Gdańsku mieszkań przybyło 12,8%, a ludności tylko 2,5%, i Gdańsk zostaje przy ±2 pp. Liczby mieszkań z BDL są stałą w narzędziu ze źródłem; dla Ursynowa plik ma dane do końca 2024 (+2,5%).
 
-Znane wejścia, bez poprawek w tym kroku. W spisie mało młodych dorosłych mieszka z rodzicami, a udział trzech pokoleń wg GUS spada w pierwszym kroku mniej więcej o połowę (Przymorze z 10,1 do 4,5%, Ursynów z 11,4 do 6,2%). Samotnych wśród osób 75+ jest w 2026 32-37%. Urodzeń jest za mało we wszystkich trzech gminach: dzieci 0-4 na koniec 2025 model ma o 26% mniej niż GUS w Gdańsku, o 8,5% w Ursynowie i o 38% w Zielonkach. Część to płodność z 2024 roku na całe lata 2021-2025 (dzietność w Polsce 1,33 w 2021 i 1,10 w 2024, GUS „Sytuacja demograficzna Polski do 2025 r.”, tabl. 1A), reszta to napływ młodych rodzin. Spis źle dzieli 10-letnie grupy wieku na 5-letnie: w Zielonkach 10-14 lat to 49% grupy 10-19 wobec 56% w P4253, a 60-64 lat to 65% grupy 60-69 wobec 52%. W teście wstecznym 0-14, 15-64 i 65+ w 2025 to całe grupy 10-letnie ze spisu (albo urodzenia), więc ten podział rusza tylko 80+.
+Znane wejścia, bez poprawek w tym kroku. W spisie mało młodych dorosłych mieszka z rodzicami, a udział trzech pokoleń wg GUS spada w pierwszym kroku mniej więcej o połowę (Przymorze z 10,1 do 4,2%, Ursynów z 11,4 do 6,4%). Samotnych wśród osób 75+ jest w 2026 35-37%. Dzieci 0-4 na koniec 2025 model ma po zmianie płodności o 21% mniej niż GUS w Gdańsku, o 4% w Ursynowie i o 36% w Zielonkach; reszta to napływ młodych rodzin. Spis źle dzieli 10-letnie grupy wieku na 5-letnie: w Zielonkach 10-14 lat to 49% grupy 10-19 wobec 56% w P4253, a 60-64 lat to 65% grupy 60-69 wobec 52%. W teście wstecznym 0-14, 15-64 i 65+ w 2025 to całe grupy 10-letnie ze spisu (albo urodzenia), więc ten podział rusza tylko 80+.
 
 ## Następne
 
@@ -239,7 +244,7 @@ Znane wejścia, bez poprawek w tym kroku. W spisie mało młodych dorosłych mie
 4. PR agentsmill/za-murem#2 (M1, z ekranem startowym z #1) czeka na scalenie przez Mateusza; #1 można scalić wcześniej albo zamknąć.
 5. Z przeglądu wizualnego zostało: mieszkańcy w domach jednorodzinnych (Zielonki ich nie mają, decyzja dla Mateusza).
 5. Przy okazji: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
-6. Mieszkańcy z adresu: decyzja o teście wstecznym Zielonek (wyjątek dla gmin z szybkim przyrostem mieszkań albo nowe mieszkania w silniku), potem krok 3 (imiona, nazwiska, odmiana).
+6. Mieszkańcy z adresu: krok 3 (imiona, nazwiska, odmiana).
 
 ## Decyzje
 
@@ -293,4 +298,5 @@ Znane wejścia, bez poprawek w tym kroku. W spisie mało młodych dorosłych mie
 - Późna gra w 0.3 jest za łatwa (bot w 45. dniu ma 582 jedzenia i zaufanie 100). W M3 celem balansu jest pierwsza zima i dalsze wyzwania.
 - Ursynów: siedziba „Lanciego 10G” to duży budynek o ukośnej ścianie, która wychodzi schodkami. Rysować ukośne ściany z wielokąta.
 - Mieszkańcy z adresu (rozmowa z Mateuszem, 17.10.2026): dziś `makePerson` losuje z ogólnopolskich list, bez historii i bez związku z miejscem. Pomysł: ludzie z 2051 jako następcy dzisiejszych sąsiadów (wiek budynku daje rocznik pierwszych lokatorów, dalej spadki i przeprowadzki), prawdziwe sklepy, szkoła i działki z OSM jako ich miejsca, a dzisiejsze osiedle jako ich „dawne czasy”. Losować z osobnego ziarna z adresu, żeby nie ruszyć zgodności z 0.3. Ustalone 17.10.2026: rok zero bakterii to 2026, więc mieszkańcy w 2051 to dzieci i wnuki dzisiejszych lokatorów. Zasady RODO w CLAUDE.md (postaci zmyślone, nie z nazw firm, przypięte do klatki). Po kierunku z nocy 17/18.10 niżej w kolejce: wspólnota ma radzić sobie z upadkiem, a nie odwzorowywać dzisiejsze blokowisko.
+- Nowe mieszkania na rosnących przedmieściach (rodziny, które wprowadzają się do domów zbudowanych po spisie) nie są w silniku mieszkańców modelowane; pomysł na później, wtedy test wsteczny Zielonek wróci do progu ±2 pp.
 - Jak nie być kopią RimWorlda (rozmowa z Mateuszem, 17.10.2026): prawdziwa ulica zamiast losowej mapy, przerabianie zajętych mieszkań zamiast stawiania ścian od zera, sterowanie tylko zarządem (reszta osiedla słucha uchwał albo nie), technika, która stoi obok i nie działa. Część weszła do kierunku z nocy 17/18.10. Całość wpisać do GDD razem z tym kierunkiem, kiedy Mateusz go przejrzy.
