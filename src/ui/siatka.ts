@@ -1,0 +1,69 @@
+/* Siatka i światło dla zarządu: dziury z World.fence z nazwą miejsca do tekstów karty nocy i raportu.
+   Czyste funkcje świata i stanu, bez DOM. Łatanie dziur i zamykanie bramy przyjdą z symulacją
+   (skutek patch), wtedy stan siatki trzeba brać z niej, a nie ze startu świata. */
+
+import type { GovFence, GovLight } from '../gov/typy.ts';
+import type { SimState } from '../sim/sim.ts';
+import type { World } from '../world/world.ts';
+
+const DIRS = [
+  'od wschodu',
+  'od południowego wschodu',
+  'od południa',
+  'od południowego zachodu',
+  'od zachodu',
+  'od północnego zachodu',
+  'od północy',
+  'od północnego wschodu',
+];
+const ORD = ['', 'druga', 'trzecia', 'czwarta'];
+
+/** wielkość dziury 0,4–0,85 z kafelka i ziarna, zawsze ta sama dla tego samego osiedla */
+function holeSize(tile: number, seed: number): number {
+  let h = Math.imul(tile ^ seed, 0x9e3779b1) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b) >>> 0;
+  return Math.round((0.4 + ((h >>> 8) % 46) / 100) * 100) / 100;
+}
+
+type FenceSrc = Pick<World, 'size' | 'seed'> & {
+  fence?: { tiles: number[]; hole: number[]; yard: number[] };
+  trees?: World['trees'];
+  dryTree?: number;
+  props?: { x: number; y: number }[];
+};
+
+/** Dziury w siatce dla GovInput.fence: id od 1 w kolejności kafelków, nazwa z kierunku od środka
+    podwórka („przy dziurze od północy”), a tuż przy trzepaku albo suchym drzewie od nich. Bez siatki
+    w świecie: undefined (zarząd sam zakłada jedną dziurę i bramę). */
+export function govFence(w: FenceSrc): GovFence | undefined {
+  const f = w.fence;
+  if (!f) return undefined;
+  const size = w.size;
+  const yard = f.yard.length ? f.yard : f.tiles;
+  const cx = yard.reduce((a, t) => a + (t % size), 0) / Math.max(1, yard.length);
+  const cy = yard.reduce((a, t) => a + Math.floor(t / size), 0) / Math.max(1, yard.length);
+  const trzepak = w.props?.[0];
+  const dry = w.dryTree !== undefined && w.dryTree >= 0 ? w.trees?.[w.dryTree] : undefined;
+  const used = new Map<string, number>();
+  const holes = f.hole.map((t, k) => {
+    const x = (t % size) + 0.5;
+    const y = Math.floor(t / size) + 0.5;
+    let name: string;
+    if (trzepak && Math.hypot(trzepak.x - x, trzepak.y - y) < 4) name = 'za trzepakiem';
+    else if (dry && Math.hypot(dry.x - x, dry.y - y) < 4) name = 'przy suchym drzewie';
+    else {
+      const a = Math.atan2(y - cy, x - cx);
+      name = DIRS[(Math.round(a / (Math.PI / 4)) + 8) % 8];
+    }
+    const n = used.get(name) ?? 0;
+    used.set(name, n + 1);
+    // druga dziura z tej samej strony: „przy dziurze od północy, druga”
+    return { id: k + 1, size: holeSize(t, w.seed), name: n ? `${name}, ${ORD[Math.min(n, 3)]}` : name };
+  });
+  return { holes, durability: 0.5 };
+}
+
+/** światło przy siatce: ognisko z rzeczy symulacji (gdy przyjdzie), lampy przy bramie jeszcze nie ma */
+export function govLight(st: SimState): GovLight {
+  return { campfire: st.things.some((t) => t.kind === 'ognisko' && t.fuel > 0), gateLamp: false };
+}

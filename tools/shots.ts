@@ -493,6 +493,315 @@ const SHOTS: Shot[] = [
       if (w.n < 2) throw new Error('nie widać wraków');
     },
   },
+  // M1: interfejs i zarząd (karta osoby, menu pod prawym, okna nocy, zapis, telefon); pomocnicze funkcje
+  // w środku, żeby reszta pliku została bez zmian
+  ...((): Shot[] => {
+    const game = async (page: Page, base: string, q = '') => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3${q}`);
+      await waitIdle(page);
+    };
+    /** punkt na ekranie: głowa k-tej osoby z zarządu */
+    const corePos = (page: Page, k = 0) =>
+      page.evaluate((k) => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[k];
+        const [x, y] = zm.screenOf(p.x, p.y - 0.55);
+        return { x, y };
+      }, k);
+    /** środek mebla do spalenia w kuchni zarządu (albo gdziekolwiek w jego mieszkaniu) */
+    const furniturePos = (page: Page) =>
+      page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const w = zm.sim!.w;
+        const h = w.interior;
+        const size = w.size;
+        const apt = (t: { x: number; y: number }) => h.rooms[h.room[t.y * size + t.x]]?.apt;
+        const room = (t: { x: number; y: number }) => h.room[t.y * size + t.x];
+        const koza = st.things.find((t) => t.kind === 'koza' && apt(t) === h.home)!;
+        const burn = ['krzeslo', 'stol', 'mebloscianka', 'wersalka', 'lozko'];
+        const t =
+          st.things.find((q) => burn.includes(q.kind) && room(q) === room(koza)) ??
+          st.things.find((q) => burn.includes(q.kind) && apt(q) === h.home)!;
+        const [x, y] = zm.screenOf(t.x + t.w / 2, t.y + t.h / 2);
+        return { x, y, kind: t.kind };
+      });
+    const select = async (page: Page, touch = false) => {
+      const a = await corePos(page);
+      if (touch) await page.touchscreen.tap(a.x, a.y);
+      else await page.mouse.click(a.x, a.y);
+      await page.waitForTimeout(300);
+      if (!(await page.isVisible('#card'))) throw new Error('karta osoby nie pokazała się po zaznaczeniu');
+    };
+    /** kamera na suchym drzewie; zwraca jego pień na ekranie */
+    const dryTree = async (page: Page) => {
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
+        zm.setCam(t.x, t.y - 1, 1.3);
+      });
+      await waitIdle(page);
+      return page.evaluate(() => {
+        const zm = window.zm!;
+        const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
+        const [x, y] = zm.screenOf(t.x, t.y);
+        return { x, y };
+      });
+    };
+    const kind = (page: Page) => page.evaluate(() => document.querySelector('#sheet')?.className ?? '');
+    /** przewija noc do raportu, odpowiadając po drodze na wydarzenia pierwszą możliwą odpowiedzią */
+    const toReport = async (page: Page) => {
+      for (let k = 0; k < 30; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(30));
+        if (p === 'raport') return;
+        if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+        else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
+        else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
+      }
+      throw new Error('raport po nocy się nie pokazał');
+    };
+    /** okno mieści się na ekranie bez przewijania w bok */
+    const fits = (page: Page) =>
+      page.evaluate(() => {
+        const s = document.querySelector('#sheet') as HTMLElement;
+        const r = s.getBoundingClientRect();
+        const body = s.querySelector('.sheet-body') as HTMLElement;
+        const bad: string[] = [];
+        if (r.left < 0 || r.right > innerWidth + 0.5 || r.top < 0 || r.bottom > innerHeight + 0.5)
+          bad.push(`okno poza ekranem: ${JSON.stringify(r)}`);
+        if (body && body.scrollWidth > body.clientWidth + 1)
+          bad.push(`treść szersza niż okno: ${body.scrollWidth} > ${body.clientWidth}`);
+        for (const el of s.querySelectorAll<HTMLElement>('select, .btn'))
+          if (el.getBoundingClientRect().right > r.right + 0.5) bad.push(`wystaje: ${el.textContent?.slice(0, 30)}`);
+        return bad;
+      });
+    /** przytrzymanie palca (pół sekundy z hakiem) przez CDP: zdarzenia dotyku jak z telefonu */
+    const hold = async (page: Page, x: number, y: number) => {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await page.waitForTimeout(700);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await cdp.detach();
+    };
+    return [
+      {
+        // pierwszy widok: cele dnia, pasek ze stanem osiedla, znacznik nad suchym drzewem
+        name: 'm1-cele',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+          await waitIdle(page);
+          await page.waitForTimeout(400);
+          if (!(await page.isVisible('#goals'))) throw new Error('nie ma listy celów');
+        },
+      },
+      {
+        name: 'm1-karta-osoby',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base);
+          await select(page);
+          // spalone krzesło daje nastrój „Palimy meble” na karcie
+          const f = await furniturePos(page);
+          await page.mouse.click(f.x, f.y, { button: 'right' });
+          await page.click('#ctx .ctx-item.risky');
+          await page.click('#sheet [data-act="burn-yes"]');
+          await page.evaluate(() => window.zm!.ff(45));
+          await waitIdle(page);
+          await page.waitForTimeout(400);
+          const moods = await page.locator('#card .mood').count();
+          console.log(`  karta: nastroje ${moods}, mebel ${f.kind}`);
+        },
+      },
+      {
+        name: 'm1-menu-prawy',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base);
+          await select(page);
+          const t = await dryTree(page);
+          await page.mouse.click(t.x, t.y, { button: 'right' });
+          await page.waitForSelector('#ctx:not([hidden])');
+          const items = await page.locator('#ctx .ctx-item').allTextContents();
+          console.log(`  menu: ${items.join(' | ')}`);
+          if (!items.includes('Ściąć drzewo')) throw new Error('w menu nie ma ścinania drzewa');
+          await page.mouse.move(t.x + 400, t.y + 300);
+        },
+      },
+      {
+        // potwierdzenie palenia mebli we własnym oknie
+        name: 'm1-spalic',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base);
+          await select(page);
+          const f = await furniturePos(page);
+          await page.mouse.click(f.x, f.y, { button: 'right' });
+          await page.click('#ctx .ctx-item.risky');
+          await page.waitForSelector('#modal:not([hidden])');
+        },
+      },
+      {
+        name: 'm1-uchwala',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base, '&godzina=19.5');
+          const p = await page.evaluate(() => window.zm!.govTick());
+          if (p !== 'uchwala') throw new Error(`o 19:30 zamiast uchwały: ${p}`);
+          await page.waitForTimeout(300);
+        },
+      },
+      {
+        name: 'm1-karta-nocy',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base, '&godzina=19.5');
+          await page.evaluate(() => window.zm!.govTick());
+          await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+          const p = await page.evaluate(() => window.zm!.ff(31));
+          if (p !== 'karta') throw new Error(`o 20:00 zamiast karty nocy: ${p}`);
+          // druga osoba na wartę przy bramie: szansa na karcie musi się zmienić
+          const before = await page.textContent('#sheet .odd-v');
+          const sel = page.locator('#sheet select.pick').nth(1);
+          const opts = await sel
+            .locator('option:not([disabled])')
+            .evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value));
+          const gate = opts.find((v) => v === 'warta:brama') ?? opts.find((v) => v.startsWith('warta:'));
+          if (gate) await sel.selectOption(gate);
+          const after = await page.textContent('#sheet .odd-v');
+          console.log(`  karta: szansa ${before} → ${after}, opcje drugiej osoby: ${opts.join(', ')}`);
+          await page.waitForTimeout(200);
+        },
+      },
+      {
+        name: 'm1-raport',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base, '&godzina=19.5');
+          await page.evaluate(() => window.zm!.govTick());
+          await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+          await page.evaluate(() => window.zm!.ff(31));
+          await page.click('#sheet [data-act="night-go"]');
+          await toReport(page);
+          await waitIdle(page);
+          const r = await page.evaluate(() => window.zm!.gov!.reports[0]);
+          console.log(`  raport: ${r.raid}, linie ${r.lines.length}, zaufanie ${r.trust} (${r.dTrust})`);
+        },
+      },
+      {
+        name: 'm1-wydarzenie',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base);
+          let p: string | null = null;
+          for (let k = 0; k < 12 && p !== 'wydarzenie'; k++) {
+            p = await page.evaluate(() => window.zm!.ff(20));
+            if (p && p !== 'wydarzenie') throw new Error(`zamiast wydarzenia: ${p}`);
+          }
+          if (p !== 'wydarzenie') throw new Error('przez cztery godziny gry nie było wydarzenia');
+          await waitIdle(page);
+          console.log(`  wydarzenie: ${await page.textContent('#sheet .sheet-title')}`);
+        },
+      },
+      {
+        name: 'm1-menu',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base);
+          await page.click('#btnMenu');
+          await page.waitForSelector('#modal:not([hidden])');
+        },
+      },
+      {
+        // zapis i wczytanie: ten sam czas, ci sami ludzie, ten sam zarząd
+        name: 'm1-zapis',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base, '&godzina=19.5');
+          await page.evaluate(() => window.zm!.govTick());
+          await page.click('#sheet [data-act="law"][data-arg="u_kociol"]');
+          await page.evaluate(() => window.zm!.ff(20));
+          const a = await page.evaluate(() => {
+            const zm = window.zm!;
+            zm.save();
+            return { tick: zm.sim!.st.tick, trust: zm.gov!.trust, hash: zm.sim!.hash(), laws: zm.gov!.laws.signed };
+          });
+          await page.goto(`${base}?speed=0`);
+          await page.waitForSelector('#resume:not([hidden])');
+          const label = await page.textContent('#btnResume');
+          await page.click('#btnResume');
+          await waitIdle(page);
+          const b = await page.evaluate(() => {
+            const zm = window.zm!;
+            return { tick: zm.sim!.st.tick, trust: zm.gov!.trust, hash: zm.sim!.hash(), laws: zm.gov!.laws.signed };
+          });
+          console.log(`  zapis: ${label}; tick ${a.tick} → ${b.tick}, zaufanie ${a.trust} → ${b.trust}`);
+          if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error('po wczytaniu stan gry jest inny');
+        },
+      },
+      {
+        // telefon: cele zwinięte do bieżącego, karta osoby po stuknięciu
+        name: 'm1-telefon',
+        query: '',
+        w: 390,
+        h: 844,
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.1`);
+          await waitIdle(page);
+          await select(page, true);
+          await page.waitForTimeout(300);
+        },
+      },
+      {
+        name: 'm1-telefon-menu',
+        query: '',
+        w: 390,
+        h: 844,
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.1`);
+          await waitIdle(page);
+          await select(page, true);
+          const t = await dryTree(page);
+          await hold(page, t.x, t.y);
+          await page.waitForSelector('#ctx:not([hidden])', { timeout: 3000 });
+        },
+      },
+      {
+        name: 'm1-telefon-karta-nocy',
+        query: '',
+        w: 390,
+        h: 844,
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.1&godzina=19.5`);
+          await waitIdle(page);
+          await page.evaluate(() => window.zm!.govTick());
+          let bad = await fits(page);
+          await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+          await page.evaluate(() => window.zm!.ff(31));
+          if (!(await kind(page)).includes('noc')) throw new Error('na telefonie nie ma karty nocy');
+          bad = [...bad, ...(await fits(page))];
+          if (bad.length) throw new Error(`telefon: ${bad.join('; ')}`);
+        },
+      },
+      {
+        name: 'm1-telefon-raport',
+        query: '',
+        w: 390,
+        h: 844,
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.1&godzina=19.5`);
+          await waitIdle(page);
+          await page.evaluate(() => window.zm!.govTick());
+          await page.click('#sheet [data-act="law-skip"]');
+          await page.evaluate(() => window.zm!.ff(31));
+          await page.click('#sheet [data-act="night-go"]');
+          await toReport(page);
+          const bad = await fits(page);
+          if (bad.length) throw new Error(`telefon: ${bad.join('; ')}`);
+        },
+      },
+    ];
+  })(),
 ];
 
 /** klucze rzeczy narysowanych w warstwie pionków (miejsce i opis sprite'a) */

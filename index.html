@@ -17,34 +17,47 @@
   <div class="start-card">
     <div><div class="sign big"><h1>Za Murem</h1><small>spółdzielnia po upadku</small></div></div>
     <p class="lore" id="lore"></p>
+    <div class="resume" id="resume" hidden><button type="button" class="btn go" id="btnResume"></button><button type="button" class="btn ghost" id="btnForget">Usuń zapis</button></div>
     <form id="startForm">
       <label for="addr">Adres twojego osiedla</label>
       <div class="row"><input id="addr" name="addr" placeholder="np. Wołoska 12, Warszawa" autocomplete="street-address"><button class="btn go" type="submit">Wczytaj osiedle</button></div>
     </form>
     <div class="alt" id="demos"></div>
     <p class="status" id="startStatus" aria-live="polite"></p>
-    <p class="fine">Wersja 0.4 w budowie: na razie chodzicie po osiedlu. Poprzednia, pełna wersja gry jest pod <a href="v03/index.html">Za Murem 0.3</a>. Adres trafia do wyszukiwarki OpenStreetMap (Nominatim), mapę pobieramy z darmowych kafelków <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Dane mapy © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, kafelki © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>.</p>
+    <p class="fine">Wersja 0.4 w budowie: pierwszy dzień i pierwsza noc za siatką. Poprzednia, pełna wersja gry jest pod <a href="v03/index.html">Za Murem 0.3</a>. Adres trafia do wyszukiwarki OpenStreetMap (Nominatim), mapę pobieramy z darmowych kafelków <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Dane mapy © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, kafelki © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>.</p>
   </div>
 </div>
 
 <div class="app" id="app" hidden>
   <div class="stage" id="stage"></div>
-  <header class="top">
+  <div class="treemark" id="treeMark" hidden><span class="treemark-t">Suche drzewo</span></div>
+  <header class="top" id="top">
     <div class="sign"><b id="osName">Spółdzielnia</b><small>Za Murem</small></div>
     <div class="clock"><span id="hDay"></span><span id="hTime"></span><span id="hSeason" class="season">jesień 2051</span></div>
     <fieldset class="speed" id="speed">
       <legend class="sr">Tempo gry</legend>
       <button type="button" class="btn" data-s="0">Pauza</button><button type="button" class="btn" data-s="1">1×</button><button type="button" class="btn" data-s="2">3×</button><button type="button" class="btn" data-s="3">6×</button>
     </fieldset>
+    <div class="stats" id="stats">
+      <span class="stat" id="sOut" title="Temperatura na dworze"><small class="stat-k">dwór</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sKit" title="Temperatura w kuchni zarządu"><small class="stat-k">kuchnia</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sWood" title="Drewno: w składzie, luzem i w kozie"><small class="stat-k">drewno</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sFood" title="Jedzenie: zapasy i ugotowane porcje"><small class="stat-k">jedzenie</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sTrust" title="Zaufanie mieszkańców do zarządu"><small class="stat-k">zaufanie</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sAnger" title="Wkurzenie mieszkańców"><small class="stat-k">wkurzenie</small><b class="stat-v">–</b></span>
+    </div>
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
     <button type="button" class="btn ghost" id="btnMenu">Menu</button>
   </header>
+  <section class="goals" id="goals" aria-label="Cele"></section>
   <aside class="card" id="card" hidden></aside>
   <p class="hint" id="hint"></p>
   <div class="box" id="box" hidden></div>
+  <div class="ctx" id="ctx" role="menu" hidden></div>
   <div class="mapctl"><button type="button" id="zIn" aria-label="Przybliż">+</button><button type="button" id="zOut" aria-label="Oddal">−</button><button type="button" id="zHome" aria-label="Pokaż siedzibę zarządu">⌂</button></div>
   <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">współtwórcy OpenStreetMap</a> · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a></div>
+  <div class="modal" id="modal" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div></div>
 </div>
 
 <script type="module" src="./src/main.ts"></script>

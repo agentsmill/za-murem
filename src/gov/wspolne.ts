@@ -89,11 +89,11 @@ export function addStock(i: GovInput, fx: GovEffects, k: StockKey, v: number): n
   return d;
 }
 
-/** „Drewno 3, Jedzenie 2” (wartości bezwzględne, bez zer) */
+/** „drewno 3, jedzenie 2” do środka zdania (wartości bezwzględne, bez zer) */
 export function stockText(d: Partial<StockDelta>): string {
   return (Object.entries(d) as [StockKey, number][])
     .filter(([, v]) => v)
-    .map(([k, v]) => `${LOOT_LABEL[k]} ${Math.abs(v)}`)
+    .map(([k, v]) => `${LOOT_LABEL[k].toLowerCase()} ${Math.abs(v)}`)
     .join(', ');
 }
 
