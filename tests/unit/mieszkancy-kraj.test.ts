@@ -17,6 +17,8 @@ import {
   plodnoscZCsv,
   qxZArkusza,
   szablonZAneksu,
+  tfrRoczny,
+  tfrZDemoFind,
   wiekZPrognozy,
 } from '../../tools/dane/kraj.ts';
 import { tekstLicencji } from '../../tools/dane/licencje.ts';
@@ -120,6 +122,13 @@ describe('tabele krajowe (kraj.json)', () => {
     expect(Math.abs(tfr(wies) - 1.149)).toBeLessThanOrEqual(0.002);
     expect(miasto100k).toBeLessThan(miasto);
     expect(miasto).toBeLessThan(wies);
+  });
+
+  it('dzietność według roku 2021-2025 na 10 000: GUS 2024 i 2025, wcześniej trend Eurostatu do GUS 2024', () => {
+    // Eurostat demo_find: 1,33 / 1,29 / 1,20 / 1,14 w latach 2021-2024; GUS: 1,099 w 2024 i 1,068 w 2025
+    expect(kraj.tfrRoczny).toEqual({ '2021': 12822, '2022': 12436, '2023': 11568, '2024': 10990, '2025': 10680 });
+    const lata = Object.keys(kraj.tfrRoczny).sort();
+    for (let i = 1; i < lata.length; i++) expect(kraj.tfrRoczny[lata[i]]).toBeLessThan(kraj.tfrRoczny[lata[i - 1]]);
   });
 
   it('kolejność urodzeń: udziały wśród urodzeń o znanej kolejności (GUS 2024) sumują się do 10 000', () => {
@@ -238,6 +247,8 @@ describe('LICENCJE.md', () => {
       'CC BY 4.0',
       'BREC 2021',
       'Eurostat',
+      'demo_find',
+      'Sytuacja demograficzna Polski do 2025',
       'PESEL',
       'CC0',
       'SGJP',
@@ -532,6 +543,48 @@ describe('wiekZPrognozy: ludność 2022 według płci i wieku', () => {
   });
 });
 
+describe('tfrZDemoFind i tfrRoczny: dzietność według roku', () => {
+  const NAGLOWEK = 'STRUCTURE,STRUCTURE_ID,freq,indic_de,geo,TIME_PERIOD,OBS_VALUE,OBS_FLAG,CONF_STATUS';
+  const w = (wskaznik: string, geo: string, rok: number, v: string): string =>
+    `dataflow,ESTAT:DEMO_FIND(1.0),A,${wskaznik},${geo},${rok},${v},ep,`;
+  const poprawny = (): string[] => [
+    NAGLOWEK,
+    w('TOTFERRT', 'PL', 2021, '1.33'),
+    w('TOTFERRT', 'PL', 2024, '1.14'),
+    // szum: inny wskaźnik, inny kraj, rok spoza listy
+    w('AGEMOTH', 'PL', 2021, '29.9'),
+    w('TOTFERRT', 'CZ', 2021, '1.83'),
+    w('TOTFERRT', 'PL', 2019, '1.44'),
+  ];
+
+  it('TFR Polski w setnych dla wybranych lat, także przy końcach linii CRLF', () => {
+    expect(tfrZDemoFind(poprawny().join('\n'), [2021, 2024])).toEqual({ '2021': 133, '2024': 114 });
+    expect(tfrZDemoFind(`${poprawny().join('\r\n')}\r\n`, [2024])).toEqual({ '2024': 114 });
+  });
+
+  it('brak roku, powtórzony rok, zły format i obcy nagłówek to błąd', () => {
+    expect(() => tfrZDemoFind(poprawny().join('\n'), [2022])).toThrow(/2022/);
+    expect(() => tfrZDemoFind([...poprawny(), w('TOTFERRT', 'PL', 2024, '1.15')].join('\n'), [2024])).toThrow(
+      /dwa razy/,
+    );
+    expect(() => tfrZDemoFind([NAGLOWEK, w('TOTFERRT', 'PL', 2024, '1.1')].join('\n'), [2024])).toThrow(/2 miejsc/);
+    expect(() => tfrZDemoFind(['a,b,c', '1,2,3'].join('\n'), [2024])).toThrow(/nagłówek/);
+  });
+
+  it('lata z GUS wprost, pozostałe to GUS w roku bazowym razy trend Eurostatu', () => {
+    const eurostat = { '2021': 133, '2022': 129, '2024': 114 };
+    const gus = { '2024': 10990, '2025': 10680 };
+    expect(tfrRoczny(eurostat, gus, 2024, [2021, 2022, 2024, 2025])).toEqual({
+      '2021': 12822, // 10 990 x 133 / 114 = 12 821,7
+      '2022': 12436,
+      '2024': 10990,
+      '2025': 10680,
+    });
+    expect(() => tfrRoczny(eurostat, gus, 2024, [2023])).toThrow(/2023/);
+    expect(() => tfrRoczny(eurostat, { '2025': 10680 }, 2024, [2021])).toThrow(/bazow/);
+  });
+});
+
 describe('mnoznikTfr i normalizujDo: przeliczenia stałych z GUS na krzywą Eurostatu', () => {
   it('mnożnik na 10 000 sprawia, że krzywa x mnożnik daje TFR obszaru', () => {
     const krzywa = [1000, 3000, 2000, 5000]; // TFR krzywej 1,1
@@ -623,6 +676,15 @@ describe('tabele krajowe a surowe pliki', () => {
       expect(Math.abs(suma(kraj.plodnosc) / 10000 - tfr)).toBeLessThanOrEqual(0.002);
     },
   );
+
+  const DZIETNOSC = plik('demografia/eurostat/demo_find.csv');
+  it.skipIf(!fs.existsSync(DZIETNOSC))('dzietność 2021-2023 to trend demo_find (Polska) do GUS 2024', () => {
+    const e = tfrZDemoFind(fs.readFileSync(DZIETNOSC, 'utf8'), [2021, 2022, 2023, 2024]);
+    expect(e).toEqual({ '2021': 133, '2022': 129, '2023': 120, '2024': 114 });
+    for (const rok of ['2021', '2022', '2023']) {
+      expect(kraj.tfrRoczny[rok], rok).toBe(Math.round((kraj.tfrRoczny['2024'] * e[rok]) / e['2024']));
+    }
+  });
 
   const ANEKS = plik('gus/nsp2021-rodziny/aneks_tabelaryczny_do_publikacji_2.xlsx');
   it.skipIf(!fs.existsSync(ANEKS))('szablon gospodarstw to tabl. 5 aneksu zgodna z tabl. 4', () => {

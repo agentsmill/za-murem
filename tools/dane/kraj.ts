@@ -1,4 +1,5 @@
-/* Czytniki tabel krajowych dla `npm run dane:kraj`: Tablica A trwania życia GUS, płodność z Eurostatu, szablon
+/* Czytniki tabel krajowych dla `npm run dane:kraj`: Tablica A trwania życia GUS, płodność i dzietność według roku
+   z Eurostatu, szablon
    gospodarstw z aneksu „Rodziny w Polsce”, struktura wieku z prognozy GUS i nota SGJP z nagłówka słownika. Czyste
    funkcje na wierszach XLSX, tekście CSV i bajtach, bez dostępu do plików, żeby dało się je testować na małych
    danych. Każdy czytnik sprawdza, czy plik ma oczekiwaną budowę, i przy niezgodzie zatrzymuje się z opisem. */
@@ -104,6 +105,56 @@ export function plodnoscZCsv(csv: string): number[] {
     wartosci.push(v);
   }
   return wartosci;
+}
+
+// ---------------------------------------------------------------- dzietność według roku (Eurostat demo_find, GUS)
+
+/** TFR Polski z Eurostatu demo_find (wskaźnik TOTFERRT) w setnych, dla każdego roku z `lata`. Plik podaje dwa
+    miejsca po przecinku (1,33), więc setne są dokładne. Brak roku, powtórzony rok albo wartość, która nie jest
+    liczbą z dwoma miejscami, to błąd. */
+export function tfrZDemoFind(csv: string, lata: readonly number[]): Record<string, number> {
+  const linie = csv.split(/\r?\n/).filter((l) => l.trim() !== '');
+  const naglowek = (linie[0] ?? '').split(',');
+  const kolumna = (nazwa: string): number => {
+    const i = naglowek.indexOf(nazwa);
+    if (i < 0) throw new Error(`Eurostat demo_find: nagłówek bez kolumny ${nazwa}: ${JSON.stringify(linie[0])}`);
+    return i;
+  };
+  const [iWskaznik, iGeo, iRok, iWartosc] = ['indic_de', 'geo', 'TIME_PERIOD', 'OBS_VALUE'].map(kolumna);
+  const szukane = new Set(lata.map(String));
+  const wynik: Record<string, number> = {};
+  for (const linia of linie.slice(1)) {
+    const p = linia.split(',');
+    if (p.length !== naglowek.length) throw new Error(`Eurostat demo_find: wiersz ma inną liczbę kolumn: ${linia}`);
+    if (p[iWskaznik] !== 'TOTFERRT' || p[iGeo] !== 'PL' || !szukane.has(p[iRok])) continue;
+    if (!/^\d\.\d{2}$/.test(p[iWartosc])) {
+      throw new Error(`Eurostat demo_find: TFR ${p[iRok]} ma wartość „${p[iWartosc]}” zamiast liczby z 2 miejscami`);
+    }
+    if (Object.hasOwn(wynik, p[iRok])) throw new Error(`Eurostat demo_find: rok ${p[iRok]} występuje dwa razy`);
+    wynik[p[iRok]] = Number(p[iWartosc].replace('.', ''));
+  }
+  for (const rok of szukane) if (!Object.hasOwn(wynik, rok)) throw new Error(`Eurostat demo_find: brak TFR ${rok}`);
+  return wynik;
+}
+
+/** Dzietność roczna na 10 000 w skali GUS dla lat `lata`. Rok, który ma wartość GUS (`gus`, na 10 000), bierze ją
+    wprost; pozostałe biorą z Eurostatu tylko trend: GUS w roku `rokBazy` razy Eurostat w danym roku przez Eurostat
+    w roku `rokBazy` (Eurostat i GUS liczą TFR na innej ludności, więc różnią się poziomem). */
+export function tfrRoczny(
+  eurostat: Record<string, number>,
+  gus: Record<string, number>,
+  rokBazy: number,
+  lata: readonly number[],
+): Record<string, number> {
+  const baza = String(rokBazy);
+  if (!(gus[baza] > 0) || !(eurostat[baza] > 0)) throw new Error(`Dzietność roczna: brak roku bazowego ${baza}`);
+  const wynik: Record<string, number> = {};
+  for (const rok of lata.map(String)) {
+    if (Object.hasOwn(gus, rok)) wynik[rok] = gus[rok];
+    else if (Object.hasOwn(eurostat, rok)) wynik[rok] = Math.round((gus[baza] * eurostat[rok]) / eurostat[baza]);
+    else throw new Error(`Dzietność roczna: brak roku ${rok} w GUS i w Eurostacie`);
+  }
+  return wynik;
 }
 
 /** Mnożnik płodności obszaru na 10 000, taki że krzywa `plodnosc` x mnożnik / 10 000 daje TFR obszaru według GUS.

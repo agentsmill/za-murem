@@ -71,6 +71,11 @@ export interface TabeleKraju {
       1,149) podzielony przez TFR samej krzywej (jej suma / 10 000, ok. 1,138). Dzięki temu krzywa x mnożnik / 10 000
       daje dokładnie TFR GUS danego obszaru. */
   mnoznikPlodnosci: { miasto100k: number; miasto: number; wies: number };
+  /** Dzietność Polski (TFR) na 10 000 w latach 2021-2025, w skali GUS. 2024 (1,099) i 2025 (1,068) to GUS; 2021-2023
+      to trend z Eurostatu (demo_find), czyli TFR Eurostatu w danym roku przez TFR Eurostatu w 2024, razy GUS 2024.
+      Silnik mnoży krzywą `plodnosc` w roku r przez `tfrRoczny[r] / tfrRoczny['2024']`, a od 2026 bierze poziom
+      z 2025 (czas.ts, `skalaPlodnosci`). */
+  tfrRoczny: Record<string, number>;
   /** Udziały urodzeń według kolejności (pierwsze, drugie, trzecie, czwarte i dalsze) na 10 000, suma dokładnie
       10 000. GUS 2024 podaje 44,1 / 33,9 / 12,4 / 6,1% (razem 96,5%, reszta ma kolejność nieustaloną), więc tu są
       udziały wśród urodzeń o znanej kolejności, przeskalowane do 100%. */

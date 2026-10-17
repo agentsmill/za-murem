@@ -92,13 +92,28 @@ function zgonyWRoku(k: TabeleKraju, klucz: KluczQx, rok: number, upadek: boolean
   return wynik;
 }
 
+/** Skala płodności w roku `rok` na 10 000 wobec roku krzywej (`PRZEJSCIA.rokPlodnosci`, 2024): dzietność z
+    `k.tfrRoczny` w najpóźniejszym roku tabeli nie późniejszym niż `rok` (od 2026 poziom z 2025) przez dzietność
+    w roku krzywej. Rok sprzed tabeli bierze jej pierwszy rok. */
+export function skalaPlodnosci(k: TabeleKraju, rok: number): number {
+  const lata = Object.keys(k.tfrRoczny)
+    .map(Number)
+    .sort((a, b) => a - b);
+  let r = lata[0];
+  for (const l of lata) if (l <= rok) r = l;
+  return Math.round((10000 * k.tfrRoczny[r]) / k.tfrRoczny[PRZEJSCIA.rokPlodnosci]);
+}
+
 /** Szansa urodzenia dziecka w roku na 10 000 kobiet według wieku osiągniętego w tym roku (15-49): krzywa `plodnosc`
-    × mnożnik obszaru, po upadku × spadek urodzeń w latach 2030-2035. */
+    × mnożnik obszaru × skala roku (`skalaPlodnosci`), po upadku × spadek urodzeń w latach 2030-2035. Same liczby
+    całkowite do 1,3 · 10^14, więc iloraz jest dokładnie zaokrąglony; w 2024 (skala 10 000) wychodzi to samo co bez
+    skali. */
 function urodzeniaWRoku(k: TabeleKraju, obszar: Obszar, rok: number, upadek: boolean): number[] {
   const d = DZWIGNIE.urodzeniaSpadek;
   const dzwignia = upadek && rok >= d.od && rok <= d.do ? d.mnoznik : 10000;
   const m = k.mnoznikPlodnosci[obszar];
-  return k.plodnosc.map((f) => Math.round((f * m * dzwignia) / 1e8));
+  const skala = skalaPlodnosci(k, rok);
+  return k.plodnosc.map((f) => Math.round((f * m * dzwignia * skala) / 1e12));
 }
 
 function zgon(s: Stan, o: Osoba, rok: number): void {

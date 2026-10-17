@@ -2,6 +2,7 @@
    ZM_SUROWE) robi `public/data/mieszkancy/kraj.json` i `LICENCJE.md`. Źródła:
    - umieralność: GUS, Tablica A trwania życia w 2025 r., sześć arkuszy (miasta, wieś, Polska × M, K),
    - płodność: Eurostat demo_frate, Polska 2024, pojedyncze lata wieku 15-49,
+   - dzietność według roku 2021-2025: GUS (2024, 2025) i trend z Eurostatu demo_find (2021-2023),
    - szablon gospodarstw i dane do `polska`: aneks „Rodziny w Polsce”, tabl. 4 i 5, oraz cztery tablice NSP 2021
      z rejonami (arkusz „Dane - rejony statystyczne”) zsumowane po całym kraju,
    - struktura wieku do `polska.wiek`: prognoza ludności GUS, Tabl. 1, rok 2022 (ostatni empiryczny),
@@ -24,6 +25,8 @@ import {
   przezycieZQx,
   qxZArkusza,
   szablonZAneksu,
+  tfrRoczny,
+  tfrZDemoFind,
   wiekZPrognozy,
 } from './dane/kraj.ts';
 import { tekstLicencji } from './dane/licencje.ts';
@@ -35,6 +38,7 @@ const UMIERALNOSC = path.join(
   'demografia/gus-trwanie-zycia-2025/tablica_a_tablica_trwania_zycia_w_2025_r..xlsx',
 );
 const PLODNOSC = path.join(SUROWE, 'demografia/eurostat/demo_frate.csv');
+const DZIETNOSC = path.join(SUROWE, 'demografia/eurostat/demo_find.csv');
 const ANEKS = path.join(SUROWE, 'gus/nsp2021-rodziny/aneks_tabelaryczny_do_publikacji_2.xlsx');
 const NSP_REJONY = path.join(SUROWE, 'gus/nsp2021-gospodarstwa-rejony');
 const PROGNOZA = path.join(SUROWE, 'demografia/gus-prognoza-ludnosci-2023-2060/2-wyniki_polska.xlsx');
@@ -50,6 +54,14 @@ const POCZATEK_SGJP = 32 * 1024;
     (https://stat.gov.pl/download/gfx/portalinformacyjny/pl/defaultaktualnosci/5515/3/19/1/rocznik_demograficzny_2025_tablice.zip),
     zebrane w research_notes/Dane do generatora mieszkańców/demografia_dynamika.md. */
 const TFR_GUS_2024 = { miasto100k: 1000, miasto: 1069, wies: 1149 };
+
+/** Dzietność Polski według GUS na 10 000: 2024 to 1,099 (Rocznik Demograficzny 2025, tabl. 76, jak wyżej), 2025 to
+    1,068 („Sytuacja demograficzna Polski do 2025 r.”, tabl. 2B, wiersz POLSKA, plik
+    demografia/gus-sytuacja-demograficzna-2025/sytuacjademograficznapolskido2025.xlsx w surowych danych). Lata
+    2021-2023 dają trend z Eurostatu (demo_find) względem 2024, decyzja koordynatora R30. */
+const TFR_GUS_POLSKA: Record<string, number> = { '2024': 10990, '2025': 10680 };
+const LATA_TFR = [2021, 2022, 2023, 2024, 2025];
+const ROK_BAZY_TFR = 2024;
 
 /** Urodzenia według kolejności w 2024: pierwsze 44,1%, drugie 33,9%, trzecie 12,4%, czwarte i dalsze 6,1% (w setnych
     procenta: 4410, 3390, 1240, 610). Razem 96,5%, bo urodzenia o nieustalonej kolejności GUS zostawia poza tą
@@ -103,7 +115,7 @@ function wczytajNoteSgjp(): { idSlownika: string; nota: string } {
 }
 
 function main(): void {
-  for (const plik of [UMIERALNOSC, PLODNOSC, ANEKS, PROGNOZA, SGJP]) {
+  for (const plik of [UMIERALNOSC, PLODNOSC, DZIETNOSC, ANEKS, PROGNOZA, SGJP]) {
     if (!fs.existsSync(plik)) throw new Error(`Brak pliku ${plik} (katalog surowych danych: ZM_SUROWE=${SUROWE})`);
   }
   console.log('Umieralność (Tablica A GUS 2025):');
@@ -111,6 +123,11 @@ function main(): void {
 
   const plodnosc = plodnoscZCsv(fs.readFileSync(PLODNOSC, 'utf8'));
   console.log(`Płodność (Eurostat 2024): TFR ${(plodnosc.reduce((a, b) => a + b, 0) / 10000).toFixed(4)}`);
+  const eurostatTfr = tfrZDemoFind(fs.readFileSync(DZIETNOSC, 'utf8'), [...LATA_TFR.slice(0, 3), ROK_BAZY_TFR]);
+  const dzietnosc = tfrRoczny(eurostatTfr, TFR_GUS_POLSKA, ROK_BAZY_TFR, LATA_TFR);
+  console.log(
+    `Dzietność według roku (Eurostat w setnych ${JSON.stringify(eurostatTfr)}): ${JSON.stringify(dzietnosc)}`,
+  );
 
   const aneks = fs.readFileSync(ANEKS);
   const szablonGospodarstw = szablonZAneksu(wiersze(aneks, 'TABL. 4'), wiersze(aneks, 'TABL. 5'));
@@ -134,6 +151,7 @@ function main(): void {
       miasto: mnoznikTfr(TFR_GUS_2024.miasto, plodnosc),
       wies: mnoznikTfr(TFR_GUS_2024.wies, plodnosc),
     },
+    tfrRoczny: dzietnosc,
     kolejnosc: normalizujDo(KOLEJNOSC_URODZEN_GUS, 10000) as TabeleKraju['kolejnosc'],
     szablonGospodarstw,
     trojpokoleniowe: TROJPOKOLENIOWE,

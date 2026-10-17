@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { budynkiZGeo } from '../../src/mieszkancy/budynki.ts';
-import { type Obszar, obszarGminy, postarz } from '../../src/mieszkancy/czas.ts';
+import { type Obszar, obszarGminy, postarz, skalaPlodnosci } from '../../src/mieszkancy/czas.ts';
 import { stanZ, wroc, wyjedz } from '../../src/mieszkancy/czas-stan.ts';
 import { DZWIGNIE, PRZEJSCIA } from '../../src/mieszkancy/dzwignie.ts';
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
@@ -158,6 +158,16 @@ describe('obszarGminy i DZWIGNIE', () => {
     expect(PRZEJSCIA.maxWiek).toBe(110);
   });
 
+  it('skala płodności: lata 2021-2025 z tfrRoczny wobec 2024, od 2026 poziom 2025 (R30)', () => {
+    expect(PRZEJSCIA.rokPlodnosci).toBe(2024);
+    expect(skalaPlodnosci(kraj, 2024)).toBe(10000);
+    expect(skalaPlodnosci(kraj, 2021)).toBe(11667); // 12 822 / 10 990
+    expect(skalaPlodnosci(kraj, 2023)).toBe(10526);
+    expect(skalaPlodnosci(kraj, 2025)).toBe(9718); // 10 680 / 10 990
+    for (const rok of [2026, 2031, 2040, 2050]) expect(skalaPlodnosci(kraj, rok), String(rok)).toBe(9718);
+    expect(skalaPlodnosci(kraj, 2019)).toBe(11667); // przed tabelą: pierwszy rok
+  });
+
   it('dźwignie i przejścia to same liczby całkowite', () => {
     const liczby: number[] = [];
     const zbierz = (v: unknown): void => {
@@ -215,13 +225,15 @@ describe('postarz bez upadku: rejon 182350 z Przymorza, 20 000 osób', () => {
     expect(Math.abs(zmarli / ile - oczekiwane / ile)).toBeLessThanOrEqual(0.015);
   });
 
-  it('urodzeń w latach 2021-2025 tyle, ile daje płodność × mnożnik miast 100 tys.+ (±10%)', () => {
+  it('urodzeń w latach 2021-2025 tyle, ile daje płodność × mnożnik miast 100 tys.+ × skala roku (±10%)', () => {
     let oczekiwane = 0;
     for (const o of spis.osoby) {
       if (o.plec !== 'K') continue;
       for (let rok = 2021; rok <= 2025; rok++) {
         const a = rok - o.rocznik;
-        if (a >= 15 && a <= 49) oczekiwane += (kraj.plodnosc[a - 15] * kraj.mnoznikPlodnosci.miasto100k) / 1e8;
+        if (a >= 15 && a <= 49) {
+          oczekiwane += (kraj.plodnosc[a - 15] * kraj.mnoznikPlodnosci.miasto100k * skalaPlodnosci(kraj, rok)) / 1e12;
+        }
       }
     }
     const urodzenia = w2026.dziennik.filter((d) => d.typ === 'urodzenie').length;

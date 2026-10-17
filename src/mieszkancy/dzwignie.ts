@@ -14,6 +14,10 @@ export const PRZEJSCIA = {
   poprawaUmieralnosci: 9900,
   /** Kto w danym roku kończy tyle lat, umiera: tablica kończy się na 100 latach z qx około 31%. Decyzja generatora. */
   maxWiek: 110,
+  /** Rok krzywej płodności (`k.plodnosc`, Eurostat 2024) i mnożników obszarów (TFR GUS 2024). W roku r krzywa idzie
+      razy `k.tfrRoczny[r] / k.tfrRoczny['2024']`: lata 2021-2025 mają własną dzietność, od 2026 zostaje poziom 2025
+      (1,068 wobec 1,099), a dźwignia urodzeń po upadku działa na to. Decyzja koordynatora R30. */
+  rokPlodnosci: 2024,
   /** Chłopcy na 10 000 urodzeń: około 105 na 100 dziewczynek, zwykła proporcja płci przy urodzeniu. Decyzja
       generatora. */
   chlopcy: 5122,

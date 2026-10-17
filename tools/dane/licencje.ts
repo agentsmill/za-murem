@@ -14,7 +14,7 @@ Tabele w katalogu \`public/data/mieszkancy/\` to przeliczone agregaty z otwartyc
 
 ## Co zrobiliśmy z danymi
 
-Informacja o przetworzeniu, której wymaga CC BY 4.0 i dobry zwyczaj przy danych GUS: dane zostały przeliczone na małe tablice JSON. Współczynniki są zaokrąglone do liczb całkowitych (umieralność na 100 000, płodność na 10 000). Tablice rejonów statystycznych NSP 2021 są zsumowane do gmin i do kraju, z plików obwodów spisowych nie korzystamy. Granice rejonów są uproszczone do 5 metrów. Struktura wieku jest złożona w 10-letnie grupy. Mnożniki płodności są przeliczone tak, żeby krzywa Eurostatu dawała dzietność GUS dla miast i wsi, a udziały kolejności urodzeń przeskalowane do 100% wśród urodzeń o znanej kolejności. Wartości w tabelach nie są oficjalnymi publikacjami GUS ani Eurostatu i nie wolno ich tak cytować.
+Informacja o przetworzeniu, której wymaga CC BY 4.0 i dobry zwyczaj przy danych GUS: dane zostały przeliczone na małe tablice JSON. Współczynniki są zaokrąglone do liczb całkowitych (umieralność na 100 000, płodność na 10 000). Tablice rejonów statystycznych NSP 2021 są zsumowane do gmin i do kraju, z plików obwodów spisowych nie korzystamy. Granice rejonów są uproszczone do 5 metrów. Struktura wieku jest złożona w 10-letnie grupy. Mnożniki płodności są przeliczone tak, żeby krzywa Eurostatu dawała dzietność GUS dla miast i wsi, a udziały kolejności urodzeń przeskalowane do 100% wśród urodzeń o znanej kolejności. Dzietność w latach 2021-2023 to trend z Eurostatu dopasowany do poziomu GUS z 2024 r. Wartości w tabelach nie są oficjalnymi publikacjami GUS ani Eurostatu i nie wolno ich tak cytować.
 
 ## Źródła i warunki
 
@@ -24,9 +24,10 @@ Informacja o przetworzeniu, której wymaga CC BY 4.0 i dobry zwyczaj przy danych
 | GUS, Trwanie życia w 2025 r. (Tablica A) | prawdopodobieństwo zgonu wg wieku, płci, miast i wsi | ${GUS_ZRODLO} | atrybucja GUS |
 | GUS, Prognoza ludności na lata 2023-2060 (Tabl. 1) | ludność Polski wg płci i wieku w 2022 r. | ${GUS_ZRODLO} | atrybucja GUS |
 | GUS, Rocznik Demograficzny 2025 (tabl. 57, 76, 78) | współczynnik dzietności miast, wsi i miast 100 tys.+, kolejność urodzeń | ${GUS_ZRODLO} | atrybucja GUS |
+| GUS, Sytuacja demograficzna Polski do 2025 r. (tabl. 2B) | współczynnik dzietności Polski w 2025 r. | ${GUS_ZRODLO} | atrybucja GUS |
 | BDL, Bank Danych Lokalnych GUS | ludność wg wieku (NSP 2021 i 31.12.2025), mieszkania wg epoki budowy | CC BY 4.0 ([Portal API BDL](https://api.stat.gov.pl/Home/BdlApi)) | atrybucja i informacja o przetworzeniu |
 | BREC 2021, granice rejonów statystycznych | obrysy rejonów | brak warunków i ograniczeń ([regulamin Portalu Geostatystycznego](https://portal.geo.stat.gov.pl/regulamin/)) | atrybucja z dobrego zwyczaju |
-| Eurostat, demo_frate | współczynniki płodności wg pojedynczych lat wieku, Polska 2024 | CC BY 4.0 ([Eurostat, Copyright notice](https://ec.europa.eu/eurostat/help/copyright-notice)) | źródło i zaznaczenie zmian |
+| Eurostat, demo_frate i demo_find | współczynniki płodności wg pojedynczych lat wieku, Polska 2024; trend dzietności Polski 2021-2024 | CC BY 4.0 ([Eurostat, Copyright notice](https://ec.europa.eu/eurostat/help/copyright-notice)) | źródło i zaznaczenie zmian |
 | Rejestr PESEL, Ministerstwo Cyfryzacji, dane.gov.pl | częstość imion i nazwisk | CC0 1.0 ([zbiór 1667](https://api.dane.gov.pl/1.4/datasets/1667,lista-imion-wystepujacych-w-rejestrze-pesel-osoby-zyjace)) | atrybucja nieobowiązkowa, ale ją podajemy |
 | SGJP, Słownik gramatyczny języka polskiego (Morfeusz 2), plik \`sgjp-20260823.tab.gz\` | odmiana imion i nazwisk (lista form liczby pojedynczej) | BSD-2, dwuklauzulowa licencja BSD ([Morfeusz 2, licencja](https://morfeusz.sgjp.pl/doc/license/)) | nota Copyright poniżej w repozytorium i w ekranie „O grze” |
 
@@ -34,7 +35,7 @@ Atrybucja map (© współtwórcy OpenStreetMap, OpenFreeMap, OpenMapTiles) jest 
 
 ## Linia do ekranu „O grze”
 
-Dane demograficzne: GUS (NSP 2021, BDL na CC BY 4.0, BREC 2021, tablice trwania życia 2025, Prognoza ludności 2023-2060, Rocznik Demograficzny 2025) i Eurostat (CC BY 4.0), przetworzone na wymyślonych mieszkańców; imiona i nazwiska: rejestr PESEL, Ministerstwo Cyfryzacji, dane.gov.pl (CC0); odmiana: SGJP (BSD-2, pełna nota w repozytorium).
+Dane demograficzne: GUS (NSP 2021, BDL na CC BY 4.0, BREC 2021, tablice trwania życia 2025, Prognoza ludności 2023-2060, Rocznik Demograficzny 2025, Sytuacja demograficzna Polski do 2025 r.) i Eurostat (CC BY 4.0), przetworzone na wymyślonych mieszkańców; imiona i nazwiska: rejestr PESEL, Ministerstwo Cyfryzacji, dane.gov.pl (CC0); odmiana: SGJP (BSD-2, pełna nota w repozytorium).
 
 ## Nota SGJP (BSD-2)
 
