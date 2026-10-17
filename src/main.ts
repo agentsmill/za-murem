@@ -22,6 +22,7 @@ import type { Light } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
+import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { createSim, Sim } from './sim/sim.ts';
 import { type SimSnapshot, snapshot } from './sim/snapshot.ts';
@@ -44,9 +45,7 @@ import {
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
-import { govFence, govLight } from './ui/siatka.ts';
-// DO PODMIANY przy łączeniu z sesją symulacji: applyGov z src/sim (ta sama sygnatura)
-import { applyGov } from './ui/skutki.ts';
+import { govFence } from './ui/siatka.ts';
 import { esc } from './ui/tekst.ts';
 import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
@@ -187,7 +186,8 @@ async function enter(data: Loaded, saved?: Save) {
   // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;
-  const crowd = params.has('perf') ? Number(params.get('perf')) : 24;
+  // tłum obcych tylko do pomiarów (?perf=150); w grze są mieszkańcy siedziby, których dokłada symulacja
+  const crowd = params.has('perf') ? Number(params.get('perf')) : 0;
   // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
   const st = saved ? saved.sim : createSim(world, seed, { core: 4, crowd });
   $('start').hidden = true;
@@ -202,6 +202,7 @@ async function enter(data: Loaded, saved?: Save) {
       (((((Number(hour) * 60 - START_MINUTES) / 60) * TICKS_PER_HOUR) % TICKS_PER_DAY) + TICKS_PER_DAY) % TICKS_PER_DAY,
     );
   sim = new Sim(world, st);
+  // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   gov = saved ? saved.gov : newGov(seed);
   screen = saved?.screen ?? 0;
   govAt = screen;
@@ -312,7 +313,14 @@ function drawState() {
 /* ---------- zarząd ---------- */
 function input(): GovInput {
   const s = sim!;
-  return { ...snapshot(s.st, s.w), screen: Math.floor(screen), fence: fenceIn, light: govLight(s.st), hqName };
+  const i = govInput(s.st, s.w, Math.floor(screen), hqName);
+  // stan dziur (łaty, wielkość) jest w symulacji, a nazwy z kierunku od środka podwórka daje interfejs
+  const names = new Map(s.w.fence?.hole.map((t, k) => [t, fenceIn?.holes[k]?.name]) ?? []);
+  for (const h of i.fence?.holes ?? []) {
+    const tiles = s.st.fence?.holes.find((x) => x.id === h.id)?.tiles ?? [];
+    h.name ??= tiles.map((t) => names.get(t)).find(Boolean);
+  }
+  return i;
 }
 
 /** skutki zarządu do symulacji; ostatni wpis kroniki jako podpowiedź (bez niej, gdy zaraz otworzy się okno) */
@@ -388,6 +396,7 @@ function showPrompt(p: Prompt) {
       if (act === 'law') applyFx(signLaw(g, input(), arg));
       else if (act === 'law-skip') applyFx(signLaw(g, input(), null));
       else return;
+      sim?.setLaws(lawsFrom(lawEffects(g)));
       decided();
     });
   else if (p.k === 'karta') showNight(p);
@@ -737,6 +746,16 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   refuel: ['Dołoży do kozy.', 'Dołożą do kozy.'],
   burn: ['Rozbierze mebel na opał.', 'Rozbiorą mebel na opał.'],
   cook: ['Ugotuje coś z zapasów.', 'Ugotują coś z zapasów.'],
+  gate: ['Idzie do bramy.', 'Idą do bramy.'],
+  guard: ['Stanie na warcie.', 'Staną na warcie.'],
+  patch: ['Załata dziurę w siatce.', 'Załatają dziurę w siatce.'],
+  campfire: ['Rozpali ognisko.', 'Rozpalą ognisko.'],
+  // polecenia zarządu i symulacji, nie z menu
+  away: ['', ''],
+  back: ['', ''],
+  laws: ['', ''],
+  raid: ['', ''],
+  mend: ['', ''],
 };
 
 function run(m: MenuItem) {

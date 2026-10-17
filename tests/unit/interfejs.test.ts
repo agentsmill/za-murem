@@ -19,7 +19,8 @@ import {
   signLaw,
 } from '../../src/gov/zarzad.ts';
 import { START_MINUTES, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
-import { createSim, Sim, type SimState, STACK } from '../../src/sim/sim.ts';
+import { applyGov } from '../../src/sim/gov.ts';
+import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { currentGoal, goalsOf, markTree } from '../../src/ui/cele.ts';
@@ -37,7 +38,6 @@ import {
 } from '../../src/ui/okna.ts';
 import { statsOf } from '../../src/ui/pasek.ts';
 import { govFence, govLight } from '../../src/ui/siatka.ts';
-import { applyGov } from '../../src/ui/skutki.ts';
 import { deg, esc, num, pct, signed } from '../../src/ui/tekst.ts';
 import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSave } from '../../src/ui/zapis.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
@@ -97,64 +97,6 @@ describe('teksty', () => {
       'sztuk',
     ]);
     expect(lootText({ wood: -3, supplies: 0, scrap: 2 })).toBe('drewno 3, złom 2');
-  });
-});
-
-describe('adapter skutków zarządu (do podmiany na applyGov z src/sim)', () => {
-  it('drewno z wyprawy idzie na skład, kradzież najpierw z drewna luzem', () => {
-    const { sim, w } = fresh();
-    const st = sim.st;
-    const fx = emptyEffects();
-    fx.stock.wood = 13;
-    applyGov(st, w, fx);
-    let s = snapshot(st, w).stock;
-    expect(s.woodSklad).toBe(13);
-    expect(st.things.filter((t) => t.kind === 'drewno').every((t) => t.n <= STACK)).toBe(true);
-    // stos luzem na podwórku
-    const yard = w.fence.yard.find((i) => !w.blocked[i] && !st.things.some((t) => t.y * w.size + t.x === i))!;
-    st.things.push({
-      id: st.nextThing++,
-      kind: 'drewno',
-      x: yard % w.size,
-      y: Math.floor(yard / w.size),
-      w: 1,
-      h: 1,
-      rot: 0,
-      n: 4,
-      fuel: 0,
-      by: -1,
-      owner: -1,
-    });
-    const steal = emptyEffects();
-    steal.stock.wood = -6;
-    applyGov(st, w, steal);
-    s = snapshot(st, w).stock;
-    expect(s.woodLoose).toBe(0);
-    expect(s.woodSklad).toBe(11);
-    expect(st.things.some((t) => t.kind === 'drewno' && t.n <= 0)).toBe(false);
-  });
-
-  it('jedzenie, potrzeby i nastroje', () => {
-    const { sim, w } = fresh();
-    const st = sim.st;
-    const food0 = snapshot(st, w).stock.supplies;
-    const fx = emptyEffects();
-    fx.stock.supplies = 5;
-    const who = st.people[0].id;
-    const pawn = st.pawns.find((p) => p.person === 0)!;
-    const rest0 = pawn.needs!.rest;
-    fx.needs.push({ id: who, d: { rest: -30, health: -500 } });
-    fx.moods.push({ id: who, why: 'Całą noc na warcie', d: -2, hours: 8 });
-    fx.moods.push({ id: who, why: 'Całą noc na warcie', d: -2, hours: 12 });
-    applyGov(st, w, fx);
-    expect(snapshot(st, w).stock.supplies).toBe(food0 + 5);
-    expect(pawn.needs!.rest).toBe(Math.max(0, rest0 - 30));
-    expect(pawn.needs!.health).toBe(0);
-    expect(pawn.moods).toEqual([{ why: 'Całą noc na warcie', d: -2, until: st.tick + 12 * TICKS_PER_HOUR }]);
-    const eat = emptyEffects();
-    eat.stock.supplies = -1000;
-    applyGov(st, w, eat);
-    expect(snapshot(st, w).stock.supplies).toBe(0);
   });
 });
 

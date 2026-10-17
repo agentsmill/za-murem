@@ -562,6 +562,8 @@ export class GameView {
     this.marks.clear();
     const gameT = (st.tick + alpha) / TICKS_PER_SECOND;
     for (const p of st.pawns) {
+      // na wyprawie poza mapą: nie rysujemy
+      if (p.away) continue;
       seen.add(p.id);
       let sp = this.pawnSprites.get(p.id);
       if (!sp) {
@@ -649,7 +651,7 @@ export class GameView {
     let best: Pawn | null = null;
     let bd = Number.POSITIVE_INFINITY;
     for (const p of st.pawns) {
-      if (p.kind !== 'core') continue;
+      if (p.kind !== 'core' || p.away) continue;
       const dx = wx / TILE - p.x;
       const dy = wy / TILE - p.y;
       if (Math.abs(dx) > 0.6 || dy < -1.5 || dy > 0.4) continue;

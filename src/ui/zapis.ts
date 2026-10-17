@@ -74,7 +74,7 @@ export function readSave(from: Store | null = store()): Save | null {
     const raw = from?.getItem(SAVE_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as Save;
-    if (s.v !== SAVE_VERSION || s.sim?.v !== 2 || s.gov?.v !== 1 || !s.data?.geo) return null;
+    if (s.v !== SAVE_VERSION || s.sim?.v !== 3 || s.gov?.v !== 1 || !s.data?.geo) return null;
     return s;
   } catch {
     return null;

@@ -126,7 +126,7 @@ export function gameLights(g: Pick<GameLike, 'st' | 'light'>, windows: readonly 
   }
   // latarnia wartownika (praca 'warta' na miejscu): w ręce, z boku
   for (const p of g.st.pawns ?? [])
-    if (p.job?.t === 'warta' && p.job.phase === 1)
+    if (p.job?.t === 'guard' && p.job.phase === 1)
       out.push({ x: p.x + 0.25, y: p.y - 0.1, r: 3, color: LAMP, strength: 0.7, flicker: 0.1 });
   for (const s of windows) {
     const lv = g.light[s.room] ?? 0;

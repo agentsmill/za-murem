@@ -403,38 +403,24 @@ const SHOTS: Shot[] = [
     },
   },
   {
-    // symulacja trzyma sterty u siebie (jedną już zabrano): rysują się tylko te ze stanu gry
+    // symulacja trzyma sterty u siebie od startu (jedną zabieramy, jak przy łataniu): rysują się tylko te ze stanu gry
     name: 'sterty-z-gry',
     query: '',
     run: async (page, base) => {
       await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
       await waitIdle(page);
-      await page.evaluate(() => {
+      const left = await page.evaluate(() => {
         const zm = window.zm!;
-        const sim = zm.sim!;
-        const heaps = sim.w.props.filter((p) => p.kind === 'gruz' || p.kind === 'deski' || p.kind === 'zlom');
-        heaps.slice(1).forEach((p, k) => {
-          const n = 'n' in p ? p.n : 1;
-          sim.st.things.push({
-            id: 990000 + k,
-            kind: p.kind,
-            x: p.x,
-            y: p.y,
-            w: 1,
-            h: 1,
-            rot: 0,
-            n,
-            fuel: 0,
-            by: -1,
-            owner: -1,
-          });
-        });
+        const things = zm.sim!.st.things;
+        const heaps = things.filter((t) => t.kind === 'gruz' || t.kind === 'deski' || t.kind === 'zlom');
+        things.splice(things.indexOf(heaps[0]), 1);
         zm.setCam(heaps[0].x + 0.5, heaps[0].y + 0.5, 1.6);
+        return heaps.length - 1;
       });
       await waitIdle(page);
       const n = await heapSprites(page);
-      console.log(`  sterty ze świata: ${n.props}, narysowane ze stanu gry: ${n.drawn}`);
-      if (n.drawn !== n.props - 1) throw new Error('sterty ze świata nie ustąpiły tym ze stanu gry');
+      console.log(`  sterty ze świata: ${n.props}, w stanie gry: ${left}, narysowane: ${n.drawn}`);
+      if (n.drawn !== left) throw new Error('sterty ze świata nie ustąpiły tym ze stanu gry');
     },
   },
   {
@@ -1155,7 +1141,7 @@ async function smokeCheck(page: Page, zoom: number, min: number) {
 /**
  * Pionki zarządu ustawione w pracy (faza 1, w miejscu): w domu śpi, siedzi przy stole, dokłada do kozy
  * (krok 0: niesie drewno do kozy, krok 1: drewno już w kozie) i gotuje; na podwórku rąbie suche drzewo,
- * niesie drewno i wartuje z lampą (praca 'warta', której symulacja jeszcze nie ma).
+ * niesie drewno i wartuje z lampą (praca 'guard' z symulacji).
  */
 async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
   await page.evaluate(
@@ -1226,7 +1212,7 @@ async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
         const gate = sim.w.fence.gate;
         put(0, tx - 1, ty, 3, job('chop', sim.w.dryTree, ty * size + tx - 1));
         put(1, tx + 2, ty + 1, 0, null, 3);
-        put(2, gate.x, gate.y + (gate.rot === 0 ? -1 : 1), 0, job('warta', -1, 0));
+        put(2, gate.x, gate.y + (gate.rot === 0 ? -1 : 1), 0, job('guard', -1, 0));
         put(3, tx - 2, ty + 2, 3, null, 2);
         zm.setCam(tx, ty + 1, 2);
       }

@@ -76,7 +76,7 @@ export function poseOf(p: PawnLike, t: number, things: readonly ThingWithId[], f
         return { pose: 'crouch', dir, frame: 0 };
       case 'cook':
         return { pose: 'cook', dir, frame: Math.floor(tt * 2) % 2 };
-      case 'warta':
+      case 'guard':
         return { pose: 'guard', dir, frame: Math.floor(tt) % 2 };
       case 'eat': {
         // na krześle siedzi; plecami do patrzącego za oparciem (krzesło rysuje się po nim)
