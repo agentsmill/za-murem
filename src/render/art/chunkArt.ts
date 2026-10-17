@@ -3,6 +3,7 @@
    32 px na kafelek (z bliska) i 8 px na kafelek (z daleka). */
 
 import { T } from '../../world/world.ts';
+import { describeTile, flatInteriorColor, IN, type InteriorTileDesc } from '../section.ts';
 import { type AnyCanvas, type Ctx2D, ctx2d } from './canvas.ts';
 import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
@@ -359,9 +360,10 @@ function roofDetails(ctx: Ctx2D, sc: ChunkScene, bid: number): void {
 
 /**
  * Rysuje kawałek (cx, cy) w skali s pikseli na kafelek (32 albo 8) do płótna o boku CHUNK*s.
- * Płótno może być zwykłe (główny wątek) albo OffscreenCanvas (worker).
+ * Płótno może być zwykłe (główny wątek) albo OffscreenCanvas (worker). cut: przekrój, czyli
+ * nad wnętrzem sc.section kafelki wnętrza zamiast dachu i fasady.
  */
-export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, canvas: AnyCanvas): void {
+export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, canvas: AnyCanvas, cut = false): void {
   const w = sc.w;
   const size = w.size;
   const side = CHUNK * s;
@@ -372,6 +374,8 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
   const out = new Uint32Array(img.data.buffer);
   const step = TILE / s;
   const off = step >> 1;
+  const sec = cut ? sc.section : null;
+  const facade = sec ? sc.styles[sec.building].wall : 0;
   for (let ty = 0; ty < CHUNK; ty++) {
     const y = cy * CHUNK + ty;
     if (y >= size) break;
@@ -383,6 +387,8 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       const bid = w.bid[i];
       const st = bid >= 0 ? sc.styles[bid] : null;
       const door = bid >= 0 && sc.doors.get(i) === 'S';
+      // przekrój: opis kafelka wnętrza raz na kafelek; tu podpiąć interiorColor z grafiki zastępczej
+      const inner: InteriorTileDesc | null = sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, facade) : null;
       for (let oy = 0; oy < s; oy++) {
         const py = oy * step + off;
         const ay = y * TILE + py;
@@ -391,7 +397,8 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
           const px = ox * step + off;
           const ax = x * TILE + px;
           let c: number;
-          if (st) {
+          if (inner) c = flatInteriorColor(inner, x, y, px, py);
+          else if (st) {
             const fy = sc.south[i] * TILE + (31 - py);
             const fh = Math.min(st.facade, sc.run[i] * TILE - 8);
             if (fy < fh) c = facadeColor(st, ax, fy, door && sc.south[i] === 0, px);
@@ -416,7 +423,9 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
   for (const b of w.buildings) {
     if (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1) continue;
     const st = sc.styles[b.id];
-    if (b.cls === 'blok' && st.levels >= 5) {
+    // otwarty w przekroju: bez maszynowni, kominów i anten (daszki nad wejściami zostają)
+    const open = sec !== null && b.id === sec.building;
+    if (!open && b.cls === 'blok' && st.levels >= 5) {
       for (const e of b.entrances) {
         const ex = e.tile % size;
         const ey = (e.tile - ex) / size;
@@ -441,10 +450,14 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
         ctx.fillRect(bx + 30, by + 68, 20, 10);
       }
     }
-    if (st.roof === 'tar' && (b.cls === 'blok' || b.cls === 'inne' || b.cls === 'przychodnia' || b.cls === 'szkola')) {
+    if (
+      !open &&
+      st.roof === 'tar' &&
+      (b.cls === 'blok' || b.cls === 'inne' || b.cls === 'przychodnia' || b.cls === 'szkola')
+    ) {
       roofDetails(ctx, sc, b.id);
     }
-    if (b.cls === 'dom') {
+    if (!open && b.cls === 'dom') {
       const vx = b.x0 + Math.floor((b.x1 - b.x0) * (0.25 + h2(b.id, 9, 3) * 0.5));
       const vy = b.y0 + 1;
       ctx.fillStyle = '#2f2d2b66';

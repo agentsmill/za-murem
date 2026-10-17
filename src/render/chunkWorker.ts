@@ -38,9 +38,12 @@ scope.onmessage = (e) => {
     if (!sc || m.gen !== gen) throw new Error(`zamówienie do sceny ${m.gen}, a worker ma ${gen}`);
     const t0 = performance.now();
     const c = new OffscreenCanvas(CHUNK * m.s, CHUNK * m.s);
-    drawChunk(sc, m.k % sc.chunks, (m.k / sc.chunks) | 0, m.s, c);
+    drawChunk(sc, m.k % sc.chunks, (m.k / sc.chunks) | 0, m.s, c, m.cut);
     const bmp = c.transferToImageBitmap();
-    scope.postMessage({ t: 'done', gen, k: m.k, s: m.s, v: m.v, bmp, ms: performance.now() - t0 }, { transfer: [bmp] });
+    scope.postMessage(
+      { t: 'done', gen, k: m.k, s: m.s, v: m.v, cut: m.cut, bmp, ms: performance.now() - t0 },
+      { transfer: [bmp] },
+    );
   } catch (err) {
     scope.postMessage({ t: 'fail', err: String(err) });
   }

@@ -67,6 +67,11 @@ const SHOTS: Shot[] = [
   { name: 'noc-swiatla-daleko', query: 'demo=przymorze&speed=0&cam=hq,0.35&godzina=22&swiatla=test' },
   { name: 'noc-swiatla-telefon', query: 'demo=przymorze&speed=0&cam=hq,1&godzina=22&swiatla=test', w: 390, h: 844 },
   { name: 'zmierzch', query: 'demo=przymorze&speed=0&cam=hq,1&godzina=18.5&swiatla=test' },
+  // przekrój siedziby z atrapą wnętrza: z bliska wnętrze zamiast dachu, w nocy z kozą, przy 0,5 dach
+  { name: 'przekroj', query: 'demo=przymorze&speed=0&cam=hq,0.75&wnetrze=atrapa' },
+  { name: 'przekroj-blisko', query: 'demo=przymorze&speed=0&cam=hq,1.3&wnetrze=atrapa' },
+  { name: 'przekroj-noc', query: 'demo=przymorze&speed=0&cam=hq,1.3&wnetrze=atrapa&godzina=22&swiatla=test' },
+  { name: 'przekroj-dach', query: 'demo=przymorze&speed=0&cam=hq,0.5&wnetrze=atrapa' },
   { name: 'przymorze-telefon', query: 'demo=przymorze&speed=0&cam=hq,1', w: 390, h: 844 },
   {
     name: 'start',

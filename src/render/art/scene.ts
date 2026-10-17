@@ -6,6 +6,7 @@
 import type { Pt } from '../../world/geo.ts';
 import { fillRing } from '../../world/raster.ts';
 import { type Dir, T, type Tree, type World, type WorldBuilding } from '../../world/world.ts';
+import type { SectionScene } from '../section.ts';
 import { h2 } from './hash.ts';
 import { C, HOUSE_WALLS, shade, WALLS } from './palette.ts';
 
@@ -53,6 +54,8 @@ export interface ChunkScene {
   treesBy: number[][];
   /** 1 = drzewa już nie ma (ścięte), kawałki rysują się bez niego */
   treeGone: Uint8Array;
+  /** wnętrze budynku do przekroju (w M1 siedziba) albo null */
+  section: SectionScene | null;
   chunks: number;
 }
 
@@ -78,6 +81,7 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
     doors: sc.doors,
     treesBy: sc.treesBy,
     treeGone: sc.treeGone,
+    section: sc.section,
     chunks: sc.chunks,
   };
 }
@@ -241,5 +245,5 @@ export function buildScene(w: World): Scene {
   const tr = w.trees;
   for (const list of treesBy) list.sort((a, b) => tr[a].y - tr[b].y || tr[a].x - tr[b].x);
   const treeGone = new Uint8Array(w.trees.length);
-  return { w, south, run, styles, shadow, doors, treesBy, treeGone, chunks };
+  return { w, south, run, styles, shadow, doors, treesBy, treeGone, section: null, chunks };
 }

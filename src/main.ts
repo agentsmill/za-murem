@@ -6,6 +6,8 @@ import { wiek } from './content/people.ts';
 import { hashString } from './core/rng.ts';
 import { buildScene, TILE } from './render/art/scene.ts';
 import type { Light } from './render/light.ts';
+import { type InteriorLike, sectionOf } from './render/section.ts';
+import { mockInterior } from './render/sectionMock.ts';
 import { GameView } from './render/view.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { createSim, Sim } from './sim/sim.ts';
@@ -88,6 +90,9 @@ async function enter(data: Loaded) {
   const t0 = performance.now();
   const world = buildWorld(data.geo, { seed, street: data.street });
   const scene = buildScene(world);
+  // ?wnetrze=atrapa: przekrój siedziby z atrapą wnętrza (podgląd rysowania, zanim przyjdzie generator ze świata)
+  const interior = params.get('wnetrze') === 'atrapa' ? mockInterior(world, world.hq) : null;
+  if (interior) scene.section = sectionOf(interior);
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
   const crowd = params.has('perf') ? Number(params.get('perf')) : 24;
   // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
@@ -97,6 +102,7 @@ async function enter(data: Loaded) {
   // płótno mierzy element; był ukryty, więc trzeba przeliczyć rozmiar po odsłonięciu
   view.app.resize();
   view.setScene(scene);
+  if (interior) view.setThings(interior.furniture);
   // ?godzina=22 (albo ?hour=22, także z ułamkiem: 18.5 to 18:30): pora dnia na start
   const hour = params.get('godzina') ?? params.get('hour');
   if (hour !== null)
@@ -128,7 +134,7 @@ async function enter(data: Loaded) {
     flyTo(hx, hy, 1, 2400);
   }
   // ?swiatla=test: trzy światła przy siedzibie do podglądu nocy
-  if (params.get('swiatla') === 'test') view.lights = testLights(hx / TILE, hy / TILE);
+  if (params.get('swiatla') === 'test') view.lights = testLights(hx / TILE, hy / TILE, interior);
   if (params.has('speed')) speed = Number(params.get('speed'));
   const first = st.pawns[0];
   if (first) selected.add(first.id);
@@ -143,9 +149,14 @@ async function enter(data: Loaded) {
   if (window.zm) window.zm.sim = sim;
 }
 
-/** światła do podglądu wokół punktu (x, y) w metrach: ognisko, okno z kozą, latarka warty */
-function testLights(x: number, y: number): Light[] {
+/** światła do podglądu wokół punktu (x, y) w metrach: ognisko, okno z kozą, latarka warty, a z wnętrzem koza */
+function testLights(x: number, y: number, interior: InteriorLike | null): Light[] {
+  const koza = interior?.furniture.find((f) => f.kind === 'koza');
+  const inside: Light[] = koza
+    ? [{ x: koza.x + 0.5, y: koza.y + 0.5, r: 4.5, color: 0xff8a3c, strength: 1.1, flicker: 0.3, inside: true }]
+    : [];
   return [
+    ...inside,
     { x: x + 4, y: y - 3, r: 7, color: 0xff9a3c, strength: 1.15, flicker: 0.35 },
     { x: x + 1, y: y + 0.8, r: 3, color: 0xffc46b, strength: 0.8, flicker: 0.12 },
     { x: x - 6, y: y - 1.5, r: 4.5, color: 0xcfdcff, strength: 0.9, flicker: 0 },

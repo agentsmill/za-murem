@@ -20,6 +20,8 @@ export interface Light {
   strength: number;
   /** migotanie: 0 stałe (lampa), 0,3 ognisko, 1 dogasający ogień */
   flicker: number;
+  /** światło we wnętrzu (koza): widać je tylko w przekroju, pod dachem świecą okna */
+  inside?: boolean;
 }
 
 const smooth = (t: number) => t * t * (3 - 2 * t);

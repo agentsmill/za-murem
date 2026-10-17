@@ -18,6 +18,8 @@ export interface Order {
   k: number;
   s: number;
   v: number;
+  /** przekrój: wnętrze zamiast dachu (tylko z bliska) */
+  cut?: boolean;
 }
 
 /** gotowy kawałek: płótno z głównego wątku albo ImageBitmap z workera */
@@ -45,24 +47,31 @@ export function chunksByDistance(
  * Lista zamówień, najważniejsze pierwsze:
  * 1. widoczne kawałki bez żadnej pasującej tekstury dostają szybki daleki (16 razy mniej pikseli),
  *    żeby zamiast dziury od razu coś było widać,
- * 2. z bliska: widoczne kawałki bez bliskiej tekstury,
+ * 2. z bliska: widoczne kawałki bez bliskiej tekstury, a gdzie trzeba przekroju (cutOf), bez
+ *    przekroju (dach z bliska wystarczy do tego czasu jako zaślepka),
  * 3. reszta dalekich w tle, żeby oddalenie było od razu gotowe.
  */
 export function planOrders(
   vis: readonly number[],
   total: number,
-  has: (k: number, s: number) => boolean,
+  has: (k: number, s: number, cut?: boolean) => boolean,
   near: boolean,
   ver: (k: number) => number = () => 0,
+  cutOf: (k: number) => boolean = () => false,
 ): Order[] {
   const out: Order[] = [];
   const queued = new Uint8Array(total);
   for (const k of vis)
-    if (!has(k, LOD_FAR) && !(near && has(k, LOD_NEAR))) {
+    if (!has(k, LOD_FAR) && !(near && (has(k, LOD_NEAR) || (cutOf(k) && has(k, LOD_NEAR, true))))) {
       out.push({ k, s: LOD_FAR, v: ver(k) });
       queued[k] = 1;
     }
-  if (near) for (const k of vis) if (!has(k, LOD_NEAR)) out.push({ k, s: LOD_NEAR, v: ver(k) });
+  if (near)
+    for (const k of vis) {
+      if (cutOf(k)) {
+        if (!has(k, LOD_NEAR, true)) out.push({ k, s: LOD_NEAR, v: ver(k), cut: true });
+      } else if (!has(k, LOD_NEAR)) out.push({ k, s: LOD_NEAR, v: ver(k) });
+    }
   for (let k = 0; k < total; k++) if (!queued[k] && !has(k, LOD_FAR)) out.push({ k, s: LOD_FAR, v: ver(k) });
   return out;
 }
@@ -153,8 +162,8 @@ export class InlinePainter implements ChunkPainter {
     for (const o of list) {
       if (performance.now() - t0 >= budgetMs) break;
       const c = document.createElement('canvas');
-      drawChunk(sc, o.k % sc.chunks, (o.k / sc.chunks) | 0, o.s, c);
-      this.done.push({ k: o.k, s: o.s, v: o.v, src: c });
+      drawChunk(sc, o.k % sc.chunks, (o.k / sc.chunks) | 0, o.s, c, o.cut);
+      this.done.push({ k: o.k, s: o.s, v: o.v, cut: o.cut, src: c });
     }
   }
 
@@ -173,13 +182,13 @@ export class InlinePainter implements ChunkPainter {
 /** wiadomości do workera */
 export type ToWorker =
   | { t: 'scene'; gen: number; sc: ChunkScene }
-  | { t: 'draw'; gen: number; k: number; s: number; v: number }
+  | { t: 'draw'; gen: number; k: number; s: number; v: number; cut?: boolean }
   | { t: 'patch'; gen: number; p: ScenePatch };
 
 /** wiadomości od workera */
 export type FromWorker =
   | { t: 'ready'; ok: boolean }
-  | { t: 'done'; gen: number; k: number; s: number; v: number; bmp: ImageBitmap; ms: number }
+  | { t: 'done'; gen: number; k: number; s: number; v: number; cut?: boolean; bmp: ImageBitmap; ms: number }
   | { t: 'fail'; err: string };
 
 /** to, czego pula potrzebuje od workera (w testach podróbka) */
@@ -190,7 +199,7 @@ export interface WorkerLike {
   terminate(): void;
 }
 
-const key = (k: number, s: number) => k * 64 + s;
+const key = (k: number, s: number, cut?: boolean) => (k * 64 + s) * 2 + (cut ? 1 : 0);
 
 interface Hand {
   w: WorkerLike;
@@ -250,7 +259,7 @@ export class WorkerPainter implements ChunkPainter {
   }
 
   order(list: readonly Order[]): void {
-    this.queue = list.filter((o) => !this.busy.has(key(o.k, o.s)));
+    this.queue = list.filter((o) => !this.busy.has(key(o.k, o.s, o.cut)));
     this.pump();
   }
 
@@ -276,9 +285,9 @@ export class WorkerPainter implements ChunkPainter {
       if (!h.ready || h.job >= 0) continue;
       const o = this.queue.shift();
       if (!o) return;
-      h.job = key(o.k, o.s);
+      h.job = key(o.k, o.s, o.cut);
       this.busy.add(h.job);
-      h.w.postMessage({ t: 'draw', gen: this.gen, k: o.k, s: o.s, v: o.v });
+      h.w.postMessage({ t: 'draw', gen: this.gen, k: o.k, s: o.s, v: o.v, cut: o.cut });
     }
   }
 
@@ -296,8 +305,8 @@ export class WorkerPainter implements ChunkPainter {
     } else {
       h.job = -1;
       if (m.gen === this.gen) {
-        this.busy.delete(key(m.k, m.s));
-        this.done.push({ k: m.k, s: m.s, v: m.v, src: m.bmp });
+        this.busy.delete(key(m.k, m.s, m.cut));
+        this.done.push({ k: m.k, s: m.s, v: m.v, cut: m.cut, src: m.bmp });
         this.workMs += m.ms;
       } else m.bmp.close(); // kawałek poprzedniej sceny
     }
