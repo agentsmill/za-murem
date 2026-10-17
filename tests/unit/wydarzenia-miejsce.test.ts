@@ -50,7 +50,13 @@ describe('w domu żadne wydarzenie nie mówi o bloku', () => {
       for (const hour of [10, 16, 20, 23])
         for (const trust of [50, 30])
           for (const e of M1_EVENTS) {
-            const over = { hour, place, residents: 0, cap: 0, light: { campfire: false, gateLamp: false } };
+            const over = {
+              hour,
+              place,
+              residents: seed % 2 ? 0 : 3,
+              cap: 0,
+              light: { campfire: false, gateLamp: false },
+            };
             const { h } = setup(over, seed, trust);
             if (e.w(h) <= 0) continue;
             const d = e.make(h);
@@ -275,5 +281,61 @@ describe('nowe wydarzenia M1 według sąsiadów i wydarzenia ulicy domów', () =
     expect(pick('szopa', {}, k('szopa', 'Zabrać deski'), dom).fx.stock.wood).toBe(3);
     expect(pick('kury', {}, k('kury', 'Załatać dziurę'), dom).fx.patch).toBe(1);
     expect(pick('panele', {}, k('panele', 'Rozkręcić falownik'), dom).fx.stock.parts).toBe(2);
+  });
+});
+
+describe('poprawki po przeglądzie', () => {
+  /** słowa, które zakładają sąsiadów przy płocie albo w budynku obok */
+  const SASIEDZI =
+    /sąsiad|sąsiedz|zza płotu|domu obok|bloku obok|sąsiednich domów|sąsiednich bloków|w ogrodzie obok|naprzeciwko/i;
+
+  it('kradzieży z piwnicy nie ma w domu, także z przyjętymi ludźmi', () => {
+    expect(def('kradziez').w(setup({ place: zielonki, residents: 3 }).h)).toBe(0);
+  });
+
+  it.each([
+    ['samotny dom', { ...zielonki, near: 'nikt', houses: 0, blocks: 0 }],
+    ['samotny blok', { ...BLOK, near: 'nikt', houses: 0, blocks: 0 }],
+  ] as const)('%s: żadne wydarzenie nie mówi o sąsiadach', (_n, place) => {
+    let seen = 0;
+    for (let seed = 1; seed <= 6; seed++)
+      for (const hour of [10, 16, 20, 23])
+        for (const e of M1_EVENTS) {
+          const over = { hour, place: place as GovPlace, residents: 0, cap: 0, season: 0 };
+          const { h } = setup(over, seed, 30);
+          if (e.w(h) <= 0) continue;
+          const d = e.make(h);
+          if (d === null) continue;
+          seen++;
+          const texts = [e.title(h, d), e.text(h, d)];
+          e.choices(h, d).forEach((c, k) => {
+            texts.push(c.label);
+            if (c.ok) texts.push(...pick(e.id, d, k, over, seed).lines);
+          });
+          for (const t of texts) expect(t, e.id).not.toMatch(SASIEDZI);
+        }
+    expect(seen).toBeGreaterThan(30);
+  });
+
+  it('dom wśród bloków: bez wydarzeń ulicy domów', () => {
+    const amid = { place: { ...zielonki, near: 'bloki', houses: 0, blocks: 6 } as GovPlace };
+    for (const id of ['kury', 'kosiarka', 'szopa', 'plot', 'panele']) expect(def(id).w(setup(amid).h), id).toBe(0);
+  });
+
+  it('przyjęcie jednej osoby po polsku: „Przyjęliście 1 osobę”', () => {
+    const one = { cap: 6, residents: 5 };
+    const { lines } = pick('uchodzcy', { n: 7, from: 'z Wilanowa', spec: null }, 0, one);
+    expect(lines.join(' ')).toContain('Przyjęliście 1 osobę z Wilanowa.');
+  });
+
+  it('rodzina pod furtką: przecinek zamyka wtrącenie', () => {
+    const { h } = setup({ place: zielonki, cap: 0, residents: 0 });
+    const t = def('uchodzcy').text(h, { n: 3, from: 'z miasta, gdzie pękł wodociąg', spec: null });
+    expect(t).toContain('z miasta, gdzie pękł wodociąg, i proszą o miejsce');
+  });
+
+  it('kot w domu jest w szopie także w tytule', () => {
+    expect(def('kot').title(setup({ place: zielonki }).h, {})).toBe('Kot w szopie');
+    expect(def('kot').title(setup().h, {})).toBe('Kot w piwnicy');
   });
 });

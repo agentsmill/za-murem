@@ -7,8 +7,8 @@ import { g } from '../content/people.ts';
 import type { GEventDef, GovHost } from './tresc.ts';
 
 const dom = (h: GovHost) => h.place().kind === 'dom';
-/** wydarzenie ulicy domów: w domu, od drugiego dnia, z sąsiadami w okolicy */
-const ulica = (h: GovHost) => dom(h) && h.day() >= 2 && h.neighbour() !== null;
+/** wydarzenie ulicy domów: w domu wśród domów, od drugiego dnia */
+const ulica = (h: GovHost) => dom(h) && h.day() >= 2 && h.neighbours() === 'domy';
 const W = 0.8;
 
 export const STREET_EVENTS: GEventDef[] = [
@@ -17,11 +17,11 @@ export const STREET_EVENTS: GEventDef[] = [
     once: true,
     when: ['dzien'],
     // październik: antonówki; tylko jesienią
-    w: (h) => (h.season() === 0 && h.day() >= 2 ? W : 0),
+    w: (h) => (h.season() === 0 && h.day() >= 2 && h.neighbours() !== null ? W : 0),
     make: () => ({}),
     title: () => 'Jabłka',
     text: (h) =>
-      h.place().near !== 'bloki'
+      h.neighbours() === 'domy'
         ? 'Dom za płotem stoi pusty od lat, a jabłonie w jego ogrodzie uginają się od antonówek.'
         : 'Na skwerze między blokami stare jabłonie uginają się od antonówek. Nikt ich nie zbiera.',
     choices: (h) => [
@@ -144,7 +144,7 @@ export const STREET_EVENTS: GEventDef[] = [
     id: 'plot',
     once: true,
     when: ['dzien'],
-    w: (h) => (ulica(h) && h.place().near === 'domy' ? W : 0),
+    w: (h) => (ulica(h) ? W : 0),
     make: () => ({}),
     title: () => 'Spór o płot',
     text: () =>

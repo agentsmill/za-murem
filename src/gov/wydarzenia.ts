@@ -11,7 +11,7 @@ import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { rngOf } from '../core/rng.ts';
-import { freePlaces, placeIn, wordsOf } from './miejsce.ts';
+import { freePlaces, placeIn, sasiedzi, wordsOf } from './miejsce.ts';
 import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, LootKey, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
@@ -99,6 +99,8 @@ export const M1_EVENTS: GEventDef[] = [
   ...STREET_EVENTS,
 ];
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
+// „Słoik od sąsiadki” z M1 to teraz dym z komina: stary zapis z tym oknem otwartym albo już zamkniętym działa dalej
+byId.set('sasiadka', byId.get('dym')!);
 
 const toPerson = (p: GovPerson): Person => ({
   id: p.id,
@@ -249,9 +251,10 @@ export function makeHost(st: GovState, i: GovInput, fx: GovEffects, ev?: GEventD
     neighbour: () => {
       const p = placeIn(i);
       if (p.kind === 'blok' && (i.residents ?? 0) > 0) return 'z waszej klatki';
-      if (p.near === 'nikt') return null;
-      return p.near === 'bloki' ? 'z bloku obok' : 'zza płotu';
+      const s = sasiedzi(p);
+      return s === null ? null : s === 'bloki' ? 'z bloku obok' : 'zza płotu';
     },
+    neighbours: () => sasiedzi(placeIn(i)),
   };
   return h;
 }
@@ -286,7 +289,7 @@ function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): Act
 
 /** dym z komina czeka: koza paliła się pierwszego dnia (albo pierwszej nocy), dymu jeszcze nie było, sąsiad jest */
 const dymWaits = (st: GovState, h: GovHost): boolean =>
-  !st.ev.done.dym && (st.ev.lit ?? -1) >= 0 && h.neighbour() !== null;
+  !st.ev.done.dym && !st.ev.done.sasiadka && (st.ev.lit ?? -1) >= 0 && h.neighbour() !== null;
 
 /** odstęp do następnego wydarzenia w sekundach przy ekranie */
 export const nextGap = (st: GovState, screen: number): number =>
@@ -295,6 +298,8 @@ export const nextGap = (st: GovState, screen: number): number =>
 /** harmonogram: nowe wydarzenie, gdy minął odstęp, jest pora dnia z pulą i nic nie czeka na decyzję; pierwszego
     dnia cisza do ciepłej kuchni i dym z komina z sytuacji */
 export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boolean): void {
+  // okno z zapisu, którego gra już nie zna (zmieniona pula), znika zamiast blokować grę
+  if (st.ev.active && !byId.has(st.ev.active.id)) st.ev.active = null;
   // pierwsze rozpalenie kozy widać zawsze; dym tylko wtedy, gdy stało się pierwszego dnia albo pierwszej nocy
   if (st.ev.lit === undefined && i.kozaLit) st.ev.lit = firstNight(i) ? i.screen : -1;
   const quiet = calm(st, i);
@@ -329,8 +334,8 @@ function show(st: GovState, i: GovInput, fx: GovEffects, ev: ActiveEvent | null)
 
 export function eventView(st: GovState, i: GovInput) {
   const ev = st.ev.active;
-  if (!ev) return null;
-  const def = byId.get(ev.id)!;
+  const def = ev && byId.get(ev.id);
+  if (!ev || !def) return null;
   const h = makeHost(st, i, emptyEffects());
   return {
     id: ev.id,
@@ -344,7 +349,11 @@ export function eventView(st: GovState, i: GovInput) {
 export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): boolean {
   const ev = st.ev.active;
   if (!ev) return false;
-  const def = byId.get(ev.id)!;
+  const def = byId.get(ev.id);
+  if (!def) {
+    st.ev.active = null;
+    return false;
+  }
   const h = makeHost(st, i, fx, def);
   const c = def.choices(h, ev.d)[k];
   if (!c?.ok) return false;

@@ -49,9 +49,11 @@ export function bud(
   };
 }
 
-/** mały świat: siedziba to pierwszy budynek, mieszkań siedziby tyle, ile podano */
+/** mały świat: siedziba to pierwszy budynek, mieszkań siedziby tyle, ile podano; rozmiar 0, więc środek mapy
+    (od którego świat liczy punkty z nazwą) leży w (0, 0), tak jak budynki */
 export function placeWorld(buildings: WorldBuilding[], apts = 1, pois: PlaceWorld['pois'] = []): PlaceWorld {
   return {
+    size: 0,
     buildings,
     hq: buildings[0].id,
     pois,

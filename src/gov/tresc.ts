@@ -227,6 +227,8 @@ export interface GovHost extends EventHost {
   /** skąd przychodzi sąsiad: „z waszej klatki” (blok z mieszkańcami), „z bloku obok” albo „zza płotu” według
       sąsiadów; null, gdy w okolicy nie ma nikogo */
   neighbour(): string | null;
+  /** jacy sąsiedzi są w okolicy: bloki, domy albo nikt (null); jak sasiedzi() w miejsce.ts */
+  neighbours(): 'bloki' | 'domy' | null;
   /** wolne miejsca dla mieszkańców, mieszkańcy siedziby, temperatura na dworze, ognisko na podwórku */
   free(): number;
   residents(): number;
@@ -265,8 +267,8 @@ const names = (list: GovPerson[]) =>
 
 const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
 const dom = (h: GovHost) => h.place().kind === 'dom';
-/** sąsiedzi to domy albo nikogo nie ma: dom obok zamiast bloku obok */
-const domyObok = (h: GovHost) => h.place().near !== 'bloki';
+/** sąsiedzi to domy: dom obok zamiast bloku obok (w samotnym miejscu wydarzenia z sąsiadami nie przychodzą) */
+const domyObok = (h: GovHost) => h.neighbours() === 'domy';
 /** gdzie mieszka sąsiad, który przychodzi: zza płotu w domu, inaczej w mieszkaniu */
 const uNiej = (h: GovHost) => (h.neighbour() === 'zza płotu' ? 'w domu' : 'w mieszkaniu');
 
@@ -538,7 +540,7 @@ export const NEW_EVENTS: GEventDef[] = [
     when: ['noc'],
     w: () => 0.8,
     make: () => ({}),
-    title: () => 'Kot w piwnicy',
+    title: (h) => (dom(h) ? 'Kot w szopie' : 'Kot w piwnicy'),
     text: (h) =>
       `${dom(h) ? 'Z szopy' : 'Z piwnicy'} dobiega miauczenie. Rudy kot zaplątał się w starą siatkę na ziemniaki. Na obroży wydrapane: „Algorytm”.`,
     choices: (h) => [
