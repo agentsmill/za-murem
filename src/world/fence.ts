@@ -89,7 +89,9 @@ export function buildFence(w: FenceWorld): Fence {
   };
   const tree = w.trees[w.dryTree];
   if (tree) need(Math.floor(tree.x), Math.floor(tree.y), 2);
+  // tylko trzepak: sterty leżą już w gotowym podwórku i nie mogą go powiększać
   for (const p of w.props) {
+    if (p.kind !== 'trzepak') continue;
     need(p.x, p.y, 2);
     need(p.x + p.w - 1, p.y + p.h - 1, 2);
   }
