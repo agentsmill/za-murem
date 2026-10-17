@@ -25,7 +25,6 @@ import { BURNABLE, createSim, type Laws, Sim, woodFrom } from '../src/sim/sim.ts
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
-import { withApts } from '../tests/unit/apts-mock.ts';
 import { type Decision, type NightLog, type Policy, playLaws, playWithGov } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
@@ -363,9 +362,8 @@ if (
 const M2_DAYS = 5;
 /** koniec dnia d (północ; dzień 1 zaczyna się o 15:00) */
 const endOf = (d: number) => (d - 1) * TICKS_PER_DAY + 9 * TICKS_PER_HOUR;
-const given = 'apts' in govWorld;
 {
-  const w0 = withApts(govWorld, GOV_SEEDS[0]);
+  const w0 = govWorld;
   const st0 = createSim(w0, GOV_SEEDS[0], { core: 4 });
   const h0 = houseOf(w0)!;
   const empty = st0.apts.filter((a) => a.state === 'puste');
@@ -374,7 +372,7 @@ const given = 'apts' in govWorld;
     `\nFala 1 M2, ${govName}: ${GOV_SEEDS.length} ziaren × ${M2_DAYS} dni, zawsze warta; od rana dnia 2 gracz co 5 s daje wolnym osobom prace przy pustych mieszkaniach i stawia plany budowli`,
   );
   console.log(
-    `  stany mieszkań ${given ? 'ze świata (World.apts)' : 'z atrapy w kształcie World.apts (świat ich jeszcze nie daje)'}; ziarno ${GOV_SEEDS[0]}: mieszkań ${st0.apts.length}, pustych ${empty.length} (${empty.map((a) => a.why).join(', ')}), pomieszczeń do przeszukania ${h0.rooms.filter((r) => empty.some((a) => a.apt === r.apt)).length}, sterty śmieci ${heaps.length} (${heaps.reduce((a, t) => a + t.n, 0)} szt.), zepsute meble ${st0.things.filter((t) => t.broken).length}, uszkodzenia ${st0.damage.length}, miejsca dla mieszkańców ${st0.cap}`,
+    `  stany mieszkań ze świata (World.apts); ziarno ${GOV_SEEDS[0]}: mieszkań ${st0.apts.length}, pustych ${empty.length} (${empty.map((a) => a.why).join(', ')}), pomieszczeń do przeszukania ${h0.rooms.filter((r) => empty.some((a) => a.apt === r.apt)).length}, sterty śmieci ${heaps.length} (${heaps.reduce((a, t) => a + t.n, 0)} szt.), zepsute meble ${st0.things.filter((t) => t.broken).length}, uszkodzenia ${st0.damage.length}, miejsca dla mieszkańców ${st0.cap}`,
   );
   console.log(
     `  koszty: ${Object.values(BUILDS)
@@ -410,7 +408,7 @@ function cover(decisions: Decision[], until: number) {
 const m2Runs = (search: boolean) =>
   GOV_SEEDS.map((seed) => {
     const { player, log } = m2Player({ search, furniture: true });
-    const w = withApts(govWorld, seed);
+    const w = govWorld;
     const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, { player });
     return {
       log,
