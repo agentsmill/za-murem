@@ -122,6 +122,15 @@ export function oddsHtml(
   const koza = Object.entries(assign)
     .filter(([, k]) => k === KOZA_KEY)
     .map(([id]) => names[id] ?? id);
+  const h = card.horde;
+  if (h) {
+    const fence = Math.round(h.fence * 100);
+    return `<div class="odds"><div class="odd ${h.size >= 35 ? 'bad' : 'mid'}"><small class="odd-k">Stado nocą</small><b class="odd-v">około ${h.size}</b><em class="odd-note">${esc(
+      h.word,
+    )} · strzał ściąga więcej</em></div><div class="odd ${fence < 50 ? 'bad' : fence < 80 ? 'mid' : 'ok'}"><small class="odd-k">Siatka</small><b class="odd-v">${fence}%</b><em class="odd-note">dzida sięga przez siatkę</em></div>${
+      card.wood ? fuelHtml(card.wood, koza) : ''
+    }</div><ul class="posts">${posts}</ul>`;
+  }
   return `<div class="odds"><div class="odd ${level}"><small class="odd-k">Spróbują wejść</small><b class="odd-v">${pct(odds.now)}</b><em class="odd-note">${
     odds.watchers ? `bez warty ${pct(odds.chance)}` : 'nikt nie pilnuje'
   }</em></div><div class="odd"><small class="odd-k">Jeśli wejdą, zabiorą</small><b class="odd-loss">${esc(loss)}</b></div>${
@@ -166,9 +175,11 @@ export function nightSheet(card: NightCard, assign: Record<string, string>, odds
     kicker: `Karta nocy, 20:00`,
     title: first ? 'Pierwsza noc za siatką' : `Noc ${card.day}`,
     body: `<p class="lead">${
-      first
-        ? 'Dym z kozy widać z daleka. Kto śpi, kto pilnuje, a kto idzie po zapasy?'
-        : 'Kto śpi, kto pilnuje siatki albo kozy, a kto idzie po zapasy?'
+      card.horde
+        ? 'Za siatką zbiera się stado. Kto stoi z dzidą przy siatce, kto śpi, a kto wychodzi po zapasy?'
+        : first
+          ? 'Dym z kozy widać z daleka. Kto śpi, kto pilnuje, a kto idzie po zapasy?'
+          : 'Kto śpi, kto pilnuje siatki albo kozy, a kto idzie po zapasy?'
     }</p><div data-odds>${oddsHtml(card, assign, odds, names)}</div><ul class="crew">${rows}</ul>${
       card.advice
         ? `<p class="advice"><b class="advice-k">Zarząd radzi:</b> <span data-advice>${esc(card.advice)}</span></p>`
@@ -304,7 +315,11 @@ export function menuSheet(note: string): Sheet {
   };
 }
 
-export function helpSheet(touch: boolean): Sheet {
+/** pomoc trybu zombie: szwendacze, stado, broń, ugryzienia */
+const ZOMBIE_HELP =
+  '<h3 class="help-h">Tryb zombie</h3><ul class="help"><li>Za siatką snują się szwendacze. Są wolni, ale idą za hałasem i za tym, co widzą. Nocą przychodzi stado i napiera na siatkę, a każdej nocy jest ich więcej.</li><li>Dzida sięga przez siatkę: warta z dzidą zabija tych, którzy napierają. Nóż, łom i siekiera działają dopiero po tej samej stronie siatki. Strzał zabija od razu, ale słychać go z daleka i ściąga następnych.</li><li>Uszkodzoną siatkę wzmacnia się deskami albo złomem, a dziurę łata. Dzidę robi się z desek i złomu na stercie. „Do broni!” wysyła wszystkich zdolnych na wartę przy siatce.</li><li>Ugryzienie to gorączka i śmierć w niecałą dobę. Kto ugryziony w rękę albo nogę, tego da się uratować amputacją w ciągu dwóch godzin. Każdy zmarły wstaje po godzinie, chyba że ktoś go dobije.</li></ul>';
+
+export function helpSheet(touch: boolean, zombie = false): Sheet {
   const ctl = touch
     ? '<li>Stuknięcie w człowieka z zarządu zaznacza go.</li><li>Stuknięcie w miejsce wydaje najprostsze polecenie: idź, zetnij, zanieś, dołóż.</li><li>Przytrzymanie palca pokazuje wszystkie polecenia w tym miejscu, także palenie mebli.</li><li>Jeden palec przesuwa mapę, dwa przybliżają.</li>'
     : '<li>Klik zaznacza człowieka z zarządu, ramka kilku naraz.</li><li>Prawy przycisk pokazuje polecenia w tym miejscu: idź, zetnij, zanieś do składu, dołóż do kozy, gotuj, spal mebel.</li><li>Kółko przybliża, przeciąganie przesuwa mapę, WASD też.</li><li>Spacja to pauza, 1–4 tempo (do 8×).</li>';
@@ -312,7 +327,7 @@ export function helpSheet(touch: boolean): Sheet {
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: 'Jak grać',
-    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul><h3 class="help-h">Zarząd</h3><ul class="help"><li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li></ul><h3 class="help-h">Na razie</h3><p>Wersja 0.4 kończy się na pierwszej nocy za siatką. Dalej gra toczy się, ale bez nowych systemów. Pełna gra z budowaniem i badaniami jest w wersji 0.3.</p>`,
+    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul><h3 class="help-h">Zarząd</h3><ul class="help"><li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li><li>Każdy z zarządu ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li></ul>${zombie ? ZOMBIE_HELP : ''}<h3 class="help-h">Na razie</h3><p>Wersja 0.4 kończy się na pierwszej nocy za siatką. Dalej gra toczy się, ale bez nowych systemów. Pełna gra z budowaniem i badaniami jest w wersji 0.3.</p>`,
     foot: btn('help-back', 'Wróć', 'btn go'),
     closable: true,
   };

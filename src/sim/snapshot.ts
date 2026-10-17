@@ -4,7 +4,7 @@
 
 import type { Dom } from '../content/data.ts';
 import type { World } from '../world/world.ts';
-import { type AmmoKey, noAmmo, type WeaponId } from './bron.ts';
+import { type AmmoKey, noAmmo, type WeaponId, weaponOf } from './bron.ts';
 import {
   clockOf,
   daylight,
@@ -31,6 +31,7 @@ import {
   postKey,
   type SimState,
 } from './sim.ts';
+import { type GameMode, modeOf } from './tryb.ts';
 
 export interface SimPerson {
   /** id pionka: do poleceń dla symulacji */
@@ -62,8 +63,9 @@ export interface SimPerson {
   away: boolean;
   /** posterunek warty tej nocy ('brama', 'd<id>', 'koza') albo null */
   post: string | null;
-  /** broń w rękach albo null (gołe ręce) */
+  /** broń w rękach albo null (gołe ręce) i amunicja do niej w magazynie (null: broń bez amunicji) */
   weapon: WeaponId | null;
+  ammo: number | null;
   /** ugryzienie: kiedy, czy w rękę albo nogę, ile ticków do śmierci, czy da się jeszcze amputować; null: zdrowy */
   bite: { at: number; limb: boolean; left: number; amputate: boolean } | null;
   /** po amputacji */
@@ -110,6 +112,8 @@ export interface SimLight {
 }
 
 export interface SimSnapshot {
+  /** tryb gry */
+  mode: GameMode;
   tick: number;
   day: number;
   hour: number;
@@ -143,6 +147,12 @@ export interface SimSnapshot {
   /** napad tej nocy albo ostatni: faza (0 czekają, 1 za siatką, 2 wchodzą albo uciekają, 3 po wszystkim),
       rozstrzygnięcie i co wynieśli; null: nie było */
   raid: { phase: number; outcome: string; took: { wood: number; supplies: number; scrap: number } } | null;
+}
+
+/** amunicja w magazynie do broni (null: broń bez amunicji) */
+function ammoFor(st: SimState, weapon: WeaponId | null): number | null {
+  const a = weaponOf(weapon).ammo;
+  return a ? (st.store.ammo?.[a] ?? 0) : null;
 }
 
 function zombieCounts(st: SimState, w: World): SimSnapshot['zombies'] {
@@ -210,6 +220,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
         away: p.away,
         post: p.job?.t === 'guard' ? postKey(p.job.target) : null,
         weapon: p.weapon ?? null,
+        ammo: ammoFor(st, p.weapon ?? null),
         bite:
           p.bite !== undefined
             ? {
@@ -226,6 +237,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   const fuel = koza?.fuel ?? 0;
   const hour = hourOf(tick);
   return {
+    mode: modeOf(st),
     tick,
     day: dayOf(tick),
     hour,

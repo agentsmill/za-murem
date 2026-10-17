@@ -23,7 +23,7 @@
       <a class="btn lamp" href="v03/index.html">Zagraj w pełną wersję 0.3</a>
     </div>
     <form id="startForm">
-      <label for="addr">Adres twojego osiedla</label>
+      <div class="label-row"><label for="addr">Adres twojego osiedla</label><span class="mode" role="radiogroup" aria-label="Tryb gry"><label class="mode-o"><input type="radio" name="tryb" value="zwykly" checked><span>Zwykły</span></label><label class="mode-o zombie"><input type="radio" name="tryb" value="zombie"><span>Zombie</span></label></span></div>
       <div class="row"><input id="addr" name="addr" placeholder="np. Wołoska 12, Warszawa" autocomplete="street-address"><button class="btn go" type="submit">Wczytaj osiedle</button></div>
     </form>
     <div class="alt" id="demos"></div>
@@ -42,7 +42,10 @@
       <legend class="sr">Tempo gry</legend>
       <button type="button" class="btn" data-s="0">Pauza</button><button type="button" class="btn" data-s="1">1×</button><button type="button" class="btn" data-s="2">3×</button><button type="button" class="btn" data-s="3">6×</button><button type="button" class="btn" data-s="4">8×</button>
     </fieldset>
+    <button type="button" class="btn alarm" id="btnAlarm" title="Wszyscy zdolni z zarządu na wartę">Do broni!</button>
     <div class="stats" id="stats">
+      <span class="stat" id="sFence" title="Siatka" hidden><small class="stat-k">siatka</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sHorde" title="Szwendacze przy siatce" hidden><small class="stat-k">stado</small><b class="stat-v">–</b></span>
       <span class="stat" id="sOut" title="Temperatura na dworze"><small class="stat-k">dwór</small><b class="stat-v">–</b></span>
       <span class="stat" id="sKit" title="Temperatura w kuchni zarządu"><small class="stat-k">kuchnia</small><b class="stat-v">–</b></span>
       <span class="stat" id="sFire" title="Ogień w kozie zarządu"><small class="stat-k">koza</small><b class="stat-v">–</b></span>

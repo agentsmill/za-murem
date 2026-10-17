@@ -5,6 +5,7 @@ import { hashString } from '../core/rng.ts';
 import type { GovState } from '../gov/typy.ts';
 import { clockOf, dayOf } from '../sim/clock.ts';
 import type { SimState } from '../sim/sim.ts';
+import { modeOf } from '../sim/tryb.ts';
 import type { Loaded } from '../world/load.ts';
 import type { World } from '../world/world.ts';
 
@@ -90,4 +91,5 @@ export function clearSave(from: Store | null = store()): void {
 }
 
 /** „Przymorze, dzień 2, 06:40” na przycisk ekranu startowego */
-export const saveLabel = (s: Save): string => `${s.data.name}, dzień ${dayOf(s.sim.tick)}, ${clockOf(s.sim.tick)}`;
+export const saveLabel = (s: Save): string =>
+  `${s.data.name}${modeOf(s.sim) === 'zombie' ? ' (zombie)' : ''}, dzień ${dayOf(s.sim.tick)}, ${clockOf(s.sim.tick)}`;

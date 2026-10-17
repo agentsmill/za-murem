@@ -191,6 +191,46 @@ a.btn {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* tryb gry w wierszu etykiety adresu: na telefonie nie dokłada wysokości */
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mode {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.start .mode-o {
+  position: relative;
+  cursor: pointer;
+  letter-spacing: 0.1em;
+}
+.mode-o input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.mode-o span {
+  display: block;
+  padding: 3px 10px;
+  color: var(--ink-dim);
+}
+.mode-o input:focus-visible + span {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.mode-o input:checked + span {
+  background: var(--lamp);
+  color: #1d1a14;
+}
+.mode-o.zombie input:checked + span {
+  background: #6f8f4a;
+  color: #10140c;
+}
 .start input {
   flex: 1 1 260px;
   min-width: 0;
@@ -239,6 +279,29 @@ a.btn {
 .preview .btn {
   text-decoration: none;
   white-space: nowrap;
+}
+.btn.alarm {
+  border-color: #8a3a2c;
+  color: #f0b4a6;
+}
+.btn.alarm:hover {
+  background: #4a2420;
+}
+.btn.mini {
+  padding: 1px 8px;
+  font-size: 13px;
+}
+.btn.mini.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.card .arm,
+.card .bite {
+  margin: 6px 0 0;
+  font-size: 14px;
+}
+.card .bite {
+  color: var(--bad);
 }
 .btn.lamp {
   background: var(--lamp);

@@ -25,13 +25,36 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
   const watch = s.people.filter((p) => p.post === 'koza').map((p) => p.name);
   const trust = gov ? Math.round(gov.trust) : null;
   const anger = gov ? Math.round(gov.anger) : null;
+  const fence = Math.round(s.fence.durability * 100);
+  const holes = s.fence.holes.length;
+  const z = s.zombies;
+  // w trybie zombie siatka i stado zamiast temperatury na dworze (ta jest w dymku kuchni)
+  const first: Stat[] =
+    s.mode === 'zombie'
+      ? [
+          {
+            id: 'sFence',
+            value: `${fence}%`,
+            level: holes || fence < 50 ? 'bad' : fence < 80 ? 'mid' : 'ok',
+            title: `Siatka trzyma w ${fence}%${holes ? `, otwarte dziury: ${holes}` : ''}. Uszkodzoną wzmacnia się deskami albo złomem.`,
+          },
+          {
+            id: 'sHorde',
+            value: String(z.near),
+            level: z.pressing ? 'bad' : z.near ? 'mid' : 'ok',
+            title: `Szwendacze przy siatce: ${z.near}, napiera ${z.pressing}, na całej mapie ${z.all}. Na dworze ${deg(s.outdoor)}.`,
+          },
+        ]
+      : [
+          {
+            id: 'sOut',
+            value: deg(s.outdoor),
+            level: s.outdoor < 0 ? 'bad' : s.outdoor < 8 ? 'mid' : 'ok',
+            title: `Na dworze ${deg(s.outdoor)}, ${s.seasonName}`,
+          },
+        ];
   return [
-    {
-      id: 'sOut',
-      value: deg(s.outdoor),
-      level: s.outdoor < 0 ? 'bad' : s.outdoor < 8 ? 'mid' : 'ok',
-      title: `Na dworze ${deg(s.outdoor)}, ${s.seasonName}`,
-    },
+    ...first,
     {
       id: 'sKit',
       value: kit === null ? '–' : deg(kit),
@@ -88,6 +111,7 @@ export function renderStats(list: Stat[]): void {
     shown.set(s.id, key);
     const el = document.getElementById(s.id);
     if (!el) continue;
+    el.hidden = false;
     el.className = `stat ${s.level}`;
     el.title = s.title;
     const b = el.querySelector('b');

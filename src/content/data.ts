@@ -895,6 +895,10 @@ export const ADS: readonly string[] = [
 export const LORE: string =
   'Rok 2051. Wszystko zaczęło się ćwierć wieku temu, w 2026 roku, kiedy ekologiczny startup poprosił swój model AI o bakterię, która odzyska miedź z elektrośmieci. Model się postarał. Szczep uciekł z laboratorium i zaczął jeść kable w ścianach, pod ziemią i na słupach. Przez trzy lata wszyscy zwalali awarie na złodziei złomu, a kiedy ktoś połączył kropki, bakteria jeździła już po świecie w kontenerach z elektrośmieciami. Potem sypało się powoli: prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję, dolar przeszedł na abonament, padła chmura, a lodówki, samochody i domofony do dziś czekają na aktualizację. Unia zakazała palenia drewnem dzień przed tym, jak zgasł prąd. Influencerzy przeszli na survival, a doradcy ds. ESG na kaszę. Przetrwało to, co szczelne, i jedna instytucja: spółdzielnia mieszkaniowa. Zarząd to teraz wy.';
 
+/** wstęp trybu zombie: przyczyna nieznana (decyzja do przejrzenia przez Mateusza), reszta świata jak w LORE */
+export const LORE_ZOMBIE: string =
+  'Rok 2051. Nikt już nie pamięta, od czego się zaczęło. Model AI z serwerowni banku ma na to trzy hipotezy i każdą przedstawia z pełnym przekonaniem. Wiadomo tylko jedno: nosi to każdy z nas. Kto umrze, ten wstaje, a kogo ugryzą, ten w niecałą dobę umiera w gorączce. Szwendacze są wolni i głupi, ale idą za hałasem i zbierają się w stada. Prezydent Stanów Zjednoczonych w dziesiątej kadencji ogłosił, że sytuacja jest pod kontrolą. Przetrwało to, co ogrodzone, i jedna instytucja: spółdzielnia mieszkaniowa. Siatkę wokół podwórka wzmocniliście deskami, w piwnicy leży dzida i stary rewolwer. Zarząd to teraz wy.';
+
 /* Z js/sim.js (0.3): opuszczone mieszkania jako cel przeszukania */
 POICAT.mieszkania = {
   name: 'Opuszczone mieszkania',

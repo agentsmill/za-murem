@@ -2,7 +2,7 @@
    zapis i sterowanie. */
 
 import './style.css';
-import { LORE } from './content/data.ts';
+import { LORE, LORE_ZOMBIE } from './content/data.ts';
 import { hashString } from './core/rng.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
@@ -22,11 +22,13 @@ import { gameLights, strangerVisibility } from './render/game.ts';
 import { type Light, lightAt } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
+import { WEAPONS, type WeaponId } from './sim/bron.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { createSim, Sim } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
+import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { currentGoal, goalsOf, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { groupCard, personCard } from './ui/karta.ts';
@@ -115,7 +117,16 @@ const modal = new Modal($('modal'), $('sheet'));
 const ctx = new ContextMenu($('ctx'));
 
 /* ---------- ekran startowy ---------- */
-$('lore').textContent = LORE;
+/* tryb gry: przełącznik na ekranie startowym albo ?tryb=zombie; wstęp zmienia się razem z nim */
+let mode: GameMode = parseMode(params.get('tryb'));
+const setMode = (m: GameMode) => {
+  mode = m;
+  $('lore').textContent = m === 'zombie' ? LORE_ZOMBIE : LORE;
+  for (const r of document.querySelectorAll<HTMLInputElement>('input[name=tryb]')) r.checked = r.value === m;
+};
+setMode(mode);
+for (const r of document.querySelectorAll<HTMLInputElement>('input[name=tryb]'))
+  r.addEventListener('change', () => r.checked && setMode(parseMode(r.value)));
 const status = (t: string) => {
   $('startStatus').textContent = t;
 };
@@ -195,7 +206,8 @@ async function enter(data: Loaded, saved?: Save) {
   // tłum obcych tylko do pomiarów (?perf=150); w grze są mieszkańcy siedziby, których dokłada symulacja
   const crowd = params.has('perf') ? Number(params.get('perf')) : 0;
   // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
-  const st = saved ? saved.sim : createSim(world, seed, { core: 4, crowd });
+  const st = saved ? saved.sim : createSim(world, seed, { core: 4, crowd, mode });
+  const zombie = modeOf(st) === 'zombie';
   $('start').hidden = true;
   $('app').hidden = false;
   // płótno mierzy element; był ukryty, więc trzeba przeliczyć rozmiar po odsłonięciu
@@ -209,7 +221,15 @@ async function enter(data: Loaded, saved?: Save) {
     );
   sim = new Sim(world, st);
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
-  gov = saved ? saved.gov : newGov(seed);
+  gov = saved ? saved.gov : newGov(seed, modeOf(st));
+  // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
+  const herd = Number(params.get('stado'));
+  if (!saved && zombie && herd > 0) sim.spawnAtFence(herd, world.buildings[world.hq]?.entrances[0]?.out ?? 0);
+  // pasek: w trybie zombie siatka i stado zamiast temperatury na dworze
+  $('sOut').hidden = zombie;
+  $('sFence').hidden = !zombie;
+  $('sHorde').hidden = !zombie;
+  document.body.classList.toggle('zombie', zombie);
   screen = saved?.screen ?? 0;
   govAt = screen;
   loaded = data;
@@ -248,6 +268,11 @@ async function enter(data: Loaded, saved?: Save) {
   const first = st.pawns[0];
   if (first && st.tut.step < 0 && !saved) selected.add(first.id);
   if (stale) say('Zapis był z innej wersji osiedla, więc gra zaczyna się od nowa.', 9000);
+  else if (!saved && zombie)
+    say(
+      'Za siatką snują się szwendacze, a nocą przyjdzie stado. Dzida sięga przez siatkę, strzał ściąga następnych.',
+      9000,
+    );
   else if (!saved)
     say(
       touchUI
@@ -343,8 +368,8 @@ function applyFx(fx: ReturnType<typeof govUpdate>, hint = true): string {
 function govStep(show: boolean): Prompt | null {
   if (!sim || !gov || gov.over) return null;
   const i = input();
-  // bez ludzi zarząd kończy grę (pustka), więc dopiero po powstaniu pionków
-  if (!i.people.length) return null;
+  // bez ludzi zarząd kończy grę (pustka), więc dopiero po powstaniu pionków albo gdy ostatni zginął
+  if (!i.people.length && !(sim.st.dead ?? []).some((d) => d.kind === 'core')) return null;
   const fx = govUpdate(gov, i);
   const p = gov.over ? null : pending(gov, i);
   applyFx(fx, !p);
@@ -629,7 +654,8 @@ function tonight(p: SimPerson): string | undefined {
     return `Tej nocy: ${label.toLowerCase()}${n.confirmed ? '' : ' (propozycja)'}.`;
   }
   if (p.post === 'koza') return 'Do rana: czuwa przy kozie.';
-  if (p.post) return `Do rana: warta ${p.post === 'brama' ? 'przy bramie' : 'przy dziurze w siatce'}.`;
+  if (p.post)
+    return `Do rana: warta ${p.post === 'brama' ? 'przy bramie' : p.post === 'siatka' ? 'przy siatce' : 'przy dziurze w siatce'}.`;
   return undefined;
 }
 
@@ -819,7 +845,7 @@ function showMenu() {
         nextPrompt();
       } else if (act === 'menu-help')
         modal.show(
-          helpSheet(touchUI),
+          helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie'),
           (a) => {
             if (a === 'help-back') showMenu();
           },
@@ -840,6 +866,48 @@ $('btnMenu').onclick = () => {
   ctx.close();
   showMenu();
 };
+
+/* ---------- broń i alarm ---------- */
+$('btnAlarm').onclick = () => {
+  if (!sim || modal.open) return;
+  const core = sim.st.pawns.filter((p) => p.kind === 'core' && !p.away).map((p) => p.id);
+  sim.push({ t: 'alarm', ids: core });
+  say(
+    modeOf(sim.st) === 'zombie'
+      ? 'Do broni! Wszyscy zdolni na wartę przy siatce.'
+      : 'Do broni! Wszyscy zdolni na wartę przy bramie.',
+    4000,
+  );
+};
+
+/** kolejność broni przy „Zmień”: najpierw to, co sięga przez siatkę */
+const ARM_ORDER: readonly WeaponId[] = ['dzida', 'rewolwer', 'strzelba', 'kusza', 'siekiera', 'lom', 'kij', 'noz'];
+$('card').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-card]');
+  if (!b || !sim) return;
+  const st = sim.st;
+  const sel = st.pawns.filter((p) => p.kind === 'core' && selected.has(p.id));
+  if (sel.length !== 1) return;
+  const p = sel[0];
+  if (b.dataset.card === 'arm') {
+    // następna broń z magazynu w ustalonej kolejności, a gdy nie ma żadnej: odłożyć to, co w rękach
+    const have = new Set(st.store.arms ?? []);
+    const list = ARM_ORDER.filter((w) => have.has(w) && w !== p.weapon);
+    const at = p.weapon ? ARM_ORDER.indexOf(p.weapon) : -1;
+    const next = list.find((w) => ARM_ORDER.indexOf(w) > at) ?? list[0] ?? null;
+    if (next === null && !p.weapon) return say('W magazynie nie ma broni.', 2500);
+    sim.push({ t: 'arm', ids: [p.id], weapon: next });
+    say(next ? `Bierze ${WEAPONS[next].acc}.` : 'Odkłada broń do magazynu.', 2500);
+  } else if (b.dataset.card === 'amputate') {
+    // amputuje ten z zarządu, kto najlepiej zna się na medycynie
+    const doc = st.pawns
+      .filter((q) => q.kind === 'core' && q !== p && !q.away && (q.needs?.health ?? 0) > 20)
+      .sort((a, c) => (st.people[c.person].skills.med ?? 0) - (st.people[a.person].skills.med ?? 0) || a.id - c.id)[0];
+    if (!doc) return say('Nie ma komu amputować.', 3000);
+    sim.push({ t: 'amputate', ids: [doc.id], patient: p.id });
+    say(`${st.people[doc.person].first} amputuje. Pół godziny, nie zawsze się udaje.`, 4000);
+  }
+});
 
 /* ---------- polecenia ---------- */
 const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {

@@ -101,6 +101,43 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    name: 'start-zombie',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(base);
+      await page.waitForSelector('#demos button');
+      await page.click('.mode-o.zombie');
+      const lore = await page.$eval('#lore', (e) => e.textContent ?? '');
+      if (!lore.includes('Szwendacze')) throw new Error('wstęp trybu zombie się nie zmienił');
+    },
+  },
+  {
+    name: 'start-zombie-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await page.goto(`${base}?tryb=zombie`);
+      await page.waitForSelector('#demos button');
+      const checked = await page.$eval('input[name=tryb][value=zombie]', (e) => (e as HTMLInputElement).checked);
+      if (!checked) throw new Error('?tryb=zombie nie zaznaczył trybu');
+      const bottom = await page.$eval('#startForm', (f) => f.getBoundingClientRect().bottom);
+      console.log(`  formularz kończy się na ${Math.round(bottom)} px z 844`);
+      if (bottom > 844) throw new Error('formularz adresu poza pierwszym ekranem telefonu');
+    },
+  },
+  {
+    name: 'zombie-dzien',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&cam=hq,0.8&stado=14`);
+      await waitIdle(page);
+      const z = await page.evaluate(() => window.zm!.sim!.st.pawns.filter((p) => p.kind === 'zombie').length);
+      console.log(`  szwendaczy: ${z}`);
+      if (z < 14) throw new Error('za mało szwendaczy');
+    },
+  },
+  {
     name: 'adres-offline',
     query: '',
     run: async (page, base) => {

@@ -3803,6 +3803,22 @@ export class Sim {
     this.rebuild();
   }
 
+  /** n szwendaczy ze stada tuż za siatką, najbliżej kafelka near (do podglądu ?stado= i testów); zwraca ilu */
+  spawnAtFence(n: number, near: number): number {
+    const size = this.w.size;
+    const nx = (near % size) + 0.5;
+    const ny = Math.floor(near / size) + 0.5;
+    const spots = [...this.seeds].sort(
+      (a, b) =>
+        Math.hypot((a % size) + 0.5 - nx, Math.floor(a / size) + 0.5 - ny) -
+          Math.hypot((b % size) + 0.5 - nx, Math.floor(b / size) + 0.5 - ny) || a - b,
+    );
+    let k = 0;
+    for (; k < Math.min(n, MAX_ZOMBIES - this.zombieCount()) && spots.length; k++)
+      spawnZombie(this.st, this.w, spots[k % spots.length], k % 16, true);
+    return k;
+  }
+
   /* ---------- praca za dnia: dzidy, wzmacnianie siatki, alarm ---------- */
 
   /** materiał ze stert: n sztuk danego rodzaju (najpierw ze sterty first), false, gdy nie starczy */
