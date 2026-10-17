@@ -937,20 +937,22 @@ export class Sim {
     p.carry = 0;
   }
 
-  /** wolny kafelek przy rzeczy (mebel stoi na przechodnim kafelku, ale pracuje się obok), osiągalny dla pionka */
+  /** wolny kafelek przy rzeczy (mebel stoi na przechodnim kafelku, ale pracuje się obok), osiągalny dla pionka;
+      najchętniej taki, na którym nikt nie stoi, a gdy wszystkie zajęte (kolacja przy stole), to i tak obok */
   private beside(p: Pawn, t: Thing): number {
     const size = this.w.size;
     const region = this.regionOf(p);
     const taken = this.taken(p);
-    const cand: number[] = [];
+    const free: number[] = [];
+    const busy: number[] = [];
     for (let y = t.y - 1; y <= t.y + t.h; y++)
       for (let x = t.x - 1; x <= t.x + t.w; x++) {
         if (x < 0 || y < 0 || x >= size || y >= size || covers(t, x, y)) continue;
         const i = y * size + x;
-        if (this.blocked[i] || this.reg[i] !== region || this.furnitureAt(x, y) || taken.includes(i)) continue;
-        cand.push(i);
+        if (this.blocked[i] || this.reg[i] !== region || this.furnitureAt(x, y)) continue;
+        (taken.includes(i) ? busy : free).push(i);
       }
-    return this.nearest(p, cand);
+    return this.nearest(p, free.length ? free : busy);
   }
 
   /** najbliższy kafelkowi wolny kafelek w tym samym obszarze, bez mebli, pnia i jedzenia: na stos, na który
@@ -1382,17 +1384,13 @@ export class Sim {
     return true;
   }
 
-  /** gotować trzeba, gdy w garnkach jest mniej porcji niż ludzi w zarządzie, ktoś niedługo zgłodnieje,
-      są zapasy i ogień albo gaz, a nikt inny akurat nie gotuje */
+  /** gotować trzeba, gdy w garnkach jest mniej porcji, niż jest ludzi, którzy zaraz zgłodnieją (kto właśnie je,
+      za chwilę będzie najedzony), są zapasy i ogień albo gaz, a nikt inny akurat nie gotuje; gotuje się wtedy
+      od razu dla wszystkich, żeby nie palić gazu na jedną porcję */
   private shouldCook(): boolean {
     const cores = this.st.pawns.filter((q) => q.kind === 'core');
-    return (
-      this.meals() < cores.length &&
-      // kto właśnie je, za chwilę będzie najedzony
-      cores.some((q) => (q.needs?.food ?? 100) < PECKISH && q.job?.t !== 'eat') &&
-      !cores.some((q) => q.job?.t === 'cook') &&
-      canCookIn(this.st, this.w)
-    );
+    const soon = cores.filter((q) => (q.needs?.food ?? 100) < PECKISH && q.job?.t !== 'eat').length;
+    return soon > this.meals() && !cores.some((q) => q.job?.t === 'cook') && canCookIn(this.st, this.w);
   }
 
   private startCook(p: Pawn, order: boolean): boolean {

@@ -2,16 +2,18 @@
    „pierwsze trzy minuty”: polecenie ścięcia suchego drzewa i czasy kolejnych kroków aż do ciepłej kuchni,
    a dalej trzy doby zarządu bez poleceń. Gospodarka z 0.3 wejdzie w M3; jej wzorzec liczy npm run bot:v03.
    Dopóki świat z OSM nie ma wnętrza siedziby (gałąź wnętrza), scenariusz biegnie na sztucznych światach
-   z atrapą wnętrza z testów; kiedy wnętrze jest, bierze prawdziwą siedzibę.
+   z atrapą wnętrza z testów; kiedy wnętrze jest, bierze prawdziwą siedzibę. Po samouczku kronika pierwszego
+   wieczoru: gotowanie, kolacja, koniec opału i decyzja bota (spala meblościankę), sen; potem trzy doby.
    Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { nextRandom } from '../src/core/rng.ts';
 import { clockOf, dayOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
-import { dryTreeOf, houseOf } from '../src/sim/house.ts';
-import { commandFor, jobText } from '../src/sim/orders.ts';
-import { createSim, Sim, woodFrom } from '../src/sim/sim.ts';
+import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
+import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
+import { BURNABLE, createSim, Sim, woodFrom } from '../src/sim/sim.ts';
+import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
@@ -113,29 +115,96 @@ function firstMinutes(name: string, w: World): boolean {
       .join(', ')}`,
   );
   if (!ok) return false;
-  // dalej bez poleceń do końca trzeciej doby: zarząd sam pilnuje kozy, je i śpi
-  console.log('  Dalej bez poleceń (kuchnia i ogień w ciągu doby, zapasy i średnie potrzeby zarządu o północy):');
-  console.log('  dzień  kuchnia °C   ogień  jedzenie  drewno  najedzenie  ciepło  siły  zdrowie  nastrój');
-  for (let d = 1; d <= 3; d++) {
-    let lo = 99;
-    let hi = -99;
-    let fire = 0;
-    for (; dayOf(st.tick) === d; s.step()) {
-      if (st.tick % 20 || kitchen < 0) continue;
-      lo = Math.min(lo, st.temps[kitchen]);
-      hi = Math.max(hi, st.temps[kitchen]);
-      if ((st.things.find((t) => t.kind === 'koza')?.fuel ?? 0) > 0) fire += 20;
-    }
-    const core = st.pawns.filter((p) => p.kind === 'core');
-    const avg = (k: 'food' | 'warm' | 'rest' | 'health' | 'mood', w: number) =>
-      String(Math.round(core.reduce((a, p) => a + p.needs![k], 0) / core.length)).padStart(w);
-    const food = st.things.find((t) => t.kind === 'jedzenie')?.n ?? 0;
-    const wood = st.things.filter((t) => t.kind === 'drewno').reduce((a, t) => a + t.n, 0);
+  const core = st.pawns.filter((p) => p.kind === 'core');
+  const first = (p: (typeof core)[number]) => st.people[p.person].first;
+  // wieczór pierwszego dnia: kronika zdarzeń; gdy skończy się opał, bot jako gracz pali meblościankę
+  console.log('  Kronika do północy (bez poleceń poza jedną decyzją bota, gdy skończy się opał):');
+  const note = (t: string) => console.log(`    ${clockOf(st.tick)}  ${t}`);
+  const seen = new Set<string>();
+  const once = (key: string, cond: boolean, text: () => string) => {
+    if (!cond || seen.has(key)) return;
+    seen.add(key);
+    note(text());
+  };
+  const rows: string[] = [];
+  let lo = 99;
+  let hi = -99;
+  let fire = 0;
+  const row = (d: number) => {
+    const snap = snapshot(st, w);
+    const avg = (k: 'food' | 'warm' | 'rest' | 'health' | 'safe' | 'mood', width: number) =>
+      String(Math.round(snap.people.reduce((a, p) => a + p.needs[k], 0) / snap.people.length)).padStart(width);
     const temps = `${lo.toFixed(1)}–${hi.toFixed(1)}`;
-    console.log(
-      `  ${String(d).padStart(5)}  ${temps.padStart(10)}  ${(fire / TICKS_PER_HOUR).toFixed(1).padStart(4)} h  ${String(food).padStart(8)}  ${String(wood).padStart(6)}  ${avg('food', 10)}  ${avg('warm', 6)}  ${avg('rest', 4)}  ${avg('health', 7)}  ${avg('mood', 7)}`,
+    rows.push(
+      `  ${String(d).padStart(5)}  ${temps.padStart(10)}  ${(fire / TICKS_PER_HOUR).toFixed(1).padStart(4)} h  ${String(snap.stock.supplies).padStart(6)}  ${String(snap.stock.meals).padStart(7)}  ${String(snap.stock.gasCooks).padStart(3)}  ${String(snap.stock.wood).padStart(6)}  ${avg('food', 7)}  ${avg('warm', 6)}  ${avg('rest', 4)}  ${avg('health', 7)}  ${avg('safe', 5)}  ${avg('mood', 7)}`,
+    );
+    lo = 99;
+    hi = -99;
+    fire = 0;
+  };
+  const track = () => {
+    if (st.tick % 20 || kitchen < 0) return;
+    lo = Math.min(lo, st.temps[kitchen]);
+    hi = Math.max(hi, st.temps[kitchen]);
+    if ((st.things.find((t) => t.kind === 'koza')?.fuel ?? 0) > 0) fire += 20;
+  };
+  for (; dayOf(st.tick) === 1; s.step()) {
+    track();
+    const cook = core.find((p) => p.job?.t === 'cook' && p.job.phase === 1);
+    once('cook', !!cook, () => `${first(cook!)}: ${jobText(st, w, cook!).toLowerCase()}`);
+    once(
+      'meal',
+      st.things.some((t) => t.kind === 'posilek'),
+      () => `w garnku na stole ${st.things.find((t) => t.kind === 'posilek')!.n} porcje`,
+    );
+    once(
+      'eat',
+      core.some((p) => p.job?.t === 'eat' && p.job.phase === 1),
+      () => 'kolacja przy stole',
+    );
+    const kz = st.things.find((t) => t.kind === 'koza');
+    const woodLeft = st.things.some((t) => t.kind === 'drewno') || core.some((p) => p.carry > 0);
+    if (kz && kz.fuel === 0 && !woodLeft && !seen.has('out')) {
+      seen.add('out');
+      note(`opał się skończył, koza gaśnie; w kuchni ${st.temps[kitchen].toFixed(1)}°C, na dworze ${s.outdoor()}°C`);
+      const mine = (t: (typeof st.things)[number]) => inHomeApt(h, t.y * w.size + t.x);
+      const shelf =
+        st.things.find((t) => t.kind === 'mebloscianka' && mine(t)) ??
+        st.things.find((t) => BURNABLE[t.kind] && mine(t));
+      const burn = shelf && commandsAt(st, w, [who.id], shelf.y * w.size + shelf.x).find((m) => m.cmd.t === 'burn');
+      if (burn) {
+        s.push(burn.cmd);
+        note(`decyzja bota: ${burn.label.toLowerCase()} (${first(who)}; w menu z potwierdzeniem)`);
+      }
+    }
+    once(
+      'burned',
+      st.burned.length > 0,
+      () =>
+        `spalone, nastroje: ${core.map((p) => `${first(p)} ${p.moods.map((m) => `${m.why} ${m.d}`).join(', ')}`).join('; ')}`,
+    );
+    once(
+      'relit',
+      seen.has('burned') && (kz?.fuel ?? 0) > 0,
+      () => `koza znowu się pali (${((kz?.fuel ?? 0) / TICKS_PER_HOUR).toFixed(1)} h ognia)`,
+    );
+    once(
+      'sleep',
+      core.every((p) => p.job?.t === 'sleep' && p.job.phase === 1),
+      () =>
+        `wszyscy śpią; bezpieczeństwo średnio ${Math.round(core.reduce((a, p) => a + p.needs!.safe, 0) / core.length)}`,
     );
   }
+  row(1);
+  for (let d = 2; d <= 3; d++) {
+    for (; dayOf(st.tick) === d; s.step()) track();
+    row(d);
+  }
+  console.log('  Doby (kuchnia i ogień w ciągu doby, zapasy i średnie potrzeby zarządu o północy):');
+  console.log(
+    '  dzień  kuchnia °C   ogień  zapasy  posiłki  gaz  drewno  najedz.  ciepło  siły  zdrowie  bezp.  nastrój',
+  );
+  for (const r of rows) console.log(r);
   console.log(`  skrót stanu po 3 dobach ${s.hash()}`);
   return true;
 }

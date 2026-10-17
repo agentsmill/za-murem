@@ -234,6 +234,21 @@ describe('zarząd sam', () => {
     expect(cooked).toBe(false);
   });
 
+  it('nie gotuje po jednej porcji, gdy w garnku starczy dla tych, co zaraz zgłodnieją', () => {
+    const st = createSim(w, 3, { core: 4 });
+    st.pawns[0].needs!.food = 40;
+    const table = st.things.find((t) => t.kind === 'stol')!;
+    st.things.push({ ...addWood(st, table.y * w.size + table.x, w.size, 3), kind: 'posilek' });
+    st.things.splice(st.things.length - 2, 1);
+    const stove = st.things.find((t) => t.kind === 'kuchenka')!;
+    const sim = new Sim(w, st);
+    for (let k = 0; k < TICKS_PER_HOUR; k++) {
+      sim.step();
+      expect(core(sim).some((p) => p.job?.t === 'cook')).toBe(false);
+    }
+    expect(stove.fuel).toBe(GAS_START);
+  });
+
   it('bez gazu gotuje się na palącej się kozie', () => {
     const st = createSim(w, 3, { core: 4 });
     st.things.find((t) => t.kind === 'kuchenka')!.fuel = 0;
@@ -868,6 +883,44 @@ describe('palenie mebli', () => {
     expect(st.things.includes(theirs)).toBe(false);
     for (const p of core(sim)) expect(moodsOf(p)).toContain('Rozbieramy cudze mieszkanie -10');
     expect(st.burned[0]).toMatchObject({ kind: 'lozko', apt: 1 });
+  });
+
+  it('stół, przy którym wszyscy siedzą, też da się spalić', () => {
+    const st = createSim(w, 3, { core: 5 });
+    const table = st.things.find((t) => t.kind === 'stol')!;
+    const inside = (x: number, y: number) =>
+      x >= table.x && x < table.x + table.w && y >= table.y && y < table.y + table.h;
+    const free: number[] = [];
+    for (let y = table.y - 1; y <= table.y + table.h; y++)
+      for (let x = table.x - 1; x <= table.x + table.w; x++) {
+        const i = y * w.size + x;
+        if (inside(x, y) || w.blocked[i]) continue;
+        if (
+          st.things.some(
+            (t) =>
+              !['drewno', 'jedzenie', 'posilek', 'pien'].includes(t.kind) &&
+              x >= t.x &&
+              x < t.x + t.w &&
+              y >= t.y &&
+              y < t.y + t.h,
+          )
+        )
+          continue;
+        free.push(i);
+      }
+    // pozostali siedzą przy stole na każdym wolnym miejscu
+    st.pawns.slice(1).forEach((p, k) => {
+      const i = free[k % free.length];
+      p.x = (i % w.size) + 0.5;
+      p.y = Math.floor(i / w.size) + 0.5;
+      p.job = { t: 'eat', target: table.id, tile: i, phase: 1, from: -1, t0: 0, until: 1e9, order: false };
+    });
+    const sim = new Sim(w, st);
+    sim.push({ t: 'burn', ids: [st.pawns[0].id], thing: table.id });
+    sim.step();
+    expect(st.pawns[0].job?.t).toBe('burn');
+    for (let k = 0; k < 1000 && st.things.includes(table); k++) sim.step();
+    expect(st.things.includes(table)).toBe(false);
   });
 
   it('chwilowe nastroje wygasają', () => {
