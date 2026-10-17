@@ -37,7 +37,11 @@ function main(): void {
   for (const k of KOSZYKI_IMION) {
     const m = imiona.koszyki[k].M;
     const z = imiona.koszyki[k].K;
-    console.log(`  ${k}: M ${m.length} imion: ${pokaz(m)}\n             K ${z.length} imion: ${pokaz(z)}`);
+    const udzial = (l: [string, number][]): string =>
+      `największy udział ${((100 * l[0][1]) / l.reduce((a, x) => a + x[1], 0)).toFixed(1)}%`;
+    console.log(
+      `  ${k}: M ${m.length} imion (${udzial(m)}): ${pokaz(m)}\n             K ${z.length} imion (${udzial(z)}): ${pokaz(z)}`,
+    );
   }
   console.log(
     `Przyjezdni: M ${imiona.przyjezdni.M.length} imion (${pokaz(imiona.przyjezdni.M, 5)}), K ${imiona.przyjezdni.K.length} (${pokaz(imiona.przyjezdni.K, 5)})`,

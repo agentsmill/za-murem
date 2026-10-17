@@ -106,24 +106,35 @@ export type ImieZLiczba = [string, number];
 export interface TabeleImion {
   wersja: number;
   /** Rok urodzenia 2000-2025 (klucz tekstowy) → 200 najczęściej nadanych pierwszych imion osobno dla chłopców (M)
-      i dziewcząt (K), z liczbą nadań w tym roku. Próg: co najmniej 10 nadań w roku. Źródło: zbiór 219. */
+      i dziewcząt (K), z liczbą nadań w tym roku. Próg: co najmniej 10 nadań w roku. Źródło: zbiór 219. Imiona z
+      `przyjezdni` są pominięte od 2022 r., a wcześniej tylko te, które przed 2022 r. nadano mniej niż 500 razy
+      (Alexander, David, Maksym czy Viktor, nadawane w Polsce od lat, zostają w latach przed 2022). */
   lata: Record<string, { M: ImieZLiczba[]; K: ImieZLiczba[] }>;
-  /** Imiona osób urodzonych przed 2000 r., w pięciu koszykach według udziału zmarłych wśród osób z danym imieniem
-      urodzonych przed 2000 r.: co najmniej 60% zmarłych to 1920-1945, 40-60% to 1946-1959, 20-40% to 1960-1974,
-      5-20% to 1975-1989, poniżej 5% to 1990-1999. Liczba to osoby z tym imieniem urodzone przed 2000 r. i żyjące
-      20.01.2026 (żyjący w rejestrze minus nadania 2000-2025). Siedem imion o dwóch falach mody (Zofia, Antoni,
-      Julia, Jan, Stanisław, Helena, Franciszek) jest wpisanych ręcznie do koszyka 1920-1945 z liczbą pomniejszoną
-      do części odpowiadającej udziałowi zmarłych. Imion z XXI wieku (nadań po 2000 r. ponad 10 razy więcej niż
-      żyjących urodzonych wcześniej) i imion z mniej niż 5 000 żyjących w koszyku nie ma. */
+  /** Imiona osób urodzonych przed 2000 r. w pięciu koszykach, od najstarszego. Klucze to nazwy; według notatek
+      badawczych typowe roczniki imion w koszykach są starsze: 1920-45, 1940-60, 1950-70, 1965-85 i 1975-99.
+      Koszyk wynika z udziału zmarłych wśród osób z imieniem urodzonych przed 2000 r.: co najmniej 60% to
+      1920-1945, 30-60% to 1946-1959, 12-30% to 1960-1974, 5-12% to 1975-1989, poniżej 5% to 1990-1999.
+      Liczba to waga imienia w koszyku, czyli osoby z tym imieniem urodzone przed 2000 r. i żyjące 20.01.2026 (żyjący
+      w rejestrze minus nadania 2000-2025), tyle ile przypada na ten koszyk. Imię dzieli się między swój koszyk
+      a sąsiedni liniowo według położenia udziału zmarłych między środkami koszyków (75, 45, 20, 10 i 2,5%), więc
+      Maria (49% zmarłych) jest w 1946-1959 i w 1920-1945, a Anna (24%) w 1946-1959 i 1960-1974. Koszyk 1990-1999 to po
+      połowie ten szacunek, a po połowie lista nadań z 2000 r. (najbliższy prawdziwy rok), bez najstarszych imion;
+      stąd Anna jest też w 1990-1999, a Julia ma tam wagę. Żadne imię nie ma więcej niż 25% wagi koszyka. Siedem imion
+      o dwóch falach mody (Zofia, Antoni, Julia, Jan, Stanisław, Helena, Franciszek) jest wpisanych ręcznie do koszyka
+      1920-1945 z liczbą pomniejszoną do części odpowiadającej udziałowi zmarłych. Nie ma tu imion z XXI wieku (nadań po
+      2000 r. ponad 10 razy więcej niż żyjących urodzonych wcześniej), imion z mniej niż 5 000 żyjących
+      i imion obcych: przyjezdnych oraz każdego z pewną transliteracją lub obcą pisownią z listy (Mark, Michael,
+      Yuliya), także gdy przybyło ich niewiele. */
   koszyki: Record<KoszykImion, { M: ImieZLiczba[]; K: ImieZLiczba[] }>;
   /** Imiona pradziadków (co najmniej 60% zmarłych wśród osób z imieniem urodzonych przed 2000 r. i co najmniej
       3 000 zmarłych, albo jedno z siedmiu dwufalowych), których udział wśród nadań w pierwszej połowie 2026 r. jest co
       najmniej 1,3 raza większy niż w 2019 r., przy co najmniej 100 nadaniach w 2025 r. i pierwszej połowie 2026 r.
       razem. Od najczęściej nadawanych. */
   powracajace: { M: string[]; K: string[] };
-  /** Imiona osób z Ukrainy, Białorusi i Rosji w transliteracji (Oleksandr, Tetiana, Serhii, Yuliia…), których
-      w rejestrze żyjących przybyło od lipca 2019 do stycznia 2026 co najmniej 5 000. Liczba to ten przyrost.
-      Te imiona nie występują w `lata` ani w `koszykach`. */
+  /** Imiona osób z Ukrainy, Białorusi, Rosji i innych krajów w obcej pisowni (Oleksandr, Tetiana, Serhii, Yuliia,
+      Emiliia…), których w rejestrze żyjących przybyło od lipca 2019 do stycznia 2026: co najmniej 5 000, gdy imię ma
+      literę v, x, q albo transliterację, albo co najmniej 500, gdy ma transliterację pewną (znak spoza polskich imion
+      albo pisownia z listy). Liczba to ten przyrost. Nie występują w `koszykach`, a w `lata` od 2022 r. */
   przyjezdni: { M: ImieZLiczba[]; K: ImieZLiczba[] };
 }
 

@@ -8,9 +8,19 @@
      więc rocznik zgadujemy z odsetka zmarłych wśród osób z danym imieniem urodzonych przed 2000 r. Takich osób jest
      tyle, ile żyjących 20.01.2026 minus nadania 2000-2025, a zmarłych tyle, ile jest ich w rejestrze ze zmarłymi
      ponad żyjących. Udział zmarłych to (razem ze zmarłymi − żyjący) / razem ze zmarłymi, liczony dla tej kohorty,
-     czyli z obu liczb odjęte nadania 2000-2025 (inaczej nowa moda rozcieńczałaby go u imion, które wracają). Im
-     większy udział, tym starsze imię (progi w `koszykWgZmarlych`). Wagą imienia w koszyku jest liczba żyjących
-     z kohorty; u siedmiu imion dwufalowych (`DWUFALOWE`) tylko jej część równa udziałowi zmarłych;
+     czyli z obu liczb odjęte nadania 2000-2025 (inaczej nowa moda rozcieńczałaby go u imion, które wracają).
+     Metoda notatek badawczych („prostsza wersja do gry”): progi udziału zmarłych 60 / 30 / 12 / 5%, pięć koszyków
+     (klucze 1920-1945 … 1990-1999 to nazwy, rzeczywiste roczniki typowych imion w koszykach są starsze, wg notatek
+     1920-45, 1940-60, 1950-70, 1965-85 i 1975-99). Cztery poprawki ponad nią, bo samo „jedno imię, jeden koszyk” gubiło
+     najczęstsze imiona kohort (Maria, Anna, Katarzyna):
+     1. miękkie członkostwo: imię dzieli się między swój koszyk a sąsiedni, liniowo według położenia udziału
+        zmarłych między środkami koszyków (`podzialKoszykow`), więc Maria (49%) ma część wśród najstarszych, a Anna (24%)
+        wśród koszyków 1946-1959 i 1960-1974;
+     2. koszyk 1990-1999 to w połowie ten szacunek, a w połowie lista imion nadanych w 2000 r. (najbliższy prawdziwy
+        rok), osobno dla każdej płci; udział zmarłych poniżej 5% nie odróżnia roczników 1975-1999;
+     3. żadne imię nie ma więcej niż 25% wagi koszyka (`ograniczUdzial`);
+     4. wagą imienia jest liczba żyjących z kohorty, a u siedmiu imion dwufalowych (`DWUFALOWE`) tylko jej część
+        równa udziałowi zmarłych (wpisane ręcznie do koszyka 1920-1945);
    - `przyjezdni`: imiona w ukraińskiej, białoruskiej i rosyjskiej transliteracji, których przybyło w rejestrze od
      migawki z lipca 2019 (cudzoziemcy z PESEL po 2022 r.); nie mieszają się z imionami „rdzennymi”;
    - `powracajace`: imiona pradziadków, których udział wśród nadań od 2019 do pierwszej połowy 2026 rośnie.
@@ -60,7 +70,7 @@ export function wielkaLitera(s: string): string {
     cudzysłowach. Puste linie są pomijane. */
 export function parsujCsv(tekst: string): string[][] {
   const linie = tekst
-    .replace(/^﻿/, '')
+    .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
     .filter((l) => l.trim() !== '');
   if (linie.length === 0) return [];
@@ -143,21 +153,27 @@ export function wierszeImion(w: readonly (readonly (string | number | null)[])[]
 
 // ---------------------------------------------------------------- transliteracja
 
-/** Litery i końcówki, jakich nie ma w polskich imionach: v, x, q; Y na początku (Yaroslav); kh (Mykhailo); podwójne i
-    (Andrii, Nataliia, Daniil); końcówki -ei i -yi (Andrei, Siarhei); przedrostki Oleks- (Oleksandr, Oleksandra
-    zamiast Aleksander, Aleksandra) i Aliak- (Aliaksandr). */
-const ZNAKI_TRANSLITERACJI: readonly RegExp[] = [/[vxq]/, /^y/, /kh/, /ii/, /ei$/, /yi$/, /^oleks/, /^aliak/];
+/** Znaki, jakich nie ma w polskich imionach, także w modnych zachodnich pisowniach: Y na początku (Yaroslav, Yuliya),
+    kh (Mykhailo), podwójne i (Andrii, Nataliia, Emiliia), końcówki -iy, -ei i -yi (Matviy, Andrei) oraz przedrostki
+    Oleks- (Oleksandr zamiast Aleksander) i Aliak- (Aliaksandr). */
+const ZNAKI_SILNE: readonly RegExp[] = [/^y/, /kh/, /ii/, /iy$/, /ei$/, /yi$/, /^oleks/, /^aliak/];
 
-/** Ukraińskie, białoruskie i rosyjskie pisownie bez takich znaków. Tylko te, które różnią się od polskiej pisowni tego
-    samego imienia (Dmytro, nie Dymitr); Roman, Igor, Bohdan, Mark, Hanna, Julia, Olga, Daria i Sofia są też polskie
-    i zostają. */
+/** Litery spoza polskiego alfabetu: v, x, q. Występują też w zachodnich imionach, które Polacy nadają dzieciom (Kevin,
+    Oliver, Alex, Violetta), więc same nie wystarczają, żeby wyrzucić imię z koszyków. */
+const ZNAKI_SLABE = /[vxq]/;
+
+/** Ukraińskie, białoruskie, rosyjskie i obcojęzyczne pisownie bez takich znaków. Tylko te, które różnią się od polskiej
+    pisowni tego samego imienia (Dmytro, nie Dymitr; Michael, nie Michał; Eduard, nie Edward); Roman, Igor, Bohdan,
+    Hanna, Julia, Olga, Daria i Sofia są też polskie i zostają. */
 const PISOWNIE_TRANSLITEROWANE = new Set([
   // mężczyźni
   'dmytro',
   'mykola',
   'artem',
   'oleh',
+  'oleg',
   'denys',
+  'denis',
   'ihor',
   'danylo',
   'kyrylo',
@@ -175,6 +191,16 @@ const PISOWNIE_TRANSLITEROWANE = new Set([
   'giorgi',
   'dzmitry',
   'illia',
+  'lev',
+  'myroslav',
+  'sviatoslav',
+  'uladzimir',
+  'leonid',
+  'vitali',
+  'mark',
+  'martin',
+  'michael',
+  'eduard',
   // kobiety
   'tetiana',
   'olena',
@@ -188,6 +214,7 @@ const PISOWNIE_TRANSLITEROWANE = new Set([
   'inna',
   'alla',
   'alona',
+  'alena',
   'polina',
   'anhelina',
   'daryna',
@@ -205,11 +232,23 @@ const PISOWNIE_TRANSLITEROWANE = new Set([
   'larysa',
   'liubov',
   'myroslava',
+  'varvara',
+  'milana',
+  'vita',
+  'tatsiana',
+  'anastasiya',
 ]);
 
-export function jestTransliteracja(imie: string): boolean {
+/** Transliteracja pewna: znak, którego nie ma w polskich imionach, albo pisownia z listy. Takie imiona nie trafiają do
+    koszyków nigdy, bez względu na przyrost. */
+export function jestTransliteracjaSilna(imie: string): boolean {
   const n = imie.toLowerCase();
-  return PISOWNIE_TRANSLITEROWANE.has(n) || ZNAKI_TRANSLITERACJI.some((w) => w.test(n));
+  return PISOWNIE_TRANSLITEROWANE.has(n) || ZNAKI_SILNE.some((w) => w.test(n));
+}
+
+/** Transliteracja pewna albo litera v, x, q (ta druga liczy się dopiero przy przyroście co najmniej `PROG_PRZYROSTU`). */
+export function jestTransliteracja(imie: string): boolean {
+  return jestTransliteracjaSilna(imie) || ZNAKI_SLABE.test(imie.toLowerCase());
 }
 
 // ---------------------------------------------------------------- tabele imion
@@ -231,14 +270,27 @@ export const OSTATNI_ROK = 2025;
 /** Imię trafia do roku, gdy ma co najmniej tyle nadań w tym roku. */
 export const PROG_NADAN_W_ROKU = 10;
 export const IMION_NA_ROK = 200;
-/** Imię trafia do puli przyjezdnych, gdy żyjących przybyło od migawki 2019 o co najmniej tyle. */
+/** Imię z przyrostem co najmniej tyle (od migawki z lipca 2019) i z literą v, x albo q albo ze znakiem pewnej
+    transliteracji trafia do puli przyjezdnych. */
 export const PROG_PRZYROSTU = 5000;
+/** Imię z pewną transliteracją (znak spoza polskich imion albo pisownia z listy) trafia do puli przyjezdnych już od
+    takiego przyrostu: to dzieci rodzin z Ukrainy urodzone w Polsce (Emiliia, Matviy, Zakhar) i ich rodzice. */
+export const PROG_PRZYROSTU_SILNEJ = 500;
+/** Przyjezdni wypadają z `lata` od tego roku (napływ po lutym 2022). Wcześniej tylko wtedy, gdy przed 2022 r. nadano
+    im mniej niż `PROG_NADAN_PRZED_2022` razy; inaczej Alexander, David, Maksym czy Viktor, nadawani w Polsce od lat,
+    znikałyby ze wszystkich lat. */
+export const PIERWSZY_ROK_NAPLYWU = 2022;
+export const PROG_NADAN_PRZED_2022 = 500;
 /** Imię trafia do koszyka, gdy ma co najmniej tyle żyjących urodzonych przed 2000 r. Poniżej to różnica dwóch dużych
     liczb (żyjący minus nadania), czyli szum, a nie rocznik. */
 export const PROG_ZYJACYCH_KOSZYKA = 5000;
 /** Imię z XXI wieku: nadań po 2000 r. ponad tyle razy więcej niż żyjących urodzonych wcześniej (Nikodem, Amelia, Lena). */
 export const MNOZNIK_MODY = 10;
 export const IMION_W_KOSZYKU = 200;
+/** Żadne imię nie ma więcej niż tyle procent wagi koszyka. */
+export const MAX_UDZIAL_W_KOSZYKU = 25;
+/** Rok listy imion, z którą koszyk 1990-1999 miesza się po połowie (najbliższy rok z prawdziwymi nadaniami). */
+export const ROK_BAZOWY_NAJMLODSZEGO_KOSZYKA = 2000;
 /** Powracające: co najmniej tyle zmarłych, tyle nadań w 2025 i pierwszej połowie 2026 oraz wzrost udziału o 30%. */
 export const PROG_ZMARLYCH_POWRACAJACYCH = 3000;
 export const PROG_NADAN_POWRACAJACYCH = 100;
@@ -250,21 +302,92 @@ export const DWUFALOWE: Record<Plec, readonly string[]> = {
   K: ['ZOFIA', 'JULIA', 'HELENA'],
 };
 
-/** Koszyk według udziału zmarłych wśród osób z imieniem urodzonych przed 2000 r.: zmarli / (zmarli + żyjący). Progi
-    w procentach: 60, 40, 20, 5. Porównania na liczbach całkowitych. */
+/** Progi udziału zmarłych (w procentach) między koszykami od najstarszego: co najmniej 60% to 1920-1945, 30-60% to
+    1946-1959, 12-30% to 1960-1974, 5-12% to 1975-1989, poniżej 5% to 1990-1999. Notatki badawcze podają 60 / 30 / 12 / 5%. */
+export const PROGI_ZMARLYCH = [60, 30, 12, 5] as const;
+
+/** Środki koszyków w promilach udziału zmarłych: 75, 45, 20, 10 i 2,5%. To środki przedziałów 60-90% (powyżej 90%
+    imię prawie wygasło), 30-60%, 12-30% (21%), 5-12% (8,5%) i 0-5% zaokrąglone, a dwa z nich (20 i 10 zamiast 21 i 8,5)
+    ustawione tak, żeby typowe imiona kohort przechodziły do sąsiedniego koszyka tak, jak w danych: Paulina i Karolina
+    do 1990-1999, Danuta i Barbara do 1946-1959. Służą do miękkiego podziału imienia między sąsiednie koszyki. */
+const SRODKI_KOSZYKOW: Record<KoszykImion, number> = {
+  '1920-1945': 750,
+  '1946-1959': 450,
+  '1960-1974': 200,
+  '1975-1989': 100,
+  '1990-1999': 25,
+};
+
+/** Koszyk według udziału zmarłych wśród osób z imieniem urodzonych przed 2000 r.: zmarli / (zmarli + żyjący), progi
+    `PROGI_ZMARLYCH`. Porównania na liczbach całkowitych. */
 export function koszykWgZmarlych(zmarli: number, zyjacy: number): KoszykImion {
   const razem = zmarli + zyjacy;
   const sto = 100 * zmarli;
-  if (sto >= 60 * razem) return '1920-1945';
-  if (sto >= 40 * razem) return '1946-1959';
-  if (sto >= 20 * razem) return '1960-1974';
-  if (sto >= 5 * razem) return '1975-1989';
+  if (sto >= PROGI_ZMARLYCH[0] * razem) return '1920-1945';
+  if (sto >= PROGI_ZMARLYCH[1] * razem) return '1946-1959';
+  if (sto >= PROGI_ZMARLYCH[2] * razem) return '1960-1974';
+  if (sto >= PROGI_ZMARLYCH[3] * razem) return '1975-1989';
   return '1990-1999';
+}
+
+/** Miękkie członkostwo: imię należy do koszyka z `koszykWgZmarlych` i do sąsiedniego, w stronę którego leży jego udział
+    zmarłych względem środka koszyka (starszego, gdy udział jest co najmniej taki jak środek, inaczej młodszego).
+    Część sąsiedniego koszyka to odległość udziału od środka własnego koszyka dzielona przez odległość między środkami,
+    czyli liniowa interpolacja; na progu koszyków jest ciągła. Najstarszy koszyk nie ma starszego sąsiada, a najmłodszy
+    młodszego, wtedy imię jest całe w swoim. Część to ułamek licznik / mianownik. */
+export function podzialKoszykow(
+  zmarli: number,
+  zyjacy: number,
+): { glowny: KoszykImion; sasiedni: KoszykImion | null; licznik: number; mianownik: number } {
+  const glowny = koszykWgZmarlych(zmarli, zyjacy);
+  const razem = zmarli + zyjacy;
+  const i = KOSZYKI_IMION.indexOf(glowny);
+  const odSrodka = 1000 * zmarli - SRODKI_KOSZYKOW[glowny] * razem; // w promilach razy `razem`
+  const j = odSrodka >= 0 ? i - 1 : i + 1;
+  if (j < 0 || j >= KOSZYKI_IMION.length) return { glowny, sasiedni: null, licznik: 0, mianownik: 1 };
+  const sasiedni = KOSZYKI_IMION[j];
+  return {
+    glowny,
+    sasiedni,
+    licznik: Math.abs(odSrodka),
+    mianownik: Math.abs(SRODKI_KOSZYKOW[sasiedni] - SRODKI_KOSZYKOW[glowny]) * razem,
+  };
+}
+
+/** Ucina wagi do `maxProcent` sumy (liczby całkowite): nadwyżkę ponad limit dostają pozostałe pozycje proporcjonalnie do
+    ich wag, aż żadna nie przekracza limitu. Kolejność wejścia zostaje. Dla listy zbyt krótkiej, żeby limit dało się
+    spełnić (mniej niż 100 / maxProcent pozycji), zwraca wagi bez zmian. */
+export function ograniczUdzial(wagi: readonly number[], maxProcent: number): number[] {
+  const w = [...wagi];
+  if (maxProcent >= 100 || w.length * maxProcent < 100) return w;
+  for (let obieg = 0; obieg < 1000; obieg++) {
+    const suma = w.reduce((a, b) => a + b, 0);
+    const limit = Math.floor((suma * maxProcent) / 100);
+    let nadmiar = 0;
+    for (let i = 0; i < w.length; i++) {
+      if (w[i] > limit) {
+        nadmiar += w[i] - limit;
+        w[i] = limit;
+      }
+    }
+    if (nadmiar === 0) break;
+    const reszta = w.map((x, i) => (x < limit ? i : -1)).filter((i) => i >= 0);
+    const baza = reszta.reduce((a, i) => a + w[i], 0);
+    if (baza === 0) break;
+    for (const i of reszta) w[i] += Math.floor((nadmiar * w[i]) / baza);
+  }
+  return w;
 }
 
 const nadaniaDoRoku = (d: DaneImion, p: Plec, imie: string): number => {
   let s = 0;
   for (let r = PIERWSZY_ROK; r <= OSTATNI_ROK; r++) s += d.urodzenia[r][p].get(imie) ?? 0;
+  return s;
+};
+
+const nadaniaPrzedNaplywem = (d: DaneImion, p: Plec, imie: string): number => {
+  let s = 0;
+  for (let r = PIERWSZY_ROK; r < PIERWSZY_ROK_NAPLYWU; r++) s += d.urodzenia[r][p].get(imie) ?? 0;
   return s;
 };
 
@@ -292,11 +415,18 @@ export function kohortaImienia(
   return { zyjacySprzed2000, zmarli, nadania, udzialZmarlych: mianownik === 0 ? 0 : (100 * zmarli) / mianownik };
 }
 
+/** Przyjezdni: imiona z przyrostem żyjących od migawki 2019 co najmniej `PROG_PRZYROSTU` i z transliteracją (także
+    z literą v, x, q) albo co najmniej `PROG_PRZYROSTU_SILNEJ` i z transliteracją pewną. Wartość to przyrost. */
 function przyjezdniPlci(d: DaneImion, p: Plec): Map<string, number> {
   const wynik = new Map<string, number>();
   for (const [imie, zyjacy] of d.zyjacy[p]) {
     const przyrost = zyjacy - (d.zyjacy2019[p].get(imie) ?? 0);
-    if (przyrost >= PROG_PRZYROSTU && jestTransliteracja(imie)) wynik.set(imie, przyrost);
+    if (
+      (przyrost >= PROG_PRZYROSTU && jestTransliteracja(imie)) ||
+      (przyrost >= PROG_PRZYROSTU_SILNEJ && jestTransliteracjaSilna(imie))
+    ) {
+      wynik.set(imie, przyrost);
+    }
   }
   return wynik;
 }
@@ -307,46 +437,91 @@ const nazwyZLiczba = (wpisy: Iterable<readonly [string, number]>, ile: number): 
     .slice(0, ile)
     .map(([n, c]) => [wielkaLitera(n), c]);
 
+/** Koszyki jednej płci. `wykluczone` to imiona obcego pochodzenia (przyjezdni i pewna transliteracja). */
 function koszykiPlci(
   d: DaneImion,
   p: Plec,
-  przyjezdni: ReadonlyMap<string, number>,
+  wykluczone: (imie: string) => boolean,
+  maxUdzial: number,
 ): Record<KoszykImion, ImieZLiczba[]> {
-  const zbiory = Object.fromEntries(KOSZYKI_IMION.map((k) => [k, [] as [string, number][]])) as Record<
+  const wagi = Object.fromEntries(KOSZYKI_IMION.map((k) => [k, new Map<string, number>()])) as Record<
     KoszykImion,
-    [string, number][]
+    Map<string, number>
   >;
+  const dodajWage = (k: KoszykImion, imie: string, w: number): void => {
+    if (w > 0) wagi[k].set(imie, (wagi[k].get(imie) ?? 0) + w);
+  };
   const dwufalowe = new Set(DWUFALOWE[p]);
+  /** Imiona, które wolno wziąć także z listy nadań z 2000 r.: kohorta dość duża, nie z XXI wieku i nie z najstarszego
+      koszyka (przedwojenne imiona w liście z 2000 r. to szum, a koszyk 1990-1999 ma ich nie mieć: Janina, Zygmunt). */
+  const zKohorty = new Set<string>();
   for (const imie of d.zyjacy[p].keys()) {
-    if (przyjezdni.has(imie)) continue;
+    if (wykluczone(imie)) continue;
     const { zyjacySprzed2000: zyjacy, zmarli, nadania } = kohortaImienia(d, p, imie);
+    const wolno = zyjacy >= PROG_ZYJACYCH_KOSZYKA && nadania <= MNOZNIK_MODY * zyjacy;
+    if (wolno && koszykWgZmarlych(zmarli, zyjacy) !== KOSZYKI_IMION[0]) zKohorty.add(imie);
     if (dwufalowe.has(imie)) {
-      // stara fala to część żyjących odpowiadająca udziałowi zmarłych; reszta to nowa fala, której koszyki przed 2000 nie znają
-      if (zyjacy > 0) zbiory['1920-1945'].push([imie, zaokraglij(zyjacy * zmarli, zyjacy + zmarli)]);
-    } else if (zyjacy >= PROG_ZYJACYCH_KOSZYKA && nadania <= MNOZNIK_MODY * zyjacy) {
-      zbiory[koszykWgZmarlych(zmarli, zyjacy)].push([imie, zyjacy]);
+      // stara fala to część żyjących odpowiadająca udziałowi zmarłych; reszta to nowa fala (u Julii z lat 90. jest
+      // w koszyku 1990-1999 dzięki liście z 2000 r.)
+      if (zyjacy > 0) dodajWage('1920-1945', imie, zaokraglij(zyjacy * zmarli, zyjacy + zmarli));
+    } else if (wolno) {
+      const { glowny, sasiedni, licznik, mianownik } = podzialKoszykow(zmarli, zyjacy);
+      const czescSasiedniego = sasiedni === null ? 0 : zaokraglij(zyjacy * licznik, mianownik);
+      dodajWage(glowny, imie, zyjacy - czescSasiedniego);
+      if (sasiedni !== null) dodajWage(sasiedni, imie, czescSasiedniego);
     }
   }
-  return Object.fromEntries(KOSZYKI_IMION.map((k) => [k, nazwyZLiczba(zbiory[k], IMION_W_KOSZYKU)])) as Record<
-    KoszykImion,
-    ImieZLiczba[]
-  >;
+
+  // koszyk 1990-1999: po połowie szacunek z udziału zmarłych i lista nadań z 2000 r. (udziały obu, w skali szacunku)
+  const najmlodszy = wagi['1990-1999'];
+  const szacunek = [...najmlodszy.values()].reduce((a, b) => a + b, 0);
+  const lista2000 = new Map<string, number>();
+  for (const [imie, c] of d.urodzenia[ROK_BAZOWY_NAJMLODSZEGO_KOSZYKA][p]) {
+    if (c >= PROG_NADAN_W_ROKU && zKohorty.has(imie)) lista2000.set(imie, c);
+  }
+  const nadania2000 = [...lista2000.values()].reduce((a, b) => a + b, 0);
+  if (nadania2000 > 0) {
+    // bez szacunku (pusty koszyk) zostaje sama lista z 2000 r.
+    const udzialListy = szacunek > 0 ? 0.5 : 1;
+    const skala = szacunek > 0 ? szacunek : nadania2000;
+    const polaczone = new Map<string, number>();
+    for (const imie of new Set([...najmlodszy.keys(), ...lista2000.keys()])) {
+      const zSzacunku = szacunek > 0 ? (najmlodszy.get(imie) ?? 0) / szacunek : 0;
+      const zListy = (lista2000.get(imie) ?? 0) / nadania2000;
+      const w = Math.round(skala * ((1 - udzialListy) * zSzacunku + udzialListy * zListy));
+      if (w > 0) polaczone.set(imie, w);
+    }
+    wagi['1990-1999'] = polaczone;
+  }
+
+  return Object.fromEntries(
+    KOSZYKI_IMION.map((k) => {
+      const wpisy = [...wagi[k]].sort(poLiczbie).slice(0, IMION_W_KOSZYKU);
+      const ograniczone = ograniczUdzial(
+        wpisy.map((x) => x[1]),
+        maxUdzial,
+      );
+      const wynik: ImieZLiczba[] = wpisy.map(([n], i): ImieZLiczba => [wielkaLitera(n), ograniczone[i]]);
+      return [k, wynik.sort((a, b) => b[1] - a[1])];
+    }),
+  ) as Record<KoszykImion, ImieZLiczba[]>;
 }
 
 /** Imiona pradziadków (udział zmarłych co najmniej 60% i co najmniej 3 000 zmarłych albo imię dwufalowe), których udział
     wśród nadań w pierwszej połowie 2026 jest co najmniej 1,3 raza większy niż w 2019. Od najczęściej nadawanych w 2025
     i pierwszej połowie 2026. */
-function powracajacePlci(d: DaneImion, p: Plec, przyjezdni: ReadonlyMap<string, number>): string[] {
+function powracajacePlci(d: DaneImion, p: Plec, wykluczone: (imie: string) => boolean): string[] {
   const dwufalowe = new Set(DWUFALOWE[p]);
   const razem2019 = sumaRoku(d, 2019, p);
   const razem2026 = sumaRoku(d, 2026, p);
   const wynik: [string, number][] = [];
   for (const imie of d.zyjacy[p].keys()) {
-    if (przyjezdni.has(imie)) continue;
+    if (wykluczone(imie)) continue;
     const { zyjacySprzed2000, zmarli } = kohortaImienia(d, p, imie);
     const zyjacy = Math.max(zyjacySprzed2000, 0);
     const stare =
-      dwufalowe.has(imie) || (zmarli >= PROG_ZMARLYCH_POWRACAJACYCH && 100 * zmarli >= 60 * (zmarli + zyjacy));
+      dwufalowe.has(imie) ||
+      (zmarli >= PROG_ZMARLYCH_POWRACAJACYCH && 100 * zmarli >= PROGI_ZMARLYCH[0] * (zmarli + zyjacy));
     if (!stare) continue;
     const c19 = d.urodzenia[2019][p].get(imie) ?? 0;
     const c25 = d.urodzenia[2025][p].get(imie) ?? 0;
@@ -358,25 +533,34 @@ function powracajacePlci(d: DaneImion, p: Plec, przyjezdni: ReadonlyMap<string, 
   return wynik.sort(poLiczbie).map(([n]) => wielkaLitera(n));
 }
 
-export function tabeleImion(d: DaneImion): TabeleImion {
+export interface OpcjeImion {
+  /** Największy udział jednego imienia w wadze koszyka, w procentach (domyślnie `MAX_UDZIAL_W_KOSZYKU`). */
+  maxUdzialWKoszyku: number;
+}
+
+export function tabeleImion(d: DaneImion, opcje: Partial<OpcjeImion> = {}): TabeleImion {
+  const maxUdzial = opcje.maxUdzialWKoszyku ?? MAX_UDZIAL_W_KOSZYKU;
   const przyj = { M: przyjezdniPlci(d, 'M'), K: przyjezdniPlci(d, 'K') };
+  const obce = (p: Plec) => (imie: string) => przyj[p].has(imie) || jestTransliteracjaSilna(imie);
   const lata: TabeleImion['lata'] = {};
   for (let rok = PIERWSZY_ROK; rok <= OSTATNI_ROK; rok++) {
+    const wypada = (p: Plec, imie: string): boolean =>
+      przyj[p].has(imie) && (rok >= PIERWSZY_ROK_NAPLYWU || nadaniaPrzedNaplywem(d, p, imie) < PROG_NADAN_PRZED_2022);
     const wpisy = (p: Plec): ImieZLiczba[] =>
       nazwyZLiczba(
-        [...d.urodzenia[rok][p]].filter(([n, c]) => c >= PROG_NADAN_W_ROKU && !przyj[p].has(n)),
+        [...d.urodzenia[rok][p]].filter(([n, c]) => c >= PROG_NADAN_W_ROKU && !wypada(p, n)),
         IMION_NA_ROK,
       );
     lata[String(rok)] = { M: wpisy('M'), K: wpisy('K') };
   }
-  const koszyki = { M: koszykiPlci(d, 'M', przyj.M), K: koszykiPlci(d, 'K', przyj.K) };
+  const koszyki = { M: koszykiPlci(d, 'M', obce('M'), maxUdzial), K: koszykiPlci(d, 'K', obce('K'), maxUdzial) };
   return {
     wersja: WERSJA_TABEL,
     lata,
     koszyki: Object.fromEntries(
       KOSZYKI_IMION.map((k) => [k, { M: koszyki.M[k], K: koszyki.K[k] }]),
     ) as TabeleImion['koszyki'],
-    powracajace: { M: powracajacePlci(d, 'M', przyj.M), K: powracajacePlci(d, 'K', przyj.K) },
+    powracajace: { M: powracajacePlci(d, 'M', obce('M')), K: powracajacePlci(d, 'K', obce('K')) },
     przyjezdni: {
       M: nazwyZLiczba(przyj.M, Number.POSITIVE_INFINITY),
       K: nazwyZLiczba(przyj.K, Number.POSITIVE_INFINITY),
