@@ -38,8 +38,9 @@ const STEPS: Record<TutStep, { text: string; mouse: string; touch: string }> = {
   },
   sklad: {
     text: 'Zanieście drewno do składu przy kozie.',
-    mouse: 'Prawy przycisk na stosie drewna: „Zanieść do składu”.',
-    touch: 'Stuknijcie stos drewna przy pniu.',
+    // symulacja zalicza krok, kiedy drwal bierze stos (w sekundę po ścięciu), więc nie ma tu czego klikać
+    mouse: 'Drwal sam bierze drewno i niesie je do składu przy kozie.',
+    touch: 'Drwal sam bierze drewno i niesie je do składu przy kozie.',
   },
   koza: {
     text: 'Rozpalcie kozę.',

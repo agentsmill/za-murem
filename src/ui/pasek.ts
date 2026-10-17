@@ -21,6 +21,8 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
   const spare = k.woodSklad + k.woodLoose + k.woodCarried;
   const ppl = Math.max(1, s.people.length);
   const kit = s.kitchen;
+  // dyżur przy kozie (posterunek 'koza' z karty nocy albo z menu kozy)
+  const watch = s.people.filter((p) => p.post === 'koza').map((p) => p.name);
   const trust = gov ? Math.round(gov.trust) : null;
   const anger = gov ? Math.round(gov.anger) : null;
   return [
@@ -43,9 +45,11 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
       id: 'sFire',
       value: s.kozaLit ? `${num(k.fireHours)} h` : 'zimna',
       level: !s.kozaLit ? (kit !== null && kit < WARM_ENOUGH ? 'bad' : 'mid') : k.fireHours < 0.5 ? 'mid' : 'ok',
-      title: s.kozaLit
-        ? `Ognia w kozie na ${num(k.fireHours)} h. Zarząd sam dokłada, póki jest drewno.`
-        : 'Koza zimna. Bez ognia kuchnia stygnie: zetnijcie drzewo albo spalcie mebel.',
+      title: `${
+        s.kozaLit
+          ? `Ognia w kozie na ${num(k.fireHours)} h. Zarząd sam dokłada, póki jest drewno.`
+          : 'Koza zimna. Bez ognia kuchnia stygnie: zetnijcie drzewo albo spalcie mebel.'
+      }${watch.length ? ` Przy kozie czuwa ${watch.join(', ')}: dokłada do rana.` : ''}`,
     },
     {
       id: 'sWood',

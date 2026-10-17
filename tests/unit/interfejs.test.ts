@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
+import { KOZA_KEY } from '../../src/gov/noc.ts';
 import type { GovInput, GovState, Prompt } from '../../src/gov/typy.ts';
 import { emptyEffects, gameMin, QUIET } from '../../src/gov/wspolne.ts';
 import { eventTick, M1_EVENTS, RETRY } from '../../src/gov/wydarzenia.ts';
@@ -32,7 +33,9 @@ import {
   lootText,
   nightOdds,
   nightSheet,
+  oddsHtml,
   optionDetail,
+  optionShort,
   plural,
   reportSheet,
 } from '../../src/ui/okna.ts';
@@ -261,6 +264,81 @@ describe('rytm zarządu po playteście', () => {
     eventTick(gov, i, emptyEffects(), false);
     expect(gov.ev.active).toBeNull();
     expect(gov.ev.next).toBe(200 + RETRY);
+  });
+});
+
+describe('dyżur przy kozie', () => {
+  it('karta nocy, posterunek w symulacji, pasek i raport rano o kuchni', () => {
+    const { sim, w, seed } = fresh();
+    sim.st.tick = tickAt(20);
+    // od 20:00 do 6:00 koza zje 20 sztuk (2 na godzinę); 40 w zapasie, bo szabrownicy mogą część wynieść
+    const wood = emptyEffects();
+    wood.stock.wood = 40;
+    applyGov(sim.st, w, wood);
+    const gov = newGov(seed);
+    govUpdate(gov, input(sim, 100));
+    signLaw(gov, input(sim, 100), null);
+    const p = pending(gov, input(sim, 100));
+    if (p?.k !== 'karta') throw new Error(`zamiast karty: ${p?.k}`);
+    const i = input(sim, 100);
+    const who = p.card.people[0];
+    const koza = who.options.find((o) => o.key === KOZA_KEY)!;
+    expect(optionShort(koza, false)).toBe('Czuwa przy kozie');
+    expect(optionDetail(koza)).toBe('Nie śpi i pilnuje ognia w kozie, drewna starczy do rana.');
+    expect(p.card.wood).toEqual({ have: 40, need: 20, until: '6:00' });
+    // pas „Koza w nocy”: bez dyżuru zgaśnie, z dyżurem do rana; dyżur nie odstrasza szabrowników
+    const none = Object.fromEntries(p.card.people.map((c) => [c.id, 'sen']));
+    const duty = { ...none, [who.id]: KOZA_KEY };
+    const names = { [who.id]: who.name };
+    expect(nightSheet(p.card, none, nightOdds(gov, i, p.card, none)).body).toContain(
+      '<small class="odd-k">Koza w nocy</small><b class="odd-v">zgaśnie</b><em class="odd-note">nikt nie czuwa · drewno 40 szt., noc zje 20 (2 na godzinę)',
+    );
+    expect(oddsHtml(p.card, duty, nightOdds(gov, i, p.card, duty), names)).toContain(
+      `<b class="odd-v">do rana</b><em class="odd-note">czuwa ${esc(who.name)} · drewno 40 szt., noc zje 20`,
+    );
+    expect(nightOdds(gov, i, p.card, duty).now).toBe(nightOdds(gov, i, p.card, none).now);
+    // zatwierdzenie: osoba idzie do kozy (posterunek 'koza' w odczycie), pasek o tym mówi
+    for (const c of p.card.people) setNight(gov, c.id, c.id === who.id ? KOZA_KEY : 'sen');
+    applyGov(sim.st, w, confirmNight(gov, input(sim, 100)));
+    for (let t = 0; t < TICKS_PER_SECOND * 5; t++) sim.step();
+    const snap = snapshot(sim.st, w);
+    expect(snap.people.find((q) => q.id === who.id)?.post).toBe('koza');
+    expect(statsOf(snap, gov).find((x) => x.id === 'sFire')?.title).toContain(
+      `Przy kozie czuwa ${who.name}: dokłada do rana.`,
+    );
+    // noc z zarządem do raportu
+    let screen = 100;
+    for (let t = 0; t < 12 * TICKS_PER_HOUR && !gov.reports.length; t++) {
+      sim.step();
+      if (sim.st.tick % TICKS_PER_SECOND) continue;
+      screen++;
+      applyGov(sim.st, w, govUpdate(gov, input(sim, screen)));
+      const q = pending(gov, input(sim, screen));
+      if (q?.k === 'wydarzenie')
+        applyGov(
+          sim.st,
+          w,
+          chooseEvent(
+            gov,
+            input(sim, screen),
+            Math.max(
+              0,
+              q.choices.findIndex((c) => c.ok),
+            ),
+          ),
+        );
+    }
+    const r = gov.reports[0];
+    expect(r).toBeDefined();
+    expect(r.koza).toEqual([who.name]);
+    expect(r.fire).toBeGreaterThan(0.9);
+    expect(r.kitchen).toBeGreaterThanOrEqual(18);
+    expect(r.lines).toContain(
+      `${who.name} ${who.name.split(' ')[0].endsWith('a') ? 'czuwała' : 'czuwał'} przy kozie i ogień palił się całą noc. Rano w kuchni ciepło, ${Math.round(r.kitchen!)}°C.`,
+    );
+    expect(reportSheet(r).body).toContain(
+      `<li class="tal good"><small class="tal-k">Kuchnia rano</small><b>${Math.round(r.kitchen!)}°C, przy kozie ${esc(who.name)}</b></li>`,
+    );
   });
 });
 

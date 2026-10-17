@@ -25,7 +25,7 @@ import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, T
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { CAMPFIRE_LIGHT, createSim, LAMP_REACH, Sim } from './sim/sim.ts';
-import { type SimSnapshot, snapshot } from './sim/snapshot.ts';
+import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { currentGoal, goalsOf, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { groupCard, personCard } from './ui/karta.ts';
@@ -324,11 +324,7 @@ function input(): GovInput {
     const tiles = s.st.fence?.holes.find((x) => x.id === h.id)?.tiles ?? [];
     h.name ??= tiles.map((t) => names.get(t)).find(Boolean);
   }
-  // warta z zarządu, która stoi przy siatce (także z menu): praca 'guard', target 0 to brama, inaczej id dziury;
-  // kiedy govInput z symulacji poda to pole sam, zostaje jego wersja
-  i.guards ??= s.st.pawns
-    .filter((p) => p.kind === 'core' && p.job?.t === 'guard' && !p.away)
-    .map((p) => ({ id: s.st.people[p.person].id, post: p.job!.target === 0 ? 'brama' : `d${p.job!.target}` }));
+  // warta i dyżur przy kozie, które stoją (także z menu), zarząd bierze z posterunków osób (people[].post)
   return i;
 }
 
@@ -622,13 +618,18 @@ function setCard(html: string) {
   $('card').innerHTML = html;
 }
 
-/** co osoba robi tej nocy według karty nocy (propozycja albo zatwierdzony przydział) */
-function tonight(id: string): string | undefined {
+/** co osoba robi tej nocy według karty nocy (propozycja albo zatwierdzony przydział), a bez karty posterunek
+    z symulacji (warta albo dyżur przy kozie z menu trwa do rana) */
+function tonight(p: SimPerson): string | undefined {
   const n = gov?.night;
-  const key = n?.assign[id];
-  if (!n || !key || key === 'sen') return undefined;
-  const label = n.card.people.find((c) => c.id === id)?.options.find((o) => o.key === key)?.label ?? key;
-  return `Tej nocy: ${label.toLowerCase()}${n.confirmed ? '' : ' (propozycja)'}.`;
+  const key = n?.assign[p.id];
+  if (n && key && key !== 'sen') {
+    const label = n.card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key)?.label ?? key;
+    return `Tej nocy: ${label.toLowerCase()}${n.confirmed ? '' : ' (propozycja)'}.`;
+  }
+  if (p.post === 'koza') return 'Do rana: czuwa przy kozie.';
+  if (p.post) return `Do rana: warta ${p.post === 'brama' ? 'przy bramie' : 'przy dziurze w siatce'}.`;
+  return undefined;
 }
 
 function hud(now: number) {
@@ -666,7 +667,7 @@ function hud(now: number) {
         touchUI,
       ),
     );
-  else setCard(personCard(sel[0], st.tick, tonight(sel[0].id)));
+  else setCard(personCard(sel[0], st.tick, tonight(sel[0])));
 }
 
 let goalsHtml = '';

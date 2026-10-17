@@ -5,9 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LAW_CD } from '../../src/content/data.ts';
-import { raidersOf, watchersOf } from '../../src/gov/noc.ts';
+import { KOZA_KEY, makeCard, nightAdvice, nightWood, raidersOf, watchersOf } from '../../src/gov/noc.ts';
 import { FIRST_LAWS, NEW_EVENTS, OLD_EVENTS, poraOf } from '../../src/gov/tresc.ts';
-import type { GovInput, GovState, NightCard, RaidPlan, RaidResult } from '../../src/gov/typy.ts';
+import type { GovEffects, GovInput, GovState, NightCard, RaidPlan, RaidResult } from '../../src/gov/typy.ts';
 import { dailyDrift, lawState } from '../../src/gov/uchwaly.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
@@ -67,7 +67,10 @@ describe('karta nocy', () => {
         expect(o.risk).toBeLessThan(1);
         expect(Object.keys(o.gain ?? {}).length).toBeGreaterThan(0);
       }
-      for (const o of cp.options.filter((x) => x.key.startsWith('warta:'))) expect(o.guard).toBeGreaterThan(0);
+      // warta przy siatce broni, dyżur przy kozie nie (czuwa w kuchni)
+      for (const o of cp.options.filter((x) => x.key.startsWith('warta:') && x.key !== KOZA_KEY))
+        expect(o.guard).toBeGreaterThan(0);
+      expect(cp.options.find((o) => o.key === KOZA_KEY)?.guard).toBeUndefined();
     }
     // przy szansie od 25% zarząd proponuje wartę przy najsłabszym miejscu
     if (card.chance >= 0.25) expect(Object.values(p.assign)).toContain(`warta:${card.posts[0].key}`);
@@ -494,5 +497,153 @@ describe('napad dla symulacji: siła w planie, jawny wynik, warta z menu', () =>
     const card = pending(gov, a2.input());
     if (card?.k !== 'karta') throw new Error('brak karty');
     expect(card.assign[first]).toBe('warta:brama');
+  });
+});
+
+describe('dyżur przy kozie: karta, rada, raport rano', () => {
+  /** pierwsza noc na atrapie: pierwsza osoba czuwa przy kozie, reszta śpi; posts: posterunki jak z symulacji
+      (people[].post od zatwierdzenia do 6:00) */
+  const kozaNight = (seed: number, posts: boolean, koza = true) => {
+    const gov = newGov(seed);
+    const atr = new Atrapa(seed);
+    const id = atr.people[0].id;
+    let confirmed = false;
+    let card: NightCard | null = null;
+    let confirmFx: GovEffects | null = null;
+    let morning: GovEffects | null = null;
+    const input = (): GovInput => {
+      const i = atr.input();
+      if (!posts) return i;
+      const at = (pid: string) => (confirmed && atr.guards.includes(pid) ? 'koza' : null);
+      return { ...i, people: i.people.map((p) => ({ ...p, post: at(p.id) })) };
+    };
+    while (atr.day < 3 && !gov.reports.length) {
+      atr.tick++;
+      if (atr.tick % TPH === 0) atr.hourly(1);
+      if (atr.tick % TPS !== 0) continue;
+      const fx = govUpdate(gov, input());
+      if (gov.reports.length) morning = fx;
+      atr.apply(fx);
+      const p = pending(gov, input());
+      if (p?.k === 'uchwala') atr.apply(signLaw(gov, input(), null));
+      else if (p?.k === 'karta') {
+        card = p.card;
+        for (const c of p.card.people) setNight(gov, c.id, 'sen');
+        if (koza) expect(setNight(gov, id, KOZA_KEY)).toBe(true);
+        confirmFx = confirmNight(gov, input());
+        confirmed = true;
+        atr.apply(confirmFx);
+      } else if (p?.k === 'wydarzenie')
+        atr.apply(
+          govChoose(
+            gov,
+            input(),
+            p.choices.findIndex((c) => c.ok),
+          ),
+        );
+    }
+    return {
+      id,
+      name: atr.people[0].name,
+      card: card as NightCard | null,
+      confirmFx: confirmFx as GovEffects | null,
+      morning: morning as GovEffects | null,
+      report: gov.reports[0],
+    };
+  };
+
+  it('karta: „Czuwa przy kozie” dla każdego przy kozie zarządu, zapas drewna do rana, bez kozy brak opcji', () => {
+    const gov = newGov(1);
+    const atr = new Atrapa(1);
+    until(gov, atr, 'uchwala');
+    signLaw(gov, atr.input(), null);
+    const p = until(gov, atr, 'karta');
+    if (p?.k !== 'karta') throw new Error('brak karty');
+    for (const cp of p.card.people) {
+      const o = cp.options.find((x) => x.key === KOZA_KEY);
+      expect(o?.label).toBe('Czuwa przy kozie');
+      expect(o?.note).toMatch(/^Nie śpi i pilnuje ognia w kozie, drewna/);
+    }
+    // o 20:00 do 6:00 jest 10 godzin, po 2 sztuki na godzinę; w zapasie całe drewno
+    expect(p.card.wood).toEqual(nightWood(atr.input()));
+    expect(p.card.wood!.need).toBe(20);
+    expect(p.card.wood!.have).toBe(atr.input().stock.wood);
+    // dyżur kosztuje noc snu: zarząd go nie wstawia sam, tylko o nim radzi
+    expect(Object.values(p.assign)).not.toContain(KOZA_KEY);
+    expect(p.card.advice).toMatch(/Niech ktoś czuwa przy kozie: drewna starczy/);
+    // bez kozy zarządu (świat bez wnętrza) nie ma ani opcji, ani zapasu
+    const { card } = makeCard(newGov(1), { ...atr.input(), kitchen: null });
+    expect(card.wood).toBeUndefined();
+    expect(card.people.every((c) => c.options.every((o) => o.key !== KOZA_KEY))).toBe(true);
+  });
+
+  it('zapas drewna od godziny karty i rada: kto czuwa, do której starczy, przy pełnym zapasie bez uwag', () => {
+    const base = new Atrapa(2).input();
+    const at = (hour: number, wood: number) => ({
+      ...base,
+      hour,
+      minute: 0,
+      kitchen: 19,
+      kozaLit: true,
+      stock: { ...base.stock, wood },
+    });
+    expect(nightWood(at(22, 20))).toEqual({ have: 20, need: 16, until: '6:00' });
+    expect(nightWood(at(20, 8))).toEqual({ have: 8, need: 20, until: '0:00' });
+    expect(nightWood(at(21, 9))).toEqual({ have: 9, need: 18, until: '1:00' });
+    const i = at(20, 8);
+    const { card } = makeCard(newGov(2), i);
+    const who = i.people[1];
+    const sleep = Object.fromEntries(i.people.map((p) => [p.id, 'sen']));
+    expect(nightAdvice(i, card, sleep)).toMatch(/Bez dyżuru koza zgaśnie w nocy/);
+    expect(nightAdvice(i, card, { ...sleep, [who.id]: KOZA_KEY })).toContain(
+      `Przy kozie czuwa ${who.name}, ale drewna starczy do około północy.`,
+    );
+    // pełny zapas: o kozie nic, zostaje zwykła rada
+    const full = at(20, 30);
+    const fullCard = makeCard(newGov(2), full).card;
+    expect(nightAdvice(full, fullCard, { ...sleep, [who.id]: KOZA_KEY })).not.toMatch(/kozie/);
+    // bez drewna nie ma czego radzić o kozie
+    const none = at(20, 1);
+    expect(nightAdvice(none, makeCard(newGov(2), none).card, sleep)).not.toMatch(/kozie/);
+    // zimna kuchnia: rada mówi, ile stopni
+    const cold = { ...at(20, 8), kitchen: 12, kozaLit: false };
+    expect(nightAdvice(cold, makeCard(newGov(2), cold).card, sleep)).toMatch(
+      /Koza jest zimna, w kuchni 12°C\. Niech ktoś czuwa przy kozie/,
+    );
+  });
+
+  it('zatwierdzenie daje fx.guards z post koza, a dyżur nie liczy się do warty przy siatce', () => {
+    const { id, confirmFx } = kozaNight(4, false);
+    expect(confirmFx?.guards).toEqual([{ id, post: 'koza' }]);
+    const i = new Atrapa(4).input();
+    const a = i.people[0].id;
+    expect(watchersOf(i, { [a]: KOZA_KEY })).toBe(0);
+    expect(watchersOf(i, { [a]: 'warta:brama' })).toBe(1);
+    // posterunki z odczytu symulacji: przy kozie nie pilnuje siatki, przy bramie tak
+    const posts = (post: string) => ({ ...i, people: i.people.map((p, k) => ({ ...p, post: k ? null : post })) });
+    expect(watchersOf(posts('koza'), {})).toBe(0);
+    expect(watchersOf(posts('brama'), {})).toBe(1);
+  });
+
+  it('rano raport mówi, kto czuwał i czy w kuchni było ciepło; z posterunkami z symulacji bez podwójnego zmęczenia', () => {
+    for (const posts of [false, true]) {
+      const { id, name, report, morning } = kozaNight(5, posts);
+      expect(report, `posterunki ${posts}`).toBeTruthy();
+      expect(report.koza).toEqual([name]);
+      expect(report.kitchen).not.toBeNull();
+      expect(report.fire).toBeGreaterThanOrEqual(0);
+      expect(report.fire).toBeLessThanOrEqual(1);
+      expect(report.tired).toContain(id);
+      const line = report.lines.find((l) => l.includes('przy kozie'));
+      expect(line).toMatch(new RegExp(`^${name} czuwał(a)? przy kozie`));
+      expect(line).toMatch(/Rano w kuchni (ciepło|chłodno|zimno), \d+°C\.$/);
+      // noc bez snu: atrapa bez posterunków dostaje ją od zarządu, symulacja z posterunkami liczy ją sama
+      const rest = morning!.needs.filter((n) => n.id === id && n.d.rest !== undefined);
+      expect(rest.length).toBe(posts ? 0 : 1);
+    }
+    // bez dyżuru: nikt nie czuwał, kuchnia rano i tak w raporcie
+    const { report } = kozaNight(5, true, false);
+    expect(report.koza).toEqual([]);
+    expect(report.lines.some((l) => /Rano w kuchni/.test(l))).toBe(true);
   });
 });

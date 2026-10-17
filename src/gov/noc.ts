@@ -1,8 +1,10 @@
 /* Karta nocy jak w 0.1 i 0.2: o 20:00 zarząd proponuje, kto śpi, kto trzyma wartę (przy bramie albo
    przy dziurze w siatce) i kto idzie na wyprawę (blisko albo daleko); szansę napadu, spodziewane straty
-   i łup widać przed decyzją. Przy zatwierdzeniu losuje się, czy szabrownicy przyjdą, gdzie i o której
-   (23:00–4:00). O tej godzinie obronę liczy się z tego, co jest: kto nie zasnął, światło, pies, brama.
-   Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość z ziarna gry. */
+   i łup widać przed decyzją. Dyżur przy kozie (warta:koza) wybiera gracz: zarząd tylko radzi, ile drewna
+   starczy, a rano raport mówi, czy w kuchni było ciepło. Przy zatwierdzeniu losuje się, czy szabrownicy
+   przyjdą, gdzie i o której (23:00–4:00). O tej godzinie obronę liczy się z tego, co jest: kto nie zasnął,
+   światło, pies, brama. Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość
+   z ziarna gry. */
 
 import { g } from '../content/people.ts';
 import { clamp } from '../core/rng.ts';
@@ -40,6 +42,33 @@ export const CARD_HOUR = 20;
 /** do tej godziny karta czeka na decyzję, potem zostaje propozycja zarządu */
 export const CARD_DEADLINE = 22;
 export const MORNING = 6;
+/** dyżur przy kozie: posterunek jak w symulacji ('koza'); czuwający dokłada do rana, koza zjada około 2 sztuk
+    drewna na godzinę (noc 22–6 to 16, od karty o 20:00 to 20) */
+export const KOZA = 'koza';
+export const KOZA_KEY = `warta:${KOZA}`;
+export const WOOD_PER_HOUR = 2;
+/** warta przy siatce (brama, dziury), bez dyżuru przy kozie */
+export const isFenceGuard = (k: string): boolean => k.startsWith('warta:') && k !== KOZA_KEY;
+
+/** drewno na noc przy dyżurze od teraz do 6:00: zapas (z tym, co w kozie), ile trzeba i do której starczy */
+export function nightWood(i: GovInput): { have: number; need: number; until: string } {
+  const now = i.hour + i.minute / 60;
+  const left = (MORNING - now + 24) % 24;
+  const need = Math.ceil(left * WOOD_PER_HOUR);
+  const have = Math.max(0, Math.floor(i.stock.wood));
+  const end = have >= need ? MORNING : Math.floor(now + have / WOOD_PER_HOUR) % 24;
+  return { have, need, until: `${end}:00` };
+}
+
+/** godzina z zapasu drewna do tekstu: „0:00” to północ */
+export const untilWord = (until: string): string => (until === '0:00' ? 'północy' : until);
+
+/** do której starczy drewna przy dyżurze, w słowach („drewna starczy do około 2:00.”) */
+export function woodNote(wd: { have: number; need: number; until: string }): string {
+  if (wd.have >= wd.need) return 'drewna starczy do rana.';
+  if (wd.have >= WOOD_PER_HOUR) return `drewna starczy do około ${untilWord(wd.until)}.`;
+  return 'drewna prawie nie ma.';
+}
 const RAID_FROM = 23;
 const RAID_SPAN = 5 * 60;
 
@@ -83,17 +112,24 @@ export function raidChance(st: GovState, i: GovInput): number {
 /** warta spoza karty nocy (polecenie z menu): z wejścia, a bez pola osoby z pracą 'guard' (miejsce nieznane: '') */
 export function standingGuards(i: GovInput): { id: string; post: string }[] {
   if (i.guards) return i.guards.filter((g) => i.people.some((p) => p.id === g.id));
+  // posterunki z odczytu symulacji (SimPerson.post: 'brama', 'd<id>', 'koza')
+  if (i.people.some((p) => p.post !== undefined))
+    return i.people.filter((p) => p.post).map((p) => ({ id: p.id, post: p.post as string }));
   return i.people.filter((p) => p.job === 'guard').map((p) => ({ id: p.id, post: '' }));
 }
 
-/** ilu ludzi pilnuje siatki: warta z karty plus ta, która już stoi (bez dubli i bez wychodzących na wyprawę) */
+/** ilu ludzi pilnuje siatki: warta z karty plus ta, która już stoi (bez dubli, bez wychodzących na wyprawę
+    i bez dyżuru przy kozie, bo ten jest w kuchni, nie przy siatce) */
 export function watchersOf(i: GovInput, assign: Record<string, string>): number {
   const ids = new Set(
     Object.entries(assign)
-      .filter(([, k]) => k.startsWith('warta:'))
+      .filter(([, k]) => isFenceGuard(k))
       .map(([id]) => id),
   );
-  for (const g of standingGuards(i)) if (!(assign[g.id] ?? '').startsWith('wyprawa:')) ids.add(g.id);
+  for (const g of standingGuards(i)) {
+    const k = assign[g.id] ?? '';
+    if (g.post !== KOZA && !k.startsWith('wyprawa:') && k !== KOZA_KEY) ids.add(g.id);
+  }
   return ids.size;
 }
 
@@ -127,7 +163,7 @@ function defenseAt(st: GovState, i: GovInput, post: string, guards: { p: GovPers
   let d = 0;
   if (post === 'brama') d += 2 + 2 * f.durability + (law(st, 'u_warty') ? 1.5 : 0);
   if (st.flags.dog) d += post === 'brama' ? 1 : 0.5;
-  for (const gd of guards) d += gd.post === post ? guardValue(st, i, gd.p, gd.post) : 0.5;
+  for (const gd of guards) if (gd.post !== KOZA) d += gd.post === post ? guardValue(st, i, gd.p, gd.post) : 0.5;
   if (st.tonight.alert === nd) d += 3;
   if (st.tonight.bonusDay === nd) d += st.tonight.bonus;
   return round1(d);
@@ -181,10 +217,23 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
   const posts = postsOf(i);
   const chance = raidChance(st, i);
   const targets = tonightTargets(st);
+  // dyżur przy kozie tylko przy kozie zarządu (kuchnia z kozą w siedzibie)
+  const wood = i.kitchen !== null ? nightWood(i) : undefined;
   const people = i.people.map((p) => {
     const opts: NightOption[] = [
       { key: 'sen', label: 'Śpi', ok: true, note: p.needs.rest < 30 ? 'Bardzo potrzebuje snu.' : undefined },
     ];
+    if (wood) {
+      const ok = p.needs.health >= 30;
+      opts.push({
+        key: KOZA_KEY,
+        label: 'Czuwa przy kozie',
+        ok,
+        why: ok ? undefined : g(p, 'Za słaby na czuwanie.', 'Za słaba na czuwanie.'),
+        // noc bez snu zjada około 50 sił (symulacja: 5 na godzinę od karty do 6:00)
+        note: `Nie śpi i pilnuje ognia w kozie, ${woodNote(wood)}${p.needs.rest < 50 ? ' Rano będzie bez sił.' : ''}`,
+      });
+    }
     for (const post of posts) {
       const ok = p.needs.health >= 20;
       opts.push({
@@ -224,6 +273,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
     loss,
     people,
     advice: '',
+    wood,
   };
   const assign = propose(i, card, st.lastGuards);
   for (const cp of card.people) cp.proposal = assign[cp.id];
@@ -255,11 +305,12 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
         y.needs.rest - x.needs.rest ||
         (x.id < y.id ? -1 : 1),
     );
-  // najsłabsze miejsca, których nikt jeszcze nie pilnuje
+  // najsłabsze miejsca, których nikt jeszcze nie pilnuje (stojący przy kozie nie pilnuje siatki)
+  const fence = [...standing].filter((id) => a[id] !== KOZA_KEY).length;
   const open = card.posts.filter((p) => !Object.values(a).includes(`warta:${p.key}`));
-  if (card.chance >= 0.25 && free.length && open.length && !standing.size) a[free.shift()!.id] = `warta:${open[0].key}`;
-  if (card.chance >= 0.55 && free.length >= 3 && open.length > 1 && standing.size < 2)
-    a[free.shift()!.id] = `warta:${open[standing.size ? 0 : 1].key}`;
+  if (card.chance >= 0.25 && free.length && open.length && !fence) a[free.shift()!.id] = `warta:${open[0].key}`;
+  if (card.chance >= 0.55 && free.length >= 3 && open.length > 1 && fence < 2)
+    a[free.shift()!.id] = `warta:${open[fence ? 0 : 1].key}`;
   const short = i.stock.supplies < i.people.length * 2 || i.stock.wood < 4;
   const key = nightDay(i) === 1 ? 'wyprawa:blisko' : 'wyprawa:daleko';
   if (short && free.length >= 2) {
@@ -268,24 +319,48 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
       .sort((x, y) => y.needs.rest - x.needs.rest)[0];
     if (goer) a[goer.id] = key;
   }
+  // dyżur przy kozie zostaje decyzją gracza (kosztuje komuś noc snu): zarząd tylko o nim radzi
   return a;
 }
 
 /** rada zarządu do przydziału na karcie (interfejs liczy ją na nowo po każdej zmianie) */
 export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): string {
-  const guards = Object.values(assign).filter((k) => k.startsWith('warta:'));
+  const guards = Object.values(assign).filter(isFenceGuard);
   const kept = new Set(guards.map((k) => k.slice(6)));
   const loss = stockText(card.loss);
   const weak = card.posts[0];
+  let fence = '';
   if (card.chance >= 0.25 && !guards.length)
-    return `Bez warty ${weak.name} szabrownicy wejdą bez trudu${loss ? ` i mogą zabrać: ${loss}` : ''}.`;
-  if (guards.length && !kept.has(weak.key))
-    return `Najsłabsze miejsce, ${weak.name}, zostaje bez warty. Tam najpewniej spróbują wejść.`;
-  if (guards.length && card.posts.some((p) => !kept.has(p.key)))
-    return `Warta stoi ${weak.name}, ale dziur jest więcej. Za dnia warto łatać siatkę.`;
+    fence = `Bez warty ${weak.name} szabrownicy wejdą bez trudu${loss ? ` i mogą zabrać: ${loss}` : ''}.`;
+  else if (guards.length && !kept.has(weak.key))
+    fence = `Najsłabsze miejsce, ${weak.name}, zostaje bez warty. Tam najpewniej spróbują wejść.`;
+  else if (guards.length && card.posts.some((p) => !kept.has(p.key)))
+    fence = `Warta stoi ${weak.name}, ale dziur jest więcej. Za dnia warto łatać siatkę.`;
+  const koza = kozaAdvice(i, card, assign);
+  if (fence || koza) return [fence, koza].filter(Boolean).join(' ');
   if (i.stock.supplies < i.people.length * 2)
     return 'Jedzenia jest na krótko. Wyprawa blisko jest bezpieczniejsza, daleka przynosi więcej.';
   return 'Wyśpijcie się. Jutro dzień pracy przy siatce.';
+}
+
+/** rada o kozie, kiedy w kuchni zrobi się zimno, a jest drewno: bez dyżuru koza gaśnie w nocy (nikt nie
+    dokłada, wszyscy śpią); z dyżurem ognia jest tyle, ile drewna */
+function kozaAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): string {
+  const wd = card.wood;
+  if (!wd || i.kitchen === null) return '';
+  const who = i.people.filter((p) => assign[p.id] === KOZA_KEY);
+  if (who.length)
+    return wd.have >= wd.need
+      ? ''
+      : `Przy kozie ${who.length > 1 ? 'czuwają' : 'czuwa'} ${peopleNames(who)}, ale ${woodNote(wd)}`;
+  if (wd.have < WOOD_PER_HOUR) return '';
+  const deg = Math.round(i.kitchen);
+  const now = !i.kozaLit
+    ? `Koza jest zimna, w kuchni ${deg}°C.`
+    : deg < 16
+      ? `W kuchni już tylko ${deg}°C.`
+      : 'Bez dyżuru koza zgaśnie w nocy i rano w kuchni będzie zimno.';
+  return `${now} Niech ktoś czuwa przy kozie: ${woodNote(wd)}`;
 }
 
 /** zmiana przydziału na karcie; false, gdy takiej opcji nie ma albo nie wolno */
@@ -340,13 +415,17 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
   n.raid = { come, at, post: post.key, resolved: false, outcome: 'brak', attack, defense: 0, stolen: zeroStock() };
   if (come) fx.raid = { day: n.day, at, post: post.key, where: post.name, attack, people: raidersOf(attack) };
   // kronika
+  n.fire = { on: 0, all: 0, at: gameMin(i) };
+  n.koza = [];
   const on = (pred: (k: string) => boolean) => i.people.filter((p) => pred(n.assign[p.id] ?? 'sen'));
-  const watch = on((k) => k.startsWith('warta:'));
+  const watch = on(isFenceGuard);
+  const koza = on((k) => k === KOZA_KEY);
   const out = on((k) => k.startsWith('wyprawa:'));
   const parts: string[] = [];
   if (watch.length) parts.push(`na warcie ${peopleNames(watch)}`);
+  if (koza.length) parts.push(`przy kozie ${peopleNames(koza)}`);
   if (out.length) parts.push(`na wyprawie ${peopleNames(out)}`);
-  parts.push(watch.length || out.length ? 'reszta śpi' : 'wszyscy śpią');
+  parts.push(watch.length || koza.length || out.length ? 'reszta śpi' : 'wszyscy śpią');
   logGov(
     st,
     i,
@@ -408,7 +487,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
   const r = n.raid!;
   r.resolved = true;
   if (!r.come) {
-    const watched = Object.values(n.assign).some((k) => k.startsWith('warta:'));
+    const watched = Object.values(n.assign).some(isFenceGuard);
     n.lines.push(watched ? 'Nikt nie próbował wejść. Pewnie widzieli wartę przy siatce.' : 'Nikt nie próbował wejść.');
     for (const p of i.people) addNeeds(fx, p.id, { safe: 4 });
     return;
@@ -418,12 +497,13 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
   const post = posts.find((p) => p.key === r.post) ?? posts.find((p) => p.key === 'brama')!;
   // warta z karty, potem ta, która stoi z menu (bez dubli i bez tych na wyprawie)
   const guards: { p: GovPerson; post: string }[] = i.people
-    .filter((p) => (n.assign[p.id] ?? '').startsWith('warta:'))
+    .filter((p) => isFenceGuard(n.assign[p.id] ?? ''))
     .map((p) => ({ p, post: n.assign[p.id].slice(6) }));
   for (const s of standingGuards(i)) {
     const p = i.people.find((q) => q.id === s.id);
     const key = n.assign[s.id] ?? '';
-    if (p && !key.startsWith('warta:') && !key.startsWith('wyprawa:')) guards.push({ p, post: s.post });
+    if (p && s.post !== KOZA && !key.startsWith('warta:') && !key.startsWith('wyprawa:'))
+      guards.push({ p, post: s.post });
   }
   const awake: { p: GovPerson; post: string }[] = [];
   for (const gd of guards) {
@@ -503,13 +583,21 @@ function morning(st: GovState, i: GovInput, fx: GovEffects): void {
     n.lines.push(l.line);
   }
   st.later = st.later.filter((x) => x.day !== n.day);
-  const watch = i.people.filter((p) => (n.assign[p.id] ?? '').startsWith('warta:'));
-  st.lastGuards = watch.map((p) => p.id);
+  const watch = i.people.filter((p) => isFenceGuard(n.assign[p.id] ?? ''));
+  // przy kozie: kto stał tam w nocy według symulacji (karta albo menu kozy), bez posterunków: z karty
+  const simPosts = i.people.some((p) => p.post !== undefined);
+  const koza = i.people.filter((p) => (simPosts ? (n.koza ?? []).includes(p.id) : n.assign[p.id] === KOZA_KEY));
+  st.lastGuards = [...watch, ...koza].map((p) => p.id);
   const guards = watch.filter((p) => !n.slept.includes(p.id));
-  for (const p of watch) addNeeds(fx, p.id, { rest: n.slept.includes(p.id) ? -15 : -30 });
+  // noc bez snu: symulacja z posterunkami liczy ją sama, atrapa bez nich dostaje ją tutaj
+  if (!simPosts) for (const p of [...watch, ...koza]) addNeeds(fx, p.id, { rest: n.slept.includes(p.id) ? -15 : -30 });
   for (const p of guards) fx.moods.push({ id: p.id, why: 'Całą noc na warcie', d: -2, hours: 8 });
+  for (const p of koza) fx.moods.push({ id: p.id, why: 'Całą noc przy kozie', d: -1, hours: 8 });
   if (guards.length)
     n.lines.push(`${peopleNames(guards)} nie ${verbPl(guards, 'spał', 'spała', 'spali', 'spały')} całą noc.`);
+  // kuchnia rano: ile nocy paliła się koza i kto przy niej czuwał
+  const fire = n.fire?.all ? round2(n.fire.on / n.fire.all) : undefined;
+  if (i.kitchen !== null && fire !== undefined) n.lines.push(kitchenLine(i.kitchen, fire, koza, i.stock.wood));
   if (!n.lines.length) n.lines.push('Spokojna noc.');
   dailyDrift(st, i);
   const far = n.exp.filter((e) => TARGETS.find((t) => t.id === e.target)?.range === 'daleko').flatMap((e) => e.ids);
@@ -520,11 +608,14 @@ function morning(st: GovState, i: GovInput, fx: GovEffects): void {
     stolen: n.raid?.stolen ?? zeroStock(),
     loot: { ...n.loot },
     hurt: n.hurt.map((h) => ({ id: h.id, name: i.people.find((p) => p.id === h.id)?.name ?? h.id, d: h.d })),
-    tired: [...guards.map((p) => p.id), ...far],
+    tired: [...guards.map((p) => p.id), ...koza.map((p) => p.id), ...far],
     trust: st.trust,
     anger: st.anger,
     dTrust: round2(st.trust - n.t0),
     dAnger: round2(st.anger - n.a0),
+    kitchen: i.kitchen === null ? null : round1(i.kitchen),
+    fire,
+    koza: koza.map((p) => p.name),
   };
   st.report = report;
   st.reports.push(report);
@@ -549,5 +640,30 @@ export function nightTick(st: GovState, i: GovInput, fx: GovEffects): void {
     if (!n.returned.includes(gr.target) && t >= atHour(n.day + 1, tg.back)) returnExp(st, i, fx, gr);
   }
   if (n.raid && !n.raid.resolved && t >= n.raid.at) resolveRaid(st, i, fx);
+  // ogień w kozie od 22:00 do rana w minutach gry (do raportu: czy w kuchni było ciepło) i kto przy niej stał
+  if (n.fire && i.kitchen !== null) {
+    const from = Math.max(n.fire.at, atHour(n.day, 22));
+    const to = Math.min(t, atHour(n.day + 1, MORNING));
+    if (to > from) {
+      n.fire.all += to - from;
+      if (i.kozaLit) n.fire.on += to - from;
+    }
+    n.fire.at = Math.max(n.fire.at, t);
+    if (t >= atHour(n.day, 22) && t < atHour(n.day + 1, MORNING))
+      for (const s of standingGuards(i)) if (s.post === KOZA && !n.koza?.includes(s.id)) (n.koza ??= []).push(s.id);
+  }
   if (t >= atHour(n.day + 1, MORNING)) morning(st, i, fx);
+}
+
+/** linia raportu o kuchni rano: jak długo paliła się koza, kto przy niej czuwał i ile stopni o 6:00 */
+function kitchenLine(t: number, fire: number, koza: GovPerson[], wood: number): string {
+  const deg = `${Math.round(t)}°C`;
+  const warm = t >= 18 ? 'ciepło' : t >= 15 ? 'chłodno' : 'zimno';
+  if (koza.length) {
+    const who = `${peopleNames(koza)} ${verbPl(koza, 'czuwał', 'czuwała', 'czuwali', 'czuwały')} przy kozie`;
+    if (fire >= 0.9) return `${who} i ogień palił się całą noc. Rano w kuchni ${warm}, ${deg}.`;
+    return `${who}, ale ${wood < WOOD_PER_HOUR ? 'drewna nie starczyło do rana' : 'koza część nocy była zimna'}. Rano w kuchni ${warm}, ${deg}.`;
+  }
+  if (fire >= 0.9) return `Koza paliła się całą noc. Rano w kuchni ${warm}, ${deg}.`;
+  return `Nikt nie dokładał do kozy i ${fire > 0 ? 'zgasła w nocy' : 'wystygła wieczorem'}. Rano w kuchni ${warm}, ${deg}.`;
 }

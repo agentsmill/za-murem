@@ -3,7 +3,7 @@
    (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts. */
 
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
-import { deterrence, watchersOf } from '../gov/noc.ts';
+import { deterrence, KOZA_KEY, untilWord, WOOD_PER_HOUR, watchersOf } from '../gov/noc.ts';
 import type {
   GovInput,
   GovState,
@@ -68,7 +68,8 @@ export const plural = (n: number, one: string, few: string, many: string): strin
 /** krótki opis opcji na liście wyboru */
 export function optionShort(o: NightOption, proposal: boolean): string {
   let s = o.label;
-  if (o.key.startsWith('warta:')) s += `, obrona ${num(o.guard ?? 0)}`;
+  // dyżur przy kozie nie broni siatki (czuwa w kuchni), więc bez obrony
+  if (o.key.startsWith('warta:') && o.key !== KOZA_KEY) s += `, obrona ${num(o.guard ?? 0)}`;
   else if (o.key.startsWith('wyprawa:')) s += `, ryzyko ${pct(o.risk ?? 0)}`;
   if (!o.ok) s += ` (${o.why ?? 'nie da rady'})`;
   else if (proposal) s += ' · propozycja';
@@ -79,6 +80,7 @@ export function optionShort(o: NightOption, proposal: boolean): string {
 export function optionDetail(o: NightOption): string {
   if (!o.ok) return o.why ?? 'Nie da rady.';
   if (o.key === 'sen') return o.note ?? 'Wyśpi się i rano będzie mieć siły.';
+  if (o.key === KOZA_KEY) return o.note ?? 'Nie śpi i pilnuje ognia w kozie.';
   if (o.key.startsWith('warta:')) return `Obrona ${num(o.guard ?? 0)}. ${o.note ?? ''}`.trim();
   const g = gainText(o.gain);
   return `Ryzyko kłopotów ${pct(o.risk ?? 0)}.${g ? ` Może przynieść: ${g}.` : ''} ${o.note ?? ''}`.trim();
@@ -117,9 +119,26 @@ export function oddsHtml(
     })
     .join('');
   const level = odds.now < 0.25 ? 'ok' : odds.now < 0.5 ? 'mid' : 'bad';
+  const koza = Object.entries(assign)
+    .filter(([, k]) => k === KOZA_KEY)
+    .map(([id]) => names[id] ?? id);
   return `<div class="odds"><div class="odd ${level}"><small class="odd-k">Spróbują wejść</small><b class="odd-v">${pct(odds.now)}</b><em class="odd-note">${
     odds.watchers ? `bez warty ${pct(odds.chance)}` : 'nikt nie pilnuje'
-  }</em></div><div class="odd"><small class="odd-k">Jeśli wejdą, zabiorą</small><b class="odd-loss">${esc(loss)}</b></div></div><ul class="posts">${posts}</ul>`;
+  }</em></div><div class="odd"><small class="odd-k">Jeśli wejdą, zabiorą</small><b class="odd-loss">${esc(loss)}</b></div>${
+    card.wood ? fuelHtml(card.wood, koza) : ''
+  }</div><ul class="posts">${posts}</ul>`;
+}
+
+/** koza w nocy: do której będzie ogień przy obecnym przydziale, kto czuwa i drewno w zapasie na noc */
+export function fuelHtml(wd: NonNullable<NightCard['wood']>, koza: string[]): string {
+  const full = wd.have >= wd.need;
+  const none = wd.have < WOOD_PER_HOUR;
+  const v = !koza.length ? 'zgaśnie' : full ? 'do rana' : none ? 'bez drewna' : `do ${untilWord(wd.until)}`;
+  const level = !koza.length || none ? 'bad' : full ? 'ok' : 'mid';
+  const who = koza.length ? `czuwa ${koza.join(', ')}` : 'nikt nie czuwa';
+  return `<div class="odd fuel ${level}"><small class="odd-k">Koza w nocy</small><b class="odd-v">${esc(v)}</b><em class="odd-note">${esc(
+    who,
+  )} · drewno ${wd.have} szt., noc zje ${wd.need} (2 na godzinę)</em></div>`;
 }
 
 export function nightSheet(card: NightCard, assign: Record<string, string>, odds: NightOdds): Sheet {
@@ -148,8 +167,8 @@ export function nightSheet(card: NightCard, assign: Record<string, string>, odds
     title: first ? 'Pierwsza noc za siatką' : `Noc ${card.day}`,
     body: `<p class="lead">${
       first
-        ? 'Dym z kozy widać z daleka. Kto śpi, kto pilnuje siatki, a kto idzie po zapasy?'
-        : 'Kto śpi, kto pilnuje siatki, a kto idzie po zapasy?'
+        ? 'Dym z kozy widać z daleka. Kto śpi, kto pilnuje siatki albo kozy, a kto idzie po zapasy?'
+        : 'Kto śpi, kto pilnuje siatki albo kozy, a kto idzie po zapasy?'
     }</p><div data-odds>${oddsHtml(card, assign, odds, names)}</div><ul class="crew">${rows}</ul>${
       card.advice
         ? `<p class="advice"><b class="advice-k">Zarząd radzi:</b> <span data-advice>${esc(card.advice)}</span></p>`
@@ -216,7 +235,14 @@ export function reportSheet(r: NightReport): Sheet {
   const lines = r.lines.map((l) => `<li class="line">${esc(l)}</li>`).join('');
   const stolen = lootText(r.stolen);
   const loot = lootText(r.loot);
+  const kit = r.kitchen ?? null;
+  const warm = kit === null ? '' : kit >= 18 ? ' good' : kit < 15 ? ' bad' : '';
   const tally = [
+    kit !== null
+      ? `<li class="tal${warm}"><small class="tal-k">Kuchnia rano</small><b>${Math.round(kit)}°C${
+          r.koza?.length ? `, przy kozie ${esc(r.koza.join(', '))}` : ''
+        }</b></li>`
+      : '',
     stolen ? `<li class="tal bad"><small class="tal-k">Zabrali</small><b>${esc(stolen)}</b></li>` : '',
     loot ? `<li class="tal good"><small class="tal-k">Z wypraw</small><b>${esc(loot)}</b></li>` : '',
     ...r.hurt.map(
@@ -286,7 +312,7 @@ export function helpSheet(touch: boolean): Sheet {
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: 'Jak grać',
-    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul><h3 class="help-h">Zarząd</h3><ul class="help"><li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto idzie na wyprawę. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li></ul><h3 class="help-h">Na razie</h3><p>Wersja 0.4 kończy się na pierwszej nocy za siatką. Dalej gra toczy się, ale bez nowych systemów. Pełna gra z budowaniem i badaniami jest w wersji 0.3.</p>`,
+    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul><h3 class="help-h">Zarząd</h3><ul class="help"><li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li></ul><h3 class="help-h">Na razie</h3><p>Wersja 0.4 kończy się na pierwszej nocy za siatką. Dalej gra toczy się, ale bez nowych systemów. Pełna gra z budowaniem i badaniami jest w wersji 0.3.</p>`,
     foot: btn('help-back', 'Wróć', 'btn go'),
     closable: true,
   };

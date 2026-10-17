@@ -35,6 +35,9 @@ export interface GovPerson {
   job: string | null;
   asleep: boolean;
   inside: boolean;
+  /** posterunek warty, jeśli stoi ('brama', 'd<id>', 'koza'), jak SimPerson.post. Z tym polem zarząd wie, że
+      symulacja sama prowadzi noc na posterunku (kto stoi, ten nie śpi), więc rano nie odejmuje już sił */
+  post?: string | null;
 }
 
 /** zapasy: drewno i jedzenie jak SimStock, materiały do łatania siatki przyjdą w turze 2 */
@@ -233,6 +236,9 @@ export interface NightCard {
   loss: { wood: number; supplies: number };
   people: NightCardPerson[];
   advice: string;
+  /** koza zarządu na noc (bez kozy brak): drewno w zapasie razem z tym w kozie, ile zje do 6:00 przy dyżurze
+      od zatwierdzenia karty (2 sztuki na godzinę) i do której godziny starczy ognia ('6:00' to do rana) */
+  wood?: { have: number; need: number; until: string };
 }
 
 export interface NightReport {
@@ -248,6 +254,10 @@ export interface NightReport {
   anger: number;
   dTrust: number;
   dAnger: number;
+  /** kuchnia rano (°C), jaka część nocy 22–6 paliła się koza (0–1) i kto przy niej czuwał (imiona) */
+  kitchen?: number | null;
+  fire?: number;
+  koza?: string[];
 }
 
 export interface LawOption {
@@ -296,6 +306,10 @@ export interface NightPlan {
   loot: StockDelta;
   /** kto zasnął na warcie */
   slept: string[];
+  /** ogień w kozie od 22:00 do 6:00: minuty gry z ogniem, wszystkie minuty i minuta ostatniego kroku zarządu */
+  fire?: { on: number; all: number; at: number };
+  /** kto w nocy stał przy kozie (id z posterunków symulacji, także z menu kozy) */
+  koza?: string[];
 }
 
 export interface GovState {
