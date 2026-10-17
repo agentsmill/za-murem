@@ -1,4 +1,8 @@
-# Za Murem
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Za Murem
 
 Pikselowa gra przeglądarkowa: wpisujesz prawdziwy adres, gra pobiera dane OpenStreetMap i robi z nich twoje osiedle po upadku cywilizacji w 2051 roku. Grasz jako zarząd spółdzielni mieszkaniowej. Mieszanka RimWorlda (ludzie na mapie, polecenia, potrzeby) i Frostpunka (uchwały, zaufanie, wkurzenie). Projekt hobbystyczny Mateusza („na jaja”), ale ma wyglądać i grać się porządnie.
 
@@ -11,6 +15,8 @@ Repo: github.com/agentsmill/za-murem (publiczne), strona: agentsmill.github.io/z
 - `docs/PIXELLAB.md`: grafika z PixelLab przez MCP.
 - `PROMPT-DLA-CLAUDE-CODE.md`: plan etapów i zasady przejęcia.
 - `docs/POSTEP.md`: dziennik postępu. Prowadzisz go sam, na końcu każdej sesji dopisujesz, co zrobione i co dalej.
+- `docs/M1-wycinek.md`: zakres M1 i kontrakt wnętrza budynku, na którym stoją świat, symulacja i rysowanie.
+- `docs/superpowers/specs/` i `docs/superpowers/plans/`: projekty i plany większych funkcji (tryb zombie, mieszkańcy z adresu). Nagłówki modułów się do nich odwołują.
 
 ## Jak rozmawiać z Mateuszem
 
@@ -33,26 +39,63 @@ Repo: github.com/agentsmill/za-murem (publiczne), strona: agentsmill.github.io/z
 - Nie mów „gotowe”, dopóki nie przejdą testy, bot symulacji i zrzuty.
 - Stara wersja 0.3 ma zostać grywalna pod `/v03/`, dopóki nowa jej nie przegoni.
 
-## Stan na 16.10.2026
+## Wersje i gałęzie
 
-Wersja 0.3: vanilla JS bez bundlera, przeniesiona do `public/v03/` (`index.html`, `style.css`, `js/*.js`, `data/sample.js`); po buildzie działa pod `/v03/`. Surowe dane Przymorza z Overpass są w `tests/fixtures/overpass/`. `tools/simtest.js` nigdy nie trafił do repo; wzorzec balansu odtwarza `npm run bot:v03`.
+Wersja 0.4 (Vite 8, TypeScript 7, PixiJS 8, Vitest, Playwright, Biome) jest na `main` i na Pages od 17.10.2026. Wersja 0.3 (vanilla JS bez bundlera: `index.html`, `style.css`, `js/*.js`, `data/sample.js`) leży w `public/v03/`, a Vite kopiuje `public/` do `dist/`, więc po buildzie działa pod `/v03/`. Surowe dane Przymorza z Overpass są w `tests/fixtures/overpass/`. `tools/simtest.js` nigdy nie trafił do repo; wzorzec balansu odtwarza `npm run bot:v03`.
 
-Wersja 0.4 (gałąź `m0-fundament`): Vite 8, TypeScript 7, PixiJS 8, Vitest, Playwright, Biome. Postęp i decyzje w `docs/POSTEP.md`.
+Praca idzie na gałęziach tematycznych, często w kilku równoległych sesjach w `.claude/worktrees/`, rozdzielonych po plikach (podział i kontrakty spisuje dokument etapu, jak `docs/M1-wycinek.md`). Co leży na której gałęzi i co czeka na OK Mateusza: `docs/POSTEP.md`, sekcje „Następne” i „Decyzje”. `main` ma być zawsze grywalny, PR-y do `main` scala Mateusz.
 
-## Komendy (wersja 0.4)
+CI (`.github/workflows/ci.yml`, Node 24) puszcza lint, testy i build na każdym pushu poza `main` i na PR-ach. Push na `main` buduje i wdraża Pages (`pages.yml`), czyli od razu idzie na żywo.
+
+## Komendy
 
 ```bash
 npm install
 npm run dev          # serwer deweloperski, http://localhost:5173 (?demo=przymorze|lanciego|zielonki, &worker=0 bez workerów)
 npm test             # testy jednostkowe (Vitest), m.in. porównanie z oryginałem 0.3 w node:vm
-npm run lint         # Biome
-npm run build        # typy + build do dist/ (z dist/v03/)
-npm run bot          # nowa symulacja 45 dni bez przeglądarki
+npm test -- tests/unit/sim.test.ts        # jeden plik
+npm test -- zarzad -t "ten sam przebieg"  # fragment ścieżki pliku i nazwy testu
+npx biome check src tests tools index.html  # lint zamiast npm run lint (niżej); z --write poprawia i formatuje
+npm run build        # typy (tsc z TypeScript 7) + build do dist/ (z dist/v03/)
+npm run bot          # nowa symulacja 45 dni bez przeglądarki [-- ziarno [dni [tłum]]]
 npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce]]
-npm run bot:v03      # wzorzec balansu na oryginale 0.3: [-- ziarno [dni]]
-npm run shots        # zrzuty w Chromium do shots/: [-- filtr] [--dist]
-npm run perf         # klatki ze 150 pionkami: [-- pionki [tempo 1-4]] [--no-worker] [--zombie]
+npm run bot:v03      # wzorzec balansu na oryginale 0.3 [-- ziarno [dni]]
+npm run shots        # zrzuty w Chromium do shots/ [-- filtr] [--dist]
+npm run perf         # klatki ze 150 pionkami [-- pionki [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5]
 npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
+node tools/trzy-noce.ts        # trzy pierwsze noce zarządu na atrapie symulacji [ziarno] [--n liczba_ziaren]
+node tools/arkusz-wnetrza.ts   # arkusz grafiki zastępczej do shots/ (podobnie arkusz-wraki.ts)
 ```
 
-Skrypty w `tools/` to TypeScript uruchamiany wprost przez Node (bez kompilacji), więc importy mają rozszerzenie `.ts`, a kod używa tylko składni wymazywalnej (bez enumów i przestrzeni nazw).
+- `npm run lint` (`biome check .`) pada w tym katalogu, bo Biome trafia na `biome.json` z drzew sesji w `.claude/worktrees/*`. Lokalnie Biome na katalogach jak wyżej; CI na czystym checkoucie puszcza `npm run lint`.
+- `npm run shots` sam stawia serwer Vite w procesie (wolny port) i Chromium z Playwright, więc `npm run dev` nie jest potrzebny. Filtr to fragment nazwy zrzutu z listy w `tools/shots.ts`, wynik ląduje w `shots/<nazwa>.png` (poza repo). `--dist` zrzuca zbudowaną wersję, więc najpierw `npm run build`.
+- Parametry adresu gry do zrzutów i prób ręcznych (`src/main.ts`): `demo`, `tryb=zombie`, `seed`, `godzina=22` (z ułamkiem: 18.5 to 18:30), `cam=x,y,zoom` w kafelkach albo `cam=hq,zoom` i `cam=all`, `speed` (indeks tempa: 0 pauza, 1 to 1×, 2 to 3×, 3 to 6×, 4 to 8×), `stado=N` (w trybie zombie N szwendaczy pod siatką), `swiatla=test`, `przekroj=0` (dach zamiast wnętrza), `perf=N` (tłum do pomiarów), `worker=0`.
+
+## Architektura
+
+Świat: adres → `src/world/load.ts` (Nominatim, kafelki wektorowe OpenFreeMap z=14, zapasowo Overpass; albo gotowe demo z `public/demo/`) → `Geo` w metrach względem adresu → `buildWorld` z `src/world/world.ts`: siatka 1 m o boku 384 m (dane z promienia 288 m, zapas na obrót), obrót do dominującego kierunku ścian, teren, budynki, drzewa, wnętrze siedziby, siatka z bramą wokół podwórka. Świat wynika tylko z danych osiedla i ziarna, więc nie trafia do zapisu.
+
+Symulacja (`src/sim/`): `createSim(world, seed, opts)` zwraca `SimState`, zwykły obiekt JSON z ziarnem i kolejką poleceń w środku. `new Sim(world, st)` dokłada to, czego w stanie nie ma (przechodniość dla każdego rodzaju pionka, regiony, A*, statystyki), a `sim.step()` robi jeden stały krok: 20 na sekundę przy 1×, 800 na godzinę gry. Interfejs i boty wysyłają polecenia przez `sim.push(...)`. `sim.ts` ma ponad 4500 linii (pionki wszystkich rodzajów, rzeczy, prace, ciepło, potrzeby, walka, szwendacze); moduły obok to w większości czyste funkcje.
+
+Zarząd (`src/gov/`: karta nocy, uchwały, zaufanie i wkurzenie, wydarzenia) nie importuje `src/sim`. Most to `src/sim/gov.ts`: `govInput()` buduje `GovInput` (odczyt w kształcie `snapshot()` z `src/sim/snapshot.ts`), `govUpdate()` oddaje `GovEffects`, a `applyGov()` stosuje je w symulacji. Zarząd ma własny stan JSON z własnym ziarnem i liczy się co sekundę przy ekranie (bez pauzy i bez otwartego okna), a nie co tick: karta nocy wypada o 20:00 czasu gry, ale tempo wydarzeń i bramki etapów mierzy się w minutach przy ekranie. `pending()` mówi, które okno czeka: karta nocy, uchwała, wydarzenie albo raport.
+
+Rysowanie (`src/render/`) tylko czyta stan. `GameView` w PixiJS 8 trzyma kawałki mapy 32×32 m w dwóch poziomach (32 i 8 px na metr), a rysuje je pula workerów na OffscreenCanvas (`chunks.ts`, `chunkWorker.ts`) albo główny wątek przy `worker=0`. PixiJS importują tylko `view.ts` i warstwy `*Layer.ts`; reszta (`chunks.ts`, `game.ts`, `section.ts`, `light.ts`, grafika zastępcza w `render/art/`) nie zależy od PixiJS i ma testy w Node. Noc to mapa światła mnożona przez obraz, przekrój to wnętrze zamiast dachu przy zbliżeniu.
+
+`src/main.ts` spina całość: ekran startowy, pętla z akumulatorem stałego kroku (najwyżej 40 kroków na klatkę), krok zarządu co sekundę przy ekranie, zapis co godzinę gry do localStorage (`src/ui/zapis.ts`). Wystawia też `window.zm` dla Playwright: `ready`, `sim`, `gov`, `view`, `setCam`, `idle`, `govTick` i `ff(minuty)`, które przewija grę i staje na pierwszej decyzji zarządu. Na tej furtce stoją zrzuty i pomiary. `src/ui/` to DOM nad płótnem, `src/content/` to treść 0.3 przeniesiona bez zmiany liczb i tekstów, `src/core/rng.ts` to mulberry32 jak w 0.3 plus `hashString` do skrótów stanu.
+
+## Determinizm, zapis i testy
+
+- Losowanie tylko z ziarna w stanie (`nextRandom`, `rngOf` z `src/core/rng.ts`), w `src/` nie ma `Math.random`. Pamięć podręczną i statystyki trzymaj poza `SimState`, żeby `sim.hash()` zależał tylko od stanu.
+- Nie tasuj przez `sort(() => rng() - 0.5)`: kolejność porównań zależy od silnika JS i raz już dała inną noc na Node 24 niż na 25. Tasowanie Fishera-Yatesa z ziarna, jak `EventHost.shuffle` w `src/gov/wydarzenia.ts`.
+- Zmiany, które przeliczają przechodniość albo drogi (warta, wyprawa, łaty, brama), idą przez kolejkę poleceń w stanie i działają od następnego kroku.
+- Nowe pole w `SimState` dostaje wartość domyślną w konstruktorze `Sim` (`??=`, bez losowania), żeby stare zapisy dalej działały. Niezgodna zmiana podbija wersję (`v` stanu symulacji, zarządu albo zapisu; sprawdza je `readSave` w `src/ui/zapis.ts`). `worldKey` to odcisk z samych liczników świata (rozmiar, siedziba, liczba budynków, drzew, kafelków siatki, pomieszczeń i mebli): zmiana generatora, która je rusza, każe zacząć stary zapis od nowa, a zmiana bez wpływu na te liczby przejdzie niezauważona i stary stan trafi na nowy świat.
+- Testy chodzą w Node bez sieci, na kafelkach z `tests/fixtures/` (trzy adresy w `tests/unit/fixtures.ts`). Determinizmu pilnują m.in. `tests/unit/sim.test.ts` (ten sam skrót po 10 dniach, zapis i wczytanie w połowie nie zmieniają przebiegu) i `tests/unit/zarzad.test.ts`.
+- Zgodność z 0.3 sprawdzają testy różnicowe: `tools/v03.ts` ładuje oryginał do `node:vm` z `Math.random` podmienionym na ten sam generator, a testy porównują port z oryginałem zamiast spisanych oczekiwań. Jedyny świadomy wyjątek to tekst `LORE`.
+- Atrapy z `tests/unit/` (`interior-mock.ts`, `gov-atrapa.ts`, `gov-play.ts`) importują też boty z `tools/`.
+- Wygląd ocenia się tylko w prawdziwym Chromium (`npm run shots`), nie w jsdom.
+
+## Konwencje
+
+- Cały projekt ma `verbatimModuleSyntax` i `erasableSyntaxOnly`: importy z rozszerzeniem `.ts`, `import type` dla typów, bez enumów i przestrzeni nazw. Dzięki temu skrypty z `tools/` (razem z kodem `src/`, który importują) chodzą wprost w Node od 22.18, bez kompilacji.
+- Komentarze po polsku, nowsze moduły mają też polskie nazwy (`zarzad`, `noc`, `siatka`, `okna`). Każdy plik zaczyna się komentarzem o tym, co robi moduł i jaki ma kontrakt; przy zmianie zachowania popraw też nagłówek. Liczby w tekstach gry idą przez `src/ui/tekst.ts` (przecinek dziesiętny, prawdziwy minus).
+- Grafika jest na razie zastępcza, rysowana kodem (paleta w `src/render/art/palette.ts`). Docelowo PixelLab, ale każdy obiekt zachowuje wersję rysowaną kodem.

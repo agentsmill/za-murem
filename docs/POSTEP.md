@@ -208,6 +208,10 @@ Liczby:
 - Wydajność (`npm run perf -- 150 1 --zombie`, 60 szwendaczy pod siatką o 23:00): laptop i telefon (CPU 4×) 60 kl/s, najgorsza klatka 17–50 ms; przy 8× też 60 kl/s.
 - Zrzuty: `start-zombie`, `start-zombie-telefon` (formularz kończy się na 718 px z 844), `zombie-dzien`, `zombie-noc`, `zombie-noc-telefon`, `zombie-walka`, `arkusz-walki`; obejrzane.
 
+### CLAUDE.md po przeglądzie kodu, 18.10.2026 (gałąź `tryb-zombie`)
+
+CLAUDE.md dostał architekturę (świat z adresu, symulacja, most do zarządu, rysowanie w workerach, `window.zm`), zasady determinizmu i zapisu, uruchamianie pojedynczych testów, parametry adresu gry i obejście `npm run lint` przy drzewach sesji w `.claude/worktrees/`. Nieaktualny „Stan na 16.10.2026” zastąpiła sekcja „Wersje i gałęzie”. Kod bez zmian; opisane komendy sprawdzone (pojedynczy test, filtr `-t`, Biome na katalogach, `tools/trzy-noce.ts`).
+
 ## Następne
 
 0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia.
@@ -262,6 +266,7 @@ Liczby:
 
 ## Zaparkowane
 
+- `npm run lint` w głównym katalogu pada na `biome.json` z `.claude/worktrees/*`; samo `!.claude` ani `!!.claude` w `files.includes` nie pomaga (sprawdzone 18.10.2026 na kopii konfiguracji), do sprawdzenia `vcs.useIgnoreFile` z wpisem w `.gitignore` albo drzewa sesji poza repo.
 - GitHub Actions ostrzega: `actions/checkout@v4` i `actions/setup-node@v4` celują w wycofywany Node 20 (GitHub uruchamia je na 24), a `ubuntu-latest` przechodzi na Ubuntu 26 od 19.10.2026. Podbić wersje akcji przy najbliższej zmianie workflow.
 - Tryb zombie: zrobiony w gałęzi `tryb-zombie` (wyżej). Z pierwotnego pomysłu zostało: teren powiększany budową zasieków. Do tego z bota: z wartą siatka trzyma dwie noce, a projekt zakładał trzy (stroić napór, siłę dzidy albo materiał na łaty); gospodarka (jedzenie) w trybie zombie po M2; pękanie bramy, ludzie-wrogowie w trybie zombie, wstawanie zmarłych ponad limit 80.
 - Tempo 16× (Mateusz, 17.10.2026): na razie zostaje 8×, wrócić, jeśli dalej będzie się dłużyć.
