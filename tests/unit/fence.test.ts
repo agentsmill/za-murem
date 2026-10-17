@@ -126,9 +126,9 @@ function checkFence(w: World) {
   expect(inYard.has(door.out), 'drzwi siedziby poza podwórkiem').toBe(true);
   const tree = w.trees[w.dryTree];
   expect(inYard.has(Math.floor(tree.y) * size + Math.floor(tree.x)), 'suche drzewo poza podwórkiem').toBe(true);
-  // trzepak i sterty w podwórku (wraki stoją poza siatką)
+  // trzepak i sterty w podwórku (wraki stoją poza siatką, śmieci w pustych mieszkaniach)
   for (const p of w.props)
-    if (p.kind !== 'wrak')
+    if (p.kind !== 'wrak' && p.kind !== 'smieci')
       for (let y = p.y; y < p.y + p.h; y++)
         for (let x = p.x; x < p.x + p.w; x++) expect(inYard.has(y * size + x), `${p.kind} poza podwórkiem`).toBe(true);
   // brama w linii siatki: skrzydła otwierają się do podwórka, z drugiej strony wolne wyjście
