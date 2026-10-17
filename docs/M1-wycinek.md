@@ -99,6 +99,14 @@ Kontrakt wnętrza (`src/world/interior.ts`):
 
 Do połączenia symulacja pracuje na atrapie wnętrza zgodnej z kontraktem, a grafika na nazwach z kontraktu. Polecenia przyjmuje tylko zarząd, tłum to tło (GDD).
 
+Kontrakt siatki (tura 2, decyzja koordynatora z nocy 17/18.10, zgodna ze sprite'ami z `src/render/art/podworko.ts`):
+
+- `World.fence: { tiles: number[]; hole: number[]; gate: { x, y, w, h, rot }; yard: number[] }`. `tiles` to kafelki siatki bez bramy (rosnąco), `hole` to kafelki z dziurą na starcie (podzbiór `tiles`, 2–4 sztuki, rozrzucone, nie przy bramie), `gate` to brama 2×1 albo 1×2 w linii siatki, a `rot` to strona otwierania skrzydeł, czyli w stronę podwórka. `yard` to kafelki podwórka za siatką bez budynków (rosnąco).
+- Siatka obejmuje siedzibę i podwórko z suchym drzewem i trzepakiem. Brama stoi od strony ulicy albo chodnika przed pierwszym wejściem. Siatka może dochodzić do ścian budynków.
+- `blocked`: kafelki siatki 1, dziury 0 (przełazi się), brama 0 (otwieranie i zamykanie trzyma symulacja w swojej kopii `blocked`).
+- Stan zmienny (wytrzymałość, łaty, nowe dziury, otwarta brama) jest w stanie symulacji, nie w świecie. Rysowanie bierze `thingSprite({ kind: 'siatka', mask, state, post })`, gdzie maska to sąsiedzi N/E/S/W będący siatką, bramą albo ścianą budynku, a `state` to `'cala' | 'dziura' | 'lata'` ze stanu symulacji.
+- Deterministycznie z ziarna świata.
+
 Dalsze tury:
 
 - Tura 1b (od nocy 17.10): zarząd w `src/gov` (karta nocy, uchwały, zaufanie, wkurzenie, wydarzenia) w osobnej sesji. Do sesji symulacji i grafiki dopisane: koza zjada drewno, palenie mebli, bezpieczeństwo; siatka, brama, ognisko i gruz w grafice.
