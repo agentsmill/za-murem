@@ -46,6 +46,8 @@ export interface Gospodarstwo {
   klatka: number;
   czlonkowie: string[];
   odOddania: boolean;
+  /** Dwa, trzy zdania historii (historie.ts, R9). Tylko w wyniku generatora z tabelami odmiany i kroniką obszaru (R49). */
+  historia?: string[];
 }
 export interface Budynek {
   klucz: string;

@@ -11,17 +11,30 @@
    spis w skali `2020 - rocznik`, krok „2026” to stan na koniec 2025, a „2051” na 1 stycznia 2051.
    Gminę dema wskazuje `rejonDla` dla punktu adresu (`geo.c`) po wszystkich tabelach gmin z repo; TERYT z listy
    ZAPAS_TERYT idzie w ruch tylko wtedy, gdy punkt nie trafi w żadną z nich.
+   Z `--historie` dla każdego dema także obszar z imionami, odmianą i kroniką (generuj.ts, historie.ts): czas, kronika
+   osiedla i pięć gospodarstw rozłożonych równo po obszarze, każde w jednej linijce (imiona, wiek, pokrewieństwo do
+   pierwszej osoby, klatka), a pod nią historia.
    Uruchomienie: npm run mieszkancy [-- demo …] [--historie] */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { wiek } from '../src/content/people.ts';
 import { obszarGminy, postarz } from '../src/mieszkancy/czas.ts';
-import { generujObszar, ROK_GRY } from '../src/mieszkancy/generuj.ts';
+import { budynkiObszaru, generujObszar, kronikaObszaru, type Nazwy, ROK_GRY } from '../src/mieszkancy/generuj.ts';
+import { type Odmiana, pokrewienstwo } from '../src/mieszkancy/historie.ts';
 import { marginesyDla, rejonDla } from '../src/mieszkancy/rejon.ts';
 import { obsadzBudynek, obsadzRejon } from '../src/mieszkancy/spis.ts';
-import type { TabeleGminy, TabeleKraju } from '../src/mieszkancy/tabele.ts';
-import type { Osiedle, Osoba, WynikBudynku } from '../src/mieszkancy/typy.ts';
-import { wczytajGmine, wczytajKraj } from '../src/mieszkancy/wczytaj.ts';
+import { KREWNI } from '../src/mieszkancy/szablony.ts';
+import type { TabeleGminy, TabeleImion, TabeleKraju } from '../src/mieszkancy/tabele.ts';
+import type { Gospodarstwo, Osiedle, Osoba, WynikBudynku } from '../src/mieszkancy/typy.ts';
+import {
+  wczytajGmine,
+  wczytajImiona,
+  wczytajKoncowki,
+  wczytajKraj,
+  wczytajNazwiskaDlaGminy,
+  wczytajOdmiane,
+} from '../src/mieszkancy/wczytaj.ts';
 import type { Geo } from '../src/world/geo.ts';
 
 const PUBLIC = path.resolve(import.meta.dirname, '../public');
@@ -46,6 +59,8 @@ const MIESZKANIA_BDL: Record<string, { od: [number, number]; do: [number, number
   '1206172': { od: [2020, 9394], do: [2025, 10084] },
 };
 const CEL_MS = 200;
+/** Ile gospodarstw z historią pokazuje `--historie` na demo. */
+const HISTORII_NA_DEMO = 5;
 /** Szerokość słupka piramidy dla największej grupy (w znakach). */
 const SZEROKOSC = 22;
 const GRUPY = 18;
@@ -330,6 +345,87 @@ function wypiszDemo(d: Demo, gm: Gmina, k: TabeleKraju): void {
   }
 }
 
+// ---------------------------------------------------------------- historie
+
+/** Kim jest `o` dla pierwszej osoby gospodarstwa: krewny z historie.ts, partner krewnego („żona syna”), dziecko
+    krewnego („syn siostry”), a inaczej współlokator. */
+function relacja(glowa: Osoba, o: Osoba, wg: ReadonlyMap<string, Osoba>): string {
+  const k = pokrewienstwo(glowa, o, wg);
+  if (k) return KREWNI[k].mian;
+  const partner = o.partner === undefined ? undefined : wg.get(o.partner);
+  const kp = partner ? pokrewienstwo(glowa, partner, wg) : undefined;
+  if (kp) return `${o.plec === 'M' ? 'mąż' : 'żona'} ${KREWNI[kp].dop}`;
+  for (const id of [o.matka, o.ojciec]) {
+    const rodzic = id === undefined ? undefined : wg.get(id);
+    const kr = rodzic ? pokrewienstwo(glowa, rodzic, wg) : undefined;
+    if (kr) return `${o.plec === 'M' ? 'syn' : 'córka'} ${KREWNI[kr].dop}`;
+  }
+  return o.plec === 'M' ? 'współlokator' : 'współlokatorka';
+}
+
+/** Gospodarstwo w jednej linijce: klatka, osoby z wiekiem w 2051 i pokrewieństwem do pierwszej osoby. */
+function linijkaGospodarstwa(w: WynikBudynku, h: Gospodarstwo): string {
+  const wg = new Map(w.osoby.map((o) => [o.id, o]));
+  const osoby = h.czlonkowie.map((id) => wg.get(id)!);
+  const rok = w.rok ?? ROK_GRY;
+  const opis = osoby.map((o, i) => {
+    const kto = `${o.imie} ${o.nazwisko}, ${wiek(rok - o.rocznik)}`;
+    return i === 0 ? kto : `${relacja(osoby[0], o, wg)} ${kto}`;
+  });
+  return `klatka ${h.klatka}: ${opis.join('; ')}`;
+}
+
+/** Obszar dema z imionami, odmianą i kroniką: czas, kronika i `HISTORII_NA_DEMO` gospodarstw równo z całego obszaru. */
+async function wypiszHistorie(
+  d: Demo,
+  gm: Gmina,
+  k: TabeleKraju,
+  imiona: TabeleImion,
+  odmiana: Odmiana,
+): Promise<void> {
+  const nazwiska = await wczytajNazwiskaDlaGminy(gm.g, zPliku);
+  if (!nazwiska) {
+    console.log(`
+  historie ${d.name}: brak tabeli nazwisk`);
+    process.exitCode = 1;
+    return;
+  }
+  const nazwy: Nazwy = { imiona, nazwiska, odmiana };
+  const czasy: number[] = [];
+  let osiedle: Osiedle | undefined;
+  for (let i = 0; i < 3; i++) {
+    const t0 = performance.now();
+    osiedle = generujObszar(d.geo, gm.g, k, nazwy);
+    czasy.push(performance.now() - t0);
+  }
+  const ms = mediana(czasy);
+  const wszystkie = osiedle!.budynki.flatMap((w) => w.gospodarstwa.map((h) => ({ w, h })));
+  console.log(`
+=== Historie: ${d.name} ===`);
+  console.log(
+    `  czas generowania z imionami, kroniką i historiami: ${Math.round(ms)} ms (mediana z 3)${ms > CEL_MS ? `  UWAGA: ponad ${CEL_MS} ms` : ''}`,
+  );
+  const kronika = kronikaObszaru(d.geo, budynkiObszaru(d.geo, gm.g, k), imiona);
+  console.log(`  kronika osiedla (${ile(kronika.length, ['wpis', 'wpisy', 'wpisów'])}):`);
+  for (const e of kronika) console.log(`    ${e.rok}  ${e.tekst}`);
+  if (wszystkie.length === 0) {
+    console.log('  brak gospodarstw w obszarze');
+    return;
+  }
+  const bezHistorii = wszystkie.filter(({ h }) => !h.historia || h.historia.length < 2 || h.historia.length > 3);
+  if (bezHistorii.length) {
+    console.log(`  UWAGA: ${ile(bezHistorii.length, ['gospodarstwo', 'gospodarstwa', 'gospodarstw'])} bez 2-3 zdań`);
+    process.exitCode = 1;
+  }
+  const ileGosp = Math.min(HISTORII_NA_DEMO, wszystkie.length);
+  console.log(`  ${ileGosp} z ${ile(wszystkie.length, ['gospodarstwa', 'gospodarstw', 'gospodarstw'])}:`);
+  for (let i = 0; i < ileGosp; i++) {
+    const { w, h } = wszystkie[Math.floor((i * wszystkie.length) / ileGosp)];
+    console.log(`  - ${linijkaGospodarstwa(w, h)}`);
+    for (const z of h.historia ?? []) console.log(`      ${z}`);
+  }
+}
+
 // ---------------------------------------------------------------- test wsteczny
 
 interface Wsteczny {
@@ -428,11 +524,24 @@ console.log(
   `Mieszkańcy z adresu: ${ile(dema.length, ['demo', 'dema', 'dem'])}, tabele gmin ${gminy.map((g) => g.teryt).join(', ')}`,
 );
 const doTestu = new Map<string, TabeleGminy>();
-for (const d of dema) {
-  const gm = gminaDema(d.key, d.geo, gminy);
-  wypiszDemo(d, gm, k);
-  if (gm.g) doTestu.set(gm.g.teryt, gm.g);
+const gminyDem = dema.map((d) => gminaDema(d.key, d.geo, gminy));
+for (const [i, d] of dema.entries()) {
+  wypiszDemo(d, gminyDem[i], k);
+  const g = gminyDem[i].g;
+  if (g) doTestu.set(g.teryt, g);
 }
-if (HISTORIE) console.log('\n--historie: przykładowe historie gospodarstw dojdą w kroku 4 (kronika i historie).');
+if (HISTORIE) {
+  const [imiona, tabela, koncowki] = await Promise.all([
+    wczytajImiona(zPliku),
+    wczytajOdmiane(zPliku),
+    wczytajKoncowki(zPliku),
+  ]);
+  if (!imiona || !tabela || !koncowki) {
+    console.error('--historie: brak tabel imion albo odmiany w public/data/mieszkancy/.');
+    process.exitCode = 1;
+  } else {
+    for (const [i, d] of dema.entries()) await wypiszHistorie(d, gminyDem[i], k, imiona, { tabela, koncowki });
+  }
+}
 const dobrze = wypiszWsteczne([...doTestu.values()].map((g) => testWsteczny(g, k)));
 if (!dobrze) process.exitCode = 1;
