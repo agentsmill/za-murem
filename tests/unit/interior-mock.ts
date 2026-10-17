@@ -176,9 +176,15 @@ function overlay(w: World, L: Layout): MockWorld {
   const at = (x: number, y: number) => (hq.y0 + y) * size + hq.x0 + x;
   const furniture = L.furniture.map((f) => ({ ...f, x: hq.x0 + f.x, y: hq.y0 + f.y }));
   const sklad = L.sklad.map(([x, y]) => at(x, y));
-  const dryTree = pickDryTree(w, blocked, hq.entrances[0].out);
+  // suche drzewo, trzepak i siatka ze świata, gdy je ma; inaczej własne
+  const own = w as unknown as { dryTree?: number; props?: PropLike[] };
+  const dryTree =
+    own.dryTree !== undefined && own.dryTree >= 0 ? own.dryTree : pickDryTree(w, blocked, hq.entrances[0].out);
   const t = w.trees[dryTree];
-  const props: PropLike[] = [{ kind: 'trzepak', x: Math.floor(t.x) + 2, y: Math.floor(t.y), w: 3, h: 1 }];
+  const props: PropLike[] = own.props?.length
+    ? [...own.props]
+    : [{ kind: 'trzepak', x: Math.floor(t.x) + 2, y: Math.floor(t.y), w: 3, h: 1 }];
+  if (!props.some((p) => HEAPS.has(p.kind))) props.push(...mockHeaps(w, blocked, props, dryTree));
   const interior: HouseLike = {
     building: w.hq,
     cell,
@@ -192,6 +198,41 @@ function overlay(w: World, L: Layout): MockWorld {
   };
   // dubel testowy: kształt z kontraktu bez typów z interior.ts, których przed połączeniem nie ma
   return { ...w, blocked, interior, dryTree, props } as unknown as MockWorld;
+}
+
+const HEAPS = new Set(['deski', 'zlom', 'gruz']);
+
+/** sterty materiałów na podwórku jak w kontrakcie sesji świata (World.props, kind deski, zlom, gruz, n sztuk):
+    deski 4 i złom 4 (dwie łaty po 3–4 sztuki), gruz 3; na wolnych kafelkach podwórka, z dala od bramy,
+    dziur, drzwi, drzewa i trzepaka; bez siatki w świecie nic */
+function mockHeaps(w: World, blocked: Uint8Array, props: PropLike[], dryTree: number): PropLike[] {
+  const size = w.size;
+  const fence = (w as unknown as { fence?: { yard: number[]; hole: number[]; gate: PropLike } }).fence;
+  if (!fence?.yard.length) return [];
+  const g = fence.gate;
+  const far: number[] = [...fence.hole];
+  for (let y = g.y; y < g.y + g.h; y++) for (let x = g.x; x < g.x + g.w; x++) far.push(y * size + x);
+  for (const b of w.buildings) for (const e of b.entrances) far.push(e.out);
+  const t = w.trees[dryTree];
+  far.push(Math.floor(t.y) * size + Math.floor(t.x));
+  for (const p of props)
+    for (let y = p.y; y < p.y + p.h; y++) for (let x = p.x; x < p.x + p.w; x++) far.push(y * size + x);
+  const cheb = (a: number, b: number) =>
+    Math.max(Math.abs((a % size) - (b % size)), Math.abs(Math.floor(a / size) - Math.floor(b / size)));
+  const out: PropLike[] = [];
+  const want: [string, number][] = [
+    ['deski', 4],
+    ['zlom', 4],
+    ['gruz', 3],
+  ];
+  for (const i of fence.yard) {
+    if (out.length === want.length) break;
+    if (blocked[i] || far.some((k) => cheb(i, k) < 3)) continue;
+    const [kind, n] = want[out.length];
+    out.push({ kind, x: i % size, y: Math.floor(i / size), w: 1, h: 1, n } as PropLike);
+    far.push(i);
+  }
+  return out;
 }
 
 /** suche drzewo: najbliższe drzwiom (po drodze) drzewo, nie krzak, z koroną od 2 m */
@@ -240,9 +281,9 @@ export function plainBlock(seed = 5): World {
   return { ...w, blocked, interior: null, dryTree: -1, props: [] } as unknown as World;
 }
 
-/** sztuczny świat z blokiem i ulicą oraz atrapą wnętrza */
+/** sztuczny świat z blokiem i ulicą oraz atrapą wnętrza (siatka, suche drzewo i trzepak ze świata) */
 export function mockBlock(seed = 5): MockWorld {
-  return overlay(plainBlock(seed), BLOCK);
+  return overlay(buildWorld(geoWith(rect(-24, -6, 48, 13), 'apartments', '5'), { seed, size: 128 }), BLOCK);
 }
 
 /** sztuczny świat z domem i ulicą oraz atrapą wnętrza */
