@@ -108,6 +108,13 @@ function allSpecs(): ThingSpec[] {
   for (const size of [1, 2, 3] as const) for (const seed of [0, 4, 9]) s.push({ kind: 'smieci', size, seed });
   for (const kind of FURNITURE_KINDS) for (const rot of ROTS) s.push({ kind, rot, seed: 6, broken: true });
   for (const rot of ROTS) s.push({ kind: 'kuchenka', rot, seed: 6, burnt: true });
+  // ogród domu: sznur z praniem i bez (ten sam rozmiar), kompost, buda, huśtawka, ławka
+  for (const rot of ROTS)
+    for (const seed of [0, 1, 7]) {
+      s.push({ kind: 'sznur', rot, seed });
+      s.push({ kind: 'sznur', rot, pranie: true, seed });
+      for (const kind of ['kompost', 'buda', 'hustawka', 'lawka'] as const) s.push({ kind, rot, seed });
+    }
   return s;
 }
 
