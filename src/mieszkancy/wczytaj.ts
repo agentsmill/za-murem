@@ -3,6 +3,7 @@
    podaje własny `fetchFn`, który czyta pliki z public/. */
 
 import { bezPuliLokalnej, nazwiskaDlaGminy } from './imiona.ts';
+import { type OdmianaPlik, rozpakujOdmiane, type TabelaKoncowek, type TabelaOdmiany } from './odmiana.ts';
 import {
   PLIK_WOJEWODZTWA,
   type TabeleGminy,
@@ -101,4 +102,22 @@ export async function wczytajNazwiskaDlaGminy(
   const { woj, lokalne } = nazwiskaDlaGminy(g);
   const t = await wczytajNazwiska(woj, fetchFn);
   return t && !lokalne ? bezPuliLokalnej(t) : t;
+}
+
+/** Słownik odmiany (odmiana.json z SGJP) rozpakowany do `TabelaOdmiany`. Odmiana jest opcjonalna (`odmien` bez słownika
+    zgaduje), więc każda porażka, także brak pliku i uszkodzony plik, to `null` z ostrzeżeniem w konsoli. */
+export async function wczytajOdmiane(fetchFn: typeof fetch = fetch): Promise<TabelaOdmiany | null> {
+  const plik = await wczytajTabele<OdmianaPlik>(`${KATALOG}odmiana.json`, 'Tabele odmiany', fetchFn, false);
+  if (!plik) return null;
+  try {
+    return rozpakujOdmiane(plik);
+  } catch (e) {
+    console.warn(`Tabele odmiany: uszkodzony plik ${KATALOG}odmiana.json`, e);
+    return null;
+  }
+}
+
+/** Tablica końcówek zgadywacza (odmiana-koncowki.json). `null` z ostrzeżeniem, gdy pliku nie da się wczytać. */
+export async function wczytajKoncowki(fetchFn: typeof fetch = fetch): Promise<TabelaKoncowek | null> {
+  return wczytajTabele<TabelaKoncowek>(`${KATALOG}odmiana-koncowki.json`, 'Tablica końcówek', fetchFn, false);
 }
