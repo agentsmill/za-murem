@@ -10,6 +10,7 @@ import type { Tree, World } from '../world/world.ts';
 import { type AmmoKey, hitChance, noAmmo, START_KIT, WEAPONS, type Weapon, type WeaponId, weaponOf } from './bron.ts';
 import {
   daylight,
+  dayOf,
   hourOf,
   minutesAt,
   outdoorTemp,
@@ -49,6 +50,26 @@ import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.t
 import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP } from './perimeter.ts';
 import { type GameMode, modeOf } from './tryb.ts';
 import { TUT_STEPS, type Tutorial, type TutStep, tutAdvance, WARM_ENOUGH } from './tutorial.ts';
+import {
+  ambientCount,
+  BITE_CD,
+  BITE_DMG,
+  BITE_HIT,
+  BITE_REACH,
+  CHASE_SPEED,
+  DISPERSE,
+  distField,
+  FAR,
+  HORDE_FROM,
+  HORDE_HOURS,
+  hordeSize,
+  MAX_ZOMBIES,
+  PUSH,
+  SIGHT_DAY,
+  SIGHT_NIGHT,
+  ZOMBIE_HP,
+  ZOMBIE_SPEED,
+} from './zombie.ts';
 
 /** kafelków na tick: 4 kafelki na sekundę przy 1× */
 export const WALK_SPEED = 4 / TICKS_PER_SECOND;
@@ -161,7 +182,8 @@ export type JobKind =
   | 'build'
   | 'leave'
   | 'raid'
-  | 'fight';
+  | 'fight'
+  | 'zombie';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -458,6 +480,8 @@ export interface SimState {
   dead?: Dead[];
   /** liczniki: zabici wrogowie, przerwania siatki, ugryzienia, zgony naszych */
   tally?: Tally;
+  /** stado tej nocy (tryb zombie): dzień, ilu jeszcze wyjdzie z krawędzi mapy i kiedy następna grupa */
+  horde?: { day: number; left: number; next: number };
   /** ułamek porcji zjedzony ponad całe porcje (racje i kocioł zjadają po 0,75 i 1,1 porcji na posiłek) */
   portion: number;
 }
@@ -578,7 +602,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     temps: [],
     tut: { step: -1, at: [] },
     burned: [],
-    fence: initFence(w),
+    fence: initFence(w, opts.mode ?? 'zwykly'),
     cap: 0,
     laws: { gateClosed: false, burnMood: 1, workStart: WORK_START, foodMult: 1, sharedMeals: false },
     portion: 0,
@@ -877,6 +901,26 @@ export function removeCore(st: SimState, id: string): boolean {
   return true;
 }
 
+/** nowy szwendacz na kafelku: snuje się (praca 'zombie' w fazie 0); stado: idzie do siatki */
+export function spawnZombie(st: SimState, w: World, tile: number, look: number, horde = false): Pawn {
+  const p = newPawn(st, w, 'zombie', -1, tile, tile, look);
+  p.hp = ZOMBIE_HP;
+  p.job = {
+    t: 'zombie',
+    target: -1,
+    tile,
+    phase: horde ? 1 : 0,
+    from: -1,
+    t0: st.tick,
+    until: 0,
+    order: false,
+    n: 0,
+    what: horde ? 'stado' : '',
+  };
+  st.pawns.push(p);
+  return p;
+}
+
 function spawnNear(w: World, i: number, k: number, rnd: () => number): number {
   const size = w.size;
   const x = (i % size) + Math.round((rnd() - 0.5) * 6) + (k % 3) - 1;
@@ -939,7 +983,11 @@ function composeLayers(
     for (const hole of fence.holes)
       for (const t of hole.tiles) {
         if (hole.patch > 0) base[t] = 1;
-        else open.push(t);
+        else {
+          // dziura po naporze jest w miejscu siatki, którą świat blokuje: przejście trzeba otworzyć
+          base[t] = 0;
+          open.push(t);
+        }
       }
   const gate = gateTiles(w);
   const core = base.slice();
@@ -1034,6 +1082,18 @@ export class Sim {
   private readonly fenceMask: Uint8Array;
   /** zabici w bieżącym kroku (znikają po pętli pionków) */
   private readonly graveyard = new Set<number>();
+  /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy */
+  private seeds: number[] = [];
+  private flow: Int32Array = new Int32Array(0);
+  private edges: number[] = [];
+  /** numer kafelka siatki w World.fence.tiles (wytrzymałość w FenceState.hp) */
+  private readonly fenceIndex = new Map<number, number>();
+  /** wyszukiwania dróg szwendaczy w tym kroku */
+  private zbudget = 0;
+  /** kafelki podwórka (1) i to, czy w bieżącym kroku jest na nim wróg (liczone raz na krok) */
+  private readonly yardMask: Uint8Array;
+  private dangerAt = -1;
+  private danger = false;
 
   constructor(w: World, st: SimState) {
     this.w = w;
@@ -1115,6 +1175,9 @@ export class Sim {
     this.exitTile = exit;
     this.fenceMask = new Uint8Array(size * size);
     for (const t of shape?.tiles ?? []) this.fenceMask[t] = 1;
+    for (const [k, t] of (shape?.tiles ?? []).entries()) this.fenceIndex.set(t, k);
+    this.yardMask = new Uint8Array(size * size);
+    for (const t of shape?.yard ?? []) this.yardMask[t] = 1;
     for (const t of gate) this.fenceMask[t] = 1;
     if (h) {
       const fires = this.fires();
@@ -1169,6 +1232,7 @@ export class Sim {
     // strona ulicy: bez podwórka, a dziury i brama to przejście, nie miejsce, w którym się czeka
     for (const t of shape?.yard ?? []) outside[t] = 1;
     for (const t of shape?.hole ?? []) outside[t] = 1;
+    for (const h of this.st.fence?.holes ?? []) for (const t of h.tiles) outside[t] = 1;
     for (const t of gateTiles(this.w)) outside[t] = 1;
     if (this.house) for (let i = 0; i < outside.length; i++) if (this.house.room[i] >= 0) outside[i] = 1;
     // szwendacze jak obcy (dziurami tak, zamkniętą bramą nie), ale do budynków nie wchodzą: drzwi są zamknięte
@@ -1184,6 +1248,17 @@ export class Sim {
       crowd: res,
       outside: { blocked: outside, reg: labelRegions(outside, size) },
     };
+    // tryb zombie: pole odległości do siatki po stronie ulicy i kafelki przy krawędzi mapy (skąd wychodzi stado)
+    if (modeOf(this.st) === 'zombie' && shape) {
+      this.seeds = this.outsideOf([...shape.tiles, ...gateTiles(this.w)]);
+      this.flow = distField(outside, size, this.seeds);
+      this.edges = [];
+      for (let i = 0; i < size * size; i++) {
+        const x = i % size;
+        const y = (i - x) / size;
+        if ((x < 2 || y < 2 || x >= size - 2 || y >= size - 2) && this.flow[i] >= 0) this.edges.push(i);
+      }
+    }
   }
 
   /** przechodniość i obszary dla danego rodzaju pionka */
@@ -1248,7 +1323,8 @@ export class Sim {
     if (st.laws.gateClosed && st.tick % TICKS_PER_HOUR === 0) {
       const h = hourOf(st.tick);
       if (h === 20) this.setGate(false);
-      else if (h === GUARD_UNTIL) this.setGate(true);
+      // w trybie zombie brama rano zostaje zamknięta: za nią są szwendacze
+      else if (h === GUARD_UNTIL && modeOf(st) !== 'zombie') this.setGate(true);
     }
     // racje liczą posiłki od 6:00; w porze wspólnego posiłku mieszkańcy mogą wejść do stołu zarządu
     if (st.tick % TICKS_PER_HOUR === 0 && hourOf(st.tick) === 6) for (const p of st.pawns) p.ate = 0;
@@ -1256,6 +1332,8 @@ export class Sim {
     if (st.raid) this.raidTick(st.raid);
     if (st.noise!.length) st.noise = st.noise!.filter((n) => n.until > st.tick);
     if (st.fx!.length) st.fx = st.fx!.filter((f) => f.tick + FX_TICKS > st.tick);
+    if (modeOf(st) === 'zombie') this.zombieClock();
+    this.zbudget = 3;
     let budget = PATHS_PER_TICK;
     let gone = false;
     for (const p of st.pawns) {
@@ -1270,6 +1348,10 @@ export class Sim {
           this.fightTick(p, p.job);
           continue;
         }
+      }
+      if (p.kind === 'zombie') {
+        this.zombieTick(p);
+        continue;
       }
       if (p.pi < p.path.length) {
         this.walk(p);
@@ -1324,6 +1406,7 @@ export class Sim {
   /** prędkość względem człowieka: ranny szabrownik wlecze się */
   private speedOf(p: Pawn): number {
     if (p.kind === 'szabrownik' && (p.hp ?? STRANGER_HP) < FLEE_HP) return 0.6;
+    if (p.kind === 'zombie') return p.job?.phase === 3 ? CHASE_SPEED : ZOMBIE_SPEED;
     return 1;
   }
 
@@ -2315,6 +2398,9 @@ export class Sim {
       case 'fight':
         // walka ma własny krok (fightTick)
         return true;
+      case 'zombie':
+        // szwendacze mają własny krok (zombieTick)
+        return false;
       case 'leave':
         // za bramą znika; wraca poleceniem 'back'
         if (j.phase === 1) return true;
@@ -2432,6 +2518,22 @@ export class Sim {
       return;
     }
     const n = p.needs!;
+    // wróg na podwórku: tylko to, co w środku (sen, jedzenie, ciepło przy kozie, gotowanie)
+    if (this.yardDanger() && !this.inRoom(this.tileOf(p))) {
+      const s = this.shelterSpot(p);
+      if (s >= 0 && this.go(p, s)) {
+        this.setJob(p, this.newJob('go', s, s, false), false);
+        return;
+      }
+    }
+    if (this.yardDanger()) {
+      if (((this.night() && n.rest < 80) || n.rest < TIRED) && this.startSleep(p)) return;
+      if (this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
+      if (this.shouldCook() && this.startCook(p, false)) return;
+      if (n.warm < COLD && this.startWarm(p)) return;
+      p.wait = this.st.tick + THINK_EVERY;
+      return;
+    }
     if (p.carry > 0) {
       if (this.startRefuel(p, false) || this.startHaul(p)) return;
       this.dropCarry(p);
@@ -2461,6 +2563,8 @@ export class Sim {
     let kind = STAY_HOME;
     if (!this.night() && h >= st.laws.workStart && h < 18) kind = STAY_YARD;
     else if (h >= 18 && h < 20 && this.campfire()) kind = STAY_FIRE;
+    // wróg na podwórku: nikt tam nie wychodzi
+    if (kind !== STAY_HOME && this.yardDanger()) kind = STAY_HOME;
     const spot = kind === STAY_YARD ? this.yardSpot(p) : kind === STAY_FIRE ? this.fireSpot(p) : this.homeSpot(p);
     if (spot >= 0 && this.go(p, spot)) {
       const j = this.newJob('stay', kind, spot, false);
@@ -3109,6 +3213,17 @@ export class Sim {
     if (best) this.strike(p, best, w);
   }
 
+  /** czy na podwórku jest teraz wróg (szwendacz, szabrownik), liczone raz na krok */
+  private yardDanger(): boolean {
+    const st = this.st;
+    if (this.dangerAt === st.tick) return this.danger;
+    this.dangerAt = st.tick;
+    this.danger = st.pawns.some(
+      (p) => isEnemy(p) && !p.away && !this.graveyard.has(p.id) && this.yardMask[this.tileOf(p)] === 1,
+    );
+    return this.danger;
+  }
+
   /** najbliższy wróg w promieniu r, którego widać bez siatki i ściany po drodze (ta sama strona siatki) */
   private threat(p: Pawn, r: number): Pawn | undefined {
     let best: Pawn | undefined;
@@ -3132,9 +3247,11 @@ export class Sim {
     if (this.inRoom(this.tileOf(p))) return false;
     const resident = p.kind === 'resident';
     const e = this.threat(p, resident ? RESIDENT_FLEE : DEFEND_REACH);
-    if (!e) return false;
+    // mieszkańcy na podwórku wracają do domu, kiedy wróg jest gdziekolwiek na podwórku
+    const outdoors = resident && j?.t === 'stay' && (j.target === STAY_YARD || j.target === STAY_FIRE);
+    if (!e && !(outdoors && this.yardDanger())) return false;
     if (j?.t === 'stay' && j.target === STAY_HOME) return false;
-    if (!resident && p.weapon && this.armed(p).id !== 'piesci' && (p.needs?.health ?? 0) > 40) {
+    if (e && !resident && p.weapon && this.armed(p).id !== 'piesci' && (p.needs?.health ?? 0) > 40) {
       const f = this.newJob('fight', e.id, -1, false);
       f.until = this.st.tick + FIGHT_GIVEUP;
       this.setJob(p, f, false);
@@ -3158,6 +3275,361 @@ export class Sim {
     const tiles: number[] = [];
     for (const r of h.rooms) if (r.apt === h.home) tiles.push(...this.roomTiles[r.id]);
     return this.pickSpot(p, tiles);
+  }
+
+  /* ---------- szwendacze ---------- */
+
+  /** liczba szwendaczy na mapie */
+  private zombieCount(): number {
+    let n = 0;
+    for (const p of this.st.pawns) if (p.kind === 'zombie') n++;
+    return n;
+  }
+
+  /** Zegar trybu zombie: za dnia co godzinę uzupełnienie snujących się, o 21:00 stado (grupy z krawędzi mapy
+      do 1:00), o 6:00 stado się rozchodzi. */
+  private zombieClock(): void {
+    const st = this.st;
+    const tick = st.tick;
+    const hourStart = tick % TICKS_PER_HOUR === 0;
+    const h = hourOf(tick);
+    const day = dayOf(tick);
+    if (hourStart && h >= DISPERSE && h < HORDE_FROM) this.topUp(day);
+    if (hourStart && h === HORDE_FROM) st.horde = { day, left: hordeSize(day), next: tick };
+    const hd = st.horde;
+    if (hd && hd.left > 0 && tick >= hd.next) {
+      const groups = 8;
+      const n = Math.min(hd.left, Math.ceil(hordeSize(hd.day) / groups));
+      hd.left -= n;
+      hd.next = tick + Math.floor((HORDE_HOURS * TICKS_PER_HOUR) / groups);
+      const room = MAX_ZOMBIES - this.zombieCount();
+      if (room > 0 && this.edges.length) {
+        const at = this.edges[Math.floor(nextRandom(st.rng) * this.edges.length)];
+        for (const t of this.tilesAround(at, Math.min(n, room)))
+          spawnZombie(st, this.w, t, Math.floor(nextRandom(st.rng) * 16), true);
+      }
+    }
+    if (hourStart && h === DISPERSE)
+      for (const p of st.pawns) {
+        if (p.kind !== 'zombie' || !p.job) continue;
+        p.job.what = '';
+        if (p.job.phase === 1 || p.job.phase === 2) {
+          p.job.phase = 0;
+          p.path = [];
+          p.pi = 0;
+        }
+      }
+  }
+
+  /** za dnia: do ambientCount(dzień) snujących się, daleko od siatki; gdy brakuje ponad połowy, od razu wszyscy */
+  private topUp(day: number): void {
+    const st = this.st;
+    const have = this.zombieCount();
+    const want = Math.min(ambientCount(day), MAX_ZOMBIES);
+    if (have >= want) return;
+    const n = have < want / 2 ? want - have : Math.min(3, want - have);
+    for (let k = 0; k < n; k++) {
+      const t = this.farTile();
+      if (t < 0) break;
+      spawnZombie(st, this.w, t, Math.floor(nextRandom(st.rng) * 16));
+    }
+  }
+
+  /** losowy kafelek po stronie ulicy co najmniej FAR metrów od siatki (a bez takiego: przy krawędzi mapy) */
+  private farTile(): number {
+    const st = this.st;
+    const size = this.w.size;
+    for (let k = 0; k < 60; k++) {
+      const i = Math.floor(nextRandom(st.rng) * size * size);
+      if (this.flow[i] < FAR) continue;
+      const x = (i % size) + 0.5;
+      const y = Math.floor(i / size) + 0.5;
+      if (this.seeds.every((s) => Math.hypot((s % size) + 0.5 - x, Math.floor(s / size) + 0.5 - y) >= FAR)) return i;
+    }
+    return this.edges.length ? this.edges[Math.floor(nextRandom(st.rng) * this.edges.length)] : -1;
+  }
+
+  /** ofiara: człowiek na mapie poza pomieszczeniami siedziby */
+  private isPrey(q: Pawn): boolean {
+    return (
+      (q.kind === 'core' || q.kind === 'resident' || q.kind === 'szabrownik') &&
+      !q.away &&
+      !this.graveyard.has(q.id) &&
+      !this.inRoom(this.tileOf(q))
+    );
+  }
+
+  /** najbliższa widziana ofiara: 10 m za dnia, nocą 5 m (10 m, gdy stoi w świetle); przez siatkę widać, przez ścianę nie */
+  private seePrey(p: Pawn): Pawn | undefined {
+    const day = daylight(this.st.tick) >= 0.5;
+    let best: Pawn | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const q of this.st.pawns) {
+      if (!this.isPrey(q)) continue;
+      const d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d >= bd || d > SIGHT_DAY) continue;
+      if (!day && d > SIGHT_NIGHT && !this.litNear(q.x, q.y)) continue;
+      if (this.lineCheck(p.x, p.y, q.x, q.y) === 'wall') continue;
+      bd = d;
+      best = q;
+    }
+    return best;
+  }
+
+  /** kafelek tuż za siatką najbliżej punktu */
+  private nearestSeed(x: number, y: number): number {
+    const size = this.w.size;
+    let best = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const s of this.seeds) {
+      const d = ((s % size) + 0.5 - x) ** 2 + (Math.floor(s / size) + 0.5 - y) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  /** najbliższy słyszany hałas */
+  private heard(p: Pawn): Noise | undefined {
+    let best: Noise | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const n of this.st.noise ?? []) {
+      const d = Math.hypot(n.x - p.x, n.y - p.y);
+      if (d <= n.r && d < bd) {
+        bd = d;
+        best = n;
+      }
+    }
+    return best;
+  }
+
+  /** Zmysły szwendacza (co sekundę): widzi ofiarę po tej samej stronie siatki, to goni; za siatką idzie pod siatkę
+      naprzeciw niej; słyszy hałas, to idzie na hałas; stado idzie do siatki. */
+  private zombieSense(p: Pawn, j: Job): void {
+    const size = this.w.size;
+    const prey = this.seePrey(p);
+    if (prey) {
+      const { blocked, reg } = this.lay.zombie;
+      const pt = this.tileOf(prey);
+      const same = reg[nearestFree(blocked, size, this.tileOf(p))] === reg[nearestFree(blocked, size, pt)];
+      if (same) {
+        j.phase = 3;
+        j.target = prey.id;
+        if (this.zbudget > 0) {
+          this.zbudget--;
+          this.routeTo(p, this.goalFor(p, pt));
+        }
+        return;
+      }
+      if (j.phase === 2 && Math.hypot(prey.x - p.x, prey.y - p.y) <= 4) return;
+      if (this.zbudget > 0 && (j.phase !== 1 || p.pi >= p.path.length)) {
+        const seed = this.nearestSeed(prey.x, prey.y);
+        this.zbudget--;
+        if (seed >= 0 && seed !== this.tileOf(p) && this.go(p, seed)) {
+          j.phase = 1;
+          j.target = -1;
+        }
+      }
+      return;
+    }
+    if (j.phase === 3) {
+      j.phase = j.what === 'stado' ? 1 : 0;
+      j.target = -1;
+      p.path = [];
+      p.pi = 0;
+    }
+    const n = this.heard(p);
+    if (n && j.phase !== 4 && j.phase !== 2 && this.zbudget > 0) {
+      this.zbudget--;
+      const g = this.goalFor(p, Math.floor(n.y) * size + Math.floor(n.x));
+      if (g >= 0 && this.routeTo(p, g)) j.phase = 4;
+      return;
+    }
+    if (j.phase === 0 && j.what === 'stado') j.phase = 1;
+  }
+
+  /** krok szwendacza: gryzie ofiarę w zasięgu, co sekundę patrzy i słucha, idzie, a gdy stoi, robi swoje w fazie */
+  private zombieTick(p: Pawn): void {
+    const st = this.st;
+    const tick = st.tick;
+    if (!p.job) p.job = this.newJob('zombie', -1, this.tileOf(p), false);
+    const j = p.job;
+    if (j.phase === 3) {
+      const t = st.pawns.find((q) => q.id === j.target);
+      if (
+        t &&
+        this.isPrey(t) &&
+        Math.hypot(t.x - p.x, t.y - p.y) <= BITE_REACH + 0.2 &&
+        this.lineCheck(p.x, p.y, t.x, t.y) === 'clear'
+      ) {
+        p.path = [];
+        p.pi = 0;
+        this.face(p, t.x, t.y);
+        if (tick >= (p.cd ?? 0)) this.bite(p, t);
+        return;
+      }
+    }
+    if ((tick + p.id) % THINK_EVERY === 0) this.zombieSense(p, j);
+    if (p.pi < p.path.length) {
+      this.walk(p);
+      return;
+    }
+    const size = this.w.size;
+    const here = this.tileOf(p);
+    switch (j.phase) {
+      case 0:
+        if (tick >= p.wait) this.drift(p);
+        return;
+      case 1: {
+        const f = this.flow[here] ?? -1;
+        if (f < 0) {
+          j.phase = 0;
+          return;
+        }
+        if (f === 0) {
+          const t = this.fenceNear(here);
+          if (t >= 0) {
+            j.phase = 2;
+            j.target = t;
+            this.face(p, (t % size) + 0.5, Math.floor(t / size) + 0.5);
+          } else j.phase = 0;
+          return;
+        }
+        this.descend(p);
+        return;
+      }
+      case 2: {
+        const t = j.target;
+        if (t < 0) {
+          j.phase = 1;
+          return;
+        }
+        // siatka puściła: stado wlewa się na podwórko
+        if (!this.blocked[t]) {
+          this.pour(p);
+          return;
+        }
+        this.damageFence(t, PUSH);
+        return;
+      }
+      case 4:
+        j.phase = j.what === 'stado' ? 1 : 0;
+        return;
+      default:
+        // goni, a droga się skończyła: czeka na zmysły
+        return;
+    }
+  }
+
+  /** ugryzienie: trafia w 70% przypadków, 15 obrażeń */
+  private bite(p: Pawn, t: Pawn): void {
+    const st = this.st;
+    p.cd = st.tick + BITE_CD;
+    this.addFx('ugryzienie', t.x, t.y, p.x, p.y);
+    if (nextRandom(st.rng) >= BITE_HIT) return;
+    st.tally!.bites++;
+    this.hurt(t, BITE_DMG, p);
+  }
+
+  /** snucie się: kilka kroków w losową stronę po przechodnich kafelkach */
+  private drift(p: Pawn): void {
+    const st = this.st;
+    const size = this.w.size;
+    const { blocked } = this.lay.zombie;
+    let c = this.tileOf(p);
+    const path: number[] = [];
+    const n = 3 + Math.floor(nextRandom(st.rng) * 6);
+    for (let k = 0; k < n; k++) {
+      const x = c % size;
+      const opts = [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1].filter(
+        (q) => q >= 0 && q < size * size && !blocked[q] && !path.includes(q),
+      );
+      if (!opts.length) break;
+      c = opts[Math.floor(nextRandom(st.rng) * opts.length)];
+      path.push(c);
+    }
+    p.path = path;
+    p.pi = 0;
+    p.wait = st.tick + 60 + Math.floor(nextRandom(st.rng) * 200);
+  }
+
+  /** do siatki po polu odległości: do 8 kroków coraz bliżej (losowo między równymi) */
+  private descend(p: Pawn): void {
+    const st = this.st;
+    const size = this.w.size;
+    const { blocked } = this.lay.zombie;
+    let c = this.tileOf(p);
+    const path: number[] = [];
+    for (let k = 0; k < 8 && this.flow[c] > 0; k++) {
+      const x = c % size;
+      const want = this.flow[c] - 1;
+      const opts = [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1].filter(
+        (q) => q >= 0 && q < size * size && !blocked[q] && this.flow[q] === want,
+      );
+      if (!opts.length) break;
+      c = opts[Math.floor(nextRandom(st.rng) * opts.length)];
+      path.push(c);
+    }
+    if (!path.length && p.job) p.job.phase = 0;
+    p.path = path;
+    p.pi = 0;
+  }
+
+  /** kafelek siatki obok (najpierw siatka, potem brama) albo −1 */
+  private fenceNear(i: number): number {
+    const size = this.w.size;
+    const x = i % size;
+    const ns = [i - size, i + size, x > 0 ? i - 1 : -1, x < size - 1 ? i + 1 : -1].filter(
+      (q) => q >= 0 && q < size * size && this.fenceMask[q],
+    );
+    const wire = ns.filter((q) => this.fenceIndex.has(q));
+    const list = wire.length ? wire : ns;
+    return list.length ? list[Math.floor(nextRandom(this.st.rng) * list.length)] : -1;
+  }
+
+  /** siatka puściła: szwendacz wchodzi kilka metrów na podwórko i się tam snuje */
+  private pour(p: Pawn): void {
+    const st = this.st;
+    const size = this.w.size;
+    const shape = fenceShape(this.w);
+    const { blocked } = this.lay.zombie;
+    const cand = (shape?.yard ?? []).filter(
+      (i) => !blocked[i] && Math.hypot((i % size) + 0.5 - p.x, Math.floor(i / size) + 0.5 - p.y) <= 6,
+    );
+    if (p.job) {
+      p.job.phase = 0;
+      p.job.target = -1;
+    }
+    if (!cand.length) return;
+    this.go(p, cand[Math.floor(nextRandom(st.rng) * cand.length)]);
+  }
+
+  /** Napór albo cios w siatkę: łata traci wytrzymałość, a przy zerze dziura znowu jest otwarta; zwykły kafelek siatki
+      przy zerze staje się nową dziurą (łata się ją tak samo). Brama nie puszcza. */
+  damageFence(tile: number, amount: number): void {
+    const f = this.st.fence;
+    if (!f) return;
+    const hole = f.holes.find((h) => h.tiles.includes(tile));
+    if (hole) {
+      if (hole.patch <= 0) return;
+      hole.patch = Math.max(0, hole.patch - amount);
+      if (hole.patch === 0) this.breach();
+      return;
+    }
+    const k = this.fenceIndex.get(tile);
+    if (k === undefined || f.hp[k] <= 0) return;
+    f.hp[k] = Math.max(0, f.hp[k] - amount);
+    if (f.hp[k] > 0) return;
+    const id = f.holes.reduce((m, h) => Math.max(m, h.id), 0) + 1;
+    f.holes.push({ id, tiles: [tile], size: 0.6, patch: 0 });
+    this.breach();
+  }
+
+  private breach(): void {
+    this.st.tally!.breaches++;
+    this.rebuild();
   }
 
   /* ---------- szabrownicy ---------- */
@@ -3498,7 +3970,7 @@ export class Sim {
     for (const q of st.pawns) if (!q.away && q.job?.t === 'guard' && q.job.phase === 1) lamps.push([q.x, q.y]);
     const fires = st.things.filter((t) => t.kind === 'ognisko' && t.fuel > 0);
     const holes = st.fence ? st.fence.holes.filter((x) => !x.patch).length : 0;
-    const strangers = st.pawns.filter((q) => q.kind === 'szabrownik' && !q.away);
+    const strangers = st.pawns.filter((q) => (q.kind === 'szabrownik' || q.kind === 'zombie') && !q.away);
     // po wtargnięciu strach zostaje do rana (12 godzin)
     const r = st.raid;
     const raided = !!r && r.outcome === 'wtargnięcie' && st.tick < r.at + 12 * TICKS_PER_HOUR;
@@ -3528,8 +4000,16 @@ export class Sim {
     for (const q of this.st.pawns)
       if (q !== p && !q.away && q.kind !== 'szabrownik' && Math.hypot(q.x - p.x, q.y - p.y) <= 4) company++;
     // obcych widać z dworu z daleka, z wnętrza tylko bliżej (przez okno); śpiący ich nie widzi
+    // szwendaczy przy siatce bywa dużo: straszą najwyżej jak dwóch obcych
     let strangers = 0;
-    if (!asleep) for (const q of a.strangers) if (Math.hypot(q.x - p.x, q.y - p.y) <= (inside ? 8 : 16)) strangers++;
+    let zs = 0;
+    if (!asleep)
+      for (const q of a.strangers)
+        if (Math.hypot(q.x - p.x, q.y - p.y) <= (inside ? 8 : 16)) {
+          if (q.kind === 'zombie') zs++;
+          else strangers++;
+        }
+    strangers += Math.min(2, zs);
     return {
       temp: inside ? this.st.temps[r] : tout,
       fire,

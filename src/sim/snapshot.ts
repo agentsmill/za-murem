@@ -124,9 +124,24 @@ export interface SimSnapshot {
   cap: number;
   /** obcy (szabrownicy) na mapie */
   strangers: number;
+  /** szwendacze: wszyscy na mapie, do 12 m od siatki, napierający na siatkę */
+  zombies: { all: number; near: number; pressing: number };
   /** napad tej nocy albo ostatni: faza (0 czekają, 1 za siatką, 2 wchodzą albo uciekają, 3 po wszystkim),
       rozstrzygnięcie i co wynieśli; null: nie było */
   raid: { phase: number; outcome: string; took: { wood: number; supplies: number; scrap: number } } | null;
+}
+
+function zombieCounts(st: SimState, w: World): SimSnapshot['zombies'] {
+  const out = { all: 0, near: 0, pressing: 0 };
+  const tiles = fenceShape(w)?.tiles ?? [];
+  const size = w.size;
+  for (const p of st.pawns) {
+    if (p.kind !== 'zombie') continue;
+    out.all++;
+    if (p.job?.phase === 2) out.pressing++;
+    if (tiles.some((t) => Math.hypot((t % size) + 0.5 - p.x, Math.floor(t / size) + 0.5 - p.y) <= 12)) out.near++;
+  }
+  return out;
 }
 
 export function snapshot(st: SimState, w: World): SimSnapshot {
@@ -233,6 +248,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     residents: st.pawns.filter((p) => p.kind === 'resident').length,
     cap: st.cap,
     strangers: st.pawns.filter((p) => p.kind === 'szabrownik').length,
+    zombies: zombieCounts(st, w),
     raid: st.raid ? { phase: st.raid.phase, outcome: st.raid.outcome, took: { ...st.raid.took } } : null,
   };
 }

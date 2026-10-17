@@ -213,5 +213,9 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return ['Skrada się pod siatkę.', 'Czai się za siatką.', 'Kradnie.', 'Ucieka.', 'Ucieka.'][j.phase] ?? 'Ucieka.';
     case 'fight':
       return walking ? 'Idzie walczyć.' : 'Walczy.';
+    case 'zombie':
+      return (
+        ['Snuje się.', 'Idzie do siatki.', 'Napiera na siatkę.', 'Goni.', 'Idzie na hałas.'][j.phase] ?? 'Snuje się.'
+      );
   }
 }
