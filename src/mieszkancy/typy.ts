@@ -33,8 +33,10 @@ export interface Osoba {
   partner?: string;
   stan: 'tu' | 'wyjechal' | 'zmarl';
   dokad?: string; // 'Kraków', 'Niemcy', 'wieś pod miastem'
+  /** Zawód sprzed upadku w formie płci osoby (tylko urodzeni do 2009; linijka historii i satyra), fachy.ts. */
   dawnyZawod?: string;
-  fach?: string; // puste do Task 14
+  /** Fach na 2051 w formie płci osoby (tylko obecni od 16 lat), fachy.ts; umiejętności daje `fachOsoby`. */
+  fach?: string;
 }
 export interface Gospodarstwo {
   id: string;

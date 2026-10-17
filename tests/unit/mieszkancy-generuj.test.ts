@@ -12,7 +12,7 @@ import { generujBudynek, generujObszar, POL_KWADRATU } from '../../src/mieszkanc
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
 import { obsadzBudynek } from '../../src/mieszkancy/spis.ts';
 import type { TabeleGminy, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
-import { type Budynek, WERSJA_GENERATORA } from '../../src/mieszkancy/typy.ts';
+import { type Budynek, WERSJA_GENERATORA, type WynikBudynku } from '../../src/mieszkancy/typy.ts';
 import type { Geo } from '../../src/world/geo.ts';
 
 const KORZEN = path.resolve(import.meta.dirname, '../..');
@@ -68,11 +68,16 @@ describe('generujObszar i generujBudynek', () => {
     }
   });
 
-  it('generujBudynek to spis 2021, 2026 bez upadku i 2051 z upadkiem', () => {
+  it('generujBudynek to spis 2021, 2026 bez upadku i 2051 z upadkiem, z fachami i dawnymi zawodami na wierzchu', () => {
     const b = osiedle.budynki[0].budynek;
     const spis = obsadzBudynek(b, marginesyDla(gdansk, b.rejon), gdansk, kraj);
     const w2026 = postarz(spis, 2026, kraj, obszarGminy(gdansk), false);
-    expect(generujBudynek(b, gdansk, kraj)).toEqual(postarz(w2026, 2051, kraj, obszarGminy(gdansk), true));
+    const wynik = JSON.parse(JSON.stringify(generujBudynek(b, gdansk, kraj))) as WynikBudynku;
+    for (const o of wynik.osoby) {
+      delete o.fach; // dopisuje je fachy.ts, test mieszkancy-fachy.test.ts pilnuje, że to jedyna różnica
+      delete o.dawnyZawod;
+    }
+    expect(wynik).toEqual(postarz(w2026, 2051, kraj, obszarGminy(gdansk), true));
   });
 
   it('obszar to budynki ze środkiem obrysu w kwadracie 384 m wokół adresu, bez obrotu mapy (R22)', () => {

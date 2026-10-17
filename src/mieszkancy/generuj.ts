@@ -3,11 +3,14 @@
    wokół adresu. Każdy budynek ma własne ziarna, więc wynik budynku nie zależy od reszty obszaru, a obszar od
    kolejności. Bez gminy (`g = null`) generator bierze marginesy całej Polski (`k.polska`) i obszar „inne miasto”.
    Imiona i nazwiska dostają osoby tylko wtedy, gdy wywołujący poda tabele (`nazwy`, imiona.ts); bez nich zostają puste.
+   Fach na 2051 (obecni od 16 lat) i dawny zawód (urodzeni do 2009) dostają osoby zawsze, po imionach, z ziarna
+   `losDla('fachy', klucz budynku)` (fachy.ts); nie zależą od imion.
    Tabelę nazwisk dla gminy wybiera `nazwiskaDlaGminy` (R35), a wczytuje `wczytajNazwiskaDlaGminy` (wczytaj.ts). */
 
 import type { Geo } from '../world/geo.ts';
 import { budynkiZGeo, metryNaStopien } from './budynki.ts';
 import { obszarGminy, postarz } from './czas.ts';
+import { nadajFachy } from './fachy.ts';
 import { nadajImiona } from './imiona.ts';
 import { losDla } from './los.ts';
 import { marginesyDla } from './rejon.ts';
@@ -32,11 +35,13 @@ export interface Nazwy {
     składają, czas.ts). Budynek z `budynkiZGeo` ma już epokę i mieszkania; bez nich dopisze je `obsadzBudynek`.
     Z `nazwy` osoby dostają imiona i nazwiska (ziarno `losDla('imiona', klucz budynku)`); `postarz` zwraca świeże kopie
     osób, więc `nadajImiona` zmienia tylko wynik tej funkcji, nigdy `b` ani tabel. Reszta wyniku jest ta sama co bez
-    nazw. */
+    nazw. Fachy i dawne zawody osoby dostają zawsze, z nazwami i bez nich (`nadajFachy`, ziarno
+    `losDla('fachy', klucz budynku)`, po imionach). */
 export function generujBudynek(b: Budynek, g: TabeleGminy | null, k: TabeleKraju, nazwy?: Nazwy): WynikBudynku {
   const spis = obsadzBudynek(b, g ? marginesyDla(g, b.rejon) : k.polska, g, k);
   const wynik = postarz(spis, ROK_GRY, k, obszarGminy(g), true);
   if (nazwy) nadajImiona(wynik, nazwy.imiona, nazwy.nazwiska, losDla('imiona', wynik.budynek.klucz));
+  nadajFachy(wynik, losDla('fachy', wynik.budynek.klucz));
   return wynik;
 }
 
