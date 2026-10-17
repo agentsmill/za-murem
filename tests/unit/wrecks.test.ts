@@ -54,7 +54,7 @@ const demo = (key: string) => {
 };
 
 const LEN = { maluch: 3, polonez: 4 } as const;
-const GROUND = new Set<number>([T.ROAD, T.PARKING, T.SIDEWALK, T.GRASS, T.PARK, T.PATH]);
+const GROUND = new Set<number>([T.ROAD, T.PARKING]);
 const wrecksOf = (w: World) => w.props.filter((p) => p.kind === 'wrak') as Wreck[];
 const cheb = (size: number, a: number, b: number) =>
   Math.max(Math.abs((a % size) - (b % size)), Math.abs(Math.floor(a / size) - Math.floor(b / size)));
@@ -121,20 +121,21 @@ function checkWrecks(w: World) {
       expect(lanes.has(t), 'wrak na drodze z bramy albo z drzwi siedziby na ulicę').toBe(false);
     }
     for (const t of tiles) taken.add(t);
-    // na parkingu albo wzdłuż jezdni: pas jezdni wzdłuż auta, po jednej stronie 3 m wolnej jezdni,
-    // a gdy całe stoi na jezdni, z drugiej strony krawężnik
+    // cały na parkingu albo cały na jezdni: z jednej strony krawężnik, z drugiej 3 m wolnej jezdni
     if (tiles.every((t) => w.terr[t] === T.PARKING)) continue;
+    const road = (t: number) => w.terr[t] === T.ROAD;
+    expect(tiles.every(road), 'wrak częściowo na chodniku albo trawniku').toBe(true);
     const horiz = k.rot % 2 === 0;
     const L2 = horiz ? k.w : k.h;
     const lane = (k2: number, s: number) => (horiz ? (k.y + k2) * size + k.x + s : (k.y + s) * size + k.x + k2);
     const every = (k2: number, ok: (t: number) => boolean) => [...Array(L2).keys()].every((s) => ok(lane(k2, s)));
-    const road = (t: number) => w.terr[t] === T.ROAD;
-    expect(every(0, road) || every(1, road), 'wrak nie stoi przy jezdni').toBe(true);
     const open = (t: number) => road(t) && !w.blocked[t];
     const clear = (from: number, step: number) => [0, 1, 2].every((d) => every(from + step * d, open));
-    expect(clear(-1, -1) || clear(2, 1), 'na jezdni zostaje mniej niż 3 m').toBe(true);
-    if (every(0, road) && every(1, road))
-      expect(every(-1, (t) => !road(t)) || every(2, (t) => !road(t)), 'wrak na środku jezdni').toBe(true);
+    const curb = (k2: number) => every(k2, (t) => !road(t));
+    expect(
+      (curb(-1) && clear(2, 1)) || (curb(2) && clear(-1, -1)),
+      'wrak nie przy krawężniku albo bez 3 m przejazdu',
+    ).toBe(true);
   }
   // osiedle zostaje spójne: co było połączone bez wraków, łączy się i z nimi
   const open = w.blocked.slice();

@@ -1,5 +1,5 @@
-/* Wraki samochodów w okolicy siedziby (klimat postapo): maluchy i polonezy na parkingach z OSM i przy
-   krawędzi jezdni, wzdłuż niej: całe na jezdni przy krawężniku albo pół na chodniku czy trawniku.
+/* Wraki samochodów w okolicy siedziby (klimat postapo): maluchy i polonezy całe na parkingach z OSM albo całe
+   na jezdni przy krawężniku, wzdłuż niej (chodnik i trawnik zostają wolne dla pieszych).
    Do około 100 m od pierwszych drzwi siedziby, poza siatką, z dala od bramy i od drzwi budynków.
    Podstawa blokuje przejście. Na jezdni zostaje co najmniej 3 m przejazdu, a wolne kafelki wokół wraku
    tworzą jeden ciągły pierścień, więc żaden wrak niczego nie odcina. Deterministycznie z ziarna świata. */
@@ -30,8 +30,6 @@ export type WreckWorld = Pick<World, 'size' | 'terr' | 'blocked' | 'buildings' |
 
 /** zasięg od pierwszych drzwi siedziby */
 const RANGE = 100;
-/** grunt przy jezdni, na który wrak może wjechać połową */
-const SIDE = new Set<number>([T.SIDEWALK, T.GRASS, T.PARK, T.PATH]);
 /** krok w stronę rot: 0 północ, 1 wschód, 2 południe, 3 zachód */
 const STEP: [number, number][] = [
   [0, -1],
@@ -40,8 +38,8 @@ const STEP: [number, number][] = [
   [-1, 0],
 ];
 
-/** czym ma być pas wzdłuż auta: jezdnią, wolną jezdnią, poboczem (chodnik, trawnik) albo nie jezdnią (krawężnik) */
-type Lane = 'road' | 'open' | 'side' | 'curb';
+/** czym ma być pas wzdłuż auta: jezdnią, wolną jezdnią albo nie jezdnią (krawężnik) */
+type Lane = 'road' | 'open' | 'curb';
 
 interface Cand {
   x: number;
@@ -102,7 +100,7 @@ export function placeWrecks(w: WreckWorld): Wreck[] {
   }
   for (const o of w.buildings) for (const e of o.entrances) keepOff(e.out, 2);
 
-  // pas k wzdłuż auta (k = 0 i 1 to auto, reszta obok) cały: jezdnią, wolną jezdnią, poboczem albo nie jezdnią
+  // pas k wzdłuż auta (k = 0 i 1 to auto, reszta obok) cały: jezdnią, wolną jezdnią albo nie jezdnią
   const laneAll = (x: number, y: number, horiz: boolean, L: number, k: number, kind: Lane, grid: Uint8Array) => {
     for (let s = 0; s < L; s++) {
       const tx = horiz ? x + s : x + k;
@@ -110,27 +108,20 @@ export function placeWrecks(w: WreckWorld): Wreck[] {
       if (tx < 0 || ty < 0 || tx >= size || ty >= size) return false;
       const t = ty * size + tx;
       const road = terr[t] === T.ROAD;
-      if (kind === 'road' ? !road : kind === 'open' ? !road || grid[t] : kind === 'side' ? !SIDE.has(terr[t]) : road)
-        return false;
+      if (kind === 'road' ? !road : kind === 'open' ? !road || grid[t] : road) return false;
     }
     return true;
   };
-  // przy jezdni: krawężnik z jednej strony auta, z drugiej 3 m wolnej jezdni
+  // całe na jezdni: krawężnik z jednej strony auta, z drugiej 3 m wolnej jezdni
   const roadside = (x: number, y: number, horiz: boolean, L: number, grid: Uint8Array) => {
     const is = (k: number, kind: Lane) => laneAll(x, y, horiz, L, k, kind, grid);
     const pass = (first: number, step: number) =>
       is(first, 'open') && is(first + step, 'open') && is(first + 2 * step, 'open');
-    // całe na jezdni przy krawężniku
-    if (is(0, 'road') && is(1, 'road')) {
-      if (is(-1, 'curb') && pass(2, 1)) return true;
-      if (is(2, 'curb') && pass(-1, -1)) return true;
-    }
-    // pół na chodniku albo trawniku
-    if (is(0, 'side') && is(1, 'road') && pass(2, 1)) return true;
-    return is(1, 'side') && is(0, 'road') && pass(-1, -1);
+    if (!is(0, 'road') || !is(1, 'road')) return false;
+    return (is(-1, 'curb') && pass(2, 1)) || (is(2, 'curb') && pass(-1, -1));
   };
 
-  // kandydaci: parking z OSM albo krawędź jezdni, w zasięgu, na wolnych dozwolonych kafelkach
+  // kandydaci: parking z OSM albo jezdnia przy krawężniku, w zasięgu, na wolnych dozwolonych kafelkach
   const cands: Cand[] = [];
   const X0 = Math.max(1, Math.floor(ax - RANGE));
   const X1 = Math.min(size - 2, Math.ceil(ax + RANGE));
@@ -139,11 +130,11 @@ export function placeWrecks(w: WreckWorld): Wreck[] {
   for (let y = Y0; y <= Y1; y++)
     for (let x = X0; x <= X1; x++) {
       const t0 = y * size + x;
-      if (blocked[t0] || ban[t0] || (terr[t0] !== T.ROAD && terr[t0] !== T.PARKING && !SIDE.has(terr[t0]))) continue;
+      if (blocked[t0] || ban[t0] || (terr[t0] !== T.ROAD && terr[t0] !== T.PARKING)) continue;
       for (const horiz of [true, false]) {
-        // przy jezdni któryś pas auta jest cały jezdnią, więc zaczyna się od jezdni; parking zaczyna się od parkingu
+        // auto na jezdni ma oba pasy na jezdni, więc drugi pas też zaczyna się od jezdni
         const t1 = horiz ? t0 + size : t0 + 1;
-        if (terr[t0] !== T.PARKING && terr[t0] !== T.ROAD && terr[t1] !== T.ROAD) continue;
+        if (terr[t0] === T.ROAD && terr[t1] !== T.ROAD) continue;
         for (const model of ['maluch', 'polonez'] as const) {
           const L = WRECK_LEN[model];
           const fw = horiz ? L : 2;

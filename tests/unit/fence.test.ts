@@ -31,6 +31,16 @@ const blockGeo = (): Geo => ({
   w: [],
   poi: [],
 });
+/** chodnik (osiedlowy, bez jezdni) wzdłuż osi x na wysokości y */
+const footway = (y: number) => ({
+  l: [
+    [-80, y],
+    [80, y],
+  ] as Pt[],
+  h: 'footway',
+});
+/** blok przy ulicy z chodnikiem równoległym do fasady y m od niej (fasada z drzwiami na y = −8) */
+const footwayGeo = (y: number): Geo => ({ ...blockGeo(), r: [street(16), footway(y)] });
 /** dom w ogródku przy ulicy */
 const houseGeo = (): Geo => ({
   c: [0, 0],
@@ -64,6 +74,15 @@ const gateTiles = (w: World) => {
 };
 const cheb = (size: number, a: number, b: number) =>
   Math.max(Math.abs((a % size) - (b % size)), Math.abs(Math.floor(a / size) - Math.floor(b / size)));
+/** odległość punktu od odcinka */
+const segDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)) : 0;
+  return Math.hypot(ax + t * dx - px, ay + t * dy - py);
+};
+const walkTiles = (w: World, tiles: number[]) => tiles.filter((t) => w.terr[t] === T.SIDEWALK);
 
 /** wspólne sprawdzenia siatki, bramy, dziur i podwórka */
 function checkFence(w: World) {
@@ -131,6 +150,34 @@ function checkFence(w: World) {
     return false;
   });
   expect(paved, 'brama nie wychodzi na ulicę ani chodnik').toBe(true);
+  // suche drzewo z dala od bramy: brzeg korony co najmniej 5 m od każdego kafelka bramy
+  const cx = (t: number) => (t % size) + 0.5;
+  const cy = (t: number) => Math.floor(t / size) + 0.5;
+  for (const t of gates)
+    expect(
+      Math.hypot(cx(t) - tree.x, cy(t) - tree.y) - tree.r,
+      'korona suchego drzewa przy bramie',
+    ).toBeGreaterThanOrEqual(5);
+  // i nie w przejściu od bramy do drzwi: korona omija o metr odcinek od bramy (od strony podwórka) do wyjścia z drzwi
+  const gx = g.x + g.w / 2 + rx;
+  const gy = g.y + g.h / 2 + ry;
+  expect(
+    segDist(tree.x, tree.y, gx, gy, cx(door.out), cy(door.out)) - tree.r,
+    'suche drzewo w przejściu od bramy do drzwi',
+  ).toBeGreaterThanOrEqual(1);
+  // chodnik: siatka nie biegnie po nim ani w poprzek niego, chyba że chodnik jest dojściem do bramy (brama stoi
+  // w poprzek niego); gdy taki chodnik przechodzi przez podwórko, siatka zamyka go jeszcze raz (najwyżej 2 kafelki)
+  const walk = (t: number) => w.terr[t] === T.SIDEWALK;
+  const across = (t: number) =>
+    STEP.some(([sx, sy]) => {
+      const a = t + sy * size + sx;
+      const b = t - sy * size - sx;
+      return walk(a) && walk(b) && inYard.has(a) && !inYard.has(b) && !onFence.has(b) && !w.blocked[b];
+    });
+  const gateWalk = walkTiles(w, gates);
+  const fenceWalk = walkTiles(w, fence.tiles);
+  for (const t of [...gateWalk, ...fenceWalk]) expect(across(t), `siatka wzdłuż chodnika ${t}`).toBe(true);
+  expect(fenceWalk.length, 'siatka w poprzek chodnika').toBeLessThanOrEqual(gateWalk.length === 2 ? 2 : 0);
   // przed pierwszym wejściem: przed linią fasady z drzwiami i nie tyłem do drzwi
   const [fx, fy] = DIRS[door.dir];
   const dx = door.tile % size;
@@ -193,6 +240,44 @@ describe('siatka z bramą wokół siedziby i podwórka', () => {
     // siatka styka się z siedzibą (obwód domyka ściana budynku)
     const size = w.size;
     expect(w.fence.tiles.some((t) => [t - 1, t + 1, t - size, t + size].some((k) => w.bid[k] === w.hq))).toBe(true);
+  });
+
+  it('chodnik 8 m przed blokiem zostaje poza podwórkiem: siatka stoi obok niego, drzewo przed nim', () => {
+    const w = buildWorld(footwayGeo(0), { seed: 3, size: 128 });
+    checkFence(w);
+    expect(walkTiles(w, w.fence.yard)).toEqual([]);
+    expect(walkTiles(w, w.fence.tiles)).toEqual([]);
+    expect(walkTiles(w, gateTiles(w))).toEqual([]);
+  });
+
+  it('chodnik 3 m przed blokiem: podwórko go obejmuje, a brama stoi w poprzek niego', () => {
+    const w = buildWorld(footwayGeo(-5), { seed: 3, size: 128 });
+    checkFence(w);
+    expect(walkTiles(w, w.fence.yard).length).toBeGreaterThan(0);
+    expect(walkTiles(w, gateTiles(w))).toHaveLength(2);
+  });
+
+  it('chodnik prosto do drzwi: jest dojściem do bramy, poza bramą siatka go nie dotyka', () => {
+    const w0 = buildWorld(blockGeo(), { seed: 3, size: 128 });
+    const x = (w0.buildings[w0.hq].entrances[0].tile % w0.size) - w0.size / 2;
+    const path: Geo = {
+      ...blockGeo(),
+      r: [
+        street(16),
+        {
+          l: [
+            [x, -8],
+            [x, 16],
+          ],
+          h: 'footway',
+        },
+      ],
+    };
+    const w = buildWorld(path, { seed: 3, size: 128 });
+    checkFence(w);
+    expect(w.terr[w.buildings[w.hq].entrances[0].out]).toBe(T.SIDEWALK);
+    expect(walkTiles(w, gateTiles(w))).toHaveLength(2);
+    expect(walkTiles(w, w.fence.tiles)).toEqual([]);
   });
 
   it('dom: siatka obejmuje cały dom z ogródkiem', () => {

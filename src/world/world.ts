@@ -7,8 +7,8 @@ import type { BuildingClass } from '../content/data.ts';
 import { mulberry } from '../core/rng.ts';
 import { labelRegions, nearestFree } from '../sim/path.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
-import { applyFence, buildFence, type Fence } from './fence.ts';
-import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea } from './geo.ts';
+import { applyFence, buildFence, type Fence, type Gate, gateCrowded, yardEdges } from './fence.ts';
+import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea, segDist } from './geo.ts';
 import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { fillRing, stampLine } from './raster.ts';
@@ -363,22 +363,46 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   const reg = applyInterior({ size, blocked }, interior);
 
   // 12. suche drzewo przy trzepaku: cel pierwszego polecenia (regiony już z wnętrzem)
-  const dry = dryTreeAndTrzepak(terr, bid, blocked, reg, size, trees, buildings, hq, opts.seed);
-
-  // 13. dziurawa siatka z bramą wokół siedziby i podwórka z suchym drzewem i trzepakiem
-  const fence = buildFence({
-    size,
-    terr,
-    bid,
-    blocked,
-    buildings,
-    hq,
-    interior,
-    trees,
-    dryTree: dry.tree,
-    props: dry.props,
-    seed: opts.seed,
-  });
+  // 13. dziurawa siatka z bramą wokół siedziby i podwórka z suchym drzewem i trzepakiem. Drzewo wyznacza podwórko,
+  // a podwórko miejsce bramy, więc gdy brama, której chce podwórko, wypada przy drzewie, wybieramy drzewo jeszcze
+  // raz z dala od niej (najwyżej trzy próby); na końcu brama i tak omija drzewo
+  const avoid: Gate[] = [];
+  let dry = dryTreeAndTrzepak(terr, bid, blocked, reg, size, trees, buildings, hq, opts.seed, avoid);
+  const fenceOf = (spare: boolean) =>
+    buildFence(
+      {
+        size,
+        terr,
+        bid,
+        blocked,
+        buildings,
+        hq,
+        interior,
+        trees,
+        dryTree: dry.tree,
+        props: dry.props,
+        seed: opts.seed,
+      },
+      spare,
+    );
+  let fence = fenceOf(false);
+  const out = buildings[hq].entrances[0]?.out ?? -1;
+  const crowded = () => dry.tree >= 0 && out >= 0 && gateCrowded(size, fence.gate, trees[dry.tree], out);
+  for (let k = 0; k < 2 && crowded(); k++) {
+    // cofnięcie: posadzone drzewo i słupki trzepaka znikają z blocked
+    if (dry.planted) {
+      const t = trees.pop() as Tree;
+      blocked[Math.floor(t.y) * size + Math.floor(t.x)] = 0;
+    }
+    for (const p of dry.props) {
+      blocked[p.y * size + p.x] = 0;
+      blocked[(p.y + p.h - 1) * size + p.x + p.w - 1] = 0;
+    }
+    avoid.push(fence.gate);
+    dry = dryTreeAndTrzepak(terr, bid, blocked, reg, size, trees, buildings, hq, opts.seed, avoid);
+    fence = fenceOf(false);
+  }
+  if (crowded()) fence = fenceOf(true);
   applyFence({ blocked }, fence);
 
   // 14. sterty z odzysku na podwórku: deski i złom na pierwsze łaty siatki, gruz do rozbierania
@@ -433,13 +457,22 @@ const PAVED = new Set<number>([T.ROAD, T.SIDEWALK, T.PARKING, T.PITCH, T.PLAY]);
 
 /** zasięg przyszłego podwórka za siatką: kroków od wyjścia z drzwi siedziby bez wchodzenia na jezdnię */
 const YARD_STEPS = 24;
+/** promień korony posadzonego suchego drzewa */
+const NEW_TREE_R = 2.6;
 
 /** Suche drzewo do pierwszego polecenia: istniejące drzewo (nie krzak), najlepiej przed wejściem i około 10 m
-    od pierwszych drzwi siedziby. Najpierw szukamy w przyszłym podwórku za siatką: do 16 m od drzwi, dojście
-    najwyżej YARD_STEPS kroków bez wchodzenia na jezdnię; gdy tam nie ma drzewa, sadzimy nowe (na
-    nieutwardzonym gruncie, w ostateczności na dowolnym wolnym). Dopiero gdy w podwórku nie ma miejsca, luźniej:
-    6–25 m i dowolna droga. 2–4 m od pnia trzepak 3×1 m: blokują tylko dwa słupki na końcach, a w pasie 1 m
-    wokół nic nie stoi, więc słupki nie odetną żadnej drogi. Nowe drzewo trafia na koniec trees. */
+    od pierwszych drzwi siedziby, ale z boku: przyszła brama stanie na wprost drzwi tam, gdzie skończy się
+    podwórko, więc brzeg korony trzyma się co najmniej 5 m od niej i półtora metra od przejścia między nią
+    a drzwiami. Najpierw szukamy w podwórku bez chodników (siatka zostawi je za sobą), potem w podwórku przez
+    chodnik osiedlowy, potem jak dawniej (drzwi wychodzą prosto na chodnik przy ulicy): do 16 m od drzwi,
+    dojście najwyżej YARD_STEPS kroków bez wchodzenia na jezdnię; gdy tam nie ma drzewa, sadzimy nowe (na
+    nieutwardzonym gruncie, w ostateczności na dowolnym wolnym). Chodnik do 3 m przed drzwiami wchodzi do
+    podwórka jako dojście do klatki, a podwórko nie rośnie wtedy na boki, więc pień stoi najwyżej 4 m od osi
+    drzwi, a trzepak najwyżej 5 m. Dopiero gdy w podwórku nie ma miejsca, luźniej: 6–25 m i dowolna droga, na
+    końcu także przy bramie.
+    Siatka sprawdza bramę jeszcze raz (gateCrowded) i w razie potrzeby oddaje ją tu do omijania. 2–4 m od pnia
+    trzepak 3×1 m, najlepiej poza przejściem: blokują tylko dwa słupki na końcach, a w pasie 1 m wokół nic nie
+    stoi, więc słupki nie odetną żadnej drogi. Nowe drzewo trafia na koniec trees. */
 function dryTreeAndTrzepak(
   terr: Uint8Array,
   bid: Int32Array,
@@ -450,7 +483,8 @@ function dryTreeAndTrzepak(
   buildings: WorldBuilding[],
   hq: number,
   seed: number,
-): { tree: number; props: Trzepak[] } {
+  avoid: readonly Gate[],
+): { tree: number; props: Trzepak[]; planted: boolean } {
   const b = buildings[hq];
   const door = b.entrances[0];
   // punkt odniesienia: środek kafelka drzwi (budynek bez wejścia: jego środek)
@@ -476,9 +510,19 @@ function dryTreeAndTrzepak(
     (((x - ax) * fx + (y - ay) * fy) / dist(x, y)) * 4 - Math.abs(dist(x, y) - 10) / 4;
   const outs = new Set<number>();
   for (const o of buildings) for (const e of o.entrances) outs.add(e.out);
-  // przyszłe podwórko: kroki od wyjścia z drzwi po wolnych kafelkach bez jezdni (−1 poza zasięgiem)
-  const yard = new Int32Array(size * size).fill(-1);
-  if (door && !blocked[door.out]) {
+  const { roadSide, walkSide, streetSide, footAhead } = yardEdges(size, terr);
+  // chodnik tuż przed drzwiami wejdzie do podwórka jako dojście do klatki, więc podwórko bez chodników odpada
+  const foot = !!door && footAhead(door);
+
+  // przyszłe podwórko jak za siatką: kroki od wyjścia z drzwi po wolnych kafelkach (−1 poza zasięgiem). Bez
+  // jezdni i chodnika z kafelkami tuż przy nich (walk), bez jezdni i chodnika przy ulicy (street) albo, gdy drzwi
+  // wychodzą prosto na chodnik przy ulicy, jak dawniej: tylko bez jezdni (old)
+  const yardOf = (edge: 'walk' | 'street' | 'old') => {
+    const yard = new Int32Array(size * size).fill(-1);
+    const ok = (i: number) =>
+      !blocked[i] &&
+      (edge === 'old' ? terr[i] !== T.ROAD : !roadSide(i) && !(edge === 'walk' ? walkSide(i) : streetSide(i)));
+    if (!door || !ok(door.out)) return yard;
     const q = [door.out];
     yard[door.out] = 0;
     for (let k = 0; k < q.length; k++) {
@@ -486,13 +530,14 @@ function dryTreeAndTrzepak(
       if (yard[c] >= YARD_STEPS) continue;
       const x = c % size;
       for (const n of [x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1, c - size, c + size]) {
-        if (n < 0 || n >= size * size || yard[n] >= 0 || blocked[n] || terr[n] === T.ROAD) continue;
+        if (n < 0 || n >= size * size || yard[n] >= 0 || !ok(n)) continue;
         yard[n] = yard[c] + 1;
         q.push(n);
       }
     }
-  }
-  const inYard = (i: number) => {
+    return yard;
+  };
+  const inYard = (yard: Int32Array) => (i: number) => {
     const x = i % size;
     return (
       (x > 0 && yard[i - 1] >= 0) ||
@@ -502,9 +547,39 @@ function dryTreeAndTrzepak(
     );
   };
 
+  // przyszła brama: na wprost drzwi, na pierwszym kafelku za podwórkiem bez chodników (najdalej 20 m);
+  // przejście biegnie od niej prosto do wyjścia z drzwi. Gdy chodnik przed drzwiami wchodzi do podwórka, brama
+  // stanie tam, gdzie wychodzi on z podwórka z boku (to sprawdza siatka), a tu zostaje przejście do chodnika.
+  let gx = ax + fx * 9;
+  let gy = ay + fy * 9;
+  for (let k = 1; door && k <= 20; k++) {
+    const x = (door.tile % size) + fx * k;
+    const y = Math.floor(door.tile / size) + fy * k;
+    if (x < 0 || y < 0 || x >= size || y >= size) break;
+    const i = y * size + x;
+    if (bid[i] >= 0 || terr[i] === T.WATER || roadSide(i) || walkSide(i)) {
+      gx = x + 0.5;
+      gy = y + 0.5;
+      break;
+    }
+  }
+  const way = (x: number, y: number) => segDist(x, y, ax + fx, ay + fy, gx - fx, gy - fy);
+  // odległość od osi drzwi w bok
+  const lateral = (x: number, y: number) => Math.abs(fx ? y - ay : x - ax);
+  // brzeg korony co najmniej 5 m od bramy (także przesuniętej o metr w bok) i 1,5 m od przejścia; przy chodniku
+  // przed drzwiami podwórko nie rośnie na boki (siatka zostaje 6 m od osi), więc pień najwyżej 4 m od osi
+  const aside = (x: number, y: number, r: number) => {
+    if (!door) return true;
+    // bramy z poprzednich prób, przy których drzewo stało za blisko (z zapasem pół metra)
+    if (avoid.some((g) => gateCrowded(size, g, { x, y, r: r + 0.5 }, door.out))) return false;
+    if (foot) return lateral(x, y) <= 4 && way(x, y) - r >= 1.5;
+    for (let s = -1; s <= 1; s++) if (Math.hypot(x - gx - fy * s, y - gy - fx * s) - r < 5) return false;
+    return way(x, y) - r >= 1.5;
+  };
+
   // trzepak poziomy albo pionowy; w ramce 1 m wokół nic nie blokuje i nie ma wyjścia z drzwi;
-  // w podwórku (tight) stoi na kafelkach podwórka i nie przy samej jezdni
-  const trzepak = (tx: number, ty: number, tight: boolean): Trzepak | null => {
+  // w podwórku (yard) stoi na kafelkach podwórka i nie przy samej jezdni; keep: lepiej poza przejściem
+  const trzepak = (tx: number, ty: number, yard: Int32Array | null, keep: boolean): Trzepak | null => {
     let best: Trzepak | null = null;
     let bs = Number.NEGATIVE_INFINITY;
     for (const [w, h] of [
@@ -515,14 +590,16 @@ function dryTreeAndTrzepak(
         for (let x = Math.floor(tx) - 7; x <= Math.floor(tx) + 5; x++) {
           const d = Math.hypot(Math.max(x - tx, 0, tx - (x + w)), Math.max(y - ty, 0, ty - (y + h)));
           if (d < 2 || d > 4 || x < 1 || y < 1 || x + w + 1 > size || y + h + 1 > size) continue;
-          // około 3 m od pnia, nie w progu drzwi siedziby
+          // około 3 m od pnia, nie w progu drzwi siedziby i nie w przejściu od bramy
           let s = -Math.abs(d - 3) / 2 - (dist(x + w / 2, y + h / 2) < 5 ? 3 : 0);
+          if (keep && door && way(x + w / 2, y + h / 2) < 1.5 + Math.max(w, h) / 2) s -= 3;
+          if (keep && foot && Math.max(lateral(x + 0.5, y + 0.5), lateral(x + w - 0.5, y + h - 0.5)) > 5) continue;
           for (let yy = y - 1; yy <= y + h && s > Number.NEGATIVE_INFINITY; yy++)
             for (let xx = x - 1; xx <= x + w; xx++) {
               const i = yy * size + xx;
               const on = yy >= y && yy < y + h && xx >= x && xx < x + w;
               const g = on ? TRZEPAK_GROUND[terr[i]] : 1;
-              const out = tight && (terr[i] === T.ROAD || (on && yard[i] < 0));
+              const out = yard && (terr[i] === T.ROAD || (on && yard[i] < 0));
               if (blocked[i] || bid[i] >= 0 || outs.has(i) || !g || out) {
                 s = Number.NEGATIVE_INFINITY;
                 break;
@@ -536,28 +613,38 @@ function dryTreeAndTrzepak(
         }
     return best;
   };
-  const finish = (tree: number, p: Trzepak) => {
+  const finish = (tree: number, p: Trzepak, planted: boolean) => {
     blocked[p.y * size + p.x] = 1;
     blocked[(p.y + p.h - 1) * size + p.x + p.w - 1] = 1;
-    return { tree, props: [p] };
+    return { tree, props: [p], planted };
   };
 
+  // kolejno: podwórko bez chodników, podwórko przez chodnik osiedlowy, podwórko jak dawniej (drzwi na chodniku
+  // przy ulicy), luźniej, na końcu także przy bramie
+  const passes: { yard: Int32Array | null; keep: boolean }[] = [
+    { yard: yardOf('street'), keep: true },
+    { yard: yardOf('old'), keep: true },
+    { yard: null, keep: true },
+    { yard: null, keep: false },
+  ];
+  if (!foot) passes.unshift({ yard: yardOf('walk'), keep: true });
   let fallback = -1;
-  for (const tight of [true, false]) {
-    const far = tight ? 16 : 25;
-    const near = tight ? inYard : reachable;
+  for (const { yard, keep } of passes) {
+    const far = yard ? 16 : 25;
+    const near = yard ? inYard(yard) : reachable;
     // 1. istniejące drzewo
     const cands: { k: number; s: number }[] = [];
     trees.forEach((t, k) => {
       const d = dist(t.x, t.y);
       if (t.kind === 2 || d < 6 || d > far || !near(Math.floor(t.y) * size + Math.floor(t.x))) return;
+      if (keep && !aside(t.x, t.y, t.r)) return;
       cands.push({ k, s: score(t.x, t.y) + (t.kind === 0 ? 1 : 0) + Math.min(t.r, 3) * 0.3 });
     });
     cands.sort((p, q) => q.s - p.s || p.k - q.k);
     if (fallback < 0 && cands.length) fallback = cands[0].k;
     for (const c of cands) {
-      const p = trzepak(trees[c.k].x, trees[c.k].y, tight);
-      if (p) return finish(c.k, p);
+      const p = trzepak(trees[c.k].x, trees[c.k].y, yard, keep);
+      if (p) return finish(c.k, p, false);
     }
 
     // 2. nowe drzewo: w promieniu 2 m nic nie blokuje (więc pień niczego nie odetnie), korona nie na budynku
@@ -568,7 +655,7 @@ function dryTreeAndTrzepak(
         for (let x = Math.max(2, Math.floor(ax - far)); x <= Math.min(size - 3, Math.ceil(ax + far)); x++) {
           const i = y * size + x;
           const d = dist(x + 0.5, y + 0.5);
-          if (d < 6 || d > far || !near(i)) continue;
+          if (d < 6 || d > far || !near(i) || (keep && !aside(x + 0.5, y + 0.5, NEW_TREE_R))) continue;
           if (strict ? !TREE_GROUND.has(terr[i]) : terr[i] === T.ROAD) continue;
           let ok = true;
           for (let dy = -2; dy <= 2 && ok; dy++)
@@ -593,11 +680,11 @@ function dryTreeAndTrzepak(
         const x = i % size;
         const y = (i - x) / size;
         blocked[i] = 1;
-        const p = trzepak(x + 0.5, y + 0.5, tight);
+        const p = trzepak(x + 0.5, y + 0.5, yard, keep);
         if (p) {
           const rnd = mulberry((seed ^ 0xd7ee5) >>> 0);
-          trees.push({ x: x + 0.5, y: y + 0.5, kind: 0, r: 2.6, seed: (rnd() * 1e9) | 0 });
-          return finish(trees.length - 1, p);
+          trees.push({ x: x + 0.5, y: y + 0.5, kind: 0, r: NEW_TREE_R, seed: (rnd() * 1e9) | 0 });
+          return finish(trees.length - 1, p, true);
         }
         blocked[i] = 0;
       }
@@ -605,7 +692,7 @@ function dryTreeAndTrzepak(
   }
 
   // 3. nigdzie nie ma miejsca na trzepak: samo drzewo
-  return { tree: fallback, props: [] };
+  return { tree: fallback, props: [], planted: false };
 }
 
 /** Łączy z największym obszarem każdy obszar większy niż 0,5% wolnej mapy (najwyżej 12 bram).
