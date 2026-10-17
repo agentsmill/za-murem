@@ -14,6 +14,7 @@ import {
   minutesAt,
   outdoorTemp,
   START_MINUTES,
+  seasonOf,
   TICKS_PER_DAY,
   TICKS_PER_HOUR,
   TICKS_PER_SECOND,
@@ -113,6 +114,11 @@ export const PATCH_TICKS = TICKS_PER_HOUR / 2;
 export const CAMPFIRE_WOOD = 2;
 export const BUILD_TICKS = TICKS_PER_HOUR / 4;
 export const CAMPFIRE_CAP = 6;
+/** kuchnia społeczna: porcja z niej to 85% zwykłej (nic się nie marnuje) */
+export const SOCIAL_KITCHEN = 0.85;
+/** ogródek: plon co trzy doby, według pory roku (jesień, zima, wiosna, lato) */
+export const GARDEN_TICKS = 3 * TICKS_PER_DAY;
+export const GARDEN_YIELD: readonly number[] = [2, 0, 4, 6];
 /** wytrzymałość zasieków (siatka 45–75, świeża łata 70) */
 export const ZASIEKI_HP = 100;
 /** zajęcie mieszkania (oznaczenie drzwi i spis) trwa kwadrans gry */
@@ -440,7 +446,7 @@ const HEAPS = new Set(['deski', 'zlom', 'gruz', 'smieci']);
 /** rzeczy, które leżą luzem (materiały, zapasy, sterty); reszta to meble i budowle (ognisko też: nie staje się
     na nim) */
 const LOOSE = new Set(['drewno', 'jedzenie', 'posilek', 'pien', 'czesci', 'leki', ...HEAPS]);
-const BEDS = new Set(['lozko', 'wersalka']);
+const BEDS = new Set(['lozko', 'wersalka', 'lozka_pietrowe']);
 
 /** drewno ze ściętego drzewa: 3 sztuki na metr korony, z krzaka mało */
 export const woodFrom = (t: Tree): number =>
@@ -473,6 +479,12 @@ function newThing(st: SimState, kind: string, x: number, y: number, w = 1, h = 1
 }
 
 const covers = (t: Thing, x: number, y: number) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
+/** kafelki rzeczy */
+const thingTiles = (t: Thing, size: number): number[] => {
+  const out: number[] = [];
+  for (let y = t.y; y < t.y + t.h; y++) for (let x = t.x; x < t.x + t.w; x++) out.push(y * size + x);
+  return out;
+};
 
 /** koza zarządu: ta w mieszkaniu zarządu (inne kozy grzeją swoje pomieszczenia, ale zarząd ich nie pilnuje) */
 function homeKoza<T extends { kind: string; x: number; y: number }>(
@@ -2057,8 +2069,9 @@ export class Sim {
             this.food();
           if (src) {
             const hot = src.kind === 'posilek';
+            // najedzenie według uchwały; kuchnia społeczna oszczędza tylko na ciepłym (konserwa to konserwa)
             const m = st.laws.foodMult;
-            this.eatPortions(m, src);
+            this.eatPortions(hot ? this.portion() : m, src);
             p.needs!.food = Math.min(100, p.needs!.food + (hot ? MEAL : COLD_MEAL) * satiety(m));
             if (hot) this.addMood(p, 'Ciepły posiłek', 4, 4 * TICKS_PER_HOUR);
             else this.addMood(p, 'Zimne z puszki', -3, 4 * TICKS_PER_HOUR);
@@ -2198,7 +2211,8 @@ export class Sim {
           if (!at) return false;
           j.phase = 2;
           j.t0 = tick;
-          j.until = tick + PATCH_TICKS;
+          // z warsztatem łata idzie półtora raza szybciej
+          j.until = tick + Math.round(PATCH_TICKS / (this.hasBuilt('warsztat') ? 1.5 : 1));
           this.face(p, (hole.tiles[0] % size) + 0.5, Math.floor(hole.tiles[0] / size) + 0.5);
           return true;
         }
@@ -2541,20 +2555,24 @@ export class Sim {
     const taken = this.taken(p);
     // zarząd śpi w swoim mieszkaniu, mieszkaniec w swoim
     const apt = p.kind === 'resident' ? p.apt : h.home;
-    // najpierw własne łóżko, potem niczyje, na końcu cudze
+    // najpierw własne łóżko, potem niczyje, na końcu cudze; zepsute się nie liczą, łóżka piętrowe mają dwa miejsca
     let bed: Thing | undefined;
+    let slot = -1;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.things) {
-      const i = t.y * size + t.x;
-      if (!BEDS.has(t.kind) || apt < 0 || aptAt(h, i) !== apt || this.layer(p.kind).blocked[i] || taken.includes(i))
-        continue;
-      const d = this.dist2(p, i) + (t.owner === p.id ? 0 : t.owner < 0 ? 1e6 : 2e6);
-      if (d < bd) {
-        bd = d;
-        bed = t;
+      if (!BEDS.has(t.kind) || t.broken || apt < 0) continue;
+      const slots = t.kind === 'lozka_pietrowe' ? thingTiles(t, size) : [t.y * size + t.x];
+      for (const i of slots) {
+        if (aptAt(h, i) !== apt || this.layer(p.kind).blocked[i] || taken.includes(i)) continue;
+        const d = this.dist2(p, i) + (t.owner === p.id ? 0 : t.owner < 0 ? 1e6 : 2e6);
+        if (d < bd) {
+          bd = d;
+          bed = t;
+          slot = i;
+        }
       }
     }
-    let tile = bed ? bed.y * size + bed.x : -1;
+    let tile = bed ? slot : -1;
     if (!bed) {
       // łóżek za mało: śpi na podłodze w pokoju zarządu, a bez pokoju gdziekolwiek w mieszkaniu
       const floorIn = (pokoj: boolean) => {
@@ -2579,11 +2597,11 @@ export class Sim {
   private shouldCook(): boolean {
     const st = this.st;
     const cores = st.pawns.filter((q) => q.kind === 'core' && !q.away);
-    const m = st.laws.foodMult;
+    const m = this.portion();
     if (cores.some((q) => q.job?.t === 'cook') || !canCookIn(st, this.w)) return false;
-    // wspólny kocioł: gotuje się raz dziennie dla wszystkich, godzinę przed obiadem (i przed kolacją tylko wtedy,
-    // gdy garnek opustoszał)
-    if (st.laws.sharedMeals) {
+    // wspólny kocioł albo kuchnia społeczna: gotuje się raz dziennie dla wszystkich, godzinę przed obiadem (i przed
+    // kolacją tylko wtedy, gdy garnek opustoszał)
+    if (this.cookOnce()) {
       const h = hourOf(st.tick);
       return MEAL_HOURS.some((mh) => h === mh - 1) && this.meals() < this.potTarget() * (h < MEAL_HOURS[0] ? 1 : 0.5);
     }
@@ -2594,13 +2612,23 @@ export class Sim {
     return soon * m > this.meals();
   }
 
-  /** ile porcji ma być w garnku: dla zarządu według wielkości porcji, przy wspólnym kotle przed obiadem od razu
-      na obiad i kolację */
+  /** wielkość porcji: uchwała (racje, kocioł), a z kuchnią społeczną o 15% mniej jedzenia na osobę */
+  private portion(): number {
+    return this.st.laws.foodMult * (this.hasBuilt('kuchnia_spoleczna') ? SOCIAL_KITCHEN : 1);
+  }
+
+  /** gotuje się raz dziennie dla wszystkich: wspólny kocioł albo kuchnia społeczna */
+  private cookOnce(): boolean {
+    return this.st.laws.sharedMeals || this.hasBuilt('kuchnia_spoleczna');
+  }
+
+  /** ile porcji ma być w garnku: dla zarządu według wielkości porcji, przy gotowaniu raz dziennie przed obiadem
+      od razu na obiad i kolację */
   private potTarget(): number {
     const st = this.st;
     const cores = st.pawns.filter((q) => q.kind === 'core' && !q.away).length;
-    const one = Math.ceil(cores * st.laws.foodMult - 1e-9);
-    if (!st.laws.sharedMeals) return one;
+    const one = Math.ceil(cores * this.portion() - 1e-9);
+    if (!this.cookOnce()) return one;
     return hourOf(st.tick) < MEAL_HOURS[0] ? one * MEAL_HOURS.length : one;
   }
 
@@ -3110,6 +3138,15 @@ export class Sim {
     }
   }
 
+  /** rzecz leży w pomieszczeniu z magazynem */
+  private inStore(t: Thing): boolean {
+    const h = this.house;
+    if (!h) return false;
+    const size = this.w.size;
+    const r = h.room[t.y * size + t.x];
+    return r >= 0 && this.st.things.some((m) => m.kind === 'magazyn' && h.room[m.y * size + m.x] === r);
+  }
+
   /** gotowa budowla danego rodzaju stoi */
   private hasBuilt(kind: BuildKind): boolean {
     return this.st.things.some((t) => t.kind === kind);
@@ -3549,6 +3586,8 @@ export class Sim {
       let bd = Number.POSITIVE_INFINITY;
       for (const t of this.st.things) {
         if (t.n <= 0 || (t.by >= 0 && t.by !== p.id) || !ok(t)) continue;
+        // bez zarządu zapasy w pokoju z magazynem są dla nich za dobrze schowane
+        if (!r.gov && this.inStore(t)) continue;
         const i = t.y * size + t.x;
         if (reg[i] !== region) continue;
         const d = this.dist2(p, i);
@@ -3650,6 +3689,15 @@ export class Sim {
     for (const t of st.things)
       if ((t.kind === 'koza' || t.kind === 'ognisko') && t.fuel > 0) t.fuel = Math.max(0, t.fuel - HEAT_EVERY);
     this.boost = heatStep(st.temps, this.kinds, this.links, fires, tout);
+    // ogródki rosną; co trzy doby plon obok grządek
+    for (const t of st.things)
+      if (t.kind === 'ogrodek') {
+        t.fuel += HEAT_EVERY;
+        if (t.fuel < GARDEN_TICKS) continue;
+        t.fuel = 0;
+        const n = GARDEN_YIELD[seasonOf(st.tick)];
+        if (n > 0) this.dropMat((t.y + 1) * this.w.size + t.x + 1, 'jedzenie', n);
+      }
     this.light = roomLight(this.kinds.length, this.links, fires);
     const hours = HEAT_EVERY / TICKS_PER_HOUR;
     const night = this.nightAround();

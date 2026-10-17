@@ -385,3 +385,181 @@ describe('M2: budowa', () => {
     expect(copy.hash()).toBe(sim.hash());
   });
 });
+
+describe('M2: działanie budowli', () => {
+  const core = (st: SimState) => st.pawns.filter((p) => p.kind === 'core');
+  const atHour = (day: number, hh: number) => Math.round(((day - 1) * 24 + hh - 15) * 800);
+  const homeRoom = (kind: string) => h.rooms.find((r) => r.apt === 0 && r.kind === kind)!.id;
+  /** gotowa budowla postawiona od razu (jak po finishBuild) w pierwszym miejscu, które canPlace przepuszcza */
+  const place = async (st: SimState, kind: import('../../src/sim/budowle.ts').BuildKind, tiles: number[]) => {
+    const { canPlace, footprint } = await import('../../src/sim/budowle.ts');
+    for (const i of tiles)
+      if (canPlace(st, w, kind, i % size, Math.floor(i / size), 0).ok) {
+        const f = footprint(kind, 0);
+        const t = {
+          id: st.nextThing++,
+          kind,
+          x: i % size,
+          y: Math.floor(i / size),
+          w: f.w,
+          h: f.h,
+          rot: 0,
+          n: 0,
+          fuel: 0,
+          by: -1,
+          owner: -1,
+        };
+        st.things.push(t);
+        return t;
+      }
+    throw new Error(`nie ma miejsca na ${kind}`);
+  };
+  const roomTiles = (room: number) => {
+    const out: number[] = [];
+    for (let i = 0; i < size * size; i++) if (h.room[i] === room && !w.blocked[i]) out.push(i);
+    return out;
+  };
+
+  it('łóżka piętrowe: dwa miejsca więcej dla mieszkańców i dwa miejsca do spania dla zarządu', async () => {
+    const { capOf } = await import('../../src/sim/sim.ts');
+    const st = createSim(w, 3, { core: 6 });
+    const cap0 = capOf(st, w);
+    const bunk = await place(st, 'lozka_pietrowe', roomTiles(homeRoom('pokoj')));
+    expect(capOf(st, w)).toBe(cap0 + 2);
+    st.tick = atHour(1, 21.5);
+    const sim = new Sim(w, st);
+    while (st.tick < atHour(2, 1)) sim.step();
+    const inBunk = core(st).filter((p) => p.job?.t === 'sleep' && p.job.phase === 1 && p.job.target === bunk.id);
+    expect(inBunk).toHaveLength(2);
+  });
+
+  it('zasieki na dziurze: dziura zamknięta dla szabrowników, siatka mocniejsza', async () => {
+    const st = createSim(w, 3, { core: 1 });
+    const sim = new Sim(w, st);
+    const hole = st.fence!.holes[0];
+    const t = hole.tiles[0];
+    const dur0 = snapshot(st, w).fence.durability;
+    sim.push({ t: 'build', ids: [core(st)[0].id], kind: 'zasieki', x: t % size, y: Math.floor(t / size), rot: 0 });
+    for (let k = 0; k < 6000 && !st.things.some((q) => q.kind === 'zasieki'); k++) sim.step();
+    expect(st.things.some((q) => q.kind === 'zasieki')).toBe(true);
+    expect(sim.canWalk('szabrownik', t)).toBe(false);
+    expect(snapshot(st, w).fence.holes.some((x) => x.id === hole.id)).toBe(false);
+    expect(snapshot(st, w).fence.durability).toBeGreaterThan(dur0);
+  });
+
+  it('warsztat: łatanie o połowę szybsze', async () => {
+    const patchTime = async (shop: boolean) => {
+      const st = createSim(w, 3, { core: 1 });
+      if (shop) await place(st, 'warsztat', roomTiles(homeRoom('pokoj')));
+      const sim = new Sim(w, st);
+      const [p] = core(st);
+      const hole = st.fence!.holes[0];
+      sim.push({ t: 'patch', ids: [p.id], hole: hole.id });
+      let start = -1;
+      for (let k = 0; k < 6000 && !hole.patch; k++) {
+        sim.step();
+        if (start < 0 && p.job?.t === 'patch' && p.job.phase === 2) start = st.tick;
+      }
+      return st.tick - start;
+    };
+    const normal = await patchTime(false);
+    expect(await patchTime(true)).toBeLessThanOrEqual(Math.ceil(normal / 1.5) + 2);
+  });
+
+  it('ogródek: po trzech dniach daje jedzenie, jesienią mało', async () => {
+    const st = createSim(w, 3, { core: 1 });
+    const g = await place(st, 'ogrodek', w.fence.yard);
+    const sim = new Sim(w, st);
+    const nearFood = () =>
+      st.things
+        .filter((t) => t.kind === 'jedzenie' && Math.max(Math.abs(t.x - g.x), Math.abs(t.y - g.y)) <= 4)
+        .reduce((a, t) => a + t.n, 0);
+    while (st.tick < 3 * 24 * 800 - 400) sim.step();
+    expect(nearFood()).toBe(0);
+    while (st.tick < 3 * 24 * 800 + 400) sim.step();
+    expect(nearFood()).toBe(2);
+  });
+
+  it('magazyn: szabrownicy (bez zarządu) nie biorą zapasów z pokoju z magazynem', async () => {
+    const stolen = async (store: boolean) => {
+      const st = createSim(w, 3, { core: 2 });
+      const room = homeRoom('pokoj');
+      if (store) await place(st, 'magazyn', roomTiles(room));
+      const food = st.things.find((t) => t.kind === 'jedzenie')!;
+      const free = roomTiles(room).find(
+        (i) =>
+          !st.things.some(
+            (t) =>
+              i % size >= t.x &&
+              i % size < t.x + t.w &&
+              Math.floor(i / size) >= t.y &&
+              Math.floor(i / size) < t.y + t.h,
+          ),
+      )!;
+      food.x = free % size;
+      food.y = Math.floor(free / size);
+      const n0 = food.n;
+      st.tick = atHour(1, 22);
+      const sim = new Sim(w, st);
+      sim.push({ t: 'raid', ids: [], at: atHour(1, 23), post: `d${st.fence!.holes[0].id}` });
+      while (st.tick < atHour(2, 2)) sim.step();
+      expect(st.raid!.outcome).toBe('wtargnięcie');
+      return n0 - st.things.filter((t) => t.kind === 'jedzenie').reduce((a, t) => a + t.n, 0);
+    };
+    expect(await stolen(false)).toBeGreaterThan(0);
+    expect(await stolen(true)).toBe(0);
+  });
+
+  it('kuchnia społeczna: gotuje się raz dziennie i schodzi mniej jedzenia', async () => {
+    const days = async (kitchen: boolean) => {
+      const st = createSim(w, 3, { core: 4 });
+      st.things.find((t) => t.kind === 'jedzenie')!.n = 40;
+      if (kitchen) await place(st, 'kuchnia_spoleczna', roomTiles(homeRoom('kuchnia')));
+      const sim = new Sim(w, st);
+      let cooks = 0;
+      let was = false;
+      // posiłki liczone po zmianie lastMeal (ile kto zjadł, niezależnie od tego, jak najedzony był na końcu)
+      let meals = 0;
+      const last = new Map(core(st).map((p) => [p.id, p.lastMeal]));
+      for (let d = 1; d <= 3; d++) {
+        for (const i of h.sklad) {
+          const pile = st.things.find((t) => t.kind === 'drewno' && t.y * size + t.x === i);
+          if (pile) pile.n = 10;
+          else
+            st.things.push({
+              id: st.nextThing++,
+              kind: 'drewno',
+              x: i % size,
+              y: Math.floor(i / size),
+              w: 1,
+              h: 1,
+              rot: 0,
+              n: 10,
+              fuel: 0,
+              by: -1,
+              owner: -1,
+            });
+        }
+        while (st.tick < atHour(d + 1, 6)) {
+          sim.step();
+          const c = core(st).some((p) => p.job?.t === 'cook' && p.job.phase === 1);
+          if (c && !was) cooks++;
+          was = c;
+          for (const p of core(st)) {
+            if (last.get(p.id) !== p.lastMeal) meals++;
+            last.set(p.id, p.lastMeal);
+          }
+        }
+      }
+      const left = st.things.filter((t) => t.kind === 'jedzenie' || t.kind === 'posilek').reduce((a, t) => a + t.n, 0);
+      return { cooks, eaten: 40 - left, meals };
+    };
+    const base = await days(false);
+    const k = await days(true);
+    expect(k.cooks).toBeLessThan(base.cooks);
+    // bez kuchni porcja na posiłek, z kuchnią 85% porcji (ułamki zbierają się w st.portion)
+    expect(base.eaten).toBe(base.meals);
+    expect(k.meals).toBeGreaterThan(10);
+    expect(k.eaten).toBeLessThanOrEqual(Math.ceil(k.meals * 0.85));
+  });
+});
