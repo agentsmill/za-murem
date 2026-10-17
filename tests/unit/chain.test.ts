@@ -7,6 +7,7 @@ import {
   COOK_TICKS,
   createSim,
   GAS_START,
+  type JobKind,
   MEAL,
   type Pawn,
   Sim,
@@ -501,6 +502,72 @@ describe('determinizm i zapis z pracami w toku', () => {
       expect(busy()).toBe(true);
       const b = new Sim(w, JSON.parse(JSON.stringify(a.st)));
       for (let k = 0; k < 3000; k++) {
+        a.step();
+        b.step();
+      }
+      expect(b.hash()).toBe(a.hash());
+    });
+
+  const out = w.buildings[w.hq].entrances[0].out;
+  const cases: [string, JobKind, (st: SimState) => void, (sim: Sim) => void][] = [
+    ['dokładania do kozy', 'refuel', (st) => addWood(st, w.interior.sklad[0], w.size, 5), () => {}],
+    [
+      'jedzenia',
+      'eat',
+      (st) => {
+        st.pawns[0].needs!.food = 20;
+        const table = st.things.find((t) => t.kind === 'stol')!;
+        st.things.push({ ...addWood(st, table.y * w.size + table.x, w.size, 3), kind: 'posilek' });
+        st.things.splice(st.things.length - 2, 1);
+      },
+      () => {},
+    ],
+    [
+      'snu',
+      'sleep',
+      (st) => {
+        st.tick = atHour(1, 22.5);
+      },
+      () => {},
+    ],
+    [
+      'grzania się',
+      'warm',
+      (st) => {
+        kozaOf(st).fuel = 4 * BURN_TICKS;
+        for (const p of st.pawns) if (p.needs) p.needs.warm = 20;
+      },
+      () => {},
+    ],
+    ['czekania po poleceniu', 'go', () => {}, (sim) => sim.push({ t: 'move', ids: [1], to: out + 4 * w.size })],
+    [
+      'rozbierania mebla',
+      'burn',
+      () => {},
+      (sim) => sim.push({ t: 'burn', ids: [1], thing: sim.st.things.find((t) => t.kind === 'mebloscianka')!.id }),
+    ],
+    [
+      'gotowania',
+      'cook',
+      (st) => {
+        st.pawns[0].needs!.food = 40;
+      },
+      () => {},
+    ],
+  ];
+  for (const [name, kind, setup, order] of cases)
+    it(`zapis i wczytanie w trakcie ${name} daje ten sam skrót`, () => {
+      const st = createSim(w, 21, { core: 4, crowd: 6 });
+      setup(st);
+      const a = new Sim(w, st);
+      order(a);
+      const busy = () => core(a).some((p) => p.job?.t === kind && p.job.phase === 1);
+      for (let k = 0; k < 6000 && !busy(); k++) a.step();
+      // w środku pracy; niesienie drewna do kozy trwa ledwie kilka ticków
+      for (let k = 0; k < (kind === 'refuel' ? 2 : 17); k++) a.step();
+      expect(busy()).toBe(true);
+      const b = new Sim(w, JSON.parse(JSON.stringify(a.st)));
+      for (let k = 0; k < 2000; k++) {
         a.step();
         b.step();
       }
