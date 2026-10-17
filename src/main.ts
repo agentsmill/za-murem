@@ -860,9 +860,8 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   laws: ['', ''],
   raid: ['', ''],
   mend: ['', ''],
-  // fala 1 M2 (teksty robocze symulacji, interfejs poprawi je w miejscu)
   build: ['Weźmie się do budowy.', 'Wezmą się do budowy.'],
-  unbuild: ['Plan budowy odwołany.', 'Plan budowy odwołany.'],
+  unbuild: ['', ''],
   search: ['Przeszuka pomieszczenie.', 'Przeszukają pomieszczenie.'],
   dismantle: ['Rozbierze na materiał.', 'Rozbiorą na materiał.'],
   repair: ['Naprawi.', 'Naprawią.'],
