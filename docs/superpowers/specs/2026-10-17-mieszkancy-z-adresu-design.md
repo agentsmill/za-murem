@@ -145,6 +145,8 @@ Dźwignie upadku to decyzje gry, nie dane, i każda jest jedną liczbą w tabeli
 
 Uczciwa linia bazowa bez upadku już daje w 2051 osiedle starych ludzi: dzietność 2025 (1,068) jest poniżej najczarniejszego scenariusza GUS, a z kobiet z rocznika 1975 co piąta jest bezdzietna. Dźwignie dodają głównie powroty i wspólne mieszkanie, a nie dodatkową śmierć.
 
+Stan pustych mieszkań (pomysł Mateusza z 18.10.2026: „W tych mieszkaniach to w sumie powinny być śmieci często do odzyskania albo coś do naprawienia.”). Generator wie, dlaczego mieszkanie opustoszało, więc każde puste mieszkanie dostaje z historii swój stan: klatkę, rok opuszczenia i rodzaj, np. rodzina wyjechała i zostawiła meble, lokatorzy wymarli, mieszkanie splądrowano, zalało je, był pożar. Rodzaj wynika z dziennika (wyjazd, zgon, wyludnienie) i z losowania z ziarna budynku dla zdarzeń z lat upadku. Zawartość wnętrza, śmieci do odzysku i rzeczy do naprawy robi z tego stanu M2 (wnętrza i symulacja); generator daje tylko stan.
+
 ## 6. Imiona i nazwiska
 
 Imiona według rocznika:
@@ -182,9 +184,10 @@ Ton historii i satyry ustala Mateusz. Budujący pisze pierwszy zestaw szablonów
 
 ## 9. Połączenie z grą
 
-- Wynik generatora to osoby zgodne z dzisiejszym `Person` (imię, nazwisko, płeć, zawód, umiejętności, wiek, cechy, dom), rozszerzone o rocznik, gospodarstwo, klatkę, krewnych, historię i formy odmiany. Zawód z 2051 roku i umiejętności biorą się z `PROFS` (zawód, którego widełki wieku pasują do osoby), z wagami od okolicy. Cechy jak dziś z `TRAITS`.
-- Rdzeń zarządu to mieszkańcy siedziby (GDD: „zarząd i fachowcy z waszych klatek”). `createSim` przestaje losować rdzeń przez `makePerson` i wybiera z gospodarstw siedziby cztery osoby, które pokrywają potrzebne dziedziny (ciepło, budowa, medycyna, uprawy), tak jak dziś. `makePerson` zostaje dla testów zgodności z 0.3.
-- Tłum: każdy pionek tłumu to konkretny mieszkaniec swojej klatki, więc po kliknięciu pokazuje kartę. Pionków jest mniej niż mieszkańców; resztę liczymy per klatka, jak w GDD.
+- Wynik generatora to osoby zgodne z dzisiejszym `Person` (imię, nazwisko, płeć, zawód, umiejętności, wiek, cechy, dom), rozszerzone o rocznik, gospodarstwo, klatkę, krewnych, historię i formy odmiany. Fach na 2051 i umiejętności biorą się z własnej tabeli fachów generatora (dziedziny jak w 0.3), z wagami od wieku, dawnego zawodu i okolicy. Dawny zawód sprzed upadku jest tylko linijką historii. Cechy jak dziś z `TRAITS`.
+- Rdzeń zarządu i mieszkańcy siedziby (w M1: 3–8 osób z planem dnia) pochodzą z gospodarstw siedziby, z klatką, rodziną i historią (GDD: „zarząd i fachowcy z waszych klatek”). Reszta osiedla zostaje jako gospodarstwa per klatka, bez pionków, na przyszłe zajmowanie budynków.
+- Dotychczasowy rdzeń: `createSim` przestaje losować rdzeń przez `makePerson` i wybiera z gospodarstw siedziby cztery osoby, które pokrywają potrzebne dziedziny (ciepło, budowa, medycyna, uprawy), tak jak dziś. `makePerson` zostaje dla testów zgodności z 0.3.
+- Pionki mieszkańców siedziby (od M1 zamiast tłumu) to konkretne osoby z gospodarstw siedziby, więc po kliknięciu pokazują kartę. Gdy wrócą pionki z innych klatek, zasada jest ta sama. Pionków jest mniej niż mieszkańców; resztę liczymy per klatka, jak w GDD.
 - Karta osoby: imię, wiek, klatka, rodzina, historia, przycisk zmiany imienia. Karta klatki albo budynku: lista gospodarstw w jednej linijce każde. Bez numerów mieszkań i bez pięter. Przekrój budynku może umieszczać rodziny w mieszkaniach, ale bez etykiet.
 - Determinizm: każdy budynek ma własne ziarno z identyfikatora rejonu, stałego klucza budynku i numeru wersji generatora. Klucz budynku to identyfikator OSM, jeśli źródło go daje, a inaczej skrót z zaokrąglonego środka i pola obrysu we współrzędnych geograficznych, nie po obrocie mapy; budujący sprawdza, co niosą kafelki i dema. Dzięki ziarnom na budynek nie ma znaczenia, czy budynki generujemy wszystkie na starcie, czy dopiero przy pierwszym kliknięciu.
 - Trwałość (moja decyzja): ten sam adres daje tych samych ludzi w obrębie jednej wersji generatora i jednej edycji tabel. Tabele odświeżamy świadomie, najwyżej raz w roku, razem z podbiciem wersji i wpisem w dzienniku. Zapis gry (M5) przechowuje swoich ludzi, więc rozpoczęta gra po aktualizacji się nie zmienia; zmieniają się tylko nowe gry. Imię zmienione przez gracza, które po aktualizacji nie ma już swojej osoby, gra pokazuje raz z dopiskiem „wyprowadził się” albo „wyprowadziła się” i usuwa.
@@ -226,9 +229,9 @@ Moja propozycja, każdy krok z bramką i zrzutami tam, gdzie coś widać:
 
 Formaty plików i podział na pliki, szczegóły IPF, konkretne wartości parametrów (stroi bot), brzmienie pierwszych szablonów (czyta Mateusz), układ kart w interfejsie (sprawdza się zrzutami), sposób sklejania segmentów bloków, nazwy komend i modułów.
 
-## Otwarte pytania do Mateusza
+## Rozstrzygnięte pytania z przeglądu
 
-Po przeglądzie projektu zostały dwa pytania, które zmieniają to, co powstanie:
+Oba pytania rozstrzygnęła 18.10.2026 sesja koordynująca prace przy grze („Analiza folderu i realizacja planu”), z kierunku, który Mateusz dał w nocy: „świat upada i trzeba sobie radzić”, a wspólnota nie musi być wiernym odbiciem dzisiejszego blokowiska. Oba potwierdzone przez Mateusza 18.10.2026: „Tak, zostaw oba rozstrzygnięcia: połowa mieszkań pusta i fachy na 2051.”
 
-1. Jak pusto ma być na osiedlu w 2051? Dane bez upadku dają prawie pełne bloki, czyli kilkaset osób w jednym bloku i kilka tysięcy na obszarze gry. Balans 0.3, który jest wzorcem dla M3, stoi na kilkudziesięciu osobach w spółdzielni na start i około 220 po 45 dniach, a 28% sąsiednich budynków było tam pustych. Moja propozycja: dźwignia wyludnienia w silniku (ludzie wyjechali na wieś po jedzenie i umarli w zimach lat trzydziestych), tak żeby w 2051 stała pusta mniej więcej połowa mieszkań. Puste mieszkania to od razu cele przeszukiwania, bo gra ma już kategorię „Opuszczone mieszkania”. Spółdzielnia na start to siedziba, a reszta to sąsiedzi do przyłączenia.
-2. Co oznacza zawód z `PROFS` w 2051? Widełki wieku pochodzą z 0.3, więc generator da np. 25-letniego prompt engineera urodzonego już po roku zero. Do wyboru: zostawić jako satyrę; traktować zawód jako pracę sprzed upadku, wtedy zarząd z fachem ma zwykle po 45+ lat; albo dać generatorowi własne fachy na 2051 z tymi samymi umiejętnościami, np. „uczył się u ojca hydraulika”.
+1. Wyludnienie: mocne. W 2051 stoi pusta mniej więcej połowa mieszkań. To dźwignia w silniku strojona botem (ludzie wyjechali na wieś po jedzenie, umarli w zimach lat trzydziestych). Puste mieszkania stają się celami przeszukiwania jako „Opuszczone mieszkania”. Spółdzielnia na start to siedziba, reszta osiedla to gospodarstwa per klatka na przyszłe zajmowanie budynków.
+2. Zawód: generator ma własne fachy na 2051, czyli to, co ktoś umie dziś robić na osiedlu, z dziedzinami umiejętności z 0.3 (`bud`, `cieplo`, `elek`, `med`, `uprawa`, `it`, `obrona`). Zawód sprzed upadku zostaje jako linijka historii i satyra („dawniej prompt engineer”). `PROFS` z 0.3 zostaje nietknięty dla testu zgodności.
