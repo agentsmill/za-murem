@@ -8,6 +8,7 @@
    przy ekranie w pierwszych 10 minutach (okna zarządu, zmiany na karcie, polecenia, których wymaga gra) i skutki
    napadów, a potem noce z dyżurem przy kozie i bez niego (temperatura w kuchni o 6:00, jak długo pali się koza)
    i trzy doby z uchwałami o jedzeniu (racje, wspólny kocioł) i bez nich: zapasy, najedzenie, nastrój, gotowanie.
+   W grze z zarządem do tego głód zarządu i poranek wartowników: głodny po nocy najpierw je, potem odsypia.
    Tłum za siatką jest już tylko do pomiaru wydajności (npm run perf), w grze są mieszkańcy siedziby.
    Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] */
 
@@ -16,12 +17,20 @@ import path from 'node:path';
 import { nextRandom } from '../src/core/rng.ts';
 import { clockOf, dayOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
+import { HUNGRY } from '../src/sim/needs.ts';
 import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
-import { BURNABLE, createSim, type Laws, Sim, woodFrom } from '../src/sim/sim.ts';
+import { BURNABLE, createSim, FOOD_START, type Laws, REST_UNTIL, Sim, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
-import { type Decision, type NightLog, type Policy, playLaws, playWithGov } from '../tests/unit/gov-play.ts';
+import {
+  type Decision,
+  type Hunger,
+  type NightLog,
+  type Policy,
+  playLaws,
+  playWithGov,
+} from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 
 const SEED = Number(process.argv[2]) || 1;
@@ -280,6 +289,31 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
     `    raport zarządu a to, co odegrała symulacja (wynik, łup, liczba szabrowników, ${slept} uśpionych wartowników): ${mismatch ? `${mismatch} niezgodnych nocy` : 'zgodne w każdej nocy'}`,
   );
   if (mismatch) fail = true;
+  // głód zarządu: poranki, w których jedzenia brakło dla głodnych, i czas z najedzeniem poniżej 10
+  const hun = (k: keyof Hunger) => runs.reduce((a, r) => a + r.hunger[k], 0);
+  console.log(
+    `    jedzenie zarządu: rano brakło dla głodnych w ${hun('short')} z ${hun('mornings')} poranków, ktoś głodny (najedzenie < 10) przez ${Math.round((100 * hun('starving')) / Math.max(1, hun('samples')))}% czasu`,
+  );
+  // wartownik po nocy: głodny najpierw je, potem odsypia; liczą się poranki, w których jedzenia starczało dla
+  // wszystkich głodnych w zarządzie (przy niedoborze zjadają inni, to sprawa gospodarki, nie wartownika)
+  const morns = runs.flatMap((r) => r.mornings);
+  const fed = morns.filter((m) => m.food6 < HUNGRY && m.stock6 >= m.hungry6);
+  const ateAt = fed.filter((m) => m.ateAt >= 0).map((m) => m.ateAt);
+  // zjadł przed 8:00 albo nie głodował (najedzenie co najmniej 15, czekał na ciepły posiłek)
+  const late = fed.filter((m) => (m.ateAt < 0 || m.ateAt >= 8) && m.minFood < 15).length;
+  const tiredFed = fed.filter((m) => m.rest6 < REST_UNTIL);
+  const napped = tiredFed.filter((m) => m.napped).length;
+  const hhmm = (v: number) => {
+    const m = Math.round(v * 60);
+    return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+  };
+  console.log(
+    `    wartownicy rano (6–14): ${morns.length} poranków, głodnych przy jedzeniu dla wszystkich ${fed.length}: zjedli przed 8:00 ${fed.filter((m) => m.ateAt >= 0 && m.ateAt < 8).length}, później bez głodowania ${fed.filter((m) => !(m.ateAt >= 0 && m.ateAt < 8) && m.minFood >= 15).length}, głodowali ${late} (pierwszy posiłek średnio o ${ateAt.length ? hhmm(mean(ateAt)) : '—'}), zmęczeni po posiłku odsypiali ${napped} z ${tiredFed.length}; przy niedoborze ${morns.filter((m) => m.food6 < HUNGRY && m.stock6 < m.hungry6).length}`,
+  );
+  if (late || napped < tiredFed.length) {
+    console.log('    BŁĄD: głodny wartownik ma rano najpierw zjeść, a potem odsypiać');
+    fail = true;
+  }
   const r0 = runs[0];
   console.log(`    pierwsze 10 min, ziarno ${GOV_SEEDS[0]}:`);
   for (const d of first(r0)) console.log(`      ${f1(d.s).padStart(6)} s  ${d.kind.padEnd(10)} ${d.text.slice(0, 90)}`);
@@ -314,7 +348,7 @@ if (warm < 18 || cold > warm - 3) {
 
 const LAW_DAYS = 3;
 console.log(
-  `\nUchwały o jedzeniu, ${govName}: ${GOV_SEEDS.length} ziaren × ${LAW_DAYS} doby bez zarządu, zapasy na start 24 porcje`,
+  `\nUchwały o jedzeniu, ${govName}: ${GOV_SEEDS.length} ziaren × ${LAW_DAYS} doby bez zarządu, zapasy na start ${FOOD_START} porcji`,
 );
 console.log('  uchwała                 zapasy  najedz.  nastrój  nastrój miesz.  gotowania  posiłki  koniec zapasów');
 const lawRuns: [string, Partial<Laws>][] = [

@@ -61,8 +61,8 @@ export const STACK = 10;
 export const BURN_TICKS = TICKS_PER_HOUR / 2;
 /** koza mieści naraz tyle sztuk */
 export const KOZA_CAP = 4;
-/** porcje jedzenia w kuchni na start: dwa posiłki dziennie dla czterech osób przez trzy dni */
-export const FOOD_START = 24;
+/** porcje jedzenia w kuchni na start: dwa posiłki dziennie dla czterech osób na pięć dni */
+export const FOOD_START = 40;
 /** posiłek trwa pół godziny gry; ciepły daje więcej najedzenia niż zimna konserwa prosto z zapasów */
 export const EAT_TICKS = TICKS_PER_HOUR / 2;
 export const MEAL = 45;
@@ -160,6 +160,8 @@ export const hungerRate = (m: number): number => (m < 1 ? 1 + 0.4 * (1 - m) : 1)
 export const RATION_MEALS = 2;
 /** poniżej takiego najedzenia je się zawsze: poza porą wspólnego posiłku i ponad racje */
 export const STARVING = 10;
+/** do tylu sił zarząd śpi (rano i odsypiając za dnia) */
+export const REST_UNTIL = 60;
 /** przy racjach je się dopiero przy wyraźnym głodzie */
 export const RATION_HUNGRY = 25;
 
@@ -237,6 +239,9 @@ export interface Pawn {
   /** posiłki od 6:00 (racje) i tick ostatniego posiłku (wspólny posiłek raz na porę) */
   ate: number;
   lastMeal: number;
+  /** zarząd odsypia za dnia (po nocnej warcie albo po pobudce na posiłek): głodny najpierw je, potem śpi, dopóki
+      siły poniżej REST_UNTIL */
+  nap?: boolean;
 }
 
 /** Rzecz na mapie: meble z wnętrza (kopiowane przy starcie, żeby dało się je kiedyś przestawić albo spalić),
@@ -1961,7 +1966,14 @@ export class Sim {
         return true;
       }
       case 'sleep':
-        if (j.phase === 1) return this.night() || p.needs!.rest < 60;
+        if (j.phase === 1) {
+          // głodny za dnia wstaje coś zjeść, kiedy jest co, a potem odsypia
+          if (p.kind === 'core' && !this.night() && tick % THINK_EVERY === 0 && this.wantsMeal(p) && this.mealFor(p)) {
+            p.nap = true;
+            return false;
+          }
+          return this.night() || p.needs!.rest < REST_UNTIL;
+        }
         if (!at) return false;
         j.phase = 1;
         j.t0 = tick;
@@ -2007,7 +2019,12 @@ export class Sim {
       case 'guard': {
         // nie śpi do rana; schodzi z posterunku tylko wtedy, gdy zdrowie siada
         if (j.phase === 1) {
-          if (tick >= j.until || p.needs!.health < 30) return false;
+          if (p.needs!.health < 30) return false;
+          // rano po nocy na posterunku: najpierw coś zje, potem odsypia
+          if (tick >= j.until) {
+            p.nap = true;
+            return false;
+          }
           // przy kozie: kiedy ognia zostaje mało, idzie po drewno i dokłada
           if (j.target === KOZA_POST && tick % THINK_EVERY === 0) this.tendKoza(p, j);
           return true;
@@ -2023,7 +2040,11 @@ export class Sim {
           return this.carryToKoza(p, j, koza);
         }
         // przysypia na posterunku do rana
-        if (j.phase === 4) return tick < j.until;
+        if (j.phase === 4) {
+          if (tick < j.until) return true;
+          p.nap = true;
+          return false;
+        }
         if (j.phase === 3) {
           const koza = this.koza();
           if (koza && at) {
@@ -2257,11 +2278,17 @@ export class Sim {
       return;
     }
     const n = p.needs!;
+    if (p.nap && n.rest >= REST_UNTIL) p.nap = false;
     if (p.carry > 0) {
       if (this.startRefuel(p, false) || this.startHaul(p)) return;
       this.dropCarry(p);
     }
-    if (((this.night() && n.rest < 80) || n.rest < TIRED) && this.startSleep(p)) return;
+    // za dnia zmęczony albo odsypiający (po nocnej warcie, po pobudce na posiłek): głodny najpierw coś zje
+    if (!this.night() && (p.nap || n.rest < TIRED) && this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
+    if (((this.night() && n.rest < 80) || n.rest < TIRED || p.nap) && this.startSleep(p)) {
+      p.nap = false;
+      return;
+    }
     if (this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
     if (this.startRefuel(p, false) || this.startHaul(p)) return;
     if (this.shouldCook() && this.startCook(p, false)) return;
@@ -2450,12 +2477,19 @@ export class Sim {
 
   /** jedzenie: ciepły posiłek z garnka, a gdy go nie ma, zimna konserwa z zapasów, ale tylko wtedy, gdy nie da się
       ugotować albo głód jest już duży (inaczej ktoś najpierw ugotuje) */
+  /** co zjeść od razu: ciepły posiłek z garnka, a zimną konserwę tylko z dużego głodu albo gdy nie da się ugotować
+      (inaczej ktoś najpierw ugotuje); undefined: nie ma co */
+  private mealFor(p: Pawn): Thing | undefined {
+    const pot = this.st.things.find((t) => t.kind === 'posilek' && t.n > 0);
+    if (pot) return pot;
+    const raw = this.food();
+    return raw && (p.needs!.food < 15 || !canCookIn(this.st, this.w)) ? raw : undefined;
+  }
+
   private startEat(p: Pawn, shared = false): boolean {
     const h = this.house!;
     const size = this.w.size;
-    const pot = this.st.things.find((t) => t.kind === 'posilek' && t.n > 0);
-    const raw = this.food();
-    const food = pot ?? (raw && (p.needs!.food < 15 || !canCookIn(this.st, this.w)) ? raw : undefined);
+    const food = this.mealFor(p);
     if (!food) return false;
     const fi = food.y * size + food.x;
     // stół w mieszkaniu zarządu najbliżej zapasów

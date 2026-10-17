@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { outdoorTemp } from '../../src/sim/clock.ts';
 import type { PropLike } from '../../src/sim/house.ts';
-import { BURN_TICKS, createSim, Sim } from '../../src/sim/sim.ts';
+import { BURN_TICKS, createSim, FOOD_START, Sim } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { mockBlock, plainBlock } from './interior-mock.ts';
 
@@ -33,7 +33,7 @@ describe('odczyt stanu dla modułu zarządu', () => {
       woodCarried: 0,
       fireHours: 0,
       wood: 0,
-      supplies: 24,
+      supplies: FOOD_START,
       meals: 0,
       gasCooks: 6,
       // sterty ze świata (prawdziwe albo z atrapy, gdy świat ich nie ma)
