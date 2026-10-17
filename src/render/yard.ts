@@ -27,7 +27,7 @@ export interface FenceLike {
  */
 export function fenceThings(
   f: FenceLike,
-  w: Pick<World, 'size' | 'bid'>,
+  w: Pick<World, 'size' | 'bid'> & { terr?: Uint8Array },
   state?: (tile: number) => FenceState | undefined,
   open?: boolean,
 ): ThingLike[] {
@@ -37,13 +37,29 @@ export function fenceThings(
   for (let dy = 0; dy < f.gate.h; dy++)
     for (let dx = 0; dx < f.gate.w; dx++) gate.add((f.gate.y + dy) * size + f.gate.x + dx);
   const holes = new Set(f.hole);
+  // schodki po skosie: dwa kafelki siatki stykające się tylko rogiem dostają narożny łącznik w kafelku
+  // obok (najlepiej nie na budynku ani na jezdni), żeby linia siatki była ciągła; to tylko rysunek
+  const isFence = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < size && y < size && (fence.has(y * size + x) || gate.has(y * size + x));
+  const free = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < size && y < size && w.bid[y * size + x] < 0 && w.terr?.[y * size + x] !== T.ROAD;
+  const fill: number[] = [];
+  for (const i of f.tiles) {
+    const x = i % size;
+    const y = (i - x) / size;
+    for (const dx of [1, -1]) {
+      if (!isFence(x + dx, y + 1) || isFence(x + dx, y) || isFence(x, y + 1)) continue;
+      fill.push(free(x + dx, y) || !free(x, y + 1) ? y * size + x + dx : (y + 1) * size + x);
+    }
+  }
+  for (const c of fill) fence.add(c);
   const joins = (x: number, y: number) => {
     if (x < 0 || y < 0 || x >= size || y >= size) return false;
     const j = y * size + x;
     return fence.has(j) || gate.has(j) || w.bid[j] >= 0;
   };
   const out: ThingLike[] = [];
-  for (const i of f.tiles) {
+  for (const i of [...f.tiles, ...fill]) {
     const x = i % size;
     const y = (i - x) / size;
     let mask = 0;

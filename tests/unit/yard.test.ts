@@ -6,6 +6,26 @@ import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
 
+describe('siatka na schodkach po skosie', () => {
+  it('kafelki stykające się rogiem dostają narożny łącznik, linia jest ciągła', () => {
+    const size = 10;
+    const bid = new Int32Array(size * size).fill(-1);
+    // rząd y = 2 od x = 1 do 4, potem schodek w dół: rząd y = 3 od x = 5 do 8; brama daleko
+    const tiles = [1, 2, 3, 4].map((x) => 2 * size + x).concat([5, 6, 7, 8].map((x) => 3 * size + x));
+    const f: FenceLike = { tiles, hole: [], gate: { x: 0, y: 8, w: 2, h: 1, rot: 0 }, yard: [] };
+    const things = fenceThings(f, { size, bid });
+    const at = (x: number, y: number) => things.find((t) => t.kind === 'siatka' && t.x === x && t.y === y);
+    const mask = (x: number, y: number) => (at(x, y)!.spec as { mask: number }).mask;
+    // łącznik w (5, 2): od zachodu (4, 2) i na południe (5, 3)
+    expect(at(5, 2)).toBeDefined();
+    expect(mask(5, 2)).toBe(NB.W | NB.S);
+    expect(mask(4, 2)).toBe(NB.E | NB.W);
+    expect(mask(5, 3) & NB.N).toBe(NB.N);
+    // na prostych odcinkach łączników nie ma
+    expect(things.filter((t) => t.kind === 'siatka')).toHaveLength(tiles.length + 1);
+  });
+});
+
 describe('siatka z bramą jako rzeczy', () => {
   // mapa 10×10, budynek w kolumnie 7 (wiersze 2–4), siatka: rząd y = 2 od x = 2 do 6, brama w (2, 3)–(2, 4)
   const size = 10;

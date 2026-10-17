@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { gameLights } from '../../src/render/game.ts';
+import { GUARD_LAMP_R, gameLights } from '../../src/render/game.ts';
 import { LightLayer } from '../../src/render/lightLayer.ts';
 import { FeedWatch, KOZA_POST, type PawnLike, poseOf, type ThingWithId } from '../../src/render/poses.ts';
-import { KOZA_POST as SIM_KOZA_POST } from '../../src/sim/sim.ts';
+import { LAMP_REACH, KOZA_POST as SIM_KOZA_POST } from '../../src/sim/sim.ts';
 
 const pawn = (o: Partial<PawnLike> = {}): PawnLike => ({
   id: 3,
@@ -20,8 +20,9 @@ const pawn = (o: Partial<PawnLike> = {}): PawnLike => ({
 const guard = (target: number, phase = 1) => ({ t: 'guard', phase, target });
 
 describe('czuwanie przy kozie', () => {
-  it('posterunek przy kozie jak w symulacji', () => {
+  it('posterunek przy kozie i zasięg latarni jak w symulacji', () => {
     expect(KOZA_POST).toBe(SIM_KOZA_POST);
+    expect(GUARD_LAMP_R).toBe(LAMP_REACH);
   });
 
   it('przy kozie klęczy przy ogniu albo stoi, bez latarni; przy bramie z latarnią', () => {

@@ -61,6 +61,8 @@ import { TreeLayer } from './treeLayer.ts';
 import { fenceThings, mockWrecks } from './yard.ts';
 
 const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+/** od tej ciemności zaznaczenie i droga rysują się nad mapą światła, a zaznaczeni dostają zarys */
+const NIGHT_MARKS = 0.35;
 /** nowych tekstur rzeczy na klatkę (wrak to około 1 ms): reszta w następnych, bez zacięcia na starcie */
 const NEW_ART_PER_FRAME = 8;
 /** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna albo ImageBitmap);
@@ -565,6 +567,9 @@ export class GameView {
       : this.lights;
     const lights = this.cutOn ? all : all.filter((l) => !l.inside);
     this.darkness = darknessAt(minutesAt(st.tick));
+    // nocą zaznaczenie i droga nad mapą światła (inaczej ciemnieją razem z ziemią), w dzień pod pionkami
+    const marksAt = this.darkness > NIGHT_MARKS ? this.root.getChildIndex(this.light.glowSprite) : 1;
+    if (this.root.getChildIndex(this.marks) !== marksAt) this.root.setChildIndex(this.marks, marksAt);
     // rzeczy: meble tylko w przekroju, ogień w kozie i ognisku co 150 ms następna klatka
     const flame = Math.floor(performance.now() / 150) % FIRE_FRAMES;
     for (const e of this.things.values()) {
@@ -611,16 +616,18 @@ export class GameView {
         sp.tint = (c << 16) | (c << 8) | Math.min(255, c + 8);
       }
       if (selected.has(p.id) && sp.visible) this.markPawn(p, x, y);
-      // ktoś z zarządu za koroną drzewa: jego zarys na wierzchu (korona zostaje pełna)
-      const hidden = p.kind === 'core' && sp.visible && !pose.lie && this.trees.covering(x, y);
+      // ktoś z zarządu za koroną drzewa: jego zarys na wierzchu (korona zostaje pełna); nocą zaznaczeni
+      // dostają słabszy zarys, żeby nie ginęli w ciemności
+      const behind = p.kind === 'core' && sp.visible && !pose.lie && this.trees.covering(x, y);
+      const lost = !behind && sp.visible && selected.has(p.id) && this.darkness > NIGHT_MARKS;
       let xr = this.xraySprites.get(p.id);
-      if (hidden) {
+      if (behind || lost) {
         if (!xr) {
           xr = new Sprite(Texture.EMPTY);
-          xr.alpha = 0.85;
           this.xray.addChild(xr);
           this.xraySprites.set(p.id, xr);
         }
+        xr.alpha = behind ? 0.85 : 0.5;
         xr.texture = this.frameTexture(this.outlineTex, this.outline!, p.look % LOOKS, pose);
         xr.anchor.copyFrom(sp.anchor);
         xr.position.copyFrom(sp.position);
@@ -636,7 +643,13 @@ export class GameView {
         this.xraySprites.delete(id);
       }
     // dym z kozy (przez okno) i z ogniska, z czasu gry; widać go także przy dachu
-    this.smoke.update(smokeSources(this.drawn, this.scene.w), gameT, this.darkness, z);
+    this.smoke.update(
+      smokeSources(this.drawn, this.scene.w),
+      gameT,
+      this.darkness,
+      z,
+      (px, py) => this.cutOn && this.underRoof(px / TILE, py / TILE),
+    );
     // noc: ciemność z godziny gry, światła z gry i z listy
     const [x0, y0] = this.toWorld(0, 0);
     const [x1, y1] = this.toWorld(this.width, this.height);

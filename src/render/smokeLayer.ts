@@ -10,6 +10,8 @@ import { mix } from './art/palette.ts';
 import { LIFE, type Puff, puffs, type SmokeSource } from './smoke.ts';
 
 const MAX_R = 20;
+/** krycie kłębu nad odkrytym wnętrzem przekroju (względem zwykłego) */
+const INDOOR = 0.22;
 /** najmniejszy kłąb na ekranie (piksele ekranu): z daleka dym się nie gubi */
 const MIN_SCREEN_R = 3;
 const DAY: Record<SmokeSource['kind'], number> = { koza: 0xdedcd6, ognisko: 0xc8c2b8 };
@@ -71,9 +73,17 @@ export class SmokeLayer {
 
   /**
    * Kłęby w chwili t (sekundy gry) ze źródeł z tej klatki; zgaszone dolatują do końca życia.
-   * darkness: ciemność nocy 0..1, zoom: skala kamery.
+   * darkness: ciemność nocy 0..1, zoom: skala kamery. indoor: czy punkt (piksele świata) leży nad
+   * odkrytym wnętrzem przekroju; tam kłęby są przygaszone, bo przy zdjętym dachu dym nad pokojami
+   * wyglądał, jakby dymiło w mieszkaniu.
    */
-  update(sources: readonly SmokeSource[], t: number, darkness: number, zoom: number): void {
+  update(
+    sources: readonly SmokeSource[],
+    t: number,
+    darkness: number,
+    zoom: number,
+    indoor: (x: number, y: number) => boolean = () => false,
+  ): void {
     const now = new Map(sources.map((s) => [s.key, s]));
     for (const [k, s] of this.live) if (!now.has(k)) this.dying.set(k, { s, off: t });
     for (const k of now.keys()) this.dying.delete(k);
@@ -111,7 +121,7 @@ export class SmokeLayer {
       sp.position.set(Math.round(p.x), Math.round(p.y));
       const base = mix(DAY[kinds[k]], NIGHT, darkness);
       sp.tint = mix(base, WARM, Math.min(1, warm * 1.5));
-      sp.alpha = p.a * (0.72 - 0.1 * darkness);
+      sp.alpha = p.a * (0.72 - 0.1 * darkness) * (indoor(p.x, p.y) ? INDOOR : 1);
       sp.visible = true;
     }
     for (let k = out.length; k < this.pool.length; k++) this.pool[k].visible = false;
