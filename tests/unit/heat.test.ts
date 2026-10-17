@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { clockOf, outdoorTemp, START_MINUTES, seasonOf, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
-import { HEAT_EVERY, heatStep, KOZA_TARGET, type RoomKind } from '../../src/sim/house.ts';
+import { clockOf, daylight, outdoorTemp, START_MINUTES, seasonOf, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
+import { HEAT_EVERY, heatStep, KOZA_TARGET, type RoomKind, roomLight } from '../../src/sim/house.ts';
 
 /** tick o danej godzinie danego dnia (dzień 1 zaczyna się o START_MINUTES) */
 const atHour = (day: number, h: number) => Math.round(((day - 1) * 24 + h - START_MINUTES / 60) * TICKS_PER_HOUR);
@@ -49,6 +49,15 @@ describe('temperatura na zewnątrz', () => {
       const after = outdoorTemp(5, atHour(d + 1, 0));
       expect(Math.abs(after - before)).toBeLessThan(1);
     }
+  });
+
+  it('światło dnia: jasno od 7 do 17, zmierzch do 20, ciemna noc, świt od 5', () => {
+    expect(daylight(atHour(1, 15))).toBe(1);
+    expect(daylight(atHour(2, 12))).toBe(1);
+    expect(daylight(atHour(1, 18.5))).toBeCloseTo(0.5, 6);
+    expect(daylight(atHour(1, 22))).toBe(0);
+    expect(daylight(atHour(2, 3))).toBe(0);
+    expect(daylight(atHour(2, 6))).toBeCloseTo(0.5, 6);
   });
 
   it('ta sama pogoda dla tego samego ziarna, inna dla innego', () => {
@@ -118,6 +127,11 @@ describe('ciepło w pomieszczeniach', () => {
     for (let k = 0; k < 60 * PER_HOUR; k++) heatStep(temps, kinds, links, [], 14);
     expect(Math.abs(temps[0] - 16)).toBeLessThan(0.5);
     expect(Math.abs(temps[3] - 14)).toBeLessThan(0.5);
+  });
+
+  it('światło z palącej się kozy: jej pomieszczenie jasne, przez drzwi półmrok, dalej ciemno', () => {
+    expect(roomLight(5, links, [0])).toEqual([1, 0.5, 0, 0, 0]);
+    expect(roomLight(5, links, [])).toEqual([0, 0, 0, 0, 0]);
   });
 
   it('pomieszczenia spoza mieszkań (sala, hala, zaplecze) też mają temperaturę', () => {

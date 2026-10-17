@@ -22,6 +22,15 @@ export function clockOf(tick: number): string {
   const m = Math.floor(minutesAt(tick)) % 1440;
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
+/** światło dnia 0–1: jasno od 7 do 17, zmierzch do 20, noc, świt od 5 do 7 (jak przyciemnienie w main.ts) */
+export function daylight(tick: number): number {
+  const h = (minutesAt(tick) / 60) % 24;
+  if (h >= 7 && h < 17) return 1;
+  if (h >= 17 && h < 20) return (20 - h) / 3;
+  if (h >= 5 && h < 7) return (h - 5) / 2;
+  return 0;
+}
+
 /** 0 jesień, 1 zima, 2 wiosna, 3 lato */
 export const seasonOf = (tick: number): number => Math.floor((dayOf(tick) - 1) / SEASON_DAYS) % 4;
 

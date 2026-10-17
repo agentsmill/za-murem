@@ -170,6 +170,22 @@ export function heatBoost(
   return boost;
 }
 
+/** Światło z palących się kóz (0–1): ich pomieszczenie jasne, przez drzwi półmrok, dalej ciemno.
+    fires: pomieszczenia z palącą się kozą. */
+export function roomLight(
+  n: number,
+  links: readonly (readonly [number, number])[],
+  fires: readonly number[],
+): number[] {
+  const light = new Array<number>(n).fill(0);
+  for (const r of fires) light[r] = 1;
+  for (const [a, b] of links) {
+    if (light[a] === 1 && light[b] < 0.5) light[b] = 0.5;
+    if (light[b] === 1 && light[a] < 0.5) light[a] = 0.5;
+  }
+  return light;
+}
+
 /** Jeden krok ciepła (HEAT_EVERY ticków). Pomieszczenie dąży do temperatury z zewnątrz z izolacją
     plus ocieplenie od kóz (heatBoost). Ogień grzeje szybko, bez niego temperatura zmienia się powoli.
     Zwraca ocieplenie pomieszczeń. */

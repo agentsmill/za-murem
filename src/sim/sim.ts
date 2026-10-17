@@ -7,7 +7,7 @@ import { PROFS } from '../content/data.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
-import { hourOf, outdoorTemp, TICKS_PER_HOUR, TICKS_PER_SECOND } from './clock.ts';
+import { daylight, hourOf, outdoorTemp, TICKS_PER_HOUR, TICKS_PER_SECOND } from './clock.ts';
 import {
   dryTreeOf,
   HEAT_EVERY,
@@ -18,6 +18,7 @@ import {
   houseOf,
   inHomeApt,
   type RoomKind,
+  roomLight,
   roomLinks,
   START_TEMP,
 } from './house.ts';
@@ -55,6 +56,15 @@ const FIRE_REACH = 2.5;
 export type Facing = 0 | 1 | 2 | 3; // dół, góra, lewo, prawo
 
 export type JobKind = 'go' | 'chop' | 'haul' | 'refuel' | 'warm' | 'eat' | 'sleep';
+
+/** chwilowy nastrój (spalone meble, ciepły posiłek): dodaje się do nastroju z potrzeb do ticku until */
+export interface Mood {
+  /** krótki opis do karty osoby, np. „Spalili moje łóżko” */
+  why: string;
+  /** punkty nastroju (ujemne: gorzej) */
+  d: number;
+  until: number;
+}
 
 /** praca pionka rdzenia */
 export interface Job {
@@ -98,6 +108,8 @@ export interface Pawn {
   job: Job | null;
   /** potrzeby (tylko rdzeń) */
   needs: Needs | null;
+  /** chwilowe nastroje (tylko rdzeń) */
+  moods: Mood[];
   /** sztuki drewna w rękach */
   carry: number;
 }
@@ -336,6 +348,7 @@ function newPawn(
     want: -1,
     job: null,
     needs: null,
+    moods: [],
     carry: 0,
   };
 }
@@ -364,9 +377,10 @@ export class Sim {
   readonly house: HouseLike | null;
   /** przechodniość świata z wyciętymi ściętymi drzewami; przy wczytaniu odtwarzana ze st.felled */
   readonly blocked: Uint8Array;
-  /** ocieplenie pomieszczeń od kóz w °C (dla rysowania: świecące okna); liczone co krok ciepła
-      i od razu przy wczytaniu */
+  /** ocieplenie pomieszczeń od kóz w °C; liczone co krok ciepła i od razu przy wczytaniu */
   boost: number[] = [];
+  /** światło z palących się kóz w pomieszczeniach, 0–1 (dla rysowania: świecące okna nocą) */
+  light: number[] = [];
   private pf: PathFinder;
   /** spójne obszary mapy: cel z innego obszaru zamieniamy na najbliższy osiągalny kafelek */
   private reg: Int32Array;
@@ -407,7 +421,11 @@ export class Sim {
         if (r >= 0 && !this.blocked[i]) this.roomTiles[r].push(i);
       }
     this.dry = dryTreeOf(w);
-    if (h) this.boost = heatBoost(this.kinds, this.links, this.fires(), this.outdoor());
+    if (h) {
+      const fires = this.fires();
+      this.boost = heatBoost(this.kinds, this.links, fires, this.outdoor());
+      this.light = roomLight(this.kinds.length, this.links, fires);
+    }
   }
 
   push(c: Command): void {
@@ -1162,8 +1180,15 @@ export class Sim {
     const fires = this.fires();
     for (const t of st.things) if (t.kind === 'koza' && t.fuel > 0) t.fuel = Math.max(0, t.fuel - HEAT_EVERY);
     this.boost = heatStep(st.temps, this.kinds, this.links, fires, tout);
+    this.light = roomLight(this.kinds.length, this.links, fires);
     const hours = HEAT_EVERY / TICKS_PER_HOUR;
-    for (const p of st.pawns) if (p.needs) stepNeeds(p.needs, this.needCtx(p, tout), hours);
+    for (const p of st.pawns) {
+      if (!p.needs) continue;
+      // chwilowe nastroje wygasają, reszta dodaje się do nastroju z potrzeb
+      if (p.moods.length) p.moods = p.moods.filter((m) => m.until > st.tick);
+      const bonus = p.moods.reduce((a, m) => a + m.d, 0);
+      stepNeeds(p.needs, this.needCtx(p, tout), hours, bonus);
+    }
     this.tutCheck();
   }
 
@@ -1194,11 +1219,19 @@ export class Sim {
       )
         fire = true;
     const j = p.job;
+    const inside = r >= 0;
+    // ciemno: noc, a w pomieszczeniu nie świeci koza ani przez drzwi
+    const dark = daylight(this.st.tick) < 0.5 && !(inside && (this.light[r] ?? 0) >= 0.5) && !fire;
+    let company = 0;
+    for (const q of this.st.pawns) if (q !== p && Math.hypot(q.x - p.x, q.y - p.y) <= 4) company++;
     return {
-      temp: r >= 0 ? this.st.temps[r] : tout,
-      fire: fire && r >= 0,
+      temp: inside ? this.st.temps[r] : tout,
+      fire: fire && inside,
       asleep: !!j && j.t === 'sleep' && j.phase === 1,
       busy: (!!j && j.t === 'chop' && j.phase === 1) || p.carry > 0,
+      dark,
+      inside,
+      company,
     };
   }
 

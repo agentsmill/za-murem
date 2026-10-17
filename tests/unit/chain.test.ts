@@ -232,6 +232,35 @@ describe('zarząd sam', () => {
   });
 });
 
+describe('bezpieczeństwo w symulacji', () => {
+  const w = block;
+  const avgSafe = (sim: Sim) => core(sim).reduce((a, p) => a + p.needs!.safe, 0) / core(sim).length;
+
+  it('nocą przy palącej się kozie spokojniej niż w ciemnym mieszkaniu', () => {
+    const run = (fire: boolean) => {
+      const st = createSim(w, 3, { core: 4 });
+      st.tick = atHour(1, 20.5);
+      if (fire) kozaOf(st).fuel = 4 * BURN_TICKS;
+      const sim = new Sim(w, st);
+      for (let k = 0; k < TICKS_PER_HOUR; k++) sim.step();
+      return avgSafe(sim);
+    };
+    expect(run(true)).toBeGreaterThan(run(false) + 10);
+  });
+
+  it('wysłany sam na dwór po zmroku zaczyna się bać', () => {
+    const st = createSim(w, 3, { core: 2 });
+    st.tick = atHour(1, 20);
+    const sim = new Sim(w, st);
+    const [p] = core(sim);
+    sim.push({ t: 'move', ids: [p.id], to: w.buildings[w.hq].entrances[0].out + 10 * w.size + 20 });
+    while (st.tick < atHour(1, 21.9)) sim.step();
+    expect(w.interior.room[tileOf(sim, p)]).toBe(-1);
+    expect(p.needs!.safe).toBeLessThan(35);
+    expect(core(sim)[1].needs!.safe).toBeGreaterThan(p.needs!.safe + 15);
+  });
+});
+
 describe('polecenia', () => {
   const w = block;
 
