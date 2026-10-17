@@ -217,6 +217,41 @@ describe('polecenia', () => {
     expect(commandsAt(st, w, ids, kzTile).map((m) => m.label)).toEqual(['Dołożyć do kozy', 'Idź tu']);
   });
 
+  it('„dołóż do kozy” przy pustym składzie: drewno spod drzewa trafia prosto do kozy', () => {
+    const st = createSim(w, 3, { core: 1 });
+    const pile = addWood(st, w.buildings[w.hq].entrances[0].out + 3 * w.size, w.size, 3);
+    const sim = new Sim(w, st);
+    const [p] = core(sim);
+    sim.push({ t: 'refuel', ids: [p.id], thing: kozaOf(st).id });
+    sim.step();
+    expect(p.job?.t).toBe('refuel');
+    expect(jobText(st, w, p)).toBe('Idzie po drewno do kozy.');
+    for (let k = 0; k < 1200 && kozaOf(st).fuel === 0; k++) sim.step();
+    expect(kozaOf(st).fuel).toBeGreaterThan(2 * BURN_TICKS);
+    expect(st.things.find((t) => t.id === pile.id)).toBeUndefined();
+  });
+
+  it('polecenie w trakcie noszenia: drewno zostaje na ziemi, nic nie ginie', () => {
+    const st = createSim(w, 3, { core: 1 });
+    // koza pełna, więc nikt nic nie spali i drewna musi być cały czas tyle samo
+    kozaOf(st).fuel = 4 * BURN_TICKS;
+    addWood(st, w.buildings[w.hq].entrances[0].out + 6 * w.size, w.size, 5);
+    const sim = new Sim(w, st);
+    const [p] = core(sim);
+    const total = () => st.things.filter((t) => t.kind === 'drewno').reduce((s, t) => s + t.n, 0) + p.carry;
+    for (let k = 0; k < 2000 && p.carry === 0; k++) sim.step();
+    expect(p.carry).toBe(5);
+    expect(jobText(st, w, p)).toBe('Niesie drewno do składu.');
+    sim.push({ t: 'move', ids: [p.id], to: w.buildings[w.hq].entrances[0].out + 9 * w.size });
+    sim.step();
+    expect(p.carry).toBe(0);
+    expect(total()).toBe(5);
+    // po godzinie czekania na miejscu sam zanosi upuszczone drewno do składu (koza wciąż pełna)
+    for (let k = 0; k < 1500; k++) sim.step();
+    expect(total()).toBe(5);
+    expect(woodOn(st, w.size, w.interior.sklad)).toBe(5);
+  });
+
   it('polecenia przyjmuje tylko zarząd, tłum to tło', () => {
     const st = createSim(w, 3, { core: 2, crowd: 2 });
     const sim = new Sim(w, st);
