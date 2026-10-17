@@ -1103,7 +1103,7 @@ window.addEventListener('keydown', (e) => {
     raidHold = null;
     renderSpeed();
   }
-  if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
+  if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3' || e.code === 'Digit4') {
     speed = Number(e.code.slice(-1));
     hold = null;
     dayPace = null;

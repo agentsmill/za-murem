@@ -92,12 +92,12 @@ Propozycje, do ustalenia:
 - Prawy przycisk na celu otwiera menu kontekstowe z poleceniami, które mają sens: „Ściąć”, „Przynieść do magazynu”, „Gotować tutaj”, „Przeszukać”, „Pilnować”, „Idź tu”. Pojedyncza oczywista akcja wykonuje się od razu.
 - Zakładka Praca: tabela ludzie × rodzaje pracy z priorytetami 1-4, jak w RimWorld. Ludzie bez poleceń biorą zadania sami.
 - Alarm: wszyscy z rdzenia zdolni do walki zbierają się, sterowanie jak w RTS do końca najazdu.
-- Spacja to pauza, klawisze 1-3 to tempo, WASD albo przeciąganie przesuwa mapę, kółko przybliża.
+- Spacja to pauza, klawisze 1-4 to tempo, WASD albo przeciąganie przesuwa mapę, kółko przybliża.
 - Telefon: stuknięcie zaznacza, stuknięcie celu wydaje domyślne polecenie, przytrzymanie otwiera menu.
 
 ## Czas
 
-Zegar i ruch są rozjechane jak w RimWorld. Godzina gry trwa około 40 s przy 1×, pionek idzie około 4 kafelków na sekundę realną. Tempa 1×, 3×, 6× i dodatkowe szybkie, gdy wszyscy śpią. Długość pory roku (teraz 10 dni) dobrać po playteście, bo przy nowym zegarze to około 2,5 godziny gry przy 1×.
+Zegar i ruch są rozjechane jak w RimWorld. Godzina gry trwa około 40 s przy 1×, pionek idzie około 4 kafelków na sekundę realną. Tempa 1×, 3×, 6×, 8× i dodatkowe szybkie, gdy wszyscy śpią. Długość pory roku (teraz 10 dni) dobrać po playteście, bo przy nowym zegarze to około 2,5 godziny gry przy 1×.
 
 ## Pierwsze trzy minuty
 

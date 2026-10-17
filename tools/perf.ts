@@ -1,7 +1,7 @@
 /* Pomiar wydajności: 150 pionków z A* i animacją, klatki na sekundę przez 10 s.
    Laptop: Chromium bez dławienia. Telefon: ekran 390×844 i procesor zdławiony 4× (CDP).
    Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
-   Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-3]] [--no-worker] [--noc] [--zoom=0.5]
+   Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-4]] [--no-worker] [--noc] [--zoom=0.5]
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
    --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła). Zawsze z dymem: koza
    zarządu rozpalona w stanie gry i ognisko na podwórku. */
@@ -10,7 +10,7 @@ import { openSession, waitIdle, webglRenderer } from './browser.ts';
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const PAWNS = Number(args[0]) || 150;
-/** tempo: 1 = 1×, 2 = 3×, 3 = 6× */
+/** tempo: 1 = 1×, 2 = 3×, 3 = 6×, 4 = 8× */
 const SPEED = Number(args[1]) || 1;
 const NO_WORKER = process.argv.includes('--no-worker');
 const NIGHT = process.argv.includes('--noc');
