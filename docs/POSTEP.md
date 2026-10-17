@@ -130,14 +130,22 @@ Do `m1-pierwsze-minuty` weszły lokalnie:
 
 Przy łączeniu interfejsu rozwiązałem konflikt w main.ts (krok zarządu z interfejsu, rysowanie stanu przez `view.syncGame`, bez tymczasowego malowania, które gubiło obrót wraków) i w tools/shots.ts (scenariusze z obu gałęzi). Scenariusz `sterty` liczył po dołączeniu wraków wszystkie props poza trzepakiem; teraz tylko gruz, deski i złom. Na połączonej gałęzi: testy 417/417, Biome, build, bot (skróty 175d3cc8 i d342966e), 61 zrzutów bez błędów; obejrzane `m1-karta-nocy` i `m1-karta-osoby`.
 
+### M1 tura 3, część 3, rano 18.10.2026: noc w symulacji, dym, playtest i spięcie
+
+Do `m1-pierwsze-minuty` weszły lokalnie, bez konfliktów:
+- `m1-noc-symulacja`: mieszkańcy siedziby zamiast tłumu (3–8, plan dnia, nocą w domu), stan siatki (wytrzymałość, dziury, łaty, brama otwarta albo zamknięta), prace: warta z lampą, łatanie dziury deskami i złomem ze stert, ognisko na podwórku, wyprawy bramą; szabrownicy podchodzą pod najsłabsze miejsce, warta ze światłem ich płoszy, bez warty kradną; `applyGov` i `govInput` w src/sim/gov.ts. Po niezależnym przeglądzie kodu poprawione trzy błędy z testami (m.in. ognisko na progu zamykało dom na zawsze). Bot z zarządem: 1,7 decyzji na minutę przy zawsze obsadzonej warcie; 30 nocy, 7 napadów (2 odparte, 5 wtargnięć).
+- `m1-dym`: dym z rury kozy (przez okno) i z ogniska, widoczny z daleka i nocą; pozy pracy pionków (rąbanie, naręcze drewna, dokładanie, sen, siedzenie, warta z lampą).
+- `m1-playtest`: playtest pierwszych minut jak nowy gracz (Playwright, komputer i telefon): przy 1× od wjazdu do porannego raportu 291 s, 2,5 decyzji na minutę przy ekranie (było 1,9), wydarzeń w pierwszą noc 1 zamiast 8. Noc po karcie biegnie w 6×, po decyzji 20 s ciszy, cel „Przygotujcie drewno na noc”, ostrzeżenie o zimnej kozie. Nagranie 2:08 (1440×900): `.claude/worktrees/m1-grafika-7e0158/shots/m1-nagranie.mp4` i `.webm` (poza repo, sprzed spięcia z nocą w symulacji).
+
+Spięcie (koordynator): main.ts bierze `applyGov` i `govInput` z symulacji zamiast adaptera interfejsu; nazwy dziur z interfejsu, stan ze stanu gry; uchwały do symulacji po podpisaniu (nie przy wczytaniu, bo `setLaws` wstawia polecenie do stanu i zapis przestawał się zgadzać); w grze bez tłumu obcych; etykiety nowych poleceń; zapis ze stanem w wersji 3; w rysowaniu warta to `'guard'` jak w symulacji, ludzi na wyprawie nie rysujemy. Dwa scenariusze zrzutów z gałęzi rysowania (sterty z gry, pozy) poprawione pod prawdziwą symulację. Na połączonej gałęzi: testy 466/466, Biome, build, bot (skrót 7bdadd8c), 70 zrzutów bez błędów; obejrzane `warta-noc` i `dym-dzien`.
+
 ## Następne
 
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
-2. M1, tura 1 (świat, symulacja, grafika) i 1b (zarząd w `src/gov`): po raportach sesji połączyć gałęzie w `m1-pierwsze-minuty`, podmienić w symulacji atrapę wnętrza na prawdziwe i puścić bramkę.
-3. M1, tura 2: siatka z bramą i podwórko, mieszkańcy zamiast tłumu, noc z wartą, wyprawami i szabrownikami, łatanie siatki i ognisko, gotowanie, przekrój z życiem w mieszkaniach, noc i światło, ścięte drzewa znikają z kawałków.
-4. M1, tura 3: karta osoby, menu pod prawym, karta nocy, uchwała, cele, samouczek, zrzuty, nagranie i bramka (decyzja co minutę przy ekranie).
-5. Strona główna: duży przycisk do grywalnej 0.3, a 0.4 jako podgląd nowej wersji. Czeka na OK Mateusza, bo to zmiana publiczna.
-6. Przy okazji: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
+2. Bramka M1: Mateusz gra na swoim adresie i mówi, czy chce dalej. Przed tym nowe nagranie po spięciu (noc z wartą, szabrownikami i dymem) i bramka w minutach przy ekranie.
+3. Z playtestu dla symulacji: warta może nocą dokładać do kozy (teraz koza gaśnie około północy), krok „zanieść drewno do składu” przy 1× czeka kilka sekund na polecenie. Propozycje API zarządu od symulacji: jawny wynik napadu, siła napadu, warta spoza karty nocy.
+4. PR agentsmill/za-murem#1 (ekran startowy) i szkic #2 (M1) czekają na scalenie przez Mateusza.
+5. Przy okazji: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
 
 ## Decyzje
 
