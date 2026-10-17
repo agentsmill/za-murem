@@ -1,7 +1,8 @@
 /* Wspólne drobiazgi zarządu: puste skutki, czas gry w minutach, kronika, zaufanie i wkurzenie. */
 
 import { clamp, nextRandom } from '../core/rng.ts';
-import { HOLE_NAMES, LOOT_LABEL } from './tresc.ts';
+import { placeIn } from './miejsce.ts';
+import { HOLE_NAMES, HOLE_NAMES_DOM, LOOT_LABEL } from './tresc.ts';
 import type { GovEffects, GovFence, GovInput, GovNeeds, GovState, StockDelta, StockKey } from './typy.ts';
 
 export const STOCK_KEYS: readonly StockKey[] = ['wood', 'supplies', 'scrap', 'parts', 'meds'];
@@ -105,12 +106,13 @@ export function stockText(d: Partial<StockDelta>): string {
 /** siatka z wejścia; bez niej jedna dziura i brama (atrapa do czasu tury 2) */
 export function fenceOf(i: GovInput, patched = 0): GovFence {
   const f = i.fence ?? { holes: [{ id: 0, size: 0.6, name: 'w siatce' }], durability: 0.5 };
+  const names = placeIn(i).kind === 'dom' ? HOLE_NAMES_DOM : HOLE_NAMES;
   const holes = [...f.holes]
     .sort((a, b) => b.size - a.size || a.id - b.id)
     .slice(patched)
     .map((h) => ({
       ...h,
-      name: h.name ?? HOLE_NAMES[(((h.id - 1) % HOLE_NAMES.length) + HOLE_NAMES.length) % HOLE_NAMES.length],
+      name: h.name ?? names[(((h.id - 1) % names.length) + names.length) % names.length],
     }));
   return { holes, durability: f.durability, gateOpen: f.gateOpen };
 }

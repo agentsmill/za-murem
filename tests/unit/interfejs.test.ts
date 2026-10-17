@@ -352,6 +352,8 @@ describe('rytm zarządu po playteście', () => {
     // wszystkie wydarzenia „przed chwilą”: żadne nie jest świeże
     for (const e of M1_EVENTS) gov.ev.last[e.id] = gameMin(i);
     gov.ev.next = 0;
+    // 16:00 pierwszego dnia z zimną kuchnią to cisza pierwszego dnia: tu sprawdzamy rytm po niej
+    gov.ev.warm = 0;
     eventTick(gov, i, emptyEffects(), false);
     expect(gov.ev.active).toBeNull();
     expect(gov.ev.next).toBe(200 + RETRY);
