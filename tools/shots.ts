@@ -311,7 +311,126 @@ const SHOTS: Shot[] = [
       await page.waitForTimeout(1500);
     },
   },
+  // stan gry (syncGame): noc z prawdziwą kozą ze stanu symulacji, okna, obcy, siatka ze stanem
+  {
+    name: 'noc-gra',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=22`);
+      await nightWithFire(page);
+    },
+  },
+  {
+    name: 'noc-gra-dach',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.45&godzina=22`);
+      await nightWithFire(page);
+    },
+  },
+  {
+    // szabrownik w świetle okna widać, drugiego w ciemności nie; w dzień obu
+    name: 'obcy-noc',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=22`);
+      await nightWithFire(page);
+      const seen = await strangers(page);
+      console.log(`  w świetle: ${fmt(seen.lit)}, w ciemności: ${fmt(seen.dark)}`);
+      if (!seen.lit.visible || seen.lit.alpha < 0.9) throw new Error('szabrownika w świetle okna nie widać');
+      if (seen.dark.visible) throw new Error('szabrownika w ciemności widać');
+    },
+  },
+  {
+    name: 'obcy-dzien',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      const seen = await strangers(page);
+      console.log(`  w dzień: ${fmt(seen.lit)}, ${fmt(seen.dark)}`);
+      if (!seen.lit.visible || !seen.dark.visible) throw new Error('obcych w dzień nie widać');
+    },
+  },
+  {
+    // symulacja łata dziurę, wybija nową i zamyka bramę (blocked = 1 i 0): siatka rysuje ten stan
+    name: 'siatka-stan',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const f = sim.w.fence;
+        const whole = f.tiles.find((i) => !f.hole.includes(i) && f.tiles.includes(i - 1) && f.tiles.includes(i + 1))!;
+        sim.blocked[f.hole[0]] = 1;
+        sim.blocked[whole] = 0;
+        for (let dy = 0; dy < f.gate.h; dy++)
+          for (let dx = 0; dx < f.gate.w; dx++) sim.blocked[(f.gate.y + dy) * sim.w.size + f.gate.x + dx] = 1;
+        zm.setCam((f.gate.x + 1) % sim.w.size, f.gate.y, 1.2);
+        return { hole: f.hole[0], whole };
+      });
+      await waitIdle(page);
+      const keys = await page.evaluate(() => [
+        ...(window.zm!.view as unknown as { things: Map<string, unknown> }).things.keys(),
+      ]);
+      const lata = keys.filter((k) => k.includes('"lata"')).length;
+      const closed = keys.some((k) => k.includes('"brama"') && k.includes('"open":false'));
+      console.log(`  łat: ${lata}, brama zamknięta: ${closed}, kafelki ${r.hole} i ${r.whole}`);
+      if (lata !== 1 || !closed) throw new Error('siatka nie pokazuje stanu z symulacji');
+    },
+  },
 ];
+
+const fmt = (v: { visible: boolean; alpha: number }) => `${v.visible ? 'widać' : 'nie widać'} (${v.alpha})`;
+
+/** rozpala kozę zarządu w stanie gry i puszcza symulację do najbliższego przeliczenia ciepła i światła */
+async function nightWithFire(page: Page) {
+  await waitIdle(page);
+  await page.evaluate(() => {
+    const sim = window.zm!.sim!;
+    sim.st.things.find((t) => t.kind === 'koza')!.fuel = 1200;
+    for (let k = 0; k < 20 && !sim.light.some((v) => v > 0); k++) sim.step();
+  });
+  await waitIdle(page);
+  const info = await page.evaluate(() => {
+    const zm = window.zm!;
+    const lights = (zm.view as unknown as { gameLights: { inside?: boolean }[] }).gameLights;
+    return {
+      lit: zm.sim!.light.filter((v) => v > 0).length,
+      inside: lights.filter((l) => l.inside).length,
+      all: lights.length,
+    };
+  });
+  console.log(`  oświetlonych pomieszczeń: ${info.lit}, światła gry: ${info.all} (koza: ${info.inside})`);
+  if (info.inside !== 1 || info.all < 2) throw new Error('brak światła kozy albo okien ze stanu gry');
+}
+
+/** dwóch szabrowników: przy oknie oświetlonego pomieszczenia i 10 m dalej w ciemności; ich sprite'y po dwóch klatkach */
+async function strangers(page: Page) {
+  await page.evaluate(() => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const g = (zm.view as unknown as { game: { windows: { room: number; x: number; y: number }[] } }).game;
+    const w = g.windows.find((s) => (sim.light[s.room] ?? 0) >= 1) ?? g.windows[0];
+    const base = sim.st.pawns.find((p) => p.kind === 'crowd') ?? sim.st.pawns[0];
+    const add = (id: number, x: number, y: number) =>
+      sim.st.pawns.push({ ...base, id, kind: 'szabrownik' as 'crowd', x, y, path: [], pi: 0, want: -1 });
+    add(900001, w.x, w.y + 0.3);
+    add(900002, zm.view.cam.x / 32 - 10, zm.view.cam.y / 32 - 6);
+  });
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  return page.evaluate(() => {
+    const sprites = (window.zm!.view as unknown as { pawnSprites: Map<number, { visible: boolean; alpha: number }> })
+      .pawnSprites;
+    const at = (id: number) => {
+      const s = sprites.get(id)!;
+      return { visible: s.visible, alpha: Math.round(s.alpha * 100) / 100 };
+    };
+    return { lit: at(900001), dark: at(900002) };
+  });
+}
 
 const dist = process.argv.includes('--dist');
 const filter = process.argv.slice(2).find((a) => !a.startsWith('--'));

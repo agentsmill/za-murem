@@ -200,6 +200,30 @@ export function renderLightMap(
     }
 }
 
+/**
+ * Jasność światła w punkcie (x, y) metrów: suma świateł tym samym spadkiem co mapa (bez pasów
+ * i ditheringu), 0 poza zasięgiem. lights i time jak w renderLightMap (ta sama kolejność daje
+ * to samo migotanie), inside jak tam: światła inside tylko we wnętrzu.
+ */
+export function lightAt(
+  x: number,
+  y: number,
+  lights: readonly Light[],
+  time: number,
+  inside?: (x: number, y: number) => boolean,
+): number {
+  let sum = 0;
+  for (let k = 0; k < lights.length; k++) {
+    const l = lights[k];
+    if (l.r <= 0) continue;
+    const q = 1 - Math.hypot(x - l.x, y - l.y) / l.r;
+    if (q <= 0) continue;
+    if (l.inside && inside && !inside(Math.floor(x), Math.floor(y))) continue;
+    sum += l.strength * flickerOf(l, k, time) * smooth(q) ** 0.7;
+  }
+  return sum;
+}
+
 /** siatka komórek pokrywająca prostokąt świata [x0, x1]×[y0, y1] (piksele grafiki) z zapasem jednej komórki */
 export function gridFor(x0: number, y0: number, x1: number, y1: number, zoom: number): LightGrid {
   const cell = lightCell(zoom);
