@@ -1,75 +1,24 @@
 /* Budowa w interfejsie (docs/M2-fala-1.md): menu budowy z BUILDS (koszt, czas pracy, działanie, miejsce),
-   sprawdzanie miejsca w trybie stawiania i dozwolone kafelki. Miejsce sprawdza canPlace z symulacji, a do
-   czasu, aż go poda (kontrakt w src/sim/budowle.ts), atrapa z tymi samymi regułami: pokój albo kuchnia
-   naszego mieszkania, podwórko za siatką, odcinek siatki bez bramy, wszystko na wolnych kafelkach.
-   Czyste funkcje stanu i świata, bez DOM. */
+   dozwolone miejsca w trybie stawiania z canPlace symulacji i polecenia przy planach i gotowych budowlach
+   w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM. */
 
-import * as budowle from '../sim/budowle.ts';
-import { BUILDS, type BuildKind, type BuildPlace, type Mat } from '../sim/budowle.ts';
+import { BUILDS, type BuildKind, type BuildPlace, canPlace, footprint, type Mat } from '../sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
+import type { MenuItem } from '../sim/orders.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimStock } from '../sim/snapshot.ts';
-import type { AptState, Damage } from '../world/apts.ts';
 import type { World } from '../world/world.ts';
 import type { Sheet } from './okna.ts';
 import { esc } from './tekst.ts';
 
 export type Rot = 0 | 1 | 2 | 3;
 
-export interface PlaceCheck {
-  ok: boolean;
-  why?: string;
-}
-
-/** sprawdzenie miejsca jak canPlace z kontraktu: lewy górny kafelek (x, y) i obrót */
-export type CanPlace = (st: SimState, w: World, kind: BuildKind, x: number, y: number, rot: Rot) => PlaceCheck;
-
-/** plan albo budowa w toku w stanie gry (st.builds, kształt od symulacji): miejsce, materiały potrzebne
-    i już przyniesione, praca od 0 do BUILDS[kind].work */
-export interface PlanGame {
-  id: number;
-  kind: BuildKind;
-  x: number;
-  y: number;
-  rot: number;
-  need: Partial<Record<Mat, number>>;
-  have: Partial<Record<Mat, number>>;
-  work: number;
-  by: number;
-}
-
-/** mieszkanie siedziby w stanie gry (st.apts, kształt od symulacji, bez bid): stan, nasze, przeszukane
-    pomieszczenia */
-export interface AptGame {
-  apt: number;
-  state: 'zarzad' | 'mieszkancy' | 'puste';
-  why?: AptState['why'];
-  year?: number;
-  ours: boolean;
-  searched: number[];
-}
-
-/** uszkodzenie w stanie gry (st.damage, kształt od symulacji): naprawione albo nie, materiały przyniesione */
-export interface DamageGame {
-  kind: Damage['kind'];
-  tile: number;
-  apt: number;
-  fixed: boolean;
-  have?: Partial<Record<Mat, number>>;
-}
-
-/** stan gry z polami fali 1 (dopóki symulacja ich nie ma, undefined) */
-export const plansOf = (st: SimState): PlanGame[] => (st as unknown as { builds?: PlanGame[] }).builds ?? [];
-export const aptsGame = (st: SimState): AptGame[] | undefined => (st as unknown as { apts?: AptGame[] }).apts;
-export const damageGame = (st: SimState): DamageGame[] | undefined =>
-  (st as unknown as { damage?: DamageGame[] }).damage;
-
 /** materiały, które plany jeszcze zabiorą ze składu: potrzebne minus przyniesione, z każdego planu */
 export function reservedOf(st: SimState): Partial<Record<Mat, number>> {
   const out: Partial<Record<Mat, number>> = {};
-  for (const p of plansOf(st))
-    for (const [m, n] of Object.entries(p.need ?? {}) as [Mat, number][]) {
-      const left = n - (p.have?.[m] ?? 0);
+  for (const p of st.builds)
+    for (const [m, n] of Object.entries(p.need) as [Mat, number][]) {
+      const left = n - (p.have[m] ?? 0);
       if (left > 0) out[m] = (out[m] ?? 0) + left;
     }
   return out;
@@ -83,71 +32,16 @@ export function availableOf(st: SimState, s: SimStock): Record<Mat, number> {
   return have;
 }
 
-/** rozmiar w kafelkach po obrocie (przy 1 i 3 zamienione) */
-export function footprint(kind: BuildKind, rot: Rot): { w: number; h: number } {
-  const d = BUILDS[kind];
-  return rot % 2 ? { w: d.h, h: d.w } : { w: d.w, h: d.h };
-}
-
 /** numery naszych mieszkań w siedzibie: mieszkanie zarządu i zajęte (st.apts) */
-export function ourApts(st: SimState, w: World): number[] {
-  const i = w.interior;
-  const out = i.home >= 0 ? [i.home] : [];
-  for (const a of aptsGame(st) ?? []) if (a.ours && !out.includes(a.apt)) out.push(a.apt);
-  return out;
-}
+export const ourApts = (st: SimState): number[] => st.apts.filter((a) => a.ours).map((a) => a.apt);
 
-/** gdzie wolno stawiać, w słowach do menu i do powodu odmowy */
+/** gdzie wolno stawiać, w słowach do menu i do powodu braku miejsca */
 export const PLACE_TEXT: Record<BuildPlace, string> = {
   pokoj: 'w pokoju naszego mieszkania',
   kuchnia: 'w kuchni naszego mieszkania',
   podworko: 'na podwórku za siatką',
   obwod: 'w miejscu odcinka siatki',
 };
-
-/** Atrapa canPlace do czasu symulacji: te same reguły co w projekcie fali */
-export const canPlaceAtrapa: CanPlace = (st, w, kind, x, y, rot) => {
-  const def = BUILDS[kind];
-  const { w: fw, h: fh } = footprint(kind, rot);
-  const inside = w.interior;
-  const ours = ourApts(st, w);
-  const yard = new Set(w.fence.yard);
-  const fence = new Set(w.fence.tiles);
-  const g = w.fence.gate;
-  for (let dy = 0; dy < fh; dy++)
-    for (let dx = 0; dx < fw; dx++) {
-      const tx = x + dx;
-      const ty = y + dy;
-      if (tx < 0 || ty < 0 || tx >= w.size || ty >= w.size) return { ok: false, why: 'Poza mapą.' };
-      const i = ty * w.size + tx;
-      if (def.place === 'pokoj' || def.place === 'kuchnia') {
-        const r = inside.room[i];
-        const room = r >= 0 ? inside.rooms[r] : null;
-        if (!room || !ours.includes(room.apt) || room.kind !== def.place)
-          return { ok: false, why: `Tylko ${PLACE_TEXT[def.place]}.` };
-      } else if (def.place === 'podworko') {
-        if (!yard.has(i)) return { ok: false, why: `Tylko ${PLACE_TEXT.podworko}.` };
-      } else {
-        if (tx >= g.x && tx < g.x + g.w && ty >= g.y && ty < g.y + g.h)
-          return { ok: false, why: 'Na bramie nie, brama musi się otwierać.' };
-        if (!fence.has(i)) return { ok: false, why: `Tylko ${PLACE_TEXT.obwod}.` };
-      }
-      // wolne miejsce: siatka pod zasiekami jest w porządku, reszta ma być pusta
-      if (def.place !== 'obwod' && w.blocked[i]) return { ok: false, why: 'Zajęte: tu nie da się stanąć.' };
-      const cover = (o: { x: number; y: number; w: number; h: number }) =>
-        tx >= o.x && tx < o.x + o.w && ty >= o.y && ty < o.y + o.h;
-      if (st.things.some(cover)) return { ok: false, why: 'Zajęte: coś tu stoi.' };
-      if (w.props.some(cover)) return { ok: false, why: 'Zajęte: coś tu leży.' };
-      if (plansOf(st).some((p) => cover({ x: p.x, y: p.y, ...footprint(p.kind, (p.rot & 3) as Rot) })))
-        return { ok: false, why: 'Tu już jest plan budowy.' };
-    }
-  return { ok: true };
-};
-
-/** canPlace z symulacji, kiedy już jest (kontrakt docs/M2-fala-1.md), a do tego czasu atrapa */
-const CAN_PLACE = 'canPlace';
-export const placeCheck: CanPlace =
-  ((budowle as unknown as Record<string, unknown>)[CAN_PLACE] as CanPlace | undefined) ?? canPlaceAtrapa;
 
 /** kafelki, na których budowla może stanąć: suma podstaw z dozwolonych zakotwiczeń (dla view.setPlacement) */
 export function okTilesOf(anchors: readonly number[], kind: BuildKind, rot: Rot, size: number): number[] {
@@ -157,21 +51,79 @@ export function okTilesOf(anchors: readonly number[], kind: BuildKind, rot: Rot,
   return [...out].sort((x, y) => x - y);
 }
 
-/** kafelki, od których (jako lewego górnego) budowla się zmieści: do podświetlenia w trybie stawiania */
-export function allowedAnchors(st: SimState, w: World, kind: BuildKind, rot: Rot, check = placeCheck): number[] {
+/** Kafelki, od których (jako lewego górnego) budowla może stanąć według canPlace symulacji, do podświetlenia
+    w trybie stawiania. Pytam tylko o pomieszczenia naszych mieszkań, podwórko albo siatkę, a nie o całą mapę:
+    lewy górny kafelek leży zawsze w tym samym miejscu co cała budowla. */
+export function allowedAnchors(st: SimState, w: World, kind: BuildKind, rot: Rot): number[] {
   const place = BUILDS[kind].place;
   const inside = w.interior;
   let cand: number[];
   if (place === 'podworko') cand = w.fence.yard;
   else if (place === 'obwod') cand = w.fence.tiles;
   else {
-    const ours = ourApts(st, w);
+    const ours = ourApts(st);
     cand = [];
     inside.room.forEach((r, i) => {
       if (r >= 0 && ours.includes(inside.rooms[r].apt) && inside.rooms[r].kind === place) cand.push(i);
     });
   }
-  return cand.filter((i) => check(st, w, kind, i % w.size, Math.floor(i / w.size), rot).ok);
+  return cand.filter((i) => canPlace(st, w, kind, i % w.size, Math.floor(i / w.size), rot).ok);
+}
+
+/* ---------- polecenia przy planach i budowlach ---------- */
+
+/** nazwy budowli w bierniku do menu („Rozebrać zasieki”) */
+const BUILD_ACC: Record<BuildKind, string> = {
+  warsztat: 'warsztat',
+  kuchnia_spoleczna: 'kuchnię społeczną',
+  magazyn: 'magazyn',
+  lozka_pietrowe: 'łóżka piętrowe',
+  ogrodek: 'ogródek',
+  zasieki: 'zasieki',
+};
+
+/** Polecenia przy planie budowy albo gotowej budowli pod kafelkiem, do menu pod prawym przyciskiem (przed
+    „Idź tu”): zaznaczeni z zarządu biorą się do planu, plan można odwołać (przyniesione materiały zostają obok),
+    a gotową budowlę rozebrać (wraca połowa kosztu, więc z potwierdzeniem). „Budować” tylko wtedy, gdy
+    symulacja je przyjmie: nikt inny przy planie nie pracuje, a materiału starczy na całość (sterty minus to,
+    czego potrzebują plany, przy których pracuje ktoś inny, jak coverable w symulacji). */
+export function buildItems(st: SimState, w: World, ids: readonly number[], tile: number, stock: SimStock): MenuItem[] {
+  const core = st.pawns.filter((p) => ids.includes(p.id) && p.kind === 'core').map((p) => p.id);
+  if (!core.length || tile < 0) return [];
+  const x = tile % w.size;
+  const y = Math.floor(tile / w.size);
+  const plan = st.builds.find((b) => {
+    const f = footprint(b.kind, b.rot);
+    return x >= b.x && x < b.x + f.w && y >= b.y && y < b.y + f.h;
+  });
+  if (plan) {
+    const free = matsOf(stock);
+    for (const o of st.builds) {
+      if (o === plan || o.by < 0 || core.includes(o.by)) continue;
+      for (const [m, n] of Object.entries(o.need) as [Mat, number][]) free[m] -= Math.max(0, n - (o.have[m] ?? 0));
+    }
+    const enough = (Object.entries(plan.need) as [Mat, number][]).every(([m, n]) => n - (plan.have[m] ?? 0) <= free[m]);
+    const out: MenuItem[] = [];
+    if (enough && (plan.by < 0 || core.includes(plan.by)))
+      out.push({
+        cmd: { t: 'build', ids: core, kind: plan.kind, x: plan.x, y: plan.y, rot: plan.rot },
+        label: `Budować ${BUILD_ACC[plan.kind]}`,
+        quick: true,
+      });
+    out.push({ cmd: { t: 'unbuild', ids: core, id: plan.id }, label: 'Odwołać plan', quick: false });
+    return out;
+  }
+  const done = st.things.find((t) => t.kind in BUILDS && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+  if (done)
+    return [
+      {
+        cmd: { t: 'unbuild', ids: core, id: done.id },
+        label: `Rozebrać ${BUILD_ACC[done.kind as BuildKind]}`,
+        quick: false,
+        confirm: true,
+      },
+    ];
+  return [];
 }
 
 /* ---------- menu budowy ---------- */
@@ -204,10 +156,14 @@ export const costText = (cost: Partial<Record<Mat, number>>): string =>
     .map(([m, n]) => `${MAT_NAME[m]} ${n}`)
     .join(', ');
 
-/** czas pracy jednej osoby w godzinach gry („1 h pracy”, „30 min pracy”) */
+/** czas pracy jednej osoby w godzinach gry („1 h pracy”, „1,5 h pracy”, „45 min pracy”) */
 export function workText(ticks: number): string {
   const min = Math.round((ticks / TICKS_PER_HOUR) * 60);
-  return min >= 60 && min % 60 === 0 ? `${min / 60} h pracy` : `${min} min pracy`;
+  if (min < 60) return `${min} min pracy`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (!m) return `${h} h pracy`;
+  return m === 30 ? `${h},5 h pracy` : `${h} h ${m} min pracy`;
 }
 
 export interface BuildItem {

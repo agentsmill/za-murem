@@ -1,43 +1,27 @@
 /* Mieszkania siedziby w interfejsie (docs/M2-fala-1.md): stan (zarząd, mieszkańcy, puste z powodem i rokiem),
-   uszkodzenia do naprawy, przeszukane pomieszczenia i karta mieszkania. Stan i uszkodzenia na starcie daje
-   świat (World.apts, World.damage); w grze stan, nasze i przeszukane daje st.apts, a naprawy st.damage
-   (kształty od symulacji). Czyste funkcje stanu i świata, bez DOM. */
+   uszkodzenia do naprawy, przeszukane pomieszczenia i karta mieszkania. Stan, nasze i przeszukane daje st.apts,
+   naprawy st.damage (fixed), koszty napraw REPAIR symulacji, a liczby do karty odczyt symulacji
+   (snapshot().apts: damaged, rooms, searched). Czyste funkcje stanu i świata, bez DOM. */
 
-import type { Mat } from '../sim/budowle.ts';
+import { REPAIR } from '../sim/mieszkania.ts';
 import type { SimState } from '../sim/sim.ts';
-import type { AptState, AptWhy, Damage, DamageKind } from '../world/apts.ts';
+import type { SimApt } from '../sim/snapshot.ts';
+import type { AptWhy, DamageKind } from '../world/apts.ts';
 import type { RoomKind } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
-import { aptsGame, costText, damageGame } from './budowa.ts';
+import { costText } from './budowa.ts';
 import { esc } from './tekst.ts';
-
-/** Stan mieszkań siedziby: ze stanu gry (st.apts), a zanim symulacja go poda, ze świata */
-export function aptsOf(st: SimState, w: World): AptState[] {
-  const game = aptsGame(st);
-  if (!game) return w.apts;
-  const bid = w.interior.building;
-  return game.map((a) => ({ bid, apt: a.apt, state: a.state, why: a.why, year: a.year }));
-}
 
 /** pomieszczenia mieszkania (bez klatki), od wejścia */
 const roomsOf = (w: World, apt: number) => w.interior.rooms.filter((r) => r.apt === apt && r.kind !== 'klatka');
 
-/** uszkodzenia mieszkania z tym, czy naprawione: ze stanu gry (st.damage), a bez niego ze świata */
-export function damageOf(st: SimState, w: World, apt: number): (Damage & { fixed: boolean })[] {
-  const bid = w.interior.building;
-  const game = damageGame(st);
-  if (game)
-    return game.filter((d) => d.apt === apt).map((d) => ({ kind: d.kind, tile: d.tile, bid, apt, fixed: d.fixed }));
-  return w.damage.filter((d) => d.bid === bid && d.apt === apt).map((d) => ({ ...d, fixed: false }));
-}
-
-/** naprawy z projektu fali: nazwa uszkodzenia i koszt (symulacja liczy je naprawdę) */
-export const REPAIR: Record<DamageKind, { name: string; cost: Partial<Record<Mat, number>> }> = {
-  okno: { name: 'Wybite okno', cost: { deski: 2 } },
-  drzwi: { name: 'Wyważone drzwi', cost: { deski: 3 } },
-  rura: { name: 'Cieknąca rura', cost: { zlom: 1, czesci: 1 } },
-  podloga: { name: 'Zniszczona podłoga', cost: { deski: 2 } },
-  piec: { name: 'Zepsuty piec', cost: { zlom: 2, czesci: 1 } },
+/** nazwy uszkodzeń do karty (koszt i czas naprawy daje symulacja: REPAIR) */
+export const DAMAGE_NAME: Record<DamageKind, string> = {
+  okno: 'Wybite okno',
+  drzwi: 'Wyważone drzwi',
+  rura: 'Cieknąca rura',
+  podloga: 'Zniszczona podłoga',
+  piec: 'Zepsuty piec',
 };
 
 /** powód opuszczenia: krótko do nagłówka i zdaniem do karty */
@@ -66,17 +50,24 @@ const ROOM_NAME: Partial<Record<RoomKind, string>> = {
   zaplecze: 'Zaplecze',
 };
 
+/** łóżka jak w symulacji: całe łóżko i wersalka to jedno miejsce, łóżka piętrowe dwa */
+const BED_PLACES: Record<string, number> = { lozko: 1, wersalka: 1, lozka_pietrowe: 2 };
+
 export interface AptView {
-  bid: number;
   apt: number;
-  state: AptState['state'];
+  state: SimApt['state'];
   why?: AptWhy;
   year?: number;
-  /** zajęte przez zarząd w grze (st.apts) */
+  /** mieszkanie zarządu albo zajęte poleceniem 'claim' */
   ours: boolean;
   rooms: { id: number; name: string; area: number; searched: boolean }[];
-  damages: (Damage & { name: string; cost: string; fixed: boolean })[];
-  /** łóżka w mieszkaniu: tyle miejsc dla nowych mieszkańców po zajęciu i naprawie */
+  /** uszkodzenia mieszkania (id: indeks w st.damage, jak w poleceniu 'repair') z kosztem naprawy */
+  damages: { id: number; kind: DamageKind; tile: number; name: string; cost: string; fixed: boolean }[];
+  /** z odczytu symulacji: uszkodzeń do naprawy, pomieszczeń i ile z nich przeszukanych */
+  damaged: number;
+  roomCount: number;
+  searchedCount: number;
+  /** miejsca do spania w całych łóżkach mieszkania: tyle osób zmieści się po zajęciu i naprawie */
   beds: number;
 }
 
@@ -89,35 +80,46 @@ export function aptAt(w: World, tile: number): number {
   return room.kind === 'klatka' ? -1 : room.apt;
 }
 
-/** wszystko do karty mieszkania */
-export function aptView(st: SimState, w: World, apt: number): AptView | null {
-  const a = aptsOf(st, w).find((x) => x.apt === apt);
-  if (!a) return null;
-  const game = aptsGame(st)?.find((g) => g.apt === apt);
-  const searched = new Set(game?.searched ?? []);
-  const ids = new Set(roomsOf(w, apt).map((r) => r.id));
-  // miejsca do spania jak w symulacji: łóżka i wersalki
-  const beds = w.interior.furniture.filter(
-    (f) => (f.kind === 'lozko' || f.kind === 'wersalka') && ids.has(w.interior.room[f.y * w.size + f.x]),
-  ).length;
+/** wszystko do karty mieszkania: stan gry (st.apts, st.damage) i liczby z odczytu (snapshot().apts) */
+export function aptView(st: SimState, w: World, apt: number, snap: readonly SimApt[]): AptView | null {
+  const g = st.apts.find((a) => a.apt === apt);
+  const s = snap.find((a) => a.apt === apt);
+  if (!g || !s) return null;
+  const searched = new Set(g.searched);
+  const rooms = roomsOf(w, apt);
+  const ids = new Set(rooms.map((r) => r.id));
+  let beds = 0;
+  for (const t of st.things)
+    if (!t.broken && ids.has(w.interior.room[t.y * w.size + t.x])) beds += BED_PLACES[t.kind] ?? 0;
   return {
-    bid: a.bid,
     apt,
-    state: a.state,
-    why: a.why,
-    year: a.year,
-    ours: a.state === 'zarzad' || !!game?.ours,
-    rooms: roomsOf(w, apt).map((r) => ({
+    state: g.state,
+    why: g.why,
+    year: g.year,
+    ours: g.state === 'zarzad' || g.ours,
+    rooms: rooms.map((r) => ({
       id: r.id,
       name: ROOM_NAME[r.kind] ?? r.kind,
       area: r.area,
       searched: searched.has(r.id),
     })),
-    damages: damageOf(st, w, apt).map((d) => ({
-      ...d,
-      name: REPAIR[d.kind].name,
-      cost: costText(REPAIR[d.kind].cost),
-    })),
+    damages: st.damage.flatMap((d, id) =>
+      d.apt === apt
+        ? [
+            {
+              id,
+              kind: d.kind,
+              tile: d.tile,
+              name: DAMAGE_NAME[d.kind],
+              cost: costText(REPAIR[d.kind].cost),
+              fixed: d.fixed,
+            },
+          ]
+        : [],
+    ),
+    damaged: s.damaged,
+    roomCount: s.rooms,
+    searchedCount: s.searched,
     beds,
   };
 }
@@ -133,8 +135,6 @@ export function aptState(v: AptView): string {
 /** karta mieszkania (w miejscu karty osoby): stan, powód opuszczenia, co do naprawy, co już przeszukane */
 export function aptCard(v: AptView, touch: boolean): string {
   const empty = v.state === 'puste';
-  // do naprawy: uszkodzenia tego mieszkania, których jeszcze nie naprawiono
-  const fix = v.damages.filter((d) => !d.fixed);
   const done = v.damages.filter((d) => d.fixed);
   const damages = v.damages.length
     ? `<ul class="apt-list">${v.damages
@@ -154,7 +154,6 @@ export function aptCard(v: AptView, touch: boolean): string {
         }</b></li>`,
     )
     .join('')}</ul>`;
-  const searchedN = v.rooms.filter((r) => r.searched).length;
   const how = touch
     ? 'Przytrzymajcie palec w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.'
     : 'Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.';
@@ -163,11 +162,11 @@ export function aptCard(v: AptView, touch: boolean): string {
     `<p class="sub">${esc(aptState(v))}</p>`,
     empty && v.why ? `<p class="apt-why">${esc(WHY_TEXT[v.why](v.year ?? 2026))}</p>` : '',
     empty
-      ? `<h3 class="apt-h">Do naprawy${fix.length ? ` (${fix.length})` : ''}</h3>${damages}`
+      ? `<h3 class="apt-h">Do naprawy${v.damaged ? ` (${v.damaged})` : ''}</h3>${damages}`
       : done.length
         ? `<h3 class="apt-h">Naprawione</h3>${damages}`
         : '',
-    empty ? `<h3 class="apt-h">Przeszukane: ${searchedN} z ${v.rooms.length}</h3>${rooms}` : '',
+    empty ? `<h3 class="apt-h">Przeszukane: ${v.searchedCount} z ${v.roomCount}</h3>${rooms}` : '',
     empty && v.beds
       ? `<p class="apt-beds">${v.ours ? 'Po naprawie' : 'Po zajęciu i naprawie'}: miejsca do spania dla ${v.beds} ${
           v.beds === 1 ? 'osoby' : 'osób'

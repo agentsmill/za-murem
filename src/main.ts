@@ -22,27 +22,19 @@ import { gameLights, strangerVisibility } from './render/game.ts';
 import { type Light, lightAt } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
-import { BUILDS, type BuildKind } from './sim/budowle.ts';
+import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
+import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
-import { type Command, createSim, Sim } from './sim/sim.ts';
+import { addResidents, createSim, Sim } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
-import {
-  allowedAnchors,
-  availableOf,
-  buildMenu,
-  buildSheet,
-  footprint,
-  okTilesOf,
-  placeCheck,
-  type Rot,
-} from './ui/budowa.ts';
+import { allowedAnchors, availableOf, buildItems, buildMenu, buildSheet, okTilesOf, type Rot } from './ui/budowa.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
-import { aptAt, aptCard, aptState, aptsOf, aptView } from './ui/mieszkania.ts';
+import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
 import {
   burnSheet,
   confirmSheet,
@@ -59,12 +51,12 @@ import {
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
+import { arriving, comingText } from './ui/przybycie.ts';
 import { govFence } from './ui/siatka.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { esc } from './ui/tekst.ts';
 import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
-import type { AptState } from './world/apts.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
 import { buildWorld, T, type World } from './world/world.ts';
 
@@ -108,8 +100,10 @@ declare global {
         allowed: number;
         first: number;
       } | null;
-      /** stan mieszkań siedziby (ze świata albo z atrapy interfejsu) */
-      apts: () => AptState[];
+      /** stan mieszkań siedziby w grze (st.apts) */
+      apts: () => AptGame[];
+      /** przyjęcie n osób zza bramy jak po decyzji zarządu (do zrzutów); zwraca, ilu przybyło */
+      admit: (n: number) => number;
     };
   }
 }
@@ -567,8 +561,10 @@ function watchRaid() {
 /* ---------- kamera ---------- */
 let fly: { x0: number; y0: number; z0: number; x1: number; y1: number; z1: number; t0: number; ms: number } | null =
   null;
-function flyTo(x: number, y: number, zoom: number, ms: number) {
-  fly = { x0: view.cam.x, y0: view.cam.y, z0: view.cam.zoom, x1: x, y1: y, z1: zoom, t0: performance.now() + 500, ms };
+/** przejazd kamery do (x, y) w pikselach świata; wait: ile ms odczekać przed ruszeniem (przy alarmie chwila,
+    żeby gracz przeczytał napis, a po przycisku od razu) */
+function flyTo(x: number, y: number, zoom: number, ms: number, wait = 500) {
+  fly = { x0: view.cam.x, y0: view.cam.y, z0: view.cam.zoom, x1: x, y1: y, z1: zoom, t0: performance.now() + wait, ms };
 }
 function stepFly(now: number) {
   if (!fly) return;
@@ -685,11 +681,15 @@ function hud(now: number) {
   $('hint').classList.toggle('warn', !!warn);
   renderStats(statsOf(snap, gov));
   renderGoals(snap);
+  // przyjęci idą zza bramy: komunikat z przyciskiem „Pokaż”, dopóki ktoś jeszcze idzie
+  const coming = arriving(st).length;
+  $('arrive').hidden = !coming;
+  if (coming && $('arriveText').textContent !== comingText(coming)) $('arriveText').textContent = comingText(coming);
   const card = $('card');
   const sel = snap.people.filter((p) => selected.has(p.pawn));
   if (!sel.length) {
     // karta mieszkania po kliknięciu w mieszkanie siedziby
-    const apt = aptFocus >= 0 ? aptView(st, sim.w, aptFocus) : null;
+    const apt = aptFocus >= 0 ? aptView(st, sim.w, aptFocus, snap.apts) : null;
     card.hidden = !apt;
     if (apt) setCard(aptCard(apt, touchUI));
     return;
@@ -796,7 +796,13 @@ function placeMarker() {
   const bar = $('top').getBoundingClientRect().bottom;
   const goals = $('goals');
   const g = goals.hidden ? null : goals.getBoundingClientRect();
-  const under = (left: number) => (g && left < g.right ? Math.max(bar, g.bottom) : bar);
+  // komunikat o przybyszach stoi pod paskiem (na telefonie pod listą celów): napis, który na niego wchodzi, idzie pod spód
+  const notice = $('arrive');
+  const n = notice.hidden ? null : notice.getBoundingClientRect();
+  const under = (left: number) => {
+    const t = g && left < g.right ? Math.max(bar, g.bottom) : bar;
+    return n && left < n.right && left + markW > n.left ? Math.max(t, n.bottom) : t;
+  };
   let top = under(x0);
   // poza ekranem (punkt, w który celuje ogonek): przy krawędzi ze strzałką, napis wyśrodkowany w cx
   const edge = sx < 70 || sx > view.width - 70 || sy < top + 30 || sy > view.height - 70;
@@ -903,12 +909,12 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   laws: ['', ''],
   raid: ['', ''],
   mend: ['', ''],
-  build: ['Weźmie się do budowy.', 'Wezmą się do budowy.'],
+  build: ['Weźmie się do budowy.', 'Jedna osoba weźmie się do budowy.'],
   unbuild: ['', ''],
-  search: ['Przeszuka pomieszczenie.', 'Przeszukają pomieszczenie.'],
-  dismantle: ['Rozbierze na materiał.', 'Rozbiorą na materiał.'],
-  repair: ['Naprawi.', 'Naprawią.'],
-  claim: ['Zajmie mieszkanie.', 'Zajmą mieszkanie.'],
+  search: ['Przeszuka pomieszczenie.', 'Jedna osoba przeszuka pomieszczenie.'],
+  dismantle: ['Rozbierze to na materiał.', 'Jedna osoba rozbierze to na materiał.'],
+  repair: ['Przyniesie materiał i naprawi.', 'Jedna osoba przyniesie materiał i naprawi.'],
+  claim: ['Zajmie mieszkanie dla zarządu.', 'Jedna osoba zajmie mieszkanie dla zarządu.'],
 };
 
 function run(m: MenuItem) {
@@ -963,11 +969,17 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   // w trybie stawiania stuknięcie i przytrzymanie należą do planu budowy
   if (!sim || placing) return;
   const ids = [...selected];
-  const items = commandsAt(sim.st, sim.w, ids, view.tileAt(sx, sy));
+  const tile = view.tileAt(sx, sy);
+  const items = commandsAt(sim.st, sim.w, ids, tile);
   if (!items.length) {
     say(touchUI ? 'Najpierw stuknijcie kogoś z zarządu.' : 'Najpierw zaznaczcie kogoś z zarządu.', 2500);
     return;
   }
+  // plan budowy albo gotowa budowla pod kursorem: jej polecenia przed „Idź tu”, polecenia symulacji pierwsze
+  const snap = snapshot(sim.st, sim.w);
+  const extra = buildItems(sim.st, sim.w, ids, tile, snap.stock);
+  const go = items.findIndex((x) => x.cmd.t === 'move');
+  items.splice(go < 0 ? items.length : go, 0, ...extra);
   if (!menu) {
     const q = items.find((x) => x.quick);
     if (q) run(q);
@@ -983,8 +995,8 @@ function orderAt(sx: number, sy: number, menu: boolean) {
     .map((p) => sim!.st.people[p.person]?.first ?? '');
   const head = who.length > 2 ? `Zarząd (${who.length})` : who.join(' i ');
   // w mieszkaniu siedziby nagłówek mówi, które to mieszkanie i w jakim stanie
-  const apt = aptAt(sim.w, view.tileAt(sx, sy));
-  const v = apt >= 0 ? aptView(sim.st, sim.w, apt) : null;
+  const apt = aptAt(sim.w, tile);
+  const v = apt >= 0 ? aptView(sim.st, sim.w, apt, snap.apts) : null;
   const where = v ? ` · mieszkanie ${apt + 1}, ${aptState(v).toLowerCase()}` : '';
   ctx.show(items, sx, sy, `${head}${where}`, (x) => (x.confirm ? askConfirm(x) : run(x)));
 }
@@ -1072,7 +1084,7 @@ function aimAt(sx: number, sy: number) {
   const { w: fw, h: fh } = footprint(placing.kind, placing.rot);
   placing.x = (t % sim.w.size) - Math.floor((fw - 1) / 2);
   placing.y = Math.floor(t / sim.w.size) - Math.floor((fh - 1) / 2);
-  const c = placeCheck(sim.st, sim.w, placing.kind, placing.x, placing.y, placing.rot);
+  const c = canPlace(sim.st, sim.w, placing.kind, placing.x, placing.y, placing.rot);
   placing.ok = c.ok;
   placing.why = c.why;
   placeInfo();
@@ -1117,7 +1129,7 @@ function placeClick(sx: number, sy: number, button: number, type: string, shift:
   const { kind, x, y, rot } = placing;
   // kto buduje: zaznaczeni z zarządu, a bez zaznaczenia zarząd wybiera sam
   const ids = sim.st.pawns.filter((p) => selected.has(p.id) && p.kind === 'core').map((p) => p.id);
-  sim.push({ t: 'build', ids, kind, x, y, rot } as unknown as Command);
+  sim.push({ t: 'build', ids, kind, x, y, rot });
   say(`Plan: ${BUILDS[kind].name}. Zarząd przyniesie materiały i zbuduje.`, 3000);
   if (shift && type === 'mouse') {
     placing.allowed = allowedAnchors(sim.st, sim.w, kind, rot);
@@ -1168,6 +1180,14 @@ function placeGhost() {
 }
 
 $('btnBuild').addEventListener('click', () => openBuild());
+// „Pokaż” przy przybyszach: kamera od razu jedzie na środek grupy, bez zmiany przybliżenia
+$('arriveShow').addEventListener('click', () => {
+  const coming = sim ? arriving(sim.st) : [];
+  if (!coming.length) return;
+  const x = coming.reduce((a, p) => a + p.x, 0) / coming.length;
+  const y = coming.reduce((a, p) => a + p.y, 0) / coming.length;
+  flyTo(x * TILE, y * TILE, view.cam.zoom, 900, 0);
+});
 $('placeBar').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>('[data-place]');
   if (!b) return;
@@ -1518,7 +1538,8 @@ bars.observe($('placeBar'));
             first: placing.allowed[0] ?? -1,
           }
         : null,
-    apts: () => (sim ? aptsOf(sim.st, sim.w) : []),
+    apts: () => sim?.st.apts ?? [],
+    admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });

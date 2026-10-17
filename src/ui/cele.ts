@@ -3,14 +3,14 @@
    do bieżącego kroku. */
 
 import type { GovState } from '../gov/typy.ts';
-import { BUILDS } from '../sim/budowle.ts';
+import { BUILDS, type BuildKind } from '../sim/budowle.ts';
 import type { SimState } from '../sim/sim.ts';
 import { TUT_STEPS, type TutStep, WARM_ENOUGH } from '../sim/tutorial.ts';
-import { aptsGame, costText } from './budowa.ts';
+import { costText } from './budowa.ts';
 import { deg } from './tekst.ts';
 
 export interface Goal {
-  key: TutStep | 'drewno' | 'noc' | 'przeszukaj' | 'warsztat' | 'obwod' | 'drewno2';
+  key: TutStep | 'drewno' | 'noc' | 'przeszukaj' | 'budowla' | 'obwod' | 'drewno2';
   text: string;
   /** jak to zrobić (tylko bieżący krok ma sens) */
   how: string;
@@ -120,9 +120,10 @@ export const DAY2_WOOD = 16;
 /** czy to już drugi dzień: po pierwszym raporcie rano, do raportu po drugiej nocy */
 export const isDay2 = (gov: GovState | null): boolean => !!gov && gov.reports.length === 1;
 
-/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie, zbudować warsztat, wzmocnić obwód,
-    mieć drewno na noc. Co przeszukane, daje stan gry (st.apts); warsztat i zasieki to gotowe budowle
-    w st.things; obwód liczy się też, gdy żadna dziura nie jest otwarta. */
+/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie, postawić pierwszą budowlę (dowolną;
+    warsztat bierze tyle materiału, że zarząd stawia go zwykle 3. albo 4. dnia), wzmocnić obwód, mieć drewno
+    na noc. Co przeszukane, daje stan gry (st.apts); budowle i zasieki to gotowe rzeczy w st.things; obwód
+    liczy się też, gdy żadna dziura nie jest otwarta. */
 export function goalsDay2(
   st: SimState,
   gov: GovState | null,
@@ -135,10 +136,16 @@ export function goalsDay2(
     holes: number;
   },
 ): Goal[] {
-  const searched = (aptsGame(st) ?? []).some((a) => a.searched.length > 0);
+  const searched = st.apts.some((a) => a.searched.length > 0);
   const built = (kind: string) => st.things.some((t) => t.kind === kind);
   const late = !!gov?.night?.confirmed || (gov?.reports.length ?? 0) > 1;
   const b = o.touch ? 'Przycisk Budowa u góry' : 'Budowa (przycisk u góry albo B)';
+  // dwie budowle, które biorą najmniej materiału (koszty stroi bot, więc nie wpisuję ich na sztywno)
+  const cheap = (Object.keys(BUILDS) as BuildKind[])
+    .map((k) => ({ k, n: Object.values(BUILDS[k].cost).reduce((a: number, v) => a + (v ?? 0), 0) }))
+    .sort((x, y) => x.n - y.n)
+    .slice(0, 2)
+    .map(({ k }) => `${BUILDS[k].name.toLowerCase()} (${costText(BUILDS[k].cost)})`);
   return [
     {
       key: 'przeszukaj',
@@ -149,10 +156,10 @@ export function goalsDay2(
       done: searched,
     },
     {
-      key: 'warsztat',
-      text: 'Zbudujcie warsztat.',
-      how: `${b}: Warsztat w pokoju naszego mieszkania (${costText(BUILDS.warsztat.cost)}). Zarząd sam przyniesie materiały i zbuduje.`,
-      done: built('warsztat'),
+      key: 'budowla',
+      text: 'Postawcie pierwszą budowlę.',
+      how: `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. Zarząd sam przyniesie materiały i zbuduje.`,
+      done: st.things.some((t) => t.kind in BUILDS),
     },
     {
       key: 'obwod',
