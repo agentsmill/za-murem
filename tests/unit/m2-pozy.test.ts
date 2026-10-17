@@ -59,6 +59,11 @@ describe('pozy prac M2', () => {
     // łata z M1: sztuki bez nazwy materiału to deski
     expect(pose({ ...walking, job: { t: 'patch', phase: 1, target: 5, n: 3 } }).pose).toBe('planks');
     expect(pose({ job: job('repair', 1, 0, 2, 'deski') }).pose).toBe('planks');
+    // w drodze po następną stertę z deskami już w rękach (faza 0); przy pracy (faza 2) bez niesienia
+    expect(pose({ ...walking, job: job('build', 0, 40, 2, 'deski') }).pose).toBe('planks');
+    expect(pose({ job: job('build', 2, 40, 2, 'deski') }, [], { builds: [{ id: 40, kind: 'warsztat' }] }).pose).toBe(
+      'hammer',
+    );
     // bez materiału w rękach zwykły chód; drewno dalej naręczem
     expect(pose({ ...walking, job: job('build', 1, 40, 0, '') }).pose).toBe('walk');
     expect(pose({ ...walking, carry: 4, job: job('haul', 1, 3) }).pose).toBe('carry');

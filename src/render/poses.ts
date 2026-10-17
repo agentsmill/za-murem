@@ -108,8 +108,9 @@ export function poseOf(
   const knees = (): PoseView => ({ pose: 'search', dir, frame: Math.floor(tt * 1.6) % 2 });
   const hammer = (): PoseView => ({ pose: 'hammer', dir, frame: Math.floor(tt * 3) % 2 });
   if (!moving && feeding) return { pose: 'crouch', dir, frame: 1 + (Math.floor(tt * 2.5) % 2) };
-  // deski albo złom w rękach na łatę, naprawę albo budowę (bez nazwy materiału: deski z łat M1)
-  if (j && j.phase === 1 && (j.n ?? 0) > 0 && (j.t === 'patch' || j.t === 'repair' || j.t === 'build'))
+  // deski albo złom w rękach na łatę, naprawę albo budowę (bez nazwy materiału: deski z łat M1), także
+  // w drodze po kolejną stertę; w fazie pracy materiał jest już przy łacie, uszkodzeniu albo planie
+  if (j && j.phase !== 2 && (j.n ?? 0) > 0 && (j.t === 'patch' || j.t === 'repair' || j.t === 'build'))
     return { pose: !j.what || j.what === 'deski' ? 'planks' : 'scrap', dir, frame: step };
   if (!moving && j && j.phase === 2)
     switch (j.t) {
