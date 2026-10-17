@@ -64,6 +64,8 @@ export interface WynikBudynku {
   gospodarstwa: Gospodarstwo[];
   dziennik: Wpis[];
   puste: number;
+  /** Rok stanu po `postarz` w czas.ts (2026 albo 2051). Spis 2021 go nie ustawia. */
+  rok?: number;
 }
 export interface Osiedle {
   wersja: number;
