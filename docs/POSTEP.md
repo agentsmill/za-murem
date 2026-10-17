@@ -199,6 +199,42 @@ Rozstrzygnięcia koordynatora, bo każda sesja przyjęła trochę inny kształt:
 
 Daty w dzienniku poprawione: praca nad M1 szła w nocy z 16 na 17.10.2026, nie z 17 na 18.10.
 
+### Granie na żywo, wieczór 17.10.2026: uwagi Mateusza i sesje mechanik
+
+Po poprawce myszy sterowanie i przybliżanie działają. Uwagi Mateusza i co z nimi:
+
+- Na Macu Ctrl+klik działał jak lewy klik, a gładzik tylko przybliżał. Poprawka weszła na main jako PR agentsmill/za-murem#4 i jest na żywo od wieczora 17.10.2026: Ctrl+klik to prawy przycisk, dwa palce przesuwają mapę, szczypanie przybliża (w Safari też), kółko myszy dalej przybliża. Na iPhonie szczypanie nie przybliża już podwójnie. Na prawdziwym gładziku i w Safari sprawdzi Mateusz.
+- „Przyjmujemy ludzi, ale ich nie widzę.” `addResidents` przerywa na `st.cap`, więc nadmiar przyjętych znika po cichu, a nowi pojawiają się od razu pod dachem. Naprawa w fali 1 (symulacja): przyjęci przychodzą przez bramę, a bez łóżka śpią na podłodze z karą do nastroju.
+- Na razie da się tylko ściąć drzewo, a dookoła jest tyle rzeczy. Przeszukiwanie, rozbiórka, naprawy i budowa przychodzą w fali 1.
+- Chce chodzić do sąsiednich budynków i próbować się do nich włamać. Dopóki nie otoczy ich wspólnym płotem, w nocy może tam wejść ktoś inny. W innych budynkach mogą być lokatorzy, o których wiadomo albo nie, spotykani w dzień albo w nocy, z różnymi intencjami i emocjami. To będzie fala 2 M2. Nowa sesja „Włamania do sąsiednich budynków i wspólny płot” ustala z Mateuszem projekt w `docs/M2-fala-2.md` i od razu robi część świata.
+- Wspólnota jest trochę naciągana: w domu jednorodzinnym po chwili przychodzi wydarzenie z automatem paczkowym przy pawilonie, a start w domu w Zamościu ma za bardzo klimat blokowiska. Przyczyna: wydarzenia losują się tylko według pory dnia, pierwsze po 38–57 s przy ekranie, a treść z 0.3 zakłada spółdzielnię i blokowisko. Nowa sesja „Wydarzenia i wspólnota osadzone w miejscu” przejrzy wydarzenia na trzech demach i w domu w Zamościu. Potem zaproponuje Mateuszowi warunki wydarzeń z miejsca, tempo i obraz wspólnoty w domu i w bloku, a po jego OK wdroży je w `src/gov`.
+
+### M2 fala 1, wieczór 17.10.2026: rysowanie połączone
+
+Do `m2-fala-1` weszła gałąź rysowania `m2-budowa-rysowanie`. Są w niej sprite'y sześciu budowli, śmieci w trzech wielkościach, zepsute i okopcone meble oraz uszkodzenia w przekroju: wyważone drzwi, wybite okno, cieknąca rura, zalana albo spalona podłoga i okopcony piec. Do tego plany budowy jako duchy z paskami materiałów i pracy oraz podgląd stawiania. Próbne połączenie z gałęzią symulacji przeszło bez konfliktów.
+
+Sesja wydarzeń ustaliła z Mateuszem dwie rzeczy:
+- w domu jednorodzinnym gra mówi „ulica” i „komitet ulicy” zamiast „spółdzielnia” i „zarząd”, a w bloku zostaje po staremu;
+- pierwszego dnia, do nagrzania kuchni, nie ma losowych wydarzeń, jest tylko jedno, które wynika z dymu z komina.
+
+Żeby zarząd wiedział, gdzie jest, `govInput` w `src/sim/gov.ts` dostaje pole `place` (wyjątek od podziału plików za zgodą koordynatora). Teksty spoza `src/gov` (samouczek z trzepakiem, „Na osiedlu”, pomoc o walnym, „Sprawy spółdzielni”) przejdą na słownik zależny od miejsca po połączeniu gałęzi wydarzeń.
+
+Symulacja zrobiła przyjmowanie ludzi: przyjęci przychodzą zza bramy, nikt nie znika, a bez łóżka śpią na podłodze. Czeka to na jej gałęzi na połączenie fali.
+
+### M2 fala 1, wieczór 17.10.2026: symulacja połączona
+
+Do `m2-fala-1` weszła gałąź symulacji `m2-budowa-sim`. Są w niej:
+- materiały jako rzeczy na mapie;
+- przeszukiwanie, rozbiórka, naprawy i zajmowanie mieszkań; w pustych mieszkaniach meble da się rozebrać dopiero po przeszukaniu pomieszczenia;
+- plany budowy z `canPlace` i działanie sześciu budowli;
+- przyjmowanie ludzi.
+
+Koszty dostroił bot, tabela jest w `docs/M2-fala-1.md`. Bramka fali w bocie: z przeszukiwaniem stoją 2 budowle do końca dnia 2 i 3 do końca dnia 3, bez przeszukiwania 1. Decyzja wypada w 98% minut dni 2–3 (3,9 na minutę). Bramka połączonej gałęzi: 570 testów, Biome, build, bot, 97 zrzutów. Bot ma nowy skrót `7a55267b`, bo mieszkańcy biorą stany mieszkań ze świata: na start jest ich 5 przy 6 miejscach. Zostają interfejs fali 1 i bramka całej fali w grze.
+
+Do poprawy:
+- Wydarzenia przyjmują ludzi bez patrzenia na miejsca. Po 6 dniach jest 16–20 mieszkańców przy 6 miejscach i nadmiar śpi na podłodze.
+- Magazyn w grze nic nie daje, bo łup z napadu liczy zarząd w `src/gov/noc.ts` bez zapasu magazynu.
+
 ## Następne
 
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
@@ -241,6 +277,7 @@ Daty w dzienniku poprawione: praca nad M1 szła w nocy z 16 na 17.10.2026, nie z
 - Tłum obcych zastąpią mieszkańcy siedziby z planem dnia. Obcy pojawiają się tylko jako wydarzenie.
 - Bramki liczone w minutach przy ekranie: w M1 decyzja co najmniej raz na minutę, w M2 trudna pierwsza zima zamiast balansu jak w 0.3.
 - Na noc z 16 na 17.10.2026 Mateusz zostawił decyzje koordynatorowi, bez pytań do rana. Bez wydatków w PixelLab.
+- Od wieczora 17.10.2026 osobne mechaniki idą w osobnych sesjach, z którymi Mateusz rozmawia bezpośrednio (jego prośba). Każda sesja ma swoje pliki, a gałęzie łączy koordynator. `src/gov` należy teraz do sesji wydarzeń, a nie do interfejsu fali 1.
 - Potem tej samej nocy Mateusz napisał: „Rób PR i merguj też automatycznie”. PR-y otwiera koordynator. Scalenie do main zablokował klasyfikator trybu auto („Merge Without Review”), a automatyczne scalanie jest wyłączone w ustawieniach repozytorium; tych ustawień nie zmieniam. Dlatego PR-y do main czekają na scalenie przez Mateusza (albo na regułę uprawnień dla `gh pr merge`), a prace sesji koordynator łączy lokalnie w `m1-pierwsze-minuty` i wypycha tę gałąź do szkicowego PR-a M1.
 - Ekran startowy: ramka „To podgląd wersji 0.4” z przyciskiem „Zagraj w pełną wersję 0.3”, na telefonie krótsza, żeby formularz adresu został na pierwszym ekranie (nowy scenariusz zrzutów `start-telefon`). PR agentsmill/za-murem#1 czeka na scalenie.
 - Odłożone drobne z przeglądu (koszt, jeśli to błąd: tylko przy funkcjach, których jeszcze nie ma):

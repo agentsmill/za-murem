@@ -41,6 +41,7 @@ describe('odczyt stanu dla modułu zarządu', () => {
       boards: heap('deski'),
       parts: 0,
       meds: 0,
+      mats: { drewno: 0, deski: heap('deski'), zlom: heap('zlom'), czesci: 0, jedzenie: 24, leki: 0 },
     });
     expect(s.burned).toEqual([]);
   });

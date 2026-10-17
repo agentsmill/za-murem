@@ -48,10 +48,18 @@ export const GAME_KINDS: ReadonlySet<string> = new Set([
   'deski',
   'zlom',
   'wrak',
+  'smieci',
+  'warsztat',
+  'kuchnia_spoleczna',
+  'magazyn',
+  'lozka_pietrowe',
+  'ogrodek',
+  'zasieki',
 ]);
 
-/** sterty materiału: ze świata (World.props), dopóki symulacja nie trzyma ich u siebie jako rzeczy */
-export const HEAPS: ReadonlySet<string> = new Set(['gruz', 'deski', 'zlom']);
+/** sterty materiału i śmieci: ze świata (World.props), dopóki symulacja nie trzyma ich u siebie jako rzeczy
+    (każdy rodzaj osobno: od pierwszej rzeczy danego rodzaju w st.things te ze świata znikają) */
+export const HEAPS: ReadonlySet<string> = new Set(['gruz', 'deski', 'zlom', 'smieci']);
 
 /**
  * Garnki z posiłkiem na stołach: table to dolna krawędź stołu, na którym stoi garnek, żeby rysował
