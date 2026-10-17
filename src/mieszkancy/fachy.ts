@@ -11,14 +11,16 @@
    rocznika: urodzeni do 1959 roku (67 lat i więcej w 2026) są nim w około 55% przypadków, urodzeni w latach 1960-1964
    w około 25%, młodsi nigdy. Zawody satyryczne mają `satyra: true`; żadnych prawdziwych marek ani osób.
 
-   Fach (`fach`) mają obecni (`stan: 'tu'`) od 16 lat w 2051 roku (wiek w grze to 2051 minus rocznik, bo nikt nie ma
-   rocznika 2051). Losowanie w dwóch krokach. Najpierw, jeśli dawny zawód ma powiązania (`POWIAZANIA_ZAWODOW`, np. hydraulik
+   Fach (`fach`) mają obecni (`stan: 'tu'`) od 16 lat w roku stanu wyniku (`w.rok`, w grze 2051; wiek w grze to rok
+   stanu minus rocznik, bo nikt nie ma rocznika z roku stanu). Losowanie w dwóch krokach. Najpierw, jeśli dawny zawód ma powiązania (`POWIAZANIA_ZAWODOW`, np. hydraulik
    do zduna i instalatora, pielęgniarka do felczerki, programista do opiekuna serwera), z szansą `SZANSA_Z_ZAWODU` fach
    pochodzi z ich wag. Inaczej, albo gdy z powiązań nic nie zostało po cięciu wiekiem, fach pochodzi z puli ogólnej
    (`baza` fachu). Wiek tnie wagi: fach nie trafia do osoby młodszej niż `odWieku`, a ciężka praca (`ciezar`) słabnie po
-   60. roku życia i znika po 70., więc najstarsi robią przetwory, hodują kury, liczą racje i opiekują się chorymi. Fachy
-   i dawne zawody są zapisane w osobie w formie jej płci (`m` albo `k`), gotowe do tekstu; `fachOsoby` i `zawodOsoby` oddają
-   pełny wpis tabeli (umiejętności, `satyra`).
+   60. roku życia i znika po 70., więc najstarsi robią przetwory, hodują kury, liczą racje i opiekują się chorymi. W osobie
+   `fach` to stabilne id z tabeli (`IdFachu`, np. 'felczer'), więc zmiana nazwy w tabeli nie zrywa zapisanych wartości: nazwę
+   w formie płci daje `nazwaFachu(id, plec)`, a pełny wpis z umiejętnościami `fachOsoby(o)` (szukanie po id, nie po
+   nazwie). `dawnyZawod` to napis w formie płci osoby, gotowy do tekstu (nie jest kluczem do niczego); `zawodOsoby` oddaje
+   jego wpis (`satyra`).
 
    `nadajFachy` zmienia osoby w miejscu: wolno ją wywołać tylko na wyniku, który wywołujący sam stworzył, np. z `postarz`
    (kopiuje osoby), jak robi to `generujBudynek`. Zmienia tylko `dawnyZawod` i `fach`, nigdy innych pól. */
@@ -28,9 +30,10 @@ import type { Rng } from '../core/rng.ts';
 import { szansa, wazony } from './los.ts';
 import type { Osoba, Plec, WynikBudynku } from './typy.ts';
 
-/** Fach na 2051. `umiejetnosci` w skali 1-4 jak zawody z 0.3 (lekarz rodzinny ma `med: 4`), `odWieku` to najmniejszy wiek. */
+/** Fach na 2051. `umiejetnosci` w skali 1-4 jak zawody z 0.3 (lekarz rodzinny ma `med: 4`), `odWieku` to najmniejszy wiek.
+    `id` to stabilne ASCII; to ono ląduje w `Osoba.fach`. */
 export interface Fach {
-  id: string;
+  id: IdFachu;
   m: string;
   k: string;
   umiejetnosci: Partial<Record<Dom, number>>;
@@ -43,12 +46,11 @@ export interface DawnyZawod {
   satyra: boolean;
 }
 
-/** Rok zero (początek bakterii) i rok migawki gry, jak `ROK_GRY` w generuj.ts (tamten plik importuje ten, więc stała tu). */
+/** Rok zero (początek bakterii): od niego liczymy wiek, w którym ktoś miał dawny zawód. Rok stanu bierzemy z wyniku. */
 const ROK_ZERO = 2026;
-const ROK_MIGAWKI = 2051;
 /** Dorosły przed upadkiem: urodzony do tego roku włącznie (18 lat w 2027). */
 const OSTATNI_ROCZNIK_DAWNEGO_ZAWODU = 2009;
-/** Od tylu lat w 2051 roku obecny mieszkaniec ma fach. */
+/** Od tylu lat w roku stanu wyniku obecny mieszkaniec ma fach. */
 const WIEK_FACHU = 16;
 /** Wiek w 2026, od którego emerytura jest zwykła (urodzeni do 1959), i od którego bywa wczesna (urodzeni 1960-1964). */
 const WIEK_EMERYTURY = 67;
@@ -62,7 +64,12 @@ const MNOZNIK_SENIORA = 3;
 type Ciezar = 0 | 1 | 2;
 /** Fach z danymi losowania. `baza`: waga w puli ogólnej. `ciezar`: 0 praca siedząca albo lekka, 1 średnia, 2 ciężka
     (słabnie od 60., znika od 70. roku życia). `seniorski`: po 65. roku życia fach ma potrójną wagę. */
-interface DefFachu extends Fach {
+interface DefFachu {
+  id: string;
+  m: string;
+  k: string;
+  umiejetnosci: Partial<Record<Dom, number>>;
+  odWieku: number;
   baza: number;
   ciezar: Ciezar;
   seniorski: boolean;
@@ -137,10 +144,11 @@ const DEF = [
   fach('kurierPieszy', 'kurier pieszy', 'kurierka piesza', { obrona: 1 }, 16, 6, 2),
 ] as const satisfies readonly DefFachu[];
 
-type IdFachu = (typeof DEF)[number]['id'];
+/** Stabilne id fachu (ASCII, camelCase): wartość `Osoba.fach`. */
+export type IdFachu = (typeof DEF)[number]['id'];
 const DEF_FACHOW: readonly DefFachu[] = DEF;
 
-export const FACHY: readonly Fach[] = DEF_FACHOW.map((d) => ({
+export const FACHY: readonly Fach[] = DEF.map((d) => ({
   id: d.id,
   m: d.m,
   k: d.k,
@@ -439,20 +447,24 @@ export const POWIAZANIA_ZAWODOW: Readonly<Record<string, Readonly<Record<string,
 
 // ---------------------------------------------------------------- wyszukiwanie wpisu osoby
 
-const FACH_PO_NAZWIE = new Map<string, Fach>();
-for (const f of FACHY) {
-  FACH_PO_NAZWIE.set(f.m, f);
-  FACH_PO_NAZWIE.set(f.k, f);
-}
+const FACH_PO_ID = new Map<string, Fach>();
+for (const f of FACHY) FACH_PO_ID.set(f.id, f);
 const ZAWOD_PO_NAZWIE = new Map<string, DawnyZawod>();
 for (const z of DAWNE_ZAWODY) {
   ZAWOD_PO_NAZWIE.set(z.m, z);
   ZAWOD_PO_NAZWIE.set(z.k, z);
 }
 
-/** Wpis tabeli fachów dla osoby (umiejętności, id), albo `undefined`, gdy osoba nie ma fachu. */
+/** Wpis tabeli fachów dla osoby (umiejętności, nazwy), szukany po id z `Osoba.fach`; `undefined`, gdy osoba nie ma fachu
+    albo jej `fach` nie jest id z tabeli (nazwa wyświetlana nie działa jako klucz). */
 export function fachOsoby(o: Pick<Osoba, 'fach'>): Fach | undefined {
-  return o.fach === undefined ? undefined : FACH_PO_NAZWIE.get(o.fach);
+  return o.fach === undefined ? undefined : FACH_PO_ID.get(o.fach);
+}
+/** Nazwa fachu w formie płci: `m` dla mężczyzny, `k` dla kobiety. Nieznane id (obejście typu) to `RangeError`. */
+export function nazwaFachu(id: IdFachu, plec: Plec): string {
+  const f = FACH_PO_ID.get(id);
+  if (!f) throw new RangeError(`nieznany fach: ${id}`);
+  return nazwaDla(f, plec);
 }
 /** Wpis tabeli dawnych zawodów dla osoby (w tym `satyra`), albo `undefined`, gdy osoba nie ma dawnego zawodu. */
 export function zawodOsoby(o: Pick<Osoba, 'dawnyZawod'>): DawnyZawod | undefined {
@@ -508,7 +520,7 @@ function wagiFachow(wiek: number, iZawodu = -1): readonly number[] {
 
 const nazwaDla = (x: { m: string; k: string }, plec: Plec): string => (plec === 'K' ? x.k : x.m);
 
-/** Fach osoby w wieku `wiek` (2051): z powiązań dawnego zawodu `iZawodu` z szansą `SZANSA_Z_ZAWODU`, inaczej (albo gdy
+/** Fach osoby w wieku `wiek` (w roku stanu wyniku): z powiązań dawnego zawodu `iZawodu` z szansą `SZANSA_Z_ZAWODU`, inaczej (albo gdy
     po cięciu wiekiem nic z powiązań nie zostało) z puli ogólnej. */
 function losujFach(wiek: number, iZawodu: number, r: Rng): Fach {
   let i = -1;
@@ -520,14 +532,18 @@ function losujFach(wiek: number, iZawodu: number, r: Rng): Fach {
   return FACHY[i];
 }
 
-/** Dawny zawód (urodzeni do 2009) i fach (obecni od 16 lat w 2051) osobom budynku, w kolejności `w.osoby`. Zmienia tylko
-    te dwa pola w osobach `w` (patrz nagłówek: tylko na wyniku stworzonym przez wywołującego). */
+/** Dawny zawód (urodzeni do 2009, jako nazwa w formie płci) i fach (obecni od 16 lat w roku stanu `w.rok`, jako id)
+    osobom budynku, w kolejności `w.osoby`. Zmienia tylko te dwa pola w osobach `w` (patrz nagłówek: tylko na wyniku
+    stworzonym przez wywołującego). Wynik bez `rok` (spis 2021, nie wynik `postarz`) to `RangeError`: bez roku stanu nie
+    ma wieku. */
 export function nadajFachy(w: WynikBudynku, r: Rng): void {
+  const rok = w.rok;
+  if (rok === undefined) throw new RangeError('nadajFachy: wynik bez roku stanu (rok), to nie wynik postarz');
   for (const o of w.osoby) {
     // indeks dawnego zawodu z wag zależnych od wieku w 2026; -1 dla urodzonych po 2009
     const iZawodu = o.rocznik <= OSTATNI_ROCZNIK_DAWNEGO_ZAWODU ? wazony(r, wagiZawodow(ROK_ZERO - o.rocznik)) : -1;
     if (iZawodu >= 0) o.dawnyZawod = nazwaDla(ZAWODY[iZawodu], o.plec);
-    const wiek = ROK_MIGAWKI - o.rocznik;
-    if (o.stan === 'tu' && wiek >= WIEK_FACHU) o.fach = nazwaDla(losujFach(wiek, iZawodu, r), o.plec);
+    const wiek = rok - o.rocznik;
+    if (o.stan === 'tu' && wiek >= WIEK_FACHU) o.fach = losujFach(wiek, iZawodu, r).id;
   }
 }

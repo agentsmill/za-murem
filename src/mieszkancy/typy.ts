@@ -35,7 +35,9 @@ export interface Osoba {
   dokad?: string; // 'Kraków', 'Niemcy', 'wieś pod miastem'
   /** Zawód sprzed upadku w formie płci osoby (tylko urodzeni do 2009; linijka historii i satyra), fachy.ts. */
   dawnyZawod?: string;
-  /** Fach na 2051 w formie płci osoby (tylko obecni od 16 lat), fachy.ts; umiejętności daje `fachOsoby`. */
+  /** Stabilne id fachu na 2051 (`IdFachu` z fachy.ts, np. 'felczer'; tylko obecni od 16 lat). Typ zostaje `string`:
+      zawężenie do `IdFachu` wymagałoby importu typu z fachy.ts, który sam importuje typy stąd (cykl typów), a
+      wartość i tak sprawdza `fachOsoby`. Nazwę w formie płci daje `nazwaFachu`, umiejętności `fachOsoby`. */
   fach?: string;
 }
 export interface Gospodarstwo {

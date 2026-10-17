@@ -14,10 +14,11 @@ import {
   type Fach,
   fachOsoby,
   nadajFachy,
+  nazwaFachu,
   POWIAZANIA_ZAWODOW,
   zawodOsoby,
 } from '../../src/mieszkancy/fachy.ts';
-import { generujBudynek, generujObszar } from '../../src/mieszkancy/generuj.ts';
+import { generujBudynek, generujObszar, ROK_GRY } from '../../src/mieszkancy/generuj.ts';
 import { nadajImiona } from '../../src/mieszkancy/imiona.ts';
 import { losDla } from '../../src/mieszkancy/los.ts';
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
@@ -46,7 +47,6 @@ const DEMA: [string, TabeleGminy][] = [
   ['zielonki', zielonki],
 ];
 const DOMY: Dom[] = ['bud', 'cieplo', 'elek', 'med', 'uprawa', 'it', 'obrona'];
-const ROK_GRY = 2051;
 /** Fachy ciężkiej pracy: po 70. roku życia nikt ich nie dostaje (reguła wieku, nie dane). */
 const CIEZKIE = ['murarz', 'pomocnikBud', 'drwal', 'barykadnik', 'straznik', 'zwiadowca', 'kurierPieszy'];
 
@@ -89,6 +89,7 @@ function partia(n: number, plec: Plec, rocznik: number, ziarno: string, stan: Os
 const udzial = (osoby: readonly Osoba[], ok: (o: Osoba) => boolean): number =>
   osoby.filter(ok).length / Math.max(1, osoby.length);
 
+/** Wiek w roku gry (rok stanu wyniku generatora to `ROK_GRY`). */
 const wiek = (o: Osoba): number => ROK_GRY - o.rocznik;
 const nazwaFormy = (z: { m: string; k: string }, plec: Plec): string => (plec === 'K' ? z.k : z.m);
 
@@ -162,6 +163,16 @@ describe('FACHY: tabela fachów na 2051', () => {
     expect(FACHY.some((f) => /gazogenerator/.test(f.m))).toBe(true);
     expect(FACHY.some((f) => /modelu/.test(f.m))).toBe(true);
   });
+
+  it('nazwaFachu oddaje formę męską i żeńską dla każdego id, a nieznane id to błąd', () => {
+    for (const f of FACHY) {
+      expect(nazwaFachu(f.id, 'M'), f.id).toBe(f.m);
+      expect(nazwaFachu(f.id, 'K'), f.id).toBe(f.k);
+    }
+    expect(nazwaFachu('felczer', 'K')).toBe('felczerka');
+    expect(nazwaFachu('lataczKabli', 'M')).toBe('łatacz kabli');
+    expect(() => nazwaFachu('astronauta' as never, 'M')).toThrow(RangeError);
+  });
 });
 
 // ---------------------------------------------------------------- tabela DAWNE_ZAWODY
@@ -207,7 +218,7 @@ describe('DAWNE_ZAWODY: zawody sprzed upadku', () => {
   });
 
   it('powiązania dawnych zawodów z fachami: znane zawody i fachy, wagi całkowite, hydraulik do zduna i instalatora', () => {
-    const ids = new Set(FACHY.map((f) => f.id));
+    const ids = new Set<string>(FACHY.map((f) => f.id));
     const zawody = new Set(DAWNE_ZAWODY.map((z) => z.m));
     for (const [zawod, wagi] of Object.entries(POWIAZANIA_ZAWODOW)) {
       expect(zawody.has(zawod), `zawód ${zawod}`).toBe(true);
@@ -313,23 +324,92 @@ describe('nadajFachy: granice wieku i stanu', () => {
   });
 });
 
+describe('nadajFachy: wiek z roku stanu wyniku', () => {
+  const zRokiem = (rok: number | undefined, osoby: Osoba[]): WynikBudynku => {
+    const w = wynik(osoby);
+    if (rok === undefined) delete w.rok;
+    else w.rok = rok;
+    return w;
+  };
+
+  it('próg 16 lat przesuwa się z rokiem stanu: w 2050 ma fach rocznik 2034, w 2051 rocznik 2035, w 2026 rocznik 2010', () => {
+    const progi: [number, number][] = [
+      [2050, 2034],
+      [ROK_GRY, 2035],
+      [2026, 2010],
+    ];
+    for (const [rok, rocznik] of progi) {
+      const w = zRokiem(rok, [osoba('stary', 'M', rocznik), osoba('mlody', 'K', rocznik + 1)]);
+      nadajFachy(w, losDla('fachy-test', 'rok', rok));
+      expect(w.osoby[0].fach, `${rok}: rocznik ${rocznik} (16 lat)`).toBeTruthy();
+      expect(w.osoby[1].fach, `${rok}: rocznik ${rocznik + 1} (15 lat)`).toBeUndefined();
+    }
+  });
+
+  it('dawny zawód nie zależy od roku stanu: tylko rocznik do 2009', () => {
+    for (const rok of [2026, 2050, ROK_GRY]) {
+      const w = zRokiem(rok, [osoba('a', 'M', 2009), osoba('b', 'K', 2010)]);
+      nadajFachy(w, losDla('fachy-test', 'rok-zawod', rok));
+      expect(w.osoby[0].dawnyZawod, String(rok)).toBeTruthy();
+      expect(w.osoby[1].dawnyZawod, String(rok)).toBeUndefined();
+    }
+  });
+
+  it('wynik bez roku stanu (spis 2021, nie wynik postarz) to RangeError, a nic nie jest zmienione', () => {
+    const w = zRokiem(undefined, [osoba('a', 'M', 1980)]);
+    expect(() => nadajFachy(w, losDla('fachy-test', 'bez-roku'))).toThrow(RangeError);
+    expect(w.osoby[0].fach).toBeUndefined();
+    expect(w.osoby[0].dawnyZawod).toBeUndefined();
+  });
+
+  it('generator daje wynik z rokiem ROK_GRY, więc próg wieku w Przymorzu liczy się od roku gry', () => {
+    const osiedle = generujObszar(przymorze, gdansk, kraj);
+    expect(ROK_GRY).toBe(2051);
+    for (const w of osiedle.budynki) {
+      expect(w.rok).toBe(ROK_GRY);
+      for (const o of w.osoby.filter((x) => x.stan === 'tu')) {
+        expect(o.fach !== undefined, `${o.id}: rocznik ${o.rocznik}`).toBe((w.rok as number) - o.rocznik >= 16);
+      }
+    }
+  });
+});
+
 describe('nadajFachy: forma według płci i niezmienność reszty', () => {
-  it('mężczyzna dostaje formę męską fachu i zawodu, kobieta żeńską', () => {
+  it('dawny zawód to nazwa w formie płci, a fach to id z tabeli, z którego nazwa w formie płci wynika z `nazwaFachu`', () => {
     const osoby = [...partia(300, 'M', 1985, 'plec'), ...partia(300, 'K', 1985, 'plec')];
-    const fachyM = new Set(FACHY.map((f) => f.m));
-    const fachyK = new Set(FACHY.map((f) => f.k));
+    const ids = new Set<string>(FACHY.map((f) => f.id));
     const zawodyM = new Set(DAWNE_ZAWODY.map((z) => z.m));
     const zawodyK = new Set(DAWNE_ZAWODY.map((z) => z.k));
     for (const o of osoby) {
-      expect((o.plec === 'M' ? fachyM : fachyK).has(o.fach ?? ''), `${o.plec}: ${o.fach}`).toBe(true);
+      expect(ids.has(o.fach ?? ''), `${o.plec}: ${o.fach}`).toBe(true);
+      expect(o.fach, o.id).toMatch(/^[a-z][A-Za-z]*$/);
       expect((o.plec === 'M' ? zawodyM : zawodyK).has(o.dawnyZawod ?? ''), `${o.plec}: ${o.dawnyZawod}`).toBe(true);
     }
-    // oba pomocnicze wyszukiwania oddają ten sam wpis dla obu form
     const o = osoby[osoby.length - 1];
-    expect(nazwaFormy(fachOsoby(o) as Fach, o.plec)).toBe(o.fach);
+    const f = fachOsoby(o) as Fach;
+    expect(f.id).toBe(o.fach);
+    expect(nazwaFachu(f.id, o.plec)).toBe(nazwaFormy(f, o.plec));
     expect(nazwaFormy(zawodOsoby(o) as { m: string; k: string }, o.plec)).toBe(o.dawnyZawod);
     expect(fachOsoby({ ...o, fach: undefined })).toBeUndefined();
     expect(zawodOsoby({ ...o, dawnyZawod: 'astronauta' })).toBeUndefined();
+  });
+
+  it('fach w osobie nie zależy od nazw wyświetlanych: nazwa w formie płci nie jest kluczem, a przemianowana tabela dalej go znajduje', () => {
+    const osoby = [...partia(300, 'M', 1985, 'klucz'), ...partia(300, 'K', 1985, 'klucz')];
+    // „felczerka”, „łataczka kabli” itd. nie są wartościami pola, więc nie rozwiązują się do niczego
+    expect(fachOsoby({ fach: 'felczerka' })).toBeUndefined();
+    expect(fachOsoby({ fach: 'łataczka kabli' })).toBeUndefined();
+    expect(fachOsoby({ fach: 'lataczKabli' })?.m).toBe('łatacz kabli');
+    // kopia tabeli z przemianowanymi wszystkimi nazwami: każdy zapisany fach nadal się w niej znajduje po id
+    const przemianowane = new Map<string, Fach>(FACHY.map((f) => [f.id, { ...f, m: `nowy ${f.m}`, k: `nowa ${f.k}` }]));
+    for (const o of osoby) {
+      const wpis = przemianowane.get(o.fach ?? '');
+      expect(wpis, `${o.plec}: ${o.fach}`).toBeDefined();
+      expect(wpis?.id).toBe(fachOsoby(o)?.id);
+    }
+    // żadna kobieta nie ma w polu formy żeńskiej, o ile różni się ona od id
+    const formyZenskieRozneOdId = new Set(FACHY.filter((f) => f.k !== f.id).map((f) => f.k));
+    for (const o of osoby) expect(formyZenskieRozneOdId.has(o.fach ?? ''), `${o.plec}: ${o.fach}`).toBe(false);
   });
 
   it('zmienia tylko fach i dawnyZawod: reszta osoby, kolejność i długość listy zostają', () => {
@@ -491,23 +571,29 @@ describe('nadajFachy: dawny zawód ciągnie do pokrewnego fachu', () => {
 
 // ---------------------------------------------------------------- generator: Przymorze i dema
 
-/** Niezmienniki fachów i dawnych zawodów dla wszystkich osób osiedla. */
+/** Niezmienniki fachów i dawnych zawodów dla wszystkich osób osiedla; wiek liczony z roku stanu wyniku (`w.rok`). */
 function sprawdz(nazwa: string, osiedle: Osiedle): void {
   const osoby = osiedle.budynki.flatMap((w) => w.osoby);
   expect(osoby.length, nazwa).toBeGreaterThan(100);
-  for (const o of osoby) {
-    const w = wiek(o);
-    if (o.stan === 'tu' && w >= 16) {
-      const f = fachOsoby(o);
-      expect(f, `${nazwa} ${o.id}: ${o.fach}`).toBeDefined();
-      expect(o.fach, o.id).toBe(nazwaFormy(f as Fach, o.plec));
-      expect(w, `${o.id}: ${f?.id}`).toBeGreaterThanOrEqual(f?.odWieku ?? 99);
-    } else expect(o.fach, `${nazwa} ${o.id} (${o.stan}, ${w} lat)`).toBeUndefined();
-    if (o.rocznik <= 2009) {
-      const z = zawodOsoby(o);
-      expect(z, `${nazwa} ${o.id}: ${o.dawnyZawod}`).toBeDefined();
-      expect(o.dawnyZawod, o.id).toBe(nazwaFormy(z as { m: string; k: string }, o.plec));
-    } else expect(o.dawnyZawod, `${nazwa} ${o.id} (rocznik ${o.rocznik})`).toBeUndefined();
+  const ids = new Set<string>(FACHY.map((f) => f.id));
+  for (const budynek of osiedle.budynki) {
+    expect(budynek.rok, nazwa).toBe(ROK_GRY);
+    for (const o of budynek.osoby) {
+      const w = (budynek.rok as number) - o.rocznik;
+      if (o.stan === 'tu' && w >= 16) {
+        const f = fachOsoby(o);
+        expect(f, `${nazwa} ${o.id}: ${o.fach}`).toBeDefined();
+        expect(ids.has(o.fach ?? ''), `${nazwa} ${o.id}: ${o.fach}`).toBe(true);
+        expect(o.fach, o.id).toBe(f?.id);
+        expect(o.fach, o.id).toMatch(/^[a-z][A-Za-z]*$/);
+        expect(w, `${o.id}: ${f?.id}`).toBeGreaterThanOrEqual(f?.odWieku ?? 99);
+      } else expect(o.fach, `${nazwa} ${o.id} (${o.stan}, ${w} lat)`).toBeUndefined();
+      if (o.rocznik <= 2009) {
+        const z = zawodOsoby(o);
+        expect(z, `${nazwa} ${o.id}: ${o.dawnyZawod}`).toBeDefined();
+        expect(o.dawnyZawod, o.id).toBe(nazwaFormy(z as { m: string; k: string }, o.plec));
+      } else expect(o.dawnyZawod, `${nazwa} ${o.id} (rocznik ${o.rocznik})`).toBeUndefined();
+    }
   }
 }
 
@@ -526,7 +612,7 @@ describe('Przymorze i dema: fachy w wyniku generatora', () => {
     for (const o of osoby.filter((x) => x.rocznik <= 2009)) expect(o.dawnyZawod, o.id).toBeTruthy();
   });
 
-  it('niezmienniki dla trzech dem: forma według płci, wiek co najmniej odWieku, nieobecni bez fachu', () => {
+  it('niezmienniki dla trzech dem: fach to id z tabeli, wiek z roku stanu co najmniej odWieku, nieobecni bez fachu', () => {
     for (const [nazwa, g] of DEMA)
       sprawdz(nazwa, nazwa === 'przymorze' ? osiedle : generujObszar(demo(nazwa), g, kraj));
   });
