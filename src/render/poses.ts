@@ -5,7 +5,8 @@
    (guard na posterunku KOZA_POST) i drzemka wartownika (guard w fazie 4). Prace M2: przeszukiwanie
    i przebieranie śmieci na kolanach, rozbiórka siekierą, naprawa, budowa i zajmowanie mieszkania
    młotkiem (podłoga, rura i grządki na kolanach), niesienie desek albo złomu na łatę, naprawę
-   i budowę. Klatki liczone z czasu gry, bez stanu w symulacji. Dokładanie do kozy trwa w symulacji
+   i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Klatki liczone z czasu gry, bez
+   stanu w symulacji. Dokładanie do kozy trwa w symulacji
    jeden tick, więc widok pamięta je chwilę (FeedWatch). Czyste funkcje bez PixiJS. */
 
 import { FRAMES, type Lie, lieHead, type Pose } from './art/people.ts';
@@ -108,6 +109,9 @@ export function poseOf(
   const knees = (): PoseView => ({ pose: 'search', dir, frame: Math.floor(tt * 1.6) % 2 });
   const hammer = (): PoseView => ({ pose: 'hammer', dir, frame: Math.floor(tt * 3) % 2 });
   if (!moving && feeding) return { pose: 'crouch', dir, frame: 1 + (Math.floor(tt * 2.5) % 2) };
+  // przyjęty idzie zza bramy do swojego mieszkania (praca 'arrive'): jak każdy idący mieszkaniec,
+  // a czekając za bramą na swoją kolej, stoi
+  if (j?.t === 'arrive') return { pose: 'walk', dir, frame: step };
   // deski albo złom w rękach na łatę, naprawę albo budowę (bez nazwy materiału: deski z łat M1), także
   // w drodze po kolejną stertę; w fazie pracy materiał jest już przy łacie, uszkodzeniu albo planie
   if (j && j.phase !== 2 && (j.n ?? 0) > 0 && (j.t === 'patch' || j.t === 'repair' || j.t === 'build'))

@@ -2220,6 +2220,82 @@ const SHOTS: Shot[] = [
       await poseCheck(page, ['search', 'hammer', 'scrap', 'doze']);
     },
   },
+  {
+    // przyjęci (praca 'arrive' z symulacji) idą zza bramy do mieszkań jak każdy mieszkaniec: widać ich, chód
+    name: 'm2-przyjeci',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const got = await page.evaluate(async () => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const w = sim.w;
+        const size = w.size;
+        const g = w.fence.gate;
+        const yard = new Set(w.fence.yard);
+        // dwa kafelki za bramą, po stronie ulicy
+        const out = [
+          [g.x, g.y - 2],
+          [g.x, g.y + 2],
+          [g.x - 2, g.y],
+          [g.x + 2, g.y],
+        ].find(([x, y]) => !yard.has(y * size + x) && !sim.blocked[y * size + x])!;
+        const res = st.pawns.filter((p) => p.kind === 'resident').slice(0, 2);
+        res.forEach((p, k) => {
+          const dest = Math.floor(p.y) * size + Math.floor(p.x);
+          Object.assign(p, {
+            x: out[0] + 0.5 + k,
+            y: out[1] + 0.5,
+            path: [],
+            pi: 0,
+            job: {
+              t: 'arrive',
+              target: -1,
+              tile: dest,
+              phase: 0,
+              from: -1,
+              t0: st.tick,
+              until: st.tick,
+              order: false,
+              n: 0,
+              what: '',
+            },
+          });
+        });
+        for (let k = 0; k < 30; k++) sim.step();
+        zm.setCam(g.x + 1, g.y + 0.5, 2.2);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const sprites = (
+          zm.view as unknown as {
+            pawnSprites: Map<number, { visible: boolean; texture: { frame: { x: number; y: number } } }>;
+          }
+        ).pawnSprites;
+        return res.map((p) => {
+          const sp = sprites.get(p.id)!;
+          return {
+            x: sp.texture.frame.x,
+            y: sp.texture.frame.y,
+            visible: sp.visible,
+            moving: p.pi < p.path.length,
+            job: p.job?.t ?? '',
+          };
+        });
+      });
+      await waitIdle(page);
+      const poses = got.map((g) => poseAt(g.x, g.y));
+      console.log(
+        `  przyjęci: ${got.map((g, k) => `${g.job} ${poses[k]}${g.moving ? ' w drodze' : ''}${g.visible ? '' : ' niewidoczny'}`).join(', ')}`,
+      );
+      if (
+        got.length < 2 ||
+        got.some((g) => !g.visible || g.job !== 'arrive' || !g.moving) ||
+        poses.some((q) => q !== 'walk')
+      )
+        throw new Error('przyjęci nie idą jak mieszkańcy');
+    },
+  },
 ];
 
 /**

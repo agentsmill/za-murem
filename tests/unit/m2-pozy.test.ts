@@ -69,6 +69,14 @@ describe('pozy prac M2', () => {
     expect(pose({ ...walking, carry: 4, job: job('haul', 1, 3) }).pose).toBe('carry');
   });
 
+  it('przyjęty (praca arrive) idzie jak każdy mieszkaniec, za bramą czeka stojąc', () => {
+    const arrive = { t: 'arrive', phase: 0, target: 3, n: 0, what: '' };
+    const walking = pose({ kind: 'resident', job: arrive, path: [1, 2, 3], pi: 0, walk: 1 });
+    expect(walking).toEqual(pose({ kind: 'resident', job: null, path: [1, 2, 3], pi: 0, walk: 1 }));
+    expect(walking.pose).toBe('walk');
+    expect(pose({ kind: 'resident', job: arrive })).toEqual({ pose: 'walk', dir: 0, frame: 0 });
+  });
+
   it('wartownik, który przysnął, siedzi z opuszczoną głową', () => {
     expect(pose({ job: job('guard', 4, 0) }).pose).toBe('doze');
     expect(pose({ job: job('guard', 1, 0) }).pose).toBe('guard');
