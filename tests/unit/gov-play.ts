@@ -16,9 +16,10 @@ import {
   setNight,
   signLaw,
 } from '../../src/gov/zarzad.ts';
-import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
+import { dayOf, hourOf, minutesAt, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from '../../src/sim/gov.ts';
 import { dryTreeOf } from '../../src/sim/house.ts';
+import { HUNGRY } from '../../src/sim/needs.ts';
 import { commandFor } from '../../src/sim/orders.ts';
 import { type Command, createSim, type Laws, type Loot, Sim, type SimState, trunkOf } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
@@ -67,8 +68,25 @@ export interface PlayOpts {
   player?: Player;
 }
 
+/** poranek wartownika po nocy na posterunku (6:00–14:00): najedzenie i siły o 6:00, godzina pierwszego posiłku
+    (−1: nie jadł), najniższe najedzenie, czy po posiłku spał */
+export interface GuardMorning {
+  day: number;
+  food6: number;
+  rest6: number;
+  ateAt: number;
+  minFood: number;
+  napped: boolean;
+  /** spał w ogóle między 6:00 a 14:00 */
+  slept: boolean;
+  /** jedzenie zarządu o 6:00 (zapasy i garnek) i ilu w zarządzie było wtedy głodnych */
+  stock6: number;
+  hungry6: number;
+}
+
 export interface PlayResult {
   decisions: Decision[];
+  mornings: GuardMorning[];
   /** przyjęcia: ilu ludzi przyjął zarząd (fx.residents) i ilu pionków mieszkańców od tego przybyło */
   admitted: { asked: number; added: number };
   nights: NightLog[];
@@ -183,6 +201,9 @@ export function playWithGov(
   }
   let night: NightLog | null = null;
   let fireN = 0;
+  const mornings: GuardMorning[] = [];
+  /** wartownicy, których poranek liczymy: pionek, posiłek sprzed 6:00, wpis */
+  let watch: { p: (typeof st.pawns)[number]; meal0: number; m: GuardMorning }[] = [];
   /** drzewa, do których nie dało się dojść, i drzewo z ostatniego polecenia (−1: brak) */
   const skip = new Set<number>();
   let asked = -1;
@@ -244,6 +265,44 @@ export function playWithGov(
       decisions.push({ s, kind: 'praca', text });
     });
     const h = hourOf(st.tick);
+    // poranek wartowników: kto o 5:00 stoi na posterunku, tego od 6:00 do 14:00
+    if (h === 5 && !watch.length)
+      watch = st.pawns
+        .filter((q) => q.kind === 'core' && !q.away && q.job?.t === 'guard')
+        .map((q) => ({
+          p: q,
+          meal0: q.lastMeal,
+          m: {
+            day: dayOf(st.tick),
+            food6: -1,
+            rest6: -1,
+            ateAt: -1,
+            minFood: 100,
+            napped: false,
+            slept: false,
+            stock6: -1,
+            hungry6: 0,
+          },
+        }));
+    if (watch.length && h >= 6 && h < 14)
+      for (const g of watch) {
+        if (g.m.food6 < 0) {
+          const sn = snapshot(st, w).stock;
+          g.m.food6 = g.p.needs!.food;
+          g.m.rest6 = g.p.needs!.rest;
+          g.m.stock6 = sn.supplies + sn.meals;
+          g.m.hungry6 = cores().filter((q) => q.needs!.food < HUNGRY).length;
+        }
+        g.m.minFood = Math.min(g.m.minFood, g.p.needs!.food);
+        if (g.m.ateAt < 0 && g.p.lastMeal !== g.meal0) g.m.ateAt = h + (Math.floor(minutesAt(st.tick)) % 60) / 60;
+        const asleep = g.p.job?.t === 'sleep' && g.p.job.phase === 1;
+        if (asleep) g.m.slept = true;
+        if (g.m.ateAt >= 0 && asleep) g.m.napped = true;
+      }
+    if (watch.length && h === 14) {
+      mornings.push(...watch.map((g) => g.m));
+      watch = [];
+    }
     // noc 22–6: jak długo pali się koza zarządu; o 6:00 temperatura w kuchni
     if (night && (h >= 22 || h < 6)) {
       night.fire += snapshot(st, w).kozaLit ? 1 : 0;
@@ -284,7 +343,7 @@ export function playWithGov(
       }
     }
   }
-  return { decisions, admitted: { ...tally }, nights, gov, st, hash: sim.hash() };
+  return { decisions, mornings, admitted: { ...tally }, nights, gov, st, hash: sim.hash() };
 }
 
 export interface LawsRun {

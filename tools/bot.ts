@@ -20,8 +20,9 @@ import { BUILDS, type Mat } from '../src/sim/budowle.ts';
 import { clockOf, dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
 import { MAT_ACC } from '../src/sim/mieszkania.ts';
+import { HUNGRY } from '../src/sim/needs.ts';
 import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
-import { BURNABLE, createSim, type Laws, Sim, woodFrom } from '../src/sim/sim.ts';
+import { BURNABLE, createSim, type Laws, REST_UNTIL, Sim, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
@@ -293,6 +294,26 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
   );
   if (asked !== added) {
     console.log('    BŁĄD: przyjętych przez zarząd i nowych pionków jest różnie');
+    fail = true;
+  }
+  // wartownik po nocy: głodny najpierw je, potem odsypia; liczą się poranki, w których jedzenia starczało dla
+  // wszystkich głodnych w zarządzie (przy niedoborze zjadają inni, to sprawa gospodarki, nie wartownika)
+  const morns = runs.flatMap((r) => r.mornings);
+  const fed = morns.filter((m) => m.food6 < HUNGRY && m.stock6 >= m.hungry6);
+  const ateAt = fed.filter((m) => m.ateAt >= 0).map((m) => m.ateAt);
+  // zjadł przed 8:00 albo nie głodował (najedzenie co najmniej 15, czekał na ciepły posiłek)
+  const late = fed.filter((m) => (m.ateAt < 0 || m.ateAt >= 8) && m.minFood < 15).length;
+  const tiredFed = fed.filter((m) => m.rest6 < REST_UNTIL);
+  const napped = tiredFed.filter((m) => m.napped).length;
+  const hhmm = (v: number) => {
+    const m = Math.round(v * 60);
+    return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+  };
+  console.log(
+    `    wartownicy rano (6–14): ${morns.length} poranków, głodnych przy jedzeniu dla wszystkich ${fed.length}: zjedli przed 8:00 ${fed.filter((m) => m.ateAt >= 0 && m.ateAt < 8).length}, później bez głodowania ${fed.filter((m) => !(m.ateAt >= 0 && m.ateAt < 8) && m.minFood >= 15).length}, głodowali ${late} (pierwszy posiłek średnio o ${ateAt.length ? hhmm(mean(ateAt)) : '—'}), zmęczeni po posiłku odsypiali ${napped} z ${tiredFed.length}; przy niedoborze ${morns.filter((m) => m.food6 < HUNGRY && m.stock6 < m.hungry6).length}`,
+  );
+  if (late || napped < tiredFed.length) {
+    console.log('    BŁĄD: głodny wartownik ma rano najpierw zjeść, a potem odsypiać');
     fail = true;
   }
   const r0 = runs[0];
