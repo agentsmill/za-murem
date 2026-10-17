@@ -301,6 +301,56 @@ describe('nazwaMiejsca: imię i nazwisko w nazwie zamienia się na opis kategori
     expect(nazwaMiejsca(poi('szkola', 'Szkoła Podstawowa Jana Pawła II'), imiona)).toBe('placówka oświatowa');
   });
 
+  it('adres w nazwie zamienia nazwę na opis kategorii (R50): numer domu po słowie, „na”, „przy”, „ul.”, „al.”, „os.”', () => {
+    const adresy: [string, string, string][] = [
+      ['apteka', 'Apteka na Obrońców Wybrzeża 2', 'apteka'],
+      ['apteka', 'Apteka przy Lecha Kaczyńskiego', 'apteka'],
+      ['spozywczy', 'Sklep ul. Grunwaldzka 12', 'sklep spożywczy przy bloku'],
+      ['spozywczy', 'Sklep Ul. Grunwaldzka', 'sklep spożywczy przy bloku'],
+      ['spozywczy', 'Sklep ul.Grunwaldzka', 'sklep spożywczy przy bloku'],
+      ['sklep', 'Kiosk al. Zwycięstwa', 'zakład usługowy na rogu'],
+      ['przychodnia', 'Przychodnia os. Kolorowe', 'gabinet lekarski'],
+      ['przychodnia', 'Gabinet przy ulicy Długiej', 'gabinet lekarski'],
+      ['przychodnia', 'KEN 50', 'gabinet lekarski'],
+      ['spozywczy', 'Grunwaldzka 12a', 'sklep spożywczy przy bloku'],
+      ['spozywczy', 'Lokal Długa 5/7', 'sklep spożywczy przy bloku'],
+      // koszt w bezpieczną stronę, opisany w nagłówku: marki z „na” i numer urzędu pocztowego
+      ['ubrania', 'Stare na Nowo', 'sklep z ubraniami'],
+      ['sklep', 'Okno na Świat', 'zakład usługowy na rogu'],
+      ['urzad', 'FUP Gdańsk 53', 'punkt osiedlowy'],
+    ];
+    for (const [c, n, opis] of adresy) expect(nazwaMiejsca(poi(c, n), imiona), n).toBe(opis);
+    // numer instytucji, godziny i liczby bez słowa przed nimi to nie adres; „na” z małej litery po nim też nie
+    const zostaje: [string, string][] = [
+      ['szkola', 'Szkoła Podstawowa nr 12'],
+      ['szkola', 'Szkoła Podstawowa Nr 44'],
+      ['szkola', 'Przedszkole Specjalne Nr 72 o Profilu Terapeutycznym'],
+      ['szkola', 'Zespół Szkolno-Przedszkolny nr 1 w Gdańsku'],
+      ['apteka', 'Apteka 24h'],
+      ['biblioteka', 'Biblioteka na fali'],
+      ['ubrania', '5 10 15'],
+      ['ubrania', 'Z 2 Ręki'],
+      ['przychodnia', '7 Góra Med'],
+      ['apteka', 'Apteka Na Zdrowie'],
+      ['apteka', 'Apteka Pod Lwem'],
+    ];
+    for (const [c, n] of zostaje) expect(nazwaMiejsca(poi(c, n), imiona), n).toBe(n);
+  });
+
+  it('kroniki dem nie niosą adresu w nazwie miejsca ani w tekście', () => {
+    const adres = (t: string): boolean =>
+      [...t.matchAll(/(\p{L}{2,})\.?\s+(\d{1,4}\p{L}?(?:\/\d+)?)(?![\p{L}\p{N}])/gu)].some(
+        (m) => !/^(nr|no|numer)$/i.test(m[1]) && !/^(19|20)\d\d$/.test(m[2]) && !/^\d+h$/i.test(m[2]),
+      ) || /(?:^|[^\p{L}])(?:na|przy|ul\.?|al\.?|os\.?)\s+\p{Lu}/u.test(t);
+    for (const o of DEMA) {
+      for (const z of ziarna) {
+        for (const w of kronika(o.geo, o.budynki, imiona, z)) {
+          if (w.miejsce) expect(adres(w.miejsce), w.miejsce).toBe(false);
+        }
+      }
+    }
+  });
+
   it('nazwa pusta zostaje pusta', () => {
     expect(nazwaMiejsca(poi('sklep', ''), imiona)).toBe('');
     expect(nazwaMiejsca(poi('sklep', '   '), imiona)).toBe('');
@@ -340,6 +390,9 @@ describe('nazwaMiejsca: imię i nazwisko w nazwie zamienia się na opis kategori
     ])
       expect(przymorze, osoba).toContain(osoba);
     for (const osoba of ['Monika Osowska', 'Marek Bazarek', 'U Sylwii']) expect(lanciego, osoba).toContain(osoba);
+    // adresy w nazwach (R50)
+    expect(przymorze).toContain('Apteka na Obrońców Wybrzeża 2');
+    expect(lanciego).toContain('KEN 50');
     for (const marka of ['Żabka', 'Biedronka', 'Rossmann', 'Szkoła Podstawowa nr 79', 'PKO BP', 'Orlen'])
       expect(przymorze, marka).not.toContain(marka);
     // przy szkołach z patronem zmieniona jest tylko nazwa (patron odpada), nigdy cała na opis

@@ -54,6 +54,13 @@
       ostatni, po którym stoi nazwisko. Wyjątek dla znanych sieci i marek: "Dr Max", "Dr. Max", "Dr Irena Eris", "Dr.
       Martens", "Dr. Oetker", "Dr. Scholl" zostają (lista `MARKI_Z_TYTULEM`; inne "Dr X" nie), ale tylko gdy po marce nie
       stoi słowo z wielkiej litery: "Dr Max Kowalski" to osoba, więc jest łapane.
+   Adres w nazwie (R50) też zamienia nazwę na opis kategorii, bo prawdziwy adres w tekście gry wskazuje dom, a ulice noszą
+   nazwiska osób (R45): „Apteka na Obrońców Wybrzeża 2”, „Apteka przy Lecha Kaczyńskiego”, „Sklep ul. Grunwaldzka 12”,
+   „KEN 50”. Adres to (a) numer domu (1-4 cyfry, z literą albo „/”) po słowie z co najmniej dwóch liter, które nie jest
+   „nr”, „no” ani „numer” („Szkoła Podstawowa nr 12” zostaje; „24h” to godziny, nie numer), albo (b) „na”, „przy”, „ul”,
+   „al”, „os” (małymi literami, z kropką albo bez), „ulica”, „ulicy”, „aleja”, „alei”, „osiedle”, „osiedlu”, a także
+   „Ul.”, „Al.”, „Os.” z kropką, przed słowem z wielkiej litery. Koszt w tę samą bezpieczną stronę co przy osobach: marki
+   „Okno na Świat”, „Stare na Nowo” i numer urzędu pocztowego „FUP Gdańsk 53” też zamieniają się na opis (pinuje to test).
    Nazwa jest też porządkowana do wyświetlenia: jedna spacja między słowami, pauzy otoczone spacjami (" - ", " – ", " — ")
    zamieniają się na ", " (w tekstach dla gracza nie ma pauz), a patron po "im." albo "imienia" odpada ("Szkoła
    Podstawowa Nr 44 im. Adama Mickiewicza" to "Szkoła Podstawowa Nr 44"), bo kronika nie wymienia osób, a patronami bywają
@@ -263,6 +270,21 @@ function maOsobe(nazwa: string, imiona: ReadonlySet<string>): boolean {
   return false;
 }
 
+/** Numer domu po słowie (grupa 1: słowo, grupa 2: numer). */
+const NUMER_DOMU = /(\p{L}{2,})\.?\s+(\d{1,4}\p{L}?(?:\/\d+\p{L}?)?)(?![\p{L}\p{N}])/gu;
+const NIE_ULICA = new Set(['nr', 'no', 'numer']);
+const GODZINY = /^\d+h$/i;
+const ADRES_SLOWEM =
+  /(?:^|[^\p{L}])(?:na|przy|ul\.?|al\.?|os\.?|ulica|ulicy|aleja|alei|osiedle|osiedlu|Ul\.|Al\.|Os\.|UL\.|AL\.|OS\.)\s*(?<=\s|\.)\p{Lu}/u;
+
+/** Czy nazwa (już bez patrona) ma w sobie adres: wzorce w nagłówku (R50). */
+function maAdres(nazwa: string): boolean {
+  for (const m of nazwa.matchAll(NUMER_DOMU)) {
+    if (!NIE_ULICA.has(m[1].toLowerCase()) && !GODZINY.test(m[2])) return true;
+  }
+  return ADRES_SLOWEM.test(nazwa);
+}
+
 interface OcenaMiejsca {
   /** Nazwa do pokazania graczowi: przefiltrowana, albo pusta, gdy POI nie ma nazwy. */
   nazwa: string;
@@ -275,12 +297,12 @@ function ocenMiejsce(poi: GeoPoi, imiona: ReadonlySet<string>): OcenaMiejsca {
   const patron = WZORZEC_PATRONA.exec(czysta);
   const poczatekPatrona = patron ? patron.index + patron[1].length : 0;
   const glowa = poczatekPatrona > 0 ? czysta.slice(0, poczatekPatrona).replace(/[\s,;:]+$/u, '') : czysta;
-  if (!maOsobe(glowa, imiona)) return { nazwa: glowa, zmieniona: false };
+  if (!maOsobe(glowa, imiona) && !maAdres(glowa)) return { nazwa: glowa, zmieniona: false };
   return { nazwa: SLOWNIK[kluczKategorii(poi.c, poi.n)].opis.mian, zmieniona: true };
 }
 
-/** Nazwa miejsca do tekstów gry: nazwa z imieniem i nazwiskiem (albo właścicielem "u Jana") zamienia się na opis
-    kategorii ("sklep spożywczy przy bloku", "apteka"), reszta zostaje. Szczegóły i luki w nagłówku pliku. Pusta nazwa
+/** Nazwa miejsca do tekstów gry: nazwa z imieniem i nazwiskiem (albo właścicielem "u Jana") albo z adresem zamienia się
+    na opis kategorii ("sklep spożywczy przy bloku", "apteka"), reszta zostaje. Szczegóły i luki w nagłówku pliku. Pusta nazwa
     POI daje pusty napis. */
 export function nazwaMiejsca(poi: GeoPoi, imiona: ReadonlySet<string>): string {
   return ocenMiejsce(poi, imiona).nazwa;

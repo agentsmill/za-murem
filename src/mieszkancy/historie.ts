@@ -295,7 +295,15 @@ export function faktyGospodarstwa(gosp: Gospodarstwo, w: WynikBudynku): Fakt[] {
       switch (e.typ) {
         case 'powrotOpieka':
           if (z) {
-            const rodzenstwo = (ind.dzieci.get(z.id) ?? []).some((d) => d.id !== m.id && !wDomu.has(d.id));
+            // „jako jedyna z rodzeństwa”: inne dzieci rodzica są, żadne nie mieszka tu i żadne nigdy nie wróciło (R50)
+            const inne = (ind.dzieci.get(z.id) ?? []).filter((d) => d.id !== m.id);
+            const rodzenstwo =
+              inne.length > 0 &&
+              inne.every(
+                (d) =>
+                  !wDomu.has(d.id) &&
+                  !(ind.wpisy.get(d.id) ?? []).some((x) => x.typ === 'powrot' || x.typ === 'powrotOpieka'),
+              );
             const f = { typ: e.typ, rok: e.rok, glowna: m, powiazana: z, kim: kim(m, z), dokad: e.dokad };
             dodaj(`opieka|${m.id}|${e.rok}`, { ...f, zyje: z.stan === 'tu', rodzenstwo }, 0);
           }
@@ -377,7 +385,9 @@ export function faktyGospodarstwa(gosp: Gospodarstwo, w: WynikBudynku): Fakt[] {
       const wpisyP = ind.wpisy.get(p.id) ?? [];
       if (p.stan === 'zmarl' && ZMARLI_OPISYWANI.has(k) && !wdowcow.has(p.id)) {
         const zgon = wpisyP.find((x) => x.typ === 'zgon');
-        if (zgon) dodaj(`zgon|${p.id}`, { typ: 'zgon', rok: zgon.rok, glowna: m, powiazana: p, kim: k }, bliskosc);
+        // śmierci osoby niepełnoletniej nie opisujemy (R50)
+        if (zgon && zgon.rok - p.rocznik >= DOROSLY)
+          dodaj(`zgon|${p.id}`, { typ: 'zgon', rok: zgon.rok, glowna: m, powiazana: p, kim: k }, bliskosc);
       }
       if (p.stan !== 'wyjechal' || !WYJEZDNI_OPISYWANI.has(k)) continue;
       const wyjazd = wpisyP.findLast((x) => WYJAZDY.has(x.typ));
@@ -535,6 +545,8 @@ interface Dom {
   sam: boolean;
   blok: boolean;
   rokStanu: number;
+  /** Nazwisko rodziny w l. mn. (`Odmiany.rodzinaGospodarstwa`) albo `undefined`. */
+  rodzina?: string;
 }
 
 function rodzajZawodu(o: Osoba): RodzajZawodu | undefined {
@@ -553,7 +565,7 @@ function nazwaFachuOsoby(o: Osoba): string | undefined {
 /** Odmiana imion i nazwisk w jednym wywołaniu historii (pamięć na osobę). */
 class Odmiany {
   private readonly imiona = new Map<string, { formy: Formy; pewne: boolean }>();
-  private readonly rodziny = new Map<string, string | undefined>();
+  private readonly rodziny = new Map<string, { meskie: string; mnoga: string } | undefined>();
   private readonly odm: Odmiana;
   constructor(odm: Odmiana) {
     this.odm = odm;
@@ -568,15 +580,34 @@ class Odmiany {
     return w;
   }
 
-  /** Nazwisko rodziny osoby w mianowniku liczby mnogiej, tylko gdy odmiana jest pewna. */
-  rodzina(o: Osoba): string | undefined {
+  /** Nazwisko osoby w formie męskiej z mianownikiem liczby mnogiej, tylko gdy odmiana jest pewna i zgodna z formą,
+      którą osoba nosi. */
+  private nazwisko(o: Osoba): { meskie: string; mnoga: string } | undefined {
     if (this.rodziny.has(o.id)) return this.rodziny.get(o.id);
     const meskie = o.plec === 'M' ? o.nazwisko : meskieNazwisko(o.nazwisko, this.odm.tabela);
     const { formy, pewne } = formyNazwiska(meskie, this.odm.tabela, this.odm.koncowki);
     const zgodne = (o.plec === 'M' ? formy.m.mian : formy.k.mian) === o.nazwisko;
-    const wynik = pewne && zgodne && o.nazwisko !== '' ? formy.mnoga : undefined;
+    const wynik = pewne && zgodne && o.nazwisko !== '' ? { meskie, mnoga: formy.mnoga } : undefined;
     this.rodziny.set(o.id, wynik);
     return wynik;
+  }
+
+  /** Nazwisko rodziny w mianowniku liczby mnogiej („Kowalscy”): najczęstsze nazwisko, które nosi co najmniej dwoje
+      członków gospodarstwa (remis: pierwsze w kolejności), tylko z pewnej odmiany (R50). Bez takiego `undefined`, więc
+      szablon z `{rodzina}` nie pasuje: „Leszczyńscy”, gdy Leszczyńska mieszka z mężem i synem Szczepańskimi, byłoby
+      fałszem. */
+  rodzinaGospodarstwa(czlonkowie: readonly Osoba[]): string | undefined {
+    const liczby = new Map<string, { ile: number; mnoga: string }>();
+    for (const o of czlonkowie) {
+      const n = this.nazwisko(o);
+      if (!n) continue;
+      const l = liczby.get(n.meskie);
+      if (l) l.ile++;
+      else liczby.set(n.meskie, { ile: 1, mnoga: n.mnoga });
+    }
+    let najlepsza: { ile: number; mnoga: string } | undefined;
+    for (const l of liczby.values()) if (l.ile >= 2 && (!najlepsza || l.ile > najlepsza.ile)) najlepsza = l;
+    return najlepsza?.mnoga;
   }
 }
 
@@ -630,13 +661,13 @@ function pasuje(
   if (s.kategoria && !(p.kategoria && s.kategoria.includes(p.kategoria))) return false;
   if (s.temat !== undefined && s.temat !== p.temat) return false;
   for (const slot of SLOTY.get(s.id) ?? []) {
-    if (!slotMa(slot, p, odm)) return false;
+    if (!slotMa(slot, p, odm, dom)) return false;
   }
   return true;
 }
 
 /** Czy podstawa ma wartość dla slotu, a imię w przypadku innym niż mianownik ma pewną odmianę. */
-function slotMa(slot: string, p: Podstawa, odm: Odmiany): boolean {
+function slotMa(slot: string, p: Podstawa, odm: Odmiany, dom: Dom): boolean {
   if (slot.startsWith('o:')) return slot === 'o:mian' || odm.imie(p.glowna).pewne;
   if (slot.startsWith('p:')) return p.powiazana !== undefined && (slot === 'p:mian' || odm.imie(p.powiazana).pewne);
   if (slot.startsWith('k:')) return p.fakt?.kim !== undefined;
@@ -646,7 +677,7 @@ function slotMa(slot: string, p: Podstawa, odm: Odmiany): boolean {
     case 'pg':
       return p.powiazana !== undefined;
     case 'rodzina':
-      return odm.rodzina(p.glowna) !== undefined;
+      return dom.rodzina !== undefined;
     case 'rok':
     case 'wiek':
       return true;
@@ -665,12 +696,12 @@ function slotMa(slot: string, p: Podstawa, odm: Odmiany): boolean {
   }
 }
 
-function kontekst(p: Podstawa, odm: Odmiany): KontekstSzablonu {
+function kontekst(p: Podstawa, odm: Odmiany, dom: Dom): KontekstSzablonu {
   const f = p.fakt;
   return {
     glowna: { ...p.glowna, formy: odm.imie(p.glowna).formy },
     powiazana: p.powiazana ? { ...p.powiazana, formy: odm.imie(p.powiazana).formy } : undefined,
-    rodzina: odm.rodzina(p.glowna),
+    rodzina: dom.rodzina,
     rok: p.rok,
     wiek: p.wiek,
     dokad: f?.dokad,
@@ -720,6 +751,7 @@ export function zdaniaGospodarstwa(
     sam: czlonkowie.length === 1,
     blok: w.budynek.typ === 'blok',
     rokStanu: w.rok ?? 2051,
+    rodzina: odm.rodzinaGospodarstwa(czlonkowie),
   };
   const wybrane: Kandydat[] = [];
   const uzyteTu = new Set<string>();
@@ -874,7 +906,7 @@ export function zdaniaGospodarstwa(
     const bezImienia = podmiot && poprzedni === k.p.glowna.id;
     const tekst = bezImienia ? k.s.tekst.slice('{o:mian} '.length) : k.s.tekst;
     poprzedni = podmiot && !bezImienia ? k.p.glowna.id : undefined;
-    return { tekst: wielka(wypelnij(tekst, kontekst(k.p, odm))), szablon: k.s.id, rodzaj: k.s.rodzaj };
+    return { tekst: wielka(wypelnij(tekst, kontekst(k.p, odm, dom))), szablon: k.s.id, rodzaj: k.s.rodzaj };
   });
 }
 

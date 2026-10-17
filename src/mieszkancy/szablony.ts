@@ -694,7 +694,7 @@ const EMIGRACJA: readonly Szablon[] = [
 ];
 
 const POWROT: readonly Szablon[] = [
-  sz('powrot-tam-tez', 'powrot', '{o:mian} wrócił{g:|a} {skad} w {rok}, kiedy okazało się, że tam też zjada kable.', {
+  sz('powrot-tam-tez', 'powrot', '{o:mian} wrócił{g:|a} {skad} w {rok}, kiedy okazało się, że i tam coś zjada kable.', {
     od: 2029,
     do: 2036,
     emigrant: true,
@@ -772,7 +772,7 @@ const POWROT_OPIEKA: readonly Szablon[] = [
   sz(
     'opieka-tam-tez',
     'powrotOpieka',
-    'W {rok} {o:mian} wrócił{g:|a} {skad} do {k:dop}, bo tam też zjadało kable, a tu przynajmniej ktoś na {g:niego|nią} czekał.',
+    'W {rok} {o:mian} wrócił{g:|a} {skad} do {k:dop}, bo i tam coś zjadało kable, a tu przynajmniej ktoś na {g:niego|nią} czekał.',
     { od: 2029, do: 2036, kim: RODZICE, motyw: 'tam-tez' },
   ),
   sz(
@@ -845,7 +845,7 @@ const OWDOWIENIE: readonly Szablon[] = [
     'owdowienie-zanim',
     'owdowienie',
     '{o:mian} owdowiał{g:|a} w {rok}, jeszcze zanim ktokolwiek wiedział, co psuje kable.',
-    { od: 2021, do: 2028 },
+    { od: 2026, do: 2028 },
   ),
   sz(
     'owdowienie-zima',
@@ -1029,7 +1029,7 @@ const KRONIKA: readonly Szablon[] = [
     'kronika-awarie',
     'kronika',
     'W {rok}, kiedy na osiedlu zaczęły się dziwne awarie kabli, {o:mian} {g:wezwał|wezwała} elektryka i czekał{g:|a} na niego trzy tygodnie.',
-    { temat: 'awarie', wiekOd: 18 },
+    { temat: 'awarie', od: 2026, wiekOd: 18 },
   ),
   sz(
     'kronika-kropki',
@@ -1211,13 +1211,13 @@ const MIEJSCE: readonly Szablon[] = [
     'miejsce-przychodnia-karta',
     'miejsce',
     'W przychodni ({miejsce}) {o:mian} ma kartę z {rok} roku, wypisaną ręcznie, bo system już nie działał.',
-    { kategoria: ['przychodnia'], od: 2029, wiekOd: 16 },
+    { kategoria: ['przychodnia'], od: 2029, do: 2043, wiekOd: 16 },
   ),
   sz(
     'miejsce-przychodnia-bandaz',
     'miejsce',
-    'Od {rok} {o:mian} chodzi do przychodni ({miejsce}) z własnym bandażem.',
-    { kategoria: ['przychodnia'], od: 2037, wiekOd: 16 },
+    'W {rok} {o:mian} chodził{g:|a} do przychodni ({miejsce}) z własnym bandażem, bo bandaży już tam nie było.',
+    { kategoria: ['przychodnia'], od: 2037, do: 2043, wiekOd: 16 },
   ),
   sz('miejsce-apteka', 'miejsce', 'W aptece ({miejsce}) {o:mian} kupił{g:|a} w {rok} ostatni syrop z importu.', {
     kategoria: ['apteka'],

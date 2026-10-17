@@ -88,6 +88,22 @@ const wszystkieHistorie = (d: Demo): { w: WynikBudynku; h: Gospodarstwo; zdania:
   d.osiedle.budynki.flatMap((w) => w.gospodarstwa.map((h) => ({ w, h, zdania: h.historia ?? [] })));
 
 const RODO = /\bm\.\s?\d|\bmieszkani[ea] nr|\bpiętr/i;
+/** Adres w tekście (R50): numer domu po słowie (bez „nr”, lat 19xx-20xx, wieku „41 lat” i godzin „24h”) albo „na”,
+    „przy”, „ul.”, „al.”, „os.” przed słowem z wielkiej litery. */
+function maAdres(t: string): boolean {
+  for (const m of t.matchAll(
+    /(\p{L}{2,})\.?\s+(\d{1,4}\p{L}?(?:\/\d+)?)(?![\p{L}\p{N}])(?!\s+(?:lat|lata|rok)(?!\p{L}))/gu,
+  )) {
+    if (!/^(nr|no|numer)$/i.test(m[1]) && !/^(19|20)\d\d$/.test(m[2]) && !/^\d+h$/i.test(m[2])) return true;
+  }
+  return /(?:^|[^\p{L}])(?:na|przy|ul\.?|al\.?|os\.?)\s+\p{Lu}/u.test(t);
+}
+/** Męska forma nazwiska osoby (w teście, niezależnie od modułu): słownik, potem -ska/-cka/-dzka. */
+function meskie(o: Osoba): string {
+  if (o.plec === 'M') return o.nazwisko;
+  const zeSlownika = Object.entries(odmiana.tabela.nazwiska).find(([, f]) => f.k.mian === o.nazwisko)?.[0];
+  return zeSlownika ?? (/(sk|ck|dzk)a$/.test(o.nazwisko) ? `${o.nazwisko.slice(0, -1)}i` : o.nazwisko);
+}
 const PAUZY = /—| – /;
 const TY = /(^|[^\p{L}])(ty|ciebie|cię|tobie|ci|twój|twoja|twoje|twoim|twoich|twojego|twojej)(?![\p{L}])/iu;
 
@@ -266,6 +282,10 @@ describe('szablony: zestaw i reguły tekstu', () => {
       if (/bakteri|szczep|zjada|zjadł|zjadało|wyszło na jaw/.test(s.tekst)) {
         expect(s.od ?? 0, s.id).toBeGreaterThanOrEqual(2029);
       }
+      // kable psują się dopiero od roku zero (R50: „owdowiała w 2021, zanim ktokolwiek wiedział, co psuje kable”)
+      if (/psuj|psuł|psuło|awari\w* kabli|złodziei złomu|kabl\w* (się )?psu/.test(s.tekst)) {
+        expect(s.od ?? 0, s.id).toBeGreaterThanOrEqual(2026);
+      }
       if (/jeszcze w dawnych czasach/.test(s.tekst)) expect(s.do ?? 9999, s.id).toBeLessThanOrEqual(2025);
       if (/przed upadkiem|złodziei złomu/.test(s.tekst)) expect(s.do ?? 9999, s.id).toBeLessThanOrEqual(2030);
     }
@@ -323,6 +343,107 @@ describe('historie gospodarstw na trzech demach', () => {
         }
       }
     }
+  });
+
+  it('żadne zdanie nie ma adresu: numeru domu po słowie ani „ul.”, „al.”, „na”, „przy” przed nazwą (R50)', () => {
+    expect(maAdres('W aptece (Apteka na Obrońców Wybrzeża 2) Przemysław kupił w 2038 ostatni syrop z importu.')).toBe(
+      true,
+    );
+    expect(maAdres('Drogę tłumaczy od jednego punktu: Sklep ul. Grunwaldzka.')).toBe(true);
+    expect(
+      maAdres('Kiedy w 2033 zgasły latarnie, Ola miała 7 lat. W szkole (Szkoła Podstawowa Nr 44) było zimno.'),
+    ).toBe(false);
+    for (const d of DEMA) {
+      for (const { h, zdania } of wszystkieHistorie(d))
+        for (const z of zdania) expect(maAdres(z), `${h.id}: ${z}`).toBe(false);
+    }
+  });
+
+  it('nazwisko rodziny w liczbie mnogiej nosi co najmniej dwoje członków gospodarstwa (R50)', () => {
+    let zRodzina = 0;
+    for (const d of DEMA) {
+      for (const w of d.osiedle.budynki) {
+        const wg = new Map(w.osoby.map((o) => [o.id, o]));
+        const uzyte = new Map<string, number>();
+        for (const h of w.gospodarstwa) {
+          const r = losDla('historie', w.budynek.klucz, h.id);
+          for (const z of zdaniaGospodarstwa(h, w, d.kronika, odmiana, r, uzyte)) {
+            const s = SZABLONY.find((x) => x.id === z.szablon)!;
+            if (!slotySzablonu(s.tekst).includes('rodzina')) continue;
+            zRodzina++;
+            const mnoga = z.tekst.split(' ')[0];
+            const nosza = h.czlonkowie.filter(
+              (id) => odmiana.tabela.nazwiska[meskie(wg.get(id)!)]?.mnoga === mnoga,
+            ).length;
+            expect(nosza, `${h.id}: ${z.tekst}`).toBeGreaterThanOrEqual(2);
+          }
+        }
+      }
+    }
+    expect(zRodzina).toBeGreaterThan(20);
+  });
+
+  it('przychodnia z kroniki nie występuje w historii po roku, w którym kronika mówi, że nie przyjmuje (R50)', () => {
+    for (const s of SZABLONY.filter((x) => x.kategoria?.includes('przychodnia')))
+      expect(s.do, s.id).toBeLessThanOrEqual(2043);
+    let sprawdzone = 0;
+    for (const d of DEMA) {
+      const zamkniete = new Map<string, number>();
+      for (const e of d.kronika) if (e.miejsce && /nie przyjmuje/.test(e.tekst)) zamkniete.set(e.miejsce, e.rok);
+      for (const { h, zdania } of wszystkieHistorie(d)) {
+        for (const z of zdania) {
+          if (!/przychodni \(/.test(z)) continue;
+          sprawdzone++;
+          const rok = Number(/(?:19|20)\d\d/.exec(z)?.[0]);
+          expect(rok, z).toBeLessThanOrEqual(2043);
+          for (const [miejsce, od] of zamkniete)
+            if (z.includes(`(${miejsce})`)) expect(rok, `${h.id}: ${z}`).toBeLessThan(od);
+        }
+      }
+    }
+    expect(sprawdzone).toBeGreaterThan(0);
+  });
+
+  it('żadne zdanie nie mówi o śmierci osoby niepełnoletniej (R50)', () => {
+    for (const d of DEMA) {
+      for (const w of d.osiedle.budynki) {
+        for (const h of w.gospodarstwa) {
+          for (const f of faktyGospodarstwa(h, w)) {
+            if ((f.typ === 'zgon' || f.typ === 'owdowienie') && f.powiazana) {
+              expect(f.rok - f.powiazana.rocznik, `${h.id} ${f.typ}`).toBeGreaterThanOrEqual(18);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('„jako jedyna z rodzeństwa wróciła” tylko, gdy żadne inne dziecko rodzica nie wróciło ani tu nie mieszka (R50)', () => {
+    let jedyne = 0;
+    for (const d of DEMA) {
+      for (const w of d.osiedle.budynki) {
+        const wg = new Map(w.osoby.map((o) => [o.id, o]));
+        const uzyte = new Map<string, number>();
+        for (const h of w.gospodarstwa) {
+          const r = losDla('historie', w.budynek.klucz, h.id);
+          if (!zdaniaGospodarstwa(h, w, d.kronika, odmiana, r, uzyte).some((z) => z.szablon === 'opieka-jedyne'))
+            continue;
+          jedyne++;
+          const opieka = faktyGospodarstwa(h, w).find((f) => f.typ === 'powrotOpieka' && f.rodzenstwo)!;
+          const rodzic = opieka.powiazana!;
+          const inne = w.osoby.filter(
+            (o) => o.id !== opieka.glowna.id && (o.matka === rodzic.id || o.ojciec === rodzic.id),
+          );
+          expect(inne.length, h.id).toBeGreaterThan(0);
+          for (const o of inne) {
+            expect(h.czlonkowie, h.id).not.toContain(o.id);
+            const wrocil = w.dziennik.some((e) => e.kto === o.id && (e.typ === 'powrot' || e.typ === 'powrotOpieka'));
+            expect(wrocil, `${h.id}: ${wg.get(o.id)?.imie}`).toBe(false);
+          }
+        }
+      }
+    }
+    expect(jedyne).toBeGreaterThan(0);
   });
 
   it('dwa wywołania dają te same historie', () => {
@@ -562,6 +683,94 @@ describe('historie: reguły na zmyślonym budynku', () => {
       // imię w mianowniku albo w dopełniaczu („pocztówka od syna Pawła”)
       expect(o!.tekst).toMatch(/Piotr|Paweł|Pawła/);
     }
+  });
+
+  it('nazwisko rodziny: wspólne dla co najmniej dwojga, a bez wspólnego nazwiska szablonu z rodziną nie ma (R50)', () => {
+    const glowa = osoba('test/b1/o0', 'Ewa', 'K', 1990, { nazwisko: 'Leszczyńska', partner: 'test/b1/o1' });
+    const maz = osoba('test/b1/o1', 'Marek', 'M', 1988, { nazwisko: 'Szczepański', partner: glowa.id });
+    const syn = osoba('test/b1/o2', 'Piotr', 'M', 2015, { nazwisko: 'Szczepański', matka: glowa.id, ojciec: maz.id });
+    const wpisy: Wpis[] = [
+      { rok: 2025, typ: 'wprowadzka', kto: glowa.id },
+      { rok: 2025, typ: 'wprowadzka', kto: maz.id, z: glowa.id },
+      { rok: 2025, typ: 'wprowadzka', kto: syn.id, z: glowa.id },
+    ];
+    const h = gosp('test/b1/g0', [glowa.id, maz.id, syn.id]);
+    const w = budynek([glowa, maz, syn], [h], wpisy);
+    const teksty = Array.from({ length: 40 }, (_, n) =>
+      historiaGospodarstwa(h, w, KRONIKA_TESTOWA, odmiana, losDla('rodzina', n)).join(' '),
+    );
+    expect(teksty.some((t) => t.includes('Szczepańscy'))).toBe(true);
+    expect(teksty.some((t) => t.includes('Leszczyńscy'))).toBe(false);
+    // para bez wspólnego nazwiska: żadnej liczby mnogiej nazwiska
+    const sama = osoba('test/b1/o3', 'Ewa', 'K', 1990, { nazwisko: 'Kowalska', partner: 'test/b1/o4' });
+    const on = osoba('test/b1/o4', 'Marek', 'M', 1988, { nazwisko: 'Nowak', partner: sama.id });
+    const h2 = gosp('test/b1/g1', [sama.id, on.id]);
+    const w2 = budynek(
+      [sama, on],
+      [h2],
+      [
+        { rok: 2025, typ: 'wprowadzka', kto: sama.id },
+        { rok: 2025, typ: 'wprowadzka', kto: on.id, z: sama.id },
+      ],
+    );
+    for (let n = 0; n < 40; n++) {
+      const t = historiaGospodarstwa(h2, w2, KRONIKA_TESTOWA, odmiana, losDla('bez-rodziny', n)).join(' ');
+      expect(t).not.toMatch(/Kowalscy|Nowakowie/);
+    }
+  });
+
+  it('brat, który zmarł jako dziecko, nie trafia do historii (R50)', () => {
+    const ja = osoba('test/b1/o0', 'Maciej', 'M', 1990, { matka: 'test/b1/o2' });
+    const brat = osoba('test/b1/o1', 'Juliusz', 'M', 2013, { matka: 'test/b1/o2', stan: 'zmarl' });
+    const matka = osoba('test/b1/o2', 'Halina', 'K', 1965, { stan: 'wyjechal', dokad: 'do Niemiec' });
+    const h = gosp('test/b1/g0', [ja.id]);
+    const w = budynek(
+      [ja, brat, matka],
+      [h],
+      [
+        { rok: 2023, typ: 'zgon', kto: brat.id },
+        { rok: 2030, typ: 'emigracja', kto: matka.id, dokad: 'do Niemiec' },
+      ],
+    );
+    expect(faktyGospodarstwa(h, w).some((f) => f.typ === 'zgon')).toBe(false);
+    for (let n = 0; n < 20; n++) {
+      expect(historiaGospodarstwa(h, w, KRONIKA_TESTOWA, odmiana, losDla('dziecko', n)).join(' ')).not.toContain(
+        'Juliusz',
+      );
+    }
+  });
+
+  it('„jako jedyna z rodzeństwa” odpada, gdy drugie dziecko też wróciło (R50)', () => {
+    const matka = osoba('test/b1/o0', 'Halina', 'K', 1950);
+    const ona = osoba('test/b1/o1', 'Natalia', 'K', 1980, { matka: matka.id });
+    const on = osoba('test/b1/o2', 'Dawid', 'M', 1982, { matka: matka.id, stan: 'wyjechal', dokad: 'za granicę' });
+    const wpisy: Wpis[] = [
+      { rok: 2005, typ: 'wyprowadzka', kto: ona.id, dokad: 'do Krakowa' },
+      { rok: 2006, typ: 'emigracja', kto: on.id, dokad: 'za granicę' },
+      { rok: 2035, typ: 'powrotOpieka', kto: ona.id, z: matka.id, dokad: 'do Krakowa' },
+    ];
+    const h = gosp('test/b1/g0', [matka.id, ona.id]);
+    const jedyne = (dziennik: Wpis[], osoby: Osoba[], czlonkowie: string[]): boolean => {
+      const hh = gosp('test/b1/g0', czlonkowie);
+      const w = budynek(osoby, [hh], dziennik);
+      return Array.from({ length: 60 }, (_, n) =>
+        zdaniaGospodarstwa(hh, w, KRONIKA_TESTOWA, odmiana, losDla('jedyne', n)),
+      ).some((z) => z.some((x) => x.szablon === 'opieka-jedyne'));
+    };
+    // brat za granicą i nigdy nie wrócił: zdanie wolno
+    expect(jedyne(wpisy, [matka, ona, on], h.czlonkowie)).toBe(true);
+    // brat wrócił w 2040 i znów wyjechał w 2045 (nie mieszka tu): wrócił, więc zdanie nie pasuje
+    const wrocilIWyjechal = [
+      ...wpisy,
+      { rok: 2040, typ: 'powrot' as const, kto: on.id, z: ona.id, dokad: 'za granicę' },
+      { rok: 2045, typ: 'wyprowadzka' as const, kto: on.id, dokad: 'na inne osiedle' },
+    ];
+    expect(jedyne(wrocilIWyjechal, [matka, ona, { ...on, dokad: 'na inne osiedle' }], h.czlonkowie)).toBe(false);
+    // brat wrócił do siostry i mieszka z nią: też nie
+    const wrocil = { ...on, stan: 'tu' as const };
+    delete wrocil.dokad;
+    const poPowrocie = [...wpisy, { rok: 2049, typ: 'powrot' as const, kto: on.id, z: ona.id, dokad: 'za granicę' }];
+    expect(jedyne(poPowrocie, [matka, ona, wrocil], [matka.id, ona.id, on.id])).toBe(false);
   });
 
   it('wdowa w historii: owdowiała w roku zgonu męża, z poprawną odmianą', () => {
