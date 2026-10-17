@@ -247,6 +247,8 @@ interface Gmina {
   jak: string;
 }
 
+/** Gmina dema: pierwsza tabela (w kolejności TERYT), w której obrysie leży punkt adresu; inaczej pierwsza, której
+    rejon jest bliżej niż 1 km (zapas „najblizszy” z `rejonDla`); inaczej TERYT z ZAPAS_TERYT; inaczej brak gminy. */
 function gminaDema(klucz: string, geo: Geo, gminy: readonly TabeleGminy[]): Gmina {
   const [lat, lon] = geo.c;
   let blisko: Gmina | undefined;
