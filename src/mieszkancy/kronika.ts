@@ -1,57 +1,69 @@
 /* Kronika osiedla i filtr nazw miejsc. Kronika to wspólna, lokalna przeszłość z lat 2026-2051: kilkanaście zdarzeń
-   przypiętych do prawdziwych miejsc z mapy (szkoły, przychodnie, sklepy, banki), do ulic z `addr:street` i do samego
-   osiedla i spółdzielni. Wiele historii mieszkańców (krok 4, historie) odwołuje się do tych samych wpisów, więc osiedle
-   ma jedną, spójną przeszłość. Lore z GDD: rok zero 2026 (bakteria z ekologicznego startupu), odkrycie około 2029, w latach
+   przypiętych do prawdziwych miejsc z mapy (szkoły, przychodnie, sklepy, banki) oraz do samego osiedla, ulic (ogólnie) i
+   spółdzielni. Wiele historii mieszkańców (krok 4, historie) odwołuje się do tych samych wpisów, więc osiedle ma jedną,
+   spójną przeszłość. Lore z GDD: rok zero 2026 (bakteria z ekologicznego startupu), odkrycie około 2029, w latach
    trzydziestych i czterdziestych rozpad (sieci padają region po regionie, chmura, dolar na abonament, dziesiąta kadencja
    prezydenta USA bez imienia), w 2051 gra. Ton to satyra na dzisiejszą technologię i ekologię; żadnych nazwisk polityków.
 
    Wejście: `kronika(geo, budynki, imiona, ziarno)`. Ziarno to `losDla('kronika', ziarno)`; wywołujący podaje `rejon`
    budynku siedziby albo pierwszego budynku, więc ten sam adres daje tę samą kronikę. `budynki` dają tylko tło osiedla
-   (bloki albo domy, wielka płyta, nowe bloki z "inteligentnym domem"), nic poza tym. Wynik jest deterministyczny i nie
-   zmienia argumentów. Moduł działa w przeglądarce i w Node, bez trygonometrii i pierwiastków (odległość porównujemy
-   w kwadratach), losowanie przez los.ts.
+   (bloki albo domy, wielka płyta, nowe bloki z "inteligentnym domem"), nic poza tym. Z mapy kronika czyta wyłącznie
+   `geo.poi` (nazwy i położenie). Wynik jest deterministyczny i nie zmienia argumentów. Moduł działa w przeglądarce i w
+   Node, bez trygonometrii i pierwiastków (odległość porównujemy w kwadratach), losowanie przez los.ts.
 
    Układ kroniki: łącznie 12-16 wpisów (losowane). Zawsze pięć o kablach, bakterii i prądzie (rok zero 2026-2027,
    odkrycie 2029, awaria prądu na ulicy 2031-2034, zielonkawy nalot w piwnicach 2036-2041, region bez sieci 2042-2046)
-   i jeden zamykający w 2051. Reszta to miejsca z mapy (do ośmiu) i zdarzenia ogólne: spółdzielnia, osiedle, ulice,
-   satyra (hulajnogi na minuty, paczkomaty, lodówki na abonament, dolar na abonament). Kategorie miejsc (szkoła,
-   przedszkole, żłobek, przychodnia, apteka, sklep spożywczy, sklep z elektroniką, z ubraniami, z narzędziami, ogrodniczy,
-   lokal, bank, stacja paliw, kościół, biblioteka, placówka) mają po 3-4 szablony z różnych epok. Dzięki temu nawet jedno
-   miejsce na mapie (Zielonki mają trzy POI) daje co najmniej pięć wpisów z miejscem: to samo miejsce dostaje kilka różnych
-   zdarzeń. Miejsca bierzemy z POI z niepustą nazwą. Pierwszeństwo mają te z obszaru gry (|x|, |y| do 192 m wokół `geo.c`);
-   gdy w rodzinie kategorii (szkoła, przedszkole i żłobek to jedna) nie ma żadnego, bierzemy trzy najbliższe. Różne POI
-   o tej samej nazwie (sieć sklepów) to jedno miejsce. Nazwy dłuższe niż 48 znaków wypadają, jeśli jest coś krótszego.
+   i jeden zamykający w 2051. Reszta to miejsca z mapy (5-8) i zdarzenia ogólne: spółdzielnia, osiedle, ulice, satyra
+   (hulajnogi na minuty, paczkomaty, lodówki na abonament, dolar na abonament). Kategorie miejsc (szkoła, przedszkole,
+   żłobek, przychodnia, apteka, sklep spożywczy, sklep z elektroniką, z ubraniami, z narzędziami, ogrodniczy, lokal, bank,
+   stacja paliw, kościół, biblioteka, placówka) mają po 4-5 szablonów z różnych epok, a do tego jest siedem szablonów
+   neutralnych, pasujących do każdej kategorii.
+   Gwarancja miejsc: gdy na mapie jest choć jedno POI z niepustą nazwą (z obszaru gry albo, gdy żadnego tam nie ma,
+   najbliższe), wpisów z `miejsce` jest co najmniej pięć. Najpierw idą szablony kategorii (po kolei po kategoriach, w
+   kolejnych rundach kolejne szablony), a gdy ich zabraknie, szablony neutralne. To samo miejsce może więc wystąpić kilka
+   razy, zawsze z innym zdarzeniem i innym rokiem. Bez żadnego nazwanego POI wpisów z miejscem nie ma, a kronika ma te
+   same 12-16 wpisów. Pierwszeństwo mają miejsca z obszaru gry (|x|, |y| do 192 m wokół `geo.c`); w rodzinie kategorii
+   (szkoła, przedszkole i żłobek to jedna), w której nie ma żadnego, bierzemy trzy najbliższe. Różne POI o tej samej
+   nazwie (sieć sklepów) to jedno miejsce. Nazwy dłuższe niż 48 znaków wypadają, jeśli jest coś krótszego.
 
    Odmiana: nazw własnych nie odmieniamy, bo nie mamy skąd wziąć poprawnych form. Miejsce stoi w mianowniku w nawiasie
    po rzeczowniku kategorii w miejscowniku ("W szkole (Szkoła Podstawowa nr 12) odwołano lekcje informatyki"), albo
    rzeczownik jest podmiotem ("Przychodnia (Baltmed) przeszła na dyżury przy świecach"). Nazwa, która jest samym rzeczownikiem
-   ("Sklep ogrodniczy"), nie powtarza się w nawiasie. Ulice są podmiotem przed dwukropkiem ("Ulica Spacerowa: latarnie
-   zgasły…"); nazwa zaczynająca się od "Aleja", "Plac" itp. nie dostaje drugiego "Ulica". Wpisy o ulicach mają `miejsce`
-   puste: ulica to tło, nie POI. Demo i kafelki nie niosą `addr:street` (budynki mają tylko numer), więc tam podmiotem
-   jest "Główna ulica osiedla", "Droga dojazdowa do osiedla" i "Osiedlowa uliczka"; nazwy ulic są tylko z Overpass. Ulice
-   z obszaru gry mają pierwszeństwo, najczęstsze pierwsze. Ulica, w której filtr nazw widzi osobę, odpada; ulica nazwana od
-   osoby w dopełniaczu ("Marii Konopnickiej") wchodzi tak, jak jest na mapie, bo odmienionych nazwisk filtr nie łapie.
+   ("Sklep ogrodniczy"), nie powtarza się w nawiasie.
+
+   Ulice: kronika NIE używa prawdziwych nazw ulic, w ogóle nie czyta `addr:street`. Ulice noszą nazwiska osób (także
+   polityków: "Lecha Kaczyńskiego", "Marii Konopnickiej"), a filtr nazw nie rozpoznaje odmienionych nazwisk, więc żadna
+   nazwa ulicy nie jest bezpieczna. Wpisy o ulicach mają ogólny podmiot przed dwukropkiem ("Główna ulica osiedla: latarnie
+   zgasły…"; kolejno: główna ulica osiedla, ulica przy bloku, droga dojazdowa do osiedla, osiedlowa uliczka) i puste
+   `miejsce`: ulica to tło, nie POI.
 
    Filtr nazw (`nazwaMiejsca`): sklep o nazwie "Sławomir Mielnik" albo "Usługi Remontowe Jan Nowak" to w tekście gry
    osoba, której nie chcemy wymieniać. Zamieniamy takie nazwy na opis kategorii ("sklep spożywczy przy bloku", "zakład
    usługowy na rogu", "apteka"), a nazwy marek i instytucji ("Żabka", "Szkoła Podstawowa nr 12", "Apteka Pod Lwem")
-   zostają. Wykrywamy dokładnie dwa wzorce:
+   zostają. Wykrywamy dokładnie trzy wzorce:
    1. słowo równe imieniu z listy (dopasowanie co do słowa, z uwzględnieniem wielkości liter, polskie litery),
       po którym po samych odstępach stoi słowo z wielkiej litery (także inicjał): "Jan Nowak", "Salon Anna K.";
    2. samodzielne "u" albo "U", po którym po odstępach stoi słowo z wielkiej litery: "Kwiaciarnia u Moniki", "U Sylwii".
-      Ten wzór nie zależy od listy imion, bo "u Jana" to dopełniacz, którego lista imion (mianowniki) nie zawiera.
+      Ten wzór nie zależy od listy imion, bo "u Jana" to dopełniacz, którego lista imion (mianowniki) nie zawiera;
+   3. tytuł, po którym (po odstępie albo kropce i odstępie) stoi słowo z wielkiej litery: "Apteka Dr Nowak", "Gabinet lek.
+      Nowak", "Gabinet lek. med. Kowalski", "Praktyka prof. Kowalski", "mgr inż. Nowak". Tytuły bez kropki: dr, mgr, prof,
+      inż; ze skrótem (kropka obowiązkowa, bo bez niej to zwykłe słowa, np. "Med Plus"): lek, med, dent, stom, wet, hab,
+      doc. Wyjątek dla znanych sieci i marek: "Dr Max", "Dr. Max", "Dr Irena Eris", "Dr. Martens", "Dr. Oetker",
+      "Dr. Scholl" zostają (lista `MARKI_Z_TYTULEM`; inne "Dr X" nie).
    Nazwa jest też porządkowana do wyświetlenia: jedna spacja między słowami, pauzy otoczone spacjami (" - ", " – ", " — ")
    zamieniają się na ", " (w tekstach dla gracza nie ma pauz), a patron po "im." albo "imienia" odpada ("Szkoła
    Podstawowa Nr 44 im. Adama Mickiewicza" to "Szkoła Podstawowa Nr 44"), bo kronika nie wymienia osób, a patronami bywają
    też politycy. Osoba przed patronem nadal się liczy.
-   NIE jest łapane (nie ma jak odróżnić od marek bez słownika nazwisk i odmiany): samo imię ("Jubiler Monika", "Roland"),
-   samo nazwisko ("Mielnik", "Gzella"), imię i nazwisko w innym przypadku niż mianownik ("Gabinet Anny Nowak", "Zakład Jana
-   Nowaka"; poza tym, gdy forma odmieniona sama jest imieniem z listy, jak "Jana"; pełna odmiana dałaby błędne trafienia
-   w nazwach kościołów, np. "Świętego Jana Chrzciciela"), patron bez "im." ("Szkoła Podstawowa Jana Pawła II", "Parafia
-   św. Józefa"), imię spoza listy PESEL (zdrobnienia, obce), pisownia wielkimi albo małymi literami ("JAN NOWAK", "jan
-   nowak"), imię i słowo rozdzielone przecinkiem, cudzysłowem albo znakiem ("Anna & Jan", "Jan, Nowak"). Odwrotnie, marka
-   zaczynająca się od imienia i słowa z wielkiej litery ("Tom Tailor") zamieni się na opis; to koszt filtra, który woli nie
-   wymienić marki, niż wymienić osobę. Nazwy ulic przechodzą przez filtr tylko po to, żeby odpaść, gdy zawierają osobę.
+   NIE jest łapane (nie ma jak odróżnić od marek bez słownika nazwisk i odmiany; każdy przypadek jest przypięty testem
+   "granice filtra"): samo imię ("Jubiler Monika", "Roland"), samo nazwisko ("Mielnik", "Gzella"), inicjał i nazwisko
+   ("PHU J. Nowak"; "E. Leclerc" to marka), imię złożone ("Anna-Maria Nowak": dopasowanie jest co do słowa, a "Anna-Maria"
+   nie ma w liście), odwrócona kolejność ("Nowak Jan"), imię i nazwisko w innym przypadku niż mianownik ("Gabinet Anny Nowak",
+   "Zakład Piotra Nowaka"; poza tym, gdy forma odmieniona sama jest imieniem z listy, jak "Jana"; pełna odmiana dałaby
+   błędne trafienia w nazwach kościołów, np. "Świętego Jana Chrzciciela"), patron bez "im." ("Szkoła Podstawowa Jana Pawła
+   II", "Parafia św. Józefa"), imię spoza listy PESEL (zdrobnienia, obce: "Kasia Nowak"), pisownia wielkimi albo małymi
+   literami ("JAN NOWAK", "jan nowak"; sam tytuł wielkimi literami łapany jest), imię i słowo rozdzielone przecinkiem,
+   cudzysłowem albo znakiem ("Anna & Jan", "Jan, Nowak"). Odwrotnie, marka zaczynająca się od imienia i słowa z wielkiej
+   litery ("Tom Tailor") zamieni się na opis; to koszt filtra, który woli nie wymienić marki, niż wymienić osobę.
 
    `zbiorImion` składa zbiór imion z `lata`, `koszyki`, `powracajace` i `przyjezdni` w tabelach imion. */
 
@@ -204,13 +216,28 @@ function oczyscNazwe(n: string): string {
   return n.replace(WZORZEC_PAUZY, ', ').replace(/\s+/g, ' ').trim();
 }
 
+/** Tytuły przed nazwiskiem w nazwach aptek i gabinetów: "Apteka Dr Nowak", "Gabinet lek. med. Nowak". Część pisze się
+    bez kropki (dr, mgr, prof, inż), reszta tylko ze skrótem, bo bez kropki to zwykłe słowa ("Med Plus", "Lek" jako marka). */
+const TYTULY_BEZ_KROPKI = new Set(['dr', 'mgr', 'prof', 'inż', 'inz']);
+const TYTULY_Z_KROPKA = new Set(['lek', 'med', 'dent', 'stom', 'wet', 'hab', 'doc']);
+const ODSTEP_PO_TYTULE = /^\.?\s+$/;
+const ODSTEP_PO_SKROCIE = /^\.\s+$/;
+/** Znane sieci i marki z "Dr" w nazwie: zostają, bo nie są osobą (i muszą zostać, żeby "Dr Max" nie zniknął z mapy). */
+const MARKI_Z_TYTULEM = /(^|[^\p{L}])dr\.?\s+(?:max|irena\s+eris|martens|oetker|scholl)(?![\p{L}])/giu;
+
 /** Czy nazwa (już bez patrona) wygląda na osobę: wzorce w nagłówku. */
 function maOsobe(nazwa: string, imiona: ReadonlySet<string>): boolean {
-  const s = slowa(nazwa);
+  const tekst = nazwa.replace(MARKI_Z_TYTULEM, '$1·');
+  const s = slowa(tekst);
   for (let i = 0; i + 1 < s.length; i++) {
     const nastepne = s[i + 1];
-    if (!SAME_ODSTEPY.test(nazwa.slice(s[i].do, nastepne.od)) || !WIELKA.test(nastepne.s)) continue;
-    if (imiona.has(s[i].s) || s[i].s === 'u' || s[i].s === 'U') return true;
+    if (!WIELKA.test(nastepne.s)) continue;
+    const odstep = tekst.slice(s[i].do, nastepne.od);
+    const slowo = s[i].s;
+    if (SAME_ODSTEPY.test(odstep) && (imiona.has(slowo) || slowo === 'u' || slowo === 'U')) return true;
+    const male = slowo.toLowerCase();
+    if (TYTULY_BEZ_KROPKI.has(male) && ODSTEP_PO_TYTULE.test(odstep)) return true;
+    if (TYTULY_Z_KROPKA.has(male) && ODSTEP_PO_SKROCIE.test(odstep)) return true;
   }
   return false;
 }
@@ -260,7 +287,7 @@ interface SzablonMiejsca {
 }
 const sz = (od: number, doRoku: number, tekst: (m: Miejsce) => string): SzablonMiejsca => ({ od, do: doRoku, tekst });
 
-/** Zdarzenia przypięte do miejsca, po 2-4 na kategorię, z różnych epok. Czasowniki w czasie teraźniejszym, bo
+/** Zdarzenia przypięte do miejsca, po 4-5 na kategorię, z różnych epok. Czasowniki w czasie teraźniejszym, bo
     zgoda rodzaju z nazwą własną nie jest możliwa; wyjątek "przeszła na dyżury", gdzie rodzaj bierzemy z rzeczownika. */
 const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
   szkola: [
@@ -272,16 +299,23 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
         `${m.Gdzie} zeszyt w kratkę zastąpił dziennik elektroniczny, a oceny wpisuje się ołówkiem, żeby dało się je poprawić.`,
     ),
     sz(2041, 2048, (m) => `${m.Gdzie} lekcje odbywają się przy oknach, bo tylko tam jest światło.`),
+    sz(2042, 2049, (m) => `${m.Gdzie} dzwonek zastąpił ktoś z gwizdkiem, bo prąd jest za cenny na przerwy.`),
   ],
   przedszkole: [
     sz(2031, 2035, (m) => `${m.Gdzie} zgasły światła w czasie leżakowania i nikt nie zauważył różnicy.`),
     sz(2036, 2043, (m) => `${m.Gdzie} ogrzewana jest tylko jedna sala, a dzieci przychodzą w szalikach.`),
     sz(2044, 2050, (m) => `${m.Gdzie} dzieci uczą się liczyć na słoikach z przetworami.`),
+    sz(
+      2032,
+      2040,
+      (m) => `${m.Gdzie} bajki czyta się na głos zamiast puszczać, bo projektor został w dawnych czasach.`,
+    ),
   ],
   przychodnia: [
     sz(2031, 2036, (m) => `${m.kto} ${wRodzaju(m, 'przeszedł', 'przeszła', 'przeszło')} na dyżury przy świecach.`),
     sz(2037, 2043, (m) => `${m.Gdzie} przyjmuje felczer, a recepty wypisuje się na odwrocie dawnych ulotek.`),
     sz(2044, 2050, (m) => `${m.kto} od lat nie przyjmuje, ale kolejka z przyzwyczajenia ustawia się nadal.`),
+    sz(2029, 2032, (m) => `${m.Gdzie} rejestracja internetowa przestała się otwierać, więc zapisy wróciły do zeszytu.`),
   ],
   apteka: [
     sz(
@@ -296,6 +330,7 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
       2050,
       (m) => `${m.Gdzie} na półce z napisem „leki” leżą dziś głównie bandaże z wygotowanych prześcieradeł.`,
     ),
+    sz(2036, 2041, (m) => `${m.Gdzie} brakuje wszystkiego z importu, więc robi się maści z tego, co rośnie za oknem.`),
   ],
   spozywczy: [
     sz(2030, 2033, (m) => `${m.Gdzie} przestały działać karty, potem kasa, więc ceny liczy się na kartce.`),
@@ -311,6 +346,7 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
     ),
     sz(2035, 2041, (m) => `${m.Gdzie} wprowadzono wymianę towaru za towar, a ceny podaje się w godzinach pracy.`),
     sz(2044, 2050, (m) => `${m.kto} nie ma już towaru, ale wciąż wszyscy przychodzą tu po wiadomości.`),
+    sz(2038, 2046, (m) => `${m.Gdzie} szyld wisi jeszcze z dawnych czasów, a nikt nie ma czasu go zdjąć.`),
   ],
   elektronika: [
     sz(
@@ -324,21 +360,38 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
       (m) => `${m.kto} skupuje dziś wszystko, co zalano żywicą, laminatem albo olejem, bo tylko to przetrwało.`,
     ),
     sz(2047, 2050, (m) => `${m.Gdzie} najdroższy towar to dziś metr kabla w szczelnej izolacji.`),
+    sz(
+      2034,
+      2040,
+      (m) => `${m.Gdzie} naprawia się już tylko to, co ma lutowanie pod żywicą, resztę oddaje się na złom.`,
+    ),
   ],
   ubrania: [
     sz(2031, 2038, (m) => `${m.Gdzie} zaczęto wymieniać ubranie na ubranie, bo kasa nie ma prądu.`),
     sz(2039, 2048, (m) => `${m.kto} wygotowuje wszystko, co przyjmie, bo bakteria ginie we wrzątku.`),
     sz(2046, 2050, (m) => `${m.Gdzie} nikt nie pyta o rozmiar, tylko o to, czy wytrzyma zimę.`),
+    sz(2033, 2040, (m) => `${m.Gdzie} metki z ceną służą dziś za papier do rozpałki.`),
   ],
   budowlany: [
     sz(2030, 2034, (m) => `${m.Gdzie} smar, rurki i taśma do izolacji schodzą szybciej niż młotki.`),
     sz(2035, 2042, (m) => `${m.Gdzie} po gwoździe kolejka ustawia się od rana, a bank nikogo nie interesuje.`),
     sz(2043, 2050, (m) => `${m.Gdzie} wymienia się narzędzia na narzędzia, a gwoździe liczy się na sztuki.`),
+    sz(
+      2029,
+      2032,
+      (m) =>
+        `${m.Gdzie} przedłużacze i rurki izolacyjne sprzedają się zestawami, bo ludzie dopiero zaczynają się bać własnych kabli.`,
+    ),
   ],
   ogrodnik: [
     sz(2029, 2034, (m) => `${m.Gdzie} nasiona warzyw rozeszły się w tydzień, a o kwiatach nikt już nie pytał.`),
     sz(2035, 2043, (m) => `${m.kto} wymienia sadzonki ziemniaków na kluczyki do samochodów, którymi nikt nie jeździ.`),
     sz(2044, 2050, (m) => `${m.Gdzie} rośnie teraz więcej, niż się sprzedaje, i nikt tego nie uważa za problem.`),
+    sz(
+      2038,
+      2045,
+      (m) => `${m.Gdzie} sprzedaje się wygotowaną ziemię do doniczek, bo zwykła może mieć w sobie szczep.`,
+    ),
   ],
   biblioteka: [
     sz(2032, 2038, (m) => `${m.Gdzie} wróciły do łask papierowe książki, bo czytniki przestały się ładować.`),
@@ -348,6 +401,12 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
       (m) => `${m.kto} wypożycza teraz narzędzia i nasiona, a książki, jak zawsze, ktoś oddaje po terminie.`,
     ),
     sz(2046, 2050, (m) => `${m.Gdzie} regały służą za przepierzenia, a księgozbiór czyta się wieczorami na głos.`),
+    sz(
+      2040,
+      2048,
+      (m) =>
+        `${m.Gdzie} na książki o hodowli, studniach i lutowaniu zapisuje się kolejka dłuższa niż kiedyś na romanse.`,
+    ),
   ],
   bank: [
     sz(2033, 2038, (m) => `${m.Gdzie} bankomat wydaje już tylko pokwitowania, bo dolar przeszedł na abonament.`),
@@ -358,11 +417,13 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
         `${m.Gdzie} została sucha serwerownia z dyskami. Jako jedna z nielicznych rzeczy w okolicy nie zjadła jej bakteria.`,
     ),
     sz(2047, 2050, (m) => `${m.kto} nie wydaje pieniędzy, ale wydaje zaświadczenia, kto komu ile jest winien.`),
+    sz(2029, 2032, (m) => `${m.Gdzie} aplikacja przestała pokazywać saldo, a pracownicy zapewniali, że to chwilowo.`),
   ],
   stacja: [
     sz(2030, 2034, (m) => `${m.Gdzie} pompy stanęły bez prądu, a paliwo wydawano kanistrem, na słowo honoru.`),
     sz(2037, 2044, (m) => `${m.kto} nie ma paliwa, ale zadaszenie przyjęło pod siebie targ.`),
     sz(2045, 2050, (m) => `${m.Gdzie} dystrybutory stoją jak pomniki dawnych czasów, a pod daszkiem suszy się pranie.`),
+    sz(2033, 2038, (m) => `${m.Gdzie} ostatni dostawca paliwa przyjechał, pomachał i odjechał z całą cysterną.`),
   ],
   kosciol: [
     sz(2030, 2037, (m) => `${m.Gdzie} dzwony bije się ręcznie, bo kable do napędu zjadła bakteria.`),
@@ -372,6 +433,7 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
       2050,
       (m) => `${m.kto} pełni dziś rolę świetlicy, noclegowni i punktu, gdzie słychać wieści z sąsiednich osiedli.`,
     ),
+    sz(2036, 2044, (m) => `${m.Gdzie} ogłoszenia parafialne i ogłoszenia spółdzielni czyta się teraz jednym tchem.`),
   ],
   urzad: [
     sz(2030, 2035, (m) => `${m.Gdzie} zgasł system kolejkowy, więc kolejka ustawia się znów na oko.`),
@@ -381,8 +443,30 @@ const SZABLONY: Record<string, readonly SzablonMiejsca[]> = {
       (m) => `${m.Gdzie} pieczątki są dziś cenniejsze niż pieniądze, bo tusz skończył się wcześniej niż dolar.`,
     ),
     sz(2044, 2050, (m) => `${m.kto} przyjmuje interesantów tak jak kiedyś, tylko bez numerków, prądu i cierpliwości.`),
+    sz(
+      2027,
+      2030,
+      (m) => `${m.Gdzie} wprowadzono numerki w aplikacji, a pierwszą kolejką była kolejka do informatyka.`,
+    ),
   ],
 };
+/** Zdarzenia neutralne: pasują do każdej kategorii (zdanie z podmiotem `Gdzie` i czasownikami bezosobowymi albo
+    nieuzgadnianymi z rodzajem). Wchodzą dopiero wtedy, gdy szablony kategorii nie wystarczą na pięć wpisów z miejscem,
+    np. na mapie z jednym nazwanym POI. Każdy użyty najwyżej raz w kronice, więc to samo miejsce może wystąpić kilka razy. */
+const SZABLONY_NEUTRALNE: readonly SzablonMiejsca[] = [
+  sz(
+    2029,
+    2032,
+    (m) => `${m.Gdzie} po raz pierwszy zgasło światło na cały dzień i nikt jeszcze nie wiedział dlaczego.`,
+  ),
+  sz(2033, 2037, (m) => `${m.Gdzie} zawisła kartka: „Nie działa, wrócimy, jak będzie prąd”.`),
+  sz(2036, 2041, (m) => `${m.Gdzie} wymieniono instalację na krótką, suchą i smarowaną co tydzień.`),
+  sz(2038, 2042, (m) => `${m.Gdzie} stanął pierwszy generator na korbę, a chętnych do kręcenia nie brakowało.`),
+  sz(2040, 2045, (m) => `${m.Gdzie} spotyka się dziś pół osiedla, bo tylko tu ktoś pilnuje ognia i słucha radia.`),
+  sz(2044, 2048, (m) => `${m.Gdzie} ktoś co rano wiesza kartkę z wiadomościami z sąsiednich osiedli.`),
+  sz(2047, 2050, (m) => `${m.Gdzie} wszystko da się załatwić za słoik, kilka godzin pracy albo dobre słowo.`),
+];
+
 /** Klucze słownika bez własnych szablonów: nieznana kategoria dostaje zdarzenia sklepu (pasują do każdego lokalu),
     żłobek zdarzenia przedszkola. */
 const ZASTEPCZE_SZABLONY: Record<string, string> = { inne: 'sklep', zlobek: 'przedszkole' };
@@ -417,44 +501,14 @@ function tloOsiedla(budynki: readonly Budynek[]): Tlo {
 
 // ---------------------------------------------------------------- ulice
 
-const WZORZEC_RZECZOWNIKA_ULICY =
-  /^(ulica|ul\.|aleja|aleje|al\.|plac|pl\.|rondo|skwer|osiedle|os\.|bulwar|park|droga|szosa|trakt|promenada|rynek|most|wybrzeże|nabrzeże|zaułek|przejście|ścieżka)(\s|$)/i;
-
-/** Ulice z `addr:street` budynków, najczęstsze pierwsze (przy remisie alfabetycznie). Z obszaru gry, a gdy tam żaden
-    budynek nie ma ulicy, ze wszystkich. Środek budynku to średnia wierzchołków obrysu. Ulica, w której filtr nazw widzi
-    osobę (imię z listy i słowo z wielkiej litery), odpada. */
-function ulice(geo: Geo, imiona: ReadonlySet<string>): string[] {
-  const blisko = new Map<string, number>();
-  const wszystkie = new Map<string, number>();
-  for (const b of geo.b) {
-    const u = (b.t['addr:street'] ?? '').replace(/\s+/g, ' ').trim();
-    if (!u || b.p.length === 0 || maOsobe(u, imiona)) continue;
-    let sx = 0;
-    let sy = 0;
-    for (const [x, y] of b.p) {
-      sx += x;
-      sy += y;
-    }
-    const x = sx / b.p.length;
-    const y = sy / b.p.length;
-    wszystkie.set(u, (wszystkie.get(u) ?? 0) + 1);
-    if (Math.abs(x) <= POL_OBSZARU && Math.abs(y) <= POL_OBSZARU) blisko.set(u, (blisko.get(u) ?? 0) + 1);
-  }
-  const zrodlo = blisko.size ? blisko : wszystkie;
-  return [...zrodlo.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([u]) => u);
-}
-
-/** "Ulica Spacerowa", "Aleja Zwycięstwa" albo, gdy nie znamy żadnej ulicy, "Główna ulica osiedla": podmiot przed
-    dwukropkiem, więc bez odmiany i bez zgody czasownika. */
-const nazwaUlicy = (u: string): string => (WZORZEC_RZECZOWNIKA_ULICY.test(u) ? wielka(u) : `Ulica ${u}`);
-
-/** Podmioty wpisów o ulicach, gdy mapa nie ma żadnej nazwy ulicy (demo, kafelki): kolejne, żeby nie powtarzać jednego. */
-const ULICE_BEZ_NAZW = ['Główna ulica osiedla', 'Droga dojazdowa do osiedla', 'Osiedlowa uliczka'] as const;
+/** Podmioty wpisów o ulicach, kolejno, żeby nie powtarzać jednego. Nigdy prawdziwe nazwy: ulice noszą nazwiska osób
+    (także polityków), których odmienionych form filtr nie łapie, więc `addr:street` w ogóle nie wchodzi do kroniki. */
+const ULICE = ['Główna ulica osiedla', 'Ulica przy bloku', 'Droga dojazdowa do osiedla', 'Osiedlowa uliczka'] as const;
 
 // ---------------------------------------------------------------- zdarzenia ogólne
 
 interface Kontekst {
-  /** Następna ulica z puli (po kolei, bez powtórzeń, dopóki starcza). */
+  /** Następny ogólny podmiot wpisu o ulicy (po kolei, bez powtórzeń, dopóki starcza). */
   ulica: () => string;
 }
 interface Ogolny {
@@ -728,15 +782,8 @@ export function kronika(
   const lacznie = calkowita(r, MIN_WPISOW, MAX_WPISOW);
   const tlo = tloOsiedla(budynki);
 
-  const kolejkaUlic = przetasuj(r, ulice(geo, imiona));
   let ktoraUlica = 0;
-  const kontekst: Kontekst = {
-    ulica: () => {
-      const n = ktoraUlica++;
-      if (kolejkaUlic.length === 0) return ULICE_BEZ_NAZW[n % ULICE_BEZ_NAZW.length];
-      return nazwaUlicy(kolejkaUlic[n % kolejkaUlic.length]);
-    },
-  };
+  const kontekst: Kontekst = { ulica: () => ULICE[ktoraUlica++ % ULICE.length] };
   const zOgolnego = (o: Ogolny): Surowy => {
     const rok = calkowita(r, o.od, o.do);
     const wariant = o.warianty[calkowita(r, 0, o.warianty.length - 1)];
@@ -756,22 +803,45 @@ export function kronika(
   const kolejki = new Map<string, SzablonMiejsca[]>(klucze.map((k) => [k, przetasuj(r, szablonyDla(k))]));
   const uzycia = new Map<string, number>();
   const miejsca: Surowy[] = [];
+  /** Wybiera miejsce z puli kategorii (`klucz`), które dotąd wystąpiło najrzadziej; remis losuje. */
+  const nastepneMiejsce = (klucz: string): Kandydat => {
+    const pula = pule.get(klucz) ?? [];
+    const uzyte = (k: Kandydat): number => uzycia.get(`${klucz}|${k.nazwa}`) ?? 0;
+    const najmniej = Math.min(...pula.map(uzyte));
+    const wolne = pula.filter((k) => uzyte(k) === najmniej);
+    const wybrany = wolne[calkowita(r, 0, wolne.length - 1)];
+    uzycia.set(`${klucz}|${wybrany.nazwa}`, najmniej + 1);
+    return wybrany;
+  };
+  const dodajMiejsce = (szablon: SzablonMiejsca, wybrany: Kandydat): void => {
+    const rok = calkowita(r, szablon.od, szablon.do);
+    miejsca.push({ rok, tekst: szablon.tekst(miejsceWTekscie(wybrany)), miejsce: wybrany.nazwa });
+  };
   for (let runda = 0; miejsca.length < celMiejsc; runda++) {
     let cosDodano = false;
     for (const klucz of klucze) {
       if (miejsca.length >= celMiejsc) break;
       const szablon = kolejki.get(klucz)?.[runda];
       if (!szablon) continue;
-      const pula = pule.get(klucz) ?? [];
-      const najmniej = Math.min(...pula.map((k) => uzycia.get(`${klucz}|${k.nazwa}`) ?? 0));
-      const wolne = pula.filter((k) => (uzycia.get(`${klucz}|${k.nazwa}`) ?? 0) === najmniej);
-      const wybrany = wolne[calkowita(r, 0, wolne.length - 1)];
-      uzycia.set(`${klucz}|${wybrany.nazwa}`, najmniej + 1);
-      const rok = calkowita(r, szablon.od, szablon.do);
-      miejsca.push({ rok, tekst: szablon.tekst(miejsceWTekscie(wybrany)), miejsce: wybrany.nazwa });
+      dodajMiejsce(szablon, nastepneMiejsce(klucz));
       cosDodano = true;
     }
     if (!cosDodano) break;
+  }
+  // szablony kategorii się skończyły, a miejsc jest za mało (np. jedno POI na mapie): zdarzenia neutralne, z miejsc
+  // używanych dotąd najrzadziej, więc to samo miejsce wraca dopiero wtedy, gdy trzeba
+  for (const szablon of przetasuj(r, SZABLONY_NEUTRALNE)) {
+    if (miejsca.length >= celMiejsc || klucze.length === 0) break;
+    const zNajmniejszymUzyciem = klucze
+      .map((klucz) => ({
+        klucz,
+        uzycie: Math.min(...(pule.get(klucz) ?? []).map((k) => uzycia.get(`${klucz}|${k.nazwa}`) ?? 0)),
+      }))
+      .sort((a, b) => a.uzycie - b.uzycie);
+    const wolneKlucze = zNajmniejszymUzyciem
+      .filter((k) => k.uzycie === zNajmniejszymUzyciem[0].uzycie)
+      .map((k) => k.klucz);
+    dodajMiejsce(szablon, nastepneMiejsce(wolneKlucze[calkowita(r, 0, wolneKlucze.length - 1)]));
   }
   wpisy.push(...miejsca);
 

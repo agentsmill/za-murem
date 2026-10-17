@@ -189,11 +189,53 @@ describe('nazwaMiejsca: imię i nazwisko w nazwie zamienia się na opis kategori
     expect(nazwaMiejsca(poi('sklep', 'Salon Jan K.'), zbior)).toBe('zakład usługowy na rogu');
   });
 
-  it('granice filtra: samo imię, samo nazwisko i formy odmienione zostają', () => {
-    // Opisane w nagłówku kronika.ts jako znane luki: bez słownika nazwisk i odmiany nie ma jak ich odróżnić od marek.
-    expect(nazwaMiejsca(poi('sklep', 'Jubiler Monika'), imiona)).toBe('Jubiler Monika');
-    expect(nazwaMiejsca(poi('sklep', 'Roland'), imiona)).toBe('Roland');
-    expect(nazwaMiejsca(poi('spozywczy', 'Mielnik'), imiona)).toBe('Mielnik');
+  it('tytuł i słowo z wielkiej litery to osoba: „Apteka Dr Nowak”, „Gabinet lek. Nowak”', () => {
+    const opisy: [string, string, string][] = [
+      ['apteka', 'Apteka Dr Nowak', 'apteka'],
+      ['apteka', 'Apteka dr. Nowak', 'apteka'],
+      ['przychodnia', 'Gabinet lek. Nowak', 'gabinet lekarski'],
+      ['przychodnia', 'Gabinet lek. med. Nowak', 'gabinet lekarski'],
+      ['przychodnia', 'Gabinet Stomatologiczny dr n. med. Kowalski', 'gabinet lekarski'],
+      ['przychodnia', 'Gabinet mgr Nowak', 'gabinet lekarski'],
+      ['przychodnia', 'Praktyka prof. Kowalski', 'gabinet lekarski'],
+      ['budowlany', 'Usługi mgr inż. Nowak', 'sklep z narzędziami i częściami'],
+      ['sklep', 'Salon DR NOWAK', 'zakład usługowy na rogu'],
+      ['sklep', 'Salon Dr Anna Nowak', 'zakład usługowy na rogu'],
+    ];
+    for (const [c, przed, po] of opisy) expect(nazwaMiejsca(poi(c, przed), imiona), przed).toBe(po);
+  });
+
+  it('sieci z tytułem w nazwie zostają (lista wyjątków), reszta „Dr” nie', () => {
+    for (const n of ['Dr. Max', 'Dr Max', 'Apteka Dr. Max', 'DR. MAX', 'Dr Irena Eris', 'Dr. Martens', 'Dr. Oetker'])
+      expect(nazwaMiejsca(poi('apteka', n), imiona), n).toBe(n);
+    // wyjątek dotyczy tylko znanej sieci, nie każdego „Dr”
+    expect(nazwaMiejsca(poi('apteka', 'Apteka Dr Maxymilian Nowak'), imiona)).toBe('apteka');
+    expect(nazwaMiejsca(poi('apteka', 'Dr Maxwell'), imiona)).toBe('apteka');
+  });
+
+  it('tytuł bez wielkiej litery po nim albo „med” bez kropki nie jest osobą', () => {
+    expect(nazwaMiejsca(poi('przychodnia', 'Centrum Med Plus'), imiona)).toBe('Centrum Med Plus');
+    expect(nazwaMiejsca(poi('apteka', 'Apteka dr w centrum'), imiona)).toBe('Apteka dr w centrum');
+    expect(nazwaMiejsca(poi('apteka', 'Drogerie Polskie'), imiona)).toBe('Drogerie Polskie');
+    expect(nazwaMiejsca(poi('przychodnia', 'Przychodnia Lekarska'), imiona)).toBe('Przychodnia Lekarska');
+  });
+
+  it('granice filtra: te przypadki zostają i są opisane w nagłówku kronika.ts jako znane luki', () => {
+    // bez słownika nazwisk i odmiany nie ma jak ich odróżnić od marek
+    const zostaje: [string, string][] = [
+      ['sklep', 'Jubiler Monika'], // samo imię
+      ['sklep', 'Roland'],
+      ['spozywczy', 'Mielnik'], // samo nazwisko
+      ['sklep', 'PHU J. Nowak'], // inicjał i nazwisko ("E. Leclerc" to marka)
+      ['spozywczy', 'E. Leclerc'],
+      ['przychodnia', 'Gabinet Anna-Maria Nowak'], // imię złożone
+      ['przychodnia', 'Nowak Jan'], // odwrócona kolejność
+      ['przychodnia', 'Zakład Piotra Nowaka'], // dopełniacz
+      ['przychodnia', 'Gabinet Anny Nowak'],
+      ['sklep', 'JAN NOWAK'], // wielkie litery
+      ['sklep', 'Hair Studio Kasia Nowak'], // zdrobnienie spoza listy PESEL
+    ];
+    for (const [c, n] of zostaje) expect(nazwaMiejsca(poi(c, n), imiona), n).toBe(n);
   });
 
   it('nazwa pusta zostaje pusta', () => {
@@ -461,20 +503,78 @@ describe('kronika: kilkanaście wspólnych zdarzeń z lat 2026 do 2051', () => {
     }
   });
 
-  it('jedno miejsce wystarcza na kilka wpisów, a każde dostaje inne zdarzenie', () => {
+  it('jedno miejsce wystarcza na co najmniej pięć wpisów, a każdy ma inne zdarzenie', () => {
     const geo = pusta([poi('przychodnia', 'Centrum Medyczne Batowice', -57, -100)]);
     for (const z of ziarna) {
       const k = kronika(geo, [], imiona, z).filter((w) => w.miejsce);
-      expect(k.length).toBeGreaterThanOrEqual(3);
+      expect(k.length, z).toBeGreaterThanOrEqual(5);
       expect(new Set(k.map((w) => w.tekst)).size).toBe(k.length);
+      expect(new Set(k.map((w) => w.rok)).size).toBeGreaterThanOrEqual(3);
       for (const w of k) expect(w.miejsce).toBe('Centrum Medyczne Batowice');
+    }
+  });
+
+  it('jedno nazwane POI w obszarze gry (kościół, sklep, szkoła, dowolna kategoria) daje co najmniej pięć wpisów z miejscem', () => {
+    const przypadki: [string, string][] = [
+      ['kosciol', 'Kościół Świętej Rodziny'],
+      ['spozywczy', 'Żabka'],
+      ['sklep', 'Rituals'],
+      ['szkola', 'Szkoła Podstawowa nr 12'],
+      ['szkola', 'Przedszkole nr 59'],
+      ['szkola', 'Żłobek nr 68'],
+      ['apteka', 'Apteka Pod Lwem'],
+      ['przychodnia', 'Baltmed'],
+      ['bank', 'PKO BP'],
+      ['stacja', 'Orlen'],
+      ['biblioteka', 'Biblioteka na fali'],
+      ['urzad', 'FUP Gdańsk 53'],
+      ['budowlany', 'Tolsen'],
+      ['elektronika', 'Vedion'],
+      ['ubrania', 'Pepco'],
+      ['ogrodnik', 'Kaktus'],
+      ['nieznana', 'Port Kosmiczny'],
+      ['spozywczy', 'Sławomir Mielnik'],
+    ];
+    for (const [c, n] of przypadki) {
+      const geo = pusta([poi(c, n, 40, -30)]);
+      for (const z of ziarna) {
+        const k = kronika(geo, [], imiona, z);
+        const zMiejscem = k.filter((w) => w.miejsce);
+        expect(zMiejscem.length, `${n} / ${z}`).toBeGreaterThanOrEqual(5);
+        expect(new Set(zMiejscem.map((w) => w.miejsce)).size, n).toBe(1);
+        expect(new Set(zMiejscem.map((w) => w.tekst)).size, n).toBe(zMiejscem.length);
+        expect(k.length).toBeGreaterThanOrEqual(12);
+        expect(k.length).toBeLessThanOrEqual(16);
+        expect(k.filter((w) => WZORZEC_KABLI.test(w.tekst)).length).toBeGreaterThanOrEqual(5);
+      }
+    }
+  });
+
+  it('jedno nazwane POI poza obszarem gry też daje pięć wpisów, a bez żadnego POI miejsc nie ma', () => {
+    const daleko = pusta([poi('szkola', 'Szkoła Podstawowa nr 79', -366, 300)]);
+    for (const z of ziarna)
+      expect(kronika(daleko, [], imiona, z).filter((w) => w.miejsce).length).toBeGreaterThanOrEqual(5);
+    for (const z of ziarna) expect(kronika(pusta(), [], imiona, z).filter((w) => w.miejsce)).toEqual([]);
+  });
+
+  it('dwa różne miejsca w jednej kategorii dzielą wpisy po równo, nie ma jednego ulubieńca', () => {
+    const geo = pusta([
+      poi('szkola', 'Szkoła Podstawowa nr 12', 10, 10),
+      poi('szkola', 'Szkoła Podstawowa nr 44', 20, 20),
+    ]);
+    for (const z of ziarna) {
+      const k = kronika(geo, [], imiona, z).filter((w) => w.miejsce);
+      const liczby = ['Szkoła Podstawowa nr 12', 'Szkoła Podstawowa nr 44'].map(
+        (n) => k.filter((w) => w.miejsce === n).length,
+      );
+      expect(Math.abs(liczby[0] - liczby[1]), z).toBeLessThanOrEqual(1);
     }
   });
 
   it('nieznana kategoria POI dostaje zdarzenia ogólne, nie wyjątek', () => {
     const geo = pusta([poi('kosmiczna', 'Port Kosmiczny', 10, 10)]);
     const k = kronika(geo, [], imiona, 'x');
-    expect(k.filter((w) => w.miejsce).length).toBeGreaterThanOrEqual(3);
+    expect(k.filter((w) => w.miejsce).length).toBeGreaterThanOrEqual(5);
     for (const w of k) if (w.miejsce) expect(w.miejsce).toBe('Port Kosmiczny');
   });
 
@@ -531,67 +631,61 @@ describe('kronika: kilkanaście wspólnych zdarzeń z lat 2026 do 2051', () => {
     expect(zNazwa.some((t) => t.startsWith('Przychodnia (Baltmed) przeszła na dyżury przy świecach'))).toBe(true);
   });
 
-  it('ulice z addr:street pojawiają się w tekście w mianowniku, bez zmyślonej odmiany', () => {
+  it('prawdziwe nazwy ulic (także od osób) nigdy nie trafiają do tekstu', () => {
+    const ulice = [
+      'Lecha Kaczyńskiego',
+      'Marii Konopnickiej',
+      'Adama Mickiewicza',
+      'Mickiewicza',
+      'Spacerowa',
+      'Aleja Zwycięstwa',
+      'Jan Kowalski',
+    ];
     const geo = pusta(
       [],
-      [wBudynku('Spacerowa', 10, 10), wBudynku('Spacerowa', 30, 10), wBudynku('Lanciego', -50, 20)],
+      ulice.map((u, i) => wBudynku(u, 10 + i * 20, 10)),
     );
+    const zakazane = [
+      'Kaczyńskiego',
+      'Konopnickiej',
+      'Mickiewicza',
+      'Lech',
+      'Marii',
+      'Adama',
+      'Spacerowa',
+      'Zwycięstwa',
+      'Kowalski',
+    ];
     for (const z of ziarna) {
-      const k = kronika(geo, [], imiona, z);
-      const ulice = k.filter((w) => /^Ulica (Spacerowa|Lanciego):/.test(w.tekst));
-      expect(ulice.length, z).toBeGreaterThanOrEqual(1);
-      for (const w of k) {
-        expect(w.tekst).not.toMatch(/ul(icy|icę|icą)\s+(Spacerowa|Lanciego)/i);
-        expect(w.tekst).not.toContain('Spacerowej');
-      }
-    }
-  });
-
-  it('ulica, w której filtr widzi osobę, odpada z kroniki', () => {
-    const geo = pusta(
-      [],
-      [wBudynku('Jan Kowalski', 10, 10), wBudynku('Jan Kowalski', 30, 10), wBudynku('Pogodna', 50, 10)],
-    );
-    for (const z of ziarna) {
-      const teksty = kronika(geo, [], imiona, z).map((w) => w.tekst);
-      expect(teksty.join(' ')).not.toContain('Kowalski');
-      expect(teksty.some((t) => t.startsWith('Ulica Pogodna:'))).toBe(true);
-    }
-    const tylkoOsoby = pusta([], [wBudynku('Anna Nowak', 10, 10)]);
-    for (const z of ziarna) {
-      const k = kronika(tylkoOsoby, [], imiona, z);
-      expect(k.map((w) => w.tekst).join(' ')).not.toContain('Nowak');
-      expect(k.some((w) => /^Główna ulica osiedla:/.test(w.tekst))).toBe(true);
-    }
-  });
-
-  it('nazwa ulicy, która już zaczyna się od rzeczownika (aleja, plac), nie dostaje drugiego „Ulica”', () => {
-    const geo = pusta([], [wBudynku('Aleja Zwycięstwa', 10, 10), wBudynku('Plac Wolności', 30, 10)]);
-    for (const z of ziarna) {
-      for (const w of kronika(geo, [], imiona, z)) {
-        expect(w.tekst).not.toMatch(/Ulica (Aleja|Plac)/);
-      }
-    }
-    const wszystkie = ziarna.flatMap((z) => kronika(geo, [], imiona, z).map((w) => w.tekst));
-    expect(wszystkie.some((t) => /^(Aleja Zwycięstwa|Plac Wolności):/.test(t))).toBe(true);
-  });
-
-  it('ulice z obszaru gry mają pierwszeństwo przed dalszymi', () => {
-    const geo = pusta([], [wBudynku('Bliska', 10, 10), wBudynku('Daleka', 500, 500), wBudynku('Daleka', 520, 500)]);
-    for (const z of ziarna) {
-      const tekst = kronika(geo, [], imiona, z)
-        .map((w) => w.tekst)
+      const wszystko = kronika(geo, [], imiona, z)
+        .map((w) => `${w.tekst} ${w.miejsce ?? ''}`)
         .join(' ');
-      expect(tekst).toContain('Ulica Bliska:');
-      expect(tekst).not.toContain('Daleka');
+      for (const s of zakazane) expect(wszystko, `${z}: ${s}`).not.toContain(s);
     }
   });
 
-  it('bez nazw ulic (demo, kafelki) wpisy o ulicach mówią o głównej ulicy osiedla', () => {
-    for (const z of ziarna) {
-      const k = kronika(pusta(), [], imiona, z);
-      expect(k.some((w) => /^Główna ulica osiedla:/.test(w.tekst))).toBe(true);
-      expect(k.some((w) => /^Ulica /.test(w.tekst))).toBe(false);
+  it('mapa z ulicami i mapa bez ulic dają tę samą kronikę (ulice z addr:street nie wchodzą do wyniku)', () => {
+    const bez = pusta([poi('szkola', 'Szkoła Podstawowa nr 12', 10, 10)]);
+    const z = pusta([poi('szkola', 'Szkoła Podstawowa nr 12', 10, 10)], [wBudynku('Lecha Kaczyńskiego', 10, 10)]);
+    for (const ziarno of ziarna)
+      expect(kronika(z, [], imiona, ziarno), ziarno).toEqual(kronika(bez, [], imiona, ziarno));
+  });
+
+  it('wpisy o ulicach mają ogólny podmiot: główna ulica osiedla, ulica przy bloku i tym podobne', () => {
+    const OGOLNE_ULICE = /^(Główna ulica osiedla|Ulica przy bloku|Droga dojazdowa do osiedla|Osiedlowa uliczka):/;
+    for (const o of DEMA) {
+      for (const z of ziarna) {
+        const k = kron(o, z);
+        expect(
+          k.some((w) => OGOLNE_ULICE.test(w.tekst)),
+          `${o.nazwa} / ${z}`,
+        ).toBe(true);
+        // podmiot przed dwukropkiem to zawsze jedna z czterech ogólnych fraz
+        for (const w of k) {
+          const przed = w.tekst.match(/^([^.:]*):/);
+          if (przed && /ulic|drog/i.test(przed[1])) expect(w.tekst, w.tekst).toMatch(OGOLNE_ULICE);
+        }
+      }
     }
   });
 
