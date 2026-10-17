@@ -6,7 +6,7 @@
 import { LAW_CD } from '../content/data.ts';
 import { M1_LAWS } from './tresc.ts';
 import type { GovInput, GovState, LawEffects, LawOption } from './typy.ts';
-import { gameMin, logGov, mood, round2 } from './wspolne.ts';
+import { burnedCount, gameMin, logGov, mood, round2 } from './wspolne.ts';
 
 export const law = (st: GovState, id: string): boolean => !!st.laws.signed[id];
 
@@ -83,9 +83,9 @@ export function dailyDrift(st: GovState, i: GovInput): [number, number] {
     if (p.traits.includes('klotliwy')) a += 0.3;
     if (p.traits.includes('optymista')) a -= 0.2;
   }
-  const burned = Math.max(0, (i.burned ?? 0) - st.evening.burned);
+  const burned = Math.max(0, burnedCount(i.burned) - st.evening.burned);
   a += 0.3 * burned * (law(st, 'u_meble') ? 0.5 : 1);
-  st.evening = { campfire: false, burned: i.burned ?? 0 };
+  st.evening = { campfire: false, burned: burnedCount(i.burned) };
   const dT = round2(tr);
   const dA = round2(a);
   mood(st, dT, dA);

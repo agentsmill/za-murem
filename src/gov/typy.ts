@@ -96,8 +96,8 @@ export interface GovInput {
   /** mieszkańcy siedziby poza zarządem (tura 2) i wolne miejsca */
   residents?: number;
   cap?: number;
-  /** ile mebli spalono od początku gry */
-  burned?: number;
+  /** spalone meble od początku gry: liczba albo lista jak SimSnapshot.burned */
+  burned?: number | readonly unknown[];
   /** nazwa siedziby do tekstów, np. „Obrońców Wybrzeża 4” */
   hqName?: string;
 }

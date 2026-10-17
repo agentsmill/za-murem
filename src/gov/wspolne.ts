@@ -109,3 +109,6 @@ export function fenceOf(i: GovInput, patched = 0): GovFence {
     }));
   return { holes, durability: f.durability, gateOpen: f.gateOpen };
 }
+
+/** ile mebli spalono (wejście podaje liczbę albo listę jak snapshot symulacji) */
+export const burnedCount = (b: GovInput['burned']): number => (Array.isArray(b) ? b.length : ((b as number) ?? 0));

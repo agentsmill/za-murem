@@ -201,6 +201,19 @@ describe('uchwały, zaufanie i wkurzenie', () => {
     expect(dA3).toBeCloseTo(dA2 + 0.4 + 0.4, 5); // bez ogniska (+0,4) i racje (+0,4)
   });
 
+  it('spalone meble wkurzają, z uchwałą o meblach o połowę mniej; lista jak w snapshot() też działa', () => {
+    const base = new Atrapa(14).input();
+    const plain = newGov(14);
+    const [, a1] = dailyDrift(plain, { ...base, burned: 0 });
+    const burnt = newGov(14);
+    const [, a2] = dailyDrift(burnt, { ...base, burned: [{}, {}] });
+    expect(a2 - a1).toBeCloseTo(0.6, 5);
+    const allowed = newGov(14);
+    allowed.laws.signed.u_meble = true;
+    const [, a3] = dailyDrift(allowed, { ...base, burned: 2 });
+    expect(a3 - a1).toBeCloseTo(0.3 + 0.1, 5); // połowa kary i codzienne +0,1 z uchwały
+  });
+
   it('koniec gry: wkurzenie 100 odwołuje zarząd, zaufanie 0 to exodus', () => {
     const a = newGov(10);
     a.anger = 100;
