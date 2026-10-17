@@ -1,9 +1,11 @@
-/* Widok gry w PixiJS 8: kamera, kawałki mapy w dwóch poziomach szczegółów, pionki.
+/* Widok gry w PixiJS 8: kamera, kawałki mapy w dwóch poziomach szczegółów, pionki, noc.
    Rysowanie tylko czyta stan symulacji. Kawałki rysują na zamówienie workery (OffscreenCanvas),
    a bez nich główny wątek w limicie czasu na klatkę. Z bliska (32 px/kafelek) tylko widoczne,
-   wyrzucane, gdy jest ich za dużo. Z daleka (8 px/kafelek) wszystkie, zamawiane na starcie. */
+   wyrzucane, gdy jest ich za dużo. Z daleka (8 px/kafelek) wszystkie, zamawiane na starcie.
+   Noc to mapa światła nad światem (light.ts), mnożona przez obraz. */
 
 import { Application, Container, Graphics, Rectangle, Sprite, Texture, TextureStyle } from 'pixi.js';
+import { minutesAt } from '../sim/clock.ts';
 import type { Pawn, SimState } from '../sim/sim.ts';
 import { FH, FRAMES, FW, LOOKS, makePeopleAtlas } from './art/people.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
@@ -20,6 +22,8 @@ import {
   WorkerPainter,
   workersAvailable,
 } from './chunks.ts';
+import { darknessAt, type Light } from './light.ts';
+import { LightLayer } from './lightLayer.ts';
 
 const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 /** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna albo ImageBitmap);
@@ -46,7 +50,15 @@ export class GameView {
   terrain = new Container();
   marks = new Graphics();
   actors = new Container();
-  night = new Graphics();
+  /** noc: mapa światła nad światem */
+  light = new LightLayer();
+  /**
+   * Źródła światła w metrach świata ({ x, y, r, color, strength, flicker }). Lista jest czytana
+   * co klatkę, więc wystarczy ją podmieniać albo zmieniać w miejscu (np. ognisko, koza, latarka).
+   */
+  lights: Light[] = [];
+  /** ciemność z ostatniej klatki (0 dzień … 1 noc) */
+  darkness = 0;
   cam: Camera = { x: 0, y: 0, zoom: 1 };
   minZoom = 0.08;
   maxZoom = 3;
@@ -81,9 +93,9 @@ export class GameView {
     });
     host.appendChild(this.app.canvas);
     this.app.canvas.classList.add('game-canvas');
-    this.root.addChild(this.terrain, this.marks, this.actors);
+    this.root.addChild(this.terrain, this.marks, this.actors, this.light.sprite);
     this.actors.sortableChildren = true;
-    this.app.stage.addChild(this.root, this.night);
+    this.app.stage.addChild(this.root);
     const atlas = Texture.from(makePeopleAtlas());
     for (let look = 0; look < LOOKS; look++)
       for (let k = 0; k < 4 * FRAMES; k++)
@@ -246,7 +258,7 @@ export class GameView {
     for (const p of st.pawns) this.prev.set(p.id, [p.x, p.y]);
   }
 
-  render(st: SimState, alpha: number, selected: ReadonlySet<number>, nightAlpha: number): void {
+  render(st: SimState, alpha: number, selected: ReadonlySet<number>): void {
     if (!this.scene) return;
     this.frameNo++;
     const z = this.cam.zoom;
@@ -280,9 +292,11 @@ export class GameView {
         sp.destroy();
         this.pawnSprites.delete(id);
       }
-    // noc (prototyp: przyciemnienie całego ekranu)
-    this.night.clear();
-    if (nightAlpha > 0.01) this.night.rect(0, 0, this.width, this.height).fill({ color: 0x0b1030, alpha: nightAlpha });
+    // noc: ciemność z godziny gry, światła z listy
+    this.darkness = darknessAt(minutesAt(st.tick));
+    const [x0, y0] = this.toWorld(0, 0);
+    const [x1, y1] = this.toWorld(this.width, this.height);
+    this.light.update(x0, y0, x1, y1, z, this.darkness, this.lights, performance.now() / 1000);
   }
 
   private markPawn(p: Pawn, x: number, y: number): void {

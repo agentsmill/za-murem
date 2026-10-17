@@ -5,17 +5,9 @@ import { DOM, LORE, TRAITS } from './content/data.ts';
 import { wiek } from './content/people.ts';
 import { hashString } from './core/rng.ts';
 import { buildScene, TILE } from './render/art/scene.ts';
+import type { Light } from './render/light.ts';
 import { GameView } from './render/view.ts';
-import {
-  clockOf,
-  dayOf,
-  minutesAt,
-  SPEEDS,
-  START_MINUTES,
-  TICKS_PER_DAY,
-  TICKS_PER_HOUR,
-  TICKS_PER_SECOND,
-} from './sim/clock.ts';
+import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { createSim, Sim } from './sim/sim.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
 import { buildWorld } from './world/world.ts';
@@ -105,7 +97,8 @@ async function enter(data: Loaded) {
   // płótno mierzy element; był ukryty, więc trzeba przeliczyć rozmiar po odsłonięciu
   view.app.resize();
   view.setScene(scene);
-  const hour = params.get('hour');
+  // ?godzina=22 (albo ?hour=22, także z ułamkiem: 18.5 to 18:30): pora dnia na start
+  const hour = params.get('godzina') ?? params.get('hour');
   if (hour !== null)
     st.tick = Math.round(
       (((((Number(hour) * 60 - START_MINUTES) / 60) * TICKS_PER_HOUR) % TICKS_PER_DAY) + TICKS_PER_DAY) % TICKS_PER_DAY,
@@ -134,6 +127,8 @@ async function enter(data: Loaded) {
     Object.assign(view.cam, { x: (world.size * TILE) / 2, y: (world.size * TILE) / 2, zoom: view.minZoom });
     flyTo(hx, hy, 1, 2400);
   }
+  // ?swiatla=test: trzy światła przy siedzibie do podglądu nocy
+  if (params.get('swiatla') === 'test') view.lights = testLights(hx / TILE, hy / TILE);
   if (params.has('speed')) speed = Number(params.get('speed'));
   const first = st.pawns[0];
   if (first) selected.add(first.id);
@@ -146,6 +141,15 @@ async function enter(data: Loaded) {
   );
   renderSpeed();
   if (window.zm) window.zm.sim = sim;
+}
+
+/** światła do podglądu wokół punktu (x, y) w metrach: ognisko, okno z kozą, latarka warty */
+function testLights(x: number, y: number): Light[] {
+  return [
+    { x: x + 4, y: y - 3, r: 7, color: 0xff9a3c, strength: 1.15, flicker: 0.35 },
+    { x: x + 1, y: y + 0.8, r: 3, color: 0xffc46b, strength: 0.8, flicker: 0.12 },
+    { x: x - 6, y: y - 1.5, r: 4.5, color: 0xcfdcff, strength: 0.9, flicker: 0 },
+  ];
 }
 
 /* ---------- kamera ---------- */
@@ -171,14 +175,6 @@ let fps = 0;
 let hudT = 0;
 const keys = new Set<string>();
 
-function nightAlpha(tick: number): number {
-  const h = (minutesAt(tick) / 60) % 24;
-  if (h >= 7 && h < 17) return 0;
-  if (h >= 17 && h < 20) return ((h - 17) / 3) * 0.62;
-  if (h >= 5 && h < 7) return ((7 - h) / 2) * 0.62;
-  return 0.62;
-}
-
 function frame(now: number, dtMs: number) {
   if (!sim) return;
   stepFly(now);
@@ -200,7 +196,7 @@ function frame(now: number, dtMs: number) {
     n++;
   }
   if (n === 40) acc = 0;
-  view.render(sim.st, mult ? acc : 1, selected, nightAlpha(sim.st.tick));
+  view.render(sim.st, mult ? acc : 1, selected);
   fpsFrames++;
   if (now - fpsT >= 1000) {
     fps = (fpsFrames * 1000) / (now - fpsT);
