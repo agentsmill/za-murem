@@ -403,6 +403,16 @@ function areaKindT(layer: string, t: Record<string, TagValue>) {
   return null;
 }
 
+/** Identyfikator OSM z id obiektu w kafelku OpenFreeMap: numer OSM razy 10 plus 1 (punkt), 2 (droga) albo 3
+    (relacja); zwraca tylko drogi i relacje. Obiekty z końcówką 0 to wiele elementów o tych samych atrybutach
+    sklejonych w jeden (z numerem jednego z nich), więc numeru nie dają. */
+export function osmIdOf(id: number): string | undefined {
+  const kind = id % 10;
+  if (kind === 2) return `w${(id - 2) / 10}`;
+  if (kind === 3) return `r${(id - 3) / 10}`;
+  return undefined;
+}
+
 export const WANT = new Set([
   'building',
   'transportation',
@@ -445,6 +455,8 @@ interface BTmp {
   pp: Pt[][];
   h: number;
   k: number;
+  /** identyfikator OSM obiektu, gdy to jeden budynek */
+  id?: string;
 }
 type SpanRec = [string, number, number, number, BTmp, DecodedTile];
 
@@ -471,7 +483,8 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
     return a < M && b > -M && c < M && d > -M;
   };
   const spans: SpanRec[] = [];
-  const hn: { x: number; y: number; h: string }[] = [];
+  /** numery domów; id: identyfikator OSM elementu z adresem (droga albo relacja), zwykle samego budynku */
+  const hn: { x: number; y: number; h: string; id?: string }[] = [];
   for (const T of tiles) {
     for (const lname in T.L) {
       const L = T.L[lname];
@@ -493,7 +506,8 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
               if (!inOwn(q)) continue;
               const [x, y] = P(q);
               if (lname === 'housenumber') {
-                if (Math.abs(x) < M && Math.abs(y) < M) hn.push({ x, y, h: String(t.housenumber || '') });
+                if (Math.abs(x) < M && Math.abs(y) < M)
+                  hn.push({ x, y, h: String(t.housenumber || ''), id: osmIdOf(F.id) });
                 continue;
               }
               const pt = poiTags(t);
@@ -536,12 +550,13 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
         if (lname === 'building') {
           if ((t.render_min_height as number) > 0) continue;
           const h = +(t.render_height as number) || 0;
+          const id = osmIdOf(F.id);
           for (const rg0 of rings) {
             const rg = clipRing(rg0, E);
             if (!rg) continue;
             const pts = rg.map(P);
             if (!near(pts) || polyArea(pts) < 4) continue;
-            const b: BTmp = { p: pts, pp: [], h, k: tmpB.length };
+            const b: BTmp = { p: pts, pp: [], h, k: tmpB.length, id };
             if (tiles.length > 1) for (const s of borderSpans(rg, E, T.x, T.y)) spans.push([s[0], s[1], s[2], h, b, T]);
             tmpB.push(b);
           }
@@ -588,21 +603,45 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
     g.sort((p, q) => polyArea(q.p) - polyArea(p.p));
     const m = g[0];
     m.pp = g.slice(1).map((x) => x.p);
+    // kawałki z różnych obiektów (albo bez numeru) to nie jeden budynek OSM
+    if (g.some((x) => x.id !== m.id)) m.id = undefined;
     return m;
   });
+  // numery OSM z punktów adresu w budynkach; punkt w kilku nachodzących na siebie obrysach nie mówi, czyj jest
+  const within = (b: BTmp, q: { x: number; y: number }) => pip(q.x, q.y, b.p) || b.pp.some((p) => pip(q.x, q.y, p));
+  const pointIds = merged.map((b) => new Set(hn.filter((q) => q.id && within(b, q)).map((q) => q.id as string)));
+  const holders = new Map<string, number>();
+  for (const ids of pointIds) for (const id of ids) holders.set(id, (holders.get(id) ?? 0) + 1);
   // budynki: tagi zgodne z formatem z Overpass, numery domów z warstwy housenumber
   const out: GeoBuilding[] = [];
-  for (const b of merged) {
+  merged.forEach((b, k) => {
     const tags: Record<string, string> = { building: 'yes', guess: '1' };
     if (b.h > 0) tags['building:levels'] = String(Math.max(1, Math.round(b.h / 3.5)));
-    const num = hn.find((q) => pip(q.x, q.y, b.p) || b.pp.some((p) => pip(q.x, q.y, p)));
+    const num = hn.find((q) => within(b, q));
     if (num?.h) tags['addr:housenumber'] = num.h;
+    // identyfikator: z obiektu budynku, gdy nie jest sklejony z innymi, albo z jedynego punktu adresu z drogi lub
+    // relacji OSM w środku budynku (adres na samym budynku), jeśli ten punkt nie leży też w innym budynku
+    let id = b.id;
+    const ids = pointIds[k];
+    if (!id && ids.size === 1) {
+      const [only] = ids;
+      if (holders.get(only) === 1) id = only;
+    }
+    if (id) tags.id = id;
     const o: GeoBuilding = { p: b.p, t: tags };
     if (b.pp.length) o.pp = b.pp;
     out.push(o);
-  }
+  });
   // duże najpierw: obrys budynku zajmuje kafelki przed ewentualnymi częściami
   out.sort((a, b) => polyArea(b.p) - polyArea(a.p));
+  // budynek rozcięty przy przycinaniu do kafelka na osobne kawałki: numer zostaje przy największym
+  const seen = new Set<string>();
+  for (const o of out) {
+    const id = o.t.id;
+    if (id === undefined) continue;
+    if (seen.has(id)) delete o.t.id;
+    seen.add(id);
+  }
   geo.b = out;
   return geo;
 }

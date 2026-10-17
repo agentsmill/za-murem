@@ -8,6 +8,8 @@ export interface GeoBuilding {
   p: Pt[];
   /** sklejone części budynku przeciętego granicą kafelków */
   pp?: Pt[][];
+  /** tagi OSM (wybrane) i identyfikator: id to typ i numer elementu OSM („w123” droga, „r45” relacja), gdy źródło
+      go podaje; start_date to data budowy z OSM bez zmian (tylko z Overpass, kafelki jej nie niosą) */
   t: Record<string, string>;
 }
 export interface GeoRoad {

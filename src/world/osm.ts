@@ -136,10 +136,21 @@ export function areaKind(t: Record<string, string>): AreaKind | null {
   return null;
 }
 
-const KEEP = ['building', 'building:levels', 'name', 'addr:street', 'addr:housenumber', 'shop', 'amenity'];
+/** tagi budynku zostawiane przy imporcie; start_date (data budowy) czyta generator mieszkańców */
+const KEEP = [
+  'building',
+  'building:levels',
+  'name',
+  'addr:street',
+  'addr:housenumber',
+  'shop',
+  'amenity',
+  'start_date',
+];
 
 interface OverpassElement {
   type: string;
+  id?: number;
   lat?: number;
   lon?: number;
   tags?: Record<string, string>;
@@ -169,6 +180,8 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
     if (t.building) {
       const tags: Record<string, string> = {};
       for (const k of KEEP) if (t[k]) tags[k] = t[k];
+      // identyfikator OSM budynku: droga (w) i jej numer
+      if (el.id !== undefined) tags.id = `w${el.id}`;
       geo.b.push({ p: pts, t: tags });
       continue;
     }
