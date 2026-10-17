@@ -47,18 +47,26 @@
       <span class="stat" id="sKit" title="Temperatura w kuchni zarządu"><small class="stat-k">kuchnia</small><b class="stat-v">–</b></span>
       <span class="stat" id="sFire" title="Ogień w kozie zarządu"><small class="stat-k">koza</small><b class="stat-v">–</b></span>
       <span class="stat" id="sWood" title="Drewno: w składzie, luzem i w kozie"><small class="stat-k">drewno</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sBoards" title="Deski"><small class="stat-k">deski</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sScrap" title="Złom"><small class="stat-k">złom</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sParts" title="Części"><small class="stat-k">części</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sMats" title="Deski, złom, części"><small class="stat-k">d·z·cz</small><b class="stat-v">–</b></span>
       <span class="stat" id="sFood" title="Jedzenie: zapasy i ugotowane porcje"><small class="stat-k">jedzenie</small><b class="stat-v">–</b></span>
       <span class="stat" id="sTrust" title="Zaufanie mieszkańców do zarządu"><small class="stat-k">zaufanie</small><b class="stat-v">–</b></span>
       <span class="stat" id="sAnger" title="Wkurzenie mieszkańców"><small class="stat-k">wkurzenie</small><b class="stat-v">–</b></span>
     </div>
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
+    <button type="button" class="btn lamp" id="btnBuild" aria-keyshortcuts="B">Budowa</button>
     <button type="button" class="btn ghost" id="btnMenu">Menu</button>
   </header>
   <section class="goals" id="goals" aria-label="Cele"></section>
   <aside class="card" id="card" hidden></aside>
   <p class="hint" id="hint"></p>
   <div class="box" id="box" hidden></div>
+  <div class="plan-ghost" id="ghost" hidden><span class="plan-ghost-t" id="ghostText"></span></div>
+  <div class="notice" id="arrive" role="status" hidden><p class="nt-t" id="arriveText"></p><button type="button" class="btn" id="arriveShow">Pokaż</button></div>
+  <div class="placebar" id="placeBar" hidden><p class="pb-t" id="placeText"></p><button type="button" class="btn" data-place="rot">Obróć</button><button type="button" class="btn ghost" data-place="cancel">Anuluj</button></div>
   <div class="ctx" id="ctx" role="menu" hidden></div>
   <div class="mapctl"><button type="button" id="zIn" aria-label="Przybliż">+</button><button type="button" id="zOut" aria-label="Oddal">−</button><button type="button" id="zHome" aria-label="Pokaż siedzibę zarządu">⌂</button></div>
   <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">współtwórcy OpenStreetMap</a> · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a></div>
