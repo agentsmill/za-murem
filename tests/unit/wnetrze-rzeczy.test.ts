@@ -73,7 +73,12 @@ function allSpecs(): ThingSpec[] {
   for (const kind of FURNITURE_KINDS)
     for (const rot of ROTS) for (const seed of [0, 1, 2, 3, 99, -7]) s.push({ kind, rot, seed });
   for (const rot of ROTS) for (let fire = 0; fire < FIRE_FRAMES; fire++) s.push({ kind: 'koza', rot, fire, seed: 5 });
-  for (const size of [1, 2, 3] as const) for (const seed of [0, 1, 2, 3]) s.push({ kind: 'drewno', size, seed });
+  for (const size of [1, 2, 3] as const)
+    for (const seed of [0, 1, 2, 3]) {
+      s.push({ kind: 'drewno', size, seed });
+      s.push({ kind: 'jedzenie', size, seed });
+    }
+  for (const r of [1, 2.2, 3.6]) for (const seed of [0, 5]) s.push({ kind: 'pien', r, seed });
   for (const rot of ROTS) for (const seed of [0, 1, 2, 3]) s.push({ kind: 'trzepak', rot, seed });
   return s;
 }
@@ -189,7 +194,12 @@ describe('rzeczy', () => {
   });
 
   it('rozmiar i kotwica zależą tylko od rodzaju i ustawienia, nie od ziarna ani ognia', () => {
-    const key = (s: ThingSpec) => (s.kind === 'drewno' ? `drewno ${s.size}` : `${s.kind} ${s.rot}`);
+    const key = (s: ThingSpec) =>
+      s.kind === 'drewno' || s.kind === 'jedzenie'
+        ? `${s.kind} ${s.size}`
+        : s.kind === 'pien'
+          ? `pien ${s.r}`
+          : `${s.kind} ${s.rot}`;
     const seen = new Map<string, string>();
     for (const spec of allSpecs()) {
       const sp = thingSprite(spec);
@@ -228,6 +238,8 @@ describe('rzeczy', () => {
       wersalka: [2, 1],
       mebloscianka: [3, 1],
       wanna: [2, 1],
+      sedes: [1, 1],
+      umywalka: [1, 1],
     });
     for (const kind of FURNITURE_KINDS)
       for (const rot of ROTS) {
@@ -236,6 +248,8 @@ describe('rzeczy', () => {
       }
     expect(footprint({ kind: 'trzepak', rot: 1 })).toEqual({ w: 1, h: 3 });
     expect(footprint({ kind: 'drewno', size: 3 })).toEqual({ w: 1, h: 1 });
+    expect(footprint({ kind: 'jedzenie', size: 1 })).toEqual({ w: 1, h: 1 });
+    expect(footprint({ kind: 'pien', r: 3 })).toEqual({ w: 1, h: 1 });
   });
 
   it('warianty się różnią: ustawienia, klatki ognia, wielkości stosu', () => {
@@ -245,8 +259,10 @@ describe('rzeczy', () => {
     }
     const fire = new Set([undefined, 0, 1, 2].map((f) => fnv(thingSprite({ kind: 'koza', rot: 0, fire: f }).px)));
     expect(fire.size).toBe(4);
-    const piles = new Set([1, 2, 3].map((size) => fnv(thingSprite({ kind: 'drewno', size: size as 1 | 2 | 3 }).px)));
-    expect(piles.size).toBe(3);
+    for (const kind of ['drewno', 'jedzenie'] as const) {
+      const piles = new Set([1, 2, 3].map((size) => fnv(thingSprite({ kind, size: size as 1 | 2 | 3 }).px)));
+      expect(piles.size, kind).toBe(3);
+    }
   });
 
   it('suche drzewo ma tę samą ramkę i kotwicę co żywe drzewo z trees.ts', () => {

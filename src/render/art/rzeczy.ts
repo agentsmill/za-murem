@@ -35,7 +35,9 @@ export type FurnitureKind =
   | 'lozko'
   | 'wersalka'
   | 'mebloscianka'
-  | 'wanna';
+  | 'wanna'
+  | 'sedes'
+  | 'umywalka';
 export const FURNITURE_KINDS: readonly FurnitureKind[] = [
   'koza',
   'stol',
@@ -46,8 +48,10 @@ export const FURNITURE_KINDS: readonly FurnitureKind[] = [
   'wersalka',
   'mebloscianka',
   'wanna',
+  'sedes',
+  'umywalka',
 ];
-/** podstawa w kafelkach przy rot 0: szerokość wzdłuż ściany × głębokość od ściany */
+/** podstawa w kafelkach przy rot 0: szerokość wzdłuż ściany × głębokość od ściany (FURNITURE_SIZE wnętrza) */
 export const BASE: Record<FurnitureKind, readonly [number, number]> = {
   koza: [1, 1],
   stol: [2, 1],
@@ -58,25 +62,30 @@ export const BASE: Record<FurnitureKind, readonly [number, number]> = {
   wersalka: [2, 1],
   mebloscianka: [3, 1],
   wanna: [2, 1],
+  sedes: [1, 1],
+  umywalka: [1, 1],
 };
 /** klatki ognia w palącej się kozie */
 export const FIRE_FRAMES = 3;
 
 /**
  * Opis rzeczy.
- * - meble: rot przy której ścianie stoją; koza z fire 0..FIRE_FRAMES-1 pali się (klatka ognia),
- *   bez fire jest zimna; rura kozy wychodzi przez okno w ścianie, przy której stoi;
- * - drewno: stos w trzech wielkościach na kafelku 1×1;
+ * - meble: rot przy której ścianie stoją (krzesło: strona oparcia); koza z fire 0..FIRE_FRAMES-1
+ *   pali się (klatka ognia), bez fire jest zimna; rura kozy wychodzi przez okno w ścianie rot;
+ * - drewno i jedzenie: zapas w trzech wielkościach na kafelku 1×1;
+ * - pien: pień po ściętym drzewie o promieniu korony r (jak Tree.r), na kafelku pnia;
  * - trzepak: 3×1 m przy rot 0 i 2, 1×3 przy rot 1 i 3.
  */
 export type ThingSpec =
   | { kind: FurnitureKind; rot: Rot; seed?: number; fire?: number }
   | { kind: 'drewno'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'jedzenie'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'pien'; r?: number; seed?: number }
   | { kind: 'trzepak'; rot: Rot; seed?: number };
 
 /** podstawa rzeczy w kafelkach (w × h na mapie) */
 export function footprint(spec: ThingSpec): { w: number; h: number } {
-  if (spec.kind === 'drewno') return { w: 1, h: 1 };
+  if (spec.kind === 'drewno' || spec.kind === 'jedzenie' || spec.kind === 'pien') return { w: 1, h: 1 };
   const [a, b] = spec.kind === 'trzepak' ? [3, 1] : BASE[spec.kind];
   return spec.rot & 1 ? { w: b, h: a } : { w: a, h: b };
 }
@@ -146,6 +155,8 @@ const OILCLOTH: readonly (readonly [number, number])[] = [
 const VINYL = [0x7a2f2a, 0x5a4030, 0x3d4a5a] as const;
 const BOOKS = [0x7a2f2f, 0x2f4a6a, 0x5a6b3a, 0xb59a52, 0x6b4a32, 0xd8cfb8, 0x8a6a9a] as const;
 const RACK = [0x4f6b45, 0x8b3a32, 0x3f5f7f, 0xb39a3e] as const;
+/** słoiki: ogórki, dżem, kompot, smalec */
+const JARS = [0x6b7a3a, 0x8a2a2a, 0xc0782a, 0xdcd6c2] as const;
 
 const LIT = 0x1000000; // kolor świeci: bez cieniowania ścian i bez linii krawędzi
 const HOLE = -1; // farba zwraca dziurę
@@ -809,6 +820,53 @@ function wanna(seed: number): Box[] {
   ];
 }
 
+function sedes(seed: number): Box[] {
+  const r = rnd(seed, 919);
+  const cer = M.white;
+  const seat = r(1) < 0.6 ? 0x2b2826 : 0xd9d2c0; // deska z bakelitu albo kremowa
+  const scale = r(2) < 0.6; // osad kamienia
+  const bowl: Paint = (u, v, w, h) => {
+    const e = ((u + 0.5 - w / 2) / (w / 2)) ** 2 + ((v + 0.5 - h / 2) / (h / 2)) ** 2;
+    if (e > 1) return HOLE;
+    if (e > 0.6) return u + v < w / 2 ? shade(seat, 1.2) : seat;
+    if (e > 0.45) return shade(cer, 0.9);
+    if (scale && e > 0.3 && e < 0.38) return 0x9a7a4a;
+    return e < 0.1 ? 0x56676a : 0x86999c; // woda
+  };
+  const tank: Paint = (u, v, w) =>
+    u >= w / 2 - 1 && u <= w / 2 && v >= 2 && v <= 3 ? M.steel : v === 0 ? shade(cer, 1.05) : cer;
+  return [
+    box(14, 0, 2, 18, 3, 8, shade(cer, 0.9), { round: true }),
+    box(9, 2, 8, 23, 8, 21, cer, { top: tank, front: (_u, v) => (v === 0 ? shade(cer, 1.05) : cer) }),
+    box(11, 6, 0, 21, 12, 7, cer),
+    box(10, 8, 7, 22, 24, 9, cer, { top: bowl, front: (_u, v) => (v === 0 ? seat : cer) }),
+  ];
+}
+
+function umywalka(rot: Rot, seed: number): Box[] {
+  const r = rnd(seed, 920);
+  const cer = M.white;
+  const basin: Paint = (u, v, w, h) => {
+    const e = ((u + 0.5 - w / 2) / (w / 2 - 1.5)) ** 2 + ((v + 0.5 - h / 2 - 1) / (h / 2 - 2)) ** 2;
+    if (e > 1) return u === 0 || v === 0 ? shade(cer, 1.06) : cer;
+    if (e < 0.06) return 0x2a2826; // odpływ
+    if (r(1) < 0.5 && e < 0.4 && u > w / 2) return 0xa8865a; // zaciek
+    return v < h / 2 - 1 ? shade(cer, 0.84) : shade(cer, 0.94);
+  };
+  const b: Box[] = [
+    box(13, 3, 0, 19, 10, 12, cer, { round: true }),
+    box(6, 2, 12, 26, 15, 16, cer, { top: basin }),
+    box(15, 2, 16, 17, 6, 19, M.steel, { flat: true }),
+  ];
+  // lustro nad umywalką widać tylko na ścianie północnej
+  if (rot === 0) {
+    const mirror: Paint = (u, v, w, h) =>
+      u === 0 || v === 0 || u === w - 1 || v === h - 1 ? 0x6b6a66 : (u - v + 20) % 9 < 2 ? 0xd2dde0 : 0x9fb3b9;
+    b.push(box(10, 0, 21, 22, 1, 31, 0x9fb3b9, { front: mirror, flat: true }));
+  }
+  return b;
+}
+
 function furniture(kind: FurnitureKind, rot: Rot, seed: number, fire: number): Box[] {
   switch (kind) {
     case 'koza':
@@ -827,8 +885,12 @@ function furniture(kind: FurnitureKind, rot: Rot, seed: number, fire: number): B
       return wersalka(seed);
     case 'mebloscianka':
       return mebloscianka(seed);
-    default:
+    case 'wanna':
       return wanna(seed);
+    case 'sedes':
+      return sedes(seed);
+    default:
+      return umywalka(rot, seed);
   }
 }
 
@@ -911,6 +973,77 @@ function drewno(size: 1 | 2 | 3, seed: number): Sprite {
   return R.finish(R.ox + 16, R.oy + 32);
 }
 
+/** zapas jedzenia: słoiki z piwnicy, skrzynka ziemniaków, worek */
+function jedzenie(size: 1 | 2 | 3, seed: number): Sprite {
+  const r = rnd(seed, 941);
+  const b: Box[] = [];
+  let k = 0;
+  const jar = (x: number, y: number) => {
+    const fill = pick(JARS, r(k++));
+    const glass: Paint = (u, v) =>
+      v <= 1 ? 0xc29a3a : u === 0 ? shade(fill, 1.3) : v === 2 ? shade(fill, 1.15) : fill;
+    b.push(
+      box(x, y, 0, x + 4, y + 4, 7, fill, {
+        top: (u, v) => ((u + v) % 3 === 0 ? 0xd9b04a : 0xc29a3a),
+        front: glass,
+        back: glass,
+        left: glass,
+        right: glass,
+      }),
+    );
+  };
+  const wood = pick(WOODS, r(20));
+  const crate = (x: number, y: number) => {
+    const slats: Paint = (_u, v) => (v % 3 === 2 ? shade(wood, 0.6) : v % 3 === 0 ? shade(wood, 1.1) : wood);
+    const top: Paint = (u, v, w, h) => {
+      if (u <= 1 || v <= 1 || u >= w - 2 || v >= h - 2) return shade(wood, 1.12);
+      // ziemniaki: bulwy rozrzucone po siatce, najbliższa wygrywa
+      let best = 9;
+      let lit = 0;
+      const cu = Math.floor(u / 4);
+      const cv = Math.floor(v / 3);
+      for (let j = -1; j <= 1; j++)
+        for (let i = -1; i <= 1; i++) {
+          const gu = cu + i;
+          const gv = cv + j;
+          const dx = (u + 0.5 - (gu * 4 + 2 + (h2(gu, gv, seed + 944) - 0.5) * 1.6)) / 2.1;
+          const dy = (v + 0.5 - (gv * 3 + 1.5 + (h2(gu, gv, seed + 945) - 0.5) * 1.2)) / 1.6;
+          const d = dx * dx + dy * dy;
+          if (d < best) {
+            best = d;
+            lit = -dx - dy;
+          }
+        }
+      if (best > 1) return 0x4a3a24;
+      return lit > 0.5 ? 0xc9a463 : best > 0.6 ? 0x8a6534 : 0xa47e40;
+    };
+    b.push(box(x, y, 0, x + 17, y + 14, 8, wood, { top, front: slats, back: slats, left: slats, right: slats }));
+  };
+  if (size === 1) {
+    jar(6, 15);
+    jar(12, 16);
+    jar(18, 15);
+    b.push(
+      box(23, 17, 0, 27, 21, 5, M.steel, { round: true, top: (u, v) => (u === 0 || v === 0 ? 0xc9cdd0 : M.steel) }),
+    );
+  } else {
+    crate(3, 9);
+    jar(22, 14);
+    jar(23, 20);
+    if (size === 3) {
+      const burlap = 0xa08a5c;
+      const sack: Paint = (u, v) => (h2(u, v, seed + 943) < 0.2 ? shade(burlap, 0.88) : burlap);
+      b.push(
+        box(19, 2, 0, 30, 13, 13, burlap, { round: true, top: sack, front: sack, back: sack, left: sack, right: sack }),
+      );
+      b.push(box(23, 6, 13, 26, 9, 15, shade(burlap, 0.8)));
+      jar(4, 23);
+      jar(9, 24);
+    }
+  }
+  return renderBoxes(b, PX, PX, 0);
+}
+
 // ---------------------------------------------------------------- drzewa
 
 /** wymiary jak w treeSprite z trees.ts, żeby suche drzewo i pień stały tam, gdzie żywe drzewo */
@@ -923,15 +1056,28 @@ function treeFrame(t: Tree) {
   return { R, lift, W, H, cx: W / 2, cy: R + 4, tw: Math.max(4, Math.round(R * 0.16)) };
 }
 
-/** pień po ściętym drzewie: niski walec z jasnym przekrojem i słojami, korzenie na boki */
-export function stumpSprite(t: Tree): Sprite {
-  const { tw } = treeFrame(t);
-  const rr = Math.round(tw * 0.6) + 2; // promień pnia z odziomkiem
-  const hz = 7;
-  const seed = t.seed | 0;
-  const cx = rr + 4;
-  const cyb = rr + hz + 2; // środek podstawy (piksele podłogi)
-  const bounds: Bounds = { x0: 0, y0: 0, x1: 2 * rr + 10, y1: cyb + rr + 3 };
+const STUMP_H = 7; // wysokość pnia w pikselach ekranu
+
+/** promień pnia z odziomkiem dla drzewa o promieniu korony r (grubość pnia jak w treeSprite) */
+const stumpRadius = (r: number) => Math.round(treeFrame({ x: 0, y: 0, kind: 0, r, seed: 0 }).tw * 0.6) + 2;
+
+/**
+ * Pień: niski walec z jasnym przekrojem i słojami, korzenie na boki. (cx, cyb) to środek podstawy
+ * w pikselach podłogi, (ax, ay) kotwica; granice obejmują też podstawę 0..fw × 0..fh.
+ */
+function stump(
+  rr: number,
+  seed: number,
+  cx: number,
+  cyb: number,
+  fw: number,
+  fh: number,
+  ax: number,
+  ay: number,
+): Sprite {
+  const hz = STUMP_H;
+  const bounds: Bounds = { x0: 0, y0: 0, x1: fw, y1: fh };
+  grow(bounds, cx - rr - 5, cyb - hz - rr - 2, cx + rr + 6, cyb + rr + 3);
   const R = new Raster(bounds);
   // korzenie
   for (const [a, len] of [
@@ -979,7 +1125,16 @@ export function stumpSprite(t: Tree): Sprite {
       R.frag(sx, sy, hz, c, 2);
     }
   R.shadow(cx - rr + 2, cyb - rr - 2, cx + rr + 2, cyb + rr - 2);
-  return R.finish(R.ox + cx, R.oy + cyb + rr);
+  return R.finish(R.ox + ax, R.oy + ay);
+}
+
+/**
+ * Pień po ściętym drzewie t, w miejscu pnia: kotwica na przedniej krawędzi pnia, więc rysuje się
+ * go w (t.x, t.y) tak samo jak treeSprite. Pień jako rzecz na kafelku daje thingSprite({ kind: 'pien' }).
+ */
+export function stumpSprite(t: Tree): Sprite {
+  const rr = stumpRadius(t.r);
+  return stump(rr, t.seed | 0, 0, -rr, 0, 0, 0, 0);
 }
 
 /**
@@ -1099,6 +1254,12 @@ export function deadTreeSprite(t: Tree): Sprite {
 export function thingSprite(spec: ThingSpec): Sprite {
   const seed = (spec.seed ?? 0) | 0;
   if (spec.kind === 'drewno') return drewno(spec.size, seed);
+  if (spec.kind === 'jedzenie') return jedzenie(spec.size, seed);
+  if (spec.kind === 'pien') {
+    // na środku kafelka, kotwica na dolnej krawędzi kafelka jak u innych rzeczy
+    const rr = Math.min(12, stumpRadius(spec.r ?? 2.2));
+    return stump(rr, seed, PX / 2, PX / 2 + 2, PX, PX, PX / 2, PX);
+  }
   if (spec.kind === 'trzepak') return trzepak(spec.rot, seed);
   const [a, b] = BASE[spec.kind];
   const fire = spec.kind === 'koza' && spec.fire !== undefined && spec.fire >= 0 ? spec.fire : -1;

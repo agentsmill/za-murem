@@ -49,6 +49,9 @@ const NAMES: Record<RoomKind, string> = {
   pokoj: 'pokój: panele',
   kuchnia: 'kuchnia: linoleum',
   lazienka: 'łazienka: kafelki',
+  sala: 'sala: jasne lastryko',
+  hala: 'hala: beton',
+  zaplecze: 'zaplecze: linoleum',
 };
 
 /** trawa za ścianą, w kolorach mapy */
@@ -170,7 +173,7 @@ heading('posadzki');
       for (let i = 0; i < 3; i++)
         drawInteriorTile(p.px, p.w, x + i * T, y + j * T, { kind: 'floor', room }, (x >> 5) + i, (y >> 5) + j, SEED);
     p.text(x, y + 2 * T + 4, NAMES[room], DIM);
-    x += 4 * T;
+    x += 3 * T + 12;
   }
   // przy ścianach ciemniej: ta sama posadzka z maską ścian dookoła
   const walls = NB.N | NB.E | NB.S | NB.W | NB.NE | NB.NW | NB.SE | NB.SW;
@@ -205,7 +208,7 @@ heading('fronty ścian (wykończenie od strony pomieszczenia na południe), wier
         );
     }
     p.text(x, y + 2 * T + 4, face === 'out' ? 'elewacja' : face, DIM);
-    x += 3 * T + 16;
+    x += 3 * T + 8;
   }
   y += 2 * T + 20;
   // lamperia w różnych klatkach (ziarno)
@@ -290,6 +293,8 @@ const ROOM_FOR: Record<FurnitureKind, string> = {
   wersalka: 'p',
   mebloscianka: 'p',
   wanna: 'l',
+  sedes: 'l',
+  umywalka: 'l',
 };
 
 /**
@@ -358,7 +363,7 @@ for (const kind of FURNITURE_KINDS) {
 fakeDocument();
 const fromCanvas = (c: unknown): Pix => (c as FakeCanvas).toPix();
 
-heading('na mapie: stos drewna 1, 2, 3; pień; trzepak w czterech ustawieniach');
+heading('na mapie: stos drewna 1, 2, 3; pień; trzepak w czterech ustawieniach; zapas jedzenia 1, 2, 3');
 {
   let x = 32;
   for (const size of [1, 2, 3] as const) {
@@ -380,6 +385,13 @@ heading('na mapie: stos drewna 1, 2, 3; pień; trzepak w czterech ustawieniach')
     const sp = thingSprite({ kind: 'trzepak', rot, seed: rot });
     p.blit(sp, x + ((fp.w + 1) / 2) * T - sp.ax, y + (fp.h + 0.5) * T + 16 - sp.ay);
     x += (fp.w + 1) * T + 16;
+  }
+  // zapasy jedzenia na posadzce kuchni
+  for (const size of [1, 2, 3] as const) {
+    drawPlan(p, x, y, ['kk', 'kk'], () => false);
+    const sp = thingSprite({ kind: 'jedzenie', size, seed: size });
+    p.blit(sp, x + T - sp.ax, y + 1.5 * T + 16 - sp.ay);
+    x += 2 * T + 16;
   }
   y += 4 * T + 24;
 }
@@ -487,6 +499,7 @@ const kitchen = (fire: number | undefined): Placed[] => [
   at({ kind: 'krzeslo', rot: 2, seed: 9 }, 4, 4),
   at({ kind: 'krzeslo', rot: 3, seed: 10 }, 2, 3),
   at({ kind: 'krzeslo', rot: 1, seed: 11 }, 5, 3),
+  at({ kind: 'jedzenie', size: 2, seed: 3 }, 1, 4),
   person(3, 1, 2.5, 2.6),
   person(9, 2, 6.3, 4.4),
 ];

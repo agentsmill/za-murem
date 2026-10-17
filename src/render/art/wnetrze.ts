@@ -13,8 +13,18 @@ const PX = 32; // pikseli grafiki na metr (TILE ze scene.ts)
 export const FRONT = 12;
 const FT = PX - FRONT; // pierwszy wiersz frontu
 
-export type RoomKind = 'klatka' | 'przedpokoj' | 'pokoj' | 'kuchnia' | 'lazienka';
-export const ROOM_KINDS: readonly RoomKind[] = ['klatka', 'przedpokoj', 'pokoj', 'kuchnia', 'lazienka'];
+/** pomieszczenia z kontraktu wnętrza; sala, hala i zaplecze są w budynkach bez mieszkań */
+export type RoomKind = 'klatka' | 'przedpokoj' | 'pokoj' | 'kuchnia' | 'lazienka' | 'sala' | 'hala' | 'zaplecze';
+export const ROOM_KINDS: readonly RoomKind[] = [
+  'klatka',
+  'przedpokoj',
+  'pokoj',
+  'kuchnia',
+  'lazienka',
+  'sala',
+  'hala',
+  'zaplecze',
+];
 /** co widać na froncie ściany: wykończenie pomieszczenia na południe od niej albo elewację */
 export type Face = RoomKind | 'out';
 
@@ -73,6 +83,15 @@ const K = {
   bt1: 0xa7bfc6,
   grout: 0x8e9793,
   cement: 0x7e7c76,
+  // beton w hali
+  con0: 0x8b8984,
+  con1: 0x84827d,
+  con2: 0x93918b,
+  oil: 0x2f2c28,
+  // gładkie linoleum na zapleczu
+  lp0: 0x8f9a86,
+  lp1: 0x8a9581,
+  lp2: 0x959f8c,
   // ściany: wierzch (przekrój) i ocieplenie
   capIn: 0x8a847a,
   capIn2: 0x837d73,
@@ -144,9 +163,10 @@ export function maskOf(isWall: (dx: number, dy: number) => boolean): number {
 
 // ---------------------------------------------------------------- posadzki
 
-function terrazzo(ax: number, ay: number, s: number): number {
+function terrazzo(ax: number, ay: number, s: number, light = false): number {
   const n = vnoise(ax, ay, 40, s + 101);
   let c: number = n < 0.42 ? K.terr0 : n < 0.78 ? K.terr1 : K.terr2;
+  if (light) c = shade(c, 1.12);
   const r = h2(ax, ay, s + 102);
   if (r < 0.05) c = K.chipD;
   else if (r < 0.1) c = K.chipW;
@@ -155,8 +175,9 @@ function terrazzo(ax: number, ay: number, s: number): number {
   const r2 = h2(ax >> 1, ay >> 1, s + 103);
   if (r2 < 0.012) c = K.chipW;
   else if (r2 > 0.992) c = K.chipD;
-  // listwy dylatacyjne co metr
-  if ((ax & 31) === 0 || (ay & 31) === 0) c = K.strip;
+  // listwy dylatacyjne co metr (w sali co dwa)
+  const grid = light ? 63 : 31;
+  if ((ax & grid) === 0 || (ay & grid) === 0) c = K.strip;
   // wydeptane i brudne
   if (vnoise(ax, ay, 80, s + 104) > 0.7) c = shade(c, 0.92);
   return c;
@@ -178,7 +199,7 @@ function panels(ax: number, ay: number, s: number): number {
   if ((ay & 7) === 7) c = shade(c, 0.8);
   else if (mod(u, 48) === 0) c = shade(c, 0.72);
   // brak deski: widać wylewkę
-  if (h2(col, row, s + 205) < 0.012) c = h2(ax, ay, s + 206) < 0.2 ? shade(K.screed, 0.88) : K.screed;
+  if (h2(col, row, s + 205) < 0.006) c = h2(ax, ay, s + 206) < 0.2 ? shade(K.screed, 0.88) : K.screed;
   return c;
 }
 
@@ -229,8 +250,37 @@ function bathTiles(ax: number, ay: number, s: number): number {
   return c;
 }
 
+/** beton w hali: dylatacje co 3 m, rysy, plamy oleju */
+function concrete(ax: number, ay: number, s: number): number {
+  const n = vnoise(ax, ay, 56, s + 901);
+  let c: number = n < 0.45 ? K.con0 : n < 0.8 ? K.con1 : K.con2;
+  const r = h2(ax, ay, s + 902);
+  if (r < 0.04) c = shade(c, 0.9);
+  else if (r > 0.97) c = shade(c, 1.06);
+  if (mod(ax, 96) === 0 || mod(ay, 96) === 0) return shade(K.con0, 0.75);
+  if (Math.abs(vnoise(ax, ay, 22, s + 903) - 0.5) < 0.012 && vnoise(ax, ay, 90, s + 904) > 0.55) c = shade(c, 0.72);
+  if (vnoise(ax, ay, 18, s + 905) > 0.84 && h2(ax >> 5, ay >> 5, s + 906) < 0.3) c = mix(c, K.oil, 0.45);
+  return c;
+}
+
+/** gładkie linoleum z arkuszy po dwa metry */
+function linoPlain(ax: number, ay: number, s: number): number {
+  const n = vnoise(ax, ay, 24, s + 951);
+  let c: number = n < 0.45 ? K.lp0 : n < 0.8 ? K.lp1 : K.lp2;
+  if (h2(ax, ay, s + 953) < 0.05) c = shade(c, 0.92);
+  if (mod(ay, 64) === 0) return shade(K.lp0, 0.8);
+  if (vnoise(ax, ay, 64, s + 952) > 0.72) c = shade(c, 1.06);
+  return c;
+}
+
 function floorColor(room: RoomKind, ax: number, ay: number, s: number): number {
   switch (room) {
+    case 'sala':
+      return terrazzo(ax, ay, s, true);
+    case 'hala':
+      return concrete(ax, ay, s);
+    case 'zaplecze':
+      return linoPlain(ax, ay, s);
     case 'klatka':
       return terrazzo(ax, ay, s);
     case 'pokoj':
@@ -280,7 +330,15 @@ function capColor(outer: boolean, ax: number, ay: number, s: number): number {
 /** wykończenie frontu: f to wiersz od góry frontu (0..FRONT-1), ax kolumna świata */
 function finish(face: Face, facade: number, ax: number, f: number, s: number): number {
   switch (face) {
-    case 'klatka': {
+    case 'hala': {
+      // surowy beton z fugami płyt i zaciekami
+      if (f === 11) return shade(K.con0, 0.7);
+      if (mod(ax, 48) === 0 || f === 0) return shade(K.con0, 0.82);
+      return h2(ax >> 1, f, s + 607) < 0.06 ? shade(K.con1, 0.9) : K.con1;
+    }
+    case 'klatka':
+    case 'sala':
+    case 'zaplecze': {
       // lamperia olejna, nad nią bielone
       const lamp = LAMP[Math.floor(h2(s, 1, 603) * LAMP.length)];
       if (f < 4) return f === 0 ? shade(K.whitewash, 0.9) : K.whitewash;
@@ -489,7 +547,8 @@ function windowCap(lit: boolean, facade: number, a: number, b: number, ax: numbe
 
 /** front okna od środka: ściana pokoju, rama, szyby, zasłony */
 function windowInside(room: RoomKind, lit: boolean, ax: number, f: number, b: number, s: number): number {
-  const curtains = room !== 'klatka' && room !== 'lazienka' && h2(Math.floor(ax / 32), 3, s + 802) < 0.7;
+  const home = room === 'pokoj' || room === 'kuchnia' || room === 'przedpokoj';
+  const curtains = home && h2(Math.floor(ax / 32), 3, s + 802) < 0.7;
   const cc = CURTAIN[Math.floor(h2(Math.floor(ax / 32), 4, s + 803) * CURTAIN.length)];
   if (curtains && f >= 1 && f <= 10 && ((b >= 2 && b <= 5) || (b >= 26 && b <= 29)))
     return (b & 1) === 0 ? cc : shade(cc, 0.8);
