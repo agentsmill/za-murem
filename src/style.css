@@ -507,11 +507,18 @@ a.btn {
     padding: 5px 8px;
     gap: 6px 8px;
   }
-  /* tempo, alarm i menu w jednym wierszu na telefonie 390 px */
-  .top .btn.alarm,
-  #btnMenu {
-    padding-left: 7px;
-    padding-right: 7px;
+  /* na telefonie 390 px: szyld i zegar w pierwszym wierszu, tempo, alarm, budowa i menu razem w drugim,
+     stan pod nimi (order w .stats) */
+  .top .clock {
+    flex: 1 0 auto;
+    min-width: calc(100% - 160px);
+  }
+  .top .btn {
+    padding: 6px 6px;
+    font-size: 13px;
+  }
+  .speed {
+    gap: 3px;
   }
   .top .sign {
     max-width: 150px;
@@ -536,6 +543,14 @@ a.btn {
   .hint {
     bottom: calc(var(--card-h, 0px) + var(--place-lift, 0px) + 44px);
     font-size: 13px;
+  }
+}
+
+/* bardzo wąski telefon (360 px): przyciski paska jeszcze ciaśniej, żeby rząd się nie łamał */
+@media (max-width: 370px) {
+  .top .btn {
+    padding: 5px 4px;
+    font-size: 12px;
   }
 }
 
