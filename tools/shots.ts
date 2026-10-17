@@ -2248,13 +2248,22 @@ const SHOTS: Shot[] = [
         await page.click(`#sheet [data-act="build"][data-arg="${kind}"]`);
       };
       const state = () =>
-        page.evaluate(() => ({
-          p: window.zm!.placing(),
-          ghost: !document.getElementById('ghost')!.hidden,
-          bad: document.getElementById('ghost')!.classList.contains('bad'),
-          bar: !document.getElementById('placeBar')!.hidden,
-          text: document.getElementById('placeText')!.textContent ?? '',
-        }));
+        page.evaluate(() => {
+          // podgląd z rysowania: co dostał view.setPlacement i czy duch stoi na mapie; duch z DOM to atrapa
+          const b = window.zm!.view.builds as unknown as {
+            placement: { kind: string; x: number; y: number; ok: boolean; tiles?: { ok?: readonly number[] } } | null;
+            ghost: { visible: boolean };
+          };
+          const v = b.placement;
+          return {
+            p: window.zm!.placing(),
+            view: v && { kind: v.kind, x: v.x, y: v.y, ok: v.ok, tiles: v.tiles?.ok?.length ?? 0 },
+            drawn: b.ghost.visible,
+            dom: !document.getElementById('ghost')!.hidden,
+            bar: !document.getElementById('placeBar')!.hidden,
+            text: document.getElementById('placeText')!.textContent ?? '',
+          };
+        });
       /** kamera i kursor na kafelku (x, y) */
       const point = async (x: number, y: number) => {
         await page.evaluate(([x, y]) => window.zm!.setCam(x + 1, y + 1, 1.6), [x, y]);
@@ -2271,25 +2280,55 @@ const SHOTS: Shot[] = [
       const spot = [p0.first % size, Math.floor(p0.first / size)] as const;
       const [sx, sy] = await point(spot[0], spot[1]);
       const good = await state();
-      console.log(`  dobre miejsce ${spot.join(',')}: ${good.text}`);
-      if (!good.p?.ok || !good.ghost || good.bad || !good.bar)
-        throw new Error('duch na dozwolonym miejscu nie jest zielony');
+      console.log(
+        `  dobre miejsce ${spot.join(',')}: ${good.text} (podgląd ${JSON.stringify(good.view)}, duch na mapie: ${good.drawn}, atrapa z DOM: ${good.dom ? 'widoczna' : 'schowana'})`,
+      );
+      if (
+        !good.p?.ok ||
+        !good.view?.ok ||
+        good.view.kind !== 'warsztat' ||
+        good.view.x !== spot[0] ||
+        good.view.y !== spot[1]
+      )
+        throw new Error('podgląd na dozwolonym miejscu nie jest zielony albo stoi gdzie indziej');
+      if (good.view.tiles < 1 || !good.drawn || good.dom || !good.bar)
+        throw new Error('podgląd bez dozwolonych kafelków, bez ducha na mapie albo z atrapą z DOM');
       await page.screenshot({ path: path.join(OUT, 'm2-stawianie-dobrze.png') });
       // podwórko nie jest pokojem: duch czerwony, a pasek mówi czemu
       const yard = await page.evaluate(() => window.zm!.sim!.w.fence.yard[0]);
       await point(yard % size, Math.floor(yard / size));
       const bad = await state();
       console.log(`  podwórko: ${bad.text}`);
-      if (bad.p?.ok || !bad.bad || !bad.text.includes('w pokoju naszego mieszkania'))
-        throw new Error('duch poza pokojem nie mówi, czemu nie');
+      if (bad.p?.ok || bad.view?.ok !== false || !bad.drawn || bad.dom)
+        throw new Error('podgląd poza pokojem nie jest czerwony albo została atrapa z DOM');
+      if (!bad.text.includes('w pokoju naszego mieszkania')) throw new Error('pasek nie mówi, czemu tu nie wolno');
       await page.screenshot({ path: path.join(OUT, 'm2-stawianie-zle.png') });
       await page.keyboard.press('r');
       if ((await state()).p?.rot !== 1) throw new Error('R nie obrócił planu');
       await page.mouse.click(sx, sy, { button: 'right' });
-      if ((await state()).p || (await state()).bar) throw new Error('prawy klik nie anulował planu');
+      await frames(page, 2);
+      const off = await state();
+      if (off.p || off.bar) throw new Error('prawy klik nie anulował planu');
+      if (off.view || off.drawn) throw new Error('po anulowaniu podgląd został na mapie');
       await choose('warsztat');
       await page.keyboard.press('Escape');
       if ((await state()).p) throw new Error('Esc nie anulował planu');
+      // Ctrl+klik (Mac: prawy przycisk na gładziku) anuluje plan jak prawy klik i nie otwiera menu poleceń
+      await choose('warsztat');
+      const [kx, ky] = await point(spot[0], spot[1]);
+      await page.keyboard.down('Control');
+      await page.mouse.click(kx, ky);
+      await page.keyboard.up('Control');
+      await frames(page, 2);
+      const ctrl = await page.evaluate(() => ({
+        placing: !!window.zm!.placing(),
+        menu: !document.getElementById('ctx')!.hidden,
+        cmds: window.zm!.sim!.st.cmds.filter((c) => (c as { t: string }).t === 'build').length,
+      }));
+      console.log(
+        `  Ctrl+klik: plan ${ctrl.placing ? 'został' : 'anulowany'}, menu poleceń ${ctrl.menu ? 'otwarte' : 'zamknięte'}, postawionych ${ctrl.cmds}`,
+      );
+      if (ctrl.placing || ctrl.menu || ctrl.cmds) throw new Error('Ctrl+klik nie anulował planu jak prawy klik');
       // przeciąganie w trybie stawiania przesuwa mapę i niczego nie stawia (klik bez przeciągnięcia stawia)
       await choose('warsztat');
       await point(spot[0], spot[1]);
@@ -2353,11 +2392,58 @@ const SHOTS: Shot[] = [
       await page.tap('#placeBar [data-place="cancel"]');
       if (await placing()) throw new Error('przycisk Anuluj nie anulował planu');
       await choose();
-      const p = (await placing())!;
       const size = await page.evaluate(() => window.zm!.sim!.w.size);
+      // stuknięcie w złe miejsce (podwórko, a zasieki stoją tylko na siatce): powód nad paskiem stawiania, nie pod nim
+      const yard = await page.evaluate(() => window.zm!.sim!.w.fence.yard[0]);
+      await page.evaluate(([x, y]) => window.zm!.setCam(x + 0.5, y + 0.5, 1.6), [yard % size, Math.floor(yard / size)]);
+      await waitIdle(page);
+      const [bx, by] = await page.evaluate(
+        ([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5),
+        [yard % size, Math.floor(yard / size)],
+      );
+      await page.touchscreen.tap(bx, by);
+      // podpowiedź odświeża się co 200 ms, a wcześniej wisi jeszcze „Budowa anulowana.” z przycisku Anuluj
+      await page
+        .waitForFunction(
+          () => {
+            const t = document.getElementById('hint')!.textContent;
+            return !!t && t !== 'Budowa anulowana.';
+          },
+          null,
+          { timeout: 2000 },
+        )
+        .catch(() => null);
+      const why = await page.evaluate(() => {
+        const h = document.getElementById('hint')!;
+        const b = document.getElementById('placeBar')!.getBoundingClientRect();
+        return { text: h.textContent ?? '', bottom: h.getBoundingClientRect().bottom, barTop: b.top };
+      });
+      console.log(
+        `  stuknięcie w podwórko: „${why.text}”, podpowiedź kończy się na ${Math.round(why.bottom)} px, pasek zaczyna na ${Math.round(why.barTop)} px`,
+      );
+      if (!why.text || why.text === 'Budowa anulowana.' || !(await placing()))
+        throw new Error('stuknięcie w złe miejsce nie powiedziało czemu albo zgubiło plan');
+      if (why.bottom > why.barTop) throw new Error('powód odmowy chowa się pod paskiem stawiania');
+      const p = (await placing())!;
       const spot = [p.first % size, Math.floor(p.first / size)] as const;
       await page.evaluate(([x, y]) => window.zm!.setCam(x + 0.5, y + 2, 1.6), spot);
       await waitIdle(page);
+      // na telefonie też podgląd z rysowania (celownik na środku ekranu), a atrapa z DOM schowana
+      const shown = await page.evaluate(() => {
+        const b = window.zm!.view.builds as unknown as {
+          placement: { kind: string; tiles?: { ok?: readonly number[] } } | null;
+          ghost: { visible: boolean };
+        };
+        return {
+          kind: b.placement?.kind,
+          tiles: b.placement?.tiles?.ok?.length ?? 0,
+          drawn: b.ghost.visible,
+          dom: !document.getElementById('ghost')!.hidden,
+        };
+      });
+      console.log(`  podgląd na telefonie: ${JSON.stringify(shown)}`);
+      if (shown.kind !== 'zasieki' || shown.tiles < 1 || !shown.drawn || shown.dom)
+        throw new Error('na telefonie nie ma podglądu z rysowania albo została atrapa z DOM');
       await page.screenshot({ path: path.join(OUT, 'm2-stawianie-telefon-plan.png') });
       const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), spot);
       await page.touchscreen.tap(sx, sy);

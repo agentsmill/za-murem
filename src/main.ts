@@ -1445,10 +1445,14 @@ const bars = new ResizeObserver(() => {
   root.setProperty('--top-h', `${Math.round($('top').getBoundingClientRect().height)}px`);
   root.setProperty('--goals-h', `${$('goals').hidden ? 0 : Math.round($('goals').getBoundingClientRect().height)}px`);
   root.setProperty('--card-h', `${$('card').hidden ? 0 : Math.round($('card').getBoundingClientRect().height)}px`);
+  // pasek trybu stawiania: na telefonie podpowiedź (np. czemu tu nie wolno) idzie nad niego, a nie pod spód
+  const place = $('placeBar');
+  root.setProperty('--place-lift', `${place.hidden ? 0 : Math.round(place.getBoundingClientRect().height) + 20}px`);
 });
 bars.observe($('top'));
 bars.observe($('goals'));
 bars.observe($('card'));
+bars.observe($('placeBar'));
 
 /* ---------- start ---------- */
 (async () => {

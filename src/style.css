@@ -465,7 +465,7 @@ a.btn {
     bottom: 36px;
   }
   .hint {
-    bottom: calc(var(--card-h, 0px) + 44px);
+    bottom: calc(var(--card-h, 0px) + var(--place-lift, 0px) + 44px);
     font-size: 13px;
   }
 }
