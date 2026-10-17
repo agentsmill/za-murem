@@ -275,6 +275,8 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     }
     case 'claim':
       return walking ? 'Idzie zająć mieszkanie.' : 'Zajmuje mieszkanie.';
+    case 'arrive':
+      return 'Przychodzi do siedziby.';
     case 'build': {
       const b = st.builds.find((q) => q.id === j.target);
       const what = b ? BUILD_ACC[b.kind] : 'budowlę';

@@ -537,12 +537,13 @@ describe('M2: działanie budowli', () => {
     return out;
   };
 
-  it('łóżka piętrowe: dwa miejsca więcej dla mieszkańców i dwa miejsca do spania dla zarządu', async () => {
+  it('łóżka piętrowe u zarządu: dwa miejsca do spania dla zarządu (miejsc dla mieszkańców nie przybywa)', async () => {
     const { capOf } = await import('../../src/sim/sim.ts');
     const st = createSim(w, 3, { core: 6 });
     const cap0 = capOf(st, w);
     const bunk = await place(st, 'lozka_pietrowe', roomTiles(homeRoom('pokoj')));
-    expect(capOf(st, w)).toBe(cap0 + 2);
+    // mieszkańcy do mieszkania zarządu nie wchodzą; miejsca dla nich dają piętrowe w zajętych mieszkaniach
+    expect(capOf(st, w)).toBe(cap0);
     st.tick = atHour(1, 21.5);
     const sim = new Sim(w, st);
     while (st.tick < atHour(2, 1)) sim.step();

@@ -4,7 +4,7 @@
    opału zostaje mało. Liczy decyzje z czasem przy ekranie i skutki napadów. Używają go testy i tools/bot.ts. */
 
 import { raidersOf } from '../../src/gov/noc.ts';
-import type { GovState, NightReport, Prompt } from '../../src/gov/typy.ts';
+import type { GovEffects, GovState, NightReport, Prompt } from '../../src/gov/typy.ts';
 import {
   ackReport,
   chooseEvent,
@@ -69,6 +69,8 @@ export interface PlayOpts {
 
 export interface PlayResult {
   decisions: Decision[];
+  /** przyjęcia: ilu ludzi przyjął zarząd (fx.residents) i ilu pionków mieszkańców od tego przybyło */
+  admitted: { asked: number; added: number };
   nights: NightLog[];
   gov: GovState;
   st: SimState;
@@ -76,6 +78,16 @@ export interface PlayResult {
 }
 
 const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+
+/** przyjęcia liczone przy każdym applyGov: zarząd przyjął, przybyło pionków */
+const tally = { asked: 0, added: 0 };
+function apply(st: SimState, w: World, fx: GovEffects): void {
+  const before = st.pawns.filter((p) => p.kind === 'resident').length;
+  applyGov(st, w, fx);
+  if (fx.residents <= 0) return;
+  tally.asked += fx.residents;
+  tally.added += st.pawns.filter((p) => p.kind === 'resident').length - before;
+}
 
 /** odpowiedź na okno zarządu według polityki (jak answer() w gov-atrapa.ts, ale skutki idą do symulacji) */
 function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, screen: number, out: Decision[]): string {
@@ -90,7 +102,7 @@ function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, sc
     let id: string | null = ok[0]?.id ?? null;
     if (policy === 'zawsze-warta') id = ok.find((o) => o.id === 'u_warty')?.id ?? id;
     if (policy === 'nigdy-warty') id = ok.find((o) => o.id === 'u_meble' || o.id === 'u_kociol')?.id ?? id;
-    applyGov(st, w, signLaw(gov, i, id));
+    apply(st, w, signLaw(gov, i, id));
     sim.setLaws(lawsFrom(lawEffects(gov)));
     return id ? `uchwała ${id}` : 'bez uchwały';
   }
@@ -110,13 +122,13 @@ function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, sc
       }
     }
     const after = { ...gov.night!.assign };
-    applyGov(st, w, confirmNight(gov, i));
+    apply(st, w, confirmNight(gov, i));
     return Object.entries(after)
       .map(([id, k]) => `${card.people.find((c) => c.id === id)?.name.split(' ')[0]}: ${k}`)
       .join(', ');
   }
   const k = p.choices.findIndex((c) => c.ok);
-  applyGov(st, w, chooseEvent(gov, i, Math.max(0, k)));
+  apply(st, w, chooseEvent(gov, i, Math.max(0, k)));
   return `${p.title}: ${p.choices[Math.max(0, k)]?.label ?? '?'}`;
 }
 
@@ -152,6 +164,8 @@ export function playWithGov(
   const sim = new Sim(w, st);
   const gov = newGov(seed);
   const decisions: Decision[] = [];
+  tally.asked = 0;
+  tally.added = 0;
   const nights: NightLog[] = [];
   const screen = () => st.tick / TICKS_PER_SECOND;
   const order = (c: Command, text: string) => {
@@ -178,7 +192,7 @@ export function playWithGov(
     if (st.tick % TICKS_PER_SECOND) continue;
     const s = screen();
     const fxu = govUpdate(gov, govInput(st, w, s));
-    applyGov(st, w, fxu);
+    apply(st, w, fxu);
     // jawny wynik napadu: zgadza się z planem (ilu ich jest) i ze snem warty na ekranie?
     const res = fxu.raidResult;
     if (res && night) {
@@ -270,7 +284,7 @@ export function playWithGov(
       }
     }
   }
-  return { decisions, nights, gov, st, hash: sim.hash() };
+  return { decisions, admitted: { ...tally }, nights, gov, st, hash: sim.hash() };
 }
 
 export interface LawsRun {

@@ -285,6 +285,16 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
     `    raport zarządu a to, co odegrała symulacja (wynik, łup, liczba szabrowników, ${slept} uśpionych wartowników): ${mismatch ? `${mismatch} niezgodnych nocy` : 'zgodne w każdej nocy'}`,
   );
   if (mismatch) fail = true;
+  // przyjęcia: każdy przyjęty przez zarząd przybywa jako pionek (bez miejsca śpi na podłodze)
+  const asked = runs.reduce((a, r) => a + r.admitted.asked, 0);
+  const added = runs.reduce((a, r) => a + r.admitted.added, 0);
+  console.log(
+    `    przyjęcia: zarząd przyjął ${asked} osób, przybyło ${added} pionków mieszkańców${asked === added ? ' (zgodne)' : ''}; mieszkańców na koniec średnio ${f1(mean(runs.map((r) => r.st.pawns.filter((p) => p.kind === 'resident').length)))} przy miejscach ${f1(mean(runs.map((r) => r.st.cap)))}`,
+  );
+  if (asked !== added) {
+    console.log('    BŁĄD: przyjętych przez zarząd i nowych pionków jest różnie');
+    fail = true;
+  }
   const r0 = runs[0];
   console.log(`    pierwsze 10 min, ziarno ${GOV_SEEDS[0]}:`);
   for (const d of first(r0)) console.log(`      ${f1(d.s).padStart(6)} s  ${d.kind.padEnd(10)} ${d.text.slice(0, 90)}`);

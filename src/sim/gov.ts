@@ -212,7 +212,8 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   if (fx.back.length) cmd({ t: 'back', ids: ids(fx.back) });
   for (const g of fx.guards) cmd({ t: 'guard', ids: ids([g.id]), post: g.post });
   for (const id of fx.leave) removeCore(st, id, w);
-  if (fx.residents > 0) addResidents(st, w, fx.residents);
+  // przyjęci przychodzą zza bramy; nikt nie znika, kto nie ma łóżka, śpi na podłodze
+  if (fx.residents > 0) addResidents(st, w, fx.residents, true);
   else if (fx.residents < 0) removeResidents(st, -fx.residents);
   // zapasy (bez łupu napadu, który wyniosą szabrownicy)
   for (const k of ['wood', 'supplies', 'scrap'] as const) {
