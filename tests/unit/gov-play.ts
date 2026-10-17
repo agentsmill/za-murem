@@ -84,9 +84,19 @@ export interface GuardMorning {
   hungry6: number;
 }
 
+/** głód zarządu w całej grze: poranki od dnia 2 (o 6:00) i te, w których jedzenia (zapasy i garnek) było mniej niż
+    głodnych w zarządzie; próbki co 10 s przy ekranie i te, w których ktoś z zarządu miał najedzenie poniżej 10 */
+export interface Hunger {
+  mornings: number;
+  short: number;
+  samples: number;
+  starving: number;
+}
+
 export interface PlayResult {
   decisions: Decision[];
   mornings: GuardMorning[];
+  hunger: Hunger;
   /** przyjęcia: ilu ludzi przyjął zarząd (fx.residents) i ilu pionków mieszkańców od tego przybyło */
   admitted: { asked: number; added: number };
   nights: NightLog[];
@@ -96,6 +106,8 @@ export interface PlayResult {
 }
 
 const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+/** gracz wystawia na wartę tylko zdrowych (z mniejszym zdrowiem wartownik schodzi w nocy z posterunku) */
+const GUARD_HEALTH = 40;
 
 /** przyjęcia liczone przy każdym applyGov: zarząd przyjął, przybyło pionków */
 const tally = { asked: 0, added: 0 };
@@ -133,8 +145,14 @@ function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, sc
     }
     if (policy === 'zawsze-warta') {
       const assign = gov.night!.assign;
+      // chorego (zdrowie poniżej 40) gracz na wartę nie wystawia: w symulacji zszedłby z posterunku w nocy
+      for (const cp of card.people)
+        if ((assign[cp.id] ?? '').startsWith('warta:') && cp.needs.health < GUARD_HEALTH && setNight(gov, cp.id, 'sen'))
+          out.push({ s: screen, kind: 'przydział', text: `${cp.name}: sen zamiast warty (zdrowie)` });
       if (!Object.values(assign).some((k) => k.startsWith('warta:'))) {
-        const best = [...card.people].sort((a, b) => b.needs.rest - a.needs.rest)[0];
+        const best = [...card.people]
+          .filter((c) => c.needs.health >= GUARD_HEALTH)
+          .sort((a, b) => b.needs.rest - a.needs.rest)[0];
         if (best && setNight(gov, best.id, `warta:${card.posts[0].key}`))
           out.push({ s: screen, kind: 'przydział', text: `${best.name}: warta ${card.posts[0].key}` });
       }
@@ -202,6 +220,7 @@ export function playWithGov(
   let night: NightLog | null = null;
   let fireN = 0;
   const mornings: GuardMorning[] = [];
+  const hunger: Hunger = { mornings: 0, short: 0, samples: 0, starving: 0 };
   /** wartownicy, których poranek liczymy: pionek, posiłek sprzed 6:00, wpis */
   let watch: { p: (typeof st.pawns)[number]; meal0: number; m: GuardMorning }[] = [];
   /** drzewa, do których nie dało się dojść, i drzewo z ostatniego polecenia (−1: brak) */
@@ -265,6 +284,22 @@ export function playWithGov(
       decisions.push({ s, kind: 'praca', text });
     });
     const h = hourOf(st.tick);
+    // głód zarządu: o 6:00 od dnia 2 starczy jedzenia dla głodnych? co 10 s kto z zarządu głoduje
+    if (
+      h === 6 &&
+      dayOf(st.tick) >= 2 &&
+      Math.floor(minutesAt(st.tick)) % 60 === 0 &&
+      st.tick % (TICKS_PER_SECOND * 60) < TICKS_PER_SECOND
+    ) {
+      const sn = snapshot(st, w).stock;
+      hunger.mornings++;
+      if (sn.supplies + sn.meals < cores().filter((q) => q.needs!.food < HUNGRY).length) hunger.short++;
+    }
+    if (st.tick % (TICKS_PER_SECOND * 10) === 0)
+      for (const q of cores()) {
+        hunger.samples++;
+        if (q.needs!.food < 10) hunger.starving++;
+      }
     // poranek wartowników: kto o 5:00 stoi na posterunku, tego od 6:00 do 14:00
     if (h === 5 && !watch.length)
       watch = st.pawns
@@ -343,7 +378,7 @@ export function playWithGov(
       }
     }
   }
-  return { decisions, mornings, admitted: { ...tally }, nights, gov, st, hash: sim.hash() };
+  return { decisions, mornings, hunger, admitted: { ...tally }, nights, gov, st, hash: sim.hash() };
 }
 
 export interface LawsRun {

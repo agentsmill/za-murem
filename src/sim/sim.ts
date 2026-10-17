@@ -77,8 +77,8 @@ export const STACK = 10;
 export const BURN_TICKS = TICKS_PER_HOUR / 2;
 /** koza mieści naraz tyle sztuk */
 export const KOZA_CAP = 4;
-/** porcje jedzenia w kuchni na start: dwa posiłki dziennie dla czterech osób przez trzy dni */
-export const FOOD_START = 24;
+/** porcje jedzenia w kuchni na start: dwa posiłki dziennie dla czterech osób na pięć dni */
+export const FOOD_START = 40;
 /** posiłek trwa pół godziny gry; ciepły daje więcej najedzenia niż zimna konserwa prosto z zapasów */
 export const EAT_TICKS = TICKS_PER_HOUR / 2;
 export const MEAL = 45;
