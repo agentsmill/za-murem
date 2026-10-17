@@ -81,9 +81,50 @@ Losowanie: jedna cecha albo dwie (dwie z szansą 45%, jak w 0.3), nigdy dwie dob
 
 Cechy nie dają ani nie zabierają punktów umiejętności.
 
+### Zawody w 2051
+
+Mateusz zostawił to mojej wyobraźni z jednym założeniem: AI było wszędzie, a potem nagle padły wszystkie serwery, bo bakteria już w nich siedziała. Na tym stoi cała reszta.
+
+Wielkie Wylogowanie (propozycja do lore, do przejrzenia przez Mateusza, bo GDD mówi „nie zmieniać bez Mateusza”). Po odkryciu bakterii w 2029 ludzie jeszcze przez kilka lat oddawali modelom AI wszystko: pisanie, liczenie, diagnozy, projekty, wychowanie dzieci. Serwerownie wyglądały na bezpieczne, bo stały w betonie. Tyle że chłodzenie odparowujące trzymało w nich wilgoć, a bakteria siedziała w tych instalacjach od lat. W 2034 roku centra danych gasły jedno po drugim w ciągu kilku tygodni. Ostatnie, co ludzie zobaczyli od swoich asystentów, to „Przepraszam, coś poszło nie tak. Spróbuj ponownie później”. Przetrwała tylko sucha, klimatyzowana serwerownia banku z GDD i lokalne modele z jej dysków. Rok 2034 pasuje do przykładu z projektu mieszkańców („bez kontaktu od 2034”).
+
+Zawód to fach, z którego osoba jest znana w spółdzielni w 2051, a nie etat. Nazwy i widełki wieku z `PROFS` zostają bez zmian, a historia mówi, skąd fach się wziął. Rozstrzyga rok urodzenia (2051 minus wiek):
+
+- Pamiętający, urodzeni przed 1996 (56+ lat): w 2026 mieli już zawód. Fachowcy od rzeczy fizycznych (hydraulik, lekarz, murarz, inżynier) są dziś na wagę złota, bo umieli to bez asystenta. Biurowi noszą starą nazwę jak stopień wojskowy.
+- Pokolenie asystenta, urodzeni 1996–2015 (36–55 lat): szkoła albo pierwsza praca przypadła na dekadę, w której AI robiło wszystko. Wylogowanie złapało ich w połowie kariery, bez umiejętności, które przez lata wykonywał za nich model. Uczyli się od nowa z papieru i od starszych.
+- Dzieci Wylogowania, urodzeni od 2016 (do 35 lat): w 2034 mieli najwyżej 18 lat. Fach mają z terminu u starszego sąsiada albo z książek z piwnicy. Stare nazwy zawodów to dla nich nazwy fachów, których sens się przesunął.
+
+Co znaczy każdy zawód w 2051 (punkt wyjścia dla historii i dla listy umiejętności):
+
+| zawód | w 2051 |
+|---|---|
+| emerytowany inżynier | Projektował jeszcze przed AI i pamięta, jak się liczy na kartce. Wszyscy przychodzą do niego z rysunkiem na odwrocie kalendarza. |
+| hydraulik | Najbardziej poszukiwany fach. Młodzi uczyli się u starych, kozy i rury to dziś to samo. |
+| elektryk | Najbardziej tragiczny fach: łata krótkie odcinki kabla, które bakteria zjada od nowa. Nosi lakier i taśmę jak różaniec. |
+| lekarz rodzinny | Starsi studiowali przed Wylogowaniem, młodsi na uczelni przeniesionej do piwnicy, z podręczników. Wciąż mówią „wypiszę e-receptę” i nikt się nie śmieje. |
+| pielęgniarz | Robi to samo co zawsze, tylko bez aparatury. |
+| ratownik medyczny | Karetek nie ma, biega. |
+| ogrodnik | Ktoś, kto umie, żeby coś urosło na balkonie i na trawniku. |
+| działkowiec | Ogródki działkowe wygrały historię. Działkowiec to dziś rolnik. |
+| nauczyciel fizyki | Uczy dzieci na klatce schodowej. Wie, jak działa prądnica, i to wystarcza, żeby był ważny. |
+| programista | Pamiętający i pokolenie asystenta pisali kod z modelem i bez niego stanęli. Dzieci Wylogowania nazywają tak tych, którzy na papierze rozpisują, jak uruchomić sterownik w kotłowni albo stary model z dysków banku. |
+| prompt engineer | Starsi pisali prompty zawodowo kilka lat przed Wylogowaniem. Młodsi to zaklinacze: rozmawiają z ocalałym modelem z banku albo próbują przekonać martwą lodówkę na abonament, żeby się otworzyła. Kult cargo AI. |
+| mechanik samochodowy | Auta stoją na abonamencie, więc naprawia rowery, wózki i agregaty. |
+| kucharz | Gotuje z niczego, na ogniu. |
+| ochroniarz z galerii | Galerie to puste skorupy, w których jest targ i skład złomu. Młodzi pilnują galerii, w której nigdy nie było sklepów. |
+| kurier | Goniec między osiedlami, bo nie ma łączności. Paczkomaty stoją pełne i zamknięte. |
+| doradca ds. ESG | Liczy ślad węglowy ogniska i prowadzi rejestr opału. Robi raport kwartalny, którego nikt nie czyta, i nikt nie wie, po co go trzymają. |
+| influencer survivalowy | Opowiada przy ognisku o przetrwaniu, a na koniec mówi „zostawcie suba”, choć młodzi nie wiedzą, co to znaczy. Ten od nastroju. |
+| student biotechnologii | Bada bakterię u lekarki albo w piwnicznej pracowni. Umie zrobić posiew (GDD: wiedza o ogniskach bakterii). |
+| monter klimatyzacji | Pompy ciepła na subskrypcję stoją, więc stawia kozy i kominy. Zna się na cieple. |
+| informatyk z urzędu | Urzędy wróciły do papieru. On wie, gdzie są stare druki i jak zrestartować to, co zostało. |
+| murarz | Murarz jak zawsze, tylko materiał z rozbiórki. |
+| weterynarz | Leczy kozy, kury i ludzi, kiedy lekarki nie ma. |
+
+Ta tabela odpowiada też na otwarte pytanie 2 z projektu mieszkańców z adresu (`2026-10-17-mieszkancy-z-adresu-design.md`), tam do przeniesienia przy budowie generatora.
+
 ### Historia
 
-Generator składa 2 lub 3 zdania z gotowych kawałków: kim osoba była przed upadkiem (z zawodu i wieku: ktoś, kto miał 30 lat w 2026, pamięta dawne czasy, ktoś młodszy urodził się już po roku zero), jedna rzecz z cechy i jeden szczegół satyryczny w tonie lore (technika, która stoi obok i nie działa, abonamenty, ESG). Odmiana przez płeć przez `g()`. Bez prawdziwych nazwisk, firm i miejsc. Generator jest deterministyczny przy danym ziarnie (do testów), a w panelu dostaje świeże ziarno przy każdym kliknięciu.
+Generator składa 2 lub 3 zdania z gotowych kawałków: skąd osoba ma fach (zawód i pokolenie z sekcji „Zawody w 2051”), jedna rzecz z cechy i jeden szczegół satyryczny w tonie lore (technika, która stoi obok i nie działa, abonamenty, ESG, Wylogowanie). Odmiana przez płeć przez `g()`. Bez prawdziwych nazwisk, firm i miejsc. Generator jest deterministyczny przy danym ziarnie (do testów), a w panelu dostaje świeże ziarno przy każdym kliknięciu.
 
 Pierwszy zestaw kawałków pisze budujący, a Mateusz czyta ton, zanim wejdzie do gry (tak jak ustalono przy historiach mieszkańców). Pisze się tak, żeby później dało się te kawałki przenieść do generatora mieszkańców z adresu.
 
@@ -122,3 +163,5 @@ Nazwy plików i modułów, dokładny wygląd i kolejność pól w edytorze (spra
 6. Historia tylko dla klimatu, na karcie osoby w grze.
 7. Piąta osoba bez własnego łóżka, wnętrze się nie zmienia.
 8. Broń ze startu po kolei, nadmiar do magazynu.
+9. Wielkie Wylogowanie w 2034 jako nowy kawałek lore (do wpisania w GDD dopiero po OK Mateusza).
+10. Zawód to fach w 2051, trzy pokolenia według roku urodzenia, widełki wieku z `PROFS` bez zmian.
