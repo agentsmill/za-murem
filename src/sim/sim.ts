@@ -22,7 +22,7 @@ import {
   roomLinks,
   START_TEMP,
 } from './house.ts';
-import { COLD, HUNGRY, type NeedCtx, type Needs, startNeeds, stepNeeds, TIRED, WARMED } from './needs.ts';
+import { COLD, HUNGRY, type NeedCtx, type Needs, PECKISH, startNeeds, stepNeeds, TIRED, WARMED } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
 import { TUT_STEPS, type Tutorial, type TutStep, tutAdvance, WARM_ENOUGH } from './tutorial.ts';
 
@@ -41,9 +41,14 @@ export const BURN_TICKS = TICKS_PER_HOUR / 2;
 export const KOZA_CAP = 4;
 /** porcje jedzenia w kuchni na start: dwa posiłki dziennie dla czterech osób przez trzy dni */
 export const FOOD_START = 24;
-/** posiłek trwa pół godziny gry i daje tyle najedzenia */
+/** posiłek trwa pół godziny gry; ciepły daje więcej najedzenia niż zimna konserwa prosto z zapasów */
 export const EAT_TICKS = TICKS_PER_HOUR / 2;
 export const MEAL = 45;
+export const COLD_MEAL = 30;
+/** gotowanie trwa 45 minut gry (30 s przy 1×) i daje porcję dla każdego z zarządu */
+export const COOK_TICKS = (TICKS_PER_HOUR * 3) / 4;
+/** gaz w butli przy kuchence zarządu na start: sześć gotowań (trzy dni), potem gotuje się na kozie */
+export const GAS_START = 6 * COOK_TICKS;
 /** meble, które da się spalić, i ile sztuk drewna dają (metal, porcelana i sama koza się nie palą) */
 export const BURNABLE: Record<string, number> = { krzeslo: 1, stol: 3, lozko: 4, wersalka: 4, mebloscianka: 6 };
 /** nazwy mebli w bierniku, do menu i opisów prac */
@@ -74,7 +79,7 @@ const FIRE_REACH = 2.5;
 
 export type Facing = 0 | 1 | 2 | 3; // dół, góra, lewo, prawo
 
-export type JobKind = 'go' | 'chop' | 'haul' | 'refuel' | 'warm' | 'eat' | 'sleep' | 'burn';
+export type JobKind = 'go' | 'chop' | 'haul' | 'refuel' | 'warm' | 'eat' | 'sleep' | 'burn' | 'cook';
 
 /** chwilowy nastrój (spalone meble, ciepły posiłek): dodaje się do nastroju z potrzeb do ticku until */
 export interface Mood {
@@ -89,14 +94,14 @@ export interface Mood {
 export interface Job {
   t: JobKind;
   /** cel: numer drzewa (chop), id rzeczy (haul: stos drewna, refuel i warm: koza, eat: stół, sleep: łóżko,
-      burn: mebel),
+      burn: mebel, cook: kuchenka albo koza),
       −1, gdy celu nie ma (haul z drewnem w rękach, eat bez stołu, sleep na podłodze), kafelek (go) */
   target: number;
   /** kafelek, na który idzie albo na którym pracuje */
   tile: number;
   /** 0: idzie do celu; 1: pracuje albo czeka (chop, warm, eat, sleep, go) lub niesie drewno (haul, refuel) */
   phase: number;
-  /** stos, z którego bierze drewno do kozy (refuel), −1: niesie własne */
+  /** skąd bierze: stos drewna do kozy (refuel; −1: niesie własne), garnek albo zapasy (eat) */
   from: number;
   /** tick początku i końca pracy (chop, eat, warm, go z polecenia) */
   t0: number;
@@ -147,9 +152,9 @@ export interface Thing {
   h: number;
   /** ściana, przy której stoi mebel (0 góra, 1 prawo, 2 dół, 3 lewo) */
   rot: number;
-  /** sztuki: drewno w stosie, porcje jedzenia */
+  /** sztuki: drewno w stosie, porcje zapasów (jedzenie) albo ugotowanego posiłku (posilek, garnek na stole) */
   n: number;
-  /** koza: ticki ognia, które zostały (0: zimna) */
+  /** koza: ticki ognia, które zostały (0: zimna); kuchenka: ticki gazu w butli */
   fuel: number;
   /** pionek, który ma tę rzecz w pracy (−1: wolna) */
   by: number;
@@ -173,7 +178,9 @@ export type Command =
   | { t: 'haul'; ids: number[]; thing: number }
   | { t: 'refuel'; ids: number[]; thing: number }
   /** rozbić mebel na opał (interfejs pyta wcześniej o potwierdzenie) */
-  | { t: 'burn'; ids: number[]; thing: number };
+  | { t: 'burn'; ids: number[]; thing: number }
+  /** ugotować posiłek z zapasów (na kuchence, a bez gazu na palącej się kozie) */
+  | { t: 'cook'; ids: number[] };
 
 export interface SimState {
   v: 2;
@@ -216,7 +223,7 @@ const SPREAD: [number, number][] = (() => {
 })();
 
 /** rzeczy, które leżą luzem; reszta to meble */
-const LOOSE = new Set(['drewno', 'jedzenie', 'pien']);
+const LOOSE = new Set(['drewno', 'jedzenie', 'posilek', 'pien']);
 const BEDS = new Set(['lozko', 'wersalka']);
 
 /** drewno ze ściętego drzewa: 3 sztuki na metr korony, z krzaka mało */
@@ -265,6 +272,18 @@ function kitchenOf(h: HouseLike, size: number): number {
   return h.rooms.find((q) => q.kind === 'kuchnia' && q.apt === h.home)?.id ?? -1;
 }
 
+/** kuchenka zarządu (w jego mieszkaniu) */
+function homeStove(h: HouseLike, size: number, things: Thing[]): Thing | undefined {
+  return things.find((t) => t.kind === 'kuchenka' && inHomeApt(h, t.y * size + t.x));
+}
+
+/** czy da się teraz gotować: są zapasy, a kuchenka ma gaz albo koza zarządu się pali */
+export function canCookIn(st: SimState, w: World): boolean {
+  const h = houseOf(w);
+  if (!h || !st.things.some((t) => t.kind === 'jedzenie' && t.n > 0)) return false;
+  return (homeStove(h, w.size, st.things)?.fuel ?? 0) > 0 || (homeKoza(h, w.size, st.things)?.fuel ?? 0) > 0;
+}
+
 /** wolne kafelki pomieszczeń (przechodnie, bez rzeczy i składu), rosnąco */
 function freeIn(w: World, h: HouseLike, rooms: number[], things: Thing[]): number[] {
   const out: number[] = [];
@@ -304,6 +323,9 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
   let spots: number[] = [];
   if (house) {
     for (const f of house.furniture) st.things.push(newThing(st, f.kind, f.x, f.y, f.w, f.h, f.rot));
+    // butla gazowa przy kuchence zarządu (szczelna, więc przetrwała); w obcych mieszkaniach butle puste
+    const stove = homeStove(house, size, st.things);
+    if (stove) stove.fuel = GAS_START;
     st.temps = house.rooms.map(() => START_TEMP);
     const kitchen = kitchenOf(house, size);
     const free = kitchen >= 0 ? freeIn(w, house, [kitchen], st.things) : [];
@@ -645,6 +667,7 @@ export class Sim {
     else if (c.t === 'haul') this.orderHaul(pawns, c.thing);
     else if (c.t === 'refuel') this.orderRefuel(pawns, c.thing);
     else if (c.t === 'burn') this.orderBurn(pawns, c.thing);
+    else if (c.t === 'cook') this.orderCook(pawns);
   }
 
   /** kilka osób naraz: każda dostaje inny wolny kafelek ze spirali wokół celu;
@@ -731,6 +754,16 @@ export class Sim {
     if (this.startRefuel(first, true, koza)) taken.push(first.job!.tile);
     else rest.unshift(first);
     if (rest.length) this.orderMove(rest, koza.y * this.w.size + koza.x, taken, false);
+  }
+
+  /** pierwsza osoba gotuje, reszta idzie do kuchni */
+  private orderCook(pawns: Pawn[]): void {
+    const [first, ...rest] = pawns;
+    const taken: number[] = [];
+    if (this.startCook(first, true)) taken.push(first.job!.tile);
+    else rest.unshift(first);
+    const stove = this.cookAt();
+    if (rest.length && stove) this.orderMove(rest, stove.y * this.w.size + stove.x, taken, false);
   }
 
   /** pierwsza osoba rozbiera mebel na opał, reszta idzie obok; gdy ktoś już go rozbiera, nowi idą pomóc */
@@ -964,30 +997,41 @@ export class Sim {
     return best;
   }
 
-  /** kafelek, z którego się dokłada do kozy: najchętniej ten przed nią (kontrakt wnętrza trzyma go wolnym,
-      to strona przeciwna do ściany z oknem, rot), a gdy zajęty, najbliższy wolny obok (skład też się nadaje) */
-  private kozaStand(p: Pawn, koza: Thing): number {
-    const h = this.house!;
+  /** kafelek, z którego się obsługuje mebel przy ścianie (koza, kuchenka): najchętniej ten przed nim (kontrakt
+      wnętrza trzyma go wolnym przy kozie; to strona przeciwna do ściany, rot), a gdy zajęty, najbliższy wolny obok
+      (skład też się nadaje) */
+  private frontOf(p: Pawn, t: Thing): number {
     const size = this.w.size;
-    const room = h.room[koza.y * size + koza.x];
-    const taken = this.taken(p);
-    const cand: number[] = [];
-    for (let y = koza.y - 1; y <= koza.y + koza.h; y++)
-      for (let x = koza.x - 1; x <= koza.x + koza.w; x++) {
-        if (x < 0 || y < 0 || x >= size || y >= size || covers(koza, x, y)) continue;
-        const i = y * size + x;
-        if (h.room[i] !== room || this.blocked[i] || this.furnitureAt(x, y) || taken.includes(i)) continue;
-        cand.push(i);
-      }
-    const cx = koza.x + (koza.w >> 1);
-    const cy = koza.y + (koza.h >> 1);
-    const front = [
-      (koza.y + koza.h) * size + cx,
-      cy * size + koza.x - 1,
-      (koza.y - 1) * size + cx,
-      cy * size + koza.x + koza.w,
-    ][koza.rot];
-    return cand.includes(front) ? front : this.nearest(p, cand);
+    const cx = t.x + (t.w >> 1);
+    const cy = t.y + (t.h >> 1);
+    const front = [(t.y + t.h) * size + cx, cy * size + t.x - 1, (t.y - 1) * size + cx, cy * size + t.x + t.w][t.rot];
+    const region = this.regionOf(p);
+    const ok =
+      front !== undefined &&
+      front >= 0 &&
+      front < size * size &&
+      !this.blocked[front] &&
+      this.reg[front] === region &&
+      !this.furnitureAt(front % size, Math.floor(front / size)) &&
+      !this.taken(p).includes(front);
+    return ok ? front : this.beside(p, t);
+  }
+
+  private kozaStand(p: Pawn, koza: Thing): number {
+    return this.frontOf(p, koza);
+  }
+
+  /** gdzie się gotuje: kuchenka zarządu z gazem, a bez gazu paląca się koza (undefined: nie da się) */
+  private cookAt(): Thing | undefined {
+    const stove = homeStove(this.house!, this.w.size, this.st.things);
+    if (stove && stove.fuel > 0) return stove;
+    const koza = this.koza();
+    return koza && koza.fuel > 0 ? koza : undefined;
+  }
+
+  /** porcje ugotowanego posiłku w garnkach */
+  private meals(): number {
+    return this.st.things.reduce((a, t) => a + (t.kind === 'posilek' ? t.n : 0), 0);
   }
 
   /** miejsce do grzania się: do FIRE_REACH od kozy, w jej pomieszczeniu, poza meblami i składem */
@@ -1138,15 +1182,22 @@ export class Sim {
       case 'eat': {
         if (j.phase === 1) {
           if (tick < j.until) return true;
-          const food = this.food();
-          if (food) {
-            food.n--;
-            if (food.n <= 0) st.things.splice(st.things.indexOf(food), 1);
-            p.needs!.food = Math.min(100, p.needs!.food + MEAL);
+          // z wybranego garnka albo zapasów, a gdy ktoś je wyjadł, z czegokolwiek: najpierw ciepłe
+          const src =
+            st.things.find((t) => t.id === j.from && t.n > 0) ??
+            st.things.find((t) => t.kind === 'posilek' && t.n > 0) ??
+            this.food();
+          if (src) {
+            src.n--;
+            if (src.n <= 0) st.things.splice(st.things.indexOf(src), 1);
+            const hot = src.kind === 'posilek';
+            p.needs!.food = Math.min(100, p.needs!.food + (hot ? MEAL : COLD_MEAL));
+            if (hot) this.addMood(p, 'Ciepły posiłek', 4, 4 * TICKS_PER_HOUR);
+            else this.addMood(p, 'Zimne z puszki', -3, 4 * TICKS_PER_HOUR);
           }
           return false;
         }
-        if (!at || !this.food()) return false;
+        if (!at || !(this.food() || this.meals() > 0)) return false;
         j.phase = 1;
         j.t0 = tick;
         j.until = tick + EAT_TICKS;
@@ -1160,6 +1211,29 @@ export class Sim {
         j.phase = 1;
         j.t0 = tick;
         return true;
+      case 'cook': {
+        const stove = this.thing(j.target);
+        const hot = !!stove && stove.fuel > 0;
+        if (j.phase === 0) {
+          if (!at || !hot || !this.food()) return false;
+          j.phase = 1;
+          j.t0 = tick;
+          j.until = tick + COOK_TICKS;
+          this.face(p, stove.x + stove.w / 2, stove.y + stove.h / 2);
+          return true;
+        }
+        if (tick < j.until) return true;
+        // bez gazu albo ognia na koniec nic się nie ugotowało, zapasy zostają
+        const food = this.food();
+        if (!hot || !food) return false;
+        const cores = st.pawns.filter((q) => q.kind === 'core').length;
+        const batch = Math.min(food.n, Math.max(1, cores - this.meals()));
+        food.n -= batch;
+        if (food.n <= 0) st.things.splice(st.things.indexOf(food), 1);
+        this.serve(batch, j.tile);
+        if (stove.kind === 'kuchenka') stove.fuel = Math.max(0, stove.fuel - COOK_TICKS);
+        return false;
+      }
       case 'burn': {
         const f = this.thing(j.target);
         if (!f || f.by !== p.id) return false;
@@ -1208,6 +1282,21 @@ export class Sim {
     if (owner?.needs) this.addMood(owner, `Spalili ${MINE[f.kind] ?? 'moją rzecz'}`, -18, 48 * TICKS_PER_HOUR);
   }
 
+  /** garnek z porcjami na stole zarządu (bez stołu obok miejsca gotowania) */
+  private serve(n: number, near: number): void {
+    const size = this.w.size;
+    const pot = this.st.things.find((t) => t.kind === 'posilek');
+    if (pot) {
+      pot.n += n;
+      return;
+    }
+    const table = this.st.things.find((t) => t.kind === 'stol' && inHomeApt(this.house!, t.y * size + t.x));
+    const at = table ? table.y * size + table.x : this.spotNear(near, 0);
+    const t = newThing(this.st, 'posilek', at % size, Math.floor(at / size));
+    t.n = n;
+    this.st.things.push(t);
+  }
+
   /** chwilowy nastrój; ten sam powód drugi raz tylko przedłuża czas */
   private addMood(p: Pawn, why: string, d: number, ticks: number): void {
     const m = p.moods.find((q) => q.why === why);
@@ -1253,6 +1342,7 @@ export class Sim {
     if (((this.night() && n.rest < 80) || n.rest < TIRED) && this.startSleep(p)) return;
     if (n.food < HUNGRY && this.startEat(p)) return;
     if (this.startRefuel(p, false) || this.startHaul(p)) return;
+    if (this.shouldCook() && this.startCook(p, false)) return;
     if (n.warm < COLD && this.startWarm(p)) return;
     p.wait = this.st.tick + THINK_EVERY;
   }
@@ -1292,10 +1382,37 @@ export class Sim {
     return true;
   }
 
+  /** gotować trzeba, gdy w garnkach jest mniej porcji niż ludzi w zarządzie, ktoś niedługo zgłodnieje,
+      są zapasy i ogień albo gaz, a nikt inny akurat nie gotuje */
+  private shouldCook(): boolean {
+    const cores = this.st.pawns.filter((q) => q.kind === 'core');
+    return (
+      this.meals() < cores.length &&
+      cores.some((q) => (q.needs?.food ?? 100) < PECKISH) &&
+      !cores.some((q) => q.job?.t === 'cook') &&
+      canCookIn(this.st, this.w)
+    );
+  }
+
+  private startCook(p: Pawn, order: boolean): boolean {
+    if (!this.food()) return false;
+    if (!order && this.st.pawns.some((q) => q !== p && q.job?.t === 'cook')) return false;
+    const stove = this.cookAt();
+    if (!stove) return false;
+    const stand = this.frontOf(p, stove);
+    if (stand < 0 || !this.go(p, stand)) return false;
+    this.setJob(p, this.newJob('cook', stove.id, stand, order), false);
+    return true;
+  }
+
+  /** jedzenie: ciepły posiłek z garnka, a gdy go nie ma, zimna konserwa z zapasów, ale tylko wtedy, gdy nie da się
+      ugotować albo głód jest już duży (inaczej ktoś najpierw ugotuje) */
   private startEat(p: Pawn): boolean {
     const h = this.house!;
     const size = this.w.size;
-    const food = this.food();
+    const pot = this.st.things.find((t) => t.kind === 'posilek' && t.n > 0);
+    const raw = this.food();
+    const food = pot ?? (raw && (p.needs!.food < 15 || !canCookIn(this.st, this.w)) ? raw : undefined);
     if (!food) return false;
     const fi = food.y * size + food.x;
     // stół w mieszkaniu zarządu najbliżej zapasów
@@ -1329,7 +1446,9 @@ export class Sim {
       seats.filter((i) => !taken.includes(i)),
     );
     if (seat < 0 || !this.go(p, seat)) return false;
-    this.setJob(p, this.newJob('eat', table ? table.id : -1, seat, false), false);
+    const j = this.newJob('eat', table ? table.id : -1, seat, false);
+    j.from = food.id;
+    this.setJob(p, j, false);
     return true;
   }
 

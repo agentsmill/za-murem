@@ -53,6 +53,8 @@ export interface NeedCtx {
 export const COMFORT = 18;
 /** progi, przy których zarząd sam idzie jeść, grzać się i spać */
 export const HUNGRY = 35;
+/** od takiego najedzenia u kogokolwiek z zarządu ktoś zaczyna gotować (posiłek gotowy, zanim zgłodnieją) */
+export const PECKISH = 45;
 export const COLD = 40;
 export const WARMED = 90;
 export const TIRED = 15;

@@ -3,7 +3,16 @@
 
 import type { World } from '../world/world.ts';
 import { dryTreeOf, houseOf } from './house.ts';
-import { BURNABLE, type Command, FURNITURE_ACC, type Pawn, type SimState, type Thing, trunkOf } from './sim.ts';
+import {
+  BURNABLE,
+  type Command,
+  canCookIn,
+  FURNITURE_ACC,
+  type Pawn,
+  type SimState,
+  type Thing,
+  trunkOf,
+} from './sim.ts';
 
 export interface MenuItem {
   cmd: Command;
@@ -59,6 +68,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       Math.abs(Math.floor(trunk / w.size) - Math.floor(tile / w.size)) <= 1;
     out.push({ cmd: { t: 'chop', ids: core, tree }, label: 'Ściąć drzewo', quick: near });
   }
+  // kuchenka zarządu albo zapasy: gotować, gdy jest z czego i na czym
+  if ((thingAt(st, w, tile, 'kuchenka') || thingAt(st, w, tile, 'jedzenie')) && canCookIn(st, w))
+    out.push({ cmd: { t: 'cook', ids: core }, label: 'Gotować', quick: true });
   const x = tile % w.size;
   const y = Math.floor(tile / w.size);
   const furniture = st.things.find((t) => BURNABLE[t.kind] && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
@@ -104,6 +116,10 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     case 'sleep':
       if (walking) return 'Idzie spać.';
       return j.target >= 0 ? 'Śpi.' : 'Śpi na podłodze.';
+    case 'cook': {
+      if (walking) return 'Idzie gotować.';
+      return st.things.find((t) => t.id === j.target)?.kind === 'koza' ? 'Gotuje na kozie.' : 'Gotuje na kuchence.';
+    }
     case 'burn': {
       const f = st.things.find((t) => t.id === j.target);
       const what = f ? (FURNITURE_ACC[f.kind] ?? 'mebel') : 'mebel';

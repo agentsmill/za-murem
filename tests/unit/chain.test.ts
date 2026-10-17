@@ -2,7 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { homeMask, inHomeApt, type RoomKind } from '../../src/sim/house.ts';
 import { commandFor, commandsAt, jobText } from '../../src/sim/orders.ts';
-import { BURN_TICKS, createSim, type Pawn, Sim, type SimState, type Thing, woodFrom } from '../../src/sim/sim.ts';
+import {
+  BURN_TICKS,
+  COOK_TICKS,
+  createSim,
+  GAS_START,
+  MEAL,
+  type Pawn,
+  Sim,
+  type SimState,
+  type Thing,
+  woodFrom,
+} from '../../src/sim/sim.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { type MockWorld, mockBlock, mockHouse, plainBlock, trunkTile } from './interior-mock.ts';
 
@@ -178,21 +189,61 @@ describe('zarząd sam', () => {
       }
   });
 
-  it('je przy stole, gdy jest głodny', () => {
+  it('głodny najpierw gotuje z zapasów na kuchence, potem je ciepły posiłek przy stole', () => {
     const st = createSim(w, 3, { core: 4 });
     const p0 = st.pawns[0];
     p0.needs!.food = 20;
     const food0 = st.things.find((t) => t.kind === 'jedzenie')!.n;
     expect(food0).toBeGreaterThanOrEqual(12);
+    const stove = st.things.find((t) => t.kind === 'kuchenka')!;
+    expect(stove.fuel).toBe(GAS_START);
     const sim = new Sim(w, st);
     const texts = new Set<string>();
     for (let k = 0; k < 3000 && p0.needs!.food < 50; k++) {
       sim.step();
       texts.add(jobText(st, w, p0));
     }
-    expect(p0.needs!.food).toBeGreaterThan(50);
-    expect(st.things.find((t) => t.kind === 'jedzenie')!.n).toBe(food0 - 1);
+    expect(texts).toContain('Gotuje na kuchence.');
     expect(texts).toContain('Je przy stole.');
+    expect(p0.needs!.food).toBeGreaterThan(50);
+    // porcja dla każdego z zarządu, jedną już zjadł
+    expect(st.things.find((t) => t.kind === 'jedzenie')!.n).toBe(food0 - 4);
+    const pot = st.things.find((t) => t.kind === 'posilek')!;
+    expect(pot.n).toBe(3);
+    const table = st.things.find((t) => t.kind === 'stol')!;
+    expect([pot.x, pot.y]).toEqual([table.x, table.y]);
+    expect(stove.fuel).toBe(GAS_START - COOK_TICKS);
+    expect(p0.moods.map((m) => m.why)).toContain('Ciepły posiłek');
+  });
+
+  it('bez gazu gotuje się na palącej się kozie', () => {
+    const st = createSim(w, 3, { core: 4 });
+    st.things.find((t) => t.kind === 'kuchenka')!.fuel = 0;
+    kozaOf(st).fuel = 4 * BURN_TICKS;
+    st.pawns[0].needs!.food = 40;
+    const sim = new Sim(w, st);
+    const texts = new Set<string>();
+    for (let k = 0; k < 2000 && !st.things.some((t) => t.kind === 'posilek'); k++) {
+      sim.step();
+      for (const p of core(sim)) texts.add(jobText(st, w, p));
+    }
+    expect(texts).toContain('Gotuje na kozie.');
+    expect(st.things.find((t) => t.kind === 'posilek')?.n).toBe(4);
+  });
+
+  it('bez gazu i bez ognia głodny je zimną konserwę: mniej najedzenia i gorszy nastrój', () => {
+    const st = createSim(w, 3, { core: 4 });
+    st.things.find((t) => t.kind === 'kuchenka')!.fuel = 0;
+    const p0 = st.pawns[0];
+    p0.needs!.food = 20;
+    const food0 = st.things.find((t) => t.kind === 'jedzenie')!.n;
+    const sim = new Sim(w, st);
+    for (let k = 0; k < 2000 && p0.needs!.food <= 20; k++) sim.step();
+    expect(p0.needs!.food).toBeGreaterThan(40);
+    expect(p0.needs!.food).toBeLessThan(20 + MEAL);
+    expect(st.things.find((t) => t.kind === 'jedzenie')!.n).toBe(food0 - 1);
+    expect(st.things.some((t) => t.kind === 'posilek')).toBe(false);
+    expect(p0.moods.map((m) => `${m.why} ${m.d}`)).toContain('Zimne z puszki -3');
   });
 
   it('śpi w łóżku w nocy i wstaje rano', () => {
@@ -286,6 +337,22 @@ describe('polecenia', () => {
     // menu kontekstowe: domyślne polecenie pierwsze, „Idź tu” zawsze na końcu
     expect(commandsAt(st, w, ids, trunk).map((m) => m.label)).toEqual(['Ściąć drzewo', 'Idź tu']);
     expect(commandsAt(st, w, ids, kzTile).map((m) => m.label)).toEqual(['Dołożyć do kozy', 'Idź tu']);
+  });
+
+  it('„Gotować” na kuchence, gdy są zapasy i gaz', () => {
+    const st = createSim(w, 3, { core: 2 });
+    const ids = st.pawns.filter((p) => p.kind === 'core').map((p) => p.id);
+    const stove = st.things.find((t) => t.kind === 'kuchenka')!;
+    const tile = stove.y * w.size + stove.x;
+    expect(commandsAt(st, w, ids, tile).map((m) => m.label)).toEqual(['Gotować', 'Idź tu']);
+    expect(commandFor(st, w, ids, tile)).toEqual({ t: 'cook', ids });
+    const sim = new Sim(w, st);
+    sim.push({ t: 'cook', ids: [ids[0]] });
+    sim.step();
+    expect(st.pawns[0].job?.t).toBe('cook');
+    // bez gazu i przy zimnej kozie gotować się nie da
+    stove.fuel = 0;
+    expect(commandsAt(st, w, ids, tile).map((m) => m.label)).toEqual(['Idź tu']);
   });
 
   it('„dołóż do kozy” przy pustym składzie: drewno spod drzewa trafia prosto do kozy', () => {
