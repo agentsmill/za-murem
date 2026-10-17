@@ -52,3 +52,35 @@ export interface TabeleGminy {
   /** Ludność na 31.12.2025 (P2137), te same 18 grup. */
   wiek2025: { M: number[]; K: number[] };
 }
+
+/** Klucze tablic trwania życia: miasta, wieś i cała Polska, osobno mężczyźni (M) i kobiety (K). */
+export type KluczQx = 'miastaM' | 'miastaK' | 'wiesM' | 'wiesK' | 'polskaM' | 'polskaK';
+
+/** Tabele krajowe: plik public/data/mieszkancy/kraj.json, wynik `npm run dane:kraj`. Gra czyta tylko je, nigdy
+    surowych plików. Same liczby całkowite (współczynniki na 100 000 albo na 10 000), żeby losowanie szło na
+    całkowitych i wyszło tak samo w Node i w przeglądarce. */
+export interface TabeleKraju {
+  wersja: number;
+  /** Prawdopodobieństwo zgonu w wieku x (0-100 lat, 101 wartości) na 100 000. GUS, Tablica A trwania życia 2025. */
+  qx: Record<KluczQx, number[]>;
+  /** Urodzenia na 10 000 kobiet rocznie w wieku 15-49 lat (35 wartości). Eurostat demo_frate, Polska 2024.
+      Suma to TFR Eurostatu (1,14), nieco wyższy od TFR GUS 1,099, bo baza ludności jest inna. */
+  plodnosc: number[];
+  /** TFR obszaru podzielony przez TFR kraju, na 10 000: miasta 100 tys.+ 1,000, miasta 1,069, wieś 1,149 wobec
+      1,099 (GUS 2024). Mnożnik stosuje się do krzywej `plodnosc`; jej suma jest o ok. 3,5% wyższa niż 1,099. */
+  mnoznikPlodnosci: { miasto100k: number; miasto: number; wies: number };
+  /** Urodzenia według kolejności w 2024 (GUS): pierwsze, drugie, trzecie, czwarte i dalsze, na 10 000. Suma to
+      9 650, bo 3,5% urodzeń ma w GUS kolejność nieustaloną; brakujące 350 czytelnik tabeli dolicza do 3+. */
+  kolejnosc: [number, number, number, number];
+  /** Liczba gospodarstw domowych w Polsce wg NSP 2021: klucz `${Wielkosc}|${Sklad}|${'60+' | 'bez60'}`, gdzie
+      „60+” znaczy, że w gospodarstwie jest osoba w wieku 60 lat i więcej, a „bez60”, że nie ma żadnej. Bez kluczy
+      o zerowej liczbie (np. nie ma rodziny w gospodarstwie jednoosobowym). Aneks „Rodziny w Polsce”, tabl. 4 i 5.
+      To ziarno IPF, które skaluje się do marginesów rejonu, więc liczą się proporcje. */
+  szablonGospodarstw: { miasta: Record<string, number>; wies: Record<string, number> };
+  /** Gospodarstwa trzypokoleniowe (młodzi, w średnim wieku i starsi razem), na 10 000 gospodarstw. NSP 2021. */
+  trojpokoleniowe: { miasta: number; wies: number };
+  /** Cała Polska w formie marginesów rejonu, na zapas dla gminy bez własnej tabeli. Gospodarstwa, skład, rodziny
+      i dzieci to sumy wszystkich rejonów NSP 2021; wiek to ludność na 31.12.2022 z prognozy GUS (ostatni rok
+      empiryczny), 10-letnie grupy wieku, osobno mężczyźni i kobiety. */
+  polska: Marginesy;
+}

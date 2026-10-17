@@ -14,6 +14,7 @@ import path from 'node:path';
 import { type Marginesy, type TabeleGminy, WERSJA_TABEL } from '../src/mieszkancy/tabele.ts';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
 import {
+  ARKUSZ_REJONOW,
   czyMiejska,
   dodajTabele,
   epokiZBdl,
@@ -21,6 +22,7 @@ import {
   ludnoscRejonow,
   type MetaBdl,
   type OdpowiedzBdl,
+  PLIKI_TABLIC,
   rozbijWiek,
   skrocNazwe,
   sumaMarginesow,
@@ -48,14 +50,6 @@ const LUDNOSC = path.join(
 const BDL_DANE = path.join(GUS, 'bdl-api/dane-przyklady');
 const BDL_META = path.join(GUS, 'bdl-api/metadane-zmiennych');
 const TOLERANCJA_M = 5;
-
-/** Które pole `Marginesy` z którego pliku (kolejność ma znaczenie: pierwsza tablica ustala listę rejonów). */
-const TABLICE = [
-  ['gospodarstwa', 'gospodarstwa_w_rejonach_i_obwodach_wg_liczby_osob_nsp2021.xlsx'],
-  ['sklad', 'gospodarstwa_w_rejonach_i_obwodach_wg_skladu_rodzinnego_nsp2021_2.xlsx'],
-  ['rodziny', 'rodziny_w_rejonach_i_obwodach_wg_typow_nsp2021.xlsx'],
-  ['dzieci', 'rodziny_w_rejonach_i_obwodach_wg_liczby_dzieci_nsp2021.xlsx'],
-] as const;
 
 type Pierscienie = number[][][];
 
@@ -147,8 +141,8 @@ function bdl(teryt: string, koniec: string, zmienna: string, rok: string): Map<s
 function zbierzMarginesy(gminy: string[]): { rejony: Map<string, Map<string, Marginesy>>; nazwy: Map<string, string> } {
   const rejony = new Map<string, Map<string, Marginesy>>(gminy.map((g) => [g, new Map()]));
   const nazwy = new Map<string, string>();
-  for (const [pole, plik] of TABLICE) {
-    const w = wiersze(fs.readFileSync(path.join(GOSPODARSTWA, plik)), 'Dane - rejony statystyczne');
+  for (const [pole, plik] of PLIKI_TABLIC) {
+    const w = wiersze(fs.readFileSync(path.join(GOSPODARSTWA, plik)), ARKUSZ_REJONOW);
     for (const g of gminy) {
       const nazwa = dodajTabele(w, pole, g, rejony.get(g)!, pole === 'gospodarstwa');
       if (nazwa !== undefined && !nazwy.has(g)) nazwy.set(g, nazwa);

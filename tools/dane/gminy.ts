@@ -87,7 +87,19 @@ export function wWielokacie(x: number, y: number, pierscienie: readonly (readonl
 
 // ---------------------------------------------------------------- tablice gospodarstw i rodzin (XLSX)
 
-type Pole = 'gospodarstwa' | 'sklad' | 'rodziny' | 'dzieci';
+export type Pole = 'gospodarstwa' | 'sklad' | 'rodziny' | 'dzieci';
+
+/** Arkusz z rejonami statystycznymi w czterech plikach NSP (drugi arkusz to obwody spisowe, których nie czytamy). */
+export const ARKUSZ_REJONOW = 'Dane - rejony statystyczne';
+
+/** Które pole `Marginesy` z którego pliku katalogu gus/nsp2021-gospodarstwa-rejony (kolejność ma znaczenie:
+    pierwsza tablica ustala listę rejonów). */
+export const PLIKI_TABLIC = [
+  ['gospodarstwa', 'gospodarstwa_w_rejonach_i_obwodach_wg_liczby_osob_nsp2021.xlsx'],
+  ['sklad', 'gospodarstwa_w_rejonach_i_obwodach_wg_skladu_rodzinnego_nsp2021_2.xlsx'],
+  ['rodziny', 'rodziny_w_rejonach_i_obwodach_wg_typow_nsp2021.xlsx'],
+  ['dzieci', 'rodziny_w_rejonach_i_obwodach_wg_liczby_dzieci_nsp2021.xlsx'],
+] as const satisfies readonly (readonly [Pole, string])[];
 
 export const ETYKIETY_WIELKOSCI: Record<string, keyof Marginesy['gospodarstwa']> = {
   '1': '1',
@@ -143,6 +155,16 @@ export function pustyMarginesy(): Marginesy {
 
 const pad = (v: Komorka, n: number): string => String(v ?? '').padStart(n, '0');
 
+function sprawdzNaglowek(w: Komorka[][], pole: Pole): void {
+  const { kolumna } = TABLICE[pole];
+  const n = w[0] ?? [];
+  if (n[0] !== 'Kod TERYT gminy' || n[2] !== 'Numer rejonu statystycznego' || n[3] !== kolumna) {
+    throw new Error(
+      `Tablica „${pole}”: nieoczekiwany nagłówek ${JSON.stringify(n.slice(0, 5))}, oczekiwano kolumny „${kolumna}”`,
+    );
+  }
+}
+
 /** Wiersze arkusza „Dane - rejony statystyczne” jednej z czterech tablic (długi format: gmina, nazwa, rejon,
     kategoria, liczba) → liczby w `rejony` dla jednej gminy. Brak wiersza kategorii to zero. `utworz` dla pierwszej
     tablicy (wielkość gospodarstw) zakłada rejony; w pozostałych rejon spoza pierwszej tablicy to błąd. Zwraca
@@ -154,13 +176,8 @@ export function dodajTabele(
   rejony: Map<string, Marginesy>,
   utworz: boolean,
 ): string | undefined {
-  const { kolumna, etykiety } = TABLICE[pole];
-  const n = w[0] ?? [];
-  if (n[0] !== 'Kod TERYT gminy' || n[2] !== 'Numer rejonu statystycznego' || n[3] !== kolumna) {
-    throw new Error(
-      `Tablica „${pole}”: nieoczekiwany nagłówek ${JSON.stringify(n.slice(0, 5))}, oczekiwano kolumny „${kolumna}”`,
-    );
-  }
+  const { etykiety } = TABLICE[pole];
+  sprawdzNaglowek(w, pole);
   const widziane = new Set<string>();
   let nazwa: string | undefined;
   for (let i = 1; i < w.length; i++) {
@@ -186,6 +203,27 @@ export function dodajTabele(
     (m[pole] as Record<string, number>)[klucz] = r[4];
   }
   return nazwa;
+}
+
+/** Suma jednej z czterech tablic po wszystkich rejonach wszystkich gmin pliku (cała Polska). Te same etykiety,
+    nagłówek i zasady co `dodajTabele`: brak wiersza kategorii to zero, brak liczby, nieznana kategoria i powtórzony
+    wiersz (gmina, rejon, kategoria) to błąd. Klucze w kolejności z typów. */
+export function sumaTablicy<P extends Pole>(w: Komorka[][], pole: P): Marginesy[P] {
+  const { etykiety } = TABLICE[pole];
+  sprawdzNaglowek(w, pole);
+  const suma = pustyMarginesy()[pole] as Record<string, number>;
+  const widziane = new Set<string>();
+  for (let i = 1; i < w.length; i++) {
+    const r = w[i];
+    const klucz = etykiety[String(r[3])];
+    if (klucz === undefined) throw new Error(`Tablica „${pole}”: nieznana kategoria „${r[3]}” (rejon ${r[2]})`);
+    if (typeof r[4] !== 'number') throw new Error(`Tablica „${pole}”: rejon ${r[2]}, „${r[3]}” nie ma liczby`);
+    const wpis = `${r[0]}|${r[2]}|${klucz}`;
+    if (widziane.has(wpis)) throw new Error(`Tablica „${pole}”: rejon ${r[2]}, „${r[3]}” występuje dwa razy`);
+    widziane.add(wpis);
+    suma[klucz] += r[4];
+  }
+  return suma as Marginesy[P];
 }
 
 /** Suma marginesów (rejony → gmina). */

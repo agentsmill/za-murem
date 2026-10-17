@@ -8,6 +8,7 @@ import {
   type pustyMarginesy,
   rozbijWiek,
   skrocNazwe,
+  sumaTablicy,
   terytZBdl,
   wartosciBdl,
   wiek2021ZBdl,
@@ -233,6 +234,36 @@ describe('tablice gospodarstw i rodzin', () => {
         true,
       ),
     ).toThrow(/nagłówek/);
+  });
+
+  it('sumaTablicy: suma po wszystkich rejonach i gminach kraju, brak wiersza to zero', () => {
+    const wiersze: Komorka[][] = [
+      naglowek,
+      ['2261011', 'gm. m. Gdańsk', '182350', 1, 598],
+      ['2261011', 'gm. m. Gdańsk', '182350', '5 i więcej', 72],
+      ['2261011', 'gm. m. Gdańsk', '182351', 1, 2],
+      ['0201011', 'gm. m. Bolesławiec', '230850', 1, 85],
+      ['0201011', 'gm. m. Bolesławiec', '230850', 3, 7],
+    ];
+    expect(sumaTablicy(wiersze, 'gospodarstwa')).toEqual({ '1': 685, '2': 0, '3': 7, '4': 0, '5+': 72 });
+    expect(Object.keys(sumaTablicy(wiersze, 'gospodarstwa'))).toEqual(['1', '2', '3', '4', '5+']);
+  });
+
+  it('sumaTablicy: zły nagłówek, nieznana kategoria, brak liczby i duplikat to błąd', () => {
+    expect(() =>
+      sumaTablicy(
+        [
+          ['Inny', 'nagłówek'],
+          ['0201011', 'x', '230850', 1, 1],
+        ],
+        'gospodarstwa',
+      ),
+    ).toThrow(/nagłówek/);
+    expect(() => sumaTablicy([naglowek, ['0201011', 'x', '230850', 'dziwne', 1]], 'gospodarstwa')).toThrow(/dziwne/);
+    expect(() => sumaTablicy([naglowek, ['0201011', 'x', '230850', 1, '-']], 'gospodarstwa')).toThrow(/liczby/);
+    expect(() =>
+      sumaTablicy([naglowek, ['0201011', 'x', '230850', 1, 1], ['0201011', 'x', '230850', 1, 2]], 'gospodarstwa'),
+    ).toThrow(/dwa razy/);
   });
 
   it('wszystkie etykiety wielkości mają klucz Marginesy', () => {
