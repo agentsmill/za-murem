@@ -174,8 +174,8 @@ export interface Job {
 }
 
 /** zarząd (rdzeń, polecenia), tłum (tylko do pomiaru wydajności, za siatką), mieszkańcy siedziby
-    (tło z planem dnia), obcy (szabrownicy z wydarzeń) */
-export type PawnKind = 'core' | 'crowd' | 'resident' | 'stranger';
+    (tło z planem dnia), szabrownicy (obcy z napadu; nazwa jak w liście obcych rysowania, src/render/game.ts) */
+export type PawnKind = 'core' | 'crowd' | 'resident' | 'szabrownik';
 
 export interface Pawn {
   id: number;
@@ -807,9 +807,12 @@ export class Sim {
   stats: SimStats = { paths: 0, failed: 0, nodes: 0, substituted: 0 };
   /** wnętrze siedziby albo null (świat sprzed M1) */
   readonly house: HouseLike | null;
-  /** przechodniość dla zarządu: świat z wyciętymi drzewami i łatami, otwarte dziury zablokowane (zarząd przez nie
-      nie przełazi), brama przechodnia nawet zamknięta (klucz); przy wczytaniu odtwarzana ze stanu */
+  /** przechodniość fizyczna według kontraktu siatki (dla rysowania i podglądu): świat z wyciętymi drzewami,
+      dziura 0, łata 1, zamknięta brama 1, ognisko 1; przy wczytaniu odtwarzana ze stanu, tablica ta sama */
   readonly blocked: Uint8Array;
+  /** przechodniość dla zarządu: jak fizyczna, ale otwarte dziury zablokowane (zarząd przez nie nie przełazi),
+      a brama przechodnia nawet zamknięta (klucz) */
+  private readonly coreBlocked: Uint8Array;
   /** ocieplenie pomieszczeń od kóz w °C; liczone co krok ciepła i od razu przy wczytaniu */
   boost: number[] = [];
   /** światło z palących się kóz w pomieszczeniach, 0–1 (dla rysowania: świecące okna nocą) */
@@ -820,7 +823,7 @@ export class Sim {
   /** przechodniość i obszary pozostałych: mieszkańcy (bez dziur, bramy i mieszkania zarządu), obcy (dziurami tak,
       zamkniętą bramą nie), tłum do pomiarów (za siatką, bez mieszkania zarządu), obcy po stronie ulicy (bez podwórka
       i wnętrz: tak podchodzą pod siatkę i uciekają spod niej, nie skracając sobie drogi przez podwórko) */
-  private lay: Record<'resident' | 'stranger' | 'crowd' | 'outside', { blocked: Uint8Array; reg: Int32Array }>;
+  private lay: Record<'resident' | 'szabrownik' | 'crowd' | 'outside', { blocked: Uint8Array; reg: Int32Array }>;
   /** mieszkanie zarządu z drzwiami (1) albo null */
   private readonly mask: Uint8Array | null;
   private readonly trunk: Int32Array;
@@ -847,6 +850,7 @@ export class Sim {
     const h = this.house;
     this.mask = h ? homeMask(h, w.size) : null;
     this.blocked = new Uint8Array(w.size * w.size);
+    this.coreBlocked = new Uint8Array(w.size * w.size);
     this.reg = new Int32Array(0);
     this.lay = {} as Sim['lay'];
     this.rebuild();
@@ -856,7 +860,7 @@ export class Sim {
     if (h)
       for (let i = 0; i < w.size * w.size; i++) {
         const r = h.room[i];
-        if (r >= 0 && !this.blocked[i]) this.roomTiles[r].push(i);
+        if (r >= 0 && !this.coreBlocked[i]) this.roomTiles[r].push(i);
       }
     this.roomOf = h ? h.room.slice() : new Int16Array(0);
     if (h)
@@ -881,7 +885,7 @@ export class Sim {
     const gy = gate.reduce((a, g) => a + Math.floor(g / size) + 0.5, 0) / Math.max(1, gate.length);
     const dg = (i: number) => ((i % size) + 0.5 - gx) ** 2 + (Math.floor(i / size) + 0.5 - gy) ** 2;
     this.gateStand = (shape?.yard ?? [])
-      .filter((i) => !this.blocked[i] && gate.some((g) => cheb(g, i) <= 1))
+      .filter((i) => !this.coreBlocked[i] && gate.some((g) => cheb(g, i) <= 1))
       .sort((a, b) => dg(a) - dg(b) || a - b);
     // za bramą: sąsiad kafelka bramy spoza podwórka, potem kilka kroków dalej od siatki
     let exit = -1;
@@ -890,11 +894,11 @@ export class Sim {
       for (const g of gate) {
         for (const d of [-size, size, -1, 1]) {
           const o = g + d;
-          if (o < 0 || o >= size * size || yard.has(o) || gate.includes(o) || this.blocked[o]) continue;
+          if (o < 0 || o >= size * size || yard.has(o) || gate.includes(o) || this.coreBlocked[o]) continue;
           exit = o;
           for (let k = 0; k < 6; k++) {
             const nx = exit + d;
-            if (nx < 0 || nx >= size * size || this.blocked[nx] || Math.abs((nx % size) - (exit % size)) > 1) break;
+            if (nx < 0 || nx >= size * size || this.coreBlocked[nx] || Math.abs((nx % size) - (exit % size)) > 1) break;
             exit = nx;
           }
           break;
@@ -946,8 +950,9 @@ export class Sim {
       this.mask,
       solid,
     );
-    this.blocked.set(core);
-    this.reg = labelRegions(this.blocked, size);
+    this.coreBlocked.set(core);
+    this.blocked.set(stranger);
+    this.reg = labelRegions(this.coreBlocked, size);
     // tłum do pomiarów chodzi tam, gdzie mieszkańcy nie: za siatką; warstwa ta sama, obszary rozłączne
     const res = { blocked: resident, reg: labelRegions(resident, size) };
     const outside = stranger.slice();
@@ -955,7 +960,7 @@ export class Sim {
     if (this.house) for (let i = 0; i < outside.length; i++) if (this.house.room[i] >= 0) outside[i] = 1;
     this.lay = {
       resident: res,
-      stranger: { blocked: stranger, reg: labelRegions(stranger, size) },
+      szabrownik: { blocked: stranger, reg: labelRegions(stranger, size) },
       crowd: res,
       outside: { blocked: outside, reg: labelRegions(outside, size) },
     };
@@ -963,12 +968,12 @@ export class Sim {
 
   /** przechodniość i obszary dla danego rodzaju pionka */
   private layer(kind: PawnKind): { blocked: Uint8Array; reg: Int32Array } {
-    return kind === 'core' ? { blocked: this.blocked, reg: this.reg } : this.lay[kind];
+    return kind === 'core' ? { blocked: this.coreBlocked, reg: this.reg } : this.lay[kind];
   }
 
   /** warstwa do drogi pionka: szabrownik po stronie ulicy (podchodzi, czeka, ucieka) chodzi tylko tamtędy */
   private layerOf(p: Pawn): { blocked: Uint8Array; reg: Int32Array } {
-    if (p.kind === 'stranger' && p.job?.phase !== 2 && !this.lay.outside.blocked[this.tileOf(p)])
+    if (p.kind === 'szabrownik' && p.job?.phase !== 2 && !this.lay.outside.blocked[this.tileOf(p)])
       return this.lay.outside;
     return this.layer(p.kind);
   }
@@ -1038,7 +1043,7 @@ export class Sim {
         this.coreTick(p);
         continue;
       }
-      if (p.kind === 'stranger') {
+      if (p.kind === 'szabrownik') {
         if (this.strangerTick(p)) gone = true;
         continue;
       }
@@ -1058,7 +1063,7 @@ export class Sim {
       p.wait = st.tick + 60 + Math.floor(rnd() * 240);
     }
     // szabrownicy, którzy doszli tam, skąd przyszli, znikają
-    if (gone) st.pawns = st.pawns.filter((p) => !(p.kind === 'stranger' && p.job?.phase === 4));
+    if (gone) st.pawns = st.pawns.filter((p) => !(p.kind === 'szabrownik' && p.job?.phase === 4));
     if (st.tick % HEAT_EVERY === 0) this.slow();
     st.tick++;
   }
@@ -1176,7 +1181,7 @@ export class Sim {
     const taken = this.taken(p);
     const cand = shape.yard.filter(
       (i) =>
-        !this.blocked[i] &&
+        !this.coreBlocked[i] &&
         this.reg[i] === region &&
         !taken.includes(i) &&
         !this.thingAt(i % size, Math.floor(i / size)) &&
@@ -1245,7 +1250,7 @@ export class Sim {
   /** na tym kafelku można postawić ognisko: podwórko, przechodnie, bez rzeczy i bez nikogo, kto tam pracuje */
   siteOk(at: number): boolean {
     const shape = fenceShape(this.w);
-    if (!shape?.yard.includes(at) || this.blocked[at]) return false;
+    if (!shape?.yard.includes(at) || this.coreBlocked[at]) return false;
     const size = this.w.size;
     if (this.thingAt(at % size, Math.floor(at / size))) return false;
     return !this.st.pawns.some((q) => q.job && (q.job.tile === at || (q.job.t === 'build' && q.job.target === at)));
@@ -1414,7 +1419,7 @@ export class Sim {
 
   /** obszar mapy, w którym stoi pionek */
   private regionOf(p: Pawn): number {
-    return this.reg[nearestFree(this.blocked, this.w.size, this.tileOf(p))];
+    return this.reg[nearestFree(this.coreBlocked, this.w.size, this.tileOf(p))];
   }
 
   private food(): Thing | undefined {
@@ -1477,7 +1482,7 @@ export class Sim {
         const y = ty + dy;
         if ((!dx && !dy) || x < 0 || y < 0 || x >= size || y >= size) continue;
         const i = y * size + x;
-        if (!this.blocked[i] && this.reg[i] === region && !taken.includes(i)) cand.push(i);
+        if (!this.coreBlocked[i] && this.reg[i] === region && !taken.includes(i)) cand.push(i);
       }
     return this.nearest(p, cand);
   }
@@ -1489,7 +1494,7 @@ export class Sim {
     const size = this.w.size;
     const region = this.regionOf(p);
     for (const i of h.sklad) {
-      if (this.blocked[i] || this.reg[i] !== region) continue;
+      if (this.coreBlocked[i] || this.reg[i] !== region) continue;
       const pile = this.pileAt(i);
       if (pile ? pile.n < STACK : !this.thingAt(i % size, Math.floor(i / size))) return i;
     }
@@ -1532,7 +1537,7 @@ export class Sim {
       for (let x = t.x - 1; x <= t.x + t.w; x++) {
         if (x < 0 || y < 0 || x >= size || y >= size || covers(t, x, y)) continue;
         const i = y * size + x;
-        if (this.blocked[i] || this.reg[i] !== region || this.furnitureAt(x, y)) continue;
+        if (this.coreBlocked[i] || this.reg[i] !== region || this.furnitureAt(x, y)) continue;
         (taken.includes(i) ? busy : free).push(i);
       }
     return this.nearest(p, free.length ? free : busy);
@@ -1542,7 +1547,7 @@ export class Sim {
       się jeszcze zmieści, albo na pusty */
   private spotNear(from: number, n: number): number {
     const size = this.w.size;
-    const at = nearestFree(this.blocked, size, from);
+    const at = nearestFree(this.coreBlocked, size, from);
     const ax = at % size;
     const ay = Math.floor(at / size);
     for (const [dx, dy] of SPREAD) {
@@ -1550,7 +1555,7 @@ export class Sim {
       const y = ay + dy;
       if (x < 0 || y < 0 || x >= size || y >= size) continue;
       const i = y * size + x;
-      if (this.blocked[i] || this.reg[i] !== this.reg[at]) continue;
+      if (this.coreBlocked[i] || this.reg[i] !== this.reg[at]) continue;
       const pile = this.pileAt(i);
       if (pile ? pile.n + n <= STACK : !this.thingAt(x, y)) return i;
     }
@@ -1596,7 +1601,7 @@ export class Sim {
       front !== undefined &&
       front >= 0 &&
       front < size * size &&
-      !this.blocked[front] &&
+      !this.coreBlocked[front] &&
       this.reg[front] === region &&
       !this.furnitureAt(front % size, Math.floor(front / size)) &&
       !this.taken(p).includes(front);
@@ -1666,7 +1671,7 @@ export class Sim {
       const y = Math.floor(t / size) + dy;
       if ((!dx && !dy) || x < 0 || y < 0 || x >= size || y >= size) continue;
       const i = y * size + x;
-      if (this.blocked[i] || this.reg[i] !== this.reg[stand] || this.thingAt(x, y)) continue;
+      if (this.coreBlocked[i] || this.reg[i] !== this.reg[stand] || this.thingAt(x, y)) continue;
       const n = Math.min(CARRY, left);
       this.addWood(i, n);
       left -= n;
@@ -2014,7 +2019,7 @@ export class Sim {
     const size = this.w.size;
     for (const i of this.house?.sklad ?? []) {
       if (p.carry <= 0) break;
-      if (this.blocked[i]) continue;
+      if (this.coreBlocked[i]) continue;
       const pile = this.pileAt(i);
       if (!pile && this.thingAt(i % size, Math.floor(i / size))) continue;
       const n = Math.min(p.carry, STACK - (pile ? pile.n : 0));
@@ -2213,7 +2218,7 @@ export class Sim {
       for (let y = tb.y - 1; y <= tb.y + tb.h; y++)
         for (let x = tb.x - 1; x <= tb.x + tb.w; x++) {
           const i = y * size + x;
-          if (covers(tb, x, y) || h.room[i] !== room || this.blocked[i] || this.furnitureAt(x, y)) continue;
+          if (covers(tb, x, y) || h.room[i] !== room || this.coreBlocked[i] || this.furnitureAt(x, y)) continue;
           seats.push(i);
         }
     } else seats.push(fi);
@@ -2373,13 +2378,13 @@ export class Sim {
     const j = p.job;
     if (!j || j.n <= 0 || !j.what) return;
     const size = this.w.size;
-    const at = nearestFree(this.blocked, size, this.tileOf(p));
+    const at = nearestFree(this.coreBlocked, size, this.tileOf(p));
     for (const [dx, dy] of SPREAD) {
       const x = (at % size) + dx;
       const y = Math.floor(at / size) + dy;
       if (x < 0 || y < 0 || x >= size || y >= size) continue;
       const i = y * size + x;
-      if (this.blocked[i] || this.reg[i] !== this.reg[at]) continue;
+      if (this.coreBlocked[i] || this.reg[i] !== this.reg[at]) continue;
       const same = this.st.things.find((t) => t.kind === j.what && t.x === x && t.y === y);
       if (same) same.n += j.n;
       else if (!this.thingAt(x, y)) {
@@ -2403,7 +2408,7 @@ export class Sim {
       if (!r.outcome && tick >= r.at + (r.gov ? GOV_WAIT : 0)) this.decideRaid(r);
       if (r.outcome) this.onOutcome(r);
     } else if (r.phase === 2) {
-      const left = st.pawns.filter((p) => p.kind === 'stranger');
+      const left = st.pawns.filter((p) => p.kind === 'szabrownik');
       if (!left.length) this.finishRaid(r);
       // bez zarządu światło płoszy ich także w środku: uciekają z tym, co mają w workach
       else if (!r.gov && tick % THINK_EVERY === 0)
@@ -2514,7 +2519,7 @@ export class Sim {
     const starts = this.tilesAround(r.from, r.n);
     for (let k = 0; k < r.n; k++) {
       const look = 16 + Math.floor(nextRandom(st.rng) * 4);
-      const p = newPawn(st, this.w, 'stranger', -1, starts[k] ?? r.from, r.from, look);
+      const p = newPawn(st, this.w, 'szabrownik', -1, starts[k] ?? r.from, r.from, look);
       p.job = this.newJob('raid', tg.post, waits[k] ?? r.spot, false);
       st.pawns.push(p);
       this.go(p, p.job.tile);
@@ -2530,7 +2535,7 @@ export class Sim {
     const sy = Math.floor(r.spot / size) + 0.5;
     const locked = this.raidTarget(r)?.post === 0 && !this.st.fence?.gateOpen;
     const scared =
-      locked || this.litNear(sx, sy) || this.st.pawns.some((p) => p.kind === 'stranger' && this.litNear(p.x, p.y));
+      locked || this.litNear(sx, sy) || this.st.pawns.some((p) => p.kind === 'szabrownik' && this.litNear(p.x, p.y));
     r.outcome = scared ? 'odparty' : 'wtargnięcie';
     if (!scared) {
       const cap = r.n * LOOT_CARRY;
@@ -2550,7 +2555,7 @@ export class Sim {
     r.phase = 2;
     const entered = r.outcome === 'wtargnięcie';
     for (const p of st.pawns) {
-      if (p.kind !== 'stranger' || !p.job) continue;
+      if (p.kind !== 'szabrownik' || !p.job) continue;
       if (!entered || !this.nextLoot(p, r)) this.leaveRaid(p, r);
     }
     const tg = this.raidTarget(r);
@@ -2571,7 +2576,7 @@ export class Sim {
   private lootFor(p: Pawn, r: Raid): Thing | undefined {
     const size = this.w.size;
     const sklad = this.house?.sklad ?? [];
-    const { blocked, reg } = this.lay.stranger;
+    const { blocked, reg } = this.lay.szabrownik;
     const region = reg[nearestFree(blocked, size, this.tileOf(p))];
     const left = (k: keyof Loot) => r.loot[k] - r.took[k] > 0;
     const tiers: ((t: Thing) => boolean)[] = [
@@ -2721,7 +2726,7 @@ export class Sim {
     for (const q of st.pawns) if (!q.away && q.job?.t === 'guard' && q.job.phase === 1) lamps.push([q.x, q.y]);
     const fires = st.things.filter((t) => t.kind === 'ognisko' && t.fuel > 0);
     const holes = st.fence ? st.fence.holes.filter((x) => !x.patch).length : 0;
-    const strangers = st.pawns.filter((q) => q.kind === 'stranger' && !q.away);
+    const strangers = st.pawns.filter((q) => q.kind === 'szabrownik' && !q.away);
     // po wtargnięciu strach zostaje do rana (12 godzin)
     const r = st.raid;
     const raided = !!r && r.outcome === 'wtargnięcie' && st.tick < r.at + 12 * TICKS_PER_HOUR;
@@ -2749,7 +2754,7 @@ export class Sim {
     const dark = daylight(this.st.tick) < 0.5 && !(inside && (this.light[r] ?? 0) >= 0.5) && !fire && !lit;
     let company = 0;
     for (const q of this.st.pawns)
-      if (q !== p && !q.away && q.kind !== 'stranger' && Math.hypot(q.x - p.x, q.y - p.y) <= 4) company++;
+      if (q !== p && !q.away && q.kind !== 'szabrownik' && Math.hypot(q.x - p.x, q.y - p.y) <= 4) company++;
     // obcych widać z dworu z daleka, z wnętrza tylko bliżej (przez okno); śpiący ich nie widzi
     let strangers = 0;
     if (!asleep) for (const q of a.strangers) if (Math.hypot(q.x - p.x, q.y - p.y) <= (inside ? 8 : 16)) strangers++;

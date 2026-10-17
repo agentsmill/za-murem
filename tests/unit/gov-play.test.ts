@@ -18,7 +18,7 @@ describe('gra z zarządem (bot)', () => {
       if (n.report === 'brak') expect(n.raid).toBeNull();
     }
     // nikt nie został na zawsze za mapą ani na warcie w dzień
-    expect(r.st.pawns.some((p) => p.kind === 'stranger')).toBe(false);
+    expect(r.st.pawns.some((p) => p.kind === 'szabrownik')).toBe(false);
   });
 
   it('bez warty i ten sam przebieg dla tego samego ziarna', () => {

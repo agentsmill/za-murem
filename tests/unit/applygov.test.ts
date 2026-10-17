@@ -164,7 +164,7 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     expect(holes[0].patch).toBeGreaterThan(0);
     expect(holes[1].patch).toBeGreaterThan(0);
     for (const h of holes.slice(2)) expect(h.patch).toBe(0);
-    for (const t of holes[0].tiles) expect(sim.canWalk('stranger', t)).toBe(false);
+    for (const t of holes[0].tiles) expect(sim.canWalk('szabrownik', t)).toBe(false);
   });
 
   it('napad z planu: rozstrzyga zarząd, a przy wtargnięciu znika dokładnie tyle, ile policzył (bez podwójnej straty)', () => {
@@ -180,7 +180,7 @@ describe('applyGov: skutki zarządu w symulacji', () => {
       fx((e) => (e.raid = { day: 1, at: minuteOf(1, 23), post: `d${hole.id}`, where: 'przy garażach' })),
     );
     while (st.tick < atHour(1, 23)) sim.step();
-    expect(st.pawns.some((p) => p.kind === 'stranger')).toBe(true);
+    expect(st.pawns.some((p) => p.kind === 'szabrownik')).toBe(true);
     const wood0 = sum(st, 'drewno');
     const food0 = sum(st, 'jedzenie');
     // rozstrzygnięcie zarządu w minucie napadu: wtargnięcie, zabrali 7 drewna i 4 porcje
@@ -198,7 +198,7 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     expect(sum(st, 'drewno')).toBe(wood0);
     while (st.tick < atHour(2, 3)) sim.step();
     expect(st.raid!.outcome).toBe('wtargnięcie');
-    expect(st.pawns.some((p) => p.kind === 'stranger')).toBe(false);
+    expect(st.pawns.some((p) => p.kind === 'szabrownik')).toBe(false);
     expect(sum(st, 'drewno')).toBe(wood0 - 7);
     expect(sum(st, 'jedzenie')).toBe(food0 - 4);
     expect(st.raid!.took).toEqual({ wood: 7, supplies: 4, scrap: 0 });
@@ -228,7 +228,7 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     while (st.tick < atHour(2, 2)) {
       sim.step();
       for (const p of st.pawns)
-        if (p.kind === 'stranger' && yard.has(Math.floor(p.y) * size + Math.floor(p.x))) inYard = true;
+        if (p.kind === 'szabrownik' && yard.has(Math.floor(p.y) * size + Math.floor(p.x))) inYard = true;
     }
     expect(st.raid!.outcome).toBe('odparty');
     expect(inYard).toBe(false);

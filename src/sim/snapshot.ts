@@ -218,7 +218,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     },
     residents: st.pawns.filter((p) => p.kind === 'resident').length,
     cap: st.cap,
-    strangers: st.pawns.filter((p) => p.kind === 'stranger').length,
+    strangers: st.pawns.filter((p) => p.kind === 'szabrownik').length,
     raid: st.raid ? { phase: st.raid.phase, outcome: st.raid.outcome, took: { ...st.raid.took } } : null,
   };
 }

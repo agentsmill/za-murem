@@ -48,17 +48,17 @@ describe('siatka w symulacji', () => {
     for (const t of w.fence.hole) {
       expect(sim.canWalk('core', t)).toBe(false);
       expect(sim.canWalk('resident', t)).toBe(false);
-      expect(sim.canWalk('stranger', t)).toBe(true);
+      expect(sim.canWalk('szabrownik', t)).toBe(true);
     }
     for (const t of w.fence.tiles.filter((x) => !w.fence.hole.includes(x)))
-      for (const k of ['core', 'resident', 'stranger'] as const) expect(sim.canWalk(k, t)).toBe(false);
+      for (const k of ['core', 'resident', 'szabrownik'] as const) expect(sim.canWalk(k, t)).toBe(false);
   });
 
   it('zamknięta brama zatrzymuje mieszkańców i obcych, zarząd ma klucz', () => {
     const sim = new Sim(w, createSim(w, 3, { core: 2 }));
     for (const t of gateTiles()) {
       expect(sim.canWalk('core', t)).toBe(true);
-      expect(sim.canWalk('stranger', t)).toBe(true);
+      expect(sim.canWalk('szabrownik', t)).toBe(true);
       // mieszkańcy nie wychodzą za siatkę nawet przy otwartej bramie
       expect(sim.canWalk('resident', t)).toBe(false);
     }
@@ -67,9 +67,25 @@ describe('siatka w symulacji', () => {
     expect(sim.st.fence!.gateOpen).toBe(false);
     for (const t of gateTiles()) {
       expect(sim.canWalk('core', t)).toBe(true);
-      expect(sim.canWalk('stranger', t)).toBe(false);
+      expect(sim.canWalk('szabrownik', t)).toBe(false);
     }
     expect(snapshot(sim.st, w).fence.gateOpen).toBe(false);
+  });
+
+  it('sim.blocked według kontraktu siatki (dla rysowania): dziura 0, łata 1, zamknięta brama 1, otwarta 0', () => {
+    const st = createSim(w, 3, { core: 2 });
+    const sim = new Sim(w, st);
+    for (const t of w.fence.hole) expect(sim.blocked[t]).toBe(0);
+    for (const t of gateTiles()) expect(sim.blocked[t]).toBe(0);
+    sim.push({ t: 'mend', ids: [], n: 1 });
+    sim.push({ t: 'gate', ids: [], open: false });
+    sim.step();
+    const patched = st.fence!.holes.find((h) => h.patch)!;
+    for (const t of patched.tiles) expect(sim.blocked[t]).toBe(1);
+    for (const h of st.fence!.holes.filter((x) => !x.patch)) for (const t of h.tiles) expect(sim.blocked[t]).toBe(0);
+    for (const t of gateTiles()) expect(sim.blocked[t]).toBe(1);
+    // reszta siatki zawsze 1
+    for (const t of w.fence.tiles.filter((x) => !w.fence.hole.includes(x))) expect(sim.blocked[t]).toBe(1);
   });
 
   it('zapis i wczytanie odtwarza dziury, łaty i bramę', () => {
@@ -78,9 +94,9 @@ describe('siatka w symulacji', () => {
     f.holes[0].patch = 70;
     f.gateOpen = false;
     const sim = new Sim(w, JSON.parse(JSON.stringify(st)));
-    for (const t of f.holes[0].tiles) expect(sim.canWalk('stranger', t)).toBe(false);
-    for (const t of f.holes[1].tiles) expect(sim.canWalk('stranger', t)).toBe(true);
-    for (const t of gateTiles()) expect(sim.canWalk('stranger', t)).toBe(false);
+    for (const t of f.holes[0].tiles) expect(sim.canWalk('szabrownik', t)).toBe(false);
+    for (const t of f.holes[1].tiles) expect(sim.canWalk('szabrownik', t)).toBe(true);
+    for (const t of gateTiles()) expect(sim.canWalk('szabrownik', t)).toBe(false);
     // łata podnosi wytrzymałość siatki
     expect(snapshot(sim.st, w).fence.durability).toBeGreaterThan(
       snapshot(createSim(w, 3, { core: 2 }), w).fence.durability,
@@ -200,7 +216,7 @@ describe('prace na noc i podwórko', () => {
     expect(hole.patch).toBeGreaterThan(0);
     expect(mat()).toBe(before - 3);
     expect(texts).toContain('Łata dziurę w siatce.');
-    for (const t of hole.tiles) expect(sim.canWalk('stranger', t)).toBe(false);
+    for (const t of hole.tiles) expect(sim.canWalk('szabrownik', t)).toBe(false);
     expect(snapshot(st, w).fence.holes.some((h) => h.id === hole.id)).toBe(false);
   });
 
@@ -404,7 +420,7 @@ describe('szabrownicy', () => {
   const tileOf = (p: { x: number; y: number }) => Math.floor(p.y) * size + Math.floor(p.x);
   const yard = new Set(w.fence.yard);
   const sklad = w.interior.sklad;
-  const strangers = (sim: Sim) => sim.st.pawns.filter((p) => p.kind === 'stranger');
+  const strangers = (sim: Sim) => sim.st.pawns.filter((p) => p.kind === 'szabrownik');
   const pile = (st: ReturnType<typeof createSim>, i: number, n: number) =>
     st.things.push({
       id: st.nextThing++,
