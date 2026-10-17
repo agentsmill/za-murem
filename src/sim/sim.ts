@@ -7,7 +7,16 @@ import { PROFS } from '../content/data.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
-import { daylight, hourOf, minutesAt, outdoorTemp, START_MINUTES, TICKS_PER_HOUR, TICKS_PER_SECOND } from './clock.ts';
+import {
+  daylight,
+  hourOf,
+  minutesAt,
+  outdoorTemp,
+  START_MINUTES,
+  TICKS_PER_DAY,
+  TICKS_PER_HOUR,
+  TICKS_PER_SECOND,
+} from './clock.ts';
 import {
   dryTreeOf,
   HEAT_EVERY,
@@ -137,6 +146,22 @@ export type JobKind =
 export const STAY_HOME = 0;
 export const STAY_YARD = 1;
 export const STAY_FIRE = 2;
+/** wspólny posiłek przy stole zarządu (uchwała o kotle) */
+export const STAY_MEAL = 3;
+/** wspólne posiłki: obiad o 13:00 i kolacja o 19:00; gotuje się godzinę wcześniej, raz dla wszystkich */
+export const MEAL_HOURS: readonly number[] = [13, 19];
+/** Porcja wielkości m (ułamek zwykłej porcji). Racje to rzadsza zupa: 3/4 jedzenia syci jak zwykły posiłek, ale głód
+    wraca szybciej (hungerRate), więc zapasy schodzą około 17% wolniej, a najedzenie spada szybciej. Kocioł daje
+    większą porcję, która syci bardziej (1,1 zwykłego posiłku). */
+export const satiety = (m: number): number => Math.max(1, m);
+/** jak szybko spada najedzenie przy porcji m: przy racjach (0,75) o 10% szybciej */
+export const hungerRate = (m: number): number => (m < 1 ? 1 + 0.4 * (1 - m) : 1);
+/** racje: najwyżej tyle posiłków na dobę (od 6:00), ponad to tylko z wielkiego głodu */
+export const RATION_MEALS = 2;
+/** poniżej takiego najedzenia je się zawsze: poza porą wspólnego posiłku i ponad racje */
+export const STARVING = 10;
+/** przy racjach je się dopiero przy wyraźnym głodzie */
+export const RATION_HUNGRY = 25;
 
 /** chwilowy nastrój (spalone meble, ciepły posiłek): dodaje się do nastroju z potrzeb do ticku until */
 export interface Mood {
@@ -209,6 +234,9 @@ export interface Pawn {
   apt: number;
   /** na wyprawie poza mapą: nie rysuje się, potrzeby stoją, wraca poleceniem 'back' */
   away: boolean;
+  /** posiłki od 6:00 (racje) i tick ostatniego posiłku (wspólny posiłek raz na porę) */
+  ate: number;
+  lastMeal: number;
 }
 
 /** Rzecz na mapie: meble z wnętrza (kopiowane przy starcie, żeby dało się je kiedyś przestawić albo spalić),
@@ -310,6 +338,10 @@ export interface Laws {
   burnMood: number;
   /** od tej godziny mieszkańcy pracują na podwórku */
   workStart: number;
+  /** wielkość porcji (racje 0,75, kocioł 1,1): ile porcji zjada się na posiłek (najedzenie: satiety) */
+  foodMult: number;
+  /** wspólny kocioł: zarząd i mieszkańcy jedzą razem przy stole zarządu o 13:00 i 19:00 */
+  sharedMeals: boolean;
 }
 
 export interface SimState {
@@ -343,6 +375,8 @@ export interface SimState {
   raid: Raid | null;
   /** zapasy bez rzeczy na mapie (z zarządu): części i leki */
   store: { parts: number; meds: number };
+  /** ułamek porcji zjedzony ponad całe porcje (racje i kocioł zjadają po 0,75 i 1,1 porcji na posiłek) */
+  portion: number;
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -459,7 +493,8 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     burned: [],
     fence: initFence(w),
     cap: 0,
-    laws: { gateClosed: false, burnMood: 1, workStart: WORK_START },
+    laws: { gateClosed: false, burnMood: 1, workStart: WORK_START, foodMult: 1, sharedMeals: false },
+    portion: 0,
     raid: null,
     store: { parts: 0, meds: 0 },
   };
@@ -784,6 +819,8 @@ function newPawn(
     carry: 0,
     apt: -1,
     away: false,
+    ate: 0,
+    lastMeal: -TICKS_PER_DAY,
   };
 }
 
@@ -878,6 +915,8 @@ export class Sim {
   private lay: Record<'resident' | 'szabrownik' | 'crowd' | 'outside', { blocked: Uint8Array; reg: Int32Array }>;
   /** mieszkanie zarządu z drzwiami (1) albo null */
   private readonly mask: Uint8Array | null;
+  /** pora wspólnego posiłku: mieszkańcy mogą wejść do mieszkania zarządu, do stołu */
+  private mealDoor = false;
   private readonly trunk: Int32Array;
   private readonly links: [number, number][];
   private readonly kinds: RoomKind[];
@@ -905,6 +944,7 @@ export class Sim {
     this.coreBlocked = new Uint8Array(w.size * w.size);
     this.reg = new Int32Array(0);
     this.lay = {} as Sim['lay'];
+    this.mealDoor = this.mealOpen();
     this.rebuild();
     this.links = h ? roomLinks(h, w.size) : [];
     this.kinds = h ? h.rooms.map((r) => r.kind) : [];
@@ -1003,7 +1043,7 @@ export class Sim {
       this.st.felled,
       this.trunk,
       this.st.fence,
-      this.mask,
+      this.mealDoor ? null : this.mask,
       solid,
     );
     this.coreBlocked.set(core);
@@ -1090,6 +1130,9 @@ export class Sim {
       if (h === 20) this.setGate(false);
       else if (h === GUARD_UNTIL) this.setGate(true);
     }
+    // racje liczą posiłki od 6:00; w porze wspólnego posiłku mieszkańcy mogą wejść do stołu zarządu
+    if (st.tick % TICKS_PER_HOUR === 0 && hourOf(st.tick) === 6) for (const p of st.pawns) p.ate = 0;
+    if (st.tick % (TICKS_PER_HOUR / 2) === 0) this.syncMealDoor();
     if (st.raid) this.raidTick(st.raid);
     let budget = PATHS_PER_TICK;
     let gone = false;
@@ -1100,6 +1143,15 @@ export class Sim {
         continue;
       }
       if (p.kind === 'core' || p.kind === 'resident') {
+        // wspólny posiłek: mieszkaniec zostawia podwórko albo dom i idzie do stołu
+        if (
+          p.kind === 'resident' &&
+          st.tick % THINK_EVERY === 0 &&
+          p.job?.t === 'stay' &&
+          p.job.target !== STAY_MEAL &&
+          this.mealDue(p)
+        )
+          this.plan(p);
         this.coreTick(p);
         continue;
       }
@@ -1182,6 +1234,7 @@ export class Sim {
       // podpisana nocą: kłódka od razu
       const h = hourOf(st.tick);
       if (!was && st.laws.gateClosed && (h >= 20 || h < GUARD_UNTIL)) this.setGate(false);
+      this.syncMealDoor();
       return;
     }
     // polecenia przyjmuje tylko zarząd, tłum to tło; kto jest na wyprawie, słucha tylko wezwania z powrotem
@@ -1207,6 +1260,53 @@ export class Sim {
     else if (c.t === 'patch') this.orderPatch(pawns, c.hole);
     else if (c.t === 'campfire') this.orderCampfire(pawns, c.at);
     else if (c.t === 'away') for (const p of pawns) this.startLeave(p);
+  }
+
+  /** Pora wspólnego posiłku (uchwała o kotle), w której mieszkańcy mogą wejść do mieszkania zarządu: pół godziny
+      przed obiadem i kolacją do półtorej godziny po nich (12:30–14:30, 18:30–20:30), a dłużej, dopóki ktoś z nich
+      jeszcze tam je. Wynika z zegara, uchwał i stanu pionków, więc po wczytaniu zapisu wychodzi tak samo. */
+  private mealOpen(): boolean {
+    const hs = this.house;
+    if (!this.st.laws.sharedMeals || !hs) return false;
+    const h = (minutesAt(this.st.tick) % 1440) / 60;
+    if (MEAL_HOURS.some((m) => h >= m - 0.5 && h < m + 1.5)) return true;
+    // spóźniony mieszkaniec dojada i wychodzi przy otwartych drzwiach
+    const size = this.w.size;
+    return this.st.pawns.some(
+      (p) =>
+        p.kind === 'resident' &&
+        (p.job?.target === STAY_MEAL || inHomeApt(hs, Math.floor(p.y) * size + Math.floor(p.x))) &&
+        (p.job?.t === 'stay' || p.job === null),
+    );
+  }
+
+  /** drzwi do stołu zarządu dla mieszkańców: przechodniość od nowa tylko przy zmianie */
+  private syncMealDoor(): void {
+    const open = this.mealOpen();
+    if (open === this.mealDoor) return;
+    this.mealDoor = open;
+    this.rebuild();
+  }
+
+  /** pierwsza godzina wspólnego posiłku (13:00–14:00, 19:00–20:00) */
+  private mealTime(): boolean {
+    return this.st.laws.sharedMeals && MEAL_HOURS.includes(hourOf(this.st.tick));
+  }
+
+  /** wspólny posiłek w tej porze jeszcze przed nim (ostatni posiłek ponad trzy godziny temu) */
+  private mealDue(p: Pawn): boolean {
+    return this.mealTime() && this.st.tick - p.lastMeal > 3 * TICKS_PER_HOUR;
+  }
+
+  /** Czy zarząd idzie jeść: z wielkiego głodu zawsze; przy wspólnym kotle o porze posiłku (chyba że najedzony);
+      przy racjach dopiero przy wyraźnym głodzie i najwyżej RATION_MEALS razy na dobę; inaczej z głodu. */
+  private wantsMeal(p: Pawn): boolean {
+    const n = p.needs!;
+    const L = this.st.laws;
+    if (n.food < STARVING) return true;
+    if (L.sharedMeals) return this.mealDue(p) && n.food < 90;
+    if (L.foodMult < 1) return p.ate < RATION_MEALS && n.food < RATION_HUNGRY;
+    return n.food < HUNGRY;
   }
 
   /** uchwały od razu (interfejs woła po podpisaniu; w kolejce poleceń, żeby zapis i powtórka ich nie gubiły) */
@@ -1839,12 +1939,16 @@ export class Sim {
             st.things.find((t) => t.kind === 'posilek' && t.n > 0) ??
             this.food();
           if (src) {
-            src.n--;
-            if (src.n <= 0) st.things.splice(st.things.indexOf(src), 1);
             const hot = src.kind === 'posilek';
-            p.needs!.food = Math.min(100, p.needs!.food + (hot ? MEAL : COLD_MEAL));
+            const m = st.laws.foodMult;
+            this.eatPortions(m, src);
+            p.needs!.food = Math.min(100, p.needs!.food + (hot ? MEAL : COLD_MEAL) * satiety(m));
             if (hot) this.addMood(p, 'Ciepły posiłek', 4, 4 * TICKS_PER_HOUR);
             else this.addMood(p, 'Zimne z puszki', -3, 4 * TICKS_PER_HOUR);
+            if (m < 1) this.addMood(p, 'Głodowe racje', -3, 8 * TICKS_PER_HOUR);
+            if (j.n === 1) this.addMood(p, 'Wspólny posiłek', 5, 12 * TICKS_PER_HOUR);
+            p.ate++;
+            p.lastMeal = tick;
           }
           return false;
         }
@@ -1877,8 +1981,8 @@ export class Sim {
         // bez gazu albo ognia na koniec nic się nie ugotowało, zapasy zostają
         const food = this.food();
         if (!hot || !food) return false;
-        const cores = st.pawns.filter((q) => q.kind === 'core').length;
-        const batch = Math.min(food.n, Math.max(1, cores - this.meals()));
+        // dla całego zarządu, porcje według uchwały (racje mniejsze, kocioł większe i od razu na cały dzień)
+        const batch = Math.min(food.n, Math.max(1, this.potTarget() - this.meals()));
         food.n -= batch;
         if (food.n <= 0) st.things.splice(st.things.indexOf(food), 1);
         this.serve(batch, j.tile);
@@ -1886,9 +1990,19 @@ export class Sim {
         return false;
       }
       case 'stay':
-        if (j.phase === 1) return tick < j.until;
+        if (j.phase === 1) {
+          if (tick < j.until) return true;
+          if (j.target === STAY_MEAL) {
+            this.addMood(p, 'Wspólny posiłek', 5, 12 * TICKS_PER_HOUR);
+            p.ate++;
+            p.lastMeal = tick;
+          }
+          return false;
+        }
         if (!at) return false;
         j.phase = 1;
+        // przy stole je się pół godziny od dojścia
+        if (j.target === STAY_MEAL) j.until = tick + EAT_TICKS;
         return true;
       case 'guard': {
         // nie śpi do rana; schodzi z posterunku tylko wtedy, gdy zdrowie siada
@@ -2148,7 +2262,7 @@ export class Sim {
       this.dropCarry(p);
     }
     if (((this.night() && n.rest < 80) || n.rest < TIRED) && this.startSleep(p)) return;
-    if (n.food < HUNGRY && this.startEat(p)) return;
+    if (this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
     if (this.startRefuel(p, false) || this.startHaul(p)) return;
     if (this.shouldCook() && this.startCook(p, false)) return;
     if (n.warm < COLD && this.startWarm(p)) return;
@@ -2161,6 +2275,14 @@ export class Sim {
     const st = this.st;
     const h = hourOf(st.tick);
     if (this.night() && this.startSleep(p)) return;
+    // wspólny kocioł: o 13:00 i 19:00 przy stole zarządu (jedzą swoje porcje, zapasów zarządu nie ruszają)
+    if (this.mealDue(p)) {
+      const spot = this.mealSpot(p);
+      if (spot >= 0 && this.go(p, spot)) {
+        this.setJob(p, this.newJob('stay', STAY_MEAL, spot, false), false);
+        return;
+      }
+    }
     let kind = STAY_HOME;
     if (!this.night() && h >= st.laws.workStart && h < 18) kind = STAY_YARD;
     else if (h >= 18 && h < 20 && this.campfire()) kind = STAY_FIRE;
@@ -2190,6 +2312,30 @@ export class Sim {
         !lay.blocked[i] && lay.reg[i] === region && !taken.includes(i) && !this.thingAt(i % size, Math.floor(i / size)),
     );
     return cand.length ? cand[Math.floor(nextRandom(this.st.rng) * cand.length)] : -1;
+  }
+
+  /** miejsce przy stole zarządu na wspólny posiłek: kafelki kuchni do 3 m od stołu, a gdy zajęte, cała kuchnia
+      i reszta mieszkania zarządu */
+  private mealSpot(p: Pawn): number {
+    const h = this.house;
+    if (!h) return -1;
+    const size = this.w.size;
+    const table = this.st.things.find((t) => t.kind === 'stol' && inHomeApt(h, t.y * size + t.x));
+    const room = table ? h.room[table.y * size + table.x] : kitchenOf(h, size);
+    if (room < 0) return -1;
+    const tiles = this.roomTiles[room];
+    if (table) {
+      const cx = table.x + table.w / 2;
+      const cy = table.y + table.h / 2;
+      const near = tiles.filter((i) => Math.hypot((i % size) + 0.5 - cx, Math.floor(i / size) + 0.5 - cy) <= 3);
+      const s = this.pickSpot(p, near);
+      if (s >= 0) return s;
+    }
+    const s = this.pickSpot(p, tiles);
+    if (s >= 0) return s;
+    const apt: number[] = [];
+    for (const r of h.rooms) if (r.apt === h.home) apt.push(...this.roomTiles[r.id]);
+    return this.pickSpot(p, apt);
   }
 
   /** miejsce pracy mieszkańca na podwórku */
@@ -2264,9 +2410,31 @@ export class Sim {
       za chwilę będzie najedzony), są zapasy i ogień albo gaz, a nikt inny akurat nie gotuje; gotuje się wtedy
       od razu dla wszystkich, żeby nie palić gazu na jedną porcję */
   private shouldCook(): boolean {
-    const cores = this.st.pawns.filter((q) => q.kind === 'core');
-    const soon = cores.filter((q) => (q.needs?.food ?? 100) < PECKISH && q.job?.t !== 'eat').length;
-    return soon > this.meals() && !cores.some((q) => q.job?.t === 'cook') && canCookIn(this.st, this.w);
+    const st = this.st;
+    const cores = st.pawns.filter((q) => q.kind === 'core' && !q.away);
+    const m = st.laws.foodMult;
+    if (cores.some((q) => q.job?.t === 'cook') || !canCookIn(st, this.w)) return false;
+    // wspólny kocioł: gotuje się raz dziennie dla wszystkich, godzinę przed obiadem (i przed kolacją tylko wtedy,
+    // gdy garnek opustoszał)
+    if (st.laws.sharedMeals) {
+      const h = hourOf(st.tick);
+      return MEAL_HOURS.some((mh) => h === mh - 1) && this.meals() < this.potTarget() * (h < MEAL_HOURS[0] ? 1 : 0.5);
+    }
+    // inaczej dla tych, którzy zaraz zgłodnieją (przy racjach tylko ci, którym racja jeszcze została)
+    const soon = cores.filter(
+      (q) => (q.needs?.food ?? 100) < PECKISH && q.job?.t !== 'eat' && (m >= 1 || q.ate < RATION_MEALS),
+    ).length;
+    return soon * m > this.meals();
+  }
+
+  /** ile porcji ma być w garnku: dla zarządu według wielkości porcji, przy wspólnym kotle przed obiadem od razu
+      na obiad i kolację */
+  private potTarget(): number {
+    const st = this.st;
+    const cores = st.pawns.filter((q) => q.kind === 'core' && !q.away).length;
+    const one = Math.ceil(cores * st.laws.foodMult - 1e-9);
+    if (!st.laws.sharedMeals) return one;
+    return hourOf(st.tick) < MEAL_HOURS[0] ? one * MEAL_HOURS.length : one;
   }
 
   private startCook(p: Pawn, order: boolean): boolean {
@@ -2282,7 +2450,7 @@ export class Sim {
 
   /** jedzenie: ciepły posiłek z garnka, a gdy go nie ma, zimna konserwa z zapasów, ale tylko wtedy, gdy nie da się
       ugotować albo głód jest już duży (inaczej ktoś najpierw ugotuje) */
-  private startEat(p: Pawn): boolean {
+  private startEat(p: Pawn, shared = false): boolean {
     const h = this.house!;
     const size = this.w.size;
     const pot = this.st.things.find((t) => t.kind === 'posilek' && t.n > 0);
@@ -2323,8 +2491,29 @@ export class Sim {
     if (seat < 0 || !this.go(p, seat)) return false;
     const j = this.newJob('eat', table ? table.id : -1, seat, false);
     j.from = food.id;
+    // wspólny posiłek (przy kotle): n = 1
+    j.n = shared ? 1 : 0;
     this.setJob(p, j, false);
     return true;
+  }
+
+  /** Zjedzona porcja wielkości m: ułamki zbierają się w st.portion, a ze stosów (najpierw ten, z którego jadł, potem
+      garnki, potem zapasy) schodzą tylko całe porcje: przy racjach 3 porcje na 4 posiłki, przy kotle 11 na 10. */
+  private eatPortions(m: number, first: Thing): void {
+    const st = this.st;
+    st.portion += m;
+    let take = Math.floor(st.portion + 1e-9);
+    st.portion = Math.max(0, Math.round((st.portion - take) * 1e6) / 1e6);
+    while (take > 0) {
+      const src =
+        (first.n > 0 && st.things.includes(first) ? first : undefined) ??
+        st.things.find((t) => t.kind === 'posilek' && t.n > 0) ??
+        this.food();
+      if (!src) break;
+      src.n--;
+      take--;
+      if (src.n <= 0) st.things.splice(st.things.indexOf(src), 1);
+    }
   }
 
   /** dokładanie do kozy: z własnego drewna albo ze stosu (sam bierze tylko ze składu i dopiero, gdy ogień się
@@ -2914,6 +3103,7 @@ export class Sim {
       temp: inside ? this.st.temps[r] : tout,
       fire,
       asleep,
+      hunger: hungerRate(this.st.laws.foodMult),
       busy: (!!j && ((j.t === 'chop' && j.phase === 1) || (j.t === 'patch' && j.phase === 2))) || p.carry > 0,
       dark,
       inside,

@@ -16,6 +16,7 @@ import {
   type Pawn,
   type SimState,
   STAY_FIRE,
+  STAY_MEAL,
   STAY_YARD,
   type Thing,
   trunkOf,
@@ -153,6 +154,7 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     case 'warm':
       return walking ? 'Idzie ogrzać się przy kozie.' : 'Grzeje się przy kozie.';
     case 'eat':
+      if (j.n === 1) return walking ? 'Idzie na wspólny posiłek.' : 'Je wspólny posiłek.';
       if (walking) return 'Idzie coś zjeść.';
       return j.target >= 0 ? 'Je przy stole.' : 'Je.';
     case 'sleep':
@@ -161,6 +163,8 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     case 'stay':
       if (j.target === STAY_YARD) return walking ? 'Idzie na podwórko.' : 'Pracuje na podwórku.';
       if (j.target === STAY_FIRE) return walking ? 'Idzie do ogniska.' : 'Grzeje się przy ognisku.';
+      if (j.target === STAY_MEAL)
+        return walking ? 'Idzie na wspólny posiłek.' : 'Je wspólny posiłek przy stole zarządu.';
       return walking ? 'Idzie do domu.' : 'Siedzi w domu.';
     case 'cook': {
       if (walking) return 'Idzie gotować.';

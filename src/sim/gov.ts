@@ -73,7 +73,13 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
 
 /** uchwały zarządu, które zmieniają symulację (do polecenia 'laws' albo Sim.setLaws) */
 export function lawsFrom(l: LawEffects): Partial<Laws> {
-  return { burnMood: l.burnMood, workStart: l.workStart, gateClosed: l.gateClosed };
+  return {
+    burnMood: l.burnMood,
+    workStart: l.workStart,
+    gateClosed: l.gateClosed,
+    foodMult: l.foodMult,
+    sharedMeals: l.sharedMeals,
+  };
 }
 
 const clamp100 = (v: number) => (v < 0 ? 0 : v > 100 ? 100 : v);

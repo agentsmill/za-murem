@@ -49,6 +49,8 @@ export interface NeedCtx {
   strangers?: number;
   /** szabrownicy weszli na podwórko tej nocy: strach zostaje do rana */
   raided?: boolean;
+  /** mnożnik spadku najedzenia (racje: głód wraca szybciej), domyślnie 1 */
+  hunger?: number;
 }
 
 /** poniżej tej temperatury ciepło spada (o punkt na godzinę za każdy stopień), powyżej rośnie */
@@ -101,7 +103,7 @@ export function stepSafe(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
 
 /** h: godziny gry od ostatniego kroku; bonus: suma chwilowych nastrojów (punkty) */
 export function stepNeeds(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
-  n.food = clamp100(n.food - (c.asleep ? 2 : 4) * h);
+  n.food = clamp100(n.food - (c.asleep ? 2 : 4) * (c.hunger ?? 1) * h);
   n.rest = clamp100(n.rest + (c.asleep ? 12 : c.busy ? -9 : -5) * h);
   // pod kocem o 6°C cieplej; przy palącej się kozie grzeje się szybko bez względu na pokój
   const t = c.temp + (c.asleep ? 6 : 0);

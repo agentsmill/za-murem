@@ -430,6 +430,8 @@ describe('applyGov: skutki zarządu w symulacji', () => {
       burnMood: 0.5,
       workStart: 9,
       gateClosed: true,
+      foodMult: 0.8,
+      sharedMeals: true,
     });
   });
 });
