@@ -3,7 +3,8 @@
    Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
    Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-3]] [--no-worker] [--noc]
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
-   --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła) */
+   --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła). Zawsze z dymem: koza
+   zarządu rozpalona w stanie gry i ognisko na podwórku. */
 
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 
@@ -43,7 +44,34 @@ try {
       `${s.base}?demo=przymorze&perf=${PAWNS}&cam=hq,1&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}`,
     );
     await waitIdle(page);
+    // dym: koza zarządu rozpalona w stanie gry i ognisko na podwórku
+    const puffs = await page.evaluate(async () => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const size = sim.w.size;
+      sim.st.things.find((t) => t.kind === 'koza')!.fuel = 20000;
+      const free = sim.w.fence.yard.filter(
+        (i) => !sim.blocked[i] && !sim.st.things.some((t) => t.y * size + t.x === i),
+      );
+      const i = free[Math.floor(free.length * 0.6)];
+      sim.st.things.push({
+        id: 993000,
+        kind: 'ognisko',
+        x: i % size,
+        y: Math.floor(i / size),
+        w: 1,
+        h: 1,
+        rot: 0,
+        n: 0,
+        fuel: 20000,
+        by: -1,
+        owner: -1,
+      });
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return (zm.view as unknown as { smoke: { count: number } }).smoke.count;
+    });
     if (rows.length === 0) console.log(`WebGL: ${await webglRenderer(page)}`);
+    console.log(`${dev.name}: kłębów dymu ${puffs}`);
     console.log(`${dev.name}: kawałki rysuje ${await page.evaluate(() => window.zm!.view.painting)}`);
     const cdp = await ctx.newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: dev.cpu });
