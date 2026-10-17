@@ -51,14 +51,16 @@ export function osob(n: number): string {
 export const osobyNaPodlodze = (n: number): string => `${n} ${osob(n)} ${osob(n) === 'osoby' ? 'będą' : 'będzie'}`;
 
 const dom = (h: GovHost) => h.place().kind === 'dom';
-/** sąsiedzi to domy (albo w okolicy nikogo nie ma): teksty o domach obok zamiast o blokach */
-const domyObok = (h: GovHost) => h.place().near !== 'bloki';
+/** sąsiedzi to domy: teksty o domach obok zamiast o blokach */
+const domyObok = (h: GovHost) => h.neighbours() === 'domy';
+/** w okolicy nie ma sąsiadów: wydarzenia o nich nie przychodzą (samotny dom w polu, samotny blok) */
+const nikt = (h: GovHost) => h.neighbours() === null;
 const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 /** skąd ktoś patrzy przez lornetkę: z najwyższego budynku w okolicy */
 const TOWER: Record<string, string> = {
-  wiezowiec: 'Z dachu wieżowca obok',
-  blok: 'Z dachu bloku naprzeciwko',
+  wiezowiec: 'Z dachu wieżowca',
+  blok: 'Z dachu wysokiego bloku',
   szkola: 'Z dachu szkoły',
   kosciol: 'Z wieży kościoła',
   hala: 'Z dachu hali',
@@ -91,6 +93,7 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'dzieci',
     when: ['dzien'],
+    w: (h, base) => (nikt(h) ? 0 : base),
     text: (h) =>
       domyObok(h)
         ? 'Dzieciaki z sąsiednich domów przyciągnęły taczkę blach i rur z rozbiórki szopy. Chcą coś do jedzenia.'
@@ -99,6 +102,8 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'lodowka',
     when: ['dzien'],
+    // w domu lodówka stoi u sąsiadów: bez sąsiadów jej nie ma
+    w: (h, base) => (dom(h) && nikt(h) ? 0 : base),
     text: (h) =>
       dom(h)
         ? 'W domu obok, u sąsiadów, którzy wyjechali w 2048 roku, stoi pełna lodówka. Zamknięta na amen, bo abonament wygasł razem z serwerem producenta.'
@@ -115,7 +120,9 @@ export const OLD_EVENTS: OldEvent[] = [
       dom(h)
         ? {
             'maskotką osiedla': 'maskotką ulicy',
-            ...(h.place().garages === null ? { 'spadł za garażami': 'spadł w ogrodzie sąsiadów' } : {}),
+            ...(h.place().garages === null
+              ? { 'spadł za garażami': nikt(h) ? 'spadł za płotem' : 'spadł w ogrodzie sąsiadów' }
+              : {}),
           }
         : null,
   },
@@ -133,6 +140,8 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'auto',
     when: ['dzien'],
+    // w domu auto stoi na podjeździe u sąsiadów: bez sąsiadów go nie ma
+    w: (h, base) => (dom(h) && nikt(h) ? 0 : base),
     text: (h) =>
       dom(h)
         ? 'Na podjeździe u sąsiadów stoi autonomiczne auto, które od 2048 roku czeka na aktualizację. Mruga światłami, kiedy ktoś przechodzi.'
@@ -145,7 +154,7 @@ export const OLD_EVENTS: OldEvent[] = [
     title: (h) => (dom(h) ? 'Rata kredytu za 2047' : null),
     text: (h) =>
       dom(h)
-        ? 'Ktoś przyniósł list z banku: zaległa rata kredytu za dom z 2047 roku plus odsetki i opłata za upomnienie. Sąsiedzi pytają, czy komitet ulicy też będzie zbierał składki.'
+        ? `Ktoś przyniósł list z banku: zaległa rata kredytu za dom z 2047 roku plus odsetki i opłata za upomnienie. ${nikt(h) ? 'Ludzie' : 'Sąsiedzi'} pytają, czy komitet ulicy też będzie zbierał składki.`
         : null,
     labels: (h) => [
       dom(h) ? 'Ogłosić, że komitet składek nie zbiera' : null,
@@ -155,6 +164,7 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'krypto',
     when: ['dzien'],
+    w: (h, base) => (nikt(h) ? 0 : base),
     text: (h) =>
       domyObok(h)
         ? 'Sąsiad zza płotu chce kupić od was Drewno 5. Płaci tokenami, które według niego zaraz odbiją.'
@@ -219,7 +229,7 @@ export const OLD_EVENTS: OldEvent[] = [
       const many = osob(d.n) === 'osoby';
       const spec = d.spec ? ` Wśród nich jest ${d.spec.prof.toLowerCase()}, ${d.spec.name}.` : '';
       if (dom(h))
-        return `Pod furtką stoi rodzina, ${d.n} ${osob(d.n)}. Przyszli ${d.from} i proszą o miejsce. ${free ? `Wolnych łóżek w domu: ${free}.` : 'W domu nie ma wolnych łóżek, spaliby na podłodze w kuchni.'}${spec}`;
+        return `Pod furtką stoi rodzina, ${d.n} ${osob(d.n)}. Przyszli ${d.from}${d.from.includes(',') ? ',' : ''} i proszą o miejsce. ${free ? `Wolnych łóżek w domu: ${free}.` : 'W domu nie ma wolnych łóżek, spaliby na podłodze w kuchni.'}${spec}`;
       return `Pod bramą ${many ? 'stoją' : 'stoi'} ${d.n} ${osob(d.n)} i ${many ? 'proszą' : 'prosi'} o miejsce. Przyszli ${d.from}. Wolnych miejsc w bloku: ${free}.${spec}`;
     },
     choices: (h, d) => {
@@ -230,7 +240,7 @@ export const OLD_EVENTS: OldEvent[] = [
         h.addPeople(k - joined);
         h.mood(1, k > free ? 2 : 0);
         h.log(
-          `Przyjęliście ${k} ${osob(k)} ${d.from}.${k > free ? ` ${osobyNaPodlodze(k - free)} spać na podłodze.` : ''}`,
+          `Przyjęliście ${k} ${k === 1 ? 'osobę' : osob(k)} ${d.from}.${k > free ? ` ${osobyNaPodlodze(k - free)} spać na podłodze.` : ''}`,
           true,
         );
       };
@@ -302,8 +312,8 @@ export const OLD_EVENTS: OldEvent[] = [
           }
         : null,
   },
-  // złodziej z piwnicy to ktoś z mieszkańców: bez nich byłby nim ktoś z domowników
-  { id: 'kradziez', when: ['noc'], first: true, w: (h, base) => (h.residents() > 0 ? base : 0) },
+  // złodziej z piwnicy to ktoś z mieszkańców bloku; w domu tego wydarzenia nie ma (projekt), także z przyjętymi ludźmi
+  { id: 'kradziez', when: ['noc'], first: true, w: (h, base) => (!dom(h) && h.residents() > 0 ? base : 0) },
   // dwoje losowych z zarządu i „pierwszy od upadku” (upadek trwał 25 lat): wróci z parami z generatora mieszkańców
   { id: 'wesele', when: ['dzien', 'wieczor'], w: () => 0 },
   {

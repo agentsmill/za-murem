@@ -143,6 +143,34 @@ describe('dym z komina', () => {
   });
 });
 
+describe('stare zapisy', () => {
+  it('otwarte okno „Słoik od sąsiadki” działa jak dym z komina, bez błędu', () => {
+    const gov = fresh();
+    gov.ev.active = { id: 'sasiadka', d: {} };
+    gov.ev.done.sasiadka = true;
+    const i = inp(sec(1, 18));
+    const p = pending(gov, i);
+    expect(p?.k === 'wydarzenie' && p.title).toBe('Dym z komina');
+    expect(chooseEvent(gov, i, 0).stock.supplies).toBe(2);
+  });
+
+  it('po słoiku od sąsiadki dym nie przychodzi drugi raz', () => {
+    const gov = fresh();
+    gov.ev.done.sasiadka = true;
+    const { seen } = play(gov, 1, 100, (s) => ({ kozaLit: s >= 40, kitchen: 12 }));
+    expect(seen).toEqual([]);
+  });
+
+  it('nieznane okno w zapisie znika, zamiast blokować grę', () => {
+    const gov = fresh();
+    gov.ev.active = { id: 'nie-ma-takiego', d: {} };
+    expect(() => pending(gov, inp(100))).not.toThrow();
+    expect(() => chooseEvent(gov, inp(100), 0)).not.toThrow();
+    govUpdate(gov, inp(101, { kitchen: 18 }));
+    expect(gov.ev.active?.id).not.toBe('nie-ma-takiego');
+  });
+});
+
 describe('pierwsza noc', () => {
   it('do 8:00 drugiego dnia tylko wydarzenia pierwszej nocy, potem cała pula', () => {
     let later = 0;

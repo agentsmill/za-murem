@@ -64,6 +64,16 @@ describe('opis miejsca ze świata', () => {
     expect(p.clinic).toBeNull();
   });
 
+  it('punkty z mapy liczone od środka mapy, jak w świecie: sklep 42 m od siedziby', () => {
+    const { w } = demoWorld('zielonki');
+    const hq = w.buildings[w.hq];
+    const x = (hq.x0 + hq.x1) / 2 - w.size / 2;
+    const y = (hq.y0 + hq.y1) / 2 - w.size / 2;
+    expect(placeOf({ ...w, pois: [{ x: x + 42, y, c: 'spozywczy', n: 'Sklep' }] }).shop).toBe(42);
+    // przychodnia jako budynek stoi 114 m dalej, apteka z punktu bliżej
+    expect(placeOf({ ...w, pois: [{ x, y: y + 60, c: 'apteka', n: 'Apteka' }] }).clinic).toBe(60);
+  });
+
   it('wieża to najwyższy budynek do 200 m', () => {
     const tower = (...b: ReturnType<typeof bud>[]) => placeOf(placeWorld([bud(0, 'dom', 0, 0), ...b])).tower;
     expect(tower(bud(1, 'blok', 100, 0, { levels: 6 }), bud(2, 'blok', 0, 150, { levels: 12 }))).toBe('wiezowiec');

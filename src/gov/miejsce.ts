@@ -8,7 +8,7 @@ import type { World } from '../world/world.ts';
 import type { GovInput, GovPlace } from './typy.ts';
 
 /** to, czego opis miejsca potrzebuje ze świata */
-export type PlaceWorld = Pick<World, 'buildings' | 'hq' | 'pois' | 'apts'>;
+export type PlaceWorld = Pick<World, 'size' | 'buildings' | 'hq' | 'pois' | 'apts'>;
 
 /** promienie w metrach: sąsiedzi, sklep, garaże, przychodnia, wysoki budynek */
 const NEAR = 120;
@@ -100,10 +100,12 @@ function describePlace(w: PlaceWorld): GovPlace {
     )
       tower = { kind, levels: b.levels, area: b.area, d };
   }
+  // punkty z mapy są w metrach od środka mapy, budynki w kafelkach od rogu (jak w buildWorld: p.x + half);
   // atrapy światów w testach symulacji nie mają punktów ani stanów mieszkań
+  const half = (w.size ?? 0) / 2;
   for (const q of w.pois ?? []) {
-    if (SHOP_POI.has(q.c)) shop = Math.min(shop, dist2(q.x, q.y));
-    else if (CLINIC_POI.has(q.c)) clinic = Math.min(clinic, dist2(q.x, q.y));
+    if (SHOP_POI.has(q.c)) shop = Math.min(shop, dist2(q.x + half, q.y + half));
+    else if (CLINIC_POI.has(q.c)) clinic = Math.min(clinic, dist2(q.x + half, q.y + half));
   }
   const apts = w.apts ? w.apts.filter((a) => a.bid === w.hq).length : null;
   const kind: GovPlace['kind'] = hq.cls === 'dom' || (apts !== null && apts <= 1 && hq.levels <= 2) ? 'dom' : 'blok';
@@ -130,6 +132,9 @@ function describePlace(w: PlaceWorld): GovPlace {
   };
 }
 
+/** jacy sąsiedzi są w okolicy (w 120 m): bloki, domy albo nikt (null); jedno źródło słów o sąsiadach w wydarzeniach */
+export const sasiedzi = (p: GovPlace): 'bloki' | 'domy' | null => (p.near === 'nikt' ? null : p.near);
+
 /** Słowa wspólnoty według miejsca. Kontrakt także dla tekstów spoza zarządu (cele, okna, pasek, powód nastroju). */
 export interface Words {
   /** spółdzielnia | ulica: mianownik, dopełniacz i „w czym” (w spółdzielni | na ulicy) */
@@ -146,7 +151,8 @@ export interface Words {
   mieszkancy: { m: string; d: string };
   /** wejście w siatce: brama | furtka (mianownik, „przy”, „pod”) */
   brama: { m: string; przy: string; pod: string };
-  /** skąd przychodzi sąsiad: z bloku obok | zza płotu */
+  /** skąd przychodzi sąsiad z innego budynku: z bloku obok | zza płotu (według sąsiadów, w samotnym miejscu według
+      siedziby). Wydarzenia mówią o sąsiadach tylko wtedy, gdy są (GovHost.neighbour: także „z waszej klatki”). */
   sasiad: string;
 }
 
@@ -172,7 +178,8 @@ const ULICZNE: Omit<Words, 'sasiad'> = {
 
 /** słownik dla miejsca: w domu ulica i komitet ulicy, w bloku spółdzielnia i zarząd (decyzja Mateusza, 17.10.2026) */
 export function wordsOf(p: GovPlace): Words {
-  const houses = p.near === 'domy' || (p.near === 'nikt' && p.kind === 'dom');
+  const s = sasiedzi(p);
+  const houses = s === 'domy' || (s === null && p.kind === 'dom');
   return { ...(p.kind === 'dom' ? ULICZNE : BLOKOWE), sasiad: houses ? 'zza płotu' : 'z bloku obok' };
 }
 

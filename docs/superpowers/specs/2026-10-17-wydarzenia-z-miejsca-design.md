@@ -55,10 +55,10 @@ Zarząd dostaje opis miejsca policzony raz ze świata (`src/gov/miejsce.ts`, fun
 |---|---|---|
 | `kind: 'dom' \| 'blok'` | siedziba z klasą `dom` albo z jednym mieszkaniem we wnętrzu to dom, reszta to blok | słownik wspólnoty, warianty tekstów |
 | `blocks`, `houses`, `near: 'bloki' \| 'domy' \| 'nikt'` | bloki i domy w promieniu 120 m od środka siedziby; `near` to rodzaj, którego jest więcej (przy remisie według siedziby), a `nikt`, gdy w promieniu nie ma żadnego budynku mieszkalnego | „blok obok” czy „dom obok”; przy `nikt` wydarzenia z sąsiadami, także dym z komina, nie przychodzą (moja decyzja: samotny dom w polu nie ma sąsiada zza płotu) |
-| `shop` | odległość do najbliższego sklepu: budynek klasy `sklep` albo punkt z kategorią handlową, do 300 m; `null`, gdy brak | automat paczkowy i podobne |
+| `shop` | odległość do najbliższego sklepu: budynek klasy `sklep` albo punkt z kategorią handlową, do 300 m; `null`, gdy brak (punkty z nazwą są w metrach od środka mapy, budynki w kafelkach od rogu) | automat paczkowy i podobne |
 | `garages` | najbliższe garaże do 150 m albo `null` | „za garażami” czy „za płotem” |
 | `clinic` | przychodnia albo apteka do 300 m albo `null` | wydarzenie o przychodni |
-| `tower` | najwyższy budynek do 200 m, z którego widać siedzibę: blok od 5 pięter („z dachu bloku naprzeciwko”, od 9 pięter „z dachu wieżowca”), szkoła, kościół („z wieży kościoła”), hala, sklep od 1000 m² („z dachu marketu”), albo `null` | „Ktoś was obserwuje” |
+| `tower` | najwyższy budynek do 200 m, z którego widać siedzibę: blok od 5 pięter („z dachu wysokiego bloku”, od 9 pięter „z dachu wieżowca”), szkoła, kościół („z wieży kościoła”), hala, sklep od 1000 m² („z dachu marketu”), albo `null` | „Ktoś was obserwuje” |
 
 Odległości na liczbach całkowitych (kwadrat odległości zamiast `Math.hypot`), żeby wynik był ten sam w każdej przeglądarce (moja decyzja, za uwagą w `docs/POSTEP.md`).
 
