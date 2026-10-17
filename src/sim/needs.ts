@@ -89,6 +89,12 @@ export function safeTarget(c: NeedCtx): number {
   return clamp100(t);
 }
 
+/** mieszkańcy (tło): zmienia się tylko bezpieczeństwo, reszta potrzeb stoi; nastrój z potrzeb i chwilowych */
+export function stepSafe(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
+  n.safe = clamp100(n.safe + (safeTarget(c) - n.safe) * Math.min(1, h / 2));
+  n.mood = clamp100(moodOf(n) + bonus);
+}
+
 /** h: godziny gry od ostatniego kroku; bonus: suma chwilowych nastrojów (punkty) */
 export function stepNeeds(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
   n.food = clamp100(n.food - (c.asleep ? 2 : 4) * h);

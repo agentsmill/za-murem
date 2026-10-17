@@ -102,6 +102,9 @@ export interface SimSnapshot {
   burned: Burned[];
   fence: SimFence;
   light: SimLight;
+  /** mieszkańcy siedziby poza zarządem i ilu się zmieści */
+  residents: number;
+  cap: number;
 }
 
 export function snapshot(st: SimState, w: World): SimSnapshot {
@@ -190,5 +193,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       campfire: st.things.some((t) => t.kind === 'ognisko' && t.fuel > 0),
       gateLamp: false,
     },
+    residents: st.pawns.filter((p) => p.kind === 'resident').length,
+    cap: st.cap,
   };
 }

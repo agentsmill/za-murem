@@ -10,6 +10,8 @@ import {
   FURNITURE_ACC,
   type Pawn,
   type SimState,
+  STAY_FIRE,
+  STAY_YARD,
   type Thing,
   trunkOf,
 } from './sim.ts';
@@ -116,6 +118,10 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     case 'sleep':
       if (walking) return 'Idzie spać.';
       return j.target >= 0 ? 'Śpi.' : 'Śpi na podłodze.';
+    case 'stay':
+      if (j.target === STAY_YARD) return walking ? 'Idzie na podwórko.' : 'Pracuje na podwórku.';
+      if (j.target === STAY_FIRE) return walking ? 'Idzie do ogniska.' : 'Grzeje się przy ognisku.';
+      return walking ? 'Idzie do domu.' : 'Siedzi w domu.';
     case 'cook': {
       if (walking) return 'Idzie gotować.';
       return st.things.find((t) => t.id === j.target)?.kind === 'koza' ? 'Gotuje na kozie.' : 'Gotuje na kuchence.';

@@ -150,7 +150,8 @@ describe('świat z geometrii', () => {
     // symulacja startuje (wcześniej: TypeError w createSim i czarny ekran)
     const sim = new Sim(w, createSim(w, 1, { core: 4, crowd: 3 }));
     for (let k = 0; k < 50; k++) sim.step();
-    expect(sim.st.pawns).toHaveLength(7);
+    // zarząd i tłum; mieszkańcy siedziby (od tury 3) dochodzą sami według mieszkań
+    expect(sim.st.pawns.filter((p) => p.kind === 'core' || p.kind === 'crowd')).toHaveLength(7);
   });
 
   it('bez żadnego budynku: czytelny błąd zamiast czarnego ekranu', () => {
