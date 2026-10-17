@@ -956,7 +956,11 @@ export class Sim {
     // tłum do pomiarów chodzi tam, gdzie mieszkańcy nie: za siatką; warstwa ta sama, obszary rozłączne
     const res = { blocked: resident, reg: labelRegions(resident, size) };
     const outside = stranger.slice();
-    for (const t of fenceShape(this.w)?.yard ?? []) outside[t] = 1;
+    const shape = fenceShape(this.w);
+    // strona ulicy: bez podwórka, a dziury i brama to przejście, nie miejsce, w którym się czeka
+    for (const t of shape?.yard ?? []) outside[t] = 1;
+    for (const t of shape?.hole ?? []) outside[t] = 1;
+    for (const t of gateTiles(this.w)) outside[t] = 1;
     if (this.house) for (let i = 0; i < outside.length; i++) if (this.house.room[i] >= 0) outside[i] = 1;
     this.lay = {
       resident: res,

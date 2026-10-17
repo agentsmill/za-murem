@@ -482,6 +482,9 @@ describe('szabrownicy', () => {
     while (st.tick < atHour(1, 22.95)) sim.step();
     for (const p of strangers(sim)) {
       expect(yard.has(tileOf(p))).toBe(false);
+      // za siatką, nie w samej dziurze ani w bramie
+      expect(w.fence.hole.includes(tileOf(p))).toBe(false);
+      expect(gateTiles().includes(tileOf(p))).toBe(false);
       expect(p.job?.phase).toBe(1);
       expect(jobText(st, w, p)).toBe('Czai się za siatką.');
       expect(
@@ -510,6 +513,26 @@ describe('szabrownicy', () => {
     expect(r.took.wood).toBe(r.n * 8);
     expect(loose0 + sklad0 - wood(st, 'loose') - wood(st, 'sklad')).toBe(r.took.wood);
     expect(food0 - food(st)).toBe(r.took.supplies);
+  });
+
+  it('przy każdym posterunku czekają za siatką, nie w samej dziurze ani w bramie', () => {
+    const gate = gateTiles();
+    let seen = 0;
+    for (const seed of [1, 2, 3]) {
+      const st = createSim(w, seed, { core: 2 });
+      st.tick = atHour(1, 21);
+      for (const post of [...st.fence!.holes.map((h) => `d${h.id}`), 'brama']) {
+        const sim = new Sim(w, JSON.parse(JSON.stringify(st)));
+        sim.push({ t: 'raid', ids: [], at: atHour(1, 22), post });
+        while (sim.st.tick < atHour(1, 22) - 10) sim.step();
+        for (const p of strangers(sim)) {
+          seen++;
+          expect(p.job?.phase).toBe(1);
+          expect(w.fence.hole.includes(tileOf(p)) || gate.includes(tileOf(p)) || yard.has(tileOf(p))).toBe(false);
+        }
+      }
+    }
+    expect(seen).toBeGreaterThan(10);
   });
 
   it('bezpieczeństwo mieszkańców po kradzieży spada', () => {
