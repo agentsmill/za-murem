@@ -569,3 +569,43 @@ describe('szabrownicy', () => {
     expect(again.sim.hash()).toBe(sim.hash());
   });
 });
+
+describe('świat bez siatki i bez wnętrza', () => {
+  it('polecenia nocy, napad i skutki zarządu nie wywracają symulacji', async () => {
+    const { plainBlock } = await import('./interior-mock.ts');
+    const { applyGov } = await import('../../src/sim/gov.ts');
+    const { emptyEffects } = await import('../../src/gov/wspolne.ts');
+    const base = plainBlock();
+    const bare = {
+      ...base,
+      fence: { tiles: [], hole: [], gate: { x: 0, y: 0, w: 0, h: 0, rot: 0 }, yard: [] },
+    } as typeof base;
+    for (const world of [base, bare]) {
+      const st = createSim(world, 3, { core: 2 });
+      const sim = new Sim(world, st);
+      const ids = st.pawns.filter((p) => p.kind === 'core').map((p) => p.id);
+      sim.push({ t: 'guard', ids: [ids[0]], post: 'brama' });
+      sim.push({ t: 'patch', ids: [ids[1]], hole: 1 });
+      sim.push({ t: 'campfire', ids, at: 5 });
+      sim.push({ t: 'gate', ids: [], open: false });
+      sim.push({ t: 'raid', ids: [], at: 400, post: 'brama' });
+      sim.push({ t: 'away', ids: [ids[1]] });
+      const fx = emptyEffects();
+      fx.stock.wood = 5;
+      fx.stock.supplies = -3;
+      fx.residents = 2;
+      fx.patch = 1;
+      fx.fire = true;
+      fx.sick = 1;
+      applyGov(st, world, fx);
+      for (let k = 0; k < 1500; k++) sim.step();
+      sim.push({ t: 'back', ids: [ids[1]] });
+      for (let k = 0; k < 200; k++) sim.step();
+      expect(st.pawns.some((p) => p.kind === 'szabrownik')).toBe(false);
+      expect(st.pawns.find((p) => p.id === ids[1])!.away).toBe(false);
+      const s = snapshot(st, world);
+      expect(s.fence.holes.length).toBeGreaterThanOrEqual(0);
+      expect(JSON.parse(JSON.stringify(st))).toEqual(st);
+    }
+  });
+});
