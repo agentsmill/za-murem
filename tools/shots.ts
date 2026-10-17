@@ -1713,6 +1713,486 @@ const SHOTS: Shot[] = [
       if (Number(group) !== pts.length) throw new Error('ramka z Shiftem nie zaznaczyła całego zarządu');
     },
   },
+  // M2, fala 1: budowle, duchy planów, podgląd stawiania, puste mieszkania w przekroju (atrapy do czasu świata i symulacji)
+  {
+    name: 'm2-budowle',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
+      await waitIdle(page);
+      const r = await m2Stage(page, 'budowle');
+      await waitIdle(page);
+      const keys = await thingKeys(page);
+      const kinds = ['warsztat', 'kuchnia_spoleczna', 'magazyn', 'lozka_pietrowe', 'ogrodek', 'zasieki'];
+      const drawn = kinds.filter((k) => keys.some((key) => key.includes(`"kind":"${k}"`)));
+      console.log(`  postawione: ${r.placed.join(', ')}; narysowane: ${drawn.join(', ')}`);
+      if (drawn.length !== r.placed.length || drawn.length < 5) throw new Error('nie wszystkie budowle się rysują');
+    },
+  },
+  {
+    // ogródek na podwórku i zasieki w linii siatki (zamiast jej odcinka)
+    name: 'm2-budowle-podworko',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
+      await waitIdle(page);
+      await m2Stage(page, 'budowle');
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const t = zm.sim!.st.things.find((q) => q.kind === 'ogrodek')!;
+        zm.setCam(t.x + 1.5, t.y + 1, 1.6);
+      });
+      await waitIdle(page);
+    },
+  },
+  {
+    name: 'm2-duch',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
+      await waitIdle(page);
+      await m2Stage(page, 'plany');
+      await waitIdle(page);
+      const n = await page.evaluate(() => (window.zm!.view as unknown as { builds: { count: number } }).builds.count);
+      console.log(`  duchów planów: ${n}`);
+      if (n < 3) throw new Error('nie widać planów budowy');
+    },
+  },
+  {
+    // podgląd stawiania w mapie (view.setPlacement) w dzień; nazwy inne niż scenariusze interfejsu
+    // m2-stawianie*, żeby obrazy się nie nadpisywały
+    name: 'm2-podglad',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
+      await waitIdle(page);
+      await m2Stage(page, 'stawianie-ok');
+      await waitIdle(page);
+    },
+  },
+  {
+    // podgląd stawiania w niedozwolonym miejscu, nocą (nad mapą światła)
+    name: 'm2-podglad-noc',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6&godzina=22`);
+      await waitIdle(page);
+      await m2Stage(page, 'stawianie-zle');
+      await waitIdle(page);
+    },
+  },
+  {
+    // puste mieszkania z atrapy: wyważone drzwi, wybite okno, spalenizna, zalana podłoga, cieknąca rura, śmieci, zepsute meble
+    name: 'm2-puste-mieszkania',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as {
+          scene: { section: { damage?: Map<number, string>; why?: Map<number, string> } | null; w: { size: number } };
+          things: Map<string, unknown>;
+        };
+        const sec = v.scene.section!;
+        const size = v.scene.w.size;
+        const kinds = [...new Set(sec.damage!.values())].sort();
+        const whys = [...new Set(sec.why!.values())].sort();
+        const keys = [...v.things.keys()];
+        // kamera na uszkodzenie wybitego okna (spalone mieszkanie)
+        const okno = [...sec.damage!.entries()].find(([, k]) => k === 'okno');
+        if (okno) zm.setCam((okno[0] % size) + 0.5, Math.floor(okno[0] / size) + 2.5, 1.7);
+        return {
+          kinds,
+          whys,
+          trash: keys.filter((k) => k.includes('"smieci"')).length,
+          broken: keys.filter((k) => k.includes('"broken":true')).length,
+        };
+      });
+      await waitIdle(page);
+      console.log(
+        `  uszkodzenia: ${r.kinds.join(', ')}; ślady: ${r.whys.join(', ')}; śmieci ${r.trash}, zepsutych ${r.broken}`,
+      );
+      if (r.kinds.length < 4 || r.whys.length < 3 || r.trash < 1 || r.broken < 1)
+        throw new Error('puste mieszkania bez śladów');
+    },
+  },
+  {
+    name: 'm2-puste-zalanie',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as { scene: { section: { damage?: Map<number, string> }; w: { size: number } } };
+        const size = v.scene.w.size;
+        const rura = [...v.scene.section.damage!.entries()].find(([, k]) => k === 'rura');
+        if (rura) zm.setCam((rura[0] % size) + 0.5, Math.floor(rura[0] / size) + 0.5, 1.9);
+      });
+      await waitIdle(page);
+    },
+  },
+  {
+    // spalone mieszkanie: okopcona kuchenka (piec na jej kafelku, jak w świecie) z sadzą na posadzce obok
+    // i zwęglona podłoga w pokoju
+    name: 'm2-puste-pozar',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      const tile = await page.evaluate(() => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as { scene: { section: { damage?: Map<number, string> }; w: { size: number } } };
+        const size = v.scene.w.size;
+        const piec = [...v.scene.section.damage!.entries()].find(([, k]) => k === 'piec');
+        if (piec) zm.setCam((piec[0] % size) + 0.5, Math.floor(piec[0] / size) + 1, 1.9);
+        return piec ? piec[0] : -1;
+      });
+      await waitIdle(page);
+      const r = await page.evaluate((i) => {
+        const v = window.zm!.view as unknown as { scene: { w: { size: number } }; things: Map<string, unknown> };
+        const size = v.scene.w.size;
+        const at = `${i % size}:${Math.floor(i / size)}:`;
+        return [...v.things.keys()].find((k) => k.startsWith(at)) ?? '';
+      }, tile);
+      console.log(
+        `  piec na kafelku ${tile}: ${r.replace(/:\{.*/, '')} ${r.includes('"burnt":true') ? 'okopcony' : 'cały'}`,
+      );
+      if (tile < 0 || !r.includes('"kuchenka"') || !r.includes('"burnt":true'))
+        throw new Error('kuchenka na kafelku uszkodzenia piec nie jest okopcona');
+    },
+  },
+  // uszkodzona podłoga według przyczyny: wyrwane deski po wyjeździe, zwęglone deski po pożarze
+  m2Floor('m2-puste-deski', 'wyjazd'),
+  m2Floor('m2-puste-zweglone', 'pozar'),
+  {
+    // puste mieszkania z prawdziwego świata, bez atrapy: widać tyle, ile świat daje (bez danych sam przekrój)
+    name: 'm2-puste-swiat',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as {
+          scene: { section: { damage?: Map<number, string>; why?: Map<number, string> }; w: { size: number } };
+          things: Map<string, unknown>;
+        };
+        const sec = v.scene.section;
+        const size = v.scene.w.size;
+        const dmg = [...(sec.damage ?? new Map<number, string>()).entries()];
+        const keys = [...v.things.keys()];
+        // kamera na uszkodzenie, najchętniej na okno albo drzwi
+        const pick = dmg.find(([, k]) => k === 'okno' || k === 'drzwi') ?? dmg[0];
+        if (pick) zm.setCam((pick[0] % size) + 0.5, Math.floor(pick[0] / size) + 1.5, 1.6);
+        return {
+          kinds: [...new Set(dmg.map(([, k]) => k))].sort(),
+          whys: [...new Set((sec.why ?? new Map<number, string>()).values())].sort(),
+          trash: keys.filter((k) => k.includes('"smieci"')).length,
+          broken: keys.filter((k) => k.includes('"broken":true')).length,
+          burnt: keys.filter((k) => k.includes('"burnt":true')).length,
+        };
+      });
+      await waitIdle(page);
+      console.log(
+        `  ze świata: uszkodzenia ${r.kinds.join(', ') || 'brak'}; ślady ${r.whys.join(', ') || 'brak'}; śmieci ${r.trash}, zepsutych ${r.broken}, okopconych ${r.burnt}`,
+      );
+    },
+  },
+  {
+    // naprawa jak w symulacji M2: wpis st.damage z fixed równym true znika z przekroju (przerysowują się
+    // tylko jego kawałki), wpis z fixed równym false zostaje
+    name: 'm2-naprawa',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      const r = await page.evaluate(async () => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as { scene: { section: { damage?: Map<number, string> } }; chunksMade: number };
+        const dmg = v.scene.section.damage!;
+        const [a, b, c] = [...dmg.keys()];
+        const before = dmg.size;
+        const st = zm.sim!.st as unknown as { damage?: unknown[] };
+        if (!st.damage) st.damage = [];
+        for (const [tile, fixed] of [
+          [a, true],
+          [b, true],
+          [c, false],
+        ] as const)
+          st.damage.push({ kind: dmg.get(tile), tile, apt: -1, fixed, have: {} });
+        await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+        return { a, b, c, before, after: dmg.size, gone: !dmg.has(a) && !dmg.has(b), kept: dmg.has(c) };
+      });
+      await waitIdle(page);
+      console.log(
+        `  uszkodzeń ${r.before} → ${r.after}: kafelki ${r.a} i ${r.b} naprawione: ${r.gone}, ${r.c} bez naprawy zostaje: ${r.kept}`,
+      );
+      if (!r.gone || !r.kept || r.after !== r.before - 2)
+        throw new Error('naprawa ze st.damage nie działa w przekroju');
+    },
+  },
+  {
+    // atrapa pustych mieszkań w przekroju: obraz z workerów i z głównego wątku ten sam
+    name: 'm2-zgodnosc',
+    query: '',
+    run: async (page, base) => {
+      const snap = async (q: string) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.5&mieszkania=atrapa${q}`);
+        await waitIdle(page);
+        await page.addStyleTag({ content: '#fps { visibility: hidden !important; }' });
+        return decodePng(await page.screenshot());
+      };
+      const a = await snap('');
+      const b = await snap('&worker=0');
+      let diff = 0;
+      for (let i = 0; i < a.rgba.length; i += 4)
+        if (a.rgba[i] !== b.rgba[i] || a.rgba[i + 1] !== b.rgba[i + 1] || a.rgba[i + 2] !== b.rgba[i + 2]) diff++;
+      console.log(`  puste mieszkania: worker i główny wątek, różnych pikseli: ${diff}`);
+      if (diff) throw new Error(`obraz z workerów i z głównego wątku różni się w ${diff} pikselach`);
+    },
+  },
+  {
+    // Mac: Ctrl+klik to prawy przycisk, dwa palce na gładziku przesuwają mapę, szczypanie (wheel z ctrlKey
+    // w Chrome i Firefoksie, gesturechange w Safari) i kółko myszy przybliżają
+    name: 'mysz-mac',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const cardShown = () =>
+        page
+          .waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 })
+          .then(() => true)
+          .catch(() => false);
+      const [px, py] = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+        return zm.screenOf(p.x, p.y - 0.6);
+      });
+      await page.mouse.click(px, py);
+      if (!(await cardShown())) throw new Error('kliknięcie nie zaznaczyło nikogo z zarządu');
+      // Ctrl+klik w suche drzewo: menu poleceń jak prawy przycisk, zaznaczenie zostaje
+      const tree = await page.evaluate(() => {
+        const zm = window.zm!;
+        const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
+        zm.setCam(t.x, t.y - 1, 1.3);
+        return [t.x, t.y] as [number, number];
+      });
+      await waitIdle(page);
+      const [tx, ty] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.3), tree);
+      await page.keyboard.down('Control');
+      await page.mouse.click(tx, ty);
+      await page.keyboard.up('Control');
+      const menu = await page.evaluate(() => ({
+        open: !document.getElementById('ctx')!.hidden,
+        items: [...document.querySelectorAll('#ctx .ctx-item')].map((b) => b.textContent ?? ''),
+        card: !document.getElementById('card')!.hidden,
+      }));
+      console.log(
+        `  Ctrl+klik w suche drzewo: menu ${menu.open ? menu.items.join(' | ') : 'zamknięte'}, zaznaczenie ${menu.card ? 'zostało' : 'zgubione'}`,
+      );
+      if (!menu.open || !menu.items.some((t) => t.startsWith('Ściąć drzewo')))
+        throw new Error('Ctrl+klik nie otworzył menu poleceń');
+      if (!menu.card) throw new Error('Ctrl+klik zgubił zaznaczenie');
+      await page.screenshot({ path: path.join(OUT, 'mysz-mac-menu.png') });
+      await page.keyboard.press('Escape');
+      // zdarzenia wheel i gest Safari na środku mapy (Playwright nie ma gładzika ani Safari)
+      const wheel = (o: { dx?: number; dy?: number; mode?: number; ctrl?: boolean }) =>
+        page.evaluate((o) => {
+          const c = document.querySelector('#stage canvas')!;
+          const r = c.getBoundingClientRect();
+          c.dispatchEvent(
+            new WheelEvent('wheel', {
+              deltaX: o.dx ?? 0,
+              deltaY: o.dy ?? 0,
+              deltaMode: o.mode ?? 0,
+              ctrlKey: !!o.ctrl,
+              clientX: r.left + r.width / 2,
+              clientY: r.top + r.height / 2,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          const cam = window.zm!.view.cam;
+          return { x: cam.x, y: cam.y, zoom: cam.zoom };
+        }, o);
+      const cam = () => page.evaluate(() => ({ ...window.zm!.view.cam }));
+      const c0 = await cam();
+      // szczypanie w Chrome i Firefoksie: wheel z ctrlKey przybliża
+      const c1 = await wheel({ dy: -8, ctrl: true });
+      // gładzik: mała delta i delta w poziomie przesuwają mapę bez zmiany zoomu
+      await wheel({ dy: 6 });
+      const c2 = await wheel({ dx: 30, dy: 2 });
+      // kółko myszy po przerwie w geście gładzika: deltaY 100 oddala, -100 przybliża
+      await page.waitForTimeout(400);
+      const c3 = await wheel({ dy: 100 });
+      const c4 = await wheel({ dy: -100 });
+      // Firefox z kółkiem: linie
+      await page.waitForTimeout(50);
+      const c5 = await wheel({ dy: -3, mode: 1 });
+      // Safari: gesturestart, gesturechange ze scale, gestureend (z preventDefault, żeby nie rosła cała strona)
+      const g = await page.evaluate(() => {
+        const c = document.querySelector('#stage canvas')!;
+        const r = c.getBoundingClientRect();
+        const ev = (type: string, scale: number) => {
+          const e = new Event(type, { bubbles: true, cancelable: true });
+          Object.assign(e, { scale, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+          c.dispatchEvent(e);
+          return e.defaultPrevented;
+        };
+        const z0 = window.zm!.view.cam.zoom;
+        const p0 = ev('gesturestart', 1);
+        const p1 = ev('gesturechange', 1.5);
+        const z1 = window.zm!.view.cam.zoom;
+        const p2 = ev('gestureend', 1.5);
+        return { z0, z1, prevented: p0 && p1 && p2 };
+      });
+      const f = (n: number) => n.toFixed(3);
+      console.log(
+        `  zoom: start ${f(c0.zoom)}, szczypanie ${f(c1.zoom)}, gładzik ${f(c2.zoom)} (mapa o ${Math.round(Math.hypot(c2.x - c1.x, c2.y - c1.y))} px świata), kółko +100 ${f(c3.zoom)}, -100 ${f(c4.zoom)}, linie ${f(c5.zoom)}, Safari ${f(g.z0)} → ${f(g.z1)}`,
+      );
+      if (!(c1.zoom > c0.zoom)) throw new Error('wheel z ctrlKey (szczypanie) nie przybliżył');
+      if (c2.zoom !== c1.zoom || (c2.x === c1.x && c2.y === c1.y))
+        throw new Error('gładzik zmienił zoom albo nie przesunął mapy');
+      if (!(c3.zoom < c2.zoom) || !(c4.zoom > c3.zoom)) throw new Error('kółko myszy (deltaY ±100) nie zmienia zoomu');
+      if (!(c5.zoom > c4.zoom)) throw new Error('kółko w liniach nie przybliżyło');
+      if (!(g.z1 > g.z0 * 1.4) || !g.prevented)
+        throw new Error('gest Safari (gesturechange) nie przybliżył albo nie zablokował strony');
+    },
+  },
+  {
+    // telefon: palec przesuwa mapę, dwa palce przybliżają w punkcie między palcami i przesuwają mapę, a gesty
+    // Safari z iPhone'a (idą razem z dotykiem) nie przybliżają drugi raz, tylko blokują przybliżanie strony
+    name: 'dotyk-szczypanie',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const s = document.getElementById('stage')!.getBoundingClientRect();
+        return { x: s.left, y: s.top, w: s.width, h: s.height };
+      });
+      // środek mapy: punkty CDP są na ekranie, a toWorld liczy od rogu mapy
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      const cam = () => page.evaluate(() => ({ ...window.zm!.view.cam }));
+      const worldAt = (x: number, y: number) =>
+        page.evaluate(([x, y]) => window.zm!.view.toWorld(x, y), [x - r.x, y - r.y] as [number, number]);
+      const cdp = await page.context().newCDPSession(page);
+      /** palce przez CDP jak z telefonu: każdy od a[i] do b[i] w 10 krokach; step(k) po starcie i każdym kroku */
+      const touch = async (a: [number, number][], b: [number, number][], step?: (k: number) => Promise<void>) => {
+        const n = 10;
+        const at = (k: number) =>
+          a.map(([x, y], id) => ({ id, x: x + ((b[id][0] - x) * k) / n, y: y + ((b[id][1] - y) * k) / n }));
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+        await step?.(0);
+        for (let k = 1; k <= n; k++) {
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(k) });
+          await step?.(k);
+        }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      };
+      const c0 = await cam();
+      // jeden palec: mapa jedzie za palcem, przybliżenie bez zmian
+      await touch([[cx, cy - 75]], [[cx, cy + 75]]);
+      const c1 = await cam();
+      const drag = Math.round((c0.y - c1.y) * c0.zoom);
+      // dwa palce rozsuwane ze 100 na 200 px: przybliżenie ×2, a punkt między palcami zostaje pod palcami
+      const w0 = await worldAt(cx, cy);
+      await touch(
+        [
+          [cx - 50, cy],
+          [cx + 50, cy],
+        ],
+        [
+          [cx - 100, cy],
+          [cx + 100, cy],
+        ],
+      );
+      const c2 = await cam();
+      const w1 = await worldAt(cx, cy);
+      const slip = Math.round(Math.hypot(w1[0] - w0[0], w1[1] - w0[1]) * c2.zoom);
+      await page.screenshot({ path: path.join(OUT, 'dotyk-szczypanie-blisko.png') });
+      // dwa palce razem w bok: mapa jedzie, przybliżenie bez zmian
+      await touch(
+        [
+          [cx - 60, cy],
+          [cx + 60, cy],
+        ],
+        [
+          [cx + 20, cy],
+          [cx + 140, cy],
+        ],
+      );
+      const c3 = await cam();
+      const pan2 = Math.round((c2.x - c3.x) * c2.zoom);
+      // iPhone: Safari wysyła przy szczypaniu też gesturestart, gesturechange i gestureend. Scale celowo inny niż
+      // palce (3 zamiast 0,5): gdyby gest przybliżał, zoom poszedłby za nim. Ruch palców Chromium oddaje stronie
+      // w następnej klatce, więc gest idzie klatkę po ruchu (jak w Safari, po zdarzeniach dotyku)
+      const gesture = (type: string, scale: number) =>
+        page.evaluate(
+          ({ type, scale, x, y }) => {
+            const e = new Event(type, { bubbles: true, cancelable: true });
+            Object.assign(e, { scale, clientX: x, clientY: y });
+            const z = window.zm!.view.cam.zoom;
+            document.querySelector('#stage canvas')!.dispatchEvent(e);
+            return { prevented: e.defaultPrevented, changed: window.zm!.view.cam.zoom !== z };
+          },
+          { type, scale, x: cx, y: cy },
+        );
+      const gestures: { prevented: boolean; changed: boolean }[] = [];
+      await touch(
+        [
+          [cx - 100, cy],
+          [cx + 100, cy],
+        ],
+        [
+          [cx - 50, cy],
+          [cx + 50, cy],
+        ],
+        async (k) => {
+          await frames(page, 1);
+          gestures.push(await gesture(k ? 'gesturechange' : 'gesturestart', k ? 3 : 1));
+        },
+      );
+      gestures.push(await gesture('gestureend', 3));
+      await frames(page, 1);
+      const c4 = await cam();
+      const prevented = gestures.every((g) => g.prevented);
+      const zoomed = gestures.filter((g) => g.changed).length;
+      // po szczypaniu stuknięcie w osobę dalej zaznacza
+      const pawn = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+        zm.setCam(p.x, p.y, 1);
+        return [p.x, p.y] as [number, number];
+      });
+      await waitIdle(page);
+      const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.6), pawn);
+      await page.touchscreen.tap(sx, sy);
+      const card = await page
+        .waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 })
+        .then(() => true)
+        .catch(() => false);
+      await cdp.detach();
+      const f = (n: number) => n.toFixed(3);
+      console.log(
+        `  palec: mapa o ${drag} px, zoom ${f(c0.zoom)} → ${f(c1.zoom)}; szczypanie ${f(c1.zoom)} → ${f(c2.zoom)}, punkt między palcami przesunął się o ${slip} px; dwa palce w bok: mapa o ${pan2} px, zoom ${f(c3.zoom)}; iPhone z gestami ${f(c3.zoom)} → ${f(c4.zoom)}, gestów, które zmieniły zoom: ${zoomed} z ${gestures.length}, strona zablokowana: ${prevented}; stuknięcie po szczypaniu zaznacza: ${card}`,
+      );
+      if (drag < 120 || c1.zoom !== c0.zoom) throw new Error('palec nie przesunął mapy albo zmienił przybliżenie');
+      if (Math.abs(c2.zoom / c1.zoom - 2) > 0.05) throw new Error('rozsunięcie palców ×2 nie przybliżyło ×2');
+      if (slip > 2) throw new Error('szczypanie nie trzyma punktu między palcami');
+      if (pan2 < 60 || c3.zoom !== c2.zoom) throw new Error('dwa palce w bok nie przesunęły mapy albo zmieniły zoom');
+      if (zoomed || Math.abs(c4.zoom / c3.zoom - 0.5) > 0.03)
+        throw new Error('przy palcach na mapie gest Safari zmienił przybliżenie (drugi raz)');
+      if (!prevented) throw new Error('gest Safari na telefonie nie zablokował przybliżania strony');
+      if (!card) throw new Error('po szczypaniu stuknięcie nie zaznaczyło osoby');
+    },
+  },
   // M2, fala 1: menu budowy z przycisku i klawisza B (kategorie, koszt, czas, działanie, niedostępne z powodem)
   {
     name: 'm2-menu-budowy',
@@ -1942,6 +2422,168 @@ const SHOTS: Shot[] = [
     },
   },
 ];
+
+/** kamera na uszkodzoną podłogę (atrapa) w pustym mieszkaniu o danej przyczynie */
+function m2Floor(name: string, why: string): Shot {
+  return {
+    name,
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2&mieszkania=atrapa`);
+      await waitIdle(page);
+      const ok = await page.evaluate((why) => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as {
+          scene: {
+            section: { damage?: Map<number, string>; why?: Map<number, string>; room: Int16Array; roomApt?: number[] };
+            w: { size: number };
+          };
+        };
+        const sec = v.scene.section;
+        const size = v.scene.w.size;
+        const hit = [...sec.damage!.entries()].find(
+          ([i, k]) => k === 'podloga' && sec.why!.get(sec.roomApt![sec.room[i]]) === why,
+        );
+        if (hit) zm.setCam((hit[0] % size) + 0.5, Math.floor(hit[0] / size) + 0.5, 1.9);
+        return !!hit;
+      }, why);
+      await waitIdle(page);
+      if (!ok) throw new Error(`brak uszkodzonej podłogi w mieszkaniu (${why})`);
+    },
+  };
+}
+
+/**
+ * Atrapy M2 w stanie gry: gotowe budowle (rzeczy w st.things), plany (st.builds) i podgląd stawiania.
+ * Budowle w mieszkaniu zarządu na wolnych kafelkach posadzki pokoju i kuchni, ogródek na podwórku,
+ * zasieki zamiast odcinka siatki.
+ */
+async function m2Stage(page: Page, what: 'budowle' | 'plany' | 'stawianie-ok' | 'stawianie-zle') {
+  return page.evaluate((what) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const st = sim.st;
+    const w = sim.w;
+    const size = w.size;
+    const int = w.interior;
+    const koza = st.things.find((t) => t.kind === 'koza')!;
+    const home = int.rooms[int.room[koza.y * size + koza.x]].apt;
+    const busy = new Set<number>();
+    for (const t of st.things)
+      for (let dy = 0; dy < t.h; dy++) for (let dx = 0; dx < t.w; dx++) busy.add((t.y + dy) * size + t.x + dx);
+    const yard = new Set(w.fence.yard);
+    const fits = (x: number, y: number, fw: number, fh: number, ok: (i: number) => boolean) => {
+      for (let dy = 0; dy < fh; dy++)
+        for (let dx = 0; dx < fw; dx++) {
+          const i = (y + dy) * size + x + dx;
+          if (busy.has(i) || !ok(i)) return false;
+        }
+      return true;
+    };
+    const roomOk = (kind: string) => (i: number) =>
+      int.cell[i] === 4 &&
+      int.room[i] >= 0 &&
+      int.rooms[int.room[i]].apt === home &&
+      int.rooms[int.room[i]].kind === kind;
+    const spot = (fw: number, fh: number, ok: (i: number) => boolean) => {
+      for (let y = 0; y < size - fh; y++) for (let x = 0; x < size - fw; x++) if (fits(x, y, fw, fh, ok)) return [x, y];
+      return null;
+    };
+    // z kafelkiem odstępu, żeby budowle nie stały jedna na drugiej
+    const take = (x: number, y: number, fw: number, fh: number) => {
+      for (let dy = -1; dy <= fh; dy++) for (let dx = -1; dx <= fw; dx++) busy.add((y + dy) * size + x + dx);
+    };
+    const list: [string, number, number, number, (i: number) => boolean][] = [
+      ['warsztat', 2, 1, 0, roomOk('pokoj')],
+      ['lozka_pietrowe', 1, 2, 0, roomOk('pokoj')],
+      ['magazyn', 2, 2, 0, roomOk('pokoj')],
+      ['kuchnia_spoleczna', 2, 1, 0, (i) => roomOk('kuchnia')(i) || roomOk('pokoj')(i)],
+      ['ogrodek', 3, 2, 0, (i) => yard.has(i) && !w.blocked[i]],
+    ];
+    const placed: string[] = [];
+    let id = 995000;
+    const plans: unknown[] = [];
+    for (const [kind, fw, fh, rot, ok] of what === 'budowle' || what === 'plany' ? list : []) {
+      const at = spot(fw, fh, ok) ?? spot(fh, fw, ok);
+      if (!at) continue;
+      const turned = !fits(at[0], at[1], fw, fh, ok);
+      const [ww, hh] = turned ? [fh, fw] : [fw, fh];
+      take(at[0], at[1], ww, hh);
+      placed.push(kind);
+      if (what === 'budowle')
+        st.things.push({
+          id: id++,
+          kind,
+          x: at[0],
+          y: at[1],
+          w: ww,
+          h: hh,
+          rot: turned ? 1 : rot,
+          n: 0,
+          fuel: 0,
+          by: -1,
+          owner: -1,
+        });
+      else
+        plans.push({
+          id: id++,
+          kind,
+          x: at[0],
+          y: at[1],
+          rot: turned ? 1 : rot,
+          need: { deski: 4, zlom: 2 },
+          have: { deski: placed.length % 3, zlom: 1 },
+          work: (placed.length * 400) % 900,
+          by: -1,
+        });
+    }
+    // zasieki w miejscu odcinka siatki najbliżej bramy
+    const g = w.fence.gate;
+    const wire = w.fence.tiles
+      .filter((i) => !w.fence.hole.includes(i))
+      .sort(
+        (a, b) =>
+          Math.hypot((a % size) - g.x, Math.floor(a / size) - g.y) -
+          Math.hypot((b % size) - g.x, Math.floor(b / size) - g.y),
+      )[3];
+    const wx = wire % size;
+    const wy = Math.floor(wire / size);
+    const horizontal = w.fence.tiles.includes(wire - 1) || w.fence.tiles.includes(wire + 1);
+    if (what === 'budowle') {
+      st.things.push({
+        id: id++,
+        kind: 'zasieki',
+        x: wx,
+        y: wy,
+        w: 1,
+        h: 1,
+        rot: horizontal ? 0 : 1,
+        n: 0,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      });
+      placed.push('zasieki');
+    }
+    if (what === 'plany') (st as unknown as { builds: unknown[] }).builds = plans;
+    const view = zm.view as unknown as { setPlacement: (p: unknown) => void };
+    if (what === 'stawianie-ok' || what === 'stawianie-zle') {
+      // wolne kafelki pokoju zarządu jako dozwolone, kilka zajętych obok jako niedozwolone
+      const ok: number[] = [];
+      for (let i = 0; i < size * size; i++) if (roomOk('pokoj')(i) && !busy.has(i)) ok.push(i);
+      const bad = [...busy].filter((i) => int.room[i] >= 0 && int.rooms[int.room[i]].apt === home).slice(0, 12);
+      const at = what === 'stawianie-ok' ? spot(2, 1, roomOk('pokoj'))! : [bad[0] % size, Math.floor(bad[0] / size)];
+      // w dzień same dozwolone miejsca (jak z interfejsu), nocą dozwolone i zajęte
+      view.setPlacement(
+        what === 'stawianie-ok'
+          ? { kind: 'warsztat', x: at[0], y: at[1], rot: 0, ok: true, tiles: { ok } }
+          : { kind: 'warsztat', x: at[0], y: at[1], rot: 0, ok: false, tiles: { ok, bad } },
+      );
+      zm.setCam(at[0] + 1, at[1] + 0.5, 1.8);
+    } else zm.setCam(koza.x, koza.y + 2, 1.6);
+    return { placed };
+  }, what);
+}
 
 /** n klatek przeglądarki */
 async function frames(page: Page, n: number) {

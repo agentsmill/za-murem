@@ -60,6 +60,7 @@ import {
 import { Modal } from './ui/okno.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
 import { govFence } from './ui/siatka.ts';
+import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { esc } from './ui/tekst.ts';
 import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
@@ -1171,6 +1172,8 @@ $('placeBar').addEventListener('click', (e) => {
 /* ---------- mysz i dotyk ---------- */
 const stage = $('stage');
 const pointers = new Map<number, { x: number; y: number }>();
+/** palce i rysik na mapie: przy nich szczypanie robi pointermove, a gesty Safari tylko blokują przybliżanie strony */
+const fingers = new Set<number>();
 let drag: {
   id: number;
   x: number;
@@ -1197,11 +1200,14 @@ stage.addEventListener('contextmenu', (e) => e.preventDefault());
 stage.addEventListener('pointerdown', (e) => {
   stage.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+  if (e.pointerType !== 'mouse') fingers.add(e.pointerId);
   fly = null;
+  // Ctrl+klik to prawy przycisk (Mac: gładzik i mysz z jednym przyciskiem; macOS daje wtedy button 0 z ctrlKey)
+  const button = pointerButton(e);
   if (ctx.open) {
     ctx.close();
     // lewy klik albo stuknięcie obok tylko zamyka menu; prawy od razu otwiera nowe w nowym miejscu
-    if (e.button !== 2) {
+    if (button !== 2) {
       swallow = e.pointerId;
       return;
     }
@@ -1220,7 +1226,7 @@ stage.addEventListener('pointerdown', (e) => {
     y: e.offsetY,
     cx: view.cam.x,
     cy: view.cam.y,
-    button: e.button,
+    button,
     type: e.pointerType,
     shift: e.shiftKey,
     moved: false,
@@ -1281,6 +1287,7 @@ stage.addEventListener('pointermove', (e) => {
 });
 const endPointer = (e: PointerEvent) => {
   pointers.delete(e.pointerId);
+  fingers.delete(e.pointerId);
   if (pointers.size < 2) pinch = null;
   const held = press?.id === e.pointerId && press.fired;
   if (press?.id === e.pointerId) {
@@ -1337,16 +1344,65 @@ stage.addEventListener('pointermove', (e) => {
   if (placing && e.pointerType === 'mouse') aimAt(e.offsetX, e.offsetY);
 });
 stage.addEventListener('pointercancel', endPointer);
+/** chwila ostatniego zdarzenia wheel z gładzika (rozpoznanie w src/ui/sterowanie.ts) */
+let lastPan = -1e9;
 stage.addEventListener(
   'wheel',
   (e) => {
     e.preventDefault();
     fly = null;
     ctx.close();
-    view.zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015));
+    const now = performance.now();
+    const kind = wheelKind(e, now, lastPan);
+    if (kind === 'pan') {
+      // dwa palce na gładziku przesuwają mapę jak w mapach
+      lastPan = now;
+      const k = e.deltaMode === 1 ? 40 : 1;
+      view.cam.x += (e.deltaX * k) / view.cam.zoom;
+      view.cam.y += (e.deltaY * k) / view.cam.zoom;
+      view.clampCam();
+      return;
+    }
+    // szczypanie (wheel z ctrlKey w Chrome i Firefoksie) albo kółko myszy przybliżają
+    view.zoomAt(e.offsetX, e.offsetY, zoomFactor(kind, e));
   },
   { passive: false },
 );
+// Safari na macOS: szczypanie to gesturestart, gesturechange i gestureend z polem scale (bez preventDefault
+// przybliżałaby się cała strona). iPhone i iPad wysyłają te gesty razem z dotykiem, a dwa palce przybliżają już
+// w pointermove, więc przy palcach na mapie gest tylko blokuje stronę.
+let gesture: { z: number } | null = null;
+const gestureAt = (e: Event): [number, number] => {
+  const g = e as Event & { clientX?: number; clientY?: number };
+  const r = stage.getBoundingClientRect();
+  return g.clientX === undefined || g.clientY === undefined
+    ? [view.width / 2, view.height / 2]
+    : [g.clientX - r.left, g.clientY - r.top];
+};
+stage.addEventListener('gesturestart', (e) => {
+  e.preventDefault();
+  fly = null;
+  ctx.close();
+  gesture = { z: view.cam.zoom };
+});
+stage.addEventListener('gesturechange', (e) => {
+  e.preventDefault();
+  if (fingers.size) return;
+  const scale = (e as Event & { scale?: number }).scale;
+  if (!scale) return;
+  gesture ??= { z: view.cam.zoom };
+  const [x, y] = gestureAt(e);
+  view.zoomAt(x, y, (gesture.z * scale) / view.cam.zoom);
+});
+stage.addEventListener('gestureend', (e) => {
+  e.preventDefault();
+  gesture = null;
+});
+// poza mapą (pasek, okna) szczypanie w Safari też nie przybliża całej strony gry
+for (const t of ['gesturestart', 'gesturechange'])
+  document.addEventListener(t, (e) => {
+    if (!$('app').hidden) e.preventDefault();
+  });
 window.addEventListener('keydown', (e) => {
   // klawisze gry tylko w grze, bez otwartego okna i nie na polach ani przyciskach (spacja ma działać na przyciskach)
   const tag = (e.target as HTMLElement).tagName;

@@ -139,7 +139,9 @@ describe('sterty, garnek i wraki', () => {
     expect(heaps.length).toBeGreaterThanOrEqual(3);
     for (const h of heaps) {
       const spec = specOf({ rot: 0, ...h });
-      expect(spec).toMatchObject({ kind: h.kind, size: h.n >= 6 ? 3 : h.n >= 3 ? 2 : 1 });
+      // śmieci (kontrakt M2, gdy świat je rozstawia): n to wielkość sterty 1–3, nie liczba sztuk
+      const trash = (h.kind as string) === 'smieci';
+      expect(spec).toMatchObject({ kind: h.kind, size: trash ? Math.min(3, h.n) : h.n >= 6 ? 3 : h.n >= 3 ? 2 : 1 });
     }
     for (const k of ['gruz', 'deski', 'zlom', 'wrak']) expect(GAME_KINDS.has(k)).toBe(true);
   });

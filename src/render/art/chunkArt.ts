@@ -2,6 +2,7 @@
    piksel po pikselu, potem drzewa i detale dachów. Ta sama funkcja daje dwa poziomy szczegółów:
    32 px na kafelek (z bliska) i 8 px na kafelek (z daleka). */
 
+import type { DamageKind } from '../../world/apts.ts';
 import { T } from '../../world/world.ts';
 import { describeTile, IN } from '../section.ts';
 import { type AnyCanvas, type Ctx2D, ctx2d, newCanvas } from './canvas.ts';
@@ -9,6 +10,7 @@ import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
 import { deadTreeSprite } from './rzeczy.ts';
 import { type BStyle, CHUNK, type ChunkScene, SUB, TILE } from './scene.ts';
+import { wearColor } from './szkody.ts';
 import { treeSprite } from './trees.ts';
 import { type InteriorTile, interiorColor } from './wnetrze.ts';
 
@@ -424,8 +426,21 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       const bid = w.bid[i];
       const st = bid >= 0 ? sc.styles[bid] : null;
       const door = bid >= 0 && sc.doors.get(i) === 'S';
-      // przekrój: opis kafelka wnętrza raz na kafelek, piksele z grafiki zastępczej (wnetrze.ts)
+      // przekrój: opis kafelka wnętrza raz na kafelek, piksele z grafiki zastępczej (wnetrze.ts),
+      // na nich ślady pustego mieszkania i uszkodzenia posadzki (szkody.ts)
       const inner: InteriorTile | null = sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, facade) : null;
+      const dmg = inner ? sec!.damage?.get(i) : undefined;
+      const rid = inner ? sec!.room[i] : -1;
+      const why = rid >= 0 ? sec!.why?.get(sec!.roomApt?.[rid] ?? -1) : undefined;
+      // sąsiedzi z uszkodzeniem danego rodzaju (bity N 1, E 2, S 4, W 8): zalana podłoga łączy się
+      // z sąsiednią, sadza od okopconego pieca wchodzi na posadzkę obok
+      const around = (k: DamageKind) => {
+        const at = (j: number) => (sec!.damage!.get(j) === k ? 1 : 0);
+        return at(i - size) | (at(i + 1) << 1) | (at(i + size) << 2) | (at(i - 1) << 3);
+      };
+      const hurt = inner?.kind === 'floor' && !!sec!.damage?.size;
+      const wet = hurt && dmg === 'podloga' ? around('podloga') : 0;
+      const soot = hurt && dmg !== 'piec' ? around('piec') : 0;
       for (let oy = 0; oy < s; oy++) {
         const py = oy * step + off;
         const ay = y * TILE + py;
@@ -434,8 +449,10 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
           const px = ox * step + off;
           const ax = x * TILE + px;
           let c: number;
-          if (inner) c = interiorColor(inner, x, y, px, py, sec!.seed);
-          else if (st) {
+          if (inner) {
+            c = interiorColor(inner, x, y, px, py, sec!.seed);
+            if (dmg || why || soot) c = wearColor(c, inner, why, dmg, ax, ay, px, py, sec!.seed, wet, soot);
+          } else if (st) {
             const fy = sc.south[i] * TILE + (31 - py);
             const fh = Math.min(st.facade, sc.run[i] * TILE - 8);
             if (fy < fh) c = facadeColor(st, ax, fy, door && sc.south[i] === 0, px);
