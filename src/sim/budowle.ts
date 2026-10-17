@@ -80,3 +80,24 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
     effect: 'Mocniejsze od siatki, szabrownik się na nich rani.',
   },
 };
+
+/** plan budowy w toku (st.builds): materiały doniesione (have) z potrzebnych (need) i praca w tickach (work);
+    by: pionek, który przy nim pracuje (−1: nikt). Gotowa budowla to rzecz w st.things o tym samym id i kind. */
+export interface BuildPlan {
+  id: number;
+  kind: BuildKind;
+  /** lewy górny kafelek i obrót (rozmiar z BUILDS, przy rot 1 i 3 zamieniony) */
+  x: number;
+  y: number;
+  rot: number;
+  need: Partial<Record<Mat, number>>;
+  have: Partial<Record<Mat, number>>;
+  work: number;
+  by: number;
+}
+
+/** rozmiar budowli przy danym obrocie */
+export function footprint(kind: BuildKind, rot: number): { w: number; h: number } {
+  const d = BUILDS[kind];
+  return rot % 2 ? { w: d.h, h: d.w } : { w: d.w, h: d.h };
+}

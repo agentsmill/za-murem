@@ -7,6 +7,7 @@ import { PROFS } from '../content/data.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
+import type { BuildPlan } from './budowle.ts';
 import {
   daylight,
   hourOf,
@@ -32,6 +33,7 @@ import {
   roomLinks,
   START_TEMP,
 } from './house.ts';
+import { type AptGame, aptsFrom, type DamageGame, damageFrom } from './mieszkania.ts';
 import {
   COLD,
   HUNGRY,
@@ -260,6 +262,8 @@ export interface Thing {
   by: number;
   /** właściciel mebla (pionek), −1: wspólny albo niczyj; spalenie boli go najbardziej */
   owner: number;
+  /** zepsuty mebel ze świata (w pustym mieszkaniu): z rozbiórki połowa materiału */
+  broken?: boolean;
 }
 
 /** spalony mebel: co, z którego mieszkania (−1: klatka), kto i kiedy */
@@ -377,6 +381,12 @@ export interface SimState {
   store: { parts: number; meds: number };
   /** ułamek porcji zjedzony ponad całe porcje (racje i kocioł zjadają po 0,75 i 1,1 porcji na posiłek) */
   portion: number;
+  /** mieszkania siedziby w grze (M2): stan ze świata, nasze, przeszukane pomieszczenia */
+  apts: AptGame[];
+  /** uszkodzenia siedziby (World.damage) z naprawami */
+  damage: DamageGame[];
+  /** plany budowy w toku; gotowe budowle są w things */
+  builds: BuildPlan[];
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -395,10 +405,11 @@ const SPREAD: [number, number][] = (() => {
   return out.sort((a, b) => a[0] ** 2 + a[1] ** 2 - (b[0] ** 2 + b[1] ** 2) || a[1] - b[1] || a[0] - b[0]);
 })();
 
-/** sterty materiałów na podwórku ze świata (World.props): deski i złom na łaty, gruz */
-const HEAPS = new Set(['deski', 'zlom', 'gruz']);
-/** rzeczy, które leżą luzem; reszta to meble (ognisko też: nie staje się na nim) */
-const LOOSE = new Set(['drewno', 'jedzenie', 'posilek', 'pien', ...HEAPS]);
+/** sterty ze świata (World.props): deski i złom na łaty, gruz na podwórku, śmieci w pustych mieszkaniach */
+const HEAPS = new Set(['deski', 'zlom', 'gruz', 'smieci']);
+/** rzeczy, które leżą luzem (materiały, zapasy, sterty); reszta to meble i budowle (ognisko też: nie staje się
+    na nim) */
+const LOOSE = new Set(['drewno', 'jedzenie', 'posilek', 'pien', 'czesci', 'leki', ...HEAPS]);
 const BEDS = new Set(['lozko', 'wersalka']);
 
 /** drewno ze ściętego drzewa: 3 sztuki na metr korony, z krzaka mało */
@@ -497,6 +508,9 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     portion: 0,
     raid: null,
     store: { parts: 0, meds: 0 },
+    apts: [],
+    damage: [],
+    builds: [],
   };
   const rnd = rngOf(st.rng);
   const size = w.size;
@@ -506,7 +520,13 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
   // zarząd zaczyna w kuchni (a gdy się nie zmieści, na klatce)
   let spots: number[] = [];
   if (house) {
-    for (const f of house.furniture) st.things.push(newThing(st, f.kind, f.x, f.y, f.w, f.h, f.rot));
+    for (const f of house.furniture) {
+      const t = newThing(st, f.kind, f.x, f.y, f.w, f.h, f.rot);
+      if ((f as { broken?: boolean }).broken) t.broken = true;
+      st.things.push(t);
+    }
+    st.apts = aptsFrom(w, house);
+    st.damage = damageFrom(w, house);
     // butla gazowa przy kuchence zarządu (szczelna, więc przetrwała); w obcych mieszkaniach butle puste
     const stove = homeStove(house, size, st.things);
     if (stove) stove.fuel = GAS_START;
@@ -685,12 +705,21 @@ function residentApts(st: SimState, w: World, h: HouseLike): number[] {
   const yardTile = fence?.yard.find((i) => !resident[i]);
   if (yardTile === undefined) return [];
   const apts: number[] = [];
+  // tylko mieszkania mieszkańców (ze świata albo zajęte i naprawione); bez stanu mieszkań każde poza zarządem
+  const lives = (a: number) => {
+    const g = st.apts.find((x) => x.apt === a);
+    return !g || g.state === 'mieszkancy' || (g.ours && g.state === 'puste' && repaired(st, a));
+  };
   for (let i = 0; i < size * size; i++) {
     const a = aptAt(h, i);
-    if (a >= 0 && a !== h.home && !resident[i] && reg[i] === reg[yardTile] && !apts.includes(a)) apts.push(a);
+    if (a >= 0 && a !== h.home && !resident[i] && reg[i] === reg[yardTile] && !apts.includes(a) && lives(a))
+      apts.push(a);
   }
   return apts.sort((a, b) => a - b);
 }
+
+/** wszystkie uszkodzenia mieszkania naprawione */
+export const repaired = (st: SimState, apt: number): boolean => st.damage.every((d) => d.apt !== apt || d.fixed);
 
 /** Mieszkańcy siedziby (tło) w mieszkaniach połączonych z podwórkiem, po kolei po mieszkaniach, najwyżej do st.cap
     (3–8 na start: po dwóch na mieszkanie i jeden więcej); każdy z łóżkiem z mebli swojego mieszkania, gdy jest wolne.
@@ -873,6 +902,21 @@ export function trunkOf(w: World, t: Tree): number {
   return Math.floor(t.y) * size + Math.floor(t.x);
 }
 
+/** Zapis sprzed nowszych pól stanu: brakujące pola ze świata albo puste (mieszkania i uszkodzenia M2, plany budowy,
+    posiłki i porcje z uchwał o jedzeniu), żeby stara gra dała się wczytać. */
+function migrate(st: SimState, w: World): void {
+  const h = houseOf(w);
+  const s = st as Partial<SimState>;
+  if (!s.apts) st.apts = h ? aptsFrom(w, h) : [];
+  if (!s.damage) st.damage = h ? damageFrom(w, h) : [];
+  if (!s.builds) st.builds = [];
+  if (s.portion === undefined) st.portion = 0;
+  for (const p of st.pawns) {
+    if (p.ate === undefined) p.ate = 0;
+    if (p.lastMeal === undefined) p.lastMeal = -TICKS_PER_DAY;
+  }
+}
+
 /** nocne otoczenie do potrzeb (liczone raz na krok potrzeb) */
 interface Around {
   /** ktoś trzyma wartę (20–6) */
@@ -935,6 +979,7 @@ export class Sim {
   constructor(w: World, st: SimState) {
     this.w = w;
     this.st = st;
+    migrate(st, w);
     this.pf = new PathFinder(w.size);
     this.house = houseOf(w);
     this.trunk = Int32Array.from(w.trees, (t) => trunkOf(w, t));

@@ -72,6 +72,54 @@ const BLOCK: Layout = {
   home: 0,
 };
 
+/** Blok jak BLOCK, ale lewa część podzielona na trzy mieszkania (M2, fala 1): A (pokój, mieszkańcy), B i E (pokój
+    z kuchnią, puste po splądrowaniu, okno w zachodniej ścianie), F (pokój, puste po zalaniu). Każde ma drzwi
+    na klatkę. W pustych zepsute meble, śmieci i uszkodzenia (mockBlockM2). */
+const BLOCK_M2: Layout = {
+  rows: [
+    `####W############W${'#'.repeat(30)}`,
+    `#AAAAAAAA#SSS#PPPPPPPPPP#${'#'.repeat(23)}`,
+    `#AAAAAAAA#SSS#PPPPPPPPPP#${'#'.repeat(23)}`,
+    `#AAAAAAAADKKK#PPPPPPPPPP#${'#'.repeat(23)}`,
+    `##########KKK#PPPPPPPPPP#${'#'.repeat(23)}`,
+    `#BBBB#EEE#KKK###D########${'#'.repeat(23)}`,
+    `WBBBBDEEEDKKKDHHHHHHHHHH#${'#'.repeat(23)}`,
+    `#BBBB#EEE#KKK#HHHHHHHHHH#${'#'.repeat(23)}`,
+    `##########KKK##D#####D###${'#'.repeat(23)}`,
+    `#FFFFFFFF#KKK#CCCCCC#LLL#${'#'.repeat(23)}`,
+    `#FFFFFFFFDKKK#CCCCCC#LLL#${'#'.repeat(23)}`,
+    `#FFFFFFFF#KKK#CCCCCC#LLL#${'#'.repeat(23)}`,
+    `###########D###W${'#'.repeat(32)}`,
+  ],
+  rooms: {
+    K: { kind: 'klatka', apt: -1 },
+    P: { kind: 'pokoj', apt: 0 },
+    H: { kind: 'przedpokoj', apt: 0 },
+    C: { kind: 'kuchnia', apt: 0 },
+    L: { kind: 'lazienka', apt: 0 },
+    A: { kind: 'pokoj', apt: 1 },
+    B: { kind: 'pokoj', apt: 2 },
+    E: { kind: 'kuchnia', apt: 2 },
+    F: { kind: 'pokoj', apt: 3 },
+  },
+  furniture: [
+    ...BLOCK.furniture.filter((f) => f.x > 12),
+    { kind: 'lozko', x: 2, y: 1, w: 1, h: 2, rot: 0 },
+    { kind: 'lozko', x: 4, y: 1, w: 1, h: 2, rot: 0 },
+    { kind: 'stol', x: 6, y: 2, w: 2, h: 1, rot: 0 },
+    { kind: 'lozko', x: 1, y: 5, w: 1, h: 2, rot: 3, broken: true } as Layout['furniture'][number],
+    { kind: 'mebloscianka', x: 4, y: 5, w: 1, h: 2, rot: 1 },
+    { kind: 'kuchenka', x: 6, y: 5, w: 1, h: 1, rot: 0 },
+    { kind: 'lodowka', x: 7, y: 5, w: 1, h: 1, rot: 0 },
+    { kind: 'stol', x: 7, y: 7, w: 2, h: 1, rot: 2, broken: true } as Layout['furniture'][number],
+    { kind: 'lozko', x: 1, y: 9, w: 1, h: 2, rot: 3 },
+    { kind: 'wersalka', x: 3, y: 9, w: 2, h: 1, rot: 0, broken: true } as Layout['furniture'][number],
+    { kind: 'stol', x: 6, y: 10, w: 2, h: 1, rot: 2 },
+  ],
+  sklad: BLOCK.sklad,
+  home: 0,
+};
+
 /** dom 11 × 10 m bez klatki: kuchnia z kozą przy północnej ścianie, daleko od drzwi frontowych */
 const HOUSE: Layout = {
   rows: [
@@ -284,6 +332,49 @@ export function plainBlock(seed = 5): World {
 /** sztuczny świat z blokiem i ulicą oraz atrapą wnętrza (siatka, suche drzewo i trzepak ze świata) */
 export function mockBlock(seed = 5): MockWorld {
   return overlay(buildWorld(geoWith(rect(-24, -6, 48, 13), 'apartments', '5'), { seed, size: 128 }), BLOCK);
+}
+
+/** stan mieszkania i uszkodzenie jak w kontrakcie src/world/apts.ts (atrapa do czasu sesji świata) */
+export interface MockApt {
+  bid: number;
+  apt: number;
+  state: 'zarzad' | 'mieszkancy' | 'puste';
+  why?: 'wyjazd' | 'wymarcie' | 'splądrowanie' | 'zalanie' | 'pozar';
+  year?: number;
+}
+export interface MockDamage {
+  kind: 'okno' | 'drzwi' | 'rura' | 'podloga' | 'piec';
+  tile: number;
+  bid: number;
+  apt: number;
+}
+export type MockWorldM2 = MockWorld & { apts: MockApt[]; damage: MockDamage[] };
+
+/** Blok M2: mieszkanie zarządu (0), mieszkańców (1), puste po splądrowaniu (2: wyważone drzwi, wybite okno,
+    śmieci 4) i po zalaniu (3: podłoga i rura, śmieci 3), jak World.apts, World.damage i sterty smieci ze świata */
+export function mockBlockM2(seed = 5): MockWorldM2 {
+  const w = overlay(buildWorld(geoWith(rect(-24, -6, 48, 13), 'apartments', '5'), { seed, size: 128 }), BLOCK_M2);
+  const hq = w.buildings[w.hq];
+  const at = (x: number, y: number) => (hq.y0 + y) * w.size + hq.x0 + x;
+  const bid = w.hq;
+  const apts: MockApt[] = [
+    { bid, apt: 0, state: 'zarzad' },
+    { bid, apt: 1, state: 'mieszkancy' },
+    { bid, apt: 2, state: 'puste', why: 'splądrowanie', year: 2031 },
+    { bid, apt: 3, state: 'puste', why: 'zalanie', year: 2044 },
+  ];
+  const damage: MockDamage[] = [
+    { kind: 'drzwi', tile: at(9, 6), bid, apt: 2 },
+    { kind: 'okno', tile: at(0, 6), bid, apt: 2 },
+    { kind: 'podloga', tile: at(4, 10), bid, apt: 3 },
+    { kind: 'rura', tile: at(7, 9), bid, apt: 3 },
+  ];
+  const props: PropLike[] = [
+    ...w.props,
+    { kind: 'smieci', x: hq.x0 + 2, y: hq.y0 + 7, w: 1, h: 1, n: 4 },
+    { kind: 'smieci', x: hq.x0 + 5, y: hq.y0 + 11, w: 1, h: 1, n: 3 },
+  ];
+  return { ...w, props, apts, damage } as unknown as MockWorldM2;
 }
 
 /** sztuczny świat z domem i ulicą oraz atrapą wnętrza */
