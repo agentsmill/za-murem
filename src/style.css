@@ -600,7 +600,8 @@ a.btn {
   position: absolute;
   left: 0;
   bottom: 10px;
-  transform: translateX(-50%);
+  /* --shift: napis wystający za ekran przesunięty do środka (main.ts) */
+  transform: translateX(calc(-50% + var(--shift, 0px)));
   white-space: nowrap;
   font: 700 13px / 1 var(--f-sign);
   letter-spacing: 0.1em;
@@ -627,6 +628,42 @@ a.btn {
 }
 .treemark.edge .treemark-t::after {
   display: none;
+}
+/* z boku korony (data-side z src/ui/znacznik.ts): napis obok punktu, ogonek w stronę drzewa */
+.treemark[data-side="e"] .treemark-t,
+.treemark[data-side="w"] .treemark-t {
+  bottom: auto;
+  top: 0;
+  transform: translate(calc(10px + var(--shift, 0px)), -50%);
+}
+.treemark[data-side="w"] .treemark-t {
+  transform: translate(calc(-100% - 10px + var(--shift, 0px)), -50%);
+}
+.treemark[data-side="e"] .treemark-t::after,
+.treemark[data-side="w"] .treemark-t::after {
+  top: 50%;
+  margin: -6px 0 0;
+  border-top-color: transparent;
+}
+.treemark[data-side="e"] .treemark-t::after {
+  left: auto;
+  right: 100%;
+  border-right-color: var(--lamp);
+}
+.treemark[data-side="w"] .treemark-t::after {
+  left: 100%;
+  border-left-color: var(--lamp);
+}
+/* pod pniem: ogonek w górę */
+.treemark[data-side="s"] .treemark-t {
+  bottom: auto;
+  top: 10px;
+}
+.treemark[data-side="s"] .treemark-t::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--lamp);
 }
 
 .needs {

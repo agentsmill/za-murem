@@ -49,6 +49,7 @@ import { renderStats, statsOf } from './ui/pasek.ts';
 import { govFence } from './ui/siatka.ts';
 import { esc } from './ui/tekst.ts';
 import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
+import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
 import { buildWorld, T, type World } from './world/world.ts';
 
@@ -714,7 +715,18 @@ $('goals').addEventListener('click', (e) => {
   if (sim) renderGoals(snapshot(sim.st, sim.w));
 });
 
-/** znacznik nad suchym drzewem, a gdy drzewo jest poza ekranem, przy krawędzi ze strzałką w jego stronę */
+/** miejsce etykiety suchego drzewa, liczone raz dla świata i układu ekranu (etykieta jedzie z mapą i nie
+    skacze; na wąskim ekranie tylko nad koroną albo pod pniem) */
+let markWorld: World | null = null;
+let markNarrow = false;
+let markAt: MarkSpot | null = null;
+/** szerokość napisu w pikselach (mierzona po zmianie tekstu, nie co klatkę) */
+let markW = 120;
+/** węższy ekran (telefon): napis z boku korony się nie mieści */
+const NARROW = 640;
+
+/** znacznik z boku korony suchego drzewa (tam, gdzie nie zasłania bramy, siatki ani rzeczy), a gdy drzewo
+    jest poza ekranem, przy krawędzi ze strzałką w jego stronę */
 function placeMarker() {
   const el = $('treeMark');
   const w = sim?.w;
@@ -722,25 +734,47 @@ function placeMarker() {
     el.hidden = true;
     return;
   }
-  const t = w.trees[w.dryTree];
-  const [sx, sy] = screenOf(t.x, t.y - Math.min(t.r, 2.5) - 0.3);
-  const cx = Math.max(70, Math.min(view.width - 70, sx));
+  const narrow = view.width < NARROW;
+  if (markWorld !== w || markNarrow !== narrow) {
+    markWorld = w;
+    markNarrow = narrow;
+    markAt = markSpot(w, narrow ? ['n', 's'] : undefined);
+  }
+  const crown = crownOf(w);
+  if (!markAt || !crown) {
+    el.hidden = true;
+    return;
+  }
+  const side = markAt.side;
+  const [sx, sy] = screenOf(markAt.x, markAt.y);
+  // lewy brzeg napisu: z boku obok punktu, nad koroną i pod pniem na środku
+  const x0 = side === 'w' ? sx - 10 - markW : side === 'e' ? sx + 10 : sx - markW / 2;
   // pod paskiem, a nad listą celów pod nią
   let top = $('top').getBoundingClientRect().bottom;
   const goals = $('goals');
   if (!goals.hidden) {
     const g = goals.getBoundingClientRect();
-    if (cx - 70 < g.right) top = Math.max(top, g.bottom);
+    if (x0 < g.right) top = Math.max(top, g.bottom);
   }
-  const cy = Math.max(top + 30, Math.min(view.height - 70, sy));
-  const edge = Math.abs(cx - sx) > 1 || Math.abs(cy - sy) > 1;
+  // poza ekranem (punkt, w który celuje ogonek): przy krawędzi ze strzałką
+  const edge = sx < 70 || sx > view.width - 70 || sy < top + 30 || sy > view.height - 70;
+  const cx = edge ? Math.max(70, Math.min(view.width - 70, sx)) : sx;
+  const cy = edge ? Math.max(top + 30, Math.min(view.height - 70, sy)) : sy;
+  // napis wystający za ekran przesuwa się płynnie do środka (bez skoku na inną stronę)
+  const shift = edge ? 0 : Math.max(4 - x0, Math.min(0, view.width - 4 - (x0 + markW)));
   el.hidden = false;
   el.classList.toggle('edge', edge);
+  el.dataset.side = edge ? '' : side;
+  el.style.setProperty('--shift', `${Math.round(shift)}px`);
   el.style.transform = `translate(${Math.round(cx)}px, ${Math.round(cy)}px)`;
-  // poza ekranem: strzałka w stronę drzewa (osiem kierunków)
-  const arrow = edge ? `${ARROWS[(Math.round(Math.atan2(sy - cy, sx - cx) / (Math.PI / 4)) + 8) % 8]} ` : '';
+  // poza ekranem: strzałka w stronę korony (osiem kierunków)
+  const [tx, ty] = screenOf(crown.x, crown.y);
+  const arrow = edge ? `${ARROWS[(Math.round(Math.atan2(ty - cy, tx - cx) / (Math.PI / 4)) + 8) % 8]} ` : '';
   const label = el.firstElementChild as HTMLElement;
-  if (label.textContent !== `${arrow}Suche drzewo`) label.textContent = `${arrow}Suche drzewo`;
+  if (label.textContent !== `${arrow}Suche drzewo`) {
+    label.textContent = `${arrow}Suche drzewo`;
+    markW = label.offsetWidth || markW;
+  }
 }
 const ARROWS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
 

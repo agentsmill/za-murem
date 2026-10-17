@@ -1505,6 +1505,144 @@ const SHOTS: Shot[] = [
       if (r.over > 0 && r.max > 0.25) throw new Error('dym zasłania odkryte wnętrze');
     },
   },
+  // etykieta „Suche drzewo” na Przymorzu (suche drzewo 3,5 m za bramą): z boku korony, nie na bramie ani na
+  // wartowniku, i jedzie z mapą bez skoków; w dzień, przy przesuwaniu i nocą z wartą przy bramie
+  {
+    name: 'm1-etykieta-brama',
+    query: '',
+    run: async (page, base) => {
+      /** prostokąt etykiety, czy dotyka bramy (z 40 px nad nią na głowy warty) i ilu ludzi z zarządu zasłania */
+      const probe = () =>
+        page.evaluate(() => {
+          const zm = window.zm!;
+          const el = document.getElementById('treeMark')!;
+          const b = (el.firstElementChild as HTMLElement).getBoundingClientRect();
+          const g = zm.sim!.w.fence.gate;
+          const [gx0, gy0] = zm.screenOf(g.x, g.y);
+          const [gx1, gy1] = zm.screenOf(g.x + g.w, g.y + g.h);
+          const hit = (x0: number, y0: number, x1: number, y1: number) =>
+            b.left < x1 && b.right > x0 && b.top < y1 && b.bottom > y0;
+          const people = zm.sim!.st.pawns.filter((p) => {
+            if (p.kind !== 'core') return false;
+            const [x0, y0] = zm.screenOf(p.x - 0.35, p.y - 1.6);
+            const [x1, y1] = zm.screenOf(p.x + 0.35, p.y);
+            return hit(x0, y0, x1, y1);
+          }).length;
+          return {
+            hidden: el.hidden,
+            side: el.dataset.side ?? '',
+            gate: hit(gx0, gy0 - 40, gx1, gy1),
+            people,
+          };
+        });
+      /** kamera między bramą a suchym drzewem */
+      const look = () =>
+        page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const t = w.trees[w.dryTree];
+          const g = w.fence.gate;
+          zm.setCam((t.x + g.x + 1) / 2, (t.y + g.y) / 2, 1.3);
+        });
+      const check = async (when: string) => {
+        const p = await probe();
+        console.log(`  ${when}: strona ${p.side}, na bramie ${p.gate}, zasłania ludzi ${p.people}`);
+        if (p.hidden || p.side !== 'w')
+          throw new Error(`${when}: etykieta ${p.hidden ? 'ukryta' : `po stronie ${p.side}`}`);
+        if (p.gate || p.people) throw new Error(`${when}: etykieta zasłania bramę albo ludzi`);
+      };
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      await look();
+      await waitIdle(page);
+      await page.waitForTimeout(300);
+      await check('dzień');
+      await page.screenshot({ path: path.join(OUT, 'm1-etykieta-brama-dzien.png') });
+      // przesuwanie mapy: odległość etykiety od pnia na ekranie się nie zmienia (najwyżej piksel zaokrąglenia)
+      const offs: [number, number][] = [];
+      for (let k = 0; k < 6; k++) {
+        await page.evaluate((k) => {
+          const zm = window.zm!;
+          const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
+          zm.setCam(t.x - 4 + k * 1.7, t.y - 2 + k * 0.6, 1.3);
+        }, k);
+        await page.waitForTimeout(150);
+        offs.push(
+          await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
+            const [tx, ty] = zm.screenOf(t.x, t.y);
+            const b = (document.getElementById('treeMark')!.firstElementChild as HTMLElement).getBoundingClientRect();
+            return [b.left - tx, b.top - ty] as [number, number];
+          }),
+        );
+      }
+      const jump = Math.max(...offs.map(([x, y]) => Math.hypot(x - offs[0][0], y - offs[0][1])));
+      console.log(`  przesuwanie: największa zmiana odległości od pnia ${jump.toFixed(1)} px`);
+      if (jump > 1.5) throw new Error('etykieta skacze przy przesuwaniu mapy');
+      // noc: okna zarządu zwykłymi decyzjami, wartownik przy bramie z latarnią
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=21.5`);
+      await waitIdle(page);
+      const clear = async () => {
+        for (let k = 0; k < 6; k++) {
+          const tone = await page.evaluate(() =>
+            document.getElementById('modal')!.hidden ? null : document.getElementById('sheet')!.className,
+          );
+          if (!tone) return;
+          if (tone.includes('uchwala')) await page.click('#sheet [data-act="law-skip"]');
+          else if (tone.includes('noc')) await page.click('#sheet [data-act="night-go"]');
+          else if (tone.includes('wydarzenie')) await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else await page.keyboard.press('Escape');
+          await page.waitForTimeout(150);
+        }
+      };
+      await page.evaluate(() => window.zm!.govTick());
+      await clear();
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const core = zm.sim!.st.pawns.find((p) => p.kind === 'core' && p.job?.t !== 'guard')!;
+        zm.sim!.push({ t: 'guard', ids: [core.id], post: 'brama' });
+      });
+      for (let k = 0; k < 4; k++) {
+        await page.evaluate(() => window.zm!.ff(10));
+        await clear();
+      }
+      const guard = await page.evaluate(() =>
+        window.zm!.sim!.st.pawns.some(
+          (p) => p.kind === 'core' && p.job?.t === 'guard' && p.job.target === 0 && p.job.phase === 1,
+        ),
+      );
+      if (!guard) throw new Error('nikt nie stoi z latarnią przy bramie');
+      await look();
+      await waitIdle(page);
+      await page.waitForTimeout(300);
+      await check('noc z wartą przy bramie');
+      await page.screenshot({ path: path.join(OUT, 'm1-etykieta-brama-noc.png') });
+      // telefon: z boku korony napis się nie mieści, więc stoi pod pniem i cały w kadrze
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
+        zm.setCam(t.x, t.y - 1, 1.3);
+      });
+      await waitIdle(page);
+      await page.waitForTimeout(300);
+      const phone = await probe();
+      const inside = await page.evaluate(() => {
+        const b = (document.getElementById('treeMark')!.firstElementChild as HTMLElement).getBoundingClientRect();
+        return b.left >= 0 && b.right <= window.innerWidth;
+      });
+      console.log(
+        `  telefon: strona ${phone.side}, na bramie ${phone.gate}, zasłania ludzi ${phone.people}, w kadrze ${inside}`,
+      );
+      if (phone.side !== 's' || phone.gate || phone.people || !inside)
+        throw new Error('na telefonie etykieta nie pod pniem albo poza kadrem');
+      await page.screenshot({ path: path.join(OUT, 'm1-etykieta-brama-telefon.png') });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await look();
+      await waitIdle(page);
+    },
+  },
 ];
 
 /** n klatek przeglądarki */

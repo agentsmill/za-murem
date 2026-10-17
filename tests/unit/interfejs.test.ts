@@ -43,6 +43,7 @@ import { statsOf } from '../../src/ui/pasek.ts';
 import { govFence, govLight } from '../../src/ui/siatka.ts';
 import { deg, esc, num, pct, signed } from '../../src/ui/tekst.ts';
 import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSave } from '../../src/ui/zapis.ts';
+import { markSpot, markSpots } from '../../src/ui/znacznik.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
@@ -120,6 +121,55 @@ describe('siatka dla zarządu', () => {
   });
   it('bez siatki w świecie zarząd sam zakłada dziurę', () => {
     expect(govFence({ size: 10, seed: 1 })).toBeUndefined();
+  });
+});
+
+describe('etykieta suchego drzewa', () => {
+  it.each(DEMOS)('%s: z boku korony, gdzie pod etykietą nie ma bramy, siatki, rzeczy ani budynków', (key) => {
+    const { w } = demo(key);
+    const spot = markSpot(w)!;
+    expect(spot.score).toBe(0);
+    const t = w.trees[w.dryTree];
+    // z boku korony na wysokości jej środka (korona 1,2 m nad pniem), ogonek w stronę drzewa
+    expect(['e', 'w']).toContain(spot.side);
+    expect(spot.y).toBeCloseTo(t.y - 1.2, 5);
+    expect(Math.sign(t.x - spot.x)).toBe(spot.side === 'e' ? -1 : 1);
+    // ani kafelka bramy, siatki czy rzeczy pod prostokątem etykiety (ani wiersz niżej, gdzie stoi warta)
+    const [x0, y0, x1, y1] = spot.rect;
+    const g = w.fence.gate;
+    const fence = new Set(w.fence.tiles);
+    for (let y = Math.floor(y0); y <= Math.floor(y1) + 1; y++)
+      for (let x = Math.floor(x0); x <= Math.floor(x1); x++) {
+        expect(x >= g.x && x < g.x + g.w && y >= g.y && y < g.y + g.h).toBe(false);
+        expect(fence.has(y * w.size + x)).toBe(false);
+        expect(w.props.some((p) => x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h)).toBe(false);
+      }
+  });
+  it.each([
+    ['przymorze', 's'],
+    ['lanciego', 'n'],
+    ['zielonki', 's'],
+  ])('%s na telefonie: nad koroną albo pod pniem (%s), pod napisem ani bramy, ani siatki', (key, side) => {
+    const { w } = demo(key);
+    const spot = markSpot(w, ['n', 's'])!;
+    expect(spot.side).toBe(side);
+    // pod napisem ani bramy, ani siatki (rzecz może dotykać zapasu wokół napisu: trzepak obok)
+    const [x0, y0, x1, y1] = spot.rect;
+    const g = w.fence.gate;
+    const fence = new Set(w.fence.tiles);
+    for (let y = Math.floor(y0); y <= Math.floor(y1); y++)
+      for (let x = Math.floor(x0); x <= Math.floor(x1); x++) {
+        expect(x >= g.x && x < g.x + g.w && y >= g.y && y < g.y + g.h).toBe(false);
+        expect(fence.has(y * w.size + x)).toBe(false);
+      }
+    expect(spot.score).toBeLessThan(10);
+  });
+  it('Przymorze: nad koroną etykieta wypadała na bramie (stary znacznik), teraz stoi z boku i się nie zmienia', () => {
+    const { w } = demo('przymorze');
+    const north = markSpots(w).find((s) => s.side === 'n')!;
+    expect(north.score).toBeGreaterThanOrEqual(10);
+    // liczona raz dla świata: te same dane, to samo miejsce
+    expect(markSpot(w)).toEqual(markSpot(w));
   });
 });
 
