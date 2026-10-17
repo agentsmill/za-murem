@@ -120,10 +120,10 @@ Gdzie skutek z 0.3 nie ma w domu sensu (dokwaterowanie czterech aktywistów do d
 | czynsz za 2047 | od 2. dnia | „Spalić list w kozie” | rata kredytu: „list z banku: zaległa rata kredytu za dom z 2047 roku plus odsetki i opłata za upomnienie. Sąsiedzi pytają, czy komitet ulicy też będzie zbierał składki”; wybory „Ogłosić, że komitet składek nie zbiera” i „Spalić list w kozie”, skutki jak w czynszu |
 | tokeny | od 2. dnia | bez zmian, drewno | gdy sąsiedzi to domy: „Sąsiad zza płotu…” |
 | karton z książkami | od 2. dnia | bez zmian | „Na strychu…”, „Na półkę przy kozie” |
-| protest przeciw kozom | od 2. dnia | bez zmian | „z sąsiedniej ulicy… przeciw dymowi z waszego komina”; „Zaprosić do ciepła” daje zaufanie bez dokwaterowania |
-| influencerka | od 2. dnia | bez zmian | „Przyjąć do domu” |
-| ludzie pod bramą | od 2. dnia, tylko blok z wolnym miejscem | „pod bramą”, „Wolnych miejsc w bloku: N” | nie ma (dom nie przyjmie kilkunastu osób, sąsiedzi przyjdą z sesją włamań) |
-| ktoś się na czymś zna | od 2. dnia, w bloku tylko z mieszkańcami | „przy kozie” zamiast „przy ognisku” | „Sąsiad zza płotu… przyznał przy kozie…” |
+| protest przeciw kozom | od 2. dnia | „Zaprosić do ciepła” bez dokwaterowania (punkt 5a) | „z sąsiedniej ulicy… przeciw dymowi z waszego komina”; tak samo bez dokwaterowania |
+| influencerka | od 2. dnia | dołącza do zarządu bez dodatkowego mieszkańca | „Przyjąć do domu” |
+| ludzie pod bramą | od 2. dnia, waga według wolnych miejsc (punkt 5a) | „pod bramą”, „Wolnych miejsc w bloku: N”, przyciski z liczbą na podłodze | rodzina 2–4 osób spod furtki, „W domu nie ma wolnych łóżek…”, rzadko |
+| ktoś się na czymś zna | od 2. dnia, w bloku tylko z mieszkańcami | „przy kozie” zamiast „przy ognisku”; mieszkaniec przechodzi do zarządu | „Sąsiad zza płotu… przyznał przy kozie…”, dołącza do domowników |
 | kłótnia o grafik | od 2. dnia | bez zmian | „Reszta domu słucha zza ściany”, „Mediacja przy stole”, „wyprowadził się na inną ulicę” |
 | pożar od kozy | od 2. dnia, koza się pali | bez zmian | „zajęła się podłoga w kuchni, dym idzie na cały dom”, „Uciekać do ogrodu” |
 | kradzież z piwnicy | od 2. dnia, tylko z mieszkańcami | bez zmian | nie ma (bez mieszkańców złodziejem byłby ktoś z domowników) |
@@ -143,6 +143,18 @@ Gdzie skutek z 0.3 nie ma w domu sensu (dokwaterowanie czterech aktywistów do d
 | latarka na korbkę | pierwsza noc | „Pani Halina z waszej klatki” | „Pani Halina zza płotu”, „po ciemnych piwnicach i garażach” |
 | domofon | od 2. dnia | bez zmian | „Wideodomofon przy furtce…”, „Bezpieczny Dom” |
 | słoik od sąsiadki | staje się dymem z komina | „pani Krysia z waszej klatki” | „pani Krysia zza płotu… u niej w domu” |
+
+## 5a. Przyjęcia i wolne miejsca
+
+Po połączeniu symulacji fali 1 przyjęci przychodzą zza bramy i nie znikają, a kto nie ma łóżka, śpi na podłodze z karą do sił i nastroju. Wydarzenia przyjmowały bez patrzenia na miejsca: w grze z zarządem po 6 dniach było 16–20 mieszkańców przy 6 miejscach (prośba koordynatora z 17.10.2026). W domu miejsc dla mieszkańców nie ma wcale (`cap` 0), więc każdy przyjęty śpi na podłodze.
+
+- Wolne miejsca to `cap − residents` z wejścia zarządu.
+- Tekst wydarzenia z przyjęciem zawsze mówi, ile jest wolnych miejsc, a przycisk mówi wprost, ilu będzie spać na podłodze: „Przyjąć tylu, ilu się zmieści (3)” i „Przyjąć wszystkich (5 będzie spać na podłodze)”. W domu: „W domu nie ma wolnych łóżek, spaliby na podłodze w kuchni”.
+- Mniej takich wydarzeń, kiedy jest ciasno: waga razy 1 przy co najmniej 4 wolnych miejscach, razy 0,5 przy 1–3, razy 0,15 bez wolnych miejsc (moja decyzja co do liczb).
+- Ludzie pod bramą: w bloku grupa 4–12 osób jak w 0.3; w domu rodzina 2–4 osób spod furtki, rzadko, bo dom zawsze jest pełny. To zastępuje wcześniejsze „w domu nie ma”.
+- Protest przeciw kozom: „Zaprosić do ciepła” znaczy, że aktywiści grzeją się do rana i odchodzą, bez dokwaterowania czterech osób (moja decyzja, mniej źródeł przyjęć).
+- Poprawka podwójnego liczenia: osoba, która dołącza do rdzenia (influencerka, fachowiec wśród ludzi spod bramy), nie dokłada jeszcze jednego mieszkańca. „Ktoś się na czymś zna” w bloku to mieszkaniec, który przechodzi do zarządu (mieszkańców o jednego mniej), w domu sąsiad zza płotu, który dołącza do domowników.
+- Liczenia łupu z napadu w `src/gov/noc.ts` nie ruszam (koordynator rozdzieli magazyn z symulacją później).
 
 ## 6. Nowe wydarzenia
 
@@ -175,6 +187,7 @@ Rata kredytu jest wariantem czynszu dla domu (tabela wyżej), a nie osobnym wyda
 
 ## 9. Jak sprawdzamy
 
+- Przyjęcia: bot po 6 dniach nie ma już mieszkańców kilka razy ponad miejsca tylko z wydarzeń; test, że tekst i przyciski mówią o wolnych miejscach i o spaniu na podłodze, a waga spada przy ciasnocie.
 - Testy jednostkowe: `placeOf` na trzech demach (Przymorze i Lanciego blok, Zielonki dom bez sklepu); w domu żaden tytuł, tekst, przycisk ani wpis kroniki z wydarzeń nie zawiera „klatk”, „piętr”, „blok”, „spółdziel”, „pawilon”, „szlaban”, „świetlic”, „czynsz” (przegląd wszystkich wydarzeń na wielu ziarnach i godzinach); w samouczku nie ma losowych wydarzeń; dym przychodzi raz po rozpaleniu kozy; pierwszego dnia i pierwszej nocy tylko wydarzenia pierwszej nocy; decyzja co minutę w pierwszych 10 minutach na atrapie; test zgodności 0.3 bez zmian.
 - Pomiar: skrypt z analizy na czterech miejscach przed i po (ile wydarzeń w 15 minutach, ile w samouczku, ile nie pasuje do domu, najdłuższa przerwa bez decyzji w pierwszych 10 minutach). Skrypt zostaje w folderze notatek, a dane domu w Zamościu tylko w scratchpadzie sesji, poza repo (moja decyzja).
 - Bot: `npm run bot` bez błędów.
