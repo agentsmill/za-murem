@@ -129,8 +129,9 @@ export const INSUL: Record<RoomKind, number> = {
 /** izolacja pomieszczenia; rodzaj, którego jeszcze nie znamy (nowy w generatorze), jak pokój */
 const insul = (k: RoomKind): number => INSUL[k] ?? 2;
 /** ułamek różnicy do celu na krok: przy ogniu stała czasowa 1,25 h (zimna kuchnia ma 18°C po około
-    1,7 h gry, czyli 70 s przy 1×), bez ognia 10 h, bo beton trzyma temperaturę;
-    stałe zamiast Math.exp, żeby wynik nie zależał od przeglądarki */
+    1,7 h gry, czyli 70 s przy 1×), bez ognia 10 h, bo beton trzyma temperaturę; liczby wpisane na sztywno
+    zamiast Math.exp (Math.sin, Math.cos i Math.hypot gdzie indziej mogą się różnić między silnikami
+    w ostatnim bicie; Node i Chrome to ten sam V8) */
 const F_FIRE = 0.0198; // 1 − e^(−0,025 h / 1,25 h)
 const F_DRIFT = 0.0025; // 1 − e^(−0,025 h / 10 h)
 /** od takiego ocieplenia pomieszczenie zmienia temperaturę w tempie ognia */
@@ -199,7 +200,9 @@ export function heatStep(
   const boost = heatBoost(kinds, links, fires, tout);
   for (let r = 0; r < temps.length; r++) {
     const base = tout + insul(kinds[r]);
-    const f = F_DRIFT + (F_FIRE - F_DRIFT) * Math.min(1, boost[r] / FULL_BOOST);
+    // pomieszczenie z ogniem w tempie ognia bez względu na pogodę, sąsiednie tym szybciej, im więcej ciepła dochodzi
+    const f =
+      fires.includes(r) && boost[r] > 0 ? F_FIRE : F_DRIFT + (F_FIRE - F_DRIFT) * Math.min(1, boost[r] / FULL_BOOST);
     temps[r] += (base + boost[r] - temps[r]) * f;
   }
   return boost;

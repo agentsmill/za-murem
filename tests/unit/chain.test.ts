@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
-import { homeMask } from '../../src/sim/house.ts';
+import { homeMask, inHomeApt, type RoomKind } from '../../src/sim/house.ts';
 import { commandFor, commandsAt, jobText } from '../../src/sim/orders.ts';
 import { BURN_TICKS, createSim, type Pawn, Sim, type SimState, type Thing, woodFrom } from '../../src/sim/sim.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
@@ -476,5 +476,173 @@ describe('tłum', () => {
     expect(inside).toBe(0);
     // tłum chodzi po klatce i do obcego mieszkania, więc test naprawdę coś sprawdza
     expect(indoors).toBeGreaterThan(0);
+  });
+});
+
+describe('poprawki z przeglądu kodu', () => {
+  const w = block;
+  const out = w.buildings[w.hq].entrances[0].out;
+  const covers = (t: Thing, x: number, y: number) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
+  const LOOSE = ['drewno', 'jedzenie', 'posilek', 'pien'];
+  const variant = (patch: Partial<MockWorld['interior']>, extra: Partial<MockWorld> = {}) =>
+    ({ ...w, ...extra, interior: { ...w.interior, ...patch } }) as MockWorld;
+
+  it('dwa osobne polecenia ścięcia tego samego drzewa: jedno ścięcie i tyle drewna, ile z drzewa', () => {
+    const st = createSim(w, 4, { core: 2 });
+    st.things = st.things.filter((t) => t.kind !== 'koza');
+    const sim = new Sim(w, st);
+    const [a, b] = core(sim);
+    sim.push({ t: 'chop', ids: [a.id], tree: w.dryTree });
+    for (let k = 0; k < 200; k++) sim.step();
+    expect(a.job?.t).toBe('chop');
+    // drugi nie zaczyna osobnego rąbania, tylko idzie pomóc
+    sim.push({ t: 'chop', ids: [b.id], tree: w.dryTree });
+    sim.step();
+    expect(b.job?.t).toBe('go');
+    // ponowne polecenie temu samemu drwalowi nie zaczyna rąbania od początku
+    while (a.job?.phase !== 1) sim.step();
+    const until = a.job!.until;
+    sim.push({ t: 'chop', ids: [a.id], tree: w.dryTree });
+    sim.step();
+    expect(a.job?.t).toBe('chop');
+    expect(a.job?.until).toBe(until);
+    while (!st.felled.includes(w.dryTree)) sim.step();
+    for (let k = 0; k < 2000; k++) sim.step();
+    expect(st.felled).toEqual([w.dryTree]);
+    expect(st.things.filter((t) => t.kind === 'pien')).toHaveLength(1);
+    const wood = st.things.filter((t) => t.kind === 'drewno').reduce((x, t) => x + t.n, 0) + a.carry + b.carry;
+    expect(wood).toBe(woodFrom(w.trees[w.dryTree]));
+  });
+
+  it('stuknięcie w koronę dalej od pnia to ruch, ścięcie zostaje w menu', () => {
+    const st = createSim(w, 3, { core: 1 });
+    const ids = [st.pawns[0].id];
+    const trunk = trunkTile(w, w.dryTree);
+    const far = trunk - 2 * w.size;
+    expect(commandFor(st, w, ids, far)?.t).toBe('move');
+    expect(commandsAt(st, w, ids, far).map((m) => m.label)).toEqual(['Ściąć drzewo', 'Idź tu']);
+    // pień i kafelki tuż obok: ścięcie od razu
+    expect(commandFor(st, w, ids, trunk + 1)?.t).toBe('chop');
+    expect(commandFor(st, w, ids, trunk)?.t).toBe('chop');
+  });
+
+  it('w drzwiach temperatura sąsiedniego pomieszczenia, a nie pogoda', () => {
+    const st = createSim(w, 3, { core: 1 });
+    const sim = new Sim(w, st);
+    expect(sim.outdoor()).not.toBe(9);
+    for (const d of w.interior.doors) {
+      const near = [d - 1, d + 1, d - w.size, d + w.size]
+        .map((i) => w.interior.room[i])
+        .filter((r) => r >= 0)
+        .map((r) => st.temps[r]);
+      expect(near).toContain(sim.tempAt(d));
+    }
+  });
+
+  it('bez kozy albo bez składu samouczek jest wyłączony', () => {
+    expect(createSim(w, 3, { core: 1 }).tut.step).toBe(0);
+    const noKoza = variant({ furniture: w.interior.furniture.filter((f) => f.kind !== 'koza') });
+    expect(createSim(noKoza, 3, { core: 1 }).tut.step).toBe(-1);
+    expect(createSim(variant({ sklad: [] }), 3, { core: 1 }).tut.step).toBe(-1);
+  });
+
+  it('zarząd pilnuje kozy we własnym mieszkaniu, nawet gdy na liście mebli pierwsza jest obca', () => {
+    const q = w.interior.rooms.find((r) => r.apt !== w.interior.home && r.kind === 'pokoj')!;
+    let qi = -1;
+    for (let i = w.size * w.size - 1; i >= 0; i--) if (w.interior.room[i] === q.id && !w.blocked[i]) qi = i;
+    const other = { kind: 'koza', x: qi % w.size, y: Math.floor(qi / w.size), w: 1, h: 1, rot: 0 };
+    const w2 = variant({ furniture: [other, ...w.interior.furniture] });
+    const st = createSim(w2, 3, { core: 4 });
+    const kozy = st.things.filter((t) => t.kind === 'koza');
+    const mine = kozy.find((t) => inHomeApt(w2.interior, t.y * w.size + t.x))!;
+    const theirs = kozy.find((t) => t !== mine)!;
+    addWood(st, w.interior.sklad[0], w.size, 4);
+    const sim = new Sim(w2, st);
+    for (const p of core(sim)) expect(w.interior.rooms[w.interior.room[tileOf(sim, p)]].apt).not.toBe(q.apt);
+    for (let k = 0; k < 600 && mine.fuel === 0; k++) sim.step();
+    expect(mine.fuel).toBeGreaterThan(0);
+    expect(theirs.fuel).toBe(0);
+  });
+
+  it('dużo osób w zarządzie: każdy startuje gdzie indziej, w mieszkaniu zarządu albo na jego klatce', () => {
+    // obce mieszkanie udaje drugą klatkę, z którą mieszkanie zarządu nie ma drzwi
+    const rooms = w.interior.rooms.map((r) =>
+      r.apt !== w.interior.home && r.kind === 'pokoj' ? { ...r, kind: 'klatka' as RoomKind, apt: -1 } : r,
+    );
+    const w2 = variant({ rooms });
+    const sim = new Sim(w2, createSim(w2, 3, { core: 12 }));
+    const tiles = core(sim).map((p) => tileOf(sim, p));
+    expect(new Set(tiles).size).toBe(12);
+    const home = w.interior.rooms.find((r) => r.kind === 'klatka')!.id;
+    for (const i of tiles) {
+      const r = w2.interior.room[i];
+      expect(r === home || w2.interior.rooms[r].apt === w2.interior.home).toBe(true);
+    }
+  });
+
+  it('bez łóżek i bez pokoju śpi na podłodze gdziekolwiek w mieszkaniu zarządu', () => {
+    const rooms = w.interior.rooms.map((r) =>
+      r.kind === 'pokoj' && r.apt === w.interior.home ? { ...r, kind: 'sala' as RoomKind } : r,
+    );
+    const w2 = variant({ rooms });
+    const st = createSim(w2, 3, { core: 2 });
+    st.things = st.things.filter((t) => t.kind !== 'lozko' && t.kind !== 'wersalka');
+    st.tick = atHour(1, 22.5);
+    const sim = new Sim(w2, st);
+    for (let k = 0; k < TICKS_PER_HOUR; k++) sim.step();
+    for (const p of core(sim)) {
+      expect(p.job?.t).toBe('sleep');
+      expect(p.job?.phase).toBe(1);
+      expect(inHomeApt(w2.interior, tileOf(sim, p))).toBe(true);
+      expect(jobText(st, w2, p)).toBe('Śpi na podłodze.');
+    }
+  });
+
+  it('stos, do którego nie da się dojść, nie zasłania osiągalnego', () => {
+    const pocket = out + 6 * w.size + 3;
+    const blocked = w.blocked.slice();
+    for (const dy of [-1, 0, 1]) for (const dx of [-1, 0, 1]) if (dx || dy) blocked[pocket + dy * w.size + dx] = 1;
+    const w2 = variant({}, { blocked });
+    const st = createSim(w2, 3, { core: 1 });
+    st.things = st.things.filter((t) => t.kind !== 'koza');
+    addWood(st, pocket, w.size, 3);
+    addWood(st, out + 9 * w.size, w.size, 2);
+    const sim = new Sim(w2, st);
+    for (let k = 0; k < 1500; k++) sim.step();
+    expect(woodOn(st, w.size, w.interior.sklad)).toBe(2);
+  });
+
+  it('upuszczone drewno nie ląduje na meblach', () => {
+    const st = createSim(w, 3, { core: 1 });
+    st.things = st.things.filter((t) => t.kind !== 'koza');
+    const p = st.pawns[0];
+    const bed = st.things.find((t) => t.kind === 'lozko')!;
+    p.x = bed.x + 0.5;
+    p.y = bed.y + 0.5;
+    p.carry = 3;
+    const sim = new Sim(w, st);
+    sim.push({ t: 'move', ids: [p.id], to: out + 3 * w.size });
+    sim.step();
+    const pile = st.things.find((t) => t.kind === 'drewno')!;
+    expect(pile.n).toBe(3);
+    expect(st.things.some((t) => !LOOSE.includes(t.kind) && covers(t, pile.x, pile.y))).toBe(false);
+  });
+
+  it('„zanieś do składu” z pełnymi rękami: odkłada swoje i najpierw niesie kliknięty stos', () => {
+    const st = createSim(w, 3, { core: 1 });
+    st.things = st.things.filter((t) => t.kind !== 'koza');
+    const p = st.pawns[0];
+    p.carry = 6;
+    const pile = addWood(st, out + 4 * w.size, w.size, 3);
+    const sim = new Sim(w, st);
+    sim.push({ t: 'haul', ids: [p.id], thing: pile.id });
+    let firstDelivery = -1;
+    for (let k = 0; k < 3000; k++) {
+      sim.step();
+      if (firstDelivery < 0 && woodOn(st, w.size, w.interior.sklad) > 0)
+        firstDelivery = st.things.some((t) => t.id === pile.id) ? 0 : 1;
+    }
+    expect(firstDelivery).toBe(1);
+    expect(woodOn(st, w.size, w.interior.sklad)).toBe(9);
   });
 });

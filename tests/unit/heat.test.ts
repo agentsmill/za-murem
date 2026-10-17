@@ -117,6 +117,16 @@ describe('ciepło w pomieszczeniach', () => {
     expect(steps / PER_HOUR).toBeLessThan(2);
   });
 
+  it('koza grzeje swoje pomieszczenie równie szybko przy łagodnej pogodzie', () => {
+    const temps = [9, 9, 9, 9, 9];
+    let steps = 0;
+    while (temps[0] < 18 && steps < 10 * PER_HOUR) {
+      heatStep(temps, kinds, links, [0], 17);
+      steps++;
+    }
+    expect(steps / PER_HOUR).toBeLessThan(2);
+  });
+
   it('bez ognia pomieszczenie tylko powoli dąży do temperatury z zewnątrz', () => {
     const temps = [9, 9, 9, 9, 9];
     for (let k = 0; k < 3 * PER_HOUR; k++) heatStep(temps, kinds, links, [], 14);

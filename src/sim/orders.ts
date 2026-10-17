@@ -3,11 +3,13 @@
 
 import type { World } from '../world/world.ts';
 import { dryTreeOf, houseOf } from './house.ts';
-import type { Command, Pawn, SimState, Thing } from './sim.ts';
+import { type Command, type Pawn, type SimState, type Thing, trunkOf } from './sim.ts';
 
 export interface MenuItem {
   cmd: Command;
   label: string;
+  /** można wykonać od razu jednym kliknięciem albo stuknięciem (domyślne polecenie); false: tylko z menu */
+  quick: boolean;
 }
 
 /** drzewo pod kursorem: najbliższy pień w zasięgu korony (najwyżej 2,5 m), także sam kafelek pnia; −1: brak */
@@ -31,9 +33,10 @@ const thingAt = (st: SimState, w: World, tile: number, kind: string): Thing | un
   return st.things.find((t) => t.kind === kind && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
 };
 
-/** Polecenia, które mają sens na klikniętym kafelku, najpierw domyślne (menu kontekstowe z GDD).
-    Drewno poza składem: zanieść do składu. Koza, gdy jest skąd wziąć drewno: dołożyć. Drzewo: ściąć.
-    Zawsze na końcu „Idź tu”. Polecenia przyjmuje tylko zarząd: bez nikogo z rdzenia lista jest pusta. */
+/** Polecenia, które mają sens na klikniętym kafelku (menu kontekstowe z GDD), „Idź tu” zawsze na końcu.
+    Drewno poza składem: zanieść do składu. Koza, gdy jest skąd wziąć drewno: dołożyć. Drzewo: ściąć, od razu
+    tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie w las ma znaczyć „idź”.
+    Polecenia przyjmuje tylko zarząd: bez nikogo z rdzenia lista jest pusta. */
 export function commandsAt(st: SimState, w: World, ids: readonly number[], tile: number): MenuItem[] {
   const core = ids.filter((id) => st.pawns.some((p) => p.id === id && p.kind === 'core'));
   if (!core.length) return [];
@@ -41,19 +44,27 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   const sklad = houseOf(w)?.sklad ?? [];
   const pile = thingAt(st, w, tile, 'drewno');
   if (pile && sklad.length && !sklad.includes(tile))
-    out.push({ cmd: { t: 'haul', ids: core, thing: pile.id }, label: 'Zanieść do składu' });
+    out.push({ cmd: { t: 'haul', ids: core, thing: pile.id }, label: 'Zanieść do składu', quick: true });
   const koza = thingAt(st, w, tile, 'koza');
   const wood = st.things.some((t) => t.kind === 'drewno' && t.n > 0) || st.pawns.some((p) => p.carry > 0);
-  if (koza && wood) out.push({ cmd: { t: 'refuel', ids: core, thing: koza.id }, label: 'Dołożyć do kozy' });
+  if (koza && wood)
+    out.push({ cmd: { t: 'refuel', ids: core, thing: koza.id }, label: 'Dołożyć do kozy', quick: true });
   const tree = treeAt(st, w, tile);
-  if (tree >= 0) out.push({ cmd: { t: 'chop', ids: core, tree }, label: 'Ściąć drzewo' });
-  out.push({ cmd: { t: 'move', ids: core, to: tile }, label: 'Idź tu' });
+  if (tree >= 0) {
+    const trunk = trunkOf(w, w.trees[tree]);
+    const near =
+      Math.abs((trunk % w.size) - (tile % w.size)) <= 1 &&
+      Math.abs(Math.floor(trunk / w.size) - Math.floor(tile / w.size)) <= 1;
+    out.push({ cmd: { t: 'chop', ids: core, tree }, label: 'Ściąć drzewo', quick: near });
+  }
+  out.push({ cmd: { t: 'move', ids: core, to: tile }, label: 'Idź tu', quick: true });
   return out;
 }
 
-/** domyślne polecenie dla klikniętego kafelka (pojedyncza oczywista akcja) albo null bez nikogo z zarządu */
+/** domyślne polecenie dla klikniętego kafelka (pierwsze, które można wykonać od razu) albo null bez nikogo
+    z zarządu */
 export function commandFor(st: SimState, w: World, ids: readonly number[], tile: number): Command | null {
-  return commandsAt(st, w, ids, tile)[0]?.cmd ?? null;
+  return commandsAt(st, w, ids, tile).find((m) => m.quick)?.cmd ?? null;
 }
 
 /** co robi osoba: krótki opis do karty */

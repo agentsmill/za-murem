@@ -250,5 +250,12 @@ export function mockHouse(seed = 7): MockWorld {
   return overlay(buildWorld(geoWith(rect(-5, -4, 11, 10), 'house', '2'), { seed, size: 96 }), HOUSE);
 }
 
-/** kafelek pnia drzewa (tam klika gracz) */
-export const trunkTile = (w: World, k: number): number => Math.floor(w.trees[k].y) * w.size + Math.floor(w.trees[k].x);
+/** kafelek pnia drzewa (tam klika gracz): ten, który świat zablokował (pozycje są zaokrąglone do 0,01 m) */
+export function trunkTile(w: World, k: number): number {
+  const t = w.trees[k];
+  const xs = Number.isInteger(t.x) ? [t.x, t.x - 1] : [Math.floor(t.x)];
+  const ys = Number.isInteger(t.y) ? [t.y, t.y - 1] : [Math.floor(t.y)];
+  for (const y of ys)
+    for (const x of xs) if (w.blocked[y * w.size + x] && w.bid[y * w.size + x] < 0) return y * w.size + x;
+  return Math.floor(t.y) * w.size + Math.floor(t.x);
+}

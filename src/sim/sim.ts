@@ -214,9 +214,18 @@ function newThing(st: SimState, kind: string, x: number, y: number, w = 1, h = 1
 
 const covers = (t: Thing, x: number, y: number) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
 
-/** kuchnia zarządu: pomieszczenie z kozą, a bez kozy kuchnia mieszkania zarządu (−1: brak) */
+/** koza zarządu: ta w mieszkaniu zarządu (inne kozy grzeją swoje pomieszczenia, ale zarząd ich nie pilnuje) */
+function homeKoza<T extends { kind: string; x: number; y: number }>(
+  h: HouseLike,
+  size: number,
+  list: T[],
+): T | undefined {
+  return list.find((f) => f.kind === 'koza' && inHomeApt(h, f.y * size + f.x));
+}
+
+/** kuchnia zarządu: pomieszczenie z kozą zarządu, a bez niej kuchnia mieszkania zarządu (−1: brak) */
 function kitchenOf(h: HouseLike, size: number): number {
-  const koza = h.furniture.find((f) => f.kind === 'koza');
+  const koza = homeKoza(h, size, h.furniture);
   const r = koza ? h.room[koza.y * size + koza.x] : -1;
   if (r >= 0) return r;
   return h.rooms.find((q) => q.kind === 'kuchnia' && q.apt === h.home)?.id ?? -1;
@@ -277,9 +286,25 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
       food.n = FOOD_START;
       st.things.push(food);
     }
-    const stairs = house.rooms.filter((r) => r.kind === 'klatka').map((r) => r.id);
-    spots = [...(kitchen >= 0 ? freeIn(w, house, [kitchen], st.things) : []), ...freeIn(w, house, stairs, st.things)];
-    if (dryTreeOf(w) >= 0) st.tut = { step: 0, at: TUT_STEPS.map(() => -1) };
+    // potem klatka, na którą wychodzą drzwi mieszkania zarządu, i reszta mieszkania
+    const homeRooms = house.home >= 0 ? house.rooms.filter((r) => r.apt === house.home).map((r) => r.id) : [];
+    const links = roomLinks(house, size);
+    const linked = (a: number) =>
+      links.some(([x, y]) => (x === a && homeRooms.includes(y)) || (y === a && homeRooms.includes(x)));
+    const stairs = house.rooms.filter((r) => r.kind === 'klatka' && linked(r.id)).map((r) => r.id);
+    spots = [
+      ...(kitchen >= 0 ? freeIn(w, house, [kitchen], st.things) : []),
+      ...freeIn(w, house, stairs, st.things),
+      ...freeIn(
+        w,
+        house,
+        homeRooms.filter((r) => r !== kitchen),
+        st.things,
+      ),
+    ];
+    // samouczek tylko wtedy, gdy jest co ściąć, gdzie złożyć drewno i w czym palić
+    if (dryTreeOf(w) >= 0 && homeKoza(house, size, house.furniture) && house.sklad.length)
+      st.tut = { step: 0, at: TUT_STEPS.map(() => -1) };
   }
   // rdzeń: zarząd z fachem w podstawowych dziedzinach, jak na starcie 0.3
   const need = ['cieplo', 'bud', 'med', 'uprawa'] as const;
@@ -294,7 +319,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     st.people.push(p);
     // losowanie miejsca zostaje, żeby ten sam adres dawał tych samych ludzi z wnętrzem i bez
     let at = spawnNear(w, door, k, rnd);
-    if (spots.length) at = spots[k % spots.length];
+    if (k < spots.length) at = spots[k];
     const pawn = newPawn(st, w, 'core', st.people.length - 1, at, door, k);
     pawn.needs = startNeeds();
     st.pawns.push(pawn);
@@ -355,7 +380,7 @@ function newPawn(
 
 /** kafelek pnia: współrzędne drzew są zaokrąglone do 0,01 m, więc pień na granicy kafelków bywa o jeden w lewo
     albo w górę; wybieramy kafelek, który świat naprawdę zablokował */
-function trunkOf(w: World, t: Tree): number {
+export function trunkOf(w: World, t: Tree): number {
   const size = w.size;
   const xs = Number.isInteger(t.x) ? [t.x, t.x - 1] : [Math.floor(t.x)];
   const ys = Number.isInteger(t.y) ? [t.y, t.y - 1] : [Math.floor(t.y)];
@@ -392,6 +417,8 @@ export class Sim {
   private readonly kinds: RoomKind[];
   /** przechodnie kafelki każdego pomieszczenia */
   private readonly roomTiles: number[][];
+  /** pomieszczenie pod nogami: jak interior.room, ale drzwi należą do sąsiedniego pomieszczenia */
+  private readonly roomOf: Int16Array;
   private readonly dry: number;
 
   constructor(w: World, st: SimState) {
@@ -420,6 +447,17 @@ export class Sim {
         const r = h.room[i];
         if (r >= 0 && !this.blocked[i]) this.roomTiles[r].push(i);
       }
+    this.roomOf = h ? h.room.slice() : new Int16Array(0);
+    if (h)
+      for (const d of h.doors) {
+        if (this.roomOf[d] >= 0) continue;
+        const x = d % w.size;
+        for (const n of [x > 0 ? d - 1 : -1, x < w.size - 1 ? d + 1 : -1, d - w.size, d + w.size])
+          if (n >= 0 && n < h.room.length && h.room[n] >= 0) {
+            this.roomOf[d] = h.room[n];
+            break;
+          }
+      }
     this.dry = dryTreeOf(w);
     if (h) {
       const fires = this.fires();
@@ -443,7 +481,7 @@ export class Sim {
 
   /** temperatura pod nogami: w pomieszczeniu siedziby jego temperatura, gdzie indziej pogoda */
   tempAt(tile: number): number {
-    const r = this.house ? this.house.room[tile] : -1;
+    const r = this.house ? this.roomOf[tile] : -1;
     return r >= 0 ? this.st.temps[r] : this.outdoor();
   }
 
@@ -591,21 +629,29 @@ export class Sim {
     }
   }
 
-  /** pierwsza osoba ścina, reszta idzie obok drzewa (będzie pod ręką do noszenia) */
+  /** pierwsza osoba ścina, reszta idzie obok drzewa (będzie pod ręką do noszenia); gdy ktoś już ścina
+      to drzewo, rąbie dalej bez zaczynania od nowa, a nowi idą pomóc */
   private orderChop(pawns: Pawn[], k: number): void {
     if (!(k >= 0 && k < this.w.trees.length)) return;
     if (this.st.felled.includes(k)) {
       this.orderMove(pawns, this.trunk[k], [], true);
       return;
     }
-    const [first, ...rest] = pawns;
     const taken: number[] = [];
-    const stand = this.chopSpot(first, k);
-    if (stand >= 0 && this.go(first, stand)) {
-      this.setJob(first, this.newJob('chop', k, stand, true), false);
-      taken.push(stand);
-      if (k === this.dry) this.tutEvent('rozkaz');
-    } else rest.unshift(first);
+    let rest = pawns;
+    const chopper = this.st.pawns.find((q) => q.job?.t === 'chop' && q.job.target === k);
+    if (chopper) {
+      rest = pawns.filter((q) => q !== chopper);
+      taken.push(chopper.job!.tile);
+    } else {
+      const stand = this.chopSpot(pawns[0], k);
+      if (stand >= 0 && this.go(pawns[0], stand)) {
+        this.setJob(pawns[0], this.newJob('chop', k, stand, true), false);
+        taken.push(stand);
+        if (k === this.dry) this.tutEvent('rozkaz');
+        rest = pawns.slice(1);
+      }
+    }
     if (rest.length) this.orderMove(rest, this.trunk[k], taken, false);
   }
 
@@ -615,7 +661,7 @@ export class Sim {
     const pile = this.thing(id);
     if (pile?.kind !== 'drewno') return;
     const tile = pile.y * size + pile.x;
-    if (this.dropTile() < 0 || this.house?.sklad.includes(tile)) {
+    if (this.dropTile(pawns[0]) < 0 || this.house?.sklad.includes(tile)) {
       this.orderMove(pawns, tile, [], true);
       return;
     }
@@ -627,7 +673,8 @@ export class Sim {
         this.orderMove([p], tile, taken, false);
         return;
       }
-      this.setJob(p, this.newJob('haul', target.id, pt, true), true);
+      // z pełnymi rękami najpierw odkłada swoje, żeby wziąć to, co kazano
+      this.setJob(p, this.newJob('haul', target.id, pt, true), false);
       target.by = p.id;
       taken.push(pt);
     });
@@ -673,8 +720,20 @@ export class Sim {
     return this.st.things.find((t) => t.id === id);
   }
 
+  /** koza zarządu (w jego mieszkaniu) */
   private koza(): Thing | undefined {
-    return this.st.things.find((t) => t.kind === 'koza');
+    return this.house ? homeKoza(this.house, this.w.size, this.st.things) : undefined;
+  }
+
+  /** stos drewna na kafelku */
+  private pileAt(i: number): Thing | undefined {
+    const size = this.w.size;
+    return this.st.things.find((t) => t.kind === 'drewno' && t.x === i % size && t.y === Math.floor(i / size));
+  }
+
+  /** obszar mapy, w którym stoi pionek */
+  private regionOf(p: Pawn): number {
+    return this.reg[nearestFree(this.blocked, this.w.size, this.tileOf(p))];
   }
 
   private food(): Thing | undefined {
@@ -728,7 +787,8 @@ export class Sim {
     const t = this.trunk[k];
     const tx = t % size;
     const ty = Math.floor(t / size);
-    const region = this.reg[nearestFree(this.blocked, size, this.tileOf(p))];
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
     const cand: number[] = [];
     for (let dy = -1; dy <= 1; dy++)
       for (let dx = -1; dx <= 1; dx++) {
@@ -736,34 +796,31 @@ export class Sim {
         const y = ty + dy;
         if ((!dx && !dy) || x < 0 || y < 0 || x >= size || y >= size) continue;
         const i = y * size + x;
-        if (!this.blocked[i] && this.reg[i] === region) cand.push(i);
+        if (!this.blocked[i] && this.reg[i] === region && !taken.includes(i)) cand.push(i);
       }
     return this.nearest(p, cand);
   }
 
-  /** kafelek składu z miejscem na drewno (−1: brak składu albo pełny) */
-  private dropTile(): number {
+  /** kafelek składu z miejscem na drewno, do którego pionek dojdzie (−1: brak składu albo pełny) */
+  private dropTile(p: Pawn): number {
     const h = this.house;
     if (!h) return -1;
     const size = this.w.size;
+    const region = this.regionOf(p);
     for (const i of h.sklad) {
-      const x = i % size;
-      const y = Math.floor(i / size);
-      const pile = this.st.things.find((t) => t.kind === 'drewno' && t.x === x && t.y === y);
-      if (pile ? pile.n < STACK : !this.thingAt(x, y)) return i;
+      if (this.blocked[i] || this.reg[i] !== region) continue;
+      const pile = this.pileAt(i);
+      if (pile ? pile.n < STACK : !this.thingAt(i % size, Math.floor(i / size))) return i;
     }
     return -1;
   }
 
   /** dokłada drewno na kafelek (do stosu, który tam leży) */
   private addWood(i: number, n: number): void {
-    const size = this.w.size;
-    const x = i % size;
-    const y = Math.floor(i / size);
-    const pile = this.st.things.find((t) => t.kind === 'drewno' && t.x === x && t.y === y);
+    const pile = this.pileAt(i);
     if (pile) pile.n += n;
     else {
-      const t = newThing(this.st, 'drewno', x, y);
+      const t = newThing(this.st, 'drewno', i % this.w.size, Math.floor(i / this.w.size));
       t.n = n;
       this.st.things.push(t);
     }
@@ -775,11 +832,30 @@ export class Sim {
     if (pile.n <= 0) this.st.things.splice(this.st.things.indexOf(pile), 1);
   }
 
-  /** drewno z rąk zostaje tam, gdzie pionek stoi */
+  /** drewno z rąk zostaje obok pionka */
   private dropCarry(p: Pawn): void {
     if (p.carry <= 0) return;
-    this.addWood(this.tileOf(p), p.carry);
+    this.addWood(this.dropSpot(p, p.carry), p.carry);
     p.carry = 0;
+  }
+
+  /** najbliższy pionkowi wolny kafelek w jego obszarze, bez mebli, pnia i jedzenia: na stos, na który
+      się jeszcze zmieści, albo na pusty */
+  private dropSpot(p: Pawn, n: number): number {
+    const size = this.w.size;
+    const at = nearestFree(this.blocked, size, this.tileOf(p));
+    const ax = at % size;
+    const ay = Math.floor(at / size);
+    for (const [dx, dy] of SPREAD) {
+      const x = ax + dx;
+      const y = ay + dy;
+      if (x < 0 || y < 0 || x >= size || y >= size) continue;
+      const i = y * size + x;
+      if (this.blocked[i] || this.reg[i] !== this.reg[at]) continue;
+      const pile = this.pileAt(i);
+      if (pile ? pile.n + n <= STACK : !this.thingAt(x, y)) return i;
+    }
+    return at;
   }
 
   /** wolny stos drewna najbliżej pionka: w składzie, poza nim albo gdziekolwiek (najpierw w składzie);
@@ -787,11 +863,14 @@ export class Sim {
   private pileFor(p: Pawn, where: 'sklad' | 'outside' | 'any', near = -1): Thing | undefined {
     const size = this.w.size;
     const sklad = this.house ? this.house.sklad : [];
+    const region = this.regionOf(p);
     let best: Thing | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.things) {
       if (t.kind !== 'drewno' || t.n <= 0 || t.by >= 0) continue;
       const i = t.y * size + t.x;
+      // stos, do którego nie da się dojść, nie zasłania osiągalnych
+      if (this.reg[i] !== region) continue;
       const inSklad = sklad.includes(i);
       if ((where === 'sklad' && !inSklad) || (where === 'outside' && inSklad)) continue;
       if (near >= 0 && Math.max(Math.abs(t.x - (near % size)), Math.abs(t.y - Math.floor(near / size))) > 4) continue;
@@ -913,7 +992,7 @@ export class Sim {
         const tree = this.w.trees[j.target];
         if (j.phase === 1) {
           if (tick < j.until) return true;
-          this.fell(j.target, j.tile);
+          if (!st.felled.includes(j.target)) this.fell(j.target, j.tile);
           return false;
         }
         if (!at || st.felled.includes(j.target)) return false;
@@ -933,7 +1012,7 @@ export class Sim {
         const take = Math.min(pile.n, CARRY - p.carry);
         this.takeWood(pile, take);
         p.carry += take;
-        const dest = this.dropTile();
+        const dest = this.dropTile(p);
         if (dest < 0 || !this.go(p, dest)) return false;
         j.phase = 1;
         j.target = -1;
@@ -1008,10 +1087,9 @@ export class Sim {
     const size = this.w.size;
     for (const i of this.house?.sklad ?? []) {
       if (p.carry <= 0) break;
-      const x = i % size;
-      const y = Math.floor(i / size);
-      const pile = this.st.things.find((t) => t.kind === 'drewno' && t.x === x && t.y === y);
-      if (!pile && this.thingAt(x, y)) continue;
+      if (this.blocked[i]) continue;
+      const pile = this.pileAt(i);
+      if (!pile && this.thingAt(i % size, Math.floor(i / size))) continue;
       const n = Math.min(p.carry, STACK - (pile ? pile.n : 0));
       if (n <= 0) continue;
       this.addWood(i, n);
@@ -1063,13 +1141,17 @@ export class Sim {
     }
     let tile = bed ? bed.y * size + bed.x : -1;
     if (!bed) {
-      // łóżek za mało: śpi na podłodze w pokoju zarządu
-      const floor: number[] = [];
-      for (const r of h.rooms)
-        if (r.apt === h.home && r.kind === 'pokoj')
-          for (const i of this.roomTiles[r.id])
-            if (!taken.includes(i) && !this.thingAt(i % size, Math.floor(i / size))) floor.push(i);
-      tile = this.nearest(p, floor);
+      // łóżek za mało: śpi na podłodze w pokoju zarządu, a bez pokoju gdziekolwiek w mieszkaniu
+      const floorIn = (pokoj: boolean) => {
+        const out: number[] = [];
+        for (const r of h.rooms)
+          if (h.home >= 0 && r.apt === h.home && (!pokoj || r.kind === 'pokoj'))
+            for (const i of this.roomTiles[r.id])
+              if (!taken.includes(i) && !this.thingAt(i % size, Math.floor(i / size))) out.push(i);
+        return out;
+      };
+      const floor = floorIn(true);
+      tile = this.nearest(p, floor.length ? floor : floorIn(false));
     }
     if (tile < 0 || !this.go(p, tile)) return false;
     this.setJob(p, this.newJob('sleep', bed ? bed.id : -1, tile, false), false);
@@ -1145,7 +1227,7 @@ export class Sim {
 
   private startHaul(p: Pawn): boolean {
     const size = this.w.size;
-    const dest = this.dropTile();
+    const dest = this.dropTile(p);
     if (dest < 0) return false;
     if (p.carry > 0) {
       if (!this.go(p, dest)) return false;
@@ -1207,8 +1289,7 @@ export class Sim {
   private needCtx(p: Pawn, tout: number): NeedCtx {
     const h = this.house!;
     const size = this.w.size;
-    const i = this.tileOf(p);
-    const r = h.room[i];
+    const r = this.roomOf[this.tileOf(p)];
     let fire = false;
     for (const t of this.st.things)
       if (
