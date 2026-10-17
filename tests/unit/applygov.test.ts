@@ -235,6 +235,28 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     expect(sum(st, 'drewno')).toBe(wood0);
   });
 
+  it('rozstrzygnięcie najpierw po wpisie zarządu: odparty, choć wydarzenie w tej samej minucie straszy jedną osobę', () => {
+    const st = createSim(w, 3, { core: 2 });
+    st.tick = atHour(1, 21);
+    const sim = new Sim(w, st);
+    applyGov(
+      st,
+      w,
+      fx((e) => (e.raid = { day: 1, at: minuteOf(1, 23), post: 'brama', where: 'przy bramie' })),
+    );
+    while (st.tick < atHour(1, 23)) sim.step();
+    applyGov(
+      st,
+      w,
+      fx((e) => {
+        for (const p of core(st)) e.needs.push({ id: st.people[p.person].id, d: { safe: 8 } });
+        e.needs.push({ id: idOf(st, 0), d: { safe: -25 } });
+        e.log.push('Ktoś kręcił się w nocy przy bramie, ale siatka wytrzymała.');
+      }),
+    );
+    expect(st.raid!.outcome).toBe('odparty');
+  });
+
   it('odczyt dla zarządu ma kształt GovInput i zarząd na nim działa; uchwały przechodzą do symulacji', () => {
     const st = createSim(w, 3, { core: 4 });
     const i = govInput(st, w, 12);
