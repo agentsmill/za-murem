@@ -7,6 +7,9 @@ import { hashString } from '../../src/core/rng.ts';
 import type { PlaceWorld } from '../../src/gov/miejsce.ts';
 import { buildWorld, type World, type WorldBuilding } from '../../src/world/world.ts';
 
+/** słowa, których w domu jednorodzinnym nie ma w tekstach zarządu: klatka, piętro, blok, spółdzielnia, pawilon… */
+export const FORBIDDEN_DOM = /klatk|piętr|spółdziel|pawilon|szlaban|świetlic|czynsz|blok|mieszkani/i;
+
 const cache = new Map<string, { w: World; seed: number }>();
 
 /** świat demo z public/demo z ziarnem z adresu */

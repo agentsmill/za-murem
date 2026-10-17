@@ -134,8 +134,9 @@ function describePlace(w: PlaceWorld): GovPlace {
 export interface Words {
   /** spółdzielnia | ulica: mianownik, dopełniacz i „w czym” (w spółdzielni | na ulicy) */
   wspolnota: { m: string; d: string; w: string };
-  /** zarząd | komitet ulicy: mianownik, dopełniacz, narzędnik i krótko (zarząd | komitet) */
-  zarzad: { m: string; d: string; n: string; krotko: string };
+  /** zarząd | komitet ulicy: mianownik, dopełniacz, narzędnik, krótko (zarząd | komitet) i krótki dopełniacz
+      (zarządu | komitetu, np. „Zebranie komitetu przy kozie”) */
+  zarzad: { m: string; d: string; n: string; krotko: string; dk: string };
   /** na początek zdania */
   Zarzad: string;
   /** zebranie, które może odwołać zarząd */
@@ -143,26 +144,30 @@ export interface Words {
   /** nagłówek okna wydarzenia */
   naglowek: string;
   mieszkancy: { m: string; d: string };
+  /** wejście w siatce: brama | furtka (mianownik, „przy”, „pod”) */
+  brama: { m: string; przy: string; pod: string };
   /** skąd przychodzi sąsiad: z bloku obok | zza płotu */
   sasiad: string;
 }
 
 const BLOKOWE: Omit<Words, 'sasiad'> = {
   wspolnota: { m: 'spółdzielnia', d: 'spółdzielni', w: 'w spółdzielni' },
-  zarzad: { m: 'zarząd', d: 'zarządu', n: 'zarządem', krotko: 'zarząd' },
+  zarzad: { m: 'zarząd', d: 'zarządu', n: 'zarządem', krotko: 'zarząd', dk: 'zarządu' },
   Zarzad: 'Zarząd',
   walne: 'walne',
   naglowek: 'Na osiedlu',
   mieszkancy: { m: 'mieszkańcy', d: 'mieszkańców' },
+  brama: { m: 'brama', przy: 'przy bramie', pod: 'pod bramą' },
 };
 
 const ULICZNE: Omit<Words, 'sasiad'> = {
   wspolnota: { m: 'ulica', d: 'ulicy', w: 'na ulicy' },
-  zarzad: { m: 'komitet ulicy', d: 'komitetu ulicy', n: 'komitetem ulicy', krotko: 'komitet' },
+  zarzad: { m: 'komitet ulicy', d: 'komitetu ulicy', n: 'komitetem ulicy', krotko: 'komitet', dk: 'komitetu' },
   Zarzad: 'Komitet ulicy',
   walne: 'zebranie ulicy',
   naglowek: 'Na ulicy',
   mieszkancy: { m: 'sąsiedzi', d: 'sąsiadów' },
+  brama: { m: 'furtka', przy: 'przy furtce', pod: 'pod furtką' },
 };
 
 /** słownik dla miejsca: w domu ulica i komitet ulicy, w bloku spółdzielnia i zarząd (decyzja Mateusza, 17.10.2026) */

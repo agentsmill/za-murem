@@ -6,7 +6,7 @@ import { LAW, type LawPath } from '../content/data.ts';
 import type { EventChoice, EventHost } from '../content/events.ts';
 import { g } from '../content/people.ts';
 import { pick } from '../core/rng.ts';
-import type { GovNeeds, GovPerson, LootKey } from './typy.ts';
+import type { GovNeeds, GovPerson, GovPlace, LootKey } from './typy.ts';
 
 // ---------------------------------------------------------------- uchwały
 
@@ -19,6 +19,8 @@ export interface M1Law {
   imm?: [number, number];
   /** codziennie rano: [zaufanie, wkurzenie] */
   daily?: [number, number];
+  /** w domu jednorodzinnym (ulica i komitet ulicy): inna nazwa albo opis; liczby te same */
+  dom?: { name?: string; desc?: string };
 }
 
 /**
@@ -30,6 +32,10 @@ export const M1_LAWS: Record<string, M1Law> = {
     name: LAW.u_warty.name,
     path: LAW.u_warty.path,
     desc: 'Co noc przy bramie stoi ktoś z mieszkańców, a warta zarządu pilnuje lepiej. Obrona przy bramie +1,5, warta mocniejsza o ćwierć, szansa napadu −5 punktów.',
+    dom: {
+      name: 'Warty przy furtce',
+      desc: 'Co noc przy furtce stoi ktoś z domowników, a warta komitetu pilnuje lepiej. Obrona przy furtce +1,5, warta mocniejsza o ćwierć, szansa napadu −5 punktów.',
+    },
   },
   u_brama: {
     name: 'Brama na kłódkę od 20:00',
@@ -37,12 +43,17 @@ export const M1_LAWS: Record<string, M1Law> = {
     req: ['u_warty'],
     desc: 'Po zmroku nikt nie wchodzi ani nie wychodzi, klucz ma tylko zarząd. Szansa napadu −8 punktów, wędrowców spod bramy nikt nie wpuszcza. Wkurzenie +0,2 dziennie.',
     daily: [0, 0.2],
+    dom: {
+      name: 'Furtka na kłódkę od 20:00',
+      desc: 'Po zmroku nikt nie wchodzi ani nie wychodzi, klucz ma tylko komitet. Szansa napadu −8 punktów, wędrowców spod furtki nikt nie wpuszcza. Wkurzenie +0,2 dziennie.',
+    },
   },
   u_zebrania: {
     name: LAW.u_zebrania.name,
     path: LAW.u_zebrania.path,
     desc: LAW.u_zebrania.desc,
     daily: [0.4, 0],
+    dom: { name: 'Zebrania przy kozie' },
   },
   u_kociol: {
     name: 'Wspólny kocioł',
@@ -63,8 +74,17 @@ export const M1_LAWS: Record<string, M1Law> = {
     desc: 'Meble z pustych mieszkań idą do kozy bez pytania o zgodę. Palenie cudzych mebli boli połowę mniej, ale wkurzenie +2 od razu i +0,1 dziennie.',
     imm: [0, 2],
     daily: [0, 0.1],
+    dom: {
+      desc: 'Meble idą do kozy bez pytania domowników o zgodę. Palenie mebli boli połowę mniej, ale wkurzenie +2 od razu i +0,1 dziennie.',
+    },
   },
 };
+
+/** nazwa uchwały według miejsca (w domu furtka i komitet zamiast bramy, klatek i zarządu) */
+export const lawName = (id: string, p: GovPlace): string =>
+  (p.kind === 'dom' ? M1_LAWS[id].dom?.name : undefined) ?? M1_LAWS[id].name;
+export const lawDesc = (id: string, p: GovPlace): string =>
+  (p.kind === 'dom' ? M1_LAWS[id].dom?.desc : undefined) ?? M1_LAWS[id].desc;
 
 /** pierwsza uchwała, wieczorem pierwszego dnia: warta, dzielenie jedzenia, palenie mebli */
 export const FIRST_LAWS = ['u_warty', 'u_kociol', 'u_meble'] as const;
@@ -126,8 +146,35 @@ export const TARGETS: ExpTarget[] = [
   },
 ];
 
+/** nazwa celu wyprawy według miejsca: w domu bez bloku obok, trzepaka i pawilonu; ryzyko i łup te same */
+export function targetName(t: ExpTarget, p: GovPlace): string {
+  if (t.id === 'mieszkania' && p.near !== 'bloki') return 'opuszczony dom obok';
+  if (p.kind !== 'dom') return t.name;
+  if (t.id === 'garaze') return p.garages === null ? 'szopy w ogrodach obok' : 'garaże obok';
+  if (t.id === 'pawilon') return 'sklep przy głównej drodze';
+  return t.name;
+}
+
 /** nazwy dziur w siatce, kiedy świat ich nie poda */
 export const HOLE_NAMES = ['przy garażach', 'za trzepakiem', 'od ulicy', 'przy śmietniku', 'od strony bloku obok'];
+/** to samo przy domu jednorodzinnym */
+export const HOLE_NAMES_DOM = ['przy garażu', 'za szopą', 'od ulicy', 'przy kompostowniku', 'od strony domu obok'];
+
+/** zakończenia gry, które M1 może dać, w domu jednorodzinnym (w bloku zostają te z 0.3 o walnym i klatkach) */
+export const KONIEC_DOM: Record<'odwolanie' | 'exodus' | 'pustka', { title: string; text: string }> = {
+  odwolanie: {
+    title: 'Zebranie ulicy odwołało komitet',
+    text: 'Wkurzenie przelało się przez płoty. Sąsiedzi zebrali się przy furtce i odwołali was przez aklamację. Nowy komitet zaczął od wymiany kłódki.',
+  },
+  exodus: {
+    title: 'Ulica opustoszała',
+    text: 'Ludzie przestali wierzyć, że z wami przetrwają. Dom po domu odchodzili na inne ulice. Zostały puste ogrody i list z banku o racie kredytu z 2047 roku.',
+  },
+  pustka: {
+    title: 'Nikt nie przeżył',
+    text: 'Ostatni domownik zgasił kozę. Ulica stoi pusta, a dron dostawczy dalej krąży nad dachem.',
+  },
+};
 
 export const LOOT_LABEL: Record<LootKey, string> = {
   wood: 'Drewno',

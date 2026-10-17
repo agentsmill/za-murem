@@ -4,7 +4,8 @@
    bezpieczeństwo, spalone meble, cechy ludzi) w miejsce budynków i kuchni z 0.3. */
 
 import { LAW_CD } from '../content/data.ts';
-import { M1_LAWS } from './tresc.ts';
+import { placeIn, wordsOf } from './miejsce.ts';
+import { lawDesc, lawName, M1_LAWS } from './tresc.ts';
 import type { GovInput, GovState, LawEffects, LawOption } from './typy.ts';
 import { burnedCount, gameMin, logGov, mood, round2 } from './wspolne.ts';
 
@@ -12,14 +13,15 @@ export const law = (st: GovState, id: string): boolean => !!st.laws.signed[id];
 
 export function lawState(st: GovState, i: GovInput, id: string): LawOption {
   const L = M1_LAWS[id];
-  const base = { id, name: L.name, path: L.path, desc: L.desc };
+  const place = placeIn(i);
+  const base = { id, name: lawName(id, place), path: L.path, desc: lawDesc(id, place) };
   if (law(st, id)) return { ...base, s: 'done' };
   if (L.path === 'porzadek' && st.laws.path === 'wspolnota')
     return { ...base, s: 'lock', why: 'Wybraliście drogę wspólnoty.' };
   if (L.path === 'wspolnota' && st.laws.path === 'porzadek')
     return { ...base, s: 'lock', why: 'Wybraliście drogę porządku.' };
   const miss = (L.req ?? []).filter((r) => !law(st, r));
-  if (miss.length) return { ...base, s: 'lock', why: `Najpierw: ${miss.map((r) => M1_LAWS[r].name).join(', ')}` };
+  if (miss.length) return { ...base, s: 'lock', why: `Najpierw: ${miss.map((r) => lawName(r, place)).join(', ')}` };
   const cd = LAW_CD - (gameMin(i) - st.laws.last);
   if (cd > 0) return { ...base, s: 'cd', why: `Kolejną uchwałę za ${Math.ceil(cd / 60)} h.` };
   return { ...base, s: 'ok' };
@@ -36,7 +38,8 @@ export function sign(st: GovState, i: GovInput, id: string): boolean {
   st.laws.last = gameMin(i);
   if (L.path === 'porzadek' || L.path === 'wspolnota') st.laws.path = L.path;
   if (L.imm) mood(st, L.imm[0], L.imm[1]);
-  logGov(st, i, `Uchwała zarządu: ${L.name}.`, true);
+  const place = placeIn(i);
+  logGov(st, i, `Uchwała ${wordsOf(place).zarzad.dk}: ${lawName(id, place)}.`, true);
   return true;
 }
 

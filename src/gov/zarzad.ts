@@ -10,6 +10,7 @@
      interfejs: pending(gov, input) → karta, uchwała, wydarzenie albo raport;
      odpowiedzi: setNight / confirmNight, signLaw, chooseEvent, ackReport (każda zwraca skutki). */
 
+import { placeIn, wordsOf } from './miejsce.ts';
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } from './noc.ts';
 import { FIRST_LAWS } from './tresc.ts';
 import type { GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
@@ -66,10 +67,11 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
     st.lawDay = i.day;
     if (optionsOfLaws(st, i).some((o) => o.s === 'ok')) {
       st.lawPending = true;
+      const z = wordsOf(placeIn(i)).zarzad.dk;
       logGov(
         st,
         i,
-        i.day === 1 ? 'Zebranie zarządu przy kozie: pierwsza uchwała.' : 'Zebranie zarządu: można podjąć uchwałę.',
+        i.day === 1 ? `Zebranie ${z} przy kozie: pierwsza uchwała.` : `Zebranie ${z}: można podjąć uchwałę.`,
         true,
         fx,
       );
@@ -148,7 +150,7 @@ export function signLaw(st: GovState, i: GovInput, id: string | null): GovEffect
     st.lawPending = false;
     if (st.lawDay === 1) mood(st, -1, 0);
     decision(st, i, 'uchwala');
-    logGov(st, i, 'Zarząd odłożył uchwałę na później.', false, fx);
+    logGov(st, i, `${wordsOf(placeIn(i)).Zarzad} odłożył uchwałę na później.`, false, fx);
     return fx;
   }
   if (!sign(st, i, id)) return fx;
