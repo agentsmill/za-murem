@@ -77,6 +77,23 @@ export interface GovLight {
   gateLamp: boolean;
 }
 
+/** miejsce siedziby ze świata (src/gov/miejsce.ts): z niego zarząd bierze warianty tekstów i warunki wydarzeń */
+export interface GovPlace {
+  /** dom jednorodzinny albo blok (i każdy budynek z wieloma mieszkaniami) */
+  kind: 'dom' | 'blok';
+  /** bloki i domy w promieniu 120 m od siedziby (bez niej) */
+  blocks: number;
+  houses: number;
+  /** jakich sąsiadów jest więcej; 'nikt', gdy w promieniu nie ma budynku mieszkalnego */
+  near: 'bloki' | 'domy' | 'nikt';
+  /** metry do najbliższego sklepu (do 300 m), garaży (do 150 m), przychodni albo apteki (do 300 m); null: brak */
+  shop: number | null;
+  garages: number | null;
+  clinic: number | null;
+  /** najwyższy budynek do 200 m, z którego widać siedzibę */
+  tower: 'wiezowiec' | 'blok' | 'szkola' | 'kosciol' | 'hala' | 'market' | null;
+}
+
 export interface GovInput {
   /** krok symulacji (ticki) */
   tick: number;
@@ -103,6 +120,8 @@ export interface GovInput {
   burned?: number | readonly unknown[];
   /** nazwa siedziby do tekstów, np. „Obrońców Wybrzeża 4” */
   hqName?: string;
+  /** miejsce siedziby (dom albo blok, co w okolicy); bez niego zarząd zakłada blok wśród bloków */
+  place?: GovPlace;
   /** warta spoza karty nocy (polecenie z menu): kto stoi i gdzie ('brama' albo 'd<id dziury>'); bez pola
       zarząd bierze osoby z pracą 'guard' za wartę w nieznanym miejscu */
   guards?: { id: string; post: string }[];
@@ -329,6 +348,10 @@ export interface GovState {
     active: ActiveEvent | null;
     /** sekunda przy ekranie, w której pojawiło się bieżące wydarzenie */
     when: number;
+    /** sekunda przy ekranie, w której koza pierwszy raz się paliła (dym z komina) */
+    lit?: number;
+    /** sekunda przy ekranie, w której skończyła się cisza pierwszego dnia (kuchnia ciepła albo 18:00) */
+    warm?: number;
   };
   night: NightPlan | null;
   cardDay: number;

@@ -4,6 +4,7 @@
    z planu odgrywają szabrownicy. To, co wymaga przeliczenia przechodniości albo dróg (warta, wyprawa, łaty), idzie
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie. */
 
+import { placeOf } from '../gov/miejsce.ts';
 import type { GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
 import { START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
@@ -65,6 +66,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     cap: s.cap,
     burned: s.burned,
     hqName,
+    place: placeOf(w),
     // warta, która stoi (z karty, z menu i przy kozie), bez śpiących na posterunku i bez tych na wyprawie
     guards: st.pawns
       .filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase !== 4)
