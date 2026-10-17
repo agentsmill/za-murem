@@ -926,6 +926,8 @@ function selectedChanged() {
 /* ---------- mysz i dotyk ---------- */
 const stage = $('stage');
 const pointers = new Map<number, { x: number; y: number }>();
+/** palce i rysik na mapie: przy nich szczypanie robi pointermove, a gesty Safari tylko blokują przybliżanie strony */
+const fingers = new Set<number>();
 let drag: {
   id: number;
   x: number;
@@ -952,6 +954,7 @@ stage.addEventListener('contextmenu', (e) => e.preventDefault());
 stage.addEventListener('pointerdown', (e) => {
   stage.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+  if (e.pointerType !== 'mouse') fingers.add(e.pointerId);
   fly = null;
   // Ctrl+klik to prawy przycisk (Mac: gładzik i mysz z jednym przyciskiem; macOS daje wtedy button 0 z ctrlKey)
   const button = pointerButton(e);
@@ -1038,6 +1041,7 @@ stage.addEventListener('pointermove', (e) => {
 });
 const endPointer = (e: PointerEvent) => {
   pointers.delete(e.pointerId);
+  fingers.delete(e.pointerId);
   if (pointers.size < 2) pinch = null;
   const held = press?.id === e.pointerId && press.fired;
   if (press?.id === e.pointerId) {
@@ -1110,7 +1114,8 @@ stage.addEventListener(
   { passive: false },
 );
 // Safari na macOS: szczypanie to gesturestart, gesturechange i gestureend z polem scale (bez preventDefault
-// przybliżałaby się cała strona)
+// przybliżałaby się cała strona). iPhone i iPad wysyłają te gesty razem z dotykiem, a dwa palce przybliżają już
+// w pointermove, więc przy palcach na mapie gest tylko blokuje stronę.
 let gesture: { z: number } | null = null;
 const gestureAt = (e: Event): [number, number] => {
   const g = e as Event & { clientX?: number; clientY?: number };
@@ -1127,6 +1132,7 @@ stage.addEventListener('gesturestart', (e) => {
 });
 stage.addEventListener('gesturechange', (e) => {
   e.preventDefault();
+  if (fingers.size) return;
   const scale = (e as Event & { scale?: number }).scale;
   if (!scale) return;
   gesture ??= { z: view.cam.zoom };

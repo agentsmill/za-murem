@@ -1822,6 +1822,137 @@ const SHOTS: Shot[] = [
         throw new Error('gest Safari (gesturechange) nie przybliżył albo nie zablokował strony');
     },
   },
+  {
+    // telefon: palec przesuwa mapę, dwa palce przybliżają w punkcie między palcami i przesuwają mapę, a gesty
+    // Safari z iPhone'a (idą razem z dotykiem) nie przybliżają drugi raz, tylko blokują przybliżanie strony
+    name: 'dotyk-szczypanie',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const s = document.getElementById('stage')!.getBoundingClientRect();
+        return { x: s.left, y: s.top, w: s.width, h: s.height };
+      });
+      // środek mapy: punkty CDP są na ekranie, a toWorld liczy od rogu mapy
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      const cam = () => page.evaluate(() => ({ ...window.zm!.view.cam }));
+      const worldAt = (x: number, y: number) =>
+        page.evaluate(([x, y]) => window.zm!.view.toWorld(x, y), [x - r.x, y - r.y] as [number, number]);
+      const cdp = await page.context().newCDPSession(page);
+      /** palce przez CDP jak z telefonu: każdy od a[i] do b[i] w 10 krokach; step(k) po starcie i każdym kroku */
+      const touch = async (a: [number, number][], b: [number, number][], step?: (k: number) => Promise<void>) => {
+        const n = 10;
+        const at = (k: number) =>
+          a.map(([x, y], id) => ({ id, x: x + ((b[id][0] - x) * k) / n, y: y + ((b[id][1] - y) * k) / n }));
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+        await step?.(0);
+        for (let k = 1; k <= n; k++) {
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(k) });
+          await step?.(k);
+        }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      };
+      const c0 = await cam();
+      // jeden palec: mapa jedzie za palcem, przybliżenie bez zmian
+      await touch([[cx, cy - 75]], [[cx, cy + 75]]);
+      const c1 = await cam();
+      const drag = Math.round((c0.y - c1.y) * c0.zoom);
+      // dwa palce rozsuwane ze 100 na 200 px: przybliżenie ×2, a punkt między palcami zostaje pod palcami
+      const w0 = await worldAt(cx, cy);
+      await touch(
+        [
+          [cx - 50, cy],
+          [cx + 50, cy],
+        ],
+        [
+          [cx - 100, cy],
+          [cx + 100, cy],
+        ],
+      );
+      const c2 = await cam();
+      const w1 = await worldAt(cx, cy);
+      const slip = Math.round(Math.hypot(w1[0] - w0[0], w1[1] - w0[1]) * c2.zoom);
+      await page.screenshot({ path: path.join(OUT, 'dotyk-szczypanie-blisko.png') });
+      // dwa palce razem w bok: mapa jedzie, przybliżenie bez zmian
+      await touch(
+        [
+          [cx - 60, cy],
+          [cx + 60, cy],
+        ],
+        [
+          [cx + 20, cy],
+          [cx + 140, cy],
+        ],
+      );
+      const c3 = await cam();
+      const pan2 = Math.round((c2.x - c3.x) * c2.zoom);
+      // iPhone: Safari wysyła przy szczypaniu też gesturestart, gesturechange i gestureend. Scale celowo inny niż
+      // palce (3 zamiast 0,5): gdyby gest przybliżał, zoom poszedłby za nim. Ruch palców Chromium oddaje stronie
+      // w następnej klatce, więc gest idzie klatkę po ruchu (jak w Safari, po zdarzeniach dotyku)
+      const gesture = (type: string, scale: number) =>
+        page.evaluate(
+          ({ type, scale, x, y }) => {
+            const e = new Event(type, { bubbles: true, cancelable: true });
+            Object.assign(e, { scale, clientX: x, clientY: y });
+            const z = window.zm!.view.cam.zoom;
+            document.querySelector('#stage canvas')!.dispatchEvent(e);
+            return { prevented: e.defaultPrevented, changed: window.zm!.view.cam.zoom !== z };
+          },
+          { type, scale, x: cx, y: cy },
+        );
+      const gestures: { prevented: boolean; changed: boolean }[] = [];
+      await touch(
+        [
+          [cx - 100, cy],
+          [cx + 100, cy],
+        ],
+        [
+          [cx - 50, cy],
+          [cx + 50, cy],
+        ],
+        async (k) => {
+          await frames(page, 1);
+          gestures.push(await gesture(k ? 'gesturechange' : 'gesturestart', k ? 3 : 1));
+        },
+      );
+      gestures.push(await gesture('gestureend', 3));
+      await frames(page, 1);
+      const c4 = await cam();
+      const prevented = gestures.every((g) => g.prevented);
+      const zoomed = gestures.filter((g) => g.changed).length;
+      // po szczypaniu stuknięcie w osobę dalej zaznacza
+      const pawn = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+        zm.setCam(p.x, p.y, 1);
+        return [p.x, p.y] as [number, number];
+      });
+      await waitIdle(page);
+      const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.6), pawn);
+      await page.touchscreen.tap(sx, sy);
+      const card = await page
+        .waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 })
+        .then(() => true)
+        .catch(() => false);
+      await cdp.detach();
+      const f = (n: number) => n.toFixed(3);
+      console.log(
+        `  palec: mapa o ${drag} px, zoom ${f(c0.zoom)} → ${f(c1.zoom)}; szczypanie ${f(c1.zoom)} → ${f(c2.zoom)}, punkt między palcami przesunął się o ${slip} px; dwa palce w bok: mapa o ${pan2} px, zoom ${f(c3.zoom)}; iPhone z gestami ${f(c3.zoom)} → ${f(c4.zoom)}, gestów, które zmieniły zoom: ${zoomed} z ${gestures.length}, strona zablokowana: ${prevented}; stuknięcie po szczypaniu zaznacza: ${card}`,
+      );
+      if (drag < 120 || c1.zoom !== c0.zoom) throw new Error('palec nie przesunął mapy albo zmienił przybliżenie');
+      if (Math.abs(c2.zoom / c1.zoom - 2) > 0.05) throw new Error('rozsunięcie palców ×2 nie przybliżyło ×2');
+      if (slip > 2) throw new Error('szczypanie nie trzyma punktu między palcami');
+      if (pan2 < 60 || c3.zoom !== c2.zoom) throw new Error('dwa palce w bok nie przesunęły mapy albo zmieniły zoom');
+      if (zoomed || Math.abs(c4.zoom / c3.zoom - 0.5) > 0.03)
+        throw new Error('przy palcach na mapie gest Safari zmienił przybliżenie (drugi raz)');
+      if (!prevented) throw new Error('gest Safari na telefonie nie zablokował przybliżania strony');
+      if (!card) throw new Error('po szczypaniu stuknięcie nie zaznaczyło osoby');
+    },
+  },
 ];
 
 /** n klatek przeglądarki */
