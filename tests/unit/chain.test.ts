@@ -30,6 +30,7 @@ function addWood(st: SimState, tile: number, size: number, n: number): Thing {
     n,
     fuel: 0,
     by: -1,
+    owner: -1,
   };
   st.things.push(t);
   return t;
@@ -165,10 +166,11 @@ describe('zarząd sam', () => {
     expect(woodOn(st, w.size, sklad) > 0 || kozaOf(st).fuel > 0).toBe(true);
   });
 
-  it('sam nie ścina drzew', () => {
+  it('sam nie ścina drzew i nie pali mebli', () => {
     const sim = new Sim(w, createSim(w, 3, { core: 4 }));
     for (let k = 0; k < 2 * TICKS_PER_DAY; k++) sim.step();
     expect(sim.st.felled).toEqual([]);
+    expect(sim.st.burned).toEqual([]);
     for (const p of core(sim))
       for (const v of Object.values(p.needs!)) {
         expect(v).toBeGreaterThanOrEqual(0);
@@ -644,5 +646,87 @@ describe('poprawki z przeglądu kodu', () => {
     }
     expect(firstDelivery).toBe(1);
     expect(woodOn(st, w.size, w.interior.sklad)).toBe(9);
+  });
+});
+
+describe('palenie mebli', () => {
+  const w = block;
+  const tileOfThing = (t: Thing) => t.y * w.size + t.x;
+  const moodsOf = (p: Pawn) => p.moods.map((m) => `${m.why} ${m.d}`);
+
+  it('w menu z potwierdzeniem, ale nigdy jako polecenie domyślne; metalu i kozy się nie pali', () => {
+    const st = createSim(w, 3, { core: 1 });
+    const ids = [st.pawns[0].id];
+    const bed = st.things.find((t) => t.kind === 'lozko')!;
+    const menu = commandsAt(st, w, ids, tileOfThing(bed));
+    expect(menu.map((m) => m.label)).toEqual(['Spalić łóżko', 'Idź tu']);
+    expect(menu[0]).toMatchObject({ cmd: { t: 'burn', ids, thing: bed.id }, quick: false, confirm: true });
+    expect(commandFor(st, w, ids, tileOfThing(bed))?.t).toBe('move');
+    for (const kind of ['koza', 'kuchenka', 'lodowka', 'wanna']) {
+      const t = st.things.find((q) => q.kind === kind)!;
+      expect(commandsAt(st, w, ids, tileOfThing(t)).some((m) => m.cmd.t === 'burn')).toBe(false);
+    }
+    const shelf = st.things.find((t) => t.kind === 'mebloscianka')!;
+    expect(commandsAt(st, w, ids, tileOfThing(shelf))[0].label).toBe('Spalić meblościankę');
+  });
+
+  it('łóżka w mieszkaniu zarządu mają właścicieli i każdy śpi w swoim', () => {
+    const st = createSim(w, 3, { core: 4 });
+    const own = st.pawns.filter((p) => p.kind === 'core').map((p) => st.things.find((t) => t.owner === p.id));
+    expect(own.every((t) => t && (t.kind === 'lozko' || t.kind === 'wersalka'))).toBe(true);
+    st.tick = atHour(1, 22.5);
+    const sim = new Sim(w, st);
+    for (let k = 0; k < TICKS_PER_HOUR; k++) sim.step();
+    core(sim).forEach((p, k) => {
+      expect(p.job?.t).toBe('sleep');
+      expect(p.job?.target).toBe(own[k]!.id);
+    });
+  });
+
+  it('spalony mebel znika ze stanu, daje opał od razu do kozy, a nastrój spada, najbardziej właścicielowi', () => {
+    const st = createSim(w, 3, { core: 4 });
+    const [a, b] = st.pawns;
+    const bed = st.things.find((t) => t.owner === b.id)!;
+    const sim = new Sim(w, st);
+    sim.push({ t: 'burn', ids: [a.id], thing: bed.id });
+    sim.step();
+    expect(jobText(st, w, a)).toBe('Idzie rozbić łóżko na opał.');
+    let seen = false;
+    for (let k = 0; k < 1500 && kozaOf(st).fuel === 0; k++) {
+      sim.step();
+      if (jobText(st, w, a) === 'Rozbiera łóżko na opał.') seen = true;
+    }
+    expect(seen).toBe(true);
+    expect(st.things.some((t) => t.id === bed.id)).toBe(false);
+    expect(kozaOf(st).fuel).toBeGreaterThan(2 * BURN_TICKS);
+    expect(st.burned).toEqual([{ tick: expect.any(Number), kind: 'lozko', apt: w.interior.home, by: a.id }]);
+    for (const p of core(sim)) expect(moodsOf(p)).toContain('Palimy meble -6');
+    expect(moodsOf(b)).toContain('Spalili moje łóżko -18');
+    expect(moodsOf(a)).not.toContain('Spalili moje łóżko -18');
+    // nastrój właściciela po kroku potrzeb jest wyraźnie niżej niż przed spaleniem
+    for (let k = 0; k < 40; k++) sim.step();
+    expect(b.needs!.mood).toBeLessThan(a.needs!.mood);
+  });
+
+  it('meble z cudzego mieszkania kosztują wszystkich więcej', () => {
+    const st = createSim(w, 3, { core: 2 });
+    const theirs = st.things.find((t) => t.kind === 'lozko' && !inHomeApt(w.interior, tileOfThing(t)))!;
+    const sim = new Sim(w, st);
+    sim.push({ t: 'burn', ids: [st.pawns[0].id], thing: theirs.id });
+    for (let k = 0; k < 2000 && st.things.includes(theirs); k++) sim.step();
+    expect(st.things.includes(theirs)).toBe(false);
+    for (const p of core(sim)) expect(moodsOf(p)).toContain('Rozbieramy cudze mieszkanie -10');
+    expect(st.burned[0]).toMatchObject({ kind: 'lozko', apt: 1 });
+  });
+
+  it('chwilowe nastroje wygasają', () => {
+    const st = createSim(w, 3, { core: 2 });
+    const shelf = st.things.find((t) => t.kind === 'mebloscianka')!;
+    const sim = new Sim(w, st);
+    sim.push({ t: 'burn', ids: [st.pawns[0].id], thing: shelf.id });
+    for (let k = 0; k < 2000 && st.things.includes(shelf); k++) sim.step();
+    expect(core(sim)[1].moods.length).toBeGreaterThan(0);
+    for (let k = 0; k < 13 * TICKS_PER_HOUR; k++) sim.step();
+    expect(core(sim)[1].moods).toEqual([]);
   });
 });

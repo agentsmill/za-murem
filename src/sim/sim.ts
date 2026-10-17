@@ -44,6 +44,25 @@ export const FOOD_START = 24;
 /** posiłek trwa pół godziny gry i daje tyle najedzenia */
 export const EAT_TICKS = TICKS_PER_HOUR / 2;
 export const MEAL = 45;
+/** meble, które da się spalić, i ile sztuk drewna dają (metal, porcelana i sama koza się nie palą) */
+export const BURNABLE: Record<string, number> = { krzeslo: 1, stol: 3, lozko: 4, wersalka: 4, mebloscianka: 6 };
+/** nazwy mebli w bierniku, do menu i opisów prac */
+export const FURNITURE_ACC: Record<string, string> = {
+  krzeslo: 'krzesło',
+  stol: 'stół',
+  lozko: 'łóżko',
+  wersalka: 'wersalkę',
+  mebloscianka: 'meblościankę',
+};
+const MINE: Record<string, string> = {
+  krzeslo: 'moje krzesło',
+  stol: 'mój stół',
+  lozko: 'moje łóżko',
+  wersalka: 'moją wersalkę',
+  mebloscianka: 'moją meblościankę',
+};
+/** rozbicie mebla na opał trwa kwadrans gry (10 s przy 1×) */
+export const BREAK_TICKS = TICKS_PER_HOUR / 4;
 /** bezczynny rdzeń rozgląda się za pracą co sekundę realną */
 const THINK_EVERY = TICKS_PER_SECOND;
 /** po poleceniu „idź tu” czeka na miejscu godzinę gry, chyba że coś pilnego */
@@ -55,7 +74,7 @@ const FIRE_REACH = 2.5;
 
 export type Facing = 0 | 1 | 2 | 3; // dół, góra, lewo, prawo
 
-export type JobKind = 'go' | 'chop' | 'haul' | 'refuel' | 'warm' | 'eat' | 'sleep';
+export type JobKind = 'go' | 'chop' | 'haul' | 'refuel' | 'warm' | 'eat' | 'sleep' | 'burn';
 
 /** chwilowy nastrój (spalone meble, ciepły posiłek): dodaje się do nastroju z potrzeb do ticku until */
 export interface Mood {
@@ -69,7 +88,8 @@ export interface Mood {
 /** praca pionka rdzenia */
 export interface Job {
   t: JobKind;
-  /** cel: numer drzewa (chop), id rzeczy (haul: stos drewna, refuel i warm: koza, eat: stół, sleep: łóżko),
+  /** cel: numer drzewa (chop), id rzeczy (haul: stos drewna, refuel i warm: koza, eat: stół, sleep: łóżko,
+      burn: mebel),
       −1, gdy celu nie ma (haul z drewnem w rękach, eat bez stołu, sleep na podłodze), kafelek (go) */
   target: number;
   /** kafelek, na który idzie albo na którym pracuje */
@@ -133,6 +153,16 @@ export interface Thing {
   fuel: number;
   /** pionek, który ma tę rzecz w pracy (−1: wolna) */
   by: number;
+  /** właściciel mebla (pionek), −1: wspólny albo niczyj; spalenie boli go najbardziej */
+  owner: number;
+}
+
+/** spalony mebel: co, z którego mieszkania (−1: klatka), kto i kiedy */
+export interface Burned {
+  tick: number;
+  kind: string;
+  apt: number;
+  by: number;
 }
 
 export type Command =
@@ -141,7 +171,9 @@ export type Command =
   | { t: 'select'; ids: number[] }
   | { t: 'chop'; ids: number[]; tree: number }
   | { t: 'haul'; ids: number[]; thing: number }
-  | { t: 'refuel'; ids: number[]; thing: number };
+  | { t: 'refuel'; ids: number[]; thing: number }
+  /** rozbić mebel na opał (interfejs pyta wcześniej o potwierdzenie) */
+  | { t: 'burn'; ids: number[]; thing: number };
 
 export interface SimState {
   v: 2;
@@ -163,6 +195,8 @@ export interface SimState {
   /** temperatura pomieszczeń wnętrza siedziby (°C, indeks = id pomieszczenia) */
   temps: number[];
   tut: Tutorial;
+  /** spalone meble, po kolei */
+  burned: Burned[];
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -209,7 +243,7 @@ function homeTiles(w: World): number[] {
 }
 
 function newThing(st: SimState, kind: string, x: number, y: number, w = 1, h = 1, rot = 0): Thing {
-  return { id: st.nextThing++, kind, x, y, w, h, rot, n: 0, fuel: 0, by: -1 };
+  return { id: st.nextThing++, kind, x, y, w, h, rot, n: 0, fuel: 0, by: -1, owner: -1 };
 }
 
 const covers = (t: Thing, x: number, y: number) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
@@ -259,6 +293,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     felled: [],
     temps: [],
     tut: { step: -1, at: [] },
+    burned: [],
   };
   const rnd = rngOf(st.rng);
   const size = w.size;
@@ -323,6 +358,13 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     const pawn = newPawn(st, w, 'core', st.people.length - 1, at, door, k);
     pawn.needs = startNeeds();
     st.pawns.push(pawn);
+  }
+  // łóżka w mieszkaniu zarządu mają właścicieli: po jednym dla każdego z zarządu, po kolei
+  if (house) {
+    const beds = st.things.filter((t) => BEDS.has(t.kind) && inHomeApt(house, t.y * size + t.x));
+    st.pawns.forEach((p, k) => {
+      if (k < beds.length) beds[k].owner = p.id;
+    });
   }
   const homes = homeTiles(w);
   const crowd = opts.crowd ?? 0;
@@ -602,6 +644,7 @@ export class Sim {
     else if (c.t === 'chop') this.orderChop(pawns, c.tree);
     else if (c.t === 'haul') this.orderHaul(pawns, c.thing);
     else if (c.t === 'refuel') this.orderRefuel(pawns, c.thing);
+    else if (c.t === 'burn') this.orderBurn(pawns, c.thing);
   }
 
   /** kilka osób naraz: każda dostaje inny wolny kafelek ze spirali wokół celu;
@@ -688,6 +731,28 @@ export class Sim {
     if (this.startRefuel(first, true, koza)) taken.push(first.job!.tile);
     else rest.unshift(first);
     if (rest.length) this.orderMove(rest, koza.y * this.w.size + koza.x, taken, false);
+  }
+
+  /** pierwsza osoba rozbiera mebel na opał, reszta idzie obok; gdy ktoś już go rozbiera, nowi idą pomóc */
+  private orderBurn(pawns: Pawn[], id: number): void {
+    const f = this.thing(id);
+    if (!f || !BURNABLE[f.kind]) return;
+    const taken: number[] = [];
+    let rest = pawns;
+    const burner = this.st.pawns.find((q) => q.job?.t === 'burn' && q.job.target === id);
+    if (burner) {
+      rest = pawns.filter((q) => q !== burner);
+      taken.push(burner.job!.tile);
+    } else {
+      const stand = this.beside(pawns[0], f);
+      if (stand >= 0 && this.go(pawns[0], stand)) {
+        this.setJob(pawns[0], this.newJob('burn', f.id, stand, true), false);
+        f.by = pawns[0].id;
+        taken.push(stand);
+        rest = pawns.slice(1);
+      }
+    }
+    if (rest.length) this.orderMove(rest, f.y * this.w.size + f.x, taken, false);
   }
 
   /* ---------- prace ---------- */
@@ -835,15 +900,31 @@ export class Sim {
   /** drewno z rąk zostaje obok pionka */
   private dropCarry(p: Pawn): void {
     if (p.carry <= 0) return;
-    this.addWood(this.dropSpot(p, p.carry), p.carry);
+    this.addWood(this.spotNear(this.tileOf(p), p.carry), p.carry);
     p.carry = 0;
   }
 
-  /** najbliższy pionkowi wolny kafelek w jego obszarze, bez mebli, pnia i jedzenia: na stos, na który
-      się jeszcze zmieści, albo na pusty */
-  private dropSpot(p: Pawn, n: number): number {
+  /** wolny kafelek przy rzeczy (mebel stoi na przechodnim kafelku, ale pracuje się obok), osiągalny dla pionka */
+  private beside(p: Pawn, t: Thing): number {
     const size = this.w.size;
-    const at = nearestFree(this.blocked, size, this.tileOf(p));
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const cand: number[] = [];
+    for (let y = t.y - 1; y <= t.y + t.h; y++)
+      for (let x = t.x - 1; x <= t.x + t.w; x++) {
+        if (x < 0 || y < 0 || x >= size || y >= size || covers(t, x, y)) continue;
+        const i = y * size + x;
+        if (this.blocked[i] || this.reg[i] !== region || this.furnitureAt(x, y) || taken.includes(i)) continue;
+        cand.push(i);
+      }
+    return this.nearest(p, cand);
+  }
+
+  /** najbliższy kafelkowi wolny kafelek w tym samym obszarze, bez mebli, pnia i jedzenia: na stos, na który
+      się jeszcze zmieści, albo na pusty */
+  private spotNear(from: number, n: number): number {
+    const size = this.w.size;
+    const at = nearestFree(this.blocked, size, from);
     const ax = at % size;
     const ay = Math.floor(at / size);
     for (const [dx, dy] of SPREAD) {
@@ -1079,7 +1160,59 @@ export class Sim {
         j.phase = 1;
         j.t0 = tick;
         return true;
+      case 'burn': {
+        const f = this.thing(j.target);
+        if (!f || f.by !== p.id) return false;
+        if (j.phase === 0) {
+          if (!at) return false;
+          j.phase = 1;
+          j.t0 = tick;
+          j.until = tick + BREAK_TICKS;
+          this.face(p, f.x + f.w / 2, f.y + f.h / 2);
+          return true;
+        }
+        if (tick < j.until) return true;
+        this.burnUp(f, p);
+        // opał od razu do kozy, a gdy się nie zmieści, do składu
+        const koza = this.koza();
+        if (koza && this.kozaRoom(koza) >= 1 && this.startRefuel(p, true, koza)) return true;
+        return this.startHaul(p);
+      }
     }
+  }
+
+  /** mebel rozebrany: znika ze stanu, drewno w rękach (reszta obok), nastrój spada wszystkim z zarządu,
+      a właścicielowi najbardziej; meble sąsiadów kosztują więcej */
+  private burnUp(f: Thing, p: Pawn): void {
+    const st = this.st;
+    const h = this.house!;
+    const i = f.y * this.w.size + f.x;
+    const r = h.room[i];
+    const apt = r >= 0 ? h.rooms[r].apt : -1;
+    const mine = h.home >= 0 && apt === h.home;
+    st.things.splice(st.things.indexOf(f), 1);
+    st.burned.push({ tick: st.tick, kind: f.kind, apt, by: p.id });
+    const wood = BURNABLE[f.kind] ?? 0;
+    const take = Math.min(wood, CARRY - p.carry);
+    p.carry += take;
+    if (wood > take) this.addWood(this.spotNear(i, wood - take), wood - take);
+    for (const q of st.pawns)
+      if (q.needs)
+        this.addMood(
+          q,
+          mine ? 'Palimy meble' : 'Rozbieramy cudze mieszkanie',
+          mine ? -6 : -10,
+          (mine ? 12 : 24) * TICKS_PER_HOUR,
+        );
+    const owner = st.pawns.find((q) => q.id === f.owner);
+    if (owner?.needs) this.addMood(owner, `Spalili ${MINE[f.kind] ?? 'moją rzecz'}`, -18, 48 * TICKS_PER_HOUR);
+  }
+
+  /** chwilowy nastrój; ten sam powód drugi raz tylko przedłuża czas */
+  private addMood(p: Pawn, why: string, d: number, ticks: number): void {
+    const m = p.moods.find((q) => q.why === why);
+    if (m) m.until = Math.max(m.until, this.st.tick + ticks);
+    else p.moods.push({ why, d, until: this.st.tick + ticks });
   }
 
   /** drewno z rąk na skład: na kafelki składu z miejscem, po kolei */
@@ -1128,12 +1261,13 @@ export class Sim {
     const h = this.house!;
     const size = this.w.size;
     const taken = this.taken(p);
+    // najpierw własne łóżko, potem niczyje, na końcu cudze
     let bed: Thing | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.things) {
       const i = t.y * size + t.x;
       if (!BEDS.has(t.kind) || !inHomeApt(h, i) || this.blocked[i] || taken.includes(i)) continue;
-      const d = this.dist2(p, i);
+      const d = this.dist2(p, i) + (t.owner === p.id ? 0 : t.owner < 0 ? 1e6 : 2e6);
       if (d < bd) {
         bd = d;
         bed = t;

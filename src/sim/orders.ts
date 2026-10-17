@@ -3,13 +3,15 @@
 
 import type { World } from '../world/world.ts';
 import { dryTreeOf, houseOf } from './house.ts';
-import { type Command, type Pawn, type SimState, type Thing, trunkOf } from './sim.ts';
+import { BURNABLE, type Command, FURNITURE_ACC, type Pawn, type SimState, type Thing, trunkOf } from './sim.ts';
 
 export interface MenuItem {
   cmd: Command;
   label: string;
   /** można wykonać od razu jednym kliknięciem albo stuknięciem (domyślne polecenie); false: tylko z menu */
   quick: boolean;
+  /** niszczy coś na zawsze (palenie mebli): interfejs pyta o potwierdzenie */
+  confirm?: boolean;
 }
 
 /** drzewo pod kursorem: najbliższy pień w zasięgu korony (najwyżej 2,5 m), także sam kafelek pnia; −1: brak */
@@ -57,6 +59,16 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       Math.abs(Math.floor(trunk / w.size) - Math.floor(tile / w.size)) <= 1;
     out.push({ cmd: { t: 'chop', ids: core, tree }, label: 'Ściąć drzewo', quick: near });
   }
+  const x = tile % w.size;
+  const y = Math.floor(tile / w.size);
+  const furniture = st.things.find((t) => BURNABLE[t.kind] && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+  if (furniture)
+    out.push({
+      cmd: { t: 'burn', ids: core, thing: furniture.id },
+      label: `Spalić ${FURNITURE_ACC[furniture.kind]}`,
+      quick: false,
+      confirm: true,
+    });
   out.push({ cmd: { t: 'move', ids: core, to: tile }, label: 'Idź tu', quick: true });
   return out;
 }
@@ -68,7 +80,7 @@ export function commandFor(st: SimState, w: World, ids: readonly number[], tile:
 }
 
 /** co robi osoba: krótki opis do karty */
-export function jobText(_st: SimState, w: World, p: Pawn): string {
+export function jobText(st: SimState, w: World, p: Pawn): string {
   const j = p.job;
   if (!j) return p.pi < p.path.length ? 'Idzie.' : 'Stoi i czeka na polecenie.';
   const walking = j.phase === 0;
@@ -92,5 +104,10 @@ export function jobText(_st: SimState, w: World, p: Pawn): string {
     case 'sleep':
       if (walking) return 'Idzie spać.';
       return j.target >= 0 ? 'Śpi.' : 'Śpi na podłodze.';
+    case 'burn': {
+      const f = st.things.find((t) => t.id === j.target);
+      const what = f ? (FURNITURE_ACC[f.kind] ?? 'mebel') : 'mebel';
+      return walking ? `Idzie rozbić ${what} na opał.` : `Rozbiera ${what} na opał.`;
+    }
   }
 }
