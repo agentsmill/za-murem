@@ -221,6 +221,20 @@ Sesja wydarzeń ustaliła z Mateuszem dwie rzeczy:
 
 Symulacja zrobiła przyjmowanie ludzi: przyjęci przychodzą zza bramy, nikt nie znika, a bez łóżka śpią na podłodze. Czeka to na jej gałęzi na połączenie fali.
 
+### M2 fala 1, wieczór 17.10.2026: symulacja połączona
+
+Do `m2-fala-1` weszła gałąź symulacji `m2-budowa-sim`. Są w niej:
+- materiały jako rzeczy na mapie;
+- przeszukiwanie, rozbiórka, naprawy i zajmowanie mieszkań; w pustych mieszkaniach meble da się rozebrać dopiero po przeszukaniu pomieszczenia;
+- plany budowy z `canPlace` i działanie sześciu budowli;
+- przyjmowanie ludzi.
+
+Koszty dostroił bot, tabela jest w `docs/M2-fala-1.md`. Bramka fali w bocie: z przeszukiwaniem stoją 2 budowle do końca dnia 2 i 3 do końca dnia 3, bez przeszukiwania 1. Decyzja wypada w 98% minut dni 2–3 (3,9 na minutę). Bramka połączonej gałęzi: 570 testów, Biome, build, bot, 97 zrzutów. Bot ma nowy skrót `7a55267b`, bo mieszkańcy biorą stany mieszkań ze świata: na start jest ich 5 przy 6 miejscach. Zostają interfejs fali 1 i bramka całej fali w grze.
+
+Do poprawy:
+- Wydarzenia przyjmują ludzi bez patrzenia na miejsca. Po 6 dniach jest 16–20 mieszkańców przy 6 miejscach i nadmiar śpi na podłodze.
+- Magazyn w grze nic nie daje, bo łup z napadu liczy zarząd w `src/gov/noc.ts` bez zapasu magazynu.
+
 ## Następne
 
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
