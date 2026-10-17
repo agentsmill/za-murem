@@ -18,13 +18,14 @@ import {
   signLaw,
 } from './gov/zarzad.ts';
 import { buildScene, TILE } from './render/art/scene.ts';
-import type { Light } from './render/light.ts';
+import { gameLights, strangerVisibility } from './render/game.ts';
+import { type Light, lightAt } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
-import { CAMPFIRE_LIGHT, createSim, LAMP_REACH, Sim } from './sim/sim.ts';
+import { createSim, Sim } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { currentGoal, goalsOf, markTree, NIGHT_WOOD } from './ui/cele.ts';
@@ -482,6 +483,8 @@ document.addEventListener('visibilitychange', () => {
  * gdzie. Jeśli są w świetle (lampa warty, ognisko), kamera jedzie na miejsce, a gdy tempo nocy ustawiła gra (6× po
  * karcie), noc zwalnia do 1× do końca napadu. Bez warty nikt nic nie słyszy: o napadzie mówi kronika i raport.
  */
+/** od tej widoczności (jak w rysowaniu obcych: 0 ciemność, 1 pełne światło) warta „widzi” szabrowników */
+const SEEN = 0.25;
 function watchRaid() {
   if (!sim) return;
   const r = sim.st.raid;
@@ -499,14 +502,11 @@ function watchRaid() {
   const lamps = st.pawns.filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase === 1);
   const them = st.pawns.filter((p) => p.kind === 'szabrownik');
   if (!lamps.length || !them.length) return;
-  // widać ich tylko w świetle: lampa warty albo palące się ognisko blisko; w ciemności warta tylko słyszy
-  const lit = them.some(
-    (q) =>
-      lamps.some((l) => Math.hypot(l.x - q.x, l.y - q.y) <= LAMP_REACH) ||
-      st.things.some(
-        (t) => t.kind === 'ognisko' && t.fuel > 0 && Math.hypot(t.x + 0.5 - q.x, t.y + 0.5 - q.y) <= CAMPFIRE_LIGHT,
-      ),
-  );
+  // widać ich tak, jak rysuje widok: światło latarni warty i ogniska w ich miejscu (sam zasięg z symulacji,
+  // LAMP_REACH 5 m, jest większy niż rysowana latarnia, 3 m, więc kamera przyjeżdżała do ciemności)
+  const lights = gameLights({ st, light: [] }, []).filter((l) => !l.inside);
+  const time = performance.now() / 1000;
+  const lit = them.some((q) => strangerVisibility(view.darkness, lightAt(q.x, q.y - 0.5, lights, time)) >= SEEN);
   const where = () => {
     const hole = input().fence?.holes.find((h) => `d${h.id}` === r.post);
     return r.post === 'brama' ? 'przy bramie' : `przy dziurze ${hole?.name ?? 'w siatce'}`;
