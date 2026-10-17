@@ -20,6 +20,7 @@
     "demos": "node tools/make-demos.ts",
     "dane:gminy": "node tools/dane-gminy.ts",
     "dane:kraj": "node tools/dane-kraj.ts",
+    "dane:imiona": "node tools/dane-imiona.ts",
     "mieszkancy": "node tools/mieszkancy.ts",
     "shots": "node tools/shots.ts",
     "perf": "node tools/perf.ts"
