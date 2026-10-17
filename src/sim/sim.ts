@@ -114,6 +114,8 @@ export const PATCH_TICKS = TICKS_PER_HOUR / 2;
 export const CAMPFIRE_WOOD = 2;
 export const BUILD_TICKS = TICKS_PER_HOUR / 4;
 export const CAMPFIRE_CAP = 6;
+/** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
+export const GATHER_NEAR = 8;
 /** kuchnia społeczna: porcja z niej to 85% zwykłej (nic się nie marnuje) */
 export const SOCIAL_KITCHEN = 0.85;
 /** ogródek: plon co trzy doby, według pory roku (jesień, zima, wiosna, lato) */
@@ -3229,16 +3231,28 @@ export class Sim {
     return false;
   }
 
-  /** Przy stercie: bierze, ile brakuje (do CARRY), i niesie na miejsce pracy (faza 1). false: nie da się. */
+  /** Przy stercie: bierze, ile brakuje (razem w rękach do CARRY). Gdy w rękach wciąż mniej, a niedaleko leży więcej
+      tego samego, idzie najpierw tam (łup leży w małych stertach), inaczej niesie na miejsce pracy (faza 1).
+      false: nie da się. */
   private takeFor(p: Pawn, j: Job, need: number, stand: number): boolean {
     const pile = this.thing(j.from);
     if (!pile || pile.by !== p.id || pile.kind !== j.what) return false;
-    const take = Math.min(pile.n, CARRY, need);
+    const take = Math.min(pile.n, CARRY - j.n, need - j.n);
     pile.n -= take;
     pile.by = -1;
     if (pile.n <= 0) this.st.things.splice(this.st.things.indexOf(pile), 1);
     j.n += take;
     j.from = -1;
+    if (j.n < Math.min(CARRY, need)) {
+      const next = this.matStack(p, j.what as Mat);
+      const at = next ? next.y * this.w.size + next.x : -1;
+      if (next && this.dist2(p, at) <= GATHER_NEAR ** 2 && this.go(p, at)) {
+        j.from = next.id;
+        j.tile = at;
+        next.by = p.id;
+        return true;
+      }
+    }
     if (stand < 0 || !this.go(p, stand)) return false;
     j.phase = 1;
     j.tile = stand;

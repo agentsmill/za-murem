@@ -229,8 +229,9 @@ function overlay(w: World, L: Layout): MockWorld {
   const dryTree =
     own.dryTree !== undefined && own.dryTree >= 0 ? own.dryTree : pickDryTree(w, blocked, hq.entrances[0].out);
   const t = w.trees[dryTree];
+  // śmieci, stany mieszkań i uszkodzenia ze świata (M2) należą do prawdziwego wnętrza, które atrapa podmienia
   const props: PropLike[] = own.props?.length
-    ? [...own.props]
+    ? own.props.filter((p) => p.kind !== 'smieci')
     : [{ kind: 'trzepak', x: Math.floor(t.x) + 2, y: Math.floor(t.y), w: 3, h: 1 }];
   if (!props.some((p) => HEAPS.has(p.kind))) props.push(...mockHeaps(w, blocked, props, dryTree));
   const interior: HouseLike = {
@@ -244,8 +245,9 @@ function overlay(w: World, L: Layout): MockWorld {
     sklad,
     home: L.home,
   };
+  const { apts: _apts, damage: _damage, ...rest } = w as World & { apts?: unknown; damage?: unknown };
   // dubel testowy: kształt z kontraktu bez typów z interior.ts, których przed połączeniem nie ma
-  return { ...w, blocked, interior, dryTree, props } as unknown as MockWorld;
+  return { ...rest, blocked, interior, dryTree, props } as unknown as MockWorld;
 }
 
 const HEAPS = new Set(['deski', 'zlom', 'gruz']);

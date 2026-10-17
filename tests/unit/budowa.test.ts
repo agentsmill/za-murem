@@ -188,6 +188,50 @@ describe('M2: przeszukanie, rozbiórka, naprawa i zajęcie mieszkania', () => {
     expect(st.damage[rura].fixed).toBe(false);
   });
 
+  it('kurs po materiał zbiera po drodze kilka małych stert tego samego (łup leży po sztuce, dwie)', async () => {
+    const st = createSim(w, 3, { core: 1 });
+    const sim = new Sim(w, st);
+    const [p] = core(st);
+    // deski tylko w trzech stertach po sztuce obok siebie w pokoju mieszkania 2, drzwi (3 deski) do naprawy
+    for (const t of st.things.filter((q) => q.kind === 'deski')) t.n = 0;
+    st.things = st.things.filter((q) => q.n > 0 || q.kind !== 'deski');
+    const room = roomOfKind(2, 'pokoj');
+    const free: number[] = [];
+    for (let i = 0; i < size * size && free.length < 3; i++)
+      if (
+        h.room[i] === room &&
+        !w.blocked[i] &&
+        !st.things.some((t) => t.x === i % size && t.y === Math.floor(i / size))
+      )
+        free.push(i);
+    for (const i of free)
+      st.things.push({
+        id: st.nextThing++,
+        kind: 'deski',
+        x: i % size,
+        y: Math.floor(i / size),
+        w: 1,
+        h: 1,
+        rot: 0,
+        n: 1,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      });
+    const k = st.damage.findIndex((d) => d.kind === 'drzwi');
+    sim.push({ t: 'repair', ids: [p.id], damage: k });
+    let carries = 0;
+    let was = false;
+    run(sim, () => {
+      const c = p.job?.t === 'repair' && p.job.phase === 1;
+      if (c && !was) carries++;
+      was = c;
+      return st.damage[k].fixed;
+    });
+    expect(st.damage[k].fixed).toBe(true);
+    expect(carries).toBe(1);
+  });
+
   it('zajęcie mieszkania: staje się nasze, a po naprawie wszystkich uszkodzeń przybywa miejsc o łóżka', async () => {
     const { jobText } = await import('../../src/sim/orders.ts');
     const st = createSim(w, 3, { core: 1 });
