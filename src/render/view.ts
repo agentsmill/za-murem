@@ -180,7 +180,7 @@ export class GameView {
   } | null = null;
   /** atrapa wraków do podglądu (?wraki=atrapa), dopóki świat ich nie rozstawia */
   private mockWrecks = false;
-  /** atrapa pustych mieszkań (?mieszkania=atrapa), dopóki świat nie daje apts, damage i śmieci */
+  /** atrapa pustych mieszkań (?mieszkania=atrapa): zastępuje stany, uszkodzenia, śmieci i zepsucia ze świata */
   private mockWearOn = false;
   private wearMock: WearMock | null = null;
   /** naprawione uszkodzenia już zdjęte z przekroju */
@@ -259,10 +259,11 @@ export class GameView {
     this.slots = [];
     this.terrain.removeChildren();
     this.scene = sc;
-    // atrapa pustych mieszkań w przekroju, zanim scena pójdzie do workerów
+    // atrapa pustych mieszkań w przekroju (zamiast stanów i uszkodzeń ze świata), zanim scena pójdzie
+    // do workerów
     this.wearMock = null;
     this.fixedSeen.clear();
-    if (this.mockWearOn && sc.section && !('damage' in sc.w)) {
+    if (this.mockWearOn && sc.section) {
       this.wearMock = mockWear(sc.w);
       setWear(sc.section, this.wearMock.damage, this.wearMock.apts);
     }
@@ -350,11 +351,16 @@ export class GameView {
     const w = sim.w;
     let g = this.game;
     if (!g || g.sim !== sim) {
-      const props: ThingLike[] = w.props.map((p) => ({ rot: 0, ...p }));
+      // z atrapą pustych mieszkań śmieci i zepsute meble tylko z atrapy, bez tych ze świata
+      const mock = this.wearMock;
+      const props: ThingLike[] = w.props
+        .filter((p) => !mock || (p.kind as string) !== 'smieci')
+        .map((p) => ({ rot: 0, ...p }));
       if (this.mockWrecks && !props.some((p) => p.kind === 'wrak')) props.push(...mockWrecks(w));
-      if (this.wearMock) props.push(...this.wearMock.trash);
-      const broken = new Set<string>(this.wearMock?.broken ?? []);
-      for (const f of w.interior.furniture) if ((f as { broken?: boolean }).broken) broken.add(`${f.x},${f.y}`);
+      if (mock) props.push(...mock.trash);
+      const broken = new Set<string>(mock?.broken ?? []);
+      if (!mock)
+        for (const f of w.interior.furniture) if ((f as { broken?: boolean }).broken) broken.add(`${f.x},${f.y}`);
       g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simKinds: new Set(), broken };
       for (const t of g.props) this.fixed.add(t);
       this.game = g;

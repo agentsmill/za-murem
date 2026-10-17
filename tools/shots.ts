@@ -1864,6 +1864,40 @@ const SHOTS: Shot[] = [
   m2Floor('m2-puste-deski', 'wyjazd'),
   m2Floor('m2-puste-zweglone', 'pozar'),
   {
+    // puste mieszkania z prawdziwego świata, bez atrapy: widać tyle, ile świat daje (bez danych sam przekrój)
+    name: 'm2-puste-swiat',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const v = zm.view as unknown as {
+          scene: { section: { damage?: Map<number, string>; why?: Map<number, string> }; w: { size: number } };
+          things: Map<string, unknown>;
+        };
+        const sec = v.scene.section;
+        const size = v.scene.w.size;
+        const dmg = [...(sec.damage ?? new Map<number, string>()).entries()];
+        const keys = [...v.things.keys()];
+        // kamera na uszkodzenie, najchętniej na okno albo drzwi
+        const pick = dmg.find(([, k]) => k === 'okno' || k === 'drzwi') ?? dmg[0];
+        if (pick) zm.setCam((pick[0] % size) + 0.5, Math.floor(pick[0] / size) + 1.5, 1.6);
+        return {
+          kinds: [...new Set(dmg.map(([, k]) => k))].sort(),
+          whys: [...new Set((sec.why ?? new Map<number, string>()).values())].sort(),
+          trash: keys.filter((k) => k.includes('"smieci"')).length,
+          broken: keys.filter((k) => k.includes('"broken":true')).length,
+          burnt: keys.filter((k) => k.includes('"burnt":true')).length,
+        };
+      });
+      await waitIdle(page);
+      console.log(
+        `  ze świata: uszkodzenia ${r.kinds.join(', ') || 'brak'}; ślady ${r.whys.join(', ') || 'brak'}; śmieci ${r.trash}, zepsutych ${r.broken}, okopconych ${r.burnt}`,
+      );
+    },
+  },
+  {
     // naprawa: uszkodzenie z st.fixed znika z przekroju, przerysowują się tylko jego kawałki
     name: 'm2-naprawa',
     query: '',
