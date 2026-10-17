@@ -22,6 +22,8 @@ export interface Stan {
   klatki: number;
   osoby: Osoba[];
   wg: Map<string, Osoba>;
+  /** Pozycja osoby w `osoby` (osoby tylko dochodzą na koniec, więc pozycja się nie zmienia). */
+  pozycja: Map<string, number>;
   /** Gospodarstwa w mieszkaniach. W trakcie kroku mogą być puste; koniec kroku je usuwa. */
   gospodarstwa: Gospodarstwo[];
   /** Gospodarstwo każdego mieszkańca (tylko `stan: 'tu'`). */
@@ -30,9 +32,10 @@ export interface Stan {
   dzieci: Map<string, Osoba[]>;
   /** Ostatni wpis wyjazdu (`wyprowadzka` albo `emigracja`) każdej osoby, która kiedyś wyjechała. */
   wyjazdy: Map<string, Wpis>;
-  /** Kto wyjechał razem z daną osobą (wpis z `z` = ta osoba), w kolejności wpisów. Lista może mieć osoby, które
-      już wróciły albo wyjechały potem z kimś innym; `wroc` bierze tylko tych, których ostatni wyjazd ma `z` = ta
-      osoba i którzy nadal są poza domem. */
+  /** Kto wyjechał razem z daną osobą (wpis z `z` = ta osoba). Lista może mieć osoby, które już wróciły, wyjechały
+      potem z kimś innym albo są w niej dwa razy; `wroc` bierze tylko tych, których ostatni wyjazd ma `z` = ta osoba
+      i którzy nadal są poza domem, każdego raz i w kolejności `osoby`, więc wynik jest taki jak przy przejrzeniu
+      wszystkich osób. */
   towarzysze: Map<string, Osoba[]>;
   dziennik: Wpis[];
   nastepnaOsoba: number;
@@ -70,10 +73,12 @@ export function stanZ(w: WynikBudynku): Stan {
   const klucz = w.budynek.klucz;
   const osoby = w.osoby.map((o) => ({ ...o }));
   const wg = new Map<string, Osoba>();
+  const pozycja = new Map<string, number>();
   const dzieci = new Map<string, Osoba[]>();
   let nastepnaOsoba = 0;
   for (const o of osoby) {
     wg.set(o.id, o);
+    pozycja.set(o.id, pozycja.size);
     nastepnaOsoba = Math.max(nastepnaOsoba, numer(o.id, `${klucz}/o`) + 1);
   }
   for (const o of osoby) {
@@ -98,14 +103,19 @@ export function stanZ(w: WynikBudynku): Stan {
     if (d.typ === 'wyprowadzka' || d.typ === 'emigracja') wyjazdy.set(d.kto, d);
     if (d.typ === 'opuszczone') nastepneGospodarstwo = Math.max(nastepneGospodarstwo, numer(d.kto, `${klucz}/g`) + 1);
   }
-  // towarzysze tylko z ostatniego wyjazdu każdej osoby, w kolejności wpisów (tak jak dopisuje ich `wyjedz`)
-  for (const d of dziennik) if (d.z !== undefined && wyjazdy.get(d.kto) === d) dopisz(towarzysze, d.z, wg.get(d.kto)!);
+  // towarzysze: osoby nadal poza domem, z ostatniego wyjazdu (jak w stanie na żywo, gdzie powrót lidera czyści listę)
+  for (const d of dziennik) {
+    if (d.z !== undefined && wyjazdy.get(d.kto) === d && wg.get(d.kto)?.stan === 'wyjechal') {
+      dopisz(towarzysze, d.z, wg.get(d.kto)!);
+    }
+  }
   return {
     budynek: { ...w.budynek },
     mieszkania: w.budynek.mieszkania ?? w.gospodarstwa.length + w.puste,
     klatki: Math.max(1, w.budynek.klatki),
     osoby,
     wg,
+    pozycja,
     gospodarstwa,
     dom,
     dzieci,
@@ -293,9 +303,9 @@ export function przyjmij(s: Stan, o: Osoba, dom: Gospodarstwo): void {
     typ `typ` i `z` (krewny, do którego wraca), wpisy towarzyszy typ `powrot` i `z` = ta osoba; `dokad` to miejsce,
     z którego wracają. */
 export function wroc(s: Stan, lider: Osoba, dom: Gospodarstwo, rok: number, typ: TypWpisu, z?: string): void {
-  const towarzysze = (s.towarzysze.get(lider.id) ?? []).filter(
-    (o) => o.stan === 'wyjechal' && s.wyjazdy.get(o.id)?.z === lider.id,
-  );
+  const towarzysze = [...new Set(s.towarzysze.get(lider.id) ?? [])]
+    .filter((o) => o !== lider && o.stan === 'wyjechal' && s.wyjazdy.get(o.id)?.z === lider.id)
+    .sort((a, b) => s.pozycja.get(a.id)! - s.pozycja.get(b.id)!);
   s.towarzysze.delete(lider.id);
   const dokad = lider.dokad ?? '';
   wpis(s, z === undefined ? { rok, typ, kto: lider.id, dokad } : { rok, typ, kto: lider.id, z, dokad });
@@ -324,6 +334,7 @@ export function nowaOsoba(s: Stan, plec: Plec, rocznik: number, matka?: Osoba, o
     if (lista) lista.push(o);
     else s.dzieci.set(r.id, [o]);
   }
+  s.pozycja.set(o.id, s.osoby.length);
   s.osoby.push(o);
   s.wg.set(o.id, o);
   return o;

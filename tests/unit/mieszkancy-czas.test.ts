@@ -7,6 +7,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { budynkiZGeo } from '../../src/mieszkancy/budynki.ts';
 import { type Obszar, obszarGminy, postarz } from '../../src/mieszkancy/czas.ts';
+import { stanZ, wroc, wyjedz } from '../../src/mieszkancy/czas-stan.ts';
 import { DZWIGNIE, PRZEJSCIA } from '../../src/mieszkancy/dzwignie.ts';
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
 import { obsadzBudynek, obsadzRejon } from '../../src/mieszkancy/spis.ts';
@@ -344,6 +345,97 @@ describe('szansa na krok: późne zdarzenie w kroku nie obcina szansy', () => {
     const razem = (grupy.z.emigr + grupy.bez.emigr) / (grupy.z.ile + grupy.bez.ile);
     expect(Math.abs(z - bez), `z noworodkiem ${z}, bez ${bez}`).toBeLessThan(0.01);
     expect(Math.abs(razem - PRZEJSCIA.emigracja[1][1] / 10000), `razem ${razem}`).toBeLessThanOrEqual(0.007);
+  });
+});
+
+// ---------------------------------------------------------------- złożenie kroków po odtworzeniu stanu
+
+/** Sztuczny blok: `rodziny` gospodarstw, w każdym para z rocznika 1985-1992 i córka z 2015 roku. Emigrują i wracają
+    całymi jednostkami, więc po odtworzeniu stanu z wyniku 2026 łatwo o drugi wyjazd tego samego lidera z tym samym
+    towarzyszem. */
+function sztuczneRodziny(rodziny: number, klucz: string): WynikBudynku {
+  const osoby: Osoba[] = [];
+  const gospodarstwa: Gospodarstwo[] = [];
+  for (let i = 0; i < rodziny; i++) {
+    const rocznik = 1985 + (i % 8);
+    const k: Osoba = { id: `${klucz}/o${3 * i}`, plec: 'K', rocznik, imie: '', nazwisko: '', stan: 'tu' };
+    const m: Osoba = { id: `${klucz}/o${3 * i + 1}`, plec: 'M', rocznik, imie: '', nazwisko: '', stan: 'tu' };
+    const d: Osoba = { id: `${klucz}/o${3 * i + 2}`, plec: 'K', rocznik: 2015, imie: '', nazwisko: '', stan: 'tu' };
+    k.partner = m.id;
+    m.partner = k.id;
+    d.matka = k.id;
+    d.ojciec = m.id;
+    osoby.push(k, m, d);
+    gospodarstwa.push({
+      id: `${klucz}/g${i}`,
+      budynek: klucz,
+      klatka: 1,
+      czlonkowie: [k.id, m.id, d.id],
+      odOddania: false,
+    });
+  }
+  const budynek = {
+    klucz,
+    lat: 54.4,
+    lon: 18.6,
+    rejon: '',
+    typ: 'blok' as const,
+    kondygnacje: 0,
+    pole: 0,
+    szerokosc: 0,
+    dlugosc: 0,
+    klatki: 1,
+    mieszkania: rodziny,
+  };
+  return { budynek, osoby, gospodarstwa, dziennik: [], puste: 0 };
+}
+
+/** Gospodarstwa, w których ten sam identyfikator jest dwa razy. */
+const zDuplikatami = (w: WynikBudynku): string[] =>
+  w.gospodarstwa.filter((g) => new Set(g.czlonkowie).size !== g.czlonkowie.length).map((g) => g.id);
+
+describe('złożenie kroków po odtworzeniu stanu z wyniku', () => {
+  it('towarzysz, który już wrócił, nie wraca drugi raz po kolejnym wyjeździe z tym samym liderem', () => {
+    // L i C wyjechali razem w 2021 i wrócili w 2023; stan odtworzony z wyniku 2026, drugi wyjazd razem w 2027.
+    const L: Osoba = { id: 't/o0', plec: 'K', rocznik: 1990, imie: '', nazwisko: '', stan: 'tu', partner: 't/o1' };
+    const C: Osoba = { id: 't/o1', plec: 'M', rocznik: 1990, imie: '', nazwisko: '', stan: 'tu', partner: 't/o0' };
+    const w: WynikBudynku = {
+      budynek: { ...sztuczneRodziny(0, 't').budynek, mieszkania: 2 },
+      osoby: [L, C],
+      gospodarstwa: [{ id: 't/g0', budynek: 't', klatka: 1, czlonkowie: [L.id, C.id], odOddania: false }],
+      dziennik: [
+        { rok: 2021, typ: 'emigracja', kto: L.id, dokad: 'do Niemiec' },
+        { rok: 2021, typ: 'emigracja', kto: C.id, z: L.id, dokad: 'do Niemiec' },
+        { rok: 2023, typ: 'powrot', kto: L.id, dokad: 'do Niemiec' },
+        { rok: 2023, typ: 'powrot', kto: C.id, z: L.id, dokad: 'do Niemiec' },
+      ],
+      puste: 1,
+      rok: 2026,
+    };
+    const s = stanZ(w);
+    s.poczatek = 2026;
+    wyjedz(s, [s.wg.get(L.id)!, s.wg.get(C.id)!], 2027, 'emigracja', 'do Norwegii');
+    const g = s.gospodarstwa[0];
+    wroc(s, s.wg.get(L.id)!, g, 2029, 'powrot');
+    expect(g.czlonkowie).toEqual([L.id, C.id]);
+    expect(s.wpisy.filter((d) => d.typ === 'powrot').map((d) => d.kto)).toEqual([L.id, C.id]);
+  });
+
+  it('rejon 182350 (6 000 gospodarstw) i sztuczne rodziny: 2021→2026→2051 to to samo co 2021→2051, bez podwójnych członków', () => {
+    const przypadki: WynikBudynku[] = [
+      obsadzRejon(gdansk.rejony['182350'], 6000, kraj, 'czas-zlozenie', gdansk),
+      ...[0, 1, 2, 3].map((b) => sztuczneRodziny(3000, `rodziny-${b}`)),
+    ];
+    for (const spis of przypadki) {
+      for (const upadek of [false, true]) {
+        const opis = `${spis.budynek.klucz}, upadek ${upadek}`;
+        const wprost = postarz(spis, 2051, kraj, 'miasto100k', upadek);
+        const krokami = postarz(postarz(spis, 2026, kraj, 'miasto100k', upadek), 2051, kraj, 'miasto100k', upadek);
+        expect(zDuplikatami(krokami), opis).toEqual([]);
+        expect(zDuplikatami(wprost), opis).toEqual([]);
+        expect(JSON.stringify(krokami) === JSON.stringify(wprost), opis).toBe(true);
+      }
+    }
   });
 });
 
