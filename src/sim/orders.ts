@@ -79,6 +79,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       label: foe.kind === 'zombie' ? 'Atakuj szwendacza' : 'Atakuj szabrownika',
       quick: true,
     });
+  // zwłoki, które wstaną: dobić
+  const body = thingAt(st, w, tile, 'zwloki');
+  if (body && body.fuel > 0) out.push({ cmd: { t: 'finish', ids: core, thing: body.id }, label: 'Dobić', quick: true });
   const sklad = houseOf(w)?.sklad ?? [];
   const pile = thingAt(st, w, tile, 'drewno');
   if (pile && sklad.length && !sklad.includes(tile))
@@ -213,6 +216,10 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return ['Skrada się pod siatkę.', 'Czai się za siatką.', 'Kradnie.', 'Ucieka.', 'Ucieka.'][j.phase] ?? 'Ucieka.';
     case 'fight':
       return walking ? 'Idzie walczyć.' : 'Walczy.';
+    case 'finish':
+      return walking ? 'Idzie dobić zwłoki.' : 'Dobija zwłoki.';
+    case 'amputate':
+      return walking ? 'Idzie amputować.' : 'Amputuje.';
     case 'zombie':
       return (
         ['Snuje się.', 'Idzie do siatki.', 'Napiera na siatkę.', 'Goni.', 'Idzie na hałas.'][j.phase] ?? 'Snuje się.'

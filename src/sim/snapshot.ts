@@ -20,7 +20,17 @@ import { houseOf, inHomeApt } from './house.ts';
 import type { Needs } from './needs.ts';
 import { jobText } from './orders.ts';
 import { durability, fenceShape } from './perimeter.ts';
-import { BURN_TICKS, type Burned, COOK_TICKS, type JobKind, type Mood, postKey, type SimState } from './sim.ts';
+import {
+  AMPUTATE_WINDOW,
+  BURN_TICKS,
+  type Burned,
+  COOK_TICKS,
+  FEVER_TICKS,
+  type JobKind,
+  type Mood,
+  postKey,
+  type SimState,
+} from './sim.ts';
 
 export interface SimPerson {
   /** id pionka: do poleceń dla symulacji */
@@ -54,6 +64,10 @@ export interface SimPerson {
   post: string | null;
   /** broń w rękach albo null (gołe ręce) */
   weapon: WeaponId | null;
+  /** ugryzienie: kiedy, czy w rękę albo nogę, ile ticków do śmierci, czy da się jeszcze amputować; null: zdrowy */
+  bite: { at: number; limb: boolean; left: number; amputate: boolean } | null;
+  /** po amputacji */
+  maimed: boolean;
 }
 
 export interface SimStock {
@@ -196,6 +210,16 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
         away: p.away,
         post: p.job?.t === 'guard' ? postKey(p.job.target) : null,
         weapon: p.weapon ?? null,
+        bite:
+          p.bite !== undefined
+            ? {
+                at: p.bite,
+                limb: !!p.limb,
+                left: p.bite + FEVER_TICKS - tick,
+                amputate: !!p.limb && tick <= p.bite + AMPUTATE_WINDOW,
+              }
+            : null,
+        maimed: !!p.maimed,
       };
     });
   const woodCarried = people.reduce((a, p) => a + p.carry, 0);

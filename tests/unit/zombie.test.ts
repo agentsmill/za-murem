@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
-import { createSim, type Pawn, Sim, type SimState, STAY_YARD, spawnZombie } from '../../src/sim/sim.ts';
+import { commandsAt } from '../../src/sim/orders.ts';
+import {
+  AMPUTATE_WINDOW,
+  BITE_INFECT,
+  createSim,
+  FEVER_TICKS,
+  infect,
+  type Pawn,
+  RISE_TICKS,
+  Sim,
+  type SimState,
+  STAY_YARD,
+  spawnZombie,
+} from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { ambientCount, distField, hordeSize, MAX_ZOMBIES, ZOMBIE_HP } from '../../src/sim/zombie.ts';
 import { mockBlock } from './interior-mock.ts';
@@ -178,5 +191,120 @@ describe('szwendacze', () => {
     expect(zombies(st).some((z) => z.job?.what === 'stado')).toBe(true);
     runTo(sim, atHour(2, 6) + TICKS_PER_HOUR / 4);
     expect(zombies(st).some((z) => z.job?.what === 'stado')).toBe(false);
+  });
+});
+
+describe('ugryzienia, gorączka, wstawanie, dobijanie, amputacja', () => {
+  const coreOf = (st: SimState) => st.pawns.filter((p) => p.kind === 'core');
+
+  it('zakażony słabnie i umiera dokładnie po FEVER_TICKS, a po RISE_TICKS w miejscu zwłok wstaje szwendacz', () => {
+    const { st, sim } = zombieSim(10, 2);
+    const [p, q] = coreOf(st);
+    const t0 = st.tick;
+    infect(st, p, false);
+    expect(p.bite).toBe(t0);
+    runTo(sim, t0 + FEVER_TICKS / 2);
+    expect(p.needs!.health).toBeLessThanOrEqual(51);
+    expect(p.needs!.health).toBeGreaterThan(0);
+    runTo(sim, t0 + FEVER_TICKS);
+    expect(st.pawns.includes(p)).toBe(true);
+    sim.step();
+    expect(st.pawns.includes(p)).toBe(false);
+    const d = st.dead!.at(-1)!;
+    expect(d.cause).toBe('gorączka');
+    expect(d.id).toBe(st.people[p.person].id);
+    expect(q.moods.some((m) => m.why.startsWith('Śmierć'))).toBe(true);
+    const body = st.things.find((t) => t.kind === 'zwloki')!;
+    expect(body.fuel).toBe(t0 + FEVER_TICKS + RISE_TICKS);
+    const z0 = zombies(st).length;
+    runTo(sim, body.fuel);
+    sim.step();
+    expect(st.things.includes(body)).toBe(false);
+    expect(zombies(st).length).toBe(z0 + 1);
+    const nz = zombies(st).at(-1)!;
+    expect(Math.floor(nz.x)).toBe(body.x);
+    expect(Math.floor(nz.y)).toBe(body.y);
+    expect(nz.look).toBe(p.look);
+  });
+
+  it('dobicie przed wstaniem: zwłoki już nie wstaną', () => {
+    const { st, sim } = zombieSim(10, 2);
+    const [p, q] = coreOf(st);
+    infect(st, p, false);
+    runTo(sim, st.tick + FEVER_TICKS + 1);
+    const body = st.things.find((t) => t.kind === 'zwloki')!;
+    expect(body.fuel).toBeGreaterThan(0);
+    const menu = commandsAt(st, w, [q.id], body.y * size + body.x);
+    expect(menu[0].cmd).toEqual({ t: 'finish', ids: [q.id], thing: body.id });
+    sim.push(menu[0].cmd);
+    const z0 = zombies(st).length;
+    runTo(sim, st.tick + 600);
+    expect(body.fuel).toBe(0);
+    runTo(sim, st.tick + RISE_TICKS + 100);
+    expect(st.things.includes(body)).toBe(true);
+    expect(zombies(st).length).toBeLessThanOrEqual(z0);
+  });
+
+  it('amputacja w oknie: z med 2 bywa sukces (bez zakażenia, −35 zdrowia, kikut) i porażka (śmierć)', () => {
+    const outcomes = new Set<string>();
+    for (let seed = 1; seed <= 12 && outcomes.size < 2; seed++) {
+      const st = createSim(w, seed, { core: 2, mode: 'zombie' });
+      st.tick = atHour(2, 10);
+      const sim = new Sim(w, st);
+      const [p, q] = coreOf(st);
+      st.people[q.person].skills.med = 2;
+      p.needs!.health = 80;
+      infect(st, p, true);
+      sim.push({ t: 'amputate', ids: [q.id], patient: p.id });
+      runTo(sim, st.tick + 1500);
+      if (st.pawns.includes(p)) {
+        expect(p.bite).toBeUndefined();
+        expect(p.maimed).toBe(true);
+        expect(p.needs!.health).toBeLessThanOrEqual(45);
+        expect(p.needs!.health).toBeGreaterThanOrEqual(10);
+        outcomes.add('sukces');
+      } else {
+        expect(st.dead!.at(-1)!.cause).toBe('amputacja');
+        outcomes.add('porażka');
+      }
+    }
+    expect([...outcomes].sort()).toEqual(['porażka', 'sukces']);
+  });
+
+  it('amputacja po oknie albo przy ugryzieniu w tułów nic nie robi', () => {
+    for (const late of [true, false]) {
+      const { st, sim } = zombieSim(10, 2);
+      const [p, q] = coreOf(st);
+      infect(st, p, late);
+      if (late) runTo(sim, st.tick + AMPUTATE_WINDOW + 10);
+      sim.push({ t: 'amputate', ids: [q.id], patient: p.id });
+      sim.step();
+      expect(q.job?.t).not.toBe('amputate');
+      expect(p.bite).toBeDefined();
+    }
+  });
+
+  it('ugryzienie przy trafieniu zaraża w części przypadków (tylko w trybie zombie)', () => {
+    const { st, sim } = zombieSim(10, 2);
+    const victims = coreOf(st);
+    // szwendacz tuż obok kogoś z zarządu na podwórku
+    let bitten = 0;
+    for (let k = 0; k < 40; k++) {
+      const p = victims[0];
+      if (!st.pawns.includes(p)) break;
+      p.needs!.health = 100;
+      delete p.bite;
+      const spot = w.fence.yard.find((i) => sim.canWalk('core', i) && sim.canWalk('zombie', i))!;
+      Object.assign(p, { x: (spot % size) + 0.5, y: Math.floor(spot / size) + 0.5, path: [], pi: 0, weapon: null });
+      const z = spawnZombie(st, w, spot, 1);
+      z.job!.phase = 3;
+      z.job!.target = p.id;
+      for (let s = 0; s < 40 && p.bite === undefined; s++) sim.step();
+      if (p.bite !== undefined) bitten++;
+      st.pawns = st.pawns.filter((x) => x !== z);
+    }
+    expect(bitten).toBeGreaterThan(0);
+    expect(bitten).toBeLessThan(40);
+    expect(BITE_INFECT).toBe(0.35);
   });
 });
