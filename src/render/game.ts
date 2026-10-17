@@ -2,19 +2,21 @@
    Rzeczy to st.things (meble, drewno, zapasy, pnie, koza z ogniem, garnek z posiłkiem na stole) plus
    ze świata trzepak, wraki, siatka i sterty materiału (te ze świata, dopóki symulacja ich nie przejmie).
    Światła dają koza z ogniem (we wnętrzu), okna pomieszczeń oświetlonych ogniem (sim.light, plama
-   na ziemi za oknem), ognisko i lampy warty. Stan siatki wynika z kopii blocked w symulacji, jak
-   w kontrakcie siatki: łata na dziurze i zamknięta brama to blocked = 1, dziura to blocked = 0.
+   na ziemi za oknem), ognisko, lampy warty i latarnia w ręce wartownika. Stan siatki wynika z kopii
+   blocked w symulacji, jak w kontrakcie siatki: łata na dziurze i zamknięta brama to blocked = 1,
+   dziura to blocked = 0.
    Obcych (szabrownicy, wędrowcy) widać tylko w świetle. Czyste funkcje bez PixiJS. */
 
 import type { World } from '../world/world.ts';
 import type { FenceState } from './art/rzeczy.ts';
 import type { Light } from './light.ts';
+import type { PawnLike } from './poses.ts';
 import { IN, type ThingLike } from './section.ts';
 import type { FenceLike } from './yard.ts';
 
 /** to, czego rysowanie potrzebuje z symulacji (Sim pasuje bez zmian) */
 export interface GameLike {
-  st: { things: readonly ThingLike[]; felled: readonly number[]; tick: number };
+  st: { things: readonly ThingLike[]; felled: readonly number[]; tick: number; pawns?: readonly PawnLike[] };
   w: World;
   /** światło pomieszczeń od ognia: 1 w pomieszczeniu z palącą się kozą, 0,5 przez drzwi */
   light: readonly number[];
@@ -122,6 +124,10 @@ export function gameLights(g: Pick<GameLike, 'st' | 'light'>, windows: readonly 
     else if ((t.kind === 'lampa' || t.kind === 'budka') && (t.fuel ?? 1) > 0)
       out.push({ x: t.x + 0.5, y: t.y + 0.6, r: 3, color: LAMP, strength: 0.75, flicker: 0.08 });
   }
+  // latarnia wartownika (praca 'warta' na miejscu): w ręce, z boku
+  for (const p of g.st.pawns ?? [])
+    if (p.job?.t === 'warta' && p.job.phase === 1)
+      out.push({ x: p.x + 0.25, y: p.y - 0.1, r: 3, color: LAMP, strength: 0.7, flicker: 0.1 });
   for (const s of windows) {
     const lv = g.light[s.room] ?? 0;
     if (lv > 0) out.push({ x: s.x, y: s.y, r: 2.5, color: PANE, strength: 0.55 * Math.min(1, lv), flicker: 0.12 });

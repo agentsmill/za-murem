@@ -6,10 +6,20 @@
    kawałki nad budynkiem z wnętrzem (scene.section) rysują się z wnętrzem zamiast dachu, a meble
    stoją w jednej warstwie z pionkami, sortowane po y. */
 
-import { Application, BufferImageSource, Container, Graphics, Rectangle, Sprite, Texture, TextureStyle } from 'pixi.js';
-import { minutesAt } from '../sim/clock.ts';
+import {
+  Application,
+  BufferImageSource,
+  Container,
+  Graphics,
+  Rectangle,
+  Sprite,
+  Texture,
+  type TextureSource,
+  TextureStyle,
+} from 'pixi.js';
+import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
 import type { Pawn, SimState } from '../sim/sim.ts';
-import { FH, FRAMES, FW, LOOKS, makePeopleAtlas } from './art/people.ts';
+import { FH, frameRect, LIE, LOOKS, lieHead, lieRect, makePeopleAtlas, POSES } from './art/people.ts';
 import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec, thingSprite } from './art/rzeczy.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
 import {
@@ -43,7 +53,10 @@ import {
 } from './game.ts';
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
+import { FeedWatch, type PoseView, poseOf } from './poses.ts';
 import { burning, IN, specOf, type ThingLike } from './section.ts';
+import { smokeSources } from './smoke.ts';
+import { SmokeLayer } from './smokeLayer.ts';
 import { fenceThings, mockWrecks } from './yard.ts';
 
 const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -102,7 +115,15 @@ export class GameView {
   maxZoom = 3;
   scene: Scene | null = null;
   private slots: ChunkSlot[] = [];
-  private frames: Texture[] = [];
+  /** atlas ludzi i tekstury jego klatek (pozy, leżenie) brane w miarę potrzeby */
+  private atlas: TextureSource | null = null;
+  private poseTex = new Map<number, Texture>();
+  /** dokładanie do kozy widać chwilę po wrzuceniu drewna */
+  private feed = new FeedWatch();
+  /** dym z kozy i ogniska nad mapą światła */
+  readonly smoke = new SmokeLayer();
+  /** rzeczy narysowane w ostatniej klatce (gra i dodatki): z nich źródła dymu */
+  private drawn: readonly ThingLike[] = [];
   private pawnSprites = new Map<number, Sprite>();
   private prev = new Map<number, [number, number]>();
   private frameNo = 0;
@@ -164,13 +185,17 @@ export class GameView {
     });
     host.appendChild(this.app.canvas);
     this.app.canvas.classList.add('game-canvas');
-    this.root.addChild(this.terrain, this.marks, this.actors, this.light.sprite, this.light.glowSprite);
+    this.root.addChild(
+      this.terrain,
+      this.marks,
+      this.actors,
+      this.light.sprite,
+      this.light.glowSprite,
+      this.smoke.container,
+    );
     this.actors.sortableChildren = true;
     this.app.stage.addChild(this.root);
-    const atlas = Texture.from(makePeopleAtlas());
-    for (let look = 0; look < LOOKS; look++)
-      for (let k = 0; k < 4 * FRAMES; k++)
-        this.frames.push(new Texture({ source: atlas.source, frame: new Rectangle(k * FW, look * FH, FW, FH) }));
+    this.atlas = Texture.from(makePeopleAtlas()).source;
     if (opts.workers !== false && workersAvailable())
       this.painter = new WorkerPainter(spawnChunkWorker, poolSize(navigator.hardwareConcurrency || 4, PHONE));
   }
@@ -303,6 +328,7 @@ export class GameView {
   private applyThings(): void {
     const g = this.game;
     const list = g ? [...g.things, ...this.extras.filter((t) => !GAME_KINDS.has(t.kind))] : this.extras;
+    this.drawn = list;
     const seen = new Set<string>();
     let fresh = 0;
     this.thingsPending = false;
@@ -531,26 +557,32 @@ export class GameView {
       e.sprite.visible = !e.inside || this.cutOn;
       if (e.fire && e.sprite.visible) e.sprite.texture = this.artOf(specOf(e.thing, flame)!).tex;
     }
-    // pionki
+    // pionki: poza z pracy (rąbie, niesie drewno, klęczy przy kozie, gotuje, siedzi, śpi, wartuje)
     const seen = new Set<number>();
     this.marks.clear();
+    const gameT = (st.tick + alpha) / TICKS_PER_SECOND;
     for (const p of st.pawns) {
       seen.add(p.id);
       let sp = this.pawnSprites.get(p.id);
       if (!sp) {
-        sp = new Sprite(this.frames[0]);
-        sp.anchor.set(0.5, 45 / FH);
+        sp = new Sprite(Texture.EMPTY);
         this.actors.addChild(sp);
         this.pawnSprites.set(p.id, sp);
       }
       const pv = this.prev.get(p.id);
       const x = pv ? pv[0] + (p.x - pv[0]) * alpha : p.x;
       const y = pv ? pv[1] + (p.y - pv[1]) * alpha : p.y;
-      const moving = p.pi < p.path.length;
-      const f = moving ? Math.floor(p.walk * 2.6) % FRAMES : 0;
-      sp.texture = this.frames[(p.look % LOOKS) * 4 * FRAMES + p.dir * FRAMES + f];
-      sp.position.set(Math.round(x * TILE), Math.round(y * TILE));
-      sp.zIndex = y;
+      const pose = poseOf(p, gameT, st.things, p.kind === 'core' && this.feed.feeding(p, st.tick));
+      sp.texture = this.poseTexture(p.look % LOOKS, pose);
+      if (pose.lie) {
+        const [hx, hy] = lieHead(pose.lie.o);
+        sp.anchor.set(hx / LIE, hy / LIE);
+        sp.position.set(Math.round(pose.lie.x), Math.round(pose.lie.y));
+      } else {
+        sp.anchor.set(0.5, 45 / FH);
+        sp.position.set(Math.round(x * TILE), Math.round(y * TILE));
+      }
+      sp.zIndex = pose.z ?? y;
       // pod dachem nie widać nikogo; w przekroju tak
       sp.visible = this.cutOn || !this.underRoof(x, y);
       // obcych widać tylko w świetle: w półmroku sam ciemny zarys, w ciemności nic
@@ -568,11 +600,29 @@ export class GameView {
       if (!seen.has(id)) {
         sp.destroy();
         this.pawnSprites.delete(id);
+        this.feed.forget(id);
       }
+    // dym z kozy (przez okno) i z ogniska, z czasu gry; widać go także przy dachu
+    this.smoke.update(smokeSources(this.drawn, this.scene.w), gameT, this.darkness, z);
     // noc: ciemność z godziny gry, światła z gry i z listy
     const [x0, y0] = this.toWorld(0, 0);
     const [x1, y1] = this.toWorld(this.width, this.height);
     this.light.update(x0, y0, x1, y1, z, this.darkness, lights, time, this.insideFn);
+  }
+
+  /** klatka atlasu ludzi dla pozy (tekstury tworzone przy pierwszym użyciu) */
+  private poseTexture(look: number, pv: PoseView): Texture {
+    // klucz: pozy nieujemne (wygląd, poza, kierunek, klatka), leżenie ujemne (wygląd, łóżko albo podłoga, strona)
+    const k = pv.lie
+      ? -1 - (look * 8 + (pv.lie.kind === 'bed' ? 0 : 4) + pv.lie.o)
+      : ((look * POSES.length + POSES.indexOf(pv.pose)) * 4 + pv.dir) * 4 + pv.frame;
+    let tex = this.poseTex.get(k);
+    if (!tex) {
+      const [x, y, w, h] = pv.lie ? lieRect(look, pv.lie.kind, pv.lie.o) : frameRect(look, pv.pose, pv.dir, pv.frame);
+      tex = new Texture({ source: this.atlas!, frame: new Rectangle(x, y, w, h) });
+      this.poseTex.set(k, tex);
+    }
+    return tex;
   }
 
   private markPawn(p: Pawn, x: number, y: number): void {

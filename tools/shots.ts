@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
+import { frameRect, LIE, POSES } from '../src/render/art/people.ts';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { decodePng } from './png.ts';
@@ -802,6 +803,106 @@ const SHOTS: Shot[] = [
       },
     ];
   })(),
+  // dym z kozy (przez okno) i ogniska: z czasu gry, nad mapą światła, widać go z daleka i przy dachu
+  {
+    name: 'dym-dzien',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.2`);
+      await nightWithFire(page);
+      await smokeCheck(page, 1.4, 12);
+    },
+  },
+  {
+    // nocą z kozą i ogniskiem na podwórku (w stanie gry): dym przy ogniu podświetlony od dołu
+    name: 'dym-noc',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=22`);
+      await nightWithFire(page);
+      await page.evaluate(() => {
+        const sim = window.zm!.sim!;
+        const size = sim.w.size;
+        const free = sim.w.fence.yard.filter(
+          (i) => !sim.blocked[i] && !sim.st.things.some((t) => t.y * size + t.x === i),
+        );
+        const i = free[Math.floor(free.length * 0.6)];
+        sim.st.things.push({
+          id: 992000,
+          kind: 'ognisko',
+          x: i % size,
+          y: Math.floor(i / size),
+          w: 1,
+          h: 1,
+          rot: 0,
+          n: 0,
+          fuel: 1200,
+          by: -1,
+          owner: -1,
+        });
+      });
+      await smokeCheck(page, 1.3, 24);
+    },
+  },
+  {
+    name: 'dym-daleko',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.4`);
+      await nightWithFire(page);
+      await smokeCheck(page, 0.4, 12);
+    },
+  },
+  {
+    name: 'dym-daleko-noc',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.4&godzina=21`);
+      await nightWithFire(page);
+      await smokeCheck(page, 0.4, 12);
+    },
+  },
+  {
+    // w mieszkaniu zarządu: śpi w łóżku, siedzi przy stole, dokłada do kozy, gotuje
+    name: 'pozy-dom',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await stage(page, 'dom', 0);
+      await stage(page, 'dom', 1);
+      await waitIdle(page);
+      await poseCheck(page, ['lie', 'sit', 'crouch', 'cook']);
+    },
+  },
+  {
+    // na podwórku: rąbie suche drzewo, niesie drewno, wartuje z lampą
+    name: 'pozy-podworko',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await stage(page, 'podworko', 0);
+      await waitIdle(page);
+      await poseCheck(page, ['chop', 'carry', 'guard', 'carry']);
+    },
+  },
+  {
+    name: 'warta-noc',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2&godzina=22`);
+      await waitIdle(page);
+      await stage(page, 'podworko', 0);
+      await waitIdle(page);
+      const lamps = await page.evaluate(
+        () =>
+          (window.zm!.view as unknown as { gameLights: { r: number }[] }).gameLights.filter((l) => l.r === 3).length,
+      );
+      console.log(`  latarnie w rękach: ${lamps}`);
+      if (lamps < 1) throw new Error('wartownik nie ma światła latarni');
+    },
+  },
 ];
 
 /** klucze rzeczy narysowanych w warstwie pionków (miejsce i opis sprite'a) */
@@ -891,6 +992,137 @@ async function strangers(page: Page) {
     };
     return { lit: at(900001), dark: at(900002) };
   });
+}
+
+/** kłęby dymu: kamera na ich środek (trochę niżej, żeby było widać wylot), co najmniej min kłębów */
+async function smokeCheck(page: Page, zoom: number, min: number) {
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const r = await page.evaluate((z) => {
+    const zm = window.zm!;
+    const sm = (
+      zm.view as unknown as {
+        smoke: { count: number; container: { children: { visible: boolean; x: number; y: number }[] } };
+      }
+    ).smoke;
+    const vis = sm.container.children.filter((c) => c.visible);
+    if (!vis.length) return { n: 0, cut: false };
+    const cx = vis.reduce((a, c) => a + c.x, 0) / vis.length / 32;
+    const cy = Math.max(...vis.map((c) => c.y)) / 32;
+    zm.setCam(cx, cy - 1.5, z);
+    return { n: sm.count, cut: (zm.view as unknown as { cutOn: boolean }).cutOn };
+  }, zoom);
+  await waitIdle(page);
+  console.log(`  kłębów dymu: ${r.n}${r.cut ? '' : ', przy dachu (bez przekroju)'}`);
+  if (r.n < min) throw new Error(`za mało dymu: ${r.n}`);
+}
+
+/**
+ * Pionki zarządu ustawione w pracy (faza 1, w miejscu): w domu śpi, siedzi przy stole, dokłada do kozy
+ * (krok 0: niesie drewno do kozy, krok 1: drewno już w kozie) i gotuje; na podwórku rąbie suche drzewo,
+ * niesie drewno i wartuje z lampą (praca 'warta', której symulacja jeszcze nie ma).
+ */
+async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
+  await page.evaluate(
+    ([where, step]) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const st = sim.st;
+      const size = sim.w.size;
+      const core = st.pawns.filter((p) => p.kind === 'core');
+      const STEP = [
+        [0, -1],
+        [1, 0],
+        [0, 1],
+        [-1, 0],
+      ];
+      const face = (x: number, y: number, tx: number, ty: number) =>
+        Math.abs(tx - x) > Math.abs(ty - y) ? (tx > x ? 3 : 2) : ty > y ? 0 : 1;
+      type Job = NonNullable<(typeof core)[number]['job']>;
+      const job = (t: string, target: number, tile: number): Job =>
+        ({ t, target, tile, phase: 1, from: -1, t0: st.tick, until: st.tick + 99999, order: false }) as Job;
+      const put = (k: number, x: number, y: number, dir: number, j: Job | null, carry = 0) => {
+        const p = core[k];
+        Object.assign(p, { x: x + 0.5, y: y + 0.5, path: [], pi: 0, dir, job: j, carry, wait: st.tick + 99999 });
+      };
+      if (where === 'dom') {
+        const koza = st.things.find((t) => t.kind === 'koza')!;
+        koza.fuel = 1200;
+        const d = (t: { x: number; y: number }) => (t.x - koza.x) ** 2 + (t.y - koza.y) ** 2;
+        const near = (kind: string) => st.things.filter((t) => t.kind === kind).sort((a, b) => d(a) - d(b))[0];
+        const bed = near('lozko') ?? near('wersalka');
+        const table = near('stol');
+        const chair = near('krzeslo');
+        const stove = near('kuchenka');
+        // dokładający klęczy z boku kozy (wolny kafelek), kucharz przy kuchence
+        const freeAt = (x: number, y: number) =>
+          !sim.blocked[y * size + x] && !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+        const [cx, cy] = STEP[(stove.rot + 2) % 4];
+        const cook = [stove.x + cx, stove.y + cy];
+        const side = [STEP[(koza.rot + 1) % 4], STEP[(koza.rot + 3) % 4], STEP[(koza.rot + 2) % 4]]
+          .map(([dx, dy]) => [koza.x + dx, koza.y + dy])
+          .find(([x, y]) => freeAt(x, y) && !(x === cook[0] && y === cook[1])) ?? [
+          koza.x + STEP[(koza.rot + 2) % 4][0],
+          koza.y + STEP[(koza.rot + 2) % 4][1],
+        ];
+        const [sx, sy] = side;
+        if (step === 0) {
+          put(0, bed.x, bed.y, 0, job('sleep', bed.id, bed.y * size + bed.x));
+          put(
+            1,
+            chair.x,
+            chair.y,
+            face(chair.x, chair.y, table.x + table.w / 2 - 0.5, table.y + table.h / 2 - 0.5),
+            job('eat', table.id, chair.y * size + chair.x),
+          );
+          put(2, sx, sy, face(sx, sy, koza.x, koza.y), job('refuel', koza.id, sy * size + sx), 2);
+          put(3, cook[0], cook[1], face(cook[0], cook[1], stove.x, stove.y), job('cook', stove.id, 0));
+          const xs = core.map((p) => p.x);
+          const ys = core.map((p) => p.y);
+          zm.setCam((Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2, 2.2);
+        } else {
+          // drewno trafiło do kozy: praca refuel skończona, w rękach pusto
+          Object.assign(core[2], { job: null, carry: 0 });
+        }
+      } else {
+        const tree = sim.w.trees[sim.w.dryTree];
+        const tx = Math.floor(tree.x);
+        const ty = Math.floor(tree.y);
+        const gate = sim.w.fence.gate;
+        put(0, tx - 1, ty, 3, job('chop', sim.w.dryTree, ty * size + tx - 1));
+        put(1, tx + 2, ty + 1, 0, null, 3);
+        put(2, gate.x, gate.y + (gate.rot === 0 ? -1 : 1), 0, job('warta', -1, 0));
+        put(3, tx - 2, ty + 2, 3, null, 2);
+        zm.setCam(tx, ty + 1, 2);
+      }
+    },
+    [where, step] as const,
+  );
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+/** pozy pionków zarządu po kolei: jaka klatka atlasu jest na sprite'cie (kolumna pozy albo leżenie) */
+async function poseCheck(page: Page, want: string[]) {
+  const got = await page.evaluate(() => {
+    const zm = window.zm!;
+    const sprites = (
+      zm.view as unknown as { pawnSprites: Map<number, { texture: { frame: { x: number; width: number } } }> }
+    ).pawnSprites;
+    return zm
+      .sim!.st.pawns.filter((p) => p.kind === 'core')
+      .map((p) => {
+        const f = sprites.get(p.id)!.texture.frame;
+        return { x: f.x, w: f.width };
+      });
+  });
+  const names = got.map((f) => (f.w === LIE ? 'lie' : poseAt(f.x)));
+  console.log(`  pozy: ${names.join(', ')}`);
+  if (names.join() !== want.join()) throw new Error(`pozy ${names.join()} zamiast ${want.join()}`);
+}
+
+/** poza z kolumny atlasu ludzi */
+function poseAt(x: number): string {
+  for (const pose of [...POSES].reverse()) if (x >= frameRect(0, pose, 0, 0)[0]) return pose;
+  return '?';
 }
 
 const dist = process.argv.includes('--dist');
