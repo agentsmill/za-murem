@@ -5,8 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LAW_CD } from '../../src/content/data.ts';
+import { raidersOf, watchersOf } from '../../src/gov/noc.ts';
 import { FIRST_LAWS, NEW_EVENTS, OLD_EVENTS, poraOf } from '../../src/gov/tresc.ts';
-import type { GovInput, GovState } from '../../src/gov/typy.ts';
+import type { GovInput, GovState, NightCard, RaidPlan, RaidResult } from '../../src/gov/typy.ts';
 import { dailyDrift, lawState } from '../../src/gov/uchwaly.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
@@ -104,7 +105,9 @@ describe('karta nocy', () => {
       expect(r.lines.length).toBeGreaterThan(0);
       expect(Number.isFinite(r.dTrust) && Number.isFinite(r.dAnger)).toBe(true);
       if (r.raid !== 'wtargnięcie') expect(r.stolen.wood + r.stolen.supplies).toBe(0);
-      expect(r.tired.length).toBeGreaterThan(0); // polityka zawsze ma kogoś na warcie
+      // polityka zawsze ma kogoś na warcie: wraca zmęczony albo zasnął na warcie
+      const slept = r.lines.some((l) => /zasn(ął|ęła) na warcie/.test(l));
+      expect(r.tired.length > 0 || slept, `ziarno ${seed}`).toBe(true);
       reports++;
       if (steps.some((s) => s.kind === 'karta' && s.text.includes('wyprawa'))) {
         back++;
@@ -376,5 +379,120 @@ describe('stan', () => {
       expect(src, f).not.toMatch(/from '\.\.\/sim\//);
       expect(src, f).not.toMatch(/\bdocument\b|\bwindow\b/);
     }
+  });
+});
+
+describe('napad dla symulacji: siła w planie, jawny wynik, warta z menu', () => {
+  /** pierwsza noc na atrapie: karta ustawiana przez setup, warta z menu z guards(); plan i wynik napadu */
+  const night = (
+    seed: number,
+    setup: (gov: GovState, card: NightCard) => void,
+    guards?: (plan: RaidPlan | null, atr: Atrapa) => { id: string; post: string }[],
+  ) => {
+    const gov = newGov(seed);
+    const atr = new Atrapa(seed);
+    let plan: RaidPlan | null = null;
+    let result: RaidResult | null = null;
+    const input = (): GovInput => ({ ...atr.input(), ...(guards ? { guards: guards(plan, atr) } : {}) });
+    while (atr.day < 3 && !gov.reports.length) {
+      atr.tick++;
+      if (atr.tick % TPH === 0) atr.hourly(1);
+      if (atr.tick % TPS !== 0) continue;
+      const fx = govUpdate(gov, input());
+      atr.apply(fx);
+      if (fx.raidResult) result = fx.raidResult;
+      const p = pending(gov, input());
+      if (p?.k === 'uchwala') atr.apply(signLaw(gov, input(), null));
+      else if (p?.k === 'karta') {
+        setup(gov, p.card);
+        const f = confirmNight(gov, input());
+        plan = f.raid;
+        atr.apply(f);
+      } else if (p?.k === 'wydarzenie')
+        atr.apply(
+          govChoose(
+            gov,
+            input(),
+            p.choices.findIndex((c) => c.ok),
+          ),
+        );
+    }
+    return { gov, atr, plan: plan as RaidPlan | null, result: result as RaidResult | null, report: gov.reports[0] };
+  };
+
+  it('plan ma siłę i liczbę szabrowników, wynik przychodzi w minucie napadu i zgadza się z raportem', () => {
+    let raids = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const { plan, result, report } = night(seed, () => {});
+      expect(report, `ziarno ${seed}`).toBeTruthy();
+      if (!plan) {
+        expect(result).toBeNull();
+        expect(report.raid).toBe('brak');
+        continue;
+      }
+      raids++;
+      expect(plan.attack).toBeGreaterThanOrEqual(2);
+      expect(plan.people).toBe(raidersOf(plan.attack!));
+      expect([1, 2, 3]).toContain(plan.people);
+      expect(result, `ziarno ${seed}`).toBeTruthy();
+      expect(result!.attack).toBe(plan.attack);
+      expect(result!.post).toBe(plan.post);
+      expect(result!.outcome).toBe(report.raid);
+      expect(result!.stolen).toEqual(report.stolen);
+      expect(result!.outcome === 'odparty' ? result!.defense >= result!.attack : result!.defense < result!.attack).toBe(
+        true,
+      );
+    }
+    expect(raids).toBeGreaterThan(5);
+  });
+
+  it('warta z menu liczy się w obronie i w odstraszaniu, a propozycja karty zostawia ją na miejscu', () => {
+    const sleepAll = (gov: GovState, card: NightCard) => {
+      for (const c of card.people) setNight(gov, c.id, 'sen');
+    };
+    let compared = 0;
+    for (let seed = 1; seed <= 40 && compared < 5; seed++) {
+      const bare = night(seed, sleepAll);
+      if (!bare.plan) continue;
+      // ta sama noc, ale po karcie ktoś z zarządu staje z menu tam, gdzie przyjdą (odstraszanie przy karcie bez zmian)
+      const id = bare.atr.people[0].id;
+      const guarded = night(seed, sleepAll, (plan) => (plan ? [{ id, post: plan.post }] : []));
+      expect(guarded.plan).toEqual(bare.plan);
+      expect(guarded.result!.defense, `ziarno ${seed}`).toBeGreaterThan(bare.result!.defense);
+      compared++;
+    }
+    expect(compared).toBe(5);
+    // bez pola guards warta to osoby z pracą 'guard' (miejsce nieznane)
+    const atr = new Atrapa(3);
+    const i = atr.input();
+    i.people[0].job = 'guard';
+    expect(watchersOf(i, {})).toBe(1);
+    expect(watchersOf({ ...i, guards: [] }, {})).toBe(0);
+    expect(
+      watchersOf({ ...i, guards: [{ id: i.people[1].id, post: 'brama' }] }, { [i.people[1].id]: 'warta:d1' }),
+    ).toBe(1);
+    // karta nocy: kto stoi z menu przy bramie, temu zarząd proponuje wartę przy bramie
+    const gov = newGov(3);
+    const a2 = new Atrapa(3);
+    const first = a2.people[0].id;
+    while (!pending(gov, a2.input())?.k?.startsWith('karta') && a2.day < 2) {
+      a2.tick++;
+      if (a2.tick % TPH === 0) a2.hourly(1);
+      if (a2.tick % TPS !== 0) continue;
+      const inp = { ...a2.input(), guards: [{ id: first, post: 'brama' }] };
+      a2.apply(govUpdate(gov, inp));
+      const p = pending(gov, inp);
+      if (p?.k === 'uchwala') signLaw(gov, inp, null);
+      else if (p?.k === 'wydarzenie')
+        govChoose(
+          gov,
+          inp,
+          p.choices.findIndex((c) => c.ok),
+        );
+      else if (p?.k === 'karta') break;
+    }
+    const card = pending(gov, a2.input());
+    if (card?.k !== 'karta') throw new Error('brak karty');
+    expect(card.assign[first]).toBe('warta:brama');
   });
 });

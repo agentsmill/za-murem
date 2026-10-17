@@ -80,6 +80,26 @@ export function raidChance(st: GovState, i: GovInput): number {
   return clamp(round2(c), 0.05, 0.85);
 }
 
+/** warta spoza karty nocy (polecenie z menu): z wejścia, a bez pola osoby z pracą 'guard' (miejsce nieznane: '') */
+export function standingGuards(i: GovInput): { id: string; post: string }[] {
+  if (i.guards) return i.guards.filter((g) => i.people.some((p) => p.id === g.id));
+  return i.people.filter((p) => p.job === 'guard').map((p) => ({ id: p.id, post: '' }));
+}
+
+/** ilu ludzi pilnuje siatki: warta z karty plus ta, która już stoi (bez dubli i bez wychodzących na wyprawę) */
+export function watchersOf(i: GovInput, assign: Record<string, string>): number {
+  const ids = new Set(
+    Object.entries(assign)
+      .filter(([, k]) => k.startsWith('warta:'))
+      .map(([id]) => id),
+  );
+  for (const g of standingGuards(i)) if (!(assign[g.id] ?? '').startsWith('wyprawa:')) ids.add(g.id);
+  return ids.size;
+}
+
+/** ilu szabrowników przychodzi przy danej sile napadu */
+export const raidersOf = (attack: number): number => (attack < 3 ? 1 : attack < 4.2 ? 2 : 3);
+
 /** ile z szansy zostaje, kiedy przy siatce widać wartę: mniej z dwiema osobami i przy świetle */
 export function deterrence(st: GovState, i: GovInput, watchers: number): number {
   if (!watchers) return 1;
@@ -215,10 +235,19 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
 function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<string, string> {
   const a: Record<string, string> = {};
   for (const p of i.people) a[p.id] = 'sen';
+  // kto już stoi na warcie z menu, ten zostaje na swoim miejscu (jeśli karta ma takie)
+  const standing = new Set<string>();
+  for (const s of standingGuards(i)) {
+    const key = `warta:${s.post}`;
+    if (card.people.find((c) => c.id === s.id)?.options.some((o) => o.key === key && o.ok)) {
+      a[s.id] = key;
+      standing.add(s.id);
+    }
+  }
   // na wartę najpierw ci, co ostatniej nocy spali, potem umiejący się bić, potem wypoczęci
   const was = (p: GovPerson) => (lastGuards.includes(p.id) ? 1 : 0);
   const free = [...i.people]
-    .filter((p) => p.needs.health >= 20)
+    .filter((p) => p.needs.health >= 20 && !standing.has(p.id))
     .sort(
       (x, y) =>
         was(x) - was(y) ||
@@ -226,9 +255,11 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
         y.needs.rest - x.needs.rest ||
         (x.id < y.id ? -1 : 1),
     );
-  if (card.chance >= 0.25 && free.length) a[free.shift()!.id] = `warta:${card.posts[0].key}`;
-  if (card.chance >= 0.55 && free.length >= 3 && card.posts.length > 1)
-    a[free.shift()!.id] = `warta:${card.posts[1].key}`;
+  // najsłabsze miejsca, których nikt jeszcze nie pilnuje
+  const open = card.posts.filter((p) => !Object.values(a).includes(`warta:${p.key}`));
+  if (card.chance >= 0.25 && free.length && open.length && !standing.size) a[free.shift()!.id] = `warta:${open[0].key}`;
+  if (card.chance >= 0.55 && free.length >= 3 && open.length > 1 && standing.size < 2)
+    a[free.shift()!.id] = `warta:${open[standing.size ? 0 : 1].key}`;
   const short = i.stock.supplies < i.people.length * 2 || i.stock.wood < 4;
   const key = nightDay(i) === 1 ? 'wyprawa:blisko' : 'wyprawa:daleko';
   if (short && free.length >= 2) {
@@ -290,8 +321,8 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
     const t = TARGETS.find((x) => x.id === gr.target)!;
     for (const id of gr.ids) fx.away.push({ id, day: n.day + 1, hour: t.back });
   }
-  // napad: czy, gdzie i o której (zawsze te same trzy losowania); warta ze światłem odstrasza
-  const watchers = Object.values(n.assign).filter((k) => k.startsWith('warta:')).length;
+  // napad: czy, gdzie i o której (zawsze te same trzy losowania); warta ze światłem odstrasza, także ta z menu
+  const watchers = watchersOf(i, n.assign);
   const come = rnd(st) < raidChance(st, i) * deterrence(st, i, watchers);
   const posts = postsOf(i);
   let r = rnd(st) * posts.reduce((s, p) => s + p.weak, 0);
@@ -304,8 +335,10 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
     }
   }
   const at = atHour(n.day, RAID_FROM) + Math.floor(rnd(st) * RAID_SPAN);
-  n.raid = { come, at, post: post.key, resolved: false, outcome: 'brak', attack: 0, defense: 0, stolen: zeroStock() };
-  if (come) fx.raid = { day: n.day, at, post: post.key, where: post.name };
+  // siła losowana od razu: symulacja pokaże tylu szabrowników, ilu przyszło, a rozstrzygnięcie użyje tej samej
+  const attack = come ? round1(2 + rnd(st) * (2 + 0.55 * n.day)) : 0;
+  n.raid = { come, at, post: post.key, resolved: false, outcome: 'brak', attack, defense: 0, stolen: zeroStock() };
+  if (come) fx.raid = { day: n.day, at, post: post.key, where: post.name, attack, people: raidersOf(attack) };
   // kronika
   const on = (pred: (k: string) => boolean) => i.people.filter((p) => pred(n.assign[p.id] ?? 'sen'));
   const watch = on((k) => k.startsWith('warta:'));
@@ -383,25 +416,42 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
   const posts = postsOf(i);
   // załatana dziura: idą do bramy
   const post = posts.find((p) => p.key === r.post) ?? posts.find((p) => p.key === 'brama')!;
-  const guards = i.people.filter((p) => (n.assign[p.id] ?? '').startsWith('warta:'));
-  const awake: GovPerson[] = [];
-  for (const p of guards) {
+  // warta z karty, potem ta, która stoi z menu (bez dubli i bez tych na wyprawie)
+  const guards: { p: GovPerson; post: string }[] = i.people
+    .filter((p) => (n.assign[p.id] ?? '').startsWith('warta:'))
+    .map((p) => ({ p, post: n.assign[p.id].slice(6) }));
+  for (const s of standingGuards(i)) {
+    const p = i.people.find((q) => q.id === s.id);
+    const key = n.assign[s.id] ?? '';
+    if (p && !key.startsWith('warta:') && !key.startsWith('wyprawa:')) guards.push({ p, post: s.post });
+  }
+  const awake: { p: GovPerson; post: string }[] = [];
+  for (const gd of guards) {
+    const p = gd.p;
     const pr = p.needs.rest < 15 ? 0.5 : p.needs.rest < 30 ? 0.15 : 0;
     if (rnd(st) < pr) {
       n.lines.push(`${p.name} ${g(p, 'zasnął', 'zasnęła')} na warcie.`);
       n.slept.push(p.id);
-    } else awake.push(p);
+    } else awake.push(gd);
   }
-  const defense = defenseAt(
-    st,
-    i,
-    post.key,
-    awake.map((p) => ({ p, post: n.assign[p.id].slice(6) })),
-  );
-  const attack = round1(2 + rnd(st) * (2 + 0.55 * n.day));
+  const defense = defenseAt(st, i, post.key, awake);
+  // siła z planu (losowana przy zatwierdzeniu karty); stary zapis bez niej losuje teraz
+  const attack = r.attack || round1(2 + rnd(st) * (2 + 0.55 * n.day));
   r.attack = attack;
   r.defense = defense;
-  const here = awake.filter((p) => n.assign[p.id] === `warta:${post.key}`);
+  const here = awake.filter((gd) => gd.post === post.key).map((gd) => gd.p);
+  const result = (outcome: 'odparty' | 'wtargnięcie', stolen = zeroStock()) => {
+    fx.raidResult = {
+      day: n.day,
+      outcome,
+      post: post.key,
+      where: post.name,
+      attack,
+      defense,
+      stolen: { ...stolen },
+      slept: [...n.slept],
+    };
+  };
   if (defense >= attack) {
     r.outcome = 'odparty';
     const why = awake.length
@@ -418,6 +468,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
     for (const p of here) fx.moods.push({ id: p.id, why: 'Przegoniliśmy szabrowników', d: 6, hours: 12 });
     for (const p of i.people) addNeeds(fx, p.id, { safe: 8 });
     logGov(st, i, n.lines[n.lines.length - 1], true, fx);
+    result('odparty');
     return;
   }
   r.outcome = 'wtargnięcie';
@@ -427,6 +478,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
   stolen.supplies = -addStock(i, fx, 'supplies', -loss.supplies);
   stolen.scrap = -addStock(i, fx, 'scrap', -Math.floor(0.3 * (i.stock.scrap ?? 0)));
   r.stolen = stolen;
+  result('wtargnięcie', stolen);
   n.lines.push(
     `Szabrownicy weszli ${post.name} i zabrali: ${stockText(stolen) || 'niewiele, bo nic nie leżało na wierzchu'}.`,
   );

@@ -23,6 +23,7 @@ export const emptyEffects = (): GovEffects => ({
   raid: null,
   guards: [],
   log: [],
+  raidResult: null,
 });
 
 /** minuta gry od północy pierwszego dnia */
