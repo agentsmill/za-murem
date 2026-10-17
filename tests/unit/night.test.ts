@@ -755,8 +755,16 @@ describe('poprawki z przeglądu', () => {
     const wood0 = wood();
     const late = emptyEffects();
     late.stock.wood = -7;
-    for (const p of coreOf(st)) late.needs.push({ id: st.people[p.person].id, d: { safe: -25 } });
-    late.log.push('Szabrownicy weszli przy bramie i zabrali: Drewno 7.');
+    late.raidResult = {
+      day: 1,
+      outcome: 'wtargnięcie',
+      post: 'brama',
+      where: 'przy bramie',
+      attack: 4,
+      defense: 2,
+      stolen: { wood: 7, supplies: 0, scrap: 0, parts: 0, meds: 0 },
+      slept: [],
+    };
     expect(wood0).toBeGreaterThanOrEqual(7);
     applyGov(st, w, late);
     // od razu i raz: tyle, ile policzył zarząd, a szabrownicy już nie wracają
@@ -764,22 +772,6 @@ describe('poprawki z przeglądu', () => {
     for (let k = 0; k < 400; k++) sim.step();
     expect(st.raid!.took).toEqual({ wood: 0, supplies: 0, scrap: 0 });
     expect(st.pawns.some((p) => p.kind === 'szabrownik')).toBe(false);
-  });
-
-  it('ślady w potrzebach bez wpisu: odparcie tylko przy +8 u wszystkich, nie przy innym wydarzeniu', async () => {
-    const { applyGov } = await import('../../src/sim/gov.ts');
-    const { emptyEffects } = await import('../../src/gov/wspolne.ts');
-    const st = createSim(w, 3, { core: 2 });
-    st.tick = atHour(1, 21);
-    const sim = new Sim(w, st);
-    const plan = emptyEffects();
-    plan.raid = { day: 1, at: 23 * 60, post: 'brama', where: 'przy bramie' };
-    applyGov(st, w, plan);
-    while (st.tick < atHour(1, 23)) sim.step();
-    const ev = emptyEffects();
-    for (const p of coreOf(st)) ev.needs.push({ id: st.people[p.person].id, d: { safe: 10 } });
-    applyGov(st, w, ev);
-    expect(st.raid!.outcome).toBe('');
   });
 
   it('łata z jednego materiału: deski albo złom, przerwana oddaje ten sam materiał', () => {

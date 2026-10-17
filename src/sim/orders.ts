@@ -172,6 +172,7 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return walking ? `Idzie rozbić ${what} na opał.` : `Rozbiera ${what} na opał.`;
     }
     case 'guard':
+      if (j.phase === 4) return 'Przysypia na warcie.';
       if (j.target === KOZA_POST) {
         if (j.phase === 2) return 'Idzie po drewno do kozy.';
         if (j.phase === 3) return 'Dokłada do kozy.';

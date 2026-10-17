@@ -247,12 +247,16 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
   const entered = raided.filter((n) => n.raid!.outcome === 'wtargnięcie');
   const repelled = raided.filter((n) => n.raid!.outcome === 'odparty');
   const quiet = nights.filter((n) => !n.raid);
+  // zgodność: wynik i łup jak w raporcie, tylu szabrowników, ilu wynika z siły, uśpiona warta przysypia na ekranie
   const mismatch = nights.filter(
     (n) =>
       (n.report === 'brak') !== !n.raid ||
       (n.raid && n.report !== n.raid.outcome) ||
-      (n.report === 'wtargnięcie' && JSON.stringify(n.raid!.took) !== JSON.stringify(n.stolen)),
+      (n.report === 'wtargnięcie' && JSON.stringify(n.raid!.took) !== JSON.stringify(n.stolen)) ||
+      (n.raid && n.result && n.raid.n !== n.result.people) ||
+      (n.result && n.result.dozing !== n.result.slept),
   ).length;
+  const slept = nights.reduce((a, n) => a + (n.result?.slept ?? 0), 0);
   console.log(`  ${policy} (${Math.round(performance.now() - t1)} ms):`);
   console.log(
     `    decyzje na minutę w pierwszych 10 min: średnio ${f1(mean(perMin))} (od ${f1(Math.min(...perMin))} do ${f1(Math.max(...perMin))}); w tym okna zarządu ${f1(kinds((d) => d.kind !== 'polecenie' && d.kind !== 'przydział'))}, zmiany na karcie ${f1(kinds((d) => d.kind === 'przydział'))}, polecenia w grze ${f1(kinds((d) => d.kind === 'polecenie'))} (na 10 min)`,
@@ -272,7 +276,7 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
     `    bezpieczeństwo rano o 7:00: po wtargnięciu ${safe(entered)}; po odparciu ${safe(repelled)}; po spokojnej nocy ${safe(quiet)}`,
   );
   console.log(
-    `    raport zarządu a to, co odegrała symulacja: ${mismatch ? `${mismatch} niezgodnych nocy` : 'zgodne w każdej nocy'}`,
+    `    raport zarządu a to, co odegrała symulacja (wynik, łup, liczba szabrowników, ${slept} uśpionych wartowników): ${mismatch ? `${mismatch} niezgodnych nocy` : 'zgodne w każdej nocy'}`,
   );
   if (mismatch) fail = true;
   const r0 = runs[0];

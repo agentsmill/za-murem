@@ -4,7 +4,7 @@
    z planu odgrywają szabrownicy. To, co wymaga przeliczenia przechodniości albo dróg (warta, wyprawa, łaty), idzie
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie. */
 
-import type { GovEffects, GovInput, LawEffects } from '../gov/typy.ts';
+import type { GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
 import { START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { houseOf, inHomeApt } from './house.ts';
@@ -14,10 +14,12 @@ import {
   addCore,
   addResidents,
   BURNABLE,
+  dozeOff,
   type Laws,
   type Loot,
   type Pawn,
   planRaid,
+  postKey,
   removeCore,
   removeResidents,
   type SimState,
@@ -62,6 +64,10 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     cap: s.cap,
     burned: s.burned,
     hqName,
+    // warta, która stoi (z karty, z menu i przy kozie), bez śpiących na posterunku i bez tych na wyprawie
+    guards: st.pawns
+      .filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase !== 4)
+      .map((p) => ({ id: st.people[p.person].id, post: postKey(p.job!.target) })),
   };
 }
 
@@ -77,21 +83,14 @@ function pawnOf(st: SimState, id: string): Pawn | undefined {
   return st.pawns.find((p) => p.kind === 'core' && st.people[p.person]?.id === id);
 }
 
-/** Rozstrzygnięcie napadu w tym wywołaniu? Zarząd rozstrzyga w minucie napadu i pisze o tym w kronice („Szabrownicy
-    weszli…”, „W nocy szabrownicy podeszli…”, „Ktoś kręcił się w nocy…”); przy wtargnięciu każdemu odejmuje dokładnie
-    25 bezpieczeństwa i zabiera zapasy, przy odparciu każdemu dodaje dokładnie 8. Bez jawnego pola w GovEffects poznajemy
-    to najpierw po wpisie, a bez wpisu po tych śladach u każdego z zarządu (propozycja zmiany API w raporcie). */
-function raidOutcome(st: SimState, fx: GovEffects): '' | 'odparty' | 'wtargnięcie' {
+/** Rozstrzygnięcie napadu w tym wywołaniu: jawny wynik zarządu (GovEffects.raidResult) dla napadu, który zarząd
+    zaplanował i który jeszcze trwa. Bez niego nic nie zgadujemy: gdy zarząd milczy, szabrownicy po godzinie odchodzą
+    bez łupu, a jego straty (fx.stock) znikają ze stanu wprost, raz. */
+function raidOutcome(st: SimState, fx: GovEffects): RaidResult | null {
   const r = st.raid;
-  if (!r?.gov || r.outcome || r.phase >= 3 || st.tick < r.at - 1) return '';
-  if (fx.log.some((l) => l.startsWith('Szabrownicy weszli'))) return 'wtargnięcie';
-  if (fx.log.some((l) => l.startsWith('W nocy szabrownicy podeszli') || l.startsWith('Ktoś kręcił się w nocy')))
-    return 'odparty';
-  const ids = st.pawns.filter((p) => p.kind === 'core').map((p) => st.people[p.person].id);
-  const all = (v: number) => ids.length > 0 && ids.every((id) => fx.needs.find((n) => n.id === id)?.d.safe === v);
-  if (all(-25)) return 'wtargnięcie';
-  if (all(8)) return 'odparty';
-  return '';
+  const res = fx.raidResult;
+  if (!res || !r?.gov || r.outcome || r.phase >= 3) return null;
+  return res;
 }
 
 /** wolny kafelek podwórka przy bramie na nowy stos (drewno, złom przyniesione z wyprawy) */
@@ -157,13 +156,13 @@ function give(st: SimState, w: World, k: keyof Loot, n: number): void {
 export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   const cmd = (c: SimState['cmds'][number]) => st.cmds.push(c);
   // napad: plan na tę noc, a w minucie napadu rozstrzygnięcie (łup wyniosą szabrownicy, nie znika od razu)
-  if (fx.raid) planRaid(st, tickOfMinute(fx.raid.at), fx.raid.post, true);
-  const out = raidOutcome(st, fx);
+  if (fx.raid) planRaid(st, tickOfMinute(fx.raid.at), fx.raid.post, true, fx.raid.people ?? 0, fx.raid.attack ?? 0);
+  const res = raidOutcome(st, fx);
   const loot: Loot = { wood: 0, supplies: 0, scrap: 0 };
-  if (out && st.raid) {
-    st.raid.outcome = out;
-    if (out === 'wtargnięcie') {
-      for (const k of ['wood', 'supplies', 'scrap'] as const) loot[k] = Math.max(0, -fx.stock[k]);
+  if (res && st.raid) {
+    st.raid.outcome = res.outcome;
+    if (res.outcome === 'wtargnięcie') {
+      for (const k of ['wood', 'supplies', 'scrap'] as const) loot[k] = Math.max(0, res.stolen[k] ?? 0);
       st.raid.loot = { ...loot };
     }
   }
@@ -186,6 +185,8 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
     else p.moods.push({ why: m.why, d: m.d, until });
   }
   const ids = (list: readonly string[]) => list.map((id) => pawnOf(st, id)?.id ?? -1).filter((id) => id >= 0);
+  // wartownicy, którzy według zarządu zasnęli, przysypiają na posterunku
+  if (res?.slept.length) dozeOff(st, ids(res.slept));
   if (fx.away.length) cmd({ t: 'away', ids: ids(fx.away.map((a) => a.id)) });
   if (fx.back.length) cmd({ t: 'back', ids: ids(fx.back) });
   for (const g of fx.guards) cmd({ t: 'guard', ids: ids([g.id]), post: g.post });

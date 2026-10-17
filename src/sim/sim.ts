@@ -286,8 +286,10 @@ export interface Raid {
   at: number;
   /** posterunek z planu: 'brama' albo 'd<id dziury>' (załatana dziura: idą do bramy) */
   post: string;
-  /** ilu ich jest (1–3, losowane przy pojawieniu się) */
+  /** ilu ich jest: z planu zarządu (RaidPlan.people), bez niego 1–3 losowane przy pojawieniu się */
   n: number;
+  /** siła napadu z planu zarządu (RaidPlan.attack), 0: nieznana */
+  attack: number;
   /** 0 czekają na swoją porę, 1 są za siatką, 2 rozstrzygnięty (wchodzą albo uciekają), 3 po wszystkim */
   phase: number;
   outcome: '' | 'odparty' | 'wtargnięcie';
@@ -614,11 +616,30 @@ export function campfireSpotOk(st: SimState, w: World, at: number): boolean {
   return true;
 }
 
-/** napad zaplanowany na tick at przy posterunku post ('brama' / 'd<id>'); gov: rozstrzyga zarząd */
-export function planRaid(st: SimState, at: number, post: string, gov: boolean): void {
+/** napad zaplanowany na tick at przy posterunku post ('brama' / 'd<id>'); gov: rozstrzyga zarząd; people i attack
+    z planu zarządu (0: nieznane, wtedy 1–3 szabrowników losowanych przy pojawieniu się) */
+export function planRaid(st: SimState, at: number, post: string, gov: boolean, people = 0, attack = 0): void {
   const zero = (): Loot => ({ wood: 0, supplies: 0, scrap: 0 });
-  st.raid = { at, post, n: 0, phase: 0, outcome: '', gov, loot: zero(), took: zero(), from: -1, spot: -1 };
+  const n = Math.max(0, Math.min(5, Math.round(people)));
+  st.raid = { at, post, n, attack, phase: 0, outcome: '', gov, loot: zero(), took: zero(), from: -1, spot: -1 };
 }
+
+/** Wartownicy (pionki), którzy według zarządu zasnęli: przysypiają tam, gdzie stoją (warta w fazie 4, bez lampy
+    i bez dokładania do kozy), aż warta skończy się rano. Zmienia tylko stan pionków, przechodniości nie rusza. */
+export function dozeOff(st: SimState, ids: readonly number[]): void {
+  for (const p of st.pawns) {
+    if (!ids.includes(p.id) || p.job?.t !== 'guard' || p.job.phase === 4) continue;
+    for (const t of st.things) if (t.by === p.id) t.by = -1;
+    p.path = [];
+    p.pi = 0;
+    p.job.phase = 4;
+    p.job.from = -1;
+  }
+}
+
+/** klucz posterunku warty z Job.target, jak w karcie nocy zarządu: 'brama', 'd<id>', 'koza' */
+export const postKey = (target: number): string =>
+  target === KOZA_POST ? 'koza' : target === 0 ? 'brama' : `d${target}`;
 
 /** mieszkania inne niż zarządu, do których z podwórka da się dojść bez wychodzenia za siatkę, rosnąco */
 function residentApts(st: SimState, w: World, h: HouseLike): number[] {
@@ -1173,6 +1194,7 @@ export class Sim {
       for (const p of pawns) this.comeBack(p);
       return;
     }
+
     if (!pawns.length) return;
     this.tutEvent('zaznacz');
     if (c.t === 'move') this.orderMove(pawns, c.to, [], true);
@@ -1886,6 +1908,8 @@ export class Sim {
           p.carry += take;
           return this.carryToKoza(p, j, koza);
         }
+        // przysypia na posterunku do rana
+        if (j.phase === 4) return tick < j.until;
         if (j.phase === 3) {
           const koza = this.koza();
           if (koza && at) {
@@ -2637,7 +2661,7 @@ export class Sim {
     }
     r.spot = outs[0];
     r.from = this.farFrom(r.spot);
-    r.n = 1 + Math.floor(nextRandom(st.rng) * 3);
+    if (r.n <= 0) r.n = 1 + Math.floor(nextRandom(st.rng) * 3);
     const waits = this.tilesAround(r.spot, r.n);
     const starts = this.tilesAround(r.from, r.n);
     for (let k = 0; k < r.n; k++) {
@@ -2877,7 +2901,7 @@ export class Sim {
       a.lamps.some(([x, y]) => Math.hypot(p.x - x, p.y - y) <= LAMP_REACH) ||
       a.fires.some((t) => Math.hypot(p.x - (t.x + 0.5), p.y - (t.y + 0.5)) <= CAMPFIRE_LIGHT);
     const j = p.job;
-    const asleep = !!j && j.t === 'sleep' && j.phase === 1;
+    const asleep = !!j && ((j.t === 'sleep' && j.phase === 1) || (j.t === 'guard' && j.phase === 4));
     // ciemno: noc, a w pomieszczeniu nie świeci koza ani przez drzwi, na dworze ognisko ani lampa warty
     const dark = daylight(this.st.tick) < 0.5 && !(inside && (this.light[r] ?? 0) >= 0.5) && !fire && !lit;
     let company = 0;

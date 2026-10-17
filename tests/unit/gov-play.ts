@@ -3,6 +3,7 @@
    polecenia, których gra wymaga: samouczek (zaznaczenie i ścięcie suchego drzewa) i kolejne drzewo, kiedy
    opału zostaje mało. Liczy decyzje z czasem przy ekranie i skutki napadów. Używają go testy i tools/bot.ts. */
 
+import { raidersOf } from '../../src/gov/noc.ts';
 import type { GovState, NightReport, Prompt } from '../../src/gov/typy.ts';
 import {
   ackReport,
@@ -50,6 +51,9 @@ export interface NightLog {
   /** temperatura w kuchni zarządu o 6:00 rano (°C) i część nocy 22–6, w której koza się paliła */
   kitchen6: number | null;
   fire: number;
+  /** jawny wynik zarządu (raidResult): ilu szabrowników wynika z siły, ilu wartowników zasnęło według zarządu
+      i ilu z nich przysypia w symulacji */
+  result: { people: number; slept: number; dozing: number } | null;
 }
 
 export interface PlayOpts {
@@ -169,7 +173,18 @@ export function playWithGov(
     sim.step();
     if (st.tick % TICKS_PER_SECOND) continue;
     const s = screen();
-    applyGov(st, w, govUpdate(gov, govInput(st, w, s)));
+    const fxu = govUpdate(gov, govInput(st, w, s));
+    applyGov(st, w, fxu);
+    // jawny wynik napadu: zgadza się z planem (ilu ich jest) i ze snem warty na ekranie?
+    const res = fxu.raidResult;
+    if (res && night) {
+      const slept = st.pawns.filter((q) => q.kind === 'core' && res.slept.includes(st.people[q.person].id));
+      night.result = {
+        people: raidersOf(res.attack),
+        slept: res.slept.length,
+        dozing: slept.filter((q) => q.job?.t === 'guard' && q.job.phase === 4).length,
+      };
+    }
     for (let k = 0; k < 5; k++) {
       const p = pending(gov, govInput(st, w, s));
       if (!p) break;
@@ -188,6 +203,7 @@ export function playWithGov(
           koza: false,
           kitchen6: null,
           fire: 0,
+          result: null,
         };
         // dyżur przy kozie: dopóki karta nie ma 'warta:koza', gracz daje go z menu kozy
         if (opts.koza) {
