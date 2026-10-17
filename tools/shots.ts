@@ -1810,8 +1810,29 @@ const SHOTS: Shot[] = [
       await choose('warsztat');
       await page.keyboard.press('Escape');
       if ((await state()).p) throw new Error('Esc nie anulował planu');
-      // lewy klik stawia plan na dozwolonym miejscu
+      // przeciąganie w trybie stawiania przesuwa mapę i niczego nie stawia (klik bez przeciągnięcia stawia)
       await choose('warsztat');
+      await point(spot[0], spot[1]);
+      const cam0 = await page.evaluate(() => ({ ...window.zm!.view.cam }));
+      await page.mouse.down();
+      await page.mouse.move(sx + 120, sy + 160, { steps: 10 });
+      await page.mouse.up();
+      const dragged = await page.evaluate(
+        ([x, y]) => ({
+          moved: Math.round(
+            Math.hypot(window.zm!.view.cam.x - x, window.zm!.view.cam.y - y) * window.zm!.view.cam.zoom,
+          ),
+          placing: !!window.zm!.placing(),
+          cmds: window.zm!.sim!.st.cmds.filter((c) => (c as { t: string }).t === 'build').length,
+        }),
+        [cam0.x, cam0.y],
+      );
+      console.log(
+        `  przeciąganie w trybie stawiania: mapa o ${dragged.moved} px, plan ${dragged.placing ? 'dalej w ręku' : 'zgubiony'}, postawionych ${dragged.cmds}`,
+      );
+      if (dragged.moved < 100 || !dragged.placing || dragged.cmds)
+        throw new Error('przeciąganie w trybie stawiania postawiło plan albo nie przesunęło mapy');
+      // lewy klik stawia plan na dozwolonym miejscu
       const [px, py] = await point(spot[0], spot[1]);
       await page.mouse.click(px, py);
       const cmds = await page.evaluate(() =>

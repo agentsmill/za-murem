@@ -898,20 +898,9 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
 function run(m: MenuItem) {
   if (!sim) return;
   sim.push(m.cmd);
-  // polecenia fali 1 (przeszukać, rozebrać, naprawić, zająć) mają podpowiedzi tutaj, zanim symulacja doda je do FEEDBACK
-  const fb = (FEEDBACK as Record<string, [string, string] | undefined>)[m.cmd.t] ?? FEEDBACK_M2[m.cmd.t];
-  const f = fb?.[m.cmd.ids.length > 1 ? 1 : 0];
+  const f = FEEDBACK[m.cmd.t][m.cmd.ids.length > 1 ? 1 : 0];
   if (f) say(f, 1800);
 }
-
-/** podpowiedzi po poleceniach fali 1 (docs/M2-fala-1.md) */
-const FEEDBACK_M2: Record<string, [string, string]> = {
-  search: ['Idzie przeszukać pomieszczenie.', 'Idą przeszukać pomieszczenie.'],
-  dismantle: ['Idzie to rozebrać.', 'Idą to rozebrać.'],
-  repair: ['Idzie naprawić.', 'Idą naprawić.'],
-  claim: ['Zarząd zajmuje mieszkanie.', 'Zarząd zajmuje mieszkanie.'],
-  unbuild: ['Plan budowy zdjęty.', 'Plan budowy zdjęty.'],
-};
 
 /** polecenie z potwierdzeniem: palenie mebli ma własne okno, reszta (rozbiórka, zajęcie) ogólne */
 function askConfirm(m: MenuItem) {
