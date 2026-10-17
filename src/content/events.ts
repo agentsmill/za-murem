@@ -10,8 +10,13 @@ import { g, type MakePersonOpts, type Person } from './people.ts';
 
 export type BRef = number;
 
+/** tasowanie przez gospodarza (gra 0.4: to samo w każdym silniku JS) albo jak w 0.3 (zgodność z oryginałem) */
+const shuffled = <T>(h: EventHost, a: T[]): T[] => (h.shuffle ? h.shuffle(a) : a.sort(() => h.rng() - 0.5));
+
 export interface EventHost {
   rng: Rng;
+  /** tasowanie listy; bez niego jak w 0.3, czyli sort z losowym porównaniem, którego wynik zależy od silnika JS */
+  shuffle?<T>(a: T[]): T[];
   readonly res: Readonly<Record<Res, number>>;
   readonly trust: number;
   /** czas gry w minutach */
@@ -248,7 +253,7 @@ EV.push({
   id: 'klotnia',
   w: (h) => (h.alive().length >= 3 ? 1 : 0),
   make: (h) => {
-    const a = h.alive().sort(() => h.rng() - 0.5);
+    const a = shuffled(h, h.alive());
     return { a: a[0].id, b: a[1].id };
   },
   title: () => 'Kłótnia o grafik',
@@ -430,7 +435,7 @@ const tradeEv = (id: string, title: string, text: string, w: (h: EventHost) => n
   id,
   w,
   make: (h) => {
-    const o = OFFERS.slice().sort(() => h.rng() - 0.5);
+    const o = shuffled(h, OFFERS.slice());
     return { o: [o[0], o[1]] };
   },
   title: () => title,
@@ -647,7 +652,7 @@ EV.push({
   id: 'wesele',
   w: (h) => (h.trust > 40 && h.alive().length >= 2 ? 0.8 : 0),
   make: (h) => {
-    const a = h.alive().sort(() => h.rng() - 0.5);
+    const a = shuffled(h, h.alive());
     return { a: a[0].id, b: a[1].id };
   },
   title: () => 'Wesele na klatce',

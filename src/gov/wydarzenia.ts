@@ -83,6 +83,14 @@ export function makeHost(st: GovState, i: GovInput, fx: GovEffects): GovHost {
   const nd = nightDay(i);
   const h: GovHost = {
     rng: rngOf(st.rng),
+    // Fisher-Yates z ziarna zarządu: ten sam wynik w każdym silniku JS (sort z losowym porównaniem daje różne)
+    shuffle: (a) => {
+      for (let k = a.length - 1; k > 0; k--) {
+        const j = Math.floor(h.rng() * (k + 1));
+        [a[k], a[j]] = [a[j], a[k]];
+      }
+      return a;
+    },
     get res() {
       return res();
     },
