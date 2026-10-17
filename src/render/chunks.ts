@@ -82,6 +82,8 @@ export interface MapChange {
   tiles?: readonly number[];
   /** drzewa, które zniknęły, np. ścięte (numery w w.trees) */
   felled?: readonly number[];
+  /** naprawione uszkodzenia w przekroju (kafelki z section.damage) */
+  fixed?: readonly number[];
 }
 
 /**
@@ -93,7 +95,7 @@ export function chunksTouched(sc: ChunkScene, ch: MapChange): number[] {
   const size = sc.w.size;
   const n = sc.chunks;
   const set = new Set<number>();
-  for (const i of ch.tiles ?? []) {
+  for (const i of [...(ch.tiles ?? []), ...(ch.fixed ?? [])]) {
     const x = i % size;
     const y = (i - x) / size;
     for (let dy = -1; dy <= 1; dy++)
@@ -113,11 +115,13 @@ export interface ScenePatch {
   tiles: number[];
   terr: number[];
   felled: number[];
+  /** naprawione uszkodzenia (kafelki), znikają z section.damage */
+  fixed?: number[];
 }
 
 export function scenePatchOf(sc: ChunkScene, ch: MapChange): ScenePatch {
   const tiles = [...(ch.tiles ?? [])];
-  return { tiles, terr: tiles.map((i) => sc.w.terr[i]), felled: [...(ch.felled ?? [])] };
+  return { tiles, terr: tiles.map((i) => sc.w.terr[i]), felled: [...(ch.felled ?? [])], fixed: [...(ch.fixed ?? [])] };
 }
 
 /** nakłada łatkę na kopię sceny w workerze */
@@ -126,6 +130,7 @@ export function applyScenePatch(sc: ChunkScene, p: ScenePatch): void {
     sc.w.terr[i] = p.terr[k];
   });
   for (const k of p.felled) sc.treeGone[k] = 1;
+  for (const i of p.fixed ?? []) sc.section?.damage?.delete(i);
 }
 
 export interface ChunkPainter {

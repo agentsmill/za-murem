@@ -1,10 +1,11 @@
 /* Pomiar wydajności: 150 pionków z A* i animacją, klatki na sekundę przez 10 s.
    Laptop: Chromium bez dławienia. Telefon: ekran 390×844 i procesor zdławiony 4× (CDP).
    Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
-   Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-3]] [--no-worker] [--noc] [--zoom=0.5]
+   Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-3]] [--no-worker] [--noc] [--zoom=0.5] [--m2]
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
-   --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła). Zawsze z dymem: koza
-   zarządu rozpalona w stanie gry i ognisko na podwórku. */
+   --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła; --m2: budowa z fali 1,
+   czyli atrapa pustych mieszkań w przekroju, cztery plany z paskami postępu i podgląd stawiania).
+   Zawsze z dymem: koza zarządu rozpalona w stanie gry i ognisko na podwórku. */
 
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 
@@ -16,6 +17,7 @@ const NO_WORKER = process.argv.includes('--no-worker');
 const NIGHT = process.argv.includes('--noc');
 /** --zoom=0.5: kamera przy progu bliskich kawałków, gdzie z bliska widać najwięcej drzew jako sprite'ów */
 const ZOOM = Number(process.argv.find((a) => a.startsWith('--zoom='))?.slice(7)) || 1;
+const M2 = process.argv.includes('--m2');
 const SECONDS = 10;
 
 interface Result {
@@ -43,7 +45,7 @@ try {
     });
     const page = await ctx.newPage();
     await page.goto(
-      `${s.base}?demo=przymorze&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}`,
+      `${s.base}?demo=przymorze&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}${M2 ? '&mieszkania=atrapa' : ''}`,
     );
     await waitIdle(page);
     // dym: koza zarządu rozpalona w stanie gry i ognisko na podwórku
@@ -72,6 +74,49 @@ try {
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       return (zm.view as unknown as { smoke: { count: number } }).smoke.count;
     });
+    if (M2) {
+      // plany budowy na podwórku (st.builds) i podgląd stawiania z podświetlonymi kafelkami
+      const m2 = await page.evaluate(async () => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const size = sim.w.size;
+        const yard = sim.w.fence.yard.filter((i) => !sim.blocked[i]);
+        const at = (f: number) => yard[Math.floor(yard.length * f)];
+        const kinds = ['warsztat', 'magazyn', 'ogrodek', 'lozka_pietrowe'];
+        (sim.st as unknown as { builds: unknown[] }).builds = kinds.map((kind, k) => {
+          const i = at(0.15 + k * 0.2);
+          return {
+            id: 994000 + k,
+            kind,
+            x: i % size,
+            y: Math.floor(i / size),
+            rot: k & 1,
+            need: { deski: 4, zlom: 2 },
+            have: { deski: k + 1 },
+            work: k * 40,
+            by: -1,
+          };
+        });
+        const p = at(0.5);
+        zm.view.setPlacement({
+          kind: 'warsztat',
+          x: p % size,
+          y: Math.floor(p / size),
+          rot: 0,
+          ok: true,
+          tiles: { ok: yard.slice(0, 40), bad: yard.slice(40, 60) },
+        });
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const v = zm.view as unknown as { builds: { count: number }; things: Map<string, unknown> };
+        const keys = [...v.things.keys()];
+        return {
+          plans: v.builds.count,
+          broken: keys.filter((k) => k.includes('"broken":true') || k.includes('"burnt":true')).length,
+          trash: keys.filter((k) => k.includes('"smieci"')).length,
+        };
+      });
+      console.log(`M2: planów ${m2.plans}, zepsutych i okopconych rzeczy ${m2.broken}, stert śmieci ${m2.trash}`);
+    }
     if (rows.length === 0) console.log(`WebGL: ${await webglRenderer(page)}`);
     const trees = await page.evaluate(() => (window.zm!.view as unknown as { trees: { count: number } }).trees.count);
     console.log(`${dev.name}: kłębów dymu ${puffs}, drzew jako sprite'y ${trees}`);

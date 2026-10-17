@@ -22,6 +22,8 @@ import type { Pawn, SimState } from '../sim/sim.ts';
 import { FH, frameRect, LIE, LOOKS, lieHead, lieRect, makePeopleAtlas, outlineAtlas, POSES } from './art/people.ts';
 import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec, thingSprite } from './art/rzeczy.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
+import { mockWear, type WearMock } from './atrapy.ts';
+import { BuildLayer, type BuildPlan, type Placement } from './buildLayer.ts';
 import {
   type ChunkPainter,
   chunksByDistance,
@@ -54,7 +56,7 @@ import {
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
 import { FeedWatch, type PoseView, poseOf } from './poses.ts';
-import { burning, IN, specOf, type ThingLike } from './section.ts';
+import { burning, IN, setWear, specOf, type ThingLike } from './section.ts';
 import { smokeSources } from './smoke.ts';
 import { SmokeLayer } from './smokeLayer.ts';
 import { TreeLayer } from './treeLayer.ts';
@@ -163,7 +165,8 @@ export class GameView {
   private extras: readonly ThingLike[] = [];
   /**
    * stan gry z ostatniego syncGame: rzeczy (st.things, rzeczy ze świata, siatka) i rzeczy niezmienne
-   * do pamięci kluczy; simHeaps: symulacja trzyma sterty u siebie, więc tych ze świata już nie ma
+   * do pamięci kluczy; simKinds: rodzaje stert, które symulacja trzyma u siebie (tych ze świata już
+   * nie ma); broken: zepsute meble po miejscu "x,y" (ze świata albo z atrapy)
    */
   private game: {
     sim: GameLike;
@@ -172,10 +175,22 @@ export class GameView {
     fence: ThingLike[];
     codes: Uint8Array | null;
     things: ThingLike[];
-    simHeaps: boolean;
+    simKinds: Set<string>;
+    broken: Set<string>;
   } | null = null;
   /** atrapa wraków do podglądu (?wraki=atrapa), dopóki świat ich nie rozstawia */
   private mockWrecks = false;
+  /** atrapa pustych mieszkań (?mieszkania=atrapa), dopóki świat nie daje apts, damage i śmieci */
+  private mockWearOn = false;
+  private wearMock: WearMock | null = null;
+  /** naprawione uszkodzenia już zdjęte z przekroju */
+  private fixedSeen = new Set<number>();
+  /** plany budowy z ostatniego syncGame (st.builds) */
+  private plans: readonly BuildPlan[] = [];
+  /** paski postępu planów i podgląd stawiania, nad mapą światła */
+  readonly buildOverlay = new Container();
+  /** budowa: duchy planów w warstwie pionków, paski i podgląd stawiania */
+  readonly builds = new BuildLayer(this.actors, this.buildOverlay);
   /** światła ze stanu gry (koza, okna, ognisko, warta); view.lights to dodatki (podgląd) */
   private gameLights: Light[] = [];
   /** rzeczy, które się nie zmieniają (trzepak, siatka) i ich klucze: bez liczenia opisu co klatkę */
@@ -186,6 +201,8 @@ export class GameView {
   async init(host: HTMLElement, opts: { workers?: boolean } = {}): Promise<void> {
     TextureStyle.defaultOptions.scaleMode = 'nearest';
     this.mockWrecks = typeof location !== 'undefined' && new URLSearchParams(location.search).get('wraki') === 'atrapa';
+    this.mockWearOn =
+      typeof location !== 'undefined' && new URLSearchParams(location.search).get('mieszkania') === 'atrapa';
     await this.app.init({
       resizeTo: host,
       background: '#16181a',
@@ -203,6 +220,7 @@ export class GameView {
       this.light.sprite,
       this.light.glowSprite,
       this.xray,
+      this.buildOverlay,
       this.smoke.container,
     );
     this.actors.sortableChildren = true;
@@ -241,6 +259,14 @@ export class GameView {
     this.slots = [];
     this.terrain.removeChildren();
     this.scene = sc;
+    // atrapa pustych mieszkań w przekroju, zanim scena pójdzie do workerów
+    this.wearMock = null;
+    this.fixedSeen.clear();
+    if (this.mockWearOn && sc.section && !('damage' in sc.w)) {
+      this.wearMock = mockWear(sc.w);
+      setWear(sc.section, this.wearMock.damage, this.wearMock.apts);
+    }
+    this.builds.mapSize = sc.w.size;
     this.painter.setScene(sc);
     const n = sc.chunks;
     for (let cy = 0; cy < n; cy++)
@@ -271,6 +297,7 @@ export class GameView {
     const sc = this.scene;
     if (!sc) return [];
     for (const k of ch.felled ?? []) sc.treeGone[k] = 1;
+    for (const i of ch.fixed ?? []) sc.section?.damage?.delete(i);
     const touched = chunksTouched(sc, ch);
     this.painter.patch(scenePatchOf(sc, ch));
     for (const k of touched) {
@@ -302,6 +329,15 @@ export class GameView {
   }
 
   /**
+   * Podgląd stawiania z trybu budowy: duch budowli w (x, y, rot) na zielono, gdy ok, inaczej na
+   * czerwono, jego kafelki i podświetlone kafelki dozwolone (tiles.ok) i niedozwolone (tiles.bad);
+   * null chowa podgląd. Kafelki to indeksy świata (y · size + x).
+   */
+  setPlacement(p: Placement | null): void {
+    this.builds.setPlacement(p);
+  }
+
+  /**
    * Rysowanie stanu gry, wołane co klatkę przed render: rzeczy z st.things (meble, drewno, zapasy,
    * pnie, koza z ogniem, garnek z posiłkiem na blacie stołu) plus rzeczy ze świata (trzepak, wraki,
    * sterty materiału, dopóki symulacja nie trzyma ich u siebie) i siatka ze stanem z sim.blocked
@@ -316,15 +352,27 @@ export class GameView {
     if (!g || g.sim !== sim) {
       const props: ThingLike[] = w.props.map((p) => ({ rot: 0, ...p }));
       if (this.mockWrecks && !props.some((p) => p.kind === 'wrak')) props.push(...mockWrecks(w));
-      g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simHeaps: false };
+      if (this.wearMock) props.push(...this.wearMock.trash);
+      const broken = new Set<string>(this.wearMock?.broken ?? []);
+      for (const f of w.interior.furniture) if ((f as { broken?: boolean }).broken) broken.add(`${f.x},${f.y}`);
+      g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simKinds: new Set(), broken };
       for (const t of g.props) this.fixed.add(t);
       this.game = g;
     }
-    // sterty rysowane ze świata, dopóki symulacja nie zrobi z nich rzeczy; potem tylko ze stanu gry
-    if (!g.simHeaps && sim.st.things.some((t) => HEAPS.has(t.kind))) {
-      g.simHeaps = true;
-      g.props = g.props.filter((t) => !HEAPS.has(t.kind));
+    // sterty i śmieci rysowane ze świata, dopóki symulacja nie zrobi z nich rzeczy; potem tylko ze stanu gry
+    for (const t of sim.st.things)
+      if (HEAPS.has(t.kind) && !g.simKinds.has(t.kind)) {
+        g.simKinds.add(t.kind);
+        g.props = g.props.filter((p) => p.kind !== t.kind);
+      }
+    // naprawione uszkodzenia (st.fixed: kafelki z w.damage) znikają z przekroju
+    const fixed = (sim.st as { fixed?: readonly number[] }).fixed;
+    if (fixed?.length) {
+      const fresh = fixed.filter((i) => !this.fixedSeen.has(i));
+      for (const i of fresh) this.fixedSeen.add(i);
+      if (fresh.length) this.redraw({ fixed: fresh });
     }
+    this.plans = (sim.st as { builds?: readonly BuildPlan[] }).builds ?? [];
     this.syncFelled(sim.st.felled);
     // siatka liczona od nowa tylko po zmianie w blocked (łata, nowa dziura, brama)
     const codes = fenceCodes(w.fence, sim.blocked, w.size);
@@ -333,7 +381,31 @@ export class GameView {
       g.fence = fenceThings(w.fence, w, fenceStateFn(w.fence, codes), codes[codes.length - 1] === 1);
       for (const t of g.fence) this.fixed.add(t);
     }
-    g.things = [...onTables(sim.st.things), ...g.props, ...g.fence];
+    // zepsute meble ze świata i okopcona kuchenka na kafelku uszkodzenia piec (po naprawie znowu cała);
+    // zasieki stoją zamiast odcinka siatki
+    let things = onTables(sim.st.things);
+    const stoves: number[] = [];
+    for (const [i, k] of this.scene.section?.damage ?? []) if (k === 'piec') stoves.push(i);
+    if (g.broken.size || stoves.length) {
+      const br = g.broken;
+      const size = w.size;
+      const onStove = (t: ThingLike) =>
+        stoves.some((i) => {
+          const x = i % size;
+          const y = (i - x) / size;
+          return x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
+        });
+      things = things.map((t) => {
+        const broken = !t.broken && br.has(`${t.x},${t.y}`);
+        const burnt = !t.burnt && onStove(t);
+        return broken || burnt
+          ? { ...t, broken: t.broken || broken || undefined, burnt: t.burnt || burnt || undefined }
+          : t;
+      });
+    }
+    const wire = new Set(sim.st.things.filter((t) => t.kind === 'zasieki').map((t) => t.y * w.size + t.x));
+    const fence = wire.size ? g.fence.filter((t) => !wire.has(t.y * w.size + t.x)) : g.fence;
+    g.things = [...things, ...g.props, ...fence];
     this.applyThings();
     this.gameLights = gameLights(sim, g.windows);
   }
@@ -576,6 +648,12 @@ export class GameView {
       e.sprite.visible = !e.inside || this.cutOn;
       if (e.fire && e.sprite.visible) e.sprite.texture = this.artOf(specOf(e.thing, flame)!).tex;
     }
+    // plany budowy: duchy budowli z paskiem postępu (w budynku tylko w przekroju)
+    this.builds.update(
+      this.plans,
+      (spec) => this.artOf(spec),
+      (x, y) => !this.cutOn && this.underRoof(x, y),
+    );
     // pionki: poza z pracy (rąbie, niesie drewno, klęczy przy kozie, gotuje, siedzi, śpi, wartuje)
     const seen = new Set<number>();
     this.marks.clear();
