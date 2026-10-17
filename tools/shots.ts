@@ -1249,6 +1249,118 @@ const SHOTS: Shot[] = [
       if (r.fire !== 1) throw new Error('brak ognia kozy');
     },
   },
+  // dyżur przy kozie: karta nocy z opcją i pasem „Koza w nocy”, osoba przy kozie w nocy, raport o kuchni rano
+  {
+    name: 'm1-karta-koza',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      // samouczek poleceniami (kliknięcia sprawdzają inne zrzuty): suche drzewo, koza grzeje; potem do karty nocy
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const core = zm.sim!.st.pawns.find((p) => p.kind === 'core')!;
+        zm.sim!.push({ t: 'chop', ids: [core.id], tree: zm.sim!.w.dryTree });
+      });
+      let p: string | null = null;
+      for (let k = 0; k < 80 && p !== 'karta'; k++) {
+        // od 16:00 zapas na noc jak w bocie: następne drzewo przy kozie, dopóki drewna jest mniej niż 16 sztuk
+        await page.evaluate(() => {
+          const zm = window.zm!;
+          const st = zm.sim!.st;
+          const w = zm.sim!.w;
+          const h = Math.floor((st.tick / 800 + 15) % 24);
+          const wood = st.things.reduce((a, t) => a + (t.kind === 'drewno' ? t.n : 0), 0);
+          if (h < 16 || wood >= 16 || st.pawns.some((q) => q.job?.t === 'chop')) return;
+          const k = st.things.find((t) => t.kind === 'koza')!;
+          let best = -1;
+          let bd = 1e9;
+          w.trees.forEach((q, i) => {
+            if (i === w.dryTree || q.kind === 2 || q.r < 1.5 || st.felled.includes(i)) return;
+            const d = Math.hypot(q.x - k.x, q.y - k.y);
+            if (d < bd) {
+              bd = d;
+              best = i;
+            }
+          });
+          const core =
+            st.pawns.find((q) => q.kind === 'core' && !q.job)?.id ?? st.pawns.find((q) => q.kind === 'core')!.id;
+          if (best >= 0) zm.sim!.push({ t: 'chop', ids: [core], tree: best });
+        });
+        p = await page.evaluate(() => window.zm!.ff(10));
+        if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+        else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
+        else if (p && p !== 'karta') throw new Error(`przed kartą okno: ${p}`);
+      }
+      if (p !== 'karta') throw new Error('karta nocy się nie pokazała');
+      const fuel = () => page.textContent('#sheet .odd.fuel');
+      const before = await fuel();
+      if (!before?.includes('zgaśnie') || !before.includes('nikt nie czuwa'))
+        throw new Error(`pas kozy bez dyżuru: ${before}`);
+      // dyżur dla najbardziej wypoczętej osoby, która według propozycji śpi
+      const who = await page.evaluate(() => {
+        const n = window.zm!.gov!.night!;
+        const free = n.card.people.filter((c) => n.assign[c.id] === 'sen');
+        const best = free.sort((a, b) => b.needs.rest - a.needs.rest)[0];
+        return { id: best.id, name: best.name };
+      });
+      await page.selectOption(`#sheet select.pick[data-id="${who.id}"]`, 'warta:koza');
+      await page.waitForTimeout(200);
+      const card = await page.evaluate(() => ({
+        fuel: document.querySelector('#sheet .odd.fuel')?.textContent ?? '',
+        advice: document.querySelector('#sheet [data-advice]')?.textContent ?? '',
+      }));
+      console.log(`  karta: ${card.fuel} | rada: ${card.advice}`);
+      if (!card.fuel.includes(`czuwa ${who.name}`)) throw new Error(`pas kozy po wyborze: ${card.fuel}`);
+      await page.screenshot({ path: path.join(OUT, 'm1-karta-koza-karta.png') });
+      await page.click('#sheet [data-act="night-go"]');
+      // pół godziny później: osoba na posterunku przy kozie, karta osoby i pasek o tym mówią (wydarzenia po drodze
+      // dostają pierwszą możliwą odpowiedź, żeby okno nie zasłaniało mapy)
+      for (let k = 0; k < 6; k++) {
+        const q = await page.evaluate(() => window.zm!.ff(5));
+        if (q === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+        else if (q) throw new Error(`po karcie okno: ${q}`);
+      }
+      const at = await page.evaluate((id) => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const pawn = st.pawns.find((q) => q.kind === 'core' && st.people[q.person].id === id)!;
+        // przybliżenie jak na starcie (przy większym mapa światła się rozjeżdża, błąd rysowania opisany w notatce)
+        zm.setCam(pawn.x, pawn.y - 1, 1.3);
+        return { koza: pawn.job?.t === 'guard' && pawn.job.target === -1, x: pawn.x, y: pawn.y };
+      }, who.id);
+      if (!at.koza) throw new Error(`${who.name} nie czuwa przy kozie`);
+      await waitIdle(page);
+      const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.55), [at.x, at.y]);
+      await page.mouse.click(sx, sy);
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(OUT, 'm1-karta-koza-noc.png') });
+      const person = await page.evaluate(() => ({
+        tonight: document.querySelector('#card .tonight')?.textContent ?? '',
+        doing: document.querySelector('#card .doing')?.textContent ?? '',
+        fire: document.getElementById('sFire')?.getAttribute('title') ?? '',
+      }));
+      console.log(`  ${await page.textContent('#hTime')}: ${person.tonight} ${person.doing}`);
+      if (person.tonight !== 'Tej nocy: czuwa przy kozie.') throw new Error(`karta osoby: ${person.tonight}`);
+      if (!person.fire.includes(`Przy kozie czuwa ${who.name}`)) throw new Error(`pasek kozy: ${person.fire}`);
+      // raport rano: kto czuwał i ile stopni w kuchni
+      for (let k = 0; k < 40; k++) {
+        const q = await page.evaluate(() => window.zm!.ff(30));
+        if (q === 'raport') break;
+        if (q === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+        else if (q) throw new Error(`w nocy okno: ${q}`);
+      }
+      const rep = await page.evaluate(() => ({
+        kitchen: document.querySelector('#sheet .tal')?.textContent ?? '',
+        lines: [...document.querySelectorAll('#sheet .line')].map((l) => l.textContent ?? ''),
+      }));
+      const line = rep.lines.find((l) => l.includes('przy kozie')) ?? '';
+      console.log(`  raport: ${line} | ${rep.kitchen}`);
+      if (!line.startsWith(who.name) || !rep.kitchen.startsWith('Kuchnia rano'))
+        throw new Error(`raport bez kuchni: ${rep.lines.join(' ')}`);
+      await page.screenshot({ path: path.join(OUT, 'm1-karta-koza-raport.png') });
+    },
+  },
 ];
 
 /** n klatek przeglądarki */
