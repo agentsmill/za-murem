@@ -1388,7 +1388,8 @@ export class Sim {
     const cores = this.st.pawns.filter((q) => q.kind === 'core');
     return (
       this.meals() < cores.length &&
-      cores.some((q) => (q.needs?.food ?? 100) < PECKISH) &&
+      // kto właśnie je, za chwilę będzie najedzony
+      cores.some((q) => (q.needs?.food ?? 100) < PECKISH && q.job?.t !== 'eat') &&
       !cores.some((q) => q.job?.t === 'cook') &&
       canCookIn(this.st, this.w)
     );

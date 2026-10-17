@@ -216,6 +216,23 @@ describe('zarząd sam', () => {
     expect(p0.moods.map((m) => m.why)).toContain('Ciepły posiłek');
   });
 
+  it('po kolacji nikt nie gotuje od razu drugi raz (ci, co jedzą, za chwilę będą najedzeni)', () => {
+    const st = createSim(w, 3, { core: 4 });
+    st.tick = atHour(1, 19.5);
+    for (const p of st.pawns) p.needs!.food = 30;
+    const table = st.things.find((t) => t.kind === 'stol')!;
+    const pot = { ...addWood(st, table.y * w.size + table.x, w.size, 4), kind: 'posilek' };
+    st.things[st.things.length - 1] = pot;
+    const sim = new Sim(w, st);
+    let cooked = false;
+    for (let k = 0; k < 2 * TICKS_PER_HOUR; k++) {
+      sim.step();
+      if (core(sim).some((p) => p.job?.t === 'cook')) cooked = true;
+    }
+    expect(core(sim).every((p) => p.needs!.food > 50)).toBe(true);
+    expect(cooked).toBe(false);
+  });
+
   it('bez gazu gotuje się na palącej się kozie', () => {
     const st = createSim(w, 3, { core: 4 });
     st.things.find((t) => t.kind === 'kuchenka')!.fuel = 0;
