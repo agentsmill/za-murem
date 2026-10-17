@@ -214,9 +214,22 @@ Przegląd całej gałęzi (osobny recenzent, model Opus): stare zapisy, zapis w 
 
 CLAUDE.md dostał architekturę (świat z adresu, symulacja, most do zarządu, rysowanie w workerach, `window.zm`), zasady determinizmu i zapisu, uruchamianie pojedynczych testów, parametry adresu gry i obejście `npm run lint` przy drzewach sesji w `.claude/worktrees/`. Nieaktualny „Stan na 16.10.2026” zastąpiła sekcja „Wersje i gałęzie”. Kod bez zmian; opisane komendy sprawdzone (pojedynczy test, filtr `-t`, Biome na katalogach, `tools/trzy-noce.ts`).
 
+### Drobne z przeglądu trybu zombie, 18.10.2026 (gałąź `tryb-zombie-drobne`, odbita od `tryb-zombie`)
+
+Siedem drobnych uwag recenzenta, które nie wymagały decyzji Mateusza, każda z testem w `tests/unit/przeglad-zombie-drobne.test.ts`, który przed poprawką padał:
+- Broń z magazynu (polecenie `arm`) nie trafia już do rąk kogoś na wyprawie; ma przy sobie to, z czym wyszedł.
+- Walka pamięta broń, z którą się zaczęła (`Job.what`). Kto w trakcie walki ze szwendaczem zostanie z gołymi rękami (odłożona broń, koniec amunicji), kończy walkę i wycofuje się do mieszkania zarządu, a gdy szwendacz jest za siatką, tylko kończy walkę. Atak gołymi rękami z rozkazu gracza zostaje jak był.
+- Napór na bramę nie liczy się do miejsca największego naporu, więc warta „przy siatce” nie idzie pod bramę, której nie da się przełamać.
+- Zwłoki trzymają numer wpisu zmarłego w osobnym polu `Thing.dead`, a nie w `owner`, który zeruje się, gdy znika pionek o tym samym numerze (wcześniej przy dobijaniu szabrownika wychodziło „Dobiłem sąsiada”). Stare zapisy przenosi konstruktor `Sim`.
+- Trupy szwendaczy w widoku biorą teksturę z pamięci po wyglądzie i stronie głowy (jak zwłoki ludzi), zamiast tworzyć nową dla każdego trupa i jej nie zwalniać.
+- Szabrownik ze starego zapisu (bez życia) dostaje przy ranieniu 70 życia jak nowy, a nie 100; pasek życia w widoku bierze tę samą stałą.
+- Uwaga „Z tą bronią nie sięgnie szwendaczy przez siatkę” w karcie nocy jest przy siatce i przy zamkniętej bramie, a nie przy otwartej dziurze (ani otwartej bramie), gdzie broń wręcz sięga.
+
+Testy 580/580, Biome na `src`, `tests`, `tools` i `index.html`, build. Boty dają ten sam przebieg co `tryb-zombie`: `npm run bot` skrót e772cf37 (po 3 dobach 7990adca), `npm run bot:zombie` ziarno 1: z wartą d5987d7e (1 zgon), bez warty fcf6aeda (3 zgony, siatka o 6:00 do 0,56). Zrzuty trybu zombie bez błędów; trupy szwendaczy obejrzane w Chromium na podwórku Przymorza (osiem wyglądów, osiem tekstur, konsola czysta). Trzy uwagi zostają w Zaparkowanych, bo potrzebują decyzji Mateusza.
+
 ## Następne
 
-0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia.
+0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia, a na niej `tryb-zombie-drobne` z drobnymi poprawkami z przeglądu.
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
 2. Bramka M1: Mateusz gra na swoim adresie i mówi, czy chce dalej. Przed tym nowe nagranie po spięciu (noc z wartą, szabrownikami i dymem) i bramka w minutach przy ekranie.
 3. Z playtestu dla symulacji: warta może nocą dokładać do kozy (teraz koza gaśnie około północy), krok „zanieść drewno do składu” przy 1× czeka kilka sekund na polecenie. Propozycje API zarządu od symulacji: jawny wynik napadu, siła napadu, warta spoza karty nocy.
@@ -270,7 +283,7 @@ CLAUDE.md dostał architekturę (świat z adresu, symulacja, most do zarządu, r
 
 - `npm run lint` w głównym katalogu pada na `biome.json` z `.claude/worktrees/*`; samo `!.claude` ani `!!.claude` w `files.includes` nie pomaga (sprawdzone 18.10.2026 na kopii konfiguracji), do sprawdzenia `vcs.useIgnoreFile` z wpisem w `.gitignore` albo drzewa sesji poza repo.
 - GitHub Actions ostrzega: `actions/checkout@v4` i `actions/setup-node@v4` celują w wycofywany Node 20 (GitHub uruchamia je na 24), a `ubuntu-latest` przechodzi na Ubuntu 26 od 19.10.2026. Podbić wersje akcji przy najbliższej zmianie workflow.
-- Drobne z przeglądu trybu zombie (17/18.10.2026): `arm` działa na osobach na wyprawie; walka nie sprawdza broni w trakcie (po zmianie na gołe ręce dalej bije); warta przy siatce bywa ściągana do bramy, której nie da się przełamać; zwłoki tracą powiązanie z wpisem zmarłego, gdy numer pionka równa się numerowi wpisu; tekstury trupów w widoku nie są zwalniane; rewolwer na warcie wystrzeliwuje wszystko sam (przydałoby się „nie strzelać”); „Do broni!” za dnia trzyma wartę do 6:00 bez odwołania; szwendacz w łatanej dziurze może wyjść na drugą stronę; uwaga o broni przy dziurach w karcie nocy; szabrownik ze starego zapisu ma 100 życia zamiast 70.
+- Drobne z przeglądu trybu zombie (17/18.10.2026), do decyzji Mateusza (resztę poprawiła gałąź `tryb-zombie-drobne`): rewolwer na warcie wystrzeliwuje wszystko sam (przydałoby się „nie strzelać”); „Do broni!” za dnia trzyma wartę do 6:00 bez odwołania; szwendacz w łatanej dziurze może wyjść na drugą stronę.
 - Tryb zombie: zrobiony w gałęzi `tryb-zombie` (wyżej). Z pierwotnego pomysłu zostało: teren powiększany budową zasieków. Do tego z bota: z wartą siatka trzyma dwie noce, a projekt zakładał trzy (stroić napór, siłę dzidy albo materiał na łaty); gospodarka (jedzenie) w trybie zombie po M2; pękanie bramy, ludzie-wrogowie w trybie zombie, wstawanie zmarłych ponad limit 80.
 - Tempo 16× (Mateusz, 17.10.2026): na razie zostaje 8×, wrócić, jeśli dalej będzie się dłużyć.
 - Własny serwer, np. VPS na Hetznerze (pytanie Mateusza, 17.10.2026, przypomniane tego samego dnia: „coś bardziej dewowego niż GitHub”): konta i zapisy w chmurze, pocztówki z PixelLab na żądanie, pamięć geokodowania i kafelków, z czasem multiplayer asynchroniczny (sąsiednie osiedla innych graczy). Gra dalej statyczna na Pages, serwer jako małe API obok. Opcje do porównania przy wyborze (ceny sprawdzić u dostawców): Cloudflare Workers z bazą i magazynem plików (lekkie API, pamięć podręczna, bez utrzymywania maszyny); VPS na Hetznerze z Dockerem albo Coolify (pełna kontrola, multiplayer w czasie rzeczywistym, ale utrzymanie i bezpieczeństwo po naszej stronie); hosting kontenerów typu Fly.io. Zmienia decyzję „bez backendu i kont”, wrócić po M1.
