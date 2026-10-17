@@ -100,8 +100,8 @@ function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, sc
   return `${p.title}: ${p.choices[Math.max(0, k)]?.label ?? '?'}`;
 }
 
-/** najbliższe drzwi siedziby drzewo do ścięcia (nie krzak, nieścięte, osiągalne z podwórka albo spod drzwi) */
-function nextTree(sim: Sim, w: World): number {
+/** najbliższe drzwi siedziby drzewo do ścięcia (nie krzak, nieścięte, nie z listy tych, do których się nie dało dojść) */
+function nextTree(sim: Sim, w: World, skip: ReadonlySet<number>): number {
   const st = sim.st;
   const door = w.buildings[w.hq].entrances[0]?.out ?? 0;
   const dx = door % w.size;
@@ -109,7 +109,7 @@ function nextTree(sim: Sim, w: World): number {
   let best = -1;
   let bd = Number.POSITIVE_INFINITY;
   w.trees.forEach((t, k) => {
-    if (t.kind === 2 || st.felled.includes(k)) return;
+    if (t.kind === 2 || st.felled.includes(k) || skip.has(k)) return;
     const d = Math.hypot(t.x - dx, t.y - dy);
     if (d < bd) {
       bd = d;
@@ -141,6 +141,9 @@ export function playWithGov(w: World, seed: number, policy: Policy, days: number
     if (c) order(c, 'ścinaj suche drzewo');
   }
   let night: NightLog | null = null;
+  /** drzewa, do których nie dało się dojść, i drzewo z ostatniego polecenia (−1: brak) */
+  const skip = new Set<number>();
+  let asked = -1;
   const end = days * TICKS_PER_DAY;
   while (st.tick < end) {
     sim.step();
@@ -183,10 +186,16 @@ export function playWithGov(w: World, seed: number, policy: Policy, days: number
     if (st.tick % (TICKS_PER_SECOND * 10) === 0 && h >= 7 && h < 21) {
       const wood = snapshot(st, w).stock.wood;
       const chopping = st.pawns.some((p) => p.job?.t === 'chop');
+      // drzewo z poprzedniego polecenia, którego nikt nie zaczął ścinać, jest nieosiągalne: następnym razem inne
+      if (asked >= 0 && !chopping && !st.felled.includes(asked)) skip.add(asked);
+      asked = -1;
       if (wood < 6 && !chopping) {
-        const k = nextTree(sim, w);
+        const k = nextTree(sim, w, skip);
         const who = cores().find((p) => p.job?.t !== 'sleep' && p.job?.t !== 'guard') ?? cores()[0];
-        if (k >= 0 && who) order({ t: 'chop', ids: [who.id], tree: k }, 'ścinaj drzewo na opał');
+        if (k >= 0 && who) {
+          order({ t: 'chop', ids: [who.id], tree: k }, 'ścinaj drzewo na opał');
+          asked = k;
+        }
       }
     }
   }

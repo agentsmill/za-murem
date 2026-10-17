@@ -3,11 +3,12 @@
 
 import type { World } from '../world/world.ts';
 import { dryTreeOf, houseOf } from './house.ts';
-import { fenceShape, gateTiles } from './perimeter.ts';
+import { gateTiles } from './perimeter.ts';
 import {
   BURNABLE,
   CAMPFIRE_WOOD,
   type Command,
+  campfireSpotOk,
   canCookIn,
   FURNITURE_ACC,
   PATCH_COST,
@@ -73,8 +74,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   // dziura w siatce: łata z desek albo złomu ze sterty, warta przy niej
   const hole = st.fence?.holes.find((h) => !h.patch && h.tiles.includes(tile));
   if (hole) {
-    const mat = st.things.filter((t) => t.kind === 'deski' || t.kind === 'zlom').reduce((a, t) => a + t.n, 0);
-    if (mat >= PATCH_COST)
+    // łata jest z jednego materiału: desek albo złomu musi starczyć na całą
+    const mat = (k: string) => st.things.reduce((a, t) => a + (t.kind === k ? t.n : 0), 0);
+    if (mat('deski') >= PATCH_COST || mat('zlom') >= PATCH_COST)
       out.push({ cmd: { t: 'patch', ids: core, hole: hole.id }, label: 'Załatać dziurę', quick: true });
     out.push({ cmd: { t: 'guard', ids: core, post: `d${hole.id}` }, label: 'Pilnować tutaj', quick: false });
   }
@@ -111,13 +113,7 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   // ognisko na wolnym kafelku podwórka, gdy jest z czego (drewno luzem albo w rękach)
   const woodN =
     st.things.reduce((a, t) => a + (t.kind === 'drewno' ? t.n : 0), 0) + st.pawns.reduce((a, p) => a + p.carry, 0);
-  const shape = fenceShape(w);
-  if (
-    shape?.yard.includes(tile) &&
-    !w.blocked[tile] &&
-    woodN >= CAMPFIRE_WOOD &&
-    !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h)
-  )
+  if (woodN >= CAMPFIRE_WOOD && campfireSpotOk(st, w, tile))
     out.push({ cmd: { t: 'campfire', ids: core, at: tile }, label: 'Rozpalić ognisko tutaj', quick: false });
   out.push({ cmd: { t: 'move', ids: core, to: tile }, label: 'Idź tu', quick: true });
   return out;

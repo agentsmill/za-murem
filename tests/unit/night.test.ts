@@ -632,3 +632,185 @@ describe('świat bez siatki i bez wnętrza', () => {
     }
   });
 });
+
+describe('poprawki z przeglądu', () => {
+  const atHour = (day: number, h: number) => Math.round(((day - 1) * 24 + h - 15) * 800);
+  const coreOf = (st: ReturnType<typeof createSim>) => st.pawns.filter((p) => p.kind === 'core');
+
+  it('ogniska nie da się postawić tam, gdzie odcięłoby przejście (próg siedziby, brama, dziury)', async () => {
+    const { labelRegions } = await import('../../src/sim/path.ts');
+    const st = createSim(w, 3, { core: 2 });
+    const sim = new Sim(w, st);
+    const ids = coreOf(st).map((p) => p.id);
+    const door = w.buildings[w.hq].entrances[0].out;
+    expect(w.fence.yard.includes(door)).toBe(true);
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'drewno',
+      x: 0,
+      y: 0,
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 4,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    expect(sim.siteOk(door)).toBe(false);
+    expect(commandsAt(st, w, ids, door).map((m) => m.label)).not.toContain('Rozpalić ognisko tutaj');
+    for (const g of gateTiles()) for (const d of [-size, size, -1, 1]) expect(sim.siteOk(g + d)).toBe(false);
+    for (const t of w.fence.hole) for (const d of [-size, size, -1, 1]) expect(sim.siteOk(t + d)).toBe(false);
+    // na każdym dozwolonym kafelku ognisko nie rozcina przejść (sąsiedzi zostają połączeni)
+    const core = Uint8Array.from({ length: size * size }, (_, i) => (sim.canWalk('core', i) ? 0 : 1));
+    let ok = 0;
+    for (const t of w.fence.yard) {
+      if (!sim.siteOk(t)) continue;
+      ok++;
+      const cut = core.slice();
+      cut[t] = 1;
+      const reg = labelRegions(cut, size);
+      const ns = [t - size, t + size, t - 1, t + 1].filter((n) => !cut[n]);
+      for (const n of ns) expect(reg[n]).toBe(reg[ns[0]]);
+    }
+    expect(ok).toBeGreaterThan(20);
+    // polecenie na progu nic nie robi
+    sim.push({ t: 'campfire', ids, at: door });
+    for (let k = 0; k < 600; k++) sim.step();
+    expect(st.things.some((t) => t.kind === 'ognisko')).toBe(false);
+  });
+
+  it('wyjście za bramą i miejsce warty nie zależą od stanu: po ścięciu drzewa przy bramie wczytana gra idzie tak samo', () => {
+    const probe = new Sim(w, createSim(w, 3, { core: 2 }));
+    const ex = probe.exitTile;
+    const g = gateTiles().reduce((a, b) =>
+      Math.abs((a % size) - (ex % size)) <= Math.abs((b % size) - (ex % size)) ? a : b,
+    );
+    const dx = Math.sign((ex % size) - (g % size));
+    const dy = Math.sign(Math.floor(ex / size) - Math.floor(g / size));
+    // pień na drodze od bramy do wyjścia
+    const tx = (g % size) + 3 * dx;
+    const ty = Math.floor(g / size) + 3 * dy;
+    const w2 = { ...w, blocked: w.blocked.slice(), bid: w.bid.slice(), trees: [...w.trees] };
+    w2.blocked[ty * size + tx] = 1;
+    w2.bid[ty * size + tx] = -1;
+    w2.trees.push({ x: tx + 0.5, y: ty + 0.5, kind: 0, r: 1.2, seed: 1 });
+    const k = w2.trees.length - 1;
+    const st = createSim(w2, 3, { core: 2 });
+    const a = new Sim(w2, st);
+    const [p0, p1] = coreOf(st);
+    a.push({ t: 'chop', ids: [p0.id], tree: k });
+    while (!st.felled.includes(k) && st.tick < 20000) a.step();
+    expect(st.felled).toContain(k);
+    const b = new Sim(w2, JSON.parse(JSON.stringify(st)));
+    expect(b.exitTile).toBe(a.exitTile);
+    for (const s of [a, b]) {
+      s.push({ t: 'away', ids: [p1.id] });
+      s.push({ t: 'guard', ids: [p0.id], post: 'brama' });
+    }
+    for (let n = 0; n < 1500; n++) {
+      a.step();
+      b.step();
+    }
+    for (const s of [a, b]) s.push({ t: 'back', ids: [p1.id] });
+    for (let n = 0; n < 300; n++) {
+      a.step();
+      b.step();
+    }
+    expect(b.hash()).toBe(a.hash());
+  });
+
+  it('spóźniony wynik napadu z zarządu: symulacja nie kradnie sama, a zapasy znikają raz, tyle ile policzył zarząd', async () => {
+    const { applyGov } = await import('../../src/sim/gov.ts');
+    const { emptyEffects } = await import('../../src/gov/wspolne.ts');
+    const st = createSim(w, 3, { core: 2 });
+    const yardFree = w.fence.yard.find(
+      (i, k) => k > 40 && !w.blocked[i] && !st.things.some((t) => t.x === i % size && t.y === Math.floor(i / size)),
+    )!;
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'drewno',
+      x: yardFree % size,
+      y: Math.floor(yardFree / size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 30,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    st.tick = atHour(1, 21);
+    const sim = new Sim(w, st);
+    const plan = emptyEffects();
+    plan.raid = { day: 1, at: 23 * 60, post: 'brama', where: 'przy bramie' };
+    applyGov(st, w, plan);
+    const wood = () =>
+      st.things.filter((t) => t.kind === 'drewno').reduce((x, t) => x + t.n, 0) +
+      st.pawns.reduce((x, p) => x + p.carry, 0);
+    // zarząd milczy długo po północy: szabrownicy sami odchodzą bez łupu
+    while (st.tick < atHour(2, 1)) sim.step();
+    expect(st.raid!.outcome).toBe('odparty');
+    expect(st.raid!.took).toEqual({ wood: 0, supplies: 0, scrap: 0 });
+    const wood0 = wood();
+    const late = emptyEffects();
+    late.stock.wood = -7;
+    for (const p of coreOf(st)) late.needs.push({ id: st.people[p.person].id, d: { safe: -25 } });
+    late.log.push('Szabrownicy weszli przy bramie i zabrali: Drewno 7.');
+    expect(wood0).toBeGreaterThanOrEqual(7);
+    applyGov(st, w, late);
+    // od razu i raz: tyle, ile policzył zarząd, a szabrownicy już nie wracają
+    expect(wood()).toBe(wood0 - 7);
+    for (let k = 0; k < 400; k++) sim.step();
+    expect(st.raid!.took).toEqual({ wood: 0, supplies: 0, scrap: 0 });
+    expect(st.pawns.some((p) => p.kind === 'szabrownik')).toBe(false);
+  });
+
+  it('ślady w potrzebach bez wpisu: odparcie tylko przy +8 u wszystkich, nie przy innym wydarzeniu', async () => {
+    const { applyGov } = await import('../../src/sim/gov.ts');
+    const { emptyEffects } = await import('../../src/gov/wspolne.ts');
+    const st = createSim(w, 3, { core: 2 });
+    st.tick = atHour(1, 21);
+    const sim = new Sim(w, st);
+    const plan = emptyEffects();
+    plan.raid = { day: 1, at: 23 * 60, post: 'brama', where: 'przy bramie' };
+    applyGov(st, w, plan);
+    while (st.tick < atHour(1, 23)) sim.step();
+    const ev = emptyEffects();
+    for (const p of coreOf(st)) ev.needs.push({ id: st.people[p.person].id, d: { safe: 10 } });
+    applyGov(st, w, ev);
+    expect(st.raid!.outcome).toBe('');
+  });
+
+  it('łata z jednego materiału: deski albo złom, przerwana oddaje ten sam materiał', () => {
+    const st = createSim(w, 3, { core: 1 });
+    // desek za mało na łatę (2) i leżą najbliżej drzwi, złomu dość
+    const boards = st.things.filter((t) => t.kind === 'deski');
+    for (const [i, t] of boards.entries()) t.n = i === 0 ? 2 : 0;
+    st.things = st.things.filter((t) => t.kind !== 'deski' || t.n > 0);
+    const door = w.buildings[w.hq].entrances[0].out;
+    const near = w.fence.yard.find(
+      (i) =>
+        i !== door &&
+        Math.max(Math.abs((i % size) - (door % size)), Math.abs(Math.floor(i / size) - Math.floor(door / size))) <= 2 &&
+        !w.blocked[i] &&
+        !st.things.some((t) => t.x === i % size && t.y === Math.floor(i / size)),
+    )!;
+    Object.assign(boards[0], { x: near % size, y: Math.floor(near / size) });
+    const scrap0 = st.things.filter((t) => t.kind === 'zlom').reduce((a, t) => a + t.n, 0);
+    expect(scrap0).toBeGreaterThanOrEqual(3);
+    const sim = new Sim(w, st);
+    const [p] = coreOf(st);
+    sim.push({ t: 'patch', ids: [p.id], hole: st.fence!.holes[0].id });
+    for (let k = 0; k < 3000 && p.job?.phase !== 1; k++) sim.step();
+    expect(p.job?.what).toBe('zlom');
+    expect(p.job?.n).toBe(3);
+    expect(st.things.filter((t) => t.kind === 'deski').reduce((a, t) => a + t.n, 0)).toBe(2);
+    sim.push({ t: 'move', ids: [p.id], to: w.buildings[w.hq].entrances[0].out });
+    sim.step();
+    expect(st.things.filter((t) => t.kind === 'zlom').reduce((a, t) => a + t.n, 0)).toBe(scrap0);
+    // menu: łata tylko wtedy, gdy jednego materiału jest dość
+    st.things = st.things.filter((t) => t.kind !== 'zlom');
+    expect(commandsAt(st, w, [p.id], st.fence!.holes[0].tiles[0]).map((m) => m.label)).not.toContain('Załatać dziurę');
+  });
+});

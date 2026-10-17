@@ -78,18 +78,19 @@ function pawnOf(st: SimState, id: string): Pawn | undefined {
 }
 
 /** Rozstrzygnięcie napadu w tym wywołaniu? Zarząd rozstrzyga w minucie napadu i pisze o tym w kronice („Szabrownicy
-    weszli…”, „W nocy szabrownicy podeszli…”, „Ktoś kręcił się w nocy…”); przy wtargnięciu każdemu odejmuje 25
-    bezpieczeństwa i zabiera zapasy, przy odparciu każdemu dodaje 8. Bez jawnego pola w GovEffects poznajemy to
-    najpierw po wpisie, a bez wpisu po tych śladach (propozycja zmiany API w raporcie). */
+    weszli…”, „W nocy szabrownicy podeszli…”, „Ktoś kręcił się w nocy…”); przy wtargnięciu każdemu odejmuje dokładnie
+    25 bezpieczeństwa i zabiera zapasy, przy odparciu każdemu dodaje dokładnie 8. Bez jawnego pola w GovEffects poznajemy
+    to najpierw po wpisie, a bez wpisu po tych śladach u każdego z zarządu (propozycja zmiany API w raporcie). */
 function raidOutcome(st: SimState, fx: GovEffects): '' | 'odparty' | 'wtargnięcie' {
   const r = st.raid;
   if (!r?.gov || r.outcome || r.phase >= 3 || st.tick < r.at - 1) return '';
   if (fx.log.some((l) => l.startsWith('Szabrownicy weszli'))) return 'wtargnięcie';
   if (fx.log.some((l) => l.startsWith('W nocy szabrownicy podeszli') || l.startsWith('Ktoś kręcił się w nocy')))
     return 'odparty';
-  const safes = fx.needs.map((n) => n.d.safe ?? 0);
-  if (safes.length && safes.every((d) => d <= -20)) return 'wtargnięcie';
-  if (safes.length && safes.every((d) => d >= 8)) return 'odparty';
+  const ids = st.pawns.filter((p) => p.kind === 'core').map((p) => st.people[p.person].id);
+  const all = (v: number) => ids.length > 0 && ids.every((id) => fx.needs.find((n) => n.id === id)?.d.safe === v);
+  if (all(-25)) return 'wtargnięcie';
+  if (all(8)) return 'odparty';
   return '';
 }
 
