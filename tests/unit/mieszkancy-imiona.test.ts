@@ -9,6 +9,7 @@ import { budynkiZGeo } from '../../src/mieszkancy/budynki.ts';
 import { generujBudynek, generujObszar } from '../../src/mieszkancy/generuj.ts';
 import {
   bezPuliLokalnej,
+  efektywnyUdzialLokalnych,
   IMIONA_DWUFALOWE,
   imieDla,
   nadajImiona,
@@ -17,7 +18,13 @@ import {
   nazwiskoRodziny,
 } from '../../src/mieszkancy/imiona.ts';
 import { losDla } from '../../src/mieszkancy/los.ts';
-import type { TabeleGminy, TabeleImion, TabeleKraju, TabeleNazwisk } from '../../src/mieszkancy/tabele.ts';
+import {
+  PLIK_WOJEWODZTWA,
+  type TabeleGminy,
+  type TabeleImion,
+  type TabeleKraju,
+  type TabeleNazwisk,
+} from '../../src/mieszkancy/tabele.ts';
 import type { Budynek, Gospodarstwo, Osoba, Plec, Wpis, WynikBudynku } from '../../src/mieszkancy/typy.ts';
 import type { Geo } from '../../src/world/geo.ts';
 
@@ -392,16 +399,26 @@ describe('nazwiskoRodziny i nazwiskoPartnera', () => {
     for (let i = 0; i < 10000; i++) expect(lokalneMeskie.has(nazwiskoRodziny(t, r)[0])).toBe(false);
   });
 
-  it('udział lokalnych 10 000 z 10 000: wszystkie z puli lokalnej, w stosunku do liczebności', () => {
-    const t = { ...pomorskie, udzialLokalnych: 10000 };
+  it('udział lokalnych 10 000 i pula lokalna o przytłaczającej masie: wszystkie z puli lokalnej, w stosunku do liczebności', () => {
+    // masa puli lokalnej 4 mld wobec 1 w „ogólnych”: ograniczenie z masy (R38) zaokrągla się do 10 000
+    const t = tabelaNazwisk(
+      [['Zwykły', 'Zwykła', 1]],
+      [
+        ['Pierwszy', 'Pierwsza', 3_000_000_000],
+        ['Drugi', 'Druga', 1_000_000_000],
+      ],
+      10000,
+    );
+    expect(efektywnyUdzialLokalnych(t)).toBe(10000);
     const r = ziarno('same-lokalne');
-    const licznik = new Map<string, number>();
+    let pierwszy = 0;
     for (let i = 0; i < 20000; i++) {
       const [m] = nazwiskoRodziny(t, r);
-      expect(lokalneMeskie.has(m), m).toBe(true);
-      licznik.set(m, (licznik.get(m) ?? 0) + 1);
+      expect(['Pierwszy', 'Drugi'], m).toContain(m);
+      if (m === 'Pierwszy') pierwszy++;
     }
-    expect(licznik.get(pomorskie.lokalne[0][0]) ?? 0).toBeGreaterThan(licznik.get(pomorskie.lokalne[60][0]) ?? 0);
+    expect(pierwszy / 20000).toBeGreaterThan(0.735);
+    expect(pierwszy / 20000).toBeLessThan(0.765);
   });
 
   it('pusta pula lokalna (jak w lubuskim): losowanie pomija ją i bierze całe „ogólne”, nic nie ginie', () => {
@@ -444,6 +461,105 @@ describe('nazwiskoRodziny i nazwiskoPartnera', () => {
     const r = ziarno('puste-nazwiska');
     expect(nazwiskoRodziny(tabelaNazwisk([]), r)).toEqual(['', '']);
     expect(nazwiskoPartnera(tabelaNazwisk([]), r)).toEqual(['', '']);
+  });
+});
+
+describe('krótkie pule lokalne (R38)', () => {
+  const wszystkie = Object.keys(PLIK_WOJEWODZTWA).map((woj) => nazwiskaWoj(PLIK_WOJEWODZTWA[woj]));
+  const meskie = (t: TabeleNazwisk): Set<string> => new Set(t.lokalne.map((x) => x[0]));
+  const masa = (l: [string, string, number][]): number => l.reduce((n, x) => n + x[2], 0);
+  /** Masa nazwisk, z których losujemy: „ogólne” bez lokalnych razem z lokalnymi. */
+  const masaLaczna = (t: TabeleNazwisk): number => masa(t.ogolne.filter((x) => !meskie(t).has(x[0]))) + masa(t.lokalne);
+
+  it('efektywny udział to mniejszy z udziału z danych i udziału masy puli lokalnej, we wszystkich 16 województwach', () => {
+    expect(wszystkie).toHaveLength(16);
+    for (const t of wszystkie) {
+      const wMasie = t.lokalne.length > 0 ? Math.round((10000 * masa(t.lokalne)) / masaLaczna(t)) : 0;
+      const oczekiwany = t.lokalne.length > 0 ? Math.min(t.udzialLokalnych, wMasie) : 0;
+      expect(efektywnyUdzialLokalnych(t), t.woj).toBe(oczekiwany);
+      expect(efektywnyUdzialLokalnych(t), t.woj).toBeLessThanOrEqual(t.udzialLokalnych);
+    }
+  });
+
+  it('pełna pula (pomorskie) trzyma udział z danych, krótkie dają swoją częstość, pusta (lubuskie) zero', () => {
+    const wg = (woj: string): TabeleNazwisk => wszystkie.find((t) => t.woj === woj)!;
+    expect(efektywnyUdzialLokalnych(wg('pomorskie'))).toBe(wg('pomorskie').udzialLokalnych);
+    expect(efektywnyUdzialLokalnych(wg('lubuskie'))).toBe(0);
+    // opolskie: 4 nazwiska, 5,32% w danych, ale w puli 0,9%; zachodniopomorskie: 1 nazwisko, 28 nosicieli
+    expect(wg('opolskie').lokalne).toHaveLength(4);
+    expect(efektywnyUdzialLokalnych(wg('opolskie'))).toBeLessThan(100);
+    expect(wg('zachodniopomorskie').lokalne).toHaveLength(1);
+    expect(efektywnyUdzialLokalnych(wg('zachodniopomorskie'))).toBeLessThan(5);
+  });
+
+  it('żadne nazwisko lokalne nie jest częstsze niż 1,2 razy jego częstość w łącznej puli, w 20 000 rodzin każdego województwa', () => {
+    for (const t of wszystkie) {
+      const N = 20000;
+      const r = ziarno('r38', t.woj);
+      const razem = masaLaczna(t);
+      const licznik = new Map<string, number>();
+      for (let i = 0; i < N; i++) {
+        const [m] = nazwiskoRodziny(t, r);
+        licznik.set(m, (licznik.get(m) ?? 0) + 1);
+      }
+      let lokalne = 0;
+      let oczekiwaneLokalne = 0;
+      for (const [m, , n] of t.lokalne) {
+        const oczekiwane = (N * n) / razem;
+        const wyszlo = licznik.get(m) ?? 0;
+        lokalne += wyszlo;
+        oczekiwaneLokalne += oczekiwane;
+        // 1,2 razy oczekiwana liczba plus trzy odchylenia szumu Poissona, bo rzadkie nazwiska mają kilka trafień
+        expect(wyszlo, `${t.woj} ${m}`).toBeLessThanOrEqual(1.2 * oczekiwane + 3 * Math.sqrt(oczekiwane));
+      }
+      expect(lokalne, `${t.woj} razem`).toBeLessThanOrEqual(1.2 * oczekiwaneLokalne + 3 * Math.sqrt(oczekiwaneLokalne));
+    }
+  });
+
+  it('opolskie: Kampa (284 nosicieli) daleko za Nowakiem, a zachodniopomorskie: Buriak (28 nosicieli) prawie nie pada', () => {
+    const opolskie = nazwiskaWoj('opolskie');
+    const r = ziarno('kampa');
+    let kampa = 0;
+    let nowak = 0;
+    let kansy = 0;
+    for (let i = 0; i < 20000; i++) {
+      const m = nazwiskoRodziny(opolskie, r)[0];
+      if (m === 'Kampa') kampa++;
+      else if (m === 'Nowak') nowak++;
+      else if (m === 'Kansy') kansy++;
+    }
+    expect(nowak).toBeGreaterThan(300);
+    expect(kampa).toBeLessThan(nowak / 3);
+    expect(kansy).toBeLessThan(nowak / 3);
+    const zachodniopomorskie = nazwiskaWoj('zachodniopomorskie');
+    let buriak = 0;
+    for (let i = 0; i < 20000; i++) if (nazwiskoRodziny(zachodniopomorskie, r)[0] === 'Buriak') buriak++;
+    expect(buriak).toBeLessThan(25);
+  });
+
+  it('pomorskie nadal 20,2% ±1,5 pp, a lubuskie losuje jak bez puli lokalnej (ta sama sekwencja)', () => {
+    const r = ziarno('pomorskie-r38');
+    let lokalne = 0;
+    for (let i = 0; i < 10000; i++) if (meskie(pomorskie).has(nazwiskoRodziny(pomorskie, r)[0])) lokalne++;
+    expect(lokalne / 10000).toBeGreaterThan(0.187);
+    expect(lokalne / 10000).toBeLessThan(0.217);
+    const lubuskie = nazwiskaWoj('lubuskie');
+    const bez = bezPuliLokalnej(lubuskie);
+    const a = ziarno('lubuskie-r38');
+    const b = ziarno('lubuskie-r38');
+    for (let i = 0; i < 500; i++) expect(nazwiskoRodziny(lubuskie, a)).toEqual(nazwiskoRodziny(bez, b));
+  });
+
+  it('mała pula na zmyślonych danych: 1 nazwisko lokalne o masie 50 wobec 1000 w „ogólnych” daje 476 na 10 000', () => {
+    const t = tabelaNazwisk(wielePar(10), [['Lokalski', 'Lokalska', 50]], 5000);
+    expect(efektywnyUdzialLokalnych(t)).toBe(476);
+    const r = ziarno('mala-pula');
+    let lokalne = 0;
+    for (let i = 0; i < 20000; i++) if (nazwiskoRodziny(t, r)[0] === 'Lokalski') lokalne++;
+    expect(lokalne / 20000).toBeGreaterThan(0.04);
+    expect(lokalne / 20000).toBeLessThan(0.055);
+    // gdy udział z danych jest mniejszy od udziału masy, zostaje udział z danych
+    expect(efektywnyUdzialLokalnych(tabelaNazwisk(wielePar(10), [['Lokalski', 'Lokalska', 50]], 100))).toBe(100);
   });
 });
 
@@ -607,7 +723,7 @@ describe('nadajImiona: reguły rodziny na małych budynkach', () => {
 
   it('partner z zewnątrz ma nazwisko z „ogólnych”, a dzieci pary po ojcu, czyli po nim', () => {
     // mieszkanka (parentless), partner wprowadza się w 2031; dziecko pary ma oboje rodziców w budynku
-    const t = tabelaNazwisk(wielePar(40), [['Lokalski', 'Lokalska', 1000]], 10000);
+    const t = tabelaNazwisk(wielePar(40), [['Lokalski', 'Lokalska', 1_000_000_000]], 10000);
     let jegoNazwiskoCzesto = 0;
     const N = 300;
     for (let i = 0; i < N; i++) {

@@ -20,7 +20,8 @@
 
    Nazwiska (`nadajImiona`). Nazwisko rodziny to para form, męska i żeńska (Kowalski, Kowalska; Nowak, Nowak), losowana
    przez `nazwiskoRodziny`: z szansą `udzialLokalnych` z puli lokalnej, inaczej z nazwisk „ogólnych” bez lokalnych
-   (żeby udział lokalnych nie wzrósł ponad dane). Osoby przeglądamy w kolejności `w.osoby`, a nazwisko każdej wynika z jej
+   (żeby udział lokalnych nie wzrósł ponad dane). Krótka pula lokalna (opolskie ma 4 nazwiska, zachodniopomorskie 1)
+   nie dostaje pełnego udziału z danych, tylko swój udział w masie nazwisk (R38, `efektywnyUdzialLokalnych`). Osoby przeglądamy w kolejności `w.osoby`, a nazwisko każdej wynika z jej
    rodziców i partnera, także gdy zmarła albo wyjechała:
    - dziecko ma nazwisko ojca, a gdy ojca nie ma w budynku, nazwisko, które nosi matka (syn dostaje jego formę męską);
    - osoba bez rodziców w budynku jest początkiem linii. Mężczyzna, którego partnerka też nie ma rodziców w budynku,
@@ -253,6 +254,8 @@ interface PulaPar {
   wagi: readonly number[];
 }
 interface PuleNazwisk {
+  /** Udział losowań z puli lokalnej na 10 000 po ograniczeniu przez masę puli (R38). */
+  udzial: number;
   ogolne: PulaPar;
   /** „Ogólne” bez nazwisk, które są też w puli lokalnej (porównanie po formie męskiej). */
   bezLokalnych: PulaPar;
@@ -270,19 +273,33 @@ function parZListy(lista: readonly [string, string, number][], pomin?: ReadonlyS
   return { pary, wagi };
 }
 
+const sumaWag = (p: PulaPar): number => p.wagi.reduce((n, w) => n + w, 0);
+
 const pamiecNazwisk = new WeakMap<TabeleNazwisk, PuleNazwisk>();
 function pule(t: TabeleNazwisk): PuleNazwisk {
   let p = pamiecNazwisk.get(t);
   if (!p) {
     const lokalneMeskie = new Set(t.lokalne.map((x) => x[0]));
-    p = {
-      ogolne: parZListy(t.ogolne),
-      bezLokalnych: parZListy(t.ogolne, lokalneMeskie),
-      lokalne: parZListy(t.lokalne),
-    };
+    const ogolne = parZListy(t.ogolne);
+    const bezLokalnych = parZListy(t.ogolne, lokalneMeskie);
+    const lokalne = parZListy(t.lokalne);
+    // R38: pula lokalna nie może mieć większego udziału niż jej masa wśród nazwisk (lokalne i „ogólne” bez nich);
+    // pełna pula (pomorskie) trzyma udział z danych, krótka (opolskie, zachodniopomorskie) swoją częstość
+    const masaLokalnych = sumaWag(lokalne);
+    const masaCalosci = masaLokalnych + sumaWag(bezLokalnych);
+    const udzialMasy = masaCalosci > 0 ? Math.round((10000 * masaLokalnych) / masaCalosci) : 0;
+    const udzial = lokalne.pary.length > 0 ? Math.min(t.udzialLokalnych, udzialMasy) : 0;
+    p = { udzial, ogolne, bezLokalnych, lokalne };
     pamiecNazwisk.set(t, p);
   }
   return p;
+}
+
+/** Udział losowań z puli lokalnej na 10 000, jakiego naprawdę używa `nazwiskoRodziny` (R38): mniejszy z `udzialLokalnych`
+    i udziału masy puli lokalnej (suma liczebności) w masie „ogólnych” bez lokalnych razem z lokalnymi, zaokrąglonego.
+    Pełna pula (pomorskie) trzyma udział z danych, krótka daje swoją częstość, pusta (lubuskie) 0. */
+export function efektywnyUdzialLokalnych(t: TabeleNazwisk): number {
+  return pule(t).udzial;
 }
 
 function losujPare(r: Rng, p: PulaPar): ParaNazwisk {
@@ -290,13 +307,13 @@ function losujPare(r: Rng, p: PulaPar): ParaNazwisk {
   return i < 0 ? ['', ''] : [p.pary[i][0], p.pary[i][1]];
 }
 
-/** Nazwisko rodziny (męska i żeńska forma): z szansą `udzialLokalnych` na 10 000 z puli lokalnej, inaczej z nazwisk
-    „ogólnych” bez tych z puli lokalnej; wagi to liczebności. Zawsze zużywa jedno losowanie na szansę. Pusta pula
-    lokalna to samo co nieudane losowanie lokalne. Tabela bez żadnego nazwiska daje `['', '']`. */
+/** Nazwisko rodziny (męska i żeńska forma): z szansą `efektywnyUdzialLokalnych` na 10 000 (nie więcej niż
+    `udzialLokalnych` i nie więcej niż masa puli lokalnej, R38) z puli lokalnej, inaczej z nazwisk „ogólnych” bez tych
+    z puli lokalnej; wagi to liczebności. Zawsze zużywa jedno losowanie na szansę. Pusta pula lokalna to samo co
+    nieudane losowanie lokalne. Tabela bez żadnego nazwiska daje `['', '']`. */
 export function nazwiskoRodziny(t: TabeleNazwisk, r: Rng): ParaNazwisk {
   const p = pule(t);
-  const lokalnie = szansa(r, t.udzialLokalnych) && p.lokalne.pary.length > 0;
-  if (lokalnie) return losujPare(r, p.lokalne);
+  if (szansa(r, p.udzial)) return losujPare(r, p.lokalne);
   return losujPare(r, p.bezLokalnych.pary.length > 0 ? p.bezLokalnych : p.ogolne);
 }
 
