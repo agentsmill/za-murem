@@ -128,21 +128,18 @@ const MIN_BOOST = 0.25;
 if (HEAT_EVERY * 40 !== TICKS_PER_HOUR)
   throw new Error('stałe F_FIRE i F_DRIFT liczone dla 40 kroków ciepła na godzinę');
 
-/** Jeden krok ciepła (HEAT_EVERY ticków). Pomieszczenie dąży do temperatury z zewnątrz z izolacją.
-    Paląca się koza dogrzewa swoje pomieszczenie do KOZA_TARGET (najwyżej o KOZA_MAX), a przez każde drzwi
-    przechodzi połowa ocieplenia. Ogień grzeje szybko, bez niego temperatura zmienia się powoli.
-    fires: pomieszczenia z palącą się kozą. Zwraca ocieplenie pomieszczeń w °C ponad pogodę. */
-export function heatStep(
-  temps: number[],
+/** Ocieplenie pomieszczeń od kóz w °C ponad pogodę. Paląca się koza dogrzewa swoje pomieszczenie
+    do KOZA_TARGET (najwyżej o KOZA_MAX), a przez każde drzwi przechodzi połowa ocieplenia.
+    fires: pomieszczenia z palącą się kozą. */
+export function heatBoost(
   kinds: readonly RoomKind[],
   links: readonly (readonly [number, number])[],
   fires: readonly number[],
   tout: number,
 ): number[] {
-  const n = temps.length;
-  const base = kinds.map((k) => tout + INSUL[k]);
-  const boost = new Array<number>(n).fill(0);
-  for (const r of fires) boost[r] = Math.max(boost[r], Math.min(KOZA_MAX, Math.max(0, KOZA_TARGET - base[r])));
+  const boost = new Array<number>(kinds.length).fill(0);
+  for (const r of fires)
+    boost[r] = Math.max(boost[r], Math.min(KOZA_MAX, Math.max(0, KOZA_TARGET - tout - INSUL[kinds[r]])));
   // połowa przez drzwi; wygrywa największe ocieplenie, więc relaksacja aż do ustalenia
   for (let changed = fires.length > 0; changed; ) {
     changed = false;
@@ -157,9 +154,24 @@ export function heatStep(
       }
     }
   }
-  for (let r = 0; r < n; r++) {
+  return boost;
+}
+
+/** Jeden krok ciepła (HEAT_EVERY ticków). Pomieszczenie dąży do temperatury z zewnątrz z izolacją
+    plus ocieplenie od kóz (heatBoost). Ogień grzeje szybko, bez niego temperatura zmienia się powoli.
+    Zwraca ocieplenie pomieszczeń. */
+export function heatStep(
+  temps: number[],
+  kinds: readonly RoomKind[],
+  links: readonly (readonly [number, number])[],
+  fires: readonly number[],
+  tout: number,
+): number[] {
+  const boost = heatBoost(kinds, links, fires, tout);
+  for (let r = 0; r < temps.length; r++) {
+    const base = tout + INSUL[kinds[r]];
     const f = F_DRIFT + (F_FIRE - F_DRIFT) * Math.min(1, boost[r] / FULL_BOOST);
-    temps[r] += (base[r] + boost[r] - temps[r]) * f;
+    temps[r] += (base + boost[r] - temps[r]) * f;
   }
   return boost;
 }

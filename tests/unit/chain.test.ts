@@ -328,6 +328,19 @@ describe('determinizm i zapis z pracami w toku', () => {
     const sim = chain(5, 2500);
     expect(JSON.parse(JSON.stringify(sim.st))).toStrictEqual(sim.st);
   });
+
+  it('od razu po wczytaniu wiadomo, które pomieszczenia grzeje koza (okna nocą)', () => {
+    const st = createSim(w, 2, { core: 2 });
+    const kz = kozaOf(st);
+    kz.fuel = 2 * BURN_TICKS;
+    st.tick = 7;
+    const sim = new Sim(w, JSON.parse(JSON.stringify(st)));
+    const kitchen = w.interior.room[kz.y * w.size + kz.x];
+    expect(sim.boost[kitchen]).toBeGreaterThan(3);
+    // do sąsiadów przez przedpokój, klatkę i ich drzwi dochodzi najwyżej ósma część
+    const other = w.interior.rooms.find((r) => r.apt !== w.interior.home && r.kind === 'pokoj')!;
+    expect(sim.boost[other.id]).toBeLessThanOrEqual(sim.boost[kitchen] / 8 + 1e-9);
+  });
 });
 
 describe('tłum', () => {

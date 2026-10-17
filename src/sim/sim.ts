@@ -12,6 +12,7 @@ import {
   dryTreeOf,
   HEAT_EVERY,
   type HouseLike,
+  heatBoost,
   heatStep,
   homeMask,
   houseOf,
@@ -362,7 +363,8 @@ export class Sim {
   readonly house: HouseLike | null;
   /** przechodniość świata z wyciętymi ściętymi drzewami; przy wczytaniu odtwarzana ze st.felled */
   readonly blocked: Uint8Array;
-  /** ocieplenie pomieszczeń od kóz z ostatniego kroku ciepła, °C (dla rysowania: świecące okna) */
+  /** ocieplenie pomieszczeń od kóz w °C (dla rysowania: świecące okna); liczone co krok ciepła
+      i od razu przy wczytaniu */
   boost: number[] = [];
   private pf: PathFinder;
   /** spójne obszary mapy: cel z innego obszaru zamieniamy na najbliższy osiągalny kafelek */
@@ -404,6 +406,7 @@ export class Sim {
         if (r >= 0 && !this.blocked[i]) this.roomTiles[r].push(i);
       }
     this.dry = dryTreeOf(w);
+    if (h) this.boost = heatBoost(this.kinds, this.links, this.fires(), this.outdoor());
   }
 
   push(c: Command): void {
@@ -1142,22 +1145,28 @@ export class Sim {
   /* ---------- co krok ciepła: ogień, ciepło, potrzeby, samouczek ---------- */
 
   private slow(): void {
-    const h = this.house;
-    if (!h) return;
+    if (!this.house) return;
     const st = this.st;
-    const size = this.w.size;
     const tout = this.outdoor();
-    const fires: number[] = [];
-    for (const t of st.things)
-      if (t.kind === 'koza' && t.fuel > 0) {
-        const r = h.room[t.y * size + t.x];
-        if (r >= 0) fires.push(r);
-        t.fuel = Math.max(0, t.fuel - HEAT_EVERY);
-      }
+    // pali się to, co paliło się na początku kroku
+    const fires = this.fires();
+    for (const t of st.things) if (t.kind === 'koza' && t.fuel > 0) t.fuel = Math.max(0, t.fuel - HEAT_EVERY);
     this.boost = heatStep(st.temps, this.kinds, this.links, fires, tout);
     const hours = HEAT_EVERY / TICKS_PER_HOUR;
     for (const p of st.pawns) if (p.needs) stepNeeds(p.needs, this.needCtx(p, tout), hours);
     this.tutCheck();
+  }
+
+  /** pomieszczenia z palącą się kozą */
+  private fires(): number[] {
+    const h = this.house!;
+    const out: number[] = [];
+    for (const t of this.st.things)
+      if (t.kind === 'koza' && t.fuel > 0) {
+        const r = h.room[t.y * this.w.size + t.x];
+        if (r >= 0) out.push(r);
+      }
+    return out;
   }
 
   private needCtx(p: Pawn, tout: number): NeedCtx {
