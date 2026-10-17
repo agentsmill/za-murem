@@ -24,7 +24,7 @@ Kontrakt świata (`src/world`):
 Prace (`src/sim`):
 
 - Przeszukać pomieszczenie: czas zależny od wielkości, łup z tabeli według `why` (deski, złom, części, czasem leki albo jedzenie), deterministycznie, raz na pomieszczenie.
-- Rozebrać mebel albo śmieci: materiały (stół 2 deski, meblościanka 4 deski, kuchenka 2 złom, lodówka 3 złom i 1 część, śmieci według `n`).
+- Rozebrać mebel albo śmieci: materiały (stół 2 deski, meblościanka 4 deski, kuchenka 2 złom, lodówka 3 złom i 1 część, śmieci według `n`). W pustym mieszkaniu meble da się rozebrać dopiero po przeszukaniu pomieszczenia, inaczej przeszukiwanie nie miałoby sensu.
 - Naprawić uszkodzenie: koszt i czas (okno 2 deski, drzwi 3 deski, rura 1 złom i 1 część, podłoga 2 deski, piec 2 złom i 1 część).
 - Zająć mieszkanie: mieszkanie staje się nasze. Po naprawie wszystkich uszkodzeń daje miejsca dla nowych mieszkańców (`cap` rośnie o liczbę łóżek).
 
@@ -32,16 +32,16 @@ Prace (`src/sim`):
 
 - Menu budowy (przycisk na pasku i klawisz B): kategorie pomieszczenie, podwórko, obwód; przy każdej budowli koszt, czas i miejsce.
 - Tryb stawiania: dozwolone kafelki podświetlone, plan (duch) idzie za kursorem albo palcem, lewy klik albo stuknięcie stawia, prawy klik, Esc albo przycisk anuluje. Gotowy plan czeka na mapie; zarząd sam przynosi materiały i buduje (praca `build`), gracz może wskazać, kto.
-- Budowle fali 1 (koszty i czasy do strojenia botem):
+- Budowle fali 1. Koszty i czasy dostroił bot symulacji 17.10.2026: przy pierwszym szkicu (4 deski, 2 złom i podobnie) zarząd stawiał wszystko już drugiego dnia.
 
 | rodzaj | nazwa | miejsce | rozmiar | koszt | działanie |
 |---|---|---|---|---|---|
-| `warsztat` | Warsztat | pokój w naszym mieszkaniu | 2×1 | 4 deski, 2 złom | łaty i naprawy szybciej, rozbiórka daje więcej |
-| `kuchnia_spoleczna` | Kuchnia społeczna | kuchnia w naszym mieszkaniu | 2×1 | 3 złom, 2 części | jedno gotowanie dla wszystkich, mniej jedzenia na osobę |
-| `magazyn` | Magazyn | pokój w naszym mieszkaniu | 2×2 | 6 desek | zapasy w magazynie trudniej ukraść przy napadzie |
-| `lozka_pietrowe` | Łóżka piętrowe | pokój w naszym mieszkaniu | 1×2 | 4 deski | 2 miejsca do spania, `cap` rośnie |
-| `ogrodek` | Ogródek | podwórko | 3×2 | 2 deski | jedzenie po kilku dniach, zależne od pory roku |
-| `zasieki` | Zasieki | obwód, w miejscu odcinka siatki | 1×1 | 3 złom | mocniejsze od siatki, szabrownik się rani |
+| `warsztat` | Warsztat | pokój w naszym mieszkaniu | 2×1 | 20 desek, 10 złomu; 1,5 h | łaty i naprawy 1,5 raza szybciej, rozbiórka daje 1,5 raza więcej |
+| `kuchnia_spoleczna` | Kuchnia społeczna | kuchnia w naszym mieszkaniu | 2×1 | 14 złomu, 10 części; 1,5 h | jedno gotowanie dziennie dla wszystkich, 85% porcji na ciepły posiłek |
+| `magazyn` | Magazyn | pokój w naszym mieszkaniu | 2×2 | 30 desek; 1,5 h | zapasy w magazynie trudniej ukraść przy napadzie (w grze zadziała, gdy zarząd dostanie zapas magazynu w `govInput`) |
+| `lozka_pietrowe` | Łóżka piętrowe | pokój w naszym mieszkaniu | 1×2 | 20 desek; 1 h | 2 miejsca do spania, `cap` rośnie |
+| `ogrodek` | Ogródek | podwórko | 3×2 | 14 desek; 1 h | plon co trzy doby: jesień 2, zima 0, wiosna 4, lato 6 porcji |
+| `zasieki` | Zasieki | obwód, w miejscu odcinka siatki | 1×1 | 10 złomu; 45 min | mocniejsze od siatki i łaty, zamykają dziurę (rany szabrowników w M3) |
 
 Kontrakt symulacji (`src/sim`):
 

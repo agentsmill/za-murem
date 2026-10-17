@@ -8,14 +8,18 @@
    przy ekranie w pierwszych 10 minutach (okna zarządu, zmiany na karcie, polecenia, których wymaga gra) i skutki
    napadów, a potem noce z dyżurem przy kozie i bez niego (temperatura w kuchni o 6:00, jak długo pali się koza)
    i trzy doby z uchwałami o jedzeniu (racje, wspólny kocioł) i bez nich: zapasy, najedzenie, nastrój, gotowanie.
+   Fala 1 M2: dni 2–5 z przeszukiwaniem pustych mieszkań, rozbiórką, naprawami i budową, a dla porównania bez
+   przeszukiwania; ile budowli stoi do końca dnia 2 i 3 i ile decyzji na minutę daje dzień 2 i 3.
    Tłum za siatką jest już tylko do pomiaru wydajności (npm run perf), w grze są mieszkańcy siedziby.
    Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { nextRandom } from '../src/core/rng.ts';
-import { clockOf, dayOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
+import { BUILDS, type Mat } from '../src/sim/budowle.ts';
+import { clockOf, dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
+import { MAT_ACC } from '../src/sim/mieszkania.ts';
 import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
 import { BURNABLE, createSim, type Laws, Sim, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
@@ -23,6 +27,7 @@ import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
 import { type Decision, type NightLog, type Policy, playLaws, playWithGov } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
+import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
 
 const SEED = Number(process.argv[2]) || 1;
 const DAYS = Number(process.argv[3]) || 45;
@@ -280,6 +285,16 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
     `    raport zarządu a to, co odegrała symulacja (wynik, łup, liczba szabrowników, ${slept} uśpionych wartowników): ${mismatch ? `${mismatch} niezgodnych nocy` : 'zgodne w każdej nocy'}`,
   );
   if (mismatch) fail = true;
+  // przyjęcia: każdy przyjęty przez zarząd przybywa jako pionek (bez miejsca śpi na podłodze)
+  const asked = runs.reduce((a, r) => a + r.admitted.asked, 0);
+  const added = runs.reduce((a, r) => a + r.admitted.added, 0);
+  console.log(
+    `    przyjęcia: zarząd przyjął ${asked} osób, przybyło ${added} pionków mieszkańców${asked === added ? ' (zgodne)' : ''}; mieszkańców na koniec średnio ${f1(mean(runs.map((r) => r.st.pawns.filter((p) => p.kind === 'resident').length)))} przy miejscach ${f1(mean(runs.map((r) => r.st.cap)))}`,
+  );
+  if (asked !== added) {
+    console.log('    BŁĄD: przyjętych przez zarząd i nowych pionków jest różnie');
+    fail = true;
+  }
   const r0 = runs[0];
   console.log(`    pierwsze 10 min, ziarno ${GOV_SEEDS[0]}:`);
   for (const d of first(r0)) console.log(`      ${f1(d.s).padStart(6)} s  ${d.kind.padEnd(10)} ${d.text.slice(0, 90)}`);
@@ -349,6 +364,102 @@ if (
   )
 ) {
   console.log('  BŁĄD: racje mają oszczędzać i obniżać nastrój, a kocioł zjadać więcej i podnosić nastrój');
+  fail = true;
+}
+
+/* ---------- fala 1 M2: dni 2–5 z przeszukiwaniem, rozbiórką i budową, dla porównania bez przeszukiwania ---------- */
+
+const M2_DAYS = 5;
+/** koniec dnia d (północ; dzień 1 zaczyna się o 15:00) */
+const endOf = (d: number) => (d - 1) * TICKS_PER_DAY + 9 * TICKS_PER_HOUR;
+{
+  const w0 = govWorld;
+  const st0 = createSim(w0, GOV_SEEDS[0], { core: 4 });
+  const h0 = houseOf(w0)!;
+  const empty = st0.apts.filter((a) => a.state === 'puste');
+  const heaps = st0.things.filter((t) => t.kind === 'smieci');
+  console.log(
+    `\nFala 1 M2, ${govName}: ${GOV_SEEDS.length} ziaren × ${M2_DAYS} dni, zawsze warta; od rana dnia 2 gracz co 5 s daje wolnym osobom prace przy pustych mieszkaniach i stawia plany budowli`,
+  );
+  console.log(
+    `  stany mieszkań ze świata (World.apts); ziarno ${GOV_SEEDS[0]}: mieszkań ${st0.apts.length}, pustych ${empty.length} (${empty.map((a) => a.why).join(', ')}), pomieszczeń do przeszukania ${h0.rooms.filter((r) => empty.some((a) => a.apt === r.apt)).length}, sterty śmieci ${heaps.length} (${heaps.reduce((a, t) => a + t.n, 0)} szt.), zepsute meble ${st0.things.filter((t) => t.broken).length}, uszkodzenia ${st0.damage.length}, miejsca dla mieszkańców ${st0.cap}`,
+  );
+  console.log(
+    `  koszty: ${Object.values(BUILDS)
+      .map(
+        (b) =>
+          `${b.name.toLowerCase()} ${Object.entries(b.cost)
+            .map(([m, n]) => `${n} ${MAT_ACC[m as Mat]}`)
+            .join(' + ')}`,
+      )
+      .join('; ')}`,
+  );
+}
+/** decyzje w dniach 2–3 od 7:00 do godziny `until` przy ekranie (1×): ile na minutę, w ilu minutach co najmniej
+    jedna, najdłuższa przerwa w ciągu dnia (s) */
+function cover(decisions: Decision[], until: number) {
+  const inside = (s: number) => {
+    const t = s * TICKS_PER_SECOND;
+    return (dayOf(t) === 2 || dayOf(t) === 3) && hourOf(t) >= 7 && hourOf(t) < until;
+  };
+  const mins = new Set<number>();
+  for (let s = endOf(1) / TICKS_PER_SECOND; s < endOf(3) / TICKS_PER_SECOND; s++)
+    if (inside(s)) mins.add(Math.floor(s / 60));
+  const ds = decisions.map((d) => d.s).filter(inside);
+  let gap = 0;
+  for (let k = 1; k < ds.length; k++)
+    if (dayOf(ds[k] * TICKS_PER_SECOND) === dayOf(ds[k - 1] * TICKS_PER_SECOND)) gap = Math.max(gap, ds[k] - ds[k - 1]);
+  return {
+    perMin: ds.length / Math.max(1, mins.size),
+    covered: new Set(ds.map((s) => Math.floor(s / 60))).size / Math.max(1, mins.size),
+    gap,
+  };
+}
+const m2Runs = (search: boolean) =>
+  GOV_SEEDS.map((seed) => {
+    const { player, log } = m2Player({ search, furniture: true });
+    const w = govWorld;
+    const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, { player });
+    return {
+      log,
+      by: (d: number) => log.built.filter((b) => b.tick < endOf(d)).length,
+      work: cover(r.decisions, 21),
+      evening: cover(r.decisions, 22),
+      mats: snapshot(r.st, w).stock.mats,
+    };
+  });
+const range = (a: number[]) => `${f1(mean(a))} (${Math.min(...a)}–${Math.max(...a)})`;
+const m2Line = (name: string, runs: ReturnType<typeof m2Runs>) => {
+  const sum = (k: keyof Omit<M2Log, 'built'>) => f1(mean(runs.map((r) => r.log[k])));
+  console.log(
+    `  ${name}: budowle do końca dnia 2: ${range(runs.map((r) => r.by(2)))}, dnia 3: ${range(runs.map((r) => r.by(3)))}, dnia 5: ${range(runs.map((r) => r.by(5)))}`,
+  );
+  console.log(
+    `    przeszukane pomieszczenia ${sum('searched')}, rozbiórki ${sum('dismantled')}, naprawy ${sum('repaired')}, zajęte mieszkania ${sum('claimed')}; po 5 dniach zostaje desek ${f1(mean(runs.map((r) => r.mats.deski)))}, złomu ${f1(mean(runs.map((r) => r.mats.zlom)))}, części ${f1(mean(runs.map((r) => r.mats.czesci)))}`,
+  );
+  const pct = (a: number[]) => `${Math.round(100 * mean(a))}% (najmniej ${Math.round(100 * Math.min(...a))}%)`;
+  console.log(
+    `    decyzje w dniach 2–3 od 7:00 do 21:00: ${f1(mean(runs.map((r) => r.work.perMin)))} na minutę, minut z decyzją ${pct(runs.map((r) => r.work.covered))}, najdłuższa przerwa ${Math.round(Math.max(...runs.map((r) => r.work.gap)))} s; z wieczorem do 22:00 (zarząd zmęczony idzie spać, warta na posterunku) minut z decyzją ${pct(runs.map((r) => r.evening.covered))}`,
+  );
+  const r0 = runs[0];
+  console.log(
+    `    ziarno ${GOV_SEEDS[0]}: ${r0.log.built.map((b) => `${BUILDS[b.kind].name.toLowerCase()} (dzień ${dayOf(b.tick)} ${clockOf(b.tick)})`).join(', ') || 'nic'}`,
+  );
+};
+const t2 = performance.now();
+const m2With = m2Runs(true);
+const m2Without = m2Runs(false);
+m2Line('z przeszukiwaniem', m2With);
+m2Line('bez przeszukiwania', m2Without);
+console.log(`  (${Math.round(performance.now() - t2)} ms)`);
+// cel z docs/M2-fala-1.md: przy przeszukiwaniu 2–3 budowle do trzeciego dnia, bez niego nie; decyzja co minutę
+const by3 = m2With.map((r) => r.by(3));
+if (Math.min(...by3) < 2 || mean(by3) > 3.5 || Math.max(...m2Without.map((r) => r.by(3))) >= 2) {
+  console.log('  BŁĄD: z przeszukiwaniem ma stanąć 2–3 budowle do końca dnia 3, bez niego mniej niż 2');
+  fail = true;
+}
+if (mean(m2With.map((r) => r.work.perMin)) < 1 || Math.min(...m2With.map((r) => r.work.covered)) < 0.9) {
+  console.log('  BŁĄD: dzień 2 i 3 mają dawać decyzję co minutę');
   fail = true;
 }
 if (fail) process.exit(1);
