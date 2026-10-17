@@ -766,6 +766,8 @@ function placeMarker() {
   el.classList.toggle('edge', edge);
   el.dataset.side = edge ? '' : side;
   el.style.setProperty('--shift', `${Math.round(shift)}px`);
+  // kreska od ogonka do korony, gdy napis stoi dalej od drzewa
+  el.style.setProperty('--lead', `${Math.round(markAt.lead * TILE * view.cam.zoom)}px`);
   el.style.transform = `translate(${Math.round(cx)}px, ${Math.round(cy)}px)`;
   // poza ekranem: strzałka w stronę korony (osiem kierunków)
   const [tx, ty] = screenOf(crown.x, crown.y);

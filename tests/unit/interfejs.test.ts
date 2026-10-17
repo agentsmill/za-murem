@@ -43,7 +43,7 @@ import { statsOf } from '../../src/ui/pasek.ts';
 import { govFence, govLight } from '../../src/ui/siatka.ts';
 import { deg, esc, num, pct, signed } from '../../src/ui/tekst.ts';
 import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSave } from '../../src/ui/zapis.ts';
-import { markSpot, markSpots } from '../../src/ui/znacznik.ts';
+import { crownOf, markSpot } from '../../src/ui/znacznik.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
@@ -125,51 +125,80 @@ describe('siatka dla zarządu', () => {
 });
 
 describe('etykieta suchego drzewa', () => {
-  it.each(DEMOS)('%s: z boku korony, gdzie pod etykietą nie ma bramy, siatki, rzeczy ani budynków', (key) => {
-    const { w } = demo(key);
-    const spot = markSpot(w)!;
-    expect(spot.score).toBe(0);
-    const t = w.trees[w.dryTree];
-    // z boku korony na wysokości jej środka (korona 1,2 m nad pniem), ogonek w stronę drzewa
-    expect(['e', 'w']).toContain(spot.side);
-    expect(spot.y).toBeCloseTo(t.y - 1.2, 5);
-    expect(Math.sign(t.x - spot.x)).toBe(spot.side === 'e' ? -1 : 1);
-    // ani kafelka bramy, siatki czy rzeczy pod prostokątem etykiety (ani wiersz niżej, gdzie stoi warta)
-    const [x0, y0, x1, y1] = spot.rect;
-    const g = w.fence.gate;
-    const fence = new Set(w.fence.tiles);
+  /** kafelki pod prostokątem napisu (bez zapasu) i wiersz niżej, gdzie stoją ludzie i rzeczy */
+  const tilesUnder = ([x0, y0, x1, y1]: readonly number[]) => {
+    const out: [number, number][] = [];
     for (let y = Math.floor(y0); y <= Math.floor(y1) + 1; y++)
-      for (let x = Math.floor(x0); x <= Math.floor(x1); x++) {
-        expect(x >= g.x && x < g.x + g.w && y >= g.y && y < g.y + g.h).toBe(false);
-        expect(fence.has(y * w.size + x)).toBe(false);
-        expect(w.props.some((p) => x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h)).toBe(false);
-      }
-  });
-  it.each([
-    ['przymorze', 's'],
-    ['lanciego', 'n'],
-    ['zielonki', 's'],
-  ])('%s na telefonie: nad koroną albo pod pniem (%s), pod napisem ani bramy, ani siatki', (key, side) => {
-    const { w } = demo(key);
-    const spot = markSpot(w, ['n', 's'])!;
-    expect(spot.side).toBe(side);
-    // pod napisem ani bramy, ani siatki (rzecz może dotykać zapasu wokół napisu: trzepak obok)
-    const [x0, y0, x1, y1] = spot.rect;
+      for (let x = Math.floor(x0); x <= Math.floor(x1); x++) out.push([x, y]);
+    return out;
+  };
+  const gateAt = (w: World, x: number, y: number) => {
     const g = w.fence.gate;
-    const fence = new Set(w.fence.tiles);
-    for (let y = Math.floor(y0); y <= Math.floor(y1); y++)
-      for (let x = Math.floor(x0); x <= Math.floor(x1); x++) {
-        expect(x >= g.x && x < g.x + g.w && y >= g.y && y < g.y + g.h).toBe(false);
-        expect(fence.has(y * w.size + x)).toBe(false);
-      }
-    expect(spot.score).toBeLessThan(10);
+    return x >= g.x && x < g.x + g.w && y >= g.y && y < g.y + g.h;
+  };
+  const fenceAt = (w: World, x: number, y: number) => w.fence.tiles.includes(y * w.size + x);
+  const propAt = (w: World, x: number, y: number) =>
+    w.props.some((p) => x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h);
+
+  for (const [screen, sides] of [
+    ['komputer', undefined],
+    ['telefon', ['n', 's']],
+  ] as const)
+    it.each(DEMOS)(
+      `%s, ${screen}: pod napisem ani bramy, siatki, rzeczy, ani budynków; ogonek w stronę korony`,
+      (key) => {
+        const { w } = demo(key);
+        const spot = markSpot(w, sides)!;
+        expect(spot.under).toBe(0);
+        if (sides) expect(sides).toContain(spot.side);
+        for (const [x, y] of tilesUnder(spot.rect)) {
+          expect(gateAt(w, x, y), `brama ${x},${y}`).toBe(false);
+          expect(fenceAt(w, x, y), `siatka ${x},${y}`).toBe(false);
+          expect(propAt(w, x, y), `rzecz ${x},${y}`).toBe(false);
+          if (y <= Math.floor(spot.rect[3])) expect(w.bid[y * w.size + x], `budynek ${x},${y}`).toBe(-1);
+        }
+        // ogonek celuje w koronę: napis leży po tej stronie korony, którą mówi side, kreska najwyżej 3,5 m
+        const c = crownOf(w)!;
+        if (spot.side === 'e') expect(spot.x).toBeGreaterThan(c.x);
+        if (spot.side === 'w') expect(spot.x).toBeLessThan(c.x);
+        if (spot.side === 'n') expect(spot.y).toBeLessThan(c.y);
+        if (spot.side === 's') expect(spot.y).toBeGreaterThan(c.y);
+        expect(spot.lead).toBeLessThanOrEqual(3.5);
+        // liczona raz dla świata: te same dane, to samo miejsce
+        expect(markSpot(w, sides)).toEqual(spot);
+      },
+    );
+
+  it('brama albo siatka pod wybranym miejscem przestawiają etykietę gdzie indziej', () => {
+    for (const key of DEMOS) {
+      const { w } = demo(key);
+      const spot = markSpot(w)!;
+      // brama dokładnie pod środkiem napisu
+      const mx = Math.floor((spot.rect[0] + spot.rect[2]) / 2);
+      const my = Math.floor((spot.rect[1] + spot.rect[3]) / 2);
+      const moved = { ...w, fence: { ...w.fence, gate: { x: mx, y: my, w: 2, h: 1, rot: 0 as const } } };
+      const again = markSpot(moved)!;
+      expect(again.under, key).toBe(0);
+      expect(
+        tilesUnder(again.rect).some(([x, y]) => gateAt(moved, x, y)),
+        key,
+      ).toBe(false);
+      // siatka wzdłuż całego napisu
+      const extra = tilesUnder(spot.rect).map(([x, y]) => y * w.size + x);
+      const fenced = { ...w, fence: { ...w.fence, tiles: [...w.fence.tiles, ...extra] } };
+      const third = markSpot(fenced)!;
+      expect(third.under, key).toBe(0);
+      expect(
+        tilesUnder(third.rect).some(([x, y]) => fenceAt(fenced, x, y)),
+        key,
+      ).toBe(false);
+    }
   });
-  it('Przymorze: nad koroną etykieta wypadała na bramie (stary znacznik), teraz stoi z boku i się nie zmienia', () => {
+
+  it('bez suchego drzewa nie ma etykiety', () => {
     const { w } = demo('przymorze');
-    const north = markSpots(w).find((s) => s.side === 'n')!;
-    expect(north.score).toBeGreaterThanOrEqual(10);
-    // liczona raz dla świata: te same dane, to samo miejsce
-    expect(markSpot(w)).toEqual(markSpot(w));
+    expect(markSpot({ ...w, dryTree: -1 })).toBeNull();
+    expect(crownOf({ ...w, dryTree: -1 })).toBeNull();
   });
 });
 

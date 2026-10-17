@@ -1505,84 +1505,68 @@ const SHOTS: Shot[] = [
       if (r.over > 0 && r.max > 0.25) throw new Error('dym zasłania odkryte wnętrze');
     },
   },
-  // etykieta „Suche drzewo” na Przymorzu (suche drzewo 3,5 m za bramą): z boku korony, nie na bramie ani na
-  // wartowniku, i jedzie z mapą bez skoków; w dzień, przy przesuwaniu i nocą z wartą przy bramie
+  // etykieta „Suche drzewo” na trzech adresach w dzień, nocą z wartą przy bramie i na telefonie: pod napisem
+  // nie ma bramy, siatki, rzeczy, budynków ani ludzi, a przy przesuwaniu mapy napis nie skacze (bez
+  // sprawdzania konkretnej strony, bo świat się jeszcze zmienia)
   {
-    name: 'm1-etykieta-brama',
+    name: 'm1-etykieta-drzewa',
     query: '',
     run: async (page, base) => {
-      /** prostokąt etykiety, czy dotyka bramy (z 40 px nad nią na głowy warty) i ilu ludzi z zarządu zasłania */
+      /** co leży pod napisem na ekranie: kafelki pod nim (brama, siatka i rzeczy też wiersz niżej, bo tam
+          stoją ludzie i sterczą rzeczy), budynki i ludzie (sprite od stóp do 1,6 m w górę) */
       const probe = () =>
         page.evaluate(() => {
           const zm = window.zm!;
           const el = document.getElementById('treeMark')!;
           const b = (el.firstElementChild as HTMLElement).getBoundingClientRect();
-          const g = zm.sim!.w.fence.gate;
-          const [gx0, gy0] = zm.screenOf(g.x, g.y);
-          const [gx1, gy1] = zm.screenOf(g.x + g.w, g.y + g.h);
-          const hit = (x0: number, y0: number, x1: number, y1: number) =>
-            b.left < x1 && b.right > x0 && b.top < y1 && b.bottom > y0;
-          const people = zm.sim!.st.pawns.filter((p) => {
-            if (p.kind !== 'core') return false;
-            const [x0, y0] = zm.screenOf(p.x - 0.35, p.y - 1.6);
-            const [x1, y1] = zm.screenOf(p.x + 0.35, p.y);
-            return hit(x0, y0, x1, y1);
-          }).length;
+          const w = zm.sim!.w;
+          const [x0, y0] = zm.view.toWorld(b.left, b.top).map((v) => v / 32);
+          const [x1, y1] = zm.view.toWorld(b.right, b.bottom).map((v) => v / 32);
+          const g = w.fence.gate;
+          const fence = new Set(w.fence.tiles);
+          const hits: string[] = [];
+          for (let y = Math.floor(y0); y <= Math.floor(y1) + 1; y++)
+            for (let x = Math.floor(x0); x <= Math.floor(x1); x++) {
+              if (x >= g.x && x < g.x + g.w && y >= g.y && y < g.y + g.h) hits.push(`brama ${x},${y}`);
+              if (fence.has(y * w.size + x)) hits.push(`siatka ${x},${y}`);
+              if (w.props.some((p) => x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h))
+                hits.push(`rzecz ${x},${y}`);
+              if (y <= Math.floor(y1) && w.bid[y * w.size + x] >= 0) hits.push(`budynek ${x},${y}`);
+            }
+          for (const p of zm.sim!.st.pawns) {
+            if (p.away) continue;
+            const [px0, py0] = zm.screenOf(p.x - 0.35, p.y - 1.6);
+            const [px1, py1] = zm.screenOf(p.x + 0.35, p.y);
+            if (b.left < px1 && b.right > px0 && b.top < py1 && b.bottom > py0) hits.push(`${p.kind} ${p.id}`);
+          }
           return {
             hidden: el.hidden,
+            edge: el.classList.contains('edge'),
             side: el.dataset.side ?? '',
-            gate: hit(gx0, gy0 - 40, gx1, gy1),
-            people,
+            inside: b.left >= 0 && b.right <= window.innerWidth && b.top >= 0 && b.bottom <= window.innerHeight,
+            hits,
           };
-        });
-      /** kamera między bramą a suchym drzewem */
-      const look = () =>
-        page.evaluate(() => {
-          const zm = window.zm!;
-          const w = zm.sim!.w;
-          const t = w.trees[w.dryTree];
-          const g = w.fence.gate;
-          zm.setCam((t.x + g.x + 1) / 2, (t.y + g.y) / 2, 1.3);
         });
       const check = async (when: string) => {
         const p = await probe();
-        console.log(`  ${when}: strona ${p.side}, na bramie ${p.gate}, zasłania ludzi ${p.people}`);
-        if (p.hidden || p.side !== 'w')
-          throw new Error(`${when}: etykieta ${p.hidden ? 'ukryta' : `po stronie ${p.side}`}`);
-        if (p.gate || p.people) throw new Error(`${when}: etykieta zasłania bramę albo ludzi`);
+        console.log(
+          `  ${when}: strona ${p.side}${p.hits.length ? `, pod napisem: ${p.hits.join(', ')}` : ', pod napisem nic'}`,
+        );
+        if (p.hidden || p.edge || !p.inside)
+          throw new Error(`${when}: etykieta ukryta, przy krawędzi albo poza kadrem`);
+        if (p.hits.length) throw new Error(`${when}: etykieta zasłania ${p.hits.join(', ')}`);
       };
-      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
-      await waitIdle(page);
-      await look();
-      await waitIdle(page);
-      await page.waitForTimeout(300);
-      await check('dzień');
-      await page.screenshot({ path: path.join(OUT, 'm1-etykieta-brama-dzien.png') });
-      // przesuwanie mapy: odległość etykiety od pnia na ekranie się nie zmienia (najwyżej piksel zaokrąglenia)
-      const offs: [number, number][] = [];
-      for (let k = 0; k < 6; k++) {
-        await page.evaluate((k) => {
+      /** kamera na suchym drzewie (jak gracz, który przesunął mapę do celu) */
+      const look = async () => {
+        await page.evaluate(() => {
           const zm = window.zm!;
           const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
-          zm.setCam(t.x - 4 + k * 1.7, t.y - 2 + k * 0.6, 1.3);
-        }, k);
-        await page.waitForTimeout(150);
-        offs.push(
-          await page.evaluate(() => {
-            const zm = window.zm!;
-            const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
-            const [tx, ty] = zm.screenOf(t.x, t.y);
-            const b = (document.getElementById('treeMark')!.firstElementChild as HTMLElement).getBoundingClientRect();
-            return [b.left - tx, b.top - ty] as [number, number];
-          }),
-        );
-      }
-      const jump = Math.max(...offs.map(([x, y]) => Math.hypot(x - offs[0][0], y - offs[0][1])));
-      console.log(`  przesuwanie: największa zmiana odległości od pnia ${jump.toFixed(1)} px`);
-      if (jump > 1.5) throw new Error('etykieta skacze przy przesuwaniu mapy');
-      // noc: okna zarządu zwykłymi decyzjami, wartownik przy bramie z latarnią
-      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=21.5`);
-      await waitIdle(page);
+          zm.setCam(t.x, t.y - 1, 1.3);
+        });
+        await waitIdle(page);
+        await page.waitForTimeout(250);
+      };
+      /** okna zarządu zwykłymi decyzjami: uchwała bez, karta z propozycją, wydarzenie pierwszą odpowiedzią */
       const clear = async () => {
         for (let k = 0; k < 6; k++) {
           const tone = await page.evaluate(() =>
@@ -1596,51 +1580,70 @@ const SHOTS: Shot[] = [
           await page.waitForTimeout(150);
         }
       };
-      await page.evaluate(() => window.zm!.govTick());
-      await clear();
-      await page.evaluate(() => {
-        const zm = window.zm!;
-        const core = zm.sim!.st.pawns.find((p) => p.kind === 'core' && p.job?.t !== 'guard')!;
-        zm.sim!.push({ t: 'guard', ids: [core.id], post: 'brama' });
-      });
-      for (let k = 0; k < 4; k++) {
-        await page.evaluate(() => window.zm!.ff(10));
+      for (const key of ['przymorze', 'lanciego', 'zielonki']) {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.goto(`${base}?demo=${key}&speed=0&cam=hq,1.3`);
+        await waitIdle(page);
+        await look();
+        await check(`${key}, dzień`);
+        await page.screenshot({ path: path.join(OUT, `m1-etykieta-${key}-dzien.png`) });
+        // przesuwanie mapy: odległość napisu od pnia na ekranie się nie zmienia (najwyżej piksel zaokrąglenia)
+        const offs: [number, number][] = [];
+        for (let k = 0; k < 6; k++) {
+          await page.evaluate((k) => {
+            const zm = window.zm!;
+            const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
+            zm.setCam(t.x - 3 + k * 1.2, t.y - 2 + k * 0.5, 1.3);
+          }, k);
+          await page.waitForTimeout(120);
+          offs.push(
+            await page.evaluate(() => {
+              const zm = window.zm!;
+              const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
+              const [tx, ty] = zm.screenOf(t.x, t.y);
+              const b = (document.getElementById('treeMark')!.firstElementChild as HTMLElement).getBoundingClientRect();
+              return [b.left - tx, b.top - ty] as [number, number];
+            }),
+          );
+        }
+        const jump = Math.max(...offs.map(([x, y]) => Math.hypot(x - offs[0][0], y - offs[0][1])));
+        console.log(`  ${key}, przesuwanie: największa zmiana odległości od pnia ${jump.toFixed(1)} px`);
+        if (jump > 1.5) throw new Error(`${key}: etykieta skacze przy przesuwaniu mapy`);
+        // noc: wartownik z latarnią przy bramie
+        await page.goto(`${base}?demo=${key}&speed=0&cam=hq,1.3&godzina=21.5`);
+        await waitIdle(page);
+        await page.evaluate(() => window.zm!.govTick());
         await clear();
+        await page.evaluate(() => {
+          const zm = window.zm!;
+          const core = zm.sim!.st.pawns.find((p) => p.kind === 'core' && p.job?.t !== 'guard')!;
+          zm.sim!.push({ t: 'guard', ids: [core.id], post: 'brama' });
+        });
+        for (let k = 0; k < 4; k++) {
+          await page.evaluate(() => window.zm!.ff(10));
+          await clear();
+        }
+        const lamp = await page.evaluate(() =>
+          window.zm!.sim!.st.pawns.some(
+            (p) => p.kind === 'core' && p.job?.t === 'guard' && p.job.target === 0 && p.job.phase === 1,
+          ),
+        );
+        if (!lamp) throw new Error(`${key}: nikt nie stoi z latarnią przy bramie`);
+        await look();
+        await check(`${key}, noc z wartą przy bramie`);
+        await page.screenshot({ path: path.join(OUT, `m1-etykieta-${key}-noc.png`) });
+        // telefon: na wąskim ekranie napis nad koroną albo pod pniem, cały w kadrze
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(`${base}?demo=${key}&speed=0&cam=hq,1.3`);
+        await waitIdle(page);
+        await look();
+        await check(`${key}, telefon`);
+        await page.screenshot({ path: path.join(OUT, `m1-etykieta-${key}-telefon.png`) });
       }
-      const guard = await page.evaluate(() =>
-        window.zm!.sim!.st.pawns.some(
-          (p) => p.kind === 'core' && p.job?.t === 'guard' && p.job.target === 0 && p.job.phase === 1,
-        ),
-      );
-      if (!guard) throw new Error('nikt nie stoi z latarnią przy bramie');
-      await look();
-      await waitIdle(page);
-      await page.waitForTimeout(300);
-      await check('noc z wartą przy bramie');
-      await page.screenshot({ path: path.join(OUT, 'm1-etykieta-brama-noc.png') });
-      // telefon: z boku korony napis się nie mieści, więc stoi pod pniem i cały w kadrze
-      await page.setViewportSize({ width: 390, height: 844 });
-      await page.evaluate(() => {
-        const zm = window.zm!;
-        const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
-        zm.setCam(t.x, t.y - 1, 1.3);
-      });
-      await waitIdle(page);
-      await page.waitForTimeout(300);
-      const phone = await probe();
-      const inside = await page.evaluate(() => {
-        const b = (document.getElementById('treeMark')!.firstElementChild as HTMLElement).getBoundingClientRect();
-        return b.left >= 0 && b.right <= window.innerWidth;
-      });
-      console.log(
-        `  telefon: strona ${phone.side}, na bramie ${phone.gate}, zasłania ludzi ${phone.people}, w kadrze ${inside}`,
-      );
-      if (phone.side !== 's' || phone.gate || phone.people || !inside)
-        throw new Error('na telefonie etykieta nie pod pniem albo poza kadrem');
-      await page.screenshot({ path: path.join(OUT, 'm1-etykieta-brama-telefon.png') });
       await page.setViewportSize({ width: 1440, height: 900 });
-      await look();
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
       await waitIdle(page);
+      await look();
     },
   },
 ];
