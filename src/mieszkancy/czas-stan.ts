@@ -316,8 +316,13 @@ export function wroc(s: Stan, lider: Osoba, dom: Gospodarstwo, rok: number, typ:
   }
 }
 
-/** Nowa osoba spoza budynku albo noworodek, z kolejnym identyfikatorem. Jeszcze bez gospodarstwa (`przyjmij`). */
+/** Nowa osoba spoza budynku albo noworodek, z kolejnym identyfikatorem. Jeszcze bez gospodarstwa (`przyjmij`).
+    `ojciec` zostaje ojcem tylko wtedy, gdy jest starszy od osoby o 18-50 lat (`PRZEJSCIA.wiekOjca`); inaczej osoba
+    nie ma `ojciec` i nie trafia do jego dzieci. Matkę wywołujący daje zawsze w wieku 15-49 lat przy porodzie. */
 export function nowaOsoba(s: Stan, plec: Plec, rocznik: number, matka?: Osoba, ojciec?: Osoba): Osoba {
+  const roznica = ojciec ? rocznik - ojciec.rocznik : 0;
+  const wiekOjca = PRZEJSCIA.wiekOjca;
+  const ojciecWWieku = ojciec && roznica >= wiekOjca.od && roznica <= wiekOjca.do ? ojciec : undefined;
   const o: Osoba = {
     id: `${s.budynek.klucz}/o${s.nastepnaOsoba++}`,
     plec,
@@ -326,7 +331,7 @@ export function nowaOsoba(s: Stan, plec: Plec, rocznik: number, matka?: Osoba, o
     nazwisko: '',
     stan: 'tu',
   };
-  for (const r of [matka, ojciec]) {
+  for (const r of [matka, ojciecWWieku]) {
     if (!r) continue;
     if (r === matka) o.matka = r.id;
     else o.ojciec = r.id;

@@ -8,11 +8,20 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { budynkiZGeo } from '../../src/mieszkancy/budynki.ts';
 import { obszarGminy, postarz } from '../../src/mieszkancy/czas.ts';
-import { generujBudynek, generujObszar, POL_KWADRATU } from '../../src/mieszkancy/generuj.ts';
+import {
+  budynkiObszaru,
+  generujBudynek,
+  generujObszar,
+  kronikaObszaru,
+  type Nazwy,
+  POL_KWADRATU,
+} from '../../src/mieszkancy/generuj.ts';
+import { bezPuliLokalnej, nazwiskaDlaGminy } from '../../src/mieszkancy/imiona.ts';
+import { type OdmianaPlik, rozpakujOdmiane, type TabelaKoncowek } from '../../src/mieszkancy/odmiana.ts';
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
 import { obsadzBudynek } from '../../src/mieszkancy/spis.ts';
-import type { TabeleGminy, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
-import { type Budynek, WERSJA_GENERATORA, type WynikBudynku } from '../../src/mieszkancy/typy.ts';
+import type { TabeleGminy, TabeleImion, TabeleKraju, TabeleNazwisk } from '../../src/mieszkancy/tabele.ts';
+import { type Budynek, type Osiedle, WERSJA_GENERATORA, type WynikBudynku } from '../../src/mieszkancy/typy.ts';
 import type { Geo } from '../../src/world/geo.ts';
 
 const KORZEN = path.resolve(import.meta.dirname, '../..');
@@ -41,6 +50,34 @@ function metry(geo: Geo, b: Budynek): [number, number] {
 
 const przymorze = demo('przymorze');
 const osiedle = generujObszar(przymorze, gdansk, kraj);
+
+// ---------------------------------------------------------------- pełny zestaw tabel (imiona, nazwiska, odmiana, kronika)
+
+const imiona = wczytaj<TabeleImion>('data/mieszkancy/imiona.json');
+const odmiana = {
+  tabela: rozpakujOdmiane(wczytaj<OdmianaPlik>('data/mieszkancy/odmiana.json')),
+  koncowki: wczytaj<TabelaKoncowek>('data/mieszkancy/odmiana-koncowki.json'),
+};
+function nazwiskaGminy(g: TabeleGminy): TabeleNazwisk {
+  const { plik, lokalne } = nazwiskaDlaGminy(g);
+  const t = wczytaj<TabeleNazwisk>(`data/mieszkancy/nazwiska/${plik}.json`);
+  return lokalne ? t : bezPuliLokalnej(t);
+}
+/** Pełny zestaw dla dema: imiona, nazwiska gminy, odmiana i kronika obszaru (R49). */
+function pelneNazwy(geo: Geo, g: TabeleGminy): Nazwy {
+  return {
+    imiona,
+    nazwiska: nazwiskaGminy(g),
+    odmiana,
+    kronika: kronikaObszaru(geo, budynkiObszaru(geo, g, kraj), imiona),
+  };
+}
+let pelne: [string, Osiedle][] | undefined;
+/** Trzy dema z pełnym zestawem, liczone raz na plik (leniwie, żeby inne testy nie czekały). */
+const PELNE = (): [string, Osiedle][] => {
+  if (!pelne) pelne = DEMA.map(([n, g]) => [n, generujObszar(demo(n), g, kraj, pelneNazwy(demo(n), g))]);
+  return pelne;
+};
 
 describe('generujObszar i generujBudynek', () => {
   it('Przymorze dwa razy daje ten sam skrót JSON', () => {
@@ -116,6 +153,33 @@ describe('generujObszar i generujBudynek', () => {
       }
       czasy.sort((a, b) => a - b);
       expect(czasy[1], nazwa).toBeLessThan(1500);
+    }
+  });
+});
+
+describe('pełny generator na demach: rodzina', () => {
+  it('ojciec jest 18-50 lat, a matka 15-49 lat starsza od dziecka, u każdej osoby (obecnej, nieobecnej i zmarłej)', () => {
+    for (const [nazwa, o] of PELNE()) {
+      const zle: string[] = [];
+      let ojcow = 0;
+      for (const w of o.budynki) {
+        const wg = new Map(w.osoby.map((x) => [x.id, x]));
+        for (const x of w.osoby) {
+          const ojciec = x.ojciec === undefined ? undefined : wg.get(x.ojciec);
+          const matka = x.matka === undefined ? undefined : wg.get(x.matka);
+          if (ojciec) {
+            ojcow++;
+            const r = x.rocznik - ojciec.rocznik;
+            if (r < 18 || r > 50) zle.push(`${x.id}: ojciec starszy o ${r} lat`);
+          }
+          if (matka) {
+            const r = x.rocznik - matka.rocznik;
+            if (r < 15 || r > 49) zle.push(`${x.id}: matka starsza o ${r} lat`);
+          }
+        }
+      }
+      expect(ojcow, nazwa).toBeGreaterThan(50);
+      expect(zle, nazwa).toEqual([]);
     }
   });
 });
