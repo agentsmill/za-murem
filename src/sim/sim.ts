@@ -168,6 +168,8 @@ import {
   szabrownicy,
   ugryzionyOd,
   uSasiada,
+  WARIANTY_PLOTU,
+  type WariantPlotu,
   WYWAZ_KLATKA_TICKS,
   WYWAZ_MIESZKANIE_TICKS,
   type WyborSpotkania,
@@ -715,7 +717,7 @@ export type Command =
   /** gra sieciowa: nowa lista drzwi klatek zajętych przez inne drużyny (ids puste) */
   | { t: 'zajete'; ids: number[]; drzwi: number[] }
   /** etap 3: otoczyć otwarty budynek wspólnym płotem (plan i praca), a po skończonej pracy (ids puste) nowa siatka */
-  | { t: 'enclose'; ids: number[]; bid: number }
+  | { t: 'enclose'; ids: number[]; bid: number; wariant?: WariantPlotu }
   | { t: 'otocz'; ids: number[]; bid: number }
   /** handlarz: włączyć (stary zapis, ids puste), wymienić się (oferta k), napaść na niego */
   | { t: 'obcy'; ids: number[] }
@@ -876,7 +878,8 @@ export interface SimState {
 }
 
 /** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
-    i ile jej trzeba, kto pracuje (−1: nikt) i kafelek podwórka, z którego się stawia */
+    i ile jej trzeba, kto pracuje (−1: nikt), kafelek podwórka, z którego się stawia, i wariant materiału z menu
+    (zapis sprzed wariantów dostaje w konstruktorze deskę i złom) */
 export interface PlotPlan {
   bid: number;
   need: Partial<Record<Mat, number>>;
@@ -885,6 +888,7 @@ export interface PlotPlan {
   total: number;
   by: number;
   stand: number;
+  wariant: WariantPlotu;
 }
 
 export interface PlotStan {
@@ -1935,6 +1939,8 @@ export class Sim {
     }
     st.dead ??= [];
     st.tally ??= zeroTally();
+    // zapis z planem wspólnego płotu sprzed wariantów materiału: deska i złom na metr
+    if (st.plot?.plan) st.plot.plan.wariant ??= 'mieszany';
     migrate(st, w);
     // zapis sprzed Thing.dead: zwłoki trzymały numer wpisu zmarłego w owner
     for (const t of st.things)
@@ -2463,7 +2469,7 @@ export class Sim {
       this.orderDoor(pawns, c.t, c.door);
     else if (c.t === 'loot') this.startLoot(pawns[0], c.bid, c.room);
     else if (c.t === 'upstairs') this.startUpstairs(pawns[0], c.bid, c.tile);
-    else if (c.t === 'enclose') this.startEnclose(pawns[0], c.bid);
+    else if (c.t === 'enclose') this.startEnclose(pawns[0], c.bid, c.wariant);
     else if (c.t === 'trade') this.startTrade(pawns[0], c.offer);
     else if (c.t === 'rob') this.startRob(pawns[0]);
     else if (c.t === 'talk') this.startTalk(pawns[0], c.target);
@@ -8566,10 +8572,11 @@ export class Sim {
 
   /* etap 3: wspólny płot */
 
-  /** Otoczyć budynek wspólnym płotem: plan z kosztem (deska i złom na metr nowego płotu, po 2 deski na drzwi do zabicia)
-      i czasem (3 minuty na metr, 20 minut na drzwi), potem praca jak przy budowie. Jeden plan naraz; na planie tego
-      samego budynku polecenie znaczy „budować dalej”. Gdy się nie da, napis mówi dlaczego. */
-  private startEnclose(p: Pawn, bid: number): void {
+  /** Otoczyć budynek wspólnym płotem: plan z kosztem według wariantu z menu (deska i złom na metr nowego płotu albo
+      2 sztuki jednego materiału, po 2 deski na drzwi do zabicia) i czasem (3 minuty na metr, 20 minut na drzwi), potem
+      praca jak przy budowie. Jeden plan naraz; na planie tego samego budynku polecenie znaczy „budować dalej” (wariant
+      zostaje z planu). Gdy się nie da, napis mówi dlaczego. */
+  private startEnclose(p: Pawn, bid: number, wybor?: WariantPlotu): void {
     const st = this.st;
     const k = st.sasiedzi?.budynki.findIndex((b) => b.bid === bid) ?? -1;
     if (k < 0) return;
@@ -8586,9 +8593,11 @@ export class Sim {
     }
     const stand = this.plotStand(r.usuniete, r.fence.yard);
     if (stand < 0) return;
-    const { need, total } = kosztPlotu(r);
+    // wariant z polecenia (także z sieci): nieznany to deska i złom
+    const wariant = wybor && WARIANTY_PLOTU.includes(wybor) ? wybor : 'mieszany';
+    const { need, total } = kosztPlotu(r, wariant);
     st.plot ??= { bids: [] };
-    st.plot.plan = { bid, need, have: {}, work: 0, total, by: -1, stand };
+    st.plot.plan = { bid, need, have: {}, work: 0, total, by: -1, stand, wariant };
     this.wersjaSasiadow++;
     this.startPlot(p);
   }

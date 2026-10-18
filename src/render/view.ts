@@ -5,7 +5,8 @@
    Noc to mapa światła nad światem (light.ts), mnożona przez obraz. Przekrój: przy zbliżeniu
    kawałki nad budynkiem z wnętrzem (scene.section) rysują się z wnętrzem zamiast dachu, a meble
    stoją w jednej warstwie z pionkami, sortowane po y. Otwarte sąsiednie budynki (M2 fala 2) dokładają
-   swoje wnętrza do tego samego przekroju łatką sceny (przekrojSasiadow.ts), razem z wyglądem drzwi. */
+   swoje wnętrza do tego samego przekroju łatką sceny (przekrojSasiadow.ts), razem z wyglądem drzwi, a plan
+   wspólnego płotu rysuje się jako duch przyszłego obwodu z postępem (plotDuch.ts, plotLayer.ts). */
 
 import {
   Application,
@@ -79,6 +80,8 @@ import {
 } from './game.ts';
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
+import { type DuchPlotu, duchPlotu } from './plotDuch.ts';
+import { PlotLayer } from './plotLayer.ts';
 import { FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
 import { PrzekrojSasiadow } from './przekrojSasiadow.ts';
 import { burning, IN, setWear, specOf, type ThingLike } from './section.ts';
@@ -231,6 +234,10 @@ export class GameView {
   readonly buildOverlay = new Container();
   /** budowa: duchy planów w warstwie pionków, paski i podgląd stawiania */
   readonly builds = new BuildLayer(this.actors, this.buildOverlay);
+  /** M2 fala 2, etap 3: duch planu wspólnego płotu (siatka w warstwie pionków, ślad i postęp nad mapą światła) */
+  readonly plotDuch = new PlotLayer(this.actors, this.buildOverlay);
+  /** duch planu płotu z ostatniego syncGame (null: nie ma planu) */
+  private duch: DuchPlotu | null = null;
   /** światła ze stanu gry (koza, okna, ognisko, warta); view.lights to dodatki (podgląd) */
   private gameLights: Light[] = [];
   /** rzeczy, które się nie zmieniają (trzepak, siatka) i ich klucze: bez liczenia opisu co klatkę */
@@ -312,6 +319,7 @@ export class GameView {
       setWear(sc.section, this.wearMock.damage, this.wearMock.apts);
     }
     this.builds.mapSize = sc.w.size;
+    this.plotDuch.mapSize = sc.w.size;
     this.painter.setScene(sc);
     const n = sc.chunks;
     for (let cy = 0; cy < n; cy++)
@@ -457,6 +465,8 @@ export class GameView {
       });
     }
     this.plans = (sim.st as { builds?: readonly BuildPlan[] }).builds ?? [];
+    // plan wspólnego płotu: przyszły obwód (kształt z pamięci, liczony od nowa po zmianie planu, siatki albo zasieków)
+    this.duch = duchPlotu(sim.st, w);
     this.syncFelled(sim.st.felled);
     // siatka liczona od nowa tylko po zmianie w blocked (łata, nowa dziura, brama)
     const codes = fenceCodes(w.fence, sim.blocked, w.size, sim.st.fence);
@@ -758,6 +768,7 @@ export class GameView {
       (spec) => this.artOf(spec),
       (x, y) => !this.cutOn && this.underRoof(x, y),
     );
+    this.plotDuch.update(this.duch, z);
     // pionki: poza z pracy (rąbie, niesie drewno albo materiał, klęczy, gotuje, siedzi, śpi, wartuje,
     // przeszukuje, naprawia, buduje); prace M2 biorą rodzaj uszkodzenia i planu ze stanu gry
     const seen = new Set<number>();

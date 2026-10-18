@@ -9,6 +9,7 @@
    widoku: zarząd, mieszkańcy z osobą i lokatorzy sąsiednich budynków ze spotkania). Czyste funkcje bez PixiJS. */
 
 import type { Sasiedzi } from '../sim/sasiedzi.ts';
+import type { PlotStan } from '../sim/sim.ts';
 import type { World } from '../world/world.ts';
 import type { FenceState } from './art/rzeczy.ts';
 import type { Light } from './light.ts';
@@ -35,6 +36,8 @@ export interface GameLike {
     fence?: FenceStateLike | null;
     /** M2 fala 2: sąsiednie budynki (otwarte wnętrza i stany drzwi do przekroju) */
     sasiedzi?: Sasiedzi;
+    /** M2 fala 2, etap 3: wspólny płot (plan w toku rysuje się jako duch, plotDuch.ts) */
+    plot?: PlotStan;
     /** wraki przeszukane (s 1) i rozebrane (s 2): lewy górny kafelek (src/sim/surowce.ts) */
     wraki?: readonly { t: number; s: number }[];
   };

@@ -9,7 +9,7 @@
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
-import { HALAS_ZOMBIE, PO_POLECENIU } from './content/napisy-sasiedzi.ts';
+import { HALAS_ZOMBIE, PO_PLOCIE, PO_POLECENIU } from './content/napisy-sasiedzi.ts';
 import { ALARM_OFF_EN, ALARM_OFF_SAY_EN, ALARM_OFF_TITLE_EN } from './content/napisy-zombie.en.ts';
 import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zombie.ts';
 import type { Person } from './content/people.ts';
@@ -1838,7 +1838,9 @@ function run(m: MenuItem) {
   if (siec.obsluz(m)) return;
   sim.push(m.cmd);
   const k = m.cmd.ids.length > 1 ? 1 : 0;
-  const f = L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]);
+  // wspólny płot z jednego materiału mówi, po co idzie (deska i złom jak w feedback)
+  const jeden = m.cmd.t === 'enclose' && (m.cmd.wariant === 'deski' || m.cmd.wariant === 'zlom') ? m.cmd.wariant : null;
+  const f = jeden ? tr(PO_PLOCIE[jeden][k]) : L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]);
   // w trybie zombie wyważanie ściąga szwendaczy z okolicy
   const loud = m.cmd.t === 'force' && modeOf(sim.st) === 'zombie' ? tr(HALAS_ZOMBIE) : '';
   if (f) say(`${f}${loud}`, loud ? 4000 : 1800);

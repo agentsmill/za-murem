@@ -25,13 +25,16 @@ import {
   gidRoom,
   kafelkiZajete,
   kosztPlotu,
+  materialNaPlot,
   mieszkalny,
   moznaPrzeszukac,
   pietraBudynku,
   plotDla,
   pokojSasiada,
+  procentPlotu,
   przechodnie,
   uSasiada,
+  wariantyPlotu,
   wnetrze,
   ZABIJANIE_DESKI,
 } from './sasiedzi.ts';
@@ -495,7 +498,8 @@ function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuI
         confirm: true,
       });
   }
-  // etap 3: wspólny płot na drzwiach albo w pomieszczeniu otwartego budynku (z kosztem i czasem; czemu się nie da)
+  // etap 3: wspólny płot na drzwiach albo w pomieszczeniu otwartego budynku (z kosztem i czasem; czemu się nie da);
+  // warianty materiału, na które starcza naszych desek i złomu, a bez materiału deska i złom
   const plotBid = dp ? dp.bid : ps ? st.sasiedzi!.budynki[ps.k].bid : -1;
   if (plotBid >= 0 && !st.plot?.bids.includes(plotBid)) {
     const plan = st.plot?.plan;
@@ -504,13 +508,15 @@ function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuI
     else if (!plan) {
       const r = plotDla(st, w, plotBid);
       if (r?.ok) {
-        const k = kosztPlotu(r);
-        out.push({
-          cmd: { t: 'enclose', ids: core, bid: plotBid },
-          label: tr(MENU.plot(r.dlugosc, k.need.deski ?? 0, k.need.zlom ?? 0, k.total / TICKS_PER_HOUR)),
-          quick: false,
-          confirm: true,
-        });
+        for (const wariant of wariantyPlotu(r, materialNaPlot(st, w))) {
+          const k = kosztPlotu(r, wariant);
+          out.push({
+            cmd: { t: 'enclose', ids: core, bid: plotBid, wariant },
+            label: tr(MENU.plot(r.dlugosc, k.need.deski ?? 0, k.need.zlom ?? 0, k.total / TICKS_PER_HOUR, wariant)),
+            quick: false,
+            confirm: true,
+          });
+        }
       } else if (r) {
         out.push({
           cmd: { t: 'enclose', ids: core, bid: plotBid },
@@ -796,8 +802,7 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return tr(walking ? PRACA.idzieNaSchody : PRACA.naPietrze);
     case 'plot': {
       const plan = st.plot?.plan;
-      const pct = plan ? Math.min(99, Math.floor((100 * plan.work) / Math.max(1, plan.total))) : 0;
-      return tr(PRACA.plot(j.phase, pct));
+      return tr(PRACA.plot(j.phase, plan ? procentPlotu(plan) : 0));
     }
   }
 }

@@ -13,6 +13,7 @@ import {
   ileTekst,
   KARTA,
   MENU,
+  PO_PLOCIE,
   PO_POLECENIU,
   PRACA,
   PRACA_DRZWI,
@@ -66,6 +67,10 @@ function wszystkie(): Dwa[] {
     MENU.pietro(3),
     MENU.plot(65, 67, 65, 3.25),
     MENU.plot(1, 1, 1, 1),
+    MENU.plot(65, 134, 0, 3.25, 'deski'),
+    MENU.plot(79, 4, 158, 4.6, 'zlom'),
+    MENU.plot(1, 0, 2, 1, 'zlom'),
+    ...Object.values(PO_PLOCIE).flat(),
     MENU.plotNie('jezdnia'),
     MENU.plotNie('dlugi', 155),
     MENU.plotNie('brak'),
@@ -194,6 +199,22 @@ describe('napisy fali 2 po angielsku', () => {
     expect(MENU.plot(65, 65, 65, 3.25).en).toBe('Put up a shared fence (65 m: 65 planks, 65 scrap, 3.3 h)');
     // po polsku jak było
     expect(MENU.plot(65, 65, 65, 3.25).pl).toBe('Otoczyć wspólnym płotem (65 m: 65 desek, 65 złomu, 3,3 h)');
+  });
+
+  it('wspólny płot z jednego materiału: materiał w nazwie i w koszcie, deski na drzwi po złomie', () => {
+    expect(MENU.plot(65, 65, 65, 3.25, 'mieszany')).toEqual(MENU.plot(65, 65, 65, 3.25));
+    expect(MENU.plot(65, 130, 0, 3.25, 'deski').en).toBe('Put up a shared plank fence (65 m: 130 planks, 3.3 h)');
+    expect(MENU.plot(65, 0, 130, 3.25, 'zlom').en).toBe('Put up a shared scrap fence (65 m: 130 scrap, 3.3 h)');
+    expect(MENU.plot(79, 4, 158, 4.6, 'zlom').en).toBe(
+      'Put up a shared scrap fence (79 m: 158 scrap, 4 planks, 4.6 h)',
+    );
+    expect(MENU.plot(65, 130, 0, 3.25, 'deski').pl).toBe('Otoczyć wspólnym płotem z desek (65 m: 130 desek, 3,3 h)');
+    expect(MENU.plot(79, 4, 158, 4.6, 'zlom').pl).toBe(
+      'Otoczyć wspólnym płotem ze złomu (79 m: 158 złomu, 4 deski, 4,6 h)',
+    );
+    expect(PO_PLOCIE.deski[0].en).toBe('Off to put up the shared plank fence, planks first.');
+    expect(PO_PLOCIE.zlom[1].en).toBe('One person goes to put up the shared scrap fence, scrap first.');
+    expect(PO_PLOCIE.zlom[0].pl).toBe('Postawi wspólny płot ze złomu: najpierw doniesie złom.');
   });
 });
 
