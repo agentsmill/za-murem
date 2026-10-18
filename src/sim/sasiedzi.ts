@@ -1,7 +1,10 @@
 /* Sąsiednie budynki (M2 fala 2, docs/M2-fala-2.md): typy stanu, wnętrza z pamięcią na świat, drzwi (rodzaje,
    stan na start, przechodniość), budynek przy podwórku, znani sąsiedzi, łup usług i mieszkań, zapasy gospodarstw,
-   lokatorzy zapasowi bez tabel generatora, zamiar i nastrój, wybory spotkania i ich skutki. Czyste funkcje świata
-   i stanu: symulacja, menu poleceń, rysowanie i interfejs liczą z nich to samo.
+   lokatorzy zapasowi bez tabel generatora, zamiar i nastrój, wybory spotkania i ich skutki. Etap 2: piętra (łup,
+   lokatorzy z góry, szwendacz), nocni goście o 2:00, szabrownicy, którzy zostają, ukryci ugryzieni. Etap 3: wspólny
+   płot dla budynku (plotDla z kształtem z wspolnyPlot, kosztPlotu), a łup w otoczonym budynku jest nasz (uSasiada).
+   Gra sieciowa: kafelki i pomieszczenia za drzwiami klatek innych drużyn (zaDrzwiami, kafelkiZajete, pokojeZajete).
+   Czyste funkcje świata i stanu: symulacja, menu poleceń, rysowanie i interfejs liczą z nich to samo.
 
    Kontrakt losowania: stany na start, łup i lokatorzy zapasowi losują tylko z ziarna świata, budynku, kafelka albo
    mieszkania (mulberry), nigdy ze st.rng. Skutki wyborów w spotkaniu dostają generator od symulacji (st.rng), więc gra,

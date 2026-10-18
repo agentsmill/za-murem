@@ -10,6 +10,9 @@
    tagu nie ma (świat wymusza siedzibę mieszkalną z budynku, którego generator nie uważa za mieszkalny, jak na
    demach Przymorza i Lanciego), budynek zapasowy powstaje ze świata (`budynekZapasowy`, klucz z samego budynku).
 
+   Sąsiednie budynki (M2 fala 2, docs/M2-fala-2.md): `zrodloLokatorow` robi to samo dla dowolnego budynku obszaru
+   (lokatorzy i stany mieszkań parteru dla `Sim.lokatorzy`); symulacja pyta o budynek przy jego pierwszym dotknięciu.
+
    Puste mieszkania. Ich liczba to udział pustych w całym budynku przyłożony do mieszkań parteru. Jak w `settleApts`
    (kontrakt M2): gdy z podwórka da się dojść do co najmniej dwóch mieszkań, jedno z nich stoi puste do przeszukania,
    reszta pustych jest dalej, a co najmniej jedno mieszkanie przy podwórku zostaje zamieszkane. Powód i rok biorą
