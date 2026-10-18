@@ -1066,7 +1066,6 @@ function showMenu() {
           },
           nextPrompt,
         );
-      else if (act === 'menu-v03') save();
       else if (act === 'menu-start') {
         save();
         location.href = startUrl();

@@ -261,25 +261,6 @@ a.btn {
   color: var(--ink-dim);
   max-width: 70ch;
 }
-.preview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--lamp);
-  border-radius: 4px;
-  background: var(--slab-raised);
-}
-.preview p {
-  margin: 0;
-  flex: 1 1 280px;
-}
-.preview .btn {
-  text-decoration: none;
-  white-space: nowrap;
-}
 .btn.alarm {
   border-color: #8a3a2c;
   color: #f0b4a6;
@@ -307,26 +288,6 @@ a.btn {
   background: var(--lamp);
   border-color: var(--lamp);
   color: #1d1a14;
-}
-/* na telefonie ramka nie może zepchnąć formularza adresu z pierwszego ekranu */
-@media (max-width: 520px) {
-  .preview {
-    gap: 8px;
-    padding: 8px 10px;
-    font-size: 14px;
-  }
-  .preview p {
-    flex-basis: 100%;
-  }
-  .preview .wide {
-    display: none;
-  }
-  .start .preview .btn {
-    width: 100%;
-    padding: 8px 12px;
-    font-size: 15px;
-    text-align: center;
-  }
 }
 
 /* gra */

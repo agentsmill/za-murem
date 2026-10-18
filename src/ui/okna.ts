@@ -312,7 +312,7 @@ export function menuSheet(note: string): Sheet {
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: 'Menu',
-    body: `<div class="menu-list">${btn('menu-back', 'Wróć do gry', 'btn go')}${btn('menu-help', 'Jak grać')}<a class="btn" href="v03/index.html" data-act="menu-v03">Pełna wersja 0.3</a>${btn(
+    body: `<div class="menu-list">${btn('menu-back', 'Wróć do gry', 'btn go')}${btn('menu-help', 'Jak grać')}${btn(
       'menu-start',
       'Zapisz i wróć do ekranu startowego',
     )}</div><p class="fine">${esc(note)}</p><p class="fine dane">${esc(DANE_MIESZKANCOW)} <a href="${LICENCJE_MIESZKANCOW}" target="_blank" rel="noopener">Źródła i licencje</a></p>`,
@@ -363,7 +363,7 @@ export function helpSheet(touch: boolean, zombie = false): Sheet {
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: 'Jak grać',
-    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul>${buildHelp(touch)}<h3 class="help-h">Zarząd</h3><ul class="help"><li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li><li>Każdy z zarządu ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li></ul>${zombie ? ZOMBIE_HELP : ''}<h3 class="help-h">Na razie</h3><p>W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie. Badania, zima i reszta gospodarki są na razie w wersji 0.3.</p>`,
+    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul>${buildHelp(touch)}<h3 class="help-h">Zarząd</h3><ul class="help"><li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li><li>Każdy z zarządu ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li></ul>${zombie ? ZOMBIE_HELP : ''}<h3 class="help-h">Na razie</h3><p>W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.</p>`,
     foot: btn('help-back', 'Wróć', 'btn go'),
     closable: true,
   };
@@ -376,6 +376,6 @@ export function endSheet(id: EndingId): Sheet {
     kicker: 'Koniec gry',
     title: esc(e.title),
     body: `<p>${esc(e.text)}</p>`,
-    foot: `<a class="btn ghost" href="v03/index.html">Pełna wersja 0.3</a>${btn('end-start', 'Od nowa', 'btn go')}`,
+    foot: btn('end-start', 'Od nowa', 'btn go'),
   };
 }
