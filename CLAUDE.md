@@ -70,7 +70,7 @@ ZM_BAZA=./za-murem.db ZM_CIASTECZKO_SECURE=0 node server/main.ts  # serwer gry s
 
 - `npm run lint` (`biome check .`) pada w tym katalogu, bo Biome trafia na `biome.json` z drzew sesji w `.claude/worktrees/*`. Lokalnie Biome na katalogach jak wyżej; CI na czystym checkoucie puszcza `npm run lint`.
 - `npm run shots` sam stawia serwer Vite w procesie (wolny port) i Chromium z Playwright, więc `npm run dev` nie jest potrzebny. Filtr to fragment nazwy zrzutu z listy w `tools/shots.ts`, wynik ląduje w `shots/<nazwa>.png` (poza repo). `--dist` zrzuca zbudowaną wersję, więc najpierw `npm run build`.
-- Parametry adresu gry do zrzutów i prób ręcznych (`src/main.ts`): `demo`, `tryb=zombie`, `seed`, `godzina=22` (z ułamkiem: 18.5 to 18:30), `cam=x,y,zoom` w kafelkach albo `cam=hq,zoom` i `cam=all`, `speed` (indeks tempa: 0 pauza, 1 to 1×, 2 to 3×, 3 to 6×, 4 to 8×), `stado=N` (w trybie zombie N szwendaczy pod siatką), `swiatla=test`, `przekroj=0` (dach zamiast wnętrza), `perf=N` (tłum do pomiarów), `worker=0`.
+- Parametry adresu gry do zrzutów i prób ręcznych (`src/main.ts`): `demo`, `tryb=zombie`, `seed`, `godzina=22` (z ułamkiem: 18.5 to 18:30), `cam=x,y,zoom` w kafelkach albo `cam=hq,zoom` i `cam=all`, `speed` (indeks tempa: 0 pauza, 1 to 1×, 2 to 3×, 3 to 6×, 4 to 8×), `stado=N` (w trybie zombie N szwendaczy pod siatką), `swiatla=test`, `przekroj=0` (dach zamiast wnętrza), `perf=N` (tłum do pomiarów), `worker=0`, `siec=1` (gra z sąsiadami: blok logowania i start przez serwer gry, tylko gdy `/api` odpowiada; lokalnie `npm run dev` przekazuje `/api` do `node server/main.ts`).
 
 ## Architektura
 

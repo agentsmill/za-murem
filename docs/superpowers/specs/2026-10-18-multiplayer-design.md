@@ -2,7 +2,7 @@
 
 Projekt z prośby Mateusza z 18.10.2026, 1:30. Jego słowa: „marzy mi się taki multiplayer, gdzie ludzie mogą założyć sobie swoje konto, zacząć grę w swoim domu i zajmują kolejne. Jeśli ktoś zaloguje się na ten adres, ale będzie to już zajęte, to on i jego drużyna będą bez domu na początku. Będą musieli go znaleźć szybko. To znaczy, że ktoś już zajął ich klatkę.” To zmienia wcześniejszą decyzję „bez backendu i kont” (Mateusz sam o to prosi). Wszystko inne poniżej to moje decyzje; te, które powinien przejrzeć Mateusz, są zebrane na końcu w sekcji „Decyzje do przejrzenia przez Mateusza”.
 
-Etap 1 (ta noc, gałąź `mp-serwer`): ten projekt, klucze budynków i klatek wspólne dla graczy, serwer z kontami, zajętymi klatkami i zapisem w chmurze, klient API. Gra jeszcze z tego nie korzysta. Etap 2: spięcie z grą na połączonej gałęzi (ekran startowy, start bez domu, „Zajmij klatkę”, znaczniki zajętych).
+Etap 1 (gałąź `mp-serwer`): ten projekt, klucze budynków i klatek wspólne dla graczy, serwer z kontami, zajętymi klatkami i zapisem w chmurze, klient API. Etap 2 w wersji minimalnej (gałąź `mp-gra`, za `?siec=1`): logowanie na karcie startowej, start bez domu, znaczniki zajętych klatek, „Zajmij klatkę”, zapis w chmurze; opis i reszta w sekcjach „Etap 2” niżej.
 
 ## Po co
 
@@ -134,17 +134,27 @@ Klient (`src/net/api.ts`): `fetch` do `/api` tej samej domeny z ciasteczkiem (`c
 - Kontener jako użytkownik `node`, port tylko na `127.0.0.1`, X-Forwarded-For brany pod uwagę tylko za własnym Caddy, w Caddy limit ciała 4 MB. Node trzyma bezczynne połączenia dłużej niż Caddy (130 s wobec 2 minut), żeby nie zamykał połączenia, które Caddy właśnie bierze (502). Brak zależności z npm, więc nie ma czego podmienić w łańcuchu dostaw.
 - Klientowi ufamy co do przebiegu gry (to jego symulacja). Przerobiony klient może zająć klatkę bez chodzenia do niej, ale tylko przy prawdziwym budynku z klucza, w promieniu 600 m od swojej siedziby i najwyżej 60.
 
-### Etap 2: spięcie z grą
+### Etap 2, wersja minimalna (zrobiona w nocy z 17 na 18.10.2026, gałąź `mp-gra`)
 
-Na połączonej gałęzi, po scaleniu M2 i trybu zombie:
+Wszystko za przełącznikiem `?siec=1` w adresie strony i tylko wtedy, gdy `/api/zdrowie` odpowiada; bez niego gra jest taka jak dotąd (boty dają te same skróty). Przełącznik zostaje, dopóki Mateusz nie da informacji o danych osobowych i administratora danych.
 
-- Ekran startowy: sekcja gry sieciowej (logowanie, zakładanie konta, wylogowanie, usunięcie konta, krótka informacja o danych), na telefonie zwinięta, żeby formularz adresu został na pierwszym ekranie (`start-telefon`).
-- `vite.config.ts`: pośrednik `/api` do `127.0.0.1:8787` przy `npm run dev`.
-- Symulacja: start bez domu (zarząd przy bramie, siedziba zamknięta), polecenia „zajmij klatkę” i „klatkę zajęła inna drużyna”, dom drużyny jako lista zajętych drzwi zamiast jednej siedziby (`houseOf`), wnętrze zajętej klatki z `buildInterior`. To największa część etapu 2, bo dziś symulacja zakłada, że dom to zawsze `w.hq`.
-- Rysowanie: znacznik zajętych klatek, światło w cudzych oknach nocą, znaczniki wolnych klatek przy starcie bez domu.
-- Zapis w chmurze w Menu i co 5 minut.
+- Karta startowa: blok `#siec` (jak `#druzyna`) z nickiem i hasłem, „Zaloguj”, „Załóż konto”, „Wyloguj”, notką „Konto to tylko nick i hasło, bez e-maila. Zapomniane hasło to stracone konto.” i przyciskiem „Kontynuuj z chmury”, kiedy na serwerze jest zapis (`src/ui/siec.ts`, `src/net/gra.ts`).
+- Start zalogowanej drużyny na prawdziwym adresie (`startSieci` w `src/net/siec.ts`): najpierw serwer zwalnia stare klatki konta (nowa gra), potem gra pyta o zajęte w prostokącie mapy i zajmuje klatkę pierwszych drzwi siedziby. Wolna: zwykły start. Zajęta (na liście albo 409): świat budowany jeszcze raz z opcją `bezSiedziby` (klucze budynków z cudzymi klatkami i budynku pod adresem), więc siedzibą zostaje najbliższy wolny budynek mieszkalny, deterministycznie; zarząd stoi na ulicy przed drzwiami utraconej klatki (`postawNaUlicy` zmienia tylko pozycje pionków zarządu w stanie przed `new Sim`, nic nie losuje), a lista celów to „Bez domu”: zaznaczyć kogoś i dojść do drzwi wolnej klatki przed nocą.
+- Klatkę nowej siedziby gra zajmuje na serwerze, kiedy ktoś z zarządu stanie w jej drzwiach albo w środku (`naProgu`, sprawdzane co pół sekundy), albo z menu „Zajmij klatkę (wasz nowy dom)”. Gdy w tym czasie zajęła ją inna drużyna, gra zapisuje dane osiedla z dłuższą listą wykluczeń w pamięci sesji i przeładowuje stronę: nowy start bez domu przy następnym wolnym budynku.
+- Znaczniki klatek nad mapą (warstwa `#klatki`): czerwone „zajęte” (inne drużyny), zielone „wasza klatka”, żółte „wolna klatka” (cel drużyny bez domu), przy drzwiach klatki, a gdy świat nie ma tam drzwi, na środku klatki. Lista z serwera odświeża się co dwie minuty i po każdym zajęciu.
+- „Zajmij klatkę” w menu pod prawym przyciskiem na każdym innym budynku (klatka z drzwi albo z rzutu kafelka na oś): zajęcie na serwerze w jego limitach (60 klatek, 600 m od siedziby), na razie bez skutków w symulacji.
+- Zapis w chmurze: przy zapisie w przeglądarce gra sieciowa wysyła go też na serwer, najwyżej raz na minutę i jeden naraz (limity serwera), bez adresu (`zapisBezAdresu`). Nowa gra nadpisuje stary zapis, dalej idzie z wersją; po konflikcie wersji (nowszy zapis z innego urządzenia) gra przestaje wysyłać i mówi o tym. Zapis ma stan sieci (`Save.siec`: lista wykluczeń, czy jest dom), więc wczytanie, także z chmury, buduje ten sam świat.
+- `vite.config.ts`: `/api` przy `npm run dev` idzie do `127.0.0.1:8787` z zachowanym nagłówkiem Host (inaczej serwer odrzuca żądania jako z obcej strony).
+- Testy: przepływ startu, świat z wykluczeniami, ulica i dojście do siedziby w symulacji, znaczniki, klatka pod kafelkiem, `GraSieciowa` bez DOM na udawanym serwerze (`tests/unit/siec.test.ts`). Zrzuty z udawanym `/api` (`siec-start`, `siec-start-telefon`, `siec-znaczniki`, `siec-bez-domu`, `siec-dom`, `siec-chmura`) i z prawdziwym serwerem w procesie za proxy Vite (`siec-dwie-druzyny`: pierwsza drużyna dostaje klatkę pod adresem, druga z tym samym adresem zaczyna bez domu).
+
+### Etap 2, reszta (na później)
+
+- Symulacja: dom drużyny jako lista zajętych drzwi zamiast jednej siedziby (`houseOf`), wnętrze dodatkowej klatki z `buildInterior`, przeprowadzka do klatki zajętej z menu, polecenie „klatkę zajęła inna drużyna” w kolejce stanu (zamknięte drzwi), cudza siedziba zamknięta dla drużyny bez domu. Dziś drużyna bez domu może wejść do nowej siedziby przed jej zajęciem na serwerze (zajęcie i tak następuje na progu).
+- Samouczek po dojściu do domu dalej mówi o „człowieku w kuchni siedziby”, a zarządu tam nie ma.
+- Usunięcie konta i informacja o danych na karcie startowej (po tekście od Mateusza), zapis w chmurze także z Menu.
+- Rysowanie: światło w cudzych oknach nocą, znaczniki w rysowaniu PixiJS zamiast warstwy DOM (dziś napis „wolna klatka” potrafi nachodzić na „Suche drzewo”).
 - Drzwi w miejscach klatek z kluczy (`findEntrances` bierze liczbę i pozycje klatek z `zm:os`), żeby każda klatka miała swoje drzwi u każdego gracza. Zmienia światy, więc stare zapisy zaczną się od nowa (zmienia się wnętrze siedziby, a z nim `worldKey`).
-- Zrzuty w Playwright: logowanie, start bez domu, znaczniki zajętych, telefon.
+- Siedziba w grze sieciowej bez nazwy ulicy (RODO, decyzja 12).
 
 ### Na później
 
