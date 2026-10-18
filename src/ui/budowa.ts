@@ -2,7 +2,8 @@
    dozwolone miejsca w trybie stawiania z canPlace symulacji i polecenia przy planach i gotowych budowlach
    w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM. */
 
-import { BUILDS, type BuildKind, type BuildPlace, canPlace, footprint, type Mat } from '../sim/budowle.ts';
+import { BLOK, type Words, wordsOf } from '../gov/miejsce.ts';
+import { BUILDS, type BuildKind, type BuildPlace, canPlace, effectOf, footprint, type Mat } from '../sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import type { MenuItem } from '../sim/orders.ts';
 import type { SimState } from '../sim/sim.ts';
@@ -201,7 +202,11 @@ const SOURCE: Partial<Record<Mat, string>> = {
 
 /** Menu budowy: kategorie z budowlami; niedostępne z powodem (nie ma gdzie postawić albo brakuje
     materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. */
-export function buildMenu(have: Partial<Record<Mat, number>>, room: (kind: BuildKind) => boolean): BuildCategory[] {
+export function buildMenu(
+  have: Partial<Record<Mat, number>>,
+  room: (kind: BuildKind) => boolean,
+  words: Words = wordsOf(BLOK),
+): BuildCategory[] {
   return CATEGORIES.map((c) => ({
     key: c.key,
     title: c.title,
@@ -223,7 +228,7 @@ export function buildMenu(have: Partial<Record<Mat, number>>, room: (kind: Build
           size: `${d.w}×${d.h}`,
           cost: costText(d.cost),
           time: workText(d.work),
-          effect: d.effect,
+          effect: effectOf(kind, words),
           place: PLACE_TEXT[d.place],
           ok: !why,
           why,
@@ -233,7 +238,7 @@ export function buildMenu(have: Partial<Record<Mat, number>>, room: (kind: Build
 }
 
 /** okno menu budowy (przycisk „Budowa” i klawisz B) */
-export function buildSheet(menu: BuildCategory[], touch: boolean): Sheet {
+export function buildSheet(menu: BuildCategory[], touch: boolean, words: Words = wordsOf(BLOK)): Sheet {
   const item = (b: BuildItem) =>
     `<li class="build ${b.ok ? 'ok' : 'no'}"><div class="build-head"><b class="build-n">${esc(b.name)}</b><small class="build-size">${esc(
       b.size,
@@ -248,7 +253,7 @@ export function buildSheet(menu: BuildCategory[], touch: boolean): Sheet {
     tone: 'menu',
     kicker: touch ? 'Budowa' : 'Budowa (B)',
     title: 'Co budujemy?',
-    body: `<p class="lead">Plan stawia się na mapie, a zarząd sam przynosi materiały i buduje.${
+    body: `<p class="lead">Plan stawia się na mapie, a ${words.zarzad.krotko} sam przynosi materiały i buduje.${
       touch
         ? ' Stuknięcie stawia plan, przyciski na dole obracają i anulują.'
         : ' Lewy klik stawia plan, R obraca, prawy klik albo Esc anuluje.'

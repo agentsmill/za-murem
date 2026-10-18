@@ -3,6 +3,7 @@
    naprawy st.damage (fixed), koszty napraw REPAIR symulacji, a liczby do karty odczyt symulacji
    (snapshot().apts: damaged, rooms, searched). Czyste funkcje stanu i świata, bez DOM. */
 
+import { BLOK, type Words, wordsOf } from '../gov/miejsce.ts';
 import { REPAIR } from '../sim/mieszkania.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimApt } from '../sim/snapshot.ts';
@@ -124,16 +125,16 @@ export function aptView(st: SimState, w: World, apt: number, snap: readonly SimA
   };
 }
 
-/** nagłówek stanu („Puste od 2034, wyjazd”) */
-export function aptState(v: AptView): string {
-  if (v.state === 'zarzad') return 'Mieszkanie zarządu';
+/** nagłówek stanu („Puste od 2034, wyjazd”); w domu mieszkanie komitetu ulicy */
+export function aptState(v: AptView, words: Words = wordsOf(BLOK)): string {
+  if (v.state === 'zarzad') return `Mieszkanie ${words.zarzad.d}`;
   if (v.state === 'mieszkancy') return 'Mieszkają tu ludzie';
-  const head = v.ours ? 'Zajęte przez zarząd' : 'Puste';
+  const head = v.ours ? `Zajęte przez ${words.zarzad.krotko}` : 'Puste';
   return v.why ? `${head} od ${v.year ?? '?'}, ${WHY_SHORT[v.why]}` : head;
 }
 
 /** karta mieszkania (w miejscu karty osoby): stan, powód opuszczenia, co do naprawy, co już przeszukane */
-export function aptCard(v: AptView, touch: boolean): string {
+export function aptCard(v: AptView, touch: boolean, words: Words = wordsOf(BLOK)): string {
   const empty = v.state === 'puste';
   const done = v.damages.filter((d) => d.fixed);
   const damages = v.damages.length
@@ -159,7 +160,7 @@ export function aptCard(v: AptView, touch: boolean): string {
     : 'Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.';
   return [
     `<h2>Mieszkanie ${v.apt + 1}</h2>`,
-    `<p class="sub">${esc(aptState(v))}</p>`,
+    `<p class="sub">${esc(aptState(v, words))}</p>`,
     empty && v.why ? `<p class="apt-why">${esc(WHY_TEXT[v.why](v.year ?? 2026))}</p>` : '',
     empty
       ? `<h3 class="apt-h">Do naprawy${v.damaged ? ` (${v.damaged})` : ''}</h3>${damages}`

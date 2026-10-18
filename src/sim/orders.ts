@@ -1,6 +1,7 @@
 /* Polecenia z kliknięcia i opisy prac do karty osoby. Czyste funkcje stanu i świata: interfejs pyta,
    co znaczy kliknięcie prawym przyciskiem na kafelku, i dostaje gotowe polecenie dla symulacji. */
 
+import { wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
@@ -11,7 +12,6 @@ import {
   drzwiPod,
   gidB,
   gidRoom,
-  LUP_MATS,
   mieszkalny,
   moznaPrzeszukac,
   pokojSasiada,
@@ -43,6 +43,7 @@ import {
   type Thing,
   trunkOf,
 } from './sim.ts';
+import { BATCH, CARRY_MATS, NAPISY, type Product, RECIPES, wreckAt, wreckStage, wreckTile } from './surowce.ts';
 import { modeOf } from './tryb.ts';
 
 /** nazwy w bierniku do menu i opisów: pomieszczenia, rzeczy do rozebrania, budowle */
@@ -179,13 +180,37 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       out.push({ cmd: { t: 'craft', ids: core, item: 'dzida' }, label: 'Zrobić dzidę', quick: false });
   }
   if (st.fence && gateTiles(w).includes(tile)) {
-    out.push({ cmd: { t: 'guard', ids: core, post: 'brama' }, label: 'Pilnować bramy', quick: false });
+    // w domu furtka
+    const brama = wordsOfWorld(w).brama;
+    out.push({ cmd: { t: 'guard', ids: core, post: 'brama' }, label: `Pilnować ${brama.d}`, quick: false });
     const open = st.fence.gateOpen;
     out.push({
       cmd: { t: 'gate', ids: core, open: !open },
-      label: open ? 'Zamknąć bramę' : 'Otworzyć bramę',
+      label: `${open ? 'Zamknąć' : 'Otworzyć'} ${brama.b}`,
       quick: false,
     });
+  }
+  // wrak: przeszukać (domyślne na samym aucie, tuż obok tylko z menu, żeby kliknięcie obok znaczyło „idź”), po
+  // przeszukaniu rozebrać (tylko z menu: długo i głośno)
+  const wreck = wreckAt(w, tile);
+  if (wreck) {
+    const wt = wreckTile(wreck, w.size);
+    const s = wreckStage(st.wraki, wt);
+    const tx = tile % w.size;
+    const ty = Math.floor(tile / w.size);
+    const onBase = tx >= wreck.x && tx < wreck.x + wreck.w && ty >= wreck.y && ty < wreck.y + wreck.h;
+    if (s === 0)
+      out.push({
+        cmd: { t: 'wreck', ids: core, tile: wt, how: 'szukaj' },
+        label: NAPISY.szukaj(wreck.model).pl,
+        quick: onBase,
+      });
+    else if (s === 1)
+      out.push({
+        cmd: { t: 'wreck', ids: core, tile: wt, how: 'rozbierz' },
+        label: NAPISY.rozbierz(wreck.model).pl,
+        quick: false,
+      });
   }
   const tree = treeAt(st, w, tile);
   if (tree >= 0) {
@@ -241,6 +266,21 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       });
     if (!g.ours) out.push({ cmd: { t: 'claim', ids: core, apt: g.apt }, label: 'Zająć mieszkanie', quick: false });
   }
+  // łup za siatką: zanieść na podwórko (drewno ma swoje „Zanieść do składu”)
+  const loot = st.fence ? things.find((t) => CARRY_MATS.has(t.kind) && t.n > 0) : undefined;
+  if (loot && !insideOf(st, w, tile))
+    out.push({ cmd: { t: 'carry', ids: core, thing: loot.id }, label: NAPISY.zaniesc.pl, quick: true });
+  // warsztat: drewno na deski, złom na części; jedna sztuka albo do BATCH naraz, gdy materiału starczy
+  if (things.some((t) => t.kind === 'warsztat')) {
+    const make = (what: Product, one: string, many: (n: number) => string) => {
+      const r = RECIPES[what];
+      const can = Math.min(BATCH, Math.floor(have(r.from) / r.n));
+      if (can >= 1) out.push({ cmd: { t: 'saw', ids: core, what, n: 1 }, label: one, quick: false });
+      if (can >= 2) out.push({ cmd: { t: 'saw', ids: core, what, n: can }, label: many(can), quick: false });
+    };
+    make('deski', NAPISY.deska.pl, (n) => NAPISY.deskiN(n).pl);
+    make('czesci', NAPISY.czesc.pl, (n) => NAPISY.czesciN(n).pl);
+  }
   // ognisko na wolnym kafelku podwórka, gdy jest z czego (drewno luzem albo w rękach)
   const woodN =
     st.things.reduce((a, t) => a + (t.kind === 'drewno' ? t.n : 0), 0) + st.pawns.reduce((a, p) => a + p.carry, 0);
@@ -251,8 +291,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
 }
 
 /** M2 fala 2 (docs/M2-fala-2.md): polecenia przy cudzych drzwiach (otworzyć, wejść, zapukać, wyważyć, zabić deskami,
-    odbić deski), w pomieszczeniach otwartego sąsiada (przeszukać, a mieszkanie lokatorów okraść pod ich nieobecność)
-    i przy łupie w jego wnętrzu (zanieść do siedziby). Drzwi od ulicy budynku przy podwórku mają ostrzeżenie. */
+    odbić deski) i w pomieszczeniach otwartego sąsiada (przeszukać, a mieszkanie lokatorów okraść pod ich nieobecność).
+    Łup z jego wnętrza niesie się na podwórko poleceniem z surowców. Drzwi od ulicy budynku przy podwórku mają
+    ostrzeżenie. */
 function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuItem[] {
   const out: MenuItem[] = [];
   const dp = drzwiPod(st.sasiedzi, w, modeOf(st), tile);
@@ -307,12 +348,7 @@ function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuI
         confirm: true,
       });
   }
-  // łup w cudzym budynku: zanieść do siedziby (i resztę z tego budynku)
-  const x = tile % w.size;
-  const y = Math.floor(tile / w.size);
-  const pile = st.things.find((t) => LUP_MATS.has(t.kind) && t.n > 0 && t.x === x && t.y === y);
-  if (pile && uSasiada(st, w, tile))
-    out.push({ cmd: { t: 'carry', ids: core, thing: pile.id }, label: 'Zanieść do siedziby', quick: true });
+  // łup w cudzym budynku niesie się jak łup zza siatki: „Zanieść na podwórko” w commandsAt (razem z resztą z budynku)
   return out;
 }
 
@@ -382,7 +418,7 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       if (j.target === STAY_YARD) return walking ? 'Idzie na podwórko.' : 'Pracuje na podwórku.';
       if (j.target === STAY_FIRE) return walking ? 'Idzie do ogniska.' : 'Grzeje się przy ognisku.';
       if (j.target === STAY_MEAL)
-        return walking ? 'Idzie na wspólny posiłek.' : 'Je wspólny posiłek przy stole zarządu.';
+        return walking ? 'Idzie na wspólny posiłek.' : `Je wspólny posiłek przy stole ${wordsOfWorld(w).zarzad.dk}.`;
       return walking ? 'Idzie do domu.' : 'Siedzi w domu.';
     case 'cook': {
       if (walking) return 'Idzie gotować.';
@@ -401,8 +437,8 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         return walking ? 'Idzie czuwać przy kozie.' : 'Czuwa przy kozie.';
       }
       if (j.target === SIATKA_POST) return walking ? 'Idzie na wartę przy siatce.' : 'Trzyma wartę przy siatce.';
-      if (walking) return j.target === 0 ? 'Idzie na wartę przy bramie.' : 'Idzie na wartę przy dziurze.';
-      return j.target === 0 ? 'Trzyma wartę przy bramie.' : 'Trzyma wartę przy dziurze.';
+      if (j.target === 0) return `${walking ? 'Idzie na wartę' : 'Trzyma wartę'} ${wordsOfWorld(w).brama.przy}.`;
+      return walking ? 'Idzie na wartę przy dziurze.' : 'Trzyma wartę przy dziurze.';
     case 'patch':
       if (j.phase === 0) return 'Idzie po deski i złom.';
       return j.phase === 1 ? 'Niesie materiał do dziury.' : 'Łata dziurę w siatce.';
@@ -452,6 +488,14 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return j.phase === 1 ? 'Niesie materiał do siatki.' : 'Wzmacnia siatkę.';
     case 'amputate':
       return walking ? 'Idzie amputować.' : 'Amputuje.';
+    case 'wreck':
+      if (j.what === 'rozbierz') return (walking ? NAPISY.idzieRozbierac : NAPISY.rozbiera).pl;
+      return (walking ? NAPISY.idzieSzukac : NAPISY.szuka).pl;
+    case 'carry':
+      return (walking ? NAPISY.poLup : NAPISY.niesie).pl;
+    case 'saw':
+      if (walking) return NAPISY.idzieWarsztat.pl;
+      return (j.what === 'czesci' ? NAPISY.robiCzesci(j.from) : NAPISY.pilujeDeski(j.from)).pl;
     case 'zombie':
       return (
         ['Snuje się.', 'Idzie do siatki.', 'Napiera na siatkę.', 'Goni.', 'Idzie na hałas.'][j.phase] ?? 'Snuje się.'
@@ -466,8 +510,6 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       const where = r ? ROOM_ACC[r.kind] : 'pomieszczenie';
       return walking ? `Idzie przeszukać ${where} u sąsiadów.` : `Przeszukuje ${where} u sąsiadów.`;
     }
-    case 'carry':
-      return j.phase === 0 ? 'Idzie po łup u sąsiadów.' : 'Niesie łup do siedziby.';
     case 'meet':
       return 'Rozmawia z sąsiadami.';
   }

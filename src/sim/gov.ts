@@ -5,7 +5,7 @@
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie. */
 
 import { nextRandom } from '../core/rng.ts';
-import { placeOf } from '../gov/miejsce.ts';
+import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type { Arm, GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
@@ -224,7 +224,8 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
     const p = pawnOf(st, id);
     if (!p?.needs) continue;
     for (const [k, v] of Object.entries(d) as [keyof typeof d, number][]) {
-      if (k === 'mood') p.moods.push({ why: 'Sprawy spółdzielni', d: v, until: st.tick + 12 * TICKS_PER_HOUR });
+      if (k === 'mood')
+        p.moods.push({ why: `Sprawy ${wordsOfWorld(w).wspolnota.d}`, d: v, until: st.tick + 12 * TICKS_PER_HOUR });
       else p.needs[k] = clamp100(p.needs[k] + v);
     }
   }

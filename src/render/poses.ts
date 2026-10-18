@@ -27,7 +27,8 @@ export interface PawnLike {
   pi: number;
   path: { length: number };
   carry: number;
-  /** n i what: sztuki w rękach poza drewnem i co to za sztuki ('deski', 'zlom', 'czesci') */
+  /** n i what: sztuki w rękach poza drewnem i co to za sztuki ('deski', 'zlom', 'czesci', 'leki', 'jedzenie');
+      what w pracy 'wreck' to sposób ('szukaj', 'rozbierz'), w 'saw' produkt (n zawsze 0) */
   job: { t: string; phase: number; target: number; n?: number; what?: string } | null;
   /** broń w rękach i tick, od którego znowu uderzy (z niego: kiedy był ostatni cios) */
   weapon?: WeaponId | null;
@@ -145,7 +146,7 @@ export function poseOf(
     j &&
     j.phase !== 2 &&
     (j.n ?? 0) > 0 &&
-    (j.t === 'patch' || j.t === 'repair' || j.t === 'build' || j.t === 'brace')
+    (j.t === 'patch' || j.t === 'repair' || j.t === 'build' || j.t === 'brace' || j.t === 'carry')
   )
     return { pose: !j.what || j.what === 'deski' ? 'planks' : 'scrap', dir, frame: step };
   if (!moving && j && j.phase === 2)
@@ -180,6 +181,12 @@ export function poseOf(
         return thing?.kind === 'smieci' ? knees() : swing();
       }
       case 'claim':
+        return hammer();
+      // wrak: przeszukuje na kolanach (schowek, bagażnik), rozbiera z łomem albo młotkiem
+      case 'wreck':
+        return j.what === 'rozbierz' ? hammer() : knees();
+      // warsztat: piłuje i obrabia przy stole
+      case 'saw':
         return hammer();
       case 'warm':
         return { pose: 'crouch', dir, frame: 0 };

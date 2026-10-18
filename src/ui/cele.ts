@@ -1,7 +1,8 @@
 /* Cele pierwszego dnia: kroki samouczka ze stanu symulacji (st.tut), drewno na noc i „przetrwać noc”
    z raportów zarządu. Czyste funkcje bez DOM: interfejs dostaje listę z tekstem celu i podpowiedzią
-   do bieżącego kroku. */
+   do bieżącego kroku. Zarząd i miejsce suchego drzewa według słownika miejsca (w domu komitet i ogród). */
 
+import { BLOK, type Words, wordsOf } from '../gov/miejsce.ts';
 import type { GovState } from '../gov/typy.ts';
 import { START_KIT } from '../sim/bron.ts';
 import { BUILDS, type BuildKind } from '../sim/budowle.ts';
@@ -23,14 +24,14 @@ export interface Goal {
 /** tyle drewna na zapas (w składzie, luzem i w rękach) wystarcza, żeby koza dotrwała do snu */
 export const NIGHT_WOOD = 6;
 
-const STEPS: Record<TutStep, { text: string; mouse: string; touch: string }> = {
+const steps = (w: Words): Record<TutStep, { text: string; mouse: string; touch: string }> => ({
   zaznacz: {
-    text: 'Zaznaczcie kogoś z zarządu.',
+    text: `Zaznaczcie kogoś z ${w.zarzad.dk}.`,
     mouse: 'Kliknijcie człowieka w kuchni siedziby.',
     touch: 'Stuknijcie człowieka w kuchni siedziby.',
   },
   rozkaz: {
-    text: 'Wyślijcie go do suchego drzewa przy trzepaku.',
+    text: `Wyślijcie go do suchego drzewa ${w.drzewo}.`,
     mouse: 'Prawy przycisk na suchym drzewie, potem „Ściąć drzewo”.',
     touch: 'Stuknijcie pień suchego drzewa albo przytrzymajcie na nim palec.',
   },
@@ -55,7 +56,7 @@ const STEPS: Record<TutStep, { text: string; mouse: string; touch: string }> = {
     mouse: 'Koza grzeje powoli, a 3× u góry przyspiesza czekanie.',
     touch: 'Koza grzeje powoli, a 3× u góry przyspiesza czekanie.',
   },
-};
+});
 
 /** lista celów; pusta, gdy samouczek wyłączony i noc już przetrwana */
 export function goalsOf(
@@ -69,13 +70,17 @@ export function goalsOf(
     /** drewno na zapas teraz i czy zapas na noc już raz był */
     wood?: number;
     woodReady?: boolean;
+    /** słowa miejsca (bez nich jak w bloku) */
+    words?: Words;
   },
 ): Goal[] {
   const out: Goal[] = [];
   const t = st.tut;
+  const w = o.words ?? wordsOf(BLOK);
+  const tut = steps(w);
   if (t.step >= 0)
     TUT_STEPS.forEach((key, k) => {
-      const s = STEPS[key];
+      const s = tut[key];
       let how = o.touch ? s.touch : s.mouse;
       if (key === 'cieplo' && o.kitchen !== null) how = `W kuchni teraz ${deg(o.kitchen)}. ${how}`;
       // zaznaczenie dociera do symulacji z następnym krokiem, a na pauzie nie od razu: cel widać jako zrobiony
@@ -102,8 +107,8 @@ export function goalsOf(
     key: 'noc',
     text: 'Przetrwajcie pierwszą noc.',
     how: night
-      ? 'Szabrownicy przychodzą po dwudziestej trzeciej. Rano zarząd dostanie raport.'
-      : 'O 19:30 zebranie zarządu, o 20:00 karta nocy: kto śpi, kto pilnuje siatki.',
+      ? `Szabrownicy przychodzą po dwudziestej trzeciej. Rano ${w.zarzad.krotko} dostanie raport.`
+      : `O 19:30 zebranie ${w.zarzad.dk}, o 20:00 karta nocy: kto śpi, kto pilnuje siatki.`,
     done: survived,
   });
   return out;
@@ -135,8 +140,11 @@ export function goalsDay2(
     woodReady: boolean;
     /** otwarte dziury w siatce */
     holes: number;
+    /** słowa miejsca (bez nich jak w bloku) */
+    words?: Words;
   },
 ): Goal[] {
+  const w = o.words ?? wordsOf(BLOK);
   const searched = st.apts.some((a) => a.searched.length > 0);
   const built = (kind: string) => st.things.some((t) => t.kind === kind);
   const late = !!gov?.night?.confirmed || (gov?.reports.length ?? 0) > 1;
@@ -166,7 +174,7 @@ export function goalsDay2(
     {
       key: 'budowla',
       text: 'Postawcie pierwszą budowlę.',
-      how: `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. Zarząd sam przyniesie materiały i zbuduje.`,
+      how: `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. ${w.Zarzad} sam przyniesie materiały i zbuduje.`,
       done: st.things.some((t) => t.kind in BUILDS),
     },
     zombie

@@ -1,6 +1,7 @@
 /* Budowle fali 1 M2 (docs/M2-fala-1.md): rodzaj, miejsce, rozmiar, koszt w materiałach i czas pracy.
    Kontrakt dla symulacji (właściciel), interfejsu i rysowania (tylko czytają). Koszty i czasy stroi bot. */
 
+import { type Words, wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
 import { houseOf } from './house.ts';
@@ -24,8 +25,8 @@ export interface BuildDef {
   cost: Partial<Record<Mat, number>>;
   /** praca w tickach symulacji, jeden pionek */
   work: number;
-  /** jedno zdanie do menu budowy */
-  effect: string;
+  /** jedno zdanie do menu budowy; zdanie zależne od miejsca bierze słowa ze słownika wspólnoty (effectOf) */
+  effect: string | ((w: Words) => string);
 }
 
 export const BUILDS: Record<BuildKind, BuildDef> = {
@@ -63,7 +64,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
     h: 2,
     cost: { deski: 20 },
     work: TICKS_PER_HOUR,
-    effect: 'Dwa miejsca do spania, w spółdzielni zmieści się więcej ludzi.',
+    effect: (w) => `Dwa miejsca do spania, ${w.mieszkamy} zmieści się więcej ludzi.`,
   },
   ogrodek: {
     name: 'Ogródek',
@@ -114,11 +115,18 @@ export function buildTiles(kind: BuildKind, x: number, y: number, rot: number, s
   return out;
 }
 
-const WHY: Record<BuildPlace, string> = {
-  pokoj: 'Tylko w pokoju w naszym mieszkaniu.',
-  kuchnia: 'Tylko w kuchni w naszym mieszkaniu.',
-  podworko: 'Tylko na podwórku za siatką, z dala od bramy, dziur i drzwi.',
-  obwod: 'Tylko na odcinku siatki.',
+/** zdanie o działaniu budowli według miejsca */
+export function effectOf(kind: BuildKind, w: Words): string {
+  const e = BUILDS[kind].effect;
+  return typeof e === 'string' ? e : e(w);
+}
+
+/** powód „nie tutaj”; bramy: brama albo furtka w dopełniaczu ze słownika wspólnoty */
+const WHY: Record<BuildPlace, (bramy: string) => string> = {
+  pokoj: () => 'Tylko w pokoju w naszym mieszkaniu.',
+  kuchnia: () => 'Tylko w kuchni w naszym mieszkaniu.',
+  podworko: (bramy) => `Tylko na podwórku za siatką, z dala od ${bramy}, dziur i drzwi.`,
+  obwod: () => 'Tylko na odcinku siatki.',
 };
 
 /** Czy budowlę wolno postawić (podgląd trybu stawiania i polecenie 'build'): w pomieszczeniu właściwego rodzaju
@@ -140,7 +148,7 @@ export function canPlace(
   const { w: bw, h: bh } = footprint(kind, rot);
   if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: 'Poza mapą.' };
   const tiles = buildTiles(kind, x, y, rot, size);
-  const no = { ok: false, why: WHY[def.place] };
+  const no = { ok: false, why: WHY[def.place](wordsOfWorld(w).brama.d) };
   const h = houseOf(w);
   const shape = fenceShape(w);
   if (def.place === 'pokoj' || def.place === 'kuchnia') {
