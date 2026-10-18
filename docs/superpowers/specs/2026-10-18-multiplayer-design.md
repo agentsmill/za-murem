@@ -142,7 +142,7 @@ Na połączonej gałęzi, po scaleniu M2 i trybu zombie:
 - Symulacja: start bez domu (zarząd przy bramie, siedziba zamknięta), polecenia „zajmij klatkę” i „klatkę zajęła inna drużyna”, dom drużyny jako lista zajętych drzwi zamiast jednej siedziby (`houseOf`), wnętrze zajętej klatki z `buildInterior`. To największa część etapu 2, bo dziś symulacja zakłada, że dom to zawsze `w.hq`.
 - Rysowanie: znacznik zajętych klatek, światło w cudzych oknach nocą, znaczniki wolnych klatek przy starcie bez domu.
 - Zapis w chmurze w Menu i co 5 minut.
-- Drzwi bloków w miejscach klatek z kluczy (`findEntrances` bierze liczbę i pozycje klatek z `zm:os`), żeby każde drzwi miały swoją klatkę u każdego gracza. Zmienia światy, więc stare zapisy zaczną się od nowa (zmienia się wnętrze siedziby, a z nim `worldKey`).
+- Drzwi w miejscach klatek z kluczy (`findEntrances` bierze liczbę i pozycje klatek z `zm:os`), żeby każda klatka miała swoje drzwi u każdego gracza. Zmienia światy, więc stare zapisy zaczną się od nowa (zmienia się wnętrze siedziby, a z nim `worldKey`).
 - Zrzuty w Playwright: logowanie, start bez domu, znaczniki zajętych, telefon.
 
 ### Na później
@@ -160,7 +160,7 @@ Gra w czasie rzeczywistym i cudzy ludzie na mapie, handel i napady między druż
 ## Decyzje do przejrzenia przez Mateusza
 
 1. Gra asynchroniczna: każdy gra swoją symulacją, wspólne są tylko zajęte klatki i konta. Cudzych ludzi na mapie nie ma.
-2. Jednostka zajęcia to klatka: w bloku co 20 m osi budynku, dom jednorodzinny, sklep czy garaż to jedna klatka. Klatki liczone z obrysu, a nie z drzwi, które dziś stawia świat. W etapie 2 drzwi bloków przejdą na miejsca klatek, co zmieni światy i zacznie stare zapisy od nowa.
+2. Jednostka zajęcia to klatka: jedna na każde 20 m osi budynku, w każdym budynku, bez względu na typ (dom krótszy niż 30 m, czyli prawie każdy, to jedna klatka; długi pawilon czy szkoła mają kilka). Klatki liczone z obrysu, a nie z drzwi, które dziś stawia świat. W etapie 2 drzwi przejdą na miejsca klatek, co zmieni światy i zacznie stare zapisy od nowa.
 3. Start bez domu: zarząd na ulicy przed swoim (teraz cudzym) podwórkiem o 15:00, cel „wolna klatka przed zmrokiem”, noc bez dachu boli jak noc na zewnątrz. Zajęcie wymaga zgody serwera, więc bez sieci nie zajmuje się nowych klatek (gra toczy się dalej).
 4. Pierwsza klatka to siedziba; kolejne najwyżej 600 m od niej, najwyżej 60 na drużynę.
 5. Nowa gra zwalnia wszystkie klatki konta. Klatki kont nieaktywnych na razie nie wygasają (propozycja: 60 dni).

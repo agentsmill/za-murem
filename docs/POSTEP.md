@@ -237,7 +237,7 @@ Mateusz (18.10, 1:30): konta, gra w swoim domu, zajmowanie kolejnych klatek, a g
 4. PR agentsmill/za-murem#2 (M1, z ekranem startowym z #1) czeka na scalenie przez Mateusza; #1 można scalić wcześniej albo zamknąć.
 5. Z przeglądu wizualnego zostało: mieszkańcy w domach jednorodzinnych (Zielonki ich nie mają, decyzja dla Mateusza).
 5. Przy okazji: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
-6. Gra sieciowa, etap 2 (na połączonej gałęzi po M2 i trybie zombie): logowanie na ekranie startowym, start bez domu, „Zajmij klatkę”, znaczniki zajętych, zapis w chmurze, drzwi bloków w miejscach klatek. Najpierw Mateusz przegląda decyzje z projektu gry sieciowej, a koordynator wdraża serwer (`server/README.md`).
+6. Gra sieciowa, etap 2 (na połączonej gałęzi po M2 i trybie zombie): logowanie na ekranie startowym, start bez domu, „Zajmij klatkę”, znaczniki zajętych, zapis w chmurze, drzwi w miejscach klatek. Najpierw Mateusz przegląda decyzje z projektu gry sieciowej, a koordynator wdraża serwer (`server/README.md`).
 
 ## Decyzje
 
