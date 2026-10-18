@@ -245,13 +245,15 @@ export async function pobierzKafelek(z: number, x: number, y: number): Promise<U
   }
 }
 
-const lon2x = (lon: number, n: number) => ((lon + 180) / 360) * n;
-const lat2y = (lat: number, n: number) => {
+/** Merkator kafelków: długość i szerokość geograficzna na kafelki (ułamkowe) przy n = 2^z kafelków na bok i z powrotem.
+    Wspólne z mapą miasta (src/world/miastoKafelki.ts), żeby tło i świat gry liczyły położenie tym samym wzorem. */
+export const lon2x = (lon: number, n: number) => ((lon + 180) / 360) * n;
+export const lat2y = (lat: number, n: number) => {
   const s = Math.sin((lat * Math.PI) / 180);
   return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n;
 };
-const x2lon = (x: number, n: number) => (x / n) * 360 - 180;
-const y2lat = (y: number, n: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI;
+export const x2lon = (x: number, n: number) => (x / n) * 360 - 180;
+export const y2lat = (y: number, n: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI;
 
 /** kafelki poziomu z (domyślnie Z = 14) pokrywające kwadrat o połowie boku rad metrów, wiersz po wierszu od północy */
 export function tilesFor(lat: number, lon: number, rad: number, z: number = Z): [number, number][] {

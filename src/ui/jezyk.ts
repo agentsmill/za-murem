@@ -144,6 +144,16 @@ export const STATYCZNE: readonly Statyczny[] = [
   ),
   ...stat('sTrust', tx('zaufanie', 'trust'), tx('Zaufanie mieszkańców do zarządu', 'Residents’ trust in the board')),
   ...stat('sAnger', tx('wkurzenie', 'anger'), tx('Wkurzenie mieszkańców', 'Residents’ anger')),
+  // mapa miasta: na telefonie krótki napis (src/ui/miasto.css), pełny w aria-label i dymku
+  {
+    sel: '#btnMiasto',
+    html: tx(
+      '<span class="mm-dlugi">Mapa miasta</span><span class="mm-krotki">Mapa</span>',
+      '<span class="mm-dlugi">City map</span><span class="mm-krotki">Map</span>',
+    ),
+    aria: tx('Mapa miasta', 'City map'),
+    title: tx('Mapa miasta: miejsca na wyprawy (M)', 'City map: places for supply runs (M)'),
+  },
   { sel: '#btnBuild', tekst: tx('Budowa', 'Build') },
   { sel: '#goals', aria: tx('Cele', 'Goals') },
   { sel: '#arriveShow', tekst: tx('Pokaż', 'Show') },

@@ -3,8 +3,16 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LatLon } from '../../src/world/klucze.ts';
-import { KafelkiMiasta, kafelkiWokol, poiZKafelkow, zKafelka } from '../../src/world/miastoKafelki.ts';
-import { pobierzKafelek, tilesFor, toGeoT } from '../../src/world/mvt.ts';
+import {
+  KafelkiMiasta,
+  kafelkiProstokata,
+  kafelkiWokol,
+  poiZKafelkow,
+  rzutKafelkaZ,
+  tloKafelka,
+  zKafelka,
+} from '../../src/world/miastoKafelki.ts';
+import { type DecodedTile, pobierzKafelek, rzutKafelka, tilesFor, toGeoT } from '../../src/world/mvt.ts';
 import { LOAD_RADIUS } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles, tileBytes } from './fixtures.ts';
 
@@ -255,6 +263,239 @@ describe('KafelkiMiasta', () => {
     const wyniki = await Promise.all(Array.from({ length: 20 }, (_, i) => k.daj(14, i, 0)));
     expect(wyniki.filter((t) => t === null).length).toBe(10);
     expect(wyniki.filter((t) => t !== null).length).toBe(10);
+  });
+
+  it('zapomnij zwalnia kafelek z pamięci: następne daj pobiera go od nowa, inne kafelki zostają', async () => {
+    const wywolania: [number, number, number][] = [];
+    const k = new KafelkiMiasta(pobierzZPlikow(wywolania));
+    const [x1, y1] = a.tiles[1];
+    const t = await k.daj(14, x0, y0);
+    await k.daj(14, x1, y1);
+    k.zapomnij(14, x0, y0);
+    // nieznany kafelek i inny poziom: nic się nie dzieje
+    k.zapomnij(14, 1, 1);
+    k.zapomnij(12, x1, y1);
+    const t2 = await k.daj(14, x0, y0);
+    expect(t2).not.toBe(t);
+    expect(t2).toEqual(t);
+    await k.daj(14, x1, y1);
+    expect(wywolania).toEqual([
+      [14, x0, y0],
+      [14, x1, y1],
+      [14, x0, y0],
+    ]);
+  });
+
+  it('zapomnij w trakcie pobierania: wołający dostaje kafelek, a porażka starego pobrania nie kasuje nowego', async () => {
+    let pusc: ((b: Uint8Array | null) => void)[] = [];
+    const k = new KafelkiMiasta(() => new Promise((r) => pusc.push(r)));
+    const stare = k.daj(14, 5, 5);
+    await Promise.resolve();
+    k.zapomnij(14, 5, 5);
+    const nowe = k.daj(14, 5, 5);
+    // dwa osobne pobrania (stare zostało zapomniane), oba czekają
+    await new Promise((r) => setTimeout(r, 0));
+    expect(pusc.length).toBe(2);
+    const [p1, p2] = pusc;
+    pusc = [];
+    p2(new Uint8Array(0));
+    expect(await nowe).toEqual({ x: 5, y: 5, z: 14, L: {} });
+    // stare pobranie kończy się porażką już po nowym: nowy kafelek zostaje w pamięci
+    p1(null);
+    expect(await stare).toBeNull();
+    expect(await k.daj(14, 5, 5)).toBe(await nowe);
+    expect(pusc.length).toBe(0);
+  });
+});
+
+describe('rzutKafelkaZ (rzut kafelka dowolnego poziomu, dla tła mapy miasta)', () => {
+  for (const a of ADDRESSES) {
+    it(`${a.key}: dla z=14 daje dokładnie to samo co rzutKafelka (wszystkie wierzchołki kafelków)`, () => {
+      const stary = rzutKafelka(a.lat, a.lon);
+      const nowy = rzutKafelkaZ(a.lat, a.lon);
+      let n = 0;
+      for (const T of decodedTiles(a))
+        for (const ln in T.L) {
+          const E = T.L[ln].extent;
+          for (const F of T.L[ln].features)
+            for (const ring of F.g ?? [])
+              for (const q of ring) {
+                expect(nowy({ x: T.x, y: T.y, z: 14 }, E, q)).toEqual(stary(T, E, q));
+                // brak pola z to poziom 14, jak w DecodedTile
+                if (n % 97 === 0) expect(nowy(T, E, q)).toEqual(stary(T, E, q));
+                n++;
+              }
+        }
+      expect(n).toBeGreaterThan(10000);
+    });
+
+    it(`${a.key}: róg kafelka z=12 leży tam, gdzie róg odpowiadającego kafelka z=14`, () => {
+      const r = rzutKafelkaZ(a.lat, a.lon);
+      const [x14, y14] = a.tiles[0];
+      const X = Math.floor(x14 / 4);
+      const Y = Math.floor(y14 / 4);
+      for (const [qx, qy] of [
+        [0, 0],
+        [4096, 4096],
+        [2048, 1024],
+      ]) {
+        const p12 = r({ x: X, y: Y, z: 12 }, 4096, [qx, qy]);
+        const p14 = r({ x: 4 * X, y: 4 * Y, z: 14 }, 4096, [qx * 4, qy * 4]);
+        expect(Math.abs(p12[0] - p14[0])).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(p12[1] - p14[1])).toBeLessThanOrEqual(0.5);
+      }
+      // kafelek z=12 jest 4 razy szerszy niż z=14
+      const a12 = r({ x: X, y: Y, z: 12 }, 4096, [0, 0]);
+      const b12 = r({ x: X, y: Y, z: 12 }, 4096, [4096, 0]);
+      const a14 = r({ x: x14, y: y14, z: 14 }, 4096, [0, 0]);
+      const b14 = r({ x: x14, y: y14, z: 14 }, 4096, [4096, 0]);
+      expect((b12[0] - a12[0]) / (b14[0] - a14[0])).toBeCloseTo(4, 2);
+    });
+  }
+});
+
+describe('kafelkiProstokata', () => {
+  for (const a of ADDRESSES) {
+    const c: LatLon = [a.lat, a.lon];
+    it(`${a.key}: kwadrat wokół adresu to te same kafelki co kafelkiWokol (z 12 i 14)`, () => {
+      for (const z of [12, 14])
+        for (const r of [0, 300, 720, 5000])
+          expect(kafelkiProstokata(c, -r, -r, r, r, z), `z ${z} r ${r}`).toEqual(kafelkiWokol(c, r, z));
+    });
+
+    it(`${a.key}: prostokąt z boku adresu pokrywa każdy swój punkt i nic poza zapasem jednego kafelka`, () => {
+      const r = rzutKafelkaZ(a.lat, a.lon);
+      for (const z of [12, 14]) {
+        const [x0, y0, x1, y1] = [800, -2500, 3100, -400];
+        const lista = kafelkiProstokata(c, x0, y0, x1, y1, z);
+        const zbior = new Set(lista.map(([x, y]) => `${x}/${y}`));
+        expect(zbior.size).toBe(lista.length);
+        // każdy kafelek z listy przecina prostokąt (z dokładnością do zaokrąglenia rzutu)
+        for (const [x, y] of lista) {
+          const [ax, ay] = r({ x, y, z }, 4096, [0, 0]);
+          const [bx, by] = r({ x, y, z }, 4096, [4096, 4096]);
+          expect(ax <= x1 + 1 && bx >= x0 - 1 && ay <= y1 + 1 && by >= y0 - 1, `${z}/${x}/${y}`).toBe(true);
+        }
+        // narożniki i środek prostokąta leżą w kafelkach z listy
+        for (const [px, py] of [
+          [x0, y0],
+          [x1, y1],
+          [x0, y1],
+          [x1, y0],
+          [(x0 + x1) / 2, (y0 + y1) / 2],
+        ]) {
+          const [lat, lon] = przesun(c, px, py);
+          const [tx, ty] = kafelekPunktu(lat, lon, z);
+          expect(zbior.has(`${tx}/${ty}`), `z ${z} punkt ${px},${py}`).toBe(true);
+        }
+      }
+    });
+  }
+
+  it('odwrócony albo pusty prostokąt i punkty poza światem nie dają kafelków spoza świata', () => {
+    const c: LatLon = [89.9, 179.99];
+    for (const [x, y] of kafelkiProstokata(c, -50000, -50000, 50000, 50000, 12)) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThan(4096);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(y).toBeLessThan(4096);
+    }
+    expect(kafelkiProstokata([52, 21], 100, 100, -100, -100, 14)).toEqual([]);
+  });
+});
+
+describe('tloKafelka (woda, zieleń, budynki i drogi do rysowania)', () => {
+  /** odbiorca, który zapisuje, co dostał */
+  function zapis() {
+    const pola: Record<string, [number, number][][]> = {};
+    const linie: Record<string, [number, number][][]> = {};
+    return {
+      pola,
+      linie,
+      odbiorca: {
+        pole: (k: string, ring: [number, number][]) => {
+          (pola[k] ??= []).push(ring);
+        },
+        linia: (k: string, line: [number, number][]) => {
+          (linie[k] ??= []).push(line);
+        },
+      },
+    };
+  }
+
+  for (const a of ADDRESSES) {
+    it(`${a.key}: budynki, zieleń i ulice w metrach od adresu, wierzchołki budynków jak w świecie gry`, () => {
+      const r = rzutKafelkaZ(a.lat, a.lon);
+      const z = zapis();
+      for (const T of decodedTiles(a)) tloKafelka(T, r, z.odbiorca);
+      expect(z.pola.budynek?.length).toBeGreaterThan(100);
+      expect(z.pola.zielen?.length).toBeGreaterThan(10);
+      expect((z.linie.ulica?.length ?? 0) + (z.linie.srednia?.length ?? 0)).toBeGreaterThan(10);
+      for (const k in z.pola) for (const ring of z.pola[k]) expect(ring.length).toBeGreaterThanOrEqual(3);
+      for (const k in z.linie) for (const line of z.linie[k]) expect(line.length).toBeGreaterThanOrEqual(2);
+      // kafelki obejmują około 720 m wokół adresu (z buforem kafelka), nic dalej
+      for (const k in z.pola)
+        for (const ring of z.pola[k])
+          for (const [x, y] of ring) {
+            expect(Number.isFinite(x) && Number.isFinite(y)).toBe(true);
+            expect(Math.abs(x)).toBeLessThan(4000);
+            expect(Math.abs(y)).toBeLessThan(4000);
+          }
+      // budynki świata gry (toGeoT) mają te same wierzchołki; inne są tylko tam, gdzie świat przyciął obrys do kafelka
+      const wierzcholki = new Set(z.pola.budynek.flatMap((ring) => ring.map(([x, y]) => `${x},${y}`)));
+      const geo = toGeoT(decodedTiles(a), a.lat, a.lon, LOAD_RADIUS);
+      let jest = 0;
+      let razem = 0;
+      for (const b of geo.b)
+        for (const [x, y] of b.p) {
+          razem++;
+          if (wierzcholki.has(`${x},${y}`)) jest++;
+        }
+      expect(razem).toBeGreaterThan(500);
+      expect(jest / razem).toBeGreaterThan(0.9);
+    });
+  }
+
+  it('pomija tunele, części budynków nad ziemią, pola w warstwie dróg i nieznane klasy', () => {
+    const r = rzutKafelkaZ(52, 21);
+    const kw: [number, number][] = [
+      [0, 0],
+      [100, 0],
+      [100, 100],
+      [0, 100],
+      [0, 0],
+    ];
+    const linia: [number, number][] = [
+      [0, 0],
+      [100, 100],
+    ];
+    const T: DecodedTile = {
+      x: 9150,
+      y: 5400,
+      L: {
+        transportation: {
+          extent: 4096,
+          features: [
+            { id: 1, type: 2, tags: { class: 'primary', brunnel: 'tunnel' }, g: [linia] },
+            { id: 2, type: 2, tags: { class: 'primary' }, g: [linia] },
+            { id: 3, type: 3, tags: { class: 'path' }, g: [kw] },
+            { id: 4, type: 2, tags: { class: 'ferry' }, g: [linia] },
+          ],
+        },
+        building: {
+          extent: 4096,
+          features: [
+            { id: 5, type: 3, tags: { render_min_height: 10, render_height: 20 }, g: [kw] },
+            { id: 6, type: 3, tags: { render_height: 20 }, g: [kw] },
+          ],
+        },
+        landcover: { extent: 4096, features: [{ id: 7, type: 3, tags: { class: 'farmland' }, g: [kw] }] },
+      },
+    };
+    const z = zapis();
+    tloKafelka(T, r, z.odbiorca);
+    expect(z.linie).toEqual({ glowna: [linia.map((q) => r(T, 4096, q))] });
+    expect(z.pola).toEqual({ budynek: [kw.map((q) => r(T, 4096, q))] });
   });
 });
 

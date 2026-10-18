@@ -7785,7 +7785,10 @@ function siecShots(): Shot[] {
 
 /** Mapa miasta w grze (src/main.ts): po starcie demo zarząd ma stan miasta (`gov.miasto`), a `zm.okolica` miejsca z
     punktów OSM z kluczami „poi:X:Y”; karta nocy proponuje wyprawy do tych miejsc (nazwa i odległość w metrach). Z
-    `?miasto=0` nic z tego nie ma, a karta ma dzisiejsze cele z TARGETS. Zrzut: karta nocy z miejscami z okolicy. */
+    `?miasto=0` nic z tego nie ma, a karta ma dzisiejsze cele z TARGETS. Zrzut: karta nocy z miejscami z okolicy.
+    Okno mapy miasta (src/ui/miasto.ts, zrzuty miasto-mapa*): kafelki z=14 z tests/fixtures (cztery wokół Przymorza),
+    reszta z=14 pusta (204) albo zerwana (brak sieci), tło z=12 zawsze puste (204), czyli mapa bez tła z niższego
+    poziomu: z daleka widać tylko to, co doczytały kafelki z=14. */
 function miastoShots(): Shot[] {
   /** stan po starcie: czy zarząd ma miasto, ile miejsc w okolicy, ile ma zły klucz albo odfiltrowaną (pustą) nazwę */
   const stan = (page: Page) =>
@@ -7832,7 +7835,264 @@ function miastoShots(): Shot[] {
     // cel z miejsca ma odległość przy nazwie („Sklep budowlany, 450 m”), cel z TARGETS tylko nazwę
     return opcje.filter((t) => /, \d+ m/.test(t));
   };
+  /** kafelki dla okna mapy: szablon i z=14 z tests/fixtures; inne z=14 puste albo (zerwane) bez sieci; z=12 puste */
+  const kafelkiMapy = async (page: Page, zerwane = false) => {
+    await page.route('https://tiles.openfreemap.org/planet', (r) =>
+      r.fulfill({ contentType: 'application/json', body: fs.readFileSync(path.join(FIX, 'tj.json'), 'utf8') }),
+    );
+    await page.route(/tiles\.openfreemap\.org\/planet\/.+\/(\d+)\/(\d+)\/(\d+)\.pbf/, (r) => {
+      const m = r
+        .request()
+        .url()
+        .match(/\/(\d+)\/(\d+)\/(\d+)\.pbf/)!;
+      const f = path.join(FIX, `t_${m[2]}_${m[3]}.pbf`);
+      if (m[1] === '14' && fs.existsSync(f))
+        return r.fulfill({ contentType: 'application/x-protobuf', body: fs.readFileSync(f) });
+      if (m[1] === '14' && zerwane) return r.abort('internetdisconnected');
+      return r.fulfill({ status: 204, body: '' });
+    });
+  };
+  const dwieKlatki = (page: Page) =>
+    page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  /** czeka, aż okno mapy narysuje widok i skończy pobierać jego kafelki */
+  const czekajNaMape = async (page: Page) => {
+    await dwieKlatki(page);
+    await page.waitForFunction(
+      () => {
+        const s = window.zm!.mapa()?.stan();
+        return !!s?.otwarta && s.wTrakcie === 0;
+      },
+      null,
+      { timeout: 30_000, polling: 100 },
+    );
+    await dwieKlatki(page);
+  };
+  const otworzMape = async (page: Page, dotyk = false) => {
+    if (dotyk) await page.tap('#btnMiasto');
+    else await page.click('#btnMiasto');
+    await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+    await czekajNaMape(page);
+  };
+  const ustawMape = async (page: Page, w: { cx: number; cy: number; mNaPiksel: number }) => {
+    await page.evaluate((w) => window.zm!.mapa()!.ustaw(w), w);
+    await czekajNaMape(page);
+  };
+  /** okno mapy: przewijanie w bok, atrybucja w stopce i czy ją widać, karta miejsca, stan mapy, tempo gry */
+  const okno = (page: Page) =>
+    page.evaluate(() => {
+      const at = document.querySelector<HTMLElement>('#sheet .miasto-attrib');
+      const ar = at?.getBoundingClientRect();
+      const karta = document.querySelector<HTMLElement>('#sheet [data-miasto-karta]');
+      const kr = karta?.getBoundingClientRect();
+      const wyslij = karta?.querySelector<HTMLButtonElement>('[data-act="wyslij"]');
+      return {
+        bok: document.documentElement.scrollWidth > innerWidth + 1,
+        atrybucja: at?.textContent ?? '',
+        atrybucjaWidac: !!ar && ar.width > 0 && ar.top >= 0 && ar.bottom <= innerHeight + 0.5,
+        karta:
+          karta && !karta.hidden && kr
+            ? {
+                tekst: karta.textContent ?? '',
+                prostokat: [kr.left, kr.top, kr.right, kr.bottom].map(Math.round),
+                wyslij: wyslij?.textContent ?? '',
+                wyszarzony: !!wyslij?.disabled,
+              }
+            : null,
+        tekst: document.querySelector('#sheet')?.textContent ?? '',
+        ekran: [innerWidth, innerHeight],
+        stan: window.zm!.mapa()!.stan(),
+        tempo: window.zm!.speed(),
+      };
+    });
+  /** miejsce poza mapą osiedla w pierścieniu od–do metrów, najchętniej z nazwą */
+  const miejsceMapy = (page: Page, od: number, doM: number) =>
+    page.evaluate(
+      ([od, doM]) => {
+        const l = window
+          .zm!.mapa()!
+          .miejscaMapy()
+          .filter((m) => m.odl > od && m.odl < doM);
+        const m = l.find((x) => x.nazwa) ?? l[0];
+        if (!m) throw new Error(`brak miejsca między ${od} a ${doM} m`);
+        return { klucz: m.klucz, x: m.x, y: m.y, nazwa: m.nazwa, kat: m.kat };
+      },
+      [od, doM],
+    );
+  const naEkranie = (page: Page, klucz: string) =>
+    page.evaluate((k) => {
+      const p = window.zm!.mapa()!.naEkranie(k);
+      if (!p) throw new Error(`miejsca ${k} nie ma na ekranie`);
+      return p;
+    }, klucz);
+  const ATRYBUCJA_PL = '© współtwórcy OpenStreetMap, OpenFreeMap, OpenMapTiles';
+  const ATRYBUCJA_EN = '© OpenStreetMap contributors, OpenFreeMap, OpenMapTiles';
+  /** wspólne sprawdzenia okna: bez przewijania w bok, atrybucja w stopce widoczna */
+  const zasady = (o: Awaited<ReturnType<typeof okno>>, atrybucja: string) => {
+    if (o.bok) throw new Error('okno mapy przewija się w bok');
+    if (!o.atrybucja.includes(atrybucja)) throw new Error(`atrybucja w stopce: ${o.atrybucja}`);
+    if (!o.atrybucjaWidac) throw new Error('atrybucji map nie widać na ekranie');
+  };
   return [
+    {
+      // oddalenie: całe miasto, koło osiedla i zasięg 5 km; po drodze pauza przy otwartym oknie, Esc i klawisz M,
+      // przesuwanie myszą i kółko
+      name: 'miasto-mapa',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,0.9`);
+        await waitIdle(page);
+        const przed = await page.evaluate(() => window.zm!.speed());
+        if ((await page.getAttribute('#btnMiasto', 'aria-label')) !== 'Mapa miasta')
+          throw new Error('brak przycisku mapy');
+        await otworzMape(page);
+        let o = await okno(page);
+        const okolica = await page.evaluate(() => window.zm!.okolica.length);
+        console.log(`  otwarta: ${JSON.stringify(o.stan)}, tempo ${o.tempo} (przed ${przed}), okolica ${okolica}`);
+        if (o.tempo !== 0) throw new Error('gra nie stoi przy otwartej mapie miasta');
+        if (o.stan.z !== 14 || o.stan.rysunki.z14 < 4 || o.stan.brak)
+          throw new Error(`kafelki z bliska: ${JSON.stringify(o.stan)}`);
+        if (o.stan.miejsca <= okolica) throw new Error('z kafelków nie doszły miejsca spoza okolicy');
+        if (o.stan.znaki < 10) throw new Error(`za mało znaków miejsc: ${o.stan.znaki}`);
+        zasady(o, ATRYBUCJA_PL);
+        // Esc zamyka i gra wraca do tempa sprzed okna; M otwiera znowu, z kafelkami z pamięci
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const po = await page.evaluate(() => ({
+          tempo: window.zm!.speed(),
+          otwarta: window.zm!.mapa()!.stan().otwarta,
+        }));
+        if (po.tempo !== przed || po.otwarta) throw new Error(`po Esc: ${JSON.stringify(po)}`);
+        await page.keyboard.press('KeyM');
+        await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+        await czekajNaMape(page);
+        // przeciągnięcie przesuwa mapę o tyle metrów, ile pikseli razy skala
+        const w0 = (await okno(page)).stan.widok!;
+        await page.mouse.move(700, 450);
+        await page.mouse.down();
+        await page.mouse.move(640, 410, { steps: 6 });
+        await page.mouse.move(580, 370, { steps: 6 });
+        await page.mouse.up();
+        await dwieKlatki(page);
+        const w1 = (await okno(page)).stan.widok!;
+        const dx = (w1.cx - w0.cx) / w0.mNaPiksel;
+        const dy = (w1.cy - w0.cy) / w0.mNaPiksel;
+        console.log(`  przeciągnięcie o (−120, −80) px: widok o (${dx.toFixed(1)}, ${dy.toFixed(1)}) px`);
+        if (Math.abs(dx - 120) > 1 || Math.abs(dy - 80) > 1) throw new Error('przeciąganie nie przesuwa mapy');
+        await page.mouse.wheel(0, 400);
+        await dwieKlatki(page);
+        const w2 = (await okno(page)).stan.widok!;
+        if (!(w2.mNaPiksel > w1.mNaPiksel)) throw new Error('kółko nie oddala mapy');
+        // całe miasto z daleka: tło z=12 (tu puste), zasięg 5 km, to, co doczytały kafelki z=14
+        await ustawMape(page, { cx: 0, cy: 0, mNaPiksel: 12 });
+        o = await okno(page);
+        console.log(`  z daleka: ${JSON.stringify(o.stan)}`);
+        if (o.stan.z !== 12) throw new Error('z daleka nie ma tła z poziomu 12');
+        if (!o.stan.napis.includes('Przybliżcie')) throw new Error(`napis z daleka: ${o.stan.napis}`);
+        // pamięć: najwyżej 24 kafelki z=14 (zdekodowany waży kilka MB; okno trzyma tylko ścieżki)
+        if (o.stan.rysunki.z14 > 24) throw new Error(`za dużo kafelków z=14 w pamięci: ${o.stan.rysunki.z14}`);
+        zasady(o, ATRYBUCJA_PL);
+      },
+    },
+    {
+      // z bliska: budynki i ulice z kafelków z=14, znaki miejsc i karta miejsca po kliknięciu w znak
+      name: 'miasto-mapa-blisko',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        await otworzMape(page);
+        const m = await miejsceMapy(page, 260, 650);
+        await ustawMape(page, { cx: m.x - 60, cy: m.y + 40, mNaPiksel: 1.2 });
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.mouse.click(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        const o = await okno(page);
+        console.log(`  miejsce ${JSON.stringify(m)}, karta: ${o.karta?.tekst}`);
+        console.log(`  stan: ${JSON.stringify(o.stan)}`);
+        if (o.stan.wybrane !== m.klucz) throw new Error('kliknięcie w znak nie wybrało miejsca');
+        if (!o.karta) throw new Error('brak karty miejsca');
+        if (!o.karta.wyszarzony || !o.karta.wyslij.includes('wkrótce'))
+          throw new Error(`przycisk wysyłki bez wysyłania: ${o.karta.wyslij}`);
+        if (!/km|m stąd/.test(o.karta.tekst) || !/Tam jest (spokojnie|niepewnie|groźnie)/.test(o.karta.tekst))
+          throw new Error('karta bez odległości albo ryzyka');
+        if (!/Nietknięte|Ktoś tu był|Wybrane do cna/.test(o.karta.tekst)) throw new Error('karta bez stanu miejsca');
+        zasady(o, ATRYBUCJA_PL);
+        // klik obok znaku zamyka kartę, a klik znowu w znak ją otwiera
+        await page.mouse.click(sx - 150, sy + 120);
+        await page.waitForSelector('#sheet [data-miasto-karta][hidden]', { state: 'attached' });
+        await page.mouse.click(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // telefon: dotyk, karta miejsca na dole, bez przewijania w bok; kafelki poza tests/fixtures zerwane (bez sieci),
+      // więc mapa rysuje to, co ma, z napisem, że reszta się nie wczytała. Bez tabel mieszkańców (404) filtr nazw nie
+      // zna imion, więc także miejsca z kafelków mają same kategorie (RODO: nazwa jednoosobowej firmy to osoba)
+      name: 'miasto-mapa-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      allow: /ERR_INTERNET_DISCONNECTED|Failed to load resource|status of 404/,
+      allowUrl: /tiles\.openfreemap\.org|\/data\/mieszkancy\//,
+      run: async (page, base) => {
+        await kafelkiMapy(page, true);
+        await bezTabel(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        await otworzMape(page, true);
+        let o = await okno(page);
+        console.log(`  telefon: ${JSON.stringify(o.stan)}`);
+        const nazwy = await page.evaluate(() => {
+          const l = window.zm!.mapa()!.miejscaMapy();
+          return { razem: l.length, zNazwa: l.filter((m) => m.nazwa).map((m) => m.nazwa) };
+        });
+        if (nazwy.razem <= 190 || nazwy.zNazwa.length)
+          throw new Error(`bez tabel miejsca z kafelków z nazwą: ${JSON.stringify(nazwy)}`);
+        if (!o.stan.brak || !o.stan.napis.includes('Reszta miasta się nie wczytała'))
+          throw new Error(`bez sieci brak napisu o reszcie miasta: ${JSON.stringify(o.stan)}`);
+        if (o.stan.rysunki.z14 < 4) throw new Error('kafelki z tests/fixtures się nie narysowały');
+        const m = await miejsceMapy(page, 230, 520);
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.touchscreen.tap(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        o = await okno(page);
+        console.log(`  miejsce ${JSON.stringify(m)}, karta ${JSON.stringify(o.karta?.prostokat)} na ${o.ekran}`);
+        if (o.stan.wybrane !== m.klucz) throw new Error('stuknięcie w znak nie wybrało miejsca');
+        const [l, t, r, b] = o.karta!.prostokat;
+        if (l < 0 || t < 0 || r > o.ekran[0] || b > o.ekran[1]) throw new Error('karta miejsca wychodzi za ekran');
+        zasady(o, ATRYBUCJA_PL);
+      },
+    },
+    {
+      // po angielsku: okno, karta miejsca i atrybucja bez polskich słów (poza nazwą miejsca z mapy)
+      name: 'en-miasto-mapa',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        if ((await page.getAttribute('#btnMiasto', 'aria-label')) !== 'City map')
+          throw new Error('przycisk mapy po angielsku');
+        await otworzMape(page);
+        const m = await miejsceMapy(page, 300, 700);
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.mouse.click(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        const o = await okno(page);
+        console.log(`  karta: ${o.karta?.tekst}`);
+        if (!o.karta?.wyslij.includes('soon')) throw new Error(`przycisk wysyłki: ${o.karta?.wyslij}`);
+        const pl = polskieLitery(o.tekst, [m.nazwa]);
+        if (pl.length) throw new Error(`polskie słowa w oknie po angielsku: ${pl.join(' ')}`);
+        zasady(o, ATRYBUCJA_EN);
+      },
+    },
     {
       name: 'miasto-start',
       query: '',
@@ -7861,6 +8121,7 @@ function miastoShots(): Shot[] {
         const wyl = await stan(page);
         console.log(`  ?miasto=0: ${JSON.stringify(wyl)}`);
         if (wyl.miasto || wyl.okolica) throw new Error('?miasto=0 nie wyłączyło miasta albo okolicy');
+        if (await page.isVisible('#btnMiasto')) throw new Error('?miasto=0: przycisk mapy miasta widać');
         const bez = await doKarty(page, base, '&miasto=0');
         if (bez.length) throw new Error(`?miasto=0: karta nocy z miejscami z okolicy: ${bez.join(' | ')}`);
         // domyślnie: miasto włączone, okolica z kluczami, karta nocy z miejscami z okolicy
