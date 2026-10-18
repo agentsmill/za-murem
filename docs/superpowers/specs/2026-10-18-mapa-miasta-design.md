@@ -68,7 +68,7 @@ Na Pages i offline bez sieci mapa miasta pokazuje tylko okolicę z zapisu, z nap
 
 ### Miejsca (moje)
 
-Celem wyprawy jest miejsce, czyli punkt sklepu albo usługi z OSM (`poi`), a nie budynek. Budynek z dwoma sklepami to dwa miejsca. Kafelki OpenFreeMap nie niosą rodzaju budynku, więc zwykłe bloki, domy, garaże i hale poza mapą lokalną nie są celami; na mapie miasta widać je jako budynki bez karty miejsca. To jedno pytanie zostaje do Mateusza (decyzja 9).
+Celem wyprawy jest miejsce, czyli punkt sklepu albo usługi z OSM (`poi`), a nie budynek. Budynek z dwoma sklepami to dwa miejsca. Kafelki OpenFreeMap nie niosą rodzaju budynku, więc zwykłe bloki, domy, garaże i hale poza mapą lokalną nie są celami; na mapie miasta widać je jako budynki bez karty miejsca. Mateusz, 18.10.2026: „Celem wyprawy są tylko sklepy i usługi z OSM, tak jak w projekcie.”
 
 `Miejsce` to czysty obiekt danych liczony w nowym module `src/world/miasto.ts` (bez sieci, z testami w Node):
 
@@ -166,7 +166,7 @@ Koordynacja: gałąź scala do `pelna-gra` koordynator `pelna-gra` po bramce, a 
 6. Miejsca się nie odnawiają, a zapas sklepu jest taki sam dla wszystkich graczy w mieście.
 7. Kategorie, ryzyko i łup z 0.3 (`POICAT`), przeliczone na zapasy zarządu. Na wyprawie nikt nie ginie, kłopoty jak dziś.
 8. Mapa pokazuje kategorię miejsca, a nazwę tylko po filtrze nazw z osobą. Otwarta mapa zatrzymuje grę jak inne okna.
-9. Celem wyprawy są sklepy i usługi z OSM. Zwykłe bloki, domy i garaże w mieście nie są celami, a te na mapie lokalnej przeszukuje się pieszo (fala 2). Do potwierdzenia przez Mateusza.
+9. Celem wyprawy są sklepy i usługi z OSM. Zwykłe bloki, domy i garaże w mieście nie są celami, a te na mapie lokalnej przeszukuje się pieszo (fala 2). Zdecydował Mateusz 18.10.2026.
 
 ## Zostawione budującemu
 
