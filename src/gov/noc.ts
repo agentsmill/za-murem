@@ -388,7 +388,8 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
       if (zombie && behindWire(i, post.key) && p.arm === 'palna' && p.weapon !== 'kusza')
         opts[opts.length - 1].note = tx(NOTE_HOLD_FIRE, NOTE_HOLD_FIRE_EN);
     }
-    // dwa miejsca na karcie: pierwsze to „blisko”, drugie „daleko” (klucz opcji według miejsca na karcie, nie zasięgu celu)
+    // dwa miejsca na karcie: pierwsze to „blisko”, drugie „daleko” (klucz opcji według miejsca na karcie, nie zasięgu celu;
+    // przedrostek etykiety i notatka według zasięgu celu)
     for (const [k, t] of targets.entries()) {
       const ok = canGo(p, t);
       const slot = k === 0 ? 'blisko' : 'daleko';
@@ -399,7 +400,8 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
           : tx(`${t.nazwa.pl}, ${Math.round(t.odl)} m`, `${t.nazwa.en}, ${Math.round(t.odl)} m`);
       opts.push({
         key: `wyprawa:${slot}`,
-        label: tx(`Wyprawa ${slot}: ${where.pl}`, `${slot === 'daleko' ? 'Long run' : 'Short run'}: ${where.en}`),
+        // przedrostek mówi to, co notatka i godzina powrotu, czyli zasięg celu; klucz opcji zostaje przy miejscu na karcie
+        label: tx(`Wyprawa ${t.range}: ${where.pl}`, `${t.range === 'daleko' ? 'Long run' : 'Short run'}: ${where.en}`),
         ok,
         why: ok
           ? undefined

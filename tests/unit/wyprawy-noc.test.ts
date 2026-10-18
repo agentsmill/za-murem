@@ -678,6 +678,42 @@ describe('karta nocy z miejscami z okolicy', () => {
     });
   });
 
+  it('przedrostek etykiety („Wyprawa blisko”, „Short run”) idzie za zasięgiem celu, klucz opcji za miejscem na karcie', () => {
+    // oba miejsca dalej niż 300 m: najbliższe stoi na miejscu „blisko”, ale wraca o świcie, więc to „daleko”
+    const oba = opcjeWypraw(
+      makeCard(zarzadMiasta(), wejscieOkolicy([miejsce(2, 'apteka', 450), miejsce(3, 'spozywczy', 600)])).card,
+    );
+    expect(oba.map((o) => o.key)).toEqual(['wyprawa:blisko', 'wyprawa:daleko']);
+    expect(oba.map((o) => o.cel?.range)).toEqual(['daleko', 'daleko']);
+    expect(oba[0].label).toEqual({ pl: 'Wyprawa daleko: Apteka, 450 m', en: 'Long run: Pharmacy, 450 m' });
+    expect(oba[1].label).toEqual({ pl: 'Wyprawa daleko: Sklep spożywczy, 600 m', en: 'Long run: Food shop, 600 m' });
+    // przedrostek i notatka o powrocie mówią to samo
+    expect(oba[0].note?.pl).toContain('świcie');
+    // oba miejsca w zasięgu „blisko”: miejsce „daleko” na karcie też wraca o 1:00 i tak się nazywa
+    const bliskie = opcjeWypraw(
+      makeCard(
+        zarzadMiasta(),
+        wejscieOkolicy([miejsce(2, 'apteka', 250), miejsce(3, 'spozywczy', 280)], { supplies: 0 }),
+      ).card,
+    );
+    expect(bliskie.map((o) => o.key)).toEqual(['wyprawa:blisko', 'wyprawa:daleko']);
+    expect(bliskie.map((o) => o.cel?.range)).toEqual(['blisko', 'blisko']);
+    expect(bliskie[1].label).toEqual({
+      pl: 'Wyprawa blisko: Sklep spożywczy, 280 m',
+      en: 'Short run: Food shop, 280 m',
+    });
+    expect(bliskie[1].note?.pl).toContain('1:00');
+  });
+
+  it('cele z TARGETS mają te same etykiety co przed zmianą przedrostka (skróty botów)', () => {
+    const [blisko, daleko] = opcjeWypraw(makeCard(zarzadMiasta(), wejscieOkolicy(undefined)).card);
+    expect([blisko.key, daleko.key]).toEqual(['wyprawa:blisko', 'wyprawa:daleko']);
+    expect(blisko.label.pl).toMatch(/^Wyprawa blisko: /);
+    expect(daleko.label.pl).toMatch(/^Wyprawa daleko: /);
+    expect(blisko.label.en).toMatch(/^Short run: /);
+    expect(daleko.label.en).toMatch(/^Long run: /);
+  });
+
   it('łup na karcie jest przycięty do tego, co zostało w miejscu, i do udźwigu jednej osoby', () => {
     const st = zarzadMiasta();
     const apteka = miejsce(2, 'apteka', 250);
