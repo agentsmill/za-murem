@@ -255,6 +255,8 @@ const SHOTS: Shot[] = [
   ...kartaShots(),
   // Gra z sąsiadami (?siec=1) z udawanym serwerem pod /api: karta startowa, znaczniki zajętych, start bez domu
   ...siecShots(),
+  // Mapa miasta w grze: okolica z punktów OSM i stan miasta w zarządzie po starcie, opcja ?miasto=0
+  ...miastoShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -4193,32 +4195,12 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // karta nocy w domu dwa razy: z `miasto=0` (tylko domowe cele z TARGETS, jak przed mapą miasta) i z mapą miasta
+    // (domyślnie: wyprawy do miejsc z okolicy albo domowe cele z TARGETS); zrzut zostaje z drugiej, domyślnej gry
     name: 'wydarzenia-dom-karta',
     query: '',
     run: async (page, base) => {
-      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
-      await waitIdle(page);
-      await chopDryTree(page);
-      for (let k = 0; k < 120; k++) {
-        const p = await page.evaluate(() => window.zm!.ff(10));
-        if (p === 'karta') {
-          const t = await sheetText(page);
-          console.log(
-            `  karta nocy w domu: ${
-              t
-                .match(/Wyprawa[^\n]*/g)
-                ?.slice(0, 2)
-                .join(' | ') ?? t.slice(0, 120)
-            }`,
-          );
-          if (BLOKOWE_UI.test(t)) throw new Error(`karta nocy w domu z blokowiskiem: ${t}`);
-          if (!t.includes('opuszczony dom obok')) throw new Error('na karcie nie ma wyprawy do opuszczonego domu obok');
-          if (!t.includes('Jak radzi komitet')) throw new Error('karta nocy w domu bez rady komitetu');
-          return;
-        }
-        if (p) await answerFirst(page, p);
-      }
-      throw new Error('karta nocy się nie pokazała');
+      for (const miasto of [false, true]) await kartaNocyWDomu(page, base, miasto);
     },
   },
   tekstyPomoc('teksty-blok-pomoc', 'przymorze', false),
@@ -5349,6 +5331,42 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
   else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
+}
+
+/** nazwy domowych celów z TARGETS na karcie nocy w domu jednorodzinnym (tresc.ts: `targetName`) */
+const CELE_DOMU = ['opuszczony dom obok', 'sklep przy głównej drodze', 'garaże obok', 'szopy'];
+
+/** Karta nocy pierwszej nocy w Zielonkach (dom jednorodzinny): bez słów z bloku, z radą komitetu i z wyprawami, których
+    nazwy są domowe. Bez mapy miasta (`miasto=0`) to dokładnie domowe cele z TARGETS, w tym opuszczony dom obok; z mapą
+    każda wyprawa jest albo miejscem z okolicy („Przychodnia (Estetica Dent), 423 m”), albo domowym celem z TARGETS
+    (druga opcja bywa nim, gdy okolica ma tylko jedno miejsce). */
+async function kartaNocyWDomu(page: Page, base: string, miasto: boolean): Promise<void> {
+  const etykieta = miasto ? 'z mapą miasta' : 'bez mapy miasta';
+  await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2${miasto ? '' : '&miasto=0'}`);
+  await waitIdle(page);
+  await chopDryTree(page);
+  for (let k = 0; k < 120; k++) {
+    const p = await page.evaluate(() => window.zm!.ff(10));
+    if (p === 'karta') {
+      const t = await sheetText(page);
+      // sheetText skleja wiersze bez separatorów, a po nazwie wyprawy zawsze idzie „, ryzyko”
+      const nazwy = [...new Set([...t.matchAll(/Wyprawa (?:blisko|daleko): ([\s\S]*?), ryzyko/g)].map((m) => m[1]))];
+      console.log(`  karta nocy w domu (${etykieta}): ${nazwy.join(' | ') || t.slice(0, 120)}`);
+      if (BLOKOWE_UI.test(t)) throw new Error(`karta nocy w domu (${etykieta}) z blokowiskiem: ${t}`);
+      if (!nazwy.length) throw new Error(`na karcie nocy w domu (${etykieta}) nie ma wypraw`);
+      for (const n of nazwy)
+        if (!CELE_DOMU.includes(n) && !(miasto && /, \d+ m$/.test(n)))
+          throw new Error(
+            `wyprawa na karcie nocy w domu (${etykieta}) nie jest domowym celem ani miejscem z okolicy: ${n}`,
+          );
+      if (!miasto && !nazwy.includes('opuszczony dom obok'))
+        throw new Error('na karcie bez mapy miasta nie ma wyprawy do opuszczonego domu obok');
+      if (!t.includes('Jak radzi komitet')) throw new Error(`karta nocy w domu (${etykieta}) bez rady komitetu`);
+      return;
+    }
+    if (p) await answerFirst(page, p);
+  }
+  throw new Error(`karta nocy w domu (${etykieta}) się nie pokazała`);
 }
 
 /* ---------- M2 fala 2: pomocnicy scenariuszy m2f2-* ---------- */
@@ -8350,6 +8368,1210 @@ function siecShots(): Shot[] {
           },
         );
         await waitIdle(page);
+      },
+    },
+  ];
+}
+
+/** Mapa miasta w grze (src/main.ts): po starcie demo zarząd ma stan miasta (`gov.miasto`), a `zm.okolica` miejsca z
+    punktów OSM z kluczami „poi:X:Y”; karta nocy proponuje wyprawy do tych miejsc (nazwa i odległość w metrach). Z
+    `?miasto=0` nic z tego nie ma, a karta ma dzisiejsze cele z TARGETS. Zrzut: karta nocy z miejscami z okolicy.
+    Okno mapy miasta (src/ui/miasto.ts, zrzuty miasto-mapa*): kafelki z=14 z tests/fixtures (cztery wokół Przymorza),
+    reszta z=14 pusta (204) albo zerwana (brak sieci), tło z=12 zawsze puste (204), czyli mapa bez tła z niższego
+    poziomu: z daleka widać tylko to, co doczytały kafelki z=14. */
+function miastoShots(): Shot[] {
+  /** stan po starcie: czy zarząd ma miasto, ile miejsc w okolicy, ile ma zły klucz albo odfiltrowaną (pustą) nazwę */
+  const stan = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const ok = zm.okolica ?? [];
+      return {
+        miasto: zm.gov?.miasto !== undefined,
+        okolica: ok.length,
+        zleKlucze: ok.filter((m) => !/^poi:\d+:\d+$/.test(m.klucz)).length,
+        bezNazwy: ok.filter((m) => !m.nazwa).length,
+        poza: ok.filter((m) => m.x * m.x + m.y * m.y > 192 * 192).length,
+      };
+    });
+  /** nazwy okolicy przy surowych nazwach punktów (po kluczu): osoby z przymorskiego dema, marka, patron szkoły, ile
+      wpisów ma niepustą nazwę. Bez filtra podpiętego w main.ts osoby miałyby swoje nazwy, a patron zostawałby w nazwie */
+  const nazwy = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const surowe = new Map(zm.sim!.w.pois.map((p) => [p.k, p.n]));
+      const ok = zm.okolica ?? [];
+      const wg = (n: string) => ok.filter((m) => surowe.get(m.klucz) === n).map((m) => m.nazwa);
+      return {
+        osoby: [...wg('Sławomir Mielnik'), ...wg('Kwiaciarnia u Moniki')],
+        marki: wg('Żabka'),
+        patron: wg('Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'),
+        niepuste: ok.filter((m) => m.nazwa).length,
+      };
+    });
+  /** noc dnia 1 do karty: 19:30 uchwała (bez podpisu), 20:00 karta nocy; etykiety opcji wyprawy z listy wyboru osób */
+  const doKarty = async (page: Page, base: string, q: string) => {
+    await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=19.5${q}`);
+    await waitIdle(page);
+    const u = await page.evaluate(() => window.zm!.govTick());
+    if (u !== 'uchwala') throw new Error(`o 19:30 zamiast uchwały: ${u}`);
+    await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+    const k = await page.evaluate(() => window.zm!.ff(31));
+    if (k !== 'karta') throw new Error(`o 20:00 zamiast karty nocy: ${k}`);
+    const opcje = await page
+      .locator('#sheet select.pick')
+      .first()
+      .locator('option')
+      .evaluateAll((o) => o.map((x) => x.textContent ?? ''));
+    // cel z miejsca ma odległość przy nazwie („Sklep budowlany, 450 m”), cel z TARGETS tylko nazwę
+    return opcje.filter((t) => /, \d+ m/.test(t));
+  };
+  /** kafelki dla okna mapy: szablon i z=14 z tests/fixtures; inne z=14 puste albo (zerwane) bez sieci; z=12 puste */
+  const kafelkiMapy = async (page: Page, zerwane = false) => {
+    await page.route('https://tiles.openfreemap.org/planet', (r) =>
+      r.fulfill({ contentType: 'application/json', body: fs.readFileSync(path.join(FIX, 'tj.json'), 'utf8') }),
+    );
+    await page.route(/tiles\.openfreemap\.org\/planet\/.+\/(\d+)\/(\d+)\/(\d+)\.pbf/, (r) => {
+      const m = r
+        .request()
+        .url()
+        .match(/\/(\d+)\/(\d+)\/(\d+)\.pbf/)!;
+      const f = path.join(FIX, `t_${m[2]}_${m[3]}.pbf`);
+      if (m[1] === '14' && fs.existsSync(f))
+        return r.fulfill({ contentType: 'application/x-protobuf', body: fs.readFileSync(f) });
+      if (m[1] === '14' && zerwane) return r.abort('internetdisconnected');
+      return r.fulfill({ status: 204, body: '' });
+    });
+  };
+  const dwieKlatki = (page: Page) =>
+    page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  /** czeka, aż okno mapy narysuje widok i skończy pobierać jego kafelki */
+  const czekajNaMape = async (page: Page) => {
+    await dwieKlatki(page);
+    await page.waitForFunction(
+      () => {
+        const s = window.zm!.mapa()?.stan();
+        return !!s?.otwarta && s.wTrakcie === 0;
+      },
+      null,
+      { timeout: 30_000, polling: 100 },
+    );
+    await dwieKlatki(page);
+  };
+  const otworzMape = async (page: Page, dotyk = false) => {
+    if (dotyk) await page.tap('#btnMiasto');
+    else await page.click('#btnMiasto');
+    await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+    await czekajNaMape(page);
+  };
+  const ustawMape = async (page: Page, w: { cx: number; cy: number; mNaPiksel: number }) => {
+    await page.evaluate((w) => window.zm!.mapa()!.ustaw(w), w);
+    await czekajNaMape(page);
+  };
+  /** okno mapy: przewijanie w bok, atrybucja w stopce i czy ją widać, karta miejsca, stan mapy, tempo gry */
+  const okno = (page: Page) =>
+    page.evaluate(() => {
+      const at = document.querySelector<HTMLElement>('#sheet .miasto-attrib');
+      const ar = at?.getBoundingClientRect();
+      const karta = document.querySelector<HTMLElement>('#sheet [data-miasto-karta]');
+      const kr = karta?.getBoundingClientRect();
+      const wyslij = karta?.querySelector<HTMLButtonElement>('[data-act="wyslij"]');
+      return {
+        bok: document.documentElement.scrollWidth > innerWidth + 1,
+        atrybucja: at?.textContent ?? '',
+        atrybucjaWidac: !!ar && ar.width > 0 && ar.top >= 0 && ar.bottom <= innerHeight + 0.5,
+        karta:
+          karta && !karta.hidden && kr
+            ? {
+                tekst: karta.textContent ?? '',
+                prostokat: [kr.left, kr.top, kr.right, kr.bottom].map(Math.round),
+                wyslij: wyslij?.textContent ?? '',
+                wyszarzony: !!wyslij?.disabled,
+              }
+            : null,
+        tekst: document.querySelector('#sheet')?.textContent ?? '',
+        ekran: [innerWidth, innerHeight],
+        stan: window.zm!.mapa()!.stan(),
+        tempo: window.zm!.speed(),
+      };
+    });
+  /** miejsce poza mapą osiedla w pierścieniu od–do metrów, najchętniej z nazwą */
+  const miejsceMapy = (page: Page, od: number, doM: number) =>
+    page.evaluate(
+      ([od, doM]) => {
+        const l = window
+          .zm!.mapa()!
+          .miejscaMapy()
+          .filter((m) => m.odl > od && m.odl < doM);
+        const m = l.find((x) => x.nazwa) ?? l[0];
+        if (!m) throw new Error(`brak miejsca między ${od} a ${doM} m`);
+        return { klucz: m.klucz, x: m.x, y: m.y, nazwa: m.nazwa, kat: m.kat };
+      },
+      [od, doM],
+    );
+  const naEkranie = (page: Page, klucz: string) =>
+    page.evaluate((k) => {
+      const p = window.zm!.mapa()!.naEkranie(k);
+      if (!p) throw new Error(`miejsca ${k} nie ma na ekranie`);
+      return p;
+    }, klucz);
+  const ATRYBUCJA_PL = '© współtwórcy OpenStreetMap, OpenFreeMap, OpenMapTiles';
+  const ATRYBUCJA_EN = '© OpenStreetMap contributors, OpenFreeMap, OpenMapTiles';
+  /** wspólne sprawdzenia okna: bez przewijania w bok, atrybucja w stopce widoczna */
+  const zasady = (o: Awaited<ReturnType<typeof okno>>, atrybucja: string) => {
+    if (o.bok) throw new Error('okno mapy przewija się w bok');
+    if (!o.atrybucja.includes(atrybucja)) throw new Error(`atrybucja w stopce: ${o.atrybucja}`);
+    if (!o.atrybucjaWidac) throw new Error('atrybucji map nie widać na ekranie');
+  };
+  /** zaznacza w grze `n` pierwszych osób z zarządu: pierwszą kliknięciem w głowę, resztę z Shiftem (kamera na siedzibie) */
+  const zaznacz = async (page: Page, n: number) => {
+    await page.evaluate(() => {
+      const zm = window.zm!;
+      const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+      zm.setCam(p.x, p.y, 1.6);
+    });
+    await waitIdle(page);
+    for (let k = 0; k < n; k++) {
+      const [x, y] = await page.evaluate((k) => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[k];
+        return zm.screenOf(p.x, p.y - 0.55);
+      }, k);
+      if (k) await page.keyboard.down('Shift');
+      await page.mouse.click(x, y);
+      if (k) await page.keyboard.up('Shift');
+    }
+    await page.waitForTimeout(250);
+  };
+  /** karta wybranego miejsca: czy przycisk „Wyślij” jest aktywny */
+  const wyslijAktywny = (page: Page) =>
+    page.evaluate(() => {
+      const b = document.querySelector<HTMLButtonElement>('#sheet [data-miasto-karta] [data-act="wyslij"]');
+      return !!b && !b.disabled;
+    });
+  /** okno planu wyprawy: osoby (id, napis, wybrana, wyszarzona), podsumowanie, powód, przycisk „Wyślij”, przewijanie w bok */
+  const plan = (page: Page) =>
+    page.evaluate(() => {
+      const sheet = document.getElementById('sheet')!;
+      const wyslij = sheet.querySelector<HTMLButtonElement>('[data-act="wyslij"]');
+      const body = sheet.querySelector<HTMLElement>('.sheet-body');
+      return {
+        klasa: sheet.className,
+        tytul: sheet.querySelector('.sheet-title')?.textContent ?? '',
+        osoby: [...sheet.querySelectorAll<HTMLButtonElement>('[data-act="wp-osoba"]')].map((b) => ({
+          id: b.dataset.arg!,
+          tekst: b.textContent ?? '',
+          wybrana: b.getAttribute('aria-pressed') === 'true',
+          wyszarzona: b.disabled,
+        })),
+        podsumowanie: [...sheet.querySelectorAll('.wp-sum dt')].map((dt) => [
+          dt.textContent ?? '',
+          dt.nextElementSibling?.textContent ?? '',
+        ]),
+        powod: sheet.querySelector('.wp-why')?.textContent ?? '',
+        wyslij: wyslij ? { tekst: wyslij.textContent ?? '', wyszarzony: wyslij.disabled } : null,
+        wroc: sheet.querySelector('[data-act="wp-wroc"]')?.textContent ?? '',
+        bok:
+          document.documentElement.scrollWidth > innerWidth + 1 || (!!body && body.scrollWidth > body.clientWidth + 1),
+        tekst: sheet.textContent ?? '',
+        tempo: window.zm!.speed(),
+        ekran: [innerWidth, innerHeight],
+        stopka: (() => {
+          const r = sheet.querySelector('.sheet-foot')?.getBoundingClientRect();
+          return r ? [r.left, r.top, r.right, r.bottom].map(Math.round) : null;
+        })(),
+      };
+    });
+  /** otwiera mapę i wybiera pierwsze miejsce z pierścienia od–do metrów, do którego karta pozwala wysłać wyprawę;
+      zwraca je z klikniętym już „Wyślij wyprawę” (okno planu otwarte) */
+  const doPlanu = async (
+    page: Page,
+    base: string,
+    o: {
+      dotyk?: boolean;
+      zaznacz?: number;
+      godzina?: string;
+      speed?: number;
+      od?: number;
+      doM?: number;
+      /** dopisek do adresu, np. `&tryb=zombie` */
+      q?: string;
+    } = {},
+  ) => {
+    await kafelkiMapy(page);
+    await page.goto(`${base}?demo=przymorze&speed=${o.speed ?? 0}&godzina=${o.godzina ?? '8'}&cam=hq,1.6${o.q ?? ''}`);
+    await waitIdle(page);
+    if (o.zaznacz) await zaznacz(page, o.zaznacz);
+    await otworzMape(page, o.dotyk);
+    const kandydaci = await page.evaluate(
+      ([od, doM]) =>
+        window
+          .zm!.mapa()!
+          .miejscaMapy()
+          .filter((m) => m.odl > od && m.odl < doM)
+          .sort((a, b) => Number(!!b.nazwa) - Number(!!a.nazwa) || a.odl - b.odl)
+          .slice(0, 12)
+          .map((m) => ({ klucz: m.klucz, x: m.x, y: m.y, nazwa: m.nazwa, kat: m.kat, odl: Math.round(m.odl) })),
+      [o.od ?? 280, o.doM ?? 560],
+    );
+    for (const m of kandydaci) {
+      await ustawMape(page, { cx: m.x - 60, cy: m.y + 40, mNaPiksel: 1.2 });
+      const [sx, sy] = await naEkranie(page, m.klucz);
+      if (o.dotyk) await page.touchscreen.tap(sx, sy);
+      else await page.mouse.click(sx, sy);
+      await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+      await dwieKlatki(page);
+      if (!(await wyslijAktywny(page))) continue;
+      if (o.dotyk) await page.tap('#sheet [data-miasto-karta] [data-act="wyslij"]');
+      else await page.click('#sheet [data-miasto-karta] [data-act="wyslij"]');
+      await page.waitForSelector('#sheet .wp');
+      await dwieKlatki(page);
+      return m;
+    }
+    throw new Error(`żadne z ${kandydaci.length} miejsc nie pozwala wysłać wyprawy`);
+  };
+  /** minimapa w rogu ekranu: stan, etykieta przycisku, atrybucja pod spodem, gdzie stoi, czy mieści się na ekranie i na
+      które nakładki gry (pasek, cele, przyciski przybliżania, karta, pasek stawiania, komunikat o przybyszach, pasek
+      atrybucji) nachodzi; liczba kolorów na płótnie (czy jest na nim rysunek) */
+  const minimapa = (page: Page) =>
+    page.evaluate(() => {
+      const root = document.getElementById('minimapa')!;
+      const btn = document.getElementById('minimapaBtn')!;
+      const cv = root.querySelector<HTMLCanvasElement>('canvas')!;
+      const cap = root.querySelector<HTMLElement>('.minimapa-attrib')!;
+      const r = root.getBoundingClientRect();
+      const b = btn.getBoundingClientRect();
+      const c = cap.getBoundingClientRect();
+      const widac = !root.hidden && r.width > 0 && r.height > 0;
+      const zachodzi = (el: Element) => {
+        const e = el as HTMLElement;
+        if (e.hidden) return false;
+        const q = e.getBoundingClientRect();
+        return (
+          q.width > 0 &&
+          q.height > 0 &&
+          q.left < r.right - 0.5 &&
+          q.right > r.left + 0.5 &&
+          q.top < r.bottom - 0.5 &&
+          q.bottom > r.top + 0.5
+        );
+      };
+      const nakladki = widac
+        ? ['#top', '#goals', '.mapctl', '#card', '#placeBar', '#arrive', '.attrib']
+            .filter((sel) => [...document.querySelectorAll(sel)].some(zachodzi))
+            .map((sel) => sel)
+        : [];
+      let kolory = 0;
+      if (widac && cv.width) {
+        const d = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data;
+        const uniq = new Set<number>();
+        for (let i = 0; i < d.length; i += 4) uniq.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+        kolory = uniq.size;
+      }
+      return {
+        stan: window.zm!.minimapa().stan(),
+        widac,
+        prostokat: [r.left, r.top, r.right, r.bottom].map(Math.round),
+        przycisk: [b.left, b.top, b.right, b.bottom].map(Math.round),
+        wEkranie: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+        // atrybucja stoi pod przyciskiem i w obrysie minimapy
+        podpisPoza:
+          widac &&
+          (c.top < b.bottom - 0.5 || c.bottom > r.bottom + 0.5 || c.left < r.left - 0.5 || c.right > r.right + 0.5),
+        aria: btn.getAttribute('aria-label') ?? '',
+        podpis: cap.textContent ?? '',
+        tekst: root.textContent ?? '',
+        czcionka: Number.parseFloat(getComputedStyle(cap).fontSize),
+        nakladki,
+        karta: !document.getElementById('card')!.hidden,
+        kolory,
+      };
+    });
+  return [
+    {
+      // oddalenie: całe miasto, koło osiedla i zasięg 5 km; po drodze pauza przy otwartym oknie, Esc i klawisz M,
+      // przesuwanie myszą i kółko
+      name: 'miasto-mapa',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,0.9`);
+        await waitIdle(page);
+        const przed = await page.evaluate(() => window.zm!.speed());
+        if ((await page.getAttribute('#btnMiasto', 'aria-label')) !== 'Mapa miasta')
+          throw new Error('brak przycisku mapy');
+        await otworzMape(page);
+        let o = await okno(page);
+        const okolica = await page.evaluate(() => window.zm!.okolica.length);
+        console.log(`  otwarta: ${JSON.stringify(o.stan)}, tempo ${o.tempo} (przed ${przed}), okolica ${okolica}`);
+        if (o.tempo !== 0) throw new Error('gra nie stoi przy otwartej mapie miasta');
+        if (o.stan.z !== 14 || o.stan.rysunki.z14 < 4 || o.stan.brak)
+          throw new Error(`kafelki z bliska: ${JSON.stringify(o.stan)}`);
+        if (o.stan.miejsca <= okolica) throw new Error('z kafelków nie doszły miejsca spoza okolicy');
+        if (o.stan.znaki < 10) throw new Error(`za mało znaków miejsc: ${o.stan.znaki}`);
+        zasady(o, ATRYBUCJA_PL);
+        // Esc zamyka i gra wraca do tempa sprzed okna; M otwiera znowu, z kafelkami z pamięci
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const po = await page.evaluate(() => ({
+          tempo: window.zm!.speed(),
+          otwarta: window.zm!.mapa()!.stan().otwarta,
+        }));
+        if (po.tempo !== przed || po.otwarta) throw new Error(`po Esc: ${JSON.stringify(po)}`);
+        await page.keyboard.press('KeyM');
+        await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+        await czekajNaMape(page);
+        // przeciągnięcie przesuwa mapę o tyle metrów, ile pikseli razy skala
+        const w0 = (await okno(page)).stan.widok!;
+        await page.mouse.move(700, 450);
+        await page.mouse.down();
+        await page.mouse.move(640, 410, { steps: 6 });
+        await page.mouse.move(580, 370, { steps: 6 });
+        await page.mouse.up();
+        await dwieKlatki(page);
+        const w1 = (await okno(page)).stan.widok!;
+        const dx = (w1.cx - w0.cx) / w0.mNaPiksel;
+        const dy = (w1.cy - w0.cy) / w0.mNaPiksel;
+        console.log(`  przeciągnięcie o (−120, −80) px: widok o (${dx.toFixed(1)}, ${dy.toFixed(1)}) px`);
+        if (Math.abs(dx - 120) > 1 || Math.abs(dy - 80) > 1) throw new Error('przeciąganie nie przesuwa mapy');
+        await page.mouse.wheel(0, 400);
+        await dwieKlatki(page);
+        const w2 = (await okno(page)).stan.widok!;
+        if (!(w2.mNaPiksel > w1.mNaPiksel)) throw new Error('kółko nie oddala mapy');
+        // całe miasto z daleka: tło z=12 (tu puste), zasięg 5 km, to, co doczytały kafelki z=14
+        await ustawMape(page, { cx: 0, cy: 0, mNaPiksel: 12 });
+        o = await okno(page);
+        console.log(`  z daleka: ${JSON.stringify(o.stan)}`);
+        if (o.stan.z !== 12) throw new Error('z daleka nie ma tła z poziomu 12');
+        if (!o.stan.napis.includes('Przybliżcie')) throw new Error(`napis z daleka: ${o.stan.napis}`);
+        // pamięć: najwyżej 24 kafelki z=14 (zdekodowany waży kilka MB; okno trzyma tylko ścieżki)
+        if (o.stan.rysunki.z14 > 24) throw new Error(`za dużo kafelków z=14 w pamięci: ${o.stan.rysunki.z14}`);
+        zasady(o, ATRYBUCJA_PL);
+      },
+    },
+    {
+      // z bliska: budynki i ulice z kafelków z=14, znaki miejsc i karta miejsca po kliknięciu w znak
+      name: 'miasto-mapa-blisko',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        await otworzMape(page);
+        const m = await miejsceMapy(page, 260, 650);
+        await ustawMape(page, { cx: m.x - 60, cy: m.y + 40, mNaPiksel: 1.2 });
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.mouse.click(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        const o = await okno(page);
+        console.log(`  miejsce ${JSON.stringify(m)}, karta: ${o.karta?.tekst}`);
+        console.log(`  stan: ${JSON.stringify(o.stan)}`);
+        if (o.stan.wybrane !== m.klucz) throw new Error('kliknięcie w znak nie wybrało miejsca');
+        if (!o.karta) throw new Error('brak karty miejsca');
+        // wysyłanie jest podpięte (zadanie 9): miejsce poza mapą osiedla za dnia ma aktywny przycisk bez dopisku
+        if (o.karta.wyszarzony || o.karta.wyslij !== 'Wyślij wyprawę')
+          throw new Error(`przycisk wysyłki: ${o.karta.wyslij}, wyszarzony: ${o.karta.wyszarzony}`);
+        if (!/km|m stąd/.test(o.karta.tekst) || !/Tam jest (spokojnie|niepewnie|groźnie)/.test(o.karta.tekst))
+          throw new Error('karta bez odległości albo ryzyka');
+        if (!/Nietknięte|Ktoś tu był|Wybrane do cna/.test(o.karta.tekst)) throw new Error('karta bez stanu miejsca');
+        zasady(o, ATRYBUCJA_PL);
+        // klik obok znaku zamyka kartę, a klik znowu w znak ją otwiera
+        await page.mouse.click(sx - 150, sy + 120);
+        await page.waitForSelector('#sheet [data-miasto-karta][hidden]', { state: 'attached' });
+        await page.mouse.click(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // telefon: dotyk, karta miejsca na dole, bez przewijania w bok; kafelki poza tests/fixtures zerwane (bez sieci),
+      // więc mapa rysuje to, co ma, z napisem, że reszta się nie wczytała. Bez tabel mieszkańców (404) filtr nazw nie
+      // zna imion, więc także miejsca z kafelków mają same kategorie (RODO: nazwa jednoosobowej firmy to osoba)
+      name: 'miasto-mapa-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      allow: /ERR_INTERNET_DISCONNECTED|Failed to load resource|status of 404/,
+      allowUrl: /tiles\.openfreemap\.org|\/data\/mieszkancy\//,
+      run: async (page, base) => {
+        await kafelkiMapy(page, true);
+        await bezTabel(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        await otworzMape(page, true);
+        let o = await okno(page);
+        console.log(`  telefon: ${JSON.stringify(o.stan)}`);
+        const nazwy = await page.evaluate(() => {
+          const l = window.zm!.mapa()!.miejscaMapy();
+          return { razem: l.length, zNazwa: l.filter((m) => m.nazwa).map((m) => m.nazwa) };
+        });
+        if (nazwy.razem <= 190 || nazwy.zNazwa.length)
+          throw new Error(`bez tabel miejsca z kafelków z nazwą: ${JSON.stringify(nazwy)}`);
+        if (!o.stan.brak || !o.stan.napis.includes('Reszta miasta się nie wczytała'))
+          throw new Error(`bez sieci brak napisu o reszcie miasta: ${JSON.stringify(o.stan)}`);
+        if (o.stan.rysunki.z14 < 4) throw new Error('kafelki z tests/fixtures się nie narysowały');
+        const m = await miejsceMapy(page, 230, 520);
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.touchscreen.tap(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        o = await okno(page);
+        console.log(`  miejsce ${JSON.stringify(m)}, karta ${JSON.stringify(o.karta?.prostokat)} na ${o.ekran}`);
+        if (o.stan.wybrane !== m.klucz) throw new Error('stuknięcie w znak nie wybrało miejsca');
+        const [l, t, r, b] = o.karta!.prostokat;
+        if (l < 0 || t < 0 || r > o.ekran[0] || b > o.ekran[1]) throw new Error('karta miejsca wychodzi za ekran');
+        zasady(o, ATRYBUCJA_PL);
+      },
+    },
+    {
+      // po angielsku: okno, karta miejsca i atrybucja bez polskich słów (poza nazwą miejsca z mapy)
+      name: 'en-miasto-mapa',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        if ((await page.getAttribute('#btnMiasto', 'aria-label')) !== 'City map')
+          throw new Error('przycisk mapy po angielsku');
+        await otworzMape(page);
+        const m = await miejsceMapy(page, 300, 700);
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.mouse.click(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        const o = await okno(page);
+        console.log(`  karta: ${o.karta?.tekst}`);
+        if (o.karta?.wyslij !== 'Send a supply run') throw new Error(`przycisk wysyłki: ${o.karta?.wyslij}`);
+        if (o.karta.wyszarzony && !/Picked clean|Too far|after dark/i.test(o.karta.tekst))
+          throw new Error(`przycisk wyszarzony bez powodu na karcie: ${o.karta.tekst}`);
+        const pl = polskieLitery(o.tekst, [m.nazwa]);
+        if (pl.length) throw new Error(`polskie słowa w oknie po angielsku: ${pl.join(' ')}`);
+        zasady(o, ATRYBUCJA_EN);
+      },
+    },
+    {
+      // wysyłanie z mapy (komputer): karta miejsca → „Wyślij wyprawę” → okno planu. Zaznaczeni w grze są wybrani od
+      // razu, kliknięcie osoby zmienia podsumowanie, bez wybranych „Wyślij” jest wyszarzony, „Wróć do mapy” wraca
+      // do tego samego widoku i karty, a Esc zamyka okno i oddaje grze tempo
+      name: 'miasto-wysylanie',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 2 });
+        const widokPrzed = await page.evaluate(() => window.zm!.mapa()!.stan().widok);
+        let p = await plan(page);
+        console.log(`  miejsce ${JSON.stringify(m)}`);
+        console.log(
+          `  plan: ${p.tytul}; osoby ${JSON.stringify(p.osoby.map((x) => [x.tekst, x.wybrana, x.wyszarzona]))}`,
+        );
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}, powód: ${p.powod}, tempo ${p.tempo}`);
+        if (!p.klasa.includes('wyprawa')) throw new Error(`odcień okna: ${p.klasa}`);
+        if (p.tempo !== 0) throw new Error('gra nie stoi przy oknie planu');
+        if (p.osoby.length < 3) throw new Error(`za mało osób na liście: ${p.osoby.length}`);
+        const wybrane = () => p.osoby.filter((x) => x.wybrana).length;
+        if (wybrane() !== 2) throw new Error(`zaznaczeni w grze nie są wybrani od razu: ${wybrane()} z 2`);
+        if (!p.wyslij || p.wyslij.wyszarzony || p.wyslij.tekst !== 'Wyślij wyprawę')
+          throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        const klucze = p.podsumowanie.map((r) => r[0]);
+        for (const k of ['Wyjście', 'Powrót', 'Czas poza osiedlem', 'Ryzyko', 'Udźwig', 'Zostało w miejscu'])
+          if (!klucze.includes(k)) throw new Error(`podsumowanie bez wiersza „${k}”: ${klucze.join(', ')}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        // trzecia osoba: udźwig rośnie o 6, powrót jest nie później
+        const trzecia = p.osoby.find((x) => !x.wybrana && !x.wyszarzona);
+        if (!trzecia) throw new Error('nie ma kogo dobrać');
+        const udzwig = () => Number(p.podsumowanie.find((r) => r[0] === 'Udźwig')![1].match(/\d+/)![0]);
+        const przed = udzwig();
+        await page.click(`#sheet [data-act="wp-osoba"][data-arg="${trzecia.id}"]`);
+        p = await plan(page);
+        console.log(`  z trzecią osobą: ${JSON.stringify(p.podsumowanie)}`);
+        if (wybrane() !== 3 || udzwig() !== przed + 6)
+          throw new Error(`dobranie osoby: ${wybrane()} wybranych, udźwig ${udzwig()}`);
+        // bez nikogo „Wyślij” jest wyszarzony i okno mówi, czego brakuje
+        for (const x of p.osoby.filter((x) => x.wybrana))
+          await page.click(`#sheet [data-act="wp-osoba"][data-arg="${x.id}"]`);
+        p = await plan(page);
+        if (wybrane() !== 0 || !p.wyslij?.wyszarzony || p.podsumowanie.length || !p.powod.includes('Wybierz kogoś'))
+          throw new Error(`bez wybranych: ${JSON.stringify([wybrane(), p.wyslij, p.podsumowanie, p.powod])}`);
+        // „Wróć do mapy”: ten sam widok i karta tego samego miejsca, a stąd znowu do planu
+        await page.click('#sheet [data-act="wp-wroc"]');
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await czekajNaMape(page);
+        const mapa = await okno(page);
+        if (mapa.stan.wybrane !== m.klucz) throw new Error(`po powrocie do mapy wybrane: ${mapa.stan.wybrane}`);
+        if (JSON.stringify(mapa.stan.widok) !== JSON.stringify(widokPrzed)) throw new Error('widok mapy się zmienił');
+        if (mapa.tempo !== 0) throw new Error('gra ruszyła po powrocie do mapy');
+        await page.click('#sheet [data-miasto-karta] [data-act="wyslij"]');
+        await page.waitForSelector('#sheet .wp');
+        // Esc zamyka okno i oddaje grze tempo sprzed mapy (2 = 3×)
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const po = await page.evaluate(() => ({
+          tempo: window.zm!.speed(),
+          wyprawy: window.zm!.gov!.wyprawy?.length ?? 0,
+        }));
+        if (po.tempo !== 2 || po.wyprawy) throw new Error(`po Esc: ${JSON.stringify(po)}`);
+        await page.keyboard.press('KeyM');
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await czekajNaMape(page);
+        // miejsce z mapy osiedla (koło 192 m) nie jest celem: przycisk wyszarzony z powodem, a wołanie wysyłki wprost
+        // niczego nie otwiera
+        const lokalne = await page.evaluate(() => {
+          const l = window
+            .zm!.mapa()!
+            .miejscaMapy()
+            .filter((q) => q.odl < 150);
+          return l[0] ? { klucz: l[0].klucz, x: l[0].x, y: l[0].y } : null;
+        });
+        if (!lokalne) throw new Error('brak miejsca na mapie osiedla');
+        await ustawMape(page, { cx: lokalne.x - 30, cy: lokalne.y + 20, mNaPiksel: 0.7 });
+        const [lx, ly] = await naEkranie(page, lokalne.klucz);
+        await page.mouse.click(lx, ly);
+        await page.waitForFunction((k) => window.zm!.mapa()!.stan().wybrane === k, lokalne.klucz);
+        await dwieKlatki(page);
+        const osiedle = await okno(page);
+        console.log(
+          `  miejsce z mapy osiedla: ${osiedle.karta?.tekst.slice(-120)}, wyszarzony ${osiedle.karta?.wyszarzony}`,
+        );
+        if (!osiedle.karta?.wyszarzony || !/mapie osiedla/.test(osiedle.karta.tekst))
+          throw new Error('miejsce z mapy osiedla ma aktywne „Wyślij”');
+        await page.evaluate((k) => window.zm!.mapa()!.obsluz('wyslij', k), lokalne.klucz);
+        await dwieKlatki(page);
+        if (await page.locator('#sheet .wp').count()) throw new Error('wysyłka z mapy osiedla otworzyła okno planu');
+        // do zrzutu: mapa, karta tamtego miejsca, plan z trzema osobami
+        await ustawMape(page, { cx: m.x - 60, cy: m.y + 40, mNaPiksel: 1.2 });
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.mouse.click(sx, sy);
+        await page.waitForFunction((k) => window.zm!.mapa()!.stan().wybrane === k, m.klucz);
+        await page.click('#sheet [data-miasto-karta] [data-act="wyslij"]');
+        await page.waitForSelector('#sheet .wp');
+        for (const x of p.osoby.slice(0, 3)) {
+          const stan = (await plan(page)).osoby.find((y) => y.id === x.id)!;
+          if (!stan.wybrana && !stan.wyszarzona) await page.click(`#sheet [data-act="wp-osoba"][data-arg="${x.id}"]`);
+        }
+        await dwieKlatki(page);
+        p = await plan(page);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        console.log(`  do zrzutu: ${wybrane()} wybranych, ${JSON.stringify(p.podsumowanie)}`);
+      },
+    },
+    {
+      // wysyłanie z mapy (telefon 390×844): dotyk, plan bez przewijania w bok, stopka z przyciskami na ekranie
+      name: 'miasto-wysylanie-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { dotyk: true });
+        let p = await plan(page);
+        console.log(`  miejsce ${JSON.stringify(m)}, plan: ${p.tytul}, osoby ${p.osoby.length}, ekran ${p.ekran}`);
+        console.log(`  osoby: ${JSON.stringify(p.osoby.map((x) => [x.tekst, x.wybrana, x.wyszarzona]))}`);
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}, stopka ${p.stopka}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok na telefonie');
+        const [l, t, r, b] = p.stopka!;
+        if (l < 0 || t < 0 || r > p.ekran[0] || b > p.ekran[1]) throw new Error('stopka planu wychodzi za ekran');
+        // stuknięcie osoby wybiera ją, ponowne cofa wybór
+        const kto = p.osoby.find((x) => !x.wyszarzona)!;
+        await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+        const po = (await plan(page)).osoby.find((x) => x.id === kto.id)!;
+        if (po.wybrana === kto.wybrana) throw new Error('stuknięcie osoby nie zmieniło wyboru');
+        if (!kto.wybrana) {
+          // dla zrzutu zostaje wybrana
+        } else await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+        await dwieKlatki(page);
+        p = await plan(page);
+        if (!p.osoby.some((x) => x.wybrana) || p.wyslij?.wyszarzony)
+          throw new Error('na zrzucie nikt nie jest wybrany');
+      },
+    },
+    {
+      // wyprawa do końca: wysłanie, osoby wychodzą bramą, podpowiedź i wpis w kronice, przewinięcie do powrotu
+      // (zm.ff), rozliczenie łupu: zapasy, st.miasto.zabrano i wizyty, wyprawy znikają ze stanu
+      name: 'miasto-powrot',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 1 });
+        const zapasy = () =>
+          page.evaluate(async () => {
+            const load = (path: string) => import(/* @vite-ignore */ path);
+            const { snapshot } = (await load('/src/sim/snapshot.ts')) as typeof import('../src/sim/snapshot.ts');
+            const zm = window.zm!;
+            const k = snapshot(zm.sim!.st, zm.sim!.w).stock;
+            return { drewno: k.wood, jedzenie: k.supplies, zlom: k.scrap, czesci: k.parts, leki: k.meds ?? 0 };
+          });
+        const przed = await zapasy();
+        const p = await plan(page);
+        const wybrani = p.osoby.filter((x) => x.wybrana).map((x) => x.id);
+        console.log(`  wybrani: ${wybrani.join(', ')}, podsumowanie ${JSON.stringify(p.podsumowanie)}`);
+        if (wybrani.length !== 2) throw new Error(`wybranych ${wybrani.length} zamiast 2`);
+        const logPrzed = await page.evaluate(() => window.zm!.gov!.log.length);
+        await page.click('#sheet [data-act="wyslij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        // podpowiedź (ostatni wpis kroniki) pokazuje pasek przy najbliższym odświeżeniu, nie od razu
+        await page.waitForFunction(
+          () => document.getElementById('hint')?.textContent?.includes('Wyprawa do miejsca'),
+          null,
+          { timeout: 3000 },
+        );
+        const wys = await page.evaluate(() => {
+          const zm = window.zm!;
+          const g = zm.gov!;
+          return {
+            tempo: zm.speed(),
+            wyprawy: JSON.parse(JSON.stringify(g.wyprawy ?? [])),
+            log: g.log.slice(-3).map((l) => l.txt),
+            wLogu: g.log.length,
+            hint: document.getElementById('hint')!.textContent,
+            minuta: (g.log.at(-1)?.day ?? 1) * 1440,
+          };
+        });
+        console.log(`  po wysłaniu: ${JSON.stringify({ ...wys, log: wys.log.map((t) => (t as { pl: string }).pl) })}`);
+        if (wys.tempo !== 1) throw new Error(`tempo po wysłaniu: ${wys.tempo} zamiast 1`);
+        if (wys.wyprawy.length !== 1) throw new Error(`wypraw w drodze: ${wys.wyprawy.length}`);
+        const w = wys.wyprawy[0];
+        if (w.cel.klucz !== m.klucz || JSON.stringify(w.ids) !== JSON.stringify(wybrani))
+          throw new Error(`wyprawa: ${JSON.stringify(w)}`);
+        if (wys.wLogu !== logPrzed + 1) throw new Error(`wpisów w kronice: ${wys.wLogu - logPrzed} zamiast 1`);
+        if (!wys.hint?.includes('Wyprawa do miejsca')) throw new Error(`podpowiedź: ${wys.hint}`);
+        // osoby wychodzą bramą (flaga away na pionkach), jedna po drugiej; gra przewijana zm.ff
+        let poza = 0;
+        for (let k = 0; k < 8 && poza < 2; k++) {
+          const okno = await page.evaluate(() => window.zm!.ff(5));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+          poza = await page.evaluate(() => window.zm!.sim!.st.pawns.filter((q) => q.kind === 'core' && q.away).length);
+        }
+        console.log(`  po wyjściu: poza mapą ${poza}`);
+        if (poza !== 2) throw new Error(`poza mapą po wyjściu: ${poza} zamiast 2`);
+        // przewijanie do powrotu: po kawałku, bez okien decyzji po drodze
+        for (let k = 0; k < 24; k++) {
+          const wToku = await page.evaluate(() => window.zm!.gov!.wyprawy?.length ?? 0);
+          if (!wToku) break;
+          const okno = await page.evaluate(() => window.zm!.ff(30));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+        }
+        const po = await page.evaluate(() => {
+          const zm = window.zm!;
+          const g = zm.gov!;
+          return {
+            wyprawy: g.wyprawy?.length ?? 0,
+            miasto: g.miasto
+              ? { zabrano: g.miasto.zabrano, wizyty: g.miasto.wizyty, ostatnia: g.miasto.ostatnia }
+              : null,
+            log: g.log.slice(-4).map((l) => `${l.clock} ${(l.txt as { pl: string }).pl}`),
+            hint: document.getElementById('hint')!.textContent,
+            poza: zm.sim!.st.pawns.filter((q) => q.kind === 'core' && q.away).length,
+          };
+        });
+        const zapasyPo = await zapasy();
+        console.log(`  po powrocie: ${JSON.stringify(po)}`);
+        console.log(`  zapasy: ${JSON.stringify(przed)} -> ${JSON.stringify(zapasyPo)}`);
+        if (po.wyprawy) throw new Error('wyprawa dalej w drodze');
+        if (po.miasto?.wizyty[m.klucz] !== 1) throw new Error(`wizyt w miejscu: ${po.miasto?.wizyty[m.klucz]}`);
+        const zabrano = po.miasto?.zabrano[m.klucz] ?? 0;
+        const przybylo = (Object.keys(zapasyPo) as (keyof typeof zapasyPo)[]).reduce(
+          (a, k) => a + Math.max(0, zapasyPo[k] - przed[k]),
+          0,
+        );
+        if (zabrano > 0 && przybylo <= 0) throw new Error(`zabrano ${zabrano}, a zapasy się nie zmieniły`);
+        if (!po.log.some((t) => /wróci|trafili|trafił|trafiła|trafiły/.test(t)))
+          throw new Error('brak wpisu o powrocie');
+      },
+    },
+    {
+      // po angielsku: plan wyprawy bez polskich słów (poza imionami i nazwą miejsca), przycisk i podsumowanie
+      name: 'en-miasto-wysylanie',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2 });
+        const p = await plan(page);
+        console.log(`  plan: ${p.tytul}`);
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}`);
+        const imiona = await page.evaluate(() => window.zm!.sim!.st.people.flatMap((q) => [q.name, q.first]));
+        const pl = polskieLitery(p.tekst, [m.nazwa, ...imiona]);
+        if (pl.length) throw new Error(`polskie słowa w oknie planu po angielsku: ${pl.join(' ')}`);
+        if (p.wyslij?.tekst !== 'Send the supply run' || p.wyslij.wyszarzony)
+          throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.wroc !== 'Back to the map') throw new Error(`przycisk powrotu: ${p.wroc}`);
+        const klucze = p.podsumowanie.map((r) => r[0]);
+        for (const k of ['Leaving', 'Back', 'Time away', 'Risk', 'Can carry', 'Left there'])
+          if (!klucze.includes(k)) throw new Error(`podsumowanie bez wiersza „${k}”: ${klucze.join(', ')}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        // zmiana języka przy otwartym planie: to samo okno po polsku z tym samym wyborem osób, i z powrotem
+        const zmien = (l: 'en' | 'pl') =>
+          page.evaluate(async (l) => {
+            const load = (path: string) => import(/* @vite-ignore */ path);
+            ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk(l);
+          }, l);
+        await zmien('pl');
+        await page.waitForFunction(
+          () => document.querySelector('#sheet [data-act="wp-wroc"]')?.textContent === 'Wróć do mapy',
+        );
+        const pol = await plan(page);
+        if (JSON.stringify(pol.osoby.map((x) => x.wybrana)) !== JSON.stringify(p.osoby.map((x) => x.wybrana)))
+          throw new Error('zmiana języka zmieniła wybór osób');
+        if (pol.wyslij?.tekst !== 'Wyślij wyprawę') throw new Error(`po polsku: ${pol.wyslij?.tekst}`);
+        await zmien('en');
+        await page.waitForFunction(
+          () => document.querySelector('#sheet [data-act="wp-wroc"]')?.textContent === 'Back to the map',
+        );
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // minimapa w rogu ekranu (src/ui/minimapa.ts): kwadrat z kropkami kategorii nad paskiem atrybucji, z atrybucją
+      // map pod spodem, bez nazw; nie zasłania paska, celów, kart, przycisków przybliżania ani paska atrybucji (kilka
+      // rozmiarów okna, schowana poniżej 640 px szerokości i 560 px wysokości); rysowana tylko przy zmianie; klik,
+      // Enter i spacja otwierają okno mapy miasta
+      name: 'miasto-minimapa',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&godzina=8&cam=hq,1.3`);
+        await waitIdle(page);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().rysunki >= 1, null, { timeout: 5000 });
+        const o = await minimapa(page);
+        console.log(`  stan: ${JSON.stringify(o.stan)}, przycisk ${JSON.stringify(o.przycisk)}, podpis „${o.podpis}”`);
+        if (!o.stan.wlaczona || !o.stan.widoczna)
+          throw new Error(`minimapa nie stoi na ekranie: ${JSON.stringify(o.stan)}`);
+        if (o.stan.ikony < 50) throw new Error(`za mało kropek miejsc: ${o.stan.ikony}`);
+        if (o.stan.wyprawy) throw new Error(`znaczniki wypraw bez wypraw: ${o.stan.wyprawy}`);
+        if (o.aria !== 'Minimapa: otwórz mapę miasta') throw new Error(`etykieta przycisku: ${o.aria}`);
+        if (o.tekst.trim() !== o.podpis.trim())
+          throw new Error(`na minimapie jest coś poza atrybucją (nazwy?): ${o.tekst}`);
+        for (const z of ['współtwórcy OpenStreetMap', 'OpenFreeMap', 'OpenMapTiles'])
+          if (!o.podpis.includes(z)) throw new Error(`atrybucja pod minimapą bez „${z}”: ${o.podpis}`);
+        if (o.czcionka < 11) throw new Error(`atrybucja pod minimapą za mała: ${o.czcionka} px`);
+        if (o.kolory < 6) throw new Error(`na minimapie ${o.kolory} kolorów: nie wygląda na rysunek miejsc`);
+        // rysowana tylko przy zmianie: gra chodzi w tempie 1×, a przez półtorej sekundy nic się nie zmienia
+        const r0 = (await minimapa(page)).stan.rysunki;
+        await page.waitForTimeout(1600);
+        const r1 = (await minimapa(page)).stan.rysunki;
+        console.log(`  rysunków: ${r0} → ${r1} po 1,6 s gry bez zmian`);
+        if (r1 !== r0) throw new Error(`minimapa rysowana bez zmian: ${r0} → ${r1}`);
+        // ułożenie przy kilku rozmiarach okna (komputer, mniejszy ekran, granice 640 i 560, telefon poziomo)
+        for (const [w, h, stoi] of [
+          [1024, 700, true],
+          [700, 900, true],
+          [641, 900, true],
+          [640, 900, false],
+          [1024, 560, true],
+          [1024, 559, false],
+          [844, 390, false],
+          [1440, 900, true],
+        ] as const) {
+          await page.setViewportSize({ width: w, height: h });
+          await page.waitForTimeout(700);
+          const u = await minimapa(page);
+          console.log(
+            `  ${w}×${h}: ${u.widac ? `w ${JSON.stringify(u.prostokat)}` : 'schowana'}, nakłada się na: ${u.nakladki.join(', ') || 'nic'}`,
+          );
+          if (u.widac !== stoi)
+            throw new Error(`${w}×${h}: minimapa ${u.widac ? 'jest' : 'schowana'}, a ma ${stoi ? 'być' : 'zniknąć'}`);
+          if (u.widac && !u.wEkranie)
+            throw new Error(`${w}×${h}: minimapa wychodzi za ekran ${JSON.stringify(u.prostokat)}`);
+          if (u.nakladki.length) throw new Error(`${w}×${h}: minimapa zasłania: ${u.nakladki.join(', ')}`);
+          if (u.widac && u.podpisPoza)
+            throw new Error(`${w}×${h}: atrybucja pod minimapą wychodzi poza minimapę albo na pasek atrybucji`);
+          if (!u.widac && (await page.isVisible('#btnMiasto')) !== true)
+            throw new Error(`${w}×${h}: przycisk mapy zniknął razem z minimapą`);
+        }
+        // karta osoby (lewy dolny róg) i zaznaczeni: minimapa jej nie zasłania
+        await zaznacz(page, 2);
+        const z = await minimapa(page);
+        if (!z.karta) throw new Error('po zaznaczeniu osób nie ma karty');
+        if (z.nakladki.length) throw new Error(`minimapa zasłania: ${z.nakladki.join(', ')}`);
+        // klik otwiera okno mapy (gra staje), Esc zamyka i oddaje tempo
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        await page.click('#minimapaBtn');
+        await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+        await czekajNaMape(page);
+        let k = await okno(page);
+        console.log(`  po kliknięciu: ${JSON.stringify({ otwarta: k.stan.otwarta, tempo: k.tempo })}`);
+        if (k.tempo !== 0) throw new Error('klik w minimapę nie zatrzymał gry');
+        if (!/Mapa miasta/.test(k.tekst)) throw new Error('klik w minimapę nie otworzył okna mapy miasta');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        if ((await page.evaluate(() => window.zm!.speed())) !== tempo)
+          throw new Error('po Esc gra nie wróciła do tempa');
+        // po kliknięciu myszą przycisk nie trzyma fokusu: spacja zatrzymuje grę, zamiast otwierać okno drugi raz
+        if ((await page.evaluate(() => document.activeElement?.id)) === 'minimapaBtn')
+          throw new Error('po kliknięciu minimapa trzyma fokus');
+        await page.keyboard.press('Space');
+        if (
+          (await page.evaluate(() => window.zm!.speed())) !== 0 ||
+          (await page.evaluate(() => window.zm!.mapa()!.stan().otwarta))
+        )
+          throw new Error('spacja po kliknięciu w minimapę nie zatrzymała gry (otworzyła okno?)');
+        await page.keyboard.press('Space');
+        if ((await page.evaluate(() => window.zm!.speed())) !== tempo) throw new Error('druga spacja nie wznowiła gry');
+        // z klawiatury: przycisk bierze fokus, Enter i spacja otwierają okno (nie zmieniają tempa gry spacją)
+        for (const klawisz of ['Enter', 'Space']) {
+          await page.focus('#minimapaBtn');
+          await page.keyboard.press(klawisz);
+          await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta, null, { timeout: 3000 });
+          k = await okno(page);
+          if (k.tempo !== 0 || !/Mapa miasta/.test(k.tekst))
+            throw new Error(`${klawisz} na minimapie nie otworzył okna mapy`);
+          await page.keyboard.press('Escape');
+          await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+          if ((await page.evaluate(() => window.zm!.speed())) !== tempo)
+            throw new Error(`po ${klawisz} i Esc tempo gry się zmieniło`);
+        }
+        // tryb stawiania: klik w minimapę nie otwiera okna i nie anuluje stawiania (to próba postawienia budowli w rogu)
+        const { BUILDS } = await import('../src/sim/budowle.ts');
+        await stockUp(page, BUILDS.warsztat.cost);
+        await page.keyboard.press('b');
+        await page.waitForSelector('#sheet .bcat');
+        await page.click('#sheet [data-act="build"][data-arg="warsztat"]');
+        if (!(await page.evaluate(() => window.zm!.placing()))) throw new Error('nie ma trybu stawiania');
+        await page.click('#minimapaBtn');
+        await page.waitForTimeout(300);
+        const stawianie = await page.evaluate(() => ({
+          placing: !!window.zm!.placing(),
+          otwarta: window.zm!.mapa()!.stan().otwarta,
+        }));
+        if (!stawianie.placing || stawianie.otwarta)
+          throw new Error(`klik w minimapę w trybie stawiania: ${JSON.stringify(stawianie)}`);
+        await page.keyboard.press('Escape');
+        if (await page.evaluate(() => window.zm!.placing())) throw new Error('Esc nie anulował stawiania');
+        // po angielsku: etykieta przycisku i atrybucja pod minimapą
+        await page.evaluate(async () => {
+          const load = (path: string) => import(/* @vite-ignore */ path);
+          ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk('en');
+        });
+        const en = await minimapa(page);
+        if (en.aria !== 'Minimap: open the city map' || !en.podpis.includes('OpenStreetMap contributors'))
+          throw new Error(`po angielsku: ${en.aria} | ${en.podpis}`);
+        const pl = polskieLitery(`${en.aria} ${en.podpis}`, []);
+        if (pl.length) throw new Error(`polskie słowa w minimapie po angielsku: ${pl.join(' ')}`);
+        await page.evaluate(async () => {
+          const load = (path: string) => import(/* @vite-ignore */ path);
+          ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk('pl');
+        });
+        await page.waitForTimeout(300);
+      },
+    },
+    {
+      // znacznik wyprawy na minimapie: po wysłaniu wyprawy z mapy w miejscu celu stoi pierścień w kolorze lampy, a po
+      // powrocie znika (zrzut w drodze: miasto-minimapa-w-drodze, końcowy: po powrocie)
+      name: 'miasto-minimapa-wyprawa',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 1 });
+        await page.waitForFunction(() => window.zm!.minimapa().stan().rysunki >= 1, null, { timeout: 5000 });
+        const przed = await minimapa(page);
+        if (przed.stan.wyprawy) throw new Error('znacznik wyprawy przed wysłaniem');
+        await page.click('#sheet [data-act="wyslij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        // minimapa sprawdza stan co 500 ms, więc znacznik pojawia się najpóźniej po pół sekundy
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 1, null, { timeout: 3000 });
+        const po = await minimapa(page);
+        // gdzie ma stać: Cel.x i Cel.y z gov.wyprawy[0], w skali minimapy (punktyMinimapy)
+        const gdzie = await page.evaluate(async () => {
+          const load = (path: string) => import(/* @vite-ignore */ path);
+          const { punktyMinimapy, ZASIEG_MINIMAPY_M } = (await load(
+            '/src/ui/minimapa.ts',
+          )) as typeof import('../src/ui/minimapa.ts');
+          const zm = window.zm!;
+          const cel = zm.gov!.wyprawy![0].cel;
+          const bok = Math.round(document.querySelector<HTMLCanvasElement>('#minimapa canvas')!.clientWidth);
+          return {
+            cel: { klucz: cel.klucz, x: cel.x, y: cel.y, kat: cel.kat },
+            ...punktyMinimapy([], [cel], bok, ZASIEG_MINIMAPY_M).wyprawy[0],
+            bok,
+          };
+        });
+        console.log(`  w drodze: ${JSON.stringify(po.stan)}, cel ${JSON.stringify(gdzie)}`);
+        if (gdzie.cel.kat === null) throw new Error('cel wyprawy bez położenia (TARGETS)');
+        if (gdzie.cel.klucz !== m.klucz || gdzie.cel.x !== m.x || gdzie.cel.y !== m.y)
+          throw new Error(
+            `znacznik nie w miejscu wybranego celu: ${JSON.stringify(gdzie.cel)} zamiast ${JSON.stringify(m)}`,
+          );
+        const lampa = await page.evaluate(
+          ([px, py]) => {
+            const cv = document.querySelector<HTMLCanvasElement>('#minimapa canvas')!;
+            const dpr = cv.width / cv.clientWidth;
+            const R = 8;
+            const x0 = Math.max(0, Math.floor((px - R) * dpr));
+            const y0 = Math.max(0, Math.floor((py - R) * dpr));
+            const d = cv.getContext('2d')!.getImageData(x0, y0, Math.floor(2 * R * dpr), Math.floor(2 * R * dpr)).data;
+            let n = 0;
+            for (let i = 0; i < d.length; i += 4)
+              if (d[i] > 200 && d[i + 1] > 140 && d[i + 1] < 200 && d[i + 2] < 110) n++;
+            return n;
+          },
+          [gdzie.px, gdzie.py],
+        );
+        console.log(`  pikseli w kolorze lampy przy celu: ${lampa}`);
+        if (lampa < 15) throw new Error(`przy celu wyprawy nie ma znacznika w kolorze lampy (${lampa} pikseli)`);
+        await page.screenshot({ path: path.join(OUT, 'miasto-minimapa-w-drodze.png') });
+        // przewinięcie do powrotu: wyprawa znika ze stanu, a znacznik z minimapy (po najbliższym odświeżeniu)
+        for (let n = 0; n < 40; n++) {
+          if (!(await page.evaluate(() => window.zm!.gov!.wyprawy?.length ?? 0))) break;
+          const okno = await page.evaluate(() => window.zm!.ff(30));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+        }
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 0, null, { timeout: 3000 });
+        console.log(`  po powrocie: ${JSON.stringify((await minimapa(page)).stan)}`);
+      },
+    },
+    {
+      // telefon: minimapy nie ma na ekranie (poniżej 640 px szerokości), nic się nie rysuje, a przycisk „Mapa” w pasku
+      // otwiera okno mapy miasta
+      name: 'miasto-minimapa-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        await page.waitForTimeout(1200);
+        const o = await minimapa(page);
+        console.log(`  stan: ${JSON.stringify(o.stan)}, minimapa widoczna: ${await page.isVisible('#minimapa')}`);
+        if (!o.stan.wlaczona) throw new Error('minimapa wyłączona na telefonie (ma być tylko schowana stylem)');
+        if (o.stan.widoczna || (await page.isVisible('#minimapa'))) throw new Error('minimapa widać na telefonie');
+        if (o.stan.rysunki) throw new Error(`schowana minimapa się rysuje: ${o.stan.rysunki} razy`);
+        const b = await page.locator('#btnMiasto').boundingBox();
+        if (!b || !(await page.isVisible('#btnMiasto'))) throw new Error('przycisk „Mapa” niewidoczny na telefonie');
+        console.log(`  przycisk „Mapa”: ${await page.textContent('#btnMiasto')}, ${JSON.stringify(b)}`);
+        if (b.x < 0 || b.y < 0 || b.x + b.width > 390 || b.y + b.height > 844)
+          throw new Error('przycisk „Mapa” wychodzi za ekran');
+        if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1))
+          throw new Error('strona przewija się w bok');
+        await otworzMape(page, true);
+        const k = await okno(page);
+        if (k.tempo !== 0 || !/Mapa miasta/.test(k.tekst))
+          throw new Error('przycisk „Mapa” nie otworzył okna mapy miasta');
+        await page.tap('#sheet [data-act="miasto-zamknij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+      },
+    },
+    {
+      // telefon po angielsku: okno mapy i karta miejsca bez polskich słów (poza nazwą miejsca), karta na ekranie;
+      // kafelki poza tests/fixtures zerwane i bez tabel mieszkańców, jak w miasto-mapa-telefon
+      name: 'en-miasto-mapa-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      allow: /ERR_INTERNET_DISCONNECTED|Failed to load resource|status of 404/,
+      allowUrl: /tiles\.openfreemap\.org|\/data\/mieszkancy\//,
+      run: async (page, base) => {
+        await kafelkiMapy(page, true);
+        await bezTabel(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        if ((await page.getAttribute('#btnMiasto', 'aria-label')) !== 'City map')
+          throw new Error('przycisk mapy po angielsku');
+        await otworzMape(page, true);
+        const m = await miejsceMapy(page, 230, 520);
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.touchscreen.tap(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        const o = await okno(page);
+        console.log(`  telefon po angielsku, karta: ${o.karta?.tekst}`);
+        if (o.stan.wybrane !== m.klucz) throw new Error('stuknięcie w znak nie wybrało miejsca');
+        if (!o.stan.napis.includes('The rest of the city didn’t load'))
+          throw new Error(`napis o reszcie miasta: ${o.stan.napis}`);
+        if (o.karta?.wyslij !== 'Send a supply run') throw new Error(`przycisk wysyłki: ${o.karta?.wyslij}`);
+        const pl = polskieLitery(o.tekst, [m.nazwa]);
+        if (pl.length) throw new Error(`polskie słowa w oknie po angielsku: ${pl.join(' ')}`);
+        const [l, t, r, b] = o.karta!.prostokat;
+        if (l < 0 || t < 0 || r > o.ekran[0] || b > o.ekran[1]) throw new Error('karta miejsca wychodzi za ekran');
+        zasady(o, ATRYBUCJA_EN);
+      },
+    },
+    {
+      // minimapa po angielsku (komputer): przycisk, dymek i atrybucja bez polskich słów; klik otwiera okno mapy
+      name: 'en-miasto-minimapa',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&godzina=8&cam=hq,1.3`);
+        await waitIdle(page);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().rysunki >= 1, null, { timeout: 5000 });
+        const o = await minimapa(page);
+        console.log(`  stan: ${JSON.stringify(o.stan)}, etykieta „${o.aria}”, podpis „${o.podpis}”`);
+        if (!o.stan.wlaczona || !o.stan.widoczna) throw new Error(`minimapa nie stoi: ${JSON.stringify(o.stan)}`);
+        if (o.aria !== 'Minimap: open the city map') throw new Error(`etykieta przycisku: ${o.aria}`);
+        const tytul = await page.getAttribute('#minimapaBtn', 'title');
+        if (tytul !== 'Minimap: open the city map (M)') throw new Error(`dymek przycisku: ${tytul}`);
+        for (const z of ['OpenStreetMap contributors', 'OpenFreeMap', 'OpenMapTiles'])
+          if (!o.podpis.includes(z)) throw new Error(`atrybucja minimapy bez „${z}”: ${o.podpis}`);
+        const pl = polskieLitery(`${o.aria} ${tytul} ${o.tekst}`, []);
+        if (pl.length) throw new Error(`polskie słowa przy minimapie po angielsku: ${pl.join(' ')}`);
+        if (o.podpisPoza || !o.wEkranie) throw new Error('minimapa albo jej podpis poza ekranem');
+        if (o.nakladki.length) throw new Error(`minimapa nachodzi na: ${o.nakladki.join(', ')}`);
+        await page.click('#minimapaBtn');
+        await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+        await czekajNaMape(page);
+        const k = await okno(page);
+        if (!/City map/.test(k.tekst)) throw new Error('klik w minimapę nie otworzył okna mapy po angielsku');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // tryb zombie (komputer): mapa miasta, karta miejsca, plan i wysłanie wyprawy jak w zwykłym trybie; wyprawa
+      // jest w stanie zarządu i na minimapie. Zrzuty: plan wyprawy (miasto-zombie-plan) i minimapa z wyprawą w drodze
+      name: 'miasto-zombie',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 1, q: '&tryb=zombie' });
+        const tryb = await page.evaluate(() => window.zm!.sim!.st.mode);
+        if (tryb !== 'zombie') throw new Error(`tryb gry: ${tryb}`);
+        const p = await plan(page);
+        console.log(
+          `  zombie, miejsce ${JSON.stringify(m)}, plan: ${p.tytul}, podsumowanie ${JSON.stringify(p.podsumowanie)}`,
+        );
+        if (p.osoby.filter((x) => x.wybrana).length !== 2) throw new Error('zaznaczeni nie są wybrani');
+        if (!p.wyslij || p.wyslij.wyszarzony || p.wyslij.tekst !== 'Wyślij wyprawę')
+          throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        if (p.podsumowanie.length < 5) throw new Error(`podsumowanie: ${JSON.stringify(p.podsumowanie)}`);
+        await page.screenshot({ path: path.join(OUT, 'miasto-zombie-plan.png') });
+        await page.click('#sheet [data-act="wyslij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const w = await page.evaluate(() => JSON.parse(JSON.stringify(window.zm!.gov!.wyprawy ?? [])));
+        if (w.length !== 1 || w[0].cel.klucz !== m.klucz) throw new Error(`wyprawa w stanie: ${JSON.stringify(w)}`);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 1, null, { timeout: 3000 });
+        const o = await minimapa(page);
+        console.log(`  minimapa w trybie zombie: ${JSON.stringify(o.stan)}`);
+        if (!o.stan.widoczna || o.nakladki.length) throw new Error(`minimapa: ${JSON.stringify([o.stan, o.nakladki])}`);
+        // wyprawa wraca także w trybie zombie: kłopoty to szwendacze, nie szabrownicy
+        for (let n = 0; n < 40; n++) {
+          if (!(await page.evaluate(() => window.zm!.gov!.wyprawy?.length ?? 0))) break;
+          const okno = await page.evaluate(() => window.zm!.ff(30));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+        }
+        const log = await page.evaluate(() => window.zm!.gov!.log.slice(-4).map((l) => (l.txt as { pl: string }).pl));
+        console.log(`  po powrocie: ${log.join(' | ')}`);
+        if (await page.evaluate(() => window.zm!.gov!.wyprawy?.length)) throw new Error('wyprawa dalej w drodze');
+        if (log.some((t) => /szabrown/.test(t))) throw new Error(`szabrownicy w trybie zombie: ${log.join(' | ')}`);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 0, null, { timeout: 3000 });
+      },
+    },
+    {
+      // tryb zombie na telefonie po angielsku: plan wyprawy bez przewijania w bok i bez polskich słów, stopka na ekranie
+      name: 'en-miasto-zombie-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { dotyk: true, q: '&tryb=zombie' });
+        const tryb = await page.evaluate(() => window.zm!.sim!.st.mode);
+        if (tryb !== 'zombie') throw new Error(`tryb gry: ${tryb}`);
+        const p = await plan(page);
+        console.log(`  zombie po angielsku, plan: ${p.tytul}, osoby ${p.osoby.length}, ekran ${p.ekran}`);
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}, stopka ${p.stopka}`);
+        const imiona = await page.evaluate(() => window.zm!.sim!.st.people.flatMap((q) => [q.name, q.first]));
+        const pl = polskieLitery(p.tekst, [m.nazwa, ...imiona]);
+        if (pl.length) throw new Error(`polskie słowa w oknie planu po angielsku: ${pl.join(' ')}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok na telefonie');
+        const [l, t, r, b] = p.stopka!;
+        if (l < 0 || t < 0 || r > p.ekran[0] || b > p.ekran[1]) throw new Error('stopka planu wychodzi za ekran');
+        if (p.wyslij?.tekst !== 'Send the supply run') throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.wroc !== 'Back to the map') throw new Error(`przycisk powrotu: ${p.wroc}`);
+        // wybór osoby dotykiem, jak w zwykłym trybie
+        const kto = p.osoby.find((x) => !x.wyszarzona)!;
+        await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+        await dwieKlatki(page);
+        const po = (await plan(page)).osoby.find((x) => x.id === kto.id)!;
+        if (po.wybrana === kto.wybrana) throw new Error('stuknięcie osoby nie zmieniło wyboru');
+        if (!po.wybrana) {
+          await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+          await dwieKlatki(page);
+        }
+      },
+    },
+    {
+      name: 'miasto-start',
+      query: '',
+      allow: BRAK_TABEL,
+      allowUrl: TABELE_URL,
+      run: async (page, base) => {
+        // bez tabel mieszkańców (404) filtr nie zna imion, więc okolica ma same puste nazwy: sama kategoria, bez nazwy
+        // jednoosobowej firmy z imieniem i nazwiskiem właściciela (RODO), także na karcie nocy
+        await bezTabel(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        const bt = await nazwy(page);
+        const btStan = await stan(page);
+        console.log(`  bez tabel: ${JSON.stringify(btStan)}, nazwy ${JSON.stringify(bt)}`);
+        if (!btStan.miasto || btStan.okolica <= 0) throw new Error('bez tabel nie ma miasta albo okolicy');
+        if (bt.niepuste) throw new Error(`bez tabel ${bt.niepuste} miejsc z nazwą (może być imię właściciela)`);
+        const btKarta = await doKarty(page, base, '');
+        console.log(`  bez tabel, karta nocy: ${btKarta.join(' | ')}`);
+        if (!btKarta.length) throw new Error('bez tabel karta nocy bez wyprawy do miejsca z okolicy');
+        if (btKarta.some((t) => t.includes('(')))
+          throw new Error(`bez tabel nazwa miejsca na karcie: ${btKarta.join(' | ')}`);
+        await page.unroute('**/data/mieszkancy/**');
+        // opcja wyłączona: zarząd bez miasta, okolicy nie ma, karta nocy z celami z TARGETS
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9&miasto=0`);
+        await waitIdle(page);
+        const wyl = await stan(page);
+        console.log(`  ?miasto=0: ${JSON.stringify(wyl)}`);
+        if (wyl.miasto || wyl.okolica) throw new Error('?miasto=0 nie wyłączyło miasta albo okolicy');
+        if (await page.isVisible('#btnMiasto')) throw new Error('?miasto=0: przycisk mapy miasta widać');
+        // minimapa też: schowana i wyłączona (nic się nie rysuje), tak samo jak przycisk
+        const mm0 = await page.evaluate(() => window.zm!.minimapa().stan());
+        if (mm0.wlaczona || mm0.widoczna || mm0.rysunki || (await page.isVisible('#minimapa')))
+          throw new Error(`?miasto=0: minimapa na ekranie albo włączona: ${JSON.stringify(mm0)}`);
+        const bez = await doKarty(page, base, '&miasto=0');
+        if (bez.length) throw new Error(`?miasto=0: karta nocy z miejscami z okolicy: ${bez.join(' | ')}`);
+        // domyślnie: miasto włączone, okolica z kluczami, karta nocy z miejscami z okolicy
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        const wl = await stan(page);
+        console.log(`  domyślnie: ${JSON.stringify(wl)}`);
+        if (!wl.miasto) throw new Error('zarząd bez stanu miasta (gov.miasto)');
+        if (wl.okolica <= 0) throw new Error('okolica pusta (zm.okolica)');
+        if (!(await page.isVisible('#minimapa'))) throw new Error('domyślnie minimapy nie widać');
+        if (wl.zleKlucze) throw new Error(`${wl.zleKlucze} miejsc bez klucza „poi:X:Y”`);
+        if (wl.poza <= 0) throw new Error('w okolicy nie ma miejsc poza mapą lokalną');
+        // filtr nazw podpięty w main.ts: nazwy z osobą puste, marka zostaje, patron szkoły odpada z nazwy
+        const nz = await nazwy(page);
+        console.log(`  nazwy: ${JSON.stringify(nz)}`);
+        if (!nz.osoby.length || nz.osoby.some((n) => n))
+          throw new Error(`nazwa z osobą w okolicy: ${nz.osoby.join(' | ')}`);
+        if (!nz.marki.length || nz.marki.some((n) => n !== 'Żabka'))
+          throw new Error(`marka po filtrze: ${nz.marki.join(' | ')}`);
+        if (!nz.patron.length || nz.patron.some((n) => n !== 'Szkoła Podstawowa Nr 44'))
+          throw new Error(`szkoła z patronem po filtrze: ${nz.patron.join(' | ')}`);
+        if (wl.bezNazwy <= 0) throw new Error('żadna nazwa nie została odfiltrowana');
+        // zapis sprzed mapy miasta (bez stanu miasta w zarządzie i bez kluczy punktów): po wczytaniu miasto włączone,
+        // okolica ta sama co w nowej grze
+        await page.evaluate(() => {
+          window.zm!.save();
+          const raw = JSON.parse(localStorage.getItem('za-murem-0.4-zapis')!);
+          delete raw.gov.miasto;
+          for (const p of raw.data.geo.poi) delete p.k;
+          localStorage.setItem('za-murem-0.4-zapis', JSON.stringify(raw));
+        });
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await waitIdle(page);
+        const stary = await stan(page);
+        console.log(`  stary zapis po wczytaniu: ${JSON.stringify(stary)}`);
+        if (!stary.miasto) throw new Error('stary zapis bez stanu miasta po wczytaniu');
+        if (stary.okolica !== wl.okolica || stary.zleKlucze)
+          throw new Error(
+            `okolica ze starego zapisu: ${stary.okolica} miejsc z ${wl.okolica}, złych kluczy ${stary.zleKlucze}`,
+          );
+        const z = await doKarty(page, base, '');
+        console.log(`  karta nocy, opcje z miejscami: ${z.join(' | ')}`);
+        if (!z.length) throw new Error('karta nocy bez wyprawy do miejsca z okolicy (input() bez okolicy?)');
+        await page.waitForTimeout(200);
       },
     },
   ];
