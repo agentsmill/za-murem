@@ -4290,7 +4290,15 @@ function druzynaShots(): Shot[] {
 /** Udawany serwer gry pod /api (page.route): zdrowie, konto, klatki w pamięci, zapis w chmurze. zalogowani: GET
     /api/konto daje nick; zajete: cudze klatki na starcie; pierwsze: odpowiedź na pierwsze zajęcie (409: ktoś był
     szybszy, start bez domu). */
-async function fakeApi(page: Page, o: { zalogowani?: boolean; zajete?: ZajetaKlatka[]; pierwsze?: 201 | 409 } = {}) {
+async function fakeApi(
+  page: Page,
+  o: {
+    zalogowani?: boolean;
+    zajete?: ZajetaKlatka[];
+    pierwsze?: 201 | 409;
+    chmura?: { dane: unknown; wersja: number };
+  } = {},
+) {
   const klatki = [...(o.zajete ?? [])];
   let zajec = 0;
   await page.route('**/api/**', async (r) => {
@@ -4304,8 +4312,17 @@ async function fakeApi(page: Page, o: { zalogowani?: boolean; zajete?: ZajetaKla
       return o.zalogowani
         ? json(200, { nick: 'Sasiedzi_z_Lanciego', utworzone: 1, klatki: 0, zapis: false })
         : json(401, { blad: 'brak_sesji', komunikat: 'Zalogujcie się.' });
-    if (path0 === '/zapis' && m === 'GET') return json(404, { blad: 'brak_zapisu', komunikat: 'Nie ma zapisu.' });
-    if (path0 === '/zapis' && m === 'PUT') return json(200, { wersja: 1, zmieniony: 1, rozmiar: 1 });
+    if (path0 === '/zapis' && m === 'GET')
+      return o.chmura
+        ? json(200, { dane: o.chmura.dane, wersja: o.chmura.wersja, zmieniony: 1, rozmiar: 1 })
+        : json(404, { blad: 'brak_zapisu', komunikat: 'Nie ma zapisu.' });
+    if (path0 === '/zapis' && m === 'PUT') {
+      // zapis zostaje w udawanym serwerze (o.chmura), jak w prawdziwym
+      const body = req.postDataJSON() as { dane: unknown };
+      const wersja = (o.chmura?.wersja ?? 0) + 1;
+      o.chmura = { dane: body.dane, wersja };
+      return json(200, { wersja, zmieniony: 1, rozmiar: req.postData()?.length ?? 0 });
+    }
     if (path0 === '/klatki/moje' && m === 'DELETE') return r.fulfill({ status: 204, body: '' });
     if (path0 === '/klatki' && m === 'GET') return json(200, { klatki });
     if (path0 === '/klatki' && m === 'POST') {
@@ -4512,6 +4529,39 @@ function siecShots(): Shot[] {
           zm.setCam((core[0].x + dx) / 2, (core[0].y + dy) / 2, Math.max(0.3, Math.min(0.9, 700 / ((d + 20) * 32))));
         });
         await waitIdle(page);
+      },
+    },
+    {
+      // zapis w chmurze: gra bez domu zapisana, przeładowanie, „Kontynuuj z chmury” wraca do tej samej siedziby i stanu
+      name: 'siec-chmura',
+      query: '',
+      run: async (page, base) => {
+        const serwer: Parameters<typeof fakeApi>[1] = {
+          zalogowani: true,
+          zajete: cudzeKlatkiLanciego(),
+          pierwsze: 409,
+        };
+        await fakeApi(page, serwer);
+        await startSieci(page, base);
+        const przed = await page.evaluate(() => ({ hq: window.zm!.sim!.w.hq, stan: window.zm!.siec().stan }));
+        await page.evaluate(() => window.zm!.save());
+        await page.waitForFunction(() => true);
+        for (let k = 0; k < 50 && !serwer.chmura; k++) await page.waitForTimeout(100);
+        if (!serwer.chmura) throw new Error('zapis nie trafił do chmury');
+        const tekst = JSON.stringify(serwer.chmura.dane);
+        console.log(`  zapis w chmurze: ${Math.round(tekst.length / 1024)} KB`);
+        if (tekst.includes('"addr"') || tekst.includes('"addr:')) throw new Error('adres w zapisie w chmurze');
+        await page.evaluate(() => localStorage.clear());
+        await page.goto(`${base}?siec=1&speed=0`);
+        await page.waitForSelector('[data-siec=chmura]');
+        const label = await page.$eval('[data-siec=chmura]', (e) => e.textContent ?? '');
+        console.log(`  przycisk: ${label}`);
+        await page.click('[data-siec=chmura]');
+        await waitIdle(page);
+        const po = await page.evaluate(() => ({ hq: window.zm!.sim!.w.hq, stan: window.zm!.siec().stan }));
+        console.log(`  przed ${JSON.stringify(przed)}, po ${JSON.stringify(po)}`);
+        if (po.hq !== przed.hq || JSON.stringify(po.stan) !== JSON.stringify(przed.stan))
+          throw new Error('gra z chmury ma inną siedzibę albo stan sieci');
       },
     },
     {
