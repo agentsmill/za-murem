@@ -399,6 +399,24 @@
           "kierunki": ["south", "north"],
           "koszt": 2,
           "uwagi": "pilot getting-up na południe i północ: południe zaczyna się od przysiadu, północ od czworaków i traci czapkę; do wstawania i kładzenia się wystarcza zachód z odbiciem na wschód, więc u pozostałych postaci tylko zachód"
+        },
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez lampy (prawa ręka za ciałem); 19.10.2026 zastąpiony wersją z lampą w lewej ręce (bliższej widzowi przy patrzeniu na zachód), która jest teraz w animacjach"
+        },
+        {
+          "nazwa": "gotowanie-px-test",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "próba osobnej grupy: zachód z garnkiem na ziemi wyszedł, ale identyczne zamówienie w grupie gotowanie-px PixelLab uznał za to samo (nie dopiął kierunku do grupy), więc próbę usunięto, a zachód zamówiono w grupie świeżym opisem (koszt w animacjach)"
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez garnka (sama łyżka); 19.10.2026 zastąpiony wersją z dużym garnkiem na ziemi, która jest teraz w animacjach"
         }
       ]
     },
@@ -604,6 +622,12 @@
           "kierunki": ["south", "north", "west"],
           "koszt": 3,
           "uwagi": "opis „unlit lantern, no fire, no glow” dał płaszcz w płomieniach na południu"
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez garnka (sama łyżka); 19.10.2026 zastąpiony wersją z dużym garnkiem na ziemi, która jest teraz w animacjach"
         }
       ]
     },
@@ -803,6 +827,12 @@
           "kierunki": ["south", "north", "west"],
           "koszt": 3,
           "uwagi": "opis „unlit lantern, no fire, no glow”, jak u emerytki; zastąpiona lampą opuszczoną przy biodrze"
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez garnka (sama łyżka); 19.10.2026 zastąpiony wersją z dużym garnkiem na ziemi, która jest teraz w animacjach"
         }
       ]
     },
@@ -994,6 +1024,14 @@
           "klatek": 5,
           "koszt": 1,
           "pliki": ["assets/raw/kotwica-mloda/Idle/animations/wstawanie"]
+        }
+      ],
+      "odrzucone": [
+        {
+          "nazwa": "gotowanie-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez garnka (sama łyżka); 19.10.2026 zastąpiony wersją z dużym garnkiem na ziemi, która jest teraz w animacjach"
         }
       ]
     },

@@ -75,17 +75,17 @@
             ]
           },
           "gotowanie-px": {
-            "north": [
-              "Idle/animations/gotowanie-px/north/frame_000.png",
-              "Idle/animations/gotowanie-px/north/frame_001.png",
-              "Idle/animations/gotowanie-px/north/frame_002.png",
-              "Idle/animations/gotowanie-px/north/frame_003.png"
-            ],
             "west": [
               "Idle/animations/gotowanie-px/west/frame_000.png",
               "Idle/animations/gotowanie-px/west/frame_001.png",
               "Idle/animations/gotowanie-px/west/frame_002.png",
               "Idle/animations/gotowanie-px/west/frame_003.png"
+            ],
+            "north": [
+              "Idle/animations/gotowanie-px/north/frame_000.png",
+              "Idle/animations/gotowanie-px/north/frame_001.png",
+              "Idle/animations/gotowanie-px/north/frame_002.png",
+              "Idle/animations/gotowanie-px/north/frame_003.png"
             ],
             "south": [
               "Idle/animations/gotowanie-px/south/frame_000.png",
@@ -379,5 +379,5 @@
     }
   ],
   "export_version": "3.1",
-  "export_date": "2026-10-18T23:01:18.380069"
+  "export_date": "2026-10-18T23:30:14.304232"
 }
