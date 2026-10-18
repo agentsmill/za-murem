@@ -1,7 +1,8 @@
 /* Duch planu wspólnego płotu w widoku (M2 fala 2, etap 3, docs/M2-fala-2.md): siatka przyszłego obwodu jako
    półprzezroczysty rysunek planu (art/duch.ts: jasny błękit, bo odcień tylko przyciemnia i ciemna siatka udawałaby
-   gotową) w warstwie pionków sortowanej po y, a pod nią na ziemi niebieski ślad nowych kafelków (pod wszystkimi
-   rzeczami i pionkami; z daleka mocniejszy, bo sprite'y siatki są wtedy drobne). Nad mapą światła postęp nad środkiem
+   gotową) w warstwie pionków sortowanej po y, a pod nią w warstwie ziemi (view.ground, pod rzeczami i pionkami)
+   niebieski ślad nowych kafelków, z daleka mocniejszy, bo sprite'y siatki są wtedy drobne. Warstwa pionków dostaje
+   same sprite'y (tools/kotwica.ts bierze z niej klasy PixiJS). Nad mapą światła postęp nad środkiem
    nowego płotu: procent pracy cyframi z pikseli i pasek materiałów (bursztynowy) i pracy (zielony) jak przy planach
    budowy, w stałym rozmiarze na ekranie, więc widać go w obu poziomach zbliżenia i nocą. Warstwa tylko czyta ducha
    z plotDuch.ts. */
@@ -27,7 +28,7 @@ const PAD = 3;
 
 export class PlotLayer {
   private readonly actors: Container;
-  /** ślad nowych kafelków na ziemi (w pikselach grafiki), w warstwie pionków pod wszystkim */
+  /** ślad nowych kafelków na ziemi (w pikselach grafiki), pod rzeczami i pionkami */
   private readonly trace = new Graphics();
   /** postęp nad środkiem nowego płotu (w pikselach ekranu: skala 1 / zoom) */
   private readonly label = new Graphics();
@@ -40,11 +41,9 @@ export class PlotLayer {
   /** szerokość mapy w kafelkach (do zamiany indeksów kafelków na pozycje) */
   mapSize = 1;
 
-  constructor(actors: Container, overlay: Container) {
+  constructor(actors: Container, ground: Container, overlay: Container) {
     this.actors = actors;
-    // pod krwią (−1), rzeczami i pionkami
-    this.trace.zIndex = -2;
-    actors.addChild(this.trace);
+    ground.addChild(this.trace);
     overlay.addChild(this.label);
   }
 
