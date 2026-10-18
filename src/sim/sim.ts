@@ -94,6 +94,7 @@ import {
   HALAS,
   type Info,
   type KontekstSpotkania,
+  kafelkiZajete,
   type LokatorzyBudynku,
   LUP_MATS,
   lupMieszkania,
@@ -595,7 +596,9 @@ export type Command =
   /** wybór w spotkaniu z lokatorami (ids puste) */
   | { t: 'meet'; ids: number[]; nr: number; choice: WyborSpotkania }
   /** etap 2: przeszukać następne piętro otwartego budynku (tile: kafelek schodów) */
-  | { t: 'upstairs'; ids: number[]; bid: number; tile: number };
+  | { t: 'upstairs'; ids: number[]; bid: number; tile: number }
+  /** gra sieciowa: nowa lista drzwi klatek zajętych przez inne drużyny (ids puste) */
+  | { t: 'zajete'; ids: number[]; drzwi: number[] };
 
 export interface Noise {
   x: number;
@@ -736,6 +739,9 @@ export interface SimState {
   /** sąsiednie budynki (M2 fala 2): nie ma go, dopóki zarząd nie dotknie cudzych drzwi, więc gra bez sąsiadów ma ten
       sam stan i skrót co przed falą 2, a stary zapis wczytuje się bez zmian */
   sasiedzi?: Sasiedzi;
+  /** gra sieciowa (fala 2): drzwi klatek zajętych przez inne drużyny, rosnąco; zamknięte na stałe razem z tym, co za
+      nimi. Nie ma go w grze bez sieci. */
+  zajete?: number[];
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -792,6 +798,8 @@ export interface SimOpts {
   crowd?: number;
   /** tryb gry, domyślnie zwykły */
   mode?: GameMode;
+  /** gra sieciowa: drzwi klatek zajętych przez inne drużyny na start (później polecenie zajete) */
+  zajete?: readonly number[];
 }
 
 /** wolne kafelki przed wejściami do budynków mieszkalnych, najbliżej siedziby najpierw */
@@ -1039,6 +1047,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     p.wait = Math.floor(rnd() * 200);
     st.pawns.push(p);
   }
+  if (opts.zajete?.length) st.zajete = [...new Set(opts.zajete)].sort((a, b) => a - b);
   return st;
 }
 
@@ -2129,6 +2138,16 @@ export class Sim {
     // wybór w spotkaniu z lokatorami nie potrzebuje zaznaczonych (nasza osoba już przy nich stoi)
     if (c.t === 'meet') {
       this.wyborSpotkania(c.nr, c.choice);
+      return;
+    }
+    // gra sieciowa: klatki innych drużyn zamknięte od następnego kroku (przechodniość od nowa)
+    if (c.t === 'zajete') {
+      const d = [...new Set(c.drzwi)].sort((a, b) => a - b);
+      if (d.join() === (st.zajete ?? []).join()) return;
+      if (d.length) st.zajete = d;
+      else delete st.zajete;
+      this.rebuild();
+      this.wersjaSasiadow++;
       return;
     }
     if (c.t === 'laws') {
@@ -6539,6 +6558,8 @@ export class Sim {
           if (cell[i] !== IN.NONE) layer[i] = solidCell(cell[i]) ? 1 : 0;
         }
       for (const d of b.drzwi) layer[d.t] = przechodnie(d.s) ? 0 : 1;
+      // gra sieciowa: klatki innych drużyn zamknięte na stałe
+      for (const t of kafelkiZajete(this.st, this.w, b.bid)) layer[t] = 1;
     }
   }
 
@@ -6634,7 +6655,7 @@ export class Sim {
   private orderDoor(pawns: Pawn[], t: 'open' | 'knock' | 'force' | 'board' | 'unboard', door: number): void {
     const w = this.w;
     const bid = w.bid[door];
-    if (bid < 0 || bid === w.hq) return;
+    if (bid < 0 || bid === w.hq || kafelkiZajete(this.st, w, bid).has(door)) return;
     const k = this.budynekSasiada(bid);
     const b = this.st.sasiedzi!.budynki[k];
     const d = stanDrzwi(b, door);

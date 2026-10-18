@@ -702,15 +702,17 @@ export function domTeraz(
 }
 
 /** Pomieszczenie sąsiada da się przeszukać (raz): w otwartym budynku sala, hala, zaplecze i klatka, puste mieszkanie,
-    a mieszkanie lokatorów tylko pod ich nieobecność (szaber). */
+    a mieszkanie lokatorów tylko pod ich nieobecność (szaber); nigdy za drzwiami klatki innej drużyny (gra sieciowa). */
 export function moznaPrzeszukac(
-  st: Pick<SimState, 'sasiedzi' | 'tick' | 'mode'>,
-  w: WorldLike,
+  st: Pick<SimState, 'sasiedzi' | 'tick' | 'mode' | 'zajete'>,
+  w: WorldLike & Pick<World, 'blocked'>,
   k: number,
   room: number,
 ): 'tak' | 'szaber' | null {
   const b = st.sasiedzi?.budynki[k];
   if (!b?.otwarty) return null;
+  // gra sieciowa: klatka innej drużyny to cudzy dom
+  if (st.zajete?.length && pokojeZajete(st, w, b.bid).has(room)) return null;
   const r = wnetrze(w, b.bid).rooms[room];
   if (!r) return null;
   if (r.apt < 0) return b.przeszukane.includes(room) ? null : 'tak';
@@ -1159,3 +1161,72 @@ export function ukrytyUgryziony(seed: number, bid: number, apt: number, osob: nu
 /** od ilu godzin ugryziony ukrywa ugryzienie (1–6), z ziarna budynku i mieszkania */
 export const ugryzionyOd = (seed: number, bid: number, apt: number): number =>
   1 + Math.floor(rngOfPlace(seed, bid, apt, 0xb17f)() * 6);
+
+// ---------------------------------------------------------------- gra sieciowa: klatki innych drużyn
+
+const zaDrzwiamiMemo = new WeakMap<object, Map<string, { tiles: Set<number>; rooms: Set<number> }>>();
+
+/** Kafelki i pomieszczenia za drzwiami na zewnątrz (klatka z jej mieszkaniami): wnętrze od tych drzwi bez przechodzenia
+    przez inne drzwi na zewnątrz, z drzwiami mieszkań i schodami; same drzwi też. Liczone raz na świat. */
+export function zaDrzwiami(
+  w: WorldLike & Pick<World, 'blocked'>,
+  bid: number,
+  door: number,
+): { tiles: Set<number>; rooms: Set<number> } {
+  let m = zaDrzwiamiMemo.get(w);
+  if (!m) {
+    m = new Map();
+    zaDrzwiamiMemo.set(w, m);
+  }
+  const key = `${bid}:${door}`;
+  const have = m.get(key);
+  if (have) return have;
+  const it = wnetrze(w, bid);
+  const size = w.size;
+  const outer = new Set(drzwiBudynku(w, bid).zewn.map((d) => d.tile));
+  const tiles = new Set<number>([door]);
+  const rooms = new Set<number>();
+  const q = [door];
+  while (q.length) {
+    const c = q.pop()!;
+    const x = c % size;
+    for (const n of [c - size, x < size - 1 ? c + 1 : -1, c + size, x > 0 ? c - 1 : -1]) {
+      if (n < 0 || n >= size * size || tiles.has(n) || w.bid[n] !== bid || outer.has(n)) continue;
+      const cell = it.cell[n];
+      if (cell !== IN.FLOOR && cell !== IN.DOOR && cell !== IN.STAIRS) continue;
+      tiles.add(n);
+      if (it.room[n] >= 0) rooms.add(it.room[n]);
+      q.push(n);
+    }
+  }
+  const out = { tiles, rooms };
+  m.set(key, out);
+  return out;
+}
+
+/** kafelki budynku za drzwiami klatek zajętych przez inne drużyny (z drzwiami), zamknięte na stałe; pusto bez gry
+    sieciowej */
+export function kafelkiZajete(
+  st: Pick<SimState, 'zajete'>,
+  w: WorldLike & Pick<World, 'blocked'>,
+  bid: number,
+): Set<number> {
+  const out = new Set<number>();
+  if (!st.zajete?.length) return out;
+  for (const d of drzwiBudynku(w, bid).zewn)
+    if (st.zajete.includes(d.tile)) for (const t of zaDrzwiami(w, bid, d.tile).tiles) out.add(t);
+  return out;
+}
+
+/** pomieszczenia budynku za drzwiami klatek zajętych przez inne drużyny (st.zajete); pusto bez gry sieciowej */
+export function pokojeZajete(
+  st: Pick<SimState, 'zajete'>,
+  w: WorldLike & Pick<World, 'blocked'>,
+  bid: number,
+): Set<number> {
+  const out = new Set<number>();
+  if (!st.zajete?.length) return out;
+  for (const d of drzwiBudynku(w, bid).zewn)
+    if (st.zajete.includes(d.tile)) for (const r of zaDrzwiami(w, bid, d.tile).rooms) out.add(r);
+  return out;
+}

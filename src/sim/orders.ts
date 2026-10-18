@@ -14,6 +14,7 @@ import {
   drzwiPod,
   gidB,
   gidRoom,
+  kafelkiZajete,
   mieszkalny,
   moznaPrzeszukac,
   pietraBudynku,
@@ -299,7 +300,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     ostrzeżenie. */
 function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuItem[] {
   const out: MenuItem[] = [];
-  const dp = drzwiPod(st.sasiedzi, w, modeOf(st), tile);
+  // gra sieciowa: drzwi klatki innej drużyny i wszystko za nimi bez poleceń (menu sieci mówi, czyja to klatka)
+  const dpAll = drzwiPod(st.sasiedzi, w, modeOf(st), tile);
+  const dp = dpAll && !kafelkiZajete(st, w, dpAll.bid).has(dpAll.tile) ? dpAll : null;
   if (dp) {
     const flat = dp.rodzaj === 'mieszkanie';
     const warn = dp.wylom ? MENU.wylom.pl : '';

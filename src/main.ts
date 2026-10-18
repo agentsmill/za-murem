@@ -1480,6 +1480,7 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   loot: [PO_POLECENIU.loot[0].pl, PO_POLECENIU.loot[1].pl],
   upstairs: [PO_POLECENIU.upstairs[0].pl, PO_POLECENIU.upstairs[1].pl],
   meet: ['', ''],
+  zajete: ['', ''],
 });
 
 function run(m: MenuItem) {
