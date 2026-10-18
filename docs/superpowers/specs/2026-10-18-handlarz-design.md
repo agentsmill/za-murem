@@ -54,7 +54,7 @@ Dziś handlarz jest tylko kartą wydarzenia z 0.3 („facet z wózkiem z marketu
 - Polecenie `{ t: 'trade'; ids; offer }`: jedna osoba z zarządu idzie na podwórko na kafelek najbliżej handlarza (albo do niego, gdy stoi po tej samej stronie siatki), targuje się 5 minut gry i wymienia. Nasz materiał schodzi ze stert (jak w warsztacie, z całego zapasu), towar handlarza ląduje na podwórku od bramy w głąb (jak łup z wraku).
 - Gdy w chwili wymiany materiału już nie starcza albo handlarz poszedł, nic się nie dzieje, a opis pracy kończy się.
 
-## Napaść
+## Napaść (pierwsza wersja, zastąpiona niżej przez walkę)
 
 - Menu: „Napaść na handlarza” (z potwierdzeniem, jak palenie mebli). Jedna osoba idzie do niego za bramę. Na miejscu cios (efekt `cios`), handlarz rzuca wózek i ucieka do krawędzi mapy.
 - Cały towar, jaki miał (wszystkie oferty razy to, co zostało), leży przy wózku za siatką. Nosi się go poleceniem „Zanieść na podwórko”.
@@ -83,3 +83,14 @@ Dziś handlarz jest tylko kartą wydarzenia z 0.3 („facet z wózkiem z marketu
 
 - `tests/unit/handlarz.test.ts`: bez opcji nie ma pola `obcy` i skrót jak przed zmianą; z opcją handlarz przychodzi drugiego dnia, staje przy bramie, czeka i odchodzi; oferty te same przy tym samym ziarnie, pierwsza kupuje złom; wymiana zabiera nasz materiał i kładzie towar na podwórku, oferta schodzi; wyszarzona pozycja z powodem; napaść: towar za siatką, ucieczka, nastroje, więcej nie przychodzi; zapis i wczytanie w trakcie wizyty dają ten sam skrót.
 - Boty bez zmian skrótów, testy, Biome, build, zrzuty: handlarz z wózkiem pod bramą, menu z ofertami (z wyszarzoną), po napaści. Lokalny commit, bez pusha.
+
+## Napaść po zmianie Mateusza (18.10.2026, wieczór)
+
+Mateusz (przez sesję „Pilnowanie agentów”): „Napaść na handlarza powoduje ciężką walkę bo handlarz umie się bronić a jeśli ucieknie to może wrócić z posiłkami i da znać innym handlarzom = wyższe ceny, mniej handlarzy”. To zastępuje „rzuca wózek i ucieka, więcej nie przychodzi”. Liczby są moje, do przejrzenia.
+
+- Walka. Napastnik zadaje pierwszy cios, handlarz rzuca wózek (towar zostaje przy nim za siatką, jak dotąd) i staje do walki z siekierą: jest wrogiem (`isEnemy`), więc zarząd z bronią w pobliżu sam się włącza, a „Atakuj handlarza” jest w menu. Handlarz ma 140 życia, bije najbliższego z zarządu do 10 m (cios siekierą: 60% obrażeń broni, celność 90% broni), goni go po stronie ulicy, a przez zamkniętą bramę nie wejdzie. Poniżej 50 życia ucieka szybciej niż człowiek. Gdy przez godzinę gry nie ma kogo bić, odchodzi.
+- Ten sam rozum dostają posiłki: prosty wróg, który podchodzi, bije, ucieka ranny i odchodzi. Wrogowie bijący zarząd to nowość: szabrownicy dalej nie oddają.
+- Zabity handlarz: towar jest nasz, nikt nie zanosi wieści, ale nowy handlarz przejmuje trasę dopiero 3 dni później niż zwykle. Zabójca ma nastrój „Zabiłem człowieka” jak przy szabrowniku.
+- Handlarz przeżył (uciekł albo odszedł po walce): wieść idzie do innych handlarzy (`st.obcy.slawa`, poziom 1–3): ceny razy 1 + 0,5 × poziom (zaokrąglone w górę), wizyty o 2 × poziom dni rzadziej. Poziom spada o jeden po 15 dniach bez nowej napaści. Do tego z szansą 60% posiłki: najbliższej nocy między 22:00 a 1:00 przychodzi 3–4 ludzi handlarza z pałkami, łomami i nożami (90 życia), stają pod siatką przy bramie i biją każdego z zarządu w zasięgu. Przez zamkniętą bramę i łaty nie przejdą, dziurą tak. Odchodzą o 4:00 albo po dwóch godzinach.
+- Koszt w zaufaniu i wkurzeniu (−6 i +4) zostaje, liczy się w chwili napaści.
+- Zabity obcy (handlarz, ludzie handlarza, wędrowiec, ekipa) liczy się jak zabity szabrownik, a nie jak zgon sąsiada.

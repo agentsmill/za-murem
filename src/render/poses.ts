@@ -30,6 +30,8 @@ export interface PawnLike {
   /** n i what: sztuki w rękach poza drewnem i co to za sztuki ('deski', 'zlom', 'czesci', 'leki', 'jedzenie');
       what w pracy 'wreck' to sposób ('szukaj', 'rozbierz'), w 'saw' produkt (n zawsze 0) */
   job: { t: string; phase: number; target: number; n?: number; what?: string } | null;
+  /** wrogi człowiek (napadnięty handlarz, jego ludzie): po ciosie poza zamachu jak w walce */
+  wrogi?: boolean;
   /** broń w rękach i tick, od którego znowu uderzy (z niego: kiedy był ostatni cios) */
   weapon?: WeaponId | null;
   cd?: number;
@@ -128,7 +130,7 @@ export function poseOf(
   const w = weaponOf(p.weapon);
   const since = w.cd - ((p.cd ?? Number.NEGATIVE_INFINITY) - tick);
   const struck = since >= 0 && since < 12;
-  if (!moving && j?.phase === 1 && (j.t === 'fight' || (j.t === 'guard' && struck))) {
+  if (!moving && ((j?.phase === 1 && (j.t === 'fight' || (j.t === 'guard' && struck))) || (p.wrogi && struck))) {
     if (w.ammo || thrusts(p.weapon)) return { pose: 'aim', dir, frame: since >= 0 && since < 4 ? 1 : 0, arm: 'aim' };
     const frame = since >= 0 && since < 4 ? 1 : since >= 0 && since < 10 ? 2 : 0;
     return { pose: 'swing', dir, frame, arm: 'swing' };

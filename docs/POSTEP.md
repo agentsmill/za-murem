@@ -651,6 +651,18 @@ Trzeci kawałek z rozmowy o surowcach, na prośbę sesji „Pilnowanie agentów�
 
 Bramka: `npm test` 1847 zdanych, 1 oczekiwana porażka, 8 pominiętych (nowy `tests/unit/wedrowcy.test.ts` z 8 przypadkami), Biome czysty, build, boty jak na `pelna-gra` (da4b24e0, dad44c81, zombie 1f6eef9b i 3e000211). Pełne `npm run shots`: 160 scenariuszy bez błędów (wędrowcy chodzą w każdej grze od drugiego dnia). Nowy zrzut `obcy` (z `obcy-wedrowiec-menu` i `obcy-wiesc`) obejrzany w Chromium: wędrowiec przy siatce z menu, rozmowa przez siatkę z wieścią na dole ekranu i nastrojem na karcie, dwóch obcych przy polonezie i wyszarzone „Przeszukać”.
 
+### Napaść na handlarza to walka, posiłki i zła sława, 18.10.2026 wieczorem (gałąź `m2-surowce` od `pelna-gra` ace6c0c, lokalnie)
+
+Mateusz (przez sesję „Pilnowanie agentów”): „Napaść na handlarza powoduje ciężką walkę bo handlarz umie się bronić a jeśli ucieknie to może wrócić z posiłkami i da znać innym handlarzom = wyższe ceny, mniej handlarzy”. Opis i liczby w `docs/superpowers/specs/2026-10-18-handlarz-design.md`, sekcja „Napaść po zmianie Mateusza”; przed budową przeczytał ją recenzent.
+
+- Napastnik zadaje pierwszy cios, handlarz rzuca wózek (towar zostaje przy nim) i staje do walki z siekierą. Jest wrogiem: zarząd z bronią w pobliżu sam się włącza, a w menu jest „Atakuj handlarza”. Handlarz ma 140 życia, bije najbliższego z zarządu do 10 m (60% obrażeń broni, 90% jej celności), goni po stronie ulicy i przez otwartą bramę albo dziurę także na podwórko, ale nie do budynku. Poniżej 50 życia ucieka, a gdy przez godzinę nie ma kogo bić, odchodzi. Wrogowie, którzy oddają, to nowość: szabrownicy dalej nie biją.
+- Przeżył (uciekł albo odszedł): wieść u handlarzy (`st.obcy.slawa`, poziom 1–3): ceny razy 1 + 0,5 × poziom, wizyty o 2 × poziom dni rzadziej, poziom spada po 15 dniach. Z szansą 60% najbliższej nocy (22:00–1:00) przychodzi 3–4 ludzi handlarza (nowy pionek `zbir`, 90 życia, kij, łom albo nóż), staje pod siatką przy bramie i bije każdego z zarządu w zasięgu, a o 4:00 albo po dwóch godzinach odchodzi. Napis na dole ekranu przy ucieczce i przy przyjściu ludzi.
+- Zginął: towar nasz, wieści nie ma, nowy handlarz przychodzi 3 dni później niż zwykle; zabójca ma „Zabiłem człowieka”. Każdy zabity obcy (handlarz, ludzie handlarza, wędrowiec, ekipa) liczy się teraz jak szabrownik, a nie jak zgon sąsiada.
+- Koszt w zaufaniu i wkurzeniu (−6 i +4) zostaje, w chwili napaści.
+- Napastnik, a także ten, kto napada na wędrowca albo przegania ekipę, staje po stronie ulicy; z kafelka otwartej bramy walka wręcz szłaby przez siatkę i wygasała.
+
+Bramka: `npm test` 1852 zdanych, 1 oczekiwana porażka, 8 pominiętych (w `tests/unit/handlarz.test.ts` zamiast jednego testu napaści sześć: walka, oddawanie, ucieczka i wieść, śmierć, zła sława, posiłki), Biome czysty, build, boty jak na `pelna-gra` (da4b24e0, dad44c81, zombie 1f6eef9b i 3e000211). Pełne `npm run shots`: 160 scenariuszy bez błędów. Zrzut `handlarz` z nowym `handlarz-walka` obejrzany w Chromium: nasza osoba walczy z handlarzem przy pustym wózku, nad nim pasek życia, potem czterech ludzi handlarza i napis o ucieczce.
+
 ## Następne
 
 Surowce (18.10.2026): wraki, noszenie łupu i warsztat są w `pelna-gra` (64c254e). Handlarz pod bramą czeka na scalenie na gałęzi `m2-surowce` (z wciągniętą `pelna-gra` ac5fe6b). Mateusz przegląda decyzje „Surowce” i „Handlarz” w „Decyzjach” i gra: wrak za siatką („Przeszukać” na aucie, potem „Rozebrać” z menu), warsztat z menu na stole, drugiego dnia handlarz przy bramie. Wędrowcy, obce ekipy i cena napaści są na tej gałęzi (wpis wyżej), czekają na scalenie; decyzje w „Decyzjach”, wpis „Wędrowcy”.
@@ -698,11 +710,18 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
   - bot surowców to raport, nie bramka: kuchnia społeczna stoi w 4.–5. dobie i bez wraków, więc warunek „z wrakami do czwartej doby, bez nich nie” nie dał się spełnić bez ruszania liczb fali 1;
   - złomu jest za dużo (42 po pięciu dniach bez wraków). Nie stroiłem: to decyzja, czy wrak ma dawać mniej złomu, czy złom ma mieć więcej zastosowań (zasieki, barykady z wraków z 0.3, akumulator na prąd w M3).
 - Handlarz (18.10.2026, sesja „Surowce”, do przejrzenia przez Mateusza):
-  - napaść kosztuje nastroje, handlarza na zawsze i od kawałka z wędrowcami także zaufanie osiedla (wpis „Wędrowcy” niżej);
+  - napaść kosztuje nastroje i zaufanie osiedla, a od zmiany Mateusza to walka z posiłkami i złą sławą u handlarzy (wpisy niżej);
   - złom może iść we wszystkich trzech ofertach jednej wizyty (pierwsza zawsze za złom, dwie pozostałe z reszty tabeli razem z niewylosowanymi złomowymi);
   - handlarz włącza się opcją, a nie sam z siebie, żeby boty i testy bez niej miały te same skróty; gra włącza go zawsze w zwykłym trybie;
   - karta wydarzenia „Handlarz z wózkiem” z 0.3 zostaje (pilnuje jej test różnicowy z 0.3); do decyzji, czy wyłączyć ją, skoro handlarz chodzi po mapie;
-  - rozmowy z handlarzem (plotki, prośby) nie ma, a nowy handlarz po napaści nigdy nie przychodzi.
+  - rozmowy z handlarzem (plotki, prośby) nie ma; po zmianie Mateusza handlarz po napaści przychodzi dalej, tylko drożej i rzadziej (wpis „Napaść na handlarza jako walka” niżej).
+- Napaść na handlarza jako walka (18.10.2026 wieczorem, kierunek Mateusza, liczby moje, do przejrzenia):
+  - handlarz: 140 życia, siekiera, cios wroga to 60% obrażeń i 90% celności broni, ucieka poniżej 50, odchodzi po godzinie bez celu; ludzie handlarza: 90 życia, kij, łom i nóż, uciekają poniżej 35;
+  - wrogowie wchodzą na podwórko przez otwartą bramę i dziury (jak szabrownicy), do budynków nie; zamknięta brama i łaty ich zatrzymują;
+  - posiłki z szansą 60%, 3–4 osoby najbliższej nocy 22:00–1:00, do 4:00 albo dwie godziny; to zdarzenie samej symulacji: karta nocy o nich nie ostrzega i raport poranny ich nie wspomina (następny krok, jeśli mają tam być);
+  - zła sława: ceny razy 1 + 0,5 × poziom (najwyżej 3), wizyty o 2 × poziom dni rzadziej, poziom spada po 15 dniach; po zabitym handlarzu bez wieści, nowy 3 dni później;
+  - broń zabitych wrogów (siekiera handlarza, kije, łomy, noże jego ludzi) trafia do magazynu, jak broń każdego zmarłego; to łup z walki, ale może za mocno ruszyć uzbrojenie zarządu;
+  - koszt w zaufaniu −6 i wkurzeniu +4 zostaje obok walki.
 - Wędrowcy i obce ekipy (18.10.2026, sesja „Surowce”, do przejrzenia przez Mateusza; kierunek przyjęty „jest ok”, liczby moje):
   - cena napaści w zaufaniu i wkurzeniu: handlarz −6 i +4, wędrowiec −3 i +2, przegonienie ekipy nic; zarząd liczy ją od razu, nie rano;
   - stary zapis z napadniętym już handlarzem nie dostaje tej napaści wstecz (takie zapisy są tylko z gałęzi testowej);

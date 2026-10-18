@@ -35,6 +35,10 @@ export interface Obcy {
   napady?: { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
   /** ostatnia wieść do pokazania na dole ekranu (rozmowa z wędrowcem, ekipa przeszukała wrak) */
   wiesc?: { tick: number; text: string };
+  /** zła sława u handlarzy po napaści, którą handlarz przeżył: poziom i tick, kiedy spadnie o jeden */
+  slawa?: { lvl: number; until: number };
+  /** posiłki handlarza zaplanowane na tick at, n ludzi */
+  zemsta?: { at: number; n: number };
 }
 
 /** czeka pod bramą 3 godziny gry, ale nie dłużej niż do 18:00; wymiana to 5 minut targowania się */
@@ -43,8 +47,38 @@ export const LEAVE_HOUR = 18;
 export const HAGGLE_TICKS = TICKS_PER_HOUR / 12;
 /** każdą ofertę przyjmie najwyżej tyle razy */
 export const OFFER_TIMES = 2;
-/** życie handlarza (cios przy napaści go nie zabija) */
-export const TRADER_HP = 80;
+/** Napadnięty handlarz walczy (zmiana Mateusza z 18.10.2026 wieczorem): 140 życia, siekiera, ucieka poniżej 50,
+    a gdy przez godzinę gry nie ma kogo bić, odchodzi. Wrogowie bijący zarząd (handlarz i jego ludzie) trafiają
+    z 90% celności broni i zadają 60% jej obrażeń, biją najbliższego z zarządu do 10 m. */
+export const TRADER_HP = 140;
+export const TRADER_FLEE = 50;
+export const TRADER_WEAPON = 'siekiera' as const;
+export const HOSTILE_HIT = 0.9;
+export const HOSTILE_DMG = 0.6;
+export const AGGRO = 10;
+export const CALM_TICKS = TICKS_PER_HOUR;
+/** posiłki po ucieczce: z szansą 60% najbliższej nocy 22:00–1:00 przychodzi 3–4 ludzi handlarza (90 życia, uciekają
+    poniżej 35), stoją pod siatką do 4:00, najwyżej dwie godziny */
+export const REVENGE_CHANCE = 0.6;
+export const ZBIR_HP = 90;
+export const ZBIR_FLEE = 35;
+export const ZBIR_WEAPONS = ['kij', 'lom', 'noz'] as const;
+export const ZBIR_STAY = 2 * TICKS_PER_HOUR;
+export const ZBIR_LEAVE_HOUR = 4;
+/** wieść u handlarzy: poziom 1–3, ceny razy 1 + 0,5 × poziom, wizyty o 2 × poziom dni rzadziej, poziom spada po 15
+    dniach; po zabitym handlarzu nowy przejmuje trasę 3 dni później */
+export const SLAWA_MAX = 3;
+export const SLAWA_DAYS = 15;
+export const SLAWA_EXTRA_DAYS = 2;
+export const KILL_DELAY_DAYS = 3;
+
+/** cena przy złej sławie: to, co handlarz bierze, razy 1 + 0,5 × poziom, w górę */
+export function priced(o: Offer, lvl: number): Offer {
+  if (lvl <= 0) return o;
+  const take: Partial<Record<Mat, number>> = {};
+  for (const [m, n] of Object.entries(o.take) as [Mat, number][]) take[m] = Math.ceil(n * (1 + 0.5 * lvl));
+  return { ...o, take };
+}
 /** nastrój po napaści: napastnik i reszta zarządu, na dobę */
 export const ROB_MOOD = -6;
 export const ROB_MOOD_OTHERS = -3;
@@ -158,6 +192,28 @@ export const NAPISY = {
   poHandelWielu: { pl: 'Jedna osoba pójdzie do handlarza.', en: 'One person will go to the trader.' },
   poNapasc: { pl: 'Napadnie na handlarza.', en: 'Will rob the trader.' },
   poNapascWielu: { pl: 'Jedna osoba napadnie na handlarza.', en: 'One person will rob the trader.' },
+  atakuj: { pl: 'Atakuj handlarza', en: 'Attack the trader' },
+  atakujZbira: { pl: 'Atakuj człowieka handlarza', en: "Attack the trader's man" },
+  walczy: { pl: 'Walczy z siekierą.', en: 'Fighting with an axe.' },
+  uciekl: {
+    pl: 'Handlarz uciekł. Wieść pójdzie do innych handlarzy, a on sam może wrócić z ludźmi.',
+    en: 'The trader got away. Other traders will hear of it, and he may come back with men.',
+  },
+  odszedlZly: {
+    pl: 'Handlarz odszedł po walce. Wieść pójdzie do innych handlarzy, a on sam może wrócić z ludźmi.',
+    en: 'The trader left after the fight. Other traders will hear of it, and he may come back with men.',
+  },
+  zabity: { pl: 'Handlarz nie żyje. Jego towar jest wasz.', en: 'The trader is dead. His goods are yours.' },
+  zemsta: (n: number): Napis => ({
+    pl: `Wracają ludzie handlarza: ${n} ${n >= 2 && n <= 4 ? 'osoby' : 'osób'} z pałkami pod siatką.`,
+    en: `The trader's men are back: ${n} of them with clubs at the fence.`,
+  }),
+  zemstaPraca: [
+    { pl: 'Idzie pod siatkę z pałką.', en: 'Walking to the fence with a club.' },
+    { pl: 'Szuka zemsty pod siatką.', en: 'Looking for revenge at the fence.' },
+    { pl: 'Odchodzi.', en: 'Leaving.' },
+    { pl: 'Ucieka.', en: 'Running away.' },
+  ],
   // opisy pracy handlarza
   przychodzi: { pl: 'Pcha wózek pod bramę.', en: 'Pushing a cart to the gate.' },
   czeka: { pl: 'Czeka z towarem pod bramą.', en: 'Waiting at the gate with goods.' },

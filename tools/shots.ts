@@ -1001,17 +1001,44 @@ const SHOTS: Shot[] = [
             if (done) break;
             await page.evaluate(() => window.zm!.ff(1));
           }
-          await page.evaluate(() => window.zm!.ff(0.3));
+          // kilka sekund walki: handlarz z siekierą oddaje, paski życia
+          await page.evaluate(() => window.zm!.ff(0.15));
           const after = await page.evaluate(() => {
             const zm = window.zm!;
             const st = zm.sim!.st;
             const c = st.things.find((t) => t.kind === 'wozek')!;
-            zm.setCam(c.x + 0.5, c.y, 2);
-            return { napad: st.obcy!.napad, next: st.obcy!.next, cart: c.n };
+            const t = st.pawns.find((q) => q.kind === 'handlarz');
+            zm.setCam(t ? t.x : c.x + 0.5, t ? t.y - 1 : c.y, 2.2);
+            return { napad: st.obcy!.napad, cart: c.n, wrogi: !!t?.wrogi, bron: t?.weapon ?? null };
           });
           await waitIdle(page);
           console.log(`  po napaści: ${JSON.stringify(after)}`);
-          if (after.napad < 0 || after.next !== -1 || after.cart !== 0) throw new Error('napaść nie zadziałała');
+          if (after.napad < 0 || after.cart !== 0) throw new Error('napaść nie zadziałała');
+          await page.screenshot({ path: path.join(OUT, 'handlarz-walka.png') });
+          // ludzie handlarza pod siatką (za dnia, żeby było ich widać na zrzucie)
+          await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            for (const q of st.pawns) if (q.kind === 'handlarz') q.hp = 1;
+            st.obcy!.zemsta = { at: st.tick + 1, n: 4 };
+          });
+          for (let k = 0; k < 20; k++) {
+            const ok = await page.evaluate(() => {
+              const men = window.zm!.sim!.st.pawns.filter((q) => q.kind === 'zbir');
+              return men.length > 0 && men.every((q) => q.job?.phase !== 0);
+            });
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          const men = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const m = st.pawns.filter((q) => q.kind === 'zbir');
+            if (m.length) zm.setCam(m[0].x, m[0].y - 1, 1.8);
+            return m.map((q) => q.weapon).join(', ');
+          });
+          await waitIdle(page);
+          console.log(`  ludzie handlarza: ${men}`);
+          if (!men) throw new Error('nie przyszli ludzie handlarza');
         },
       },
       {
