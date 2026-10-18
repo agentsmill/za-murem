@@ -87,7 +87,7 @@ Zapas miejsca (ile łącznie da się z niego wynieść) liczy czysta funkcja z k
 - Otwarta mapa miasta zatrzymuje grę jak inne okna (`pauseGame()` w `src/main.ts`), a zarząd przy otwartym oknie nie liczy czasu, tak jak dziś. Karta nocy i powrót wyprawy nie przerywają więc planowania.
 - Stuknięcie w miejsce otwiera kartę miejsca: kategoria (i nazwa po filtrze), odległość i czas drogi, ryzyko słowem („spokojnie”, „niepewnie”, „groźnie”), co tam zwykle jest, ile zostało („nietknięte”, „ktoś tu był”, „wybrane do cna”), kiedy byliście ostatnio, i przycisk „Wyślij wyprawę”.
 - Wysłanie: wybór osób z zarządu z ich siłami, zdrowiem i bronią (zaznaczeni na mapie gry są wybrani od razu), podsumowanie (wyjście, spodziewany powrót, ryzyko, ile uniosą) i potwierdzenie. Osoby na wyprawie mają znacznik na minimapie w miejscu celu.
-- Wszystkie napisy przez warstwę języka (`tr()`, angielski domyślnie, słowa z `docs/SLOWNICZEK-EN.md`). Nazwy kategorii po angielsku dochodzą obok `POICAT`, bez zmiany treści 0.3.
+- Wszystkie napisy od razu po polsku i po angielsku przez warstwę języka z `src/core/jezyk.ts` (`tx()` w stanie i w zarządzie, `L()` i `tr()` przy wyświetlaniu; angielski domyślnie, słowa z `docs/SLOWNICZEK-EN.md`). Nazwy kategorii po angielsku dochodzą obok `POICAT`, bez zmiany treści 0.3.
 
 ### Wyprawa (moje)
 
@@ -124,7 +124,7 @@ Tak jak handlarz z wędrowcami (`SimOpts.obcy`): opcja zarządu `miasto`, któr�
 
 ## Następny projekt: obca ekipa (szkic, osobny dokument)
 
-Z rozmowy: na mapie lokalnej mieszka inny klan, „oznaczony na minimapie jako inny klan”, a przy próbie wejścia do jego budynku „należy spodziewać się oporu”. Gra według tych samych zasad co gracz (Mateusz: „Tak”), rozbudowuje się i na razie prowadzi go bot, żeby „przetestować mechanikę, że jest ktoś niezależny na mapie”. Moje rozumienie: klan zajmuje klatkę w sąsiednim budynku (jak cudza drużyna w grze sieciowej), ma swoich ludzi jako pionki, swój magazyn i swoje wyprawy do tych samych miejsc w mieście, broni drzwi mechaniką fali 2 i może handlować albo napaść. Bot wydaje polecenia tą samą drogą co gracz, więc kiedyś na jego miejscu usiądzie człowiek. Szczegóły w osobnej rozmowie po tym projekcie.
+Z rozmowy: na mapie lokalnej mieszka inny klan, „oznaczony na minimapie jako inny klan”, a przy próbie wejścia do jego budynku „należy spodziewać się oporu”. Gra według tych samych zasad co gracz (Mateusz: „Tak”), rozbudowuje się i na razie prowadzi go bot, żeby „przetestować mechanikę, że jest ktoś niezależny na mapie”. Moje rozumienie: klan zajmuje klatkę w sąsiednim budynku (jak cudza drużyna w grze sieciowej), ma swoich ludzi jako pionki, swój magazyn i swoje wyprawy do tych samych miejsc w mieście, broni drzwi mechaniką fali 2 i może handlować albo napaść. Bot wydaje polecenia tą samą drogą co gracz, więc kiedyś na jego miejscu usiądzie człowiek. Ludzie klanu stoją na tych samych rodzajach pionków i tych samych zasadach walki co obcy, którzy już są w grze (`obcy` i `zbir` z `src/sim/wedrowcy.ts` i `src/sim/handlarz.ts`, sesja „Surowce i ekonomia”: obce ekipy na wrakach, wędrowcy, handlarz z posiłkami), a nie obok nich (uwaga koordynatora). Szczegóły w osobnej rozmowie po tym projekcie.
 
 ## Ograniczenia
 
@@ -147,7 +147,7 @@ Pliki (moje):
 
 Etapy (moje): 1) miejsca z kluczami z testami; 2) wyprawy w zarządzie i karta nocy z botem; 3) mapa miasta i minimapa z doczytywaniem i zrzutami; 4) angielski, telefon, wydajność, dema. Etap 3 może iść równolegle z 2, kiedy typ `Miejsce` i wywołanie „wyślij wyprawę” są ustalone w etapie 1.
 
-Koordynacja: scalenia robi koordynator (sesja „Pilnowanie agentów”) do `pelna-gra`. Pliki wspólne z innymi sesjami to głównie `src/main.ts`, `src/gov/noc.ts`, `tools/shots.ts` i `docs/POSTEP.md`. Dziś równolegle pracują sesje „Wspólny płot: duch planu na mapie” (fala 2, mapa lokalna) i „Podpięcie kotwicy stylu PixelLab do gry” (rysowanie); żadna nie dotyka wypraw ani nowych plików z listy.
+Koordynacja: gałąź scala do `pelna-gra` koordynator `pelna-gra` po bramce, a raport idzie do niego po każdym kawałku (gdyby wiadomość nie doszła, wystarczy commit z wpisem w dzienniku; wyłapie go sesja „Pilnowanie agentów”). Gałąź może iść na GitHub po bramce, na serwer testowy tylko po OK Mateusza. Pliki wspólne z innymi sesjami to głównie `src/main.ts`, `src/gov/noc.ts`, `tools/shots.ts` i `docs/POSTEP.md`. Dziś równolegle pracują sesje „Wspólny płot: duch planu na mapie” (fala 2, mapa lokalna) i „Podpięcie kotwicy stylu PixelLab do gry” (rysowanie); żadna nie dotyka wypraw ani nowych plików z listy.
 
 ## Bramka
 
