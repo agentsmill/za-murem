@@ -4438,6 +4438,55 @@ const SHOTS: Shot[] = [
   // etap 3: plan wspólnego płotu w toku, duch przyszłego obwodu z postępem: z bliska po polsku, z daleka po angielsku
   m2f2PlotDuch('m2f2-plot-duch', 0.62, 'pl'),
   m2f2PlotDuch('en-m2f2-plot-duch', 0.3, 'en'),
+  m2f2('m2f2-plot-pien', 'zielonki', async (page) => {
+    // pień na linii wspólnego płotu po ścięciu staje się siatką (Mateusz: dziura po obu stronach pnia i na nim)
+    const r = await m2f2Open(page, 'Dom nr 8', false);
+    const out = await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const w = sim.w;
+      const size = w.size;
+      const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+      sim.push({ t: 'enclose', ids: [p.id], bid });
+      sim.step();
+      if (!sim.st.plot?.plan) return null;
+      sim.push({ t: 'otocz', ids: [], bid });
+      sim.step();
+      const yard = new Set(w.fence.yard);
+      const line = new Set(w.fence.tiles);
+      const ns = (i: number) => [i - size, i + size, i - 1, i + 1];
+      // drzewo, którego pień domyka nowy obwód: poza podwórkiem, bokiem przy nim, z drugiej strony wolna ulica
+      const k = w.trees.findIndex((t) => {
+        const i = Math.floor(t.y) * size + Math.floor(t.x);
+        return (
+          w.blocked[i] === 1 &&
+          !yard.has(i) &&
+          !line.has(i) &&
+          ns(i).some((n) => yard.has(n)) &&
+          ns(i).some((n) => !yard.has(n) && !line.has(n) && !w.blocked[n])
+        );
+      });
+      if (k < 0) return { k };
+      const t = w.trees[k];
+      const pien = Math.floor(t.y) * size + Math.floor(t.x);
+      sim.push({ t: 'chop', ids: [p.id], tree: k });
+      for (let n = 0; n < 20000 && !sim.st.felled.includes(k); n++) sim.step();
+      zm.setCam(t.x, t.y, 1.6);
+      return {
+        k,
+        sciete: sim.st.felled.includes(k),
+        siatka: w.fence.tiles.includes(pien),
+        blokuje: sim.blocked[pien],
+        pienNaMapie: sim.st.things.some((x) => x.kind === 'pien' && x.y * size + x.x === pien),
+      };
+    }, r.bid);
+    await page.waitForTimeout(300);
+    await waitIdle(page);
+    console.log(`  pień na linii płotu: ${JSON.stringify(out)}`);
+    if (!out || out.k < 0) throw new Error('brak drzewa na linii wspólnego płotu');
+    if (!out.sciete || !out.siatka || out.blokuje !== 1 || out.pienNaMapie)
+      throw new Error('ścięty pień na linii płotu nie stał się siatką');
+  }),
   m2f2('m2f2-plot-deski', 'lanciego', async (page) => {
     // etap 3: na podwórku same deski (złomu brak), więc menu ma tylko płot z desek; potem potwierdzenie, podpowiedź
     // po poleceniu i duch planu na 0%

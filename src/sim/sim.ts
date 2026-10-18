@@ -1725,6 +1725,19 @@ function newPawn(
   };
 }
 
+/** Kafelek na linii obwodu: poza podwórkiem i bokiem przy nim. Budynki, drzewa i woda domykają obwód same (fence.ts,
+    plot.ts), więc pień drzewa na takim kafelku jest częścią płotu. `inYard` mówi, czy kafelek należy do podwórka. */
+export function naLiniiObwodu(size: number, t: number, inYard: (i: number) => boolean): boolean {
+  const x = t % size;
+  return (
+    !inYard(t) &&
+    ((t >= size && inYard(t - size)) ||
+      (t < size * (size - 1) && inYard(t + size)) ||
+      (x > 0 && inYard(t - 1)) ||
+      (x < size - 1 && inYard(t + 1)))
+  );
+}
+
 /** Przechodniość według rodzaju pionka. Baza: świat, ścięte drzewa wolne (poza pniami na linii obwodu), łaty i ogniska
     zablokowane. Zarząd bez otwartych dziur (nie przełazi, a przez zamkniętą bramę przechodzi, bo ma klucz), mieszkańcy
     dodatkowo bez bramy i mieszkania zarządu (zostają za siatką), obcy z dziurami, ale bez zamkniętej bramy. */
@@ -1738,20 +1751,13 @@ function composeLayers(
 ): { core: Uint8Array; resident: Uint8Array; stranger: Uint8Array } {
   const base = w.blocked.slice();
   if (trunk) {
-    // drzewa domykają obwód same (fence.ts, plot.ts): pień poza podwórkiem, który styka się z nim bokiem, zostaje po
-    // ścięciu przeszkodą, bo inaczej w siatce byłaby dziura bez łaty i zasieków; pień w podwórku się zwalnia
+    // pień na linii obwodu zostaje po ścięciu przeszkodą (zwykle jest już siatką, Sim.dociagnijSiatke), bo inaczej
+    // w płocie byłaby dziura bez łaty i zasieków; pień w podwórku się zwalnia
     const size = w.size;
     const yard = new Uint8Array(size * size);
     for (const t of fenceShape(w)?.yard ?? []) yard[t] = 1;
-    const x0 = (t: number) => t % size === 0;
-    const x1 = (t: number) => t % size === size - 1;
-    const onLine = (t: number) =>
-      !yard[t] &&
-      ((t >= size && yard[t - size] === 1) ||
-        (t < size * (size - 1) && yard[t + size] === 1) ||
-        (!x0(t) && yard[t - 1] === 1) ||
-        (!x1(t) && yard[t + 1] === 1));
-    for (const k of felled) if (!onLine(trunk[k])) base[trunk[k]] = 0;
+    const inYard = (i: number) => yard[i] === 1;
+    for (const k of felled) if (!naLiniiObwodu(size, trunk[k], inYard)) base[trunk[k]] = 0;
   }
   for (const t of solid) base[t] = 1;
   const open: number[] = [];
@@ -1973,6 +1979,11 @@ export class Sim {
     this.pf = new PathFinder(w.size);
     this.house = houseOf(w);
     this.trunk = Int32Array.from(w.trees, (t) => trunkOf(w, t));
+    // zapis sprzed siatki w miejscu pni: ścięty pień na linii obwodu staje się siatką, a pień z mapy znika
+    for (const k of st.felled) {
+      const t = this.trunk[k];
+      if (this.dociagnijSiatke(t)) st.things = st.things.filter((x) => x.kind !== 'pien' || x.y * w.size + x.x !== t);
+    }
     const h = this.house;
     this.mask = h ? homeMask(h, w.size) : null;
     this.blocked = new Uint8Array(w.size * w.size);
@@ -3086,16 +3097,42 @@ export class Sim {
     return Math.floor((cap * BURN_TICKS - koza.fuel) / BURN_TICKS);
   }
 
+  /** Pień drzewa, które domykało obwód (poza podwórkiem, bokiem przy nim, jeszcze nie siatka), po ścięciu staje się
+      kafelkiem siatki: rysuje się ciągle, bierze łatę i zasieki, a jego wytrzymałość jest jak świeżego płotu (w trybie
+      zombie jak wzmocnionej siatki). Kształt idzie przez stan wspólnego płotu (st.plot.ksztalt, ustawSiatke), więc
+      zapis i wczytanie dają tę samą siatkę. Zwraca, czy siatka się zmieniła; przeliczenie siatki i przechodniości
+      zostaje wołającemu. */
+  private dociagnijSiatke(tile: number): boolean {
+    const st = this.st;
+    const shape = fenceShape(this.w);
+    const f = st.fence;
+    if (!shape || !f || shape.tiles.includes(tile)) return false;
+    const yard = new Set(shape.yard);
+    if (!naLiniiObwodu(this.w.size, tile, (i) => yard.has(i))) return false;
+    const fresh = modeOf(st) === 'zombie' ? REINFORCED_HP : PATCH_HP;
+    const hp = new Map(shape.tiles.map((t, i) => [t, f.hp[i]]));
+    const tiles = [...shape.tiles, tile].sort((a, b) => a - b);
+    f.hp = tiles.map((t) => hp.get(t) ?? fresh);
+    st.plot ??= { bids: [] };
+    st.plot.ksztalt = { tiles, hole: [...shape.hole], yard: [...shape.yard] };
+    ustawSiatke(this.w, st.plot.ksztalt);
+    return true;
+  }
+
   /** drzewo pada: zostaje pień, kafelek się zwalnia, drewno leży w stosach dookoła, po tej stronie,
-      z której rąbał drwal (stand), żeby dało się do niego dojść */
+      z której rąbał drwal (stand), żeby dało się do niego dojść; drzewo z linii obwodu zamiast pnia zostawia
+      kafelek siatki (dociagnijSiatke), a drewno tylko w podwórku */
   private fell(k: number, stand: number): void {
     const st = this.st;
     const size = this.w.size;
     const t = this.trunk[k];
     st.felled.push(k);
     st.felled.sort((a, b) => a - b);
+    // pień, który domykał obwód, staje się kafelkiem siatki (bez pnia na mapie): płot jest cały i bierze zasieki
+    const siatka = this.dociagnijSiatke(t);
+    if (siatka) this.przeliczSiatke();
     this.rebuild();
-    st.things.push(newThing(st, 'pien', t % size, Math.floor(t / size)));
+    if (!siatka) st.things.push(newThing(st, 'pien', t % size, Math.floor(t / size)));
     let left = woodFrom(this.w.trees[k]);
     for (const [dx, dy] of SPREAD) {
       if (left <= 0) break;
@@ -3104,6 +3141,8 @@ export class Sim {
       if ((!dx && !dy) || x < 0 || y < 0 || x >= size || y >= size) continue;
       const i = y * size + x;
       if (this.coreBlocked[i] || this.reg[i] !== this.reg[stand] || this.thingAt(x, y) || onPlan(st, size, i)) continue;
+      // drzewo z linii płotu: drewno tylko po stronie podwórka (za bramą to ten sam obszar zarządu)
+      if (siatka && !this.yardMask[i]) continue;
       const n = Math.min(CARRY, left);
       this.addWood(i, n);
       left -= n;
