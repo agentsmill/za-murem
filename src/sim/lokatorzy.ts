@@ -10,12 +10,19 @@
    tagu nie ma (świat wymusza siedzibę mieszkalną z budynku, którego generator nie uważa za mieszkalny, jak na
    demach Przymorza i Lanciego), budynek zapasowy powstaje ze świata (`budynekZapasowy`).
 
-   Puste mieszkania. Ich liczba to udział pustych w całym budynku przyłożony do mieszkań parteru. Powód i rok biorą
-   się z wpisów `opuszczone` dziennika budynku. Silnik zajmuje wolne mieszkania od najwcześniej zwolnionych, więc
-   puste w 2051 to raczej te opuszczone najpóźniej: pulą jest ostatnie `puste` wpisów, rosnąco po roku, a z niej
-   bierzemy wpisy równo rozłożone, żeby puste mieszkania parteru pokazały całe 25 lat, a nie jeden rok. Ostatni
-   członek odszedł przez zgon: wymarcie, inaczej wyjazd; od 2033 część pustych potem splądrowano, zalało albo spłonęła
-   (szanse w `LOSY_UPADKU`, decyzja gry, nie dane).
+   Puste mieszkania. Ich liczba to udział pustych w całym budynku przyłożony do mieszkań parteru. Jak w `settleApts`
+   (kontrakt M2): gdy z podwórka da się dojść do co najmniej dwóch mieszkań, jedno z nich stoi puste do przeszukania,
+   reszta pustych jest dalej, a co najmniej jedno mieszkanie przy podwórku zostaje zamieszkane. Powód i rok biorą
+   się z wpisów `opuszczone` dziennika budynku (`powodyPustych`). Silnik zajmuje wolne mieszkania od najwcześniej
+   zwolnionych, więc puste w 2051 to raczej te opuszczone najpóźniej: pulą jest ostatnie `puste` wpisów, rosnąco po
+   roku, a z niej bierzemy wpisy równo rozłożone, żeby puste mieszkania parteru pokazały całe 25 lat, a nie jeden
+   rok. Ostatni członek odszedł przez zgon: wymarcie, inaczej wyjazd; od 2033 puste mieszkanie mogło potem zostać
+   splądrowane, zalane albo spalone (szanse w `LOSY_UPADKU`, decyzja gry, nie dane).
+
+   Lokatorzy. Mieszkania przy podwórku dostają pierwsze gospodarstwa z najwięcej obecnymi (1-4 osoby), bo z nich
+   symulacja robi pionki mieszkańców, a reszta mieszkań kolejne gospodarstwa budynku. Mieszkanie, dla którego
+   gospodarstwa zabrakło, też stoi puste (powód i rok losuje `settleApts`); tylko gdy budynek nie ma żadnego
+   gospodarstwa do rozdania, jedno mieszkanie przy podwórku zostaje zamieszkane bez osób.
 
    Czyste i deterministyczne: bez DOM, sieci, zegara i Math.random, losowanie z `losDla` po kluczach. Nie zmienia
    świata, mapy ani danych. */
@@ -54,8 +61,8 @@ export interface LokatorzyGry {
   kronika: WpisKroniki[];
   /** najwyżej `core` osób, w kolejności miejsc zarządu */
   zarzad: OsobaGry[];
-  /** zamieszkane mieszkania parteru siedziby poza mieszkaniem z kozą, rosnąco po numerze; mieszkanie bez gospodarstwa
-      (gospodarstw zabrakło) ma pustą listę */
+  /** zamieszkane mieszkania parteru siedziby poza mieszkaniem z kozą, rosnąco po numerze, każde z gospodarstwem;
+      pustą listę ma tylko jedno mieszkanie przy podwórku, gdy budynek nie ma żadnego gospodarstwa do rozdania */
   lokatorzy: { apt: number; osoby: OsobaGry[] }[];
   /** stany wszystkich mieszkań parteru siedziby, rosnąco po numerze, do `settleApts(world, stany)` */
   stany: AptState[];
@@ -123,16 +130,18 @@ function zawodGry(o: Osoba): string {
   return o.plec === 'K' ? 'mieszkanka' : 'mieszkaniec';
 }
 
-/** Historia osoby: linijka „Dawniej X, dziś Y.” (gdy ma dawny zawód i fach, a historia gospodarstwa jeszcze o tym nie
-    mówi) i zdania historii gospodarstwa. Zdania z numerem mieszkania albo piętrem odpadają; całość do 700 znaków,
-    ucinana całymi zdaniami od końca. Bez zdań: `undefined`. */
+/** Historia osoby: linijka „Dawniej X, dziś Y.” (gdy ma dawny zawód i fach, a żadne zdanie historii gospodarstwa nie
+    ma już jej imienia razem z oboma zawodami) i zdania historii gospodarstwa. Zdania z numerem mieszkania albo
+    piętrem odpadają; całość do 700 znaków, ucinana całymi zdaniami od końca. Bez zdań: `undefined`. */
 function historiaOsoby(o: Osoba, historia: readonly string[]): string | undefined {
   const zdania = historia.filter((z) => z.trim() !== '' && !RODO.test(z));
   const fach = fachOsoby(o);
   if (fach && o.dawnyZawod) {
     const dzis = nazwaFachu(fach.id, o.plec);
     const dawny = o.dawnyZawod;
-    if (!zdania.some((z) => z.includes(dawny) && z.includes(dzis))) zdania.unshift(`Dawniej ${dawny}, dziś ${dzis}.`);
+    // zdanie generatora o tej osobie („Michał: kiedyś doradca ds. ESG, dziś pieczarkarz.”), nie o kimś z tym samym fachem
+    const juzJest = zdania.some((z) => z.includes(o.imie) && z.includes(dawny) && z.includes(dzis));
+    if (!juzJest) zdania.unshift(`Dawniej ${dawny}, dziś ${dzis}.`);
   }
   while (zdania.length > 0 && zdania.join(' ').length > MAX_HISTORII) zdania.pop();
   return zdania.length > 0 ? zdania.join(' ') : undefined;
@@ -252,9 +261,15 @@ function wybierzZarzad(w: WynikBudynku, core: number): Osoba[] {
 
 // ---------------------------------------------------------------- puste mieszkania
 
-/** Powód i rok dla `ile` pustych mieszkań, rosnąco po roku (opis w nagłówku pliku). Mniej wpisów niż pustych: lista
-    jest krótsza, a reszta pustych dostaje powód i rok od `settleApts`. */
-function powodyPustych(w: WynikBudynku, ile: number): { why: AptWhy; year: number }[] {
+/** Powód i rok dla `ile` pustych mieszkań, rosnąco po roku (opis w nagłówku pliku): z ostatnich `w.puste` wpisów
+    `opuszczone` dziennika `ile` równo rozłożonych, rok przycięty do [2029, 2051], wymarcie, gdy ostatni członek
+    (`Wpis.z`) zmarł najpóźniej w roku opuszczenia, inaczej wyjazd, a od 2033 jedno losowanie
+    `losDla('mieszkania-gry', id gospodarstwa)` na szaber, zalanie albo pożar. Mniej wpisów niż pustych: lista jest
+    krótsza, a reszta pustych dostaje powód i rok od `settleApts`. */
+export function powodyPustych(
+  w: Pick<WynikBudynku, 'dziennik' | 'puste'>,
+  ile: number,
+): { why: AptWhy; year: number }[] {
   const opuszczone = w.dziennik.filter((d) => d.typ === 'opuszczone');
   const pula = opuszczone.slice(Math.max(0, opuszczone.length - w.puste)).sort((a, b) => a.rok - b.rok);
   if (ile <= 0 || pula.length === 0) return [];
@@ -293,11 +308,14 @@ function powodyPustych(w: WynikBudynku, ile: number): { why: AptWhy; year: numbe
       budynek zapasowy ze świata;
     - zarząd: `wybierzZarzad`, najwyżej `opts.core` osób;
     - mieszkania parteru poza mieszkaniem z kozą: pustych `round(n × puste / mieszkania)` budynku, wybieranych
-      z `losDla('mieszkania-gry', klucz)` najpierw spoza mieszkań osiągalnych z podwórka (`reachable`), a jedno
-      osiągalne zostaje zamieszkane, gdy jakieś jest; powód i rok z `powodyPustych`, przypisane rosnąco po numerze;
-    - zamieszkane mieszkania, najpierw osiągalne z podwórka (z nich są pionki mieszkańców), potem reszta, rosnąco po
-      numerze, dostają po kolei gospodarstwa budynku z obecnymi, bez gospodarstw zarządu, najpierw te z 1-4
-      obecnymi; gdy gospodarstw zabraknie, mieszkanie ma pustą listę osób. */
+      z `losDla('mieszkania-gry', klucz)`: przy co najmniej dwóch mieszkaniach osiągalnych z podwórka (`reachable`)
+      najpierw jedno z nich, potem spoza, na końcu reszta osiągalnych, a jedno osiągalne zostaje zamieszkane, gdy
+      jakieś jest; powód i rok z `powodyPustych`, przypisane rosnąco po numerze;
+    - gospodarstwa budynku z obecnymi, bez gospodarstw zarządu: zamieszkane mieszkania przy podwórku (rosnąco)
+      dostają najpierw te z 1-4 obecnymi od najliczniejszych, pozostałe mieszkania (rosnąco) kolejne gospodarstwa
+      w kolejności budynku, najpierw te z 1-4 obecnymi;
+    - mieszkanie, dla którego gospodarstwa zabrakło, jest puste bez powodu i roku (losuje `settleApts`) i nie ma go
+      w `lokatorzy`; gdy gospodarstw nie ma wcale, pierwsze zamieszkane przy podwórku zostaje z pustą listą osób. */
 export function lokatorzyGry(
   world: World,
   geo: Geo,
@@ -342,13 +360,16 @@ export function lokatorzyGry(
     const mieszkania = Math.max(1, siedziba.budynek.mieszkania ?? siedziba.gospodarstwa.length + siedziba.puste);
     const chciane = Math.round((inne.length * siedziba.puste) / mieszkania);
     const ile = Math.max(0, Math.min(chciane, inne.length - (przy.length > 0 ? 1 : 0)));
-    const puste = new Set([...daleko, ...przy].slice(0, ile));
+    // jak settleApts (M2): przy podwórku jedno puste do przeszukania, gdy są tam co najmniej dwa, potem puste dalej;
+    // ostatnie mieszkanie przy podwórku nigdy nie trafia do pustych (limit `ile` wyżej)
+    const kolejnoscPustych = przy.length >= 2 ? [przy[0], ...daleko, ...przy.slice(1)] : [...daleko, ...przy];
+    const puste = new Set(kolejnoscPustych.slice(0, ile));
 
     const pusteRosnaco = inne.filter((a) => puste.has(a));
     const powody = powodyPustych(siedziba, pusteRosnaco.length);
     const powodMieszkania = new Map(pusteRosnaco.map((a, i) => [a, powody[i]]));
 
-    // gospodarstwa do mieszkań: z obecnymi, bez rodzin zarządu, najpierw małe
+    // gospodarstwa do mieszkań: z obecnymi, bez rodzin zarządu
     const domyZarzadu = new Set(wybrani.map((o) => domOsoby.get(o.id)?.id));
     const obecni = (g: Gospodarstwo): Osoba[] =>
       g.czlonkowie.flatMap((id) => {
@@ -359,25 +380,38 @@ export function lokatorzyGry(
       .filter((g) => !domyZarzadu.has(g.id))
       .map((g) => ({ g, osoby: obecni(g) }))
       .filter((x) => x.osoby.length > 0);
-    const poKolei = [
-      ...kolejka.filter((x) => x.osoby.length <= MALE_GOSPODARSTWO),
-      ...kolejka.filter((x) => x.osoby.length > MALE_GOSPODARSTWO),
-    ];
+    const male = kolejka.filter((x) => x.osoby.length <= MALE_GOSPODARSTWO);
+    const duze = kolejka.filter((x) => x.osoby.length > MALE_GOSPODARSTWO);
+    // przy podwórku (z tych mieszkań są pionki mieszkańców) najpierw małe gospodarstwa z najwięcej obecnymi, stabilnie
+    const dlaPrzy = [...[...male].sort((a, b) => b.osoby.length - a.osoby.length), ...duze];
     const zamieszkane = inne.filter((a) => !puste.has(a));
-    const przydzial = new Map<number, OsobaGry[]>();
-    [...zamieszkane.filter((a) => blisko.has(a)), ...zamieszkane.filter((a) => !blisko.has(a))].forEach((a, i) => {
-      const x = poKolei[i];
-      przydzial.set(a, x ? x.osoby.map(gra) : []);
+    const zamPrzy = zamieszkane.filter((a) => blisko.has(a));
+    const przydzial = new Map<number, (typeof kolejka)[number]>();
+    zamPrzy.forEach((a, i) => {
+      if (dlaPrzy[i]) przydzial.set(a, dlaPrzy[i]);
     });
-    for (const a of zamieszkane) lokatorzy.push({ apt: a, osoby: przydzial.get(a) ?? [] });
+    // reszta mieszkań: kolejne gospodarstwa budynku, najpierw te z 1-4 obecnymi
+    const uzyte = new Set([...przydzial.values()].map((x) => x.g.id));
+    const reszta = [...male, ...duze].filter((x) => !uzyte.has(x.g.id));
+    zamieszkane
+      .filter((a) => !blisko.has(a))
+      .forEach((a, i) => {
+        if (reszta[i]) przydzial.set(a, reszta[i]);
+      });
+    // bez gospodarstwa mieszkanie stoi puste; bez żadnego gospodarstwa jedno przy podwórku zostaje bez osób
+    const bezOsob = kolejka.length === 0 ? zamPrzy[0] : undefined;
+    const opuszczone = new Set(zamieszkane.filter((a) => !przydzial.has(a) && a !== bezOsob));
+    for (const a of zamieszkane) {
+      if (opuszczone.has(a)) continue;
+      lokatorzy.push({ apt: a, osoby: przydzial.get(a)?.osoby.map(gra) ?? [] });
+    }
 
     for (let a = 0; a < n; a++) {
+      const powod = powodMieszkania.get(a);
       if (a === house.home) stany.push({ bid: world.hq, apt: a, state: 'zarzad' });
-      else if (!puste.has(a)) stany.push({ bid: world.hq, apt: a, state: 'mieszkancy' });
-      else {
-        const p = powodMieszkania.get(a);
-        stany.push(p ? { bid: world.hq, apt: a, state: 'puste', ...p } : { bid: world.hq, apt: a, state: 'puste' });
-      }
+      else if (puste.has(a) && powod) stany.push({ bid: world.hq, apt: a, state: 'puste', ...powod });
+      else if (puste.has(a) || opuszczone.has(a)) stany.push({ bid: world.hq, apt: a, state: 'puste' });
+      else stany.push({ bid: world.hq, apt: a, state: 'mieszkancy' });
     }
   }
   return { siedziba, kronika, zarzad, lokatorzy, stany };

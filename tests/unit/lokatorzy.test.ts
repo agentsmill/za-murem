@@ -11,9 +11,9 @@ import { budynkiZCzlonkami } from '../../src/mieszkancy/budynki.ts';
 import { fachOsoby } from '../../src/mieszkancy/fachy.ts';
 import { budynkiObszaru, generujBudynek, kronikaObszaru } from '../../src/mieszkancy/generuj.ts';
 import { oznaczGeo, TAG_BUDYNKU } from '../../src/mieszkancy/oznacz.ts';
-import type { Budynek, Osoba, WynikBudynku } from '../../src/mieszkancy/typy.ts';
+import type { Budynek, Osoba, Wpis, WynikBudynku } from '../../src/mieszkancy/typy.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow } from '../../src/mieszkancy/wczytaj.ts';
-import { type LokatorzyGry, lokatorzyGry, type OsobaGry, osobaGry } from '../../src/sim/lokatorzy.ts';
+import { type LokatorzyGry, lokatorzyGry, type OsobaGry, osobaGry, powodyPustych } from '../../src/sim/lokatorzy.ts';
 import { type AptWhy, reachable, settleApts } from '../../src/world/apts.ts';
 import type { Geo } from '../../src/world/geo.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
@@ -233,14 +233,82 @@ describe('lokatorzyGry na demach', () => {
       const b = wynik.siedziba;
       const chciane = Math.round((n * b.puste) / (b.budynek.mieszkania ?? 1));
       const blisko = reachable(world);
+      // na demach gospodarstw starcza dla wszystkich zamieszkanych, więc puste to tylko te z udziału
       const puste = wynik.stany.filter((s) => s.state === 'puste');
-      expect(puste.length, nazwa).toBe(Math.min(chciane, n - (blisko.size > 0 ? 1 : 0)));
-      // puste najpierw spoza mieszkań osiągalnych z podwórka
+      const ile = Math.min(chciane, n - (blisko.size > 0 ? 1 : 0));
+      expect(puste.length, nazwa).toBe(ile);
+      // jak settleApts: przy co najmniej dwóch przy podwórku jedno z nich puste, potem puste spoza podwórka
       const daleko = n - blisko.size;
-      expect(puste.filter((s) => blisko.has(s.apt)).length, nazwa).toBe(Math.max(0, puste.length - daleko));
+      const jedno = blisko.size >= 2 && ile >= 1 ? 1 : 0;
+      expect(puste.filter((s) => blisko.has(s.apt)).length, nazwa).toBe(jedno + Math.max(0, ile - jedno - daleko));
     }
-    // Przymorze: część mieszkań stoi pusta, a przy podwórku wszystkie zamieszkane
     expect(demo('przymorze').wynik.stany.filter((s) => s.state === 'puste').length).toBeGreaterThan(0);
+  });
+
+  it('Przymorze i Lanciego (M2): przy podwórku dokładnie jedno puste do przeszukania i zamieszkane obok', () => {
+    for (const nazwa of ['przymorze', 'lanciego'] as const) {
+      const { world, wynik } = demo(nazwa);
+      const blisko = reachable(world);
+      expect(blisko.size, nazwa).toBeGreaterThanOrEqual(2);
+      const przy = wynik.stany.filter((s) => blisko.has(s.apt));
+      expect(
+        przy.filter((s) => s.state === 'puste'),
+        nazwa,
+      ).toHaveLength(1);
+      expect(
+        przy.some((s) => s.state === 'mieszkancy'),
+        nazwa,
+      ).toBe(true);
+      // tak samo po settleApts (stan świata dla symulacji)
+      const r = settleApts(world, wynik.stany);
+      expect(
+        r.apts.filter((s) => blisko.has(s.apt) && s.state === 'puste'),
+        nazwa,
+      ).toHaveLength(1);
+    }
+  });
+
+  it('siedziba-dom bez tagu na wnętrzu bloku: mieszkania bez gospodarstwa stoją puste, przy podwórku ktoś zostaje', () => {
+    for (const nazwa of ['przymorze', 'lanciego'] as const) {
+      const { world, geo, dane } = demo(nazwa);
+      // świat jak dema, ale siedziba to mały dom (pole < 300, poniżej 3 kondygnacji): generator daje 1-2 mieszkania
+      const dom: World = {
+        ...world,
+        buildings: world.buildings.map((b) => {
+          if (b.id !== world.hq) return b;
+          const { [TAG_BUDYNKU]: _, ...tags } = b.tags;
+          return { ...b, tags, area: 120, levels: 2 };
+        }),
+      };
+      const l = lokatorzyGry(dom, geo, dane, { core: 4 });
+      if (!l) throw new Error(`null dla ${nazwa}`);
+      expect(l.siedziba.budynek.typ, nazwa).toBe('dom');
+      const blisko = reachable(dom);
+      const n = mieszkaniaParteru(dom).length;
+      expect(l.stany.map((s) => s.apt).sort((a, b) => a - b)).toEqual(mieszkaniaParteru(dom));
+      // gospodarstw jest mniej niż mieszkań: zamieszkane tylko te z gospodarstwem
+      const zamieszkane = l.stany.filter((s) => s.state === 'mieszkancy');
+      expect(zamieszkane.length, nazwa).toBeLessThan(n - 1);
+      expect(
+        l.lokatorzy.map((m) => m.apt),
+        nazwa,
+      ).toEqual(zamieszkane.map((s) => s.apt));
+      const zOsobami = l.lokatorzy.filter((m) => m.osoby.length > 0);
+      if (zOsobami.length === 0) {
+        // żadnego gospodarstwa do rozdania: jedno mieszkanie przy podwórku bez osób
+        expect(l.lokatorzy, nazwa).toHaveLength(1);
+        expect(blisko.has(l.lokatorzy[0].apt), nazwa).toBe(true);
+      } else expect(zOsobami, nazwa).toEqual(l.lokatorzy);
+      expect(
+        zamieszkane.some((s) => blisko.has(s.apt)),
+        nazwa,
+      ).toBe(true);
+      // puste bez gospodarstwa nie mają powodu ani roku (losuje settleApts), a settleApts je przyjmuje
+      expect(l.stany.filter((s) => s.state === 'puste' && !s.why).length, nazwa).toBeGreaterThan(0);
+      for (const s of l.stany) expect(s.why === undefined, `${nazwa} ${s.apt}`).toBe(s.year === undefined);
+      const r = settleApts(dom, l.stany);
+      for (const s of l.stany) expect(r.apts.find((x) => x.apt === s.apt)?.state).toBe(s.state);
+    }
   });
 
   it('jedyne mieszkanie przy podwórku zostaje zamieszkane, choć udział pustych w budynku każe je opróżnić', () => {
@@ -316,7 +384,7 @@ describe('lokatorzyGry na demach', () => {
     }
   });
 
-  it('gospodarstwa idą po kolei z budynku, najpierw te z 1-4 obecnymi, najpierw do mieszkań przy podwórku', () => {
+  it('przy podwórku najliczniejsze z gospodarstw z 1-4 obecnymi, w reszcie kolejne z budynku, najpierw małe', () => {
     for (const nazwa of DEMA) {
       const { world, wynik } = demo(nazwa);
       const s = wynik.siedziba;
@@ -326,19 +394,30 @@ describe('lokatorzyGry na demach', () => {
         (g) => g.czlonkowie.some((id) => tu.has(id)) && !g.czlonkowie.some((id) => zarzad.has(id)),
       );
       const obecni = (g: (typeof kolejka)[number]) => g.czlonkowie.filter((id) => tu.has(id)).length;
-      const poKolei = [...kolejka.filter((g) => obecni(g) <= 4), ...kolejka.filter((g) => obecni(g) > 4)];
+      const male = kolejka.filter((g) => obecni(g) <= 4);
+      const duze = kolejka.filter((g) => obecni(g) > 4);
+      const dlaPrzy = [...[...male].sort((a, b) => obecni(b) - obecni(a)), ...duze];
       const blisko = reachable(world);
-      const mieszkania = [
-        ...wynik.lokatorzy.filter((m) => blisko.has(m.apt)),
-        ...wynik.lokatorzy.filter((m) => !blisko.has(m.apt)),
-      ];
       const domOsoby = new Map<string, string>();
       for (const g of s.gospodarstwa) for (const id of g.czlonkowie) domOsoby.set(id, g.id);
-      mieszkania.forEach((m, i) => {
-        const oczekiwane = poKolei[i];
-        if (!oczekiwane) expect(m.osoby, `${nazwa} ${m.apt}`).toEqual([]);
-        else expect(domOsoby.get(m.osoby[0]?.ref ?? ''), `${nazwa} ${m.apt}`).toBe(oczekiwane.id);
+      const dom = (m: LokatorzyGry['lokatorzy'][number]) => domOsoby.get(m.osoby[0]?.ref ?? '');
+      const przy = wynik.lokatorzy.filter((m) => blisko.has(m.apt));
+      przy.forEach((m, i) => {
+        expect(dom(m), `${nazwa} ${m.apt}`).toBe(dlaPrzy[i]?.id);
       });
+      const uzyte = new Set(przy.map(dom));
+      const reszta = [...male, ...duze].filter((g) => !uzyte.has(g.id));
+      wynik.lokatorzy
+        .filter((m) => !blisko.has(m.apt))
+        .forEach((m, i) => {
+          expect(dom(m), `${nazwa} ${m.apt}`).toBe(reszta[i]?.id);
+        });
+    }
+    // Przymorze i Lanciego: przy podwórku gospodarstwa po 4 osoby
+    for (const nazwa of ['przymorze', 'lanciego'] as const) {
+      const { world, wynik } = demo(nazwa);
+      const blisko = reachable(world);
+      for (const m of wynik.lokatorzy.filter((x) => blisko.has(x.apt))) expect(m.osoby, nazwa).toHaveLength(4);
     }
   });
 
@@ -535,9 +614,14 @@ describe('osobaGry', () => {
     expect(osobaGry(jas, maly, []).story).toBeUndefined();
   });
 
-  it('historia nie powtarza linijki o fachu, gdy historia gospodarstwa już ją ma', () => {
+  it('historia nie powtarza linijki o fachu, gdy historia gospodarstwa już ją ma o tej osobie', () => {
     const h = ['Anna: kiedyś pielęgniarka, dziś felczerka.'];
     expect(osobaGry(anna, maly, h).story).toBe('Anna: kiedyś pielęgniarka, dziś felczerka.');
+    // to samo zdanie o kimś innym z tymi samymi zawodami nie zabiera Annie jej linijki
+    const inna = ['Halina: kiedyś pielęgniarka, dziś felczerka.'];
+    expect(osobaGry(anna, maly, inna).story).toBe(
+      'Dawniej pielęgniarka, dziś felczerka. Halina: kiedyś pielęgniarka, dziś felczerka.',
+    );
   });
 
   it('historia do 700 znaków, ucinana całymi zdaniami od końca; zdania z piętrem albo numerem mieszkania odpadają', () => {
@@ -580,6 +664,69 @@ describe('src/sim/lokatorzy.ts: moduł czysty', () => {
   it('nie importuje z ui, render, gov ani node:, bez DOM, sieci, Math.random i zegara', () => {
     expect(zrodlo).not.toMatch(/from '\.\.\/(ui|render|gov)\//);
     expect(zrodlo).not.toMatch(/from 'node:/);
-    expect(zrodlo).not.toMatch(/\b(fetch|document|window|localStorage|performance)\b|Math\.random|Date\./);
+    expect(zrodlo).not.toMatch(/\b(fetch|document|window|localStorage|performance|Date)\b|Math\.random/);
+  });
+});
+
+// ---------------------------------------------------------------- powody pustych na sztucznym dzienniku
+
+describe('powodyPustych', () => {
+  const K = 'syn:1';
+  /** po 40 gospodarstw opuszczonych w każdym roku 2021-2035 (wpis n to gospodarstwo g<n>, ostatni członek o<n>):
+      co czwarte po zgonie ostatniego członka rok wcześniej, co czwarte z jego zgonem 3 lata po opuszczeniu (wyjechał
+      i zmarł gdzie indziej), reszta bez zgonu */
+  const NA_ROK = 40;
+  const dziennik: Wpis[] = [];
+  const spodziewany = new Map<string, 'wymarcie' | 'wyjazd'>();
+  for (let rok = 2021; rok <= 2035; rok++)
+    for (let i = 0; i < NA_ROK; i++) {
+      const n = (rok - 2021) * NA_ROK + i;
+      const z = `${K}/o${n}`;
+      if (i % 4 === 0) dziennik.push({ rok: rok - 1, typ: 'zgon', kto: z });
+      if (i % 4 === 2) dziennik.push({ rok: rok + 3, typ: 'zgon', kto: z });
+      dziennik.push({ rok, typ: 'opuszczone', kto: `${K}/g${n}`, z });
+      spodziewany.set(`${K}/g${n}`, i % 4 === 0 ? 'wymarcie' : 'wyjazd');
+    }
+  const opuszczone = dziennik.filter((d) => d.typ === 'opuszczone');
+  const wszystkie = opuszczone.length;
+
+  it('rok przycięty do 2029; przed 2033 tylko wyjazd albo wymarcie (zgon ostatniego członka do roku opuszczenia)', () => {
+    const p = powodyPustych({ dziennik, puste: wszystkie }, wszystkie);
+    expect(p).toHaveLength(wszystkie);
+    p.forEach((x, n) => {
+      const d = opuszczone[n];
+      expect(x.year, d.kto).toBe(Math.max(2029, d.rok));
+      if (d.rok < 2033) expect(x.why, d.kto).toBe(spodziewany.get(d.kto));
+    });
+    expect(p.slice(0, 8 * NA_ROK).every((x) => x.year === 2029)).toBe(true);
+  });
+
+  it('od 2033 część pustych splądrowana, zalana albo spalona (około 55%), reszta jak przed 2033', () => {
+    const p = powodyPustych({ dziennik, puste: wszystkie }, wszystkie);
+    let upadek = 0;
+    let od2033 = 0;
+    p.forEach((x, n) => {
+      const d = opuszczone[n];
+      if (d.rok < 2033) return;
+      od2033++;
+      if (x.why === 'wyjazd' || x.why === 'wymarcie') expect(x.why, d.kto).toBe(spodziewany.get(d.kto));
+      else upadek++;
+    });
+    expect(od2033).toBe(3 * NA_ROK);
+    expect(upadek / od2033).toBeGreaterThan(0.35);
+    expect(upadek / od2033).toBeLessThan(0.75);
+    // już w samym 2033, a w 2032 ani jednego
+    expect(p.some((x, n) => opuszczone[n].rok === 2033 && !['wyjazd', 'wymarcie'].includes(x.why))).toBe(true);
+    expect(p.some((x, n) => opuszczone[n].rok === 2032 && !['wyjazd', 'wymarcie'].includes(x.why))).toBe(false);
+  });
+
+  it('pula to ostatnie `puste` wpisów; z niej równo rozłożone; mniej wpisów niż pustych daje krótszą listę', () => {
+    // ostatnie 40 wpisów to rok 2035
+    expect(powodyPustych({ dziennik, puste: NA_ROK }, NA_ROK).map((x) => x.year)).toEqual(Array(NA_ROK).fill(2035));
+    // 3 z 600: wpisy 100, 300 i 500, czyli lata 2023 (przycięty do 2029), 2028 (też 2029) i 2033
+    expect(powodyPustych({ dziennik, puste: wszystkie }, 3).map((x) => x.year)).toEqual([2029, 2029, 2033]);
+    expect(powodyPustych({ dziennik, puste: 5 }, 10)).toHaveLength(5);
+    expect(powodyPustych({ dziennik, puste: wszystkie }, 0)).toEqual([]);
+    expect(powodyPustych({ dziennik: [], puste: 3 }, 3)).toEqual([]);
   });
 });

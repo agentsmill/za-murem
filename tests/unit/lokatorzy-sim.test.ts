@@ -187,6 +187,14 @@ describe('mieszkańcy siedziby z osobami', () => {
     expect(zOsoba(z('lanciego')).length).toBeGreaterThan(0);
   });
 
+  it('Przymorze i Lanciego: każdy pionek mieszkańca ma osobę (mieszkania przy podwórku mają najliczniejsze gospodarstwa)', () => {
+    for (const nazwa of ['przymorze', 'lanciego'] as const) {
+      const st = z(nazwa);
+      expect(mieszkancy(st).length, nazwa).toBeGreaterThanOrEqual(3);
+      for (const p of mieszkancy(st)) expect(p.person, `${nazwa} pionek ${p.id} w ${p.apt}`).toBeGreaterThanOrEqual(0);
+    }
+  });
+
   it('każdy mieszkaniec z osobą ma ref', () => {
     for (const nazwa of DEMA) {
       const st = z(nazwa);
@@ -207,8 +215,10 @@ describe('mieszkańcy siedziby z osobami', () => {
     dwie[wynik.lokatorzy.indexOf(pierwsze)].osoby = pierwsze.osoby.slice(0, 2);
     const st = z('przymorze', { mieszkancy: { zarzad: wynik.zarzad, lokatorzy: dwie } });
     expect(mieszkancy(st)).toHaveLength(2);
-    // jawna liczba mieszkańców wygrywa z domyślną
-    expect(mieszkancy(z('przymorze', { residents: 8 }))).toHaveLength(8);
+    // jawna liczba mieszkańców wygrywa z domyślną (do miejsc st.cap: po trzy na mieszkanie przy podwórku)
+    const osiem = z('przymorze', { residents: 8 });
+    expect(mieszkancy(osiem)).toHaveLength(Math.min(8, osiem.cap));
+    expect(mieszkancy(osiem).length).toBeGreaterThan(mieszkancy(z('przymorze')).length);
   });
 
   it('mieszkanie z pustą listą osób: jego mieszkańcy zostają bez osób', () => {
@@ -307,8 +317,10 @@ describe('odczyt i zarząd', () => {
   });
 
   it('zabity mieszkaniec bez osoby zostaje „Mieszkańcem”', () => {
-    const { world } = demo('przymorze');
-    const st = z('przymorze');
+    const { world, wynik } = demo('przymorze');
+    // domyślnie każdy mieszkaniec Przymorza ma osobę, więc mieszkania bez osób i jawna liczba mieszkańców
+    const bezOsob = wynik.lokatorzy.map((m) => ({ ...m, osoby: [] as OsobaGry[] }));
+    const st = z('przymorze', { mieszkancy: { zarzad: wynik.zarzad, lokatorzy: bezOsob }, residents: 3 });
     const sim = new Sim(world, st);
     const p = mieszkancy(st).find((q) => q.person < 0)!;
     sim.wound(p, 1000);
