@@ -8,14 +8,21 @@
    go nie ma i gra działa jak dotąd.
 
    Nic tu nie rusza gry. Etap 2 podepnie klienta pod ekran startowy i symulację: odpowiedzi serwera wchodzą do gry
-   tylko jako jawne wejście startu albo polecenie w kolejce stanu, nigdy w środku kroku symulacji. */
+   tylko jako jawne wejście startu albo polecenie w kolejce stanu, nigdy w środku kroku symulacji.
 
+   Język: komunikat w Wyniku jest zawsze polski, tak jak przyszedł z serwera (serwer mówi po polsku) albo z KOMUNIKATY.
+   Angielska wersja gry pokazuje go przez komunikatEn: znany kod błędu po angielsku (przy kodach z kilkoma zdaniami
+   według polskiego zdania serwera), nieznany kod tak, jak przyszedł. txBledu daje oba naraz (Tx), komunikatBledu
+   napis w bieżącym języku. */
+
+import { type Tx, tr, tx } from '../core/jezyk.ts';
 import {
   type Blad,
   type DaneLogowania,
   type Ja,
   type KodBledu,
   type ListaKlatek,
+  POWODY_LOGOWANIA,
   type Prostokat,
   type WyslijZapis,
   type ZajetaOdpowiedz,
@@ -54,6 +61,118 @@ const KOMUNIKATY: Partial<Record<KodBledu, string>> = {
   czas: 'Serwer gry nie odpowiedział na czas.',
   brak_serwera: 'Pod tym adresem nie ma serwera gry.',
 };
+/** zdanie klienta, gdy odpowiedź z błędem nie ma własnego */
+const OGOLNY = 'Coś poszło nie tak.';
+
+/** błąd z Wyniku: kod, polski komunikat i (przy 429) za ile sekund spróbować */
+export type BladWyniku = { blad: KodBledu | string; komunikat: string; ponowZa?: number };
+
+/** angielskie zdanie z polskiego komunikatu przy danym kodzie */
+type NaAngielski = (pl: string, b: BladWyniku) => string;
+
+/** zdanie z mapy po polskim zdaniu (tylko własne klucze mapy) */
+const zMapy = (mapa: Readonly<Record<string, string>>, pl: string): string | undefined =>
+  Object.hasOwn(mapa, pl) ? mapa[pl] : undefined;
+
+/** po polskim zdaniu z mapy, a bez dopasowania ogólne zdanie kodu */
+const zdania =
+  (mapa: Readonly<Record<string, string>>, ogolne: string): NaAngielski =>
+  (pl) =>
+    zMapy(mapa, pl) ?? ogolne;
+
+/** zdanie z liczbą (limit klatek, promień): liczba z polskiego zdania, bez niej ogólne */
+const zLiczba =
+  (wzor: RegExp, en: (n: string) => string, ogolne: string): NaAngielski =>
+  (pl) => {
+    const m = wzor.exec(pl);
+    return m ? en(m[1]) : ogolne;
+  };
+
+/** powody złego nicku i hasła z protokol.ts: polskie zdanie serwera → angielskie */
+const LOGOWANIE_EN: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.values(POWODY_LOGOWANIA).map((p) => [p.pl, p.en]),
+);
+
+/** za dużo prób: zdanie bez „spróbujcie”, a kiedy spróbować, mówi czas z nagłówka Retry-After */
+const PROBY_EN: Readonly<Record<string, string>> = {
+  'Za dużo nowych kont z tego miejsca. Spróbujcie później.': 'Too many new accounts from here.',
+  'Za dużo nieudanych prób. Spróbujcie za kilka minut.': 'Too many failed attempts.',
+  'Za dużo nieudanych prób na to konto. Spróbujcie za kilka minut.': 'Too many failed attempts on this account.',
+  'Za często zapisujecie. Spróbujcie za chwilę.': 'You are saving too often.',
+  'Poprzedni zapis jeszcze się wysyła.': 'The previous save is still uploading.',
+};
+
+/** Komunikaty po angielsku dla każdego kodu błędu (serwer w server/app.ts i server/http.ts, klient tutaj). */
+const BLEDY_EN: Readonly<Record<KodBledu, NaAngielski>> = {
+  zle_dane: zdania(
+    {
+      'Podajcie nick i hasło.': 'Enter a username and a password.',
+      'Dane nie są poprawnym JSON.': 'The data is not valid JSON.',
+      'Oczekiwany obiekt JSON.': 'A JSON object was expected.',
+      'Zły klucz albo pozycja klatki.': 'Bad stairwell key or position.',
+      'Zły klucz klatki.': 'Bad stairwell key.',
+      'Zapis musi być obiektem JSON.': 'A save has to be a JSON object.',
+      'Zła wersja zapisu.': 'Bad save version.',
+    },
+    'The server could not make sense of that request.',
+  ),
+  zly_nick: zdania(LOGOWANIE_EN, 'That username won’t do.'),
+  zle_haslo: zdania(
+    { ...LOGOWANIE_EN, 'Hasło nie może być nickiem.': 'Your password can’t be your username.' },
+    'That password won’t do.',
+  ),
+  nick_zajety: () => 'That username is already taken.',
+  brak_sesji: () => 'Log in first.',
+  zle_logowanie: zdania({ 'Złe hasło.': 'Wrong password.' }, 'Wrong username or password.'),
+  za_duzo_prob: (pl, b) => {
+    const min = b.ponowZa ? Math.max(1, Math.ceil(b.ponowZa / 60)) : 0;
+    return `${zMapy(PROBY_EN, pl) ?? 'Too many attempts.'} ${min ? `Try again in ${min} min.` : 'Try again later.'}`;
+  },
+  zajeta: () => 'Another team has already taken that stairwell.',
+  nie_ma: zdania(
+    {
+      'Nie macie takiej klatki.': 'You don’t have that stairwell.',
+      'Nie ma takiego adresu API.': 'No such API address.',
+    },
+    'Not found.',
+  ),
+  limit_klatek: zLiczba(
+    /najwyżej (\d+) klatek/,
+    (n) => `A team can hold at most ${n} stairwells.`,
+    'Your team has reached its stairwell limit.',
+  ),
+  za_daleko: zLiczba(
+    /dalej niż (\d+) m/,
+    (n) => `That stairwell is more than ${n} m from your HQ.`,
+    'That stairwell is too far from your HQ.',
+  ),
+  zla_pozycja: () => 'That stairwell’s position or number doesn’t match its building.',
+  serwer_zajety: () => 'The server is busy. Try again in a moment.',
+  konflikt_wersji: () => 'There is a newer save on the server.',
+  za_duze: zdania({ 'Zapis jest za duży.': 'The save is too big.' }, 'Too much data.'),
+  adres_w_zapisie: () => 'A cloud save can’t contain an address.',
+  brak_zapisu: () => 'There is no save in the cloud.',
+  zly_typ: () => 'Data has to be sent as application/json.',
+  obce_zrodlo: () => 'Request from another site.',
+  zla_metoda: () => 'That method doesn’t work at this address.',
+  blad_serwera: () => 'Something went wrong on the server.',
+  siec: () => 'No connection to the game server.',
+  czas: () => 'The game server didn’t answer in time.',
+  brak_serwera: () => 'There is no game server at this address.',
+};
+
+/** Komunikat błędu po angielsku: znany kod po angielsku, nieznany (nowszy serwer) tak, jak przyszedł; bez zdania
+    z serwera (zostaje ogólne zdanie klienta) ogólne zdanie po angielsku. */
+export function komunikatEn(b: BladWyniku): string {
+  if (Object.hasOwn(BLEDY_EN, b.blad)) return BLEDY_EN[b.blad as KodBledu](b.komunikat, b);
+  return b.komunikat === OGOLNY ? 'Something went wrong.' : b.komunikat;
+}
+
+/** komunikat błędu w obu językach: polski, jak przyszedł, i angielski z komunikatEn */
+export const txBledu = (b: BladWyniku): Tx => tx(b.komunikat, komunikatEn(b));
+
+/** komunikat błędu w bieżącym języku (po polsku dokładnie ten, który przyszedł) */
+export const komunikatBledu = (b: BladWyniku): string => tr(txBledu(b));
 
 /** Klient API; jeden na grę. */
 export function utworzApi(opcje: OpcjeApi = {}) {
@@ -65,7 +184,7 @@ export function utworzApi(opcje: OpcjeApi = {}) {
     ok: false,
     status,
     blad,
-    komunikat: komunikat ?? KOMUNIKATY[blad] ?? 'Coś poszło nie tak.',
+    komunikat: komunikat ?? KOMUNIKATY[blad] ?? OGOLNY,
   });
 
   async function zadanie<T>(metoda: string, sciezka: string, cialo?: unknown, czas = czasDomyslny): Promise<Wynik<T>> {
@@ -100,7 +219,7 @@ export function utworzApi(opcje: OpcjeApi = {}) {
         ok: false,
         status: r.status,
         blad: b.blad,
-        komunikat: typeof b.komunikat === 'string' ? b.komunikat : (KOMUNIKATY[b.blad] ?? 'Coś poszło nie tak.'),
+        komunikat: typeof b.komunikat === 'string' ? b.komunikat : (KOMUNIKATY[b.blad] ?? OGOLNY),
         ...(ponow > 0 ? { ponowZa: ponow } : {}),
         ...(typeof b.wersja === 'number' ? { wersja: b.wersja } : {}),
       };
