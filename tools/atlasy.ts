@@ -23,6 +23,7 @@ import {
   klatkiAnimacji,
   koloryUbrania,
   kotwicaKlatki,
+  kotwicaPrzejscia,
   przytnij,
   stopyWzgledne,
 } from './ludzie.ts';
@@ -101,9 +102,17 @@ const ODSTEP_LUDZI = 2;
 
 /**
  * Prace w grze (klucz) i animacje PixelLab, z których powstają. bezReferencji: animacja z opisu (pixminimax)
- * zamówiona z klatką referencyjną ma pierwszą klatkę z pozą wyjściową, której nie bierzemy.
+ * zamówiona z klatką referencyjną ma pierwszą klatkę z pozą wyjściową, której nie bierzemy. kotwica: domyślnie stopy
+ * statycznej postaci przeniesione na środek płótna, 'dol' to dolna krawędź sylwetki (klękanie), a przejścia między
+ * staniem a leżeniem kotwiczą klatki od stóp do środka ciała ('do-lezenia': upadek, 'z-lezenia': wstawanie,
+ * kotwicaPrzejscia). tylkoZachod: paczka ma sensowny tylko zachód, reszta kierunków to jego odbicie (wstawanie z
+ * południa i północy zaczyna się od przysiadu i traci czapkę). Przejścia (smierc, wstawanie) uruchamia widok przy
+ * zmianie stanu (src/render/przejscia.ts), nie poza z gry.
  */
-export const PRACE: Record<string, { zrodlo: string; bezReferencji?: boolean; kotwica?: 'dol' }> = {
+export const PRACE: Record<
+  string,
+  { zrodlo: string; bezReferencji?: boolean; kotwica?: 'dol' | 'do-lezenia' | 'z-lezenia'; tylkoZachod?: boolean }
+> = {
   chod: { zrodlo: 'chod' },
   stanie: { zrodlo: 'stanie' },
   klekanie: { zrodlo: 'klekanie', kotwica: 'dol' },
@@ -118,6 +127,8 @@ export const PRACE: Record<string, { zrodlo: string; bezReferencji?: boolean; ko
   mlotek: { zrodlo: 'mlotek-px', bezReferencji: true },
   deski: { zrodlo: 'deski-px', bezReferencji: true },
   zlom: { zrodlo: 'zlom-px', bezReferencji: true },
+  smierc: { zrodlo: 'smierc', kotwica: 'do-lezenia' },
+  wstawanie: { zrodlo: 'wstawanie', kotwica: 'z-lezenia', tylkoZachod: true },
 };
 
 /** mieszkańcy z PixelLab mają tylko chód i stanie, prace wykonuje zarząd */
@@ -280,7 +291,7 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
       if (!an) continue;
       const po: Partial<Record<(typeof KIERUNKI_PL)[number], string[]>> = {};
       for (const k of KIERUNKI_PL) if (an.kierunki[k]) po[k] = klatkiAnimacji(an.kierunki[k], spec);
-      const kier = kierunkiAnimacji(po);
+      const kier = kierunkiAnimacji(po, { tylkoZachod: spec.tylkoZachod });
       if (!kier) continue;
       const obraz = (plik: string) => {
         const z = wczytaj(`assets/raw/${id}/${plik}`);
@@ -289,16 +300,15 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
       const klatki = kier.map((k) => (Array.isArray(k) ? k.map(obraz) : k));
       const kierunki: KierunkiLudzi = klatki.map((k) =>
         Array.isArray(k)
-          ? k.map((fr) => {
+          ? k.map((fr, i) => {
               const p = przytnij(fr);
-              const wpis: KlatkaLudzi = [
-                0,
-                0,
-                p.w,
-                p.h,
-                (fr.w >> 1) - p.x,
-                kotwicaKlatki(rel, fr.h, p.y, spec.kotwica, p.h),
-              ];
+              // przejścia: kotwica schodzi od stóp do środka leżącego ciała (u: ile ruchu do leżenia za nami)
+              const przejscie = spec.kotwica === 'do-lezenia' || spec.kotwica === 'z-lezenia';
+              const u = k.length > 1 ? i / (k.length - 1) : 1;
+              const [ax, ay] = przejscie
+                ? kotwicaPrzejscia(p, fr.w, spec.kotwica === 'do-lezenia' ? u : 1 - u)
+                : [(fr.w >> 1) - p.x, kotwicaKlatki(rel, fr.h, p.y, spec.kotwica === 'dol' ? 'dol' : 'srodek', p.h)];
+              const wpis: KlatkaLudzi = [0, 0, p.w, p.h, ax, ay];
               wpisy.push({ wpis, idx: rozmiary.length, zarzad });
               rozmiary.push({ w: p.w, h: p.h });
               obrazy.push(p.rgba);

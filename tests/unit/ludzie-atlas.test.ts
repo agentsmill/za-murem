@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { SRODEK_LEZACEGO } from '../../src/render/art/animacjePozy.ts';
 import {
   kierunkiAnimacji,
   klatkiAnimacji,
   koloryUbrania,
   kotwicaKlatki,
+  kotwicaPrzejscia,
   przytnij,
   stopyWzgledne,
 } from '../../tools/ludzie.ts';
@@ -57,6 +59,41 @@ describe('kotwica stóp animacji', () => {
   });
 });
 
+describe('kotwica klatki przejścia między staniem a leżeniem (upadek, wstawanie)', () => {
+  // przycięta klatka o szerokości 28 i wysokości 20, jej lewa krawędź w kolumnie 10 płótna 48: kolumna środka płótna
+  // (24) wypada w kolumnie 14 klatki, czyli dokładnie w jej środku
+  const k = { x: 10, w: 28, h: 20 };
+
+  it('stojąca (u = 0): dolna krawędź sylwetki w kotwicy, kolumna środka płótna', () => {
+    expect(kotwicaPrzejscia(k, 48, 0)).toEqual([14, 20]);
+  });
+
+  it('leżąca (u = 1): środek sylwetki SRODEK_LEZACEGO nad kotwicą, środek jej szerokości', () => {
+    expect(kotwicaPrzejscia(k, 48, 1)).toEqual([14, 10 + SRODEK_LEZACEGO]);
+  });
+
+  it('klatki pośrednie leżą na prostej między tymi dwiema kotwicami, w liczbach całkowitych', () => {
+    const [x, y] = kotwicaPrzejscia(k, 48, 0.5);
+    expect([x, y]).toEqual([14, (20 + 10 + SRODEK_LEZACEGO) / 2]);
+    // sylwetka przesunięta w płótnie: środek płótna wypada w kolumnie 18 klatki, a jej własny środek w 14
+    const przesunieta = { x: 6, w: 28, h: 20 };
+    expect(kotwicaPrzejscia(przesunieta, 48, 0)[0]).toBe(18);
+    expect(kotwicaPrzejscia(przesunieta, 48, 1)[0]).toBe(14);
+    expect(kotwicaPrzejscia(przesunieta, 48, 0.5)[0]).toBe(16);
+    for (let i = 0; i <= 10; i++)
+      for (const a of kotwicaPrzejscia(przesunieta, 48, i / 10)) expect(Number.isInteger(a), `u ${i / 10}`).toBe(true);
+  });
+
+  it('bez skoku na styku: ostatnia klatka wstawania stoi tak jak stanie, pierwsza klatka wstawania leży jak komórka', () => {
+    // klatka leżąca o nieparzystej szerokości i wysokości: środek zaokrąglony do liczby całkowitej
+    const lezaca = { x: 3, w: 45, h: 17 };
+    const [ax, ay] = kotwicaPrzejscia(lezaca, 48, 1);
+    expect(Math.abs(ax - lezaca.w / 2)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(ay - (lezaca.h / 2 + SRODEK_LEZACEGO))).toBeLessThanOrEqual(0.5);
+    expect(kotwicaPrzejscia({ x: 8, w: 22, h: 41 }, 48, 0)).toEqual([16, 41]);
+  });
+});
+
 describe('wybór klatek animacji z paczki PixelLab', () => {
   const pliki = (n: number) => Array.from({ length: n }, (_, i) => `frame_${String(i).padStart(3, '0')}.png`);
 
@@ -78,6 +115,12 @@ describe('kierunki animacji pionka (0 południe, 1 północ, 2 zachód, 3 wschó
   it('bez wschodu: wschód to odbicie zachodu (numer kierunku 2)', () => {
     const w = kierunkiAnimacji({ south: k(4), north: k(4), west: k(4) });
     expect(w).toEqual([k(4), k(4), k(4), 2]);
+  });
+
+  it('animacja tylko z zachodem (wstawanie): reszta kierunków to odbicie zachodu (numer 2), inne paczki są pomijane', () => {
+    expect(kierunkiAnimacji({ west: k(5) }, { tylkoZachod: true })).toEqual([2, 2, k(5), 2]);
+    expect(kierunkiAnimacji({ south: k(5), north: k(5), west: k(5) }, { tylkoZachod: true })).toEqual([2, 2, k(5), 2]);
+    expect(kierunkiAnimacji({ south: k(5), north: k(5) }, { tylkoZachod: true })).toBeNull();
   });
 
   it('bez zachodu albo północy animacji nie da się złożyć (null)', () => {

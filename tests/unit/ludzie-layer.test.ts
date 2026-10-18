@@ -84,6 +84,34 @@ describe('warstwa postaci z PixelLab (tekstury Pixi z atlasu ludzie.png)', () =>
     expect(warstwa.lezenie(emeryt, 1, 1, 'floor')!.tex).not.toBe(k.tex);
   });
 
+  it('przejście i zwłoki to klatki atlasu z tych samych tekstur co zwykłe klatki, a mieszkańcy ich nie mają', () => {
+    const emeryt = postac('kotwica-emeryt');
+    // wynik jest współdzielony, więc kopiujemy go przed następnym wywołaniem
+    const k = { ...warstwa.przejscie(emeryt, 'smierc', 2, 0.25)! };
+    const d = { ...warstwa.dane.przejscie(emeryt, 'smierc', 2, 0.25)! };
+    expect([k.tex.frame.x, k.tex.frame.y, k.tex.frame.width, k.tex.frame.height]).toEqual([d.x, d.y, d.w, d.h]);
+    expect([k.ax, k.ay, k.w, k.h, k.flip, k.zastepcza]).toEqual([d.ax, d.ay, d.w, d.h, d.flip, false]);
+    expect(k.tex.source.width).toBe(atlas.w);
+    // ta sama klatka w tym samym kierunku to ta sama tekstura, wschód to lustro tej samej tekstury zachodu
+    expect(warstwa.przejscie(emeryt, 'smierc', 2, 0.26)!.tex).toBe(k.tex);
+    const wschod = { ...warstwa.przejscie(emeryt, 'smierc', 3, 0.25)! };
+    expect([wschod.tex, wschod.flip]).toEqual([k.tex, true]);
+    // zwłoki to ostatnia klatka upadku
+    const z = { ...warstwa.zwloki(emeryt, 2)! };
+    const dz = warstwa.dane.klatkaZwlok(emeryt, 2)!;
+    expect([z.tex.frame.x, z.tex.frame.y]).toEqual([dz.x, dz.y]);
+    expect([z.ax, z.ay, z.w, z.h]).toEqual([dz.ax, dz.ay, dz.w, dz.h]);
+    // wersja kolorystyczna ma własne źródło, a mieszkaniec (bez przejść) null
+    expect(warstwa.przejscie(emeryt, 'smierc', 2, 0.25, 2)!.tex.source).not.toBe(k.tex.source);
+    expect(warstwa.zwloki(emeryt, 2, 2)!.tex.source).toBe(warstwa.przejscie(emeryt, 'smierc', 2, 0.25, 2)!.tex.source);
+    const kibic = postac('kotwica-kibic');
+    expect(warstwa.przejscie(kibic, 'smierc', 2, 0)).toBeNull();
+    expect(warstwa.przejscie(kibic, 'kladzenie', 2, 0)).toBeNull();
+    expect(warstwa.zwloki(kibic, 2)).toBeNull();
+    // skończone przejście: null (widok przechodzi wtedy do leżenia albo stania)
+    expect(warstwa.przejscie(emeryt, 'wstawanie', 2, 5)).toBeNull();
+  });
+
   it('wybór postaci i wersji przechodzi przez warstwę, a destroy zwalnia źródła tekstur', () => {
     const l = new LudzieLayer(grafika);
     const p = { id: 1, kind: 'core', person: 0, look: 0 };
