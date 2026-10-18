@@ -404,6 +404,17 @@ Liczby: testy 1443/1443, Biome, build, `npm run bot` i `npm run bot:zombie` bez 
 
 W toku tej nocy: multiplayer, etap 1 (projekt i serwer kont, gałąź `mp-serwer`), własna drużyna zarządu według `docs/superpowers/specs/2026-10-18-druzyna-design.md` (gałąź `druzyna`).
 
+Przegląd połączenia M2 z trybem zombie (osobny recenzent, model Opus, skrypty w Node): we wszystkich 41 miejscach konfliktu zostały oba zamiary, ale styk funkcji miał błędy. Poprawione, każde z testem w `tests/unit/styk-m2-zombie.test.ts`, który na kodzie sprzed poprawek padał (8 z 8):
+- Zasieki z M2 w trybie zombie: napór zbijał kafelek pod nimi do zera i robił dziurę, a zasieki zostawały (gracz widział cały drut, szwendacze przechodzili), a ich rozbiórka łatała przerwanie za darmo. Teraz przy zerze zasieki są zniszczone, bez zwrotu materiału.
+- Amputacja liczyła lek tylko z zapasu zarządu, a od M2 leki leżą jako rzeczy na mapie (wyprawy, przeszukania, wydarzenia). Teraz bierze też ze sterty.
+- Odsypianie po warcie (M2) przy szwendaczu na podwórku: wartownik stał i słabł, teraz je i śpi jak bez wroga.
+- Praca fali 1, do której zarząd wziął się sam, ustępuje wrogowi na podwórku, kiedy pracujący jest na zewnątrz, także w drodze po materiał (wcześniej budujący nosił deski obok szwendacza).
+- Krew, trupy i zwłoki nie blokują planu budowy (jak ogniska); wspólny zbiór `GHOST_KINDS` w `budowle.ts`.
+- W trybie zombie nie ma wydarzeń ulicy z M2 (żywi sąsiedzi i dzieciaki, wyjścia za siatkę bez ryzyka ugryzienia); cel drugiego dnia to „Zróbcie dzidę dla warty” zamiast „Wzmocnijcie obwód” (siatka bez dziur zaliczała go od razu i polecała zasieki).
+- Wzmacnianie siatki ma pozę z materiałem w drodze i młotkiem przy siatce, a warsztat przyspiesza je jak łaty.
+
+Po poprawkach: testy 1593, zwykły bot z tymi samymi skrótami (da4b24e0, dad44c81), bot zombie z nowymi (4873d659 z wartą: trzy noce bez przerwania siatki, 34dd5c5f bez warty: koniec gry „pustką” czwartego dnia). Recenzent wskazał też, że bot zombie wystawia na wartę dwie najzdrowsze osoby, a od szóstej nocy to nowi bez broni; to do poprawy w bocie, nie w grze (w „Zaparkowanych”).
+
 ### Mieszkańcy z adresu: poprawki po przeglądzie całej gałęzi, 18.10.2026 (gałąź `mieszkancy-z-adresu`, nic nie wypchnięte)
 
 Przegląd całej gałęzi przyjął ją z poprawkami (R51, R52) i wszystkie są zrobione. Ojciec jest teraz zawsze 18-50 lat starszy od dziecka, a matka 15-49; wcześniej dorosłe dzieci spoza domu dostawały za ojca obecnego partnera matki, także o 14 albo 60 lat starszego (50 takich ojców na Przymorzu, 113 na Ursynowie, 2 w Batowicach). Imię nie tworzy z nazwiskiem znanej osoby: lista `tools/dane/zakazane-polaczenia.txt` (36 osób, m.in. Anna i Robert Lewandowscy, Justyna Kowalczyk, Radosław Sikorski) idzie do `imiona.json`, a trafienie losuje imię jeszcze raz. Na liście nazwisk polityków doszli Rakowski, Trzaskowski, Grodzki, Kołodziejczak i Bodnar, a obie listy pomijają komentarze. Obecni domownicy nie mają wspólnego imienia, chyba że to rodzic i dziecko. Losowana epoka bloku zależy od wysokości: od 7 kondygnacji nie ma przedwojennej, od 13 powojennej, a sklejony blok mierzy szerokość segmentu, nie całego obrysu. Na mapie Przymorza bloki od 9 kondygnacji były 4 przedwojenne, 1 powojenny, 2 z płyty, 2 z transformacji i 3 nowe, teraz 6 z płyty, 3 z transformacji i 3 nowe. Przez to Przymorze ma trochę inne mieszkania i ludzi: 2 622 / 2 680 / 1 487 osób w 2021 / 2026 / 2051 zamiast 2 710 / 2 746 / 1 662, a pustych mieszkań w blokach w 2051 jest 52,1%.
@@ -510,6 +521,7 @@ Mateusz (18.10, 1:30): konta, gra w swoim domu, zajmowanie kolejnych klatek, a g
 
 ## Zaparkowane
 
+- Bot zombie: na wartę tylko osoby z dzidą (albo zamiana broni z magazynu), w tabeli średnie najedzenie i zdrowie zarządu, ugryzienia osobno w dzień i w nocy (przegląd 18.10.2026).
 - Trudność a liczba osób zarządu (z bota zombie, 18.10.2026): wydarzenia zarządu szybko dokładają ludzi do zarządu (z jednej osoby trzy drugiej nocy), więc wybór 1–5 osób na karcie startowej zmienia głównie pierwsze doby; do sprawdzenia botem na wielu ziarnach i ewentualnie do przemyślenia z Mateuszem, czy przy małej drużynie wydarzenia mają dokładać ludzi wolniej.
 
 - `npm run lint` w głównym katalogu pada na `biome.json` z `.claude/worktrees/*`; samo `!.claude` ani `!!.claude` w `files.includes` nie pomaga (sprawdzone 18.10.2026 na kopii konfiguracji), do sprawdzenia `vcs.useIgnoreFile` z wpisem w `.gitignore` albo drzewa sesji poza repo.

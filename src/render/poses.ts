@@ -141,11 +141,17 @@ export function poseOf(
   if (j?.t === 'arrive') return { pose: 'walk', dir, frame: step, arm: 'hold' };
   // deski albo złom w rękach na łatę, naprawę albo budowę (bez nazwy materiału: deski z łat M1), także
   // w drodze po kolejną stertę; w fazie pracy materiał jest już przy łacie, uszkodzeniu albo planie
-  if (j && j.phase !== 2 && (j.n ?? 0) > 0 && (j.t === 'patch' || j.t === 'repair' || j.t === 'build'))
+  if (
+    j &&
+    j.phase !== 2 &&
+    (j.n ?? 0) > 0 &&
+    (j.t === 'patch' || j.t === 'repair' || j.t === 'build' || j.t === 'brace')
+  )
     return { pose: !j.what || j.what === 'deski' ? 'planks' : 'scrap', dir, frame: step };
   if (!moving && j && j.phase === 2)
     switch (j.t) {
       case 'patch':
+      case 'brace':
         return hammer();
       case 'repair': {
         const k = ctx.damage?.[j.target]?.kind;

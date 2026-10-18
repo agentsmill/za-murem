@@ -124,6 +124,9 @@ const WHY: Record<BuildPlace, string> = {
 /** Czy budowlę wolno postawić (podgląd trybu stawiania i polecenie 'build'): w pomieszczeniu właściwego rodzaju
     w naszym mieszkaniu (bez składu drewna), na wolnym podwórku z dala od bramy, dziur i wejść albo na odcinku siatki
     (także na dziurze, nie na bramie); nie na rzeczach i nie na innym planie. Czysta funkcja stanu i świata. */
+/** rzeczy, które nie zajmują miejsca (krew, trupy, zwłoki): plan budowy i ognisko mogą stanąć na nich */
+export const GHOST_KINDS: ReadonlySet<string> = new Set(['zwloki', 'trup', 'krew']);
+
 export function canPlace(
   st: SimState,
   w: World,
@@ -161,7 +164,8 @@ export function canPlace(
     const iy = Math.floor(i / size);
     return ix >= t.x && ix < t.x + t.w && iy >= t.y && iy < t.y + t.h;
   };
-  for (const i of tiles) if (st.things.some((t) => covers(t, i))) return { ok: false, why: 'Tu coś stoi.' };
+  for (const i of tiles)
+    if (st.things.some((t) => !GHOST_KINDS.has(t.kind) && covers(t, i))) return { ok: false, why: 'Tu coś stoi.' };
   for (const b of st.builds) {
     const f = footprint(b.kind, b.rot);
     if (tiles.some((i) => covers({ x: b.x, y: b.y, w: f.w, h: f.h }, i)))

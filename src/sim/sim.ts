@@ -9,7 +9,7 @@ import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
 import { type AmmoKey, hitChance, noAmmo, START_KIT, WEAPONS, type Weapon, type WeaponId, weaponOf } from './bron.ts';
-import { BUILDS, type BuildKind, type BuildPlan, canPlace, footprint, type Mat } from './budowle.ts';
+import { BUILDS, type BuildKind, type BuildPlan, canPlace, footprint, GHOST_KINDS, type Mat } from './budowle.ts';
 import {
   daylight,
   dayOf,
@@ -223,7 +223,7 @@ const SIATKA_EVERY = 10 * TICKS_PER_SECOND;
 const FINISH_TICKS = TICKS_PER_SECOND;
 const FEVER_MOOD = 'Gorączka po ugryzieniu';
 /** rzeczy, które leżą, ale niczego nie zajmują (można na nich stanąć, nie są meblami) */
-const GHOST = new Set(['zwloki', 'trup', 'krew']);
+const GHOST = GHOST_KINDS;
 
 export type Facing = 0 | 1 | 2 | 3; // dół, góra, lewo, prawo
 
@@ -1705,6 +1705,13 @@ export class Sim {
         continue;
       }
       if (p.pi < p.path.length) {
+        // praca fali 1 bez polecenia ustępuje wrogowi na podwórku także w drodze (po materiał, na plan)
+        if (p.kind === 'core' && st.tick % THINK_EVERY === 0 && this.yieldsToDanger(p)) {
+          p.path = [];
+          p.pi = 0;
+          this.done(p);
+          continue;
+        }
         this.walk(p);
         continue;
       }
@@ -2484,15 +2491,26 @@ export class Sim {
     } else if (this.house && p.needs && this.st.tick >= p.wait) this.think(p);
   }
 
+  /** praca fali 1, do której zarząd wziął się sam, ustępuje wrogowi na podwórku, kiedy pracujący jest na zewnątrz */
+  private yieldsToDanger(p: Pawn): boolean {
+    const j = p.job;
+    return !!j && M2_JOBS.has(j.t) && !j.order && this.yardDanger() && !this.inRoom(this.tileOf(p));
+  }
+
   /** praca pionka, który nie idzie: doszedł do celu albo pracuje; false, gdy praca się skończyła
       albo nie da się jej dokończyć (cel zniknął, ktoś go przejął, nie doszedł) */
   private work(p: Pawn, j: Job): boolean {
     const st = this.st;
     const tick = st.tick;
     const at = this.tileOf(p) === j.tile;
-    // prace fali 1 ustępują pilnej potrzebie, a budowa, do której zarząd wziął się sam, także nocy (plan czeka
-    // z doniesionym materiałem i postępem pracy)
-    if (M2_JOBS.has(j.t) && tick % THINK_EVERY === 0 && (this.urgent(p) || (!j.order && this.night()))) return false;
+    // prace fali 1 ustępują pilnej potrzebie, a te, do których zarząd wziął się sam, także nocy i wrogowi na
+    // podwórku, kiedy pracujący jest na zewnątrz (plan czeka z doniesionym materiałem i postępem pracy)
+    if (
+      M2_JOBS.has(j.t) &&
+      tick % THINK_EVERY === 0 &&
+      (this.urgent(p) || (!j.order && this.night()) || this.yieldsToDanger(p))
+    )
+      return false;
     switch (j.t) {
       case 'go':
         // po poleceniu czeka na miejscu godzinę gry, chyba że coś pilnego
@@ -2865,7 +2883,8 @@ export class Sim {
         if (j.phase === 1) {
           if (!at) return false;
           j.phase = 2;
-          j.until = tick + BRACE_TICKS;
+          // z warsztatem wzmacnianie idzie półtora raza szybciej, jak łata
+          j.until = tick + Math.round(BRACE_TICKS / (this.hasBuilt('warsztat') ? 1.5 : 1));
           this.face(p, (j.target % size) + 0.5, Math.floor(j.target / size) + 0.5);
           return true;
         }
@@ -3080,7 +3099,12 @@ export class Sim {
       }
     }
     if (this.yardDanger()) {
-      if (((this.night() && n.rest < 80) || n.rest < TIRED) && this.startSleep(p)) return;
+      // odsypianie po warcie jak niżej: głodny najpierw je, potem śpi
+      if (!this.night() && (p.nap || n.rest < TIRED) && this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
+      if (((this.night() && n.rest < 80) || n.rest < TIRED || p.nap) && this.startSleep(p)) {
+        p.nap = false;
+        return;
+      }
       if (this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
       if (this.shouldCook() && this.startCook(p, false)) return;
       if (n.warm < COLD && this.startWarm(p)) return;
@@ -4925,13 +4949,17 @@ export class Sim {
     if (hole) {
       if (hole.patch <= 0) return;
       hole.patch = Math.max(0, hole.patch - amount);
-      if (hole.patch === 0) this.breach();
+      if (hole.patch === 0) {
+        this.wreckZasieki(hole.tiles);
+        this.breach();
+      }
       return;
     }
     const k = this.fenceIndex.get(tile);
     if (k === undefined || f.hp[k] <= 0) return;
     f.hp[k] = Math.max(0, f.hp[k] - amount);
     if (f.hp[k] > 0) return;
+    this.wreckZasieki([tile]);
     const id = f.holes.reduce((m, h) => Math.max(m, h.id), 0) + 1;
     f.holes.push({ id, tiles: [tile], size: 0.6, patch: 0 });
     this.breach();
@@ -4940,6 +4968,21 @@ export class Sim {
   private breach(): void {
     this.st.tally!.breaches++;
     this.rebuild();
+  }
+
+  /** Zasieki (M2) na kafelkach, które napór zbił do zera: zniszczone, bez zwrotu materiału, żeby widok pokazał
+      dziurę, a rozbiórka nie łatała przerwania za darmo. */
+  private wreckZasieki(tiles: readonly number[]): void {
+    const st = this.st;
+    const size = this.w.size;
+    let gone = false;
+    for (let k = st.things.length - 1; k >= 0; k--) {
+      const t = st.things[k];
+      if (t.kind !== 'zasieki' || !tiles.includes(t.y * size + t.x)) continue;
+      st.things.splice(k, 1);
+      gone = true;
+    }
+    if (gone) this.updateCap();
   }
 
   /** n szwendaczy ze stada tuż za siatką, najbliżej kafelka near (do podglądu ?stado= i testów); zwraca ilu */
@@ -5138,8 +5181,22 @@ export class Sim {
     p.pi = 0;
   }
 
+  /** jeden lek: najpierw z zapasu zarządu, potem ze sterty 'leki' na mapie (łup z wypraw i przeszukań, M2) */
+  private takeMed(): boolean {
+    const st = this.st;
+    if (st.store.meds >= 1) {
+      st.store.meds--;
+      return true;
+    }
+    const heap = st.things.find((t) => t.kind === 'leki' && t.n > 0);
+    if (!heap) return false;
+    heap.n--;
+    if (heap.n <= 0) st.things.splice(st.things.indexOf(heap), 1);
+    return true;
+  }
+
   /** Amputacja: dojść do chorego (droga od nowa co sekundę), pół godziny pracy, na koniec wynik. Szansa
-      0,5 + 0,15 × med, z lekiem z magazynu +0,15, najwyżej 0,9. */
+      0,5 + 0,15 × med, z lekiem (z zapasu albo ze sterty leków) +0,15, najwyżej 0,9. */
   private amputateTick(p: Pawn, j: Job): void {
     const st = this.st;
     const tick = st.tick;
@@ -5152,10 +5209,7 @@ export class Sim {
       if (tick < j.until) return;
       const who = st.people[p.person];
       let chance = 0.5 + 0.15 * (who?.skills.med ?? 0);
-      if (st.store.meds >= 1) {
-        st.store.meds--;
-        chance += 0.15;
-      }
+      if (this.takeMed()) chance += 0.15;
       if (nextRandom(st.rng) < Math.min(0.9, chance)) {
         delete q.bite;
         delete q.limb;
