@@ -4,7 +4,9 @@
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
-   raport), zapis i sterowanie. */
+   raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta”, klawisz M i minimapa w rogu ekranu
+   (src/ui/minimapa.ts), gra stoi przy otwartym oknie) z wysyłaniem wypraw dziennych (src/ui/wyprawa.ts: wybór osób,
+   podsumowanie, potwierdzenie), zapis i sterowanie. */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -15,9 +17,11 @@ import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zomb
 import type { Person } from './content/people.ts';
 import { jezyk, L, poZmianieJezyka, type Tx, tr, tx } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
+import { wyslijWyprawe } from './gov/dzienne.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
+import { celZMiejsca, wlaczMiasto } from './gov/wyprawy.ts';
 import {
   ackReport,
   chooseEvent,
@@ -32,6 +36,7 @@ import {
 } from './gov/zarzad.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
+import { nazwaDoOkolicy, zbiorImion } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { GraSieciowa } from './net/gra.ts';
@@ -92,8 +97,10 @@ import {
 import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
+import { MapaMiasta, mapaMiastaSheet } from './ui/miasto.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
 import { clearThumbs, thumbUrl } from './ui/miniatura.ts';
+import { Minimapa } from './ui/minimapa.ts';
 import {
   burnSheet,
   confirmSheet,
@@ -116,9 +123,13 @@ import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { esc } from './ui/tekst.ts';
+import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
+import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
+import { KafelkiMiasta } from './world/miastoKafelki.ts';
+import { pobierzKafelek } from './world/mvt.ts';
 import { buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -135,6 +146,8 @@ startJezyka({ params });
 const touchUI = matchMedia('(pointer: coarse)').matches;
 // grafika z PixelLab (atlasy z public/assets) pobiera się w tle od razu; ?grafika=kod: wszystko rysowane kodem
 const grafika = params.get('grafika') === 'kod' ? Promise.resolve(null) : wczytajGrafike();
+// mapa miasta (wyprawy do miejsc z okolicy, src/gov/wyprawy.ts): domyślnie włączona; ?miasto=0 gra jak przed nią
+const opcjaMiasto = params.get('miasto') !== '0';
 
 declare global {
   interface Window {
@@ -174,6 +187,12 @@ declare global {
         allowed: number;
         first: number;
       } | null;
+      /** miejsca z okolicy, które dostaje zarząd (`GovInput.okolica`); puste z ?miasto=0 (do zrzutów i testów) */
+      okolica: readonly Miejsce[];
+      /** mapa miasta tej gry (okno, widok, kafelki); null z ?miasto=0 i na osiedlu zapasowym */
+      mapa: () => MapaMiasta | null;
+      /** minimapa miasta w rogu ekranu (jej stan do zrzutów i testów); schowana i wyłączona bez mapy miasta */
+      minimapa: () => Minimapa;
       /** stan mieszkań siedziby w grze (st.apts) */
       apts: () => AptGame[];
       /** przyjęcie n osób zza bramy jak po decyzji zarządu (do zrzutów); zwraca, ilu przybyło */
@@ -192,6 +211,19 @@ let gov: GovState | null = null;
 let loaded: Loaded | null = null;
 let seed = 0;
 let hqName = '';
+/** miejsca z punktów OSM wokół adresu dla zarządu (liczone raz po zbudowaniu świata); puste bez opcji miasta */
+let okolica: Miejsce[] = [];
+/** kafelki miasta na całą sesję: pobierane dopiero przy oglądaniu mapy miasta, nigdy przy starcie gry */
+const kafelkiMiasta = new KafelkiMiasta(pobierzKafelek);
+/** mapa miasta tej gry (widok i doczytane kafelki zostają między otwarciami okna); null bez opcji miasta i na osiedlu
+    zapasowym, które nie ma prawdziwego położenia */
+let mapaMiasta: MapaMiasta | null = null;
+/** minimapa miasta w prawym dolnym rogu (src/ui/minimapa.ts): kropki miejsc z okolicy i wyprawy w drodze, stuknięcie
+    otwiera okno mapy (nie w trybie stawiania: klik w jej rogu to próba postawienia budowli, a `openMiasto` by ją
+    anulował); rysowana z `drawState` najwyżej co 500 ms, schowana tam, gdzie nie ma miasta (`enter`) */
+const minimapa = new Minimapa($('minimapa'), () => {
+  if (!placing) openMiasto();
+});
 /** słowa miejsca siedziby: w domu komitet ulicy, sąsiedzi i furtka, w bloku zarząd, mieszkańcy i brama; po
     angielsku wordsE */
 let words: Words = wordsOf(BLOK);
@@ -414,6 +446,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
   const t0 = performance.now();
+  // klucze „poi:X:Y” punktów (zapis i demo sprzed kluczy ich nie mają); przed mapaMieszkancow, żeby trafiły do mapy
+  // i zapisu. Osiedle zapasowe (proc) nie ma prawdziwego położenia, więc bez kluczy
+  if (opcjaMiasto && !data.geo.proc) uzupelnijKlucze(data.geo);
   // mapa z tagami budynków generatora mieszkańców (bez tabel ta sama mapa); świat poza tagami jest ten sam
   const geo = mapaMieszkancow(data.geo, dane);
   // gra z sąsiadami: świat bez budynków zajętych przez inne drużyny przy wyborze siedziby i bez nazwy ulicy z adresu
@@ -430,6 +465,18 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     saved,
   );
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
+  // okolica dla zarządu: punkty z `geo` (metry od adresu bez obrotu świata, w przeciwieństwie do `world.pois`). Nazwa
+  // z osobą albo adresem odpada (pusta), bo filtr zamieniłby ją na polski opis kategorii, który wszedłby do angielskich
+  // tekstów celu; bez tabel imion (dane === null) wszystkie nazwy puste, bo filtr nie rozpozna wtedy właściciela
+  const nazwaOkolicy = nazwaDoOkolicy(dane ? zbiorImion(dane.imiona) : null);
+  okolica = opcjaMiasto ? miejscaZPoi(geo.poi, nazwaOkolicy) : [];
+  // mapa miasta: ten sam filtr nazw dla miejsc z doczytanych kafelków (RODO); bez położenia (proc) nie ma miasta
+  mapaMiasta =
+    opcjaMiasto && !data.geo.proc
+      ? new MapaMiasta({ c: data.geo.c, okolica, kafelki: kafelkiMiasta, nazwa: nazwaOkolicy })
+      : null;
+  $('btnMiasto').hidden = !mapaMiasta;
+  minimapa.ustaw(mapaMiasta ? { okolica, st: () => gov } : null);
   // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;
@@ -514,6 +561,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
   gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
+  // mapa miasta w nowej grze i w starym zapisie (bez losowania; wyprawa nocna w drodze kończy się po staremu)
+  if (opcjaMiasto) wlaczMiasto(gov);
   // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
   const herd = Number(params.get('stado'));
   if (!saved && zombie && herd > 0) sim.spawnAtFence(herd, world.buildings[world.hq]?.entrances[0]?.out ?? 0);
@@ -597,6 +646,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   if (window.zm) {
     window.zm.sim = sim;
     window.zm.gov = gov;
+    window.zm.okolica = okolica;
   }
   // imiona zmienione przez gracza (pamięć przeglądarki) na osobach z generatora, w nowej grze i we wznowionej
   zastosujImiona();
@@ -662,6 +712,8 @@ function drawState() {
   wiescSeen = wiesc?.tick ?? -1;
   // ?swiatla=test: światła podglądu nocy zamiast świateł z gry
   if (preview) view.lights = preview.lights;
+  // minimapa sama pilnuje, żeby sprawdzać stan najwyżej co 500 ms i rysować tylko przy zmianie
+  minimapa.odswiez();
 }
 
 /* ---------- zarząd ---------- */
@@ -674,6 +726,8 @@ function input(): GovInput {
     const tiles = s.st.fence?.holes.find((x) => x.id === h.id)?.tiles ?? [];
     h.name ??= tiles.map((t) => names.get(t)).find(Boolean);
   }
+  // miejsca z okolicy dla karty nocy i wypraw dziennych; bez opcji zarząd gra na TARGETS
+  if (opcjaMiasto) i.okolica = okolica;
   // warta i dyżur przy kozie, które stoją (także z menu), zarząd bierze z posterunków osób (people[].post)
   return i;
 }
@@ -2090,6 +2144,79 @@ function openBuild() {
   buildPanel.toggle();
 }
 
+/** okno mapy miasta: przycisk „Mapa miasta” i klawisz M. Gra stoi, póki okno jest otwarte; zamknięcie (przycisk, Esc,
+    klik obok) wraca do gry albo do decyzji zarządu, która czeka */
+function openMiasto() {
+  const mapa = mapaMiasta;
+  if (!sim || !mapa || modal.open) return;
+  sheetAgain = () => {
+    mapa.odepnij();
+    modal.close();
+    openMiasto();
+  };
+  cancelPlacing(false);
+  ctx.close();
+  pauseGame();
+  modal.show(
+    mapaMiastaSheet(touchUI),
+    (act, arg) => {
+      if (act === 'miasto-zamknij') {
+        mapa.odepnij();
+        modal.close();
+        nextPrompt();
+      } else mapa.obsluz(act, arg);
+    },
+    () => {
+      mapa.odepnij();
+      nextPrompt();
+    },
+  );
+  const el = modal.find('[data-miasto]');
+  if (el)
+    mapa.podepnij(el, {
+      touch: touchUI,
+      st: () => gov,
+      wejscie: () => (gov && sim ? input() : null),
+      onWyslij: (m) => openWyprawa(m),
+    });
+}
+
+/** plan wyprawy z karty miejsca na mapie miasta (src/ui/wyprawa.ts): wybór osób z zarządu (zaznaczeni w grze są wybrani
+    od razu), podsumowanie i potwierdzenie. „Wyślij” woła `wyslijWyprawe`: udane idzie przez `applyFx` (osoby wychodzą
+    bramą, ostatni wpis kroniki jest podpowiedzią), zapis i powrót do gry albo do decyzji, która czeka; odmowa zostaje
+    w oknie. „Wróć do mapy” otwiera mapę od nowa z tym samym widokiem i kartą; Esc zamyka jak każde okno.
+    Wysłanie z własnej woli nie jest odpowiedzią na okno zarządu, więc bez `decision()`. `wybrani`: wybór do zachowania
+    po zmianie języka. */
+function openWyprawa(m: Miejsce, wybrani?: Set<string>) {
+  const mapa = mapaMiasta;
+  const g = gov;
+  if (!sim || !g || g.over || !mapa) return;
+  const cel = celZMiejsca(m);
+  const wyb = wybrani ?? domyslniWybrani(cel, input(), g, selected);
+  sheetAgain = () => openWyprawa(m, wyb);
+  // okno mapy ustępuje planowi: widok i karta zostają w mapie na powrót
+  mapa.odepnij();
+  modal.show(
+    planWyprawySheet(cel, input(), g, wyb),
+    (act, arg) => {
+      if (act === 'wp-osoba') {
+        if (!wyb.delete(arg)) wyb.add(arg);
+        odswiezPlan(modal, cel, input(), g, wyb);
+      } else if (act === 'wp-wroc') {
+        modal.close();
+        openMiasto();
+      } else if (act === 'wyslij') {
+        const i = input();
+        const w = wyslijWyprawe(g, i, cel, kogoWyslac(cel, i, g, wyb));
+        if (!w.ok) return odswiezPlan(modal, cel, i, g, wyb, w.why);
+        applyFx(w.fx);
+        decided();
+      }
+    },
+    () => nextPrompt(),
+  );
+}
+
 function startPlacing(kind: BuildKind) {
   if (!sim) return;
   const allowed = allowedAnchors(sim.st, sim.w, kind, 0);
@@ -2215,6 +2342,7 @@ function placeGhost() {
 }
 
 $('btnBuild').addEventListener('click', () => openBuild());
+$('btnMiasto').addEventListener('click', () => openMiasto());
 // „Pokaż” przy przybyszach: kamera od razu jedzie na środek grupy, bez zmiany przybliżenia
 $('arriveShow').addEventListener('click', () => {
   const coming = sim ? arriving(sim.st) : [];
@@ -2511,6 +2639,7 @@ window.addEventListener('keydown', (e) => {
     renderSpeed();
   }
   if (e.code === 'KeyB') openBuild();
+  if (e.code === 'KeyM') openMiasto();
   if (e.code === 'KeyR' && placing) rotatePlacing();
   if (e.code === 'Escape') {
     if (placing) cancelPlacing();
@@ -2606,6 +2735,9 @@ if (attrib) bars.observe(attrib);
             first: placing.allowed[0] ?? -1,
           }
         : null,
+    okolica: [],
+    mapa: () => mapaMiasta,
+    minimapa: () => minimapa,
     apts: () => sim?.st.apts ?? [],
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
     siec: () => siec.podglad(),

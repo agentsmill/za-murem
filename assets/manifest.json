@@ -2639,8 +2639,10 @@
       },
       "pixellab": "84f1ac26-af5e-47cc-8ce3-8ec0fdc60143",
       "koszt": 10,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/strop-tynk"],
+      "wybrany": "tło z kodu (przepis w uzycie), szwy 96 × 64, naklejki #3, #4, #5, #6, gęstość 0,12",
+      "zatwierdzenie": "19.10.2026, Mateusz (przekazane przez sesję „Kafelki stropu PixelLab”): „Bierzemy polecany (tło z kodu, szwy 96×64, naklejki #3–#6, gęstość 0,12), ale tło bardziej beżowe niż łososiowe i szare plamy rzadsze i drobniejsze. Poprawka tylko w polach uzycie, bez nowego zamówienia.”",
       "warianty": {
         "0": "prawie biały (#e3e0d6), odrzucony",
         "1": "biały, odrzucony",
@@ -2660,26 +2662,40 @@
         "15": "blady z kropkami, odrzucony"
       },
       "uzycie": {
-        "opis": "tło stropu rysuje kod z samego koloru z szumem, bo kafelki PixelLab są płaskie (1 do 3 kolorów) i mają powtarzalne narożniki po odbiciu; szwy płyt stropowych rysuje kod jak szwy papy na dachu; z kafelków zostają rzadkie naklejki: piksele w kolorze klucza są przezroczyste, reszta leży na tle. Wszystkie kolory z palety Za Murem 2051. Szum liczony od współrzędnych świata, żeby łączył się między kafelkami.",
+        "opis": "tło stropu rysuje kod z samego koloru z drobnym ziarnem, bo kafelki PixelLab są płaskie (1 do 3 kolorów) i mają powtarzalne narożniki po odbiciu; szwy płyt stropowych rysuje kod jak szwy papy na dachu; z kafelków zostają rzadkie naklejki: piksele w kolorze klucza są przezroczyste, reszta leży na tle. Wszystkie kolory z palety Za Murem 2051. Wzór liczony od współrzędnych świata, żeby łączył się między kafelkami. Poprawka 19.10.2026 po uwagach Mateusza: beż zamiast łososia (ziarno #cac6bc po pikselu zlewa się optycznie z bazą), szare plamy rzadsze i drobniejsze.",
         "tlo": "#e0b48c",
         "klucz": "#e3b79a",
-        "ciemny": "#9a958a",
+        "kurz": "#cac6bc",
         "posredni": "#b7b2a6",
-        "jasny": "#e3b79a",
+        "ciemny": "#9a958a",
+        "brazowy": "#765e42",
         "szum": {
-          "opis": "po jednym polu szumu wartościowego na kolor (siatka co tyle px, drugie pole z siatką 2,2 razy drobniejszą z wagą 0,3); piksele z najniższych wartości pola dostają kolor, w kolejności jasny, posredni, ciemny (ciemny na wierzchu)",
-          "ciemny": {
-            "udzial": 0.03,
-            "siatka": 5
+          "opis": "kolejność od spodu: kurz, posredni, ciemny, brazowy (późniejszy zakrywa wcześniejszy). Rodzaj piksel to biały szum po pikselu (hash współrzędnych świata dzielonych przez siatkę, siatka 1 = pojedyncze piksele). Rodzaj pole to szum wartościowy z kratą co siatka px (drugie pole 2,2 razy drobniejsze z wagą 0,3, nie mniej niż 2 px); piksele z najniższych wartości pola dostają kolor.",
+          "kurz": {
+            "kolor": "#cac6bc",
+            "udzial": 0.28,
+            "rodzaj": "piksel",
+            "siatka": 1
           },
           "posredni": {
-            "udzial": 0.14,
-            "siatka": 6
+            "kolor": "#b7b2a6",
+            "udzial": 0.05,
+            "rodzaj": "pole",
+            "siatka": 3
           },
-          "jasny": {
-            "udzial": 0.12,
-            "siatka": 7
-          }
+          "ciemny": {
+            "kolor": "#9a958a",
+            "udzial": 0.01,
+            "rodzaj": "pole",
+            "siatka": 2
+          },
+          "brazowy": {
+            "kolor": "#765e42",
+            "udzial": 0.02,
+            "rodzaj": "piksel",
+            "siatka": 1
+          },
+          "poprzednio": "posredni #b7b2a6 0,14 (krata 6), ciemny #9a958a 0,03 (krata 5), jasny #e3b79a 0,12 (krata 7): łososiowe tło z dużymi szarymi plamami"
         },
         "szwy": [96, 64],
         "szwy_kolor": "#b07a55",
@@ -2693,25 +2709,44 @@
           "6": [0, 0, 31, 30]
         },
         "gestosc": 0.12,
-        "szwy_inne": "co 32 px (siatka 1 m) czyta się jak płytki i dubluje szwy lastryko w klatce, więc 96 × 64 jak na dachu (płyty 3 × 2 m)"
+        "szwy_inne": "co 32 px (siatka 1 m) czyta się jak płytki i dubluje szwy lastryko w klatce, więc 96 × 64 jak na dachu (płyty 3 × 2 m)",
+        "krawedz": {
+          "opis": "propozycja, gra jej nie używa: ciemniejsza krawędź stropu na granicy mieszkania (ściana do klatki i ściany zewnętrzne), żeby beżowy strop nie mylił się z linoleum (ΔE 7,5) i wytartymi panelami (ΔE 8,9); podgląd w pietra-strop-arkusz.png",
+          "kolor": "#765e42",
+          "grubosc": 2
+        }
       },
       "pomiary": {
-        "opis": "pomiary z docs/postep/pietra-strop-arkusz.png: średni kolor tła ze skryptu pomocniczego (512 × 512 px, przepis z uzycie), luminancja względna WCAG, ΔE CIE76 do średnich kolorów powierzchni z gry",
-        "tlo_srednia": "#d9b391 (217, 179, 145)",
-        "tlo_roznica_do_cdb08c": [11.7, 3.1, 4.8],
-        "luminancja_tla": 0.4902,
+        "opis": "pomiary z docs/postep/pietra-strop-arkusz.png po poprawce tła z 19.10.2026: średni kolor tła ze skryptu pomocniczego (512 × 512 px, przepis z uzycie), luminancja względna WCAG, ΔE CIE76 do średnich kolorów powierzchni z gry",
+        "tlo_srednia": "#d6b798 (214, 182, 152)",
+        "tlo_R_minus_G": 31.0,
+        "tlo_roznica_do_cdb08c": [8.6, 6.5, 12.1],
+        "luminancja_tla": 0.5017,
         "luminancja_dachu_313336": 0.0329,
-        "stosunek_do_dachu": 14.91,
+        "stosunek_do_dachu": 15.26,
         "R_minus_B": {
-          "strop": 72,
+          "strop": 61,
           "dach_PixelLab": -5,
           "lastryko": 16
         },
         "udzialy_pikseli_tla": {
-          "baza": 0.736,
-          "jasniejszy": 0.099,
-          "szary": 0.134,
-          "cien": 0.03
+          "baza": 0.664,
+          "kurz": 0.257,
+          "posredni": 0.049,
+          "ciemny": 0.01,
+          "brazowy": 0.02
+        },
+        "przed_poprawka": {
+          "tlo_srednia": "#d9b391 (217, 179, 145)",
+          "tlo_R_minus_G": 37.6,
+          "tlo_roznica_do_cdb08c": [11.7, 3.1, 4.8],
+          "deltaE": {
+            "linoleum kuchni": 10.1,
+            "panele wytarte": 7.2,
+            "lastryko klatki": 22.9,
+            "dach PixelLab (papa)": 60.4
+          },
+          "udzialy": "baza #e0b48c, #e3b79a 12%, #b7b2a6 14%, #9a958a 3% (pola 5 do 7 px)"
         },
         "surowe_ciepłe_kafelki_3_4_6_11": {
           "rgb": [224.7, 182.0, 153.3],
@@ -2721,52 +2756,52 @@
         "powierzchnie": {
           "dach PixelLab (papa)": {
             "srednia": "#313336",
-            "strop_jasniejszy_razy": 14.91,
-            "deltaE": 60.4
+            "strop_jasniejszy_razy": 15.26,
+            "deltaE": 59.6
           },
           "dach z kodu: papa": {
             "srednia": "#585450",
-            "strop_jasniejszy_razy": 5.45,
-            "deltaE": 44.8
+            "strop_jasniejszy_razy": 5.58,
+            "deltaE": 43.9
           },
           "dach z kodu: żwir": {
             "srednia": "#9a968d",
-            "strop_jasniejszy_razy": 1.6,
-            "deltaE": 23.6
+            "strop_jasniejszy_razy": 1.64,
+            "deltaE": 21.2
           },
           "dach z kodu: dachówka": {
             "srednia": "#a24f36",
-            "strop_jasniejszy_razy": 3.63,
-            "deltaE": 40.3
+            "strop_jasniejszy_razy": 3.72,
+            "deltaE": 42.8
           },
           "dach z kodu: blacha": {
             "srednia": "#767c81",
-            "strop_jasniejszy_razy": 2.47,
-            "deltaE": 36.7
+            "strop_jasniejszy_razy": 2.53,
+            "deltaE": 34.6
           },
           "lastryko klatki": {
             "srednia": "#9a958a",
-            "strop_jasniejszy_razy": 1.62,
-            "deltaE": 22.9
+            "strop_jasniejszy_razy": 1.66,
+            "deltaE": 20.6
           },
           "panele": {
             "srednia": "#9f7850",
-            "strop_jasniejszy_razy": 2.29,
-            "deltaE": 22.8
+            "strop_jasniejszy_razy": 2.35,
+            "deltaE": 24.5
           },
           "panele wytarte": {
             "srednia": "#c4a47c",
-            "strop_jasniejszy_razy": 1.23,
-            "deltaE": 7.2
+            "strop_jasniejszy_razy": 1.26,
+            "deltaE": 8.9
           },
           "linoleum kuchni": {
             "srednia": "#cdbf9b",
-            "strop_jasniejszy_razy": 0.93,
-            "deltaE": 10.1
+            "strop_jasniejszy_razy": 0.95,
+            "deltaE": 7.5
           }
         }
       },
-      "uwagi": "Zamówienie poprawkowe po strop-tynk-v1 (szare kafelki): style_options z color_palette false, w opisie dopisane „sandy peach beige colour”. Ciepłe kafelki mają tło #e3b79a (227,183,154, kolor „skóra” z palety), czyli o 22 za dużo czerwieni względem #cdb08c, bo w palecie nie ma tak ciemnego beżu (najbliższy to #e0b48c); średnią w granicach ±14 daje dopiero tło z kodu: baza #e0b48c z plamkami #b7b2a6, #e3b79a i #9a958a (216,179,145, różnica +12, +3, +5). Strop jest 14,9 razy jaśniejszy od dachu #313336 i ma R−B 72 przy −5 na dachu i 16 w lastryko. Uwaga: od wytartych paneli (#c4a47c, ΔE 7) i linoleum kuchni (#cdbf9b, ΔE 10) odróżnia go głównie siatka szwów 3 × 2 m i szary kurz, kolor jest bliski (makieta Mateusza też to zaznaczała). Jasnej ramki kafelków nie ma, poza ciemną obwódką w #8, więc w przeciwieństwie do dachu wnętrze kafelka nie wymaga wycinka, ale naklejki mają pasy na krawędziach (#5, #6), stąd wnetrze_wariantu. Wzorzec stylu: assets/wejscia/strop-wzorzec-32.png."
+      "uwagi": "Zamówienie poprawkowe po strop-tynk-v1 (szare kafelki): style_options z color_palette false, w opisie dopisane „sandy peach beige colour”. Ciepłe kafelki mają tło #e3b79a (227,183,154, kolor „skóra” z palety), czyli o 22 za dużo czerwieni względem #cdb08c, bo w palecie nie ma tak ciemnego beżu (najbliższy to #e0b48c), więc tło rysuje kod, a z kafelków zostają naklejki. Poprawka tła 19.10.2026 (uwaga Mateusza: za łososiowe i za duże szare plamy): R−G średniego tła spadło z 37,6 do 31,0, średnia z (217,179,145) do (214,183,152), czyli różnica do #cdb08c z +12, +3, +5 na +9, +7, +12 (w granicach ±14, a niebieski jest najbliżej granicy: R−G 30 wymagałoby +14). Bez nowego zamówienia: ziarno #cac6bc po pikselu (28%) zlewa się optycznie z bazą #e0b48c w beż, szare plamy #b7b2a6 i #9a958a spadły z 14% i 3% do 5% i 1% przy kracie 3 i 2 px, a 2% ciemnobrązowych pikseli #765e42 obniża czerwień i błękit. Strop jest 15,3 razy jaśniejszy od dachu #313336, R−B 61 przy −5 na dachu i 16 w lastryko. Po poprawce ΔE do linoleum kuchni (#cdbf9b) spadło z 10,1 do 7,5, a do wytartych paneli (#c4a47c) wzrosło z 7,2 do 8,9; do lastryko 20,6 (było 22,9), do dachu 59,6 (było 60,4). Od linoleum odróżnia strop więc coraz mniej sam kolor, dlatego w uzycie jest propozycja ciemniejszej krawędzi (pole krawedz). Jasnej ramki kafelków nie ma, poza ciemną obwódką w #8, ale naklejki #5 i #6 mają pasy na krawędziach, stąd wnetrze_wariantu. Wzorzec stylu: assets/wejscia/strop-wzorzec-32.png."
     },
     {
       "id": "strop-tynk-v1",

@@ -2,7 +2,11 @@
    (godzina gry to 800 ticków, 20 ticków na sekundę przy 1×, start o 15:00), proste potrzeby, koza
    zjadająca drewno, zapasy, ognisko wieczorem, siatka z trzema dziurami. Stosuje skutki zarządu.
    Do tego przebieg z polityką gracza, który od razu odpowiada na karty. Używają jej testy
-   i tools/trzy-noce.ts. */
+   i tools/trzy-noce.ts.
+
+   Mapa miasta: pole `okolica` (miejsca z OSM) trafia do wejścia zarządu tylko wtedy, gdy jest ustawione, a osoba
+   z mapy `away` ma w wejściu `away: true`, jak pionek poza mapą w prawdziwej symulacji. Bez `okolica` wejście
+   jest takie jak przed mapą miasta. */
 
 import { makePerson } from '../../src/content/people.ts';
 import { mulberry, type Rng } from '../../src/core/rng.ts';
@@ -18,6 +22,7 @@ import {
   setNight,
   signLaw,
 } from '../../src/gov/zarzad.ts';
+import type { Miejsce } from '../../src/world/miasto.ts';
 
 export const TPS = 20;
 export const TPH = 800;
@@ -45,8 +50,10 @@ export class Atrapa {
   campfire = false;
   residents = 4;
   burned = 0;
-  /** id → minuta gry powrotu */
+  /** id → minuta gry powrotu; kto tu jest, ma w wejściu `away: true` (poza mapą na wyprawie) */
   away: Record<string, number> = {};
+  /** miejsca z okolicy (mapa miasta) przekazywane do wejścia; bez pola zarząd gra na TARGETS jak dotąd */
+  okolica?: Miejsce[];
   guards: string[] = [];
 
   constructor(seed: number) {
@@ -99,7 +106,12 @@ export class Atrapa {
       outdoor: 8,
       kitchen: this.fire > 0 ? 18 : 9,
       kozaLit: this.fire > 0,
-      people: this.people.map((p) => ({ ...p, needs: { ...p.needs }, inside: !(p.id in this.away) })),
+      people: this.people.map((p) => ({
+        ...p,
+        needs: { ...p.needs },
+        inside: !(p.id in this.away),
+        ...(p.id in this.away ? { away: true } : {}),
+      })),
       stock: {
         wood: this.woodSklad + this.woodLoose,
         woodSklad: this.woodSklad,
@@ -115,6 +127,7 @@ export class Atrapa {
       residents: this.residents,
       burned: this.burned,
       hqName: 'Atrapia 7',
+      ...(this.okolica ? { okolica: this.okolica } : {}),
     };
   }
 

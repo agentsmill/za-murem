@@ -5,8 +5,10 @@
    wyjście i skróty są takie jak przed krokiem 5.
    Flaga może stać gdziekolwiek wśród argumentów; `ARGUMENTY` to argumenty pozycyjne bez flag (ziarno, dni, tłum…).
    Druga flaga, `--sasiedzi` (M2 fala 2), włącza w botach gracza, który od dnia 2 chodzi do sąsiednich budynków
-   (tests/unit/sasiedzi-play.ts). Dwie ostatnie znają tylko bot trybu zombie, a pozostałe boty kończą z błędem, kiedy je
-   dostaną (`tylkoZombie`): `--demo=NAZWA` (przymorze, lanciego, zielonki) wybiera osiedle, `--opal` dokłada do kozy
+   (tests/unit/sasiedzi-play.ts). Trzecia, `--miasto` (mapa miasta), włącza w zwykłym bocie (tools/bot.ts) gracza
+   wypraw dziennych do miejsc z okolicy (tests/unit/miasto-play.ts); bot trybu zombie jej nie zna i kończy z błędem
+   (`bezMiasta`). Dwie ostatnie znają tylko bot trybu zombie, a pozostałe boty kończą z błędem, kiedy je dostaną
+   (`tylkoZombie`): `--demo=NAZWA` (przymorze, lanciego, zielonki) wybiera osiedle, `--opal` dokłada do kozy
    z niczego, jakby opału nie brakowało. Inny argument od `--` (literówka, np. `--mieszkanc`) kończy bota z błędem,
    zamiast cicho zagrać bez tego, o co chodziło.
    Ziarno świata to ziarno bota (nie z adresu jak w grze), żeby przebiegi z flagą i bez niej były porównywalne. */
@@ -22,8 +24,9 @@ import { buildWorld, type World } from '../src/world/world.ts';
 const PUBLIC = path.resolve(import.meta.dirname, '../public');
 const FLAGA = '--mieszkancy';
 const FLAGA_SASIEDZI = '--sasiedzi';
+const FLAGA_MIASTO = '--miasto';
 const FLAGA_OPAL = '--opal';
-const FLAGI = [FLAGA, FLAGA_SASIEDZI, FLAGA_OPAL];
+const FLAGI = [FLAGA, FLAGA_SASIEDZI, FLAGA_MIASTO, FLAGA_OPAL];
 
 const FLAGA_DEMO = '--demo=';
 const jestDemo = (a: string) => a.startsWith(FLAGA_DEMO);
@@ -57,6 +60,16 @@ export function tylkoZombie(bot: string): void {
 export const MIESZKANCY = process.argv.includes(FLAGA);
 /** Czy bot ma chodzić do sąsiednich budynków (M2 fala 2). */
 export const SASIEDZI = process.argv.includes(FLAGA_SASIEDZI);
+/** Czy bot ma wysyłać wyprawy dzienne do miejsc z mapy miasta (tylko zwykły bot, tools/bot.ts). */
+export const MIASTO = process.argv.includes(FLAGA_MIASTO);
+
+/** Bot trybu zombie nie zna `--miasto`: kończy z błędem, zamiast cicho zagrać bez wypraw z mapy miasta. */
+export function bezMiasta(bot: string): void {
+  if (!MIASTO) return;
+  console.error(`${bot} nie zna ${FLAGA_MIASTO} (wyprawy z mapy miasta gra tylko zwykły bot: npm run bot).`);
+  process.exit(2);
+}
+
 /** Argumenty pozycyjne bez flag: `ARGUMENTY[0]` to pierwszy argument po nazwie skryptu. */
 export const ARGUMENTY: string[] = process.argv.slice(2).filter((a) => !FLAGI.includes(a) && !jestDemo(a));
 

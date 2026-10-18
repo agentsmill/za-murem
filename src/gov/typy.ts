@@ -10,6 +10,8 @@ import type { ActiveEvent } from '../content/events.ts';
 import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { RngState } from '../core/rng.ts';
+import type { Miejsce } from '../world/miasto.ts';
+import type { Cel } from './wyprawy.ts';
 
 // ---------------------------------------------------------------- wejście
 
@@ -48,6 +50,9 @@ export interface GovPerson {
   arm?: Arm;
   /** ugryziony (zakażony) */
   bitten?: boolean;
+  /** poza mapą na wyprawie (wyszedł bramą i jeszcze nie wrócił); bez pola: na miejscu. Mapa miasta nie wysyła
+      drugi raz kogoś, kto już jest w drodze */
+  away?: boolean;
 }
 
 export type Arm = 'brak' | 'wrecz' | 'dzida' | 'palna';
@@ -145,6 +150,9 @@ export interface GovInput {
   dead?: { id: string; name: string; cause: string; tick: number }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
+  /** mapa miasta: miejsca z okolicy (sklepy i usługi z OSM) poza mapą lokalną, posortowane po odległości; bez pola
+      albo pusta: karta nocy gra na dzisiejszych TARGETS. Zapas miejsca liczy się z klucza, nie ze stanu gry */
+  okolica?: readonly Miejsce[];
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -254,8 +262,10 @@ export interface NightOption {
   gain?: Partial<Record<LootKey, [number, number]>>;
   /** warta: ile obrony dodaje */
   guard?: number;
-  /** wyprawa: id celu z TARGETS */
+  /** wyprawa: id celu z TARGETS albo klucz miejsca z okolicy (`Cel.klucz`) */
   target?: string;
+  /** wyprawa: opis celu (miejsce z okolicy albo cel z TARGETS); bez pola cel szukany w TARGETS po `target` */
+  cel?: Cel;
   note?: Tx;
 }
 
@@ -339,8 +349,8 @@ export interface NightPlan {
     defense: number;
     stolen: StockDelta;
   } | null;
-  /** wyprawy: grupy po celu */
-  exp: { key: string; ids: string[]; target: string }[];
+  /** wyprawy: grupy po celu; `cel` to opis celu (stare grupy bez niego szukają w TARGETS po `target`) */
+  exp: { key: string; ids: string[]; target: string; cel?: Cel }[];
   /** linie raportu zbierane w nocy */
   lines: Tx[];
   hurt: { id: string; d: number }[];
@@ -360,6 +370,31 @@ export interface NightPlan {
   z0?: { killed: number; breaches: number; bites: number };
   bit0?: string[];
   zpeak?: number;
+}
+
+/** Stan miejsc z okolicy: dla klucza miejsca ile sztuk łupu już zabrano, ile było wizyt i w którym dniu gry ostatnia.
+    Miejsca się nie odnawiają. Pole `GovState.miasto` istnieje tylko po `wlaczMiasto` (src/gov/wyprawy.ts). */
+export interface StanMiasta {
+  /** klucz miejsca → sztuki łupu zabrane łącznie */
+  zabrano: Record<string, number>;
+  /** klucz miejsca → liczba wizyt */
+  wizyty: Record<string, number>;
+  /** klucz miejsca → dzień gry ostatniej wizyty */
+  ostatnia: Record<string, number>;
+}
+
+/** Wyprawa dzienna w drodze (z mapy miasta): kto idzie, dokąd i kiedy wyszła i wraca. Czasy w minutach gry od północy
+    pierwszego dnia (jak `gameMin`), a nie godziny jak `Cel.powrot`. Opis celu jest w stanie, więc powrót i łup liczą
+    się bez kafelków miasta. */
+export interface Wyprawa {
+  id: number;
+  cel: Cel;
+  /** id osób z zarządu */
+  ids: string[];
+  /** minuta gry wyjścia */
+  wyjscie: number;
+  /** minuta gry powrotu (`powrotMin`), nie godzina */
+  powrot: number;
 }
 
 export interface GovState {
@@ -410,4 +445,8 @@ export interface GovState {
   deadN?: number;
   /** ile napaści z GovInput.napady osiedle już policzyło (pole od pierwszej napaści) */
   napadN?: number;
+  /** mapa miasta: stan odwiedzonych miejsc; pole od `wlaczMiasto` (opcja `miasto`), bez niego zarząd gra na TARGETS */
+  miasto?: StanMiasta;
+  /** wyprawy dzienne w drodze; pole od pierwszego wyjścia z mapy miasta */
+  wyprawy?: Wyprawa[];
 }
