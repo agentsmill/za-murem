@@ -132,6 +132,8 @@ export class GameView {
   app = new Application();
   root = new Container();
   terrain = new Container();
+  /** ziemia: ślady pod rzeczami i pionkami (duch planu wspólnego płotu); warstwa pionków ma same sprite'y */
+  readonly ground = new Container();
   marks = new Graphics();
   actors = new Container();
   /** drzewa z bliska jako sprite'y w warstwie pionków (z daleka są w kawałkach) */
@@ -234,8 +236,9 @@ export class GameView {
   readonly buildOverlay = new Container();
   /** budowa: duchy planów w warstwie pionków, paski i podgląd stawiania */
   readonly builds = new BuildLayer(this.actors, this.buildOverlay);
-  /** M2 fala 2, etap 3: duch planu wspólnego płotu (siatka w warstwie pionków, ślad i postęp nad mapą światła) */
-  readonly plotDuch = new PlotLayer(this.actors, this.buildOverlay);
+  /** M2 fala 2, etap 3: duch planu wspólnego płotu (siatka w warstwie pionków, ślad na ziemi, postęp nad mapą
+      światła) */
+  readonly plotDuch = new PlotLayer(this.actors, this.ground, this.buildOverlay);
   /** duch planu płotu z ostatniego syncGame (null: nie ma planu) */
   private duch: DuchPlotu | null = null;
   /** światła ze stanu gry (koza, okna, ognisko, warta); view.lights to dodatki (podgląd) */
@@ -262,6 +265,7 @@ export class GameView {
     this.app.canvas.classList.add('game-canvas');
     this.root.addChild(
       this.terrain,
+      this.ground,
       this.marks,
       this.actors,
       this.light.sprite,
@@ -753,8 +757,12 @@ export class GameView {
       : this.lights;
     const lights = this.cutOn ? all : all.filter((l) => !l.inside);
     this.darkness = darknessAt(minutesAt(st.tick));
-    // nocą zaznaczenie i droga nad mapą światła (inaczej ciemnieją razem z ziemią), w dzień pod pionkami
-    const marksAt = this.darkness > NIGHT_MARKS ? this.root.getChildIndex(this.light.glowSprite) : 1;
+    // nocą zaznaczenie i droga nad mapą światła (inaczej ciemnieją razem z ziemią), w dzień pod pionkami, nad śladami
+    // na ziemi
+    const marksAt =
+      this.darkness > NIGHT_MARKS
+        ? this.root.getChildIndex(this.light.glowSprite)
+        : this.root.getChildIndex(this.ground) + 1;
     if (this.root.getChildIndex(this.marks) !== marksAt) this.root.setChildIndex(this.marks, marksAt);
     // rzeczy: meble tylko w przekroju, ogień w kozie i ognisku co 150 ms następna klatka
     const flame = Math.floor(performance.now() / 150) % FIRE_FRAMES;
