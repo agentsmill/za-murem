@@ -60,7 +60,9 @@ interface Asset {
 
 interface Manifest {
   paleta: { nazwa: string; kolory: string[]; rampy: Record<string, string[]> };
+  /** postacie zarządu i mieszkańców w kolejności obsadzania pionków (najpierw zarząd) */
   zarzad: string[];
+  mieszkancy: string[];
   assety: Asset[];
 }
 
@@ -77,8 +79,11 @@ export interface Kotwica {
   trzepak: string;
   /** wiersz pod stopami trzepaka (kotwica sprite'a) */
   stopy: number;
-  /** postacie dla kolejnych osób zarządu: 8 kierunków od południa i wiersz pod stopami */
-  zarzad: { kierunki: string[]; stopy: number }[];
+  /** obsada: najpierw zarząd, potem mieszkańcy; 8 kierunków od południa, wiersz pod stopami i przemalowania
+      (te same 8 kierunków w kolejnych rampach palety) */
+  ludzie: { kierunki: string[]; stopy: number; warianty: string[][] }[];
+  /** ilu pierwszych z obsady to zarząd */
+  zarzad: number;
   blok: string;
   moduly: Moduly;
   dach: Omit<Dach, 'naklejki'> & { naklejki: string[]; ciemny: string; jasny: string };
@@ -126,6 +131,44 @@ export function przemaluj(rel: string, p: Przemalowanie, rampa: string[]): strin
   return `data:image/png;base64,${Buffer.from(encodePng(width, height, out)).toString('base64')}`;
 }
 
+/** kolory skóry, których przemalowanie nie rusza */
+const SKORA = new Set(['#1a1c22', '#e0b48c', '#e3b79a']);
+
+/**
+ * Ubranie postaci bez opisu w manifeście: najczęstsze kolory tułowia (od 30 do 66% wysokości sylwetki w widoku
+ * od południa) bez obrysu, skóry i kolorów głowy (włosy, czapka, cień twarzy), najwyżej cztery.
+ */
+function ubranie(id: string): Przemalowanie {
+  const { width, height, rgba } = decodePng(file(postac(id, 'south')));
+  let top = height;
+  let bottom = 0;
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++)
+      if (rgba[(y * width + x) * 4 + 3]) {
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y + 1);
+      }
+  const h = bottom - top;
+  const liczby = (y0: number, y1: number) => {
+    const n = new Map<string, number>();
+    for (let y = y0; y < y1; y++)
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        if (!rgba[i + 3]) continue;
+        const c = `#${[rgba[i], rgba[i + 1], rgba[i + 2]].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+        n.set(c, (n.get(c) ?? 0) + 1);
+      }
+    return n;
+  };
+  const glowa = liczby(top, top + Math.round(h * 0.22));
+  const kolory = [...liczby(top + Math.round(h * 0.3), top + Math.round(h * 0.66))]
+    .filter(([c, n]) => n >= 8 && !SKORA.has(c) && (glowa.get(c) ?? 0) <= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([c]) => c);
+  return { kolory, wiersze: [top + Math.round(h * 0.27), top + Math.round(h * 0.75)] };
+}
+
 /** kafelki dachu w kolejności wariantów (PixelLab nazywa pliki od pierwszego opisu, numer wariantu na końcu) */
 function dachowki(): string[] {
   const dir = 'assets/raw/kotwica-blok-dach';
@@ -152,10 +195,15 @@ export function kotwica(): Kotwica {
     })),
     trzepak: png('assets/raw/kotwica-trzepak/trzepak.png'),
     stopy: stopy('assets/raw/kotwica-trzepak/trzepak.png'),
-    zarzad: m.zarzad.map((id) => ({
-      kierunki: DIRS.map((d) => png(postac(id, d))),
-      stopy: stopy(postac(id, 'south')),
-    })),
+    ludzie: [...m.zarzad, ...m.mieszkancy].map((id) => {
+      const p = asset(m, id).przemalowanie ?? ubranie(id);
+      return {
+        kierunki: DIRS.map((d) => png(postac(id, d))),
+        stopy: stopy(postac(id, 'south')),
+        warianty: Object.values(m.paleta.rampy).map((r) => DIRS.map((d) => przemaluj(postac(id, d), p, r))),
+      };
+    }),
+    zarzad: m.zarzad.length,
     blok: png(blok.wybrany!),
     moduly: blok.moduly!,
     dach: {
@@ -209,8 +257,9 @@ async function ustaw(page: Page) {
 
 /**
  * Podmiana w scenie Pixi na czas zrzutu: trawnik i chodnik z kafelków Wanga (podwójna siatka, żeby granica
- * terenów wypadła na krawędzi kafelka świata, z cieniami budynków jak w grze), siedziba z modułów (dach z papy
- * z naklejkami i attyką, pas fasady z piętrami i wejściem nad drzwiami), trzepak i zarząd jako emeryci.
+ * terenów wypadła na krawędzi kafelka świata, z cieniami budynków jak w grze), bloki z modułów (dach z papy
+ * z naklejkami i attyką, pas fasady z tyloma piętrami, ile ma budynek, i wejściem nad drzwiami), trzepak i zarząd
+ * z różnych postaci.
  */
 async function podmien(page: Page, k: Kotwica) {
   await page.evaluate(async (k) => {
@@ -256,7 +305,12 @@ async function podmien(page: Page, k: Kotwica) {
       return g.getImageData(0, 0, im.width, im.height);
     };
     const [sheet, trz, blok] = await Promise.all([k.tileset, k.trzepak, k.blok].map(load));
-    const ludzie = await Promise.all(k.zarzad.map((z) => Promise.all(z.kierunki.map(load))));
+    // obsada: postać z PixelLab, potem ta sama w kolejnych przemalowaniach
+    const wersje = [
+      ...k.ludzie.map((l) => ({ kierunki: l.kierunki, stopy: l.stopy })),
+      ...k.ludzie[0].warianty.flatMap((_, r) => k.ludzie.map((l) => ({ kierunki: l.warianty[r], stopy: l.stopy }))),
+    ];
+    const ludzie = await Promise.all(wersje.map((l) => Promise.all(l.kierunki.map(load))));
     const naklejki = (await Promise.all(k.dach.naklejki.map(load))).map(pixels);
     // klasy Pixi z sprite'a, który już jest w scenie (strona nie wystawia modułu pixi.js)
     const any = v.actors.children.find((c) => c.texture)!;
@@ -318,28 +372,10 @@ async function podmien(page: Page, k: Kotwica) {
     ground.position.set(tx0 * T, ty0 * T);
     v.terrain.addChild(ground);
 
-    // siedziba z modułów: pas fasady przy każdej południowej krawędzi, nad nim papa z attyką
+    // bloki z modułów: pas fasady przy każdej południowej krawędzi (tyle pięter, ile ma budynek), nad nim papa
+    // z attyką; domy, garaże i pawilony zostają z kodu
     const M = k.moduly;
-    const hq = w.buildings[w.hq];
-    const levels = v.scene.styles[w.hq].levels;
-    const rows: number[] = [];
-    const take = (y0: number, n: number) => {
-      for (let r = 0; r < n; r++) rows.push(y0 + r);
-    };
-    // parterowy budynek: sam gzyms nad parterem
-    take(M.fasada.y, levels > 1 ? M.fasada.gora : M.fasada.gora - M.fasada.pietro[1]);
-    for (let n = 0; n < levels - 2; n++) take(M.fasada.pietro[0], M.fasada.pietro[1]);
-    take(M.fasada.dol[0], M.fasada.dol[1]);
     const src = pixels(blok).data;
-    const inB = (x: number, y: number) => x >= 0 && y >= 0 && x < size && y < size && w.bid[y * size + x] === w.hq;
-    const doors = hq.entrances
-      .filter((e) => e.dir === 'S')
-      .map((e) => ({ x: (e.tile % size) * T + T / 2, bottom: (Math.floor(e.tile / size) + 1) * T }));
-    const bx0 = Math.max(hq.x0, tx0);
-    const by0 = Math.max(hq.y0, ty0);
-    const bx1 = Math.min(hq.x1, tx1);
-    const by1 = Math.min(hq.y1, ty1);
-    const out = new ImageData((bx1 - bx0 + 1) * T, (by1 - by0 + 1) * T);
     const [ax0, ay0, , attN] = M.attyka;
     const D = k.dach;
     const tlo = rgb(D.tlo);
@@ -364,51 +400,76 @@ async function podmien(page: Page, k: Kotwica) {
       const r = hash(ax, ay, 6);
       return r < 0.025 ? ciemny : r < 0.05 ? jasny : tlo;
     };
-    for (let ty = by0; ty <= by1; ty++)
-      for (let tx = bx0; tx <= bx1; tx++) {
-        if (!inB(tx, ty)) continue;
-        let below = 0;
-        while (inB(tx, ty + below + 1)) below++;
-        let above = 0;
-        while (inB(tx, ty - above - 1)) above++;
-        const bottom = (ty + below + 1) * T;
-        const fh = Math.min(rows.length, (below + above + 1) * T - 8);
-        const edgeN = !inB(tx, ty - 1);
-        const edgeW = !inB(tx - 1, ty);
-        const edgeE = !inB(tx + 1, ty);
-        for (let py = 0; py < T; py++)
-          for (let px = 0; px < T; px++) {
-            const ax = tx * T + px;
-            const ay = ty * T + py;
-            const fy = bottom - 1 - ay;
-            const i = ((ay - by0 * T) * out.width + (ax - bx0 * T)) * 4;
-            let sx: number;
-            let sy: number;
-            if (fy < fh) {
-              // fasada: wiersz pasa od dołu; przęsła po x świata, nad drzwiami wejście
-              sy = rows[rows.length - 1 - fy];
-              const d = doors.find(
-                (q) => q.bottom === bottom && ax >= q.x - M.drzwi && ax < q.x - M.drzwi + M.wejscie[1],
-              );
-              sx = d ? M.wejscie[0] + ax - (d.x - M.drzwi) : M.przesla[0] + mod(ax, M.przesla[1]);
-            } else {
-              const e = Math.min(edgeN ? py : T, edgeW ? px : T, edgeE ? T - 1 - px : T);
-              if (e >= attN) {
-                out.data.set(papa(ax, ay), i);
-                continue;
+    /** wiersze kawałka bloku na pas fasady o tylu piętrach: gzyms z górnym piętrem, środkowe piętra, parter */
+    const pas = (levels: number) => {
+      const rows: number[] = [];
+      const take = (y0: number, n: number) => {
+        for (let r = 0; r < n; r++) rows.push(y0 + r);
+      };
+      // parterowy budynek: sam gzyms nad parterem
+      take(M.fasada.y, levels > 1 ? M.fasada.gora : M.fasada.gora - M.fasada.pietro[1]);
+      for (let n = 0; n < levels - 2; n++) take(M.fasada.pietro[0], M.fasada.pietro[1]);
+      take(M.fasada.dol[0], M.fasada.dol[1]);
+      return rows;
+    };
+    for (const b of w.buildings) {
+      if (b.cls !== 'blok' || b.x1 < tx0 || b.x0 > tx1 || b.y1 < ty0 || b.y0 > ty1) continue;
+      const rows = pas(v.scene.styles[b.id].levels);
+      const inB = (x: number, y: number) => x >= 0 && y >= 0 && x < size && y < size && w.bid[y * size + x] === b.id;
+      const doors = b.entrances
+        .filter((e) => e.dir === 'S')
+        .map((e) => ({ x: (e.tile % size) * T + T / 2, bottom: (Math.floor(e.tile / size) + 1) * T }));
+      const bx0 = Math.max(b.x0, tx0);
+      const by0 = Math.max(b.y0, ty0);
+      const bx1 = Math.min(b.x1, tx1);
+      const by1 = Math.min(b.y1, ty1);
+      const out = new ImageData((bx1 - bx0 + 1) * T, (by1 - by0 + 1) * T);
+      for (let ty = by0; ty <= by1; ty++)
+        for (let tx = bx0; tx <= bx1; tx++) {
+          if (!inB(tx, ty)) continue;
+          let below = 0;
+          while (inB(tx, ty + below + 1)) below++;
+          let above = 0;
+          while (inB(tx, ty - above - 1)) above++;
+          const bottom = (ty + below + 1) * T;
+          const fh = Math.min(rows.length, (below + above + 1) * T - 8);
+          const edgeN = !inB(tx, ty - 1);
+          const edgeW = !inB(tx - 1, ty);
+          const edgeE = !inB(tx + 1, ty);
+          for (let py = 0; py < T; py++)
+            for (let px = 0; px < T; px++) {
+              const ax = tx * T + px;
+              const ay = ty * T + py;
+              const fy = bottom - 1 - ay;
+              const i = ((ay - by0 * T) * out.width + (ax - bx0 * T)) * 4;
+              let sx: number;
+              let sy: number;
+              if (fy < fh) {
+                // fasada: wiersz pasa od dołu; przęsła po x świata, nad drzwiami wejście
+                sy = rows[rows.length - 1 - fy];
+                const d = doors.find(
+                  (q) => q.bottom === bottom && ax >= q.x - M.drzwi && ax < q.x - M.drzwi + M.wejscie[1],
+                );
+                sx = d ? M.wejscie[0] + ax - (d.x - M.drzwi) : M.przesla[0] + mod(ax, M.przesla[1]);
+              } else {
+                const e = Math.min(edgeN ? py : T, edgeW ? px : T, edgeE ? T - 1 - px : T);
+                if (e >= attN) {
+                  out.data.set(papa(ax, ay), i);
+                  continue;
+                }
+                sx = ax0;
+                sy = ay0 + e;
               }
-              sx = ax0;
-              sy = ay0 + e;
+              const j = (sy * blok.width + sx) * 4;
+              out.data.set(src.subarray(j, j + 4), i);
             }
-            const j = (sy * blok.width + sx) * 4;
-            out.data.set(src.subarray(j, j + 4), i);
-          }
-      }
-    const [oc, og] = canvas(out.width, out.height);
-    og.putImageData(out, 0, 0);
-    const house = sprite(oc);
-    house.position.set(bx0 * T, by0 * T);
-    v.terrain.addChild(house);
+        }
+      const [oc, og] = canvas(out.width, out.height);
+      og.putImageData(out, 0, 0);
+      const house = sprite(oc);
+      house.position.set(bx0 * T, by0 * T);
+      v.terrain.addChild(house);
+    }
 
     // trzepak: z kodu schowany, z PixelLab stopami tam, gdzie stopy betonowe z kodu (wiersz 20 kafelka)
     const tz = w.props.find((p) => p.kind === 'trzepak')!;
@@ -419,16 +480,20 @@ async function podmien(page: Page, k: Kotwica) {
     ts.zIndex = tz.y + tz.h;
     v.actors.addChild(ts);
 
-    // zarząd: każda osoba inną postacią z PixelLab, w kierunku pionka z kodu (0 południe, 1 północ, 2 zachód,
-    // 3 wschód); pionek z kodu poza kadrem
+    // ludzie: zarząd dostaje pierwsze postacie z obsady, mieszkańcy następne, a gdy postaci zabraknie, idą ich
+    // przemalowania; kierunek jak pionek z kodu (0 południe, 1 północ, 2 zachód, 3 wschód), pionek z kodu poza kadrem
     const face = [0, 4, 6, 2];
-    let n = 0;
-    for (const p of sim.st.pawns) {
-      if (p.kind !== 'core') continue;
-      const z = n++ % ludzie.length;
+    const kolej = [
+      ...sim.st.pawns.filter((p) => p.kind === 'core'),
+      ...sim.st.pawns.filter((p) => p.kind === 'resident'),
+    ];
+    let zw = 0;
+    let mw = k.zarzad;
+    for (const p of kolej) {
+      const z = p.kind === 'core' ? zw++ % k.zarzad : mw++ % ludzie.length;
       const im = ludzie[z][face[p.dir]];
       const s = sprite(im);
-      s.anchor.set(0.5, k.zarzad[z].stopy / im.height);
+      s.anchor.set(0.5, wersje[z].stopy / im.height);
       s.position.set(Math.round(p.x * T), Math.round(p.y * T));
       s.zIndex = p.y;
       v.actors.addChild(s);
@@ -437,18 +502,18 @@ async function podmien(page: Page, k: Kotwica) {
   }, k);
 }
 
-/** zestawienie: ten sam kadr gry dziś i z kotwicą z PixelLab, obok siebie */
-export async function kotwicaStylu(page: Page, base: string) {
+/** ten sam kadr gry dziś i z kotwicą z PixelLab, obok siebie; ustawKadr przygotowuje kadr przed oboma zrzutami */
+async function przedPo(page: Page, base: string, query: string, ustawKadr: (page: Page) => Promise<void>, po: string) {
   await page.setViewportSize({ width: KADR.w, height: KADR.h });
-  await page.goto(`${base}?demo=lanciego&speed=0&cam=hq,1&przekroj=0`);
+  await page.goto(`${base}?${query}`);
   await waitIdle(page);
   await page.addStyleTag({ content: UI });
-  await ustaw(page);
+  await ustawKadr(page);
   await waitIdle(page);
-  const przed = (await page.screenshot()).toString('base64');
+  const a = (await page.screenshot()).toString('base64');
   await podmien(page, kotwica());
   await waitIdle(page);
-  const po = (await page.screenshot()).toString('base64');
+  const b = (await page.screenshot()).toString('base64');
   // gra przestaje chodzić w tle, zanim strona dostanie zestawienie
   await page.goto('about:blank');
   await page.setViewportSize({ width: KADR.w * 2 + 12, height: KADR.h + 40 });
@@ -457,9 +522,106 @@ export async function kotwicaStylu(page: Page, base: string) {
     figure { margin: 0; } figcaption { height: 40px; display: flex; align-items: center; padding-left: 12px; }
     img { display: block; }
   </style>
-  <figure><figcaption>Dziś: grafika rysowana kodem</figcaption><img src="data:image/png;base64,${przed}"></figure>
-  <figure><figcaption>Kotwica z PixelLab: trawnik z chodnikiem, trzepak, zarząd, blok</figcaption><img src="data:image/png;base64,${po}"></figure>`);
+  <figure><figcaption>Dziś: grafika rysowana kodem</figcaption><img src="data:image/png;base64,${a}"></figure>
+  <figure><figcaption>${po}</figcaption><img src="data:image/png;base64,${b}"></figure>`);
 }
+
+/** podwórko siedziby w Lanciego: fasada z dachem, trawnik, trzepak, zarząd i chodnik */
+export const kotwicaStylu = (page: Page, base: string) =>
+  przedPo(
+    page,
+    base,
+    'demo=lanciego&speed=0&cam=hq,1&przekroj=0',
+    ustaw,
+    'Kotwica z PixelLab: trawnik z chodnikiem, trzepak, zarząd, blok',
+  );
+
+/** tłum przy siedzibie: zarząd i dosztukowani mieszkańcy (kopie pionka mieszkańca, każdy w innym wyglądzie z kodu)
+    na wolnych kafelkach trawy i chodnika wokół trzepaka, od najbliższych */
+async function ustawTlum(page: Page, ile: number) {
+  await page.evaluate(
+    ([ile, zoom]) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const st = sim.st;
+      const w = sim.w;
+      const size = w.size;
+      const tz = w.props.find((p) => p.kind === 'trzepak')!;
+      const wolne: [number, number][] = [];
+      for (let y = tz.y - 1; y <= tz.y + 6; y++)
+        for (let x = tz.x - 7; x <= tz.x + 10; x++) {
+          const i = y * size + x;
+          const t = w.terr[i];
+          if ((x + y) % 2 || sim.blocked[i] || !(t === 0 || t === 4 || t === 5)) continue;
+          if (y === tz.y && x >= tz.x && x < tz.x + tz.w) continue;
+          wolne.push([x, y]);
+        }
+      const d = (q: [number, number]) => Math.hypot(q[0] - tz.x - 1, q[1] - tz.y - 2);
+      wolne.sort((a, b) => d(a) - d(b));
+      const ludzie = () => st.pawns.filter((p) => p.kind === 'core' || p.kind === 'resident');
+      const wzor = st.pawns.find((p) => p.kind === 'resident')!;
+      let id = Math.max(...st.pawns.map((p) => p.id)) + 1;
+      while (ludzie().length < ile) st.pawns.push({ ...wzor, id: id++ });
+      ludzie().forEach((p, k) => {
+        const [x, y] = wolne[k % wolne.length];
+        Object.assign(p, {
+          x: x + 0.3 + ((k * 7) % 5) / 10,
+          y: y + 0.6,
+          path: [],
+          pi: 0,
+          dir: [0, 3, 0, 2, 0, 1][k % 6],
+          job: null,
+          carry: 0,
+          wait: st.tick + 99999,
+          look: k % 16,
+          away: false,
+        });
+      });
+      // meble siedziby (przy przekroj=0 leżałyby na dachu) schowane jak na podwórku
+      const v = zm.view as unknown as { things: Map<string, { thing: { x: number; y: number }; inside: boolean }> };
+      for (const e of v.things.values())
+        if (w.bid[Math.floor(e.thing.y) * size + Math.floor(e.thing.x)] >= 0) e.inside = true;
+      zm.setCam(tz.x + 1.5, tz.y + 2, zoom);
+    },
+    [ile, 1.5] as const,
+  );
+}
+
+/** tyle osób w kadrze z tłumem: więcej niż postaci w obsadzie, żeby było widać przemalowania */
+const TLUM = 36;
+
+/** tłum na podwórku: pionki z kodu (16 wyglądów) i ta sama liczba osób z obsady PixelLab i jej przemalowań */
+export const kotwicaTlum = (page: Page, base: string) =>
+  przedPo(
+    page,
+    base,
+    'demo=lanciego&speed=0&cam=hq,1&przekroj=0',
+    (p) => ustawTlum(p, TLUM),
+    `Kotwica z PixelLab: ${TLUM} osób z ${kotwica().ludzie.length} postaci i ich przemalowań`,
+  );
+
+/** najwyższy blok w Lanciego od strony wejścia: moduły piętra składają się do każdej wysokości */
+export const kotwicaWysokiBlok = (page: Page, base: string) =>
+  przedPo(
+    page,
+    base,
+    'demo=lanciego&speed=0',
+    async (p) => {
+      const pietra = await p.evaluate(() => {
+        const zm = window.zm!;
+        const w = zm.sim!.w;
+        const bloki = w.buildings.filter(
+          (b) => b.cls === 'blok' && b.id !== w.hq && b.entrances.some((e) => e.dir === 'S'),
+        );
+        const b = bloki.sort((a, c) => c.levels - a.levels)[0];
+        const e = b.entrances.find((q) => q.dir === 'S')!;
+        zm.setCam((e.tile % w.size) + 0.5, Math.floor(e.tile / w.size) - 4, 1.25);
+        return b.levels;
+      });
+      if (pietra < 9) throw new Error(`najwyższy blok ma tylko ${pietra} pięter`);
+    },
+    'Kotwica z PixelLab: najwyższy blok osiedla z tych samych modułów piętra',
+  );
 
 /** arkusz kotwicy: wybrane assety w powiększeniu, z narzędziem i kosztem, zarząd z przemalowaniami, paleta */
 export async function kotwicaArkusz(page: Page) {
@@ -472,23 +634,30 @@ export async function kotwicaArkusz(page: Page) {
     return `<h2>${co}<small>${a.narzedzie} · ${gen(koszt(a))}</small></h2>`;
   };
   const img = (src: string, zoom: number) => `<img src="${src}" style="zoom:${zoom}">`;
-  const rampy = Object.entries(m.paleta.rampy);
+  const rampy = Object.keys(m.paleta.rampy);
   const zarzad = m.zarzad.map((id, i) => {
     const a = asset(m, id);
-    const p = a.przemalowanie;
-    const warianty = p
-      ? rampy.map(
-          ([n, r]) => `<figure>${img(przemaluj(postac(id, 'south'), p, r), 2)}<figcaption>${n}</figcaption></figure>`,
-        )
-      : [];
-    return `<div class="row"><div>${opis(id, a.co)}${k.zarzad[i].kierunki.map((s) => img(s, 2)).join('')}</div>
+    const l = k.ludzie[i];
+    const warianty = rampy.map((n, r) => `<figure>${img(l.warianty[r][0], 2)}<figcaption>${n}</figcaption></figure>`);
+    return `<div class="row"><div>${opis(id, a.co)}${l.kierunki.map((s) => img(s, 2)).join('')}</div>
       <div><h2>Przemalowania w kodzie<small>0 gen.</small></h2>${warianty.join('')}</div></div>`;
   });
-  const wybrane = ['kotwica-chodnik-trawa', 'kotwica-trzepak', ...m.zarzad, 'kotwica-blok', 'kotwica-blok-dach'];
+  const mieszkancy = m.mieszkancy.map(
+    (id, i) =>
+      `<figure>${img(k.ludzie[k.zarzad + i].kierunki[0], 2)}<figcaption>${asset(m, id).co}</figcaption></figure>`,
+  );
+  const wybrane = [
+    'kotwica-chodnik-trawa',
+    'kotwica-trzepak',
+    ...m.zarzad,
+    ...m.mieszkancy,
+    'kotwica-blok',
+    'kotwica-blok-dach',
+  ];
   const naKotwice = wybrane.reduce((s, id) => s + koszt(asset(m, id)), 0);
   const razem = m.assety.reduce((s, a) => s + koszt(a), 0);
   const kafle = dachowki().map((f) => img(png(f), 2));
-  await page.setViewportSize({ width: 1440, height: 1290 });
+  await page.setViewportSize({ width: 1440, height: 1630 });
   await page.setContent(`<!doctype html><meta charset="utf-8"><style>
     body { margin: 0; padding: 24px 32px; background: #26292e; color: #e3e0d6; font: 14px/1.4 system-ui, sans-serif; }
     h1 { font-size: 22px; margin: 0 0 4px; } p { margin: 0 0 18px; color: #b7b2a6; }
@@ -497,6 +666,8 @@ export async function kotwicaArkusz(page: Page) {
     figure { display: inline-block; margin: 0 6px 0 0; text-align: center; }
     figcaption { font-size: 11px; color: #9a958a; }
     .row { display: flex; gap: 40px; margin-bottom: 18px; align-items: flex-start; }
+    .ludzie { display: grid; grid-template-columns: repeat(10, 128px); gap: 4px 0; margin-bottom: 18px; }
+    .ludzie figcaption { width: 120px; }
     .tiles { display: grid; grid-template-columns: repeat(4, 64px); gap: 6px; }
     .pal { display: grid; grid-template-columns: repeat(16, 76px); gap: 4px; }
     .pal div { height: 40px; font: 11px/1 ui-monospace, monospace; display: flex; align-items: flex-end; padding: 3px; }
@@ -504,6 +675,7 @@ export async function kotwicaArkusz(page: Page) {
   <h1>Kotwica stylu z PixelLab, do akceptacji</h1>
   <p>Wybrane assety: ${gen(naKotwice)} Razem z odrzuconymi próbami ${gen(razem)} z 2000 w abonamencie, 0 USD. Każda następna postać to 2 gen., warianty kolorów ubrań robi kod za darmo. Szczegóły w assets/manifest.json.</p>
   ${zarzad.join('')}
+  ${mieszkancy.length ? `<h2>Mieszkańcy: ${mieszkancy.length} postaci<small>create_character v3 · po 2 gen.</small></h2><div class="ludzie">${mieszkancy.join('')}</div>` : ''}
   <div class="row">
     <div>${opis('kotwica-trzepak', 'Trzepak 96×64')}${img(k.trzepak, 2)}</div>
     <div>${opis('kotwica-chodnik-trawa', 'Chodnik i trawnik, 16 kafelków 32 px')}${img(k.tileset, 2)}</div>

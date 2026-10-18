@@ -1,0 +1,36 @@
+{
+  "group_id": "3b00bfd3-cbd4-4c43-ada7-cbf6de4fa05f",
+  "states": [
+    {
+      "character": {
+        "id": "3c4dceab-48f7-4cf3-a376-254b2b2d49d9",
+        "name": "Idle",
+        "prompt": "Polish football fan about 28 years old, short hair, white and green striped club scarf, dark padded jacket, jeans, sneakers, loud and proud",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T15:15:59.205604+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T15:21:48.081704"
+}

@@ -14,7 +14,7 @@ import { toGeoT } from '../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS } from '../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from '../tests/unit/fixtures.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
-import { kotwicaArkusz, kotwicaStylu } from './kotwica.ts';
+import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
 
 const OUT = path.resolve(import.meta.dirname, '../shots');
@@ -3026,6 +3026,8 @@ const SHOTS: Shot[] = [
   // kotwica stylu z PixelLab (M3, do akceptacji): ten sam kadr przy siedzibie dziś i z assetami z assets/raw,
   // do tego arkusz wybranych assetów z kosztami i paletą
   { name: 'kotwica-stylu', query: '', run: kotwicaStylu },
+  { name: 'kotwica-wysoki-blok', query: '', run: kotwicaWysokiBlok },
+  { name: 'kotwica-tlum', query: '', run: kotwicaTlum },
   { name: 'kotwica-arkusz', query: '', run: (page) => kotwicaArkusz(page) },
 ];
 

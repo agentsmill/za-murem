@@ -1,0 +1,36 @@
+{
+  "group_id": "bb75047a-fce7-442c-a626-295e4fda81d8",
+  "states": [
+    {
+      "character": {
+        "id": "3fe22ec0-97f4-443a-bb55-5865bcda5bf0",
+        "name": "Idle",
+        "prompt": "Polish construction worker about 35 years old, white hard hat, orange high-visibility vest over a brown fleece, dusty work trousers, heavy boots, strong",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T15:07:52.187031+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T15:17:02.362812"
+}

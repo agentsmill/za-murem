@@ -1,0 +1,36 @@
+{
+  "group_id": "9c6487a3-0734-4286-8832-8ba26ff40f41",
+  "states": [
+    {
+      "character": {
+        "id": "2f2a41bf-81f0-4258-972f-24a88b84170d",
+        "name": "Idle",
+        "prompt": "Polish ex-soldier survivalist about 45 years old, short beard, faded olive military surplus parka, knit cap, cargo trousers, combat boots, backpack with a rolled sleeping mat, watchful",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T15:16:26.796863+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T15:21:51.667114"
+}

@@ -1,0 +1,36 @@
+{
+  "group_id": "7f6d4352-9260-4424-8348-64f68d01dec6",
+  "states": [
+    {
+      "character": {
+        "id": "f558535a-ce4f-4dd7-8b32-839d14366459",
+        "name": "Idle",
+        "prompt": "Polish allotment gardener woman about 65 years old, wide straw hat, green quilted vest over a checked shirt, gardening gloves, rubber boots, small trowel in hand, cheerful",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T15:07:54.704044+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T15:17:03.324011"
+}

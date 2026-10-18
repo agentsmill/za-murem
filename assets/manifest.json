@@ -48,6 +48,28 @@
     "opis_ramp": "rampy od najciemniejszego koloru; kod przemalowuje nimi ubrania postaci (pole przemalowanie: kolory ubrania i wiersze, w których leży), najciemniejszy kolor ubrania na pierwszy kolor rampy i tak dalej, żeby tłum nie wyglądał tak samo bez kolejnych generacji"
   },
   "zarzad": ["kotwica-emeryt", "kotwica-emerytka", "kotwica-zlota-raczka", "kotwica-mloda"],
+  "mieszkancy": [
+    "kotwica-chlopiec",
+    "kotwica-dziewczynka",
+    "kotwica-dresiarz",
+    "kotwica-pielegniarka",
+    "kotwica-kucharka",
+    "kotwica-informatyk",
+    "kotwica-prompt-engineer",
+    "kotwica-doradca-esg",
+    "kotwica-influencerka",
+    "kotwica-ochroniarz",
+    "kotwica-mechanik",
+    "kotwica-listonoszka",
+    "kotwica-budowlaniec",
+    "kotwica-dzialkowiczka",
+    "kotwica-staruszek",
+    "kotwica-kioskarka",
+    "kotwica-kibic",
+    "kotwica-lekarz",
+    "kotwica-weteran",
+    "kotwica-matka"
+  ],
   "wejscia": {
     "assets/wejscia/blok-lanciego-17.png": "obraz startowy i wzorzec układu dla bloku: wycinek gry 160×128 w skali 1:1 (Lanciego, budynek 17, cztery piętra, wejście od południa), grafika rysowana kodem z 18.10.2026",
     "assets/wejscia/paleta-32.png": "paleta jako pasek 32×1 do narzędzi, które biorą paletę z obrazka (create_image_pixflux, reduce_colors)"
@@ -338,6 +360,667 @@
         }
       ],
       "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
+    },
+    {
+      "id": "kotwica-chlopiec",
+      "grupa": "kotwica-stylu",
+      "co": "chłopiec w czapce z pomponem",
+      "narzedzie": "create_character",
+      "prompt": "Polish boy about 8 years old, messy blond hair, red knitted bobble hat, oversized patched blue winter jacket, grey tracksuit trousers, muddy rubber boots, curious and cheeky",
+      "parametry": {
+        "mode": "v3",
+        "size": 36,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Chłopiec 36"
+      },
+      "pixellab": "431022d6-02c7-4c82-a649-6cadad7dc7a9",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-chlopiec/Idle/rotations", "assets/raw/kotwica-chlopiec/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków"
+          },
+          "pixellab": "1a4dd7a3-0fba-4d63-be7a-50bc824de66e",
+          "koszt": 0.1,
+          "pliki": ["assets/raw/kotwica-chlopiec/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-dziewczynka",
+      "grupa": "kotwica-stylu",
+      "co": "dziewczynka w żółtym płaszczu",
+      "narzedzie": "create_character",
+      "prompt": "Polish girl about 10 years old, two brown braids, yellow raincoat, purple leggings, worn pink sneakers, small fabric backpack, serious",
+      "parametry": {
+        "mode": "v3",
+        "size": 40,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Dziewczynka 40"
+      },
+      "pixellab": "3a1dc2c8-8093-4e8c-a17c-50d972386500",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-dziewczynka/Idle/rotations", "assets/raw/kotwica-dziewczynka/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków"
+          },
+          "pixellab": "f646bbe6-e498-4a35-b0b2-40f57c3cd18d",
+          "koszt": 0.1,
+          "pliki": ["assets/raw/kotwica-dziewczynka/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-dresiarz",
+      "grupa": "kotwica-stylu",
+      "co": "dresiarz w kapturze",
+      "narzedzie": "create_character",
+      "prompt": "Polish young man about 19 years old, buzz cut, black tracksuit with white side stripes and the hood up, white sneakers, hands in pockets, slouching and cocky",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Dresiarz 48"
+      },
+      "pixellab": "713f9006-293a-48de-b24c-50a02d4935e5",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-dresiarz/Idle/rotations", "assets/raw/kotwica-dresiarz/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0.1,
+          "pliki": ["assets/raw/kotwica-dresiarz/paleta"],
+          "uwagi": "koszt całego wywołania zapisany przy pierwszej postaci z paczki"
+        }
+      ]
+    },
+    {
+      "id": "kotwica-pielegniarka",
+      "grupa": "kotwica-stylu",
+      "co": "pielęgniarka z apteczką",
+      "narzedzie": "create_character",
+      "prompt": "Polish nurse about 40 years old, dark hair in a bun, white medical scrubs under an open grey padded jacket, white clogs, red first aid bag on the shoulder, tired but kind",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Pielęgniarka 48"
+      },
+      "pixellab": "016e91c4-023b-4213-ac47-b7333160b020",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-pielegniarka/Idle/rotations", "assets/raw/kotwica-pielegniarka/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-pielegniarka/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-kucharka",
+      "grupa": "kotwica-stylu",
+      "co": "kucharka w fartuchu",
+      "narzedzie": "create_character",
+      "prompt": "stout Polish cook about 55 years old, short red-dyed hair, white apron over a flowered housecoat and a thick cardigan, slippers, wooden spoon in hand, warm and loud",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Kucharka 48"
+      },
+      "pixellab": "980e1fd9-e766-4b59-88d2-dbcd92e286bb",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-kucharka/Idle/rotations", "assets/raw/kotwica-kucharka/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-kucharka/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-informatyk",
+      "grupa": "kotwica-stylu",
+      "co": "informatyk z martwym laptopem",
+      "narzedzie": "create_character",
+      "prompt": "Polish IT specialist about 30 years old, beard, thick black glasses, faded black hoodie, cargo trousers, worn running shoes, a dead laptop under his arm, sleepy",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Informatyk 48"
+      },
+      "pixellab": "7d27bd29-55bb-44e3-b1cc-a0e233998e31",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-informatyk/Idle/rotations", "assets/raw/kotwica-informatyk/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-informatyk/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-prompt-engineer",
+      "grupa": "kotwica-stylu",
+      "co": "prompt engineer z pękniętym tabletem",
+      "narzedzie": "create_character",
+      "prompt": "young Polish prompt engineer about 26 years old, styled undercut hair, thin round glasses, beige puffer vest over a black turtleneck, slim chinos, white designer sneakers, holding a cracked tablet, smug",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Prompt engineer 48"
+      },
+      "pixellab": "f34fcdef-6edd-4458-8bd3-2a8a1f384e3b",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": [
+        "assets/raw/kotwica-prompt-engineer/Idle/rotations",
+        "assets/raw/kotwica-prompt-engineer/metadata.json"
+      ],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-prompt-engineer/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-doradca-esg",
+      "grupa": "kotwica-stylu",
+      "co": "doradca ESG z podkładką",
+      "narzedzie": "create_character",
+      "prompt": "Polish ESG consultant about 40 years old, slicked-back hair, crumpled navy suit with a green leaf pin, loosened tie, muddy leather shoes, clipboard in hand, overly cheerful",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Doradca ESG 48"
+      },
+      "pixellab": "47a484fc-9cc6-46c0-b81e-9a0af374f2e4",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-doradca-esg/Idle/rotations", "assets/raw/kotwica-doradca-esg/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-doradca-esg/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-influencerka",
+      "grupa": "kotwica-stylu",
+      "co": "influencerka survivalowa",
+      "narzedzie": "create_character",
+      "prompt": "young Polish survival influencer about 24 years old, long bleached hair, camouflage cap, tactical vest over a pink hoodie, cargo pants, hiking boots, holding a dead phone on a selfie stick",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Influencerka 48"
+      },
+      "pixellab": "963fecf9-4c36-42ce-98f5-f149a5ae6ad3",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-influencerka/Idle/rotations", "assets/raw/kotwica-influencerka/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków"
+          },
+          "pixellab": "ecdafb79-e2ac-4e69-872b-2d91cd3f9725",
+          "koszt": 0.1,
+          "pliki": ["assets/raw/kotwica-influencerka/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-ochroniarz",
+      "grupa": "kotwica-stylu",
+      "co": "ochroniarz",
+      "narzedzie": "create_character",
+      "prompt": "big Polish security guard about 50 years old, shaved head, black bomber jacket, black trousers, heavy boots, walkie-talkie on the belt, arms crossed, stern",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Ochroniarz 48"
+      },
+      "pixellab": "13b408c9-4bd6-4432-8dfd-572f8bd7772e",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-ochroniarz/Idle/rotations", "assets/raw/kotwica-ochroniarz/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-ochroniarz/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-mechanik",
+      "grupa": "kotwica-stylu",
+      "co": "mechanik z kluczem",
+      "narzedzie": "create_character",
+      "prompt": "Polish car mechanic about 50 years old, grey moustache, oil-stained dark green work jacket, dark trousers, steel-toe boots, big wrench in hand, rag in the back pocket",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Mechanik 48"
+      },
+      "pixellab": "74e4a444-d991-4522-a266-b94aa882cac1",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-mechanik/Idle/rotations", "assets/raw/kotwica-mechanik/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-mechanik/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-listonoszka",
+      "grupa": "kotwica-stylu",
+      "co": "listonoszka z torbą",
+      "narzedzie": "create_character",
+      "prompt": "Polish postwoman about 45 years old, short brown hair, faded blue uniform jacket, big leather mail bag across the body, dark trousers, sensible shoes, brisk",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Listonoszka 48"
+      },
+      "pixellab": "b84a2d1b-164e-4900-afd4-492a3eb75708",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-listonoszka/Idle/rotations", "assets/raw/kotwica-listonoszka/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-listonoszka/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-budowlaniec",
+      "grupa": "kotwica-stylu",
+      "co": "budowlaniec w kasku",
+      "narzedzie": "create_character",
+      "prompt": "Polish construction worker about 35 years old, white hard hat, orange high-visibility vest over a brown fleece, dusty work trousers, heavy boots, strong",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Budowlaniec 48"
+      },
+      "pixellab": "3fe22ec0-97f4-443a-bb55-5865bcda5bf0",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-budowlaniec/Idle/rotations", "assets/raw/kotwica-budowlaniec/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-budowlaniec/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-dzialkowiczka",
+      "grupa": "kotwica-stylu",
+      "co": "działkowiczka w kapeluszu",
+      "narzedzie": "create_character",
+      "prompt": "Polish allotment gardener woman about 65 years old, wide straw hat, green quilted vest over a checked shirt, gardening gloves, rubber boots, small trowel in hand, cheerful",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Działkowiczka 48"
+      },
+      "pixellab": "f558535a-ce4f-4dd7-8b32-839d14366459",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-dzialkowiczka/Idle/rotations", "assets/raw/kotwica-dzialkowiczka/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-dzialkowiczka/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-staruszek",
+      "grupa": "kotwica-stylu",
+      "co": "staruszek z laską",
+      "narzedzie": "create_character",
+      "prompt": "very old Polish man about 85 years old, grey beret, long dark grey wool coat, knitted scarf, wooden walking cane, hunched, slow and dignified",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Staruszek z laską 48"
+      },
+      "pixellab": "75869a37-be96-4e71-94db-3f4ea8c16482",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-staruszek/Idle/rotations", "assets/raw/kotwica-staruszek/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-staruszek/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-kioskarka",
+      "grupa": "kotwica-stylu",
+      "co": "kioskarka w swetrze",
+      "narzedzie": "create_character",
+      "prompt": "Polish kiosk saleswoman about 55 years old, curly dyed burgundy hair, thick knitted cardigan, long brown skirt, fingerless gloves, reading glasses on a chain, gossipy",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Kioskarka 48"
+      },
+      "pixellab": "5241a440-bc06-4228-9231-f7f3d9de0e9b",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-kioskarka/Idle/rotations", "assets/raw/kotwica-kioskarka/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-kioskarka/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-kibic",
+      "grupa": "kotwica-stylu",
+      "co": "kibic z szalikiem",
+      "narzedzie": "create_character",
+      "prompt": "Polish football fan about 28 years old, short hair, white and green striped club scarf, dark padded jacket, jeans, sneakers, loud and proud",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Kibic 48"
+      },
+      "pixellab": "3c4dceab-48f7-4cf3-a376-254b2b2d49d9",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-kibic/Idle/rotations", "assets/raw/kotwica-kibic/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 13 innymi postaciami"
+          },
+          "pixellab": "fa1b9ac8-6d8c-4f6a-8366-5cf73dd1a56e",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-kibic/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-lekarz",
+      "grupa": "kotwica-stylu",
+      "co": "lekarz w kitlu",
+      "narzedzie": "create_character",
+      "prompt": "Polish doctor about 60 years old, white hair, long white coat over a brown sweater, stethoscope around the neck, dark trousers, leather shoes, calm",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Lekarz 48"
+      },
+      "pixellab": "3b812ba0-e875-49d1-a006-798d76734f08",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-lekarz/Idle/rotations", "assets/raw/kotwica-lekarz/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 2 innymi postaciami"
+          },
+          "pixellab": "330b97d9-4277-48cf-a8d2-60b75d9a3d35",
+          "koszt": 0.1,
+          "pliki": ["assets/raw/kotwica-lekarz/paleta"],
+          "uwagi": "koszt całego wywołania zapisany przy pierwszej postaci z paczki"
+        }
+      ]
+    },
+    {
+      "id": "kotwica-weteran",
+      "grupa": "kotwica-stylu",
+      "co": "weteran w parce wojskowej",
+      "narzedzie": "create_character",
+      "prompt": "Polish ex-soldier survivalist about 45 years old, short beard, faded olive military surplus parka, knit cap, cargo trousers, combat boots, backpack with a rolled sleeping mat, watchful",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Weteran 48"
+      },
+      "pixellab": "2f2a41bf-81f0-4258-972f-24a88b84170d",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-weteran/Idle/rotations", "assets/raw/kotwica-weteran/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 2 innymi postaciami"
+          },
+          "pixellab": "330b97d9-4277-48cf-a8d2-60b75d9a3d35",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-weteran/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-matka",
+      "grupa": "kotwica-stylu",
+      "co": "matka z dzieckiem na ręku",
+      "narzedzie": "create_character",
+      "prompt": "Polish young mother about 32 years old, brown ponytail, long quilted purple coat, carrying a baby wrapped in a blanket, jeans, ankle boots, determined",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Matka z dzieckiem 48"
+      },
+      "pixellab": "3f6fb6ac-3f7b-4789-aebf-518e8963f7f8",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-matka/Idle/rotations", "assets/raw/kotwica-matka/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków, w jednym wywołaniu z 2 innymi postaciami"
+          },
+          "pixellab": "330b97d9-4277-48cf-a8d2-60b75d9a3d35",
+          "koszt": 0,
+          "pliki": ["assets/raw/kotwica-matka/paleta"]
+        }
+      ]
+    },
+    {
+      "id": "kotwica-influencerka-v1",
+      "grupa": "kotwica-stylu",
+      "co": "pierwsze zamówienie influencerki",
+      "narzedzie": "create_character",
+      "prompt": "young Polish survival influencer about 24 years old, long bleached hair, camouflage cap, tactical vest over a pink hoodie, cargo pants, hiking boots, holding a dead phone on a selfie stick",
+      "parametry": {
+        "mode": "v3",
+        "size": 48
+      },
+      "pixellab": "f6fe25aa-e6dc-4414-942d-f8784ee12283",
+      "koszt": 0,
+      "status": "odrzucony",
+      "pliki": [],
+      "uwagi": "zadanie stanęło po stronie PixelLab i nie zostało policzone; zamówione jeszcze raz"
     },
     {
       "id": "kotwica-emeryt-64",
