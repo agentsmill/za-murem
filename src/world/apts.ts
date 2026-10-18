@@ -6,10 +6,11 @@
    z podwórka da się dojść bez wychodzenia za siatkę, zawsze są mieszkańcy, a gdy takich mieszkań jest więcej,
    także puste do przeszukania. Śmieci są przechodnie, a wyważone drzwi zostają przejściem, więc nic tu nie
    zmienia blocked. Deterministycznie z ziarna świata i numeru budynku, zawartość każdego mieszkania z jego
-   własnego ziarna. */
+   własnego ziarna. Te same przepisy dla sąsiednich budynków (fala 2, docs/M2-fala-2.md) daje settleAptsOf:
+   bez mieszkania zarządu i bez reguły podwórka, dla wnętrza, które symulacja dołącza po otwarciu drzwi. */
 
 import { mulberry, type Rng } from '../core/rng.ts';
-import { type Furniture, IN, type RoomKind } from './interior.ts';
+import { type Furniture, IN, type Interior, type RoomKind } from './interior.ts';
 import type { World } from './world.ts';
 
 /** dlaczego mieszkanie jest puste */
@@ -85,12 +86,10 @@ const between = (rnd: Rng, [lo, hi]: [number, number]) => lo + Math.floor(rnd() 
     bez stanu dostają domyślny z ziarna, a mieszkanie z kozą zawsze należy do zarządu. Pusty stan bez powodu
     albo roku dostaje je z ziarna mieszkania. Niczego nie zmienia w świecie: wynik nakłada applyApts. */
 export function settleApts(w: AptWorld, given?: readonly AptState[]): Apts {
-  const { size, interior: it } = w;
+  const it = w.interior;
   const bid = w.hq;
-  const n = it.rooms.reduce((m, r) => Math.max(m, r.apt + 1), 0);
-  const base = it.furniture.map(({ broken: _broken, ...f }): Furniture => f);
-  if (!n) return { apts: [], furniture: base, trash: [], damage: [] };
-  const aptAt = (t: number) => (it.room[t] >= 0 ? it.rooms[it.room[t]].apt : -1);
+  const n = aptCount(it);
+  if (!n) return { apts: [], furniture: plainFurniture(it), trash: [], damage: [] };
 
   // 1. domyślnie: losowa połowa pustych. Przy podwórku (mieszkania, do których mieszkańcy dojdą bez wychodzenia
   // za siatkę) jedno puste do przeszukania, gdy są tam co najmniej dwa, a reszta dla mieszkańców; pozostałe
@@ -104,12 +103,55 @@ export function settleApts(w: AptWorld, given?: readonly AptState[]): Apts {
   const empty = new Set<number>();
   if (near.length >= 2) empty.add(near[0]);
   for (const a of [...others.filter((x) => !reach.has(x)), ...near.slice(1, -1)]) if (empty.size < want) empty.add(a);
+  return settleWith(w, it, bid, it.home, empty, given);
+}
+
+/** Stany i zawartość mieszkań dowolnego budynku (sąsiedniego, fala 2: docs/M2-fala-2.md): bez mieszkania zarządu
+    i bez reguły podwórka, domyślnie losowa połowa pustych z ziarna świata i budynku (tak jak w siedzibie), a stany
+    z zewnątrz (generator mieszkańców) wygrywają. Zawartość pustych z tych samych przepisów i ziaren mieszkań co
+    w siedzibie. Czysta funkcja: świat i wnętrze bez zmian. */
+export function settleAptsOf(
+  w: Pick<World, 'size' | 'seed' | 'buildings'>,
+  it: Interior,
+  given?: readonly AptState[],
+): Apts {
+  const bid = it.building;
+  const n = aptCount(it);
+  if (!n) return { apts: [], furniture: plainFurniture(it), trash: [], damage: [] };
+  const rnd = mulberry(((w.seed * 6151) ^ (bid * 92821) ^ 0x5eed5) >>> 0);
+  const all = [...Array(n).keys()];
+  shuffle(all, rnd);
+  const want = Math.floor(n / 2) + (n % 2 === 1 && rnd() < 0.5 ? 1 : 0);
+  return settleWith(w, it, bid, -1, new Set(all.slice(0, want)), given);
+}
+
+/** liczba mieszkań wnętrza (numery od 0) */
+const aptCount = (it: Interior): number => it.rooms.reduce((m, r) => Math.max(m, r.apt + 1), 0);
+
+/** meble wnętrza bez śladów zniszczenia (zawartość pustych liczy się od nowa) */
+const plainFurniture = (it: Interior): Furniture[] => it.furniture.map(({ broken: _broken, ...f }): Furniture => f);
+
+/** Kroki 2 i 3 wspólne dla siedziby i innych budynków: stany (z zewnątrz albo z domyślnej listy pustych, mieszkanie
+    zarządu home zawsze zarządu, −1: brak) i zawartość pustych (zepsute meble, uszkodzenia, śmieci) z ziaren
+    mieszkań, więc zmiana stanu jednego mieszkania nie przestawia innych. */
+function settleWith(
+  w: Pick<World, 'size' | 'seed' | 'buildings'>,
+  it: Interior,
+  bid: number,
+  home: number,
+  empty: ReadonlySet<number>,
+  given?: readonly AptState[],
+): Apts {
+  const { size } = w;
+  const n = aptCount(it);
+  const base = plainFurniture(it);
+  const aptAt = (t: number) => (it.room[t] >= 0 ? it.rooms[it.room[t]].apt : -1);
 
   // 2. stany: z zewnątrz, gdy są, inaczej domyślne; powód i rok pustego z ziarna mieszkania
   const byApt = new Map((given ?? []).filter((g) => g.bid === bid).map((g) => [g.apt, g]));
   const apts: AptState[] = [];
   for (let a = 0; a < n; a++) {
-    if (a === it.home) {
+    if (a === home) {
       apts.push({ bid, apt: a, state: 'zarzad' });
       continue;
     }
