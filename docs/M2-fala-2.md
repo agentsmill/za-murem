@@ -195,7 +195,7 @@ Rysowanie (`src/render`):
 
 Interfejs (`src/ui`, `src/main.ts`):
 
-- Napisy fali 2 w obu językach w `src/content/napisy-sasiedzi.ts` (do gry idzie na razie polski, jak w surowcach).
+- Napisy fali 2 w obu językach w `src/content/napisy-sasiedzi.ts` jako `Tx` z `src/core/jezyk.ts`: menu, opisy prac, podpowiedzi, karta spotkania i karta budynku biorą je przez `tr()` w bieżącym języku, angielski według `docs/SLOWNICZEK-EN.md` (zawody przez `zawodEn`, nazwy budynków z mapy przez `nazwaBudynkuEn`). Stan trzyma tylko identyfikatory napisów, więc zdanie powstaje przy rysowaniu.
 - Karta spotkania `src/ui/spotkanie.ts` (pauza jak okna zarządu, odcienie `sasiedzi` i `napad`, wybór poleceniem `meet`, wynik napisem w podpowiedzi), karta budynku `src/ui/budynek.ts` (klik w cudzy budynek bez zaznaczenia).
 - Cel drugiego dnia w domu rozwiązała osobna sesja („Przeszukajcie dom” z przeszukiwaniem domu komitetu, `pelna-gra`); od fali 2 cel przeszukania zalicza też pierwsze pomieszczenie przeszukane u sąsiadów.
 
@@ -210,7 +210,7 @@ Stan 18.10.2026 wieczorem: wszystkie cztery etapy zbudowane na `m2-fala-2`.
 1. Wejście, przeszukanie i spotkanie (to, czego Mateuszowi zabrakło): stany drzwi, otwieranie, pukanie, wyważanie z hałasem, zabijanie deskami, wnętrze w symulacji i w przekroju, stany i zawartość mieszkań, przeszukanie i rozbiórka, łup usług, noszenie na podwórko, lokatorzy z generatora, spotkanie z kartą i wyborami, szwendacze w mieszkaniach w trybie zombie, karta budynku. Zrobione.
 2. Lokatorzy szerzej i noc: znani i nieznani na karcie budynku, za dnia poza domem, szaber zamieszkanego mieszkania, wrodzy po wyważeniu, piętra, nocni goście (szabrownicy, którzy zostają, z „Przegonić”), ukrywani ugryzieni w trybie zombie. Zrobione.
 3. Wspólny płot. Zrobiony bez ducha planu na mapie.
-4. Gra sieciowa (zajęte klatki zamknięte na stałe), bot z flagą `--sasiedzi`, zrzuty, scalenia `pelna-gra`. Zrobione; tłumaczenia czekają na warstwę języka (napisy są parami pl/en w `src/content/napisy-sasiedzi.ts`).
+4. Gra sieciowa (zajęte klatki zamknięte na stałe), bot z flagą `--sasiedzi`, zrzuty, scalenia `pelna-gra`. Zrobione; po scaleniu angielskiego (`pelna-gra` eb74f5b) napisy fali 2 idą przez `tr()` po angielsku albo po polsku.
 
 Każdy etap kończy się testami, botami, zrzutami i lokalnym commitem na `m2-fala-2`.
 
