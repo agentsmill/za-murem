@@ -1,7 +1,8 @@
 /* Broń w obu trybach (docs/superpowers/specs/2026-10-17-tryb-zombie-design.md): zasięg w metrach, obrażenia,
    kroki między ciosami (20 na sekundę przy 1×), hałas w metrach, celność, amunicja i to, czy broń sięga przez
    siatkę. Każdy z zarządu ma jedną broń albo gołe ręce, zapasowa broń i amunicja leżą w magazynie (st.store).
-   Czyste dane i formuły bez stanu. */
+   Czyste dane i formuły bez stanu. Polskie nazwy zostają w WEAPONS, angielskie do rysowania są obok (WEAPONS_EN,
+   AMMO_EN). */
 
 import type { GameMode } from './tryb.ts';
 
@@ -54,6 +55,27 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
 
 /** amunicja w nazwach do tekstów */
 export const AMMO_NAMES: Record<AmmoKey, string> = { naboje: 'naboje', loftki: 'loftki', belty: 'bełty' };
+
+/** Nazwy broni po angielsku do rysowania (WEAPONS zostaje po polsku): name na karcie osoby („Weapon: crowbar”), the
+    w zdaniach, jak acc po polsku („Takes the crowbar.”). */
+export const WEAPONS_EN: Readonly<Record<WeaponId, { name: string; the: string }>> = {
+  piesci: { name: 'bare hands', the: 'bare hands' },
+  noz: { name: 'knife', the: 'the knife' },
+  siekiera: { name: 'axe', the: 'the axe' },
+  lom: { name: 'crowbar', the: 'the crowbar' },
+  kij: { name: 'nail bat', the: 'the nail bat' },
+  dzida: { name: 'spear', the: 'the spear' },
+  kusza: { name: 'crossbow', the: 'the crossbow' },
+  rewolwer: { name: 'revolver', the: 'the revolver' },
+  strzelba: { name: 'shotgun', the: 'the shotgun' },
+};
+
+/** amunicja po angielsku: nazwa jak AMMO_NAMES i liczba pojedyncza i mnoga do „12 rounds” */
+export const AMMO_EN: Readonly<Record<AmmoKey, { name: string; one: string; other: string }>> = {
+  naboje: { name: 'rounds', one: 'round', other: 'rounds' },
+  loftki: { name: 'buckshot', one: 'buckshot shell', other: 'buckshot shells' },
+  belty: { name: 'bolts', one: 'bolt', other: 'bolts' },
+};
 
 /** broń z identyfikatora; bez broni gołe ręce */
 export const weaponOf = (id?: WeaponId | null): Weapon => (id ? WEAPONS[id] : WEAPONS.piesci);
