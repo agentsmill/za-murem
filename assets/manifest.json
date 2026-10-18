@@ -2614,6 +2614,230 @@
       "status": "odrzucony",
       "pliki": ["assets/raw/kotwica-blok-edycja/edycja.png"],
       "uwagi": "skopiował wzorzec prawie bez zmian, fasada znów około 15 px na piętro"
+    },
+    {
+      "id": "strop-tynk",
+      "grupa": "pietra",
+      "co": "strop pięter, wariant „Ciepły tynk”: 16 kafelków 32 px płyty stropowej pod ciepłym beżowym tynkiem widzianej z góry (8 opisów po 2 warianty, numer i oraz i+8)",
+      "narzedzie": "create_tiles_pro",
+      "prompt": "1). [początek] plain uniform warm beige plaster, very faint grain 2). [początek] plain warm beige plaster, slightly faded and lighter 3). [początek] warm beige plaster with one faint straight panel joint across the middle 4). [początek] warm beige plaster with a small pale brown water stain in one corner 5). [początek] warm beige plaster with a single thin hairline crack 6). [początek] warm beige plaster with a small patch of lighter repaired plaster 7). [początek] warm beige plaster with a few tiny dark specks of mold in one corner 8). [początek] plain warm beige plaster, slightly darker and dustier",
+      "parametry": {
+        "tile_type": "square_topdown",
+        "tile_size": 32,
+        "tile_view": "top-down",
+        "poczatek": "top-down view of a prefab concrete floor slab covered with warm beige plaster, Polish 1970s apartment block, seen from directly above, flat matte surface, no furniture, no objects, no perspective, no shadows, no outline, seamless tile, low detail, calm low contrast, sandy peach beige colour,",
+        "style_images": [
+          "assets/wejscia/strop-wzorzec-32.png: 32×32 w kolorze płyty fasady #9a958a z assets/raw/kotwica-blok/1.png, wycinek x 46..57, y 106..110 (na fasadzie bloku nie ma okna 32×32 bez okien i szwów: płyta między oknami ma najwyżej 12×5 px, więc wzorzec jest płaski)"
+        ],
+        "style_options": {
+          "color_palette": false,
+          "outline": true,
+          "detail": true,
+          "shading": true
+        },
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "84f1ac26-af5e-47cc-8ce3-8ec0fdc60143",
+      "koszt": 10,
+      "status": "gotowy",
+      "pliki": [
+        "assets/raw/strop-tynk"
+      ],
+      "warianty": {
+        "0": "prawie biały (#e3e0d6), odrzucony",
+        "1": "biały, odrzucony",
+        "2": "szew z ciemnymi kreskami i szary placek na dole, nie bierzemy (koliduje z szwami z kodu)",
+        "3": "plama zalania w lewym dolnym rogu (naklejka)",
+        "4": "rysa przez cały kafelek (naklejka)",
+        "5": "łata jaśniejszego tynku, biała plama z jasną obwódką (naklejka, wycinek bez dolnego pasa)",
+        "6": "ciemne plamki pleśni w dwóch rogach (naklejka, wycinek bez dolnego pasa i prawej kolumny)",
+        "7": "szary (#9a958a), odrzucony",
+        "8": "szary z ciemną ramką, odrzucony",
+        "9": "żółty (#e0d29a), odrzucony",
+        "10": "szary z pęknięciami, odrzucony",
+        "11": "ciepły, prawie pusty: tylko trzy piksele różnicy w narożnikach, nie niesie naklejki",
+        "12": "blady z szarym rogiem, odrzucony",
+        "13": "szary z kropkami, odrzucony",
+        "14": "szary ze szwem przy lewej krawędzi, odrzucony",
+        "15": "blady z kropkami, odrzucony"
+      },
+      "uzycie": {
+        "opis": "tło stropu rysuje kod z samego koloru z szumem, bo kafelki PixelLab są płaskie (1 do 3 kolorów) i mają powtarzalne narożniki po odbiciu; szwy płyt stropowych rysuje kod jak szwy papy na dachu; z kafelków zostają rzadkie naklejki: piksele w kolorze klucza są przezroczyste, reszta leży na tle. Wszystkie kolory z palety Za Murem 2051. Szum liczony od współrzędnych świata, żeby łączył się między kafelkami.",
+        "tlo": "#e0b48c",
+        "klucz": "#e3b79a",
+        "ciemny": "#9a958a",
+        "posredni": "#b7b2a6",
+        "jasny": "#e3b79a",
+        "szum": {
+          "opis": "po jednym polu szumu wartościowego na kolor (siatka co tyle px, drugie pole z siatką 2,2 razy drobniejszą z wagą 0,3); piksele z najniższych wartości pola dostają kolor, w kolejności jasny, posredni, ciemny (ciemny na wierzchu)",
+          "ciemny": {
+            "udzial": 0.03,
+            "siatka": 5
+          },
+          "posredni": {
+            "udzial": 0.14,
+            "siatka": 6
+          },
+          "jasny": {
+            "udzial": 0.12,
+            "siatka": 7
+          }
+        },
+        "szwy": [
+          96,
+          64
+        ],
+        "szwy_kolor": "#b07a55",
+        "szwy_grubosc": 1,
+        "naklejki": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "wnetrze": [
+          2,
+          2,
+          28,
+          28
+        ],
+        "wnetrze_wariantu": {
+          "3": [
+            0,
+            20,
+            12,
+            12
+          ],
+          "4": [
+            0,
+            0,
+            32,
+            32
+          ],
+          "5": [
+            9,
+            10,
+            15,
+            12
+          ],
+          "6": [
+            0,
+            0,
+            31,
+            30
+          ]
+        },
+        "gestosc": 0.12,
+        "szwy_inne": "co 32 px (siatka 1 m) czyta się jak płytki i dubluje szwy lastryko w klatce, więc 96 × 64 jak na dachu (płyty 3 × 2 m)"
+      },
+      "pomiary": {
+        "opis": "pomiary z docs/postep/pietra-strop-arkusz.png: średni kolor tła ze skryptu pomocniczego (512 × 512 px, przepis z uzycie), luminancja względna WCAG, ΔE CIE76 do średnich kolorów powierzchni z gry",
+        "tlo_srednia": "#d9b391 (217, 179, 145)",
+        "tlo_roznica_do_cdb08c": [
+          11.7,
+          3.1,
+          4.8
+        ],
+        "luminancja_tla": 0.4902,
+        "luminancja_dachu_313336": 0.0329,
+        "stosunek_do_dachu": 14.91,
+        "R_minus_B": {
+          "strop": 72,
+          "dach_PixelLab": -5,
+          "lastryko": 16
+        },
+        "udzialy_pikseli_tla": {
+          "baza": 0.736,
+          "jasniejszy": 0.099,
+          "szary": 0.134,
+          "cien": 0.03
+        },
+        "surowe_ciepłe_kafelki_3_4_6_11": {
+          "rgb": [
+            224.7,
+            182.0,
+            153.3
+          ],
+          "hex": "#e1b699",
+          "roznica_do_cdb08c": [
+            19.7,
+            6.0,
+            13.3
+          ]
+        },
+        "powierzchnie": {
+          "dach PixelLab (papa)": {
+            "srednia": "#313336",
+            "strop_jasniejszy_razy": 14.91,
+            "deltaE": 60.4
+          },
+          "dach z kodu: papa": {
+            "srednia": "#585450",
+            "strop_jasniejszy_razy": 5.45,
+            "deltaE": 44.8
+          },
+          "dach z kodu: żwir": {
+            "srednia": "#9a968d",
+            "strop_jasniejszy_razy": 1.6,
+            "deltaE": 23.6
+          },
+          "dach z kodu: dachówka": {
+            "srednia": "#a24f36",
+            "strop_jasniejszy_razy": 3.63,
+            "deltaE": 40.3
+          },
+          "dach z kodu: blacha": {
+            "srednia": "#767c81",
+            "strop_jasniejszy_razy": 2.47,
+            "deltaE": 36.7
+          },
+          "lastryko klatki": {
+            "srednia": "#9a958a",
+            "strop_jasniejszy_razy": 1.62,
+            "deltaE": 22.9
+          },
+          "panele": {
+            "srednia": "#9f7850",
+            "strop_jasniejszy_razy": 2.29,
+            "deltaE": 22.8
+          },
+          "panele wytarte": {
+            "srednia": "#c4a47c",
+            "strop_jasniejszy_razy": 1.23,
+            "deltaE": 7.2
+          },
+          "linoleum kuchni": {
+            "srednia": "#cdbf9b",
+            "strop_jasniejszy_razy": 0.93,
+            "deltaE": 10.1
+          }
+        }
+      },
+      "uwagi": "Zamówienie poprawkowe po strop-tynk-v1 (szare kafelki): style_options z color_palette false, w opisie dopisane „sandy peach beige colour”. Ciepłe kafelki mają tło #e3b79a (227,183,154, kolor „skóra” z palety), czyli o 22 za dużo czerwieni względem #cdb08c, bo w palecie nie ma tak ciemnego beżu (najbliższy to #e0b48c); średnią w granicach ±14 daje dopiero tło z kodu: baza #e0b48c z plamkami #b7b2a6, #e3b79a i #9a958a (216,179,145, różnica +12, +3, +5). Strop jest 14,9 razy jaśniejszy od dachu #313336 i ma R−B 72 przy −5 na dachu i 16 w lastryko. Uwaga: od wytartych paneli (#c4a47c, ΔE 7) i linoleum kuchni (#cdbf9b, ΔE 10) odróżnia go głównie siatka szwów 3 × 2 m i szary kurz, kolor jest bliski (makieta Mateusza też to zaznaczała). Jasnej ramki kafelków nie ma, poza ciemną obwódką w #8, więc w przeciwieństwie do dachu wnętrze kafelka nie wymaga wycinka, ale naklejki mają pasy na krawędziach (#5, #6), stąd wnetrze_wariantu. Wzorzec stylu: assets/wejscia/strop-wzorzec-32.png."
+    },
+    {
+      "id": "strop-tynk-v1",
+      "grupa": "pietra",
+      "co": "strop pięter, pierwsze zamówienie: 16 kafelków 32 px, wszystkie szare (#b7b2a6) zamiast ciepłego beżu",
+      "narzedzie": "create_tiles_pro",
+      "prompt": "1). [początek] plain uniform warm beige plaster, very faint grain 2). [początek] plain warm beige plaster, slightly faded and lighter 3). [początek] warm beige plaster with one faint straight panel joint across the middle 4). [początek] warm beige plaster with a small pale brown water stain in one corner 5). [początek] warm beige plaster with a single thin hairline crack 6). [początek] warm beige plaster with a small patch of lighter repaired plaster 7). [początek] warm beige plaster with a few tiny dark specks of mold in one corner 8). [początek] plain warm beige plaster, slightly darker and dustier",
+      "parametry": {
+        "tile_type": "square_topdown",
+        "tile_size": 32,
+        "tile_view": "top-down",
+        "poczatek": "top-down view of a prefab concrete floor slab covered with warm beige plaster, Polish 1970s apartment block, seen from directly above, flat matte surface, no furniture, no objects, no perspective, no shadows, no outline, seamless tile, low detail, calm low contrast,",
+        "style_images": [
+          "assets/wejscia/strop-wzorzec-32.png (32×32 w kolorze płyty fasady #9a958a z assets/raw/kotwica-blok/1.png, wycinek x 46..57, y 106..110)"
+        ],
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "8eb5d6ca-b3f2-41e0-9482-ac10e57a86c1",
+      "koszt": 10,
+      "status": "odrzucony",
+      "pliki": [
+        "assets/raw/strop-tynk-v1"
+      ],
+      "uwagi": "wzorzec stylu przeniósł szary odcień fasady mimo palety: średnie kolory kafelków #b7b2a6 (183,178,166), czyli o 22 za mało czerwieni i 26 za dużo niebieskiego względem #cdb08c, do tego płaskie (1 do 3 kolorów na kafelek). Ramki nie ma, poza ciemną obwódką w #15. Poprawka w strop-tynk: style_options z color_palette false."
     }
   ]
 }
