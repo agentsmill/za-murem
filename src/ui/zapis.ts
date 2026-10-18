@@ -25,6 +25,9 @@ export interface Save {
   cam?: { x: number; y: number; zoom: number };
   /** odcisk świata (worldKey): po zmianie generatora stary stan nie pasuje do nowego wnętrza */
   world?: string;
+  /** gra sieciowa (src/net/siec.ts): budynki, które nie mogą być siedzibą (świat buduje się z nimi tak samo), i czy
+      drużyna ma już dom; brak: gra bez sieci */
+  siec?: { zajete: string[]; dom: boolean; utracony?: string };
 }
 
 /** odcisk świata z danych osiedla: inna wersja generatora daje inny odcisk */
