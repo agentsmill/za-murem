@@ -17,8 +17,17 @@ export interface WynikRejonu {
     (północ) do 0,66 (południe). Stała zamiast cosinusa, bo trygonometrii w tym module nie ma; błąd kilku
     procent nie ma znaczenia dla progu 1 km i wyboru najbliższego sąsiada. */
 const SKALA_DLUGOSCI = 0.6;
-/** 1 km w stopniach szerokości geograficznej (1° = 111,2 km → 0,009° ≈ 1,0 km), na kwadracie odległości. */
-const PROG_KW = 0.009 * 0.009;
+/** 1 km w stopniach szerokości geograficznej (1° = 111,2 km → 0,009° ≈ 1,0 km). */
+const PROG = 0.009;
+/** próg odległości na kwadracie */
+const PROG_KW = PROG * PROG;
+/** Jak daleko poza prostokątem obrysów gminy (w stopniach szerokości i długości) `rejonDla` może jeszcze dać
+    `najblizszy`: próg 1 km, po długości przez SKALA_DLUGOSCI (0,015°). Wczytywanie gminy dla punktu (wczytaj.ts)
+    poszerza o tyle prostokąty z indeksu. */
+export const MARGINES_REJONU: { readonly lat: number; readonly lon: number } = {
+  lat: PROG,
+  lon: PROG / SKALA_DLUGOSCI,
+};
 
 type Pierscienie = TabeleGminy['obrysy'][string];
 

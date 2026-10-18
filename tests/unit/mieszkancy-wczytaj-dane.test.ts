@@ -335,7 +335,8 @@ describe('wczytajDaneMieszkancow', () => {
       KRAKOW.lon,
       plikowy({ 'gminy/indeks.json': indeksTekstem(i) }, zapytania),
     );
-    // Kraków jest w prostokątach obu gmin (świat), ale od Zielonek (Małopolska, 19 km) i Gdańska jest za daleko
+    // Kraków jest w prostokątach obu gmin (świat), ale od obrysu Zielonek (Małopolska, około 4,5 km) i od Gdańska
+    // jest za daleko
     expect(zapytania).toContain('data/mieszkancy/gminy/1206172.json');
     expect(zapytania).toContain('data/mieszkancy/gminy/2261011.json');
     expect(d).not.toBeNull();
@@ -375,6 +376,40 @@ describe('wczytajDaneMieszkancow', () => {
       );
     const d = await wczytajDaneMieszkancow(p.lat, p.lon, plikowy({ 'gminy/indeks.json': zepsuty }));
     expect(d?.gmina?.teryt).toBe('2261011');
+  });
+
+  it('punkt pół kilometra na północ od skrajnego wierzchołka Gdańska (poza prostokątem z indeksu) dostaje Gdańsk', async () => {
+    const g = JSON.parse(fs.readFileSync(path.join(GMINY, '2261011.json'), 'utf8')) as TabeleGminy;
+    let szczyt: readonly number[] = [-90, 0];
+    for (const pierscienie of Object.values(g.obrysy))
+      for (const p of pierscienie) for (const v of p) if (v[0] > szczyt[0]) szczyt = v;
+    const indeks = JSON.parse(fs.readFileSync(INDEKS, 'utf8')) as IndeksGmin;
+    expect(indeks.gminy.find((x) => x.teryt === '2261011')?.bbox[2]).toBe(szczyt[0]);
+    const d = await wczytajDaneMieszkancow(szczyt[0] + 0.0045, szczyt[1], plikowy());
+    expect(d?.gmina?.teryt).toBe('2261011');
+  });
+
+  it('NaN albo nieskończoność zamiast współrzędnych: bez pytania o tabele gmin, gmina null', async () => {
+    for (const [lat, lon] of [
+      [Number.NaN, 18.6],
+      [54.4, Number.NaN],
+      [Number.POSITIVE_INFINITY, 18.6],
+    ]) {
+      const zapytania: string[] = [];
+      const d = await wczytajDaneMieszkancow(lat, lon, plikowy({}, zapytania));
+      expect(
+        zapytania.some((a) => /gminy\/\d{7}\.json$/.test(a)),
+        `${lat},${lon}`,
+      ).toBe(false);
+      expect(d?.gmina).toBeNull();
+    }
+  });
+
+  it('odpowiedź HTML ze statusem 200 na kraj.json albo na nazwiska województwa: null', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const p = adres('przymorze');
+    for (const plik of ['mieszkancy/kraj.json', 'nazwiska/pomorskie.json'])
+      await expect(wczytajDaneMieszkancow(p.lat, p.lon, plikowy({ [plik]: html })), plik).resolves.toBeNull();
   });
 
   it('bez podanego fetch używa globalnego', async () => {

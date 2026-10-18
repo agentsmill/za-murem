@@ -5,7 +5,7 @@
 import type { Odmiana } from './historie.ts';
 import { bezPuliLokalnej, nazwiskaDlaGminy } from './imiona.ts';
 import { type OdmianaPlik, rozpakujOdmiane, type TabelaKoncowek, type TabelaOdmiany } from './odmiana.ts';
-import { rejonDla } from './rejon.ts';
+import { MARGINES_REJONU, rejonDla } from './rejon.ts';
 import {
   type IndeksGmin,
   PLIK_WOJEWODZTWA,
@@ -90,8 +90,9 @@ export async function wczytajKraj(fetchFn: typeof fetch = fetch): Promise<Tabele
   return dane as unknown as TabeleKraju;
 }
 
-/** Tabele imion (rocznik → imiona, koszyki przed 2000 r., powracające, przyjezdni). Imiona są opcjonalne (generator
-    bez nich zostawia osoby bez imion), więc każda porażka, także brak pliku, to `null` z ostrzeżeniem w konsoli. */
+/** Tabele imion (rocznik → imiona, koszyki przed 2000 r., powracające, przyjezdni). Każda porażka, także brak pliku,
+    to `null` z ostrzeżeniem w konsoli. Sam generator bez imion zostawia osoby bez imion, ale gra ich wymaga:
+    `wczytajDaneMieszkancow` bez nich daje `null` (stara ścieżka). */
 export async function wczytajImiona(fetchFn: typeof fetch = fetch): Promise<TabeleImion | null> {
   return wczytajTabele<TabeleImion>(`${KATALOG}imiona.json`, 'Tabele imion', fetchFn, false);
 }
@@ -123,8 +124,9 @@ export async function wczytajNazwiskaDlaGminy(
   return t && !lokalne ? bezPuliLokalnej(t) : t;
 }
 
-/** Słownik odmiany (odmiana.json z SGJP) rozpakowany do `TabelaOdmiany`. Odmiana jest opcjonalna (`odmien` bez słownika
-    zgaduje), więc każda porażka, także brak pliku i uszkodzony plik, to `null` z ostrzeżeniem w konsoli. */
+/** Słownik odmiany (odmiana.json z SGJP) rozpakowany do `TabelaOdmiany`. Każda porażka, także brak pliku i uszkodzony
+    plik, to `null` z ostrzeżeniem w konsoli. Samo `odmien` bez słownika zgaduje, ale gra wymaga słownika:
+    `wczytajDaneMieszkancow` bez niego daje `null`, a edytor imienia bez niego się nie otwiera. */
 export async function wczytajOdmiane(fetchFn: typeof fetch = fetch): Promise<TabelaOdmiany | null> {
   const plik = await wczytajTabele<OdmianaPlik>(`${KATALOG}odmiana.json`, 'Tabele odmiany', fetchFn, false);
   if (!plik) return null;
@@ -180,18 +182,22 @@ export interface DaneMieszkancow {
 }
 
 /** Tabele gminy, w której leży punkt: pierwsza gmina z indeksu (kolejność indeksu, czyli po TERYT), której prostokąt
-    zawiera punkt i której tabela istnieje, a `rejonDla` nie zwraca dla punktu zapasu `gmina` (czyli punkt leży
-    w obrysie rejonu albo najwyżej 1 km od niego). Prostokąty sąsiednich gmin mogą na siebie zachodzić, stąd pętla
-    po kandydatach. `null`, gdy żaden nie pasuje albo indeksu nie ma (404): szablon krajowy. `BLAD`, gdy indeksu albo
+    poszerzony o `MARGINES_REJONU` zawiera punkt i której tabela istnieje, a `rejonDla` nie zwraca dla punktu zapasu
+    `gmina` (czyli punkt leży w obrysie rejonu albo najwyżej 1 km od niego, także za skrajnym wierzchołkiem gminy).
+    Prostokąty sąsiednich gmin mogą na siebie zachodzić, stąd pętla po kandydatach. `null`, gdy żaden nie pasuje,
+    indeksu nie ma (404) albo punkt nie jest liczbą (NaN, nieskończoność; bez pytania o pliki): szablon krajowy. `BLAD`, gdy indeksu albo
     pliku gminy z pasującym prostokątem nie da się wczytać z innego powodu niż 404 (błąd sieci, 5xx, strona HTML,
     inna wersja): wtedy nie wiadomo, czy punkt ma gminę, więc wywołujący zostaje przy starej ścieżce, zamiast dać
     osiedlu szablon krajowy. */
 async function gminaPunktu(lat: number, lon: number, fetchFn: typeof fetch): Promise<TabeleGminy | null | typeof BLAD> {
+  // NaN przeszedłby przez każde porównanie z prostokątem i pytałby o tabele wszystkich gmin
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   const indeks = await pobierzIndeksGmin(fetchFn);
   if (indeks === BRAK) return null;
   if (!indeks) return BLAD;
+  const m = MARGINES_REJONU;
   for (const { teryt, bbox } of indeks.gminy) {
-    if (lat < bbox[0] || lat > bbox[2] || lon < bbox[1] || lon > bbox[3]) continue;
+    if (lat < bbox[0] - m.lat || lat > bbox[2] + m.lat || lon < bbox[1] - m.lon || lon > bbox[3] + m.lon) continue;
     const g = await pobierzTabele<TabeleGminy>(adresGminy(teryt), `Tabele gminy ${teryt}`, fetchFn, true);
     if (g === BRAK) continue;
     if (!g) return BLAD;
