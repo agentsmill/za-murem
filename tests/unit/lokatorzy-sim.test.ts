@@ -18,7 +18,7 @@ import { wczytajDaneMieszkancow } from '../../src/mieszkancy/wczytaj.ts';
 import { TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { type LokatorzyGry, lokatorzyGry, type OsobaGry } from '../../src/sim/lokatorzy.ts';
-import { createSim, type Pawn, Sim, type SimState } from '../../src/sim/sim.ts';
+import { addResidents, createSim, type Pawn, Sim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { readSave, worldKey, writeSave } from '../../src/ui/zapis.ts';
@@ -192,6 +192,27 @@ describe('mieszkańcy siedziby z osobami', () => {
       const st = z(nazwa);
       expect(mieszkancy(st).length, nazwa).toBeGreaterThanOrEqual(3);
       for (const p of mieszkancy(st)) expect(p.person, `${nazwa} pionek ${p.id} w ${p.apt}`).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('przyjęci z uchwał zostają anonimowi: nowe pionki bez osoby, osób w stanie tyle samo', () => {
+    for (const nazwa of ['przymorze', 'lanciego'] as const) {
+      const { world } = demo(nazwa);
+      const st = z(nazwa);
+      const osoby = st.people.length;
+      const pionki = st.pawns.length;
+      const n = addResidents(st, world, 2, true);
+      expect(n, nazwa).toBe(2);
+      const nowe = st.pawns.slice(pionki);
+      expect(
+        nowe.map((p) => p.kind),
+        nazwa,
+      ).toEqual(['resident', 'resident']);
+      expect(
+        nowe.map((p) => p.person),
+        nazwa,
+      ).toEqual([-1, -1]);
+      expect(st.people.length, nazwa).toBe(osoby);
     }
   });
 
@@ -371,13 +392,26 @@ describe('pierwsza doba z mieszkańcami z generatora', () => {
         const { world, seed } = demo(nazwa);
         const st = z(nazwa, { mode });
         const imiona = zOsoba(st).map((p) => st.people[p.person].name);
+        const osoby = st.people.length;
         const { sim, gov } = doba(world, st, seed, mode);
         expect(st.tick).toBe(TICKS_PER_DAY);
         expect(gov.over ?? null).toBeNull();
         const s = snapshot(st, world);
-        // mieszkańcy z osobą dalej w odczycie (w trybie zombie ktoś mógł zginąć, nowych osób nie ma)
-        expect(s.lokatorzy.length).toBe(zOsoba(st).length);
+        // mieszkańcy z osobą dalej w odczycie (w zombie ktoś mógł zginąć); przyjęci są anonimowi
+        // nowe osoby są tylko w zarządzie (wydarzenie w trybie zombie potrafi dać nowego członka), bez ref; żaden
+        // mieszkaniec nie dostaje nowej osoby
+        const nowe = st.people.slice(osoby);
+        for (const p of nowe) expect(p.ref).toBeUndefined();
+        for (const p of nowe) expect(st.pawns.find((q) => st.people[q.person] === p)?.kind ?? 'core').toBe('core');
+        expect(zOsoba(st).every((p) => p.person < osoby)).toBe(true);
         for (const p of s.lokatorzy) expect(imiona).toContain(p.name);
+        // zarząd nie dostaje mieszkańców w odczycie osób: ani ich id, ani ref
+        const refy = zOsoba(st).map((p) => st.people[p.person].ref as string);
+        const ids = new Set(zOsoba(st).map((p) => st.people[p.person].id));
+        const wejscie = govInput(st, world, 0).people;
+        expect(wejscie.some((p) => ids.has(p.id))).toBe(false);
+        const tekst = JSON.stringify(wejscie);
+        for (const r of refy) expect(tekst).not.toContain(`"${r}"`);
         expect(s.people.length).toBeGreaterThan(0);
         expect(sim.hash()).toMatch(/^[0-9a-f]{8}$/);
       });
