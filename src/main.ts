@@ -9,7 +9,7 @@
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
-import { HALAS_ZOMBIE, PO_POLECENIU } from './content/napisy-sasiedzi.ts';
+import { HALAS_ZOMBIE, PO_PLOCIE, PO_POLECENIU } from './content/napisy-sasiedzi.ts';
 import { ALARM_OFF_EN, ALARM_OFF_SAY_EN, ALARM_OFF_TITLE_EN } from './content/napisy-zombie.en.ts';
 import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zombie.ts';
 import type { Person } from './content/people.ts';
@@ -37,6 +37,7 @@ import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajO
 import { GraSieciowa } from './net/gra.ts';
 import { buildScene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
+import { wczytajGrafike } from './render/grafika.ts';
 import { type Light, lightAt } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
@@ -119,6 +120,8 @@ const params = new URLSearchParams(location.search);
 // język przed czymkolwiek, co rysuje: ?lang=, pamięć przeglądarki, a bez nich angielski
 startJezyka({ params });
 const touchUI = matchMedia('(pointer: coarse)').matches;
+// grafika z PixelLab (atlasy z public/assets) pobiera się w tle od razu; ?grafika=kod: wszystko rysowane kodem
+const grafika = params.get('grafika') === 'kod' ? Promise.resolve(null) : wczytajGrafike();
 
 declare global {
   interface Window {
@@ -162,6 +165,8 @@ declare global {
       admit: (n: number) => number;
       /** gra z sąsiadami (src/net/gra.ts): zalogowanie, stan sieci, znaczniki */
       siec: () => ReturnType<GraSieciowa['podglad']>;
+      /** które części grafiki są z PixelLab (reszta z kodu); null: wszystko z kodu */
+      grafika: () => Record<'teren' | 'blok' | 'dach' | 'trzepak', boolean> | null;
     };
   }
 }
@@ -452,8 +457,11 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     }
   // drużyna bez domu w grze z sąsiadami zaczyna na ulicy
   if (!saved) siec.poStarcie(st, world);
-  // scena po stanach mieszkań na świecie: przekrój rysuje puste mieszkania, uszkodzenia i śmieci ze świata
-  const scene = buildScene(world);
+  // scena po stanach mieszkań na świecie: przekrój rysuje puste mieszkania, uszkodzenia i śmieci ze świata;
+  // teren i bloki z grafiki z PixelLab, jeśli się wczytała
+  const art = await grafika;
+  view.setGrafika(art);
+  const scene = buildScene(world, art);
   // przekrój siedziby z wnętrzem ze świata; ?przekroj=0 zostawia dach (do porównań)
   if (params.get('przekroj') !== '0') scene.section = sectionOf(world);
   const zombie = modeOf(st) === 'zombie';
@@ -1838,7 +1846,9 @@ function run(m: MenuItem) {
   if (siec.obsluz(m)) return;
   sim.push(m.cmd);
   const k = m.cmd.ids.length > 1 ? 1 : 0;
-  const f = L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]);
+  // wspólny płot z jednego materiału mówi, po co idzie (deska i złom jak w feedback)
+  const jeden = m.cmd.t === 'enclose' && (m.cmd.wariant === 'deski' || m.cmd.wariant === 'zlom') ? m.cmd.wariant : null;
+  const f = jeden ? tr(PO_PLOCIE[jeden][k]) : L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]);
   // w trybie zombie wyważanie ściąga szwendaczy z okolicy
   const loud = m.cmd.t === 'force' && modeOf(sim.st) === 'zombie' ? tr(HALAS_ZOMBIE) : '';
   if (f) say(`${f}${loud}`, loud ? 4000 : 1800);
@@ -2542,6 +2552,10 @@ if (attrib) bars.observe(attrib);
     apts: () => sim?.st.apts ?? [],
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
     siec: () => siec.podglad(),
+    grafika: () => {
+      const g = view.grafika;
+      return g && { teren: !!g.teren, blok: !!g.blok, dach: !!g.dach, trzepak: !!g.trzepak };
+    },
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });

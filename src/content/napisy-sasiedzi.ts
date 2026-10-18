@@ -60,6 +60,16 @@ const nazwaEn = (nazwa: string): string => nazwaBudynkuEn(nazwa);
 
 // ---------------------------------------------------------------- menu i prace
 
+/** wariant materiału wspólnego płotu (WariantPlotu z src/sim/sasiedzi.ts) */
+type WariantNapisu = 'mieszany' | 'deski' | 'zlom';
+
+/** dopisek do nazwy płotu z jednego materiału */
+const PLOT_Z: Record<WariantNapisu, Dwa> = {
+  mieszany: { pl: '', en: '' },
+  deski: { pl: ' z desek', en: 'plank ' },
+  zlom: { pl: ' ze złomu', en: 'scrap ' },
+};
+
 export const MENU = {
   otworz: { pl: 'Otworzyć drzwi', en: 'Open the door' },
   otworzMieszkanie: { pl: 'Otworzyć drzwi mieszkania', en: 'Open the flat door' },
@@ -79,11 +89,21 @@ export const MENU = {
     en: `Search a floor upstairs (${left} left)`,
   }),
   okradnij: { pl: 'Okraść mieszkanie (lokatorów nie ma)', en: 'Rob the flat (nobody’s home)' },
-  /** etap 3: wspólny płot z kosztem i czasem; h: godziny pracy */
-  plot: (m: number, deski: number, zlom: number, h: number): Dwa => ({
-    pl: `Otoczyć wspólnym płotem (${m} m: ${deski} ${pl3(deski, 'deska', 'deski', 'desek')}, ${zlom} złomu, ${liczba(h, 1, 'pl')} h)`,
-    en: `Put up a shared fence (${m} m: ${deski} ${en2(deski, 'plank', 'planks')}, ${zlom} scrap, ${liczba(h, 1, 'en')} h)`,
-  }),
+  /** etap 3: wspólny płot z kosztem i czasem; h: godziny pracy; wariant materiału: deska i złom (oba w koszcie) albo
+      z desek czy ze złomu (materiał płotu pierwszy, deski na drzwi do zabicia po złomie) */
+  plot: (m: number, deski: number, zlom: number, h: number, wariant: WariantNapisu = 'mieszany'): Dwa => {
+    const d = {
+      pl: `${deski} ${pl3(deski, 'deska', 'deski', 'desek')}`,
+      en: `${deski} ${en2(deski, 'plank', 'planks')}`,
+    };
+    const z = { pl: `${zlom} złomu`, en: `${zlom} scrap` };
+    const co = wariant === 'deski' ? [d] : wariant === 'zlom' ? (deski > 0 ? [z, d] : [z]) : [d, z];
+    const jaki = PLOT_Z[wariant];
+    return {
+      pl: `Otoczyć wspólnym płotem${jaki.pl} (${m} m: ${co.map((c) => c.pl).join(', ')}, ${liczba(h, 1, 'pl')} h)`,
+      en: `Put up a shared ${jaki.en}fence (${m} m: ${co.map((c) => c.en).join(', ')}, ${liczba(h, 1, 'en')} h)`,
+    };
+  },
   plotDalej: { pl: 'Budować wspólny płot dalej', en: 'Keep building the shared fence' },
   plotNie: (why: string, m?: number): Dwa =>
     why === 'jezdnia'
@@ -194,6 +214,30 @@ export const PO_POLECENIU: Record<
     {
       pl: 'Jedna osoba przeszuka pomieszczenie i zaniesie łup.',
       en: 'One person goes to search the room and carry the loot.',
+    },
+  ],
+};
+
+/** podpowiedź po poleceniu wspólnego płotu z jednego materiału (deska i złom: PO_POLECENIU.enclose) */
+export const PO_PLOCIE: Record<'deski' | 'zlom', [Dwa, Dwa]> = {
+  deski: [
+    {
+      pl: 'Postawi wspólny płot z desek: najpierw doniesie deski.',
+      en: 'Off to put up the shared plank fence, planks first.',
+    },
+    {
+      pl: 'Jedna osoba postawi wspólny płot z desek: najpierw doniesie deski.',
+      en: 'One person goes to put up the shared plank fence, planks first.',
+    },
+  ],
+  zlom: [
+    {
+      pl: 'Postawi wspólny płot ze złomu: najpierw doniesie złom.',
+      en: 'Off to put up the shared scrap fence, scrap first.',
+    },
+    {
+      pl: 'Jedna osoba postawi wspólny płot ze złomu: najpierw doniesie złom.',
+      en: 'One person goes to put up the shared scrap fence, scrap first.',
     },
   ],
 };

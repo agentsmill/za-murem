@@ -5,7 +5,9 @@
    Noc to mapa światła nad światem (light.ts), mnożona przez obraz. Przekrój: przy zbliżeniu
    kawałki nad budynkiem z wnętrzem (scene.section) rysują się z wnętrzem zamiast dachu, a meble
    stoją w jednej warstwie z pionkami, sortowane po y. Otwarte sąsiednie budynki (M2 fala 2) dokładają
-   swoje wnętrza do tego samego przekroju łatką sceny (przekrojSasiadow.ts), razem z wyglądem drzwi. */
+   swoje wnętrza do tego samego przekroju łatką sceny (przekrojSasiadow.ts), razem z wyglądem drzwi, a plan
+   wspólnego płotu rysuje się jako duch przyszłego obwodu z postępem (plotDuch.ts, plotLayer.ts). Z grafiką
+   z PixelLab (setGrafika) trzepak jest z PixelLab, teren i bloki rysują kawałki ze sceny (scene.art). */
 
 import {
   Application,
@@ -40,7 +42,8 @@ import {
   zFrameRect,
   zLieRect,
 } from './art/people.ts';
-import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec, thingSprite } from './art/rzeczy.ts';
+import { type Grafika, rzeczSprite } from './art/pixellab.ts';
+import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec } from './art/rzeczy.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
 import { mockWear, type WearMock } from './atrapy.ts';
 import { BuildLayer, type BuildPlan, type Placement } from './buildLayer.ts';
@@ -79,7 +82,9 @@ import {
 } from './game.ts';
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
-import { FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
+import { type DuchPlotu, duchPlotu } from './plotDuch.ts';
+import { PlotLayer } from './plotLayer.ts';
+import { crowdJitter, FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
 import { PrzekrojSasiadow } from './przekrojSasiadow.ts';
 import { burning, IN, setWear, specOf, type ThingLike } from './section.ts';
 import { smokeSources } from './smoke.ts';
@@ -129,6 +134,8 @@ export class GameView {
   app = new Application();
   root = new Container();
   terrain = new Container();
+  /** ziemia: ślady pod rzeczami i pionkami (duch planu wspólnego płotu); warstwa pionków ma same sprite'y */
+  readonly ground = new Container();
   marks = new Graphics();
   actors = new Container();
   /** drzewa z bliska jako sprite'y w warstwie pionków (z daleka są w kawałkach) */
@@ -231,11 +238,18 @@ export class GameView {
   readonly buildOverlay = new Container();
   /** budowa: duchy planów w warstwie pionków, paski i podgląd stawiania */
   readonly builds = new BuildLayer(this.actors, this.buildOverlay);
+  /** M2 fala 2, etap 3: duch planu wspólnego płotu (siatka w warstwie pionków, ślad na ziemi, postęp nad mapą
+      światła) */
+  readonly plotDuch = new PlotLayer(this.actors, this.ground, this.buildOverlay);
+  /** duch planu płotu z ostatniego syncGame (null: nie ma planu) */
+  private duch: DuchPlotu | null = null;
   /** światła ze stanu gry (koza, okna, ognisko, warta); view.lights to dodatki (podgląd) */
   private gameLights: Light[] = [];
   /** rzeczy, które się nie zmieniają (trzepak, siatka) i ich klucze: bez liczenia opisu co klatkę */
   private fixed = new WeakSet<ThingLike>();
   private fixedKeys = new WeakMap<ThingLike, string | null>();
+  /** grafika z PixelLab (trzepak; teren i bloki idą ze sceną) albo null: wszystko z kodu */
+  grafika: Grafika | null = null;
 
   /** workers: false wymusza rysowanie kawałków w głównym wątku (adres ?worker=0) */
   async init(host: HTMLElement, opts: { workers?: boolean } = {}): Promise<void> {
@@ -255,6 +269,7 @@ export class GameView {
     this.app.canvas.classList.add('game-canvas');
     this.root.addChild(
       this.terrain,
+      this.ground,
       this.marks,
       this.actors,
       this.light.sprite,
@@ -272,6 +287,16 @@ export class GameView {
     this.warms = Texture.from(makeWeaponAtlas() as HTMLCanvasElement).source;
     if (opts.workers !== false && workersAvailable())
       this.painter = new WorkerPainter(spawnChunkWorker, poolSize(navigator.hardwareConcurrency || 4, PHONE));
+  }
+
+  /** grafika z PixelLab do rzeczy (przed setScene; tekstury rzeczy z poprzedniej grafiki idą do kosza) */
+  setGrafika(g: Grafika | null): void {
+    if (g === this.grafika) return;
+    this.grafika = g;
+    for (const e of this.things.values()) e.sprite.destroy();
+    this.things.clear();
+    for (const a of this.thingArt.values()) a.tex.destroy(true);
+    this.thingArt.clear();
   }
 
   /** gdzie się rysują kawałki (do pomiarów) */
@@ -312,6 +337,7 @@ export class GameView {
       setWear(sc.section, this.wearMock.damage, this.wearMock.apts);
     }
     this.builds.mapSize = sc.w.size;
+    this.plotDuch.mapSize = sc.w.size;
     this.painter.setScene(sc);
     const n = sc.chunks;
     for (let cy = 0; cy < n; cy++)
@@ -364,7 +390,8 @@ export class GameView {
 
   /**
    * Rzeczy (meble z interior.furniture, trzepak z world.props, potem st.things z symulacji) jako
-   * sprite'y z grafiki zastępczej (thingSprite) w warstwie pionków, sortowane po y dolnej krawędzi.
+   * sprite'y z grafiki zastępczej (thingSprite; trzepak z PixelLab, gdy jest grafika) w warstwie pionków,
+   * sortowane po y dolnej krawędzi.
    * Meble we wnętrzu widać tylko w przekroju, rzeczy na podwórku zawsze; koza i ognisko z ogniem
    * mają animację. Wołać, gdy lista się zmieni; rzeczy porównuje po miejscu i opisie sprite'a,
    * więc tanio też co klatkę.
@@ -457,6 +484,8 @@ export class GameView {
       });
     }
     this.plans = (sim.st as { builds?: readonly BuildPlan[] }).builds ?? [];
+    // plan wspólnego płotu: przyszły obwód (kształt z pamięci, liczony od nowa po zmianie planu, siatki albo zasieków)
+    this.duch = duchPlotu(sim.st, w);
     this.syncFelled(sim.st.felled);
     // siatka liczona od nowa tylko po zmianie w blocked (łata, nowa dziura, brama)
     const codes = fenceCodes(w.fence, sim.blocked, w.size, sim.st.fence);
@@ -559,7 +588,7 @@ export class GameView {
     const key = JSON.stringify(spec);
     let art = this.thingArt.get(key);
     if (!art) {
-      const sp = thingSprite(spec);
+      const sp = rzeczSprite(spec, this.grafika);
       art = { tex: pixelTexture(sp), sp };
       this.thingArt.set(key, art);
     }
@@ -743,8 +772,12 @@ export class GameView {
       : this.lights;
     const lights = this.cutOn ? all : all.filter((l) => !l.inside);
     this.darkness = darknessAt(minutesAt(st.tick));
-    // nocą zaznaczenie i droga nad mapą światła (inaczej ciemnieją razem z ziemią), w dzień pod pionkami
-    const marksAt = this.darkness > NIGHT_MARKS ? this.root.getChildIndex(this.light.glowSprite) : 1;
+    // nocą zaznaczenie i droga nad mapą światła (inaczej ciemnieją razem z ziemią), w dzień pod pionkami, nad śladami
+    // na ziemi
+    const marksAt =
+      this.darkness > NIGHT_MARKS
+        ? this.root.getChildIndex(this.light.glowSprite)
+        : this.root.getChildIndex(this.ground) + 1;
     if (this.root.getChildIndex(this.marks) !== marksAt) this.root.setChildIndex(this.marks, marksAt);
     // rzeczy: meble tylko w przekroju, ogień w kozie i ognisku co 150 ms następna klatka
     const flame = Math.floor(performance.now() / 150) % FIRE_FRAMES;
@@ -758,6 +791,7 @@ export class GameView {
       (spec) => this.artOf(spec),
       (x, y) => !this.cutOn && this.underRoof(x, y),
     );
+    this.plotDuch.update(this.duch, z);
     // pionki: poza z pracy (rąbie, niesie drewno albo materiał, klęczy, gotuje, siedzi, śpi, wartuje,
     // przeszukuje, naprawia, buduje); prace M2 biorą rodzaj uszkodzenia i planu ze stanu gry
     const seen = new Set<number>();
@@ -787,7 +821,9 @@ export class GameView {
         sp.position.set(Math.round(pose.lie.x), Math.round(pose.lie.y));
       } else {
         sp.anchor.set(0.5, 45 / FH);
-        sp.position.set(Math.round(x * TILE), Math.round(y * TILE));
+        // napierający na siatkę stoją na środkach kafelków: tłum rozsuwamy w widoku, żeby nie był jednym sprite'em
+        const [jx, jy] = p.kind === 'zombie' && p.job?.phase === 2 ? this.crowdOffset(p) : [0, 0];
+        sp.position.set(Math.round((x + jx) * TILE), Math.round((y + jy) * TILE));
       }
       sp.zIndex = pose.z ?? y;
       // pod dachem nie widać nikogo; w przekroju tak; kto przeszukuje piętro sąsiada, jest na górze (M2 fala 2)
@@ -931,6 +967,16 @@ export class GameView {
         sp.destroy();
         this.corpseSprites.delete(id);
       }
+  }
+
+  /** rozsunięcie napierającego szwendacza (kafelki): od siatki, którą naciska (job.target), wzdłuż niej i w głąb ulicy */
+  private crowdOffset(p: Pawn): [number, number] {
+    const size = this.scene!.w.size;
+    const t = p.job!.target;
+    const dx = (t % size) + 0.5 - p.x;
+    const dy = Math.floor(t / size) + 0.5 - p.y;
+    const away: [number, number] = Math.abs(dx) >= Math.abs(dy) ? [dx > 0 ? -1 : 1, 0] : [0, dy > 0 ? -1 : 1];
+    return crowdJitter(p.id, t >= 0 ? away : [0, 1]);
   }
 
   /** paski życia rannych w walce i krąg hałasu po strzale (w warstwie zaznaczeń) */

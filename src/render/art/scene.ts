@@ -1,6 +1,7 @@
 /* Dane pochodne do rysowania świata: liczone raz na mapę (w kilkanaście milisekund).
    - dla każdego kafelka budynku: odległość od dolnej (południowej) krawędzi w kolumnie,
-   - styl każdego budynku (kolor ściany, wysokość fasady, rodzaj dachu),
+   - styl każdego budynku (kolor ściany, wysokość fasady, rodzaj dachu); bloki z grafiką z PixelLab składają się
+     z modułów kawałka bloku (13 px na piętro zamiast 9),
    - maska cieni w oczkach 8 px (4 na kafelek), drzewa pogrupowane w kawałki 32×32. */
 
 import type { Pt } from '../../world/geo.ts';
@@ -9,6 +10,7 @@ import { type Dir, T, type Tree, type World, type WorldBuilding } from '../../wo
 import type { SectionScene } from '../section.ts';
 import { h2 } from './hash.ts';
 import { C, HOUSE_WALLS, shade, WALLS } from './palette.ts';
+import { type Blok, type Grafika, type GrafikaKawalkow, pasFasady } from './pixellab.ts';
 
 export const TILE = 32; // pikseli grafiki na metr
 export const CHUNK = 32; // kafelków w boku kawałka
@@ -33,6 +35,8 @@ export interface BStyle {
   balconies: boolean;
   /** kolor balustrad */
   accent: number;
+  /** blok z modułów grafiki z PixelLab (pas fasady, przęsła, wejście, papa z attyką) zamiast rysowanego kodem */
+  mod?: boolean;
 }
 
 /** budynek w zakresie, którego potrzebuje rysowanie kawałków */
@@ -59,6 +63,8 @@ export interface ChunkScene {
   /** wnętrze budynku do przekroju (w M1 siedziba) albo null */
   section: SectionScene | null;
   chunks: number;
+  /** grafika z PixelLab do terenu i bloków albo null (wszystko z kodu) */
+  art: GrafikaKawalkow | null;
 }
 
 export interface Scene extends ChunkScene {
@@ -86,6 +92,7 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
     dryTree: sc.dryTree,
     section: sc.section,
     chunks: sc.chunks,
+    art: sc.art,
   };
 }
 
@@ -103,7 +110,7 @@ export function treeChunks(t: Tree, chunks: number): number[] {
 
 export const heightM = (levels: number) => levels * 2.8 + 1;
 
-function styleOf(b: WorldBuilding, w: World): BStyle {
+function styleOf(b: WorldBuilding, w: World, blok: Blok | null): BStyle {
   const seed = (h2(b.id, b.x0 * 7 + b.y0, w.seed) * 1e9) | 0;
   const r = (k: number) => h2(seed, k, 77);
   const depthPx = (b.y1 - b.y0 + 1) * TILE;
@@ -154,7 +161,10 @@ function styleOf(b: WorldBuilding, w: World): BStyle {
       wall = 0xb3aea3;
   }
   const levels = Math.max(1, Math.min(b.levels, 16));
-  let facade = base + levels * floorH + 2;
+  // blok z modułów: fasada to pas modułów kawałka bloku (piętro jak w module, u PixelLab około 13 px)
+  const mod = b.cls === 'blok' && blok !== null;
+  if (mod) floorH = blok.srodek[1];
+  let facade = mod ? pasFasady(blok, levels).length : base + levels * floorH + 2;
   facade = Math.min(facade, Math.max(10, depthPx - 12));
   if (roof === 'tiles') {
     const wpx = (b.x1 - b.x0 + 1) * TILE;
@@ -169,10 +179,13 @@ function styleOf(b: WorldBuilding, w: World): BStyle {
     }
   }
   const accent = [0x8a8f86, 0x9a5b3c, 0x5f7a8c, 0xb8a86a, 0x6e8a5a, 0xc7c2b6][Math.floor(r(9) * 6)];
-  return { kind: b.cls, roof, wall, facade, floorH, base, levels, seed, ridge, ridgeAt, balconies, accent };
+  const st: BStyle = { kind: b.cls, roof, wall, facade, floorH, base, levels, seed, ridge, ridgeAt, balconies, accent };
+  if (mod) st.mod = true;
+  return st;
 }
 
-export function buildScene(w: World): Scene {
+/** scena do rysowania świata; art: grafika z PixelLab (teren, bloki), bez niej wszystko rysuje kod */
+export function buildScene(w: World, art: Grafika | null = null): Scene {
   const size = w.size;
   const N = size * size;
   const south = new Int16Array(N).fill(-1);
@@ -195,7 +208,7 @@ export function buildScene(w: World): Scene {
       y -= k;
     }
   }
-  const styles = w.buildings.map((b) => styleOf(b, w));
+  const styles = w.buildings.map((b) => styleOf(b, w, art?.blok ?? null));
   const doors = new Map<number, Dir>();
   for (const b of w.buildings) for (const e of b.entrances) doors.set(e.tile, e.dir);
 
@@ -248,5 +261,19 @@ export function buildScene(w: World): Scene {
   const tr = w.trees;
   for (const list of treesBy) list.sort((a, b) => tr[a].y - tr[b].y || tr[a].x - tr[b].x);
   const treeGone = new Uint8Array(w.trees.length);
-  return { w, south, run, styles, shadow, doors, treesBy, treeGone, dryTree: w.dryTree, section: null, chunks };
+  const chunkArt = art && { teren: art.teren, blok: art.blok, dach: art.dach };
+  return {
+    w,
+    south,
+    run,
+    styles,
+    shadow,
+    doors,
+    treesBy,
+    treeGone,
+    dryTree: w.dryTree,
+    section: null,
+    chunks,
+    art: chunkArt,
+  };
 }

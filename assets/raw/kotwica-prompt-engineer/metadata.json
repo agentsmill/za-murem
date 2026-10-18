@@ -1,0 +1,36 @@
+{
+  "group_id": "95a04e06-251f-4734-a7e3-c0be28160f88",
+  "states": [
+    {
+      "character": {
+        "id": "f34fcdef-6edd-4458-8bd3-2a8a1f384e3b",
+        "name": "Idle",
+        "prompt": "young Polish prompt engineer about 26 years old, styled undercut hair, thin round glasses, beige puffer vest over a black turtleneck, slim chinos, white designer sneakers, holding a cracked tablet, smug",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T15:00:24.344015+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T15:11:05.308034"
+}

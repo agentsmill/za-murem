@@ -118,7 +118,7 @@ import {
   WARMED,
 } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
-import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP } from './perimeter.ts';
+import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP, REINFORCED_HP } from './perimeter.ts';
 import {
   atakOdRazu,
   type DrzwiStan,
@@ -168,6 +168,8 @@ import {
   szabrownicy,
   ugryzionyOd,
   uSasiada,
+  WARIANTY_PLOTU,
+  type WariantPlotu,
   WYWAZ_KLATKA_TICKS,
   WYWAZ_MIESZKANIE_TICKS,
   type WyborSpotkania,
@@ -236,6 +238,7 @@ import {
   BITE_HIT_FIGHTING,
   BITE_REACH,
   CHASE_SPEED,
+  crowdNear,
   DAY_PULL,
   DISPERSE,
   distField,
@@ -245,7 +248,7 @@ import {
   hordeSize,
   MAX_ZOMBIES,
   NEAR,
-  PUSH,
+  pushOf,
   RING_FROM,
   RING_TO,
   SIGHT_DAY,
@@ -715,7 +718,7 @@ export type Command =
   /** gra sieciowa: nowa lista drzwi klatek zajętych przez inne drużyny (ids puste) */
   | { t: 'zajete'; ids: number[]; drzwi: number[] }
   /** etap 3: otoczyć otwarty budynek wspólnym płotem (plan i praca), a po skończonej pracy (ids puste) nowa siatka */
-  | { t: 'enclose'; ids: number[]; bid: number }
+  | { t: 'enclose'; ids: number[]; bid: number; wariant?: WariantPlotu }
   | { t: 'otocz'; ids: number[]; bid: number }
   /** handlarz: włączyć (stary zapis, ids puste), wymienić się (oferta k), napaść na niego */
   | { t: 'obcy'; ids: number[] }
@@ -876,7 +879,8 @@ export interface SimState {
 }
 
 /** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
-    i ile jej trzeba, kto pracuje (−1: nikt) i kafelek podwórka, z którego się stawia */
+    i ile jej trzeba, kto pracuje (−1: nikt), kafelek podwórka, z którego się stawia, i wariant materiału z menu
+    (zapis sprzed wariantów dostaje w konstruktorze deskę i złom) */
 export interface PlotPlan {
   bid: number;
   need: Partial<Record<Mat, number>>;
@@ -885,6 +889,7 @@ export interface PlotPlan {
   total: number;
   by: number;
   stand: number;
+  wariant: WariantPlotu;
 }
 
 export interface PlotStan {
@@ -1912,6 +1917,9 @@ export class Sim {
   private readonly fenceIndex = new Map<number, number>();
   /** wyszukiwania dróg szwendaczy w tym kroku */
   private zbudget = 0;
+  /** napierający szwendacze według naciskanego kafelka i ich tłok przy kafelku, liczone raz na krok (tryb zombie) */
+  private readonly pressing = new Map<number, number>();
+  private readonly crowd = new Map<number, number>();
   /** kafelki podwórka (1) i to, czy w bieżącym kroku jest na nim wróg (liczone raz na krok) */
   private yardMask: Uint8Array = new Uint8Array(0);
   private dangerAt = -1;
@@ -1935,6 +1943,8 @@ export class Sim {
     }
     st.dead ??= [];
     st.tally ??= zeroTally();
+    // zapis z planem wspólnego płotu sprzed wariantów materiału: deska i złom na metr
+    if (st.plot?.plan) st.plot.plan.wariant ??= 'mieszany';
     migrate(st, w);
     // zapis sprzed Thing.dead: zwłoki trzymały numer wpisu zmarłego w owner
     for (const t of st.things)
@@ -2199,6 +2209,7 @@ export class Sim {
     if (modeOf(st) === 'zombie') {
       this.zombieClock();
       this.rise();
+      this.countPressing();
     }
     this.zbudget = 3;
     let budget = PATHS_PER_TICK;
@@ -2463,7 +2474,7 @@ export class Sim {
       this.orderDoor(pawns, c.t, c.door);
     else if (c.t === 'loot') this.startLoot(pawns[0], c.bid, c.room);
     else if (c.t === 'upstairs') this.startUpstairs(pawns[0], c.bid, c.tile);
-    else if (c.t === 'enclose') this.startEnclose(pawns[0], c.bid);
+    else if (c.t === 'enclose') this.startEnclose(pawns[0], c.bid, c.wariant);
     else if (c.t === 'trade') this.startTrade(pawns[0], c.offer);
     else if (c.t === 'rob') this.startRob(pawns[0]);
     else if (c.t === 'talk') this.startTalk(pawns[0], c.target);
@@ -6562,7 +6573,7 @@ export class Sim {
           this.pour(p);
           return;
         }
-        this.damageFence(t, PUSH);
+        this.press(t);
         return;
       }
       case 4:
@@ -6683,6 +6694,42 @@ export class Sim {
     }
     if (!cand.length) return;
     this.go(p, cand[Math.floor(nextRandom(st.rng) * cand.length)]);
+  }
+
+  /** Napierający szwendacze według naciskanego kafelka, raz na krok (przed ruchem pionków). */
+  private countPressing(): void {
+    this.pressing.clear();
+    this.crowd.clear();
+    for (const q of this.st.pawns)
+      if (q.kind === 'zombie' && q.job?.phase === 2 && q.job.target >= 0)
+        this.pressing.set(q.job.target, (this.pressing.get(q.job.target) ?? 0) + 1);
+  }
+
+  /** Tłok przy kafelku siatki: ilu szwendaczy napiera w promieniu CROWD_RADIUS od niego (z tymi na nim). */
+  private crowdAt(tile: number): number {
+    let n = this.crowd.get(tile);
+    if (n === undefined) {
+      n = crowdNear(this.pressing, this.w.size, tile);
+      this.crowd.set(tile, n);
+    }
+    return n;
+  }
+
+  /** wytrzymałość kafelka siatki: łaty, jeśli stoi na dziurze, inaczej samej siatki (0 poza siatką i na bramie) */
+  private wireHp(tile: number): number {
+    const f = this.st.fence;
+    if (!f) return 0;
+    const hole = f.holes.find((h) => h.tiles.includes(tile));
+    if (hole) return hole.patch;
+    const k = this.fenceIndex.get(tile);
+    return k === undefined ? 0 : f.hp[k];
+  }
+
+  /** Jeden szwendacz napiera na kafelek siatki, łaty albo zasieków: zużycie, a przy tłoku ponad próg szkoda
+      (zombie.ts, pushOf). */
+  private press(tile: number): void {
+    const dmg = pushOf(this.crowdAt(tile), this.wireHp(tile));
+    if (dmg > 0) this.damageFence(tile, dmg);
   }
 
   /** Napór albo cios w siatkę: łata traci wytrzymałość, a przy zerze dziura znowu jest otwarta; zwykły kafelek siatki
@@ -8566,10 +8613,11 @@ export class Sim {
 
   /* etap 3: wspólny płot */
 
-  /** Otoczyć budynek wspólnym płotem: plan z kosztem (deska i złom na metr nowego płotu, po 2 deski na drzwi do zabicia)
-      i czasem (3 minuty na metr, 20 minut na drzwi), potem praca jak przy budowie. Jeden plan naraz; na planie tego
-      samego budynku polecenie znaczy „budować dalej”. Gdy się nie da, napis mówi dlaczego. */
-  private startEnclose(p: Pawn, bid: number): void {
+  /** Otoczyć budynek wspólnym płotem: plan z kosztem według wariantu z menu (deska i złom na metr nowego płotu albo
+      2 sztuki jednego materiału, po 2 deski na drzwi do zabicia) i czasem (3 minuty na metr, 20 minut na drzwi), potem
+      praca jak przy budowie. Jeden plan naraz; na planie tego samego budynku polecenie znaczy „budować dalej” (wariant
+      zostaje z planu). Gdy się nie da, napis mówi dlaczego. */
+  private startEnclose(p: Pawn, bid: number, wybor?: WariantPlotu): void {
     const st = this.st;
     const k = st.sasiedzi?.budynki.findIndex((b) => b.bid === bid) ?? -1;
     if (k < 0) return;
@@ -8586,9 +8634,11 @@ export class Sim {
     }
     const stand = this.plotStand(r.usuniete, r.fence.yard);
     if (stand < 0) return;
-    const { need, total } = kosztPlotu(r);
+    // wariant z polecenia (także z sieci): nieznany to deska i złom
+    const wariant = wybor && WARIANTY_PLOTU.includes(wybor) ? wybor : 'mieszany';
+    const { need, total } = kosztPlotu(r, wariant);
     st.plot ??= { bids: [] };
-    st.plot.plan = { bid, need, have: {}, work: 0, total, by: -1, stand };
+    st.plot.plan = { bid, need, have: {}, work: 0, total, by: -1, stand, wariant };
     this.wersjaSasiadow++;
     this.startPlot(p);
   }
@@ -8676,7 +8726,9 @@ export class Sim {
     const stara = this.w.fence;
     const f = st.fence!;
     const hp = new Map(stara.tiles.map((t, i) => [t, f.hp[i]]));
-    f.hp = r.fence.tiles.map((t) => hp.get(t) ?? PATCH_HP);
+    // nowy płot z desek i złomu w trybie zombie jest tak mocny jak wzmocniona siatka na starcie, w zwykłym jak świeża łata
+    const fresh = modeOf(st) === 'zombie' ? REINFORCED_HP : PATCH_HP;
+    f.hp = r.fence.tiles.map((t) => hp.get(t) ?? fresh);
     const on = new Set(r.fence.tiles);
     f.holes = f.holes.map((h) => ({ ...h, tiles: h.tiles.filter((t) => on.has(t)) })).filter((h) => h.tiles.length);
     const b = st.sasiedzi!.budynki[k];

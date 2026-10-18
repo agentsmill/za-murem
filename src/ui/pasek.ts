@@ -9,6 +9,7 @@ import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce
 import type { GovState } from '../gov/typy.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import { WARM_ENOUGH } from '../sim/tutorial.ts';
+import { FENCE_BEARS } from '../sim/zombie.ts';
 import { deg, manyEn, num } from './tekst.ts';
 
 export interface Stat {
@@ -48,10 +49,16 @@ export function statsOf(
           {
             id: 'sFence',
             value: `${fence}%`,
-            level: holes || fence < 50 ? 'bad' : fence < 80 ? 'mid' : 'ok',
+            // tłok w jednym miejscu: od trzech czwartych progu uwaga, ponad progiem siatka zaczyna pękać
+            level:
+              holes || fence < 50 || z.crowd > FENCE_BEARS
+                ? 'bad'
+                : fence < 80 || z.crowd * 4 >= FENCE_BEARS * 3
+                  ? 'mid'
+                  : 'ok',
             title: L(
-              `Siatka trzyma w ${fence}%${holes ? `, otwarte dziury: ${holes}` : ''}. Uszkodzoną wzmacnia się deskami albo złomem.`,
-              `The fence is holding at ${fence}%${holes ? `, open holes: ${holes}` : ''}. Shore up the damage with planks or scrap.`,
+              `Siatka trzyma w ${fence}%${holes ? `, otwarte dziury: ${holes}` : ''}. Uszkodzoną wzmacnia się deskami albo złomem.${z.crowd ? ` Największy tłok przy siatce: ${z.crowd} napierających w jednym miejscu (siatka wytrzyma do ${FENCE_BEARS}).` : ''}`,
+              `The fence is holding at ${fence}%${holes ? `, open holes: ${holes}` : ''}. Shore up the damage with planks or scrap.${z.crowd ? ` Biggest crowd at the fence: ${z.crowd} pressing in one spot (it holds up to ${FENCE_BEARS}).` : ''}`,
             ),
           },
           {

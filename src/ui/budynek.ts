@@ -16,6 +16,7 @@ import {
   type Gdzie,
   mieszkalny,
   pietraBudynku,
+  procentPlotu,
   type SasiedniBudynek,
   type StanDrzwi,
   wnetrze,
@@ -75,10 +76,7 @@ export function widokBudynku(w: World, b: SasiedniBudynek, dotkniety: boolean, p
     pokoje: b.otwarty ? { n, z: it.rooms.length } : null,
     plot: {
       otoczony: !!plot?.bids.includes(b.bid),
-      pct:
-        plot?.plan?.bid === b.bid
-          ? Math.min(99, Math.floor((100 * plot.plan.work) / Math.max(1, plot.plan.total)))
-          : null,
+      pct: plot?.plan?.bid === b.bid ? procentPlotu(plot.plan) : null,
     },
     pietra: b.otwarty && pietraBudynku(w, b.bid) > 0 ? { n: b.pietra, z: pietraBudynku(w, b.bid) } : null,
     noc: b.noc ? { dzien: dayOf(b.noc.tick), kto: b.noc.kto, zabrali: b.noc.zabrali } : null,

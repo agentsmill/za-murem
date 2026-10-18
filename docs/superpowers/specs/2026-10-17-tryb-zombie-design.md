@@ -67,7 +67,7 @@ Dzidę robi się na podwórku z 2 desek i 1 złomu (godzina gry pracy).
 - Nie wchodzą do budynków (drzwi są zamknięte). Przez otwartą dziurę wchodzą na podwórko, przez zamkniętą bramę nie.
 - Za dnia po stronie ulicy snuje się min(30, 6 + 2 × dzień) szwendaczy. Rodzą się w pasie 15–40 m drogi od siatki i przez dzień ściągają się pod nią (zmiana z 18.10.2026 po playteście: wcześniej losowali się po całej mapie i nie było ich widać). O 21:00 zaczyna się stado: min(60, 8 + 6 × (dzień − 1)) szwendaczy wychodzi z okolicy 50–80 m od siatki do 1:00 w grupach i idzie do siatki. O 6:00 ci, którzy nie napierają, rozchodzą się. Najwyżej 80 szwendaczy naraz.
 - Do siatki prowadzi ich pole odległości liczone od kafelków tuż za siatką (BFS po stronie ulicy, liczone przy każdej zmianie przechodniości), a do widzianej ofiary albo hałasu A* z limitem 3 wyszukiwań na krok.
-- Napór: szwendacz, który stoi przy kafelku siatki, zdejmuje mu 0,004 wytrzymałości na krok (3,2 na godzinę gry). Kafelek z wytrzymałością 0 staje się nową dziurą, którą da się załatać jak dziś.
+- Napór: do 18.10.2026 szwendacz przy kafelku siatki zdejmował mu 0,004 wytrzymałości na krok (3,2 na godzinę gry), po zmianie tłok w jednym miejscu (sekcja „Płot odporny na napór” na końcu). Kafelek z wytrzymałością 0 staje się nową dziurą, którą da się załatać jak dziś.
 - Ugryzienie: zasięg 1,1 m, co 30 kroków, 15 obrażeń, 35% szans na zakażenie przy trafieniu. Zakażony słabnie liniowo do śmierci po 18 godzinach gry. W 60% ugryzień trafienie jest w rękę albo nogę i przez 2 godziny gry od ugryzienia da się amputować: ktoś z zarządu idzie do chorego, pół godziny pracy, szansa 0,5 + 0,15 × umiejętność `med` (+0,15 z lekiem z magazynu), najwyżej 0,9. Udana amputacja usuwa zakażenie, zdejmuje 35 zdrowia (zostaje co najmniej 10) i zostawia kikut (gorsza celność o 0,15). Nieudana zabija.
 - Wstawanie: zwłoki w trybie zombie wstają po godzinie gry. „Dobić” (nóż w głowę, sekunda pracy) sprawia, że nie wstaną. Martwy szwendacz zostaje jako trup na dobę.
 
@@ -116,3 +116,11 @@ Gałąź `zombie-szlif`, decyzje w `docs/POSTEP.md` („Decyzje”):
 - „Do broni!” odwołuje ten sam przycisk („Odwołaj”): z posterunków schodzi tylko warta z alarmu, kto stał na warcie wcześniej, zostaje. Bez odwołania alarm trwa do 6:00.
 - Warta przy siatce zostaje na miejscu, póki jej broń sięga kogoś, kto napiera na miejsce największego naporu; inaczej staje tuż obok niego od strony podwórka (wcześniej próg 2,5 m od kafelka, za mały na rogu siatki).
 - Łata, zasieki albo zamknięta brama wypychają szwendacza, który w nich stoi, na stronę ulicy; w drodze szwendacz staje przed łatą.
+
+## Płot odporny na napór, 18.10.2026
+
+Skarga Mateusza po graniu: płot pada za szybko, pierwszej nocy przestał działać, ma być dużo mocniejszy i nie tak szybko. Liniowy napór (każdy szwendacz tyle samo) zbijał kafelek, gdy ośmiu stało razem, w cztery godziny, a od szwendaczy blisko siatki napierają już od popołudnia. Teraz (`pushOf` w `src/sim/zombie.ts`, wszystko przez `damageFence`, więc siatka, łaty, zasieki i wspólny płot tak samo):
+- Tłok to napierający szwendacze w promieniu 2 kafelków od naciskanego miejsca. Do 16 siatka tylko się zużywa: każdy napierający zdejmuje 0,002 na krok, ale nie poniżej 25, więc kilku nigdy jej nie przewróci, za to traci deski (poniżej 50) i jest co wzmacniać.
+- Ponad 16 każdy napierający zdejmuje do tego 0,001 razy tylu, ilu jest ponad próg: 18 w jednym miejscu to niecałe dwie godziny gry, 22 trzy kwadranse, 30 kwadrans.
+- Pasek pokazuje największy tłok (dymek, od trzech czwartych progu uwaga, ponad progiem czerwony), pomoc trybu zombie tłumaczy regułę.
+- Nowe kafelki wspólnego płotu w trybie zombie startują ze 100 (wzmocniona siatka), nie z 70.

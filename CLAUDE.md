@@ -53,7 +53,7 @@ CI (`.github/workflows/ci.yml`, Node 24) puszcza lint, testy i build na każdym 
 
 ```bash
 npm install
-npm run dev          # serwer deweloperski, http://localhost:5173 (?demo=przymorze|lanciego|zielonki, &worker=0 bez workerów)
+npm run dev          # serwer deweloperski, http://localhost:5173 (?demo=przymorze|lanciego|zielonki, &worker=0 bez workerów, &grafika=kod bez grafiki z PixelLab)
 npm test             # testy jednostkowe (Vitest), m.in. porównanie z oryginałem 0.3 w node:vm
 npm test -- tests/unit/sim.test.ts        # jeden plik
 npm test -- zarzad -t "ten sam przebieg"  # fragment ścieżki pliku i nazwy testu
@@ -61,13 +61,15 @@ npx biome check src tests tools server index.html  # lint zamiast npm run lint (
 npm run build        # typy (tsc z TypeScript 7) + build do dist/ (z dist/v03/)
 npm run bot          # nowa symulacja 45 dni bez przeglądarki [-- ziarno [dni [tłum]]]
 npm run bot -- --mieszkancy         # to samo z zarządem i mieszkańcami siedziby z generatora (tabele z public/data/mieszkancy/)
-npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce [osoby zarządu 1–5]]]
+npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce [osoby zarządu 1–5]]] [--demo=przymorze|lanciego|zielonki] [--opal]
 npm run bot:zombie -- --mieszkancy  # tryb zombie z mieszkańcami z generatora (flaga w dowolnym miejscu argumentów)
+npm run bot:zombie:siatka  # miara siatki: bot zombie na trzech osiedlach, z mieszkańcami i bez, w której nocy siatka puszcza pierwszy raz [-- 1-6 [noce]] [--opal]
 npm run bot:v03      # wzorzec balansu na oryginale 0.3 [-- ziarno [dni]]
 npm run bot:surowce  # raport gospodarki: wraki i warsztat z graczem fali 1 i bez nich, 5 dni [-- ziarno [dni]]
-npm run shots        # zrzuty w Chromium do shots/ [-- filtr] [--dist]
-npm run perf         # klatki ze 150 pionkami [-- pionki [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5]
+npm run shots        # zrzuty w Chromium do shots/ [-- filtr] [--dist] [--kod]
+npm run perf         # klatki ze 150 pionkami [-- pionki [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5] [--demo=lanciego] [--kod]
 npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
+npm run atlasy       # atlasy grafiki z PixelLab do public/assets/ z assets/raw (tylko zatwierdzone): [-- --sprawdz]
 node tools/trzy-noce.ts        # trzy pierwsze noce zarządu na atrapie symulacji [ziarno] [--n liczba_ziaren]
 node tools/arkusz-wnetrza.ts   # arkusz grafiki zastępczej do shots/ (podobnie arkusz-wraki.ts)
 ZM_BAZA=./za-murem.db ZM_CIASTECZKO_SECURE=0 node server/main.ts  # serwer gry sieciowej na :8787 (server/README.md)
@@ -75,7 +77,7 @@ ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default
 ```
 
 - `npm run lint` (`biome check .`) pada w tym katalogu, bo Biome trafia na `biome.json` z drzew sesji w `.claude/worktrees/*`. Lokalnie Biome na katalogach jak wyżej; CI na czystym checkoucie puszcza `npm run lint`.
-- `npm run shots` sam stawia serwer Vite w procesie (wolny port) i Chromium z Playwright, więc `npm run dev` nie jest potrzebny. Filtr to fragment nazwy zrzutu z listy w `tools/shots.ts`, wynik ląduje w `shots/<nazwa>.png` (poza repo). `--dist` zrzuca zbudowaną wersję, więc najpierw `npm run build`.
+- `npm run shots` sam stawia serwer Vite w procesie (wolny port) i Chromium z Playwright, więc `npm run dev` nie jest potrzebny. Filtr to fragment nazwy zrzutu z listy w `tools/shots.ts`, wynik ląduje w `shots/<nazwa>.png` (poza repo). `--dist` zrzuca zbudowaną wersję, więc najpierw `npm run build`. `--kod` puszcza te same scenariusze z `?grafika=kod` (teren, bloki i trzepak rysuje kod, bez grafiki z PixelLab), wynik w `shots/kod/`, do porównań przed i po.
 - Parametry adresu gry do zrzutów i prób ręcznych (`src/main.ts`): `demo`, `tryb=zombie`, `seed`, `godzina=22` (z ułamkiem: 18.5 to 18:30), `cam=x,y,zoom` w kafelkach albo `cam=hq,zoom` i `cam=all`, `speed` (indeks tempa: 0 pauza, 1 to 1×, 2 to 3×, 3 to 6×, 4 to 8×), `stado=N` (w trybie zombie N szwendaczy pod siatką), `swiatla=test`, `przekroj=0` (dach zamiast wnętrza), `perf=N` (tłum do pomiarów), `worker=0`, `handlarz=0` (gra bez handlarza pod bramą, do porównań), `siec=1` (gra z sąsiadami: blok logowania i start przez serwer gry, tylko gdy `/api` odpowiada; lokalnie `npm run dev` przekazuje `/api` do `node server/main.ts`).
 
 ## Architektura

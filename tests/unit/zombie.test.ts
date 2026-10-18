@@ -16,7 +16,15 @@ import {
   spawnZombie,
 } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
-import { ambientCount, BITE_CD, distField, hordeSize, MAX_ZOMBIES, ZOMBIE_HP } from '../../src/sim/zombie.ts';
+import {
+  ambientCount,
+  BITE_CD,
+  distField,
+  FENCE_BEARS,
+  hordeSize,
+  MAX_ZOMBIES,
+  ZOMBIE_HP,
+} from '../../src/sim/zombie.ts';
 import { mockBlock } from './interior-mock.ts';
 
 const w = mockBlock();
@@ -126,6 +134,16 @@ describe('szwendacze', () => {
     runTo(sim, atHour(2, 2));
     const holes0 = st.fence!.holes.length;
     st.fence!.hp = st.fence!.hp.map(() => 0.002);
+    // kilku szwendaczy osłabionej siatki nie przewróci, więc tłum w jednym miejscu (src/sim/zombie.ts, FENCE_BEARS)
+    const tile = w.fence.tiles.find((t) =>
+      [t - size, t + size, t - 1, t + 1].some((n) => !yard.has(n) && sim.canWalk('zombie', n)),
+    )!;
+    const out = [tile - size, tile + size, tile - 1, tile + 1].find((n) => !yard.has(n) && sim.canWalk('zombie', n))!;
+    for (let k = 0; k < FENCE_BEARS + 6; k++) {
+      const z = spawnZombie(st, w, out, k % 16, true);
+      z.job!.phase = 2;
+      z.job!.target = tile;
+    }
     let inYard = false;
     runTo(sim, atHour(2, 4), () => {
       for (const z of zombies(st)) {

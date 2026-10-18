@@ -39,6 +39,7 @@ import {
   type SimState,
 } from './sim.ts';
 import { type GameMode, modeOf } from './tryb.ts';
+import { crowdNear } from './zombie.ts';
 
 export interface SimPerson {
   /** id pionka: do poleceń dla symulacji */
@@ -193,7 +194,8 @@ export interface SimSnapshot {
   /** obcy (szabrownicy) na mapie */
   strangers: number;
   /** szwendacze: wszyscy na mapie, do 12 m od siatki, napierający na siatkę */
-  zombies: { all: number; near: number; pressing: number };
+  /** crowd: największy tłok napierających przy jednym miejscu siatki (src/sim/zombie.ts, FENCE_BEARS) */
+  zombies: { all: number; near: number; pressing: number; crowd: number };
   /** mieszkania siedziby (M2) i plany budowy */
   apts: SimApt[];
   builds: SimBuild[];
@@ -209,15 +211,20 @@ function ammoFor(st: SimState, weapon: WeaponId | null): number | null {
 }
 
 function zombieCounts(st: SimState, w: World): SimSnapshot['zombies'] {
-  const out = { all: 0, near: 0, pressing: 0 };
+  const out = { all: 0, near: 0, pressing: 0, crowd: 0 };
   const tiles = fenceShape(w)?.tiles ?? [];
   const size = w.size;
+  const pressing = new Map<number, number>();
   for (const p of st.pawns) {
     if (p.kind !== 'zombie') continue;
     out.all++;
-    if (p.job?.phase === 2) out.pressing++;
+    if (p.job?.phase === 2) {
+      out.pressing++;
+      if (p.job.target >= 0) pressing.set(p.job.target, (pressing.get(p.job.target) ?? 0) + 1);
+    }
     if (tiles.some((t) => Math.hypot((t % size) + 0.5 - p.x, Math.floor(t / size) + 0.5 - p.y) <= 12)) out.near++;
   }
+  for (const t of pressing.keys()) out.crowd = Math.max(out.crowd, crowdNear(pressing, size, t));
   return out;
 }
 

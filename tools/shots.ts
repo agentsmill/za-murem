@@ -1,5 +1,6 @@
 /* Zrzuty ekranu w prawdziwym Chromium: mapy testowe, kamera i pora dnia ustawiane w adresie.
-   Uruchomienie: npm run shots [-- filtr] [--dist]   (filtr: fragment nazwy; --dist: zbudowana wersja)
+   Uruchomienie: npm run shots [-- filtr] [--dist] [--kod]   (filtr: fragment nazwy; --dist: zbudowana wersja;
+   --kod: ten sam scenariusz z ?grafika=kod, czyli bez grafiki z PixelLab, wynik w shots/kod/, do porównań)
    Wynik: shots/<nazwa>.png. Każdy zrzut obejrzyj, zanim zgłosisz zmianę.
    Język: pole `lang` scenariusza (przez pamięć przeglądarki, jak wybór gracza). Bez pola polski, bo starsze
    scenariusze sprawdzają polskie napisy; angielskie i polskie wersje tych samych ekranów to scenariusze en-* i pl-*. */
@@ -17,9 +18,11 @@ import { toGeoT } from '../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS } from '../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from '../tests/unit/fixtures.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
+import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
 
-const OUT = path.resolve(import.meta.dirname, '../shots');
+const KOD = process.argv.includes('--kod');
+const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
 fs.mkdirSync(OUT, { recursive: true });
 
 interface Shot {
@@ -230,6 +233,19 @@ const SHOTS: Shot[] = [
     name: 'zombie-noc',
     query: '',
     run: async (page, base) => zombieNight(page, base),
+  },
+  {
+    // tłum ponad próg przy jednym miejscu siatki (płot odporny na napór): zużyta siatka bez desek, pasek na czerwono
+    name: 'zombie-tlok',
+    query: '',
+    run: async (page, base) => zombieCrowd(page, base),
+  },
+  {
+    name: 'zombie-tlok-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => zombieCrowd(page, base),
   },
   {
     name: 'zombie-noc-telefon',
@@ -4145,6 +4161,72 @@ const SHOTS: Shot[] = [
     );
     if (!out?.bids.includes(r.bid)) throw new Error('płot nie stanął');
   }),
+  // etap 3: plan wspólnego płotu w toku, duch przyszłego obwodu z postępem: z bliska po polsku, z daleka po angielsku
+  m2f2PlotDuch('m2f2-plot-duch', 0.62, 'pl'),
+  m2f2PlotDuch('en-m2f2-plot-duch', 0.3, 'en'),
+  m2f2('m2f2-plot-deski', 'lanciego', async (page) => {
+    // etap 3: na podwórku same deski (złomu brak), więc menu ma tylko płot z desek; potem potwierdzenie, podpowiedź
+    // po poleceniu i duch planu na 0%
+    const r = await m2f2Open(page, 'Blok nr 10F', false);
+    await page.evaluate(() => {
+      const st = window.zm!.sim!.st;
+      const w = window.zm!.sim!.w;
+      const size = w.size;
+      const nasze = (t: { x: number; y: number }) => {
+        const b = w.bid[t.y * size + t.x];
+        return b < 0 || b === w.hq;
+      };
+      st.things = st.things.filter((t) => !((t.kind === 'deski' || t.kind === 'zlom') && nasze(t)));
+      const free = w.fence.yard.filter((i) => !w.blocked[i] && !st.things.some((t) => t.y * size + t.x === i));
+      for (let k = 0; k < 30; k++)
+        st.things.push({
+          id: st.nextThing++,
+          kind: 'deski',
+          x: free[k] % size,
+          y: Math.floor(free[k] / size),
+          w: 1,
+          h: 1,
+          rot: 0,
+          n: 10,
+          fuel: 0,
+          by: -1,
+          owner: -1,
+        });
+    });
+    await m2f2Select(page);
+    const items = await m2f2DoorMenu(page, 'Blok nr 10F', 1.4);
+    console.log(`  menu: ${items.join(' | ')}`);
+    const plot = items.filter((i) => i.startsWith('Otoczyć wspólnym płotem'));
+    if (plot.length !== 1 || !/^Otoczyć wspólnym płotem z desek \(\d+ m: \d+ desek, [\d,]+ h\)…$/.test(plot[0]))
+      throw new Error(`menu płotu bez samego wariantu z desek: ${plot.join(' | ')}`);
+    await page.click('#ctx .ctx-item:has-text("Otoczyć wspólnym płotem z desek")');
+    await page.click('#sheet [data-act="confirm-yes"]');
+    // podpowiedź wchodzi do #hint w następnej klatce
+    const want = 'Postawi wspólny płot z desek: najpierw doniesie deski.';
+    await page
+      .waitForFunction((t) => document.getElementById('hint')?.textContent === t, want, { timeout: 3000 })
+      .catch(() => null);
+    const hint = (await page.textContent('#hint')) ?? '';
+    console.log(`  podpowiedź: ${hint}`);
+    if (hint !== want) throw new Error(`inna podpowiedź: ${hint}`);
+    const plan = await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      for (let i = 0; i < 5; i++) sim.step();
+      const w = sim.w;
+      const b = w.buildings[bid];
+      const hq = w.buildings[w.hq];
+      zm.setCam((b.x0 + hq.x0) / 2 + 4, (b.y0 + hq.y1) / 2 + 6, 0.62);
+      const p = sim.st.plot?.plan;
+      return p ? { wariant: p.wariant, need: p.need } : null;
+    }, r.bid);
+    await page.waitForTimeout(300);
+    await waitIdle(page);
+    const n = await page.evaluate(() => (window.zm!.view as unknown as { plotDuch: { count: number } }).plotDuch.count);
+    console.log(`  plan ${JSON.stringify(plan)}, duch: ${n} kafelków siatki`);
+    if (plan?.wariant !== 'deski' || plan.need.zlom) throw new Error('plan nie pamięta płotu z desek');
+    if (!n) throw new Error('nie ma ducha planu płotu');
+  }),
   m2f2('m2f2-karta-po-nocy', 'lanciego', async (page) => {
     // etap 2: karta otwartego bloku po nocnym gościu i z przeszukanym piętrem
     const r = await m2f2Open(page, 'Blok nr 10F', false);
@@ -4543,6 +4625,27 @@ const SHOTS: Shot[] = [
     });
     return out;
   })(),
+  // kotwica stylu z PixelLab (M3, do akceptacji): ten sam kadr przy siedzibie dziś i z assetami z assets/raw,
+  // do tego arkusz wybranych assetów z kosztami i paletą
+  { name: 'kotwica-stylu', query: '', run: kotwicaStylu },
+  { name: 'kotwica-wysoki-blok', query: '', run: kotwicaWysokiBlok },
+  { name: 'kotwica-tlum', query: '', run: kotwicaTlum },
+  { name: 'kotwica-arkusz', query: '', run: (page) => kotwicaArkusz(page) },
+  {
+    // bez public/assets (404) gra startuje i rysuje wszystko kodem, jak przed grafiką z PixelLab
+    name: 'grafika-zapas',
+    query: '',
+    allow: /status of 404/,
+    allowUrl: /\/assets\/grafika\.json/,
+    run: async (page, base) => {
+      await page.route('**/assets/grafika.json', (r) => r.fulfill({ status: 404, body: 'brak' }));
+      await page.goto(`${base}?demo=lanciego&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const g = await page.evaluate(() => window.zm!.grafika());
+      console.log(`  grafika: ${JSON.stringify(g)}`);
+      if (g !== null) throw new Error('bez public/assets gra wzięła grafikę z PixelLab');
+    },
+  },
 ];
 
 /**
@@ -4808,6 +4911,54 @@ async function m2f2Open(page: Page, which: string, looks: boolean, pusty = false
   );
   if (!r.open) throw new Error(`${r.name}: budynek się nie otworzył`);
   return r;
+}
+
+/** Etap 3: plan wspólnego płotu do 10F w toku. Materiał już doniesiony, pierwsza osoba z zarządu stawia, aż praca dojdzie
+    do 40% (symulacja, jak z menu); potem zaznaczona (karta z opisem pracy), a kamera na duchu przyszłego obwodu: z bliska
+    (zoom 0,62, kawałki 32 px na metr) albo z daleka (0,3, kawałki 8 px na metr). */
+function m2f2PlotDuch(name: string, zoom: number, lang: 'pl' | 'en'): Shot {
+  return {
+    ...m2f2(name, 'lanciego', async (page) => {
+      const r = await m2f2Open(page, 'Blok nr 10F', false);
+      const out = await page.evaluate((bid) => {
+        const sim = window.zm!.sim!;
+        const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+        sim.push({ t: 'enclose', ids: [p.id], bid });
+        sim.step();
+        const plan = sim.st.plot?.plan;
+        if (!plan) return null;
+        plan.have = { ...plan.need };
+        sim.push({ t: 'enclose', ids: [p.id], bid });
+        for (let i = 0; i < 20000 && plan.work < plan.total * 0.4; i++) sim.step();
+        return { work: plan.work, total: plan.total, job: p.job?.t ?? null };
+      }, r.bid);
+      if (!out) throw new Error('plan płotu nie powstał');
+      await m2f2Select(page);
+      await page.evaluate(
+        ([bid, zoom]) => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const b = w.buildings[bid];
+          const hq = w.buildings[w.hq];
+          zm.setCam((b.x0 + hq.x0) / 2 + 4, (b.y0 + hq.y1) / 2 + 6, zoom);
+        },
+        [r.bid, zoom] as const,
+      );
+      await page.waitForTimeout(300);
+      await waitIdle(page);
+      const seen = await page.evaluate(() => ({
+        n: (window.zm!.view as unknown as { plotDuch: { count: number } }).plotDuch.count,
+        doing: document.querySelector('#card .doing')?.textContent ?? '',
+      }));
+      console.log(
+        `  praca ${out.work}/${out.total} (${out.job}), duch: ${seen.n} kafelków siatki, karta: ${seen.doing}`,
+      );
+      if (!seen.n) throw new Error('nie ma ducha planu płotu');
+      const want = lang === 'en' ? 'Putting up the shared fence (40%).' : 'Stawia wspólny płot (40%).';
+      if (seen.doing !== want) throw new Error(`karta osoby bez postępu płotu: ${seen.doing}`);
+    }),
+    lang,
+  };
 }
 
 /** Puka do domów w Zielonkach od najbliższego, aż ktoś otworzy (spotkanie w drzwiach), i czeka na okno spotkania.
@@ -5515,6 +5666,55 @@ async function zombieNight(page: Page, base: string) {
   await page.waitForTimeout(350);
 }
 
+/** Wieczór pod tłumem: kilkunastu szwendaczy napiera na jeden kafelek siatki, symulacja idzie kwadrans gry (siatka już
+    zużyta, ale jeszcze stoi), kamera na tym miejscu. Pasek ma pokazać tłok ponad próg. */
+async function zombieCrowd(page: Page, base: string) {
+  // o zmierzchu szwendaczy widać jako szare sylwetki (w nocy bez światła prawie wcale)
+  await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=18.8&stado=24&cam=hq,1`);
+  await waitIdle(page);
+  const info = await page.evaluate(() => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const st = sim.st;
+    const w = sim.w;
+    const size = w.size;
+    const yard = new Set(w.fence.yard);
+    const door = w.buildings[w.hq].entrances[0].out;
+    // kafelek siatki najbliżej drzwi siedziby, z wolnym miejscem za siatką
+    const spot = w.fence.tiles
+      .map((t) => ({
+        t,
+        out: [t - size, t + size, t - 1, t + 1].find((n) => !yard.has(n) && sim.canWalk('zombie', n)),
+      }))
+      .filter((x) => x.out !== undefined)
+      .sort(
+        (a, b) =>
+          Math.hypot((a.t % size) - (door % size), Math.floor(a.t / size) - Math.floor(door / size)) -
+          Math.hypot((b.t % size) - (door % size), Math.floor(b.t / size) - Math.floor(door / size)),
+      )[0];
+    const out = spot.out!;
+    // dwudziestu szwendaczy stoi dokładnie na jednym kafelku tuż za siatką (najgorszy przypadek: sprite'y nałożyłyby się
+    // w jeden, widok rozsuwa je z numeru pionka) i napiera na kafelek siatki
+    let n = 0;
+    for (const z of st.pawns.filter((p) => p.kind === 'zombie').slice(0, 20)) {
+      Object.assign(z, { x: (out % size) + 0.5, y: Math.floor(out / size) + 0.5, path: [], pi: 0 });
+      z.job!.phase = 2;
+      z.job!.target = spot.t;
+      n++;
+    }
+    for (let k = 0; k < 200; k++) sim.step();
+    // panel celów zasłania lewą część ekranu komputera, więc kamera trochę w prawo od miejsca naporu
+    zm.setCam((spot.t % size) - (window.innerWidth > 600 ? 4 : 0), Math.floor(spot.t / size), 2.2);
+    const k = w.fence.tiles.indexOf(spot.t);
+    return { pressing: n, hp: Math.round(st.fence!.hp[k]), breaches: st.tally?.breaches ?? 0 };
+  });
+  console.log(`  tłum: ${JSON.stringify(info)}`);
+  if (info.pressing < 17) throw new Error('za mało napierających na jednym kafelku');
+  await waitIdle(page);
+  // pasek u góry odświeża się co 200 ms
+  await page.waitForTimeout(350);
+}
+
 /** rozpala kozę zarządu w stanie gry i puszcza symulację do najbliższego przeliczenia ciepła i światła */
 async function nightWithFire(page: Page) {
   await waitIdle(page);
@@ -5776,6 +5976,19 @@ try {
         // strona bez pamięci: gra wybierze język domyślny
       }
     }, shot.lang ?? 'pl');
+    // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
+    if (KOD)
+      await page.addInitScript(() => {
+        try {
+          const u = new URL(location.href);
+          if (!u.searchParams.has('grafika')) {
+            u.searchParams.set('grafika', 'kod');
+            history.replaceState(null, '', u);
+          }
+        } catch {
+          // strona bez adresu (about:blank, setContent): nic do zmiany
+        }
+      });
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => {

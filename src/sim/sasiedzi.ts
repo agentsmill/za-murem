@@ -2,7 +2,8 @@
    stan na start, przechodniość), budynek przy podwórku, znani sąsiedzi, łup usług i mieszkań, zapasy gospodarstw,
    lokatorzy zapasowi bez tabel generatora, zamiar i nastrój, wybory spotkania i ich skutki. Etap 2: piętra (łup,
    lokatorzy z góry, szwendacz), nocni goście o 2:00, szabrownicy, którzy zostają, ukryci ugryzieni. Etap 3: wspólny
-   płot dla budynku (plotDla z kształtem z wspolnyPlot, kosztPlotu), a łup w otoczonym budynku jest nasz (uSasiada).
+   płot dla budynku (plotDla z kształtem z wspolnyPlot, kosztPlotu w trzech wariantach materiału, wariantyPlotu do
+   menu, procentPlotu), a łup w otoczonym budynku jest nasz (uSasiada).
    Gra sieciowa: kafelki i pomieszczenia za drzwiami klatek innych drużyn (zaDrzwiami, kafelkiZajete, pokojeZajete).
    Czyste funkcje świata i stanu: symulacja, menu poleceń, rysowanie i interfejs liczą z nich to samo.
 
@@ -24,7 +25,7 @@ import type { World } from '../world/world.ts';
 import type { Mat } from './budowle.ts';
 import { dayOf, hourOf, TICKS_PER_HOUR } from './clock.ts';
 import { lootOf } from './mieszkania.ts';
-import type { SimState } from './sim.ts';
+import type { PlotPlan, PlotStan, SimState } from './sim.ts';
 import type { GameMode } from './tryb.ts';
 
 // ---------------------------------------------------------------- typy stanu
@@ -1249,14 +1250,18 @@ export function pokojeZajete(
 export const PLOT_TICKS_M = Math.round((3 * TICKS_PER_HOUR) / 60);
 export const PLOT_DESKI_DRZWI = 2;
 
+/** to, czego plotDla potrzebuje ze stanu: stan symulacji i stan gry w widoku pasują bez zmian */
+export interface StanPlotu {
+  sasiedzi?: Sasiedzi;
+  plot?: PlotStan;
+  things: readonly { kind: string; x: number; y: number }[];
+  fence?: object | null;
+}
+
 /** Kształt wspólnego płotu dla otwartego sąsiedniego budynku z obecnej siatki świata (korytarz omija zasieki na
-    siatce); null: budynku nie da się otoczyć (nie jest otwarty, już otoczony, gra bez siatki). Ten sam wynik liczą menu
-    i symulacja. */
-export function plotDla(
-  st: Pick<SimState, 'sasiedzi' | 'plot' | 'things' | 'fence'>,
-  w: World,
-  bid: number,
-): PlotWynik | null {
+    siatce); null: budynku nie da się otoczyć (nie jest otwarty, już otoczony, gra bez siatki). Ten sam wynik liczą menu,
+    symulacja i duch planu na mapie (src/render/plotDuch.ts). */
+export function plotDla(st: StanPlotu, w: World, bid: number): PlotWynik | null {
   const rec = st.sasiedzi?.budynki.find((b) => b.bid === bid);
   if (!rec?.otwarty || st.plot?.bids.includes(bid) || !w.fence?.tiles.length || !st.fence) return null;
   const size = w.size;
@@ -1265,17 +1270,60 @@ export function plotDla(
   return wspolnyPlot(w, w.fence, drzwi, zasieki);
 }
 
-/** koszt płotu: deska i złom na metr, po 2 deski na drzwi do zabicia; praca (ticki), najmniej 10 minut */
-export function kosztPlotu(r: { dlugosc: number; zabic: readonly number[] }): {
-  need: Partial<Record<Mat, number>>;
-  total: number;
-} {
+/** postęp planu płotu w procentach (praca zrobiona z całej), najwyżej 99: to samo w opisie pracy, na karcie budynku
+    i na duchu planu na mapie */
+export const procentPlotu = (plan: Pick<PlotPlan, 'work' | 'total'>): number =>
+  Math.min(99, Math.floor((100 * plan.work) / Math.max(1, plan.total)));
+
+/** z czego stoi wspólny płot: deska i złom na metr albo 2 sztuki jednego materiału, gdy brakuje drugiego */
+export type WariantPlotu = 'mieszany' | 'deski' | 'zlom';
+export const WARIANTY_PLOTU: readonly WariantPlotu[] = ['mieszany', 'deski', 'zlom'];
+
+/** Koszt płotu: deska i złom na metr (z deskami albo ze złomu: 2 sztuki tego materiału na metr), po 2 deski na drzwi
+    do zabicia w każdym wariancie; praca (ticki) taka sama, najmniej 10 minut. Materiał płotu idzie w need pierwszy. */
+export function kosztPlotu(
+  r: { dlugosc: number; zabic: readonly number[] },
+  wariant: WariantPlotu = 'mieszany',
+): { need: Partial<Record<Mat, number>>; total: number } {
   const need: Partial<Record<Mat, number>> = {};
-  const deski = r.dlugosc + PLOT_DESKI_DRZWI * r.zabic.length;
-  if (deski > 0) need.deski = deski;
-  if (r.dlugosc > 0) need.zlom = r.dlugosc;
+  const m = r.dlugosc;
+  const drzwi = PLOT_DESKI_DRZWI * r.zabic.length;
+  if (wariant === 'zlom') {
+    if (m > 0) need.zlom = 2 * m;
+    if (drzwi > 0) need.deski = drzwi;
+  } else {
+    const deski = (wariant === 'deski' ? 2 * m : m) + drzwi;
+    if (deski > 0) need.deski = deski;
+    if (wariant === 'mieszany' && m > 0) need.zlom = m;
+  }
   return {
     need,
-    total: Math.max(TICKS_PER_HOUR / 6, r.dlugosc * PLOT_TICKS_M + r.zabic.length * ZABIJANIE_TICKS),
+    total: Math.max(TICKS_PER_HOUR / 6, m * PLOT_TICKS_M + r.zabic.length * ZABIJANIE_TICKS),
   };
+}
+
+/** nasze deski i złom do wyboru wariantu płotu: sterty po naszej stronie, bez łupu w nieotoczonym cudzym budynku */
+export function materialNaPlot(
+  st: Pick<SimState, 'sasiedzi' | 'plot' | 'things'>,
+  w: Pick<World, 'bid' | 'hq' | 'size'>,
+): Record<'deski' | 'zlom', number> {
+  const out = { deski: 0, zlom: 0 };
+  for (const t of st.things)
+    if ((t.kind === 'deski' || t.kind === 'zlom') && t.n > 0 && !uSasiada(st, w, t.y * w.size + t.x))
+      out[t.kind] += t.n;
+  return out;
+}
+
+/** Warianty płotu do menu: te, na które starcza naszego materiału (po kolei: mieszany, z desek, ze złomu); gdy nie
+    starcza na żaden albo nowego płotu nie ma (same drzwi do zabicia), deska i złom jak dotąd (plan czeka na materiał). */
+export function wariantyPlotu(
+  r: { dlugosc: number; zabic: readonly number[] },
+  mat: Record<'deski' | 'zlom', number>,
+): WariantPlotu[] {
+  if (r.dlugosc <= 0) return ['mieszany'];
+  const stac = WARIANTY_PLOTU.filter((v) => {
+    const need = kosztPlotu(r, v).need;
+    return (need.deski ?? 0) <= mat.deski && (need.zlom ?? 0) <= mat.zlom;
+  });
+  return stac.length ? stac : ['mieszany'];
 }
