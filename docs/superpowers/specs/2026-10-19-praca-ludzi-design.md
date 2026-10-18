@@ -146,7 +146,9 @@ Czas pracy rodzaju z umiejętnością dzieli się przez mnożnik `0,7 + 0,15 · 
 
 ### Populacja (integrator, punkt 14)
 
-Jedna czysta funkcja `populacja(st)` w `src/sim/snapshot.ts`: zarząd żywy (także na wyprawie) i mieszkańcy żywi, osobno i razem. Bez lokatorów sąsiednich budynków, którzy nie są nasi, i bez gości (wędrowców, handlarza). Z niej korzysta warunek zwycięstwa integratora; tabela Pracy i bot werbunku też.
+Jedna czysta funkcja `populacja(st)` w `src/sim/snapshot.ts`: zarząd żywy (także na wyprawie) i mieszkańcy żywi, osobno i razem. Bez lokatorów sąsiednich budynków, którzy nie są nasi (także w budynkach otoczonych wspólnym płotem: przyłączanie ich lokatorów to dalszy projekt, `docs/M2-fala-2.md`), i bez gości (wędrowców, handlarza, obcych).
+
+Kontrakt z projektem warunków zwycięstwa (integrator, gałąź `warunki-zwyciestwa`, `docs/superpowers/specs/2026-10-19-warunki-zwyciestwa-design.md`, sekcja „4. Ludnościowa”): `govInput()` w `src/sim/gov.ts` wystawia wynik `populacja(st).razem` w `GovInput` jako `ludnosc` (typ w `src/gov/typy.ts`; atrapy zarządu w `tests/unit/` dostają to pole też). Cel zwycięstwa tam to połowa ludności kwadratu domu z NSP 2021, od 120 do 500 osób, utrzymana 7 dni bez głodu; ten projekt nie liczy celu, tylko daje ludność.
 
 ### Interfejs (moje)
 
@@ -166,7 +168,7 @@ Jedna czysta funkcja `populacja(st)` w `src/sim/snapshot.ts`: zarząd żywy (tak
 - Szansa (moje, liczby do strojenia botem): 0,30, +0,20 gdy jedzenia jest co najmniej 2 porcje na osobę w zarządzie, +0,15 gdy jest wolne łóżko, −0,30 gdy w ciągu ostatnich dwóch dób była napaść na wędrowca albo handlarza (`st.obcy.napady`); w zakresie 0,05–0,85. Połowa wędrowców ma swój cel („idzie do rodziny”, z ziarna wędrowca) i szansę o połowę mniejszą, co rozmowa mówi wprost. Zaufania we wzorze nie ma, bo symulacja go nie zna (moje, po przeglądzie; integrator przyjął wzór z zaufaniem, zanim to wyszło). Most zaufania do symulacji zrobi projekt rozporządzeń, bo posłuszeństwo i tak go potrzebuje; wtedy zaufanie może wejść do wzoru.
 - Udane zaproszenie: wędrowiec przechodzi bramą i staje się osobą zarządu (pionek `core` z osobą, jak `addCore`, z jego wyglądem i z miejsca, w którym stoi), z domyślnymi priorytetami, linią w kronice i nastrojem „Nowa osoba w zarządzie” dla reszty. Nieudane: dziękuje, idzie dalej, bez kary.
 - Tryb zombie: co piąty wędrowiec ukrywa ugryzienie, jak gospodarstwa sąsiadów (`UKRYTY_UGRYZIONY`). „Zapytać o rękę” przed zaproszeniem ujawnia je, a przyjęty bez pytania dostaje gorączkę od chwili ugryzienia. Ten sam kod co przy sąsiadach.
-- Limit: zarząd ma najwyżej 12 osób, jedna stała (integrator, punkt 12). Przy pełnym zarządzie opcji zaproszenia nie ma (napis „Zarząd jest pełny”). Limit dotyczy tylko werbunku: wydarzenia dokładają jak dziś. Zmienia „Poza zakresem” z `docs/superpowers/specs/2026-10-18-wedrowcy-design.md`.
+- Limit: zwerbowani idą do zarządu, dopóki ma mniej niż 12 osób (jedna stała, integrator, punkt 12). Przy pełnym zarządzie zaproszenie dalej jest, a zwerbowany zostaje mieszkańcem: dostaje mieszkanie z wolnym łóżkiem albo najmniej zatłoczone, idzie tam pracą `arrive` i żyje planem dnia, tak jak przyjęte gospodarstwo sąsiadów (`przyjmijGospodarstwo`). Menu mówi wtedy, że przyjdzie jako mieszkaniec. W domu jednorodzinnym, gdzie mieszkańcy nie mają gdzie spać, przy pełnym zarządzie zaproszenia nie ma (napis „Nie ma już gdzie spać”), dopóki nie rozstrzygnie się punkt 15 Decyzji. Limit dotyczy tylko werbunku: wydarzenia dokładają jak dziś. Zmienia „Poza zakresem” z `docs/superpowers/specs/2026-10-18-wedrowcy-design.md`.
 
 ### Przyrost ma koszt (moje)
 
@@ -187,7 +189,7 @@ Testy w Node (nowe pliki w `tests/unit/`), każdy, który da się zepsuć, spraw
 - pierwszy dzień: przed pierwszym rankiem i przed końcem samouczka nowe rodzaje nic nie robią, koza, kuchnia i budowa jak dziś;
 - próg drewna liczy tylko drewno w obrębie siatki;
 - mnożnik umiejętności: ta sama praca szybciej u osoby z umiejętnością;
-- werbunek: szansa z jedzenia, łóżka, napaści i celu wędrowca; udane zaproszenie robi osobę zarządu z priorytetami i id `w…`; pełny zarząd nie ma opcji; ukryte ugryzienie w trybie zombie i „Zapytać o rękę”; gra bez rozmów z wędrowcem ma ten sam skrót co bez tej funkcji;
+- werbunek: szansa z jedzenia, łóżka, napaści i celu wędrowca; udane zaproszenie robi osobę zarządu z priorytetami i id `w…`; przy pełnym zarządzie zwerbowany zostaje mieszkańcem z łóżkiem; w domu przy pełnym zarządzie opcji nie ma; ukryte ugryzienie w trybie zombie i „Zapytać o rękę”; gra bez rozmów z wędrowcem ma ten sam skrót co bez tej funkcji;
 - `populacja(st)`: zarząd z wyprawą, mieszkańcy, bez sąsiadów i gości;
 - łańcuch wspólnego płotu w symulacji: 10F, potem 10H na Lanciego, obwód szczelny po każdym, zapis i wczytanie z tym samym skrótem;
 - determinizm: ten sam skrót po kilku dobach z pracą, zapis i wczytanie w połowie nie zmieniają przebiegu.
@@ -196,7 +198,7 @@ Boty:
 - `npm run bot` i `npm run bot:zombie` dostaną nowe skróty (zarząd sam pracuje). Nowe skróty do dziennika, z porównaniem liczb przed i po (zgony, siatka, drewno, jedzenie), integrator, punkt 10.
 - Nowy pomiar „zarząd bez gracza”: trzy doby bez żadnego polecenia poza kartą nocy, na trzech demach i w obu trybach. Ile drewna, desek, części, załatanych dziur i przeszukanych pomieszczeń, ile razy ktoś sam wyszedł za siatkę (ma być 0 bez przełącznika), jak ciepło i nastrój zarządu.
 - `npm run bot:surowce` po zmianie: ile desek i złomu jest po 5 dniach i którego dnia stać na najtańszy wspólny płot na Lanciego. To liczba do projektu kosztu płotu.
-- Werbunek w bocie (z włączoną opcją `obcy`, której `bot.ts` i `bot-zombie.ts` dziś nie włączają): ilu zwerbowanych po 10 dniach przy rozmowie z każdym wędrowcem; cel (moje) 2–5, nie więcej niż limit.
+- Werbunek w bocie (z włączoną opcją `obcy`, której `bot.ts` i `bot-zombie.ts` dziś nie włączają): ilu zwerbowanych po 10 dniach przy rozmowie z każdym wędrowcem, ilu do zarządu, ilu jako mieszkańcy; cel (moje) 2–5 do zarządu w 10 dni. Bot drukuje ludność (`populacja(st)`: zarząd, mieszkańcy, razem) na koniec każdego dnia, bo z niej integrator ustawi tempo werbunku pod warunek ludnościowy.
 
 Zrzuty (`npm run shots`, obejrzane w Chromium): panel Pracy na komputerze i telefonie po polsku i po angielsku, karta osoby ze stałym zajęciem i przełącznikiem, menu wędrowca z zaproszeniem, nowa osoba w zarządzie przy bramie. Wydajność: `npm run perf` z 12 osobami w zarządzie, laptop i telefon (CPU 4×), co najmniej jak dziś.
 
@@ -232,9 +234,9 @@ Integrator, 19.10.2026 w nocy (do przejrzenia przez Mateusza):
 9. Nowe rodzaje dopiero po celach pierwszego dnia; to, co zarząd robi sam dziś (koza, kuchnia, noszenie drewna), bez zmian. Zgłoszone, że dzisiejsze noszenie drewna wychodzi za siatkę (także nocą i w trybie zombie), co gryzie się z punktem 7; czeka na odpowiedź. Moja rekomendacja: drewno zza siatki wnosi ta sama osoba, która ścięła na polecenie; bezczynni wnoszą drewno zza siatki tylko za dnia i z przełącznikiem.
 10. Nowe skróty botów z dopiskiem w dzienniku, stare zapisy z domyślnymi priorytetami.
 11. Werbunek wędrowców tak.
-12. Do zarządu, limit 12 jako jedna stała.
+12. Do zarządu, limit 12 jako jedna stała; ponad limit zwerbowani zostają mieszkańcami (tak brzmiała rekomendacja, którą integrator przyjął).
 13. Uchodźców w domu naprawić tutaj. Po przeglądzie pytanie wróciło (punkt 15).
-14. Płot przez jezdnię osobnym projektem zaraz po tym; jedna funkcja populacji dla warunku zwycięstwa.
+14. Płot przez jezdnię osobnym projektem zaraz po tym (warunek zwycięstwa terytorialnego); jedna funkcja populacji wystawiona w `GovInput` jako `ludnosc` dla warunku ludnościowego, bot drukuje ludność po dniach.
 15. Uchodźcy w domu: (a) do zarządu, (b) wstęp mieszkańców do domu zarządu, (c) osobna poprawka. Moja rekomendacja: (c). Czeka na odpowiedź.
 
 Moje rozstrzygnięcia po przeglądzie oczami budującego: wzmacnianie siatki, drzewa na linii obwodu, szaber u lokatorów, cudze drzwi i naprawy w niezajętych mieszkaniach poza automatem; ogrzanie tam, gdzie dziś, z pomiarem; ustawienia na indeksie osoby, zwerbowani z id `w…`; wzór werbunku bez zaufania; próg drewna tylko w obrębie siatki; bot werbunku z opcją `obcy`.
