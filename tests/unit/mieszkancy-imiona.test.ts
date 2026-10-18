@@ -1035,6 +1035,87 @@ describe('nadajImiona: imię nie tworzy z nazwiskiem znanej osoby', () => {
   });
 });
 
+describe('nadajImiona: domownicy nie mają tego samego imienia', () => {
+  const piec = tabelaImion({
+    lata: {
+      '2010': {
+        M: Array.from({ length: 5 }, (_, i) => [`Imię${i}`, 10] as [string, number]),
+        K: [],
+      },
+    },
+  });
+
+  it('kuzyni w jednym mieszkaniu (różne matki) dostają różne imiona', () => {
+    let wspolne = 0;
+    for (let i = 0; i < 300; i++) {
+      const w = wynik(
+        `test/kuzyni${i}`,
+        [
+          osoba('o0', 'K', 1980),
+          osoba('o1', 'K', 1982),
+          osoba('o2', 'M', 2010, { matka: 'o0' }),
+          osoba('o3', 'M', 2010, { matka: 'o1' }),
+        ],
+        [dom('g0', ['o0', 'o1', 'o2', 'o3'])],
+      );
+      nadajImiona(w, piec, tabelaNazwisk([['Testski', 'Testska', 100]]), ziarno('kuzyni', i));
+      if (w.osoby[2].imie === w.osoby[3].imie) wspolne++;
+    }
+    expect(wspolne).toBe(0);
+  });
+
+  it('kuzyni w różnych mieszkaniach mogą mieć to samo imię', () => {
+    let wspolne = 0;
+    for (let i = 0; i < 300; i++) {
+      const w = wynik(
+        `test/osobno${i}`,
+        [
+          osoba('o0', 'K', 1980),
+          osoba('o1', 'K', 1982),
+          osoba('o2', 'M', 2010, { matka: 'o0' }),
+          osoba('o3', 'M', 2010, { matka: 'o1' }),
+        ],
+        [dom('g0', ['o0', 'o2']), dom('g1', ['o1', 'o3'])],
+      );
+      nadajImiona(w, piec, tabelaNazwisk([['Testski', 'Testska', 100]]), ziarno('osobno', i));
+      if (w.osoby[2].imie === w.osoby[3].imie) wspolne++;
+    }
+    expect(wspolne).toBeGreaterThan(20);
+  });
+
+  it('ojciec i syn w jednym mieszkaniu mogą mieć to samo imię (imię po ojcu)', () => {
+    const t = tabelaImion({
+      koszyki: {
+        '1920-1945': { M: [], K: [] },
+        '1946-1959': { M: [], K: [] },
+        '1960-1974': { M: [], K: [] },
+        '1975-1989': { M: [['Adam', 1]], K: [] },
+        '1990-1999': { M: [], K: [] },
+      },
+      lata: {
+        '2010': {
+          M: [
+            ['Adam', 90],
+            ['Bartosz', 10],
+          ],
+          K: [],
+        },
+      },
+    });
+    let poOjcu = 0;
+    for (let i = 0; i < 100; i++) {
+      const w = wynik(
+        `test/ojciec${i}`,
+        [osoba('o0', 'M', 1980), osoba('o1', 'M', 2010, { ojciec: 'o0' })],
+        [dom('g0', ['o0', 'o1'])],
+      );
+      nadajImiona(w, t, tabelaNazwisk([['Testski', 'Testska', 100]]), ziarno('ojciec', i));
+      if (w.osoby[1].imie === 'Adam') poOjcu++;
+    }
+    expect(poOjcu).toBeGreaterThan(70);
+  });
+});
+
 // ---------------------------------------------------------------- generator z nazwami
 
 describe('generujBudynek i generujObszar z tabelami nazw (R36)', () => {

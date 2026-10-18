@@ -182,6 +182,27 @@ describe('pełny generator na demach: rodzina', () => {
       expect(zle, nazwa).toEqual([]);
     }
   });
+
+  it('obecni domownicy nie dzielą imienia i nazwiska, chyba że to rodzic i dziecko', () => {
+    for (const [nazwa, o] of PELNE()) {
+      const zle: string[] = [];
+      for (const w of o.budynki) {
+        const wg = new Map(w.osoby.map((x) => [x.id, x]));
+        for (const h of w.gospodarstwa) {
+          const tu = h.czlonkowie.map((id) => wg.get(id)!).filter((x) => x.stan === 'tu');
+          for (let i = 0; i < tu.length; i++) {
+            for (let j = i + 1; j < tu.length; j++) {
+              const [a, b] = [tu[i], tu[j]];
+              if (a.imie !== b.imie || a.nazwisko !== b.nazwisko) continue;
+              const rodzic = a.matka === b.id || a.ojciec === b.id || b.matka === a.id || b.ojciec === a.id;
+              if (!rodzic) zle.push(`${h.id}: ${a.imie} ${a.nazwisko} ${a.rocznik} i ${b.rocznik}`);
+            }
+          }
+        }
+      }
+      expect(zle, nazwa).toEqual([]);
+    }
+  });
 });
 
 describe('src/mieszkancy/generuj.ts: reguły modułu', () => {
