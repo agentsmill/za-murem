@@ -54,7 +54,8 @@ describe('zarząd w obu językach', () => {
         // karta nocy otwarta (20:30) i noc po raporcie (dzień 4)
         for (const until of [at(2, 20, 30), at(4, 7)]) {
           const { gov, atr } = run(seed, policy, until);
-          const names = [...atr.people.map((p) => p.name), ...atr.people.map((p) => p.first)];
+          // imiona i polskie nazwy miejsc zostają po polsku (słowniczek)
+          const names = [...atr.people.map((p) => p.name), ...atr.people.map((p) => p.first), 'Wilanów', 'Łódź'];
           for (const t of texts(gov)) {
             n++;
             expect(isTx(t), JSON.stringify(t)).toBe(true);

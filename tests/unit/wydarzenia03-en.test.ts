@@ -147,7 +147,7 @@ describe('każde wydarzenie z 0.3 po angielsku', () => {
         const labels = en.labels(
           h,
           d,
-          choices.map((c) => c.label),
+          choices.map((c) => c.label.pl),
         );
         poAngielsku(en.title(h, d), ok, `${where}: tytuł`);
         poAngielsku(en.text(h, d), ok, `${where}: tekst`);
@@ -214,7 +214,7 @@ describe('słowa miejsca jak w polskich wariantach', () => {
       ...en.labels(
         h,
         d,
-        choices.map((c) => c.label),
+        choices.map((c) => c.label.pl),
       ),
     ];
     choices.forEach((c, k) => {
@@ -286,7 +286,7 @@ describe('przykłady', () => {
       d,
       def(id)
         .choices(h, d)
-        .map((c) => c.label),
+        .map((c) => c.label.pl),
     );
   };
 

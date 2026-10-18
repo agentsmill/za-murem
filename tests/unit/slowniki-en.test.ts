@@ -74,7 +74,9 @@ describe('słowniki napisów ze stanu', () => {
       expect(zawodEn(f), f).toBe(PROFS_EN[m]);
       const low = zawodEn(f.toLowerCase());
       expect(low.toLowerCase(), f).toBe(PROFS_EN[m].toLowerCase());
-      expect(low, f).toBe(/^[A-Z]{2,}\b/.test(PROFS_EN[m]) ? PROFS_EN[m] : PROFS_EN[m][0].toLowerCase() + PROFS_EN[m].slice(1));
+      expect(low, f).toBe(
+        /^[A-Z]{2,}\b/.test(PROFS_EN[m]) ? PROFS_EN[m] : PROFS_EN[m][0].toLowerCase() + PROFS_EN[m].slice(1),
+      );
       expect(zawodEn(m)).not.toMatch(POLSKIE);
     }
     expect(zawodEn('dziecko')).toBe('child');
