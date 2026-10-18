@@ -661,7 +661,7 @@ function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[
             `${who.en} came back from ${where.en} empty-handed.`,
           ),
     );
-    if (has) {
+    if (has.pl) {
       mood(st, 1, 0);
       for (const p of ppl)
         fx.moods.push({ id: p.id, why: g(p, 'Wróciłem z łupem', 'Wróciłam z łupem'), d: 4, hours: 12 });

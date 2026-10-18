@@ -227,14 +227,27 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
-/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona) */
-const startUrl = () => location.pathname + (params.get('siec') === '1' ? '?siec=1' : '');
+/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona, i z ?lang=, dopóki jest w adresie) */
+const startUrl = () => {
+  const q = new URLSearchParams();
+  if (params.get('siec') === '1') q.set('siec', '1');
+  const lang = new URLSearchParams(location.search).get('lang');
+  if (lang) q.set('lang', lang);
+  const s = q.toString();
+  return location.pathname + (s ? `?${s}` : '');
+};
+/** opisy przykładów po angielsku (public/demo/index.json z tools/make-demos.ts ma polskie) */
+const DEMO_LABEL_EN: Record<string, string> = {
+  przymorze: 'Obrońców Wybrzeża, Gdańsk (a wave block, large concrete panels)',
+  lanciego: 'Lanciego 10G, Warszawa Ursynów (blocks and terraced houses)',
+  zielonki: 'Spacerowa 10, Batowice, Zielonki commune (detached houses)',
+};
 /** przyciski przykładowych osiedli (napisy od nowa po zmianie języka) */
-const demoButtons: { b: HTMLButtonElement; d: { name: string; label: string } }[] = [];
+const demoButtons: { b: HTMLButtonElement; d: { key: string; name: string; label: string } }[] = [];
 const demoLabels = () => {
   for (const { b, d } of demoButtons) {
     b.textContent = L(`Przykład: ${d.name}`, `Example: ${d.name}`);
-    b.title = d.label;
+    b.title = L(d.label, DEMO_LABEL_EN[d.key] ?? d.label);
   }
 };
 demoList().then((list) => {
@@ -255,6 +268,15 @@ $('startForm').addEventListener('submit', (e) => {
   if (q) start(() => loadAddress(q, status));
 });
 const resume = readSave();
+// usunięcie zapisu w dwóch krokach, bez natywnego confirm: drugi klik w ciągu ARM_MS usuwa
+const ARM_MS = 4000;
+let armedAt = Number.NEGATIVE_INFINITY;
+const forgetArmed = () => performance.now() - armedAt < ARM_MS;
+/** napis przycisku według stanu (po zmianie języka napisy statyczne wracają do „Delete save”) */
+const forgetLabel = () => {
+  if (resume && !$('resume').hidden)
+    $('btnForget').textContent = forgetArmed() ? L('Na pewno? Usuń', 'Really delete?') : L('Usuń zapis', 'Delete save');
+};
 const resumeLabel = () => {
   if (resume) $('btnResume').textContent = L(`Kontynuuj: ${saveLabel(resume)}`, `Continue: ${saveLabel(resume)}`);
 };
@@ -262,15 +284,11 @@ if (resume) {
   $('resume').hidden = false;
   resumeLabel();
   $('btnResume').onclick = () => start(async () => resume.data, resume);
-  // usunięcie zapisu w dwóch krokach, bez natywnego confirm
-  let armed = 0;
   $('btnForget').onclick = () => {
-    if (performance.now() - armed > 4000) {
-      armed = performance.now();
-      $('btnForget').textContent = L('Na pewno? Usuń', 'Really delete?');
-      setTimeout(() => {
-        if (!$('resume').hidden) $('btnForget').textContent = L('Usuń zapis', 'Delete save');
-      }, 4000);
+    if (!forgetArmed()) {
+      armedAt = performance.now();
+      forgetLabel();
+      setTimeout(forgetLabel, ARM_MS + 50);
       return;
     }
     clearSave();
@@ -285,17 +303,34 @@ const renderLang = () => {
 renderLang();
 if (langStart) podepnijPrzelacznik(langStart);
 /* zmiana języka (przełącznik EN/PL): wszystko, co widać, od nowa w nowym języku; stan gry się nie zmienia */
+/** opis przycisku „pokaż siedzibę” ze słowem miejsca (napis statyczny z ui/jezyk.ts ma wersję z bloku) */
+function hqAria() {
+  $('zHome').setAttribute('aria-label', L(`Pokaż siedzibę ${words.zarzad.d}`, `Show ${wordsE.krotko}’s HQ`));
+}
+
 poZmianieJezyka(() => {
   renderLang();
   setMode(mode);
   demoLabels();
   resumeLabel();
+  forgetLabel();
   druzyna?.odswiez();
   siec.przerysuj();
   if (!sim) return;
+  hqAria();
   ctx.close();
+  // chwilowy napis był w starym języku: znika (pokazuje się na kilka sekund, więc nie ma czego tłumaczyć)
+  hintUntil = 0;
+  imieAgain();
   hud(performance.now());
+  wpiszImie();
   renderSpeed();
+  // powód z canPlace był w starym języku
+  if (placing) {
+    const c = canPlace(sim.st, sim.w, placing.kind, placing.x, placing.y, placing.rot);
+    placing.ok = c.ok;
+    placing.why = c.why;
+  }
   placeInfo();
   alarmButton(sim.st);
   if (modal.open) sheetAgain?.();
@@ -437,7 +472,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   hqName = world.buildings[world.hq]?.name ?? '';
   words = wordsOfWorld(world);
   wordsE = wordsEnOfWorld(world);
-  $('zHome').setAttribute('aria-label', `Pokaż siedzibę ${words.zarzad.d}`);
+  hqAria();
   fenceIn = govFence(world, words, wordsE);
   savedHour = Math.floor(st.tick / TICKS_PER_HOUR);
   $('osName').textContent = data.name;
@@ -1476,6 +1511,32 @@ async function otworzImie(person: number, pawn: number, lokator: boolean) {
 function zamknijImie() {
   imieEdit = null;
   hud(performance.now());
+}
+
+/** wpisane w edytorze imienia (z poprawionymi ręcznie formami), przeniesione przez zmianę języka: edytor rysuje
+    się od nowa w nowym języku */
+let wpisaneImie: Map<string, { v: string; wlasne?: string; niepewne: boolean }> | null = null;
+function imieAgain() {
+  const p = imieEdit && sim?.st.people[imieEdit.person];
+  if (!imieEdit || !p?.ref) return;
+  wpisaneImie = new Map(
+    [...$('card').querySelectorAll<HTMLInputElement>('.imie-ed input[name]')].map((x) => [
+      x.name,
+      { v: x.value, wlasne: x.dataset.wlasne, niepewne: x.classList.contains('niepewne') },
+    ]),
+  );
+  imieEdit.html = edytorImienia({ ref: p.ref, first: p.first, f: p.f }, imieEdit.odm, zapisanaZmiana(p));
+}
+function wpiszImie() {
+  if (!wpisaneImie) return;
+  for (const x of $('card').querySelectorAll<HTMLInputElement>('.imie-ed input[name]')) {
+    const was = wpisaneImie.get(x.name);
+    if (!was) continue;
+    x.value = was.v;
+    if (was.wlasne) x.dataset.wlasne = was.wlasne;
+    x.classList.toggle('niepewne', was.niepewne);
+  }
+  wpisaneImie = null;
 }
 
 function przywrocImie() {

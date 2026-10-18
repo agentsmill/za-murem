@@ -3580,6 +3580,94 @@ const SHOTS: Shot[] = [
         await obcy(page, 'en', 'en-surowce-menu');
       },
     });
+    out.push({
+      // plan warsztatu po angielsku na podwórku (tam nie wolno), zmiana języka bez ruchu myszą: powód z canPlace
+      // i sterowanie na pasku po polsku od razu, nie dopiero po ruchu kursora
+      name: 'en-budowa-zmiana-jezyka',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        const { BUILDS } = await import('../src/sim/budowle.ts');
+        await stockUp(page, BUILDS.warsztat.cost);
+        await page.keyboard.press('b');
+        await page.waitForSelector('#sheet .bcat');
+        await page.click('#sheet [data-act="build"][data-arg="warsztat"]');
+        const [x, y] = await page.evaluate(() => {
+          const w = window.zm!.sim!.w;
+          const t = w.fence.yard[0];
+          window.zm!.setCam((t % w.size) + 1, Math.floor(t / w.size) + 1, 1.6);
+          return [t % w.size, Math.floor(t / w.size)];
+        });
+        await waitIdle(page);
+        const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [x, y]);
+        await page.mouse.move(sx, sy);
+        await page.waitForTimeout(150);
+        const en = (await page.textContent('#placeText')) ?? '';
+        await page.evaluate(() => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.dataset.lang = 'pl';
+          document.querySelector('#sheet')!.appendChild(b);
+          b.click();
+          b.remove();
+        });
+        await page.waitForTimeout(100);
+        const pl = (await page.textContent('#placeText')) ?? '';
+        console.log(`  pasek: „${en}” → „${pl}”`);
+        if (!/only in a room/i.test(en)) throw new Error(`pasek po angielsku bez powodu: ${en}`);
+        if (/\b(only|room|flat|click|rotates|cancels)\b/i.test(pl))
+          throw new Error('pasek stawiania po zmianie języka ma angielskie słowa');
+      },
+    });
+    out.push({
+      // ?lang=pl wygrywa z zapamiętanym angielskim i zostaje w adresie po „Zapisz i wróć na start”; podpowiedzi
+      // przykładów w języku strony (po angielsku bez polskich opisów zabudowy)
+      name: 'en-lang-adres',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&lang=pl`);
+        await waitIdle(page);
+        if ((await page.evaluate(() => document.documentElement.lang)) !== 'pl')
+          throw new Error('?lang=pl nie wygrał z pamięcią');
+        await page.click('#btnMenu');
+        await page.click('#sheet [data-act="menu-start"]');
+        await page.waitForSelector('#demos button');
+        const lang = await page.evaluate(() => document.documentElement.lang);
+        const plTitles = await page.$$eval('#demos button', (l) => l.map((b) => (b as HTMLElement).title));
+        console.log(`  po powrocie: ${page.url().replace(base, '/')}, <html lang> ${lang}; ${plTitles.join(' | ')}`);
+        if (lang !== 'pl' || !page.url().includes('lang=pl')) throw new Error('powrót na kartę startową zgubił ?lang=');
+        await page.goto(base);
+        await page.waitForSelector('#demos button');
+        const enTitles = await page.$$eval('#demos button', (l) => l.map((b) => (b as HTMLElement).title));
+        console.log(`  po angielsku: ${enTitles.join(' | ')}`);
+        if (enTitles.some((t) => /falowiec|płyta|bloki|szeregowce|domy|gm\./.test(t)))
+          throw new Error('podpowiedzi przykładów po polsku w angielskiej wersji');
+      },
+    });
+    out.push({
+      // uzbrojone „Delete save” przy zmianie języka: napis „Na pewno? Usuń” w nowym języku, po 4 s z powrotem
+      name: 'en-usun-zapis',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        await page.click('#btnMenu');
+        await page.click('#sheet [data-act="menu-start"]');
+        await page.waitForSelector('#resume:not([hidden]) #btnForget');
+        await page.click('#btnForget');
+        const armed = await page.textContent('#btnForget');
+        await page.click('#langStart [data-lang="pl"]');
+        const pl = await page.textContent('#btnForget');
+        await page.waitForTimeout(4200);
+        const later = await page.textContent('#btnForget');
+        console.log(`  przycisk: „${armed}” → „${pl}” → „${later}”`);
+        if (armed !== 'Really delete?' || pl !== 'Na pewno? Usuń' || later !== 'Usuń zapis')
+          throw new Error('uzbrojony przycisk usuwania nie poszedł za językiem');
+        if (!(await page.isVisible('#resume'))) throw new Error('zapis zniknął bez drugiego kliknięcia');
+      },
+    });
     return out;
   })(),
 ];
@@ -5774,6 +5862,32 @@ function kartaShots(): Shot[] {
         const bozenka = await polaEdytora(page);
         console.log(`  formy: ${bozenka.map((x) => x.value).join(', ')}`);
         if (bozenka[4].value !== 'Bożenką') throw new Error(`narzędnik: ${bozenka[4].value}`);
+      },
+    },
+    {
+      // edytor po angielsku z wpisanym imieniem, przełącznik w Menu na polski: edytor po polsku z tym samym wpisem
+      name: 'en-imie-zmiana-jezyka',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await wejdz(page, base);
+        const r = await mieszkaniecZGeneratora(page, 0, true);
+        await waitIdle(page);
+        await otworzEdytor(page, r.id, false);
+        await wpisz(page, 'Bożenka', false);
+        await page.fill('#card input[name="dop"]', 'Bożenki-ręcznie');
+        await page.dispatchEvent('#card input[name="dop"]', 'input');
+        const en = (await page.textContent('#card form.imie-ed')) ?? '';
+        await page.click('#btnMenu');
+        await page.click('#modal [data-lang-menu] [data-lang="pl"]');
+        await page.click('#sheet [data-act="menu-back"]');
+        await page.waitForTimeout(200);
+        const pl = (await page.textContent('#card form.imie-ed')) ?? '';
+        const pola = await polaEdytora(page);
+        console.log(`  edytor: ${en.slice(0, 40)} → ${pl.slice(0, 40)}; ${pola.map((x) => x.value).join(', ')}`);
+        if (en === pl) throw new Error('edytor imienia nie zmienił języka');
+        if (pola[0].value !== 'Bożenka' || pola[1].value !== 'Bożenki-ręcznie')
+          throw new Error('wpisane imię zginęło przy zmianie języka');
       },
     },
     {
