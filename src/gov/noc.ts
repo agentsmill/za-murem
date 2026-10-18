@@ -6,6 +6,12 @@
    światło, pies, brama. Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość
    z ziarna gry. Teksty karty i raportu to Tx (polski i angielski z tych samych danych, bez dodatkowych losowań).
 
+   Cele wypraw na karcie wybiera `wybierzCeleNocy` (src/gov/wyprawy.ts): miejsca z okolicy (`GovInput.okolica`), gdy
+   zarząd ma stan miasta, inaczej dzisiejsze TARGETS. Opcja karty (`NightOption`) niesie cały opis celu (`cel`),
+   zatwierdzenie kopiuje go do grupy `n.exp`, a powrót, męczenie rano i godzina powrotu czytają go stamtąd. Grupa bez
+   `cel` (stan zapisany przed mapą miasta) szuka celu w TARGETS po `target`. Osoba poza mapą (`GovPerson.away`) ma na
+   karcie tylko sen, a propozycja zarządu nie daje jej warty ani wyprawy.
+
    Rozliczenie powrotu wyprawy (`rozliczWyprawe`) jest wspólne dla nocy i dla wyprawy dziennej z mapy miasta: bierze
    `Cel` (src/gov/wyprawy.ts) i osoby, losuje łup, kłopoty i znaleziska z ziarna zarządu i zwraca wpisy raportu, ranę
    i łup; zapasy, potrzeby, nastroje i powrót ludzi dopisuje do skutków (`fx`). Cel z TARGETS (`zapas === null`) liczy
@@ -20,7 +26,7 @@ import { g } from '../content/people.ts';
 import { type Tx, tx, txJoin, txOf } from '../core/jezyk.ts';
 import { clamp } from '../core/rng.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
-import { type ExpTarget, peopleNamesTx, TARGETS } from './tresc.ts';
+import { peopleNamesTx, TARGETS } from './tresc.ts';
 import type {
   Arm,
   GovEffects,
@@ -52,7 +58,15 @@ import {
   stockTx,
   zeroStock,
 } from './wspolne.ts';
-import { type Cel, celZTarget, ograniczLup, UDZWIG_NA_OSOBE, wlaczMiasto, zostaloZMiejsca } from './wyprawy.ts';
+import {
+  type Cel,
+  celZTarget,
+  ograniczLup,
+  UDZWIG_NA_OSOBE,
+  wlaczMiasto,
+  wybierzCeleNocy,
+  zostaloZMiejsca,
+} from './wyprawy.ts';
 
 export const CARD_HOUR = 20;
 /** do tej godziny karta czeka na decyzję, potem zostaje propozycja zarządu */
@@ -237,10 +251,9 @@ export function lossIfEntered(i: GovInput): { wood: number; supplies: number } {
 
 // ---------------------------------------------------------------- wyprawy
 
-function tonightTargets(st: GovState): ExpTarget[] {
-  const best = (r: ExpTarget['range']) =>
-    TARGETS.filter((t) => t.range === r).sort((a, b) => (st.visits[a.id] ?? 0) - (st.visits[b.id] ?? 0))[0];
-  return [best('blisko'), best('daleko')];
+/** Cel grupy wyprawy: opis zapisany w grupie albo, w stanie sprzed mapy miasta, cel z TARGETS po `target`. */
+function celGrupy(i: GovInput, gr: { target: string; cel?: Cel }): Cel {
+  return gr.cel ?? celZTarget(TARGETS.find((x) => x.id === gr.target)!, placeIn(i));
 }
 
 /** ryzyko kłopotów jednej osoby na wyprawie do celu (0,02–0,9); `Cel.ryzyko` bywa większe niż 1, tu jest ucinane */
@@ -265,11 +278,27 @@ export function expRisk(st: GovState, p: GovPerson, cel: Pick<Cel, 'ryzyko'>, to
 const lootMult = (st: GovState, cel: Pick<Cel, 'klucz' | 'zapas'>) =>
   cel.zapas === null ? Math.max(0.3, 1 - 0.15 * (st.visits[cel.klucz] ?? 0)) : 1;
 
+/** Spodziewany łup jednej osoby na karcie. Cel z TARGETS: przedziały razy mnożnik za wizyty. Cel z miejsca: przedziały
+    przycięte do tego, co zostało w miejscu, i do udźwigu jednej osoby (oba końce przez `ograniczLup`, więc suma
+    nie przekracza `min(zostało, udźwig)`), żeby karta nie obiecywała więcej, niż da się wynieść. */
 function expGain(st: GovState, cel: Cel): Partial<Record<LootKey, [number, number]>> {
   const m = lootMult(st, cel);
   const out: Partial<Record<LootKey, [number, number]>> = {};
-  for (const [k, [a, b]] of Object.entries(cel.lup) as [LootKey, [number, number]][])
-    out[k] = [Math.round(a * m), Math.round(b * m)];
+  const pary = Object.entries(cel.lup) as [LootKey, [number, number]][];
+  if (cel.zapas !== null) {
+    const pojemnosc = Math.min(zostaloZMiejsca(st, cel), UDZWIG_NA_OSOBE);
+    const od = zeroStock();
+    const doMax = zeroStock();
+    for (const [k, [a, b]] of pary) {
+      od[k] = a;
+      doMax[k] = b;
+    }
+    const odCiete = ograniczLup(od, pojemnosc);
+    const doCiete = ograniczLup(doMax, pojemnosc);
+    for (const [k] of pary) out[k] = [Math.min(odCiete[k], doCiete[k]), doCiete[k]];
+    return out;
+  }
+  for (const [k, [a, b]] of pary) out[k] = [Math.round(a * m), Math.round(b * m)];
   return out;
 }
 
@@ -285,10 +314,26 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
   const posts = postsOf(i, zombie);
   // w trybie zombie stado przychodzi zawsze: zarząd proponuje dwie warty przy siatce
   const chance = zombie ? 0.9 : raidChance(st, i);
-  const targets = tonightTargets(st).map((t) => celZTarget(t, placeIn(i)));
+  const targets = wybierzCeleNocy(st, i);
   // dyżur przy kozie tylko przy kozie zarządu (kuchnia z kozą w siedzibie)
   const wood = i.kitchen !== null ? nightWood(i) : undefined;
   const people = i.people.map((p) => {
+    // kto jest poza mapą na wyprawie, ten nie ma z czego wybierać: nie trzyma warty i nie idzie drugi raz
+    if (p.away)
+      return {
+        id: p.id,
+        name: p.name,
+        needs: { ...p.needs },
+        proposal: 'sen',
+        options: [
+          {
+            key: 'sen',
+            label: tx('Śpi', 'Sleeps'),
+            ok: true,
+            note: tx('Na wyprawie.', 'Out on a supply run.'),
+          },
+        ],
+      };
     const opts: NightOption[] = [
       {
         key: 'sen',
@@ -336,12 +381,18 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
       if (zombie && behindWire(i, post.key) && p.arm === 'palna' && p.weapon !== 'kusza')
         opts[opts.length - 1].note = tx(NOTE_HOLD_FIRE, NOTE_HOLD_FIRE_EN);
     }
-    for (const t of targets) {
+    // dwa miejsca na karcie: pierwsze to „blisko”, drugie „daleko” (klucz opcji według miejsca na karcie, nie zasięgu celu)
+    for (const [k, t] of targets.entries()) {
       const ok = canGo(p, t);
-      const where = t.nazwa;
+      const slot = k === 0 ? 'blisko' : 'daleko';
+      // cel z miejsca ma odległość przy nazwie („Sklep budowlany, 450 m”), cel z TARGETS tylko nazwę
+      const where =
+        t.zapas === null
+          ? t.nazwa
+          : tx(`${t.nazwa.pl}, ${Math.round(t.odl)} m`, `${t.nazwa.en}, ${Math.round(t.odl)} m`);
       opts.push({
-        key: `wyprawa:${t.range}`,
-        label: tx(`Wyprawa ${t.range}: ${where.pl}`, `${t.range === 'daleko' ? 'Long run' : 'Short run'}: ${where.en}`),
+        key: `wyprawa:${slot}`,
+        label: tx(`Wyprawa ${slot}: ${where.pl}`, `${slot === 'daleko' ? 'Long run' : 'Short run'}: ${where.en}`),
         ok,
         why: ok
           ? undefined
@@ -356,6 +407,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
         risk: expRisk(st, p, t),
         gain: expGain(st, t),
         target: t.klucz,
+        cel: t,
         note:
           t.range === 'daleko'
             ? tx('Wraca o świcie, razem bezpieczniej.', 'Back at dawn. Safer in company.')
@@ -424,7 +476,7 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
   // na wartę najpierw ci, co ostatniej nocy spali, potem umiejący się bić, potem wypoczęci
   const was = (p: GovPerson) => (lastGuards.includes(p.id) ? 1 : 0);
   const free = [...i.people]
-    .filter((p) => p.needs.health >= 20 && !standing.has(p.id))
+    .filter((p) => p.needs.health >= 20 && !p.away && !standing.has(p.id))
     .sort(
       (x, y) =>
         was(x) - was(y) ||
@@ -553,20 +605,22 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
   n.confirmed = true;
   n.t0 = st.trust;
   n.a0 = st.anger;
-  // wyprawy w grupach według celu
-  const groups = new Map<string, string[]>();
+  // wyprawy w grupach według celu; grupa dostaje opis celu z opcji karty (stare karty go nie mają)
+  const groups = new Map<string, { ids: string[]; cel?: Cel }>();
   for (const p of i.people) {
     const key = n.assign[p.id] ?? 'sen';
     if (key.startsWith('wyprawa:')) {
-      const target = n.card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key)?.target;
-      if (!target) continue;
-      groups.set(target, [...(groups.get(target) ?? []), p.id]);
+      const opt = n.card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key);
+      if (!opt?.target) continue;
+      const gr = groups.get(opt.target) ?? { ids: [], cel: opt.cel };
+      gr.ids.push(p.id);
+      groups.set(opt.target, gr);
     } else if (key.startsWith('warta:')) fx.guards.push({ id: p.id, post: key.slice(6) });
   }
-  n.exp = [...groups].map(([target, ids]) => ({ key: target, ids, target }));
+  n.exp = [...groups].map(([target, { ids, cel }]) => ({ key: target, ids, target, ...(cel ? { cel } : {}) }));
   for (const gr of n.exp) {
-    const t = TARGETS.find((x) => x.id === gr.target)!;
-    for (const id of gr.ids) fx.away.push({ id, day: n.day + 1, hour: t.back });
+    const cel = celGrupy(i, gr);
+    for (const id of gr.ids) fx.away.push({ id, day: n.day + 1, hour: cel.powrot });
   }
   // tryb zombie: bez szabrowników; liczniki przy siatce na początek nocy (do raportu rano)
   if (zombieMode(st)) {
@@ -722,14 +776,14 @@ export function rozliczWyprawe(st: GovState, i: GovInput, fx: GovEffects, cel: C
   return { lines, hurt, loot: got };
 }
 
-/** powrót nocnej wyprawy z karty (cel z TARGETS): rozliczenie wspólną funkcją i wpisy do raportu nocy */
-function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[]; target: string }): void {
+/** powrót nocnej wyprawy z karty (cel z miejsca albo z TARGETS): rozliczenie wspólną funkcją i wpisy do raportu nocy */
+function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[]; target: string; cel?: Cel }): void {
   const n = st.night!;
-  const t = TARGETS.find((x) => x.id === gr.target)!;
+  const cel = celGrupy(i, gr);
   n.returned.push(gr.target);
   const ppl = gr.ids.map((id) => i.people.find((p) => p.id === id)).filter((p): p is GovPerson => !!p);
   if (!ppl.length) return;
-  const r = rozliczWyprawe(st, i, fx, celZTarget(t, placeIn(i)), ppl);
+  const r = rozliczWyprawe(st, i, fx, cel, ppl);
   n.lines.push(...r.lines);
   if (r.hurt) n.hurt.push(r.hurt);
   for (const k of STOCK_KEYS) n.loot[k] += r.loot[k];
@@ -926,7 +980,7 @@ function morning(st: GovState, i: GovInput, fx: GovEffects): void {
   if (zombieMode(st)) n.lines.push(...hordeLines(i, n));
   if (!n.lines.length) n.lines.push(tx('Spokojna noc.', 'A quiet night.'));
   dailyDrift(st, i);
-  const far = n.exp.filter((e) => TARGETS.find((t) => t.id === e.target)?.range === 'daleko').flatMap((e) => e.ids);
+  const far = n.exp.filter((e) => celGrupy(i, e).range === 'daleko').flatMap((e) => e.ids);
   const report: NightReport = {
     day: n.day,
     lines: [...n.lines],
@@ -1005,8 +1059,7 @@ export function nightTick(st: GovState, i: GovInput, fx: GovEffects): void {
   if (!n?.confirmed) return;
   const t = gameMin(i);
   for (const gr of n.exp) {
-    const tg = TARGETS.find((x) => x.id === gr.target)!;
-    if (!n.returned.includes(gr.target) && t >= atHour(n.day + 1, tg.back)) returnExp(st, i, fx, gr);
+    if (!n.returned.includes(gr.target) && t >= atHour(n.day + 1, celGrupy(i, gr).powrot)) returnExp(st, i, fx, gr);
   }
   if (n.raid && !n.raid.resolved && t >= n.raid.at) resolveRaid(st, i, fx);
   if (i.horde) n.zpeak = Math.max(n.zpeak ?? 0, i.horde.near);

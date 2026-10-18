@@ -16,6 +16,11 @@
    więc ten sam sklep ma ten sam zapas u każdego gracza w mieście. Co zabrano, trzyma `GovState.miasto`; pole pojawia się
    dopiero po `wlaczMiasto` (opcja `miasto`), a `newGov` bez opcji go nie ma, więc skróty botów bez flagi nie drgną.
 
+   Wybór celów karty nocy (`wybierzCeleNocy`): „blisko” to najbliższe niewyczerpane miejsce z okolicy poza mapą lokalną
+   (do 300 m, a gdy takiego nie ma, najbliższe do 720 m), „daleko” to miejsce o największym braku jedzenia, leków
+   i części. Bez stanu miasta (`GovState.miasto`) albo bez miejsc do wyboru karta ma dzisiejsze cele z TARGETS
+   (`celeZTargets`, wybór według liczby wizyt), więc bot i testy bez opcji `miasto` grają jak dotąd.
+
    Kategorie miejsc to klucze `KAT_EN` (src/content/miejsca.en.ts), czyli `POICAT` bez `mieszkania`. Każda inna
    kategoria (także `mieszkania`, które jest celem z 0.3, nie punktem z OSM) liczy się jak `POICAT.sklep`. */
 
@@ -23,9 +28,10 @@ import { POICAT, type Res } from '../content/data.ts';
 import { KAT_EN } from '../content/miejsca.en.ts';
 import { type Tx, tx } from '../core/jezyk.ts';
 import { hashString, mulberry } from '../core/rng.ts';
-import type { Miejsce } from '../world/miasto.ts';
-import { type ExpTarget, targetNameTx } from './tresc.ts';
-import type { GovPlace, GovState, LootKey, StockDelta } from './typy.ts';
+import { type Miejsce, naMapieLokalnej } from '../world/miasto.ts';
+import { placeIn } from './miejsce.ts';
+import { type ExpTarget, TARGETS, targetNameTx } from './tresc.ts';
+import type { GovInput, GovPlace, GovState, LootKey, StockDelta } from './typy.ts';
 import { atHour, STOCK_KEYS, zeroStock } from './wspolne.ts';
 
 /** łup z POICAT (jednostki 0.3) razy tyle daje łup w jednostkach zarządu; skalę stroi bot */
@@ -36,6 +42,8 @@ export const MAX_DROGA_M = 5000;
 export const UDZWIG_NA_OSOBE = 6;
 /** do tylu metrów wyprawa jest „blisko” (wraca o 1:00), dalej „daleko” (o świcie) */
 export const BLISKO_DO_M = 300;
+/** najdalej tyle metrów od adresu leży miejsce, do którego karta nocy proponuje wyprawę (zasięg `geo.poi`) */
+export const MAX_OKOLICA_M = 720;
 /** jednostki łupu z 0.3 (Res) na zapasy zarządu; prądu z miejsc się nie wynosi */
 export const LUP_03: Readonly<Partial<Record<Res, LootKey>>> = {
   jedzenie: 'supplies',
@@ -227,4 +235,59 @@ export function ryzykoSlowem(r: number): Tx {
   if (r < 0.15) return tx('spokojnie', 'calm');
   if (r < 0.3) return tx('niepewnie', 'uncertain');
   return tx('groźnie', 'dangerous');
+}
+
+/** Dwa dzisiejsze cele karty nocy z TARGETS: blisko i daleko, w każdym zasięgu ten z najmniejszą liczbą wizyt
+    (przy remisie pierwszy z listy). Nazwy według miejsca siedziby `p`, `zapas: null`. */
+export function celeZTargets(st: GovState, p: GovPlace): [Cel, Cel] {
+  const najmniejOdwiedzany = (r: ExpTarget['range']): ExpTarget =>
+    TARGETS.filter((t) => t.range === r).sort((a, b) => (st.visits[a.id] ?? 0) - (st.visits[b.id] ?? 0))[0];
+  return [celZTarget(najmniejOdwiedzany('blisko'), p), celZTarget(najmniejOdwiedzany('daleko'), p)];
+}
+
+/** Braki, które „daleko” próbuje załatać: jedzenie, leki i części (drewno i złom nie liczą się do wyboru). */
+const BRAKI: readonly LootKey[] = ['supplies', 'meds', 'parts'];
+
+/** Brak, który miejsce zaspokaja: dla jedzenia, leków i części suma (środek przedziału łupu) / (1 + zapas w magazynie
+    tego rodzaju). Im mniej mamy, tym więcej warte to samo przyniesione. */
+function brakZaspokojony(cel: Cel, stock: GovInput['stock']): number {
+  let suma = 0;
+  for (const k of BRAKI) {
+    const przedzial = cel.lup[k];
+    if (przedzial) suma += (przedzial[0] + przedzial[1]) / 2 / (1 + Math.max(0, stock[k] ?? 0));
+  }
+  return suma;
+}
+
+/** Od najbliższego, przy równej odległości po kluczu (kolejność, w jakiej rozstrzygają się remisy). */
+const poOdleglosci = (a: Cel, b: Cel): number => a.odl - b.odl || (a.klucz < b.klucz ? -1 : a.klucz > b.klucz ? 1 : 0);
+
+/** Cele nocnych wypraw na karcie: [blisko, daleko]. Kandydaci to miejsca z `i.okolica` poza mapą lokalną, do
+    `MAX_OKOLICA_M`, z czymś jeszcze w zapasie (`zostaloZMiejsca`); mapa lokalna ma własną mapę gry, więc jej miejsca
+    nigdy nie są propozycją. „Blisko”: najbliższy kandydat do `BLISKO_DO_M`, a gdy go nie ma, po prostu najbliższy.
+    „Daleko”: spośród pozostałych kandydat o największym `brakZaspokojony`, przy remisie mniejsza odległość, potem
+    klucz. Bez `st.miasto`, bez kandydatów albo (dla „daleko”) bez drugiego kandydata miejsce zajmuje dzisiejszy cel
+    z TARGETS (`celeZTargets`), więc bez mapy miasta wynik jest taki sam jak przed nią. */
+export function wybierzCeleNocy(st: GovState, i: GovInput): [Cel, Cel] {
+  const zTargets = celeZTargets(st, placeIn(i));
+  if (!st.miasto || !i.okolica?.length) return zTargets;
+  const kandydaci = i.okolica
+    .filter((m) => !naMapieLokalnej(m) && m.odl <= MAX_OKOLICA_M)
+    .map((m) => celZMiejsca(m))
+    .filter((c) => zostaloZMiejsca(st, c) > 0)
+    .sort(poOdleglosci);
+  if (!kandydaci.length) return zTargets;
+  const blisko = kandydaci.find((c) => c.odl <= BLISKO_DO_M) ?? kandydaci[0];
+  let daleko: Cel | undefined;
+  let najwiekszyBrak = 0;
+  // kandydaci są posortowani, więc przy równym braku zostaje pierwszy: bliższy, a potem o mniejszym kluczu
+  for (const c of kandydaci) {
+    if (c === blisko) continue;
+    const brak = brakZaspokojony(c, i.stock);
+    if (!daleko || brak > najwiekszyBrak) {
+      daleko = c;
+      najwiekszyBrak = brak;
+    }
+  }
+  return [blisko, daleko ?? zTargets[1]];
 }
