@@ -170,6 +170,8 @@
       "id": "kotwica-emeryt",
       "grupa": "kotwica-stylu",
       "co": "emeryt w kurtce, 8 kierunków, stoi",
+      "plec": "m",
+      "wiek": [58, 100],
       "narzedzie": "create_character",
       "prompt": "elderly Polish retiree man about 70 years old, grey hair and grey moustache, grey flat cap, worn brown quilted winter jacket zipped up, dark grey trousers, scuffed brown shoes, slightly hunched, tired but stubborn",
       "parametry": {
@@ -202,12 +204,184 @@
           "uwagi": "z 55 kolorów na 15–20 z palety; tryb v3 nie przyjmuje palety przy zamówieniu"
         }
       ],
-      "uwagi": "płótno 48×48, 47 px wzrostu (ludzie rysowani kodem mają 45 px), stopy w wierszu 46. Kolejne postaci w tym stylu: create_character pro ze style_character_id tej postaci albo v3 z tym samym opisem stylu."
+      "uwagi": "płótno 48×48, 47 px wzrostu (ludzie rysowani kodem mają 45 px), stopy w wierszu 46. Kolejne postaci w tym stylu: create_character pro ze style_character_id tej postaci albo v3 z tym samym opisem stylu.",
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/stanie"]
+        },
+        {
+          "nazwa": "klekanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "crouching",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 5,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/klekanie"]
+        },
+        {
+          "nazwa": "niesienie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/niesienie-px"]
+        },
+        {
+          "nazwa": "rabanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/rabanie-px"]
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/gotowanie-px"]
+        },
+        {
+          "nazwa": "siedzenie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/siedzenie-px"]
+        },
+        {
+          "nazwa": "warta-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/warta-px"]
+        },
+        {
+          "nazwa": "cios",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "cross-punch",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 6,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/cios"]
+        },
+        {
+          "nazwa": "celowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/celowanie-px"]
+        },
+        {
+          "nazwa": "przeszukiwanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/przeszukiwanie-px"]
+        },
+        {
+          "nazwa": "mlotek-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/mlotek-px"]
+        },
+        {
+          "nazwa": "deski-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/deski-px"]
+        },
+        {
+          "nazwa": "zlom-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/zlom-px"]
+        }
+      ],
+      "odrzucone": [
+        {
+          "nazwa": "rabanie",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "v3 z opisu, słabsze od pixminimax"
+        },
+        {
+          "nazwa": "niesienie",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "v3 z opisu, słabsze od pixminimax"
+        },
+        {
+          "nazwa": "siedzenie",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "v3 z opisu, słabsze od pixminimax"
+        },
+        {
+          "nazwa": "drzemka-px",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "pixminimax, nieużywana: drzemka to ostatnia klatka siedzenia"
+        },
+        {
+          "nazwa": "celowanie-px",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "pierwsza próba, celowała w bok na kierunku południowym; zastąpiona wersją z trzema kierunkami"
+        },
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["south", "north", "west"],
+          "koszt": 3,
+          "uwagi": "pierwsza warta: blask lampy rozlany po ubraniu, zachód bez lampy; zastąpiona lampą opuszczoną przy biodrze"
+        }
+      ]
     },
     {
       "id": "kotwica-emerytka",
       "grupa": "kotwica-stylu",
       "co": "emerytka w płaszczu, 8 kierunków, stoi",
+      "plec": "k",
+      "wiek": [52, 100],
       "narzedzie": "create_character",
       "prompt": "elderly Polish woman about 70 years old, short grey permed hair, round glasses, long camel wool winter coat with big buttons, burgundy knitted scarf, dark skirt, thick brown tights, sturdy black shoes, slightly hunched, sharp-eyed and bossy",
       "parametry": {
@@ -239,12 +413,160 @@
           "pliki": ["assets/raw/kotwica-emerytka/paleta"]
         }
       ],
-      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
+      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca",
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/stanie"]
+        },
+        {
+          "nazwa": "klekanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "crouching",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 5,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/klekanie"]
+        },
+        {
+          "nazwa": "niesienie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/niesienie-px"]
+        },
+        {
+          "nazwa": "rabanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/rabanie-px"]
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/gotowanie-px"]
+        },
+        {
+          "nazwa": "siedzenie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/siedzenie-px"]
+        },
+        {
+          "nazwa": "warta-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/warta-px"]
+        },
+        {
+          "nazwa": "cios",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "cross-punch",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 6,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/cios"]
+        },
+        {
+          "nazwa": "celowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/celowanie-px"]
+        },
+        {
+          "nazwa": "przeszukiwanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/przeszukiwanie-px"]
+        },
+        {
+          "nazwa": "mlotek-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/mlotek-px"]
+        },
+        {
+          "nazwa": "deski-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/deski-px"]
+        },
+        {
+          "nazwa": "zlom-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/zlom-px"]
+        }
+      ],
+      "odrzucone": [
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["south", "north", "west"],
+          "koszt": 3,
+          "uwagi": "lampa wyciągnięta przed siebie: na południu blask lampy rozlany po płaszczu"
+        },
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["south", "north", "west"],
+          "koszt": 3,
+          "uwagi": "opis „unlit lantern, no fire, no glow” dał płaszcz w płomieniach na południu"
+        }
+      ]
     },
     {
       "id": "kotwica-zlota-raczka",
       "grupa": "kotwica-stylu",
       "co": "złota rączka w kombinezonie, 8 kierunków, stoi",
+      "plec": "m",
+      "wiek": [16, 57],
       "narzedzie": "create_character",
       "prompt": "Polish handyman about 45 years old, stubble, dark grey knitted beanie, faded navy blue work overalls over a grey hoodie, tool belt with a hammer, heavy brown work boots, broad shoulders, practical and calm",
       "parametry": {
@@ -276,12 +598,154 @@
           "pliki": ["assets/raw/kotwica-zlota-raczka/paleta"]
         }
       ],
-      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
+      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca",
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/stanie"]
+        },
+        {
+          "nazwa": "klekanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "crouching",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 5,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/klekanie"]
+        },
+        {
+          "nazwa": "niesienie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/niesienie-px"]
+        },
+        {
+          "nazwa": "rabanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/rabanie-px"]
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/gotowanie-px"]
+        },
+        {
+          "nazwa": "siedzenie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/siedzenie-px"]
+        },
+        {
+          "nazwa": "warta-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/warta-px"]
+        },
+        {
+          "nazwa": "cios",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "cross-punch",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 6,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/cios"]
+        },
+        {
+          "nazwa": "celowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/celowanie-px"]
+        },
+        {
+          "nazwa": "przeszukiwanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/przeszukiwanie-px"]
+        },
+        {
+          "nazwa": "mlotek-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/mlotek-px"]
+        },
+        {
+          "nazwa": "deski-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/deski-px"]
+        },
+        {
+          "nazwa": "zlom-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/zlom-px"]
+        }
+      ],
+      "odrzucone": [
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["south", "north", "west"],
+          "koszt": 3,
+          "uwagi": "opis „unlit lantern, no fire, no glow”, jak u emerytki; zastąpiona lampą opuszczoną przy biodrze"
+        }
+      ]
     },
     {
       "id": "kotwica-mloda",
       "grupa": "kotwica-stylu",
       "co": "młoda w parce, 8 kierunków, stoi",
+      "plec": "k",
+      "wiek": [16, 51],
       "narzedzie": "create_character",
       "prompt": "young Polish woman about 20 years old, dark brown hair in a ponytail, olive green parka with a fur-trimmed hood down, black jeans, dirty white sneakers, small dark backpack, alert and restless",
       "parametry": {
@@ -313,12 +777,146 @@
           "pliki": ["assets/raw/kotwica-mloda/paleta"]
         }
       ],
-      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
+      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca",
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/stanie"]
+        },
+        {
+          "nazwa": "klekanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "crouching",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 5,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/klekanie"]
+        },
+        {
+          "nazwa": "niesienie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/niesienie-px"]
+        },
+        {
+          "nazwa": "rabanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/rabanie-px"]
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/gotowanie-px"]
+        },
+        {
+          "nazwa": "siedzenie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/siedzenie-px"]
+        },
+        {
+          "nazwa": "warta-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/warta-px"]
+        },
+        {
+          "nazwa": "cios",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "cross-punch",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 6,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/cios"]
+        },
+        {
+          "nazwa": "celowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/celowanie-px"]
+        },
+        {
+          "nazwa": "przeszukiwanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/przeszukiwanie-px"]
+        },
+        {
+          "nazwa": "mlotek-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/mlotek-px"]
+        },
+        {
+          "nazwa": "deski-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/deski-px"]
+        },
+        {
+          "nazwa": "zlom-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/zlom-px"]
+        }
+      ]
     },
     {
       "id": "kotwica-chlopiec",
       "grupa": "kotwica-stylu",
       "co": "chłopiec w czapce z pomponem",
+      "plec": "m",
+      "wiek": [0, 15],
       "narzedzie": "create_character",
       "prompt": "Polish boy about 8 years old, messy blond hair, red knitted bobble hat, oversized patched blue winter jacket, grey tracksuit trousers, muddy rubber boots, curious and cheeky",
       "parametry": {
@@ -345,12 +943,36 @@
           "koszt": 0.1,
           "pliki": ["assets/raw/kotwica-chlopiec/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-chlopiec/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-chlopiec/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-dziewczynka",
       "grupa": "kotwica-stylu",
       "co": "dziewczynka w żółtym płaszczu",
+      "plec": "k",
+      "wiek": [0, 15],
       "narzedzie": "create_character",
       "prompt": "Polish girl about 10 years old, two brown braids, yellow raincoat, purple leggings, worn pink sneakers, small fabric backpack, serious",
       "parametry": {
@@ -377,12 +999,36 @@
           "koszt": 0.1,
           "pliki": ["assets/raw/kotwica-dziewczynka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dziewczynka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dziewczynka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-dresiarz",
       "grupa": "kotwica-stylu",
       "co": "dresiarz w kapturze",
+      "plec": "m",
+      "wiek": [16, 26],
       "narzedzie": "create_character",
       "prompt": "Polish young man about 19 years old, buzz cut, black tracksuit with white side stripes and the hood up, white sneakers, hands in pockets, slouching and cocky",
       "parametry": {
@@ -410,12 +1056,36 @@
           "pliki": ["assets/raw/kotwica-dresiarz/paleta"],
           "uwagi": "koszt całego wywołania zapisany przy pierwszej postaci z paczki"
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dresiarz/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dresiarz/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-pielegniarka",
       "grupa": "kotwica-stylu",
       "co": "pielęgniarka z apteczką",
+      "plec": "k",
+      "wiek": [30, 55],
       "narzedzie": "create_character",
       "prompt": "Polish nurse about 40 years old, dark hair in a bun, white medical scrubs under an open grey padded jacket, white clogs, red first aid bag on the shoulder, tired but kind",
       "parametry": {
@@ -442,12 +1112,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-pielegniarka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-pielegniarka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-pielegniarka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-kucharka",
       "grupa": "kotwica-stylu",
       "co": "kucharka w fartuchu",
+      "plec": "k",
+      "wiek": [45, 65],
       "narzedzie": "create_character",
       "prompt": "stout Polish cook about 55 years old, short red-dyed hair, white apron over a flowered housecoat and a thick cardigan, slippers, wooden spoon in hand, warm and loud",
       "parametry": {
@@ -474,12 +1168,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-kucharka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kucharka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kucharka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-informatyk",
       "grupa": "kotwica-stylu",
       "co": "informatyk z martwym laptopem",
+      "plec": "m",
+      "wiek": [24, 40],
       "narzedzie": "create_character",
       "prompt": "Polish IT specialist about 30 years old, beard, thick black glasses, faded black hoodie, cargo trousers, worn running shoes, a dead laptop under his arm, sleepy",
       "parametry": {
@@ -506,12 +1224,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-informatyk/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-informatyk/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-informatyk/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-prompt-engineer",
       "grupa": "kotwica-stylu",
       "co": "prompt engineer z pękniętym tabletem",
+      "plec": "m",
+      "wiek": [20, 34],
       "narzedzie": "create_character",
       "prompt": "young Polish prompt engineer about 26 years old, styled undercut hair, thin round glasses, beige puffer vest over a black turtleneck, slim chinos, white designer sneakers, holding a cracked tablet, smug",
       "parametry": {
@@ -541,12 +1283,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-prompt-engineer/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-prompt-engineer/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-prompt-engineer/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-doradca-esg",
       "grupa": "kotwica-stylu",
       "co": "doradca ESG z podkładką",
+      "plec": "m",
+      "wiek": [32, 50],
       "narzedzie": "create_character",
       "prompt": "Polish ESG consultant about 40 years old, slicked-back hair, crumpled navy suit with a green leaf pin, loosened tie, muddy leather shoes, clipboard in hand, overly cheerful",
       "parametry": {
@@ -573,12 +1339,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-doradca-esg/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-doradca-esg/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-doradca-esg/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-influencerka",
       "grupa": "kotwica-stylu",
       "co": "influencerka survivalowa",
+      "plec": "k",
+      "wiek": [16, 34],
       "narzedzie": "create_character",
       "prompt": "young Polish survival influencer about 24 years old, long bleached hair, camouflage cap, tactical vest over a pink hoodie, cargo pants, hiking boots, holding a dead phone on a selfie stick",
       "parametry": {
@@ -605,12 +1395,36 @@
           "koszt": 0.1,
           "pliki": ["assets/raw/kotwica-influencerka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-influencerka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-influencerka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-ochroniarz",
       "grupa": "kotwica-stylu",
       "co": "ochroniarz",
+      "plec": "m",
+      "wiek": [35, 60],
       "narzedzie": "create_character",
       "prompt": "big Polish security guard about 50 years old, shaved head, black bomber jacket, black trousers, heavy boots, walkie-talkie on the belt, arms crossed, stern",
       "parametry": {
@@ -637,12 +1451,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-ochroniarz/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-ochroniarz/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-ochroniarz/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-mechanik",
       "grupa": "kotwica-stylu",
       "co": "mechanik z kluczem",
+      "plec": "m",
+      "wiek": [38, 62],
       "narzedzie": "create_character",
       "prompt": "Polish car mechanic about 50 years old, grey moustache, oil-stained dark green work jacket, dark trousers, steel-toe boots, big wrench in hand, rag in the back pocket",
       "parametry": {
@@ -669,12 +1507,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-mechanik/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mechanik/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mechanik/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-listonoszka",
       "grupa": "kotwica-stylu",
       "co": "listonoszka z torbą",
+      "plec": "k",
+      "wiek": [35, 58],
       "narzedzie": "create_character",
       "prompt": "Polish postwoman about 45 years old, short brown hair, faded blue uniform jacket, big leather mail bag across the body, dark trousers, sensible shoes, brisk",
       "parametry": {
@@ -701,12 +1563,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-listonoszka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-listonoszka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-listonoszka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-budowlaniec",
       "grupa": "kotwica-stylu",
       "co": "budowlaniec w kasku",
+      "plec": "m",
+      "wiek": [25, 48],
       "narzedzie": "create_character",
       "prompt": "Polish construction worker about 35 years old, white hard hat, orange high-visibility vest over a brown fleece, dusty work trousers, heavy boots, strong",
       "parametry": {
@@ -733,12 +1619,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-budowlaniec/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-budowlaniec/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-budowlaniec/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-dzialkowiczka",
       "grupa": "kotwica-stylu",
       "co": "działkowiczka w kapeluszu",
+      "plec": "k",
+      "wiek": [55, 80],
       "narzedzie": "create_character",
       "prompt": "Polish allotment gardener woman about 65 years old, wide straw hat, green quilted vest over a checked shirt, gardening gloves, rubber boots, small trowel in hand, cheerful",
       "parametry": {
@@ -765,12 +1675,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-dzialkowiczka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dzialkowiczka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dzialkowiczka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-staruszek",
       "grupa": "kotwica-stylu",
       "co": "staruszek z laską",
+      "plec": "m",
+      "wiek": [72, 100],
       "narzedzie": "create_character",
       "prompt": "very old Polish man about 85 years old, grey beret, long dark grey wool coat, knitted scarf, wooden walking cane, hunched, slow and dignified",
       "parametry": {
@@ -797,12 +1731,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-staruszek/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-staruszek/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-staruszek/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-kioskarka",
       "grupa": "kotwica-stylu",
       "co": "kioskarka w swetrze",
+      "plec": "k",
+      "wiek": [45, 68],
       "narzedzie": "create_character",
       "prompt": "Polish kiosk saleswoman about 55 years old, curly dyed burgundy hair, thick knitted cardigan, long brown skirt, fingerless gloves, reading glasses on a chain, gossipy",
       "parametry": {
@@ -829,12 +1787,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-kioskarka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kioskarka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kioskarka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-kibic",
       "grupa": "kotwica-stylu",
       "co": "kibic z szalikiem",
+      "plec": "m",
+      "wiek": [18, 38],
       "narzedzie": "create_character",
       "prompt": "Polish football fan about 28 years old, short hair, white and green striped club scarf, dark padded jacket, jeans, sneakers, loud and proud",
       "parametry": {
@@ -861,12 +1843,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-kibic/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kibic/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kibic/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-lekarz",
       "grupa": "kotwica-stylu",
       "co": "lekarz w kitlu",
+      "plec": "m",
+      "wiek": [48, 72],
       "narzedzie": "create_character",
       "prompt": "Polish doctor about 60 years old, white hair, long white coat over a brown sweater, stethoscope around the neck, dark trousers, leather shoes, calm",
       "parametry": {
@@ -894,12 +1900,36 @@
           "pliki": ["assets/raw/kotwica-lekarz/paleta"],
           "uwagi": "koszt całego wywołania zapisany przy pierwszej postaci z paczki"
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-lekarz/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-lekarz/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-weteran",
       "grupa": "kotwica-stylu",
       "co": "weteran w parce wojskowej",
+      "plec": "m",
+      "wiek": [35, 60],
       "narzedzie": "create_character",
       "prompt": "Polish ex-soldier survivalist about 45 years old, short beard, faded olive military surplus parka, knit cap, cargo trousers, combat boots, backpack with a rolled sleeping mat, watchful",
       "parametry": {
@@ -926,12 +1956,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-weteran/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-weteran/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-weteran/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-matka",
       "grupa": "kotwica-stylu",
       "co": "matka z dzieckiem na ręku",
+      "plec": "k",
+      "wiek": [24, 42],
       "narzedzie": "create_character",
       "prompt": "Polish young mother about 32 years old, brown ponytail, long quilted purple coat, carrying a baby wrapped in a blanket, jeans, ankle boots, determined",
       "parametry": {
@@ -957,6 +2011,28 @@
           "pixellab": "330b97d9-4277-48cf-a8d2-60b75d9a3d35",
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-matka/paleta"]
+        }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-matka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-matka/Idle/animations/stanie"]
         }
       ]
     },

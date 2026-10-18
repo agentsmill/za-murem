@@ -1,22 +1,39 @@
 /* Atlasy grafiki z PixelLab do public/assets/ (npm run atlasy). Z assets/raw bierze tylko assety ze statusem
    „zatwierdzony” w assets/manifest.json i składa je tak, jak ich potrzebuje gra: kafelki Wanga terenu w kolejności
    narożników, moduły bloku z wybranego kawałka bloku (pas fasady, przęsła, wejście, profil attyki), naklejki dachu
-   bez tła papy, trzepak i obsadę postaci po palecie z przemalowaniami ubrań z ramp palety. Opis w grafika.json.
+   bez tła papy, trzepak i animacje postaci: klatki po palecie, przycięte do sylwetki, w dwóch pasach wierszy
+   (mieszkańcy i zarząd), z kotwicą stóp i kolorami ubrania do przemalowania w grze. Opis w grafika.json.
    npm run atlasy -- --sprawdz: tylko sprawdza, czy public/assets jest aktualne (kod wyjścia 1, jeśli nie). */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type OpisGrafiki, WERSJA_GRAFIKI } from '../src/render/art/pixellab.ts';
+import {
+  type KierunkiLudzi,
+  type KlatkaLudzi,
+  type OpisGrafiki,
+  type PostacLudzi,
+  type PostacRegiony,
+  WERSJA_GRAFIKI,
+} from '../src/render/art/pixellab.ts';
+import { animacjePostaci, type Metadane } from './animacje.ts';
+import {
+  KIERUNKI_PL,
+  kierunkiAnimacji,
+  klatkiAnimacji,
+  koloryUbrania,
+  kotwicaKlatki,
+  przytnij,
+  stopyWzgledne,
+} from './ludzie.ts';
+import { pakuj } from './pakuj.ts';
+import { dociagnijDoPalety } from './paleta.ts';
 import { decodePng, encodePng } from './png.ts';
 
 export type { OpisGrafiki } from '../src/render/art/pixellab.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 export const WYJSCIE = 'public/assets';
-
-/** kolejność kierunków postaci z PixelLab, od południa zgodnie z zegarem */
-export const DIRS = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
 
 /** obraz RGBA: w*h*4 bajtów */
 export interface Atlas {
@@ -57,6 +74,8 @@ interface Asset {
   moduly?: Moduly;
   uzycie?: Dach;
   przemalowanie?: Przemalowanie;
+  plec?: 'm' | 'k';
+  wiek?: [number, number];
 }
 
 interface Manifest {
@@ -74,6 +93,35 @@ interface WangTile {
   corners: Record<'NW' | 'NE' | 'SW' | 'SE', 'upper' | 'lower'>;
   bounding_box: { x: number; y: number };
 }
+
+/** szerokość atlasu ludzi (klatki pakowane półkami; wysokość wychodzi z pakowania) */
+const SZEROKOSC_LUDZI = 2048;
+/** odstęp między klatkami w atlasie ludzi */
+const ODSTEP_LUDZI = 2;
+
+/**
+ * Prace w grze (klucz) i animacje PixelLab, z których powstają. bezReferencji: animacja z opisu (pixminimax)
+ * zamówiona z klatką referencyjną ma pierwszą klatkę z pozą wyjściową, której nie bierzemy.
+ */
+export const PRACE: Record<string, { zrodlo: string; bezReferencji?: boolean; kotwica?: 'dol' }> = {
+  chod: { zrodlo: 'chod' },
+  stanie: { zrodlo: 'stanie' },
+  klekanie: { zrodlo: 'klekanie', kotwica: 'dol' },
+  niesienie: { zrodlo: 'niesienie-px', bezReferencji: true },
+  rabanie: { zrodlo: 'rabanie-px', bezReferencji: true },
+  gotowanie: { zrodlo: 'gotowanie-px', bezReferencji: true },
+  siedzenie: { zrodlo: 'siedzenie-px', bezReferencji: true },
+  warta: { zrodlo: 'warta-px', bezReferencji: true },
+  cios: { zrodlo: 'cios' },
+  celowanie: { zrodlo: 'celowanie-px', bezReferencji: true },
+  przeszukiwanie: { zrodlo: 'przeszukiwanie-px', bezReferencji: true },
+  mlotek: { zrodlo: 'mlotek-px', bezReferencji: true },
+  deski: { zrodlo: 'deski-px', bezReferencji: true },
+  zlom: { zrodlo: 'zlom-px', bezReferencji: true },
+};
+
+/** mieszkańcy z PixelLab mają tylko chód i stanie, prace wykonuje zarząd */
+export const PRACE_MIESZKANCOW = ['chod', 'stanie'];
 
 const file = (rel: string) => fs.readFileSync(path.join(ROOT, rel));
 const json = <T>(rel: string) => JSON.parse(file(rel).toString('utf8')) as T;
@@ -100,33 +148,6 @@ function stopy(a: Atlas): number {
 }
 
 const hex = (c: string) => Number.parseInt(c.slice(1), 16);
-
-/** jasność koloru #rrggbb */
-function jasnosc(c: string): number {
-  const n = hex(c);
-  return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
-}
-
-/**
- * Przemalowanie ubrania na inną rampę palety: najciemniejszy kolor ubrania przechodzi na pierwszy kolor rampy,
- * następny na drugi i tak dalej, tylko w wierszach ubrania. Z kilku postaci z PixelLab robi tłum bez kolejnych
- * generacji.
- */
-export function przemaluj(a: Atlas, p: Przemalowanie, rampa: string[]): Atlas {
-  const z = [...p.kolory].sort((x, y) => jasnosc(x) - jasnosc(y));
-  const mapa = new Map(z.map((c, i) => [hex(c), hex(rampa[Math.min(i, rampa.length - 1)])]));
-  const out = Uint8Array.from(a.rgba);
-  for (let y = p.wiersze[0]; y < Math.min(a.h, p.wiersze[1]); y++)
-    for (let x = 0; x < a.w; x++) {
-      const i = (y * a.w + x) * 4;
-      const c = out[i + 3] ? mapa.get((out[i] << 16) | (out[i + 1] << 8) | out[i + 2]) : undefined;
-      if (c === undefined) continue;
-      out[i] = c >> 16;
-      out[i + 1] = (c >> 8) & 255;
-      out[i + 2] = c & 255;
-    }
-  return { w: a.w, h: a.h, rgba: out };
-}
 
 /** kolory skóry, których przemalowanie nie rusza */
 const SKORA = new Set(['#1a1c22', '#e0b48c', '#e3b79a']);
@@ -238,28 +259,97 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
   const tz = wczytaj('assets/raw/kotwica-trzepak/trzepak.png');
   out.set('trzepak.png', tz);
 
-  // ludzie: wiersz na postać, w nim wersje (oryginał i rampy palety) po 8 kierunków, klatki 48 px; mniejsze płótna
-  // dzieci wyrównane do środka i do dołu klatki
-  const K = 48;
+  // ludzie: animacje wszystkich postaci w jednym atlasie, klatki po palecie przycięte do sylwetki i spakowane
   const ids = [...m.zarzad, ...m.mieszkancy];
-  const rampy = Object.values(pal.rampy);
-  const ludzie = pusty(K * DIRS.length * (rampy.length + 1), K * ids.length);
-  const postacie = ids.map((id, c) => {
+  const rozmiary: { w: number; h: number }[] = [];
+  const obrazy: Uint8Array[] = [];
+  const wpisy: { wpis: KlatkaLudzi; idx: number; zarzad: boolean }[] = [];
+  const postacie: PostacLudzi[] = ids.map((id) => {
     const a = asset(id);
-    const kier = DIRS.map((d) => wczytaj(`assets/raw/${id}/paleta/${d}.png`));
-    const p = a.przemalowanie ?? ubranie(kier[0]);
-    const wersje = [kier, ...rampy.map((r) => kier.map((k) => przemaluj(k, p, r)))];
-    const dx = (K - kier[0].w) >> 1;
-    const dy = K - kier[0].h;
-    wersje.forEach((v, n) => {
-      v.forEach((k, d) => {
-        kopiuj(k, 0, 0, k.w, k.h, ludzie, (n * DIRS.length + d) * K + dx, c * K + dy);
-      });
-    });
-    // stopy: najniższy piksel ze wszystkich kierunków (z tyłu stopy wypadają o 1–3 px wyżej), żeby postać przy
-    // obrocie nie skakała i w żadnym kierunku nie wchodziła w ziemię
-    return { id, co: a.co, zarzad: c < m.zarzad.length, stopy: Math.max(...kier.map(stopy)) + dy };
+    const zarzad = m.zarzad.includes(id);
+    const meta = json<Metadane>(`assets/raw/${id}/metadata.json`);
+    const dostepne = new Map(animacjePostaci(meta).map((x) => [x.nazwa, x]));
+    const animacje: PostacLudzi['animacje'] = {};
+    // statyczna postać od południa: jej stopy względem środka płótna to kotwica klatek wszystkich animacji, a ubranie
+    // do przemalowania z manifestu albo zgadnięte, z zakresem liczonym od stóp
+    const stat = wczytaj(`assets/raw/${id}/paleta/south.png`);
+    const rel = stopyWzgledne(stat);
+    for (const [klucz, spec] of Object.entries(PRACE)) {
+      if (!zarzad && !PRACE_MIESZKANCOW.includes(klucz)) continue;
+      const an = dostepne.get(spec.zrodlo);
+      if (!an) continue;
+      const po: Partial<Record<(typeof KIERUNKI_PL)[number], string[]>> = {};
+      for (const k of KIERUNKI_PL) if (an.kierunki[k]) po[k] = klatkiAnimacji(an.kierunki[k], spec);
+      const kier = kierunkiAnimacji(po);
+      if (!kier) continue;
+      const obraz = (plik: string) => {
+        const z = wczytaj(`assets/raw/${id}/${plik}`);
+        return { w: z.w, h: z.h, rgba: dociagnijDoPalety(z.rgba, pal.kolory) };
+      };
+      const klatki = kier.map((k) => (Array.isArray(k) ? k.map(obraz) : k));
+      const kierunki: KierunkiLudzi = klatki.map((k) =>
+        Array.isArray(k)
+          ? k.map((fr) => {
+              const p = przytnij(fr);
+              const wpis: KlatkaLudzi = [
+                0,
+                0,
+                p.w,
+                p.h,
+                (fr.w >> 1) - p.x,
+                kotwicaKlatki(rel, fr.h, p.y, spec.kotwica, p.h),
+              ];
+              wpisy.push({ wpis, idx: rozmiary.length, zarzad });
+              rozmiary.push({ w: p.w, h: p.h });
+              obrazy.push(p.rgba);
+              return wpis;
+            })
+          : k,
+      );
+      animacje[klucz] = { kierunki };
+    }
+    // kolory ubrania: kandydaci z manifestu albo zgadnięci, bez tych, które w statycznej postaci (4 kierunki) leżą
+    // w większości poza tułowiem (włosy, buty, obrys); gra przemalowuje je w każdej klatce bez pasa wysokości
+    const p = a.przemalowanie ?? ubranie(stat);
+    const statyczne = KIERUNKI_PL.map((k) => wczytaj(`assets/raw/${id}/paleta/${k}.png`));
+    if (!a.plec || !a.wiek) throw new Error(`${id}: w manifeście brakuje pola plec albo wiek`);
+    return {
+      id,
+      co: a.co,
+      zarzad,
+      plec: a.plec,
+      wiek: a.wiek,
+      animacje,
+      przemalowanie: { kolory: koloryUbrania(statyczne, p.kolory, p.wiersze) },
+    };
   });
+  // dwa pasy wierszy: najpierw klatki mieszkańców (gra robi z nich w locie przemalowane wersje, więc leżą razem),
+  // pod nimi klatki zarządu; między pasami ten sam odstęp co między klatkami
+  const regiony: PostacRegiony = { mieszkancy: [0, 0], zarzad: [0, 0] };
+  const miejsca = new Map<(typeof wpisy)[number], { x: number; y: number }>();
+  let y0 = 0;
+  for (const zarzad of [false, true]) {
+    const grupa = wpisy.filter((w) => w.zarzad === zarzad);
+    const pakowanie = pakuj(
+      grupa.map((w) => rozmiary[w.idx]),
+      SZEROKOSC_LUDZI,
+      ODSTEP_LUDZI,
+    );
+    grupa.forEach((w, i) => {
+      miejsca.set(w, { x: pakowanie.miejsca[i].x, y: y0 + pakowanie.miejsca[i].y });
+    });
+    regiony[zarzad ? 'zarzad' : 'mieszkancy'] = [y0, y0 + pakowanie.wysokosc];
+    y0 += pakowanie.wysokosc + ODSTEP_LUDZI;
+  }
+  const ludzie = pusty(SZEROKOSC_LUDZI, regiony.zarzad[1]);
+  for (const w of wpisy) {
+    const { x, y } = miejsca.get(w)!;
+    w.wpis[0] = x;
+    w.wpis[1] = y;
+    const { w: sz, h } = rozmiary[w.idx];
+    for (let r = 0; r < h; r++)
+      ludzie.rgba.set(obrazy[w.idx].subarray(r * sz * 4, (r + 1) * sz * 4), ((y + r) * ludzie.w + x) * 4);
+  }
   out.set('ludzie.png', ludzie);
 
   const opis: OpisGrafiki = {
@@ -290,13 +380,7 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
       gestosc: D.gestosc,
     },
     trzepak: { id: trzepak.id, plik: 'trzepak.png', stopy: stopy(tz), podstawa: 20 },
-    ludzie: {
-      plik: 'ludzie.png',
-      klatka: K,
-      kierunki: DIRS,
-      wersje: ['oryginał', ...Object.keys(pal.rampy)],
-      postacie,
-    },
+    ludzie: { plik: 'ludzie.png', regiony, postacie, rampy: pal.rampy },
   };
   out.set('grafika.json', opis);
   return out;

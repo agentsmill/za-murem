@@ -11,7 +11,6 @@ import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { stworzSerwer } from '../server/app.ts';
 import type { ZajetaKlatka } from '../src/net/protokol.ts';
-import { frameRect, LIE, LOOKS, POSE_FRAMES, POSES } from '../src/render/art/people.ts';
 import { nazwaBudynkuEn } from '../src/world/classify.en.ts';
 import { klatkiBudynku, kluczBudynku } from '../src/world/klucze.ts';
 import { toGeoT } from '../src/world/mvt.ts';
@@ -109,6 +108,69 @@ async function offlineNetwork(page: Page) {
 }
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
+/** zarząd z bronią walczy ze szwendaczami na podwórku; emeryci: cała czwórka zarządu to starsi mężczyźni (jedna postać
+    z PixelLab w czterech wersjach kolorystycznych), żeby w kadrze były postacie z PixelLab z bronią */
+async function zombieWalka(page: Page, base: string, emeryci = false) {
+  await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=11&stado=10&cam=hq,1`);
+  await waitIdle(page);
+  if (emeryci)
+    await page.evaluate(() => {
+      const zm = window.zm!;
+      const st = zm.sim!.st;
+      for (const p of st.pawns) if (p.kind === 'core') Object.assign(st.people[p.person], { f: false, age: 70 });
+      (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+    });
+  // siatka puszcza przy szwendaczach, zarząd z bronią na podwórku walczy
+  const info = await page.evaluate(() => {
+    const sim = window.zm!.sim!;
+    const st = sim.st;
+    const zs = st.pawns.filter((p) => p.kind === 'zombie');
+    const fence = sim.w.fence.tiles;
+    const size = sim.w.size;
+    const z0 = zs[0];
+    const tile = fence.reduce((b, t) =>
+      Math.hypot((t % size) - z0.x, Math.floor(t / size) - z0.y) <
+      Math.hypot((b % size) - z0.x, Math.floor(b / size) - z0.y)
+        ? t
+        : b,
+    );
+    sim.damageFence(tile, 500);
+    const core = st.pawns.filter((p) => p.kind === 'core');
+    core[0].weapon = 'lom';
+    core[1].weapon = 'dzida';
+    // szwendacze wchodzą na podwórko, potem zarząd dostaje rozkaz ataku na najbliższych
+    for (let k = 0; k < 900; k++) sim.step();
+    const yard = new Set(sim.w.fence.yard);
+    const inYard = () =>
+      st.pawns.filter((p) => p.kind === 'zombie' && yard.has(Math.floor(p.y) * size + Math.floor(p.x)));
+    for (const c of core.slice(0, 2)) {
+      const z = inYard().sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
+      if (z) sim.push({ t: 'attack', ids: [c.id], target: z.id });
+    }
+    let fights = 0;
+    for (let k = 0; k < 1600 && fights < 1; k++) {
+      sim.step();
+      if (st.fx?.some((f) => f.t === 'cios' && st.tick - f.tick < 2)) fights++;
+    }
+    const busy = st.pawns.filter((p) => p.job?.t === 'fight');
+    const at = busy.length ? busy : st.pawns.filter((p) => p.kind === 'zombie');
+    const x = at.reduce((a, p) => a + p.x, 0) / at.length;
+    const y = at.reduce((a, p) => a + p.y, 0) / at.length;
+    window.zm!.setCam(x, y, 2.2);
+    return {
+      fights,
+      killed: st.tally?.killed ?? 0,
+      bodies: st.things.filter((t) => t.kind === 'trup' || t.kind === 'zwloki').length,
+      blood: st.things.filter((t) => t.kind === 'krew').length,
+    };
+  });
+  console.log(`  walka: ${JSON.stringify(info)}`);
+  if (!info.fights) throw new Error('nikt nie walczył');
+  await waitIdle(page);
+  // pasek u góry odświeża się co 200 ms
+  await page.waitForTimeout(350);
+}
+
 const SHOTS: Shot[] = [
   // przy zoomie od 0,6 nad siedzibą widać przekrój (wnętrze ze świata) zamiast dachu
   ...DEMOS.flatMap((d) => [
@@ -244,59 +306,12 @@ const SHOTS: Shot[] = [
   {
     name: 'zombie-walka',
     query: '',
-    run: async (page, base) => {
-      await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=11&stado=10&cam=hq,1`);
-      await waitIdle(page);
-      // siatka puszcza przy szwendaczach, zarząd z bronią na podwórku walczy
-      const info = await page.evaluate(() => {
-        const sim = window.zm!.sim!;
-        const st = sim.st;
-        const zs = st.pawns.filter((p) => p.kind === 'zombie');
-        const fence = sim.w.fence.tiles;
-        const size = sim.w.size;
-        const z0 = zs[0];
-        const tile = fence.reduce((b, t) =>
-          Math.hypot((t % size) - z0.x, Math.floor(t / size) - z0.y) <
-          Math.hypot((b % size) - z0.x, Math.floor(b / size) - z0.y)
-            ? t
-            : b,
-        );
-        sim.damageFence(tile, 500);
-        const core = st.pawns.filter((p) => p.kind === 'core');
-        core[0].weapon = 'lom';
-        core[1].weapon = 'dzida';
-        // szwendacze wchodzą na podwórko, potem zarząd dostaje rozkaz ataku na najbliższych
-        for (let k = 0; k < 900; k++) sim.step();
-        const yard = new Set(sim.w.fence.yard);
-        const inYard = () =>
-          st.pawns.filter((p) => p.kind === 'zombie' && yard.has(Math.floor(p.y) * size + Math.floor(p.x)));
-        for (const c of core.slice(0, 2)) {
-          const z = inYard().sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
-          if (z) sim.push({ t: 'attack', ids: [c.id], target: z.id });
-        }
-        let fights = 0;
-        for (let k = 0; k < 1600 && fights < 1; k++) {
-          sim.step();
-          if (st.fx?.some((f) => f.t === 'cios' && st.tick - f.tick < 2)) fights++;
-        }
-        const busy = st.pawns.filter((p) => p.job?.t === 'fight');
-        const at = busy.length ? busy : st.pawns.filter((p) => p.kind === 'zombie');
-        const x = at.reduce((a, p) => a + p.x, 0) / at.length;
-        const y = at.reduce((a, p) => a + p.y, 0) / at.length;
-        window.zm!.setCam(x, y, 2.2);
-        return {
-          fights,
-          killed: st.tally?.killed ?? 0,
-          bodies: st.things.filter((t) => t.kind === 'trup' || t.kind === 'zwloki').length,
-          blood: st.things.filter((t) => t.kind === 'krew').length,
-        };
-      });
-      console.log(`  walka: ${JSON.stringify(info)}`);
-      if (!info.fights) throw new Error('nikt nie walczył');
-      await waitIdle(page);
-      // pasek u góry odświeża się co 200 ms
-      await page.waitForTimeout(350);
-    },
+    run: (page, base) => zombieWalka(page, base),
+  },
+  {
+    name: 'kotwica-walka',
+    query: '',
+    run: (page, base) => zombieWalka(page, base, true),
   },
   {
     name: 'arkusz-walki',
@@ -1874,6 +1889,43 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // zarząd z PixelLab w pozach pracy: czterech starszych mężczyzn gra jedną postać (emeryta) w czterech wersjach
+    // kolorystycznych, na podwórku (rąbie, niesie, wartuje) i w mieszkaniu (śpi, siedzi, dokłada do kozy, gotuje)
+    name: 'kotwica-pozy',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        for (const p of st.pawns) if (p.kind === 'core') Object.assign(st.people[p.person], { f: false, age: 70 });
+        (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+      });
+      await stage(page, 'podworko', 0);
+      await waitIdle(page);
+      await poseCheck(page, ['chop', 'carry', 'guard', 'carry']);
+    },
+  },
+  {
+    name: 'kotwica-pozy-dom',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        for (const p of st.pawns) if (p.kind === 'core') Object.assign(st.people[p.person], { f: false, age: 70 });
+        (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+      });
+      await stage(page, 'dom', 0);
+      await stage(page, 'dom', 1);
+      await waitIdle(page);
+      await poseCheck(page, ['lie', 'sit', 'crouch', 'cook']);
+    },
+  },
+  {
     name: 'warta-noc',
     query: '',
     run: async (page, base) => {
@@ -2095,20 +2147,15 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       const r = await page.evaluate(() => {
         const zm = window.zm!;
-        const view = zm.view as unknown as {
-          gameLights: { r: number; inside?: boolean }[];
-          pawnSprites: Map<number, { texture: { frame: { x: number; y: number } } }>;
-        };
+        const view = zm.view as unknown as { gameLights: { r: number; inside?: boolean }[] };
         const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
-        const f = view.pawnSprites.get(p.id)!.texture.frame;
         return {
           lamps: view.gameLights.filter((l) => l.r === 5).length,
           fire: view.gameLights.filter((l) => l.inside).length,
-          x: f.x,
-          y: f.y,
+          pose: zm.view.poses.get(p.id)!.pose,
         };
       });
-      const pose = poseAt(r.x, r.y);
+      const pose = r.pose;
       console.log(`  czuwa przy kozie: poza ${pose}, latarnie ${r.lamps}, ogień kozy ${r.fire}`);
       if (pose !== 'crouch' && pose !== 'walk') throw new Error(`czuwający w pozie ${pose}`);
       if (r.lamps !== 0) throw new Error('czuwający przy kozie ma latarnię');
@@ -3117,16 +3164,11 @@ const SHOTS: Shot[] = [
         for (let k = 0; k < 30; k++) sim.step();
         zm.setCam(g.x + 1, g.y + 0.5, 2.2);
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-        const sprites = (
-          zm.view as unknown as {
-            pawnSprites: Map<number, { visible: boolean; texture: { frame: { x: number; y: number } } }>;
-          }
-        ).pawnSprites;
+        const sprites = (zm.view as unknown as { pawnSprites: Map<number, { visible: boolean }> }).pawnSprites;
         return res.map((p) => {
           const sp = sprites.get(p.id)!;
           return {
-            x: sp.texture.frame.x,
-            y: sp.texture.frame.y,
+            pose: zm.view.poses.get(p.id)!.pose,
             visible: sp.visible,
             moving: p.pi < p.path.length,
             job: p.job?.t ?? '',
@@ -3134,7 +3176,7 @@ const SHOTS: Shot[] = [
         });
       });
       await waitIdle(page);
-      const poses = got.map((g) => poseAt(g.x, g.y));
+      const poses = got.map((g) => g.pose);
       console.log(
         `  przyjęci: ${got.map((g, k) => `${g.job} ${poses[k]}${g.moving ? ' w drodze' : ''}${g.visible ? '' : ' niewidoczny'}`).join(', ')}`,
       );
@@ -5807,37 +5849,19 @@ async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 }
 
-/** pozy pionków zarządu po kolei: jaka klatka atlasu jest na sprite'cie (kolumna pozy albo leżenie) */
+/** pozy pionków zarządu po kolei, z ostatniej klatki widoku: nazwa pozy albo leżenie */
 async function poseCheck(page: Page, want: string[]) {
-  const got = await page.evaluate(() => {
+  const names = await page.evaluate(() => {
     const zm = window.zm!;
-    const sprites = (
-      zm.view as unknown as {
-        pawnSprites: Map<number, { texture: { frame: { x: number; y: number; width: number } } }>;
-      }
-    ).pawnSprites;
     return zm
       .sim!.st.pawns.filter((p) => p.kind === 'core')
       .map((p) => {
-        const f = sprites.get(p.id)!.texture.frame;
-        return { x: f.x, y: f.y, w: f.width };
+        const pv = zm.view.poses.get(p.id)!;
+        return pv.lie ? 'lie' : pv.pose;
       });
   });
-  const names = got.map((f) => (f.w === LIE ? 'lie' : poseAt(f.x, f.y)));
   console.log(`  pozy: ${names.join(', ')}`);
   if (names.join() !== want.join()) throw new Error(`pozy ${names.join()} zamiast ${want.join()}`);
-}
-
-/** poza z klatki atlasu ludzi (lewy górny róg klatki) */
-function poseAt(x: number, y: number): string {
-  for (let look = 0; look < LOOKS; look++)
-    for (const pose of POSES)
-      for (let d = 0; d < 4; d++)
-        for (let f = 0; f < POSE_FRAMES[pose]; f++) {
-          const [fx, fy] = frameRect(look, pose, d, f);
-          if (fx === x && fy === y) return pose;
-        }
-  return '?';
 }
 
 /**
@@ -5895,38 +5919,41 @@ async function treeStage(page: Page, zarzad: boolean) {
 
 const dist = process.argv.includes('--dist');
 const filter = process.argv.slice(2).find((a) => !a.startsWith('--'));
+/** --dalej: scenariusz, który padł, dostaje drugą próbę, a przebieg idzie dalej i na końcu wypisuje, co padło */
+const dalej = process.argv.includes('--dalej');
 const s = await openSession({ dist });
-try {
-  for (const shot of SHOTS) {
-    if (filter && !shot.name.includes(filter)) continue;
-    const mobile = (shot.w ?? 1440) < 640;
-    const page = await s.browser.newPage({
-      viewport: { width: shot.w ?? 1440, height: shot.h ?? 900 },
-      isMobile: mobile,
-      hasTouch: mobile,
-      deviceScaleFactor: mobile ? 2 : 1,
-    });
-    // język jak wybór gracza zapisany w pamięci przeglądarki (src/ui/jezyk.ts), przed skryptami strony
-    await page.addInitScript((l) => {
+
+/** jeden scenariusz w nowej stronie; strona zamyka się także po błędzie */
+async function zrzut(shot: Shot): Promise<void> {
+  const mobile = (shot.w ?? 1440) < 640;
+  const page = await s.browser.newPage({
+    viewport: { width: shot.w ?? 1440, height: shot.h ?? 900 },
+    isMobile: mobile,
+    hasTouch: mobile,
+    deviceScaleFactor: mobile ? 2 : 1,
+  });
+  // język jak wybór gracza zapisany w pamięci przeglądarki (src/ui/jezyk.ts), przed skryptami strony
+  await page.addInitScript((l) => {
+    try {
+      localStorage.setItem('za-murem-0.4-jezyk', l);
+    } catch {
+      // strona bez pamięci: gra wybierze język domyślny
+    }
+  }, shot.lang ?? 'pl');
+  // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
+  if (KOD)
+    await page.addInitScript(() => {
       try {
-        localStorage.setItem('za-murem-0.4-jezyk', l);
-      } catch {
-        // strona bez pamięci: gra wybierze język domyślny
-      }
-    }, shot.lang ?? 'pl');
-    // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
-    if (KOD)
-      await page.addInitScript(() => {
-        try {
-          const u = new URL(location.href);
-          if (!u.searchParams.has('grafika')) {
-            u.searchParams.set('grafika', 'kod');
-            history.replaceState(null, '', u);
-          }
-        } catch {
-          // strona bez adresu (about:blank, setContent): nic do zmiany
+        const u = new URL(location.href);
+        if (!u.searchParams.has('grafika')) {
+          u.searchParams.set('grafika', 'kod');
+          history.replaceState(null, '', u);
         }
-      });
+      } catch {
+        // strona bez adresu (about:blank, setContent): nic do zmiany
+      }
+    });
+  try {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => {
@@ -5948,8 +5975,33 @@ try {
     // błąd na stronie to nieudany zrzut, także dla CI
     if (errors.length) process.exitCode = 1;
     if (shot === SHOTS[0]) console.log(`  WebGL: ${await webglRenderer(page)}`);
-    await page.close();
+  } finally {
+    await page.close().catch(() => {});
   }
+}
+
+const padly: string[] = [];
+try {
+  for (const shot of SHOTS) {
+    if (filter && !shot.name.includes(filter)) continue;
+    for (let proba = 1; ; proba++) {
+      try {
+        await zrzut(shot);
+        break;
+      } catch (e) {
+        if (!dalej) throw e;
+        const opis = String(e).split('\n')[0];
+        if (proba >= 2) {
+          console.log(`${shot.name}: BŁĄD ${opis}`);
+          padly.push(shot.name);
+          process.exitCode = 1;
+          break;
+        }
+        console.log(`${shot.name}: błąd (${opis}), druga próba`);
+      }
+    }
+  }
+  if (padly.length) console.log(`Padły: ${padly.join(', ')}`);
 } finally {
   await s.close();
 }
