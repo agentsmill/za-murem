@@ -170,32 +170,36 @@ Czego brakuje, żeby gra to pokazała:
 
 ## Strop pięter (19.10.2026)
 
-Gra dostanie piętra: przełącznik w pasku u góry tnie budynki na wybranej wysokości, klatka schodowa jest widoczna, a mieszkania za zamkniętymi drzwiami zasłania strop. Mateusz: „bedzie ‘strop’ cos innego kolory niz dach”, z makiety wybrał „Ciepły tynk” (beż jak sufit w mieszkaniu, w makiecie `#cdb08c`). Zamówione dwa razy `create_tiles_pro` 32 px (po 10 generacji, razem 20 z abonamentu, 0 USD, saldo po obu 1301 z 2000): `strop-tynk-v1` (odrzucone, szare) i `strop-tynk` (poprawka, `gotowy`, `assets/raw/strop-tynk/`). Po 16 kafelków, czyli po dwa na każdy z ośmiu opisów (numer i oraz i+8). Zestawienia: `docs/postep/pietra-strop-arkusz.png` (kafelki, tło 4 × 4 z odbiciami, strop z oboma wariantami szwów, obok dach, lastryko, panele i linoleum) i `docs/postep/pietra-strop-kadr.png` (prawdziwy zrzut Przymorza z `npm run shots -- przymorze-przekroj` ze stropem nałożonym w skrypcie pomocniczym na mieszkania, klatki i ściany zostają). Gra stropu nie używa: czeka na zatwierdzenie Mateusza i na podpięcie.
+Gra dostanie piętra: przełącznik w pasku u góry tnie budynki na wybranej wysokości, klatka schodowa jest widoczna, a mieszkania za zamkniętymi drzwiami zasłania strop. Mateusz: „bedzie ‘strop’ cos innego kolory niz dach”, z makiety wybrał „Ciepły tynk” (beż jak sufit w mieszkaniu, w makiecie `#cdb08c`). Zamówione dwa razy `create_tiles_pro` 32 px (po 10 generacji, razem 20 z abonamentu, 0 USD, saldo po obu 1301 z 2000): `strop-tynk-v1` (odrzucone, szare) i `strop-tynk` (poprawka, `zatwierdzony` 19.10.2026, `assets/raw/strop-tynk/`). Po 16 kafelków, czyli po dwa na każdy z ośmiu opisów (numer i oraz i+8). Zestawienia: `docs/postep/pietra-strop-arkusz.png` (kafelki, tło 4 × 4 z odbiciami, strop z oboma wariantami szwów, obok dach, lastryko, panele i linoleum) i `docs/postep/pietra-strop-kadr.png` (prawdziwy zrzut Przymorza z `npm run shots -- przymorze-przekroj` ze stropem nałożonym w skrypcie pomocniczym na mieszkania, klatki i ściany zostają). Gra stropu nie używa: czeka na podpięcie po projekcie pięter.
+
+Mateusz zatwierdził wariant 19.10.2026 (słowa przekazane przez sesję „Kafelki stropu PixelLab”): „Bierzemy polecany (tło z kodu, szwy 96×64, naklejki #3–#6, gęstość 0,12), ale tło bardziej beżowe niż łososiowe i szare plamy rzadsze i drobniejsze. Poprawka tylko w polach uzycie, bez nowego zamówienia.” Poprawka zrobiona w polach `uzycie`, bez nowych generacji (patrz niżej, „Poprawka tła”).
 
 Czego nauczyły:
 - Na fasadzie bloku z kotwicy nie ma okna 32 × 32 bez okien i szwów (płyta między oknami ma najwyżej 12 × 5 px), więc wzorzec stylu to 32 × 32 w kolorze płyty fasady `#9a958a` (`assets/wejscia/strop-wzorzec-32.png`), a nie wycinek. Współrzędne źródła są w manifeście.
 - `create_tiles_pro` ze wzorcem stylu kopiuje jego kolory mimo `palette`. Pierwsze zamówienie wyszło więc szare (`#b7b2a6`, o 22 za mało czerwieni i 26 za dużo niebieskiego względem `#cdb08c`). Pomogło `style_options` z `color_palette: false` i dopisek „sandy peach beige colour” w opisie.
-- Kafelek w kolorze `#cdb08c` z tej palety nie powstanie: najbliższy beż to `#e0b48c`, a PixelLab wybrał `#e3b79a` („skóra”, 227,183,154, o 22 za dużo czerwieni). Średnią w granicach ±14 daje dopiero tło z kodu: baza `#e0b48c` z plamkami `#b7b2a6` (14%), `#e3b79a` (12%) i `#9a958a` (3%), średnio `#d9b391` (216,179,145, różnica +12, +3, +5).
-- Kafelki są płaskie (1 do 3 kolorów), więc „very faint grain” szumu nie daje. Tło rysuje kod z szumem wartościowym od współrzędnych świata (przepis w `uzycie` w manifeście), a z kafelków zostają naklejki: rysa (#4), plama zalania (#3), łata jaśniejszego tynku (#5) i pleśń (#6), z kluczem przezroczystości `#e3b79a`. Gęstość 0,12 daje około 6 naklejek na 54 kafelki.
+- Kafelek w kolorze `#cdb08c` z tej palety nie powstanie: najbliższy beż to `#e0b48c`, a PixelLab wybrał `#e3b79a` („skóra”, 227,183,154, o 22 za dużo czerwieni). Średnią w granicach ±14 daje dopiero tło z kodu.
+- Kafelki są płaskie (1 do 3 kolorów), więc „very faint grain” szumu nie daje. Tło rysuje kod od współrzędnych świata (przepis w `uzycie` w manifeście), a z kafelków zostają naklejki: rysa (#4), plama zalania (#3), łata jaśniejszego tynku (#5) i pleśń (#6), z kluczem przezroczystości `#e3b79a`. Gęstość 0,12 daje około 6 naklejek na 54 kafelki.
 - Jasnej ramki jak na dachu tym razem nie ma (jedyny wyjątek to ciemna obwódka w #8), ale naklejki #5 i #6 mają pasy przy krawędzi, więc `wnetrze_wariantu` przycina je osobno. Surowe kafelki odbite 4 × 4 pokazują powtórzenia (rysa układa się w girlandę, narożniki #11 w kwiatki), więc surowych nie kładziemy jako tła.
 - Opis „plain uniform” i „faded and lighter” dają prawie biały `#e3e0d6`, opis „darker and dustier” szary `#9a958a`. Plama zalania wyszła szara, pleśń to ciemne kropki.
-- Szwy (kod, 1 px `#b07a55`): zalecane 96 × 64 (płyty 3 × 2 m, jak na dachu). Co 32 px (1 m) wygląda jak płytki i dubluje szwy lastryko w klatce.
+- Szwy (kod, 1 px `#b07a55`): 96 × 64 (płyty 3 × 2 m, jak na dachu). Co 32 px (1 m) wygląda jak płytki i dubluje szwy lastryko w klatce.
 
-Pomiary (skrypt pomocniczy poza repo, tło 512 × 512 px z przepisu, luminancja względna WCAG, ΔE CIE76 do średnich kolorów powierzchni z kodu i zrzutów):
+Poprawka tła (19.10.2026, po uwagach Mateusza „za łososiowe, za duże szare plamy”). Pierwsza wersja tła (baza `#e0b48c`, plamy `#b7b2a6` 14% przy kracie 6, `#9a958a` 3% przy kracie 5 i `#e3b79a` 12% przy kracie 7) miała średnią `#d9b391` (217,179,145, R−G 37,6) i duże szare plamy jak kamuflaż. Nowa: baza `#e0b48c` z ziarnem `#cac6bc` po pojedynczym pikselu (28%), które zlewa się optycznie z bazą w beż, rzadkie drobne plamy `#b7b2a6` (5%, krata 3 px) i `#9a958a` (1%, krata 2 px) oraz 2% pikseli `#765e42`, które obniżają czerwień i błękit. Średnia `#d6b798` (214,183,152), czyli +9, +7, +12 względem `#cdb08c` (w granicach ±14), R−G 31,0. Dalej w stronę beżu się nie da: R−G 30 wymaga już +14 w błękicie, czyli granicy ±14, a ziarno `#cac6bc` podnosi błękit najmocniej, więc wybrałem wariant z zapasem 1,9 w błękicie. Przepis (kolory, udziały, rodzaj i krata) jest w `uzycie.szum`, poprzedni zapis w `uzycie.szum.poprzednio`.
 
-| powierzchnia | średni kolor | strop jaśniejszy razy | ΔE |
-| --- | --- | --- | --- |
-| dach z PixelLab (papa) | `#313336` | 14,9 | 60 |
-| dach z kodu: papa | `#585450` | 5,5 | 45 |
-| dach z kodu: żwir | `#9a968d` | 1,6 | 24 |
-| dach z kodu: dachówka | `#a24f36` | 3,6 | 40 |
-| dach z kodu: blacha | `#767c81` | 2,5 | 37 |
-| lastryko klatki | `#9a958a` | 1,6 | 23 |
-| panele | `#9f7850` | 2,3 | 23 |
-| panele wytarte | `#c4a47c` | 1,2 | 7 |
-| linoleum kuchni | `#cdbf9b` | 0,9 | 10 |
+Pomiary po poprawce (skrypt pomocniczy poza repo, tło 512 × 512 px z przepisu, luminancja względna WCAG, ΔE CIE76 do średnich kolorów powierzchni z kodu i zrzutów):
 
-Warunek z zamówienia (co najmniej 2,5 razy jaśniejszy od dachu `#313336`) spełniony z zapasem, 14,9 razy; różnica ciepła: R−B strop 72, dach −5, lastryko 16. Słabe miejsce to wytarte panele i linoleum: strop jest bliski im kolorem (makieta Mateusza też to zaznaczała), więc odróżnia go siatka szwów 3 × 2 m i szary kurz, a nie sam kolor. Jaśniejsza baza (`#e3b79a` zamiast `#e0b48c`) podnosi ΔE do 10,5 (panele wytarte) i 10,7 (linoleum), czyli niewiele, więc jeśli w grze będą się mylić, lepiej pomoże ciemniejsza krawędź na granicy mieszkania i wyraźniejsze szwy.
+| powierzchnia | średni kolor | strop jaśniejszy razy | ΔE po | ΔE przed |
+| --- | --- | --- | --- | --- |
+| dach z PixelLab (papa) | `#313336` | 15,3 | 59,6 | 60,4 |
+| dach z kodu: papa | `#585450` | 5,6 | 43,9 | 44,8 |
+| dach z kodu: żwir | `#9a968d` | 1,6 | 21,2 | 23,6 |
+| dach z kodu: dachówka | `#a24f36` | 3,7 | 42,8 | 40,4 |
+| dach z kodu: blacha | `#767c81` | 2,5 | 34,6 | 36,7 |
+| lastryko klatki | `#9a958a` | 1,7 | 20,6 | 22,9 |
+| panele | `#9f7850` | 2,4 | 24,5 | 22,7 |
+| panele wytarte | `#c4a47c` | 1,3 | 8,9 | 7,2 |
+| linoleum kuchni | `#cdbf9b` | 0,9 | 7,5 | 10,1 |
+
+Warunek z zamówienia (co najmniej 2,5 razy jaśniejszy od dachu `#313336`) spełniony z zapasem, 15,3 razy; różnica ciepła: R−B strop 61 (było 72), dach −5, lastryko 16. Słabe miejsce to linoleum kuchni i wytarte panele: po zbeżowieniu ΔE do linoleum spadło z 10,1 do 7,5, a do wytartych paneli wzrosło z 7,2 do 8,9, więc strop odróżnia od nich głównie siatka szwów 3 × 2 m, a nie kolor (makieta Mateusza też to zaznaczała). Dlatego w `uzycie.krawedz` jest propozycja ciemniejszej krawędzi stropu na granicy mieszkania (2 px `#765e42`, podgląd w arkuszu); gra jej nie używa, decyzja przy podpinaniu pięter.
 
 ## Pierwsza fala assetów (wycinek pionowy)
 
