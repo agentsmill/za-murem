@@ -21,7 +21,7 @@ import {
   BUILD_MENU,
   buildItems,
   buildMenu,
-  buildSheet,
+  buildPanelHtml,
   costText,
   MAT_NAME,
   matsOf,
@@ -129,11 +129,12 @@ describe('menu budowy', () => {
       .flatMap((c) => c.items)
       .find((b) => b.kind === 'kuchnia_spoleczna')!;
     expect(k.why).toBe('Nie ma gdzie postawić: brak wolnego miejsca w kuchni naszego mieszkania.');
-    // okno: przy zapasie dokładnie na warsztat przycisk ma warsztat, a magazyn (więcej desek) powód
+    // panel: przy zapasie dokładnie na warsztat szczegóły mają przycisk dla warsztatu, a magazyn (więcej desek) powód
     const have = BUILDS.warsztat.cost;
     expect(total('magazyn')).toBeGreaterThan(have.deski ?? 0);
-    const html = buildSheet(
+    const html = buildPanelHtml(
       buildMenu(have, () => true),
+      { tab: null, kind: null },
       false,
     ).body;
     expect(html).toContain('data-act="build" data-arg="warsztat"');
@@ -141,11 +142,44 @@ describe('menu budowy', () => {
     expect(html).toContain(`Brakuje: ${missing('magazyn', have)}.`);
     expect(html).toContain('Lewy klik stawia plan, R obraca, prawy klik albo Esc anuluje.');
     expect(
-      buildSheet(
+      buildPanelHtml(
         buildMenu({}, () => true),
+        { tab: null, kind: null },
         true,
       ).body,
     ).toContain('Stuknięcie stawia plan');
+  });
+
+  it('panel: zakładki, kafelki aktywnej zakładki z miniaturą i szczegóły z wybraną budowlą', () => {
+    const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true);
+    const r = buildPanelHtml(menu, { tab: null, kind: null }, false, undefined, undefined, (k) => `data:thumb/${k}`);
+    expect(r.view).toEqual({ tab: 'dom', kind: 'warsztat' });
+    for (const tab of ['dom', 'podworko', 'obwod']) expect(r.body).toContain(`data-tab="${tab}"`);
+    const dom = menu.find((c) => c.key === 'dom')!;
+    for (const b of dom.items) {
+      expect(r.body).toContain(`class="tile`);
+      expect(r.body).toContain(`data-kind="${b.kind}"`);
+      expect(r.body).toContain(`src="data:thumb/${b.kind}"`);
+    }
+    expect(r.body).not.toContain('data-kind="ogrodek"');
+    expect(r.body).toContain('aria-selected="true"');
+    // szczegóły: widoczny tylko wybrany
+    expect(r.body).toMatch(/<section class="bd" data-kind="warsztat">/);
+    expect(r.body).toMatch(/<section class="bd" data-kind="magazyn" hidden>/);
+    const yard = buildPanelHtml(menu, { tab: 'podworko', kind: null }, false);
+    expect(yard.view).toEqual({ tab: 'podworko', kind: 'ogrodek' });
+    expect(yard.body).toContain('data-kind="ogrodek"');
+    expect(yard.body).not.toContain('data-kind="warsztat"');
+  });
+
+  it('panel: wybór spoza aktywnej zakładki wraca do pierwszej pozycji, a puste menu daje komunikat', () => {
+    const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true);
+    expect(buildPanelHtml(menu, { tab: 'dom', kind: 'ogrodek' }, false).view).toEqual({ tab: 'dom', kind: 'warsztat' });
+    expect(buildPanelHtml(menu, { tab: 'dom', kind: 'magazyn' }, false).view).toEqual({ tab: 'dom', kind: 'magazyn' });
+    const none = buildPanelHtml([], { tab: 'dom', kind: 'warsztat' }, false);
+    expect(none.view).toEqual({ tab: null, kind: null });
+    expect(none.body).toContain('Na razie nic nie można zbudować.');
+    expect(none.body).not.toContain('data-act="build"');
   });
 
   it('czas pracy w godzinach gry, także półtorej godziny', () => {

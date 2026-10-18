@@ -294,49 +294,74 @@ export function buildMenu(
   })).filter((c) => c.items.length > 0);
 }
 
-/** okno menu budowy (przycisk „Budowa” i klawisz B) */
-export function buildSheet(
+/** co panel pokazuje: aktywna zakładka i wybrana budowla (null: pierwsza z menu) */
+export type PanelView = { tab: BuildCat | null; kind: BuildKind | null };
+
+/** Treść panelu budowy (aside obok karty osoby): zakładki, kafelki aktywnej zakładki z miniaturą i szczegóły
+    każdej jej budowli (widoczne tylko wybranej, przycisk „Postaw” tylko dla dostępnych). Wybór spoza aktywnej
+    zakładki albo spoza menu wraca do pierwszej budowli zakładki, a puste menu daje komunikat. Zwraca kształt Sheet
+    (kicker, title, body) razem z wyliczonym widokiem; miniatury podaje thumb (data: URL), w testach atrapa. */
+export function buildPanelHtml(
   menu: BuildCategory[],
+  view: PanelView,
   touch: boolean,
   words: Words = wordsOf(BLOK),
   en: WordsEn = wordsEn(BLOK),
-): Sheet {
-  const item = (b: BuildItem) =>
-    `<li class="build ${b.ok ? 'ok' : 'no'}"><div class="build-head"><b class="build-n">${esc(b.name)}</b><small class="build-size">${esc(
-      b.size,
-    )}</small></div><p class="build-d">${esc(b.effect)}</p><p class="build-m"><span class="build-cost">${esc(
+  thumb: (kind: BuildKind) => string = () => '',
+): Sheet & { view: PanelView } {
+  const kicker = touch ? L('Budowa', 'Build') : L('Budowa (B)', 'Build (B)');
+  const title = L('Co budujemy?', 'What are we building?');
+  const wrap = (body: string, v: PanelView) => ({ tone: 'menu' as const, kicker, title, body, foot: '', view: v });
+  const cat = menu.find((c) => c.key === view.tab) ?? menu[0];
+  if (!cat) {
+    return wrap(`<p class="build-empty">${L('Na razie nic nie można zbudować.', 'Nothing can be built yet.')}</p>`, {
+      tab: null,
+      kind: null,
+    });
+  }
+  const sel = cat.items.find((b) => b.kind === view.kind) ?? cat.items[0];
+  const tile = (b: BuildItem) =>
+    `<button type="button" class="tile${b.kind === sel.kind ? ' sel' : ''}${b.locked ? ' lock' : b.ok ? '' : ' no'}" data-kind="${
+      b.kind
+    }" aria-pressed="${b.kind === sel.kind}"><span class="th"><img src="${esc(thumb(b.kind))}" alt=""></span><span class="tn">${esc(
+      b.name,
+    )}</span><span class="ts">${esc(b.size)}${b.locked ? ' <span aria-hidden="true">🔒</span>' : ''}</span></button>`;
+  const detail = (b: BuildItem) =>
+    `<section class="bd" data-kind="${b.kind}"${b.kind === sel.kind ? '' : ' hidden'}><div class="build-head"><b class="build-n">${esc(
+      b.name,
+    )}</b><small class="build-size">${esc(b.size)}</small></div><p class="build-d">${esc(b.effect)}</p><p class="build-m"><span class="build-cost">${esc(
       b.cost,
     )}</span> · <span>${esc(b.time)}</span> · <span>${esc(b.place)}</span></p>${
       b.ok
         ? `<button type="button" class="btn go" data-act="build" data-arg="${b.kind}">${L('Postaw', 'Build')}</button>`
         : `<p class="build-why">${esc(b.why ?? '')}</p>`
-    }</li>`;
-  return {
-    tone: 'menu',
-    kicker: touch ? L('Budowa', 'Build') : L('Budowa (B)', 'Build (B)'),
-    title: L('Co budujemy?', 'What are we building?'),
-    body: `<p class="lead">${L(
-      `Plan stawia się na mapie, a ${words.zarzad.krotko} sam przynosi materiały i buduje.`,
-      `You place the plan on the map, and ${en.krotko} fetches the materials and does the building.`,
-    )}${
-      touch
-        ? L(
-            ' Stuknięcie stawia plan, przyciski na dole obracają i anulują.',
-            ' Tap to place the plan; the buttons at the bottom rotate and cancel.',
-          )
-        : L(
-            ' Lewy klik stawia plan, R obraca, prawy klik albo Esc anuluje.',
-            ' Left-click places the plan, R rotates, right-click or Esc cancels.',
-          )
-    }</p>${menu
-      .map(
-        (c) =>
-          `<section class="bcat" data-cat="${c.key}"><h3 class="bcat-h">${esc(c.title)}</h3><ul class="builds">${c.items
-            .map(item)
-            .join('')}</ul></section>`,
-      )
-      .join('')}`,
-    foot: `<button type="button" class="btn ghost" data-act="build-close">${L('Zamknij', 'Close')}</button>`,
-    closable: true,
-  };
+    }</section>`;
+  const lead = `<p class="lead">${L(
+    `Plan stawia się na mapie, a ${words.zarzad.krotko} sam przynosi materiały i buduje.`,
+    `You place the plan on the map, and ${en.krotko} fetches the materials and does the building.`,
+  )}${
+    touch
+      ? L(
+          ' Stuknięcie stawia plan, przyciski na dole obracają i anulują.',
+          ' Tap to place the plan; the buttons at the bottom rotate and cancel.',
+        )
+      : L(
+          ' Lewy klik stawia plan, R obraca, prawy klik albo Esc anuluje.',
+          ' Left-click places the plan, R rotates, right-click or Esc cancels.',
+        )
+  }</p>`;
+  const tabs = menu
+    .map(
+      (c) =>
+        `<button type="button" role="tab" class="btab" data-tab="${c.key}" aria-selected="${c.key === cat.key}" tabindex="${
+          c.key === cat.key ? 0 : -1
+        }">${esc(c.title)}</button>`,
+    )
+    .join('');
+  return wrap(
+    `${lead}<div class="btabs" role="tablist" aria-label="${esc(title)}">${tabs}</div><div class="bgrid" role="tabpanel">${cat.items
+      .map(tile)
+      .join('')}</div><div class="bdet">${cat.items.map(detail).join('')}</div>`,
+    { tab: cat.key, kind: sel.kind },
+  );
 }

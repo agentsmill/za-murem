@@ -30,7 +30,7 @@ import {
   buildItems,
   buildMenu,
   buildName,
-  buildSheet,
+  buildPanelHtml,
   costText,
   placeText,
   workText,
@@ -530,15 +530,20 @@ describe('budowa i mieszkania po angielsku', () => {
       .find((b) => b.kind === 'kuchnia_spoleczna')!;
     expect(k.why).toBe('Nowhere to put it: no free space in the kitchen of your flat.');
     for (const touch of [false, true])
-      for (const have of [{}, BUILDS.warsztat.cost, { deski: 999, zlom: 999, czesci: 999 }]) {
-        const s = buildSheet(
-          buildMenu(have, (kind) => kind !== 'ogrodek'),
-          touch,
-        );
-        expect(polskieSlowa(all(s))).toEqual([]);
-        expect(s.kicker).toBe(touch ? 'Build' : 'Build (B)');
-        expect(s.body).toContain(touch ? 'Tap to place the plan' : 'Left-click places the plan, R rotates');
-      }
+      for (const have of [{}, BUILDS.warsztat.cost, { deski: 999, zlom: 999, czesci: 999 }])
+        for (const tab of ['dom', 'podworko', 'obwod'] as const) {
+          const s = buildPanelHtml(
+            buildMenu(have, (kind) => kind !== 'ogrodek'),
+            { tab, kind: null },
+            touch,
+          );
+          expect(polskieSlowa(all(s))).toEqual([]);
+          expect(s.kicker).toBe(touch ? 'Build' : 'Build (B)');
+          expect(s.body).toContain(touch ? 'Tap to place the plan' : 'Left-click places the plan, R rotates');
+        }
+    const none = buildPanelHtml([], { tab: null, kind: null }, false);
+    expect(none.body).toContain('Nothing can be built yet.');
+    expect(polskieSlowa(all(none))).toEqual([]);
   });
 
   it('polecenia przy planach i budowlach, powody z canPlace', () => {
