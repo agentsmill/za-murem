@@ -24,6 +24,7 @@ import {
   govUpdate,
   lawEffects,
   newGov,
+  normalizujTeksty,
   pending,
   setNight,
   signLaw,
@@ -419,7 +420,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   aptFocus = -1;
   residentFocus = -1;
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
-  gov = saved ? saved.gov : newGov(seed, modeOf(st));
+  // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
+  gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
   // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
   const herd = Number(params.get('stado'));
   if (!saved && zombie && herd > 0) sim.spawnAtFence(herd, world.buildings[world.hq]?.entrances[0]?.out ?? 0);
