@@ -2,9 +2,11 @@
    Laptop: Chromium bez dławienia. Telefon: ekran 390×844 i procesor zdławiony 4× (CDP).
    Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
    Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5] [--m2]
+   [--demo=lanciego] [--kod]
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
    --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła; --m2: budowa z fali 1,
-   czyli atrapa pustych mieszkań w przekroju, cztery plany z paskami postępu i podgląd stawiania).
+   czyli atrapa pustych mieszkań w przekroju, cztery plany z paskami postępu i podgląd stawiania; --demo: inne demo
+   niż Przymorze; --kod: wszystko rysowane kodem, bez grafiki z PixelLab, do porównań przed i po).
    Zawsze z dymem: koza zarządu rozpalona w stanie gry i ognisko na podwórku. */
 
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
@@ -20,6 +22,8 @@ const ZOMBIE = process.argv.includes('--zombie');
 /** --zoom=0.5: kamera przy progu bliskich kawałków, gdzie z bliska widać najwięcej drzew jako sprite'ów */
 const ZOOM = Number(process.argv.find((a) => a.startsWith('--zoom='))?.slice(7)) || 1;
 const M2 = process.argv.includes('--m2');
+const DEMO = process.argv.find((a) => a.startsWith('--demo='))?.slice(7) || 'przymorze';
+const KOD = process.argv.includes('--kod');
 const SECONDS = 10;
 
 interface Result {
@@ -47,7 +51,7 @@ try {
     });
     const page = await ctx.newPage();
     await page.goto(
-      `${s.base}?demo=przymorze&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}${ZOMBIE ? '&tryb=zombie&stado=60&godzina=23' : ''}${M2 ? '&mieszkania=atrapa' : ''}`,
+      `${s.base}?demo=${DEMO}&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}${ZOMBIE ? '&tryb=zombie&stado=60&godzina=23' : ''}${M2 ? '&mieszkania=atrapa' : ''}${KOD ? '&grafika=kod' : ''}`,
     );
     await waitIdle(page);
     // dym: koza zarządu rozpalona w stanie gry i ognisko na podwórku
@@ -123,6 +127,7 @@ try {
     const trees = await page.evaluate(() => (window.zm!.view as unknown as { trees: { count: number } }).trees.count);
     console.log(`${dev.name}: kłębów dymu ${puffs}, drzew jako sprite'y ${trees}`);
     console.log(`${dev.name}: kawałki rysuje ${await page.evaluate(() => window.zm!.view.painting)}`);
+    console.log(`${dev.name}: ${DEMO}, z PixelLab ${JSON.stringify(await page.evaluate(() => window.zm!.grafika()))}`);
     const cdp = await ctx.newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: dev.cpu });
     for (const pan of [false, true]) {
