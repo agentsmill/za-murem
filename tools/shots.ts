@@ -233,6 +233,19 @@ const SHOTS: Shot[] = [
     run: async (page, base) => zombieNight(page, base),
   },
   {
+    // tłum ponad próg przy jednym miejscu siatki (płot odporny na napór): zużyta siatka bez desek, pasek na czerwono
+    name: 'zombie-tlok',
+    query: '',
+    run: async (page, base) => zombieCrowd(page, base),
+  },
+  {
+    name: 'zombie-tlok-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => zombieCrowd(page, base),
+  },
+  {
     name: 'zombie-noc-telefon',
     query: '',
     w: 390,
@@ -5633,6 +5646,66 @@ async function zombieNight(page: Page, base: string) {
   console.log(`  noc: ${JSON.stringify(info)}`);
   if (!info.guards) throw new Error('nikt nie stoi na warcie');
   await waitIdle(page);
+  await page.waitForTimeout(350);
+}
+
+/** Wieczór pod tłumem: kilkunastu szwendaczy napiera na jeden kafelek siatki, symulacja idzie kwadrans gry (siatka już
+    zużyta, ale jeszcze stoi), kamera na tym miejscu. Pasek ma pokazać tłok ponad próg. */
+async function zombieCrowd(page: Page, base: string) {
+  // o zmierzchu szwendaczy widać jako szare sylwetki (w nocy bez światła prawie wcale)
+  await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=18.8&stado=24&cam=hq,1`);
+  await waitIdle(page);
+  const info = await page.evaluate(() => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const st = sim.st;
+    const w = sim.w;
+    const size = w.size;
+    const yard = new Set(w.fence.yard);
+    const door = w.buildings[w.hq].entrances[0].out;
+    // kafelek siatki najbliżej drzwi siedziby, z wolnym miejscem za siatką
+    const spot = w.fence.tiles
+      .map((t) => ({
+        t,
+        out: [t - size, t + size, t - 1, t + 1].find((n) => !yard.has(n) && sim.canWalk('zombie', n)),
+      }))
+      .filter((x) => x.out !== undefined)
+      .sort(
+        (a, b) =>
+          Math.hypot((a.t % size) - (door % size), Math.floor(a.t / size) - Math.floor(door / size)) -
+          Math.hypot((b.t % size) - (door % size), Math.floor(b.t / size) - Math.floor(door / size)),
+      )[0];
+    const out = spot.out!;
+    // dwadzieścia szwendaczy stoi tłumem tuż za siatką (kafelki w promieniu 2 od tego miejsca) i napiera na ten kafelek
+    const around: number[] = [];
+    for (let dy = -2; dy <= 2; dy++)
+      for (let dx = -2; dx <= 2; dx++) {
+        const t = out + dy * size + dx;
+        if (!yard.has(t) && sim.canWalk('zombie', t)) around.push(t);
+      }
+    let n = 0;
+    for (const z of st.pawns.filter((p) => p.kind === 'zombie').slice(0, 20)) {
+      const t = around[n % around.length];
+      Object.assign(z, {
+        x: (t % size) + 0.3 + (0.4 * ((n * 7) % 5)) / 4,
+        y: Math.floor(t / size) + 0.3 + (0.4 * ((n * 3) % 5)) / 4,
+        path: [],
+        pi: 0,
+      });
+      z.job!.phase = 2;
+      z.job!.target = spot.t;
+      n++;
+    }
+    for (let k = 0; k < 200; k++) sim.step();
+    // panel celów zasłania lewą część ekranu komputera, więc kamera trochę w prawo od miejsca naporu
+    zm.setCam((spot.t % size) - (window.innerWidth > 600 ? 4 : 0), Math.floor(spot.t / size), 2.2);
+    const k = w.fence.tiles.indexOf(spot.t);
+    return { pressing: n, hp: Math.round(st.fence!.hp[k]), breaches: st.tally?.breaches ?? 0 };
+  });
+  console.log(`  tłum: ${JSON.stringify(info)}`);
+  if (info.pressing < 17) throw new Error('za mało napierających na jednym kafelku');
+  await waitIdle(page);
+  // pasek u góry odświeża się co 200 ms
   await page.waitForTimeout(350);
 }
 
