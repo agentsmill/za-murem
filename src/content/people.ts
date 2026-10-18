@@ -26,6 +26,12 @@ export interface Person {
   /** historia z własnej drużyny zarządu (src/content/druzyna.ts); tylko dla klimatu, na karcie osoby. Osoby z
       losowania z adresu jej nie mają, więc pole nie trafia do ich stanu ani do skrótu. */
   story?: string;
+  /** osoba z generatora mieszkańców (src/sim/lokatorzy.ts): `Osoba.id`, klucz zmiany imienia w przeglądarce gracza.
+      Osoby z `makePerson` go nie mają. */
+  ref?: string;
+  /** obecni krewni z generatora w jednej linijce, np. „mąż Marek (54), córka Agnieszka (23)”; bez numerów mieszkań
+      i pięter */
+  rodzina?: string;
 }
 
 export interface MakePersonOpts {

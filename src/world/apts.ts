@@ -225,7 +225,7 @@ export function applyApts(w: Pick<World, 'apts' | 'damage' | 'props' | 'interior
 
 /** mieszkania poza zarządem, do których z podwórka da się dojść bez wychodzenia za siatkę (siatka, dziury
     i brama zamknięte, mieszkanie zarządu zamknięte), jak dla mieszkańców w symulacji */
-function reachable(w: AptWorld): Set<number> {
+export function reachable(w: AptWorld): Set<number> {
   const { size, fence, interior: it } = w;
   const out = new Set<number>();
   const aptAt = (t: number) => (it.room[t] >= 0 ? it.rooms[it.room[t]].apt : -1);
