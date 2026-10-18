@@ -1,7 +1,9 @@
 /* Świat gry: siatka 1 m wokół adresu, zbudowana z geometrii OSM.
    Kolejność: obrót mapy, prostowanie budynków, teren, wody, ścieżki, chodniki, jezdnie,
    budynki, drzewa, wnętrze siedziby, suche drzewo z trzepakiem, siatka z bramą wokół podwórka.
-   Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. */
+   Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. W grze sieciowej świat może dostać listę
+   budynków zajętych przez inne drużyny (bezSiedziby, klucze z klucze.ts): siedzibą zostaje wtedy najbliższy wolny
+   budynek mieszkalny; bez tej opcji świat jest taki jak zawsze. */
 
 import type { BuildingClass } from '../content/data.ts';
 import { mulberry } from '../core/rng.ts';
@@ -12,6 +14,7 @@ import { applyFence, buildFence, type Fence, type Gate, gateCrowded, yardEdges }
 import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea, segDist } from './geo.ts';
 import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
+import { kluczBudynku } from './klucze.ts';
 import { fillRing, stampLine } from './raster.ts';
 import { dominantAngle, rotateGeo, straighten } from './rotate.ts';
 import { T } from './terrain.ts';
@@ -156,6 +159,8 @@ export interface BuildOpts {
   street?: string;
   /** stany mieszkań siedziby z zewnątrz (generator mieszkańców); bez nich świat losuje je z ziarna */
   apts?: readonly AptState[];
+  /** gra sieciowa: klucze budynków (zm:klucz), które nie mogą być siedzibą, bo zajęła je inna drużyna */
+  bezSiedziby?: readonly string[];
 }
 
 export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
@@ -313,15 +318,18 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     };
   });
 
-  // 8. siedziba: budynek pod adresem (do 4 m), inaczej najbliższy mieszkalny
+  // 8. siedziba: budynek pod adresem (do 4 m), inaczej najbliższy mieszkalny; w grze sieciowej bez budynków zajętych
+  // przez inne drużyny
   const c = Math.floor(half);
+  const zajete = new Set(opts.bezSiedziby ?? []);
+  const wolny = (b: WorldBuilding) => !zajete.size || !zajete.has(kluczBudynku(b) ?? '');
   let hq = -1;
   let best = 4.5;
   for (let dy = -4; dy <= 4; dy++)
     for (let dx = -4; dx <= 4; dx++) {
       const b = bid[(c + dy) * size + c + dx];
       const d = Math.hypot(dx, dy);
-      if (b >= 0 && d < best) {
+      if (b >= 0 && d < best && wolny(buildings[b])) {
         best = d;
         hq = b;
       }
@@ -344,7 +352,8 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     }
     return best;
   };
-  if (hq < 0) hq = nearest((b) => b.cls === 'blok' || b.cls === 'dom');
+  if (hq < 0) hq = nearest((b) => (b.cls === 'blok' || b.cls === 'dom') && wolny(b));
+  if (hq < 0) hq = nearest(wolny);
   if (hq < 0) hq = nearest(() => true);
   if (hq >= 0) {
     const b = buildings[hq];

@@ -1,0 +1,5 @@
+# Kontekst budowania serwera (docker build -f server/Dockerfile .): tylko pliki serwera i protokół,
+# bez node_modules, dist i reszty gry. BuildKit czyta ten plik zamiast .dockerignore w korzeniu.
+*
+!server/*.ts
+!src/net/protokol.ts

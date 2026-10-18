@@ -3,14 +3,15 @@
    do bieżącego kroku. */
 
 import type { GovState } from '../gov/typy.ts';
+import { START_KIT } from '../sim/bron.ts';
 import { BUILDS, type BuildKind } from '../sim/budowle.ts';
-import type { SimState } from '../sim/sim.ts';
+import { type SimState, SPEAR_BOARDS, SPEAR_SCRAP } from '../sim/sim.ts';
 import { TUT_STEPS, type TutStep, WARM_ENOUGH } from '../sim/tutorial.ts';
 import { costText } from './budowa.ts';
 import { deg } from './tekst.ts';
 
 export interface Goal {
-  key: TutStep | 'drewno' | 'noc' | 'przeszukaj' | 'budowla' | 'obwod' | 'drewno2';
+  key: TutStep | 'drewno' | 'noc' | 'przeszukaj' | 'budowla' | 'obwod' | 'dzida' | 'drewno2';
   text: string;
   /** jak to zrobić (tylko bieżący krok ma sens) */
   how: string;
@@ -140,6 +141,13 @@ export function goalsDay2(
   const built = (kind: string) => st.things.some((t) => t.kind === kind);
   const late = !!gov?.night?.confirmed || (gov?.reports.length ?? 0) > 1;
   const b = o.touch ? 'Przycisk Budowa u góry' : 'Budowa (przycisk u góry albo B)';
+  // w trybie zombie siatka jest wzmocniona i bez dziur, a zasieki przed szwendaczami nie chronią lepiej niż ona:
+  // zamiast obwodu dzida dla warty (dzidy w rękach zarządu i w magazynie ponad te ze startu)
+  const zombie = gov?.mode === 'zombie';
+  const spears =
+    st.pawns.filter((p) => p.kind === 'core' && p.weapon === 'dzida').length +
+    (st.store.arms ?? []).filter((x) => x === 'dzida').length;
+  const startSpears = [...START_KIT.zombie.core, ...START_KIT.zombie.store].filter((x) => x === 'dzida').length;
   // dwie budowle, które biorą najmniej materiału (koszty stroi bot, więc nie wpisuję ich na sztywno)
   const cheap = (Object.keys(BUILDS) as BuildKind[])
     .map((k) => ({ k, n: Object.values(BUILDS[k].cost).reduce((a: number, v) => a + (v ?? 0), 0) }))
@@ -161,14 +169,21 @@ export function goalsDay2(
       how: `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. Zarząd sam przyniesie materiały i zbuduje.`,
       done: st.things.some((t) => t.kind in BUILDS),
     },
-    {
-      key: 'obwod',
-      text: 'Wzmocnijcie obwód.',
-      how: `${b}: Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)}) albo załatajcie dziury${
-        o.touch ? ' (przytrzymajcie palec na dziurze)' : ' (prawy przycisk na dziurze)'
-      }. Otwartych dziur: ${o.holes}.`,
-      done: built('zasieki') || o.holes === 0,
-    },
+    zombie
+      ? {
+          key: 'dzida',
+          text: 'Zróbcie dzidę dla warty.',
+          how: `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie pustych mieszkań i rozbiórka.`,
+          done: spears > startSpears,
+        }
+      : {
+          key: 'obwod',
+          text: 'Wzmocnijcie obwód.',
+          how: `${b}: Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)}) albo załatajcie dziury${
+            o.touch ? ' (przytrzymajcie palec na dziurze)' : ' (prawy przycisk na dziurze)'
+          }. Otwartych dziur: ${o.holes}.`,
+          done: built('zasieki') || o.holes === 0,
+        },
     {
       key: 'drewno2',
       text: 'Przygotujcie drewno na noc.',

@@ -16,6 +16,14 @@ import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf
 import type { GovEffects, GovInput, GovPerson, GovState, LootKey, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
+
+/** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
+const STREET_IDS: ReadonlySet<string> = new Set(STREET_EVENTS.map((e) => e.id));
+
+/** czy wydarzenie pasuje do trybu gry (w trybie zombie bez wydarzeń ulicy) */
+export const fitsMode = (st: Pick<GovState, 'mode'>, id: string): boolean =>
+  !(st.mode === 'zombie' && STREET_IDS.has(id));
+
 import { drewno } from './warianty.ts';
 import {
   addNeeds,
@@ -273,7 +281,8 @@ function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): Act
   const fresh = (e: GEventDef) =>
     st.ev.last[e.id] === undefined || h.t - st.ev.last[e.id] >= (e.gap ?? REPEAT_GAP) * 60;
   const pool = M1_EVENTS.filter(
-    (e) => e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e),
+    (e) =>
+      e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e.id),
   )
     .map((e) => [e, e.w(h)] as const)
     .filter((x) => x[1] > 0);

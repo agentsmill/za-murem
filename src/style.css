@@ -394,6 +394,10 @@ a.btn {
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
+/* Budowa i Menu przy prawej krawędzi także wtedy, gdy zawiną się do następnego wiersza (długa nazwa osiedla) */
+#btnBuild {
+  margin-left: auto;
+}
 /* licznik klatek tylko na szerokim ekranie: przy 1440 px pasek z materiałami i budową mieści się w jednym
    wierszu (pomiary czytają zm.fps()) */
 @media (max-width: 1600px) {

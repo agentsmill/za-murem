@@ -4,6 +4,7 @@
 import { FOODSHOP } from '../content/data.ts';
 import { mulberry } from '../core/rng.ts';
 import type { AreaKind, Geo, Pt } from './geo.ts';
+import { pikselZ, tagiKlucza } from './klucze.ts';
 
 const ENDPOINTS: [string, number][] = [
   ['https://overpass-api.de/api/interpreter', 35000],
@@ -182,6 +183,9 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
       for (const k of KEEP) if (t[k]) tags[k] = t[k];
       // identyfikator OSM budynku: droga (w) i jej numer
       if (el.id !== undefined) tags.id = `w${el.id}`;
+      // klucz budynku i oś klatek jak z kafelków: wierzchołki zaokrąglone do siatki pikseli kafelków (klucze.ts)
+      const kl = tagiKlucza([el.geometry.map((g) => pikselZ(g.lat, g.lon).map(Math.round) as Pt)]);
+      if (kl) Object.assign(tags, kl);
       geo.b.push({ p: pts, t: tags });
       continue;
     }

@@ -3,10 +3,16 @@
    Wynik: shots/<nazwa>.png. Każdy zrzut obejrzyj, zanim zgłosisz zmianę. */
 
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
+import { stworzSerwer } from '../server/app.ts';
+import type { ZajetaKlatka } from '../src/net/protokol.ts';
 import { frameRect, LIE, LOOKS, POSE_FRAMES, POSES } from '../src/render/art/people.ts';
-import { ADDRESSES } from '../tests/unit/fixtures.ts';
+import { klatkiBudynku, kluczBudynku } from '../src/world/klucze.ts';
+import { toGeoT } from '../src/world/mvt.ts';
+import { buildWorld, LOAD_RADIUS } from '../src/world/world.ts';
+import { ADDRESSES, decodedTiles } from '../tests/unit/fixtures.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { decodePng } from './png.ts';
 
@@ -166,6 +172,8 @@ const SHOTS: Shot[] = [
   // karta osoby z generatora mieszkańców (krok 5): członek zarządu i mieszkaniec, komputer i telefon; zmiana imienia
   // z odmianą (imie-*): edytor, zgadywane formy, błąd, zapis w przeglądarce, przywrócenie
   ...kartaShots(),
+  // Gra z sąsiadami (?siec=1) z udawanym serwerem pod /api: karta startowa, znaczniki zajętych, start bez domu
+  ...siecShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -3921,7 +3929,10 @@ try {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => {
-      if (m.type() === 'error' && !shot.allow?.test(m.text())) errors.push(m.text());
+      // odpowiedzi 4xx z /api (niezalogowani, zajęta klatka) to zwykły przebieg gry z sąsiadami, nie błąd strony;
+      // błędy, których scenariusz się spodziewa (allow, np. 404 tabel mieszkańców), też nie
+      const api = m.text().startsWith('Failed to load resource') && m.location().url.includes('/api/');
+      if (m.type() === 'error' && !api && !shot.allow?.test(m.text())) errors.push(m.text());
     });
     const t0 = Date.now();
     if (shot.run) await shot.run(page, s.base);
@@ -5070,5 +5081,406 @@ function kartaShots(): Shot[] {
       },
     },
     ...mieszkancy(),
+  ];
+}
+
+/** Udawany serwer gry pod /api (page.route): zdrowie, konto, klatki w pamięci, zapis w chmurze. zalogowani: GET
+    /api/konto daje nick; zajete: cudze klatki na starcie; pierwsze: odpowiedź na pierwsze zajęcie (409: ktoś był
+    szybszy, start bez domu). */
+async function fakeApi(
+  page: Page,
+  o: {
+    zalogowani?: boolean;
+    zajete?: ZajetaKlatka[];
+    pierwsze?: 201 | 409;
+    chmura?: { dane: unknown; wersja: number };
+  } = {},
+) {
+  const klatki = [...(o.zajete ?? [])];
+  let zajec = 0;
+  await page.route('**/api/**', async (r) => {
+    const req = r.request();
+    const path0 = new URL(req.url()).pathname.replace(/^.*\/api/, '');
+    const m = req.method();
+    const json = (status: number, body: unknown) =>
+      r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (path0 === '/zdrowie') return json(200, { ok: true, gra: 'za-murem', wersja: 1 });
+    if (path0 === '/konto' && m === 'GET')
+      return o.zalogowani
+        ? json(200, { nick: 'Sasiedzi_z_Lanciego', utworzone: 1, klatki: 0, zapis: false })
+        : json(401, { blad: 'brak_sesji', komunikat: 'Zalogujcie się.' });
+    if (path0 === '/zapis' && m === 'GET')
+      return o.chmura
+        ? json(200, { dane: o.chmura.dane, wersja: o.chmura.wersja, zmieniony: 1, rozmiar: 1 })
+        : json(404, { blad: 'brak_zapisu', komunikat: 'Nie ma zapisu.' });
+    if (path0 === '/zapis' && m === 'PUT') {
+      // zapis zostaje w udawanym serwerze (o.chmura) z wersją jak w prawdziwym: inna wersja bazowa to konflikt
+      const body = req.postDataJSON() as { dane: unknown; wersja?: number };
+      const obecna = o.chmura?.wersja ?? 0;
+      if (body.wersja !== undefined && body.wersja !== obecna)
+        return json(409, { blad: 'konflikt_wersji', komunikat: 'Na serwerze jest nowszy zapis.', wersja: obecna });
+      o.chmura = { dane: body.dane, wersja: obecna + 1 };
+      return json(200, { wersja: obecna + 1, zmieniony: 1, rozmiar: req.postData()?.length ?? 0 });
+    }
+    if (path0 === '/zapis' && m === 'DELETE') {
+      o.chmura = undefined;
+      return r.fulfill({ status: 204, body: '' });
+    }
+    if (path0 === '/klatki/moje' && m === 'DELETE') return r.fulfill({ status: 204, body: '' });
+    if (path0 === '/klatki' && m === 'GET') return json(200, { klatki });
+    if (path0 === '/klatki' && m === 'POST') {
+      const k = req.postDataJSON() as Omit<ZajetaKlatka, 'moja'>;
+      zajec++;
+      if (zajec === 1 && o.pierwsze === 409) {
+        klatki.push({ ...k, moja: false });
+        return json(409, { blad: 'zajeta', komunikat: 'Ta klatka jest zajęta przez inną drużynę.' });
+      }
+      const kl: ZajetaKlatka = { ...k, moja: true, siedziba: zajec === 1 };
+      klatki.push(kl);
+      return json(201, { klatka: kl });
+    }
+    return json(404, { blad: 'nie_ma', komunikat: 'Nie ma takiego adresu API.' });
+  });
+}
+
+/** cudze klatki z pięciu budynków mieszkalnych najbliżej siedziby Lanciego (bez samej siedziby) */
+function cudzeKlatkiLanciego(): ZajetaKlatka[] {
+  const a = ADDRESSES.find((x) => x.key === 'lanciego')!;
+  const geo = toGeoT(decodedTiles(a), a.lat, a.lon, LOAD_RADIUS);
+  const w = buildWorld(geo, { seed: 1 });
+  const hq = w.buildings[w.hq];
+  return w.buildings
+    .filter((b) => b.id !== w.hq && (b.cls === 'blok' || b.cls === 'dom') && kluczBudynku(b))
+    .sort((p, q) => Math.hypot(p.x0 - hq.x0, p.y0 - hq.y0) - Math.hypot(q.x0 - hq.x0, q.y0 - hq.y0) || p.id - q.id)
+    .slice(0, 5)
+    .map((b) => klatkiBudynku(b)[0])
+    .map((k) => ({
+      klucz: k.klucz,
+      budynek: k.budynek,
+      lat: Math.round(k.lat * 1e5) / 1e5,
+      lon: Math.round(k.lon * 1e5) / 1e5,
+      moja: false,
+    }));
+}
+
+/** start gry z sąsiadami na Lanciego (sieć map z danych testowych, /api udawane) */
+async function startSieci(page: Page, base: string) {
+  await offlineNetwork(page);
+  await page.goto(`${base}?siec=1&speed=0`);
+  await page.waitForSelector('#siec:not([hidden]) .sc-who');
+  await page.fill('#addr', 'Lanciego 10G, Warszawa');
+  await page.click('#startForm button[type=submit]');
+  await waitIdle(page);
+}
+
+/** zakłada konto w bloku „Gra z sąsiadami” (prawdziwy serwer za proxy Vite) i czeka na zalogowanie */
+async function zalozKonto(page: Page, nick: string) {
+  await page.waitForSelector('#siec:not([hidden]) #scNick');
+  await page.fill('#scNick', nick);
+  await page.fill('#scHaslo', `${nick}-haslo-123`);
+  await page.click('[data-siec=zaloz]');
+  await page.waitForSelector('#siec .sc-who');
+}
+
+function siecShots(): Shot[] {
+  return [
+    {
+      // dwie drużyny na prawdziwym serwerze gry (w procesie, :memory:, za proxy /api z vite.config.ts): pierwsza zajmuje
+      // klatkę pod adresem, druga z tym samym adresem zaczyna bez domu, a w bazie są obie drużyny bez adresu
+      name: 'siec-dwie-druzyny',
+      query: '',
+      run: async (page, base) => {
+        const gra = stworzSerwer({ baza: ':memory:', bezpieczneCiasteczko: false, hasla: { logN: 10, r: 8, p: 1 } });
+        const srv = http.createServer((req, res) => gra.obsluz(req, res));
+        const wolny = await new Promise<boolean>((ok) => {
+          srv.once('error', () => ok(false));
+          srv.listen(8787, '127.0.0.1', () => ok(true));
+        });
+        if (!wolny) {
+          console.log('  port 8787 zajęty (działa inny serwer gry?): pomijam scenariusz');
+          gra.zamknij();
+          return;
+        }
+        try {
+          await offlineNetwork(page);
+          await page.goto(`${base}?siec=1&speed=0`);
+          await zalozKonto(page, 'Pierwsi');
+          await page.fill('#addr', 'Lanciego 10G, Warszawa');
+          await page.click('#startForm button[type=submit]');
+          await waitIdle(page);
+          const a = await page.evaluate(() => window.zm!.siec());
+          console.log(`  pierwsza drużyna: ${JSON.stringify(a.stan)}`);
+          if (!a.stan?.dom) throw new Error('pierwsza drużyna nie dostała klatki pod adresem');
+          // druga drużyna w tej samej przeglądarce: wylogowanie, nowe konto, ten sam adres
+          await page.goto(`${base}?siec=1&speed=0`);
+          await page.waitForSelector('#siec:not([hidden]) .sc-who');
+          await page.click('[data-siec=wyloguj]');
+          await zalozKonto(page, 'Drudzy');
+          await page.fill('#addr', 'Lanciego 10G, Warszawa');
+          await page.click('#startForm button[type=submit]');
+          await waitIdle(page);
+          const b = await page.evaluate(() => window.zm!.siec());
+          console.log(`  druga drużyna: ${JSON.stringify(b.stan)}, znaczniki ${b.znaczniki.join(' ')}`);
+          if (b.stan?.dom !== false || !b.znaczniki.includes('obca') || !b.znaczniki.includes('cel'))
+            throw new Error('druga drużyna nie zaczęła bez domu przy zajętej klatce');
+          const wiersze = gra.baza.db.prepare('SELECT konto, siedziba FROM klatki').all();
+          const konta = gra.baza.db.prepare('SELECT * FROM konta').all() as Record<string, unknown>[];
+          console.log(
+            `  w bazie: ${konta.length} konta, ${wiersze.length} klatka; kolumny konta: ${Object.keys(konta[0]).join(', ')}`,
+          );
+          if (wiersze.length !== 1) throw new Error('w bazie powinna być jedna zajęta klatka');
+          await page.evaluate(() => {
+            const zm = window.zm!;
+            const w = zm.sim!.w;
+            const core = zm.sim!.st.pawns.filter((p) => p.kind === 'core');
+            const door = w.buildings[w.hq].entrances[0].out;
+            const dx = (door % w.size) + 0.5;
+            const dy = Math.floor(door / w.size) + 0.5;
+            const d = Math.hypot(core[0].x - dx, core[0].y - dy);
+            zm.setCam((core[0].x + dx) / 2, (core[0].y + dy) / 2, Math.max(0.3, Math.min(0.9, 700 / ((d + 20) * 32))));
+          });
+          await waitIdle(page);
+        } finally {
+          srv.closeAllConnections();
+          await new Promise<void>((ok) => srv.close(() => ok()));
+          gra.zamknij();
+        }
+      },
+    },
+    {
+      // blok „Gra z sąsiadami” tylko z ?siec=1 i przy działającym serwerze; niezalogowani widzą formularz i notkę
+      name: 'siec-start',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page);
+        // bez ?siec=1 blok zostaje ukryty, nawet gdy serwer odpowiada
+        await page.goto(base);
+        await page.waitForSelector('#demos button');
+        if (!(await page.$eval('#siec', (e) => (e as HTMLElement).hidden))) throw new Error('blok sieci bez ?siec=1');
+        await page.goto(`${base}?siec=1`);
+        await page.waitForSelector('#siec:not([hidden]) #scNick');
+        const note = await page.$eval('#siec', (e) => e.textContent ?? '');
+        if (!note.includes('bez e-maila')) throw new Error('brak notki o koncie bez e-maila');
+      },
+    },
+    {
+      name: 'siec-start-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await fakeApi(page, { zalogowani: true });
+        await page.goto(`${base}?siec=1`);
+        await page.waitForSelector('#siec:not([hidden]) .sc-who');
+        const bottom = await page.$eval('#startForm', (f) => f.getBoundingClientRect().bottom);
+        console.log(`  formularz kończy się na ${Math.round(bottom)} px z 844`);
+        if (bottom > 844) throw new Error('formularz adresu poza pierwszym ekranem telefonu');
+      },
+    },
+    {
+      // klatka pod adresem wolna: nasza (zielona), dookoła klatki innych drużyn (czerwone)
+      name: 'siec-znaczniki',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page, { zalogowani: true, zajete: cudzeKlatkiLanciego() });
+        await startSieci(page, base);
+        const s = await page.evaluate(() => window.zm!.siec());
+        console.log(`  stan ${JSON.stringify(s.stan)}, znaczniki ${s.znaczniki.join(' ')}`);
+        if (!s.stan?.dom) throw new Error('klatka pod adresem nie została nasza');
+        if (!s.znaczniki.includes('nasza') || !s.znaczniki.includes('obca')) throw new Error('brak znaczników');
+        await page.evaluate(() => {
+          const zm = window.zm!;
+          const hq = zm.sim!.w.buildings[zm.sim!.w.hq];
+          zm.setCam((hq.x0 + hq.x1) / 2, (hq.y0 + hq.y1) / 2, 0.3);
+        });
+        await waitIdle(page);
+        const shown = await page.$$eval('#klatki .kl-zn:not([hidden])', (l) => l.length);
+        console.log(`  znaczników na ekranie: ${shown}`);
+        if (shown < 3) throw new Error('za mało znaczników na ekranie');
+      },
+    },
+    {
+      // ktoś zajął naszą klatkę: zarząd na ulicy przed jej drzwiami, cel „Bez domu”, znacznik wolnej klatki
+      name: 'siec-bez-domu',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page, { zalogowani: true, zajete: cudzeKlatkiLanciego(), pierwsze: 409 });
+        await startSieci(page, base);
+        const s = await page.evaluate(() => window.zm!.siec());
+        console.log(`  stan ${JSON.stringify(s.stan)}, znaczniki ${s.znaczniki.join(' ')}`);
+        if (s.stan?.dom !== false) throw new Error('drużyna nie zaczęła bez domu');
+        if (!s.znaczniki.includes('cel')) throw new Error('brak znacznika wolnej klatki');
+        const goals = await page.$eval('#goals', (e) => e.textContent ?? '');
+        if (!goals.includes('Bez domu')) throw new Error('brak celów „Bez domu”');
+        const outside = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          return zm
+            .sim!.st.pawns.filter((p) => p.kind === 'core')
+            .every((p) => w.bid[Math.floor(p.y) * w.size + Math.floor(p.x)] !== w.hq);
+        });
+        if (!outside) throw new Error('zarząd startuje w siedzibie zamiast na ulicy');
+        // kamera tak, żeby było widać zarząd na ulicy i drzwi nowej siedziby
+        await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const core = zm.sim!.st.pawns.filter((p) => p.kind === 'core');
+          const door = w.buildings[w.hq].entrances[0].out;
+          const dx = (door % w.size) + 0.5;
+          const dy = Math.floor(door / w.size) + 0.5;
+          const d = Math.hypot(core[0].x - dx, core[0].y - dy);
+          zm.setCam((core[0].x + dx) / 2, (core[0].y + dy) / 2, Math.max(0.3, Math.min(0.9, 700 / ((d + 20) * 32))));
+        });
+        await waitIdle(page);
+      },
+    },
+    {
+      // zapis w chmurze: gra bez domu zapisana, przeładowanie, „Kontynuuj z chmury” wraca do tej samej siedziby i stanu
+      name: 'siec-chmura',
+      query: '',
+      run: async (page, base) => {
+        const serwer: Parameters<typeof fakeApi>[1] = {
+          zalogowani: true,
+          zajete: cudzeKlatkiLanciego(),
+          pierwsze: 409,
+        };
+        await fakeApi(page, serwer);
+        await startSieci(page, base);
+        // gra stoi (speed=0): zapis i stan w tej samej chwili
+        const gra = () =>
+          page.evaluate(() => {
+            const zm = window.zm!;
+            return {
+              hq: zm.sim!.w.hq,
+              stan: zm.siec().stan,
+              tick: zm.sim!.st.tick,
+              zarzad: zm
+                .sim!.st.pawns.filter((p) => p.kind === 'core')
+                .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
+                .join(' '),
+            };
+          });
+        const przed = await gra();
+        await page.evaluate(() => window.zm!.save());
+        for (let k = 0; k < 50 && !serwer.chmura; k++) await page.waitForTimeout(100);
+        if (!serwer.chmura) throw new Error('zapis nie trafił do chmury');
+        const tekst = JSON.stringify(serwer.chmura.dane);
+        console.log(`  zapis w chmurze: ${Math.round(tekst.length / 1024)} KB`);
+        if (tekst.includes('"addr"') || tekst.includes('"addr:')) throw new Error('adres w zapisie w chmurze');
+        // nazwa ulicy z wpisanego adresu nie trafia do nazw budynków gry sieciowej
+        if (tekst.includes('Lanciego 10G')) throw new Error('adres z formularza w nazwie budynku w zapisie w chmurze');
+        await page.evaluate(() => localStorage.clear());
+        await page.goto(`${base}?siec=1&speed=0`);
+        await page.waitForSelector('[data-siec=chmura]');
+        const label = await page.$eval('[data-siec=chmura]', (e) => e.textContent ?? '');
+        console.log(`  przycisk: ${label}`);
+        await page.click('[data-siec=chmura]');
+        await waitIdle(page);
+        const po = await gra();
+        console.log(`  przed ${JSON.stringify(przed)}`);
+        console.log(`  po    ${JSON.stringify(po)}`);
+        if (JSON.stringify(po) !== JSON.stringify(przed))
+          throw new Error('gra z chmury ma inną siedzibę, stan sieci, chwilę albo miejsca zarządu');
+        // następny zapis idzie od wersji z chmury (bez konfliktu wersji)
+        await page.evaluate(() => window.zm!.save());
+        for (let k = 0; k < 50 && serwer.chmura.wersja < 2; k++) await page.waitForTimeout(100);
+        console.log(`  wersja zapisu w chmurze po drugim zapisie: ${serwer.chmura.wersja}`);
+        if (serwer.chmura.wersja !== 2) throw new Error('drugi zapis do chmury nie przeszedł');
+      },
+    },
+    {
+      // „Zajmij klatkę” pod prawym przyciskiem na wolnym budynku, bez zaznaczonych ludzi: potwierdzenie, zajęcie na
+      // serwerze i zielony znacznik; na zrzucie menu na następnym wolnym budynku
+      name: 'siec-menu',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page, { zalogowani: true, zajete: cudzeKlatkiLanciego() });
+        await startSieci(page, base);
+        /** prawy przycisk na drzwiach k-tego budynku mieszkalnego od siedziby; pozycje menu */
+        const menuNa = async (k: number) => {
+          const ok = await page.evaluate((k) => {
+            const zm = window.zm!;
+            const w = zm.sim!.w;
+            const hq = w.buildings[w.hq];
+            const b = w.buildings
+              .filter((x) => x.id !== w.hq && (x.cls === 'blok' || x.cls === 'dom') && x.entrances.length)
+              .sort((p, q) => Math.hypot(p.x0 - hq.x0, p.y0 - hq.y0) - Math.hypot(q.x0 - hq.x0, q.y0 - hq.y0))[k];
+            if (!b) return false;
+            const t = b.entrances[0].tile;
+            zm.setCam((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5, 0.9);
+            return true;
+          }, k);
+          if (!ok) return null;
+          await waitIdle(page);
+          const xy = await page.evaluate((k) => {
+            const zm = window.zm!;
+            const w = zm.sim!.w;
+            const hq = w.buildings[w.hq];
+            const b = w.buildings
+              .filter((x) => x.id !== w.hq && (x.cls === 'blok' || x.cls === 'dom') && x.entrances.length)
+              .sort((p, q) => Math.hypot(p.x0 - hq.x0, p.y0 - hq.y0) - Math.hypot(q.x0 - hq.x0, q.y0 - hq.y0))[k];
+            const t = b.entrances[0].tile;
+            return zm.screenOf((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5);
+          }, k);
+          await page.mouse.click(xy[0], xy[1], { button: 'right' });
+          if (!(await page.waitForSelector('#ctx:not([hidden])', { timeout: 1500 }).catch(() => null))) return [];
+          return page.locator('#ctx .ctx-item').allTextContents();
+        };
+        let k = 0;
+        let items: string[] | null = [];
+        for (; k < 20; k++) {
+          items = await menuNa(k);
+          if (!items || items.includes('Zajmij klatkę…')) break;
+          await page.keyboard.press('Escape');
+        }
+        console.log(`  budynek ${k}: menu ${items?.join(' | ')}`);
+        if (!items?.includes('Zajmij klatkę…')) throw new Error('brak „Zajmij klatkę” w menu');
+        const przed = await page.evaluate(() => window.zm!.siec().klatki);
+        await page.click('#ctx .ctx-item:has-text("Zajmij klatkę")');
+        await page.click('#sheet [data-act="confirm-yes"]');
+        await page.waitForFunction((n) => window.zm!.siec().klatki > n, przed, { timeout: 5000 });
+        const s = await page.evaluate(() => window.zm!.siec());
+        console.log(`  klatek ${przed} → ${s.klatki}, znaczniki ${s.znaczniki.join(' ')}`);
+        if (s.znaczniki.filter((z) => z === 'nasza').length < 2) throw new Error('brak znacznika zajętej klatki');
+        for (k++; k < 25; k++) {
+          items = await menuNa(k);
+          if (!items || items.includes('Zajmij klatkę…')) break;
+          await page.keyboard.press('Escape');
+        }
+        console.log(`  budynek ${k}: menu ${items?.join(' | ')}`);
+        await page.waitForTimeout(200);
+      },
+    },
+    {
+      // ktoś z zarządu staje w drzwiach nowej siedziby: klatka zajęta na serwerze i znacznik „wasza klatka”
+      name: 'siec-dom',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page, { zalogowani: true, zajete: cudzeKlatkiLanciego(), pierwsze: 409 });
+        await startSieci(page, base);
+        await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const door = w.buildings[w.hq].entrances[0].out;
+          const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+          p.x = (door % w.size) + 0.5;
+          p.y = Math.floor(door / w.size) + 0.5;
+          zm.setCam(p.x, p.y, 0.8);
+        });
+        await page.waitForFunction(() => window.zm!.siec().stan?.dom === true, null, { timeout: 10_000 });
+        const s = await page.evaluate(() => window.zm!.siec());
+        console.log(`  stan ${JSON.stringify(s.stan)}, znaczniki ${s.znaczniki.join(' ')}`);
+        if (!s.znaczniki.includes('nasza')) throw new Error('brak znacznika naszej klatki');
+        // cele odświeżają się co 200 ms: po zajęciu klatki wracają cele pierwszego dnia
+        await page.waitForFunction(
+          () => !(document.getElementById('goals')?.textContent ?? '').includes('Bez domu'),
+          null,
+          {
+            timeout: 5000,
+          },
+        );
+        await waitIdle(page);
+      },
+    },
   ];
 }

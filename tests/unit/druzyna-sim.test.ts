@@ -169,9 +169,11 @@ describe('z drużyną', () => {
         expect(st.tick).toBe(TICKS_PER_DAY);
         expect(gov.over ?? null).toBeNull();
         const snap = snapshot(st, w);
-        // ludzie z drużyny w odczycie dla interfejsu, z historią
-        expect(snap.people.map((p) => p.name)).toEqual(team.map((o) => osobaDoGry(o).name));
-        for (const p of snap.people) expect(p.story?.length).toBeGreaterThan(0);
+        // ludzie z drużyny w odczycie dla interfejsu, z historią; wydarzenia zarządu mogą już pierwszej doby dołożyć
+        // przybysza (zależnie od ziarna i trybu), więc drużyna to początek listy
+        const ours = snap.people.slice(0, team.length);
+        expect(ours.map((p) => p.name)).toEqual(team.map((o) => osobaDoGry(o).name));
+        for (const p of ours) expect(p.story?.length).toBeGreaterThan(0);
         expect(sim.hash()).toMatch(/^[0-9a-f]{8}$/);
       });
 
