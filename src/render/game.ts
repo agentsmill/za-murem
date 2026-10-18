@@ -72,6 +72,7 @@ export const GAME_KINDS: ReadonlySet<string> = new Set([
   'zlom',
   'czesci',
   'leki',
+  'wozek',
   'wrak',
   'krew',
   'smieci',
@@ -102,7 +103,7 @@ export function onTables(things: readonly ThingLike[]): readonly ThingLike[] {
 }
 
 /** rodzaje pionków obcych: widać je tylko w świetle (symulacja doda je z siatką i nocą) */
-export const STRANGERS: ReadonlySet<string> = new Set(['obcy', 'szabrownik', 'wedrowiec', 'zombie']);
+export const STRANGERS: ReadonlySet<string> = new Set(['obcy', 'szabrownik', 'wedrowiec', 'zombie', 'handlarz']);
 
 /** zasięg latarni wartownika w metrach: tyle, ile warta widzi w symulacji (LAMP_REACH w sim.ts) */
 export const GUARD_LAMP_R = 5;

@@ -985,6 +985,19 @@ a.btn {
 .ctx-item.risky {
   color: #f0a08f;
 }
+/* pozycja, której teraz nie da się wybrać (oferta handlarza bez materiału): wyszarzona, z powodem pod spodem */
+.ctx-item.off {
+  color: var(--ink-dim);
+  cursor: default;
+}
+.ctx-item.off:hover {
+  background: none;
+}
+.ctx-off {
+  display: block;
+  margin-top: 2px;
+  font: 400 12px / 1.2 var(--f-body);
+}
 
 .modal {
   position: fixed;

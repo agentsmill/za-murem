@@ -923,6 +923,71 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // handlarz pod bramą drugiego dnia: z wózkiem, menu z towarem (wyszarzone bez materiału), potem napaść
+        name: 'handlarz',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const st = sim.st;
+            // dzień 2, 10:00, wizyta od razu
+            st.tick = Math.round(((24 + 10 - 15) * 60 * 800) / 60);
+            st.obcy!.next = st.tick;
+          });
+          for (let k = 0; k < 30; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'handlarz')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const cart = (await thingKeys(page)).filter((k) => k.includes('"kind":"wozek"'));
+          console.log(`  wózek: ${cart.length}`);
+          if (cart.length !== 1) throw new Error('nie widać wózka handlarza');
+          await page.screenshot({ path: path.join(OUT, 'handlarz-brama.png') });
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          const off = await page.locator('#ctx .ctx-item.off').count();
+          console.log(`  menu: ${items.join(' | ')} (wyszarzone: ${off})`);
+          if (!items.some((i) => i.startsWith('Dać ')) || !items.some((i) => i.startsWith('Napaść')))
+            throw new Error('w menu handlarza nie ma towaru albo napaści');
+          await page.screenshot({ path: path.join(OUT, 'handlarz-menu.png') });
+          await page.keyboard.press('Escape');
+          // napaść bez okna potwierdzenia (polecenie wprost) i chwila ucieczki
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+            sim.push({ t: 'rob', ids: [p.id] });
+          });
+          for (let k = 0; k < 20; k++) {
+            const done = await page.evaluate(() => window.zm!.sim!.st.obcy!.napad >= 0);
+            if (done) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          await page.evaluate(() => window.zm!.ff(0.3));
+          const after = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const c = st.things.find((t) => t.kind === 'wozek')!;
+            zm.setCam(c.x + 0.5, c.y, 2);
+            return { napad: st.obcy!.napad, next: st.obcy!.next, cart: c.n };
+          });
+          await waitIdle(page);
+          console.log(`  po napaści: ${JSON.stringify(after)}`);
+          if (after.napad < 0 || after.next !== -1 || after.cart !== 0) throw new Error('napaść nie zadziałała');
+        },
+      },
+      {
         name: 'surowce-menu-warsztat',
         query: '',
         run: async (page, base) => {

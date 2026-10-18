@@ -44,6 +44,7 @@ import {
   armchairSprite,
   boothSprite,
   campfireSprite,
+  cartSprite,
   type FenceState,
   type FireStyle,
   fenceSprite,
@@ -141,6 +142,7 @@ export type ThingSpec =
   | { kind: 'zlom'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'czesci'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'leki'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'wozek'; full?: boolean; seed?: number }
   | { kind: 'budka'; rot: Rot; lit?: boolean; seed?: number }
   | { kind: 'fotel'; rot: Rot; seed?: number }
   | { kind: 'lampa'; lit?: boolean; seed?: number }
@@ -191,6 +193,7 @@ export function footprint(spec: ThingSpec): { w: number; h: number } {
     case 'zlom':
     case 'czesci':
     case 'leki':
+    case 'wozek':
     case 'budka':
     case 'fotel':
     case 'lampa':
@@ -1176,6 +1179,7 @@ export function thingSprite(spec: ThingSpec): Sprite {
   )
     return pileSprite(spec.kind, spec.size, seed);
   if (spec.kind === 'budka') return boothSprite(spec.rot, !!spec.lit, seed);
+  if (spec.kind === 'wozek') return cartSprite(spec.full ?? true, seed);
   if (spec.kind === 'fotel') return armchairSprite(spec.rot, seed);
   if (spec.kind === 'lampa') return lampSprite(!!spec.lit, seed);
   if (spec.kind === 'posilek') return posilek(spec.size, !!spec.table, seed);

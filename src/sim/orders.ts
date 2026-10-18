@@ -5,6 +5,7 @@ import { wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
+import { NAPISY as HANDEL } from './handlarz.ts';
 import { dryTreeOf, houseOf, inHomeApt, type RoomKind } from './house.ts';
 import { MAT_ACC, REPAIR, RUBBISH } from './mieszkania.ts';
 import { gateTiles } from './perimeter.ts';
@@ -71,6 +72,8 @@ export interface MenuItem {
   quick: boolean;
   /** niszczy coś na zawsze (palenie mebli): interfejs pyta o potwierdzenie */
   confirm?: boolean;
+  /** teraz nie da się wybrać, z tego powodu (oferta handlarza bez materiału): menu pokazuje ją wyszarzoną */
+  off?: string;
 }
 
 /** drzewo pod kursorem: najbliższy pień w zasięgu korony (najwyżej 2,5 m), także sam kafelek pnia; −1: brak */
@@ -122,6 +125,24 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       label: foe.kind === 'zombie' ? 'Atakuj szwendacza' : 'Atakuj szabrownika',
       quick: true,
     });
+  // handlarz pod bramą (na nim albo na jego wózku): jego towar, wyszarzony, gdy nie starcza materiału, i napaść
+  const trader = st.obcy && st.obcy.trader >= 0 ? st.pawns.find((p) => p.id === st.obcy!.trader) : undefined;
+  if (trader?.job?.t === 'trader' && trader.job.phase === 1) {
+    const cart = st.things.find((t) => t.id === trader.job!.from);
+    const onCart = !!cart && cart.y * w.size + cart.x === tile;
+    if (onCart || Math.hypot(trader.x - cx, trader.y - cy) <= 1) {
+      const stock = (m: Mat) => st.things.reduce((a, t) => a + (t.kind === m && t.n > 0 ? t.n : 0), 0);
+      st.obcy!.offers.forEach((o, k) => {
+        if (o.left <= 0) return;
+        const short: Partial<Record<Mat, number>> = {};
+        for (const [m, n] of Object.entries(o.take) as [Mat, number][]) if (stock(m) < n) short[m] = n - stock(m);
+        const item: MenuItem = { cmd: { t: 'trade', ids: core, offer: k }, label: HANDEL.oferta(o).pl, quick: false };
+        if (Object.keys(short).length) item.off = HANDEL.brakuje(short).pl;
+        out.push(item);
+      });
+      out.push({ cmd: { t: 'rob', ids: core }, label: HANDEL.napasc.pl, quick: false, confirm: true });
+    }
+  }
   // zwłoki, które wstaną: dobić
   const body = thingAt(st, w, tile, 'zwloki');
   if (body && body.fuel > 0) out.push({ cmd: { t: 'finish', ids: core, thing: body.id }, label: 'Dobić', quick: true });
@@ -304,7 +325,7 @@ function reachesThrough(st: SimState, id: number): boolean {
 /** domyślne polecenie dla klikniętego kafelka (pierwsze, które można wykonać od razu) albo null bez nikogo
     z zarządu */
 export function commandFor(st: SimState, w: World, ids: readonly number[], tile: number): Command | null {
-  return commandsAt(st, w, ids, tile).find((m) => m.quick)?.cmd ?? null;
+  return commandsAt(st, w, ids, tile).find((m) => m.quick && !m.off)?.cmd ?? null;
 }
 
 /** co robi osoba: krótki opis do karty */
@@ -416,6 +437,12 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return (walking ? NAPISY.idzieSzukac : NAPISY.szuka).pl;
     case 'carry':
       return (walking ? NAPISY.poLup : NAPISY.niesie).pl;
+    case 'trader':
+      return [HANDEL.przychodzi, HANDEL.czeka, HANDEL.odchodzi, HANDEL.ucieka, HANDEL.odchodzi][j.phase]?.pl ?? '';
+    case 'trade':
+      return (walking ? HANDEL.idzieHandlowac : HANDEL.handluje).pl;
+    case 'rob':
+      return HANDEL.idzieNapasc.pl;
     case 'saw':
       if (walking) return NAPISY.idzieWarsztat.pl;
       return (j.what === 'czesci' ? NAPISY.robiCzesci(j.from) : NAPISY.pilujeDeski(j.from)).pl;

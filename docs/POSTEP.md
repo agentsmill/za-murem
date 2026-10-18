@@ -578,9 +578,20 @@ Mateusz w rozmowie: „na razie to mogę iść i kosić drzewo, ale nic więcej 
 
 Bramka: `npm test` 1823 zdanych, 1 oczekiwana porażka, 8 pominiętych (90 plików, w tym nowy `tests/unit/surowce.test.ts` z 13 przypadkami), Biome na `src tests tools server index.html` czysty, build, boty bez zmian (bot da4b24e0 i dad44c81, zombie e77f1b99 i 34dd5c5f). Pełne `npm run shots`: 157 scenariuszy bez błędów (doszło pięć). Nowe `surowce-wraki`, `surowce-sterty`, `surowce-menu-wrak`, `surowce-praca` (z `surowce-praca-rozbiorka`) i `surowce-menu-warsztat` obejrzane w Chromium.
 
+### Handlarz pod bramą, 18.10.2026 (gałąź `m2-surowce`, po wrakach, lokalnie)
+
+Drugi kawałek z rozmowy o surowcach: handlarz, którego widać za dnia, nie da się nim sterować, a można z nim handlować albo na niego napaść. Projekt: `docs/superpowers/specs/2026-10-18-handlarz-design.md`, przed budową przeczytał go recenzent.
+
+- Handlarz przychodzi drugiego dnia między 10:00 a 12:00, potem co dwa albo trzy dni między 9:00 a 13:00, z daleka ulicą. Staje przy bramie od strony ulicy z wózkiem z marketu obok, czeka do 3 godzin (najpóźniej do 18:00) i odchodzi. Termin wypadający w nocy przesuwa się na rano. Przy przyjściu napis „Pod bramą stoi handlarz z wózkiem.” (w domu „Pod furtką”).
+- Towar: trzy oferty po dwa razy, pierwsza zawsze za złom, bo złomu jest za dużo. Prawy przycisk na handlarzu albo wózku pokazuje oferty („Dać 6 złomu za 3 deski”). Na którą nie starcza, jest wyszarzona z powodem („brakuje 2 leków”); menu dostało do tego `MenuItem.off`. Wymiana: jedna osoba idzie na podwórko pod bramę, targuje się 5 minut, nasz materiał schodzi ze stert, towar ląduje na podwórku.
+- „Napaść na handlarza” (z potwierdzeniem): cios, handlarz rzuca wózek i ucieka, cały jego towar zostaje przy wózku za siatką (nosi się go „Zanieść na podwórko”), napastnik ma nastrój −6 na dobę, reszta zarządu −3, a handlarz już nie przychodzi.
+- Handlarz chodzi tylko z opcją `SimOpts.obcy`, którą gra włącza w zwykłym trybie (`?handlarz=0` wyłącza), a stary zapis dostaje go poleceniem `{ t: 'obcy' }` przy wczytaniu. Boty i testy bez opcji grają jak przed nim.
+
+Bramka: `npm test` 1832 zdanych, 1 oczekiwana porażka, 8 pominiętych (91 plików, nowy `tests/unit/handlarz.test.ts` z 9 przypadkami), Biome czysty, build, boty bez zmian (da4b24e0, dad44c81, e77f1b99, 34dd5c5f). Pełne `npm run shots`: 158 scenariuszy bez błędów (handlarz jest w grze domyślnie, więc chodzi też w starych scenariuszach z drugim dniem). Zrzut `handlarz` (z `handlarz-brama` i `handlarz-menu`) obejrzany w Chromium: wózek obok handlarza przy bramie, menu z dwiema wyszarzonymi ofertami, po napaści pusty wózek, towar obok i uciekający handlarz z paskiem życia.
+
 ## Następne
 
-Surowce (gałąź `m2-surowce`, lokalnie, 18.10.2026): Mateusz przegląda decyzje z wpisu niżej w „Decyzjach” i gra: wrak za siatką, „Przeszukać” na aucie, potem „Rozebrać” z menu, warsztat z menu na stole. Koordynator `pelna-gra` scala gałąź; z falą 2 może być konflikt w `sim.ts` i `orders.ts` (obie dokładają prace i polecenia, `carry` jest u mnie w kształcie z ich planu). Następny kawałek tej sesji: obcy w dzień i handlarz, z osobnym projektem.
+Surowce (gałąź `m2-surowce`, lokalnie, 18.10.2026): Mateusz przegląda decyzje z wpisu niżej w „Decyzjach” i gra: wrak za siatką, „Przeszukać” na aucie, potem „Rozebrać” z menu, warsztat z menu na stole. Koordynator `pelna-gra` scala gałąź; z falą 2 może być konflikt w `sim.ts` i `orders.ts` (obie dokładają prace i polecenia, `carry` jest u mnie w kształcie z ich planu). Handlarz pod bramą też jest na tej gałęzi (wpis wyżej). Następny kawałek tej sesji: wędrowcy i obce ekipy, które szabrują te same wraki, na szkielecie handlarza.
 
 Rano 18.10.2026, po nocy integracji (dla Mateusza):
 - Kierunek rozwoju (`docs/superpowers/specs/2026-10-18-kierunek-rozwoju-design.md`): Mateusz zdecydował, że każdego lokatora da się ręcznie przejąć. Czeka przejrzenie decyzji z końca dokumentu i rozmowa o pierwszym projekcie, czyli pracy ludzi i rozporządzeniach.
@@ -624,6 +635,12 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
   - przeróbka w warsztacie liczy cały materiał, także ten, który ktoś właśnie niesie do składu, a piłujący czeka, gdy drewno jest akurat w czyichś rękach;
   - bot surowców to raport, nie bramka: kuchnia społeczna stoi w 4.–5. dobie i bez wraków, więc warunek „z wrakami do czwartej doby, bez nich nie” nie dał się spełnić bez ruszania liczb fali 1;
   - złomu jest za dużo (42 po pięciu dniach bez wraków). Nie stroiłem: to decyzja, czy wrak ma dawać mniej złomu, czy złom ma mieć więcej zastosowań (zasieki, barykady z wraków z 0.3, akumulator na prąd w M3).
+- Handlarz (18.10.2026, sesja „Surowce”, do przejrzenia przez Mateusza):
+  - napaść kosztuje nastroje i handlarza na zawsze, ale jeszcze nie zaufanie osiedla: zaufanie liczy zarząd w `src/gov`, a napaść musiałaby przejść przez `snapshot()` i `GovInput` (następny krok, jeśli ma kosztować);
+  - złom może iść we wszystkich trzech ofertach jednej wizyty (pierwsza zawsze za złom, dwie pozostałe z reszty tabeli razem z niewylosowanymi złomowymi);
+  - handlarz włącza się opcją, a nie sam z siebie, żeby boty i testy bez niej miały te same skróty; gra włącza go zawsze w zwykłym trybie;
+  - karta wydarzenia „Handlarz z wózkiem” z 0.3 zostaje (pilnuje jej test różnicowy z 0.3); do decyzji, czy wyłączyć ją, skoro handlarz chodzi po mapie;
+  - rozmowy z handlarzem (plotki, prośby) nie ma, a nowy handlarz po napaści nigdy nie przychodzi.
 - Narzędzia: Biome zamiast ESLint (jedno narzędzie, formatowanie pilnowane w CI). TypeScript 7 (natywny). Skrypty w `tools/` uruchamiane przez Node wprost z `.ts` (wymazywanie typów), bez tsx.
 - Treść przeniesiona skryptem, który zostawia literały bajt w bajt. Poprawność sprawdza test różnicowy z oryginałem w `node:vm`, a nie ręcznie spisane oczekiwania.
 - Wydarzenia rozmawiają ze stanem przez interfejs `EventHost`. W testach implementuje go adapter na stanie 0.3, w M3 zrobi to nowa symulacja. Kolejność losowań zostaje jak w 0.3, łącznie z tasowaniem przez `sort(() => rng() - 0.5)`. Wymienię je w M3, kiedy wzorcem przestanie być 0.3. Koszt pomyłki: inne losowania niż w 0.3, nic więcej.

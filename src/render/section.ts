@@ -249,6 +249,9 @@ export function specOf(t: ThingLike, fire = 0): ThingSpec | null {
         seed: seed % WRECK_LOOKS,
         stage: t.stage === 1 || t.stage === 2 ? t.stage : undefined,
       };
+    case 'wozek':
+      // wózek handlarza: pełny przy wizycie, pusty po napaści (n 0)
+      return { kind: 'wozek', full: (t.n ?? 1) > 0 ? undefined : false, seed: seed % 4 };
     case 'smieci':
       // n to wielkość sterty z kontraktu świata (1–3), nie liczba sztuk
       return { kind: 'smieci', size: Math.min(3, Math.max(1, Math.round(t.n ?? 1))) as 1 | 2 | 3, seed };
