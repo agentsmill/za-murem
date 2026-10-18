@@ -944,6 +944,97 @@ describe('nadajImiona: reguły rodziny na małych budynkach', () => {
   });
 });
 
+// ---------------------------------------------------------------- zakazane połączenia i domownicy
+
+describe('nadajImiona: imię nie tworzy z nazwiskiem znanej osoby', () => {
+  const lewandowscy = tabelaNazwisk([['Lewandowski', 'Lewandowska', 100]]);
+  const roberty = (zakaz?: string[]): TabeleImion =>
+    tabelaImion({
+      lata: {
+        '2010': {
+          M: [
+            ['Robert', 50],
+            ['Adam', 50],
+          ],
+          K: [
+            ['Anna', 50],
+            ['Ewa', 50],
+          ],
+        },
+      },
+      ...(zakaz ? { zakazanePolaczenia: zakaz } : {}),
+    });
+
+  it('trafienie w zakazane połączenie losuje imię jeszcze raz, a bez listy połączenie wypada', () => {
+    const imie = (t: TabeleImion, plec: Plec): string[] => {
+      const w = samotni(200, plec, 2010, `test/zakaz-${plec}`);
+      nadajImiona(w, t, lewandowscy, ziarno('zakaz', plec));
+      return w.osoby.map((o) => `${o.imie} ${o.nazwisko}`);
+    };
+    const zakaz = ['Anna|Lewandowska', 'Robert|Lewandowski'];
+    expect(imie(roberty(zakaz), 'M').filter((n) => n === 'Robert Lewandowski')).toEqual([]);
+    expect(imie(roberty(zakaz), 'K').filter((n) => n === 'Anna Lewandowska')).toEqual([]);
+    expect(new Set(imie(roberty(zakaz), 'M'))).toEqual(new Set(['Adam Lewandowski']));
+    // bez listy (stara tabela) to samo losowanie daje Roberta, więc test naprawdę coś sprawdza
+    expect(imie(roberty(), 'M').filter((n) => n === 'Robert Lewandowski').length).toBeGreaterThan(60);
+  });
+
+  it('pula, w której każde imię tworzy zakazane połączenie, zostawia imię puste zamiast znanej osoby', () => {
+    const t = tabelaImion({
+      lata: { '2010': { M: [['Robert', 10]], K: [] } },
+      zakazanePolaczenia: ['Robert|Lewandowski'],
+    });
+    const w = samotni(3, 'M', 2010, 'test/same-roberty');
+    nadajImiona(w, t, lewandowscy, ziarno('same-roberty'));
+    expect(w.osoby.map((o) => `${o.imie}|${o.nazwisko}`)).toEqual(['|Lewandowski', '|Lewandowski', '|Lewandowski']);
+  });
+
+  it('żadne połączenie z listy nie wypada na trzech demach przy wielu ziarnach', () => {
+    const zakaz = new Set(imiona.zakazanePolaczenia ?? []);
+    expect(zakaz.size).toBeGreaterThan(10);
+    let osob = 0;
+    for (const [nazwa, g] of [
+      ['przymorze', gdansk],
+      ['lanciego', ursynow],
+      ['zielonki', zielonki],
+    ] as const) {
+      const n = nazwiskaWoj(PLIK_WOJEWODZTWA[g.woj]);
+      const baza = generujObszar(demo(nazwa), g, kraj).budynki;
+      for (let z = 0; z < 8; z++) {
+        for (const b of baza) {
+          const w = structuredClone(b);
+          nadajImiona(w, imiona, n, losDla('imiona', w.budynek.klucz, 'proba', z));
+          for (const o of w.osoby) {
+            osob++;
+            expect(zakaz.has(`${o.imie}|${o.nazwisko}`), `${nazwa} ${z} ${o.imie} ${o.nazwisko}`).toBe(false);
+          }
+        }
+      }
+    }
+    expect(osob).toBeGreaterThan(50000);
+  });
+
+  it('wymuszone nazwisko z listy (każdy w Przymorzu je nosi) nigdy nie łączy się z zakazanym imieniem', () => {
+    const lista = (imiona.zakazanePolaczenia ?? []).map((p) => p.split('|') as [string, string]);
+    const baza = generujObszar(przymorze, gdansk, kraj).budynki;
+    const trafienia = (t: TabeleImion, imie: string, nazwisko: string): number => {
+      const n = tabelaNazwisk([[nazwisko, nazwisko, 100]]);
+      let ile = 0;
+      for (const b of baza) {
+        const w = structuredClone(b);
+        nadajImiona(w, t, n, losDla('imiona', w.budynek.klucz, 'wymuszone', nazwisko));
+        ile += w.osoby.filter((o) => o.imie === imie && o.nazwisko === nazwisko).length;
+      }
+      return ile;
+    };
+    for (const [imie, nazwisko] of lista) expect(trafienia(imiona, imie, nazwisko), `${imie} ${nazwisko}`).toBe(0);
+    // bez listy Robert i Anna z wymuszonym nazwiskiem pojawiają się w Przymorzu wiele razy
+    const bezListy = { ...imiona, zakazanePolaczenia: [] };
+    expect(trafienia(bezListy, 'Robert', 'Lewandowski')).toBeGreaterThan(10);
+    expect(trafienia(bezListy, 'Anna', 'Lewandowska')).toBeGreaterThan(10);
+  });
+});
+
 // ---------------------------------------------------------------- generator z nazwami
 
 describe('generujBudynek i generujObszar z tabelami nazw (R36)', () => {

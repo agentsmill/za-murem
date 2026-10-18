@@ -136,6 +136,11 @@ export interface TabeleImion {
       literę v, x, q albo transliterację, albo co najmniej 500, gdy ma transliterację pewną (znak spoza polskich imion
       albo pisownia z listy). Liczba to ten przyrost. Nie występują w `koszykach`, a w `lata` od 2022 r. */
   przyjezdni: { M: ImieZLiczba[]; K: ImieZLiczba[] };
+  /** Połączenia imienia z nazwiskiem znanych żyjących osób („Anna|Lewandowska”, „Robert|Lewandowski”), których
+      generator nie nadaje: nazwisko jest za częste, żeby je wyciąć jak nazwiska polityków. Nazwisko w formie, którą
+      osoba nosi. Źródło: tools/dane/zakazane-polaczenia.txt (lista ręczna), posortowane. Tabela bez pola (starsze
+      pliki, testy) nie ma zakazów. */
+  zakazanePolaczenia?: string[];
 }
 
 /** Województwo (nazwa małymi literami, jak `TabeleGminy.woj`) → nazwa pliku bez rozszerzenia w
