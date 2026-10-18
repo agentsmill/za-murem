@@ -8,14 +8,16 @@
    - Czyste funkcje (testy w Node): `rzut` i `odwrotnie` (metry od adresu ↔ piksele płótna; x na wschód, y na południe,
      bez obrotu świata, jak `Miejsce`), `przybliz` (czynnik powyżej 1 przybliża, zakres 0,5–40 m/px, punkt pod kursorem
      stoi), `trafiony` (najbliższe miejsce w promieniu w pikselach), `kafelkiWidoku` (które kafelki zamówić),
-     `dolaczMiejsca` (okolica ma pierwszeństwo), `przytnijPamiec` (limit rysunków kafelków), `kartaMiejsca`
+     `dolaczMiejsca` (okolica ma pierwszeństwo), `przytnijPamiec` i `PamiecKafelkow` (pamięć kafelków), `kartaMiejsca`
      i `kartaHtml` (napisy w obu językach), `mapaMiastaSheet`, ikony kategorii `IKONY` (wzory 7×7 w palecie gry).
    - Kafelki: powyżej 8 m/px tło z=12 (`zKafelka` ściśle), z bliska z=14, ale tylko gdy widok potrzebuje najwyżej
      MAX_KAFELKOW_14 kafelków (duży ekran przy 6–8 m/px dostaje tło z=12), i tylko w kwadracie ZASIEG_MIASTA_M wokół
      adresu (dalej nie ma po co chodzić). Zdekodowany kafelek okno od razu przerabia na ścieżki Path2D i miejsca, po
      czym woła `KafelkiMiasta.zapomnij`, więc w pamięci zostają tylko ścieżki: najwyżej MAX_KAFELKOW_14 kafelków z=14
-     i MAX_RYSUNKOW_12 z=12, reszta wypada od najdawniej widzianych. Najwyżej MAX_W_TRAKCIE pobrań w toku, od środka
-     widoku, więc szybkie przesuwanie nie kolejkuje pobrań dla miejsc, których już nie widać.
+     i MAX_RYSUNKOW_12 z=12, reszta wypada od najdawniej widzianych, ale nigdy kafelki bieżącego widoku (na dalekiej
+     północy widok z daleka potrzebuje ponad 16 kafelków z=12; pamięć trzyma wtedy cały widok, zamiast pobierać go
+     w kółko). Najwyżej MAX_W_TRAKCIE pobrań w toku, od środka widoku, więc szybkie przesuwanie nie kolejkuje pobrań
+     dla miejsc, których już nie widać. Decyzje o pobieraniu i zapominaniu są w `PamiecKafelkow` (testy w Node).
    - Render postępowy: okno otwiera się od razu z okolicą (bez sieci) i tym, co już jest w pamięci, a kafelki dochodzą
      w tle i odświeżają widok. Nieudany kafelek nie jest ponawiany do następnego otwarcia okna; wtedy na mapie stoi
      napis „Reszta miasta się nie wczytała”. Nic nie rzuca i nic nie pisze na konsoli.
@@ -26,15 +28,15 @@
      do cna są przygaszone, a z daleka (koło osiedla mniejsze niż OSIEDLE_PX) miejsc z mapy osiedla nie ma wcale.
      Trafić można tylko w to, co narysowane.
    - Okno nie zmienia stanu gry ani zarządu: karta i przygaszanie tylko czytają `GovState` i `GovInput` (pauzę i powrót
-     do gry robi main.ts). Atrybucja map jest w stopce okna zawsze.
+     do gry robi main.ts). Czy można wysłać wyprawę i dlaczego nie, rozstrzyga `powodOdmowy` z src/gov/dzienne.ts, ta
+     sama co w `wyslijWyprawe`; karta dokłada tylko „miejsce na mapie osiedla”. Atrybucja map jest w stopce okna zawsze.
    Liczby w napisach po polsku z przecinkiem, po angielsku z kropką (`liczba`), z twardą spacją przed jednostką. Bez
    hypot, sin i cos (odległość palców przez Math.sqrt); nic stąd nie trafia do stanu. */
 
 import './miasto.css';
 import { L, type Lang, liczba, type Tx, tr, tx } from '../core/jezyk.ts';
-import { CARD_HOUR, MORNING } from '../gov/noc.ts';
+import { kiedyWraca, powodOdmowy } from '../gov/dzienne.ts';
 import type { GovInput, GovState, LootKey } from '../gov/typy.ts';
-import { clockOf } from '../gov/wspolne.ts';
 import { celZMiejsca, czasWyprawyMin, MAX_DROGA_M, ryzykoSlowem, zostaloZMiejsca } from '../gov/wyprawy.ts';
 import { C, css, mix, shade, WALLS } from '../render/art/palette.ts';
 import type { GeoPoi, Pt } from '../world/geo.ts';
@@ -71,8 +73,9 @@ export const M_NA_PIKSEL_MAX = 40;
 export const ZASIEG_MIASTA_M = MAX_DROGA_M + 1000;
 /** najwyżej tyle kafelków z=14 widok zamawia i trzyma w pamięci naraz (zdekodowany kafelek waży kilka MB) */
 export const MAX_KAFELKOW_14 = 24;
-/** najwyżej tyle kafelków tła z=12 w pamięci (całe miasto to kilka sztuk) */
-const MAX_RYSUNKOW_12 = 16;
+/** najwyżej tyle kafelków tła z=12 w pamięci (całe miasto to kilka sztuk; na dalekiej północy kafelek jest węższy i widok
+    potrzebuje ich więcej, wtedy pamięć trzyma cały widok, bo kafelków z bieżącego widoku nic nie wypiera) */
+export const MAX_RYSUNKOW_12 = 16;
 /** najwyżej tyle pobrań kafelków w toku z jednego okna */
 const MAX_W_TRAKCIE = 8;
 /** zapas wokół widoku w pikselach przy zamawianiu kafelków */
@@ -146,20 +149,84 @@ export function kafelkiWidoku(
 }
 
 /** Wyrzuca z pamięci rysunków kafelków (klucz → rysunek z poziomem `z`; kolejność wstawienia to kolejność ostatniego
-    użycia, najdawniej użyte pierwsze) te najdawniej użyte, które przekraczają limit swojego poziomu. Zwraca wyrzucone
-    klucze. Okno przenosi widoczne kafelki na koniec przy każdej klatce, więc wypadają te, których nie widać. */
-export function przytnijPamiec<T extends { z: number }>(mapa: Map<string, T>, limit: (z: number) => number): string[] {
+    użycia, najdawniej użyte pierwsze) te najdawniej użyte, które przekraczają limit swojego poziomu, ale nigdy kluczy
+    z `chronione` (kafelki bieżącego widoku): gdy sam widok potrzebuje więcej, pamięć chwilowo przekracza limit, zamiast
+    wypierać to, co zaraz trzeba by pobrać od nowa. Zwraca wyrzucone klucze. */
+export function przytnijPamiec<T extends { z: number }>(
+  mapa: Map<string, T>,
+  limit: (z: number) => number,
+  chronione: ReadonlySet<string> = new Set(),
+): string[] {
   const ile = new Map<number, number>();
   for (const r of mapa.values()) ile.set(r.z, (ile.get(r.z) ?? 0) + 1);
   const out: string[] = [];
   for (const [k, r] of mapa) {
     const n = ile.get(r.z) ?? 0;
-    if (n <= limit(r.z)) continue;
+    if (n <= limit(r.z) || chronione.has(k)) continue;
     mapa.delete(k);
     ile.set(r.z, n - 1);
     out.push(k);
   }
   return out;
+}
+
+/** Pamięć rysunków kafelków okna mapy i decyzje, co pobrać (bez DOM i sieci, więc z testami w Node; rysunek to dowolny
+    obiekt z poziomem `z`): rysunki po kluczu „z/x/y” w kolejności ostatniego użycia, pobrania w toku (najwyżej
+    MAX_W_TRAKCIE) i kafelki nieudane, których nie ponawia aż do `odNowa` (nowe otwarcie okna). Kafelki bieżącego widoku
+    (ostatnie `zamow`) nigdy nie wypadają, więc nic nie jest pobierane w kółko, nawet gdy widok potrzebuje więcej
+    kafelków niż limit poziomu. */
+export class PamiecKafelkow<R extends { z: number }> {
+  readonly rysunki = new Map<string, R>();
+  readonly wTrakcie = new Set<string>();
+  readonly nieudane = new Set<string>();
+  private widok: ReadonlySet<string> = new Set();
+
+  /** nowe otwarcie okna: kafelki, które się nie wczytały, można próbować od nowa */
+  odNowa(): void {
+    this.nieudane.clear();
+  }
+
+  /** Kafelki widoku na poziomie z (z `kafelkiWidoku`): zapamiętuje widok (chroniony przed wypadaniem), widoczne rysunki
+      przenosi na koniec kolejki do wypadania i zwraca brakujące do pobrania [x, y, klucz], od środka widoku, najwyżej
+      tyle, ile zostało miejsc w MAX_W_TRAKCIE; zwrócone są już w toku. */
+  zamow(z: number, kafelki: readonly [number, number][]): [number, number, string][] {
+    this.widok = new Set(kafelki.map(([x, y]) => `${z}/${x}/${y}`));
+    if (!kafelki.length) return [];
+    let sx = 0;
+    let sy = 0;
+    for (const [x, y] of kafelki) {
+      sx += x;
+      sy += y;
+    }
+    sx /= kafelki.length;
+    sy /= kafelki.length;
+    const brakujace: [number, number, string][] = [];
+    for (const [x, y] of kafelki) {
+      const k = `${z}/${x}/${y}`;
+      const r = this.rysunki.get(k);
+      if (r) {
+        // widziane teraz: na koniec kolejki do wypadania
+        this.rysunki.delete(k);
+        this.rysunki.set(k, r);
+      } else if (!this.wTrakcie.has(k) && !this.nieudane.has(k)) brakujace.push([x, y, k]);
+    }
+    brakujace.sort((p, q) => (p[0] - sx) ** 2 + (p[1] - sy) ** 2 - ((q[0] - sx) ** 2 + (q[1] - sy) ** 2));
+    const out = brakujace.slice(0, Math.max(0, MAX_W_TRAKCIE - this.wTrakcie.size));
+    for (const t of out) this.wTrakcie.add(t[2]);
+    return out;
+  }
+
+  /** Wynik pobrania kafelka `k`: rysunek albo null (porażka, bez ponawiania do `odNowa`); potem pamięć przycięta do
+      limitów poziomów bez ruszania bieżącego widoku. */
+  przyszedl(k: string, r: R | null): void {
+    this.wTrakcie.delete(k);
+    if (!r) {
+      this.nieudane.add(k);
+      return;
+    }
+    this.rysunki.set(k, r);
+    przytnijPamiec(this.rysunki, (z) => (z === 12 ? MAX_RYSUNKOW_12 : MAX_KAFELKOW_14), this.widok);
+  }
 }
 
 /** ten sam punkt pod innym kluczem: ta sama kategoria i klucz najwyżej tyle pikseli z=14 obok na każdej osi (klucz
@@ -237,9 +304,8 @@ const czas = (min: number): string => {
 
 /** Karta miejsca dla stanu zarządu `st` i wejścia `i`: kategoria i nazwa, odległość i czas drogi, ryzyko słowem, co tam
     zwykle jest, ile zostało („nietknięte”, „ktoś tu był”, „wybrane do cna”), kiedy byliście ostatnio, wyprawa w drodze.
-    Nie można, gdy mapa miasta jest wyłączona, miejsce leży na mapie osiedla, dalej niż MAX_DROGA_M, nic w nim nie
-    zostało, ktoś już tam idzie albo jest po zmroku (jak `wyslijWyprawe`); `powod` mówi, co pierwsze stoi na drodze.
-    Nic nie zmienia. */
+    Czy można i dlaczego nie, mówi `powodOdmowy` z src/gov/dzienne.ts (to samo co przy wysłaniu, bez sprawdzania osób);
+    karta dokłada tylko jedno: miejsce na mapie osiedla nie jest celem wyprawy. Nic nie zmienia. */
 export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsca {
   const cel = celZMiejsca(m);
   const linie: Tx[] = [];
@@ -298,30 +364,18 @@ export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsc
   } else linie.push(tx('Jeszcze tu nie byliście.', 'You have not been here yet.'));
   const wDrodze = st.wyprawy?.find((w) => w.cel.klucz === m.klucz);
   if (wDrodze) {
-    const kiedy = clockOf({ hour: Math.floor((wDrodze.powrot % 1440) / 60), minute: wDrodze.powrot % 60 });
-    const jutro = Math.floor(wDrodze.powrot / 1440) + 1 > i.day;
-    linie.push(
-      tx(
-        `Wyprawa jest w drodze, powrót ${jutro ? 'jutro o' : 'około'} ${kiedy}.`,
-        `A supply run is on its way, back ${jutro ? 'tomorrow at' : 'around'} ${kiedy}.`,
-      ),
-    );
+    const kiedy = kiedyWraca(wDrodze.powrot, i.day);
+    linie.push(tx(`Wyprawa jest w drodze, powrót ${kiedy.pl}.`, `A supply run is on its way, back ${kiedy.en}.`));
   }
-  let powod: Tx | undefined;
-  if (!st.miasto) powod = tx('Mapa miasta nie jest włączona.', 'The city map is not switched on.');
-  else if (naMapieLokalnej(m))
-    powod = tx(
-      'To miejsce jest na mapie osiedla: tam chodzi się pieszo, bez wyprawy.',
-      'This place is on your estate map: you can walk there, no supply run needed.',
-    );
-  else if (m.odl > MAX_DROGA_M) powod = tx('Za daleko na jeden dzień.', 'Too far for one day.');
-  else if (zostalo <= 0) powod = tx('To miejsce jest wybrane do cna.', 'This place has been picked clean.');
-  else if (wDrodze) powod = tx('Ktoś już tam idzie.', 'Somebody is already on the way there.');
-  else if (i.hour >= CARD_HOUR || i.hour < MORNING)
-    powod = tx(
-      `Po zmroku nikt nie wychodzi. Wyprawy ruszają między ${MORNING}:00 a ${CARD_HOUR}:00.`,
-      `Nobody sets out after dark. Supply runs leave between ${MORNING}:00 and ${CARD_HOUR}:00.`,
-    );
+  // zasady wysyłki są tylko w zarządzie (te same, co sprawdzi wysłanie); karta dokłada jedno swoje: mapa osiedla
+  const powod =
+    powodOdmowy(st, i, cel) ??
+    (naMapieLokalnej(m)
+      ? tx(
+          'To miejsce jest na mapie osiedla: tam chodzi się pieszo, bez wyprawy.',
+          'This place is on your estate map: you can walk there, no supply run needed.',
+        )
+      : null);
   return { tytul: cel.nazwa, linie, mozna: !powod, ...(powod ? { powod } : {}) };
 }
 
@@ -591,11 +645,8 @@ export class MapaMiasta {
   wybrane: string | null = null;
   private readonly zr: ZrodloMapy;
   private readonly rzutK: ReturnType<typeof rzutKafelkaZ>;
-  /** klucz „z/x/y” → rysunek; kolejność to kolejność ostatniego użycia (najdawniej pierwsze) */
-  private readonly rysunki = new Map<string, Rysunek>();
-  private readonly wTrakcie = new Set<string>();
-  /** kafelki, które się nie wczytały od otwarcia okna (bez ponawiania do następnego otwarcia) */
-  private readonly nieudane = new Set<string>();
+  /** rysunki kafelków, pobrania w toku i nieudane (bez ponawiania do następnego otwarcia okna) */
+  private readonly pamiec = new PamiecKafelkow<Rysunek>();
   private readonly miejsca = new Map<string, Miejsce>();
   private lista: Miejsce[] = [];
   private z = 14;
@@ -642,7 +693,7 @@ export class MapaMiasta {
     this.o = o;
     this.stanEl = el.querySelector<HTMLElement>('[data-miasto-stan]');
     this.kartaEl = el.querySelector<HTMLElement>('[data-miasto-karta]');
-    this.nieudane.clear();
+    this.pamiec.odNowa();
     cv.addEventListener('pointerdown', this.naDol);
     cv.addEventListener('pointermove', this.naRuch);
     cv.addEventListener('pointerup', this.naGore);
@@ -717,15 +768,16 @@ export class MapaMiasta {
   }
 
   stan(): StanMapy {
+    const p = this.pamiec;
     let z12 = 0;
-    for (const r of this.rysunki.values()) if (r.z === 12) z12++;
+    for (const r of p.rysunki.values()) if (r.z === 12) z12++;
     return {
       otwarta: !!this.el,
       widok: this.widok ? { ...this.widok } : null,
       z: this.z,
-      rysunki: { z12, z14: this.rysunki.size - z12 },
-      wTrakcie: this.wTrakcie.size,
-      brak: this.nieudane.size,
+      rysunki: { z12, z14: p.rysunki.size - z12 },
+      wTrakcie: p.wTrakcie.size,
+      brak: p.nieudane.size,
       miejsca: this.miejsca.size,
       znaki: this.znaki,
       kropki: this.kropki,
@@ -783,63 +835,39 @@ export class MapaMiasta {
     const el = this.stanEl;
     if (!el) return;
     let t = '';
-    if (!this.zr.kafelki || this.nieudane.size)
+    if (!this.zr.kafelki || this.pamiec.nieudane.size)
       t = L('Reszta miasta się nie wczytała.', 'The rest of the city didn’t load.');
-    else if (this.wTrakcie.size) t = L('Wczytuję mapę…', 'Loading the map…');
+    else if (this.pamiec.wTrakcie.size) t = L('Wczytuję mapę…', 'Loading the map…');
     else if (this.z === 12)
       t = L('Przybliżcie, żeby zobaczyć budynki i więcej miejsc.', 'Zoom in to see buildings and more places.');
     if (el.textContent !== t) el.textContent = t;
     el.hidden = !t;
   }
 
-  /** zamawia brakujące kafelki widoku (od środka, najwyżej MAX_W_TRAKCIE w toku) i odświeża kolejność użycia */
+  /** zamawia brakujące kafelki widoku (decyzje w `PamiecKafelkow`) i zaczyna ich pobieranie */
   private zamow(): void {
     const w = this.widok;
     if (!w) return;
     const { z, kafelki } = kafelkiWidoku(this.zr.c, w, this.szer, this.wys);
     this.z = z;
-    if (!kafelki.length) return;
-    let sx = 0;
-    let sy = 0;
-    for (const [x, y] of kafelki) {
-      sx += x;
-      sy += y;
-    }
-    sx /= kafelki.length;
-    sy /= kafelki.length;
-    const brakujace: [number, number, string][] = [];
-    for (const [x, y] of kafelki) {
-      const k = `${z}/${x}/${y}`;
-      const r = this.rysunki.get(k);
-      if (r) {
-        // widziane teraz: na koniec kolejki do wypadania
-        this.rysunki.delete(k);
-        this.rysunki.set(k, r);
-      } else if (!this.wTrakcie.has(k) && !this.nieudane.has(k)) brakujace.push([x, y, k]);
-    }
-    if (!this.zr.kafelki) return;
-    brakujace.sort((p, q) => (p[0] - sx) ** 2 + (p[1] - sy) ** 2 - ((q[0] - sx) ** 2 + (q[1] - sy) ** 2));
-    for (const [x, y, k] of brakujace) {
-      if (this.wTrakcie.size >= MAX_W_TRAKCIE) break;
-      this.wczytaj(this.zr.kafelki, z, x, y, k);
-    }
+    const k = this.zr.kafelki;
+    if (!k) return;
+    for (const [x, y, klucz] of this.pamiec.zamow(z, kafelki)) this.wczytaj(k, z, x, y, klucz);
   }
 
   private wczytaj(kafelki: KafelkiMiasta, z: number, x: number, y: number, k: string): void {
-    this.wTrakcie.add(k);
     void kafelki.daj(z, x, y).then((T) => {
-      this.wTrakcie.delete(k);
+      let r: Rysunek | null = null;
       try {
-        if (!T) this.nieudane.add(k);
-        else {
-          this.rysunki.set(k, rysunekKafelka(T, this.rzutK));
+        if (T) {
+          r = rysunekKafelka(T, this.rzutK);
           if (z === 14 && dolaczMiejsca(this.miejsca, miejscaZPoi(poiZKafelkow([T], this.zr.c), this.zr.nazwa)))
             this.lista = [...this.miejsca.values()].sort((p, q) => p.odl - q.odl);
-          przytnijPamiec(this.rysunki, (z) => (z === 12 ? MAX_RYSUNKOW_12 : MAX_KAFELKOW_14));
         }
       } catch {
-        this.nieudane.add(k);
+        r = null;
       }
+      this.pamiec.przyszedl(k, r);
       // zdekodowany kafelek nie jest już potrzebny: zostaje rysunek i miejsca
       kafelki.zapomnij(z, x, y);
       this.odswiezStan();
@@ -866,7 +894,7 @@ export class MapaMiasta {
     };
     const tlo: Rysunek[] = [];
     const blisko: Rysunek[] = [];
-    for (const r of this.rysunki.values()) if (widac(r)) (r.z === 14 ? blisko : tlo).push(r);
+    for (const r of this.pamiec.rysunki.values()) if (widac(r)) (r.z === 14 ? blisko : tlo).push(r);
     const s = dpr / w.mNaPiksel;
     ctx.setTransform(s, 0, 0, s, (dpr * szer) / 2 - w.cx * s, (dpr * wys) / 2 - w.cy * s);
     // tło z=12 tylko tam, gdzie nie ma kafelka z=14: uogólnione drogi i woda nie dublują się z dokładnymi

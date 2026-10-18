@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Lang, type Tx, ustawJezyk } from '../../src/core/jezyk.ts';
+import { wyslijWyprawe } from '../../src/gov/dzienne.ts';
 import type { GovInput, GovState } from '../../src/gov/typy.ts';
 import { celZMiejsca, czasWyprawyMin, MAX_DROGA_M, wlaczMiasto, zostaloZMiejsca } from '../../src/gov/wyprawy.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
@@ -20,8 +21,10 @@ import {
   M_NA_PIKSEL_MAX,
   M_NA_PIKSEL_MIN,
   MAX_KAFELKOW_14,
+  MAX_RYSUNKOW_12,
   mapaMiastaSheet,
   odwrotnie,
+  PamiecKafelkow,
   przybliz,
   przytnijPamiec,
   rzut,
@@ -50,8 +53,8 @@ const miejsce = (klucz: string, kat: string, x: number, y: number, nazwa = ''): 
 });
 
 /** miejsce z zapasem co najmniej `min` (pierwszy klucz, który go ma) */
-function zZapasem(kat: string, x: number, y: number, min = 4): Miejsce {
-  for (let k = 0; k < 500; k++) {
+function zZapasem(kat: string, x: number, y: number, min = 4, od = 0): Miejsce {
+  for (let k = od; k < od + 500; k++) {
     const m = miejsce(`poi:${k}:7`, kat, x, y);
     const z = celZMiejsca(m).zapas;
     if (z !== null && z >= min) return m;
@@ -249,6 +252,77 @@ describe('przytnijPamiec', () => {
     expect([...mapa.values()].filter((x) => x.z === 12).length).toBe(4);
     expect(przytnijPamiec(mapa, limit)).toEqual([]);
   });
+
+  it('kafelki bieżącego widoku nigdy nie wypadają, nawet ponad limit', () => {
+    const mapa = new Map<string, { z: number }>();
+    for (let k = 0; k < 10; k++) mapa.set(`12/${k}/0`, { z: 12 });
+    const widok = new Set(['12/0/0', '12/1/0', '12/2/0', '12/3/0', '12/4/0', '12/5/0']);
+    expect(przytnijPamiec(mapa, () => 4, widok)).toEqual(['12/6/0', '12/7/0', '12/8/0', '12/9/0']);
+    expect([...mapa.keys()]).toEqual([...widok]);
+  });
+});
+
+describe('PamiecKafelkow (decyzje okna: co pobrać, co zapomnieć)', () => {
+  // daleka północ: kafelek z=12 jest tam wąski, więc kwadrat miasta potrzebuje ich więcej niż limit pamięci
+  const POLNOC: [string, LatLon][] = [
+    ['Tromsø', [69.6492, 18.9553]],
+    ['Longyearbyen', [78.2232, 15.6267]],
+  ];
+  for (const [nazwa, c] of POLNOC)
+    it(`${nazwa}: całe miasto z daleka ponad limit z=12; nic widocznego nie wypada, każdy kafelek pobiera się raz`, () => {
+      const { z, kafelki } = kafelkiWidoku(c, { cx: 0, cy: 0, mNaPiksel: M_NA_PIKSEL_MAX }, 2560, 1440);
+      expect(z).toBe(12);
+      expect(kafelki.length).toBeGreaterThan(MAX_RYSUNKOW_12);
+      const p = new PamiecKafelkow<{ z: number }>();
+      let pobrania = 0;
+      // jak w oknie: każda klatka zamawia widok, kafelki przychodzą po jednym, a każde przyjście to nowa klatka
+      for (let klatka = 0; klatka < 10 * kafelki.length; klatka++) {
+        pobrania += p.zamow(z, kafelki).length;
+        const [k] = p.wTrakcie;
+        if (k) p.przyszedl(k, { z });
+      }
+      expect(pobrania).toBe(kafelki.length);
+      expect(p.wTrakcie.size).toBe(0);
+      for (const [x, y] of kafelki) expect(p.rysunki.has(`${z}/${x}/${y}`)).toBe(true);
+    });
+
+  it('najwyżej MAX_W_TRAKCIE pobrań naraz, od środka widoku; po przesunięciu widoku wypadają niewidoczne do limitu', () => {
+    const kafelki: [number, number][] = [];
+    for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) kafelki.push([100 + x, 200 + y]);
+    const p = new PamiecKafelkow<{ z: number }>();
+    const pierwsze = p.zamow(12, kafelki);
+    expect(pierwsze.length).toBeLessThan(kafelki.length);
+    expect(pierwsze[0]).toEqual([102, 202, '12/102/202']);
+    // nic nowego, póki wszystkie miejsca w toku zajęte
+    expect(p.zamow(12, kafelki)).toEqual([]);
+    for (let n = 0; n < 100 && (p.wTrakcie.size || p.rysunki.size < kafelki.length); n++) {
+      for (const k of [...p.wTrakcie]) p.przyszedl(k, { z: 12 });
+      p.zamow(12, kafelki);
+    }
+    expect(p.rysunki.size).toBe(kafelki.length);
+    // inny widok: stare kafelki wypadają do limitu, nowe zostają
+    const inne: [number, number][] = [
+      [500, 500],
+      [501, 500],
+    ];
+    for (const [x, y, k] of p.zamow(12, inne)) {
+      expect(`12/${x}/${y}`).toBe(k);
+      p.przyszedl(k, { z: 12 });
+    }
+    expect(p.rysunki.size).toBe(MAX_RYSUNKOW_12);
+    expect(p.rysunki.has('12/500/500') && p.rysunki.has('12/501/500')).toBe(true);
+  });
+
+  it('nieudany kafelek nie jest ponawiany aż do odNowa', () => {
+    const p = new PamiecKafelkow<{ z: number }>();
+    const kafelki: [number, number][] = [[7, 7]];
+    const [[, , k]] = p.zamow(14, kafelki);
+    p.przyszedl(k, null);
+    expect(p.nieudane.has(k)).toBe(true);
+    expect(p.zamow(14, kafelki)).toEqual([]);
+    p.odNowa();
+    expect(p.zamow(14, kafelki).map((t) => t[2])).toEqual([k]);
+  });
 });
 
 describe('dolaczMiejsca', () => {
@@ -418,6 +492,33 @@ describe('kartaMiejsca', () => {
     const wyl = kartaMiejsca(m, bez, i);
     expect(wyl.mozna).toBe(false);
     dwaJezyki(wyl);
+  });
+
+  it('powód odmowy na karcie jest tym samym, który dałaby wyslijWyprawe (także daleki cel nocą)', () => {
+    const { st, i } = gra();
+    const [a, b] = i.people.map((p) => p.id);
+    const bliski = zZapasem('apteka', 600, 0);
+    const daleki = zZapasem('apteka', MAX_DROGA_M + 300, 0);
+    const pusty = pusteOdLat('bank', 900, 0);
+    const wDrodze = zZapasem('sklep', 0, 800, 4, 1000);
+    st.wyprawy = [{ id: 1, cel: celZMiejsca(wDrodze), ids: [a], wyjscie: 600, powrot: 2000 }];
+    const przypadki: [Miejsce, GovState, GovInput][] = [
+      [bliski, newGov(7), i],
+      [bliski, st, { ...i, hour: 21 }],
+      [daleki, st, { ...i, hour: 21 }],
+      [daleki, st, { ...i, hour: 4 }],
+      [daleki, st, i],
+      [pusty, st, i],
+      [pusty, st, { ...i, hour: 22 }],
+      [wDrodze, st, i],
+      [bliski, st, i],
+    ];
+    for (const [m, s0, wej] of przypadki) {
+      const k = kartaMiejsca(m, s0, wej);
+      const w = wyslijWyprawe(structuredClone(s0), wej, celZMiejsca(m), [b]);
+      expect(k.powod ?? null, `${m.klucz} o ${wej.hour}`).toEqual(w.ok ? null : w.why);
+      expect(k.mozna).toBe(w.ok);
+    }
   });
 
   it('nie zmienia stanu zarządu ani wejścia', () => {

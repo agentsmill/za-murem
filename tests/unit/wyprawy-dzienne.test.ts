@@ -4,7 +4,7 @@
    a pełne przebiegi idą przez `run`. */
 
 import { describe, expect, it } from 'vitest';
-import { podgladWyprawy, wyprawyTick, wyslijWyprawe } from '../../src/gov/dzienne.ts';
+import { kiedyWraca, podgladWyprawy, powodOdmowy, wyprawyTick, wyslijWyprawe } from '../../src/gov/dzienne.ts';
 import { canGo, makeCard } from '../../src/gov/noc.ts';
 import type { GovEffects, GovInput, GovState } from '../../src/gov/typy.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
@@ -172,6 +172,85 @@ describe('wyslijWyprawe: odmowy', () => {
     odmowa(st, wej(2, 21), cel(), idy(1));
     odmowa(st, wej(2, 10), cel(), []);
     expect(st.rng.s).toBe(s);
+  });
+});
+
+describe('powodOdmowy: jedno źródło zasad wysyłki (wyslijWyprawe i karta miejsca)', () => {
+  /** wysłanie na kopii stanu: powód odmowy albo null, gdy wyprawa wyszła */
+  const powodWysylki = (st: GovState, i: GovInput, c: Cel, ids: string[]) => {
+    const w = wyslijWyprawe(structuredClone(st), i, c, ids);
+    return w.ok ? null : w.why;
+  };
+
+  it('z osobami daje dokładnie to, co wyslijWyprawe, w tej samej kolejności', () => {
+    const atr = new Atrapa(SEED);
+    const [a, b] = idy(2, atr);
+    const st = nowy();
+    const wDrodze = cel('apteka', 100, 3000);
+    st.wyprawy = [{ id: 1, cel: wDrodze, ids: [a], wyjscie: 600, powrot: 900 }];
+    const pusty = cel('bank', 400, 5000);
+    st.miasto!.zabrano[pusty.klucz] = pusty.zapas!;
+    const daleki = cel('apteka', MAX_DROGA_M + 1);
+    const przypadki: [GovState, GovInput, Cel, string[]][] = [
+      [newGov(SEED), wej(2, 10, 0, atr), cel(), [b]],
+      [st, wej(2, 21, 0, atr), cel(), [b]],
+      [st, wej(2, 21, 0, atr), daleki, [b]],
+      [st, wej(2, 10, 0, atr), daleki, [b]],
+      [st, wej(2, 10, 0, atr), pusty, [b]],
+      [st, wej(2, 10, 0, atr), cel(), []],
+      [st, wej(2, 10, 0, atr), cel(), ['nikt']],
+      [st, wej(2, 10, 0, atr), cel(), [a]],
+      [st, wej(2, 10, 0, atr), wDrodze, [b]],
+      [st, wej(2, 10, 0, atr), wDrodze, [a]],
+      [st, wej(2, 10, 0, atr), cel(), [b]],
+    ];
+    const powody = przypadki.map(([s0, i, c, ids]) => {
+      const przed = JSON.stringify(s0);
+      const p = powodOdmowy(s0, i, c, ids);
+      expect(JSON.stringify(s0)).toBe(przed);
+      expect(p).toEqual(powodWysylki(s0, i, c, ids));
+      return p;
+    });
+    // każdy przypadek poza ostatnim to inna odmowa, ostatni wolno
+    expect(powody.at(-1)).toBeNull();
+    expect(powody.slice(0, -1).every((p) => p !== null)).toBe(true);
+    // daleki cel nocą: najpierw pora, nie odległość
+    expect(powody[2]).toEqual(powody[1]);
+    // osoba w innej wyprawie do tego klucza: najpierw osoba, potem klucz
+    expect(powody[9]?.pl).toMatch(/jest już na wyprawie/);
+    expect(powody[8]?.pl).toMatch(/Ktoś już tam idzie/);
+  });
+
+  it('bez osób (karta miejsca) sprawdza tylko miejsce i porę, a odmowy ma te same co z osobami', () => {
+    const st = nowy();
+    const [a] = idy(1);
+    expect(powodOdmowy(st, wej(2, 10), cel(), undefined)).toBeNull();
+    // osoby nie są sprawdzane: pusta lista daje odmowę dopiero z `ids`
+    expect(powodOdmowy(st, wej(2, 10), cel())).toBeNull();
+    expect(powodOdmowy(st, wej(2, 10), cel(), [])).not.toBeNull();
+    for (const [i, c] of [
+      [wej(2, 21), cel()],
+      [wej(2, 10), cel('apteka', MAX_DROGA_M + 10)],
+    ] as const)
+      expect(powodOdmowy(st, i, c)).toEqual(powodOdmowy(st, i, c, [a]));
+  });
+});
+
+describe('kiedyWraca', () => {
+  it('ten sam dzień: „około”, następny dzień i dalej: „jutro o”, godzina z minutą gry', () => {
+    expect(kiedyWraca(1440 + 16 * 60 + 20, 2)).toEqual({ pl: 'około 16:20', en: 'around 16:20' });
+    expect(kiedyWraca(2 * 1440 + 6 * 60 + 5, 2)).toEqual({ pl: 'jutro o 06:05', en: 'tomorrow at 06:05' });
+  });
+
+  it('wpis w kronice po wysłaniu używa tego samego napisu', () => {
+    const st = nowy();
+    const i = wej(2, 10);
+    const w = wyslijWyprawe(st, i, cel('apteka', 400), idy(1));
+    if (!w.ok) throw new Error('odmowa');
+    const k = kiedyWraca(w.powrot, i.day);
+    const wpis = st.log.at(-1)!.txt;
+    expect(wpis.pl).toContain(`powrót ${k.pl}.`);
+    expect(wpis.en).toContain(`back ${k.en}.`);
   });
 });
 
