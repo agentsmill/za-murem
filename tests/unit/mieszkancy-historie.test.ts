@@ -891,6 +891,30 @@ describe('generuj: historie w generatorze (R49)', () => {
     }
   });
 
+  it('kronikaObszaru bez tabel gminy: ziarno to klucz budynku najbliższego środkowi mapy, nie pusty napis', () => {
+    const teksty = new Set<string>();
+    for (const d of DEMA) {
+      const budynki = budynkiObszaru(d.geo, null, kraj);
+      const kx = 111320 * Math.cos((d.geo.c[0] * Math.PI) / 180);
+      const odl = (b: Budynek): number => Math.hypot((b.lon - d.geo.c[1]) * kx, (d.geo.c[0] - b.lat) * 110574);
+      const najblizszy = [...budynki].sort((a, b) => odl(a) - odl(b))[0];
+      expect(najblizszy.rejon).toBe('');
+      const k = kronikaObszaru(d.geo, budynki, imiona);
+      expect(k).toEqual(kronika(d.geo, budynki, zbiorImion(imiona), najblizszy.klucz));
+      // wpisy o kablach i ogólne (bez miejsca) zależą tylko od ziarna: przy pustym ziarnie byłyby w każdym demie te same
+      teksty.add(JSON.stringify(k.filter((w) => !w.miejsce).map((w) => [w.rok, w.tekst])));
+    }
+    expect(teksty.size).toBe(DEMA.length);
+  });
+
+  it('kronikaObszaru bez budynków: ziarno ze środka mapy zaokrąglonego do 3 miejsc, różne dla różnych adresów', () => {
+    const pusta = (c: [number, number]): Geo => ({ c, b: [], r: [], a: [], w: [], poi: [] });
+    const a = kronikaObszaru(pusta([54.4093, 18.5991]), [], imiona);
+    expect(a).toEqual(kronika(pusta([54.4093, 18.5991]), [], zbiorImion(imiona), 'c:54.409,18.599'));
+    const b = kronikaObszaru(pusta([52.1446, 21.0579]), [], imiona);
+    expect(JSON.stringify(b)).not.toBe(JSON.stringify(a));
+  });
+
   it('cały obszar dema z historiami w Node poniżej 1500 ms (cel 200 ms, mediana z 3)', () => {
     for (const d of DEMA) {
       const czasy: number[] = [];
