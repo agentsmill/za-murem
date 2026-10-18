@@ -1997,6 +1997,8 @@ const SHOTS: Shot[] = [
         zm.setCam((core[0].x + core[1].x) / 2, (core[0].y + core[1].y) / 2, 3.4);
       });
       await waitIdle(page);
+      // kto położył się na podłodze, kładzie się z animacji PixelLab: gra na pauzie stoi w czasie, więc przewijamy
+      await przewin(page, 1.5);
       const rodzaje = await page.evaluate(() => {
         const zm = window.zm!;
         return zm
@@ -2066,6 +2068,8 @@ const SHOTS: Shot[] = [
       }, start);
       console.log(`  zwłoki: ${rzad}`);
       await waitIdle(page);
+      // zwłoki członka zarządu, który zginął podczas gry, upadają (animacja z PixelLab): przewijamy, aż zostaną na ostatniej klatce
+      await przewin(page, 1.5);
       // zwłoki członka zarządu mają teksturę postaci, którą ten sam człowiek gra za życia
       const zgodne = await page.evaluate(() => {
         const zm = window.zm!;
@@ -2073,18 +2077,127 @@ const SHOTS: Shot[] = [
         const v = zm.view as unknown as {
           ludzie: null | {
             dane: { postacPionka(p: unknown, o: unknown): unknown };
-            lezenie(p: unknown, w: number, o: number, r: string): { tex: unknown } | null;
+            zwloki(p: unknown, dir: number, w: number): { tex: unknown } | null;
           };
           corpseSprites: Map<number, { texture: unknown }>;
         };
         // z --kod (?grafika=kod) warstwy PixelLab nie ma, a zwłoki są z kodu
         if (!v.ludzie) return true;
         const p0 = st.pawns.find((p) => p.kind === 'core')!;
-        const tex = v.ludzie.lezenie(v.ludzie.dane.postacPionka(p0, st.people), 0, 993008 & 3, 'floor')!.tex;
-        return v.corpseSprites.get(993008)!.texture === tex;
+        const postac = v.ludzie.dane.postacPionka(p0, st.people);
+        // upadek skończył się na ostatniej klatce w kierunku, w którym patrzył zmarły (jedna z czterech)
+        const tekstury = [0, 1, 2, 3].map((d) => v.ludzie!.zwloki(postac, d, 0)!.tex);
+        return tekstury.includes(v.corpseSprites.get(993008)!.texture);
       });
       if (!zgodne) throw new Error('zwłoki członka zarządu nie mają jego postaci');
     },
+  },
+  {
+    // upadek przy śmierci z PixelLab: czterech z zarządu w czterech kierunkach (zachód, południe, północ, wschód), każdy
+    // w siedmiu klatkach upadku obok siebie (zwłoki zamrożone w kolejnych klatkach animacji, od stania po leżenie);
+    // z --kod to samo ze zwłok z kodu, do porównania
+    name: 'kotwica-upadek',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      const start = await wolnyBlok(page, 15, 9);
+      if (!start) throw new Error('nie ma wolnego bloku 15 × 9 kafelków na upadki');
+      const wynik = await page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const core = st.pawns.filter((p) => p.kind === 'core');
+        // postacie zarządu po płci i wieku: emeryt, emerytka, złota rączka, młoda; kierunki zachód, południe, północ, wschód
+        const osoby = [
+          { f: false, age: 70 },
+          { f: true, age: 70 },
+          { f: false, age: 30 },
+          { f: true, age: 25 },
+        ];
+        const kierunki = [2, 0, 1, 3] as const;
+        core.forEach((p, k) => {
+          Object.assign(st.people[p.person], osoby[k]);
+          p.dir = kierunki[k];
+        });
+        (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+        return core.map((p) => p.person);
+      });
+      // widok zapamiętuje kierunek zarządu z klatki, więc zwłoki dostają go dopiero po niej
+      await frames(page, 3);
+      const ids = await page.evaluate(
+        ([x0, y0, osoby]) => {
+          const zm = window.zm!;
+          const st = zm.sim!.st;
+          const dead = st.dead!;
+          const ids: number[][] = [];
+          osoby.forEach((osoba, k) => {
+            dead.push({
+              id: st.people[osoba].id,
+              name: st.people[osoba].name,
+              look: k,
+              kind: 'core',
+              tick: st.tick,
+              cause: 'rany',
+            });
+            ids.push([]);
+            for (let c = 0; c < 7; c++) {
+              const id = 994000 + k * 10 + c;
+              ids[k].push(id);
+              st.things.push({
+                id,
+                kind: 'zwloki',
+                x: x0 + 2 * c,
+                y: y0 + 2 * k,
+                w: 1,
+                h: 1,
+                rot: 0,
+                n: k,
+                fuel: 0,
+                by: -1,
+                owner: -1,
+                dead: dead.length - 1,
+              });
+            }
+          });
+          zm.setCam(x0 + 6.5, y0 + 3.5, 2.2);
+          return ids;
+        },
+        [start[0], start[1], wynik] as const,
+      );
+      await frames(page, 3);
+      // zamrażamy kolejne klatki upadku: zwłoki o numerze c w kolumnie c pokazują c-tą klatkę (10 klatek na sekundę gry)
+      const zamrozone = await page.evaluate((ids) => {
+        const v = window.zm!.view as unknown as { upadki: Map<number, { start: number }> };
+        let n = 0;
+        for (const rzad of ids)
+          rzad.forEach((id, c) => {
+            const u = v.upadki.get(id);
+            if (!u) return;
+            u.start -= (c + 0.5) / 10;
+            n++;
+          });
+        return n;
+      }, ids);
+      console.log(`  upadki zamrożone: ${zamrozone}`);
+      // z grafiką: 4 × 7 upadków w toku; z --kod żadnego (zwłoki z kodu)
+      if (!KOD && zamrozone !== 28) throw new Error(`zamrożonych upadków ${zamrozone} zamiast 28`);
+      if (KOD && zamrozone !== 0) throw new Error(`z --kod upadków ${zamrozone} zamiast 0`);
+      await frames(page, 3);
+    },
+  },
+  {
+    // wstawanie z PixelLab: czterech z zarządu leży na podłodze (zachód i wschód głową w prawo i w lewo, południe i
+    // północ na zmianę), każdy budzi się w innej fazie wstawania (klatki 0 do 3 z 5); z --kod to samo z kodu
+    name: 'kotwica-wstawanie',
+    query: '',
+    run: async (page, base) => przejsciaPionkow(page, base, 'wstawanie'),
+  },
+  {
+    // kładzenie się z PixelLab: czterech z zarządu kładzie się na podłodze, każdy w innej fazie (animacja wstawania od
+    // końca, od stania do półsiadu); z --kod to samo z kodu
+    name: 'kotwica-kladzenie',
+    query: '',
+    run: async (page, base) => przejsciaPionkow(page, base, 'kladzenie'),
   },
   {
     // nakładka broni na klatkach ciosu z PixelLab: czterech z zarządu w rzędzie, każdy w innej klatce walki: zamach kijem
@@ -6366,6 +6479,131 @@ async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
     [where, step] as const,
   );
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+/** przesuwa zegar gry o `sekundy` (20 ticków na sekundę) bez kroków symulacji, żeby przejścia widoku (kładzenie się,
+    wstawanie, upadek) zdążyły się skończyć przy grze na pauzie: ich czas to czas gry, a na pauzie nie płynie. Kroków
+    symulacji nie robimy, bo pionki ze scenariusza budziłyby się (praca snu kończy się za dnia); potem dwie klatki widoku */
+async function przewin(page: Page, sekundy: number) {
+  await page.evaluate((s) => {
+    window.zm!.sim!.st.tick += Math.round(s * 20);
+  }, sekundy);
+  await frames(page, 2);
+}
+
+/** wolny blok w × h kafelków najbliżej siedziby (jak wolnyRzad, ale na kilka rzędów) albo null */
+async function wolnyBlok(page: Page, w: number, h: number): Promise<[number, number] | null> {
+  return page.evaluate(
+    ([w, h]) => {
+      const sim = window.zm!.sim!;
+      const st = sim.st;
+      const size = sim.w.size;
+      const b = sim.w.buildings[sim.w.hq];
+      const cx = Math.round((b.x0 + b.x1) / 2);
+      const cy = Math.round((b.y0 + b.y1) / 2);
+      const wolny = (x: number, y: number) =>
+        !sim.blocked[y * size + x] && !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+      let najlepszy: [number, number] | null = null;
+      let najblizej = 1e9;
+      for (let y = cy - 30; y <= cy + 30; y++)
+        for (let x = cx - 30; x <= cx + 14; x++) {
+          const d = Math.hypot(x + w / 2 - cx, y + h / 2 - cy);
+          if (d >= najblizej) continue;
+          let ok = true;
+          for (let j = 0; j < h && ok; j++) for (let i = 0; i < w && ok; i++) ok = wolny(x + i, y + j);
+          if (ok) {
+            najblizej = d;
+            najlepszy = [x, y];
+          }
+        }
+      return najlepszy;
+    },
+    [w, h] as const,
+  );
+}
+
+/**
+ * Czterech z zarządu w rzędzie co dwa kafelki, każdy w innej fazie kładzenia się albo wstawania na podłodze (fazy 0 do 3
+ * animacji o 5 klatkach): stan jest w widoku, więc fazy ustawia się przesunięciem startu przejścia (gra stoi na pauzie).
+ * Wstawanie: najpierw leżą (kładzenie się kończy przewinięciem czasu), potem tracą pracę snu i wstają. Kładzenie się:
+ * stoją, potem dostają pracę snu. Kierunki: zachód, wschód, południe, północ (strony głowy w prawo, w lewo, w lewo, w prawo).
+ */
+async function przejsciaPionkow(page: Page, base: string, rodzaj: 'wstawanie' | 'kladzenie') {
+  await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+  await waitIdle(page);
+  const start = await wolnyBlok(page, 9, 3);
+  if (!start) throw new Error('nie ma wolnego bloku 9 × 3 kafelków na pionki');
+  await page.evaluate(([x0, y0]) => {
+    const zm = window.zm!;
+    const st = zm.sim!.st;
+    const core = st.pawns.filter((p) => p.kind === 'core');
+    const osoby = [
+      { f: false, age: 70 },
+      { f: true, age: 70 },
+      { f: false, age: 30 },
+      { f: true, age: 25 },
+    ];
+    core.forEach((p, k) => {
+      Object.assign(st.people[p.person], osoby[k]);
+      Object.assign(p, {
+        x: x0 + 2 * k + 0.5,
+        y: y0 + 1.5,
+        path: [],
+        pi: 0,
+        dir: [2, 3, 0, 1][k],
+        job: null,
+        carry: 0,
+        wait: st.tick + 99999,
+      });
+    });
+    (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+    zm.setCam(x0 + 3.5, y0 + 1.5, 3.4);
+  }, start);
+  // pionki stoją co najmniej jedną klatkę, żeby widok je zobaczył na stojąco
+  await frames(page, 3);
+  const spij = () =>
+    page.evaluate(() => {
+      const st = window.zm!.sim!.st;
+      const size = window.zm!.sim!.w.size;
+      for (const p of st.pawns.filter((q) => q.kind === 'core'))
+        p.job = {
+          t: 'sleep',
+          target: -1,
+          tile: Math.floor(p.y) * size + Math.floor(p.x),
+          phase: 1,
+          from: -1,
+          t0: st.tick,
+          until: st.tick + 99999,
+          order: false,
+        } as NonNullable<typeof p.job>;
+    });
+  await spij();
+  if (rodzaj === 'wstawanie') {
+    // leżą po skończonym kładzeniu się, potem się budzą
+    await przewin(page, 1.5);
+    await page.evaluate(() => {
+      for (const p of window.zm!.sim!.st.pawns.filter((q) => q.kind === 'core')) p.job = null;
+    });
+  }
+  await frames(page, 3);
+  // fazy 0 do 3 z 5 klatek (8 klatek na sekundę gry): start przejścia cofnięty o k + 0,5 klatki
+  const fazy = await page.evaluate(() => {
+    const zm = window.zm!;
+    const v = zm.view as unknown as { przejscia: { biezace: Map<number, { rodzaj: string; start: number }> } };
+    return zm
+      .sim!.st.pawns.filter((p) => p.kind === 'core')
+      .map((p, k) => {
+        const pr = v.przejscia.biezace.get(p.id);
+        if (!pr) return null;
+        pr.start -= (k + 0.5) / 8;
+        return pr.rodzaj;
+      });
+  });
+  console.log(`  przejścia: ${fazy.join(', ')}`);
+  // z grafiką każdy z czterech ma swoje przejście, z --kod żadnego (leżenie z kodu)
+  const oczekiwane = KOD ? [null, null, null, null] : [rodzaj, rodzaj, rodzaj, rodzaj];
+  if (fazy.join() !== oczekiwane.join()) throw new Error(`przejścia ${fazy.join()} zamiast ${oczekiwane.join()}`);
+  await frames(page, 3);
 }
 
 /** pozy pionków zarządu po kolei, z ostatniej klatki widoku: nazwa pozy albo leżenie */
