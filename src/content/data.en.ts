@@ -4,7 +4,7 @@
    (`zawodEn`, `TRAITS_EN`), a zarząd składa z nich angielską stronę swoich zdań. */
 
 import { mieszkancyEn } from '../mieszkancy/fachy.en.ts';
-import type { BuildingClass, Dom, Res } from './data.ts';
+import type { BuildingClass, Dom, EndingId, LawPath, Res } from './data.ts';
 import { PROFS } from './data.ts';
 
 export const DOM_EN: Record<Dom, string> = {
@@ -97,6 +97,42 @@ export function zawodEn(prof: string): string {
   const lower = prof[0] === prof[0]?.toLowerCase();
   return lower ? en[0].toLowerCase() + en.slice(1) : en[0].toUpperCase() + en.slice(1);
 }
+
+/** drogi uchwał jak PATHS */
+export const PATHS_EN: Record<LawPath, string> = {
+  base: 'Survival',
+  porzadek: 'Order',
+  wspolnota: 'Community',
+  tech: 'Technocracy',
+};
+
+/** zakończenia gry jak ENDINGS (w bloku; przy domu jednorodzinnym zarząd ma własne, src/gov/tresc.en.ts) */
+export const ENDINGS_EN: Record<EndingId, { title: string; text: string }> = {
+  twierdza: {
+    title: 'Fortress',
+    text: 'The estate has become a fortress. The gates shut at eight, the guards know everyone by name and keep an eye on all of them. Nobody goes hungry, and nobody asks any more when the next general meeting is. Beyond the wall they speak of you with respect. Inside, people speak more and more quietly.',
+  },
+  wspolnota: {
+    title: 'Community',
+    text: 'Every block has its own council, its own meetings and its own row over the rota. It is loud, slow and inefficient, but people stay, because it is their place. Other settlements send delegations to see how it works.',
+  },
+  technokracja: {
+    title: 'Technocracy',
+    text: 'The model from the bank’s drives has been made chair of the co-op. Rations are fair to the gram, rotas are optimal, and meetings last four minutes. Nobody knows who actually controls it. For now, everyone is fed.',
+  },
+  odwolanie: {
+    title: 'The general meeting recalled the board',
+    text: 'The anger spilled out into the stairwells. An extraordinary general meeting gathered in the common room and voted you out by acclamation. The new board started by changing the locks.',
+  },
+  exodus: {
+    title: 'The estate emptied out',
+    text: 'People stopped believing they would make it with you. Family by family, they left for other estates. All that is left are empty stairwells and service charge bills from 2047.',
+  },
+  pustka: {
+    title: 'Nobody survived',
+    text: 'The last resident let the stove go out. The estate stands empty, and the delivery drone is still circling over the roof.',
+  },
+};
 
 /** przyczyna zgonu ze stanu symulacji (Dead.cause) do zdań: „of their wounds” */
 const PRZYCZYNY_EN: Record<string, string> = {
