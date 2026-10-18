@@ -14,10 +14,14 @@
    - `podgladWyprawy(st, i, cel, ids)`: to samo, co pokaże podsumowanie przed potwierdzeniem (czas, powrót, ryzyko, ile
      uniosą, ile zostało w miejscu); nic nie zmienia i niczego nie losuje.
    - `wyprawyTick(st, i, fx)`: wołany na początku `govUpdate`. O minucie powrotu (albo później) rozlicza wyprawę przez
-     `rozliczWyprawe` (łup do `fx.stock` i `st.miasto`, ludzie do `fx.back`), linie rozliczenia idą do kroniki,
-     a wpis znika z `st.wyprawy`, więc powrót jest dokładnie raz, także po zapisie i wczytaniu w połowie drogi.
-     Nie dotyka `st.night`. Bez `st.wyprawy` nie robi nic: nie zmienia stanu ani ziarna, więc boty i testy bez mapy miasta
-     mają te same skróty co przed nią.
+     `rozliczWyprawe` (łup do `fx.stock` i `st.miasto`, ludzie do `fx.back`), a wpis znika z `st.wyprawy`, więc powrót
+     jest dokładnie raz, także po zapisie i wczytaniu w połowie drogi. Wynik powrotu to jedna pełna linia (opowieść
+     razem ze znaleziskami) w kronice i w `fx.log`. Za dnia ta sama linia idzie też do `fx.powroty`, skąd interfejs
+     pokaże ją graczowi (także gdy w chwili powrotu czeka okno). Powrót przesunięty na rano trafia do raportu nocy:
+     gdy noc jest potwierdzona, linie (osobno, jak przy nocnej wyprawie) idą do `st.later` z dniem nocy i bez zapasów
+     (łup jest już w `fx`), a `morning()` w tym samym kroku scala je do raportu; wtedy `fx.powroty` zostaje puste, bo
+     raport sam otwiera okno. Nie zmienia `st.night`. Bez `st.wyprawy` nie robi nic: nie zmienia stanu ani ziarna, więc
+     boty i testy bez mapy miasta mają te same skróty co przed nią.
 
    Zasady wysyłki, w tej kolejności: mapa miasta włączona (`st.miasto`), godzina od 6:00 do 19:59 (od 20:00 gra karta
    nocy), cel najwyżej `MAX_DROGA_M` od adresu i jeszcze z czymś w zapasie, lista osób niepusta, a każda z nich znana
@@ -29,7 +33,7 @@
    unikalny wśród tych, które są w drodze. Bez hypot, sin i cos; napisy od razu po polsku i angielsku. */
 
 import { g } from '../content/people.ts';
-import { type Tx, tx } from '../core/jezyk.ts';
+import { type Tx, tx, txJoin } from '../core/jezyk.ts';
 import { CARD_HOUR, canGo, expRisk, MORNING, rozliczWyprawe } from './noc.ts';
 import { peopleNamesTx } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, Wyprawa } from './typy.ts';
@@ -168,8 +172,10 @@ export function wyslijWyprawe(st: GovState, i: GovInput, cel: Cel, ids: string[]
 }
 
 /** Powroty wypraw dziennych: każda, której minuta powrotu minęła (w kolejności wysłania), rozlicza się raz przez
-    `rozliczWyprawe` z osobami, które jeszcze są w zarządzie; linie rozliczenia idą do kroniki (i do `fx.log`), a wpis
-    znika z `st.wyprawy`. Wyprawa bez nikogo z żywych znika bez losowania i bez wpisu. Bez `st.wyprawy` nic nie robi. */
+    `rozliczWyprawe` z osobami, które jeszcze są w zarządzie, a wpis znika z `st.wyprawy`. Linie rozliczenia (opowieść
+    i znaleziska) składają się w jeden wpis kroniki (i `fx.log`). Za dnia ten wpis idzie też do `fx.powroty`; gdy noc
+    jest potwierdzona (powrót przesunięty na 6:00), linie idą osobno do `st.later` z dniem nocy, a rano do raportu.
+    Wyprawa bez nikogo z żywych znika bez losowania i bez wpisu. Bez `st.wyprawy` nic nie robi. */
 export function wyprawyTick(st: GovState, i: GovInput, fx: GovEffects): void {
   if (!st.wyprawy?.length) return;
   const t = gameMin(i);
@@ -181,7 +187,13 @@ export function wyprawyTick(st: GovState, i: GovInput, fx: GovEffects): void {
     }
     const ppl = w.ids.map((id) => i.people.find((p) => p.id === id)).filter((p): p is GovPerson => !!p);
     const r = rozliczWyprawe(st, i, fx, w.cel, ppl);
-    for (const line of r.lines) logGov(st, i, line, !!r.hurt, fx);
+    if (!r.lines.length) continue;
+    const calosc = txJoin(r.lines);
+    logGov(st, i, calosc, !!r.hurt, fx);
+    if (st.night?.confirmed) {
+      // powrót o 6:00: `morning()` w tym samym kroku zamyka noc raportem i scala `st.later` z dniem tej nocy
+      for (const line of r.lines) st.later.push({ day: st.night.day, stock: {}, line });
+    } else (fx.powroty ??= []).push(calosc);
   }
   st.wyprawy = wTrakcie;
 }

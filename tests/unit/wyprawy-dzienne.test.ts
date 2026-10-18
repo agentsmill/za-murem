@@ -735,3 +735,122 @@ describe('osoba w drodze do bramy: wejście jeszcze nie ma jej jako away, trzyma
     expect(gov.miasto!.wizyty[c.klucz]).toBe(1);
   });
 });
+
+describe('wynik wyprawy dziennej jest widoczny dla gracza (przegląd gałęzi, I-1)', () => {
+  /** Linie, które opowiadają o powrocie z apteki (nie o wyjściu), z listy wpisów w obu językach. */
+  const oPowrocie = (linie: { pl: string; en: string }[]) =>
+    linie.filter((l) => l.pl.includes('Apteka') && !l.pl.startsWith('Wyprawa do miejsca'));
+
+  /** Pełny przebieg: wysłana o 19:00 dnia 2 wyprawa do apteki 250 m od adresu, przebieg do 6:02 dnia 3. */
+  function wieczorna(seed: number, tryb: 'zwykly' | 'zombie' = 'zwykly') {
+    const atr = new Atrapa(seed);
+    const gov = newGov(seed, tryb);
+    wlaczMiasto(gov);
+    run(seed, 'propozycja', at(2, 19), { gov, atr });
+    const c = cel('apteka', 250);
+    const kto = atr.people.find((p) => canGo(p, c));
+    if (!kto) throw new Error('nikt nie może iść');
+    const w = wyslijWyprawe(gov, atr.input(), c, [kto.id]);
+    if (!w.ok) throw new Error(`powinno wyjść: ${w.why.pl}`);
+    atr.apply(w.fx);
+    run(seed, 'propozycja', at(3, 6, 2), { gov, atr });
+    return { gov, atr, c };
+  }
+
+  it('wysłana o 19:00: linia powrotu jest w raporcie dnia 2 dokładnie raz, w kronice też raz, a st.later pusty', () => {
+    const { gov } = wieczorna(3);
+    const rap = gov.reports.find((r) => r.day === 2);
+    expect(rap).toBeDefined();
+    const wRaporcie = oPowrocie(rap!.lines);
+    expect(wRaporcie).toHaveLength(1);
+    expect(wRaporcie[0].pl).toMatch(/wróci|trafi/);
+    expect(wRaporcie[0].en).toMatch(/came back|ran into/);
+    expect(oPowrocie(gov.log.map((l) => l.txt))).toHaveLength(1);
+    expect(gov.later).toEqual([]);
+    expect(gov.wyprawy).toEqual([]);
+  });
+
+  it('tryb zombie: ugryzienie z wyprawy dziennej też trafia do raportu nocy', () => {
+    let widzialem = 0;
+    for (let seed = 1; seed <= 150 && !widzialem; seed++) {
+      const { gov } = wieczorna(seed, 'zombie');
+      const rap = gov.reports.find((r) => r.day === 2);
+      if (!rap) continue;
+      const ugryzienie = rap.lines.filter((l) => /ugryzion/.test(l.pl));
+      if (!ugryzienie.length) continue;
+      widzialem++;
+      expect(ugryzienie).toHaveLength(1);
+      expect(ugryzienie[0].en).toMatch(/bitten/);
+      expect(oPowrocie(rap.lines)).toHaveLength(1);
+    }
+    expect(widzialem, 'w 150 ziarnach nie było ugryzienia, test nic nie sprawdza').toBe(1);
+  });
+
+  it('gdy noc jest potwierdzona, linie idą do st.later (dzień nocy, bez zapasów) i nie do podpowiedzi', () => {
+    const st = nowy();
+    const w = wyslijWyprawe(st, wej(2, 19, 0), cel('apteka', 250), idy(1));
+    if (!w.ok) throw new Error('powinno wyjść');
+    st.night = {
+      day: 2,
+      card: {},
+      assign: {},
+      confirmed: true,
+      raid: null,
+      exp: [],
+      lines: [],
+      hurt: [],
+      t0: st.trust,
+      a0: st.anger,
+      returned: [],
+      loot: { wood: 0, supplies: 0, scrap: 0, parts: 0, meds: 0 },
+      slept: [],
+    } as unknown as NonNullable<GovState['night']>;
+    const fx = emptyEffects();
+    wyprawyTick(st, wejMin(w.powrot), fx);
+    expect(st.later.length).toBeGreaterThan(0);
+    for (const l of st.later) {
+      expect(l.day).toBe(2);
+      expect(l.stock).toEqual({});
+    }
+    expect(oPowrocie(st.later.map((l) => l.line))).toHaveLength(1);
+    expect(fx.powroty).toBeUndefined();
+    // do kroniki i do skutków linia idzie jak zawsze
+    expect(oPowrocie(st.log.map((l) => l.txt))).toHaveLength(1);
+    expect(fx.log).toHaveLength(1);
+    // łup poszedł od razu do fx (wizyta policzona), a nie dopiero rano
+    expect(suma(fx.stock)).toBe(suma(st.miasto!.zabrano));
+  });
+
+  it('za dnia powrót to jedna pełna linia: główna razem ze znaleziskami, w kronice, w skutkach i w podpowiedzi', () => {
+    let zeZnaleziskiem = 0;
+    for (let seed = 1; seed <= 80; seed++) {
+      const st = nowy(seed);
+      const w = wyslijWyprawe(st, wej(2, 10), cel('apteka', 450), idy(1));
+      if (!w.ok) throw new Error('powinno wyjść');
+      const przed = st.log.length;
+      const fx = emptyEffects();
+      wyprawyTick(st, wejMin(w.powrot), fx);
+      const nowe = st.log.slice(przed);
+      expect(nowe, `ziarno ${seed}`).toHaveLength(1);
+      expect(fx.log, `ziarno ${seed}`).toEqual([nowe[0].txt]);
+      expect(fx.powroty, `ziarno ${seed}`).toEqual([nowe[0].txt]);
+      expect(nowe[0].txt.pl, `ziarno ${seed}`).toContain('Apteka');
+      expect(nowe[0].txt.en, `ziarno ${seed}`).toContain('Pharmacy');
+      if (/[Zz]nalaz|[Zz]nale/.test(nowe[0].txt.pl)) zeZnaleziskiem++;
+      expect(st.later, `ziarno ${seed}`).toEqual([]);
+    }
+    expect(zeZnaleziskiem, 'w 80 ziarnach nie było znaleziska, test nic nie sprawdza').toBeGreaterThan(0);
+  });
+
+  it('bez powrotu nie ma fx.powroty, a pole nie pojawia się w pustych skutkach', () => {
+    const { st, powrot } = (() => {
+      const s = nowy();
+      const w = wyslijWyprawe(s, wej(2, 10), cel('apteka', 450), idy(1));
+      if (!w.ok) throw new Error('powinno wyjść');
+      return { st: s, powrot: w.powrot };
+    })();
+    const fx = emptyEffects();
+    wyprawyTick(st, wejMin(powrot - 1), fx);
+    expect('powroty' in fx).toBe(false);
+  });
+});

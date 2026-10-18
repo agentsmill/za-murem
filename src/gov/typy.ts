@@ -202,6 +202,9 @@ export interface GovEffects {
   ammo?: Partial<Record<'naboje' | 'loftki' | 'belty', number>>;
   /** ugryzieni na wyprawie (zakażeni) */
   bitten?: string[];
+  /** powroty wypraw dziennych z tego wywołania, po jednej pełnej linii na wyprawę (ta sama, co w `log`); tylko za dnia,
+      powrót przesunięty na rano idzie do raportu nocy. Interfejs pokazuje je graczowi, także po zamknięciu okna */
+  powroty?: Tx[];
 }
 
 export interface RaidPlan {

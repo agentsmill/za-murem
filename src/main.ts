@@ -236,6 +236,8 @@ let savedHour = -1;
 const selected = new Set<number>();
 let hint = '';
 let hintUntil = 0;
+/** powroty wypraw dziennych (GovEffects.powroty), których nie dało się pokazać, bo w tym kroku czekało okno zarządu */
+let powrotyCzekaja: Tx[] = [];
 const modal = new Modal($('modal'), $('sheet'));
 const ctx = new ContextMenu($('ctx'));
 
@@ -540,6 +542,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
   gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
+  powrotyCzekaja = [];
   // mapa miasta w nowej grze i w starym zapisie (bez losowania; wyprawa nocna w drodze kończy się po staremu)
   if (opcjaMiasto) wlaczMiasto(gov);
   // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
@@ -729,6 +732,12 @@ function govStep(show: boolean): Prompt | null {
   const fx = govUpdate(gov, i);
   const p = gov.over ? null : pending(gov, i);
   applyFx(fx, !p);
+  // wynik wyprawy dziennej nie ginie pod uchwałą czy kartą: czeka na krok bez okna (raport rano ma własne linie)
+  powrotyCzekaja.push(...(fx.powroty ?? []));
+  if (!p && powrotyCzekaja.length) {
+    say(powrotyCzekaja.map(tr).join(' '), 7000);
+    powrotyCzekaja = [];
+  }
   if (gov.over) {
     if (show) showEnd();
     return null;
