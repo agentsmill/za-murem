@@ -2159,7 +2159,8 @@ const SHOTS: Shot[] = [
               });
             }
           });
-          zm.setCam(x0 + 6.5, y0 + 3.5, 2.2);
+          // środek kadru bliżej lewej, żeby pierwsza kolumna nie wypadała pod panelem celów
+          zm.setCam(x0 + 5.5, y0 + 3.5, 2.2);
           return ids;
         },
         [start[0], start[1], wynik] as const,
@@ -6491,7 +6492,8 @@ async function przewin(page: Page, sekundy: number) {
   await frames(page, 2);
 }
 
-/** wolny blok w × h kafelków najbliżej siedziby (jak wolnyRzad, ale na kilka rzędów) albo null */
+/** wolny blok w × h kafelków najbliżej siedziby (jak wolnyRzad, ale na kilka rzędów i poza koronami drzew, które
+    przykrywają pionki) albo null */
 async function wolnyBlok(page: Page, w: number, h: number): Promise<[number, number] | null> {
   return page.evaluate(
     ([w, h]) => {
@@ -6501,8 +6503,23 @@ async function wolnyBlok(page: Page, w: number, h: number): Promise<[number, num
       const b = sim.w.buildings[sim.w.hq];
       const cx = Math.round((b.x0 + b.x1) / 2);
       const cy = Math.round((b.y0 + b.y1) / 2);
+      // kafelki pod koronami drzew (bez krzaków): korona rysuje się nad pionkami
+      const korona = new Uint8Array(size * size);
+      for (const t of sim.w.trees) {
+        if (t.kind === 2) continue;
+        const r = Math.ceil(t.r) + 1;
+        for (let dy = -r; dy <= r; dy++)
+          for (let dx = -r; dx <= r; dx++) {
+            const x = Math.floor(t.x) + dx;
+            const y = Math.floor(t.y) + dy;
+            if (x >= 0 && y >= 0 && x < size && y < size && Math.hypot(x + 0.5 - t.x, y + 0.5 - t.y) <= t.r + 0.7)
+              korona[y * size + x] = 1;
+          }
+      }
       const wolny = (x: number, y: number) =>
-        !sim.blocked[y * size + x] && !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+        !sim.blocked[y * size + x] &&
+        !korona[y * size + x] &&
+        !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
       let najlepszy: [number, number] | null = null;
       let najblizej = 1e9;
       for (let y = cy - 30; y <= cy + 30; y++)
