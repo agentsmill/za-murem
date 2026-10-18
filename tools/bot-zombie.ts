@@ -12,7 +12,10 @@
    Z flagą --mieszkancy (gdziekolwiek wśród argumentów) bot gra na świecie z mieszkańcami siedziby z generatora
    (tools/bot-mieszkancy.ts, jak w grze: zarząd i lokatorzy z osobami z generatora, stany mieszkań siedziby z niego);
    pod nagłówkiem pierwszej polityki jedna linijka o mieszkańcach z adresu. Bez flagi wyjście i skróty bez zmian.
-   Uruchomienie: npm run bot:zombie [-- ziarno [noce [osoby]]] [--mieszkancy] */
+   Z flagą --sasiedzi (M2 fala 2) za dnia jedna osoba z zarządu chodzi do sąsiednich budynków (tests/unit/sasiedzi-play.ts):
+   pod tabelą nocy linijka, ile u nich zrobiła, spotkania, rany i ugryzienia; najedzenie w tabeli pokazuje, czy szaber
+   ratuje zarząd przed głodem. Bez flagi wyjście i skróty bez zmian.
+   Uruchomienie: npm run bot:zombie [-- ziarno [noce [osoby]]] [--mieszkancy] [--sasiedzi] */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,7 +36,8 @@ import { AMPUTATE_WINDOW, createSim, FEVER_TICKS, type Pawn, Sim } from '../src/
 import { snapshot } from '../src/sim/snapshot.ts';
 import { hordeSize } from '../src/sim/zombie.ts';
 import { buildWorld } from '../src/world/world.ts';
-import { ARGUMENTY, MIESZKANCY, opisMieszkancow, swiatMieszkancow } from './bot-mieszkancy.ts';
+import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
+import { ARGUMENTY, MIESZKANCY, opisMieszkancow, SASIEDZI, swiatMieszkancow } from './bot-mieszkancy.ts';
 
 const SEED = Number(ARGUMENTY[0]) || 1;
 const NIGHTS = Number(ARGUMENTY[1]) || 6;
@@ -68,7 +72,14 @@ interface Night {
   residents: number;
 }
 
-function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over: string; start: string } {
+function play(policy: Policy): {
+  nights: Night[];
+  hash: string;
+  ms: number;
+  over: string;
+  start: string;
+  sasiedzi: SasiedziLog | null;
+} {
   const t0 = performance.now();
   const st = createSim(world, SEED, {
     core: CORE,
@@ -92,6 +103,7 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
   const door = world.buildings[world.hq].entrances[0]?.out ?? 0;
   const skip = new Set<number>();
   let asked = -1;
+  const nb = SASIEDZI ? sasiedziPlayer() : null;
   while (st.tick < end) {
     sim.step();
     const h = hourOf(st.tick);
@@ -155,6 +167,8 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
     }
     // gracz co 10 sekund gry
     if (st.tick % (10 * TICKS_PER_SECOND) === 0) {
+      // fala 2 (--sasiedzi): jedna osoba u sąsiadów za dnia
+      nb?.player(sim, world, st.tick / TICKS_PER_SECOND, (c) => sim.push(c));
       const people = core();
       const armed = people.filter((p) => p.weapon && p.job?.t !== 'guard' && (p.needs?.health ?? 0) > 40);
       // podwórko: uzbrojeni na szwendaczy, którzy weszli
@@ -294,6 +308,7 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
     ms: performance.now() - t0,
     start,
     over: `${end_}, zaufanie ${Math.round(gov.trust)}, wkurzenie ${Math.round(gov.anger)}`,
+    sasiedzi: nb?.log ?? null,
   };
 }
 
@@ -308,5 +323,10 @@ for (const policy of ['warta-dzidy', 'bez-warty'] as const) {
   for (const n of r.nights)
     console.log(
       `  ${String(n.day).padStart(3)}  ${String(n.horde).padStart(5)}  ${String(n.pressing).padStart(7)}  ${String(n.killed).padStart(6)}  ${String(n.breaches).padStart(10)}  ${`${n.biteDay}/${n.biteNight}`.padStart(20)}  ${String(n.deaths).padStart(5)}  ${n.fence.toFixed(2).padStart(6)}  ${String(n.core).padStart(6)}  ${String(Math.round(n.food)).padStart(10)}  ${String(Math.round(n.health)).padStart(7)}  ${String(n.residents).padStart(10)}`,
+    );
+  const nb = r.sasiedzi;
+  if (nb)
+    console.log(
+      `  u sąsiadów: otwarte budynki ${nb.opened}, przeszukane pomieszczenia ${nb.rooms}, piętra ${nb.floors}, spotkania ${nb.meetings}, rany ${nb.wounds}, ugryzienia na piętrach ${nb.bites}`,
     );
 }

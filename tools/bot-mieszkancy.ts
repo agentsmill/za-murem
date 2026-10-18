@@ -3,8 +3,10 @@
    przez `fs`, tagi `zm:bud` na mapie, `buildWorld`, `lokatorzyGry` i stany mieszkań siedziby na świecie, a wynik idzie
    do `createSim` jako opcja `mieszkancy`. Bez flagi boty nie dotykają niczego stąd poza odczytem argumentów, więc ich
    wyjście i skróty są takie jak przed krokiem 5.
-   Flaga może stać gdziekolwiek wśród argumentów; `ARGUMENTY` to argumenty pozycyjne bez niej (ziarno, dni, tłum…).
-   Inny argument od `--` (literówka, np. `--mieszkanc`) kończy bota z błędem, zamiast cicho zagrać bez mieszkańców.
+   Flaga może stać gdziekolwiek wśród argumentów; `ARGUMENTY` to argumenty pozycyjne bez flag (ziarno, dni, tłum…).
+   Druga flaga, `--sasiedzi` (M2 fala 2), włącza w botach gracza, który od dnia 2 chodzi do sąsiednich budynków
+   (tests/unit/sasiedzi-play.ts). Inny argument od `--` (literówka, np. `--mieszkanc`) kończy bota z błędem, zamiast
+   cicho zagrać bez tego, o co chodziło.
    Ziarno świata to ziarno bota (nie z adresu jak w grze), żeby przebiegi z flagą i bez niej były porównywalne. */
 
 import fs from 'node:fs';
@@ -17,17 +19,23 @@ import { buildWorld, type World } from '../src/world/world.ts';
 
 const PUBLIC = path.resolve(import.meta.dirname, '../public');
 const FLAGA = '--mieszkancy';
+const FLAGA_SASIEDZI = '--sasiedzi';
+const FLAGI = [FLAGA, FLAGA_SASIEDZI];
 
-const nieznane = process.argv.slice(2).filter((a) => a.startsWith('--') && a !== FLAGA);
+const nieznane = process.argv.slice(2).filter((a) => a.startsWith('--') && !FLAGI.includes(a));
 if (nieznane.length) {
-  console.error(`Nieznany argument: ${nieznane.join(', ')}. Bot zna tylko flagę ${FLAGA} (reszta to liczby).`);
+  console.error(
+    `Nieznany argument: ${nieznane.join(', ')}. Bot zna tylko flagi ${FLAGI.join(' i ')} (reszta to liczby).`,
+  );
   process.exit(2);
 }
 
 /** Czy bot ma grać z mieszkańcami z adresu. */
 export const MIESZKANCY = process.argv.includes(FLAGA);
-/** Argumenty pozycyjne bez flagi: `ARGUMENTY[0]` to pierwszy argument po nazwie skryptu. */
-export const ARGUMENTY: string[] = process.argv.slice(2).filter((a) => a !== FLAGA);
+/** Czy bot ma chodzić do sąsiednich budynków (M2 fala 2). */
+export const SASIEDZI = process.argv.includes(FLAGA_SASIEDZI);
+/** Argumenty pozycyjne bez flag: `ARGUMENTY[0]` to pierwszy argument po nazwie skryptu. */
+export const ARGUMENTY: string[] = process.argv.slice(2).filter((a) => !FLAGI.includes(a));
 
 /** `fetch` dla wczytaj.ts: ścieżka względna to plik w public/, brak pliku to 404. */
 const zPliku: typeof fetch = async (adres) => {
