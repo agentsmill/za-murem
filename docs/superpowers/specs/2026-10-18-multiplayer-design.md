@@ -48,6 +48,7 @@ Klucz liczymy więc z obrysu w globalnych pikselach kafelków (poziom 14, 4096 p
 - `zm:os` = oś klatek „x1,y1,x2,y2”: dłuższa oś najmniejszego prostokąta opisanego na obrysie, przez jego środek, od zachodu na wschód.
 
 Oba tagi liczą się z całej budowli: ze wszystkich jej kawałków z pobranych kafelków (gra pobiera kafelki w promieniu 720 m), sklejonych przez granice kafelków, także z kawałków, których gracz nie ma na swojej mapie, bo leżą za daleko od jego środka albo są maleńkie przy granicy kafelka. Geometria gry dalej bierze tylko bliskie kawałki, jak w 0.3. Bez tego blok przy brzegu mapy albo budynek z wąskim skrawkiem po drugiej stronie granicy kafelka miał u różnych graczy różne klucze (znalazł to przegląd kodu).
+
 Rachunek używa tylko dodawania, mnożenia, dzielenia i pierwiastka, a wynik idzie przez `toFixed`, więc każdy silnik JS daje ten sam napis.
 
 Klatki: każdy budynek ma max(1, round(długość osi / 20 m)) klatek równej długości (20 m jak w `findEntrances`), niezależnie od typu budynku w świecie, bo typ zależy od rastra i u dwóch graczy potrafi wyjść inny (na kafelkach testowych około 3% budynków). Klucz klatki to „klucz budynku/numer”, od 1 od zachodniego końca osi. Pozycja klatki to środek jej odcinka osi w stopniach; ta sama u wszystkich, więc serwer może po niej odpowiadać na pytania o prostokąt.
@@ -118,7 +119,7 @@ Klient (`src/net/api.ts`): `fetch` do `/api` tej samej domeny z ciasteczkiem (`c
 - Nazwa siedziby („Obrońców Wybrzeża 4B”, z ulicy z geokodera) trafia dziś do tekstów zarządu, a te do zapisu. W grze sieciowej siedziba ma nazwę bez ulicy (etap 2), żeby adres nie wszedł do kroniki w zapisie w chmurze.
 - Inni gracze widzą tylko, że klatka jest zajęta („zajęte przez inną drużynę”): bez nicku, numeru konta i daty. Zapytanie o prostokąt wymaga zalogowania i ma limit wielkości.
 - Usunięcie konta (z hasłem) od razu kasuje konto, sesje, klatki i zapis. Klatki wracają do wolnych.
-- Serwer nie zapisuje adresów IP ani w bazie, ani w dzienniku. Limity prób trzymają IP tylko w pamięci, a wpis znika po końcu okna (od minuty do godziny), najpóźniej przy cogodzinnym sprzątaniu.
+- Serwer nie zapisuje adresów IP ani w bazie, ani w dzienniku. Limity prób trzymają IP tylko w pamięci, a wpis znika po końcu okna (od minuty do godziny), najpóźniej przy sprzątaniu co minutę.
 - Nicków nikt poza właścicielem nie widzi, więc nie trzeba ich moderować.
 - Kopie bazy zawierają te same dane, więc trzymamy je tak samo i kasujemy stare.
 
@@ -170,3 +171,4 @@ Gra w czasie rzeczywistym i cudzy ludzie na mapie, handel i napady między druż
 9. Gra sieciowa tylko na prawdziwym adresie i tylko na domenie z serwerem. Pages i dema zostają grą jednoosobową.
 10. Zapis w chmurze wysyłany co 5 minut i z Menu (localStorage dalej co godzinę gry); jeden zapis na konto.
 11. Serwer: Node 24 i SQLite w jednym kontenerze za Caddy na Hetznerze, zamiast porównywanych w „Zaparkowanych” Cloudflare Workers czy Fly.io; wybrane przy prośbie o własny serwer.
+12. Zapis w chmurze bez ulic i numerów domów z mapy, a w grze sieciowej siedziba bez nazwy ulicy. To kłóci się trochę z filarem „to jest moje osiedle” (prawdziwe nazwy ulic). Druga możliwość: zostawić nazwy z OSM (to dane publiczne) i usuwać tylko to, co gracz wpisał (`data.addr`, `data.street`, `data.name`); wtedy w bazie będzie adres siedziby w tekście kroniki i w tagach budynków.
