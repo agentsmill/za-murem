@@ -2158,6 +2158,402 @@
       "uwagi": "wzorzec stylu wycięty z wybranego kawałka bloku; pliki nazwane przez PixelLab od pierwszego opisu, numer na końcu to numer wariantu"
     },
     {
+      "id": "budynek-kamienica",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "kamienica miejska, 4 kondygnacje z bramą, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish prewar city tenement house (kamienica), 4 storeys, for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the flat roof seen from above fills the top part, the short front facade strip with four storeys (about 13 px per storey) sits at the bottom. The architecture must be completely different from the reference panel block. Facade: cream and ochre plaster, cracked and peeling, horizontal stone cornices between the storeys, tall narrow windows with white frames and stone lintels, small wrought-iron balconies on the second floor, rusticated ground floor with a large arched wooden gate (brama) in the middle. Roof: dark tar paper with two brick chimneys, small dormer windows along the edge, moss and rain stains. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "32279297-f99c-4315-a3d7-ac6322205992",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-kamienica/0.png",
+        "assets/raw/budynek-kamienica/1.png",
+        "assets/raw/budynek-kamienica/2.png",
+        "assets/raw/budynek-kamienica/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-kamienica/0.png",
+      "warianty": {
+        "0": "tynk kremowy i ochra, balkony kute, brama z łukiem, kominy i lukarny, mech na dachu (zatwierdzony)",
+        "1": "szara ruina z odpadającym tynkiem, zabite okna, dziury w dachu",
+        "2": "jak 0, oplątana bluszczem",
+        "3": "szara ruina z zabitymi oknami i połataną papą"
+      },
+      "uwagi": "Piętro ma około 19 px, więcej niż 13 px bloku, co pasuje do kamienicy (wyższe kondygnacje). Okna co około 25 px. Tło płaskie #b7b2a6, do wycięcia przez wypełnienie od brzegu. Dach z kominami i lukarnami."
+    },
+    {
+      "id": "budynek-ratusz",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "ratusz z wieżą zegarową i iglicą, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish town hall (ratusz) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey). The architecture must be completely different from the reference panel block. A symmetrical stately building of red brick and pale stone trim, three storeys, tall arched windows, a central entrance with steps and a stone portal, a steep red clay tile roof with the ridge running left to right, and a tall central clock tower with a pointed copper spire rising from the middle of the roof. Moss, cracks, a few broken windows. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "0e181fb9-07f9-464c-9148-8a193a0dd73b",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-ratusz/0.png",
+        "assets/raw/budynek-ratusz/1.png",
+        "assets/raw/budynek-ratusz/2.png",
+        "assets/raw/budynek-ratusz/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-ratusz/0.png",
+      "warianty": {
+        "0": "ceglany, wieża z zegarem i iglicą, trzy kondygnacje, bluszcz przy lewym skrzydle (zatwierdzony)",
+        "1": "dziury w dachu i na wieży, gruz przy schodach",
+        "2": "mech na dachu, parter zabity deskami",
+        "3": "gęsto zarośnięty bluszczem"
+      },
+      "uwagi": "Płótno 160×160, wieża sięga górnej krawędzi. Wieża jest elementem jednorazowym na osi środkowej, skrzydła do powtarzania. Tło płaskie #6f6b64."
+    },
+    {
+      "id": "budynek-muzeum",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "muzeum klasycystyczne z portykiem, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered neoclassical museum for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey). The architecture must be completely different from the reference panel block. Pale grey-beige stone facade, two storeys with tall rectangular windows, a projecting portico with four columns and a triangular pediment over wide stone steps at the centre, a low hipped copper roof with a glass skylight. Cracked stone, moss on the steps, a toppled banner. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "e5a747d8-addf-490e-8cc1-48751e35d4f7",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-muzeum/0.png",
+        "assets/raw/budynek-muzeum/1.png",
+        "assets/raw/budynek-muzeum/2.png",
+        "assets/raw/budynek-muzeum/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-muzeum/1.png",
+      "warianty": {
+        "0": "porośnięte bluszczem, zwalony sztandar",
+        "1": "czysty portyk z czterema kolumnami i frontonem, dziura w prawym skrzydle i w świetliku, sztandar na schodach (zatwierdzony)",
+        "2": "bluszcz po lewej, okna zabite deskami",
+        "3": "rdza i pęknięcia, sztandar"
+      },
+      "uwagi": "Portyk wystaje przed fasadę i zasłania pas dachu, więc to element środkowy, skrzydła boczne do powtarzania. Tło płaskie #9a958a."
+    },
+    {
+      "id": "budynek-kosciol",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "kościół ceglany z wieżą i iglicą, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish brick church (kościół) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey). The architecture must be completely different from the reference panel block. Dark red brick walls with pale stone trim, a steep gable roof of red clay tiles with the ridge running left to right, a tall square front tower with a pointed spire and a cross rising from the middle, a pointed-arch wooden double door in a stone portal with steps, tall pointed-arch windows with stained glass, buttresses along the wall. Moss, cracks, missing roof tiles. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "7c0122f8-c897-4246-8a18-54ec41e86bc5",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-kosciol/0.png",
+        "assets/raw/budynek-kosciol/1.png",
+        "assets/raw/budynek-kosciol/2.png",
+        "assets/raw/budynek-kosciol/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-kosciol/2.png",
+      "warianty": {
+        "0": "rzut izometryczny (sześcian), nie pasuje do rzutu gry",
+        "1": "rzut izometryczny, zrujnowany, nie pasuje do rzutu gry",
+        "2": "rzut jak w grze: dach z góry, wieża z iglicą i krzyżem, portal ze schodami, uszkodzone dachówki (zatwierdzony)",
+        "3": "rzut jak w grze, gęsto zarośnięty bluszczem"
+      },
+      "uwagi": "Dwie z czterech propozycji wyszły izometrycznie, więc przy kolejnych zamówieniach dopisać do opisu wyraźnie „seen straight from the front, roof from above”. Tło płaskie #7c796f, wokół kościoła cień z gruzu (ciemna plama)."
+    },
+    {
+      "id": "budynek-urzad",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "budynek publiczny z lat 60. (urząd, poczta, biblioteka), 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered 1960s Polish public building (urząd, post office or library) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the flat roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey). The architecture must be completely different from the reference panel block. Three storeys of beige and grey plaster with long horizontal ribbon windows, a glass entrance with a concrete canopy and a few steps at the centre, a flagpole and a faded sign board over the door, flat roof with ventilation boxes and an antenna. Water stains, peeling plaster, a few boarded windows. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "702adcae-e02c-4be3-bede-94a18a1105fa",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-urzad/0.png",
+        "assets/raw/budynek-urzad/1.png",
+        "assets/raw/budynek-urzad/2.png",
+        "assets/raw/budynek-urzad/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-urzad/0.png",
+      "warianty": {
+        "0": "okna pasmowe, szklane wejście z daszkiem i schodami, anteny i wentylatory na dachu (zatwierdzony)",
+        "1": "plamy i zacieki, szyld nad wejściem po lewej, nadbudówka na dachu",
+        "2": "okna zabite deskami, śmieci na dachu",
+        "3": "okna pasmowe, bluszcz, wejście po prawej"
+      },
+      "uwagi": "Fasada z oknami pasmowymi ma około 18 px na kondygnację. Tło płaskie #b7b2a6."
+    },
+    {
+      "id": "budynek-teatr",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "teatr neoklasycystyczny z kopułą, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish city theatre (teatr) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. A stately neo-baroque theatre of pale plaster and stone: a tall central section with a grand arched portal, three tall arched windows above it and a sculpted pediment, a low green copper dome rising from the roof behind the pediment, lower symmetrical side wings with tall windows, wide stone entrance steps with two iron lamp posts, a faded poster board beside the door. Moss, cracks, a few broken windows. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "554a2f39-af2e-4ad3-bcb2-9e0c731e1a1f",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-teatr/0.png",
+        "assets/raw/budynek-teatr/1.png",
+        "assets/raw/budynek-teatr/2.png",
+        "assets/raw/budynek-teatr/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-teatr/0.png",
+      "warianty": {
+        "0": "biały tynk, kopuła z miedzi, napis TEATR na tympanonie, lampy przy schodach (zatwierdzony)",
+        "1": "zarośnięty bluszczem, pnącza na kopule",
+        "2": "ozdobny szary tynk, trawa na schodach",
+        "3": "ruina: zabite wejścia, dziura w kopule"
+      },
+      "uwagi": "Płótno 160×160. Kopuła i fronton to element jednorazowy na osi środkowej, skrzydła do powtarzania. Tło płaskie #7c796f, poza dachem ciemna papa."
+    },
+    {
+      "id": "budynek-hotel",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "hotel z lat 70., 5 kondygnacji z balkonami, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered 1970s Polish state hotel (Orbis style) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the flat roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. Five storeys of concrete and dark glass with a regular grid of small balconies, a wide ground floor lobby with a big glass front and a flat concrete canopy over the entrance with steps, a faded rooftop sign with large letters, a flagpole, a flat roof with machine rooms and a satellite dish. Water stains, broken windows, peeling paint. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "b3a50263-8282-4af1-8551-b11645fdea88",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-hotel/0.png",
+        "assets/raw/budynek-hotel/1.png",
+        "assets/raw/budynek-hotel/2.png",
+        "assets/raw/budynek-hotel/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-hotel/2.png",
+      "warianty": {
+        "0": "napis ORBIS na dachu (prawdziwa marka, unikać)",
+        "1": "napis ORBIS, osmolony",
+        "2": "napis HOTEL, pięć pięter z balkonami, bluszcz (zatwierdzony, bez marki)",
+        "3": "napis ORB…, gęsty bluszcz"
+      },
+      "uwagi": "Opis zawierał „Orbis style”, więc model wpisał prawdziwą markę na dach. W opisach nie podawać nazw marek. Tło nie jest płaskie (ciemna ulica ze spękaniami i zielenią), więc kadr zostaje prostokątem. Piętro około 13 px."
+    },
+    {
+      "id": "budynek-dworzec",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "dworzec kolejowy z zegarem i wiatą peronową, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish railway station building (dworzec) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. A long symmetrical station of brick and plaster: a taller central hall with three tall arched windows and a big clock under a gable, lower wings with arched windows and doors, a hipped roof of red clay tiles with the ridge running left to right, a wooden platform canopy with iron columns along the front edge, a faded station name board, a few benches. Moss, cracks, missing tiles. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "9b03818a-14ca-4fd3-93c5-3f0809d53751",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-dworzec/0.png",
+        "assets/raw/budynek-dworzec/1.png",
+        "assets/raw/budynek-dworzec/2.png",
+        "assets/raw/budynek-dworzec/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-dworzec/1.png",
+      "warianty": {
+        "0": "ceglany, bluszcz, dziura w dachu po prawej",
+        "1": "szary tynk w hali środkowej, zegar, wiata na kolumnach (zatwierdzony)",
+        "2": "okna zabite deskami, wiata zniszczona",
+        "3": "bluszcz, ławki pod wiatą"
+      },
+      "uwagi": "Napisy na tablicach nieczytelne. Hala środkowa to element jednorazowy, skrzydła do powtarzania. Tło płaskie #9a958a."
+    },
+    {
+      "id": "budynek-willa",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "willa międzywojenna z gankiem i ogrodem, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered interwar Polish suburban villa (willa) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. Two storeys plus attic, pale yellow plaster walls with a corner bay window, a columned terrace with a balcony above it, a steep hipped roof of red clay tiles with dormer windows and a brick chimney, a low stone fence with a gate in front, an overgrown garden. Moss, cracks, missing tiles, a few boarded windows. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "86f663fb-b521-471c-beea-e26d56fe8d7f",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-willa/0.png",
+        "assets/raw/budynek-willa/1.png",
+        "assets/raw/budynek-willa/2.png",
+        "assets/raw/budynek-willa/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-willa/0.png",
+      "warianty": {
+        "0": "żółty tynk, ganek z kolumnami, lukarna, płot (zatwierdzona)",
+        "1": "dziury w dachu",
+        "2": "okna zabite deskami",
+        "3": "najgęściej zarośnięta"
+      },
+      "uwagi": "Cztery bliskie warianty tej samej willi. Ogród, ścieżka i płot są w kadrze, więc to prostokątny kawałek z własnym podłożem (bez płaskiego tła do wycięcia). Dach obejmuje większość kadru, fasada dwóch pięter ma około 26 px."
+    },
+    {
+      "id": "budynek-remiza",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "remiza OSP z wieżą do suszenia węży, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish volunteer fire station (remiza OSP) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. A small red brick building with two big red wooden garage doors with arched tops, a tall square hose-drying tower on one side with a small pyramid roof and a siren, a hipped roof of red clay tiles with the ridge running left to right, a faded sign board over the doors, a hose reel by the wall. Moss, peeling paint, rust. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "2819ebc5-5d54-462e-84b6-fe6d4773a260",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-remiza/0.png",
+        "assets/raw/budynek-remiza/1.png",
+        "assets/raw/budynek-remiza/2.png",
+        "assets/raw/budynek-remiza/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-remiza/0.png",
+      "warianty": {
+        "0": "cegła, dwie bramy garażowe, napis OSP, wieża z syreną po prawej, dziura w dachu (zatwierdzona)",
+        "1": "ruina, wieża po lewej, otwarta brama",
+        "2": "zarośnięta bluszczem, napis REMIZA",
+        "3": "ruina, wieża po lewej, otwarty dach"
+      },
+      "uwagi": "Wieża stoi z boku (po prawej albo po lewej), więc wersje 1 i 3 to odbicia układu. Budynek ma własny brązowy plac w kadrze. Tło płaskie #9a958a poza placem."
+    },
+    {
+      "id": "budynek-szpital",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "szpital z lat 70., 5 kondygnacji z czerwonym krzyżem, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered 1970s Polish hospital block (szpital) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the flat roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. Five storeys of pale plaster and grey concrete with long horizontal ribbon windows and small balconies, a covered ambulance entrance with a flat canopy and a ramp at the centre, a big red cross sign on the facade, a flat roof with ventilation boxes and a water tank. Water stains, boarded windows, moss. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "332cc8b2-308a-42d8-9880-c2fcef291c75",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-szpital/0.png",
+        "assets/raw/budynek-szpital/1.png",
+        "assets/raw/budynek-szpital/2.png",
+        "assets/raw/budynek-szpital/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-szpital/0.png",
+      "warianty": {
+        "0": "pięć pięter, czerwony krzyż i napis SZPITAL, wejście z daszkiem dla karetek (zatwierdzony)",
+        "1": "zawalona prawa strona, woda i gruz przed wejściem",
+        "2": "okna zabite deskami, wrak karetki przed wejściem",
+        "3": "poplamiony, zbiorniki na dachu"
+      },
+      "uwagi": "Napis SZPITAL czytelny. Trawa, gruz i woda przy budynku są w kadrze (bez płaskiego tła). Piętro około 14 px."
+    },
+    {
       "id": "kotwica-blok-moduly",
       "grupa": "kotwica-stylu",
       "co": "zestaw modułów budynku (podłoga, ściany, narożniki, drzwi, dach) z wielkiej płyty",
