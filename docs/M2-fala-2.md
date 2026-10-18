@@ -238,4 +238,4 @@ Każdy etap kończy się testami, botami, zrzutami i lokalnym commitem na `m2-fa
 17. Wspólny płot obejmuje wszystkie drzwi budynku albo je zabija, nie przechodzi przez jezdnię i ma najwyżej 120 m nowego płotu.
 18. W trybie zombie co piąte gospodarstwo ocalałych ukrywa ugryzionego; w zwykłym po nocnych gościach w co trzecim budynku zostają szabrownicy do przegonienia.
 19. W trybie zombie mieszkania z wymarcia dają dwa razy więcej jedzenia niż w tabeli fali 1, bo szaber ma być tam głównym źródłem jedzenia.
-20. W domu jednorodzinnym cel dnia 2 to „Przeszukajcie pokój u sąsiadów”.
+20. Cel dnia 2 w domu jednorodzinnym rozstrzygnął Mateusz w sesji domu (gałąź `m2-dom-cel`, w `pelna-gra`): „Przeszukajcie dom”, czyli pomieszczenia domu komitetu. Fala 2 tego nie nadpisuje, tylko dokłada, że cel przeszukania zalicza też pierwsze pomieszczenie przeszukane u sąsiadów (w domu i w bloku). „Pokój u sąsiadów” może wrócić jako późniejszy cel albo podpowiedź.
