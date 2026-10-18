@@ -89,7 +89,7 @@ const metrowNaPiksel = (lat: number) => (M_NA_STOPIEN * 360 * Math.cos((lat * Ma
 /** liczba do klucza: całkowita bez ułamka, inna z dwoma miejscami */
 const liczba = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(2));
 
-/** otoczka wypukła (Andrew), bez powtórzeń i punktów współliniowych, przeciwnie do ruchu wskazówek */
+/** otoczka wypukła (łańcuch monotoniczny Andrew), bez powtórzeń i punktów współliniowych */
 function otoczka(pts: Pt[]): Pt[] {
   const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
