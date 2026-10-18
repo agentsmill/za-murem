@@ -754,9 +754,13 @@ Bramka: `npm test` 2104 zdanych, 1 oczekiwana porażka, 8 pominiętych (117 plik
 
 Gałąź `m2-plot-duch` (sesja „Wspólny płot” od fali 2, wpis wyżej) weszła przewinięciem. Po niej porównania kotwicy (`tools/kotwica.ts`) padały na `TextureC.from`, bo pierwsze dziecko warstwy actors z polem `texture` nie było już sprite'em Pixi; koordynator poprawił wybór sprite'a (fcce6a5). Bramka na tym kodzie: `npm test` 2104 zdanych, 1 oczekiwana porażka, 8 pominiętych; Biome; tsc; build; boty bez zmian (da4b24e0, dad44c81, 1f6eef9b, 3e000211); wszystkie 220 scenariuszy zrzutów poza kotwicą w jednym przebiegu i 4 scenariusze kotwicy po poprawce, obejrzany `m2f2-plot-duch` (ślad planu, „40%”, „Stawia wspólny płot”). Na serwer jeszcze nie poszło.
 
+### Ślad ducha płotu na warstwie ziemi w `pelna-gra`, 18.10.2026 wieczorem (scalenie 9007cd2)
+
+Ostatni commit sesji płotu (0d22b2b: ślad nowych kafelków na własnej warstwie `view.ground`, w warstwie pionków same sprite'y) wszedł scaleniem, a nie przewinięciem, bo `pelna-gra` miała już poprawkę narzędzia kotwicy (fcce6a5). Obie zostają i naprawiają ten sam błąd z dwóch stron: `tools/kotwica.ts` bierze klasy PixiJS tylko ze sprite'a, którego tekstura ma `Texture.from`, więc ostrzeżenie z wpisu o duchu („kto doda tam coś innego niż sprite, zepsuje kotwicę”) jest już na wyrost. Bramka na 9007cd2: `npm test` 2104 zdanych, 1 oczekiwana porażka, 8 pominiętych (117 plików); Biome na `src tests tools server index.html`; build; boty bez zmian (da4b24e0, dad44c81, 1f6eef9b, 3e000211); pełne `npm run shots`: 224 scenariusze bez błędów, obejrzane `m2f2-plot-duch` i `en-m2f2-plot-duch` (ślad planu na ziemi pod ludźmi, zaznaczenie nad nim, „40%”, karta „Stawia wspólny płot (40%).” i „Putting up the shared fence (40%).”) oraz `kotwica-stylu` (porównanie rysuje się bez `TextureC.from`). Na serwer jeszcze nie poszło.
+
 ## Następne
 
-- Gałąź `m2-plot-duch` (duch planu wspólnego płotu i płot z jednego materiału, wpis wyżej) czeka na scalenie do `pelna-gra`. Do sprawdzenia w grze: na Lanciego otworzyć 10F i zlecić wspólny płot; z samymi deskami albo samym złomem menu pokazuje płot z jednego materiału.
+- Wspólny płot z duchem planu i z jednego materiału jest w `pelna-gra` (9007cd2, wpisy wyżej) i czeka na wdrożenie po OK Mateusza. W pracy: kotwica stylu w grze (`m3-kotwica-w-grze`, koordynator scala po pomiarze `npm run perf` na Lanciego) i mocniejszy płot w trybie zombie (`zombie-plot`, pierwsza noc bez warty bez przebicia). Do sprawdzenia w grze: na Lanciego otworzyć 10F i zlecić wspólny płot; z samymi deskami albo samym złomem menu pokazuje płot z jednego materiału.
 
 - Wdrożone 18.10.2026 wieczorem razem z falą 2 (zgoda Mateusza „Poczekaj i wgraj razem”): serwer testowy ma `pelna-gra` ba0479f, czyli angielski domyślnie, surowce z handlarzem i obcymi, przeszukiwanie domu i falę 2 (wpis niżej).
 
