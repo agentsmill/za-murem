@@ -65,6 +65,7 @@ Polecenia na drzwiach (menu pod prawym przyciskiem na kafelku drzwi albo tuż pr
 
 - Pokoje pustych mieszkań: „Przeszukać [pokój]” jak w siedzibie, łup `lootOf` z fali 1 według powodu opuszczenia i rodzaju pomieszczenia, raz na pomieszczenie, z ziarna świata, budynku i pomieszczenia (inne niż w siedzibie, więc numery pomieszczeń się nie zderzają). Meble rozbiera się po przeszukaniu, jak w fali 1.
 - Sale, hale i zaplecza budynków usługowych mają własne tabele według rodzaju budynku: pawilon głównie jedzenie i części, przychodnia leki, szkoła deski i części, garaż i hala złom i części, kościół deski i trochę jedzenia. Liczby stroi bot.
+- Tryb zombie: jedzenie przychodzi dziś tylko z wydarzeń, a najedzenie zarządu w bocie spada do zera około szóstej doby (sesja szlifu zombie). Mieszkania z wymarcia w tym trybie są świeże, ludzie zmarli niedawno, więc w kuchniach zostały konserwy i słoiki: łup jedzenia z nich jest dwa razy większy niż w tabeli fali 1. Szaber u sąsiadów jest wtedy głównym źródłem jedzenia, a bot `--sasiedzi` w trybie zombie sprawdza, czy zarząd przy szabrowaniu dociąga do siódmej doby bez głodu.
 - Szaber zamieszkanego mieszkania: zapasy gospodarstwa (jedzenie, czasem leki, części i deski, według liczby osób; w trybie zombie mniej jedzenia). Do wzięcia tylko wtedy, gdy nikogo nie ma w domu (w zwykłym trybie część gospodarstw wychodzi za dnia) albo gdy spotkanie skończy się zabraniem zapasów lub wyjściem lokatorów. Okradzeni to wrogowie na zawsze, a nasi ludzie mają gorszy nastrój („Okradliśmy sąsiadów”).
 - Łup leży w stertach w pomieszczeniu. „Zanieść do siedziby” na stercie w cudzym budynku (domyślne polecenie) każe nosić po 6 sztuk, kurs za kursem, aż w tym budynku nie zostanie nic, na podwórko przy bramie.
 - Łup w cudzym budynku nie jest nasz, dopóki nie trafi za siatkę. Sterty we wnętrzu nieotoczonego sąsiada nie liczą się do zapasów na pasku i w zarządzie (karta nocy, napad), nie je się z nich, nie gotuje i nie bierze na budowy ani naprawy. Widać je na karcie budynku, a nosi się je tylko poleceniem „Zanieść do siedziby”. Reguła dotyczy tylko wnętrz sąsiadów, więc drewno ze ściętych drzew za siatką działa jak dziś.
@@ -208,6 +209,7 @@ Interfejs (`src/ui`, `src/main.ts`):
 
 - Polecenia w menu, karta spotkania (pauza jak przy oknach zarządu, wybór idzie poleceniem `meet`, gra rusza dalej, a wynik pokazuje napis z `sasiedzi.wynik`), karta budynku (stuknięcie w cudzy budynek bez zaznaczenia: nazwa, drzwi, znani lokatorzy według klatek, co przeszukane, nocni goście), napisy przy hałasie i rano po nocnych gościach.
 - Napisy w obu językach od początku (pary polski i angielski w nowych modułach), a po scaleniu warstwy tłumaczeń (gałąź `angielski`) przez jej `L()` i `tx()`.
+- Cel drugiego dnia „Przeszukajcie puste mieszkanie” jest w domu jednorodzinnym nie do zrobienia, bo dom ma jedno mieszkanie, zarządu (znalazła to sesja słownika miejsca). W domu cel zmienia się na „Przeszukajcie pokój u sąsiadów” i zalicza go pierwsze przeszukane pomieszczenie w sąsiednim budynku; w bloku zostaje jak jest.
 
 ## Etapy
 
@@ -245,3 +247,5 @@ Każdy etap kończy się testami, botami, zrzutami i lokalnym commitem na `m2-fa
 16. Łup w nieotoczonym cudzym budynku nie jest nasz, dopóki nie trafi za siatkę (bez zapasów, jedzenia i budów).
 17. Wspólny płot obejmuje wszystkie drzwi budynku albo je zabija, nie przechodzi przez jezdnię i ma najwyżej 120 m nowego płotu.
 18. W trybie zombie co piąte gospodarstwo ocalałych ukrywa ugryzionego; w zwykłym po nocnych gościach w co trzecim budynku zostają szabrownicy do przegonienia.
+19. W trybie zombie mieszkania z wymarcia dają dwa razy więcej jedzenia niż w tabeli fali 1, bo szaber ma być tam głównym źródłem jedzenia.
+20. W domu jednorodzinnym cel dnia 2 to „Przeszukajcie pokój u sąsiadów”.
