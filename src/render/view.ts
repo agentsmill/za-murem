@@ -4,7 +4,8 @@
    wyrzucane, gdy jest ich za dużo. Z daleka (8 px/kafelek) wszystkie, zamawiane na starcie.
    Noc to mapa światła nad światem (light.ts), mnożona przez obraz. Przekrój: przy zbliżeniu
    kawałki nad budynkiem z wnętrzem (scene.section) rysują się z wnętrzem zamiast dachu, a meble
-   stoją w jednej warstwie z pionkami, sortowane po y. */
+   stoją w jednej warstwie z pionkami, sortowane po y. Z grafiką z PixelLab (setGrafika) trzepak
+   jest z PixelLab, teren i bloki rysują kawałki ze sceny (scene.art). */
 
 import {
   Application,
@@ -39,7 +40,8 @@ import {
   zFrameRect,
   zLieRect,
 } from './art/people.ts';
-import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec, thingSprite } from './art/rzeczy.ts';
+import { type Grafika, rzeczSprite } from './art/pixellab.ts';
+import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec } from './art/rzeczy.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
 import { mockWear, type WearMock } from './atrapy.ts';
 import { BuildLayer, type BuildPlan, type Placement } from './buildLayer.ts';
@@ -230,6 +232,8 @@ export class GameView {
   /** rzeczy, które się nie zmieniają (trzepak, siatka) i ich klucze: bez liczenia opisu co klatkę */
   private fixed = new WeakSet<ThingLike>();
   private fixedKeys = new WeakMap<ThingLike, string | null>();
+  /** grafika z PixelLab (trzepak; teren i bloki idą ze sceną) albo null: wszystko z kodu */
+  grafika: Grafika | null = null;
 
   /** workers: false wymusza rysowanie kawałków w głównym wątku (adres ?worker=0) */
   async init(host: HTMLElement, opts: { workers?: boolean } = {}): Promise<void> {
@@ -266,6 +270,16 @@ export class GameView {
     this.warms = Texture.from(makeWeaponAtlas() as HTMLCanvasElement).source;
     if (opts.workers !== false && workersAvailable())
       this.painter = new WorkerPainter(spawnChunkWorker, poolSize(navigator.hardwareConcurrency || 4, PHONE));
+  }
+
+  /** grafika z PixelLab do rzeczy (przed setScene; tekstury rzeczy z poprzedniej grafiki idą do kosza) */
+  setGrafika(g: Grafika | null): void {
+    if (g === this.grafika) return;
+    this.grafika = g;
+    for (const e of this.things.values()) e.sprite.destroy();
+    this.things.clear();
+    for (const a of this.thingArt.values()) a.tex.destroy(true);
+    this.thingArt.clear();
   }
 
   /** gdzie się rysują kawałki (do pomiarów) */
@@ -355,7 +369,8 @@ export class GameView {
 
   /**
    * Rzeczy (meble z interior.furniture, trzepak z world.props, potem st.things z symulacji) jako
-   * sprite'y z grafiki zastępczej (thingSprite) w warstwie pionków, sortowane po y dolnej krawędzi.
+   * sprite'y z grafiki zastępczej (thingSprite; trzepak z PixelLab, gdy jest grafika) w warstwie pionków,
+   * sortowane po y dolnej krawędzi.
    * Meble we wnętrzu widać tylko w przekroju, rzeczy na podwórku zawsze; koza i ognisko z ogniem
    * mają animację. Wołać, gdy lista się zmieni; rzeczy porównuje po miejscu i opisie sprite'a,
    * więc tanio też co klatkę.
@@ -530,7 +545,7 @@ export class GameView {
     const key = JSON.stringify(spec);
     let art = this.thingArt.get(key);
     if (!art) {
-      const sp = thingSprite(spec);
+      const sp = rzeczSprite(spec, this.grafika);
       art = { tex: pixelTexture(sp), sp };
       this.thingArt.set(key, art);
     }
