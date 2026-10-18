@@ -428,7 +428,9 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       const door = bid >= 0 && sc.doors.get(i) === 'S';
       // przekrój: opis kafelka wnętrza raz na kafelek, piksele z grafiki zastępczej (wnetrze.ts),
       // na nich ślady pustego mieszkania i uszkodzenia posadzki (szkody.ts)
-      const inner: InteriorTile | null = sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, facade) : null;
+      // fasada z budynku kafelka: w przekroju są też otwarte sąsiednie budynki (M2 fala 2)
+      const inner: InteriorTile | null =
+        sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, bid >= 0 ? sc.styles[bid].wall : facade) : null;
       const dmg = inner ? sec!.damage?.get(i) : undefined;
       const rid = inner ? sec!.room[i] : -1;
       const why = rid >= 0 ? sec!.why?.get(sec!.roomApt?.[rid] ?? -1) : undefined;
@@ -478,7 +480,7 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
     if (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1) continue;
     const st = sc.styles[b.id];
     // otwarty w przekroju: bez maszynowni, kominów i anten (daszki nad wejściami zostają)
-    const open = sec !== null && b.id === sec.building;
+    const open = sec !== null && (b.id === sec.building || !!sec.otwarte?.has(b.id));
     if (!open && b.cls === 'blok' && st.levels >= 5) {
       for (const e of b.entrances) {
         const ex = e.tile % size;

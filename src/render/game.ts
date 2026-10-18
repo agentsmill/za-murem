@@ -6,8 +6,9 @@
    blocked w symulacji, jak w kontrakcie siatki: łata na dziurze i zamknięta brama to blocked = 1,
    dziura to blocked = 0.
    Obcych (szabrownicy, wędrowcy) widać tylko w świetle. Do tego wybór pionka pod punktem kliknięcia (pawnAt, dla
-   widoku: zarząd i mieszkańcy z osobą). Czyste funkcje bez PixiJS. */
+   widoku: zarząd, mieszkańcy z osobą i lokatorzy sąsiednich budynków ze spotkania). Czyste funkcje bez PixiJS. */
 
+import type { Sasiedzi } from '../sim/sasiedzi.ts';
 import type { World } from '../world/world.ts';
 import type { FenceState } from './art/rzeczy.ts';
 import type { Light } from './light.ts';
@@ -32,12 +33,16 @@ export interface GameLike {
     /** efekty walki z ostatnich 2 sekund (błysk strzału) */
     fx?: readonly { t: string; x: number; y: number; tick: number }[];
     fence?: FenceStateLike | null;
+    /** M2 fala 2: sąsiednie budynki (otwarte wnętrza i stany drzwi do przekroju) */
+    sasiedzi?: Sasiedzi;
   };
   w: World;
   /** światło pomieszczeń od ognia: 1 w pomieszczeniu z palącą się kozą, 0,5 przez drzwi */
   light: readonly number[];
   /** przechodniość w symulacji (siatka: łaty i zamknięta brama to 1, dziury 0) */
   blocked: Uint8Array;
+  /** rośnie po każdej zmianie wnętrz i drzwi sąsiadów (otwarcie budynku, wyważenie, deski) */
+  wersjaSasiadow?: number;
 }
 
 /** rodzaje rzeczy, które daje stan gry; rzeczy tych rodzajów spoza gry (podgląd) się pomija */
@@ -225,9 +230,9 @@ export interface HitPawn {
 /** zarząd (pionki rdzenia) */
 export const isBoard = (p: HitPawn): boolean => p.kind === 'core';
 
-/** mieszkaniec siedziby z osobą z generatora mieszkańców; bez osoby (person −1) nie ma karty, więc nie da się go
-    wybrać */
-export const isLokator = (p: HitPawn): boolean => p.kind === 'resident' && p.person >= 0;
+/** mieszkaniec siedziby z osobą z generatora mieszkańców albo lokator sąsiedniego budynku (M2 fala 2, osoba od
+    spotkania); bez osoby (person −1) nie ma karty, więc nie da się go wybrać */
+export const isLokator = (p: HitPawn): boolean => (p.kind === 'resident' || p.kind === 'sasiad') && p.person >= 0;
 
 /** Pionek pod punktem w kafelkach (tx, ty), spośród tych, które przepuszcza `accept`. Pole trafienia to postać:
     0,6 kafelka w bok, 1,5 w górę i 0,4 w dół od stóp; przy kilku wygrywa środek postaci najbliższy punktu. Pionki na

@@ -4,7 +4,8 @@
    wyrzucane, gdy jest ich za dużo. Z daleka (8 px/kafelek) wszystkie, zamawiane na starcie.
    Noc to mapa światła nad światem (light.ts), mnożona przez obraz. Przekrój: przy zbliżeniu
    kawałki nad budynkiem z wnętrzem (scene.section) rysują się z wnętrzem zamiast dachu, a meble
-   stoją w jednej warstwie z pionkami, sortowane po y. */
+   stoją w jednej warstwie z pionkami, sortowane po y. Otwarte sąsiednie budynki (M2 fala 2) dokładają
+   swoje wnętrza do tego samego przekroju łatką sceny (przekrojSasiadow.ts), razem z wyglądem drzwi. */
 
 import {
   Application,
@@ -42,6 +43,7 @@ import { CHUNK, type Scene, TILE } from './art/scene.ts';
 import { mockWear, type WearMock } from './atrapy.ts';
 import { BuildLayer, type BuildPlan, type Placement } from './buildLayer.ts';
 import {
+  applyScenePatch,
   type ChunkPainter,
   chunksByDistance,
   chunksTouched,
@@ -76,6 +78,7 @@ import {
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
 import { FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
+import { PrzekrojSasiadow } from './przekrojSasiadow.ts';
 import { burning, IN, setWear, specOf, type ThingLike } from './section.ts';
 import { smokeSources } from './smoke.ts';
 import { SmokeLayer } from './smokeLayer.ts';
@@ -215,6 +218,9 @@ export class GameView {
   private wearMock: WearMock | null = null;
   /** naprawione uszkodzenia (st.damage z fixed) już zdjęte z przekroju */
   private fixedSeen = new Set<number>();
+  /** M2 fala 2: wnętrza sąsiadów dołożone do przekroju i wersja sąsiadów z symulacji, z której są */
+  private przekrojSas = new PrzekrojSasiadow();
+  private wersjaSas = -1;
   /** plany budowy z ostatniego syncGame (st.builds) */
   private plans: readonly BuildPlan[] = [];
   /** paski postępu planów i podgląd stawiania, nad mapą światła */
@@ -295,6 +301,8 @@ export class GameView {
     // do workerów
     this.wearMock = null;
     this.fixedSeen.clear();
+    this.przekrojSas = new PrzekrojSasiadow();
+    this.wersjaSas = -1;
     if (this.mockWearOn && sc.section) {
       this.wearMock = mockWear(sc.w);
       setWear(sc.section, this.wearMock.damage, this.wearMock.apts);
@@ -322,17 +330,18 @@ export class GameView {
   }
 
   /**
-   * Przerysowuje kawałki pod zmianą na mapie, z workerami i bez: ścięte drzewa (felled) i kafelki
-   * ze zmienionym terenem (tiles; w.terr trzeba zmienić przed wywołaniem). Do czasu nowych tekstur
-   * widać stare, więc nic nie miga. Zwraca numery przerysowywanych kawałków.
+   * Przerysowuje kawałki pod zmianą na mapie, z workerami i bez: ścięte drzewa (felled), kafelki
+   * ze zmienionym terenem (tiles; w.terr trzeba zmienić przed wywołaniem), naprawy, wnętrza sąsiadów
+   * i ich drzwi. Scena głównego wątku dostaje tę samą łatkę co kopie w workerach. Do czasu nowych
+   * tekstur widać stare, więc nic nie miga. Zwraca numery przerysowywanych kawałków.
    */
   redraw(ch: MapChange): number[] {
     const sc = this.scene;
     if (!sc) return [];
-    for (const k of ch.felled ?? []) sc.treeGone[k] = 1;
-    for (const i of ch.fixed ?? []) sc.section?.damage?.delete(i);
+    const patch = scenePatchOf(sc, ch);
+    applyScenePatch(sc, patch);
     const touched = chunksTouched(sc, ch);
-    this.painter.patch(scenePatchOf(sc, ch));
+    this.painter.patch(patch);
     for (const k of touched) {
       const s = this.slots[k];
       s.ver++;
@@ -398,6 +407,7 @@ export class GameView {
   syncGame(sim: GameLike): void {
     if (!this.scene) return;
     const w = sim.w;
+    this.syncSasiedzi(sim);
     let g = this.game;
     // z atrapą pustych mieszkań śmieci i zepsute meble tylko z atrapy, bez tych ze świata i ze stanu gry
     const mock = this.wearMock;
@@ -464,6 +474,25 @@ export class GameView {
     g.things = [...things, ...g.props, ...fence];
     this.applyThings();
     this.gameLights = gameLights(sim, g.windows);
+  }
+
+  /** Otwarte sąsiednie budynki (M2 fala 2): po zmianie wersji w symulacji nowe wnętrza i drzwi idą do przekroju,
+      ich kawałki dostają przekrój, a rzeczy, które stoją teraz we wnętrzu, widać już tylko w przekroju. */
+  private syncSasiedzi(sim: GameLike): void {
+    const sc = this.scene!;
+    const ver = sim.wersjaSasiadow ?? 0;
+    if (!sc.section || ver === this.wersjaSas) return;
+    this.wersjaSas = ver;
+    const z = this.przekrojSas.zmiany(sim.w, sc.section, sim.st.sasiedzi);
+    if (!z) return;
+    this.redraw(z);
+    const n = sc.chunks;
+    for (const p of z.wnetrze)
+      for (let cy = Math.floor(p.y0 / CHUNK); cy <= Math.floor((p.y0 + p.h - 1) / CHUNK); cy++)
+        for (let cx = Math.floor(p.x0 / CHUNK); cx <= Math.floor((p.x0 + p.w - 1) / CHUNK); cx++)
+          this.cutChunks.add(cy * n + cx);
+    if (z.wnetrze.length)
+      for (const e of this.things.values()) e.inside = this.underRoof(e.thing.x + 0.5, e.thing.y + e.thing.h - 0.5);
   }
 
   /** rzeczy gry i dodatki do warstwy pionków (diff po miejscu i opisie sprite'a) */

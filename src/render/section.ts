@@ -3,10 +3,14 @@
    z jej nagłówka: ściana zewnętrzna na brzegu obrysu z bokami na zewnątrz, okno z listy okien ze
    stroną ulicy i pomieszczeniem za nim, drzwi frontowe z wejść budynku, schody w głąb od posadzki
    klatki. Rzeczy (meble, trzepak, później rzeczy z symulacji) zamieniane na opis sprite'a
-   thingSprite (art/rzeczy.ts). Czyste funkcje bez DOM: działają w Node, w oknie i w workerze. */
+   thingSprite (art/rzeczy.ts). M2 fala 2: do przekroju siedziby dokładają się wnętrza otwartych
+   sąsiednich budynków (SectionPart, dolozCzesc: przy pierwszym dołożeniu przekrój dostaje własne
+   kopie tablic, bo na start dzieli je z wnętrzem świata, które czyta symulacja) i wygląd ich drzwi
+   (DoorLook: wyważone jak uszkodzenie drzwi, zabite deskami). Czyste funkcje bez DOM: działają
+   w Node, w oknie i w workerze. */
 
 import type { AptState, AptWhy, Damage, DamageKind } from '../world/apts.ts';
-import { IN, type RoomKind } from '../world/interior.ts';
+import { IN, type Interior, type RoomKind } from '../world/interior.ts';
 import type { Dir, World } from '../world/world.ts';
 import { BUILD_KINDS, FIRE_FRAMES, type ThingSpec } from './art/rzeczy.ts';
 import { type InteriorTile, maskOf, NB } from './art/wnetrze.ts';
@@ -61,6 +65,123 @@ export interface SectionScene {
   roomApt?: number[];
   /** puste mieszkania siedziby: numer mieszkania → przyczyna (ślad na posadzce) */
   why?: Map<number, AptWhy>;
+  /** M2 fala 2: otwarte sąsiednie budynki w tym przekroju (bez dachu, maszynowni i kominów przy zbliżeniu) */
+  otwarte?: Set<number>;
+  /** drzwi zabite deskami (kafelki) */
+  zabite?: Set<number>;
+  /** przekrój ma własne tablice komórek i pomieszczeń (przed pierwszym dołożeniem wnętrza są wspólne z siedzibą
+      świata, której symulacja nie może zobaczyć cudzych pomieszczeń) */
+  wlasne?: boolean;
+}
+
+/** Kawałek przekroju: wnętrze otwartego sąsiedniego budynku do dołożenia do sceny siedziby (M2 fala 2). Komórki
+    różnych budynków się nie pokrywają, więc jedna scena rysuje wszystkie. Pomieszczenia i mieszkania dostają numery
+    przekroju od base i aptBase. Idzie do workera w łatce sceny. */
+export interface SectionPart {
+  building: number;
+  /** prostokąt budynku na mapie i komórki oraz pomieszczenia (numery przekroju, −1) w jego obrębie */
+  x0: number;
+  y0: number;
+  w: number;
+  h: number;
+  cell: Uint8Array;
+  room: Int16Array;
+  /** rodzaje i mieszkania (numery przekroju) pomieszczeń od base */
+  base: number;
+  kinds: RoomKind[];
+  roomApt: number[];
+  windows: number[];
+  /** drzwi na zewnątrz (rysują się jak drzwi frontowe) */
+  entrances: number[];
+  /** ślady w pustych mieszkaniach (uszkodzenia) i przyczyny pustych mieszkań (numery przekroju) */
+  damage: [number, DamageKind][];
+  why: [number, AptWhy][];
+}
+
+/** wygląd drzwi sąsiada: zwykłe, wyważone (jak w fali 1) albo zabite deskami */
+export interface DoorLook {
+  tile: number;
+  look: 'zwykle' | 'wywazone' | 'zabite';
+}
+
+/** Kawałek przekroju z wnętrza budynku: prostokąt budynku, pomieszczenia od base, mieszkania od aptBase,
+    puste mieszkania (przyczyna śladu) i ślady uszkodzeń, drzwi na zewnątrz. */
+export function czescPrzekroju(
+  w: Pick<World, 'size' | 'buildings' | 'bid'>,
+  it: Interior,
+  base: number,
+  aptBase: number,
+  why: readonly (readonly [number, AptWhy])[],
+  slady: readonly { t: number; k: DamageKind }[],
+  entrances: readonly number[],
+): SectionPart {
+  const b = w.buildings[it.building];
+  const size = w.size;
+  const W = b.x1 - b.x0 + 1;
+  const H = b.y1 - b.y0 + 1;
+  const cell = new Uint8Array(W * H);
+  const room = new Int16Array(W * H).fill(-1);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = (b.y0 + y) * size + b.x0 + x;
+      if (w.bid[i] !== it.building) continue;
+      cell[y * W + x] = it.cell[i];
+      if (it.room[i] >= 0) room[y * W + x] = base + it.room[i];
+    }
+  return {
+    building: it.building,
+    x0: b.x0,
+    y0: b.y0,
+    w: W,
+    h: H,
+    cell,
+    room,
+    base,
+    kinds: it.rooms.map((r) => r.kind),
+    roomApt: it.rooms.map((r) => (r.apt >= 0 ? aptBase + r.apt : -1)),
+    windows: [...it.windows],
+    entrances: [...entrances],
+    damage: slady.map((d) => [d.t, d.k]),
+    why: why.map(([apt, k]) => [aptBase + apt, k]),
+  };
+}
+
+/** dokłada kawałek do przekroju (w głównym wątku i w kopii sceny w workerze) */
+export function dolozCzesc(sec: SectionScene, part: SectionPart, size: number): void {
+  if (!sec.wlasne) {
+    sec.cell = sec.cell.slice();
+    sec.room = sec.room.slice();
+    sec.wlasne = true;
+  }
+  for (let y = 0; y < part.h; y++)
+    for (let x = 0; x < part.w; x++) {
+      const k = y * part.w + x;
+      if (part.cell[k] === IN.NONE) continue;
+      const i = (part.y0 + y) * size + part.x0 + x;
+      sec.cell[i] = part.cell[k];
+      sec.room[i] = part.room[k];
+    }
+  part.kinds.forEach((kind, k) => {
+    sec.kinds[part.base + k] = kind;
+    (sec.roomApt ??= [])[part.base + k] = part.roomApt[k];
+  });
+  for (const t of part.windows) sec.windows.add(t);
+  for (const t of part.entrances) sec.entrances.add(t);
+  sec.damage ??= new Map();
+  for (const [t, k] of part.damage) sec.damage.set(t, k);
+  sec.why ??= new Map();
+  for (const [a, k] of part.why) sec.why.set(a, k);
+  (sec.otwarte ??= new Set()).add(part.building);
+}
+
+/** wygląd drzwi sąsiada w przekroju: zabite deskami, wyważone (uszkodzenie drzwi) albo zwykłe */
+export function ustawDrzwi(sec: SectionScene, d: DoorLook): void {
+  sec.zabite ??= new Set();
+  sec.damage ??= new Map();
+  if (d.look === 'zabite') sec.zabite.add(d.tile);
+  else sec.zabite.delete(d.tile);
+  if (d.look === 'wywazone') sec.damage.set(d.tile, 'drzwi');
+  else if (sec.damage.get(d.tile) === 'drzwi' && d.look === 'zwykle') sec.damage.delete(d.tile);
 }
 
 /** świat z uszkodzeniami i stanami mieszkań (kontrakt M2, src/world/apts.ts), gdy już je ma */
@@ -150,6 +271,7 @@ export function describeTile(sec: SectionScene, i: number, size: number, facade:
         face,
         facade: face === 'out' ? facade : undefined,
         broken: sec.damage?.get(i) === 'drzwi' || undefined,
+        boarded: sec.zabite?.has(i) || undefined,
       };
     default: {
       const mask = maskOf(wallish);
