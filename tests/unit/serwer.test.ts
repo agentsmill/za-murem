@@ -406,6 +406,19 @@ describe('serwer gry: limity i obrona', () => {
     ).toBe(201);
   });
 
+  it('sprawdzanie po kolei, czy nick ma konto: najwyżej 30 zajętych nicków na IP na godzinę', async () => {
+    const s = await start();
+    await druzyna(s, 'Jan_Kowalski');
+    const p = przegladarka(s.adres);
+    for (let i = 0; i < 30; i++)
+      expect((await p.zadanie('POST', '/api/konto', { nick: 'jan_kowalski', haslo: `inne-haslo-${i}` })).status).toBe(
+        409,
+      );
+    const r = await p.zadanie('POST', '/api/konto', { nick: 'Zupelnie_Nowy', haslo: 'inne-haslo-x' });
+    expect(r.status).toBe(429);
+    expect(r.body.blad).toBe('za_duzo_prob');
+  });
+
   it('X-Forwarded-For liczy się tylko za zaufanym proxy', async () => {
     const zwykly = await start();
     await przegladarka(zwykly.adres).zadanie('POST', '/api/konto', DANE);

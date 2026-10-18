@@ -39,7 +39,8 @@ const gra = stworzSerwer({
 });
 
 const serwer = createServer(
-  { requestTimeout: 30_000, headersTimeout: 10_000, keepAliveTimeout: 5_000, maxHeaderSize: 16 * 1024 },
+  // zapis gry do 3 MiB z telefonu na słabym łączu potrafi iść kilkadziesiąt sekund
+  { requestTimeout: 60_000, headersTimeout: 10_000, keepAliveTimeout: 5_000, maxHeaderSize: 16 * 1024 },
   (req, res) => gra.obsluz(req, res),
 );
 serwer.listen(port, host, () => {

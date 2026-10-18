@@ -146,12 +146,12 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const rejestracje: Okno = okno(5, GODZ, teraz);
   const zadania: Okno = okno(300, MIN, teraz);
   const zapisy: Okno = okno(60, GODZ, teraz);
-  // porównanie z atrapą dla nieistniejącego nicku: tyle samo pracy co z prawdziwym kontem
-  let atrapa: Promise<string> | null = null;
-  const atrapaSkrotu = () => {
-    atrapa ??= atrapaHasla(par);
-    return atrapa;
-  };
+  // próby zajętych nicków przy zakładaniu konta: bez tego dałoby się sprawdzać po kolei, kto ma konto
+  const zajeteNicki: Okno = okno(30, GODZ, teraz);
+  // porównanie z atrapą dla nieistniejącego nicku: tyle samo pracy co z prawdziwym kontem; liczona od razu,
+  // żeby pierwsze logowanie na nieznany nick nie trwało dwa razy dłużej
+  const atrapa = atrapaHasla(par);
+  atrapa.catch(() => {});
 
   const ciasteczko = (token: string, maxAgeMs: number) =>
     ciasteczkoSesji(token, { nazwa: CIASTECZKO, maxAge: Math.floor(maxAgeMs / 1000), secure });
@@ -226,7 +226,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   };
 
   const zalozKonto: Obsluga = async (k) => {
-    const czekaj = rejestracje.zablokowany(k.ip);
+    const czekaj = rejestracje.zablokowany(k.ip) || zajeteNicki.zablokowany(k.ip);
     if (czekaj)
       throw new BladHttp(429, 'za_duzo_prob', 'Za dużo nowych kont z tego miejsca. Spróbujcie później.', {
         'Retry-After': String(czekaj),
@@ -239,10 +239,14 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     if (zh) throw new BladHttp(400, 'zle_haslo', zh);
     if (nickKlucz(haslo) === nickKlucz(nick)) throw new BladHttp(400, 'zle_haslo', 'Hasło nie może być nickiem.');
     const klucz = nickKlucz(nick);
-    if (baza.kontoPoNicku(klucz)) throw new BladHttp(409, 'nick_zajety', 'Ten nick jest już zajęty.');
+    const zajety = () => {
+      zajeteNicki.dolicz(k.ip);
+      return new BladHttp(409, 'nick_zajety', 'Ten nick jest już zajęty.');
+    };
+    if (baza.kontoPoNicku(klucz)) throw zajety();
     const skrot = await skrotHasla(haslo, par);
-    const konto = baza.dodajKonto(nick, klucz, skrot, teraz());
-    if (!konto) throw new BladHttp(409, 'nick_zajety', 'Ten nick jest już zajęty.');
+    const konto = baza.dodajKonto(nick, klucz, skrot, k.teraz);
+    if (!konto) throw zajety();
     rejestracje.dolicz(k.ip);
     zaloguj(k, konto);
     wyslij(k.res, 201, ja(konto), k.naglowki);
@@ -256,7 +260,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       });
     const { nick, haslo } = await daneLogowania(k);
     const konto = nick.length <= 64 && haslo.length <= 200 ? baza.kontoPoNicku(nickKlucz(nick)) : null;
-    const dobre = await sprawdzHaslo(haslo.slice(0, 200), konto?.haslo ?? (await atrapaSkrotu()));
+    const dobre = await sprawdzHaslo(haslo.slice(0, 200), konto?.haslo ?? (await atrapa));
     if (!konto || !dobre) {
       logowania.dolicz(k.ip);
       throw new BladHttp(401, 'zle_logowanie', 'Zły nick albo hasło.');
@@ -481,14 +485,13 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   };
 
   const obsluzAsync = async (req: IncomingMessage, res: ServerResponse) => {
-    const k: Kontekst = {
-      req,
-      res,
-      url: new URL(req.url ?? '/', 'http://serwer'),
-      ip: ipZ(req),
-      teraz: teraz(),
-      naglowki: {},
-    };
+    let url: URL;
+    try {
+      url = new URL(req.url ?? '/', 'http://serwer');
+    } catch {
+      url = new URL('/', 'http://serwer');
+    }
+    const k: Kontekst = { req, res, url, ip: ipZ(req), teraz: teraz(), naglowki: {} };
     const metoda = req.method ?? 'GET';
     try {
       const czekaj = zadania.zablokowany(k.ip);
@@ -531,12 +534,16 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
 
   return {
     obsluz(req, res) {
-      void obsluzAsync(req, res);
+      // ostatnia siatka: błąd poza obsługą trasy nie może wywrócić procesu
+      obsluzAsync(req, res).catch((e) => {
+        dziennik(`błąd obsługi: ${e instanceof Error ? e.message : String(e)}`);
+        res.destroy();
+      });
     },
     baza,
     sprzataj() {
       baza.usunWygasleSesje(teraz());
-      for (const o of [logowania, rejestracje, zadania, zapisy]) o.sprzataj();
+      for (const o of [logowania, rejestracje, zadania, zapisy, zajeteNicki]) o.sprzataj();
     },
     zamknij() {
       baza.zamknij();
