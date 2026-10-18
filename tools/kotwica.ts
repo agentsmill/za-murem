@@ -320,8 +320,11 @@ async function podmien(page: Page, k: Kotwica) {
     ];
     const ludzie = await Promise.all(wersje.map((l) => Promise.all(l.kierunki.map(load))));
     const naklejki = (await Promise.all(k.dach.naklejki.map(load))).map(pixels);
-    // klasy Pixi z sprite'a, który już jest w scenie (strona nie wystawia modułu pixi.js)
-    const any = v.actors.children.find((c) => c.texture)!;
+    // klasy Pixi z sprite'a, który już jest w scenie (strona nie wystawia modułu pixi.js); tylko taki, którego
+    // tekstura ma Texture.from, bo warstwy w actors (np. plotLayer) trzymają pod `texture` co innego
+    const any = [...v.actors.children, ...v.terrain.children].find(
+      (c) => typeof (c.texture as { constructor?: { from?: unknown } } | undefined)?.constructor?.from === 'function',
+    )!;
     const SpriteC = any.constructor as new (t: Tex) => Spr;
     const TextureC = any.texture!.constructor as unknown as { from: (s: CanvasImageSource) => Tex };
     const sprite = (src: CanvasImageSource) => {
