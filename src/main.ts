@@ -1464,7 +1464,8 @@ let placing: {
 } | null = null;
 /** mieszkanie na karcie (klik w mieszkanie siedziby, gdy nikt nie jest zaznaczony) albo −1 */
 let aptFocus = -1;
-/** mieszkaniec z osobą na karcie do odczytu (id pionka po kliknięciu w niego) albo −1 */
+/** mieszkaniec z osobą na karcie do odczytu (id pionka po kliknięciu w niego; na dotyku tylko bez zaznaczonych, bo
+    z zaznaczonymi stuknięcie to polecenie) albo −1 */
 let residentFocus = -1;
 
 /** podgląd stawiania w rysowaniu (view.setPlacement, robi sesja rysowania); bez niego duch z DOM */
@@ -1796,24 +1797,33 @@ const endPointer = (e: PointerEvent) => {
     selectedChanged();
     return;
   }
-  // mieszkaniec z osobą: karta do odczytu, bez zmiany zaznaczenia i bez poleceń (zarząd miał pierwszeństwo wyżej)
+  // mieszkaniec z osobą (zarząd miał pierwszeństwo wyżej): karta do odczytu, bez zmiany zaznaczenia i bez poleceń
   const lok = view.pickResident(sim.st, e.offsetX, e.offsetY);
+  if (d.type !== 'mouse') {
+    // dotyk: stuknięcie w pusty teren przy otwartej karcie mieszkańca tylko ją zamyka, bez polecenia
+    if (residentFocus >= 0 && !lok) {
+      residentFocus = -1;
+      return;
+    }
+    // z zaznaczonymi z zarządu stuknięcie to zawsze polecenie, także przy mieszkańcu (jak przed mieszkańcami z adresu)
+    if (selected.size) {
+      residentFocus = -1;
+      orderAt(e.offsetX, e.offsetY, false);
+      return;
+    }
+    // bez zaznaczenia: karta mieszkańca albo karta mieszkania
+    if (lok) {
+      residentFocus = lok.id;
+      aptFocus = -1;
+    } else aptFocus = aptAt(sim.w, view.tileAt(e.offsetX, e.offsetY));
+    return;
+  }
   if (lok) {
     residentFocus = lok.id;
     aptFocus = -1;
     return;
   }
-  // dotyk: stuknięcie obok otwartej karty mieszkańca tylko ją zamyka, bez polecenia dla zaznaczonych z zarządu
-  if (d.type !== 'mouse' && residentFocus >= 0) {
-    residentFocus = -1;
-    return;
-  }
   residentFocus = -1;
-  if (d.type !== 'mouse') {
-    if (selected.size) orderAt(e.offsetX, e.offsetY, false);
-    else aptFocus = aptAt(sim.w, view.tileAt(e.offsetX, e.offsetY));
-    return;
-  }
   if (d.button === 0) {
     selected.clear();
     aptFocus = aptAt(sim.w, view.tileAt(e.offsetX, e.offsetY));

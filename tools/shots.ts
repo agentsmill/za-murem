@@ -4971,8 +4971,9 @@ function kartaShots(): Shot[] {
         await wejdz(page, base);
         const kto0 = await zarzadZGeneratora(page, 0);
         const r = await mieszkaniecZGeneratora(page, 0, true);
-        // zaznaczony członek zarządu, stuknięcie w mieszkańca (karta), potem w pusty teren: karta się zamyka i nikt
-        // z zarządu nie dostaje polecenia (wraca karta zaznaczonego); kamera po kolei na każdym z nich
+        // dotyk z zaznaczonym członkiem zarządu: stuknięcie przy mieszkańcu to polecenie (jak przed krokiem 5), bez
+        // karty mieszkańca; bez zaznaczenia stuknięcie otwiera kartę mieszkańca, a stuknięcie w pusty teren ją zamyka
+        // bez polecenia; kamera po kolei na każdym z nich
         const naPionku = async (id: number) => {
           await page.evaluate((id) => {
             const zm = window.zm!;
@@ -4988,6 +4989,21 @@ function kartaShots(): Shot[] {
         const przed = await cmds(page);
         const b0 = await naPionku(r.id);
         await page.touchscreen.tap(b0.x, b0.y);
+        await page.waitForTimeout(400);
+        const poZaznaczonym = await page.evaluate(
+          () => document.querySelector('#card:not([hidden]) h2')?.textContent ?? null,
+        );
+        console.log(
+          `  stuknięcie przy mieszkańcu z zaznaczonym: karta „${poZaznaczonym}”, polecenia ${przed} → ${await cmds(page)}`,
+        );
+        if ((await cmds(page)) !== przed + 1) throw new Error('stuknięcie z zaznaczonym zarządem nie dało polecenia');
+        if (poZaznaczonym !== kto0) throw new Error(`stuknięcie z zaznaczonym zarządem dało kartę „${poZaznaczonym}”`);
+        await page.keyboard.press('Escape');
+        // podpowiedź „Idzie.” po poleceniu znika, zanim zrobimy zrzut końcowy
+        await page.waitForTimeout(2800);
+        const przed2 = await cmds(page);
+        const b1 = await naPionku(r.id);
+        await page.touchscreen.tap(b1.x, b1.y);
         await sprawdz(page, r.name);
         // pusty teren obok mieszkańca: mapa bez paneli nad nią i bez pionka w promieniu 2 m
         const pusty = await page.evaluate(
@@ -5012,15 +5028,15 @@ function kartaShots(): Shot[] {
             }
             return null;
           },
-          [b0.x, b0.y] as const,
+          [b1.x, b1.y] as const,
         );
         if (!pusty) throw new Error('brak pustego miejsca na mapie do stuknięcia');
         await page.touchscreen.tap(pusty.x, pusty.y);
         await page.waitForTimeout(400);
         const po = await page.evaluate(() => document.querySelector('#card:not([hidden]) h2')?.textContent ?? null);
-        console.log(`  stuknięcie obok karty mieszkańca: karta „${po}”, polecenia ${przed} → ${await cmds(page)}`);
-        if ((await cmds(page)) !== przed) throw new Error('stuknięcie obok karty mieszkańca wysłało polecenie');
-        if (po !== kto0) throw new Error(`po stuknięciu obok karty mieszkańca karta „${po}”`);
+        console.log(`  stuknięcie obok karty mieszkańca: karta „${po}”, polecenia ${przed2} → ${await cmds(page)}`);
+        if ((await cmds(page)) !== przed2) throw new Error('stuknięcie obok karty mieszkańca wysłało polecenie');
+        if (po !== null) throw new Error(`po stuknięciu obok karty mieszkańca karta „${po}”`);
         await page.keyboard.press('Escape');
         // końcowy zrzut: sam mieszkaniec, kamera na nim
         const b = await naPionku(r.id);
