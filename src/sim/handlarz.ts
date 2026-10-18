@@ -1,8 +1,8 @@
 /* Handlarz pod bramą (docs/superpowers/specs/2026-10-18-handlarz-design.md): terminy wizyt, towar, wymiana i napisy.
    Czyste dane i funkcje dla symulacji, menu i rysowania. Handlarz chodzi tylko w grze z opcją SimOpts.obcy, więc
    losowanie ze st.rng (termin, oferty, wygląd) nie rusza gier i botów bez niej. Złom jest walutą, bo po wrakach
-   i rozbiórce jest go za dużo, a deski i jedzenie są wąskim gardłem. Napisy w obu językach: do menu i opisów idzie
-   na razie polski, tłumaczenie podłączy warstwa języka. */
+   i rozbiórce jest go za dużo, a deski i jedzenie są wąskim gardłem. Napisy w obu językach: menu, opisy prac
+   i podpowiedzi biorą je przez tr() w bieżącym języku (deski to „planks”, bo „board” to zarząd). */
 
 import { nextRandom, type RngState } from '../core/rng.ts';
 import type { Mat } from './budowle.ts';
@@ -152,16 +152,17 @@ const GEN: Record<Mat, readonly [string, string, string]> = {
 };
 const amount = (m: Partial<Record<Mat, number>>, forms = ACC): string =>
   (Object.entries(m) as [Mat, number][]).map(([k, n]) => `${n} ${form(n, forms[k])}`).join(' i ');
-const AMOUNT_EN: Record<Mat, string> = {
-  drewno: 'firewood',
-  deski: 'boards',
-  zlom: 'scrap',
-  czesci: 'parts',
-  jedzenie: 'food',
-  leki: 'medicine',
+/** po angielsku jak w słowniczku i na pasku (deski „planks”, leki „meds”): jedna sztuka, reszta */
+const AMOUNT_EN: Record<Mat, readonly [string, string]> = {
+  drewno: ['wood', 'wood'],
+  deski: ['plank', 'planks'],
+  zlom: ['scrap', 'scrap'],
+  czesci: ['part', 'parts'],
+  jedzenie: ['food', 'food'],
+  leki: ['pack of meds', 'packs of meds'],
 };
 const amountEn = (m: Partial<Record<Mat, number>>): string =>
-  (Object.entries(m) as [Mat, number][]).map(([k, n]) => `${n} ${AMOUNT_EN[k]}`).join(' and ');
+  (Object.entries(m) as [Mat, number][]).map(([k, n]) => `${n} ${AMOUNT_EN[k][n === 1 ? 0 : 1]}`).join(' and ');
 
 /** napis w obu językach */
 export interface Napis {
@@ -176,22 +177,23 @@ export const NAPISY = {
   }),
   brakuje: (m: Partial<Record<Mat, number>>): Napis => ({
     pl: `brakuje ${amount(m, GEN)}`,
-    en: `short of ${amountEn(m)}`,
+    en: `${amountEn(m)} short`,
   }),
   napasc: { pl: 'Napaść na handlarza', en: 'Rob the trader' },
-  /** pod: miejsce ze słownika miejsca („pod bramą”, w domu „pod furtką”) */
-  przyszedl: (pod: string): Napis => ({
+  /** pod: miejsce ze słownika miejsca („pod bramą”, w domu „pod furtką”), gate: to samo po angielsku („the gate”,
+      „the garden gate”) */
+  przyszedl: (pod: string, gate = 'the gate'): Napis => ({
     pl: `${pod[0].toUpperCase()}${pod.slice(1)} stoi handlarz z wózkiem.`,
-    en: 'A trader with a cart is waiting at the gate.',
+    en: `A trader with a cart is waiting at ${gate}.`,
   }),
   idzieHandlowac: { pl: 'Idzie do handlarza.', en: 'Going to the trader.' },
   handluje: { pl: 'Targuje się z handlarzem.', en: 'Haggling with the trader.' },
   idzieNapasc: { pl: 'Idzie napaść na handlarza.', en: 'Going to rob the trader.' },
   nastroj: { pl: 'Napadliśmy na handlarza', en: 'We robbed the trader' },
-  poHandel: { pl: 'Pójdzie do handlarza.', en: 'Will go to the trader.' },
-  poHandelWielu: { pl: 'Jedna osoba pójdzie do handlarza.', en: 'One person will go to the trader.' },
-  poNapasc: { pl: 'Napadnie na handlarza.', en: 'Will rob the trader.' },
-  poNapascWielu: { pl: 'Jedna osoba napadnie na handlarza.', en: 'One person will rob the trader.' },
+  poHandel: { pl: 'Pójdzie do handlarza.', en: 'Off to the trader.' },
+  poHandelWielu: { pl: 'Jedna osoba pójdzie do handlarza.', en: 'One person goes to the trader.' },
+  poNapasc: { pl: 'Napadnie na handlarza.', en: 'Off to rob the trader.' },
+  poNapascWielu: { pl: 'Jedna osoba napadnie na handlarza.', en: 'One person goes to rob the trader.' },
   atakuj: { pl: 'Atakuj handlarza', en: 'Attack the trader' },
   atakujZbira: { pl: 'Atakuj człowieka handlarza', en: "Attack the trader's man" },
   walczy: { pl: 'Walczy z siekierą.', en: 'Fighting with an axe.' },

@@ -743,7 +743,7 @@ describe('poprawki z przeglądu', () => {
     st.tick = atHour(1, 21);
     const sim = new Sim(w, st);
     const plan = emptyEffects();
-    plan.raid = { day: 1, at: 23 * 60, post: 'brama', where: 'przy bramie' };
+    plan.raid = { day: 1, at: 23 * 60, post: 'brama', where: { pl: 'przy bramie', en: 'przy bramie' } };
     applyGov(st, w, plan);
     const wood = () =>
       st.things.filter((t) => t.kind === 'drewno').reduce((x, t) => x + t.n, 0) +
@@ -759,7 +759,7 @@ describe('poprawki z przeglądu', () => {
       day: 1,
       outcome: 'wtargnięcie',
       post: 'brama',
-      where: 'przy bramie',
+      where: { pl: 'przy bramie', en: 'przy bramie' },
       attack: 4,
       defense: 2,
       stolen: { wood: 7, supplies: 0, scrap: 0, parts: 0, meds: 0 },

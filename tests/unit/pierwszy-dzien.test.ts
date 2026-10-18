@@ -9,6 +9,7 @@ import { M1_EVENTS } from '../../src/gov/wydarzenia.ts';
 import { ackReport, chooseEvent, confirmNight, govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
 import { Atrapa, TPH, TPS } from './gov-atrapa.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
+import { pl } from './po-angielsku.ts';
 
 const base = new Atrapa(1).input();
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
@@ -124,7 +125,7 @@ describe('dym z komina', () => {
     play(gov, 1, 59, f);
     govUpdate(gov, inp(60, f(60)));
     const p = pending(gov, inp(60, f(60)));
-    return p?.k === 'wydarzenie' ? `${p.title}: ${p.text}` : '';
+    return p?.k === 'wydarzenie' ? `${pl(p.title)}: ${pl(p.text)}` : '';
   };
 
   it('w bloku sąsiadka z waszej klatki, w bloku bez mieszkańców z bloku obok', () => {
@@ -150,7 +151,7 @@ describe('stare zapisy', () => {
     gov.ev.done.sasiadka = true;
     const i = inp(sec(1, 18));
     const p = pending(gov, i);
-    expect(p?.k === 'wydarzenie' && p.title).toBe('Dym z komina');
+    expect(p?.k === 'wydarzenie' && pl(p.title)).toBe('Dym z komina');
     expect(chooseEvent(gov, i, 0).stock.supplies).toBe(2);
   });
 

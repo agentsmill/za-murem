@@ -12,9 +12,10 @@ import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, newGov } from '../../src/gov/zarzad.ts';
 import { Atrapa } from './gov-atrapa.ts';
 import { demoWorld, FORBIDDEN_DOM } from './miejsce-pomoc.ts';
+import { pl, polski } from './po-angielsku.ts';
 
 const zielonki = placeOf(demoWorld('zielonki').w);
-const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
+const def = (id: string) => polski(M1_EVENTS.find((e) => e.id === id)!);
 
 /** zarząd, wejście (dzień 3, 10:00, dużo zapasów) i host do jednego wydarzenia */
 function setup(over: Partial<GovInput> = {}, seed = 1, trust = 50) {
@@ -34,7 +35,7 @@ function pick(id: string, d: unknown, k: number, over: Partial<GovInput> = {}, s
   const { gov, i } = setup(over, seed);
   gov.ev.active = { id, d };
   const fx = chooseEvent(gov, i, k);
-  return { gov, fx, lines: [...fx.log, ...gov.later.map((l) => l.line)] };
+  return { gov, fx, lines: [...fx.log, ...gov.later.map((l) => l.line)].map(pl) };
 }
 
 const labels = (id: string, d: unknown, over: Partial<GovInput> = {}) =>
@@ -49,7 +50,7 @@ describe('w domu żadne wydarzenie nie mówi o bloku', () => {
     for (let seed = 1; seed <= 6; seed++)
       for (const hour of [10, 16, 20, 23])
         for (const trust of [50, 30])
-          for (const e of M1_EVENTS) {
+          for (const e of M1_EVENTS.map(polski)) {
             const over = {
               hour,
               place,
@@ -300,7 +301,7 @@ describe('poprawki po przeglądzie', () => {
     let seen = 0;
     for (let seed = 1; seed <= 6; seed++)
       for (const hour of [10, 16, 20, 23])
-        for (const e of M1_EVENTS) {
+        for (const e of M1_EVENTS.map(polski)) {
           const over = { hour, place: place as GovPlace, residents: 0, cap: 0, season: 0 };
           const { h } = setup(over, seed, 30);
           if (e.w(h) <= 0) continue;

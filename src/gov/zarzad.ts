@@ -10,7 +10,9 @@
      interfejs: pending(gov, input) → karta, uchwała, wydarzenie albo raport;
      odpowiedzi: setNight / confirmNight, signLaw, chooseEvent, ackReport (każda zwraca skutki). */
 
-import { placeIn, wordsOf } from './miejsce.ts';
+import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
+import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
+import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } from './noc.ts';
 import { FIRST_LAWS } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
@@ -71,10 +73,13 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
     if (optionsOfLaws(st, i).some((o) => o.s === 'ok')) {
       st.lawPending = true;
       const z = wordsOf(placeIn(i)).zarzad.dk;
+      const meeting = placeIn(i).kind === 'dom' ? 'Committee meeting' : 'Board meeting';
       logGov(
         st,
         i,
-        i.day === 1 ? `Zebranie ${z} przy kozie: pierwsza uchwała.` : `Zebranie ${z}: można podjąć uchwałę.`,
+        i.day === 1
+          ? tx(`Zebranie ${z} przy kozie: pierwsza uchwała.`, `${meeting} by the stove: the first resolution.`)
+          : tx(`Zebranie ${z}: można podjąć uchwałę.`, `${meeting}: you can pass a resolution.`),
         true,
         fx,
       );
@@ -82,7 +87,7 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   }
   if (st.lawPending && (i.hour >= CARD_DEADLINE || i.day > st.lawDay)) {
     st.lawPending = false;
-    logGov(st, i, 'Zebranie skończyło się bez uchwały.', false, fx);
+    logGov(st, i, tx('Zebranie skończyło się bez uchwały.', 'The meeting ended without a resolution.'), false, fx);
   }
   // karta nocy o 20:00
   if (!st.night && st.cardDay < i.day && i.hour >= CARD_HOUR) {
@@ -103,7 +108,7 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
       loot: zeroStock(),
       slept: [],
     };
-    logGov(st, i, `Karta nocy. ${card.forecast}`, true, fx);
+    logGov(st, i, tx(`Karta nocy. ${card.forecast.pl}`, `Night orders. ${card.forecast.en}`), true, fx);
   }
   if (st.night && !st.night.confirmed && (i.hour >= CARD_DEADLINE || i.day > st.night.day)) confirm(st, i, fx, true);
   nightTick(st, i, fx);
@@ -124,7 +129,10 @@ function mourn(st: GovState, i: GovInput, fx: GovEffects): void {
   st.deadN = dead.length;
   for (const d of dead.slice(from)) {
     const why = CAUSE[d.cause] ?? d.cause;
-    const line = d.id ? `${d.name} nie żyje, ${why}.` : `Nie żyje jeden z mieszkańców, ${why}.`;
+    const whyEn = przyczynaEn(d.cause);
+    const line = d.id
+      ? tx(`${d.name} nie żyje, ${why}.`, `${d.name} has died ${whyEn}.`)
+      : tx(`Nie żyje jeden z mieszkańców, ${why}.`, `One of the ${wordsEn(placeIn(i)).mieszkancy} has died ${whyEn}.`);
     if (d.id) mood(st, -5, 8);
     else mood(st, -2, 3);
     if (st.night?.confirmed) st.night.lines.push(line);
@@ -137,7 +145,10 @@ function checkOver(st: GovState, i: GovInput, fx: GovEffects): void {
   if (!i.people.length) st.over = 'pustka';
   else if (st.anger >= 100) st.over = 'odwolanie';
   else if (st.trust <= 0) st.over = 'exodus';
-  if (st.over) logGov(st, i, `Koniec gry: ${st.over}.`, true, fx);
+  if (!st.over) return;
+  // po angielsku tytuł zakończenia według miejsca („Game over: the street meeting recalled the committee.”)
+  const t = (wordsEn(placeIn(i)).koniec[st.over] ?? ENDINGS_EN[st.over]).title;
+  logGov(st, i, tx(`Koniec gry: ${st.over}.`, `Game over: ${t[0].toLowerCase()}${t.slice(1)}.`), true, fx);
 }
 
 /** co czeka na decyzję gracza, w kolejności: raport rano, uchwała, karta nocy, wydarzenie */
@@ -173,7 +184,16 @@ export function signLaw(st: GovState, i: GovInput, id: string | null): GovEffect
     st.lawPending = false;
     if (st.lawDay === 1) mood(st, -1, 0);
     decision(st, i, 'uchwala');
-    logGov(st, i, `${wordsOf(placeIn(i)).Zarzad} odłożył uchwałę na później.`, false, fx);
+    logGov(
+      st,
+      i,
+      tx(
+        `${wordsOf(placeIn(i)).Zarzad} odłożył uchwałę na później.`,
+        `${wordsEn(placeIn(i)).Zarzad} put the resolution off.`,
+      ),
+      false,
+      fx,
+    );
     return fx;
   }
   if (!sign(st, i, id)) return fx;
@@ -207,6 +227,38 @@ export function saveGov(st: GovState): string {
 export function loadGov(json: string): GovState {
   const st = JSON.parse(json) as GovState;
   if (st.v !== GOV_VERSION) throw new Error(`nieznana wersja zapisu zarządu: ${st.v}`);
+  return normalizujTeksty(st);
+}
+
+/** tekst ze starego zapisu (polski napis) albo już w obu językach */
+const txt = (t: unknown): Tx => (isTx(t) ? t : txOf(String(t ?? '')));
+const optTxt = (t: unknown): Tx | undefined => (t === undefined || t === null ? undefined : txt(t));
+
+/** Zapis sprzed angielskiej wersji ma w kronice, raportach, karcie nocy i liniach na rano zwykłe polskie napisy.
+    Zamienia je w miejscu na Tx z tym samym tekstem w obu językach (stare wpisy zostają po polsku także po
+    angielsku); zapis z Tx przechodzi bez zmian. Zwraca ten sam stan. */
+export function normalizujTeksty(st: GovState): GovState {
+  for (const l of st.log ?? []) l.txt = txt(l.txt);
+  for (const l of st.later ?? []) l.line = txt(l.line);
+  for (const r of [...(st.reports ?? []), ...(st.report ? [st.report] : [])]) r.lines = r.lines.map(txt);
+  const n = st.night;
+  if (n) {
+    n.lines = n.lines.map(txt);
+    const c = n.card;
+    c.chanceWord = txt(c.chanceWord);
+    c.forecast = txt(c.forecast);
+    c.advice = txt(c.advice);
+    for (const p of c.posts) p.name = txt(p.name);
+    if (c.horde) c.horde.word = txt(c.horde.word);
+    for (const p of c.people)
+      for (const o of p.options) {
+        o.label = txt(o.label);
+        o.why = optTxt(o.why);
+        o.note = optTxt(o.note);
+        if (o.why === undefined) delete o.why;
+        if (o.note === undefined) delete o.note;
+      }
+  }
   return st;
 }
 

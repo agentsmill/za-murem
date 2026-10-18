@@ -25,9 +25,14 @@
    tabel), jest pomijany, ale zostaje w pamięci. Sierota to tylko wpis z budynku siedziby (`ref` zaczyna się od
    klucza jej budynku), którego osoby nie ma ani w grze, ani w budynku: main.ts pokazuje raz `wyprowadzka` w kronice
    i usuwa wpis z pamięci. Wpisy innych budynków pod tym samym adresem (inna siedziba w grze z sąsiadami, zapasowy
-   budynek z innym kluczem) zostają. Czyste i deterministyczne. */
+   budynek z innym kluczem) zostają. Czyste i deterministyczne.
+
+   Język: edytor i komunikaty o błędach są w bieżącym języku (src/core/jezyk.ts). Formy przypadków są polskie
+   i służą polskiej wersji historii, więc po angielsku pola mają angielskie skróty nazw przypadków i jedno zdanie
+   o tym, po co są. Komunikat o wyprowadzce do kroniki: `wyprowadzka` po polsku, `wyprowadzkaTx` w obu językach. */
 
 import { g, type Person } from '../content/people.ts';
+import { L, type Tx, tx } from '../core/jezyk.ts';
 import { hashString } from '../core/rng.ts';
 import { ROK_GRY } from '../mieszkancy/generuj.ts';
 import type { Odmiana } from '../mieszkancy/historie.ts';
@@ -35,8 +40,8 @@ import { type Formy, normalizuj, odmien, PRZYPADKI, type Przypadek } from '../mi
 import type { Osoba } from '../mieszkancy/typy.ts';
 import type { DaneMieszkancow } from '../mieszkancy/wczytaj.ts';
 import { type LokatorzyGry, type OsobaGry, osobyZeZmianami, type ZmianaImienia } from '../sim/lokatorzy.ts';
-import { FIKCJA, many } from './karta.ts';
-import { esc } from './tekst.ts';
+import { FIKCJA, FIKCJA_EN, many } from './karta.ts';
+import { esc, manyEn } from './tekst.ts';
 
 export type { ZmianaImienia };
 
@@ -51,9 +56,9 @@ export type Magazyn = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 // ---------------------------------------------------------------- sprawdzanie
 
 /** litera alfabetu łacińskiego (z polskimi i innymi akcentami w postaci złożonej) */
-const L = String.raw`(?:(?=\p{L})\p{Script=Latin})`;
+const LIT = String.raw`(?:(?=\p{L})\p{Script=Latin})`;
 /** człony od litery, z apostrofem w środku albo na końcu, rozdzielone jedną spacją albo łącznikiem */
-const IMIE = new RegExp(`^${L}(?:${L}|['’])*(?:[- ]${L}(?:${L}|['’])*)*$`, 'u');
+const IMIE = new RegExp(`^${LIT}(?:${LIT}|['’])*(?:[- ]${LIT}(?:${LIT}|['’])*)*$`, 'u');
 
 const oczysc = (s: string): string => s.normalize('NFC').replace(/\s+/g, ' ').trim();
 
@@ -68,6 +73,18 @@ const POLA: Record<Przypadek, { przed: (f: boolean) => string; nazwa: string }> 
   wol: { przed: (f) => g({ f }, 'panie', 'pani'), nazwa: 'wołacz' },
 };
 
+/** Te same pola po angielsku: skrót nazwy przypadku przed polem, pełna nazwa z pytaniem w podpowiedzi i nazwa formy
+    do komunikatów o błędach („the genitive form”). */
+const POLA_EN: Record<Przypadek, { przed: string; nazwa: string; forma: string }> = {
+  mian: { przed: 'name', nazwa: 'Nominative: who?', forma: 'name' },
+  dop: { przed: 'gen.', nazwa: 'Genitive: of whom?', forma: 'genitive form' },
+  cel: { przed: 'dat.', nazwa: 'Dative: to whom?', forma: 'dative form' },
+  bier: { przed: 'acc.', nazwa: 'Accusative: whom?', forma: 'accusative form' },
+  narz: { przed: 'inst.', nazwa: 'Instrumental: with whom?', forma: 'instrumental form' },
+  msc: { przed: 'loc.', nazwa: 'Locative: about whom?', forma: 'locative form' },
+  wol: { przed: 'voc.', nazwa: 'Vocative: calling out to someone', forma: 'vocative form' },
+};
+
 type Bledne = { blad: string; pole: Przypadek };
 
 /** Siedem form z pól: oczyszczone (spacje, wielka litera jak w `normalizuj`) albo pierwszy błąd z nazwą pola. */
@@ -77,9 +94,31 @@ function formyZPol(pola: Partial<Record<Przypadek, string>>, f: boolean): { form
     const v = oczysc(String(pola[c] ?? ''));
     const max = c === 'mian' ? IMIE_MAX : FORMA_MAX;
     const kto = c === 'mian' ? 'Imię' : `Forma „${POLA[c].przed(f)} …”`;
-    if (!v) return { blad: c === 'mian' ? 'Wpiszcie imię.' : `Uzupełnijcie formę „${POLA[c].przed(f)} …”.`, pole: c };
-    if (v.length > max) return { blad: `${kto} może mieć najwyżej ${many(max, 'znak', 'znaki', 'znaków')}.`, pole: c };
-    if (!IMIE.test(v)) return { blad: `${kto} może mieć tylko litery, spację, łącznik i apostrof.`, pole: c };
+    const ktoEn = `The ${POLA_EN[c].forma}`;
+    if (!v)
+      return {
+        blad:
+          c === 'mian'
+            ? L('Wpiszcie imię.', 'Type in a name.')
+            : L(`Uzupełnijcie formę „${POLA[c].przed(f)} …”.`, `Fill in the ${POLA_EN[c].forma}.`),
+        pole: c,
+      };
+    if (v.length > max)
+      return {
+        blad: L(
+          `${kto} może mieć najwyżej ${many(max, 'znak', 'znaki', 'znaków')}.`,
+          `${ktoEn} can be at most ${manyEn(max, 'character', 'characters')} long.`,
+        ),
+        pole: c,
+      };
+    if (!IMIE.test(v))
+      return {
+        blad: L(
+          `${kto} może mieć tylko litery, spację, łącznik i apostrof.`,
+          `${ktoEn} can only contain letters, spaces, hyphens and apostrophes.`,
+        ),
+        pole: c,
+      };
     // NFC także po zmianie wielkości liter („İLKA” małymi to i z kropką osobno), żeby drugie sprawdzenie (wpis
     // z pamięci) dało to samo
     formy[c] = normalizuj(v).normalize('NFC');
@@ -241,6 +280,9 @@ export function wyprowadzka(z: ZmianaImienia): string {
   return `${z.imie} ${g({ f: z.f ?? z.imie.endsWith('a') }, 'wyprowadził się', 'wyprowadziła się')}.`;
 }
 
+/** ten sam komunikat w obu językach, do kroniki zarządu (wpisy w niej to Tx): „Halina moved out.” */
+export const wyprowadzkaTx = (z: ZmianaImienia): Tx => tx(wyprowadzka(z), `${z.imie} moved out.`);
+
 // ---------------------------------------------------------------- edytor
 
 /** Czy wpisane imię przejdzie sprawdzenie (`zmianaZPol`): przy pisaniu edytor podpowiada formy tylko dla takiego. */
@@ -254,8 +296,9 @@ export function podpowiedz(imie: string, f: boolean, odm: Odmiana): { formy: For
   return odmien(oczysc(imie), f ? 'K' : 'M', odm.tabela, odm.koncowki);
 }
 
-/** Słowa przed polem przypadku `c` dla osoby płci `f` (main.ts nie musi ich znać, ale testy i zrzuty tak). */
-export const przedPolem = (c: Przypadek, f: boolean): string => POLA[c].przed(f);
+/** Słowa przed polem przypadku `c` dla osoby płci `f` w bieżącym języku, jak w edytorze (main.ts nie musi ich znać,
+    ale testy i zrzuty tak). */
+export const przedPolem = (c: Przypadek, f: boolean): string => L(POLA[c].przed(f), POLA_EN[c].przed);
 
 /** HTML edytora imienia w miejsce treści karty osoby: siedem pól (`name` to przypadek, `mian` pierwsze), z formami
     zapisanej zmiany albo z `podpowiedz` (pola form z klasą „niepewne”, gdy odmiana nie jest pewna), podpowiedź o
@@ -271,23 +314,35 @@ export function edytorImienia(
     const klasa = c !== 'mian' && !pewne ? ' class="niepewne"' : '';
     const max = c === 'mian' ? IMIE_MAX : FORMA_MAX;
     return (
-      `<label class="imie-pole${c === 'mian' ? ' imie-mian' : ''}" title="${POLA[c].nazwa}">` +
-      `<span class="imie-k">${esc(POLA[c].przed(o.f))}</span>` +
+      `<label class="imie-pole${c === 'mian' ? ' imie-mian' : ''}" title="${L(POLA[c].nazwa, POLA_EN[c].nazwa)}">` +
+      `<span class="imie-k">${esc(przedPolem(c, o.f))}</span>` +
       `<input${klasa} name="${c}" value="${esc(wartosc(c))}" maxlength="${max}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done"></label>`
     );
   }).join('');
   const przywroc = zapisana
-    ? '<button type="button" class="btn mini ghost" data-card="imie-przywroc" title="Wraca imię z generatora mieszkańców">Przywróć</button>'
+    ? `<button type="button" class="btn mini ghost" data-card="imie-przywroc" title="${L(
+        'Wraca imię z generatora mieszkańców',
+        'Brings back the name from the resident generator',
+      )}">${L('Przywróć', 'Restore')}</button>`
     : '';
   return [
     `<form class="imie-ed" data-ref="${esc(o.ref)}" novalidate autocomplete="off">`,
-    '<h2>Zmiana imienia</h2>',
-    '<p class="imie-sub">Nazwisko, wiek, rodzina i historia zostają. Formy podpowiada gra, możecie je poprawić.</p>',
+    `<h2>${L('Zmiana imienia', 'Rename')}</h2>`,
+    `<p class="imie-sub">${L(
+      'Nazwisko, wiek, rodzina i historia zostają. Formy podpowiada gra, możecie je poprawić.',
+      'Surname, age, family and story stay. The Polish forms below are for the Polish version; the game suggests them and you can correct them.',
+    )}</p>`,
     `<div class="imie-pola">${pola}</div>`,
-    `<p class="imie-uwaga"${pewne ? ' hidden' : ''}>Gra zgaduje formy na żółto. Sprawdźcie je.</p>`,
+    `<p class="imie-uwaga"${pewne ? ' hidden' : ''}>${L(
+      'Gra zgaduje formy na żółto. Sprawdźcie je.',
+      'The forms in yellow are guesses. Check them.',
+    )}</p>`,
     '<p class="imie-blad" role="alert" hidden></p>',
-    `<div class="imie-przyciski"><button type="submit" class="btn mini go" data-card="imie-zapisz">Zapisz</button><button type="button" class="btn mini" data-card="imie-anuluj">Anuluj</button>${przywroc}</div>`,
-    `<div class="osoba-fikcja"><p class="fikcja">${FIKCJA} Własne imię zostaje tylko w tej przeglądarce.</p></div>`,
+    `<div class="imie-przyciski"><button type="submit" class="btn mini go" data-card="imie-zapisz">${L('Zapisz', 'Save')}</button><button type="button" class="btn mini" data-card="imie-anuluj">${L('Anuluj', 'Cancel')}</button>${przywroc}</div>`,
+    `<div class="osoba-fikcja"><p class="fikcja">${L(
+      `${FIKCJA} Własne imię zostaje tylko w tej przeglądarce.`,
+      `${FIKCJA_EN} The new name stays in this browser only.`,
+    )}</p></div>`,
     '</form>',
   ].join('');
 }
@@ -311,6 +366,12 @@ function ustaw(p: Person, k: 'story' | 'rodzina', v: string | undefined): void {
 
 /** imię i nazwisko osoby generatora bez zmian gracza, jak w `osobaGry` */
 const nazwaZGeneratora = (o: Osoba): string => (o.nazwisko ? `${o.imie} ${o.nazwisko}` : o.imie);
+
+/** Osoba gry ma teksty (historię, rodzinę) z tej osoby generatora: zapamiętała przy powstaniu jej imię i nazwisko,
+    płeć i wiek się zgadzają. Na tym warunku angielska karta bierze teksty z src/mieszkancy/angielski.ts zamiast
+    polskich ze stanu (jak zastosujZmiany przy odświeżaniu historii). */
+export const zTejOsobyGeneratora = (o: Osoba | undefined, p: Pick<Person, 'f' | 'age' | 'nazwaGen'>): boolean =>
+  !!o && p.nazwaGen !== undefined && p.nazwaGen === nazwaZGeneratora(o) && takaSama(o, p);
 
 /** Zmiany imion na stanie gry (w miejscu; `st` to `SimState` albo cokolwiek z `people`). Wpis działa tylko na osobę,
     której dotyczy (`dotyczy`: płeć i imię z generatora). Gdy każda osoba z `ref` ma już imię, które daje wpis (albo,

@@ -5,6 +5,7 @@
 
 import type { Dom } from '../content/data.ts';
 import type { Person } from '../content/people.ts';
+import type { Tx } from '../core/jezyk.ts';
 import type { World } from '../world/world.ts';
 import { type AmmoKey, noAmmo, type WeaponId, weaponOf } from './bron.ts';
 import { BUILDS, type BuildKind, footprint, type Mat } from './budowle.ts';
@@ -139,9 +140,9 @@ export interface SimBuild {
 }
 
 /** stan siatki dla zarządu (GovFence): otwarte dziury, średnia wytrzymałość, brama; kafelki dziury, żeby interfejs
-    mógł nadać jej nazwę miejsca (name) przed podaniem zarządowi */
+    mógł nadać jej nazwę miejsca (name, w obu językach) przed podaniem zarządowi */
 export interface SimFence {
-  holes: { id: number; size: number; tiles: number[]; name?: string }[];
+  holes: { id: number; size: number; tiles: number[]; name?: Tx }[];
   durability: number;
   gateOpen: boolean;
 }

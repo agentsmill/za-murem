@@ -1,7 +1,10 @@
-/* Wspólne drobiazgi zarządu: puste skutki, czas gry w minutach, kronika, zaufanie i wkurzenie. */
+/* Wspólne drobiazgi zarządu: puste skutki, czas gry w minutach, kronika (wpisy w obu językach, Tx), zaufanie
+   i wkurzenie. */
 
+import { type Tx, tx } from '../core/jezyk.ts';
 import { clamp, nextRandom } from '../core/rng.ts';
 import { placeIn } from './miejsce.ts';
+import { HOLE_NAMES_DOM_EN, HOLE_NAMES_EN } from './tresc.en.ts';
 import { HOLE_NAMES, HOLE_NAMES_DOM, LOOT_LABEL } from './tresc.ts';
 import type { GovEffects, GovFence, GovInput, GovNeeds, GovState, StockDelta, StockKey } from './typy.ts';
 
@@ -46,7 +49,7 @@ export const rnd = (st: GovState): number => nextRandom(st.rng);
 /** liczba całkowita z [a, b] */
 export const rint = (st: GovState, a: number, b: number): number => a + Math.floor(rnd(st) * (b - a + 1));
 
-export function logGov(st: GovState, i: GovInput, txt: string, big = false, fx?: GovEffects): void {
+export function logGov(st: GovState, i: GovInput, txt: Tx, big = false, fx?: GovEffects): void {
   st.log.push({ day: i.day, clock: clockOf(i), txt, big });
   if (st.log.length > 300) st.log.splice(0, st.log.length - 300);
   fx?.log.push(txt);
@@ -103,17 +106,40 @@ export function stockText(d: Partial<StockDelta>): string {
     .join(', ');
 }
 
-/** siatka z wejścia; bez niej jedna dziura i brama (atrapa do czasu tury 2) */
+/** zapasy w angielskim zdaniu: liczba przed nazwą, w liczbie pojedynczej i mnogiej */
+const STOCK_EN: Record<StockKey, [string, string]> = {
+  wood: ['wood', 'wood'],
+  supplies: ['food', 'food'],
+  scrap: ['scrap', 'scrap'],
+  parts: ['part', 'parts'],
+  meds: ['pack of meds', 'packs of meds'],
+};
+
+/** to samo w obu językach do środka zdania: „drewno 3, jedzenie 2”, „3 wood and 2 food”; pusty, gdy same zera
+    (w zestawieniach raportu i kosztach zostaje „Wood 3” z lootText) */
+export function stockTx(d: Partial<StockDelta>): Tx {
+  const items = (Object.entries(d) as [StockKey, number][])
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${Math.abs(v)} ${STOCK_EN[k][Math.abs(v) === 1 ? 0 : 1]}`);
+  const en = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : (items[0] ?? '');
+  return tx(stockText(d), en);
+}
+
+/** siatka z wejścia; bez niej jedna dziura i brama (atrapa do czasu tury 2). Nazwy dziur w obu językach: z wejścia
+    albo z list HOLE_NAMES po numerze dziury. */
 export function fenceOf(i: GovInput, patched = 0): GovFence {
-  const f = i.fence ?? { holes: [{ id: 0, size: 0.6, name: 'w siatce' }], durability: 0.5 };
-  const names = placeIn(i).kind === 'dom' ? HOLE_NAMES_DOM : HOLE_NAMES;
+  const f: GovFence = i.fence ?? {
+    holes: [{ id: 0, size: 0.6, name: tx('w siatce', 'in the fence') }],
+    durability: 0.5,
+  };
+  const dom = placeIn(i).kind === 'dom';
+  const names = dom ? HOLE_NAMES_DOM : HOLE_NAMES;
+  const namesEn = dom ? HOLE_NAMES_DOM_EN : HOLE_NAMES_EN;
+  const at = (id: number) => (((id - 1) % names.length) + names.length) % names.length;
   const holes = [...f.holes]
     .sort((a, b) => b.size - a.size || a.id - b.id)
     .slice(patched)
-    .map((h) => ({
-      ...h,
-      name: h.name ?? names[(((h.id - 1) % names.length) + names.length) % names.length],
-    }));
+    .map((h) => ({ ...h, name: h.name ?? tx(names[at(h.id)], namesEn[at(h.id)]) }));
   return { holes, durability: f.durability, gateOpen: f.gateOpen };
 }
 

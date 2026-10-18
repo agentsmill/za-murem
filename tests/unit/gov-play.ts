@@ -137,7 +137,7 @@ function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, sc
   const i = govInput(st, w, screen);
   if (p.k === 'raport') {
     ackReport(gov);
-    return p.report.lines.join(' ');
+    return p.report.lines.map((l) => l.pl).join(' ');
   }
   if (p.k === 'uchwala') {
     const ok = p.options.filter((o) => o.s === 'ok');
@@ -177,7 +177,7 @@ function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, sc
   }
   const k = p.choices.findIndex((c) => c.ok);
   apply(st, w, chooseEvent(gov, i, Math.max(0, k)));
-  return `${p.title}: ${p.choices[Math.max(0, k)]?.label ?? '?'}`;
+  return `${p.title.pl}: ${p.choices[Math.max(0, k)]?.label.pl ?? '?'}`;
 }
 
 /** najbliższe drzwi siedziby drzewo do ścięcia (nie krzak, nieścięte, nie z listy tych, do których się nie dało dojść) */

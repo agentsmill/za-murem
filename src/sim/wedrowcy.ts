@@ -1,13 +1,15 @@
 /* Wędrowcy i obce ekipy za dnia (docs/superpowers/specs/2026-10-18-wedrowcy-design.md): terminy, czasy, worek
    wędrowca, wieści z rozmowy i napisy. Czyste dane i funkcje dla symulacji i menu. Chodzą tylko w grze z opcją
    SimOpts.obcy (jak handlarz), więc losowanie ze st.rng nie rusza gier i botów bez niej. Napisy w obu językach:
-   do menu, opisów i wieści idzie na razie polski. */
+   menu i opisy prac biorą je przez tr() w bieżącym języku, a wieść zostaje w stanie po polsku (st.obcy.wiesc,
+   jak inne napisy symulacji) i po angielsku pokazuje ją wiescEn, ze słownika wszystkich wariantów. */
 
+import { ADS_EN } from '../content/data.en.ts';
 import { ADS } from '../content/data.ts';
 import { nextRandom, type RngState } from '../core/rng.ts';
 import type { Mat } from './budowle.ts';
 import { dayOf, hourOf, TICKS_PER_HOUR } from './clock.ts';
-import { tickAt } from './handlarz.ts';
+import { NAPISY as HANDEL, tickAt } from './handlarz.ts';
 import { WRECK_SEARCH_TICKS } from './surowce.ts';
 
 /** wędrowiec przystaje przy siatce 20–40 minut gry, po rozmowie jeszcze 10 */
@@ -74,9 +76,16 @@ export interface GossipCtx {
   wrecksLeft: number;
 }
 
-/** Wieść z rozmowy z wędrowcem: kiedy handlarz, ile aut zostało, ludzie z łomami albo ogłoszenie ze słupa (z 0.3). */
+/** Wieść z rozmowy z wędrowcem: kiedy handlarz, ile aut zostało, ludzie z łomami albo ogłoszenie ze słupa (z 0.3).
+    Losowanie jak dotąd (rodzaj wieści, przy ogłoszeniu jeszcze jego numer), tekst z gossipText. */
 export function gossip(ctx: GossipCtx, rng: RngState): Napis {
   const k = Math.floor(4 * nextRandom(rng));
+  const ad = k === 3 ? Math.floor(nextRandom(rng) * ADS.length) : 0;
+  return gossipText(k, ctx, ad);
+}
+
+/** tekst wieści: k rodzaj (0 handlarz, 1 auta, 2 ludzie z łomami, 3 ogłoszenie), ad numer ogłoszenia z ADS */
+export function gossipText(k: number, ctx: GossipCtx, ad: number): Napis {
   if (k === 0) {
     if (ctx.traderIn < 0)
       return {
@@ -90,37 +99,61 @@ export function gossip(ctx: GossipCtx, rng: RngState): Napis {
       en: `The wanderer says the trader with the cart should be here ${when}.`,
     };
   }
-  if (k === 1)
-    return ctx.wrecksLeft > 0
+  if (k === 1) {
+    const n = ctx.wrecksLeft;
+    return n > 0
       ? {
-          pl: `Wędrowiec mówi, że przy ulicy stoją jeszcze ${ctx.wrecksLeft} ${aut(ctx.wrecksLeft)}, których nikt nie przeszukał.`,
-          en: `The wanderer says ${ctx.wrecksLeft} cars by the road are still unsearched.`,
+          pl: `Wędrowiec mówi, że przy ulicy stoją jeszcze ${n} ${aut(n)}, których nikt nie przeszukał.`,
+          en: `The wanderer says there ${n === 1 ? 'is still 1 car' : `are still ${n} cars`} by the road that nobody has searched.`,
         }
       : {
           pl: 'Wędrowiec mówi, że w okolicy nie ma już aut, w których coś zostało.',
           en: 'The wanderer says there are no cars left around here with anything in them.',
         };
+  }
   if (k === 2)
     return {
       pl: 'Wędrowiec mówi, że po okolicy chodzą ludzie z łomami i przeszukują auta.',
-      en: 'The wanderer says people with crowbars are going around searching cars.',
+      en: 'The wanderer says people with crowbars are going round searching cars.',
     };
-  const ad = ADS[Math.floor(nextRandom(rng) * ADS.length)];
   return {
-    pl: `Wędrowiec mówi, że na słupie przy przystanku wisi ogłoszenie: „${ad}”`,
-    en: `The wanderer says there is a notice on the pole by the bus stop: “${ad}”`,
+    pl: `Wędrowiec mówi, że na słupie przy przystanku wisi ogłoszenie: „${ADS[ad]}”`,
+    en: `The wanderer says there’s a notice on the pole by the bus stop: “${ADS_EN[ad]}”`,
   };
 }
 
+/** wieść z polskiego tekstu w stanie po angielsku: słownik ze wszystkich wariantów gossipText i przeszukali (liczby
+    do 99) oraz wieści po napaści na handlarza; nieznany tekst zostaje jak jest */
+let wiesciEn: Map<string, string> | null = null;
+export function wiescEn(pl: string): string {
+  if (!wiesciEn) {
+    wiesciEn = new Map();
+    const put = (n: Napis) => wiesciEn!.set(n.pl, n.en);
+    for (let n = -1; n < 100; n++) {
+      put(gossipText(0, { traderIn: n, wrecksLeft: 0 }, 0));
+      if (n >= 0) put(gossipText(1, { traderIn: 0, wrecksLeft: n }, 0));
+    }
+    put(gossipText(2, { traderIn: 0, wrecksLeft: 0 }, 0));
+    for (let ad = 0; ad < ADS.length; ad++) put(gossipText(3, { traderIn: 0, wrecksLeft: 0 }, ad));
+    for (const model of ['maluch', 'polonez']) put(NAPISY.przeszukali(model));
+    // wieści po napaści na handlarza (src/sim/handlarz.ts)
+    put(HANDEL.uciekl);
+    put(HANDEL.odszedlZly);
+    put(HANDEL.zabity);
+    for (let n = 1; n < 10; n++) put(HANDEL.zemsta(n));
+  }
+  return wiesciEn.get(pl) ?? pl;
+}
+
 export const NAPISY = {
-  zagadac: { pl: 'Zagadać', en: 'Talk' },
+  zagadac: { pl: 'Zagadać', en: 'Talk to the wanderer' },
   napasc: { pl: 'Napaść na wędrowca', en: 'Rob the wanderer' },
-  przegonic: { pl: 'Przegonić', en: 'Chase away' },
+  przegonic: { pl: 'Przegonić', en: 'Chase them off' },
   nastrojRozmowa: { pl: 'Wieści ze świata', en: 'News from outside' },
   nastrojNapasc: { pl: 'Napadliśmy na wędrowca', en: 'We robbed a wanderer' },
   przeszukali: (model: string): Napis => ({
     pl: `Obcy przeszukali ${model === 'polonez' ? 'poloneza' : 'malucha'} przy ulicy.`,
-    en: `Strangers searched the ${model === 'polonez' ? 'Polonez' : 'Fiat 126p'} by the road.`,
+    en: `Strangers have searched the ${model === 'polonez' ? 'Polonez' : 'Fiat 126p'} by the road.`,
   }),
   // opisy prac obcych i zarządu
   wander: [
@@ -138,11 +171,11 @@ export const NAPISY = {
   idzieZagadac: { pl: 'Idzie zagadać wędrowca.', en: 'Going to talk to the wanderer.' },
   rozmawia: { pl: 'Rozmawia przez siatkę.', en: 'Talking through the fence.' },
   idzieNapasc: { pl: 'Idzie napaść na wędrowca.', en: 'Going to rob the wanderer.' },
-  idziePrzegonic: { pl: 'Idzie przegonić obcych.', en: 'Going to chase the strangers away.' },
-  poZagadac: { pl: 'Zagada wędrowca.', en: 'Will talk to the wanderer.' },
-  poZagadacWielu: { pl: 'Jedna osoba zagada wędrowca.', en: 'One person will talk to the wanderer.' },
-  poNapasc: { pl: 'Napadnie na wędrowca.', en: 'Will rob the wanderer.' },
-  poNapascWielu: { pl: 'Jedna osoba napadnie na wędrowca.', en: 'One person will rob the wanderer.' },
-  poPrzegonic: { pl: 'Przegoni obcych.', en: 'Will chase the strangers away.' },
-  poPrzegonicWielu: { pl: 'Jedna osoba przegoni obcych.', en: 'One person will chase the strangers away.' },
+  idziePrzegonic: { pl: 'Idzie przegonić obcych.', en: 'Going to chase the strangers off.' },
+  poZagadac: { pl: 'Zagada wędrowca.', en: 'Off to talk to the wanderer.' },
+  poZagadacWielu: { pl: 'Jedna osoba zagada wędrowca.', en: 'One person goes to talk to the wanderer.' },
+  poNapasc: { pl: 'Napadnie na wędrowca.', en: 'Off to rob the wanderer.' },
+  poNapascWielu: { pl: 'Jedna osoba napadnie na wędrowca.', en: 'One person goes to rob the wanderer.' },
+  poPrzegonic: { pl: 'Przegoni obcych.', en: 'Going to chase the strangers off.' },
+  poPrzegonicWielu: { pl: 'Jedna osoba przegoni obcych.', en: 'One person goes to chase the strangers off.' },
 } as const;

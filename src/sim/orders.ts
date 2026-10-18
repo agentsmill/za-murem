@@ -1,13 +1,20 @@
 /* Polecenia z kliknięcia i opisy prac do karty osoby. Czyste funkcje stanu i świata: interfejs pyta,
-   co znaczy kliknięcie prawym przyciskiem na kafelku, i dostaje gotowe polecenie dla symulacji. */
+   co znaczy kliknięcie prawym przyciskiem na kafelku, i dostaje gotowe polecenie dla symulacji.
 
-import { wordsOfWorld } from '../gov/miejsce.ts';
+   Napisy (MenuItem.label, jobText) są w bieżącym języku (L z src/core/jezyk.ts, angielskie nazwy rzeczy
+   z nazwy.en.ts): to tylko tekst do rysowania, nic go nie zapisuje w stanie ani nie porównuje. W Node domyślnie po
+   polsku, więc testy i boty widzą polskie napisy jak dotąd. Brama albo furtka i zarząd albo komitet ze słownika
+   wspólnoty (wordsOfWorld, wordsEnOfWorld). */
+
+import { L, tr } from '../core/jezyk.ts';
+import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
 import { NAPISY as HANDEL } from './handlarz.ts';
 import { dryTreeOf, houseOf, inHomeApt, type RoomKind } from './house.ts';
 import { MAT_ACC, REPAIR, RUBBISH, searchable } from './mieszkania.ts';
+import { BUILD_EN, FURNITURE_EN, MAT_EN, REPAIR_EN, ROOM_EN, THING_EN } from './nazwy.en.ts';
 import { gateTiles } from './perimeter.ts';
 import {
   BRACE_COST,
@@ -99,6 +106,18 @@ const thingAt = (st: SimState, w: World, tile: number, kind: string): Thing | un
   return st.things.find((t) => t.kind === kind && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
 };
 
+/** rozbiórka po angielsku: śmieci i gruz się sprząta („clear the rubbish”), resztę rozbiera („take apart the
+    fridge”); base do menu i „Going to …”, ing do opisu pracy */
+function dismantleEn(kind: string | undefined): { base: string; ing: string } {
+  const what = kind === undefined ? undefined : THING_EN[kind];
+  if (!what) return { base: 'take it apart', ing: 'taking it apart' };
+  return RUBBISH.has(kind!)
+    ? { base: `clear the ${what}`, ing: `clearing the ${what}` }
+    : { base: `take apart the ${what}`, ing: `taking apart the ${what}` };
+}
+
+const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
+
 /** Polecenia, które mają sens na klikniętym kafelku (menu kontekstowe z GDD), „Idź tu” zawsze na końcu.
     Drewno poza składem: zanieść do składu. Koza albo ognisko, gdy jest skąd wziąć drewno: dołożyć. Drzewo: ściąć,
     od razu tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie w las ma znaczyć „idź”.
@@ -126,12 +145,12 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       cmd: { t: 'attack', ids: fighters, target: foe.id },
       label:
         foe.kind === 'zombie'
-          ? 'Atakuj szwendacza'
+          ? L('Atakuj szwendacza', 'Attack the shambler')
           : foe.kind === 'handlarz'
-            ? HANDEL.atakuj.pl
+            ? tr(HANDEL.atakuj)
             : foe.kind === 'zbir'
-              ? HANDEL.atakujZbira.pl
-              : 'Atakuj szabrownika',
+              ? tr(HANDEL.atakujZbira)
+              : L('Atakuj szabrownika', 'Attack the looter'),
       quick: true,
     });
   // handlarz pod bramą (na nim albo na jego wózku): jego towar, wyszarzony, gdy nie starcza materiału, i napaść
@@ -145,11 +164,11 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
         if (o.left <= 0) return;
         const short: Partial<Record<Mat, number>> = {};
         for (const [m, n] of Object.entries(o.take) as [Mat, number][]) if (stock(m) < n) short[m] = n - stock(m);
-        const item: MenuItem = { cmd: { t: 'trade', ids: core, offer: k }, label: HANDEL.oferta(o).pl, quick: false };
-        if (Object.keys(short).length) item.off = HANDEL.brakuje(short).pl;
+        const item: MenuItem = { cmd: { t: 'trade', ids: core, offer: k }, label: tr(HANDEL.oferta(o)), quick: false };
+        if (Object.keys(short).length) item.off = tr(HANDEL.brakuje(short));
         out.push(item);
       });
-      out.push({ cmd: { t: 'rob', ids: core }, label: HANDEL.napasc.pl, quick: false, confirm: true });
+      out.push({ cmd: { t: 'rob', ids: core }, label: tr(HANDEL.napasc), quick: false, confirm: true });
     }
   }
   // wędrowiec: zagadać, gdy przystanął przy siatce (raz), napaść, dopóki nie ucieka; obca ekipa: przegonić
@@ -166,60 +185,106 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     }
   if (near?.kind === 'wedrowiec') {
     if (near.job?.phase === 1 && near.job.what !== 'zagadany')
-      out.push({ cmd: { t: 'talk', ids: core, target: near.id }, label: OBCY.zagadac.pl, quick: false });
-    out.push({ cmd: { t: 'mug', ids: core, target: near.id }, label: OBCY.napasc.pl, quick: false, confirm: true });
+      out.push({ cmd: { t: 'talk', ids: core, target: near.id }, label: tr(OBCY.zagadac), quick: false });
+    out.push({ cmd: { t: 'mug', ids: core, target: near.id }, label: tr(OBCY.napasc), quick: false, confirm: true });
   } else if (near?.kind === 'obcy' && (near.job?.phase ?? 4) < 2)
-    out.push({ cmd: { t: 'shoo', ids: core, target: near.id }, label: OBCY.przegonic.pl, quick: false });
+    out.push({ cmd: { t: 'shoo', ids: core, target: near.id }, label: tr(OBCY.przegonic), quick: false });
   // zwłoki, które wstaną: dobić
   const body = thingAt(st, w, tile, 'zwloki');
-  if (body && body.fuel > 0) out.push({ cmd: { t: 'finish', ids: core, thing: body.id }, label: 'Dobić', quick: true });
+  if (body && body.fuel > 0)
+    out.push({
+      cmd: { t: 'finish', ids: core, thing: body.id },
+      label: L('Dobić', 'Finish off the body'),
+      quick: true,
+    });
   const sklad = houseOf(w)?.sklad ?? [];
   const pile = thingAt(st, w, tile, 'drewno');
   if (pile && sklad.length && !sklad.includes(tile))
-    out.push({ cmd: { t: 'haul', ids: core, thing: pile.id }, label: 'Zanieść do składu', quick: true });
+    out.push({
+      cmd: { t: 'haul', ids: core, thing: pile.id },
+      label: L('Zanieść do składu', 'Carry to the woodpile'),
+      quick: true,
+    });
   const koza = thingAt(st, w, tile, 'koza');
   const wood = st.things.some((t) => t.kind === 'drewno' && t.n > 0) || st.pawns.some((p) => p.carry > 0);
   if (koza && wood)
-    out.push({ cmd: { t: 'refuel', ids: core, thing: koza.id }, label: 'Dołożyć do kozy', quick: true });
+    out.push({
+      cmd: { t: 'refuel', ids: core, thing: koza.id },
+      label: L('Dołożyć do kozy', 'Feed the stove'),
+      quick: true,
+    });
   // dyżur przy kozie zarządu do rana (warta z posterunkiem 'koza'; w karcie nocy klucz 'warta:koza')
   const house = houseOf(w);
   if (koza && house && inHomeApt(house, koza.y * w.size + koza.x))
-    out.push({ cmd: { t: 'guard', ids: core, post: 'koza' }, label: 'Czuwać przy kozie', quick: false });
+    out.push({
+      cmd: { t: 'guard', ids: core, post: 'koza' },
+      label: L('Czuwać przy kozie', 'Keep watch by the stove'),
+      quick: false,
+    });
   const fire = thingAt(st, w, tile, 'ognisko');
   if (fire && wood)
-    out.push({ cmd: { t: 'refuel', ids: core, thing: fire.id }, label: 'Dołożyć do ogniska', quick: true });
+    out.push({
+      cmd: { t: 'refuel', ids: core, thing: fire.id },
+      label: L('Dołożyć do ogniska', 'Feed the campfire'),
+      quick: true,
+    });
   // dziura w siatce: łata z desek albo złomu ze sterty, warta przy niej
   const hole = st.fence?.holes.find((h) => !h.patch && h.tiles.includes(tile));
   if (hole) {
     // łata jest z jednego materiału: desek albo złomu musi starczyć na całą
     const mat = (k: string) => st.things.reduce((a, t) => a + (t.kind === k ? t.n : 0), 0);
     if (mat('deski') >= PATCH_COST || mat('zlom') >= PATCH_COST)
-      out.push({ cmd: { t: 'patch', ids: core, hole: hole.id }, label: 'Załatać dziurę', quick: true });
-    out.push({ cmd: { t: 'guard', ids: core, post: `d${hole.id}` }, label: 'Pilnować tutaj', quick: false });
+      out.push({
+        cmd: { t: 'patch', ids: core, hole: hole.id },
+        label: L('Załatać dziurę', 'Patch the hole'),
+        quick: true,
+      });
+    out.push({
+      cmd: { t: 'guard', ids: core, post: `d${hole.id}` },
+      label: L('Pilnować tutaj', 'Keep watch here'),
+      quick: false,
+    });
   }
   // siatka: wzmocnić uszkodzony kafelek (2 deski albo 2 złomu ze stert), w trybie zombie pilnować przy siatce
   const k = w.fence?.tiles.indexOf(tile) ?? -1;
   if (st.fence && k >= 0 && !st.fence.holes.some((h) => h.tiles.includes(tile))) {
     const mat = (kind: string) => st.things.reduce((a, t) => a + (t.kind === kind ? t.n : 0), 0);
     if (st.fence.hp[k] > 0 && st.fence.hp[k] < 100 && (mat('deski') >= BRACE_COST || mat('zlom') >= BRACE_COST))
-      out.push({ cmd: { t: 'brace', ids: core, tile }, label: 'Wzmocnić siatkę', quick: true });
+      out.push({
+        cmd: { t: 'brace', ids: core, tile },
+        label: L('Wzmocnić siatkę', 'Shore up the fence'),
+        quick: true,
+      });
     if (modeOf(st) === 'zombie')
-      out.push({ cmd: { t: 'guard', ids: core, post: 'siatka' }, label: 'Pilnować przy siatce', quick: false });
+      out.push({
+        cmd: { t: 'guard', ids: core, post: 'siatka' },
+        label: L('Pilnować przy siatce', 'Keep watch at the fence'),
+        quick: false,
+      });
   }
   // sterta desek albo złomu: dzida, gdy starczy materiału
   if (thingAt(st, w, tile, 'deski') || thingAt(st, w, tile, 'zlom')) {
     const mat = (kind: string) => st.things.reduce((a, t) => a + (t.kind === kind ? t.n : 0), 0);
     if (mat('deski') >= SPEAR_BOARDS && mat('zlom') >= SPEAR_SCRAP)
-      out.push({ cmd: { t: 'craft', ids: core, item: 'dzida' }, label: 'Zrobić dzidę', quick: false });
+      out.push({
+        cmd: { t: 'craft', ids: core, item: 'dzida' },
+        label: L('Zrobić dzidę', 'Make a spear'),
+        quick: false,
+      });
   }
   if (st.fence && gateTiles(w).includes(tile)) {
     // w domu furtka
     const brama = wordsOfWorld(w).brama;
-    out.push({ cmd: { t: 'guard', ids: core, post: 'brama' }, label: `Pilnować ${brama.d}`, quick: false });
+    const gate = wordsEnOfWorld(w).brama;
+    out.push({
+      cmd: { t: 'guard', ids: core, post: 'brama' },
+      label: L(`Pilnować ${brama.d}`, `Keep watch at ${gate}`),
+      quick: false,
+    });
     const open = st.fence.gateOpen;
     out.push({
       cmd: { t: 'gate', ids: core, open: !open },
-      label: `${open ? 'Zamknąć' : 'Otworzyć'} ${brama.b}`,
+      label: L(`${open ? 'Zamknąć' : 'Otworzyć'} ${brama.b}`, `${open ? 'Close' : 'Open'} ${gate}`),
       quick: false,
     });
   }
@@ -236,15 +301,15 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     if (s === 0) {
       const item: MenuItem = {
         cmd: { t: 'wreck', ids: core, tile: wt, how: 'szukaj' },
-        label: NAPISY.szukaj(wreck.model).pl,
+        label: tr(NAPISY.szukaj(wreck.model)),
         quick: onBase && !busy,
       };
-      if (busy) item.off = NAPISY.obcyPrzyAucie.pl;
+      if (busy) item.off = tr(NAPISY.obcyPrzyAucie);
       out.push(item);
     } else if (s === 1)
       out.push({
         cmd: { t: 'wreck', ids: core, tile: wt, how: 'rozbierz' },
-        label: NAPISY.rozbierz(wreck.model).pl,
+        label: tr(NAPISY.rozbierz(wreck.model)),
         quick: false,
       });
   }
@@ -254,18 +319,18 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     const near =
       Math.abs((trunk % w.size) - (tile % w.size)) <= 1 &&
       Math.abs(Math.floor(trunk / w.size) - Math.floor(tile / w.size)) <= 1;
-    out.push({ cmd: { t: 'chop', ids: core, tree }, label: 'Ściąć drzewo', quick: near });
+    out.push({ cmd: { t: 'chop', ids: core, tree }, label: L('Ściąć drzewo', 'Chop down the tree'), quick: near });
   }
   // kuchenka zarządu albo zapasy: gotować, gdy jest z czego i na czym
   if ((thingAt(st, w, tile, 'kuchenka') || thingAt(st, w, tile, 'jedzenie')) && canCookIn(st, w))
-    out.push({ cmd: { t: 'cook', ids: core }, label: 'Gotować', quick: true });
+    out.push({ cmd: { t: 'cook', ids: core }, label: L('Gotować', 'Cook'), quick: true });
   const x = tile % w.size;
   const y = Math.floor(tile / w.size);
   const furniture = st.things.find((t) => BURNABLE[t.kind] && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
   if (furniture)
     out.push({
       cmd: { t: 'burn', ids: core, thing: furniture.id },
-      label: `Spalić ${FURNITURE_ACC[furniture.kind]}`,
+      label: L(`Spalić ${FURNITURE_ACC[furniture.kind]}`, `Burn the ${FURNITURE_EN[furniture.kind]}`),
       quick: false,
       confirm: true,
     });
@@ -278,7 +343,7 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       const rubbish = RUBBISH.has(t.kind);
       const item: MenuItem = {
         cmd: { t: 'dismantle', ids: core, thing: t.id },
-        label: `Rozebrać ${THING_ACC[t.kind] ?? 'to'}`,
+        label: L(`Rozebrać ${THING_ACC[t.kind] ?? 'to'}`, cap(dismantleEn(t.kind).base)),
         quick: rubbish,
       };
       if (rubbish) out.unshift(item);
@@ -289,7 +354,12 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     if (d.fixed || d.tile !== tile) return;
     const def = REPAIR[d.kind];
     const ok = (Object.entries(def.cost) as [Mat, number][]).every(([m, v]) => have(m) + (d.have[m] ?? 0) >= v);
-    if (ok) out.push({ cmd: { t: 'repair', ids: core, damage: k }, label: `Naprawić ${def.acc}`, quick: false });
+    if (ok)
+      out.push({
+        cmd: { t: 'repair', ids: core, damage: k },
+        label: L(`Naprawić ${def.acc}`, `Fix the ${REPAIR_EN[d.kind]}`),
+        quick: false,
+      });
   });
   const hq = houseOf(w);
   const room = hq && hq.room[tile] >= 0 ? hq.rooms[hq.room[tile]] : null;
@@ -298,15 +368,20 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     if (!g.searched.includes(room.id))
       out.push({
         cmd: { t: 'search', ids: core, room: room.id },
-        label: `Przeszukać ${ROOM_ACC[room.kind]}`,
+        label: L(`Przeszukać ${ROOM_ACC[room.kind]}`, `Search the ${ROOM_EN[room.kind]}`),
         quick: false,
       });
-    if (!g.ours) out.push({ cmd: { t: 'claim', ids: core, apt: g.apt }, label: 'Zająć mieszkanie', quick: false });
+    if (!g.ours)
+      out.push({
+        cmd: { t: 'claim', ids: core, apt: g.apt },
+        label: L('Zająć mieszkanie', 'Claim the flat'),
+        quick: false,
+      });
   }
   // łup za siatką: zanieść na podwórko (drewno ma swoje „Zanieść do składu”)
   const loot = st.fence ? things.find((t) => CARRY_MATS.has(t.kind) && t.n > 0) : undefined;
   if (loot && !insideOf(st, w, tile))
-    out.push({ cmd: { t: 'carry', ids: core, thing: loot.id }, label: NAPISY.zaniesc.pl, quick: true });
+    out.push({ cmd: { t: 'carry', ids: core, thing: loot.id }, label: tr(NAPISY.zaniesc), quick: true });
   // warsztat: drewno na deski, złom na części; jedna sztuka albo do BATCH naraz, gdy materiału starczy
   if (things.some((t) => t.kind === 'warsztat')) {
     const make = (what: Product, one: string, many: (n: number) => string) => {
@@ -315,15 +390,19 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       if (can >= 1) out.push({ cmd: { t: 'saw', ids: core, what, n: 1 }, label: one, quick: false });
       if (can >= 2) out.push({ cmd: { t: 'saw', ids: core, what, n: can }, label: many(can), quick: false });
     };
-    make('deski', NAPISY.deska.pl, (n) => NAPISY.deskiN(n).pl);
-    make('czesci', NAPISY.czesc.pl, (n) => NAPISY.czesciN(n).pl);
+    make('deski', tr(NAPISY.deska), (n) => tr(NAPISY.deskiN(n)));
+    make('czesci', tr(NAPISY.czesc), (n) => tr(NAPISY.czesciN(n)));
   }
   // ognisko na wolnym kafelku podwórka, gdy jest z czego (drewno luzem albo w rękach)
   const woodN =
     st.things.reduce((a, t) => a + (t.kind === 'drewno' ? t.n : 0), 0) + st.pawns.reduce((a, p) => a + p.carry, 0);
   if (woodN >= CAMPFIRE_WOOD && campfireSpotOk(st, w, tile))
-    out.push({ cmd: { t: 'campfire', ids: core, at: tile }, label: 'Rozpalić ognisko tutaj', quick: false });
-  out.push({ cmd: { t: 'move', ids: core, to: tile }, label: 'Idź tu', quick: true });
+    out.push({
+      cmd: { t: 'campfire', ids: core, at: tile },
+      label: L('Rozpalić ognisko tutaj', 'Light a campfire here'),
+      quick: false,
+    });
+  out.push({ cmd: { t: 'move', ids: core, to: tile }, label: L('Idź tu', 'Go here'), quick: true });
   return out;
 }
 
@@ -363,138 +442,226 @@ export function commandFor(st: SimState, w: World, ids: readonly number[], tile:
 export function jobText(st: SimState, w: World, p: Pawn): string {
   const j = p.job;
   // polecenia dostaje tylko zarząd; mieszkaniec (karta do odczytu) po prostu stoi
-  if (!j) return p.pi < p.path.length ? 'Idzie.' : p.kind === 'core' ? 'Stoi i czeka na polecenie.' : 'Stoi.';
+  if (!j)
+    return p.pi < p.path.length
+      ? L('Idzie.', 'Walking.')
+      : p.kind === 'core'
+        ? L('Stoi i czeka na polecenie.', 'Standing by for orders.')
+        : L('Stoi.', 'Standing around.');
   const walking = j.phase === 0;
   switch (j.t) {
     case 'go':
-      return walking ? 'Idzie.' : 'Czeka na miejscu.';
+      return walking ? L('Idzie.', 'Walking.') : L('Czeka na miejscu.', 'Waiting on the spot.');
     case 'chop': {
       const dry = j.target === dryTreeOf(w);
-      if (walking) return dry ? 'Idzie do suchego drzewa.' : 'Idzie ściąć drzewo.';
-      return dry ? 'Rąbie suche drzewo.' : 'Ścina drzewo.';
+      if (walking)
+        return dry
+          ? L('Idzie do suchego drzewa.', 'Heading for the dead tree.')
+          : L('Idzie ściąć drzewo.', 'Going to chop down the tree.');
+      return dry
+        ? L('Rąbie suche drzewo.', 'Chopping down the dead tree.')
+        : L('Ścina drzewo.', 'Chopping down the tree.');
     }
     case 'haul':
-      return walking ? 'Idzie po drewno.' : 'Niesie drewno do składu.';
+      return walking
+        ? L('Idzie po drewno.', 'Fetching wood.')
+        : L('Niesie drewno do składu.', 'Carrying wood to the woodpile.');
     case 'refuel': {
       const fire = st.things.find((t) => t.id === j.target)?.kind === 'ognisko';
-      if (fire) return walking ? 'Idzie po drewno do ogniska.' : 'Dokłada do ogniska.';
-      return walking ? 'Idzie po drewno do kozy.' : 'Dokłada do kozy.';
+      if (fire)
+        return walking
+          ? L('Idzie po drewno do ogniska.', 'Fetching wood for the campfire.')
+          : L('Dokłada do ogniska.', 'Feeding the campfire.');
+      return walking
+        ? L('Idzie po drewno do kozy.', 'Fetching wood for the stove.')
+        : L('Dokłada do kozy.', 'Feeding the stove.');
     }
     case 'warm':
-      return walking ? 'Idzie ogrzać się przy kozie.' : 'Grzeje się przy kozie.';
+      return walking
+        ? L('Idzie ogrzać się przy kozie.', 'Going to warm up by the stove.')
+        : L('Grzeje się przy kozie.', 'Warming up by the stove.');
     case 'eat':
-      if (j.n === 1) return walking ? 'Idzie na wspólny posiłek.' : 'Je wspólny posiłek.';
-      if (walking) return 'Idzie coś zjeść.';
-      return j.target >= 0 ? 'Je przy stole.' : 'Je.';
+      if (j.n === 1)
+        return walking
+          ? L('Idzie na wspólny posiłek.', 'Heading to the shared meal.')
+          : L('Je wspólny posiłek.', 'Having the shared meal.');
+      if (walking) return L('Idzie coś zjeść.', 'Going to get something to eat.');
+      return j.target >= 0 ? L('Je przy stole.', 'Eating at the table.') : L('Je.', 'Eating.');
     case 'sleep':
-      if (walking) return 'Idzie spać.';
-      return j.target >= 0 ? 'Śpi.' : 'Śpi na podłodze.';
+      if (walking) return L('Idzie spać.', 'Going to bed.');
+      return j.target >= 0 ? L('Śpi.', 'Sleeping.') : L('Śpi na podłodze.', 'Sleeping on the floor.');
     case 'stay':
-      if (j.target === STAY_YARD) return walking ? 'Idzie na podwórko.' : 'Pracuje na podwórku.';
-      if (j.target === STAY_FIRE) return walking ? 'Idzie do ogniska.' : 'Grzeje się przy ognisku.';
+      if (j.target === STAY_YARD)
+        return walking
+          ? L('Idzie na podwórko.', 'Heading out to the yard.')
+          : L('Pracuje na podwórku.', 'Working in the yard.');
+      if (j.target === STAY_FIRE)
+        return walking
+          ? L('Idzie do ogniska.', 'Heading for the campfire.')
+          : L('Grzeje się przy ognisku.', 'Warming up by the campfire.');
       if (j.target === STAY_MEAL)
-        return walking ? 'Idzie na wspólny posiłek.' : `Je wspólny posiłek przy stole ${wordsOfWorld(w).zarzad.dk}.`;
-      return walking ? 'Idzie do domu.' : 'Siedzi w domu.';
+        return walking
+          ? L('Idzie na wspólny posiłek.', 'Heading to the shared meal.')
+          : L(
+              `Je wspólny posiłek przy stole ${wordsOfWorld(w).zarzad.dk}.`,
+              `Having the shared meal at ${wordsEnOfWorld(w).krotko}’s table.`,
+            );
+      return walking ? L('Idzie do domu.', 'Going home.') : L('Siedzi w domu.', 'Staying in.');
     case 'cook': {
-      if (walking) return 'Idzie gotować.';
-      return st.things.find((t) => t.id === j.target)?.kind === 'koza' ? 'Gotuje na kozie.' : 'Gotuje na kuchence.';
+      if (walking) return L('Idzie gotować.', 'Going to cook.');
+      return st.things.find((t) => t.id === j.target)?.kind === 'koza'
+        ? L('Gotuje na kozie.', 'Cooking on the stove.')
+        : L('Gotuje na kuchence.', 'Cooking on the gas cooker.');
     }
     case 'burn': {
       const f = st.things.find((t) => t.id === j.target);
       const what = f ? (FURNITURE_ACC[f.kind] ?? 'mebel') : 'mebel';
-      return walking ? `Idzie rozbić ${what} na opał.` : `Rozbiera ${what} na opał.`;
+      const whatEn = (f && FURNITURE_EN[f.kind]) || 'furniture';
+      return walking
+        ? L(`Idzie rozbić ${what} na opał.`, `Going to break up the ${whatEn} for fuel.`)
+        : L(`Rozbiera ${what} na opał.`, `Breaking up the ${whatEn} for fuel.`);
     }
     case 'guard':
-      if (j.phase === 4) return 'Przysypia na warcie.';
+      if (j.phase === 4) return L('Przysypia na warcie.', 'Dozing off on watch.');
       if (j.target === KOZA_POST) {
-        if (j.phase === 2) return 'Idzie po drewno do kozy.';
-        if (j.phase === 3) return 'Dokłada do kozy.';
-        return walking ? 'Idzie czuwać przy kozie.' : 'Czuwa przy kozie.';
+        if (j.phase === 2) return L('Idzie po drewno do kozy.', 'Fetching wood for the stove.');
+        if (j.phase === 3) return L('Dokłada do kozy.', 'Feeding the stove.');
+        return walking
+          ? L('Idzie czuwać przy kozie.', 'Going to keep watch by the stove.')
+          : L('Czuwa przy kozie.', 'Keeping watch by the stove.');
       }
-      if (j.target === SIATKA_POST) return walking ? 'Idzie na wartę przy siatce.' : 'Trzyma wartę przy siatce.';
-      if (j.target === 0) return `${walking ? 'Idzie na wartę' : 'Trzyma wartę'} ${wordsOfWorld(w).brama.przy}.`;
-      return walking ? 'Idzie na wartę przy dziurze.' : 'Trzyma wartę przy dziurze.';
+      if (j.target === SIATKA_POST)
+        return walking
+          ? L('Idzie na wartę przy siatce.', 'Going on watch at the fence.')
+          : L('Trzyma wartę przy siatce.', 'On watch at the fence.');
+      if (j.target === 0) {
+        const gate = wordsEnOfWorld(w).brama;
+        return L(
+          `${walking ? 'Idzie na wartę' : 'Trzyma wartę'} ${wordsOfWorld(w).brama.przy}.`,
+          `${walking ? 'Going on watch' : 'On watch'} at ${gate}.`,
+        );
+      }
+      return walking
+        ? L('Idzie na wartę przy dziurze.', 'Going on watch at the hole in the fence.')
+        : L('Trzyma wartę przy dziurze.', 'On watch at the hole in the fence.');
     case 'patch':
-      if (j.phase === 0) return 'Idzie po deski i złom.';
-      return j.phase === 1 ? 'Niesie materiał do dziury.' : 'Łata dziurę w siatce.';
+      if (j.phase === 0) return L('Idzie po deski i złom.', 'Fetching planks and scrap.');
+      return j.phase === 1
+        ? L('Niesie materiał do dziury.', 'Carrying materials to the hole.')
+        : L('Łata dziurę w siatce.', 'Patching the hole in the fence.');
     case 'campfire':
-      if (j.phase === 0) return 'Idzie po drewno na ognisko.';
-      return j.phase === 1 ? 'Niesie drewno na ognisko.' : 'Rozpala ognisko.';
+      if (j.phase === 0) return L('Idzie po drewno na ognisko.', 'Fetching wood for a campfire.');
+      return j.phase === 1
+        ? L('Niesie drewno na ognisko.', 'Carrying wood for the campfire.')
+        : L('Rozpala ognisko.', 'Lighting a campfire.');
     case 'search': {
       const r = houseOf(w)?.rooms[j.target];
       const where = r ? ROOM_ACC[r.kind] : 'pomieszczenie';
-      return walking ? `Idzie przeszukać ${where}.` : `Przeszukuje ${where}.`;
+      const whereEn = (r && ROOM_EN[r.kind]) || 'room';
+      return walking
+        ? L(`Idzie przeszukać ${where}.`, `Going to search the ${whereEn}.`)
+        : L(`Przeszukuje ${where}.`, `Searching the ${whereEn}.`);
     }
     case 'dismantle': {
       const t = st.things.find((q) => q.id === j.target);
       const what = t ? (THING_ACC[t.kind] ?? 'to') : 'to';
-      return walking ? `Idzie rozebrać ${what}.` : `Rozbiera ${what}.`;
+      const en = dismantleEn(t?.kind);
+      return walking ? L(`Idzie rozebrać ${what}.`, `Going to ${en.base}.`) : L(`Rozbiera ${what}.`, `${cap(en.ing)}.`);
     }
     case 'repair': {
       const d = st.damage[j.target];
       const what = d ? REPAIR[d.kind].acc : 'uszkodzenie';
-      if (j.phase === 0) return `Idzie po ${MAT_ACC[j.what as Mat] ?? 'materiał'} do naprawy.`;
-      if (j.phase === 1) return `Niesie ${MAT_ACC[j.what as Mat] ?? 'materiał'} do naprawy.`;
-      return `Naprawia ${what}.`;
+      const mat = MAT_ACC[j.what as Mat] ?? 'materiał';
+      const matEn = MAT_EN[j.what as Mat] ?? 'materials';
+      if (j.phase === 0) return L(`Idzie po ${mat} do naprawy.`, `Fetching ${matEn} for the repair.`);
+      if (j.phase === 1) return L(`Niesie ${mat} do naprawy.`, `Carrying ${matEn} for the repair.`);
+      return L(`Naprawia ${what}.`, d ? `Fixing the ${REPAIR_EN[d.kind]}.` : 'Fixing the damage.');
     }
     case 'claim':
-      return walking ? 'Idzie zająć mieszkanie.' : 'Zajmuje mieszkanie.';
+      return walking
+        ? L('Idzie zająć mieszkanie.', 'Going to claim the flat.')
+        : L('Zajmuje mieszkanie.', 'Claiming the flat.');
     case 'arrive':
-      return 'Przychodzi do siedziby.';
+      return L('Przychodzi do siedziby.', 'Arriving at HQ.');
     case 'build': {
       const b = st.builds.find((q) => q.id === j.target);
       const what = b ? BUILD_ACC[b.kind] : 'budowlę';
-      if (j.phase === 0) return `Idzie po ${MAT_ACC[j.what as Mat] ?? 'materiał'} na ${what}.`;
-      if (j.phase === 1) return `Niesie ${MAT_ACC[j.what as Mat] ?? 'materiał'} na ${what}.`;
-      return `Buduje ${what}.`;
+      const whatEn = b ? BUILD_EN[b.kind] : 'structure';
+      const mat = MAT_ACC[j.what as Mat] ?? 'materiał';
+      const matEn = MAT_EN[j.what as Mat] ?? 'materials';
+      if (j.phase === 0) return L(`Idzie po ${mat} na ${what}.`, `Fetching ${matEn} for the ${whatEn}.`);
+      if (j.phase === 1) return L(`Niesie ${mat} na ${what}.`, `Carrying ${matEn} to the ${whatEn}.`);
+      return L(`Buduje ${what}.`, `Building the ${whatEn}.`);
     }
     case 'leave':
-      return walking ? 'Wychodzi na wyprawę.' : 'Na wyprawie.';
+      return walking
+        ? L('Wychodzi na wyprawę.', 'Heading out on a supply run.')
+        : L('Na wyprawie.', 'Out on a supply run.');
     case 'raid':
-      return ['Skrada się pod siatkę.', 'Czai się za siatką.', 'Kradnie.', 'Ucieka.', 'Ucieka.'][j.phase] ?? 'Ucieka.';
-    case 'fight':
-      return walking ? 'Idzie walczyć.' : 'Walczy.';
-    case 'finish':
-      return walking ? 'Idzie dobić zwłoki.' : 'Dobija zwłoki.';
-    case 'craft':
-      return walking ? 'Idzie po deski na dzidę.' : 'Robi dzidę.';
-    case 'brace':
-      if (j.phase === 0) return 'Idzie po deski i złom.';
-      return j.phase === 1 ? 'Niesie materiał do siatki.' : 'Wzmacnia siatkę.';
-    case 'amputate':
-      return walking ? 'Idzie amputować.' : 'Amputuje.';
-    case 'wreck':
-      if (j.what === 'rozbierz') return (walking ? NAPISY.idzieRozbierac : NAPISY.rozbiera).pl;
-      return (walking ? NAPISY.idzieSzukac : NAPISY.szuka).pl;
-    case 'carry':
-      return (walking ? NAPISY.poLup : NAPISY.niesie).pl;
-    case 'trader':
       return (
-        [HANDEL.przychodzi, HANDEL.czeka, HANDEL.odchodzi, HANDEL.ucieka, HANDEL.odchodzi, HANDEL.walczy][j.phase]
-          ?.pl ?? ''
+        [
+          L('Skrada się pod siatkę.', 'Sneaking up to the fence.'),
+          L('Czai się za siatką.', 'Lurking behind the fence.'),
+          L('Kradnie.', 'Stealing.'),
+          L('Ucieka.', 'Running off.'),
+          L('Ucieka.', 'Running off.'),
+        ][j.phase] ?? L('Ucieka.', 'Running off.')
+      );
+    case 'fight':
+      return walking ? L('Idzie walczyć.', 'Going in to fight.') : L('Walczy.', 'Fighting.');
+    case 'finish':
+      return walking
+        ? L('Idzie dobić zwłoki.', 'Going to finish off the body.')
+        : L('Dobija zwłoki.', 'Finishing off the body.');
+    case 'craft':
+      return walking
+        ? L('Idzie po deski na dzidę.', 'Fetching planks for a spear.')
+        : L('Robi dzidę.', 'Making a spear.');
+    case 'brace':
+      if (j.phase === 0) return L('Idzie po deski i złom.', 'Fetching planks and scrap.');
+      return j.phase === 1
+        ? L('Niesie materiał do siatki.', 'Carrying materials to the fence.')
+        : L('Wzmacnia siatkę.', 'Shoring up the fence.');
+    case 'amputate':
+      return walking ? L('Idzie amputować.', 'Going to amputate.') : L('Amputuje.', 'Amputating.');
+    case 'wreck':
+      if (j.what === 'rozbierz') return tr(walking ? NAPISY.idzieRozbierac : NAPISY.rozbiera);
+      return tr(walking ? NAPISY.idzieSzukac : NAPISY.szuka);
+    case 'carry':
+      return tr(walking ? NAPISY.poLup : NAPISY.niesie);
+    case 'trader':
+      return tr(
+        [HANDEL.przychodzi, HANDEL.czeka, HANDEL.odchodzi, HANDEL.ucieka, HANDEL.odchodzi, HANDEL.walczy][j.phase] ??
+          HANDEL.czeka,
       );
     case 'zemsta':
-      return HANDEL.zemstaPraca[Math.min(3, j.phase)].pl;
+      return tr(HANDEL.zemstaPraca[Math.min(3, j.phase)]);
     case 'wander':
-      return OBCY.wander[Math.min(3, j.phase)].pl;
+      return tr(OBCY.wander[Math.min(3, j.phase)]);
     case 'scavenge':
-      return OBCY.scavenge[Math.min(3, j.phase)].pl;
+      return tr(OBCY.scavenge[Math.min(3, j.phase)]);
     case 'talk':
-      return (walking ? OBCY.idzieZagadac : OBCY.rozmawia).pl;
+      return tr(walking ? OBCY.idzieZagadac : OBCY.rozmawia);
     case 'mug':
-      return OBCY.idzieNapasc.pl;
+      return tr(OBCY.idzieNapasc);
     case 'shoo':
-      return OBCY.idziePrzegonic.pl;
+      return tr(OBCY.idziePrzegonic);
     case 'trade':
-      return (walking ? HANDEL.idzieHandlowac : HANDEL.handluje).pl;
+      return tr(walking ? HANDEL.idzieHandlowac : HANDEL.handluje);
     case 'rob':
-      return HANDEL.idzieNapasc.pl;
+      return tr(HANDEL.idzieNapasc);
     case 'saw':
-      if (walking) return NAPISY.idzieWarsztat.pl;
-      return (j.what === 'czesci' ? NAPISY.robiCzesci(j.from) : NAPISY.pilujeDeski(j.from)).pl;
+      if (walking) return tr(NAPISY.idzieWarsztat);
+      return tr(j.what === 'czesci' ? NAPISY.robiCzesci(j.from) : NAPISY.pilujeDeski(j.from));
     case 'zombie':
       return (
-        ['Snuje się.', 'Idzie do siatki.', 'Napiera na siatkę.', 'Goni.', 'Idzie na hałas.'][j.phase] ?? 'Snuje się.'
+        [
+          L('Snuje się.', 'Shambling about.'),
+          L('Idzie do siatki.', 'Heading for the fence.'),
+          L('Napiera na siatkę.', 'Pushing against the fence.'),
+          L('Goni.', 'Giving chase.'),
+          L('Idzie na hałas.', 'Following the noise.'),
+        ][j.phase] ?? L('Snuje się.', 'Shambling about.')
       );
   }
 }

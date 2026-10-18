@@ -13,8 +13,13 @@
    - klatkę nowej siedziby gra zajmuje na serwerze, kiedy ktoś z zarządu dojdzie do jej drzwi (naProgu). Gdy w tym
      czasie zajęła ją inna drużyna, gra zaczyna od nowa z kolejnym budynkiem na liście (sessionStorage i przeładowanie).
    Cudze klatki to tylko znaczniki na mapie; „Zajmij klatkę” na innym budynku zajmuje ją na serwerze bez skutków
-   w symulacji (dom drużyny jako lista drzwi zostaje na później). */
+   w symulacji (dom drużyny jako lista drzwi zostaje na później).
 
+   Napisy dla gracza (komunikat startu, cele drużyny bez domu) są w bieżącym języku z chwili wywołania
+   (src/core/jezyk.ts), a komunikaty serwera przechodzą przez komunikatBledu z src/net/api.ts (po polsku dokładnie
+   takie, jakie przyszły). */
+
+import { L } from '../core/jezyk.ts';
 import { nearestFree } from '../sim/path.ts';
 import type { SimState } from '../sim/sim.ts';
 import {
@@ -29,7 +34,7 @@ import {
   prostokatMapy,
 } from '../world/klucze.ts';
 import type { World } from '../world/world.ts';
-import type { Wynik } from './api.ts';
+import { komunikatBledu, type Wynik } from './api.ts';
 import type { ListaKlatek, Prostokat, ZajetaKlatka, ZajetaOdpowiedz, ZajmijKlatke } from './protokol.ts';
 
 /** stan gry sieciowej w zapisie gry (Save.siec) */
@@ -87,6 +92,7 @@ export function klatkaPod(w: World, srodek: LatLon, tile: number): Klatka | null
 export const budynkiObcych = (lista: readonly ZajetaKlatka[]): string[] =>
   [...new Set(lista.filter((k) => !k.moja).map((k) => k.budynek))].sort();
 
+/** wynik startu; komunikat w bieżącym języku */
 export type WynikStartu =
   | { ok: true; stan: StanSieci; swiat: World; klatki: ZajetaKlatka[]; komunikat: string }
   | { ok: false; komunikat: string };
@@ -105,11 +111,18 @@ export async function startSieci(
 ): Promise<WynikStartu> {
   let swiat = zbuduj([]);
   const k0 = klatkaSiedziby(swiat, srodek);
-  if (!k0) return { ok: false, komunikat: 'To osiedle nie ma kluczy klatek, więc gramy bez sieci.' };
+  if (!k0)
+    return {
+      ok: false,
+      komunikat: L(
+        'To osiedle nie ma kluczy klatek, więc gramy bez sieci.',
+        'This estate’s map has no stairwell IDs, so the game runs offline.',
+      ),
+    };
   const zwolnione = await api.zwolnijWszystkie();
-  if (!zwolnione.ok) return { ok: false, komunikat: zwolnione.komunikat };
+  if (!zwolnione.ok) return { ok: false, komunikat: komunikatBledu(zwolnione) };
   const lista = await api.zajete(prostokatMapy(swiat, srodek));
-  if (!lista.ok) return { ok: false, komunikat: lista.komunikat };
+  if (!lista.ok) return { ok: false, komunikat: komunikatBledu(lista) };
   let klatki = lista.dane.klatki;
   if (!klatki.some((k) => k.klucz === k0.klucz)) {
     const r = await api.zajmij(doZajecia(k0));
@@ -120,10 +133,10 @@ export async function startSieci(
         stan: { zajete: [], dom: true },
         swiat,
         klatki,
-        komunikat: 'Wasza klatka była wolna. Jest wasza.',
+        komunikat: L('Wasza klatka była wolna. Jest wasza.', 'Your stairwell was free. It’s yours now.'),
       };
     }
-    if (r.blad !== 'zajeta') return { ok: false, komunikat: r.komunikat };
+    if (r.blad !== 'zajeta') return { ok: false, komunikat: komunikatBledu(r) };
     klatki = [...klatki, { ...doZajecia(k0), moja: false }];
   }
   // ktoś już zajął naszą klatkę: siedzibą zostaje najbliższy budynek mieszkalny bez cudzych klatek
@@ -134,7 +147,10 @@ export async function startSieci(
     stan: { zajete, dom: false, utracony: k0.budynek },
     swiat,
     klatki,
-    komunikat: 'Ktoś już zajął waszą klatkę. Zaczynacie na ulicy: dojdźcie do drzwi wolnej klatki, zanim zapadnie noc.',
+    komunikat: L(
+      'Ktoś już zajął waszą klatkę. Zaczynacie na ulicy: dojdźcie do drzwi wolnej klatki, zanim zapadnie noc.',
+      'Someone has already taken your stairwell. You start out on the street: get to the door of a free stairwell before nightfall.',
+    ),
   };
 }
 
@@ -241,19 +257,30 @@ export function znaczniki(
   return out;
 }
 
-/** cele dnia drużyny bez domu (w kształcie celów z src/ui/cele.ts) */
+/** cele dnia drużyny bez domu (w kształcie celów z src/ui/cele.ts), w bieżącym języku */
 export function celeBezDomu(zaznaczeni: boolean, touch: boolean): { text: string; how: string; done: boolean }[] {
   return [
     {
-      text: 'Zaznaczcie kogoś z zarządu.',
-      how: touch ? 'Stuknijcie kogoś z waszych ludzi na ulicy.' : 'Kliknijcie kogoś z waszych ludzi na ulicy.',
+      text: L('Zaznaczcie kogoś z zarządu.', 'Select someone from the board.'),
+      how: touch
+        ? L('Stuknijcie kogoś z waszych ludzi na ulicy.', 'Tap one of your people on the street.')
+        : L('Kliknijcie kogoś z waszych ludzi na ulicy.', 'Click one of your people on the street.'),
       done: zaznaczeni,
     },
     {
-      text: 'Dojdźcie do drzwi wolnej klatki, zanim zapadnie noc.',
+      text: L(
+        'Dojdźcie do drzwi wolnej klatki, zanim zapadnie noc.',
+        'Get to the door of a free stairwell before nightfall.',
+      ),
       how: touch
-        ? 'Stuknijcie drzwi przy znaczniku „wolna klatka”. Kiedy ktoś tam stanie, klatka jest wasza.'
-        : 'Prawy przycisk przy drzwiach ze znacznikiem „wolna klatka”. Kiedy ktoś tam stanie, klatka jest wasza.',
+        ? L(
+            'Stuknijcie drzwi przy znaczniku „wolna klatka”. Kiedy ktoś tam stanie, klatka jest wasza.',
+            'Tap the door by the “free stairwell” marker. Once someone stands there, the stairwell is yours.',
+          )
+        : L(
+            'Prawy przycisk przy drzwiach ze znacznikiem „wolna klatka”. Kiedy ktoś tam stanie, klatka jest wasza.',
+            'Right-click the door with the “free stairwell” marker. Once someone stands there, the stairwell is yours.',
+          ),
       done: false,
     },
   ];

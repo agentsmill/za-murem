@@ -1,9 +1,10 @@
 /* Wieść się niesie (docs/superpowers/specs/2026-10-18-wedrowcy-design.md): napaść zarządu na obcego kosztuje zaufanie
    i wkurzenie osiedla. Symulacja podaje listę napaści (GovInput.napady), a zarząd liczy nowe po napadN, tak jak zgony
    po deadN: raz na napaść, od razu, z linią w kronice. Pole napadN powstaje dopiero przy pierwszej napaści, więc gra
-   bez napaści ma ten sam stan zarządu. Napisy w obu językach: do kroniki idzie na razie polski. */
+   bez napaści ma ten sam stan zarządu. Linia do kroniki i raportu w obu językach (Tx), ze słowami miejsca. */
 
-import { placeIn, wordsOf } from './miejsce.ts';
+import { type Tx, tx } from '../core/jezyk.ts';
+import { BLOK, placeIn, type WordsEn, wordsEn, wordsOf } from './miejsce.ts';
 import type { GovEffects, GovInput, GovState } from './typy.ts';
 import { logGov, mood } from './wspolne.ts';
 
@@ -15,16 +16,19 @@ export const CENA: Record<Kto, { trust: number; anger: number }> = {
   wedrowiec: { trust: -3, anger: 2 },
 };
 
-/** linia do kroniki; Zarzad: „Zarząd” albo w domu słowo ze słownika miejsca, pod: „pod bramą” albo „pod furtką” */
-export const WIESC: Record<Kto, (Zarzad: string, pod: string) => { pl: string; en: string }> = {
-  handlarz: (Zarzad, pod) => ({
-    pl: `Wieść się niesie: ${Zarzad.toLowerCase()} napadł na handlarza ${pod}. Ludzie pytają, kto będzie następny.`,
-    en: 'Word gets around: the board robbed the trader at the gate. People ask who will be next.',
-  }),
-  wedrowiec: (Zarzad) => ({
-    pl: `Wieść się niesie: ${Zarzad.toLowerCase()} napadł na wędrowca. Ludzie kręcą głowami.`,
-    en: 'Word gets around: the board robbed a wanderer. People shake their heads.',
-  }),
+/** linia do kroniki; Zarzad: „Zarząd” albo w domu słowo ze słownika miejsca, pod: „pod bramą” albo „pod furtką”,
+    e: słowa miejsca po angielsku (the board przy the gate, w domu the street committee przy the garden gate) */
+export const WIESC: Record<Kto, (Zarzad: string, pod: string, e?: WordsEn) => Tx> = {
+  handlarz: (Zarzad, pod, e = wordsEn(BLOK)) =>
+    tx(
+      `Wieść się niesie: ${Zarzad.toLowerCase()} napadł na handlarza ${pod}. Ludzie pytają, kto będzie następny.`,
+      `Word gets around: ${e.zarzad} robbed the trader at ${e.brama}. People are asking who’s next.`,
+    ),
+  wedrowiec: (Zarzad, _pod, e = wordsEn(BLOK)) =>
+    tx(
+      `Wieść się niesie: ${Zarzad.toLowerCase()} napadł na wędrowca. Ludzie kręcą głowami.`,
+      `Word gets around: ${e.zarzad} robbed a wanderer. People are shaking their heads.`,
+    ),
 };
 
 /** nowe napaści z wejścia: zaufanie i wkurzenie, linia do kroniki i raportu nocy */
@@ -34,11 +38,12 @@ export function wiesci(st: GovState, i: GovInput, fx: GovEffects): void {
   if (all.length <= from) return;
   st.napadN = all.length;
   const s = wordsOf(placeIn(i));
+  const e = wordsEn(placeIn(i));
   for (const n of all.slice(from)) {
     const c = CENA[n.kto];
     if (!c) continue;
     mood(st, c.trust, c.anger);
-    const line = WIESC[n.kto](s.Zarzad, s.brama.pod).pl;
+    const line = WIESC[n.kto](s.Zarzad, s.brama.pod, e);
     if (st.night?.confirmed) st.night.lines.push(line);
     logGov(st, i, line, true, fx);
   }

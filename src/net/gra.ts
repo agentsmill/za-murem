@@ -12,8 +12,14 @@
    się dalej bez sieci (bez zajmowania i bez chmury). Zapis w chmurze idzie od wersji, którą ta gra ostatnio wysłała
    (StanSieci.wersja), a zapis wczytany z chmury od wersji z serwera, więc stary zapis z innego urządzenia nie nadpisze
    nowszej gry bez ostrzeżenia. Odpowiedzi z sieci sprawdzają numer gry (gen): spóźniona odpowiedź z poprzedniej gry
-   nic nie zmienia w nowej. */
+   nic nie zmienia w nowej.
 
+   Język (src/core/jezyk.ts): komunikat w bloku #siec trzymamy jako Tx, a opis zapisu z chmury liczymy przy każdym
+   rysowaniu, więc po zmianie języka blok rysuje się od nowa w nowym (przerysuj, woła ją main.ts). Znaczniki klatek
+   zmieniają napis same w następnej klatce, a podpowiedzi (say), napisy menu i komunikat startu są w języku z chwili,
+   w której powstają. Serwer mówi po polsku; jego komunikat po angielsku daje txBledu/komunikatBledu z src/net/api.ts. */
+
+import { jezyk, L, type Tx, tr, tx, txCat } from '../core/jezyk.ts';
 import type { MenuItem } from '../sim/orders.ts';
 import type { Sim, SimState } from '../sim/sim.ts';
 import { htmlSieci, NAPIS_ZNACZNIKA, type WidokSieci } from '../ui/siec.ts';
@@ -21,7 +27,7 @@ import { readSave, type Save, saveLabel } from '../ui/zapis.ts';
 import { type Klatka, type LatLon, prostokatMapy } from '../world/klucze.ts';
 import type { Loaded } from '../world/load.ts';
 import type { World } from '../world/world.ts';
-import { type ApiGry, utworzApi } from './api.ts';
+import { type ApiGry, komunikatBledu, txBledu, utworzApi } from './api.ts';
 import type { ZajetaKlatka } from './protokol.ts';
 import {
   budynkiObcych,
@@ -114,7 +120,8 @@ export class GraSieciowa {
   /** zajmowanie nowej siedziby przerwane (błąd serwera, który się nie zmieni): cele jak zwykle */
   private porzucone = false;
   private restartuje = false;
-  private komunikat: string | null = null;
+  /** komunikat startu: Tx albo napis w języku z chwili startu (z startSieci) */
+  private komunikat: Tx | string | null = null;
   private klatki: ZajetaKlatka[] = [];
   private cel: Klatka | null = null;
   private zn: Znacznik[] = [];
@@ -180,19 +187,31 @@ export class GraSieciowa {
     return this.ponownie ? { data: this.ponownie.data, tryb: this.ponownie.tryb } : null;
   }
 
-  private rysuj(nick?: string) {
+  /** blok w bieżącym języku; opis zapisu z chmury liczony przy każdym rysowaniu (zależy od języka) */
+  private rysuj(nick?: string, haslo?: string) {
     const el = this.o.el;
     if (!el) return;
-    el.innerHTML = htmlSieci(this.widok);
+    el.innerHTML = htmlSieci({ ...this.widok, chmura: this.chmura ? saveLabel(this.chmura) : null });
     const pole = el.querySelector<HTMLInputElement>('#scNick');
     if (pole && nick) pole.value = nick;
+    const pole2 = el.querySelector<HTMLInputElement>('#scHaslo');
+    if (pole2 && haslo) pole2.value = haslo;
+  }
+
+  /** Po zmianie języka (woła main.ts): blok „Gra z sąsiadami” od nowa w bieżącym języku, z tym samym komunikatem
+      i z wpisanym nickiem i hasłem. Bez bloku na ekranie (bez ?siec=1, bez serwera) nic nie robi. */
+  przerysuj(): void {
+    const el = this.o.el;
+    if (!el || el.hidden) return;
+    const nick = el.querySelector<HTMLInputElement>('#scNick')?.value;
+    const haslo = el.querySelector<HTMLInputElement>('#scHaslo')?.value;
+    this.rysuj(nick, haslo);
   }
 
   private async wczytajChmure() {
     const z = await this.api.pobierzZapis();
     this.chmura = z.ok ? zapisZChmury(z.dane.dane) : null;
     this.wersjaZChmury = z.ok ? z.dane.wersja : undefined;
-    this.widok.chmura = this.chmura ? saveLabel(this.chmura) : null;
   }
 
   private async akcja(a: string) {
@@ -211,7 +230,10 @@ export class GraSieciowa {
       this.zalogowani = false;
       this.nick = null;
       this.chmura = null;
-      this.widok = { stan: 'wylogowani', komunikat: 'Wylogowani. Gra działa dalej bez sieci.' };
+      this.widok = {
+        stan: 'wylogowani',
+        komunikat: tx('Wylogowani. Gra działa dalej bez sieci.', 'Logged out. The game carries on offline.'),
+      };
     } else if (a === 'zaloguj' || a === 'zaloz') {
       const r = a === 'zaloz' ? await this.api.zaloz(nick, haslo) : await this.api.zaloguj(nick, haslo);
       if (r.ok) {
@@ -221,12 +243,18 @@ export class GraSieciowa {
           stan: 'zalogowani',
           nick: r.dane.nick,
           komunikat:
-            a === 'zaloz' ? 'Konto założone. Zapiszcie sobie hasło: bez e-maila nie da się go odzyskać.' : undefined,
+            a === 'zaloz'
+              ? tx(
+                  'Konto założone. Zapiszcie sobie hasło: bez e-maila nie da się go odzyskać.',
+                  'Account created. Write your password down: without an email there is no way to recover it.',
+                )
+              : undefined,
         };
         await this.wczytajChmure();
       } else {
-        const czekaj = r.ponowZa ? ` Spróbujcie za ${Math.ceil(r.ponowZa / 60)} min.` : '';
-        this.widok = { stan: 'wylogowani', komunikat: `${r.komunikat}${czekaj}` };
+        // angielski komunikat o limicie prób sam mówi, za ile spróbować (txBledu bierze czas z Retry-After)
+        const czekaj = r.ponowZa ? tx(` Spróbujcie za ${Math.ceil(r.ponowZa / 60)} min.`, '') : '';
+        this.widok = { stan: 'wylogowani', komunikat: txCat(txBledu(r), czekaj) };
       }
     }
     this.widok.czeka = false;
@@ -256,7 +284,11 @@ export class GraSieciowa {
       this.ustaw(data, swiat, { ...saved.siec });
       const obce = !!saved.siec.konto && saved.siec.konto !== this.nick;
       this.bezSieci = !this.zalogowani || obce;
-      if (this.zalogowani && obce) this.komunikat = 'Ten zapis jest z gry innego konta, więc gra toczy się bez sieci.';
+      if (this.zalogowani && obce)
+        this.komunikat = tx(
+          'Ten zapis jest z gry innego konta, więc gra toczy się bez sieci.',
+          'This save is from another account’s game, so it carries on offline.',
+        );
       // zapis z chmury albo ten sam zapis co w chmurze (ta sama chwila zapisu, np. wysłany przy zamykaniu strony, kiedy
       // odpowiedź z nową wersją już nie doszła): od wersji z serwera; inny zapis z przeglądarki: od wersji, którą ta gra
       // ostatnio wysłała (nowszy zapis z innego urządzenia skończy się konfliktem wersji)
@@ -271,17 +303,25 @@ export class GraSieciowa {
       const swiat = zbuduj(p.stan.zajete);
       this.ustaw(data, swiat, { ...p.stan, konto: this.nick ?? p.stan.konto });
       this.bezSieci = !this.zalogowani;
-      this.komunikat =
-        'Inna drużyna była szybsza. Siedzibą zostaje następna wolna klatka: dojdźcie do niej przed nocą.';
+      this.komunikat = tx(
+        'Inna drużyna była szybsza. Siedzibą zostaje następna wolna klatka: dojdźcie do niej przed nocą.',
+        'Another team got there first. Your HQ is now the next free stairwell: get there before dark.',
+      );
       this.wersjaChmury = undefined;
       if (!this.bezSieci) void this.odswiez(this.gen);
       return swiat;
     }
     if (!this.zalogowani || data.src === 'demo') return zbuduj(null);
-    this.o.status?.('Sprawdzam na serwerze gry, czy wasza klatka jest wolna…');
+    this.o.status?.(
+      L(
+        'Sprawdzam na serwerze gry, czy wasza klatka jest wolna…',
+        'Checking with the game server whether your stairwell is free…',
+      ),
+    );
     const r = await startSieci(this.api, (bez) => zbuduj(bez), data.geo.c);
     if (!r.ok) {
-      this.komunikat = `${r.komunikat} Gramy bez sieci.`;
+      // komunikat ze startSieci jest już w bieżącym języku
+      this.komunikat = L(`${r.komunikat} Gramy bez sieci.`, `${r.komunikat} Playing offline.`);
       return zbuduj(null);
     }
     this.klatki = r.klatki;
@@ -313,14 +353,20 @@ export class GraSieciowa {
       const r = k ? await this.api.zajmij(doZajecia(k)) : null;
       if (gen !== this.gen) return;
       if (r && !r.ok && r.blad === 'zajeta')
-        this.o.say('Kiedy was nie było, waszą klatkę zajęła inna drużyna. Gra toczy się dalej u was.', 9000);
+        this.o.say(
+          L(
+            'Kiedy was nie było, waszą klatkę zajęła inna drużyna. Gra toczy się dalej u was.',
+            'While you were away, another team took your stairwell. Your own game carries on regardless.',
+          ),
+          9000,
+        );
     }
     await this.odswiez(gen);
   }
 
-  /** komunikat startu gry sieciowej (zamiast zwykłego powitania) albo null */
+  /** komunikat startu gry sieciowej (zamiast zwykłego powitania) w bieżącym języku albo null */
   komunikatStartu(): string | null {
-    return this.komunikat;
+    return this.komunikat === null ? null : tr(this.komunikat);
   }
 
   /** stan przed new Sim: nowa gra bez domu stawia zarząd na ulicy przed drzwiami utraconej klatki */
@@ -392,11 +438,13 @@ export class GraSieciowa {
       const z = this.zn[k];
       d.hidden = !z;
       if (!z) return;
-      if (d.dataset.k !== z.klucz || d.dataset.r !== z.rodzaj) {
+      // napis od nowa także po zmianie języka
+      if (d.dataset.k !== z.klucz || d.dataset.r !== z.rodzaj || d.dataset.l !== jezyk()) {
         d.dataset.k = z.klucz;
         d.dataset.r = z.rodzaj;
+        d.dataset.l = jezyk();
         d.className = `kl-zn ${z.rodzaj}`;
-        (d.firstElementChild as HTMLElement).textContent = NAPIS_ZNACZNIKA[z.rodzaj];
+        (d.firstElementChild as HTMLElement).textContent = tr(NAPIS_ZNACZNIKA[z.rodzaj]);
       }
       const [sx, sy] = this.o.screenOf(z.x, z.y);
       d.style.transform = `translate(${Math.round(sx)}px, ${Math.round(sy)}px)`;
@@ -423,7 +471,13 @@ export class GraSieciowa {
       this.odsw++;
       this.klatki = [...this.klatki.filter((x) => x.klucz !== k.klucz), r.dane.klatka];
       this.zn = [];
-      this.o.say('Klatka jest wasza. Inne drużyny widzą ją teraz jako zajętą.', 9000);
+      this.o.say(
+        L(
+          'Klatka jest wasza. Inne drużyny widzą ją teraz jako zajętą.',
+          'The stairwell is yours. Other teams now see it as taken.',
+        ),
+        9000,
+      );
       return;
     }
     if (r.blad === 'zajeta') {
@@ -431,7 +485,13 @@ export class GraSieciowa {
       if (zajete.length === stan.zajete.length) {
         // lista się nie wydłuża (np. nie ma już wolnego budynku mieszkalnego): bez ponownego startu w kółko
         this.porzucone = true;
-        this.o.say('Wolnej klatki w okolicy już nie ma. Gra toczy się dalej bez zajmowania.', 9000);
+        this.o.say(
+          L(
+            'Wolnej klatki w okolicy już nie ma. Gra toczy się dalej bez zajmowania.',
+            'There are no free stairwells left nearby. The game carries on without claiming one.',
+          ),
+          9000,
+        );
         return;
       }
       this.restartuje = true;
@@ -441,19 +501,35 @@ export class GraSieciowa {
       } catch {
         // bez pamięci sesji gracz zacznie od nowa sam
       }
-      this.o.say('Inna drużyna zajęła tę klatkę przed wami. Szukamy następnej wolnej…', 6000);
+      this.o.say(
+        L(
+          'Inna drużyna zajęła tę klatkę przed wami. Szukamy następnej wolnej…',
+          'Another team took this stairwell before you did. Looking for the next free one…',
+        ),
+        6000,
+      );
       setTimeout(() => (this.o.przeladuj ?? (() => location.reload()))(), 2500);
       return;
     }
+    const kom = komunikatBledu(r);
     if (r.status >= 400 && r.status < 500 && r.status !== 429) {
       // za daleko, limit, zła pozycja albo brak sesji: ponowienie nic nie zmieni
       this.porzucone = true;
-      this.o.say(`${r.komunikat} Gra toczy się dalej bez zajmowania klatki.`, 9000);
+      this.o.say(
+        L(
+          `${kom} Gra toczy się dalej bez zajmowania klatki.`,
+          `${kom} The game carries on without claiming the stairwell.`,
+        ),
+        9000,
+      );
       return;
     }
     // sieć, przeciążony serwer: spróbujemy za pół minuty
     this.sprawdzono = performance.now() + 30_000;
-    this.o.say(`${r.komunikat} Klatkę zajmiemy, kiedy serwer odpowie.`, 6000);
+    this.o.say(
+      L(`${kom} Klatkę zajmiemy, kiedy serwer odpowie.`, `${kom} We’ll claim the stairwell once the server answers.`),
+      6000,
+    );
   }
 
   /** „Zajmij klatkę” w menu na budynku (gra sieciowa, z potwierdzeniem); puste poza grą sieciową i na naszych klatkach */
@@ -465,7 +541,11 @@ export class GraSieciowa {
     const dom = !!this.cel && k.klucz === this.cel.klucz;
     const item: MenuItem = {
       cmd: { t: 'select', ids: [] },
-      label: obca ? 'Klatka zajęta przez inną drużynę' : dom ? 'Zajmij klatkę (wasz nowy dom)' : 'Zajmij klatkę',
+      label: obca
+        ? L('Klatka zajęta przez inną drużynę', 'Stairwell taken by another team')
+        : dom
+          ? L('Zajmij klatkę (wasz nowy dom)', 'Claim stairwell (your new home)')
+          : L('Zajmij klatkę', 'Claim stairwell'),
       quick: false,
       confirm: !obca,
     };
@@ -480,7 +560,7 @@ export class GraSieciowa {
     if (!k) return false;
     this.specjalne.clear();
     if (this.klatki.some((x) => x.klucz === k.klucz && !x.moja)) {
-      this.o.say('Tę klatkę zajęła już inna drużyna.', 3000);
+      this.o.say(L('Tę klatkę zajęła już inna drużyna.', 'Another team has already taken this stairwell.'), 3000);
       return true;
     }
     if (this.cel && k.klucz === this.cel.klucz) void this.zajmijSiedzibe();
@@ -497,13 +577,16 @@ export class GraSieciowa {
       this.klatki = [...this.klatki.filter((x) => x.klucz !== k.klucz), r.dane.klatka];
       this.zn = [];
       this.o.say(
-        'Klatka zajęta: inne drużyny widzą ją jako waszą. Przeprowadzka do niej przyjdzie w grze później.',
+        L(
+          'Klatka zajęta: inne drużyny widzą ją jako waszą. Przeprowadzka do niej przyjdzie w grze później.',
+          'Stairwell claimed: other teams see it as yours. Moving in will come in a later version.',
+        ),
         7000,
       );
     } else if (r.blad === 'zajeta') {
-      this.o.say('Tę klatkę zajęła już inna drużyna.', 4000);
+      this.o.say(L('Tę klatkę zajęła już inna drużyna.', 'Another team has already taken this stairwell.'), 4000);
       void this.odswiez(gen);
-    } else this.o.say(r.komunikat, 5000);
+    } else this.o.say(komunikatBledu(r), 5000);
   }
 
   /** Zapis do chmury po zapisie w przeglądarce: tylko gra sieciowa tego konta, najwyżej raz na minutę i jeden naraz
@@ -525,7 +608,13 @@ export class GraSieciowa {
         stan.wersja = r.dane.wersja;
       } else if (r.blad === 'konflikt_wersji') {
         this.chmuraStop = true;
-        this.o.say('Na innym urządzeniu jest nowszy zapis tej gry. Ten zostaje tylko w tej przeglądarce.', 9000);
+        this.o.say(
+          L(
+            'Na innym urządzeniu jest nowszy zapis tej gry. Ten zostaje tylko w tej przeglądarce.',
+            'Another device has a newer save of this game. This one stays in this browser only.',
+          ),
+          9000,
+        );
       }
     });
   }

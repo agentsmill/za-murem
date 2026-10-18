@@ -33,6 +33,7 @@ import { statsOf } from '../../src/ui/pasek.ts';
 import { comingText } from '../../src/ui/przybycie.ts';
 import { govFence } from '../../src/ui/siatka.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
+import { pl } from './po-angielsku.ts';
 
 /** słowa z bloku, których w domu nie ma w tekstach interfejsu, także mieszkanie i mieszkańcy (w domu jednorodzinnym
     lokum komitetu to dom, a ludzie to sąsiedzi); łóżka piętrowe to nazwa łóżek, więc bez „piętr” */
@@ -52,8 +53,8 @@ const tickAt = (h: number) => Math.round(((h * 60 - START_MINUTES) / 60) * TICKS
 const event = (): Extract<Prompt, { k: 'wydarzenie' }> => ({
   k: 'wydarzenie',
   id: 'x',
-  title: 'T',
-  text: 'a',
+  title: { pl: 'T', en: 'T' },
+  text: { pl: 'a', en: 'a' },
   choices: [],
 });
 const law = (day: number): Extract<Prompt, { k: 'uchwala' }> => ({ k: 'uchwala', day, first: day === 1, options: [] });
@@ -269,10 +270,10 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
       fence: { tiles: [3, 4, 5, 6], hole: [5], yard },
       props: [{ kind: 'trzepak', x: 4, y: 2, w: 3, h: 1 }],
     };
-    expect(govFence(src)!.holes[0].name).toBe('za trzepakiem');
-    expect(govFence(src, wordsOf(placeOf(demoWorld('zielonki').w)))!.holes[0].name).toBe('od północy');
+    expect(pl(govFence(src)!.holes[0].name)).toBe('za trzepakiem');
+    expect(pl(govFence(src, wordsOf(placeOf(demoWorld('zielonki').w)))!.holes[0].name)).toBe('od północy');
     // bez trzepaka (sterta na jego miejscu) dziura ma nazwę z kierunku
-    expect(govFence({ ...src, props: [{ ...src.props[0], kind: 'deski' }] })!.holes[0].name).toBe('od północy');
+    expect(pl(govFence({ ...src, props: [{ ...src.props[0], kind: 'deski' }] })!.holes[0].name)).toBe('od północy');
   });
 });
 

@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Za Murem</title>
-<meta name="description" content="Pikselowa gra o spółdzielni mieszkaniowej po upadku cywilizacji. Wpisz adres i poprowadź swoje prawdziwe osiedle.">
-<meta property="og:title" content="Za Murem: spółdzielnia po upadku">
-<meta property="og:description" content="Wpisz adres swojego osiedla i sprawdź, ile dni przetrwa wasza spółdzielnia.">
+<meta name="description" content="A pixel-art game about a housing co-op after the fall of civilisation. Type in an address and run your own real estate.">
+<meta property="og:title" content="Za Murem: a housing co-op after the fall">
+<meta property="og:description" content="Type in the address of your estate and see how many days your co-op survives.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&display=swap">
@@ -15,12 +15,13 @@
 <body>
 <div class="start" id="start">
   <div class="start-card">
-    <div><div class="sign big"><h1>Za Murem</h1><small>spółdzielnia po upadku</small></div></div>
+    <div class="lang-slot" id="langStart"></div>
+    <div><div class="sign big"><h1>Za Murem</h1><small>a housing co-op after the fall</small></div></div>
     <p class="lore" id="lore"></p>
-    <div class="resume" id="resume" hidden><button type="button" class="btn go" id="btnResume"></button><button type="button" class="btn ghost" id="btnForget">Usuń zapis</button></div>
+    <div class="resume" id="resume" hidden><button type="button" class="btn go" id="btnResume"></button><button type="button" class="btn ghost" id="btnForget">Delete save</button></div>
     <form id="startForm">
-      <div class="label-row"><label for="addr">Adres twojego osiedla</label><span class="mode" role="radiogroup" aria-label="Tryb gry"><label class="mode-o"><input type="radio" name="tryb" value="zwykly" checked><span>Zwykły</span></label><label class="mode-o zombie"><input type="radio" name="tryb" value="zombie"><span>Zombie</span></label></span></div>
-      <div class="row"><input id="addr" name="addr" placeholder="np. Wołoska 12, Warszawa" autocomplete="street-address"><button class="btn go" type="submit">Wczytaj osiedle</button></div>
+      <div class="label-row"><label for="addr">Your estate’s address</label><span class="mode" role="radiogroup" aria-label="Game mode"><label class="mode-o"><input type="radio" name="tryb" value="zwykly" checked><span>Normal</span></label><label class="mode-o zombie"><input type="radio" name="tryb" value="zombie"><span>Zombie</span></label></span></div>
+      <div class="row"><input id="addr" name="addr" placeholder="e.g. Wołoska 12, Warszawa" autocomplete="street-address"><button class="btn go" type="submit">Load the estate</button></div>
     </form>
     <!-- ===== Wasz zarząd: początek bloku (liczba osób i własna drużyna; treść rysuje src/ui/druzyna.ts) ===== -->
     <section class="druzyna" id="druzyna" aria-labelledby="dzTitle"></section>
@@ -30,52 +31,52 @@
     <!-- ===== Gra z sąsiadami: koniec bloku ===== -->
     <div class="alt" id="demos"></div>
     <p class="status" id="startStatus" aria-live="polite"></p>
-    <p class="fine">Adres trafia do wyszukiwarki OpenStreetMap (Nominatim), mapę pobieramy z darmowych kafelków <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Dane mapy © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, kafelki © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>. Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL (<a href="data/mieszkancy/LICENCJE.md" target="_blank" rel="noopener">źródła i licencje</a>).</p>
+    <p class="fine">Your address goes to the OpenStreetMap search (Nominatim), and the map comes from free <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> tiles. Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors, tiles © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>. The residents are made up from Polish statistics, GUS and PESEL (<a href="data/mieszkancy/LICENCJE.md" target="_blank" rel="noopener">sources and licences</a>).</p>
   </div>
 </div>
 
 <div class="app" id="app" hidden>
   <div class="stage" id="stage"></div>
-  <div class="treemark" id="treeMark" hidden><span class="treemark-t">Suche drzewo</span></div>
+  <div class="treemark" id="treeMark" hidden><span class="treemark-t">Dead tree</span></div>
   <div class="klatki" id="klatki" hidden></div>
   <header class="top" id="top">
-    <div class="sign"><b id="osName">Spółdzielnia</b><small>Za Murem</small></div>
-    <div class="clock"><span id="hDay"></span><span id="hTime"></span><span id="hSeason" class="season">jesień 2051</span></div>
+    <div class="sign"><b id="osName">Co-op</b><small>Za Murem</small></div>
+    <div class="clock"><span id="hDay"></span><span id="hTime"></span><span id="hSeason" class="season">autumn 2051</span></div>
     <fieldset class="speed" id="speed">
-      <legend class="sr">Tempo gry</legend>
-      <button type="button" class="btn" data-s="0">Pauza</button><button type="button" class="btn" data-s="1">1×</button><button type="button" class="btn" data-s="2">3×</button><button type="button" class="btn" data-s="3">6×</button><button type="button" class="btn" data-s="4">8×</button>
+      <legend class="sr">Game speed</legend>
+      <button type="button" class="btn" data-s="0">Pause</button><button type="button" class="btn" data-s="1">1×</button><button type="button" class="btn" data-s="2">3×</button><button type="button" class="btn" data-s="3">6×</button><button type="button" class="btn" data-s="4">8×</button>
     </fieldset>
-    <button type="button" class="btn alarm" id="btnAlarm" title="Wszyscy zdolni z zarządu na wartę">Do broni!</button>
+    <button type="button" class="btn alarm" id="btnAlarm" title="Everyone fit on the board goes on watch">To arms!</button>
     <div class="stats" id="stats">
-      <span class="stat" id="sFence" title="Siatka" hidden><small class="stat-k">siatka</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sHorde" title="Szwendacze przy siatce" hidden><small class="stat-k">stado</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sOut" title="Temperatura na dworze"><small class="stat-k">dwór</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sKit" title="Temperatura w kuchni zarządu"><small class="stat-k">kuchnia</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sFire" title="Ogień w kozie zarządu"><small class="stat-k">koza</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sWood" title="Drewno: w składzie, luzem i w kozie"><small class="stat-k">drewno</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sBoards" title="Deski"><small class="stat-k">deski</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sScrap" title="Złom"><small class="stat-k">złom</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sParts" title="Części"><small class="stat-k">części</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sMats" title="Deski, złom, części"><small class="stat-k">d·z·cz</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sFood" title="Jedzenie: zapasy i ugotowane porcje"><small class="stat-k">jedzenie</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sTrust" title="Zaufanie mieszkańców do zarządu"><small class="stat-k">zaufanie</small><b class="stat-v">–</b></span>
-      <span class="stat" id="sAnger" title="Wkurzenie mieszkańców"><small class="stat-k">wkurzenie</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sFence" title="Fence" hidden><small class="stat-k">fence</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sHorde" title="Shamblers at the fence" hidden><small class="stat-k">herd</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sOut" title="Temperature outside"><small class="stat-k">outside</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sKit" title="Temperature in the board’s kitchen"><small class="stat-k">kitchen</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sFire" title="Fire in the board’s stove"><small class="stat-k">stove</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sWood" title="Wood: on the woodpile, lying around and in the stove"><small class="stat-k">wood</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sBoards" title="Planks"><small class="stat-k">planks</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sScrap" title="Scrap"><small class="stat-k">scrap</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sParts" title="Parts"><small class="stat-k">parts</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sMats" title="Planks, scrap, parts"><small class="stat-k">pl·sc·pa</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sFood" title="Food: supplies and cooked portions"><small class="stat-k">food</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sTrust" title="Residents’ trust in the board"><small class="stat-k">trust</small><b class="stat-v">–</b></span>
+      <span class="stat" id="sAnger" title="Residents’ anger"><small class="stat-k">anger</small><b class="stat-v">–</b></span>
     </div>
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
-    <button type="button" class="btn lamp" id="btnBuild" aria-keyshortcuts="B">Budowa</button>
+    <button type="button" class="btn lamp" id="btnBuild" aria-keyshortcuts="B">Build</button>
     <button type="button" class="btn ghost" id="btnMenu">Menu</button>
   </header>
-  <section class="goals" id="goals" aria-label="Cele"></section>
+  <section class="goals" id="goals" aria-label="Goals"></section>
   <aside class="card" id="card" hidden></aside>
   <p class="hint" id="hint"></p>
   <div class="box" id="box" hidden></div>
   <div class="plan-ghost" id="ghost" hidden><span class="plan-ghost-t" id="ghostText"></span></div>
-  <div class="notice" id="arrive" role="status" hidden><p class="nt-t" id="arriveText"></p><button type="button" class="btn" id="arriveShow">Pokaż</button></div>
-  <div class="placebar" id="placeBar" hidden><p class="pb-t" id="placeText"></p><button type="button" class="btn" data-place="rot">Obróć</button><button type="button" class="btn ghost" data-place="cancel">Anuluj</button></div>
+  <div class="notice" id="arrive" role="status" hidden><p class="nt-t" id="arriveText"></p><button type="button" class="btn" id="arriveShow">Show</button></div>
+  <div class="placebar" id="placeBar" hidden><p class="pb-t" id="placeText"></p><button type="button" class="btn" data-place="rot">Rotate</button><button type="button" class="btn ghost" data-place="cancel">Cancel</button></div>
   <div class="ctx" id="ctx" role="menu" hidden></div>
-  <div class="mapctl"><button type="button" id="zIn" aria-label="Przybliż">+</button><button type="button" id="zOut" aria-label="Oddal">−</button><button type="button" id="zHome" aria-label="Pokaż siedzibę zarządu">⌂</button></div>
-  <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">współtwórcy OpenStreetMap</a> · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="data/mieszkancy/LICENCJE.md" target="_blank" rel="noopener">mieszkańcy: GUS, PESEL, SGJP</a></div>
+  <div class="mapctl"><button type="button" id="zIn" aria-label="Zoom in">+</button><button type="button" id="zOut" aria-label="Zoom out">−</button><button type="button" id="zHome" aria-label="Show the board’s HQ">⌂</button></div>
+  <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="data/mieszkancy/LICENCJE.md" target="_blank" rel="noopener">residents: GUS, PESEL, SGJP</a></div>
   <div class="modal" id="modal" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div></div>
 </div>
 

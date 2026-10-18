@@ -1,6 +1,8 @@
 /* Zrzuty ekranu w prawdziwym Chromium: mapy testowe, kamera i pora dnia ustawiane w adresie.
    Uruchomienie: npm run shots [-- filtr] [--dist]   (filtr: fragment nazwy; --dist: zbudowana wersja)
-   Wynik: shots/<nazwa>.png. Każdy zrzut obejrzyj, zanim zgłosisz zmianę. */
+   Wynik: shots/<nazwa>.png. Każdy zrzut obejrzyj, zanim zgłosisz zmianę.
+   Język: pole `lang` scenariusza (przez pamięć przeglądarki, jak wybór gracza). Bez pola polski, bo starsze
+   scenariusze sprawdzają polskie napisy; angielskie i polskie wersje tych samych ekranów to scenariusze en-* i pl-*. */
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -30,6 +32,8 @@ interface Shot {
   allow?: RegExp;
   /** z allow: błąd jest spodziewany tylko dla zasobu pod tym adresem (np. tylko tabele z data/mieszkancy/) */
   allowUrl?: RegExp;
+  /** język gry (domyślnie polski, nagłówek pliku) */
+  lang?: 'en' | 'pl';
 }
 
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
@@ -1042,6 +1046,42 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // to samo menu handlarza po angielsku: oferty „Give … for …”, wyszarzona z powodem, napaść
+        name: 'en-handlarz-menu',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            st.tick = Math.round(((24 + 10 - 15) * 60 * 800) / 60);
+            st.obcy!.next = st.tick;
+          });
+          for (let k = 0; k < 30; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'handlarz')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          console.log(`  menu: ${items.join(' | ')}`);
+          if (!items.some((i) => i.startsWith('Give ')) || !items.includes('Rob the trader…'))
+            throw new Error('w angielskim menu handlarza nie ma towaru albo napaści');
+          if (items.some((i) => /[ąćęłńóśźż]|\bboards?\b/i.test(i))) throw new Error('w menu handlarza polskie słowa');
+        },
+      },
+      {
         // wędrowiec przy siatce (menu, rozmowa i wieść), potem obca ekipa przy wraku (Przeszukać wyszarzone)
         name: 'obcy',
         query: '',
@@ -1118,6 +1158,54 @@ const SHOTS: Shot[] = [
           console.log(`  menu wraku: ${wItems.join(' | ')} (wyszarzone: ${off.join(', ')})`);
           if (!off.some((t) => t.includes('przy aucie są obcy')))
             throw new Error('przeszukanie wraku przy obcych nie jest wyszarzone');
+        },
+      },
+      {
+        // wędrowiec po angielsku: menu „Talk to the wanderer” i „Rob the wanderer…”, po rozmowie wieść na dole
+        // ekranu po angielsku (w stanie zostaje po polsku, tłumaczy ją wiescEn)
+        name: 'en-obcy',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          await page.evaluate(() => {
+            const o = window.zm!.sim!.st;
+            o.tick = 15200;
+            o.obcy!.next = 15200 * 20;
+            o.obcy!.wnext = 15200;
+            o.obcy!.enext = 15200 * 20;
+          });
+          for (let k = 0; k < 40; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          console.log(`  menu wędrowca: ${items.join(' | ')}`);
+          if (!items.includes('Talk to the wanderer') || !items.includes('Rob the wanderer…'))
+            throw new Error('w angielskim menu wędrowca nie ma rozmowy albo napaści');
+          await page.click('#ctx .ctx-item:has-text("Talk to the wanderer")');
+          for (let k = 0; k < 20; k++) {
+            const done = await page.evaluate(() => !!window.zm!.sim!.st.obcy!.wiesc);
+            if (done) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          await page.waitForTimeout(300);
+          const hint = (await page.textContent('#hint')) ?? '';
+          console.log(`  wieść: ${hint}`);
+          if (!hint.startsWith('The wanderer says')) throw new Error(`wieść nie po angielsku: ${hint}`);
         },
       },
       {
@@ -3644,6 +3732,302 @@ const SHOTS: Shot[] = [
       if (r.missing.length) throw new Error(`brak w rysowaniu: ${r.missing.join(', ')}`);
     },
   },
+  // angielski i polski (docs/superpowers/specs/2026-10-18-angielski-design.md): te same ekrany w obu językach, na
+  // komputerze i telefonie 390×844. Każdy wypisuje słowa, które wyglądają na drugi język (do obejrzenia: imiona
+  // i nazwy miejsc zostają polskie), a przełącznik w Menu zmienia język otwartego okna bez przeładowania.
+  ...((): Shot[] => {
+    const game = async (page: Page, base: string, q = '') => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3${q}`);
+      await waitIdle(page);
+    };
+    const pick = async (page: Page, touch: boolean) => {
+      const a = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+        const [x, y] = zm.screenOf(p.x, p.y - 0.55);
+        return { x, y };
+      });
+      if (touch) await page.touchscreen.tap(a.x, a.y);
+      else await page.mouse.click(a.x, a.y);
+      await page.waitForTimeout(300);
+      if (!(await page.isVisible('#card'))) throw new Error('karta osoby nie pokazała się po zaznaczeniu');
+    };
+    /** karta nocy pierwszego dnia (po pierwszej uchwale) */
+    const nightCard = async (page: Page, base: string) => {
+      await game(page, base, '&godzina=19.5');
+      await page.evaluate(() => window.zm!.govTick());
+      await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+      const p = await page.evaluate(() => window.zm!.ff(31));
+      if (p !== 'karta') throw new Error(`o 20:00 zamiast karty nocy: ${p}`);
+      await page.waitForTimeout(200);
+    };
+    /** raport rano po pierwszej nocy (wydarzenia po drodze: pierwsza możliwa odpowiedź) */
+    const report = async (page: Page, base: string) => {
+      await nightCard(page, base);
+      await page.click('#sheet [data-act="night-go"]');
+      for (let k = 0; k < 30; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(30));
+        if (p === 'raport') return waitIdle(page);
+        if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+        else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
+        else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
+      }
+      throw new Error('raport po nocy się nie pokazał');
+    };
+    /** słowa widoczne na stronie, które wyglądają na polskie (w angielskim) albo angielskie (w polskim) */
+    const obcy = async (page: Page, lang: 'en' | 'pl', name: string) => {
+      const words = await page.evaluate((lang) => {
+        const text = document.body.innerText;
+        const out = new Set<string>();
+        for (const w of text.split(/[^\p{L}’']+/u)) {
+          if (!w) continue;
+          if (lang === 'en' && /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(w)) out.add(w);
+          if (lang === 'pl' && /^(the|and|with|from|you|your|board|night|watch|stove|fence)$/i.test(w)) out.add(w);
+        }
+        return [...out];
+      }, lang);
+      if (words.length)
+        console.log(
+          `  ${name}: do sprawdzenia (${lang === 'en' ? 'polskie litery' : 'angielskie słowa'}): ${words.join(', ')}`,
+        );
+    };
+    const out: Shot[] = [];
+    for (const lang of ['en', 'pl'] as const)
+      for (const phone of [false, true]) {
+        const sfx = phone ? '-telefon' : '';
+        const size = phone ? { w: 390, h: 844 } : {};
+        const shot = (name: string, run: (page: Page, base: string) => Promise<void>): Shot => ({
+          name: `${lang}-${name}${sfx}`,
+          query: '',
+          lang,
+          ...size,
+          run: async (page, base) => {
+            await run(page, base);
+            const htmlLang = await page.evaluate(() => document.documentElement.lang);
+            if (htmlLang !== lang) throw new Error(`<html lang> to ${htmlLang}, a miało być ${lang}`);
+            await obcy(page, lang, `${lang}-${name}${sfx}`);
+          },
+        });
+        out.push(
+          shot('start', async (page, base) => {
+            await page.goto(base);
+            await page.waitForSelector('#demos button');
+            const lore = await page.$eval('#lore', (e) => e.textContent ?? '');
+            if (lang === 'en' ? !lore.startsWith('It is 2051.') : !lore.startsWith('Rok 2051.'))
+              throw new Error(`wstęp nie w tym języku: ${lore.slice(0, 40)}`);
+            const pressed = await page.$eval(
+              '#langStart [aria-pressed="true"]',
+              (b) => (b as HTMLElement).dataset.lang,
+            );
+            if (pressed !== lang) throw new Error(`przełącznik pokazuje ${pressed}`);
+          }),
+          shot('pasek', async (page, base) => {
+            await game(page, base, '&godzina=15');
+            await page.waitForTimeout(300);
+          }),
+          shot('karta-osoby', async (page, base) => {
+            await game(page, base);
+            await pick(page, phone);
+          }),
+          shot('karta-nocy', nightCard),
+          shot('raport', report),
+        );
+      }
+    out.push({
+      // przełącznik w Menu: z angielskiego na polski przy otwartej karcie nocy (bez przeładowania i bez utraty
+      // przydziału), potem z powrotem; zrzut po polsku
+      name: 'en-zmiana-jezyka',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await nightCard(page, base);
+        const before = await page.textContent('#sheet .sheet-kicker');
+        await page.evaluate(() => {
+          // przełącznik z Menu działa tak samo: zmienJezyk przez kliknięcie w przycisk data-lang
+          const b = document.createElement('div');
+          b.innerHTML = '<button type="button" data-lang="pl">PL</button>';
+          document.querySelector('#sheet')!.appendChild(b);
+          (b.firstChild as HTMLButtonElement).click();
+        });
+        await page.waitForTimeout(200);
+        const after = await page.textContent('#sheet .sheet-kicker');
+        const lang = await page.evaluate(() => document.documentElement.lang);
+        console.log(`  karta nocy: „${before}” → „${after}”, <html lang> ${lang}`);
+        if (before === after || lang !== 'pl') throw new Error('karta nocy nie zmieniła języka');
+        if (!(await page.isVisible('#sheet select.pick'))) throw new Error('karta nocy zniknęła po zmianie języka');
+      },
+    });
+    out.push({
+      name: 'en-menu',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        await page.click('#btnMenu');
+        await page.waitForSelector('#modal:not([hidden]) [data-lang="pl"]');
+      },
+    });
+    // najdłuższe angielskie teksty: okno wydarzenia i pomoc, na komputerze i telefonie
+    for (const phone of [false, true]) {
+      const sfx = phone ? '-telefon' : '';
+      const size = phone ? { w: 390, h: 844 } : {};
+      out.push(
+        {
+          name: `en-wydarzenie${sfx}`,
+          query: '',
+          lang: 'en',
+          ...size,
+          run: async (page, base) => {
+            await game(page, base);
+            let p: string | null = null;
+            for (let k = 0; k < 12 && p !== 'wydarzenie'; k++) p = await page.evaluate(() => window.zm!.ff(20));
+            if (p !== 'wydarzenie') throw new Error('przez cztery godziny gry nie było wydarzenia');
+            await waitIdle(page);
+            console.log(`  wydarzenie: ${await page.textContent('#sheet .sheet-title')}`);
+            await obcy(page, 'en', `en-wydarzenie${sfx}`);
+          },
+        },
+        {
+          name: `en-pomoc${sfx}`,
+          query: '',
+          lang: 'en',
+          ...size,
+          run: async (page, base) => {
+            await game(page, base);
+            await page.click('#btnMenu');
+            await page.click('#sheet [data-act="menu-help"]');
+            await page.waitForSelector('#sheet .help');
+            await obcy(page, 'en', `en-pomoc${sfx}`);
+          },
+        },
+      );
+    }
+    out.push({
+      // menu wraku po angielsku (napisy surowców z src/sim/surowce.ts): najbliższy wrak przy siedzibie
+      name: 'en-surowce-menu',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        await page.evaluate(() => {
+          const zm = window.zm!;
+          const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+          zm.setCam(p.x, p.y, 1.3);
+        });
+        await waitIdle(page);
+        await pick(page, false);
+        const at = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const door = w.buildings[w.hq].entrances[0].out;
+          const [dx, dy] = [door % w.size, Math.floor(door / w.size)];
+          const r = w.props
+            .filter((p) => p.kind === 'wrak')
+            .sort((a, b) => Math.hypot(a.x - dx, a.y - dy) - Math.hypot(b.x - dx, b.y - dy))[0];
+          zm.setCam(r.x + r.w / 2, r.y + r.h / 2, 1.6);
+          return [r.x + r.w / 2, r.y + r.h / 2];
+        });
+        await waitIdle(page);
+        const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+        await page.mouse.click(x, y, { button: 'right' });
+        await page.waitForSelector('#ctx:not([hidden])');
+        const items = await page.locator('#ctx .ctx-item').allTextContents();
+        console.log(`  menu: ${items.join(' | ')}`);
+        if (!items.some((i) => /^Search the (Fiat 126p|Polonez)$/.test(i)))
+          throw new Error('w angielskim menu wraku nie ma przeszukania');
+        await obcy(page, 'en', 'en-surowce-menu');
+      },
+    });
+    out.push({
+      // plan warsztatu po angielsku na podwórku (tam nie wolno), zmiana języka bez ruchu myszą: powód z canPlace
+      // i sterowanie na pasku po polsku od razu, nie dopiero po ruchu kursora
+      name: 'en-budowa-zmiana-jezyka',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        const { BUILDS } = await import('../src/sim/budowle.ts');
+        await stockUp(page, BUILDS.warsztat.cost);
+        await page.keyboard.press('b');
+        await page.waitForSelector('#sheet .bcat');
+        await page.click('#sheet [data-act="build"][data-arg="warsztat"]');
+        const [x, y] = await page.evaluate(() => {
+          const w = window.zm!.sim!.w;
+          const t = w.fence.yard[0];
+          window.zm!.setCam((t % w.size) + 1, Math.floor(t / w.size) + 1, 1.6);
+          return [t % w.size, Math.floor(t / w.size)];
+        });
+        await waitIdle(page);
+        const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [x, y]);
+        await page.mouse.move(sx, sy);
+        await page.waitForTimeout(150);
+        const en = (await page.textContent('#placeText')) ?? '';
+        await page.evaluate(() => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.dataset.lang = 'pl';
+          document.querySelector('#sheet')!.appendChild(b);
+          b.click();
+          b.remove();
+        });
+        await page.waitForTimeout(100);
+        const pl = (await page.textContent('#placeText')) ?? '';
+        console.log(`  pasek: „${en}” → „${pl}”`);
+        if (!/only in a room/i.test(en)) throw new Error(`pasek po angielsku bez powodu: ${en}`);
+        if (/\b(only|room|flat|click|rotates|cancels)\b/i.test(pl))
+          throw new Error('pasek stawiania po zmianie języka ma angielskie słowa');
+      },
+    });
+    out.push({
+      // ?lang=pl wygrywa z zapamiętanym angielskim i zostaje w adresie po „Zapisz i wróć na start”; podpowiedzi
+      // przykładów w języku strony (po angielsku bez polskich opisów zabudowy)
+      name: 'en-lang-adres',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&lang=pl`);
+        await waitIdle(page);
+        if ((await page.evaluate(() => document.documentElement.lang)) !== 'pl')
+          throw new Error('?lang=pl nie wygrał z pamięcią');
+        await page.click('#btnMenu');
+        await page.click('#sheet [data-act="menu-start"]');
+        await page.waitForSelector('#demos button');
+        const lang = await page.evaluate(() => document.documentElement.lang);
+        const plTitles = await page.$$eval('#demos button', (l) => l.map((b) => (b as HTMLElement).title));
+        console.log(`  po powrocie: ${page.url().replace(base, '/')}, <html lang> ${lang}; ${plTitles.join(' | ')}`);
+        if (lang !== 'pl' || !page.url().includes('lang=pl')) throw new Error('powrót na kartę startową zgubił ?lang=');
+        await page.goto(base);
+        await page.waitForSelector('#demos button');
+        const enTitles = await page.$$eval('#demos button', (l) => l.map((b) => (b as HTMLElement).title));
+        console.log(`  po angielsku: ${enTitles.join(' | ')}`);
+        if (enTitles.some((t) => /falowiec|płyta|bloki|szeregowce|domy|gm\./.test(t)))
+          throw new Error('podpowiedzi przykładów po polsku w angielskiej wersji');
+      },
+    });
+    out.push({
+      // uzbrojone „Delete save” przy zmianie języka: napis „Na pewno? Usuń” w nowym języku, po 4 s z powrotem
+      name: 'en-usun-zapis',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        await page.click('#btnMenu');
+        await page.click('#sheet [data-act="menu-start"]');
+        await page.waitForSelector('#resume:not([hidden]) #btnForget');
+        await page.click('#btnForget');
+        const armed = await page.textContent('#btnForget');
+        await page.click('#langStart [data-lang="pl"]');
+        const pl = await page.textContent('#btnForget');
+        await page.waitForTimeout(4200);
+        const later = await page.textContent('#btnForget');
+        console.log(`  przycisk: „${armed}” → „${pl}” → „${later}”`);
+        if (armed !== 'Really delete?' || pl !== 'Na pewno? Usuń' || later !== 'Usuń zapis')
+          throw new Error('uzbrojony przycisk usuwania nie poszedł za językiem');
+        if (!(await page.isVisible('#resume'))) throw new Error('zapis zniknął bez drugiego kliknięcia');
+      },
+    });
+    return out;
+  })(),
 ];
 
 /**
@@ -4596,6 +4980,14 @@ try {
       hasTouch: mobile,
       deviceScaleFactor: mobile ? 2 : 1,
     });
+    // język jak wybór gracza zapisany w pamięci przeglądarki (src/ui/jezyk.ts), przed skryptami strony
+    await page.addInitScript((l) => {
+      try {
+        localStorage.setItem('za-murem-0.4-jezyk', l);
+      } catch {
+        // strona bez pamięci: gra wybierze język domyślny
+      }
+    }, shot.lang ?? 'pl');
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => {
@@ -5828,6 +6220,32 @@ function kartaShots(): Shot[] {
         const bozenka = await polaEdytora(page);
         console.log(`  formy: ${bozenka.map((x) => x.value).join(', ')}`);
         if (bozenka[4].value !== 'Bożenką') throw new Error(`narzędnik: ${bozenka[4].value}`);
+      },
+    },
+    {
+      // edytor po angielsku z wpisanym imieniem, przełącznik w Menu na polski: edytor po polsku z tym samym wpisem
+      name: 'en-imie-zmiana-jezyka',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await wejdz(page, base);
+        const r = await mieszkaniecZGeneratora(page, 0, true);
+        await waitIdle(page);
+        await otworzEdytor(page, r.id, false);
+        await wpisz(page, 'Bożenka', false);
+        await page.fill('#card input[name="dop"]', 'Bożenki-ręcznie');
+        await page.dispatchEvent('#card input[name="dop"]', 'input');
+        const en = (await page.textContent('#card form.imie-ed')) ?? '';
+        await page.click('#btnMenu');
+        await page.click('#modal [data-lang-menu] [data-lang="pl"]');
+        await page.click('#sheet [data-act="menu-back"]');
+        await page.waitForTimeout(200);
+        const pl = (await page.textContent('#card form.imie-ed')) ?? '';
+        const pola = await polaEdytora(page);
+        console.log(`  edytor: ${en.slice(0, 40)} → ${pl.slice(0, 40)}; ${pola.map((x) => x.value).join(', ')}`);
+        if (en === pl) throw new Error('edytor imienia nie zmienił języka');
+        if (pola[0].value !== 'Bożenka' || pola[1].value !== 'Bożenki-ręcznie')
+          throw new Error('wpisane imię zginęło przy zmianie języka');
       },
     },
     {
