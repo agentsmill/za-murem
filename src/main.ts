@@ -13,7 +13,7 @@ import { HALAS_ZOMBIE, PO_PLOCIE, PO_POLECENIU } from './content/napisy-sasiedzi
 import { ALARM_OFF_EN, ALARM_OFF_SAY_EN, ALARM_OFF_TITLE_EN } from './content/napisy-zombie.en.ts';
 import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zombie.ts';
 import type { Person } from './content/people.ts';
-import { jezyk, L, poZmianieJezyka, type Tx, tr } from './core/jezyk.ts';
+import { jezyk, L, poZmianieJezyka, type Tx, tr, tx } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice } from './gov/noc.ts';
@@ -52,7 +52,7 @@ import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
 import { type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
-import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
+import { type SimPerson, type SimSnapshot, type SimStock, snapshot } from './sim/snapshot.ts';
 import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
@@ -60,12 +60,15 @@ import { NAPISY as OBCY, wiescEn } from './sim/wedrowcy.ts';
 import {
   allowedAnchors,
   availableOf,
+  BUILD_MENU,
+  type BuildCategory,
   buildItems,
   buildMenu,
   buildName,
-  buildSheet,
   okTilesOf,
+  ourApts,
   type Rot,
+  TECH_NAMES,
 } from './ui/budowa.ts';
 import { kartaBudynku, widokBudynku } from './ui/budynek.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
@@ -89,6 +92,7 @@ import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
+import { clearThumbs, thumbUrl } from './ui/miniatura.ts';
 import {
   burnSheet,
   confirmSheet,
@@ -104,6 +108,7 @@ import {
   reportSheet,
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
+import { BuildPanel } from './ui/panelbudowy.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
 import { govFence } from './ui/siatka.ts';
@@ -117,6 +122,13 @@ import { buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
+// ?budowa=klodki (do zrzutów): widok menu z kłódkami; magazyn i ogródek czekają na badanie testowe
+if (params.get('budowa') === 'klodki') {
+  BUILD_MENU.showLocked = true;
+  BUILDS.magazyn.tech = 't_test';
+  BUILDS.ogrodek.tech = 't_test';
+  TECH_NAMES.t_test = tx('Badanie testowe', 'Test research');
+}
 // język przed czymkolwiek, co rysuje: ?lang=, pamięć przeglądarki, a bez nich angielski
 startJezyka({ params });
 const touchUI = matchMedia('(pointer: coarse)').matches;
@@ -148,6 +160,8 @@ declare global {
       speed: () => number;
       /** płynny przejazd kamery do miejsca w metrach (do nagrań) */
       fly: (x: number, y: number, zoom: number, ms: number) => void;
+      /** panel budowy (do testów): czy otwarty, zakładka i wybrana budowla */
+      buildPanel: () => { open: boolean; tab: string | null; kind: string | null };
       /** tryb stawiania (do testów): plan pod kursorem, czy wolno, ile dozwolonych miejsc i pierwsze z nich */
       placing: () => {
         kind: BuildKind;
@@ -332,6 +346,7 @@ poZmianieJezyka(() => {
   druzyna?.odswiez();
   siec.przerysuj();
   if (!sim) return;
+  buildPanel.refresh(true);
   hqAria();
   ctx.close();
   // chwilowy napis był w starym języku: znika (pokazuje się na kilka sekund, więc nie ma czego tłumaczyć)
@@ -460,6 +475,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // scena po stanach mieszkań na świecie: przekrój rysuje puste mieszkania, uszkodzenia i śmieci ze świata;
   // teren i bloki z grafiki z PixelLab, jeśli się wczytała
   const art = await grafika;
+  clearThumbs();
   view.setGrafika(art);
   const scene = buildScene(world, art);
   // przekrój siedziby z wnętrzem ze świata; ?przekroj=0 zostawia dach (do porównań)
@@ -487,6 +503,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // lokatorzy sąsiednich budynków z generatora mieszkańców (fala 2); bez tabel zapasowi z ziarna budynku
   if (dane) sim.lokatorzy = zrodloLokatorow(world, geo, dane);
   placing = null;
+  buildPanel.hide();
+  buildPanel.reset();
+  menuCache = null;
   aptFocus = -1;
   budFocus = -1;
   residentFocus = -1;
@@ -1080,6 +1099,8 @@ function hud(now: number) {
   $('hTime').textContent = clockOf(st.tick);
   $('fps').textContent = L(`${Math.round(fps)} kl/s`, `${Math.round(fps)} fps`);
   const snap = snapshot(st, sim.w);
+  lastStock = snap.stock;
+  buildPanel.refresh();
   // koza wygasła po samouczku, a drewna nie ma: decyzja gracza (drzewo albo mebel), więc ostrzeżenie wisi,
   // dopóki problem trwa (w dzień, kiedy zarząd nie śpi), i ma pierwszeństwo przed zwykłymi podpowiedziami
   const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
@@ -2009,30 +2030,60 @@ function setPlacementView(p: PlacementView): boolean {
   return true;
 }
 
-/** menu budowy: przycisk „Budowa” i klawisz B */
-function openBuild() {
-  if (!sim || modal.open) return;
-  sheetAgain = () => {
-    modal.close();
-    openBuild();
-  };
+/** zapas z ostatniego odczytu symulacji (hud co klatkę), do menu i skrótu stanu panelu */
+let lastStock: SimStock | null = null;
+let menuCache: { key: string; menu: BuildCategory[] } | null = null;
+
+/** skrót tego, od czego zależy treść panelu budowy: zapas bez zarezerwowanego przez plany, liczba planów i rzeczy,
+    nasze mieszkania, odblokowane badania, język. Gdy się nie zmienił, panel nie rusza DOM i nie liczy miejsc. */
+function buildStateKey(): string {
+  if (!sim || !lastStock) return '';
+  const st = sim.st;
+  return [
+    L('pl', 'en'),
+    Object.values(availableOf(st, lastStock)).join(','),
+    st.builds.length,
+    st.things.length,
+    ourApts(st).join(','),
+    st.techDone?.length ?? 0,
+    BUILD_MENU.showLocked,
+  ].join('|');
+}
+
+/** menu budowy z aktualnego stanu; miejsca (allowedAnchors) liczone tylko, gdy zmienił się skrót stanu */
+function buildMenuNow(): BuildCategory[] {
   const s = sim;
-  cancelPlacing(false);
-  ctx.close();
+  if (!s || !lastStock) return [];
+  const key = buildStateKey();
+  if (menuCache?.key === key) return menuCache.menu;
   const room = (k: BuildKind) =>
     allowedAnchors(s.st, s.w, k, 0).length > 0 || allowedAnchors(s.st, s.w, k, 1).length > 0;
-  // materiały bez tego, co plany jeszcze zabiorą ze składu
-  const menu = buildMenu(availableOf(s.st, snapshot(s.st, s.w).stock), room, words, wordsE);
-  modal.show(buildSheet(menu, touchUI, words, wordsE), (act, arg) => {
-    if (act === 'build') {
-      modal.close();
-      startPlacing(arg as BuildKind);
-      nextPrompt();
-    } else if (act === 'build-close') {
-      modal.close();
-      nextPrompt();
-    }
-  });
+  const menu = buildMenu(availableOf(s.st, lastStock), room, words, wordsE, { st: s.st });
+  menuCache = { key, menu };
+  return menu;
+}
+
+/** panel budowy po prawej (przycisk „Budowa” i klawisz B): nie-modalny, mapa pod nim klikalna */
+const buildPanel = new BuildPanel($('buildPanel'), $('app'), {
+  menu: buildMenuNow,
+  stateKey: buildStateKey,
+  thumb: (kind) => thumbUrl(kind, view.grafika),
+  words: () => words,
+  en: () => wordsE,
+  touch: touchUI,
+  onPlace: (kind) => {
+    startPlacing(kind);
+    nextPrompt();
+    // na dotyku plan jedzie za palcem, więc szuflada schodzi z drogi; na komputerze panel zostaje na kolejne plany
+    if (touchUI) buildPanel.hide();
+  },
+  onClose: () => nextPrompt(),
+});
+
+function openBuild() {
+  if (!sim || modal.open) return;
+  if (!buildPanel.open) ctx.close();
+  buildPanel.toggle();
 }
 
 function startPlacing(kind: BuildKind) {
@@ -2459,6 +2510,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && placing) rotatePlacing();
   if (e.code === 'Escape') {
     if (placing) cancelPlacing();
+    else if (buildPanel.open) buildPanel.hide();
     else if (imieEdit) zamknijImie();
     else {
       selected.clear();
@@ -2536,6 +2588,7 @@ if (attrib) bars.observe(attrib);
     screen: () => screen,
     speed: () => speed,
     fly: (x, y, zoom, ms) => flyTo(x * TILE, y * TILE, zoom, ms),
+    buildPanel: () => ({ open: buildPanel.open, ...buildPanel.current }),
     placing: () =>
       placing
         ? {

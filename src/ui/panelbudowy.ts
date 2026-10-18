@@ -29,14 +29,16 @@ const COLS = 3;
 export class BuildPanel {
   private view: PanelView = { tab: null, kind: null };
   private key = '';
+  private readonly el: HTMLElement;
+  private readonly app: HTMLElement;
+  private readonly hooks: BuildPanelHooks;
   private readonly kicker: HTMLElement;
   private readonly body: HTMLElement;
 
-  constructor(
-    private readonly el: HTMLElement,
-    private readonly app: HTMLElement,
-    private readonly hooks: BuildPanelHooks,
-  ) {
+  constructor(el: HTMLElement, app: HTMLElement, hooks: BuildPanelHooks) {
+    this.el = el;
+    this.app = app;
+    this.hooks = hooks;
     el.innerHTML =
       '<header class="bp-head"><b class="bp-kicker"></b><button type="button" class="bp-x" data-act="build-close">✕</button></header><div class="bp-body"></div>';
     this.kicker = el.querySelector<HTMLElement>('.bp-kicker')!;
@@ -55,6 +57,11 @@ export class BuildPanel {
     });
     el.addEventListener('keydown', (e) => this.arrows(e));
     el.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  /** wybrana zakładka i budowla (do testów) */
+  get current(): PanelView {
+    return this.view;
   }
 
   get open(): boolean {
