@@ -21,12 +21,20 @@ export const BITE_DMG = 15;
 export const BITE_HIT = 0.7;
 /** kto walczy albo trzyma wartę (patrzy na szwendacza), tego trudniej ugryźć */
 export const BITE_HIT_FIGHTING = 0.35;
-/** stado wychodzi z krawędzi mapy od 21:00 do 1:00, o 6:00 się rozchodzi */
+/** stado wychodzi z okolicy (RING_FROM–RING_TO) od 21:00 do 1:00, o 6:00 się rozchodzi */
 export const HORDE_FROM = 21;
 export const HORDE_HOURS = 4;
 export const DISPERSE = 6;
-/** daleko od siatki: tu snują się szwendacze za dnia (metry po stronie ulicy) */
+/** pas za dnia: szwendacze rodzą się od FAR do NEAR metrów drogi od siatki i snują się nie dalej niż NEAR,
+    więc widać ich z podwórka (Walking Dead: ciągnie ich tam, gdzie są ludzie) */
 export const FAR = 15;
+export const NEAR = 40;
+/** stado wychodzi z okolicy: od RING_FROM do RING_TO metrów drogi od siatki, poza kadrem podwórka, a pod siatką
+    jest po godzinie, półtorej */
+export const RING_FROM = 50;
+export const RING_TO = 80;
+/** szansa, że krok snucia idzie ku siatce: z pasa pod siatkę w około 4 godziny */
+export const DAY_PULL = 0.25;
 
 /** ilu szwendaczy snuje się za dnia */
 export const ambientCount = (day: number): number => Math.min(30, 6 + 2 * day);

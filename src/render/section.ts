@@ -30,8 +30,9 @@ export interface ThingLike {
   n?: number;
   /** ogień (koza, ognisko): pali się, gdy więcej niż 0 */
   fuel?: number;
-  /** wrak samochodu: 'maluch' albo 'polonez' */
+  /** wrak samochodu: 'maluch' albo 'polonez'; stage: 1 przeszukany, 2 szkielet (st.wraki) */
   model?: string;
+  stage?: number;
   /** zepsuty mebel z pustego mieszkania (kontrakt M2: Furniture.broken) */
   broken?: boolean;
   /** okopcony mebel: kuchenka na kafelku uszkodzenia piec (do naprawy) */
@@ -235,11 +236,19 @@ export function specOf(t: ThingLike, fire = 0): ThingSpec | null {
     case 'gruz':
     case 'deski':
     case 'zlom':
+    case 'czesci':
+    case 'leki':
       return { kind: t.kind, size: pileSize(t.n), seed };
     case 'posilek':
       return { kind: 'posilek', size: potSize(t.n), table: t.table !== undefined, seed };
     case 'wrak':
-      return { kind: 'wrak', model: t.model === 'polonez' ? 'polonez' : 'maluch', rot, seed: seed % WRECK_LOOKS };
+      return {
+        kind: 'wrak',
+        model: t.model === 'polonez' ? 'polonez' : 'maluch',
+        rot,
+        seed: seed % WRECK_LOOKS,
+        stage: t.stage === 1 || t.stage === 2 ? t.stage : undefined,
+      };
     case 'smieci':
       // n to wielkość sterty z kontraktu świata (1–3), nie liczba sztuk
       return { kind: 'smieci', size: Math.min(3, Math.max(1, Math.round(t.n ?? 1))) as 1 | 2 | 3, seed };

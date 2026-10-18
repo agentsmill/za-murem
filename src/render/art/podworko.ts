@@ -30,7 +30,7 @@ export const FENCE_X = 16;
 
 export type FenceState = 'cala' | 'dziura' | 'lata' | 'wzm';
 export type FireStyle = 'krag' | 'beczka';
-export type Pile = 'gruz' | 'deski' | 'zlom';
+export type Pile = 'gruz' | 'deski' | 'zlom' | 'czesci' | 'leki';
 
 /** kolory podwórka; reszta z M (bryly.ts) i C (palette.ts) */
 const Y = {
@@ -469,6 +469,88 @@ function zlom(size: 1 | 2 | 3, seed: number): Box[] {
   return b;
 }
 
+/** Części ze szczelnych podzespołów (to przetrwało bakterię): alternator z żeberkami pod lakierem, przy większej
+    stercie akumulator z klemami i rozrusznik. */
+function czesci(size: 1 | 2 | 3, seed: number): Box[] {
+  const b: Box[] = [];
+  const lacquer = 0x3d4a3f; // ciemnozielony lakier na uzwojeniach
+  const ribs: Paint = (u, v) =>
+    u % 2 === 0 ? shade(Y.sheet, 0.75) : h2(u, v, seed + 1101) < 0.15 ? M.rust : shade(Y.sheet, 1.1);
+  // alternator: walec na boku z kołem pasowym
+  b.push(box(5, 16, 0, 17, 26, 9, Y.sheet, { round: true, front: ribs, top: ribs, opt: true }));
+  b.push(box(17, 18, 2, 20, 24, 7, M.steelD, { round: true, opt: true }));
+  b.push(box(7, 18, 9, 15, 24, 10, lacquer, { opt: true }));
+  if (size >= 2) {
+    // akumulator: czarna skrzynka, czerwona i czarna klema
+    const side: Paint = (u, v) =>
+      v === 1 ? shade(M.ironDark, 1.6) : h2(u, v, seed + 1102) < 0.05 ? M.ironHi : M.ironDark;
+    b.push(box(18, 6, 0, 29, 14, 9, M.ironDark, { front: side, left: side, right: side, opt: true }));
+    b.push(box(19, 8, 9, 21, 10, 11, 0xa8342c, { opt: true }));
+    b.push(box(26, 8, 9, 28, 10, 11, M.ironD, { opt: true }));
+  }
+  if (size === 3) {
+    // rozrusznik: krótszy walec z zębatką
+    b.push(
+      box(4, 5, 0, 13, 12, 7, lacquer, {
+        round: true,
+        front: (u) => (u % 3 ? lacquer : shade(lacquer, 0.7)),
+        opt: true,
+      }),
+    );
+    b.push(box(13, 6, 1, 16, 11, 6, M.brass, { round: true, opt: true }));
+  }
+  return b;
+}
+
+/** Leki: czerwona apteczka samochodowa, przy większej stercie pudełka z krzyżem i karton z apteki. */
+function leki(size: 1 | 2 | 3, seed: number): Box[] {
+  const b: Box[] = [];
+  const red = 0xb2352b;
+  const card = 0xd8d0bd;
+  const cross =
+    (base: number, mark: number): Paint =>
+    (u, v, bw, bh) => {
+      const cu = Math.abs(u + 0.5 - bw / 2);
+      const cv = Math.abs(v + 0.5 - bh / 2);
+      return (cu < 1 && cv < bh / 3) || (cv < 1 && cu < bw / 3) ? mark : base;
+    };
+  // apteczka: płaska walizeczka z białym krzyżem na wieku
+  b.push(
+    box(6, 15, 0, 22, 26, 5, red, {
+      top: cross(red, M.white),
+      front: (u) => (u % 7 === 3 ? shade(red, 0.7) : red),
+      opt: true,
+    }),
+  );
+  if (size >= 2) {
+    // dwa pudełka leków
+    b.push(box(22, 18, 0, 28, 24, 4, card, { top: cross(card, red), opt: true }));
+    b.push(
+      box(23, 11, 0, 29, 17, 3, M.white, {
+        top: (u, v) => (h2(u, v, seed + 1111) < 0.1 ? 0x6f9fb0 : M.white),
+        opt: true,
+      }),
+    );
+  }
+  if (size === 3) {
+    // karton z apteki, przetarty na rogach
+    const carton: Paint = (u, v, bw, bh) =>
+      (u === 0 || v === 0 || u === bw - 1 || v === bh - 1) && h2(u, v, seed + 1112) < 0.5
+        ? shade(0xa98a5e, 0.8)
+        : 0xa98a5e;
+    b.push(
+      box(4, 4, 0, 17, 14, 9, 0xa98a5e, {
+        top: cross(0xa98a5e, 0x3f7a4a),
+        front: carton,
+        left: carton,
+        right: carton,
+        opt: true,
+      }),
+    );
+  }
+  return b;
+}
+
 /** granice stosu: zależą tylko od rodzaju i wielkości, nie od ziarna */
 function pileEnv(kind: Pile, size: 1 | 2 | 3): Box[] {
   if (kind === 'gruz') {
@@ -476,11 +558,14 @@ function pileEnv(kind: Pile, size: 1 | 2 | 3): Box[] {
     return [box(16 - R - 3, 19 - R, 0, 16 + R + 3, 19 + R, 8 + size * 3, 0)];
   }
   if (kind === 'deski') return [box(2, 8, 0, 30, 29, size * 3, 0)];
+  if (kind === 'czesci' || kind === 'leki') return [box(3, 4, 0, 30, 27, 12, 0)];
   return [box(2, 5, 0, 30, 26, 14, 0)];
 }
 
+const PILES: Record<Pile, (size: 1 | 2 | 3, seed: number) => Box[]> = { gruz, deski, zlom, czesci, leki };
+
 function pile(kind: Pile, size: 1 | 2 | 3, seed: number): Sprite {
-  const b = kind === 'gruz' ? gruz(size, seed) : kind === 'deski' ? deski(size, seed) : zlom(size, seed);
+  const b = PILES[kind](size, seed);
   return renderBoxes(b, PX, PX, 0, pileEnv(kind, size));
 }
 

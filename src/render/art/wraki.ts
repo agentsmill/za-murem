@@ -130,18 +130,24 @@ const FADE_SIDE = 0xc6c0b2;
 const FADE_TOP = 0xdcd5c6;
 
 /** wrak w ustawieniu rot; te same argumenty dają te same piksele */
-export function wreckSprite(model: WreckModel, rot: Rot, seed: number): Sprite {
+/**
+ * stage: 0 cały wrak, 1 przeszukany (zdjęte obie pokrywy, widać komorę silnika i bagażnik), 2 szkielet po rozbiórce
+ * (rdzawa rama: bez szyb, drzwi, zderzaków i bloku silnika). Rozmiar i kotwica nie zależą od stanu.
+ */
+export function wreckSprite(model: WreckModel, rot: Rot, seed: number, stage: 0 | 1 | 2 = 0): Sprite {
   const s = SHAPES[model];
   const r = rnd(seed, 1201);
   const L = WRECK_BASE[model][0] * PX;
   const D = WRECK_BASE[model][1] * PX;
   const base = pick(s.paints, r(1));
   const fade = 0.15 + r(2) * 0.2;
-  const paint = mix(base, FADE_SIDE, fade);
-  const sun = mix(base, FADE_TOP, fade + 0.12);
-  const decay = 0.35 + r(3) * 0.5;
-  const odd = r(4) < 0.3 ? mix(pick(s.paints, r(5)), FADE_SIDE, fade * 0.5) : -1; // drzwi z innego auta
-  const lidGone = r(6) < 0.25; // brak pokrywy silnika (w maluchu z tyłu, w polonezie z przodu)
+  const bare = stage === 2;
+  // szkielet: z lakieru została rdza
+  const paint = bare ? mix(K.rust[0], FADE_SIDE, 0.15) : mix(base, FADE_SIDE, fade);
+  const sun = bare ? mix(K.rust[1], FADE_TOP, 0.2) : mix(base, FADE_TOP, fade + 0.12);
+  const decay = bare ? 1.1 : 0.35 + r(3) * 0.5;
+  const odd = !bare && r(4) < 0.3 ? mix(pick(s.paints, r(5)), FADE_SIDE, fade * 0.5) : -1; // drzwi z innego auta
+  const lidGone = stage > 0 || r(6) < 0.25; // brak pokrywy silnika (w maluchu z tyłu, w polonezie z przodu)
   const rack = model === 'maluch' && r(7) < 0.35; // bagażnik dachowy
   const [bx0, by0, bx1, by1] = s.body;
   const [cx0, cy0, cx1, cy1] = s.cabin;
@@ -187,6 +193,7 @@ export function wreckSprite(model: WreckModel, rot: Rot, seed: number): Sprite {
       const x = right ? u : w - 1 - u; // od tyłu auta
       const e = archAt(x, v, h);
       if (e < 1 || endCut(x, v, w)) return HOLE; // puste nadkole: widać ciemne wnętrze i cegły
+      if (bare && x > s.door[0] && x < s.door[1] && v < h - 2) return v === 0 ? K.rim : K.dark; // bez drzwi
       let c = odd >= 0 && x > s.door[0] && x < s.door[1] ? odd : paint;
       if (model === 'polonez' && v === 5 && e > 1.4) c = K.black; // listwa boczna
       if (model === 'maluch' && x >= 22 && x <= 30 && v >= 1 && v <= 2 && x % 2 === 0) c = K.dark; // wloty powietrza
@@ -233,7 +240,7 @@ export function wreckSprite(model: WreckModel, rot: Rot, seed: number): Sprite {
   const engine = (u: number, v: number, w: number, h: number) => {
     const k = h2(u, v, seed + 1226);
     const mid = Math.abs(v + 0.5 - h / 2) < h * 0.2;
-    const block = mid && (model === 'maluch' ? u > 5 && u < deckU - 4 : u > hoodU + 5 && u < w - 6);
+    const block = !bare && mid && (model === 'maluch' ? u > 5 && u < deckU - 4 : u > hoodU + 5 && u < w - 6);
     if (block) return k < 0.2 ? K.rim : k > 0.88 ? rust(u, v, 1227) : K.block;
     if (model === 'polonez' && u >= w - 4) return v % 2 ? K.dark : K.rim; // chłodnica
     return k < 0.1 ? rust(u, v, 1228) : K.dark;
@@ -250,6 +257,9 @@ export function wreckSprite(model: WreckModel, rot: Rot, seed: number): Sprite {
     const inDeck = u <= deckU;
     const lid = v > 3 && v < h - 4;
     if (lidGone && lid && (model === 'maluch' ? u < deckU : u > hoodU)) return engine(u, v, w, h);
+    // przeszukany: otwarty także bagażnik (w maluchu z przodu, w polonezie z tyłu), w środku pusto
+    if (stage > 0 && lid && (model === 'maluch' ? u > hoodU : u < deckU))
+      return h2(u, v, seed + 1229) < 0.12 ? rust(u, v, 1229) : K.dark;
     if ((u === hoodU || u === deckU) && lid) return shade(c, 0.66); // szczeliny pokryw
     if ((inHood || inDeck) && (v === 3 || v === h - 4)) c = shade(c, 0.8);
     if (model === 'maluch' && inDeck && u >= 5 && u <= 14 && v > 10 && v < h - 11 && u % 3 === 0) return shade(c, 0.55); // żaluzje silnika
@@ -268,7 +278,7 @@ export function wreckSprite(model: WreckModel, rot: Rot, seed: number): Sprite {
   /** stan szyby k: 0 wybita, 1 popękana, 2 cała, ale brudna */
   const state = (k: number) => {
     const q = r(40 + k);
-    return q < 0.62 ? 0 : q < 0.85 ? 1 : 2;
+    return bare || q < 0.62 ? 0 : q < 0.85 ? 1 : 2;
   };
   /** piksel szyby (u, v w szybie w × h); deep: co widać przez dziurę */
   const pane = (st: number, u: number, v: number, w: number, h: number, k: number, deep: number) => {
@@ -399,10 +409,14 @@ export function wreckSprite(model: WreckModel, rot: Rot, seed: number): Sprite {
   const bumpPaint: Paint = (u, v) =>
     model === 'maluch' && h2(u, v, seed + 1295) < decay * 0.4 ? rust(u, v, 1296) : v === 0 ? shade(bump, 1.15) : bump;
   const bz1 = s.sill + (model === 'maluch' ? 3 : 4);
+  const env: Box[] = [];
   for (const [x0, x1] of [
     [bx0 - 1, bx0 + 2],
     [bx1 - 2, bx1 + 1],
-  ])
+  ]) {
+    // szkielet bez zderzaków, ale z tymi samymi granicami sprite'a
+    env.push(box(x0, by0 + 3, s.sill + 1, x1, by1 - 3, bz1, 0));
+    if (bare) continue;
     b.push(
       box(x0, by0 + 3, s.sill + 1, x1, by1 - 3, bz1, bump, {
         top: bumpPaint,
@@ -412,7 +426,7 @@ export function wreckSprite(model: WreckModel, rot: Rot, seed: number): Sprite {
         right: bumpPaint,
       }),
     );
-  const env: Box[] = [];
+  }
   if (model === 'maluch') {
     // bagażnik dachowy (granice zawsze z nim, żeby rozmiar nie zależał od ziarna)
     const ry0 = cy0 + INSET + 2;

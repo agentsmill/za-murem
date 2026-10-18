@@ -6,7 +6,7 @@
    polsku, więc testy i boty widzą polskie napisy jak dotąd. Brama albo furtka i zarząd albo komitet ze słownika
    wspólnoty (wordsOfWorld, wordsEnOfWorld). */
 
-import { L } from '../core/jezyk.ts';
+import { L, tr } from '../core/jezyk.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
@@ -38,6 +38,7 @@ import {
   type Thing,
   trunkOf,
 } from './sim.ts';
+import { BATCH, CARRY_MATS, NAPISY, type Product, RECIPES, wreckAt, wreckStage, wreckTile } from './surowce.ts';
 import { modeOf } from './tryb.ts';
 
 /** nazwy w bierniku do menu i opisów: pomieszczenia, rzeczy do rozebrania, budowle */
@@ -242,6 +243,28 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       quick: false,
     });
   }
+  // wrak: przeszukać (domyślne na samym aucie, tuż obok tylko z menu, żeby kliknięcie obok znaczyło „idź”), po
+  // przeszukaniu rozebrać (tylko z menu: długo i głośno)
+  const wreck = wreckAt(w, tile);
+  if (wreck) {
+    const wt = wreckTile(wreck, w.size);
+    const s = wreckStage(st.wraki, wt);
+    const tx = tile % w.size;
+    const ty = Math.floor(tile / w.size);
+    const onBase = tx >= wreck.x && tx < wreck.x + wreck.w && ty >= wreck.y && ty < wreck.y + wreck.h;
+    if (s === 0)
+      out.push({
+        cmd: { t: 'wreck', ids: core, tile: wt, how: 'szukaj' },
+        label: tr(NAPISY.szukaj(wreck.model)),
+        quick: onBase,
+      });
+    else if (s === 1)
+      out.push({
+        cmd: { t: 'wreck', ids: core, tile: wt, how: 'rozbierz' },
+        label: tr(NAPISY.rozbierz(wreck.model)),
+        quick: false,
+      });
+  }
   const tree = treeAt(st, w, tile);
   if (tree >= 0) {
     const trunk = trunkOf(w, w.trees[tree]);
@@ -305,6 +328,21 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
         label: L('Zająć mieszkanie', 'Claim the flat'),
         quick: false,
       });
+  }
+  // łup za siatką: zanieść na podwórko (drewno ma swoje „Zanieść do składu”)
+  const loot = st.fence ? things.find((t) => CARRY_MATS.has(t.kind) && t.n > 0) : undefined;
+  if (loot && !insideOf(st, w, tile))
+    out.push({ cmd: { t: 'carry', ids: core, thing: loot.id }, label: tr(NAPISY.zaniesc), quick: true });
+  // warsztat: drewno na deski, złom na części; jedna sztuka albo do BATCH naraz, gdy materiału starczy
+  if (things.some((t) => t.kind === 'warsztat')) {
+    const make = (what: Product, one: string, many: (n: number) => string) => {
+      const r = RECIPES[what];
+      const can = Math.min(BATCH, Math.floor(have(r.from) / r.n));
+      if (can >= 1) out.push({ cmd: { t: 'saw', ids: core, what, n: 1 }, label: one, quick: false });
+      if (can >= 2) out.push({ cmd: { t: 'saw', ids: core, what, n: can }, label: many(can), quick: false });
+    };
+    make('deski', tr(NAPISY.deska), (n) => tr(NAPISY.deskiN(n)));
+    make('czesci', tr(NAPISY.czesc), (n) => tr(NAPISY.czesciN(n)));
   }
   // ognisko na wolnym kafelku podwórka, gdy jest z czego (drewno luzem albo w rękach)
   const woodN =
@@ -535,6 +573,14 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         : L('Wzmacnia siatkę.', 'Shoring up the fence.');
     case 'amputate':
       return walking ? L('Idzie amputować.', 'Going to amputate.') : L('Amputuje.', 'Amputating.');
+    case 'wreck':
+      if (j.what === 'rozbierz') return tr(walking ? NAPISY.idzieRozbierac : NAPISY.rozbiera);
+      return tr(walking ? NAPISY.idzieSzukac : NAPISY.szuka);
+    case 'carry':
+      return tr(walking ? NAPISY.poLup : NAPISY.niesie);
+    case 'saw':
+      if (walking) return tr(NAPISY.idzieWarsztat);
+      return tr(j.what === 'czesci' ? NAPISY.robiCzesci(j.from) : NAPISY.pilujeDeski(j.from));
     case 'zombie':
       return (
         [

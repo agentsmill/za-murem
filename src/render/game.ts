@@ -32,6 +32,8 @@ export interface GameLike {
     /** efekty walki z ostatnich 2 sekund (błysk strzału) */
     fx?: readonly { t: string; x: number; y: number; tick: number }[];
     fence?: FenceStateLike | null;
+    /** wraki przeszukane (s 1) i rozebrane (s 2): lewy górny kafelek (src/sim/surowce.ts) */
+    wraki?: readonly { t: number; s: number }[];
   };
   w: World;
   /** światło pomieszczeń od ognia: 1 w pomieszczeniu z palącą się kozą, 0,5 przez drzwi */
@@ -68,6 +70,8 @@ export const GAME_KINDS: ReadonlySet<string> = new Set([
   'gruz',
   'deski',
   'zlom',
+  'czesci',
+  'leki',
   'wrak',
   'krew',
   'smieci',
@@ -97,7 +101,7 @@ export function onTables(things: readonly ThingLike[]): readonly ThingLike[] {
   });
 }
 
-/** rodzaje pionków obcych: widać je tylko w świetle (symulacja doda je z siatką i nocą) */
+/** rodzaje pionków obcych: widać je tylko w świetle (szwendacza w ciemności jako zarys, strangerVisibility) */
 export const STRANGERS: ReadonlySet<string> = new Set(['obcy', 'szabrownik', 'wedrowiec', 'zombie']);
 
 /** zasięg latarni wartownika w metrach: tyle, ile warta widzi w symulacji (LAMP_REACH w sim.ts) */
@@ -208,9 +212,14 @@ export function fenceStateFn(f: FenceLike, codes: Uint8Array): (tile: number) =>
   return (tile) => at.get(tile) ?? 'cala';
 }
 
-/** jak dobrze widać obcego: 1 w dzień albo w świetle, 0 w nocnej ciemności (lit: światło w jego miejscu) */
-export function strangerVisibility(darkness: number, lit: number): number {
-  return Math.max(0, Math.min(1, 1 - darkness + lit * 1.4));
+/** szwendacz w ciemności: ciemny zarys, żeby było widać, gdzie napiera stado */
+export const ZOMBIE_SHADOW = 0.4;
+
+/** jak dobrze widać obcego: 1 w dzień albo w świetle, 0 w nocnej ciemności (lit: światło w jego miejscu);
+    szwendacza w ciemności widać jako ciemny zarys (ZOMBIE_SHADOW) */
+export function strangerVisibility(darkness: number, lit: number, kind = ''): number {
+  const v = Math.max(0, Math.min(1, 1 - darkness + lit * 1.4));
+  return kind === 'zombie' ? Math.max(ZOMBIE_SHADOW, v) : v;
 }
 
 /** to, czego wybór pionka potrzebuje (Pawn z symulacji pasuje bez zmian) */

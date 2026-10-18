@@ -10,6 +10,7 @@ import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../cont
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
+import type { Wreck } from '../world/wrecks.ts';
 import {
   type AmmoKey,
   hitChance,
@@ -78,6 +79,23 @@ import {
 } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
 import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP } from './perimeter.ts';
+import {
+  CARRY_MATS,
+  CARRY_REACH,
+  type Product,
+  RECIPES,
+  WRECK_SEARCH_NOISE,
+  WRECK_SEARCH_TICKS,
+  WRECK_STRIP,
+  WRECK_STRIP_NOISE,
+  WRECK_STRIP_TICKS,
+  type WreckMark,
+  wreckAt,
+  wreckLoot,
+  wreckRng,
+  wreckStage,
+  wreckTile,
+} from './surowce.ts';
 import { type GameMode, modeOf } from './tryb.ts';
 import { TUT_STEPS, type Tutorial, type TutStep, tutAdvance, WARM_ENOUGH } from './tutorial.ts';
 import {
@@ -88,6 +106,7 @@ import {
   BITE_HIT_FIGHTING,
   BITE_REACH,
   CHASE_SPEED,
+  DAY_PULL,
   DISPERSE,
   distField,
   FAR,
@@ -95,7 +114,10 @@ import {
   HORDE_HOURS,
   hordeSize,
   MAX_ZOMBIES,
+  NEAR,
   PUSH,
+  RING_FROM,
+  RING_TO,
   SIGHT_DAY,
   SIGHT_NIGHT,
   ZOMBIE_HP,
@@ -161,7 +183,7 @@ export const ARRIVE_GAP = 30;
 export const FLOOR_MOOD = -5;
 export const RESIDENT_REST = 70;
 /** prace fali 1 M2 (przerywa je pilna potrzeba, a te bez polecenia także noc) */
-const M2_JOBS = new Set<JobKind>(['search', 'dismantle', 'repair', 'build', 'claim']);
+const M2_JOBS = new Set<JobKind>(['search', 'dismantle', 'repair', 'build', 'claim', 'wreck', 'carry', 'saw']);
 /** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
 export const GATHER_NEAR = 8;
 /** kuchnia społeczna: porcja z niej to 85% zwykłej (nic się nie marnuje) */
@@ -267,7 +289,10 @@ export type JobKind =
   | 'finish'
   | 'amputate'
   | 'craft'
-  | 'brace';
+  | 'brace'
+  | 'wreck'
+  | 'carry'
+  | 'saw';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -475,7 +500,12 @@ export type Command =
   | { t: 'search'; ids: number[]; room: number }
   | { t: 'dismantle'; ids: number[]; thing: number }
   | { t: 'repair'; ids: number[]; damage: number }
-  | { t: 'claim'; ids: number[]; apt: number };
+  | { t: 'claim'; ids: number[]; apt: number }
+  /** surowce: przeszukać albo rozebrać wrak (kafelek pod nim albo obok), zanieść stertę zza siatki na podwórko,
+      przerobić w warsztacie drewno na deski albo złom na części (n sztuk po kolei) */
+  | { t: 'wreck'; ids: number[]; tile: number; how: 'szukaj' | 'rozbierz' }
+  | { t: 'carry'; ids: number[]; thing: number }
+  | { t: 'saw'; ids: number[]; what: Product; n: number };
 
 export interface Noise {
   x: number;
@@ -601,7 +631,7 @@ export interface SimState {
   dead?: Dead[];
   /** liczniki: zabici wrogowie, przerwania siatki, ugryzienia, zgony naszych */
   tally?: Tally;
-  /** stado tej nocy (tryb zombie): dzień, ilu jeszcze wyjdzie z krawędzi mapy i kiedy następna grupa */
+  /** stado tej nocy (tryb zombie): dzień, ilu jeszcze wyjdzie z okolicy i kiedy następna grupa */
   horde?: { day: number; left: number; next: number };
   /** ułamek porcji zjedzony ponad całe porcje (racje i kocioł zjadają po 0,75 i 1,1 porcji na posiłek) */
   portion: number;
@@ -611,6 +641,8 @@ export interface SimState {
   damage: DamageGame[];
   /** plany budowy w toku; gotowe budowle są w things */
   builds: BuildPlan[];
+  /** wraki przeszukane i rozebrane (lewy górny kafelek), rosnąco; brak, dopóki nikt nie przeszukał wraku */
+  wraki?: WreckMark[];
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -1543,10 +1575,13 @@ export class Sim {
   private readonly fenceMask: Uint8Array;
   /** zabici w bieżącym kroku (znikają po pętli pionków) */
   private readonly graveyard = new Set<number>();
-  /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy */
+  /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy,
+      pas za dnia (FAR–NEAR m od siatki) i okolica, z której wychodzi stado (RING_FROM–RING_TO m) */
   private seeds: number[] = [];
   private flow: Int32Array = new Int32Array(0);
   private edges: number[] = [];
+  private band: number[] = [];
+  private ring: number[] = [];
   /** numer kafelka siatki w World.fence.tiles (wytrzymałość w FenceState.hp) */
   private readonly fenceIndex = new Map<number, number>();
   /** wyszukiwania dróg szwendaczy w tym kroku */
@@ -1697,15 +1732,21 @@ export class Sim {
       crowd: res,
       outside: { blocked: outside, reg: labelRegions(outside, size) },
     };
-    // tryb zombie: pole odległości do siatki po stronie ulicy i kafelki przy krawędzi mapy (skąd wychodzi stado)
+    // tryb zombie: pole odległości do siatki po stronie ulicy, pas za dnia, okolica stada i krawędź mapy (zapas)
     if (modeOf(this.st) === 'zombie' && shape) {
       this.seeds = this.outsideOf([...shape.tiles, ...gateTiles(this.w)]);
       this.flow = distField(outside, size, this.seeds);
       this.edges = [];
+      this.band = [];
+      this.ring = [];
       for (let i = 0; i < size * size; i++) {
         const x = i % size;
         const y = (i - x) / size;
-        if ((x < 2 || y < 2 || x >= size - 2 || y >= size - 2) && this.flow[i] >= 0) this.edges.push(i);
+        const f = this.flow[i];
+        if (f < 0 || zombie[i]) continue;
+        if (x < 2 || y < 2 || x >= size - 2 || y >= size - 2) this.edges.push(i);
+        if (f >= FAR && f <= NEAR) this.band.push(i);
+        if (f >= RING_FROM && f <= RING_TO) this.ring.push(i);
       }
     }
   }
@@ -1997,6 +2038,9 @@ export class Sim {
     else if (c.t === 'dismantle') this.startDismantle(pawns[0], c.thing);
     else if (c.t === 'repair') this.startRepair(pawns[0], c.damage);
     else if (c.t === 'claim') this.startClaim(pawns[0], c.apt);
+    else if (c.t === 'wreck') this.startWreck(pawns[0], c.tile, c.how);
+    else if (c.t === 'carry') this.startCarry(pawns[0], c.thing);
+    else if (c.t === 'saw') this.startSaw(pawns[0], c.what, c.n);
   }
 
   /** Pora wspólnego posiłku (uchwała o kotle), w której mieszkańcy mogą wejść do mieszkania zarządu: pół godziny
@@ -3082,6 +3126,12 @@ export class Sim {
       }
       case 'build':
         return this.buildWork(p, j, at);
+      case 'wreck':
+        return this.wreckWork(p, j, at);
+      case 'carry':
+        return this.carryWork(p, j, at);
+      case 'saw':
+        return this.sawWork(p, j, at);
       case 'arrive':
         // przyjęty: zza bramy do swojego mieszkania (po kolei, gęsiego), potem plan dnia jak każdy mieszkaniec
         if (tick < j.until) return true;
@@ -4210,6 +4260,325 @@ export class Sim {
     this.setJob(p, this.newJob('claim', apt, spot, true), false);
   }
 
+  /* ---------- surowce: wraki, łup zza siatki na podwórko, warsztat (src/sim/surowce.ts) ---------- */
+
+  /** wolny kafelek przy podstawie wraku, osiągalny dla pionka, na którym nikt nie pracuje (−1: brak) */
+  private wreckStand(p: Pawn, r: Wreck): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const free: number[] = [];
+    for (let y = r.y - 1; y <= r.y + r.h; y++)
+      for (let x = r.x - 1; x <= r.x + r.w; x++) {
+        if (x < 0 || y < 0 || x >= size || y >= size) continue;
+        if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) continue;
+        const i = y * size + x;
+        if (!this.coreBlocked[i] && this.reg[i] === region && !taken.includes(i)) free.push(i);
+      }
+    return this.nearest(p, free);
+  }
+
+  /** przeszukać albo rozebrać wrak (tile: kafelek pod nim albo obok); jedna osoba naraz, rozbiórka po przeszukaniu */
+  private startWreck(p: Pawn, tile: number, how: 'szukaj' | 'rozbierz'): void {
+    const r = wreckAt(this.w, tile);
+    if (!r) return;
+    const t = wreckTile(r, this.w.size);
+    if (wreckStage(this.st.wraki, t) !== (how === 'szukaj' ? 0 : 1)) return;
+    if (this.st.pawns.some((q) => q !== p && q.job?.t === 'wreck' && q.job.target === t)) return;
+    const stand = this.wreckStand(p, r);
+    if (stand < 0 || !this.go(p, stand)) return;
+    const j = this.newJob('wreck', t, stand, true);
+    j.what = how;
+    this.setJob(p, j, false);
+  }
+
+  /** Praca przy wraku: przeszukanie pół godziny (cichy szelest), rozbiórka 2–2,5 h z hałasem co 2 s, z łomem
+      o połowę krócej; postęp rozbiórki zostaje w st.wraki, więc przerwana idzie dalej od tego miejsca. Po skończeniu
+      łup spada obok, a ta sama osoba od razu nosi go na podwórko (praca 'carry'). */
+  private wreckWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const tick = st.tick;
+    const r = wreckAt(this.w, j.target);
+    const strip = j.what === 'rozbierz';
+    if (!r || wreckStage(st.wraki, j.target) !== (strip ? 1 : 0)) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = tick;
+      j.until = strip ? 0 : tick + WRECK_SEARCH_TICKS;
+      this.face(p, r.x + r.w / 2, r.y + r.h / 2);
+      if (!strip) this.addNoise(p.x, p.y, WRECK_SEARCH_NOISE);
+      return true;
+    }
+    if (strip) {
+      const mark = st.wraki!.find((m) => m.t === j.target)!;
+      mark.w = (mark.w ?? 0) + (p.weapon === 'lom' ? 2 : 1);
+      if ((tick - j.t0) % NOISE_TICKS === 0) this.addNoise(p.x, p.y, WRECK_STRIP_NOISE);
+      if (mark.w < WRECK_STRIP_TICKS[r.model]) return true;
+    } else if (tick < j.until) return true;
+    this.wreckDone(r, j.target, strip ? 2 : 1, j.tile);
+    return this.carryOn(p, j, j.tile);
+  }
+
+  /** wrak przeszukany (s 1) albo rozebrany (s 2): znak w st.wraki (pole powstaje przy pierwszym), łup obok */
+  private wreckDone(r: Wreck, t: number, s: 1 | 2, at: number): void {
+    const st = this.st;
+    st.wraki ??= [];
+    const mark: WreckMark | undefined = st.wraki.find((m) => m.t === t);
+    if (mark) {
+      mark.s = s;
+      delete mark.w;
+    } else {
+      st.wraki.push({ t, s });
+      st.wraki.sort((a, b) => a.t - b.t);
+    }
+    const loot = s === 1 ? wreckLoot(r.model, wreckRng(st.seed, t)) : WRECK_STRIP[r.model];
+    // z warsztatem rozbiórka daje półtora raza więcej, jak przy meblach
+    const bonus = s === 2 && this.hasBuilt('warsztat');
+    for (const [m, n] of Object.entries(loot) as [Mat, number][]) {
+      const k = bonus ? Math.round(n * 1.5) : n;
+      if (k > 0) this.dropMat(at, m, k);
+    }
+  }
+
+  /** sterta łupu za siatką do noszenia: najbliższa pionkowi, do CARRY_REACH metrów od kafelka anchor */
+  private lootNear(p: Pawn, anchor: number): Thing | undefined {
+    const size = this.w.size;
+    const ax = anchor % size;
+    const ay = Math.floor(anchor / size);
+    const region = this.regionOf(p);
+    let best: Thing | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.things) {
+      if (!CARRY_MATS.has(t.kind) || t.n <= 0 || (t.by >= 0 && t.by !== p.id)) continue;
+      if (Math.max(Math.abs(t.x - ax), Math.abs(t.y - ay)) > CARRY_REACH) continue;
+      const i = t.y * size + t.x;
+      if (this.insideAt(i) || this.reg[i] !== region) continue;
+      const d = this.dist2(p, i);
+      if (d < bd || (d === bd && best && t.id < best.id)) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** Praca j przechodzi w noszenie łupu leżącego przy anchor (następny kurs): do sterty po materiał. false, gdy
+      nie ma czego nosić albo nie da się dojść (bez siatki nie ma „za siatką”, więc łup zostaje, gdzie leży). */
+  private carryOn(p: Pawn, j: Job, anchor: number): boolean {
+    if (!this.st.fence) return false;
+    const next = this.lootNear(p, anchor);
+    if (!next) return false;
+    const i = next.y * this.w.size + next.x;
+    if (!this.go(p, i)) return false;
+    j.t = 'carry';
+    j.phase = 0;
+    j.target = next.id;
+    j.tile = i;
+    j.from = anchor;
+    j.order = true;
+    next.by = p.id;
+    return true;
+  }
+
+  /** zanieść stertę zza siatki (i sterty obok niej) na podwórko */
+  private startCarry(p: Pawn, id: number): void {
+    const t = this.thing(id);
+    if (!t || !this.st.fence || !CARRY_MATS.has(t.kind) || t.n <= 0 || (t.by >= 0 && t.by !== p.id)) return;
+    const i = t.y * this.w.size + t.x;
+    if (this.insideAt(i) || !this.go(p, i)) return;
+    const j = this.newJob('carry', t.id, i, true);
+    j.from = i;
+    this.setJob(p, j, false);
+    t.by = p.id;
+  }
+
+  /** Noszenie łupu: przy stercie bierze do CARRY sztuk jednego materiału (n, what), na podwórku kładzie je od bramy
+      w głąb, potem wraca po następną stertę przy anchor (from), aż nic nie zostanie. Przerwane: to, co w rękach,
+      upada pod nogi (dropLoad). */
+  private carryWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    if (j.phase === 0) {
+      const t = this.thing(j.target);
+      if (!at || !t || t.by !== p.id || !CARRY_MATS.has(t.kind) || this.insideAt(j.tile)) return false;
+      const take = Math.min(t.n, CARRY);
+      t.n -= take;
+      t.by = -1;
+      if (t.n <= 0) st.things.splice(st.things.indexOf(t), 1);
+      j.n = take;
+      j.what = t.kind;
+      const dest = this.lootSpot(p, t.kind);
+      if (dest < 0 || !this.go(p, dest)) return false;
+      j.phase = 1;
+      j.target = -1;
+      j.tile = dest;
+      return true;
+    }
+    if (!at) return false;
+    this.dropInYard(j.what, j.n, j.tile);
+    j.n = 0;
+    j.what = '';
+    return this.carryOn(p, j, j.from);
+  }
+
+  /** kafelki podwórka na łup, od bramy w głąb: bez kafelków przy bramie, dziurach, drzwiach i wejściach (przejścia
+      zostają wolne), bez mebli, budowli i planów */
+  private yardSpots(): number[] {
+    const shape = fenceShape(this.w);
+    if (!shape) return [];
+    const size = this.w.size;
+    const gate = gateTiles(this.w);
+    const keep: number[] = [...gate, ...shape.hole, ...(this.house?.doors ?? [])];
+    for (const b of this.w.buildings) for (const e of b.entrances) keep.push(e.out);
+    const ban = new Set<number>();
+    for (const k of keep)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = (k % size) + dx;
+          const y = Math.floor(k / size) + dy;
+          if (x >= 0 && y >= 0 && x < size && y < size) ban.add(y * size + x);
+        }
+    const gx = gate.length ? gate.reduce((a, t) => a + (t % size), 0) / gate.length : 0;
+    const gy = gate.length ? gate.reduce((a, t) => a + Math.floor(t / size), 0) / gate.length : 0;
+    const d = (i: number) => ((i % size) - gx) ** 2 + (Math.floor(i / size) - gy) ** 2;
+    return shape.yard
+      .filter((i) => !ban.has(i) && !this.coreBlocked[i] && !onPlan(this.st, size, i))
+      .sort((a, b) => d(a) - d(b) || a - b);
+  }
+
+  /** kafelek podwórka, na który zmieści się materiał kind: sterta tego rodzaju z miejscem albo wolny kafelek */
+  private lootSpot(p: Pawn, kind: string): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    for (const i of this.yardSpots()) {
+      if (this.reg[i] !== region) continue;
+      const x = i % size;
+      const y = Math.floor(i / size);
+      const same = this.st.things.find((t) => t.kind === kind && t.x === x && t.y === y);
+      if (same ? same.n < STACK : !this.thingAt(x, y)) return i;
+    }
+    return -1;
+  }
+
+  /** n sztuk materiału na podwórko: na sterty tego rodzaju z miejscem i na wolne kafelki, od bramy w głąb;
+      gdy podwórko pełne, reszta przy kafelku at, jak przy innych pracach */
+  private dropInYard(kind: string, n: number, at: number): void {
+    const st = this.st;
+    const size = this.w.size;
+    let left = n;
+    for (const i of this.yardSpots()) {
+      if (left <= 0) return;
+      const x = i % size;
+      const y = Math.floor(i / size);
+      const same = st.things.find((t) => t.kind === kind && t.x === x && t.y === y);
+      if (same) {
+        const k = Math.min(left, STACK - same.n);
+        same.n += Math.max(0, k);
+        left -= Math.max(0, k);
+      } else if (!this.thingAt(x, y)) {
+        const t = newThing(st, kind, x, y);
+        t.n = Math.min(left, STACK);
+        left -= t.n;
+        st.things.push(t);
+      }
+    }
+    if (left > 0) this.dropMat(at, kind, left);
+  }
+
+  /** zbudowany warsztat najbliżej pionka, przy którym da się stanąć, wolny albo jego */
+  private workshopFor(p: Pawn): { t: Thing; stand: number } | undefined {
+    let best: { t: Thing; stand: number } | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.things) {
+      if (t.kind !== 'warsztat' || (t.by >= 0 && t.by !== p.id)) continue;
+      const stand = this.beside(p, t);
+      if (stand < 0) continue;
+      const d = this.dist2(p, stand);
+      if (d < bd) {
+        bd = d;
+        best = { t, stand };
+      }
+    }
+    return best;
+  }
+
+  /** Przeróbka w warsztacie: n sztuk produktu po kolei (j.from: ile zostało, j.what: produkt; n w rękach zostaje
+      zerem, bo nic się nie nosi). Materiał zużywa się na końcu każdej sztuki, jak przy dzidzie. */
+  private startSaw(p: Pawn, what: Product, n: number): void {
+    const r = RECIPES[what];
+    if (!r || n < 1 || this.workStock(r.from) < r.n) return;
+    const ws = this.workshopFor(p);
+    if (!ws || !this.go(p, ws.stand)) return;
+    const j = this.newJob('saw', ws.t.id, ws.stand, true);
+    j.what = what;
+    j.from = n;
+    this.setJob(p, j, false);
+    ws.t.by = p.id;
+  }
+
+  private sawWork(p: Pawn, j: Job, at: boolean): boolean {
+    const tick = this.st.tick;
+    const ws = this.thing(j.target);
+    const r = RECIPES[j.what as Product];
+    if (ws?.kind !== 'warsztat' || ws.by !== p.id || !r) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      // materiał w drodze (ktoś niesie drewno do składu): czeka przy warsztacie
+      if (this.workStock(r.from) < r.n) return this.inTransit(p, r.from) > 0;
+      j.phase = 1;
+      j.t0 = tick;
+      j.until = tick + r.work;
+      this.face(p, ws.x + ws.w / 2, ws.y + ws.h / 2);
+      return true;
+    }
+    if (tick < j.until) return true;
+    if (!this.takeForWork(r.from, r.n)) return this.inTransit(p, r.from) > 0;
+    this.dropMat(j.tile, j.what, 1);
+    j.from--;
+    if (j.from <= 0 || this.workStock(r.from) + this.inTransit(p, r.from) < r.n) return false;
+    j.t0 = tick;
+    j.until = tick + r.work;
+    return true;
+  }
+
+  /** materiał na przeróbkę: wszystkie sterty danego rodzaju, także te, które ktoś właśnie niesie do składu
+      (inaczej piłujący kończyłby pracę za każdym razem, gdy ktoś inny weźmie stos drewna do składu) */
+  private workStock(kind: string): number {
+    return this.st.things.reduce((a, t) => a + (t.kind === kind && t.n > 0 ? t.n : 0), 0);
+  }
+
+  /** sztuki materiału w rękach innych z zarządu (drewno niesione do składu, materiał na budowę) */
+  private inTransit(p: Pawn, kind: string): number {
+    let n = 0;
+    for (const q of this.st.pawns) {
+      if (q === p || q.kind !== 'core') continue;
+      if (kind === 'drewno') n += q.carry;
+      if (q.job?.what === kind) n += q.job.n;
+    }
+    return n;
+  }
+
+  /** Materiał na przeróbkę ze stert: najpierw wolne, potem zajęte (noszący weźmie, ile zostało); drewno najpierw
+      spoza składu, bo skład jest na noc do kozy. false, gdy nie starczy. */
+  private takeForWork(kind: string, n: number): boolean {
+    if (this.workStock(kind) < n) return false;
+    const size = this.w.size;
+    const sklad = kind === 'drewno' ? (this.house?.sklad ?? []) : [];
+    const rank = (t: Thing) => (t.by >= 0 ? 2 : 0) + (sklad.includes(t.y * size + t.x) ? 1 : 0);
+    const piles = this.st.things
+      .filter((t) => t.kind === kind && t.n > 0)
+      .sort((a, b) => rank(a) - rank(b) || a.id - b.id);
+    let left = n;
+    for (const t of piles) {
+      const k = Math.min(t.n, left);
+      t.n -= k;
+      left -= k;
+      if (left <= 0) break;
+    }
+    this.st.things = this.st.things.filter((t) => !(t.kind === kind && t.n <= 0));
+    return true;
+  }
+
   /** miejsca dla mieszkańców od nowa (zajęcie, naprawa, budowa) */
   private updateCap(): void {
     this.st.cap = capOf(this.st, this.w);
@@ -4744,7 +5113,7 @@ export class Sim {
     return n;
   }
 
-  /** Zegar trybu zombie: za dnia co godzinę uzupełnienie snujących się, o 21:00 stado (grupy z krawędzi mapy
+  /** Zegar trybu zombie: za dnia co godzinę uzupełnienie snujących się, o 21:00 stado (grupy z okolicy
       do 1:00), o 6:00 stado się rozchodzi. */
   private zombieClock(): void {
     const st = this.st;
@@ -4753,7 +5122,7 @@ export class Sim {
     const h = hourOf(tick);
     const day = dayOf(tick);
     if (hourStart && h >= DISPERSE && h < HORDE_FROM) this.topUp(day);
-    // o 21:00 stado: najpierw ci, którzy już się snują (poza budynkami), a z krawędzi mapy tylko brakująca reszta
+    // o 21:00 stado: najpierw ci, którzy już się snują (poza budynkami), a z okolicy tylko brakująca reszta
     if (hourStart && h === HORDE_FROM) {
       const want = hordeSize(day);
       let have = 0;
@@ -4773,8 +5142,9 @@ export class Sim {
       hd.left -= n;
       hd.next = tick + Math.floor((HORDE_HOURS * TICKS_PER_HOUR) / groups);
       const room = MAX_ZOMBIES - this.zombieCount();
-      if (room > 0 && this.edges.length) {
-        const at = this.edges[Math.floor(nextRandom(st.rng) * this.edges.length)];
+      const from = this.ring.length ? this.ring : this.edges;
+      if (room > 0 && from.length) {
+        const at = from[Math.floor(nextRandom(st.rng) * from.length)];
         for (const t of this.tilesAround(at, Math.min(n, room)))
           spawnZombie(st, this.w, t, Math.floor(nextRandom(st.rng) * 16), true);
       }
@@ -4791,7 +5161,7 @@ export class Sim {
       }
   }
 
-  /** za dnia: do ambientCount(dzień) snujących się, daleko od siatki; gdy brakuje ponad połowy, od razu wszyscy */
+  /** za dnia: do ambientCount(dzień) snujących się w pasie przy siatce; gdy brakuje ponad połowy, od razu wszyscy */
   private topUp(day: number): void {
     const st = this.st;
     const have = this.zombieCount();
@@ -4805,18 +5175,20 @@ export class Sim {
     }
   }
 
-  /** losowy kafelek po stronie ulicy co najmniej FAR metrów od siatki (a bez takiego: przy krawędzi mapy) */
+  /** losowy kafelek z pasa FAR–NEAR metrów drogi od siatki, także w linii prostej co najmniej FAR (droga za rogiem
+      budynku bywa dłuższa); bez pasa: przy krawędzi mapy */
   private farTile(): number {
-    const st = this.st;
     const size = this.w.size;
-    for (let k = 0; k < 60; k++) {
-      const i = Math.floor(nextRandom(st.rng) * size * size);
-      if (this.flow[i] < FAR) continue;
+    const from = this.band.length ? this.band : this.edges;
+    if (!from.length) return -1;
+    let i = -1;
+    for (let k = 0; k < 20; k++) {
+      i = from[Math.floor(nextRandom(this.st.rng) * from.length)];
       const x = (i % size) + 0.5;
       const y = Math.floor(i / size) + 0.5;
       if (this.seeds.every((s) => Math.hypot((s % size) + 0.5 - x, Math.floor(s / size) + 0.5 - y) >= FAR)) return i;
     }
-    return this.edges.length ? this.edges[Math.floor(nextRandom(st.rng) * this.edges.length)] : -1;
+    return i;
   }
 
   /** ofiara: człowiek na mapie; indoor: także w pomieszczeniach (dla szwendacza, który jest w środku) */
@@ -5032,7 +5404,8 @@ export class Sim {
     if (nextRandom(st.rng) < BITE_INFECT) infect(st, t, nextRandom(st.rng) < LIMB);
   }
 
-  /** snucie się: kilka kroków w losową stronę po przechodnich kafelkach */
+  /** snucie się: kilka kroków w losową stronę po przechodnich kafelkach; co któryś krok ku siatce (ściągają się pod
+      nią przez dzień), a dalej niż NEAR od siatki każdy */
   private drift(p: Pawn): void {
     const st = this.st;
     const size = this.w.size;
@@ -5042,9 +5415,14 @@ export class Sim {
     const n = 3 + Math.floor(nextRandom(st.rng) * 6);
     for (let k = 0; k < n; k++) {
       const x = c % size;
-      const opts = [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1].filter(
+      let opts = [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1].filter(
         (q) => q >= 0 && q < size * size && !blocked[q] && !path.includes(q),
       );
+      const f = this.flow[c] ?? -1;
+      if (f > NEAR || (f > 1 && nextRandom(st.rng) < DAY_PULL)) {
+        const closer = opts.filter((q) => this.flow[q] >= 0 && this.flow[q] < f);
+        if (closer.length) opts = closer;
+      }
       if (!opts.length) break;
       c = opts[Math.floor(nextRandom(st.rng) * opts.length)];
       path.push(c);

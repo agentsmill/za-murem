@@ -49,6 +49,7 @@ import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
+import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import {
@@ -1592,6 +1593,9 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   dismantle: ['Rozbierze to na materiał.', 'Jedna osoba rozbierze to na materiał.'],
   repair: ['Przyniesie materiał i naprawi.', 'Jedna osoba przyniesie materiał i naprawi.'],
   claim: [`Zajmie mieszkanie dla ${w.zarzad.d}.`, `Jedna osoba zajmie mieszkanie dla ${w.zarzad.d}.`],
+  wreck: [NAPISY.poWrak.pl, NAPISY.poWrakWielu.pl],
+  carry: [NAPISY.poZaniesc.pl, NAPISY.poZaniescWielu.pl],
+  saw: [NAPISY.poWarsztat.pl, NAPISY.poWarsztatWielu.pl],
 });
 /** to samo po angielsku (jedna osoba, kilka osób) */
 const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> => ({
@@ -1624,6 +1628,9 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   dismantle: ['Will take it apart for materials.', 'One person will take it apart for materials.'],
   repair: ['Will bring materials and fix it.', 'One person will bring materials and fix it.'],
   claim: [`Will claim the flat for ${e.krotko}.`, `One person will claim the flat for ${e.krotko}.`],
+  wreck: [NAPISY.poWrak.en, NAPISY.poWrakWielu.en],
+  carry: [NAPISY.poZaniesc.en, NAPISY.poZaniescWielu.en],
+  saw: [NAPISY.poWarsztat.en, NAPISY.poWarsztatWielu.en],
 });
 
 function run(m: MenuItem) {

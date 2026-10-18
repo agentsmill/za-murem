@@ -571,6 +571,37 @@ Na OK Mateusza („Tak, scal zombie-szlif i m2-slownik-miejsca do pelna-gra, spr
 
 Pierwszy przebieg zrzutów padł na starcie przeglądarki: około 14:50 zniknął cały katalog `~/Library/Caches/ms-playwright` (wspólny dla wszystkich drzew; nie usunęła go sesja pilnująca, przyczyna nieznana, na dysku 57 GB wolnego). Koordynator zainstalował z powrotem chromium 1248 (`npx playwright install chromium`) i dał znać pozostałym sesjom.
 
+### Szwendaczy widać i ściągają się pod siatkę, 18.10.2026 (gałąź `tryb-zombie`, w `pelna-gra` od scalenia 18.10.2026 po południu)
+
+Mateusz po pierwszym graniu: zombie „nie widać nigdzie, nie ściągają”. Pomiar na Przymorzu (mapa 384 m) potwierdził: pierwszego dnia 8 szwendaczy losowało się po całej mapie, mediana 300 m drogi od siatki, żaden bliżej niż 20 m, a snucie się nie miało kierunku. Stado o 21:00 szło z krawędzi mapy i dochodziło pod siatkę między 2:00 a 5:00. Nocą w ciemności szwendaczy nie było widać wcale.
+
+Zmiany:
+- Za dnia szwendacze rodzą się w pasie 15–40 m drogi od siatki (i co najmniej 15 m w linii prostej), a co czwarty krok snucia idzie ku siatce: pierwszego dnia o 16:00 mediana 25 m, o 20:00 siedmiu z ośmiu stoi pod siatką. Ten, kto odejdzie dalej niż 40 m, wraca. Kto pod siatką zobaczy ludzi na podwórku, napiera już za dnia, więc jest co dźgać dzidą przez siatkę.
+- Stado wychodzi z okolicy 50–80 m od siatki zamiast z krawędzi mapy; pierwsze grupy napierają przed 23:00.
+- Nocą szwendacz w ciemności jest ciemnym zarysem (widoczność co najmniej 0,4), w świetle jak dotąd.
+- Bot trybu zombie gra ostrożniej, jak rozsądny gracz: za dnia kto ma dzidę, dźga przez siatkę tych, którzy pod nią stoją, a drwal wychodzi tylko wtedy, gdy przy bramie i przy drzewie nie ma szwendaczy w promieniu 12 m. Bez tego wracający z wyprawy i drwal wchodzili prosto w tłum przy bramie (22 z 39 ugryzień za siatką w drodze).
+
+Liczby: testy 583/583 (nowy `tests/unit/zombie-blisko.test.ts` na prawdziwej mapie Przymorza padał przed poprawką), Biome, build. `npm run bot` bez zmian (e772cf37, po 3 dobach 7990adca). `npm run bot:zombie`: ziarno 1 z wartą gra trwa 6 nocy, 3 zgony, 13–34 zabitych na noc w pierwszych trzech nocach, siatka o 6:00 do 0,49 po siódmej nocy; bez warty koniec gry „pustką” czwartego dnia. Ziarna 2 i 3 z wartą: 2 i 1 zgon w 5 nocach. Z wartą jest więc trudniej niż przedtem (było 1 zgon w 6 nocach), bez warty można przegrać. Nowy zrzut `zombie-wieczor` (zwykły start bez `?stado`, 19:30): sześciu szwendaczy do 12 m od siatki, widać ich jako szare sylwetki o zmierzchu; `zombie-noc-telefon` obejrzany.
+
+### Scalenie `tryb-zombie`: szwendacze blisko siatki, 18.10.2026 po południu (`pelna-gra`)
+
+Sesja pilnująca zgłosiła, że w `pelna-gra` brakuje c7a5f21 z `tryb-zombie`, czyli poprawki na skargę Mateusza, że zombie nie widać i nie ściągają (wpis wyżej). Scalone 416de6e: c7a5f21 i połączenie z `main`, które `pelna-gra` już miała (`origin/main` jest jej przodkiem). `src/sim/sim.ts` połączył się sam ze szlifem trybu zombie. Konflikty: `src/ui/okna.ts` (pomoc ze słowem miejsca, zostało nasze), nagłówek `tools/bot-zombie.ts` (polityka warty ze szlifu i zachowanie za dnia z c7a5f21) i dziennik (bez podwójnego wpisu „Poprawka po wdrożeniu M1”, punkt 0 w „Następnych” z obu stron). W `tests/unit/druzyna-sim.test.ts` dwa skróty „przymorze zombie 4 doba” i „5 doba” wzięte z nowego zachowania szwendaczy (f5eebaf7, b00f03bb); reszta tabeli policzona od nowa i bez zmian. Bramka: `npm test` 1813 zdanych, 1 oczekiwana porażka, 8 pominiętych; Biome czysty; build; `npm run bot` da4b24e0 i dad44c81 (bez zmian); `npm run bot:zombie` 1f6eef9b z wartą (bez przerwania cztery noce, pierwsze piątej przy stadzie 32, dwa zgony szóstej) i 3e000211 bez warty (przerwania od drugiej nocy); `npm run shots` 153 scenariusze bez błędów, obejrzane `zombie-wieczor` (szwendacze pod siatką o zmierzchu jako szare sylwetki) i `zombie-noc`.
+
+### Surowce: wraki, łup na podwórko i warsztat, 18.10.2026 (gałąź `m2-surowce` od `pelna-gra` c110956, lokalnie)
+
+Mateusz w rozmowie: „na razie to mogę iść i kosić drzewo, ale nic więcej nie mogę zrobić”; chce przeszukiwać samochody i budynki, zbierać surowce, przerabiać obiekty na surowce, a potem handlarza i obcych w dzień. Kolejność (najpierw szaber z przeróbką, handlarz drugi) zaproponowałem ja, a ruszyć kazała sesja „Pilnowanie agentów”, kiedy Mateusz był na spacerze. Budynków sąsiadów nie ruszam (fala 2). Projekt: `docs/superpowers/specs/2026-10-18-surowce-design.md`, przeczytał go niezależny recenzent przed budową.
+
+- Wraki z `World.props` da się przeszukać (pół godziny, części, czasem złom, leki z apteczki, konserwy z bagażnika) i po przeszukaniu rozebrać (maluch 2 h, polonez 2,5 h, z łomem o połowę krócej, hałas 20 m co 2 s, 6–8 złomu i część). Rozebrany zostaje szkieletem i blokuje dalej, więc drogi się nie zmieniają. Łup losuje się z ziarna gry i kafelka wraku, a nie z `st.rng`. Przerwana rozbiórka pamięta postęp. Stan `st.wraki` powstaje przy pierwszym przeszukaniu, więc gra bez wraków ma ten sam stan i skrót.
+- Łup zza siatki niesie na podwórko ta sama osoba, po 6 sztuk, kurs za kursem, a „Zanieść na podwórko” robi to samo z każdą stertą za siatką. Na podwórku łup leży od bramy w głąb, z dala od przejść. Polecenie `carry` ma kształt z planu fali 2.
+- Warsztat przerabia 2 drewna na deskę (20 min) i 2 złomu na część (1 h): jedna sztuka albo do pięciu naraz. Materiał schodzi na końcu każdej sztuki, przerwana praca nic nie zjada, drewno najpierw spoza składu.
+- Rysowanie: wrak przeszukany (zdjęte pokrywy) i szkielet (rdza, bez szyb, drzwi i zderzaków), sterty części i leków. Te dwie sterty z przeszukiwania mieszkań leżały wcześniej w stanie, ale się nie rysowały.
+- Nowe napisy w obu językach w `src/sim/surowce.ts` (`NAPISY`), do menu idzie na razie polski.
+- `npm run bot:surowce`: raport z pięciu dni na Przymorzu (tabela w projekcie). Z jedną osobą na wrakach i warsztacie od dnia 2: 5,4 budowli zamiast 5,0 i 21 części zamiast 8; kuchnia społeczna nie wychodzi wcześniej, bo ta osoba nie przeszukuje wtedy mieszkań. Złomu jest za dużo już bez wraków (42 po pięciu dniach), deski są wąskim gardłem.
+
+Bramka: `npm test` 1823 zdanych, 1 oczekiwana porażka, 8 pominiętych (90 plików, w tym nowy `tests/unit/surowce.test.ts` z 13 przypadkami), Biome na `src tests tools server index.html` czysty, build, boty bez zmian (bot da4b24e0 i dad44c81, zombie e77f1b99 i 34dd5c5f). Pełne `npm run shots`: 157 scenariuszy bez błędów (doszło pięć). Nowe `surowce-wraki`, `surowce-sterty`, `surowce-menu-wrak`, `surowce-praca` (z `surowce-praca-rozbiorka`) i `surowce-menu-warsztat` obejrzane w Chromium.
+
+Scalone do `pelna-gra` 18.10.2026 po południu przez koordynatora: konflikt tylko w dzienniku. Bramka po scaleniu: `npm test` 1826 zdanych, 1 oczekiwana porażka, 8 pominiętych; Biome czysty; build; bot da4b24e0 i dad44c81, bot:zombie 1f6eef9b i 3e000211 (bez zmian po surowcach); `npm run shots` 158 scenariuszy bez błędów, obejrzane `surowce-menu-wrak` i `surowce-praca-rozbiorka`. Sesja fali 2 dostała kontrakt noszenia (`carryOn`, filtr w `lootNear`), żeby nie pisała drugiego.
+
 ### Angielski domyślnie, 18.10.2026 po południu (gałąź `angielski` od `pelna-gra`, lokalnie, nic nie wypchnięte)
 
 Gra otwiera się po angielsku, a polski jest do wyboru przełącznikiem EN/PL na karcie startowej (w rogu karty, na telefonie we własnym wierszu nad tabliczką) i w Menu. Wybór zostaje w pamięci przeglądarki pod `za-murem-0.4-jezyk`; parametr `?lang=en|pl` (do zrzutów i prób ręcznych) wygrywa z pamięcią i jej nie nadpisuje, a przełącznik usuwa go z adresu. Bez obu angielski, niezależnie od języka przeglądarki. Projekt: `docs/superpowers/specs/2026-10-18-angielski-design.md`, plan: `docs/superpowers/plans/2026-10-18-angielski.md`, słowniczek pojęć: `docs/SLOWNICZEK-EN.md` (angielski brytyjski). Mateusz kazał decydować spójnie i nie pytać, więc decyzje są niżej w „Decyzjach” do przejrzenia.
@@ -588,9 +619,11 @@ Co jeszcze po polsku: wpisy kroniki i raportów ze starych zapisów; historia dr
 
 ## Następne
 
+Surowce (gałąź `m2-surowce`, lokalnie, 18.10.2026): Mateusz przegląda decyzje z wpisu niżej w „Decyzjach” i gra: wrak za siatką, „Przeszukać” na aucie, potem „Rozebrać” z menu, warsztat z menu na stole. Koordynator `pelna-gra` scala gałąź; z falą 2 może być konflikt w `sim.ts` i `orders.ts` (obie dokładają prace i polecenia, `carry` jest u mnie w kształcie z ich planu). Następny kawałek tej sesji: obcy w dzień i handlarz, z osobnym projektem.
+
 Rano 18.10.2026, po nocy integracji (dla Mateusza):
 - Kierunek rozwoju (`docs/superpowers/specs/2026-10-18-kierunek-rozwoju-design.md`): Mateusz zdecydował, że każdego lokatora da się ręcznie przejąć. Czeka przejrzenie decyzji z końca dokumentu i rozmowa o pierwszym projekcie, czyli pracy ludzi i rozporządzeniach.
-- Stan sesji 18.10.2026 około 15:30: szlif trybu zombie i słownik miejsca są scalone w `pelna-gra` (c110956) i wdrożone na serwer testowy (OK Mateusza), ale `pelna-gra` nie jest wypchnięta od c46a524: push czeka na OK Mateusza. Pracują: angielski domyślnie, fala 2 M2 (`m2-fala-2`, buduje etapami według `docs/M2-fala-2.md`) i surowce z ekonomią (sesja Mateusza, `m2-surowce` od c110956); ich gałęzie koordynator scala lokalnie i zostawia gotowe do wdrożenia jedną komendą (`deploy/hetzner/README.md`). Kotwica stylu z PixelLab (`kotwica-stylu` 4736d4d: trawnik z chodnikiem, trzepak, emeryt 48 px, blok z modułów; 92,2 generacji z 2000, 0 USD) czeka na decyzję Mateusza, czy bierze ten wygląd, z wyższą fasadą bloku (13 px na piętro zamiast 9). Sesja „Dom jednorodzinny: cel drugiego dnia” uruchomiona przez sesję słownika padła; cel drugiego dnia w domu załatwia projekt fali 2.
+- Stan sesji 18.10.2026 około 15:30: szlif trybu zombie i słownik miejsca są scalone w `pelna-gra` (c110956) i wdrożone na serwer testowy (OK Mateusza), a `pelna-gra` jest na origin: sesja pilnująca wypchnęła ją po słowach Mateusza „Możesz scalać, możemy to po prostu trzymać na GitHub w chmurze?”, więc kolejne scalenia idą na origin od razu po bramce, a na serwer testowy dalej tylko po jego OK. Po wdrożeniu doszło scalenie `tryb-zombie` (szwendacze blisko siatki, wpis niżej), na serwer czeka na OK. Pracują: angielski domyślnie, fala 2 M2 (`m2-fala-2`, buduje etapami według `docs/M2-fala-2.md`) i surowce z ekonomią (sesja Mateusza; pierwszy kawałek z wrakami i warsztatem jest już w `pelna-gra`); ich gałęzie koordynator scala lokalnie i zostawia gotowe do wdrożenia jedną komendą (`deploy/hetzner/README.md`). Kotwica stylu z PixelLab (`kotwica-stylu` 4736d4d: trawnik z chodnikiem, trzepak, emeryt 48 px, blok z modułów; 92,2 generacji z 2000, 0 USD) czeka na decyzję Mateusza, czy bierze ten wygląd, z wyższą fasadą bloku (13 px na piętro zamiast 9). Sesja „Dom jednorodzinny: cel drugiego dnia” uruchomiona przez sesję słownika padła; cel drugiego dnia w domu załatwia projekt fali 2.
 - Logowanie i konta są dalej tylko z `?siec=1` (https://za-murem.5-75-147-27.sslip.io/?siec=1). Przełącznik zniknie, kiedy będzie informacja o danych osobowych, a do niej potrzebne są dane firmy Mateusza jako administratora.
 - Zagrać w pełną grę: https://za-murem.5-75-147-27.sslip.io/ (od rana na `cergo-rw-prod`; stary adres przekierowuje; zwykły tryb i zombie, „Wasz zarząd” na karcie startowej, mieszkańcy z adresu na karcie osoby). Gra z sąsiadami: ten sam adres z `?siec=1`, dwa konta (drugie w oknie prywatnym) na tym samym adresie; drugie ma zacząć bez domu.
 - Decyzja: czy `pelna-gra` ma iść na `main` i Pages (PR przygotuję po OK).
@@ -609,7 +642,7 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
 - Na nowym serwerze: gra 200 z ważnym certyfikatem, `/v03/` 200, `/api/zdrowie` ok, konto bez sesji 401, obce źródło 403.
 - Stary serwer `za-murem` (kontekst `phpbotbot`): baza gry sieciowej była pusta (żadnych kont), stary adres przekierowuje na nowy, kontener `api` zatrzymany.
 
-0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia, a na niej `tryb-zombie-drobne` z drobnymi poprawkami z przeglądu.
+0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia, czy szwendaczy pod siatką za dnia jest dość). Gałąź `tryb-zombie` (z `main` scalonym 18.10.2026) czeka w PR do `main` na scalenie przez Mateusza; w `pelna-gra` jest od 18.10.2026 po południu, razem ze szlifem trybu zombie.
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
 2. Bramka M1: Mateusz gra na żywo na swoim adresie (M1 z poprawką myszy jest na Pages od 17.10.2026) i mówi, czy chce dalej.
 3. Z playtestu dla symulacji: warta może nocą dokładać do kozy (teraz koza gaśnie około północy), krok „zanieść drewno do składu” przy 1× czeka kilka sekund na polecenie. Propozycje API zarządu od symulacji: jawny wynik napadu, siła napadu, warta spoza karty nocy.
@@ -622,6 +655,14 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
 
 ## Decyzje
 
+- Surowce (18.10.2026, sesja „Surowce”, do przejrzenia przez Mateusza, koszt pomyłki: liczby i drobne zachowania do zmiany w `src/sim/surowce.ts`):
+  - przeszukanie wraku jest domyślne tylko na samym aucie, tuż obok jest w menu, a kliknięcie znaczy „Idź tu” (stary test kliknięcia obok auta tego pilnował);
+  - wrak, noszenie łupu i warsztat przerywa tylko pilna potrzeba, nie noc i nie wróg na podwórku, jak każdą pracę z polecenia gracza; w trybie zombie nocna rozbiórka z hałasem to ryzyko gracza;
+  - przerwana rozbiórka pamięta postęp (`st.wraki[].w`), przeszukanie nie (trwa pół godziny);
+  - z warsztatem rozbiórka wraku daje półtora raza więcej, tak jak rozbiórka mebli z fali 1;
+  - przeróbka w warsztacie liczy cały materiał, także ten, który ktoś właśnie niesie do składu, a piłujący czeka, gdy drewno jest akurat w czyichś rękach;
+  - bot surowców to raport, nie bramka: kuchnia społeczna stoi w 4.–5. dobie i bez wraków, więc warunek „z wrakami do czwartej doby, bez nich nie” nie dał się spełnić bez ruszania liczb fali 1;
+  - złomu jest za dużo (42 po pięciu dniach bez wraków). Nie stroiłem: to decyzja, czy wrak ma dawać mniej złomu, czy złom ma mieć więcej zastosowań (zasieki, barykady z wraków z 0.3, akumulator na prąd w M3).
 - Narzędzia: Biome zamiast ESLint (jedno narzędzie, formatowanie pilnowane w CI). TypeScript 7 (natywny). Skrypty w `tools/` uruchamiane przez Node wprost z `.ts` (wymazywanie typów), bez tsx.
 - Treść przeniesiona skryptem, który zostawia literały bajt w bajt. Poprawność sprawdza test różnicowy z oryginałem w `node:vm`, a nie ręcznie spisane oczekiwania.
 - Wydarzenia rozmawiają ze stanem przez interfejs `EventHost`. W testach implementuje go adapter na stanie 0.3, w M3 zrobi to nowa symulacja. Kolejność losowań zostaje jak w 0.3, łącznie z tasowaniem przez `sort(() => rng() - 0.5)`. Wymienię je w M3, kiedy wzorcem przestanie być 0.3. Koszt pomyłki: inne losowania niż w 0.3, nic więcej.
@@ -672,6 +713,7 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
 
 ## Zaparkowane
 
+- Surowce: porzucone hulajnogi i rowery z wypożyczalni po całej mapie (nie blokują, więc nie zmieniają dróg ani skrótów), żeby okolica się wyczerpywała i trzeba było chodzić dalej; opis w projekcie surowców, etap 1c. Więcej wraków dalej od siedziby zmieniłoby skróty botów, bo wrak blokuje.
 - Kronika mieszkańców: „Padła chmura” w `src/mieszkancy/kronika.ts` przenieść z lat 2039–2043 na 2034 (Wielkie Wylogowanie z GDD) przy najbliższym podbiciu `WERSJA_GENERATORA`. Wstęp na karcie startowej (`LORE`) może wtedy też wspomnieć Wylogowanie, po scaleniu wersji angielskiej.
 - Zmiana nazwiska mieszkańca przez gracza (§7 projektu mieszkańców, 18.10.2026): plan kroku 5 objął tylko imiona.
 - Imię zmarłego mieszkańca w kronice zarządu (18.10.2026): wymaga rodzaju osoby w `GovInput.dead`, żeby `mourn` nie kluczował tylko po id.
