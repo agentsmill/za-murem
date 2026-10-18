@@ -108,6 +108,7 @@ import {
   pokojSasiada,
   przechodnie,
   rngOfPlace,
+  type SasiedniBudynek,
   type Sasiedzi,
   type Skutek,
   type Spotkanie,
@@ -1650,6 +1651,8 @@ export class Sim {
   private readonly nbTiles = new Map<number, number[]>();
   /** rośnie przy każdej zmianie wnętrz i drzwi sąsiadów (rysowanie przelicza przekrój tylko po zmianie) */
   wersjaSasiadow = 0;
+  /** podglądy wpisów budynków do karty budynku (poza stanem, budynekDoKarty) */
+  private podglady = new Map<number, SasiedniBudynek>();
   /** lokatorzy budynku z generatora mieszkańców (ustawia gra albo bot z tabelami); bez niego lokatorzy zapasowi */
   lokatorzy: ((bid: number) => LokatorzyBudynku | null) | null = null;
   /** mieszkanie zarządu z drzwiami (1) albo null */
@@ -6420,22 +6423,41 @@ export class Sim {
     const s = this.sasiedzi();
     const have = s.budynki.findIndex((b) => b.bid === bid);
     if (have >= 0) return have;
-    const w = this.w;
-    let lok: LokatorzyBudynku | null = null;
-    if (mieszkalny(w, bid)) {
-      try {
-        lok = this.lokatorzy?.(bid) ?? null;
-      } catch (e) {
-        console.warn('Sąsiedzi: lokatorzy z generatora się nie udali, są zapasowi', e);
-      }
-      lok ??= domyZapasowe(w, wnetrze(w, bid), new Set(this.st.people.map((p) => p.first)));
-    }
-    s.budynki.push(nowyBudynek(w, modeOf(this.st), bid, lok));
+    s.budynki.push(nowyBudynek(this.w, modeOf(this.st), bid, this.lokatorzyDla(bid)));
     const k = s.budynki.length - 1;
     const b = s.budynki[k];
-    if (drzwiBudynku(w, bid).zewn.some((d) => przechodnie(stanDrzwi(b, d.tile)?.s ?? 'zamkniete')))
+    if (drzwiBudynku(this.w, bid).zewn.some((d) => przechodnie(stanDrzwi(b, d.tile)?.s ?? 'zamkniete')))
       this.otworzBudynek(k);
     return k;
+  }
+
+  /** lokatorzy budynku z generatora mieszkańców (źródło ustawione przez grę) albo zapasowi; null bez mieszkań */
+  private lokatorzyDla(bid: number): LokatorzyBudynku | null {
+    const w = this.w;
+    if (!mieszkalny(w, bid)) return null;
+    let lok: LokatorzyBudynku | null = null;
+    try {
+      lok = this.lokatorzy?.(bid) ?? null;
+    } catch (e) {
+      console.warn('Sąsiedzi: lokatorzy z generatora się nie udali, są zapasowi', e);
+    }
+    return lok ?? domyZapasowe(w, wnetrze(w, bid), new Set(this.st.people.map((p) => p.first)));
+  }
+
+  /** Wpis cudzego budynku do karty budynku: z gry albo podgląd, czyli ten sam wpis, który powstanie przy pierwszym
+      dotknięciu drzwi (z ziarna świata i budynku). Podgląd nie trafia do stanu, więc oglądanie kart nie zmienia gry.
+      null dla siedziby i poza budynkami. */
+  budynekDoKarty(bid: number): { b: SasiedniBudynek; wGrze: boolean } | null {
+    const w = this.w;
+    if (bid < 0 || bid === w.hq || !w.buildings[bid]) return null;
+    const have = this.st.sasiedzi?.budynki.find((b) => b.bid === bid);
+    if (have) return { b: have, wGrze: true };
+    let p = this.podglady.get(bid);
+    if (!p) {
+      p = nowyBudynek(w, modeOf(this.st), bid, this.lokatorzyDla(bid));
+      this.podglady.set(bid, p);
+    }
+    return { b: p, wGrze: false };
   }
 
   /** nakładka wnętrz otwartych budynków od nowa (po otwarciu budynku i przy wczytaniu zapisu) */

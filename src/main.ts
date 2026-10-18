@@ -6,10 +6,11 @@
 
 import './style.css';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
+import { HALAS_ZOMBIE, PO_POLECENIU } from './content/napisy-sasiedzi.ts';
 import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zombie.ts';
 import type { Person } from './content/people.ts';
 import { hashString } from './core/rng.ts';
-import { BLOK, type Words, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
+import { BLOK, placeOf, type Words, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
 import {
@@ -40,12 +41,14 @@ import { type LokatorzyGry, zrodloLokatorow } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
+import { type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { allowedAnchors, availableOf, buildItems, buildMenu, buildSheet, okTilesOf, type Rot } from './ui/budowa.ts';
+import { kartaBudynku, widokBudynku } from './ui/budynek.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { Druzyna } from './ui/druzyna.ts';
 import {
@@ -83,6 +86,7 @@ import { Modal } from './ui/okno.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
 import { govFence } from './ui/siatka.ts';
+import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { esc } from './ui/tekst.ts';
 import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
@@ -352,11 +356,14 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
       (((((Number(hour) * 60 - START_MINUTES) / 60) * TICKS_PER_HOUR) % TICKS_PER_DAY) + TICKS_PER_DAY) % TICKS_PER_DAY,
     );
   sim = new Sim(world, st);
+  napisSeen = st.sasiedzi?.n ?? 0;
+  meetChosen = null;
   if (l && dane) mieszkancy = { l, dane, adres: data.addr };
   // lokatorzy sąsiednich budynków z generatora mieszkańców (fala 2); bez tabel zapasowi z ziarna budynku
   if (dane) sim.lokatorzy = zrodloLokatorow(world, geo, dane);
   placing = null;
   aptFocus = -1;
+  budFocus = -1;
   residentFocus = -1;
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   gov = saved ? saved.gov : newGov(seed, modeOf(st));
@@ -662,6 +669,63 @@ document.addEventListener('visibilitychange', () => {
  */
 /** od tej widoczności (jak w rysowaniu obcych: 0 ciemność, 1 pełne światło) warta „widzi” szabrowników */
 const SEEN = 0.25;
+/* ---------- sąsiedzi (M2 fala 2): karta spotkania i zdania przy cudzych drzwiach ---------- */
+/** numer ostatniego pokazanego napisu sąsiadów (po wczytaniu zapisu stary się nie powtarza) */
+let napisSeen = 0;
+/** spotkanie, w którym gracz już wybrał (numer i atak): karta czeka, aż symulacja rozstrzygnie wybór */
+let meetChosen: { nr: number; atak: boolean } | null = null;
+
+/** nowy napis sąsiadów jako podpowiedź, a trwające spotkanie jako okno z pauzą (gdy nie ma innego okna) */
+function watchSasiedzi() {
+  if (!sim) return;
+  const s = sim.st.sasiedzi;
+  if (!s) return;
+  if (s.napis && s.n > napisSeen) {
+    napisSeen = s.n;
+    const n = s.napis;
+    const q = n.kto !== undefined ? sim.st.pawns.find((p) => p.id === n.kto) : undefined;
+    const person = q && q.person >= 0 ? sim.st.people[q.person] : undefined;
+    const t = zdanieNapisu(n, person ? { first: person.first, f: person.f } : null);
+    if (t) say(t, 6000);
+  }
+  const sp = s.spotkanie;
+  if (!sp) {
+    meetChosen = null;
+    return;
+  }
+  if ((meetChosen && meetChosen.nr === sp.nr && meetChosen.atak === sp.atak) || modal.open) return;
+  showMeet();
+}
+
+/** okno spotkania: wybór idzie do symulacji poleceniem meet, gra rusza dalej, a wynik przychodzi napisem */
+function showMeet() {
+  const s = sim?.st.sasiedzi;
+  const sp = s?.spotkanie;
+  const k = sim?.kontekstKarty();
+  if (!sim || !s || !sp || !k) return;
+  const b = s.budynki[sp.b];
+  const g = b.domy[sp.dom];
+  const nr = sp.nr;
+  const atak = sp.atak;
+  pauseGame();
+  ctx.close();
+  modal.show(
+    spotkanieSheet({
+      sp,
+      g,
+      wybory: wybory(sp, g, k),
+      jedzenie: k.jedzenie,
+      budynek: sim.w.buildings[b.bid].name,
+    }),
+    (act, arg) => {
+      if (act !== 'meet' || !sim) return;
+      meetChosen = { nr, atak };
+      sim.push({ t: 'meet', ids: [], nr, choice: arg as WyborSpotkania });
+      decided();
+    },
+  );
+}
+
 function watchRaid() {
   if (!sim) return;
   const r = sim.st.raid;
@@ -768,6 +832,7 @@ function frame(now: number, dtMs: number) {
     govStep(true);
   }
   watchRaid();
+  watchSasiedzi();
   drawState();
   view.render(sim.st, mult ? acc : 1, selected);
   placeMarker();
@@ -876,10 +941,12 @@ function hud(now: number) {
   }
   const sel = snap.people.filter((p) => selected.has(p.pawn));
   if (!sel.length) {
-    // karta mieszkania po kliknięciu w mieszkanie siedziby
+    // karta mieszkania po kliknięciu w mieszkanie siedziby, karta budynku po kliknięciu w sąsiedni budynek
     const apt = aptFocus >= 0 ? aptView(st, sim.w, aptFocus, snap.apts) : null;
-    card.hidden = !apt;
+    const bud = !apt && budFocus >= 0 ? sim.budynekDoKarty(budFocus) : null;
+    card.hidden = !apt && !bud;
     if (apt) setCard(aptCard(apt, touchUI, words));
+    else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze), touchUI));
     return;
   }
   card.hidden = false;
@@ -942,6 +1009,7 @@ function renderGoals(snap: SimSnapshot) {
       woodReady: woodReady2,
       holes: snap.fence.holes.length,
       words,
+      dom: placeOf(sim.w).kind === 'dom',
     });
     cur = currentGoal(list);
     title = 'Drugi dzień';
@@ -1398,12 +1466,12 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   carry: [NAPISY.poZaniesc.pl, NAPISY.poZaniescWielu.pl],
   saw: [NAPISY.poWarsztat.pl, NAPISY.poWarsztatWielu.pl],
   // M2 fala 2: sąsiednie budynki
-  open: ['Otworzy drzwi.', 'Jedna osoba otworzy drzwi.'],
-  knock: ['Zapuka.', 'Jedna osoba zapuka.'],
-  force: ['Wyważy drzwi. Będzie głośno.', 'Jedna osoba wyważy drzwi. Będzie głośno.'],
-  board: ['Zabije drzwi deskami.', 'Jedna osoba zabije drzwi deskami.'],
-  unboard: ['Odbije deski z drzwi.', 'Jedna osoba odbije deski z drzwi.'],
-  loot: ['Przeszuka pomieszczenie i zaniesie łup na podwórko.', 'Jedna osoba przeszuka pomieszczenie i zaniesie łup.'],
+  open: [PO_POLECENIU.open[0].pl, PO_POLECENIU.open[1].pl],
+  knock: [PO_POLECENIU.knock[0].pl, PO_POLECENIU.knock[1].pl],
+  force: [PO_POLECENIU.force[0].pl, PO_POLECENIU.force[1].pl],
+  board: [PO_POLECENIU.board[0].pl, PO_POLECENIU.board[1].pl],
+  unboard: [PO_POLECENIU.unboard[0].pl, PO_POLECENIU.unboard[1].pl],
+  loot: [PO_POLECENIU.loot[0].pl, PO_POLECENIU.loot[1].pl],
   meet: ['', ''],
 });
 
@@ -1414,7 +1482,7 @@ function run(m: MenuItem) {
   sim.push(m.cmd);
   const f = feedback(words)[m.cmd.t][m.cmd.ids.length > 1 ? 1 : 0];
   // w trybie zombie wyważanie ściąga szwendaczy z okolicy
-  const loud = m.cmd.t === 'force' && modeOf(sim.st) === 'zombie' ? ' Hałas ściągnie szwendaczy.' : '';
+  const loud = m.cmd.t === 'force' && modeOf(sim.st) === 'zombie' ? HALAS_ZOMBIE.pl : '';
   if (f) say(`${f}${loud}`, loud ? 4000 : 1800);
 }
 
@@ -1503,6 +1571,7 @@ function orderAt(sx: number, sy: number, menu: boolean) {
 function selectedChanged() {
   // zaznaczenie kogoś zamyka kartę mieszkania i kartę mieszkańca
   aptFocus = -1;
+  budFocus = -1;
   residentFocus = -1;
   if (sim?.st.tut.step !== 0 || !selected.size) return;
   sim.push({ t: 'select', ids: [...selected] });
@@ -1523,6 +1592,17 @@ let placing: {
 } | null = null;
 /** mieszkanie na karcie (klik w mieszkanie siedziby, gdy nikt nie jest zaznaczony) albo −1 */
 let aptFocus = -1;
+/** cudzy budynek na karcie budynku (M2 fala 2: klik w sąsiedni budynek, gdy nikt nie jest zaznaczony) albo −1 */
+let budFocus = -1;
+
+/** karta pod kliknięciem bez zaznaczenia: mieszkanie siedziby albo sąsiedni budynek */
+function focusTile(sx: number, sy: number) {
+  if (!sim) return;
+  const tile = view.tileAt(sx, sy);
+  aptFocus = aptAt(sim.w, tile);
+  const bid = tile >= 0 ? sim.w.bid[tile] : -1;
+  budFocus = aptFocus < 0 && bid >= 0 && bid !== sim.w.hq ? bid : -1;
+}
 /** mieszkaniec z osobą na karcie do odczytu (id pionka po kliknięciu w niego; na dotyku tylko bez zaznaczonych, bo
     z zaznaczonymi stuknięcie to polecenie) albo −1 */
 let residentFocus = -1;
@@ -1875,18 +1955,20 @@ const endPointer = (e: PointerEvent) => {
     if (lok) {
       residentFocus = lok.id;
       aptFocus = -1;
-    } else aptFocus = aptAt(sim.w, view.tileAt(e.offsetX, e.offsetY));
+      budFocus = -1;
+    } else focusTile(e.offsetX, e.offsetY);
     return;
   }
   if (lok) {
     residentFocus = lok.id;
     aptFocus = -1;
+    budFocus = -1;
     return;
   }
   residentFocus = -1;
   if (d.button === 0) {
     selected.clear();
-    aptFocus = aptAt(sim.w, view.tileAt(e.offsetX, e.offsetY));
+    focusTile(e.offsetX, e.offsetY);
   }
 };
 stage.addEventListener('pointerup', endPointer);
@@ -1984,6 +2066,7 @@ window.addEventListener('keydown', (e) => {
     else {
       selected.clear();
       aptFocus = -1;
+      budFocus = -1;
       residentFocus = -1;
     }
   }

@@ -1,6 +1,7 @@
 /* Polecenia z kliknięcia i opisy prac do karty osoby. Czyste funkcje stanu i świata: interfejs pyta,
    co znaczy kliknięcie prawym przyciskiem na kafelku, i dostaje gotowe polecenie dla symulacji. */
 
+import { MENU, PRACA, PRACA_DRZWI } from '../content/napisy-sasiedzi.ts';
 import { wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
@@ -299,13 +300,13 @@ function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuI
   const dp = drzwiPod(st.sasiedzi, w, modeOf(st), tile);
   if (dp) {
     const flat = dp.rodzaj === 'mieszkanie';
-    const warn = dp.wylom ? ' (droga z ulicy na podwórko)' : '';
+    const warn = dp.wylom ? MENU.wylom.pl : '';
     const door = dp.tile;
-    const knock = mieszkalny(w, dp.bid) ? (flat ? 'Zapukać do mieszkania' : 'Zapukać') : '';
+    const knock = mieszkalny(w, dp.bid) ? (flat ? MENU.zapukajMieszkanie : MENU.zapukaj).pl : '';
     if (dp.s === 'zamkniete') {
       out.push({
         cmd: { t: 'open', ids: core, door },
-        label: `${flat ? 'Otworzyć drzwi mieszkania' : 'Otworzyć drzwi'}${warn}`,
+        label: `${(flat ? MENU.otworzMieszkanie : MENU.otworz).pl}${warn}`,
         quick: true,
       });
       if (knock) out.push({ cmd: { t: 'knock', ids: core, door }, label: knock, quick: false });
@@ -314,20 +315,20 @@ function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuI
     if (dp.s === 'zamkniete' || dp.s === 'na_klucz')
       out.push({
         cmd: { t: 'force', ids: core, door },
-        label: `${flat ? 'Wyważyć drzwi mieszkania' : 'Wyważyć drzwi'}${warn}`,
+        label: `${(flat ? MENU.wywazMieszkanie : MENU.wywaz).pl}${warn}`,
         quick: false,
       });
     if (przechodnie(dp.s)) {
-      out.push({ cmd: { t: 'open', ids: core, door }, label: 'Wejść', quick: true });
+      out.push({ cmd: { t: 'open', ids: core, door }, label: MENU.wejdz.pl, quick: true });
       const boards = st.things.reduce(
         (a, t) => a + (t.kind === 'deski' && !uSasiada(st, w, t.y * w.size + t.x) ? t.n : 0),
         0,
       );
       if (!flat && boards >= ZABIJANIE_DESKI)
-        out.push({ cmd: { t: 'board', ids: core, door }, label: 'Zabić drzwi deskami', quick: false });
+        out.push({ cmd: { t: 'board', ids: core, door }, label: MENU.zabij.pl, quick: false });
     }
     if (dp.s === 'zabite' && !flat)
-      out.push({ cmd: { t: 'unboard', ids: core, door }, label: `Odbić deski${warn}`, quick: true });
+      out.push({ cmd: { t: 'unboard', ids: core, door }, label: `${MENU.odbij.pl}${warn}`, quick: true });
   }
   const ps = pokojSasiada(st, w, tile);
   if (ps) {
@@ -337,13 +338,13 @@ function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuI
     if (can === 'tak')
       out.push({
         cmd: { t: 'loot', ids: core, bid, room: ps.room },
-        label: `Przeszukać ${ROOM_ACC[kind]}`,
+        label: MENU.przeszukaj(kind).pl,
         quick: false,
       });
     else if (can === 'szaber')
       out.push({
         cmd: { t: 'loot', ids: core, bid, room: ps.room },
-        label: 'Okraść mieszkanie (lokatorów nie ma)',
+        label: MENU.okradnij.pl,
         quick: false,
         confirm: true,
       });
@@ -501,25 +502,15 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         ['Snuje się.', 'Idzie do siatki.', 'Napiera na siatkę.', 'Goni.', 'Idzie na hałas.'][j.phase] ?? 'Snuje się.'
       );
     case 'door': {
-      const v = DOOR_TEXT[j.what] ?? DOOR_TEXT.open;
-      return walking ? v[0] : v[1];
+      const v = PRACA_DRZWI[j.what] ?? PRACA_DRZWI.open;
+      return (walking ? v[0] : v[1]).pl;
     }
     case 'loot': {
       const b = st.sasiedzi?.budynki[gidB(j.target)];
-      const r = b ? wnetrze(w, b.bid).rooms[gidRoom(j.target)] : undefined;
-      const where = r ? ROOM_ACC[r.kind] : 'pomieszczenie';
-      return walking ? `Idzie przeszukać ${where} u sąsiadów.` : `Przeszukuje ${where} u sąsiadów.`;
+      const kind = b ? (wnetrze(w, b.bid).rooms[gidRoom(j.target)]?.kind ?? null) : null;
+      return (walking ? PRACA.idziePrzeszukac(kind) : PRACA.przeszukuje(kind)).pl;
     }
     case 'meet':
-      return 'Rozmawia z sąsiadami.';
+      return PRACA.rozmawia.pl;
   }
 }
-
-/** opisy pracy przy cudzych drzwiach: w drodze i przy drzwiach */
-const DOOR_TEXT: Record<string, [string, string]> = {
-  open: ['Idzie otworzyć drzwi.', 'Otwiera drzwi.'],
-  knock: ['Idzie zapukać.', 'Puka do drzwi.'],
-  force: ['Idzie wyważyć drzwi.', 'Wyważa drzwi.'],
-  board: ['Idzie zabić drzwi deskami.', 'Zabija drzwi deskami.'],
-  unboard: ['Idzie odbić deski z drzwi.', 'Odbija deski z drzwi.'],
-};
