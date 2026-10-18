@@ -1,0 +1,225 @@
+{
+  "wersja": 1,
+  "zrodlo": "PixelLab, kotwica stylu zatwierdzona 18.10.2026: assety ze statusem zatwierdzony z assets/manifest.json, złożone przez tools/atlasy.ts (npm run atlasy)",
+  "teren": {
+    "id": "kotwica-chodnik-trawa",
+    "plik": "teren.png",
+    "kafel": 32
+  },
+  "blok": {
+    "id": "kotwica-blok",
+    "plik": "blok.png",
+    "gora": [
+      0,
+      20
+    ],
+    "srodek": [
+      20,
+      13
+    ],
+    "dol": [
+      33,
+      19
+    ],
+    "wejscie": [
+      0,
+      35
+    ],
+    "drzwi": 23,
+    "przesla": [
+      35,
+      59
+    ],
+    "attyka": [
+      94,
+      7
+    ]
+  },
+  "dach": {
+    "id": "kotwica-blok-dach",
+    "plik": "dach.png",
+    "tlo": "#313336",
+    "ciemny": "#1a1c22",
+    "jasny": "#46484a",
+    "szwy": [
+      96,
+      64
+    ],
+    "naklejka": 26,
+    "naklejek": 11,
+    "gestosc": 0.22
+  },
+  "trzepak": {
+    "id": "kotwica-trzepak",
+    "plik": "trzepak.png",
+    "stopy": 55,
+    "podstawa": 20
+  },
+  "ludzie": {
+    "plik": "ludzie.png",
+    "klatka": 48,
+    "kierunki": [
+      "south",
+      "south-east",
+      "east",
+      "north-east",
+      "north",
+      "north-west",
+      "west",
+      "south-west"
+    ],
+    "wersje": [
+      "oryginał",
+      "granat",
+      "zieleń",
+      "szarość",
+      "rdza"
+    ],
+    "postacie": [
+      {
+        "id": "kotwica-emeryt",
+        "co": "emeryt w kurtce, 8 kierunków, stoi",
+        "zarzad": true,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-emerytka",
+        "co": "emerytka w płaszczu, 8 kierunków, stoi",
+        "zarzad": true,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-zlota-raczka",
+        "co": "złota rączka w kombinezonie, 8 kierunków, stoi",
+        "zarzad": true,
+        "stopy": 46
+      },
+      {
+        "id": "kotwica-mloda",
+        "co": "młoda w parce, 8 kierunków, stoi",
+        "zarzad": true,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-chlopiec",
+        "co": "chłopiec w czapce z pomponem",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-dziewczynka",
+        "co": "dziewczynka w żółtym płaszczu",
+        "zarzad": false,
+        "stopy": 45
+      },
+      {
+        "id": "kotwica-dresiarz",
+        "co": "dresiarz w kapturze",
+        "zarzad": false,
+        "stopy": 46
+      },
+      {
+        "id": "kotwica-pielegniarka",
+        "co": "pielęgniarka z apteczką",
+        "zarzad": false,
+        "stopy": 46
+      },
+      {
+        "id": "kotwica-kucharka",
+        "co": "kucharka w fartuchu",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-informatyk",
+        "co": "informatyk z martwym laptopem",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-prompt-engineer",
+        "co": "prompt engineer z pękniętym tabletem",
+        "zarzad": false,
+        "stopy": 46
+      },
+      {
+        "id": "kotwica-doradca-esg",
+        "co": "doradca ESG z podkładką",
+        "zarzad": false,
+        "stopy": 46
+      },
+      {
+        "id": "kotwica-influencerka",
+        "co": "influencerka survivalowa",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-ochroniarz",
+        "co": "ochroniarz",
+        "zarzad": false,
+        "stopy": 46
+      },
+      {
+        "id": "kotwica-mechanik",
+        "co": "mechanik z kluczem",
+        "zarzad": false,
+        "stopy": 48
+      },
+      {
+        "id": "kotwica-listonoszka",
+        "co": "listonoszka z torbą",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-budowlaniec",
+        "co": "budowlaniec w kasku",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-dzialkowiczka",
+        "co": "działkowiczka w kapeluszu",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-staruszek",
+        "co": "staruszek z laską",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-kioskarka",
+        "co": "kioskarka w swetrze",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-kibic",
+        "co": "kibic z szalikiem",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-lekarz",
+        "co": "lekarz w kitlu",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-weteran",
+        "co": "weteran w parce wojskowej",
+        "zarzad": false,
+        "stopy": 47
+      },
+      {
+        "id": "kotwica-matka",
+        "co": "matka z dzieckiem na ręku",
+        "zarzad": false,
+        "stopy": 47
+      }
+    ]
+  }
+}
