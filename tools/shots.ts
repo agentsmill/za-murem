@@ -4390,6 +4390,7 @@ function kartaShots(): Shot[] {
         fikcja: q('.fikcja'),
         imie: q('[data-card="imie"]'),
         rodzina: q('.rodzina'),
+        sub: q('.sub'),
         story: q('.story'),
         buttons: [...c.querySelectorAll<HTMLElement>('button[data-card]')].map((b) => b.dataset.card),
         sideScroll: document.documentElement.scrollWidth > innerWidth,
@@ -4409,6 +4410,8 @@ function kartaShots(): Shot[] {
       if (!m.fikcja?.shown || m.fikcja.text !== FIKCJA || !inCard(m.fikcja))
         throw new Error('nie widać napisu o fikcji');
       if (!m.imie?.shown || !inCard(m.imie)) throw new Error('nie widać przycisku zmiany imienia');
+      // zawód i wiek osoby z generatora także na zwartej karcie telefonu (spec §9)
+      if (!m.sub?.shown || !inCard(m.sub)) throw new Error('nie widać zawodu i wieku osoby z generatora');
     } else if (m.fikcja || m.imie) throw new Error('osoba spoza generatora ma napis o fikcji');
     if (!m.story?.shown) throw new Error('nie widać historii');
     console.log(
@@ -4955,9 +4958,61 @@ function kartaShots(): Shot[] {
       h: 844,
       run: async (page, base) => {
         await wejdz(page, base);
+        const kto0 = await zarzadZGeneratora(page, 0);
         const r = await mieszkaniecZGeneratora(page, 0, true);
-        await waitIdle(page);
-        const b = await ekran(page, r.id);
+        // zaznaczony członek zarządu, stuknięcie w mieszkańca (karta), potem w pusty teren: karta się zamyka i nikt
+        // z zarządu nie dostaje polecenia (wraca karta zaznaczonego); kamera po kolei na każdym z nich
+        const naPionku = async (id: number) => {
+          await page.evaluate((id) => {
+            const zm = window.zm!;
+            const p = zm.sim!.st.pawns.find((q) => q.id === id)!;
+            zm.setCam(p.x, p.y - 0.5, 1.3);
+          }, id);
+          await waitIdle(page);
+          return ekran(page, id);
+        };
+        const a = await naPionku((await rdzen(page, 0)).id);
+        await page.touchscreen.tap(a.x, a.y);
+        await sprawdz(page, kto0);
+        const przed = await cmds(page);
+        const b0 = await naPionku(r.id);
+        await page.touchscreen.tap(b0.x, b0.y);
+        await sprawdz(page, r.name);
+        // pusty teren obok mieszkańca: mapa bez paneli nad nią i bez pionka w promieniu 2 m
+        const pusty = await page.evaluate(
+          ([bx, by]) => {
+            const zm = window.zm!;
+            const v = zm.view!;
+            for (const [dx, dy] of [
+              [120, -60],
+              [-120, -60],
+              [120, 0],
+              [-120, 0],
+              [150, -120],
+              [-150, -120],
+            ]) {
+              const x = bx + dx;
+              const y = by + dy;
+              const e = document.elementFromPoint(x, y);
+              if (!e?.closest('#stage') || e.closest('#card, #goals, #top')) continue;
+              const wx = ((x - v.width / 2) / v.cam.zoom + v.cam.x) / 32;
+              const wy = ((y - v.height / 2) / v.cam.zoom + v.cam.y) / 32;
+              if (zm.sim!.st.pawns.every((p) => p.away || Math.hypot(p.x - wx, p.y - wy) > 2)) return { x, y };
+            }
+            return null;
+          },
+          [b0.x, b0.y] as const,
+        );
+        if (!pusty) throw new Error('brak pustego miejsca na mapie do stuknięcia');
+        await page.touchscreen.tap(pusty.x, pusty.y);
+        await page.waitForTimeout(400);
+        const po = await page.evaluate(() => document.querySelector('#card:not([hidden]) h2')?.textContent ?? null);
+        console.log(`  stuknięcie obok karty mieszkańca: karta „${po}”, polecenia ${przed} → ${await cmds(page)}`);
+        if ((await cmds(page)) !== przed) throw new Error('stuknięcie obok karty mieszkańca wysłało polecenie');
+        if (po !== kto0) throw new Error(`po stuknięciu obok karty mieszkańca karta „${po}”`);
+        await page.keyboard.press('Escape');
+        // końcowy zrzut: sam mieszkaniec, kamera na nim
+        const b = await naPionku(r.id);
         await page.touchscreen.tap(b.x, b.y);
         const m = await sprawdz(page, r.name);
         if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);

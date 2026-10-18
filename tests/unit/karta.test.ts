@@ -64,7 +64,7 @@ describe('personCard: rodzina', () => {
     const html = personCard(generowana(), 0);
     expect(html).toContain('<p class="rodzina">');
     expect(html).toContain('mąż Marek (54), córka Agnieszka (23), syn Jaś (11)');
-    const sub = html.indexOf('class="sub"');
+    const sub = html.indexOf('class="sub');
     const rod = html.indexOf('class="rodzina"');
     expect(sub).toBeGreaterThan(-1);
     expect(rod).toBeGreaterThan(sub);
@@ -111,6 +111,14 @@ describe('personCard: napis o fikcji i zmiana imienia', () => {
     expect(html.split('class="fikcja"')).toHaveLength(2);
     expect(html.indexOf('class="fikcja"')).toBeGreaterThan(html.indexOf('class="doing"'));
     expect(html.indexOf('data-card="imie"')).toBeGreaterThan(html.indexOf('class="doing"'));
+  });
+});
+
+describe('personCard: zawód i wiek na telefonie', () => {
+  it('osoba z ref ma zawód i wiek z klasą `gen` (zwarta karta telefonu ich nie chowa), osoba bez ref bez klasy', () => {
+    expect(personCard(generowana(), 0)).toContain('<p class="sub gen">emerytka, 52 lata</p>');
+    expect(personCard(generowana(), 0, undefined, false, lokator)).toContain('<p class="sub gen">');
+    expect(personCard(osoba(), 0)).toContain('<p class="sub">emerytka, 52 lata</p>');
   });
 });
 

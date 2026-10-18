@@ -110,7 +110,8 @@ export function personCard(
     .join('');
   return [
     `<h2>${esc(p.name)}</h2>`,
-    `<p class="sub">${esc(p.prof)}, ${wiek(p.age)}</p>`,
+    // osoba z generatora: zawód i wiek zostają też na zwartej karcie telefonu (klasa `gen`, spec §9)
+    `<p class="sub${p.ref ? ' gen' : ''}">${esc(p.prof)}, ${wiek(p.age)}</p>`,
     rodzinaHtml(p.rodzina),
     storyHtml(p.story, storyOpen),
     `<div class="tags">${skills}${traits}${maimed}</div>`,

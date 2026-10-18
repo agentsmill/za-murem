@@ -957,10 +957,11 @@ export class GameView {
   }
 
   /** mieszkaniec siedziby pod punktem ekranu: tylko pionki `resident` z osobą z generatora (person ≥ 0), bo tylko
-      one mają kartę. Zarząd ma pierwszeństwo, więc wołający pyta najpierw `pick`. */
+      one mają kartę, i tylko widoczne (pod dachem bez przekroju nikogo nie widać, więc nie da się go kliknąć).
+      Zarząd ma pierwszeństwo, więc wołający pyta najpierw `pick`. */
   pickResident(st: SimState, sx: number, sy: number): Pawn | null {
     const [wx, wy] = this.toWorld(sx, sy);
-    return pawnAt(st.pawns, wx / TILE, wy / TILE, isLokator);
+    return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isLokator(p) && (this.cutOn || !this.underRoof(p.x, p.y)));
   }
 
   /** kafelek pod punktem ekranu */

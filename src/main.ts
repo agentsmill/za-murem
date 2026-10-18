@@ -1788,6 +1788,11 @@ const endPointer = (e: PointerEvent) => {
     aptFocus = -1;
     return;
   }
+  // dotyk: stuknięcie obok otwartej karty mieszkańca tylko ją zamyka, bez polecenia dla zaznaczonych z zarządu
+  if (d.type !== 'mouse' && residentFocus >= 0) {
+    residentFocus = -1;
+    return;
+  }
   residentFocus = -1;
   if (d.type !== 'mouse') {
     if (selected.size) orderAt(e.offsetX, e.offsetY, false);

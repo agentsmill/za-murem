@@ -1444,6 +1444,12 @@ a.btn {
   .card .tags {
     display: none;
   }
+  /* osoba z generatora mieszkańców: zawód i wiek zostają (spec §9), drobniej, zaraz pod imieniem */
+  .card .sub.gen {
+    display: block;
+    margin: 1px 0 0;
+    font-size: 13px;
+  }
   /* bez zawodu nad nią rodzina zaczyna się zaraz pod imieniem; przycisk imienia dość duży na palec */
   .card .rodzina {
     margin: 3px 0 6px;
