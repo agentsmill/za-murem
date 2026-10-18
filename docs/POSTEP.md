@@ -388,6 +388,22 @@ Siedem drobnych uwag recenzenta, które nie wymagały decyzji Mateusza, każda z
 
 Testy 580/580, Biome na `src`, `tests`, `tools` i `index.html`, build. Boty dają ten sam przebieg co `tryb-zombie`: `npm run bot` skrót e772cf37 (po 3 dobach 7990adca), `npm run bot:zombie` ziarno 1: z wartą d5987d7e (1 zgon), bez warty fcf6aeda (3 zgony, siatka o 6:00 do 0,56). Zrzuty trybu zombie bez błędów; trupy szwendaczy obejrzane w Chromium na podwórku Przymorza (osiem wyglądów, osiem tekstur, konsola czysta). Trzy uwagi zostają w Zaparkowanych, bo potrzebują decyzji Mateusza.
 
+### Noc integracji, 18.10.2026 (gałąź `pelna-gra`, koordynator; Mateusz: „chcę zagrać w pełną grę”)
+
+Mateusz przed snem: pętla co godzinę do 9:00, połączyć wszystkie sesje w pełną grę, w razie potrzeby GitHub, do tego Hetzner (`hcloud`), serwery tam można wyczyścić. Do tego wizja multiplayera (konta, start we własnym domu, zajmowanie kolejnych klatek, a kto przyjdzie na zajęty adres, zaczyna bez domu).
+
+Co połączone w `pelna-gra` (od `tryb-zombie`): `main` (sterowanie myszą i gładzikiem, PR #4), M2 z `m2-razem` (pięć gałęzi: budowa, puste mieszkania, przybysze, ogród, wydarzenia z miejsca, wartownik i śniadanie), mieszkańcy z adresu (39 commitów), identyfikatory OSM i daty budowy (`swiat-id-budynkow`) i drobne poprawki trybu zombie z przeglądu. `wartownik-i-jedzenie` (PR #5) nie jest osobno potrzebny: to samo weszło do M2 przez `m2-wartownik-sniadanie` (bot liczy poranki wartowników i głód zarządu).
+
+Jak rozstrzygnięte (41 miejsc, z tego 14 w `sim.ts`): zawsze oba zamiary. Polecenia, pola pionków i rzeczy, kroki prac, migracje zapisów i odczyt stanu z obu stron; pozy ciosu, celowania i szwendaczy obok póz prac M2 w jednym atlasie ludzi (37 klatek na kierunek, atlas poniżej 4096 px); wyjście za bramę z `exitOf` (M2) z maskami siatki i podwórka (zombie); warta po nocy odsypia (M2), a na posterunku bije wrogów i idzie za naporem (zombie). Wzorzec planu napadu w zwykłym trybie (test z trybu zombie) przesunięty na liczby z samej gałęzi `m2-razem`: dla ośmiu ziaren dokładnie te same wyniki co po połączeniu, więc tryb zombie nie zmienia zwykłego trybu. Test kluczy budynków mieszkańców przyjmuje `osm:<id>`, które dają dema z identyfikatorami OSM.
+
+Poprawki po połączeniu: pasek na telefonie (tempo, „Do broni!”, „Budowa” i „Menu” nie mieściły się w 390 px i spadały do trzeciego wiersza, przez co etykieta suchego drzewa w Zielonkach nie miała miejsca; zrzut `m1-etykieta` padał, choć na każdej gałęzi osobno przechodził), odmiana „do 1 szwendacza” w raporcie nocy, ramka na ekranie startowym i pomoc mówią, co już jest w 0.4.
+
+Serwer: projekt `phpbotbot` w Hetznerze miał jeden serwer `phpbotbot-staging` z aplikacją phpbotbot i Postgresem. Kopia przed wyczyszczeniem w `~/kopie-zapasowe/phpbotbot-staging-2026-10-18/` (zrzut bazy `pg_dump`, katalog `/opt/phpbotbot`, lista wolumenów). Serwer przebudowany na czysty Ubuntu 24.04 z Dockerem (cloud-init), nazwa `za-murem`. Gra: https://167-233-18-125.sslip.io/ (Caddy z certyfikatem, `/v03/` działa), wdrożenie jedną komendą `ZM_IP=167.233.18.125 deploy/hetzner/wdroz.sh`. Projektu `cergo-rw` nie ruszałem. `main` i Pages bez zmian; `pelna-gra` wypchnięta na GitHub, CI zielone.
+
+Liczby: testy 1443/1443, Biome, build, `npm run bot` i `npm run bot:zombie` bez błędów, wszystkie zrzuty (147) bez błędów; obejrzane m.in. `zombie-noc`, `zombie-noc-telefon`, `zombie-walka`, `m2-stawianie-telefon`, `start-telefon`, `start-zombie-telefon`, `m1-etykieta-*-telefon`. W przeglądarce na serwerze tryb zombie przeszedł pierwszą noc (stado, warta, wyprawa z miejsca, raport rano) bez błędów w konsoli.
+
+W toku tej nocy: multiplayer, etap 1 (projekt i serwer kont, gałąź `mp-serwer`), własna drużyna zarządu według `docs/superpowers/specs/2026-10-18-druzyna-design.md` (gałąź `druzyna`).
+
 ## Następne
 
 0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia, a na niej `tryb-zombie-drobne` z drobnymi poprawkami z przeglądu.
