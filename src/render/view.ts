@@ -7,7 +7,8 @@
    stoją w jednej warstwie z pionkami, sortowane po y. Otwarte sąsiednie budynki (M2 fala 2) dokładają
    swoje wnętrza do tego samego przekroju łatką sceny (przekrojSasiadow.ts), razem z wyglądem drzwi, a plan
    wspólnego płotu rysuje się jako duch przyszłego obwodu z postępem (plotDuch.ts, plotLayer.ts). Z grafiką
-   z PixelLab (setGrafika) trzepak jest z PixelLab, teren i bloki rysują kawałki ze sceny (scene.art). */
+   z PixelLab (setGrafika) trzepak jest z PixelLab, teren i bloki rysują kawałki ze sceny (scene.art), a pionki
+   rysuje postać z animacji PixelLab (ludzieLayer.ts), gdy obsada ma daną pozę: inaczej kod. */
 
 import {
   Application,
@@ -26,7 +27,7 @@ import { TRADER_HP, ZBIR_HP } from '../sim/handlarz.ts';
 import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
 import { WANDERER_HP } from '../sim/wedrowcy.ts';
 import { ZOMBIE_HP } from '../sim/zombie.ts';
-import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, weaponRect } from './art/bron.ts';
+import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, thrusts, weaponRect } from './art/bron.ts';
 import {
   FH,
   frameRect,
@@ -82,6 +83,7 @@ import {
 } from './game.ts';
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
+import { LudzieLayer } from './ludzieLayer.ts';
 import { type DuchPlotu, duchPlotu } from './plotDuch.ts';
 import { PlotLayer } from './plotLayer.ts';
 import { crowdJitter, FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
@@ -178,6 +180,8 @@ export class GameView {
   /** rzeczy narysowane w ostatniej klatce (gra i dodatki): z nich źródła dymu */
   private drawn: readonly ThingLike[] = [];
   private pawnSprites = new Map<number, Sprite>();
+  /** ostatnia poza każdego pionka: zrzuty czytają ją zamiast klatki atlasu (z PixelLab klatka nie mówi, jaka to poza) */
+  readonly poses = new Map<number, PoseView>();
   private prev = new Map<number, [number, number]>();
   private frameNo = 0;
   private nearIsLinear = false;
@@ -248,8 +252,10 @@ export class GameView {
   /** rzeczy, które się nie zmieniają (trzepak, siatka) i ich klucze: bez liczenia opisu co klatkę */
   private fixed = new WeakSet<ThingLike>();
   private fixedKeys = new WeakMap<ThingLike, string | null>();
-  /** grafika z PixelLab (trzepak; teren i bloki idą ze sceną) albo null: wszystko z kodu */
+  /** grafika z PixelLab (trzepak i ludzie; teren i bloki idą ze sceną) albo null: wszystko z kodu */
   grafika: Grafika | null = null;
+  /** postacie z PixelLab (animacje z atlasu ludzie.png) albo null: pionki rysuje kod */
+  private ludzie: LudzieLayer | null = null;
 
   /** workers: false wymusza rysowanie kawałków w głównym wątku (adres ?worker=0) */
   async init(host: HTMLElement, opts: { workers?: boolean } = {}): Promise<void> {
@@ -293,6 +299,8 @@ export class GameView {
   setGrafika(g: Grafika | null): void {
     if (g === this.grafika) return;
     this.grafika = g;
+    this.ludzie?.destroy();
+    this.ludzie = g?.ludzie ? new LudzieLayer(g.ludzie) : null;
     for (const e of this.things.values()) e.sprite.destroy();
     this.things.clear();
     for (const a of this.thingArt.values()) a.tex.destroy(true);
@@ -798,6 +806,8 @@ export class GameView {
     this.marks.clear();
     const gameT = (st.tick + alpha) / TICKS_PER_SECOND;
     const ctx = this.poseCtx(st);
+    // wersje kolorystyczne zarządu z jego składu (także ludzie na wyprawie), zanim ktokolwiek się narysuje
+    this.ludzie?.dane.przypiszZarzad(st.pawns, st.people);
     for (const p of st.pawns) {
       // na wyprawie poza mapą: nie rysujemy
       if (p.away) continue;
@@ -812,15 +822,22 @@ export class GameView {
       const x = pv ? pv[0] + (p.x - pv[0]) * alpha : p.x;
       const y = pv ? pv[1] + (p.y - pv[1]) * alpha : p.y;
       const pose = poseOf(p, gameT, st.things, p.kind === 'core' && this.feed.feeding(p, st.tick), ctx);
-      sp.texture = pose.zpose
-        ? this.zombieTexture(p.look, pose)
-        : this.frameTexture(this.poseTex, this.atlas!, p.look % LOOKS, pose);
+      this.poses.set(p.id, pose);
+      // postać z PixelLab, gdy obsada ma tę pracę; szwendacze, leżący i brakujące prace rysuje kod
+      const lp = this.ludzieKlatka(p, st, pose, gameT);
+      sp.texture = lp
+        ? lp.tex
+        : pose.zpose
+          ? this.zombieTexture(p.look, pose)
+          : this.frameTexture(this.poseTex, this.atlas!, p.look % LOOKS, pose);
+      sp.scale.x = lp?.flip ? -1 : 1;
       if (pose.lie) {
         const [hx, hy] = lieHead(pose.lie.o);
         sp.anchor.set(hx / LIE, hy / LIE);
         sp.position.set(Math.round(pose.lie.x), Math.round(pose.lie.y));
       } else {
-        sp.anchor.set(0.5, 45 / FH);
+        if (lp) sp.anchor.set(lp.ax / lp.w, lp.ay / lp.h);
+        else sp.anchor.set(0.5, 45 / FH);
         // napierający na siatkę stoją na środkach kafelków: tłum rozsuwamy w widoku, żeby nie był jednym sprite'em
         const [jx, jy] = p.kind === 'zombie' && p.job?.phase === 2 ? this.crowdOffset(p) : [0, 0];
         sp.position.set(Math.round((x + jx) * TILE), Math.round((y + jy) * TILE));
@@ -842,7 +859,9 @@ export class GameView {
       // wrogi człowiek (napadnięty handlarz, jego ludzie) też ma broń w ręce
       const wid = (p.kind === 'core' || p.wrogi) && !pose.lie ? (p.weapon ?? null) : null;
       let ws = this.weaponSprites.get(p.id);
-      if (wid && pose.arm && sp.visible) {
+      // postać z PixelLab celuje z pistoletem narysowanym w klatkach, więc nakładka broni tylko przy innych pozach
+      // (klatka zastępcza, czyli stanie mieszkańca bez celowania, broni nie ma: nakładka rysuje się jak przy kodzie)
+      if (wid && pose.arm && sp.visible && !(lp && !lp.zastepcza && pose.arm === 'aim' && !thrusts(wid))) {
         if (!ws) {
           ws = new Sprite(Texture.EMPTY);
           this.actors.addChild(ws);
@@ -866,7 +885,8 @@ export class GameView {
           this.xraySprites.set(p.id, xr);
         }
         xr.alpha = behind ? 0.85 : 0.5;
-        xr.texture = this.frameTexture(this.outlineTex, this.outline!, p.look % LOOKS, pose);
+        xr.texture = lp ? lp.tex : this.frameTexture(this.outlineTex, this.outline!, p.look % LOOKS, pose);
+        xr.scale.x = sp.scale.x;
         xr.anchor.copyFrom(sp.anchor);
         xr.position.copyFrom(sp.position);
         xr.visible = true;
@@ -876,6 +896,8 @@ export class GameView {
       if (!seen.has(id)) {
         sp.destroy();
         this.pawnSprites.delete(id);
+        this.ludzie?.dane.zapomnij(id);
+        this.poses.delete(id);
         this.feed.forget(id);
         this.xraySprites.get(id)?.destroy();
         this.xraySprites.delete(id);
@@ -896,6 +918,24 @@ export class GameView {
     const [x0, y0] = this.toWorld(0, 0);
     const [x1, y1] = this.toWorld(this.width, this.height);
     this.light.update(x0, y0, x1, y1, z, this.darkness, lights, time, this.insideFn);
+  }
+
+  /** klatka postaci z PixelLab dla pionka w pozie albo null (kod): nie szwendacz, nie leży, obsada ma tę pracę */
+  private ludzieKlatka(p: Pawn, st: SimState, pose: PoseView, gameT: number) {
+    if (!this.ludzie || pose.zpose || pose.lie) return null;
+    const postac = this.ludzie.dane.postacPionka(p, st.people);
+    if (!postac) return null;
+    // dzida bije pchnięciem w pozie celowania, ale klatki celowania z PixelLab mają pistolet w rękach: pchnięcie to cios
+    const pv: PoseView =
+      pose.pose === 'aim' && thrusts(p.weapon) ? { ...pose, pose: 'swing', frame: pose.frame === 0 ? 0 : 1 } : pose;
+    // czas pionka jak w poseOf: pionki nie pracują w takt
+    return this.ludzie.klatka(
+      postac,
+      pv,
+      p.pi < p.path.length,
+      gameT + (p.id % 7) * 0.13,
+      this.ludzie.dane.wersjaPionka(p, postac),
+    );
   }
 
   /** klatka atlasu szwendaczy: chód albo ugryzienie, kierunek, klatka */

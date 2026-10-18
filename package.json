@@ -22,6 +22,7 @@
     "bot:surowce": "node tools/bot-surowce.ts",
     "demos": "node tools/make-demos.ts",
     "atlasy": "node tools/atlasy.ts",
+    "animacje": "node tools/animacje.ts",
     "dane:gminy": "node tools/dane-gminy.ts",
     "dane:kraj": "node tools/dane-kraj.ts",
     "dane:imiona": "node tools/dane-imiona.ts",

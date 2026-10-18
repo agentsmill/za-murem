@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { type Atlas, atlasy, DIRS, type OpisGrafiki, WYJSCIE } from '../../tools/atlasy.ts';
+import { type Atlas, atlasy, type OpisGrafiki, WYJSCIE } from '../../tools/atlasy.ts';
 import { decodePng } from '../../tools/png.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
@@ -125,42 +125,5 @@ describe('atlasy grafiki z PixelLab (tools/atlasy.ts)', () => {
     let dol = 0;
     for (let y = 0; y < a.h; y++) for (let x = 0; x < a.w; x++) if (px(a, x, y)[3]) dol = y + 1;
     expect(t.stopy).toBe(dol);
-  });
-
-  it('ludzie: 24 postacie po 5 wersji (oryginał i rampy palety) w 8 kierunkach, stopy na tej samej linii', () => {
-    const l = opis.ludzie;
-    const a = obraz(l.plik);
-    const pal = json<{ rampy: Record<string, string[]> }>('assets/palette.json');
-    expect(l.kierunki).toEqual(DIRS);
-    expect(l.wersje).toEqual(['oryginał', ...Object.keys(pal.rampy)]);
-    expect(l.postacie).toHaveLength(24);
-    expect([a.w, a.h]).toEqual([l.klatka * l.kierunki.length * l.wersje.length, l.klatka * l.postacie.length]);
-    l.postacie.forEach((p, c) => {
-      // pod stopami w każdej wersji i kierunku już nic, a w wierszu stóp coś stoi przynajmniej w jednym kierunku
-      for (let v = 0; v < l.wersje.length; v++)
-        for (let d = 0; d < l.kierunki.length; d++) {
-          const x0 = (v * l.kierunki.length + d) * l.klatka;
-          for (let y = p.stopy; y < l.klatka; y++)
-            for (let x = 0; x < l.klatka; x++) expect(px(a, x0 + x, c * l.klatka + y)[3], `${p.id} ${v} ${d}`).toBe(0);
-        }
-      let stoi = false;
-      for (let x = 0; x < l.klatka * l.kierunki.length; x++) if (px(a, x, c * l.klatka + p.stopy - 1)[3]) stoi = true;
-      expect(stoi, p.id).toBe(true);
-    });
-  });
-
-  it('przemalowanie zmienia tylko ubranie: twarz i obrys zostają, wersje różnią się kolorem kurtki', () => {
-    const l = opis.ludzie;
-    const a = obraz(l.plik);
-    const k = l.kierunki.length * l.klatka;
-    let rozne = 0;
-    for (let y = 0; y < l.klatka; y++)
-      for (let x = 0; x < l.klatka; x++) {
-        const o = px(a, x, y);
-        const v = px(a, k + x, y);
-        expect(v[3]).toBe(o[3]);
-        if (o.join() !== v.join()) rozne++;
-      }
-    expect(rozne).toBeGreaterThan(40);
   });
 });

@@ -1,12 +1,11 @@
 /* Kotwica stylu z PixelLab w grze, do npm run shots (scenariusze kotwica-*): ten sam kadr z grafiką rysowaną kodem
-   (?grafika=kod) i z grafiką z PixelLab (atlasy z public/assets składa tools/atlasy.ts), obok siebie. Teren, bloki
-   i trzepak rysuje już gra. Postacie z PixelLab czekają na animacje, więc w kadrze z tłumem obsada z atlasu
-   ludzie.png stoi w miejscu pionków tylko na czas zrzutu. Arkusz pokazuje zatwierdzone assety z kosztami. */
+   (?grafika=kod) i z grafiką z PixelLab (atlasy z public/assets składa tools/atlasy.ts), obok siebie. Teren, bloki,
+   trzepak i postacie rysuje sama gra. Arkusz pokazuje zatwierdzone assety z kosztami. */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import type { OpisGrafiki } from '../src/render/art/pixellab.ts';
+import { mapaPrzemalowania, type OpisGrafiki, przemalujKlatki } from '../src/render/art/pixellab.ts';
 import { waitIdle } from './browser.ts';
 import { decodePng, encodePng } from './png.ts';
 
@@ -22,6 +21,9 @@ interface Asset {
   koszt: number;
   wybrany?: string;
   pochodne?: { koszt: number }[];
+  /** animacje z PixelLab po pobraniu paczki postaci (tools/animacje.ts) i odrzucone próby, każda z kosztem */
+  animacje?: { koszt: number }[];
+  odrzucone?: { koszt: number }[];
 }
 
 /** paleta gry z kotwicy (assets/palette.json): kolory i rampy do przemalowań, od najciemniejszego */
@@ -42,18 +44,16 @@ const paleta = () => json<Paleta>('assets/palette.json');
 const opisGrafiki = () => json<OpisGrafiki>('public/assets/grafika.json');
 const asset = (m: Manifest, id: string) => m.assety.find((a) => a.id === id)!;
 
-/** klatka postaci c w wersji v (0 oryginał, dalej przemalowania) i kierunku d z atlasu ludzie.png, jako data URL */
-function klatka(c: number, v: number, d: number): string {
-  const l = opisGrafiki().ludzie;
-  const a = decodePng(file(`public/assets/${l.plik}`));
-  const K = l.klatka;
-  const out = new Uint8Array(K * K * 4);
-  const x0 = (v * l.kierunki.length + d) * K;
-  for (let y = 0; y < K; y++) {
-    const i = ((c * K + y) * a.width + x0) * 4;
-    out.set(a.rgba.subarray(i, i + K * 4), y * K * 4);
+/** postać id w kierunku PixelLab (south, east, north, west) ze statycznej paczki po palecie, jako data URL */
+function statyczna(id: string, kierunek: string, rampa?: string): string {
+  const d = decodePng(file(`assets/raw/${id}/paleta/${kierunek}.png`));
+  if (rampa) {
+    const post = opisGrafiki().ludzie.postacie.find((q) => q.id === id)!;
+    const px = new Uint32Array(d.rgba.buffer, d.rgba.byteOffset, d.rgba.length / 4);
+    const mapa = mapaPrzemalowania(post.przemalowanie.kolory, opisGrafiki().ludzie.rampy[rampa]);
+    przemalujKlatki(px, d.width, [[0, 0, d.width, d.height]], mapa);
   }
-  return `data:image/png;base64,${Buffer.from(encodePng(K, K, out)).toString('base64')}`;
+  return `data:image/png;base64,${Buffer.from(encodePng(d.width, d.height, d.rgba)).toString('base64')}`;
 }
 
 /** wycinek przy siedzibie w Lanciego: fasada z dachem (przekroj=0), podwórko z trzepakiem, zarząd, chodnik */
@@ -97,74 +97,6 @@ async function ustaw(page: Page) {
 }
 
 /**
- * Obsada z PixelLab w miejscu pionków na czas zrzutu (postacie czekają na animacje): zarząd dostaje pierwsze
- * postacie z obsady, mieszkańcy następne, a gdy postaci zabraknie, ich przemalowania; kierunek jak pionek z kodu
- * (0 południe, 1 północ, 2 zachód, 3 wschód), pionek z kodu wychodzi poza kadr.
- */
-async function nalozLudzi(page: Page) {
-  await page.evaluate(async (l) => {
-    const zm = window.zm!;
-    const sim = zm.sim!;
-    type Tex = { source: { scaleMode: string } };
-    type Spr = {
-      position: { set: (x: number, y: number) => void };
-      anchor: { set: (x: number, y: number) => void };
-      zIndex: number;
-    };
-    type Dziecko = { texture?: Tex; constructor: unknown };
-    const v = zm.view as unknown as {
-      actors: { addChild: (s: Spr) => void; children: Dziecko[] };
-      terrain: { children: Dziecko[] };
-    };
-    const im = await new Promise<HTMLImageElement>((ok, fail) => {
-      const i = new Image();
-      i.onload = () => ok(i);
-      i.onerror = fail;
-      i.src = `assets/${l.plik}`;
-    });
-    const K = l.klatka;
-    const D = l.kierunki.length;
-    const frame = (c: number, w: number, d: number) => {
-      const cv = document.createElement('canvas');
-      cv.width = K;
-      cv.height = K;
-      const g = cv.getContext('2d')!;
-      g.imageSmoothingEnabled = false;
-      g.drawImage(im, (w * D + d) * K, c * K, K, K, 0, 0, K, K);
-      return cv;
-    };
-    // klasy Pixi z sprite'a, który już jest w scenie (strona nie wystawia modułu pixi.js); tylko taki, którego
-    // tekstura ma Texture.from, bo warstwy w actors (np. plotLayer) trzymają pod `texture` co innego
-    const any = [...v.actors.children, ...v.terrain.children].find(
-      (c) => typeof (c.texture as { constructor?: { from?: unknown } } | undefined)?.constructor?.from === 'function',
-    )!;
-    const SpriteC = any.constructor as new (t: Tex) => Spr;
-    const TextureC = any.texture!.constructor as unknown as { from: (s: CanvasImageSource) => Tex };
-    const zarzad = l.postacie.filter((p) => p.zarzad).length;
-    const wersje: [number, number][] = [];
-    for (let w = 0; w < l.wersje.length; w++) for (let c = 0; c < l.postacie.length; c++) wersje.push([c, w]);
-    const face = [0, 4, 6, 2];
-    const kolej = [
-      ...sim.st.pawns.filter((p) => p.kind === 'core'),
-      ...sim.st.pawns.filter((p) => p.kind === 'resident'),
-    ];
-    let zw = 0;
-    let mw = zarzad;
-    for (const p of kolej) {
-      const [c, w] = wersje[p.kind === 'core' ? zw++ % zarzad : mw++ % wersje.length];
-      const t = TextureC.from(frame(c, w, face[p.dir]));
-      t.source.scaleMode = 'nearest';
-      const s = new SpriteC(t);
-      s.anchor.set(0.5, l.postacie[c].stopy / K);
-      s.position.set(Math.round(p.x * 32), Math.round(p.y * 32));
-      s.zIndex = p.y;
-      v.actors.addChild(s);
-      Object.assign(p, { x: 1.5, y: 1.5 });
-    }
-  }, opisGrafiki().ludzie);
-}
-
-/**
  * Ten sam kadr gry z grafiką rysowaną kodem (?grafika=kod) i z grafiką z PixelLab, obok siebie; ustawKadr
  * przygotowuje kadr przed oboma zrzutami, po (opcjonalnie) zmienia coś tylko w kadrze z PixelLab.
  */
@@ -180,7 +112,7 @@ async function przedPo(
     await page.goto(`${base}?${q}`);
     await waitIdle(page);
     const g = await page.evaluate(() => window.zm!.grafika());
-    const pelna = !!g && g.teren && g.blok && g.dach && g.trzepak;
+    const pelna = !!g && g.teren && g.blok && g.dach && g.trzepak && g.ludzie;
     if (pixellab ? !pelna : g)
       throw new Error(`grafika ${JSON.stringify(g)} w kadrze ${pixellab ? 'z PixelLab' : 'z kodu'}`);
     await page.addStyleTag({ content: UI });
@@ -213,7 +145,7 @@ const KOD = 'Przed: grafika rysowana kodem (?grafika=kod)';
 export const kotwicaStylu = (page: Page, base: string) =>
   przedPo(page, base, 'demo=lanciego&speed=0&cam=hq,1&przekroj=0', ustaw, [
     KOD,
-    'Po: trawnik z chodnikiem, trzepak i blok z PixelLab (postacie jeszcze z kodu)',
+    'Po: trawnik z chodnikiem, trzepak, blok i zarząd z PixelLab',
   ]);
 
 /** tłum przy siedzibie: zarząd i dosztukowani mieszkańcy (kopie pionka mieszkańca, każdy w innym wyglądzie z kodu)
@@ -257,6 +189,8 @@ async function ustawTlum(page: Page, ile: number) {
           away: false,
         });
       });
+      // kopie mieszkańca bez osoby: o postaci z PixelLab decyduje wtedy wygląd z gry, a nie jedna wspólna osoba
+      for (const p of st.pawns) if (p.kind === 'resident') p.person = -1;
       // meble siedziby (przy przekroj=0 leżałyby na dachu) schowane jak na podwórku
       const v = zm.view as unknown as { things: Map<string, { thing: { x: number; y: number }; inside: boolean }> };
       for (const e of v.things.values())
@@ -267,22 +201,15 @@ async function ustawTlum(page: Page, ile: number) {
   );
 }
 
-/** tyle osób w kadrze z tłumem: więcej niż postaci w obsadzie, żeby było widać przemalowania */
+/** tyle osób w kadrze z tłumem: więcej niż wyglądów w kodzie (16), mniej niż postaci mieszkańców i zarządu razem */
 const TLUM = 36;
 
-/** tłum na podwórku: pionki z kodu (16 wyglądów) i ta sama liczba osób z obsady PixelLab i jej przemalowań */
+/** tłum na podwórku: pionki z kodu (16 wyglądów) i ta sama liczba osób z obsady PixelLab */
 export const kotwicaTlum = (page: Page, base: string) =>
-  przedPo(
-    page,
-    base,
-    'demo=lanciego&speed=0&cam=hq,1&przekroj=0',
-    (p) => ustawTlum(p, TLUM),
-    [
-      KOD,
-      `Po: ${TLUM} osób z ${opisGrafiki().ludzie.postacie.length} postaci i ich przemalowań (postacie z atlasu na czas zrzutu)`,
-    ],
-    nalozLudzi,
-  );
+  przedPo(page, base, 'demo=lanciego&speed=0&cam=hq,1&przekroj=0', (p) => ustawTlum(p, TLUM), [
+    KOD,
+    `Po: ${TLUM} osób z ${opisGrafiki().ludzie.postacie.length} postaci PixelLab`,
+  ]);
 
 /** najwyższy blok w Lanciego od strony wejścia: moduły piętra składają się do każdej wysokości */
 export const kotwicaWysokiBlok = (page: Page, base: string) =>
@@ -322,7 +249,8 @@ function dachowki(): string[] {
 export async function kotwicaArkusz(page: Page) {
   const m = manifest();
   const l = opisGrafiki().ludzie;
-  const koszt = (a: Asset) => a.koszt + (a.pochodne ?? []).reduce((s, p) => s + p.koszt, 0);
+  const suma = (l?: { koszt: number }[]) => (l ?? []).reduce((s, p) => s + p.koszt, 0);
+  const koszt = (a: Asset) => a.koszt + suma(a.pochodne) + suma(a.animacje) + suma(a.odrzucone);
   const gen = (n: number) => `${n.toLocaleString('pl-PL', { maximumFractionDigits: 1 })} gen.`;
   const opis = (id: string, co: string) => {
     const a = asset(m, id);
@@ -330,18 +258,18 @@ export async function kotwicaArkusz(page: Page) {
   };
   const img = (src: string, zoom: number) => `<img src="${src}" style="zoom:${zoom}">`;
   const pal = paleta();
-  const zarzad = m.zarzad.map((id, c) => {
+  const rampy = Object.keys(l.rampy);
+  const zarzad = m.zarzad.map((id) => {
     const a = asset(m, id);
-    const kier = l.kierunki.map((_, d) => img(klatka(c, 0, d), 2));
-    const warianty = l.wersje
-      .slice(1)
-      .map((n, w) => `<figure>${img(klatka(c, w + 1, 0), 2)}<figcaption>${n}</figcaption></figure>`);
+    const kier = ['south', 'east', 'north', 'west'].map((d) => img(statyczna(id, d), 2));
+    const warianty = rampy.map(
+      (n) => `<figure>${img(statyczna(id, 'south', n), 2)}<figcaption>${n}</figcaption></figure>`,
+    );
     return `<div class="row"><div>${opis(id, a.co)}${kier.join('')}</div>
       <div><h2>Przemalowania w kodzie<small>0 gen.</small></h2>${warianty.join('')}</div></div>`;
   });
   const mieszkancy = m.mieszkancy.map(
-    (id, i) =>
-      `<figure>${img(klatka(m.zarzad.length + i, 0, 0), 2)}<figcaption>${asset(m, id).co}</figcaption></figure>`,
+    (id) => `<figure>${img(statyczna(id, 'south'), 2)}<figcaption>${asset(m, id).co}</figcaption></figure>`,
   );
   const wybrane = [
     'kotwica-chodnik-trawa',
@@ -370,7 +298,7 @@ export async function kotwicaArkusz(page: Page) {
     .pal div { height: 40px; font: 11px/1 ui-monospace, monospace; display: flex; align-items: flex-end; padding: 3px; }
   </style>
   <h1>Kotwica stylu z PixelLab, zatwierdzona 18.10.2026</h1>
-  <p>Wybrane assety: ${gen(naKotwice)} Razem z odrzuconymi próbami ${gen(razem)} z 2000 w abonamencie, 0 USD. Każda następna postać to 2 gen., warianty kolorów ubrań robi kod za darmo. Szczegóły w assets/manifest.json, postacie z atlasu public/assets/ludzie.png (npm run atlasy).</p>
+  <p>Wybrane assety z animacjami postaci: ${gen(naKotwice)} Razem z odrzuconymi próbami i poprawkami ${gen(razem)} z 2000 w abonamencie, 0 USD. Każda następna postać to 2 gen., jej chód i stanie 8 gen., warianty kolorów ubrań robi gra za darmo. Szczegóły w assets/manifest.json, animacje w atlasie public/assets/ludzie.png (npm run atlasy).</p>
   ${zarzad.join('')}
   ${mieszkancy.length ? `<h2>Mieszkańcy: ${mieszkancy.length} postaci<small>create_character v3 · po 2 gen.</small></h2><div class="ludzie">${mieszkancy.join('')}</div>` : ''}
   <div class="row">

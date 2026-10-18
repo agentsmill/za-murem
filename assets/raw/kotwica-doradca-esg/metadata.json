@@ -27,10 +27,63 @@
           "west": "Idle/rotations/west.png",
           "south-west": "Idle/rotations/south-west.png"
         },
-        "animations": {}
+        "animations": {
+          "chod": {
+            "west": [
+              "Idle/animations/chod/west/frame_000.png",
+              "Idle/animations/chod/west/frame_001.png",
+              "Idle/animations/chod/west/frame_002.png",
+              "Idle/animations/chod/west/frame_003.png"
+            ],
+            "north": [
+              "Idle/animations/chod/north/frame_000.png",
+              "Idle/animations/chod/north/frame_001.png",
+              "Idle/animations/chod/north/frame_002.png",
+              "Idle/animations/chod/north/frame_003.png"
+            ],
+            "east": [
+              "Idle/animations/chod/east/frame_000.png",
+              "Idle/animations/chod/east/frame_001.png",
+              "Idle/animations/chod/east/frame_002.png",
+              "Idle/animations/chod/east/frame_003.png"
+            ],
+            "south": [
+              "Idle/animations/chod/south/frame_000.png",
+              "Idle/animations/chod/south/frame_001.png",
+              "Idle/animations/chod/south/frame_002.png",
+              "Idle/animations/chod/south/frame_003.png"
+            ]
+          },
+          "stanie": {
+            "south": [
+              "Idle/animations/stanie/south/frame_000.png",
+              "Idle/animations/stanie/south/frame_001.png",
+              "Idle/animations/stanie/south/frame_002.png",
+              "Idle/animations/stanie/south/frame_003.png"
+            ],
+            "east": [
+              "Idle/animations/stanie/east/frame_000.png",
+              "Idle/animations/stanie/east/frame_001.png",
+              "Idle/animations/stanie/east/frame_002.png",
+              "Idle/animations/stanie/east/frame_003.png"
+            ],
+            "north": [
+              "Idle/animations/stanie/north/frame_000.png",
+              "Idle/animations/stanie/north/frame_001.png",
+              "Idle/animations/stanie/north/frame_002.png",
+              "Idle/animations/stanie/north/frame_003.png"
+            ],
+            "west": [
+              "Idle/animations/stanie/west/frame_000.png",
+              "Idle/animations/stanie/west/frame_001.png",
+              "Idle/animations/stanie/west/frame_002.png",
+              "Idle/animations/stanie/west/frame_003.png"
+            ]
+          }
+        }
       }
     }
   ],
   "export_version": "3.1",
-  "export_date": "2026-10-18T15:11:08.930199"
+  "export_date": "2026-10-18T19:36:14.241440"
 }
