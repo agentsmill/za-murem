@@ -114,6 +114,17 @@ describe('personCard: napis o fikcji i zmiana imienia', () => {
   });
 });
 
+describe('personCard: gra z sąsiadami', () => {
+  it('z opcją imie: false karta osoby z generatora ma napis o fikcji, ale bez przycisku zmiany imienia', () => {
+    for (const o of [{ imie: false }, { imie: false, lokator: true }]) {
+      const html = personCard(generowana(), 0, undefined, false, o);
+      expect(html).toContain(FIKCJA);
+      expect(html).not.toContain('data-card="imie"');
+    }
+    expect(personCard(generowana(), 0, undefined, false, { imie: true })).toContain('data-card="imie"');
+  });
+});
+
 describe('personCard: zawód i wiek na telefonie', () => {
   it('osoba z ref ma zawód i wiek z klasą `gen` (zwarta karta telefonu ich nie chowa), osoba bez ref bez klasy', () => {
     expect(personCard(generowana(), 0)).toContain('<p class="sub gen">emerytka, 52 lata</p>');

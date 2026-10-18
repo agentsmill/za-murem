@@ -2,7 +2,7 @@
    drużyny albo z generatora mieszkańców historia pod zawodem (jedna linijka, cała po kliknięciu; stan rozwinięcia
    trzyma main.ts). Osoba z generatora (`ref`) ma jeszcze wiersz rodziny pod zawodem, napis, że mieszkańcy są
    wymyśleni, i przycisk zmiany imienia (`data-card="imie"`: main.ts otwiera w karcie edytor z src/ui/imiona.ts, także
-   na karcie mieszkańca). Karta mieszkańca (opts.lokator) jest tylko do odczytu: bez broni i amputacji, to rozkazy dla
+   na karcie mieszkańca; w grze z sąsiadami przycisku nie ma, `opts.imie`). Karta mieszkańca (opts.lokator) jest tylko do odczytu: bez broni i amputacji, to rozkazy dla
    zarządu. Żadnego numeru mieszkania ani piętra w tekstach. Zwraca HTML z odczytu symulacji (SimPerson), bez DOM, więc
    da się go sprawdzić w Node. */
 
@@ -64,10 +64,14 @@ function rodzinaHtml(rodzina: string | undefined): string {
     na zrzucie i w edytorze imienia z src/ui/imiona.ts). */
 export const FIKCJA = 'Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.';
 
-/** Napis o fikcji i przycisk własnego imienia. Osoby z losowania z adresu i z drużyny gracza go nie mają. */
-function fikcjaHtml(p: SimPerson): string {
+/** Napis o fikcji i przycisk własnego imienia (bez przycisku, gdy `imie` jest false). Osoby z losowania z adresu
+    i z drużyny gracza nie mają żadnego z nich. */
+function fikcjaHtml(p: SimPerson, imie: boolean): string {
   if (!p.ref) return '';
-  return `<div class="osoba-fikcja"><p class="fikcja">${FIKCJA}</p><button type="button" class="btn mini" data-card="imie" title="Własne imię tej osoby; zostaje tylko w tej przeglądarce">Zmień imię</button></div>`;
+  const btn = imie
+    ? '<button type="button" class="btn mini" data-card="imie" title="Własne imię tej osoby; zostaje tylko w tej przeglądarce">Zmień imię</button>'
+    : '';
+  return `<div class="osoba-fikcja"><p class="fikcja">${FIKCJA}</p>${btn}</div>`;
 }
 
 /** historia osoby: przycisk z tekstem, zwinięty do jednej linijki albo rozwinięty */
@@ -80,6 +84,8 @@ export function storyHtml(story: string | undefined, open: boolean): string {
 export interface CardOpts {
   /** mieszkaniec siedziby: karta tylko do odczytu, bez broni i amputacji (rozkazy dla zarządu) */
   lokator?: boolean;
+  /** przycisk zmiany imienia osoby z generatora (domyślnie jest; false w grze z sąsiadami, `imionaWGrze`) */
+  imie?: boolean;
 }
 
 export function personCard(
@@ -120,7 +126,7 @@ export function personCard(
     moods ? `<ul class="moods">${moods}</ul>` : '',
     tonight ? `<p class="tonight">${esc(tonight)}</p>` : '',
     `<p class="doing">${esc(p.doing)}</p>`,
-    fikcjaHtml(p),
+    fikcjaHtml(p, opts.imie !== false),
   ].join('');
 }
 

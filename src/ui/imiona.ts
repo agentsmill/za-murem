@@ -16,6 +16,9 @@
    w stanie. Uszkodzony JSON albo zły wpis to brak zmian; przeglądarka bez dostępu do pamięci (tryb prywatny) to brak
    zmian bez wyjątku.
 
+   Gra z sąsiadami (`imionaWGrze`): bez zmiany imion i bez stosowania zapisanych zmian, bo zapis gry (osoby, kronika)
+   idzie tam na serwer gry, a imiona gracza mają zostać tylko w przeglądarce (K5-R20).
+
    Stan gry (`zastosujZmiany`): imię i pierwszy człon `name` osób z `ref`, a z danymi mieszkańców także historie osób
    siedziby i linijki rodziny ich krewnych (`osobyZeZmianami` z src/sim/lokatorzy.ts; bez wpisu osoba wraca do imienia
    z generatora). Wpis, który nie dotyczy żadnej osoby ani w grze, ani w budynku siedziby z generatora (nie ma jej
@@ -143,6 +146,12 @@ export function imieZGeneratora(
   }
   return bezDanych ?? p.first;
 }
+
+/** Czy w tej grze wolno zmieniać imiona i stosować zapisane zmiany: tylko w grze bez stanu sieci. Gra z sąsiadami
+    wysyła zapis (osoby, ich historie, kronikę) na serwer gry, a imiona gracza nie mogą wyjść z przeglądarki; gra ze
+    stanem sieci toczona chwilowo bez sieci (inne konto, bez zalogowania) też nie, bo jej zapis może jeszcze trafić
+    do chmury. */
+export const imionaWGrze = (stanSieci: object | null | undefined): boolean => !stanSieci;
 
 // ---------------------------------------------------------------- pamięć
 

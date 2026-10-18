@@ -1,7 +1,8 @@
 /* Za Murem 0.4: start (z panelem „Wasz zarząd”: liczba osób i własna drużyna), wczytanie osiedla i tabel mieszkańców
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
-   z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy), pętla
-   gry z zarządem (uchwały, karta nocy, wydarzenia, raport), zapis i sterowanie. */
+   z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
+   zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
+   raport), zapis i sterowanie. */
 
 import './style.css';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
@@ -48,6 +49,7 @@ import {
   dotyczy,
   edytorImienia,
   imieZGeneratora,
+  imionaWGrze,
   podpowiedz,
   poprawneImie,
   wczytajZmiany,
@@ -853,7 +855,7 @@ function hud(now: number) {
   }
   if (lok) {
     card.hidden = false;
-    setCard(personCard(lok, st.tick, undefined, storyOf === lok.pawn, { lokator: true }));
+    setCard(personCard(lok, st.tick, undefined, storyOf === lok.pawn, { lokator: true, imie: imionaWGrze(siec.stan) }));
     return;
   }
   const sel = snap.people.filter((p) => selected.has(p.pawn));
@@ -872,7 +874,7 @@ function hud(now: number) {
         touchUI,
       ),
     );
-  else setCard(personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn));
+  else setCard(personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn, { imie: imionaWGrze(siec.stan) }));
 }
 
 let goalsHtml = '';
@@ -1100,8 +1102,9 @@ $('card').addEventListener('click', (e) => {
   if (b.dataset.card === 'imie-zapisz') return;
   if (b.dataset.card === 'imie-anuluj') return zamknijImie();
   if (b.dataset.card === 'imie-przywroc') return przywrocImie();
-  // zmiana imienia osoby z generatora: na karcie mieszkańca i na karcie jednej osoby z zarządu
+  // zmiana imienia osoby z generatora: na karcie mieszkańca i na karcie jednej osoby z zarządu (nie w grze z sąsiadami)
   if (b.dataset.card === 'imie') {
+    if (!imionaWGrze(siec.stan)) return;
     const kto =
       residentFocus >= 0
         ? st.pawns.find((p) => p.id === residentFocus)
@@ -1187,7 +1190,8 @@ function doKroniki(teksty: readonly string[]) {
     (nowej i wznowionej), gdy `sim`, `gov` i `loaded` już są. */
 function zastosujImiona(zmiany?: Record<string, ZmianaImienia>): void {
   const adres = adresImion();
-  if (!sim || !adres) return;
+  // gra z sąsiadami: zapisane imiona nie trafiają do stanu, bo zapis gry idzie na serwer (K5-R20)
+  if (!sim || !adres || !imionaWGrze(siec.stan)) return;
   const z = zmiany ?? wczytajZmiany(adres);
   if (!mieszkancy)
     for (const p of sim.st.people) {
@@ -1211,7 +1215,7 @@ function zapisanaZmiana(p: Person): ZmianaImienia | undefined {
 
 async function otworzImie(person: number, pawn: number, lokator: boolean) {
   const p = sim?.st.people[person];
-  if (!p?.ref) return;
+  if (!p?.ref || !imionaWGrze(siec.stan)) return;
   const odm = await odmianaEdytora();
   if (!odm) return say('Nie udało się wczytać odmiany imion. Spróbujcie jeszcze raz.', 4000);
   // w czasie wczytywania gra mogła się zmienić
@@ -1232,7 +1236,7 @@ function zamknijImie() {
 function przywrocImie() {
   const p = imieEdit && sim?.st.people[imieEdit.person];
   const adres = adresImion();
-  if (!p?.ref || !adres) return;
+  if (!p?.ref || !adres || !imionaWGrze(siec.stan)) return;
   const zmiany = wczytajZmiany(adres);
   delete zmiany[p.ref];
   zapiszZmiane(adres, p.ref, null);
@@ -1251,7 +1255,7 @@ $('card').addEventListener('submit', (e) => {
   e.preventDefault();
   const p = imieEdit && sim?.st.people[imieEdit.person];
   const adres = adresImion();
-  if (!p?.ref || !adres) return;
+  if (!p?.ref || !adres || !imionaWGrze(siec.stan)) return;
   const pola = Object.fromEntries(
     PRZYPADKI.map((c) => [c, form.querySelector<HTMLInputElement>(`input[name="${c}"]`)?.value ?? '']),
   );

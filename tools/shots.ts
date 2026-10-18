@@ -5411,6 +5411,33 @@ function siecShots(): Shot[] {
           `  mieszkańcy z generatora: osób ${m.refs}, zarząd z osobą ${m.zarzad}/${m.core}, lokatorzy ${m.zOsoba}/${m.lok}`,
         );
         if (!m.refs || m.zarzad !== m.core) throw new Error('gra z sąsiadami bez mieszkańców z generatora');
+        // karta osoby z generatora w grze z sąsiadami: napis o fikcji jest, zmiany imienia nie ma (zapis idzie na
+        // serwer, imiona gracza zostają w przeglądarce)
+        const kto = await page.evaluate(() => {
+          const zm = window.zm!;
+          const st = zm.sim!.st;
+          const p = st.pawns.filter((q) => q.kind === 'core')[0];
+          zm.setCam(p.x, p.y - 0.5, 1.3);
+          return { id: p.id, name: st.people[p.person].name };
+        });
+        await waitIdle(page);
+        const [kx, ky] = await page.evaluate((id) => {
+          const zm = window.zm!;
+          const p = zm.sim!.st.pawns.find((q) => q.id === id)!;
+          return zm.screenOf(p.x, p.y - 0.55);
+        }, kto.id);
+        await page.mouse.click(kx, ky);
+        await page.waitForFunction(
+          (n) => document.querySelector('#card:not([hidden]) h2')?.textContent === n,
+          kto.name,
+        );
+        const karta = await page.evaluate(() => ({
+          fikcja: !!document.querySelector('#card .fikcja'),
+          imie: !!document.querySelector('#card [data-card="imie"]'),
+        }));
+        console.log(`  karta „${kto.name}”: napis o fikcji ${karta.fikcja}, zmiana imienia ${karta.imie}`);
+        if (!karta.fikcja || karta.imie)
+          throw new Error('w grze z sąsiadami karta daje zmianę imienia albo nie ma napisu');
         // kamera tak, żeby było widać zarząd na ulicy i drzwi nowej siedziby
         await page.evaluate(() => {
           const zm = window.zm!;

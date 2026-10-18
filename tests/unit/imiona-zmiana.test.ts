@@ -22,6 +22,7 @@ import {
   edytorImienia,
   IMIONA_KEY,
   imieZGeneratora,
+  imionaWGrze,
   poprawneImie,
   sieroty,
   wczytajZmiany,
@@ -213,6 +214,15 @@ describe('zmianaZPol: sprawdzanie wpisanego imienia', () => {
     expect(zmianaZPol({ ...BOZENKA_FORMY, narz: '<b>Bożenką</b>' }, true)).toHaveProperty('pole', 'narz');
     expect(zmianaZPol({ ...BOZENKA_FORMY, dop: '' }, true)).toHaveProperty('pole', 'dop');
     expect(zmianaZPol({ mian: 'Bożenka' }, true)).toHaveProperty('pole', 'dop');
+  });
+});
+
+describe('imionaWGrze: gra z sąsiadami bez zmiany imion (zapis idzie na serwer)', () => {
+  it('bez stanu sieci wolno, ze stanem sieci (także toczona chwilowo bez sieci) nie', () => {
+    expect(imionaWGrze(null)).toBe(true);
+    expect(imionaWGrze(undefined)).toBe(true);
+    expect(imionaWGrze({ zajete: [], dom: true })).toBe(false);
+    expect(imionaWGrze({ zajete: ['px:1:2:3:4:0'], dom: false, konto: 'inne' })).toBe(false);
   });
 });
 
