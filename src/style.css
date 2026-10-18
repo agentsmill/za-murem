@@ -529,6 +529,12 @@ a.btn {
 .imie-pole input[aria-invalid] {
   border-color: var(--bad);
 }
+/* palec, także na tablecie szerszym niż telefon: pola od 16 px, żeby iOS nie przybliżał strony przy pisaniu */
+@media (pointer: coarse) {
+  .imie-pole input {
+    font-size: 16px;
+  }
+}
 .imie-uwaga,
 .imie-blad {
   margin: 6px 0 0;

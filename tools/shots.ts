@@ -4540,6 +4540,7 @@ function kartaShots(): Shot[] {
         card: { top: c.top, bottom: c.bottom, left: c.left, right: c.right },
         inputs,
         fikcja: !!fik && getComputedStyle(fik).display !== 'none',
+        palec: matchMedia('(pointer: coarse)').matches,
         vw: innerWidth,
         vh: innerHeight,
         sideScroll: document.documentElement.scrollWidth > innerWidth,
@@ -4552,7 +4553,8 @@ function kartaShots(): Shot[] {
       throw new Error('pola edytora poza kartą');
     if (!m.fikcja) throw new Error('w edytorze nie widać napisu o fikcji');
     const najmniejsza = Math.min(...m.inputs.map((i) => i.font));
-    if (m.vw < 640 && najmniejsza < 16) throw new Error(`pole edytora ${najmniejsza} px: telefon przybliży stronę`);
+    if ((m.vw < 640 || m.palec) && najmniejsza < 16)
+      throw new Error(`pole edytora ${najmniejsza} px: telefon przybliży stronę`);
     console.log(
       `  edytor: ${Math.round(m.card.right - m.card.left)}×${Math.round(m.card.bottom - m.card.top)} px na ${m.vw}×${m.vh}, ` +
         `pola ${najmniejsza} px, ${Math.round(Math.min(...m.inputs.map((i) => i.h)))} px wysokości`,
@@ -4884,6 +4886,15 @@ function kartaShots(): Shot[] {
         await waitIdle(page);
         // zaznaczony członek zarządu, potem mieszkaniec
         const a = await rdzen(page, 0);
+        await page.mouse.click(a.x, a.y);
+        await sprawdz(page, kto0);
+        // otwarty edytor imienia zarządu nie zostaje nad klikniętym mieszkańcem
+        await page.click('#card [data-card="imie"]');
+        await page.waitForSelector('#card form.imie-ed');
+        const b1 = await ekran(page, r.id);
+        await page.mouse.click(b1.x, b1.y);
+        await sprawdz(page, r.name);
+        await page.keyboard.press('Escape');
         await page.mouse.click(a.x, a.y);
         await sprawdz(page, kto0);
         const przed = await cmds(page);

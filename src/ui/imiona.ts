@@ -11,18 +11,23 @@
 
    Pamięć (`wczytajZmiany`, `zapiszZmiane`): tylko localStorage gracza, klucz IMIONA_KEY, w nim zmiany po skrócie
    adresu (`hashString` z tego samego napisu adresu co zapis gry, `Loaded.addr`), a w adresie po `Osoba.id` (`ref`
-   osoby gry). Nic nie idzie do sieci, do repo ani do zapisu gry poza samym imieniem osoby w stanie. Uszkodzony JSON
-   albo zły wpis to brak zmian; przeglądarka bez dostępu do pamięci (tryb prywatny) to brak zmian bez wyjątku.
+   osoby gry). Wpis niesie też płeć i imię z generatora (`f`, `gen`), żeby po aktualizacji tabel nie trafił na inną
+   osobę pod tym samym `ref` (`dotyczy`). Nic nie idzie do sieci, do repo ani do zapisu gry poza samym imieniem osoby
+   w stanie. Uszkodzony JSON albo zły wpis to brak zmian; przeglądarka bez dostępu do pamięci (tryb prywatny) to brak
+   zmian bez wyjątku.
 
    Stan gry (`zastosujZmiany`): imię i pierwszy człon `name` osób z `ref`, a z danymi mieszkańców także historie osób
    siedziby i linijki rodziny ich krewnych (`osobyZeZmianami` z src/sim/lokatorzy.ts; bez wpisu osoba wraca do imienia
-   z generatora). Wpis, którego osoby nie ma ani w grze, ani w budynku siedziby z generatora (po aktualizacji tabel),
-   to sierota: main.ts pokazuje raz `wyprowadzka` w kronice i usuwa wpis z pamięci. Czyste i deterministyczne. */
+   z generatora). Wpis, który nie dotyczy żadnej osoby ani w grze, ani w budynku siedziby z generatora (nie ma jej
+   albo pod tym `ref` stoi teraz ktoś inny: inna płeć albo inne imię z generatora), to sierota: main.ts pokazuje raz
+   `wyprowadzka` w kronice i usuwa wpis z pamięci. Czyste i deterministyczne. */
 
 import { g, type Person } from '../content/people.ts';
 import { hashString } from '../core/rng.ts';
+import { ROK_GRY } from '../mieszkancy/generuj.ts';
 import type { Odmiana } from '../mieszkancy/historie.ts';
 import { type Formy, normalizuj, odmien, PRZYPADKI, type Przypadek } from '../mieszkancy/odmiana.ts';
+import type { Osoba } from '../mieszkancy/typy.ts';
 import type { DaneMieszkancow } from '../mieszkancy/wczytaj.ts';
 import { type LokatorzyGry, type OsobaGry, osobyZeZmianami, type ZmianaImienia } from '../sim/lokatorzy.ts';
 import { FIKCJA, many } from './karta.ts';
@@ -70,27 +75,73 @@ function formyZPol(pola: Partial<Record<Przypadek, string>>, f: boolean): { form
     if (!v) return { blad: c === 'mian' ? 'Wpiszcie imię.' : `Uzupełnijcie formę „${POLA[c].przed(f)} …”.`, pole: c };
     if (v.length > max) return { blad: `${kto} może mieć najwyżej ${many(max, 'znak', 'znaki', 'znaków')}.`, pole: c };
     if (!IMIE.test(v)) return { blad: `${kto} może mieć tylko litery, spację, łącznik i apostrof.`, pole: c };
-    formy[c] = normalizuj(v);
+    // NFC także po zmianie wielkości liter („İLKA” małymi to i z kropką osobno), żeby drugie sprawdzenie (wpis
+    // z pamięci) dało to samo
+    formy[c] = normalizuj(v).normalize('NFC');
   }
   return { formy };
 }
 
-/** Zmiana imienia z wpisanych pól (klucze jak `Przypadek`, `mian` to imię) dla osoby płci `f`, albo pierwszy błąd
-    z komunikatem dla gracza i nazwą pola, które go ma. */
-export function zmianaZPol(pola: Partial<Record<Przypadek, string>>, f: boolean): { zmiana: ZmianaImienia } | Bledne {
+/** najdłuższe imię z generatora we wpisie (tylko porównywane, nigdy nie trafia na stronę) */
+const GEN_MAX = 64;
+
+/** Zmiana imienia z wpisanych pól (klucze jak `Przypadek`, `mian` to imię) dla osoby płci `f` z imieniem z generatora
+    `gen` (gdy znane, `imieZGeneratora`), albo pierwszy błąd z komunikatem dla gracza i nazwą pola, które go ma. */
+export function zmianaZPol(
+  pola: Partial<Record<Przypadek, string>>,
+  f: boolean,
+  gen?: string,
+): { zmiana: ZmianaImienia } | Bledne {
   const w = formyZPol(pola, f);
   if ('blad' in w) return w;
-  return { zmiana: { imie: w.formy.mian, formy: w.formy, f } };
+  const zmiana: ZmianaImienia = { imie: w.formy.mian, formy: w.formy, f };
+  if (gen && gen.length <= GEN_MAX) zmiana.gen = gen;
+  return { zmiana };
 }
 
 /** Wpis z pamięci, jeśli ma dobry kształt i dobre formy (pamięć jest w rękach gracza, więc sprawdzamy jak pola). */
 function poprawna(z: unknown): ZmianaImienia | null {
   if (!z || typeof z !== 'object') return null;
-  const { imie, formy, f } = z as { imie?: unknown; formy?: unknown; f?: unknown };
+  const { imie, formy, f, gen } = z as { imie?: unknown; formy?: unknown; f?: unknown; gen?: unknown };
   if (typeof imie !== 'string' || !formy || typeof formy !== 'object') return null;
+  if (gen !== undefined && (typeof gen !== 'string' || !gen || gen.length > GEN_MAX)) return null;
   const w = formyZPol({ ...(formy as Partial<Record<Przypadek, string>>), mian: imie }, f === true);
   if ('blad' in w || w.formy.mian !== imie) return null;
-  return typeof f === 'boolean' ? { imie, formy: w.formy, f } : { imie, formy: w.formy };
+  const ok: ZmianaImienia = { imie, formy: w.formy };
+  if (typeof f === 'boolean') ok.f = f;
+  if (typeof gen === 'string') ok.gen = gen;
+  return ok;
+}
+
+/** Czy wpis dotyczy osoby z generatora o imieniu `gen` i płci `f` (wpis bez tych pól, sprzed ich zapisywania, pasuje
+    do każdej). */
+const dlaOsoby = (z: ZmianaImienia, gen: string, f: boolean): boolean =>
+  (z.f === undefined || z.f === f) && (z.gen === undefined || z.gen === gen);
+
+/** Czy wpis dotyczy osoby gry `p` (płeć z wpisu, a imię z generatora z wpisu albo już nadane imię z wpisu: osoba
+    w zapisie gry może nieść zmienione imię). */
+export const dotyczy = (z: ZmianaImienia, p: Pick<Person, 'first' | 'f'>): boolean =>
+  (z.f === undefined || z.f === p.f) && (z.gen === undefined || p.first === z.gen || p.first === z.imie);
+
+/** płeć i wiek osoby z generatora takie same jak osoby gry */
+const takaSama = (o: Osoba, p: Pick<Person, 'f' | 'age'>): boolean =>
+  (o.plec === 'K') === p.f && ROK_GRY - o.rocznik === p.age;
+
+/** Imię z generatora osoby gry `p` do nowego wpisu (`ZmianaImienia.gen`): z zapisanej zmiany, która jej dotyczy (bez
+    `gen` w starym wpisie: nieznane), z budynku siedziby `l` (ta sama płeć i wiek, inaczej nieznane), a bez danych
+    mieszkańców `bezDanych` (imię sprzed pierwszej zmiany w tej grze) albo obecne imię. */
+export function imieZGeneratora(
+  p: Pick<Person, 'ref' | 'first' | 'f' | 'age'>,
+  l: LokatorzyGry | null,
+  zapisana: ZmianaImienia | undefined,
+  bezDanych?: string,
+): string | undefined {
+  if (zapisana && dotyczy(zapisana, p)) return zapisana.gen;
+  if (l) {
+    const o = l.siedziba.osoby.find((x) => x.id === p.ref);
+    return o && takaSama(o, p) ? o.imie : undefined;
+  }
+  return bezDanych ?? p.first;
 }
 
 // ---------------------------------------------------------------- pamięć
@@ -238,12 +289,14 @@ function ustaw(p: Person, k: 'story' | 'rodzina', v: string | undefined): void {
     trzyma swoich ludzi i nowy generator nie przepisuje im historii. */
 const taSama = (p: Person, o: OsobaGry): boolean => p.f === o.f && p.age === o.age;
 
-/** Zmiany imion na stanie gry (w miejscu; `st` to `SimState` albo cokolwiek z `people`). Osoba z `ref`:
+/** Zmiany imion na stanie gry (w miejscu; `st` to `SimState` albo cokolwiek z `people`). Wpis działa tylko na osobę,
+    której dotyczy (`dotyczy`: płeć i imię z generatora). Osoba z `ref`:
     - z danymi mieszkańców (`l` i `dane`) i tą samą osobą w budynku siedziby: imię, `name`, historia i linijka rodziny
-      z `osobyZeZmianami`, więc nowe imię widać też w historiach i rodzinie innych, a bez wpisu wraca imię z generatora;
+      z `osobyZeZmianami` (z wpisami, które dotyczą osób budynku), więc nowe imię widać też w historiach i rodzinie
+      innych, a bez wpisu wraca imię z generatora;
     - w pozostałych przypadkach tylko imię i pierwszy człon `name` z wpisu (bez wpisu nic).
-    `sieroty`: wpisy bez osoby ani w grze, ani w budynku siedziby (bez danych mieszkańców zawsze pusto). Drugie
-    wywołanie z tymi samymi zmianami nic już nie zmienia. */
+    `sieroty`: wpisy, które nie dotyczą żadnej osoby ani w grze, ani w budynku siedziby (bez danych mieszkańców zawsze
+    pusto). Drugie wywołanie z tymi samymi zmianami nic już nie zmienia. */
 export function zastosujZmiany(
   st: { people: Person[] },
   l: LokatorzyGry | null,
@@ -251,12 +304,21 @@ export function zastosujZmiany(
   zmiany: Readonly<Record<string, ZmianaImienia>>,
 ): { sieroty: string[] } {
   const refs = st.people.flatMap((p) => (p.ref ? [p.ref] : []));
-  const zDanych = l && dane ? osobyZeZmianami(l, dane, zmiany, refs) : new Map<string, OsobaGry>();
+  const budynek = new Map<string, Osoba>(l && dane ? l.siedziba.osoby.map((o) => [o.id, o]) : []);
+  /** wpis dotyczy osoby budynku siedziby pod tym samym id */
+  const wBudynku = (ref: string, z: ZmianaImienia): boolean => {
+    const o = budynek.get(ref);
+    return !!o && dlaOsoby(z, o.imie, o.plec === 'K');
+  };
+  const zgodne = Object.fromEntries(Object.entries(zmiany).filter(([ref, z]) => wBudynku(ref, z)));
+  const zDanych = l && dane ? osobyZeZmianami(l, dane, zgodne, refs) : new Map<string, OsobaGry>();
   for (const p of st.people) {
     if (!p.ref) continue;
-    const z = Object.hasOwn(zmiany, p.ref) ? zmiany[p.ref] : undefined;
+    const z0 = Object.hasOwn(zmiany, p.ref) ? zmiany[p.ref] : undefined;
+    const z = z0 && dotyczy(z0, p) ? z0 : undefined;
     const o = zDanych.get(p.ref);
-    if (o && taSama(p, o)) {
+    // ta sama osoba co w generatorze: płeć i wiek, a gdy wpis tej osoby zna jej imię z generatora, to też ono
+    if (o && taSama(p, o) && !(z && !wBudynku(p.ref, z))) {
       if (p.name !== o.name) p.name = o.name;
       if (p.first !== o.first) p.first = o.first;
       ustaw(p, 'story', o.story);
@@ -267,5 +329,6 @@ export function zastosujZmiany(
     }
   }
   if (!l || !dane) return { sieroty: [] };
-  return { sieroty: sieroty(zmiany, new Set([...refs, ...l.siedziba.osoby.map((o) => o.id)])) };
+  const wGrze = (ref: string, z: ZmianaImienia) => st.people.some((p) => p.ref === ref && dotyczy(z, p));
+  return { sieroty: Object.keys(zmiany).filter((ref) => !wGrze(ref, zmiany[ref]) && !wBudynku(ref, zmiany[ref])) };
 }

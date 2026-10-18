@@ -18,8 +18,10 @@ import { historieZeZmianami, type LokatorzyGry, lokatorzyGry } from '../../src/s
 import { createSim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import {
+  dotyczy,
   edytorImienia,
   IMIONA_KEY,
+  imieZGeneratora,
   poprawneImie,
   sieroty,
   wczytajZmiany,
@@ -196,6 +198,17 @@ describe('zmianaZPol: sprawdzanie wpisanego imienia', () => {
       expect(poprawneImie(imie), imie).toBe(false);
   });
 
+  it('wielkie litery z kropką („İLKA”): imię w NFC, więc drugie sprawdzenie (wpis z pamięci) daje to samo', () => {
+    const pola = Object.fromEntries(PRZYPADKI.map((c) => [c, c === 'mian' ? 'İLKA' : 'İLKI']));
+    const w = zmianaZPol(pola, true);
+    if (!('zmiana' in w)) throw new Error(w.blad);
+    expect(w.zmiana.imie).toBe('\u0130lka');
+    expect(w.zmiana.formy.dop).toBe('\u0130lki');
+    const mag = new Atrapa();
+    zapiszZmiane('Lanciego 10G', 'o5', w.zmiana, mag);
+    expect(wczytajZmiany('Lanciego 10G', mag)).toEqual({ o5: w.zmiana });
+  });
+
   it('forma z HTML albo pusta też jest błędem, z nazwą pola', () => {
     expect(zmianaZPol({ ...BOZENKA_FORMY, narz: '<b>Bożenką</b>' }, true)).toHaveProperty('pole', 'narz');
     expect(zmianaZPol({ ...BOZENKA_FORMY, dop: '' }, true)).toHaveProperty('pole', 'dop');
@@ -239,6 +252,19 @@ describe('pamięć zmian w przeglądarce', () => {
     zapiszZmiane('Lanciego 10G', 'o6', null, mag);
     expect(wczytajZmiany('Lanciego 10G', mag)).toEqual({});
     expect(Object.keys(JSON.parse(mag.m.get(IMIONA_KEY) ?? '{}'))).toEqual([hashString('Inny adres 1')]);
+  });
+
+  it('wpis niesie imię z generatora (gen); stary wpis bez niego dalej się wczytuje, zły gen to zły wpis', () => {
+    expect(zmianaZPol({ ...BOZENKA_FORMY }, true, 'Halina')).toEqual({ zmiana: { ...BOZENKA, gen: 'Halina' } });
+    expect(zmianaZPol({ ...BOZENKA_FORMY }, true)).toEqual({ zmiana: BOZENKA });
+    const mag = new Atrapa();
+    zapiszZmiane('A', 'o1', { ...BOZENKA, gen: 'Halina' }, mag);
+    zapiszZmiane('A', 'o2', BOZENKA, mag);
+    expect(wczytajZmiany('A', mag)).toEqual({ o1: { ...BOZENKA, gen: 'Halina' }, o2: BOZENKA });
+    for (const gen of [5, '', 'x'.repeat(65)]) {
+      mag.m.set(IMIONA_KEY, JSON.stringify({ [hashString('A')]: { o3: { ...BOZENKA, gen } } }));
+      expect(wczytajZmiany('A', mag), String(gen)).toEqual({});
+    }
   });
 
   it('uszkodzony JSON i złe wpisy dają pusto, a nie wyjątek', () => {
@@ -419,6 +445,59 @@ describe('zastosujZmiany', () => {
     st.people.forEach((q, i) => {
       expect(bezImion(q)).toEqual(bezImion(przed[i]));
     });
+  });
+
+  it('wpis z innym imieniem z generatora albo inną płcią niż osoba pod tym ref to sierota i nikogo nie zmienia', () => {
+    // po aktualizacji tabel pod tym samym ref może stać ktoś inny
+    const st = nowaGra();
+    const [p1, p2, p3, p4] = st.people.filter((q) => q.ref);
+    const z: Record<string, ZmianaImienia> = {
+      [p1.ref as string]: { ...BOZENKA, f: p1.f, gen: 'Innaosoba' },
+      [p2.ref as string]: { ...BOZENKA, f: !p2.f, gen: p2.first },
+      [p3.ref as string]: { ...BOZENKA, f: p3.f, gen: p3.first },
+      [p4.ref as string]: { imie: BOZENKA.imie, formy: BOZENKA.formy },
+    };
+    const przed = structuredClone(st.people);
+    const w = zastosujZmiany(st, P.l, P.dane, z);
+    expect([...w.sieroty].sort()).toEqual([p1.ref, p2.ref].sort());
+    expect(p1).toEqual(przed[st.people.indexOf(p1)]);
+    expect(p2).toEqual(przed[st.people.indexOf(p2)]);
+    expect(p3.first).toBe('Bożenka');
+    expect(p4.first).toBe('Bożenka');
+    // wpisy sierot nie zmieniają też historii ani rodziny innych: jak same dwa dobre wpisy
+    const dobre = nowaGra();
+    zastosujZmiany(dobre, P.l, P.dane, {
+      [p3.ref as string]: z[p3.ref as string],
+      [p4.ref as string]: z[p4.ref as string],
+    });
+    expect(st.people).toEqual(dobre.people);
+  });
+
+  it('osoba z zapisu gry z nadanym imieniem zostaje przy nim, gdy generator ma pod jej ref kogoś innego', () => {
+    const st = nowaGra();
+    const p = st.people.find((q) => q.ref) as Person;
+    // zapis sprzed aktualizacji tabel: ta osoba miała z generatora imię „Halinka”, gracz nadał jej „Bożenka”
+    const z = { ...BOZENKA, f: p.f, gen: 'Halinka' };
+    p.name = `Bożenka${p.name.slice(p.first.length)}`;
+    p.first = 'Bożenka';
+    const przed = structuredClone(p);
+    expect(zastosujZmiany(st, P.l, P.dane, { [p.ref as string]: z })).toEqual({ sieroty: [] });
+    expect(p).toEqual(przed);
+  });
+
+  it('imieZGeneratora: z wpisu tej osoby, z budynku (ta sama płeć i wiek), bez danych z pamięci gry albo obecne', () => {
+    const p = nowaGra().people.find((q) => q.ref) as Person;
+    const zmieniona = { ...p, first: 'Bożenka' };
+    const z = { ...BOZENKA, f: p.f, gen: 'Halinka' };
+    expect(imieZGeneratora(p, P.l, undefined)).toBe(p.first);
+    expect(imieZGeneratora(zmieniona, P.l, z)).toBe('Halinka');
+    expect(dotyczy(z, p)).toBe(false);
+    expect(imieZGeneratora(p, P.l, z)).toBe(p.first);
+    // stary wpis tej osoby (bez gen i bez płci): imię z generatora nieznane
+    expect(imieZGeneratora(zmieniona, P.l, { imie: BOZENKA.imie, formy: BOZENKA.formy })).toBeUndefined();
+    expect(imieZGeneratora({ ...p, age: p.age + 1 }, P.l, undefined)).toBeUndefined();
+    expect(imieZGeneratora(zmieniona, null, undefined, p.first)).toBe(p.first);
+    expect(imieZGeneratora(p, null, undefined)).toBe(p.first);
   });
 
   it('bez danych mieszkańców zmienia tylko imię osoby z ref, bez sierot', () => {

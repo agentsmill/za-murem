@@ -61,11 +61,14 @@ export type OsobaGry = Pick<Person, 'first' | 'name' | 'f' | 'prof' | 'skills' |
 };
 
 /** Imię osoby z generatora zmienione przez gracza: mianownik i siedem form (`formy.mian` = `imie`), `f` to płeć
-    osoby w chwili zmiany (do komunikatu „wyprowadził się” / „wyprowadziła się”, gdy osoby już nie ma). */
+    osoby w chwili zmiany (do komunikatu „wyprowadził się” / „wyprowadziła się”, gdy osoby już nie ma), `gen` jej
+    imię z generatora. Po aktualizacji tabel albo generatora pod tym samym `ref` może stać ktoś inny: wpis z innym
+    `gen` albo `f` niż osoba nie jej dotyczy (src/ui/imiona.ts). Starsze wpisy nie mają `f` ani `gen`. */
 export interface ZmianaImienia {
   imie: string;
   formy: Formy;
   f?: boolean;
+  gen?: string;
 }
 
 export interface LokatorzyGry {

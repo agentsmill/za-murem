@@ -5,6 +5,7 @@
 
 import './style.css';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
+import type { Person } from './content/people.ts';
 import { hashString } from './core/rng.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
@@ -44,7 +45,9 @@ import { allowedAnchors, availableOf, buildItems, buildMenu, buildSheet, okTiles
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { Druzyna } from './ui/druzyna.ts';
 import {
+  dotyczy,
   edytorImienia,
+  imieZGeneratora,
   podpowiedz,
   poprawneImie,
   wczytajZmiany,
@@ -840,7 +843,7 @@ function hud(now: number) {
   if (imieEdit) {
     const naKarcie = imieEdit.lokator
       ? residentFocus === imieEdit.pawn
-      : selected.size === 1 && selected.has(imieEdit.pawn);
+      : residentFocus < 0 && selected.size === 1 && selected.has(imieEdit.pawn);
     if (naKarcie && st.people[imieEdit.person]?.ref) {
       card.hidden = false;
       setCard(imieEdit.html);
@@ -1198,6 +1201,14 @@ function zastosujImiona(zmiany?: Record<string, ZmianaImienia>): void {
   for (const ref of sieroty) zapiszZmiane(adres, ref, null);
 }
 
+/** zapisana zmiana imienia tej osoby (wpis pod jej `ref`, który jej dotyczy) */
+function zapisanaZmiana(p: Person): ZmianaImienia | undefined {
+  const adres = adresImion();
+  if (!adres || !p.ref) return undefined;
+  const z = wczytajZmiany(adres);
+  return Object.hasOwn(z, p.ref) && dotyczy(z[p.ref], p) ? z[p.ref] : undefined;
+}
+
 async function otworzImie(person: number, pawn: number, lokator: boolean) {
   const p = sim?.st.people[person];
   if (!p?.ref) return;
@@ -1205,9 +1216,7 @@ async function otworzImie(person: number, pawn: number, lokator: boolean) {
   if (!odm) return say('Nie udało się wczytać odmiany imion. Spróbujcie jeszcze raz.', 4000);
   // w czasie wczytywania gra mogła się zmienić
   if (sim?.st.people[person] !== p || !p.ref) return;
-  const adres = adresImion();
-  const zapisane = adres ? wczytajZmiany(adres) : {};
-  const zapisana = Object.hasOwn(zapisane, p.ref) ? zapisane[p.ref] : undefined;
+  const zapisana = zapisanaZmiana(p);
   imieEdit = { person, pawn, lokator, odm, html: edytorImienia({ ref: p.ref, first: p.first, f: p.f }, odm, zapisana) };
   hud(performance.now());
   const pole = $('card').querySelector<HTMLInputElement>('.imie-ed input[name="mian"]');
@@ -1246,7 +1255,9 @@ $('card').addEventListener('submit', (e) => {
   const pola = Object.fromEntries(
     PRZYPADKI.map((c) => [c, form.querySelector<HTMLInputElement>(`input[name="${c}"]`)?.value ?? '']),
   );
-  const w = zmianaZPol(pola, p.f);
+  // imię z generatora idzie do wpisu, żeby po aktualizacji tabel nie trafił na inną osobę pod tym samym ref
+  const gen = imieZGeneratora(p, mieszkancy?.l ?? null, zapisanaZmiana(p), imionaGen.get(p.ref)?.first);
+  const w = zmianaZPol(pola, p.f, gen);
   if ('blad' in w) {
     const blad = form.querySelector<HTMLElement>('.imie-blad');
     if (blad) {
