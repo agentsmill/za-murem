@@ -750,6 +750,10 @@ Dwie brakujące rzeczy z etapu 3 fali 2 (były w „Zaparkowanych”), zadanie o
 
 Bramka: `npm test` 2104 zdanych, 1 oczekiwana porażka, 8 pominiętych (117 plików; nowe przypadki w `tests/unit/plot.test.ts`: koszt i warianty, menu przy różnych zapasach, płot ze złomu do końca z dokładnym zużyciem desek i złomu, stary zapis bez wariantu z tym samym skrótem i przebiegiem, duch z tymi samymi kafelkami co menu i z procentem z karty, zasieki zmieniają ducha jak menu, rysunek planu i cyfry; w `tests/unit/sasiedzi-en.test.ts` nazwy wariantów i podpowiedzi w obu językach); Biome na `src tests tools server index.html` czysty; `tsc --noEmit` i build bez błędów; boty bez zmian (bot da4b24e0 i dad44c81, bot:zombie 1f6eef9b i 3e000211). Nowe zrzuty obejrzane w Chromium: `m2f2-plot-duch` (z bliska, praca 40%, karta „Stawia wspólny płot (40%).”), `en-m2f2-plot-duch` (z daleka, cały obwód, „Putting up the shared fence (40%).”) i `m2f2-plot-deski` (300 desek bez złomu: w menu tylko „Otoczyć wspólnym płotem z desek (65 m: 130 desek, 3,3 h)…”, podpowiedź, plan z wariantem i duch na 0%). Pełne `npm run shots`: 220 scenariuszy, w tym sześć płotowych (`m2f2-plot-menu`, `m2f2-plot`, trzy nowe i `en-m2f2-plot-menu`), bez błędów poza jednym: w `przeglad-dym-przekroj` konsola Chromium siedem razy zgłosiła `net::ERR_NETWORK_CHANGED` (zmiana sieci w maszynie w trakcie), a osobno ten scenariusz przechodzi czysto. Pierwszy pełny przebieg urwał się po 70 scenariuszach, bo w trakcie poprawiłem plik źródłowy i Vite przeładował stronę; plików w czasie zrzutów nie ruszać.
 
+### Duch planu płotu w `pelna-gra`, 18.10.2026 wieczorem (przewinięcie do 755358c)
+
+Gałąź `m2-plot-duch` (sesja „Wspólny płot” od fali 2, wpis wyżej) weszła przewinięciem. Po niej porównania kotwicy (`tools/kotwica.ts`) padały na `TextureC.from`, bo pierwsze dziecko warstwy actors z polem `texture` nie było już sprite'em Pixi; koordynator poprawił wybór sprite'a (fcce6a5). Bramka na tym kodzie: `npm test` 2104 zdanych, 1 oczekiwana porażka, 8 pominiętych; Biome; tsc; build; boty bez zmian (da4b24e0, dad44c81, 1f6eef9b, 3e000211); wszystkie 220 scenariuszy zrzutów poza kotwicą w jednym przebiegu i 4 scenariusze kotwicy po poprawce, obejrzany `m2f2-plot-duch` (ślad planu, „40%”, „Stawia wspólny płot”). Na serwer jeszcze nie poszło.
+
 ## Następne
 
 - Gałąź `m2-plot-duch` (duch planu wspólnego płotu i płot z jednego materiału, wpis wyżej) czeka na scalenie do `pelna-gra`. Do sprawdzenia w grze: na Lanciego otworzyć 10F i zlecić wspólny płot; z samymi deskami albo samym złomem menu pokazuje płot z jednego materiału.
@@ -892,6 +896,7 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
   - tasowanie przez `sort` i `Math.hypot`/`sin`/`cos` mogą dawać różne wyniki w różnych przeglądarkach; ważne, gdy zapisy będą przechodzić między przeglądarkami. Tasowanie w wydarzeniach zarządu poprawione 17.10.2026 (CI na Node 24); `Math.hypot`/`sin`/`cos` w decyzjach symulacji do sprawdzenia.
 
 ## Zaparkowane
+- `siec-menu` w `npm run shots` raz padł pod obciążeniem (kilka sesji naraz): po zajęciu klatki nie było jeszcze znaczników „nasza”, sam scenariusz przechodzi. Dodać czekanie na znaczniki zamiast jednego odczytu (18.10.2026).
 
 - Fala 2: duch wspólnego płotu mógłby pokazywać też odcinki starej siatki, które znikną, i drzwi do zabicia deskami (dziś tylko nowe kafelki i postęp).
 - Fala 2: lokatorzy wyższych pięter i szabrownicy z generatora mieszkańców zamiast fachowców 0.3, gdy generator dostanie piętra.
