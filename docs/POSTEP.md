@@ -638,6 +638,8 @@ Drugi kawałek z rozmowy o surowcach: handlarz, którego widać za dnia, nie da 
 
 Bramka: `npm test` 1832 zdanych, 1 oczekiwana porażka, 8 pominiętych (91 plików, nowy `tests/unit/handlarz.test.ts` z 9 przypadkami), Biome czysty, build, boty bez zmian (da4b24e0, dad44c81, e77f1b99, 34dd5c5f). Pełne `npm run shots`: 158 scenariuszy bez błędów (handlarz jest w grze domyślnie, więc chodzi też w starych scenariuszach z drugim dniem). Zrzut `handlarz` (z `handlarz-brama` i `handlarz-menu`) obejrzany w Chromium: wózek obok handlarza przy bramie, menu z dwiema wyszarzonymi ofertami, po napaści pusty wózek, towar obok i uciekający handlarz z paskiem życia.
 
+Po wciągnięciu `pelna-gra` ac5fe6b (scalenie d0f6d7d, konflikty w dzienniku i w liście obcych `STRANGERS` w `src/render/game.ts`): `npm test` 1839 zdanych, 1 oczekiwana porażka, 8 pominiętych; Biome czysty; build; boty jak na `pelna-gra` (da4b24e0, dad44c81, zombie 1f6eef9b i 3e000211); `npm run shots` 159 scenariuszy bez błędów, `handlarz-menu` obejrzany ponownie.
+
 ## Następne
 
 Surowce (18.10.2026): wraki, noszenie łupu i warsztat są w `pelna-gra` (64c254e). Handlarz pod bramą czeka na scalenie na gałęzi `m2-surowce` (z wciągniętą `pelna-gra` ac5fe6b). Mateusz przegląda decyzje „Surowce” i „Handlarz” w „Decyzjach” i gra: wrak za siatką („Przeszukać” na aucie, potem „Rozebrać” z menu), warsztat z menu na stole, drugiego dnia handlarz przy bramie. Następny kawałek: wędrowcy i obce ekipy, które szabrują te same wraki, na szkielecie handlarza (karta sesji czeka na uruchomienie).
