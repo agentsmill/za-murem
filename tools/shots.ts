@@ -128,7 +128,8 @@ const SHOTS: Shot[] = [
   },
   // Wasz zarząd: sekcja zwinięta, edytor na komputerze i telefonie, liczba osób w grze, karta osoby z historią
   ...druzynaShots(),
-  // karta osoby z generatora mieszkańców (krok 5): członek zarządu i mieszkaniec, komputer i telefon
+  // karta osoby z generatora mieszkańców (krok 5): członek zarządu i mieszkaniec, komputer i telefon; zmiana imienia
+  // z odmianą (imie-*): edytor, zgadywane formy, błąd, zapis w przeglądarce, przywrócenie
   ...kartaShots(),
   {
     name: 'zombie-dzien',
@@ -4439,9 +4440,70 @@ function kartaShots(): Shot[] {
     await page.waitForSelector('#card .story[aria-expanded="false"]');
   };
 
+  /** karta mieszkańca (kliknięcie albo stuknięcie w pionek) i edytor imienia z niej */
+  const otworzEdytor = async (page: Page, id: number, tap: boolean) => {
+    if (!(await page.$('#card [data-card="imie"]'))) {
+      const b = await ekran(page, id);
+      if (tap) await page.touchscreen.tap(b.x, b.y);
+      else await page.mouse.click(b.x, b.y);
+      await page.waitForSelector('#card [data-card="imie"]');
+    }
+    if (tap) await page.tap('#card [data-card="imie"]');
+    else await page.click('#card [data-card="imie"]');
+    await page.waitForSelector('#card form.imie-ed');
+  };
+  /** pola edytora: nazwa, wartość, czy zgadywane */
+  const polaEdytora = (page: Page) =>
+    page.$$eval('#card form.imie-ed input', (l) =>
+      (l as HTMLInputElement[]).map((i) => ({
+        name: i.name,
+        value: i.value,
+        niepewne: i.classList.contains('niepewne'),
+      })),
+    );
+  /** nowe imię w polu mianownika, litera po literze (podpowiedzi form idą przy każdej) */
+  const wpisz = async (page: Page, imie: string, tap: boolean) => {
+    const pole = page.locator('#card input[name="mian"]');
+    if (tap) await pole.tap();
+    else await pole.click();
+    await pole.fill('');
+    await pole.pressSequentially(imie);
+  };
+  /** edytor cały na ekranie i w karcie, pola dość duże na palec na telefonie, bez przewijania w bok */
+  const edytorNaEkranie = async (page: Page) => {
+    const m = await page.evaluate(() => {
+      const c = document.getElementById('card')!.getBoundingClientRect();
+      const inputs = [...document.querySelectorAll<HTMLInputElement>('#card form.imie-ed input')].map((i) => {
+        const b = i.getBoundingClientRect();
+        return { left: b.left, right: b.right, h: b.height, font: Number.parseFloat(getComputedStyle(i).fontSize) };
+      });
+      const fik = document.querySelector('#card form.imie-ed .fikcja');
+      return {
+        card: { top: c.top, bottom: c.bottom, left: c.left, right: c.right },
+        inputs,
+        fikcja: !!fik && getComputedStyle(fik).display !== 'none',
+        vw: innerWidth,
+        vh: innerHeight,
+        sideScroll: document.documentElement.scrollWidth > innerWidth,
+      };
+    });
+    if (m.sideScroll) throw new Error('edytor przewija stronę w bok');
+    if (m.card.top < 0 || m.card.bottom > m.vh || m.card.left < 0 || m.card.right > m.vw)
+      throw new Error(`edytor poza ekranem: ${JSON.stringify(m.card)}`);
+    if (m.inputs.length !== 7 || m.inputs.some((i) => i.left < m.card.left || i.right > m.card.right))
+      throw new Error('pola edytora poza kartą');
+    if (!m.fikcja) throw new Error('w edytorze nie widać napisu o fikcji');
+    const najmniejsza = Math.min(...m.inputs.map((i) => i.font));
+    if (m.vw < 640 && najmniejsza < 16) throw new Error(`pole edytora ${najmniejsza} px: telefon przybliży stronę`);
+    console.log(
+      `  edytor: ${Math.round(m.card.right - m.card.left)}×${Math.round(m.card.bottom - m.card.top)} px na ${m.vw}×${m.vh}, ` +
+        `pola ${najmniejsza} px, ${Math.round(Math.min(...m.inputs.map((i) => i.h)))} px wysokości`,
+    );
+  };
+
   return [
     {
-      // zarząd: osoba z generatora na komputerze; przycisk imienia nic jeszcze nie robi, ale nie wywala strony
+      // zarząd: osoba z generatora na komputerze; przycisk imienia otwiera edytor, Anuluj wraca do karty
       name: 'karta-zarzad',
       query: '',
       run: async (page, base) => {
@@ -4455,7 +4517,9 @@ function kartaShots(): Shot[] {
         if (!m.buttons.includes('arm')) throw new Error('karta zarządu straciła zmianę broni');
         await historia(page, 'karta-zarzad', false);
         await page.click('#card [data-card="imie"]');
-        await page.waitForTimeout(200);
+        await page.waitForSelector('#card form.imie-ed');
+        await page.click('#card [data-card="imie-anuluj"]');
+        await sprawdz(page, kto);
         await page.mouse.move(a.x + 400, a.y - 250);
       },
     },
@@ -4473,7 +4537,9 @@ function kartaShots(): Shot[] {
         await sprawdz(page, kto);
         await historia(page, 'karta-zarzad-telefon', true);
         await page.tap('#card [data-card="imie"]');
-        await page.waitForTimeout(200);
+        await page.waitForSelector('#card form.imie-ed');
+        await page.tap('#card [data-card="imie-anuluj"]');
+        await sprawdz(page, kto);
       },
     },
     {
@@ -4567,6 +4633,119 @@ function kartaShots(): Shot[] {
         const m = await sprawdz(page, r.name);
         if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
         await historia(page, 'karta-mieszkanca-telefon', true);
+      },
+    },
+    {
+      // edytor imienia mieszkańca: siedem form ze słownika, zgadywane formy na bursztynowo, błąd przy znakach HTML,
+      // Escape bez zapisu; końcowy zrzut to edytor z nowym imieniem i podpowiedzianymi formami
+      name: 'imie-edytor',
+      query: '',
+      run: async (page, base) => {
+        await wejdz(page, base);
+        const r = await mieszkaniecZGeneratora(page, 0, true);
+        await waitIdle(page);
+        await otworzEdytor(page, r.id, false);
+        const pola = await polaEdytora(page);
+        const WIESLAWA = ['Wiesława', 'Wiesławy', 'Wiesławie', 'Wiesławę', 'Wiesławą', 'Wiesławie', 'Wiesławo'];
+        if (pola.map((x) => x.value).join() !== WIESLAWA.join()) throw new Error(`formy: ${pola.map((x) => x.value)}`);
+        if (pola.some((x) => x.niepewne)) throw new Error('słownikowe imię ma zgadywane formy');
+        await edytorNaEkranie(page);
+        // zgadywane formy: pola na bursztynowo i podpowiedź
+        await wpisz(page, 'Xyz', false);
+        const xyz = await polaEdytora(page);
+        if (!xyz.slice(1).every((x) => x.niepewne)) throw new Error('„Xyz” bez zaznaczonych form');
+        if (!(await page.isVisible('#card .imie-uwaga'))) throw new Error('brak podpowiedzi o zgadywanych formach');
+        await page.screenshot({ path: path.join(OUT, 'imie-edytor-niepewne.png') });
+        // znaki HTML: błąd w karcie, nic nie trafia do pamięci ani na stronę
+        await wpisz(page, '<img src=x onerror=alert(1)>', false);
+        await page.click('#card [data-card="imie-zapisz"]');
+        await page.waitForSelector('#card .imie-blad:not([hidden])');
+        const blad = await page.textContent('#card .imie-blad');
+        console.log(`  błąd: „${blad}”`);
+        if (await page.$('#card img')) throw new Error('imię z HTML weszło na stronę');
+        if ((await polaEdytora(page)).slice(1).some((x) => x.value !== ''))
+          throw new Error('złe imię dostało podpowiedzi form');
+        if (await page.evaluate(() => localStorage.getItem('za-murem-0.4-imiona')))
+          throw new Error('złe imię trafiło do pamięci');
+        await page.screenshot({ path: path.join(OUT, 'imie-edytor-blad.png') });
+        // Escape zamyka bez zapisu
+        await page.focus('#card input[name="mian"]');
+        await page.keyboard.press('Escape');
+        await sprawdz(page, r.name);
+        await otworzEdytor(page, r.id, false);
+        await wpisz(page, 'Bożenka', false);
+        const bozenka = await polaEdytora(page);
+        console.log(`  formy: ${bozenka.map((x) => x.value).join(', ')}`);
+        if (bozenka[4].value !== 'Bożenką') throw new Error(`narzędnik: ${bozenka[4].value}`);
+      },
+    },
+    {
+      // edytor na telefonie (390×844) na karcie zarządu: cały na ekranie, pola od 16 px, bez przewijania w bok
+      name: 'imie-edytor-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await wejdz(page, base);
+        await zarzadZGeneratora(page, 0);
+        const a = await rdzen(page, 0);
+        await page.touchscreen.tap(a.x, a.y);
+        await page.waitForSelector('#card [data-card="imie"]');
+        await page.tap('#card [data-card="imie"]');
+        await page.waitForSelector('#card form.imie-ed');
+        const f = await page.evaluate(() => {
+          const st = window.zm!.sim!.st;
+          return st.people[st.pawns.filter((q) => q.kind === 'core')[0].person].f;
+        });
+        await wpisz(page, f ? 'Bożenka' : 'Zbyszko', true);
+        await edytorNaEkranie(page);
+      },
+    },
+    {
+      // po zapisie: nowe imię na karcie i w zapisie gry, pamięć tylko w przeglądarce (bez adresu otwartym tekstem
+      // i bez żądań sieci z imieniem), Przywróć wraca do imienia z generatora; końcowy zrzut to karta po zmianie
+      name: 'imie-po-zmianie',
+      query: '',
+      run: async (page, base) => {
+        const siec: string[] = [];
+        page.on('request', (q) => siec.push(`${q.url()} ${q.postData() ?? ''}`));
+        await wejdz(page, base);
+        const r = await mieszkaniecZGeneratora(page, 0, true);
+        await waitIdle(page);
+        const nazwisko = r.name.split(' ').slice(1).join(' ');
+        await otworzEdytor(page, r.id, false);
+        await wpisz(page, 'Bożenka', false);
+        await page.click('#card [data-card="imie-zapisz"]');
+        await sprawdz(page, `Bożenka ${nazwisko}`);
+        const pamiec = await page.evaluate(() => localStorage.getItem('za-murem-0.4-imiona') ?? '');
+        console.log(`  pamięć: ${pamiec}`);
+        if (!pamiec.includes('"Bożenką"') || /przymorze|Przymorze|Gdańsk/.test(pamiec))
+          throw new Error('pamięć imion bez zmiany albo z adresem');
+        // przywrócenie: z powrotem imię z generatora i pusta pamięć
+        await otworzEdytor(page, r.id, false);
+        if (!(await page.$('#card [data-card="imie-przywroc"]'))) throw new Error('brak przycisku Przywróć');
+        const zapisane = (await polaEdytora(page)).map((x) => x.value);
+        if (zapisane[0] !== 'Bożenka') throw new Error(`edytor bez zapisanych form: ${zapisane}`);
+        await page.click('#card [data-card="imie-przywroc"]');
+        await sprawdz(page, r.name);
+        if (await page.evaluate(() => localStorage.getItem('za-murem-0.4-imiona')))
+          throw new Error('Przywróć nie wyczyścił pamięci');
+        // jeszcze raz Enterem w polu imienia
+        await otworzEdytor(page, r.id, false);
+        await wpisz(page, 'Bożenka', false);
+        await page.keyboard.press('Enter');
+        await sprawdz(page, `Bożenka ${nazwisko}`);
+        // zapis gry niesie nowe imię osoby
+        const save = await page.evaluate(() => {
+          window.zm!.save();
+          return localStorage.getItem('za-murem-0.4-zapis') ?? '';
+        });
+        if (!save.includes(`Bożenka ${nazwisko}`)) throw new Error('zapis gry bez nowego imienia');
+        if (siec.some((x) => x.includes('Bo%C5%BCenka') || x.includes('Bożenka')))
+          throw new Error('imię poszło do sieci');
+        console.log(`  żądań sieci: ${siec.length}, żadne z imieniem`);
+        const d = await ekran(page, r.id);
+        await page.mouse.move(d.x + 400, d.y - 250);
       },
     },
   ];

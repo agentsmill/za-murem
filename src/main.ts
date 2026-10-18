@@ -17,6 +17,9 @@ import {
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
+import type { Odmiana } from './mieszkancy/historie.ts';
+import { PRZYPADKI } from './mieszkancy/odmiana.ts';
+import { type DaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { buildScene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
 import { type Light, lightAt } from './render/light.ts';
@@ -26,6 +29,7 @@ import { WEAPONS, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
+import type { LokatorzyGry } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { addResidents, createSim, Sim } from './sim/sim.ts';
@@ -35,6 +39,17 @@ import { TUT_STEPS } from './sim/tutorial.ts';
 import { allowedAnchors, availableOf, buildItems, buildMenu, buildSheet, okTilesOf, type Rot } from './ui/budowa.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { Druzyna } from './ui/druzyna.ts';
+import {
+  edytorImienia,
+  podpowiedz,
+  poprawneImie,
+  wczytajZmiany,
+  wyprowadzka,
+  type ZmianaImienia,
+  zapiszZmiane,
+  zastosujZmiany,
+  zmianaZPol,
+} from './ui/imiona.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
@@ -219,6 +234,10 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
 let preview: { things: ThingLike[]; lights: Light[] } | null = null;
 
 async function enter(data: Loaded, saved?: Save) {
+  // dane mieszkańców z generatora należą do jednej gry (ustawia je start z mieszkańcami, krok 5, zadanie 7)
+  mieszkancy = null;
+  imieEdit = null;
+  imionaGen.clear();
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
   const t0 = performance.now();
@@ -731,6 +750,19 @@ function hud(now: number) {
   // karta mieszkańca z osobą (kliknięty): do odczytu, zasłania kartę zaznaczonego z zarządu, dopóki jest wybrana
   const lok = residentFocus >= 0 ? snap.lokatorzy.find((p) => p.pawn === residentFocus) : undefined;
   if (residentFocus >= 0 && !lok) residentFocus = -1;
+  // edytor imienia zasłania kartę osoby, dopóki ta osoba jest na karcie (zaznaczona albo kliknięty mieszkaniec);
+  // HTML edytora się nie zmienia, więc odświeżanie karty nie kasuje wpisanych liter
+  if (imieEdit) {
+    const naKarcie = imieEdit.lokator
+      ? residentFocus === imieEdit.pawn
+      : selected.size === 1 && selected.has(imieEdit.pawn);
+    if (naKarcie && st.people[imieEdit.person]?.ref) {
+      card.hidden = false;
+      setCard(imieEdit.html);
+      return;
+    }
+    imieEdit = null;
+  }
   if (lok) {
     card.hidden = false;
     setCard(personCard(lok, st.tick, undefined, storyOf === lok.pawn, { lokator: true }));
@@ -959,8 +991,21 @@ $('card').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-card]');
   if (!b || !sim) return;
   const st = sim.st;
-  // karta mieszkańca jest tylko do odczytu: z jej przycisków działa historia; zmiana imienia (data-card="imie", na
-  // kartach zarządu i mieszkańca) dostaje obsługę w kroku 6, na razie przycisk nic nie robi
+  // edytor imienia: Zapisz to wysłanie formularza (niżej), Anuluj i Przywróć tutaj
+  if (b.dataset.card === 'imie-zapisz') return;
+  if (b.dataset.card === 'imie-anuluj') return zamknijImie();
+  if (b.dataset.card === 'imie-przywroc') return przywrocImie();
+  // zmiana imienia osoby z generatora: na karcie mieszkańca i na karcie jednej osoby z zarządu
+  if (b.dataset.card === 'imie') {
+    const kto =
+      residentFocus >= 0
+        ? st.pawns.find((p) => p.id === residentFocus)
+        : st.pawns.filter((p) => p.kind === 'core' && selected.has(p.id)).at(0);
+    if (kto && kto.person >= 0 && (residentFocus >= 0 || selected.size === 1))
+      void otworzImie(kto.person, kto.id, residentFocus >= 0);
+    return;
+  }
+  // karta mieszkańca jest tylko do odczytu: z jej przycisków działa historia (i zmiana imienia wyżej)
   if (residentFocus >= 0) {
     if (b.dataset.card === 'story') {
       storyOf = storyOf === residentFocus ? -1 : residentFocus;
@@ -993,6 +1038,165 @@ $('card').addEventListener('click', (e) => {
     sim.push({ t: 'amputate', ids: [doc.id], patient: p.id });
     say(`${st.people[doc.person].first} amputuje. Pół godziny, nie zawsze się udaje.`, 4000);
   }
+});
+
+/* ---------- imiona gracza (src/ui/imiona.ts) ---------- */
+/** Dane mieszkańców z generatora tej gry: wynik `lokatorzyGry` dla siedziby, tabele i adres (`Loaded.addr`, ten sam
+    napis co w zapisie gry; klucz pamięci imion). Ustawia je start gry z mieszkańcami z adresu (krok 5, zadanie 7),
+    który potem woła `zastosujImiona()` po createSim albo po wczytaniu zapisu. Bez nich (null) zmiana imienia zmienia
+    tylko imię osoby, bez historii i rodziny krewnych, pod adresem z `loaded`. */
+let mieszkancy: { l: LokatorzyGry; dane: DaneMieszkancow; adres: string } | null = null;
+/** edytor imienia w karcie: osoba (indeks w st.people), jej pionek, karta mieszkańca albo zarządu, stały HTML edytora
+    i odmiana do podpowiedzi form */
+let imieEdit: { person: number; pawn: number; lokator: boolean; html: string; odm: Odmiana } | null = null;
+/** bez danych mieszkańców: imiona osób z generatora sprzed pierwszej zmiany w tej grze (do „Przywróć”) */
+const imionaGen = new Map<string, { first: string; name: string }>();
+let odmianaPlikow: Promise<Odmiana | null> | null = null;
+
+const adresImion = (): string | null => mieszkancy?.adres ?? loaded?.addr ?? null;
+
+/** odmiana do podpowiedzi: z danych mieszkańców, a bez nich wczytana raz z public/data/mieszkancy/ (pliki gry, bez
+    wysyłania czegokolwiek) */
+function odmianaEdytora(): Promise<Odmiana | null> {
+  if (mieszkancy) return Promise.resolve(mieszkancy.dane.odmiana);
+  odmianaPlikow ??= Promise.all([wczytajOdmiane(), wczytajKoncowki()])
+    .then(([tabela, koncowki]) => (tabela && koncowki ? { tabela, koncowki } : null))
+    .catch(() => null)
+    .then((o) => {
+      // nieudane wczytanie da się ponowić przy następnym otwarciu edytora
+      if (!o) odmianaPlikow = null;
+      return o;
+    });
+  return odmianaPlikow;
+}
+
+/** wpis do kroniki zarządu z godziną gry i podpowiedź na ekranie */
+function doKroniki(teksty: readonly string[]) {
+  if (!sim || !gov || !teksty.length) return;
+  for (const txt of teksty) gov.log.push({ day: dayOf(sim.st.tick), clock: clockOf(sim.st.tick), txt, big: false });
+  say(teksty.join(' '), 7000);
+}
+
+/** Zmiany imion (z pamięci przeglądarki albo podane) na stanie gry. Wpisy bez osoby po aktualizacji tabel: po jednym
+    komunikacie w kronice („Halina wyprowadziła się.”) i usunięcie z pamięci. Krok 5, zadanie 7 woła to po starcie gry
+    z mieszkańcami. */
+function zastosujImiona(zmiany?: Record<string, ZmianaImienia>): void {
+  const adres = adresImion();
+  if (!sim || !adres) return;
+  const z = zmiany ?? wczytajZmiany(adres);
+  if (!mieszkancy)
+    for (const p of sim.st.people) {
+      if (!p.ref) continue;
+      const gen = imionaGen.get(p.ref);
+      if (!gen) imionaGen.set(p.ref, { first: p.first, name: p.name });
+      else if (!Object.hasOwn(z, p.ref)) Object.assign(p, gen);
+    }
+  const { sieroty } = zastosujZmiany(sim.st, mieszkancy?.l ?? null, mieszkancy?.dane ?? null, z);
+  doKroniki(sieroty.map((ref) => wyprowadzka(z[ref])));
+  for (const ref of sieroty) zapiszZmiane(adres, ref, null);
+}
+
+async function otworzImie(person: number, pawn: number, lokator: boolean) {
+  const p = sim?.st.people[person];
+  if (!p?.ref) return;
+  const odm = await odmianaEdytora();
+  if (!odm) return say('Nie udało się wczytać odmiany imion. Spróbujcie jeszcze raz.', 4000);
+  // w czasie wczytywania gra mogła się zmienić
+  if (sim?.st.people[person] !== p || !p.ref) return;
+  const adres = adresImion();
+  const zapisane = adres ? wczytajZmiany(adres) : {};
+  const zapisana = Object.hasOwn(zapisane, p.ref) ? zapisane[p.ref] : undefined;
+  imieEdit = { person, pawn, lokator, odm, html: edytorImienia({ ref: p.ref, first: p.first, f: p.f }, odm, zapisana) };
+  hud(performance.now());
+  const pole = $('card').querySelector<HTMLInputElement>('.imie-ed input[name="mian"]');
+  pole?.focus();
+  pole?.select();
+}
+
+function zamknijImie() {
+  imieEdit = null;
+  hud(performance.now());
+}
+
+function przywrocImie() {
+  const p = imieEdit && sim?.st.people[imieEdit.person];
+  const adres = adresImion();
+  if (!p?.ref || !adres) return;
+  const zmiany = wczytajZmiany(adres);
+  delete zmiany[p.ref];
+  zapiszZmiane(adres, p.ref, null);
+  zastosujImiona(zmiany);
+  zamknijImie();
+}
+
+const formImienia = (e: Event): HTMLFormElement | null => {
+  const f = (e.target as HTMLElement).closest?.('form.imie-ed');
+  return f instanceof HTMLFormElement ? f : null;
+};
+
+$('card').addEventListener('submit', (e) => {
+  const form = formImienia(e);
+  if (!form) return;
+  e.preventDefault();
+  const p = imieEdit && sim?.st.people[imieEdit.person];
+  const adres = adresImion();
+  if (!p?.ref || !adres) return;
+  const pola = Object.fromEntries(
+    PRZYPADKI.map((c) => [c, form.querySelector<HTMLInputElement>(`input[name="${c}"]`)?.value ?? '']),
+  );
+  const w = zmianaZPol(pola, p.f);
+  if ('blad' in w) {
+    const blad = form.querySelector<HTMLElement>('.imie-blad');
+    if (blad) {
+      blad.textContent = w.blad;
+      blad.hidden = false;
+    }
+    for (const i of form.querySelectorAll('input')) {
+      if (i.name === w.pole) i.setAttribute('aria-invalid', 'true');
+      else i.removeAttribute('aria-invalid');
+    }
+    form.querySelector<HTMLInputElement>(`input[name="${w.pole}"]`)?.focus();
+    return;
+  }
+  zapiszZmiane(adres, p.ref, w.zmiana);
+  // bez dostępu do pamięci (tryb prywatny) imię i tak zmienia się w tej grze
+  zastosujImiona({ ...wczytajZmiany(adres), [p.ref]: w.zmiana });
+  zamknijImie();
+});
+
+// pisanie imienia podpowiada sześć form (poza tymi, które gracz już poprawił); poprawiona forma traci zaznaczenie
+$('card').addEventListener('input', (e) => {
+  const form = formImienia(e);
+  const t = e.target as HTMLInputElement;
+  const p = imieEdit && sim?.st.people[imieEdit.person];
+  if (!form || !p || !imieEdit || t.tagName !== 'INPUT') return;
+  t.removeAttribute('aria-invalid');
+  const blad = form.querySelector<HTMLElement>('.imie-blad');
+  if (blad) blad.hidden = true;
+  if (t.name !== 'mian') {
+    t.dataset.wlasne = '1';
+    t.classList.remove('niepewne');
+  } else {
+    // imię, które nie przejdzie sprawdzenia (puste, cyfry, znaki HTML), nie dostaje podpowiedzi form
+    const dobre = poprawneImie(t.value);
+    const { formy, pewne } = podpowiedz(t.value, p.f, imieEdit.odm);
+    for (const c of PRZYPADKI) {
+      const i = form.querySelector<HTMLInputElement>(`input[name="${c}"]`);
+      if (c === 'mian' || !i || i.dataset.wlasne) continue;
+      i.value = dobre ? formy[c] : '';
+      i.classList.toggle('niepewne', dobre && !pewne);
+    }
+  }
+  const uwaga = form.querySelector<HTMLElement>('.imie-uwaga');
+  if (uwaga) uwaga.hidden = !form.querySelector('input.niepewne');
+});
+
+// Escape w polu edytora zamyka go bez zapisu (klawisze gry nie działają na polach, więc osobno)
+$('card').addEventListener('keydown', (e) => {
+  if (!imieEdit || e.key !== 'Escape' || !formImienia(e)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  zamknijImie();
 });
 
 /* ---------- polecenia ---------- */
@@ -1579,6 +1783,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && placing) rotatePlacing();
   if (e.code === 'Escape') {
     if (placing) cancelPlacing();
+    else if (imieEdit) zamknijImie();
     else {
       selected.clear();
       aptFocus = -1;

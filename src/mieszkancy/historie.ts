@@ -25,6 +25,9 @@
    Odmiana. Imiona w zdaniach tylko w formach z `odmien`; gdy odmiana imienia nie jest pewna (`pewne: false`), szablon
    z tym imieniem w przypadku innym niż mianownik nie pasuje i wchodzi szablon z mianownikiem („Halina: syn wyjechał…”).
    Nazwisko rodziny w liczbie mnogiej tylko z pewnej odmiany (`formyNazwiska`). Rzeczowniki pokrewieństwa z `KREWNI`.
+   Imię zmienione przez gracza przychodzi w `Odmiana.nadpisane` (formy po `Osoba.id`) i wchodzi do zdań zamiast form
+   wylosowanego imienia, ale `pewne` zostaje z wylosowanego: wybór szablonów i losowania się nie zmieniają, więc
+   historia jest ta sama, tylko z nowym imieniem (spec §7: „historia zostaje losowa”).
 
    RODO: żadnych numerów mieszkań, pięter ani ulic; prawdziwe miejsca tylko z kroniki (`WpisKroniki.miejsce`, już po
    filtrze nazw w kronika.ts). Kategorię miejsca rozpoznajemy po rzeczowniku przed nawiasem w tekście kroniki
@@ -58,10 +61,12 @@ import {
 } from './szablony.ts';
 import type { Gospodarstwo, Osoba, Wpis, WynikBudynku } from './typy.ts';
 
-/** Tabele odmiany dla historii (R49): słownik SGJP i tablica końcówek zgadywacza. */
+/** Tabele odmiany dla historii (R49): słownik SGJP i tablica końcówek zgadywacza. `nadpisane`: formy imion
+    zmienionych przez gracza po `Osoba.id` (zastępują formy z `odmien`, a `pewne` zostaje z wylosowanego imienia). */
 export interface Odmiana {
   tabela: TabelaOdmiany;
   koncowki: TabelaKoncowek;
+  nadpisane?: ReadonlyMap<string, Formy>;
 }
 
 /** Waga typu zdarzenia w wyborze zdań: im większa, tym ważniejsze zdarzenie. */
@@ -576,6 +581,9 @@ class Odmiany {
     let w = this.imiona.get(o.id);
     if (!w) {
       w = odmien(o.imie, o.plec, this.odm.tabela, this.odm.koncowki);
+      // imię gracza: jego formy, ale pewność wylosowanego, żeby wybór szablonów się nie zmienił
+      const wlasne = this.odm.nadpisane?.get(o.id);
+      if (wlasne) w = { formy: wlasne, pewne: w.pewne };
       this.imiona.set(o.id, w);
     }
     return w;
@@ -930,12 +938,25 @@ export function historiaGospodarstwa(
   return zdaniaGospodarstwa(gosp, w, kronika, odmiana, r, uzyte).map((z) => z.tekst);
 }
 
-/** Dopisuje historię każdemu gospodarstwu budynku, w kolejności `w.gospodarstwa`, z ziarnem
-    `losDla('historie', klucz budynku, id gospodarstwa)` i licznikiem szablonów wspólnym dla budynku. Zmienia tylko pole
-    `historia` w gospodarstwach `w`: wolno ją wołać tylko na wyniku, który wywołujący sam stworzył (generuj.ts). */
-export function historieBudynku(w: WynikBudynku, kronika: readonly WpisKroniki[], odmiana: Odmiana): void {
+/** Historie wszystkich gospodarstw budynku po `Gospodarstwo.id`, w kolejności `w.gospodarstwa`, z ziarnem
+    `losDla('historie', klucz budynku, id gospodarstwa)` i licznikiem szablonów wspólnym dla budynku. Nie zmienia `w`,
+    więc da się je przeliczyć z imionami gracza (`Odmiana.nadpisane`) na gotowym wyniku generatora. */
+export function historieWyniku(
+  w: WynikBudynku,
+  kronika: readonly WpisKroniki[],
+  odmiana: Odmiana,
+): Map<string, string[]> {
   const uzyte = new Map<string, number>();
+  const wynik = new Map<string, string[]>();
   for (const h of w.gospodarstwa) {
-    h.historia = historiaGospodarstwa(h, w, kronika, odmiana, losDla('historie', w.budynek.klucz, h.id), uzyte);
+    wynik.set(h.id, historiaGospodarstwa(h, w, kronika, odmiana, losDla('historie', w.budynek.klucz, h.id), uzyte));
   }
+  return wynik;
+}
+
+/** Dopisuje historię każdemu gospodarstwu budynku (`historieWyniku`). Zmienia tylko pole `historia` w gospodarstwach
+    `w`: wolno ją wołać tylko na wyniku, który wywołujący sam stworzył (generuj.ts). */
+export function historieBudynku(w: WynikBudynku, kronika: readonly WpisKroniki[], odmiana: Odmiana): void {
+  const historie = historieWyniku(w, kronika, odmiana);
+  for (const h of w.gospodarstwa) h.historia = historie.get(h.id) ?? [];
 }

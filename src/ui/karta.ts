@@ -1,9 +1,10 @@
 /* Karta osoby: paski potrzeb, chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
    drużyny albo z generatora mieszkańców historia pod zawodem (jedna linijka, cała po kliknięciu; stan rozwinięcia
    trzyma main.ts). Osoba z generatora (`ref`) ma jeszcze wiersz rodziny pod zawodem, napis, że mieszkańcy są
-   wymyśleni, i przycisk zmiany imienia (`data-card="imie"`, obsługa w main.ts). Karta mieszkańca (opts.lokator) jest
-   tylko do odczytu: bez broni i amputacji, to rozkazy dla zarządu. Żadnego numeru mieszkania ani piętra w tekstach.
-   Zwraca HTML z odczytu symulacji (SimPerson), bez DOM, więc da się go sprawdzić w Node. */
+   wymyśleni, i przycisk zmiany imienia (`data-card="imie"`: main.ts otwiera w karcie edytor z src/ui/imiona.ts, także
+   na karcie mieszkańca). Karta mieszkańca (opts.lokator) jest tylko do odczytu: bez broni i amputacji, to rozkazy dla
+   zarządu. Żadnego numeru mieszkania ani piętra w tekstach. Zwraca HTML z odczytu symulacji (SimPerson), bez DOM, więc
+   da się go sprawdzić w Node. */
 
 import { DOM, type Dom, TRAITS } from '../content/data.ts';
 import { nazwaCechy } from '../content/druzyna.ts';
@@ -59,11 +60,14 @@ function rodzinaHtml(rodzina: string | undefined): string {
   return rodzina ? `<p class="rodzina"><span class="rodzina-k">Rodzina:</span> ${esc(rodzina)}</p>` : '';
 }
 
-/** Napis dla osób z generatora, że mieszkańcy są wymyśleni (RODO: widać go na każdej takiej karcie, także na telefonie
-    i na zrzucie), i przycisk własnego imienia. Osoby z losowania z adresu i z drużyny gracza go nie mają. */
+/** Napis dla osób z generatora, że mieszkańcy są wymyśleni (RODO: widać go na każdej takiej karcie, także na telefonie,
+    na zrzucie i w edytorze imienia z src/ui/imiona.ts). */
+export const FIKCJA = 'Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.';
+
+/** Napis o fikcji i przycisk własnego imienia. Osoby z losowania z adresu i z drużyny gracza go nie mają. */
 function fikcjaHtml(p: SimPerson): string {
   if (!p.ref) return '';
-  return `<div class="osoba-fikcja"><p class="fikcja">Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.</p><button type="button" class="btn mini" data-card="imie" title="Własne imię tej osoby; zostaje tylko w tej przeglądarce">Zmień imię</button></div>`;
+  return `<div class="osoba-fikcja"><p class="fikcja">${FIKCJA}</p><button type="button" class="btn mini" data-card="imie" title="Własne imię tej osoby; zostaje tylko w tej przeglądarce">Zmień imię</button></div>`;
 }
 
 /** historia osoby: przycisk z tekstem, zwinięty do jednej linijki albo rozwinięty */

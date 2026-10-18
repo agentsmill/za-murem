@@ -24,6 +24,11 @@
    gospodarstwa zabrakło, też stoi puste (powód i rok losuje `settleApts`); tylko gdy budynek nie ma żadnego
    gospodarstwa do rozdania, jedno mieszkanie przy podwórku zostaje zamieszkane bez osób.
 
+   Imiona gracza (spec §7, pamięć w przeglądarce: src/ui/imiona.ts). `historieZeZmianami` przelicza historie
+   gospodarstw siedziby z formami imion gracza (`Odmiana.nadpisane`; wybór zdań i losowania zostają te same), a
+   `osobyZeZmianami` składa z nich osoby gry tak jak `osobaGry` (to samo `osobaZ`): nowe imię w `first` i `name`,
+   w historii osoby i w linijkach rodziny krewnych.
+
    Czyste i deterministyczne: bez DOM, sieci, zegara i Math.random, losowanie z `losDla` po kluczach. Nie zmienia
    świata, mapy ani danych. */
 
@@ -34,9 +39,10 @@ import type { Rng } from '../core/rng.ts';
 import { rokZDaty } from '../mieszkancy/budynki.ts';
 import { fachOsoby, nazwaFachu } from '../mieszkancy/fachy.ts';
 import { budynkiObszaru, generujBudynek, kronikaObszaru, ROK_GRY } from '../mieszkancy/generuj.ts';
-import { pokrewienstwo } from '../mieszkancy/historie.ts';
+import { historieWyniku, pokrewienstwo } from '../mieszkancy/historie.ts';
 import type { WpisKroniki } from '../mieszkancy/kronika.ts';
 import { losDla } from '../mieszkancy/los.ts';
+import type { Formy } from '../mieszkancy/odmiana.ts';
 import { TAG_BUDYNKU } from '../mieszkancy/oznacz.ts';
 import { rejonDla } from '../mieszkancy/rejon.ts';
 import { KREWNI, type Krewny } from '../mieszkancy/szablony.ts';
@@ -53,6 +59,14 @@ export type OsobaGry = Pick<Person, 'first' | 'name' | 'f' | 'prof' | 'skills' |
   ref: string;
   rodzina: string;
 };
+
+/** Imię osoby z generatora zmienione przez gracza: mianownik i siedem form (`formy.mian` = `imie`), `f` to płeć
+    osoby w chwili zmiany (do komunikatu „wyprowadził się” / „wyprowadziła się”, gdy osoby już nie ma). */
+export interface ZmianaImienia {
+  imie: string;
+  formy: Formy;
+  f?: boolean;
+}
 
 export interface LokatorzyGry {
   /** wynik generatora dla budynku siedziby (wszystkie osoby, gospodarstwa i dziennik) */
@@ -415,4 +429,42 @@ export function lokatorzyGry(
     }
   }
   return { siedziba, kronika, zarzad, lokatorzy, stany };
+}
+
+// ---------------------------------------------------------------- imiona gracza
+
+/** Historie gospodarstw budynku siedziby po `Gospodarstwo.id` z imionami gracza: formy z `zmiany` (po `Osoba.id`)
+    zamiast form wylosowanych imion, te same zdania i losowania co w generatorze (`historieWyniku` z kroniką i
+    ziarnami wyniku). Bez zmian daje dokładnie `Gospodarstwo.historia` z `l.siedziba`. Nie zmienia `l` ani `dane`. */
+export function historieZeZmianami(
+  l: LokatorzyGry,
+  dane: DaneMieszkancow,
+  zmiany: Readonly<Record<string, ZmianaImienia>>,
+): Map<string, string[]> {
+  const nadpisane = new Map(Object.entries(zmiany).map(([id, z]) => [id, z.formy]));
+  return historieWyniku(l.siedziba, l.kronika, { ...dane.odmiana, nadpisane });
+}
+
+/** Osoby gry (jak `osobaGry`) dla osób budynku siedziby o id z `refs`, po `Osoba.id`, z imionami gracza: `first`
+    i `name` z nowym imieniem, historia osoby z `historieZeZmianami`, linijka rodziny z nowymi imionami krewnych.
+    Id spoza budynku pomija. */
+export function osobyZeZmianami(
+  l: LokatorzyGry,
+  dane: DaneMieszkancow,
+  zmiany: Readonly<Record<string, ZmianaImienia>>,
+  refs: Iterable<string>,
+): Map<string, OsobaGry> {
+  const historie = historieZeZmianami(l, dane, zmiany);
+  const osoby = l.siedziba.osoby.map((o) => (Object.hasOwn(zmiany, o.id) ? { ...o, imie: zmiany[o.id].imie } : o));
+  const wg = new Map(osoby.map((o) => [o.id, o]));
+  const domOsoby = new Map<string, string>();
+  for (const g of l.siedziba.gospodarstwa) for (const id of g.czlonkowie) domOsoby.set(id, g.id);
+  const wynik = new Map<string, OsobaGry>();
+  for (const ref of refs) {
+    const o = wg.get(ref);
+    if (!o || wynik.has(ref)) continue;
+    const dom = domOsoby.get(ref);
+    wynik.set(ref, osobaZ(o, osoby, wg, (dom === undefined ? undefined : historie.get(dom)) ?? []));
+  }
+  return wynik;
 }
