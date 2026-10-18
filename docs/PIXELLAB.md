@@ -75,6 +75,7 @@ Koszt w generacjach abonamentu, zmierzony na koncie przy kotwicy stylu 18.10.202
 - `create_object_pro_flash` 96×64: 5.
 - `create_topdown_tileset` 32 px: standard 4, pro 15.
 - `create_building_kit` 32 px, `create_tiles_pro` 32 px, `edit_image` 160×128: po 10.
+- Z cennika w opisie narzędzi (jeszcze niezmierzone): `animate_character` z szablonu 1 na kierunek, z opisu przy postaci 48 px około 1 na kierunek; `create_character_state` 10–25.
 - `create_image_pro` 160×128 (cztery propozycje w jednym zamówieniu): 15.
 
 ## Licencja
@@ -98,6 +99,7 @@ Szczegóły, prompty i koszty każdej próby są w `assets/manifest.json`, zesta
 - Trzepak i inne obiekty: `create_map_object` rysuje po swojemu (ukośnie, z kępą trawy), `create_object_pro_flash` z paletą trzyma opis i rzut od frontu.
 - Teren: zestaw pro z paletą wyszedł dobrze, standard był jaskrawy. Kolejny zestaw dowiązany przez `lower_base_tile_id` zostawia ten sam chodnik. Trawnik trzeba opisywać jako spokojny i o niskim kontraście, bo „kilka liści” daje łąkę z makami. Jednolite kafelki da się odbijać w poziomie i pionie, żeby nie było widać powtórzeń. Teren gry jest zapisany per kafelek, a kafelki Wanga patrzą na narożniki, więc rysujemy je na podwójnej siatce: narożnik kafelka Wanga to środek kafelka świata, a granica terenów wypada wtedy na krawędzi kafelka.
 - Postać v3 wypełnia całe płótno: 64 px to 63 px wzrostu, czyli około 2 m i olbrzym przy ludziach z gry (45 px). Płótno 48 daje 47 px, tyle co dziś.
+- Różne postacie: każda nowa postać v3 w tych samych ustawieniach (płótno 48, `low top-down`, `single color outline`, `medium detail`) wychodzi w tym samym stylu bez wzorca, za 2 generacje. Kolory ubrań dla tłumu przemalowuje kod (`przemalowanie` przy postaci i `rampy` w palecie w manifeście), bo stany postaci kosztują 10–25 generacji. Pełna obsada, 12 postaci z chodem i pięcioma pracami, to według cennika około 310 generacji w 4 kierunkach albo 600 w 8.
 - Blok: `create_building_kit` w `square_topdown` skraca ziemię do 32×24 (gra ma 32×32 z góry), a ściany dwukafelkowe mają okna co około 21 px, bez balkonów. Do sprawdzenia `tile_view_angle` 90 z niskim `wall_angle`. Modele pro (`create_image_pro`, `edit_image`) rysują fasadę w naturalnej skali około 13 px na piętro. Przy 9 px na piętro, jak dziś w grze (`floorH` w `src/render/art/scene.ts`), da się tylko przemalować wycinek przez img2img. Kawałek bloku z `create_image_pro` składamy w moduły: profil attyki, pas fasady (gzyms z górnym piętrem, środkowe piętro powtarzane, parter z cokołem), przęsła wzdłuż ściany, wejście nad drzwiami. Prostokąty są w manifeście.
 - Dach: `create_tiles_pro` ze wzorcem stylu daje 16 wariantów papy, ale każdy z jasną ramką, więc obok siebie wyglądają jak posadzka. Dach to tło w kolorze papy z szumem i szwami, a środki kafelków (kałuża, mech, odpływ, gruz, spękania, żwir) są rzadkimi naklejkami.
 

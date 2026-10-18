@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { waitIdle } from './browser.ts';
-import { decodePng } from './png.ts';
+import { decodePng, encodePng } from './png.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const file = (rel: string) => fs.readFileSync(path.join(ROOT, rel));
@@ -39,19 +39,28 @@ interface Dach {
   gestosc: number;
 }
 
+/** kolory ubrania postaci do przemalowania (tylko w tych wierszach, żeby nie ruszyć skóry dłoni i twarzy) */
+interface Przemalowanie {
+  kolory: string[];
+  wiersze: [number, number];
+}
+
 interface Asset {
   id: string;
+  co: string;
   narzedzie: string;
   koszt: number;
   status: string;
   wybrany?: string;
   moduly?: Moduly;
   uzycie?: Dach;
+  przemalowanie?: Przemalowanie;
   pochodne?: { koszt: number }[];
 }
 
 interface Manifest {
-  paleta: { nazwa: string; kolory: string[] };
+  paleta: { nazwa: string; kolory: string[]; rampy: Record<string, string[]> };
+  zarzad: string[];
   assety: Asset[];
 }
 
@@ -66,9 +75,10 @@ export interface Kotwica {
   /** narożniki NW NE SW SE (1 = trawa) → miejsce kafelka w arkuszu */
   wang: { c: string; x: number; y: number }[];
   trzepak: string;
-  emeryt: string[];
-  /** wiersz pod stopami (kotwica sprite'a): trzepak i postać od południa */
-  stopy: { trzepak: number; emeryt: number };
+  /** wiersz pod stopami trzepaka (kotwica sprite'a) */
+  stopy: number;
+  /** postacie dla kolejnych osób zarządu: 8 kierunków od południa i wiersz pod stopami */
+  zarzad: { kierunki: string[]; stopy: number }[];
   blok: string;
   moduly: Moduly;
   dach: Omit<Dach, 'naklejki'> & { naklejki: string[]; ciemny: string; jasny: string };
@@ -82,6 +92,38 @@ function stopy(rel: string): number {
   const { width, height, rgba } = decodePng(file(rel));
   for (let y = height - 1; y >= 0; y--) for (let x = 0; x < width; x++) if (rgba[(y * width + x) * 4 + 3]) return y + 1;
   return height;
+}
+
+/** postać po dociągnięciu do palety, w danym kierunku */
+const postac = (id: string, d: string) => `assets/raw/${id}/paleta/${d}.png`;
+
+/** jasność koloru #rrggbb */
+function jasnosc(hex: string): number {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+}
+
+/**
+ * Przemalowanie ubrania na inną rampę palety: najciemniejszy kolor ubrania przechodzi na pierwszy kolor rampy,
+ * następny na drugi i tak dalej, tylko w wierszach ubrania. Z kilku postaci z PixelLab robi tłum bez kolejnych
+ * generacji.
+ */
+export function przemaluj(rel: string, p: Przemalowanie, rampa: string[]): string {
+  const { width, height, rgba } = decodePng(file(rel));
+  const z = [...p.kolory].sort((a, b) => jasnosc(a) - jasnosc(b));
+  const hex = (c: string) => Number.parseInt(c.slice(1), 16);
+  const mapa = new Map(z.map((c, i) => [hex(c), hex(rampa[Math.min(i, rampa.length - 1)])]));
+  const out = Uint8Array.from(rgba);
+  for (let y = p.wiersze[0]; y < Math.min(height, p.wiersze[1]); y++)
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const c = out[i + 3] ? mapa.get((out[i] << 16) | (out[i + 1] << 8) | out[i + 2]) : undefined;
+      if (c === undefined) continue;
+      out[i] = c >> 16;
+      out[i + 1] = (c >> 8) & 255;
+      out[i + 2] = c & 255;
+    }
+  return `data:image/png;base64,${Buffer.from(encodePng(width, height, out)).toString('base64')}`;
 }
 
 /** kafelki dachu w kolejności wariantów (PixelLab nazywa pliki od pierwszego opisu, numer wariantu na końcu) */
@@ -109,11 +151,11 @@ export function kotwica(): Kotwica {
       y: t.bounding_box.y,
     })),
     trzepak: png('assets/raw/kotwica-trzepak/trzepak.png'),
-    emeryt: DIRS.map((d) => png(`assets/raw/kotwica-emeryt/paleta/${d}.png`)),
-    stopy: {
-      trzepak: stopy('assets/raw/kotwica-trzepak/trzepak.png'),
-      emeryt: stopy('assets/raw/kotwica-emeryt/paleta/south.png'),
-    },
+    stopy: stopy('assets/raw/kotwica-trzepak/trzepak.png'),
+    zarzad: m.zarzad.map((id) => ({
+      kierunki: DIRS.map((d) => png(postac(id, d))),
+      stopy: stopy(postac(id, 'south')),
+    })),
     blok: png(blok.wybrany!),
     moduly: blok.moduly!,
     dach: {
@@ -213,7 +255,8 @@ async function podmien(page: Page, k: Kotwica) {
       g.drawImage(im, 0, 0);
       return g.getImageData(0, 0, im.width, im.height);
     };
-    const [sheet, trz, blok, ...eme] = await Promise.all([k.tileset, k.trzepak, k.blok, ...k.emeryt].map(load));
+    const [sheet, trz, blok] = await Promise.all([k.tileset, k.trzepak, k.blok].map(load));
+    const ludzie = await Promise.all(k.zarzad.map((z) => Promise.all(z.kierunki.map(load))));
     const naklejki = (await Promise.all(k.dach.naklejki.map(load))).map(pixels);
     // klasy Pixi z sprite'a, który już jest w scenie (strona nie wystawia modułu pixi.js)
     const any = v.actors.children.find((c) => c.texture)!;
@@ -371,18 +414,21 @@ async function podmien(page: Page, k: Kotwica) {
     const tz = w.props.find((p) => p.kind === 'trzepak')!;
     for (const e of v.things.values()) if (e.thing.kind === 'trzepak') e.inside = true;
     const ts = sprite(trz);
-    ts.anchor.set(0.5, k.stopy.trzepak / trz.height);
+    ts.anchor.set(0.5, k.stopy / trz.height);
     ts.position.set((tz.x + tz.w / 2) * T, tz.y * T + 20);
     ts.zIndex = tz.y + tz.h;
     v.actors.addChild(ts);
 
-    // zarząd: emeryt w kierunku pionka z kodu (0 południe, 1 północ, 2 zachód, 3 wschód), pionek z kodu poza kadrem
+    // zarząd: każda osoba inną postacią z PixelLab, w kierunku pionka z kodu (0 południe, 1 północ, 2 zachód,
+    // 3 wschód); pionek z kodu poza kadrem
     const face = [0, 4, 6, 2];
+    let n = 0;
     for (const p of sim.st.pawns) {
       if (p.kind !== 'core') continue;
-      const im = eme[face[p.dir]];
+      const z = n++ % ludzie.length;
+      const im = ludzie[z][face[p.dir]];
       const s = sprite(im);
-      s.anchor.set(0.5, k.stopy.emeryt / im.height);
+      s.anchor.set(0.5, k.zarzad[z].stopy / im.height);
       s.position.set(Math.round(p.x * T), Math.round(p.y * T));
       s.zIndex = p.y;
       v.actors.addChild(s);
@@ -412,10 +458,10 @@ export async function kotwicaStylu(page: Page, base: string) {
     img { display: block; }
   </style>
   <figure><figcaption>Dziś: grafika rysowana kodem</figcaption><img src="data:image/png;base64,${przed}"></figure>
-  <figure><figcaption>Kotwica z PixelLab: trawnik z chodnikiem, trzepak, emeryt, blok</figcaption><img src="data:image/png;base64,${po}"></figure>`);
+  <figure><figcaption>Kotwica z PixelLab: trawnik z chodnikiem, trzepak, zarząd, blok</figcaption><img src="data:image/png;base64,${po}"></figure>`);
 }
 
-/** arkusz kotwicy: wybrane assety w powiększeniu, z narzędziem i kosztem, do tego paleta */
+/** arkusz kotwicy: wybrane assety w powiększeniu, z narzędziem i kosztem, zarząd z przemalowaniami, paleta */
 export async function kotwicaArkusz(page: Page) {
   const m = manifest();
   const k = kotwica();
@@ -426,31 +472,43 @@ export async function kotwicaArkusz(page: Page) {
     return `<h2>${co}<small>${a.narzedzie} · ${gen(koszt(a))}</small></h2>`;
   };
   const img = (src: string, zoom: number) => `<img src="${src}" style="zoom:${zoom}">`;
-  const wybrane = ['kotwica-chodnik-trawa', 'kotwica-trzepak', 'kotwica-emeryt', 'kotwica-blok', 'kotwica-blok-dach'];
+  const rampy = Object.entries(m.paleta.rampy);
+  const zarzad = m.zarzad.map((id, i) => {
+    const a = asset(m, id);
+    const p = a.przemalowanie;
+    const warianty = p
+      ? rampy.map(
+          ([n, r]) => `<figure>${img(przemaluj(postac(id, 'south'), p, r), 2)}<figcaption>${n}</figcaption></figure>`,
+        )
+      : [];
+    return `<div class="row"><div>${opis(id, a.co)}${k.zarzad[i].kierunki.map((s) => img(s, 2)).join('')}</div>
+      <div><h2>Przemalowania w kodzie<small>0 gen.</small></h2>${warianty.join('')}</div></div>`;
+  });
+  const wybrane = ['kotwica-chodnik-trawa', 'kotwica-trzepak', ...m.zarzad, 'kotwica-blok', 'kotwica-blok-dach'];
   const naKotwice = wybrane.reduce((s, id) => s + koszt(asset(m, id)), 0);
   const razem = m.assety.reduce((s, a) => s + koszt(a), 0);
   const kafle = dachowki().map((f) => img(png(f), 2));
-  await page.setViewportSize({ width: 1440, height: 1400 });
+  await page.setViewportSize({ width: 1440, height: 1290 });
   await page.setContent(`<!doctype html><meta charset="utf-8"><style>
     body { margin: 0; padding: 24px 32px; background: #26292e; color: #e3e0d6; font: 14px/1.4 system-ui, sans-serif; }
     h1 { font-size: 22px; margin: 0 0 4px; } p { margin: 0 0 18px; color: #b7b2a6; }
-    h2 { font-size: 15px; margin: 0 0 10px; } h2 small { display: block; font-weight: 400; color: #9a958a; }
+    h2 { font-size: 15px; margin: 0 0 8px; } h2 small { display: block; font-weight: 400; color: #9a958a; }
     img { image-rendering: pixelated; vertical-align: bottom; }
-    .row { display: flex; gap: 40px; margin-bottom: 26px; align-items: flex-start; }
-    .tiles { display: grid; grid-template-columns: repeat(8, 64px); gap: 6px; }
+    figure { display: inline-block; margin: 0 6px 0 0; text-align: center; }
+    figcaption { font-size: 11px; color: #9a958a; }
+    .row { display: flex; gap: 40px; margin-bottom: 18px; align-items: flex-start; }
+    .tiles { display: grid; grid-template-columns: repeat(4, 64px); gap: 6px; }
     .pal { display: grid; grid-template-columns: repeat(16, 76px); gap: 4px; }
     .pal div { height: 40px; font: 11px/1 ui-monospace, monospace; display: flex; align-items: flex-end; padding: 3px; }
   </style>
   <h1>Kotwica stylu z PixelLab, do akceptacji</h1>
-  <p>Wybrane cztery assety (z kafelkami dachu): ${gen(naKotwice)} Razem z odrzuconymi próbami ${gen(razem)} z 2000 w abonamencie, 0 USD. Szczegóły i odrzucone próby w assets/manifest.json.</p>
-  <div class="row"><div>${opis('kotwica-emeryt', 'Emeryt w kurtce, 8 kierunków, płótno 48 px')}${k.emeryt.map((s) => img(s, 3)).join('')}</div></div>
+  <p>Wybrane assety: ${gen(naKotwice)} Razem z odrzuconymi próbami ${gen(razem)} z 2000 w abonamencie, 0 USD. Każda następna postać to 2 gen., warianty kolorów ubrań robi kod za darmo. Szczegóły w assets/manifest.json.</p>
+  ${zarzad.join('')}
   <div class="row">
-    <div>${opis('kotwica-trzepak', 'Trzepak 96×64')}${img(k.trzepak, 3)}</div>
-    <div>${opis('kotwica-chodnik-trawa', 'Chodnik i trawnik, 16 kafelków Wanga 32 px')}${img(k.tileset, 3)}</div>
-  </div>
-  <div class="row">
-    <div>${opis('kotwica-blok', 'Kawałek bloku 160×128, fasada 13 px na piętro (gra ma dziś 9)')}${img(k.blok, 3)}</div>
-    <div>${opis('kotwica-blok-dach', 'Dach: 16 wariantów papy 32 px')}<div class="tiles">${kafle.join('')}</div></div>
+    <div>${opis('kotwica-trzepak', 'Trzepak 96×64')}${img(k.trzepak, 2)}</div>
+    <div>${opis('kotwica-chodnik-trawa', 'Chodnik i trawnik, 16 kafelków 32 px')}${img(k.tileset, 2)}</div>
+    <div>${opis('kotwica-blok', 'Kawałek bloku, 13 px na piętro (gra ma dziś 9)')}${img(k.blok, 2)}</div>
+    <div>${opis('kotwica-blok-dach', 'Dach: 16 wariantów papy')}<div class="tiles">${kafle.join('')}</div></div>
   </div>
   <h2>Paleta ${m.paleta.nazwa}, 32 kolory z palette.ts</h2>
   <div class="pal">${m.paleta.kolory

@@ -38,8 +38,16 @@
       "#b07a55",
       "#3b4a5e",
       "#5f5a3a"
-    ]
+    ],
+    "rampy": {
+      "granat": ["#26323d", "#3b4a5e", "#3d5262", "#a6bfd4"],
+      "zieleń": ["#3a5229", "#4c6631", "#648043", "#8a9a55"],
+      "szarość": ["#313336", "#46484a", "#6f6b64", "#9a958a"],
+      "rdza": ["#463324", "#7a4a2e", "#8e4b36", "#d2552a"]
+    },
+    "opis_ramp": "rampy od najciemniejszego koloru; kod przemalowuje nimi ubrania postaci (pole przemalowanie: kolory ubrania i wiersze, w których leży), najciemniejszy kolor ubrania na pierwszy kolor rampy i tak dalej, żeby tłum nie wyglądał tak samo bez kolejnych generacji"
   },
+  "zarzad": ["kotwica-emeryt", "kotwica-emerytka", "kotwica-zlota-raczka", "kotwica-mloda"],
   "wejscia": {
     "assets/wejscia/blok-lanciego-17.png": "obraz startowy i wzorzec układu dla bloku: wycinek gry 160×128 w skali 1:1 (Lanciego, budynek 17, cztery piętra, wejście od południa), grafika rysowana kodem z 18.10.2026",
     "assets/wejscia/paleta-32.png": "paleta jako pasek 32×1 do narzędzi, które biorą paletę z obrazka (create_image_pixflux, reduce_colors)"
@@ -200,6 +208,10 @@
       "koszt": 2,
       "status": "gotowy",
       "pliki": ["assets/raw/kotwica-emeryt/Idle/rotations", "assets/raw/kotwica-emeryt/metadata.json"],
+      "przemalowanie": {
+        "kolory": ["#463324", "#5f5a3a", "#765e42", "#b07a55"],
+        "wiersze": [13, 31]
+      },
       "pochodne": [
         {
           "narzedzie": "reduce_colors",
@@ -215,6 +227,117 @@
         }
       ],
       "uwagi": "płótno 48×48, 47 px wzrostu (ludzie rysowani kodem mają 45 px), stopy w wierszu 46. Kolejne postaci w tym stylu: create_character pro ze style_character_id tej postaci albo v3 z tym samym opisem stylu."
+    },
+    {
+      "id": "kotwica-emerytka",
+      "grupa": "kotwica-stylu",
+      "co": "emerytka w płaszczu, 8 kierunków, stoi",
+      "narzedzie": "create_character",
+      "prompt": "elderly Polish woman about 70 years old, short grey permed hair, round glasses, long camel wool winter coat with big buttons, burgundy knitted scarf, dark skirt, thick brown tights, sturdy black shoes, slightly hunched, sharp-eyed and bossy",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Emerytka w płaszczu 48"
+      },
+      "pixellab": "7f52d5c0-ac95-4452-87e1-fd20dea11fc9",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-emerytka/Idle/rotations", "assets/raw/kotwica-emerytka/metadata.json"],
+      "przemalowanie": {
+        "kolory": ["#7a4a2e", "#a8682b", "#b07a55"],
+        "wiersze": [14, 36]
+      },
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków emerytki, złotej rączki i młodej razem (24 klatki, jedno wywołanie)"
+          },
+          "pixellab": "0b466adc-1e7a-4b24-8f7e-047190834db8",
+          "koszt": 0.034,
+          "pliki": ["assets/raw/kotwica-emerytka/paleta"]
+        }
+      ],
+      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
+    },
+    {
+      "id": "kotwica-zlota-raczka",
+      "grupa": "kotwica-stylu",
+      "co": "złota rączka w kombinezonie, 8 kierunków, stoi",
+      "narzedzie": "create_character",
+      "prompt": "Polish handyman about 45 years old, stubble, dark grey knitted beanie, faded navy blue work overalls over a grey hoodie, tool belt with a hammer, heavy brown work boots, broad shoulders, practical and calm",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Złota rączka 48"
+      },
+      "pixellab": "f06b4a96-4373-4f57-a658-99622d74a68d",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/rotations", "assets/raw/kotwica-zlota-raczka/metadata.json"],
+      "przemalowanie": {
+        "kolory": ["#26323d", "#3b4a5e", "#3d5262"],
+        "wiersze": [10, 37]
+      },
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków emerytki, złotej rączki i młodej razem (24 klatki, jedno wywołanie)"
+          },
+          "pixellab": "0b466adc-1e7a-4b24-8f7e-047190834db8",
+          "koszt": 0.033,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/paleta"]
+        }
+      ],
+      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
+    },
+    {
+      "id": "kotwica-mloda",
+      "grupa": "kotwica-stylu",
+      "co": "młoda w parce, 8 kierunków, stoi",
+      "narzedzie": "create_character",
+      "prompt": "young Polish woman about 20 years old, dark brown hair in a ponytail, olive green parka with a fur-trimmed hood down, black jeans, dirty white sneakers, small dark backpack, alert and restless",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Młoda w parce 48"
+      },
+      "pixellab": "f6d0b247-198c-4ecc-8a47-54333c1e6455",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-mloda/Idle/rotations", "assets/raw/kotwica-mloda/metadata.json"],
+      "przemalowanie": {
+        "kolory": ["#463324", "#5f5a3a", "#765e42", "#8a9a55"],
+        "wiersze": [15, 32]
+      },
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków emerytki, złotej rączki i młodej razem (24 klatki, jedno wywołanie)"
+          },
+          "pixellab": "0b466adc-1e7a-4b24-8f7e-047190834db8",
+          "koszt": 0.033,
+          "pliki": ["assets/raw/kotwica-mloda/paleta"]
+        }
+      ],
+      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
     },
     {
       "id": "kotwica-emeryt-64",
