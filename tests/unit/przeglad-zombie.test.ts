@@ -8,6 +8,7 @@ import { govInput } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { createSim, FEVER_TICKS, infect, type Pawn, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
 import { mockBlock } from './interior-mock.ts';
+import { pl } from './po-angielsku.ts';
 
 const w = mockBlock();
 const size = w.size;
@@ -115,7 +116,7 @@ describe('poprawki z przeglądu', () => {
     const opts = card.people.find((c) => c.id === st.people[p.person].id)!.options;
     for (const o of opts.filter((x) => x.key.startsWith('wyprawa:'))) {
       expect(o.ok).toBe(false);
-      expect(o.why).toMatch(/ugryzion/i);
+      expect(pl(o.why)).toMatch(/ugryzion/i);
     }
     runTo(sim, p.bite! + FEVER_TICKS + 10);
     expect(st.pawns.includes(p)).toBe(false);

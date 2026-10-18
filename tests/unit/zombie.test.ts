@@ -77,7 +77,7 @@ describe('szwendacze', () => {
     expect(zombies(st)).toEqual([]);
   });
 
-  it('za dnia snuje się ambientCount(dzień) szwendaczy daleko od siatki, za siatką', () => {
+  it('za dnia rodzi się ambientCount(dzień) szwendaczy co najmniej 15 m od siatki, za siatką', () => {
     const { st, sim } = zombieSim();
     sim.step();
     expect(zombies(st)).toHaveLength(ambientCount(1));
@@ -105,7 +105,7 @@ describe('szwendacze', () => {
     expect(snapshot(st, w).fence.durability).toBeLessThan(1);
   });
 
-  it('o 21:00 stado zbiera snujących się, a z krawędzi mapy dochodzi tylko brakująca reszta', () => {
+  it('o 21:00 stado zbiera snujących się, a z okolicy dochodzi tylko brakująca reszta', () => {
     const { st, sim } = zombieSim(15);
     runTo(sim, atHour(1, 20.5));
     expect(zombies(st)).toHaveLength(ambientCount(1));
@@ -456,8 +456,8 @@ describe('praca za dnia i alarm', () => {
     runTo(sim, st.tick + 2500);
     expect(st.fence!.hp[k]).toBe(90);
     expect(heap(st, 'deski') + heap(st, 'zlom')).toBe(m0 - 2);
-    // cała siatka: nic do wzmocnienia
-    const fresh = w.fence.tiles[k + 1];
+    // cała siatka: nic do wzmocnienia (za dnia szwendacze pod siatką mogli już nadgryźć inne kafelki)
+    const fresh = w.fence.tiles.find((_, j) => st.fence!.hp[j] === 100)!;
     expect(commandsAt(st, w, [a.id], fresh).some((m) => m.cmd.t === 'brace')).toBe(false);
   });
 

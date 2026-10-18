@@ -27,9 +27,10 @@ function breakIn(h = 23, mode: 'zwykly' | 'zombie' = 'zwykly') {
   return { st, sim, inside: inside! };
 }
 
-/** szabrownicy czekają za zamkniętą bramą, a przy bramie stoi warta z daną bronią */
-function gateWatch(weapon: Pawn['weapon'], mode: 'zwykly' | 'zombie' = 'zwykly') {
+/** szabrownicy czekają za zamkniętą bramą, a przy bramie stoi warta z daną bronią (i nabojami w magazynie) */
+function gateWatch(weapon: Pawn['weapon'], mode: 'zwykly' | 'zombie' = 'zwykly', naboje = 0) {
   const st = createSim(w, 3, { core: 2, mode });
+  if (naboje) st.store.ammo!.naboje = naboje;
   st.tick = atHour(1, 22);
   const sim = new Sim(w, st);
   const g = core(st)[0];
@@ -83,7 +84,8 @@ describe('walka', () => {
   });
 
   it('strzał z rewolweru zdejmuje nabój i robi hałas na 40 m przez 2 sekundy; bez naboi bije jak gołe ręce', () => {
-    const { st, sim } = gateWatch('rewolwer', 'zombie');
+    // zwykły tryb: warta strzela przez bramę (w trybie zombie sama nie strzela przez siatkę, tests/unit/zombie-szlif)
+    const { st, sim } = gateWatch('rewolwer', 'zwykly', 12);
     expect(st.store.ammo!.naboje).toBe(12);
     while (st.store.ammo!.naboje === 12 && st.tick < atHour(1, 23)) sim.step();
     expect(st.store.ammo!.naboje).toBe(11);

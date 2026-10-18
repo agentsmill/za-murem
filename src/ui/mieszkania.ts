@@ -1,15 +1,19 @@
 /* Mieszkania siedziby w interfejsie (docs/M2-fala-1.md): stan (zarząd, mieszkańcy, puste z powodem i rokiem),
    uszkodzenia do naprawy, przeszukane pomieszczenia i karta mieszkania. Stan, nasze i przeszukane daje st.apts,
    naprawy st.damage (fixed), koszty napraw REPAIR symulacji, a liczby do karty odczyt symulacji
-   (snapshot().apts: damaged, rooms, searched). Czyste funkcje stanu i świata, bez DOM. */
+   (snapshot().apts: damaged, rooms, searched). Czyste funkcje stanu i świata, bez DOM. Napisy w bieżącym języku:
+   polskie tablice zostają tutaj, angielskie leżą w mieszkania.en.ts. */
 
-import { REPAIR } from '../sim/mieszkania.ts';
+import { jezyk, L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
+import { REPAIR, searchable } from '../sim/mieszkania.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimApt } from '../sim/snapshot.ts';
 import type { AptWhy, DamageKind } from '../world/apts.ts';
 import type { RoomKind } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
 import { costText } from './budowa.ts';
+import { DAMAGE_EN, WHY_SHORT_EN, WHY_TEXT_EN } from './mieszkania.en.ts';
 import { esc } from './tekst.ts';
 
 /** pomieszczenia mieszkania (bez klatki), od wejścia */
@@ -40,14 +44,14 @@ export const WHY_TEXT: Record<AptWhy, (year: number) => string> = {
   pozar: (y) => `Pożar w ${y}: spalenizna, wybite okno, część mebli spalona.`,
 };
 
-const ROOM_NAME: Partial<Record<RoomKind, string>> = {
-  przedpokoj: 'Przedpokój',
-  pokoj: 'Pokój',
-  kuchnia: 'Kuchnia',
-  lazienka: 'Łazienka',
-  sala: 'Sala',
-  hala: 'Hala',
-  zaplecze: 'Zaplecze',
+const ROOM_NAME: Partial<Record<RoomKind, Tx>> = {
+  przedpokoj: tx('Przedpokój', 'Hallway'),
+  pokoj: tx('Pokój', 'Room'),
+  kuchnia: tx('Kuchnia', 'Kitchen'),
+  lazienka: tx('Łazienka', 'Bathroom'),
+  sala: tx('Sala', 'Hall'),
+  hala: tx('Hala', 'Shed'),
+  zaplecze: tx('Zaplecze', 'Back room'),
 };
 
 /** łóżka jak w symulacji: całe łóżko i wersalka to jedno miejsce, łóżka piętrowe dwa */
@@ -60,6 +64,8 @@ export interface AptView {
   year?: number;
   /** mieszkanie zarządu albo zajęte poleceniem 'claim' */
   ours: boolean;
+  /** pomieszczenia wolno przeszukać: puste mieszkanie, w domu jednorodzinnym także dom komitetu (sim: searchable) */
+  search: boolean;
   rooms: { id: number; name: string; area: number; searched: boolean }[];
   /** uszkodzenia mieszkania (id: indeks w st.damage, jak w poleceniu 'repair') z kosztem naprawy */
   damages: { id: number; kind: DamageKind; tile: number; name: string; cost: string; fixed: boolean }[];
@@ -97,9 +103,10 @@ export function aptView(st: SimState, w: World, apt: number, snap: readonly SimA
     why: g.why,
     year: g.year,
     ours: g.state === 'zarzad' || g.ours,
+    search: searchable(w, g),
     rooms: rooms.map((r) => ({
       id: r.id,
-      name: ROOM_NAME[r.kind] ?? r.kind,
+      name: tr(ROOM_NAME[r.kind] ?? r.kind),
       area: r.area,
       searched: searched.has(r.id),
     })),
@@ -110,7 +117,7 @@ export function aptView(st: SimState, w: World, apt: number, snap: readonly SimA
               id,
               kind: d.kind,
               tile: d.tile,
-              name: DAMAGE_NAME[d.kind],
+              name: L(DAMAGE_NAME[d.kind], DAMAGE_EN[d.kind]),
               cost: costText(REPAIR[d.kind].cost),
               fixed: d.fixed,
             },
@@ -124,16 +131,24 @@ export function aptView(st: SimState, w: World, apt: number, snap: readonly SimA
   };
 }
 
-/** nagłówek stanu („Puste od 2034, wyjazd”) */
-export function aptState(v: AptView): string {
-  if (v.state === 'zarzad') return 'Mieszkanie zarządu';
-  if (v.state === 'mieszkancy') return 'Mieszkają tu ludzie';
-  const head = v.ours ? 'Zajęte przez zarząd' : 'Puste';
-  return v.why ? `${head} od ${v.year ?? '?'}, ${WHY_SHORT[v.why]}` : head;
+const wielka = (t: string): string => t[0].toUpperCase() + t.slice(1);
+
+/** nagłówek stanu („Puste od 2034, wyjazd”; po angielsku „Empty since 2034, moved away”); lokum zarządu ze słownika:
+    mieszkanie zarządu, w domu dom komitetu */
+export function aptState(v: AptView, words: Words = wordsOf(BLOK), e: WordsEn = wordsEn(BLOK)): string {
+  if (v.state === 'zarzad') return L(`${words.lokal.M} ${words.zarzad.d}`, `${wielka(e.krotko)}’s ${e.lokal.noun}`);
+  if (v.state === 'mieszkancy') return L('Mieszkają tu ludzie', 'People live here');
+  const head = v.ours ? L(`Zajęte przez ${words.zarzad.krotko}`, `Claimed by ${e.krotko}`) : L('Puste', 'Empty');
+  if (!v.why) return head;
+  // po angielsku rok mówi, od kiedy mieszkanie stoi puste, także zajęte przez zarząd
+  return jezyk() === 'en'
+    ? `${v.ours ? `Claimed by ${e.krotko}, empty` : 'Empty'} since ${v.year ?? '?'}, ${WHY_SHORT_EN[v.why]}`
+    : `${head} od ${v.year ?? '?'}, ${WHY_SHORT[v.why]}`;
 }
 
-/** karta mieszkania (w miejscu karty osoby): stan, powód opuszczenia, co do naprawy, co już przeszukane */
-export function aptCard(v: AptView, touch: boolean): string {
+/** karta mieszkania (w miejscu karty osoby): stan, powód opuszczenia, co do naprawy, co już przeszukane; w domu
+    jednorodzinnym karta domu komitetu z jego pomieszczeniami do przeszukania */
+export function aptCard(v: AptView, touch: boolean, words: Words = wordsOf(BLOK), e: WordsEn = wordsEn(BLOK)): string {
   const empty = v.state === 'puste';
   const done = v.damages.filter((d) => d.fixed);
   const damages = v.damages.length
@@ -141,37 +156,47 @@ export function aptCard(v: AptView, touch: boolean): string {
         .map(
           (d) =>
             `<li class="apt-i${d.fixed ? ' done' : ''}"><span>${esc(d.name)}</span><b class="apt-c">${
-              d.fixed ? 'naprawione' : esc(d.cost)
+              d.fixed ? L('naprawione', 'repaired') : esc(d.cost)
             }</b></li>`,
         )
         .join('')}</ul>`
-    : '<p class="apt-none">Nic do naprawy.</p>';
+    : `<p class="apt-none">${L('Nic do naprawy.', 'Nothing to repair.')}</p>`;
   const rooms = `<ul class="apt-list">${v.rooms
     .map(
       (r) =>
         `<li class="apt-i${r.searched ? ' done' : ''}"><span>${esc(r.name)}, ${r.area} m²</span><b class="apt-c">${
-          r.searched ? 'przeszukane' : 'do przeszukania'
+          r.searched ? L('przeszukane', 'searched') : L('do przeszukania', 'not searched')
         }</b></li>`,
     )
     .join('')}</ul>`;
   const how = touch
-    ? 'Przytrzymajcie palec w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.'
-    : 'Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.';
+    ? L(words.szukanie.karta.dotyk, e.szukanie.karta.dotyk)
+    : L(words.szukanie.karta.mysz, e.szukanie.karta.mysz);
+  const year = v.year ?? 2026;
   return [
-    `<h2>Mieszkanie ${v.apt + 1}</h2>`,
-    `<p class="sub">${esc(aptState(v))}</p>`,
-    empty && v.why ? `<p class="apt-why">${esc(WHY_TEXT[v.why](v.year ?? 2026))}</p>` : '',
+    `<h2>${esc(L(words.lokal.nr(v.apt + 1), e.lokal.nr(v.apt + 1)))}</h2>`,
+    `<p class="sub">${esc(aptState(v, words, e))}</p>`,
+    empty && v.why ? `<p class="apt-why">${esc(L(WHY_TEXT[v.why](year), WHY_TEXT_EN[v.why](year)))}</p>` : '',
     empty
-      ? `<h3 class="apt-h">Do naprawy${v.damaged ? ` (${v.damaged})` : ''}</h3>${damages}`
+      ? `<h3 class="apt-h">${L('Do naprawy', 'Repairs')}${v.damaged ? ` (${v.damaged})` : ''}</h3>${damages}`
       : done.length
-        ? `<h3 class="apt-h">Naprawione</h3>${damages}`
+        ? `<h3 class="apt-h">${L('Naprawione', 'Repaired')}</h3>${damages}`
         : '',
-    empty ? `<h3 class="apt-h">Przeszukane: ${v.searchedCount} z ${v.roomCount}</h3>${rooms}` : '',
-    empty && v.beds
-      ? `<p class="apt-beds">${v.ours ? 'Po naprawie' : 'Po zajęciu i naprawie'}: miejsca do spania dla ${v.beds} ${
-          v.beds === 1 ? 'osoby' : 'osób'
-        }.</p>`
+    v.search
+      ? `<h3 class="apt-h">${L(
+          `Przeszukane: ${v.searchedCount} z ${v.roomCount}`,
+          `Searched: ${v.searchedCount} of ${v.roomCount}`,
+        )}</h3>${rooms}`
       : '',
-    empty ? `<p class="doing">${esc(how)}</p>` : '',
+    empty && v.beds
+      ? `<p class="apt-beds">${L(
+          `${v.ours ? 'Po naprawie' : 'Po zajęciu i naprawie'}: miejsca do spania dla ${v.beds} ${
+            v.beds === 1 ? 'osoby' : 'osób'
+          }.`,
+          `${v.ours ? 'Once repaired' : 'Once claimed and repaired'}: sleeps ${v.beds}.`,
+        )}</p>`
+      : '',
+    // dom komitetu po przeszukaniu wszystkiego nie ma już poleceń (w pustym mieszkaniu zostają rozbiórka i naprawy)
+    v.search && (empty || v.searchedCount < v.roomCount) ? `<p class="doing">${esc(how)}</p>` : '',
   ].join('');
 }

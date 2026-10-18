@@ -242,7 +242,7 @@ export function answer(gov: GovState, atr: Atrapa, p: Prompt, policy: PolicyName
   const i = atr.input();
   if (p.k === 'raport') {
     ackReport(gov);
-    return p.report.lines.join(' ');
+    return p.report.lines.map((l) => l.pl).join(' ');
   }
   if (p.k === 'uchwala') {
     const ok = p.options.filter((o) => o.s === 'ok');
@@ -282,7 +282,7 @@ export function answer(gov: GovState, atr: Atrapa, p: Prompt, policy: PolicyName
   const ok = p.choices.map((c, k) => [c, k] as const).filter(([c]) => c.ok);
   const pickK = policy === 'losowo' ? ok[Math.floor(r() * ok.length)][1] : ok[0][1];
   atr.apply(chooseEvent(gov, i, pickK));
-  return `${p.title}: ${p.choices[pickK].label}`;
+  return `${p.title.pl}: ${p.choices[pickK].label.pl}`;
 }
 
 /** przebieg do minuty gry `until` (od północy pierwszego dnia); zarząd co sekundę przy ekranie */

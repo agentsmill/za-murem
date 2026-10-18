@@ -1,6 +1,8 @@
 /* Zrzuty ekranu w prawdziwym Chromium: mapy testowe, kamera i pora dnia ustawiane w adresie.
    Uruchomienie: npm run shots [-- filtr] [--dist]   (filtr: fragment nazwy; --dist: zbudowana wersja)
-   Wynik: shots/<nazwa>.png. Każdy zrzut obejrzyj, zanim zgłosisz zmianę. */
+   Wynik: shots/<nazwa>.png. Każdy zrzut obejrzyj, zanim zgłosisz zmianę.
+   Język: pole `lang` scenariusza (przez pamięć przeglądarki, jak wybór gracza). Bez pola polski, bo starsze
+   scenariusze sprawdzają polskie napisy; angielskie i polskie wersje tych samych ekranów to scenariusze en-* i pl-*. */
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -31,6 +33,8 @@ interface Shot {
   allow?: RegExp;
   /** z allow: błąd jest spodziewany tylko dla zasobu pod tym adresem (np. tylko tabele z data/mieszkancy/) */
   allowUrl?: RegExp;
+  /** język gry (domyślnie polski, nagłówek pliku) */
+  lang?: 'en' | 'pl';
 }
 
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
@@ -193,6 +197,33 @@ const SHOTS: Shot[] = [
       const z = await page.evaluate(() => window.zm!.sim!.st.pawns.filter((p) => p.kind === 'zombie').length);
       console.log(`  szwendaczy: ${z}`);
       if (z < 14) throw new Error('za mało szwendaczy');
+    },
+  },
+  {
+    // zwykły start bez ?stado: do 19:30 szwendacze z pasa przy siatce ściągają się pod nią
+    name: 'zombie-wieczor',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const info = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        for (let k = 0; k < 3600; k++) sim.step();
+        const w = sim.w;
+        const near = (p: { x: number; y: number }) =>
+          w.fence.tiles.some((t) => Math.hypot((t % w.size) + 0.5 - p.x, Math.floor(t / w.size) + 0.5 - p.y) <= 12);
+        const z = st.pawns.filter((p) => p.kind === 'zombie');
+        const at = z.filter(near);
+        if (at.length)
+          zm.setCam(at.reduce((a, p) => a + p.x, 0) / at.length - 4, at.reduce((a, p) => a + p.y, 0) / at.length, 1.2);
+        return { all: z.length, near: at.length };
+      });
+      console.log(`  szwendaczy: ${info.all}, do 12 m od siatki: ${info.near}`);
+      if (info.near < 4) throw new Error('szwendacze nie ściągają się pod siatkę');
+      await waitIdle(page);
+      await page.waitForTimeout(350);
     },
   },
   {
@@ -714,6 +745,602 @@ const SHOTS: Shot[] = [
       if (w.n < 2) throw new Error('nie widać wraków');
     },
   },
+  // surowce (docs/superpowers/specs/2026-10-18-surowce-design.md): wraki w trzech stanach, sterty części i leków,
+  // menu wraku i warsztatu
+  ...((): Shot[] => {
+    /** wraki świata posortowane od najbliższego drzwiom siedziby */
+    const nearWrecks = () => {
+      const zm = window.zm!;
+      const w = zm.sim!.w;
+      const door = w.buildings[w.hq].entrances[0].out;
+      const dx = door % w.size;
+      const dy = Math.floor(door / w.size);
+      return w.props
+        .filter((p) => p.kind === 'wrak')
+        .sort((a, b) => Math.hypot(a.x - dx, a.y - dy) - Math.hypot(b.x - dx, b.y - dy));
+    };
+    /** zaznaczenie pierwszej osoby z zarządu kliknięciem w głowę (kamera na siedzibie) */
+    const select = async (page: Page) => {
+      const a = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+        zm.setCam(p.x, p.y, 1.3);
+        return [p.x, p.y];
+      });
+      await waitIdle(page);
+      const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py - 0.55), a);
+      await page.mouse.click(x, y);
+      await page.waitForTimeout(300);
+      if (!(await page.isVisible('#card'))) throw new Error('karta osoby nie pokazała się po zaznaczeniu');
+    };
+    const menuAt = async (page: Page, x: number, y: number) => {
+      await page.mouse.click(x, y, { button: 'right' });
+      await page.waitForSelector('#ctx:not([hidden])');
+      return page.locator('#ctx .ctx-item').allTextContents();
+    };
+    return [
+      {
+        name: 'surowce-wraki',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+          await waitIdle(page);
+          await page.evaluate((src) => {
+            const near = new Function(`return (${src})()`) as () => { x: number; y: number; w: number; h: number }[];
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const size = sim.w.size;
+            const wr = near();
+            sim.st.wraki = [
+              { t: wr[0].y * size + wr[0].x, s: 1 as const },
+              { t: wr[1].y * size + wr[1].x, s: 2 as const },
+            ].sort((a, b) => a.t - b.t);
+            const three = wr.slice(0, 3);
+            const cx = three.reduce((a, p) => a + p.x + p.w / 2, 0) / three.length;
+            const cy = three.reduce((a, p) => a + p.y + p.h / 2, 0) / three.length;
+            zm.setCam(cx, cy, 1.5);
+          }, nearWrecks.toString());
+          await waitIdle(page);
+          const stages = (await thingKeys(page))
+            .filter((k) => k.includes('"kind":"wrak"'))
+            .map((k) => /"stage":(\d)/.exec(k)?.[1] ?? '0');
+          console.log(`  wraki według stanu: ${stages.join(', ')}`);
+          for (const s of ['0', '1', '2']) if (!stages.includes(s)) throw new Error(`nie widać wraku w stanie ${s}`);
+        },
+      },
+      {
+        name: 'surowce-sterty',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const w = sim.w;
+            const size = w.size;
+            const st = sim.st;
+            const taken = (i: number) =>
+              st.things.some(
+                (t) =>
+                  i % size >= t.x - 1 &&
+                  i % size < t.x + t.w + 1 &&
+                  Math.floor(i / size) >= t.y - 1 &&
+                  Math.floor(i / size) < t.y + t.h + 1,
+              );
+            // sześć wolnych kafelków podwórka w rzędzie (co drugi, żeby sterty się nie zlewały)
+            const yard = new Set(w.fence.yard);
+            let row: number[] = [];
+            for (const i of w.fence.yard) {
+              const ok = (k: number) => yard.has(i + 2 * k) && !w.blocked[i + 2 * k] && !taken(i + 2 * k);
+              if ([0, 1, 2, 3, 4, 5].every(ok)) {
+                row = [0, 1, 2, 3, 4, 5].map((k) => i + 2 * k);
+                break;
+              }
+            }
+            const piles: [string, number][] = [
+              ['czesci', 1],
+              ['czesci', 4],
+              ['czesci', 8],
+              ['leki', 1],
+              ['leki', 4],
+              ['leki', 8],
+            ];
+            piles.forEach(([kind, n], k) => {
+              const i = row[k];
+              st.things.push({
+                id: 992000 + k,
+                kind,
+                x: i % size,
+                y: Math.floor(i / size),
+                w: 1,
+                h: 1,
+                rot: 0,
+                n,
+                fuel: 0,
+                by: -1,
+                owner: -1,
+              });
+            });
+            zm.setCam((row[0] % size) + 6, Math.floor(row[0] / size) + 0.5, 2.4);
+          });
+          await waitIdle(page);
+          const keys = (await thingKeys(page)).filter((k) => /"kind":"(czesci|leki)"/.test(k));
+          console.log(`  sterty części i leków: ${keys.length}`);
+          if (keys.length !== 6) throw new Error('nie widać stert części i leków');
+        },
+      },
+      {
+        name: 'surowce-menu-wrak',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          const at = await page.evaluate((src) => {
+            const near = new Function(`return (${src})()`) as () => { x: number; y: number; w: number; h: number }[];
+            const r = near()[0];
+            window.zm!.setCam(r.x + r.w / 2, r.y + r.h / 2, 1.6);
+            return [r.x + r.w / 2, r.y + r.h / 2];
+          }, nearWrecks.toString());
+          await waitIdle(page);
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          console.log(`  menu: ${items.join(' | ')}`);
+          if (!items.some((i) => i.startsWith('Przeszukać'))) throw new Error('w menu wraku nie ma przeszukania');
+        },
+      },
+      {
+        // rozbiórka przeszukanego wraku łomem: poza pracy przy aucie, potem łup niesiony na podwórko
+        name: 'surowce-praca',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate((src) => {
+            const near = new Function(`return (${src})()`) as () => { x: number; y: number; w: number; h: number }[];
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const r = near()[0];
+            const t = r.y * sim.w.size + r.x;
+            sim.st.wraki = [{ t, s: 1 }];
+            const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+            p.weapon = 'lom';
+            sim.push({ t: 'wreck', ids: [p.id], tile: t, how: 'rozbierz' });
+          }, nearWrecks.toString());
+          // do wraku i chwila pracy
+          for (let k = 0; k < 12; k++) {
+            const busy = await page.evaluate(() => {
+              const p = window.zm!.sim!.st.pawns.find((q) => q.kind === 'core')!;
+              return p.job?.t === 'wreck' && p.job.phase === 1;
+            });
+            if (busy) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          await page.evaluate(() => window.zm!.ff(10));
+          const job = await page.evaluate(() => {
+            const zm = window.zm!;
+            const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+            zm.setCam(p.x, p.y, 2.2);
+            return `${p.job?.t}/${p.job?.what}/${p.job?.phase}`;
+          });
+          await waitIdle(page);
+          console.log(`  praca: ${job}`);
+          if (job !== 'wreck/rozbierz/1') throw new Error(`zarząd nie rozbiera wraku (${job})`);
+          await page.screenshot({ path: path.join(OUT, 'surowce-praca-rozbiorka.png') });
+          // do końca rozbiórki (z łomem godzina albo pięć kwadransów) i pierwszy kurs z łupem
+          for (let k = 0; k < 40; k++) {
+            const carrying = await page.evaluate(() => {
+              const p = window.zm!.sim!.st.pawns.find((q) => q.kind === 'core')!;
+              return p.job?.t === 'carry' && p.job.phase === 1;
+            });
+            if (carrying) break;
+            await page.evaluate(() => window.zm!.ff(3));
+          }
+          await page.evaluate(() => window.zm!.ff(0.5));
+          const after = await page.evaluate(() => {
+            const zm = window.zm!;
+            const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+            zm.setCam(p.x, p.y, 2.2);
+            return {
+              job: `${p.job?.t}/${p.job?.phase}`,
+              what: p.job?.what,
+              n: p.job?.n,
+              wraki: JSON.stringify(zm.sim!.st.wraki),
+            };
+          });
+          await waitIdle(page);
+          console.log(`  potem: ${after.job}, w rękach ${after.n} ${after.what}, wraki ${after.wraki}`);
+          if (after.job !== 'carry/1') throw new Error('łup nie idzie na podwórko');
+        },
+      },
+      {
+        // handlarz pod bramą drugiego dnia: z wózkiem, menu z towarem (wyszarzone bez materiału), potem napaść
+        name: 'handlarz',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const st = sim.st;
+            // dzień 2, 10:00, wizyta od razu
+            st.tick = Math.round(((24 + 10 - 15) * 60 * 800) / 60);
+            st.obcy!.next = st.tick;
+          });
+          for (let k = 0; k < 30; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'handlarz')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const cart = (await thingKeys(page)).filter((k) => k.includes('"kind":"wozek"'));
+          console.log(`  wózek: ${cart.length}`);
+          if (cart.length !== 1) throw new Error('nie widać wózka handlarza');
+          await page.screenshot({ path: path.join(OUT, 'handlarz-brama.png') });
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          const off = await page.locator('#ctx .ctx-item.off').count();
+          console.log(`  menu: ${items.join(' | ')} (wyszarzone: ${off})`);
+          if (!items.some((i) => i.startsWith('Dać ')) || !items.some((i) => i.startsWith('Napaść')))
+            throw new Error('w menu handlarza nie ma towaru albo napaści');
+          await page.screenshot({ path: path.join(OUT, 'handlarz-menu.png') });
+          await page.keyboard.press('Escape');
+          // napaść bez okna potwierdzenia (polecenie wprost) i chwila ucieczki
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+            sim.push({ t: 'rob', ids: [p.id] });
+          });
+          for (let k = 0; k < 20; k++) {
+            const done = await page.evaluate(() => window.zm!.sim!.st.obcy!.napad >= 0);
+            if (done) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          // kilka sekund walki: handlarz z siekierą oddaje, paski życia
+          await page.evaluate(() => window.zm!.ff(0.15));
+          const after = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const c = st.things.find((t) => t.kind === 'wozek')!;
+            const t = st.pawns.find((q) => q.kind === 'handlarz');
+            zm.setCam(t ? t.x : c.x + 0.5, t ? t.y - 1 : c.y, 2.2);
+            return { napad: st.obcy!.napad, cart: c.n, wrogi: !!t?.wrogi, bron: t?.weapon ?? null };
+          });
+          await waitIdle(page);
+          console.log(`  po napaści: ${JSON.stringify(after)}`);
+          if (after.napad < 0 || after.cart !== 0) throw new Error('napaść nie zadziałała');
+          await page.screenshot({ path: path.join(OUT, 'handlarz-walka.png') });
+          // ludzie handlarza pod siatką (za dnia, żeby było ich widać na zrzucie)
+          await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            for (const q of st.pawns) if (q.kind === 'handlarz') q.hp = 1;
+            st.obcy!.zemsta = { at: st.tick + 1, n: 4 };
+          });
+          for (let k = 0; k < 20; k++) {
+            const ok = await page.evaluate(() => {
+              const men = window.zm!.sim!.st.pawns.filter((q) => q.kind === 'zbir');
+              return men.length > 0 && men.every((q) => q.job?.phase !== 0);
+            });
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          const men = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const m = st.pawns.filter((q) => q.kind === 'zbir');
+            if (m.length) zm.setCam(m[0].x, m[0].y - 1, 1.8);
+            return m.map((q) => q.weapon).join(', ');
+          });
+          await waitIdle(page);
+          console.log(`  ludzie handlarza: ${men}`);
+          if (!men) throw new Error('nie przyszli ludzie handlarza');
+        },
+      },
+      {
+        // to samo menu handlarza po angielsku: oferty „Give … for …”, wyszarzona z powodem, napaść
+        name: 'en-handlarz-menu',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            st.tick = Math.round(((24 + 10 - 15) * 60 * 800) / 60);
+            st.obcy!.next = st.tick;
+          });
+          for (let k = 0; k < 30; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'handlarz')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          console.log(`  menu: ${items.join(' | ')}`);
+          if (!items.some((i) => i.startsWith('Give ')) || !items.includes('Rob the trader…'))
+            throw new Error('w angielskim menu handlarza nie ma towaru albo napaści');
+          if (items.some((i) => /[ąćęłńóśźż]|\bboards?\b/i.test(i))) throw new Error('w menu handlarza polskie słowa');
+        },
+      },
+      {
+        // tryb zombie: handlarz czwartego dnia przy zamkniętej bramie, na chwilę (szwendacze zdjęte do zrzutu)
+        name: 'handlarz-zombie',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          // dzień 4, 10:00; wizyta może nie dojść do skutku, więc ponawiamy termin, aż handlarz wyjdzie
+          for (let k = 0; k < 12; k++) {
+            const here = await page.evaluate(() => {
+              const st = window.zm!.sim!.st;
+              if (k0() === 0) st.tick = 15200 + 2 * 19200;
+              st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+              if (!st.pawns.some((p) => p.kind === 'handlarz')) st.obcy!.next = st.tick;
+              return st.pawns.some((p) => p.kind === 'handlarz');
+              function k0() {
+                return st.tick < 15200 + 2 * 19200 ? 0 : 1;
+              }
+            });
+            if (here) break;
+            await page.evaluate(() => window.zm!.ff(0.2));
+          }
+          for (let k = 0; k < 30; k++) {
+            const ok = await page.evaluate(() => {
+              const st = window.zm!.sim!.st;
+              st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+              return st.pawns.find((p) => p.kind === 'handlarz')?.job?.phase === 1;
+            });
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz');
+            if (t) zm.setCam(t.x, t.y - 1, 2);
+            return t ? `${t.job?.phase}` : 'brak';
+          });
+          await waitIdle(page);
+          console.log(`  handlarz w trybie zombie: faza ${at}`);
+          if (at !== '1') throw new Error('handlarz w trybie zombie nie stanął przy bramie');
+        },
+      },
+      {
+        // wędrowiec przy siatce (menu, rozmowa i wieść), potem obca ekipa przy wraku (Przeszukać wyszarzone)
+        name: 'obcy',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          // dzień 2, 10:00: tylko wędrowiec (handlarz i ekipa daleko)
+          await page.evaluate(() => {
+            const o = window.zm!.sim!.st;
+            o.tick = 15200;
+            o.obcy!.next = 15200 * 20;
+            o.obcy!.wnext = 15200;
+            o.obcy!.enext = 15200 * 20;
+          });
+          for (let k = 0; k < 40; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          console.log(`  menu wędrowca: ${items.join(' | ')}`);
+          if (!items.includes('Zagadać') || !items.some((i) => i.startsWith('Napaść na wędrowca')))
+            throw new Error('w menu wędrowca nie ma rozmowy albo napaści');
+          await page.screenshot({ path: path.join(OUT, 'obcy-wedrowiec-menu.png') });
+          await page.click('#ctx .ctx-item:has-text("Zagadać")');
+          for (let k = 0; k < 20; k++) {
+            const done = await page.evaluate(() => !!window.zm!.sim!.st.obcy!.wiesc);
+            if (done) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          const wiesc = await page.evaluate(() => window.zm!.sim!.st.obcy!.wiesc?.text ?? '');
+          console.log(`  wieść: ${wiesc}`);
+          if (!wiesc.startsWith('Wędrowiec mówi')) throw new Error('rozmowa nie dała wieści');
+          await page.waitForTimeout(300);
+          await page.screenshot({ path: path.join(OUT, 'obcy-wiesc.png') });
+          // dzień 3, 10:00: obca ekipa przy wraku
+          await page.evaluate(() => {
+            const o = window.zm!.sim!.st;
+            o.tick = 15200 + 19200;
+            o.obcy!.wnext = 15200 * 20;
+            o.obcy!.enext = o.tick;
+          });
+          for (let k = 0; k < 40; k++) {
+            const ok = await page.evaluate(() => {
+              const crew = window.zm!.sim!.st.pawns.filter((p) => p.kind === 'obcy');
+              return crew.length === 2 && crew.every((p) => p.job?.phase === 1);
+            });
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const wr = await page.evaluate(() => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const t = sim.st.pawns.find((p) => p.kind === 'obcy')!.job!.target;
+            const size = sim.w.size;
+            zm.setCam((t % size) + 1.5, Math.floor(t / size) + 0.5, 2);
+            return [(t % size) + 1, Math.floor(t / size) + 1];
+          });
+          await waitIdle(page);
+          const [wx, wy] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), wr);
+          const wItems = await menuAt(page, wx, wy);
+          const off = await page.locator('#ctx .ctx-item.off').allTextContents();
+          console.log(`  menu wraku: ${wItems.join(' | ')} (wyszarzone: ${off.join(', ')})`);
+          if (!off.some((t) => t.includes('przy aucie są obcy')))
+            throw new Error('przeszukanie wraku przy obcych nie jest wyszarzone');
+        },
+      },
+      {
+        // wędrowiec po angielsku: menu „Talk to the wanderer” i „Rob the wanderer…”, po rozmowie wieść na dole
+        // ekranu po angielsku (w stanie zostaje po polsku, tłumaczy ją wiescEn)
+        name: 'en-obcy',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          await page.evaluate(() => {
+            const o = window.zm!.sim!.st;
+            o.tick = 15200;
+            o.obcy!.next = 15200 * 20;
+            o.obcy!.wnext = 15200;
+            o.obcy!.enext = 15200 * 20;
+          });
+          for (let k = 0; k < 40; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          console.log(`  menu wędrowca: ${items.join(' | ')}`);
+          if (!items.includes('Talk to the wanderer') || !items.includes('Rob the wanderer…'))
+            throw new Error('w angielskim menu wędrowca nie ma rozmowy albo napaści');
+          await page.click('#ctx .ctx-item:has-text("Talk to the wanderer")');
+          for (let k = 0; k < 20; k++) {
+            const done = await page.evaluate(() => !!window.zm!.sim!.st.obcy!.wiesc);
+            if (done) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          await page.waitForTimeout(300);
+          const hint = (await page.textContent('#hint')) ?? '';
+          console.log(`  wieść: ${hint}`);
+          if (!hint.startsWith('The wanderer says')) throw new Error(`wieść nie po angielsku: ${hint}`);
+        },
+      },
+      {
+        name: 'surowce-menu-warsztat',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const w = sim.w;
+            const h = w.interior!;
+            const size = w.size;
+            const st = sim.st;
+            const covered = (i: number) =>
+              st.things.some(
+                (t) =>
+                  i % size >= t.x &&
+                  i % size < t.x + t.w &&
+                  Math.floor(i / size) >= t.y &&
+                  Math.floor(i / size) < t.y + t.h,
+              );
+            const rooms = h.rooms.filter((r) => r.apt === h.home && r.kind === 'pokoj').map((r) => r.id);
+            let at = -1;
+            for (let i = 0; i < size * size && at < 0; i++)
+              if (
+                rooms.includes(h.room[i]) &&
+                h.room[i + 1] === h.room[i] &&
+                !sim.blocked[i] &&
+                !sim.blocked[i + 1] &&
+                !covered(i) &&
+                !covered(i + 1)
+              )
+                at = i;
+            st.things.push({
+              id: 993000,
+              kind: 'warsztat',
+              x: at % size,
+              y: Math.floor(at / size),
+              w: 2,
+              h: 1,
+              rot: 0,
+              n: 0,
+              fuel: 0,
+              by: -1,
+              owner: -1,
+            });
+            // drewno i złom na podwórku
+            const free = w.fence.yard.filter((i) => !covered(i) && !sim.blocked[i]);
+            st.things.push({
+              id: 993001,
+              kind: 'drewno',
+              x: free[0] % size,
+              y: Math.floor(free[0] / size),
+              w: 1,
+              h: 1,
+              rot: 0,
+              n: 9,
+              fuel: 0,
+              by: -1,
+              owner: -1,
+            });
+            st.things.push({
+              id: 993002,
+              kind: 'zlom',
+              x: free[3] % size,
+              y: Math.floor(free[3] / size),
+              w: 1,
+              h: 1,
+              rot: 0,
+              n: 5,
+              fuel: 0,
+              by: -1,
+              owner: -1,
+            });
+            zm.setCam((at % size) + 1, Math.floor(at / size) + 0.5, 1.8);
+            return [(at % size) + 1, Math.floor(at / size) + 0.5];
+          });
+          await waitIdle(page);
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          console.log(`  menu: ${items.join(' | ')}`);
+          for (const want of ['Piłować deskę z drewna', 'Zrobić część ze złomu'])
+            if (!items.includes(want)) throw new Error(`w menu warsztatu nie ma „${want}”`);
+          if (!items.some((t) => /^Piłować \d desk/.test(t)) || !items.some((t) => /^Zrobić \d części/.test(t)))
+            throw new Error('w menu warsztatu nie ma przeróbki kilku sztuk naraz');
+        },
+      },
+    ];
+  })(),
   // M1: interfejs i zarząd (karta osoby, menu pod prawym, okna nocy, zapis, telefon); pomocnicze funkcje
   // w środku, żeby reszta pliku została bez zmian
   ...((): Shot[] => {
@@ -2942,8 +3569,10 @@ const SHOTS: Shot[] = [
     run: async (page, base) => arrivals(page, base, true),
   },
   // wydarzenia z miejsca: dym z komina pierwszego dnia w bloku i w domu, wydarzenie drugiego dnia i karta nocy w domu
-  wydarzeniaDym('wydarzenia-blok-dym', 'przymorze', 'z waszej klatki'),
-  wydarzeniaDym('wydarzenia-dom-dym', 'zielonki', 'zza płotu'),
+  wydarzeniaDym('wydarzenia-blok-dym', 'przymorze', 'z waszej klatki', false),
+  wydarzeniaDym('wydarzenia-dom-dym', 'zielonki', 'zza płotu', true),
+  // drugi dzień w domu: wydarzenie „Na ulicy” i cele bez słów z bloku; cel „Przeszukajcie dom” da się zaliczyć:
+  // prawy przycisk w pokoju domu komitetu daje „Przeszukać pokój”, a karta domu liczy przeszukane pomieszczenia
   {
     name: 'wydarzenia-dom-dzien2',
     query: '',
@@ -2952,7 +3581,8 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       await chopDryTree(page);
       // do raportu i dalej do pierwszego wydarzenia drugiego dnia od 8:00 (okna po drodze: pierwsza odpowiedź)
-      for (let k = 0; k < 200; k++) {
+      let event = false;
+      for (let k = 0; k < 200 && !event; k++) {
         const p = await page.evaluate(() => window.zm!.ff(15));
         const day2 = await page.evaluate(() => {
           const st = window.zm!.sim!.st;
@@ -2962,11 +3592,115 @@ const SHOTS: Shot[] = [
           const t = await sheetText(page);
           console.log(`  wydarzenie drugiego dnia w domu: ${t.slice(0, 160)}`);
           if (FORBIDDEN_DOM.test(t)) throw new Error(`w domu słowa z bloku: ${t}`);
-          return;
-        }
+          const kicker = await page.textContent('#sheet .sheet-kicker');
+          if (kicker !== 'Na ulicy') throw new Error(`nagłówek okna wydarzenia w domu: ${kicker}`);
+          const goals = (await page.textContent('#goals')) ?? '';
+          if (BLOKOWE_UI.test(goals)) throw new Error(`cele drugiego dnia w domu ze słowami z bloku: ${goals}`);
+          if (!goals.includes('Przeszukajcie dom.')) throw new Error(`w celach drugiego dnia nie ma domu: ${goals}`);
+          await page.screenshot({ path: path.join(OUT, 'wydarzenia-dom-dzien2-wydarzenie.png') });
+          await answerFirst(page, p);
+          event = true;
+        } else if (p) await answerFirst(page, p);
+      }
+      if (!event) throw new Error('drugiego dnia nie było wydarzenia');
+      // okna, które przyszły zaraz po wydarzeniu
+      for (let k = 0; k < 10; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(0));
+        if (!p) break;
+        await answerFirst(page, p);
+      }
+      // ktoś z komitetu (kliknięcie) i wolny kafelek pokoju w domu komitetu (prawy przycisk)
+      const pawn = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        zm.setCam(p.x, p.y, 1.6);
+        return { x: p.x, y: p.y };
+      });
+      await waitIdle(page);
+      const [qx, qy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.6), [pawn.x, pawn.y]);
+      await page.mouse.click(qx, qy);
+      await page.waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 });
+      const spot = await page.evaluate(() => {
+        const { sim } = window.zm!;
+        const { w, st } = sim!;
+        const it = w.interior;
+        const home = st.apts.find((a) => a.state === 'zarzad')!.apt;
+        const room = it.rooms.find((r) => r.apt === home && r.kind === 'pokoj')!;
+        const covered = (i: number) =>
+          st.things.some(
+            (t) =>
+              i % w.size >= t.x &&
+              i % w.size < t.x + t.w &&
+              Math.floor(i / w.size) >= t.y &&
+              Math.floor(i / w.size) < t.y + t.h,
+          );
+        const tiles = [...it.room.keys()].filter((i) => it.room[i] === room.id && !w.blocked[i] && !covered(i));
+        const t = tiles[Math.floor(tiles.length / 2)];
+        window.zm!.setCam((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5, 1.6);
+        return { room: room.id, x: t % w.size, y: Math.floor(t / w.size) };
+      });
+      await waitIdle(page);
+      const [rx, ry] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [spot.x, spot.y]);
+      await page.mouse.click(rx, ry, { button: 'right' });
+      await page.waitForSelector('#ctx:not([hidden])', { timeout: 3000 });
+      const menu = await page.evaluate(() => ({
+        head: document.querySelector('#ctx .ctx-head')?.textContent ?? '',
+        items: [...document.querySelectorAll('#ctx .ctx-item')].map((b) => b.textContent ?? ''),
+      }));
+      console.log(`  menu w pokoju domu: ${menu.head}: ${menu.items.join(' | ')}`);
+      if (!menu.items.includes('Przeszukać pokój')) throw new Error('w pokoju domu komitetu nie ma „Przeszukać pokój”');
+      if (!menu.head.endsWith(' · dom komitetu ulicy')) throw new Error(`nagłówek menu w domu: ${menu.head}`);
+      const word = `${menu.head} ${menu.items.join(' ')}`.match(BLOKOWE_UI)?.[0];
+      if (word) throw new Error(`menu poleceń w domu ze słowem z bloku: ${word}`);
+      await page.screenshot({ path: path.join(OUT, 'wydarzenia-dom-dzien2-menu.png') });
+      await page.click('#ctx .ctx-item:has-text("Przeszukać pokój")');
+      // przeszukanie trwa około godziny gry; okna po drodze: pierwsza odpowiedź
+      for (let k = 0; k < 40; k++) {
+        if (await page.evaluate((room) => window.zm!.sim!.st.apts[0].searched.includes(room), spot.room)) break;
+        const p = await page.evaluate(() => window.zm!.ff(5));
         if (p) await answerFirst(page, p);
       }
-      throw new Error('drugiego dnia nie było wydarzenia');
+      const done = await page.evaluate(() => ({
+        searched: window.zm!.sim!.st.apts[0].searched.length,
+        goal: document.querySelector('#goals .goal[data-n="1"]')?.className ?? '',
+        count: document.querySelector('#goals .goals-n')?.textContent ?? '',
+      }));
+      console.log(`  po przeszukaniu: przeszukane ${done.searched}, cel 1: ${done.goal}, cele ${done.count}`);
+      if (!done.searched) throw new Error('pokój domu komitetu nie został przeszukany');
+      if (!done.goal.includes('done')) throw new Error('cel „Przeszukajcie dom” nie zaliczony po przeszukaniu pokoju');
+      // karta domu (lewy klik w domu z dala od ludzi zdejmuje zaznaczenie): dom komitetu, bez mieszkania,
+      // z przeszukanymi pomieszczeniami
+      const far = await page.evaluate(() => {
+        const { w, st } = window.zm!.sim!;
+        const it = w.interior;
+        const t = [...it.room.keys()].find(
+          (i) =>
+            it.room[i] >= 0 &&
+            !w.blocked[i] &&
+            st.pawns.every((p) => Math.hypot(p.x - (i % w.size) - 0.5, p.y - Math.floor(i / w.size) - 0.5) > 2),
+        )!;
+        window.zm!.setCam((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5, 1.3);
+        return [t % w.size, Math.floor(t / w.size)];
+      });
+      await waitIdle(page);
+      const [hx, hy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), far);
+      await page.mouse.click(hx, hy);
+      const card = await page
+        .waitForFunction(
+          () => {
+            const t = document.getElementById('card')!.textContent ?? '';
+            return t.includes('Przeszukane: 1 z') ? t : '';
+          },
+          null,
+          { timeout: 3000 },
+        )
+        .then((h) => h.jsonValue())
+        .catch(() => '');
+      if (!card) throw new Error('karta domu nie pokazała przeszukanego pomieszczenia');
+      console.log(`  karta domu: ${card.replace(/\s+/g, ' ').slice(0, 140)}`);
+      if (!card.includes('Dom komitetu ulicy')) throw new Error(`karta domu bez domu komitetu: ${card}`);
+      const cardWord = card.match(BLOKOWE_UI)?.[0];
+      if (cardWord) throw new Error(`karta domu ze słowem z bloku: ${cardWord}`);
     },
   },
   {
@@ -2988,13 +3722,31 @@ const SHOTS: Shot[] = [
                 .join(' | ') ?? t.slice(0, 120)
             }`,
           );
-          if (/blok|trzepak|pawilon/i.test(t)) throw new Error(`karta nocy w domu z blokowiskiem: ${t}`);
+          if (BLOKOWE_UI.test(t)) throw new Error(`karta nocy w domu z blokowiskiem: ${t}`);
           if (!t.includes('opuszczony dom obok')) throw new Error('na karcie nie ma wyprawy do opuszczonego domu obok');
+          if (!t.includes('Jak radzi komitet')) throw new Error('karta nocy w domu bez rady komitetu');
           return;
         }
         if (p) await answerFirst(page, p);
       }
       throw new Error('karta nocy się nie pokazała');
+    },
+  },
+  tekstyPomoc('teksty-blok-pomoc', 'przymorze', false),
+  tekstyPomoc('teksty-dom-pomoc', 'zielonki', true),
+  {
+    // menu budowy w domu: komitet sam przynosi materiały, łóżka piętrowe zmieszczą ludzi „w domu”
+    name: 'teksty-dom-budowa',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await page.click('#btnBuild');
+      await page.waitForSelector('#sheet .bcat');
+      const t = await sheetText(page);
+      console.log(`  menu budowy w domu: ${t.match(/Plan stawia[^.]*\./)?.[0] ?? t.slice(0, 120)}`);
+      if (BLOKOWE_UI.test(t)) throw new Error(`menu budowy w domu ze słowem z bloku: ${t.match(BLOKOWE_UI)?.[0]}`);
+      if (!t.includes('w domu zmieści się więcej ludzi')) throw new Error('łóżka piętrowe w domu nie mówią o domu');
     },
   },
   {
@@ -3023,6 +3775,302 @@ const SHOTS: Shot[] = [
       if (r.missing.length) throw new Error(`brak w rysowaniu: ${r.missing.join(', ')}`);
     },
   },
+  // angielski i polski (docs/superpowers/specs/2026-10-18-angielski-design.md): te same ekrany w obu językach, na
+  // komputerze i telefonie 390×844. Każdy wypisuje słowa, które wyglądają na drugi język (do obejrzenia: imiona
+  // i nazwy miejsc zostają polskie), a przełącznik w Menu zmienia język otwartego okna bez przeładowania.
+  ...((): Shot[] => {
+    const game = async (page: Page, base: string, q = '') => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3${q}`);
+      await waitIdle(page);
+    };
+    const pick = async (page: Page, touch: boolean) => {
+      const a = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+        const [x, y] = zm.screenOf(p.x, p.y - 0.55);
+        return { x, y };
+      });
+      if (touch) await page.touchscreen.tap(a.x, a.y);
+      else await page.mouse.click(a.x, a.y);
+      await page.waitForTimeout(300);
+      if (!(await page.isVisible('#card'))) throw new Error('karta osoby nie pokazała się po zaznaczeniu');
+    };
+    /** karta nocy pierwszego dnia (po pierwszej uchwale) */
+    const nightCard = async (page: Page, base: string) => {
+      await game(page, base, '&godzina=19.5');
+      await page.evaluate(() => window.zm!.govTick());
+      await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+      const p = await page.evaluate(() => window.zm!.ff(31));
+      if (p !== 'karta') throw new Error(`o 20:00 zamiast karty nocy: ${p}`);
+      await page.waitForTimeout(200);
+    };
+    /** raport rano po pierwszej nocy (wydarzenia po drodze: pierwsza możliwa odpowiedź) */
+    const report = async (page: Page, base: string) => {
+      await nightCard(page, base);
+      await page.click('#sheet [data-act="night-go"]');
+      for (let k = 0; k < 30; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(30));
+        if (p === 'raport') return waitIdle(page);
+        if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+        else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
+        else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
+      }
+      throw new Error('raport po nocy się nie pokazał');
+    };
+    /** słowa widoczne na stronie, które wyglądają na polskie (w angielskim) albo angielskie (w polskim) */
+    const obcy = async (page: Page, lang: 'en' | 'pl', name: string) => {
+      const words = await page.evaluate((lang) => {
+        const text = document.body.innerText;
+        const out = new Set<string>();
+        for (const w of text.split(/[^\p{L}’']+/u)) {
+          if (!w) continue;
+          if (lang === 'en' && /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(w)) out.add(w);
+          if (lang === 'pl' && /^(the|and|with|from|you|your|board|night|watch|stove|fence)$/i.test(w)) out.add(w);
+        }
+        return [...out];
+      }, lang);
+      if (words.length)
+        console.log(
+          `  ${name}: do sprawdzenia (${lang === 'en' ? 'polskie litery' : 'angielskie słowa'}): ${words.join(', ')}`,
+        );
+    };
+    const out: Shot[] = [];
+    for (const lang of ['en', 'pl'] as const)
+      for (const phone of [false, true]) {
+        const sfx = phone ? '-telefon' : '';
+        const size = phone ? { w: 390, h: 844 } : {};
+        const shot = (name: string, run: (page: Page, base: string) => Promise<void>): Shot => ({
+          name: `${lang}-${name}${sfx}`,
+          query: '',
+          lang,
+          ...size,
+          run: async (page, base) => {
+            await run(page, base);
+            const htmlLang = await page.evaluate(() => document.documentElement.lang);
+            if (htmlLang !== lang) throw new Error(`<html lang> to ${htmlLang}, a miało być ${lang}`);
+            await obcy(page, lang, `${lang}-${name}${sfx}`);
+          },
+        });
+        out.push(
+          shot('start', async (page, base) => {
+            await page.goto(base);
+            await page.waitForSelector('#demos button');
+            const lore = await page.$eval('#lore', (e) => e.textContent ?? '');
+            if (lang === 'en' ? !lore.startsWith('It is 2051.') : !lore.startsWith('Rok 2051.'))
+              throw new Error(`wstęp nie w tym języku: ${lore.slice(0, 40)}`);
+            const pressed = await page.$eval(
+              '#langStart [aria-pressed="true"]',
+              (b) => (b as HTMLElement).dataset.lang,
+            );
+            if (pressed !== lang) throw new Error(`przełącznik pokazuje ${pressed}`);
+          }),
+          shot('pasek', async (page, base) => {
+            await game(page, base, '&godzina=15');
+            await page.waitForTimeout(300);
+          }),
+          shot('karta-osoby', async (page, base) => {
+            await game(page, base);
+            await pick(page, phone);
+          }),
+          shot('karta-nocy', nightCard),
+          shot('raport', report),
+        );
+      }
+    out.push({
+      // przełącznik w Menu: z angielskiego na polski przy otwartej karcie nocy (bez przeładowania i bez utraty
+      // przydziału), potem z powrotem; zrzut po polsku
+      name: 'en-zmiana-jezyka',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await nightCard(page, base);
+        const before = await page.textContent('#sheet .sheet-kicker');
+        await page.evaluate(() => {
+          // przełącznik z Menu działa tak samo: zmienJezyk przez kliknięcie w przycisk data-lang
+          const b = document.createElement('div');
+          b.innerHTML = '<button type="button" data-lang="pl">PL</button>';
+          document.querySelector('#sheet')!.appendChild(b);
+          (b.firstChild as HTMLButtonElement).click();
+        });
+        await page.waitForTimeout(200);
+        const after = await page.textContent('#sheet .sheet-kicker');
+        const lang = await page.evaluate(() => document.documentElement.lang);
+        console.log(`  karta nocy: „${before}” → „${after}”, <html lang> ${lang}`);
+        if (before === after || lang !== 'pl') throw new Error('karta nocy nie zmieniła języka');
+        if (!(await page.isVisible('#sheet select.pick'))) throw new Error('karta nocy zniknęła po zmianie języka');
+      },
+    });
+    out.push({
+      name: 'en-menu',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        await page.click('#btnMenu');
+        await page.waitForSelector('#modal:not([hidden]) [data-lang="pl"]');
+      },
+    });
+    // najdłuższe angielskie teksty: okno wydarzenia i pomoc, na komputerze i telefonie
+    for (const phone of [false, true]) {
+      const sfx = phone ? '-telefon' : '';
+      const size = phone ? { w: 390, h: 844 } : {};
+      out.push(
+        {
+          name: `en-wydarzenie${sfx}`,
+          query: '',
+          lang: 'en',
+          ...size,
+          run: async (page, base) => {
+            await game(page, base);
+            let p: string | null = null;
+            for (let k = 0; k < 12 && p !== 'wydarzenie'; k++) p = await page.evaluate(() => window.zm!.ff(20));
+            if (p !== 'wydarzenie') throw new Error('przez cztery godziny gry nie było wydarzenia');
+            await waitIdle(page);
+            console.log(`  wydarzenie: ${await page.textContent('#sheet .sheet-title')}`);
+            await obcy(page, 'en', `en-wydarzenie${sfx}`);
+          },
+        },
+        {
+          name: `en-pomoc${sfx}`,
+          query: '',
+          lang: 'en',
+          ...size,
+          run: async (page, base) => {
+            await game(page, base);
+            await page.click('#btnMenu');
+            await page.click('#sheet [data-act="menu-help"]');
+            await page.waitForSelector('#sheet .help');
+            await obcy(page, 'en', `en-pomoc${sfx}`);
+          },
+        },
+      );
+    }
+    out.push({
+      // menu wraku po angielsku (napisy surowców z src/sim/surowce.ts): najbliższy wrak przy siedzibie
+      name: 'en-surowce-menu',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        await page.evaluate(() => {
+          const zm = window.zm!;
+          const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+          zm.setCam(p.x, p.y, 1.3);
+        });
+        await waitIdle(page);
+        await pick(page, false);
+        const at = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const door = w.buildings[w.hq].entrances[0].out;
+          const [dx, dy] = [door % w.size, Math.floor(door / w.size)];
+          const r = w.props
+            .filter((p) => p.kind === 'wrak')
+            .sort((a, b) => Math.hypot(a.x - dx, a.y - dy) - Math.hypot(b.x - dx, b.y - dy))[0];
+          zm.setCam(r.x + r.w / 2, r.y + r.h / 2, 1.6);
+          return [r.x + r.w / 2, r.y + r.h / 2];
+        });
+        await waitIdle(page);
+        const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+        await page.mouse.click(x, y, { button: 'right' });
+        await page.waitForSelector('#ctx:not([hidden])');
+        const items = await page.locator('#ctx .ctx-item').allTextContents();
+        console.log(`  menu: ${items.join(' | ')}`);
+        if (!items.some((i) => /^Search the (Fiat 126p|Polonez)$/.test(i)))
+          throw new Error('w angielskim menu wraku nie ma przeszukania');
+        await obcy(page, 'en', 'en-surowce-menu');
+      },
+    });
+    out.push({
+      // plan warsztatu po angielsku na podwórku (tam nie wolno), zmiana języka bez ruchu myszą: powód z canPlace
+      // i sterowanie na pasku po polsku od razu, nie dopiero po ruchu kursora
+      name: 'en-budowa-zmiana-jezyka',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        const { BUILDS } = await import('../src/sim/budowle.ts');
+        await stockUp(page, BUILDS.warsztat.cost);
+        await page.keyboard.press('b');
+        await page.waitForSelector('#sheet .bcat');
+        await page.click('#sheet [data-act="build"][data-arg="warsztat"]');
+        const [x, y] = await page.evaluate(() => {
+          const w = window.zm!.sim!.w;
+          const t = w.fence.yard[0];
+          window.zm!.setCam((t % w.size) + 1, Math.floor(t / w.size) + 1, 1.6);
+          return [t % w.size, Math.floor(t / w.size)];
+        });
+        await waitIdle(page);
+        const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [x, y]);
+        await page.mouse.move(sx, sy);
+        await page.waitForTimeout(150);
+        const en = (await page.textContent('#placeText')) ?? '';
+        await page.evaluate(() => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.dataset.lang = 'pl';
+          document.querySelector('#sheet')!.appendChild(b);
+          b.click();
+          b.remove();
+        });
+        await page.waitForTimeout(100);
+        const pl = (await page.textContent('#placeText')) ?? '';
+        console.log(`  pasek: „${en}” → „${pl}”`);
+        if (!/only in a room/i.test(en)) throw new Error(`pasek po angielsku bez powodu: ${en}`);
+        if (/\b(only|room|flat|click|rotates|cancels)\b/i.test(pl))
+          throw new Error('pasek stawiania po zmianie języka ma angielskie słowa');
+      },
+    });
+    out.push({
+      // ?lang=pl wygrywa z zapamiętanym angielskim i zostaje w adresie po „Zapisz i wróć na start”; podpowiedzi
+      // przykładów w języku strony (po angielsku bez polskich opisów zabudowy)
+      name: 'en-lang-adres',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&lang=pl`);
+        await waitIdle(page);
+        if ((await page.evaluate(() => document.documentElement.lang)) !== 'pl')
+          throw new Error('?lang=pl nie wygrał z pamięcią');
+        await page.click('#btnMenu');
+        await page.click('#sheet [data-act="menu-start"]');
+        await page.waitForSelector('#demos button');
+        const lang = await page.evaluate(() => document.documentElement.lang);
+        const plTitles = await page.$$eval('#demos button', (l) => l.map((b) => (b as HTMLElement).title));
+        console.log(`  po powrocie: ${page.url().replace(base, '/')}, <html lang> ${lang}; ${plTitles.join(' | ')}`);
+        if (lang !== 'pl' || !page.url().includes('lang=pl')) throw new Error('powrót na kartę startową zgubił ?lang=');
+        await page.goto(base);
+        await page.waitForSelector('#demos button');
+        const enTitles = await page.$$eval('#demos button', (l) => l.map((b) => (b as HTMLElement).title));
+        console.log(`  po angielsku: ${enTitles.join(' | ')}`);
+        if (enTitles.some((t) => /falowiec|płyta|bloki|szeregowce|domy|gm\./.test(t)))
+          throw new Error('podpowiedzi przykładów po polsku w angielskiej wersji');
+      },
+    });
+    out.push({
+      // uzbrojone „Delete save” przy zmianie języka: napis „Na pewno? Usuń” w nowym języku, po 4 s z powrotem
+      name: 'en-usun-zapis',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        await page.click('#btnMenu');
+        await page.click('#sheet [data-act="menu-start"]');
+        await page.waitForSelector('#resume:not([hidden]) #btnForget');
+        await page.click('#btnForget');
+        const armed = await page.textContent('#btnForget');
+        await page.click('#langStart [data-lang="pl"]');
+        const pl = await page.textContent('#btnForget');
+        await page.waitForTimeout(4200);
+        const later = await page.textContent('#btnForget');
+        console.log(`  przycisk: „${armed}” → „${pl}” → „${later}”`);
+        if (armed !== 'Really delete?' || pl !== 'Na pewno? Usuń' || later !== 'Usuń zapis')
+          throw new Error('uzbrojony przycisk usuwania nie poszedł za językiem');
+        if (!(await page.isVisible('#resume'))) throw new Error('zapis zniknął bez drugiego kliknięcia');
+      },
+    });
+    return out;
+  })(),
   // kotwica stylu z PixelLab (M3, do akceptacji): ten sam kadr przy siedzibie dziś i z assetami z assets/raw,
   // do tego arkusz wybranych assetów z kosztami i paletą
   { name: 'kotwica-stylu', query: '', run: kotwicaStylu },
@@ -3183,6 +4231,9 @@ async function m2PoseStage(page: Page, where: 'dom' | 'podworko') {
 
 /** słowa, których w domu jednorodzinnym nie ma w tekstach zarządu (jak FORBIDDEN_DOM w testach) */
 const FORBIDDEN_DOM = /klatk|piętr|spółdziel|pawilon|szlaban|świetlic|czynsz|blok|mieszkani/i;
+/** słowa z bloku, których w domu nie ma w oknach, celach, pomocy, pasku, menu budowy i poleceń i na karcie domu (jak
+    BLOKOWE w tests/unit/teksty-miejsca.test.ts: także mieszkanie, bo lokum komitetu to dom; łóżka piętrowe zostają) */
+const BLOKOWE_UI = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszka[nń]/i;
 
 /** samouczek bez klikania: pierwszy z zarządu ścina suche drzewo (jak polecenie z menu) */
 async function chopDryTree(page: Page) {
@@ -3210,8 +4261,9 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
 }
 
-/** okno „Dym z komina” po rozpaleniu kozy pierwszego dnia, z sąsiadem z miejsca */
-function wydarzeniaDym(name: string, demo: string, from: string): Shot {
+/** okno „Dym z komina” po rozpaleniu kozy pierwszego dnia, z sąsiadem z miejsca; nagłówek okna, samouczek
+    i pasek według miejsca (w domu „Na ulicy”, suche drzewo w ogrodzie i komitet, w bloku osiedle i trzepak) */
+function wydarzeniaDym(name: string, demo: string, from: string, dom: boolean): Shot {
   return {
     name,
     query: '',
@@ -3226,12 +4278,47 @@ function wydarzeniaDym(name: string, demo: string, from: string): Shot {
           console.log(`  ${t.replace(/\s+/g, ' ').slice(0, 200)}`);
           if (!t.startsWith('Dym z komina')) throw new Error(`pierwsze okno to nie dym z komina: ${t.slice(0, 80)}`);
           if (!t.includes(`pani Krysia ${from}`)) throw new Error(`w dymie nie ma sąsiadki ${from}`);
+          const kicker = await page.textContent('#sheet .sheet-kicker');
+          const goals = (await page.textContent('#goals')) ?? '';
+          const bar = await page.evaluate(() =>
+            [...document.querySelectorAll<HTMLElement>('.stat')].map((e) => e.title).join(' | '),
+          );
+          console.log(`  nagłówek: ${kicker}; samouczek: ${goals.match(/Wyślijcie[^.]*\./)?.[0]}`);
+          if (kicker !== (dom ? 'Na ulicy' : 'Na osiedlu')) throw new Error(`nagłówek okna wydarzenia: ${kicker}`);
+          if (!goals.includes(`do suchego drzewa ${dom ? 'w ogrodzie' : 'przy trzepaku'}`))
+            throw new Error(`samouczek nie według miejsca: ${goals}`);
+          const word = dom ? `${goals} ${bar}`.match(BLOKOWE_UI)?.[0] : undefined;
+          if (word) throw new Error(`samouczek albo pasek w domu ze słowem z bloku: ${word}`);
           await waitIdle(page);
           return;
         }
         if (p) throw new Error(`przed dymem okno: ${p}`);
       }
       throw new Error('dym z komina się nie pokazał');
+    },
+  };
+}
+
+/** pomoc z menu według miejsca: w domu komitet ulicy, sąsiedzi i zebranie ulicy, w bloku zarząd spółdzielni
+    i walne */
+function tekstyPomoc(name: string, demo: string, dom: boolean): Shot {
+  return {
+    name,
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=${demo}&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await page.click('#btnMenu');
+      await page.click('#sheet [data-act="menu-help"]');
+      await page.waitForSelector('#sheet .help');
+      const t = await sheetText(page);
+      console.log(`  pomoc: ${t.match(/Prowadzicie[^.]*\./)?.[0] ?? t.slice(0, 120)}`);
+      const word = t.match(BLOKOWE_UI)?.[0];
+      if (dom && word) throw new Error(`pomoc w domu ze słowem z bloku: ${word}`);
+      if (!dom && !t.includes('Prowadzicie zarząd spółdzielni'))
+        throw new Error('pomoc w bloku nie mówi o spółdzielni');
+      // na zrzucie część o zarządzie (w domu o komitecie) i „Na razie”
+      await page.evaluate(() => document.querySelectorAll('#sheet .help-h')[2]?.scrollIntoView({ block: 'start' }));
     },
   };
 }
@@ -3942,6 +5029,14 @@ try {
       hasTouch: mobile,
       deviceScaleFactor: mobile ? 2 : 1,
     });
+    // język jak wybór gracza zapisany w pamięci przeglądarki (src/ui/jezyk.ts), przed skryptami strony
+    await page.addInitScript((l) => {
+      try {
+        localStorage.setItem('za-murem-0.4-jezyk', l);
+      } catch {
+        // strona bez pamięci: gra wybierze język domyślny
+      }
+    }, shot.lang ?? 'pl');
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => {
@@ -5174,6 +6269,32 @@ function kartaShots(): Shot[] {
         const bozenka = await polaEdytora(page);
         console.log(`  formy: ${bozenka.map((x) => x.value).join(', ')}`);
         if (bozenka[4].value !== 'Bożenką') throw new Error(`narzędnik: ${bozenka[4].value}`);
+      },
+    },
+    {
+      // edytor po angielsku z wpisanym imieniem, przełącznik w Menu na polski: edytor po polsku z tym samym wpisem
+      name: 'en-imie-zmiana-jezyka',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await wejdz(page, base);
+        const r = await mieszkaniecZGeneratora(page, 0, true);
+        await waitIdle(page);
+        await otworzEdytor(page, r.id, false);
+        await wpisz(page, 'Bożenka', false);
+        await page.fill('#card input[name="dop"]', 'Bożenki-ręcznie');
+        await page.dispatchEvent('#card input[name="dop"]', 'input');
+        const en = (await page.textContent('#card form.imie-ed')) ?? '';
+        await page.click('#btnMenu');
+        await page.click('#modal [data-lang-menu] [data-lang="pl"]');
+        await page.click('#sheet [data-act="menu-back"]');
+        await page.waitForTimeout(200);
+        const pl = (await page.textContent('#card form.imie-ed')) ?? '';
+        const pola = await polaEdytora(page);
+        console.log(`  edytor: ${en.slice(0, 40)} → ${pl.slice(0, 40)}; ${pola.map((x) => x.value).join(', ')}`);
+        if (en === pl) throw new Error('edytor imienia nie zmienił języka');
+        if (pola[0].value !== 'Bożenka' || pola[1].value !== 'Bożenki-ręcznie')
+          throw new Error('wpisane imię zginęło przy zmianie języka');
       },
     },
     {

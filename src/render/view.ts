@@ -19,7 +19,9 @@ import {
 } from 'pixi.js';
 import type { WeaponId } from '../sim/bron.ts';
 import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
+import { TRADER_HP, ZBIR_HP } from '../sim/handlarz.ts';
 import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
+import { WANDERER_HP } from '../sim/wedrowcy.ts';
 import { ZOMBIE_HP } from '../sim/zombie.ts';
 import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, weaponRect } from './art/bron.ts';
 import {
@@ -204,6 +206,8 @@ export class GameView {
     codes: Uint8Array | null;
     things: ThingLike[];
     simKinds: Set<string>;
+    /** podpis st.wraki z ostatniej klatki (stan wraków zmienia opis sprite'a) */
+    wrecks: string;
   } | null = null;
   /** atrapa wraków do podglądu (?wraki=atrapa), dopóki świat ich nie rozstawia */
   private mockWrecks = false;
@@ -407,7 +411,7 @@ export class GameView {
         .map((p) => ({ rot: 0, ...p }));
       if (this.mockWrecks && !props.some((p) => p.kind === 'wrak')) props.push(...mockWrecks(w));
       if (mock) props.push(...mock.trash);
-      g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simKinds: new Set() };
+      g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simKinds: new Set(), wrecks: '' };
       for (const t of g.props) this.fixed.add(t);
       this.game = g;
     }
@@ -426,6 +430,21 @@ export class GameView {
         for (const i of fresh) this.fixedSeen.add(i);
         this.redraw({ fixed: fresh });
       }
+    }
+    // wraki przeszukane i rozebrane: nowy opis sprite'a (nowy obiekt, bo klucze rzeczy ze świata są zapamiętane)
+    const wraki = sim.st.wraki;
+    const sig = wraki?.map((m) => `${m.t}:${m.s}`).join() ?? '';
+    if (sig !== g.wrecks) {
+      g.wrecks = sig;
+      const size = w.size;
+      g.props = g.props.map((p) => {
+        if (p.kind !== 'wrak') return p;
+        const s = wraki?.find((m) => m.t === p.y * size + p.x)?.s ?? 0;
+        if ((p.stage ?? 0) === s) return p;
+        const q = { ...p, stage: s || undefined };
+        this.fixed.add(q);
+        return q;
+      });
     }
     this.plans = (sim.st as { builds?: readonly BuildPlan[] }).builds ?? [];
     this.syncFelled(sim.st.felled);
@@ -744,9 +763,9 @@ export class GameView {
       sp.zIndex = pose.z ?? y;
       // pod dachem nie widać nikogo; w przekroju tak
       sp.visible = this.cutOn || !this.underRoof(x, y);
-      // obcych widać tylko w świetle: w półmroku sam ciemny zarys, w ciemności nic
+      // obcych widać tylko w świetle: w półmroku sam ciemny zarys, w ciemności nic (szwendacza ciemny zarys)
       if (STRANGERS.has(p.kind)) {
-        const vis = strangerVisibility(this.darkness, lightAt(x, y - 0.5, lights, time, this.insideFn));
+        const vis = strangerVisibility(this.darkness, lightAt(x, y - 0.5, lights, time, this.insideFn), p.kind);
         sp.visible &&= vis > 0.08;
         sp.alpha = Math.min(1, vis * 1.6);
         const v = Math.min(1, vis * 1.4);
@@ -755,7 +774,8 @@ export class GameView {
       }
       if (selected.has(p.id) && sp.visible) this.markPawn(p, x, y);
       // broń w ręce: nakładka w tej samej klatce co postać (za plecami, gdy idzie od patrzącego)
-      const wid = p.kind === 'core' && !pose.lie ? (p.weapon ?? null) : null;
+      // wrogi człowiek (napadnięty handlarz, jego ludzie) też ma broń w ręce
+      const wid = (p.kind === 'core' || p.wrogi) && !pose.lie ? (p.weapon ?? null) : null;
       let ws = this.weaponSprites.get(p.id);
       if (wid && pose.arm && sp.visible) {
         if (!ws) {
@@ -891,11 +911,24 @@ export class GameView {
       if (p.away) continue;
       const sp = this.pawnSprites.get(p.id);
       if (!sp?.visible || sp.alpha < 0.3) continue;
-      const max = p.kind === 'zombie' ? ZOMBIE_HP : p.kind === 'szabrownik' ? STRANGER_HP : 100;
+      const max =
+        p.kind === 'zombie'
+          ? ZOMBIE_HP
+          : p.kind === 'szabrownik'
+            ? STRANGER_HP
+            : p.kind === 'handlarz'
+              ? TRADER_HP
+              : p.kind === 'wedrowiec' || p.kind === 'obcy'
+                ? WANDERER_HP
+                : p.kind === 'zbir'
+                  ? ZBIR_HP
+                  : 100;
       const hp = p.needs ? p.needs.health : (p.hp ?? max);
       const busy =
         p.kind === 'zombie' ||
         p.kind === 'szabrownik' ||
+        ((p.kind === 'handlarz' || p.kind === 'wedrowiec' || p.kind === 'obcy') && p.job?.phase === 3) ||
+        !!p.wrogi ||
         p.job?.t === 'fight' ||
         (p.job?.t === 'guard' && p.job.phase === 1) ||
         p.bite !== undefined;

@@ -351,11 +351,11 @@ const ZENSKIE_STALE = new Set([
 ]);
 
 describe('historie z kawałków', () => {
-  it('zapis jak w szablonach mieszkańców z adresu (tylko sloty {g:…|…}), bez nowego lore i bez pauz', () => {
+  it('zapis jak w szablonach mieszkańców z adresu (tylko sloty {g:…|…}), bez pauz', () => {
     for (const s of kawalki()) {
       expect(() => slotySzablonu(s), s).not.toThrow();
       expect(slotySzablonu(s).every((k) => k === 'g')).toBe(true);
-      expect(s).not.toMatch(/Wylogowan|2034|—|–/);
+      expect(s).not.toMatch(/—|–/);
       expect(s).toMatch(/^[A-ZĄĆĘŁŃÓŚŹŻ{]/);
       expect(s).toMatch(/[.!?]$/);
     }
@@ -372,6 +372,17 @@ describe('historie z kawałków', () => {
           `${p[0]}: ${g}`,
         ).toBe(true);
     }
+  });
+
+  it('Wielkie Wylogowanie (2034, GDD): pamięta je środek i starsi, młodzi najwyżej z dzieciństwa, cechy go nie znają', () => {
+    const wyl = /Wylogowani/;
+    const zFachu = (g: Pokolenie) => Object.values(FACH).flatMap((t) => [...(t[g] ?? [])]);
+    expect(zFachu('srodek').filter((s) => wyl.test(s)).length).toBeGreaterThanOrEqual(4);
+    expect(zFachu('starsi').some((s) => wyl.test(s))).toBe(true);
+    for (const s of zFachu('mlodzi').filter((x) => wyl.test(x))) expect(s, s).toMatch(/dzieck/);
+    for (const s of Object.values(Z_CECHY).flat()) expect(s).not.toMatch(wyl);
+    // nikt nie mówi już o upadku chmury bez roku: chmura padła w 2034, przy Wylogowaniu
+    for (const s of kawalki()) expect(s).not.toMatch(/chmura padła|padła chmura/);
   });
 
   it('każda cecha ma zdania', () => {

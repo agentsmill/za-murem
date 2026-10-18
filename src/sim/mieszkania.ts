@@ -2,6 +2,7 @@
    przeszukane pomieszczenia, uszkodzenia do naprawy (World.damage), a do tego tabele: łup z przeszukania według
    powodu opuszczenia, materiały z rozbiórki mebli i śmieci, koszty i czasy napraw. Czyste dane i funkcje. */
 
+import { type PlaceWorld, placeOfWorld } from '../gov/miejsce.ts';
 import type { AptState, AptWhy, Damage, DamageKind } from '../world/apts.ts';
 import type { World } from '../world/world.ts';
 import type { Mat } from './budowle.ts';
@@ -91,6 +92,15 @@ export function yieldOf(kind: string, n: number, broken: boolean): Partial<Recor
 export const dismantleTicks = (kind: string, w: number, h: number, n: number): number =>
   RUBBISH.has(kind) ? 160 + 100 * n : Math.min(1000, 400 * Math.max(1, w * h));
 
+/** Czy pomieszczenia mieszkania wolno przeszukać (każde raz): puste mieszkanie, a w domu jednorodzinnym także dom
+    komitetu, bo innego mieszkania w siedzibie nie ma (decyzja Mateusza 18.10.2026). Łup domu: searchLoot. */
+export const searchable = (w: PlaceWorld, g: AptGame): boolean =>
+  g.state === 'puste' || (g.state === 'zarzad' && placeOfWorld(w).kind === 'dom');
+
+/** dom komitetu z każdego pomieszczenia daje ponad tabelę deskę i złom ze strychu, piwnicy i garażu: bez pustych
+    mieszkań do przeszukania i rozbiórki pierwsza budowla wychodzi wtedy drugiego dnia (decyzja Mateusza 18.10.2026) */
+export const HOUSE_EXTRA: Partial<Record<Mat, number>> = { deski: 1, zlom: 1 };
+
 /** czas przeszukania pomieszczenia według jego wielkości (kafelki posadzki) */
 export const searchTicks = (area: number): number => Math.max(600, Math.min(1200, 400 + 20 * area));
 
@@ -150,6 +160,15 @@ export function lootOf(why: AptWhy, kind: RoomKind, area: number, rnd: () => num
     for (let k = 0; k < times; k++)
       if (rnd() < chance + (bonus[mat] ?? 0)) out[mat] = (out[mat] ?? 0) + lo + Math.floor(rnd() * (hi - lo + 1));
   }
+  return out;
+}
+
+/** łup z przeszukania pomieszczenia w grze: z tabeli według powodu opuszczenia (dom komitetu go nie ma, więc jak
+    po wyjeździe), a w domu komitetu jeszcze HOUSE_EXTRA */
+export function searchLoot(g: AptGame, kind: RoomKind, area: number, rnd: () => number): Partial<Record<Mat, number>> {
+  const out = lootOf(g.why ?? 'wyjazd', kind, area, rnd);
+  if (g.state === 'zarzad')
+    for (const [m, n] of Object.entries(HOUSE_EXTRA) as [Mat, number][]) out[m] = (out[m] ?? 0) + n;
   return out;
 }
 

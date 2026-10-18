@@ -90,7 +90,7 @@ function allSpecs(): ThingSpec[] {
     for (const open of [false, true]) for (const seed of [0, 9]) s.push({ kind: 'brama', rot, open, seed });
   for (const style of ['krag', 'beczka'] as const)
     for (const fire of [undefined, 0, 1, 2]) for (const seed of [0, 4]) s.push({ kind: 'ognisko', style, fire, seed });
-  for (const kind of ['gruz', 'deski', 'zlom'] as const)
+  for (const kind of ['gruz', 'deski', 'zlom', 'czesci', 'leki'] as const)
     for (const size of [1, 2, 3] as const) for (const seed of [0, 1, 2, 77]) s.push({ kind, size, seed });
   for (const rot of ROTS)
     for (const seed of [0, 3]) {
@@ -98,11 +98,14 @@ function allSpecs(): ThingSpec[] {
       s.push({ kind: 'fotel', rot, seed });
     }
   for (const lit of [false, true]) for (const seed of [0, 2]) s.push({ kind: 'lampa', lit, seed });
+  for (const full of [undefined, false]) for (const seed of [0, 3]) s.push({ kind: 'wozek', full, seed });
   // garnek z posiłkiem (na podłodze i na stole) i wraki we wszystkich ustawieniach
   for (const size of [0, 1, 2, 3] as const)
     for (const table of [false, true]) for (const seed of [0, 1, 2, 3]) s.push({ kind: 'posilek', size, table, seed });
   for (const model of WRECK_MODELS)
-    for (const rot of ROTS) for (const seed of [0, 1, 5, 11]) s.push({ kind: 'wrak', model, rot, seed });
+    for (const rot of ROTS)
+      for (const seed of [0, 1, 5, 11])
+        for (const stage of [undefined, 1, 2] as const) s.push({ kind: 'wrak', model, rot, seed, stage });
   // budowle M2, śmieci i zepsute meble
   for (const kind of BUILD_KINDS) for (const rot of ROTS) for (const seed of [0, 3, 8]) s.push({ kind, rot, seed });
   for (const size of [1, 2, 3] as const) for (const seed of [0, 4, 9]) s.push({ kind: 'smieci', size, seed });
@@ -126,12 +129,15 @@ function sizeKey(s: ThingSpec): string {
     case 'gruz':
     case 'deski':
     case 'zlom':
+    case 'czesci':
+    case 'leki':
       return `${s.kind} ${s.size}`;
     case 'pien':
       return `pien ${s.r}`;
     case 'siatka':
     case 'lampa':
     case 'krew':
+    case 'wozek':
       return s.kind;
     case 'ognisko':
       return `ognisko ${s.style}`;
@@ -310,7 +316,8 @@ describe('rzeczy', () => {
     expect(footprint({ kind: 'pien', r: 3 })).toEqual({ w: 1, h: 1 });
     expect(footprint({ kind: 'brama', rot: 0 })).toEqual({ w: 2, h: 1 });
     expect(footprint({ kind: 'brama', rot: 3 })).toEqual({ w: 1, h: 2 });
-    for (const kind of ['gruz', 'deski', 'zlom'] as const) expect(footprint({ kind, size: 2 })).toEqual({ w: 1, h: 1 });
+    for (const kind of ['gruz', 'deski', 'zlom', 'czesci', 'leki'] as const)
+      expect(footprint({ kind, size: 2 })).toEqual({ w: 1, h: 1 });
     expect(footprint({ kind: 'siatka', mask: NB.E | NB.W })).toEqual({ w: 1, h: 1 });
   });
 
@@ -340,9 +347,18 @@ describe('rzeczy', () => {
     }
     expect(sum({ kind: 'lampa', lit: true })).not.toBe(sum({ kind: 'lampa' }));
     expect(sum({ kind: 'budka', rot: 0, lit: true })).not.toBe(sum({ kind: 'budka', rot: 0 }));
-    for (const kind of ['drewno', 'jedzenie', 'gruz', 'deski', 'zlom'] as const) {
+    for (const kind of ['drewno', 'jedzenie', 'gruz', 'deski', 'zlom', 'czesci', 'leki'] as const) {
       const piles = new Set([1, 2, 3].map((size) => fnv(thingSprite({ kind, size: size as 1 | 2 | 3 }).px)));
       expect(piles.size, kind).toBe(3);
+    }
+    // wrak: cały, przeszukany i szkielet wyglądają inaczej
+    for (const model of WRECK_MODELS) {
+      const looks = new Set(
+        ([undefined, 1, 2] as const).map((stage) =>
+          fnv(thingSprite({ kind: 'wrak', model, rot: 0, seed: 5, stage }).px),
+        ),
+      );
+      expect(looks.size, model).toBe(3);
     }
   });
 

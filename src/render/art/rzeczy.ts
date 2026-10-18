@@ -44,6 +44,7 @@ import {
   armchairSprite,
   boothSprite,
   campfireSprite,
+  cartSprite,
   type FenceState,
   type FireStyle,
   fenceSprite,
@@ -139,11 +140,14 @@ export type ThingSpec =
   | { kind: 'gruz'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'deski'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'zlom'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'czesci'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'leki'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'wozek'; full?: boolean; seed?: number }
   | { kind: 'budka'; rot: Rot; lit?: boolean; seed?: number }
   | { kind: 'fotel'; rot: Rot; seed?: number }
   | { kind: 'lampa'; lit?: boolean; seed?: number }
   | { kind: 'posilek'; size: 0 | 1 | 2 | 3; table?: boolean; seed?: number }
-  | { kind: 'wrak'; model: WreckModel; rot: Rot; seed?: number }
+  | { kind: 'wrak'; model: WreckModel; rot: Rot; seed?: number; stage?: 1 | 2 }
   | { kind: 'krew'; seed?: number }
   | { kind: BuildKind; rot: Rot; seed?: number }
   | { kind: 'smieci'; size: 1 | 2 | 3; seed?: number }
@@ -187,6 +191,9 @@ export function footprint(spec: ThingSpec): { w: number; h: number } {
     case 'gruz':
     case 'deski':
     case 'zlom':
+    case 'czesci':
+    case 'leki':
+    case 'wozek':
     case 'budka':
     case 'fotel':
     case 'lampa':
@@ -1163,13 +1170,20 @@ export function thingSprite(spec: ThingSpec): Sprite {
   if (spec.kind === 'siatka') return fenceSprite(spec.mask, spec.state ?? 'cala', spec.post, seed);
   if (spec.kind === 'brama') return gateSprite(spec.rot, !!spec.open, seed);
   if (spec.kind === 'ognisko') return campfireSprite(spec.style ?? 'krag', spec.fire ?? -1, seed);
-  if (spec.kind === 'gruz' || spec.kind === 'deski' || spec.kind === 'zlom')
+  if (
+    spec.kind === 'gruz' ||
+    spec.kind === 'deski' ||
+    spec.kind === 'zlom' ||
+    spec.kind === 'czesci' ||
+    spec.kind === 'leki'
+  )
     return pileSprite(spec.kind, spec.size, seed);
   if (spec.kind === 'budka') return boothSprite(spec.rot, !!spec.lit, seed);
+  if (spec.kind === 'wozek') return cartSprite(spec.full ?? true, seed);
   if (spec.kind === 'fotel') return armchairSprite(spec.rot, seed);
   if (spec.kind === 'lampa') return lampSprite(!!spec.lit, seed);
   if (spec.kind === 'posilek') return posilek(spec.size, !!spec.table, seed);
-  if (spec.kind === 'wrak') return wreckSprite(spec.model, spec.rot, seed);
+  if (spec.kind === 'wrak') return wreckSprite(spec.model, spec.rot, seed, spec.stage ?? 0);
   if (spec.kind === 'smieci') return renderBoxes(smieciBoxes(spec.size, seed), PX, PX, 0, smieciEnv(spec.size));
   if ((BUILD_KINDS as readonly string[]).includes(spec.kind))
     return buildSprite(spec.kind as BuildKind, spec.rot as Rot, seed);

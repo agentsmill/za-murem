@@ -10,7 +10,18 @@ import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../cont
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
-import { type AmmoKey, hitChance, noAmmo, START_KIT, WEAPONS, type Weapon, type WeaponId, weaponOf } from './bron.ts';
+import type { Wreck } from '../world/wrecks.ts';
+import {
+  type AmmoKey,
+  hitChance,
+  isFirearm,
+  noAmmo,
+  START_KIT,
+  WEAPONS,
+  type Weapon,
+  type WeaponId,
+  weaponOf,
+} from './bron.ts';
 import { BUILDS, type BuildKind, type BuildPlan, canPlace, footprint, GHOST_KINDS, type Mat } from './budowle.ts';
 import {
   daylight,
@@ -24,6 +35,44 @@ import {
   TICKS_PER_HOUR,
   TICKS_PER_SECOND,
 } from './clock.ts';
+import {
+  AGGRO,
+  CALM_TICKS,
+  firstVisit,
+  firstVisitZombie,
+  HAGGLE_TICKS,
+  NAPISY as HANDEL,
+  HOSTILE_DMG,
+  HOSTILE_HIT,
+  KILL_DELAY_DAYS,
+  LEAVE_HOUR,
+  nextVisit,
+  nextVisitZombie,
+  type Obcy,
+  priced,
+  REVENGE_CHANCE,
+  ROB_MOOD,
+  ROB_MOOD_OTHERS,
+  rollOffers,
+  SLAWA_DAYS,
+  SLAWA_EXTRA_DAYS,
+  SLAWA_MAX,
+  TRADER_FLEE,
+  TRADER_HP,
+  TRADER_NOSHOW,
+  TRADER_WEAPON,
+  tickAt,
+  WAIT_TICKS,
+  WAIT_ZOMBIE,
+  ZBIR_FLEE,
+  ZBIR_HP,
+  ZBIR_LEAVE_HOUR,
+  ZBIR_STAY,
+  ZBIR_WEAPONS,
+  ZOMBIE_DELAY,
+  ZOMBIE_SCARE_ARRIVE,
+  ZOMBIE_SCARE_WAIT,
+} from './handlarz.ts';
 import {
   dryTreeOf,
   HEAT_EVERY,
@@ -47,10 +96,11 @@ import {
   DISMANTLE,
   damageFrom,
   dismantleTicks,
-  lootOf,
   MATS,
   REPAIR,
   RUBBISH,
+  searchable,
+  searchLoot,
   searchTicks,
   yieldOf,
 } from './mieszkania.ts';
@@ -68,8 +118,56 @@ import {
 } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
 import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP } from './perimeter.ts';
+import {
+  CARRY_MATS,
+  CARRY_REACH,
+  type Product,
+  RECIPES,
+  WRECK_SEARCH_NOISE,
+  WRECK_SEARCH_TICKS,
+  WRECK_STRIP,
+  WRECK_STRIP_NOISE,
+  WRECK_STRIP_TICKS,
+  type WreckMark,
+  wreckAt,
+  wreckLoot,
+  wreckRng,
+  wreckStage,
+  wrecksOf,
+  wreckTile,
+} from './surowce.ts';
 import { type GameMode, modeOf } from './tryb.ts';
 import { TUT_STEPS, type Tutorial, type TutStep, tutAdvance, WARM_ENOUGH } from './tutorial.ts';
+import {
+  CHASE_TICKS,
+  CREW_SEARCH_TICKS,
+  FLEE_SPEED,
+  firstCrew,
+  firstCrewZombie,
+  firstWanderer,
+  gossip,
+  gossipZombie,
+  MUG_MOOD,
+  MUG_MOOD_OTHERS,
+  mugLoot,
+  nextCrew,
+  nextCrewZombie,
+  nextWanderer,
+  nextWandererZombie,
+  NAPISY as OBCY,
+  PAUSE_MAX,
+  PAUSE_MIN,
+  PAUSE_ZOMBIE_MAX,
+  PAUSE_ZOMBIE_MIN,
+  SHOO_REACH,
+  SPOOK_R,
+  TALK_EXTRA,
+  TALK_MOOD,
+  TALK_MOOD_TICKS,
+  TALK_TICKS,
+  WANDER_SPEED,
+  WANDERER_HP,
+} from './wedrowcy.ts';
 import {
   ambientCount,
   BITE_CD,
@@ -78,6 +176,7 @@ import {
   BITE_HIT_FIGHTING,
   BITE_REACH,
   CHASE_SPEED,
+  DAY_PULL,
   DISPERSE,
   distField,
   FAR,
@@ -85,7 +184,10 @@ import {
   HORDE_HOURS,
   hordeSize,
   MAX_ZOMBIES,
+  NEAR,
   PUSH,
+  RING_FROM,
+  RING_TO,
   SIGHT_DAY,
   SIGHT_NIGHT,
   ZOMBIE_HP,
@@ -151,7 +253,21 @@ export const ARRIVE_GAP = 30;
 export const FLOOR_MOOD = -5;
 export const RESIDENT_REST = 70;
 /** prace fali 1 M2 (przerywa je pilna potrzeba, a te bez polecenia także noc) */
-const M2_JOBS = new Set<JobKind>(['search', 'dismantle', 'repair', 'build', 'claim']);
+const M2_JOBS = new Set<JobKind>([
+  'search',
+  'dismantle',
+  'repair',
+  'build',
+  'claim',
+  'wreck',
+  'carry',
+  'saw',
+  'trade',
+  'rob',
+  'talk',
+  'mug',
+  'shoo',
+]);
 /** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
 export const GATHER_NEAR = 8;
 /** kuchnia społeczna: porcja z niej to 85% zwykłej (nic się nie marnuje) */
@@ -178,6 +294,19 @@ export const LOOT_CARRY = 8;
 export const GOV_WAIT = TICKS_PER_HOUR;
 /** skąd przychodzą: mniej więcej tyle kroków od siatki */
 const RAID_FROM = 22;
+/** handlarz przychodzi z daleka, mniej więcej tyle kroków ulicą od bramy (wędrowcy i ekipy też) */
+const TRADER_FROM = 70;
+/** obcy, którzy przychodzą i znikają (praca w fazie 4: zniknął) */
+const PASSERS = new Set<PawnKind>(['szabrownik', 'handlarz', 'wedrowiec', 'obcy', 'zbir']);
+/** obcy ludzie: ich śmierć liczy się jak zabity szabrownik (bez żałoby, „Zabiłem człowieka” dla zabójcy) */
+const STRANGER_KINDS = new Set<PawnKind>(['szabrownik', 'handlarz', 'wedrowiec', 'obcy', 'zbir']);
+const STRANGER_NAMES: Partial<Record<PawnKind, string>> = {
+  szabrownik: 'Szabrownik',
+  handlarz: 'Handlarz',
+  wedrowiec: 'Wędrowiec',
+  obcy: 'Obcy',
+  zbir: 'Człowiek handlarza',
+};
 /** bezczynny rdzeń rozgląda się za pracą co sekundę realną */
 const THINK_EVERY = TICKS_PER_SECOND;
 /** po poleceniu „idź tu” czeka na miejscu godzinę gry, chyba że coś pilnego */
@@ -257,7 +386,19 @@ export type JobKind =
   | 'finish'
   | 'amputate'
   | 'craft'
-  | 'brace';
+  | 'brace'
+  | 'wreck'
+  | 'carry'
+  | 'saw'
+  | 'trader'
+  | 'trade'
+  | 'rob'
+  | 'wander'
+  | 'scavenge'
+  | 'talk'
+  | 'mug'
+  | 'shoo'
+  | 'zemsta';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -319,10 +460,20 @@ export interface Job {
 
 /** zarząd (rdzeń, polecenia), tłum (tylko do pomiaru wydajności, za siatką), mieszkańcy siedziby
     (tło z planem dnia), szabrownicy (obcy z napadu; nazwa jak w liście obcych rysowania, src/render/game.ts) */
-export type PawnKind = 'core' | 'crowd' | 'resident' | 'szabrownik' | 'zombie';
+export type PawnKind =
+  | 'core'
+  | 'crowd'
+  | 'resident'
+  | 'szabrownik'
+  | 'zombie'
+  | 'handlarz'
+  | 'wedrowiec'
+  | 'obcy'
+  | 'zbir';
 
-/** wróg: szabrownik albo szwendacz (do ataku z menu i obrony) */
-export const isEnemy = (p: Pick<Pawn, 'kind'>): boolean => p.kind === 'szabrownik' || p.kind === 'zombie';
+/** wróg: szabrownik, szwendacz albo wrogi człowiek (napadnięty handlarz, ludzie handlarza; do ataku z menu i obrony) */
+export const isEnemy = (p: Pick<Pawn, 'kind' | 'wrogi'>): boolean =>
+  p.kind === 'szabrownik' || p.kind === 'zombie' || !!p.wrogi;
 
 export interface Pawn {
   id: number;
@@ -370,6 +521,8 @@ export interface Pawn {
   maimed?: boolean;
   /** szabrownik: łup w worku według rodzaju (zabity zostawia go na podwórku) */
   sack?: Partial<Loot>;
+  /** wrogi człowiek, który bije zarząd (napadnięty handlarz, ludzie handlarza); brak: nie */
+  wrogi?: boolean;
   /** zarząd odsypia za dnia (po nocnej warcie albo po pobudce na posiłek): głodny najpierw je, potem śpi, dopóki
       siły poniżej REST_UNTIL */
   nap?: boolean;
@@ -454,8 +607,9 @@ export type Command =
   | { t: 'craft'; ids: number[]; item: 'dzida' }
   /** wzmocnić kafelek siatki deskami albo złomem */
   | { t: 'brace'; ids: number[]; tile: number }
-  /** do broni: cały zdolny zarząd na wartę (przy siatce w trybie zombie, przy bramie w zwykłym) */
-  | { t: 'alarm'; ids: number[] }
+  /** do broni: cały zdolny zarząd na wartę (przy siatce w trybie zombie, przy bramie w zwykłym); off: odwołanie,
+      warta z alarmu schodzi z posterunku */
+  | { t: 'alarm'; ids: number[]; off?: boolean }
   /** M2: plan budowy w miejscu (albo przydział do planu, który tam już jest), odwołanie planu albo budowli */
   | { t: 'build'; ids: number[]; kind: BuildKind; x: number; y: number; rot: number }
   | { t: 'unbuild'; ids: number[]; id: number }
@@ -464,7 +618,20 @@ export type Command =
   | { t: 'search'; ids: number[]; room: number }
   | { t: 'dismantle'; ids: number[]; thing: number }
   | { t: 'repair'; ids: number[]; damage: number }
-  | { t: 'claim'; ids: number[]; apt: number };
+  | { t: 'claim'; ids: number[]; apt: number }
+  /** surowce: przeszukać albo rozebrać wrak (kafelek pod nim albo obok), zanieść stertę zza siatki na podwórko,
+      przerobić w warsztacie drewno na deski albo złom na części (n sztuk po kolei) */
+  | { t: 'wreck'; ids: number[]; tile: number; how: 'szukaj' | 'rozbierz' }
+  | { t: 'carry'; ids: number[]; thing: number }
+  | { t: 'saw'; ids: number[]; what: Product; n: number }
+  /** handlarz: włączyć (stary zapis, ids puste), wymienić się (oferta k), napaść na niego */
+  | { t: 'obcy'; ids: number[] }
+  | { t: 'trade'; ids: number[]; offer: number }
+  | { t: 'rob'; ids: number[] }
+  /** wędrowiec: zagadać, napaść (target: id pionka); obca ekipa przy wraku: przegonić */
+  | { t: 'talk'; ids: number[]; target: number }
+  | { t: 'mug'; ids: number[]; target: number }
+  | { t: 'shoo'; ids: number[]; target: number };
 
 export interface Noise {
   x: number;
@@ -590,7 +757,7 @@ export interface SimState {
   dead?: Dead[];
   /** liczniki: zabici wrogowie, przerwania siatki, ugryzienia, zgony naszych */
   tally?: Tally;
-  /** stado tej nocy (tryb zombie): dzień, ilu jeszcze wyjdzie z krawędzi mapy i kiedy następna grupa */
+  /** stado tej nocy (tryb zombie): dzień, ilu jeszcze wyjdzie z okolicy i kiedy następna grupa */
   horde?: { day: number; left: number; next: number };
   /** ułamek porcji zjedzony ponad całe porcje (racje i kocioł zjadają po 0,75 i 1,1 porcji na posiłek) */
   portion: number;
@@ -600,6 +767,10 @@ export interface SimState {
   damage: DamageGame[];
   /** plany budowy w toku; gotowe budowle są w things */
   builds: BuildPlan[];
+  /** wraki przeszukane i rozebrane (lewy górny kafelek), rosnąco; brak, dopóki nikt nie przeszukał wraku */
+  wraki?: WreckMark[];
+  /** handlarz pod bramą (src/sim/handlarz.ts); tylko z opcją obcy albo po poleceniu 'obcy' */
+  obcy?: Obcy;
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -656,6 +827,9 @@ export interface SimOpts {
   crowd?: number;
   /** tryb gry, domyślnie zwykły */
   mode?: GameMode;
+  /** handlarz pod bramą za dnia (src/sim/handlarz.ts), tylko w zwykłym trybie; gra go włącza, boty i testy bez
+      tej opcji grają jak przed nim (losowanie terminu idzie ze st.rng dopiero po całej reszcie startu) */
+  obcy?: boolean;
 }
 
 /** wolne kafelki przed wejściami do budynków mieszkalnych, najbliżej siedziby najpierw */
@@ -902,8 +1076,29 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     p.wait = Math.floor(rnd() * 200);
     st.pawns.push(p);
   }
+  if (opts.obcy) st.obcy = newObcy(st);
   return st;
 }
+
+/** przy wraku (lewy górny kafelek t) są obcy z ekipy, którzy jeszcze nie uciekają: zarząd go wtedy nie przeszukuje */
+export const crewAt = (st: SimState, t: number): boolean =>
+  st.pawns.some((q) => q.kind === 'obcy' && q.job?.t === 'scavenge' && q.job.target === t && q.job.phase < 2);
+
+/** Handlarz, wędrowcy i ekipy włączeni. Zwykły tryb: handlarz drugiego dnia, pierwszy wędrowiec drugiego dnia między
+    8:00 a 12:00, pierwsza ekipa trzeciego albo czwartego dnia. Tryb zombie (jak w The Walking Dead): handlarz
+    czwartego dnia i rzadko, wędrowcy i ekipy jako ocaleni (src/sim/wedrowcy.ts). */
+const newObcy = (st: SimState): Obcy => {
+  const zombie = modeOf(st) === 'zombie';
+  return {
+    next: zombie ? firstVisitZombie(st.rng) : firstVisit(st.rng),
+    offers: [],
+    trader: -1,
+    napad: -1,
+    wizyty: 0,
+    wnext: firstWanderer(st.rng),
+    enext: zombie ? firstCrewZombie(st.rng) : firstCrew(st.rng),
+  };
+};
 
 /** pola osoby gry z osoby z generatora mieszkańców: kopie (stan nie dzieli tablic z wejściem), rodzina i historia
     tylko niepuste, `nazwaGen` to imię i nazwisko z generatora (tożsamość osoby przy wczytaniu zapisu) */
@@ -1032,6 +1227,19 @@ export function dozeOff(st: SimState, ids: readonly number[]): void {
     p.job.phase = 4;
     p.job.from = -1;
   }
+}
+
+/** Job.what warty z „Do broni!” (odwołanie zdejmuje tylko ją) */
+const ALARM_JOB = 'alarm';
+
+/** „Do broni!” trwa: ktoś z zarządu stoi na warcie z alarmu, a zaraz po kliknięciu (polecenie czeka na krok,
+    także na pauzie) decyduje ostatni alarm w kolejce. Dla przycisku, który alarm włącza i odwołuje. */
+export function alarmOn(st: SimState): boolean {
+  for (let k = st.cmds.length - 1; k >= 0; k--) {
+    const c = st.cmds[k];
+    if (c.t === 'alarm') return !c.off;
+  }
+  return st.pawns.some((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.what === ALARM_JOB);
 }
 
 /** klucz posterunku warty z Job.target, jak w karcie nocy zarządu: 'brama', 'd<id>', 'koza' */
@@ -1519,10 +1727,13 @@ export class Sim {
   private readonly fenceMask: Uint8Array;
   /** zabici w bieżącym kroku (znikają po pętli pionków) */
   private readonly graveyard = new Set<number>();
-  /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy */
+  /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy,
+      pas za dnia (FAR–NEAR m od siatki) i okolica, z której wychodzi stado (RING_FROM–RING_TO m) */
   private seeds: number[] = [];
   private flow: Int32Array = new Int32Array(0);
   private edges: number[] = [];
+  private band: number[] = [];
+  private ring: number[] = [];
   /** numer kafelka siatki w World.fence.tiles (wytrzymałość w FenceState.hp) */
   private readonly fenceIndex = new Map<number, number>();
   /** wyszukiwania dróg szwendaczy w tym kroku */
@@ -1540,6 +1751,12 @@ export class Sim {
     st.store.ammo ??= noAmmo();
     st.noise ??= [];
     st.fx ??= [];
+    // zapis z handlarzem sprzed wędrowców i ekip: pierwszy wędrowiec jutro rano, ekipa pojutrze (bez losowania)
+    if (st.obcy) {
+      const zombie = modeOf(st) === 'zombie';
+      st.obcy.wnext ??= zombie ? -1 : tickAt(dayOf(st.tick) + 1, 9);
+      st.obcy.enext ??= zombie ? -1 : tickAt(dayOf(st.tick) + 2, 10);
+    }
     st.dead ??= [];
     st.tally ??= zeroTally();
     migrate(st, w);
@@ -1673,22 +1890,31 @@ export class Sim {
       crowd: res,
       outside: { blocked: outside, reg: labelRegions(outside, size) },
     };
-    // tryb zombie: pole odległości do siatki po stronie ulicy i kafelki przy krawędzi mapy (skąd wychodzi stado)
+    // tryb zombie: pole odległości do siatki po stronie ulicy, pas za dnia, okolica stada i krawędź mapy (zapas)
     if (modeOf(this.st) === 'zombie' && shape) {
       this.seeds = this.outsideOf([...shape.tiles, ...gateTiles(this.w)]);
       this.flow = distField(outside, size, this.seeds);
       this.edges = [];
+      this.band = [];
+      this.ring = [];
       for (let i = 0; i < size * size; i++) {
         const x = i % size;
         const y = (i - x) / size;
-        if ((x < 2 || y < 2 || x >= size - 2 || y >= size - 2) && this.flow[i] >= 0) this.edges.push(i);
+        const f = this.flow[i];
+        if (f < 0 || zombie[i]) continue;
+        if (x < 2 || y < 2 || x >= size - 2 || y >= size - 2) this.edges.push(i);
+        if (f >= FAR && f <= NEAR) this.band.push(i);
+        if (f >= RING_FROM && f <= RING_TO) this.ring.push(i);
       }
     }
   }
 
   /** przechodniość i obszary dla danego rodzaju pionka */
   private layer(kind: PawnKind): { blocked: Uint8Array; reg: Int32Array } {
-    return kind === 'core' ? { blocked: this.coreBlocked, reg: this.reg } : this.lay[kind];
+    if (kind === 'core') return { blocked: this.coreBlocked, reg: this.reg };
+    // handlarz, wędrowcy i obce ekipy chodzą tylko po stronie ulicy, ludzie handlarza jak szabrownicy
+    if (kind === 'zbir') return this.lay.szabrownik;
+    return kind === 'handlarz' || kind === 'wedrowiec' || kind === 'obcy' ? this.lay.outside : this.lay[kind];
   }
 
   /** warstwa do drogi pionka: szabrownik po stronie ulicy (podchodzi, czeka, ucieka) chodzi tylko tamtędy */
@@ -1696,6 +1922,8 @@ export class Sim {
     if (p.kind === 'szabrownik' && p.job?.phase !== 2 && !this.lay.outside.blocked[this.tileOf(p)])
       return this.lay.outside;
     if (p.kind === 'zombie') return this.zlay(p);
+    // wrogi człowiek chodzi jak szabrownik: dziurami tak, zamkniętą bramą nie
+    if (p.wrogi) return this.lay.szabrownik;
     // przyjęty w drodze do siedziby przechodzi przez bramę jak zarząd (ktoś mu otwiera)
     if (p.kind === 'resident' && p.job?.t === 'arrive') return this.layer('core');
     return this.layer(p.kind);
@@ -1763,6 +1991,12 @@ export class Sim {
     if (st.tick % TICKS_PER_HOUR === 0 && hourOf(st.tick) === 6) for (const p of st.pawns) p.ate = 0;
     if (st.tick % (TICKS_PER_HOUR / 2) === 0) this.syncMealDoor();
     if (st.raid) this.raidTick(st.raid);
+    if (st.obcy) {
+      this.traderClock();
+      this.wandererClock();
+      this.crewClock();
+      this.revengeClock();
+    }
     if (st.noise!.length) st.noise = st.noise!.filter((n) => n.until > st.tick);
     if (st.fx!.length) st.fx = st.fx!.filter((f) => f.tick + FX_TICKS > st.tick);
     if (modeOf(st) === 'zombie') {
@@ -1799,6 +2033,13 @@ export class Sim {
         this.zombieTick(p);
         continue;
       }
+      if (p.wrogi) {
+        if (this.hostileTick(p)) gone = true;
+        continue;
+      }
+      // tryb zombie: handlarz, ocalały albo ekipa, do których podchodzi szwendacz, uciekają (także w drodze)
+      if (PASSERS.has(p.kind) && p.kind !== 'szabrownik' && (st.tick + p.id) % THINK_EVERY === 0 && this.spooked(p))
+        continue;
       if (p.pi < p.path.length) {
         // praca fali 1 bez polecenia ustępuje wrogowi na podwórku także w drodze (po materiał, na plan)
         if (p.kind === 'core' && st.tick % THINK_EVERY === 0 && this.yieldsToDanger(p)) {
@@ -1827,6 +2068,18 @@ export class Sim {
         if (this.strangerTick(p)) gone = true;
         continue;
       }
+      if (p.kind === 'handlarz') {
+        if (this.traderTick(p)) gone = true;
+        continue;
+      }
+      if (p.kind === 'wedrowiec') {
+        if (this.wanderTick(p)) gone = true;
+        continue;
+      }
+      if (p.kind === 'obcy') {
+        if (this.scavengeTick(p)) gone = true;
+        continue;
+      }
       if (st.tick < p.wait) continue;
       if (p.want < 0) {
         // tłum: spacer w promieniu 28 m od swojej klatki
@@ -1843,7 +2096,7 @@ export class Sim {
       p.wait = st.tick + 60 + Math.floor(rnd() * 240);
     }
     // szabrownicy, którzy doszli tam, skąd przyszli, znikają
-    if (gone) st.pawns = st.pawns.filter((p) => !(p.kind === 'szabrownik' && p.job?.phase === 4));
+    if (gone) st.pawns = st.pawns.filter((p) => !(PASSERS.has(p.kind) && p.job?.phase === 4));
     // zabici w tym kroku znikają ze stanu (zostają po nich zwłoki)
     if (this.graveyard.size) {
       for (const id of this.graveyard) {
@@ -1859,6 +2112,8 @@ export class Sim {
   /** prędkość względem człowieka: ranny szabrownik wlecze się */
   private speedOf(p: Pawn): number {
     if (p.kind === 'szabrownik' && (p.hp ?? STRANGER_HP) < FLEE_HP) return 0.6;
+    if ((p.kind === 'handlarz' || p.kind === 'wedrowiec' || p.kind === 'obcy') && p.job?.phase === 3) return FLEE_SPEED;
+    if (p.kind === 'wedrowiec') return WANDER_SPEED;
     if (p.kind === 'zombie') return p.job?.phase === 3 ? CHASE_SPEED : ZOMBIE_SPEED;
     return 1;
   }
@@ -1869,6 +2124,12 @@ export class Sim {
     let left = speed;
     while (left > 1e-9 && p.pi < p.path.length) {
       const t = p.path[p.pi];
+      // szwendacz staje przed łatą albo bramą, które zamknęły się, kiedy już szedł (droga od nowa przy zmysłach)
+      if (p.kind === 'zombie' && this.sealed(t)) {
+        p.path = [];
+        p.pi = 0;
+        break;
+      }
       const tx = (t % size) + 0.5;
       const ty = Math.floor(t / size) + 0.5;
       const dx = tx - p.x;
@@ -1944,6 +2205,10 @@ export class Sim {
       this.unbuild(c.id);
       return;
     }
+    if (c.t === 'obcy') {
+      if (!st.obcy) st.obcy = newObcy(st);
+      return;
+    }
 
     if (!pawns.length) return;
     this.tutEvent('zaznacz');
@@ -1962,11 +2227,19 @@ export class Sim {
     else if (c.t === 'amputate') this.orderAmputate(pawns, c.patient);
     else if (c.t === 'craft') this.orderCraft(pawns);
     else if (c.t === 'brace') this.orderBrace(pawns, c.tile);
-    else if (c.t === 'alarm') this.orderAlarm(pawns);
+    else if (c.t === 'alarm') this.orderAlarm(pawns, !!c.off);
     else if (c.t === 'search') this.startSearch(pawns[0], c.room);
     else if (c.t === 'dismantle') this.startDismantle(pawns[0], c.thing);
     else if (c.t === 'repair') this.startRepair(pawns[0], c.damage);
     else if (c.t === 'claim') this.startClaim(pawns[0], c.apt);
+    else if (c.t === 'wreck') this.startWreck(pawns[0], c.tile, c.how);
+    else if (c.t === 'carry') this.startCarry(pawns[0], c.thing);
+    else if (c.t === 'saw') this.startSaw(pawns[0], c.what, c.n);
+    else if (c.t === 'trade') this.startTrade(pawns[0], c.offer);
+    else if (c.t === 'rob') this.startRob(pawns[0]);
+    else if (c.t === 'talk') this.startTalk(pawns[0], c.target);
+    else if (c.t === 'mug') this.startChase(pawns[0], c.target, 'mug');
+    else if (c.t === 'shoo') this.startChase(pawns[0], c.target, 'shoo');
   }
 
   /** Pora wspólnego posiłku (uchwała o kotle), w której mieszkańcy mogą wejść do mieszkania zarządu: pół godziny
@@ -3052,6 +3325,27 @@ export class Sim {
       }
       case 'build':
         return this.buildWork(p, j, at);
+      case 'wreck':
+        return this.wreckWork(p, j, at);
+      case 'carry':
+        return this.carryWork(p, j, at);
+      case 'saw':
+        return this.sawWork(p, j, at);
+      case 'trade':
+        return this.tradeWork(p, j, at);
+      case 'rob':
+        return this.robWork(p, j, at);
+      // prace obcych mają własne kroki (traderTick, wanderTick, scavengeTick)
+      case 'trader':
+      case 'wander':
+      case 'scavenge':
+      case 'zemsta':
+        return false;
+      case 'talk':
+        return this.talkWork(p, j, at);
+      case 'mug':
+      case 'shoo':
+        return this.chaseWork(p, j);
       case 'arrive':
         // przyjęty: zza bramy do swojego mieszkania (po kolei, gęsiego), potem plan dnia jak każdy mieszkaniec
         if (tick < j.until) return true;
@@ -3944,21 +4238,23 @@ export class Sim {
     return this.nearest(p, cand.length ? cand : this.roomTiles[room].filter((i) => this.reg[i] === region));
   }
 
-  /** przeszukać pomieszczenie pustego mieszkania (raz; nie gdy ktoś już je przeszukuje) */
+  /** przeszukać pomieszczenie pustego mieszkania albo, w domu jednorodzinnym, domu komitetu (raz; nie gdy ktoś już
+      je przeszukuje) */
   private startSearch(p: Pawn, room: number): void {
     const g = this.aptOfRoom(room);
-    if (g?.state !== 'puste' || g.searched.includes(room)) return;
+    if (!g || !searchable(this.w, g) || g.searched.includes(room)) return;
     if (this.st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room)) return;
     const spot = this.roomSpot(p, room);
     if (spot < 0 || !this.go(p, spot)) return;
     this.setJob(p, this.newJob('search', room, spot, true), false);
   }
 
-  /** łup z przeszukania: z tabeli według powodu opuszczenia, deterministycznie z ziarna gry i pomieszczenia */
+  /** łup z przeszukania: z tabeli według powodu opuszczenia (w domu komitetu z dokładką), deterministycznie z ziarna
+      gry i pomieszczenia */
   private searchDone(room: number, g: AptGame, at: number): void {
     const h = this.house!;
     const rnd = mulberry((Math.imul(this.st.seed | 0, 9973) ^ Math.imul(room + 1, 7919) ^ 0x51ab) >>> 0);
-    const loot = lootOf(g.why ?? 'wyjazd', h.rooms[room].kind, this.roomTiles[room].length, rnd);
+    const loot = searchLoot(g, h.rooms[room].kind, this.roomTiles[room].length, rnd);
     for (const [m, n] of Object.entries(loot) as [Mat, number][]) if (n > 0) this.dropMat(at, m, n, room);
     g.searched.push(room);
     g.searched.sort((a, b) => a - b);
@@ -4178,6 +4474,1041 @@ export class Sim {
     const spot = this.nearest(p, spots);
     if (spot < 0 || !this.go(p, spot)) return;
     this.setJob(p, this.newJob('claim', apt, spot, true), false);
+  }
+
+  /* ---------- surowce: wraki, łup zza siatki na podwórko, warsztat (src/sim/surowce.ts) ---------- */
+
+  /** wolny kafelek przy podstawie wraku, osiągalny dla pionka, na którym nikt nie pracuje (−1: brak) */
+  private wreckStand(p: Pawn, r: Wreck): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const free: number[] = [];
+    for (let y = r.y - 1; y <= r.y + r.h; y++)
+      for (let x = r.x - 1; x <= r.x + r.w; x++) {
+        if (x < 0 || y < 0 || x >= size || y >= size) continue;
+        if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) continue;
+        const i = y * size + x;
+        if (!this.coreBlocked[i] && this.reg[i] === region && !taken.includes(i)) free.push(i);
+      }
+    return this.nearest(p, free);
+  }
+
+  /** przeszukać albo rozebrać wrak (tile: kafelek pod nim albo obok); jedna osoba naraz, rozbiórka po przeszukaniu */
+  private startWreck(p: Pawn, tile: number, how: 'szukaj' | 'rozbierz'): void {
+    const r = wreckAt(this.w, tile);
+    if (!r) return;
+    const t = wreckTile(r, this.w.size);
+    if (wreckStage(this.st.wraki, t) !== (how === 'szukaj' ? 0 : 1)) return;
+    if (this.st.pawns.some((q) => q !== p && q.job?.t === 'wreck' && q.job.target === t)) return;
+    if (crewAt(this.st, t)) return;
+    const stand = this.wreckStand(p, r);
+    if (stand < 0 || !this.go(p, stand)) return;
+    const j = this.newJob('wreck', t, stand, true);
+    j.what = how;
+    this.setJob(p, j, false);
+  }
+
+  /** Praca przy wraku: przeszukanie pół godziny (cichy szelest), rozbiórka 2–2,5 h z hałasem co 2 s, z łomem
+      o połowę krócej; postęp rozbiórki zostaje w st.wraki, więc przerwana idzie dalej od tego miejsca. Po skończeniu
+      łup spada obok, a ta sama osoba od razu nosi go na podwórko (praca 'carry'). */
+  private wreckWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const tick = st.tick;
+    const r = wreckAt(this.w, j.target);
+    const strip = j.what === 'rozbierz';
+    if (!r || wreckStage(st.wraki, j.target) !== (strip ? 1 : 0)) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = tick;
+      j.until = strip ? 0 : tick + WRECK_SEARCH_TICKS;
+      this.face(p, r.x + r.w / 2, r.y + r.h / 2);
+      if (!strip) this.addNoise(p.x, p.y, WRECK_SEARCH_NOISE);
+      return true;
+    }
+    if (strip) {
+      const mark = st.wraki!.find((m) => m.t === j.target)!;
+      mark.w = (mark.w ?? 0) + (p.weapon === 'lom' ? 2 : 1);
+      if ((tick - j.t0) % NOISE_TICKS === 0) this.addNoise(p.x, p.y, WRECK_STRIP_NOISE);
+      if (mark.w < WRECK_STRIP_TICKS[r.model]) return true;
+    } else if (tick < j.until) return true;
+    this.wreckDone(r, j.target, strip ? 2 : 1, j.tile);
+    return this.carryOn(p, j, j.tile);
+  }
+
+  /** wrak przeszukany (s 1) albo rozebrany (s 2): znak w st.wraki (pole powstaje przy pierwszym), łup obok */
+  private wreckDone(r: Wreck, t: number, s: 1 | 2, at: number): void {
+    const st = this.st;
+    st.wraki ??= [];
+    const mark: WreckMark | undefined = st.wraki.find((m) => m.t === t);
+    if (mark) {
+      mark.s = s;
+      delete mark.w;
+    } else {
+      st.wraki.push({ t, s });
+      st.wraki.sort((a, b) => a.t - b.t);
+    }
+    const loot = s === 1 ? wreckLoot(r.model, wreckRng(st.seed, t)) : WRECK_STRIP[r.model];
+    // z warsztatem rozbiórka daje półtora raza więcej, jak przy meblach
+    const bonus = s === 2 && this.hasBuilt('warsztat');
+    for (const [m, n] of Object.entries(loot) as [Mat, number][]) {
+      const k = bonus ? Math.round(n * 1.5) : n;
+      if (k > 0) this.dropMat(at, m, k);
+    }
+  }
+
+  /** sterta łupu za siatką do noszenia: najbliższa pionkowi, do CARRY_REACH metrów od kafelka anchor */
+  private lootNear(p: Pawn, anchor: number): Thing | undefined {
+    const size = this.w.size;
+    const ax = anchor % size;
+    const ay = Math.floor(anchor / size);
+    const region = this.regionOf(p);
+    let best: Thing | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.things) {
+      if (!CARRY_MATS.has(t.kind) || t.n <= 0 || (t.by >= 0 && t.by !== p.id)) continue;
+      if (Math.max(Math.abs(t.x - ax), Math.abs(t.y - ay)) > CARRY_REACH) continue;
+      const i = t.y * size + t.x;
+      if (this.insideAt(i) || this.reg[i] !== region) continue;
+      const d = this.dist2(p, i);
+      if (d < bd || (d === bd && best && t.id < best.id)) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** Praca j przechodzi w noszenie łupu leżącego przy anchor (następny kurs): do sterty po materiał. false, gdy
+      nie ma czego nosić albo nie da się dojść (bez siatki nie ma „za siatką”, więc łup zostaje, gdzie leży). */
+  private carryOn(p: Pawn, j: Job, anchor: number): boolean {
+    if (!this.st.fence) return false;
+    const next = this.lootNear(p, anchor);
+    if (!next) return false;
+    const i = next.y * this.w.size + next.x;
+    if (!this.go(p, i)) return false;
+    j.t = 'carry';
+    j.phase = 0;
+    j.target = next.id;
+    j.tile = i;
+    j.from = anchor;
+    j.order = true;
+    next.by = p.id;
+    return true;
+  }
+
+  /** zanieść stertę zza siatki (i sterty obok niej) na podwórko */
+  private startCarry(p: Pawn, id: number): void {
+    const t = this.thing(id);
+    if (!t || !this.st.fence || !CARRY_MATS.has(t.kind) || t.n <= 0 || (t.by >= 0 && t.by !== p.id)) return;
+    const i = t.y * this.w.size + t.x;
+    if (this.insideAt(i) || !this.go(p, i)) return;
+    const j = this.newJob('carry', t.id, i, true);
+    j.from = i;
+    this.setJob(p, j, false);
+    t.by = p.id;
+  }
+
+  /** Noszenie łupu: przy stercie bierze do CARRY sztuk jednego materiału (n, what), na podwórku kładzie je od bramy
+      w głąb, potem wraca po następną stertę przy anchor (from), aż nic nie zostanie. Przerwane: to, co w rękach,
+      upada pod nogi (dropLoad). */
+  private carryWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    if (j.phase === 0) {
+      const t = this.thing(j.target);
+      if (!at || !t || t.by !== p.id || !CARRY_MATS.has(t.kind) || this.insideAt(j.tile)) return false;
+      const take = Math.min(t.n, CARRY);
+      t.n -= take;
+      t.by = -1;
+      if (t.n <= 0) st.things.splice(st.things.indexOf(t), 1);
+      j.n = take;
+      j.what = t.kind;
+      const dest = this.lootSpot(p, t.kind);
+      if (dest < 0 || !this.go(p, dest)) return false;
+      j.phase = 1;
+      j.target = -1;
+      j.tile = dest;
+      return true;
+    }
+    if (!at) return false;
+    this.dropInYard(j.what, j.n, j.tile);
+    j.n = 0;
+    j.what = '';
+    return this.carryOn(p, j, j.from);
+  }
+
+  /** kafelki podwórka na łup, od bramy w głąb: bez kafelków przy bramie, dziurach, drzwiach i wejściach (przejścia
+      zostają wolne), bez mebli, budowli i planów */
+  private yardSpots(): number[] {
+    const shape = fenceShape(this.w);
+    if (!shape) return [];
+    const size = this.w.size;
+    const gate = gateTiles(this.w);
+    const keep: number[] = [...gate, ...shape.hole, ...(this.house?.doors ?? [])];
+    for (const b of this.w.buildings) for (const e of b.entrances) keep.push(e.out);
+    const ban = new Set<number>();
+    for (const k of keep)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = (k % size) + dx;
+          const y = Math.floor(k / size) + dy;
+          if (x >= 0 && y >= 0 && x < size && y < size) ban.add(y * size + x);
+        }
+    const gx = gate.length ? gate.reduce((a, t) => a + (t % size), 0) / gate.length : 0;
+    const gy = gate.length ? gate.reduce((a, t) => a + Math.floor(t / size), 0) / gate.length : 0;
+    const d = (i: number) => ((i % size) - gx) ** 2 + (Math.floor(i / size) - gy) ** 2;
+    return shape.yard
+      .filter((i) => !ban.has(i) && !this.coreBlocked[i] && !onPlan(this.st, size, i))
+      .sort((a, b) => d(a) - d(b) || a - b);
+  }
+
+  /** kafelek podwórka, na który zmieści się materiał kind: sterta tego rodzaju z miejscem albo wolny kafelek */
+  private lootSpot(p: Pawn, kind: string): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    for (const i of this.yardSpots()) {
+      if (this.reg[i] !== region) continue;
+      const x = i % size;
+      const y = Math.floor(i / size);
+      const same = this.st.things.find((t) => t.kind === kind && t.x === x && t.y === y);
+      if (same ? same.n < STACK : !this.thingAt(x, y)) return i;
+    }
+    return -1;
+  }
+
+  /** n sztuk materiału na podwórko: na sterty tego rodzaju z miejscem i na wolne kafelki, od bramy w głąb;
+      gdy podwórko pełne, reszta przy kafelku at, jak przy innych pracach */
+  private dropInYard(kind: string, n: number, at: number): void {
+    const st = this.st;
+    const size = this.w.size;
+    let left = n;
+    for (const i of this.yardSpots()) {
+      if (left <= 0) return;
+      const x = i % size;
+      const y = Math.floor(i / size);
+      const same = st.things.find((t) => t.kind === kind && t.x === x && t.y === y);
+      if (same) {
+        const k = Math.min(left, STACK - same.n);
+        same.n += Math.max(0, k);
+        left -= Math.max(0, k);
+      } else if (!this.thingAt(x, y)) {
+        const t = newThing(st, kind, x, y);
+        t.n = Math.min(left, STACK);
+        left -= t.n;
+        st.things.push(t);
+      }
+    }
+    if (left > 0) this.dropMat(at, kind, left);
+  }
+
+  /** zbudowany warsztat najbliżej pionka, przy którym da się stanąć, wolny albo jego */
+  private workshopFor(p: Pawn): { t: Thing; stand: number } | undefined {
+    let best: { t: Thing; stand: number } | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.things) {
+      if (t.kind !== 'warsztat' || (t.by >= 0 && t.by !== p.id)) continue;
+      const stand = this.beside(p, t);
+      if (stand < 0) continue;
+      const d = this.dist2(p, stand);
+      if (d < bd) {
+        bd = d;
+        best = { t, stand };
+      }
+    }
+    return best;
+  }
+
+  /** Przeróbka w warsztacie: n sztuk produktu po kolei (j.from: ile zostało, j.what: produkt; n w rękach zostaje
+      zerem, bo nic się nie nosi). Materiał zużywa się na końcu każdej sztuki, jak przy dzidzie. */
+  private startSaw(p: Pawn, what: Product, n: number): void {
+    const r = RECIPES[what];
+    if (!r || n < 1 || this.workStock(r.from) < r.n) return;
+    const ws = this.workshopFor(p);
+    if (!ws || !this.go(p, ws.stand)) return;
+    const j = this.newJob('saw', ws.t.id, ws.stand, true);
+    j.what = what;
+    j.from = n;
+    this.setJob(p, j, false);
+    ws.t.by = p.id;
+  }
+
+  private sawWork(p: Pawn, j: Job, at: boolean): boolean {
+    const tick = this.st.tick;
+    const ws = this.thing(j.target);
+    const r = RECIPES[j.what as Product];
+    if (ws?.kind !== 'warsztat' || ws.by !== p.id || !r) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      // materiał w drodze (ktoś niesie drewno do składu): czeka przy warsztacie
+      if (this.workStock(r.from) < r.n) return this.inTransit(p, r.from) > 0;
+      j.phase = 1;
+      j.t0 = tick;
+      j.until = tick + r.work;
+      this.face(p, ws.x + ws.w / 2, ws.y + ws.h / 2);
+      return true;
+    }
+    if (tick < j.until) return true;
+    if (!this.takeForWork(r.from, r.n)) return this.inTransit(p, r.from) > 0;
+    this.dropMat(j.tile, j.what, 1);
+    j.from--;
+    if (j.from <= 0 || this.workStock(r.from) + this.inTransit(p, r.from) < r.n) return false;
+    j.t0 = tick;
+    j.until = tick + r.work;
+    return true;
+  }
+
+  /** materiał na przeróbkę: wszystkie sterty danego rodzaju, także te, które ktoś właśnie niesie do składu
+      (inaczej piłujący kończyłby pracę za każdym razem, gdy ktoś inny weźmie stos drewna do składu) */
+  private workStock(kind: string): number {
+    return this.st.things.reduce((a, t) => a + (t.kind === kind && t.n > 0 ? t.n : 0), 0);
+  }
+
+  /** sztuki materiału w rękach innych z zarządu (drewno niesione do składu, materiał na budowę) */
+  private inTransit(p: Pawn, kind: string): number {
+    let n = 0;
+    for (const q of this.st.pawns) {
+      if (q === p || q.kind !== 'core') continue;
+      if (kind === 'drewno') n += q.carry;
+      if (q.job?.what === kind) n += q.job.n;
+    }
+    return n;
+  }
+
+  /** Materiał na przeróbkę ze stert: najpierw wolne, potem zajęte (noszący weźmie, ile zostało); drewno najpierw
+      spoza składu, bo skład jest na noc do kozy. false, gdy nie starczy. */
+  private takeForWork(kind: string, n: number): boolean {
+    if (this.workStock(kind) < n) return false;
+    const size = this.w.size;
+    const sklad = kind === 'drewno' ? (this.house?.sklad ?? []) : [];
+    const rank = (t: Thing) => (t.by >= 0 ? 2 : 0) + (sklad.includes(t.y * size + t.x) ? 1 : 0);
+    const piles = this.st.things
+      .filter((t) => t.kind === kind && t.n > 0)
+      .sort((a, b) => rank(a) - rank(b) || a.id - b.id);
+    let left = n;
+    for (const t of piles) {
+      const k = Math.min(t.n, left);
+      t.n -= k;
+      left -= k;
+      if (left <= 0) break;
+    }
+    this.st.things = this.st.things.filter((t) => !(t.kind === kind && t.n <= 0));
+    return true;
+  }
+
+  /* ---------- handlarz pod bramą (src/sim/handlarz.ts) ---------- */
+
+  /** pionek handlarza na mapie */
+  private trader(): Pawn | undefined {
+    const o = this.st.obcy;
+    return o && o.trader >= 0 ? this.st.pawns.find((p) => p.id === o.trader && p.kind === 'handlarz') : undefined;
+  }
+
+  /** termin wizyty: przychodzi za dnia (9:00–15:00), a gdy termin wypadł w nocy, przesuwa się na rano */
+  private traderClock(): void {
+    const st = this.st;
+    const o = st.obcy!;
+    // zła sława u handlarzy spada o poziom po SLAWA_DAYS dniach bez nowej napaści
+    if (o.slawa && o.slawa.lvl > 0 && st.tick >= o.slawa.until) {
+      o.slawa.lvl--;
+      o.slawa.until += SLAWA_DAYS * TICKS_PER_DAY;
+    }
+    if (o.next < 0 || o.trader >= 0 || st.tick < o.next) return;
+    const h = hourOf(st.tick);
+    if (h < 9 || h >= 15) {
+      o.next = tickAt(dayOf(st.tick) + (h >= 15 ? 1 : 0), 9 + 4 * nextRandom(st.rng));
+      return;
+    }
+    // tryb zombie: przy bramie kręcą się szwendacze, handlarz przyjdzie później
+    const gate = this.outsideOf(gateTiles(this.w))[0];
+    if (modeOf(st) === 'zombie' && gate !== undefined && this.walkersNear(gate, ZOMBIE_SCARE_ARRIVE)) {
+      o.next = st.tick + ZOMBIE_DELAY;
+      return;
+    }
+    // tryb zombie: co druga, trzecia wizyta nie dochodzi do skutku (nie przeżył drogi albo zawrócił)
+    if (modeOf(st) === 'zombie' && nextRandom(st.rng) < TRADER_NOSHOW) {
+      o.next = this.nextTraderVisit(0);
+      return;
+    }
+    this.spawnTrader();
+  }
+
+  /** handlarz z daleka po stronie ulicy idzie na kafelek przy bramie; bez bramy wizyta przepada */
+  private spawnTrader(): void {
+    const st = this.st;
+    const o = st.obcy!;
+    const day = dayOf(st.tick);
+    const spot = this.outsideOf(gateTiles(this.w))[0];
+    if (spot === undefined) {
+      o.next = nextVisit(day, st.rng);
+      return;
+    }
+    const from = this.farFrom(spot, TRADER_FROM);
+    const p = newPawn(st, this.w, 'handlarz', -1, from, from, Math.floor(nextRandom(st.rng) * 16));
+    p.hp = TRADER_HP;
+    p.job = this.newJob('trader', -1, spot, false);
+    st.pawns.push(p);
+    if (from === spot || !this.go(p, spot)) {
+      st.pawns.pop();
+      o.next = nextVisit(day, st.rng);
+      return;
+    }
+    o.trader = p.id;
+    o.offers = rollOffers(st.rng).map((x) => priced(x, o.slawa?.lvl ?? 0));
+    o.wizyty++;
+  }
+
+  /** Krok handlarza, który nie idzie: 0 doszedł pod bramę (stawia wózek i czeka do until), 1 czeka, potem odchodzi
+      z wózkiem, 2 odszedł, 3 uciekł po napaści, 4 zniknął. true: zniknął w tym kroku. */
+  private traderTick(p: Pawn): boolean {
+    const st = this.st;
+    const o = st.obcy;
+    const j = p.job;
+    if (!o || !j) {
+      p.job = this.newJob('trader', -1, this.tileOf(p), false, 4);
+      return true;
+    }
+    if (j.phase === 0) {
+      const size = this.w.size;
+      const here = this.tileOf(p);
+      // wózek obok w tym samym rzędzie (nad handlarzem zasłaniałby mu głowę), dalej od bramy
+      const around = this.tilesAround(here, 9).filter((i) => i !== here);
+      const g0 = gateTiles(this.w)[0] ?? here;
+      const away = (i: number) =>
+        -Math.abs((i % size) - (g0 % size)) - Math.abs(Math.floor(i / size) - Math.floor(g0 / size));
+      const row = around.filter((i) => Math.floor(i / size) === Math.floor(here / size) && Math.abs(i - here) === 1);
+      const at = row.sort((a, b) => away(a) - away(b) || a - b)[0] ?? around[0] ?? here;
+      const cart = newThing(st, 'wozek', at % size, Math.floor(at / size));
+      cart.n = 1;
+      st.things.push(cart);
+      j.phase = 1;
+      j.from = cart.id;
+      j.t0 = st.tick;
+      // w trybie zombie handlarz zostaje tylko chwilę
+      const wait = modeOf(st) === 'zombie' ? WAIT_ZOMBIE : WAIT_TICKS;
+      j.until = Math.min(st.tick + wait, tickAt(dayOf(st.tick), LEAVE_HOUR));
+      const g = gateTiles(this.w)[0];
+      if (g !== undefined) this.face(p, (g % size) + 0.5, Math.floor(g / size) + 0.5);
+      return false;
+    }
+    if (j.phase === 1) {
+      if (st.tick < j.until) return false;
+      // odchodzi tam, skąd przyszedł, i zabiera wózek
+      const cart = this.thing(j.from);
+      if (cart) st.things.splice(st.things.indexOf(cart), 1);
+      j.phase = 2;
+      j.from = -1;
+      o.offers = [];
+      if (this.go(p, p.home)) return false;
+    }
+    j.phase = 4;
+    if (o.trader === p.id) {
+      o.trader = -1;
+      o.offers = [];
+      o.next = this.nextTraderVisit(0);
+    }
+    return true;
+  }
+
+  /** następna wizyta handlarza: za dwa albo trzy dni, przy złej sławie o 2 × poziom dni później, plus extra dni */
+  private nextTraderVisit(extra: number): number {
+    const st = this.st;
+    const lvl = st.obcy?.slawa?.lvl ?? 0;
+    const base = modeOf(st) === 'zombie' ? nextVisitZombie : nextVisit;
+    return base(dayOf(st.tick), st.rng) + (SLAWA_EXTRA_DAYS * lvl + extra) * TICKS_PER_DAY;
+  }
+
+  /** handlarz przeżył napaść (uciekł albo odszedł po walce): wieść idzie do innych handlarzy (ceny w górę, wizyty
+      rzadziej), a z szansą REVENGE_CHANCE najbliższej nocy wracają jego ludzie */
+  private traderSurvived(fled: boolean): void {
+    const st = this.st;
+    const o = st.obcy!;
+    o.trader = -1;
+    o.offers = [];
+    const lvl = Math.min(SLAWA_MAX, (o.slawa?.lvl ?? 0) + 1);
+    o.slawa = { lvl, until: st.tick + SLAWA_DAYS * TICKS_PER_DAY };
+    o.next = this.nextTraderVisit(0);
+    if (nextRandom(st.rng) < REVENGE_CHANCE) {
+      const day = dayOf(st.tick);
+      const night = hourOf(st.tick) < 20 ? day : day + 1;
+      o.zemsta = { at: tickAt(night, 22 + 3 * nextRandom(st.rng)), n: 3 + Math.floor(2 * nextRandom(st.rng)) };
+    }
+    o.wiesc = { tick: st.tick, text: (fled ? HANDEL.uciekl : HANDEL.odszedlZly).pl };
+  }
+
+  /** Zabity handlarz: nikt nie zanosi wieści, nowy handlarz przejmuje trasę KILL_DELAY_DAYS dni później. Zagryziony
+      przez szwendacze w czasie wizyty (tryb zombie) zostawia pod bramą wózek z całym towarem. */
+  private traderKilled(p: Pawn, by: Pawn | null): void {
+    const st = this.st;
+    const o = st.obcy;
+    if (!o || o.trader !== p.id) return;
+    const bitten = by?.kind === 'zombie';
+    if (bitten) {
+      const cart = p.job?.phase === 1 ? this.thing(p.job.from) : undefined;
+      const size = this.w.size;
+      const at = cart ? cart.y * size + cart.x : this.tileOf(p);
+      for (const offer of o.offers)
+        if (offer.left > 0)
+          for (const [m, n] of Object.entries(offer.give) as [Mat, number][]) this.dropOutside(at, m, n * offer.left);
+      if (cart) cart.n = 0;
+    }
+    o.trader = -1;
+    o.offers = [];
+    o.next = this.nextTraderVisit(KILL_DELAY_DAYS);
+    o.wiesc = { tick: st.tick, text: (bitten ? HANDEL.zagryziony : HANDEL.zabity).pl };
+  }
+
+  /** posiłki handlarza w swoim czasie: n ludzi z daleka staje pod siatką przy bramie */
+  private revengeClock(): void {
+    const st = this.st;
+    const o = st.obcy!;
+    const z = o.zemsta;
+    if (!z || st.tick < z.at) return;
+    delete o.zemsta;
+    const spot = this.outsideOf(gateTiles(this.w))[0];
+    if (spot === undefined) return;
+    const from = this.farFrom(spot, TRADER_FROM);
+    const starts = this.tilesAround(from, z.n);
+    const waits = this.tilesAround(spot, z.n);
+    let came = 0;
+    for (let k = 0; k < z.n; k++) {
+      const p = newPawn(st, this.w, 'zbir', -1, starts[k] ?? from, from, Math.floor(nextRandom(st.rng) * 16));
+      p.hp = ZBIR_HP;
+      p.wrogi = true;
+      p.weapon = ZBIR_WEAPONS[k % ZBIR_WEAPONS.length];
+      p.job = this.newJob('zemsta', -1, waits[k] ?? spot, false);
+      st.pawns.push(p);
+      if (this.go(p, p.job.tile)) came++;
+      else p.job.phase = 4;
+    }
+    if (came) o.wiesc = { tick: st.tick, text: HANDEL.zemsta(came).pl };
+  }
+
+  /** najbliższy z zarządu do AGGRO m, nie w budynku (do środka wrogowie nie wchodzą) */
+  private hostileTarget(p: Pawn): Pawn | undefined {
+    let best: Pawn | undefined;
+    let bd = AGGRO;
+    for (const q of this.st.pawns) {
+      if (q.kind !== 'core' || q.away || this.graveyard.has(q.id) || this.inRoom(this.tileOf(q))) continue;
+      const d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d <= bd) {
+        bd = d;
+        best = q;
+      }
+    }
+    return best;
+  }
+
+  /** cios wroga: celność i obrażenia z broni, słabsze niż u zarządu (HOSTILE_HIT, HOSTILE_DMG), bez amunicji */
+  private hostileStrike(p: Pawn, t: Pawn, w: Weapon): void {
+    const st = this.st;
+    p.cd = st.tick + w.cd;
+    this.face(p, t.x, t.y);
+    this.addFx('cios', p.x, p.y, t.x, t.y);
+    if (w.noise > 0) this.addNoise(p.x, p.y, w.noise);
+    if (nextRandom(st.rng) >= w.hit * HOSTILE_HIT) return;
+    this.hurt(t, Math.round(w.dmg * HOSTILE_DMG), p);
+  }
+
+  /** wrogi człowiek odchodzi (2) albo ucieka (3) tam, skąd przyszedł; bez drogi znika w następnym kroku */
+  private hostileLeave(p: Pawn, phase: 2 | 3): void {
+    p.job!.phase = phase;
+    if (!this.go(p, p.home)) {
+      p.path = [];
+      p.pi = 0;
+    }
+  }
+
+  /** Wrogi człowiek (napadnięty handlarz w fazie 5, ludzie handlarza): bije najbliższego z zarządu do AGGRO m i goni
+      go swoją warstwą (przez zamkniętą bramę i łaty nie przejdzie), ranny ucieka tam, skąd przyszedł. Handlarz bez
+      nikogo w pobliżu przez CALM_TICKS odchodzi. Ludzie handlarza stają pod siatką i odchodzą o 4:00 albo po
+      ZBIR_STAY. Fazy: 0 idzie (ludzie handlarza pod siatkę), 1 stoi, 2 odchodzi, 3 ucieka, 4 zniknął, 5 walka
+      handlarza. true: zniknął w tym kroku. */
+  private hostileTick(p: Pawn): boolean {
+    const st = this.st;
+    const j = p.job;
+    const trader = p.kind === 'handlarz';
+    if (!j) {
+      p.job = this.newJob(trader ? 'trader' : 'zemsta', -1, this.tileOf(p), false, 4);
+      if (trader && st.obcy?.trader === p.id) this.traderSurvived(true);
+      return true;
+    }
+    if (j.phase === 4) return true;
+    if (j.phase === 2 || j.phase === 3) {
+      if (p.pi < p.path.length) {
+        this.walk(p);
+        return false;
+      }
+      const fled = j.phase === 3;
+      j.phase = 4;
+      if (trader && st.obcy?.trader === p.id) this.traderSurvived(fled);
+      return true;
+    }
+    if ((p.hp ?? 0) < (trader ? TRADER_FLEE : ZBIR_FLEE)) {
+      this.hostileLeave(p, 3);
+      return false;
+    }
+    if (!trader && j.phase === 1 && st.tick >= j.until) {
+      this.hostileLeave(p, 2);
+      return false;
+    }
+    const t = this.hostileTarget(p);
+    if (!t) {
+      if (trader && st.tick >= j.until) {
+        this.hostileLeave(p, 2);
+        return false;
+      }
+      if (p.pi < p.path.length) this.walk(p);
+      else if (!trader && j.phase === 0) {
+        j.phase = 1;
+        const four = tickAt(dayOf(st.tick) + (hourOf(st.tick) >= ZBIR_LEAVE_HOUR ? 1 : 0), ZBIR_LEAVE_HOUR);
+        j.until = Math.min(st.tick + ZBIR_STAY, four);
+      }
+      return false;
+    }
+    if (trader) j.until = st.tick + CALM_TICKS;
+    const w = weaponOf(p.weapon);
+    if (this.canHit(p, t, w)) {
+      p.path = [];
+      p.pi = 0;
+      if (st.tick >= (p.cd ?? 0)) this.hostileStrike(p, t, w);
+      else this.face(p, t.x, t.y);
+      return false;
+    }
+    if (p.pi >= p.path.length || (st.tick + p.id) % THINK_EVERY === 0) {
+      const g = this.goalFor(p, this.tileOf(t));
+      if (g >= 0 && g !== this.tileOf(p)) this.routeTo(p, g);
+    }
+    if (p.pi < p.path.length) this.walk(p);
+    return false;
+  }
+
+  /** Tryb zombie: szwendacz do SPOOK_R m (handlarz: ZOMBIE_SCARE_WAIT) od obcego, który nie ucieka i nie walczy:
+      handlarz odchodzi z wózkiem (wizyta skończona), ocalały i ekipa uciekają. true: ruszył. */
+  private spooked(p: Pawn): boolean {
+    const st = this.st;
+    const j = p.job;
+    if (modeOf(st) !== 'zombie' || !j || j.phase >= 2) return false;
+    const trader = p.kind === 'handlarz';
+    if (!this.walkersNear(this.tileOf(p), trader ? ZOMBIE_SCARE_WAIT : SPOOK_R)) return false;
+    if (trader) {
+      const cart = this.thing(j.from);
+      if (cart && j.phase === 1) st.things.splice(st.things.indexOf(cart), 1);
+      j.from = -1;
+      st.obcy!.offers = [];
+      st.obcy!.wiesc = { tick: st.tick, text: HANDEL.szwendacze.pl };
+      j.phase = 2;
+      if (!this.go(p, p.home)) {
+        p.path = [];
+        p.pi = 0;
+      }
+      return true;
+    }
+    this.flee(p);
+    return true;
+  }
+
+  /** szwendacz do r metrów od kafelka */
+  private walkersNear(tile: number, r: number): boolean {
+    const size = this.w.size;
+    const x = (tile % size) + 0.5;
+    const y = Math.floor(tile / size) + 0.5;
+    return this.st.pawns.some(
+      (q) => q.kind === 'zombie' && !this.graveyard.has(q.id) && Math.hypot(q.x - x, q.y - y) <= r,
+    );
+  }
+
+  /** na ofertę starcza materiału (z całego zapasu, jak w warsztacie) */
+  private canPay(take: Partial<Record<Mat, number>>): boolean {
+    return (Object.entries(take) as [Mat, number][]).every(([m, n]) => this.workStock(m) >= n);
+  }
+
+  /** kafelek do handlu: podwórko najbliżej handlarza (wymiana przez bramę), bez siatki tuż obok niego */
+  private tradeSpot(p: Pawn, t: Pawn): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const yard = fenceShape(this.w)?.yard ?? [];
+    let best = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const i of yard) {
+      if (this.coreBlocked[i] || this.reg[i] !== region || taken.includes(i)) continue;
+      const d = ((i % size) + 0.5 - t.x) ** 2 + (Math.floor(i / size) + 0.5 - t.y) ** 2;
+      if (d < bd || (d === bd && i < best)) {
+        bd = d;
+        best = i;
+      }
+    }
+    return best >= 0 ? best : this.besidePawn(p, t);
+  }
+
+  /** wolny kafelek tuż przy pionku t, do którego p dojdzie (−1: brak); street: tylko po stronie ulicy (nie na bramie,
+      w dziurze ani na podwórku), żeby walka nie szła przez siatkę */
+  private besidePawn(p: Pawn, t: Pawn, street = false): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const tx = Math.floor(t.x);
+    const ty = Math.floor(t.y);
+    const cand: number[] = [];
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = tx + dx;
+        const y = ty + dy;
+        if ((!dx && !dy) || x < 0 || y < 0 || x >= size || y >= size) continue;
+        const i = y * size + x;
+        if (street && this.lay.outside.blocked[i]) continue;
+        if (!this.coreBlocked[i] && this.reg[i] === region && !taken.includes(i)) cand.push(i);
+      }
+    return this.nearest(p, cand);
+  }
+
+  /** wymiana: jedna osoba idzie pod bramę i targuje się 5 minut; oferta, handlarz i materiał sprawdzane na końcu */
+  private startTrade(p: Pawn, k: number): void {
+    const t = this.trader();
+    const offer = this.st.obcy?.offers[k];
+    if (t?.job?.phase !== 1 || !offer || offer.left <= 0 || !this.canPay(offer.take)) return;
+    const spot = this.tradeSpot(p, t);
+    if (spot < 0 || !this.go(p, spot)) return;
+    this.setJob(p, this.newJob('trade', k, spot, true), false);
+  }
+
+  private tradeWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const t = this.trader();
+    const offer = st.obcy?.offers[j.target];
+    if (t?.job?.phase !== 1 || !offer || offer.left <= 0) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = st.tick;
+      j.until = st.tick + HAGGLE_TICKS;
+      this.face(p, t.x, t.y);
+      return true;
+    }
+    if (st.tick < j.until) return true;
+    if (!this.canPay(offer.take)) return false;
+    for (const [m, n] of Object.entries(offer.take) as [Mat, number][]) this.takeForWork(m, n);
+    for (const [m, n] of Object.entries(offer.give) as [Mat, number][])
+      if (st.fence) this.dropInYard(m, n, j.tile);
+      else this.dropMat(j.tile, m, n);
+    offer.left--;
+    return false;
+  }
+
+  /** n sztuk materiału po stronie ulicy wokół kafelka at (nie na bramie, dziurach i podwórku), na sterty tego rodzaju
+      z miejscem i na wolne kafelki; gdy tam brak miejsca, reszta jak zwykle (dropMat) */
+  private dropOutside(at: number, kind: string, n: number): void {
+    const st = this.st;
+    const size = this.w.size;
+    let left = n;
+    for (const i of this.tilesAround(at, 25)) {
+      if (left <= 0) return;
+      const x = i % size;
+      const y = Math.floor(i / size);
+      const same = st.things.find((t) => t.kind === kind && t.x === x && t.y === y);
+      if (same) {
+        const k = Math.max(0, Math.min(left, STACK - same.n));
+        same.n += k;
+        left -= k;
+      } else if (!this.thingAt(x, y)) {
+        const t = newThing(st, kind, x, y);
+        t.n = Math.min(left, STACK);
+        left -= t.n;
+        st.things.push(t);
+      }
+    }
+    if (left > 0) this.dropMat(at, kind, left);
+  }
+
+  /** napaść: jedna osoba idzie do handlarza za bramę */
+  private startRob(p: Pawn): void {
+    const t = this.trader();
+    if (t?.job?.phase !== 1) return;
+    const spot = this.besidePawn(p, t, true);
+    if (spot < 0 || !this.go(p, spot)) return;
+    this.setJob(p, this.newJob('rob', t.id, spot, true), false);
+  }
+
+  /** Napaść: pierwszy cios napastnika, handlarz rzuca wózek (cały towar zostaje przy nim za siatką) i staje do walki
+      z siekierą. Od tej chwili jest wrogiem, więc zarząd z bronią w pobliżu sam się włącza, a napastnik walczy dalej.
+      Cena od razu: nastroje zarządu i zaufanie osiedla (przez zarząd). Resztę rozstrzyga walka: zabity (die),
+      uciekł albo odszedł (hostileTick). */
+  private robWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const o = st.obcy;
+    const t = this.trader();
+    if (!o || !at || !t || t.id !== j.target || t.job?.phase !== 1) return false;
+    const cart = this.thing(t.job.from);
+    const size = this.w.size;
+    const drop = cart ? cart.y * size + cart.x : this.tileOf(t);
+    for (const offer of o.offers)
+      if (offer.left > 0)
+        for (const [m, n] of Object.entries(offer.give) as [Mat, number][]) this.dropOutside(drop, m, n * offer.left);
+    if (cart) cart.n = 0;
+    o.offers = [];
+    o.napad = st.tick;
+    (o.napady ??= []).push({ kto: 'handlarz', tick: st.tick });
+    t.wrogi = true;
+    t.weapon = TRADER_WEAPON;
+    t.job.phase = 5;
+    t.job.from = -1;
+    t.job.until = st.tick + CALM_TICKS;
+    // chwila zaskoczenia, zanim odda
+    t.cd = st.tick + TICKS_PER_SECOND;
+    this.strike(p, t, this.armed(p));
+    this.addMood(p, HANDEL.nastroj.pl, ROB_MOOD, TICKS_PER_DAY);
+    for (const q of st.pawns)
+      if (q !== p && q.kind === 'core' && !q.away) this.addMood(q, HANDEL.nastroj.pl, ROB_MOOD_OTHERS, TICKS_PER_DAY);
+    if (this.graveyard.has(t.id)) return false;
+    this.startFight(p, t.id, true);
+    return true;
+  }
+
+  /* ---------- wędrowcy i obce ekipy (src/sim/wedrowcy.ts) ---------- */
+
+  /** termin wędrowca: za dnia (8:00–17:00), jeden naraz; po zmroku termin przesuwa się na rano */
+  private wandererClock(): void {
+    const st = this.st;
+    const o = st.obcy!;
+    if (o.wnext === undefined || o.wnext < 0 || st.tick < o.wnext) return;
+    if (st.pawns.some((p) => p.kind === 'wedrowiec')) {
+      o.wnext = st.tick + TICKS_PER_HOUR;
+      return;
+    }
+    const h = hourOf(st.tick);
+    if (h < 8 || h >= 17) {
+      o.wnext = tickAt(dayOf(st.tick) + (h >= 17 ? 1 : 0), 8 + 3 * nextRandom(st.rng));
+      return;
+    }
+    this.spawnWanderer();
+    o.wnext = modeOf(st) === 'zombie' ? nextWandererZombie(st.tick, st.rng) : nextWanderer(st.tick, st.rng);
+  }
+
+  /** wędrowiec z daleka idzie na losowy kafelek ulicy tuż przy siatce */
+  private spawnWanderer(): void {
+    const st = this.st;
+    const shape = fenceShape(this.w);
+    const outs = shape ? this.outsideOf(shape.tiles) : [];
+    if (!outs.length) return;
+    const spot = outs[Math.floor(nextRandom(st.rng) * outs.length)];
+    const from = this.farFrom(spot, TRADER_FROM);
+    const p = newPawn(st, this.w, 'wedrowiec', -1, from, from, Math.floor(nextRandom(st.rng) * 16));
+    p.hp = WANDERER_HP;
+    p.job = this.newJob('wander', -1, spot, false);
+    st.pawns.push(p);
+    if (from === spot || !this.go(p, spot)) st.pawns.pop();
+  }
+
+  /** Krok wędrowca, który nie idzie: 0 doszedł pod siatkę (przystaje), 1 stoi, potem idzie daleko w inną stronę,
+      2 odszedł, 3 uciekł, 4 zniknął. true: zniknął w tym kroku. */
+  private wanderTick(p: Pawn): boolean {
+    const st = this.st;
+    const j = p.job;
+    if (!j) {
+      p.job = this.newJob('wander', -1, this.tileOf(p), false, 4);
+      return true;
+    }
+    if (j.phase === 0) {
+      j.phase = 1;
+      j.t0 = st.tick;
+      // ocalały w trybie zombie przystaje tylko na chwilę
+      const [a, b] = modeOf(st) === 'zombie' ? [PAUSE_ZOMBIE_MIN, PAUSE_ZOMBIE_MAX] : [PAUSE_MIN, PAUSE_MAX];
+      j.until = st.tick + a + Math.floor(nextRandom(st.rng) * (b - a));
+      return false;
+    }
+    if (j.phase === 1) {
+      if (st.tick < j.until) return false;
+      j.phase = 2;
+      const dest = this.farFrom(this.tileOf(p), TRADER_FROM);
+      if (dest !== this.tileOf(p) && this.go(p, dest)) return false;
+    }
+    j.phase = 4;
+    return true;
+  }
+
+  /** termin ekipy: za dnia (9:00–14:00), do nieprzeszukanego wraku, którego nie przeszukuje nikt z zarządu */
+  private crewClock(): void {
+    const st = this.st;
+    const o = st.obcy!;
+    if (o.enext === undefined || o.enext < 0 || st.tick < o.enext) return;
+    if (st.pawns.some((p) => p.kind === 'obcy')) {
+      o.enext = st.tick + TICKS_PER_HOUR;
+      return;
+    }
+    const h = hourOf(st.tick);
+    if (h < 9 || h >= 14) {
+      o.enext = tickAt(dayOf(st.tick) + (h >= 14 ? 1 : 0), 9 + 5 * nextRandom(st.rng));
+      return;
+    }
+    o.enext = modeOf(st) === 'zombie' ? nextCrewZombie(dayOf(st.tick), st.rng) : nextCrew(dayOf(st.tick), st.rng);
+    this.spawnCrew();
+  }
+
+  /** dwie osoby z łomami z daleka do losowego nieprzeszukanego wraku; stają przy nim od strony ulicy */
+  private spawnCrew(): void {
+    const st = this.st;
+    const size = this.w.size;
+    const ours = new Set(st.pawns.filter((q) => q.job?.t === 'wreck').map((q) => q.job!.target));
+    const free = wrecksOf(this.w).filter((r) => {
+      const t = wreckTile(r, size);
+      return wreckStage(st.wraki, t) === 0 && !ours.has(t);
+    });
+    if (!free.length) return;
+    const r = free[Math.floor(nextRandom(st.rng) * free.length)];
+    const t = wreckTile(r, size);
+    const { blocked, reg } = this.lay.outside;
+    const ring: number[] = [];
+    for (let y = r.y - 1; y <= r.y + r.h; y++)
+      for (let x = r.x - 1; x <= r.x + r.w; x++) {
+        if (x < 0 || y < 0 || x >= size || y >= size) continue;
+        if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) continue;
+        const i = y * size + x;
+        if (!blocked[i]) ring.push(i);
+      }
+    if (!ring.length) return;
+    const stands = [ring[0], ring.find((i) => reg[i] === reg[ring[0]] && Math.abs(i - ring[0]) > 1) ?? ring[0]];
+    const from = this.farFrom(stands[0], TRADER_FROM);
+    const starts = this.tilesAround(from, 2);
+    for (let k = 0; k < 2; k++) {
+      const p = newPawn(st, this.w, 'obcy', -1, starts[k] ?? from, from, Math.floor(nextRandom(st.rng) * 16));
+      p.hp = WANDERER_HP;
+      p.job = this.newJob('scavenge', t, stands[k], false);
+      p.job.from = k;
+      st.pawns.push(p);
+      if (!this.go(p, stands[k])) p.job.phase = 4;
+    }
+  }
+
+  /** Krok obcego z ekipy, który nie idzie: 0 doszedł do wraku (wrak przeszukany: odchodzi), 1 przeszukuje godzinę,
+      potem pierwszy z nich oznacza wrak jako przeszukany (łup przepada) i obaj odchodzą, 2 odszedł, 3 uciekł,
+      4 zniknął. true: zniknął w tym kroku. */
+  private scavengeTick(p: Pawn): boolean {
+    const st = this.st;
+    const j = p.job;
+    if (!j) {
+      p.job = this.newJob('scavenge', -1, this.tileOf(p), false, 4);
+      return true;
+    }
+    if (j.phase === 4) return true;
+    const r = wreckAt(this.w, j.target);
+    if (j.phase === 0) {
+      j.phase = 1;
+      j.t0 = st.tick;
+      j.until = r && wreckStage(st.wraki, j.target) === 0 ? st.tick + CREW_SEARCH_TICKS : st.tick;
+      if (r) this.face(p, r.x + r.w / 2, r.y + r.h / 2);
+      return false;
+    }
+    if (j.phase === 1) {
+      if (st.tick < j.until) return false;
+      if (j.from === 0 && r && wreckStage(st.wraki, j.target) === 0) {
+        st.wraki ??= [];
+        st.wraki.push({ t: j.target, s: 1 });
+        st.wraki.sort((a, b) => a.t - b.t);
+        st.obcy!.wiesc = { tick: st.tick, text: OBCY.przeszukali(r.model).pl };
+      }
+      j.phase = 2;
+      if (this.go(p, p.home)) return false;
+    }
+    j.phase = 4;
+    return true;
+  }
+
+  /** obcy danego rodzaju o tym id, który jeszcze nie ucieka ani nie zniknął */
+  private stranger(id: number, kind: PawnKind): Pawn | undefined {
+    return this.st.pawns.find((q) => q.id === id && q.kind === kind && (q.job?.phase ?? 4) < 3);
+  }
+
+  /** zagadać przystającego wędrowca: osoba idzie na podwórko na kafelek najbliżej niego (rozmowa przez siatkę) */
+  private startTalk(p: Pawn, id: number): void {
+    const t = this.stranger(id, 'wedrowiec');
+    if (t?.job?.phase !== 1 || t.job.what === 'zagadany') return;
+    const spot = this.tradeSpot(p, t);
+    if (spot < 0 || !this.go(p, spot)) return;
+    this.setJob(p, this.newJob('talk', t.id, spot, true), false);
+  }
+
+  /** rozmowa 5 minut: wędrowiec zostaje dłużej, rozmawiający ma lepszy nastrój, wieść na dole ekranu */
+  private talkWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const t = this.stranger(j.target, 'wedrowiec');
+    if (t?.job?.phase !== 1 || t.job.what === 'zagadany') return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = st.tick;
+      j.until = st.tick + TALK_TICKS;
+      t.job.until = Math.max(t.job.until, st.tick + TALK_TICKS + TALK_EXTRA);
+      this.face(p, t.x, t.y);
+      this.face(t, p.x, p.y);
+      return true;
+    }
+    if (st.tick < j.until) return true;
+    t.job.what = 'zagadany';
+    t.job.until = Math.max(t.job.until, st.tick + TALK_EXTRA);
+    this.addMood(p, OBCY.nastrojRozmowa.pl, TALK_MOOD, TALK_MOOD_TICKS);
+    const o = st.obcy!;
+    const size = this.w.size;
+    const left = wrecksOf(this.w).filter((r) => wreckStage(st.wraki, wreckTile(r, size)) === 0).length;
+    const traderIn = o.next < 0 ? -1 : Math.max(0, dayOf(o.next) - dayOf(st.tick));
+    const ctx = { traderIn, wrecksLeft: left };
+    o.wiesc = { tick: st.tick, text: (modeOf(st) === 'zombie' ? gossipZombie : gossip)(ctx, st.rng).pl };
+    return false;
+  }
+
+  /** napaść na wędrowca (mug) albo przegonienie ekipy (shoo): osoba idzie do obcego i poprawia drogę, aż dojdzie */
+  private startChase(p: Pawn, id: number, how: 'mug' | 'shoo'): void {
+    const t = this.stranger(id, how === 'mug' ? 'wedrowiec' : 'obcy');
+    if (!t) return;
+    const spot = this.besidePawn(p, t, true);
+    if (spot < 0 || !this.go(p, spot)) return;
+    const j = this.newJob(how, t.id, spot, true);
+    j.until = this.st.tick + CHASE_TICKS;
+    this.setJob(p, j, false);
+  }
+
+  /** Na miejscu: mug to cios, worek i ucieczka (i cena w zaufaniu przez zarząd), shoo to ucieczka całej ekipy bez
+      ceny. Obcy odszedł dalej: nowa droga do niego, dopóki nie minie czas pościgu. */
+  private chaseWork(p: Pawn, j: Job): boolean {
+    const st = this.st;
+    const mug = j.t === 'mug';
+    const t = this.stranger(j.target, mug ? 'wedrowiec' : 'obcy');
+    if (!t) return false;
+    const reach = mug ? 1.8 : SHOO_REACH;
+    if (Math.hypot(t.x - p.x, t.y - p.y) > reach) {
+      if (st.tick >= j.until) return false;
+      const spot = this.besidePawn(p, t, true);
+      if (spot < 0 || !this.go(p, spot)) return false;
+      j.tile = spot;
+      return true;
+    }
+    this.face(p, t.x, t.y);
+    if (!mug) {
+      for (const q of st.pawns)
+        if (q.kind === 'obcy' && q.job?.t === 'scavenge' && q.job.target === t.job!.target && q.job.phase < 3)
+          this.flee(q);
+      return false;
+    }
+    this.addFx('cios', p.x, p.y, t.x, t.y);
+    t.hp = Math.max(1, (t.hp ?? WANDERER_HP) - 20);
+    for (const [m, n] of Object.entries(mugLoot(st.rng)) as [Mat, number][]) this.dropOutside(this.tileOf(t), m, n);
+    this.flee(t);
+    (st.obcy!.napady ??= []).push({ kto: 'wedrowiec', tick: st.tick });
+    this.addMood(p, OBCY.nastrojNapasc.pl, MUG_MOOD, TICKS_PER_DAY);
+    for (const q of st.pawns)
+      if (q !== p && q.kind === 'core' && !q.away)
+        this.addMood(q, OBCY.nastrojNapasc.pl, MUG_MOOD_OTHERS, TICKS_PER_DAY);
+    return false;
+  }
+
+  /** obcy ucieka tam, skąd przyszedł (bez drogi znika w następnym kroku) */
+  private flee(t: Pawn): void {
+    if (!t.job) return;
+    t.job.phase = 3;
+    if (!this.go(t, t.home)) {
+      t.path = [];
+      t.pi = 0;
+    }
   }
 
   /** miejsca dla mieszkańców od nowa (zajęcie, naprawa, budowa) */
@@ -4444,7 +5775,7 @@ export class Sim {
       return;
     }
     const who = p.person >= 0 ? st.people[p.person] : undefined;
-    const name = who?.name ?? (p.kind === 'szabrownik' ? 'Szabrownik' : 'Mieszkaniec');
+    const name = who?.name ?? STRANGER_NAMES[p.kind] ?? 'Mieszkaniec';
     // id tylko dla zarządu: mieszkaniec z osobą ma imię, ale dla zarządu (GovInput.dead) zostaje mieszkańcem
     st.dead!.push({ id: p.kind === 'core' ? (who?.id ?? '') : '', name, look: p.look, kind: p.kind, tick, cause });
     if (away) {
@@ -4462,9 +5793,10 @@ export class Sim {
     // w trybie zombie każdy zmarły wstaje, chyba że ktoś go dobije
     if (modeOf(st) === 'zombie') body.fuel = tick + RISE_TICKS;
     st.things.push(body);
-    if (p.kind === 'szabrownik') {
+    if (STRANGER_KINDS.has(p.kind)) {
       st.tally!.killed++;
       if (by?.needs) this.addMood(by, 'Zabiłem człowieka', -6, TICKS_PER_DAY);
+      if (p.kind === 'handlarz') this.traderKilled(p, by);
       return;
     }
     st.tally!.deaths++;
@@ -4514,6 +5846,13 @@ export class Sim {
       p.path = [];
       p.pi = 0;
       if (!t || !bare || this.across(p, t.x, t.y) || !this.retreat(p)) this.done(p);
+      return;
+    }
+    // walka bez rozkazu z bronią palną w trybie zombie kończy się, kiedy wróg jest za siatką
+    if (!j.order && this.holdFire(w) && this.across(p, t.x, t.y)) {
+      p.path = [];
+      p.pi = 0;
+      this.done(p);
       return;
     }
     if (this.canHit(p, t, w)) {
@@ -4574,16 +5913,28 @@ export class Sim {
     return s >= 0 ? s : this.standBy(p, [best], 2);
   }
 
-  /** warta na posterunku: najbliższy wróg w zasięgu broni */
+  /** W trybie zombie broń palna sama nie strzela przez siatkę, bo strzał ściąga stado: tylko po swojej stronie siatki
+      i na rozkaz gracza („Atakuj”). */
+  private holdFire(w: Weapon): boolean {
+    return modeOf(this.st) === 'zombie' && isFirearm(w);
+  }
+
+  /** broń tak, jak sięga sama z siebie (warta, pilnowanie naporu): w trybie zombie broń palna nie przez siatkę */
+  private selfReach(w: Weapon): Weapon {
+    return this.holdFire(w) ? { ...w, fence: false } : w;
+  }
+
+  /** warta na posterunku: najbliższy wróg w zasięgu broni (w trybie zombie z bronią palną tylko po swojej stronie) */
   private guardStrike(p: Pawn): void {
     if (this.st.tick < (p.cd ?? 0)) return;
     const w = this.armed(p);
+    const reach = this.selfReach(w);
     let best: Pawn | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.pawns) {
       if (!isEnemy(t) || t.away || this.graveyard.has(t.id)) continue;
       const d = Math.hypot(t.x - p.x, t.y - p.y);
-      if (d < bd && this.canHit(p, t, w)) {
+      if (d < bd && this.canHit(p, t, reach)) {
         bd = d;
         best = t;
       }
@@ -4695,7 +6046,7 @@ export class Sim {
     return n;
   }
 
-  /** Zegar trybu zombie: za dnia co godzinę uzupełnienie snujących się, o 21:00 stado (grupy z krawędzi mapy
+  /** Zegar trybu zombie: za dnia co godzinę uzupełnienie snujących się, o 21:00 stado (grupy z okolicy
       do 1:00), o 6:00 stado się rozchodzi. */
   private zombieClock(): void {
     const st = this.st;
@@ -4704,7 +6055,7 @@ export class Sim {
     const h = hourOf(tick);
     const day = dayOf(tick);
     if (hourStart && h >= DISPERSE && h < HORDE_FROM) this.topUp(day);
-    // o 21:00 stado: najpierw ci, którzy już się snują (poza budynkami), a z krawędzi mapy tylko brakująca reszta
+    // o 21:00 stado: najpierw ci, którzy już się snują (poza budynkami), a z okolicy tylko brakująca reszta
     if (hourStart && h === HORDE_FROM) {
       const want = hordeSize(day);
       let have = 0;
@@ -4724,8 +6075,9 @@ export class Sim {
       hd.left -= n;
       hd.next = tick + Math.floor((HORDE_HOURS * TICKS_PER_HOUR) / groups);
       const room = MAX_ZOMBIES - this.zombieCount();
-      if (room > 0 && this.edges.length) {
-        const at = this.edges[Math.floor(nextRandom(st.rng) * this.edges.length)];
+      const from = this.ring.length ? this.ring : this.edges;
+      if (room > 0 && from.length) {
+        const at = from[Math.floor(nextRandom(st.rng) * from.length)];
         for (const t of this.tilesAround(at, Math.min(n, room)))
           spawnZombie(st, this.w, t, Math.floor(nextRandom(st.rng) * 16), true);
       }
@@ -4742,7 +6094,7 @@ export class Sim {
       }
   }
 
-  /** za dnia: do ambientCount(dzień) snujących się, daleko od siatki; gdy brakuje ponad połowy, od razu wszyscy */
+  /** za dnia: do ambientCount(dzień) snujących się w pasie przy siatce; gdy brakuje ponad połowy, od razu wszyscy */
   private topUp(day: number): void {
     const st = this.st;
     const have = this.zombieCount();
@@ -4756,24 +6108,31 @@ export class Sim {
     }
   }
 
-  /** losowy kafelek po stronie ulicy co najmniej FAR metrów od siatki (a bez takiego: przy krawędzi mapy) */
+  /** losowy kafelek z pasa FAR–NEAR metrów drogi od siatki, także w linii prostej co najmniej FAR (droga za rogiem
+      budynku bywa dłuższa); bez pasa: przy krawędzi mapy */
   private farTile(): number {
-    const st = this.st;
     const size = this.w.size;
-    for (let k = 0; k < 60; k++) {
-      const i = Math.floor(nextRandom(st.rng) * size * size);
-      if (this.flow[i] < FAR) continue;
+    const from = this.band.length ? this.band : this.edges;
+    if (!from.length) return -1;
+    let i = -1;
+    for (let k = 0; k < 20; k++) {
+      i = from[Math.floor(nextRandom(this.st.rng) * from.length)];
       const x = (i % size) + 0.5;
       const y = Math.floor(i / size) + 0.5;
       if (this.seeds.every((s) => Math.hypot((s % size) + 0.5 - x, Math.floor(s / size) + 0.5 - y) >= FAR)) return i;
     }
-    return this.edges.length ? this.edges[Math.floor(nextRandom(st.rng) * this.edges.length)] : -1;
+    return i;
   }
 
   /** ofiara: człowiek na mapie; indoor: także w pomieszczeniach (dla szwendacza, który jest w środku) */
   private isPrey(q: Pawn, indoor = false): boolean {
     return (
-      (q.kind === 'core' || q.kind === 'resident' || q.kind === 'szabrownik') &&
+      (q.kind === 'core' ||
+        q.kind === 'resident' ||
+        q.kind === 'szabrownik' ||
+        q.kind === 'handlarz' ||
+        q.kind === 'wedrowiec' ||
+        q.kind === 'obcy') &&
       !q.away &&
       !this.graveyard.has(q.id) &&
       (indoor || !this.inRoom(this.tileOf(q)))
@@ -4878,6 +6237,7 @@ export class Sim {
     const tick = st.tick;
     if (!p.job) p.job = this.newJob('zombie', -1, this.tileOf(p), false);
     const j = p.job;
+    if (this.sealed(this.tileOf(p))) this.pushOut(p, j);
     if (j.phase === 3) {
       const t = st.pawns.find((q) => q.id === j.target);
       if (
@@ -4950,6 +6310,25 @@ export class Sim {
     }
   }
 
+  /** kafelek siatki albo bramy, przez który teraz nie da się przejść (cała siatka, łata, zasieki, zamknięta brama) */
+  private sealed(tile: number): boolean {
+    return this.fenceMask[tile] === 1 && this.blocked[tile] === 1;
+  }
+
+  /** Szwendacz w dziurze albo bramie, którą właśnie zamknięto: łata wypycha go na najbliższy wolny kafelek po stronie
+      ulicy, także gdy szedł z podwórka, i zaczyna od nowa (stado znowu idzie pod siatkę). */
+  private pushOut(p: Pawn, j: Job): void {
+    const size = this.w.size;
+    const out = nearestFree(this.lay.outside.blocked, size, this.tileOf(p));
+    p.x = (out % size) + 0.5;
+    p.y = Math.floor(out / size) + 0.5;
+    p.path = [];
+    p.pi = 0;
+    j.phase = j.what === 'stado' ? 1 : 0;
+    j.target = -1;
+    j.n = 0;
+  }
+
   /** ugryzienie: trafia w 70% przypadków, 15 obrażeń */
   private bite(p: Pawn, t: Pawn): void {
     const st = this.st;
@@ -4963,7 +6342,8 @@ export class Sim {
     if (nextRandom(st.rng) < BITE_INFECT) infect(st, t, nextRandom(st.rng) < LIMB);
   }
 
-  /** snucie się: kilka kroków w losową stronę po przechodnich kafelkach */
+  /** snucie się: kilka kroków w losową stronę po przechodnich kafelkach; co któryś krok ku siatce (ściągają się pod
+      nią przez dzień), a dalej niż NEAR od siatki każdy */
   private drift(p: Pawn): void {
     const st = this.st;
     const size = this.w.size;
@@ -4973,9 +6353,14 @@ export class Sim {
     const n = 3 + Math.floor(nextRandom(st.rng) * 6);
     for (let k = 0; k < n; k++) {
       const x = c % size;
-      const opts = [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1].filter(
+      let opts = [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1].filter(
         (q) => q >= 0 && q < size * size && !blocked[q] && !path.includes(q),
       );
+      const f = this.flow[c] ?? -1;
+      if (f > NEAR || (f > 1 && nextRandom(st.rng) < DAY_PULL)) {
+        const closer = opts.filter((q) => this.flow[q] >= 0 && this.flow[q] < f);
+        if (closer.length) opts = closer;
+      }
       if (!opts.length) break;
       c = opts[Math.floor(nextRandom(st.rng) * opts.length)];
       path.push(c);
@@ -5163,11 +6548,22 @@ export class Sim {
     heap.by = p.id;
   }
 
-  /** do broni: każdy z zarządu ze zdrowiem ponad 30 na wartę */
-  private orderAlarm(pawns: Pawn[]): void {
-    const able = pawns.filter((p) => (p.needs?.health ?? 0) > 30);
+  /** Do broni: każdy z zarządu ze zdrowiem ponad 30, kto nie stoi już na warcie, na wartę z alarmu (do 6:00 jak
+      każda warta). Odwołanie: warta z alarmu schodzi z posterunku, reszta warty zostaje. */
+  private orderAlarm(pawns: Pawn[], off: boolean): void {
+    if (off) {
+      for (const p of pawns)
+        if (p.job?.t === 'guard' && p.job.what === ALARM_JOB) {
+          p.path = [];
+          p.pi = 0;
+          this.done(p);
+        }
+      return;
+    }
+    const able = pawns.filter((p) => (p.needs?.health ?? 0) > 30 && p.job?.t !== 'guard');
     if (!able.length) return;
     this.orderGuard(able, modeOf(this.st) === 'zombie' && this.st.fence ? 'siatka' : 'brama');
+    for (const p of able) if (p.job?.t === 'guard') p.job.what = ALARM_JOB;
   }
 
   /** Kafelek siatki, na który napiera najwięcej szwendaczy (−1: nikt nie napiera). Brama nie puszcza, więc napór
@@ -5207,12 +6603,15 @@ export class Sim {
     return free >= 0 ? free : best;
   }
 
-  /** warta przy siatce przechodzi do miejsca największego naporu, gdy stoi od niego dalej niż 2,5 m */
+  /** Warta przy siatce przechodzi do miejsca największego naporu, kiedy jej broń nie sięga nikogo, kto tam napiera
+      (na rogu siatki 2,2 m od kafelka to już za daleko na dzidę), i staje tuż przy nim od strony podwórka. */
   private followPressure(p: Pawn, j: Job): void {
     const hot = this.hotTile(p);
     if (hot < 0) return;
-    const size = this.w.size;
-    if (Math.hypot((hot % size) + 0.5 - p.x, Math.floor(hot / size) + 0.5 - p.y) <= 2.5) return;
+    const w = this.armed(p);
+    const reach = this.selfReach(w);
+    for (const z of this.st.pawns)
+      if (z.kind === 'zombie' && z.job?.phase === 2 && z.job.target === hot && this.canHit(p, z, reach)) return;
     let stand = this.standBy(p, [hot], 1);
     if (stand < 0) stand = this.standBy(p, [hot], 2);
     if (stand < 0 || stand === this.tileOf(p) || !this.go(p, stand)) return;
@@ -5406,8 +6805,8 @@ export class Sim {
     return out;
   }
 
-  /** skąd przychodzą: losowy kafelek RAID_FROM kroków od siatki po stronie ulicy (albo najdalszy, jaki jest) */
-  private farFrom(spot: number): number {
+  /** skąd przychodzą: losowy kafelek far kroków od siatki po stronie ulicy (albo najdalszy, jaki jest) */
+  private farFrom(spot: number, far = RAID_FROM): number {
     const size = this.w.size;
     const { blocked } = this.lay.outside;
     const dist = new Map<number, number>([[spot, 0]]);
@@ -5417,7 +6816,7 @@ export class Sim {
     for (let qi = 0; qi < q.length; qi++) {
       const c = q[qi];
       const d = dist.get(c)!;
-      if (d === RAID_FROM) {
+      if (d === far) {
         ring.push(c);
         continue;
       }

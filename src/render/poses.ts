@@ -27,8 +27,11 @@ export interface PawnLike {
   pi: number;
   path: { length: number };
   carry: number;
-  /** n i what: sztuki w rękach poza drewnem i co to za sztuki ('deski', 'zlom', 'czesci') */
+  /** n i what: sztuki w rękach poza drewnem i co to za sztuki ('deski', 'zlom', 'czesci', 'leki', 'jedzenie');
+      what w pracy 'wreck' to sposób ('szukaj', 'rozbierz'), w 'saw' produkt (n zawsze 0) */
   job: { t: string; phase: number; target: number; n?: number; what?: string } | null;
+  /** wrogi człowiek (napadnięty handlarz, jego ludzie): po ciosie poza zamachu jak w walce */
+  wrogi?: boolean;
   /** broń w rękach i tick, od którego znowu uderzy (z niego: kiedy był ostatni cios) */
   weapon?: WeaponId | null;
   cd?: number;
@@ -127,7 +130,7 @@ export function poseOf(
   const w = weaponOf(p.weapon);
   const since = w.cd - ((p.cd ?? Number.NEGATIVE_INFINITY) - tick);
   const struck = since >= 0 && since < 12;
-  if (!moving && j?.phase === 1 && (j.t === 'fight' || (j.t === 'guard' && struck))) {
+  if (!moving && ((j?.phase === 1 && (j.t === 'fight' || (j.t === 'guard' && struck))) || (p.wrogi && struck))) {
     if (w.ammo || thrusts(p.weapon)) return { pose: 'aim', dir, frame: since >= 0 && since < 4 ? 1 : 0, arm: 'aim' };
     const frame = since >= 0 && since < 4 ? 1 : since >= 0 && since < 10 ? 2 : 0;
     return { pose: 'swing', dir, frame, arm: 'swing' };
@@ -145,7 +148,7 @@ export function poseOf(
     j &&
     j.phase !== 2 &&
     (j.n ?? 0) > 0 &&
-    (j.t === 'patch' || j.t === 'repair' || j.t === 'build' || j.t === 'brace')
+    (j.t === 'patch' || j.t === 'repair' || j.t === 'build' || j.t === 'brace' || j.t === 'carry')
   )
     return { pose: !j.what || j.what === 'deski' ? 'planks' : 'scrap', dir, frame: step };
   if (!moving && j && j.phase === 2)
@@ -180,6 +183,12 @@ export function poseOf(
         return thing?.kind === 'smieci' ? knees() : swing();
       }
       case 'claim':
+        return hammer();
+      // wrak: przeszukuje na kolanach (schowek, bagażnik), rozbiera z łomem albo młotkiem
+      case 'wreck':
+        return j.what === 'rozbierz' ? hammer() : knees();
+      // warsztat: piłuje i obrabia przy stole
+      case 'saw':
         return hammer();
       case 'warm':
         return { pose: 'crouch', dir, frame: 0 };

@@ -1,7 +1,7 @@
 /* Potrzeby ludzi z rdzenia w skali 0–100, liczone co HEAT_EVERY ticków razem z ciepłem.
    Nastrój nie ma własnej dynamiki: wynika z pozostałych potrzeb plus chwilowe nastroje (spalone meble,
    ciepły posiłek), później dojdą cechy i wydarzenia. Zdrowie na razie tylko spada i wraca; choroby,
-   leczenie i śmierć przyjdą razem z systemami z 0.3. */
+   leczenie i śmierć przyjdą razem z systemami z 0.3. Nazwy pasków są w obu językach (NEED_LABELS, NEED_LABELS_EN). */
 
 export interface Needs {
   /** najedzenie */
@@ -25,6 +25,16 @@ export const NEED_LABELS: Record<keyof Needs, string> = {
   health: 'Zdrowie',
   safe: 'Bezpieczeństwo',
   mood: 'Nastrój',
+};
+
+/** te same paski po angielsku (słowniczek); wybór języka przy rysowaniu karty */
+export const NEED_LABELS_EN: Record<keyof Needs, string> = {
+  food: 'Fed',
+  warm: 'Warmth',
+  rest: 'Energy',
+  health: 'Health',
+  safe: 'Safety',
+  mood: 'Mood',
 };
 
 export interface NeedCtx {

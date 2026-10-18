@@ -4,12 +4,15 @@
    starczy, a rano raport mówi, czy w kuchni było ciepło. Przy zatwierdzeniu losuje się, czy szabrownicy
    przyjdą, gdzie i o której (23:00–4:00). O tej godzinie obronę liczy się z tego, co jest: kto nie zasnął,
    światło, pies, brama. Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość
-   z ziarna gry. */
+   z ziarna gry. Teksty karty i raportu to Tx (polski i angielski z tych samych danych, bez dodatkowych losowań). */
 
+import { NOTE_HOLD_FIRE_EN } from '../content/napisy-zombie.en.ts';
+import { NOTE_HOLD_FIRE } from '../content/napisy-zombie.ts';
 import { g } from '../content/people.ts';
+import { type Tx, tx, txJoin, txOf } from '../core/jezyk.ts';
 import { clamp } from '../core/rng.ts';
-import { placeIn, wordsOf } from './miejsce.ts';
-import { type ExpTarget, peopleNames, TARGETS, targetName } from './tresc.ts';
+import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
+import { type ExpTarget, peopleNamesTx, TARGETS, targetNameTx } from './tresc.ts';
 import type {
   Arm,
   GovEffects,
@@ -36,7 +39,7 @@ import {
   rnd,
   round1,
   round2,
-  stockText,
+  stockTx,
   zeroStock,
 } from './wspolne.ts';
 
@@ -64,13 +67,29 @@ export function nightWood(i: GovInput): { have: number; need: number; until: str
 
 /** godzina z zapasu drewna do tekstu: „0:00” to północ */
 export const untilWord = (until: string): string => (until === '0:00' ? 'północy' : until);
+export const untilWordEn = (until: string): string => (until === '0:00' ? 'midnight' : until);
 
 /** do której starczy drewna przy dyżurze, w słowach („drewna starczy do około 2:00.”) */
-export function woodNote(wd: { have: number; need: number; until: string }): string {
-  if (wd.have >= wd.need) return 'drewna starczy do rana.';
-  if (wd.have >= WOOD_PER_HOUR) return `drewna starczy do około ${untilWord(wd.until)}.`;
-  return 'drewna prawie nie ma.';
+export function woodNote(wd: { have: number; need: number; until: string }): Tx {
+  if (wd.have >= wd.need) return tx('drewna starczy do rana.', 'the wood will last till morning.');
+  if (wd.have >= WOOD_PER_HOUR)
+    return tx(
+      `drewna starczy do około ${untilWord(wd.until)}.`,
+      `the wood will only last until about ${untilWordEn(wd.until)}.`,
+    );
+  return tx('drewna prawie nie ma.', 'there’s hardly any wood left.');
 }
+
+/** zdania po kolei w obu językach, bez pustych */
+const zdania = (...parts: Tx[]): Tx =>
+  txJoin(
+    parts.filter((t) => t.pl || t.en),
+    ' ',
+  );
+const NIC: Tx = tx('', '');
+/** angielski zaimek po płci osoby albo „They” dla kilku */
+const oni = (list: { f: boolean }[], he: string, she: string, they: string) =>
+  list.length === 1 ? (list[0].f ? she : he) : they;
 const RAID_FROM = 23;
 const RAID_SPAN = 5 * 60;
 
@@ -79,7 +98,8 @@ const verbPl = (list: { f: boolean }[], m: string, f: string, mp: string, fp: st
 
 interface Post {
   key: string;
-  name: string;
+  /** „przy bramie”, „at the gate” */
+  name: Tx;
   weak: number;
 }
 
@@ -90,13 +110,21 @@ export const zombieMode = (st: Pick<GovState, 'mode'>): boolean => st.mode === '
     w trybie zombie najpierw „przy siatce” (warta idzie tam, gdzie napiera stado) */
 export function postsOf(i: GovInput, zombie = false): Post[] {
   const f = fenceOf(i);
-  const posts: Post[] = f.holes.map((h) => ({
-    key: `d${h.id}`,
-    name: `przy dziurze ${h.name}`,
-    weak: round2(h.size + 0.2),
-  }));
-  posts.push({ key: 'brama', name: wordsOf(placeIn(i)).brama.przy, weak: round2(0.15 + 0.35 * (1 - f.durability)) });
-  if (zombie) posts.push({ key: 'siatka', name: 'przy siatce', weak: 2 });
+  const posts: Post[] = f.holes.map((h) => {
+    const name = txOf(h.name ?? '');
+    return {
+      key: `d${h.id}`,
+      name: tx(`przy dziurze ${name.pl}`, `at the hole ${name.en}`),
+      weak: round2(h.size + 0.2),
+    };
+  });
+  const place = placeIn(i);
+  posts.push({
+    key: 'brama',
+    name: tx(wordsOf(place).brama.przy, `at ${wordsEn(place).brama}`),
+    weak: round2(0.15 + 0.35 * (1 - f.durability)),
+  });
+  if (zombie) posts.push({ key: 'siatka', name: tx('przy siatce', 'at the fence'), weak: 2 });
   return posts.sort((a, b) => b.weak - a.weak || (a.key < b.key ? -1 : 1));
 }
 
@@ -155,7 +183,8 @@ export function deterrence(st: GovState, i: GovInput, watchers: number): number 
   return Math.max(0.4, 1 - 0.2 * Math.min(2, watchers) - (lit ? 0.15 : 0));
 }
 
-export const chanceWord = (c: number): string => (c < 0.25 ? 'niska' : c < 0.5 ? 'średnia' : 'wysoka');
+export const chanceWord = (c: number): Tx =>
+  c < 0.25 ? tx('niska', 'low') : c < 0.5 ? tx('średnia', 'medium') : tx('wysoka', 'high');
 
 /** broń w warcie: gołe ręce × 1, wręcz × 1,25, dzida × 1,4, broń palna albo kusza z amunicją × 1,5 */
 const ARM_FACTOR: Record<Arm, number> = { brak: 1, wrecz: 1.25, dzida: 1.4, palna: 1.5 };
@@ -245,52 +274,76 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
   const wood = i.kitchen !== null ? nightWood(i) : undefined;
   const people = i.people.map((p) => {
     const opts: NightOption[] = [
-      { key: 'sen', label: 'Śpi', ok: true, note: p.needs.rest < 30 ? 'Bardzo potrzebuje snu.' : undefined },
+      {
+        key: 'sen',
+        label: tx('Śpi', 'Sleeps'),
+        ok: true,
+        note: p.needs.rest < 30 ? tx('Bardzo potrzebuje snu.', 'Badly needs sleep.') : undefined,
+      },
     ];
     if (wood) {
       const ok = p.needs.health >= 30;
+      const wn = woodNote(wood);
       opts.push({
         key: KOZA_KEY,
-        label: 'Czuwa przy kozie',
+        label: tx('Czuwa przy kozie', 'Watches the stove'),
         ok,
-        why: ok ? undefined : g(p, 'Za słaby na czuwanie.', 'Za słaba na czuwanie.'),
+        why: ok
+          ? undefined
+          : tx(g(p, 'Za słaby na czuwanie.', 'Za słaba na czuwanie.'), 'Too weak to sit up all night.'),
         // noc bez snu zjada około 50 sił (symulacja: 5 na godzinę od karty do 6:00)
-        note: `Nie śpi i pilnuje ognia w kozie, ${woodNote(wood)}${p.needs.rest < 50 ? ' Rano będzie bez sił.' : ''}`,
+        note: tx(
+          `Nie śpi i pilnuje ognia w kozie, ${wn.pl}${p.needs.rest < 50 ? ' Rano będzie bez sił.' : ''}`,
+          `Stays up and keeps the stove going, and ${wn.en}${p.needs.rest < 50 ? ' Will be exhausted in the morning.' : ''}`,
+        ),
       });
     }
     for (const post of posts) {
       const ok = p.needs.health >= 20;
       opts.push({
         key: `warta:${post.key}`,
-        label: `Warta ${post.name}`,
+        label: tx(`Warta ${post.name.pl}`, `Watch ${post.name.en}`),
         ok,
-        why: ok ? undefined : g(p, 'Za słaby na wartę.', 'Za słaba na wartę.'),
+        why: ok ? undefined : tx(g(p, 'Za słaby na wartę.', 'Za słaba na wartę.'), 'Too weak for the watch.'),
         guard: guardValue(st, i, p, post.key),
         note:
           zombie && behindWire(i, post.key) && (p.arm === 'brak' || p.arm === 'wrecz' || !p.arm)
-            ? 'Z tą bronią nie sięgnie szwendaczy przez siatkę.'
+            ? tx(
+                'Z tą bronią nie sięgnie szwendaczy przez siatkę.',
+                'Can’t reach the shamblers through the fence with that.',
+              )
             : p.needs.rest < 30
-              ? `${g(p, 'Zmęczony', 'Zmęczona')}: może zasnąć na warcie.`
-              : 'Nie wyśpi się.',
+              ? tx(`${g(p, 'Zmęczony', 'Zmęczona')}: może zasnąć na warcie.`, 'Tired: may fall asleep on watch.')
+              : tx('Nie wyśpi się.', 'Won’t get much sleep.'),
       });
+      // broń palna sama nie strzela przez siatkę (strzał ściąga stado), kusza strzela cicho
+      if (zombie && behindWire(i, post.key) && p.arm === 'palna' && p.weapon !== 'kusza')
+        opts[opts.length - 1].note = tx(NOTE_HOLD_FIRE, NOTE_HOLD_FIRE_EN);
     }
     for (const t of targets) {
       const ok = canGo(p, t);
+      const where = targetNameTx(t, placeIn(i));
       opts.push({
         key: `wyprawa:${t.range}`,
-        label: `Wyprawa ${t.range}: ${targetName(t, placeIn(i))}`,
+        label: tx(`Wyprawa ${t.range}: ${where.pl}`, `${t.range === 'daleko' ? 'Long run' : 'Short run'}: ${where.en}`),
         ok,
         why: ok
           ? undefined
           : p.bitten
-            ? g(p, 'Ugryziony, w gorączce: nie wróci z wyprawy.', 'Ugryziona, w gorączce: nie wróci z wyprawy.')
+            ? tx(
+                g(p, 'Ugryziony, w gorączce: nie wróci z wyprawy.', 'Ugryziona, w gorączce: nie wróci z wyprawy.'),
+                'Bitten and feverish: wouldn’t make it back from a run.',
+              )
             : t.range === 'daleko'
-              ? 'Za mało sił na daleką wyprawę.'
-              : 'Za mało sił na wyprawę.',
+              ? tx('Za mało sił na daleką wyprawę.', 'Not enough energy for a long run.')
+              : tx('Za mało sił na wyprawę.', 'Not enough energy for a run.'),
         risk: expRisk(st, p, t),
         gain: expGain(st, t),
         target: t.id,
-        note: t.range === 'daleko' ? 'Wraca o świcie, razem bezpieczniej.' : `Wraca o ${t.back}:00, potem śpi.`,
+        note:
+          t.range === 'daleko'
+            ? tx('Wraca o świcie, razem bezpieczniej.', 'Back at dawn. Safer in company.')
+            : tx(`Wraca o ${t.back}:00, potem śpi.`, `Back at ${t.back}:00, then sleeps.`),
       });
     }
     return { id: p.id, name: p.name, needs: { ...p.needs }, proposal: 'sen', options: opts };
@@ -298,23 +351,38 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
   const loss = zombie ? { wood: 0, supplies: 0 } : lossIfEntered(i);
   const nd = nightDay(i);
   const pct = Math.round(chance * 20) * 5;
-  const first = nd === 1 ? 'Pierwsza noc za siatką. Dym z kozy widać z daleka. ' : '';
+  const first =
+    nd === 1
+      ? tx(
+          'Pierwsza noc za siatką. Dym z kozy widać z daleka. ',
+          'The first night behind the fence. The smoke from the stove can be seen from far away. ',
+        )
+      : NIC;
   const fence = fenceOf(i).durability;
   const size = i.horde?.tonight ?? 0;
-  const word = size < 15 ? 'małe' : size < 35 ? 'duże' : 'ogromne';
+  const word = size < 15 ? tx('małe', 'small') : size < 35 ? tx('duże', 'big') : tx('ogromne', 'huge');
   const near = i.horde?.near ?? 0;
+  const fpct = Math.round(fence * 100);
+  const one = Math.round(chance * deterrence(st, i, 1) * 20) * 5;
+  const cw = chanceWord(chance);
   const forecast = zombie
-    ? `${first}Nocą przyjdzie stado: około ${size} szwendaczy (${word}). Siatka trzyma w ${Math.round(fence * 100)}%.${near ? ` Już teraz przy siatce: ${near}.` : ''} Strzał ściągnie ich więcej.`
-    : `${first}Szansa, że szabrownicy spróbują wejść: około ${pct}% (${chanceWord(chance)}), z jedną osobą na warcie około ${Math.round(chance * deterrence(st, i, 1) * 20) * 5}%. Najsłabsze miejsce: ${posts[0].name}.`;
+    ? tx(
+        `${first.pl}Nocą przyjdzie stado: około ${size} szwendaczy (${word.pl}). Siatka trzyma w ${fpct}%.${near ? ` Już teraz przy siatce: ${near}.` : ''} Strzał ściągnie ich więcej.`,
+        `${first.en}A herd is coming tonight: about ${size} shamblers (${word.en}). The fence is holding at ${fpct}%.${near ? ` Already at the fence: ${near}.` : ''} A gunshot will draw more of them.`,
+      )
+    : tx(
+        `${first.pl}Szansa, że szabrownicy spróbują wejść: około ${pct}% (${cw.pl}), z jedną osobą na warcie około ${one}%. Najsłabsze miejsce: ${posts[0].name.pl}.`,
+        `${first.en}Chance of looters trying to get in: about ${pct}% (${cw.en}), or about ${one}% with one person on watch. They’ll most likely try ${posts[0].name.en}.`,
+      );
   const card: NightCard = {
     day: nd,
     chance,
-    chanceWord: zombie ? 'pewne' : chanceWord(chance),
+    chanceWord: zombie ? tx('pewne', 'certain') : cw,
     forecast,
     posts: posts.map((p) => ({ key: p.key, name: p.name, weak: p.weak })),
     loss,
     people,
-    advice: '',
+    advice: NIC,
     wood,
   };
   if (zombie) card.horde = { size, word, fence };
@@ -367,56 +435,88 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
 }
 
 /** rada zarządu do przydziału na karcie (interfejs liczy ją na nowo po każdej zmianie) */
-export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): string {
+export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): Tx {
   if (card.horde) return hordeAdvice(i, card, assign);
   const guards = Object.values(assign).filter(isFenceGuard);
   const kept = new Set(guards.map((k) => k.slice(6)));
-  const loss = stockText(card.loss);
+  const loss = stockTx(card.loss);
   const weak = card.posts[0];
-  let fence = '';
+  const at = txOf(weak.name);
+  let fence = NIC;
   if (card.chance >= 0.25 && !guards.length)
-    fence = `Bez warty ${weak.name} szabrownicy wejdą bez trudu${loss ? ` i mogą zabrać: ${loss}` : ''}.`;
+    fence = tx(
+      `Bez warty ${at.pl} szabrownicy wejdą bez trudu${loss.pl ? ` i mogą zabrać: ${loss.pl}` : ''}.`,
+      `With nobody on watch ${at.en}, looters will walk right in${loss.en ? ` and could take ${loss.en}` : ''}.`,
+    );
   else if (guards.length && !kept.has(weak.key))
-    fence = `Najsłabsze miejsce, ${weak.name}, zostaje bez warty. Tam najpewniej spróbują wejść.`;
+    fence = tx(
+      `Najsłabsze miejsce, ${at.pl}, zostaje bez warty. Tam najpewniej spróbują wejść.`,
+      `Nobody is on watch ${at.en}, the weakest spot. That is where they will most likely try.`,
+    );
   else if (guards.length && card.posts.some((p) => !kept.has(p.key)))
-    fence = `Warta stoi ${weak.name}, ale dziur jest więcej. Za dnia warto łatać siatkę.`;
+    fence = tx(
+      `Warta stoi ${at.pl}, ale dziur jest więcej. Za dnia warto łatać siatkę.`,
+      `There is a watch ${at.en}, but there are more holes. Patch the fence during the day.`,
+    );
   const koza = kozaAdvice(i, card, assign);
-  if (fence || koza) return [fence, koza].filter(Boolean).join(' ');
+  if (fence.pl || koza.pl) return zdania(fence, koza);
   if (i.stock.supplies < i.people.length * 2)
-    return 'Jedzenia jest na krótko. Wyprawa blisko jest bezpieczniejsza, daleka przynosi więcej.';
-  return 'Wyśpijcie się. Jutro dzień pracy przy siatce.';
+    return tx(
+      'Jedzenia jest na krótko. Wyprawa blisko jest bezpieczniejsza, daleka przynosi więcej.',
+      'Food is running short. A short run is safer, a long one brings back more.',
+    );
+  return tx('Wyśpijcie się. Jutro dzień pracy przy siatce.', 'Get some sleep. The fence needs work tomorrow.');
 }
 
 /** rada w trybie zombie: warta przy siatce i broń, która przez nią sięga; potem koza */
-function hordeAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): string {
+function hordeAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): Tx {
   const guards = i.people.filter((p) => isFenceGuard(assign[p.id] ?? ''));
   const pct = Math.round((card.horde?.fence ?? 1) * 100);
-  let fence: string;
-  if (!guards.length) fence = `Bez warty stado będzie napierać na siatkę do rana. Siatka trzyma w ${pct}%.`;
+  let fence: Tx;
+  if (!guards.length)
+    fence = tx(
+      `Bez warty stado będzie napierać na siatkę do rana. Siatka trzyma w ${pct}%.`,
+      `With nobody on watch, the herd will push at the fence until morning. The fence is holding at ${pct}%.`,
+    );
   else if (!guards.some((p) => p.arm === 'dzida' || p.arm === 'palna'))
-    fence = 'Warta bez dzidy ani broni palnej nie sięgnie szwendaczy przez siatkę. Dajcie komuś dzidę.';
-  else fence = 'Dzida sięga przez siatkę. Strzelajcie tylko w ostateczności: strzał ściąga stado.';
-  return [fence, kozaAdvice(i, card, assign)].filter(Boolean).join(' ');
+    fence = tx(
+      'Warta bez dzidy ani broni palnej nie sięgnie szwendaczy przez siatkę. Dajcie komuś dzidę.',
+      'A watch without a spear or a gun can’t reach the shamblers through the fence. Give someone a spear.',
+    );
+  else
+    fence = tx(
+      'Dzida sięga przez siatkę. Strzelajcie tylko w ostateczności: strzał ściąga stado.',
+      'A spear reaches through the fence. Shoot only as a last resort: a gunshot draws the herd.',
+    );
+  return zdania(fence, kozaAdvice(i, card, assign));
 }
 
 /** rada o kozie, kiedy w kuchni zrobi się zimno, a jest drewno: bez dyżuru koza gaśnie w nocy (nikt nie
     dokłada, wszyscy śpią); z dyżurem ognia jest tyle, ile drewna */
-function kozaAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): string {
+function kozaAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): Tx {
   const wd = card.wood;
-  if (!wd || i.kitchen === null) return '';
+  if (!wd || i.kitchen === null) return NIC;
   const who = i.people.filter((p) => assign[p.id] === KOZA_KEY);
-  if (who.length)
-    return wd.have >= wd.need
-      ? ''
-      : `Przy kozie ${who.length > 1 ? 'czuwają' : 'czuwa'} ${peopleNames(who)}, ale ${woodNote(wd)}`;
-  if (wd.have < WOOD_PER_HOUR) return '';
+  const wn = woodNote(wd);
+  if (who.length) {
+    if (wd.have >= wd.need) return NIC;
+    const names = peopleNamesTx(who);
+    return tx(
+      `Przy kozie ${who.length > 1 ? 'czuwają' : 'czuwa'} ${names.pl}, ale ${wn.pl}`,
+      `${names.en} ${who.length > 1 ? 'are' : 'is'} watching the stove, but ${wn.en}`,
+    );
+  }
+  if (wd.have < WOOD_PER_HOUR) return NIC;
   const deg = Math.round(i.kitchen);
   const now = !i.kozaLit
-    ? `Koza jest zimna, w kuchni ${deg}°C.`
+    ? tx(`Koza jest zimna, w kuchni ${deg}°C.`, `The stove is cold, and the kitchen is at ${deg}°C.`)
     : deg < 16
-      ? `W kuchni już tylko ${deg}°C.`
-      : 'Bez dyżuru koza zgaśnie w nocy i rano w kuchni będzie zimno.';
-  return `${now} Niech ktoś czuwa przy kozie: ${woodNote(wd)}`;
+      ? tx(`W kuchni już tylko ${deg}°C.`, `The kitchen is down to ${deg}°C.`)
+      : tx(
+          'Bez dyżuru koza zgaśnie w nocy i rano w kuchni będzie zimno.',
+          'Without a stove watch the fire will go out in the night, and the kitchen will be cold by morning.',
+        );
+  return tx(`${now.pl} Niech ktoś czuwa przy kozie: ${wn.pl}`, `${now.en} Have someone keep the stove going: ${wn.en}`);
 }
 
 /** zmiana przydziału na karcie; false, gdy takiej opcji nie ma albo nie wolno */
@@ -486,15 +586,28 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
   const watch = on(isFenceGuard);
   const koza = on((k) => k === KOZA_KEY);
   const out = on((k) => k.startsWith('wyprawa:'));
-  const parts: string[] = [];
-  if (watch.length) parts.push(`na warcie ${peopleNames(watch)}`);
-  if (koza.length) parts.push(`przy kozie ${peopleNames(koza)}`);
-  if (out.length) parts.push(`na wyprawie ${peopleNames(out)}`);
-  parts.push(watch.length || koza.length || out.length ? 'reszta śpi' : 'wszyscy śpią');
+  const parts: Tx[] = [];
+  const named = (list: GovPerson[], pl: string, en: string) => {
+    const n = peopleNamesTx(list);
+    return tx(`${pl} ${n.pl}`, `${n.en} ${en}`);
+  };
+  if (watch.length) parts.push(named(watch, 'na warcie', 'on watch'));
+  if (koza.length) parts.push(named(koza, 'przy kozie', 'by the stove'));
+  if (out.length) parts.push(named(out, 'na wyprawie', 'on a run'));
+  parts.push(
+    watch.length || koza.length || out.length
+      ? tx('reszta śpi', 'the rest asleep')
+      : tx('wszyscy śpią', 'everyone asleep'),
+  );
+  const night = txJoin(parts, ', ');
+  const place = placeIn(i);
   logGov(
     st,
     i,
-    `${auto ? `${wordsOf(placeIn(i)).Zarzad} nie zdążył się naradzić, zostaje propozycja. ` : ''}Noc: ${parts.join(', ')}.`,
+    tx(
+      `${auto ? `${wordsOf(place).Zarzad} nie zdążył się naradzić, zostaje propozycja. ` : ''}Noc: ${night.pl}.`,
+      `${auto ? `${wordsEn(place).Zarzad} ran out of time, so its suggestion stands. ` : ''}Night: ${night.en}.`,
+    ),
     false,
     fx,
   );
@@ -514,31 +627,41 @@ function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[
     got[k] = Math.round(rint(st, a, b) * m * (ppl.length > 1 ? 1.6 : 1));
   const risk = Math.max(...ppl.map((p) => expRisk(st, p, t, ppl.length)));
   const trouble = rnd(st) < risk;
-  const who = peopleNames(ppl);
+  const who = peopleNamesTx(ppl);
+  const where = targetNameTx(t, placeIn(i));
   if (trouble) {
     for (const k of Object.keys(got) as LootKey[]) got[k] = Math.floor(got[k] / 2);
     const hurt = ppl[rint(st, 0, ppl.length - 1)];
     const d = -rint(st, 20, 35);
     addNeeds(fx, hurt.id, { health: d });
     n.hurt.push({ id: hurt.id, d });
-    const has = stockText(got);
+    const has = stockTx(got);
     const zombie = zombieMode(st);
     // w trybie zombie kłopoty to szwendacze, a co trzeci kłopot kończy się ugryzieniem
     const bitten = zombie && rnd(st) < 0.35;
     if (bitten) (fx.bitten ??= []).push(hurt.id);
     const harm = bitten ? g(hurt, 'jest ugryziony', 'jest ugryziona') : g(hurt, 'jest ranny', 'jest ranna');
     n.lines.push(
-      `${who} ${verbPl(ppl, 'trafił', 'trafiła', 'trafili', 'trafiły')} na ${zombie ? 'szwendaczy' : 'szabrowników'} (${targetName(t, placeIn(i))}). ${hurt.name} ${harm}.${has ? ` Udało się przynieść: ${has}.` : ' Wszystko zostało po drodze.'}`,
+      tx(
+        `${who.pl} ${verbPl(ppl, 'trafił', 'trafiła', 'trafili', 'trafiły')} na ${zombie ? 'szwendaczy' : 'szabrowników'} (${where.pl}). ${hurt.name} ${harm}.${has.pl ? ` Udało się przynieść: ${has.pl}.` : ' Wszystko zostało po drodze.'}`,
+        `${who.en} ran into ${zombie ? 'shamblers' : 'looters'} at ${where.en}. ${hurt.name} ${bitten ? 'was bitten' : 'got hurt'}.${has.en ? ` ${oni(ppl, 'He', 'She', 'They')} still brought back ${has.en}.` : ` ${oni(ppl, 'He', 'She', 'They')} had to drop the lot on the way back.`}`,
+      ),
     );
     for (const p of ppl) fx.moods.push({ id: p.id, why: g(p, 'Ledwo uciekłem', 'Ledwo uciekłam'), d: -6, hours: 12 });
   } else {
-    const has = stockText(got);
+    const has = stockTx(got);
     n.lines.push(
-      has
-        ? `${who} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${targetName(t, placeIn(i))}. ${verbPl(ppl, 'Przyniósł', 'Przyniosła', 'Przynieśli', 'Przyniosły')}: ${has}.`
-        : `${who} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${targetName(t, placeIn(i))} z pustymi rękami.`,
+      has.pl
+        ? tx(
+            `${who.pl} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${where.pl}. ${verbPl(ppl, 'Przyniósł', 'Przyniosła', 'Przynieśli', 'Przyniosły')}: ${has.pl}.`,
+            `${who.en} came back from ${where.en}, carrying ${has.en}.`,
+          )
+        : tx(
+            `${who.pl} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${where.pl} z pustymi rękami.`,
+            `${who.en} came back from ${where.en} empty-handed.`,
+          ),
     );
-    if (has) {
+    if (has.pl) {
       mood(st, 1, 0);
       for (const p of ppl)
         fx.moods.push({ id: p.id, why: g(p, 'Wróciłem z łupem', 'Wróciłam z łupem'), d: 4, hours: 12 });
@@ -549,8 +672,15 @@ function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[
     n.loot[k] += got[k];
   }
   const found = finds(st, fx);
-  if (found.length)
-    n.lines.push(`${verbPl(ppl, 'Znalazł', 'Znalazła', 'Znaleźli', 'Znalazły')} też: ${found.join(', ')}.`);
+  if (found.length) {
+    const all = txJoin(found, ', ');
+    n.lines.push(
+      tx(
+        `${verbPl(ppl, 'Znalazł', 'Znalazła', 'Znaleźli', 'Znalazły')} też: ${all.pl}.`,
+        `${oni(ppl, 'He', 'She', 'They')} also found: ${all.en}.`,
+      ),
+    );
+  }
   for (const p of ppl) addNeeds(fx, p.id, { rest: t.range === 'daleko' ? -30 : -15 });
   fx.back.push(...ppl.map((p) => p.id));
 }
@@ -564,11 +694,19 @@ const ARM_ACC: Record<string, string> = {
   kusza: 'kuszę',
   rewolwer: 'rewolwer',
 };
+const ARM_ACC_EN: Record<string, string> = {
+  noz: 'a knife',
+  lom: 'a crowbar',
+  kij: 'a nail bat',
+  strzelba: 'a shotgun',
+  kusza: 'a crossbow',
+  rewolwer: 'a revolver',
+};
 
 /** Znaleziska z wyprawy: amunicja (w trybie zombie w 30% wypraw, w zwykłym w 10%) i broń (12% i 8%). */
-function finds(st: GovState, fx: GovEffects): string[] {
+function finds(st: GovState, fx: GovEffects): Tx[] {
   const zombie = zombieMode(st);
-  const out: string[] = [];
+  const out: Tx[] = [];
   const ammo = (k: 'naboje' | 'loftki' | 'belty', n: number) => {
     fx.ammo ??= {};
     fx.ammo[k] = (fx.ammo[k] ?? 0) + n;
@@ -576,13 +714,13 @@ function finds(st: GovState, fx: GovEffects): string[] {
   if (rnd(st) < (zombie ? 0.3 : 0.1)) {
     const n = rint(st, 2, 8);
     ammo('naboje', n);
-    out.push(`${n} naboi`);
+    out.push(tx(`${n} naboi`, `${n} rounds`));
   }
   if (rnd(st) < (zombie ? 0.12 : 0.08)) {
     const pool = zombie ? ['noz', 'lom', 'kij', 'strzelba', 'kusza'] : ['noz', 'lom', 'kij'];
     const w = pool[rint(st, 0, pool.length - 1)];
     (fx.arms ??= []).push(w);
-    out.push(ARM_ACC[w]);
+    out.push(tx(ARM_ACC[w], ARM_ACC_EN[w]));
     if (w === 'strzelba') ammo('loftki', rint(st, 4, 8));
     if (w === 'kusza') ammo('belty', rint(st, 6, 10));
   }
@@ -595,7 +733,14 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
   r.resolved = true;
   if (!r.come) {
     const watched = Object.values(n.assign).some(isFenceGuard);
-    n.lines.push(watched ? 'Nikt nie próbował wejść. Pewnie widzieli wartę przy siatce.' : 'Nikt nie próbował wejść.');
+    n.lines.push(
+      watched
+        ? tx(
+            'Nikt nie próbował wejść. Pewnie widzieli wartę przy siatce.',
+            'Nobody tried to get in. They probably saw the watch at the fence.',
+          )
+        : tx('Nikt nie próbował wejść.', 'Nobody tried to get in.'),
+    );
     for (const p of i.people) addNeeds(fx, p.id, { safe: 4 });
     return;
   }
@@ -617,7 +762,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
     const p = gd.p;
     const pr = p.needs.rest < 15 ? 0.5 : p.needs.rest < 30 ? 0.15 : 0;
     if (rnd(st) < pr) {
-      n.lines.push(`${p.name} ${g(p, 'zasnął', 'zasnęła')} na warcie.`);
+      n.lines.push(tx(`${p.name} ${g(p, 'zasnął', 'zasnęła')} na warcie.`, `${p.name} fell asleep on watch.`));
       n.slept.push(p.id);
     } else awake.push(gd);
   }
@@ -642,15 +787,26 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
   if (defense >= attack) {
     r.outcome = 'odparty';
     const why = awake.length
-      ? 'warta usłyszała i przybiegła'
+      ? tx('warta usłyszała i przybiegła', 'the watch heard and came running')
       : st.flags.dog
-        ? 'pies narobił hałasu'
-        : 'siatka wytrzymała';
-    n.lines.push(
-      here.length
-        ? `W nocy szabrownicy podeszli ${post.name}. ${peopleNames(here)} ${verbPl(here, 'przegonił', 'przegoniła', 'przegonili', 'przegoniły')} ich.`
-        : `Ktoś kręcił się w nocy ${post.name}, ale ${why}.`,
-    );
+        ? tx('pies narobił hałasu', 'the dog made a racket')
+        : tx('siatka wytrzymała', 'the fence held');
+    const at = txOf(post.name);
+    if (here.length) {
+      const names = peopleNamesTx(here);
+      n.lines.push(
+        tx(
+          `W nocy szabrownicy podeszli ${at.pl}. ${names.pl} ${verbPl(here, 'przegonił', 'przegoniła', 'przegonili', 'przegoniły')} ich.`,
+          `In the night, looters tried their luck ${at.en}. ${names.en} chased them off.`,
+        ),
+      );
+    } else
+      n.lines.push(
+        tx(
+          `Ktoś kręcił się w nocy ${at.pl}, ale ${why.pl}.`,
+          `Someone was prowling ${at.en} in the night, but ${why.en}.`,
+        ),
+      );
     mood(st, 2, -1);
     for (const p of here) fx.moods.push({ id: p.id, why: 'Przegoniliśmy szabrowników', d: 6, hours: 12 });
     for (const p of i.people) addNeeds(fx, p.id, { safe: 8 });
@@ -666,8 +822,13 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
   stolen.scrap = -addStock(i, fx, 'scrap', -Math.floor(0.3 * (i.stock.scrap ?? 0)));
   r.stolen = stolen;
   result('wtargnięcie', stolen);
+  const took = stockTx(stolen);
+  const at = txOf(post.name);
   n.lines.push(
-    `Szabrownicy weszli ${post.name} i zabrali: ${stockText(stolen) || 'niewiele, bo nic nie leżało na wierzchu'}.`,
+    tx(
+      `Szabrownicy weszli ${at.pl} i zabrali: ${took.pl || 'niewiele, bo nic nie leżało na wierzchu'}.`,
+      `Looters got in ${at.en} and took ${took.en || 'very little, since nothing was lying around'}.`,
+    ),
   );
   logGov(st, i, n.lines[n.lines.length - 1], true, fx);
   mood(st, -2, 4);
@@ -679,7 +840,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
     const v = here[rint(st, 0, here.length - 1)];
     addNeeds(fx, v.id, { health: -25 });
     n.hurt.push({ id: v.id, d: -25 });
-    n.lines.push(`${v.name} ${g(v, 'oberwał', 'oberwała')} ${post.name}.`);
+    n.lines.push(tx(`${v.name} ${g(v, 'oberwał', 'oberwała')} ${at.pl}.`, `${v.name} got hurt ${at.en}.`));
   }
 }
 
@@ -700,13 +861,20 @@ function morning(st: GovState, i: GovInput, fx: GovEffects): void {
   if (!simPosts) for (const p of [...watch, ...koza]) addNeeds(fx, p.id, { rest: n.slept.includes(p.id) ? -15 : -30 });
   for (const p of guards) fx.moods.push({ id: p.id, why: 'Całą noc na warcie', d: -2, hours: 8 });
   for (const p of koza) fx.moods.push({ id: p.id, why: 'Całą noc przy kozie', d: -1, hours: 8 });
-  if (guards.length)
-    n.lines.push(`${peopleNames(guards)} nie ${verbPl(guards, 'spał', 'spała', 'spali', 'spały')} całą noc.`);
+  if (guards.length) {
+    const names = peopleNamesTx(guards);
+    n.lines.push(
+      tx(
+        `${names.pl} nie ${verbPl(guards, 'spał', 'spała', 'spali', 'spały')} całą noc.`,
+        `${names.en} stayed up all night.`,
+      ),
+    );
+  }
   // kuchnia rano: ile nocy paliła się koza i kto przy niej czuwał
   const fire = n.fire?.all ? round2(n.fire.on / n.fire.all) : undefined;
   if (i.kitchen !== null && fire !== undefined) n.lines.push(kitchenLine(i.kitchen, fire, koza, i.stock.wood));
   if (zombieMode(st)) n.lines.push(...hordeLines(i, n));
-  if (!n.lines.length) n.lines.push('Spokojna noc.');
+  if (!n.lines.length) n.lines.push(tx('Spokojna noc.', 'A quiet night.'));
   dailyDrift(st, i);
   const far = n.exp.filter((e) => TARGETS.find((t) => t.id === e.target)?.range === 'daleko').flatMap((e) => e.ids);
   const report: NightReport = {
@@ -729,33 +897,55 @@ function morning(st: GovState, i: GovInput, fx: GovEffects): void {
   st.reports.push(report);
   if (st.reports.length > 10) st.reports.shift();
   st.night = null;
+  const t = Math.round(st.trust);
+  const a = Math.round(st.anger);
   logGov(
     st,
     i,
-    `Rano po nocy ${n.day}: zaufanie ${Math.round(st.trust)}, wkurzenie ${Math.round(st.anger)}.`,
+    tx(
+      `Rano po nocy ${n.day}: zaufanie ${t}, wkurzenie ${a}.`,
+      `Morning after night ${n.day}: trust ${t}, anger ${a}.`,
+    ),
     false,
     fx,
   );
 }
 
 /** raport z nocy w trybie zombie: ilu było przy siatce, ilu zabitych, ile razy siatka puściła, kto ugryziony */
-function hordeLines(i: GovInput, n: NonNullable<GovState['night']>): string[] {
+function hordeLines(i: GovInput, n: NonNullable<GovState['night']>): Tx[] {
   const h = i.horde;
   if (!h) return [];
   const z0 = n.z0 ?? { killed: 0, breaches: 0, bites: 0 };
-  const out: string[] = [];
+  const out: Tx[] = [];
   const peak = Math.max(n.zpeak ?? 0, h.near);
   out.push(
     peak
-      ? `W nocy przy siatce było do ${peak} ${peak === 1 ? 'szwendacza' : 'szwendaczy'}.`
-      : 'W nocy przy siatce było spokojnie.',
+      ? tx(
+          `W nocy przy siatce było do ${peak} ${peak === 1 ? 'szwendacza' : 'szwendaczy'}.`,
+          `In the night there were up to ${peak} ${peak === 1 ? 'shambler' : 'shamblers'} at the fence.`,
+        )
+      : tx('W nocy przy siatce było spokojnie.', 'The fence was quiet all night.'),
   );
   const killed = h.killed - z0.killed;
-  if (killed > 0) out.push(`Zabitych szwendaczy: ${killed}.`);
+  if (killed > 0) out.push(tx(`Zabitych szwendaczy: ${killed}.`, `Shamblers killed: ${killed}.`));
   const broke = h.breaches - z0.breaches;
-  if (broke > 0) out.push(`Siatka puściła w ${broke} ${broke === 1 ? 'miejscu' : 'miejscach'}. Trzeba łatać.`);
+  if (broke > 0)
+    out.push(
+      tx(
+        `Siatka puściła w ${broke} ${broke === 1 ? 'miejscu' : 'miejscach'}. Trzeba łatać.`,
+        `The fence gave way in ${broke} ${broke === 1 ? 'place' : 'places'}. It needs patching.`,
+      ),
+    );
   const bit = i.people.filter((p) => p.bitten && !(n.bit0 ?? []).includes(p.id));
-  if (bit.length) out.push(`Ugryzieni: ${peopleNames(bit)}. Gorączka zabija w niecałą dobę.`);
+  if (bit.length) {
+    const names = peopleNamesTx(bit);
+    out.push(
+      tx(
+        `Ugryzieni: ${names.pl}. Gorączka zabija w niecałą dobę.`,
+        `Bitten: ${names.en}. The fever kills in less than a day.`,
+      ),
+    );
+  }
   return out;
 }
 
@@ -786,14 +976,27 @@ export function nightTick(st: GovState, i: GovInput, fx: GovEffects): void {
 }
 
 /** linia raportu o kuchni rano: jak długo paliła się koza, kto przy niej czuwał i ile stopni o 6:00 */
-function kitchenLine(t: number, fire: number, koza: GovPerson[], wood: number): string {
+function kitchenLine(t: number, fire: number, koza: GovPerson[], wood: number): Tx {
   const deg = `${Math.round(t)}°C`;
   const warm = t >= 18 ? 'ciepło' : t >= 15 ? 'chłodno' : 'zimno';
+  const warmEn = t >= 18 ? 'warm' : t >= 15 ? 'chilly' : 'cold';
+  const rano = `Rano w kuchni ${warm}, ${deg}.`;
+  const morningEn = `The kitchen is ${warmEn} this morning, ${deg}.`;
   if (koza.length) {
-    const who = `${peopleNames(koza)} ${verbPl(koza, 'czuwał', 'czuwała', 'czuwali', 'czuwały')} przy kozie`;
-    if (fire >= 0.9) return `${who} i ogień palił się całą noc. Rano w kuchni ${warm}, ${deg}.`;
-    return `${who}, ale ${wood < WOOD_PER_HOUR ? 'drewna nie starczyło do rana' : 'koza część nocy była zimna'}. Rano w kuchni ${warm}, ${deg}.`;
+    const names = peopleNamesTx(koza);
+    const who = `${names.pl} ${verbPl(koza, 'czuwał', 'czuwała', 'czuwali', 'czuwały')} przy kozie`;
+    const whoEn = `${names.en} watched the stove`;
+    if (fire >= 0.9)
+      return tx(`${who} i ogień palił się całą noc. ${rano}`, `${whoEn}, and the fire burned all night. ${morningEn}`);
+    const short = wood < WOOD_PER_HOUR;
+    return tx(
+      `${who}, ale ${short ? 'drewna nie starczyło do rana' : 'koza część nocy była zimna'}. ${rano}`,
+      `${whoEn}, but ${short ? 'the wood ran out before morning' : 'the stove was cold for part of the night'}. ${morningEn}`,
+    );
   }
-  if (fire >= 0.9) return `Koza paliła się całą noc. Rano w kuchni ${warm}, ${deg}.`;
-  return `Nikt nie dokładał do kozy i ${fire > 0 ? 'zgasła w nocy' : 'wystygła wieczorem'}. Rano w kuchni ${warm}, ${deg}.`;
+  if (fire >= 0.9) return tx(`Koza paliła się całą noc. ${rano}`, `The stove burned all night. ${morningEn}`);
+  return tx(
+    `Nikt nie dokładał do kozy i ${fire > 0 ? 'zgasła w nocy' : 'wystygła wieczorem'}. ${rano}`,
+    `Nobody fed the stove, and it ${fire > 0 ? 'went out in the night' : 'went cold in the evening'}. ${morningEn}`,
+  );
 }

@@ -36,7 +36,11 @@
 
    Determinizm: ziarno `losDla('historie', klucz budynku, id gospodarstwa)`, losowanie przez los.ts (całkowite). Moduł
    działa w przeglądarce i w Node, nie zmienia wejścia (indeksy budynku trzyma w WeakMap), a `historieBudynku` dopisuje
-   tylko pole `historia` gospodarstwom wyniku, który wywołujący sam stworzył. */
+   tylko pole `historia` gospodarstwom wyniku, który wywołujący sam stworzył.
+
+   Źródła zdań (angielska wersja, angielski.ts): `zdaniaGospodarstwa`, `historiaGospodarstwa` i `historieWyniku` biorą
+   opcjonalną listę albo mapę, do której dopisują `ZrodloZdania` każdego zdania (szablon, osoby, rok, kierunek, miejsce,
+   nazwisko rodziny), w kolejności zdań. Zbieranie niczego nie losuje i nie zmienia polskich zdań. */
 
 import type { Rng } from '../core/rng.ts';
 import { fachOsoby, type IdFachu, nazwaFachu, zawodOsoby } from './fachy.ts';
@@ -553,6 +557,8 @@ interface Dom {
   rokStanu: number;
   /** Nazwisko rodziny w l. mn. (`Odmiany.rodzinaGospodarstwa`) albo `undefined`. */
   rodzina?: string;
+  /** To samo nazwisko w formie męskiej („Kowalski”), tylko do `ZrodloZdania`. */
+  rodzinaMeska?: string;
 }
 
 function rodzajZawodu(o: Osoba): RodzajZawodu | undefined {
@@ -601,22 +607,22 @@ class Odmiany {
     return wynik;
   }
 
-  /** Nazwisko rodziny w mianowniku liczby mnogiej („Kowalscy”): najczęstsze nazwisko, które nosi co najmniej dwoje
-      członków gospodarstwa (remis: pierwsze w kolejności), tylko z pewnej odmiany (R50). Bez takiego `undefined`, więc
-      szablon z `{rodzina}` nie pasuje: „Leszczyńscy”, gdy Leszczyńska mieszka z mężem i synem Szczepańskimi, byłoby
-      fałszem. */
-  rodzinaGospodarstwa(czlonkowie: readonly Osoba[]): string | undefined {
-    const liczby = new Map<string, { ile: number; mnoga: string }>();
+  /** Nazwisko rodziny w mianowniku liczby mnogiej („Kowalscy”) i w formie męskiej („Kowalski”): najczęstsze nazwisko,
+      które nosi co najmniej dwoje członków gospodarstwa (remis: pierwsze w kolejności), tylko z pewnej odmiany (R50).
+      Bez takiego `undefined`, więc szablon z `{rodzina}` nie pasuje: „Leszczyńscy”, gdy Leszczyńska mieszka z mężem
+      i synem Szczepańskimi, byłoby fałszem. */
+  rodzinaGospodarstwa(czlonkowie: readonly Osoba[]): { meskie: string; mnoga: string } | undefined {
+    const liczby = new Map<string, { ile: number; meskie: string; mnoga: string }>();
     for (const o of czlonkowie) {
       const n = this.nazwisko(o);
       if (!n) continue;
       const l = liczby.get(n.meskie);
       if (l) l.ile++;
-      else liczby.set(n.meskie, { ile: 1, mnoga: n.mnoga });
+      else liczby.set(n.meskie, { ile: 1, meskie: n.meskie, mnoga: n.mnoga });
     }
-    let najlepsza: { ile: number; mnoga: string } | undefined;
+    let najlepsza: { ile: number; meskie: string; mnoga: string } | undefined;
     for (const l of liczby.values()) if (l.ile >= 2 && (!najlepsza || l.ile > najlepsza.ile)) najlepsza = l;
-    return najlepsza?.mnoga;
+    return najlepsza && { meskie: najlepsza.meskie, mnoga: najlepsza.mnoga };
   }
 }
 
@@ -736,6 +742,34 @@ export interface Zdanie {
   rodzaj: RodzajSzablonu;
 }
 
+/** Z czego powstało zdanie historii (angielska wersja, angielski.ts): id szablonu, osoba główna i powiązana z wyniku
+    budynku, pokrewieństwo, rok i wiek z podstawy zdania, kierunek z silnika (polski, jak w dzienniku), miejsce
+    z kroniki i nazwisko rodziny w formie męskiej (gdy gospodarstwo ma wspólne nazwisko z pewną odmianą).
+    `bezImienia`: imię osoby głównej z początku szablonu odpadło, bo poprzednie zdanie zaczynało się od niej. */
+export interface ZrodloZdania {
+  szablon: string;
+  bezImienia: boolean;
+  glowna: Osoba;
+  powiazana?: Osoba;
+  kim?: Krewny;
+  rok: number;
+  wiek: number;
+  dokad?: string;
+  miejsce?: string;
+  rodzina?: string;
+}
+
+function zrodloZdania(k: Kandydat, bezImienia: boolean, dom: Dom): ZrodloZdania {
+  const { p } = k;
+  const z: ZrodloZdania = { szablon: k.s.id, bezImienia, glowna: p.glowna, rok: p.rok, wiek: p.wiek };
+  if (p.powiazana) z.powiazana = p.powiazana;
+  if (p.fakt?.kim) z.kim = p.fakt.kim;
+  if (p.fakt?.dokad !== undefined) z.dokad = p.fakt.dokad;
+  if (p.miejsce) z.miejsce = p.miejsce;
+  if (dom.rodzinaMeska !== undefined) z.rodzina = dom.rodzinaMeska;
+  return z;
+}
+
 const najstarszy = (osoby: readonly Osoba[]): Osoba =>
   osoby.reduce((a, b) => (b.rocznik < a.rocznik ? b : a), osoby[0]);
 const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
@@ -743,7 +777,8 @@ const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 const PODMIOT = /^\{o:mian\} (?!i )/;
 
 /** Zdania historii gospodarstwa z ich szablonami. `uzyte` liczy użycia szablonów w budynku (wspólne dla gospodarstw
-    jednego budynku, zmieniane w miejscu); bez niego liczy od zera. */
+    jednego budynku, zmieniane w miejscu); bez niego liczy od zera. `zebrane` (opcjonalne) dostaje źródło każdego
+    zdania, w kolejności zdań. */
 export function zdaniaGospodarstwa(
   gosp: Gospodarstwo,
   w: WynikBudynku,
@@ -751,6 +786,7 @@ export function zdaniaGospodarstwa(
   odmiana: Odmiana,
   r: Rng,
   uzyte: Map<string, number> = new Map(),
+  zebrane?: ZrodloZdania[],
 ): Zdanie[] {
   const ind = indeks(w);
   const czlonkowie = gosp.czlonkowie.flatMap((id) => {
@@ -759,6 +795,7 @@ export function zdaniaGospodarstwa(
   });
   if (czlonkowie.length === 0) return [];
   const odm = new Odmiany(odmiana);
+  const rodzina = odm.rodzinaGospodarstwa(czlonkowie);
   const dom: Dom = {
     czlonkowie,
     wDomu: new Set(gosp.czlonkowie),
@@ -766,7 +803,8 @@ export function zdaniaGospodarstwa(
     blok: w.budynek.typ === 'blok',
     kondygnacje: w.budynek.kondygnacje,
     rokStanu: w.rok ?? 2051,
-    rodzina: odm.rodzinaGospodarstwa(czlonkowie),
+    rodzina: rodzina?.mnoga,
+    rodzinaMeska: rodzina?.meskie,
   };
   const wybrane: Kandydat[] = [];
   const uzyteTu = new Set<string>();
@@ -921,12 +959,13 @@ export function zdaniaGospodarstwa(
     const bezImienia = podmiot && poprzedni === k.p.glowna.id;
     const tekst = bezImienia ? k.s.tekst.slice('{o:mian} '.length) : k.s.tekst;
     poprzedni = podmiot && !bezImienia ? k.p.glowna.id : undefined;
+    zebrane?.push(zrodloZdania(k, bezImienia, dom));
     return { tekst: wielka(wypelnij(tekst, kontekst(k.p, odm, dom))), szablon: k.s.id, rodzaj: k.s.rodzaj };
   });
 }
 
 /** Historia gospodarstwa: 2-3 zdania (`zdaniaGospodarstwa` bez szablonów). Ziarno `r` podaje wywołujący:
-    `losDla('historie', klucz budynku, id gospodarstwa)`. */
+    `losDla('historie', klucz budynku, id gospodarstwa)`. `zebrane` jak w `zdaniaGospodarstwa`. */
 export function historiaGospodarstwa(
   gosp: Gospodarstwo,
   w: WynikBudynku,
@@ -934,22 +973,28 @@ export function historiaGospodarstwa(
   odmiana: Odmiana,
   r: Rng,
   uzyte?: Map<string, number>,
+  zebrane?: ZrodloZdania[],
 ): string[] {
-  return zdaniaGospodarstwa(gosp, w, kronika, odmiana, r, uzyte).map((z) => z.tekst);
+  return zdaniaGospodarstwa(gosp, w, kronika, odmiana, r, uzyte, zebrane).map((z) => z.tekst);
 }
 
 /** Historie wszystkich gospodarstw budynku po `Gospodarstwo.id`, w kolejności `w.gospodarstwa`, z ziarnem
     `losDla('historie', klucz budynku, id gospodarstwa)` i licznikiem szablonów wspólnym dla budynku. Nie zmienia `w`,
-    więc da się je przeliczyć z imionami gracza (`Odmiana.nadpisane`) na gotowym wyniku generatora. */
+    więc da się je przeliczyć z imionami gracza (`Odmiana.nadpisane`) na gotowym wyniku generatora. Z mapą `zebrane`
+    dopisuje do niej źródła zdań każdego gospodarstwa (po `Gospodarstwo.id`, w kolejności zdań). */
 export function historieWyniku(
   w: WynikBudynku,
   kronika: readonly WpisKroniki[],
   odmiana: Odmiana,
+  zebrane?: Map<string, ZrodloZdania[]>,
 ): Map<string, string[]> {
   const uzyte = new Map<string, number>();
   const wynik = new Map<string, string[]>();
   for (const h of w.gospodarstwa) {
-    wynik.set(h.id, historiaGospodarstwa(h, w, kronika, odmiana, losDla('historie', w.budynek.klucz, h.id), uzyte));
+    const z: ZrodloZdania[] | undefined = zebrane ? [] : undefined;
+    const r = losDla('historie', w.budynek.klucz, h.id);
+    wynik.set(h.id, historiaGospodarstwa(h, w, kronika, odmiana, r, uzyte, z));
+    if (z) zebrane?.set(h.id, z);
   }
   return wynik;
 }
