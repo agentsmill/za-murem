@@ -946,7 +946,8 @@ export function nowyBudynek(w: World, mode: GameMode, bid: number, lok: Lokatorz
         klatka: h.klatka,
         znani: known,
         ...start,
-        rel: known ? REL_ZNANI : 0,
+        // znani: sympatia, a wrogich znamy od złej strony (niechęć)
+        rel: known ? (start.zamiar === 'wrodzy' ? -REL_ZNANI : REL_ZNANI) : 0,
         zapasy,
         gdzie: 'u_siebie',
         ...(h.zal ? { zal: true } : {}),

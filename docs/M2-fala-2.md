@@ -79,7 +79,7 @@ Kto. Gospodarstwa budynku z generatora mieszkańców (zmyśleni, przypięci do k
 - w domu albo nie: nocą zawsze w domu; za dnia w zwykłym trybie każde gospodarstwo z szansą 40% jest poza domem (woda, drewno, handel), w trybie zombie nikt nie wychodzi;
 - zamiar: życzliwi, nieufni, wrodzy, zdesperowani. Z cech osoby, która mówi za gospodarstwo (lubiany i optymista życzliwi, kłótliwy nieufny, kłótliwy i odważny wrogi), z głodu (małe zapasy i dzieci: zdesperowani) i z trybu (w zombie strach na start, a co siódme gospodarstwo to rabusie, wrogowie);
 - nastrój: spokój, strach, gniew, żal (ktoś bliski zmarł niedawno, z dziennika generatora), nadzieja. Zależy od zamiaru i od tego, jak przyszliście: pukanie za dnia uspokaja, wyważanie nocą straszy albo złości;
-- relacja z zarządem od −100 do 100: znani zaczynają od 15, rozmowa daje +10, jedzenie +25, wyważenie ich drzwi −20, kradzież −80.
+- relacja z zarządem od −100 do 100: znani zaczynają od 15 (znani wrodzy od −15, bo znamy ich od złej strony), rozmowa daje +10, jedzenie +25, wyważenie ich drzwi −20, kradzież −80.
 
 Spotkanie zaczyna się, gdy lokatorzy są w domu i: ktoś puka do ich klatki albo mieszkania, wchodzi do ich mieszkania (po wyważeniu), albo hałasuje pod ich drzwiami i wrodzy wychodzą sami. Członkowie gospodarstwa stają się wtedy pionkami (rodzaj `sasiad`, wygląd z osoby) w drzwiach albo w mieszkaniu, nasza osoba czeka, a gra pauzuje i pokazuje kartę spotkania. Karta mówi, kto to jest (imię, wiek, z kim mieszka), jak się zachowuje (nastrój) i czego chce (zamiar), na przykład: „W drzwiach staje Halina Zając, 71 lat, za nią wnuk. Trzyma kij od szczotki i patrzy na was ze strachem. Pyta, czy przyszliście kraść.”
 

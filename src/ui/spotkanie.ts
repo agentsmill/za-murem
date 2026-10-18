@@ -18,6 +18,8 @@ export interface WidokSpotkania {
   jedzenie: number;
   /** nazwa budynku (z mapy) */
   budynek: string;
+  /** budynek to dom jednorodzinny (w środku „w domu”, nie „w mieszkaniu”) */
+  dom?: boolean;
 }
 
 /** napis na przycisku wyboru: szansa przy wyborach, które ją mają */
@@ -39,7 +41,11 @@ function etykieta(w: WyborKarty): string {
 /** okno spotkania: kto stoi w drzwiach, jak patrzy, co o nas myśli, i wybory */
 export function spotkanieSheet(v: WidokSpotkania): Sheet {
   const { sp, g } = v;
-  const title = sp.atak ? KARTA.tytul.atak : KARTA.tytul[sp.gdzie];
+  const title = sp.atak
+    ? KARTA.tytul.atak
+    : v.dom && sp.gdzie === 'mieszkanie'
+      ? KARTA.tytul.dom
+      : KARTA.tytul[sp.gdzie];
   const who = g.osoby.map((o) => `<li class="line">${esc(KARTA.osoba(o.name, o.age, o.prof).pl)}</li>`).join('');
   const look = [(g.znani ? KARTA.znani : KARTA.obcy).pl, KARTA.zamiar[g.zamiar].pl, KARTA.nastroj[g.nastroj].pl].join(
     ' ',

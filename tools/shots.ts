@@ -3370,6 +3370,270 @@ const SHOTS: Shot[] = [
       if (r.missing.length) throw new Error(`brak w rysowaniu: ${r.missing.join(', ')}`);
     },
   },
+  // M2 fala 2 (docs/M2-fala-2.md): cudze drzwi, przekrój sąsiadów, łup, spotkania z lokatorami, karta budynku, tryb
+  // zombie; blok na Lanciego (10F obok siedziby), dom w Zielonkach, znajomi sąsiedzi na Przymorzu
+  m2f2('m2f2-menu-drzwi', 'lanciego', async (page) => {
+    await m2f2Select(page);
+    const xy = await page.evaluate(() => {
+      const zm = window.zm!;
+      const w = zm.sim!.w;
+      const b = w.buildings.find((x) => x.name === 'Blok nr 10F')!;
+      const t = b.entrances[0].tile;
+      const at: [number, number] = [(t % w.size) + 0.5, Math.floor(t / w.size) + 0.5];
+      zm.setCam(at[0], at[1], 1.6);
+      return at;
+    });
+    await waitIdle(page);
+    const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y), xy);
+    await page.mouse.click(sx, sy, { button: 'right' });
+    await page.waitForSelector('#ctx:not([hidden])');
+    const items = await page.locator('#ctx .ctx-item').allTextContents();
+    console.log(`  menu drzwi bloku: ${items.join(' | ')}`);
+    if (!items.some((i) => i.startsWith('Otworzyć drzwi'))) throw new Error('w menu drzwi nie ma „Otworzyć drzwi”');
+    if (!items.some((i) => i.startsWith('Wyważyć drzwi'))) throw new Error('w menu drzwi nie ma „Wyważyć drzwi”');
+  }),
+  m2f2('m2f2-blok-przekroj', 'lanciego', async (page) => {
+    const r = await m2f2Open(page, 'Blok nr 10F', true);
+    await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const b = zm.sim!.w.buildings[bid];
+      zm.setCam((b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2, 0.95);
+    }, r.bid);
+    await waitIdle(page);
+    const cut = await page.evaluate(() => window.zm!.view.section);
+    console.log(`  drzwi: ${r.drzwi.join(', ')}; przekrój ${cut}`);
+    if (!cut) throw new Error('przy tym zbliżeniu nie widać przekroju');
+    if (!r.drzwi.includes('wywazone')) throw new Error('żadne drzwi mieszkania nie są wyważone');
+  }),
+  m2f2('m2f2-blok-calosc', 'lanciego', async (page) => {
+    // cały blok w przekroju na granicy zbliżenia: drzwi otwarte, zabite deskami i wyważone przy trzech klatkach
+    const r = await m2f2Open(page, 'Blok nr 10F', true);
+    await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const b = zm.sim!.w.buildings[bid];
+      zm.setCam((b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2, 0.62);
+    }, r.bid);
+    await waitIdle(page);
+    console.log(`  drzwi: ${r.drzwi.join(', ')}`);
+    if (!(await page.evaluate(() => window.zm!.view.section))) throw new Error('nie widać przekroju bloku');
+  }),
+  m2f2('m2f2-dom-przekroj', 'zielonki', async (page) => {
+    const r = await m2f2Open(page, 'dom', false, true);
+    await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const b = zm.sim!.w.buildings[bid];
+      zm.setCam((b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2, 1.5);
+    }, r.bid);
+    await waitIdle(page);
+    console.log(`  dom ${r.name}: drzwi ${r.drzwi.join(', ')}`);
+    if (!(await page.evaluate(() => window.zm!.view.section))) throw new Error('nie widać przekroju domu');
+  }),
+  m2f2('m2f2-lup', 'lanciego', async (page) => {
+    const r = await m2f2Open(page, 'Blok nr 10F', false);
+    // pomieszczenia otwartego bloku: środek posadzki każdego (prawy przycisk w środku, jak gracz)
+    const rooms = await page.evaluate((bid) => {
+      const sim = window.zm!.sim!;
+      const k = sim.st.sasiedzi!.budynki.findIndex((b) => b.bid === bid);
+      const out: [number, number][] = [];
+      for (let room = 0; room < 400; room++) {
+        const t = sim.kafelkiPokoju(k * 4096 + room);
+        if (t.length < 4) continue;
+        const i = t[Math.floor(t.length / 2)];
+        out.push([(i % sim.w.size) + 0.5, Math.floor(i / sim.w.size) + 0.5]);
+      }
+      return out;
+    }, r.bid);
+    await m2f2Select(page);
+    let found = '';
+    for (const [x, y] of rooms) {
+      await page.evaluate(([px, py]) => window.zm!.setCam(px, py, 1.3), [x, y]);
+      await waitIdle(page);
+      const [sx, sy] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), [x, y]);
+      await page.mouse.click(sx, sy, { button: 'right' });
+      await page.waitForSelector('#ctx:not([hidden])');
+      const items = await page.locator('#ctx .ctx-item').allTextContents();
+      const it = items.find((i) => i.startsWith('Przeszukać'));
+      if (it) {
+        found = it;
+        await page.locator('#ctx .ctx-item', { hasText: it }).first().click();
+        break;
+      }
+      await page.keyboard.press('Escape');
+    }
+    if (!found) throw new Error('w otwartym bloku żadne pomieszczenie nie ma „Przeszukać”');
+    // przeszukanie do końca i pierwszy kurs: osoba z łupem w rękach w drodze na podwórko
+    const lup = await page.evaluate((bid) => {
+      const sim = window.zm!.sim!;
+      sim.step();
+      const p = sim.st.pawns.find((q) => q.kind === 'core' && q.job?.t === 'loot');
+      if (!p) return null;
+      for (let i = 0; i < 4000; i++) {
+        sim.step();
+        if (p.job?.t === 'carry' && (p.job.n ?? 0) > 0) break;
+        if (!p.job) break;
+      }
+      const w = sim.w;
+      const piles = sim.st.things.filter((t) => w.bid[t.y * w.size + t.x] === bid && t.n > 0 && t.kind !== 'smieci');
+      window.zm!.setCam(p.x, p.y, 1.3);
+      return {
+        job: p.job?.t ?? null,
+        n: p.job?.n ?? 0,
+        what: p.job?.what ?? '',
+        piles: piles.map((t) => `${t.kind} ${t.n}`),
+      };
+    }, r.bid);
+    await waitIdle(page);
+    console.log(`  ${found}: praca ${lup?.job}, w rękach ${lup?.what} ${lup?.n}, w budynku ${lup?.piles.join(', ')}`);
+    if (!lup) throw new Error('nikt nie przeszukuje pomieszczenia');
+  }),
+  m2f2Meet('m2f2-spotkanie', 1440, 900),
+  m2f2Meet('m2f2-spotkanie-telefon', 390, 844),
+  {
+    // po wyborze „Porozmawiać” okno znika, a wynik przychodzi zdaniem w podpowiedzi
+    name: 'm2f2-po-rozmowie',
+    query: '',
+    run: async (page, base) => {
+      await m2f2Knock(page, base, 'lubiany');
+      await page.click('#sheet [data-act="meet"][data-arg="rozmowa"]');
+      await page.evaluate(() => {
+        const sim = window.zm!.sim!;
+        for (let i = 0; i < 5; i++) sim.step();
+      });
+      await page
+        .waitForFunction(
+          () => (document.getElementById('hint')?.textContent ?? '').startsWith('Porozmawialiście'),
+          null,
+          {
+            timeout: 3000,
+          },
+        )
+        .catch(() => null);
+      await waitIdle(page);
+      const hint = await page.textContent('#hint');
+      console.log(`  podpowiedź: ${hint}`);
+      if (!hint?.startsWith('Porozmawialiście')) throw new Error(`po rozmowie inna podpowiedź: ${hint}`);
+      if (await page.isVisible('#sheet')) throw new Error('okno spotkania nie zniknęło po wyborze');
+    },
+  },
+  {
+    // wrodzy lokatorzy nocą rzucają się od razu: czerwone okno z obroną, uspokojeniem i ucieczką
+    name: 'm2f2-napad',
+    query: '',
+    run: async (page, base) => {
+      await m2f2Knock(page, base, 'wrogi');
+      const tone = await page.getAttribute('#sheet', 'class');
+      const acts = await page
+        .locator('#sheet [data-act="meet"]')
+        .evaluateAll((l) => l.map((b) => (b as HTMLElement).dataset.arg));
+      console.log(`  okno ${tone}: ${acts.join(', ')}`);
+      if (!tone?.includes('napad')) throw new Error('napad nie ma czerwonego okna');
+      if (acts.join() !== 'obrona,uspokojenie,ucieczka') throw new Error(`wybory napadu: ${acts.join()}`);
+    },
+  },
+  {
+    // tryb zombie: w domu z wymarcia szwendacz wychodzi zaraz po otwarciu drzwi
+    name: 'm2f2-zombie-szwendacz',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&tryb=zombie&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const w = sim.w;
+        const size = w.size;
+        const door = w.buildings[w.hq].entrances[0].out;
+        const d2 = (t: number) =>
+          ((t % size) - (door % size)) ** 2 + (Math.floor(t / size) - Math.floor(door / size)) ** 2;
+        const houses = w.buildings
+          .filter((b) => b.id !== w.hq && b.cls === 'dom' && b.entrances.length)
+          .sort((a, b) => d2(a.entrances[0].out) - d2(b.entrances[0].out));
+        const b = houses.find((x) => sim.budynekDoKarty(x.id)?.b.mieszkania.some((m) => m.zombie));
+        if (!b) return null;
+        const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+        p.weapon = 'lom';
+        const e = b.entrances[0];
+        p.x = (e.out % size) + 0.5;
+        p.y = Math.floor(e.out / size) + 0.5;
+        p.path = [];
+        p.pi = 0;
+        const zombies = () => sim.st.pawns.filter((q) => q.kind === 'zombie').length;
+        const before = zombies();
+        for (const t of ['open', 'force'] as const) {
+          sim.push({ t, ids: [p.id], door: e.tile });
+          sim.step();
+          for (let i = 0; i < 3000 && p.job?.t === 'door'; i++) sim.step();
+          if (sim.st.sasiedzi?.budynki.find((x) => x.bid === b.id)?.otwarty) break;
+        }
+        for (let i = 0; i < 40; i++) sim.step();
+        zm.setCam((b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2, 1.4);
+        return { name: b.name, before, after: zombies(), napis: sim.st.sasiedzi?.napis?.co ?? null };
+      });
+      await page.waitForTimeout(300);
+      await waitIdle(page);
+      const hint = await page.textContent('#hint');
+      console.log(`  ${r?.name}: szwendaczy ${r?.before} → ${r?.after}, napis ${r?.napis}, podpowiedź: ${hint}`);
+      if (!r) throw new Error('w Zielonkach nie ma domu ze szwendaczem z wymarcia');
+      if (r.after <= r.before) throw new Error('po otwarciu domu nie wyszedł szwendacz');
+    },
+  },
+  {
+    // wyważanie w trybie zombie: krąg hałasu, który ściąga szwendaczy z okolicy
+    name: 'm2f2-wywazanie',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=lanciego&tryb=zombie&stado=6&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const r = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const w = sim.w;
+        const size = w.size;
+        const b = w.buildings.find((x) => x.name === 'Blok nr 10F')!;
+        const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+        p.weapon = null;
+        const e = b.entrances[0];
+        p.x = (e.out % size) + 0.5;
+        p.y = Math.floor(e.out / size) + 0.5;
+        p.path = [];
+        p.pi = 0;
+        sim.push({ t: 'force', ids: [p.id], door: e.tile });
+        for (let i = 0; i < 400; i++) {
+          sim.step();
+          if (p.job?.t === 'door' && p.job.phase === 1 && sim.st.tick - p.job.t0 > 68) break;
+        }
+        zm.setCam(p.x, p.y, 0.7);
+        return { job: p.job?.what ?? null, noise: (sim.st.noise ?? []).map((n) => Math.round(n.r)) };
+      });
+      await waitIdle(page);
+      console.log(`  praca ${r.job}, hałas ${r.noise.join(', ')} m`);
+      if (r.job !== 'force') throw new Error('nikt nie wyważa drzwi');
+      if (!r.noise.some((n) => n >= 20)) throw new Error('wyważanie bez hałasu');
+    },
+  },
+  m2f2Card('m2f2-karta-budynku', 1440, 900),
+  m2f2Card('m2f2-karta-budynku-telefon', 390, 844),
+  {
+    // dom jednorodzinny: drugiego dnia cel „Przeszukajcie pokój u sąsiadów” zamiast pustego mieszkania
+    name: 'm2f2-cel-dom',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.1`);
+      await waitIdle(page);
+      await chopDryTree(page);
+      for (let k = 0; k < 200; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(15));
+        const day2 = await page.evaluate(() => window.zm!.sim!.st.tick >= (24 + 9 - 15) * 800);
+        if (!p && day2) break;
+        if (p) await answerFirst(page, p);
+      }
+      await page.waitForTimeout(400);
+      await waitIdle(page);
+      const goals = (await page.textContent('#goals')) ?? '';
+      console.log(`  cele: ${goals.replace(/\s+/g, ' ').slice(0, 200)}`);
+      if (!goals.includes('Przeszukajcie pokój u sąsiadów')) throw new Error('w domu nie ma celu u sąsiadów');
+    },
+  },
 ];
 
 /**
@@ -3552,6 +3816,235 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
   else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
+}
+
+/* ---------- M2 fala 2: pomocnicy scenariuszy m2f2-* ---------- */
+
+/** scenariusz fali 2 na demie: strona z kamerą na siedzibie, w pauzie, i własny ciąg dalszy */
+function m2f2(name: string, demo: string, then: (page: Page) => Promise<void>): Shot {
+  return {
+    name,
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=${demo}&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      await then(page);
+    },
+  };
+}
+
+/** zaznaczenie pierwszej osoby z zarządu kliknięciem w głowę */
+async function m2f2Select(page: Page) {
+  const a = await page.evaluate(() => {
+    const zm = window.zm!;
+    const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+    zm.setCam(p.x, p.y, 1.3);
+    return [p.x, p.y] as [number, number];
+  });
+  await waitIdle(page);
+  const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py - 0.55), a);
+  await page.mouse.click(x, y);
+  await page.waitForTimeout(300);
+  if (!(await page.isVisible('#card'))) throw new Error('karta osoby nie pokazała się po zaznaczeniu');
+}
+
+/** Otwiera sąsiedni budynek (po nazwie albo najbliższy siedzibie budynek tej klasy): pierwsza osoba z zarządu z łomem
+    staje przed pierwszym wejściem i otwiera drzwi, a zamknięte na klucz wyważa (praca w symulacji, jak z menu). Drugie
+    i trzecie wejście dostają tylko wygląd (zabite deskami, wyważone), żeby było widać wszystkie stany drzwi. */
+async function m2f2Open(page: Page, which: string, looks: boolean, pusty = false) {
+  const r = await page.evaluate(
+    ([which, looks, pusty]) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const w = sim.w;
+      const size = w.size;
+      const door = w.buildings[w.hq].entrances[0].out;
+      const d2 = (t: number) =>
+        ((t % size) - (door % size)) ** 2 + (Math.floor(t / size) - Math.floor(door / size)) ** 2;
+      const b =
+        w.buildings.find((x) => x.name === which) ??
+        w.buildings
+          .filter((x) => x.id !== w.hq && x.cls === which && x.entrances.length)
+          .filter((x) => !pusty || !sim.budynekDoKarty(x.id)?.b.domy.length)
+          .sort((a, c) => d2(a.entrances[0].out) - d2(c.entrances[0].out))[0];
+      const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+      p.weapon = 'lom';
+      const e = b.entrances[0];
+      p.x = (e.out % size) + 0.5;
+      p.y = Math.floor(e.out / size) + 0.5;
+      p.path = [];
+      p.pi = 0;
+      const work = (t: 'open' | 'force', tile: number) => {
+        sim.push({ t, ids: [p.id], door: tile });
+        sim.step();
+        for (let i = 0; i < 4000 && p.job?.t === 'door'; i++) sim.step();
+      };
+      const rec = () => sim.st.sasiedzi?.budynki.find((x) => x.bid === b.id);
+      work('open', e.tile);
+      if (!rec()?.otwarty) work('force', e.tile);
+      if (looks) {
+        // sam wygląd drzwi pozostałych wejść (przechodniość się nie liczy, scena nic nie robi)
+        const set = (k: number, s: 'zabite' | 'wywazone') => {
+          const d = rec()?.drzwi.find((x) => x.t === b.entrances[k]?.tile);
+          if (d) d.s = s;
+        };
+        set(1, 'zabite');
+        set(2, 'wywazone');
+        sim.wersjaSasiadow++;
+      }
+      for (let i = 0; i < 20; i++) sim.step();
+      return { bid: b.id, name: b.name, open: !!rec()?.otwarty, drzwi: rec()?.drzwi.map((x) => x.s) ?? [] };
+    },
+    [which, looks, pusty] as const,
+  );
+  if (!r.open) throw new Error(`${r.name}: budynek się nie otworzył`);
+  return r;
+}
+
+/** Puka do domów w Zielonkach od najbliższego, aż ktoś otworzy (spotkanie w drzwiach), i czeka na okno spotkania.
+    lubiany: o zmierzchu, lokatorzy z generatora mieszkańców (a gdy nikt nie otworzy, życzliwi z cechą lubiany);
+    wrogi: o 23, kłótliwi i odważni, którzy nocą rzucają się od razu. */
+async function m2f2Knock(page: Page, base: string, kind: 'lubiany' | 'wrogi') {
+  await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1&godzina=${kind === 'wrogi' ? 23 : 18.5}`);
+  await waitIdle(page);
+  const r = await page.evaluate((kind) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const w = sim.w;
+    const size = w.size;
+    const door = w.buildings[w.hq].entrances[0].out;
+    const d2 = (t: number) => ((t % size) - (door % size)) ** 2 + (Math.floor(t / size) - Math.floor(door / size)) ** 2;
+    const houses = w.buildings
+      .filter((b) => b.id !== w.hq && b.cls === 'dom' && b.entrances.length)
+      .sort((a, b) => d2(a.entrances[0].out) - d2(b.entrances[0].out));
+    const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+    const knock = (b: (typeof houses)[number]) => {
+      const e = b.entrances[0];
+      p.x = (e.out % size) + 0.5;
+      p.y = Math.floor(e.out / size) + 0.5;
+      p.path = [];
+      p.pi = 0;
+      sim.push({ t: 'knock', ids: [p.id], door: e.tile });
+      sim.step();
+      for (let i = 0; i < 3000 && p.job?.t === 'door'; i++) sim.step();
+      return !!sim.st.sasiedzi?.spotkanie;
+    };
+    const os = (first: string, name: string, f: boolean, prof: string, age: number, traits: string[]) => ({
+      first,
+      name,
+      f,
+      prof,
+      skills: {},
+      age,
+      traits,
+    });
+    const people =
+      kind === 'wrogi'
+        ? [
+            os('Roman', 'Roman Kos', false, 'ślusarz', 48, ['klotliwy', 'odwazny']),
+            os('Bożena', 'Bożena Kos', true, 'szwaczka', 46, ['klotliwy', 'odwazny']),
+          ]
+        : [
+            os('Teresa', 'Teresa Wilk', true, 'krawcowa', 63, ['lubiany']),
+            os('Zdzisław', 'Zdzisław Wilk', false, 'kolejarz', 66, ['lubiany']),
+          ];
+    const own = (bid: number) => ({
+      stany: [{ bid, apt: 0, state: 'mieszkancy' as const }],
+      domy: [{ apt: 0, klatka: -1, zal: false, osoby: people }],
+    });
+    let gen = kind === 'lubiany';
+    if (!gen) sim.lokatorzy = own;
+    let k = 0;
+    for (; k < houses.length && k < 14; k++) {
+      if (knock(houses[k])) break;
+      if (gen && k === 7) {
+        gen = false;
+        sim.lokatorzy = own;
+      }
+    }
+    zm.setCam(p.x, p.y - 1, 1.7);
+    const sp = sim.st.sasiedzi?.spotkanie;
+    return { house: houses[k]?.name ?? '', k, gen, sp: !!sp, atak: sp?.atak ?? null };
+  }, kind);
+  console.log(
+    `  ${r.house} (${r.k + 1}. dom, lokatorzy ${r.gen ? 'z generatora' : 'ze scenariusza'}): spotkanie ${r.sp}, atak ${r.atak}`,
+  );
+  if (!r.sp) throw new Error('nikt nie otworzył drzwi');
+  await page.waitForSelector('#sheet [data-act="meet"]');
+  await waitIdle(page);
+}
+
+/** okno spotkania z sąsiadami w drzwiach, także na telefonie (mieści się bez przewijania w bok) */
+function m2f2Meet(name: string, w: number, h: number): Shot {
+  return {
+    name,
+    query: '',
+    w,
+    h,
+    run: async (page, base) => {
+      await m2f2Knock(page, base, 'lubiany');
+      const t = await sheetText(page);
+      console.log(`  ${t.replace(/\s+/g, ' ').slice(0, 240)}`);
+      if (!(await page.getAttribute('#sheet', 'class'))?.includes('sasiedzi'))
+        throw new Error('okno bez odcienia sąsiadów');
+      const bad = await page.evaluate(() => {
+        const s = document.querySelector('#sheet') as HTMLElement;
+        const r = s.getBoundingClientRect();
+        const out: string[] = [];
+        if (r.left < 0 || r.right > innerWidth + 0.5 || r.top < 0 || r.bottom > innerHeight + 0.5)
+          out.push('okno poza ekranem');
+        for (const el of s.querySelectorAll<HTMLElement>('.btn'))
+          if (el.getBoundingClientRect().right > r.right + 0.5) out.push(`wystaje: ${el.textContent}`);
+        return out;
+      });
+      if (bad.length) throw new Error(bad.join('; '));
+    },
+  };
+}
+
+/** karta znajomego sąsiedniego budynku na Przymorzu po kliknięciu (na telefonie stuknięciu) bez zaznaczenia */
+function m2f2Card(name: string, w: number, h: number): Shot {
+  return {
+    name,
+    query: '',
+    w,
+    h,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+      await waitIdle(page);
+      const at = await page.evaluate(() => {
+        const zm = window.zm!;
+        const w = zm.sim!.w;
+        const size = w.size;
+        const door = w.buildings[w.hq].entrances[0].out;
+        const d2 = (t: number) =>
+          ((t % size) - (door % size)) ** 2 + (Math.floor(t / size) - Math.floor(door / size)) ** 2;
+        const b = w.buildings
+          .filter((x) => x.id !== w.hq && (x.cls === 'blok' || x.cls === 'dom') && x.entrances.length)
+          .sort((a, c) => d2(a.entrances[0].out) - d2(c.entrances[0].out))[0];
+        let tile = Math.round((b.y0 + b.y1) / 2) * size + Math.round((b.x0 + b.x1) / 2);
+        if (w.bid[tile] !== b.id)
+          for (let i = 0; i < size * size; i++)
+            if (w.bid[i] === b.id) {
+              tile = i;
+              break;
+            }
+        const xy: [number, number] = [(tile % size) + 0.5, Math.floor(tile / size) + 0.5];
+        zm.setCam(xy[0], xy[1] + 4, 0.9);
+        return { xy, name: b.name };
+      });
+      await waitIdle(page);
+      const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y), at.xy);
+      if (w < 640) await page.touchscreen.tap(sx, sy);
+      else await page.mouse.click(sx, sy);
+      await page.waitForTimeout(400);
+      await waitIdle(page);
+      const card = (await page.textContent('#card')) ?? '';
+      console.log(`  ${at.name}: ${card.replace(/\s+/g, ' ').slice(0, 260)}`);
+      if (!card.includes(at.name)) throw new Error('nie widać karty budynku');
+      if (!card.includes('Znacie stąd')) throw new Error('karta znajomego budynku bez znajomych');
+    },
+  };
 }
 
 /** okno „Dym z komina” po rozpaleniu kozy pierwszego dnia, z sąsiadem z miejsca; nagłówek okna, samouczek

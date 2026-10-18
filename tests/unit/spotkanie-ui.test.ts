@@ -76,6 +76,9 @@ describe('karta spotkania', () => {
     const sp = { nr: 2, atak: false, gdzie: 'mieszkanie' as const, wywazone: true };
     const s = spotkanieSheet({ sp, g, wybory: wybory(sp, g, ctx(1)), jedzenie: 1, budynek: 'Blok nr 8B' });
     expect(s.title).toBe('W mieszkaniu ktoś jest');
+    expect(spotkanieSheet({ sp, g, wybory: [], jedzenie: 1, budynek: 'Dom 28', dom: true }).title).toBe(
+      'W domu ktoś jest',
+    );
     expect(s.body).toContain('Nie znacie ich.');
     expect(s.body).toContain('Wyważyliście im drzwi.');
     expect(s.body).toContain('W zapasach macie 1 porcję jedzenia.');

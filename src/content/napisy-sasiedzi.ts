@@ -146,6 +146,8 @@ export const KARTA = {
     atak: { pl: 'Rzucają się na was', en: 'They are coming at you' },
     drzwi: { pl: 'Ktoś otworzył drzwi', en: 'Someone opened the door' },
     mieszkanie: { pl: 'W mieszkaniu ktoś jest', en: 'Someone is in the flat' },
+    /** spotkanie w środku domu jednorodzinnego (dom jest jednym mieszkaniem) */
+    dom: { pl: 'W domu ktoś jest', en: 'Someone is in the house' },
     pietro: { pl: 'Na piętrze ktoś jest', en: 'Someone is upstairs' },
   },
   znani: { pl: 'Znacie ich z widzenia.', en: 'You know them by sight.' },

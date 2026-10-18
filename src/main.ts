@@ -716,6 +716,7 @@ function showMeet() {
       wybory: wybory(sp, g, k),
       jedzenie: k.jedzenie,
       budynek: sim.w.buildings[b.bid].name,
+      dom: sim.w.buildings[b.bid].cls === 'dom',
     }),
     (act, arg) => {
       if (act !== 'meet' || !sim) return;
