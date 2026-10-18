@@ -521,7 +521,7 @@ Gra przestała odsyłać do wersji 0.3 (Mateusz: „chyba już nie musimy kierow
 
 Rano 18.10.2026, po nocy integracji (dla Mateusza):
 - Kierunek rozwoju (`docs/superpowers/specs/2026-10-18-kierunek-rozwoju-design.md`): Mateusz zdecydował, że każdego lokatora da się ręcznie przejąć. Czeka przejrzenie decyzji z końca dokumentu i rozmowa o pierwszym projekcie, czyli pracy ludzi i rozporządzeniach.
-- Sesje `zombie-szlif` i `angielski` pracują od 18.10.2026 (decyzje w „Decyzjach”). Po ich końcu koordynator scala do `pelna-gra` (najpierw zombie), sprawdza i wdraża na serwer testowy.
+- Sesje `zombie-szlif` i `angielski` czekają jako karty w aplikacji (decyzje w „Decyzjach”). Aplikacja nie pozwala ich uruchomić z wiadomości przez Remote Control, więc startuje je Mateusz kliknięciem. Po ich końcu koordynator scala do `pelna-gra` (najpierw zombie), sprawdza i wdraża na serwer testowy.
 - Logowanie i konta są dalej tylko z `?siec=1` (https://za-murem.5-75-147-27.sslip.io/?siec=1). Przełącznik zniknie, kiedy będzie informacja o danych osobowych, a do niej potrzebne są dane firmy Mateusza jako administratora.
 - Zagrać w pełną grę: https://za-murem.5-75-147-27.sslip.io/ (od rana na `cergo-rw-prod`; stary adres przekierowuje; zwykły tryb i zombie, „Wasz zarząd” na karcie startowej, mieszkańcy z adresu na karcie osoby). Gra z sąsiadami: ten sam adres z `?siec=1`, dwa konta (drugie w oknie prywatnym) na tym samym adresie; drugie ma zacząć bez domu.
 - Decyzja: czy `pelna-gra` ma iść na `main` i Pages (PR przygotuję po OK).
