@@ -25,9 +25,9 @@ export interface Save {
   cam?: { x: number; y: number; zoom: number };
   /** odcisk świata (worldKey): po zmianie generatora stary stan nie pasuje do nowego wnętrza */
   world?: string;
-  /** gra sieciowa (src/net/siec.ts): budynki, które nie mogą być siedzibą (świat buduje się z nimi tak samo), i czy
-      drużyna ma już dom; brak: gra bez sieci */
-  siec?: { zajete: string[]; dom: boolean; utracony?: string };
+  /** gra sieciowa (src/net/siec.ts, StanSieci): budynki, które nie mogą być siedzibą (świat buduje się z nimi tak
+      samo), czy drużyna ma już dom, konto gry i wersja zapisu w chmurze; brak: gra bez sieci */
+  siec?: { zajete: string[]; dom: boolean; utracony?: string; konto?: string; wersja?: number };
 }
 
 /** odcisk świata z danych osiedla: inna wersja generatora daje inny odcisk */
@@ -79,6 +79,8 @@ export function readSave(from: Store | null = store()): Save | null {
     if (!raw) return null;
     const s = JSON.parse(raw) as Save;
     if (s.v !== SAVE_VERSION || s.sim?.v !== 3 || s.gov?.v !== 1 || !s.data?.geo) return null;
+    // stan gry sieciowej buduje świat (lista wykluczeń), więc zły kształt to zły zapis (także z chmury)
+    if (s.siec && !(Array.isArray(s.siec.zajete) && s.siec.zajete.every((k) => typeof k === 'string'))) return null;
     return s;
   } catch {
     return null;

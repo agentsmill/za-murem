@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiGry, Wynik } from '../../src/net/api.ts';
 import { GraSieciowa, PONOWNY_START } from '../../src/net/gra.ts';
-import type { ZajetaKlatka, ZajetaOdpowiedz, ZajmijKlatke } from '../../src/net/protokol.ts';
+import type { KodBledu, ZajetaKlatka, ZajetaOdpowiedz, ZajmijKlatke } from '../../src/net/protokol.ts';
 import {
   type ApiSieci,
   doZajecia,
@@ -25,12 +25,12 @@ import { ADDRESSES, decodedTiles } from './fixtures.ts';
 const adr = ADDRESSES.find((a) => a.key === 'lanciego') as (typeof ADDRESSES)[number];
 const geo = toGeoT(decodedTiles(adr), adr.lat, adr.lon, LOAD_RADIUS);
 const C = geo.c;
-const zbuduj = (bez: string[]) => buildWorld(geo, { seed: 1, ...(bez.length ? { bezSiedziby: bez } : {}) });
+const zbuduj = (bez: string[] | null) => buildWorld(geo, { seed: 1, ...(bez?.length ? { bezSiedziby: bez } : {}) });
 const w0 = zbuduj([]);
 const k0 = klatkaSiedziby(w0, C) as NonNullable<ReturnType<typeof klatkaSiedziby>>;
 
 const ok = <T>(dane: T, status = 200): Wynik<T> => ({ ok: true, status, dane });
-const zle = <T>(status: number, blad: 'zajeta' | 'siec' | 'za_daleko', komunikat = 'błąd'): Wynik<T> => ({
+const zle = <T>(status: number, blad: KodBledu, komunikat = 'błąd'): Wynik<T> => ({
   ok: false,
   status,
   blad,
@@ -198,59 +198,99 @@ describe('gra z sąsiadami: siedziba i start (src/net/siec.ts)', () => {
   });
 });
 
-/** udawane API dla GraSieciowa: serwer działa, gracz zalogowany, zapis i klatki w pamięci */
-function udawaneApiGry(o: { zajeteNaStarcie?: ZajetaKlatka[]; drugie?: Wynik<ZajetaOdpowiedz> } = {}) {
+/** udawane API dla GraSieciowa: serwer działa, gracz zalogowany (nick null: bez sesji), zapis i klatki w pamięci */
+function udawaneApiGry(
+  o: {
+    nick?: string | null;
+    zajeteNaStarcie?: ZajetaKlatka[];
+    /** lista z serwera przy następnych pytaniach (odświeżanie w trakcie gry) */
+    zajetePozniej?: ZajetaKlatka[];
+    /** odpowiedź na zajęcie klatki w trakcie gry (bez niej: zajęta dla nas) */
+    zajmij?: (k: ZajmijKlatke) => Wynik<ZajetaOdpowiedz>;
+    /** zapis w chmurze */
+    chmura?: { dane: unknown; wersja: number };
+  } = {},
+) {
   const log: string[] = [];
-  let zajmij = 0;
+  let pytan = 0;
+  const nick = o.nick === undefined ? 'Sasiad' : o.nick;
   const api = {
     serwerDostepny: async () => true,
-    ja: async () => ok({ nick: 'Sasiad', utworzone: 1, klatki: 0, zapis: false }),
-    pobierzZapis: async () => zle(404, 'siec'),
+    ja: async () =>
+      nick ? ok({ nick, utworzone: 1, klatki: 0, zapis: false }) : zle(401, 'brak_sesji', 'Nie jesteście zalogowani.'),
+    pobierzZapis: async () => (o.chmura ? ok(o.chmura) : zle(404, 'brak_zapisu')),
     zwolnijWszystkie: async () => {
       log.push('zwolnij');
       return ok(undefined, 204);
     },
     zajete: async () => {
       log.push('zajete');
-      return ok({ klatki: o.zajeteNaStarcie ?? [] });
+      pytan++;
+      return ok({ klatki: (pytan > 1 ? o.zajetePozniej : undefined) ?? o.zajeteNaStarcie ?? [] });
     },
     zajmij: async (k: ZajmijKlatke) => {
       log.push(`zajmij ${k.klucz}`);
-      zajmij++;
-      if (zajmij > 1 && o.drugie) return o.drugie;
-      return ok({ klatka: { ...k, moja: true, siedziba: zajmij === 1 } }, 201);
+      return o.zajmij ? o.zajmij(k) : ok({ klatka: { ...k, moja: true, siedziba: false } }, 201);
     },
-    wyslijZapis: async () => {
-      log.push('chmura');
-      return ok({ wersja: 1, zmieniony: 1, rozmiar: 1 });
+    wyslijZapis: async (_dane: unknown, wersja?: number) => {
+      log.push(`chmura ${wersja ?? '-'}`);
+      return ok({ wersja: (wersja ?? 0) + 1, zmieniony: 1, rozmiar: 1 });
+    },
+    usunZapis: async () => {
+      log.push('usun');
+      return ok(undefined, 204);
     },
   } as unknown as ApiGry;
   return { api, log };
 }
 
 const dane: Loaded = { geo, name: 'Ursynów', addr: 'Lanciego 10G, Warszawa', street: 'Lanciego', src: 'mvt' };
+const chwila = () => new Promise((r) => setTimeout(r, 0));
+const obca = (k: ZajmijKlatke): ZajetaKlatka => ({ ...k, moja: false });
+
+/** ktoś z zarządu w drzwiach siedziby świata w */
+function naDrzwiach(sim: Sim, w: World) {
+  const door = w.buildings[w.hq].entrances[0].out;
+  const p = sim.st.pawns.find((q) => q.kind === 'core') as (typeof sim.st.pawns)[number];
+  p.x = (door % w.size) + 0.5;
+  p.y = Math.floor(door / w.size) + 0.5;
+}
 
 describe('gra z sąsiadami w grze (src/net/gra.ts, bez DOM)', () => {
-  const opcje = (api: ApiGry, wlaczona = true, sesja = new Map<string, string>(), przeladuj = () => {}) => ({
+  const opcje = (
+    api: ApiGry,
+    o: { wlaczona?: boolean; sesja?: Map<string, string>; przeladuj?: () => void; say?: string[]; tryb?: string } = {},
+  ) => ({
     el: null,
     warstwa: null,
-    wlaczona,
+    wlaczona: o.wlaczona ?? true,
     touch: false,
-    say: () => {},
+    say: (t: string) => void o.say?.push(t),
     screenOf: (x: number, y: number): [number, number] => [x, y],
     onChmura: () => {},
     api,
     sesja: {
-      getItem: (k: string) => sesja.get(k) ?? null,
-      setItem: (k: string, v: string) => void sesja.set(k, v),
-      removeItem: (k: string) => void sesja.delete(k),
+      getItem: (k: string) => o.sesja?.get(k) ?? null,
+      setItem: (k: string, v: string) => void o.sesja?.set(k, v),
+      removeItem: (k: string) => void o.sesja?.delete(k),
     },
-    przeladuj,
+    przeladuj: o.przeladuj ?? (() => {}),
+    ...(o.tryb ? { tryb: () => o.tryb as string } : {}),
   });
+
+  /** nowa gra zalogowanej drużyny na adresie z klatką zajętą przez inną drużynę: start bez domu */
+  async function bezDomu(api: ApiGry, o: Parameters<typeof opcje>[1] = {}) {
+    const g = new GraSieciowa(opcje(api, o));
+    await g.init();
+    const w = await g.przygotuj(dane, zbuduj);
+    const st = createSim(w, 1);
+    g.poStarcie(st, w);
+    return { g, w, sim: new Sim(w, st) };
+  }
 
   it('bez ?siec=1 gra jak bez sieci: zwykły świat, bez znaczników, bez poleceń, bez chmury', async () => {
     const { api, log } = udawaneApiGry();
-    const g = new GraSieciowa(opcje(api, false));
+    const g = new GraSieciowa(opcje(api, { wlaczona: false }));
     await g.init();
     const w = await g.przygotuj(dane, zbuduj);
     expect(worldKey(w)).toBe(worldKey(w0));
@@ -259,78 +299,175 @@ describe('gra z sąsiadami w grze (src/net/gra.ts, bez DOM)', () => {
     g.poStarcie(st, w);
     const sim = new Sim(w, st);
     expect(g.menu(sim, w.buildings[w.hq].entrances[0].tile)).toEqual([]);
+    g.zapisz({} as Save);
+    g.koniec();
     expect(log).toEqual([]);
   });
 
   it('start bez domu, „Zajmij klatkę” na drzwiach nowej siedziby i zapis z listą wykluczeń odtwarza ten sam świat', async () => {
-    const { api, log } = udawaneApiGry({ zajeteNaStarcie: [{ ...doZajecia(k0), moja: false }] });
-    const g = new GraSieciowa(opcje(api));
-    await g.init();
-    const w = await g.przygotuj(dane, zbuduj);
-    expect(g.podglad()).toMatchObject({ zalogowani: true, stan: { dom: false, zajete: [k0.budynek] } });
+    const { api, log } = udawaneApiGry({ zajeteNaStarcie: [obca(doZajecia(k0))] });
+    const { g, w, sim } = await bezDomu(api);
+    expect(g.podglad()).toMatchObject({
+      zalogowani: true,
+      stan: { dom: false, zajete: [k0.budynek], konto: 'Sasiad' },
+    });
     expect(g.bezDomu()).toBe(true);
     expect(g.komunikatStartu()).toMatch(/zajął waszą klatkę/);
-    const st = createSim(w, 1);
-    g.poStarcie(st, w);
-    const sim = new Sim(w, st);
     expect(naProgu(sim.st, w)).toBe(false);
     const cel = klatkaSiedziby(w, C) as NonNullable<ReturnType<typeof klatkaSiedziby>>;
     const [item] = g.menu(sim, w.buildings[w.hq].entrances[0].tile);
-    expect(item.label).toBe('Zajmij klatkę (wasz nowy dom)');
+    expect(item).toMatchObject({ label: 'Zajmij klatkę (wasz nowy dom)', confirm: true, quick: false });
     expect(g.obsluz(item)).toBe(true);
-    await new Promise((r) => setTimeout(r, 0));
+    await chwila();
     expect(log).toContain(`zajmij ${cel.klucz}`);
     expect(g.bezDomu()).toBe(false);
     expect(g.menu(sim, w.buildings[w.hq].entrances[0].tile)).toEqual([]);
-    // zapis gry: stan sieci w zapisie, po wczytaniu ten sam świat
+    // zapis do chmury: od razu, następny dopiero po minucie (także po zakończonym wysyłaniu)
     const save = { siec: g.stan } as unknown as Save;
-    const g2 = new GraSieciowa(opcje(udawaneApiGry().api));
+    g.zapisz(save);
+    await chwila();
+    g.zapisz(save);
+    await chwila();
+    expect(log.filter((x) => x.startsWith('chmura'))).toEqual(['chmura -']);
+    expect(g.stan?.wersja).toBe(1);
+    // wczytanie zapisu na tym samym koncie: ten sam świat, następny zapis do chmury od wersji z zapisu
+    const z2 = udawaneApiGry();
+    const g2 = new GraSieciowa(opcje(z2.api));
+    await g2.init();
     const w2 = await g2.przygotuj(dane, zbuduj, save);
     expect(worldKey(w2)).toBe(worldKey(w));
     expect(w2.hq).toBe(w.hq);
-    // zapis do chmury: raz, potem najwyżej raz na minutę
-    g.zapisz(save);
-    g.zapisz(save);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(log.filter((x) => x === 'chmura')).toHaveLength(1);
+    g2.zapisz(save);
+    await chwila();
+    expect(z2.log.filter((x) => x.startsWith('chmura'))).toEqual(['chmura 1']);
   });
 
-  it('klatka nowej siedziby zajęta po drodze: ponowny start z kolejnym budynkiem na liście', async () => {
+  it('zapis z przeglądarki ten sam co w chmurze (odpowiedź z nową wersją nie doszła): dalej od wersji z serwera', async () => {
+    const siec = { zajete: [], dom: true, konto: 'Sasiad', wersja: 6 };
+    const zapis = { v: 1, at: 5, seed: 1, sim: { v: 3, tick: 0 }, gov: { v: 1 }, data: dane, siec };
+    for (const [at, wyslany] of [
+      [5, 'chmura 7'],
+      [4, 'chmura 6'],
+    ] as const) {
+      const { api, log } = udawaneApiGry({ chmura: { dane: zapis, wersja: 7 } });
+      const g = new GraSieciowa(opcje(api));
+      await g.init();
+      const lokalny = { ...zapis, at } as unknown as Save;
+      await g.przygotuj(dane, zbuduj, lokalny);
+      g.zapisz(lokalny);
+      await chwila();
+      expect(log.filter((x) => x.startsWith('chmura'))).toEqual([wyslany]);
+    }
+  });
+
+  it('zapis gry sieciowej bez zalogowania albo z innego konta: ten sam świat, ale bez zajmowania i bez chmury', async () => {
+    const save = { siec: { zajete: [k0.budynek], dom: false, konto: 'Sasiad' } } as unknown as Save;
+    for (const nick of [null, 'Inny']) {
+      const { api, log } = udawaneApiGry({ nick });
+      const g = new GraSieciowa(opcje(api));
+      await g.init();
+      const w = await g.przygotuj(dane, zbuduj, save);
+      expect(w.hq).toBe(zbuduj([k0.budynek]).hq);
+      expect(g.podglad().bezSieci).toBe(true);
+      // cele zwykłe, nie „Bez domu”, bo i tak nie da się zająć klatki
+      expect(g.bezDomu()).toBe(false);
+      expect(g.komunikatStartu() ?? '').toMatch(nick ? /innego konta/ : /^$/);
+      const sim = new Sim(w, createSim(w, 1));
+      naDrzwiach(sim, w);
+      g.klatka(sim, 10_000, false);
+      expect(g.menu(sim, w.buildings[w.hq].entrances[0].tile)).toEqual([]);
+      g.zapisz(save);
+      g.koniec();
+      await chwila();
+      expect(log).toEqual([]);
+    }
+  });
+
+  it('błąd zajęcia, który się nie zmieni (za daleko, limit): bez ponowień i bez ponownego startu', async () => {
+    const sesja = new Map<string, string>();
+    const powiedziane: string[] = [];
+    let przeladowano = false;
+    const { api, log } = udawaneApiGry({
+      zajeteNaStarcie: [obca(doZajecia(k0))],
+      zajmij: () => zle(403, 'za_daleko', 'Ta klatka jest za daleko od waszej siedziby.'),
+    });
+    const { g, w, sim } = await bezDomu(api, {
+      sesja,
+      say: powiedziane,
+      przeladuj: () => {
+        przeladowano = true;
+      },
+    });
+    naDrzwiach(sim, w);
+    g.klatka(sim, 10_000, false);
+    await chwila();
+    g.klatka(sim, 20_000, false);
+    await chwila();
+    expect(log.filter((x) => x.startsWith('zajmij'))).toHaveLength(1);
+    expect(g.bezDomu()).toBe(false);
+    expect(powiedziane.at(-1)).toMatch(/za daleko.*bez zajmowania/);
+    expect(sesja.size).toBe(0);
+    expect(przeladowano).toBe(false);
+  });
+
+  it('klatka nowej siedziby zajęta po drodze: jeden ponowny start bez niej i bez budynków z nowymi cudzymi klatkami', async () => {
     const sesja = new Map<string, string>();
     let przeladowano = false;
-    const { api } = udawaneApiGry({
-      zajeteNaStarcie: [{ ...doZajecia(k0), moja: false }],
-      drugie: zle(409, 'zajeta'),
+    const inna = { ...obca(doZajecia(k0)), klucz: 'zm:inna:1', budynek: 'px:1:2:3:4:1' };
+    const { api, log } = udawaneApiGry({
+      zajeteNaStarcie: [obca(doZajecia(k0))],
+      zajetePozniej: [obca(doZajecia(k0)), inna],
+      zajmij: () => zle(409, 'zajeta'),
     });
-    const g = new GraSieciowa(
-      opcje(api, true, sesja, () => {
+    const { g, w, sim } = await bezDomu(api, {
+      sesja,
+      tryb: 'zombie',
+      przeladuj: () => {
         przeladowano = true;
-      }),
-    );
-    await g.init();
-    const w = await g.przygotuj(dane, zbuduj);
-    const st = createSim(w, 1);
-    g.poStarcie(st, w);
-    const sim = new Sim(w, st);
-    // ktoś z zarządu staje w drzwiach nowej siedziby: gra próbuje ją zająć, serwer mówi, że zajęta (to drugie zajęcie)
-    await api.zajmij(doZajecia(k0));
-    const door = w.buildings[w.hq].entrances[0].out;
-    const p = sim.st.pawns.find((q) => q.kind === 'core') as (typeof sim.st.pawns)[number];
-    p.x = (door % w.size) + 0.5;
-    p.y = Math.floor(door / w.size) + 0.5;
+      },
+    });
+    // odświeżenie listy w trakcie gry (nikt jeszcze nie stoi w drzwiach), potem ktoś z zarządu w drzwiach
+    g.klatka(sim, 1e9, false);
+    await chwila();
+    naDrzwiach(sim, w);
     expect(naProgu(sim.st, w)).toBe(true);
-    g.klatka(sim, 10_000, false);
+    g.klatka(sim, 1e9 + 1000, false);
+    await chwila();
+    g.klatka(sim, 1e9 + 2000, false);
     await new Promise((r) => setTimeout(r, 2600));
+    expect(log.filter((x) => x.startsWith('zajmij'))).toHaveLength(1);
     const zapis = JSON.parse(sesja.get(PONOWNY_START) ?? '{}');
     const hq = kluczBudynku(w.buildings[w.hq]);
-    expect(zapis.stan.zajete).toEqual([k0.budynek, hq].sort());
+    expect(zapis.stan.zajete).toEqual([k0.budynek, hq, inna.budynek].sort());
+    expect(zapis.tryb).toBe('zombie');
     expect(przeladowano).toBe(true);
-    // po przeładowaniu: dane osiedla z pamięci sesji, świat bez obu budynków
-    const g3 = new GraSieciowa(opcje(udawaneApiGry().api, true, sesja));
-    const data3 = g3.ponownyStart() as Loaded;
-    expect(data3).not.toBeNull();
-    const w3 = await g3.przygotuj(data3, (bez) => buildWorld(data3.geo, { seed: 1, bezSiedziby: bez }));
+    // po przeładowaniu: dane osiedla i tryb z pamięci sesji, świat bez tych budynków, dalej bez domu
+    const g3 = new GraSieciowa(opcje(udawaneApiGry().api, { sesja }));
+    await g3.init();
+    const p3 = g3.ponownyStart();
+    expect(p3?.tryb).toBe('zombie');
+    const data3 = p3?.data as Loaded;
+    const w3 = await g3.przygotuj(data3, (bez) =>
+      buildWorld(data3.geo, { seed: 1, ...(bez?.length ? { bezSiedziby: bez } : {}) }),
+    );
     expect(zapis.stan.zajete).not.toContain(kluczBudynku(w3.buildings[w3.hq]));
     expect(g3.bezDomu()).toBe(true);
+    expect(g3.komunikatStartu()).toMatch(/szybsza/);
+    expect(sesja.has(PONOWNY_START)).toBe(false);
+  });
+
+  it('koniec gry: zapis w chmurze i klatki drużyny znikają z serwera, potem już nic nie idzie', async () => {
+    const { api, log } = udawaneApiGry();
+    const g = new GraSieciowa(opcje(api));
+    await g.init();
+    await g.przygotuj(dane, zbuduj);
+    expect(g.stan).toMatchObject({ dom: true, zajete: [] });
+    g.koniec();
+    await chwila();
+    expect(log.slice(-2)).toEqual(['usun', 'zwolnij']);
+    expect(g.stan).toBeNull();
+    g.zapisz({} as Save);
+    await chwila();
+    expect(log.some((x) => x.startsWith('chmura'))).toBe(false);
   });
 });

@@ -4317,11 +4317,17 @@ async function fakeApi(
         ? json(200, { dane: o.chmura.dane, wersja: o.chmura.wersja, zmieniony: 1, rozmiar: 1 })
         : json(404, { blad: 'brak_zapisu', komunikat: 'Nie ma zapisu.' });
     if (path0 === '/zapis' && m === 'PUT') {
-      // zapis zostaje w udawanym serwerze (o.chmura), jak w prawdziwym
-      const body = req.postDataJSON() as { dane: unknown };
-      const wersja = (o.chmura?.wersja ?? 0) + 1;
-      o.chmura = { dane: body.dane, wersja };
-      return json(200, { wersja, zmieniony: 1, rozmiar: req.postData()?.length ?? 0 });
+      // zapis zostaje w udawanym serwerze (o.chmura) z wersją jak w prawdziwym: inna wersja bazowa to konflikt
+      const body = req.postDataJSON() as { dane: unknown; wersja?: number };
+      const obecna = o.chmura?.wersja ?? 0;
+      if (body.wersja !== undefined && body.wersja !== obecna)
+        return json(409, { blad: 'konflikt_wersji', komunikat: 'Na serwerze jest nowszy zapis.', wersja: obecna });
+      o.chmura = { dane: body.dane, wersja: obecna + 1 };
+      return json(200, { wersja: obecna + 1, zmieniony: 1, rozmiar: req.postData()?.length ?? 0 });
+    }
+    if (path0 === '/zapis' && m === 'DELETE') {
+      o.chmura = undefined;
+      return r.fulfill({ status: 204, body: '' });
     }
     if (path0 === '/klatki/moje' && m === 'DELETE') return r.fulfill({ status: 204, body: '' });
     if (path0 === '/klatki' && m === 'GET') return json(200, { klatki });
@@ -4543,14 +4549,29 @@ function siecShots(): Shot[] {
         };
         await fakeApi(page, serwer);
         await startSieci(page, base);
-        const przed = await page.evaluate(() => ({ hq: window.zm!.sim!.w.hq, stan: window.zm!.siec().stan }));
+        // gra stoi (speed=0): zapis i stan w tej samej chwili
+        const gra = () =>
+          page.evaluate(() => {
+            const zm = window.zm!;
+            return {
+              hq: zm.sim!.w.hq,
+              stan: zm.siec().stan,
+              tick: zm.sim!.st.tick,
+              zarzad: zm
+                .sim!.st.pawns.filter((p) => p.kind === 'core')
+                .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
+                .join(' '),
+            };
+          });
+        const przed = await gra();
         await page.evaluate(() => window.zm!.save());
-        await page.waitForFunction(() => true);
         for (let k = 0; k < 50 && !serwer.chmura; k++) await page.waitForTimeout(100);
         if (!serwer.chmura) throw new Error('zapis nie trafił do chmury');
         const tekst = JSON.stringify(serwer.chmura.dane);
         console.log(`  zapis w chmurze: ${Math.round(tekst.length / 1024)} KB`);
         if (tekst.includes('"addr"') || tekst.includes('"addr:')) throw new Error('adres w zapisie w chmurze');
+        // nazwa ulicy z wpisanego adresu nie trafia do nazw budynków gry sieciowej
+        if (tekst.includes('Lanciego 10G')) throw new Error('adres z formularza w nazwie budynku w zapisie w chmurze');
         await page.evaluate(() => localStorage.clear());
         await page.goto(`${base}?siec=1&speed=0`);
         await page.waitForSelector('[data-siec=chmura]');
@@ -4558,10 +4579,79 @@ function siecShots(): Shot[] {
         console.log(`  przycisk: ${label}`);
         await page.click('[data-siec=chmura]');
         await waitIdle(page);
-        const po = await page.evaluate(() => ({ hq: window.zm!.sim!.w.hq, stan: window.zm!.siec().stan }));
-        console.log(`  przed ${JSON.stringify(przed)}, po ${JSON.stringify(po)}`);
-        if (po.hq !== przed.hq || JSON.stringify(po.stan) !== JSON.stringify(przed.stan))
-          throw new Error('gra z chmury ma inną siedzibę albo stan sieci');
+        const po = await gra();
+        console.log(`  przed ${JSON.stringify(przed)}`);
+        console.log(`  po    ${JSON.stringify(po)}`);
+        if (JSON.stringify(po) !== JSON.stringify(przed))
+          throw new Error('gra z chmury ma inną siedzibę, stan sieci, chwilę albo miejsca zarządu');
+        // następny zapis idzie od wersji z chmury (bez konfliktu wersji)
+        await page.evaluate(() => window.zm!.save());
+        for (let k = 0; k < 50 && serwer.chmura.wersja < 2; k++) await page.waitForTimeout(100);
+        console.log(`  wersja zapisu w chmurze po drugim zapisie: ${serwer.chmura.wersja}`);
+        if (serwer.chmura.wersja !== 2) throw new Error('drugi zapis do chmury nie przeszedł');
+      },
+    },
+    {
+      // „Zajmij klatkę” pod prawym przyciskiem na wolnym budynku, bez zaznaczonych ludzi: potwierdzenie, zajęcie na
+      // serwerze i zielony znacznik; na zrzucie menu na następnym wolnym budynku
+      name: 'siec-menu',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page, { zalogowani: true, zajete: cudzeKlatkiLanciego() });
+        await startSieci(page, base);
+        /** prawy przycisk na drzwiach k-tego budynku mieszkalnego od siedziby; pozycje menu */
+        const menuNa = async (k: number) => {
+          const ok = await page.evaluate((k) => {
+            const zm = window.zm!;
+            const w = zm.sim!.w;
+            const hq = w.buildings[w.hq];
+            const b = w.buildings
+              .filter((x) => x.id !== w.hq && (x.cls === 'blok' || x.cls === 'dom') && x.entrances.length)
+              .sort((p, q) => Math.hypot(p.x0 - hq.x0, p.y0 - hq.y0) - Math.hypot(q.x0 - hq.x0, q.y0 - hq.y0))[k];
+            if (!b) return false;
+            const t = b.entrances[0].tile;
+            zm.setCam((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5, 0.9);
+            return true;
+          }, k);
+          if (!ok) return null;
+          await waitIdle(page);
+          const xy = await page.evaluate((k) => {
+            const zm = window.zm!;
+            const w = zm.sim!.w;
+            const hq = w.buildings[w.hq];
+            const b = w.buildings
+              .filter((x) => x.id !== w.hq && (x.cls === 'blok' || x.cls === 'dom') && x.entrances.length)
+              .sort((p, q) => Math.hypot(p.x0 - hq.x0, p.y0 - hq.y0) - Math.hypot(q.x0 - hq.x0, q.y0 - hq.y0))[k];
+            const t = b.entrances[0].tile;
+            return zm.screenOf((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5);
+          }, k);
+          await page.mouse.click(xy[0], xy[1], { button: 'right' });
+          if (!(await page.waitForSelector('#ctx:not([hidden])', { timeout: 1500 }).catch(() => null))) return [];
+          return page.locator('#ctx .ctx-item').allTextContents();
+        };
+        let k = 0;
+        let items: string[] | null = [];
+        for (; k < 20; k++) {
+          items = await menuNa(k);
+          if (!items || items.includes('Zajmij klatkę…')) break;
+          await page.keyboard.press('Escape');
+        }
+        console.log(`  budynek ${k}: menu ${items?.join(' | ')}`);
+        if (!items?.includes('Zajmij klatkę…')) throw new Error('brak „Zajmij klatkę” w menu');
+        const przed = await page.evaluate(() => window.zm!.siec().klatki);
+        await page.click('#ctx .ctx-item:has-text("Zajmij klatkę")');
+        await page.click('#sheet [data-act="confirm-yes"]');
+        await page.waitForFunction((n) => window.zm!.siec().klatki > n, przed, { timeout: 5000 });
+        const s = await page.evaluate(() => window.zm!.siec());
+        console.log(`  klatek ${przed} → ${s.klatki}, znaczniki ${s.znaczniki.join(' ')}`);
+        if (s.znaczniki.filter((z) => z === 'nasza').length < 2) throw new Error('brak znacznika zajętej klatki');
+        for (k++; k < 25; k++) {
+          items = await menuNa(k);
+          if (!items || items.includes('Zajmij klatkę…')) break;
+          await page.keyboard.press('Escape');
+        }
+        console.log(`  budynek ${k}: menu ${items?.join(' | ')}`);
+        await page.waitForTimeout(200);
       },
     },
     {

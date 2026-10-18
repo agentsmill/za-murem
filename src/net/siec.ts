@@ -40,6 +40,10 @@ export interface StanSieci {
   dom: boolean;
   /** budynek pod adresem, w którym ktoś zajął naszą klatkę (przed jego drzwiami drużyna zaczyna) */
   utracony?: string;
+  /** nick konta, które zaczęło grę (na innym koncie gra toczy się bez sieci) */
+  konto?: string;
+  /** wersja zapisu w chmurze, którą ta gra ostatnio wysłała (następny zapis idzie od niej) */
+  wersja?: number;
 }
 
 /** to, czego przepływ startu potrzebuje od serwera (w grze utworzApi z src/net/api.ts) */
@@ -89,7 +93,7 @@ export type WynikStartu =
 
 /**
  * Start zalogowanej drużyny na adresie. zbuduj(bez) buduje świat z listą budynków, które nie mogą być siedzibą
- * (bez: [] to zwykły świat). Nowa gra zwalnia najpierw stare klatki konta. Klatka pod adresem wolna: zajmujemy ją
+ * (bez: [] to świat bez wykluczeń). Nowa gra zwalnia najpierw stare klatki konta. Klatka pod adresem wolna: zajmujemy ją
  * i drużyna zaczyna w siedzibie jak dziś. Zajęta (na liście z serwera albo 409 przy zajmowaniu): świat bez budynków
  * z cudzymi klatkami, siedzibą zostaje najbliższy wolny mieszkalny, a drużyna zaczyna bez domu. Błąd sieci albo
  * inny błąd serwera: ok false (gra rusza bez sieci). Świat bez kluczy: zwykły start bez zajmowania.

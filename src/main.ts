@@ -170,8 +170,12 @@ const siec = new GraSieciowa({
   say: (t, ms) => say(t, ms),
   screenOf: (x, y) => screenOf(x, y),
   onChmura: (s) => start(async () => s.data, s),
+  status,
+  tryb: () => mode,
 });
-const siecGotowa = siec.init();
+const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
+/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona) */
+const startUrl = () => location.pathname + (params.get('siec') === '1' ? '?siec=1' : '');
 demoList().then((list) => {
   const box = $('demos');
   for (const d of list) {
@@ -215,6 +219,8 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
   if (busy) return;
   busy = true;
   try {
+    // gra z sąsiadami: start zależy od zalogowania, więc najpierw odpowiedź serwera (bez ?siec=1 od razu)
+    await siecGotowa;
     const data = await get();
     status('Rysuję osiedle…');
     await new Promise((r) => setTimeout(r, 0));
@@ -237,10 +243,15 @@ async function enter(data: Loaded, saved?: Save) {
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
   const t0 = performance.now();
-  // gra z sąsiadami: świat bez budynków zajętych przez inne drużyny przy wyborze siedziby (bez sieci zwykły świat)
+  // gra z sąsiadami: świat bez budynków zajętych przez inne drużyny przy wyborze siedziby i bez nazwy ulicy z adresu
+  // w nazwach budynków (zapis idzie do chmury); bez sieci (bez === null) zwykły świat
   const world = await siec.przygotuj(
     data,
-    (bez) => buildWorld(data.geo, { seed, street: data.street, ...(bez.length ? { bezSiedziby: bez } : {}) }),
+    (bez) =>
+      buildWorld(data.geo, {
+        seed,
+        ...(bez === null ? { street: data.street } : bez.length ? { bezSiedziby: bez } : {}),
+      }),
     saved,
   );
   const scene = buildScene(world);
@@ -534,8 +545,10 @@ function showEnd() {
   if (!gov?.over) return;
   pauseGame();
   clearSave();
+  // gra z sąsiadami: zapis w chmurze i klatki drużyny też znikają
+  siec.koniec();
   modal.show(endSheet(gov.over), (act) => {
-    if (act === 'end-start') location.href = location.pathname;
+    if (act === 'end-start') location.href = startUrl();
   });
 }
 
@@ -965,7 +978,7 @@ function showMenu() {
       else if (act === 'menu-v03') save();
       else if (act === 'menu-start') {
         save();
-        location.href = location.pathname;
+        location.href = startUrl();
       }
     },
     nextPrompt,
@@ -1114,7 +1127,8 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   const ids = [...selected];
   const tile = view.tileAt(sx, sy);
   const items = commandsAt(sim.st, sim.w, ids, tile);
-  const zSieci = siec.menu(sim, tile);
+  // gra z sąsiadami: „Zajmij klatkę” tylko w menu (z potwierdzeniem), nigdy od stuknięcia
+  const zSieci = menu ? siec.menu(sim, tile) : [];
   if (!items.length && !zSieci.length) {
     say(touchUI ? 'Najpierw stuknijcie kogoś z zarządu.' : 'Najpierw zaznaczcie kogoś z zarządu.', 2500);
     return;
@@ -1131,7 +1145,7 @@ function orderAt(sx: number, sy: number, menu: boolean) {
     return;
   }
   // samo „Idź tu”: bez menu
-  if (items.length === 1) {
+  if (items.length === 1 && !zSieci.length) {
     run(items[0]);
     return;
   }
@@ -1694,8 +1708,8 @@ bars.observe($('placeBar'));
   // gra z sąsiadami: ponowny start po przegranym wyścigu o klatkę (przeładowanie z danymi osiedla w pamięci sesji)
   const again = siec.ponownyStart();
   if (again) {
-    await siecGotowa;
-    await start(async () => again);
+    if (again.tryb) setMode(parseMode(again.tryb));
+    await start(async () => again.data);
   } else if (demo) await start(() => loadDemo(demo));
   window.zm.ready = true;
 })();
