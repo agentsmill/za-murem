@@ -43,7 +43,7 @@ Repo: github.com/agentsmill/za-murem (publiczne), strona: agentsmill.github.io/z
 
 Wersja 0.4 (Vite 8, TypeScript 7, PixiJS 8, Vitest, Playwright, Biome) jest na `main` i na Pages od 17.10.2026. Wersja 0.3 (vanilla JS bez bundlera: `index.html`, `style.css`, `js/*.js`, `data/sample.js`) leży w `public/v03/`, a Vite kopiuje `public/` do `dist/`, więc po buildzie działa pod `/v03/`. Surowe dane Przymorza z Overpass są w `tests/fixtures/overpass/`. `tools/simtest.js` nigdy nie trafił do repo; wzorzec balansu odtwarza `npm run bot:v03`.
 
-Pełna gra po nocy z 17 na 18.10.2026 to gałąź `pelna-gra`: `main`, tryb zombie, fala 1 M2, mieszkańcy z adresu, własna drużyna i gra z sąsiadami za `?siec=1`. Jest na origin, ale nie na `main`. Stoi na serwerze Hetznera `za-murem` (kontekst `phpbotbot` w `hcloud`, adres `hcloud --context phpbotbot server ip za-murem`, gra pod `<ip z kreskami>.sslip.io`): Caddy z HTTPS i serwer gry sieciowej w Dockerze według `deploy/hetzner/`.
+Pełna gra po nocy z 17 na 18.10.2026 to gałąź `pelna-gra`: `main`, tryb zombie, fala 1 M2, mieszkańcy z adresu, własna drużyna i gra z sąsiadami za `?siec=1`. Jest na origin, ale nie na `main`. Od 18.10.2026 stoi na serwerze Hetznera `cergo-rw-prod` (kontekst `cergo-rw` w `hcloud`) obok produkcyjnej aplikacji cergo, pod https://za-murem.5-75-147-27.sslip.io/: kontenery gry i serwera gry sieciowej w sieci Dockera cergo, ruch przez Caddy cergo (`deploy/hetzner/README.md`). Stos cergo zostaje nietknięty: zmieniamy tylko `/srv/za-murem` i nasz blok na końcu jego Caddyfile.
 
 Praca idzie na gałęziach tematycznych, często w kilku równoległych sesjach w `.claude/worktrees/`, rozdzielonych po plikach (podział i kontrakty spisuje dokument etapu, jak `docs/M1-wycinek.md`). Co leży na której gałęzi i co czeka na OK Mateusza: `docs/POSTEP.md`, sekcje „Następne” i „Decyzje”. `main` ma być zawsze grywalny, PR-y do `main` scala Mateusz.
 
@@ -70,7 +70,7 @@ npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
 node tools/trzy-noce.ts        # trzy pierwsze noce zarządu na atrapie symulacji [ziarno] [--n liczba_ziaren]
 node tools/arkusz-wnetrza.ts   # arkusz grafiki zastępczej do shots/ (podobnie arkusz-wraki.ts)
 ZM_BAZA=./za-murem.db ZM_CIASTECZKO_SECURE=0 node server/main.ts  # serwer gry sieciowej na :8787 (server/README.md)
-ZM_IP=$(hcloud --context phpbotbot server ip za-murem) deploy/hetzner/wdroz.sh  # build i wdrożenie na serwer (gra i /api)
+ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh  # build i wdrożenie (gra i /api)
 ```
 
 - `npm run lint` (`biome check .`) pada w tym katalogu, bo Biome trafia na `biome.json` z drzew sesji w `.claude/worktrees/*`. Lokalnie Biome na katalogach jak wyżej; CI na czystym checkoucie puszcza `npm run lint`.

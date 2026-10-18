@@ -514,13 +514,21 @@ Co zostaje:
 ## Następne
 
 Rano 18.10.2026, po nocy integracji (dla Mateusza):
-- Zagrać w pełną grę: https://167-233-18-125.sslip.io/ (zwykły tryb i zombie, „Wasz zarząd” na karcie startowej, mieszkańcy z adresu na karcie osoby). Gra z sąsiadami: ten sam adres z `?siec=1`, dwa konta (drugie w oknie prywatnym) na tym samym adresie; drugie ma zacząć bez domu.
+- Zagrać w pełną grę: https://za-murem.5-75-147-27.sslip.io/ (od rana na `cergo-rw-prod`; stary adres przekierowuje; zwykły tryb i zombie, „Wasz zarząd” na karcie startowej, mieszkańcy z adresu na karcie osoby). Gra z sąsiadami: ten sam adres z `?siec=1`, dwa konta (drugie w oknie prywatnym) na tym samym adresie; drugie ma zacząć bez domu.
 - Decyzja: czy `pelna-gra` ma iść na `main` i Pages (PR przygotuję po OK).
-- Do zakładania kont przez innych potrzebna jest informacja o danych osobowych i administrator danych; do tego czasu gra z sąsiadami zostaje za `?siec=1`. Pozostałe decyzje multiplayera: sekcja „Decyzje do przejrzenia” w projekcie gry sieciowej.
+- Nowe wymagania Mateusza (18.10 rano, po testach): angielska wersja językowa domyślnie (polska do wyboru); konto z e-mailem i loginem, logowanie przez magic link zamiast hasła (potrzebny dostawca wysyłki poczty); administratorem danych firma Mateusza (do informacji o danych potrzebne pełne dane firmy). Do tego czasu gra z sąsiadami zostaje za `?siec=1`. Pozostałe decyzje multiplayera: sekcja „Decyzje do przejrzenia” w projekcie gry sieciowej.
 - Do przeczytania: tabela umiejętności zawodów i kawałki historii drużyny, ton historii, kroniki i fachów mieszkańców oraz lista zakazanych nazwisk.
 - PHPBotBot: serwer `phpbotbot-staging` jest wyczyszczony i przerobiony na `za-murem` (zgoda Mateusza w nocy); kopia bazy i `/opt/phpbotbot` w `~/kopie-zapasowe/phpbotbot-staging-2026-10-18/`. Sesja tamtego projektu była jeszcze aktywna o 7:44, więc jeśli korzysta ze stagingu, potrzebny jest nowy serwer.
 
 Koniec nocy 8:40: pętla koordynatora wyłączona, wszystkie gałęzie tej nocy są w `pelna-gra` (6c7f50b i to zamknięcie), na serwerze i na origin; `main` i Pages bez zmian.
+
+### Rano 18.10.2026: przeniesienie na cergo-rw-prod i nowe wymagania
+
+Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mocniejsza maszyna); angielska wersja językowa domyślnie; konto z prostymi danymi (e-mail i login) i logowaniem przez magic link; administratorem danych jego firma; na razie najważniejsze przetestować grę i funkcje sieciowe.
+
+- Gra i serwer gry sieciowej stoją na `cergo-rw-prod` (4 vCPU, 8 GB, 160 GB) obok produkcyjnego stosu cergo, pod https://za-murem.5-75-147-27.sslip.io/. Tryb wdrożenia „obok innej aplikacji” (`compose.obok.yml`, `conf-obok/`, `ZM_SIEC` w `wdroz.sh`, opis w `deploy/hetzner/README.md`): kontenery `za-murem-www` i `za-murem-api` w sieci `cergo_default`, a w `/opt/cergo/Caddyfile` jeden dopisany blok dla adresu gry (kopia sprzed zmiany obok, składnia sprawdzona przed przeładowaniem). Cergo odpowiada jak przed zmianą (303), jego kontenery chodzą bez przerwy od 5 tygodni.
+- Na nowym serwerze: gra 200 z ważnym certyfikatem, `/v03/` 200, `/api/zdrowie` ok, konto bez sesji 401, obce źródło 403.
+- Stary serwer `za-murem` (kontekst `phpbotbot`): baza gry sieciowej była pusta (żadnych kont), stary adres przekierowuje na nowy, kontener `api` zatrzymany.
 
 0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia, a na niej `tryb-zombie-drobne` z drobnymi poprawkami z przeglądu.
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
