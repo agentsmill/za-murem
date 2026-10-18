@@ -1,5 +1,5 @@
 {
-  "wersja": 2,
+  "wersja": 3,
   "zrodlo": "PixelLab, kotwica stylu zatwierdzona 18.10.2026: assety ze statusem zatwierdzony z assets/manifest.json, złożone przez tools/atlasy.ts (npm run atlasy)",
   "teren": {
     "id": "kotwica-chodnik-trawa",
@@ -54,6 +54,531 @@
     "plik": "trzepak.png",
     "stopy": 55,
     "podstawa": 20
+  },
+  "budynki": {
+    "plik": "budynki.png",
+    "typy": {
+      "kamienica": {
+        "id": "budynek-kamienica",
+        "fasada": [
+          315,
+          0,
+          63,
+          80
+        ],
+        "gora": [
+          0,
+          28
+        ],
+        "srodek": [
+          28,
+          25
+        ],
+        "dol": [
+          53,
+          27
+        ],
+        "wejscie": [
+          0,
+          29
+        ],
+        "drzwi": 13,
+        "przesla": [
+          29,
+          33
+        ],
+        "attyka": [
+          62,
+          4
+        ],
+        "dach": null,
+        "ozdoba": null,
+        "pietra": 4,
+        "stalePietra": false
+      },
+      "ratusz": {
+        "id": "budynek-ratusz",
+        "fasada": [
+          379,
+          0,
+          82,
+          79
+        ],
+        "gora": [
+          0,
+          30
+        ],
+        "srodek": [
+          30,
+          27
+        ],
+        "dol": [
+          57,
+          22
+        ],
+        "wejscie": [
+          0,
+          53
+        ],
+        "drzwi": 26,
+        "przesla": [
+          53,
+          28
+        ],
+        "attyka": [
+          81,
+          4
+        ],
+        "dach": [
+          283,
+          207,
+          24,
+          16
+        ],
+        "ozdoba": {
+          "prostokat": [
+            180,
+            0,
+            56,
+            89
+          ],
+          "ax": 27,
+          "ay": 89,
+          "kotwica": "gzyms",
+          "polozenie": "wejscie"
+        },
+        "pietra": 3,
+        "stalePietra": false
+      },
+      "muzeum": {
+        "id": "budynek-muzeum",
+        "fasada": [
+          57,
+          207,
+          61,
+          60
+        ],
+        "gora": [
+          0,
+          21
+        ],
+        "srodek": [
+          21,
+          16
+        ],
+        "dol": [
+          37,
+          23
+        ],
+        "wejscie": [
+          0,
+          30
+        ],
+        "drzwi": 15,
+        "przesla": [
+          30,
+          30
+        ],
+        "attyka": [
+          60,
+          4
+        ],
+        "dach": null,
+        "ozdoba": {
+          "prostokat": [
+            356,
+            129,
+            55,
+            66
+          ],
+          "ax": 27,
+          "ay": 46,
+          "kotwica": "ziemia",
+          "polozenie": "wejscie"
+        },
+        "pietra": 2,
+        "stalePietra": false
+      },
+      "kosciol": {
+        "id": "budynek-kosciol",
+        "fasada": [
+          237,
+          0,
+          77,
+          83
+        ],
+        "gora": [
+          0,
+          30
+        ],
+        "srodek": [
+          30,
+          22
+        ],
+        "dol": [
+          52,
+          31
+        ],
+        "wejscie": [
+          0,
+          36
+        ],
+        "drzwi": 18,
+        "przesla": [
+          36,
+          40
+        ],
+        "attyka": [
+          76,
+          4
+        ],
+        "dach": [
+          308,
+          207,
+          24,
+          16
+        ],
+        "ozdoba": {
+          "prostokat": [
+            39,
+            0,
+            46,
+            107
+          ],
+          "ax": 23,
+          "ay": 107,
+          "kotwica": "gzyms",
+          "polozenie": "wejscie"
+        },
+        "pietra": 1,
+        "stalePietra": true
+      },
+      "urzad": {
+        "id": "budynek-urzad",
+        "fasada": [
+          412,
+          129,
+          56,
+          65
+        ],
+        "gora": [
+          0,
+          26
+        ],
+        "srodek": [
+          26,
+          16
+        ],
+        "dol": [
+          42,
+          23
+        ],
+        "wejscie": [
+          0,
+          40
+        ],
+        "drzwi": 20,
+        "przesla": [
+          40,
+          15
+        ],
+        "attyka": [
+          55,
+          7
+        ],
+        "dach": null,
+        "ozdoba": null,
+        "pietra": 3,
+        "stalePietra": false
+      },
+      "teatr": {
+        "id": "budynek-teatr",
+        "fasada": [
+          0,
+          129,
+          73,
+          77
+        ],
+        "gora": [
+          0,
+          29
+        ],
+        "srodek": [
+          29,
+          21
+        ],
+        "dol": [
+          50,
+          27
+        ],
+        "wejscie": [
+          0,
+          46
+        ],
+        "drzwi": 23,
+        "przesla": [
+          46,
+          26
+        ],
+        "attyka": [
+          72,
+          6
+        ],
+        "dach": null,
+        "ozdoba": {
+          "prostokat": [
+            278,
+            129,
+            77,
+            70
+          ],
+          "ax": 38,
+          "ay": 70,
+          "kotwica": "gzyms",
+          "polozenie": "wejscie"
+        },
+        "pietra": 3,
+        "stalePietra": false
+      },
+      "hotel": {
+        "id": "budynek-hotel",
+        "fasada": [
+          184,
+          207,
+          45,
+          52
+        ],
+        "gora": [
+          0,
+          17
+        ],
+        "srodek": [
+          17,
+          15
+        ],
+        "dol": [
+          32,
+          20
+        ],
+        "wejscie": [
+          0,
+          20
+        ],
+        "drzwi": 10,
+        "przesla": [
+          20,
+          24
+        ],
+        "attyka": [
+          44,
+          7
+        ],
+        "dach": null,
+        "ozdoba": {
+          "prostokat": [
+            230,
+            207,
+            52,
+            16
+          ],
+          "ax": 25,
+          "ay": 15,
+          "kotwica": "gzyms",
+          "polozenie": "wejscie"
+        },
+        "pietra": 5,
+        "stalePietra": false
+      },
+      "dworzec": {
+        "id": "budynek-dworzec",
+        "fasada": [
+          184,
+          129,
+          93,
+          72
+        ],
+        "gora": [
+          0,
+          28
+        ],
+        "srodek": [
+          28,
+          22
+        ],
+        "dol": [
+          50,
+          22
+        ],
+        "wejscie": [
+          0,
+          56
+        ],
+        "drzwi": 32,
+        "przesla": [
+          56,
+          36
+        ],
+        "attyka": [
+          92,
+          5
+        ],
+        "dach": [
+          333,
+          207,
+          24,
+          12
+        ],
+        "ozdoba": {
+          "prostokat": [
+            119,
+            207,
+            64,
+            56
+          ],
+          "ax": 36,
+          "ay": 56,
+          "kotwica": "gzyms",
+          "polozenie": "wejscie"
+        },
+        "pietra": 2,
+        "stalePietra": false
+      },
+      "willa": {
+        "id": "budynek-willa",
+        "fasada": [
+          0,
+          207,
+          56,
+          63
+        ],
+        "gora": [
+          0,
+          25
+        ],
+        "srodek": [
+          25,
+          21
+        ],
+        "dol": [
+          46,
+          17
+        ],
+        "wejscie": [
+          0,
+          41
+        ],
+        "drzwi": 20,
+        "przesla": [
+          41,
+          14
+        ],
+        "attyka": [
+          55,
+          4
+        ],
+        "dach": [
+          358,
+          207,
+          16,
+          10
+        ],
+        "ozdoba": null,
+        "pietra": 2,
+        "stalePietra": false
+      },
+      "remiza": {
+        "id": "budynek-remiza",
+        "fasada": [
+          86,
+          0,
+          93,
+          106
+        ],
+        "gora": [
+          0,
+          41
+        ],
+        "srodek": [
+          41,
+          31
+        ],
+        "dol": [
+          72,
+          34
+        ],
+        "wejscie": [
+          0,
+          46
+        ],
+        "drzwi": 17,
+        "przesla": [
+          46,
+          46
+        ],
+        "attyka": [
+          92,
+          4
+        ],
+        "dach": [
+          375,
+          207,
+          16,
+          10
+        ],
+        "ozdoba": {
+          "prostokat": [
+            0,
+            0,
+            38,
+            128
+          ],
+          "ax": 17,
+          "ay": 125,
+          "kotwica": "ziemia",
+          "polozenie": "prawo"
+        },
+        "pietra": 1,
+        "stalePietra": true
+      },
+      "szpital": {
+        "id": "budynek-szpital",
+        "fasada": [
+          74,
+          129,
+          109,
+          74
+        ],
+        "gora": [
+          0,
+          28
+        ],
+        "srodek": [
+          28,
+          16
+        ],
+        "dol": [
+          44,
+          30
+        ],
+        "wejscie": [
+          0,
+          76
+        ],
+        "drzwi": 53,
+        "przesla": [
+          76,
+          32
+        ],
+        "attyka": [
+          108,
+          7
+        ],
+        "dach": null,
+        "ozdoba": null,
+        "pietra": 4,
+        "stalePietra": false
+      }
+    }
   },
   "ludzie": {
     "plik": "ludzie.png",

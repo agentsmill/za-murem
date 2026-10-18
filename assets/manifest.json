@@ -2185,6 +2185,22 @@
         "assets/raw/budynek-kamienica/3.png"
       ],
       "wybrany": "assets/raw/budynek-kamienica/0.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę kamienicy (x, y, szerokość, wysokość w pikselach pliku): gzyms z górnym piętrem, środkowe piętro powtarzane i parter z cokołem, każde piętro od listwy międzypiętrowej do następnej, przęsło z trzema oknami i balkonem powtarzane wzdłuż ściany, brama z łukiem jako wejście, dach z papy jak w blokach",
+        "tlo": "#b7b2a6",
+        "attyka": [75, 13, 1, 4],
+        "fasada": {
+          "y": 42,
+          "gora": 28,
+          "pietro": [70, 25],
+          "dol": [95, 27]
+        },
+        "przesla": [23, 33],
+        "wejscie": [67, 29],
+        "drzwi": 13,
+        "dach": "papa",
+        "pietra": 4
+      },
       "warianty": {
         "0": "tynk kremowy i ochra, balkony kute, brama z łukiem, kominy i lukarny, mech na dachu (zatwierdzony)",
         "1": "szara ruina z odpadającym tynkiem, zabite okna, dziury w dachu",
@@ -2221,6 +2237,30 @@
         "assets/raw/budynek-ratusz/3.png"
       ],
       "wybrany": "assets/raw/budynek-ratusz/0.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę ratusza: gzyms z piętrem okien, piętro okien powtarzane, parter; przęsło ze skrzydła, ryzalit środkowy z oknami łukowymi i drzwiami jako wejście, dach z próbki dachówki, wieża z zegarem i szczytem jako ozdoba nad wejściem",
+        "tlo": "#6f6b64",
+        "attyka": [118, 56, 1, 4],
+        "fasada": {
+          "y": 92,
+          "gora": 30,
+          "pietro": [95, 27],
+          "dol": [122, 22]
+        },
+        "przesla": [118, 28],
+        "wejscie": [55, 53],
+        "drzwi": 26,
+        "dach": [37, 59, 24, 16],
+        "ozdoba": {
+          "prostokat": [54, 3, 56, 89],
+          "os": 81,
+          "podstawa": 92,
+          "kotwica": "gzyms",
+          "tlo": ["#6f6b64", "#8e4b36", "#463324"],
+          "zalew": "prostokat"
+        },
+        "pietra": 3
+      },
       "warianty": {
         "0": "ceglany, wieża z zegarem i iglicą, trzy kondygnacje, bluszcz przy lewym skrzydle (zatwierdzony)",
         "1": "dziury w dachu i na wieży, gruz przy schodach",
@@ -2257,6 +2297,59 @@
         "assets/raw/budynek-muzeum/3.png"
       ],
       "wybrany": "assets/raw/budynek-muzeum/1.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę muzeum: skrzydło z dwoma pietrami okien jako przęsło, portyk z fasadą i schodami jako ozdoba stojąca na ziemi przed wejściem, dach z papy jak w blokach",
+        "tlo": "#9a958a",
+        "attyka": [90, 13, 1, 4],
+        "fasada": {
+          "y": 50,
+          "gora": 21,
+          "pietro": [55, 16],
+          "dol": [71, 23]
+        },
+        "przesla": [22, 30],
+        "wejscie": [22, 30],
+        "drzwi": 15,
+        "dach": "papa",
+        "ozdoba": {
+          "prostokat": [54, 48, 55, 66],
+          "os": 81,
+          "podstawa": 94,
+          "kotwica": "ziemia",
+          "wytnij": [
+            [
+              [52, 48],
+              [110, 48],
+              [110, 60],
+              [101, 60],
+              [101, 59],
+              [99, 58],
+              [97, 57],
+              [95, 56],
+              [92, 55],
+              [90, 54],
+              [88, 53],
+              [86, 52],
+              [83, 51],
+              [81, 50],
+              [80, 49],
+              [79, 50],
+              [77, 51],
+              [75, 52],
+              [72, 53],
+              [70, 54],
+              [68, 55],
+              [66, 56],
+              [64, 57],
+              [61, 58],
+              [59, 59],
+              [59, 60],
+              [52, 60]
+            ]
+          ]
+        },
+        "pietra": 2
+      },
       "warianty": {
         "0": "porośnięte bluszczem, zwalony sztandar",
         "1": "czysty portyk z czterema kolumnami i frontonem, dziura w prawym skrzydle i w świetliku, sztandar na schodach (zatwierdzony)",
@@ -2293,6 +2386,31 @@
         "assets/raw/budynek-kosciol/3.png"
       ],
       "wybrany": "assets/raw/budynek-kosciol/2.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę kościoła: ściana z oknami łukowymi i przyporami jako przęsło, portal jako wejście, dach z próbki dachówki, wieża z iglicą jako ozdoba nad portalem; fasada ma zawsze tyle pięter co obrazek",
+        "tlo": "#7c796f",
+        "attyka": [40, 50, 1, 4],
+        "fasada": {
+          "y": 108,
+          "gora": 30,
+          "pietro": [118, 22],
+          "dol": [118, 31]
+        },
+        "przesla": [21, 40],
+        "wejscie": [62, 36],
+        "drzwi": 18,
+        "dach": [33, 87, 24, 16],
+        "ozdoba": {
+          "prostokat": [58, 1, 46, 107],
+          "os": 81,
+          "podstawa": 108,
+          "kotwica": "gzyms",
+          "tlo": ["#7c796f", "#a8682b", "#463324"],
+          "zalew": "prostokat"
+        },
+        "pietra": 1,
+        "stalePietra": true
+      },
       "warianty": {
         "0": "rzut izometryczny (sześcian), nie pasuje do rzutu gry",
         "1": "rzut izometryczny, zrujnowany, nie pasuje do rzutu gry",
@@ -2329,6 +2447,28 @@
         "assets/raw/budynek-urzad/3.png"
       ],
       "wybrany": "assets/raw/budynek-urzad/0.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę urzędu: gzyms z pasem okien, piętro z pasem okien powtarzane, parter; przęsło pasa okien (słupki co 15 px), wejście z daszkiem i szklanymi drzwiami, dach z papy jak w blokach",
+        "tlo": "#b7b2a6",
+        "attyka": [100, 12, 1, 7],
+        "fasada": {
+          "y": 57,
+          "gora": 26,
+          "pietro": [83, 16],
+          "dol": [99, 23]
+        },
+        "przesla": [35, 15],
+        "przeslaPasow": {
+          "dol": 100
+        },
+        "wejscie": [58, 40],
+        "drzwi": 20,
+        "dach": "papa",
+        "pietra": 3,
+        "wejsciePasow": {
+          "pietro": 67
+        }
+      },
       "warianty": {
         "0": "okna pasmowe, szklane wejście z daszkiem i schodami, anteny i wentylatory na dachu (zatwierdzony)",
         "1": "plamy i zacieki, szyld nad wejściem po lewej, nadbudówka na dachu",
@@ -2365,6 +2505,33 @@
         "assets/raw/budynek-teatr/3.png"
       ],
       "wybrany": "assets/raw/budynek-teatr/0.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę teatru: skrzydło z oknami co piętro (piętra co 21 px od listwy do listwy) jako przęsło, ryzalit środkowy z oknami łukowymi i portalem jako wejście, dach z papy jak w blokach, kopuła z frontonem jako ozdoba nad wejściem",
+        "tlo": "#7c796f",
+        "attyka": [100, 7, 1, 6],
+        "fasada": {
+          "y": 82,
+          "gora": 29,
+          "pietro": [111, 21],
+          "dol": [111, 27]
+        },
+        "przesla": [121, 26],
+        "wejscie": [60, 46],
+        "wejsciePasow": {
+          "pietro": 90
+        },
+        "drzwi": 23,
+        "dach": "papa",
+        "ozdoba": {
+          "prostokat": [42, 12, 77, 70],
+          "os": 80,
+          "podstawa": 82,
+          "kotwica": "gzyms",
+          "tlo": ["#313336", "#3a5229", "#648043", "#4c6631"],
+          "zalew": "prostokat"
+        },
+        "pietra": 3
+      },
       "warianty": {
         "0": "biały tynk, kopuła z miedzi, napis TEATR na tympanonie, lampy przy schodach (zatwierdzony)",
         "1": "zarośnięty bluszczem, pnącza na kopule",
@@ -2401,6 +2568,29 @@
         "assets/raw/budynek-hotel/3.png"
       ],
       "wybrany": "assets/raw/budynek-hotel/2.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę hotelu: panele z oknami (złącza poziome co 15 do 16 px, pionowe co 20 do 24 px), przęsło z dwoma oknami, wejście z daszkiem, dach z papy jak w blokach, napis HOTEL jako ozdoba na gzymsie nad wejściem. Kadr ma własne podłoże, więc używane są tylko piksele ściany i dachu",
+        "attyka": [80, 12, 1, 7],
+        "fasada": {
+          "y": 63,
+          "gora": 17,
+          "pietro": [80, 15],
+          "dol": [127, 20]
+        },
+        "przesla": [70, 24],
+        "wejscie": [50, 20],
+        "drzwi": 10,
+        "dach": "papa",
+        "ozdoba": {
+          "prostokat": [56, 48, 52, 16],
+          "os": 81,
+          "podstawa": 63,
+          "kotwica": "gzyms",
+          "tlo": "#313336",
+          "zalew": "prostokat"
+        },
+        "pietra": 5
+      },
       "warianty": {
         "0": "napis ORBIS na dachu (prawdziwa marka, unikać)",
         "1": "napis ORBIS, osmolony",
@@ -2437,6 +2627,28 @@
         "assets/raw/budynek-dworzec/3.png"
       ],
       "wybrany": "assets/raw/budynek-dworzec/1.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę dworca: skrzydło z dwoma piętrami okien jako przęsło, hala środkowa z oknami łukowymi, daszkiem z napisem i drzwiami jako wejście, dach z próbki dachówki, szczyt hali z zegarem jako ozdoba nad wejściem",
+        "tlo": "#9a958a",
+        "attyka": [30, 28, 1, 5],
+        "fasada": {
+          "y": 60,
+          "gora": 28,
+          "pietro": [66, 22],
+          "dol": [88, 22]
+        },
+        "przesla": [112, 36],
+        "wejscie": [52, 56],
+        "drzwi": 32,
+        "dach": [21, 30, 24, 12],
+        "ozdoba": {
+          "prostokat": [44, 4, 64, 56],
+          "os": 80,
+          "podstawa": 60,
+          "kotwica": "gzyms"
+        },
+        "pietra": 2
+      },
       "warianty": {
         "0": "ceglany, bluszcz, dziura w dachu po prawej",
         "1": "szary tynk w hali środkowej, zegar, wiata na kolumnach (zatwierdzony)",
@@ -2473,6 +2685,21 @@
         "assets/raw/budynek-willa/3.png"
       ],
       "wybrany": "assets/raw/budynek-willa/0.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę willi: gzyms z piętrem okien, piętro okien powtarzane, parter; przęsło z oknami z prawego skrzydła, ganek z balkonem i kolumnami jako wejście, dach z próbki dachówki. Kadr ma własne podłoże, więc używane są tylko piksele ściany i dachu",
+        "attyka": [40, 17, 1, 4],
+        "fasada": {
+          "y": 52,
+          "gora": 25,
+          "pietro": [56, 21],
+          "dol": [77, 17]
+        },
+        "przesla": [106, 14],
+        "wejscie": [63, 41],
+        "drzwi": 20,
+        "dach": [56, 30, 16, 10],
+        "pietra": 2
+      },
       "warianty": {
         "0": "żółty tynk, ganek z kolumnami, lukarna, płot (zatwierdzona)",
         "1": "dziury w dachu",
@@ -2509,6 +2736,30 @@
         "assets/raw/budynek-remiza/3.png"
       ],
       "wybrany": "assets/raw/budynek-remiza/0.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę remizy: ściana z dwiema bramami garażowymi jako przęsło i wejście, dach z próbki dachówki, wieża do suszenia węży jako ozdoba stojąca na ziemi na końcu ściany; fasada ma zawsze tyle pięter co obrazek",
+        "tlo": "#9a958a",
+        "attyka": [100, 39, 1, 4],
+        "fasada": {
+          "y": 104,
+          "gora": 41,
+          "pietro": [113, 31],
+          "dol": [113, 34]
+        },
+        "przesla": [34, 46],
+        "wejscie": [34, 46],
+        "drzwi": 17,
+        "dach": [63, 73, 16, 10],
+        "ozdoba": {
+          "prostokat": [116, 6, 38, 128],
+          "os": 133,
+          "podstawa": 131,
+          "kotwica": "ziemia",
+          "polozenie": "prawo"
+        },
+        "pietra": 1,
+        "stalePietra": true
+      },
       "warianty": {
         "0": "cegła, dwie bramy garażowe, napis OSP, wieża z syreną po prawej, dziura w dachu (zatwierdzona)",
         "1": "ruina, wieża po lewej, otwarta brama",
@@ -2545,6 +2796,21 @@
         "assets/raw/budynek-szpital/3.png"
       ],
       "wybrany": "assets/raw/budynek-szpital/0.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasadę szpitala: pasy okien i balkony, wejście szerokie z napisem SZPITAL, czerwonym krzyżem i daszkiem, przęsło z prawego skrzydła z balkonami, dach z papy jak w blokach. Kadr ma własne podłoże, więc używane są tylko piksele ściany i dachu",
+        "attyka": [80, 7, 1, 7],
+        "fasada": {
+          "y": 56,
+          "gora": 28,
+          "pietro": [84, 16],
+          "dol": [100, 30]
+        },
+        "przesla": [94, 32],
+        "wejscie": [17, 76],
+        "drzwi": 53,
+        "dach": "papa",
+        "pietra": 4
+      },
       "warianty": {
         "0": "pięć pięter, czerwony krzyż i napis SZPITAL, wejście z daszkiem dla karetek (zatwierdzony)",
         "1": "zawalona prawa strona, woda i gruz przed wejściem",

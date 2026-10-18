@@ -3,17 +3,23 @@
    narożników, moduły bloku z wybranego kawałka bloku (pas fasady, przęsła, wejście, profil attyki), naklejki dachu
    bez tła papy, trzepak i animacje postaci: klatki po palecie, przycięte do sylwetki, w dwóch pasach wierszy
    (mieszkańcy i zarząd), z kotwicą stóp i kolorami ubrania do przemalowania w grze. Opis w grafika.json.
+   Do tego budynki.png: 11 wyglądów budynków publicznych i zabytkowych (kamienica, ratusz, muzeum, kościół, urząd, teatr,
+   hotel, dworzec, willa, remiza, szpital) składanych tak samo jak blok (pas fasady z piętrami, przęsła, wejście, profil
+   krawędzi dachu), z próbką dachu do powtarzania i elementem jednorazowym na osi budynku (wieża, kopuła, portyk).
    npm run atlasy -- --sprawdz: tylko sprawdza, czy public/assets jest aktualne (kod wyjścia 1, jeśli nie). */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LOOKI, type LookBudynku } from '../src/render/art/lookBudynku.ts';
 import {
+  type BudynekOpis,
   type KierunkiLudzi,
   type KlatkaLudzi,
   type OpisGrafiki,
   type PostacLudzi,
   type PostacRegiony,
+  type Prostokat,
   WERSJA_GRAFIKI,
 } from '../src/render/art/pixellab.ts';
 import { animacjePostaci, type Metadane } from './animacje.ts';
@@ -42,13 +48,44 @@ export interface Atlas {
   rgba: Uint8Array;
 }
 
-/** jak z kawałka bloku składać fasady (manifest, kotwica-blok.moduly), prostokąty w pikselach pliku */
+/** jak z kawałka bloku albo budynku składać fasady (manifest, moduly), prostokąty w pikselach pliku */
 interface Moduly {
   attyka: [number, number, number, number];
   fasada: { y: number; gora: number; pietro: [number, number]; dol: [number, number] };
   przesla: [number, number];
+  /** x przęsła osobno dla pasa górnego, środkowego i dolnego, gdy w jednym miejscu nie wszystkie piętra są czyste */
+  przeslaPasow?: { gora?: number; pietro?: number; dol?: number };
+  /** pierwszy wiersz w pliku, z którego moduł wejścia bierze dany pas, gdy ma wyglądać inaczej niż przęsło (np. okna
+      łukowe zamiast drzwi w środkowych piętrach) */
+  wejsciePasow?: { gora?: number; pietro?: number; dol?: number };
   wejscie: [number, number];
   drzwi: number;
+  /** płaski kolor tła kadru (do wycięcia przy elementach jednorazowych); brak, gdy kadr ma własne podłoże */
+  tlo?: string | string[];
+  /** dach budynku: papa z dach.png jak w blokach (domyślnie) albo próbka do powtarzania */
+  dach?: 'papa' | Prostokat;
+  /**
+   * element jednorazowy (wieża, kopuła, portyk, ganek): prostokąt w pliku, x jego osi i y podstawy; kotwica mówi, na czym
+   * stoi podstawa (gzyms fasady albo ziemia przed budynkiem), polozenie gdzie (przy wejściu, domyślnie, albo na końcu
+   * budynku); tlo (kolor albo lista kolorów) i zalew nadpisują wycinanie tła (zalew z prostokąta zamiast z brzegu całego
+   * obrazu, gdy tłem jest też dach wokół wieży, a nie tylko kolor kadru)
+   */
+  ozdoba?: {
+    prostokat: Prostokat;
+    os: number;
+    podstawa: number;
+    kotwica: 'gzyms' | 'ziemia';
+    polozenie?: 'wejscie' | 'prawo' | 'lewo';
+    tlo?: string | string[];
+    zalew?: 'obraz' | 'prostokat';
+    /** wielokąty (współrzędne w pliku), których wnętrze znika z ozdoby: ręczna maska tam, gdzie zalew po kolorach zjadłby
+        kamień budynku (np. dach wokół frontonu portyku) */
+    wytnij?: [number, number][][];
+  };
+  /** ile pięter ma fasada na obrazku */
+  pietra?: number;
+  /** fasada ma zawsze tyle pięter, ile na obrazku, bez względu na dane (kościół, remiza: „piętra” z map nic nie znaczą) */
+  stalePietra?: boolean;
 }
 
 /** dach z kafelków papy (kotwica-blok-dach.uzycie) */
@@ -186,6 +223,232 @@ function ubranie(a: Atlas): Przemalowanie {
   return { kolory, wiersze: [top + Math.round(h * 0.27), top + Math.round(h * 0.75)] };
 }
 
+/**
+ * Moduły fasady z kawałka budynku: kolumny wejście (z drzwiami), przęsła i na końcu jedna kolumna profilu krawędzi
+ * dachu (od góry), wiersze gzyms z górnym piętrem, środkowe piętro i parter, jak w blok.png.
+ */
+function zlozModuly(kawalek: Atlas, M: Moduly): Atlas {
+  const [wx, ww] = M.wejscie;
+  const [px, pw] = M.przesla;
+  const f = M.fasada;
+  const pasy: [number, number, number, number][] = [
+    [f.y, f.gora, M.przeslaPasow?.gora ?? px, M.wejsciePasow?.gora ?? f.y],
+    [f.pietro[0], f.pietro[1], M.przeslaPasow?.pietro ?? px, M.wejsciePasow?.pietro ?? f.pietro[0]],
+    [f.dol[0], f.dol[1], M.przeslaPasow?.dol ?? px, M.wejsciePasow?.dol ?? f.dol[0]],
+  ];
+  const wys = pasy.reduce((s, [, h]) => s + h, 0);
+  const moduly = pusty(ww + pw + 1, Math.max(wys, M.attyka[3]));
+  let y = 0;
+  for (const [sy, h, bx, wy] of pasy) {
+    kopiuj(kawalek, wx, wy, ww, h, moduly, 0, y);
+    kopiuj(kawalek, bx, sy, pw, h, moduly, ww, y);
+    y += h;
+  }
+  kopiuj(kawalek, M.attyka[0], M.attyka[1], 1, M.attyka[3], moduly, ww + pw, 0);
+  return moduly;
+}
+
+/** wycinek obrazu jako osobny obraz */
+function wytnij(a: Atlas, [x, y, w, h]: Prostokat): Atlas {
+  const o = pusty(w, h);
+  kopiuj(a, x, y, w, h, o, 0, 0);
+  return o;
+}
+
+/**
+ * Wycinek z przezroczystym tłem: piksele koloru tła, do których da się dojść od brzegu całego obrazu (czwórkowo),
+ * stają się przezroczyste, a kolory tła w środku budynku zostają. Tło zewnętrzne to płaski kolor kadru. Z `zalew`
+ * równym „prostokat” zalewa się od brzegu samego wycinka (do napisu na dachu, gdzie tłem jest kolor dachu).
+ */
+function wytnijBezTla(
+  a: Atlas,
+  r: Prostokat,
+  tlo: readonly number[],
+  zalew: 'obraz' | 'prostokat' = 'obraz',
+  maska: readonly (readonly [number, number][])[] = [],
+): Atlas {
+  const tloZewn = new Uint8Array(a.w * a.h);
+  const stos: number[] = [];
+  const kolor = (i: number) => (a.rgba[i * 4] << 16) | (a.rgba[i * 4 + 1] << 8) | a.rgba[i * 4 + 2];
+  const dodaj = (x: number, y: number) => {
+    const i = y * a.w + x;
+    if (!tloZewn[i] && tlo.includes(kolor(i))) {
+      tloZewn[i] = 1;
+      stos.push(i);
+    }
+  };
+  const [rx, ry, rw, rh] = zalew === 'obraz' ? [0, 0, a.w, a.h] : r;
+  for (let x = rx; x < rx + rw; x++) {
+    dodaj(x, ry);
+    dodaj(x, ry + rh - 1);
+  }
+  for (let y = ry; y < ry + rh; y++) {
+    dodaj(rx, y);
+    dodaj(rx + rw - 1, y);
+  }
+  while (stos.length) {
+    const i = stos.pop() as number;
+    const x = i % a.w;
+    const y = (i - x) / a.w;
+    if (x > rx) dodaj(x - 1, y);
+    if (x < rx + rw - 1) dodaj(x + 1, y);
+    if (y > ry) dodaj(x, y - 1);
+    if (y < ry + rh - 1) dodaj(x, y + 1);
+  }
+  const o = wytnij(a, r);
+  const [, , rw2, rh2] = r;
+  for (let y = 0; y < rh2; y++)
+    for (let x = 0; x < rw2; x++)
+      if (tloZewn[(r[1] + y) * a.w + r[0] + x]) o.rgba.fill(0, (y * rw2 + x) * 4, (y * rw2 + x) * 4 + 4);
+  // ręczna maska: wnętrza wielokątów (środki pikseli, parzystość przecięć)
+  for (const w of maska)
+    for (let y = 0; y < rh2; y++)
+      for (let x = 0; x < rw2; x++) {
+        const px = r[0] + x + 0.5;
+        const py = r[1] + y + 0.5;
+        let w1 = false;
+        for (let i = 0, j = w.length - 1; i < w.length; j = i++) {
+          const [xi, yi] = w[i];
+          const [xj, yj] = w[j];
+          if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) w1 = !w1;
+        }
+        if (w1) o.rgba.fill(0, (y * rw2 + x) * 4, (y * rw2 + x) * 4 + 4);
+      }
+  // wolne linie: poziome i pionowe ciągi co najmniej 10 pikseli, obok których z obu stron nic nie ma (obrys i szwy dachu
+  // przecinające kadr wieży), znikają; krótkie kreski (ramiona krzyża, igła iglicy) zostają
+  const jest = (x: number, y: number) => x >= 0 && y >= 0 && x < rw2 && y < rh2 && o.rgba[(y * rw2 + x) * 4 + 3] > 0;
+  const czysc = (poziomo: boolean) => {
+    const dl = poziomo ? rw2 : rh2;
+    const szer = poziomo ? rh2 : rw2;
+    const pt = (i: number, j: number): [number, number] => (poziomo ? [i, j] : [j, i]);
+    const wolny = (i: number, j: number) => {
+      const [x, y] = pt(i, j);
+      const [ax, ay] = poziomo ? [x, y - 1] : [x - 1, y];
+      const [bx, by] = poziomo ? [x, y + 1] : [x + 1, y];
+      return jest(x, y) && !jest(ax, ay) && !jest(bx, by);
+    };
+    for (let j = 0; j < szer; j++) {
+      let i = 0;
+      while (i < dl) {
+        if (!wolny(i, j)) {
+          i++;
+          continue;
+        }
+        let k = i;
+        while (k < dl && wolny(k, j)) k++;
+        if (k - i >= 10)
+          for (let c = i; c < k; c++) {
+            const [x, y] = pt(c, j);
+            o.rgba.fill(0, (y * rw2 + x) * 4, (y * rw2 + x) * 4 + 4);
+          }
+        i = k;
+      }
+    }
+  };
+  czysc(true);
+  czysc(false);
+  return o;
+}
+
+/** id assetów wyglądów budynków w manifeście */
+export const ASSET_LOOKA: Record<LookBudynku, string> = {
+  kamienica: 'budynek-kamienica',
+  ratusz: 'budynek-ratusz',
+  muzeum: 'budynek-muzeum',
+  kosciol: 'budynek-kosciol',
+  urzad: 'budynek-urzad',
+  teatr: 'budynek-teatr',
+  hotel: 'budynek-hotel',
+  dworzec: 'budynek-dworzec',
+  willa: 'budynek-willa',
+  remiza: 'budynek-remiza',
+  szpital: 'budynek-szpital',
+};
+
+/** szerokość atlasu budynków i odstęp między kawałkami */
+const SZEROKOSC_BUDYNKOW = 512;
+const ODSTEP_BUDYNKOW = 1;
+
+/** wszystkie wyglądy budynków w jednym atlasie (budynki.png) i ich opis */
+function budynki(asset: (id: string) => Asset): { atlas: Atlas; opis: OpisGrafiki['budynki'] } {
+  interface Kawalki {
+    look: LookBudynku;
+    a: Asset;
+    M: Moduly;
+    fasada: Atlas;
+    dach: Atlas | null;
+    ozdoba: Atlas | null;
+  }
+  const kawalki: Kawalki[] = LOOKI.map((look) => {
+    const a = asset(ASSET_LOOKA[look]);
+    const M = a.moduly;
+    if (!M || !a.wybrany) throw new Error(`atlasy: ${a.id} nie ma modułów w manifeście`);
+    const obraz = wczytaj(a.wybrany);
+    const tloOzdoby = M.ozdoba?.tlo ?? M.tlo;
+    if (M.ozdoba && !tloOzdoby) throw new Error(`atlasy: ${a.id} ma ozdobę, ale nie ma tła do wycięcia (tlo)`);
+    return {
+      look,
+      a,
+      M,
+      fasada: zlozModuly(obraz, M),
+      dach: Array.isArray(M.dach) ? wytnij(obraz, M.dach) : null,
+      ozdoba: M.ozdoba
+        ? wytnijBezTla(
+            obraz,
+            M.ozdoba.prostokat,
+            [tloOzdoby as string | string[]].flat().map(hex),
+            M.ozdoba.zalew,
+            M.ozdoba.wytnij,
+          )
+        : null,
+    };
+  });
+  const czesci = kawalki.flatMap((k) => [k.fasada, k.dach, k.ozdoba].filter((c): c is Atlas => c !== null));
+  const { miejsca, wysokosc } = pakuj(czesci, SZEROKOSC_BUDYNKOW, ODSTEP_BUDYNKOW);
+  const atlas = pusty(SZEROKOSC_BUDYNKOW, wysokosc);
+  for (const [i, c] of czesci.entries()) kopiuj(c, 0, 0, c.w, c.h, atlas, miejsca[i].x, miejsca[i].y);
+  let nr = 0;
+  const miejsce = (c: Atlas): Prostokat => {
+    const m = miejsca[nr++];
+    return [m.x, m.y, c.w, c.h];
+  };
+  const typy = {} as Record<LookBudynku, BudynekOpis>;
+  for (const k of kawalki) {
+    const { M } = k;
+    const f = M.fasada;
+    const fasada = miejsce(k.fasada);
+    const dach = k.dach ? miejsce(k.dach) : null;
+    const oz = k.ozdoba && M.ozdoba ? miejsce(k.ozdoba) : null;
+    const [, ww] = M.wejscie;
+    const [, pw] = M.przesla;
+    typy[k.look] = {
+      id: k.a.id,
+      fasada,
+      gora: [0, f.gora],
+      srodek: [f.gora, f.pietro[1]],
+      dol: [f.gora + f.pietro[1], f.dol[1]],
+      wejscie: [0, ww],
+      drzwi: M.drzwi,
+      przesla: [ww, pw],
+      attyka: [ww + pw, M.attyka[3]],
+      dach,
+      ozdoba:
+        oz && M.ozdoba
+          ? {
+              prostokat: oz,
+              ax: M.ozdoba.os - M.ozdoba.prostokat[0],
+              ay: M.ozdoba.podstawa - M.ozdoba.prostokat[1],
+              kotwica: M.ozdoba.kotwica,
+              polozenie: M.ozdoba.polozenie ?? 'wejscie',
+            }
+          : null,
+      pietra: M.pietra ?? 3,
+      stalePietra: M.stalePietra ?? false,
+    };
+  }
+  return { atlas, opis: { plik: 'budynki.png', typy } };
+}
+
 /** wszystkie pliki atlasów: nazwa w public/assets → obraz albo opis (grafika.json) */
 export function atlasy(): Map<string, Atlas | OpisGrafiki> {
   const m = json<Manifest>('assets/manifest.json');
@@ -216,21 +479,10 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
   // w ostatniej kolumnie profil attyki
   const blok = asset('kotwica-blok');
   const M = blok.moduly!;
-  const kawalek = wczytaj(blok.wybrany!);
-  const [wx, ww] = M.wejscie;
-  const [px, pw] = M.przesla;
+  const [, ww] = M.wejscie;
+  const [, pw] = M.przesla;
   const f = M.fasada;
-  const pasy: [number, number][] = [[f.y, f.gora], f.pietro, f.dol];
-  const wys = pasy.reduce((s, [, h]) => s + h, 0);
-  const moduly = pusty(ww + pw + 1, Math.max(wys, M.attyka[3]));
-  let y = 0;
-  for (const [sy, h] of pasy) {
-    kopiuj(kawalek, wx, sy, ww, h, moduly, 0, y);
-    kopiuj(kawalek, px, sy, pw, h, moduly, ww, y);
-    y += h;
-  }
-  kopiuj(kawalek, M.attyka[0], M.attyka[1], 1, M.attyka[3], moduly, ww + pw, 0);
-  out.set('blok.png', moduly);
+  out.set('blok.png', zlozModuly(wczytaj(blok.wybrany!), M));
 
   // dach: środki wybranych kafelków papy jako naklejki w jednym rzędzie, piksele w kolorze tła przezroczyste
   const dach = asset('kotwica-blok-dach');
@@ -258,6 +510,10 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
   const trzepak = asset('kotwica-trzepak');
   const tz = wczytaj('assets/raw/kotwica-trzepak/trzepak.png');
   out.set('trzepak.png', tz);
+
+  // budynki publiczne i zabytkowe: 11 wyglądów w jednym atlasie
+  const wyglady = budynki(asset);
+  out.set('budynki.png', wyglady.atlas);
 
   // ludzie: animacje wszystkich postaci w jednym atlasie, klatki po palecie przycięte do sylwetki i spakowane
   const ids = [...m.zarzad, ...m.mieszkancy];
@@ -380,6 +636,7 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
       gestosc: D.gestosc,
     },
     trzepak: { id: trzepak.id, plik: 'trzepak.png', stopy: stopy(tz), podstawa: 20 },
+    budynki: wyglady.opis,
     ludzie: { plik: 'ludzie.png', regiony, postacie, rampy: pal.rampy },
   };
   out.set('grafika.json', opis);

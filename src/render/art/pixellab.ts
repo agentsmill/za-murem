@@ -6,10 +6,11 @@
 import { T } from '../../world/terrain.ts';
 import type { Sprite } from './bryly.ts';
 import { h2 } from './hash.ts';
+import type { LookBudynku } from './lookBudynku.ts';
 import { type ThingSpec, thingSprite } from './rzeczy.ts';
 
 /** wersja formatu grafika.json; gra nie bierze atlasów w innej wersji */
-export const WERSJA_GRAFIKI = 2;
+export const WERSJA_GRAFIKI = 3;
 
 /** klatka animacji w atlasie ludzi: prostokąt [x, y, szerokość, wysokość] i kotwica [ax, ay] (stopy postaci, środek
     korpusu) w pikselach klatki */
@@ -37,6 +38,42 @@ export interface PostacLudzi {
   animacje: Record<string, { kierunki: KierunkiLudzi }>;
   /** ubranie do przemalowania na inną rampę: kolory z palety i zakres wysokości nad stopami (od, do] w pikselach */
   przemalowanie: { kolory: string[] };
+}
+
+/** prostokąt w pikselach atlasu: [x, y, szerokość, wysokość] */
+export type Prostokat = [x: number, y: number, w: number, h: number];
+
+/**
+ * Jeden z 11 wyglądów budynków (kamienica, ratusz, muzeum…) w budynki.png. Fasada to złożone moduły jak w blok.png
+ * (kolumny: wejście z drzwiami, przęsła, profil krawędzi dachu; wiersze: gzyms z górnym piętrem, środkowe piętro,
+ * parter), a jej wiersze i kolumny (jak w opisie bloku) liczą się względem prostokąta `fasada`. Dach to próbka do
+ * powtarzania albo null (papa z dach.png jak w blokach), ozdoba to element jednorazowy na osi budynku (wieża ratusza,
+ * kopuła teatru…) z przezroczystym tłem, kotwicą [ax, ay] w pikselach prostokąta i podstawą na linii gzymsu fasady.
+ */
+export interface BudynekOpis {
+  id: string;
+  fasada: Prostokat;
+  gora: [number, number];
+  srodek: [number, number];
+  dol: [number, number];
+  wejscie: [number, number];
+  drzwi: number;
+  przesla: [number, number];
+  attyka: [number, number];
+  dach: Prostokat | null;
+  ozdoba: {
+    prostokat: Prostokat;
+    ax: number;
+    ay: number;
+    /** na czym stoi podstawa: gzyms fasady (korona nad dachem: wieża, kopuła, fronton) albo ziemia (portyk, ganek) */
+    kotwica: 'gzyms' | 'ziemia';
+    /** gdzie: przy głównym wejściu (bez wejścia na osi budynku) albo na końcu południowej ściany (wieża remizy) */
+    polozenie: 'wejscie' | 'prawo' | 'lewo';
+  } | null;
+  /** liczba pięter fasady na obrazku PixelLab: tyle, gdy dane nie podają pięter budynku */
+  pietra: number;
+  /** fasada ma zawsze `pietra` pięter, bez względu na dane (kościół, remiza) */
+  stalePietra: boolean;
 }
 
 /** opis atlasów w public/assets/grafika.json (prostokąty w pikselach plików atlasów) */
@@ -74,6 +111,9 @@ export interface OpisGrafiki {
   };
   /** trzepak od frontu: stopy to wiersz pod stopami, podstawa to wiersz kafelka, na którym stoją stopy */
   trzepak: { id: string; plik: string; stopy: number; podstawa: number };
+  /** wyglądy budynków publicznych i zabytkowych (kamienica, ratusz, muzeum, kościół, urząd, teatr, hotel, dworzec,
+      willa, remiza, szpital) w jednym atlasie */
+  budynki: { plik: string; typy: Record<LookBudynku, BudynekOpis> };
   /** obsada: animacje postaci w jednym atlasie (klatki przycięte do sylwetki i spakowane), rampy palety do przemalowań */
   ludzie: {
     plik: string;
