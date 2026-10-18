@@ -8,10 +8,13 @@
      const gov = newGov(seed);
      co krok: apply(govUpdate(gov, input));
      interfejs: pending(gov, input) → karta, uchwała, wydarzenie albo raport;
-     odpowiedzi: setNight / confirmNight, signLaw, chooseEvent, ackReport (każda zwraca skutki). */
+     odpowiedzi: setNight / confirmNight, signLaw, chooseEvent, ackReport (każda zwraca skutki).
+   Wyprawa dzienna z mapy miasta (src/gov/dzienne.ts): `wyslijWyprawe` zapisuje ją w `st.wyprawy`, a `govUpdate` na
+   początku kroku woła `wyprawyTick`, który rozlicza powroty (bez `st.wyprawy` nie robi nic). */
 
 import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
+import { wyprawyTick } from './dzienne.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } from './noc.ts';
 import { FIRST_LAWS } from './tresc.ts';
@@ -61,11 +64,14 @@ export function newGov(seed: number, mode: GameMode = 'zwykly'): GovState {
 
 const busy = (st: GovState) => !!st.report || st.lawPending || (!!st.night && !st.night.confirmed);
 
-/** krok zarządu: wieczorne zebranie, karta nocy, przebieg nocy, wydarzenia; zwraca skutki do zastosowania */
+/** krok zarządu: powroty wypraw dziennych, wieczorne zebranie, karta nocy, przebieg nocy, wydarzenia; zwraca skutki
+    do zastosowania */
 export function govUpdate(st: GovState, i: GovInput): GovEffects {
   const fx = emptyEffects();
   if (st.over) return fx;
   if (i.hour >= 18 && i.light?.campfire) st.evening.campfire = true;
+  // powroty wypraw dziennych z mapy miasta (bez st.wyprawy nic: skróty botów bez mapy zostają)
+  wyprawyTick(st, i, fx);
   const t = gameMin(i);
   // wieczorne zebranie: uchwała, kiedy odnowienie na to pozwala
   if (!st.lawPending && st.lawDay < i.day && t >= atHour(i.day, LAW_HOUR, LAW_MINUTE) && i.hour < CARD_DEADLINE) {
