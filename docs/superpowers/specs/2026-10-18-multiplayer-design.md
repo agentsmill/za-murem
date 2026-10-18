@@ -44,14 +44,15 @@ Numer budynku w świecie, kafelki i drzwi zależą od środka mapy (adresu), obr
 
 Klucz liczymy więc z obrysu w globalnych pikselach kafelków (poziom 14, 4096 pikseli na kafelek, około 0,35 m). Wierzchołki z kafelków są tam liczbami całkowitymi, takimi samymi u każdego, kto pobrał te kafelki. `toGeoT` (kafelki) i `toGeo` (Overpass, z wierzchołkami zaokrąglonymi do tej samej siatki) liczą przed zaokrągleniem do pół metra dwa tagi budynku:
 
-- `zm:klucz` = „px:X:Y:DX:DY”: najwyższy wierzchołek obrysu (przy remisie najbardziej zachodni) i przesunięcie do najniższego (przy remisie najbardziej wschodniego). Dwa różne budynki o tych samych skrajnych wierzchołkach musiałyby na siebie nachodzić.
+- `zm:klucz` = „px:X:Y:DX:DY:S”: najwyższy wierzchołek obrysu (przy remisie najbardziej zachodni), przesunięcie do najniższego (przy remisie najbardziej wschodniego), wszystko w całych pikselach, i S: po której stronie cięciwy między nimi budynek ma wierzchołki (1 lewa, 2 prawa, 3 obie). S odróżnia dwa budynki o tych samych skrajnych wierzchołkach, np. dwa trójkąty ze wspólną ścianą po przekątnej.
 - `zm:os` = oś klatek „x1,y1,x2,y2”: dłuższa oś najmniejszego prostokąta opisanego na obrysie, przez jego środek, od zachodu na wschód.
 
+Oba tagi liczą się z całej budowli: ze wszystkich jej kawałków z pobranych kafelków (gra pobiera kafelki w promieniu 720 m), sklejonych przez granice kafelków, także z kawałków, których gracz nie ma na swojej mapie, bo leżą za daleko od jego środka albo są maleńkie przy granicy kafelka. Geometria gry dalej bierze tylko bliskie kawałki, jak w 0.3. Bez tego blok przy brzegu mapy albo budynek z wąskim skrawkiem po drugiej stronie granicy kafelka miał u różnych graczy różne klucze (znalazł to przegląd kodu).
 Rachunek używa tylko dodawania, mnożenia, dzielenia i pierwiastka, a wynik idzie przez `toFixed`, więc każdy silnik JS daje ten sam napis.
 
 Klatki: każdy budynek ma max(1, round(długość osi / 20 m)) klatek równej długości (20 m jak w `findEntrances`), niezależnie od typu budynku w świecie, bo typ zależy od rastra i u dwóch graczy potrafi wyjść inny (na kafelkach testowych około 3% budynków). Klucz klatki to „klucz budynku/numer”, od 1 od zachodniego końca osi. Pozycja klatki to środek jej odcinka osi w stopniach; ta sama u wszystkich, więc serwer może po niej odpowiadać na pytania o prostokąt.
 
-Drzwi ze świata (`Entrance`) dostają klucz klatki, w której leży ich rzut na oś (obrót siatki cofamy jak w `rotateGeo`). Test (`tests/unit/klucze.test.ts`) buduje świat trzech adresów z kafelków testowych z prawdziwego środka i z trzech przesuniętych o 110–160 m, także z siatką obróconą o 16,7° względem pierwszej:
+Drzwi ze świata (`Entrance`) dostają klucz klatki, w której leży ich rzut na oś (obrót siatki cofamy jak w `rotateGeo`). Test (`tests/unit/klucze.test.ts`) buduje świat trzech adresów z kafelków testowych z prawdziwego środka i z trzech przesuniętych o 110–160 m, także z siatką obróconą o 16,7° względem pierwszej, a osobno sprawdza osiem budynków przeciętych granicą kafelków albo uciętych brzegiem mapy z gęstej siatki środków (przesunięcia o ułamki metra i o 300 m):
 
 - klucz budynku: ten sam dla każdej pary tych samych budynków, także uciętych brzegiem mapy,
 - lista klatek z pozycjami: ta sama,
@@ -59,7 +60,7 @@ Drzwi ze świata (`Entrance`) dostają klucz klatki, w której leży ich rzut na
 
 Ten sam budynek z Overpass ma ten sam klucz co z kafelków w 39 z 40 budynków Przymorza (oś w 36 z 40); kafelki bywają uproszczone o piksel. Overpass to zapas, gdy kafelki nie odpowiadają, więc wystarczy dopasowanie po pozycji klatki (niżej).
 
-Znane słabe miejsca, rzadkie: budynek przecięty granicą kafelków daleko od jednego z graczy (ten gracz nie ma drugiej części), zmiana obrysu w OSM (nowy klucz po aktualizacji kafelków), demo i zapisy sprzed kluczy (bez tagów, więc bez klucza: gra sieciowa tylko na prawdziwym adresie).
+Znane słabe miejsca, rzadkie: budynek sięgający kafelka, którego jeden z graczy nie pobrał (dopiero ponad 700 m od jego adresu, więc tylko ogromne budowle), zmiana obrysu w OSM (nowy klucz po aktualizacji kafelków), demo i zapisy sprzed kluczy (bez tagów, więc bez klucza: gra sieciowa tylko na prawdziwym adresie).
 
 ### Przepływ startu
 
@@ -97,21 +98,24 @@ API pod `/api` (typy w `src/net/protokol.ts`, wspólnym dla serwera i klienta):
 | `DELETE /api/konto` | usuń konto `{haslo}` razem z klatkami i zapisem |
 | `POST /api/sesja`, `DELETE /api/sesja` | zaloguj, wyloguj |
 | `GET /api/klatki?s=&w=&n=&e=` | zajęte klatki w prostokącie (cudze bez nicku: `moja: false`) |
-| `POST /api/klatki` | zajmij `{klucz, budynek, lat, lon}`; 409, gdy zajęta |
+| `POST /api/klatki` | zajmij `{klucz, budynek, lat, lon}`; 409, gdy zajęta, 422, gdy pozycja nie pasuje do budynku z klucza albo jest za daleko od siedziby |
 | `GET /api/klatki/moje`, `DELETE /api/klatki/moje` | moje klatki, zwolnij wszystkie |
 | `DELETE /api/klatki/:klucz` | zwolnij jedną |
 | `GET`, `PUT`, `DELETE /api/zapis` | zapis gry w chmurze z wersją |
 
-Baza: `konta` (nick, nick do porównań, skrót hasła, chwila założenia, dzień ostatniej wizyty), `sesje` (skrót tokenu, konto, termin), `klatki` (klucz klatki i budynku, środek klatki z dokładnością około 1 m, konto, czy siedziba, chwila zajęcia), `zapisy` (gzip JSON, rozmiar, wersja, chwila). Klucze obce z `ON DELETE CASCADE`.
+Baza: `konta` (nick, nick do porównań, skrót hasła, chwila założenia, dzień ostatniej wizyty), `sesje` (skrót tokenu, konto, termin), `klatki` (klucz klatki i budynku, środek klatki z dokładnością około 1 m, konto, czy siedziba, chwila zajęcia), `zapisy` (gzip JSON, rozmiar, wersja, chwila). Klucze obce z `ON DELETE CASCADE`, numery kont z `AUTOINCREMENT` (nie wracają po usunięciu konta), `secure_delete` zamazuje usunięte dane w pliku.
 
-Zapis w chmurze to ten sam obiekt co w localStorage, bez `data.addr` i `data.street`: klient je usuwa, a serwer odrzuca zapis, który je ma. `data.name` bywa dziś wpisanym tekstem, gdy geokoder nie poda nazwy osiedla ani ulicy, więc etap 2 ustawia go do chmury z nazwy osiedla albo na „Osiedle”. `PUT` z wersją, którą klient ostatnio widział: nieaktualna daje 409, żeby telefon nie nadpisał nowszej gry z komputera. Limit 3 MiB JSON. Gra wysyła zapis co 5 minut przy ekranie i z Menu, nie co godzinę gry jak do localStorage.
+Serwer nie zna geometrii budynków, ale z klucza wie, gdzie jest najwyższy wierzchołek budynku i jak daleko najniższy. Pozycja zajmowanej klatki musi leżeć najwyżej rozpiętość budynku i 50 m od tego wierzchołka (na kafelkach testowych środki klatek leżą najwyżej rozpiętość i 21 m dalej), a numer klatki pasować do wielkości budynku. Bez tego dało się zająć klatkę w innym mieście, podając pozycję obok swojej siedziby. Klucz ma jedną postać na budynek (liczby całkowite bez zer na początku).
+
+Zapis w chmurze to ten sam obiekt co w localStorage, bez tekstu adresu: klient (`zapisBezAdresu`) usuwa `data.addr`, `data.street` i tagi `addr:*` przy budynkach w `data.geo`, a nazwę osiedla z cyframi albo równą ulicy (`data.name` bywa wpisanym tekstem, gdy geokoder nie poda nazwy okolicy) zmienia na „Osiedle”; serwer odrzuca zapis, który to jeszcze ma (`maAdres`). Świat z takiego zapisu buduje się tak samo i ma te same klucze, zmieniają się tylko nazwy budynków. `PUT` z wersją, którą klient ostatnio widział: nieaktualna daje 409, żeby telefon nie nadpisał nowszej gry z komputera; usunięty zapis zostaje jako pusty wiersz z wyższą wersją, więc i po usunięciu stary telefon nie nadpisze nowej gry. Jeden zapis naraz na konto, limit 3 MiB JSON. Gra wysyła zapis co 5 minut przy ekranie i z Menu, nie co godzinę gry jak do localStorage.
 
 Klient (`src/net/api.ts`): `fetch` do `/api` tej samej domeny z ciasteczkiem (`credentials: 'same-origin'`), wynik zawsze `{ok, dane}` albo `{ok: false, blad, komunikat}`, bez wyjątków. `serwerDostepny()` daje false na Pages, offline, po czasie i przy obcym serwerze.
 
 ### RODO
 
 - Konto to nick i hasło. Bez e-maila, imienia, nazwiska, telefonu. Hasło tylko jako skrót scrypt.
-- W bazie nie ma tekstu adresu: ani tego, co gracz wpisał, ani etykiety z geokodera, ani ulicy. Są natomiast pozycje zajętych klatek i w zapisie gry mapa okolicy z punktem adresu jako środkiem. To dane o miejscu, zwykle o domu gracza, powiązane z nickiem, więc traktujemy je jak dane osobowe: nikomu ich nie pokazujemy, nie udostępniamy i kasujemy na żądanie.
+- W bazie nie ma tekstu adresu: ani tego, co gracz wpisał, ani etykiety z geokodera, ani ulicy, ani numerów domów z mapy. Zostają nazwy miejsc z OSM (apteka „na Obrońców Wybrzeża” to nazwa sklepu, nie adres gracza), pozycje zajętych klatek i w zapisie gry mapa okolicy z punktem adresu jako środkiem. Z tego da się odtworzyć, gdzie gracz gra, zwykle jego dom, i to jest powiązane z nickiem, więc traktujemy to jak dane osobowe: nikomu nie pokazujemy, nie udostępniamy i kasujemy na żądanie.
+- Nazwa siedziby („Obrońców Wybrzeża 4B”, z ulicy z geokodera) trafia dziś do tekstów zarządu, a te do zapisu. W grze sieciowej siedziba ma nazwę bez ulicy (etap 2), żeby adres nie wszedł do kroniki w zapisie w chmurze.
 - Inni gracze widzą tylko, że klatka jest zajęta („zajęte przez inną drużynę”): bez nicku, numeru konta i daty. Zapytanie o prostokąt wymaga zalogowania i ma limit wielkości.
 - Usunięcie konta (z hasłem) od razu kasuje konto, sesje, klatki i zapis. Klatki wracają do wolnych.
 - Serwer nie zapisuje adresów IP ani w bazie, ani w dzienniku. Limity prób trzymają IP tylko w pamięci, a wpis znika po końcu okna (od minuty do godziny), najpóźniej przy cogodzinnym sprzątaniu.
@@ -123,10 +127,11 @@ Klient (`src/net/api.ts`): `fetch` do `/api` tej samej domeny z ciasteczkiem (`c
 - Hasła: scrypt (N = 2^15, r = 8, p = 1, 32 MiB na jedno liczenie), sól 16 bajtów, porównanie w stałym czasie. Dla nieznanego nicku serwer liczy scrypt na atrapie, więc odpowiedź „Zły nick albo hasło” przychodzi w tym samym czasie i nie zdradza, które nicki istnieją. Hasło od 8 do 200 znaków i nie takie jak nick. Nick od 3 do 24 znaków: litery (także polskie), cyfry, kropka, podkreślnik, myślnik; bez względu na wielkość liter.
 - Sesje: 32 losowe bajty w ciasteczku `zm_sesja` (HttpOnly, Secure, SameSite=Lax, Path=/api), w bazie tylko SHA-256. Ważna 30 dni, przedłuża się przy używaniu, najwyżej 10 sesji na konto, wylogowanie kasuje ją w bazie.
 - CSRF: obok SameSite=Lax żądania zmieniające stan z danymi muszą mieć `application/json` (formularz z innej strony tego nie wyśle), a nagłówek Origin, jeśli jest, musi być z tej samej strony albo z listy `ZM_ZRODLA`. Serwer nie wysyła nagłówków CORS.
-- Limity: ciało żądania 4 KiB (zapis gry 3 MiB), 10 nieudanych logowań na IP w 15 minut, 5 nowych kont na IP na godzinę, 300 żądań na IP na minutę, 60 zapisów na konto na godzinę, 60 klatek na konto, 600 m od siedziby, prostokąt najwyżej 0,05° na 0,08° i 2000 klatek w odpowiedzi.
+- Limity: ciało żądania 4 KiB (zapis gry 3 MiB, jeden naraz na konto), 10 nieudanych logowań na IP i 20 na nick w 15 minut, 5 nowych kont i 30 prób zajętego nicku na IP na godzinę, 300 żądań na IP na minutę, 60 zapisów na konto na godzinę, 60 klatek na konto, 600 m od siedziby, prostokąt najwyżej 0,05° na 0,08° i 2000 klatek w odpowiedzi. Próba liczy się, zanim serwer na cokolwiek poczeka, więc setka równoległych żądań nie przejdzie limitu (pierwsza wersja to przepuszczała, znalazł to przegląd kodu). IPv6 liczymy po sieci /64. scrypt idzie przez kolejkę (2 naraz, 64 czekających), pełna kolejka to 503, żeby zalew logowań nie zajął wątków, na których liczy się też gzip.
+- Po ostatnim await przed zapisem do bazy serwer jeszcze raz sprawdza sesję: zapis albo klatka wysyłana z telefonu w chwili, gdy konto znika na komputerze, przepada (401), zamiast trafić do cudzego konta.
 - Tylko zapytania z parametrami (bez sklejania SQL). Odpowiedzi to JSON z `Cache-Control: no-store`, `nosniff` i CSP `default-src 'none'`. Gra pokaże nick przez `textContent`.
-- Kontener jako użytkownik `node`, port tylko na `127.0.0.1`, X-Forwarded-For brany pod uwagę tylko za własnym Caddy. Brak zależności z npm, więc nie ma czego podmienić w łańcuchu dostaw.
-- Klientowi ufamy co do przebiegu gry (to jego symulacja). Przerobiony klient może zająć klatkę bez chodzenia do niej, ale tylko w promieniu 600 m od swojej siedziby i najwyżej 60.
+- Kontener jako użytkownik `node`, port tylko na `127.0.0.1`, X-Forwarded-For brany pod uwagę tylko za własnym Caddy, w Caddy limit ciała 4 MB. Node trzyma bezczynne połączenia dłużej niż Caddy (130 s wobec 2 minut), żeby nie zamykał połączenia, które Caddy właśnie bierze (502). Brak zależności z npm, więc nie ma czego podmienić w łańcuchu dostaw.
+- Klientowi ufamy co do przebiegu gry (to jego symulacja). Przerobiony klient może zająć klatkę bez chodzenia do niej, ale tylko przy prawdziwym budynku z klucza, w promieniu 600 m od swojej siedziby i najwyżej 60.
 
 ### Etap 2: spięcie z grą
 
@@ -142,7 +147,7 @@ Na połączonej gałęzi, po scaleniu M2 i trybu zombie:
 
 ### Na później
 
-Gra w czasie rzeczywistym i cudzy ludzie na mapie, handel i napady między drużynami, czat, ranking. Wygasanie klatek kont nieaktywnych (propozycja: po 60 dniach bez logowania) i usuwanie kont nieaktywnych przez rok. Kody odzyskiwania zamiast e-maila. Sprawdzanie na serwerze, czy w promieniu kilku metrów nie ma już cudzej klatki pod innym kluczem. Przeniesienie klatek, gdy po zmianie w OSM zmieni się klucz. Kilka instancji serwera (limity prób w pamięci liczyłyby się osobno). Nadużycia: jedna osoba z wieloma kontami może zająć dużo klatek w jednej okolicy; dziś hamują to tylko limity kont na IP i klatek na konto. Pocztówki z PixelLab i pamięć kafelków na tym samym serwerze (z „Zaparkowanych”).
+Gra w czasie rzeczywistym i cudzy ludzie na mapie, handel i napady między drużynami, czat, ranking. Indeks przestrzenny dla prostokąta (dziś zakres szerokości i filtr długości, wystarczy na tysiące klatek). Wygasanie klatek kont nieaktywnych (propozycja: po 60 dniach bez logowania) i usuwanie kont nieaktywnych przez rok. Kody odzyskiwania zamiast e-maila. Sprawdzanie na serwerze, czy w promieniu kilku metrów nie ma już cudzej klatki pod innym kluczem. Przeniesienie klatek, gdy po zmianie w OSM zmieni się klucz. Kilka instancji serwera (limity prób w pamięci liczyłyby się osobno). Nadużycia: jedna osoba z wieloma kontami może zająć dużo klatek w jednej okolicy; dziś hamują to tylko limity kont na IP i klatek na konto. Pocztówki z PixelLab i pamięć kafelków na tym samym serwerze (z „Zaparkowanych”).
 
 ## Ograniczenia
 

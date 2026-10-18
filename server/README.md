@@ -44,6 +44,9 @@ Port wystawiamy tylko na `127.0.0.1`: kontener ufa X-Forwarded-For (`ZM_ZAUFANE_
 ```
 twoja.domena {
   handle /api/* {
+    request_body {
+      max_size 4MB
+    }
     reverse_proxy 127.0.0.1:8787
   }
   handle {
@@ -52,6 +55,8 @@ twoja.domena {
   }
 }
 ```
+
+Serwer bierze adres klienta z ostatniego wpisu X-Forwarded-For, czyli z tego, który dopisał Caddy (bez `trusted_proxies` Caddy nie przepuszcza tego nagłówka od klienta; warto to sprawdzić na wdrożonej wersji). Bezczynne połączenia Caddy trzyma do serwera 2 minuty, a serwer 130 s, żeby nie zamykał połączenia, które Caddy właśnie bierze na kolejne żądanie. Logi dostępu Caddy z adresami IP lepiej wyłączyć albo trzymać krótko (RODO).
 
 Kopia bazy bez zatrzymywania serwera (SQLite w trybie WAL):
 
