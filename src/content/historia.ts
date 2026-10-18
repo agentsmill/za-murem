@@ -3,14 +3,13 @@
    z cechy i jeden szczegół satyryczny (technika, która stoi obok i nie działa, abonamenty, ESG). Historia jest tylko
    dla klimatu: idzie na kartę osoby, symulacji nie rusza.
 
-   Pokolenia liczymy od roku zero z lore (2026, docs/GDD.md), według wieku w 2051 roku:
-   - młodzi, do 35 lat (urodzeni od 2016): w roku zero mieli najwyżej 10 lat, rozpad lat trzydziestych i czterdziestych
-     pamiętają od dziecka, fach mają z terminu u starszego sąsiada albo z książek z piwnicy;
-   - środek, 36–55 lat (urodzeni 1996–2015): w roku zero szkoła, studia albo pierwsza praca, a w tej dekadzie wszystko
-     robił za ludzi asystent w telefonie; rozpad złapał ich w połowie drogi;
-   - starsi, od 56 lat (urodzeni do 1995): w roku zero mieli już zawód i robili go bez asystenta.
-   Granice są te z projektu, ale bez proponowanego tam „Wielkiego Wylogowania” w 2034 roku: tego lore Mateusz jeszcze
-   nie przyjął, więc kawałki opierają się tylko na tym, co jest w GDD (bakteria, padła chmura, abonamenty).
+   Pokolenia według wieku w 2051 roku, od roku zero (2026) i Wielkiego Wylogowania (2034, kiedy w kilka tygodni zgasły
+   centra danych i padła chmura; docs/GDD.md, sekcja Lore):
+   - młodzi, czyli dzieci Wylogowania, do 35 lat (urodzeni od 2016): w 2034 mieli najwyżej 18 lat, Wylogowanie znają
+     najwyżej z dzieciństwa, fach mają z terminu u starszego sąsiada albo z książek z piwnicy;
+   - środek, czyli pokolenie asystenta, 36–55 lat (urodzeni 1996–2015): szkoła, studia albo pierwsza praca przypadły na
+     dekadę, w której wszystko robił za ludzi asystent AI, i Wylogowanie złapało ich w połowie drogi;
+   - starsi, czyli pamiętający, od 56 lat (urodzeni do 1995): w roku zero mieli już zawód i robili go bez asystenta.
 
    Zapis kawałków jak w szablonach mieszkańców z adresu (src/mieszkancy/szablony.ts), żeby dało się je tam przenieść:
    `{g:męska|żeńska}` to forma według płci osoby, np. „nauczył{g:|a} się”. Zdania nie zawierają imienia (karta pokazuje
@@ -32,6 +31,7 @@ export const FACH: Readonly<Record<string, Partial<Record<Pokolenie, readonly st
     starsi: [
       'Projektował{g:|a} kotłownie jeszcze przed asystentami AI i do dziś liczy na kartce, więc całe osiedle przychodzi do {g:niego|niej} z rysunkiem na odwrocie kalendarza.',
       'Emeryturę wypłaca {g:mu|jej} spółdzielnia w kaszy, więc pracuje dalej, bo jako jedyn{g:y|a} na osiedlu policzy strop bez programu.',
+      'W dniu Wielkiego Wylogowania jako jedyn{g:y|a} w biurze {g:wiedział|wiedziała}, gdzie leży suwak logarytmiczny, i od tamtej pory nosi go przy sobie.',
     ],
   },
   Hydraulik: {
@@ -61,7 +61,7 @@ export const FACH: Readonly<Record<string, Partial<Record<Pokolenie, readonly st
       'Medycynę {g:skończył|skończyła} na uczelni przeniesionej do piwnicy, z podręczników bez połowy kartek, i leczy tym, co akurat jest pod ręką.',
     ],
     srodek: [
-      'Na studiach {g:miał|miała} asystenta, który stawiał diagnozy szybciej niż profesor, a dziś stawia je {g:sam|sama}, przy świeczce i z podręcznikiem na kolanach.',
+      'Na studiach {g:miał|miała} asystenta, który stawiał diagnozy szybciej niż profesor, a od Wielkiego Wylogowania stawia je {g:sam|sama}, przy świeczce i z podręcznikiem na kolanach.',
     ],
     starsi: ['Leczy od trzydziestu lat i wciąż mówi „wypiszę e-receptę”, a nikt na osiedlu się już nie śmieje.'],
   },
@@ -108,7 +108,7 @@ export const FACH: Readonly<Record<string, Partial<Record<Pokolenie, readonly st
       'Fizyki {g:uczył|uczyła} się z podręcznika znalezionego w piwnicy szkoły, a teraz {g:sam|sama} uczy dzieci na klatce schodowej, jak działa prądnica.',
     ],
     srodek: [
-      'W szkole odrabiał{g:|a} fizykę z asystentem w telefonie, a dziś {g:sam|sama} jest takim asystentem, tylko na klatce schodowej i za kaszę.',
+      'W szkole odrabiał{g:|a} fizykę z asystentem w telefonie, a od Wielkiego Wylogowania {g:sam|sama} jest takim asystentem, tylko na klatce schodowej i za kaszę.',
     ],
     starsi: [
       'Przez trzydzieści lat nikt {g:go|jej} nie słuchał na lekcjach o prądnicy, a dziś całe osiedle przychodzi na nie z własnym krzesłem.',
@@ -119,15 +119,17 @@ export const FACH: Readonly<Record<string, Partial<Record<Pokolenie, readonly st
       '{g:Programistą|Programistką} nazywają {g:go|ją}, bo na papierze rozpisuje, jak uruchomić sterownik w kotłowni, i czasem nawet się udaje.',
     ],
     srodek: [
-      'Przez dziesięć lat pisał{g:|a} kod razem z modelem w chmurze, a kiedy chmura padła, przez tydzień nie {g:wiedział|wiedziała}, od której strony zacząć.',
+      'Od pierwszej pracy pisał{g:|a} kod razem z modelem w chmurze, a po Wielkim Wylogowaniu przez tydzień nie {g:wiedział|wiedziała}, od której strony zacząć.',
     ],
   },
   'Prompt engineer': {
     mlodzi: [
       'Na osiedlu uchodzi za zaklinacz{g:a|kę}: godzinami przemawia do martwej lodówki na abonament, a raz na jakiś czas lodówka się otwiera.',
+      'W dniu Wielkiego Wylogowania {g:był|była} dzieckiem i {g:zapamiętał|zapamiętała} tylko, że dorośli płakali nad telefonami, więc z ocalałym modelem z banku rozmawia tak grzecznie, jak z prezesem spółdzielni.',
     ],
     srodek: [
       'Jako dziecko pisał{g:|a} prompty szybciej niż wypracowania i do dziś zaczyna każdą prośbę od słów „działaj jako”.',
+      'Od nastolatka pisał{g:|a} prompty za pieniądze, aż w 2034 roku {g:dostał|dostała} od modelu odpowiedź „Przepraszam, coś poszło nie tak, spróbuj ponownie później” i do dziś czeka, aż będzie później.',
     ],
   },
   'Mechanik samochodowy': {
@@ -207,7 +209,7 @@ export const FACH: Readonly<Record<string, Partial<Record<Pokolenie, readonly st
       'Urząd wrócił do papieru, ale etat informatyka został, więc pilnuje szafy ze starymi drukami i restartuje to, co jeszcze świeci.',
     ],
     srodek: [
-      'Przez lata {g:mówił|mówiła} urzędnikom, żeby wyłączyli i włączyli, a po upadku okazało się, że to działa też na ludzi.',
+      'Przez lata {g:mówił|mówiła} urzędnikom, żeby wyłączyli i włączyli, a po Wielkim Wylogowaniu okazało się, że to działa też na ludzi.',
     ],
     starsi: [
       'Trzydzieści lat {g:resetował|resetowała} urzędowe komputery, a dziś wie, gdzie leżą stare druki i jak zrestartować to, co jeszcze zostało.',
@@ -302,6 +304,7 @@ export const SATYRA: readonly string[] = [
   'Telewizor ma tak płaski, że zimą służy za deskę do krojenia.',
   'Ekspres do kawy z aplikacją stoi u {g:niego|niej} na honorowym miejscu, a herbatę z pokrzywy parzy obok, przez sitko.',
   'W portfelu nosi kartę płatniczą i czasem przykłada ją do drzwi, na szczęście.',
+  'Na lodówce wisi kartka z ostatnią odpowiedzią asystenta sprzed Wielkiego Wylogowania, „Spróbuj ponownie później”, i co jakiś czas próbuje.',
 ];
 
 /** Uzupełnia formy według płci: `{g:męska|żeńska}`. */

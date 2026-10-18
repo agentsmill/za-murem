@@ -163,5 +163,5 @@ Nazwy plików i modułów, dokładny wygląd i kolejność pól w edytorze (spra
 6. Historia tylko dla klimatu, na karcie osoby w grze.
 7. Piąta osoba bez własnego łóżka, wnętrze się nie zmienia.
 8. Broń ze startu po kolei, nadmiar do magazynu.
-9. Wielkie Wylogowanie w 2034 jako nowy kawałek lore (do wpisania w GDD dopiero po OK Mateusza).
+9. Wielkie Wylogowanie w 2034 jako nowy kawałek lore. Mateusz przyjął 18.10.2026, jest w GDD i w historiach drużyny.
 10. Zawód to fach w 2051, trzy pokolenia według roku urodzenia, widełki wieku z `PROFS` bez zmian.
