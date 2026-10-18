@@ -303,3 +303,20 @@ export function prostokatMapy(
   }
   return { s: Math.min(...lat), w: Math.min(...lon), n: Math.max(...lat), e: Math.max(...lon) };
 }
+
+/** Miejsce na mapie świata (w kafelkach, z ułamkiem; może wypaść poza mapę) dla punktu (lat, lon): odwrotność
+    przeliczenia z pikselWejscia, do znaczników klatek z serwera. */
+export function pozycjaNaMapie(
+  w: Pick<World, 'size' | 'angle'>,
+  srodek: LatLon,
+  lat: number,
+  lon: number,
+): [number, number] {
+  const [lat0, lon0] = srodek;
+  const kx = M_NA_STOPIEN * Math.cos((lat0 * Math.PI) / 180);
+  const x = (lon - lon0) * kx;
+  const y = (lat0 - lat) * M_NA_STOPIEN_SZER;
+  const c = Math.cos(w.angle);
+  const sn = Math.sin(w.angle);
+  return [x * c - y * sn + w.size / 2, x * sn + y * c + w.size / 2];
+}

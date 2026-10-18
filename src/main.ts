@@ -17,6 +17,7 @@ import {
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
+import { GraSieciowa } from './net/gra.ts';
 import { buildScene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
 import { type Light, lightAt } from './render/light.ts';
@@ -107,6 +108,8 @@ declare global {
       apts: () => AptGame[];
       /** przyjęcie n osób zza bramy jak po decyzji zarządu (do zrzutów); zwraca, ilu przybyło */
       admit: (n: number) => number;
+      /** gra z sąsiadami (src/net/gra.ts): zalogowanie, stan sieci, znaczniki */
+      siec: () => ReturnType<GraSieciowa['podglad']>;
     };
   }
 }
@@ -157,6 +160,22 @@ const druzyna = druzynaEl ? new Druzyna(druzynaEl) : null;
 const status = (t: string) => {
   $('startStatus').textContent = t;
 };
+/* gra z sąsiadami (src/net/gra.ts): blok #siec, start przez serwer, znaczniki klatek, zapis w chmurze; tylko z ?siec=1
+   i przy działającym serwerze, inaczej wszystko jak bez sieci */
+const siec = new GraSieciowa({
+  el: document.getElementById('siec'),
+  warstwa: document.getElementById('klatki'),
+  wlaczona: params.get('siec') === '1',
+  touch: touchUI,
+  say: (t, ms) => say(t, ms),
+  screenOf: (x, y) => screenOf(x, y),
+  onChmura: (s) => start(async () => s.data, s),
+  status,
+  tryb: () => mode,
+});
+const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
+/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona) */
+const startUrl = () => location.pathname + (params.get('siec') === '1' ? '?siec=1' : '');
 demoList().then((list) => {
   const box = $('demos');
   for (const d of list) {
@@ -200,6 +219,8 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
   if (busy) return;
   busy = true;
   try {
+    // gra z sąsiadami: start zależy od zalogowania, więc najpierw odpowiedź serwera (bez ?siec=1 od razu)
+    await siecGotowa;
     const data = await get();
     status('Rysuję osiedle…');
     await new Promise((r) => setTimeout(r, 0));
@@ -222,7 +243,17 @@ async function enter(data: Loaded, saved?: Save) {
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
   const t0 = performance.now();
-  const world = buildWorld(data.geo, { seed, street: data.street });
+  // gra z sąsiadami: świat bez budynków zajętych przez inne drużyny przy wyborze siedziby i bez nazwy ulicy z adresu
+  // w nazwach budynków (zapis idzie do chmury); bez sieci (bez === null) zwykły świat
+  const world = await siec.przygotuj(
+    data,
+    (bez) =>
+      buildWorld(data.geo, {
+        seed,
+        ...(bez === null ? { street: data.street } : bez.length ? { bezSiedziby: bez } : {}),
+      }),
+    saved,
+  );
   const scene = buildScene(world);
   // przekrój siedziby z wnętrzem ze świata; ?przekroj=0 zostawia dach (do porównań)
   if (params.get('przekroj') !== '0') scene.section = sectionOf(world);
@@ -235,6 +266,8 @@ async function enter(data: Loaded, saved?: Save) {
   // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
   // zarząd z panelu „Wasz zarząd”: bez ruszania go 4 osoby z adresu, jak zawsze
   const st = saved ? saved.sim : createSim(world, seed, { ...(druzyna?.opcje() ?? { core: 4 }), crowd, mode });
+  // drużyna bez domu w grze z sąsiadami zaczyna na ulicy
+  if (!saved) siec.poStarcie(st, world);
   const zombie = modeOf(st) === 'zombie';
   $('start').hidden = true;
   $('app').hidden = false;
@@ -297,7 +330,9 @@ async function enter(data: Loaded, saved?: Save) {
   // z samouczkiem pierwszy krok to zaznaczenie kogoś, bez niego zaznaczony jest pierwszy z zarządu
   const first = st.pawns[0];
   if (first && st.tut.step < 0 && !saved) selected.add(first.id);
+  const siecMsg = siec.komunikatStartu();
   if (stale) say('Zapis był z innej wersji osiedla, więc gra zaczyna się od nowa.', 9000);
+  else if (siecMsg) say(siecMsg, 12000);
   else if (!saved && zombie)
     say(
       'Za siatką snują się szwendacze, a nocą przyjdzie stado. Dzida sięga przez siatkę, strzał ściąga następnych.',
@@ -510,14 +545,16 @@ function showEnd() {
   if (!gov?.over) return;
   pauseGame();
   clearSave();
+  // gra z sąsiadami: zapis w chmurze i klatki drużyny też znikają
+  siec.koniec();
   modal.show(endSheet(gov.over), (act) => {
-    if (act === 'end-start') location.href = location.pathname;
+    if (act === 'end-start') location.href = startUrl();
   });
 }
 
 function save(): boolean {
   if (!sim || !gov || !loaded || gov.over) return false;
-  return writeSave({
+  const s: Save = {
     v: 1,
     at: Date.now(),
     data: loaded,
@@ -527,7 +564,12 @@ function save(): boolean {
     screen,
     cam: { ...view.cam },
     world: worldKey(sim.w),
-  });
+    ...(siec.stan ? { siec: siec.stan } : {}),
+  };
+  const ok = writeSave(s);
+  // gra z sąsiadami: także do chmury (najwyżej raz na minutę)
+  siec.zapisz(s);
+  return ok;
 }
 window.addEventListener('pagehide', () => save());
 document.addEventListener('visibilitychange', () => {
@@ -650,6 +692,7 @@ function frame(now: number, dtMs: number) {
   drawState();
   view.render(sim.st, mult ? acc : 1, selected);
   placeMarker();
+  siec.klatka(sim, now, modal.open);
   placeGhost();
   // zapis co godzinę gry
   const h = Math.floor(sim.st.tick / TICKS_PER_HOUR);
@@ -753,6 +796,23 @@ let woodReady2 = false;
 function renderGoals(snap: SimSnapshot) {
   const el = $('goals');
   if (!sim) return;
+  // gra z sąsiadami, drużyna bez domu: najpierw dojść do wolnej klatki
+  if (siec.bezDomu()) {
+    const own = siec.cele(snap.people.some((p) => selected.has(p.pawn)));
+    const now = own.find((g) => !g.done);
+    el.hidden = false;
+    const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>Bez domu</span><b class="goals-n">${own.filter((g) => g.done).length}/${own.length}</b></button><ol class="goal-list">${own
+      .map(
+        (g, k) =>
+          `<li class="goal${g.done ? ' done' : g === now ? ' now' : ''}" data-n="${k + 1}">${esc(g.text)}${g === now ? `<small class="goal-how">${esc(g.how)}</small>` : ''}</li>`,
+      )
+      .join('')}</ol>`;
+    if (html !== goalsHtml) {
+      goalsHtml = html;
+      el.innerHTML = html;
+    }
+    return;
+  }
   const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
   if (wood >= NIGHT_WOOD && sim.st.tut.step >= TUT_STEPS.length) woodReady = true;
   let list = goalsOf(sim.st, gov, {
@@ -918,7 +978,7 @@ function showMenu() {
       else if (act === 'menu-v03') save();
       else if (act === 'menu-start') {
         save();
-        location.href = location.pathname;
+        location.href = startUrl();
       }
     },
     nextPrompt,
@@ -1013,6 +1073,8 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
 
 function run(m: MenuItem) {
   if (!sim) return;
+  // „Zajmij klatkę” z gry z sąsiadami idzie do serwera, nie do symulacji
+  if (siec.obsluz(m)) return;
   sim.push(m.cmd);
   const f = FEEDBACK[m.cmd.t][m.cmd.ids.length > 1 ? 1 : 0];
   if (f) say(f, 1800);
@@ -1065,7 +1127,9 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   const ids = [...selected];
   const tile = view.tileAt(sx, sy);
   const items = commandsAt(sim.st, sim.w, ids, tile);
-  if (!items.length) {
+  // gra z sąsiadami: „Zajmij klatkę” tylko w menu (z potwierdzeniem), nigdy od stuknięcia
+  const zSieci = menu ? siec.menu(sim, tile) : [];
+  if (!items.length && !zSieci.length) {
     say(touchUI ? 'Najpierw stuknijcie kogoś z zarządu.' : 'Najpierw zaznaczcie kogoś z zarządu.', 2500);
     return;
   }
@@ -1074,20 +1138,21 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   const extra = buildItems(sim.st, sim.w, ids, tile, snap.stock);
   const go = items.findIndex((x) => x.cmd.t === 'move');
   items.splice(go < 0 ? items.length : go, 0, ...extra);
+  items.push(...zSieci);
   if (!menu) {
     const q = items.find((x) => x.quick);
     if (q) run(q);
     return;
   }
   // samo „Idź tu”: bez menu
-  if (items.length === 1) {
+  if (items.length === 1 && !zSieci.length) {
     run(items[0]);
     return;
   }
   const who = sim.st.pawns
     .filter((p) => selected.has(p.id) && p.kind === 'core')
     .map((p) => sim!.st.people[p.person]?.first ?? '');
-  const head = who.length > 2 ? `Zarząd (${who.length})` : who.join(' i ');
+  const head = who.length > 2 ? `Zarząd (${who.length})` : who.join(' i ') || 'Klatka';
   // w mieszkaniu siedziby nagłówek mówi, które to mieszkanie i w jakim stanie
   const apt = aptAt(sim.w, tile);
   const v = apt >= 0 ? aptView(sim.st, sim.w, apt, snap.apts) : null;
@@ -1634,11 +1699,17 @@ bars.observe($('placeBar'));
         : null,
     apts: () => sim?.st.apts ?? [],
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
+    siec: () => siec.podglad(),
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });
   view.app.ticker.add((t) => frame(performance.now(), t.deltaMS));
   const demo = params.get('demo');
-  if (demo) await start(() => loadDemo(demo));
+  // gra z sąsiadami: ponowny start po przegranym wyścigu o klatkę (przeładowanie z danymi osiedla w pamięci sesji)
+  const again = siec.ponownyStart();
+  if (again) {
+    if (again.tryb) setMode(parseMode(again.tryb));
+    await start(async () => again.data);
+  } else if (demo) await start(() => loadDemo(demo));
   window.zm.ready = true;
 })();

@@ -29,6 +29,9 @@
     <!-- ===== Wasz zarząd: początek bloku (liczba osób i własna drużyna; treść rysuje src/ui/druzyna.ts) ===== -->
     <section class="druzyna" id="druzyna" aria-labelledby="dzTitle"></section>
     <!-- ===== Wasz zarząd: koniec bloku ===== -->
+    <!-- ===== Gra z sąsiadami: początek bloku (konto i gra sieciowa; tylko z ?siec=1, treść rysuje src/net/gra.ts) ===== -->
+    <section class="siec" id="siec" aria-labelledby="scTitle" hidden></section>
+    <!-- ===== Gra z sąsiadami: koniec bloku ===== -->
     <div class="alt" id="demos"></div>
     <p class="status" id="startStatus" aria-live="polite"></p>
     <p class="fine">Adres trafia do wyszukiwarki OpenStreetMap (Nominatim), mapę pobieramy z darmowych kafelków <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Dane mapy © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, kafelki © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>.</p>
@@ -38,6 +41,7 @@
 <div class="app" id="app" hidden>
   <div class="stage" id="stage"></div>
   <div class="treemark" id="treeMark" hidden><span class="treemark-t">Suche drzewo</span></div>
+  <div class="klatki" id="klatki" hidden></div>
   <header class="top" id="top">
     <div class="sign"><b id="osName">Spółdzielnia</b><small>Za Murem</small></div>
     <div class="clock"><span id="hDay"></span><span id="hTime"></span><span id="hSeason" class="season">jesień 2051</span></div>
