@@ -30,15 +30,20 @@ import { CARD_HOUR, canGo, expRisk, MORNING, rozliczWyprawe } from './noc.ts';
 import { peopleNamesTx } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, Wyprawa } from './typy.ts';
 import { clockOf, emptyEffects, gameMin, logGov } from './wspolne.ts';
-import { type Cel, czasWyprawyMin, MAX_DROGA_M, powrotMin, UDZWIG_NA_OSOBE, zostaloZMiejsca } from './wyprawy.ts';
+import {
+  type Cel,
+  czasWyprawyMin,
+  MAX_DROGA_M,
+  powrotMin,
+  UDZWIG_NA_OSOBE,
+  wDrodze,
+  zostaloZMiejsca,
+} from './wyprawy.ts';
 
 /** Wynik wysłania: wyprawa wyszła (skutki do zastosowania i minuta powrotu) albo odmowa z powodem. */
 export type WynikWysylki = { ok: true; fx: GovEffects; powrot: number } | { ok: false; why: Tx };
 
 const odmowa = (pl: string, en: string): WynikWysylki => ({ ok: false, why: tx(pl, en) });
-
-/** Czy osoba jest w którejś wyprawie dziennej w drodze. */
-const wDrodze = (st: GovState, id: string): boolean => !!st.wyprawy?.some((w) => w.ids.includes(id));
 
 /** Osoby z listy `ids` w zarządzie (bez powtórzeń, w podanej kolejności) albo id osoby, której nie ma. */
 function osoby(i: GovInput, ids: readonly string[]): { ppl: GovPerson[] } | { brak: string } {

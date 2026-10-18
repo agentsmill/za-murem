@@ -9,8 +9,9 @@
    Cele wypraw na karcie wybiera `wybierzCeleNocy` (src/gov/wyprawy.ts): miejsca z okolicy (`GovInput.okolica`), gdy
    zarząd ma stan miasta, inaczej dzisiejsze TARGETS. Opcja karty (`NightOption`) niesie cały opis celu (`cel`),
    zatwierdzenie kopiuje go do grupy `n.exp`, a powrót, męczenie rano i godzina powrotu czytają go stamtąd. Grupa bez
-   `cel` (stan zapisany przed mapą miasta) szuka celu w TARGETS po `target`. Osoba poza mapą (`GovPerson.away`) ma na
-   karcie tylko sen, a propozycja zarządu nie daje jej warty ani wyprawy.
+   `cel` (stan zapisany przed mapą miasta) szuka celu w TARGETS po `target`. Osoba poza mapą (`GovPerson.away`) albo
+   w wyprawie dziennej w drodze (`wDrodze`, bo pionek ma `away` dopiero przy bramie) ma na karcie tylko sen, a propozycja
+   zarządu nie daje jej warty ani wyprawy.
 
    Rozliczenie powrotu wyprawy (`rozliczWyprawe`) jest wspólne dla nocy i dla wyprawy dziennej z mapy miasta: bierze
    `Cel` (src/gov/wyprawy.ts) i osoby, losuje łup, kłopoty i znaleziska z ziarna zarządu i zwraca wpisy raportu, ranę
@@ -63,6 +64,7 @@ import {
   celZTarget,
   ograniczLup,
   UDZWIG_NA_OSOBE,
+  wDrodze,
   wlaczMiasto,
   wybierzCeleNocy,
   zostaloZMiejsca,
@@ -302,6 +304,10 @@ function expGain(st: GovState, cel: Cel): Partial<Record<LootKey, [number, numbe
   return out;
 }
 
+/** Osoba poza domem na wyprawie: flaga `away` z wejścia albo wpis w wyprawach dziennych w drodze (`wDrodze`; pionek
+    wysłany tuż przed 20:00 ma `away` dopiero przy bramie). Karta nocy daje jej tylko sen. */
+const pozaDomem = (st: GovState, p: GovPerson): boolean => !!p.away || wDrodze(st, p.id);
+
 /** kto może iść: nie ugryziony, dość sił i zdrowia, na daleką drogę więcej */
 export const canGo = (p: GovPerson, cel: Pick<Cel, 'range'>) =>
   !p.bitten &&
@@ -318,8 +324,9 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
   // dyżur przy kozie tylko przy kozie zarządu (kuchnia z kozą w siedzibie)
   const wood = i.kitchen !== null ? nightWood(i) : undefined;
   const people = i.people.map((p) => {
-    // kto jest poza mapą na wyprawie, ten nie ma z czego wybierać: nie trzyma warty i nie idzie drugi raz
-    if (p.away)
+    // kto jest poza mapą na wyprawie (albo w drodze do bramy na wyprawę dzienną), ten nie ma z czego wybierać: nie
+    // trzyma warty i nie idzie drugi raz
+    if (pozaDomem(st, p))
       return {
         id: p.id,
         name: p.name,
@@ -454,14 +461,14 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
     wood,
   };
   if (zombie) card.horde = { size, word, fence };
-  const assign = propose(i, card, st.lastGuards);
+  const assign = propose(st, i, card, st.lastGuards);
   for (const cp of card.people) cp.proposal = assign[cp.id];
   card.advice = nightAdvice(i, card, assign);
   return { card, assign };
 }
 
 /** propozycja zarządu: warta przy najsłabszym miejscu, przy dużym ryzyku druga, wyprawa przy brakach */
-function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<string, string> {
+function propose(st: GovState, i: GovInput, card: NightCard, lastGuards: string[]): Record<string, string> {
   const a: Record<string, string> = {};
   for (const p of i.people) a[p.id] = 'sen';
   // kto już stoi na warcie z menu, ten zostaje na swoim miejscu (jeśli karta ma takie)
@@ -476,7 +483,7 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
   // na wartę najpierw ci, co ostatniej nocy spali, potem umiejący się bić, potem wypoczęci
   const was = (p: GovPerson) => (lastGuards.includes(p.id) ? 1 : 0);
   const free = [...i.people]
-    .filter((p) => p.needs.health >= 20 && !p.away && !standing.has(p.id))
+    .filter((p) => p.needs.health >= 20 && !pozaDomem(st, p) && !standing.has(p.id))
     .sort(
       (x, y) =>
         was(x) - was(y) ||

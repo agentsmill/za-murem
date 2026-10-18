@@ -22,7 +22,10 @@
    (`celeZTargets`, wybór według liczby wizyt), więc bot i testy bez opcji `miasto` grają jak dotąd.
 
    Kategorie miejsc to klucze `KAT_EN` (src/content/miejsca.en.ts), czyli `POICAT` bez `mieszkania`. Każda inna
-   kategoria (także `mieszkania`, które jest celem z 0.3, nie punktem z OSM) liczy się jak `POICAT.sklep`. */
+   kategoria (także `mieszkania`, które jest celem z 0.3, nie punktem z OSM) liczy się jak `POICAT.sklep`.
+
+   Wyprawy dzienne w drodze (`GovState.wyprawy`, src/gov/dzienne.ts) czyta stąd `wDrodze`, żeby karta nocy (noc.ts)
+   i wysyłka widziały je bez cyklu importów. */
 
 import { POICAT, type Res } from '../content/data.ts';
 import { KAT_EN } from '../content/miejsca.en.ts';
@@ -190,6 +193,13 @@ export function celZTarget(t: ExpTarget, p: GovPlace): Cel {
     nowej grze i przy wczytaniu starego zapisu. `newGov` bez opcji tego nie robi. */
 export function wlaczMiasto(st: GovState): void {
   st.miasto ??= { zabrano: {}, wizyty: {}, ostatnia: {} };
+}
+
+/** Czy osoba jest w którejś wyprawie dziennej w drodze (`GovState.wyprawy`). Sama flaga `away` z wejścia nie wystarcza:
+    w symulacji pionek dostaje ją dopiero przy bramie, więc wyprawa wysłana tuż przed 20:00 jeszcze wygląda na „w domu”.
+    Karta nocy i wysyłka wypraw liczą „poza domem” jako `away` albo `wDrodze`. */
+export function wDrodze(st: Pick<GovState, 'wyprawy'>, id: string): boolean {
+  return !!st.wyprawy?.some((w) => w.ids.includes(id));
 }
 
 /** Ile sztuk łupu zostało w miejscu: zapas minus to, co zabrano, nigdy poniżej 0. Cel z TARGETS (zapas null) nie

@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { podgladWyprawy, wyprawyTick, wyslijWyprawe } from '../../src/gov/dzienne.ts';
-import { canGo } from '../../src/gov/noc.ts';
+import { canGo, makeCard } from '../../src/gov/noc.ts';
 import type { GovEffects, GovInput, GovState } from '../../src/gov/typy.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
 import {
@@ -588,5 +588,71 @@ describe('wyprawa dzienna w pełnym przebiegu na atrapie', () => {
     expect(razem).toContain('Apteka');
     expect(gov.wyprawy).toEqual([]);
     expect(gameMin(atr.input())).toBeGreaterThan(w.powrot);
+  });
+});
+
+describe('osoba w drodze do bramy: wejście jeszcze nie ma jej jako away, trzyma ją tylko st.wyprawy', () => {
+  /** Osoba 0 z najlepszą obroną (zarząd wziąłby ją na wartę), reszta bez umiejętności. */
+  function atrapaZObronca(seed: number): Atrapa {
+    const atr = new Atrapa(seed);
+    atr.people.forEach((p, k) => {
+      p.skills = k === 0 ? { obrona: 5 } : {};
+      p.needs.rest = k === 0 ? 90 : 60;
+    });
+    return atr;
+  }
+
+  it('karta nocy: tylko sen z notatką o wyprawie i bez propozycji warty, a bez wyprawy ta sama osoba dostaje wartę', () => {
+    const atr = atrapaZObronca(SEED);
+    const kto = atr.people[0].id;
+    const c = cel('apteka', 250);
+    // kontrola: bez wyprawy najlepsza obrończyni dostaje wartę, więc test niżej coś sprawdza
+    const kontrola = makeCard(nowy(), wej(2, 20, 0, atr));
+    expect(kontrola.assign[kto]).toMatch(/^warta:/);
+
+    const st = nowy();
+    const w = wyslijWyprawe(st, wej(2, 19, 50, atr), c, [kto]);
+    expect(w.ok).toBe(true);
+    // wejście o 20:00 jest bez fx.away: pionek jeszcze idzie do bramy
+    const i = wej(2, 20, 0, atr);
+    expect(i.people.some((p) => p.away)).toBe(false);
+    const { card, assign } = makeCard(st, i);
+    const osoba = card.people.find((p) => p.id === kto)!;
+    expect(osoba.options.map((o) => o.key)).toEqual(['sen']);
+    expect(osoba.proposal).toBe('sen');
+    expect(osoba.options[0].note).toEqual({ pl: 'Na wyprawie.', en: 'Out on a supply run.' });
+    expect(assign[kto]).toBe('sen');
+    // ktoś inny przejął wartę
+    expect(Object.entries(assign).some(([id, k]) => id !== kto && k.startsWith('warta:'))).toBe(true);
+  });
+
+  it('pełna noc: bez warty i bez nocnej wyprawy dla niej, potwierdzenie nie robi dla niej grupy, powrót o 6:00 raz', () => {
+    const seed = 3;
+    const atr = atrapaZObronca(seed);
+    const gov = newGov(seed);
+    wlaczMiasto(gov);
+    run(seed, 'propozycja', at(2, 19, 50), { gov, atr });
+    const c = cel('apteka', 250);
+    const kto = atr.people.find((p) => canGo(p, c))!;
+    const w = wyslijWyprawe(gov, atr.input(), c, [kto.id]);
+    if (!w.ok) throw new Error('powinno wyjść');
+    // fx.away celowo nie trafia do atrapy: o 20:00 pionek wygląda na „w domu”
+    const noc = run(seed, 'propozycja', at(2, 20, 5), { gov, atr });
+    expect(noc.steps.some((s) => s.kind === 'karta' && s.day === 2)).toBe(true);
+    const n = gov.night!;
+    expect(n.confirmed).toBe(true);
+    expect(n.card.people.find((p) => p.id === kto.id)!.options.map((o) => o.key)).toEqual(['sen']);
+    expect(n.assign[kto.id] ?? 'sen').toBe('sen');
+    expect(n.exp.flatMap((g) => g.ids)).not.toContain(kto.id);
+    expect(atr.guards).not.toContain(kto.id);
+    expect(kto.id in atr.away).toBe(false);
+    // wyjście do bramy dociera do symulacji później; powrót o 6:00 dokładnie raz
+    atr.apply(w.fx);
+    run(seed, 'propozycja', at(3, 5, 59), { gov, atr });
+    expect(gov.wyprawy).toHaveLength(1);
+    run(seed, 'propozycja', at(3, 6, 2), { gov, atr });
+    expect(gov.wyprawy).toEqual([]);
+    expect(kto.id in atr.away).toBe(false);
+    expect(gov.miasto!.wizyty[c.klucz]).toBe(1);
   });
 });
