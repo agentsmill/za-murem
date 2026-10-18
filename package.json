@@ -18,6 +18,7 @@
     "bot": "node tools/bot.ts",
     "bot:zombie": "node tools/bot-zombie.ts",
     "bot:v03": "node tools/bot-v03.ts",
+    "bot:surowce": "node tools/bot-surowce.ts",
     "demos": "node tools/make-demos.ts",
     "dane:gminy": "node tools/dane-gminy.ts",
     "dane:kraj": "node tools/dane-kraj.ts",

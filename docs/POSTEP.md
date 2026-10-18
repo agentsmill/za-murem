@@ -565,7 +565,22 @@ Bramka: `npm test` 1798 zdanych, 1 oczekiwana porażka, 8 pominiętych; Biome na
 
 Nowe napisy (cztery) są w `src/content/napisy-zombie.ts`, do tłumaczenia; istniejących tekstów nie ruszałem. Dalej: koordynator scala `zombie-szlif` do `pelna-gra` przed gałęzią `angielski`.
 
+### Surowce: wraki, łup na podwórko i warsztat, 18.10.2026 (gałąź `m2-surowce` od `pelna-gra` c110956, lokalnie)
+
+Mateusz w rozmowie: „na razie to mogę iść i kosić drzewo, ale nic więcej nie mogę zrobić”; chce przeszukiwać samochody i budynki, zbierać surowce, przerabiać obiekty na surowce, a potem handlarza i obcych w dzień. Kolejność (najpierw szaber z przeróbką, handlarz drugi) zaproponowałem ja, a ruszyć kazała sesja „Pilnowanie agentów”, kiedy Mateusz był na spacerze. Budynków sąsiadów nie ruszam (fala 2). Projekt: `docs/superpowers/specs/2026-10-18-surowce-design.md`, przeczytał go niezależny recenzent przed budową.
+
+- Wraki z `World.props` da się przeszukać (pół godziny, części, czasem złom, leki z apteczki, konserwy z bagażnika) i po przeszukaniu rozebrać (maluch 2 h, polonez 2,5 h, z łomem o połowę krócej, hałas 20 m co 2 s, 6–8 złomu i część). Rozebrany zostaje szkieletem i blokuje dalej, więc drogi się nie zmieniają. Łup losuje się z ziarna gry i kafelka wraku, a nie z `st.rng`. Przerwana rozbiórka pamięta postęp. Stan `st.wraki` powstaje przy pierwszym przeszukaniu, więc gra bez wraków ma ten sam stan i skrót.
+- Łup zza siatki niesie na podwórko ta sama osoba, po 6 sztuk, kurs za kursem, a „Zanieść na podwórko” robi to samo z każdą stertą za siatką. Na podwórku łup leży od bramy w głąb, z dala od przejść. Polecenie `carry` ma kształt z planu fali 2.
+- Warsztat przerabia 2 drewna na deskę (20 min) i 2 złomu na część (1 h): jedna sztuka albo do pięciu naraz. Materiał schodzi na końcu każdej sztuki, przerwana praca nic nie zjada, drewno najpierw spoza składu.
+- Rysowanie: wrak przeszukany (zdjęte pokrywy) i szkielet (rdza, bez szyb, drzwi i zderzaków), sterty części i leków. Te dwie sterty z przeszukiwania mieszkań leżały wcześniej w stanie, ale się nie rysowały.
+- Nowe napisy w obu językach w `src/sim/surowce.ts` (`NAPISY`), do menu idzie na razie polski.
+- `npm run bot:surowce`: raport z pięciu dni na Przymorzu (tabela w projekcie). Z jedną osobą na wrakach i warsztacie od dnia 2: 5,4 budowli zamiast 5,0 i 21 części zamiast 8; kuchnia społeczna nie wychodzi wcześniej, bo ta osoba nie przeszukuje wtedy mieszkań. Złomu jest za dużo już bez wraków (42 po pięciu dniach), deski są wąskim gardłem.
+
+Bramka: `npm test` 1823 zdanych, 1 oczekiwana porażka, 8 pominiętych (90 plików, w tym nowy `tests/unit/surowce.test.ts` z 13 przypadkami), Biome na `src tests tools server index.html` czysty, build, boty bez zmian (bot da4b24e0 i dad44c81, zombie e77f1b99 i 34dd5c5f). Pełne `npm run shots`: 157 scenariuszy bez błędów (doszło pięć). Nowe `surowce-wraki`, `surowce-sterty`, `surowce-menu-wrak`, `surowce-praca` (z `surowce-praca-rozbiorka`) i `surowce-menu-warsztat` obejrzane w Chromium.
+
 ## Następne
+
+Surowce (gałąź `m2-surowce`, lokalnie, 18.10.2026): Mateusz przegląda decyzje z wpisu niżej w „Decyzjach” i gra: wrak za siatką, „Przeszukać” na aucie, potem „Rozebrać” z menu, warsztat z menu na stole. Koordynator `pelna-gra` scala gałąź; z falą 2 może być konflikt w `sim.ts` i `orders.ts` (obie dokładają prace i polecenia, `carry` jest u mnie w kształcie z ich planu). Następny kawałek tej sesji: obcy w dzień i handlarz, z osobnym projektem.
 
 Rano 18.10.2026, po nocy integracji (dla Mateusza):
 - Kierunek rozwoju (`docs/superpowers/specs/2026-10-18-kierunek-rozwoju-design.md`): Mateusz zdecydował, że każdego lokatora da się ręcznie przejąć. Czeka przejrzenie decyzji z końca dokumentu i rozmowa o pierwszym projekcie, czyli pracy ludzi i rozporządzeniach.
@@ -601,6 +616,14 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
 
 ## Decyzje
 
+- Surowce (18.10.2026, sesja „Surowce”, do przejrzenia przez Mateusza, koszt pomyłki: liczby i drobne zachowania do zmiany w `src/sim/surowce.ts`):
+  - przeszukanie wraku jest domyślne tylko na samym aucie, tuż obok jest w menu, a kliknięcie znaczy „Idź tu” (stary test kliknięcia obok auta tego pilnował);
+  - wrak, noszenie łupu i warsztat przerywa tylko pilna potrzeba, nie noc i nie wróg na podwórku, jak każdą pracę z polecenia gracza; w trybie zombie nocna rozbiórka z hałasem to ryzyko gracza;
+  - przerwana rozbiórka pamięta postęp (`st.wraki[].w`), przeszukanie nie (trwa pół godziny);
+  - z warsztatem rozbiórka wraku daje półtora raza więcej, tak jak rozbiórka mebli z fali 1;
+  - przeróbka w warsztacie liczy cały materiał, także ten, który ktoś właśnie niesie do składu, a piłujący czeka, gdy drewno jest akurat w czyichś rękach;
+  - bot surowców to raport, nie bramka: kuchnia społeczna stoi w 4.–5. dobie i bez wraków, więc warunek „z wrakami do czwartej doby, bez nich nie” nie dał się spełnić bez ruszania liczb fali 1;
+  - złomu jest za dużo (42 po pięciu dniach bez wraków). Nie stroiłem: to decyzja, czy wrak ma dawać mniej złomu, czy złom ma mieć więcej zastosowań (zasieki, barykady z wraków z 0.3, akumulator na prąd w M3).
 - Narzędzia: Biome zamiast ESLint (jedno narzędzie, formatowanie pilnowane w CI). TypeScript 7 (natywny). Skrypty w `tools/` uruchamiane przez Node wprost z `.ts` (wymazywanie typów), bez tsx.
 - Treść przeniesiona skryptem, który zostawia literały bajt w bajt. Poprawność sprawdza test różnicowy z oryginałem w `node:vm`, a nie ręcznie spisane oczekiwania.
 - Wydarzenia rozmawiają ze stanem przez interfejs `EventHost`. W testach implementuje go adapter na stanie 0.3, w M3 zrobi to nowa symulacja. Kolejność losowań zostaje jak w 0.3, łącznie z tasowaniem przez `sort(() => rng() - 0.5)`. Wymienię je w M3, kiedy wzorcem przestanie być 0.3. Koszt pomyłki: inne losowania niż w 0.3, nic więcej.
@@ -650,6 +673,7 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
 
 ## Zaparkowane
 
+- Surowce: porzucone hulajnogi i rowery z wypożyczalni po całej mapie (nie blokują, więc nie zmieniają dróg ani skrótów), żeby okolica się wyczerpywała i trzeba było chodzić dalej; opis w projekcie surowców, etap 1c. Więcej wraków dalej od siedziby zmieniłoby skróty botów, bo wrak blokuje.
 - Kronika mieszkańców: „Padła chmura” w `src/mieszkancy/kronika.ts` przenieść z lat 2039–2043 na 2034 (Wielkie Wylogowanie z GDD) przy najbliższym podbiciu `WERSJA_GENERATORA`. Wstęp na karcie startowej (`LORE`) może wtedy też wspomnieć Wylogowanie, po scaleniu wersji angielskiej.
 - Zmiana nazwiska mieszkańca przez gracza (§7 projektu mieszkańców, 18.10.2026): plan kroku 5 objął tylko imiona.
 - Imię zmarłego mieszkańca w kronice zarządu (18.10.2026): wymaga rodzaju osoby w `GovInput.dead`, żeby `mourn` nie kluczował tylko po id.

@@ -64,6 +64,7 @@ npm run bot -- --mieszkancy         # to samo z zarządem i mieszkańcami siedzi
 npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce [osoby zarządu 1–5]]]
 npm run bot:zombie -- --mieszkancy  # tryb zombie z mieszkańcami z generatora (flaga w dowolnym miejscu argumentów)
 npm run bot:v03      # wzorzec balansu na oryginale 0.3 [-- ziarno [dni]]
+npm run bot:surowce  # raport gospodarki: wraki i warsztat z graczem fali 1 i bez nich, 5 dni [-- ziarno [dni]]
 npm run shots        # zrzuty w Chromium do shots/ [-- filtr] [--dist]
 npm run perf         # klatki ze 150 pionkami [-- pionki [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5]
 npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
