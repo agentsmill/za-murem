@@ -1615,7 +1615,8 @@ a.btn {
   position: absolute;
   right: 8px;
   top: calc(var(--top-h, 56px) + 8px);
-  bottom: calc(var(--attrib-h, 21px) + 15px);
+  /* wysokość z treści, a gdy budowli przybędzie, do dolnej krawędzi nad atrybucją i przewijanie */
+  max-height: calc(100% - var(--top-h, 56px) - var(--attrib-h, 21px) - 31px);
   width: min(var(--build-w), calc(100% - 16px));
   display: flex;
   flex-direction: column;
@@ -1761,7 +1762,6 @@ a.btn {
   color: var(--ink-dim);
 }
 .bdet {
-  margin-top: auto;
   padding-top: 10px;
 }
 .bd {
@@ -1793,17 +1793,20 @@ a.btn {
     right: 0;
     left: 0;
     top: auto;
-    bottom: 0;
+    /* nad atrybucją map, która ma być widoczna zawsze */
+    bottom: calc(var(--attrib-h, 21px) + 12px);
     width: auto;
-    max-height: min(56vh, 460px);
+    max-height: min(54vh, 460px);
     border-radius: 10px 10px 0 0;
     animation-name: bp-up;
   }
-  .app.build-open .mapctl {
-    right: 8px;
-  }
-  .app.build-open .placebar {
-    left: 50%;
+  /* szuflada zajmuje dół ekranu: przyciski zoomu, podpowiedź, pasek stawiania i karta osoby chowają się, dopóki
+     jest otwarta (plan i zaznaczenie zostają) */
+  .app.build-open .mapctl,
+  .app.build-open .hint,
+  .app.build-open .placebar,
+  .app.build-open .card {
+    display: none;
   }
 }
 @keyframes bp-up {
