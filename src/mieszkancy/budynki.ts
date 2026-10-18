@@ -85,21 +85,52 @@ export function epokaZRoku(rok: number): Epoka {
   return 'nowa';
 }
 
+/** Od tylu kondygnacji losowana epoka nie bywa przedwojenna, a od drugiej liczby także powojenna. Decyzja
+    generatora z przeglądu gałęzi, nie dane: losowanie z samych wag gminy dawało na mapie Przymorza 4 przedwojenne
+    bloki z 10 od 13 kondygnacji. Bloki 9-12 kondygnacji bez dozwolonej wagi to płyta. */
+const KONDYGNACJE_BEZ_PRZEDWOJENNEJ = 7;
+const KONDYGNACJE_BEZ_POWOJENNEJ = 13;
+const PLYTA_OD = 9;
+const PLYTA_DO = 12;
+
+const dozwolona = (e: Epoka, kondygnacje: number): boolean =>
+  !(
+    (e === 'przedwojenna' && kondygnacje >= KONDYGNACJE_BEZ_PRZEDWOJENNEJ) ||
+    (e === 'powojenna' && kondygnacje >= KONDYGNACJE_BEZ_POWOJENNEJ)
+  );
+const suma = (w: readonly number[]): number => w.reduce((s, v) => s + v, 0);
+
 /** Epoka budynku, w kolejności: `startDate`; wielka płyta z wymiarów (blok 10-12 kondygnacji i szerokość do 14,5 m;
     blok 5 kondygnacji, ta szerokość i długość co najmniej 3 razy większa; w próbce z OSM precyzja 24 na 24 i 0,95
     dla lat 1945-1989, bierzemy `plyta` jako częstszą); reszta losowana z mieszkań gminy według epok (P4386)
     z ziarnem po kluczu budynku. Wagi to sumy epok, nie „ogółem” z GUS: mieszkania o nieznanym okresie budowy
-    (około 2%) nie należą do żadnej epoki. Gmina bez tabeli albo z samymi zerami: wagi krajowe. */
-export function epokaBudynku(b: Budynek, g: TabeleGminy | null): Epoka {
+    (około 2%) nie należą do żadnej epoki. Gmina bez tabeli albo z samymi zerami: wagi krajowe.
+    Wysokość ogranicza losowanie: od 7 kondygnacji waga `przedwojenna` to 0, od 13 także `powojenna`, a reszta wag
+    zostaje (losowanie idzie za nimi proporcjonalnie). Gdy gmina ma mieszkania tylko w epokach wykluczonych, blok
+    9-12 kondygnacji to `plyta`, od 13 losuje `transformacja` albo `nowa` z wag krajowych, a 7-8 kondygnacji losuje
+    z wag krajowych bez wykluczonych. `szerokoscSegmentu` to szerokość do reguł płyty: w sklejonym bloku mediana
+    szerokości segmentów (`budynkiZGeo`), bo obrys całości (litera L, rząd z poprzecznym skrzydłem) jest szerszy niż
+    trakt; domyślnie `b.szerokosc`. */
+export function epokaBudynku(b: Budynek, g: TabeleGminy | null, szerokoscSegmentu = b.szerokosc): Epoka {
   if (b.startDate !== undefined) return epokaZRoku(b.startDate);
-  if (b.typ === 'blok' && b.szerokosc <= MAX_SZEROKOSC_PLYTY) {
+  if (b.typ === 'blok' && szerokoscSegmentu <= MAX_SZEROKOSC_PLYTY) {
     if (b.kondygnacje >= 10 && b.kondygnacje <= 12) return 'plyta';
-    if (b.kondygnacje === 5 && b.dlugosc >= 3 * b.szerokosc) return 'plyta';
+    if (b.kondygnacje === 5 && b.dlugosc >= 3 * szerokoscSegmentu) return 'plyta';
   }
-  const wagi = g ? EPOKI.map((e) => g.epoki[e].mieszkania) : [];
-  let i = wazony(losDla('epoka', b.klucz), wagi); // brak tabeli albo same zera: -1, bez losowania
-  if (i < 0) i = wazony(losDla('epoka', b.klucz), WAGI_KRAJOWE_TAB);
-  return EPOKI[i];
+  const k = b.kondygnacje;
+  const bezWykluczonych = (w: readonly number[]): number[] => w.map((v, i) => (dozwolona(EPOKI[i], k) ? v : 0));
+  const zGminy = g ? EPOKI.map((e) => g.epoki[e].mieszkania) : [];
+  // brak tabeli albo same zera: wagi krajowe, jak bez ograniczenia wysokości
+  let wagi = bezWykluczonych(suma(zGminy) > 0 ? zGminy : WAGI_KRAJOWE_TAB);
+  if (suma(wagi) === 0) {
+    // gmina ma mieszkania tylko w epokach wykluczonych dla tej wysokości
+    if (k >= PLYTA_OD && k <= PLYTA_DO) return 'plyta';
+    wagi =
+      k > PLYTA_DO
+        ? EPOKI.map((e, i) => (e === 'transformacja' || e === 'nowa' ? WAGI_KRAJOWE_TAB[i] : 0))
+        : bezWykluczonych(WAGI_KRAJOWE_TAB);
+  }
+  return EPOKI[wazony(losDla('epoka', b.klucz), wagi)];
 }
 
 // ---------------------------------------------------------------- mieszkania
@@ -238,6 +269,13 @@ export function metryNaStopien(lat0: number): { kx: number; ky: number } {
 const klatkiBloku = (segmenty: number, dlugosc: number): number =>
   segmenty > 1 ? segmenty : Math.max(1, Math.round(dlugosc / DLUGOSC_KLATKI));
 
+/** Mediana liczb (przy parzystej liczbie średnia dwóch środkowych). */
+function mediana(v: readonly number[]): number {
+  const s = [...v].sort((a, b) => a - b);
+  const pol = Math.floor(s.length / 2);
+  return s.length % 2 === 1 ? s[pol] : (s[pol - 1] + s[pol]) / 2;
+}
+
 /** Segment o największym polu spośród tych, które spełniają warunek (remis: wcześniejszy na mapie). */
 function najwiekszy(s: readonly Segment[], ma: (x: Segment) => boolean): Segment | undefined {
   let wynik: Segment | undefined;
@@ -252,7 +290,7 @@ function najwiekszy(s: readonly Segment[], ma: (x: Segment) => boolean): Segment
     obróconego prostokąta, klatki, epokę i liczbę mieszkań. Segmenty bloków jednej wysokości, które się stykają albo
     są bliżej niż metr, tworzą jeden budynek (klatki = liczba segmentów); pojedynczy blok ma `max(1, round(długość /
     20))` klatek, a dom jedną. Klucz to `osm:<id>`, gdy mapa niesie tag `id` (największy segment), inaczej
-    `g:<szerokość>,<długość>,<pole>` ze środka obrysu w stopniach z 5 miejscami, więc nie zależy od adresu gracza. */
+    `g:<szerokość>,<długość>,<pole>` ze środka obrysu w stopniach z 5 miejscami. więc nie zależy od adresu gracza. */
 export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Budynek[] {
   const segmenty = segmentyMieszkalne(geo);
   const korzenie = grupy(segmenty.length, parySasiadow(segmenty));
@@ -276,6 +314,8 @@ export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Bu
     const lat = zaokr5(lat0 - cy / ky);
     const lon = zaokr5(lon0 + cx / kx);
     const wymiary = najmniejszyProstokat(ob);
+    const szerokoscSegmentu =
+      grupa.length > 1 ? mediana(grupa.map((x) => najmniejszyProstokat(x.ob).szerokosc)) : wymiary.szerokosc;
     const typ = grupa[0].typ;
     const poleBudynku = Math.round(sumaPol);
 
@@ -300,7 +340,7 @@ export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Bu
       klatki: typ === 'dom' ? 1 : klatkiBloku(grupa.length, wymiary.dlugosc),
     };
     if (rok !== undefined) budynek.startDate = rok;
-    budynek.epoka = epokaBudynku(budynek, g);
+    budynek.epoka = epokaBudynku(budynek, g, szerokoscSegmentu);
     budynek.mieszkania = mieszkaniaBudynku(budynek, g, k);
     wynik.push(budynek);
   }

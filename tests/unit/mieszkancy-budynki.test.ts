@@ -78,6 +78,14 @@ describe('budynkiZGeo na demach', () => {
   const lanciego = budynkiZGeo(demo('lanciego'), ursynow, kraj);
   const wiesz = budynkiZGeo(demo('zielonki'), zielonki, kraj);
 
+  it('żaden blok od 9 kondygnacji nie jest przedwojenny (Przymorze, Ursynów)', () => {
+    for (const lista of [przymorze, lanciego]) {
+      const wysokie = lista.filter((b) => b.typ === 'blok' && b.kondygnacje >= 9);
+      expect(wysokie.length).toBeGreaterThan(5);
+      expect(wysokie.filter((b) => b.epoka === 'przedwojenna').map((b) => `${b.klucz} ${b.kondygnacje}`)).toEqual([]);
+    }
+  });
+
   it('Przymorze: żaden budynek mieszkalny nie ma 0 mieszkań, a największy blok ma co najmniej 150', () => {
     expect(przymorze.length).toBeGreaterThan(20);
     for (const b of przymorze) expect(b.mieszkania, b.klucz).toBeGreaterThanOrEqual(1);
@@ -311,6 +319,45 @@ describe('sklejanie segmentów w jeden budynek', () => {
     expect(budynkiZGeo(mapa([segment(0, 5), segment(20, 7)]), gdansk, kraj).length).toBe(2);
   });
 
+  it('sklejony blok bierze do reguł płyty medianę szerokości segmentów, nie szerokość całego obrysu', () => {
+    // litera L z dwóch segmentów 60 × 12 m, 11 kondygnacji: cały obrys ma 60 m szerokości, segmenty po 12 m
+    const litera = (c: [number, number]) =>
+      budynkiZGeo(
+        mapa([blokGeo(prostokat(0, 0, 60, 12), 11), blokGeo(prostokat(0, 12, 12, 48), 11)], [], c),
+        null,
+        kraj,
+      );
+    for (let i = 0; i < 40; i++) {
+      const wynik = litera([52 + i / 1000, 21 + i / 1000]);
+      expect(wynik.length).toBe(1);
+      expect(wynik[0].szerokosc).toBeGreaterThan(14.5);
+      expect(wynik[0].epoka, wynik[0].klucz).toBe('plyta');
+    }
+    // trzy segmenty 5 kondygnacji po 22 × 12 m w rzędzie i czwarty 22 × 12 m w poprzek: obrys 66 × 34 m,
+    // mediana szerokości 12 m, długość 66 m ≥ 3 × 12 m, więc płyta z reguły pięciokondygnacyjnej
+    const rzad = (c: [number, number]) =>
+      budynkiZGeo(
+        mapa(
+          [
+            blokGeo(prostokat(0, 0, 22, 12), 5),
+            blokGeo(prostokat(22, 0, 22, 12), 5),
+            blokGeo(prostokat(44, 0, 22, 12), 5),
+            blokGeo(prostokat(54, 12, 12, 22), 5),
+          ],
+          [],
+          c,
+        ),
+        null,
+        kraj,
+      );
+    for (let i = 0; i < 40; i++) {
+      const wynik = rzad([52 + i / 1000, 21 + i / 1000]);
+      expect(wynik.length).toBe(1);
+      expect(wynik[0].szerokosc).toBeGreaterThan(14.5);
+      expect(wynik[0].epoka, wynik[0].klucz).toBe('plyta');
+    }
+  });
+
   it('kolejność segmentów na wejściu nie zmienia wyniku (A–B–C połączone przez B)', () => {
     const a = budynkiZGeo(mapa([segment(0, 5), segment(40, 5), segment(20, 5)]), gdansk, kraj);
     expect(a.length).toBe(1);
@@ -498,6 +545,64 @@ describe('epokaBudynku', () => {
       nowa: 0.101,
     };
     for (const e of EPOKI) expect(Math.abs(u[e] - oczekiwane[e]), e).toBeLessThan(0.03);
+  });
+
+  /** Epoki punktowca `kond` kondygnacji, 22 × 22 m (za szeroki na regułę płyty), dla `n` kluczy. */
+  const epokiPunktowca = (g: TabeleGminy | null, kond: number, n = 400): Set<Epoka> =>
+    new Set(
+      klucze(n, `p${kond}-`).map((k) =>
+        epokaBudynku(bud({ klucz: k, kondygnacje: kond, szerokosc: 22, dlugosc: 22, pole: 484 }), g),
+      ),
+    );
+
+  it('wysokość ogranicza losowanie: od 7 kondygnacji nie ma przedwojennej, od 13 także powojennej', () => {
+    for (const g of [gdansk, ursynow, zielonki, null]) {
+      const opis = g?.nazwa ?? 'bez gminy';
+      for (const kond of [7, 8, 9, 11, 12]) {
+        const e = epokiPunktowca(g, kond);
+        expect(e.has('przedwojenna'), `${opis} ${kond}`).toBe(false);
+        expect(e.size, `${opis} ${kond}`).toBeGreaterThan(1);
+      }
+      for (const kond of [13, 16, 25]) {
+        const e = epokiPunktowca(g, kond);
+        expect(e.has('przedwojenna'), `${opis} ${kond}`).toBe(false);
+        expect(e.has('powojenna'), `${opis} ${kond}`).toBe(false);
+      }
+    }
+    // niżej losowanie zostaje takie jak było: kamienica bywa przedwojenna
+    expect(epokiPunktowca(gdansk, 6).has('przedwojenna')).toBe(true);
+    expect(epokiPunktowca(null, 6).has('przedwojenna')).toBe(true);
+  });
+
+  it('punktowiec 11 kondygnacji i 22 m nigdy nie jest przedwojenny, a 14 kondygnacji ani przedwojenny, ani powojenny', () => {
+    for (const g of [gdansk, ursynow, zielonki, null]) {
+      expect([...epokiPunktowca(g, 11, 2000)].sort()).toEqual(['nowa', 'plyta', 'powojenna', 'transformacja']);
+      expect([...epokiPunktowca(g, 14, 2000)].sort()).toEqual(['nowa', 'plyta', 'transformacja']);
+    }
+  });
+
+  it('poza wysokością reszta wag idzie za gminą: udziały 11-kondygnacyjnych to wagi bez przedwojennej', () => {
+    const n = 6000;
+    const licznik = Object.fromEntries(EPOKI.map((e) => [e, 0])) as Record<Epoka, number>;
+    for (const k of klucze(n, 'u'))
+      licznik[epokaBudynku(bud({ klucz: k, kondygnacje: 11, szerokosc: 22, dlugosc: 22 }), gdansk)]++;
+    const bez = EPOKI.filter((e) => e !== 'przedwojenna');
+    const suma = bez.reduce((s, e) => s + gdansk.epoki[e].mieszkania, 0);
+    for (const e of bez) expect(Math.abs(licznik[e] / n - gdansk.epoki[e].mieszkania / suma), e).toBeLessThan(0.03);
+  });
+
+  it('gmina z mieszkaniami tylko w dawnych epokach: 9-12 kondygnacji to płyta, od 13 transformacja albo nowa', () => {
+    const zera = Object.fromEntries(EPOKI.map((e) => [e, { mieszkania: 0, osoby: 0 }])) as TabeleGminy['epoki'];
+    const stara = { ...gdansk, epoki: { ...zera, przedwojenna: { mieszkania: 500, osoby: 900 } } };
+    const stareIPowojenne = { ...stara, epoki: { ...stara.epoki, powojenna: { mieszkania: 300, osoby: 600 } } };
+    for (const kond of [9, 11, 12]) expect([...epokiPunktowca(stara, kond)], String(kond)).toEqual(['plyta']);
+    for (const g of [stara, stareIPowojenne]) {
+      expect([...epokiPunktowca(g, 14, 1000)].sort()).toEqual(['nowa', 'transformacja']);
+    }
+    // 7-8 kondygnacji bez dozwolonej wagi gminy: wagi krajowe bez przedwojennej
+    expect([...epokiPunktowca(stara, 8, 1000)].sort()).toEqual(['nowa', 'plyta', 'powojenna', 'transformacja']);
+    // powojenna z gminy zostaje dla 9-12 kondygnacji, bo jest dozwolona
+    expect([...epokiPunktowca(stareIPowojenne, 11)]).toEqual(['powojenna']);
   });
 
   it('gmina z samymi zerami w epokach spada na wagi krajowe, nie rzuca', () => {
