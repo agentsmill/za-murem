@@ -1,0 +1,89 @@
+{
+  "group_id": "f8b51ee0-f4dd-4f09-b7cf-7babfb8baf55",
+  "states": [
+    {
+      "character": {
+        "id": "3f6fb6ac-3f7b-4789-aebf-518e8963f7f8",
+        "name": "Idle",
+        "prompt": "Polish young mother about 32 years old, brown ponytail, long quilted purple coat, carrying a baby wrapped in a blanket, jeans, ankle boots, determined",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T15:16:31.381684+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {
+          "stanie": {
+            "north": [
+              "Idle/animations/stanie/north/frame_000.png",
+              "Idle/animations/stanie/north/frame_001.png",
+              "Idle/animations/stanie/north/frame_002.png",
+              "Idle/animations/stanie/north/frame_003.png"
+            ],
+            "west": [
+              "Idle/animations/stanie/west/frame_000.png",
+              "Idle/animations/stanie/west/frame_001.png",
+              "Idle/animations/stanie/west/frame_002.png",
+              "Idle/animations/stanie/west/frame_003.png"
+            ],
+            "south": [
+              "Idle/animations/stanie/south/frame_000.png",
+              "Idle/animations/stanie/south/frame_001.png",
+              "Idle/animations/stanie/south/frame_002.png",
+              "Idle/animations/stanie/south/frame_003.png"
+            ],
+            "east": [
+              "Idle/animations/stanie/east/frame_000.png",
+              "Idle/animations/stanie/east/frame_001.png",
+              "Idle/animations/stanie/east/frame_002.png",
+              "Idle/animations/stanie/east/frame_003.png"
+            ]
+          },
+          "chod": {
+            "west": [
+              "Idle/animations/chod/west/frame_000.png",
+              "Idle/animations/chod/west/frame_001.png",
+              "Idle/animations/chod/west/frame_002.png",
+              "Idle/animations/chod/west/frame_003.png"
+            ],
+            "south": [
+              "Idle/animations/chod/south/frame_000.png",
+              "Idle/animations/chod/south/frame_001.png",
+              "Idle/animations/chod/south/frame_002.png",
+              "Idle/animations/chod/south/frame_003.png"
+            ],
+            "east": [
+              "Idle/animations/chod/east/frame_000.png",
+              "Idle/animations/chod/east/frame_001.png",
+              "Idle/animations/chod/east/frame_002.png",
+              "Idle/animations/chod/east/frame_003.png"
+            ],
+            "north": [
+              "Idle/animations/chod/north/frame_000.png",
+              "Idle/animations/chod/north/frame_001.png",
+              "Idle/animations/chod/north/frame_002.png",
+              "Idle/animations/chod/north/frame_003.png"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T19:57:51.792200"
+}

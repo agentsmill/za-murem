@@ -1,7 +1,7 @@
 /* Potrzeby ludzi z rdzenia w skali 0–100, liczone co HEAT_EVERY ticków razem z ciepłem.
    Nastrój nie ma własnej dynamiki: wynika z pozostałych potrzeb plus chwilowe nastroje (spalone meble,
    ciepły posiłek), później dojdą cechy i wydarzenia. Zdrowie na razie tylko spada i wraca; choroby,
-   leczenie i śmierć przyjdą razem z systemami z 0.3. */
+   leczenie i śmierć przyjdą razem z systemami z 0.3. Nazwy pasków są w obu językach (NEED_LABELS, NEED_LABELS_EN). */
 
 export interface Needs {
   /** najedzenie */
@@ -27,12 +27,24 @@ export const NEED_LABELS: Record<keyof Needs, string> = {
   mood: 'Nastrój',
 };
 
+/** te same paski po angielsku (słowniczek); wybór języka przy rysowaniu karty */
+export const NEED_LABELS_EN: Record<keyof Needs, string> = {
+  food: 'Fed',
+  warm: 'Warmth',
+  rest: 'Energy',
+  health: 'Health',
+  safe: 'Safety',
+  mood: 'Mood',
+};
+
 export interface NeedCtx {
   /** temperatura pod nogami (°C) */
   temp: number;
   /** stoi przy palącej się kozie */
   fire: boolean;
   asleep: boolean;
+  /** śpi na podłodze (bez łóżka): wypoczywa wolniej */
+  floor?: boolean;
   /** ciężka praca: rąbanie, noszenie */
   busy: boolean;
   /** ciemno: noc i żadnego światła obok (koza, później ognisko i latarka) */
@@ -104,7 +116,7 @@ export function stepSafe(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
 /** h: godziny gry od ostatniego kroku; bonus: suma chwilowych nastrojów (punkty) */
 export function stepNeeds(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
   n.food = clamp100(n.food - (c.asleep ? 2 : 4) * (c.hunger ?? 1) * h);
-  n.rest = clamp100(n.rest + (c.asleep ? 12 : c.busy ? -9 : -5) * h);
+  n.rest = clamp100(n.rest + (c.asleep ? (c.floor ? 8 : 12) : c.busy ? -9 : -5) * h);
   // pod kocem o 6°C cieplej; przy palącej się kozie grzeje się szybko bez względu na pokój
   const t = c.temp + (c.asleep ? 6 : 0);
   const dw = c.fire ? 40 : t >= COMFORT ? 15 : t - COMFORT;

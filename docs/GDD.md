@@ -20,7 +20,9 @@ Rok 2051. Wszystko zaczęło się w 2026 roku, czyli w roku zero, w którym grac
 
 Potem przyszło ćwierć wieku powolnego rozpadu. Sieci energetyczne padały region po regionie, łatane i zjadane od nowa, bo kilometrów kabli nikt nie upilnuje. W tym czasie prezydent Stanów Zjednoczonych zaczął dziesiątą kadencję po zmianie konstytucji, dolar przeszedł na abonament, padła chmura, łączność i łańcuchy dostaw. Jedyna instytucja, która przetrwała, to spółdzielnia mieszkaniowa. Zarząd to teraz wy.
 
-Oś czasu, z której liczy generator mieszkańców: 2026 rok zero, około 2029 odkrycie, lata trzydzieste i czterdzieste rozpad, 2051 gra. Dzisiejsze osiedle gracza to dla postaci „dawne czasy”, a mieszkańcy to dzieci i wnuki dzisiejszych lokatorów, a nie oni sami.
+Wielkie Wylogowanie (przyjęte przez Mateusza 18.10.2026). Po odkryciu bakterii ludzie jeszcze przez kilka lat oddawali modelom AI wszystko: pisanie, liczenie, diagnozy, projekty, wychowanie dzieci. Serwerownie wyglądały na bezpieczne, bo stały w betonie, tyle że chłodzenie odparowujące trzymało w nich wilgoć, a bakteria siedziała w tych instalacjach od lat. W 2034 roku centra danych gasły jedno po drugim w ciągu kilku tygodni i to był koniec chmury. Ostatnie, co ludzie zobaczyli od swoich asystentów, to „Przepraszam, coś poszło nie tak. Spróbuj ponownie później”. Przetrwała sucha, klimatyzowana serwerownia banku i lokalne modele z jej dysków (niżej). Pokolenia w 2051: pamiętający (urodzeni przed 1996) mieli zawód jeszcze przed upadkiem; pokolenie asystenta (1996–2015) uczyło się i pracowało w dekadzie, w której AI robiło wszystko, i Wylogowanie złapało ich w połowie drogi; dzieci Wylogowania (od 2016) w 2034 miały najwyżej 18 lat i fach mają z terminu u starszych albo z książek z piwnicy.
+
+Oś czasu, z której liczy generator mieszkańców: 2026 rok zero, około 2029 odkrycie, 2034 Wielkie Wylogowanie (padła chmura), lata trzydzieste i czterdzieste rozpad, 2051 gra. Dzisiejsze osiedle gracza to dla postaci „dawne czasy”, a mieszkańcy to dzieci i wnuki dzisiejszych lokatorów, a nie oni sami.
 
 Zasada świata: przetrwało to, co szczelne. Uzwojenia pod lakierem w generatorach i silnikach, ogniwa zalane szkłem i laminatem w panelach, chipy w żywicy, transformatory w oleju, sucha i klimatyzowana serwerownia banku. Dlatego generator w piwnicy i panele na dachu dają prąd, krótką instalację w bloku da się łatać i chronić, a lokalny model językowy jest z dysków banku. To, co gołe i wilgotne, zjadła bakteria.
 
@@ -86,18 +88,24 @@ Propozycje, do ustalenia:
 - Serwer w oleju. Serwerownię zanurza się w oleju, tak jak chłodzi się dziś niektóre prawdziwe serwerownie. Olej chroni przed bakterią i obniża zużycie prądu, ale trzeba go zdobyć: z transformatorów, z warsztatów samochodowych. Na mapie wygląda to jak akwarium z olejem w piwnicy.
 - Satyra przy okazji, przykłady do ogłoszeń: „Zamienię przedłużacz w słoiku z olejem na worek ziemniaków”, „Startup od recyklingu przeprasza za niedogodności”.
 
+## Tryb zombie
+
+Drugi tryb gry, wybierany na ekranie startowym (decyzja Mateusza z 17.10.2026, wzór: serial The Walking Dead). Ten sam adres, mapa i zarząd. Siatka od startu cała i wzmocniona deskami, brama zamknięta. Za siatką snują się szwendacze: wolni i głupi, groźni w kupie, idą za hałasem i za tym, co widzą. Nocą przychodzi stado, każdej nocy większe, i napiera na siatkę, aż puści. Ugryzienie to gorączka i śmierć w niecałą dobę, każdy zmarły wstaje, chyba że ktoś go dobije, a ugryzionego w rękę albo nogę ratuje amputacja. Dzida sięga przez siatkę, strzał zabija od razu, ale ściąga stado. Szczegóły i liczby w `docs/superpowers/specs/2026-10-17-tryb-zombie-design.md`.
+
+Broń jest w obu trybach: każdy z zarządu ma jedną, zapasowa leży w magazynie, warta bije sama, a gracz może kazać atakować.
+
 ## Sterowanie
 
 - Lewy przycisk zaznacza człowieka, przeciąganie ramką zaznacza kilku.
 - Prawy przycisk na celu otwiera menu kontekstowe z poleceniami, które mają sens: „Ściąć”, „Przynieść do magazynu”, „Gotować tutaj”, „Przeszukać”, „Pilnować”, „Idź tu”. Pojedyncza oczywista akcja wykonuje się od razu.
 - Zakładka Praca: tabela ludzie × rodzaje pracy z priorytetami 1-4, jak w RimWorld. Ludzie bez poleceń biorą zadania sami.
 - Alarm: wszyscy z rdzenia zdolni do walki zbierają się, sterowanie jak w RTS do końca najazdu.
-- Spacja to pauza, klawisze 1-3 to tempo, WASD albo przeciąganie przesuwa mapę, kółko przybliża.
+- Spacja to pauza, klawisze 1-4 to tempo, WASD albo przeciąganie przesuwa mapę, kółko przybliża.
 - Telefon: stuknięcie zaznacza, stuknięcie celu wydaje domyślne polecenie, przytrzymanie otwiera menu.
 
 ## Czas
 
-Zegar i ruch są rozjechane jak w RimWorld. Godzina gry trwa około 40 s przy 1×, pionek idzie około 4 kafelków na sekundę realną. Tempa 1×, 3×, 6× i dodatkowe szybkie, gdy wszyscy śpią. Długość pory roku (teraz 10 dni) dobrać po playteście, bo przy nowym zegarze to około 2,5 godziny gry przy 1×.
+Zegar i ruch są rozjechane jak w RimWorld. Godzina gry trwa około 40 s przy 1×, pionek idzie około 4 kafelków na sekundę realną. Tempa 1×, 3×, 6×, 8× i dodatkowe szybkie, gdy wszyscy śpią. Długość pory roku (teraz 10 dni) dobrać po playteście, bo przy nowym zegarze to około 2,5 godziny gry przy 1×.
 
 ## Pierwsze trzy minuty
 

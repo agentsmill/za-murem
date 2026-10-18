@@ -4,7 +4,7 @@
    opału zostaje mało. Liczy decyzje z czasem przy ekranie i skutki napadów. Używają go testy i tools/bot.ts. */
 
 import { raidersOf } from '../../src/gov/noc.ts';
-import type { GovState, NightReport, Prompt } from '../../src/gov/typy.ts';
+import type { GovEffects, GovState, NightReport, Prompt } from '../../src/gov/typy.ts';
 import {
   ackReport,
   chooseEvent,
@@ -16,13 +16,24 @@ import {
   setNight,
   signLaw,
 } from '../../src/gov/zarzad.ts';
-import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
+import { dayOf, hourOf, minutesAt, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from '../../src/sim/gov.ts';
 import { dryTreeOf } from '../../src/sim/house.ts';
+import { HUNGRY } from '../../src/sim/needs.ts';
 import { commandFor } from '../../src/sim/orders.ts';
-import { type Command, createSim, type Laws, type Loot, Sim, type SimState, trunkOf } from '../../src/sim/sim.ts';
+import {
+  type Command,
+  createSim,
+  type Laws,
+  type Loot,
+  Sim,
+  type SimOpts,
+  type SimState,
+  trunkOf,
+} from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import type { World } from '../../src/world/world.ts';
+import type { Player } from './m2-play.ts';
 
 export type Policy = 'zawsze-warta' | 'nigdy-warty';
 
@@ -61,10 +72,45 @@ export interface PlayOpts {
   koza?: boolean;
   /** od 16:00 bot ścina drzewa, dopóki zapasu drewna (bez kozy) nie ma tyle; rano i w południe zawsze 6 */
   evening?: number;
+  /** gracz z dodatkowymi poleceniami (np. prace fali 1 M2), co sekundę przy ekranie; jego polecenia to decyzje
+      rodzaju 'praca' */
+  player?: Player;
+  /** zarząd i mieszkańcy siedziby z generatora mieszkańców (opcja `mieszkancy` createSim; flaga --mieszkancy botów);
+      bez niej sim powstaje jak przed krokiem 5 */
+  mieszkancy?: SimOpts['mieszkancy'];
+}
+
+/** poranek wartownika po nocy na posterunku (6:00–14:00): najedzenie i siły o 6:00, godzina pierwszego posiłku
+    (−1: nie jadł), najniższe najedzenie, czy po posiłku spał */
+export interface GuardMorning {
+  day: number;
+  food6: number;
+  rest6: number;
+  ateAt: number;
+  minFood: number;
+  napped: boolean;
+  /** spał w ogóle między 6:00 a 14:00 */
+  slept: boolean;
+  /** jedzenie zarządu o 6:00 (zapasy i garnek) i ilu w zarządzie było wtedy głodnych */
+  stock6: number;
+  hungry6: number;
+}
+
+/** głód zarządu w całej grze: poranki od dnia 2 (o 6:00) i te, w których jedzenia (zapasy i garnek) było mniej niż
+    głodnych w zarządzie; próbki co 10 s przy ekranie i te, w których ktoś z zarządu miał najedzenie poniżej 10 */
+export interface Hunger {
+  mornings: number;
+  short: number;
+  samples: number;
+  starving: number;
 }
 
 export interface PlayResult {
   decisions: Decision[];
+  mornings: GuardMorning[];
+  hunger: Hunger;
+  /** przyjęcia: ilu ludzi przyjął zarząd (fx.residents) i ilu pionków mieszkańców od tego przybyło */
+  admitted: { asked: number; added: number };
   nights: NightLog[];
   gov: GovState;
   st: SimState;
@@ -72,6 +118,18 @@ export interface PlayResult {
 }
 
 const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+/** gracz wystawia na wartę tylko zdrowych (z mniejszym zdrowiem wartownik schodzi w nocy z posterunku) */
+const GUARD_HEALTH = 40;
+
+/** przyjęcia liczone przy każdym applyGov: zarząd przyjął, przybyło pionków */
+const tally = { asked: 0, added: 0 };
+function apply(st: SimState, w: World, fx: GovEffects): void {
+  const before = st.pawns.filter((p) => p.kind === 'resident').length;
+  applyGov(st, w, fx);
+  if (fx.residents <= 0) return;
+  tally.asked += fx.residents;
+  tally.added += st.pawns.filter((p) => p.kind === 'resident').length - before;
+}
 
 /** odpowiedź na okno zarządu według polityki (jak answer() w gov-atrapa.ts, ale skutki idą do symulacji) */
 function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, screen: number, out: Decision[]): string {
@@ -79,14 +137,14 @@ function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, sc
   const i = govInput(st, w, screen);
   if (p.k === 'raport') {
     ackReport(gov);
-    return p.report.lines.join(' ');
+    return p.report.lines.map((l) => l.pl).join(' ');
   }
   if (p.k === 'uchwala') {
     const ok = p.options.filter((o) => o.s === 'ok');
     let id: string | null = ok[0]?.id ?? null;
     if (policy === 'zawsze-warta') id = ok.find((o) => o.id === 'u_warty')?.id ?? id;
     if (policy === 'nigdy-warty') id = ok.find((o) => o.id === 'u_meble' || o.id === 'u_kociol')?.id ?? id;
-    applyGov(st, w, signLaw(gov, i, id));
+    apply(st, w, signLaw(gov, i, id));
     sim.setLaws(lawsFrom(lawEffects(gov)));
     return id ? `uchwała ${id}` : 'bez uchwały';
   }
@@ -99,21 +157,27 @@ function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, sc
     }
     if (policy === 'zawsze-warta') {
       const assign = gov.night!.assign;
+      // chorego (zdrowie poniżej 40) gracz na wartę nie wystawia: w symulacji zszedłby z posterunku w nocy
+      for (const cp of card.people)
+        if ((assign[cp.id] ?? '').startsWith('warta:') && cp.needs.health < GUARD_HEALTH && setNight(gov, cp.id, 'sen'))
+          out.push({ s: screen, kind: 'przydział', text: `${cp.name}: sen zamiast warty (zdrowie)` });
       if (!Object.values(assign).some((k) => k.startsWith('warta:'))) {
-        const best = [...card.people].sort((a, b) => b.needs.rest - a.needs.rest)[0];
+        const best = [...card.people]
+          .filter((c) => c.needs.health >= GUARD_HEALTH)
+          .sort((a, b) => b.needs.rest - a.needs.rest)[0];
         if (best && setNight(gov, best.id, `warta:${card.posts[0].key}`))
           out.push({ s: screen, kind: 'przydział', text: `${best.name}: warta ${card.posts[0].key}` });
       }
     }
     const after = { ...gov.night!.assign };
-    applyGov(st, w, confirmNight(gov, i));
+    apply(st, w, confirmNight(gov, i));
     return Object.entries(after)
       .map(([id, k]) => `${card.people.find((c) => c.id === id)?.name.split(' ')[0]}: ${k}`)
       .join(', ');
   }
   const k = p.choices.findIndex((c) => c.ok);
-  applyGov(st, w, chooseEvent(gov, i, Math.max(0, k)));
-  return `${p.title}: ${p.choices[Math.max(0, k)]?.label ?? '?'}`;
+  apply(st, w, chooseEvent(gov, i, Math.max(0, k)));
+  return `${p.title.pl}: ${p.choices[Math.max(0, k)]?.label.pl ?? '?'}`;
 }
 
 /** najbliższe drzwi siedziby drzewo do ścięcia (nie krzak, nieścięte, nie z listy tych, do których się nie dało dojść) */
@@ -144,10 +208,12 @@ export function playWithGov(
   core = 4,
   opts: PlayOpts = {},
 ): PlayResult {
-  const st = createSim(w, seed, { core });
+  const st = createSim(w, seed, { core, ...(opts.mieszkancy ? { mieszkancy: opts.mieszkancy } : {}) });
   const sim = new Sim(w, st);
   const gov = newGov(seed);
   const decisions: Decision[] = [];
+  tally.asked = 0;
+  tally.added = 0;
   const nights: NightLog[] = [];
   const screen = () => st.tick / TICKS_PER_SECOND;
   const order = (c: Command, text: string) => {
@@ -165,6 +231,10 @@ export function playWithGov(
   }
   let night: NightLog | null = null;
   let fireN = 0;
+  const mornings: GuardMorning[] = [];
+  const hunger: Hunger = { mornings: 0, short: 0, samples: 0, starving: 0 };
+  /** wartownicy, których poranek liczymy: pionek, posiłek sprzed 6:00, wpis */
+  let watch: { p: (typeof st.pawns)[number]; meal0: number; m: GuardMorning }[] = [];
   /** drzewa, do których nie dało się dojść, i drzewo z ostatniego polecenia (−1: brak) */
   const skip = new Set<number>();
   let asked = -1;
@@ -174,7 +244,7 @@ export function playWithGov(
     if (st.tick % TICKS_PER_SECOND) continue;
     const s = screen();
     const fxu = govUpdate(gov, govInput(st, w, s));
-    applyGov(st, w, fxu);
+    apply(st, w, fxu);
     // jawny wynik napadu: zgadza się z planem (ilu ich jest) i ze snem warty na ekranie?
     const res = fxu.raidResult;
     if (res && night) {
@@ -221,7 +291,65 @@ export function playWithGov(
         night.stolen = { wood: p.report.stolen.wood, supplies: p.report.stolen.supplies, scrap: p.report.stolen.scrap };
       }
     }
+    opts.player?.(sim, w, s, (c, text) => {
+      sim.push(c);
+      decisions.push({ s, kind: 'praca', text });
+    });
     const h = hourOf(st.tick);
+    // głód zarządu: o 6:00 od dnia 2 starczy jedzenia dla głodnych? co 10 s kto z zarządu głoduje
+    if (
+      h === 6 &&
+      dayOf(st.tick) >= 2 &&
+      Math.floor(minutesAt(st.tick)) % 60 === 0 &&
+      st.tick % (TICKS_PER_SECOND * 60) < TICKS_PER_SECOND
+    ) {
+      const sn = snapshot(st, w).stock;
+      hunger.mornings++;
+      if (sn.supplies + sn.meals < cores().filter((q) => q.needs!.food < HUNGRY).length) hunger.short++;
+    }
+    if (st.tick % (TICKS_PER_SECOND * 10) === 0)
+      for (const q of cores()) {
+        hunger.samples++;
+        if (q.needs!.food < 10) hunger.starving++;
+      }
+    // poranek wartowników: kto o 5:00 stoi na posterunku, tego od 6:00 do 14:00
+    if (h === 5 && !watch.length)
+      watch = st.pawns
+        .filter((q) => q.kind === 'core' && !q.away && q.job?.t === 'guard')
+        .map((q) => ({
+          p: q,
+          meal0: q.lastMeal,
+          m: {
+            day: dayOf(st.tick),
+            food6: -1,
+            rest6: -1,
+            ateAt: -1,
+            minFood: 100,
+            napped: false,
+            slept: false,
+            stock6: -1,
+            hungry6: 0,
+          },
+        }));
+    if (watch.length && h >= 6 && h < 14)
+      for (const g of watch) {
+        if (g.m.food6 < 0) {
+          const sn = snapshot(st, w).stock;
+          g.m.food6 = g.p.needs!.food;
+          g.m.rest6 = g.p.needs!.rest;
+          g.m.stock6 = sn.supplies + sn.meals;
+          g.m.hungry6 = cores().filter((q) => q.needs!.food < HUNGRY).length;
+        }
+        g.m.minFood = Math.min(g.m.minFood, g.p.needs!.food);
+        if (g.m.ateAt < 0 && g.p.lastMeal !== g.meal0) g.m.ateAt = h + (Math.floor(minutesAt(st.tick)) % 60) / 60;
+        const asleep = g.p.job?.t === 'sleep' && g.p.job.phase === 1;
+        if (asleep) g.m.slept = true;
+        if (g.m.ateAt >= 0 && asleep) g.m.napped = true;
+      }
+    if (watch.length && h === 14) {
+      mornings.push(...watch.map((g) => g.m));
+      watch = [];
+    }
     // noc 22–6: jak długo pali się koza zarządu; o 6:00 temperatura w kuchni
     if (night && (h >= 22 || h < 6)) {
       night.fire += snapshot(st, w).kozaLit ? 1 : 0;
@@ -262,7 +390,7 @@ export function playWithGov(
       }
     }
   }
-  return { decisions, nights, gov, st, hash: sim.hash() };
+  return { decisions, mornings, hunger, admitted: { ...tally }, nights, gov, st, hash: sim.hash() };
 }
 
 export interface LawsRun {
@@ -280,8 +408,14 @@ export interface LawsRun {
 
 /** Gra bez zarządu z uchwałami o jedzeniu od startu: samouczek i drzewo na opał, kiedy drewna mało (jak w playWithGov),
     przez `days` dni od 15:00. Do porównania racji, kotła i wspólnych posiłków. */
-export function playLaws(w: World, seed: number, laws: Partial<Laws>, days: number): LawsRun {
-  const st = createSim(w, seed, { core: 4 });
+export function playLaws(
+  w: World,
+  seed: number,
+  laws: Partial<Laws>,
+  days: number,
+  mieszkancy?: SimOpts['mieszkancy'],
+): LawsRun {
+  const st = createSim(w, seed, { core: 4, ...(mieszkancy ? { mieszkancy } : {}) });
   const sim = new Sim(w, st);
   sim.setLaws(laws);
   const cores = () => st.pawns.filter((p) => p.kind === 'core' && !p.away);

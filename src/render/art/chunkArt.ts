@@ -1,14 +1,27 @@
 /* Rysowanie kawałka mapy (32×32 kafelki) do płótna: teren, cienie, dachy i fasady liczone
    piksel po pikselu, potem drzewa i detale dachów. Ta sama funkcja daje dwa poziomy szczegółów:
-   32 px na kafelek (z bliska) i 8 px na kafelek (z daleka). */
+   32 px na kafelek (z bliska) i 8 px na kafelek (z daleka). Z grafiką z PixelLab (scena.art) trawnik
+   i chodnik idą z kafelków Wanga, a bloki z modułów kawałka bloku (pixellab.ts); reszta zawsze z kodu. */
 
+import type { DamageKind } from '../../world/apts.ts';
 import { T } from '../../world/world.ts';
 import { describeTile, IN } from '../section.ts';
 import { type AnyCanvas, type Ctx2D, ctx2d, newCanvas } from './canvas.ts';
 import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
+import {
+  attykaKolor,
+  blokKolor,
+  kolumnaFasady,
+  papaKolor,
+  pasFasady,
+  wangKafel,
+  wangPiksel,
+  wangRysuje,
+} from './pixellab.ts';
 import { deadTreeSprite } from './rzeczy.ts';
 import { type BStyle, CHUNK, type ChunkScene, SUB, TILE } from './scene.ts';
+import { wearColor } from './szkody.ts';
 import { treeSprite } from './trees.ts';
 import { type InteriorTile, interiorColor } from './wnetrze.ts';
 
@@ -25,8 +38,24 @@ function asphaltCrack(c: number, ax: number, ay: number): number {
   return h2(ax >> 1, ay >> 1, 28) < 0.15 ? C.grass0 : 0x26272a;
 }
 
-/** kolor terenu (0xRRGGBB) w punkcie grafiki (ax, ay) na kafelku i o kodzie t */
-function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: number, px: number, py: number): number {
+/** teren z kafelków Wanga z grafiki z PixelLab (pseudokod terenu w groundColor) */
+const WANG = -1;
+
+/**
+ * Kolor terenu (0xRRGGBB) w punkcie grafiki (ax, ay) na kafelku i o kodzie t. wq: kafelki Wanga nad tym
+ * kafelkiem (wangKafel), gdy teren idzie z grafiki z PixelLab; chodnik dostaje wtedy krawężnik od jezdni
+ * jak chodnik z kodu, a przy ścianach i w cieniu ciemnieje jak cały teren.
+ */
+function groundColor(
+  sc: ChunkScene,
+  t: number,
+  i: number,
+  ax: number,
+  ay: number,
+  px: number,
+  py: number,
+  wq: Int32Array | null,
+): number {
   const w = sc.w;
   const size = w.size;
   const x = i % size;
@@ -45,7 +74,15 @@ function groundColor(sc: ChunkScene, t: number, i: number, ax: number, ay: numbe
     return d;
   };
   let c: number;
-  switch (t) {
+  switch (wq ? WANG : t) {
+    case WANG: {
+      c = wangPiksel(sc.art!.teren!, wq!, px, py);
+      if (t === T.SIDEWALK || t === T.PATH) {
+        const er = edgeTo((n2) => n2 === T.ROAD || n2 === T.PARKING);
+        if (er < 3) c = er === 0 ? shade(C.curb, 0.8) : C.curb;
+      }
+      break;
+    }
     case T.GRASS:
     case T.PARK:
     case T.WOOD: {
@@ -413,6 +450,11 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
   const off = step >> 1;
   const sec = cut ? sc.section : null;
   const facade = sec ? sc.styles[sec.building].wall : 0;
+  const teren = sc.art?.teren ?? null;
+  const blok = sc.art?.blok ?? null;
+  const dach = sc.art?.dach ?? null;
+  /** pas fasady z modułów (wiersze atlasu od góry) po numerze budynku */
+  const pasy = new Map<number, number[]>();
   for (let ty = 0; ty < CHUNK; ty++) {
     const y = cy * CHUNK + ty;
     if (y >= size) break;
@@ -424,8 +466,46 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       const bid = w.bid[i];
       const st = bid >= 0 ? sc.styles[bid] : null;
       const door = bid >= 0 && sc.doors.get(i) === 'S';
-      // przekrój: opis kafelka wnętrza raz na kafelek, piksele z grafiki zastępczej (wnetrze.ts)
-      const inner: InteriorTile | null = sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, facade) : null;
+      // przekrój: opis kafelka wnętrza raz na kafelek, piksele z grafiki zastępczej (wnetrze.ts),
+      // na nich ślady pustego mieszkania i uszkodzenia posadzki (szkody.ts)
+      // fasada z budynku kafelka: w przekroju są też otwarte sąsiednie budynki (M2 fala 2)
+      const inner: InteriorTile | null =
+        sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, bid >= 0 ? sc.styles[bid].wall : facade) : null;
+      const dmg = inner ? sec!.damage?.get(i) : undefined;
+      const rid = inner ? sec!.room[i] : -1;
+      const why = rid >= 0 ? sec!.why?.get(sec!.roomApt?.[rid] ?? -1) : undefined;
+      // sąsiedzi z uszkodzeniem danego rodzaju (bity N 1, E 2, S 4, W 8): zalana podłoga łączy się
+      // z sąsiednią, sadza od okopconego pieca wchodzi na posadzkę obok
+      const around = (k: DamageKind) => {
+        const at = (j: number) => (sec!.damage!.get(j) === k ? 1 : 0);
+        return at(i - size) | (at(i + 1) << 1) | (at(i + size) << 2) | (at(i - 1) << 3);
+      };
+      const hurt = inner?.kind === 'floor' && !!sec!.damage?.size;
+      const wet = hurt && dmg === 'podloga' ? around('podloga') : 0;
+      const soot = hurt && dmg !== 'piec' ? around('piec') : 0;
+      // teren z kafelków Wanga: cztery kafelki nad tym kafelkiem świata (podwójna siatka)
+      const wq = !inner && !st && teren && wangRysuje(t) ? wangKafel(w.terr, size, x, y) : null;
+      // blok z modułów: pas fasady, środki drzwi od południa przy dole tej kolumny (moduł wejścia sięga
+      // do sąsiedniej kolumny) i krawędzie dachu z attyką
+      const mod = !inner && st?.mod && blok ? blok : null;
+      let rows: number[] = [];
+      const doorsX: number[] = [];
+      let eN = false;
+      let eW = false;
+      let eE = false;
+      if (mod) {
+        rows = pasy.get(bid) ?? pasFasady(mod, st!.levels);
+        pasy.set(bid, rows);
+        const yb = y + sc.south[i];
+        for (let dx = -1; dx <= 1; dx++) {
+          const j = yb * size + x + dx;
+          if (x + dx >= 0 && x + dx < size && w.bid[j] === bid && sc.doors.get(j) === 'S')
+            doorsX.push((x + dx) * TILE + TILE / 2);
+        }
+        eN = !(y > 0 && w.bid[i - size] === bid);
+        eW = !(x > 0 && w.bid[i - 1] === bid);
+        eE = !(x < size - 1 && w.bid[i + 1] === bid);
+      }
       for (let oy = 0; oy < s; oy++) {
         const py = oy * step + off;
         const ay = y * TILE + py;
@@ -434,14 +514,28 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
           const px = ox * step + off;
           const ax = x * TILE + px;
           let c: number;
-          if (inner) c = interiorColor(inner, x, y, px, py, sec!.seed);
-          else if (st) {
+          if (inner) {
+            c = interiorColor(inner, x, y, px, py, sec!.seed);
+            if (dmg || why || soot) c = wearColor(c, inner, why, dmg, ax, ay, px, py, sec!.seed, wet, soot);
+          } else if (mod) {
+            const fy = sc.south[i] * TILE + (31 - py);
+            const fh = Math.min(st!.facade, sc.run[i] * TILE - 8);
+            if (fy < fh) {
+              let dX = Number.NaN;
+              for (const d of doorsX) if (ax >= d - mod.drzwi && ax < d - mod.drzwi + mod.wejscie[1]) dX = d;
+              c = blokKolor(mod, kolumnaFasady(mod, ax, dX), rows[rows.length - 1 - fy]);
+            } else {
+              const e = Math.min(eN ? py : TILE, eW ? px : TILE, eE ? 31 - px : TILE);
+              if (e < mod.attyka[1]) c = attykaKolor(mod, e);
+              else c = dach ? papaKolor(dach, ax, ay) : roofColor(sc, st!, i, ax, ay, px, py, bid);
+            }
+          } else if (st) {
             const fy = sc.south[i] * TILE + (31 - py);
             const fh = Math.min(st.facade, sc.run[i] * TILE - 8);
             if (fy < fh) c = facadeColor(st, ax, fy, door && sc.south[i] === 0, px);
             else if (fy < fh + 3) c = fy === fh ? 0x3f3c38 : C.parapet;
             else c = roofColor(sc, st, i, ax, ay, px, py, bid);
-          } else c = groundColor(sc, t, i, ax, ay, px, py);
+          } else c = groundColor(sc, t, i, ax, ay, px, py, wq);
           out[o++] = rgba(c);
         }
       }
@@ -461,8 +555,9 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
     if (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1) continue;
     const st = sc.styles[b.id];
     // otwarty w przekroju: bez maszynowni, kominów i anten (daszki nad wejściami zostają)
-    const open = sec !== null && b.id === sec.building;
-    if (!open && b.cls === 'blok' && st.levels >= 5) {
+    const open = sec !== null && (b.id === sec.building || !!sec.otwarte?.has(b.id));
+    // bloki z modułów PixelLab mają dach z samej papy z naklejkami, bez maszynowni, kominów i anten z kodu
+    if (!open && b.cls === 'blok' && st.levels >= 5 && !st.mod) {
       for (const e of b.entrances) {
         const ex = e.tile % size;
         const ey = (e.tile - ex) / size;
@@ -489,6 +584,7 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
     }
     if (
       !open &&
+      !st.mod &&
       st.roof === 'tar' &&
       (b.cls === 'blok' || b.cls === 'inne' || b.cls === 'przychodnia' || b.cls === 'szkola')
     ) {

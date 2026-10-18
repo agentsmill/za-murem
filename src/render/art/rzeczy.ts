@@ -27,12 +27,24 @@ import {
   type Sprite,
   WOODS,
 } from './bryly.ts';
+import {
+  BUILD_BASE,
+  BUILD_KINDS,
+  type BuildKind,
+  brokenSprite,
+  buildSprite,
+  burntSprite,
+  smieciBoxes,
+  smieciEnv,
+} from './budowle.ts';
 import { h2, vnoise } from './hash.ts';
+import { budaSprite, hustawkaSprite, kompostSprite, lawkaSprite, sznurSprite } from './ogrod.ts';
 import { mix, rgba, shade } from './palette.ts';
 import {
   armchairSprite,
   boothSprite,
   campfireSprite,
+  cartSprite,
   type FenceState,
   type FireStyle,
   fenceSprite,
@@ -44,6 +56,7 @@ import { WRECK_BASE, type WreckModel, wreckSprite } from './wraki.ts';
 
 export type { Rot, Sprite } from './bryly.ts';
 export { FIRE_FRAMES } from './bryly.ts';
+export { BUILD_BASE, BUILD_KINDS, type BuildKind } from './budowle.ts';
 export { FENCE_H, FENCE_X, FENCE_Y, type FenceState, type FireStyle, type Pile } from './podworko.ts';
 export { WRECK_BASE, WRECK_MODELS, type WreckModel } from './wraki.ts';
 
@@ -106,10 +119,17 @@ export const BASE: Record<FurnitureKind, readonly [number, number]> = {
  * - posilek: garnek z ugotowanym posiłkiem, size 0 pusty do 3 pełny (z miskami); table: stoi na
  *   blacie stołu (rysowany na wysokości TABLE_TOP, bez cienia na podłodze);
  * - wrak: maluch 3×2 albo polonez 4×2 przy rot 0 i 2 (1 i 3 odwrotnie), przodem na wschód przy
- *   rot 0, na południe przy 1, na zachód przy 2, na północ przy 3.
+ *   rot 0, na południe przy 1, na zachód przy 2, na północ przy 3;
+ * - budowle M2 (budowle.ts): warsztat, kuchnia_spoleczna, magazyn, lozka_pietrowe, ogrodek, zasieki;
+ * - smieci: sterta śmieci z pustego mieszkania w trzech wielkościach;
+ * - meble z broken: zepsute (pociemniałe, popękane, drzazgi wokół); z burnt: okopcone (prawie czarne
+ *   od sadzy, kuchenka na kafelku uszkodzenia piec);
+ * - ogród domu (ogrod.ts): sznur na pranie 3×1 (pranie: z praniem), kompost 1×1, buda 1×1 (rot jak
+ *   meble, wejście z przodu), hustawka 2×1 i lawka 2×1 (rot jak meble, oparcie od strony rot);
+ *   przy rot 1 i 3 wymiary odwrotnie.
  */
 export type ThingSpec =
-  | { kind: FurnitureKind; rot: Rot; seed?: number; fire?: number }
+  | { kind: FurnitureKind; rot: Rot; seed?: number; fire?: number; broken?: boolean; burnt?: boolean }
   | { kind: 'drewno'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'jedzenie'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'pien'; r?: number; seed?: number }
@@ -120,23 +140,48 @@ export type ThingSpec =
   | { kind: 'gruz'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'deski'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'zlom'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'czesci'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'leki'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'wozek'; full?: boolean; seed?: number }
   | { kind: 'budka'; rot: Rot; lit?: boolean; seed?: number }
   | { kind: 'fotel'; rot: Rot; seed?: number }
   | { kind: 'lampa'; lit?: boolean; seed?: number }
   | { kind: 'posilek'; size: 0 | 1 | 2 | 3; table?: boolean; seed?: number }
-  | { kind: 'wrak'; model: WreckModel; rot: Rot; seed?: number };
+  | { kind: 'wrak'; model: WreckModel; rot: Rot; seed?: number; stage?: 1 | 2 }
+  | { kind: 'krew'; seed?: number }
+  | { kind: BuildKind; rot: Rot; seed?: number }
+  | { kind: 'smieci'; size: 1 | 2 | 3; seed?: number }
+  | { kind: 'sznur'; rot: Rot; pranie?: boolean; seed?: number }
+  | { kind: 'kompost'; rot: Rot; seed?: number }
+  | { kind: 'buda'; rot: Rot; seed?: number }
+  | { kind: 'hustawka'; rot: Rot; seed?: number }
+  | { kind: 'lawka'; rot: Rot; seed?: number };
 
 /** podstawa rzeczy w kafelkach (w × h na mapie) */
 export function footprint(spec: ThingSpec): { w: number; h: number } {
   switch (spec.kind) {
     case 'trzepak':
+    case 'sznur':
       return spec.rot & 1 ? { w: 1, h: 3 } : { w: 3, h: 1 };
+    case 'hustawka':
+    case 'lawka':
+      return spec.rot & 1 ? { w: 1, h: 2 } : { w: 2, h: 1 };
     case 'brama':
       return spec.rot & 1 ? { w: 1, h: 2 } : { w: 2, h: 1 };
     case 'wrak': {
       const [a, b] = WRECK_BASE[spec.model];
       return spec.rot & 1 ? { w: b, h: a } : { w: a, h: b };
     }
+    case 'warsztat':
+    case 'kuchnia_spoleczna':
+    case 'magazyn':
+    case 'lozka_pietrowe':
+    case 'ogrodek':
+    case 'zasieki': {
+      const [a, b] = BUILD_BASE[spec.kind];
+      return spec.rot & 1 ? { w: b, h: a } : { w: a, h: b };
+    }
+    case 'smieci':
     case 'posilek':
     case 'drewno':
     case 'jedzenie':
@@ -146,9 +191,15 @@ export function footprint(spec: ThingSpec): { w: number; h: number } {
     case 'gruz':
     case 'deski':
     case 'zlom':
+    case 'czesci':
+    case 'leki':
+    case 'wozek':
     case 'budka':
     case 'fotel':
     case 'lampa':
+    case 'krew':
+    case 'kompost':
+    case 'buda':
       return { w: 1, h: 1 };
     default: {
       const [a, b] = BASE[spec.kind];
@@ -1081,8 +1132,28 @@ export function deadTreeSprite(t: Tree): Sprite {
 // ---------------------------------------------------------------- wejście
 
 /** sprite rzeczy; te same argumenty dają te same piksele */
+/** plama krwi na ziemi: kilka kropli wokół środka kafelka, półprzezroczysta, ciemnieje do brzegu */
+function krew(seed: number): Sprite {
+  const px = new Uint32Array(PX * PX);
+  const blob = (cx: number, cy: number, r: number) => {
+    for (let y = Math.floor(cy - r); y <= cy + r; y++)
+      for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+        if (x < 0 || y < 0 || x >= PX || y >= PX) continue;
+        const d = Math.hypot(x - cx, (y - cy) * 1.3) / r;
+        if (d > 1 + 0.25 * (h2(x, y, seed + 990) - 0.5)) continue;
+        const c = d > 0.75 ? 0x3e0c0a : h2(x, y, seed + 991) < 0.15 ? 0x6e1a14 : 0x581210;
+        // półprzezroczysta (alfa 0xb0), kolejność bajtów jak w rgba()
+        px[y * PX + x] = ((0xb0 << 24) | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff)) >>> 0;
+      }
+  };
+  blob(16, 18, 6 + 3 * h2(seed, 1, 992));
+  for (let k = 0; k < 5; k++) blob(6 + 20 * h2(seed, k, 993), 8 + 18 * h2(seed, k, 994), 1 + 2 * h2(seed, k, 995));
+  return { w: PX, h: PX, ax: PX / 2, ay: PX, px };
+}
+
 export function thingSprite(spec: ThingSpec): Sprite {
   const seed = (spec.seed ?? 0) | 0;
+  if (spec.kind === 'krew') return krew(seed);
   if (spec.kind === 'drewno') return drewno(spec.size, seed);
   if (spec.kind === 'jedzenie') return jedzenie(spec.size, seed);
   if (spec.kind === 'pien') {
@@ -1091,17 +1162,34 @@ export function thingSprite(spec: ThingSpec): Sprite {
     return stump(rr, seed, PX / 2, PX / 2 + 2, PX, PX, PX / 2, PX);
   }
   if (spec.kind === 'trzepak') return trzepak(spec.rot, seed);
+  if (spec.kind === 'sznur') return sznurSprite(spec.rot, !!spec.pranie, seed);
+  if (spec.kind === 'kompost') return kompostSprite(spec.rot, seed);
+  if (spec.kind === 'buda') return budaSprite(spec.rot, seed);
+  if (spec.kind === 'hustawka') return hustawkaSprite(spec.rot, seed);
+  if (spec.kind === 'lawka') return lawkaSprite(spec.rot, seed);
   if (spec.kind === 'siatka') return fenceSprite(spec.mask, spec.state ?? 'cala', spec.post, seed);
   if (spec.kind === 'brama') return gateSprite(spec.rot, !!spec.open, seed);
   if (spec.kind === 'ognisko') return campfireSprite(spec.style ?? 'krag', spec.fire ?? -1, seed);
-  if (spec.kind === 'gruz' || spec.kind === 'deski' || spec.kind === 'zlom')
+  if (
+    spec.kind === 'gruz' ||
+    spec.kind === 'deski' ||
+    spec.kind === 'zlom' ||
+    spec.kind === 'czesci' ||
+    spec.kind === 'leki'
+  )
     return pileSprite(spec.kind, spec.size, seed);
   if (spec.kind === 'budka') return boothSprite(spec.rot, !!spec.lit, seed);
+  if (spec.kind === 'wozek') return cartSprite(spec.full ?? true, seed);
   if (spec.kind === 'fotel') return armchairSprite(spec.rot, seed);
   if (spec.kind === 'lampa') return lampSprite(!!spec.lit, seed);
   if (spec.kind === 'posilek') return posilek(spec.size, !!spec.table, seed);
-  if (spec.kind === 'wrak') return wreckSprite(spec.model, spec.rot, seed);
-  const [a, b] = BASE[spec.kind];
-  const fire = spec.kind === 'koza' && spec.fire !== undefined && spec.fire >= 0 ? spec.fire : -1;
-  return renderBoxes(furniture(spec.kind, spec.rot, seed, fire), a * PX, b * PX, spec.rot);
+  if (spec.kind === 'wrak') return wreckSprite(spec.model, spec.rot, seed, spec.stage ?? 0);
+  if (spec.kind === 'smieci') return renderBoxes(smieciBoxes(spec.size, seed), PX, PX, 0, smieciEnv(spec.size));
+  if ((BUILD_KINDS as readonly string[]).includes(spec.kind))
+    return buildSprite(spec.kind as BuildKind, spec.rot as Rot, seed);
+  const f = spec as Extract<ThingSpec, { kind: FurnitureKind }>;
+  const [a, b] = BASE[f.kind];
+  const fire = f.kind === 'koza' && f.fire !== undefined && f.fire >= 0 ? f.fire : -1;
+  const sp = renderBoxes(furniture(f.kind, f.rot, seed, fire), a * PX, b * PX, f.rot);
+  return f.burnt ? burntSprite(sp, seed) : f.broken ? brokenSprite(sp, seed) : sp;
 }

@@ -4,10 +4,13 @@
    Zamówienie, które jeszcze nie trafiło do workera, a zniknęło z nowej listy (kawałek wyszedł
    z ekranu), przepada. Zmiana na mapie (ścięte drzewo, inny teren) idzie do workerów jako łatka
    sceny, a dotknięte kawałki dostają nową wersję: kawałek narysowany ze starych danych przepada.
+   Otwarty sąsiedni budynek (M2 fala 2) to też łatka: jego wnętrze dokłada się do przekroju
+   (dolozCzesc z section.ts), a wygląd drzwi sąsiadów (wyważone, zabite) idzie razem z nim.
    Moduł nie zależy od PixiJS, więc da się go sprawdzić w Node. */
 
 import { drawChunk } from './art/chunkArt.ts';
 import { CHUNK, type ChunkScene, chunkSceneOf, type Scene, treeChunks } from './art/scene.ts';
+import { type DoorLook, dolozCzesc, type SectionPart, ustawDrzwi } from './section.ts';
 
 /** pikseli grafiki na kafelek: z bliska i z daleka */
 export const LOD_NEAR = 32;
@@ -82,18 +85,36 @@ export interface MapChange {
   tiles?: readonly number[];
   /** drzewa, które zniknęły, np. ścięte (numery w w.trees) */
   felled?: readonly number[];
+  /** naprawione uszkodzenia w przekroju (kafelki z section.damage) */
+  fixed?: readonly number[];
+  /** M2 fala 2: wnętrza otwartych sąsiednich budynków do dołożenia do przekroju */
+  wnetrze?: readonly SectionPart[];
+  /** wygląd drzwi sąsiadów (wyważone, zabite deskami, zwykłe) */
+  drzwi?: readonly DoorLook[];
 }
 
 /**
  * Kawałki do przerysowania po zmianie, rosnąco: kafelek z ośmioma sąsiadami (krawędzie terenu
- * i ścian zależą od sąsiadów, także za granicą kawałka) i drzewo ze wszystkimi kawałkami,
- * w których rysuje się jego korona albo cień.
+ * i ścian zależą od sąsiadów, także za granicą kawałka), drzewo ze wszystkimi kawałkami,
+ * w których rysuje się jego korona albo cień, i cały prostokąt dołożonego wnętrza z zapasem kafelka.
  */
 export function chunksTouched(sc: ChunkScene, ch: MapChange): number[] {
   const size = sc.w.size;
   const n = sc.chunks;
   const set = new Set<number>();
-  for (const i of ch.tiles ?? []) {
+  for (const p of ch.wnetrze ?? [])
+    for (
+      let cy = Math.floor(Math.max(0, p.y0 - 1) / CHUNK);
+      cy <= Math.floor(Math.min(size - 1, p.y0 + p.h) / CHUNK);
+      cy++
+    )
+      for (
+        let cx = Math.floor(Math.max(0, p.x0 - 1) / CHUNK);
+        cx <= Math.floor(Math.min(size - 1, p.x0 + p.w) / CHUNK);
+        cx++
+      )
+        set.add(cy * n + cx);
+  for (const i of [...(ch.tiles ?? []), ...(ch.fixed ?? []), ...(ch.drzwi ?? []).map((d) => d.tile)]) {
     const x = i % size;
     const y = (i - x) / size;
     for (let dy = -1; dy <= 1; dy++)
@@ -113,11 +134,23 @@ export interface ScenePatch {
   tiles: number[];
   terr: number[];
   felled: number[];
+  /** naprawione uszkodzenia (kafelki), znikają z section.damage */
+  fixed?: number[];
+  /** wnętrza sąsiadów i wygląd ich drzwi (M2 fala 2) */
+  wnetrze?: SectionPart[];
+  drzwi?: DoorLook[];
 }
 
 export function scenePatchOf(sc: ChunkScene, ch: MapChange): ScenePatch {
   const tiles = [...(ch.tiles ?? [])];
-  return { tiles, terr: tiles.map((i) => sc.w.terr[i]), felled: [...(ch.felled ?? [])] };
+  return {
+    tiles,
+    terr: tiles.map((i) => sc.w.terr[i]),
+    felled: [...(ch.felled ?? [])],
+    fixed: [...(ch.fixed ?? [])],
+    ...(ch.wnetrze?.length ? { wnetrze: [...ch.wnetrze] } : {}),
+    ...(ch.drzwi?.length ? { drzwi: [...ch.drzwi] } : {}),
+  };
 }
 
 /** nakłada łatkę na kopię sceny w workerze */
@@ -126,6 +159,11 @@ export function applyScenePatch(sc: ChunkScene, p: ScenePatch): void {
     sc.w.terr[i] = p.terr[k];
   });
   for (const k of p.felled) sc.treeGone[k] = 1;
+  for (const i of p.fixed ?? []) sc.section?.damage?.delete(i);
+  if (sc.section) {
+    for (const part of p.wnetrze ?? []) dolozCzesc(sc.section, part, sc.w.size);
+    for (const d of p.drzwi ?? []) ustawDrzwi(sc.section, d);
+  }
 }
 
 export interface ChunkPainter {

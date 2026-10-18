@@ -126,6 +126,14 @@ describe('obcy w nocy', () => {
     expect(STRANGERS.has('crowd')).toBe(false);
   });
 
+  it('szwendacza w ciemności widać jako ciemny zarys (stado pod siatką), szabrownika nie', () => {
+    expect(strangerVisibility(1, 0, 'zombie')).toBeGreaterThanOrEqual(0.25);
+    expect(strangerVisibility(1, 0, 'zombie')).toBeLessThan(0.5);
+    expect(strangerVisibility(1, 0, 'szabrownik')).toBe(0);
+    expect(strangerVisibility(0, 0, 'zombie')).toBe(1);
+    expect(strangerVisibility(1, 0.8, 'zombie')).toBe(1);
+  });
+
   it('rzeczy gry: meble, zapasy, trzepak i siatka są z gry, podgląd tych rodzajów się pomija', () => {
     for (const k of ['koza', 'drewno', 'pien', 'trzepak', 'siatka', 'brama']) expect(GAME_KINDS.has(k)).toBe(true);
     for (const k of ['ognisko', 'lampa']) expect(GAME_KINDS.has(k)).toBe(false);
@@ -139,7 +147,9 @@ describe('sterty, garnek i wraki', () => {
     expect(heaps.length).toBeGreaterThanOrEqual(3);
     for (const h of heaps) {
       const spec = specOf({ rot: 0, ...h });
-      expect(spec).toMatchObject({ kind: h.kind, size: h.n >= 6 ? 3 : h.n >= 3 ? 2 : 1 });
+      // śmieci (kontrakt M2, gdy świat je rozstawia): n to wielkość sterty 1–3, nie liczba sztuk
+      const trash = (h.kind as string) === 'smieci';
+      expect(spec).toMatchObject({ kind: h.kind, size: trash ? Math.min(3, h.n) : h.n >= 6 ? 3 : h.n >= 3 ? 2 : 1 });
     }
     for (const k of ['gruz', 'deski', 'zlom', 'wrak']) expect(GAME_KINDS.has(k)).toBe(true);
   });

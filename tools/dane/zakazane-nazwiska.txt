@@ -1,0 +1,46 @@
+# Nazwiska polityków, których generator nie nadaje (lore: żadnych nazwisk prawdziwych polityków).
+# Jedno nazwisko w linii, w formie męskiej; żeńska forma (-ska, -cka, -a) odpada razem z nią.
+# Linia zaczynająca się od # to komentarz. Po zmianie: npm run dane:imiona.
+Jaruzelski
+Wałęsa
+Kwaśniewski
+Kaczyński
+Komorowski
+Duda
+Nawrocki
+Mazowiecki
+Bielecki
+Olszewski
+Pawlak
+Suchocki
+Oleksy
+Cimoszewicz
+Buzek
+Miller
+Belka
+Marcinkiewicz
+Tusk
+Kopacz
+Szydło
+Morawiecki
+Ziobro
+Sasin
+Błaszczak
+Budka
+Kosiniak-Kamysz
+Hołownia
+Hennig-Kloska
+Pełczyńska-Nałęcz
+Czarzasty
+Zandberg
+Biedroń
+Żukowska
+Mentzen
+Bosak
+Wipler
+Braun
+Rakowski
+Trzaskowski
+Grodzki
+Kołodziejczak
+Bodnar

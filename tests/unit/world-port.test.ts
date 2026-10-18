@@ -16,6 +16,19 @@ const v = loadV03(undefined, [
 ]);
 const G = v.G;
 
+/** geometria bez dodatków 0.4: przejść przez budynki (pass) oraz identyfikatora OSM, daty budowy i klucza budynku
+    z osią klatek (zm:klucz, zm:os, src/world/klucze.ts) w tagach */
+function as03(geo: Geo): Omit<Geo, 'pass'> {
+  const { pass: _pass, ...rest } = geo;
+  return {
+    ...rest,
+    b: rest.b.map((b) => {
+      const { id: _id, start_date: _start, 'zm:klucz': _klucz, 'zm:os': _os, ...t } = b.t;
+      return { ...b, t };
+    }),
+  };
+}
+
 /** typy budynków jak w grze: pole z obrysu, kategorie z punktów w środku */
 function classes(geo: Geo, cls = classify) {
   const counts: Record<string, number> = {};
@@ -45,8 +58,8 @@ describe('kafelki wektorowe (mvt.ts) jak w 0.3', () => {
       });
 
       it('geometria (toGeoT) jest identyczna z 0.3 przy promieniu 230 m', () => {
-        // przejścia przez budynki (pass) to dodatek 0.4, reszta ma być identyczna z 0.3
-        const { pass: _pass, ...now } = toGeoT(decodedTiles(a), a.lat, a.lon, 230);
+        // przejścia przez budynki (pass) i identyfikatory OSM budynków to dodatki 0.4, reszta ma być identyczna z 0.3
+        const now = as03(toGeoT(decodedTiles(a), a.lat, a.lon, 230));
         const oldTiles = a.tiles.map(([x, y]) => ({ x, y, L: G.MVT.decode(tileBytes(x, y), WANT) }));
         const old = G.MVT.toGeoT(oldTiles, a.lat, a.lon);
         expect(plain(now)).toEqual(plain(old));
@@ -118,7 +131,7 @@ describe('kafelki wektorowe (mvt.ts) jak w 0.3', () => {
 describe('Overpass i osiedle zapasowe (osm.ts) jak w 0.3', () => {
   it('toGeo z zapisanej odpowiedzi Overpass', () => {
     const json = overpassJson();
-    const { pass: _pass, ...now } = toGeo(json as Parameters<typeof toGeo>[0], 54.4093, 18.5991);
+    const now = as03(toGeo(json as Parameters<typeof toGeo>[0], 54.4093, 18.5991));
     expect(plain(now)).toEqual(plain(G.OSM.toGeo(json, 54.4093, 18.5991)));
   });
 

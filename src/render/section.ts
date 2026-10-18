@@ -3,11 +3,16 @@
    z jej nagłówka: ściana zewnętrzna na brzegu obrysu z bokami na zewnątrz, okno z listy okien ze
    stroną ulicy i pomieszczeniem za nim, drzwi frontowe z wejść budynku, schody w głąb od posadzki
    klatki. Rzeczy (meble, trzepak, później rzeczy z symulacji) zamieniane na opis sprite'a
-   thingSprite (art/rzeczy.ts). Czyste funkcje bez DOM: działają w Node, w oknie i w workerze. */
+   thingSprite (art/rzeczy.ts). M2 fala 2: do przekroju siedziby dokładają się wnętrza otwartych
+   sąsiednich budynków (SectionPart, dolozCzesc: przy pierwszym dołożeniu przekrój dostaje własne
+   kopie tablic, bo na start dzieli je z wnętrzem świata, które czyta symulacja) i wygląd ich drzwi
+   (DoorLook: wyważone jak uszkodzenie drzwi, zabite deskami). Czyste funkcje bez DOM: działają
+   w Node, w oknie i w workerze. */
 
-import { IN, type RoomKind } from '../world/interior.ts';
+import type { AptState, AptWhy, Damage, DamageKind } from '../world/apts.ts';
+import { IN, type Interior, type RoomKind } from '../world/interior.ts';
 import type { Dir, World } from '../world/world.ts';
-import { FIRE_FRAMES, type ThingSpec } from './art/rzeczy.ts';
+import { BUILD_KINDS, FIRE_FRAMES, type ThingSpec } from './art/rzeczy.ts';
 import { type InteriorTile, maskOf, NB } from './art/wnetrze.ts';
 
 export { IN };
@@ -25,12 +30,17 @@ export interface ThingLike {
   h: number;
   /** ściana, przy której stoi: 0 góra, 1 prawo, 2 dół, 3 lewo */
   rot: number;
-  /** sztuki (drewno, jedzenie, porcje w garnku, sterty materiału) */
+  /** sztuki (drewno, jedzenie, porcje w garnku, sterty materiału); przy śmieciach wielkość sterty 1–3 */
   n?: number;
   /** ogień (koza, ognisko): pali się, gdy więcej niż 0 */
   fuel?: number;
-  /** wrak samochodu: 'maluch' albo 'polonez' */
+  /** wrak samochodu: 'maluch' albo 'polonez'; stage: 1 przeszukany, 2 szkielet (st.wraki) */
   model?: string;
+  stage?: number;
+  /** zepsuty mebel z pustego mieszkania (kontrakt M2: Furniture.broken) */
+  broken?: boolean;
+  /** okopcony mebel: kuchenka na kafelku uszkodzenia piec (do naprawy) */
+  burnt?: boolean;
   /** stoi na stole (garnek z posiłkiem): dolna krawędź stołu w kafelkach, rysuje się na blacie po stole */
   table?: number;
   spec?: ThingSpec;
@@ -50,13 +60,143 @@ export interface SectionScene {
   lit: Set<number>;
   /** ziarno wzorów (zużycie, lamperia) */
   seed: number;
+  /** uszkodzenia w siedzibie: kafelek → rodzaj (naprawione znikają z mapy) */
+  damage?: Map<number, DamageKind>;
+  /** numer mieszkania po numerze pomieszczenia (−1: klatka) */
+  roomApt?: number[];
+  /** puste mieszkania siedziby: numer mieszkania → przyczyna (ślad na posadzce) */
+  why?: Map<number, AptWhy>;
+  /** M2 fala 2: otwarte sąsiednie budynki w tym przekroju (bez dachu, maszynowni i kominów przy zbliżeniu) */
+  otwarte?: Set<number>;
+  /** drzwi zabite deskami (kafelki) */
+  zabite?: Set<number>;
+  /** przekrój ma własne tablice komórek i pomieszczeń (przed pierwszym dołożeniem wnętrza są wspólne z siedzibą
+      świata, której symulacja nie może zobaczyć cudzych pomieszczeń) */
+  wlasne?: boolean;
 }
 
-export function sectionOf(w: Pick<World, 'interior' | 'buildings' | 'seed'>): SectionScene {
+/** Kawałek przekroju: wnętrze otwartego sąsiedniego budynku do dołożenia do sceny siedziby (M2 fala 2). Komórki
+    różnych budynków się nie pokrywają, więc jedna scena rysuje wszystkie. Pomieszczenia i mieszkania dostają numery
+    przekroju od base i aptBase. Idzie do workera w łatce sceny. */
+export interface SectionPart {
+  building: number;
+  /** prostokąt budynku na mapie i komórki oraz pomieszczenia (numery przekroju, −1) w jego obrębie */
+  x0: number;
+  y0: number;
+  w: number;
+  h: number;
+  cell: Uint8Array;
+  room: Int16Array;
+  /** rodzaje i mieszkania (numery przekroju) pomieszczeń od base */
+  base: number;
+  kinds: RoomKind[];
+  roomApt: number[];
+  windows: number[];
+  /** drzwi na zewnątrz (rysują się jak drzwi frontowe) */
+  entrances: number[];
+  /** ślady w pustych mieszkaniach (uszkodzenia) i przyczyny pustych mieszkań (numery przekroju) */
+  damage: [number, DamageKind][];
+  why: [number, AptWhy][];
+}
+
+/** wygląd drzwi sąsiada: zwykłe, wyważone (jak w fali 1) albo zabite deskami */
+export interface DoorLook {
+  tile: number;
+  look: 'zwykle' | 'wywazone' | 'zabite';
+}
+
+/** Kawałek przekroju z wnętrza budynku: prostokąt budynku, pomieszczenia od base, mieszkania od aptBase,
+    puste mieszkania (przyczyna śladu) i ślady uszkodzeń, drzwi na zewnątrz. */
+export function czescPrzekroju(
+  w: Pick<World, 'size' | 'buildings' | 'bid'>,
+  it: Interior,
+  base: number,
+  aptBase: number,
+  why: readonly (readonly [number, AptWhy])[],
+  slady: readonly { t: number; k: DamageKind }[],
+  entrances: readonly number[],
+): SectionPart {
+  const b = w.buildings[it.building];
+  const size = w.size;
+  const W = b.x1 - b.x0 + 1;
+  const H = b.y1 - b.y0 + 1;
+  const cell = new Uint8Array(W * H);
+  const room = new Int16Array(W * H).fill(-1);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = (b.y0 + y) * size + b.x0 + x;
+      if (w.bid[i] !== it.building) continue;
+      cell[y * W + x] = it.cell[i];
+      if (it.room[i] >= 0) room[y * W + x] = base + it.room[i];
+    }
+  return {
+    building: it.building,
+    x0: b.x0,
+    y0: b.y0,
+    w: W,
+    h: H,
+    cell,
+    room,
+    base,
+    kinds: it.rooms.map((r) => r.kind),
+    roomApt: it.rooms.map((r) => (r.apt >= 0 ? aptBase + r.apt : -1)),
+    windows: [...it.windows],
+    entrances: [...entrances],
+    damage: slady.map((d) => [d.t, d.k]),
+    why: why.map(([apt, k]) => [aptBase + apt, k]),
+  };
+}
+
+/** dokłada kawałek do przekroju (w głównym wątku i w kopii sceny w workerze) */
+export function dolozCzesc(sec: SectionScene, part: SectionPart, size: number): void {
+  if (!sec.wlasne) {
+    sec.cell = sec.cell.slice();
+    sec.room = sec.room.slice();
+    sec.wlasne = true;
+  }
+  for (let y = 0; y < part.h; y++)
+    for (let x = 0; x < part.w; x++) {
+      const k = y * part.w + x;
+      if (part.cell[k] === IN.NONE) continue;
+      const i = (part.y0 + y) * size + part.x0 + x;
+      sec.cell[i] = part.cell[k];
+      sec.room[i] = part.room[k];
+    }
+  part.kinds.forEach((kind, k) => {
+    sec.kinds[part.base + k] = kind;
+    (sec.roomApt ??= [])[part.base + k] = part.roomApt[k];
+  });
+  for (const t of part.windows) sec.windows.add(t);
+  for (const t of part.entrances) sec.entrances.add(t);
+  sec.damage ??= new Map();
+  for (const [t, k] of part.damage) sec.damage.set(t, k);
+  sec.why ??= new Map();
+  for (const [a, k] of part.why) sec.why.set(a, k);
+  (sec.otwarte ??= new Set()).add(part.building);
+}
+
+/** wygląd drzwi sąsiada w przekroju: zabite deskami, wyważone (uszkodzenie drzwi) albo zwykłe */
+export function ustawDrzwi(sec: SectionScene, d: DoorLook): void {
+  sec.zabite ??= new Set();
+  sec.damage ??= new Map();
+  if (d.look === 'zabite') sec.zabite.add(d.tile);
+  else sec.zabite.delete(d.tile);
+  if (d.look === 'wywazone') sec.damage.set(d.tile, 'drzwi');
+  else if (sec.damage.get(d.tile) === 'drzwi' && d.look === 'zwykle') sec.damage.delete(d.tile);
+}
+
+/** świat z uszkodzeniami i stanami mieszkań (kontrakt M2, src/world/apts.ts), gdy już je ma */
+export type WorldWear = { damage?: readonly Damage[]; apts?: readonly AptState[] };
+
+export function sectionOf(w: Pick<World, 'interior' | 'buildings' | 'seed'> & WorldWear): SectionScene {
   const int = w.interior;
   const kinds: RoomKind[] = [];
-  for (const r of int.rooms) kinds[r.id] = r.kind;
-  return {
+  const roomApt: number[] = [];
+  for (const r of int.rooms) {
+    kinds[r.id] = r.kind;
+    roomApt[r.id] = r.apt;
+  }
+  const sec: SectionScene = {
     building: int.building,
     cell: int.cell,
     room: int.room,
@@ -65,7 +205,18 @@ export function sectionOf(w: Pick<World, 'interior' | 'buildings' | 'seed'>): Se
     entrances: new Set(w.buildings[int.building].entrances.map((e) => e.tile)),
     lit: new Set(),
     seed: w.seed | 0,
+    roomApt,
   };
+  setWear(sec, w.damage ?? [], w.apts ?? []);
+  return sec;
+}
+
+/** uszkodzenia i ślady pustych mieszkań budynku przekroju (z kontraktu świata albo z atrapy) */
+export function setWear(sec: SectionScene, damage: readonly Damage[], apts: readonly AptState[]): void {
+  sec.damage = new Map(damage.filter((d) => d.bid === sec.building).map((d) => [d.tile, d.kind]));
+  sec.why = new Map(
+    apts.filter((a) => a.bid === sec.building && a.state === 'puste' && a.why).map((a) => [a.apt, a.why!]),
+  );
 }
 
 /**
@@ -120,13 +271,24 @@ export function describeTile(sec: SectionScene, i: number, size: number, facade:
         entrance: sec.entrances.has(i),
         face,
         facade: face === 'out' ? facade : undefined,
+        broken: sec.damage?.get(i) === 'drzwi' || undefined,
+        boarded: sec.zabite?.has(i) || undefined,
       };
     default: {
       const mask = maskOf(wallish);
       if (sec.windows.has(i) && out) {
         const side = out & NB.N ? NB.N : out & NB.S ? NB.S : out & NB.E ? NB.E : NB.W;
         const [ix, iy] = side === NB.N ? [0, 1] : side === NB.S ? [0, -1] : side === NB.E ? [-1, 0] : [1, 0];
-        return { kind: 'window', mask, out: side, room: kindAt(ix, iy) ?? 'pokoj', lit: sec.lit.has(i), facade };
+        const broken = sec.damage?.get(i) === 'okno' || undefined;
+        return {
+          kind: 'window',
+          mask,
+          out: side,
+          room: kindAt(ix, iy) ?? 'pokoj',
+          lit: sec.lit.has(i),
+          facade,
+          broken,
+        };
       }
       return { kind: 'wall', mask, outer: out !== 0, out, face, facade: face === 'out' ? facade : undefined };
     }
@@ -187,24 +349,53 @@ export function specOf(t: ThingLike, fire = 0): ThingSpec | null {
   const seed = seedOf(t);
   const rot = (t.rot & 3) as 0 | 1 | 2 | 3;
   const f = burning(t) ? fire % FIRE_FRAMES : undefined;
-  if (FURNITURE.has(t.kind)) return { kind: t.kind as 'koza', rot, seed, fire: f };
+  if (FURNITURE.has(t.kind))
+    return { kind: t.kind as 'koza', rot, seed, fire: f, broken: t.broken || undefined, burnt: t.burnt || undefined };
+  if ((BUILD_KINDS as readonly string[]).includes(t.kind)) return { kind: t.kind as 'warsztat', rot, seed: seed % 8 };
   switch (t.kind) {
     case 'drewno':
     case 'jedzenie':
     case 'gruz':
     case 'deski':
     case 'zlom':
+    case 'czesci':
+    case 'leki':
       return { kind: t.kind, size: pileSize(t.n), seed };
     case 'posilek':
       return { kind: 'posilek', size: potSize(t.n), table: t.table !== undefined, seed };
     case 'wrak':
-      return { kind: 'wrak', model: t.model === 'polonez' ? 'polonez' : 'maluch', rot, seed: seed % WRECK_LOOKS };
+      return {
+        kind: 'wrak',
+        model: t.model === 'polonez' ? 'polonez' : 'maluch',
+        rot,
+        seed: seed % WRECK_LOOKS,
+        stage: t.stage === 1 || t.stage === 2 ? t.stage : undefined,
+      };
+    case 'wozek':
+      // wózek handlarza: pełny przy wizycie, pusty po napaści (n 0)
+      return { kind: 'wozek', full: (t.n ?? 1) > 0 ? undefined : false, seed: seed % 4 };
+    case 'smieci':
+      // n to wielkość sterty z kontraktu świata (1–3), nie liczba sztuk
+      return { kind: 'smieci', size: Math.min(3, Math.max(1, Math.round(t.n ?? 1))) as 1 | 2 | 3, seed };
     case 'pien':
       return { kind: 'pien', seed };
     case 'trzepak':
       return { kind: 'trzepak', rot: t.w >= t.h ? 0 : 1, seed };
+    // ogród domu: sznur na pranie z praniem, gdy n > 0 (sztuki prania); huśtawka ułożona z w i h;
+    // buda, ławka i kompost stoją plecami do strony rot, ułożenie zgodne z w i h
+    case 'sznur':
+      return { kind: 'sznur', rot: t.w >= t.h ? 0 : 1, pranie: (t.n ?? 0) > 0 || undefined, seed: seed % 8 };
+    case 'hustawka':
+      return { kind: 'hustawka', rot: t.w >= t.h ? 0 : 1, seed: seed % 4 };
+    case 'lawka':
+      return { kind: 'lawka', rot: t.w >= t.h ? (rot === 2 ? 2 : 0) : rot === 3 ? 3 : 1, seed: seed % 4 };
+    case 'kompost':
+    case 'buda':
+      return { kind: t.kind, rot, seed: seed % 4 };
     case 'ognisko':
       return { kind: 'ognisko', fire: f, seed };
+    case 'krew':
+      return { kind: 'krew', seed: seed % 8 };
     default:
       return null;
   }

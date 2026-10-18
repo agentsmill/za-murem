@@ -1,10 +1,14 @@
 /* Zarząd spółdzielni (M1): typy wąskiego interfejsu z symulacją. Moduł src/gov nie importuje src/sim.
    Wejście to odczyt stanu gry o nazwach jak snapshot() z src/sim/snapshot.ts, wyjście to skutki, które
-   symulacja stosuje u siebie (zapasy, potrzeby, chwilowe nastroje, ludzie poza mapą). */
+   symulacja stosuje u siebie (zapasy, potrzeby, chwilowe nastroje, ludzie poza mapą).
+   Zdania, które zarząd składa sam (kronika, raport, karta nocy, okna), są typu Tx: od razu po polsku i po
+   angielsku (src/core/jezyk.ts), więc stan nie zależy od języka gry. Powód nastroju (GovMood.why) trafia do stanu
+   symulacji i zostaje polskim napisem, który interfejs tłumaczy przy rysowaniu. */
 
 import type { Dom, EndingId, LawPath, TechDom } from '../content/data.ts';
 import type { ActiveEvent } from '../content/events.ts';
 import type { Person } from '../content/people.ts';
+import type { Tx } from '../core/jezyk.ts';
 import type { RngState } from '../core/rng.ts';
 
 // ---------------------------------------------------------------- wejście
@@ -38,7 +42,16 @@ export interface GovPerson {
   /** posterunek warty, jeśli stoi ('brama', 'd<id>', 'koza'), jak SimPerson.post. Z tym polem zarząd wie, że
       symulacja sama prowadzi noc na posterunku (kto stoi, ten nie śpi), więc rano nie odejmuje już sił */
   post?: string | null;
+  /** broń (id z src/sim/bron.ts) i jej rodzaj do warty i wypraw: gołe ręce (albo broń palna bez amunicji),
+      broń do walki wręcz, dzida (sięga przez siatkę), broń palna albo kusza z amunicją */
+  weapon?: string | null;
+  arm?: Arm;
+  /** ugryziony (zakażony) */
+  bitten?: boolean;
 }
+
+export type Arm = 'brak' | 'wrecz' | 'dzida' | 'palna';
+export type GameMode = 'zwykly' | 'zombie';
 
 /** zapasy: drewno i jedzenie jak SimStock, materiały do łatania siatki przyjdą w turze 2 */
 export interface GovStock {
@@ -59,8 +72,8 @@ export interface GovHole {
   id: number;
   /** wielkość 0–1: większą łatwiej przejść */
   size: number;
-  /** nazwa miejsca do tekstów, np. „przy garażach” */
-  name?: string;
+  /** nazwa miejsca do tekstów, np. „przy garażach” (po angielsku „by the garages”) */
+  name?: Tx;
 }
 
 export interface GovFence {
@@ -75,6 +88,23 @@ export interface GovLight {
   campfire: boolean;
   /** lampa albo latarnia przy bramie */
   gateLamp: boolean;
+}
+
+/** miejsce siedziby ze świata (src/gov/miejsce.ts): z niego zarząd bierze warianty tekstów i warunki wydarzeń */
+export interface GovPlace {
+  /** dom jednorodzinny albo blok (i każdy budynek z wieloma mieszkaniami) */
+  kind: 'dom' | 'blok';
+  /** bloki i domy w promieniu 120 m od siedziby (bez niej) */
+  blocks: number;
+  houses: number;
+  /** jakich sąsiadów jest więcej; 'nikt', gdy w promieniu nie ma budynku mieszkalnego */
+  near: 'bloki' | 'domy' | 'nikt';
+  /** metry do najbliższego sklepu (do 300 m), garaży (do 150 m), przychodni albo apteki (do 300 m); null: brak */
+  shop: number | null;
+  garages: number | null;
+  clinic: number | null;
+  /** najwyższy budynek do 200 m, z którego widać siedzibę */
+  tower: 'wiezowiec' | 'blok' | 'szkola' | 'kosciol' | 'hala' | 'market' | null;
 }
 
 export interface GovInput {
@@ -103,9 +133,18 @@ export interface GovInput {
   burned?: number | readonly unknown[];
   /** nazwa siedziby do tekstów, np. „Obrońców Wybrzeża 4” */
   hqName?: string;
+  /** miejsce siedziby (dom albo blok, co w okolicy); bez niego zarząd zakłada blok wśród bloków */
+  place?: GovPlace;
   /** warta spoza karty nocy (polecenie z menu): kto stoi i gdzie ('brama' albo 'd<id dziury>'); bez pola
       zarząd bierze osoby z pracą 'guard' za wartę w nieznanym miejscu */
   guards?: { id: string; post: string }[];
+  /** tryb zombie: szwendacze przy siatce (do 12 m), napierający, liczniki od początku gry (zabici, przerwania
+      siatki, ugryzienia) i wielkość stada tej nocy */
+  horde?: { near: number; pressing: number; killed: number; breaches: number; bites: number; tonight: number };
+  /** zmarli (zarząd z id, mieszkańcy z pustym id) od początku gry, po kolei; lista tylko rośnie */
+  dead?: { id: string; name: string; cause: string; tick: number }[];
+  /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
+  napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -147,9 +186,14 @@ export interface GovEffects {
   /** kto i gdzie trzyma wartę tej nocy (symulacja trzyma ich na nogach przy siatce) */
   guards: { id: string; post: string }[];
   /** wpisy do kroniki */
-  log: string[];
+  log: Tx[];
   /** rozstrzygnięcie napadu w tym wywołaniu (w minucie napadu); null albo brak, gdy nic się nie rozstrzygnęło */
   raidResult?: RaidResult | null;
+  /** znaleziona broń (id z src/sim/bron.ts) i amunicja do magazynu */
+  arms?: string[];
+  ammo?: Partial<Record<'naboje' | 'loftki' | 'belty', number>>;
+  /** ugryzieni na wyprawie (zakażeni) */
+  bitten?: string[];
 }
 
 export interface RaidPlan {
@@ -158,7 +202,7 @@ export interface RaidPlan {
   at: number;
   /** 'brama' albo 'd<id dziury>' */
   post: string;
-  where: string;
+  where: Tx;
   /** siła napadu (ta sama, z którą zarząd rozstrzygnie napad) */
   attack?: number;
   /** ilu szabrowników przychodzi (1–3, z siły) */
@@ -170,7 +214,7 @@ export interface RaidResult {
   day: number;
   outcome: 'odparty' | 'wtargnięcie';
   post: string;
-  where: string;
+  where: Tx;
   attack: number;
   defense: number;
   /** zabrane zapasy w liczbach dodatnich (przy odparciu same zera) */
@@ -200,10 +244,10 @@ export type LootKey = StockKey;
 export interface NightOption {
   /** 'sen', 'warta:brama', 'warta:d<id>', 'wyprawa:blisko', 'wyprawa:daleko' */
   key: string;
-  label: string;
+  label: Tx;
   ok: boolean;
   /** dlaczego nie można */
-  why?: string;
+  why?: Tx;
   /** wyprawa: szansa kłopotów 0–1 */
   risk?: number;
   /** wyprawa: spodziewany łup (od, do) */
@@ -212,7 +256,7 @@ export interface NightOption {
   guard?: number;
   /** wyprawa: id celu z TARGETS */
   target?: string;
-  note?: string;
+  note?: Tx;
 }
 
 export interface NightCardPerson {
@@ -228,14 +272,16 @@ export interface NightCard {
   day: number;
   /** szansa, że szabrownicy spróbują, i słowo do tego */
   chance: number;
-  chanceWord: string;
-  forecast: string;
+  chanceWord: Tx;
+  forecast: Tx;
   /** miejsca do pilnowania: brama i dziury, od najsłabszego */
-  posts: { key: string; name: string; weak: number }[];
+  posts: { key: string; name: Tx; weak: number }[];
   /** spodziewane straty, jeśli wejdą (do porównania z wartą) */
   loss: { wood: number; supplies: number };
+  /** tryb zombie: ilu szwendaczy przyjdzie w stadzie, słowo do tego i wytrzymałość siatki 0–1 */
+  horde?: { size: number; word: Tx; fence: number };
   people: NightCardPerson[];
-  advice: string;
+  advice: Tx;
   /** koza zarządu na noc (bez kozy brak): drewno w zapasie razem z tym w kozie, ile zje do 6:00 przy dyżurze
       od zatwierdzenia karty (2 sztuki na godzinę) i do której godziny starczy ognia ('6:00' to do rana) */
   wood?: { have: number; need: number; until: string };
@@ -244,7 +290,7 @@ export interface NightCard {
 export interface NightReport {
   /** noc z dnia day na day + 1 */
   day: number;
-  lines: string[];
+  lines: Tx[];
   raid: 'brak' | 'odparty' | 'wtargnięcie';
   stolen: StockDelta;
   loot: StockDelta;
@@ -262,19 +308,19 @@ export interface NightReport {
 
 export interface LawOption {
   id: string;
-  name: string;
+  name: Tx;
   path: LawPath;
-  desc: string;
+  desc: Tx;
   /** ok, done (podpisana), lock (zablokowana), cd (odnowienie) */
   s: 'ok' | 'done' | 'lock' | 'cd';
-  why?: string;
+  why?: Tx;
 }
 
 export type Prompt =
   | { k: 'raport'; report: NightReport }
   | { k: 'uchwala'; day: number; first: boolean; options: LawOption[] }
   | { k: 'karta'; card: NightCard; assign: Record<string, string> }
-  | { k: 'wydarzenie'; id: string; title: string; text: string; choices: { label: string; ok: boolean }[] };
+  | { k: 'wydarzenie'; id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[] };
 
 // ---------------------------------------------------------------- stan
 
@@ -296,7 +342,7 @@ export interface NightPlan {
   /** wyprawy: grupy po celu */
   exp: { key: string; ids: string[]; target: string }[];
   /** linie raportu zbierane w nocy */
-  lines: string[];
+  lines: Tx[];
   hurt: { id: string; d: number }[];
   /** zaufanie i wkurzenie przy zatwierdzeniu (do zmian w raporcie) */
   t0: number;
@@ -310,6 +356,10 @@ export interface NightPlan {
   fire?: { on: number; all: number; at: number };
   /** kto w nocy stał przy kozie (id z posterunków symulacji, także z menu kozy) */
   koza?: string[];
+  /** tryb zombie: liczniki przy zatwierdzeniu karty, ugryzieni wtedy i najwięcej szwendaczy przy siatce w nocy */
+  z0?: { killed: number; breaches: number; bites: number };
+  bit0?: string[];
+  zpeak?: number;
 }
 
 export interface GovState {
@@ -329,6 +379,10 @@ export interface GovState {
     active: ActiveEvent | null;
     /** sekunda przy ekranie, w której pojawiło się bieżące wydarzenie */
     when: number;
+    /** sekunda przy ekranie, w której koza pierwszy raz się paliła (dym z komina) */
+    lit?: number;
+    /** sekunda przy ekranie, w której skończyła się cisza pierwszego dnia (kuchnia ciepła albo 18:00) */
+    warm?: number;
   };
   night: NightPlan | null;
   cardDay: number;
@@ -345,9 +399,15 @@ export interface GovState {
   /** kto trzymał wartę ostatniej nocy (propozycja zmienia wartowników) */
   lastGuards: string[];
   /** skutki odłożone na rano (z wydarzeń): zapasy i linia do raportu */
-  later: { day: number; stock: Partial<StockDelta>; line: string }[];
+  later: { day: number; stock: Partial<StockDelta>; line: Tx }[];
   /** decyzje gracza w sekundach przy ekranie (do pomiaru tempa) */
   decisions: { s: number; k: string }[];
-  log: { day: number; clock: string; txt: string; big: boolean }[];
+  log: { day: number; clock: string; txt: Tx; big: boolean }[];
   over: EndingId | null;
+  /** tryb gry; stary zapis: zwykły */
+  mode?: GameMode;
+  /** ile zgonów z GovInput.dead zarząd już opłakał */
+  deadN?: number;
+  /** ile napaści z GovInput.napady osiedle już policzyło (pole od pierwszej napaści) */
+  napadN?: number;
 }

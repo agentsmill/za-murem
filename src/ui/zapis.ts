@@ -1,10 +1,13 @@
 /* Zapis gry w przeglądarce (localStorage): dane osiedla, z których świat odtwarza się deterministycznie,
-   ziarno, stan symulacji, stan zarządu i czas przy ekranie. Jeden zapis na przeglądarkę. */
+   ziarno, stan symulacji, stan zarządu i czas przy ekranie. Jeden zapis na przeglądarkę. Zapis nie zależy od języka;
+   tylko etykieta wznowienia (`saveLabel`) jest w bieżącym języku. */
 
+import { L } from '../core/jezyk.ts';
 import { hashString } from '../core/rng.ts';
 import type { GovState } from '../gov/typy.ts';
 import { clockOf, dayOf } from '../sim/clock.ts';
 import type { SimState } from '../sim/sim.ts';
+import { modeOf } from '../sim/tryb.ts';
 import type { Loaded } from '../world/load.ts';
 import type { World } from '../world/world.ts';
 
@@ -24,12 +27,17 @@ export interface Save {
   cam?: { x: number; y: number; zoom: number };
   /** odcisk świata (worldKey): po zmianie generatora stary stan nie pasuje do nowego wnętrza */
   world?: string;
+  /** gra sieciowa (src/net/siec.ts, StanSieci): budynki, które nie mogą być siedzibą (świat buduje się z nimi tak
+      samo), czy drużyna ma już dom, konto gry i wersja zapisu w chmurze; brak: gra bez sieci */
+  siec?: { zajete: string[]; dom: boolean; utracony?: string; konto?: string; wersja?: number };
 }
 
 /** odcisk świata z danych osiedla: inna wersja generatora daje inny odcisk */
 export function worldKey(
   w: Pick<World, 'size' | 'hq' | 'buildings' | 'trees' | 'dryTree'> & {
     fence?: { tiles: number[] };
+    /** siatka sprzed wspólnego płotu (M2 fala 2): klucz liczy się ze świata, nie z gry */
+    fenceBaza?: { tiles: number[] };
     interior?: { rooms: unknown[]; furniture: unknown[] } | null;
   },
 ): string {
@@ -40,7 +48,7 @@ export function worldKey(
       w.buildings.length,
       w.trees.length,
       w.dryTree,
-      w.fence?.tiles.length ?? 0,
+      (w.fenceBaza ?? w.fence)?.tiles.length ?? 0,
       w.interior?.rooms.length ?? 0,
       w.interior?.furniture.length ?? 0,
     ]),
@@ -75,6 +83,8 @@ export function readSave(from: Store | null = store()): Save | null {
     if (!raw) return null;
     const s = JSON.parse(raw) as Save;
     if (s.v !== SAVE_VERSION || s.sim?.v !== 3 || s.gov?.v !== 1 || !s.data?.geo) return null;
+    // stan gry sieciowej buduje świat (lista wykluczeń), więc zły kształt to zły zapis (także z chmury)
+    if (s.siec && !(Array.isArray(s.siec.zajete) && s.siec.zajete.every((k) => typeof k === 'string'))) return null;
     return s;
   } catch {
     return null;
@@ -89,5 +99,6 @@ export function clearSave(from: Store | null = store()): void {
   }
 }
 
-/** „Przymorze, dzień 2, 06:40” na przycisk ekranu startowego */
-export const saveLabel = (s: Save): string => `${s.data.name}, dzień ${dayOf(s.sim.tick)}, ${clockOf(s.sim.tick)}`;
+/** „Przymorze, dzień 2, 06:40” (po angielsku „Przymorze, day 2, 06:40”) na przycisk ekranu startowego */
+export const saveLabel = (s: Save): string =>
+  `${s.data.name}${modeOf(s.sim) === 'zombie' ? ' (zombie)' : ''}, ${L('dzień', 'day')} ${dayOf(s.sim.tick)}, ${clockOf(s.sim.tick)}`;

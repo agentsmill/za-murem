@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { labelRegions } from '../../src/sim/path.ts';
+import { settleApts } from '../../src/world/apts.ts';
 import type { Geo, Pt } from '../../src/world/geo.ts';
 import { applyInterior, buildInterior, IN, type Interior } from '../../src/world/interior.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
@@ -154,8 +155,10 @@ describe('wnętrze siedziby', () => {
   it('wnętrze wynika tylko ze świata, numeru budynku i ziarna (bez ukrytego stanu)', () => {
     const a = ADDRESSES[0];
     const w = buildWorld(toGeoT(decodedTiles(a), a.lat, a.lon, LOAD_RADIUS), { seed: 1 });
-    // gotowy świat (z nałożonym wnętrzem, suchym drzewem i trzepakiem) daje to samo wnętrze siedziby
-    expect(buildInterior(w, w.hq, { home: true })).toEqual(w.interior);
+    // gotowy świat (z nałożonym wnętrzem, suchym drzewem i trzepakiem) daje to samo wnętrze siedziby;
+    // zepsute meble w pustych mieszkaniach wynikają jeszcze ze stanów mieszkań (World.apts)
+    const fresh = buildInterior(w, w.hq, { home: true });
+    expect({ ...fresh, furniture: settleApts({ ...w, interior: fresh }, w.apts).furniture }).toEqual(w.interior);
     // wnętrze innego budynku nie zależy od tego, co już nałożono na świat
     const other = w.buildings.find((b) => b.id !== w.hq && b.cls === 'blok' && b.entrances.length)!;
     const before = buildInterior(w, other.id);

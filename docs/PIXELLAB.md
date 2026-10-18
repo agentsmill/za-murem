@@ -66,23 +66,86 @@ Pocztówki generuje gra na żywo dla każdego gracza? Nie. Klucz API nie może t
 - Zestaw kafelków top-down 32 px: około 0,01.
 - Kafelki pro: 0,08-0,15.
 
-Pierwsza fala z listy niżej to według tych stawek rząd 15-40 USD z poprawkami. To mój szacunek, nie cena PixelLab. Abonament i limity generacji sprawdzić na pixellab.ai przed startem. Warunki licencji na wygenerowane assety (publiczne repo, ewentualnie komercyjne użycie) też sprawdzić i zapisać tutaj.
+Pierwsza fala z listy niżej to według tych stawek rząd 15-40 USD z poprawkami. To mój szacunek, nie cena PixelLab. Abonament i limity generacji sprawdzić na pixellab.ai przed startem.
+
+Koszt w generacjach abonamentu, zmierzony na koncie przy kotwicy stylu 18.10.2026 (Tier 1: 2000 generacji na miesiąc, kredyty USD idą dopiero po wyczerpaniu generacji, a przy 0 USD nic ponad abonament nie przejdzie):
+
+- `create_map_object` 96×64: 1. `create_image_pixflux`: 1. `reduce_colors`: 0,1.
+- `create_character` v3, płótno 48 albo 64: 2.
+- `create_object_pro_flash` 96×64: 5.
+- `create_topdown_tileset` 32 px: standard 4, pro 15.
+- `create_building_kit` 32 px, `create_tiles_pro` 32 px, `edit_image` 160×128: po 10.
+- Z cennika w opisie narzędzi (jeszcze niezmierzone): `animate_character` z szablonu 1 na kierunek, z opisu przy postaci 48 px około 1 na kierunek; `create_character_state` 10–25.
+- `create_image_pro` 160×128 (cztery propozycje w jednym zamówieniu): 15.
+
+## Licencja
+
+Regulamin PixelLab (pixellab.ai/termsofservice, sprawdzony 18.10.2026): wygenerowana grafika jest nasza (pkt 1.3), wolno jej używać komercyjnie i niekomercyjnie, zmieniać ją i rozpowszechniać (pkt 3.3), bez obowiązku podpisu. Jedno ograniczenie: nie wolno trenować na niej własnych modeli bez zgody PixelLab (pkt 1.2 i 3.3). Do tego obowiązuje licencja Open RAIL-M modelu (pkt 4.1). Surowe pliki mogą więc leżeć w publicznym repo.
 
 ## Zasady stylu
 
-1. Najpierw kotwica stylu: jeden kafelek trawy z chodnikiem, jeden obiekt (trzepak), jedna postać (emeryt w kurtce), jeden kawałek bloku z modułów. Pokazać Mateuszowi, poprawić, zatwierdzić.
-2. Z kotwicy zapisać paletę (około 32 kolory) w `assets/palette.json` i podawać ją do każdego kolejnego zamówienia.
+1. Najpierw kotwica stylu: jeden kafelek trawy z chodnikiem, jeden obiekt (trzepak), jedna postać (emeryt w kurtce), jeden kawałek bloku z modułów. Pokazać Mateuszowi, poprawić, zatwierdzić. Zatwierdzona przez Mateusza 18.10.2026 („Biorę kotwicę stylu z tą obsadą i fasadą 13 px na piętro”, gałąź `kotwica-stylu`): chodnik z trawnikiem, trzepak, 24 postacie (zarząd i mieszkańcy), kawałek bloku z modułów i warianty papy na dach. W manifeście mają status `zatwierdzony`. Ustalenia z akceptacji: fasada bloku ma 13 px na piętro, czyli `floorH` 13 zamiast 9 przy podpinaniu bloków; tłum to 24 postacie z PixelLab, a różne wyglądy daje kod, który przemalowuje ubrania na rampy z `assets/palette.json`; każdy obiekt zostaje też w wersji rysowanej kodem.
+2. Z kotwicy zapisać paletę (około 32 kolory) w `assets/palette.json` i podawać ją do każdego kolejnego zamówienia. Zapisana 18.10.2026, razem z rampami do przemalowań ubrań.
 3. Kafelek 32 px = 1 m. Widok `low top-down` dla wszystkiego, co stoi na mapie. Postacie na płótnie 48 albo 64 px, 8 kierunków.
-4. Każdy następny asset z referencją stylu (`style_images`, `style_object_id`, `style_character_id`) do zatwierdzonej kotwicy.
+4. Każdy następny asset z referencją stylu (`style_images`, `style_object_id`, `style_character_id`) do zatwierdzonej kotwicy. Postacie: `create_character` v3 z tymi samymi ustawieniami (płótno 48, dzieci 36–40, `low top-down`, `single color outline`, `medium detail`), a w trybie pro `style_character_id` emeryta (6cef90c9-22a6-496a-b24d-9bf4df154bd3). Obiekty: `create_object_pro_flash` z paletą, wzorzec stylu trzepak. Teren: zestawy dowiązane przez base tile id chodnika i trawy (manifest, `kotwica-chodnik-trawa`). Budynki: `create_image_pro` ze wzorcem kawałka bloku (`assets/raw/kotwica-blok/1.png`).
 5. Warianty pór roku przez `create_object_state` i osobne zestawy kafelków (śnieg), nie przez filtr koloru.
+
+## Czego nauczyła kotwica stylu (18.10.2026)
+
+Szczegóły, prompty i koszty każdej próby są w `assets/manifest.json`, zestawienie w zrzutach `kotwica-stylu` i `kotwica-arkusz` (`npm run shots -- kotwica`).
+
+- Paleta: `create_topdown_tileset` i `create_character` przyjmują `palette` tylko w trybie pro (standard i v3 odmawiają, choć pomoc PixelLab twierdzi inaczej), `create_map_object` nie ma jej wcale. Wtedy zamawiamy bez palety i dociągamy wynik przez `reduce_colors` z paskiem palety (`assets/wejscia/paleta-32.png`), wszystkie kierunki postaci w jednym wywołaniu.
+- Obrazki do narzędzi idą przez `get_upload_url` i `curl -F`, a nie jako base64 w argumencie (klient potrafi je uciąć). Do zamówień, które biorą obrazek z adresu, wystarczy też adres pobrania wyniku z PixelLab.
+- Trzepak i inne obiekty: `create_map_object` rysuje po swojemu (ukośnie, z kępą trawy), `create_object_pro_flash` z paletą trzyma opis i rzut od frontu.
+- Teren: zestaw pro z paletą wyszedł dobrze, standard był jaskrawy. Kolejny zestaw dowiązany przez `lower_base_tile_id` zostawia ten sam chodnik. Trawnik trzeba opisywać jako spokojny i o niskim kontraście, bo „kilka liści” daje łąkę z makami. Jednolite kafelki da się odbijać w poziomie i pionie, żeby nie było widać powtórzeń. Teren gry jest zapisany per kafelek, a kafelki Wanga patrzą na narożniki, więc rysujemy je na podwójnej siatce: narożnik kafelka Wanga to środek kafelka świata, a granica terenów wypada wtedy na krawędzi kafelka.
+- Postać v3 wypełnia całe płótno: 64 px to 63 px wzrostu, czyli około 2 m i olbrzym przy ludziach z gry (45 px). Płótno 48 daje 47 px, tyle co dziś.
+- Paczki postaci: Tier 1 przyjmuje najwyżej 8 zadań naraz (dalej odpowiada 429), więc większe paczki idą falami po 8. Płótno v3 musi być wielokrotnością 4. Dzieci na mniejszym płótnie (36–40 px), bo v3 rysuje postać na całą wysokość płótna. Zadanie, które stanie po stronie PixelLab, nie jest liczone, wystarczy zamówić jeszcze raz. `reduce_colors` bierze klatki jednego rozmiaru, razem do 512×512 px (14 postaci 48 px po 8 kierunków na wywołanie, 0,1 generacji).
+- Różne postacie: każda nowa postać v3 w tych samych ustawieniach (płótno 48, `low top-down`, `single color outline`, `medium detail`) wychodzi w tym samym stylu bez wzorca, za 2 generacje. Kolory ubrań dla tłumu przemalowuje kod (`przemalowanie` przy postaci i `rampy` w palecie w manifeście), bo stany postaci kosztują 10–25 generacji. Pełna obsada, 12 postaci z chodem i pięcioma pracami, to według cennika około 310 generacji w 4 kierunkach albo 600 w 8.
+- Blok: `create_building_kit` w `square_topdown` skraca ziemię do 32×24 (gra ma 32×32 z góry), a ściany dwukafelkowe mają okna co około 21 px, bez balkonów. Do sprawdzenia `tile_view_angle` 90 z niskim `wall_angle`. Modele pro (`create_image_pro`, `edit_image`) rysują fasadę w naturalnej skali około 13 px na piętro. Przy 9 px na piętro, jak dziś w grze (`floorH` w `src/render/art/scene.ts`), da się tylko przemalować wycinek przez img2img. Kawałek bloku z `create_image_pro` składamy w moduły: profil attyki, pas fasady (gzyms z górnym piętrem, środkowe piętro powtarzane, parter z cokołem), przęsła wzdłuż ściany, wejście nad drzwiami. Prostokąty są w manifeście.
+- Dach: `create_tiles_pro` ze wzorcem stylu daje 16 wariantów papy, ale każdy z jasną ramką, więc obok siebie wyglądają jak posadzka. Dach to tło w kolorze papy z szumem i szwami, a środki kafelków (kałuża, mech, odpływ, gruz, spękania, żwir) są rzadkimi naklejkami.
 
 ## Jak trzymać assety w repo
 
 - `assets/manifest.json`: każdy asset ma id, narzędzie, prompt, parametry, identyfikator PixelLab, koszt, status (zamówiony, gotowy, zatwierdzony, odrzucony), ścieżkę pliku.
-- `assets/raw/<id>/`: pliki dokładnie tak, jak przyszły z PixelLab. Nie edytować ręcznie.
-- `public/assets/`: atlasy i arkusze sprite'ów zrobione skryptem z `assets/raw`.
+- `assets/raw/<id>/`: pliki dokładnie tak, jak przyszły z PixelLab. Nie edytować ręcznie. Biome ich nie sprawdza.
+- `assets/wejscia/`: nasze obrazki dla PixelLab (obraz startowy, pasek palety), żeby zamówienie dało się powtórzyć.
+- `public/assets/`: atlasy i arkusze sprite'ów zrobione skryptem z `assets/raw`: `npm run atlasy` (`tools/atlasy.ts`) bierze tylko assety ze statusem `zatwierdzony` i pisze `teren.png` (16 kafelków Wanga w kolejności narożników), `blok.png` (moduły kawałka bloku: gzyms z górnym piętrem, środkowe piętro, parter, wejście, przęsła, profil attyki), `dach.png` (naklejki papy bez tła), `trzepak.png`, `ludzie.png` (animacje 24 postaci z `assets/raw/<id>/Idle/animations`: chód i stanie wszystkich, 14 prac zarządu; klatki po palecie, przycięte do sylwetki, spakowane w dwa pasy wierszy: mieszkańcy i zarząd) i opis `grafika.json`. Pliki są w repo, bo build ich nie robi; test `tests/unit/grafika-atlasy.test.ts` pilnuje, że odpowiadają `assets/raw` (po zmianie w surowych plikach albo w manifeście: `npm run atlasy`, sprawdzenie bez zapisu: `npm run atlasy -- --sprawdz`).
 - Każdy typ obiektu ma też grafikę zapasową rysowaną kodem, żeby gra działała bez assetów i żeby można było budować mechanikę przed grafiką.
 - Przed każdą większą paczką zamówień policzyć koszt z manifestu i zapytać Mateusza. Budżet na etap ustala Mateusz.
+
+## Kotwica w grze (M3, 18.10.2026)
+
+Gra wczytuje `public/assets/grafika.json` i atlasy przy starcie (`src/render/grafika.ts`), a rysuje z nich `src/render/art/pixellab.ts`. Bez plików, w innej wersji opisu albo bez sieci rysuje kod jak dawniej; bez jednego obrazka tylko ta część. `?grafika=kod` wyłącza grafikę z PixelLab (do porównań).
+
+- Teren w kawałkach mapy (także w workerach): trawnik, park, chodnik i ścieżka z kafelków Wanga na podwójnej siatce (narożnik kafelka Wanga w środku kafelka świata, granica terenów na krawędzi kafelka). Narożnik liczy się jako trawnik dla trawy, parku i lasu, a jako chodnik dla całej reszty, więc trawnik przy jezdni, budynku albo wodzie ma krawężnik, a przy parku przechodzi bez krawężnika. Las, jezdnia, parking, woda, piaskownica, boisko i działki zostają z kodu. Jednolite kafelki są odbite według miejsca. Chodnik przy jezdni ma krawężnik z kodu, a cały teren ciemnieje przy ścianach i w cieniu budynków jak dawniej.
+- Bloki (`cls === 'blok'`) z modułów: pas fasady z tyloma piętrami, ile ma budynek (13 px na piętro, `floorH` w stylu budynku), przęsła po x świata, nad drzwiami od południa moduł wejścia, na dachu papa z naklejkami i szwami i attyka od północy, zachodu i wschodu. Dach bez maszynowni, kominów i anten z kodu (jak w zatwierdzonym kadrze). Domy, garaże, pawilony i reszta budynków zostają z kodu, z dawną fasadą 9 px na piętro.
+- Trzepak od frontu (3×1) z PixelLab, ze stopami w tym samym wierszu kafelka co betonowe stopy trzepaka z kodu. Trzepak bokiem (1×3) zostaje z kodu, bo PixelLab dał tylko widok od frontu.
+- Postacie w grze (animacje z PixelLab): atlas `ludzie.png` i opis `postacie` w `grafika.json`. Pionek bierze postać z obsady po płci i wieku swojej osoby (`plec` i przedział `wiek` w manifeście): zarząd z czterech postaci zarządu (emeryt i emerytka od 58 i 52 lat, złota rączka i młoda poniżej), mieszkańcy z pozostałych dwudziestu, pionek bez osoby (przybysz, tłum) po numerze wyglądu. Ta sama osoba zawsze wygląda tak samo. Pozę z gry (`poseOf` w `src/render/poses.ts`) zamienia na animację `kluczAnimacji` i `numerKlatki` (`src/render/art/animacjePozy.ts`): chód i stanie, a u zarządu niesienie, rąbanie, klękanie, gotowanie, siedzenie (też drzemka), wartę, cios, celowanie, przeszukiwanie, młotek, deski i złom. Kierunek bez własnych klatek to odbity zachód. Leżenie (sen, zwłoki), szwendacze i brakująca praca zostają z kodu.
+- Kolory: z jednej postaci robi się pięć wersji (oryginał i ubranie przemalowane na cztery rampy palety), więc 20 mieszkańców to 100 wyglądów. Przemalowanie robi gra w locie przy pierwszym użyciu wersji (`atlasWersji`, kopia pasa wierszy atlasu), a kolory ubrania są przy postaci w `grafika.json`: te kolory kandydatów (z manifestu albo zgadnięte), które w statycznej postaci leżą w większości na tułowiu (`koloryUbrania`). Pasa wysokości nad stopami nie ma, bo pozy przysiadu, klęczenia i siedzenia przesuwają ciało względem niego (czapka i broda zmieniały kolor razem z pozą); kolor dzielony z włosami, butami albo obrysem zostaje jak był. Zarząd ma wersje dla dubli: pierwszy pionek z danej postaci jest w oryginale, następne na rampach od najdalszej od jej ubrania (`rampyOdNajdalszej`), żeby nie były kopiami.
+- Kotwica stóp: PixelLab stawia postać na środku płótna każdej animacji (48 px szablony, 64 albo 68 px animacje z opisu, każdy kierunek może mieć inne), więc stopy statycznej postaci względem środka (`stopyWzgledne`) są kotwicą wszystkich jej klatek. Najniższy piksel klatki odpada, bo siekiera wbita w ziemię, garnek albo gwóźdź podnosiłyby postać nad ziemię (klękanie, w którym stopy się podnoszą, stoi dolną krawędzią sylwetki).
+- Broń: nakładka z kodu zostaje przy trzymaniu i ciosie. Przy celowaniu postać z PixelLab ma już pistolet w rękach, więc nakładki nie ma, a dzida (pchnięcie) bije klatkami ciosu z nakładką dzidy.
+
+Koszt animacji obsady (18.10.2026, ostatecznie): szablon (`walking-4-frames`, `breathing-idle`, `crouching`, `cross-punch`) to 1 generacja na kierunek, animacja z opisu w trybie `pixminimax` (4 klatki, płótno 64 albo 68 px) też 1 na kierunek. Chód i stanie wszystkich 24 postaci w 4 kierunkach to 192 generacje, zarząd dostał do tego klękanie (4 kierunki) i 12 prac z opisu albo ciosu w trzech kierunkach (wschód to odbity zachód): 37 na postać, razem 148. W atlasie jest 340 generacji animacji, odrzucone próby i poprawki (pilotaże v3, drzemka, trzy podejścia do warty, pierwsze celowanie emeryta) dołożyły 17: 357 z uzgodnionych 400, wszystko z abonamentu (0 USD kredytów).
+
+Opisy prac zarządu do powtórzenia (tryb `pixminimax`, `frame_count` 4, `keep_first_frame` false, kierunki `south`, `north`, `west`, `animation_name` jak w pierwszej kolumnie; `subject_description` to jedno zdanie o postaci, np. „a stocky handyman with stubble in a dark grey knitted beanie, navy blue work overalls over a grey hoodie and a tool belt”; klękanie to szablon `crouching` w czterech kierunkach, cios `cross-punch` w trzech):
+- `niesienie-px`: walking forward while carrying a big bundle of three thick firewood logs against the chest with both arms, the logs clearly visible
+- `rabanie-px`: chopping firewood: raising an axe high above the head with both hands, then swinging it down hard in front of the body
+- `gotowanie-px`: stirring a pot with a long wooden spoon: standing and leaning slightly forward, the right arm moving the spoon in circles in front of the body
+- `siedzenie-px`: sitting down on a chair and then staying seated, thighs horizontal, knees bent at a right angle, hands resting on the knees
+- `warta-px`: standing guard with a small oil lantern hanging from the right hand down at the side near the hip, the arm relaxed, the lantern swaying gently while the head turns slowly to look around
+- `celowanie-px`: standing in a shooting stance with both arms stretched straight forward holding a pistol, aiming and recoiling slightly
+- `przeszukiwanie-px`: kneeling down on both knees and rummaging through a pile of junk on the ground with both hands
+- `mlotek-px`: hammering: raising a hammer high in the right hand and bringing it down hard, driving a nail in front of the body, the left hand holding the nail
+- `deski-px`: walking forward while carrying a stack of long wooden planks held in both hands at waist height, the planks clearly visible and wider than the shoulders
+- `zlom-px`: walking forward while carrying a heavy box full of rusty scrap metal pieces against the belly with both arms, leaning slightly backwards, the scrap clearly visible
+(Emeryt dostał pierwsze cztery kierunki prac z dłuższymi opisami i `initial_pose` z kierunkiem, wynik jest podobny. Nazwy `-px` odróżniają je od słabszych prób v3.)
+
+Czego nauczyły animacje (18.10.2026):
+- `animate_character` w trybie `pixminimax` z `keep_first_frame: false` daje dokładnie `frame_count` klatek, bez klatki referencyjnej. Opis bez kierunku wystarcza (obraz startowy to obrót postaci w danym kierunku), jedno wywołanie może zamówić trzy kierunki (`directions`) w jednej grupie. Kolejne kierunki albo poprawki doklada się do grupy przez `animation_group_id` z `animation_name` tak samo jak w grupie (inaczej grupa zmienia nazwę), a zła grupa (`delete_animation` z id grupy) znika w całości, nie po kierunku.
+- Tier 1 przyjmuje najwyżej 8 zadań naraz (wywołanie, które się nie mieści, odpowiada błędem i nic nie zamawia). Zadanie trwa 1 do 4 minut, w zapchanej kolejce eta pokazuje 7 do 15 minut, ale i tak schodzi w kilka. Paczka postaci (ZIP) odpowiada 423, dopóki jakaś jej animacja się generuje, a `tools/animacje.ts` ponawia pobieranie.
+- Płótno animacji z opisu zależy od sylwetki w danym kierunku (64 albo 68 px, w jednej animacji bywa różne), a szablony mają 48 px. Gotowanie bez garnka, celowanie bokiem w kierunku południowym i północnym (model nie umie wycelować do patrzącego) i warta bez latarni w kierunku zachodnim to ograniczenia, z którymi gra żyje. Warta: opis z „no fire” i „no glow” daje płaszcz w płomieniach, a latarnia „hanging from the right hand down at the side near the hip” daje czystą klatkę.
+- Prace z opisu w wersji v3 wyszły słabsze niż w `pixminimax` za ten sam koszt, a `crouching` jest przysiadem, w którym stopy się podnoszą (klęczenie przy kozie ma tylko taką wersję).
+
 
 ## Pierwsza fala assetów (wycinek pionowy)
 

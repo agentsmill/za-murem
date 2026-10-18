@@ -43,8 +43,9 @@ import { statsOf } from '../../src/ui/pasek.ts';
 import { govFence, govLight } from '../../src/ui/siatka.ts';
 import { deg, esc, num, pct, signed } from '../../src/ui/tekst.ts';
 import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSave } from '../../src/ui/zapis.ts';
-import { crownOf, markSpot } from '../../src/ui/znacznik.ts';
+import { crownOf, markSpot, under } from '../../src/ui/znacznik.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
+import { pl } from './po-angielsku.ts';
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
 const cache = new Map<string, { w: World; seed: number; data: Save['data'] }>();
@@ -114,9 +115,9 @@ describe('siatka dla zarządu', () => {
     for (const h of f.holes) {
       expect(h.size).toBeGreaterThanOrEqual(0.4);
       expect(h.size).toBeLessThanOrEqual(0.85);
-      expect(h.name).toMatch(/^(od |za trzepakiem|przy suchym drzewie)/);
+      expect(pl(h.name)).toMatch(/^(od |za trzepakiem|przy suchym drzewie)/);
     }
-    expect(new Set(f.holes.map((h) => h.name)).size).toBe(f.holes.length);
+    expect(new Set(f.holes.map((h) => pl(h.name))).size).toBe(f.holes.length);
     expect(govFence(w)).toEqual(f);
   });
   it('bez siatki w świecie zarząd sam zakłada dziurę', () => {
@@ -193,6 +194,18 @@ describe('etykieta suchego drzewa', () => {
         key,
       ).toBe(false);
     }
+  });
+
+  it('śmieci w mieszkaniach (rzeczy w budynkach) nie liczą się pod etykietą, rzeczy na podwórku tak', () => {
+    const { w } = demo('przymorze');
+    const at = (p: { x: number; y: number }) => w.bid[p.y * w.size + p.x];
+    const inside = w.props.find((p) => p.kind === 'smieci' && at(p) >= 0)!;
+    expect(inside).toBeTruthy();
+    const r1 = [inside.x, inside.y, inside.x + 1, inside.y + 1] as const;
+    expect(under(w, r1)).toBe(under({ ...w, props: w.props.filter((p) => p !== inside) }, r1));
+    const outside = w.props.find((p) => at(p) < 0)!;
+    const r2 = [outside.x, outside.y, outside.x + 1, outside.y + 1] as const;
+    expect(under(w, r2)).toBeGreaterThan(under({ ...w, props: w.props.filter((p) => p !== outside) }, r2));
   });
 
   it('bez suchego drzewa nie ma etykiety', () => {
@@ -284,11 +297,11 @@ describe('okna zarządu', () => {
     const ev = eventSheet({
       k: 'wydarzenie',
       id: 'x',
-      title: 'Hałas <w nocy>',
-      text: 'Raz.\nDwa.',
+      title: { pl: 'Hałas <w nocy>', en: 'Noise <at night>' },
+      text: { pl: 'Raz.\nDwa.', en: 'One.\nTwo.' },
       choices: [
-        { label: 'Tak', ok: true },
-        { label: 'Nie', ok: false },
+        { label: { pl: 'Tak', en: 'Yes' }, ok: true },
+        { label: { pl: 'Nie', en: 'No' }, ok: false },
       ],
     });
     expect(ev.title).toBe('Hałas &lt;w nocy&gt;');
@@ -297,7 +310,7 @@ describe('okna zarządu', () => {
     const zero = { wood: 0, supplies: 0, scrap: 0, parts: 0, meds: 0 };
     const r = reportSheet({
       day: 1,
-      lines: ['Spokojna noc.'],
+      lines: [{ pl: 'Spokojna noc.', en: 'A quiet night.' }],
       raid: 'odparty',
       stolen: zero,
       loot: { ...zero, wood: 4 },
@@ -340,6 +353,8 @@ describe('rytm zarządu po playteście', () => {
     // wszystkie wydarzenia „przed chwilą”: żadne nie jest świeże
     for (const e of M1_EVENTS) gov.ev.last[e.id] = gameMin(i);
     gov.ev.next = 0;
+    // 16:00 pierwszego dnia z zimną kuchnią to cisza pierwszego dnia: tu sprawdzamy rytm po niej
+    gov.ev.warm = 0;
     eventTick(gov, i, emptyEffects(), false);
     expect(gov.ev.active).toBeNull();
     expect(gov.ev.next).toBe(200 + RETRY);
@@ -412,7 +427,7 @@ describe('dyżur przy kozie', () => {
     expect(r.koza).toEqual([who.name]);
     expect(r.fire).toBeGreaterThan(0.9);
     expect(r.kitchen).toBeGreaterThanOrEqual(18);
-    expect(r.lines).toContain(
+    expect(r.lines.map(pl)).toContain(
       `${who.name} ${who.name.split(' ')[0].endsWith('a') ? 'czuwała' : 'czuwał'} przy kozie i ogień palił się całą noc. Rano w kuchni ciepło, ${Math.round(r.kitchen!)}°C.`,
     );
     expect(reportSheet(r).body).toContain(
@@ -425,7 +440,19 @@ describe('pasek i karta osoby', () => {
   it('stan osiedla na starcie: zimna kuchnia, brak drewna', () => {
     const { sim, w, seed } = fresh();
     const s = statsOf(snapshot(sim.st, w), newGov(seed));
-    expect(s.map((x) => x.id)).toEqual(['sOut', 'sKit', 'sFire', 'sWood', 'sFood', 'sTrust', 'sAnger']);
+    expect(s.map((x) => x.id)).toEqual([
+      'sOut',
+      'sKit',
+      'sFire',
+      'sWood',
+      'sBoards',
+      'sScrap',
+      'sParts',
+      'sMats',
+      'sFood',
+      'sTrust',
+      'sAnger',
+    ]);
     const by = Object.fromEntries(s.map((x) => [x.id, x]));
     expect(by.sKit.level).toBe('bad');
     expect(by.sFire).toMatchObject({ value: 'zimna', level: 'bad' });

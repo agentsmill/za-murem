@@ -9,8 +9,8 @@ export const TICKS_PER_DAY = TICKS_PER_HOUR * 24;
 /** gra zaczyna się o 15:00 pierwszego dnia: zmierzch przychodzi po 2–3 minutach gry przy 1×,
     mniej więcej wtedy, kiedy pierwsza koza zaczyna grzać, więc okno może zaświecić od razu */
 export const START_MINUTES = 15 * 60;
-/** tempa: pauza, 1×, 3×, 6× */
-export const SPEEDS = [0, 1, 3, 6] as const;
+/** tempa: pauza, 1×, 3×, 6×, 8× */
+export const SPEEDS = [0, 1, 3, 6, 8] as const;
 /** pora roku trwa 10 dni jak w 0.3; dzień 1 to początek jesieni, czyli październik 2051 */
 export const SEASON_DAYS = 10;
 export const SEASONS = ['jesień', 'zima', 'wiosna', 'lato'] as const;

@@ -4,9 +4,12 @@
    z planu odgrywają szabrownicy. To, co wymaga przeliczenia przechodniości albo dróg (warta, wyprawa, łaty), idzie
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie. */
 
-import type { GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
+import { nextRandom } from '../core/rng.ts';
+import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
+import type { Arm, GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
-import { START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
+import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
+import { dayOf, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { houseOf, inHomeApt } from './house.ts';
 import { nearestFree } from './path.ts';
 import { fenceShape, gateTiles } from './perimeter.ts';
@@ -15,8 +18,11 @@ import {
   addResidents,
   BURNABLE,
   dozeOff,
+  infect,
   type Laws,
+  LIMB,
   type Loot,
+  onPlan,
   type Pawn,
   planRaid,
   postKey,
@@ -28,6 +34,16 @@ import {
   takeStock,
 } from './sim.ts';
 import { snapshot } from './snapshot.ts';
+import { modeOf } from './tryb.ts';
+import { hordeSize } from './zombie.ts';
+
+/** rodzaj broni dla zarządu: broń palna i kusza bez amunicji to gołe ręce */
+export function armOf(weapon: WeaponId | null, ammo: Partial<Record<AmmoKey, number>>): Arm {
+  const w = weaponOf(weapon);
+  if (w.id === 'piesci') return 'brak';
+  if (w.ammo) return (ammo[w.ammo] ?? 0) > 0 ? 'palna' : 'brak';
+  return w.id === 'dzida' ? 'dzida' : 'wrecz';
+}
 
 /** tick dla minuty gry liczonej od północy pierwszego dnia (jak RaidPlan.at i GovEffects.away) */
 export const tickOfMinute = (m: number): number => Math.round(((m - START_MINUTES) * TICKS_PER_HOUR) / 60);
@@ -46,7 +62,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     outdoor: s.outdoor,
     kitchen: s.kitchen,
     kozaLit: s.kozaLit,
-    people: s.people,
+    people: s.people.map((p) => ({ ...p, arm: armOf(p.weapon, s.stock.ammo), bitten: !!p.bite })),
     stock: {
       wood: s.stock.wood,
       woodSklad: s.stock.woodSklad,
@@ -64,10 +80,27 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     cap: s.cap,
     burned: s.burned,
     hqName,
+    place: placeOf(w),
     // warta, która stoi (z karty, z menu i przy kozie), bez śpiących na posterunku i bez tych na wyprawie
     guards: st.pawns
       .filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase !== 4)
       .map((p) => ({ id: st.people[p.person].id, post: postKey(p.job!.target) })),
+    ...(modeOf(st) === 'zombie'
+      ? {
+          horde: {
+            near: s.zombies.near,
+            pressing: s.zombies.pressing,
+            killed: st.tally?.killed ?? 0,
+            breaches: st.tally?.breaches ?? 0,
+            bites: st.tally?.bites ?? 0,
+            tonight: hordeSize(dayOf(st.tick)),
+          },
+        }
+      : {}),
+    ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
+    dead: (st.dead ?? [])
+      .filter((d) => d.kind === 'core' || d.kind === 'resident')
+      .map((d) => ({ id: d.id, name: d.name, cause: d.cause, tick: d.tick })),
   };
 }
 
@@ -118,10 +151,24 @@ function yardSpot(st: SimState, w: World, kind: string, n: number): number {
     const x = i % size;
     const y = Math.floor(i / size);
     if (gate.some((g) => Math.max(Math.abs((g % size) - x), Math.abs(Math.floor(g / size) - y)) < 2)) continue;
+    if (onPlan(st, size, i)) continue;
     const here = st.things.filter((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
     if (!here.length || (here.length === 1 && here[0].kind === kind && here[0].n + n <= STACK)) return i;
   }
   return nearestFree(w.blocked, size, from);
+}
+
+/** zdejmuje n sztuk rzeczy danego rodzaju ze stert na mapie (puste sterty znikają) */
+function takeKind(st: SimState, kind: string, n: number): void {
+  let left = n;
+  for (const t of st.things) {
+    if (left <= 0) break;
+    if (t.kind !== kind) continue;
+    const k = Math.min(t.n, left);
+    t.n -= k;
+    left -= k;
+  }
+  st.things = st.things.filter((t) => t.kind !== kind || t.n > 0);
 }
 
 /** dokłada n sztuk na stos danego rodzaju na kafelku (nowy albo istniejący) */
@@ -178,7 +225,8 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
     const p = pawnOf(st, id);
     if (!p?.needs) continue;
     for (const [k, v] of Object.entries(d) as [keyof typeof d, number][]) {
-      if (k === 'mood') p.moods.push({ why: 'Sprawy spółdzielni', d: v, until: st.tick + 12 * TICKS_PER_HOUR });
+      if (k === 'mood')
+        p.moods.push({ why: `Sprawy ${wordsOfWorld(w).wspolnota.d}`, d: v, until: st.tick + 12 * TICKS_PER_HOUR });
       else p.needs[k] = clamp100(p.needs[k] + v);
     }
   }
@@ -196,8 +244,9 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   if (fx.away.length) cmd({ t: 'away', ids: ids(fx.away.map((a) => a.id)) });
   if (fx.back.length) cmd({ t: 'back', ids: ids(fx.back) });
   for (const g of fx.guards) cmd({ t: 'guard', ids: ids([g.id]), post: g.post });
-  for (const id of fx.leave) removeCore(st, id);
-  if (fx.residents > 0) addResidents(st, w, fx.residents);
+  for (const id of fx.leave) removeCore(st, id, w);
+  // przyjęci przychodzą zza bramy; nikt nie znika, kto nie ma łóżka, śpi na podłodze
+  if (fx.residents > 0) addResidents(st, w, fx.residents, true);
   else if (fx.residents < 0) removeResidents(st, -fx.residents);
   // zapasy (bez łupu napadu, który wyniosą szabrownicy)
   for (const k of ['wood', 'supplies', 'scrap'] as const) {
@@ -205,11 +254,33 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
     if (d > 0) give(st, w, k, d);
     else if (d < 0) takeStock(st, w, k, -d);
   }
-  st.store.parts = Math.max(0, st.store.parts + fx.stock.parts);
-  st.store.meds = Math.max(0, st.store.meds + fx.stock.meds);
+  // części i leki: wydatek najpierw z zapasu zarządu (store), potem z rzeczy na mapie (łup z przeszukania);
+  // przybytek leży przy bramie jako rzeczy, żeby budowa i naprawy mogły go użyć
+  for (const [k, kind] of [
+    ['parts', 'czesci'],
+    ['meds', 'leki'],
+  ] as const) {
+    const d = fx.stock[k];
+    for (let left = d; left > 0; left -= STACK) {
+      const part = Math.min(STACK, left);
+      heapAt(st, w, kind, yardSpot(st, w, kind, part), part);
+    }
+    if (d >= 0) continue;
+    const own = Math.min(st.store[k], -d);
+    st.store[k] -= own;
+    takeKind(st, kind, -d - own);
+  }
   if (fx.patch > 0) cmd({ t: 'mend', ids: [], n: fx.patch });
   if (fx.fire) stairFire(st, w);
   if (fx.sick > 0) sicken(st, fx.sick);
+  // znaleziska z wypraw do magazynu, ugryzieni na wyprawie zakażeni
+  for (const a of fx.arms ?? []) if (a in WEAPONS && a !== 'piesci') (st.store.arms ??= []).push(a as WeaponId);
+  for (const [k, n] of Object.entries(fx.ammo ?? {}) as [AmmoKey, number][])
+    if (st.store.ammo && k in st.store.ammo) st.store.ammo[k] = Math.max(0, st.store.ammo[k] + n);
+  for (const id of fx.bitten ?? []) {
+    const p = pawnOf(st, id);
+    if (p) infect(st, p, nextRandom(st.rng) < LIMB);
+  }
 }
 
 /** pożar od kozy (zdarzenie zarządu): spala najbliższy kozie zarządu mebel, który się pali, i straszy wszystkich */

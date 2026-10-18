@@ -1,0 +1,89 @@
+{
+  "group_id": "3f32a1d6-4d13-4a07-8465-f8dbfb7bb259",
+  "states": [
+    {
+      "character": {
+        "id": "b84a2d1b-164e-4900-afd4-492a3eb75708",
+        "name": "Idle",
+        "prompt": "Polish postwoman about 45 years old, short brown hair, faded blue uniform jacket, big leather mail bag across the body, dark trousers, sensible shoes, brisk",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T15:07:51.506537+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {
+          "chod": {
+            "north": [
+              "Idle/animations/chod/north/frame_000.png",
+              "Idle/animations/chod/north/frame_001.png",
+              "Idle/animations/chod/north/frame_002.png",
+              "Idle/animations/chod/north/frame_003.png"
+            ],
+            "south": [
+              "Idle/animations/chod/south/frame_000.png",
+              "Idle/animations/chod/south/frame_001.png",
+              "Idle/animations/chod/south/frame_002.png",
+              "Idle/animations/chod/south/frame_003.png"
+            ],
+            "west": [
+              "Idle/animations/chod/west/frame_000.png",
+              "Idle/animations/chod/west/frame_001.png",
+              "Idle/animations/chod/west/frame_002.png",
+              "Idle/animations/chod/west/frame_003.png"
+            ],
+            "east": [
+              "Idle/animations/chod/east/frame_000.png",
+              "Idle/animations/chod/east/frame_001.png",
+              "Idle/animations/chod/east/frame_002.png",
+              "Idle/animations/chod/east/frame_003.png"
+            ]
+          },
+          "stanie": {
+            "east": [
+              "Idle/animations/stanie/east/frame_000.png",
+              "Idle/animations/stanie/east/frame_001.png",
+              "Idle/animations/stanie/east/frame_002.png",
+              "Idle/animations/stanie/east/frame_003.png"
+            ],
+            "west": [
+              "Idle/animations/stanie/west/frame_000.png",
+              "Idle/animations/stanie/west/frame_001.png",
+              "Idle/animations/stanie/west/frame_002.png",
+              "Idle/animations/stanie/west/frame_003.png"
+            ],
+            "south": [
+              "Idle/animations/stanie/south/frame_000.png",
+              "Idle/animations/stanie/south/frame_001.png",
+              "Idle/animations/stanie/south/frame_002.png",
+              "Idle/animations/stanie/south/frame_003.png"
+            ],
+            "north": [
+              "Idle/animations/stanie/north/frame_000.png",
+              "Idle/animations/stanie/north/frame_001.png",
+              "Idle/animations/stanie/north/frame_002.png",
+              "Idle/animations/stanie/north/frame_003.png"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T19:36:20.414270"
+}

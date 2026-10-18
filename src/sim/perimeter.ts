@@ -4,6 +4,7 @@
 
 import { mulberry } from '../core/rng.ts';
 import type { World } from '../world/world.ts';
+import type { GameMode } from './tryb.ts';
 
 export interface Hole {
   /** numer dziury od 1, do poleceń i dla zarządu (warta 'd<id>') */
@@ -21,7 +22,12 @@ export interface FenceState {
   hp: number[];
   holes: Hole[];
   gateOpen: boolean;
+  /** tryb zombie: siatka wzmocniona deskami na start (rysowanie) */
+  reinforced?: boolean;
 }
+
+/** wzmocniona siatka i łata w trybie zombie */
+export const REINFORCED_HP = 100;
 
 /** świeża łata z desek albo złomu */
 export const PATCH_HP = 70;
@@ -45,8 +51,9 @@ export function gateTiles(w: World): number[] {
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
 /** Stan siatki na start: stara siatka 45–75 (odcinki po 4 kafelki różnią się między sobą), dziury z kontraktu
-    pogrupowane w sąsiadujące kafelki, brama otwarta. Deterministycznie z ziarna świata. */
-export function initFence(w: World): FenceState | null {
+    pogrupowane w sąsiadujące kafelki, brama otwarta. W trybie zombie siatka jest wzmocniona: każdy kafelek 100,
+    dziury załatane na 100, brama zamknięta. Deterministycznie z ziarna świata. */
+export function initFence(w: World, mode: GameMode = 'zwykly'): FenceState | null {
   const f = fenceShape(w);
   if (!f) return null;
   const size = w.size;
@@ -79,6 +86,13 @@ export function initFence(w: World): FenceState | null {
     const size01 = Math.min(1, round2(0.45 + 0.2 * (tiles.length - 1) + 0.15 * rnd()));
     holes.push({ id: holes.length + 1, tiles, size: size01, patch: 0 });
   }
+  if (mode === 'zombie')
+    return {
+      hp: hp.map(() => REINFORCED_HP),
+      holes: holes.map((h) => ({ ...h, patch: REINFORCED_HP })),
+      gateOpen: false,
+      reinforced: true,
+    };
   return { hp, holes, gateOpen: true };
 }
 

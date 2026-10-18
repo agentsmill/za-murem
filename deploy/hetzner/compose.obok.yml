@@ -1,0 +1,36 @@
+# Za Murem obok innej aplikacji na tym samym serwerze (na przykład cergo-rw-prod), bez własnego Caddy na 80/443.
+# Gra (www, kopia dist/) i serwer gry sieciowej (api) stoją w sieci Dockera tamtej aplikacji (ZM_SIEC w .env),
+# a jej Caddy przekazuje do nich ruch dla adresu gry (blok w deploy/hetzner/README.md).
+services:
+  www:
+    image: caddy:2
+    container_name: za-murem-www
+    restart: unless-stopped
+    volumes:
+      - ./conf-obok:/etc/caddy:ro
+      - ./www:/srv/www:ro
+      - www_config:/config
+      - www_data:/data
+    networks: [proxy]
+
+  api:
+    build:
+      context: ./serwer-zrodla
+      dockerfile: server/Dockerfile
+    container_name: za-murem-api
+    restart: unless-stopped
+    environment:
+      - ZM_ZRODLA=https://${SITE}
+    volumes:
+      - dane:/dane
+    networks: [proxy]
+
+networks:
+  proxy:
+    external: true
+    name: ${ZM_SIEC}
+
+volumes:
+  dane:
+  www_config:
+  www_data:

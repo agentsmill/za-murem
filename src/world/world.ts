@@ -1,16 +1,22 @@
 /* Świat gry: siatka 1 m wokół adresu, zbudowana z geometrii OSM.
    Kolejność: obrót mapy, prostowanie budynków, teren, wody, ścieżki, chodniki, jezdnie,
    budynki, drzewa, wnętrze siedziby, suche drzewo z trzepakiem, siatka z bramą wokół podwórka.
-   Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. */
+   Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. W grze sieciowej świat może dostać listę
+   budynków zajętych przez inne drużyny (bezSiedziby, klucze z klucze.ts): siedzibą zostaje wtedy najbliższy wolny
+   budynek mieszkalny; bez tej opcji świat jest taki jak zawsze. Świat nie zależy od języka (nazwy budynków zostają
+   polskie, bo nazwa siedziby wchodzi do zdań zarządu); w bieżącym języku jest tylko błąd dla gracza. */
 
 import type { BuildingClass } from '../content/data.ts';
+import { L } from '../core/jezyk.ts';
 import { mulberry } from '../core/rng.ts';
 import { labelRegions, nearestFree } from '../sim/path.ts';
+import { type AptState, applyApts, type Damage, type Smieci, settleApts } from './apts.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
 import { applyFence, buildFence, type Fence, type Gate, gateCrowded, yardEdges } from './fence.ts';
 import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea, segDist } from './geo.ts';
 import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
+import { kluczBudynku } from './klucze.ts';
 import { fillRing, stampLine } from './raster.ts';
 import { dominantAngle, rotateGeo, straighten } from './rotate.ts';
 import { T } from './terrain.ts';
@@ -49,6 +55,11 @@ export interface WorldBuilding {
   cats: string[];
   entrances: Entrance[];
   tags: Record<string, string>;
+  /** identyfikator OSM budynku („w123” droga, „r45” relacja), gdy źródło go podaje: Overpass zawsze, kafelki
+      dla budynku niesklejonego z innymi albo z adresem na samym budynku */
+  osmId?: string;
+  /** data budowy z tagu start_date w OSM, bez zmian („1975”, „1970s”, „~1965”); tylko z Overpass */
+  startDate?: string;
 }
 
 export interface Tree {
@@ -73,9 +84,9 @@ export interface Trzepak {
   h: number;
 }
 
-/** rzecz na mapie: trzepak, sterta materiału z odzysku (gruz, deski, złom; przechodnia)
-    albo wrak auta (maluch, polonez; podstawa blokuje przejście) */
-export type Prop = Trzepak | Heap | Wreck;
+/** rzecz na mapie: trzepak, sterta materiału z odzysku (gruz, deski, złom; przechodnia), wrak auta (maluch,
+    polonez; podstawa blokuje przejście) albo sterta śmieci w pustym mieszkaniu siedziby (przechodnia) */
+export type Prop = Trzepak | Heap | Wreck | Smieci;
 
 export interface World {
   size: number;
@@ -101,6 +112,13 @@ export interface World {
   props: Prop[];
   /** dziurawa siatka z bramą wokół siedziby i podwórka; stan zmienny (łaty, nowe dziury, brama) trzyma symulacja */
   fence: Fence;
+  /** M2 fala 2, etap 3: siatka ze świata sprzed wspólnego płotu. Gdy gra otoczy sąsiedni budynek, symulacja wymienia
+      fence (i jej kafelki w blocked) na kształt ze stanu gry, a tu zostaje pierwotna, do klucza zapisu (worldKey). */
+  fenceBaza?: Fence;
+  /** stany mieszkań siedziby (zarząd, mieszkańcy, puste z powodem i rokiem), po numerze mieszkania */
+  apts: AptState[];
+  /** uszkodzenia w pustych mieszkaniach siedziby (okno, drzwi, rura, podłoga, piec); naprawy trzyma symulacja */
+  damage: Damage[];
 }
 
 const ROAD_W: Record<string, number> = {
@@ -144,6 +162,10 @@ export interface BuildOpts {
   size?: number;
   /** ulica z geokodera: nazwa siedziby, gdy mapa ma tylko numer domu */
   street?: string;
+  /** stany mieszkań siedziby z zewnątrz (generator mieszkańców); bez nich świat losuje je z ziarna */
+  apts?: readonly AptState[];
+  /** gra sieciowa: klucze budynków (zm:klucz), które nie mogą być siedzibą, bo zajęła je inna drużyna */
+  bezSiedziby?: readonly string[];
 }
 
 export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
@@ -296,24 +318,34 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
       cats,
       entrances: [],
       tags: o.b.t,
+      ...(o.b.t.id ? { osmId: o.b.t.id } : {}),
+      ...(o.b.t.start_date ? { startDate: o.b.t.start_date } : {}),
     };
   });
 
-  // 8. siedziba: budynek pod adresem (do 4 m), inaczej najbliższy mieszkalny
+  // 8. siedziba: budynek pod adresem (do 4 m), inaczej najbliższy mieszkalny; w grze sieciowej bez budynków zajętych
+  // przez inne drużyny
   const c = Math.floor(half);
+  const zajete = new Set(opts.bezSiedziby ?? []);
+  const wolny = (b: WorldBuilding) => !zajete.size || !zajete.has(kluczBudynku(b) ?? '');
   let hq = -1;
   let best = 4.5;
   for (let dy = -4; dy <= 4; dy++)
     for (let dx = -4; dx <= 4; dx++) {
       const b = bid[(c + dy) * size + c + dx];
       const d = Math.hypot(dx, dy);
-      if (b >= 0 && d < best) {
+      if (b >= 0 && d < best && wolny(buildings[b])) {
         best = d;
         hq = b;
       }
     }
   if (!buildings.length)
-    throw new Error('W tym miejscu mapa nie ma żadnego budynku. Spróbujcie adresu bliżej domów albo bloków.');
+    throw new Error(
+      L(
+        'W tym miejscu mapa nie ma żadnego budynku. Spróbujcie adresu bliżej domów albo bloków.',
+        'There isn’t a single building on the map here. Try an address closer to houses or blocks of flats.',
+      ),
+    );
   // najbliższy mieszkalny, a gdy takiego nie ma (strefa przemysłowa), najbliższy jakikolwiek
   const nearest = (pred: (b: WorldBuilding) => boolean) => {
     let best = -1;
@@ -330,7 +362,8 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     }
     return best;
   };
-  if (hq < 0) hq = nearest((b) => b.cls === 'blok' || b.cls === 'dom');
+  if (hq < 0) hq = nearest((b) => (b.cls === 'blok' || b.cls === 'dom') && wolny(b));
+  if (hq < 0) hq = nearest(wolny);
   if (hq < 0) hq = nearest(() => true);
   if (hq >= 0) {
     const b = buildings[hq];
@@ -424,7 +457,7 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   for (const k of wrecks)
     for (let y = k.y; y < k.y + k.h; y++) for (let x = k.x; x < k.x + k.w; x++) blocked[y * size + x] = 1;
 
-  return {
+  const world: World = {
     size,
     angle,
     terr,
@@ -439,7 +472,14 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     dryTree: dry.tree,
     props: [...dry.props, ...heaps, ...wrecks],
     fence,
+    apts: [],
+    damage: [],
   };
+
+  // 16. mieszkania siedziby: zarząd, mieszkańcy i puste (około połowy, z powodem i rokiem), a w pustych zepsute
+  // meble, sterty śmieci i uszkodzenia; stany może podać generator mieszkańców (opts.apts)
+  applyApts(world, settleApts(world, opts.apts));
+  return world;
 }
 
 /** grunt pod trzepak: trawa (lepiej) albo chodnik */

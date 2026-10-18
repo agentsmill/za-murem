@@ -8,36 +8,66 @@
    przy ekranie w pierwszych 10 minutach (okna zarządu, zmiany na karcie, polecenia, których wymaga gra) i skutki
    napadów, a potem noce z dyżurem przy kozie i bez niego (temperatura w kuchni o 6:00, jak długo pali się koza)
    i trzy doby z uchwałami o jedzeniu (racje, wspólny kocioł) i bez nich: zapasy, najedzenie, nastrój, gotowanie.
+   Fala 1 M2: dni 2–5 z przeszukiwaniem pustych mieszkań, rozbiórką, naprawami i budową, a dla porównania bez
+   przeszukiwania; ile budowli stoi do końca dnia 2 i 3 i ile decyzji na minutę daje dzień 2 i 3.
    Tłum za siatką jest już tylko do pomiaru wydajności (npm run perf), w grze są mieszkańcy siedziby.
-   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] */
+   Z flagą --mieszkancy (gdziekolwiek wśród argumentów) cały bot gra na świecie z mieszkańcami siedziby z generatora
+   (tools/bot-mieszkancy.ts, jak w grze): zarząd i lokatorzy z osobami z generatora, stany mieszkań siedziby z niego;
+   po linijce „Rdzeń” pojawia się jedna o mieszkańcach z adresu. Bez flagi wyjście i skróty bez zmian.
+   Z flagą --sasiedzi na końcu dochodzi fala 2 M2: gracz fali 1, a od dnia 2 jedna osoba u sąsiadów (otwiera najbliższy
+   budynek, przeszukuje pomieszczenia i piętra, nosi łup, rozmawia z lokatorami); liczy, ile u nich zrobiła, spotkania,
+   rany i ugryzienia, zapasy po 5 dniach i głód. Bez flagi wyjście i skróty bez zmian.
+   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi] */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { nextRandom } from '../src/core/rng.ts';
-import { clockOf, dayOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
+import { BUILDS, type Mat } from '../src/sim/budowle.ts';
+import { clockOf, dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
+import { MAT_ACC } from '../src/sim/mieszkania.ts';
+import { HUNGRY } from '../src/sim/needs.ts';
 import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
-import { BURNABLE, createSim, type Laws, Sim, woodFrom } from '../src/sim/sim.ts';
+import { BURNABLE, createSim, FOOD_START, type Laws, REST_UNTIL, Sim, type SimOpts, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
-import { type Decision, type NightLog, type Policy, playLaws, playWithGov } from '../tests/unit/gov-play.ts';
+import {
+  type Decision,
+  type Hunger,
+  type NightLog,
+  type Policy,
+  playLaws,
+  playWithGov,
+} from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
+import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
+import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
+import { ARGUMENTY, MIESZKANCY, opisMieszkancow, SASIEDZI, swiatMieszkancow, tylkoZombie } from './bot-mieszkancy.ts';
 
-const SEED = Number(process.argv[2]) || 1;
-const DAYS = Number(process.argv[3]) || 45;
-const CROWD = Number(process.argv[4]) || 0;
+tylkoZombie('bot');
+const SEED = Number(ARGUMENTY[0]) || 1;
+const DAYS = Number(ARGUMENTY[1]) || 45;
+const CROWD = Number(ARGUMENTY[2]) || 0;
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../public/demo/przymorze.json'), 'utf8'));
 const t0 = performance.now();
-const world = buildWorld(demo.geo, { seed: SEED, street: demo.street });
-const sim = new Sim(world, createSim(world, SEED, { core: 4, crowd: CROWD }));
+// z flagą --mieszkancy świat i opcja `mieszkancy` dla createSim z generatora mieszkańców (tools/bot-mieszkancy.ts)
+const osiedle = MIESZKANCY ? await swiatMieszkancow(demo, SEED, 4) : null;
+const world = osiedle ? osiedle.world : buildWorld(demo.geo, { seed: SEED, street: demo.street });
+/** opcje createSim z mieszkańcami z adresu dla świata `w` (tylko dla świata z generatora; bez flagi puste) */
+const zAdresu = (w: World): Pick<SimOpts, 'mieszkancy'> =>
+  osiedle && w === osiedle.world ? { mieszkancy: osiedle.mieszkancy } : {};
+const sim = new Sim(world, createSim(world, SEED, { core: 4, crowd: CROWD, ...zAdresu(world) }));
 console.log(
   `Bot 0.4, ${demo.name}: ${world.buildings.length} budynków, ${world.trees.length} drzew, świat w ${Math.round(performance.now() - t0)} ms`,
 );
+// zarząd to osoby pionków rdzenia (z generatora w state.people są też mieszkańcy)
+const rdzen = sim.st.pawns.filter((p) => p.kind === 'core').map((p) => sim.st.people[p.person]);
 console.log(
-  `Rdzeń: ${sim.st.people.map((p) => `${p.name} (${p.prof.toLowerCase()})`).join(', ')}; mieszkańców ${sim.st.pawns.filter((p) => p.kind === 'resident').length}, tłum: ${CROWD}`,
+  `Rdzeń: ${rdzen.map((p) => `${p.name} (${p.prof.toLowerCase()})`).join(', ')}; mieszkańców ${sim.st.pawns.filter((p) => p.kind === 'resident').length}, tłum: ${CROWD}`,
 );
+if (osiedle) console.log(opisMieszkancow(sim.st));
 console.log(' dzień  ścieżki  nieudane  zamienione  węzłów/ścieżkę  ms/dzień  idzie');
 
 // polecenia bota: co dwie godziny gry losowy cel dla losowej osoby z rdzenia (z ziarnem bota)
@@ -86,7 +116,7 @@ const STEP_TEXT: Record<TutStep, string> = {
 const LIMIT = 5 * 60 * TICKS_PER_SECOND;
 
 function firstMinutes(name: string, w: World): boolean {
-  const s = new Sim(w, createSim(w, SEED, { core: 4, crowd: 8 }));
+  const s = new Sim(w, createSim(w, SEED, { core: 4, crowd: 8, ...zAdresu(w) }));
   const st = s.st;
   const h = houseOf(w)!;
   const dry = dryTreeOf(w);
@@ -239,7 +269,7 @@ const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.lengt
 const f1 = (v: number) => v.toFixed(1);
 for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
   const t1 = performance.now();
-  const runs = GOV_SEEDS.map((seed) => playWithGov(govWorld, seed, policy, GOV_DAYS));
+  const runs = GOV_SEEDS.map((seed) => playWithGov(govWorld, seed, policy, GOV_DAYS, 4, zAdresu(govWorld)));
   const first = (r: { decisions: Decision[] }) => r.decisions.filter((d) => d.s < 600);
   const perMin = runs.map((r) => first(r).length / 10);
   const kinds = (k: (d: Decision) => boolean) => mean(runs.map((r) => first(r).filter(k).length));
@@ -280,6 +310,41 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
     `    raport zarządu a to, co odegrała symulacja (wynik, łup, liczba szabrowników, ${slept} uśpionych wartowników): ${mismatch ? `${mismatch} niezgodnych nocy` : 'zgodne w każdej nocy'}`,
   );
   if (mismatch) fail = true;
+  // przyjęcia: każdy przyjęty przez zarząd przybywa jako pionek (bez miejsca śpi na podłodze)
+  const asked = runs.reduce((a, r) => a + r.admitted.asked, 0);
+  const added = runs.reduce((a, r) => a + r.admitted.added, 0);
+  console.log(
+    `    przyjęcia: zarząd przyjął ${asked} osób, przybyło ${added} pionków mieszkańców${asked === added ? ' (zgodne)' : ''}; mieszkańców na koniec średnio ${f1(mean(runs.map((r) => r.st.pawns.filter((p) => p.kind === 'resident').length)))} przy miejscach ${f1(mean(runs.map((r) => r.st.cap)))}`,
+  );
+  if (asked !== added) {
+    console.log('    BŁĄD: przyjętych przez zarząd i nowych pionków jest różnie');
+    fail = true;
+  }
+  // głód zarządu: poranki, w których jedzenia brakło dla głodnych, i czas z najedzeniem poniżej 10
+  const hun = (k: keyof Hunger) => runs.reduce((a, r) => a + r.hunger[k], 0);
+  console.log(
+    `    jedzenie zarządu (bez przeszukiwania, tylko wydarzenia): rano brakło dla głodnych w ${hun('short')} z ${hun('mornings')} poranków, ktoś głodny (najedzenie < 10) przez ${Math.round((100 * hun('starving')) / Math.max(1, hun('samples')))}% czasu`,
+  );
+  // wartownik po nocy: głodny najpierw je, potem odsypia; liczą się poranki, w których jedzenia starczało dla
+  // wszystkich głodnych w zarządzie (przy niedoborze zjadają inni, to sprawa gospodarki, nie wartownika)
+  const morns = runs.flatMap((r) => r.mornings);
+  const fed = morns.filter((m) => m.food6 < HUNGRY && m.stock6 >= m.hungry6);
+  const ateAt = fed.filter((m) => m.ateAt >= 0).map((m) => m.ateAt);
+  // zjadł przed 8:00 albo nie głodował (najedzenie co najmniej 15, czekał na ciepły posiłek)
+  const late = fed.filter((m) => (m.ateAt < 0 || m.ateAt >= 8) && m.minFood < 15).length;
+  const tiredFed = fed.filter((m) => m.rest6 < REST_UNTIL);
+  const napped = tiredFed.filter((m) => m.napped).length;
+  const hhmm = (v: number) => {
+    const m = Math.round(v * 60);
+    return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+  };
+  console.log(
+    `    wartownicy rano (6–14): ${morns.length} poranków, głodnych przy jedzeniu dla wszystkich ${fed.length}: zjedli przed 8:00 ${fed.filter((m) => m.ateAt >= 0 && m.ateAt < 8).length}, później bez głodowania ${fed.filter((m) => !(m.ateAt >= 0 && m.ateAt < 8) && m.minFood >= 15).length}, głodowali ${late} (pierwszy posiłek średnio o ${ateAt.length ? hhmm(mean(ateAt)) : '—'}), zmęczeni po posiłku odsypiali ${napped} z ${tiredFed.length}; przy niedoborze ${morns.filter((m) => m.food6 < HUNGRY && m.stock6 < m.hungry6).length}`,
+  );
+  if (late || napped < tiredFed.length) {
+    console.log('    BŁĄD: głodny wartownik ma rano najpierw zjeść, a potem odsypiać');
+    fail = true;
+  }
   const r0 = runs[0];
   console.log(`    pierwsze 10 min, ziarno ${GOV_SEEDS[0]}:`);
   for (const d of first(r0)) console.log(`      ${f1(d.s).padStart(6)} s  ${d.kind.padEnd(10)} ${d.text.slice(0, 90)}`);
@@ -292,7 +357,10 @@ console.log(
   `\nNoc przy kozie, ${govName}: ${GOV_SEEDS.length} ziaren × ${KOZA_DAYS} noce, zawsze warta, wieczorem 16 sztuk drewna w zapasie`,
 );
 const kozaRuns = (koza: boolean) =>
-  GOV_SEEDS.flatMap((seed) => playWithGov(govWorld, seed, 'zawsze-warta', KOZA_DAYS, 4, { koza, evening: 16 }).nights);
+  GOV_SEEDS.flatMap(
+    (seed) =>
+      playWithGov(govWorld, seed, 'zawsze-warta', KOZA_DAYS, 4, { koza, evening: 16, ...zAdresu(govWorld) }).nights,
+  );
 const withDuty = kozaRuns(true);
 const without = kozaRuns(false);
 const k6 = (list: NightLog[]) => list.map((n) => n.kitchen6 ?? 0);
@@ -314,7 +382,7 @@ if (warm < 18 || cold > warm - 3) {
 
 const LAW_DAYS = 3;
 console.log(
-  `\nUchwały o jedzeniu, ${govName}: ${GOV_SEEDS.length} ziaren × ${LAW_DAYS} doby bez zarządu, zapasy na start 24 porcje`,
+  `\nUchwały o jedzeniu, ${govName}: ${GOV_SEEDS.length} ziaren × ${LAW_DAYS} doby bez zarządu, zapasy na start ${FOOD_START} porcji`,
 );
 console.log('  uchwała                 zapasy  najedz.  nastrój  nastrój miesz.  gotowania  posiłki  koniec zapasów');
 const lawRuns: [string, Partial<Laws>][] = [
@@ -324,7 +392,7 @@ const lawRuns: [string, Partial<Laws>][] = [
   ['racje i kocioł', { foodMult: 0.825, sharedMeals: true }],
 ];
 const lawStats = lawRuns.map(([name, laws]) => {
-  const runs = GOV_SEEDS.map((seed) => playLaws(govWorld, seed, laws, LAW_DAYS));
+  const runs = GOV_SEEDS.map((seed) => playLaws(govWorld, seed, laws, LAW_DAYS, zAdresu(govWorld).mieszkancy));
   const empty = runs.filter((r) => r.emptyDay !== null).map((r) => r.emptyDay as number);
   const row = {
     supplies: mean(runs.map((r) => r.supplies)),
@@ -350,5 +418,154 @@ if (
 ) {
   console.log('  BŁĄD: racje mają oszczędzać i obniżać nastrój, a kocioł zjadać więcej i podnosić nastrój');
   fail = true;
+}
+
+/* ---------- fala 1 M2: dni 2–5 z przeszukiwaniem, rozbiórką i budową, dla porównania bez przeszukiwania ---------- */
+
+const M2_DAYS = 5;
+/** koniec dnia d (północ; dzień 1 zaczyna się o 15:00) */
+const endOf = (d: number) => (d - 1) * TICKS_PER_DAY + 9 * TICKS_PER_HOUR;
+{
+  const w0 = govWorld;
+  const st0 = createSim(w0, GOV_SEEDS[0], { core: 4, ...zAdresu(w0) });
+  const h0 = houseOf(w0)!;
+  const empty = st0.apts.filter((a) => a.state === 'puste');
+  const heaps = st0.things.filter((t) => t.kind === 'smieci');
+  console.log(
+    `\nFala 1 M2, ${govName}: ${GOV_SEEDS.length} ziaren × ${M2_DAYS} dni, zawsze warta; od rana dnia 2 gracz co 5 s daje wolnym osobom prace przy pustych mieszkaniach i stawia plany budowli`,
+  );
+  console.log(
+    `  stany mieszkań ze świata (World.apts); ziarno ${GOV_SEEDS[0]}: mieszkań ${st0.apts.length}, pustych ${empty.length} (${empty.map((a) => a.why).join(', ')}), pomieszczeń do przeszukania ${h0.rooms.filter((r) => empty.some((a) => a.apt === r.apt)).length}, sterty śmieci ${heaps.length} (${heaps.reduce((a, t) => a + t.n, 0)} szt.), zepsute meble ${st0.things.filter((t) => t.broken).length}, uszkodzenia ${st0.damage.length}, miejsca dla mieszkańców ${st0.cap}`,
+  );
+  console.log(
+    `  koszty: ${Object.values(BUILDS)
+      .map(
+        (b) =>
+          `${b.name.toLowerCase()} ${Object.entries(b.cost)
+            .map(([m, n]) => `${n} ${MAT_ACC[m as Mat]}`)
+            .join(' + ')}`,
+      )
+      .join('; ')}`,
+  );
+}
+/** decyzje w dniach 2–3 od 7:00 do godziny `until` przy ekranie (1×): ile na minutę, w ilu minutach co najmniej
+    jedna, najdłuższa przerwa w ciągu dnia (s) */
+function cover(decisions: Decision[], until: number) {
+  const inside = (s: number) => {
+    const t = s * TICKS_PER_SECOND;
+    return (dayOf(t) === 2 || dayOf(t) === 3) && hourOf(t) >= 7 && hourOf(t) < until;
+  };
+  const mins = new Set<number>();
+  for (let s = endOf(1) / TICKS_PER_SECOND; s < endOf(3) / TICKS_PER_SECOND; s++)
+    if (inside(s)) mins.add(Math.floor(s / 60));
+  const ds = decisions.map((d) => d.s).filter(inside);
+  let gap = 0;
+  for (let k = 1; k < ds.length; k++)
+    if (dayOf(ds[k] * TICKS_PER_SECOND) === dayOf(ds[k - 1] * TICKS_PER_SECOND)) gap = Math.max(gap, ds[k] - ds[k - 1]);
+  return {
+    perMin: ds.length / Math.max(1, mins.size),
+    covered: new Set(ds.map((s) => Math.floor(s / 60))).size / Math.max(1, mins.size),
+    gap,
+  };
+}
+const m2Runs = (search: boolean) =>
+  GOV_SEEDS.map((seed) => {
+    const { player, log } = m2Player({ search, furniture: true });
+    const w = govWorld;
+    const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, { player, ...zAdresu(w) });
+    return {
+      log,
+      by: (d: number) => log.built.filter((b) => b.tick < endOf(d)).length,
+      work: cover(r.decisions, 21),
+      evening: cover(r.decisions, 22),
+      mats: snapshot(r.st, w).stock.mats,
+      hunger: r.hunger,
+    };
+  });
+const range = (a: number[]) => `${f1(mean(a))} (${Math.min(...a)}–${Math.max(...a)})`;
+const m2Line = (name: string, runs: ReturnType<typeof m2Runs>) => {
+  const sum = (k: keyof Omit<M2Log, 'built'>) => f1(mean(runs.map((r) => r.log[k])));
+  console.log(
+    `  ${name}: budowle do końca dnia 2: ${range(runs.map((r) => r.by(2)))}, dnia 3: ${range(runs.map((r) => r.by(3)))}, dnia 5: ${range(runs.map((r) => r.by(5)))}`,
+  );
+  console.log(
+    `    przeszukane pomieszczenia ${sum('searched')}, rozbiórki ${sum('dismantled')}, naprawy ${sum('repaired')}, zajęte mieszkania ${sum('claimed')}; po 5 dniach zostaje desek ${f1(mean(runs.map((r) => r.mats.deski)))}, złomu ${f1(mean(runs.map((r) => r.mats.zlom)))}, części ${f1(mean(runs.map((r) => r.mats.czesci)))}`,
+  );
+  const pct = (a: number[]) => `${Math.round(100 * mean(a))}% (najmniej ${Math.round(100 * Math.min(...a))}%)`;
+  console.log(
+    `    decyzje w dniach 2–3 od 7:00 do 21:00: ${f1(mean(runs.map((r) => r.work.perMin)))} na minutę, minut z decyzją ${pct(runs.map((r) => r.work.covered))}, najdłuższa przerwa ${Math.round(Math.max(...runs.map((r) => r.work.gap)))} s; z wieczorem do 22:00 (zarząd zmęczony idzie spać, warta na posterunku) minut z decyzją ${pct(runs.map((r) => r.evening.covered))}`,
+  );
+  const hs = (k: keyof Hunger) => runs.reduce((a, r) => a + r.hunger[k], 0);
+  console.log(
+    `    jedzenie zarządu: rano brakło dla głodnych w ${hs('short')} z ${hs('mornings')} poranków, ktoś głodny (najedzenie < 10) przez ${Math.round((100 * hs('starving')) / Math.max(1, hs('samples')))}% czasu`,
+  );
+  const r0 = runs[0];
+  console.log(
+    `    ziarno ${GOV_SEEDS[0]}: ${r0.log.built.map((b) => `${BUILDS[b.kind].name.toLowerCase()} (dzień ${dayOf(b.tick)} ${clockOf(b.tick)})`).join(', ') || 'nic'}`,
+  );
+};
+const t2 = performance.now();
+const m2With = m2Runs(true);
+const m2Without = m2Runs(false);
+m2Line('z przeszukiwaniem', m2With);
+m2Line('bez przeszukiwania', m2Without);
+console.log(`  (${Math.round(performance.now() - t2)} ms)`);
+// cel z docs/M2-fala-1.md: przy przeszukiwaniu 2–3 budowle do trzeciego dnia, bez niego nie; decyzja co minutę
+const by3 = m2With.map((r) => r.by(3));
+if (Math.min(...by3) < 2 || mean(by3) > 3.5 || Math.max(...m2Without.map((r) => r.by(3))) >= 2) {
+  console.log('  BŁĄD: z przeszukiwaniem ma stanąć 2–3 budowle do końca dnia 3, bez niego mniej niż 2');
+  fail = true;
+}
+// jedzenie: z przeszukiwaniem (konserwy z kuchni) zarząd głoduje najwyżej 15% czasu
+const starving =
+  m2With.reduce((a, r) => a + r.hunger.starving, 0) /
+  Math.max(
+    1,
+    m2With.reduce((a, r) => a + r.hunger.samples, 0),
+  );
+if (starving > 0.15) {
+  console.log(`  BŁĄD: z przeszukiwaniem zarząd głoduje przez ${Math.round(100 * starving)}% czasu (najwyżej 15%)`);
+  fail = true;
+}
+if (mean(m2With.map((r) => r.work.perMin)) < 1 || Math.min(...m2With.map((r) => r.work.covered)) < 0.9) {
+  console.log('  BŁĄD: dzień 2 i 3 mają dawać decyzję co minutę');
+  fail = true;
+}
+
+/* ---------- fala 2 M2 (--sasiedzi): gracz fali 1 i jedna osoba u sąsiadów od dnia 2 ---------- */
+if (SASIEDZI) {
+  const t3 = performance.now();
+  console.log(
+    `\nFala 2 M2 (--sasiedzi), ${govName}: ${GOV_SEEDS.length} ziaren × ${M2_DAYS} dni, gracz fali 1 z przeszukiwaniem, a od dnia 2 ostatnia osoba z zarządu otwiera najbliższy budynek, przeszukuje pomieszczenia i piętra, nosi łup i rozmawia z lokatorami`,
+  );
+  const runs = GOV_SEEDS.map((seed) => {
+    const m2 = m2Player({ search: true, furniture: true });
+    const nb = sasiedziPlayer();
+    const w = govWorld;
+    const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, {
+      player: (sim, ww, s, order) => {
+        nb.player(sim, ww, s, order);
+        m2.player(sim, ww, s, order);
+      },
+      ...zAdresu(w),
+    });
+    const sn = snapshot(r.st, w).stock;
+    return { log: nb.log, mats: sn.mats, food: sn.supplies, hunger: r.hunger, built: m2.log.built.length };
+  });
+  const sum = (k: keyof SasiedziLog) => f1(mean(runs.map((r) => r.log[k])));
+  console.log(
+    `  u sąsiadów: otwarte budynki ${sum('opened')}, przeszukane pomieszczenia ${sum('rooms')}, piętra ${sum('floors')}, spotkania ${sum('meetings')}, rany ${sum('wounds')}, ugryzienia ${sum('bites')}`,
+  );
+  console.log(
+    `  po ${M2_DAYS} dniach: budowle ${f1(mean(runs.map((r) => r.built)))}, jedzenie ${f1(mean(runs.map((r) => r.food)))}, desek ${f1(mean(runs.map((r) => r.mats.deski)))}, złomu ${f1(mean(runs.map((r) => r.mats.zlom)))}, części ${f1(mean(runs.map((r) => r.mats.czesci)))} (bez sąsiadów wyżej: z przeszukiwaniem)`,
+  );
+  const hs = (k: keyof Hunger) => runs.reduce((a, r) => a + r.hunger[k], 0);
+  console.log(
+    `  jedzenie zarządu: rano brakło dla głodnych w ${hs('short')} z ${hs('mornings')} poranków, ktoś głodny przez ${Math.round((100 * hs('starving')) / Math.max(1, hs('samples')))}% czasu (${Math.round(performance.now() - t3)} ms)`,
+  );
+  if (mean(runs.map((r) => r.log.rooms)) < 1) {
+    console.log('  BŁĄD: gracz z sąsiadami nic u nich nie przeszukał');
+    fail = true;
+  }
 }
 if (fail) process.exit(1);

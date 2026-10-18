@@ -22,15 +22,48 @@ import { h2, vnoise } from './hash.ts';
 import { C, mix, shade } from './palette.ts';
 import { NB } from './wnetrze.ts';
 
+/** Wózek z marketu handlarza: druciany kosz na stelażu z czterema kółkami i czerwoną rączką. Pełny: worek, kartony
+    i kanister w koszu. Pusty (po napaści): sam pordzewiały kosz. Rozmiar nie zależy od zawartości. */
+function wozek(full: boolean, seed: number): Sprite {
+  const wire: Paint = (u, v, bw, bh) => {
+    const edge = u === 0 || v === 0 || u === bw - 1 || v === bh - 1;
+    if (edge) return h2(u, v, seed + 1301) < 0.2 ? M.rust : M.steel;
+    return u % 3 === 0 || v % 3 === 0 ? (h2(u, v, seed + 1302) < 0.15 ? M.rust : M.steelD) : HOLE;
+  };
+  const b: Box[] = [];
+  // kółka i stelaż
+  for (const [x, y] of [
+    [7, 10],
+    [24, 10],
+    [7, 22],
+    [24, 22],
+  ])
+    b.push(box(x, y, 0, x + 2, y + 2, 3, M.ironDark, { opt: true }));
+  b.push(box(7, 10, 3, 26, 24, 4, M.steelD, { opt: true }));
+  // kosz
+  b.push(box(6, 9, 8, 27, 24, 20, M.steelD, { front: wire, back: wire, left: wire, right: wire, opt: true }));
+  b.push(box(6, 9, 7, 27, 24, 8, M.steelD, { top: wire, opt: true }));
+  // rączka z czerwonego plastiku
+  b.push(box(27, 9, 18, 30, 24, 20, 0xb2352b, { opt: true }));
+  if (full) {
+    const sack: Paint = (u, v) => (h2(u, v, seed + 1303) < 0.12 ? shade(0xc9b48a, 0.85) : 0xc9b48a);
+    const carton: Paint = (u, v, bw) => (u === bw - 1 || v === 0 ? shade(0xa98a5e, 0.8) : 0xa98a5e);
+    b.push(box(8, 11, 8, 16, 22, 21, 0xc9b48a, { top: sack, front: sack, round: true, opt: true }));
+    b.push(box(16, 11, 8, 25, 17, 19, 0xa98a5e, { top: carton, front: carton, opt: true }));
+    b.push(box(17, 17, 8, 24, 23, 23, 0xa83a2c, { top: (u) => (u % 3 ? 0xa83a2c : 0x7a2a20), opt: true })); // kanister
+  }
+  return renderBoxes(b, PX, PX, 0, [box(5, 8, 0, 31, 25, 24, 0)]);
+}
+
 /** wysokość siatki w pikselach ekranu (półtora metra) */
 export const FENCE_H = 24;
 /** linia siatki w kafelku: odcinki poziome biegną w y = FENCE_Y, pionowe w x = FENCE_X */
 export const FENCE_Y = 28;
 export const FENCE_X = 16;
 
-export type FenceState = 'cala' | 'dziura' | 'lata';
+export type FenceState = 'cala' | 'dziura' | 'lata' | 'wzm';
 export type FireStyle = 'krag' | 'beczka';
-export type Pile = 'gruz' | 'deski' | 'zlom';
+export type Pile = 'gruz' | 'deski' | 'zlom' | 'czesci' | 'leki';
 
 /** kolory podwórka; reszta z M (bryly.ts) i C (palette.ts) */
 const Y = {
@@ -91,7 +124,7 @@ function fence(mask: number, state: FenceState, postIn: boolean | undefined, see
   const s = !!(mask & NB.S);
   const w = !!(mask & NB.W);
   const straight = (e && w && !n && !s) || (n && s && !e && !w);
-  const holey = state !== 'cala';
+  const holey = state === 'dziura' || state === 'lata';
   const post = postIn ?? (!straight && !holey);
   const horiz = e || w;
   // dziura: owal od ziemi do dwóch trzecich wysokości, przy węźle kafelka
@@ -145,6 +178,17 @@ function fence(mask: number, state: FenceState, postIn: boolean | undefined, see
       return HOLE;
     };
     b.push(box(hx - 10, FENCE_Y + 1, 0, hx + 10, FENCE_Y + 2, Math.round(H * 0.72), Y.plank, { front: cross }));
+  }
+  // wzmocniona (tryb zombie): deski przybite w poprzek siatki
+  if (state === 'wzm') {
+    const plank: Paint = (u, v) => (h2(u, v, seed + 971) < 0.06 ? Y.nail : v === 0 ? Y.plankHi : Y.plank);
+    if (horiz)
+      for (const z of [Math.round(H * 0.22), Math.round(H * 0.58)])
+        b.push(box(w ? 0 : FENCE_X, FENCE_Y + 1, z, e ? PX : FENCE_X, FENCE_Y + 2, z + 4, Y.plank, { front: plank }));
+    else {
+      const z = Math.round(H * 0.35);
+      b.push(box(FENCE_X - 2, 1, z, FENCE_X + 2, PX - 1, z + 4, Y.plank, { top: plank, front: plankSide(seed) }));
+    }
   }
   // dziura: trochę zerwanej siatki leży na ziemi
   if (state === 'dziura' && horiz)
@@ -458,6 +502,88 @@ function zlom(size: 1 | 2 | 3, seed: number): Box[] {
   return b;
 }
 
+/** Części ze szczelnych podzespołów (to przetrwało bakterię): alternator z żeberkami pod lakierem, przy większej
+    stercie akumulator z klemami i rozrusznik. */
+function czesci(size: 1 | 2 | 3, seed: number): Box[] {
+  const b: Box[] = [];
+  const lacquer = 0x3d4a3f; // ciemnozielony lakier na uzwojeniach
+  const ribs: Paint = (u, v) =>
+    u % 2 === 0 ? shade(Y.sheet, 0.75) : h2(u, v, seed + 1101) < 0.15 ? M.rust : shade(Y.sheet, 1.1);
+  // alternator: walec na boku z kołem pasowym
+  b.push(box(5, 16, 0, 17, 26, 9, Y.sheet, { round: true, front: ribs, top: ribs, opt: true }));
+  b.push(box(17, 18, 2, 20, 24, 7, M.steelD, { round: true, opt: true }));
+  b.push(box(7, 18, 9, 15, 24, 10, lacquer, { opt: true }));
+  if (size >= 2) {
+    // akumulator: czarna skrzynka, czerwona i czarna klema
+    const side: Paint = (u, v) =>
+      v === 1 ? shade(M.ironDark, 1.6) : h2(u, v, seed + 1102) < 0.05 ? M.ironHi : M.ironDark;
+    b.push(box(18, 6, 0, 29, 14, 9, M.ironDark, { front: side, left: side, right: side, opt: true }));
+    b.push(box(19, 8, 9, 21, 10, 11, 0xa8342c, { opt: true }));
+    b.push(box(26, 8, 9, 28, 10, 11, M.ironD, { opt: true }));
+  }
+  if (size === 3) {
+    // rozrusznik: krótszy walec z zębatką
+    b.push(
+      box(4, 5, 0, 13, 12, 7, lacquer, {
+        round: true,
+        front: (u) => (u % 3 ? lacquer : shade(lacquer, 0.7)),
+        opt: true,
+      }),
+    );
+    b.push(box(13, 6, 1, 16, 11, 6, M.brass, { round: true, opt: true }));
+  }
+  return b;
+}
+
+/** Leki: czerwona apteczka samochodowa, przy większej stercie pudełka z krzyżem i karton z apteki. */
+function leki(size: 1 | 2 | 3, seed: number): Box[] {
+  const b: Box[] = [];
+  const red = 0xb2352b;
+  const card = 0xd8d0bd;
+  const cross =
+    (base: number, mark: number): Paint =>
+    (u, v, bw, bh) => {
+      const cu = Math.abs(u + 0.5 - bw / 2);
+      const cv = Math.abs(v + 0.5 - bh / 2);
+      return (cu < 1 && cv < bh / 3) || (cv < 1 && cu < bw / 3) ? mark : base;
+    };
+  // apteczka: płaska walizeczka z białym krzyżem na wieku
+  b.push(
+    box(6, 15, 0, 22, 26, 5, red, {
+      top: cross(red, M.white),
+      front: (u) => (u % 7 === 3 ? shade(red, 0.7) : red),
+      opt: true,
+    }),
+  );
+  if (size >= 2) {
+    // dwa pudełka leków
+    b.push(box(22, 18, 0, 28, 24, 4, card, { top: cross(card, red), opt: true }));
+    b.push(
+      box(23, 11, 0, 29, 17, 3, M.white, {
+        top: (u, v) => (h2(u, v, seed + 1111) < 0.1 ? 0x6f9fb0 : M.white),
+        opt: true,
+      }),
+    );
+  }
+  if (size === 3) {
+    // karton z apteki, przetarty na rogach
+    const carton: Paint = (u, v, bw, bh) =>
+      (u === 0 || v === 0 || u === bw - 1 || v === bh - 1) && h2(u, v, seed + 1112) < 0.5
+        ? shade(0xa98a5e, 0.8)
+        : 0xa98a5e;
+    b.push(
+      box(4, 4, 0, 17, 14, 9, 0xa98a5e, {
+        top: cross(0xa98a5e, 0x3f7a4a),
+        front: carton,
+        left: carton,
+        right: carton,
+        opt: true,
+      }),
+    );
+  }
+  return b;
+}
+
 /** granice stosu: zależą tylko od rodzaju i wielkości, nie od ziarna */
 function pileEnv(kind: Pile, size: 1 | 2 | 3): Box[] {
   if (kind === 'gruz') {
@@ -465,11 +591,14 @@ function pileEnv(kind: Pile, size: 1 | 2 | 3): Box[] {
     return [box(16 - R - 3, 19 - R, 0, 16 + R + 3, 19 + R, 8 + size * 3, 0)];
   }
   if (kind === 'deski') return [box(2, 8, 0, 30, 29, size * 3, 0)];
+  if (kind === 'czesci' || kind === 'leki') return [box(3, 4, 0, 30, 27, 12, 0)];
   return [box(2, 5, 0, 30, 26, 14, 0)];
 }
 
+const PILES: Record<Pile, (size: 1 | 2 | 3, seed: number) => Box[]> = { gruz, deski, zlom, czesci, leki };
+
 function pile(kind: Pile, size: 1 | 2 | 3, seed: number): Sprite {
-  const b = kind === 'gruz' ? gruz(size, seed) : kind === 'deski' ? deski(size, seed) : zlom(size, seed);
+  const b = PILES[kind](size, seed);
   return renderBoxes(b, PX, PX, 0, pileEnv(kind, size));
 }
 
@@ -600,3 +729,4 @@ export const pileSprite = (kind: Pile, size: 1 | 2 | 3, seed = 0) => pile(kind, 
 export const boothSprite = (rot: Rot, lit = false, seed = 0) => budka(rot, lit, seed | 0);
 export const armchairSprite = (rot: Rot, seed = 0) => fotel(rot, seed | 0);
 export const lampSprite = (lit = false, seed = 0) => lampa(lit, seed | 0);
+export const cartSprite = (full = true, seed = 0) => wozek(full, seed | 0);

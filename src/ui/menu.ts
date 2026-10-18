@@ -1,6 +1,6 @@
 /* Menu pod prawym przyciskiem (i pod przytrzymanym palcem): polecenia z commandsAt w miejscu kliknięcia.
    Domyślne polecenie (pierwsze szybkie) jest wyróżnione i ma fokus, palenie mebli kończy się wielokropkiem,
-   bo najpierw pyta w oknie. */
+   bo najpierw pyta w oknie. Pozycja z powodem (off) jest wyszarzona, z powodem pod spodem, i nie da się jej wybrać. */
 
 import type { MenuItem } from '../sim/orders.ts';
 import { esc } from './tekst.ts';
@@ -16,6 +16,7 @@ export class ContextMenu {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-k]');
       if (!b) return;
       const m = this.items[Number(b.dataset.k)];
+      if (m?.off) return;
       const pick = this.pick;
       this.close();
       if (m) pick?.(m);
@@ -50,11 +51,12 @@ export class ContextMenu {
   show(items: MenuItem[], x: number, y: number, head: string, pick: (m: MenuItem) => void): void {
     this.items = items;
     this.pick = pick;
-    const quick = items.findIndex((m) => m.quick);
+    const quick = items.findIndex((m) => m.quick && !m.off);
     this.el.innerHTML = `<p class="ctx-head">${esc(head)}</p>${items
-      .map(
-        (m, k) =>
-          `<button type="button" role="menuitem" class="ctx-item${k === quick ? ' quick' : ''}${m.confirm ? ' risky' : ''}" data-k="${k}">${esc(m.label)}${m.confirm ? '…' : ''}</button>`,
+      .map((m, k) =>
+        m.off
+          ? `<button type="button" role="menuitem" class="ctx-item off" aria-disabled="true" data-k="${k}">${esc(m.label)}<span class="ctx-off">${esc(m.off)}</span></button>`
+          : `<button type="button" role="menuitem" class="ctx-item${k === quick ? ' quick' : ''}${m.confirm ? ' risky' : ''}" data-k="${k}">${esc(m.label)}${m.confirm ? '…' : ''}</button>`,
       )
       .join('')}`;
     this.el.hidden = false;

@@ -4,7 +4,9 @@
    bezpieczeństwo, spalone meble, cechy ludzi) w miejsce budynków i kuchni z 0.3. */
 
 import { LAW_CD } from '../content/data.ts';
-import { M1_LAWS } from './tresc.ts';
+import { tx, txJoin } from '../core/jezyk.ts';
+import { placeIn, wordsOf } from './miejsce.ts';
+import { lawDescTx, lawNameTx, M1_LAWS } from './tresc.ts';
 import type { GovInput, GovState, LawEffects, LawOption } from './typy.ts';
 import { burnedCount, gameMin, logGov, mood, round2 } from './wspolne.ts';
 
@@ -12,16 +14,24 @@ export const law = (st: GovState, id: string): boolean => !!st.laws.signed[id];
 
 export function lawState(st: GovState, i: GovInput, id: string): LawOption {
   const L = M1_LAWS[id];
-  const base = { id, name: L.name, path: L.path, desc: L.desc };
+  const place = placeIn(i);
+  const base = { id, name: lawNameTx(id, place), path: L.path, desc: lawDescTx(id, place) };
   if (law(st, id)) return { ...base, s: 'done' };
   if (L.path === 'porzadek' && st.laws.path === 'wspolnota')
-    return { ...base, s: 'lock', why: 'Wybraliście drogę wspólnoty.' };
+    return { ...base, s: 'lock', why: tx('Wybraliście drogę wspólnoty.', 'You chose the path of community.') };
   if (L.path === 'wspolnota' && st.laws.path === 'porzadek')
-    return { ...base, s: 'lock', why: 'Wybraliście drogę porządku.' };
+    return { ...base, s: 'lock', why: tx('Wybraliście drogę porządku.', 'You chose the path of order.') };
   const miss = (L.req ?? []).filter((r) => !law(st, r));
-  if (miss.length) return { ...base, s: 'lock', why: `Najpierw: ${miss.map((r) => M1_LAWS[r].name).join(', ')}` };
+  if (miss.length) {
+    const need = txJoin(
+      miss.map((r) => lawNameTx(r, place)),
+      ', ',
+    );
+    return { ...base, s: 'lock', why: tx(`Najpierw: ${need.pl}`, `First: ${need.en}`) };
+  }
   const cd = LAW_CD - (gameMin(i) - st.laws.last);
-  if (cd > 0) return { ...base, s: 'cd', why: `Kolejną uchwałę za ${Math.ceil(cd / 60)} h.` };
+  const h = Math.ceil(cd / 60);
+  if (cd > 0) return { ...base, s: 'cd', why: tx(`Kolejną uchwałę za ${h} h.`, `Next resolution in ${h} h.`) };
   return { ...base, s: 'ok' };
 }
 
@@ -36,7 +46,17 @@ export function sign(st: GovState, i: GovInput, id: string): boolean {
   st.laws.last = gameMin(i);
   if (L.path === 'porzadek' || L.path === 'wspolnota') st.laws.path = L.path;
   if (L.imm) mood(st, L.imm[0], L.imm[1]);
-  logGov(st, i, `Uchwała zarządu: ${L.name}.`, true);
+  const place = placeIn(i);
+  const name = lawNameTx(id, place);
+  logGov(
+    st,
+    i,
+    tx(
+      `Uchwała ${wordsOf(place).zarzad.dk}: ${name.pl}.`,
+      `${place.kind === 'dom' ? 'Committee' : 'Board'} resolution: ${name.en}.`,
+    ),
+    true,
+  );
   return true;
 }
 
