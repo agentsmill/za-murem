@@ -47,6 +47,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | apteka | the pharmacy | |
 | działka | allotment | |
 | koza (piecyk) | the stove | pierwszy raz: potbelly stove |
+| ognisko (na podwórku) | campfire | |
 | dyżur przy kozie | stove watch | |
 | skład drewna | the woodpile | |
 | meblościanka | wall unit | |

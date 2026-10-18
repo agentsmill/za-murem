@@ -343,11 +343,9 @@ describe('okna zarządu po angielsku', () => {
         if (zombie) expect(h.body).toMatch(/shambler/i);
         else expect(h.body).not.toMatch(/shambler/i);
       }
-    expect(helpSheet(false).body).toContain(
-      'Right-click inside a flat for: Search, Tear down, Repair, Claim the flat.',
-    );
+    expect(helpSheet(false).body).toContain('Right-click inside a flat for: Search, Take apart, Fix, Claim the flat.');
     expect(helpSheet(true).body).toContain(
-      'Press and hold inside a flat for: Search, Tear down, Repair, Claim the flat.',
+      'Press and hold inside a flat for: Search, Take apart, Fix, Claim the flat.',
     );
     for (const id of Object.keys(ENDINGS_EN) as EndingId[]) {
       const e = endSheet(id);
@@ -602,7 +600,7 @@ describe('budowa i mieszkania po angielsku', () => {
         expect(aptState(v)).toBe(`Empty since ${g.year}, ${WHY_SHORT_EN[g.why]}`);
         expect(aptCard(v, false)).toContain(esc(WHY_TEXT_EN[g.why](g.year!)));
         expect(aptCard(v, false)).toContain(`Searched: 0 of ${v.roomCount}`);
-        expect(aptCard(v, false)).toContain('Right-click inside the flat: Search, Tear down, Repair, Claim the flat.');
+        expect(aptCard(v, false)).toContain('Right-click inside the flat: Search, Take apart, Fix, Claim the flat.');
         for (const d of v.damages) expect(d.name).toBe(DAMAGE_EN[d.kind]);
       }
     }

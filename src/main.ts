@@ -46,7 +46,16 @@ import { addResidents, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
-import { allowedAnchors, availableOf, buildItems, buildMenu, buildSheet, okTilesOf, type Rot } from './ui/budowa.ts';
+import {
+  allowedAnchors,
+  availableOf,
+  buildItems,
+  buildMenu,
+  buildName,
+  buildSheet,
+  okTilesOf,
+  type Rot,
+} from './ui/budowa.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { Druzyna } from './ui/druzyna.ts';
 import {
@@ -1505,7 +1514,7 @@ const FEEDBACK_EN: Record<MenuItem['cmd']['t'], [string, string]> = {
   gate: ['Off to the gate.', 'Off to the gate.'],
   guard: ['Going on watch.', 'Going on watch.'],
   patch: ['Will patch the hole in the fence.', 'Will patch the hole in the fence.'],
-  campfire: ['Will light a bonfire.', 'Will light a bonfire.'],
+  campfire: ['Will light a campfire.', 'Will light a campfire.'],
   away: ['', ''],
   back: ['', ''],
   laws: ['', ''],
@@ -1678,9 +1687,6 @@ function setPlacementView(p: PlacementView): boolean {
 }
 
 /** menu budowy: przycisk „Budowa” i klawisz B */
-/** nazwa budowli w bieżącym języku */
-const buildName = (k: BuildKind): string => BUILDS[k].name;
-
 function openBuild() {
   if (!sim || modal.open) return;
   sheetAgain = () => {

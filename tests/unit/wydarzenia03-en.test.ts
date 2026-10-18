@@ -327,7 +327,7 @@ describe('przykłady', () => {
     const m = { ...p, name: 'Marek Nowak', f: false, prof: 'Hydraulik' };
     const fire = setup({ light: { campfire: true, gateLamp: false } }).h;
     expect(EVENTS_EN.fachowiec.text(fire, { p: m, b: 'siedziby' })).toBe(
-      'Marek Nowak from the board’s block let slip by the bonfire what he used to be: plumber. He kept quiet until now, afraid someone would make him work.',
+      'Marek Nowak from the board’s block let slip by the campfire what he used to be: plumber. He kept quiet until now, afraid someone would make him work.',
     );
     expect(EVENTS_EN.fachowiec.labels(fire, { p: m }, ['a', 'b'])).toEqual(['Put him to work', 'Let him rest']);
     const dom = setup({ place: zielonki, residents: 0 }).h;
@@ -370,7 +370,7 @@ describe('przykłady', () => {
     expect(EVENTS_EN.czynsz.title(dom, {})).toBe('Mortgage instalment for 2047');
     expect(EVENTS_EN.czynsz.labels(dom, {}, ['a', 'b'])).toEqual([
       'Announce the committee collects no dues',
-      'Burn the letter on the bonfire',
+      'Burn the letter on the campfire',
     ]);
     const blok = setup({ light: { campfire: false, gateLamp: false } }).h;
     expect(EVENTS_EN.czynsz.labels(blok, {}, ['a', 'b'])).toEqual([

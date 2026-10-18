@@ -20,6 +20,7 @@ import type {
   StockDelta,
 } from '../gov/typy.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
+import { FURNITURE_EN } from '../sim/nazwy.en.ts';
 import { BURN_TICKS, BURNABLE, FURNITURE_ACC } from '../sim/sim.ts';
 import { esc, manyEn, num, pct, signed } from './tekst.ts';
 
@@ -363,19 +364,10 @@ export function reportSheet(r: NightReport): Sheet {
 
 // ---------------------------------------------------------------- palenie mebli
 
-/** meble do palenia po angielsku, jak FURNITURE_ACC w symulacji (po angielsku bez odmiany) */
-const MEBEL_EN: Record<string, string> = {
-  krzeslo: 'chair',
-  stol: 'table',
-  lozko: 'bed',
-  wersalka: 'sofa bed',
-  mebloscianka: 'wall unit',
-};
-
 export function burnSheet(kind: string, owner: string | null, softer: boolean): Sheet {
   const wood = BURNABLE[kind] ?? 1;
   const hours = (wood * BURN_TICKS) / TICKS_PER_HOUR;
-  const what = L(FURNITURE_ACC[kind] ?? 'mebel', MEBEL_EN[kind] ?? 'furniture');
+  const what = L(FURNITURE_ACC[kind] ?? 'mebel', FURNITURE_EN[kind] ?? 'furniture');
   return {
     tone: 'ogien',
     kicker: L('Meble na opał', 'Furniture for fuel'),
@@ -454,7 +446,7 @@ function buildHelp(touch: boolean): string {
         fetch,
         tx(
           'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
-          'Tap a flat in your block to see its card: whether it is empty, why, what needs repairing and what has been searched. Press and hold inside a flat for: Search, Tear down, Repair, Claim the flat.',
+          'Tap a flat in your block to see its card: whether it is empty, why, what needs repairing and what has been searched. Press and hold inside a flat for: Search, Take apart, Fix, Claim the flat.',
         ),
       ]
     : [
@@ -469,7 +461,7 @@ function buildHelp(touch: boolean): string {
         fetch,
         tx(
           'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
-          'Click a flat in your block to see its card: whether it is empty, why, what needs repairing and what has been searched. Right-click inside a flat for: Search, Tear down, Repair, Claim the flat.',
+          'Click a flat in your block to see its card: whether it is empty, why, what needs repairing and what has been searched. Right-click inside a flat for: Search, Take apart, Fix, Claim the flat.',
         ),
       ];
   return `<h3 class="help-h">${L('Budowa i puste mieszkania', 'Building and empty flats')}</h3><ul class="help">${items
@@ -508,7 +500,7 @@ export function helpSheet(touch: boolean, zombie = false): Sheet {
       'The board',
     )}</h3><ul class="help">${L(
       '<li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li><li>Każdy z zarządu ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li>',
-      '<li>You are the board of a housing co-op in 2051. Four people, a potbelly stove in the kitchen and a fence full of holes around the yard.</li><li>Watch everyone’s needs on their person card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 the board meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the residents’ trust and anger. At zero trust people leave; at full anger the general meeting votes the board out.</li><li>Each board member carries one weapon, and spares are kept in the storeroom (person card: “Change”). Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li>',
+      '<li>You are the board of a housing co-op in 2051. Four people, a potbelly stove in the kitchen and a fence full of holes around the yard.</li><li>Watch everyone’s needs on their person card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 the board meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the residents’ trust and anger. At zero trust people leave; at full anger the general meeting votes the board out.</li><li>Each board member carries one weapon, and spares are kept in the storeroom (person card: “Swap”). Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li>',
     )}</ul>${zombie ? tr(ZOMBIE_HELP) : ''}<h3 class="help-h">${L('Na razie', 'For now')}</h3><p>${L(
       'W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.',
       'Version 0.4 has nights behind the fence, building, empty flats to search and repair, newcomers and Zombie mode. Research, winter and the rest of the economy will come in later versions.',

@@ -164,11 +164,11 @@ export function aptCard(v: AptView, touch: boolean): string {
   const how = touch
     ? L(
         'Przytrzymajcie palec w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
-        'Press and hold inside the flat: Search, Tear down, Repair, Claim the flat.',
+        'Press and hold inside the flat: Search, Take apart, Fix, Claim the flat.',
       )
     : L(
         'Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
-        'Right-click inside the flat: Search, Tear down, Repair, Claim the flat.',
+        'Right-click inside the flat: Search, Take apart, Fix, Claim the flat.',
       );
   const year = v.year ?? 2026;
   return [

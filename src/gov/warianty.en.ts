@@ -69,7 +69,7 @@ function budynek(b: string): string {
 }
 
 /** ognisko na podwórku, a bez niego koza */
-const ogien = (h: GovHost) => (h.campfire() ? 'the bonfire' : 'the stove');
+const ogien = (h: GovHost) => (h.campfire() ? 'the campfire' : 'the stove');
 
 // ---------------------------------------------------------------- kronika
 
@@ -181,7 +181,7 @@ const WYDARZENIA: Record<string, EventEn> = {
         : 'Someone has brought a letter from the old co-op: unpaid service charge for 2047, plus interest. People are asking whether the new board will be collecting too.',
     labels: (h) => [
       dom(h) ? 'Announce the committee collects no dues' : 'Write it off for everyone',
-      h.campfire() ? 'Burn the letter on the bonfire' : 'Burn the letter in the stove',
+      h.campfire() ? 'Burn the letter on the campfire' : 'Burn the letter in the stove',
     ],
   },
 

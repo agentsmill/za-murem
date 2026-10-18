@@ -41,7 +41,7 @@ export const M1_LAWS_EN: Record<string, M1LawEn> = {
     desc: 'Food goes 25% slower. Anger +0.4 a day.',
   },
   u_meble: {
-    name: 'Furniture for firewood',
+    name: 'Furniture for fuel',
     desc: 'Furniture from empty flats goes into the stove without asking anyone. Burning other people’s furniture hurts half as much, but anger +2 at once and +0.1 a day.',
     dom: {
       desc: 'Furniture goes into the stove without asking the household. Burning furniture hurts half as much, but anger +2 at once and +0.1 a day.',
