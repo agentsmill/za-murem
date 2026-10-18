@@ -108,3 +108,11 @@ Szwendacze w atlasie ludzi (szarozielona skóra, podarte ubranie z plamami, ręc
 - Liczby z tabel wyżej (siła broni, liczebność stada, napór) to pierwszy balans do strojenia botem i playtestem.
 - Brama nie pęka, szabrowników w trybie zombie nie ma.
 - Ludzie umierają tylko od ran i gorączki, nie od zimna i głodu.
+
+## Zmiany po szlifie, 18.10.2026
+
+Gałąź `zombie-szlif`, decyzje w `docs/POSTEP.md` („Decyzje”):
+- W trybie zombie broń palna sama nie strzela przez siatkę, bo strzał ściąga stado: warta i odruchowa walka strzelają do wroga po swojej stronie siatki (także w otwartej dziurze), przez siatkę tylko na rozkaz „Atakuj”. Kusza strzela cicho i sięga jak dotąd.
+- „Do broni!” odwołuje ten sam przycisk („Odwołaj”): z posterunków schodzi tylko warta z alarmu, kto stał na warcie wcześniej, zostaje. Bez odwołania alarm trwa do 6:00.
+- Warta przy siatce zostaje na miejscu, póki jej broń sięga kogoś, kto napiera na miejsce największego naporu; inaczej staje tuż obok niego od strony podwórka (wcześniej próg 2,5 m od kafelka, za mały na rogu siatki).
+- Łata, zasieki albo zamknięta brama wypychają szwendacza, który w nich stoi, na stronę ulicy; w drodze szwendacz staje przed łatą.
