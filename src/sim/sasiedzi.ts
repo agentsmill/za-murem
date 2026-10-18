@@ -16,6 +16,7 @@ import { makePerson, type Person } from '../content/people.ts';
 import { clamp, mulberry, type Rng } from '../core/rng.ts';
 import { type AptState, type AptWhy, type DamageKind, settleAptsOf } from '../world/apts.ts';
 import { buildInterior, IN, type Interior, type RoomKind } from '../world/interior.ts';
+import { type PlotWynik, wspolnyPlot } from '../world/plot.ts';
 import type { World } from '../world/world.ts';
 import type { Mat } from './budowle.ts';
 import { dayOf, hourOf, TICKS_PER_HOUR } from './clock.ts';
@@ -250,6 +251,12 @@ export interface DrzwiBudynku {
   przed: Map<number, number>;
 }
 
+/** kafelek siatki ze świata albo ze wspólnego płotu */
+function naSiatce(w: object, n: number): boolean {
+  const f = w as Partial<Pick<World, 'fence' | 'fenceBaza'>>;
+  return !!(f.fence?.tiles.includes(n) || f.fenceBaza?.tiles.includes(n));
+}
+
 /** Drzwi budynku według rodzaju, liczone raz na świat: na zewnątrz (którykolwiek sąsiad poza budynkiem), wejściowe
     mieszkań (z jednej strony posadzka mieszkania, z drugiej klatka albo inne mieszkanie) i reszta (w środku jednego
     mieszkania, sali albo klatki: zawsze przechodnie, poza tą listą). */
@@ -277,7 +284,8 @@ export function drzwiBudynku(w: WorldLike & Pick<World, 'blocked'>, bid: number)
     const outside = nb.filter((n) => n >= 0 && w.bid[n] !== bid);
     if (outside.length) {
       const j = b.entrances.findIndex((e) => e.tile === d);
-      const free = outside.find((n) => !w.blocked[n]) ?? outside[0];
+      // kafelek siatki liczy się jako wolny, żeby wybór nie zmieniał się po wspólnym płocie (etap 3)
+      const free = outside.find((n) => !w.blocked[n] || naSiatce(w, n)) ?? outside[0];
       out.zewn.push({ tile: d, out: j >= 0 ? b.entrances[j].out : free, wejscie: j });
       continue;
     }
@@ -356,10 +364,11 @@ export function mieszkaniaZaDrzwiami(w: WorldLike & Pick<World, 'blocked'>, bid:
 }
 
 /** Kafelek we wnętrzu sąsiedniego budynku (rzeczy tam nie są nasze, dopóki ktoś ich nie przyniesie): kafelek budynku
-    innego niż siedziba. Rzeczy leżą na kafelkach budynków tylko w siedzibie i we wnętrzach otwartych sąsiadów. */
-export function uSasiada(_st: Pick<SimState, 'sasiedzi'>, w: Pick<World, 'bid' | 'hq'>, tile: number): boolean {
+    innego niż siedziba i niż budynki za wspólnym płotem (etap 3: tam łup jest już nasz). Rzeczy leżą na kafelkach
+    budynków tylko w siedzibie i we wnętrzach otwartych sąsiadów. */
+export function uSasiada(st: Pick<SimState, 'sasiedzi' | 'plot'>, w: Pick<World, 'bid' | 'hq'>, tile: number): boolean {
   const bid = w.bid[tile];
-  return bid >= 0 && bid !== w.hq;
+  return bid >= 0 && bid !== w.hq && !st.plot?.bids.includes(bid);
 }
 
 /** przechodzi się przez drzwi w tym stanie */
@@ -1229,4 +1238,41 @@ export function pokojeZajete(
   for (const d of drzwiBudynku(w, bid).zewn)
     if (st.zajete.includes(d.tile)) for (const r of zaDrzwiami(w, bid, d.tile).rooms) out.add(r);
   return out;
+}
+
+// ---------------------------------------------------------------- etap 3: wspólny płot
+
+/** 3 minuty pracy na metr nowego płotu, 2 deski i 20 minut na każde drzwi na obwodzie do zabicia */
+export const PLOT_TICKS_M = Math.round((3 * TICKS_PER_HOUR) / 60);
+export const PLOT_DESKI_DRZWI = 2;
+
+/** Kształt wspólnego płotu dla otwartego sąsiedniego budynku z obecnej siatki świata (korytarz omija zasieki na
+    siatce); null: budynku nie da się otoczyć (nie jest otwarty, już otoczony, gra bez siatki). Ten sam wynik liczą menu
+    i symulacja. */
+export function plotDla(
+  st: Pick<SimState, 'sasiedzi' | 'plot' | 'things' | 'fence'>,
+  w: World,
+  bid: number,
+): PlotWynik | null {
+  const rec = st.sasiedzi?.budynki.find((b) => b.bid === bid);
+  if (!rec?.otwarty || st.plot?.bids.includes(bid) || !w.fence?.tiles.length || !st.fence) return null;
+  const size = w.size;
+  const zasieki = new Set(st.things.filter((t) => t.kind === 'zasieki').map((t) => t.y * size + t.x));
+  const drzwi = drzwiBudynku(w, bid).zewn.map((d) => ({ tile: d.tile, out: d.out }));
+  return wspolnyPlot(w, w.fence, drzwi, zasieki);
+}
+
+/** koszt płotu: deska i złom na metr, po 2 deski na drzwi do zabicia; praca (ticki), najmniej 10 minut */
+export function kosztPlotu(r: { dlugosc: number; zabic: readonly number[] }): {
+  need: Partial<Record<Mat, number>>;
+  total: number;
+} {
+  const need: Partial<Record<Mat, number>> = {};
+  const deski = r.dlugosc + PLOT_DESKI_DRZWI * r.zabic.length;
+  if (deski > 0) need.deski = deski;
+  if (r.dlugosc > 0) need.zlom = r.dlugosc;
+  return {
+    need,
+    total: Math.max(TICKS_PER_HOUR / 6, r.dlugosc * PLOT_TICKS_M + r.zabic.length * ZABIJANIE_TICKS),
+  };
 }

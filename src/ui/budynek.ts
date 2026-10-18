@@ -18,6 +18,7 @@ import {
   type StanDrzwi,
   wnetrze,
 } from '../sim/sasiedzi.ts';
+import type { PlotStan } from '../sim/sim.ts';
 import type { World } from '../world/world.ts';
 import { esc } from './tekst.ts';
 
@@ -41,14 +42,16 @@ export interface WidokBudynku {
   drzwi: Partial<Record<StanDrzwi, number>> | null;
   /** przeszukane pomieszczenia i wszystkie do przeszukania w otwartym budynku */
   pokoje: { n: number; z: number } | null;
+  /** etap 3: budynek za wspólnym płotem albo płot w budowie (procent pracy) */
+  plot: { otoczony: boolean; pct: number | null };
   /** etap 2: przeszukane piętra (w otwartym budynku z piętrami) i ostatni nocny gość (dzień gry, kto, co zniknęło) */
   pietra: { n: number; z: number } | null;
   noc: { dzien: number; kto: 'szabrownicy' | 'szwendacze'; zabrali: Partial<Record<string, number>> } | null;
   znajomi: ZnajomiWidok[];
 }
 
-/** widok karty z wpisu budynku (z gry albo z podglądu); dotkniety: wpis jest w stanie gry */
-export function widokBudynku(w: World, b: SasiedniBudynek, dotkniety: boolean): WidokBudynku {
+/** widok karty z wpisu budynku (z gry albo z podglądu); dotkniety: wpis jest w stanie gry; plot: wspólny płot ze stanu */
+export function widokBudynku(w: World, b: SasiedniBudynek, dotkniety: boolean, plot?: PlotStan): WidokBudynku {
   const B = w.buildings[b.bid];
   const it = wnetrze(w, b.bid);
   const multi = B.entrances.length > 1;
@@ -68,6 +71,13 @@ export function widokBudynku(w: World, b: SasiedniBudynek, dotkniety: boolean): 
     otwarty: b.otwarty,
     drzwi: dotkniety ? drzwi : null,
     pokoje: b.otwarty ? { n, z: it.rooms.length } : null,
+    plot: {
+      otoczony: !!plot?.bids.includes(b.bid),
+      pct:
+        plot?.plan?.bid === b.bid
+          ? Math.min(99, Math.floor((100 * plot.plan.work) / Math.max(1, plot.plan.total)))
+          : null,
+    },
     pietra: b.otwarty && pietraBudynku(w, b.bid) > 0 ? { n: b.pietra, z: pietraBudynku(w, b.bid) } : null,
     noc: b.noc ? { dzien: dayOf(b.noc.tick), kto: b.noc.kto, zabrali: b.noc.zabrali } : null,
     znajomi: b.domy
@@ -108,6 +118,8 @@ export function kartaBudynku(v: WidokBudynku, touch: boolean): string {
     v.pokoje
       ? `<p class="apt-why">${esc(BUDYNEK.przeszukane(v.pokoje.n, v.pokoje.z).pl)}</p>`
       : `<p class="apt-why">${esc(BUDYNEK.zamkniety.pl)}</p>`,
+    v.plot.otoczony ? `<p class="apt-why">${esc(BUDYNEK.otoczony.pl)}</p>` : '',
+    v.plot.pct !== null ? `<p class="apt-why">${esc(BUDYNEK.plotPlan(v.plot.pct).pl)}</p>` : '',
     v.pietra ? `<p class="apt-why">${esc(BUDYNEK.pietraPrzeszukane(v.pietra.n, v.pietra.z).pl)}</p>` : '',
     v.noc ? `<p class="apt-why">${esc(BUDYNEK.noc(v.noc.dzien, v.noc.kto, ileTekst(v.noc.zabrali)).pl)}</p>` : '',
     `<p class="doing">${esc(BUDYNEK.jak(touch).pl)}</p>`,

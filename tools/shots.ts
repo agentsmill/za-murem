@@ -3842,7 +3842,7 @@ const SHOTS: Shot[] = [
       const proto = st.things.find((t) => t.kind === 'deski' || t.kind === 'zlom')!;
       st.things.push({
         ...proto,
-        id: st.nextId++,
+        id: st.nextThing++,
         x: Math.floor(p.x),
         y: Math.floor(p.y),
         kind: 'czesci',
@@ -3878,6 +3878,53 @@ const SHOTS: Shot[] = [
     console.log(`  ${t.replace(/\s+/g, ' ').slice(0, 220)}`);
     if (!t.includes('szabrownicy')) throw new Error('okno bez szabrowników');
   }),
+  m2f2('m2f2-plot-menu', 'lanciego', async (page) => {
+    // etap 3: na drzwiach otwartego 10F „Otoczyć wspólnym płotem” z długością, kosztem i czasem
+    const r = await m2f2Open(page, 'Blok nr 10F', false);
+    await m2f2Select(page);
+    const xy = await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const w = zm.sim!.w;
+      const t = w.buildings[bid].entrances[0].tile;
+      const at: [number, number] = [(t % w.size) + 0.5, Math.floor(t / w.size) + 0.5];
+      zm.setCam(at[0], at[1], 1.4);
+      return at;
+    }, r.bid);
+    await waitIdle(page);
+    const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y), xy);
+    await page.mouse.click(sx, sy, { button: 'right' });
+    await page.waitForSelector('#ctx:not([hidden])');
+    const items = await page.locator('#ctx .ctx-item').allTextContents();
+    console.log(`  menu: ${items.join(' | ')}`);
+    if (!items.some((i) => i.startsWith('Otoczyć wspólnym płotem ('))) throw new Error('brak wspólnego płotu w menu');
+  }),
+  m2f2('m2f2-plot', 'lanciego', async (page) => {
+    // etap 3: gotowy wspólny płot wokół korytarza do 10F (plan i od razu koniec pracy poleceniem otocz)
+    const r = await m2f2Open(page, 'Blok nr 10F', false);
+    const out = await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const w = sim.w;
+      const before = w.fence.tiles.length;
+      const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+      sim.push({ t: 'enclose', ids: [p.id], bid });
+      sim.step();
+      if (!sim.st.plot?.plan) return null;
+      sim.push({ t: 'otocz', ids: [], bid });
+      sim.step();
+      const b = w.buildings[bid];
+      const hq = w.buildings[w.hq];
+      zm.setCam((b.x0 + hq.x0) / 2 + 4, (b.y0 + hq.y1) / 2 + 6, 0.62);
+      return { before, after: w.fence.tiles.length, bids: sim.st.plot?.bids ?? [], napis: sim.st.sasiedzi?.napis?.co };
+    }, r.bid);
+    await page.waitForTimeout(300);
+    await waitIdle(page);
+    const hint = await page.textContent('#hint');
+    console.log(
+      `  siatka ${out?.before} → ${out?.after}, otoczone ${out?.bids.join(',')}, napis ${out?.napis}, podpowiedź: ${hint}`,
+    );
+    if (!out?.bids.includes(r.bid)) throw new Error('płot nie stanął');
+  }),
   m2f2('m2f2-karta-po-nocy', 'lanciego', async (page) => {
     // etap 2: karta otwartego bloku po nocnym gościu i z przeszukanym piętrem
     const r = await m2f2Open(page, 'Blok nr 10F', false);
@@ -3891,7 +3938,7 @@ const SHOTS: Shot[] = [
       const proto = st.things.find((t) => t.kind === 'deski' || t.kind === 'zlom')!;
       st.things.push({
         ...proto,
-        id: st.nextId++,
+        id: st.nextThing++,
         x: Math.floor(p.x),
         y: Math.floor(p.y),
         kind: 'deski',

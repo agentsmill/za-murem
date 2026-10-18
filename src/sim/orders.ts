@@ -7,6 +7,7 @@ import { IN } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
+import { TICKS_PER_HOUR } from './clock.ts';
 import { NAPISY as HANDEL } from './handlarz.ts';
 import { dryTreeOf, houseOf, inHomeApt, type RoomKind } from './house.ts';
 import { MAT_ACC, REPAIR, RUBBISH, searchable } from './mieszkania.ts';
@@ -16,9 +17,11 @@ import {
   gidB,
   gidRoom,
   kafelkiZajete,
+  kosztPlotu,
   mieszkalny,
   moznaPrzeszukac,
   pietraBudynku,
+  plotDla,
   pokojSasiada,
   przechodnie,
   uSasiada,
@@ -383,6 +386,31 @@ function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuI
         confirm: true,
       });
   }
+  // etap 3: wspólny płot na drzwiach albo w pomieszczeniu otwartego budynku (z kosztem i czasem; czemu się nie da)
+  const plotBid = dp ? dp.bid : ps ? st.sasiedzi!.budynki[ps.k].bid : -1;
+  if (plotBid >= 0 && !st.plot?.bids.includes(plotBid)) {
+    const plan = st.plot?.plan;
+    if (plan?.bid === plotBid)
+      out.push({ cmd: { t: 'enclose', ids: core, bid: plotBid }, label: MENU.plotDalej.pl, quick: false });
+    else if (!plan) {
+      const r = plotDla(st, w, plotBid);
+      if (r?.ok) {
+        const k = kosztPlotu(r);
+        out.push({
+          cmd: { t: 'enclose', ids: core, bid: plotBid },
+          label: MENU.plot(r.dlugosc, k.need.deski ?? 0, k.need.zlom ?? 0, k.total / TICKS_PER_HOUR).pl,
+          quick: false,
+          confirm: true,
+        });
+      } else if (r) {
+        out.push({
+          cmd: { t: 'enclose', ids: core, bid: plotBid },
+          label: MENU.plotNie(r.why, r.dlugosc).pl,
+          quick: false,
+        });
+      }
+    }
+  }
   // łup w cudzym budynku niesie się jak łup zza siatki: „Zanieść na podwórko” w commandsAt (razem z resztą z budynku)
   return out;
 }
@@ -554,5 +582,10 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return PRACA.rozmawia.pl;
     case 'upstairs':
       return (walking ? PRACA.idzieNaSchody : PRACA.naPietrze).pl;
+    case 'plot': {
+      const plan = st.plot?.plan;
+      const pct = plan ? Math.min(99, Math.floor((100 * plan.work) / Math.max(1, plan.total))) : 0;
+      return PRACA.plot(j.phase, pct).pl;
+    }
   }
 }

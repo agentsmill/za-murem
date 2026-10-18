@@ -40,6 +40,12 @@ const MAT: Record<string, Dwa> = {
   drewno: { pl: 'drewno', en: 'firewood' },
 };
 
+/** godziny z przecinkiem dziesiętnym, bez „,0” („1,5”, „2”) */
+const godz = (h: number): string => {
+  const r = Math.round(h * 10) / 10;
+  return Number.isInteger(r) ? String(r) : String(r).replace('.', ',');
+};
+
 /** „jedzenie 3, leki 1” (bez zer); pusty napis, gdy nic */
 export function ileTekst(ile: Partial<Record<string, number>> | undefined): Dwa {
   const list = Object.entries(ile ?? {}).filter(([, n]) => (n ?? 0) > 0) as [string, number][];
@@ -68,6 +74,21 @@ export const MENU = {
     en: `Search a floor upstairs (${left} left)`,
   }),
   okradnij: { pl: 'Okraść mieszkanie (lokatorów nie ma)', en: 'Rob the flat (nobody is home)' },
+  /** etap 3: wspólny płot z kosztem i czasem; h: godziny pracy */
+  plot: (m: number, deski: number, zlom: number, h: number): Dwa => ({
+    pl: `Otoczyć wspólnym płotem (${m} m: ${deski} ${pl3(deski, 'deska', 'deski', 'desek')}, ${zlom} złomu, ${godz(h)} h)`,
+    en: `Enclose with a shared fence (${m} m: ${deski} boards, ${zlom} scrap, ${godz(h).replace(',', '.')} h)`,
+  }),
+  plotDalej: { pl: 'Budować wspólny płot dalej', en: 'Keep building the shared fence' },
+  plotNie: (why: string, m?: number): Dwa =>
+    why === 'jezdnia'
+      ? { pl: 'Wspólny płot: między wami jest jezdnia', en: 'Shared fence: there is a road in the way' }
+      : why === 'dlugi'
+        ? {
+            pl: `Wspólny płot: za długi (${m ?? 0} m, najwyżej 120 m)`,
+            en: `Shared fence: too long (${m ?? 0} m, at most 120 m)`,
+          }
+        : { pl: 'Wspólny płot: tu się nie da', en: 'Shared fence: not possible here' },
 } as const;
 
 /** praca przy drzwiach: w drodze i przy drzwiach */
@@ -106,52 +127,71 @@ export const PRACA = {
   rozmawia: { pl: 'Rozmawia z sąsiadami.', en: 'Talking to the neighbours.' },
   idzieNaSchody: { pl: 'Idzie na schody.', en: 'Heading for the stairs.' },
   naPietrze: { pl: 'Przeszukuje piętro.', en: 'Searching a floor upstairs.' },
+  /** etap 3: wspólny płot (faza 0 po materiał, 1 z materiałem, 2 stawia; pct gotowe w procentach) */
+  plot: (faza: number, pct: number): Dwa =>
+    faza === 0
+      ? { pl: 'Idzie po materiał na wspólny płot.', en: 'Fetching material for the shared fence.' }
+      : faza === 1
+        ? { pl: 'Niesie materiał na wspólny płot.', en: 'Carrying material for the shared fence.' }
+        : { pl: `Stawia wspólny płot (${pct}%).`, en: `Building the shared fence (${pct}%).` },
 } as const;
 
 /** podpowiedzi po poleceniu: jedna osoba, kilka zaznaczonych (polecenie bierze jedna) */
-export const PO_POLECENIU: Record<'open' | 'knock' | 'force' | 'board' | 'unboard' | 'loot' | 'upstairs', [Dwa, Dwa]> =
-  {
-    upstairs: [
-      {
-        pl: 'Pójdzie przeszukać piętro. Wróci za godzinę.',
-        en: 'Will search a floor upstairs and be back in an hour.',
-      },
-      {
-        pl: 'Jedna osoba pójdzie przeszukać piętro. Wróci za godzinę.',
-        en: 'One person will search a floor upstairs and be back in an hour.',
-      },
-    ],
-    open: [
-      { pl: 'Otworzy drzwi.', en: 'Will open the door.' },
-      { pl: 'Jedna osoba otworzy drzwi.', en: 'One person will open the door.' },
-    ],
-    knock: [
-      { pl: 'Zapuka.', en: 'Will knock.' },
-      { pl: 'Jedna osoba zapuka.', en: 'One person will knock.' },
-    ],
-    force: [
-      { pl: 'Wyważy drzwi. Będzie głośno.', en: 'Will force the door. It will be loud.' },
-      { pl: 'Jedna osoba wyważy drzwi. Będzie głośno.', en: 'One person will force the door. It will be loud.' },
-    ],
-    board: [
-      { pl: 'Zabije drzwi deskami.', en: 'Will board up the door.' },
-      { pl: 'Jedna osoba zabije drzwi deskami.', en: 'One person will board up the door.' },
-    ],
-    unboard: [
-      { pl: 'Odbije deski z drzwi.', en: 'Will pull the boards off the door.' },
-      { pl: 'Jedna osoba odbije deski z drzwi.', en: 'One person will pull the boards off the door.' },
-    ],
-    loot: [
-      {
-        pl: 'Przeszuka pomieszczenie i zaniesie łup na podwórko.',
-        en: 'Will search the room and carry the loot into the yard.',
-      },
-      {
-        pl: 'Jedna osoba przeszuka pomieszczenie i zaniesie łup.',
-        en: 'One person will search the room and carry the loot.',
-      },
-    ],
-  };
+export const PO_POLECENIU: Record<
+  'open' | 'knock' | 'force' | 'board' | 'unboard' | 'loot' | 'upstairs' | 'enclose',
+  [Dwa, Dwa]
+> = {
+  enclose: [
+    {
+      pl: 'Postawi wspólny płot: najpierw doniesie deski i złom.',
+      en: 'Will build the shared fence, bringing boards and scrap first.',
+    },
+    {
+      pl: 'Jedna osoba postawi wspólny płot: najpierw doniesie deski i złom.',
+      en: 'One person will build the shared fence, bringing boards and scrap first.',
+    },
+  ],
+  upstairs: [
+    {
+      pl: 'Pójdzie przeszukać piętro. Wróci za godzinę.',
+      en: 'Will search a floor upstairs and be back in an hour.',
+    },
+    {
+      pl: 'Jedna osoba pójdzie przeszukać piętro. Wróci za godzinę.',
+      en: 'One person will search a floor upstairs and be back in an hour.',
+    },
+  ],
+  open: [
+    { pl: 'Otworzy drzwi.', en: 'Will open the door.' },
+    { pl: 'Jedna osoba otworzy drzwi.', en: 'One person will open the door.' },
+  ],
+  knock: [
+    { pl: 'Zapuka.', en: 'Will knock.' },
+    { pl: 'Jedna osoba zapuka.', en: 'One person will knock.' },
+  ],
+  force: [
+    { pl: 'Wyważy drzwi. Będzie głośno.', en: 'Will force the door. It will be loud.' },
+    { pl: 'Jedna osoba wyważy drzwi. Będzie głośno.', en: 'One person will force the door. It will be loud.' },
+  ],
+  board: [
+    { pl: 'Zabije drzwi deskami.', en: 'Will board up the door.' },
+    { pl: 'Jedna osoba zabije drzwi deskami.', en: 'One person will board up the door.' },
+  ],
+  unboard: [
+    { pl: 'Odbije deski z drzwi.', en: 'Will pull the boards off the door.' },
+    { pl: 'Jedna osoba odbije deski z drzwi.', en: 'One person will pull the boards off the door.' },
+  ],
+  loot: [
+    {
+      pl: 'Przeszuka pomieszczenie i zaniesie łup na podwórko.',
+      en: 'Will search the room and carry the loot into the yard.',
+    },
+    {
+      pl: 'Jedna osoba przeszuka pomieszczenie i zaniesie łup.',
+      en: 'One person will search the room and carry the loot.',
+    },
+  ],
+};
 
 /** dopisek przy wyważaniu w trybie zombie */
 export const HALAS_ZOMBIE: Dwa = { pl: ' Hałas ściągnie szwendaczy.', en: ' The noise will draw the walkers.' };
@@ -315,6 +355,20 @@ export function zdanie(
             en: `Someone was in ${gdzie.en} at night. Gone: ${ile.en}.`,
           }
         : { pl: `W nocy ktoś był ${gdzie.pl}.`, en: `Someone was in ${gdzie.en} at night.` };
+    case 'plot_jezdnia':
+      return { pl: 'Nie da się: między wami jest jezdnia.', en: 'Not possible: there is a road in the way.' };
+    case 'plot_dlugi':
+      return {
+        pl: `Nie da się: płot miałby ${o.ilu ?? 0} m, a najwyżej 120 m.`,
+        en: `Not possible: the fence would be ${o.ilu ?? 0} m long, at most 120 m.`,
+      };
+    case 'plot_brak':
+      return { pl: 'Tu nie da się postawić szczelnego płotu.', en: 'A tight fence cannot be built here.' };
+    case 'plot_gotowy':
+      return {
+        pl: `Wspólny płot stoi: ${o.ilu ?? 0} m nowej siatki${o.nazwa ? `, „${o.nazwa}” jest za nią` : ''}.`,
+        en: `The shared fence is up: ${o.ilu ?? 0} m of new fence${o.nazwa ? `, “${o.nazwa}” is inside` : ''}.`,
+      };
     case 'noc_zombie':
       return { pl: `W nocy ${dokad.pl} weszły szwendacze.`, en: `At night walkers got into ${dokad.en}.` };
     case 'na_klucz':
@@ -468,6 +522,15 @@ export const BUDYNEK = {
     pl: 'Wnętrza jeszcze nie widzieliście.',
     en: 'You have not seen the inside yet.',
   },
+  /** etap 3 */
+  otoczony: {
+    pl: 'Za wspólnym płotem: łup w środku jest wasz, a nocni goście tu nie wejdą.',
+    en: 'Behind the shared fence: the loot inside is yours and night visitors cannot get in.',
+  },
+  plotPlan: (pct: number): Dwa => ({
+    pl: `Wspólny płot w budowie: ${pct}%.`,
+    en: `Shared fence under construction: ${pct}%.`,
+  }),
   jak: (touch: boolean): Dwa =>
     touch
       ? {

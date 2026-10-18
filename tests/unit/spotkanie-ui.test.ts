@@ -145,6 +145,7 @@ describe('karta spotkania, etap 2', () => {
       pietra: { n: 3, z: 12 },
       noc: { dzien: 4, kto: 'szabrownicy' as const, zabrali: { deski: 4, jedzenie: 2 } },
       znajomi: [],
+      plot: { otoczony: false, pct: null },
     };
     const html = kartaBudynku(v, false);
     expect(html).toContain('Piętra przeszukane: 3 z 12.');
@@ -152,6 +153,8 @@ describe('karta spotkania, etap 2', () => {
     expect(kartaBudynku({ ...v, noc: { dzien: 2, kto: 'szwendacze', zabrali: {} } }, false)).toContain(
       'Dnia 2 w nocy weszły tu szwendacze.',
     );
+    expect(kartaBudynku({ ...v, plot: { otoczony: false, pct: 40 } }, false)).toContain('Wspólny płot w budowie: 40%.');
+    expect(kartaBudynku({ ...v, plot: { otoczony: true, pct: null } }, false)).toContain('Za wspólnym płotem');
     expect(zdanieNapisu({ co: 'noc_zombie', ilu: 2 }, null, 'Dom 28')).toBe(
       'W nocy do budynku „Dom 28” i do 1 innego weszły szwendacze.',
     );

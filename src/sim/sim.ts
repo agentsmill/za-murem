@@ -110,6 +110,7 @@ import {
   type Info,
   type KontekstSpotkania,
   kafelkiZajete,
+  kosztPlotu,
   type LokatorzyBudynku,
   LUP_MATS,
   lupMieszkania,
@@ -128,6 +129,7 @@ import {
   PUKANIE_TICKS,
   pietraBudynku,
   pietro,
+  plotDla,
   poHalasie,
   pokojSasiada,
   przechodnie,
@@ -268,6 +270,7 @@ const M2_JOBS = new Set<JobKind>([
   'door',
   'loot',
   'upstairs',
+  'plot',
   'trade',
   'rob',
 ]);
@@ -391,6 +394,8 @@ export type JobKind =
   | 'meet'
   /** etap 2: piętro sąsiada (target: indeks budynku, tile: kafelek przy schodach); w fazie 1 osoba jest na górze */
   | 'upstairs'
+  /** etap 3: wspólny płot (target: budynek; materiał jak przy budowie, potem praca) */
+  | 'plot'
   | 'trader'
   | 'trade'
   | 'rob';
@@ -621,6 +626,9 @@ export type Command =
   | { t: 'upstairs'; ids: number[]; bid: number; tile: number }
   /** gra sieciowa: nowa lista drzwi klatek zajętych przez inne drużyny (ids puste) */
   | { t: 'zajete'; ids: number[]; drzwi: number[] }
+  /** etap 3: otoczyć otwarty budynek wspólnym płotem (plan i praca), a po skończonej pracy (ids puste) nowa siatka */
+  | { t: 'enclose'; ids: number[]; bid: number }
+  | { t: 'otocz'; ids: number[]; bid: number }
   /** handlarz: włączyć (stary zapis, ids puste), wymienić się (oferta k), napaść na niego */
   | { t: 'obcy'; ids: number[] }
   | { t: 'trade'; ids: number[]; offer: number }
@@ -768,8 +776,54 @@ export interface SimState {
   /** gra sieciowa (fala 2): drzwi klatek zajętych przez inne drużyny, rosnąco; zamknięte na stałe razem z tym, co za
       nimi. Nie ma go w grze bez sieci. */
   zajete?: number[];
+  /** wspólny płot (fala 2, etap 3): otoczone budynki, kształt siatki po ostatnim otoczeniu i plan w toku; nie ma go,
+      dopóki nikt nie zaczął płotu */
+  plot?: PlotStan;
   /** handlarz pod bramą (src/sim/handlarz.ts); tylko z opcją obcy albo po poleceniu 'obcy' */
   obcy?: Obcy;
+}
+
+/** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
+    i ile jej trzeba, kto pracuje (−1: nikt) i kafelek podwórka, z którego się stawia */
+export interface PlotPlan {
+  bid: number;
+  need: Partial<Record<Mat, number>>;
+  have: Partial<Record<Mat, number>>;
+  work: number;
+  total: number;
+  by: number;
+  stand: number;
+}
+
+export interface PlotStan {
+  /** otoczone budynki po kolei */
+  bids: number[];
+  /** kształt siatki po ostatnim otoczeniu (kafelki rosnąco, dziury ze startu na obwodzie, podwórko); brama ze świata */
+  ksztalt?: { tiles: number[]; hole: number[]; yard: number[] };
+  plan?: PlotPlan;
+}
+
+/** Siatka świata według wspólnego płotu: pierwotna zostaje w fenceBaza, a fence i jej kafelki w blocked mają kształt
+    ze stanu (bez kształtu wraca pierwotna). Świat zmienia się w miejscu, bo to ten sam obiekt dla rysowania, pamięci
+    wnętrz i klucza zapisu; siatka stoi zawsze na wolnych kafelkach, więc blocked wraca bez śladu. */
+export function ustawSiatke(w: World, k: PlotStan['ksztalt'] | undefined): void {
+  const baza = w.fenceBaza ?? w.fence;
+  const teraz = w.fence;
+  if (!baza || (!k && teraz === baza)) return;
+  for (const t of teraz.tiles) w.blocked[t] = 0;
+  for (const t of baza.tiles) w.blocked[t] = 1;
+  for (const t of baza.hole) w.blocked[t] = 0;
+  if (!k) {
+    w.fence = baza;
+    delete w.fenceBaza;
+    return;
+  }
+  for (const t of baza.tiles) w.blocked[t] = 0;
+  const f = { tiles: k.tiles, hole: k.hole, gate: baza.gate, yard: k.yard };
+  for (const t of f.tiles) w.blocked[t] = 1;
+  for (const t of f.hole) w.blocked[t] = 0;
+  w.fenceBaza = baza;
+  w.fence = f;
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -1727,14 +1781,15 @@ export class Sim {
   /** pomieszczenie pod nogami: jak interior.room, ale drzwi należą do sąsiedniego pomieszczenia */
   private readonly roomOf: Int16Array;
   private readonly dry: number;
-  /** kafelki podwórka przy bramie, na których stoi warta (najbliżej środka bramy najpierw) */
-  private readonly gateStand: number[];
+  /** kafelki podwórka przy bramie, na których stoi warta (najbliżej środka bramy najpierw); to i maski siatki niżej
+      liczy przeliczSiatke (także po wspólnym płocie) */
+  private gateStand: number[] = [];
   /** kafelek za bramą, na którym znika i pojawia się wyprawa (−1: świat bez siatki) */
-  readonly exitTile: number;
+  exitTile = -1;
   /** kafelek przed drzwiami siedziby, do którego wraca wyprawa */
   private readonly door: number;
   /** kafelki siatki i bramy (1): przez nie da się sięgnąć tylko dzidą, kuszą i bronią palną */
-  private readonly fenceMask: Uint8Array;
+  private fenceMask: Uint8Array = new Uint8Array(0);
   /** zabici w bieżącym kroku (znikają po pętli pionków) */
   private readonly graveyard = new Set<number>();
   /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy,
@@ -1749,13 +1804,15 @@ export class Sim {
   /** wyszukiwania dróg szwendaczy w tym kroku */
   private zbudget = 0;
   /** kafelki podwórka (1) i to, czy w bieżącym kroku jest na nim wróg (liczone raz na krok) */
-  private readonly yardMask: Uint8Array;
+  private yardMask: Uint8Array = new Uint8Array(0);
   private dangerAt = -1;
   private danger = false;
 
   constructor(w: World, st: SimState) {
     this.w = w;
     this.st = st;
+    // M2 fala 2, etap 3: siatka świata według wspólnego płotu ze stanu (bez niego pierwotna)
+    ustawSiatke(w, st.plot?.ksztalt);
     // zapis sprzed broni: pusty magazyn i bez amunicji (bez losowania, żeby skrót zależał tylko od stanu)
     st.store.arms ??= [];
     st.store.ammo ??= noAmmo();
@@ -1805,6 +1862,19 @@ export class Sim {
     this.dry = dryTreeOf(w);
     const hq = w.buildings[w.hq];
     this.door = hq?.entrances[0]?.out ?? -1;
+    this.przeliczSiatke();
+    if (h) {
+      const fires = this.fires();
+      this.boost = heatBoost(this.kinds, this.links, fires, this.outdoor());
+      this.light = roomLight(this.kinds.length, this.links, fires);
+    }
+  }
+
+  /** Posterunek przy bramie, wyjście za bramę, maski siatki i podwórka oraz numery kafelków siatki ze świata (po
+      wspólnym płocie od nowa). Liczone ze świata (z dziurami zamkniętymi), nie ze stanu: ścięte drzewo albo ognisko nie
+      może ich przesunąć, bo gra wczytana z zapisu musi iść dalej tak samo. */
+  private przeliczSiatke(): void {
+    const w = this.w;
     const shape = fenceShape(w);
     const gate = gateTiles(w);
     const size = w.size;
@@ -1813,8 +1883,6 @@ export class Sim {
     const gx = gate.reduce((a, g) => a + (g % size) + 0.5, 0) / Math.max(1, gate.length);
     const gy = gate.reduce((a, g) => a + Math.floor(g / size) + 0.5, 0) / Math.max(1, gate.length);
     const dg = (i: number) => ((i % size) + 0.5 - gx) ** 2 + (Math.floor(i / size) + 0.5 - gy) ** 2;
-    // posterunek i wyjście liczone ze świata (z dziurami zamkniętymi), nie ze stanu: ścięte drzewo albo ognisko nie może
-    // ich przesunąć, bo gra wczytana z zapisu musi iść dalej tak samo
     const still = w.blocked.slice();
     for (const t of shape?.hole ?? []) still[t] = 1;
     this.gateStand = (shape?.yard ?? [])
@@ -1823,15 +1891,11 @@ export class Sim {
     this.exitTile = exitOf(w);
     this.fenceMask = new Uint8Array(size * size);
     for (const t of shape?.tiles ?? []) this.fenceMask[t] = 1;
+    this.fenceIndex.clear();
     for (const [k, t] of (shape?.tiles ?? []).entries()) this.fenceIndex.set(t, k);
     this.yardMask = new Uint8Array(size * size);
     for (const t of shape?.yard ?? []) this.yardMask[t] = 1;
     for (const t of gate) this.fenceMask[t] = 1;
-    if (h) {
-      const fires = this.fires();
-      this.boost = heatBoost(this.kinds, this.links, fires, this.outdoor());
-      this.light = roomLight(this.kinds.length, this.links, fires);
-    }
   }
 
   push(c: Command): void {
@@ -2184,6 +2248,11 @@ export class Sim {
       this.wyborSpotkania(c.nr, c.choice);
       return;
     }
+    // wspólny płot skończony: nowa siatka od tego kroku (praca skończyła się w poprzednim)
+    if (c.t === 'otocz') {
+      this.otocz(c.bid);
+      return;
+    }
     // gra sieciowa: klatki innych drużyn zamknięte od następnego kroku (przechodniość od nowa)
     if (c.t === 'zajete') {
       const d = [...new Set(c.drzwi)].sort((a, b) => a - b);
@@ -2256,6 +2325,7 @@ export class Sim {
       this.orderDoor(pawns, c.t, c.door);
     else if (c.t === 'loot') this.startLoot(pawns[0], c.bid, c.room);
     else if (c.t === 'upstairs') this.startUpstairs(pawns[0], c.bid, c.tile);
+    else if (c.t === 'enclose') this.startEnclose(pawns[0], c.bid);
     else if (c.t === 'trade') this.startTrade(pawns[0], c.offer);
     else if (c.t === 'rob') this.startRob(pawns[0]);
   }
@@ -3358,6 +3428,8 @@ export class Sim {
         return this.st.sasiedzi?.spotkanie?.nr === j.target;
       case 'upstairs':
         return this.pietroPraca(p, j, at);
+      case 'plot':
+        return this.plotPraca(p, j, at);
       case 'trade':
         return this.tradeWork(p, j, at);
       case 'rob':
@@ -7709,7 +7781,8 @@ export class Sim {
     const day = dayOf(st.tick);
     const seed = this.w.seed;
     s.budynki.forEach((b, k) => {
-      if (!b.otwarty || !this.zUlicy(b)) return;
+      // za wspólnym płotem (etap 3) i bez wejścia od ulicy nikt nie wchodzi
+      if (!b.otwarty || st.plot?.bids.includes(b.bid) || !this.zUlicy(b)) return;
       const piles = this.stertyW(b.bid);
       const squat = b.domy.find((g) => g.szabrownicy && g.gdzie === 'u_siebie');
       const kto = squat ? 'szabrownicy' : nocnyGosc(seed, b.bid, day, mode, piles.length > 0);
@@ -7852,6 +7925,138 @@ export class Sim {
       if (this.zacznijSpotkanie(p, j.target, b.domy.length - 1, 'pietro', false)) return true;
     }
     return this.carryOn(p, j, j.tile);
+  }
+
+  /* etap 3: wspólny płot */
+
+  /** Otoczyć budynek wspólnym płotem: plan z kosztem (deska i złom na metr nowego płotu, po 2 deski na drzwi do zabicia)
+      i czasem (3 minuty na metr, 20 minut na drzwi), potem praca jak przy budowie. Jeden plan naraz; na planie tego
+      samego budynku polecenie znaczy „budować dalej”. Gdy się nie da, napis mówi dlaczego. */
+  private startEnclose(p: Pawn, bid: number): void {
+    const st = this.st;
+    const k = st.sasiedzi?.budynki.findIndex((b) => b.bid === bid) ?? -1;
+    if (k < 0) return;
+    const plan = st.plot?.plan;
+    if (plan) {
+      if (plan.bid === bid) this.startPlot(p);
+      return;
+    }
+    const r = plotDla(st, this.w, bid);
+    if (!r) return;
+    if (!r.ok) {
+      this.napisSasiada(`plot_${r.why}`, k, r.dlugosc ? { ilu: r.dlugosc } : {});
+      return;
+    }
+    const stand = this.plotStand(r.usuniete, r.fence.yard);
+    if (stand < 0) return;
+    const { need, total } = kosztPlotu(r);
+    st.plot ??= { bids: [] };
+    st.plot.plan = { bid, need, have: {}, work: 0, total, by: -1, stand };
+    this.wersjaSasiadow++;
+    this.startPlot(p);
+  }
+
+  /** skąd się stawia: kafelek starego podwórka przy siatce, która zniknie (przejście do korytarza), a bez takiego
+      (budynek przy podwórku) pierwszy wolny kafelek nowego podwórka */
+  private plotStand(usuniete: readonly number[], yard: readonly number[]): number {
+    const size = this.w.size;
+    const old = this.yardMask;
+    for (const t of usuniete)
+      for (const n of [t - size, t + 1, t + size, t - 1])
+        if (n >= 0 && n < size * size && old[n] && !this.coreBlocked[n]) return n;
+    return yard.find((i) => old[i] && !this.coreBlocked[i]) ?? -1;
+  }
+
+  /** zająć się planem płotu: z materiałami od razu do pracy, inaczej po pierwszy brakujący materiał */
+  private startPlot(p: Pawn): boolean {
+    const plan = this.st.plot?.plan;
+    if (!plan) return false;
+    const holder = plan.by >= 0 && plan.by !== p.id ? this.st.pawns.find((q) => q.id === plan.by) : undefined;
+    if (holder?.job?.t === 'plot') return false;
+    const j = this.newJob('plot', plan.bid, this.tileOf(p), true);
+    if (this.ready({ need: plan.need, have: plan.have } as BuildPlan)) {
+      if (!this.go(p, plan.stand)) return false;
+      this.setJob(p, j, false);
+      j.phase = 2;
+      j.tile = plan.stand;
+      plan.by = p.id;
+      return true;
+    }
+    this.setJob(p, j, false);
+    if (!this.fetchNext(p, j, plan.need, plan.have)) {
+      p.job = null;
+      return false;
+    }
+    plan.by = p.id;
+    return true;
+  }
+
+  /** Płot: kursy po deski i złom (faza 0 i 1), potem praca przy przejściu (faza 2); po skończonej pracy nowa siatka
+      od następnego kroku (polecenie otocz w kolejce). */
+  private plotPraca(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const plan = st.plot?.plan;
+    if (!plan || plan.bid !== j.target) return false;
+    plan.by = p.id;
+    if (j.phase === 0) {
+      if (!at) return false;
+      const m = j.what as Mat;
+      return this.takeFor(p, j, (plan.need[m] ?? 0) - (plan.have[m] ?? 0), plan.stand);
+    }
+    if (j.phase === 1) {
+      if (!at) return false;
+      const m = j.what as Mat;
+      plan.have[m] = (plan.have[m] ?? 0) + j.n;
+      j.n = 0;
+      j.what = '';
+      if (this.fetchNext(p, j, plan.need, plan.have)) return true;
+      if (!this.ready({ need: plan.need, have: plan.have } as BuildPlan)) return false;
+      j.phase = 2;
+      j.t0 = st.tick;
+      return true;
+    }
+    if (!at) return false;
+    plan.work += 1;
+    if ((st.tick - j.t0) % NOISE_TICKS === 0) this.addNoise(p.x, p.y, HALAS.deski);
+    if (plan.work < plan.total) return true;
+    if (!st.cmds.some((c) => c.t === 'otocz')) st.cmds.push({ t: 'otocz', ids: [], bid: plan.bid });
+    return false;
+  }
+
+  /** Wspólny płot stoi: siatka od nowa według kształtu (liczonego jeszcze raz, teraz), wytrzymałość starych kafelków
+      zostaje, nowe mają świeżą łatę, dziury, przez które przeszło podwórko, znikają, drzwi na obwodzie zabite. */
+  private otocz(bid: number): void {
+    const st = this.st;
+    const plan = st.plot?.plan;
+    if (!plan || plan.bid !== bid) return;
+    delete st.plot!.plan;
+    const k = st.sasiedzi?.budynki.findIndex((b) => b.bid === bid) ?? -1;
+    const r = plotDla(st, this.w, bid);
+    if (!r?.ok || k < 0) {
+      if (k >= 0) this.napisSasiada('plot_brak', k);
+      return;
+    }
+    const stara = this.w.fence;
+    const f = st.fence!;
+    const hp = new Map(stara.tiles.map((t, i) => [t, f.hp[i]]));
+    f.hp = r.fence.tiles.map((t) => hp.get(t) ?? PATCH_HP);
+    const on = new Set(r.fence.tiles);
+    f.holes = f.holes.map((h) => ({ ...h, tiles: h.tiles.filter((t) => on.has(t)) })).filter((h) => h.tiles.length);
+    const b = st.sasiedzi!.budynki[k];
+    for (const t of r.zabic) {
+      const d = stanDrzwi(b, t);
+      if (d) {
+        d.s = 'zabite';
+        delete d.k;
+      }
+    }
+    st.plot!.bids.push(bid);
+    st.plot!.ksztalt = { tiles: r.fence.tiles, hole: r.fence.hole, yard: r.fence.yard };
+    ustawSiatke(this.w, st.plot!.ksztalt);
+    this.przeliczSiatke();
+    this.rebuild();
+    this.wersjaSasiadow++;
+    this.napisSasiada('plot_gotowy', k, { ilu: r.dlugosc });
   }
 
   hash(): string {

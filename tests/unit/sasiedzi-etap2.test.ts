@@ -71,7 +71,7 @@ function pile(sim: Sim, bid: number, kind: string, n: number) {
     (t) => w.bid[t] === bid && it.cell[t] === IN.FLOOR && !sim.st.things.some((x) => x.y * w.size + x.x === t),
   )!;
   const proto = sim.st.things.find((t) => t.kind === 'deski' || t.kind === 'zlom')!;
-  sim.st.things.push({ ...proto, id: sim.st.nextId++, kind, x: i % w.size, y: Math.floor(i / w.size), n, by: -1 });
+  sim.st.things.push({ ...proto, id: sim.st.nextThing++, kind, x: i % w.size, y: Math.floor(i / w.size), n, by: -1 });
 }
 
 describe('etap 2: czyste funkcje', () => {

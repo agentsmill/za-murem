@@ -970,7 +970,7 @@ function hud(now: number) {
     const bud = !apt && budFocus >= 0 ? sim.budynekDoKarty(budFocus) : null;
     card.hidden = !apt && !bud;
     if (apt) setCard(aptCard(apt, touchUI, words));
-    else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze), touchUI));
+    else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze, sim.st.plot), touchUI));
     return;
   }
   card.hidden = false;
@@ -1498,6 +1498,8 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   upstairs: [PO_POLECENIU.upstairs[0].pl, PO_POLECENIU.upstairs[1].pl],
   meet: ['', ''],
   zajete: ['', ''],
+  enclose: [PO_POLECENIU.enclose[0].pl, PO_POLECENIU.enclose[1].pl],
+  otocz: ['', ''],
   trade: [HANDEL.poHandel.pl, HANDEL.poHandelWielu.pl],
   rob: [HANDEL.poNapasc.pl, HANDEL.poNapascWielu.pl],
   obcy: ['', ''],
