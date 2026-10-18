@@ -45,6 +45,7 @@ import { deg, esc, num, pct, signed } from '../../src/ui/tekst.ts';
 import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSave } from '../../src/ui/zapis.ts';
 import { crownOf, markSpot, under } from '../../src/ui/znacznik.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
+import { pl } from './po-angielsku.ts';
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
 const cache = new Map<string, { w: World; seed: number; data: Save['data'] }>();
@@ -114,9 +115,9 @@ describe('siatka dla zarządu', () => {
     for (const h of f.holes) {
       expect(h.size).toBeGreaterThanOrEqual(0.4);
       expect(h.size).toBeLessThanOrEqual(0.85);
-      expect(h.name).toMatch(/^(od |za trzepakiem|przy suchym drzewie)/);
+      expect(pl(h.name)).toMatch(/^(od |za trzepakiem|przy suchym drzewie)/);
     }
-    expect(new Set(f.holes.map((h) => h.name)).size).toBe(f.holes.length);
+    expect(new Set(f.holes.map((h) => pl(h.name))).size).toBe(f.holes.length);
     expect(govFence(w)).toEqual(f);
   });
   it('bez siatki w świecie zarząd sam zakłada dziurę', () => {
@@ -296,11 +297,11 @@ describe('okna zarządu', () => {
     const ev = eventSheet({
       k: 'wydarzenie',
       id: 'x',
-      title: 'Hałas <w nocy>',
-      text: 'Raz.\nDwa.',
+      title: { pl: 'Hałas <w nocy>', en: 'Noise <at night>' },
+      text: { pl: 'Raz.\nDwa.', en: 'One.\nTwo.' },
       choices: [
-        { label: 'Tak', ok: true },
-        { label: 'Nie', ok: false },
+        { label: { pl: 'Tak', en: 'Yes' }, ok: true },
+        { label: { pl: 'Nie', en: 'No' }, ok: false },
       ],
     });
     expect(ev.title).toBe('Hałas &lt;w nocy&gt;');
@@ -309,7 +310,7 @@ describe('okna zarządu', () => {
     const zero = { wood: 0, supplies: 0, scrap: 0, parts: 0, meds: 0 };
     const r = reportSheet({
       day: 1,
-      lines: ['Spokojna noc.'],
+      lines: [{ pl: 'Spokojna noc.', en: 'A quiet night.' }],
       raid: 'odparty',
       stolen: zero,
       loot: { ...zero, wood: 4 },
@@ -426,7 +427,7 @@ describe('dyżur przy kozie', () => {
     expect(r.koza).toEqual([who.name]);
     expect(r.fire).toBeGreaterThan(0.9);
     expect(r.kitchen).toBeGreaterThanOrEqual(18);
-    expect(r.lines).toContain(
+    expect(r.lines.map(pl)).toContain(
       `${who.name} ${who.name.split(' ')[0].endsWith('a') ? 'czuwała' : 'czuwał'} przy kozie i ogień palił się całą noc. Rano w kuchni ciepło, ${Math.round(r.kitchen!)}°C.`,
     );
     expect(reportSheet(r).body).toContain(

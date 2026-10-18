@@ -1,6 +1,8 @@
 /* Zapis gry w przeglądarce (localStorage): dane osiedla, z których świat odtwarza się deterministycznie,
-   ziarno, stan symulacji, stan zarządu i czas przy ekranie. Jeden zapis na przeglądarkę. */
+   ziarno, stan symulacji, stan zarządu i czas przy ekranie. Jeden zapis na przeglądarkę. Zapis nie zależy od języka;
+   tylko etykieta wznowienia (`saveLabel`) jest w bieżącym języku. */
 
+import { L } from '../core/jezyk.ts';
 import { hashString } from '../core/rng.ts';
 import type { GovState } from '../gov/typy.ts';
 import { clockOf, dayOf } from '../sim/clock.ts';
@@ -97,6 +99,6 @@ export function clearSave(from: Store | null = store()): void {
   }
 }
 
-/** „Przymorze, dzień 2, 06:40” na przycisk ekranu startowego */
+/** „Przymorze, dzień 2, 06:40” (po angielsku „Przymorze, day 2, 06:40”) na przycisk ekranu startowego */
 export const saveLabel = (s: Save): string =>
-  `${s.data.name}${modeOf(s.sim) === 'zombie' ? ' (zombie)' : ''}, dzień ${dayOf(s.sim.tick)}, ${clockOf(s.sim.tick)}`;
+  `${s.data.name}${modeOf(s.sim) === 'zombie' ? ' (zombie)' : ''}, ${L('dzień', 'day')} ${dayOf(s.sim.tick)}, ${clockOf(s.sim.tick)}`;

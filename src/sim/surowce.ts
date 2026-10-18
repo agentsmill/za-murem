@@ -2,8 +2,8 @@
    zza siatki niesiony na podwórko i przeróbka w warsztacie (drewno na deski, złom na części). Czyste dane i funkcje
    dla symulacji, menu i rysowania. Łup z wraku losuje generator z ziarna gry i kafelka wraku, a nie st.rng, więc
    przeszukanie nie przesuwa innych losowań. Stan wraków (st.wraki) powstaje dopiero przy pierwszym przeszukaniu,
-   żeby gra bez wraków miała ten sam stan i skrót co przed tą zmianą. Napisy są w obu językach: do menu i opisów
-   prac idzie na razie polski, tłumaczenie podłączy warstwa języka. */
+   żeby gra bez wraków miała ten sam stan i skrót co przed tą zmianą. Napisy są w obu językach: menu, opisy prac
+   i podpowiedzi biorą je przez tr() w bieżącym języku (deski to „planks”, bo „board” to zarząd). */
 
 import { mulberry } from '../core/rng.ts';
 import type { Wreck, WreckModel } from '../world/wrecks.ts';
@@ -130,8 +130,11 @@ export const NAPISY = {
   rozbierz: (m: WreckModel): Napis => ({ pl: `Rozebrać ${MODEL_ACC[m].pl}`, en: `Strip ${MODEL_ACC[m].en}` }),
   zaniesc: { pl: 'Zanieść na podwórko', en: 'Carry into the yard' },
   obcyPrzyAucie: { pl: 'przy aucie są obcy', en: 'strangers are at the car' },
-  deska: { pl: 'Piłować deskę z drewna', en: 'Saw a board from firewood' },
-  deskiN: (n: number): Napis => ({ pl: `Piłować ${n} ${plural(n, 'deski', 'desek')}`, en: `Saw ${n} boards` }),
+  deska: { pl: 'Piłować deskę z drewna', en: 'Saw wood into a plank' },
+  deskiN: (n: number): Napis => ({
+    pl: `Piłować ${n} ${plural(n, 'deski', 'desek')}`,
+    en: `Saw wood into ${n} planks`,
+  }),
   czesc: { pl: 'Zrobić część ze złomu', en: 'Make a part from scrap' },
   czesciN: (n: number): Napis => ({ pl: `Zrobić ${n} części ze złomu`, en: `Make ${n} parts from scrap` }),
   idzieSzukac: { pl: 'Idzie przeszukać wrak.', en: 'Going to search the wreck.' },
@@ -144,20 +147,23 @@ export const NAPISY = {
   /** left: ile sztuk zostało razem z tą, nad którą pracuje */
   pilujeDeski: (left: number): Napis => ({
     pl: left > 1 ? `Piłuje deski (jeszcze ${left}).` : 'Piłuje deskę.',
-    en: left > 1 ? `Sawing boards (${left} to go).` : 'Sawing a board.',
+    en: left > 1 ? `Sawing planks (${left} to go).` : 'Sawing a plank.',
   }),
   robiCzesci: (left: number): Napis => ({
     pl: left > 1 ? `Robi części ze złomu (jeszcze ${left}).` : 'Robi część ze złomu.',
     en: left > 1 ? `Making parts from scrap (${left} to go).` : 'Making a part from scrap.',
   }),
   /** podpowiedzi po poleceniu (jedna osoba, kilka osób: polecenie bierze jedna) */
-  poWrak: { pl: 'Weźmie się za wrak.', en: 'Will get to work on the wreck.' },
-  poWrakWielu: { pl: 'Jedna osoba weźmie się za wrak.', en: 'One person will get to work on the wreck.' },
-  poZaniesc: { pl: 'Zaniesie łup na podwórko.', en: 'Will carry the loot into the yard.' },
-  poZaniescWielu: { pl: 'Jedna osoba zaniesie łup na podwórko.', en: 'One person will carry the loot into the yard.' },
-  poWarsztat: { pl: 'Weźmie się do roboty w warsztacie.', en: 'Will get to work in the workshop.' },
+  poWrak: { pl: 'Weźmie się za wrak.', en: 'Off to work on the wreck.' },
+  poWrakWielu: { pl: 'Jedna osoba weźmie się za wrak.', en: 'One person goes to work on the wreck.' },
+  poZaniesc: { pl: 'Zaniesie łup na podwórko.', en: 'Off to carry the loot into the yard.' },
+  poZaniescWielu: {
+    pl: 'Jedna osoba zaniesie łup na podwórko.',
+    en: 'One person goes to carry the loot into the yard.',
+  },
+  poWarsztat: { pl: 'Weźmie się do roboty w warsztacie.', en: 'Off to the workshop.' },
   poWarsztatWielu: {
     pl: 'Jedna osoba weźmie się do roboty w warsztacie.',
-    en: 'One person will work in the workshop.',
+    en: 'One person goes to the workshop.',
   },
 } as const;

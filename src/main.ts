@@ -1,16 +1,21 @@
-/* Za Murem 0.4: start (z panelem „Wasz zarząd”: liczba osób i własna drużyna), wczytanie osiedla i tabel mieszkańców
+/* Za Murem 0.4: język gry (src/ui/jezyk.ts: angielski domyślnie, przełącznik EN/PL na karcie startowej i w Menu;
+   po zmianie wszystko, co widać, rysuje się od nowa), start (z panelem „Wasz zarząd”: liczba osób i własna drużyna),
+   wczytanie osiedla i tabel mieszkańców
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), zapis i sterowanie. */
 
 import './style.css';
+import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
 import { HALAS_ZOMBIE, PO_POLECENIU } from './content/napisy-sasiedzi.ts';
+import { ALARM_OFF_EN, ALARM_OFF_SAY_EN, ALARM_OFF_TITLE_EN } from './content/napisy-zombie.en.ts';
 import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zombie.ts';
 import type { Person } from './content/people.ts';
+import { jezyk, L, poZmianieJezyka, type Tx, tr } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
-import { BLOK, type Words, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
 import {
@@ -20,10 +25,12 @@ import {
   govUpdate,
   lawEffects,
   newGov,
+  normalizujTeksty,
   pending,
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
+import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
@@ -33,7 +40,7 @@ import { gameLights, strangerVisibility } from './render/game.ts';
 import { type Light, lightAt } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
-import { WEAPONS, type WeaponId } from './sim/bron.ts';
+import { WEAPONS, WEAPONS_EN, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
@@ -48,8 +55,17 @@ import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
-import { NAPISY as OBCY } from './sim/wedrowcy.ts';
-import { allowedAnchors, availableOf, buildItems, buildMenu, buildSheet, okTilesOf, type Rot } from './ui/budowa.ts';
+import { NAPISY as OBCY, wiescEn } from './sim/wedrowcy.ts';
+import {
+  allowedAnchors,
+  availableOf,
+  buildItems,
+  buildMenu,
+  buildName,
+  buildSheet,
+  okTilesOf,
+  type Rot,
+} from './ui/budowa.ts';
 import { kartaBudynku, widokBudynku } from './ui/budynek.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { Druzyna } from './ui/druzyna.ts';
@@ -61,12 +77,14 @@ import {
   podpowiedz,
   poprawneImie,
   wczytajZmiany,
-  wyprowadzka,
+  wyprowadzkaTx,
   type ZmianaImienia,
   zapiszZmiane,
   zastosujZmiany,
   zmianaZPol,
+  zTejOsobyGeneratora,
 } from './ui/imiona.ts';
+import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
@@ -98,6 +116,8 @@ import { buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
+// język przed czymkolwiek, co rysuje: ?lang=, pamięć przeglądarki, a bez nich angielski
+startJezyka({ params });
 const touchUI = matchMedia('(pointer: coarse)').matches;
 
 declare global {
@@ -152,8 +172,10 @@ let gov: GovState | null = null;
 let loaded: Loaded | null = null;
 let seed = 0;
 let hqName = '';
-/** słowa miejsca siedziby: w domu komitet ulicy, sąsiedzi i furtka, w bloku zarząd, mieszkańcy i brama */
+/** słowa miejsca siedziby: w domu komitet ulicy, sąsiedzi i furtka, w bloku zarząd, mieszkańcy i brama; po
+    angielsku wordsE */
 let words: Words = wordsOf(BLOK);
+let wordsE: WordsEn = wordsEn(BLOK);
 /** id handlarza z ostatniej klatki (−1: nie ma), żeby napis o jego przyjściu pokazał się raz */
 let traderSeen = -1;
 /** tick ostatniej pokazanej wieści (st.obcy.wiesc) */
@@ -180,12 +202,15 @@ let hintUntil = 0;
 const modal = new Modal($('modal'), $('sheet'));
 const ctx = new ContextMenu($('ctx'));
 
+/** okno, które jest otwarte, do narysowania od nowa po zmianie języka (ustawiają je funkcje otwierające okna) */
+let sheetAgain: (() => void) | null = null;
+
 /* ---------- ekran startowy ---------- */
 /* tryb gry: przełącznik na ekranie startowym albo ?tryb=zombie; wstęp zmienia się razem z nim */
 let mode: GameMode = parseMode(params.get('tryb'));
 const setMode = (m: GameMode) => {
   mode = m;
-  $('lore').textContent = m === 'zombie' ? LORE_ZOMBIE : LORE;
+  $('lore').textContent = m === 'zombie' ? L(LORE_ZOMBIE, LORE_ZOMBIE_EN) : L(LORE, LORE_EN);
   for (const r of document.querySelectorAll<HTMLInputElement>('input[name=tryb]')) r.checked = r.value === m;
 };
 setMode(mode);
@@ -212,19 +237,40 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
-/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona) */
-const startUrl = () => location.pathname + (params.get('siec') === '1' ? '?siec=1' : '');
+/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona, i z ?lang=, dopóki jest w adresie) */
+const startUrl = () => {
+  const q = new URLSearchParams();
+  if (params.get('siec') === '1') q.set('siec', '1');
+  const lang = new URLSearchParams(location.search).get('lang');
+  if (lang) q.set('lang', lang);
+  const s = q.toString();
+  return location.pathname + (s ? `?${s}` : '');
+};
+/** opisy przykładów po angielsku (public/demo/index.json z tools/make-demos.ts ma polskie) */
+const DEMO_LABEL_EN: Record<string, string> = {
+  przymorze: 'Obrońców Wybrzeża, Gdańsk (a wave block, large concrete panels)',
+  lanciego: 'Lanciego 10G, Warszawa Ursynów (blocks and terraced houses)',
+  zielonki: 'Spacerowa 10, Batowice, Zielonki commune (detached houses)',
+};
+/** przyciski przykładowych osiedli (napisy od nowa po zmianie języka) */
+const demoButtons: { b: HTMLButtonElement; d: { key: string; name: string; label: string } }[] = [];
+const demoLabels = () => {
+  for (const { b, d } of demoButtons) {
+    b.textContent = L(`Przykład: ${d.name}`, `Example: ${d.name}`);
+    b.title = L(d.label, DEMO_LABEL_EN[d.key] ?? d.label);
+  }
+};
 demoList().then((list) => {
   const box = $('demos');
   for (const d of list) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'btn';
-    b.textContent = `Przykład: ${d.name}`;
-    b.title = d.label;
     b.onclick = () => start(() => loadDemo(d.key));
+    demoButtons.push({ b, d });
     box.appendChild(b);
   }
+  demoLabels();
 });
 $('startForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -232,25 +278,73 @@ $('startForm').addEventListener('submit', (e) => {
   if (q) start(() => loadAddress(q, status));
 });
 const resume = readSave();
+// usunięcie zapisu w dwóch krokach, bez natywnego confirm: drugi klik w ciągu ARM_MS usuwa
+const ARM_MS = 4000;
+let armedAt = Number.NEGATIVE_INFINITY;
+const forgetArmed = () => performance.now() - armedAt < ARM_MS;
+/** napis przycisku według stanu (po zmianie języka napisy statyczne wracają do „Delete save”) */
+const forgetLabel = () => {
+  if (resume && !$('resume').hidden)
+    $('btnForget').textContent = forgetArmed() ? L('Na pewno? Usuń', 'Really delete?') : L('Usuń zapis', 'Delete save');
+};
+const resumeLabel = () => {
+  if (resume) $('btnResume').textContent = L(`Kontynuuj: ${saveLabel(resume)}`, `Continue: ${saveLabel(resume)}`);
+};
 if (resume) {
   $('resume').hidden = false;
-  $('btnResume').textContent = `Kontynuuj: ${saveLabel(resume)}`;
+  resumeLabel();
   $('btnResume').onclick = () => start(async () => resume.data, resume);
-  // usunięcie zapisu w dwóch krokach, bez natywnego confirm
-  let armed = 0;
   $('btnForget').onclick = () => {
-    if (performance.now() - armed > 4000) {
-      armed = performance.now();
-      $('btnForget').textContent = 'Na pewno? Usuń';
-      setTimeout(() => {
-        if (!$('resume').hidden) $('btnForget').textContent = 'Usuń zapis';
-      }, 4000);
+    if (!forgetArmed()) {
+      armedAt = performance.now();
+      forgetLabel();
+      setTimeout(forgetLabel, ARM_MS + 50);
       return;
     }
     clearSave();
     $('resume').hidden = true;
   };
 }
+/* przełącznik języka na karcie startowej (w Menu rysuje go showMenu) */
+const langStart = document.getElementById('langStart');
+const renderLang = () => {
+  if (langStart) langStart.innerHTML = przelacznikHtml(jezyk());
+};
+renderLang();
+if (langStart) podepnijPrzelacznik(langStart);
+/* zmiana języka (przełącznik EN/PL): wszystko, co widać, od nowa w nowym języku; stan gry się nie zmienia */
+/** opis przycisku „pokaż siedzibę” ze słowem miejsca (napis statyczny z ui/jezyk.ts ma wersję z bloku) */
+function hqAria() {
+  $('zHome').setAttribute('aria-label', L(`Pokaż siedzibę ${words.zarzad.d}`, `Show ${wordsE.krotko}’s HQ`));
+}
+
+poZmianieJezyka(() => {
+  renderLang();
+  setMode(mode);
+  demoLabels();
+  resumeLabel();
+  forgetLabel();
+  druzyna?.odswiez();
+  siec.przerysuj();
+  if (!sim) return;
+  hqAria();
+  ctx.close();
+  // chwilowy napis był w starym języku: znika (pokazuje się na kilka sekund, więc nie ma czego tłumaczyć)
+  hintUntil = 0;
+  imieAgain();
+  hud(performance.now());
+  wpiszImie();
+  renderSpeed();
+  // powód z canPlace był w starym języku
+  if (placing) {
+    const c = canPlace(sim.st, sim.w, placing.kind, placing.x, placing.y, placing.rot);
+    placing.ok = c.ok;
+    placing.why = c.why;
+  }
+  placeInfo();
+  alarmButton(sim.st);
+  if (modal.open) sheetAgain?.();
+});
 
 let busy = false;
 async function start(get: () => Promise<Loaded>, saved?: Save) {
@@ -262,14 +356,14 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
     const data = await get();
     // tabele mieszkańców dla punktu osiedla (pliki gry z public/data/mieszkancy/, bez wysyłania adresu); bez nich
     // (null) gra idzie starą ścieżką
-    status('Liczę mieszkańców…');
+    status(L('Liczę mieszkańców…', 'Counting the residents…'));
     const t0 = performance.now();
     const c = data.geo?.c;
     const dane = Array.isArray(c) ? await wczytajDaneMieszkancow(c[0], c[1]) : null;
     console.info(
       `tabele mieszkańców ${Math.round(performance.now() - t0)} ms${dane ? `, gmina ${dane.gmina?.teryt ?? 'brak (szablon krajowy)'}` : ', brak: postaci jak dawniej'}`,
     );
-    status('Rysuję osiedle…');
+    status(L('Rysuję osiedle…', 'Drawing the estate…'));
     await new Promise((r) => setTimeout(r, 0));
     await enter(data, saved, dane);
     status('');
@@ -277,7 +371,12 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
     const m = (err as Error)?.message || '';
     const net = err instanceof TypeError || (err as Error)?.name === 'AbortError';
     status(
-      `${net ? 'Nie mogę połączyć się z serwerami map: brak sieci albo serwery są przeciążone.' : m || 'Coś poszło nie tak.'} Możecie zagrać na przykładowym osiedlu.`,
+      net
+        ? L(
+            'Nie mogę połączyć się z serwerami map: brak sieci albo serwery są przeciążone. Możecie zagrać na przykładowym osiedlu.',
+            'Can’t reach the map servers: no connection, or the servers are overloaded. You can play on an example estate.',
+          )
+        : `${m || L('Coś poszło nie tak.', 'Something went wrong.')} ${L('Możecie zagrać na przykładowym osiedlu.', 'You can play on an example estate.')}`,
     );
     console.error(err);
   }
@@ -384,7 +483,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   budFocus = -1;
   residentFocus = -1;
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
-  gov = saved ? saved.gov : newGov(seed, modeOf(st));
+  // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
+  gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
   // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
   const herd = Number(params.get('stado'));
   if (!saved && zombie && herd > 0) sim.spawnAtFence(herd, world.buildings[world.hq]?.entrances[0]?.out ?? 0);
@@ -398,8 +498,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   loaded = data;
   hqName = world.buildings[world.hq]?.name ?? '';
   words = wordsOfWorld(world);
-  $('zHome').setAttribute('aria-label', `Pokaż siedzibę ${words.zarzad.d}`);
-  fenceIn = govFence(world, words);
+  wordsE = wordsEnOfWorld(world);
+  hqAria();
+  fenceIn = govFence(world, words, wordsE);
   savedHour = Math.floor(st.tick / TICKS_PER_HOUR);
   $('osName').textContent = data.name;
   document.title = `Za Murem · ${data.name}`;
@@ -433,18 +534,34 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   const first = st.pawns[0];
   if (first && st.tut.step < 0 && !saved) selected.add(first.id);
   const siecMsg = siec.komunikatStartu();
-  if (stale) say('Zapis był z innej wersji osiedla, więc gra zaczyna się od nowa.', 9000);
+  if (stale)
+    say(
+      L(
+        'Zapis był z innej wersji osiedla, więc gra zaczyna się od nowa.',
+        'The save was from a different version of the estate, so the game starts over.',
+      ),
+      9000,
+    );
   else if (siecMsg) say(siecMsg, 12000);
   else if (!saved && zombie)
     say(
-      'Za siatką snują się szwendacze, a nocą przyjdzie stado. Dzida sięga przez siatkę, strzał ściąga następnych.',
+      L(
+        'Za siatką snują się szwendacze, a nocą przyjdzie stado. Dzida sięga przez siatkę, strzał ściąga następnych.',
+        'Shamblers drift about beyond the fence, and a herd will come at night. A spear reaches through the fence, a gunshot draws more of them.',
+      ),
       9000,
     );
   else if (!saved)
     say(
       touchUI
-        ? `To wasz ${words.zarzad.m}. Jednym palcem przesuwacie mapę, dwoma przybliżacie. Cele są pod paskiem u góry.`
-        : `To wasz ${words.zarzad.m}. Przeciąganie przesuwa mapę, kółko przybliża. Cele pierwszego dnia są po lewej.`,
+        ? L(
+            `To wasz ${words.zarzad.m}. Jednym palcem przesuwacie mapę, dwoma przybliżacie. Cele są pod paskiem u góry.`,
+            `This is ${wordsE.wasz}. One finger moves the map, two fingers zoom. Your goals are under the bar at the top.`,
+          )
+        : L(
+            `To wasz ${words.zarzad.m}. Przeciąganie przesuwa mapę, kółko przybliża. Cele pierwszego dnia są po lewej.`,
+            `This is ${wordsE.wasz}. Drag to move the map, scroll to zoom. Today’s goals are on the left.`,
+          ),
       9000,
     );
   renderSpeed();
@@ -507,12 +624,12 @@ function drawState() {
   if (!sim) return;
   view.syncGame(sim);
   // handlarz właśnie przyszedł: napis na dole ekranu
-  const tr = sim.st.obcy?.trader ?? -1;
-  if (tr >= 0 && tr !== traderSeen) say(HANDEL.przyszedl(words.brama.pod).pl, 5000);
-  traderSeen = tr;
-  // wieść od wędrowca albo o ekipie przy wraku: raz, na dłużej
+  const trader = sim.st.obcy?.trader ?? -1;
+  if (trader >= 0 && trader !== traderSeen) say(tr(HANDEL.przyszedl(words.brama.pod, wordsE.brama)), 5000);
+  traderSeen = trader;
+  // wieść od wędrowca albo o ekipie przy wraku: raz, na dłużej (w stanie po polsku, po angielsku z wiescEn)
   const wiesc = sim.st.obcy?.wiesc;
-  if (wiesc && wiesc.tick !== wiescSeen) say(wiesc.text, 7000);
+  if (wiesc && wiesc.tick !== wiescSeen) say(L(wiesc.text, wiescEn(wiesc.text)), 7000);
   wiescSeen = wiesc?.tick ?? -1;
   // ?swiatla=test: światła podglądu nocy zamiast świateł z gry
   if (preview) view.lights = preview.lights;
@@ -536,7 +653,7 @@ function input(): GovInput {
 function applyFx(fx: ReturnType<typeof govUpdate>, hint = true): string {
   if (!sim) return '';
   applyGov(sim.st, sim.w, fx);
-  const last = fx.log[fx.log.length - 1] ?? '';
+  const last = tr(fx.log[fx.log.length - 1]);
   if (last && hint) say(last, 7000);
   return last;
 }
@@ -588,6 +705,11 @@ function decided() {
 function showPrompt(p: Prompt) {
   if (!gov) return;
   const g = gov;
+  // po zmianie języka to samo okno od nowa, ze stanem zarządu z tej chwili (przydział na karcie nocy zostaje)
+  sheetAgain = () => {
+    const q = gov && pending(gov, input());
+    if (q) showPrompt(q);
+  };
   pauseGame();
   ctx.close();
   if (p.k === 'raport')
@@ -601,7 +723,7 @@ function showPrompt(p: Prompt) {
       decided();
     });
   else if (p.k === 'uchwala')
-    modal.show(lawSheet(p, words), (act, arg) => {
+    modal.show(lawSheet(p, words, wordsE), (act, arg) => {
       if (act === 'law') applyFx(signLaw(g, input(), arg));
       else if (act === 'law-skip') applyFx(signLaw(g, input(), null));
       else return;
@@ -610,7 +732,7 @@ function showPrompt(p: Prompt) {
     });
   else if (p.k === 'karta') showNight(p);
   else
-    modal.show(eventSheet(p, words), (act, arg) => {
+    modal.show(eventSheet(p, words, wordsE), (act, arg) => {
       if (act !== 'event') return;
       applyFx(chooseEvent(g, input(), Number(arg)));
       decided();
@@ -623,7 +745,7 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
   const names = Object.fromEntries(card.people.map((c) => [c.id, c.name]));
   const i = input();
   const assign = () => g.night?.assign ?? p.assign;
-  modal.show(nightSheet(card, assign(), nightOdds(g, i, card, assign()), words), (act, arg, el) => {
+  modal.show(nightSheet(card, assign(), nightOdds(g, i, card, assign()), words, wordsE), (act, arg, el) => {
     if (act === 'select') {
       const id = el.dataset.id ?? '';
       if (!setNight(g, id, arg)) {
@@ -633,7 +755,7 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
       const odds = modal.find('[data-odds]');
       if (odds) odds.innerHTML = oddsHtml(card, assign(), nightOdds(g, i, card, assign()), names);
       const advice = modal.find('[data-advice]');
-      if (advice) advice.textContent = nightAdvice(i, card, assign());
+      if (advice) advice.textContent = tr(nightAdvice(i, card, assign()));
       const o = card.people.find((c) => c.id === id)?.options.find((q) => q.key === arg);
       const line = modal.find(`.opt[data-for="${CSS.escape(id)}"]`);
       if (line && o) line.textContent = optionDetail(o);
@@ -646,7 +768,10 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
       if (hold !== null && hold > 0 && hold < NIGHT_PACE) {
         dayPace = hold;
         hold = NIGHT_PACE;
-        say(`${line ? `${line} ` : ''}Do rana czas płynie szybciej (6×).`, 9000);
+        say(
+          `${line ? `${line} ` : ''}${L('Do rana czas płynie szybciej (6×).', 'Time runs faster until morning (6×).')}`,
+          9000,
+        );
       }
       decided();
     }
@@ -655,11 +780,12 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
 
 function showEnd() {
   if (!gov?.over) return;
+  sheetAgain = showEnd;
   pauseGame();
   clearSave();
   // gra z sąsiadami: zapis w chmurze i klatki drużyny też znikają
   siec.koniec();
-  modal.show(endSheet(gov.over, words), (act) => {
+  modal.show(endSheet(gov.over, words, wordsE), (act) => {
     if (act === 'end-start') location.href = startUrl();
   });
 }
@@ -738,6 +864,7 @@ function showMeet() {
   const g = b.domy[sp.dom];
   const nr = sp.nr;
   const runda = sp.runda ?? 0;
+  sheetAgain = showMeet;
   pauseGame();
   ctx.close();
   modal.show(
@@ -768,7 +895,10 @@ function watchRaid() {
       renderSpeed();
     } else hold = raidHold;
     raidHold = null;
-    say('Szabrownicy odeszli. Do rana znowu szybciej (6×).', 5000);
+    say(
+      L('Szabrownicy odeszli. Do rana znowu szybciej (6×).', 'The looters are gone. Faster again until morning (6×).'),
+      5000,
+    );
   }
   if (r?.phase !== 1 || raidSeen === r.at || modal.open) return;
   const st = sim.st;
@@ -782,13 +912,22 @@ function watchRaid() {
   const lit = them.some((q) => strangerVisibility(view.darkness, lightAt(q.x, q.y - 0.5, lights, time)) >= SEEN);
   const where = () => {
     const hole = input().fence?.holes.find((h) => `d${h.id}` === r.post);
-    return r.post === 'brama' ? words.brama.przy : `przy dziurze ${hole?.name ?? 'w siatce'}`;
+    const name = hole?.name;
+    return r.post === 'brama'
+      ? L(words.brama.przy, `at ${wordsE.brama}`)
+      : L(`przy dziurze ${name?.pl ?? 'w siatce'}`, `at the hole ${name?.en ?? 'in the fence'}`);
   };
   // w ciemności warta tylko słyszy (raz); patrzymy dalej, bo zaraz mogą wejść w światło lampy
   if (!lit) {
     if (raidHeard !== r.at) {
       raidHeard = r.at;
-      say(`Warta słyszy coś ${where()}, ale tam ciemno. Światło przy siatce pokazałoby, kto to.`, 8000);
+      say(
+        L(
+          `Warta słyszy coś ${where()}, ale tam ciemno. Światło przy siatce pokazałoby, kto to.`,
+          `The watch hears something ${where()}, but it is dark there. A light by the fence would show who it is.`,
+        ),
+        8000,
+      );
     }
     return;
   }
@@ -799,7 +938,13 @@ function watchRaid() {
     speed = 1;
     renderSpeed();
   }
-  say(`Warta widzi szabrowników ${where()}.${slow ? ' Czas zwalnia do 1×.' : ''}`, 9000);
+  say(
+    L(
+      `Warta widzi szabrowników ${where()}.${slow ? ' Czas zwalnia do 1×.' : ''}`,
+      `The watch can see looters ${where()}.${slow ? ' Time slows down to 1×.' : ''}`,
+    ),
+    9000,
+  );
   const x = them.reduce((a, p) => a + p.x, 0) / them.length;
   const y = them.reduce((a, p) => a + p.y, 0) / them.length;
   // bez zmiany przybliżenia: kamera tylko przesuwa się na miejsce
@@ -904,21 +1049,28 @@ function tonight(p: SimPerson): string | undefined {
   const n = gov?.night;
   const key = n?.assign[p.id];
   if (n && key && key !== 'sen') {
-    const label = n.card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key)?.label ?? key;
-    return `Tej nocy: ${label.toLowerCase()}${n.confirmed ? '' : ' (propozycja)'}.`;
+    const opt = n.card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key);
+    const label = opt ? tr(opt.label) : key;
+    return L(
+      `Tej nocy: ${label.toLowerCase()}${n.confirmed ? '' : ' (propozycja)'}.`,
+      `Tonight: ${label[0].toLowerCase()}${label.slice(1)}${n.confirmed ? '' : ' (suggested)'}.`,
+    );
   }
-  if (p.post === 'koza') return 'Do rana: czuwa przy kozie.';
+  if (p.post === 'koza') return L('Do rana: czuwa przy kozie.', 'Until morning: watching the stove.');
   if (p.post)
-    return `Do rana: warta ${p.post === 'brama' ? words.brama.przy : p.post === 'siatka' ? 'przy siatce' : 'przy dziurze w siatce'}.`;
+    return L(
+      `Do rana: warta ${p.post === 'brama' ? words.brama.przy : p.post === 'siatka' ? 'przy siatce' : 'przy dziurze w siatce'}.`,
+      `Until morning: on watch ${p.post === 'brama' ? `at ${wordsE.brama}` : p.post === 'siatka' ? 'at the fence' : 'at a hole in the fence'}.`,
+    );
   return undefined;
 }
 
 function hud(now: number) {
   if (!sim) return;
   const st = sim.st;
-  $('hDay').textContent = `Dzień ${dayOf(st.tick)}`;
+  $('hDay').textContent = L(`Dzień ${dayOf(st.tick)}`, `Day ${dayOf(st.tick)}`);
   $('hTime').textContent = clockOf(st.tick);
-  $('fps').textContent = `${Math.round(fps)} kl/s`;
+  $('fps').textContent = L(`${Math.round(fps)} kl/s`, `${Math.round(fps)} fps`);
   const snap = snapshot(st, sim.w);
   // koza wygasła po samouczku, a drewna nie ma: decyzja gracza (drzewo albo mebel), więc ostrzeżenie wisi,
   // dopóki problem trwa (w dzień, kiedy zarząd nie śpi), i ma pierwszeństwo przed zwykłymi podpowiedziami
@@ -928,24 +1080,33 @@ function hud(now: number) {
   // gorączka po ugryzieniu: niecałe 2 godziny do śmierci, a zmarły wstaje, więc ktoś z bronią powinien być przy nim
   const dying = snap.people.find((p) => p.bite && p.bite.left < 2 * TICKS_PER_HOUR);
   const fever = dying
-    ? `${dying.name} umiera w gorączce. Po śmierci wstanie: niech ktoś z bronią będzie obok, żeby dobić.`
+    ? L(
+        `${dying.name} umiera w gorączce. Po śmierci wstanie: niech ktoś z bronią będzie obok, żeby dobić.`,
+        `${dying.name} is dying of fever and will get back up after death. Have someone armed standing by to finish the job.`,
+      )
     : '';
   const warn = fever
     ? fever
     : cold
       ? touchUI
-        ? 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).'
-        : 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (prawy przycisk na meblu).'
+        ? L(
+            'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).',
+            'The stove has gone out and there is no wood. Chop down a tree or burn some furniture (press and hold on it).',
+          )
+        : L(
+            'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (prawy przycisk na meblu).',
+            'The stove has gone out and there is no wood. Chop down a tree or burn some furniture (right-click it).',
+          )
       : '';
   $('hint').textContent = warn || (now < hintUntil ? hint : '');
   $('hint').classList.toggle('warn', !!warn);
-  renderStats(statsOf(snap, gov, words));
+  renderStats(statsOf(snap, gov, words, wordsE));
   alarmButton(st);
   renderGoals(snap);
   // przyjęci idą zza bramy: komunikat z przyciskiem „Pokaż”, dopóki ktoś jeszcze idzie
   const coming = arriving(st).length;
   $('arrive').hidden = !coming;
-  const comingLine = coming ? comingText(coming, words) : '';
+  const comingLine = coming ? comingText(coming, words, wordsE) : '';
   if (coming && $('arriveText').textContent !== comingLine) $('arriveText').textContent = comingLine;
   const card = $('card');
   // karta mieszkańca z osobą (kliknięty): do odczytu, zasłania kartę zaznaczonego z zarządu, dopóki jest wybrana
@@ -967,7 +1128,13 @@ function hud(now: number) {
   if (lok) {
     card.hidden = false;
     setCard(
-      personCard(lok, st.tick, undefined, storyOf === lok.pawn, { lokator: true, imie: imionaWGrze(siec.stan), words }),
+      personCard(lok, st.tick, undefined, storyOf === lok.pawn, {
+        lokator: true,
+        imie: imionaWGrze(siec.stan),
+        words,
+        wordsEn: wordsE,
+        en: lok.ref ? angielscy?.get(lok.ref) : undefined,
+      }),
     );
     return;
   }
@@ -977,7 +1144,7 @@ function hud(now: number) {
     const apt = aptFocus >= 0 ? aptView(st, sim.w, aptFocus, snap.apts) : null;
     const bud = !apt && budFocus >= 0 ? sim.budynekDoKarty(budFocus) : null;
     card.hidden = !apt && !bud;
-    if (apt) setCard(aptCard(apt, touchUI, words));
+    if (apt) setCard(aptCard(apt, touchUI, words, wordsE));
     else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze, sim.st.plot), touchUI));
     return;
   }
@@ -991,7 +1158,12 @@ function hud(now: number) {
     );
   else
     setCard(
-      personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn, { imie: imionaWGrze(siec.stan), words }),
+      personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn, {
+        imie: imionaWGrze(siec.stan),
+        words,
+        wordsEn: wordsE,
+        en: sel[0].ref ? angielscy?.get(sel[0].ref) : undefined,
+      }),
     );
 }
 
@@ -1007,7 +1179,7 @@ function renderGoals(snap: SimSnapshot) {
     const own = siec.cele(snap.people.some((p) => selected.has(p.pawn)));
     const now = own.find((g) => !g.done);
     el.hidden = false;
-    const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>Bez domu</span><b class="goals-n">${own.filter((g) => g.done).length}/${own.length}</b></button><ol class="goal-list">${own
+    const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>${L('Bez domu', 'Homeless')}</span><b class="goals-n">${own.filter((g) => g.done).length}/${own.length}</b></button><ol class="goal-list">${own
       .map(
         (g, k) =>
           `<li class="goal${g.done ? ' done' : g === now ? ' now' : ''}" data-n="${k + 1}">${esc(g.text)}${g === now ? `<small class="goal-how">${esc(g.how)}</small>` : ''}</li>`,
@@ -1029,9 +1201,10 @@ function renderGoals(snap: SimSnapshot) {
     wood,
     woodReady,
     words,
+    wordsEn: wordsE,
   });
   let cur = currentGoal(list);
-  let title = 'Pierwszy dzień';
+  let title = L('Pierwszy dzień', 'Day one');
   // po pierwszej nocy cele drugiego dnia: przeszukać, warsztat, obwód, drewno na noc
   if (!cur && isDay2(gov)) {
     if (wood >= DAY2_WOOD) woodReady2 = true;
@@ -1041,9 +1214,10 @@ function renderGoals(snap: SimSnapshot) {
       woodReady: woodReady2,
       holes: snap.fence.holes.length,
       words,
+      wordsEn: wordsE,
     });
     cur = currentGoal(list);
-    title = 'Drugi dzień';
+    title = L('Drugi dzień', 'Day two');
   }
   // po drugiej nocy lista znika
   if (!cur) {
@@ -1136,8 +1310,9 @@ function placeMarker() {
   const [tx, ty] = screenOf(crown.x, crown.y);
   const arrow = edge ? `${ARROWS[(Math.round(Math.atan2(ty - cy, tx - cx) / (Math.PI / 4)) + 8) % 8]} ` : '';
   const label = el.firstElementChild as HTMLElement;
-  if (label.textContent !== `${arrow}Suche drzewo`) {
-    label.textContent = `${arrow}Suche drzewo`;
+  const dead = `${arrow}${L('Suche drzewo', 'Dead tree')}`;
+  if (label.textContent !== dead) {
+    label.textContent = dead;
     markW = label.offsetWidth || markW;
   }
 }
@@ -1171,23 +1346,23 @@ $('zHome').onclick = () => {
 
 /* ---------- menu gry (zamiast natywnego confirm) ---------- */
 function showMenu() {
-  const note = readSave()
-    ? `Gra zapisuje się sama co godzinę gry i przy zamknięciu karty. Ostatni zapis: ${saveLabel(readSave()!)}.`
-    : 'Gra zapisuje się sama co godzinę gry i przy zamknięciu karty.';
+  sheetAgain = showMenu;
+  const auto = L(
+    'Gra zapisuje się sama co godzinę gry i przy zamknięciu karty.',
+    'The game saves itself every game hour and when you close the tab.',
+  );
+  const last = readSave();
+  const note = last ? `${auto} ${L('Ostatni zapis', 'Last save')}: ${saveLabel(last)}.` : auto;
+  // przełącznik języka nad przyciskami Menu
+  const sheet = menuSheet(note);
+  sheet.body = `<div class="menu-lang" data-lang-menu>${przelacznikHtml(jezyk())}</div>${sheet.body}`;
   modal.show(
-    menuSheet(note),
+    sheet,
     (act) => {
       if (act === 'menu-back') {
         modal.close();
         nextPrompt();
-      } else if (act === 'menu-help')
-        modal.show(
-          helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie', words),
-          (a) => {
-            if (a === 'help-back') showMenu();
-          },
-          nextPrompt,
-        );
+      } else if (act === 'menu-help') showHelp();
       else if (act === 'menu-start') {
         save();
         location.href = startUrl();
@@ -1196,6 +1371,19 @@ function showMenu() {
     nextPrompt,
   );
 }
+/** jak grać (z Menu) */
+function showHelp() {
+  sheetAgain = showHelp;
+  modal.show(
+    helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie', words, wordsE),
+    (a) => {
+      if (a === 'help-back') showMenu();
+    },
+    nextPrompt,
+  );
+}
+// przełącznik języka w Menu: kliknięcie zmienia język, a okno rysuje się od nowa przez słuchacza niżej
+podepnijPrzelacznik($('modal'));
 $('btnMenu').onclick = () => {
   if (!sim || modal.open) return;
   pauseGame();
@@ -1204,22 +1392,28 @@ $('btnMenu').onclick = () => {
 };
 
 /* ---------- broń i alarm ---------- */
-// ten sam przycisk włącza i odwołuje alarm; napis i podpowiedź bez alarmu są w index.html
-const ALARM_IDLE = { text: $('btnAlarm').textContent ?? '', title: $('btnAlarm').title };
+// ten sam przycisk włącza i odwołuje alarm; napis i podpowiedź bez alarmu jak w index.html (napisy statyczne)
+const ALARM_IDLE = STATYCZNE.find((x) => x.sel === '#btnAlarm')!;
 $('btnAlarm').onclick = () => {
   if (!sim || modal.open) return;
   const core = sim.st.pawns.filter((p) => p.kind === 'core' && !p.away).map((p) => p.id);
   if (alarmOn(sim.st)) {
     sim.push({ t: 'alarm', ids: core, off: true });
-    say(ALARM_OFF_SAY, 2500);
+    say(L(ALARM_OFF_SAY, ALARM_OFF_SAY_EN), 2500);
     alarmButton(sim.st);
     return;
   }
   sim.push({ t: 'alarm', ids: core });
   say(
     modeOf(sim.st) === 'zombie'
-      ? 'Do broni! Wszyscy zdolni na wartę przy siatce.'
-      : `Do broni! Wszyscy zdolni na wartę ${words.brama.przy}.`,
+      ? L(
+          'Do broni! Wszyscy zdolni na wartę przy siatce.',
+          'To arms! Everyone who can stand goes on watch at the fence.',
+        )
+      : L(
+          `Do broni! Wszyscy zdolni na wartę ${words.brama.przy}.`,
+          `To arms! Everyone who can stand goes on watch at ${wordsE.brama}.`,
+        ),
     4000,
   );
   alarmButton(sim.st);
@@ -1229,10 +1423,10 @@ $('btnAlarm').onclick = () => {
 function alarmButton(st: SimState) {
   const b = $('btnAlarm');
   const on = alarmOn(st);
-  const text = on ? ALARM_OFF : ALARM_IDLE.text;
+  const text = on ? L(ALARM_OFF, ALARM_OFF_EN) : tr(ALARM_IDLE.tekst);
   if (b.textContent === text) return;
   b.textContent = text;
-  b.title = on ? ALARM_OFF_TITLE : ALARM_IDLE.title;
+  b.title = on ? L(ALARM_OFF_TITLE, ALARM_OFF_TITLE_EN) : tr(ALARM_IDLE.title);
   b.classList.toggle('on', on);
   b.setAttribute('aria-pressed', String(on));
 }
@@ -1279,17 +1473,30 @@ $('card').addEventListener('click', (e) => {
     const list = ARM_ORDER.filter((w) => have.has(w) && w !== p.weapon);
     const at = p.weapon ? ARM_ORDER.indexOf(p.weapon) : -1;
     const next = list.find((w) => ARM_ORDER.indexOf(w) > at) ?? list[0] ?? null;
-    if (next === null && !p.weapon) return say('W magazynie nie ma broni.', 2500);
+    if (next === null && !p.weapon)
+      return say(L('W magazynie nie ma broni.', 'There are no weapons in the storeroom.'), 2500);
     sim.push({ t: 'arm', ids: [p.id], weapon: next });
-    say(next ? `Bierze ${WEAPONS[next].acc}.` : 'Odkłada broń do magazynu.', 2500);
+    say(
+      next
+        ? L(`Bierze ${WEAPONS[next].acc}.`, `Takes ${WEAPONS_EN[next].the}.`)
+        : L('Odkłada broń do magazynu.', 'Puts the weapon back in the storeroom.'),
+      2500,
+    );
   } else if (b.dataset.card === 'amputate') {
     // amputuje ten z zarządu, kto najlepiej zna się na medycynie
     const doc = st.pawns
       .filter((q) => q.kind === 'core' && q !== p && !q.away && (q.needs?.health ?? 0) > 20)
       .sort((a, c) => (st.people[c.person].skills.med ?? 0) - (st.people[a.person].skills.med ?? 0) || a.id - c.id)[0];
-    if (!doc) return say('Nie ma komu amputować.', 3000);
+    if (!doc) return say(L('Nie ma komu amputować.', 'There is nobody to do the amputation.'), 3000);
     sim.push({ t: 'amputate', ids: [doc.id], patient: p.id });
-    say(`${st.people[doc.person].first} amputuje. Pół godziny, nie zawsze się udaje.`, 4000);
+    const who = st.people[doc.person].first;
+    say(
+      L(
+        `${who} amputuje. Pół godziny, nie zawsze się udaje.`,
+        `${who} is amputating. Half an hour, and it doesn’t always work.`,
+      ),
+      4000,
+    );
   }
 });
 
@@ -1323,17 +1530,43 @@ function odmianaEdytora(): Promise<Odmiana | null> {
   return odmianaPlikow;
 }
 
-/** wpis do kroniki zarządu z godziną gry i podpowiedź na ekranie */
-function doKroniki(teksty: readonly string[]) {
+/** wpis do kroniki zarządu z godziną gry (w obu językach) i podpowiedź na ekranie */
+function doKroniki(teksty: readonly Tx[]) {
   if (!sim || !gov || !teksty.length) return;
   for (const txt of teksty) gov.log.push({ day: dayOf(sim.st.tick), clock: clockOf(sim.st.tick), txt, big: false });
-  say(teksty.join(' '), 7000);
+  say(teksty.map((t) => tr(t)).join(' '), 7000);
 }
 
 /** Zmiany imion (z pamięci przeglądarki albo podane) na stanie gry. Wpisy bez osoby po aktualizacji tabel: po jednym
     komunikacie w kronice („Halina wyprowadziła się.”) i usunięcie z pamięci. `enter` woła to na końcu startu gry
     (nowej i wznowionej), gdy `sim`, `gov` i `loaded` już są. */
 function zastosujImiona(zmiany?: Record<string, ZmianaImienia>): void {
+  zastosujImionaStanu(zmiany);
+  liczAngielskich();
+}
+
+/** angielskie teksty osób z generatora po `Person.ref` (tylko tych, których polskie teksty są z generatora), liczone
+    przy starcie gry i po każdej zmianie imienia; bez danych mieszkańców null i karta pokazuje teksty ze stanu */
+let angielscy: Map<string, LokatorEn> | null = null;
+function liczAngielskich(): void {
+  angielscy = null;
+  if (!sim || !mieszkancy) return;
+  const imiona = new Map(sim.st.people.flatMap((p) => (p.ref ? [[p.ref, p.first] as const] : [])));
+  try {
+    const wszyscy = lokatorzyEn(mieszkancy.l, mieszkancy.dane, imiona);
+    const osoby = new Map(mieszkancy.l.siedziba.osoby.map((o) => [o.id, o]));
+    angielscy = new Map(
+      sim.st.people.flatMap((p) => {
+        const en = p.ref ? wszyscy.get(p.ref) : undefined;
+        return p.ref && en && zTejOsobyGeneratora(osoby.get(p.ref), p) ? [[p.ref, en] as const] : [];
+      }),
+    );
+  } catch (e) {
+    console.warn('mieszkańcy z adresu po angielsku', e);
+  }
+}
+
+function zastosujImionaStanu(zmiany?: Record<string, ZmianaImienia>): void {
   const adres = adresImion();
   // gra z sąsiadami: zapisane imiona nie trafiają do stanu, bo zapis gry idzie na serwer (K5-R20)
   if (!sim || !adres || !imionaWGrze(siec.stan)) return;
@@ -1346,7 +1579,7 @@ function zastosujImiona(zmiany?: Record<string, ZmianaImienia>): void {
       else if (!Object.hasOwn(z, p.ref)) Object.assign(p, gen);
     }
   const { sieroty } = zastosujZmiany(sim.st, mieszkancy?.l ?? null, mieszkancy?.dane ?? null, z);
-  doKroniki(sieroty.map((ref) => wyprowadzka(z[ref])));
+  doKroniki(sieroty.map((ref) => wyprowadzkaTx(z[ref])));
   for (const ref of sieroty) zapiszZmiane(adres, ref, null);
 }
 
@@ -1362,7 +1595,11 @@ async function otworzImie(person: number, pawn: number, lokator: boolean) {
   const p = sim?.st.people[person];
   if (!p?.ref || !imionaWGrze(siec.stan)) return;
   const odm = await odmianaEdytora();
-  if (!odm) return say('Nie udało się wczytać odmiany imion. Spróbujcie jeszcze raz.', 4000);
+  if (!odm)
+    return say(
+      L('Nie udało się wczytać odmiany imion. Spróbujcie jeszcze raz.', 'Couldn’t load the name forms. Try again.'),
+      4000,
+    );
   // w czasie wczytywania gra mogła się zmienić
   if (sim?.st.people[person] !== p || !p.ref) return;
   const zapisana = zapisanaZmiana(p);
@@ -1376,6 +1613,32 @@ async function otworzImie(person: number, pawn: number, lokator: boolean) {
 function zamknijImie() {
   imieEdit = null;
   hud(performance.now());
+}
+
+/** wpisane w edytorze imienia (z poprawionymi ręcznie formami), przeniesione przez zmianę języka: edytor rysuje
+    się od nowa w nowym języku */
+let wpisaneImie: Map<string, { v: string; wlasne?: string; niepewne: boolean }> | null = null;
+function imieAgain() {
+  const p = imieEdit && sim?.st.people[imieEdit.person];
+  if (!imieEdit || !p?.ref) return;
+  wpisaneImie = new Map(
+    [...$('card').querySelectorAll<HTMLInputElement>('.imie-ed input[name]')].map((x) => [
+      x.name,
+      { v: x.value, wlasne: x.dataset.wlasne, niepewne: x.classList.contains('niepewne') },
+    ]),
+  );
+  imieEdit.html = edytorImienia({ ref: p.ref, first: p.first, f: p.f }, imieEdit.odm, zapisanaZmiana(p));
+}
+function wpiszImie() {
+  if (!wpisaneImie) return;
+  for (const x of $('card').querySelectorAll<HTMLInputElement>('.imie-ed input[name]')) {
+    const was = wpisaneImie.get(x.name);
+    if (!was) continue;
+    x.value = was.v;
+    if (was.wlasne) x.dataset.wlasne = was.wlasne;
+    x.classList.toggle('niepewne', was.niepewne);
+  }
+  wpisaneImie = null;
 }
 
 function przywrocImie() {
@@ -1515,15 +1778,69 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   rob: [HANDEL.poNapasc.pl, HANDEL.poNapascWielu.pl],
   obcy: ['', ''],
 });
+/** to samo po angielsku (jedna osoba, kilka osób) */
+const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> => ({
+  move: ['On the way.', 'On their way.'],
+  select: ['', ''],
+  chop: ['Off to chop down the tree.', 'Off to chop down the tree.'],
+  haul: ['Off to carry the wood to the woodpile.', 'Off to carry the wood to the woodpile.'],
+  refuel: ['Off to feed the stove.', 'Off to feed the stove.'],
+  burn: ['Off to break up the furniture for firewood.', 'Off to break up the furniture for firewood.'],
+  cook: ['Off to cook something from the supplies.', 'Off to cook something from the supplies.'],
+  gate: [`Off to ${e.brama}.`, `Off to ${e.brama}.`],
+  guard: ['Going on watch.', 'Going on watch.'],
+  patch: ['Off to patch the hole in the fence.', 'Off to patch the hole in the fence.'],
+  campfire: ['Off to light a campfire.', 'Off to light a campfire.'],
+  away: ['', ''],
+  back: ['', ''],
+  laws: ['', ''],
+  raid: ['', ''],
+  mend: ['', ''],
+  arm: ['', ''],
+  attack: ['Attacking.', 'Attacking.'],
+  finish: ['Going to finish off the body.', 'Going to finish off the body.'],
+  amputate: ['Amputating.', 'Amputating.'],
+  craft: ['Off to make a spear.', 'Off to make a spear.'],
+  brace: ['Off to shore up the fence.', 'Off to shore up the fence.'],
+  alarm: ['To arms!', 'To arms!'],
+  build: ['Getting down to building.', 'One person gets down to building.'],
+  unbuild: ['', ''],
+  search: ['Off to search the room.', 'One person goes to search the room.'],
+  dismantle: ['Off to take it apart for materials.', 'One person goes to take it apart for materials.'],
+  repair: ['Off to fetch materials and fix it.', 'One person goes to fetch materials and fix it.'],
+  claim: [`Off to claim the flat for ${e.krotko}.`, `One person goes to claim the flat for ${e.krotko}.`],
+  wreck: [NAPISY.poWrak.en, NAPISY.poWrakWielu.en],
+  carry: [NAPISY.poZaniesc.en, NAPISY.poZaniescWielu.en],
+  saw: [NAPISY.poWarsztat.en, NAPISY.poWarsztatWielu.en],
+  // M2 fala 2: sąsiednie budynki
+  open: [PO_POLECENIU.open[0].en, PO_POLECENIU.open[1].en],
+  knock: [PO_POLECENIU.knock[0].en, PO_POLECENIU.knock[1].en],
+  force: [PO_POLECENIU.force[0].en, PO_POLECENIU.force[1].en],
+  board: [PO_POLECENIU.board[0].en, PO_POLECENIU.board[1].en],
+  unboard: [PO_POLECENIU.unboard[0].en, PO_POLECENIU.unboard[1].en],
+  loot: [PO_POLECENIU.loot[0].en, PO_POLECENIU.loot[1].en],
+  upstairs: [PO_POLECENIU.upstairs[0].en, PO_POLECENIU.upstairs[1].en],
+  meet: ['', ''],
+  zajete: ['', ''],
+  enclose: [PO_POLECENIU.enclose[0].en, PO_POLECENIU.enclose[1].en],
+  otocz: ['', ''],
+  trade: [HANDEL.poHandel.en, HANDEL.poHandelWielu.en],
+  talk: [OBCY.poZagadac.en, OBCY.poZagadacWielu.en],
+  mug: [OBCY.poNapasc.en, OBCY.poNapascWielu.en],
+  shoo: [OBCY.poPrzegonic.en, OBCY.poPrzegonicWielu.en],
+  rob: [HANDEL.poNapasc.en, HANDEL.poNapascWielu.en],
+  obcy: ['', ''],
+});
 
 function run(m: MenuItem) {
   if (!sim) return;
   // „Zajmij klatkę” z gry z sąsiadami idzie do serwera, nie do symulacji
   if (siec.obsluz(m)) return;
   sim.push(m.cmd);
-  const f = feedback(words)[m.cmd.t][m.cmd.ids.length > 1 ? 1 : 0];
+  const k = m.cmd.ids.length > 1 ? 1 : 0;
+  const f = L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]);
   // w trybie zombie wyważanie ściąga szwendaczy z okolicy
-  const loud = m.cmd.t === 'force' && modeOf(sim.st) === 'zombie' ? HALAS_ZOMBIE.pl : '';
+  const loud = m.cmd.t === 'force' && modeOf(sim.st) === 'zombie' ? tr(HALAS_ZOMBIE) : '';
   if (f) say(`${f}${loud}`, loud ? 4000 : 1800);
 }
 
@@ -1533,6 +1850,7 @@ function askConfirm(m: MenuItem) {
     askBurn(m);
     return;
   }
+  sheetAgain = () => askConfirm(m);
   pauseGame();
   modal.show(
     confirmSheet(m.label),
@@ -1555,9 +1873,10 @@ function askBurn(m: MenuItem) {
   // imię tylko dla mebla kogoś z zarządu (tekst mówi o „reszcie zarządu”); mieszkaniec z osobą nie jest z zarządu
   const name = owner?.kind === 'core' ? (sim.st.people[owner.person]?.name ?? null) : null;
   const softer = !!gov && lawEffects(gov).burnMood < 1;
+  sheetAgain = () => askBurn(m);
   pauseGame();
   modal.show(
-    burnSheet(thing.kind, name, softer, words),
+    burnSheet(thing.kind, name, softer, words, wordsE),
     (act) => {
       if (act !== 'burn-yes' && act !== 'burn-no') return;
       if (act === 'burn-yes') run(m);
@@ -1578,7 +1897,13 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   // gra z sąsiadami: „Zajmij klatkę” tylko w menu (z potwierdzeniem), nigdy od stuknięcia
   const zSieci = menu ? siec.menu(sim, tile) : [];
   if (!items.length && !zSieci.length) {
-    say(`Najpierw ${touchUI ? 'stuknijcie' : 'zaznaczcie'} kogoś z ${words.zarzad.dk}.`, 2500);
+    say(
+      L(
+        `Najpierw ${touchUI ? 'stuknijcie' : 'zaznaczcie'} kogoś z ${words.zarzad.dk}.`,
+        `${touchUI ? 'Tap' : 'Select'} someone from ${wordsE.krotko} first.`,
+      ),
+      2500,
+    );
     return;
   }
   // plan budowy albo gotowa budowla pod kursorem: jej polecenia przed „Idź tu”, polecenia symulacji pierwsze
@@ -1600,11 +1925,15 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   const who = sim.st.pawns
     .filter((p) => selected.has(p.id) && p.kind === 'core')
     .map((p) => sim!.st.people[p.person]?.first ?? '');
-  const head = who.length > 2 ? `${words.Zarzad} (${who.length})` : who.join(' i ') || 'Klatka';
+  const head =
+    who.length > 2
+      ? L(`${words.Zarzad} (${who.length})`, `${wordsE.Zarzad} (${who.length})`)
+      : who.join(L(' i ', ' and ')) || L('Klatka', 'Stairwell');
   // w mieszkaniu siedziby nagłówek mówi, które to mieszkanie i w jakim stanie (w domu sam stan: dom komitetu)
   const apt = aptAt(sim.w, tile);
   const v = apt >= 0 ? aptView(sim.st, sim.w, apt, snap.apts) : null;
-  const where = v ? ` · ${words.lokal.menu(apt + 1, aptState(v, words).toLowerCase())}` : '';
+  const state = v ? aptState(v, words, wordsE).toLowerCase() : '';
+  const where = v ? ` · ${L(words.lokal.menu(apt + 1, state), wordsE.lokal.menu(apt + 1, state))}` : '';
   ctx.show(items, sx, sy, `${head}${where}`, (x) => (x.confirm ? askConfirm(x) : run(x)));
 }
 
@@ -1673,14 +2002,18 @@ function setPlacementView(p: PlacementView): boolean {
 /** menu budowy: przycisk „Budowa” i klawisz B */
 function openBuild() {
   if (!sim || modal.open) return;
+  sheetAgain = () => {
+    modal.close();
+    openBuild();
+  };
   const s = sim;
   cancelPlacing(false);
   ctx.close();
   const room = (k: BuildKind) =>
     allowedAnchors(s.st, s.w, k, 0).length > 0 || allowedAnchors(s.st, s.w, k, 1).length > 0;
   // materiały bez tego, co plany jeszcze zabiorą ze składu
-  const menu = buildMenu(availableOf(s.st, snapshot(s.st, s.w).stock), room, words);
-  modal.show(buildSheet(menu, touchUI, words), (act, arg) => {
+  const menu = buildMenu(availableOf(s.st, snapshot(s.st, s.w).stock), room, words, wordsE);
+  modal.show(buildSheet(menu, touchUI, words, wordsE), (act, arg) => {
     if (act === 'build') {
       modal.close();
       startPlacing(arg as BuildKind);
@@ -1733,7 +2066,7 @@ function cancelPlacing(tell = true) {
   $('placeBar').hidden = true;
   $('ghost').hidden = true;
   setPlacementView(null);
-  if (tell) say('Budowa anulowana.', 1500);
+  if (tell) say(L('Budowa anulowana.', 'Building cancelled.'), 1500);
 }
 
 /** klik albo stuknięcie w trybie stawiania: lewy klik i stuknięcie stawiają, prawy klik anuluje;
@@ -1747,14 +2080,20 @@ function placeClick(sx: number, sy: number, button: number, type: string, shift:
   if (type === 'mouse' && button !== 0) return false;
   aimAt(sx, sy);
   if (!placing.ok) {
-    say(placing.why ?? 'Tu nie da się postawić.', 2500);
+    say(placing.why ?? L('Tu nie da się postawić.', 'You can’t build here.'), 2500);
     return true;
   }
   const { kind, x, y, rot } = placing;
   // kto buduje: zaznaczeni z zarządu, a bez zaznaczenia zarząd wybiera sam
   const ids = sim.st.pawns.filter((p) => selected.has(p.id) && p.kind === 'core').map((p) => p.id);
   sim.push({ t: 'build', ids, kind, x, y, rot });
-  say(`Plan: ${BUILDS[kind].name}. ${words.Zarzad} przyniesie materiały i zbuduje.`, 3000);
+  say(
+    L(
+      `Plan: ${buildName(kind)}. ${words.Zarzad} przyniesie materiały i zbuduje.`,
+      `Plan: ${buildName(kind)}. ${wordsE.Zarzad} will bring the materials and build it.`,
+    ),
+    3000,
+  );
   if (shift && type === 'mouse') {
     placing.allowed = allowedAnchors(sim.st, sim.w, kind, rot);
     placing.okTiles = okTilesOf(placing.allowed, kind, rot, sim.w.size);
@@ -1766,9 +2105,16 @@ function placeClick(sx: number, sy: number, button: number, type: string, shift:
 /** napis na pasku trybu stawiania: co, czy wolno i jak sterować */
 function placeInfo() {
   if (!placing) return;
-  const name = BUILDS[placing.kind].name;
-  const state = placing.ok ? 'tu można postawić' : (placing.why ?? 'tu nie da się postawić').replace(/\.$/, '');
-  const how = touchUI ? 'Stuknięcie stawia plan.' : 'Lewy klik stawia, R obraca, prawy klik albo Esc anuluje.';
+  const name = buildName(placing.kind);
+  const state = placing.ok
+    ? L('tu można postawić', 'you can build here')
+    : (placing.why ?? L('tu nie da się postawić', 'you can’t build here')).replace(/\.$/, '');
+  const how = touchUI
+    ? L('Stuknięcie stawia plan.', 'Tap to place the plan.')
+    : L(
+        'Lewy klik stawia, R obraca, prawy klik albo Esc anuluje.',
+        'Left-click places, R rotates, right-click or Esc cancels.',
+      );
   const text = `${name}: ${state.charAt(0).toLowerCase()}${state.slice(1)}. ${how}`;
   const el = $('placeText');
   if (el.textContent !== text) el.textContent = text;

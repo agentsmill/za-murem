@@ -3,9 +3,11 @@
    budynki, drzewa, wnętrze siedziby, suche drzewo z trzepakiem, siatka z bramą wokół podwórka.
    Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. W grze sieciowej świat może dostać listę
    budynków zajętych przez inne drużyny (bezSiedziby, klucze z klucze.ts): siedzibą zostaje wtedy najbliższy wolny
-   budynek mieszkalny; bez tej opcji świat jest taki jak zawsze. */
+   budynek mieszkalny; bez tej opcji świat jest taki jak zawsze. Świat nie zależy od języka (nazwy budynków zostają
+   polskie, bo nazwa siedziby wchodzi do zdań zarządu); w bieżącym języku jest tylko błąd dla gracza. */
 
 import type { BuildingClass } from '../content/data.ts';
+import { L } from '../core/jezyk.ts';
 import { mulberry } from '../core/rng.ts';
 import { labelRegions, nearestFree } from '../sim/path.ts';
 import { type AptState, applyApts, type Damage, type Smieci, settleApts } from './apts.ts';
@@ -338,7 +340,12 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
       }
     }
   if (!buildings.length)
-    throw new Error('W tym miejscu mapa nie ma żadnego budynku. Spróbujcie adresu bliżej domów albo bloków.');
+    throw new Error(
+      L(
+        'W tym miejscu mapa nie ma żadnego budynku. Spróbujcie adresu bliżej domów albo bloków.',
+        'There isn’t a single building on the map here. Try an address closer to houses or blocks of flats.',
+      ),
+    );
   // najbliższy mieszkalny, a gdy takiego nie ma (strefa przemysłowa), najbliższy jakikolwiek
   const nearest = (pred: (b: WorldBuilding) => boolean) => {
     let best = -1;

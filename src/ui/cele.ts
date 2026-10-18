@@ -1,15 +1,18 @@
 /* Cele pierwszego dnia: kroki samouczka ze stanu symulacji (st.tut), drewno na noc i „przetrwać noc”
    z raportów zarządu. Czyste funkcje bez DOM: interfejs dostaje listę z tekstem celu i podpowiedzią
-   do bieżącego kroku. Zarząd i miejsce suchego drzewa według słownika miejsca (w domu komitet i ogród). */
+   do bieżącego kroku, w bieżącym języku (kroki samouczka to Tx, wybór przy rysowaniu). Zarząd i miejsce suchego
+   drzewa według słownika miejsca (w domu komitet i ogród), po angielsku z wordsEn. */
 
-import { BLOK, type Words, wordsOf } from '../gov/miejsce.ts';
+import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import type { GovState } from '../gov/typy.ts';
 import { START_KIT } from '../sim/bron.ts';
+import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS, type BuildKind } from '../sim/budowle.ts';
 import { type SimState, SPEAR_BOARDS, SPEAR_SCRAP } from '../sim/sim.ts';
 import { TUT_STEPS, type TutStep, WARM_ENOUGH } from '../sim/tutorial.ts';
 import { costText } from './budowa.ts';
-import { deg } from './tekst.ts';
+import { deg, manyEn } from './tekst.ts';
 
 export interface Goal {
   key: TutStep | 'drewno' | 'noc' | 'przeszukaj' | 'budowla' | 'obwod' | 'dzida' | 'drewno2';
@@ -24,37 +27,57 @@ export interface Goal {
 /** tyle drewna na zapas (w składzie, luzem i w rękach) wystarcza, żeby koza dotrwała do snu */
 export const NIGHT_WOOD = 6;
 
-const steps = (w: Words): Record<TutStep, { text: string; mouse: string; touch: string }> => ({
+const WOOD_GOAL = tx('Przygotujcie drewno na noc.', 'Get wood in for the night.');
+
+const CHOP = tx(
+  'Rąbanie trwa chwilę. Przycisk 3× u góry przyspiesza czekanie.',
+  'Chopping takes a while. The 3× button at the top speeds up the wait.',
+);
+// symulacja zalicza krok, kiedy drwal bierze stos (w sekundę po ścięciu), więc nie ma tu czego klikać
+const CARRY = tx(
+  'Drwal sam bierze drewno i niesie je do składu przy kozie.',
+  'Your woodcutter picks up the wood and carries it to the woodpile by the stove.',
+);
+const HEAT = tx(
+  'Koza grzeje powoli, a 3× u góry przyspiesza czekanie.',
+  'The stove heats up slowly, and 3× at the top speeds up the wait.',
+);
+
+const steps = (w: Words, e: WordsEn): Record<TutStep, { text: Tx; mouse: Tx; touch: Tx }> => ({
   zaznacz: {
-    text: `Zaznaczcie kogoś z ${w.zarzad.dk}.`,
-    mouse: 'Kliknijcie człowieka w kuchni siedziby.',
-    touch: 'Stuknijcie człowieka w kuchni siedziby.',
+    text: tx(`Zaznaczcie kogoś z ${w.zarzad.dk}.`, `Select someone from ${e.krotko}.`),
+    mouse: tx('Kliknijcie człowieka w kuchni siedziby.', 'Click a person in the HQ kitchen.'),
+    touch: tx('Stuknijcie człowieka w kuchni siedziby.', 'Tap a person in the HQ kitchen.'),
   },
   rozkaz: {
-    text: `Wyślijcie go do suchego drzewa ${w.drzewo}.`,
-    mouse: 'Prawy przycisk na suchym drzewie, potem „Ściąć drzewo”.',
-    touch: 'Stuknijcie pień suchego drzewa albo przytrzymajcie na nim palec.',
+    text: tx(`Wyślijcie go do suchego drzewa ${w.drzewo}.`, `Send them to the dead tree ${e.drzewo}.`),
+    mouse: tx(
+      'Prawy przycisk na suchym drzewie, potem „Ściąć drzewo”.',
+      'Right-click the dead tree, then “Chop down the tree”.',
+    ),
+    touch: tx(
+      'Stuknijcie pień suchego drzewa albo przytrzymajcie na nim palec.',
+      'Tap the trunk of the dead tree, or press and hold on it.',
+    ),
   },
-  sciete: {
-    text: 'Zetnijcie suche drzewo.',
-    mouse: 'Rąbanie trwa chwilę. Przycisk 3× u góry przyspiesza czekanie.',
-    touch: 'Rąbanie trwa chwilę. Przycisk 3× u góry przyspiesza czekanie.',
-  },
+  sciete: { text: tx('Zetnijcie suche drzewo.', 'Chop down the dead tree.'), mouse: CHOP, touch: CHOP },
   sklad: {
-    text: 'Zanieście drewno do składu przy kozie.',
-    // symulacja zalicza krok, kiedy drwal bierze stos (w sekundę po ścięciu), więc nie ma tu czego klikać
-    mouse: 'Drwal sam bierze drewno i niesie je do składu przy kozie.',
-    touch: 'Drwal sam bierze drewno i niesie je do składu przy kozie.',
+    text: tx('Zanieście drewno do składu przy kozie.', 'Take the wood to the woodpile by the stove.'),
+    mouse: CARRY,
+    touch: CARRY,
   },
   koza: {
-    text: 'Rozpalcie kozę.',
-    mouse: 'Prawy przycisk na kozie w kuchni: „Dołożyć do kozy”.',
-    touch: 'Stuknijcie kozę w kuchni.',
+    text: tx('Rozpalcie kozę.', 'Light the stove.'),
+    mouse: tx(
+      'Prawy przycisk na kozie w kuchni: „Dołożyć do kozy”.',
+      'Right-click the stove in the kitchen: “Feed the stove”.',
+    ),
+    touch: tx('Stuknijcie kozę w kuchni.', 'Tap the stove in the kitchen.'),
   },
   cieplo: {
-    text: `Ogrzejcie kuchnię do ${WARM_ENOUGH}°C.`,
-    mouse: 'Koza grzeje powoli, a 3× u góry przyspiesza czekanie.',
-    touch: 'Koza grzeje powoli, a 3× u góry przyspiesza czekanie.',
+    text: tx(`Ogrzejcie kuchnię do ${WARM_ENOUGH}°C.`, `Warm the kitchen up to ${WARM_ENOUGH}°C.`),
+    mouse: HEAT,
+    touch: HEAT,
   },
 });
 
@@ -70,21 +93,24 @@ export function goalsOf(
     /** drewno na zapas teraz i czy zapas na noc już raz był */
     wood?: number;
     woodReady?: boolean;
-    /** słowa miejsca (bez nich jak w bloku) */
+    /** słowa miejsca po polsku i po angielsku (bez nich jak w bloku) */
     words?: Words;
+    wordsEn?: WordsEn;
   },
 ): Goal[] {
   const out: Goal[] = [];
   const t = st.tut;
   const w = o.words ?? wordsOf(BLOK);
-  const tut = steps(w);
+  const e = o.wordsEn ?? wordsEn(BLOK);
+  const tut = steps(w, e);
   if (t.step >= 0)
     TUT_STEPS.forEach((key, k) => {
       const s = tut[key];
-      let how = o.touch ? s.touch : s.mouse;
-      if (key === 'cieplo' && o.kitchen !== null) how = `W kuchni teraz ${deg(o.kitchen)}. ${how}`;
+      let how = tr(o.touch ? s.touch : s.mouse);
+      if (key === 'cieplo' && o.kitchen !== null)
+        how = L(`W kuchni teraz ${deg(o.kitchen)}. ${how}`, `The kitchen is at ${deg(o.kitchen)} now. ${how}`);
       // zaznaczenie dociera do symulacji z następnym krokiem, a na pauzie nie od razu: cel widać jako zrobiony
-      out.push({ key, text: s.text, how, done: k < t.step || (key === 'zaznacz' && !!o.selected) });
+      out.push({ key, text: tr(s.text), how, done: k < t.step || (key === 'zaznacz' && !!o.selected) });
     });
   const survived = !!gov && gov.reports.length > 0;
   // drewno na noc: po samouczku koza zjada resztę drewna do wieczora; cel liczy się, kiedy zapas raz był
@@ -92,12 +118,19 @@ export function goalsOf(
     const late = survived || !!gov?.night?.confirmed;
     out.push({
       key: 'drewno',
-      text: 'Przygotujcie drewno na noc.',
-      how: `Drewna na zapas: ${o.wood ?? 0} z ${NIGHT_WOOD}. ${
-        o.touch
-          ? 'Stuknijcie pień dowolnego drzewa albo przytrzymajcie palec na meblu, żeby go spalić.'
-          : 'Prawy przycisk na dowolnym drzewie: „Ściąć drzewo”. W ostateczności spalcie mebel.'
-      }`,
+      text: tr(WOOD_GOAL),
+      how: L(
+        `Drewna na zapas: ${o.wood ?? 0} z ${NIGHT_WOOD}. ${
+          o.touch
+            ? 'Stuknijcie pień dowolnego drzewa albo przytrzymajcie palec na meblu, żeby go spalić.'
+            : 'Prawy przycisk na dowolnym drzewie: „Ściąć drzewo”. W ostateczności spalcie mebel.'
+        }`,
+        `Wood stocked: ${o.wood ?? 0} of ${NIGHT_WOOD}. ${
+          o.touch
+            ? 'Tap the trunk of any tree, or press and hold on a piece of furniture to burn it.'
+            : 'Right-click any tree: “Chop down the tree”. If all else fails, burn some furniture.'
+        }`,
+      ),
       done: !!o.woodReady || late,
       missed: !o.woodReady && late,
     });
@@ -105,10 +138,16 @@ export function goalsOf(
   const night = o.hour >= 20 || o.hour < 6;
   out.push({
     key: 'noc',
-    text: 'Przetrwajcie pierwszą noc.',
+    text: L('Przetrwajcie pierwszą noc.', 'Survive the first night.'),
     how: night
-      ? `Szabrownicy przychodzą po dwudziestej trzeciej. Rano ${w.zarzad.krotko} dostanie raport.`
-      : `O 19:30 zebranie ${w.zarzad.dk}, o 20:00 karta nocy: kto śpi, kto pilnuje siatki.`,
+      ? L(
+          `Szabrownicy przychodzą po dwudziestej trzeciej. Rano ${w.zarzad.krotko} dostanie raport.`,
+          `Looters come after 23:00. In the morning ${e.krotko} gets a report.`,
+        )
+      : L(
+          `O 19:30 zebranie ${w.zarzad.dk}, o 20:00 karta nocy: kto śpi, kto pilnuje siatki.`,
+          `${e.Zarzad === 'The board' ? 'Board' : 'Committee'} meeting at 19:30, Night orders at 20:00: who sleeps and who watches the fence.`,
+        ),
     done: survived,
   });
   return out;
@@ -141,18 +180,22 @@ export function goalsDay2(
     woodReady: boolean;
     /** otwarte dziury w siatce */
     holes: number;
-    /** słowa miejsca (bez nich jak w bloku) */
+    /** słowa miejsca po polsku i po angielsku (bez nich jak w bloku) */
     words?: Words;
+    wordsEn?: WordsEn;
   },
 ): Goal[] {
   const w = o.words ?? wordsOf(BLOK);
+  const e = o.wordsEn ?? wordsEn(BLOK);
   const uSasiadow = (st.sasiedzi?.budynki ?? []).some(
     (b) => b.przeszukane.length > 0 || b.mieszkania.some((m) => m.przeszukane.length > 0),
   );
   const searched = st.apts.some((a) => a.searched.length > 0) || uSasiadow;
   const built = (kind: string) => st.things.some((t) => t.kind === kind);
   const late = !!gov?.night?.confirmed || (gov?.reports.length ?? 0) > 1;
-  const b = o.touch ? 'Przycisk Budowa u góry' : 'Budowa (przycisk u góry albo B)';
+  const b = o.touch
+    ? L('Przycisk Budowa u góry', 'The Build button at the top')
+    : L('Budowa (przycisk u góry albo B)', 'Build (button at the top, or B)');
   // w trybie zombie siatka jest wzmocniona i bez dziur, a zasieki przed szwendaczami nie chronią lepiej niż ona:
   // zamiast obwodu dzida dla warty (dzidy w rękach zarządu i w magazynie ponad te ze startu)
   const zombie = gov?.mode === 'zombie';
@@ -165,39 +208,53 @@ export function goalsDay2(
     .map((k) => ({ k, n: Object.values(BUILDS[k].cost).reduce((a: number, v) => a + (v ?? 0), 0) }))
     .sort((x, y) => x.n - y.n)
     .slice(0, 2)
-    .map(({ k }) => `${BUILDS[k].name.toLowerCase()} (${costText(BUILDS[k].cost)})`);
+    .map(({ k }) => `${L(BUILDS[k].name.toLowerCase(), BUILDS_EN[k].the)} (${costText(BUILDS[k].cost)})`);
   return [
     {
       key: 'przeszukaj',
-      text: `Przeszukajcie ${w.szukanie.b}.`,
-      how: o.touch ? w.szukanie.jak.dotyk : w.szukanie.jak.mysz,
+      text: L(`Przeszukajcie ${w.szukanie.b}.`, `Search ${e.szukanie.b}.`),
+      how: o.touch ? L(w.szukanie.jak.dotyk, e.szukanie.jak.dotyk) : L(w.szukanie.jak.mysz, e.szukanie.jak.mysz),
       done: searched,
     },
     {
       key: 'budowla',
-      text: 'Postawcie pierwszą budowlę.',
-      how: `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. ${w.Zarzad} sam przyniesie materiały i zbuduje.`,
+      text: L('Postawcie pierwszą budowlę.', 'Put up your first structure.'),
+      how: L(
+        `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. ${w.Zarzad} sam przyniesie materiały i zbuduje.`,
+        `${b}: any structure will do. The cheapest are ${cheap.join(' and ')}. ${e.Zarzad} will fetch the materials and do the building.`,
+      ),
       done: st.things.some((t) => t.kind in BUILDS),
     },
     zombie
       ? {
           key: 'dzida',
-          text: 'Zróbcie dzidę dla warty.',
-          how: `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${w.szukanie.d} i rozbiórka.`,
+          text: L('Zróbcie dzidę dla warty.', 'Make a spear for the watch.'),
+          how: L(
+            `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${w.szukanie.d} i rozbiórka.`,
+            `${o.touch ? 'Press and hold on a pile of planks or scrap' : 'Right-click a pile of planks or scrap'}: “Make a spear” (${manyEn(SPEAR_BOARDS, 'plank', 'planks')} and ${SPEAR_SCRAP} scrap). A spear reaches shamblers through the fence. Planks and scrap come from searching ${e.szukanie.d} and taking things apart.`,
+          ),
           done: spears > startSpears,
         }
       : {
           key: 'obwod',
-          text: 'Wzmocnijcie obwód.',
-          how: `${b}: Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)}) albo załatajcie dziury${
-            o.touch ? ' (przytrzymajcie palec na dziurze)' : ' (prawy przycisk na dziurze)'
-          }. Otwartych dziur: ${o.holes}.`,
+          text: L('Wzmocnijcie obwód.', 'Strengthen the perimeter.'),
+          how: L(
+            `${b}: Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)}) albo załatajcie dziury${
+              o.touch ? ' (przytrzymajcie palec na dziurze)' : ' (prawy przycisk na dziurze)'
+            }. Otwartych dziur: ${o.holes}.`,
+            `${b}: a ${BUILDS_EN.zasieki.name} in place of a stretch of fence (${costText(BUILDS.zasieki.cost)}), or patch the holes${
+              o.touch ? ' (press and hold on a hole)' : ' (right-click a hole)'
+            }. Open holes: ${o.holes}.`,
+          ),
           done: built('zasieki') || o.holes === 0,
         },
     {
       key: 'drewno2',
-      text: 'Przygotujcie drewno na noc.',
-      how: `Drewna na zapas: ${o.wood} z ${DAY2_WOOD}. Noc zjada około 2 sztuk na godzinę, a przy kozie może ktoś czuwać.`,
+      text: tr(WOOD_GOAL),
+      how: L(
+        `Drewna na zapas: ${o.wood} z ${DAY2_WOOD}. Noc zjada około 2 sztuk na godzinę, a przy kozie może ktoś czuwać.`,
+        `Wood stocked: ${o.wood} of ${DAY2_WOOD}. The night eats about 2 pieces an hour, and someone can sit up with the stove.`,
+      ),
       done: o.woodReady || late,
       missed: !o.woodReady && late,
     },

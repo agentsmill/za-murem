@@ -1,7 +1,10 @@
 /* Budowle fali 1 M2 (docs/M2-fala-1.md): rodzaj, miejsce, rozmiar, koszt w materiałach i czas pracy.
-   Kontrakt dla symulacji (właściciel), interfejsu i rysowania (tylko czytają). Koszty i czasy stroi bot. */
+   Kontrakt dla symulacji (właściciel), interfejsu i rysowania (tylko czytają). Koszty i czasy stroi bot.
+   Nazwy i działanie budowli po angielsku leżą w budowle.en.ts; powód z canPlace służy tylko do wyświetlenia, więc
+   jest od razu w bieżącym języku (symulacja patrzy tylko na ok). */
 
-import { type Words, wordsOfWorld } from '../gov/miejsce.ts';
+import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { type Words, type WordsEn, wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
 import { houseOf } from './house.ts';
@@ -121,12 +124,16 @@ export function effectOf(kind: BuildKind, w: Words): string {
   return typeof e === 'string' ? e : e(w);
 }
 
-/** powód „nie tutaj” ze słowami ze słownika wspólnoty: nasze mieszkanie albo dom, brama albo furtka w dopełniaczu */
-const WHY: Record<BuildPlace, (w: Words) => string> = {
-  pokoj: (w) => `Tylko w pokoju ${w.lokal.w}.`,
-  kuchnia: (w) => `Tylko w kuchni ${w.lokal.w}.`,
-  podworko: (w) => `Tylko na podwórku za siatką, z dala od ${w.brama.d}, dziur i drzwi.`,
-  obwod: () => 'Tylko na odcinku siatki.',
+/** powód „nie tutaj” w obu językach ze słowami ze słownika wspólnoty: nasze mieszkanie albo dom, brama albo furtka */
+const WHY: Record<BuildPlace, (w: Words, e: WordsEn) => Tx> = {
+  pokoj: (w, e) => tx(`Tylko w pokoju ${w.lokal.w}.`, `Only in a room of ${e.lokal.w}.`),
+  kuchnia: (w, e) => tx(`Tylko w kuchni ${w.lokal.w}.`, `Only in the kitchen of ${e.lokal.w}.`),
+  podworko: (w, e) =>
+    tx(
+      `Tylko na podwórku za siatką, z dala od ${w.brama.d}, dziur i drzwi.`,
+      `Only in the yard inside the fence, away from ${e.brama}, holes and doors.`,
+    ),
+  obwod: () => tx('Tylko na odcinku siatki.', 'Only on a stretch of the fence.'),
 };
 
 /** Czy budowlę wolno postawić (podgląd trybu stawiania i polecenie 'build'): w pomieszczeniu właściwego rodzaju
@@ -146,9 +153,9 @@ export function canPlace(
   const def = BUILDS[kind];
   const size = w.size;
   const { w: bw, h: bh } = footprint(kind, rot);
-  if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: 'Poza mapą.' };
+  if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: L('Poza mapą.', 'Off the map.') };
   const tiles = buildTiles(kind, x, y, rot, size);
-  const no = { ok: false, why: WHY[def.place](wordsOfWorld(w)) };
+  const no = { ok: false, why: tr(WHY[def.place](wordsOfWorld(w), wordsEnOfWorld(w))) };
   const h = houseOf(w);
   const shape = fenceShape(w);
   if (def.place === 'pokoj' || def.place === 'kuchnia') {
@@ -173,11 +180,12 @@ export function canPlace(
     return ix >= t.x && ix < t.x + t.w && iy >= t.y && iy < t.y + t.h;
   };
   for (const i of tiles)
-    if (st.things.some((t) => !GHOST_KINDS.has(t.kind) && covers(t, i))) return { ok: false, why: 'Tu coś stoi.' };
+    if (st.things.some((t) => !GHOST_KINDS.has(t.kind) && covers(t, i)))
+      return { ok: false, why: L('Tu coś stoi.', 'Something is in the way.') };
   for (const b of st.builds) {
     const f = footprint(b.kind, b.rot);
     if (tiles.some((i) => covers({ x: b.x, y: b.y, w: f.w, h: f.h }, i)))
-      return { ok: false, why: 'Tu już jest plan budowy.' };
+      return { ok: false, why: L('Tu już jest plan budowy.', 'There is already a build plan here.') };
   }
   return { ok: true };
 }

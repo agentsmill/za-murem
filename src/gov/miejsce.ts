@@ -6,6 +6,7 @@
 
 import type { EndingId } from '../content/data.ts';
 import type { World } from '../world/world.ts';
+import { KONIEC_DOM_EN } from './tresc.en.ts';
 import { KONIEC_DOM } from './tresc.ts';
 import type { GovInput, GovPlace } from './typy.ts';
 
@@ -305,6 +306,176 @@ export const placeOfWorld = (w: PlaceWorld): GovPlace => (w.buildings[w.hq] ? pl
 
 /** słownik dla świata gry (teksty symulacji i interfejsu); świat bez siedziby (atrapy w testach) mówi jak blok */
 export const wordsOfWorld = (w: PlaceWorld): Words => wordsOf(placeOfWorld(w));
+
+/** Słowa wspólnoty po angielsku, jak Words (docs/SLOWNICZEK-EN.md), z tych samych warunków. Bez przypadków,
+    z rodzajnikiem tam, gdzie zdanie go potrzebuje; wielka litera na początek zdania przez `Zarzad`. */
+export interface WordsEn {
+  /** the co-op | the street */
+  wspolnota: string;
+  /** the board | the street committee */
+  zarzad: string;
+  /** pełna nazwa jak Words.zarzad.pelny: the board of a housing co-op | the street committee */
+  pelny: string;
+  /** The board | The street committee */
+  Zarzad: string;
+  /** krótko: the board | the committee */
+  krotko: string;
+  /** your board | your street committee („This is your board.”) */
+  wasz: string;
+  /** zebranie i uchwała na początek zdania: Board meeting | Committee meeting, Board resolution | Committee resolution */
+  zebranie: string;
+  uchwala: string;
+  /** the general meeting | the street meeting */
+  walne: string;
+  /** nagłówek okna wydarzenia: On the estate | On the street */
+  naglowek: string;
+  /** residents | neighbours */
+  mieszkancy: string;
+  /** the gate | the garden gate */
+  brama: string;
+  /** gdzie stoi suche drzewo z samouczka: by the carpet rack | in the garden */
+  drzewo: string;
+  /** dziura tuż przy trzepaku: behind the carpet rack; w domu null */
+  zaTrzepakiem: string | null;
+  /** gdzie przybywa miejsc do spania: in the co-op | in the house */
+  mieszkamy: string;
+  /** zakończenia gry w wersji dla miejsca, jak Words.koniec */
+  koniec: Partial<Record<EndingId, { title: string; text: string }>>;
+  /** Nasze lokum w siedzibie jak Words.lokal: noun flat | house („The board’s flat”, „The committee’s house”),
+      w: „Only in a room of your flat.”, nr: nazwa na karcie („Flat 3” | „The house”), menu: nagłówek menu poleceń
+      ze stanem lokum („flat 3, empty since 2034, moved out”; w domu sam stan). */
+  lokal: { noun: string; w: string; nr: (n: number) => string; menu: (n: number, stan: string) => string };
+  /** co przeszukiwać, jak Words.szukanie: puste mieszkania albo dom komitetu */
+  szukanie: {
+    /** cel: „Search an empty flat.” | „Search the house.” */
+    b: string;
+    /** „searching empty flats” | „searching the house” */
+    d: string;
+    jak: { mysz: string; dotyk: string };
+    karta: { mysz: string; dotyk: string };
+    pomoc: { mysz: string; dotyk: string };
+    naglowek: string;
+    wersja: string;
+    /** skąd deski, złom i części („Planks come from …”, „to get more” w pasku) */
+    zrodla: { deski: string; zlom: string; czesci: string };
+  };
+  /** from the block next door | from over the fence (jak Words.sasiad) */
+  sasiad: string;
+}
+
+const BLOKOWE_EN: Omit<WordsEn, 'sasiad'> = {
+  wspolnota: 'the co-op',
+  zarzad: 'the board',
+  pelny: 'the board of a housing co-op',
+  Zarzad: 'The board',
+  krotko: 'the board',
+  wasz: 'your board',
+  zebranie: 'Board meeting',
+  uchwala: 'Board resolution',
+  walne: 'the general meeting',
+  naglowek: 'On the estate',
+  mieszkancy: 'residents',
+  brama: 'the gate',
+  drzewo: 'by the carpet rack',
+  zaTrzepakiem: 'behind the carpet rack',
+  mieszkamy: 'in the co-op',
+  koniec: {},
+  lokal: {
+    noun: 'flat',
+    w: 'your flat',
+    nr: (n) => `Flat ${n}`,
+    menu: (n, stan) => `flat ${n}, ${stan}`,
+  },
+  szukanie: {
+    b: 'an empty flat',
+    d: 'empty flats',
+    jak: {
+      mysz: 'Click a flat at HQ: its card shows whether it is empty and what is left in it. Then right-click inside it: “Search”.',
+      dotyk:
+        'Tap a flat at HQ: its card shows whether it is empty and what is left in it. Then press and hold inside it: “Search”.',
+    },
+    karta: {
+      mysz: 'Right-click inside the flat: Search, Take apart, Fix, Claim the flat.',
+      dotyk: 'Press and hold inside the flat: Search, Take apart, Fix, Claim the flat.',
+    },
+    pomoc: {
+      mysz: 'Click a flat at HQ to see its card: whether it is empty, why, what needs repairing and what has been searched. Right-click inside a flat for: Search, Take apart, Fix, Claim the flat.',
+      dotyk:
+        'Tap a flat at HQ to see its card: whether it is empty, why, what needs repairing and what has been searched. Press and hold inside a flat for: Search, Take apart, Fix, Claim the flat.',
+    },
+    naglowek: 'Building and empty flats',
+    wersja: 'empty flats to search and repair',
+    zrodla: {
+      deski: 'searching empty flats and taking furniture apart',
+      zlom: 'searching, clearing rubbish and taking appliances apart',
+      czesci: 'searching and taking appliances apart',
+    },
+  },
+};
+
+const ULICZNE_EN: Omit<WordsEn, 'sasiad'> = {
+  wspolnota: 'the street',
+  zarzad: 'the street committee',
+  pelny: 'the street committee',
+  Zarzad: 'The street committee',
+  krotko: 'the committee',
+  wasz: 'your street committee',
+  zebranie: 'Committee meeting',
+  uchwala: 'Committee resolution',
+  walne: 'the street meeting',
+  naglowek: 'On the street',
+  mieszkancy: 'neighbours',
+  brama: 'the garden gate',
+  drzewo: 'in the garden',
+  zaTrzepakiem: null,
+  mieszkamy: 'in the house',
+  koniec: KONIEC_DOM_EN,
+  // dom komitetu to jedyne mieszkanie siedziby: bez numeru, przeszukuje się jego pomieszczenia
+  lokal: {
+    noun: 'house',
+    w: 'your house',
+    nr: () => 'The house',
+    menu: (_n, stan) => stan,
+  },
+  szukanie: {
+    b: 'the house',
+    d: 'the house',
+    jak: {
+      mysz: 'Click the house: its card shows what has already been searched. Then right-click inside the house: “Search”.',
+      dotyk:
+        'Tap the house: its card shows what has already been searched. Then press and hold inside the house: “Search”.',
+    },
+    karta: {
+      mysz: 'Right-click inside the house: Search.',
+      dotyk: 'Press and hold inside the house: Search.',
+    },
+    pomoc: {
+      mysz: 'Clicking the house shows its card: what has already been searched. Right-click inside the house: Search.',
+      dotyk:
+        'Tapping the house shows its card: what has already been searched. Press and hold inside the house: Search.',
+    },
+    naglowek: 'Building and searching the house',
+    wersja: 'a house to search',
+    zrodla: {
+      deski: 'searching the house and clearing rubble',
+      zlom: 'searching the house and clearing rubble',
+      czesci: 'searching the house',
+    },
+  },
+};
+
+/** angielski słownik dla miejsca, z tych samych warunków co wordsOf */
+export function wordsEn(p: GovPlace): WordsEn {
+  const s = sasiedzi(p);
+  const houses = s === 'domy' || (s === null && p.kind === 'dom');
+  return {
+    ...(p.kind === 'dom' ? ULICZNE_EN : BLOKOWE_EN),
+    sasiad: houses ? 'from over the fence' : 'from the block next door',
+  };
+}
+
+/** angielski słownik dla świata gry, jak wordsOfWorld */
+export const wordsEnOfWorld = (w: PlaceWorld): WordsEn => wordsEn(placeOfWorld(w));
 
 /** wolne miejsca dla mieszkańców (miejsca minus mieszkańcy); bez danych o miejscach cztery, jak dotąd */
 export function freePlaces(i: Pick<GovInput, 'cap' | 'residents'>): number {

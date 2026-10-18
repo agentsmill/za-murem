@@ -7,10 +7,16 @@
    Osoba: imię i nazwisko (do 40 znaków, imię to pierwsze słowo), płeć, wiek w widełkach zawodu z PROFS, zawód z PROFS,
    umiejętności tylko z listy zawodu, poziom 0 do maksimum dziedziny, razem najwyżej BUDZET punktów, jedna albo dwie
    cechy z losowania (nigdy dwie dobre, nigdy para z TRAIT_PAIRS), historia do 400 znaków. Cechy nie dają ani nie
-   zabierają punktów. */
+   zabierają punktów.
+
+   Angielska wersja (docs/superpowers/specs/2026-10-18-angielski-design.md) zmienia tylko to, co widać: nazwy cech
+   i zawodów po angielsku (*En obok polskich) i historia z tego samego ziarna po angielsku (historiaZEn). Dane osoby
+   zostają te same w obu językach: zawód to męska nazwa z PROFS, cechy to klucze z TRAITS. */
 
 import { mulberry, pick, type Rng, ri } from '../core/rng.ts';
+import { PROFS_EN, TRAITS_EN } from './data.en.ts';
 import { type Dom, NAMES, PROFS, type Prof, SURN, TRAIT_PAIRS, TRAITS } from './data.ts';
+import { losujHistorieEn } from './historia.en.ts';
 import { HISTORIA_MAX, losujHistorie } from './historia.ts';
 import type { Person } from './people.ts';
 
@@ -122,6 +128,12 @@ const CECHY_K: Readonly<Record<string, string>> = {
 /** nazwa cechy w formie zgodnej z płcią */
 export const nazwaCechy = (t: string, f: boolean): string => (f ? CECHY_K[t] : undefined) ?? TRAITS[t]?.name ?? t;
 
+/** nazwa cechy po angielsku (jedna forma dla obu płci); nieznana cecha zostaje kluczem jak w nazwaCechy */
+export const nazwaCechyEn = (t: string): string => TRAITS_EN[t]?.name ?? TRAITS[t]?.name ?? t;
+
+/** opis cechy po angielsku (podpowiedź przy cesze) */
+export const opisCechyEn = (t: string): string => TRAITS_EN[t]?.desc ?? TRAITS[t]?.desc ?? '';
+
 /** dziedziny, które zarząd z adresu ma po kolei (createSim): od 4 osób w górę drużyna je pokrywa */
 export const POTRZEBNE: readonly Dom[] = ['cieplo', 'bud', 'med', 'uprawa'];
 
@@ -133,6 +145,9 @@ export const nazwaZawodu = (prof: string, f: boolean): string => {
   const p = zawod(prof);
   return p ? p[f ? 1 : 0] : prof;
 };
+
+/** nazwa zawodu po angielsku (jedna forma dla obu płci); zawód spoza PROFS zostaje bez zmian */
+export const nazwaZawoduEn = (prof: string): string => PROFS_EN[prof] ?? prof;
 
 /** widełki wieku zawodu */
 export const wiekZawodu = (prof: string): [number, number] => {
@@ -249,6 +264,10 @@ const ziarnoZ = (rnd: Rng): number => Math.floor(rnd() * 4294967296) | 0;
 /** historia z ziarna osoby (to samo ziarno i dane: ta sama historia) */
 export const historiaZ = (ziarno: number, o: Pick<OsobaDruzyny, 'f' | 'age' | 'prof' | 'traits'>): string =>
   losujHistorie(mulberry(ziarno), o);
+
+/** ta sama historia z ziarna po angielsku: te same losowania i te same zdania co historiaZ (src/content/historia.en.ts) */
+export const historiaZEn = (ziarno: number, o: Pick<OsobaDruzyny, 'f' | 'age' | 'prof' | 'traits'>): string =>
+  losujHistorieEn(mulberry(ziarno), o);
 
 export interface LosujOsobeOpts {
   /** imiona już zajęte w drużynie */

@@ -10,6 +10,7 @@ import { govInput } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { alarmOn, createSim, type Pawn, SIATKA_POST, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
 import { mockBlock } from './interior-mock.ts';
+import { pl } from './po-angielsku.ts';
 
 const w = mockBlock();
 const size = w.size;
@@ -209,7 +210,7 @@ describe('broń palna w trybie zombie: strzał ściąga stado', () => {
     const notes = (mode: 'zombie' | 'zwykly', p: Pawn) => {
       const card = makeCard(newGov(3, mode), govInput(st, w, 0)).card;
       const opts = card.people.find((c) => c.id === st.people[p.person].id)!.options;
-      return (key: string) => opts.find((o) => o.key === `warta:${key}`)?.note;
+      return (key: string) => pl(opts.find((o) => o.key === `warta:${key}`)?.note);
     };
     const gun = notes('zombie', a);
     expect(gun('siatka')).toBe(NOTE_HOLD_FIRE);

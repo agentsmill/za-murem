@@ -8,6 +8,7 @@ import { createSim, type Pawn, Sim, type SimState } from '../../src/sim/sim.ts';
 import { wreckStage } from '../../src/sim/surowce.ts';
 import { CREW_SEARCH_TICKS } from '../../src/sim/wedrowcy.ts';
 import { mockBlockM2 } from './interior-mock.ts';
+import { pl } from './po-angielsku.ts';
 
 const w = mockBlockM2();
 const size = w.size;
@@ -125,7 +126,7 @@ describe('Wędrowcy', () => {
     govUpdate(gov, govInput(st, w, 1));
     expect(gov.trust).toBeCloseTo(trust - 3, 5);
     expect(gov.anger).toBeCloseTo(anger + 2, 5);
-    expect(gov.log.at(-1)?.txt).toContain('napadł na wędrowca');
+    expect(pl(gov.log.at(-1)!.txt)).toContain('napadł na wędrowca');
     govUpdate(gov, govInput(st, w, 2));
     expect(gov.trust).toBeCloseTo(trust - 3, 5);
     run(sim, () => !kind(st, 'wedrowiec').length);
@@ -147,7 +148,7 @@ describe('Wędrowcy', () => {
     expect(gov.trust).toBeCloseTo(trust - 6, 5);
     expect(gov.anger).toBeCloseTo(anger + 4, 5);
     expect(gov.napadN).toBe(1);
-    expect(gov.log.at(-1)?.txt).toContain('napadł na handlarza');
+    expect(pl(gov.log.at(-1)!.txt)).toContain('napadł na handlarza');
   });
 });
 

@@ -1,7 +1,9 @@
 /* Dane z OpenStreetMap: geokodowanie (Nominatim), Overpass jako zapas, kategorie miejsc
-   i osiedle zapasowe. Przeniesione z js/osm.js (0.3); rasteryzacja jest nowa (raster.ts). */
+   i osiedle zapasowe. Przeniesione z js/osm.js (0.3); rasteryzacja jest nowa (raster.ts). Komunikaty dla gracza
+   w bieżącym języku; nazwy miejsc i osiedle zapasowe zostają polskie, bo to dane świata. */
 
 import { FOODSHOP } from '../content/data.ts';
+import { L } from '../core/jezyk.ts';
 import { mulberry } from '../core/rng.ts';
 import type { AreaKind, Geo, Pt } from './geo.ts';
 import { pikselZ, tagiKlucza } from './klucze.ts';
@@ -33,9 +35,18 @@ export interface GeocodeResult {
 export async function geocode(q: string): Promise<GeocodeResult> {
   const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&accept-language=pl&q=${encodeURIComponent(q)}`;
   const r = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!r.ok) throw new Error(`Wyszukiwarka adresów odpowiedziała błędem ${r.status}`);
+  if (!r.ok)
+    throw new Error(
+      L(`Wyszukiwarka adresów odpowiedziała błędem ${r.status}`, `The address search answered with error ${r.status}.`),
+    );
   const j = await r.json();
-  if (!j.length) throw new Error('Nie znalazłem takiego adresu. Spróbuj z miastem, np. „Wołoska 12, Warszawa”.');
+  if (!j.length)
+    throw new Error(
+      L(
+        'Nie znalazłem takiego adresu. Spróbuj z miastem, np. „Wołoska 12, Warszawa”.',
+        'Couldn’t find that address. Try adding the town, e.g. “Wołoska 12, Warszawa”.',
+      ),
+    );
   const a = j[0].address || {};
   const area = a.neighbourhood || a.quarter || a.suburb || a.city_district || a.village || a.town || a.city || '';
   return {
@@ -65,10 +76,12 @@ export async function overpass(lat: number, lon: number, R: number, onStatus?: (
       return await r.json();
     } catch (e) {
       last = e;
-      onStatus?.('Serwer map nie odpowiada, próbuję zapasowego…');
+      onStatus?.(
+        L('Serwer map nie odpowiada, próbuję zapasowego…', 'The map server isn’t answering, trying a backup…'),
+      );
     }
   }
-  throw last || new Error('Brak połączenia z serwerami map.');
+  throw last || new Error(L('Brak połączenia z serwerami map.', 'No connection to the map servers.'));
 }
 
 export function poiCat(t: Record<string, unknown>): string | null {

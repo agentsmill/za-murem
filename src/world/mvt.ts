@@ -2,6 +2,7 @@
    Źródło: OpenFreeMap (schemat OpenMapTiles, dane OpenStreetMap). Szybkie, z CDN, bez klucza.
    Przeniesione z js/mvt.js (0.3); promień obszaru jest teraz parametrem. */
 
+import { L } from '../core/jezyk.ts';
 import { type Geo, type GeoBuilding, type Pt, pip, polyArea } from './geo.ts';
 import { KAFEL_PX, tagiKlucza } from './klucze.ts';
 import { poiCat } from './osm.ts';
@@ -441,7 +442,12 @@ export async function load(lat0: number, lon0: number, R: number, onStatus?: (s:
   }
   const url = tileUrl;
   const list = tilesFor(lat0, lon0, 720);
-  onStatus?.(`Pobieram ${list.length} ${list.length === 1 ? 'kafelek' : 'kafelki'} mapy…`);
+  onStatus?.(
+    L(
+      `Pobieram ${list.length} ${list.length === 1 ? 'kafelek' : 'kafelki'} mapy…`,
+      `Downloading ${list.length} map ${list.length === 1 ? 'tile' : 'tiles'}…`,
+    ),
+  );
   const bufs = await Promise.all(
     list.map(([x, y]) =>
       getTile(url.replace('{z}', String(Z)).replace('{x}', String(x)).replace('{y}', String(y)), 20000),
