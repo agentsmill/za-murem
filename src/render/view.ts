@@ -8,7 +8,8 @@
    swoje wnętrza do tego samego przekroju łatką sceny (przekrojSasiadow.ts), razem z wyglądem drzwi, a plan
    wspólnego płotu rysuje się jako duch przyszłego obwodu z postępem (plotDuch.ts, plotLayer.ts). Z grafiką
    z PixelLab (setGrafika) trzepak jest z PixelLab, teren i bloki rysują kawałki ze sceny (scene.art), a pionki
-   rysuje postać z animacji PixelLab (ludzieLayer.ts), gdy obsada ma daną pozę: inaczej kod. */
+   rysuje postać z animacji PixelLab (ludzieLayer.ts), gdy obsada ma daną pozę: inaczej kod. Leżącego pionka i zwłoki
+   składa warstwa z klatki stania przodem (art/lezenie.ts). */
 
 import {
   Application,
@@ -28,6 +29,7 @@ import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.t
 import { WANDERER_HP } from '../sim/wedrowcy.ts';
 import { ZOMBIE_HP } from '../sim/zombie.ts';
 import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, thrusts, weaponRect } from './art/bron.ts';
+import { korektaDloni } from './art/bronPixellab.ts';
 import {
   FH,
   frameRect,
@@ -301,6 +303,9 @@ export class GameView {
     this.grafika = g;
     this.ludzie?.destroy();
     this.ludzie = g?.ludzie ? new LudzieLayer(g.ludzie) : null;
+    // zwłoki dostają teksturę raz, przy powstaniu: po zmianie grafiki rysują się od nowa
+    for (const sp of this.corpseSprites.values()) sp.destroy();
+    this.corpseSprites.clear();
     for (const e of this.things.values()) e.sprite.destroy();
     this.things.clear();
     for (const a of this.thingArt.values()) a.tex.destroy(true);
@@ -823,18 +828,32 @@ export class GameView {
       const y = pv ? pv[1] + (p.y - pv[1]) * alpha : p.y;
       const pose = poseOf(p, gameT, st.things, p.kind === 'core' && this.feed.feeding(p, st.tick), ctx);
       this.poses.set(p.id, pose);
-      // postać z PixelLab, gdy obsada ma tę pracę; szwendacze, leżący i brakujące prace rysuje kod
+      // postać z PixelLab, gdy obsada ma tę pracę (leżącą składa lezenie.ts z jej klatki stania); szwendacze i brakujące
+      // prace rysuje kod. lp i ll to ten sam współdzielony wynik warstwy, więc co najwyżej jedno z nich jest niepuste.
       const lp = this.ludzieKlatka(p, st, pose, gameT);
-      sp.texture = lp
-        ? lp.tex
+      const ll = lp ? null : this.ludzieLezenie(p, st, pose);
+      const pl = lp ?? ll;
+      sp.texture = pl
+        ? pl.tex
         : pose.zpose
           ? this.zombieTexture(p.look, pose)
           : this.frameTexture(this.poseTex, this.atlas!, p.look % LOOKS, pose);
       sp.scale.x = lp?.flip ? -1 : 1;
       if (pose.lie) {
         const [hx, hy] = lieHead(pose.lie.o);
-        sp.anchor.set(hx / LIE, hy / LIE);
-        sp.position.set(Math.round(pose.lie.x), Math.round(pose.lie.y));
+        let dx = 0;
+        let dy = 0;
+        if (ll) {
+          sp.anchor.set(ll.ax / ll.w, ll.ay / ll.h);
+          // na podłodze poza z kodu liczy położenie z komórki LIE × LIE o głowie w lieHead(o), a komórka z PixelLab ma
+          // inny rozmiar i głowę gdzie indziej: jej środek ma stanąć tam, gdzie środek komórki z kodu (w łóżku
+          // kotwicą jest poduszka, bez poprawki)
+          if (pose.lie.kind === 'floor') {
+            dx = ll.ax - ll.w / 2 - (hx - LIE / 2);
+            dy = ll.ay - ll.h / 2 - (hy - LIE / 2);
+          }
+        } else sp.anchor.set(hx / LIE, hy / LIE);
+        sp.position.set(Math.round(pose.lie.x + dx), Math.round(pose.lie.y + dy));
       } else {
         if (lp) sp.anchor.set(lp.ax / lp.w, lp.ay / lp.h);
         else sp.anchor.set(0.5, 45 / FH);
@@ -870,6 +889,12 @@ export class GameView {
         ws.texture = this.weaponTexture(wid, pose.arm, pose.dir, pose.frame);
         ws.anchor.set(0.5, ANCHOR_Y / CELL);
         ws.position.copyFrom(sp.position);
+        // klatki ciosu z PixelLab mają dłoń gdzie indziej niż klatki z kodu: przesunięcie z pomiaru (bronPixellab.ts)
+        if (lp && !lp.zastepcza) {
+          const [kx, ky] = korektaDloni(pose.arm, pose.dir, pose.frame);
+          ws.position.x += kx;
+          ws.position.y += ky;
+        }
         ws.zIndex = sp.zIndex + (pose.dir === 1 ? -0.001 : 0.001);
         ws.visible = true;
       } else if (ws) ws.visible = false;
@@ -885,7 +910,7 @@ export class GameView {
           this.xraySprites.set(p.id, xr);
         }
         xr.alpha = behind ? 0.85 : 0.5;
-        xr.texture = lp ? lp.tex : this.frameTexture(this.outlineTex, this.outline!, p.look % LOOKS, pose);
+        xr.texture = pl ? pl.tex : this.frameTexture(this.outlineTex, this.outline!, p.look % LOOKS, pose);
         xr.scale.x = sp.scale.x;
         xr.anchor.copyFrom(sp.anchor);
         xr.position.copyFrom(sp.position);
@@ -938,6 +963,32 @@ export class GameView {
     );
   }
 
+  /** komórka leżenia postaci z PixelLab dla leżącego pionka (w łóżku albo na podłodze) albo null (kod): nie szwendacz,
+      obsada ma jego postać z klatką stania przodem */
+  private ludzieLezenie(p: Pawn, st: SimState, pose: PoseView) {
+    if (!this.ludzie || pose.zpose || !pose.lie) return null;
+    const postac = this.ludzie.dane.postacPionka(p, st.people);
+    if (!postac) return null;
+    return this.ludzie.lezenie(postac, this.ludzie.dane.wersjaPionka(p, postac), pose.lie.o, pose.lie.kind);
+  }
+
+  /** zwłoki człowieka z PixelLab, na podłodze; środek komórki to środek ciała, więc kładzie się go środkiem kafelka.
+      Zmarły z zarządu to ta sama postać co za życia (wpis zmarłych zna id osoby), inni to dorosły mieszkaniec po
+      wyglądzie z gry (rzecz zna tylko wygląd). null: zwłoki rysuje kod */
+  private zwlokiLudzi(st: SimState, t: { id: number; n: number; dead?: number }, o: number) {
+    if (!this.ludzie) return null;
+    const zmarly = t.dead !== undefined ? st.dead?.[t.dead] : undefined;
+    const osoba = zmarly?.kind === 'core' && zmarly.id ? st.people.findIndex((q) => q.id === zmarly.id) : -1;
+    const dane = this.ludzie.dane;
+    const postac = (osoba >= 0 ? dane.postacOsoby(osoba, st.people, true) : null) ?? dane.postacZwlok(t.n);
+    if (!postac) return null;
+    const wersja = dane.wersjaPionka(
+      { id: t.id, kind: osoba >= 0 ? 'core' : 'zwloki', person: osoba, look: t.n },
+      postac,
+    );
+    return this.ludzie.lezenie(postac, wersja, o, 'floor');
+  }
+
   /** klatka atlasu szwendaczy: chód albo ugryzienie, kierunek, klatka */
   private zombieTexture(look: number, pv: PoseView): Texture {
     const k = ((((look % 16) * 2 + (pv.zpose === 'bite' ? 1 : 0)) * 4 + pv.dir) * 4 + pv.frame) | 0;
@@ -974,7 +1025,8 @@ export class GameView {
     return tex;
   }
 
-  /** zwłoki ludzi (atlas ludzi, leżenie na podłodze) i trupy szwendaczy (atlas szwendaczy) na ziemi */
+  /** zwłoki ludzi (postać z PixelLab albo atlas ludzi z kodu, leżenie na podłodze) i trupy szwendaczy (atlas szwendaczy)
+      na ziemi */
   private drawCorpses(st: SimState): void {
     const seen = new Set<number>();
     for (const t of st.things) {
@@ -983,8 +1035,10 @@ export class GameView {
       let sp = this.corpseSprites.get(t.id);
       if (!sp) {
         const o = t.id & 3;
-        const tex =
-          t.kind === 'trup'
+        const lz = t.kind === 'zwloki' ? this.zwlokiLudzi(st, t, o) : null;
+        const tex = lz
+          ? lz.tex
+          : t.kind === 'trup'
             ? this.zombieLieTexture(t.n, o)
             : this.frameTexture(this.poseTex, this.atlas!, t.n % LOOKS, {
                 pose: 'walk',

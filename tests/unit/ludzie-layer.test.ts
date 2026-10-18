@@ -67,11 +67,30 @@ describe('warstwa postaci z PixelLab (tekstury Pixi z atlasu ludzie.png)', () =>
     expect(warstwa.klatka(kibic, poza({ pose: 'swing' }), false, 0, 0)!.zastepcza).toBe(true);
   });
 
+  it('leżenie to cała komórka z własnego źródła, kotwica jest w środku głowy, a ta sama komórka daje tę samą teksturę', () => {
+    const emeryt = postac('kotwica-emeryt');
+    // wynik jest współdzielony, więc kopiujemy go przed następnym wywołaniem
+    const k = { ...warstwa.lezenie(emeryt, 0, 1, 'floor')! };
+    const d = warstwa.dane.lezenie(emeryt, 0, 1, 'floor')!;
+    expect([k.tex.frame.x, k.tex.frame.y, k.tex.frame.width, k.tex.frame.height]).toEqual([0, 0, d.w, d.h]);
+    expect([k.ax, k.ay, k.w, k.h, k.flip, k.zastepcza]).toEqual([d.hx, d.hy, d.w, d.h, false, false]);
+    expect([k.tex.source.width, k.tex.source.height]).toEqual([d.w, d.h]);
+    // piksele źródła to piksele komórki: cień ma alfę prostą, a tekstura mnoży ją przy wgraniu
+    const b = k.tex.source.resource as Uint8Array;
+    expect(Array.from(new Uint32Array(b.buffer, b.byteOffset, b.byteLength / 4))).toEqual(Array.from(d.px));
+    expect(warstwa.lezenie(emeryt, 0, 1, 'floor')!.tex).toBe(k.tex);
+    expect(warstwa.lezenie(emeryt, 0, 2, 'floor')!.tex).not.toBe(k.tex);
+    expect(warstwa.lezenie(emeryt, 0, 1, 'bed')!.tex).not.toBe(k.tex);
+    expect(warstwa.lezenie(emeryt, 1, 1, 'floor')!.tex).not.toBe(k.tex);
+  });
+
   it('wybór postaci i wersji przechodzi przez warstwę, a destroy zwalnia źródła tekstur', () => {
     const l = new LudzieLayer(grafika);
     const p = { id: 1, kind: 'core', person: 0, look: 0 };
     expect(l.dane.postacPionka(p, [{ f: false, age: 70 }])?.id).toBe('kotwica-emeryt');
     l.klatka(postac('kotwica-emeryt'), poza(), true, 0, 2);
+    const lezy = { ...l.lezenie(postac('kotwica-emeryt'), 0, 0, 'bed')! };
     expect(() => l.destroy()).not.toThrow();
+    expect(lezy.tex.destroyed).toBe(true);
   });
 });
