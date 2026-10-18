@@ -1,6 +1,10 @@
 /* Czytnik kafelków wektorowych (Mapbox Vector Tile, protobuf) i zamiana na geometrię gry.
    Źródło: OpenFreeMap (schemat OpenMapTiles, dane OpenStreetMap). Szybkie, z CDN, bez klucza.
-   Przeniesione z js/mvt.js (0.3); promień obszaru jest teraz parametrem. */
+   Przeniesione z js/mvt.js (0.3); promień obszaru jest teraz parametrem.
+
+   Dla mapy miasta (miastoKafelki.ts) moduł daje też `pobierzKafelek` (bajty kafelka dowolnego poziomu, błąd to null)
+   oraz wspólne z toGeoT wzory na punkty sklepów i usług: `rzutKafelka` (położenie w metrach) i `poiPunktu`
+   (kategoria, nazwa, klucz), żeby miejsca spoza obszaru startowego miały to samo `k`, `x` i `y` co w świecie gry. */
 
 import { L } from '../core/jezyk.ts';
 import { type Geo, type GeoBuilding, type Pt, pip, polyArea } from './geo.ts';
@@ -212,6 +216,35 @@ async function getTile(url: string, ms: number): Promise<Uint8Array> {
   }
 }
 
+/** Szablon adresu kafelków OpenFreeMap ({z}/{x}/{y}): pobierany raz na sesję, równoległe pierwsze wywołania czekają na
+    to samo pobranie. Błąd (brak sieci, odpowiedź bez adresu) odrzuca obietnicę i nie zostaje zapamiętany. */
+let tileUrlWTrakcie: Promise<string> | null = null;
+async function szablonKafelkow(): Promise<string> {
+  if (tileUrl) return tileUrl;
+  tileUrlWTrakcie ||= (async () => {
+    const tj = await getJson('https://tiles.openfreemap.org/planet', 15000);
+    const url: string | null = tj?.tiles?.[0] ?? null;
+    if (!url) throw new Error('Serwer kafelków nie podał adresu.');
+    tileUrl = url;
+    return url;
+  })().finally(() => {
+    tileUrlWTrakcie = null;
+  });
+  return tileUrlWTrakcie;
+}
+
+/** Surowe bajty kafelka (z, x, y) z OpenFreeMap dla mapy miasta (src/world/miastoKafelki.ts). Pusty kafelek (204, 404)
+    to pusta tablica, a każdy błąd (brak sieci, czas, kod serwera) to `null`, nigdy wyjątek i nic na konsoli. Poziomy
+    niższe niż 14 mają ten sam schemat warstw. */
+export async function pobierzKafelek(z: number, x: number, y: number): Promise<Uint8Array | null> {
+  try {
+    const url = await szablonKafelkow();
+    return await getTile(url.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y)), 20000);
+  } catch {
+    return null;
+  }
+}
+
 const lon2x = (lon: number, n: number) => ((lon + 180) / 360) * n;
 const lat2y = (lat: number, n: number) => {
   const s = Math.sin((lat * Math.PI) / 180);
@@ -220,9 +253,9 @@ const lat2y = (lat: number, n: number) => {
 const x2lon = (x: number, n: number) => (x / n) * 360 - 180;
 const y2lat = (y: number, n: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI;
 
-/** kafelki pokrywające kwadrat o połowie boku rad metrów */
-export function tilesFor(lat: number, lon: number, rad: number): [number, number][] {
-  const n = 2 ** Z;
+/** kafelki poziomu z (domyślnie Z = 14) pokrywające kwadrat o połowie boku rad metrów, wiersz po wierszu od północy */
+export function tilesFor(lat: number, lon: number, rad: number, z: number = Z): [number, number][] {
+  const n = 2 ** z;
   const dLat = rad / 110574;
   const dLon = rad / (111320 * Math.cos((lat * Math.PI) / 180));
   const x0 = Math.floor(lon2x(lon - dLon, n));
@@ -232,6 +265,21 @@ export function tilesFor(lat: number, lon: number, rad: number): [number, number
   const out: [number, number][] = [];
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) out.push([x, y]);
   return out;
+}
+
+/** Rzut punktu kafelka na metry od środka mapy (lat0, lon0): wschód i południe, zaokrąglone do 0,5 m. T to kafelek
+    poziomu Z, q punkt w jednostkach extent E. Jedyny wzór dla geometrii gry (toGeoT) i dla miejsc spoza obszaru
+    startowego (miastoKafelki.ts), więc ten sam punkt ma w obu to samo położenie. */
+export function rzutKafelka(lat0: number, lon0: number): (T: Pick<DecodedTile, 'x' | 'y'>, E: number, q: Pt) => Pt {
+  const n = 2 ** Z;
+  const kx = 111320 * Math.cos((lat0 * Math.PI) / 180);
+  const ky = 110574;
+  const rd = (v: number) => Math.round(v * 2) / 2;
+  return (T, E, [px, py]) => {
+    const lon = x2lon(T.x + px / E, n);
+    const lat = y2lat(T.y + py / E, n);
+    return [rd((lon - lon0) * kx), rd((lat0 - lat) * ky)];
+  };
 }
 
 /* ---------- OpenMapTiles -> geometria gry ---------- */
@@ -284,6 +332,24 @@ function poiTags(t: Record<string, TagValue>): Record<string, string> | null {
   if (AMEN.has(s)) return { amenity: s };
   if (SHOPCLS.has(c)) return { shop: s };
   return null;
+}
+
+/** Kategoria, nazwa z OSM i klucz „poi:X:Y” punktu q (w jednostkach extent E) z warstwy poi kafelka T poziomu Z; null,
+    gdy to nie sklep ani usługa. Klucz liczy się z surowego punktu kafelka, przed zaokrągleniem do 0,5 m (całe globalne
+    piksele, jak klucze budynków). Jedyne miejsce, które go liczy: wspólne dla toGeoT i dla miejsc spoza obszaru
+    startowego (miastoKafelki.ts), więc ten sam punkt ma zawsze ten sam klucz. */
+export function poiPunktu(
+  t: Record<string, TagValue>,
+  T: Pick<DecodedTile, 'x' | 'y'>,
+  q: Pt,
+  E: number,
+): { c: string; n: string; k: string } | null {
+  const pt = poiTags(t);
+  if (!pt) return null;
+  const c = poiCat(pt);
+  if (!c) return null;
+  const k = kluczPunktu(T.x * KAFEL_PX + (q[0] * KAFEL_PX) / E, T.y * KAFEL_PX + (q[1] * KAFEL_PX) / E);
+  return { c, n: (t.name as string) || '', k };
 }
 
 /** przycięcie pierścienia do kwadratu [0,E] (Sutherland-Hodgman) */
@@ -431,17 +497,14 @@ export const WANT = new Set([
 export interface DecodedTile {
   x: number;
   y: number;
+  /** poziom kafelka; brak oznacza Z (14), jak kafelki z `load` i z tests/fixtures. Klucze miejsc liczą się tylko z Z. */
+  z?: number;
   L: TileLayers;
 }
 
 /** R: promień obszaru gry w metrach (w 0.3 było 230) */
 export async function load(lat0: number, lon0: number, R: number, onStatus?: (s: string) => void): Promise<Geo> {
-  if (!tileUrl) {
-    const tj = await getJson('https://tiles.openfreemap.org/planet', 15000);
-    tileUrl = tj?.tiles?.[0] ?? null;
-    if (!tileUrl) throw new Error('Serwer kafelków nie podał adresu.');
-  }
-  const url = tileUrl;
+  const url = await szablonKafelkow();
   const list = tilesFor(lat0, lon0, 720);
   onStatus?.(
     L(
@@ -505,10 +568,7 @@ function sklej<B extends { k: number }>(n: number, spans: SpanRec<B>[]): (i: num
 }
 
 export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: number): Geo {
-  const n = 2 ** Z;
-  const kx = 111320 * Math.cos((lat0 * Math.PI) / 180);
-  const ky = 110574;
-  const rd = (v: number) => Math.round(v * 2) / 2;
+  const rzut = rzutKafelka(lat0, lon0);
   const geo: Geo = { c: [lat0, lon0], b: [], r: [], a: [], w: [], poi: [], src: 'mvt' };
   const tmpB: BTmp[] = [];
   const M = R + 30;
@@ -536,11 +596,7 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
     for (const lname in T.L) {
       const L = T.L[lname];
       const E = L.extent;
-      const P = ([px, py]: Pt): Pt => {
-        const lon = x2lon(T.x + px / E, n);
-        const lat = y2lat(T.y + py / E, n);
-        return [rd((lon - lon0) * kx), rd((lat0 - lat) * ky)];
-      };
+      const P = (q: Pt): Pt => rzut(T, E, q);
       // przycinamy do własnego obszaru kafelka (bez bufora), żeby kawałki z sąsiednich kafelków się nie dublowały
       const inOwn = ([px, py]: Pt) => px >= 0 && px < E && py >= 0 && py < E;
       for (const F of L.features) {
@@ -557,14 +613,10 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
                   hn.push({ x, y, h: String(t.housenumber || ''), id: osmIdOf(F.id) });
                 continue;
               }
-              const pt = poiTags(t);
-              if (!pt) continue;
-              const c = poiCat(pt);
-              if (!c) continue;
+              const m = poiPunktu(t, T, q, E);
+              if (!m) continue;
               if (Math.hypot(x, y) > 720) continue;
-              // klucz z surowego punktu kafelka, przed zaokrągleniem do 0,5 m (całe globalne piksele, jak klucze budynków)
-              const k = kluczPunktu(T.x * KAFEL_PX + (q[0] * KAFEL_PX) / E, T.y * KAFEL_PX + (q[1] * KAFEL_PX) / E);
-              geo.poi.push({ x, y, c, n: (t.name as string) || '', k });
+              geo.poi.push({ x, y, c: m.c, n: m.n, k: m.k });
             }
           continue;
         }
