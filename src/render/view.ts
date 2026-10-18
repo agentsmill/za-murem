@@ -22,6 +22,7 @@ import type { WeaponId } from '../sim/bron.ts';
 import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
 import { TRADER_HP } from '../sim/handlarz.ts';
 import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
+import { WANDERER_HP } from '../sim/wedrowcy.ts';
 import { ZOMBIE_HP } from '../sim/zombie.ts';
 import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, weaponRect } from './art/bron.ts';
 import {
@@ -945,12 +946,14 @@ export class GameView {
             ? STRANGER_HP
             : p.kind === 'handlarz'
               ? TRADER_HP
-              : 100;
+              : p.kind === 'wedrowiec' || p.kind === 'obcy'
+                ? WANDERER_HP
+                : 100;
       const hp = p.needs ? p.needs.health : (p.hp ?? max);
       const busy =
         p.kind === 'zombie' ||
         p.kind === 'szabrownik' ||
-        (p.kind === 'handlarz' && p.job?.phase === 3) ||
+        ((p.kind === 'handlarz' || p.kind === 'wedrowiec' || p.kind === 'obcy') && p.job?.phase === 3) ||
         p.job?.t === 'fight' ||
         (p.job?.t === 'guard' && p.job.phase === 1) ||
         p.bite !== undefined;

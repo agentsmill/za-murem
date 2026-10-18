@@ -1015,6 +1015,85 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // wędrowiec przy siatce (menu, rozmowa i wieść), potem obca ekipa przy wraku (Przeszukać wyszarzone)
+        name: 'obcy',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          // dzień 2, 10:00: tylko wędrowiec (handlarz i ekipa daleko)
+          await page.evaluate(() => {
+            const o = window.zm!.sim!.st;
+            o.tick = 15200;
+            o.obcy!.next = 15200 * 20;
+            o.obcy!.wnext = 15200;
+            o.obcy!.enext = 15200 * 20;
+          });
+          for (let k = 0; k < 40; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          console.log(`  menu wędrowca: ${items.join(' | ')}`);
+          if (!items.includes('Zagadać') || !items.some((i) => i.startsWith('Napaść na wędrowca')))
+            throw new Error('w menu wędrowca nie ma rozmowy albo napaści');
+          await page.screenshot({ path: path.join(OUT, 'obcy-wedrowiec-menu.png') });
+          await page.click('#ctx .ctx-item:has-text("Zagadać")');
+          for (let k = 0; k < 20; k++) {
+            const done = await page.evaluate(() => !!window.zm!.sim!.st.obcy!.wiesc);
+            if (done) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          const wiesc = await page.evaluate(() => window.zm!.sim!.st.obcy!.wiesc?.text ?? '');
+          console.log(`  wieść: ${wiesc}`);
+          if (!wiesc.startsWith('Wędrowiec mówi')) throw new Error('rozmowa nie dała wieści');
+          await page.waitForTimeout(300);
+          await page.screenshot({ path: path.join(OUT, 'obcy-wiesc.png') });
+          // dzień 3, 10:00: obca ekipa przy wraku
+          await page.evaluate(() => {
+            const o = window.zm!.sim!.st;
+            o.tick = 15200 + 19200;
+            o.obcy!.wnext = 15200 * 20;
+            o.obcy!.enext = o.tick;
+          });
+          for (let k = 0; k < 40; k++) {
+            const ok = await page.evaluate(() => {
+              const crew = window.zm!.sim!.st.pawns.filter((p) => p.kind === 'obcy');
+              return crew.length === 2 && crew.every((p) => p.job?.phase === 1);
+            });
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const wr = await page.evaluate(() => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const t = sim.st.pawns.find((p) => p.kind === 'obcy')!.job!.target;
+            const size = sim.w.size;
+            zm.setCam((t % size) + 1.5, Math.floor(t / size) + 0.5, 2);
+            return [(t % size) + 1, Math.floor(t / size) + 1];
+          });
+          await waitIdle(page);
+          const [wx, wy] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), wr);
+          const wItems = await menuAt(page, wx, wy);
+          const off = await page.locator('#ctx .ctx-item.off').allTextContents();
+          console.log(`  menu wraku: ${wItems.join(' | ')} (wyszarzone: ${off.join(', ')})`);
+          if (!off.some((t) => t.includes('przy aucie są obcy')))
+            throw new Error('przeszukanie wraku przy obcych nie jest wyszarzone');
+        },
+      },
+      {
         name: 'surowce-menu-warsztat',
         query: '',
         run: async (page, base) => {

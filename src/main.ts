@@ -48,6 +48,7 @@ import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
+import { NAPISY as OBCY } from './sim/wedrowcy.ts';
 import { allowedAnchors, availableOf, buildItems, buildMenu, buildSheet, okTilesOf, type Rot } from './ui/budowa.ts';
 import { kartaBudynku, widokBudynku } from './ui/budynek.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
@@ -155,6 +156,8 @@ let hqName = '';
 let words: Words = wordsOf(BLOK);
 /** id handlarza z ostatniej klatki (−1: nie ma), żeby napis o jego przyjściu pokazał się raz */
 let traderSeen = -1;
+/** tick ostatniej pokazanej wieści (st.obcy.wiesc) */
+let wiescSeen = -1;
 let fenceIn: GovInput['fence'];
 /** sekundy przy ekranie bez pauzy (dla zarządu: tempo wydarzeń) i chwila ostatniego kroku zarządu */
 let screen = 0;
@@ -372,6 +375,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // zapis sprzed handlarza: włączony od następnego kroku (w trybie zombie symulacja to pomija)
   if (saved && obcy && !st.obcy) sim.push({ t: 'obcy', ids: [] });
   traderSeen = st.obcy?.trader ?? -1;
+  wiescSeen = st.obcy?.wiesc?.tick ?? -1;
   if (l && dane) mieszkancy = { l, dane, adres: data.addr };
   // lokatorzy sąsiednich budynków z generatora mieszkańców (fala 2); bez tabel zapasowi z ziarna budynku
   if (dane) sim.lokatorzy = zrodloLokatorow(world, geo, dane);
@@ -506,6 +510,10 @@ function drawState() {
   const tr = sim.st.obcy?.trader ?? -1;
   if (tr >= 0 && tr !== traderSeen) say(HANDEL.przyszedl(words.brama.pod).pl, 5000);
   traderSeen = tr;
+  // wieść od wędrowca albo o ekipie przy wraku: raz, na dłużej
+  const wiesc = sim.st.obcy?.wiesc;
+  if (wiesc && wiesc.tick !== wiescSeen) say(wiesc.text, 7000);
+  wiescSeen = wiesc?.tick ?? -1;
   // ?swiatla=test: światła podglądu nocy zamiast świateł z gry
   if (preview) view.lights = preview.lights;
 }
@@ -1501,6 +1509,9 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   enclose: [PO_POLECENIU.enclose[0].pl, PO_POLECENIU.enclose[1].pl],
   otocz: ['', ''],
   trade: [HANDEL.poHandel.pl, HANDEL.poHandelWielu.pl],
+  talk: [OBCY.poZagadac.pl, OBCY.poZagadacWielu.pl],
+  mug: [OBCY.poNapasc.pl, OBCY.poNapascWielu.pl],
+  shoo: [OBCY.poPrzegonic.pl, OBCY.poPrzegonicWielu.pl],
   rob: [HANDEL.poNapasc.pl, HANDEL.poNapascWielu.pl],
   obcy: ['', ''],
 });

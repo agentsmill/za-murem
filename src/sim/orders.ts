@@ -35,6 +35,7 @@ import {
   type Command,
   campfireSpotOk,
   canCookIn,
+  crewAt,
   dismantlable,
   FURNITURE_ACC,
   isEnemy,
@@ -53,6 +54,7 @@ import {
 } from './sim.ts';
 import { BATCH, CARRY_MATS, NAPISY, type Product, RECIPES, wreckAt, wreckStage, wreckTile } from './surowce.ts';
 import { modeOf } from './tryb.ts';
+import { NAPISY as OBCY } from './wedrowcy.ts';
 
 /** nazwy w bierniku do menu i opisów: pomieszczenia, rzeczy do rozebrania, budowle */
 const ROOM_ACC: Record<RoomKind, string> = {
@@ -162,6 +164,24 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       out.push({ cmd: { t: 'rob', ids: core }, label: HANDEL.napasc.pl, quick: false, confirm: true });
     }
   }
+  // wędrowiec: zagadać, gdy przystanął przy siatce (raz), napaść, dopóki nie ucieka; obca ekipa: przegonić
+  let near: Pawn | undefined;
+  let nd = 1;
+  for (const p of st.pawns)
+    if (
+      (p.kind === 'wedrowiec' || p.kind === 'obcy') &&
+      (p.job?.phase ?? 4) < 3 &&
+      Math.hypot(p.x - cx, p.y - cy) <= nd
+    ) {
+      nd = Math.hypot(p.x - cx, p.y - cy);
+      near = p;
+    }
+  if (near?.kind === 'wedrowiec') {
+    if (near.job?.phase === 1 && near.job.what !== 'zagadany')
+      out.push({ cmd: { t: 'talk', ids: core, target: near.id }, label: OBCY.zagadac.pl, quick: false });
+    out.push({ cmd: { t: 'mug', ids: core, target: near.id }, label: OBCY.napasc.pl, quick: false, confirm: true });
+  } else if (near?.kind === 'obcy' && (near.job?.phase ?? 4) < 2)
+    out.push({ cmd: { t: 'shoo', ids: core, target: near.id }, label: OBCY.przegonic.pl, quick: false });
   // zwłoki, które wstaną: dobić
   const body = thingAt(st, w, tile, 'zwloki');
   if (body && body.fuel > 0) out.push({ cmd: { t: 'finish', ids: core, thing: body.id }, label: 'Dobić', quick: true });
@@ -227,13 +247,16 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     const tx = tile % w.size;
     const ty = Math.floor(tile / w.size);
     const onBase = tx >= wreck.x && tx < wreck.x + wreck.w && ty >= wreck.y && ty < wreck.y + wreck.h;
-    if (s === 0)
-      out.push({
+    const busy = crewAt(st, wt);
+    if (s === 0) {
+      const item: MenuItem = {
         cmd: { t: 'wreck', ids: core, tile: wt, how: 'szukaj' },
         label: NAPISY.szukaj(wreck.model).pl,
-        quick: onBase,
-      });
-    else if (s === 1)
+        quick: onBase && !busy,
+      };
+      if (busy) item.off = NAPISY.obcyPrzyAucie.pl;
+      out.push(item);
+    } else if (s === 1)
       out.push({
         cmd: { t: 'wreck', ids: core, tile: wt, how: 'rozbierz' },
         label: NAPISY.rozbierz(wreck.model).pl,
@@ -558,6 +581,16 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return (walking ? NAPISY.poLup : NAPISY.niesie).pl;
     case 'trader':
       return [HANDEL.przychodzi, HANDEL.czeka, HANDEL.odchodzi, HANDEL.ucieka, HANDEL.odchodzi][j.phase]?.pl ?? '';
+    case 'wander':
+      return OBCY.wander[Math.min(3, j.phase)].pl;
+    case 'scavenge':
+      return OBCY.scavenge[Math.min(3, j.phase)].pl;
+    case 'talk':
+      return (walking ? OBCY.idzieZagadac : OBCY.rozmawia).pl;
+    case 'mug':
+      return OBCY.idzieNapasc.pl;
+    case 'shoo':
+      return OBCY.idziePrzegonic.pl;
     case 'trade':
       return (walking ? HANDEL.idzieHandlowac : HANDEL.handluje).pl;
     case 'rob':

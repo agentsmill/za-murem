@@ -97,6 +97,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
           },
         }
       : {}),
+    ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
     dead: (st.dead ?? [])
       .filter((d) => d.kind === 'core' || d.kind === 'resident')
       .map((d) => ({ id: d.id, name: d.name, cause: d.cause, tick: d.tick })),

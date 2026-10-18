@@ -27,6 +27,14 @@ export interface Obcy {
   napad: number;
   /** ile było wizyt (licząc tę, która trwa) */
   wizyty: number;
+  /** tick następnego wędrowca i następnej obcej ekipy (docs/superpowers/specs/2026-10-18-wedrowcy-design.md);
+      stary zapis z samym handlarzem dostaje je w konstruktorze Sim bez losowania */
+  wnext?: number;
+  enext?: number;
+  /** napaści zarządu po kolei (zarząd liczy z nich cenę w zaufaniu); brak: żadnej */
+  napady?: { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
+  /** ostatnia wieść do pokazania na dole ekranu (rozmowa z wędrowcem, ekipa przeszukała wrak) */
+  wiesc?: { tick: number; text: string };
 }
 
 /** czeka pod bramą 3 godziny gry, ale nie dłużej niż do 18:00; wymiana to 5 minut targowania się */

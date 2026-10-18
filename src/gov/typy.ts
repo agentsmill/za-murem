@@ -139,6 +139,8 @@ export interface GovInput {
   horde?: { near: number; pressing: number; killed: number; breaches: number; bites: number; tonight: number };
   /** zmarli (zarząd z id, mieszkańcy z pustym id) od początku gry, po kolei; lista tylko rośnie */
   dead?: { id: string; name: string; cause: string; tick: number }[];
+  /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
+  napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -402,4 +404,6 @@ export interface GovState {
   mode?: GameMode;
   /** ile zgonów z GovInput.dead zarząd już opłakał */
   deadN?: number;
+  /** ile napaści z GovInput.napady osiedle już policzyło (pole od pierwszej napaści) */
+  napadN?: number;
 }
