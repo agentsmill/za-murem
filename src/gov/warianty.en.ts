@@ -15,6 +15,7 @@
 
 import { zawodEn } from '../content/data.en.ts';
 import type { Cost } from '../content/data.ts';
+import { nazwaBudynkuEn } from '../world/classify.en.ts';
 import type { GovHost } from './tresc.ts';
 import { bookEn, costEn, costPlEn, dziedzinaEn, fromEn, TOWER_EN } from './warianty-dane.en.ts';
 
@@ -63,7 +64,8 @@ function zawod(prof: string): string {
 function budynek(b: string): string {
   if (b === 'siedziby') return 'the board’s block';
   if (b === 'z sąsiedztwa') return 'a block nearby';
-  return b;
+  // nazwa z mapy bez ulicy („Blok nr 12”) po angielsku, adres z ulicą zostaje
+  return nazwaBudynkuEn(b);
 }
 
 /** ognisko na podwórku, a bez niego koza */

@@ -23,12 +23,6 @@ export interface DemoInfo {
   label: string;
 }
 
-/** komunikat postępu z mvt.ts po angielsku (mvt.ts mówi po polsku): „Pobieram 4 kafelki mapy…” */
-function kafelkiEn(m: string): string {
-  const n = /^Pobieram (\d+) kafel/.exec(m)?.[1];
-  return n ? `Downloading ${n} ${n === '1' ? 'map tile' : 'map tiles'}…` : m;
-}
-
 export async function loadDemo(key: string): Promise<Loaded> {
   const r = await fetch(`demo/${encodeURIComponent(key)}.json`);
   if (!r.ok) throw new Error(L(`Nie ma takiego przykładu: ${key}`, `No such example: ${key}.`));
@@ -49,9 +43,7 @@ export async function loadAddress(q: string, status: (s: string) => void): Promi
   let geo: Geo;
   let src: Loaded['src'] = 'mvt';
   try {
-    geo = await loadTiles(g.lat, g.lon, LOAD_RADIUS, (m) =>
-      status(L(`Jest: ${where}. ${m}`, `Found: ${where}. ${kafelkiEn(m)}`)),
-    );
+    geo = await loadTiles(g.lat, g.lon, LOAD_RADIUS, (m) => status(L(`Jest: ${where}. ${m}`, `Found: ${where}. ${m}`)));
   } catch (e) {
     console.warn('kafelki', e);
     status(

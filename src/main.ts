@@ -10,7 +10,7 @@ import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
 import type { Person } from './content/people.ts';
-import { jezyk, L, poZmianieJezyka, tr, txOf } from './core/jezyk.ts';
+import { jezyk, L, poZmianieJezyka, type Tx, tr } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
@@ -34,7 +34,7 @@ import { gameLights, strangerVisibility } from './render/game.ts';
 import { type Light, lightAt } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
-import { WEAPONS, type WeaponId } from './sim/bron.ts';
+import { WEAPONS, WEAPONS_EN, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
@@ -57,7 +57,7 @@ import {
   podpowiedz,
   poprawneImie,
   wczytajZmiany,
-  wyprowadzka,
+  wyprowadzkaTx,
   type ZmianaImienia,
   zapiszZmiane,
   zastosujZmiany,
@@ -1266,7 +1266,7 @@ $('card').addEventListener('click', (e) => {
     sim.push({ t: 'arm', ids: [p.id], weapon: next });
     say(
       next
-        ? L(`Bierze ${WEAPONS[next].acc}.`, `Takes the ${WEAPONS[next].name.toLowerCase()}.`)
+        ? L(`Bierze ${WEAPONS[next].acc}.`, `Takes ${WEAPONS_EN[next].the}.`)
         : L('Odkłada broń do magazynu.', 'Puts the weapon back in the store.'),
       2500,
     );
@@ -1318,12 +1318,11 @@ function odmianaEdytora(): Promise<Odmiana | null> {
   return odmianaPlikow;
 }
 
-/** wpis do kroniki zarządu z godziną gry i podpowiedź na ekranie */
-function doKroniki(teksty: readonly string[]) {
+/** wpis do kroniki zarządu z godziną gry (w obu językach) i podpowiedź na ekranie */
+function doKroniki(teksty: readonly Tx[]) {
   if (!sim || !gov || !teksty.length) return;
-  for (const t of teksty)
-    gov.log.push({ day: dayOf(sim.st.tick), clock: clockOf(sim.st.tick), txt: txOf(t), big: false });
-  say(teksty.join(' '), 7000);
+  for (const txt of teksty) gov.log.push({ day: dayOf(sim.st.tick), clock: clockOf(sim.st.tick), txt, big: false });
+  say(teksty.map((t) => tr(t)).join(' '), 7000);
 }
 
 /** Zmiany imion (z pamięci przeglądarki albo podane) na stanie gry. Wpisy bez osoby po aktualizacji tabel: po jednym
@@ -1342,7 +1341,7 @@ function zastosujImiona(zmiany?: Record<string, ZmianaImienia>): void {
       else if (!Object.hasOwn(z, p.ref)) Object.assign(p, gen);
     }
   const { sieroty } = zastosujZmiany(sim.st, mieszkancy?.l ?? null, mieszkancy?.dane ?? null, z);
-  doKroniki(sieroty.map((ref) => wyprowadzka(z[ref])));
+  doKroniki(sieroty.map((ref) => wyprowadzkaTx(z[ref])));
   for (const ref of sieroty) zapiszZmiane(adres, ref, null);
 }
 
