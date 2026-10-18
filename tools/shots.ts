@@ -8012,10 +8012,19 @@ function miastoShots(): Shot[] {
   const doPlanu = async (
     page: Page,
     base: string,
-    o: { dotyk?: boolean; zaznacz?: number; godzina?: string; speed?: number; od?: number; doM?: number } = {},
+    o: {
+      dotyk?: boolean;
+      zaznacz?: number;
+      godzina?: string;
+      speed?: number;
+      od?: number;
+      doM?: number;
+      /** dopisek do adresu, np. `&tryb=zombie` */
+      q?: string;
+    } = {},
   ) => {
     await kafelkiMapy(page);
-    await page.goto(`${base}?demo=przymorze&speed=${o.speed ?? 0}&godzina=${o.godzina ?? '8'}&cam=hq,1.6`);
+    await page.goto(`${base}?demo=przymorze&speed=${o.speed ?? 0}&godzina=${o.godzina ?? '8'}&cam=hq,1.6${o.q ?? ''}`);
     await waitIdle(page);
     if (o.zaznacz) await zaznacz(page, o.zaznacz);
     await otworzMape(page, o.dotyk);
@@ -8765,6 +8774,149 @@ function miastoShots(): Shot[] {
           throw new Error('przycisk „Mapa” nie otworzył okna mapy miasta');
         await page.tap('#sheet [data-act="miasto-zamknij"]');
         await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+      },
+    },
+    {
+      // telefon po angielsku: okno mapy i karta miejsca bez polskich słów (poza nazwą miejsca), karta na ekranie;
+      // kafelki poza tests/fixtures zerwane i bez tabel mieszkańców, jak w miasto-mapa-telefon
+      name: 'en-miasto-mapa-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      allow: /ERR_INTERNET_DISCONNECTED|Failed to load resource|status of 404/,
+      allowUrl: /tiles\.openfreemap\.org|\/data\/mieszkancy\//,
+      run: async (page, base) => {
+        await kafelkiMapy(page, true);
+        await bezTabel(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        if ((await page.getAttribute('#btnMiasto', 'aria-label')) !== 'City map')
+          throw new Error('przycisk mapy po angielsku');
+        await otworzMape(page, true);
+        const m = await miejsceMapy(page, 230, 520);
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.touchscreen.tap(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        const o = await okno(page);
+        console.log(`  telefon po angielsku, karta: ${o.karta?.tekst}`);
+        if (o.stan.wybrane !== m.klucz) throw new Error('stuknięcie w znak nie wybrało miejsca');
+        if (!o.stan.napis.includes('The rest of the city didn’t load'))
+          throw new Error(`napis o reszcie miasta: ${o.stan.napis}`);
+        if (o.karta?.wyslij !== 'Send a supply run') throw new Error(`przycisk wysyłki: ${o.karta?.wyslij}`);
+        const pl = polskieLitery(o.tekst, [m.nazwa]);
+        if (pl.length) throw new Error(`polskie słowa w oknie po angielsku: ${pl.join(' ')}`);
+        const [l, t, r, b] = o.karta!.prostokat;
+        if (l < 0 || t < 0 || r > o.ekran[0] || b > o.ekran[1]) throw new Error('karta miejsca wychodzi za ekran');
+        zasady(o, ATRYBUCJA_EN);
+      },
+    },
+    {
+      // minimapa po angielsku (komputer): przycisk, dymek i atrybucja bez polskich słów; klik otwiera okno mapy
+      name: 'en-miasto-minimapa',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&godzina=8&cam=hq,1.3`);
+        await waitIdle(page);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().rysunki >= 1, null, { timeout: 5000 });
+        const o = await minimapa(page);
+        console.log(`  stan: ${JSON.stringify(o.stan)}, etykieta „${o.aria}”, podpis „${o.podpis}”`);
+        if (!o.stan.wlaczona || !o.stan.widoczna) throw new Error(`minimapa nie stoi: ${JSON.stringify(o.stan)}`);
+        if (o.aria !== 'Minimap: open the city map') throw new Error(`etykieta przycisku: ${o.aria}`);
+        const tytul = await page.getAttribute('#minimapaBtn', 'title');
+        if (tytul !== 'Minimap: open the city map (M)') throw new Error(`dymek przycisku: ${tytul}`);
+        for (const z of ['OpenStreetMap contributors', 'OpenFreeMap', 'OpenMapTiles'])
+          if (!o.podpis.includes(z)) throw new Error(`atrybucja minimapy bez „${z}”: ${o.podpis}`);
+        const pl = polskieLitery(`${o.aria} ${tytul} ${o.tekst}`, []);
+        if (pl.length) throw new Error(`polskie słowa przy minimapie po angielsku: ${pl.join(' ')}`);
+        if (o.podpisPoza || !o.wEkranie) throw new Error('minimapa albo jej podpis poza ekranem');
+        if (o.nakladki.length) throw new Error(`minimapa nachodzi na: ${o.nakladki.join(', ')}`);
+        await page.click('#minimapaBtn');
+        await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+        await czekajNaMape(page);
+        const k = await okno(page);
+        if (!/City map/.test(k.tekst)) throw new Error('klik w minimapę nie otworzył okna mapy po angielsku');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // tryb zombie (komputer): mapa miasta, karta miejsca, plan i wysłanie wyprawy jak w zwykłym trybie; wyprawa
+      // jest w stanie zarządu i na minimapie. Zrzuty: plan wyprawy (miasto-zombie-plan) i minimapa z wyprawą w drodze
+      name: 'miasto-zombie',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 1, q: '&tryb=zombie' });
+        const tryb = await page.evaluate(() => window.zm!.sim!.st.mode);
+        if (tryb !== 'zombie') throw new Error(`tryb gry: ${tryb}`);
+        const p = await plan(page);
+        console.log(
+          `  zombie, miejsce ${JSON.stringify(m)}, plan: ${p.tytul}, podsumowanie ${JSON.stringify(p.podsumowanie)}`,
+        );
+        if (p.osoby.filter((x) => x.wybrana).length !== 2) throw new Error('zaznaczeni nie są wybrani');
+        if (!p.wyslij || p.wyslij.wyszarzony || p.wyslij.tekst !== 'Wyślij wyprawę')
+          throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        if (p.podsumowanie.length < 5) throw new Error(`podsumowanie: ${JSON.stringify(p.podsumowanie)}`);
+        await page.screenshot({ path: path.join(OUT, 'miasto-zombie-plan.png') });
+        await page.click('#sheet [data-act="wyslij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const w = await page.evaluate(() => JSON.parse(JSON.stringify(window.zm!.gov!.wyprawy ?? [])));
+        if (w.length !== 1 || w[0].cel.klucz !== m.klucz) throw new Error(`wyprawa w stanie: ${JSON.stringify(w)}`);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 1, null, { timeout: 3000 });
+        const o = await minimapa(page);
+        console.log(`  minimapa w trybie zombie: ${JSON.stringify(o.stan)}`);
+        if (!o.stan.widoczna || o.nakladki.length) throw new Error(`minimapa: ${JSON.stringify([o.stan, o.nakladki])}`);
+        // wyprawa wraca także w trybie zombie: kłopoty to szwendacze, nie szabrownicy
+        for (let n = 0; n < 40; n++) {
+          if (!(await page.evaluate(() => window.zm!.gov!.wyprawy?.length ?? 0))) break;
+          const okno = await page.evaluate(() => window.zm!.ff(30));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+        }
+        const log = await page.evaluate(() => window.zm!.gov!.log.slice(-4).map((l) => (l.txt as { pl: string }).pl));
+        console.log(`  po powrocie: ${log.join(' | ')}`);
+        if (await page.evaluate(() => window.zm!.gov!.wyprawy?.length)) throw new Error('wyprawa dalej w drodze');
+        if (log.some((t) => /szabrown/.test(t))) throw new Error(`szabrownicy w trybie zombie: ${log.join(' | ')}`);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 0, null, { timeout: 3000 });
+      },
+    },
+    {
+      // tryb zombie na telefonie po angielsku: plan wyprawy bez przewijania w bok i bez polskich słów, stopka na ekranie
+      name: 'en-miasto-zombie-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { dotyk: true, q: '&tryb=zombie' });
+        const tryb = await page.evaluate(() => window.zm!.sim!.st.mode);
+        if (tryb !== 'zombie') throw new Error(`tryb gry: ${tryb}`);
+        const p = await plan(page);
+        console.log(`  zombie po angielsku, plan: ${p.tytul}, osoby ${p.osoby.length}, ekran ${p.ekran}`);
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}, stopka ${p.stopka}`);
+        const imiona = await page.evaluate(() => window.zm!.sim!.st.people.flatMap((q) => [q.name, q.first]));
+        const pl = polskieLitery(p.tekst, [m.nazwa, ...imiona]);
+        if (pl.length) throw new Error(`polskie słowa w oknie planu po angielsku: ${pl.join(' ')}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok na telefonie');
+        const [l, t, r, b] = p.stopka!;
+        if (l < 0 || t < 0 || r > p.ekran[0] || b > p.ekran[1]) throw new Error('stopka planu wychodzi za ekran');
+        if (p.wyslij?.tekst !== 'Send the supply run') throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.wroc !== 'Back to the map') throw new Error(`przycisk powrotu: ${p.wroc}`);
+        // wybór osoby dotykiem, jak w zwykłym trybie
+        const kto = p.osoby.find((x) => !x.wyszarzona)!;
+        await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+        await dwieKlatki(page);
+        const po = (await plan(page)).osoby.find((x) => x.id === kto.id)!;
+        if (po.wybrana === kto.wybrana) throw new Error('stuknięcie osoby nie zmieniło wyboru');
+        if (!po.wybrana) {
+          await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+          await dwieKlatki(page);
+        }
       },
     },
     {
