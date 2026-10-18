@@ -258,6 +258,24 @@ describe('LICENCJE.md', () => {
     }
   });
 
+  it('PESEL: zbiory, z których naprawdę bierzemy imiona i nazwiska, z migawką 2019 (zasoby 18607 i 18609)', () => {
+    const wiersz = tekst.split('\n').find((l) => l.startsWith('| Rejestr PESEL'));
+    expect(wiersz).toBeDefined();
+    for (const zbior of ['219', '1667', '1501', '1681', '18607', '18609']) {
+      expect(wiersz, zbior).toMatch(new RegExp(`\\b${zbior}\\b`));
+    }
+    expect(wiersz).toContain('datasets/1501');
+    expect(wiersz).toContain('datasets/1681');
+    expect(wiersz).toContain('datasets/219');
+  });
+
+  it('GUS „Warunki mieszkaniowe” (stałe krajowe epok i metrażu w budynki.ts) i odmiana-koncowki.json przy SGJP', () => {
+    expect(tekst).toContain('Warunki mieszkaniowe w Polsce w świetle wyników NSP 2021');
+    const sgjp = tekst.split('\n').find((l) => l.startsWith('| SGJP'));
+    expect(sgjp).toContain('odmiana.json');
+    expect(sgjp).toContain('odmiana-koncowki.json');
+  });
+
   it('ma pełną notę SGJP: autorów, warunki ponownego użycia i wyłączenie gwarancji', () => {
     expect(tekst).toContain('Marcin Woliński');
     expect(tekst).toContain('Redistributions of source code must retain the above copyright notice');
