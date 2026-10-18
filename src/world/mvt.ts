@@ -3,6 +3,7 @@
    Przeniesione z js/mvt.js (0.3); promień obszaru jest teraz parametrem. */
 
 import { type Geo, type GeoBuilding, type Pt, pip, polyArea } from './geo.ts';
+import { KAFEL_PX, tagiKlucza } from './klucze.ts';
 import { poiCat } from './osm.ts';
 
 export const Z = 14;
@@ -457,6 +458,10 @@ interface BTmp {
   k: number;
   /** identyfikator OSM obiektu, gdy to jeden budynek */
   id?: string;
+  /** obrys w globalnych pikselach kafelków (dokładny, przed zaokrągleniem do metrów), do klucza budynku */
+  g: Pt[];
+  /** to samo dla sklejonych części */
+  gg: Pt[][];
 }
 type SpanRec = [string, number, number, number, BTmp, DecodedTile];
 
@@ -551,12 +556,15 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
           if ((t.render_min_height as number) > 0) continue;
           const h = +(t.render_height as number) || 0;
           const id = osmIdOf(F.id);
+          // globalne piksele: KAFEL_PX na kafelek niezależnie od extent (przy 4096 to po prostu liczby całkowite)
+          const gs = KAFEL_PX / E;
+          const G = ([px, py]: Pt): Pt => [T.x * KAFEL_PX + px * gs, T.y * KAFEL_PX + py * gs];
           for (const rg0 of rings) {
             const rg = clipRing(rg0, E);
             if (!rg) continue;
             const pts = rg.map(P);
             if (!near(pts) || polyArea(pts) < 4) continue;
-            const b: BTmp = { p: pts, pp: [], h, k: tmpB.length, id };
+            const b: BTmp = { p: pts, pp: [], h, k: tmpB.length, id, g: rg.map(G), gg: [] };
             if (tiles.length > 1) for (const s of borderSpans(rg, E, T.x, T.y)) spans.push([s[0], s[1], s[2], h, b, T]);
             tmpB.push(b);
           }
@@ -603,6 +611,7 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
     g.sort((p, q) => polyArea(q.p) - polyArea(p.p));
     const m = g[0];
     m.pp = g.slice(1).map((x) => x.p);
+    m.gg = g.slice(1).map((x) => x.g);
     // kawałki z różnych obiektów (albo bez numeru) to nie jeden budynek OSM
     if (g.some((x) => x.id !== m.id)) m.id = undefined;
     return m;
@@ -628,6 +637,9 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
       if (holders.get(only) === 1) id = only;
     }
     if (id) tags.id = id;
+    // klucz budynku i oś klatek z dokładnego obrysu w pikselach kafelków (src/world/klucze.ts)
+    const kl = tagiKlucza([b.g, ...b.gg]);
+    if (kl) Object.assign(tags, kl);
     const o: GeoBuilding = { p: b.p, t: tags };
     if (b.pp.length) o.pp = b.pp;
     out.push(o);
