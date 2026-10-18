@@ -57,10 +57,11 @@ import {
   DISMANTLE,
   damageFrom,
   dismantleTicks,
-  lootOf,
   MATS,
   REPAIR,
   RUBBISH,
+  searchable,
+  searchLoot,
   searchTicks,
   yieldOf,
 } from './mieszkania.ts';
@@ -3987,21 +3988,23 @@ export class Sim {
     return this.nearest(p, cand.length ? cand : this.roomTiles[room].filter((i) => this.reg[i] === region));
   }
 
-  /** przeszukać pomieszczenie pustego mieszkania (raz; nie gdy ktoś już je przeszukuje) */
+  /** przeszukać pomieszczenie pustego mieszkania albo, w domu jednorodzinnym, domu komitetu (raz; nie gdy ktoś już
+      je przeszukuje) */
   private startSearch(p: Pawn, room: number): void {
     const g = this.aptOfRoom(room);
-    if (g?.state !== 'puste' || g.searched.includes(room)) return;
+    if (!g || !searchable(this.w, g) || g.searched.includes(room)) return;
     if (this.st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room)) return;
     const spot = this.roomSpot(p, room);
     if (spot < 0 || !this.go(p, spot)) return;
     this.setJob(p, this.newJob('search', room, spot, true), false);
   }
 
-  /** łup z przeszukania: z tabeli według powodu opuszczenia, deterministycznie z ziarna gry i pomieszczenia */
+  /** łup z przeszukania: z tabeli według powodu opuszczenia (w domu komitetu z dokładką), deterministycznie z ziarna
+      gry i pomieszczenia */
   private searchDone(room: number, g: AptGame, at: number): void {
     const h = this.house!;
     const rnd = mulberry((Math.imul(this.st.seed | 0, 9973) ^ Math.imul(room + 1, 7919) ^ 0x51ab) >>> 0);
-    const loot = lootOf(g.why ?? 'wyjazd', h.rooms[room].kind, this.roomTiles[room].length, rnd);
+    const loot = searchLoot(g, h.rooms[room].kind, this.roomTiles[room].length, rnd);
     for (const [m, n] of Object.entries(loot) as [Mat, number][]) if (n > 0) this.dropMat(at, m, n, room);
     g.searched.push(room);
     g.searched.sort((a, b) => a - b);

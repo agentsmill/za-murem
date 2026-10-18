@@ -24,6 +24,7 @@ Kontrakt świata (`src/world`):
 Prace (`src/sim`):
 
 - Przeszukać pomieszczenie: czas zależny od wielkości, łup z tabeli według `why` (deski, złom, części, czasem leki albo jedzenie), deterministycznie, raz na pomieszczenie.
+- Dom jednorodzinny (decyzje Mateusza 18.10.2026): siedziba ma jedno mieszkanie, komitetu, więc przeszukuje się pomieszczenia samego domu, każde raz, z łupem jak po wyjeździe i dokładką jednej deski i jednego złomu z pomieszczenia (strych, piwnica, garaż; `HOUSE_EXTRA` w `src/sim/mieszkania.ts`). Cel dnia 2 w domu: „Przeszukajcie dom”. Słowa dla domu i bloku są w słowniku miejsca (`lokal` i `szukanie` w `src/gov/miejsce.ts`).
 - Rozebrać mebel albo śmieci: materiały (stół 2 deski, meblościanka 4 deski, kuchenka 2 złom, lodówka 3 złom i 1 część, śmieci według `n`). W pustym mieszkaniu meble da się rozebrać dopiero po przeszukaniu pomieszczenia, inaczej przeszukiwanie nie miałoby sensu.
 - Naprawić uszkodzenie: koszt i czas (okno 2 deski, drzwi 3 deski, rura 1 złom i 1 część, podłoga 2 deski, piec 2 złom i 1 część).
 - Zająć mieszkanie: mieszkanie staje się nasze. Po naprawie wszystkich uszkodzeń daje miejsca dla nowych mieszkańców (`cap` rośnie o liczbę łóżek).

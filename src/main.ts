@@ -1476,10 +1476,10 @@ function orderAt(sx: number, sy: number, menu: boolean) {
     .filter((p) => selected.has(p.id) && p.kind === 'core')
     .map((p) => sim!.st.people[p.person]?.first ?? '');
   const head = who.length > 2 ? `${words.Zarzad} (${who.length})` : who.join(' i ') || 'Klatka';
-  // w mieszkaniu siedziby nagłówek mówi, które to mieszkanie i w jakim stanie
+  // w mieszkaniu siedziby nagłówek mówi, które to mieszkanie i w jakim stanie (w domu sam stan: dom komitetu)
   const apt = aptAt(sim.w, tile);
   const v = apt >= 0 ? aptView(sim.st, sim.w, apt, snap.apts) : null;
-  const where = v ? ` · mieszkanie ${apt + 1}, ${aptState(v, words).toLowerCase()}` : '';
+  const where = v ? ` · ${words.lokal.menu(apt + 1, aptState(v, words).toLowerCase())}` : '';
   ctx.show(items, sx, sy, `${head}${where}`, (x) => (x.confirm ? askConfirm(x) : run(x)));
 }
 
