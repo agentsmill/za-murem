@@ -1,5 +1,6 @@
 /* Zrzuty ekranu w prawdziwym Chromium: mapy testowe, kamera i pora dnia ustawiane w adresie.
-   Uruchomienie: npm run shots [-- filtr] [--dist]   (filtr: fragment nazwy; --dist: zbudowana wersja)
+   Uruchomienie: npm run shots [-- filtr] [--dist] [--kod]   (filtr: fragment nazwy; --dist: zbudowana wersja;
+   --kod: ten sam scenariusz z ?grafika=kod, czyli bez grafiki z PixelLab, wynik w shots/kod/, do porównań)
    Wynik: shots/<nazwa>.png. Każdy zrzut obejrzyj, zanim zgłosisz zmianę.
    Język: pole `lang` scenariusza (przez pamięć przeglądarki, jak wybór gracza). Bez pola polski, bo starsze
    scenariusze sprawdzają polskie napisy; angielskie i polskie wersje tych samych ekranów to scenariusze en-* i pl-*. */
@@ -20,7 +21,8 @@ import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
 
-const OUT = path.resolve(import.meta.dirname, '../shots');
+const KOD = process.argv.includes('--kod');
+const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
 fs.mkdirSync(OUT, { recursive: true });
 
 interface Shot {
@@ -5912,6 +5914,19 @@ try {
         // strona bez pamięci: gra wybierze język domyślny
       }
     }, shot.lang ?? 'pl');
+    // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
+    if (KOD)
+      await page.addInitScript(() => {
+        try {
+          const u = new URL(location.href);
+          if (!u.searchParams.has('grafika')) {
+            u.searchParams.set('grafika', 'kod');
+            history.replaceState(null, '', u);
+          }
+        } catch {
+          // strona bez adresu (about:blank, setContent): nic do zmiany
+        }
+      });
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => {
