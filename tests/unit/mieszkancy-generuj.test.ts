@@ -17,6 +17,7 @@ import {
   POL_KWADRATU,
 } from '../../src/mieszkancy/generuj.ts';
 import { bezPuliLokalnej, nazwiskaDlaGminy } from '../../src/mieszkancy/imiona.ts';
+import { losDla, wazony } from '../../src/mieszkancy/los.ts';
 import { type OdmianaPlik, rozpakujOdmiane, type TabelaKoncowek } from '../../src/mieszkancy/odmiana.ts';
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
 import { obsadzBudynek } from '../../src/mieszkancy/spis.ts';
@@ -204,6 +205,36 @@ describe('pełny generator na demach: rodzina', () => {
       }
       expect(zle, nazwa).toEqual([]);
     }
+  });
+});
+
+// ---------------------------------------------------------------- złote skróty
+
+describe('złote skróty: wynik generatora przypięty do bajtu', () => {
+  // Zmiana tylko z podbiciem WERSJA_GENERATORA. Skrót sha256 z JSON.stringify(generujObszar(…)) z pełnym zestawem
+  // (imiona, nazwiska gminy, odmiana, kronika obszaru) dla każdego dema i pierwsze liczby ziarna. Inny skrót znaczy,
+  // że te same dane i adres dają innych mieszkańców niż wcześniej: jeśli to zamierzone, podbij WERSJA_GENERATORA
+  // i wpisz nowe skróty (test przy różnicy pokazuje otrzymany). Zapisane 18.10.2026 po fali poprawek z przeglądu
+  // (R51, R52).
+  const SKROTY: Record<string, string> = {
+    przymorze: '6b2cc447ed97193a3b26303b68b71cd08bfc48f08584f7f2d24a828e26f80fde',
+    lanciego: '6bf2c07f69f0c61c30bcf7a849a7049f3911452f1f292c5915c490ba4542acf9',
+    zielonki: '74956defb9ba59547d46b7d4200a5667f68dd1421c1d16615195d1eea0cb144e',
+  };
+
+  it('wersja generatora 1', () => {
+    expect(WERSJA_GENERATORA).toBe(1);
+  });
+
+  it('skrót sha256 każdego dema z pełnym zestawem tabel', () => {
+    for (const [nazwa, o] of PELNE()) expect(skrot(o), nazwa).toBe(SKROTY[nazwa]);
+  });
+
+  it('pierwsze liczby losDla("a", 1) i losowanie ważone', () => {
+    const r = losDla('a', 1);
+    expect([r(), r(), r()]).toEqual([0.9250533184967935, 0.6815912965685129, 0.02749735489487648]);
+    expect(wazony(losDla('a', 1), [1, 2, 3, 4])).toBe(3);
+    expect(wazony(losDla('wazony', 7), [5, 0, 3, 2])).toBe(3);
   });
 });
 
