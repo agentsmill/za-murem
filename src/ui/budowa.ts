@@ -1,13 +1,18 @@
 /* Budowa w interfejsie (docs/M2-fala-1.md): menu budowy z BUILDS (koszt, czas pracy, działanie, miejsce),
    dozwolone miejsca w trybie stawiania z canPlace symulacji i polecenia przy planach i gotowych budowlach
-   w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM. */
+   w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM. Napisy w bieżącym języku: polskie tablice
+   zostają tutaj, angielskie leżą obok (budowa.en.ts, src/sim/budowle.en.ts, src/sim/mieszkania.en.ts). */
 
+import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS, type BuildKind, type BuildPlace, canPlace, footprint, type Mat } from '../sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
+import { MAT_EN } from '../sim/mieszkania.en.ts';
 import type { MenuItem } from '../sim/orders.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimStock } from '../sim/snapshot.ts';
 import type { World } from '../world/world.ts';
+import { PLACE_EN } from './budowa.en.ts';
 import type { Sheet } from './okna.ts';
 import { esc } from './tekst.ts';
 
@@ -42,6 +47,10 @@ export const PLACE_TEXT: Record<BuildPlace, string> = {
   podworko: 'na podwórku za siatką',
   obwod: 'w miejscu odcinka siatki',
 };
+const placeText = (p: BuildPlace): string => L(PLACE_TEXT[p], PLACE_EN[p]);
+
+/** nazwa budowli w bieżącym języku (menu, pasek trybu stawiania, duch planu) */
+export const buildName = (kind: BuildKind): string => L(BUILDS[kind].name, BUILDS_EN[kind].name);
 
 /** kafelki, na których budowla może stanąć: suma podstaw z dozwolonych zakotwiczeń (dla view.setPlacement) */
 export function okTilesOf(anchors: readonly number[], kind: BuildKind, rot: Rot, size: number): number[] {
@@ -107,10 +116,14 @@ export function buildItems(st: SimState, w: World, ids: readonly number[], tile:
     if (enough && (plan.by < 0 || core.includes(plan.by)))
       out.push({
         cmd: { t: 'build', ids: core, kind: plan.kind, x: plan.x, y: plan.y, rot: plan.rot },
-        label: `Budować ${BUILD_ACC[plan.kind]}`,
+        label: L(`Budować ${BUILD_ACC[plan.kind]}`, `Build ${BUILDS_EN[plan.kind].the}`),
         quick: true,
       });
-    out.push({ cmd: { t: 'unbuild', ids: core, id: plan.id }, label: 'Odwołać plan', quick: false });
+    out.push({
+      cmd: { t: 'unbuild', ids: core, id: plan.id },
+      label: L('Odwołać plan', 'Cancel the plan'),
+      quick: false,
+    });
     return out;
   }
   const done = st.things.find((t) => t.kind in BUILDS && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
@@ -118,7 +131,7 @@ export function buildItems(st: SimState, w: World, ids: readonly number[], tile:
     return [
       {
         cmd: { t: 'unbuild', ids: core, id: done.id },
-        label: `Rozebrać ${BUILD_ACC[done.kind as BuildKind]}`,
+        label: L(`Rozebrać ${BUILD_ACC[done.kind as BuildKind]}`, `Tear down ${BUILDS_EN[done.kind as BuildKind].the}`),
         quick: false,
         confirm: true,
       },
@@ -137,6 +150,8 @@ export const MAT_NAME: Record<Mat, string> = {
   jedzenie: 'jedzenie',
   leki: 'leki',
 };
+/** materiał w bieżącym języku */
+const matName = (m: Mat): string => L(MAT_NAME[m], MAT_EN[m]);
 
 /** materiały w zapasie z odczytu symulacji (drewno bez tego, co już się pali) */
 export function matsOf(s: SimStock): Record<Mat, number> {
@@ -153,17 +168,19 @@ export function matsOf(s: SimStock): Record<Mat, number> {
 export const costText = (cost: Partial<Record<Mat, number>>): string =>
   (Object.entries(cost) as [Mat, number][])
     .filter(([, n]) => n > 0)
-    .map(([m, n]) => `${MAT_NAME[m]} ${n}`)
+    .map(([m, n]) => `${matName(m)} ${n}`)
     .join(', ');
 
-/** czas pracy jednej osoby w godzinach gry („1 h pracy”, „1,5 h pracy”, „45 min pracy”) */
+/** czas pracy jednej osoby w godzinach gry („1 h pracy”, „1,5 h pracy”, „45 min pracy”; po angielsku „1.5 h of
+    work”) */
 export function workText(ticks: number): string {
   const min = Math.round((ticks / TICKS_PER_HOUR) * 60);
-  if (min < 60) return `${min} min pracy`;
+  const of = L('pracy', 'of work');
+  if (min < 60) return `${min} min ${of}`;
   const h = Math.floor(min / 60);
   const m = min % 60;
-  if (!m) return `${h} h pracy`;
-  return m === 30 ? `${h},5 h pracy` : `${h} h ${m} min pracy`;
+  if (!m) return `${h} h ${of}`;
+  return m === 30 ? `${h}${L(',5', '.5')} h ${of}` : `${h} h ${m} min ${of}`;
 }
 
 export interface BuildItem {
@@ -185,18 +202,27 @@ export interface BuildCategory {
   items: BuildItem[];
 }
 
-const CATEGORIES: { key: BuildCategory['key']; title: string; places: BuildPlace[] }[] = [
-  { key: 'pomieszczenie', title: 'Pomieszczenie', places: ['pokoj', 'kuchnia'] },
-  { key: 'podworko', title: 'Podwórko', places: ['podworko'] },
-  { key: 'obwod', title: 'Obwód', places: ['obwod'] },
+const CATEGORIES: { key: BuildCategory['key']; title: Tx; places: BuildPlace[] }[] = [
+  { key: 'pomieszczenie', title: tx('Pomieszczenie', 'Indoors'), places: ['pokoj', 'kuchnia'] },
+  { key: 'podworko', title: tx('Podwórko', 'Yard'), places: ['podworko'] },
+  { key: 'obwod', title: tx('Obwód', 'Perimeter'), places: ['obwod'] },
 ];
 
 /** skąd brać materiał, do powodu „brakuje” */
-const SOURCE: Partial<Record<Mat, string>> = {
-  deski: 'Deski daje przeszukiwanie pustych mieszkań i rozbiórka mebli.',
-  zlom: 'Złom daje przeszukiwanie i rozbiórka śmieci i sprzętów.',
-  czesci: 'Części daje przeszukiwanie i rozbiórka sprzętów.',
-  drewno: 'Drewno daje ścinanie drzew.',
+const SOURCE: Partial<Record<Mat, Tx>> = {
+  deski: tx(
+    'Deski daje przeszukiwanie pustych mieszkań i rozbiórka mebli.',
+    'Planks come from searching empty flats and tearing down furniture.',
+  ),
+  zlom: tx(
+    'Złom daje przeszukiwanie i rozbiórka śmieci i sprzętów.',
+    'Scrap comes from searching and from tearing down rubbish and appliances.',
+  ),
+  czesci: tx(
+    'Części daje przeszukiwanie i rozbiórka sprzętów.',
+    'Parts come from searching and from tearing down appliances.',
+  ),
+  drewno: tx('Drewno daje ścinanie drzew.', 'Wood comes from chopping down trees.'),
 };
 
 /** Menu budowy: kategorie z budowlami; niedostępne z powodem (nie ma gdzie postawić albo brakuje
@@ -204,7 +230,7 @@ const SOURCE: Partial<Record<Mat, string>> = {
 export function buildMenu(have: Partial<Record<Mat, number>>, room: (kind: BuildKind) => boolean): BuildCategory[] {
   return CATEGORIES.map((c) => ({
     key: c.key,
-    title: c.title,
+    title: tr(c.title),
     items: (Object.keys(BUILDS) as BuildKind[])
       .filter((k) => c.places.includes(BUILDS[k].place))
       .map((kind) => {
@@ -213,18 +239,24 @@ export function buildMenu(have: Partial<Record<Mat, number>>, room: (kind: Build
           .map(([m, n]): [Mat, number] => [m, n - (have[m] ?? 0)])
           .filter(([, n]) => n > 0);
         let why: string | undefined;
-        if (!room(kind)) why = `Nie ma gdzie postawić: brak wolnego miejsca ${PLACE_TEXT[d.place]}.`;
-        else if (short.length)
-          why =
-            `Brakuje: ${short.map(([m, n]) => `${MAT_NAME[m]} ${n}`).join(', ')}. ${SOURCE[short[0][0]] ?? ''}`.trim();
+        if (!room(kind))
+          why = L(
+            `Nie ma gdzie postawić: brak wolnego miejsca ${PLACE_TEXT[d.place]}.`,
+            `Nowhere to put it: no free space ${PLACE_EN[d.place]}.`,
+          );
+        else if (short.length) {
+          const list = short.map(([m, n]) => `${matName(m)} ${n}`).join(', ');
+          const src = tr(SOURCE[short[0][0]]);
+          why = L(`Brakuje: ${list}. ${src}`, `Still needed: ${list}. ${src}`).trim();
+        }
         return {
           kind,
-          name: d.name,
+          name: buildName(kind),
           size: `${d.w}×${d.h}`,
           cost: costText(d.cost),
           time: workText(d.work),
-          effect: d.effect,
-          place: PLACE_TEXT[d.place],
+          effect: L(d.effect, BUILDS_EN[kind].effect),
+          place: placeText(d.place),
           ok: !why,
           why,
         };
@@ -241,17 +273,26 @@ export function buildSheet(menu: BuildCategory[], touch: boolean): Sheet {
       b.cost,
     )}</span> · <span>${esc(b.time)}</span> · <span>${esc(b.place)}</span></p>${
       b.ok
-        ? `<button type="button" class="btn go" data-act="build" data-arg="${b.kind}">Postaw</button>`
+        ? `<button type="button" class="btn go" data-act="build" data-arg="${b.kind}">${L('Postaw', 'Build')}</button>`
         : `<p class="build-why">${esc(b.why ?? '')}</p>`
     }</li>`;
   return {
     tone: 'menu',
-    kicker: touch ? 'Budowa' : 'Budowa (B)',
-    title: 'Co budujemy?',
-    body: `<p class="lead">Plan stawia się na mapie, a zarząd sam przynosi materiały i buduje.${
+    kicker: touch ? L('Budowa', 'Build') : L('Budowa (B)', 'Build (B)'),
+    title: L('Co budujemy?', 'What are we building?'),
+    body: `<p class="lead">${L(
+      'Plan stawia się na mapie, a zarząd sam przynosi materiały i buduje.',
+      'You place the plan on the map, and the board fetches the materials and builds it.',
+    )}${
       touch
-        ? ' Stuknięcie stawia plan, przyciski na dole obracają i anulują.'
-        : ' Lewy klik stawia plan, R obraca, prawy klik albo Esc anuluje.'
+        ? L(
+            ' Stuknięcie stawia plan, przyciski na dole obracają i anulują.',
+            ' Tap to place the plan; the buttons at the bottom rotate and cancel.',
+          )
+        : L(
+            ' Lewy klik stawia plan, R obraca, prawy klik albo Esc anuluje.',
+            ' Left-click places the plan, R rotates, right-click or Esc cancels.',
+          )
     }</p>${menu
       .map(
         (c) =>
@@ -260,7 +301,7 @@ export function buildSheet(menu: BuildCategory[], touch: boolean): Sheet {
             .join('')}</ul></section>`,
       )
       .join('')}`,
-    foot: '<button type="button" class="btn ghost" data-act="build-close">Zamknij</button>',
+    foot: `<button type="button" class="btn ghost" data-act="build-close">${L('Zamknij', 'Close')}</button>`,
     closable: true,
   };
 }
