@@ -3544,6 +3544,42 @@ const SHOTS: Shot[] = [
         },
       );
     }
+    out.push({
+      // menu wraku po angielsku (napisy surowców z src/sim/surowce.ts): najbliższy wrak przy siedzibie
+      name: 'en-surowce-menu',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        await page.evaluate(() => {
+          const zm = window.zm!;
+          const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+          zm.setCam(p.x, p.y, 1.3);
+        });
+        await waitIdle(page);
+        await pick(page, false);
+        const at = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const door = w.buildings[w.hq].entrances[0].out;
+          const [dx, dy] = [door % w.size, Math.floor(door / w.size)];
+          const r = w.props
+            .filter((p) => p.kind === 'wrak')
+            .sort((a, b) => Math.hypot(a.x - dx, a.y - dy) - Math.hypot(b.x - dx, b.y - dy))[0];
+          zm.setCam(r.x + r.w / 2, r.y + r.h / 2, 1.6);
+          return [r.x + r.w / 2, r.y + r.h / 2];
+        });
+        await waitIdle(page);
+        const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+        await page.mouse.click(x, y, { button: 'right' });
+        await page.waitForSelector('#ctx:not([hidden])');
+        const items = await page.locator('#ctx .ctx-item').allTextContents();
+        console.log(`  menu: ${items.join(' | ')}`);
+        if (!items.some((i) => /^Search the (Fiat 126p|Polonez)$/.test(i)))
+          throw new Error('w angielskim menu wraku nie ma przeszukania');
+        await obcy(page, 'en', 'en-surowce-menu');
+      },
+    });
     return out;
   })(),
 ];

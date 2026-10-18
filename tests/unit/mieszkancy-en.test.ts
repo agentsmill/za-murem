@@ -497,6 +497,9 @@ describe('lokatorzyEn na demach', () => {
   });
 });
 
+/** całe obszary dem: sam plik trwa około 30 s, a w pełnym przebiegu obok botów drugi test przekraczał 60 s */
+const CIEZKI = 240_000;
+
 describe('lokatorzyEn na całych obszarach dem i innych kronikach', () => {
   /** Każdy budynek mieszkalny obszaru jako siedziba: wszystkie historie bez polskich słów i z tymi samymi zdaniami.
       `ziarno` to inna kronika osiedla niż w grze. */
@@ -533,7 +536,7 @@ describe('lokatorzyEn na całych obszarach dem i innych kronikach', () => {
       for (const s of wynik.szablony) szablony.add(s);
     }
     expect(szablony.size).toBeGreaterThan(120);
-  });
+  }, CIEZKI);
 
   it('inne kroniki osiedla (inne ziarna): więcej szablonów kroniki i miejsc, dalej bez polskich słów', () => {
     const szablony = new Set<string>();
@@ -545,7 +548,7 @@ describe('lokatorzyEn na całych obszarach dem i innych kronikach', () => {
       }
     }
     expect(szablony.size).toBeGreaterThan(135);
-  });
+  }, CIEZKI);
 
   it('budynek, w którym żadne imię nie ma pewnej odmiany: szablony zapasowe po angielsku, te same zdania', () => {
     const { l, dane } = demo('przymorze');
