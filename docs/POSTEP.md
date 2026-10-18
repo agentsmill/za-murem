@@ -529,6 +529,27 @@ Bramka: `npm test` 1788 zdanych, 1 oczekiwana porażka, 8 pominiętych (87 plik�
 
 Kronika mieszkańców z adresu ma dalej „Padła chmura” w latach 2039–2043 (`src/mieszkancy/kronika.ts`). Przesunięcie na 2034 zmienia złote skróty generatora, a to według testu wymaga podbicia `WERSJA_GENERATORA`, czyli innych ludzi na każdym adresie. Cofnąłem to i zostawiam torowi mieszkańców (w „Zaparkowanych”).
 
+### Teksty gry ze słownika miejsca, 18.10.2026 (gałąź `m2-slownik-miejsca` od `pelna-gra` 80d0fed, lokalnie)
+
+Teksty spoza zarządu biorą słowa ze słownika `wordsOf` w `src/gov/miejsce.ts`. W domu jednorodzinnym gra mówi o komitecie ulicy, sąsiadach, zebraniu ulicy i furtce, okno wydarzenia ma nagłówek „Na ulicy”, a suche drzewo z samouczka stoi „w ogrodzie”. W bloku teksty są takie jak wcześniej. Pracę zacząłem na `m2-razem` i na prośbę koordynatora przełożyłem na `pelna-gra`. Według jego wskazówki warianty dla domu i bloku są w słowniku, a nie w warunkach przy tekstach, żeby sesja angielska przetłumaczyła je w jednym miejscu. Słownik dostał dopełniacz i biernik bramy, pełną nazwę zarządu („zarząd spółdzielni” albo „komitet ulicy”), miejsce suchego drzewa, nazwę dziury przy trzepaku (w domu bez niej), „w spółdzielni” albo „w domu” do łóżek piętrowych i zakończenia gry dla domu (`KONIEC_DOM` z `src/gov/tresc.ts`). `wordsOfWorld(świat)` liczy słowa dla świata gry, bez DOM; świat bez siedziby (atrapy w testach) mówi jak blok. Logika zarządu się nie zmieniła.
+
+Co w domu brzmi inaczej:
+- okna: „Zebranie komitetu, dzień N, 19:30”, „Uchwała komitetu”, „Sąsiedzi czekają…”, „Komitet ulicy radzi” i „Jak radzi komitet” na karcie nocy, palenie mebli, koniec gry z tekstami dla domu;
+- pomoc: „Prowadzicie komitet ulicy”, sąsiedzi, „zebranie ulicy odwoła komitet”, „Każdy z komitetu ma jedną broń”;
+- samouczek i cele pierwszego i drugiego dnia, pasek, „N osób idzie od furtki”, „Do broni! Wszyscy zdolni na wartę przy furtce”, amputacja na karcie osoby („Ktoś z komitetu z medycyną…”), karta mieszkania, nagłówek menu poleceń, podpowiedzi w `main.ts` („To wasz komitet ulicy”) i ukryta etykieta przycisku siedziby;
+- symulacja: menu poleceń przy furtce („Pilnować furtki”, „Otworzyć furtkę”), praca „Trzyma wartę przy furtce” i „Je wspólny posiłek przy stole komitetu”, powód nastroju „Sprawy ulicy”, powód braku miejsca „z dala od furtki”;
+- menu budowy: „a komitet sam przynosi materiały”, łóżka piętrowe „w domu zmieści się więcej ludzi” (nie „na ulicy”, bo to brzmi jak bez dachu nad głową; `effect` budowli może być funkcją słów, `effectOf`);
+- dziura w siatce w domu nie jest „za trzepakiem”, a w bloku ta nazwa trafia tylko do dziury przy prawdziwym trzepaku, nie przy pierwszej rzeczy w `props` (bez trzepaka byłaby to sterta).
+
+Nowy test `tests/unit/teksty-miejsca.test.ts` (11 przypadków) sprawdza na Zielonkach okna, pomoc, samouczek, cele, pasek, kartę osoby i mieszkania, menu budowy i poleceń oraz powód nastroju, a na Przymorzu stare teksty. W `tests/unit/budowa-ui.test.ts` działanie budowli porównuje się przez `effectOf`. W zrzutach `wydarzenia-blok-dym` i `wydarzenia-dom-dym` pilnują nagłówka okna, samouczka i (w domu) paska, `wydarzenia-dom-dzien2` nagłówka i celów, `wydarzenia-dom-karta` rady komitetu; doszły `teksty-blok-pomoc`, `teksty-dom-pomoc` i `teksty-dom-budowa`.
+
+Bramka: `npm test` 1799 zdanych, 1 oczekiwana porażka, 8 pominiętych (88 plików), Biome na `src tests tools index.html` czysty, build bez błędów, boty bez zmian (bot da4b24e0 i dad44c81, zombie 4873d659 i 34dd5c5f), pełne `npm run shots`: 152 scenariusze bez błędów (było 149, doszły trzy nowe). Obejrzane z domu: dym z komina, kartę nocy, pomoc i menu budowy; z bloku: dym z komina i pomoc.
+
+Do dalszej pracy:
+- w domu zostaje słowo „mieszkanie” (karta mieszkania, „w pokoju naszego mieszkania” w menu budowy, pomoc o pustych mieszkaniach). To pojęcie mechaniki, nie słownika: dom ma jedno mieszkanie, komitetu, więc nie ma czego przeszukać, a cel drugiego dnia „Przeszukajcie puste mieszkanie” jest w domu nie do zrobienia. Najpierw decyzja, co w domu przeszukiwać, potem słowo „dom”;
+- poza słownikiem zostają szyld gry (ekran startowy, „Wczytaj osiedle”, karta „Wasz zarząd” przed wczytaniem mapy), gra z sąsiadami (z założenia o klatkach bloku; w domu nie startuje) i historie mieszkańców z generatora (`src/mieszkancy`). Szablony historii mają flagę `blok`, ale część zdań o spółdzielni jej nie ma (przydział „na wypadek gdyby spółdzielnia zapytała”, dyżury za mieszkanie od spółdzielni, kronika o zarządzie spółdzielni); nie sprawdzałem, czy trafiają do ludzi z domu;
+- dla sesji angielskiej: nowe warianty są w `BLOKOWE` i `ULICZNE` w `src/gov/miejsce.ts`, zdanie o łóżkach piętrowych w `src/sim/budowle.ts`.
+
 ## Następne
 
 Rano 18.10.2026, po nocy integracji (dla Mateusza):
