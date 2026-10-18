@@ -1,6 +1,12 @@
-/* Szlif trybu zombie (18.10.2026): szwendacz w łatanej dziurze zostaje po stronie ulicy. */
+/* Szlif trybu zombie (18.10.2026): szwendacz w łatanej dziurze zostaje po stronie ulicy; warta z bronią palną
+   nie strzela sama przez siatkę. */
 
 import { describe, expect, it } from 'vitest';
+import { NOTE_HOLD_FIRE } from '../../src/content/napisy-zombie.ts';
+import { makeCard } from '../../src/gov/noc.ts';
+import { newGov } from '../../src/gov/zarzad.ts';
+import { govInput } from '../../src/sim/gov.ts';
+import { commandsAt } from '../../src/sim/orders.ts';
 import { createSim, type Pawn, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
 import { mockBlock } from './interior-mock.ts';
 
@@ -83,5 +89,138 @@ describe('szwendacz w łatanej dziurze', () => {
     }
     // test ma sens tylko wtedy, gdy szwendacze naprawdę szli przez dziurę
     expect(crossing).toBeGreaterThan(3);
+  });
+});
+
+describe('broń palna w trybie zombie: strzał ściąga stado', () => {
+  const coreOf = (st: SimState) => st.pawns.filter((p) => p.kind === 'core');
+  const dist = (a: Pawn, b: Pawn) => Math.hypot(a.x - b.x, a.y - b.y);
+  /** kafelek siatki najbliżej bramy, który ma wolny kafelek od ulicy, i ten kafelek */
+  const fenceOut = (sim: Sim) => {
+    const gx = w.fence.gate.x;
+    const gy = w.fence.gate.y;
+    const tiles = [...w.fence.tiles].sort(
+      (a, b) =>
+        Math.hypot((a % size) - gx, Math.floor(a / size) - gy) - Math.hypot((b % size) - gx, Math.floor(b / size) - gy),
+    );
+    for (const t of tiles) {
+      const out = near4(t).find((n) => !yard.has(n) && !indoor(n) && sim.canWalk('zombie', n));
+      if (out !== undefined) return { tile: t, out };
+    }
+    throw new Error('brak kafelka siatki z wolnym miejscem od ulicy');
+  };
+  const night = () => {
+    const st = createSim(w, 3, { core: 2, mode: 'zombie' });
+    st.tick = atHour(1, 23);
+    const sim = new Sim(w, st);
+    const [g, b] = coreOf(st);
+    g.weapon = 'rewolwer';
+    b.weapon = null;
+    return { st, sim, g };
+  };
+
+  it('warta z rewolwerem przy siatce nie strzela sama do szwendaczy za siatką', () => {
+    const { st, sim, g } = night();
+    const { out } = fenceOut(sim);
+    sim.push({ t: 'guard', ids: [g.id], post: 'siatka' });
+    for (let k = 0; k < 3; k++) spawnZombie(st, w, out, k, true);
+    let close = Number.POSITIVE_INFINITY;
+    runTo(sim, st.tick + 1200, () => {
+      for (const z of st.pawns) if (z.kind === 'zombie' && z.job?.phase === 2) close = Math.min(close, dist(z, g));
+    });
+    // szwendacze napierali w zasięgu rewolweru (14 m), a warta stała i nie strzelała
+    expect(close).toBeLessThan(10);
+    expect(g.job?.t).toBe('guard');
+    expect(st.store.ammo!.naboje).toBe(12);
+  });
+
+  it('warta z rewolwerem strzela do szwendacza po swojej stronie siatki', () => {
+    const { st, sim, g } = night();
+    sim.push({ t: 'guard', ids: [g.id], post: 'brama' });
+    runTo(sim, st.tick + 400);
+    expect(g.job?.t).toBe('guard');
+    expect(g.job?.phase).toBe(1);
+    // szwendacz na podwórku 4–8 m od warty
+    const spot = w.fence.yard.find((i) => {
+      const d = Math.hypot((i % size) + 0.5 - g.x, Math.floor(i / size) + 0.5 - g.y);
+      return d >= 4 && d <= 8 && sim.canWalk('zombie', i);
+    })!;
+    expect(spot).toBeDefined();
+    spawnZombie(st, w, spot, 2);
+    runTo(sim, st.tick + 200);
+    expect(st.store.ammo!.naboje).toBeLessThan(12);
+  });
+
+  it('na rozkaz „Atakuj” strzela do szwendacza za siatką', () => {
+    const { st, sim, g } = night();
+    const { out } = fenceOut(sim);
+    const z = spawnZombie(st, w, out, 1, true);
+    runTo(sim, st.tick + 20);
+    const attack = commandsAt(st, w, [g.id], tileOf(z)).find((m) => m.cmd.t === 'attack');
+    expect(attack).toBeTruthy();
+    sim.push(attack!.cmd);
+    runTo(sim, st.tick + 1200);
+    expect(st.store.ammo!.naboje).toBeLessThan(12);
+  });
+
+  it('kto sam zaczął walkę z rewolwerem, nie strzela za szwendaczem, który wyszedł za siatkę', () => {
+    const st = createSim(w, 3, { core: 2, mode: 'zombie' });
+    st.tick = atHour(2, 10);
+    const sim = new Sim(w, st);
+    const [g, b] = coreOf(st);
+    g.weapon = 'rewolwer';
+    b.weapon = null;
+    const { tile, out } = fenceOut(sim);
+    const yardNear = (from: number, lo: number, hi: number) =>
+      w.fence.yard.find((i) => {
+        const d = Math.hypot((i % size) - (from % size), Math.floor(i / size) - Math.floor(from / size));
+        return d >= lo && d <= hi && sim.canWalk('core', i) && sim.canWalk('zombie', i);
+      });
+    // ktoś z rewolwerem czeka na podwórku 2–3 m od siatki („idź tu”), a szwendacz 3–5 m od niego, po tej samej stronie
+    const gs = yardNear(tile, 2, 3)!;
+    Object.assign(g, { x: (gs % size) + 0.5, y: Math.floor(gs / size) + 0.5, path: [], pi: 0, job: null, wait: 0 });
+    sim.push({ t: 'move', ids: [g.id], to: gs });
+    runTo(sim, st.tick + 20);
+    expect(g.job?.t).toBe('go');
+    const z = spawnZombie(st, w, yardNear(gs, 3, 5)!, 2);
+    // sam z siebie, bez rozkazu, staje do walki
+    while (g.job?.t !== 'fight' && st.tick < atHour(2, 11)) sim.step();
+    expect(g.job?.t).toBe('fight');
+    expect(g.job?.order).toBe(false);
+    // szwendacz za siatką, w zasięgu rewolweru
+    Object.assign(z, { x: (out % size) + 0.5, y: Math.floor(out / size) + 0.5, path: [], pi: 0 });
+    const ammo = st.store.ammo!.naboje;
+    expect(dist(z, g)).toBeLessThan(14);
+    runTo(sim, st.tick + 600);
+    expect(st.store.ammo!.naboje).toBe(ammo);
+    expect(g.job?.t).not.toBe('fight');
+  });
+
+  it('karta nocy: uwaga, że warta z bronią palną strzela przez siatkę tylko na rozkaz, przy siatce i zamkniętej bramie', () => {
+    const st = createSim(w, 3, { core: 2, mode: 'zombie' });
+    st.tick = atHour(2, 10);
+    const sim = new Sim(w, st);
+    const [a, b] = coreOf(st);
+    a.weapon = 'rewolwer';
+    b.weapon = 'dzida';
+    sim.damageFence(w.fence.tiles[5], 1000);
+    const hole = st.fence!.holes.find((h) => h.tiles.includes(w.fence.tiles[5]))!;
+    const notes = (mode: 'zombie' | 'zwykly', p: Pawn) => {
+      const card = makeCard(newGov(3, mode), govInput(st, w, 0)).card;
+      const opts = card.people.find((c) => c.id === st.people[p.person].id)!.options;
+      return (key: string) => opts.find((o) => o.key === `warta:${key}`)?.note;
+    };
+    const gun = notes('zombie', a);
+    expect(gun('siatka')).toBe(NOTE_HOLD_FIRE);
+    expect(gun('brama')).toBe(NOTE_HOLD_FIRE);
+    // przy otwartej dziurze szwendacz jest po naszej stronie: strzela sam
+    expect(gun(`d${hole.id}`)).not.toBe(NOTE_HOLD_FIRE);
+    // dzida sięga przez siatkę cicho, a w zwykłym trybie warta strzela jak dotąd
+    expect(notes('zombie', b)('siatka')).not.toBe(NOTE_HOLD_FIRE);
+    expect(notes('zwykly', a)('brama')).not.toBe(NOTE_HOLD_FIRE);
+    // kusza strzela cicho, więc warta z kuszą strzela sama
+    a.weapon = 'kusza';
+    st.store.ammo!.belty = 5;
+    expect(notes('zombie', a)('siatka')).not.toBe(NOTE_HOLD_FIRE);
   });
 });

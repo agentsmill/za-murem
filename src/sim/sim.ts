@@ -10,7 +10,17 @@ import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../cont
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
-import { type AmmoKey, hitChance, noAmmo, START_KIT, WEAPONS, type Weapon, type WeaponId, weaponOf } from './bron.ts';
+import {
+  type AmmoKey,
+  hitChance,
+  isFirearm,
+  noAmmo,
+  START_KIT,
+  WEAPONS,
+  type Weapon,
+  type WeaponId,
+  weaponOf,
+} from './bron.ts';
 import { BUILDS, type BuildKind, type BuildPlan, canPlace, footprint, GHOST_KINDS, type Mat } from './budowle.ts';
 import {
   daylight,
@@ -4522,6 +4532,13 @@ export class Sim {
       if (!t || !bare || this.across(p, t.x, t.y) || !this.retreat(p)) this.done(p);
       return;
     }
+    // walka bez rozkazu z bronią palną w trybie zombie kończy się, kiedy wróg jest za siatką
+    if (!j.order && this.holdFire(w) && this.across(p, t.x, t.y)) {
+      p.path = [];
+      p.pi = 0;
+      this.done(p);
+      return;
+    }
     if (this.canHit(p, t, w)) {
       p.path = [];
       p.pi = 0;
@@ -4580,16 +4597,23 @@ export class Sim {
     return s >= 0 ? s : this.standBy(p, [best], 2);
   }
 
-  /** warta na posterunku: najbliższy wróg w zasięgu broni */
+  /** W trybie zombie broń palna sama nie strzela przez siatkę, bo strzał ściąga stado: tylko po swojej stronie siatki
+      i na rozkaz gracza („Atakuj”). */
+  private holdFire(w: Weapon): boolean {
+    return modeOf(this.st) === 'zombie' && isFirearm(w);
+  }
+
+  /** warta na posterunku: najbliższy wróg w zasięgu broni (w trybie zombie z bronią palną tylko po swojej stronie) */
   private guardStrike(p: Pawn): void {
     if (this.st.tick < (p.cd ?? 0)) return;
     const w = this.armed(p);
+    const reach = this.holdFire(w) ? { ...w, fence: false } : w;
     let best: Pawn | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.pawns) {
       if (!isEnemy(t) || t.away || this.graveyard.has(t.id)) continue;
       const d = Math.hypot(t.x - p.x, t.y - p.y);
-      if (d < bd && this.canHit(p, t, w)) {
+      if (d < bd && this.canHit(p, t, reach)) {
         bd = d;
         best = t;
       }

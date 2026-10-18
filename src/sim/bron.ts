@@ -61,6 +61,9 @@ export const weaponOf = (id?: WeaponId | null): Weapon => (id ? WEAPONS[id] : WE
 /** broń palna albo kusza */
 export const isRanged = (w: Weapon): boolean => w.ammo !== null;
 
+/** broń palna (rewolwer, strzelba): strzał słychać z daleka, kusza strzela cicho */
+export const isFirearm = (w: Weapon): boolean => w.ammo === 'naboje' || w.ammo === 'loftki';
+
 /** Szansa trafienia: celność broni, +0,05 za punkt umiejętności obrona, −0,15 przy siłach poniżej 20 i z kikutem;
     zawsze 0,05–0,95. */
 export function hitChance(w: Weapon, obrona: number, rest: number, maimed: boolean): number {
