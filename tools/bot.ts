@@ -17,7 +17,11 @@
    Z flagą --sasiedzi na końcu dochodzi fala 2 M2: gracz fali 1, a od dnia 2 jedna osoba u sąsiadów (otwiera najbliższy
    budynek, przeszukuje pomieszczenia i piętra, nosi łup, rozmawia z lokatorami); liczy, ile u nich zrobiła, spotkania,
    rany i ugryzienia, zapasy po 5 dniach i głód. Bez flagi wyjście i skróty bez zmian.
-   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi] */
+   Z flagą --miasto na końcu dochodzi mapa miasta: gracz fali 1, a od dnia 2 za dnia (7–17) dwie najzdrowsze osoby idą do najbliższego
+   niewyczerpanego miejsca z okolicy poza mapą lokalną (tests/unit/miasto-play.ts: brak jedzenia to sklep spożywczy, brak
+   drewna stacja, co trzeci dzień szkoła; jedna wyprawa naraz); liczy wyprawy, łup, rannych, ugryzionych, najdalszą
+   wyprawę po dniach i zapasy po 10 dniach obok gry bez wypraw. Bez flagi wyjście i skróty bez zmian.
+   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi] [--miasto] */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,6 +35,7 @@ import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
 import { BURNABLE, createSim, FOOD_START, type Laws, REST_UNTIL, Sim, type SimOpts, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
+import { naMapieLokalnej } from '../src/world/miasto.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
 import {
   type Decision,
@@ -42,8 +47,17 @@ import {
 } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
+import { miastoPlayer, okolicaZGeo } from '../tests/unit/miasto-play.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
-import { ARGUMENTY, MIESZKANCY, opisMieszkancow, SASIEDZI, swiatMieszkancow, tylkoZombie } from './bot-mieszkancy.ts';
+import {
+  ARGUMENTY,
+  MIASTO,
+  MIESZKANCY,
+  opisMieszkancow,
+  SASIEDZI,
+  swiatMieszkancow,
+  tylkoZombie,
+} from './bot-mieszkancy.ts';
 
 tylkoZombie('bot');
 const SEED = Number(ARGUMENTY[0]) || 1;
@@ -567,5 +581,91 @@ if (SASIEDZI) {
     console.log('  BŁĄD: gracz z sąsiadami nic u nich nie przeszukał');
     fail = true;
   }
+}
+
+/* ---------- mapa miasta (--miasto): wyprawy dzienne do miejsc z okolicy ---------- */
+if (MIASTO) {
+  const t4 = performance.now();
+  const MIASTO_DAYS = 10;
+  const w = govWorld;
+  // jak w grze: okolica z geo osiedla (klucze miejsc z położenia, nazwy bez tabel mieszkańców, same kategorie)
+  const okolica = okolicaZGeo(demo.geo);
+  const poza = okolica.filter((m) => !naMapieLokalnej(m)).length;
+  console.log(
+    `\nMapa miasta (--miasto), ${govName}: ${GOV_SEEDS.length} ziaren × ${MIASTO_DAYS} dni, gracz fali 1 z przeszukiwaniem, a od dnia 2 za dnia (7–17) dwie najzdrowsze osoby idą do najbliższego niewyczerpanego miejsca poza mapą lokalną (192 m, do 2000 m): brak jedzenia (poniżej 2 porcji na osobę) to sklep spożywczy, brak drewna (poniżej 4) stacja, co trzeci dzień szkoła; jedna wyprawa naraz`,
+  );
+  console.log(
+    `  okolica: ${okolica.length} miejsc, w tym poza mapą lokalną ${poza} (najdalej ${Math.round(Math.max(...okolica.map((m) => m.odl)))} m)`,
+  );
+  const kats = ['spozywczy', 'stacja', 'szkola'];
+  const mc = (zMiastem: boolean) =>
+    GOV_SEEDS.map((seed) => {
+      const m2 = m2Player({ search: true, furniture: true });
+      const mp = miastoPlayer();
+      const r = playWithGov(w, seed, 'zawsze-warta', MIASTO_DAYS, 4, {
+        player: m2.player,
+        ...(zMiastem ? { miasto: { okolica, krok: mp.krok, po: mp.po } } : {}),
+        ...zAdresu(w),
+      });
+      return {
+        log: mp.log,
+        wysylki: mp.wysylki,
+        stock: snapshot(r.st, w).stock,
+        hunger: r.hunger,
+        built: m2.log.built.length,
+        zabrano: Object.values(r.gov.miasto?.zabrano ?? {}).reduce((a, b) => a + b, 0),
+        // z miejsc wyniesiono (po kłopotach i udźwigu) i ile razy wróciła stamtąd wyprawa, po kategoriach
+        wynos: kats.map((k) => {
+          const klucze = okolica.filter((m) => m.kat === k).map((m) => m.klucz);
+          return {
+            zabrano: klucze.reduce((a, c) => a + (r.gov.miasto?.zabrano[c] ?? 0), 0),
+            wizyty: klucze.reduce((a, c) => a + (r.gov.miasto?.wizyty[c] ?? 0), 0),
+          };
+        }),
+      };
+    });
+  const z = mc(true);
+  const bez = mc(false);
+  console.log(
+    `  wyprawy: średnio ${range(z.map((r) => r.log.wyprawy))} na grę, w tym ${kats.map((k) => `${k} ${f1(mean(z.map((r) => r.wysylki.filter((x) => x.kat === k).length)))}`).join(', ')}; z miejsc wyniesiono średnio ${f1(mean(z.map((r) => r.zabrano)))} sztuk`,
+  );
+  console.log(
+    `  z miejsca wynosi wyprawa średnio (sztuk): ${kats
+      .map((k, n) => {
+        const wiz = z.reduce((a, r) => a + r.wynos[n].wizyty, 0);
+        return `${k} ${wiz ? f1(z.reduce((a, r) => a + r.wynos[n].zabrano, 0) / wiz) : '—'}`;
+      })
+      .join(', ')}`,
+  );
+  const lup = (k: keyof (typeof z)[number]['log']['lup']) => f1(mean(z.map((r) => r.log.lup[k])));
+  console.log(
+    `  łup z powrotów (średnio na grę): jedzenie ${lup('supplies')}, drewno ${lup('wood')}, złom ${lup('scrap')}, części ${lup('parts')}, leki ${lup('meds')}; ranni ${f1(mean(z.map((r) => r.log.ranni)))}, ugryzieni ${f1(mean(z.map((r) => r.log.ugryzieni)))}`,
+  );
+  const dni = Array.from({ length: MIASTO_DAYS + 1 }, (_, k) => {
+    const m = Math.max(...z.map((r) => r.log.maxOdl[k] ?? 0));
+    return `${k + 1}: ${m ? Math.round(m) : '—'}`;
+  });
+  console.log(`  najdalsza wyprawa po dniach (największa z ziaren, m): ${dni.join(', ')}`);
+  const hz = (rs: typeof z, k: keyof Hunger) => rs.reduce((a, r) => a + r.hunger[k], 0);
+  const gl = (rs: typeof z) => Math.round((100 * hz(rs, 'starving')) / Math.max(1, hz(rs, 'samples')));
+  const zap = (rs: typeof z, k: 'supplies' | 'wood' | 'meals') => range(rs.map((r) => r.stock[k] ?? 0));
+  for (const [nazwa, rs] of [
+    ['z wyprawami', z],
+    ['bez wypraw', bez],
+  ] as const)
+    console.log(
+      `  po ${MIASTO_DAYS} dniach, ${nazwa}: jedzenie ${zap(rs, 'supplies')}, garnek ${zap(rs, 'meals')}, drewno ${zap(rs, 'wood')}, budowle ${f1(mean(rs.map((r) => r.built)))}; rano brakło jedzenia dla głodnych w ${hz(rs, 'short')} z ${hz(rs, 'mornings')} poranków, ktoś głodny przez ${gl(rs)}% czasu`,
+    );
+  console.log(`  (${Math.round(performance.now() - t4)} ms)`);
+  if (mean(z.map((r) => r.log.wyprawy)) < 1) {
+    console.log('  BŁĄD: gracz z mapą miasta nie wysłał żadnej wyprawy');
+    fail = true;
+  }
+  const jedz = mean(z.map((r) => r.stock.supplies + (r.stock.meals ?? 0)));
+  const jedzBez = mean(bez.map((r) => r.stock.supplies + (r.stock.meals ?? 0)));
+  if (jedz < 0.5 * jedzBez || gl(z) > gl(bez) + 10)
+    console.log(
+      `  UWAGA: zarząd z wyprawami ma po ${MIASTO_DAYS} dniach wyraźnie mniej jedzenia (${f1(jedz)} wobec ${f1(jedzBez)}) albo głoduje dłużej (${gl(z)}% wobec ${gl(bez)}%): do strojenia liczb w src/gov/wyprawy.ts`,
+    );
 }
 if (fail) process.exit(1);

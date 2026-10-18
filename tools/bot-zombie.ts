@@ -44,7 +44,18 @@ import { snapshot } from '../src/sim/snapshot.ts';
 import { hordeSize } from '../src/sim/zombie.ts';
 import { buildWorld } from '../src/world/world.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
-import { ARGUMENTY, DEMO, MIESZKANCY, OPAL, opisMieszkancow, SASIEDZI, swiatMieszkancow } from './bot-mieszkancy.ts';
+import {
+  ARGUMENTY,
+  bezMiasta,
+  DEMO,
+  MIESZKANCY,
+  OPAL,
+  opisMieszkancow,
+  SASIEDZI,
+  swiatMieszkancow,
+} from './bot-mieszkancy.ts';
+
+bezMiasta('bot:zombie');
 
 const SEED = Number(ARGUMENTY[0]) || 1;
 const NIGHTS = Number(ARGUMENTY[1]) || 6;
