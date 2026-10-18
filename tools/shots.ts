@@ -1941,6 +1941,206 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // leżenie z PixelLab: jeden z zarządu śpi w łóżku (głowa na poduszce, koc), drugi na podłodze obok, reszta pracuje;
+    // z --kod to samo z kodu, do porównania
+    name: 'kotwica-lezenie-dom',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await stage(page, 'dom', 0);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const size = sim.w.size;
+        const core = st.pawns.filter((p) => p.kind === 'core');
+        const lozko = st.things.find((t) => t.kind === 'lozko' || t.kind === 'wersalka')!;
+        const wolny = (x: number, y: number) =>
+          !sim.blocked[y * size + x] && !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+        // wolny kafelek najbliżej łóżka (poza nim), na nim ktoś śpi bez łóżka: na podłodze
+        let najblizszy: [number, number] | null = null;
+        let najblizej = 1e9;
+        for (let dy = -4; dy <= 4; dy++)
+          for (let dx = -4; dx <= 4; dx++) {
+            const x = lozko.x + dx;
+            const y = lozko.y + dy;
+            const d = Math.hypot(dx, dy);
+            // z wolnym otoczeniem 3 × 3, żeby żadna szafa nie zasłaniała leżącego
+            if (d >= 2.5 && d < najblizej && [-1, 0, 1].every((a) => [-1, 0, 1].every((b) => wolny(x + a, y + b)))) {
+              najblizej = d;
+              najblizszy = [x, y];
+            }
+          }
+        const [fx, fy] = najblizszy!;
+        const job = {
+          t: 'sleep',
+          target: -1,
+          tile: fy * size + fx,
+          phase: 1,
+          from: -1,
+          t0: st.tick,
+          until: st.tick + 99999,
+          order: false,
+        };
+        Object.assign(core[1], {
+          x: fx + 0.5,
+          y: fy + 0.5,
+          path: [],
+          pi: 0,
+          dir: 0,
+          job,
+          carry: 0,
+          wait: st.tick + 99999,
+        });
+        // kamera na obu śpiących (łóżko i podłoga), z boku od kozy i kuchni
+        zm.setCam((core[0].x + core[1].x) / 2, (core[0].y + core[1].y) / 2, 3.4);
+      });
+      await waitIdle(page);
+      const rodzaje = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm
+          .sim!.st.pawns.filter((p) => p.kind === 'core')
+          .map((p) => zm.view.poses.get(p.id)!.lie?.kind ?? 'stoi');
+      });
+      console.log(`  leżenie: ${rodzaje.join(', ')}`);
+      if (rodzaje[0] !== 'bed' || rodzaje[1] !== 'floor')
+        throw new Error(`leżenie ${rodzaje.join()} zamiast bed, floor`);
+    },
+  },
+  {
+    // zwłoki z PixelLab w rzędzie co dwa kafelki: osiem postaci (wygląd z gry 0 do 7), głową w cztery strony (strona z
+    // numeru rzeczy), a na końcu zmarły z zarządu w swojej postaci; z --kod to samo z kodu
+    name: 'kotwica-lezenie-zwloki',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      const start = await wolnyRzad(page, 18);
+      if (!start) throw new Error('nie ma wolnego rzędu 18 kafelków na zwłoki');
+      const rzad = await page.evaluate(([x0, y0]) => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        // id podzielne przez 4: rzecz o numerze k leży głową w stronę k & 3
+        for (let k = 0; k < 8; k++)
+          st.things.push({
+            id: 993000 + k,
+            kind: 'zwloki',
+            x: x0 + 2 * k,
+            y: y0,
+            w: 1,
+            h: 1,
+            rot: 0,
+            n: k,
+            fuel: 0,
+            by: -1,
+            owner: -1,
+          });
+        // dziewiąte: zmarły z zarządu (wpis zmarłych z id osoby), więc zwłoki mają tę samą postać co on za życia
+        const p0 = st.pawns.find((p) => p.kind === 'core')!;
+        const dead = st.dead!;
+        dead.push({
+          id: st.people[p0.person].id,
+          name: st.people[p0.person].name,
+          look: p0.look,
+          kind: 'core',
+          tick: st.tick,
+          cause: 'rany',
+        });
+        st.things.push({
+          id: 993008,
+          kind: 'zwloki',
+          x: x0 + 16,
+          y: y0,
+          w: 1,
+          h: 1,
+          rot: 0,
+          n: p0.look,
+          fuel: 0,
+          by: -1,
+          owner: -1,
+          dead: dead.length - 1,
+        });
+        zm.setCam(x0 + 9, y0 + 0.5, 2.2);
+        return 9;
+      }, start);
+      console.log(`  zwłoki: ${rzad}`);
+      await waitIdle(page);
+      // zwłoki członka zarządu mają teksturę postaci, którą ten sam człowiek gra za życia
+      const zgodne = await page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const v = zm.view as unknown as {
+          ludzie: null | {
+            dane: { postacPionka(p: unknown, o: unknown): unknown };
+            lezenie(p: unknown, w: number, o: number, r: string): { tex: unknown } | null;
+          };
+          corpseSprites: Map<number, { texture: unknown }>;
+        };
+        // z --kod (?grafika=kod) warstwy PixelLab nie ma, a zwłoki są z kodu
+        if (!v.ludzie) return true;
+        const p0 = st.pawns.find((p) => p.kind === 'core')!;
+        const tex = v.ludzie.lezenie(v.ludzie.dane.postacPionka(p0, st.people), 0, 993008 & 3, 'floor')!.tex;
+        return v.corpseSprites.get(993008)!.texture === tex;
+      });
+      if (!zgodne) throw new Error('zwłoki członka zarządu nie mają jego postaci');
+    },
+  },
+  {
+    // nakładka broni na klatkach ciosu z PixelLab: czterech z zarządu w rzędzie, każdy w innej klatce walki: zamach kijem
+    // z przodu i z tyłu, dokończenie z boku, pchnięcie dzidą z przodu; z --kod to samo z kodu, do porównania
+    name: 'kotwica-bron-cios',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      const start = await wolnyRzad(page, 12);
+      if (!start) throw new Error('nie ma wolnego rzędu 12 kafelków na walczących');
+      await page.evaluate(([x0, y0]) => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const size = sim.w.size;
+        const core = st.pawns.filter((p) => p.kind === 'core');
+        // bez ruchu i z pracą walki (faza 1): poza ciosu, klatka z czasu od ostatniego ciosu (cd względem ticku)
+        const ustaw = (k: number, x: number, bron: string, dir: number, od: number) => {
+          const p = core[k];
+          const job = {
+            t: 'fight',
+            target: -1,
+            tile: y0 * size + x,
+            phase: 1,
+            from: -1,
+            t0: st.tick,
+            until: st.tick + 99999,
+            order: false,
+          };
+          // od ciosu minęło `od` ticków: klatka 0 przed ciosem (ujemne), 1 tuż po (0 do 3), 2 dokończenie (4 do 9)
+          Object.assign(p, { x: x + 0.5, y: y0 + 0.5, path: [], pi: 0, dir, job, weapon: bron, wait: st.tick + 99999 });
+          p.cd = st.tick + (bron === 'dzida' ? 24 : 22) - od;
+        };
+        ustaw(0, x0 + 1, 'kij', 0, -3);
+        ustaw(1, x0 + 4, 'kij', 1, -3);
+        ustaw(2, x0 + 7, 'kij', 3, 6);
+        ustaw(3, x0 + 10, 'dzida', 0, -3);
+        zm.setCam(x0 + 4, y0 + 0.5, 3.2);
+      }, start);
+      await waitIdle(page);
+      const pozy = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm
+          .sim!.st.pawns.filter((p) => p.kind === 'core')
+          .map((p) => {
+            const pv = zm.view.poses.get(p.id)!;
+            return `${pv.pose}${pv.frame}/${pv.dir}`;
+          });
+      });
+      console.log(`  pozy: ${pozy.join(', ')}`);
+      if (pozy.join() !== 'swing0/0,swing0/1,swing2/3,aim0/0')
+        throw new Error(`pozy ${pozy.join()} zamiast swing0/0, swing0/1, swing2/3, aim0/0`);
+    },
+  },
+  {
     name: 'warta-noc',
     query: '',
     run: async (page, base) => {
@@ -4438,6 +4638,55 @@ const SHOTS: Shot[] = [
   // etap 3: plan wspólnego płotu w toku, duch przyszłego obwodu z postępem: z bliska po polsku, z daleka po angielsku
   m2f2PlotDuch('m2f2-plot-duch', 0.62, 'pl'),
   m2f2PlotDuch('en-m2f2-plot-duch', 0.3, 'en'),
+  m2f2('m2f2-plot-pien', 'zielonki', async (page) => {
+    // pień na linii wspólnego płotu po ścięciu staje się siatką (Mateusz: dziura po obu stronach pnia i na nim)
+    const r = await m2f2Open(page, 'Dom nr 8', false);
+    const out = await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const w = sim.w;
+      const size = w.size;
+      const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+      sim.push({ t: 'enclose', ids: [p.id], bid });
+      sim.step();
+      if (!sim.st.plot?.plan) return null;
+      sim.push({ t: 'otocz', ids: [], bid });
+      sim.step();
+      const yard = new Set(w.fence.yard);
+      const line = new Set(w.fence.tiles);
+      const ns = (i: number) => [i - size, i + size, i - 1, i + 1];
+      // drzewo, którego pień domyka nowy obwód: poza podwórkiem, bokiem przy nim, z drugiej strony wolna ulica
+      const k = w.trees.findIndex((t) => {
+        const i = Math.floor(t.y) * size + Math.floor(t.x);
+        return (
+          w.blocked[i] === 1 &&
+          !yard.has(i) &&
+          !line.has(i) &&
+          ns(i).some((n) => yard.has(n)) &&
+          ns(i).some((n) => !yard.has(n) && !line.has(n) && !w.blocked[n])
+        );
+      });
+      if (k < 0) return { k };
+      const t = w.trees[k];
+      const pien = Math.floor(t.y) * size + Math.floor(t.x);
+      sim.push({ t: 'chop', ids: [p.id], tree: k });
+      for (let n = 0; n < 20000 && !sim.st.felled.includes(k); n++) sim.step();
+      zm.setCam(t.x, t.y, 1.6);
+      return {
+        k,
+        sciete: sim.st.felled.includes(k),
+        siatka: w.fence.tiles.includes(pien),
+        blokuje: sim.blocked[pien],
+        pienNaMapie: sim.st.things.some((x) => x.kind === 'pien' && x.y * size + x.x === pien),
+      };
+    }, r.bid);
+    await page.waitForTimeout(300);
+    await waitIdle(page);
+    console.log(`  pień na linii płotu: ${JSON.stringify(out)}`);
+    if (!out || out.k < 0) throw new Error('brak drzewa na linii wspólnego płotu');
+    if (!out.sciete || !out.siatka || out.blokuje !== 1 || out.pienNaMapie)
+      throw new Error('ścięty pień na linii płotu nie stał się siatką');
+  }),
   m2f2('m2f2-plot-deski', 'lanciego', async (page) => {
     // etap 3: na podwórku same deski (złomu brak), więc menu ma tylko płot z desek; potem potwierdzenie, podpowiedź
     // po poleceniu i duch planu na 0%
@@ -6061,6 +6310,33 @@ async function smokeCheck(page: Page, zoom: number, min: number) {
  * (krok 0: niesie drewno do kozy, krok 1: drewno już w kozie) i gotuje; na podwórku rąbie suche drzewo,
  * niesie drewno i wartuje z lampą (praca 'guard' z symulacji).
  */
+/** początek (x, y) wolnego odcinka `dlugosc` kafelków w poziomie najbliżej siedziby (trawa, chodnik, bez rzeczy), albo null */
+async function wolnyRzad(page: Page, dlugosc: number): Promise<[number, number] | null> {
+  return page.evaluate((dlugosc) => {
+    const sim = window.zm!.sim!;
+    const st = sim.st;
+    const size = sim.w.size;
+    const b = sim.w.buildings[sim.w.hq];
+    const cx = Math.round((b.x0 + b.x1) / 2);
+    const cy = Math.round((b.y0 + b.y1) / 2);
+    const wolny = (x: number, y: number) =>
+      !sim.blocked[y * size + x] && !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+    let najlepszy: [number, number] | null = null;
+    let najblizej = 1e9;
+    for (let y = cy - 30; y <= cy + 30; y++)
+      for (let x = cx - 30; x <= cx + 14; x++) {
+        let ok = true;
+        for (let k = 0; k < dlugosc && ok; k++) ok = wolny(x + k, y);
+        const d = Math.hypot(x + dlugosc / 2 - cx, y - cy);
+        if (ok && d < najblizej) {
+          najblizej = d;
+          najlepszy = [x, y];
+        }
+      }
+    return najlepszy;
+  }, dlugosc);
+}
+
 async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
   await page.evaluate(
     ([where, step]) => {
