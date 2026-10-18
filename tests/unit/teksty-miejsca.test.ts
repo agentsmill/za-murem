@@ -1,6 +1,7 @@
 /* Teksty spoza zarządu według miejsca (słownik wspólnoty z src/gov/miejsce.ts): w domu jednorodzinnym (Zielonki)
-   okna, pomoc, samouczek, cele, pasek, karta osoby i mieszkania, menu budowy i poleceń i powód nastroju bez słów
-   z bloku, w bloku (Przymorze) po staremu. */
+   okna, pomoc, samouczek, cele, pasek, karta osoby i domu, menu budowy i poleceń i powód nastroju bez słów z bloku
+   (także bez mieszkania: lokum komitetu to dom), a cel drugiego dnia „Przeszukajcie dom” da się zaliczyć; w bloku
+   (Przymorze) po staremu. */
 
 import { describe, expect, it } from 'vitest';
 import { BLOK, placeOf, wordsOf, wordsOfWorld } from '../../src/gov/miejsce.ts';
@@ -34,9 +35,9 @@ import { govFence } from '../../src/ui/siatka.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 import { pl } from './po-angielsku.ts';
 
-/** słowa z bloku, których w domu nie ma w tekstach interfejsu; łóżka piętrowe to nazwa łóżek, a mieszkanie zostaje
-    nazwą mieszkania siedziby w grze, więc bez „piętr” i „mieszkani” */
-const BLOKOWE = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszkańc/i;
+/** słowa z bloku, których w domu nie ma w tekstach interfejsu, także mieszkanie i mieszkańcy (w domu jednorodzinnym
+    lokum komitetu to dom, a ludzie to sąsiedzi); łóżka piętrowe to nazwa łóżek, więc bez „piętr” */
+const BLOKOWE = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszka[nń]/i;
 
 /** gra na demie: symulacja z czterema osobami zarządu i słowa miejsca */
 function game(key: string) {
@@ -173,16 +174,73 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
       '5 osób idzie od furtki',
     ]);
     expect(bittenCard('zielonki')).toContain('title="Ktoś z komitetu z medycyną utnie kończynę');
+    expect(statsOf(snap, null, words).find((s) => s.id === 'sBoards')?.title).toBe(
+      'Deski: 4. Na łaty, naprawy i budowę. Dają je przeszukiwanie domu i rozbiórka gruzu.',
+    );
+    // karta domu komitetu: bez numeru mieszkania, z pomieszczeniami do przeszukania
     const v = aptView(sim.st, w, 0, snap.apts)!;
-    expect(aptState(v, words)).toBe('Mieszkanie komitetu ulicy');
-    expect(visible(aptCard(v, false, words))).not.toMatch(BLOKOWE);
+    expect(aptState(v, words)).toBe('Dom komitetu ulicy');
+    for (const touch of [false, true]) {
+      const card = visible(aptCard(v, touch, words));
+      expect(card).not.toMatch(BLOKOWE);
+      expect(card).toContain(' Dom ');
+      expect(card).toContain('Przeszukane: 0 z 5');
+      expect(card).toContain(touch ? 'Przytrzymajcie palec w domu: Przeszukać.' : 'Prawy przycisk w domu: Przeszukać.');
+    }
     const sheet = buildSheet(
       buildMenu({}, (kind) => kind !== 'magazyn', words),
       false,
       words,
     );
     expect(sheet.body).toContain('Dwa miejsca do spania, w domu zmieści się więcej ludzi.');
+    expect(sheet.body).toContain('Nie ma gdzie postawić: brak wolnego miejsca w pokoju naszego domu.');
+    expect(sheet.body).toContain('Brakuje: deski 20, złom 10. Deski daje przeszukiwanie domu i rozbiórka gruzu.');
+    expect(sheet.body).toContain('Brakuje: złom 14, części 10. Złom daje przeszukiwanie domu i rozbiórka gruzu.');
     for (const t of sheetTexts(sheet)) expect(t).not.toMatch(BLOKOWE);
+    expect(canPlace(sim.st, w, 'warsztat', 0, 0, 0).why).toBe('Tylko w pokoju w naszym domu.');
+    expect(canPlace(sim.st, w, 'kuchnia_spoleczna', 0, 0, 0).why).toBe('Tylko w kuchni w naszym domu.');
+    const help = helpSheet(false, false, words).body;
+    expect(help).toContain('<h3 class="help-h">Budowa i przeszukiwanie domu</h3>');
+    expect(help).toContain(
+      'Klik w dom pokazuje jego kartę: co w nim już przeszukane. Prawy przycisk w domu: Przeszukać.',
+    );
+    expect(help).toContain('W wersji 0.4 są noce za siatką, budowa, dom do przeszukania, przybysze i tryb zombie.');
+  });
+
+  it('cel drugiego dnia: dom komitetu do przeszukania, pierwsze pomieszczenie zalicza cel', () => {
+    const { sim, w } = game('zielonki');
+    const core = sim.st.pawns.find((p) => p.kind === 'core')!;
+    const gov = newGov(1);
+    const goal = (touch: boolean) =>
+      goalsDay2(sim.st, gov, { touch, wood: 0, woodReady: false, holes: 0, words }).find(
+        (g) => g.key === 'przeszukaj',
+      )!;
+    expect([goal(false).text, goal(false).how]).toEqual([
+      'Przeszukajcie dom.',
+      'Kliknijcie dom: karta pokaże, co w nim już przeszukane. Potem prawy przycisk w domu: „Przeszukać”.',
+    ]);
+    expect(goal(true).how).toBe(
+      'Stuknijcie dom: karta pokaże, co w nim już przeszukane. Potem przytrzymajcie palec w domu: „Przeszukać”.',
+    );
+    expect(goal(false).done).toBe(false);
+    // dom ma jedno mieszkanie, komitetu: każde jego pomieszczenie da się przeszukać, zająć nie ma czego
+    const room = w.interior.rooms.find((r) => r.kind === 'pokoj')!;
+    const tile = w.interior.room.indexOf(room.id);
+    const labels = () => commandsAt(sim.st, w, [core.id], tile).map((m) => m.label);
+    expect(labels()).toContain('Przeszukać pokój');
+    expect(labels()).not.toContain('Zająć mieszkanie');
+    for (const l of labels()) expect(l).not.toMatch(BLOKOWE);
+    const mats = () => sim.st.things.filter((t) => ['deski', 'zlom', 'czesci', 'jedzenie', 'leki'].includes(t.kind));
+    const before = mats().reduce((a, t) => a + t.n, 0);
+    sim.push({ t: 'search', ids: [core.id], room: room.id });
+    for (let k = 0; k < 6000 && !sim.st.apts[0].searched.includes(room.id); k++) sim.step();
+    expect(sim.st.apts[0].searched).toEqual([room.id]);
+    expect(mats().reduce((a, t) => a + t.n, 0)).toBeGreaterThan(before);
+    expect(goal(false).done).toBe(true);
+    // przeszukane pomieszczenie znika z menu, karta domu je liczy
+    expect(labels()).not.toContain('Przeszukać pokój');
+    const v = aptView(sim.st, w, 0, snapshot(sim.st, w).apts)!;
+    expect(visible(aptCard(v, false, words))).toContain('Przeszukane: 1 z 5');
   });
 
   it('menu poleceń przy furtce, praca w karcie osoby, miejsce na podwórku i powód nastroju', () => {
@@ -255,15 +313,60 @@ describe('w bloku po staremu (Przymorze)', () => {
       'Wkurzenie mieszkańców (0–100). Przy stu walne odwoła zarząd.',
     );
     expect(comingText(3, words)).toBe('3 osoby idą od bramy');
-    const zarzad = sim.st.apts.find((a) => a.ours)!.apt;
-    expect(aptState(aptView(sim.st, w, zarzad, snapshot(sim.st, w).apts)!, words)).toBe('Mieszkanie zarządu');
-    expect(
-      buildSheet(
-        buildMenu({}, () => true, words),
-        false,
-        words,
-      ).body,
-    ).toContain('Dwa miejsca do spania, w spółdzielni zmieści się więcej ludzi.');
+    expect(stats.find((s) => s.id === 'sBoards')?.title).toMatch(
+      /Na łaty, naprawy i budowę\. Dają je przeszukiwanie pustych mieszkań i rozbiórka mebli\.$/,
+    );
+    // mieszkanie zarządu bez przeszukiwania, puste z numerem, poleceniami i przeszukaniem
+    const snap = snapshot(sim.st, w);
+    const zarzad = aptView(sim.st, w, sim.st.apts.find((a) => a.ours)!.apt, snap.apts)!;
+    expect(aptState(zarzad, words)).toBe('Mieszkanie zarządu');
+    expect(zarzad.search).toBe(false);
+    expect(aptCard(zarzad, false, words)).not.toContain('Przeszukane');
+    const empty = aptView(sim.st, w, sim.st.apts.find((a) => a.state === 'puste')!.apt, snap.apts)!;
+    const card = aptCard(empty, false, words);
+    expect(card).toContain(`<h2>Mieszkanie ${empty.apt + 1}</h2>`);
+    expect(card).toContain('Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.');
+    expect(aptCard(empty, true, words)).toContain(
+      'Przytrzymajcie palec w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+    );
+    const body = buildSheet(
+      buildMenu({}, (kind) => kind !== 'magazyn', words),
+      false,
+      words,
+    ).body;
+    expect(body).toContain('Dwa miejsca do spania, w spółdzielni zmieści się więcej ludzi.');
+    expect(body).toContain('Nie ma gdzie postawić: brak wolnego miejsca w pokoju naszego mieszkania.');
+    expect(body).toContain('Brakuje: deski 20, złom 10. Deski daje przeszukiwanie pustych mieszkań i rozbiórka mebli.');
+    expect(body).toContain('Brakuje: złom 14, części 10. Złom daje przeszukiwanie i rozbiórka śmieci i sprzętów.');
+    expect(canPlace(sim.st, w, 'warsztat', 0, 0, 0).why).toBe('Tylko w pokoju w naszym mieszkaniu.');
+  });
+
+  it('cel drugiego dnia i pomoc: puste mieszkania, mieszkanie zarządu bez przeszukiwania', () => {
+    const { sim, w } = game('przymorze');
+    const goal = (touch: boolean) =>
+      goalsDay2(sim.st, null, { touch, wood: 0, woodReady: false, holes: 0, words }).find(
+        (g) => g.key === 'przeszukaj',
+      )!;
+    expect([goal(false).text, goal(false).how, goal(true).how]).toEqual([
+      'Przeszukajcie puste mieszkanie.',
+      'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
+      'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.',
+    ]);
+    const core = sim.st.pawns.find((p) => p.kind === 'core')!;
+    const home = sim.st.apts.find((a) => a.state === 'zarzad')!.apt;
+    const room = w.interior.rooms.find((r) => r.apt === home && r.kind === 'pokoj')!;
+    const labels = commandsAt(sim.st, w, [core.id], w.interior.room.indexOf(room.id)).map((m) => m.label);
+    expect(labels.some((l) => l.startsWith('Przeszukać'))).toBe(false);
+    const help = helpSheet(false, false, words).body;
+    expect(help).toContain('<h3 class="help-h">Budowa i puste mieszkania</h3>');
+    expect(help).toContain(
+      'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+    );
+    expect(help).toContain('Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.');
+    expect(help).toContain('budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie.');
+    expect(helpSheet(true, false, words).body).toContain(
+      'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+    );
   });
 
   it('menu poleceń przy bramie, praca w karcie osoby, miejsce na podwórku i powód nastroju', () => {

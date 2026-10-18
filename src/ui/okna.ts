@@ -451,11 +451,12 @@ const ZOMBIE_HELP = tx(
   '<h3 class="help-h">Zombie mode</h3><ul class="help"><li>Shamblers drift around beyond the fence. They are slow, but they follow noise and anything they can see. At night the herd comes and presses against the fence, and every night there are more of them.</li><li>A spear reaches through the fence: a guard with a spear kills the ones pressing against it. A knife, crowbar or axe only works on the same side of the fence. A shot kills outright, but it can be heard from far away and draws more of them in.</li><li>Shore up a damaged fence with planks or scrap, and patch any hole. Spears are made from planks and scrap: use “Make a spear” on a pile of either. “To arms!” sends everyone who can fight to stand watch at the fence.</li><li>A bite means fever and death in less than a day. Anyone bitten on an arm or a leg can be saved by amputation within two hours. Everyone who dies gets back up an hour later, unless somebody finishes them off.</li></ul>',
 );
 
-/** pomoc o budowie i pustych mieszkaniach (M2, fala 1) */
+/** pomoc o budowie i przeszukiwaniu (M2, fala 1): w bloku pustych mieszkań, w domu domu komitetu (słownik miejsca) */
 function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
+  const s = words.szukanie;
   const fetch = tx(
-    `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.`,
-    `${e.Zarzad} fetches the materials and does the building. Planks, scrap and parts come from searching empty flats and tearing things down.`,
+    `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie ${s.d} i rozbiórka.`,
+    `${e.Zarzad} fetches the materials and does the building. Planks, scrap and parts come from searching ${e.szukanie.d} and taking things apart.`,
   );
   const items = touch
     ? [
@@ -468,10 +469,7 @@ function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
           'Once you pick one, the plan follows your finger: tap to place it, the buttons at the bottom rotate and cancel. A green plan fits; a red one tells you why not.',
         ),
         fetch,
-        tx(
-          'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
-          'Tap a flat at HQ to see its card: whether it is empty, why, what needs repairing and what has been searched. Press and hold inside a flat for: Search, Take apart, Fix, Claim the flat.',
-        ),
+        tx(s.pomoc.dotyk, e.szukanie.pomoc.dotyk),
       ]
     : [
         tx(
@@ -483,12 +481,9 @@ function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
           'Once you pick one, the plan follows the cursor: left-click places it, R rotates, right-click or Esc cancels, and with Shift you can place several in a row. A green plan fits; a red one tells you why not.',
         ),
         fetch,
-        tx(
-          'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
-          'Click a flat at HQ to see its card: whether it is empty, why, what needs repairing and what has been searched. Right-click inside a flat for: Search, Take apart, Fix, Claim the flat.',
-        ),
+        tx(s.pomoc.mysz, e.szukanie.pomoc.mysz),
       ];
-  return `<h3 class="help-h">${L('Budowa i puste mieszkania', 'Building and empty flats')}</h3><ul class="help">${items
+  return `<h3 class="help-h">${esc(L(s.naglowek, e.szukanie.naglowek))}</h3><ul class="help">${items
     .map((t) => `<li>${esc(tr(t))}</li>`)
     .join('')}</ul>`;
 }
@@ -529,8 +524,8 @@ export function helpSheet(
       `<li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>Każdy z ${z} ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li>`,
       `<li>You are ${e.pelny} in 2051. Four people, a potbelly stove in the kitchen and a fence full of holes around the yard.</li><li>Watch everyone’s needs on their card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 ${e.krotko} meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the ${e.mieszkancy}’ trust and anger. At zero trust people leave; at full anger ${e.walne} votes ${e.krotko} out.</li><li>Everyone on ${e.krotko} carries one weapon, and spares are kept in the storeroom (person card: “Swap”). Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li>`,
     )}</ul>${zombie ? tr(ZOMBIE_HELP) : ''}<h3 class="help-h">${L('Na razie', 'For now')}</h3><p>${L(
-      'W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.',
-      'Version 0.4 has nights behind the fence, building, empty flats to search and repair, newcomers and Zombie mode. Research, winter and the rest of the economy will come in later versions.',
+      `W wersji 0.4 są noce za siatką, budowa, ${words.szukanie.wersja}, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.`,
+      `Version 0.4 has nights behind the fence, building, ${e.szukanie.wersja}, newcomers and Zombie mode. Research, winter and the rest of the economy will come in later versions.`,
     )}</p>`,
     foot: btn('help-back', L('Wróć', 'Back'), 'btn go'),
     closable: true,

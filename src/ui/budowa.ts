@@ -13,7 +13,7 @@ import type { MenuItem } from '../sim/orders.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimStock } from '../sim/snapshot.ts';
 import type { World } from '../world/world.ts';
-import { PLACE_EN } from './budowa.en.ts';
+import { placeEn } from './budowa.en.ts';
 import type { Sheet } from './okna.ts';
 import { esc } from './tekst.ts';
 
@@ -41,14 +41,16 @@ export function availableOf(st: SimState, s: SimStock): Record<Mat, number> {
 /** numery naszych mieszkań w siedzibie: mieszkanie zarządu i zajęte (st.apts) */
 export const ourApts = (st: SimState): number[] => st.apts.filter((a) => a.ours).map((a) => a.apt);
 
-/** gdzie wolno stawiać, w słowach do menu i do powodu braku miejsca */
-export const PLACE_TEXT: Record<BuildPlace, string> = {
-  pokoj: 'w pokoju naszego mieszkania',
-  kuchnia: 'w kuchni naszego mieszkania',
-  podworko: 'na podwórku za siatką',
-  obwod: 'w miejscu odcinka siatki',
-};
-const placeText = (p: BuildPlace): string => L(PLACE_TEXT[p], PLACE_EN[p]);
+/** gdzie wolno stawiać, w słowach do menu i do powodu braku miejsca (nasze mieszkanie albo dom ze słownika) */
+export const placeText = (place: BuildPlace, w: Words = wordsOf(BLOK)): string =>
+  ({
+    pokoj: `w pokoju ${w.lokal.d}`,
+    kuchnia: `w kuchni ${w.lokal.d}`,
+    podworko: 'na podwórku za siatką',
+    obwod: 'w miejscu odcinka siatki',
+  })[place];
+/** to samo w bieżącym języku */
+const placeL = (place: BuildPlace, w: Words, e: WordsEn): string => L(placeText(place, w), placeEn(place, e));
 
 /** nazwa budowli w bieżącym języku (menu, pasek trybu stawiania, duch planu) */
 export const buildName = (kind: BuildKind): string => L(BUILDS[kind].name, BUILDS_EN[kind].name);
@@ -209,22 +211,13 @@ const CATEGORIES: { key: BuildCategory['key']; title: Tx; places: BuildPlace[] }
   { key: 'obwod', title: tx('Obwód', 'Perimeter'), places: ['obwod'] },
 ];
 
-/** skąd brać materiał, do powodu „brakuje” */
-const SOURCE: Partial<Record<Mat, Tx>> = {
-  deski: tx(
-    'Deski daje przeszukiwanie pustych mieszkań i rozbiórka mebli.',
-    'Planks come from searching empty flats and taking furniture apart.',
-  ),
-  zlom: tx(
-    'Złom daje przeszukiwanie i rozbiórka śmieci i sprzętów.',
-    'Scrap comes from searching, clearing rubbish and taking appliances apart.',
-  ),
-  czesci: tx(
-    'Części daje przeszukiwanie i rozbiórka sprzętów.',
-    'Parts come from searching and taking appliances apart.',
-  ),
+/** skąd brać materiał, do powodu „brakuje”, w obu językach (w domu przeszukiwanie domu i gruz ze słownika) */
+const source = (w: Words, e: WordsEn): Partial<Record<Mat, Tx>> => ({
+  deski: tx(`Deski daje ${w.szukanie.zrodla.deski}.`, `Planks come from ${e.szukanie.zrodla.deski}.`),
+  zlom: tx(`Złom daje ${w.szukanie.zrodla.zlom}.`, `Scrap comes from ${e.szukanie.zrodla.zlom}.`),
+  czesci: tx(`Części daje ${w.szukanie.zrodla.czesci}.`, `Parts come from ${e.szukanie.zrodla.czesci}.`),
   drewno: tx('Drewno daje ścinanie drzew.', 'Wood comes from chopping down trees.'),
-};
+});
 
 /** Menu budowy: kategorie z budowlami; niedostępne z powodem (nie ma gdzie postawić albo brakuje
     materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. */
@@ -247,12 +240,12 @@ export function buildMenu(
         let why: string | undefined;
         if (!room(kind))
           why = L(
-            `Nie ma gdzie postawić: brak wolnego miejsca ${PLACE_TEXT[d.place]}.`,
-            `Nowhere to put it: no free space ${PLACE_EN[d.place]}.`,
+            `Nie ma gdzie postawić: brak wolnego miejsca ${placeText(d.place, words)}.`,
+            `Nowhere to put it: no free space ${placeEn(d.place, en)}.`,
           );
         else if (short.length) {
           const list = short.map(([m, n]) => `${matName(m)} ${n}`).join(', ');
-          const src = tr(SOURCE[short[0][0]]);
+          const src = tr(source(words, en)[short[0][0]]);
           why = L(`Brakuje: ${list}. ${src}`, `Still needed: ${list}. ${src}`).trim();
         }
         return {
@@ -262,7 +255,7 @@ export function buildMenu(
           cost: costText(d.cost),
           time: workText(d.work),
           effect: L(effectOf(kind, words), effectEnOf(kind, en)),
-          place: placeText(d.place),
+          place: placeL(d.place, words, en),
           ok: !why,
           why,
         };

@@ -954,6 +954,107 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // handlarz pod bramą drugiego dnia: z wózkiem, menu z towarem (wyszarzone bez materiału), potem napaść
+        name: 'handlarz',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const st = sim.st;
+            // dzień 2, 10:00, wizyta od razu
+            st.tick = Math.round(((24 + 10 - 15) * 60 * 800) / 60);
+            st.obcy!.next = st.tick;
+          });
+          for (let k = 0; k < 30; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'handlarz')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const cart = (await thingKeys(page)).filter((k) => k.includes('"kind":"wozek"'));
+          console.log(`  wózek: ${cart.length}`);
+          if (cart.length !== 1) throw new Error('nie widać wózka handlarza');
+          await page.screenshot({ path: path.join(OUT, 'handlarz-brama.png') });
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          const off = await page.locator('#ctx .ctx-item.off').count();
+          console.log(`  menu: ${items.join(' | ')} (wyszarzone: ${off})`);
+          if (!items.some((i) => i.startsWith('Dać ')) || !items.some((i) => i.startsWith('Napaść')))
+            throw new Error('w menu handlarza nie ma towaru albo napaści');
+          await page.screenshot({ path: path.join(OUT, 'handlarz-menu.png') });
+          await page.keyboard.press('Escape');
+          // napaść bez okna potwierdzenia (polecenie wprost) i chwila ucieczki
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+            sim.push({ t: 'rob', ids: [p.id] });
+          });
+          for (let k = 0; k < 20; k++) {
+            const done = await page.evaluate(() => window.zm!.sim!.st.obcy!.napad >= 0);
+            if (done) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          await page.evaluate(() => window.zm!.ff(0.3));
+          const after = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const c = st.things.find((t) => t.kind === 'wozek')!;
+            zm.setCam(c.x + 0.5, c.y, 2);
+            return { napad: st.obcy!.napad, next: st.obcy!.next, cart: c.n };
+          });
+          await waitIdle(page);
+          console.log(`  po napaści: ${JSON.stringify(after)}`);
+          if (after.napad < 0 || after.next !== -1 || after.cart !== 0) throw new Error('napaść nie zadziałała');
+        },
+      },
+      {
+        // to samo menu handlarza po angielsku: oferty „Give … for …”, wyszarzona z powodem, napaść
+        name: 'en-handlarz-menu',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          await select(page);
+          await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            st.tick = Math.round(((24 + 10 - 15) * 60 * 800) / 60);
+            st.obcy!.next = st.tick;
+          });
+          for (let k = 0; k < 30; k++) {
+            const ok = await page.evaluate(
+              () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'handlarz')?.job?.phase === 1,
+            );
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(2));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
+            zm.setCam(t.x, t.y - 1, 2);
+            return [t.x, t.y - 0.4];
+          });
+          await waitIdle(page);
+          const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+          const items = await menuAt(page, x, y);
+          console.log(`  menu: ${items.join(' | ')}`);
+          if (!items.some((i) => i.startsWith('Give ')) || !items.includes('Rob the trader…'))
+            throw new Error('w angielskim menu handlarza nie ma towaru albo napaści');
+          if (items.some((i) => /[ąćęłńóśźż]|\bboards?\b/i.test(i))) throw new Error('w menu handlarza polskie słowa');
+        },
+      },
+      {
         name: 'surowce-menu-warsztat',
         query: '',
         run: async (page, base) => {
@@ -3273,6 +3374,8 @@ const SHOTS: Shot[] = [
   // wydarzenia z miejsca: dym z komina pierwszego dnia w bloku i w domu, wydarzenie drugiego dnia i karta nocy w domu
   wydarzeniaDym('wydarzenia-blok-dym', 'przymorze', 'z waszej klatki', false),
   wydarzeniaDym('wydarzenia-dom-dym', 'zielonki', 'zza płotu', true),
+  // drugi dzień w domu: wydarzenie „Na ulicy” i cele bez słów z bloku; cel „Przeszukajcie dom” da się zaliczyć:
+  // prawy przycisk w pokoju domu komitetu daje „Przeszukać pokój”, a karta domu liczy przeszukane pomieszczenia
   {
     name: 'wydarzenia-dom-dzien2',
     query: '',
@@ -3281,7 +3384,8 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       await chopDryTree(page);
       // do raportu i dalej do pierwszego wydarzenia drugiego dnia od 8:00 (okna po drodze: pierwsza odpowiedź)
-      for (let k = 0; k < 200; k++) {
+      let event = false;
+      for (let k = 0; k < 200 && !event; k++) {
         const p = await page.evaluate(() => window.zm!.ff(15));
         const day2 = await page.evaluate(() => {
           const st = window.zm!.sim!.st;
@@ -3295,11 +3399,111 @@ const SHOTS: Shot[] = [
           if (kicker !== 'Na ulicy') throw new Error(`nagłówek okna wydarzenia w domu: ${kicker}`);
           const goals = (await page.textContent('#goals')) ?? '';
           if (BLOKOWE_UI.test(goals)) throw new Error(`cele drugiego dnia w domu ze słowami z bloku: ${goals}`);
-          return;
-        }
+          if (!goals.includes('Przeszukajcie dom.')) throw new Error(`w celach drugiego dnia nie ma domu: ${goals}`);
+          await page.screenshot({ path: path.join(OUT, 'wydarzenia-dom-dzien2-wydarzenie.png') });
+          await answerFirst(page, p);
+          event = true;
+        } else if (p) await answerFirst(page, p);
+      }
+      if (!event) throw new Error('drugiego dnia nie było wydarzenia');
+      // okna, które przyszły zaraz po wydarzeniu
+      for (let k = 0; k < 10; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(0));
+        if (!p) break;
+        await answerFirst(page, p);
+      }
+      // ktoś z komitetu (kliknięcie) i wolny kafelek pokoju w domu komitetu (prawy przycisk)
+      const pawn = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        zm.setCam(p.x, p.y, 1.6);
+        return { x: p.x, y: p.y };
+      });
+      await waitIdle(page);
+      const [qx, qy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.6), [pawn.x, pawn.y]);
+      await page.mouse.click(qx, qy);
+      await page.waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 });
+      const spot = await page.evaluate(() => {
+        const { sim } = window.zm!;
+        const { w, st } = sim!;
+        const it = w.interior;
+        const home = st.apts.find((a) => a.state === 'zarzad')!.apt;
+        const room = it.rooms.find((r) => r.apt === home && r.kind === 'pokoj')!;
+        const covered = (i: number) =>
+          st.things.some(
+            (t) =>
+              i % w.size >= t.x &&
+              i % w.size < t.x + t.w &&
+              Math.floor(i / w.size) >= t.y &&
+              Math.floor(i / w.size) < t.y + t.h,
+          );
+        const tiles = [...it.room.keys()].filter((i) => it.room[i] === room.id && !w.blocked[i] && !covered(i));
+        const t = tiles[Math.floor(tiles.length / 2)];
+        window.zm!.setCam((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5, 1.6);
+        return { room: room.id, x: t % w.size, y: Math.floor(t / w.size) };
+      });
+      await waitIdle(page);
+      const [rx, ry] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [spot.x, spot.y]);
+      await page.mouse.click(rx, ry, { button: 'right' });
+      await page.waitForSelector('#ctx:not([hidden])', { timeout: 3000 });
+      const menu = await page.evaluate(() => ({
+        head: document.querySelector('#ctx .ctx-head')?.textContent ?? '',
+        items: [...document.querySelectorAll('#ctx .ctx-item')].map((b) => b.textContent ?? ''),
+      }));
+      console.log(`  menu w pokoju domu: ${menu.head}: ${menu.items.join(' | ')}`);
+      if (!menu.items.includes('Przeszukać pokój')) throw new Error('w pokoju domu komitetu nie ma „Przeszukać pokój”');
+      if (!menu.head.endsWith(' · dom komitetu ulicy')) throw new Error(`nagłówek menu w domu: ${menu.head}`);
+      const word = `${menu.head} ${menu.items.join(' ')}`.match(BLOKOWE_UI)?.[0];
+      if (word) throw new Error(`menu poleceń w domu ze słowem z bloku: ${word}`);
+      await page.screenshot({ path: path.join(OUT, 'wydarzenia-dom-dzien2-menu.png') });
+      await page.click('#ctx .ctx-item:has-text("Przeszukać pokój")');
+      // przeszukanie trwa około godziny gry; okna po drodze: pierwsza odpowiedź
+      for (let k = 0; k < 40; k++) {
+        if (await page.evaluate((room) => window.zm!.sim!.st.apts[0].searched.includes(room), spot.room)) break;
+        const p = await page.evaluate(() => window.zm!.ff(5));
         if (p) await answerFirst(page, p);
       }
-      throw new Error('drugiego dnia nie było wydarzenia');
+      const done = await page.evaluate(() => ({
+        searched: window.zm!.sim!.st.apts[0].searched.length,
+        goal: document.querySelector('#goals .goal[data-n="1"]')?.className ?? '',
+        count: document.querySelector('#goals .goals-n')?.textContent ?? '',
+      }));
+      console.log(`  po przeszukaniu: przeszukane ${done.searched}, cel 1: ${done.goal}, cele ${done.count}`);
+      if (!done.searched) throw new Error('pokój domu komitetu nie został przeszukany');
+      if (!done.goal.includes('done')) throw new Error('cel „Przeszukajcie dom” nie zaliczony po przeszukaniu pokoju');
+      // karta domu (lewy klik w domu z dala od ludzi zdejmuje zaznaczenie): dom komitetu, bez mieszkania,
+      // z przeszukanymi pomieszczeniami
+      const far = await page.evaluate(() => {
+        const { w, st } = window.zm!.sim!;
+        const it = w.interior;
+        const t = [...it.room.keys()].find(
+          (i) =>
+            it.room[i] >= 0 &&
+            !w.blocked[i] &&
+            st.pawns.every((p) => Math.hypot(p.x - (i % w.size) - 0.5, p.y - Math.floor(i / w.size) - 0.5) > 2),
+        )!;
+        window.zm!.setCam((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5, 1.3);
+        return [t % w.size, Math.floor(t / w.size)];
+      });
+      await waitIdle(page);
+      const [hx, hy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), far);
+      await page.mouse.click(hx, hy);
+      const card = await page
+        .waitForFunction(
+          () => {
+            const t = document.getElementById('card')!.textContent ?? '';
+            return t.includes('Przeszukane: 1 z') ? t : '';
+          },
+          null,
+          { timeout: 3000 },
+        )
+        .then((h) => h.jsonValue())
+        .catch(() => '');
+      if (!card) throw new Error('karta domu nie pokazała przeszukanego pomieszczenia');
+      console.log(`  karta domu: ${card.replace(/\s+/g, ' ').slice(0, 140)}`);
+      if (!card.includes('Dom komitetu ulicy')) throw new Error(`karta domu bez domu komitetu: ${card}`);
+      const cardWord = card.match(BLOKOWE_UI)?.[0];
+      if (cardWord) throw new Error(`karta domu ze słowem z bloku: ${cardWord}`);
     },
   },
   {
@@ -3824,9 +4028,9 @@ async function m2PoseStage(page: Page, where: 'dom' | 'podworko') {
 
 /** słowa, których w domu jednorodzinnym nie ma w tekstach zarządu (jak FORBIDDEN_DOM w testach) */
 const FORBIDDEN_DOM = /klatk|piętr|spółdziel|pawilon|szlaban|świetlic|czynsz|blok|mieszkani/i;
-/** słowa z bloku, których w domu nie ma w oknach, celach, pomocy, pasku i menu budowy (jak BLOKOWE
-    w tests/unit/teksty-miejsca.test.ts: łóżka piętrowe i mieszkanie siedziby zostają) */
-const BLOKOWE_UI = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszkańc/i;
+/** słowa z bloku, których w domu nie ma w oknach, celach, pomocy, pasku, menu budowy i poleceń i na karcie domu (jak
+    BLOKOWE w tests/unit/teksty-miejsca.test.ts: także mieszkanie, bo lokum komitetu to dom; łóżka piętrowe zostają) */
+const BLOKOWE_UI = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszka[nń]/i;
 
 /** samouczek bez klikania: pierwszy z zarządu ścina suche drzewo (jak polecenie z menu) */
 async function chopDryTree(page: Page) {

@@ -98,6 +98,7 @@ function allSpecs(): ThingSpec[] {
       s.push({ kind: 'fotel', rot, seed });
     }
   for (const lit of [false, true]) for (const seed of [0, 2]) s.push({ kind: 'lampa', lit, seed });
+  for (const full of [undefined, false]) for (const seed of [0, 3]) s.push({ kind: 'wozek', full, seed });
   // garnek z posiłkiem (na podłodze i na stole) i wraki we wszystkich ustawieniach
   for (const size of [0, 1, 2, 3] as const)
     for (const table of [false, true]) for (const seed of [0, 1, 2, 3]) s.push({ kind: 'posilek', size, table, seed });
@@ -136,6 +137,7 @@ function sizeKey(s: ThingSpec): string {
     case 'siatka':
     case 'lampa':
     case 'krew':
+    case 'wozek':
       return s.kind;
     case 'ognisko':
       return `ognisko ${s.style}`;

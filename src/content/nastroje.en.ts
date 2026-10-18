@@ -20,6 +20,8 @@ export const NASTROJE_EN: Readonly<Record<string, string>> = {
   'Gorączka po ugryzieniu': 'Fever from a bite',
   'Szabrownicy weszli na podwórko': 'Looters got into the yard',
   'Przegoniliśmy szabrowników': 'We ran the looters off',
+  // handlarz pod bramą (NAPISY.nastroj w src/sim/handlarz.ts)
+  'Napadliśmy na handlarza': 'We robbed the trader',
   // zarząd: noc, wyprawy, wydarzenia
   'Sprawy spółdzielni': 'Co-op business',
   'Sprawy ulicy': 'Street business',

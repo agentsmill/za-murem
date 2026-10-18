@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { mulberry } from '../../src/core/rng.ts';
 import { BUILDS, type BuildKind, buildTiles } from '../../src/sim/budowle.ts';
-import { REPAIR, searchTicks } from '../../src/sim/mieszkania.ts';
+import { type AptGame, HOUSE_EXTRA, lootOf, REPAIR, searchLoot, searchTicks } from '../../src/sim/mieszkania.ts';
+import { commandsAt } from '../../src/sim/orders.ts';
 import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
-import { mockBlock, mockBlockM2 } from './interior-mock.ts';
+import { mockBlock, mockBlockM2, mockHouse } from './interior-mock.ts';
 
 const w = mockBlockM2();
 const size = w.size;
@@ -131,9 +133,49 @@ describe('M2: przeszukanie, rozbiórka, naprawa i zajęcie mieszkania', () => {
     a.sim.step();
     expect(a.p.job?.t).not.toBe('search');
     // mieszkania mieszkańców i zarządu się nie przeszukuje
-    a.sim.push({ t: 'search', ids: [a.p.id], room: roomOfKind(1, 'pokoj') });
-    a.sim.step();
-    expect(a.p.job?.t).not.toBe('search');
+    for (const apt of [1, 0]) {
+      a.sim.push({ t: 'search', ids: [a.p.id], room: roomOfKind(apt, 'pokoj') });
+      a.sim.step();
+      expect(a.p.job?.t).not.toBe('search');
+    }
+  });
+
+  it('łup: z tabeli według powodu, w domu komitetu z dokładką desek i złomu', () => {
+    const empty: AptGame = { apt: 2, state: 'puste', why: 'zalanie', ours: false, searched: [] };
+    const home: AptGame = { apt: 0, state: 'zarzad', ours: true, searched: [] };
+    for (let k = 1; k <= 20; k++) {
+      expect(searchLoot(empty, 'kuchnia', 9, mulberry(k))).toEqual(lootOf('zalanie', 'kuchnia', 9, mulberry(k)));
+      const plain = lootOf('wyjazd', 'pokoj', 9, mulberry(k));
+      expect(searchLoot(home, 'pokoj', 9, mulberry(k))).toEqual({
+        ...plain,
+        deski: (plain.deski ?? 0) + (HOUSE_EXTRA.deski ?? 0),
+        zlom: (plain.zlom ?? 0) + (HOUSE_EXTRA.zlom ?? 0),
+      });
+    }
+  });
+
+  it('w domu jednorodzinnym przeszukuje się dom komitetu: każde pomieszczenie raz, z dokładką desek i złomu', () => {
+    const house = mockHouse();
+    const hh = house.interior;
+    const st = createSim(house, 3, { core: 1 });
+    const sim = new Sim(house, st);
+    const [p] = core(st);
+    expect(st.apts).toEqual([{ apt: 0, state: 'zarzad', ours: true, searched: [] }]);
+    const room = hh.rooms.find((r) => r.kind === 'pokoj')!.id;
+    const tile = hh.room.indexOf(room);
+    expect(commandsAt(st, house, [p.id], tile).map((m) => m.label)).toContain('Przeszukać pokój');
+    const inHouseRoom = (k: string) =>
+      st.things.filter((t) => t.kind === k && hh.room[t.y * house.size + t.x] === room).reduce((a, t) => a + t.n, 0);
+    sim.push({ t: 'search', ids: [p.id], room });
+    run(sim, () => st.apts[0].searched.includes(room));
+    expect(st.apts[0].searched).toEqual([room]);
+    expect(inHouseRoom('deski')).toBeGreaterThanOrEqual(1);
+    expect(inHouseRoom('zlom')).toBeGreaterThanOrEqual(1);
+    // drugi raz to samo pomieszczenie: nic się nie dzieje, a mebli domu dalej nie wolno rozebrać
+    sim.push({ t: 'search', ids: [p.id], room });
+    sim.step();
+    expect(p.job?.t).not.toBe('search');
+    expect(commandsAt(st, house, [p.id], tile).some((m) => m.label.startsWith('Rozebrać'))).toBe(false);
   });
 
   it('rozbiórka: śmieci, lodówka i zepsuty stół dają materiały z tabeli, rzecz znika', async () => {

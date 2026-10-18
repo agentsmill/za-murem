@@ -11,8 +11,9 @@ import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
+import { NAPISY as HANDEL } from './handlarz.ts';
 import { dryTreeOf, houseOf, inHomeApt, type RoomKind } from './house.ts';
-import { MAT_ACC, REPAIR, RUBBISH } from './mieszkania.ts';
+import { MAT_ACC, REPAIR, RUBBISH, searchable } from './mieszkania.ts';
 import { BUILD_EN, FURNITURE_EN, MAT_EN, REPAIR_EN, ROOM_EN, THING_EN } from './nazwy.en.ts';
 import { gateTiles } from './perimeter.ts';
 import {
@@ -78,6 +79,8 @@ export interface MenuItem {
   quick: boolean;
   /** niszczy coś na zawsze (palenie mebli): interfejs pyta o potwierdzenie */
   confirm?: boolean;
+  /** teraz nie da się wybrać, z tego powodu (oferta handlarza bez materiału): menu pokazuje ją wyszarzoną */
+  off?: string;
 }
 
 /** drzewo pod kursorem: najbliższy pień w zasięgu korony (najwyżej 2,5 m), także sam kafelek pnia; −1: brak */
@@ -144,6 +147,24 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
           : L('Atakuj szabrownika', 'Attack the looter'),
       quick: true,
     });
+  // handlarz pod bramą (na nim albo na jego wózku): jego towar, wyszarzony, gdy nie starcza materiału, i napaść
+  const trader = st.obcy && st.obcy.trader >= 0 ? st.pawns.find((p) => p.id === st.obcy!.trader) : undefined;
+  if (trader?.job?.t === 'trader' && trader.job.phase === 1) {
+    const cart = st.things.find((t) => t.id === trader.job!.from);
+    const onCart = !!cart && cart.y * w.size + cart.x === tile;
+    if (onCart || Math.hypot(trader.x - cx, trader.y - cy) <= 1) {
+      const stock = (m: Mat) => st.things.reduce((a, t) => a + (t.kind === m && t.n > 0 ? t.n : 0), 0);
+      st.obcy!.offers.forEach((o, k) => {
+        if (o.left <= 0) return;
+        const short: Partial<Record<Mat, number>> = {};
+        for (const [m, n] of Object.entries(o.take) as [Mat, number][]) if (stock(m) < n) short[m] = n - stock(m);
+        const item: MenuItem = { cmd: { t: 'trade', ids: core, offer: k }, label: tr(HANDEL.oferta(o)), quick: false };
+        if (Object.keys(short).length) item.off = tr(HANDEL.brakuje(short));
+        out.push(item);
+      });
+      out.push({ cmd: { t: 'rob', ids: core }, label: tr(HANDEL.napasc), quick: false, confirm: true });
+    }
+  }
   // zwłoki, które wstaną: dobić
   const body = thingAt(st, w, tile, 'zwloki');
   if (body && body.fuel > 0)
@@ -287,7 +308,8 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       confirm: true,
     });
   // M2: rozbiórka na materiał (śmieci i gruz od razu, meble pustych mieszkań z menu), naprawa uszkodzenia, gdy
-  // materiałów starczy, przeszukanie pomieszczenia i zajęcie pustego mieszkania
+  // materiałów starczy, przeszukanie pomieszczenia (pustego mieszkania, w domu jednorodzinnym też domu komitetu)
+  // i zajęcie pustego mieszkania (dom komitetu jest już nasz)
   const things = st.things.filter((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
   for (const t of things)
     if (dismantlable(st, w, t)) {
@@ -315,7 +337,7 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   const hq = houseOf(w);
   const room = hq && hq.room[tile] >= 0 ? hq.rooms[hq.room[tile]] : null;
   const g = room ? st.apts.find((a) => a.apt === room.apt) : undefined;
-  if (room && g?.state === 'puste') {
+  if (room && g && searchable(w, g)) {
     if (!g.searched.includes(room.id))
       out.push({
         cmd: { t: 'search', ids: core, room: room.id },
@@ -386,7 +408,7 @@ function reachesThrough(st: SimState, id: number): boolean {
 /** domyślne polecenie dla klikniętego kafelka (pierwsze, które można wykonać od razu) albo null bez nikogo
     z zarządu */
 export function commandFor(st: SimState, w: World, ids: readonly number[], tile: number): Command | null {
-  return commandsAt(st, w, ids, tile).find((m) => m.quick)?.cmd ?? null;
+  return commandsAt(st, w, ids, tile).find((m) => m.quick && !m.off)?.cmd ?? null;
 }
 
 /** co robi osoba: krótki opis do karty */
@@ -580,6 +602,12 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return tr(walking ? NAPISY.idzieSzukac : NAPISY.szuka);
     case 'carry':
       return tr(walking ? NAPISY.poLup : NAPISY.niesie);
+    case 'trader':
+      return tr([HANDEL.przychodzi, HANDEL.czeka, HANDEL.odchodzi, HANDEL.ucieka, HANDEL.odchodzi][j.phase]);
+    case 'trade':
+      return tr(walking ? HANDEL.idzieHandlowac : HANDEL.handluje);
+    case 'rob':
+      return tr(HANDEL.idzieNapasc);
     case 'saw':
       if (walking) return tr(NAPISY.idzieWarsztat);
       return tr(j.what === 'czesci' ? NAPISY.robiCzesci(j.from) : NAPISY.pilujeDeski(j.from));

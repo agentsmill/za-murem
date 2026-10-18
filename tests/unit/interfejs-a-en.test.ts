@@ -11,7 +11,7 @@ import { ENDINGS_EN } from '../../src/content/data.en.ts';
 import type { EndingId } from '../../src/content/data.ts';
 import { type Tx, tr, tx, txOf, ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
-import { BLOK, wordsEn } from '../../src/gov/miejsce.ts';
+import { BLOK, wordsEn, wordsOf } from '../../src/gov/miejsce.ts';
 import { KOZA_KEY, makeCard } from '../../src/gov/noc.ts';
 import type { GovInput, LawOption, NightCard, NightReport, Prompt } from '../../src/gov/typy.ts';
 import { govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
@@ -24,7 +24,7 @@ import { MAT_ACC, REPAIR } from '../../src/sim/mieszkania.ts';
 import { BURNABLE, createSim, Sim } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
-import { PLACE_EN } from '../../src/ui/budowa.en.ts';
+import { placeEn } from '../../src/ui/budowa.en.ts';
 import {
   allowedAnchors,
   buildItems,
@@ -32,7 +32,7 @@ import {
   buildName,
   buildSheet,
   costText,
-  PLACE_TEXT,
+  placeText,
   workText,
 } from '../../src/ui/budowa.ts';
 import { goalsDay2, goalsOf } from '../../src/ui/cele.ts';
@@ -475,13 +475,15 @@ describe('pasek, cele i przybysze po angielsku', () => {
   });
 });
 
+/** dom jednorodzinny wśród domów (jak Zielonki) */
+const DOM = { ...BLOK, kind: 'dom' as const, near: 'domy' as const };
+
 describe('budowa i mieszkania po angielsku', () => {
   it('angielskie tablice mają wszystkie klucze polskich i nie mają polskich liter', () => {
     const pary: [Record<string, unknown>, Record<string, unknown>][] = [
       [BUILDS, BUILDS_EN],
       [MAT_ACC, MAT_EN],
       [REPAIR, REPAIR_EN],
-      [PLACE_TEXT, PLACE_EN],
       [DAMAGE_NAME, DAMAGE_EN],
       [WHY_SHORT, WHY_SHORT_EN],
       [WHY_TEXT, WHY_TEXT_EN],
@@ -493,6 +495,13 @@ describe('budowa i mieszkania po angielsku', () => {
         expect(POLSKIE.test(t), t).toBe(false);
       }
     }
+    // gdzie wolno stawiać: po angielsku dla bloku i dla domu, jak placeText ze słownikiem miejsca
+    for (const place of ['pokoj', 'kuchnia', 'podworko', 'obwod'] as const)
+      for (const p of [BLOK, DOM]) {
+        expect(placeText(place, wordsOf(p))).toBeTruthy();
+        expect(POLSKIE.test(placeEn(place, wordsEn(p)))).toBe(false);
+      }
+    expect(placeEn('pokoj', wordsEn(DOM))).toBe('in a room of your house');
   });
 
   it('menu budowy: kategorie, nazwy, koszt i czas po angielsku, powody braku', () => {
@@ -519,7 +528,7 @@ describe('budowa i mieszkania po angielsku', () => {
     const k = buildMenu({ zlom: 999, czesci: 999 }, (kind) => kind !== 'kuchnia_spoleczna')
       .flatMap((c) => c.items)
       .find((b) => b.kind === 'kuchnia_spoleczna')!;
-    expect(k.why).toBe('Nowhere to put it: no free space in your kitchen.');
+    expect(k.why).toBe('Nowhere to put it: no free space in the kitchen of your flat.');
     for (const touch of [false, true])
       for (const have of [{}, BUILDS.warsztat.cost, { deski: 999, zlom: 999, czesci: 999 }]) {
         const s = buildSheet(
@@ -578,7 +587,7 @@ describe('budowa i mieszkania po angielsku', () => {
       'Only on a stretch of the fence.',
       'Only in the yard inside the fence, away from the gate, holes and doors.',
       'Only in a room of your flat.',
-      'Only in your kitchen.',
+      'Only in the kitchen of your flat.',
     ])
       expect(whys).toContain(why);
     for (const why of whys) expect(polskieSlowa(why), why).toEqual([]);

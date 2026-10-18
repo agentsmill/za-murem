@@ -127,8 +127,8 @@ export function statsOf(
       value: String(k.boards),
       level: k.boards ? 'ok' : 'mid',
       title: L(
-        `Deski: ${k.boards}. Na łaty, naprawy i budowę. Dają je przeszukiwanie pustych mieszkań i rozbiórka mebli.`,
-        `Planks: ${k.boards}. For patches, repairs and building. Search empty flats and take furniture apart to get more.`,
+        `Deski: ${k.boards}. Na łaty, naprawy i budowę. Dają je ${words.szukanie.zrodla.deski}.`,
+        `Planks: ${k.boards}. For patches, repairs and building. They come from ${e.szukanie.zrodla.deski}.`,
       ),
     },
     {
@@ -137,7 +137,7 @@ export function statsOf(
       level: k.scrap ? 'ok' : 'mid',
       title: L(
         `Złom: ${k.scrap}. Na łaty, zasieki i naprawy rur i pieców. Dają go przeszukiwanie i rozbiórka śmieci.`,
-        `Scrap: ${k.scrap}. For patches, barricades and fixing pipes and cookers. Search flats and clear rubbish to get more.`,
+        `Scrap: ${k.scrap}. For patches, barricades and fixing pipes and cookers. It comes from ${e.szukanie.zrodla.zlom}.`,
       ),
     },
     {
@@ -146,7 +146,7 @@ export function statsOf(
       level: k.parts ? 'ok' : 'mid',
       title: L(
         `Części: ${k.parts}. Do rur, pieców i kuchni społecznej. Dają je przeszukiwanie i rozbiórka sprzętów.`,
-        `Parts: ${k.parts}. For pipes, cookers and the community kitchen. Search flats and take appliances apart to get more.`,
+        `Parts: ${k.parts}. For pipes, cookers and the community kitchen. They come from ${e.szukanie.zrodla.czesci}.`,
       ),
     },
     {
@@ -155,7 +155,7 @@ export function statsOf(
       level: k.boards || k.scrap || k.parts ? 'ok' : 'mid',
       title: L(
         `Deski ${k.boards}, złom ${k.scrap}, części ${k.parts}. Dają je przeszukiwanie i rozbiórka.`,
-        `Planks ${k.boards}, scrap ${k.scrap}, parts ${k.parts}. Searching and tearing things down gets you more.`,
+        `Planks ${k.boards}, scrap ${k.scrap}, parts ${k.parts}. Searching and taking things apart gets you more.`,
       ),
     },
     {

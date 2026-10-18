@@ -4,7 +4,7 @@
    jest od razu w bieżącym języku (symulacja patrzy tylko na ok). */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
-import { type Words, wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
+import { type Words, type WordsEn, wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
 import { houseOf } from './house.ts';
@@ -124,14 +124,14 @@ export function effectOf(kind: BuildKind, w: Words): string {
   return typeof e === 'string' ? e : e(w);
 }
 
-/** powód „nie tutaj” w obu językach; brama albo furtka (w dopełniaczu i po angielsku) ze słownika wspólnoty */
-const WHY: Record<BuildPlace, (bramy: string, gate: string) => Tx> = {
-  pokoj: () => tx('Tylko w pokoju w naszym mieszkaniu.', 'Only in a room of your flat.'),
-  kuchnia: () => tx('Tylko w kuchni w naszym mieszkaniu.', 'Only in your kitchen.'),
-  podworko: (bramy, gate) =>
+/** powód „nie tutaj” w obu językach ze słowami ze słownika wspólnoty: nasze mieszkanie albo dom, brama albo furtka */
+const WHY: Record<BuildPlace, (w: Words, e: WordsEn) => Tx> = {
+  pokoj: (w, e) => tx(`Tylko w pokoju ${w.lokal.w}.`, `Only in a room of ${e.lokal.w}.`),
+  kuchnia: (w, e) => tx(`Tylko w kuchni ${w.lokal.w}.`, `Only in the kitchen of ${e.lokal.w}.`),
+  podworko: (w, e) =>
     tx(
-      `Tylko na podwórku za siatką, z dala od ${bramy}, dziur i drzwi.`,
-      `Only in the yard inside the fence, away from ${gate}, holes and doors.`,
+      `Tylko na podwórku za siatką, z dala od ${w.brama.d}, dziur i drzwi.`,
+      `Only in the yard inside the fence, away from ${e.brama}, holes and doors.`,
     ),
   obwod: () => tx('Tylko na odcinku siatki.', 'Only on a stretch of the fence.'),
 };
@@ -155,7 +155,7 @@ export function canPlace(
   const { w: bw, h: bh } = footprint(kind, rot);
   if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: L('Poza mapą.', 'Off the map.') };
   const tiles = buildTiles(kind, x, y, rot, size);
-  const no = { ok: false, why: tr(WHY[def.place](wordsOfWorld(w).brama.d, wordsEnOfWorld(w).brama)) };
+  const no = { ok: false, why: tr(WHY[def.place](wordsOfWorld(w), wordsEnOfWorld(w))) };
   const h = houseOf(w);
   const shape = fenceShape(w);
   if (def.place === 'pokoj' || def.place === 'kuchnia') {

@@ -37,9 +37,9 @@ import { polskieSlowa } from './po-angielsku.ts';
 beforeEach(() => ustawJezyk('en'));
 afterEach(() => ustawJezyk('pl'));
 
-/** słowa z bloku, których w domu nie ma w angielskich tekstach interfejsu (flat zostaje nazwą mieszkania siedziby) */
+/** słowa z bloku, których w domu nie ma w angielskich tekstach interfejsu (siedziba w domu to dom komitetu, nie mieszkanie) */
 const BLOKOWE =
-  /co-op|\bboard\b|general meeting|\bestate\b|carpet rack|stairwell|\bblocks?\b|pavilion|common room|service charge|\bresidents?\b|(?<!garden )\bgate\b/i;
+  /co-op|\bboard\b|general meeting|\bestate\b|carpet rack|stairwell|\bblocks?\b|\bflats?\b|pavilion|common room|service charge|\bresidents?\b|(?<!garden )\bgate\b/i;
 
 function game(key: string) {
   const { w, seed } = demoWorld(key);
@@ -123,7 +123,9 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
       [false, true].flatMap((touch) => goalsOf(sim.st, gov, { touch, kitchen: 9, hour, words, wordsEn: e })),
     );
     expect(goals.find((g) => g.key === 'rozkaz')?.text).toBe('Send them to the dead tree in the garden.');
-    goals.push(...goalsDay2(sim.st, gov, { touch: false, wood: 0, woodReady: false, holes: 2, words, wordsEn: e }));
+    const day2 = goalsDay2(sim.st, gov, { touch: false, wood: 0, woodReady: false, holes: 2, words, wordsEn: e });
+    expect(day2.find((g) => g.key === 'przeszukaj')?.text).toBe('Search the house.');
+    goals.push(...day2);
     for (const g of goals) expect(`${g.text} ${g.how}`).not.toMatch(BLOKOWE);
   });
 
@@ -148,8 +150,10 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
     );
     expect(bitten).toContain('title="Someone from the committee with Medicine takes the limb off');
     const v = aptView(sim.st, w, 0, snap.apts)!;
-    expect(aptState(v, words, e)).toBe('The committee’s flat');
+    expect(aptState(v, words, e)).toBe('The committee’s house');
     expect(visible(aptCard(v, false, words, e))).not.toMatch(BLOKOWE);
+    expect(aptCard(v, false, words, e)).toContain('<h2>The house</h2>');
+    expect(helpSheet(false, false, words, e).body).toContain('Building and searching the house');
     const sheet = buildSheet(
       buildMenu({}, (kind) => kind !== 'magazyn', words, e),
       false,

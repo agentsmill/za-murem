@@ -165,10 +165,10 @@ export const DAY2_WOOD = 16;
 /** czy to już drugi dzień: po pierwszym raporcie rano, do raportu po drugiej nocy */
 export const isDay2 = (gov: GovState | null): boolean => !!gov && gov.reports.length === 1;
 
-/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie, postawić pierwszą budowlę (dowolną;
-    warsztat bierze tyle materiału, że zarząd stawia go zwykle 3. albo 4. dnia), wzmocnić obwód, mieć drewno
-    na noc. Co przeszukane, daje stan gry (st.apts); budowle i zasieki to gotowe rzeczy w st.things; obwód
-    liczy się też, gdy żadna dziura nie jest otwarta. */
+/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie (w domu jednorodzinnym dom komitetu, słowa
+    ze słownika miejsca), postawić pierwszą budowlę (dowolną; warsztat bierze tyle materiału, że zarząd stawia go
+    zwykle 3. albo 4. dnia), wzmocnić obwód, mieć drewno na noc. Co przeszukane, daje stan gry (st.apts); budowle
+    i zasieki to gotowe rzeczy w st.things; obwód liczy się też, gdy żadna dziura nie jest otwarta. */
 export function goalsDay2(
   st: SimState,
   gov: GovState | null,
@@ -208,16 +208,8 @@ export function goalsDay2(
   return [
     {
       key: 'przeszukaj',
-      text: L('Przeszukajcie puste mieszkanie.', 'Search an empty flat.'),
-      how: o.touch
-        ? L(
-            'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.',
-            'Tap a flat at HQ: its card shows whether it is empty and what is left inside. Then press and hold inside it: “Search”.',
-          )
-        : L(
-            'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
-            'Click a flat at HQ: its card shows whether it is empty and what is left inside. Then right-click inside it: “Search”.',
-          ),
+      text: L(`Przeszukajcie ${w.szukanie.b}.`, `Search ${e.szukanie.b}.`),
+      how: o.touch ? L(w.szukanie.jak.dotyk, e.szukanie.jak.dotyk) : L(w.szukanie.jak.mysz, e.szukanie.jak.mysz),
       done: searched,
     },
     {
@@ -234,8 +226,8 @@ export function goalsDay2(
           key: 'dzida',
           text: L('Zróbcie dzidę dla warty.', 'Make a spear for the watch.'),
           how: L(
-            `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie pustych mieszkań i rozbiórka.`,
-            `${o.touch ? 'Press and hold on a pile of planks or scrap' : 'Right-click a pile of planks or scrap'}: “Make a spear” (${manyEn(SPEAR_BOARDS, 'plank', 'planks')} and ${SPEAR_SCRAP} scrap). A spear reaches shamblers through the fence. Planks and scrap come from searching empty flats and tearing things down.`,
+            `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${w.szukanie.d} i rozbiórka.`,
+            `${o.touch ? 'Press and hold on a pile of planks or scrap' : 'Right-click a pile of planks or scrap'}: “Make a spear” (${manyEn(SPEAR_BOARDS, 'plank', 'planks')} and ${SPEAR_SCRAP} scrap). A spear reaches shamblers through the fence. Planks and scrap come from searching ${e.szukanie.d} and taking things apart.`,
           ),
           done: spears > startSpears,
         }
