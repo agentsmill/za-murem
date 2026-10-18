@@ -25,6 +25,7 @@ import {
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
+import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
@@ -71,6 +72,7 @@ import {
   zapiszZmiane,
   zastosujZmiany,
   zmianaZPol,
+  zTejOsobyGeneratora,
 } from './ui/imiona.ts';
 import { podepnijPrzelacznik, przelacznikHtml, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
@@ -279,6 +281,8 @@ poZmianieJezyka(() => {
   setMode(mode);
   demoLabels();
   resumeLabel();
+  druzyna?.odswiez();
+  siec.przerysuj();
   if (!sim) return;
   ctx.close();
   hud(performance.now());
@@ -972,7 +976,13 @@ function hud(now: number) {
   }
   if (lok) {
     card.hidden = false;
-    setCard(personCard(lok, st.tick, undefined, storyOf === lok.pawn, { lokator: true, imie: imionaWGrze(siec.stan) }));
+    setCard(
+      personCard(lok, st.tick, undefined, storyOf === lok.pawn, {
+        lokator: true,
+        imie: imionaWGrze(siec.stan),
+        en: lok.ref ? angielscy?.get(lok.ref) : undefined,
+      }),
+    );
     return;
   }
   const sel = snap.people.filter((p) => selected.has(p.pawn));
@@ -991,7 +1001,13 @@ function hud(now: number) {
         touchUI,
       ),
     );
-  else setCard(personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn, { imie: imionaWGrze(siec.stan) }));
+  else
+    setCard(
+      personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn, {
+        imie: imionaWGrze(siec.stan),
+        en: sel[0].ref ? angielscy?.get(sel[0].ref) : undefined,
+      }),
+    );
 }
 
 let goalsHtml = '';
@@ -1006,7 +1022,7 @@ function renderGoals(snap: SimSnapshot) {
     const own = siec.cele(snap.people.some((p) => selected.has(p.pawn)));
     const now = own.find((g) => !g.done);
     el.hidden = false;
-    const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>Bez domu</span><b class="goals-n">${own.filter((g) => g.done).length}/${own.length}</b></button><ol class="goal-list">${own
+    const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>${L('Bez domu', 'Homeless')}</span><b class="goals-n">${own.filter((g) => g.done).length}/${own.length}</b></button><ol class="goal-list">${own
       .map(
         (g, k) =>
           `<li class="goal${g.done ? ' done' : g === now ? ' now' : ''}" data-n="${k + 1}">${esc(g.text)}${g === now ? `<small class="goal-how">${esc(g.how)}</small>` : ''}</li>`,
@@ -1338,6 +1354,32 @@ function doKroniki(teksty: readonly Tx[]) {
     komunikacie w kronice („Halina wyprowadziła się.”) i usunięcie z pamięci. `enter` woła to na końcu startu gry
     (nowej i wznowionej), gdy `sim`, `gov` i `loaded` już są. */
 function zastosujImiona(zmiany?: Record<string, ZmianaImienia>): void {
+  zastosujImionaStanu(zmiany);
+  liczAngielskich();
+}
+
+/** angielskie teksty osób z generatora po `Person.ref` (tylko tych, których polskie teksty są z generatora), liczone
+    przy starcie gry i po każdej zmianie imienia; bez danych mieszkańców null i karta pokazuje teksty ze stanu */
+let angielscy: Map<string, LokatorEn> | null = null;
+function liczAngielskich(): void {
+  angielscy = null;
+  if (!sim || !mieszkancy) return;
+  const imiona = new Map(sim.st.people.flatMap((p) => (p.ref ? [[p.ref, p.first] as const] : [])));
+  try {
+    const wszyscy = lokatorzyEn(mieszkancy.l, mieszkancy.dane, imiona);
+    const osoby = new Map(mieszkancy.l.siedziba.osoby.map((o) => [o.id, o]));
+    angielscy = new Map(
+      sim.st.people.flatMap((p) => {
+        const en = p.ref ? wszyscy.get(p.ref) : undefined;
+        return p.ref && en && zTejOsobyGeneratora(osoby.get(p.ref), p) ? [[p.ref, en] as const] : [];
+      }),
+    );
+  } catch (e) {
+    console.warn('mieszkańcy z adresu po angielsku', e);
+  }
+}
+
+function zastosujImionaStanu(zmiany?: Record<string, ZmianaImienia>): void {
   const adres = adresImion();
   // gra z sąsiadami: zapisane imiona nie trafiają do stanu, bo zapis gry idzie na serwer (K5-R20)
   if (!sim || !adres || !imionaWGrze(siec.stan)) return;

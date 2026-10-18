@@ -367,6 +367,12 @@ function ustaw(p: Person, k: 'story' | 'rodzina', v: string | undefined): void {
 /** imię i nazwisko osoby generatora bez zmian gracza, jak w `osobaGry` */
 const nazwaZGeneratora = (o: Osoba): string => (o.nazwisko ? `${o.imie} ${o.nazwisko}` : o.imie);
 
+/** Osoba gry ma teksty (historię, rodzinę) z tej osoby generatora: zapamiętała przy powstaniu jej imię i nazwisko,
+    płeć i wiek się zgadzają. Na tym warunku angielska karta bierze teksty z src/mieszkancy/angielski.ts zamiast
+    polskich ze stanu (jak zastosujZmiany przy odświeżaniu historii). */
+export const zTejOsobyGeneratora = (o: Osoba | undefined, p: Pick<Person, 'f' | 'age' | 'nazwaGen'>): boolean =>
+  !!o && p.nazwaGen !== undefined && p.nazwaGen === nazwaZGeneratora(o) && takaSama(o, p);
+
 /** Zmiany imion na stanie gry (w miejscu; `st` to `SimState` albo cokolwiek z `people`). Wpis działa tylko na osobę,
     której dotyczy (`dotyczy`: płeć i imię z generatora). Gdy każda osoba z `ref` ma już imię, które daje wpis (albo,
     bez wpisu, imię z generatora), nic się nie zmienia: wczytana gra bez nowych zmian zostaje bajt w bajt, także po

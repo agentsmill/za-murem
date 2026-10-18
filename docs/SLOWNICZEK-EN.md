@@ -71,6 +71,22 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | rozbiórka | demolition | rozebrać: tear down |
 | przeszukanie (mieszkania) | search | przeszukać: search |
 | puste mieszkanie | empty flat | |
+| Wielkie Wylogowanie (2034) | the Great Logout | |
+| Gra z sąsiadami | Play with the neighbours | etykieta „beta” (próba) |
+| nick | username | |
+| świetlica | common room | |
+| czynsz | service charge | w domu: mortgage instalment |
+| piwnica, strych | basement, loft | |
+| sąd koleżeński | residents’ court | |
+| kuchnia społeczna | community kitchen | |
+| warsztat, magazyn | workshop, storeroom | |
+| łóżka piętrowe | bunk beds | |
+| ogródek | vegetable patch | |
+| zasieki | barricade | |
+| ognisko (na podwórku) | campfire | |
+| kuchenka, umywalka, wanna | cooker, washbasin, bath | piec w mieszkaniu też „cooker” |
+| przedpokój, pokój, sala, hala, zaplecze | hallway, room, hall, shed, back room | |
+| rodzina Kowalskich | the Kowalski family | nazwisko w formie męskiej |
 
 ## Zapasy, potrzeby, broń
 
@@ -115,6 +131,10 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | Odwołanie | Recalled |
 | Exodus | Exodus |
 | Pustka | Nobody Left |
+
+## Polecenia i przyciski
+
+Menu pod prawym przyciskiem, pomoc i karty cytują te same słowa: Chop down the tree, Feed the stove, Keep watch here (at the gate, at the fence, by the stove), Make a spear, Search the …, Take apart the … (śmieci i gruz: Clear the …), Fix the …, Claim the flat, Burn the …, Attack the shambler (looter), Go here. Budowle w menu budowy: Tear down. Broń na karcie osoby: Swap; po amputacji tag „stump”. Karta nocy: Raid chance, Stove overnight, As the board suggests, Start the night. Kategorie budowy: Indoors, Yard, Perimeter. Wiek na karcie to sama liczba („Nurse, 52”).
 
 ## Zawody-żarty
 
