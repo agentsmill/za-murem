@@ -6,7 +6,7 @@ import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
 import { dryTreeOf, houseOf, inHomeApt, type RoomKind } from './house.ts';
-import { MAT_ACC, REPAIR, RUBBISH } from './mieszkania.ts';
+import { MAT_ACC, REPAIR, RUBBISH, searchable } from './mieszkania.ts';
 import { gateTiles } from './perimeter.ts';
 import {
   BRACE_COST,
@@ -219,7 +219,8 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       confirm: true,
     });
   // M2: rozbiórka na materiał (śmieci i gruz od razu, meble pustych mieszkań z menu), naprawa uszkodzenia, gdy
-  // materiałów starczy, przeszukanie pomieszczenia i zajęcie pustego mieszkania
+  // materiałów starczy, przeszukanie pomieszczenia (pustego mieszkania, w domu jednorodzinnym też domu komitetu)
+  // i zajęcie pustego mieszkania (dom komitetu jest już nasz)
   const things = st.things.filter((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
   for (const t of things)
     if (dismantlable(st, w, t)) {
@@ -242,7 +243,7 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   const hq = houseOf(w);
   const room = hq && hq.room[tile] >= 0 ? hq.rooms[hq.room[tile]] : null;
   const g = room ? st.apts.find((a) => a.apt === room.apt) : undefined;
-  if (room && g?.state === 'puste') {
+  if (room && g && searchable(w, g)) {
     if (!g.searched.includes(room.id))
       out.push({
         cmd: { t: 'search', ids: core, room: room.id },

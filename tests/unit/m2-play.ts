@@ -6,7 +6,7 @@
 import { BUILDS, type BuildKind, canPlace, type Mat } from '../../src/sim/budowle.ts';
 import { dayOf, hourOf } from '../../src/sim/clock.ts';
 import { houseOf } from '../../src/sim/house.ts';
-import { DISMANTLE, REPAIR, RUBBISH } from '../../src/sim/mieszkania.ts';
+import { DISMANTLE, REPAIR, RUBBISH, searchable } from '../../src/sim/mieszkania.ts';
 import { THING_ACC } from '../../src/sim/orders.ts';
 import { fenceShape } from '../../src/sim/perimeter.ts';
 import { type Command, dismantlable, type Sim, type Thing } from '../../src/sim/sim.ts';
@@ -138,11 +138,12 @@ export function m2Player(opts: M2Opts): { player: Player; log: M2Log } {
         `naprawa: ${REPAIR[d.kind].acc}`,
       );
     }
-    // 3. przeszukanie najbliższego nieprzeszukanego pomieszczenia
+    // 3. przeszukanie najbliższego nieprzeszukanego pomieszczenia (pustego mieszkania, w domu też domu komitetu)
     if (opts.search) {
       const rooms = hs.rooms.filter(
         (r) =>
-          state(r.apt)?.state === 'puste' &&
+          !!state(r.apt) &&
+          searchable(w, state(r.apt)!) &&
           !state(r.apt)!.searched.includes(r.id) &&
           !busy('search', r.id) &&
           !bad.has(`search:${r.id}`),

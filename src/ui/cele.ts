@@ -126,10 +126,10 @@ export const DAY2_WOOD = 16;
 /** czy to już drugi dzień: po pierwszym raporcie rano, do raportu po drugiej nocy */
 export const isDay2 = (gov: GovState | null): boolean => !!gov && gov.reports.length === 1;
 
-/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie, postawić pierwszą budowlę (dowolną;
-    warsztat bierze tyle materiału, że zarząd stawia go zwykle 3. albo 4. dnia), wzmocnić obwód, mieć drewno
-    na noc. Co przeszukane, daje stan gry (st.apts); budowle i zasieki to gotowe rzeczy w st.things; obwód
-    liczy się też, gdy żadna dziura nie jest otwarta. */
+/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie (w domu jednorodzinnym dom komitetu, słowa
+    ze słownika miejsca), postawić pierwszą budowlę (dowolną; warsztat bierze tyle materiału, że zarząd stawia go
+    zwykle 3. albo 4. dnia), wzmocnić obwód, mieć drewno na noc. Co przeszukane, daje stan gry (st.apts); budowle
+    i zasieki to gotowe rzeczy w st.things; obwód liczy się też, gdy żadna dziura nie jest otwarta. */
 export function goalsDay2(
   st: SimState,
   gov: GovState | null,
@@ -165,10 +165,8 @@ export function goalsDay2(
   return [
     {
       key: 'przeszukaj',
-      text: 'Przeszukajcie puste mieszkanie.',
-      how: o.touch
-        ? 'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.'
-        : 'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
+      text: `Przeszukajcie ${w.szukanie.b}.`,
+      how: o.touch ? w.szukanie.jak.dotyk : w.szukanie.jak.mysz,
       done: searched,
     },
     {
@@ -181,7 +179,7 @@ export function goalsDay2(
       ? {
           key: 'dzida',
           text: 'Zróbcie dzidę dla warty.',
-          how: `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie pustych mieszkań i rozbiórka.`,
+          how: `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${w.szukanie.d} i rozbiórka.`,
           done: spears > startSpears,
         }
       : {

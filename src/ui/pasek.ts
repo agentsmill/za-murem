@@ -88,7 +88,7 @@ export function statsOf(s: SimSnapshot, gov: GovState | null, words: Words = wor
       id: 'sBoards',
       value: String(k.boards),
       level: k.boards ? 'ok' : 'mid',
-      title: `Deski: ${k.boards}. Na łaty, naprawy i budowę. Dają je przeszukiwanie pustych mieszkań i rozbiórka mebli.`,
+      title: `Deski: ${k.boards}. Na łaty, naprawy i budowę. Dają je ${words.szukanie.zrodla.deski}.`,
     },
     {
       id: 'sScrap',
