@@ -5,8 +5,10 @@
    Kontrakt w skrócie:
    - konto to nick i hasło, bez e-maila; sesja w ciasteczku HttpOnly (klient go nie widzi ani nie wysyła sam),
    - inni gracze widzą tylko, że klatka jest zajęta („moja: false”), nigdy czyj to nick ani numer konta,
-   - klucze klatek i budynków liczy klient (src/world/klucze.ts); serwer sprawdza tylko ich postać,
-   - zapis gry w chmurze to obiekt JSON bez tekstu adresu (data.addr i data.street są odrzucane). */
+   - klucze klatek i budynków liczy klient (src/world/klucze.ts); serwer sprawdza ich postać i to, czy pozycja
+     klatki leży przy budynku z klucza (kotwicaKlucza), więc nie da się zająć klatki w innym mieście,
+   - zapis gry w chmurze to obiekt JSON bez tekstu adresu: bez data.addr i data.street, bez tagów addr:* przy
+     budynkach w data.geo i bez cyfr w data.name (zapisBezAdresu czyści, maAdres sprawdza). */
 
 /** wersja protokołu w odpowiedzi /api/zdrowie */
 export const API_WERSJA = 1;
@@ -17,11 +19,39 @@ export const NICK_MAX = 24;
 export const NICK_WZOR = /^[\p{L}\p{N}_.-]+$/u;
 export const HASLO_MIN = 8;
 export const HASLO_MAX = 200;
-/** klucz budynku: schemat (np. „px”) i liczby rozdzielone dwukropkami, jak z src/world/klucze.ts */
-export const KLUCZ_BUDYNKU_WZOR = /^[a-z][a-z0-9]{0,7}:-?\d+(\.\d+)?(:-?\d+(\.\d+)?){1,5}$/;
+/** klucz budynku „px:X:Y:DX:DY:S” z src/world/klucze.ts: liczby całkowite bez zer na początku (jedna postać na
+    budynek), S to 1, 2 albo 3 */
+const PX = 'px:(0|[1-9]\\d{0,8}):(0|[1-9]\\d{0,8}):(0|-?[1-9]\\d{0,8}):(0|[1-9]\\d{0,8}):[123]';
+export const KLUCZ_BUDYNKU_WZOR = new RegExp(`^${PX}$`);
 /** klucz klatki: klucz budynku, ukośnik i numer klatki od 1 */
-export const KLUCZ_KLATKI_WZOR = /^([a-z][a-z0-9]{0,7}:[0-9.:-]+)\/([1-9]\d{0,2})$/;
+export const KLUCZ_KLATKI_WZOR = new RegExp(`^(${PX})/([1-9]\\d{0,2})$`);
 export const KLUCZ_MAX = 96;
+
+/** globalne piksele kafelków poziomu 14 (4096 na kafelek, Merkator) → [lat, lon]; jak latLonZ w klucze.ts */
+export function stopnieZPikseli(x: number, y: number): [number, number] {
+  const n = 2 ** 26;
+  return [(Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI, (x / n) * 360 - 180];
+}
+
+/** odległość w metrach (przybliżenie równoodległościowe jak w geometrii gry, dokładne na kilometry) */
+export function odlegloscM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const kx = 111320 * Math.cos((((lat1 + lat2) / 2) * Math.PI) / 180);
+  return Math.sqrt(((lon2 - lon1) * kx) ** 2 + ((lat2 - lat1) * 110574) ** 2);
+}
+
+/** zapas między rozpiętością budynku a odległością środka klatki od kotwicy (na kafelkach testowych najwyżej 21 m) */
+export const ZAPAS_KLATKI_M = 50;
+
+/** Kotwica klucza budynku: najwyższy wierzchołek obrysu (stopnie) i rozpiętość do najniższego (metry). Środek każdej
+    klatki tego budynku leży najwyżej rozpietoscM + ZAPAS_KLATKI_M od kotwicy. Null, gdy klucz ma złą postać. */
+export function kotwicaKlucza(budynek: string): { lat: number; lon: number; rozpietoscM: number } | null {
+  const m = KLUCZ_BUDYNKU_WZOR.exec(budynek);
+  if (!m) return null;
+  const [x, y, dx, dy] = [m[1], m[2], m[3], m[4]].map(Number);
+  const [lat, lon] = stopnieZPikseli(x, y);
+  const [lat2, lon2] = stopnieZPikseli(x + dx, y + dy);
+  return { lat, lon, rozpietoscM: odlegloscM(lat, lon, lat2, lon2) };
+}
 
 /** nick do porównań (wielkość liter bez znaczenia, ta sama postać znaków Unicode) */
 export const nickKlucz = (nick: string): string => nick.normalize('NFC').toLocaleLowerCase('pl');
@@ -56,6 +86,8 @@ export type KodBledu =
   | 'nie_ma'
   | 'limit_klatek'
   | 'za_daleko'
+  | 'zla_pozycja'
+  | 'serwer_zajety'
   | 'konflikt_wersji'
   | 'za_duze'
   | 'adres_w_zapisie'
@@ -167,18 +199,46 @@ export interface ZapisChmura extends ZapisanoOdpowiedz {
   dane: Record<string, unknown>;
 }
 
-/** Zapis gry bez tekstu adresu: data.addr (etykieta z geokodera) i data.street znikają, reszta bez zmian. */
-export function zapisBezAdresu<T extends Record<string, unknown>>(zapis: T): T {
+type Obiekt = Record<string, unknown>;
+const obiekt = (v: unknown): v is Obiekt => !!v && typeof v === 'object' && !Array.isArray(v);
+/** budynki geometrii w zapisie (data.geo.b) */
+const budynkiZapisu = (d: Obiekt): unknown[] => {
+  const geo = d.geo;
+  return obiekt(geo) && Array.isArray(geo.b) ? geo.b : [];
+};
+/** nazwa osiedla z cyframi to zwykle wpisany adres albo ulica z numerem (load.ts bierze wpisany tekst, gdy
+    geokoder nie poda nazwy okolicy ani ulicy) */
+const nazwaJakAdres = (d: Obiekt): boolean =>
+  typeof d.name === 'string' && (/\d/.test(d.name) || (typeof d.street === 'string' && d.name === d.street));
+
+/** Zapis gry bez tekstu adresu: znikają data.addr (etykieta z geokodera), data.street i tagi addr:* przy budynkach
+    w data.geo, a nazwa osiedla wyglądająca na adres zmienia się na „Osiedle”. Reszta bez zmian (kopia, oryginał
+    zostaje). Współrzędne (geo.c i obrysy) zostają: bez nich gra nie odtworzy świata. */
+export function zapisBezAdresu<T extends Obiekt>(zapis: T): T {
   const data = zapis.data;
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return zapis;
-  const { addr: _addr, street: _street, ...reszta } = data as Record<string, unknown>;
-  return { ...zapis, data: reszta };
+  if (!obiekt(data)) return zapis;
+  const { addr: _addr, street: _street, ...reszta } = data;
+  const out: Obiekt = { ...reszta };
+  if (nazwaJakAdres(data)) out.name = 'Osiedle';
+  const geo = data.geo;
+  if (obiekt(geo) && Array.isArray(geo.b))
+    out.geo = {
+      ...geo,
+      b: geo.b.map((b) => {
+        if (!obiekt(b) || !obiekt(b.t)) return b;
+        const t = Object.fromEntries(Object.entries(b.t).filter(([k]) => !k.startsWith('addr:')));
+        return { ...b, t };
+      }),
+    };
+  return { ...zapis, data: out };
 }
 
-/** Czy zapis ma tekst adresu (serwer takiego nie przyjmuje). */
-export function maAdres(zapis: Record<string, unknown>): boolean {
-  const data = zapis.data;
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
-  const d = data as Record<string, unknown>;
-  return (typeof d.addr === 'string' && d.addr !== '') || (typeof d.street === 'string' && d.street !== '');
+/** Czy zapis ma tekst adresu (serwer takiego nie przyjmuje): data.addr, data.street, tagi addr:* przy budynkach
+    albo nazwa osiedla z cyframi. */
+export function maAdres(zapis: Obiekt): boolean {
+  const d = zapis.data;
+  if (!obiekt(d)) return false;
+  if ((typeof d.addr === 'string' && d.addr !== '') || (typeof d.street === 'string' && d.street !== '')) return true;
+  if (nazwaJakAdres(d)) return true;
+  return budynkiZapisu(d).some((b) => obiekt(b) && obiekt(b.t) && Object.keys(b.t).some((k) => k.startsWith('addr:')));
 }

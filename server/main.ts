@@ -38,16 +38,18 @@ const gra = stworzSerwer({
   promienM: liczba(env.ZM_PROMIEN_M, 600),
 });
 
+// keepAliveTimeout dłuższy niż 2 minuty, przez które Caddy trzyma bezczynne połączenie do serwera: inaczej Node
+// zamykałby połączenie, które Caddy właśnie bierze na następne żądanie (502); powolnych klientów pilnuje Caddy
 const serwer = createServer(
-  // zapis gry do 3 MiB z telefonu na słabym łączu potrafi iść kilkadziesiąt sekund
-  { requestTimeout: 60_000, headersTimeout: 10_000, keepAliveTimeout: 5_000, maxHeaderSize: 16 * 1024 },
+  { requestTimeout: 150_000, headersTimeout: 140_000, keepAliveTimeout: 130_000, maxHeaderSize: 16 * 1024 },
   (req, res) => gra.obsluz(req, res),
 );
 serwer.listen(port, host, () => {
   console.log(`Za Murem: serwer gry na http://${host}:${port}/api (baza: ${sciezka})`);
 });
 
-const sprzatanie = setInterval(() => gra.sprzataj(), 60 * 60 * 1000);
+// wygasłe sesje i wpisy limitów (okno żądań na IP trwa minutę)
+const sprzatanie = setInterval(() => gra.sprzataj(), 60 * 1000);
 sprzatanie.unref();
 
 let konczy = false;

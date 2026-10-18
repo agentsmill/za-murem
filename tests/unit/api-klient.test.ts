@@ -111,17 +111,32 @@ describe('klient API gry sieciowej (src/net/api.ts)', () => {
     const widok = await b.zajete(prostokatMapy(w, geo.c));
     expect(widok.ok && widok.dane.klatki.map((k) => [k.klucz, k.moja])).toEqual([[klatka.klucz, false]]);
     const wolna = klatkiBudynku(w.buildings[w.hq]).find((k) => k.klucz !== klatka.klucz);
+    expect(wolna, 'siedziba na Przymorzu to blok z kilkoma klatkami').toBeDefined();
     if (wolna) expect((await b.zajmij(wolna)).ok).toBe(true);
 
-    // zapis w chmurze: klient sam usuwa adres, wersje chronią przed nadpisaniem z drugiego komputera
+    // zapis w chmurze: klient sam usuwa adres (także numery domów z mapy), wersje chronią przed nadpisaniem
+    // z drugiego komputera
     const zapis = {
       v: 1,
-      data: { name: 'Przymorze', addr: 'Obrońców Wybrzeża 4, Gdańsk', street: 'Obrońców Wybrzeża', geo: { c: geo.c } },
+      data: { name: 'Przymorze', addr: 'Obrońców Wybrzeża 4, Gdańsk', street: 'Obrońców Wybrzeża', geo },
     };
+    expect(geo.b.some((b) => b.t['addr:housenumber'])).toBe(true);
     const z1 = await a.wyslijZapis(zapis, 0);
     expect(z1).toMatchObject({ ok: true, dane: { wersja: 1 } });
     const odczyt = await a.pobierzZapis();
-    expect(odczyt.ok && odczyt.dane.dane).toEqual({ v: 1, data: { name: 'Przymorze', geo: { c: geo.c } } });
+    expect(odczyt.ok).toBe(true);
+    if (!odczyt.ok) return;
+    const wChmurze = odczyt.dane.dane as { data: { name: string; addr?: string; geo: typeof geo } };
+    expect(wChmurze.data.name).toBe('Przymorze');
+    expect(wChmurze.data.addr).toBeUndefined();
+    expect(JSON.stringify(wChmurze)).not.toMatch(/"addr:/);
+    // nazwa ulicy zostaje tylko w nazwach miejsc z OSM (np. apteka „na Obrońców Wybrzeża”), nie w danych adresu
+    const zUlica = JSON.stringify(wChmurze.data.geo.b).includes('Obrońców Wybrzeża');
+    expect(zUlica).toBe(false);
+    // świat z zapisu w chmurze jest ten sam (adres nie wpływa na budowę świata), klucze też
+    const wZChmury = buildWorld(wChmurze.data.geo, { seed: 1 });
+    expect(kluczeSwiata(wZChmury, wChmurze.data.geo.c)).toEqual(kluczeSwiata(w, geo.c));
+    expect(wZChmury.buildings.map((b) => b.tiles)).toEqual(w.buildings.map((b) => b.tiles));
     expect(await a.wyslijZapis(zapis, 0)).toMatchObject({ ok: false, status: 409, blad: 'konflikt_wersji', wersja: 1 });
 
     // zwolnienie po kluczu z dwukropkami i ukośnikiem, wylogowanie, usunięcie konta
@@ -144,13 +159,44 @@ describe('klient API gry sieciowej (src/net/api.ts)', () => {
     expect(!r.ok && r.ponowZa).toBeGreaterThan(0);
   });
 
-  it('zapis bez adresu: tylko data.addr i data.street znikają', () => {
-    const z = { v: 1, data: { addr: 'x', street: 'y', name: 'Przymorze', src: 'mvt' }, sim: { tick: 5 } };
+  it('zapis bez adresu: znikają data.addr, data.street i tagi addr:*, nazwa z numerem zmienia się na „Osiedle”', () => {
+    const geo = {
+      c: [54.4, 18.6],
+      b: [
+        {
+          p: [],
+          t: { building: 'yes', 'addr:housenumber': '4B', 'addr:street': 'Obrońców Wybrzeża', name: 'Falowiec' },
+        },
+        { p: [], t: { building: 'school', name: 'Szkoła nr 23' } },
+      ],
+    };
+    const z = { v: 1, data: { addr: 'x', street: 'y', name: 'Przymorze', src: 'mvt', geo }, sim: { tick: 5 } };
     expect(maAdres(z)).toBe(true);
     const bez = zapisBezAdresu(z);
-    expect(bez).toEqual({ v: 1, data: { name: 'Przymorze', src: 'mvt' }, sim: { tick: 5 } });
+    expect(bez).toEqual({
+      v: 1,
+      data: {
+        name: 'Przymorze',
+        src: 'mvt',
+        geo: {
+          c: [54.4, 18.6],
+          b: [
+            { p: [], t: { building: 'yes', name: 'Falowiec' } },
+            { p: [], t: { building: 'school', name: 'Szkoła nr 23' } },
+          ],
+        },
+      },
+      sim: { tick: 5 },
+    });
     expect(maAdres(bez)).toBe(false);
+    // oryginał bez zmian
     expect(z.data.addr).toBe('x');
+    expect(z.data.geo.b[0].t['addr:housenumber']).toBe('4B');
+    // nazwa osiedla to czasem wpisany adres albo sama ulica
+    expect(zapisBezAdresu({ data: { name: 'Obrońców Wybrzeża 4, Gdańsk' } })).toEqual({ data: { name: 'Osiedle' } });
+    expect(zapisBezAdresu({ data: { name: 'Lanciego', street: 'Lanciego' } })).toEqual({ data: { name: 'Osiedle' } });
+    expect(maAdres({ data: { name: 'Lanciego 10G' } })).toBe(true);
+    expect(maAdres({ data: { geo: { b: [{ t: { 'addr:housenumber': '7' } }] } } })).toBe(true);
     expect(zapisBezAdresu({ v: 1 })).toEqual({ v: 1 });
     expect(maAdres({ data: { addr: '' } })).toBe(false);
   });

@@ -18,10 +18,13 @@
      PUT    /api/zapis              zapisz {dane, wersja?}                   → {wersja, zmieniony, rozmiar}, 409
      DELETE /api/zapis              usuń zapis                               → 204
 
-   Zasady: cudza klatka to tylko „zajęta” (bez nicku i numeru konta); każda klatka drużyny najwyżej `promienM`
-   od jej siedziby (pierwszej klatki), najwyżej `limitKlatek` na konto; zapis bez tekstu adresu. Żądania zmieniające
-   stan muszą mieć JSON (gdy niosą dane) i nagłówek Origin z tej samej strony (albo żadnego). Limity prób w pamięci
-   (limity.ts), adresów IP nie zapisujemy. Zegar i koszt scrypt da się podać w opcjach (testy). */
+   Zasady: cudza klatka to tylko „zajęta” (bez nicku i numeru konta); pozycja klatki musi leżeć przy budynku z jej
+   klucza (kotwicaKlucza), każda klatka drużyny najwyżej `promienM` od siedziby (pierwszej klatki), najwyżej
+   `limitKlatek` na konto; zapis bez tekstu adresu. Żądania zmieniające stan muszą mieć JSON (gdy niosą dane)
+   i nagłówek Origin z tej samej strony (albo żadnego). Limity prób w pamięci (limity.ts), liczone przed pierwszym
+   await, żeby równoległe żądania ich nie obeszły; adresów IP nie zapisujemy, IPv6 liczymy po sieci /64. scrypt idzie
+   przez kolejkę (najwyżej 2 naraz). Po ostatnim await zapis do bazy sprawdza sesję jeszcze raz. Zegar, koszt scrypt
+   i kolejkę da się podać w opcjach (testy). */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { promisify } from 'node:util';
@@ -29,15 +32,18 @@ import { gunzip, gzip } from 'node:zlib';
 import {
   API_WERSJA,
   type DaneLogowania,
+  HASLO_MAX,
   type Ja,
   KLATKI_W_ODPOWIEDZI_MAX,
-  KLUCZ_BUDYNKU_WZOR,
   KLUCZ_KLATKI_WZOR,
   KLUCZ_MAX,
+  kotwicaKlucza,
   maAdres,
   nickKlucz,
+  odlegloscM,
   PROSTOKAT_MAX_DLUG,
   PROSTOKAT_MAX_SZER,
+  ZAPAS_KLATKI_M,
   type ZajetaKlatka,
   type ZapisanoOdpowiedz,
   type Zdrowie,
@@ -55,7 +61,7 @@ import {
   sprawdzHaslo,
 } from './hasla.ts';
 import { BladHttp, ciasteczka, ciasteczkoSesji, czytajJson, wyslij, wyslijBlad } from './http.ts';
-import { type Okno, okno } from './limity.ts';
+import { type Kolejka, kluczIp, kolejka, type Okno, okno, PelnaKolejka } from './limity.ts';
 
 const gzipA = promisify(gzip);
 const gunzipA = promisify(gunzip);
@@ -69,6 +75,8 @@ export interface OpcjeSerwera {
   baza: string;
   /** koszt scrypt (testy biorą mniejszy) */
   hasla?: ParametryHasla;
+  /** ile scrypt naraz i ile może czekać w kolejce (domyślnie 2 i 64); pełna kolejka to 503 */
+  scrypt?: { naraz: number; czeka: number };
   /** atrybut Secure ciasteczka (domyślnie tak; lokalnie po http można wyłączyć) */
   bezpieczneCiasteczko?: boolean;
   /** adres klienta z ostatniego wpisu X-Forwarded-For (tylko za własnym proxy, np. Caddy) */
@@ -93,7 +101,7 @@ export interface SerwerGry {
   /** obsługa żądania dla http.createServer */
   obsluz(req: IncomingMessage, res: ServerResponse): void;
   readonly baza: Baza;
-  /** wygasłe sesje i stare wpisy limitów; main.ts woła co godzinę */
+  /** wygasłe sesje i stare wpisy limitów; main.ts woła co minutę */
   sprzataj(): void;
   zamknij(): void;
 }
@@ -113,6 +121,7 @@ interface Kontekst {
   req: IncomingMessage;
   res: ServerResponse;
   url: URL;
+  /** klucz limitów dla klienta: IPv4 albo sieć /64 IPv6 */
   ip: string;
   teraz: number;
   /** nagłówki do dołączenia (np. Set-Cookie przy przedłużeniu sesji) */
@@ -121,13 +130,9 @@ interface Kontekst {
 
 type Obsluga = (k: Kontekst) => Promise<void>;
 
-/** odległość w metrach (przybliżenie równoodległościowe, dokładne na kilometry) */
-function metry(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const kx = 111320 * Math.cos((((lat1 + lat2) / 2) * Math.PI) / 180);
-  return Math.sqrt(((lon2 - lon1) * kx) ** 2 + ((lat2 - lat1) * 110574) ** 2);
-}
-
 const do5 = (v: number) => Math.round(v * 1e5) / 1e5;
+const zaDuzo = (sekundy: number, komunikat: string) =>
+  new BladHttp(429, 'za_duzo_prob', komunikat, { 'Retry-After': String(sekundy) });
 
 export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const baza = otworzBaze(op.baza);
@@ -141,13 +146,28 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const dziennik = op.dziennik ?? ((w: string) => console.error(w));
   const zrodla = new Set(op.zrodla ?? []);
 
-  // limity w pamięci: nieudane logowania i zakładanie kont na IP, wszystkie żądania na IP, zapisy na konto
+  // limity w pamięci: nieudane logowania na IP i na nick, nowe konta i zajęte nicki na IP, wszystkie żądania na IP,
+  // zapisy na konto
   const logowania: Okno = okno(10, 15 * MIN, teraz);
+  const logowaniaNicku: Okno = okno(20, 15 * MIN, teraz);
   const rejestracje: Okno = okno(5, GODZ, teraz);
+  const zajeteNicki: Okno = okno(30, GODZ, teraz);
   const zadania: Okno = okno(300, MIN, teraz);
   const zapisy: Okno = okno(60, GODZ, teraz);
-  // próby zajętych nicków przy zakładaniu konta: bez tego dałoby się sprawdzać po kolei, kto ma konto
-  const zajeteNicki: Okno = okno(30, GODZ, teraz);
+  const okna = [logowania, logowaniaNicku, rejestracje, zajeteNicki, zadania, zapisy];
+  /** konta, których zapis właśnie się wysyła: drugi naraz to 429 */
+  const zapisyWToku = new Set<number>();
+  const scryptKolejka: Kolejka = kolejka(op.scrypt?.naraz ?? 2, op.scrypt?.czeka ?? 64);
+  /** scrypt przez kolejkę; pełna kolejka to 503, żeby zalew logowań nie zajął wszystkich wątków */
+  const scrypt = async <T>(zadanie: () => Promise<T>): Promise<T> => {
+    try {
+      return await scryptKolejka.przez(zadanie);
+    } catch (e) {
+      if (e instanceof PelnaKolejka)
+        throw new BladHttp(503, 'serwer_zajety', 'Serwer jest zajęty. Spróbujcie za chwilę.', { 'Retry-After': '5' });
+      throw e;
+    }
+  };
   // porównanie z atrapą dla nieistniejącego nicku: tyle samo pracy co z prawdziwym kontem; liczona od razu,
   // żeby pierwsze logowanie na nieznany nick nie trwało dwa razy dłużej
   const atrapa = atrapaHasla(par);
@@ -162,16 +182,16 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       const xff = req.headers['x-forwarded-for'];
       const lista = (Array.isArray(xff) ? xff.join(',') : (xff ?? '')).split(',').map((s) => s.trim());
       const ostatni = lista.filter(Boolean).pop();
-      if (ostatni) return ostatni;
+      if (ostatni) return kluczIp(ostatni);
     }
-    return req.socket.remoteAddress ?? '?';
+    return kluczIp(req.socket.remoteAddress ?? '?');
   };
 
   const ja = (konto: Konto): Ja => ({
     nick: konto.nick,
     utworzone: konto.utworzone,
     klatki: baza.liczbaKlatek(konto.id),
-    zapis: baza.wersjaZapisu(konto.id) > 0,
+    zapis: baza.maZapis(konto.id),
   });
 
   const jakoOdpowiedz = (k: Klatka, moje: number | null): ZajetaKlatka => {
@@ -210,6 +230,11 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     if (!s) throw new BladHttp(401, 'brak_sesji', 'Zalogujcie się.');
     return s;
   };
+  /** po ostatnim await przed zapisem do bazy: czy sesja dalej jest (wylogowanie albo usunięcie konta w trakcie) */
+  const sesjaDalej = (k: Kontekst, s: Sesja) => {
+    const teraz0 = baza.sesja(s.skrot, k.teraz);
+    if (!teraz0 || teraz0.konto.id !== s.konto.id) throw new BladHttp(401, 'brak_sesji', 'Zalogujcie się.');
+  };
 
   const daneLogowania = async (k: Kontekst): Promise<DaneLogowania> => {
     const b = await czytajJson(k.req, MALE_CIALO);
@@ -227,46 +252,73 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
 
   const zalozKonto: Obsluga = async (k) => {
     const czekaj = rejestracje.zablokowany(k.ip) || zajeteNicki.zablokowany(k.ip);
-    if (czekaj)
-      throw new BladHttp(429, 'za_duzo_prob', 'Za dużo nowych kont z tego miejsca. Spróbujcie później.', {
-        'Retry-After': String(czekaj),
-      });
-    const { nick: nick0, haslo } = await daneLogowania(k);
-    const nick = nick0.normalize('NFC');
-    const zn = zlyNick(nick);
-    if (zn) throw new BladHttp(400, 'zly_nick', zn);
-    const zh = zleHaslo(haslo);
-    if (zh) throw new BladHttp(400, 'zle_haslo', zh);
-    if (nickKlucz(haslo) === nickKlucz(nick)) throw new BladHttp(400, 'zle_haslo', 'Hasło nie może być nickiem.');
-    const klucz = nickKlucz(nick);
-    const zajety = () => {
-      zajeteNicki.dolicz(k.ip);
-      return new BladHttp(409, 'nick_zajety', 'Ten nick jest już zajęty.');
-    };
-    if (baza.kontoPoNicku(klucz)) throw zajety();
-    const skrot = await skrotHasla(haslo, par);
-    const konto = baza.dodajKonto(nick, klucz, skrot, k.teraz);
-    if (!konto) throw zajety();
+    if (czekaj) throw zaDuzo(czekaj, 'Za dużo nowych kont z tego miejsca. Spróbujcie później.');
+    // miejsca w obu limitach zajmujemy przed pierwszym await; wynik zdecyduje, które oddać
     rejestracje.dolicz(k.ip);
-    zaloguj(k, konto);
-    wyslij(k.res, 201, ja(konto), k.naglowki);
+    zajeteNicki.dolicz(k.ip);
+    let wynik: 'konto' | 'zajety' | 'inny' = 'inny';
+    try {
+      const { nick: nick0, haslo } = await daneLogowania(k);
+      const nick = nick0.normalize('NFC');
+      const zn = zlyNick(nick);
+      if (zn) throw new BladHttp(400, 'zly_nick', zn);
+      const zh = zleHaslo(haslo);
+      if (zh) throw new BladHttp(400, 'zle_haslo', zh);
+      if (nickKlucz(haslo) === nickKlucz(nick)) throw new BladHttp(400, 'zle_haslo', 'Hasło nie może być nickiem.');
+      const klucz = nickKlucz(nick);
+      if (baza.kontoPoNicku(klucz)) {
+        wynik = 'zajety';
+        throw new BladHttp(409, 'nick_zajety', 'Ten nick jest już zajęty.');
+      }
+      const skrot = await scrypt(() => skrotHasla(haslo, par));
+      const konto = baza.dodajKonto(nick, klucz, skrot, k.teraz);
+      if (!konto) {
+        wynik = 'zajety';
+        throw new BladHttp(409, 'nick_zajety', 'Ten nick jest już zajęty.');
+      }
+      wynik = 'konto';
+      zaloguj(k, konto);
+      wyslij(k.res, 201, ja(konto), k.naglowki);
+    } finally {
+      if (wynik !== 'konto') rejestracje.odlicz(k.ip);
+      if (wynik !== 'zajety') zajeteNicki.odlicz(k.ip);
+    }
   };
 
   const zalogujSie: Obsluga = async (k) => {
     const czekaj = logowania.zablokowany(k.ip);
-    if (czekaj)
-      throw new BladHttp(429, 'za_duzo_prob', 'Za dużo nieudanych prób. Spróbujcie za kilka minut.', {
-        'Retry-After': String(czekaj),
-      });
-    const { nick, haslo } = await daneLogowania(k);
-    const konto = nick.length <= 64 && haslo.length <= 200 ? baza.kontoPoNicku(nickKlucz(nick)) : null;
-    const dobre = await sprawdzHaslo(haslo.slice(0, 200), konto?.haslo ?? (await atrapa));
-    if (!konto || !dobre) {
-      logowania.dolicz(k.ip);
-      throw new BladHttp(401, 'zle_logowanie', 'Zły nick albo hasło.');
+    if (czekaj) throw zaDuzo(czekaj, 'Za dużo nieudanych prób. Spróbujcie za kilka minut.');
+    // próba liczy się od razu (przed await), a odlicza, jeśli nie była złym hasłem
+    logowania.dolicz(k.ip);
+    let nick: string | null = null;
+    let zleHasloLubNick = false;
+    try {
+      const dane = await daneLogowania(k);
+      nick = dane.nick.length <= 64 ? nickKlucz(dane.nick) : null;
+      if (nick) {
+        const czekajNick = logowaniaNicku.zablokowany(nick);
+        if (czekajNick) {
+          nick = null;
+          throw zaDuzo(czekajNick, 'Za dużo nieudanych prób na to konto. Spróbujcie za kilka minut.');
+        }
+        logowaniaNicku.dolicz(nick);
+      }
+      const konto = nick && dane.haslo.length <= HASLO_MAX ? baza.kontoPoNicku(nick) : null;
+      const haslo = dane.haslo.slice(0, HASLO_MAX);
+      const skrot = konto?.haslo ?? (await atrapa);
+      const dobre = await scrypt(() => sprawdzHaslo(haslo, skrot));
+      if (!konto || !dobre) {
+        zleHasloLubNick = true;
+        throw new BladHttp(401, 'zle_logowanie', 'Zły nick albo hasło.');
+      }
+      zaloguj(k, konto);
+      wyslij(k.res, 200, ja(konto), k.naglowki);
+    } finally {
+      if (!zleHasloLubNick) {
+        logowania.odlicz(k.ip);
+        if (nick) logowaniaNicku.odlicz(nick);
+      }
     }
-    zaloguj(k, konto);
-    wyslij(k.res, 200, ja(konto), k.naglowki);
   };
 
   const wyloguj: Obsluga = async (k) => {
@@ -283,18 +335,22 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const usunKonto: Obsluga = async (k) => {
     const s = wymagajSesji(k);
     const czekaj = logowania.zablokowany(k.ip);
-    if (czekaj)
-      throw new BladHttp(429, 'za_duzo_prob', 'Za dużo nieudanych prób. Spróbujcie za kilka minut.', {
-        'Retry-After': String(czekaj),
-      });
-    const b = await czytajJson(k.req, MALE_CIALO);
-    if (typeof b.haslo !== 'string' || !(await sprawdzHaslo(b.haslo.slice(0, 200), s.konto.haslo))) {
-      logowania.dolicz(k.ip);
-      throw new BladHttp(401, 'zle_logowanie', 'Złe hasło.');
+    if (czekaj) throw zaDuzo(czekaj, 'Za dużo nieudanych prób. Spróbujcie za kilka minut.');
+    logowania.dolicz(k.ip);
+    let zle = false;
+    try {
+      const b = await czytajJson(k.req, MALE_CIALO);
+      const haslo = typeof b.haslo === 'string' ? b.haslo.slice(0, HASLO_MAX) : '';
+      if (!haslo || !(await scrypt(() => sprawdzHaslo(haslo, s.konto.haslo)))) {
+        zle = true;
+        throw new BladHttp(401, 'zle_logowanie', 'Złe hasło.');
+      }
+      // kaskada w bazie: sesje, klatki i zapis znikają razem z kontem
+      baza.usunKonto(s.konto.id);
+      wyslij(k.res, 204, undefined, { ...k.naglowki, 'Set-Cookie': skasujCiasteczko() });
+    } finally {
+      if (!zle) logowania.odlicz(k.ip);
     }
-    // kaskada w bazie: sesje, klatki i zapis znikają razem z kontem
-    baza.usunKonto(s.konto.id);
-    wyslij(k.res, 204, undefined, { ...k.naglowki, 'Set-Cookie': skasujCiasteczko() });
   };
 
   const liczba = (v: string | null) => (v === null || v.trim() === '' ? Number.NaN : Number(v));
@@ -323,36 +379,47 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     wyslij(k.res, 200, { klatki: lista.map((x) => jakoOdpowiedz(x, s.konto.id)) }, k.naglowki);
   };
 
+  /** klucz klatki rozłożony na klucz budynku i numer; null, gdy ma złą postać */
+  const czesciKlucza = (klucz: unknown): { budynek: string; nr: number } | null => {
+    if (typeof klucz !== 'string' || klucz.length > KLUCZ_MAX || !KLUCZ_KLATKI_WZOR.test(klucz)) return null;
+    const i = klucz.lastIndexOf('/');
+    return { budynek: klucz.slice(0, i), nr: Number(klucz.slice(i + 1)) };
+  };
+
   const zajmijKlatke: Obsluga = async (k) => {
     const s = wymagajSesji(k);
     const b = await czytajJson(k.req, MALE_CIALO);
     const { klucz, budynek, lat, lon } = b;
-    const m = typeof klucz === 'string' ? KLUCZ_KLATKI_WZOR.exec(klucz) : null;
+    const czesci = czesciKlucza(klucz);
     const dobry =
-      typeof klucz === 'string' &&
-      typeof budynek === 'string' &&
-      klucz.length <= KLUCZ_MAX &&
-      !!m &&
-      m[1] === budynek &&
-      KLUCZ_BUDYNKU_WZOR.test(budynek) &&
+      !!czesci &&
+      czesci.budynek === budynek &&
       typeof lat === 'number' &&
       typeof lon === 'number' &&
       Number.isFinite(lat) &&
       Number.isFinite(lon) &&
       Math.abs(lat) <= 85 &&
       Math.abs(lon) <= 180;
-    if (!dobry) throw new BladHttp(400, 'zle_dane', 'Zły klucz albo pozycja klatki.');
+    const kotwica = czesci ? kotwicaKlucza(czesci.budynek) : null;
+    if (!dobry || !czesci || !kotwica) throw new BladHttp(400, 'zle_dane', 'Zły klucz albo pozycja klatki.');
+    // pozycja z klienta musi leżeć przy budynku z klucza (kotwica to jego najwyższy wierzchołek), a numer klatki
+    // pasować do jego wielkości: inaczej dałoby się zająć klatkę w innym mieście z pozycją obok swojej siedziby
+    const odKotwicy = odlegloscM(kotwica.lat, kotwica.lon, lat as number, lon as number);
+    const najwiecejKlatek = Math.ceil((kotwica.rozpietoscM + ZAPAS_KLATKI_M) / 10) + 1;
+    if (odKotwicy > kotwica.rozpietoscM + ZAPAS_KLATKI_M || czesci.nr > najwiecejKlatek)
+      throw new BladHttp(422, 'zla_pozycja', 'Pozycja albo numer klatki nie pasuje do budynku z klucza.');
     const nowa: Klatka = {
       klucz: klucz as string,
-      budynek: budynek as string,
+      budynek: czesci.budynek,
       konto: s.konto.id,
       lat: do5(lat as number),
       lon: do5(lon as number),
       siedziba: false,
       zajeta: k.teraz,
     };
-    // sprawdzenie i wstawienie w jednej transakcji (bez await w środku)
+    // sprawdzenie i wstawienie w jednej transakcji, bez await w środku
     const wynik = baza.transakcja((): { status: number; klatka: Klatka } => {
+      sesjaDalej(k, s);
       const jest = baza.klatka(nowa.klucz);
       if (jest) {
         if (jest.konto === s.konto.id) return { status: 200, klatka: jest };
@@ -361,7 +428,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       if (baza.liczbaKlatek(s.konto.id) >= limitKlatek)
         throw new BladHttp(403, 'limit_klatek', `Drużyna może mieć najwyżej ${limitKlatek} klatek.`);
       const siedziba = baza.siedziba(s.konto.id);
-      if (siedziba && metry(siedziba.lat, siedziba.lon, nowa.lat, nowa.lon) > promienM)
+      if (siedziba && odlegloscM(siedziba.lat, siedziba.lon, nowa.lat, nowa.lon) > promienM)
         throw new BladHttp(422, 'za_daleko', `Klatka jest dalej niż ${promienM} m od waszej siedziby.`);
       nowa.siedziba = !siedziba;
       if (!baza.dodajKlatke(nowa)) throw new BladHttp(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.');
@@ -385,8 +452,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     (klucz: string): Obsluga =>
     async (k) => {
       const s = wymagajSesji(k);
-      if (klucz.length > KLUCZ_MAX || !KLUCZ_KLATKI_WZOR.test(klucz))
-        throw new BladHttp(400, 'zle_dane', 'Zły klucz klatki.');
+      if (!czesciKlucza(klucz)) throw new BladHttp(400, 'zle_dane', 'Zły klucz klatki.');
       if (!baza.zwolnijKlatke(s.konto.id, klucz)) throw new BladHttp(404, 'nie_ma', 'Nie macie takiej klatki.');
       wyslij(k.res, 204, undefined, k.naglowki);
     };
@@ -407,43 +473,51 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
 
   const wyslijZapis: Obsluga = async (k) => {
     const s = wymagajSesji(k);
-    const czekaj = zapisy.zablokowany(String(s.konto.id));
-    if (czekaj)
-      throw new BladHttp(429, 'za_duzo_prob', 'Za często zapisujecie. Spróbujcie za chwilę.', {
-        'Retry-After': String(czekaj),
-      });
-    const b = await czytajJson(k.req, limitZapisu + 4096);
-    const { dane, wersja } = b;
-    if (!dane || typeof dane !== 'object' || Array.isArray(dane))
-      throw new BladHttp(400, 'zle_dane', 'Zapis musi być obiektem JSON.');
-    if (wersja !== undefined && (typeof wersja !== 'number' || !Number.isInteger(wersja) || wersja < 0))
-      throw new BladHttp(400, 'zle_dane', 'Zła wersja zapisu.');
-    if (maAdres(dane as Record<string, unknown>))
-      throw new BladHttp(422, 'adres_w_zapisie', 'Zapis w chmurze nie może zawierać adresu (data.addr, data.street).');
-    const tekst = JSON.stringify(dane);
-    const rozmiar = Buffer.byteLength(tekst);
-    if (rozmiar > limitZapisu) throw new BladHttp(413, 'za_duze', 'Zapis jest za duży.');
-    const spakowany = await gzipA(tekst);
-    zapisy.dolicz(String(s.konto.id));
-    const zmieniony = teraz();
-    const nowa = baza.ustawZapis(s.konto.id, spakowany, rozmiar, zmieniony, wersja as number | undefined);
-    if (nowa === null)
-      throw new BladHttp(
-        409,
-        'konflikt_wersji',
-        'Na serwerze jest nowszy zapis.',
-        {},
-        {
-          wersja: baza.wersjaZapisu(s.konto.id),
-        },
-      );
-    const out: ZapisanoOdpowiedz = { wersja: nowa, zmieniony, rozmiar };
-    wyslij(k.res, 200, out, k.naglowki);
+    const id = s.konto.id;
+    const czekaj = zapisy.zablokowany(String(id));
+    if (czekaj) throw zaDuzo(czekaj, 'Za często zapisujecie. Spróbujcie za chwilę.');
+    if (zapisyWToku.has(id)) throw zaDuzo(5, 'Poprzedni zapis jeszcze się wysyła.');
+    zapisy.dolicz(String(id));
+    zapisyWToku.add(id);
+    try {
+      const b = await czytajJson(k.req, limitZapisu + 4096);
+      const { dane, wersja } = b;
+      if (!dane || typeof dane !== 'object' || Array.isArray(dane))
+        throw new BladHttp(400, 'zle_dane', 'Zapis musi być obiektem JSON.');
+      if (wersja !== undefined && (typeof wersja !== 'number' || !Number.isInteger(wersja) || wersja < 0))
+        throw new BladHttp(400, 'zle_dane', 'Zła wersja zapisu.');
+      if (maAdres(dane as Record<string, unknown>))
+        throw new BladHttp(
+          422,
+          'adres_w_zapisie',
+          'Zapis w chmurze nie może zawierać adresu (data.addr, data.street, tagi addr:*, nazwa z numerem).',
+        );
+      const tekst = JSON.stringify(dane);
+      const rozmiar = Buffer.byteLength(tekst);
+      if (rozmiar > limitZapisu) throw new BladHttp(413, 'za_duze', 'Zapis jest za duży.');
+      const spakowany = await gzipA(tekst);
+      // od tego miejsca bez await: sesja sprawdzona jeszcze raz i zapis w bazie w jednym kawałku
+      sesjaDalej(k, s);
+      const zmieniony = teraz();
+      const nowa = baza.ustawZapis(id, spakowany, rozmiar, zmieniony, wersja as number | undefined);
+      if (nowa === null)
+        throw new BladHttp(
+          409,
+          'konflikt_wersji',
+          'Na serwerze jest nowszy zapis.',
+          {},
+          { wersja: baza.wersjaZapisu(id) },
+        );
+      const out: ZapisanoOdpowiedz = { wersja: nowa, zmieniony, rozmiar };
+      wyslij(k.res, 200, out, k.naglowki);
+    } finally {
+      zapisyWToku.delete(id);
+    }
   };
 
   const usunZapis: Obsluga = async (k) => {
     const s = wymagajSesji(k);
-    baza.usunZapis(s.konto.id);
+    baza.usunZapis(s.konto.id, k.teraz);
     wyslij(k.res, 204, undefined, k.naglowki);
   };
 
@@ -495,8 +569,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     const metoda = req.method ?? 'GET';
     try {
       const czekaj = zadania.zablokowany(k.ip);
-      if (czekaj)
-        throw new BladHttp(429, 'za_duzo_prob', 'Za dużo żądań. Zwolnijcie trochę.', { 'Retry-After': String(czekaj) });
+      if (czekaj) throw zaDuzo(czekaj, 'Za dużo żądań. Zwolnijcie trochę.');
       zadania.dolicz(k.ip);
       const t = trasa(k.url.pathname);
       if (!t) throw new BladHttp(404, 'nie_ma', 'Nie ma takiego adresu API.');
@@ -543,7 +616,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     baza,
     sprzataj() {
       baza.usunWygasleSesje(teraz());
-      for (const o of [logowania, rejestracje, zadania, zapisy, zajeteNicki]) o.sprzataj();
+      for (const o of okna) o.sprzataj();
     },
     zamknij() {
       baza.zamknij();

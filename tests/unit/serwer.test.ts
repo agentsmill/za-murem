@@ -6,15 +6,32 @@ import { gunzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { otworzBaze } from '../../server/baza.ts';
 import { DOMYSLNE_HASLO, skrotHasla, sprawdzHaslo } from '../../server/hasla.ts';
-import { okno } from '../../server/limity.ts';
+import { kluczIp, kolejka, okno, PelnaKolejka } from '../../server/limity.ts';
+import { pikselZ } from '../../src/world/klucze.ts';
 import { przegladarka, type SerwerTestowy, serwerTestowy } from './serwer-pomoc.ts';
 
 const DOBA = 24 * 60 * 60 * 1000;
 const DANE = { nick: 'Mateusz_test', haslo: 'bardzo-tajne-1' };
-/** blok na Przymorzu: klucz z src/world/klucze.ts i środki dwóch klatek */
-const BUD = 'px:37021580:21416944:-325:163';
-const K1 = { klucz: `${BUD}/1`, budynek: BUD, lat: 54.409301, lon: 18.598812 };
-const K2 = { klucz: `${BUD}/2`, budynek: BUD, lat: 54.409362, lon: 18.599105 };
+/** klucz budynku (postać z src/world/klucze.ts) z najwyższym wierzchołkiem w danym punkcie; dx, dy w pikselach
+    kafelków (około 0,35 m) do najniższego wierzchołka */
+function budynekW(lat: number, lon: number, dx = -100, dy = 60): string {
+  const [x, y] = pikselZ(lat, lon).map(Math.round);
+  return `px:${x}:${y}:${dx}:${dy}:3`;
+}
+/** klatka budynku w punkcie (lat, lon), z pozycją przesuniętą o metry na wschód i południe */
+function klatka(bud: string, nr: number, lat: number, lon: number, wschod = 0, poludnie = 0) {
+  return {
+    klucz: `${bud}/${nr}`,
+    budynek: bud,
+    lat: lat - poludnie / 110574,
+    lon: lon + wschod / (111320 * Math.cos((lat * Math.PI) / 180)),
+  };
+}
+/** blok na Przymorzu i dwie jego klatki (około 30 i 10 m od najwyższego wierzchołka; rozpiętość około 40 m) */
+const BUD = budynekW(54.40939, 18.59923);
+const K1 = klatka(BUD, 1, 54.40939, 18.59923, -27, 10);
+const K2 = klatka(BUD, 2, 54.40939, 18.59923, -8, 3);
+const do5 = (v: number) => Math.round(v * 1e5) / 1e5;
 
 let serwery: SerwerTestowy[] = [];
 async function start(opcje: Parameters<typeof serwerTestowy>[0] = {}) {
@@ -92,6 +109,17 @@ describe('serwer gry: konta i sesje', () => {
     expect(r.status).toBe(409);
     expect(r.body.blad).toBe('nick_zajety');
     expect((await druga.zadanie('POST', '/api/konto', { nick: 7, haslo: 'inne-haslo-1' })).body.blad).toBe('zle_dane');
+    // granice i znaki dozwolone (każde konto z innego adresu, żeby nie wpaść w limit nowych kont)
+    const zaProxy = await start({ zaufaneProxy: true });
+    const nicki = ['abc', 'a'.repeat(24), 'Jan.Kowal', 'pan-kot', 'Ąę_9'];
+    for (const [i, nick] of nicki.entries()) {
+      const r1 = await przegladarka(zaProxy.adres, { 'X-Forwarded-For': `10.1.0.${i}` }).zadanie('POST', '/api/konto', {
+        nick,
+        haslo: 'dobre-haslo-9',
+      });
+      expect(r1.status, nick).toBe(201);
+      expect(r1.body.nick).toBe(nick);
+    }
   });
 
   it('logowanie: dobre hasło daje nową sesję, złe hasło i nieznany nick dają tę samą odpowiedź 401', async () => {
@@ -186,7 +214,7 @@ describe('serwer gry: zajęte klatki', () => {
     const b = await druzyna(s, 'Drudzy');
     const r = await a.zadanie('POST', '/api/klatki', K1);
     expect(r.status).toBe(201);
-    expect(r.body.klatka).toEqual({ ...K1, lat: 54.4093, lon: 18.59881, moja: true, siedziba: true });
+    expect(r.body.klatka).toEqual({ ...K1, lat: do5(K1.lat), lon: do5(K1.lon), moja: true, siedziba: true });
     // to samo jeszcze raz: bez zmian, bez błędu
     expect((await a.zadanie('POST', '/api/klatki', K1)).status).toBe(200);
     const konflikt = await b.zadanie('POST', '/api/klatki', K1);
@@ -195,7 +223,7 @@ describe('serwer gry: zajęte klatki', () => {
     expect(konflikt.tekst).not.toContain('Pierwsi');
     const q = '/api/klatki?s=54.40&w=18.59&n=54.42&e=18.61';
     const widokB = await b.zadanie('GET', q);
-    expect(widokB.body).toEqual({ klatki: [{ ...K1, lat: 54.4093, lon: 18.59881, moja: false }] });
+    expect(widokB.body).toEqual({ klatki: [{ ...K1, lat: do5(K1.lat), lon: do5(K1.lon), moja: false }] });
     expect(widokB.tekst).not.toMatch(/Pierwsi|konto|siedziba|zajeta"/);
     const widokA = await a.zadanie('GET', q);
     expect(widokA.body.klatki[0]).toMatchObject({ moja: true, siedziba: true });
@@ -213,7 +241,7 @@ describe('serwer gry: zajęte klatki', () => {
     const s = await start();
     const a = await druzyna(s, 'Mapowi');
     await a.zadanie('POST', '/api/klatki', K1);
-    const daleko = { klucz: 'px:1:2:3:4/1', budynek: 'px:1:2:3:4', lat: 54.4097, lon: 18.5995 };
+    const daleko = klatka(budynekW(54.4097, 18.5995), 1, 54.4097, 18.5995, 5, 5);
     expect((await a.zadanie('POST', '/api/klatki', daleko)).status).toBe(201);
     const w = (s0: number, w0: number, n0: number, e0: number) => `/api/klatki?s=${s0}&w=${w0}&n=${n0}&e=${e0}`;
     const lista = async (u: string) => (await a.zadanie('GET', u)).body.klatki.map((k: { klucz: string }) => k.klucz);
@@ -234,7 +262,8 @@ describe('serwer gry: zajęte klatki', () => {
     const s = await start({ limitKlatek: 3 });
     const a = await druzyna(s, 'Zachlanni');
     expect((await a.zadanie('POST', '/api/klatki', K1)).status).toBe(201);
-    const za = { klucz: 'px:9:9:1:1/1', budynek: 'px:9:9:1:1', lat: 54.409301, lon: 18.6094 };
+    // blok 650 m na wschód od siedziby (pozycja przy jego własnym kluczu, więc to uczciwa próba)
+    const za = klatka(budynekW(54.40939, 18.60935), 1, 54.40939, 18.60935, -10, 5);
     const r = await a.zadanie('POST', '/api/klatki', za);
     expect(r.status).toBe(422);
     expect(r.body.blad).toBe('za_daleko');
@@ -243,16 +272,49 @@ describe('serwer gry: zajęte klatki', () => {
     const limit = await a.zadanie('POST', '/api/klatki', { ...K2, klucz: `${BUD}/4` });
     expect(limit.status).toBe(403);
     expect(limit.body.blad).toBe('limit_klatek');
+    // tylko jedna postać klucza na budynek: bez zer na początku, z kodem stron 1–3, numer klatki od 1
+    const [, x, y] = BUD.split(':');
     for (const zly of [
       { ...K1, klucz: 'px:1:2:3:4/1' },
       { ...K1, klucz: `${BUD}/0` },
+      { ...K1, klucz: `${BUD}/01` },
       { ...K1, klucz: `${BUD}/1/2` },
+      { ...K1, klucz: `px:0${x}:${y}:-100:60:3/1`, budynek: `px:0${x}:${y}:-100:60:3` },
+      { ...K1, klucz: `px:${x}:${y}:-100:60:4/1`, budynek: `px:${x}:${y}:-100:60:4` },
+      { ...K1, klucz: `px:${x}:${y}:-0:60:3/1`, budynek: `px:${x}:${y}:-0:60:3` },
+      { ...K1, klucz: `px:${x}.5:${y}:-100:60:3/1`, budynek: `px:${x}.5:${y}:-100:60:3` },
       { ...K1, budynek: 'drop table' },
       { ...K1, lat: 91 },
       { ...K1, lat: '54.4' },
       { ...K1, klucz: `${BUD}:${'1'.repeat(90)}/1`, budynek: `${BUD}:${'1'.repeat(90)}` },
     ])
       expect((await a.zadanie('POST', '/api/klatki', zly)).status, JSON.stringify(zly)).toBe(400);
+  });
+
+  it('pozycja klatki musi leżeć przy budynku z klucza: cudzej klatki w innym mieście nie zajmie się z pozycją obok siebie', async () => {
+    const s = await start();
+    const gdansk = await druzyna(s, 'Gdanszczanie');
+    const warszawa = await druzyna(s, 'Warszawiacy');
+    expect((await gdansk.zadanie('POST', '/api/klatki', K1)).status).toBe(201);
+    // siedziba drużyny z Warszawy (Ursynów)
+    const ursynow = budynekW(52.144625, 21.0579432);
+    const ich = klatka(ursynow, 1, 52.144625, 21.0579432, -15, 6);
+    // drużyna z Gdańska próbuje zająć ją, podając pozycję obok swojej siedziby
+    const podrobiona = await gdansk.zadanie('POST', '/api/klatki', { ...ich, lat: K1.lat, lon: K1.lon });
+    expect(podrobiona.status).toBe(422);
+    expect(podrobiona.body.blad).toBe('zla_pozycja');
+    // z prawdziwą pozycją jest za daleko od ich siedziby
+    expect((await gdansk.zadanie('POST', '/api/klatki', ich)).body.blad).toBe('za_daleko');
+    // drużyna z Warszawy zajmuje swoją klatkę bez przeszkód i widzi ją na mapie
+    expect((await warszawa.zadanie('POST', '/api/klatki', ich)).status).toBe(201);
+    // numer klatki nie może przekraczać tego, co mieści budynek tej wielkości
+    const zaDuzyNumer = await warszawa.zadanie('POST', '/api/klatki', { ...ich, klucz: `${ursynow}/99` });
+    expect(zaDuzyNumer.status).toBe(422);
+    // pozycja tuż obok budynku (w zapasie 50 m) przechodzi
+    expect(
+      (await warszawa.zadanie('POST', '/api/klatki', { ...klatka(ursynow, 2, 52.144625, 21.0579432, 60, 30) })).status,
+    ).toBe(201);
+    expect(wiersze(s, 'SELECT klucz FROM klatki ORDER BY klucz').length).toBe(3);
   });
 
   it('zwolnienie: tylko własnej klatki; siedziba przechodzi na najstarszą; zwolnienie wszystkich', async () => {
@@ -280,12 +342,8 @@ describe('serwer gry: zajęte klatki', () => {
     expect((await a.zadanie('DELETE', '/api/klatki/moje')).status).toBe(204);
     expect((await a.zadanie('GET', '/api/klatki/moje')).body.klatki).toEqual([]);
     // po zwolnieniu wszystkiego nowa klatka znów jest siedzibą, nawet daleko od starej
-    const nowa = await a.zadanie('POST', '/api/klatki', {
-      klucz: 'px:9:9:1:1/1',
-      budynek: 'px:9:9:1:1',
-      lat: 52.1,
-      lon: 21,
-    });
+    const nowa = await a.zadanie('POST', '/api/klatki', klatka(budynekW(52.1, 21), 1, 52.1, 21, -10, 5));
+    expect(nowa.status).toBe(201);
     expect(nowa.body.klatka.siedziba).toBe(true);
   });
 });
@@ -325,6 +383,69 @@ describe('serwer gry: zapis w chmurze', () => {
     expect((await b.zadanie('GET', '/api/zapis')).status).toBe(404);
     expect((await a.zadanie('DELETE', '/api/zapis')).status).toBe(204);
     expect((await a.zadanie('GET', '/api/zapis')).status).toBe(404);
+  });
+
+  it('po usunięciu zapisu wersja rośnie dalej: stary telefon nie nadpisze nowej gry', async () => {
+    const s = await start();
+    const a = await druzyna(s, 'Dwa_urzadzenia');
+    expect((await a.zadanie('PUT', '/api/zapis', { dane: zapisGry(1), wersja: 0 })).body.wersja).toBe(1);
+    expect((await a.zadanie('DELETE', '/api/zapis')).status).toBe(204);
+    expect((await a.zadanie('GET', '/api/zapis')).status).toBe(404);
+    expect((await a.zadanie('GET', '/api/konto')).body.zapis).toBe(false);
+    // telefon pamięta wersję 1 sprzed usunięcia
+    const stary = await a.zadanie('PUT', '/api/zapis', { dane: zapisGry(5), wersja: 1 });
+    expect(stary.status).toBe(409);
+    expect(stary.body.wersja).toBe(2);
+    expect((await a.zadanie('PUT', '/api/zapis', { dane: zapisGry(2), wersja: 2 })).body.wersja).toBe(3);
+    expect((await a.zadanie('GET', '/api/zapis')).body.dane).toEqual(zapisGry(2));
+  });
+
+  it('konto usunięte w trakcie wysyłania zapisu: zapis przepada, a nowe konto nie dostaje starego numeru', async () => {
+    const s = await start();
+    const komputer = await druzyna(s, 'Ofiara');
+    const telefon = przegladarka(s.adres);
+    await telefon.zadanie('POST', '/api/sesja', { nick: 'Ofiara', haslo: 'Ofiara-haslo-123' });
+    const idOfiary = Number(wiersze(s, 'SELECT id FROM konta')[0].id);
+    // telefon wysyła zapis powoli: najpierw nagłówki i kawałek ciała
+    const cialo = JSON.stringify({ dane: zapisGry(1) });
+    const u = new URL(`${s.adres}/api/zapis`);
+    let dokoncz = () => {};
+    const wynik = new Promise<number>((ok, zle) => {
+      const req = http.request(
+        {
+          host: u.hostname,
+          port: u.port,
+          path: u.pathname,
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(cialo),
+            Cookie: telefon.ciasteczko,
+          },
+        },
+        (res) => {
+          res.resume();
+          ok(res.statusCode ?? 0);
+        },
+      );
+      req.on('error', zle);
+      req.write(cialo.slice(0, 20));
+      dokoncz = () => req.end(cialo.slice(20));
+    });
+    // serwer dostał już nagłówki i kawałek ciała pierwszego zapisu
+    await new Promise((r) => setTimeout(r, 50));
+    // drugi zapis z tego samego konta w tym czasie: 429, jeden naraz
+    const drugi = await telefon.zadanie('PUT', '/api/zapis', { dane: zapisGry(2) });
+    expect(drugi.status).toBe(429);
+    // w tym czasie konto znika, a ktoś zakłada nowe
+    expect((await komputer.zadanie('DELETE', '/api/konto', { haslo: 'Ofiara-haslo-123' })).status).toBe(204);
+    const obcy = await druzyna(s, 'Obcy_nowy');
+    const idObcego = Number(wiersze(s, 'SELECT id FROM konta')[0].id);
+    expect(idObcego).toBeGreaterThan(idOfiary);
+    dokoncz();
+    expect(await wynik).toBe(401);
+    expect((await obcy.zadanie('GET', '/api/zapis')).status).toBe(404);
+    expect(wiersze(s, 'SELECT konto FROM zapisy')).toEqual([]);
   });
 
   it('zapis bez tekstu adresu, tylko obiekt, z limitem rozmiaru', async () => {
@@ -419,6 +540,92 @@ describe('serwer gry: limity i obrona', () => {
     expect(r.body.blad).toBe('za_duzo_prob');
   });
 
+  it('równoległe żądania nie obchodzą limitów: nowe konta, nieudane logowania, logowania na jeden nick', async () => {
+    const s = await start();
+    const ile = (rs: { status: number }[], st: number) => rs.filter((r) => r.status === st).length;
+    const konta = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        przegladarka(s.adres).zadanie('POST', '/api/konto', { nick: `Rownolegly${i}`, haslo: `haslo-rownolegle-${i}` }),
+      ),
+    );
+    expect(ile(konta, 201)).toBe(5);
+    expect(ile(konta, 429)).toBe(15);
+    expect(wiersze(s, 'SELECT id FROM konta')).toHaveLength(5);
+    const proby = await Promise.all(
+      Array.from({ length: 30 }, (_, i) =>
+        przegladarka(s.adres).zadanie('POST', '/api/sesja', { nick: 'Rownolegly0', haslo: `zle-haslo-${i}` }),
+      ),
+    );
+    expect(ile(proby, 401)).toBe(10);
+    expect(ile(proby, 429)).toBe(20);
+    // dobre hasło z tego adresu też czeka
+    expect(
+      (await przegladarka(s.adres).zadanie('POST', '/api/sesja', { nick: 'Rownolegly0', haslo: 'haslo-rownolegle-0' }))
+        .status,
+    ).toBe(429);
+    // jeden nick z wielu adresów (za zaufanym proxy): najwyżej 20 nieudanych prób na 15 minut
+    const zaProxy = await start({ zaufaneProxy: true });
+    await przegladarka(zaProxy.adres).zadanie('POST', '/api/konto', DANE);
+    const zWielu = await Promise.all(
+      Array.from({ length: 40 }, (_, i) =>
+        przegladarka(zaProxy.adres, { 'X-Forwarded-For': `10.2.${i}.1` }).zadanie('POST', '/api/sesja', {
+          nick: DANE.nick,
+          haslo: `zle-haslo-${i}`,
+        }),
+      ),
+    );
+    expect(ile(zWielu, 401)).toBe(20);
+    expect(ile(zWielu, 429)).toBe(20);
+    const zNowego = await przegladarka(zaProxy.adres, { 'X-Forwarded-For': '10.3.0.1' }).zadanie(
+      'POST',
+      '/api/sesja',
+      DANE,
+    );
+    expect(zNowego.status).toBe(429);
+    zaProxy.czekaj(15 * 60 * 1000);
+    expect(
+      (await przegladarka(zaProxy.adres, { 'X-Forwarded-For': '10.3.0.1' }).zadanie('POST', '/api/sesja', DANE)).status,
+    ).toBe(200);
+  });
+
+  it('IPv6: limity liczone po sieci /64, nie po pojedynczym adresie', async () => {
+    expect(kluczIp('2001:db8:1:2::1')).toBe('2001:db8:1:2::/64');
+    expect(kluczIp('2001:0db8:0001:0002:aaaa:bbbb:cccc:dddd')).toBe('2001:db8:1:2::/64');
+    expect(kluczIp('::1')).toBe('0:0:0:0::/64');
+    expect(kluczIp('::ffff:192.168.1.7')).toBe('192.168.1.7');
+    expect(kluczIp('192.168.1.7')).toBe('192.168.1.7');
+    const s = await start({ zaufaneProxy: true });
+    await przegladarka(s.adres).zadanie('POST', '/api/konto', DANE);
+    for (let i = 0; i < 10; i++)
+      await przegladarka(s.adres, { 'X-Forwarded-For': `2001:db8:1:2::${i + 1}` }).zadanie('POST', '/api/sesja', {
+        ...DANE,
+        haslo: 'zle-haslo-xx',
+      });
+    expect(
+      (await przegladarka(s.adres, { 'X-Forwarded-For': '2001:db8:1:2:ffff::7' }).zadanie('POST', '/api/sesja', DANE))
+        .status,
+    ).toBe(429);
+    expect(
+      (await przegladarka(s.adres, { 'X-Forwarded-For': '2001:db8:1:3::7' }).zadanie('POST', '/api/sesja', DANE))
+        .status,
+    ).toBe(200);
+  });
+
+  it('scrypt przez kolejkę: przy zalewie logowań pełna kolejka to 503, a nie zajęte wszystkie wątki', async () => {
+    const s = await start({ scrypt: { naraz: 1, czeka: 2 }, zaufaneProxy: true });
+    await przegladarka(s.adres).zadanie('POST', '/api/konto', DANE);
+    const rs = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        przegladarka(s.adres, { 'X-Forwarded-For': `10.4.0.${i}` }).zadanie('POST', '/api/sesja', DANE),
+      ),
+    );
+    const zajety = rs.filter((r) => r.status === 503);
+    expect(zajety.length).toBeGreaterThan(0);
+    expect(zajety[0].body.blad).toBe('serwer_zajety');
+    expect(zajety[0].headers.get('retry-after')).toBe('5');
+    expect(rs.filter((r) => r.status === 200).length).toBeGreaterThanOrEqual(3);
+  });
+
   it('X-Forwarded-For liczy się tylko za zaufanym proxy', async () => {
     const zwykly = await start();
     await przegladarka(zwykly.adres).zadanie('POST', '/api/konto', DANE);
@@ -499,6 +706,37 @@ describe('serwer gry: części', () => {
     expect(await sprawdzHaslo('hasło z polskimi znakami ae', a)).toBe(false);
     expect(await sprawdzHaslo('cokolwiek', 'zepsuty-skrot')).toBe(false);
     expect(await sprawdzHaslo('cokolwiek', 'scrypt$40$8$1$AA$AA')).toBe(false);
+  });
+
+  it('kolejka: najwyżej tyle zadań naraz, ile pozwala, reszta czeka, nadmiar dostaje odmowę', async () => {
+    const q = kolejka(2, 2);
+    let naraz = 0;
+    let najwiecej = 0;
+    const zwolnij: (() => void)[] = [];
+    const zadanie = () =>
+      q.przez(async () => {
+        naraz++;
+        najwiecej = Math.max(najwiecej, naraz);
+        await new Promise<void>((ok) => zwolnij.push(ok));
+        naraz--;
+      });
+    const wyniki = Array.from({ length: 5 }, () =>
+      zadanie().then(
+        () => 'ok',
+        (e) => (e instanceof PelnaKolejka ? 'pelna' : 'blad'),
+      ),
+    );
+    await Promise.resolve();
+    expect(q.wToku).toBe(2);
+    expect(q.czekajacych).toBe(2);
+    // kolejne zwolnienia przepuszczają czekające po jednym, nigdy więcej niż dwa naraz
+    for (let i = 0; i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 1));
+      zwolnij.shift()?.();
+    }
+    expect(await Promise.all(wyniki)).toEqual(['ok', 'ok', 'ok', 'ok', 'pelna']);
+    expect(najwiecej).toBe(2);
+    expect(q.wToku).toBe(0);
   });
 
   it('okno limitu: liczy w oknie czasu, potem zapomina', () => {

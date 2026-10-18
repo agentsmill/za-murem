@@ -7,15 +7,18 @@
    - sesje: skrót SHA-256 tokenu, konto, termin ważności,
    - klatki: klucz klatki i budynku (src/world/klucze.ts), środek klatki (stopnie zaokrąglone do 1e-5, około 1 m),
      konto, czy to siedziba drużyny, chwila zajęcia,
-   - zapisy: jeden zapis gry na konto (JSON skompresowany gzipem, bez tekstu adresu), wersja i chwila zmiany.
-   Usunięcie konta kasuje kaskadą jego sesje, klatki i zapis (klucze obce z ON DELETE CASCADE).
+   - zapisy: jeden zapis gry na konto (JSON skompresowany gzipem, bez tekstu adresu), wersja i chwila zmiany;
+     usunięty zapis zostaje jako pusty wiersz z wyższą wersją, żeby stary telefon nie nadpisał nowej gry.
+   Usunięcie konta kasuje kaskadą jego sesje, klatki i zapis (klucze obce z ON DELETE CASCADE), a numery kont nie
+   wracają (AUTOINCREMENT), więc spóźnione żądanie usuniętego konta nie trafi do nowego. secure_delete zamazuje
+   usunięte dane w pliku bazy.
    Wersja schematu w PRAGMA user_version; nowa wersja to nowy wpis w MIGRACJE. */
 
 import { DatabaseSync } from 'node:sqlite';
 
 const MIGRACJE: string[] = [
   `CREATE TABLE konta (
-     id INTEGER PRIMARY KEY,
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
      nick TEXT NOT NULL,
      nick_klucz TEXT NOT NULL UNIQUE,
      haslo TEXT NOT NULL,
@@ -42,7 +45,7 @@ const MIGRACJE: string[] = [
    CREATE INDEX klatki_poz ON klatki(lat, lon);
    CREATE TABLE zapisy (
      konto INTEGER PRIMARY KEY REFERENCES konta(id) ON DELETE CASCADE,
-     dane BLOB NOT NULL,
+     dane BLOB,
      rozmiar INTEGER NOT NULL,
      wersja INTEGER NOT NULL,
      zmieniony INTEGER NOT NULL
@@ -104,11 +107,15 @@ export interface Baza {
   zwolnijKlatke(konto: number, klucz: string): boolean;
   zwolnijKlatkiKonta(konto: number): number;
 
+  /** zapis albo null, gdy go nie ma (także usunięty) */
   zapis(konto: number): Zapis | null;
   /** zapisuje, gdy wersja na serwerze to `poprzednia` (albo zawsze, gdy undefined); zwraca nową wersję albo null */
   ustawZapis(konto: number, dane: Uint8Array, rozmiar: number, teraz: number, poprzednia?: number): number | null;
-  usunZapis(konto: number): boolean;
+  /** usuwa dane zapisu, wersja rośnie dalej; false, gdy nie było czego usuwać */
+  usunZapis(konto: number, teraz: number): boolean;
+  /** wersja zapisu (0: nigdy nie było), rośnie też przy usunięciu */
   wersjaZapisu(konto: number): number;
+  maZapis(konto: number): boolean;
 
   /** wykonuje fn w jednej transakcji (BEGIN IMMEDIATE … COMMIT, przy błędzie ROLLBACK) */
   transakcja<T>(fn: () => T): T;
@@ -139,7 +146,7 @@ const klatkaZ = (r: Wiersz): Klatka => ({
 /** Otwiera (i w razie potrzeby zakłada) bazę: ścieżka do pliku albo ':memory:' w testach. */
 export function otworzBaze(sciezka: string): Baza {
   const db = new DatabaseSync(sciezka, { enableForeignKeyConstraints: true });
-  db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+  db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA secure_delete = ON;');
   if (sciezka !== ':memory:') db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
   const wersja = num((db.prepare('PRAGMA user_version').get() as Wiersz).user_version);
   if (wersja > MIGRACJE.length)
@@ -186,14 +193,17 @@ export function otworzBaze(sciezka: string): Baza {
     najstarsza: db.prepare('SELECT klucz FROM klatki WHERE konto = ? ORDER BY zajeta, klucz LIMIT 1'),
     ustawSiedzibe: db.prepare('UPDATE klatki SET siedziba = 1 WHERE klucz = ?'),
     usunKlatkiKonta: db.prepare('DELETE FROM klatki WHERE konto = ?'),
-    zapis: db.prepare('SELECT dane, rozmiar, wersja, zmieniony FROM zapisy WHERE konto = ?'),
+    zapis: db.prepare('SELECT dane, rozmiar, wersja, zmieniony FROM zapisy WHERE konto = ? AND dane IS NOT NULL'),
     wersjaZapisu: db.prepare('SELECT wersja FROM zapisy WHERE konto = ?'),
+    maZapis: db.prepare('SELECT 1 AS jest FROM zapisy WHERE konto = ? AND dane IS NOT NULL'),
     wstawZapis: db.prepare(
       `INSERT INTO zapisy (konto, dane, rozmiar, wersja, zmieniony) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(konto) DO UPDATE SET dane = excluded.dane, rozmiar = excluded.rozmiar, wersja = excluded.wersja,
        zmieniony = excluded.zmieniony`,
     ),
-    usunZapis: db.prepare('DELETE FROM zapisy WHERE konto = ?'),
+    usunZapis: db.prepare(
+      'UPDATE zapisy SET dane = NULL, rozmiar = 0, wersja = wersja + 1, zmieniony = ? WHERE konto = ? AND dane IS NOT NULL',
+    ),
   };
 
   let otwarta = true;
@@ -204,7 +214,8 @@ export function otworzBaze(sciezka: string): Baza {
       db.exec('COMMIT');
       return out;
     } catch (e) {
-      db.exec('ROLLBACK');
+      // SQLite mógł już sam wycofać transakcję; wtedy ROLLBACK zgłosiłby własny błąd zamiast prawdziwego
+      if (db.isTransaction) db.exec('ROLLBACK');
       throw e;
     }
   };
@@ -312,10 +323,13 @@ export function otworzBaze(sciezka: string): Baza {
         return obecna + 1;
       });
     },
-    usunZapis(konto) {
-      return q.usunZapis.run(konto).changes > 0;
+    usunZapis(konto, teraz) {
+      return q.usunZapis.run(teraz, konto).changes > 0;
     },
     wersjaZapisu,
+    maZapis(konto) {
+      return q.maZapis.get(konto) !== undefined;
+    },
     transakcja,
     zamknij() {
       if (otwarta) db.close();
