@@ -8,7 +8,7 @@
    zapasy zarządu) albo dzisiejszy zmyślony cel z `TARGETS` (`celZTarget`, `zapas: null`, czyli bez końca, jak dotąd).
 
    Jednostki. Odległość w metrach w linii prostej od adresu przychodzi z `Miejsce.odl` (liczone przez `Math.sqrt`);
-   ten moduł jej nie liczy, a nowy kod zarządu nie używa Math.hypot, sin ani cos (zapisy przechodzą między
+   ten moduł jej nie liczy, a nowy kod zarządu nie używa hypot, sin i cos (zapisy przechodzą między
    przeglądarkami). `Cel.powrot` to GODZINA powrotu z karty nocy (1 albo 5), a `Wyprawa.powrot`
    z typy.ts to MINUTA GRY od północy pierwszego dnia (jak `gameMin`), liczona przez `powrotMin`. Czasy w minutach gry.
 

@@ -4,7 +4,15 @@
    starczy, a rano raport mówi, czy w kuchni było ciepło. Przy zatwierdzeniu losuje się, czy szabrownicy
    przyjdą, gdzie i o której (23:00–4:00). O tej godzinie obronę liczy się z tego, co jest: kto nie zasnął,
    światło, pies, brama. Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość
-   z ziarna gry. Teksty karty i raportu to Tx (polski i angielski z tych samych danych, bez dodatkowych losowań). */
+   z ziarna gry. Teksty karty i raportu to Tx (polski i angielski z tych samych danych, bez dodatkowych losowań).
+
+   Rozliczenie powrotu wyprawy (`rozliczWyprawe`) jest wspólne dla nocy i dla wyprawy dziennej z mapy miasta: bierze
+   `Cel` (src/gov/wyprawy.ts) i osoby, losuje łup, kłopoty i znaleziska z ziarna zarządu i zwraca wpisy raportu, ranę
+   i łup; zapasy, potrzeby, nastroje i powrót ludzi dopisuje do skutków (`fx`). Cel z TARGETS (`zapas === null`) liczy
+   się jak przed wspólną funkcją, z tymi samymi losowaniami w tej samej kolejności i z mnożnikiem za wizyty
+   (`GovState.visits`). Cel z miejsca ma zapas: łup po kłopotach przycina się do tego, co zostało w miejscu, i do
+   udźwigu, a zabrane, wizyty i dzień ostatniej wizyty idą do `GovState.miasto`. Zależność idzie tylko stąd do
+   wyprawy.ts, nigdy odwrotnie. */
 
 import { NOTE_HOLD_FIRE_EN } from '../content/napisy-zombie.en.ts';
 import { NOTE_HOLD_FIRE } from '../content/napisy-zombie.ts';
@@ -12,7 +20,7 @@ import { g } from '../content/people.ts';
 import { type Tx, tx, txJoin, txOf } from '../core/jezyk.ts';
 import { clamp } from '../core/rng.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
-import { type ExpTarget, peopleNamesTx, TARGETS, targetNameTx } from './tresc.ts';
+import { type ExpTarget, peopleNamesTx, TARGETS } from './tresc.ts';
 import type {
   Arm,
   GovEffects,
@@ -23,6 +31,7 @@ import type {
   NightCard,
   NightOption,
   NightReport,
+  StockDelta,
 } from './typy.ts';
 import { dailyDrift, law } from './uchwaly.ts';
 import {
@@ -39,9 +48,11 @@ import {
   rnd,
   round1,
   round2,
+  STOCK_KEYS,
   stockTx,
   zeroStock,
 } from './wspolne.ts';
+import { type Cel, celZTarget, ograniczLup, UDZWIG_NA_OSOBE, wlaczMiasto, zostaloZMiejsca } from './wyprawy.ts';
 
 export const CARD_HOUR = 20;
 /** do tej godziny karta czeka na decyzję, potem zostaje propozycja zarządu */
@@ -232,8 +243,9 @@ function tonightTargets(st: GovState): ExpTarget[] {
   return [best('blisko'), best('daleko')];
 }
 
-function expRisk(st: GovState, p: GovPerson, t: ExpTarget, together = 1): number {
-  let r = t.risk;
+/** ryzyko kłopotów jednej osoby na wyprawie do celu (0,02–0,9); `Cel.ryzyko` bywa większe niż 1, tu jest ucinane */
+export function expRisk(st: GovState, p: GovPerson, cel: Pick<Cel, 'ryzyko'>, together = 1): number {
+  let r = cel.ryzyko;
   if (p.needs.rest < 35) r *= 1.4;
   if (p.needs.health < 50) r *= 1.3;
   if (p.traits.includes('odwazny')) r *= 0.7;
@@ -248,19 +260,23 @@ function expRisk(st: GovState, p: GovPerson, t: ExpTarget, together = 1): number
   return clamp(round2(r), 0.02, 0.9);
 }
 
-const lootMult = (st: GovState, t: ExpTarget) => Math.max(0.3, 1 - 0.15 * (st.visits[t.id] ?? 0));
+/** mnożnik łupu za dotychczasowe wizyty (nie mniej niż 0,3): tylko cel z TARGETS, który nie ma końca zapasu; miejsce
+    z zapasem wyczerpuje się samo, więc jego łup nie dostaje mnożnika */
+const lootMult = (st: GovState, cel: Pick<Cel, 'klucz' | 'zapas'>) =>
+  cel.zapas === null ? Math.max(0.3, 1 - 0.15 * (st.visits[cel.klucz] ?? 0)) : 1;
 
-function expGain(st: GovState, t: ExpTarget): Partial<Record<LootKey, [number, number]>> {
-  const m = lootMult(st, t);
+function expGain(st: GovState, cel: Cel): Partial<Record<LootKey, [number, number]>> {
+  const m = lootMult(st, cel);
   const out: Partial<Record<LootKey, [number, number]>> = {};
-  for (const [k, [a, b]] of Object.entries(t.loot) as [LootKey, [number, number]][])
+  for (const [k, [a, b]] of Object.entries(cel.lup) as [LootKey, [number, number]][])
     out[k] = [Math.round(a * m), Math.round(b * m)];
   return out;
 }
 
-const canGo = (p: GovPerson, t: ExpTarget) =>
+/** kto może iść: nie ugryziony, dość sił i zdrowia, na daleką drogę więcej */
+export const canGo = (p: GovPerson, cel: Pick<Cel, 'range'>) =>
   !p.bitten &&
-  (t.range === 'daleko' ? p.needs.rest >= 40 && p.needs.health >= 45 : p.needs.rest >= 25 && p.needs.health >= 30);
+  (cel.range === 'daleko' ? p.needs.rest >= 40 && p.needs.health >= 45 : p.needs.rest >= 25 && p.needs.health >= 30);
 
 // ---------------------------------------------------------------- karta
 
@@ -269,7 +285,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
   const posts = postsOf(i, zombie);
   // w trybie zombie stado przychodzi zawsze: zarząd proponuje dwie warty przy siatce
   const chance = zombie ? 0.9 : raidChance(st, i);
-  const targets = tonightTargets(st);
+  const targets = tonightTargets(st).map((t) => celZTarget(t, placeIn(i)));
   // dyżur przy kozie tylko przy kozie zarządu (kuchnia z kozą w siedzibie)
   const wood = i.kitchen !== null ? nightWood(i) : undefined;
   const people = i.people.map((p) => {
@@ -322,7 +338,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
     }
     for (const t of targets) {
       const ok = canGo(p, t);
-      const where = targetNameTx(t, placeIn(i));
+      const where = t.nazwa;
       opts.push({
         key: `wyprawa:${t.range}`,
         label: tx(`Wyprawa ${t.range}: ${where.pl}`, `${t.range === 'daleko' ? 'Long run' : 'Short run'}: ${where.en}`),
@@ -339,11 +355,11 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
               : tx('Za mało sił na wyprawę.', 'Not enough energy for a run.'),
         risk: expRisk(st, p, t),
         gain: expGain(st, t),
-        target: t.id,
+        target: t.klucz,
         note:
           t.range === 'daleko'
             ? tx('Wraca o świcie, razem bezpieczniej.', 'Back at dawn. Safer in company.')
-            : tx(`Wraca o ${t.back}:00, potem śpi.`, `Back at ${t.back}:00, then sleeps.`),
+            : tx(`Wraca o ${t.powrot}:00, potem śpi.`, `Back at ${t.powrot}:00, then sleeps.`),
       });
     }
     return { id: p.id, name: p.name, needs: { ...p.needs }, proposal: 'sen', options: opts };
@@ -614,43 +630,66 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
   if (!auto) decision(st, i, 'karta');
 }
 
-function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[]; target: string }): void {
-  const n = st.night!;
-  const t = TARGETS.find((x) => x.id === gr.target)!;
-  n.returned.push(gr.target);
-  const ppl = gr.ids.map((id) => i.people.find((p) => p.id === id)).filter((p): p is GovPerson => !!p);
-  if (!ppl.length) return;
-  const m = lootMult(st, t);
-  st.visits[t.id] = (st.visits[t.id] ?? 0) + 1;
+/** Wynik rozliczenia wyprawy: wpisy raportu (kłopoty albo powrót, potem ewentualne znaleziska), kto oberwał
+    i ile łupu przyniesiono w tym rozliczeniu (to samo, co poszło do `fx.stock`). */
+export interface Rozliczenie {
+  lines: Tx[];
+  hurt: { id: string; d: number } | null;
+  loot: StockDelta;
+}
+
+/** Rozliczenie powrotu wyprawy `ppl` z celu `cel`, wspólne dla nocy i dnia. Losuje z ziarna zarządu w stałej kolejności:
+    łup z przedziałów celu (po jednym losie na rodzaj, w kolejności `cel.lup`), czy były kłopoty, a przy kłopotach kto
+    oberwał, ile i (w trybie zombie) czy ugryziony; potem znaleziska. Przy kłopotach łup spada o połowę. Skutki dopisuje
+    do `fx` (zapasy, potrzeby, nastroje, ugryzienie, broń i amunicja ze znalezisk, powrót ludzi), a zaufanie do `st`.
+    Cel z TARGETS (`zapas === null`) liczy wizyty w `st.visits` i dostaje mnożnik `lootMult`. Cel z miejsca dostaje łup
+    z przedziałów bez mnożnika, przycięty (`ograniczLup`) do tego, co zostało w miejscu, i do udźwigu `ppl.length` osób;
+    zabrane, wizyty i dzień ostatniej wizyty (`i.day`) idą do `st.miasto`, którego rozliczenie samo zakłada, gdy go nie
+    ma. Pusta `ppl` nic nie losuje i nic nie zmienia. */
+export function rozliczWyprawe(st: GovState, i: GovInput, fx: GovEffects, cel: Cel, ppl: GovPerson[]): Rozliczenie {
+  const lines: Tx[] = [];
   const got = zeroStock();
-  for (const [k, [a, b]] of Object.entries(t.loot) as [LootKey, [number, number]][])
+  if (!ppl.length) return { lines, hurt: null, loot: got };
+  let hurt: Rozliczenie['hurt'] = null;
+  const m = lootMult(st, cel);
+  if (cel.zapas === null) st.visits[cel.klucz] = (st.visits[cel.klucz] ?? 0) + 1;
+  for (const [k, [a, b]] of Object.entries(cel.lup) as [LootKey, [number, number]][])
     got[k] = Math.round(rint(st, a, b) * m * (ppl.length > 1 ? 1.6 : 1));
-  const risk = Math.max(...ppl.map((p) => expRisk(st, p, t, ppl.length)));
+  const risk = Math.max(...ppl.map((p) => expRisk(st, p, cel, ppl.length)));
   const trouble = rnd(st) < risk;
+  if (trouble) for (const k of Object.keys(got) as LootKey[]) got[k] = Math.floor(got[k] / 2);
+  if (cel.zapas !== null) {
+    Object.assign(got, ograniczLup(got, Math.min(zostaloZMiejsca(st, cel), UDZWIG_NA_OSOBE * ppl.length)));
+    wlaczMiasto(st);
+    const miasto = st.miasto!;
+    const wyniesiono = Object.values(got).reduce((a, b) => a + b, 0);
+    miasto.zabrano[cel.klucz] = (miasto.zabrano[cel.klucz] ?? 0) + wyniesiono;
+    miasto.wizyty[cel.klucz] = (miasto.wizyty[cel.klucz] ?? 0) + 1;
+    miasto.ostatnia[cel.klucz] = i.day;
+  }
   const who = peopleNamesTx(ppl);
-  const where = targetNameTx(t, placeIn(i));
+  const where = cel.nazwa;
   if (trouble) {
-    for (const k of Object.keys(got) as LootKey[]) got[k] = Math.floor(got[k] / 2);
-    const hurt = ppl[rint(st, 0, ppl.length - 1)];
+    const ranny = ppl[rint(st, 0, ppl.length - 1)];
     const d = -rint(st, 20, 35);
-    addNeeds(fx, hurt.id, { health: d });
-    n.hurt.push({ id: hurt.id, d });
+    addNeeds(fx, ranny.id, { health: d });
+    hurt = { id: ranny.id, d };
     const has = stockTx(got);
     const zombie = zombieMode(st);
     // w trybie zombie kłopoty to szwendacze, a co trzeci kłopot kończy się ugryzieniem
     const bitten = zombie && rnd(st) < 0.35;
-    if (bitten) (fx.bitten ??= []).push(hurt.id);
-    const harm = bitten ? g(hurt, 'jest ugryziony', 'jest ugryziona') : g(hurt, 'jest ranny', 'jest ranna');
-    n.lines.push(
+    if (bitten) (fx.bitten ??= []).push(ranny.id);
+    const harm = bitten ? g(ranny, 'jest ugryziony', 'jest ugryziona') : g(ranny, 'jest ranny', 'jest ranna');
+    lines.push(
       tx(
-        `${who.pl} ${verbPl(ppl, 'trafił', 'trafiła', 'trafili', 'trafiły')} na ${zombie ? 'szwendaczy' : 'szabrowników'} (${where.pl}). ${hurt.name} ${harm}.${has.pl ? ` Udało się przynieść: ${has.pl}.` : ' Wszystko zostało po drodze.'}`,
-        `${who.en} ran into ${zombie ? 'shamblers' : 'looters'} at ${where.en}. ${hurt.name} ${bitten ? 'was bitten' : 'got hurt'}.${has.en ? ` ${oni(ppl, 'He', 'She', 'They')} still brought back ${has.en}.` : ` ${oni(ppl, 'He', 'She', 'They')} had to drop the lot on the way back.`}`,
+        `${who.pl} ${verbPl(ppl, 'trafił', 'trafiła', 'trafili', 'trafiły')} na ${zombie ? 'szwendaczy' : 'szabrowników'} (${where.pl}). ${ranny.name} ${harm}.${has.pl ? ` Udało się przynieść: ${has.pl}.` : ' Wszystko zostało po drodze.'}`,
+        `${who.en} ran into ${zombie ? 'shamblers' : 'looters'} at ${where.en}. ${ranny.name} ${bitten ? 'was bitten' : 'got hurt'}.${has.en ? ` ${oni(ppl, 'He', 'She', 'They')} still brought back ${has.en}.` : ` ${oni(ppl, 'He', 'She', 'They')} had to drop the lot on the way back.`}`,
       ),
     );
     for (const p of ppl) fx.moods.push({ id: p.id, why: g(p, 'Ledwo uciekłem', 'Ledwo uciekłam'), d: -6, hours: 12 });
   } else {
     const has = stockTx(got);
-    n.lines.push(
+    lines.push(
       has.pl
         ? tx(
             `${who.pl} ${verbPl(ppl, 'wrócił', 'wróciła', 'wrócili', 'wróciły')} z miejsca: ${where.pl}. ${verbPl(ppl, 'Przyniósł', 'Przyniosła', 'Przynieśli', 'Przyniosły')}: ${has.pl}.`,
@@ -667,22 +706,33 @@ function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[
         fx.moods.push({ id: p.id, why: g(p, 'Wróciłem z łupem', 'Wróciłam z łupem'), d: 4, hours: 12 });
     }
   }
-  for (const k of Object.keys(got) as LootKey[]) {
-    fx.stock[k] += got[k];
-    n.loot[k] += got[k];
-  }
+  for (const k of Object.keys(got) as LootKey[]) fx.stock[k] += got[k];
   const found = finds(st, fx);
   if (found.length) {
     const all = txJoin(found, ', ');
-    n.lines.push(
+    lines.push(
       tx(
         `${verbPl(ppl, 'Znalazł', 'Znalazła', 'Znaleźli', 'Znalazły')} też: ${all.pl}.`,
         `${oni(ppl, 'He', 'She', 'They')} also found: ${all.en}.`,
       ),
     );
   }
-  for (const p of ppl) addNeeds(fx, p.id, { rest: t.range === 'daleko' ? -30 : -15 });
+  for (const p of ppl) addNeeds(fx, p.id, { rest: cel.range === 'daleko' ? -30 : -15 });
   fx.back.push(...ppl.map((p) => p.id));
+  return { lines, hurt, loot: got };
+}
+
+/** powrót nocnej wyprawy z karty (cel z TARGETS): rozliczenie wspólną funkcją i wpisy do raportu nocy */
+function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[]; target: string }): void {
+  const n = st.night!;
+  const t = TARGETS.find((x) => x.id === gr.target)!;
+  n.returned.push(gr.target);
+  const ppl = gr.ids.map((id) => i.people.find((p) => p.id === id)).filter((p): p is GovPerson => !!p);
+  if (!ppl.length) return;
+  const r = rozliczWyprawe(st, i, fx, celZTarget(t, placeIn(i)), ppl);
+  n.lines.push(...r.lines);
+  if (r.hurt) n.hurt.push(r.hurt);
+  for (const k of STOCK_KEYS) n.loot[k] += r.loot[k];
 }
 
 /** nazwy broni w bierniku do raportu (te same id co w src/sim/bron.ts) */
