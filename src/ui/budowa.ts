@@ -6,7 +6,18 @@
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import { BUILDS_EN, effectEnOf } from '../sim/budowle.en.ts';
-import { BUILDS, type BuildKind, type BuildPlace, canPlace, effectOf, footprint, type Mat } from '../sim/budowle.ts';
+import {
+  BUILD_CATS,
+  BUILDS,
+  type BuildCat,
+  type BuildKind,
+  type BuildPlace,
+  canPlace,
+  effectOf,
+  footprint,
+  isUnlocked,
+  type Mat,
+} from '../sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { MAT_EN } from '../sim/mieszkania.en.ts';
 import type { MenuItem } from '../sim/orders.ts';
@@ -186,6 +197,14 @@ export function workText(ticks: number): string {
   return m === 30 ? `${h}${L(',5', '.5')} h ${of}` : `${h} h ${m} min ${of}`;
 }
 
+/** Widok z kłódkami: do czasu badań zablokowana budowla, której nie da się odblokować, byłaby ślepą uliczką, więc
+    menu pokazuje tylko to, co wolno postawić. Gdy badania ruszą, wystarczy tu ustawić true. */
+export const BUILD_MENU: { showLocked: boolean } = { showLocked: false };
+
+/** nazwy badań do napisu „Wymaga badania”; wypełni je projekt badań (bez wpisu pokazuje się identyfikator) */
+export const TECH_NAMES: Record<string, Tx> = {};
+const techName = (id: string): string => (TECH_NAMES[id] ? tr(TECH_NAMES[id]) : id);
+
 export interface BuildItem {
   kind: BuildKind;
   name: string;
@@ -197,19 +216,21 @@ export interface BuildItem {
   ok: boolean;
   /** czemu nie (brak miejsca albo materiałów), z podpowiedzią, skąd wziąć */
   why?: string;
+  /** „Wymaga badania: …”, gdy budowla czeka na badanie (tylko przy BUILD_MENU.showLocked); jest też w why */
+  locked?: string;
 }
 
 export interface BuildCategory {
-  key: 'pomieszczenie' | 'podworko' | 'obwod';
+  key: BuildCat;
   title: string;
   items: BuildItem[];
 }
 
-const CATEGORIES: { key: BuildCategory['key']; title: Tx; places: BuildPlace[] }[] = [
-  { key: 'pomieszczenie', title: tx('Pomieszczenie', 'Indoors'), places: ['pokoj', 'kuchnia'] },
-  { key: 'podworko', title: tx('Podwórko', 'Yard'), places: ['podworko'] },
-  { key: 'obwod', title: tx('Obwód', 'Perimeter'), places: ['obwod'] },
-];
+const CAT_TITLE: Record<BuildCat, Tx> = {
+  dom: tx('Dom', 'Home'),
+  podworko: tx('Podwórko', 'Yard'),
+  obwod: tx('Obwód', 'Perimeter'),
+};
 
 /** skąd brać materiał, do powodu „brakuje”, w obu językach (w domu przeszukiwanie domu i gruz ze słownika) */
 const source = (w: Words, e: WordsEn): Partial<Record<Mat, Tx>> => ({
@@ -219,26 +240,35 @@ const source = (w: Words, e: WordsEn): Partial<Record<Mat, Tx>> => ({
   drewno: tx('Drewno daje ścinanie drzew.', 'Wood comes from chopping down trees.'),
 });
 
-/** Menu budowy: kategorie z budowlami; niedostępne z powodem (nie ma gdzie postawić albo brakuje
-    materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. */
+/** Menu budowy: zakładki z budowlami (zakładka bez pozycji znika); niedostępne z powodem (nie ma gdzie postawić
+    albo brakuje materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. Zablokowane badaniem
+    (opts.st.techDone) są ukryte, a z opts.showLocked (domyślnie BUILD_MENU.showLocked) pokazane jako „Wymaga badania”. */
 export function buildMenu(
   have: Partial<Record<Mat, number>>,
   room: (kind: BuildKind) => boolean,
   words: Words = wordsOf(BLOK),
   en: WordsEn = wordsEn(BLOK),
+  opts: { st?: Pick<SimState, 'techDone'>; showLocked?: boolean } = {},
 ): BuildCategory[] {
-  return CATEGORIES.map((c) => ({
-    key: c.key,
-    title: tr(c.title),
+  const st = opts.st ?? {};
+  const showLocked = opts.showLocked ?? BUILD_MENU.showLocked;
+  return BUILD_CATS.map((key) => ({
+    key,
+    title: tr(CAT_TITLE[key]),
     items: (Object.keys(BUILDS) as BuildKind[])
-      .filter((k) => c.places.includes(BUILDS[k].place))
+      .filter((k) => BUILDS[k].cat === key && (showLocked || isUnlocked(st, k)))
       .map((kind) => {
         const d = BUILDS[kind];
         const short = (Object.entries(d.cost) as [Mat, number][])
           .map(([m, n]): [Mat, number] => [m, n - (have[m] ?? 0)])
           .filter(([, n]) => n > 0);
         let why: string | undefined;
-        if (!room(kind))
+        let locked: string | undefined;
+        if (!isUnlocked(st, kind)) {
+          const name = techName(d.tech ?? '');
+          locked = L(`Wymaga badania: ${name}`, `Needs research: ${name}`);
+          why = locked;
+        } else if (!room(kind))
           why = L(
             `Nie ma gdzie postawić: brak wolnego miejsca ${placeText(d.place, words)}.`,
             `Nowhere to put it: no free space ${placeEn(d.place, en)}.`,
@@ -258,9 +288,10 @@ export function buildMenu(
           place: placeL(d.place, words, en),
           ok: !why,
           why,
+          locked,
         };
       }),
-  }));
+  })).filter((c) => c.items.length > 0);
 }
 
 /** okno menu budowy (przycisk „Budowa” i klawisz B) */

@@ -4,7 +4,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { tx } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { BLOK, wordsOf } from '../../src/gov/miejsce.ts';
 import type { GovState } from '../../src/gov/typy.ts';
@@ -17,6 +18,7 @@ import { snapshot } from '../../src/sim/snapshot.ts';
 import {
   allowedAnchors,
   availableOf,
+  BUILD_MENU,
   buildItems,
   buildMenu,
   buildSheet,
@@ -26,6 +28,7 @@ import {
   okTilesOf,
   ourApts,
   reservedOf,
+  TECH_NAMES,
   workText,
 } from '../../src/ui/budowa.ts';
 import { DAY2_WOOD, goalsDay2, isDay2 } from '../../src/ui/cele.ts';
@@ -62,9 +65,41 @@ const missing = (k: BuildKind, have: Partial<Record<Mat, number>>) =>
     .join(', ');
 
 describe('menu budowy', () => {
-  it('trzy kategorie, każda budowla z kosztem, czasem pracy, działaniem i miejscem z BUILDS', () => {
+  afterEach(() => {
+    for (const k of Object.keys(BUILDS) as BuildKind[]) delete BUILDS[k].tech;
+    delete TECH_NAMES.t_test;
+    BUILD_MENU.showLocked = false;
+  });
+
+  it('zablokowane badaniem: ukryte, z flagą kłódek wyszarzone z „Wymaga badania”, zakładka bez pozycji znika', () => {
+    const rich = { deski: 999, zlom: 999, czesci: 999 };
+    const kinds = (m: ReturnType<typeof buildMenu>) => m.flatMap((c) => c.items.map((b) => b.kind));
+    BUILDS.warsztat.tech = 't_test';
+    expect(kinds(buildMenu(rich, () => true, undefined, undefined, { st: {} }))).not.toContain('warsztat');
+    expect(kinds(buildMenu(rich, () => true, undefined, undefined, { st: { techDone: ['t_test'] } }))).toContain(
+      'warsztat',
+    );
+    TECH_NAMES.t_test = tx('Badanie testowe', 'Test research');
+    const shown = buildMenu(rich, () => true, undefined, undefined, { st: {}, showLocked: true })
+      .flatMap((c) => c.items)
+      .find((b) => b.kind === 'warsztat')!;
+    expect(shown).toMatchObject({ ok: false, locked: 'Wymaga badania: Badanie testowe' });
+    expect(shown.why).toBe(shown.locked);
+    // flaga z danych działa tak samo jak opcja
+    BUILD_MENU.showLocked = true;
+    expect(kinds(buildMenu(rich, () => true, undefined, undefined, { st: {} }))).toContain('warsztat');
+    BUILD_MENU.showLocked = false;
+    // jedyna budowla zakładki zablokowana: zakładki nie ma
+    BUILDS.zasieki.tech = 't_test';
+    expect(buildMenu(rich, () => true, undefined, undefined, { st: {} }).map((c) => c.key)).toEqual([
+      'dom',
+      'podworko',
+    ]);
+  });
+
+  it('trzy zakładki, każda budowla z kosztem, czasem pracy, działaniem i miejscem z BUILDS', () => {
     const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true);
-    expect(menu.map((c) => c.title)).toEqual(['Pomieszczenie', 'Podwórko', 'Obwód']);
+    expect(menu.map((c) => c.title)).toEqual(['Dom', 'Podwórko', 'Obwód']);
     const all = menu.flatMap((c) => c.items);
     expect(all.map((b) => b.kind).sort()).toEqual((Object.keys(BUILDS) as BuildKind[]).sort());
     for (const b of all) {

@@ -507,7 +507,7 @@ describe('budowa i mieszkania po angielsku', () => {
   it('menu budowy: kategorie, nazwy, koszt i czas po angielsku, powody braku', () => {
     ustawJezyk('en');
     const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true);
-    expect(menu.map((c) => c.title)).toEqual(['Indoors', 'Yard', 'Perimeter']);
+    expect(menu.map((c) => c.title)).toEqual(['Home', 'Yard', 'Perimeter']);
     for (const b of menu.flatMap((c) => c.items)) {
       expect(b).toMatchObject({ name: BUILDS_EN[b.kind].name, effect: effectEnOf(b.kind, wordsEn(BLOK)), ok: true });
       for (const [m, n] of Object.entries(BUILDS[b.kind].cost) as [Mat, number][])
