@@ -195,6 +195,33 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // zwykły start bez ?stado: do 19:30 szwendacze z pasa przy siatce ściągają się pod nią
+    name: 'zombie-wieczor',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const info = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        for (let k = 0; k < 3600; k++) sim.step();
+        const w = sim.w;
+        const near = (p: { x: number; y: number }) =>
+          w.fence.tiles.some((t) => Math.hypot((t % w.size) + 0.5 - p.x, Math.floor(t / w.size) + 0.5 - p.y) <= 12);
+        const z = st.pawns.filter((p) => p.kind === 'zombie');
+        const at = z.filter(near);
+        if (at.length)
+          zm.setCam(at.reduce((a, p) => a + p.x, 0) / at.length - 4, at.reduce((a, p) => a + p.y, 0) / at.length, 1.2);
+        return { all: z.length, near: at.length };
+      });
+      console.log(`  szwendaczy: ${info.all}, do 12 m od siatki: ${info.near}`);
+      if (info.near < 4) throw new Error('szwendacze nie ściągają się pod siatkę');
+      await waitIdle(page);
+      await page.waitForTimeout(350);
+    },
+  },
+  {
     name: 'zombie-noc',
     query: '',
     run: async (page, base) => zombieNight(page, base),
@@ -3307,6 +3334,8 @@ const SHOTS: Shot[] = [
   // wydarzenia z miejsca: dym z komina pierwszego dnia w bloku i w domu, wydarzenie drugiego dnia i karta nocy w domu
   wydarzeniaDym('wydarzenia-blok-dym', 'przymorze', 'z waszej klatki', false),
   wydarzeniaDym('wydarzenia-dom-dym', 'zielonki', 'zza płotu', true),
+  // drugi dzień w domu: wydarzenie „Na ulicy” i cele bez słów z bloku; cel „Przeszukajcie dom” da się zaliczyć:
+  // prawy przycisk w pokoju domu komitetu daje „Przeszukać pokój”, a karta domu liczy przeszukane pomieszczenia
   {
     name: 'wydarzenia-dom-dzien2',
     query: '',
@@ -3315,7 +3344,8 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       await chopDryTree(page);
       // do raportu i dalej do pierwszego wydarzenia drugiego dnia od 8:00 (okna po drodze: pierwsza odpowiedź)
-      for (let k = 0; k < 200; k++) {
+      let event = false;
+      for (let k = 0; k < 200 && !event; k++) {
         const p = await page.evaluate(() => window.zm!.ff(15));
         const day2 = await page.evaluate(() => {
           const st = window.zm!.sim!.st;
@@ -3329,11 +3359,111 @@ const SHOTS: Shot[] = [
           if (kicker !== 'Na ulicy') throw new Error(`nagłówek okna wydarzenia w domu: ${kicker}`);
           const goals = (await page.textContent('#goals')) ?? '';
           if (BLOKOWE_UI.test(goals)) throw new Error(`cele drugiego dnia w domu ze słowami z bloku: ${goals}`);
-          return;
-        }
+          if (!goals.includes('Przeszukajcie dom.')) throw new Error(`w celach drugiego dnia nie ma domu: ${goals}`);
+          await page.screenshot({ path: path.join(OUT, 'wydarzenia-dom-dzien2-wydarzenie.png') });
+          await answerFirst(page, p);
+          event = true;
+        } else if (p) await answerFirst(page, p);
+      }
+      if (!event) throw new Error('drugiego dnia nie było wydarzenia');
+      // okna, które przyszły zaraz po wydarzeniu
+      for (let k = 0; k < 10; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(0));
+        if (!p) break;
+        await answerFirst(page, p);
+      }
+      // ktoś z komitetu (kliknięcie) i wolny kafelek pokoju w domu komitetu (prawy przycisk)
+      const pawn = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+        zm.setCam(p.x, p.y, 1.6);
+        return { x: p.x, y: p.y };
+      });
+      await waitIdle(page);
+      const [qx, qy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.6), [pawn.x, pawn.y]);
+      await page.mouse.click(qx, qy);
+      await page.waitForFunction(() => !document.getElementById('card')!.hidden, null, { timeout: 3000 });
+      const spot = await page.evaluate(() => {
+        const { sim } = window.zm!;
+        const { w, st } = sim!;
+        const it = w.interior;
+        const home = st.apts.find((a) => a.state === 'zarzad')!.apt;
+        const room = it.rooms.find((r) => r.apt === home && r.kind === 'pokoj')!;
+        const covered = (i: number) =>
+          st.things.some(
+            (t) =>
+              i % w.size >= t.x &&
+              i % w.size < t.x + t.w &&
+              Math.floor(i / w.size) >= t.y &&
+              Math.floor(i / w.size) < t.y + t.h,
+          );
+        const tiles = [...it.room.keys()].filter((i) => it.room[i] === room.id && !w.blocked[i] && !covered(i));
+        const t = tiles[Math.floor(tiles.length / 2)];
+        window.zm!.setCam((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5, 1.6);
+        return { room: room.id, x: t % w.size, y: Math.floor(t / w.size) };
+      });
+      await waitIdle(page);
+      const [rx, ry] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), [spot.x, spot.y]);
+      await page.mouse.click(rx, ry, { button: 'right' });
+      await page.waitForSelector('#ctx:not([hidden])', { timeout: 3000 });
+      const menu = await page.evaluate(() => ({
+        head: document.querySelector('#ctx .ctx-head')?.textContent ?? '',
+        items: [...document.querySelectorAll('#ctx .ctx-item')].map((b) => b.textContent ?? ''),
+      }));
+      console.log(`  menu w pokoju domu: ${menu.head}: ${menu.items.join(' | ')}`);
+      if (!menu.items.includes('Przeszukać pokój')) throw new Error('w pokoju domu komitetu nie ma „Przeszukać pokój”');
+      if (!menu.head.endsWith(' · dom komitetu ulicy')) throw new Error(`nagłówek menu w domu: ${menu.head}`);
+      const word = `${menu.head} ${menu.items.join(' ')}`.match(BLOKOWE_UI)?.[0];
+      if (word) throw new Error(`menu poleceń w domu ze słowem z bloku: ${word}`);
+      await page.screenshot({ path: path.join(OUT, 'wydarzenia-dom-dzien2-menu.png') });
+      await page.click('#ctx .ctx-item:has-text("Przeszukać pokój")');
+      // przeszukanie trwa około godziny gry; okna po drodze: pierwsza odpowiedź
+      for (let k = 0; k < 40; k++) {
+        if (await page.evaluate((room) => window.zm!.sim!.st.apts[0].searched.includes(room), spot.room)) break;
+        const p = await page.evaluate(() => window.zm!.ff(5));
         if (p) await answerFirst(page, p);
       }
-      throw new Error('drugiego dnia nie było wydarzenia');
+      const done = await page.evaluate(() => ({
+        searched: window.zm!.sim!.st.apts[0].searched.length,
+        goal: document.querySelector('#goals .goal[data-n="1"]')?.className ?? '',
+        count: document.querySelector('#goals .goals-n')?.textContent ?? '',
+      }));
+      console.log(`  po przeszukaniu: przeszukane ${done.searched}, cel 1: ${done.goal}, cele ${done.count}`);
+      if (!done.searched) throw new Error('pokój domu komitetu nie został przeszukany');
+      if (!done.goal.includes('done')) throw new Error('cel „Przeszukajcie dom” nie zaliczony po przeszukaniu pokoju');
+      // karta domu (lewy klik w domu z dala od ludzi zdejmuje zaznaczenie): dom komitetu, bez mieszkania,
+      // z przeszukanymi pomieszczeniami
+      const far = await page.evaluate(() => {
+        const { w, st } = window.zm!.sim!;
+        const it = w.interior;
+        const t = [...it.room.keys()].find(
+          (i) =>
+            it.room[i] >= 0 &&
+            !w.blocked[i] &&
+            st.pawns.every((p) => Math.hypot(p.x - (i % w.size) - 0.5, p.y - Math.floor(i / w.size) - 0.5) > 2),
+        )!;
+        window.zm!.setCam((t % w.size) + 0.5, Math.floor(t / w.size) + 0.5, 1.3);
+        return [t % w.size, Math.floor(t / w.size)];
+      });
+      await waitIdle(page);
+      const [hx, hy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), far);
+      await page.mouse.click(hx, hy);
+      const card = await page
+        .waitForFunction(
+          () => {
+            const t = document.getElementById('card')!.textContent ?? '';
+            return t.includes('Przeszukane: 1 z') ? t : '';
+          },
+          null,
+          { timeout: 3000 },
+        )
+        .then((h) => h.jsonValue())
+        .catch(() => '');
+      if (!card) throw new Error('karta domu nie pokazała przeszukanego pomieszczenia');
+      console.log(`  karta domu: ${card.replace(/\s+/g, ' ').slice(0, 140)}`);
+      if (!card.includes('Dom komitetu ulicy')) throw new Error(`karta domu bez domu komitetu: ${card}`);
+      const cardWord = card.match(BLOKOWE_UI)?.[0];
+      if (cardWord) throw new Error(`karta domu ze słowem z bloku: ${cardWord}`);
     },
   },
   {
@@ -3562,9 +3692,9 @@ async function m2PoseStage(page: Page, where: 'dom' | 'podworko') {
 
 /** słowa, których w domu jednorodzinnym nie ma w tekstach zarządu (jak FORBIDDEN_DOM w testach) */
 const FORBIDDEN_DOM = /klatk|piętr|spółdziel|pawilon|szlaban|świetlic|czynsz|blok|mieszkani/i;
-/** słowa z bloku, których w domu nie ma w oknach, celach, pomocy, pasku i menu budowy (jak BLOKOWE
-    w tests/unit/teksty-miejsca.test.ts: łóżka piętrowe i mieszkanie siedziby zostają) */
-const BLOKOWE_UI = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszkańc/i;
+/** słowa z bloku, których w domu nie ma w oknach, celach, pomocy, pasku, menu budowy i poleceń i na karcie domu (jak
+    BLOKOWE w tests/unit/teksty-miejsca.test.ts: także mieszkanie, bo lokum komitetu to dom; łóżka piętrowe zostają) */
+const BLOKOWE_UI = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszka[nń]/i;
 
 /** samouczek bez klikania: pierwszy z zarządu ścina suche drzewo (jak polecenie z menu) */
 async function chopDryTree(page: Page) {

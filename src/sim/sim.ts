@@ -72,10 +72,11 @@ import {
   DISMANTLE,
   damageFrom,
   dismantleTicks,
-  lootOf,
   MATS,
   REPAIR,
   RUBBISH,
+  searchable,
+  searchLoot,
   searchTicks,
   yieldOf,
 } from './mieszkania.ts';
@@ -120,6 +121,7 @@ import {
   BITE_HIT_FIGHTING,
   BITE_REACH,
   CHASE_SPEED,
+  DAY_PULL,
   DISPERSE,
   distField,
   FAR,
@@ -127,7 +129,10 @@ import {
   HORDE_HOURS,
   hordeSize,
   MAX_ZOMBIES,
+  NEAR,
   PUSH,
+  RING_FROM,
+  RING_TO,
   SIGHT_DAY,
   SIGHT_NIGHT,
   ZOMBIE_HP,
@@ -661,7 +666,7 @@ export interface SimState {
   dead?: Dead[];
   /** liczniki: zabici wrogowie, przerwania siatki, ugryzienia, zgony naszych */
   tally?: Tally;
-  /** stado tej nocy (tryb zombie): dzień, ilu jeszcze wyjdzie z krawędzi mapy i kiedy następna grupa */
+  /** stado tej nocy (tryb zombie): dzień, ilu jeszcze wyjdzie z okolicy i kiedy następna grupa */
   horde?: { day: number; left: number; next: number };
   /** ułamek porcji zjedzony ponad całe porcje (racje i kocioł zjadają po 0,75 i 1,1 porcji na posiłek) */
   portion: number;
@@ -1614,10 +1619,13 @@ export class Sim {
   private readonly fenceMask: Uint8Array;
   /** zabici w bieżącym kroku (znikają po pętli pionków) */
   private readonly graveyard = new Set<number>();
-  /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy */
+  /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy,
+      pas za dnia (FAR–NEAR m od siatki) i okolica, z której wychodzi stado (RING_FROM–RING_TO m) */
   private seeds: number[] = [];
   private flow: Int32Array = new Int32Array(0);
   private edges: number[] = [];
+  private band: number[] = [];
+  private ring: number[] = [];
   /** numer kafelka siatki w World.fence.tiles (wytrzymałość w FenceState.hp) */
   private readonly fenceIndex = new Map<number, number>();
   /** wyszukiwania dróg szwendaczy w tym kroku */
@@ -1768,15 +1776,21 @@ export class Sim {
       crowd: res,
       outside: { blocked: outside, reg: labelRegions(outside, size) },
     };
-    // tryb zombie: pole odległości do siatki po stronie ulicy i kafelki przy krawędzi mapy (skąd wychodzi stado)
+    // tryb zombie: pole odległości do siatki po stronie ulicy, pas za dnia, okolica stada i krawędź mapy (zapas)
     if (modeOf(this.st) === 'zombie' && shape) {
       this.seeds = this.outsideOf([...shape.tiles, ...gateTiles(this.w)]);
       this.flow = distField(outside, size, this.seeds);
       this.edges = [];
+      this.band = [];
+      this.ring = [];
       for (let i = 0; i < size * size; i++) {
         const x = i % size;
         const y = (i - x) / size;
-        if ((x < 2 || y < 2 || x >= size - 2 || y >= size - 2) && this.flow[i] >= 0) this.edges.push(i);
+        const f = this.flow[i];
+        if (f < 0 || zombie[i]) continue;
+        if (x < 2 || y < 2 || x >= size - 2 || y >= size - 2) this.edges.push(i);
+        if (f >= FAR && f <= NEAR) this.band.push(i);
+        if (f >= RING_FROM && f <= RING_TO) this.ring.push(i);
       }
     }
   }
@@ -4076,21 +4090,23 @@ export class Sim {
     return this.nearest(p, cand.length ? cand : this.roomTiles[room].filter((i) => this.reg[i] === region));
   }
 
-  /** przeszukać pomieszczenie pustego mieszkania (raz; nie gdy ktoś już je przeszukuje) */
+  /** przeszukać pomieszczenie pustego mieszkania albo, w domu jednorodzinnym, domu komitetu (raz; nie gdy ktoś już
+      je przeszukuje) */
   private startSearch(p: Pawn, room: number): void {
     const g = this.aptOfRoom(room);
-    if (g?.state !== 'puste' || g.searched.includes(room)) return;
+    if (!g || !searchable(this.w, g) || g.searched.includes(room)) return;
     if (this.st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room)) return;
     const spot = this.roomSpot(p, room);
     if (spot < 0 || !this.go(p, spot)) return;
     this.setJob(p, this.newJob('search', room, spot, true), false);
   }
 
-  /** łup z przeszukania: z tabeli według powodu opuszczenia, deterministycznie z ziarna gry i pomieszczenia */
+  /** łup z przeszukania: z tabeli według powodu opuszczenia (w domu komitetu z dokładką), deterministycznie z ziarna
+      gry i pomieszczenia */
   private searchDone(room: number, g: AptGame, at: number): void {
     const h = this.house!;
     const rnd = mulberry((Math.imul(this.st.seed | 0, 9973) ^ Math.imul(room + 1, 7919) ^ 0x51ab) >>> 0);
-    const loot = lootOf(g.why ?? 'wyjazd', h.rooms[room].kind, this.roomTiles[room].length, rnd);
+    const loot = searchLoot(g, h.rooms[room].kind, this.roomTiles[room].length, rnd);
     for (const [m, n] of Object.entries(loot) as [Mat, number][]) if (n > 0) this.dropMat(at, m, n, room);
     g.searched.push(room);
     g.searched.sort((a, b) => a - b);
@@ -5400,7 +5416,7 @@ export class Sim {
     return n;
   }
 
-  /** Zegar trybu zombie: za dnia co godzinę uzupełnienie snujących się, o 21:00 stado (grupy z krawędzi mapy
+  /** Zegar trybu zombie: za dnia co godzinę uzupełnienie snujących się, o 21:00 stado (grupy z okolicy
       do 1:00), o 6:00 stado się rozchodzi. */
   private zombieClock(): void {
     const st = this.st;
@@ -5409,7 +5425,7 @@ export class Sim {
     const h = hourOf(tick);
     const day = dayOf(tick);
     if (hourStart && h >= DISPERSE && h < HORDE_FROM) this.topUp(day);
-    // o 21:00 stado: najpierw ci, którzy już się snują (poza budynkami), a z krawędzi mapy tylko brakująca reszta
+    // o 21:00 stado: najpierw ci, którzy już się snują (poza budynkami), a z okolicy tylko brakująca reszta
     if (hourStart && h === HORDE_FROM) {
       const want = hordeSize(day);
       let have = 0;
@@ -5429,8 +5445,9 @@ export class Sim {
       hd.left -= n;
       hd.next = tick + Math.floor((HORDE_HOURS * TICKS_PER_HOUR) / groups);
       const room = MAX_ZOMBIES - this.zombieCount();
-      if (room > 0 && this.edges.length) {
-        const at = this.edges[Math.floor(nextRandom(st.rng) * this.edges.length)];
+      const from = this.ring.length ? this.ring : this.edges;
+      if (room > 0 && from.length) {
+        const at = from[Math.floor(nextRandom(st.rng) * from.length)];
         for (const t of this.tilesAround(at, Math.min(n, room)))
           spawnZombie(st, this.w, t, Math.floor(nextRandom(st.rng) * 16), true);
       }
@@ -5447,7 +5464,7 @@ export class Sim {
       }
   }
 
-  /** za dnia: do ambientCount(dzień) snujących się, daleko od siatki; gdy brakuje ponad połowy, od razu wszyscy */
+  /** za dnia: do ambientCount(dzień) snujących się w pasie przy siatce; gdy brakuje ponad połowy, od razu wszyscy */
   private topUp(day: number): void {
     const st = this.st;
     const have = this.zombieCount();
@@ -5461,18 +5478,20 @@ export class Sim {
     }
   }
 
-  /** losowy kafelek po stronie ulicy co najmniej FAR metrów od siatki (a bez takiego: przy krawędzi mapy) */
+  /** losowy kafelek z pasa FAR–NEAR metrów drogi od siatki, także w linii prostej co najmniej FAR (droga za rogiem
+      budynku bywa dłuższa); bez pasa: przy krawędzi mapy */
   private farTile(): number {
-    const st = this.st;
     const size = this.w.size;
-    for (let k = 0; k < 60; k++) {
-      const i = Math.floor(nextRandom(st.rng) * size * size);
-      if (this.flow[i] < FAR) continue;
+    const from = this.band.length ? this.band : this.edges;
+    if (!from.length) return -1;
+    let i = -1;
+    for (let k = 0; k < 20; k++) {
+      i = from[Math.floor(nextRandom(this.st.rng) * from.length)];
       const x = (i % size) + 0.5;
       const y = Math.floor(i / size) + 0.5;
       if (this.seeds.every((s) => Math.hypot((s % size) + 0.5 - x, Math.floor(s / size) + 0.5 - y) >= FAR)) return i;
     }
-    return this.edges.length ? this.edges[Math.floor(nextRandom(st.rng) * this.edges.length)] : -1;
+    return i;
   }
 
   /** ofiara: człowiek na mapie; indoor: także w pomieszczeniach (dla szwendacza, który jest w środku) */
@@ -5688,7 +5707,8 @@ export class Sim {
     if (nextRandom(st.rng) < BITE_INFECT) infect(st, t, nextRandom(st.rng) < LIMB);
   }
 
-  /** snucie się: kilka kroków w losową stronę po przechodnich kafelkach */
+  /** snucie się: kilka kroków w losową stronę po przechodnich kafelkach; co któryś krok ku siatce (ściągają się pod
+      nią przez dzień), a dalej niż NEAR od siatki każdy */
   private drift(p: Pawn): void {
     const st = this.st;
     const size = this.w.size;
@@ -5698,9 +5718,14 @@ export class Sim {
     const n = 3 + Math.floor(nextRandom(st.rng) * 6);
     for (let k = 0; k < n; k++) {
       const x = c % size;
-      const opts = [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1].filter(
+      let opts = [c - size, c + size, x > 0 ? c - 1 : -1, x < size - 1 ? c + 1 : -1].filter(
         (q) => q >= 0 && q < size * size && !blocked[q] && !path.includes(q),
       );
+      const f = this.flow[c] ?? -1;
+      if (f > NEAR || (f > 1 && nextRandom(st.rng) < DAY_PULL)) {
+        const closer = opts.filter((q) => this.flow[q] >= 0 && this.flow[q] < f);
+        if (closer.length) opts = closer;
+      }
       if (!opts.length) break;
       c = opts[Math.floor(nextRandom(st.rng) * opts.length)];
       path.push(c);

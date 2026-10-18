@@ -28,7 +28,9 @@ function world(key: string): World {
 
 /** Skróty stanu bez drużyny policzone na gałęzi pelna-gra (77af2a9) przed własną drużyną: createSim(świat, 7, { core,
     mode }) na starcie i po pierwszej dobie. Tryb zombie z 1–3 osobami się zmienił (broń ponad liczbę osób idzie do
-    magazynu, decyzja 8 z projektu), więc go tu nie ma. */
+    magazynu, decyzja 8 z projektu), więc go tu nie ma. Tryb zombie po dobie zmienił się 18.10.2026 przy scaleniu
+    szwendaczy blisko siatki (c7a5f21 z tryb-zombie: pas 15–40 m za dnia, stado z okolicy), więc te dwa skróty są
+    z pelna-gra po tym scaleniu; zwykły tryb i starty bez zmian. */
 const PRZED: Record<string, string> = {
   'przymorze zwykly 1 start': 'bf1fc378',
   'przymorze zwykly 1 doba': '7c2439bf',
@@ -39,9 +41,9 @@ const PRZED: Record<string, string> = {
   'przymorze zwykly 5 start': 'c1d08113',
   'przymorze zwykly 5 doba': 'fc74bf7e',
   'przymorze zombie 4 start': '601e5138',
-  'przymorze zombie 4 doba': 'fb64b0b2',
+  'przymorze zombie 4 doba': 'f5eebaf7',
   'przymorze zombie 5 start': '6a4a7d1c',
-  'przymorze zombie 5 doba': '4e56eee4',
+  'przymorze zombie 5 doba': 'b00f03bb',
   'lanciego zwykly 1 start': '540c7ccc',
   'lanciego zwykly 2 start': '712940be',
   'lanciego zwykly 3 start': '6dfb0c87',

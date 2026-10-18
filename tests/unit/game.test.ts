@@ -126,6 +126,14 @@ describe('obcy w nocy', () => {
     expect(STRANGERS.has('crowd')).toBe(false);
   });
 
+  it('szwendacza w ciemności widać jako ciemny zarys (stado pod siatką), szabrownika nie', () => {
+    expect(strangerVisibility(1, 0, 'zombie')).toBeGreaterThanOrEqual(0.25);
+    expect(strangerVisibility(1, 0, 'zombie')).toBeLessThan(0.5);
+    expect(strangerVisibility(1, 0, 'szabrownik')).toBe(0);
+    expect(strangerVisibility(0, 0, 'zombie')).toBe(1);
+    expect(strangerVisibility(1, 0.8, 'zombie')).toBe(1);
+  });
+
   it('rzeczy gry: meble, zapasy, trzepak i siatka są z gry, podgląd tych rodzajów się pomija', () => {
     for (const k of ['koza', 'drewno', 'pien', 'trzepak', 'siatka', 'brama']) expect(GAME_KINDS.has(k)).toBe(true);
     for (const k of ['ognisko', 'lampa']) expect(GAME_KINDS.has(k)).toBe(false);

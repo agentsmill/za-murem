@@ -4,7 +4,7 @@
    (snapshot().apts: damaged, rooms, searched). Czyste funkcje stanu i świata, bez DOM. */
 
 import { BLOK, type Words, wordsOf } from '../gov/miejsce.ts';
-import { REPAIR } from '../sim/mieszkania.ts';
+import { REPAIR, searchable } from '../sim/mieszkania.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimApt } from '../sim/snapshot.ts';
 import type { AptWhy, DamageKind } from '../world/apts.ts';
@@ -61,6 +61,8 @@ export interface AptView {
   year?: number;
   /** mieszkanie zarządu albo zajęte poleceniem 'claim' */
   ours: boolean;
+  /** pomieszczenia wolno przeszukać: puste mieszkanie, w domu jednorodzinnym także dom komitetu (sim: searchable) */
+  search: boolean;
   rooms: { id: number; name: string; area: number; searched: boolean }[];
   /** uszkodzenia mieszkania (id: indeks w st.damage, jak w poleceniu 'repair') z kosztem naprawy */
   damages: { id: number; kind: DamageKind; tile: number; name: string; cost: string; fixed: boolean }[];
@@ -98,6 +100,7 @@ export function aptView(st: SimState, w: World, apt: number, snap: readonly SimA
     why: g.why,
     year: g.year,
     ours: g.state === 'zarzad' || g.ours,
+    search: searchable(w, g),
     rooms: rooms.map((r) => ({
       id: r.id,
       name: ROOM_NAME[r.kind] ?? r.kind,
@@ -125,15 +128,16 @@ export function aptView(st: SimState, w: World, apt: number, snap: readonly SimA
   };
 }
 
-/** nagłówek stanu („Puste od 2034, wyjazd”); w domu mieszkanie komitetu ulicy */
+/** nagłówek stanu („Puste od 2034, wyjazd”); lokum zarządu ze słownika: mieszkanie zarządu, w domu dom komitetu */
 export function aptState(v: AptView, words: Words = wordsOf(BLOK)): string {
-  if (v.state === 'zarzad') return `Mieszkanie ${words.zarzad.d}`;
+  if (v.state === 'zarzad') return `${words.lokal.M} ${words.zarzad.d}`;
   if (v.state === 'mieszkancy') return 'Mieszkają tu ludzie';
   const head = v.ours ? `Zajęte przez ${words.zarzad.krotko}` : 'Puste';
   return v.why ? `${head} od ${v.year ?? '?'}, ${WHY_SHORT[v.why]}` : head;
 }
 
-/** karta mieszkania (w miejscu karty osoby): stan, powód opuszczenia, co do naprawy, co już przeszukane */
+/** karta mieszkania (w miejscu karty osoby): stan, powód opuszczenia, co do naprawy, co już przeszukane; w domu
+    jednorodzinnym karta domu komitetu z jego pomieszczeniami do przeszukania */
 export function aptCard(v: AptView, touch: boolean, words: Words = wordsOf(BLOK)): string {
   const empty = v.state === 'puste';
   const done = v.damages.filter((d) => d.fixed);
@@ -155,11 +159,9 @@ export function aptCard(v: AptView, touch: boolean, words: Words = wordsOf(BLOK)
         }</b></li>`,
     )
     .join('')}</ul>`;
-  const how = touch
-    ? 'Przytrzymajcie palec w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.'
-    : 'Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.';
+  const how = touch ? words.szukanie.karta.dotyk : words.szukanie.karta.mysz;
   return [
-    `<h2>Mieszkanie ${v.apt + 1}</h2>`,
+    `<h2>${esc(words.lokal.nr(v.apt + 1))}</h2>`,
     `<p class="sub">${esc(aptState(v, words))}</p>`,
     empty && v.why ? `<p class="apt-why">${esc(WHY_TEXT[v.why](v.year ?? 2026))}</p>` : '',
     empty
@@ -167,12 +169,13 @@ export function aptCard(v: AptView, touch: boolean, words: Words = wordsOf(BLOK)
       : done.length
         ? `<h3 class="apt-h">Naprawione</h3>${damages}`
         : '',
-    empty ? `<h3 class="apt-h">Przeszukane: ${v.searchedCount} z ${v.roomCount}</h3>${rooms}` : '',
+    v.search ? `<h3 class="apt-h">Przeszukane: ${v.searchedCount} z ${v.roomCount}</h3>${rooms}` : '',
     empty && v.beds
       ? `<p class="apt-beds">${v.ours ? 'Po naprawie' : 'Po zajęciu i naprawie'}: miejsca do spania dla ${v.beds} ${
           v.beds === 1 ? 'osoby' : 'osób'
         }.</p>`
       : '',
-    empty ? `<p class="doing">${esc(how)}</p>` : '',
+    // dom komitetu po przeszukaniu wszystkiego nie ma już poleceń (w pustym mieszkaniu zostają rozbiórka i naprawy)
+    v.search && (empty || v.searchedCount < v.roomCount) ? `<p class="doing">${esc(how)}</p>` : '',
   ].join('');
 }

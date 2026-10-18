@@ -121,11 +121,11 @@ export function effectOf(kind: BuildKind, w: Words): string {
   return typeof e === 'string' ? e : e(w);
 }
 
-/** powód „nie tutaj”; bramy: brama albo furtka w dopełniaczu ze słownika wspólnoty */
-const WHY: Record<BuildPlace, (bramy: string) => string> = {
-  pokoj: () => 'Tylko w pokoju w naszym mieszkaniu.',
-  kuchnia: () => 'Tylko w kuchni w naszym mieszkaniu.',
-  podworko: (bramy) => `Tylko na podwórku za siatką, z dala od ${bramy}, dziur i drzwi.`,
+/** powód „nie tutaj” ze słowami ze słownika wspólnoty: nasze mieszkanie albo dom, brama albo furtka w dopełniaczu */
+const WHY: Record<BuildPlace, (w: Words) => string> = {
+  pokoj: (w) => `Tylko w pokoju ${w.lokal.w}.`,
+  kuchnia: (w) => `Tylko w kuchni ${w.lokal.w}.`,
+  podworko: (w) => `Tylko na podwórku za siatką, z dala od ${w.brama.d}, dziur i drzwi.`,
   obwod: () => 'Tylko na odcinku siatki.',
 };
 
@@ -148,7 +148,7 @@ export function canPlace(
   const { w: bw, h: bh } = footprint(kind, rot);
   if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: 'Poza mapą.' };
   const tiles = buildTiles(kind, x, y, rot, size);
-  const no = { ok: false, why: WHY[def.place](wordsOfWorld(w).brama.d) };
+  const no = { ok: false, why: WHY[def.place](wordsOfWorld(w)) };
   const h = houseOf(w);
   const shape = fenceShape(w);
   if (def.place === 'pokoj' || def.place === 'kuchnia') {
