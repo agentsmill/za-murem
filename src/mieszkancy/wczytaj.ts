@@ -20,18 +20,21 @@ const KATALOG = 'data/mieszkancy/';
 
 const obiekt = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
-/** Plik JSON z tabelami w wersji `WERSJA_TABEL` albo `null` z ostrzeżeniem w konsoli (`opis` otwiera komunikat):
-    błąd sieci, status inny niż 200, odpowiedź niebędąca JSON-em i inna wersja. `cichy404` pomija ostrzeżenie przy 404,
-    czyli przy tabelach, których może po prostu nie być. Nigdy nie rzuca. */
-async function wczytajTabele<T>(
+/** Wynik pobrania pliku, którego może po prostu nie być: prawdziwe 404. Inna porażka to `null`. */
+const BRAK = Symbol('brak pliku');
+
+/** Plik JSON z tabelami w wersji `WERSJA_TABEL`, `BRAK` przy 404 albo `null` przy każdej innej porażce (błąd sieci,
+    inny status, odpowiedź niebędąca JSON-em, inna wersja). Ostrzeżenie w konsoli (`opis` otwiera komunikat) przy
+    każdej porażce poza 404 z `cichy404`, czyli przy tabelach, których może po prostu nie być. Nigdy nie rzuca. */
+async function pobierzTabele<T>(
   adres: string,
   opis: string,
   fetchFn: typeof fetch,
   cichy404: boolean,
-): Promise<T | null> {
+): Promise<T | typeof BRAK | null> {
   try {
     const odp = await fetchFn(adres);
-    if (odp.status === 404 && cichy404) return null;
+    if (odp.status === 404 && cichy404) return BRAK;
     if (!odp.ok) {
       console.warn(`${opis}: ${adres} odpowiada ${odp.status}`);
       return null;
@@ -50,13 +53,26 @@ async function wczytajTabele<T>(
   }
 }
 
+/** Jak `pobierzTabele`, ale 404 to też `null`. */
+async function wczytajTabele<T>(
+  adres: string,
+  opis: string,
+  fetchFn: typeof fetch,
+  cichy404: boolean,
+): Promise<T | null> {
+  const t = await pobierzTabele<T>(adres, opis, fetchFn, cichy404);
+  return t === BRAK ? null : t;
+}
+
+const adresGminy = (teryt: string): string => `${KATALOG}gminy/${teryt}.json`;
+
 /** Tabele gminy o kodzie TERYT (7 cyfr). `null`, gdy gminy nie ma wśród tabel (404), gdy nie da się pobrać albo
     odczytać pliku (błąd sieci, inny status, odpowiedź niebędąca JSON-em) i gdy wersja tabel jest inna niż
     `WERSJA_TABEL`. Nigdy nie rzuca: wtedy generator bierze szablon krajowy (`wczytajKraj`). Poza zwykłym 404
     każda porażka zostawia ostrzeżenie w konsoli. */
 export async function wczytajGmine(teryt: string, fetchFn: typeof fetch = fetch): Promise<TabeleGminy | null> {
   if (!/^\d{7}$/.test(teryt)) return null;
-  return wczytajTabele<TabeleGminy>(`${KATALOG}gminy/${teryt}.json`, `Tabele gminy ${teryt}`, fetchFn, true);
+  return wczytajTabele<TabeleGminy>(adresGminy(teryt), `Tabele gminy ${teryt}`, fetchFn, true);
 }
 
 /** Tabele krajowe (trwanie życia, płodność, szablon gospodarstw, marginesy całej Polski). Rzuca wyjątek, gdy nie da
@@ -132,8 +148,14 @@ export async function wczytajKoncowki(fetchFn: typeof fetch = fetch): Promise<Ta
     `gminy` niebędące tablicą; wtedy z ostrzeżeniem). Wpisy bez 7-cyfrowego TERYT i czterech liczb prostokąta są
     pomijane. Nigdy nie rzuca. */
 export async function wczytajIndeksGmin(fetchFn: typeof fetch = fetch): Promise<IndeksGmin | null> {
-  const indeks = await wczytajTabele<IndeksGmin>(`${KATALOG}gminy/indeks.json`, 'Indeks gmin', fetchFn, true);
-  if (!indeks) return null;
+  const i = await pobierzIndeksGmin(fetchFn);
+  return i === BRAK ? null : i;
+}
+
+/** Jak `wczytajIndeksGmin`, ale 404 to `BRAK`, a nie `null`. */
+async function pobierzIndeksGmin(fetchFn: typeof fetch): Promise<IndeksGmin | typeof BRAK | null> {
+  const indeks = await pobierzTabele<IndeksGmin>(`${KATALOG}gminy/indeks.json`, 'Indeks gmin', fetchFn, true);
+  if (!indeks || indeks === BRAK) return indeks;
   if (!Array.isArray(indeks.gminy)) {
     console.warn(`Indeks gmin: uszkodzony plik ${KATALOG}gminy/indeks.json`);
     return null;
@@ -160,18 +182,19 @@ export interface DaneMieszkancow {
 /** Tabele gminy, w której leży punkt: pierwsza gmina z indeksu (kolejność indeksu, czyli po TERYT), której prostokąt
     zawiera punkt i której tabela istnieje, a `rejonDla` nie zwraca dla punktu zapasu `gmina` (czyli punkt leży
     w obrysie rejonu albo najwyżej 1 km od niego). Prostokąty sąsiednich gmin mogą na siebie zachodzić, stąd pętla
-    po kandydatach. `null`, gdy żaden nie pasuje. */
-async function gminaPunktu(
-  lat: number,
-  lon: number,
-  indeks: IndeksGmin | null,
-  fetchFn: typeof fetch,
-): Promise<TabeleGminy | null> {
-  if (!indeks) return null;
+    po kandydatach. `null`, gdy żaden nie pasuje albo indeksu nie ma (404): szablon krajowy. `BLAD`, gdy indeksu albo
+    pliku gminy z pasującym prostokątem nie da się wczytać z innego powodu niż 404 (błąd sieci, 5xx, strona HTML,
+    inna wersja): wtedy nie wiadomo, czy punkt ma gminę, więc wywołujący zostaje przy starej ścieżce, zamiast dać
+    osiedlu szablon krajowy. */
+async function gminaPunktu(lat: number, lon: number, fetchFn: typeof fetch): Promise<TabeleGminy | null | typeof BLAD> {
+  const indeks = await pobierzIndeksGmin(fetchFn);
+  if (indeks === BRAK) return null;
+  if (!indeks) return BLAD;
   for (const { teryt, bbox } of indeks.gminy) {
     if (lat < bbox[0] || lat > bbox[2] || lon < bbox[1] || lon > bbox[3]) continue;
-    const g = await wczytajGmine(teryt, fetchFn);
-    if (!g) continue;
+    const g = await pobierzTabele<TabeleGminy>(adresGminy(teryt), `Tabele gminy ${teryt}`, fetchFn, true);
+    if (g === BRAK) continue;
+    if (!g) return BLAD;
     try {
       if (rejonDla(g, lat, lon).zapas !== 'gmina') return g;
     } catch (e) {
@@ -181,12 +204,18 @@ async function gminaPunktu(
   return null;
 }
 
+/** porażka wczytania indeksu albo gminy inna niż 404 (`gminaPunktu`) */
+const BLAD = Symbol('błąd wczytania');
+
 /** Dane mieszkańców dla punktu `lat, lon` (adres gracza): tabele krajowe, imiona, odmiana (słownik i końcówki),
     indeks gmin, z niego tabela gminy punktu, na końcu nazwiska jej województwa (`wczytajNazwiskaDlaGminy`).
     Pierwsze pięć pobrań idzie równolegle. Zwraca `null`, gdy brakuje tabel krajowych, imion, któregokolwiek z dwóch
     plików odmiany albo nazwisk: generator bez nich nie ma na czym pracować, więc wywołujący zostaje przy
-    dotychczasowych postaciach. Brak gminy to nie błąd (`gmina: null`, szablon krajowy). Nigdy nie rzuca, a każda
-    porażka zostawia ostrzeżenie w konsoli (poza zwykłym 404 indeksu i gminy). */
+    dotychczasowych postaciach. Tak samo, gdy indeksu gmin albo pliku gminy z pasującym prostokątem nie da się
+    wczytać z innego powodu niż 404 (błąd sieci, 5xx, strona HTML): chwilowa awaria nie może dać osiedlu szablonu
+    krajowego zamiast gminy. Brak gminy (404 indeksu albo gminy, punkt poza gminami z tabelami) to nie błąd
+    (`gmina: null`, szablon krajowy). Nigdy nie rzuca, a każda porażka zostawia ostrzeżenie w konsoli (poza zwykłym
+    404 indeksu i gminy). */
 export async function wczytajDaneMieszkancow(
   lat: number,
   lon: number,
@@ -201,9 +230,9 @@ export async function wczytajDaneMieszkancow(
       wczytajImiona(fetchFn),
       wczytajOdmiane(fetchFn),
       wczytajKoncowki(fetchFn),
-      wczytajIndeksGmin(fetchFn).then((indeks) => gminaPunktu(lat, lon, indeks, fetchFn)),
+      gminaPunktu(lat, lon, fetchFn),
     ]);
-    if (!kraj || !imiona || !tabelaOdmiany || !koncowki) return null;
+    if (!kraj || !imiona || !tabelaOdmiany || !koncowki || gmina === BLAD) return null;
     const nazwiska = await wczytajNazwiskaDlaGminy(gmina, fetchFn);
     if (!nazwiska) return null;
     return { kraj, gmina, imiona, nazwiska, odmiana: { tabela: tabelaOdmiany, koncowki } };

@@ -8,7 +8,7 @@
    w `generujObszar`. Lista budynków obszaru jest potrzebna tylko do kroniki osiedla (`kronikaObszaru`) i do
    odszukania budynku siedziby po tagu `zm:bud` (oznacz.ts), który świat niesie w `WorldBuilding.tags`. Gdy siedziba
    tagu nie ma (świat wymusza siedzibę mieszkalną z budynku, którego generator nie uważa za mieszkalny, jak na
-   demach Przymorza i Lanciego), budynek zapasowy powstaje ze świata (`budynekZapasowy`).
+   demach Przymorza i Lanciego), budynek zapasowy powstaje ze świata (`budynekZapasowy`, klucz z samego budynku).
 
    Puste mieszkania. Ich liczba to udział pustych w całym budynku przyłożony do mieszkań parteru. Jak w `settleApts`
    (kontrakt M2): gdy z podwórka da się dojść do co najmniej dwóch mieszkań, jedno z nich stoi puste do przeszukania,
@@ -51,6 +51,7 @@ import type { Budynek, Gospodarstwo, Osoba, Wpis, WynikBudynku } from '../mieszk
 import type { DaneMieszkancow } from '../mieszkancy/wczytaj.ts';
 import { type AptState, type AptWhy, reachable } from '../world/apts.ts';
 import type { Geo } from '../world/geo.ts';
+import { geoPunktu, kluczBudynku } from '../world/klucze.ts';
 import type { World, WorldBuilding } from '../world/world.ts';
 import { houseOf } from './house.ts';
 
@@ -210,17 +211,19 @@ export function osobaGry(o: Osoba, w: WynikBudynku, historia: readonly string[])
 
 // ---------------------------------------------------------------- budynek siedziby
 
-/** Budynek zapasowy ze świata, gdy siedziba nie ma budynku generatora: klucz i rejon z punktu adresu (`geo.c`),
-    blok od 3 kondygnacji albo 300 m², kondygnacje i pole ze świata, wymiary z prostokąta kafelków (metr na kafelek),
-    klatki z wejść. Epokę i mieszkania dopisze generator. */
-function budynekZapasowy(hq: WorldBuilding, geo: Geo, g: TabeleGminy | null): Budynek {
-  const [lat0, lon0] = geo.c;
+/** Budynek zapasowy ze świata, gdy siedziba nie ma budynku generatora: klucz z samego budynku siedziby (kanoniczny
+    `zm:klucz` z importera, inaczej `osm:<id>`, inaczej `hq:` ze środka jego prostokąta na mapie, 5 miejsc po
+    przecinku), więc inna siedziba (start bez domu w grze z sąsiadami) nie dzieli osób (`ref`) z budynkiem pod
+    adresem; rejon ze środka budynku, blok od 3 kondygnacji albo 300 m², kondygnacje i pole ze świata, wymiary
+    z prostokąta kafelków (metr na kafelek), klatki z wejść. Epokę i mieszkania dopisze generator. */
+function budynekZapasowy(world: World, hq: WorldBuilding, geo: Geo, g: TabeleGminy | null): Budynek {
+  const [lat0, lon0] = geoPunktu(world, (hq.x0 + hq.x1 + 1) / 2, (hq.y0 + hq.y1 + 1) / 2, geo.c);
   const lat = zaokr5(lat0);
   const lon = zaokr5(lon0);
   const bokX = hq.x1 - hq.x0 + 1;
   const bokY = hq.y1 - hq.y0 + 1;
   const b: Budynek = {
-    klucz: `hq:${lat0.toFixed(5)},${lon0.toFixed(5)}`,
+    klucz: kluczBudynku(hq) ?? (hq.osmId ? `osm:${hq.osmId}` : `hq:${lat0.toFixed(5)},${lon0.toFixed(5)}`),
     lat,
     lon,
     rejon: g ? rejonDla(g, lat, lon).rejon : '',
@@ -346,7 +349,8 @@ export function lokatorzyGry(
   const kronika = kronikaObszaru(geo, budynki, imiona);
   const klucz = hq.tags[TAG_BUDYNKU];
   const budynek =
-    (klucz === undefined ? undefined : budynki.find((b) => b.klucz === klucz)) ?? budynekZapasowy(hq, geo, gmina);
+    (klucz === undefined ? undefined : budynki.find((b) => b.klucz === klucz)) ??
+    budynekZapasowy(world, hq, geo, gmina);
   const siedziba = generujBudynek(budynek, gmina, kraj, { imiona, nazwiska, odmiana, kronika });
 
   const wg = new Map(siedziba.osoby.map((o) => [o.id, o]));

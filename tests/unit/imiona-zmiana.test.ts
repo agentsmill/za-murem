@@ -449,15 +449,17 @@ describe('zastosujZmiany', () => {
     const pozaGra = P.l.siedziba.osoby.find((o) => !wGrze.has(o.id));
     if (!pozaGra) throw new Error('wszyscy z budynku są w grze');
     const przed = structuredClone(st.people);
-    const w = zastosujZmiany(st, P.l, P.dane, { 'hq:0,0/o9999': BOZENKA, [pozaGra.id]: BOZENKA });
-    expect(w.sieroty).toEqual(['hq:0,0/o9999']);
+    const brak = `${P.l.siedziba.budynek.klucz}/o9999`;
+    const w = zastosujZmiany(st, P.l, P.dane, { [brak]: BOZENKA, [pozaGra.id]: BOZENKA, 'inny:1,2/o3': BOZENKA });
+    // wpis z innego budynku pod tym adresem (inna siedziba, inny klucz) nie jest sierotą
+    expect(w.sieroty).toEqual([brak]);
     // osoba spoza gry nie ma karty, ale jej nowe imię widać w historiach i rodzinie innych, jeśli o niej mówią
     st.people.forEach((q, i) => {
       expect(bezImion(q)).toEqual(bezImion(przed[i]));
     });
   });
 
-  it('wpis z innym imieniem z generatora albo inną płcią niż osoba pod tym ref to sierota i nikogo nie zmienia', () => {
+  it('wpis z innym imieniem z generatora albo inną płcią niż osoba pod tym ref nikogo nie zmienia i zostaje', () => {
     // po aktualizacji tabel pod tym samym ref może stać ktoś inny
     const st = nowaGra();
     const [p1, p2, p3, p4] = st.people.filter((q) => q.ref);
@@ -469,12 +471,13 @@ describe('zastosujZmiany', () => {
     };
     const przed = structuredClone(st.people);
     const w = zastosujZmiany(st, P.l, P.dane, z);
-    expect([...w.sieroty].sort()).toEqual([p1.ref, p2.ref].sort());
+    // pominięte, ale nie sieroty: zostają w pamięci (po cofnięciu tabel znowu pasują)
+    expect(w.sieroty).toEqual([]);
     expect(p1).toEqual(przed[st.people.indexOf(p1)]);
     expect(p2).toEqual(przed[st.people.indexOf(p2)]);
     expect(p3.first).toBe('Bożenka');
     expect(p4.first).toBe('Bożenka');
-    // wpisy sierot nie zmieniają też historii ani rodziny innych: jak same dwa dobre wpisy
+    // pominięte wpisy nie zmieniają też historii ani rodziny innych: jak same dwa dobre wpisy
     const dobre = nowaGra();
     zastosujZmiany(dobre, P.l, P.dane, {
       [p3.ref as string]: z[p3.ref as string],

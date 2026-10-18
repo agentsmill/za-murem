@@ -226,6 +226,20 @@ export function klatkiBudynku(b: Pick<WorldBuilding, 'tags'>): Klatka[] {
   return out;
 }
 
+/** Punkt świata (kafelki z ułamkiem, x w prawo, y w dół) jako szerokość i długość geograficzna. srodek to punkt
+    adresu, wokół którego zbudowano świat (geo.c); obrót siatki cofamy jak w rotateGeo. */
+export function geoPunktu(w: Pick<World, 'size' | 'angle'>, tx: number, ty: number, srodek: LatLon): LatLon {
+  const dx = tx - w.size / 2;
+  const dy = ty - w.size / 2;
+  const c = Math.cos(w.angle);
+  const sn = Math.sin(w.angle);
+  const x = dx * c + dy * sn;
+  const y = dy * c - dx * sn;
+  const [lat0, lon0] = srodek;
+  const kx = M_NA_STOPIEN * Math.cos((lat0 * Math.PI) / 180);
+  return [lat0 - y / M_NA_STOPIEN_SZER, lon0 + x / kx];
+}
+
 /** Środek ściany z drzwiami (między kafelkiem drzwi a kafelkiem przed nimi) w globalnych pikselach. srodek to
     punkt adresu, wokół którego zbudowano świat (geo.c); obrót siatki cofamy jak w rotateGeo. */
 export function pikselWejscia(w: Pick<World, 'size' | 'angle'>, e: Entrance, srodek: LatLon): Pt {

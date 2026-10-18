@@ -293,12 +293,20 @@ describe('wczytajDaneMieszkancow', () => {
     expect(d!.nazwiska.woj).toBe('mazowieckie');
   });
 
-  it('uszkodzony indeks.json (HTML ze statusem 200): dane z gmina null', async () => {
+  it('indeks.json nie do wczytania (HTML ze statusem 200, 5xx, błąd sieci): null, a nie szablon krajowy', async () => {
+    // chwilowa awaria nie może dać osiedlu szablonu krajowego zamiast gminy: gra zostaje przy starej ścieżce
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const p = adres('przymorze');
-    const d = await wczytajDaneMieszkancow(p.lat, p.lon, plikowy({ 'gminy/indeks.json': html }));
-    expect(d).not.toBeNull();
-    expect(d!.gmina).toBeNull();
+    for (const zla of [html, () => new Response('awaria', { status: 503 }), () => 'siec' as const])
+      await expect(wczytajDaneMieszkancow(p.lat, p.lon, plikowy({ 'gminy/indeks.json': zla }))).resolves.toBeNull();
+  });
+
+  it('plik gminy z pasującym prostokątem nie do wczytania (HTML 200, 5xx, błąd sieci, inna wersja): null', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const p = adres('przymorze');
+    const innaWersja = () => new Response(JSON.stringify({ wersja: WERSJA_TABEL + 1 }));
+    for (const zla of [html, () => new Response('awaria', { status: 500 }), () => 'siec' as const, innaWersja])
+      await expect(wczytajDaneMieszkancow(p.lat, p.lon, plikowy({ 'gminy/2261011.json': zla }))).resolves.toBeNull();
   });
 
   it('brak pliku gminy z indeksu: gmina null, reszta komplet', async () => {

@@ -21,9 +21,11 @@
 
    Stan gry (`zastosujZmiany`): imię i pierwszy człon `name` osób z `ref`, a z danymi mieszkańców także historie osób
    siedziby i linijki rodziny ich krewnych (`osobyZeZmianami` z src/sim/lokatorzy.ts; bez wpisu osoba wraca do imienia
-   z generatora). Wpis, który nie dotyczy żadnej osoby ani w grze, ani w budynku siedziby z generatora (nie ma jej
-   albo pod tym `ref` stoi teraz ktoś inny: inna płeć albo inne imię z generatora), to sierota: main.ts pokazuje raz
-   `wyprowadzka` w kronice i usuwa wpis z pamięci. Czyste i deterministyczne. */
+   z generatora). Wpis, który nie dotyczy osoby pod swoim `ref` (inna płeć albo inne imię z generatora po aktualizacji
+   tabel), jest pomijany, ale zostaje w pamięci. Sierota to tylko wpis z budynku siedziby (`ref` zaczyna się od
+   klucza jej budynku), którego osoby nie ma ani w grze, ani w budynku: main.ts pokazuje raz `wyprowadzka` w kronice
+   i usuwa wpis z pamięci. Wpisy innych budynków pod tym samym adresem (inna siedziba w grze z sąsiadami, zapasowy
+   budynek z innym kluczem) zostają. Czyste i deterministyczne. */
 
 import { g, type Person } from '../content/people.ts';
 import { hashString } from '../core/rng.ts';
@@ -304,7 +306,8 @@ const taSama = (p: Person, o: OsobaGry): boolean => p.f === o.f && p.age === o.a
       z `osobyZeZmianami` (z wpisami, które dotyczą osób budynku), więc nowe imię widać też w historiach i rodzinie
       innych, a bez wpisu wraca imię z generatora;
     - w pozostałych przypadkach tylko imię i pierwszy człon `name` z wpisu (bez wpisu nic).
-    `sieroty`: wpisy, które nie dotyczą żadnej osoby ani w grze, ani w budynku siedziby (bez danych mieszkańców zawsze
+    Wpis, który nie dotyczy osoby pod swoim `ref`, nic nie zmienia. `sieroty`: wpisy z budynku siedziby (`ref`
+    z prefiksem `<klucz budynku>/`) bez osoby o tym `ref` ani w grze, ani w budynku (bez danych mieszkańców zawsze
     pusto). Drugie wywołanie z tymi samymi zmianami nic już nie zmienia. */
 export function zastosujZmiany(
   st: { people: Person[] },
@@ -338,6 +341,7 @@ export function zastosujZmiany(
     }
   }
   if (!l || !dane) return { sieroty: [] };
-  const wGrze = (ref: string, z: ZmianaImienia) => st.people.some((p) => p.ref === ref && dotyczy(z, p));
-  return { sieroty: Object.keys(zmiany).filter((ref) => !wGrze(ref, zmiany[ref]) && !wBudynku(ref, zmiany[ref])) };
+  const prefiks = `${l.siedziba.budynek.klucz}/`;
+  const znane = new Set([...refs, ...budynek.keys()]);
+  return { sieroty: Object.keys(zmiany).filter((ref) => ref.startsWith(prefiks) && !znane.has(ref)) };
 }

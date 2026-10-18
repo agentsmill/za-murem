@@ -16,6 +16,7 @@ import { type DaneMieszkancow, wczytajDaneMieszkancow } from '../../src/mieszkan
 import { type LokatorzyGry, lokatorzyGry, type OsobaGry, osobaGry, powodyPustych } from '../../src/sim/lokatorzy.ts';
 import { type AptWhy, reachable, settleApts } from '../../src/world/apts.ts';
 import type { Geo } from '../../src/world/geo.ts';
+import { geoPunktu } from '../../src/world/klucze.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 
 const PUBLIC = path.resolve(import.meta.dirname, '../../public');
@@ -70,6 +71,13 @@ const mieszkaniaParteru = (w: World): number[] => {
   return [...Array(n).keys()];
 };
 /** Świat z siedzibą bez tagu zm:bud (płytka kopia; reszta świata wspólna). */
+/** klucz zapasowego budynku siedziby bez `zm:klucz` i bez id OSM: środek prostokąta budynku na mapie */
+const kluczZapasowy = (w: World, geo: Geo, hq = w.hq): string => {
+  const b = w.buildings[hq];
+  const [lat, lon] = geoPunktu(w, (b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2, geo.c);
+  return `hq:${lat.toFixed(5)},${lon.toFixed(5)}`;
+};
+
 const bezTagu = (w: World): World => ({
   ...w,
   buildings: w.buildings.map((b) => {
@@ -312,14 +320,18 @@ describe('lokatorzyGry na demach', () => {
   });
 
   it('jedyne mieszkanie przy podwórku zostaje zamieszkane, choć udział pustych w budynku każe je opróżnić', () => {
-    const { world, geo, dane, wynik } = demo('lanciego');
-    // warunek wstępny z danych: ponad połowa mieszkań budynku Lanciego stoi pusta
-    const b = wynik.siedziba;
-    expect(Math.round(b.puste / (b.budynek.mieszkania ?? 1))).toBe(1);
+    const { world, geo, dane } = demo('lanciego');
+    // warunek wstępny z danych: budynek Lanciego, w którym ponad połowa mieszkań stoi pusta, jako siedziba
+    const hq = world.buildings.find((x) => {
+      const w = lokatorzyGry({ ...world, hq: x.id }, geo, dane, { core: 4 })?.siedziba;
+      return !!w && Math.round(w.puste / (w.budynek.mieszkania ?? 1)) === 1;
+    })?.id;
+    if (hq === undefined) throw new Error('na Lanciego nie ma budynku z ponad połową pustych mieszkań');
     // siedziba z dwoma mieszkaniami na siatce 4×4: zarząd (0) i jedno mieszkanie przy podwórku (1)
     const room = new Int16Array(16).map((_, t) => (t < 8 ? 0 : 1));
     const maly: World = {
       ...world,
+      hq,
       size: 4,
       blocked: new Uint8Array(16),
       interior: {
@@ -336,8 +348,8 @@ describe('lokatorzyGry na demach', () => {
     expect([...reachable(maly)]).toEqual([1]);
     const l = lokatorzyGry(maly, geo, dane, { core: 4 });
     expect(l?.stany).toEqual([
-      { bid: world.hq, apt: 0, state: 'zarzad' },
-      { bid: world.hq, apt: 1, state: 'mieszkancy' },
+      { bid: hq, apt: 0, state: 'zarzad' },
+      { bid: hq, apt: 1, state: 'mieszkancy' },
     ]);
     expect(l?.lokatorzy.map((m) => m.apt)).toEqual([1]);
     expect(l?.lokatorzy[0].osoby.length).toBeGreaterThan(0);
@@ -413,11 +425,13 @@ describe('lokatorzyGry na demach', () => {
           expect(dom(m), `${nazwa} ${m.apt}`).toBe(reszta[i]?.id);
         });
     }
-    // Przymorze i Lanciego: przy podwórku gospodarstwa po 4 osoby
+    // Przymorze i Lanciego: przy podwórku gospodarstwa po 3-4 osoby, a pierwsze ma 4
     for (const nazwa of ['przymorze', 'lanciego'] as const) {
       const { world, wynik } = demo(nazwa);
       const blisko = reachable(world);
-      for (const m of wynik.lokatorzy.filter((x) => blisko.has(x.apt))) expect(m.osoby, nazwa).toHaveLength(4);
+      const przy = wynik.lokatorzy.filter((x) => blisko.has(x.apt)).map((m) => m.osoby.length);
+      expect(Math.max(...przy), nazwa).toBe(4);
+      expect(Math.min(...przy), nazwa).toBeGreaterThanOrEqual(3);
     }
   });
 
@@ -455,8 +469,7 @@ describe('lokatorzyGry na demach', () => {
     const zapas = lokatorzyGry(bezTagu(world), geo, dane, { core: 4 });
     expect(zapas).not.toBeNull();
     const b = zapas?.siedziba.budynek as Budynek;
-    const [lat, lon] = geo.c;
-    expect(b.klucz).toBe(`hq:${lat.toFixed(5)},${lon.toFixed(5)}`);
+    expect(b.klucz).toBe(kluczZapasowy(world, geo));
     const hq = world.buildings[world.hq];
     expect(b.typ).toBe(hq.levels >= 3 || hq.area >= 300 ? 'blok' : 'dom');
     expect(b.kondygnacje).toBe(hq.levels);
@@ -470,9 +483,32 @@ describe('lokatorzyGry na demach', () => {
     for (const nazwa of ['przymorze', 'lanciego'] as const) {
       const { world, geo, wynik } = demo(nazwa);
       expect(world.buildings[world.hq].tags[TAG_BUDYNKU], nazwa).toBeUndefined();
-      expect(wynik.siedziba.budynek.klucz, nazwa).toBe(`hq:${geo.c[0].toFixed(5)},${geo.c[1].toFixed(5)}`);
+      expect(wynik.siedziba.budynek.klucz, nazwa).toBe(kluczZapasowy(world, geo));
       expect(wynik.siedziba.budynek.typ, nazwa).toBe('blok');
     }
+  });
+
+  it('klucz zapasowej siedziby idzie z samego budynku: inna siedziba (start bez domu) ma inny klucz i inne osoby', () => {
+    const { world, geo, dane, wynik } = demo('przymorze');
+    const inna = world.buildings.find((b) => b.id !== world.hq && b.cls === world.buildings[world.hq].cls);
+    if (!inna) throw new Error('brak innego bloku na Przymorzu');
+    // inny blok bez budynku generatora (bez tagu zm:bud) jako siedziba
+    const swiat = bezTagu({ ...world, hq: inna.id });
+    const l = lokatorzyGry(swiat, geo, dane, { core: 4 });
+    expect(l?.siedziba.budynek.klucz).toBe(kluczZapasowy(world, geo, inna.id));
+    expect(l?.siedziba.budynek.klucz).not.toBe(wynik.siedziba.budynek.klucz);
+    const refy = new Set(wynik.siedziba.osoby.map((o) => o.id));
+    expect(l?.siedziba.osoby.some((o) => refy.has(o.id))).toBe(false);
+    // z kanonicznym kluczem z importera (zm:klucz) albo id OSM klucz idzie z nich
+    const zKluczem = (t: Record<string, string>, osmId?: string): World => ({
+      ...world,
+      buildings: world.buildings.map((b) => (b.id === world.hq ? { ...b, tags: { ...b.tags, ...t }, osmId } : b)),
+    });
+    expect(
+      lokatorzyGry(zKluczem({ 'zm:klucz': 'px:1:2:3:4:1', 'zm:os': '1,2,3,4' }), geo, dane, { core: 1 })?.siedziba
+        .budynek.klucz,
+    ).toBe('px:1:2:3:4:1');
+    expect(lokatorzyGry(zKluczem({}, 'w123'), geo, dane, { core: 1 })?.siedziba.budynek.klucz).toBe('osm:w123');
   });
 
   it('dane bez gminy (szablon krajowy) też dają zarząd, lokatorów i stany', () => {
