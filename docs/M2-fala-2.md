@@ -67,8 +67,8 @@ Polecenia na drzwiach (menu pod prawym przyciskiem na kafelku drzwi albo tuż pr
 - Sale, hale i zaplecza budynków usługowych mają własne tabele według rodzaju budynku: pawilon głównie jedzenie i części, przychodnia leki, szkoła deski i części, garaż i hala złom i części, kościół deski i trochę jedzenia. Liczby stroi bot.
 - Tryb zombie: jedzenie przychodzi dziś tylko z wydarzeń, a najedzenie zarządu w bocie spada do zera około szóstej doby (sesja szlifu zombie). Mieszkania z wymarcia w tym trybie są świeże, ludzie zmarli niedawno, więc w kuchniach zostały konserwy i słoiki: łup jedzenia z nich jest dwa razy większy niż w tabeli fali 1. Szaber u sąsiadów jest wtedy głównym źródłem jedzenia, a bot `--sasiedzi` w trybie zombie sprawdza, czy zarząd przy szabrowaniu dociąga do siódmej doby bez głodu.
 - Szaber zamieszkanego mieszkania: zapasy gospodarstwa (jedzenie, czasem leki, części i deski, według liczby osób; w trybie zombie mniej jedzenia). Do wzięcia tylko wtedy, gdy nikogo nie ma w domu (w zwykłym trybie część gospodarstw wychodzi za dnia) albo gdy spotkanie skończy się zabraniem zapasów lub wyjściem lokatorów. Okradzeni to wrogowie na zawsze, a nasi ludzie mają gorszy nastrój („Okradliśmy sąsiadów”).
-- Łup leży w stertach w pomieszczeniu. „Zanieść do siedziby” na stercie w cudzym budynku (domyślne polecenie) każe nosić po 6 sztuk, kurs za kursem, aż w tym budynku nie zostanie nic, na podwórko przy bramie.
-- Łup w cudzym budynku nie jest nasz, dopóki nie trafi za siatkę. Sterty we wnętrzu nieotoczonego sąsiada nie liczą się do zapasów na pasku i w zarządzie (karta nocy, napad), nie je się z nich, nie gotuje i nie bierze na budowy ani naprawy. Widać je na karcie budynku, a nosi się je tylko poleceniem „Zanieść do siedziby”. Reguła dotyczy tylko wnętrz sąsiadów, więc drewno ze ściętych drzew za siatką działa jak dziś.
+- Łup leży w stertach w pomieszczeniu. Nosi go wspólne noszenie z surowców: „Zanieść na podwórko” na stercie w cudzym budynku (domyślne polecenie) i samo po przeszukaniu pokoju, po 6 sztuk, kurs za kursem, aż w tym budynku nie zostanie nic.
+- Łup w cudzym budynku nie jest nasz, dopóki nie trafi za siatkę. Sterty we wnętrzu nieotoczonego sąsiada nie liczą się do zapasów na pasku i w zarządzie (karta nocy, napad), nie je się z nich, nie gotuje i nie bierze na budowy ani naprawy. Widać je na karcie budynku, a nosi się je poleceniem „Zanieść na podwórko”. Za wspólnym płotem (etap 3) łup w budynku jest już nasz. Reguła dotyczy tylko wnętrz sąsiadów, więc drewno ze ściętych drzew za siatką działa jak dziś.
 - Piętra (etap 2): na klatce ze schodami „Przeszukać piętro”. Osoba znika na schodach na godzinę gry na piętro i wraca z łupem z pustych mieszkań tego piętra, tyle pięter, ile ma budynek (`levels`). Na górze może spotkać lokatorów z wyższych pięter, a w trybie zombie szwendacza (rana, ugryzienie jak na wyprawie). Rysujemy tylko parter, jak w GDD.
 
 ## Lokatorzy i spotkania
@@ -110,10 +110,11 @@ Przejmowanie lokatorów z kierunku rozwoju (każdego lokatora da się prowadzić
 
 ## Wspólny płot (etap 3)
 
-- Polecenie „Otoczyć wspólnym płotem” na otwartym budynku. Gra liczy nowy obwód z siatki siedziby: podwórko rośnie o wolne kafelki między podwórkiem a drzwiami tego budynku (pas jak w `buildFence`; chodnik można przeciąć, jezdni i kafelków tuż przy niej nie), płot staje na wolnych kafelkach tuż za nowym podwórkiem, brama zostaje, jeśli dalej stoi na obwodzie (inaczej staje nowa według zasad z `buildFence`), a odcinki starej siatki, które wypadły w środek, znikają. Czysta funkcja świata i listy otoczonych budynków.
-- Obwód obejmuje kafelki przed wszystkimi drzwiami budynku, do których da się dojść bez jezdni. Drzwi, które zostają na obwodzie (od ulicy), plan zabija deskami w ramach budowy (po 2 deski), więc gotowy płot nie zostawia drogi z ulicy przez wnętrze. Gdy podwórko nie dojdzie do żadnych drzwi bez przejścia przez jezdnię albo nowego płotu byłoby ponad 120 m, polecenie mówi dlaczego się nie da („Między wami jest jezdnia”, „Za długi płot: 140 m, najwyżej 120 m”).
-- Przed poleceniem okno pokazuje długość, koszt i czas: po 1 desce i 1 złomie na metr nowego płotu (albo 2 sztuki jednego z nich), 3 minuty pracy na metr. To jeden plan budowy jak w fali 1: zarząd donosi materiał i stawia, a stara siatka stoi do końca. Po ukończeniu siatka przechodzi na nowy kształt od następnego kroku (kolejka poleceń), nowe odcinki mają wytrzymałość świeżej łaty.
-- Otoczony budynek nie dostaje nocnych gości, a w trybie zombie stado napiera na dłuższy obwód. To decyzja strategiczna: więcej miejsca i łupu za dłuższą siatkę do obrony.
+- Polecenie „Otoczyć wspólnym płotem” na drzwiach albo w pomieszczeniu otwartego budynku. Gra liczy nowy obwód z obecnej siatki (`wspolnyPlot` w `src/world/plot.ts`, czysta funkcja świata i siatki): podwórko rośnie o korytarz od podwórka do drzwi budynku, czyli najkrótszą drogę poszerzoną o metr z każdej strony, a płot staje na wolnych kafelkach tuż za nowym podwórkiem tak jak w `buildFence`. Korytarz nie wchodzi na jezdnię ani na chodnik przy ulicy (z kafelkami tuż przy nich), nie przechodzi przez bramę, więc brama zostaje, i omija zasieki na siatce. Odcinki starej siatki, przez które przeszedł korytarz, znikają; stare dziury zostają, jeśli dalej są na obwodzie.
+- Inne drzwi tego budynku dołączają do podwórka, gdy dojście do nich ma najwyżej 25 m; reszta zostaje na obwodzie i plan je zabija (po 2 deski), więc gotowy płot nie zostawia drogi z ulicy przez wnętrze. Gdy do drzwi nie da się dojść bez jezdni, nowego płotu byłoby ponad 120 m albo obwód nie byłby szczelny, menu mówi dlaczego („Wspólny płot: między wami jest jezdnia”, „Wspólny płot: za długi (155 m, najwyżej 120 m)”, „Wspólny płot: tu się nie da”).
+- Menu pokazuje długość, koszt i czas, a wybór idzie przez okno potwierdzenia: deska i złom na metr nowego płotu, 2 deski na drzwi do zabicia, 3 minuty pracy na metr i 20 na drzwi. Jeden plan naraz (`st.plot.plan`, poza planami budów fali 1): osoba donosi materiał na stary brzeg podwórka przy przejściu i stawia; przerwana przez pilną potrzebę wraca na polecenie „Budować wspólny płot dalej”. Po skończonej pracy polecenie `otocz` w kolejce zmienia siatkę od następnego kroku: kształt trafia do stanu (`st.plot.ksztalt`), świat dostaje go w miejscu (`ustawSiatke`: `fence` i jej kafelki w `blocked`; pierwotna siatka zostaje w `fenceBaza`, z niej liczy się klucz zapisu), stare odcinki trzymają wytrzymałość, nowe mają świeżą łatę. Wczytana gra kładzie ten sam kształt na świeżo zbudowany świat.
+- Otoczony budynek nie dostaje nocnych gości, łup w nim jest już nasz (liczy się do zapasów), a w trybie zombie stado napiera na dłuższy obwód. To decyzja strategiczna: więcej miejsca i łupu za dłuższą siatkę do obrony. Na demach: Lanciego 10F 65 m (wszystkie trzy klatki w środku), 10A i 10H 79–101 m, w Zielonkach domy nr 12 i 8 (42 i 68 m), dom 31 za długi (155 m), na Przymorzu bloki za jezdnią.
+- Nie zrobione: duch planu płotu na mapie z postępem (postęp jest w opisie pracy i na karcie budynku) i zamiennik „2 sztuki jednego materiału” zamiast deski i złomu.
 - Zajmowanie mieszkań w otoczonym budynku i przyłączanie jego lokatorów to dalszy ciąg rosnącej osady (projekt 4), poza falą 2.
 
 ## Tryby
@@ -185,6 +186,7 @@ interface Spotkanie { nr; b; dom; my: number[]; oni: number[]; gdzie: 'drzwi' | 
 - Pionek `sasiad`: osoba w `st.people` od pierwszego spotkania, nie bierze poleceń; da się go kliknąć jak mieszkańca (karta osoby).
 - Lokatorzy z generatora: `Sim.lokatorzy?: (bid) => LokatorzyBudynku | null`, źródło `zrodloLokatorow` z `src/sim/lokatorzy.ts`, ustawiane poza stanem. Wynik trafia do stanu przy pierwszym dotknięciu budynku. `Sim.budynekDoKarty(bid)` daje wpis z gry albo podgląd tego samego wpisu bez zapisu w stanie (karta budynku).
 - Zegar: o 2:00 nocni goście, o 7:00 napis o nich; wszystko tylko przy `st.sasiedzi`.
+- Wspólny płot: `SimState.plot?: { bids; ksztalt?: { tiles; hole; yard }; plan? }`, polecenia `{ t: 'enclose'; ids; bid }` i wewnętrzne `{ t: 'otocz'; ids: []; bid }`, praca `plot`, `plotDla` i `kosztPlotu` w `src/sim/sasiedzi.ts` (to samo liczą menu i symulacja), `ustawSiatke(w, ksztalt)` w `src/sim/sim.ts`, `World.fenceBaza` i `worldKey` z pierwotnej siatki.
 
 Rysowanie (`src/render`):
 
@@ -203,10 +205,12 @@ Boty: `tests/unit/sasiedzi-play.ts` (gracz u sąsiadów), flaga `--sasiedzi` w `
 
 ## Etapy
 
-1. Wejście, przeszukanie i spotkanie (to, czego Mateuszowi zabrakło): stany drzwi, otwieranie, pukanie, wyważanie z hałasem, zabijanie deskami, wnętrze w symulacji i w przekroju, stany i zawartość mieszkań, przeszukanie i rozbiórka, łup usług, noszenie do siedziby, lokatorzy z generatora, spotkanie z kartą i pięcioma wyborami, szwendacze w mieszkaniach w trybie zombie, karta budynku.
-2. Lokatorzy szerzej i noc: znani i nieznani na karcie budynku, za dnia poza domem, szaber pustego zamieszkanego mieszkania, wrodzy po wyważeniu, piętra, nocni goście, ukrywani ugryzieni w trybie zombie.
-3. Wspólny płot.
-4. Gra sieciowa (zajęte klatki), bot z sąsiadami, pełne zrzuty, tłumaczenia po scaleniu `pelna-gra`.
+Stan 18.10.2026 wieczorem: wszystkie cztery etapy zbudowane na `m2-fala-2`.
+
+1. Wejście, przeszukanie i spotkanie (to, czego Mateuszowi zabrakło): stany drzwi, otwieranie, pukanie, wyważanie z hałasem, zabijanie deskami, wnętrze w symulacji i w przekroju, stany i zawartość mieszkań, przeszukanie i rozbiórka, łup usług, noszenie na podwórko, lokatorzy z generatora, spotkanie z kartą i wyborami, szwendacze w mieszkaniach w trybie zombie, karta budynku. Zrobione.
+2. Lokatorzy szerzej i noc: znani i nieznani na karcie budynku, za dnia poza domem, szaber zamieszkanego mieszkania, wrodzy po wyważeniu, piętra, nocni goście (szabrownicy, którzy zostają, z „Przegonić”), ukrywani ugryzieni w trybie zombie. Zrobione.
+3. Wspólny płot. Zrobiony bez ducha planu na mapie.
+4. Gra sieciowa (zajęte klatki zamknięte na stałe), bot z flagą `--sasiedzi`, zrzuty, scalenia `pelna-gra`. Zrobione; tłumaczenia czekają na warstwę języka (napisy są parami pl/en w `src/content/napisy-sasiedzi.ts`).
 
 Każdy etap kończy się testami, botami, zrzutami i lokalnym commitem na `m2-fala-2`.
 
