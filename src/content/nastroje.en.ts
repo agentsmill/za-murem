@@ -22,6 +22,9 @@ export const NASTROJE_EN: Readonly<Record<string, string>> = {
   'Przegoniliśmy szabrowników': 'We ran the looters off',
   // handlarz pod bramą (NAPISY.nastroj w src/sim/handlarz.ts)
   'Napadliśmy na handlarza': 'We robbed the trader',
+  // wędrowcy (NAPISY w src/sim/wedrowcy.ts)
+  'Wieści ze świata': 'News from outside',
+  'Napadliśmy na wędrowca': 'We robbed a wanderer',
   // zarząd: noc, wyprawy, wydarzenia
   'Sprawy spółdzielni': 'Co-op business',
   'Sprawy ulicy': 'Street business',

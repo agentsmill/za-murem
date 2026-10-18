@@ -17,6 +17,7 @@ import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } fro
 import { FIRST_LAWS } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
 import { lawEffects as effectsOfLaws, lawState, lawOptions as optionsOfLaws, sign } from './uchwaly.ts';
+import { wiesci } from './wiesci.ts';
 import { atHour, decision, emptyEffects, gameMin, logGov, mood, rnd, zeroStock } from './wspolne.ts';
 import { choose, eventTick, eventView, FIRST_EVENT } from './wydarzenia.ts';
 
@@ -112,6 +113,7 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   if (st.night && !st.night.confirmed && (i.hour >= CARD_DEADLINE || i.day > st.night.day)) confirm(st, i, fx, true);
   nightTick(st, i, fx);
   mourn(st, i, fx);
+  wiesci(st, i, fx);
   eventTick(st, i, fx, busy(st));
   checkOver(st, i, fx);
   return fx;

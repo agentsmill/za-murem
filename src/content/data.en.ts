@@ -151,3 +151,21 @@ export const LORE_EN: string =
 
 export const LORE_ZOMBIE_EN: string =
   'It is 2051. Nobody remembers any more how it started. The AI model in the bank’s server room has three hypotheses and presents each one with total confidence. Only one thing is certain: we all carry it. Whoever dies gets back up, and whoever gets bitten dies of fever within a day. Shamblers are slow and stupid, but they follow noise and gather in herds. The President of the United States, now in his tenth term, has announced that the situation is under control. Only what was fenced in survived. That, and one institution: the housing cooperative. You have shored up the fence around the yard with planks, and there is a spear and an old revolver in the basement. You are the board now.';
+
+/** ogłoszenia ze słupa jak ADS w data.ts, po tych samych numerach (wieść od wędrowca w src/sim/wedrowcy.ts) */
+export const ADS_EN: readonly string[] = [
+  'Will swap an electric scooter for a jar of pickles.',
+  'Buying AA batteries. Paying in buckwheat or carbon credits.',
+  'Free to a good home: smart doorbell. Still asks for the Wi-Fi password.',
+  'Axe-handling lessons. Formerly a mindfulness coach.',
+  'For sale: NFT of a cat, or will swap for an armful of wood.',
+  'Looking for a charger for a car that hasn’t moved since 2048.',
+  'Will swap a Python textbook for a roll of toilet paper.',
+  'A delivery drone has been circling the block for three years. Finders keepers.',
+  'Guitar lessons by the campfire. Repertoire: whatever we can remember.',
+  'Missing: ginger cat. Answers to Algorithm.',
+  'Subscription fridge, locked, full. Password welcome.',
+  'Former ESG consultant seeks work. Can calculate the carbon footprint of a campfire.',
+  'Will take any number of jars. Returnable.',
+  'For sale: subscription heat pump. Subscription expired.',
+];

@@ -53,6 +53,7 @@ import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
+import { NAPISY as OBCY, wiescEn } from './sim/wedrowcy.ts';
 import {
   allowedAnchors,
   availableOf,
@@ -173,6 +174,8 @@ let words: Words = wordsOf(BLOK);
 let wordsE: WordsEn = wordsEn(BLOK);
 /** id handlarza z ostatniej klatki (−1: nie ma), żeby napis o jego przyjściu pokazał się raz */
 let traderSeen = -1;
+/** tick ostatniej pokazanej wieści (st.obcy.wiesc) */
+let wiescSeen = -1;
 let fenceIn: GovInput['fence'];
 /** sekundy przy ekranie bez pauzy (dla zarządu: tempo wydarzeń) i chwila ostatniego kroku zarządu */
 let screen = 0;
@@ -465,6 +468,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // zapis sprzed handlarza: włączony od następnego kroku (w trybie zombie symulacja to pomija)
   if (saved && obcy && !st.obcy) sim.push({ t: 'obcy', ids: [] });
   traderSeen = st.obcy?.trader ?? -1;
+  wiescSeen = st.obcy?.wiesc?.tick ?? -1;
   if (l && dane) mieszkancy = { l, dane, adres: data.addr };
   placing = null;
   aptFocus = -1;
@@ -614,6 +618,10 @@ function drawState() {
   const trader = sim.st.obcy?.trader ?? -1;
   if (trader >= 0 && trader !== traderSeen) say(tr(HANDEL.przyszedl(words.brama.pod, wordsE.brama)), 5000);
   traderSeen = trader;
+  // wieść od wędrowca albo o ekipie przy wraku: raz, na dłużej (w stanie po polsku, po angielsku z wiescEn)
+  const wiesc = sim.st.obcy?.wiesc;
+  if (wiesc && wiesc.tick !== wiescSeen) say(L(wiesc.text, wiescEn(wiesc.text)), 7000);
+  wiescSeen = wiesc?.tick ?? -1;
   // ?swiatla=test: światła podglądu nocy zamiast świateł z gry
   if (preview) view.lights = preview.lights;
 }
@@ -1676,6 +1684,9 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   carry: [NAPISY.poZaniesc.pl, NAPISY.poZaniescWielu.pl],
   saw: [NAPISY.poWarsztat.pl, NAPISY.poWarsztatWielu.pl],
   trade: [HANDEL.poHandel.pl, HANDEL.poHandelWielu.pl],
+  talk: [OBCY.poZagadac.pl, OBCY.poZagadacWielu.pl],
+  mug: [OBCY.poNapasc.pl, OBCY.poNapascWielu.pl],
+  shoo: [OBCY.poPrzegonic.pl, OBCY.poPrzegonicWielu.pl],
   rob: [HANDEL.poNapasc.pl, HANDEL.poNapascWielu.pl],
   obcy: ['', ''],
 });
@@ -1714,6 +1725,9 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   carry: [NAPISY.poZaniesc.en, NAPISY.poZaniescWielu.en],
   saw: [NAPISY.poWarsztat.en, NAPISY.poWarsztatWielu.en],
   trade: [HANDEL.poHandel.en, HANDEL.poHandelWielu.en],
+  talk: [OBCY.poZagadac.en, OBCY.poZagadacWielu.en],
+  mug: [OBCY.poNapasc.en, OBCY.poNapascWielu.en],
+  shoo: [OBCY.poPrzegonic.en, OBCY.poPrzegonicWielu.en],
   rob: [HANDEL.poNapasc.en, HANDEL.poNapascWielu.en],
   obcy: ['', ''],
 });
