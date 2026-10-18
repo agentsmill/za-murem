@@ -11,9 +11,10 @@
    dawać poniższe tagi.
 
    Kanoniczne tagi budynku z importera (krok 5), oba formaty stałe niezależnie od adresu:
-   - `zm:klucz`: `px:X:Y:DX:DY`, obrys w pikselach globalnych siatki z=14 (X, Y to najwyższy wierzchołek, DX, DY
-     przesunięcie do najniższego). Gdy segment go ma, jest kluczem budynku (przed `osm:` i `g:`). W sklejonym budynku
-     klucz bierze się z największego segmentu, który ma ten tag, tak samo jak dziś `id`.
+   - `zm:klucz`: `px:X:Y:DX:DY:S`, obrys w pikselach globalnych siatki z=14 (X, Y to najwyższy wierzchołek, DX, DY
+     przesunięcie do najniższego, S strona cięciwy między nimi, po której leży budynek; src/world/klucze.ts). Gdy
+     segment go ma, jest kluczem budynku (przed `osm:` i `g:`). W sklejonym budynku klucz bierze się z największego
+     segmentu, który ma ten tag, tak samo jak dziś `id`.
    - `zm:pole`: pole obrysu segmentu w m², liczba całkowita dodatnia do 6 cyfr ("1180").
    - `zm:wym`: wymiary obrysu segmentu w metrach, `szer,dl` ("11.6,59.4"; kolejność wymusza min i max), każdy do 4 cyfr
      i 3 miejsc po przecinku.
