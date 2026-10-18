@@ -2,9 +2,12 @@
    strony; ścieżki są względne (`base: './'`), tak jak `demo/…` w src/world/load.ts. W Node (testy, boty) wywołujący
    podaje własny `fetchFn`, który czyta pliki z public/. */
 
+import type { Odmiana } from './historie.ts';
 import { bezPuliLokalnej, nazwiskaDlaGminy } from './imiona.ts';
 import { type OdmianaPlik, rozpakujOdmiane, type TabelaKoncowek, type TabelaOdmiany } from './odmiana.ts';
+import { rejonDla } from './rejon.ts';
 import {
+  type IndeksGmin,
   PLIK_WOJEWODZTWA,
   type TabeleGminy,
   type TabeleImion,
@@ -120,4 +123,92 @@ export async function wczytajOdmiane(fetchFn: typeof fetch = fetch): Promise<Tab
 /** Tablica końcówek zgadywacza (odmiana-koncowki.json). `null` z ostrzeżeniem, gdy pliku nie da się wczytać. */
 export async function wczytajKoncowki(fetchFn: typeof fetch = fetch): Promise<TabelaKoncowek | null> {
   return wczytajTabele<TabelaKoncowek>(`${KATALOG}odmiana-koncowki.json`, 'Tablica końcówek', fetchFn, false);
+}
+
+// ---------------------------------------------------------------- dane dla punktu
+
+/** Indeks gmin (`gminy/indeks.json`). `null`, gdy go nie ma (404, bez ostrzeżenia: gra działa i bez niego, z szablonem
+    krajowym) albo nie da się go odczytać (błąd sieci, inny status, odpowiedź niebędąca JSON-em, inna wersja, pole
+    `gminy` niebędące tablicą; wtedy z ostrzeżeniem). Wpisy bez 7-cyfrowego TERYT i czterech liczb prostokąta są
+    pomijane. Nigdy nie rzuca. */
+export async function wczytajIndeksGmin(fetchFn: typeof fetch = fetch): Promise<IndeksGmin | null> {
+  const indeks = await wczytajTabele<IndeksGmin>(`${KATALOG}gminy/indeks.json`, 'Indeks gmin', fetchFn, true);
+  if (!indeks) return null;
+  if (!Array.isArray(indeks.gminy)) {
+    console.warn(`Indeks gmin: uszkodzony plik ${KATALOG}gminy/indeks.json`);
+    return null;
+  }
+  const poprawny = (w: unknown): w is IndeksGmin['gminy'][number] =>
+    obiekt(w) &&
+    typeof w.teryt === 'string' &&
+    /^\d{7}$/.test(w.teryt) &&
+    Array.isArray(w.bbox) &&
+    w.bbox.length === 4 &&
+    w.bbox.every((x) => typeof x === 'number' && Number.isFinite(x));
+  return { wersja: indeks.wersja, gminy: indeks.gminy.filter(poprawny) };
+}
+
+/** Wszystko, czego generator mieszkańców potrzebuje dla jednego punktu. `gmina` bywa `null` (szablon krajowy). */
+export interface DaneMieszkancow {
+  kraj: TabeleKraju;
+  gmina: TabeleGminy | null;
+  imiona: TabeleImion;
+  nazwiska: TabeleNazwisk;
+  odmiana: Odmiana;
+}
+
+/** Tabele gminy, w której leży punkt: pierwsza gmina z indeksu (kolejność indeksu, czyli po TERYT), której prostokąt
+    zawiera punkt i której tabela istnieje, a `rejonDla` nie zwraca dla punktu zapasu `gmina` (czyli punkt leży
+    w obrysie rejonu albo najwyżej 1 km od niego). Prostokąty sąsiednich gmin mogą na siebie zachodzić, stąd pętla
+    po kandydatach. `null`, gdy żaden nie pasuje. */
+async function gminaPunktu(
+  lat: number,
+  lon: number,
+  indeks: IndeksGmin | null,
+  fetchFn: typeof fetch,
+): Promise<TabeleGminy | null> {
+  if (!indeks) return null;
+  for (const { teryt, bbox } of indeks.gminy) {
+    if (lat < bbox[0] || lat > bbox[2] || lon < bbox[1] || lon > bbox[3]) continue;
+    const g = await wczytajGmine(teryt, fetchFn);
+    if (!g) continue;
+    try {
+      if (rejonDla(g, lat, lon).zapas !== 'gmina') return g;
+    } catch (e) {
+      console.warn(`Tabele gminy ${teryt}: nie da się ustalić rejonu`, e);
+    }
+  }
+  return null;
+}
+
+/** Dane mieszkańców dla punktu `lat, lon` (adres gracza): tabele krajowe, imiona, odmiana (słownik i końcówki),
+    indeks gmin, z niego tabela gminy punktu, na końcu nazwiska jej województwa (`wczytajNazwiskaDlaGminy`).
+    Pierwsze pięć pobrań idzie równolegle. Zwraca `null`, gdy brakuje tabel krajowych, imion, któregokolwiek z dwóch
+    plików odmiany albo nazwisk: generator bez nich nie ma na czym pracować, więc wywołujący zostaje przy
+    dotychczasowych postaciach. Brak gminy to nie błąd (`gmina: null`, szablon krajowy). Nigdy nie rzuca, a każda
+    porażka zostawia ostrzeżenie w konsoli (poza zwykłym 404 indeksu i gminy). */
+export async function wczytajDaneMieszkancow(
+  lat: number,
+  lon: number,
+  fetchFn: typeof fetch = fetch,
+): Promise<DaneMieszkancow | null> {
+  try {
+    const [kraj, imiona, tabelaOdmiany, koncowki, gmina] = await Promise.all([
+      wczytajKraj(fetchFn).catch((e: unknown) => {
+        console.warn('Tabele krajowe: nie udało się wczytać', e);
+        return null;
+      }),
+      wczytajImiona(fetchFn),
+      wczytajOdmiane(fetchFn),
+      wczytajKoncowki(fetchFn),
+      wczytajIndeksGmin(fetchFn).then((indeks) => gminaPunktu(lat, lon, indeks, fetchFn)),
+    ]);
+    if (!kraj || !imiona || !tabelaOdmiany || !koncowki) return null;
+    const nazwiska = await wczytajNazwiskaDlaGminy(gmina, fetchFn);
+    if (!nazwiska) return null;
+    return { kraj, gmina, imiona, nazwiska, odmiana: { tabela: tabelaOdmiany, koncowki } };
+  } catch (e) {
+    console.warn('Dane mieszkańców: nie udało się wczytać', e);
+    return null;
+  }
 }

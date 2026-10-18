@@ -7,7 +7,9 @@
    - obrysy: SHP z BREC, uproszczone do 5 m i przeliczone na WGS84,
    - epoki i metraż (P4386), wiek 2021 (P4253) i 2025 (P2137): odpowiedzi BDL zapisane w gus/bdl-api/dane-przyklady.
    Cały plik BREC w pamięci to ok. 1,75 GB, więc czytamy go raz i zostawiamy tylko rejony potrzebnych gmin.
-   Uruchomienie: npm run dane:gminy [-- lat,lon ...] */
+   Na końcu składa `gminy/indeks.json` (prostokąty gmin, `indeksGmin`) ze wszystkich plików gmin w katalogu, także
+   tych sprzed tego uruchomienia. Sam indeks, bez surowych plików, odtwarza `--indeks`.
+   Uruchomienie: npm run dane:gminy [-- lat,lon ...]    albo    npm run dane:gminy -- --indeks */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,6 +21,7 @@ import {
   dodajTabele,
   epokiZBdl,
   GRUPY_WIEKU,
+  indeksGmin,
   ludnoscRejonow,
   type MetaBdl,
   type OdpowiedzBdl,
@@ -231,7 +234,24 @@ function zbudujTabele(
   };
 }
 
+/** Indeks gmin z plików `gminy/<teryt>.json` w repozytorium (surowe dane niepotrzebne): zwarty JSON jak same tabele. */
+function zapiszIndeks(): void {
+  const katalog = wyjscie('gminy');
+  const tabele = fs
+    .readdirSync(katalog)
+    .filter((n) => /^\d{7}\.json$/.test(n))
+    .sort()
+    .map((n) => JSON.parse(fs.readFileSync(path.join(katalog, n), 'utf8')) as TabeleGminy);
+  const indeks = indeksGmin(tabele);
+  fs.writeFileSync(wyjscie('gminy', 'indeks.json'), `${JSON.stringify(indeks)}\n`);
+  console.log(`indeks.json: ${indeks.gminy.map((g) => g.teryt).join(', ')}`);
+}
+
 function main(): void {
+  if (process.argv.slice(2).includes('--indeks')) {
+    zapiszIndeks();
+    return;
+  }
   const { trafienia, obrysy } = wczytajBrec(punktyZArgumentow(process.argv.slice(2)));
   const gminy = [...new Set(trafienia.map((t) => t.gmina))];
   console.log(`Punkty → rejony: ${trafienia.map((t) => `${t.gmina}/${t.rejon}`).join(', ')}`);
@@ -256,6 +276,7 @@ function main(): void {
         `${gospodarstw} gospodarstw, ${punktow} punktów obrysów, ${(Buffer.byteLength(tekst) / 1024).toFixed(0)} KB`,
     );
   }
+  zapiszIndeks();
 }
 
 main();

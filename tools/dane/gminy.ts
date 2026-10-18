@@ -2,7 +2,14 @@
    odpowiedzi BDL (P4386, P4253, P2137) i podział płci w grupach wieku. Bez dostępu do plików, żeby dało się je
    testować na małych danych. Kolejność kluczy w zerowych obiektach jest taka jak w typach (JSON ma ją zachować). */
 
-import type { Epoka, GrupaWieku, Marginesy, TabeleGminy } from '../../src/mieszkancy/tabele.ts';
+import {
+  type Epoka,
+  type GrupaWieku,
+  type IndeksGmin,
+  type Marginesy,
+  type TabeleGminy,
+  WERSJA_TABEL,
+} from '../../src/mieszkancy/tabele.ts';
 import type { Komorka } from './xlsx.ts';
 
 export const GRUPY_WIEKU: GrupaWieku[] = ['0-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80+'];
@@ -521,4 +528,35 @@ export function wiek2025ZBdl(w: ReadonlyMap<string, number>): TabeleGminy['wiek2
     wynik[pole] = g;
   }
   return wynik;
+}
+
+// ---------------------------------------------------------------- indeks gmin
+
+/** Indeks gmin (`IndeksGmin`) z wczytanych tabel gmin: dla każdej gminy z obrysami prostokąt
+    `[latMin, lonMin, latMax, lonMax]` ze wszystkich punktów wszystkich pierścieni wszystkich rejonów. Punkty obrysów
+    są już zaokrąglone do 5 miejsc po przecinku, więc prostokąt wychodzi bez dodatkowych działań na liczbach.
+    Gminy posortowane po TERYT (porównanie napisów, bez ustawień regionalnych), więc wynik nie zależy od kolejności
+    wejścia. Gmina bez żadnego punktu obrysu nie ma prostokąta i do indeksu nie trafia. Czysta funkcja: ta sama służy
+    narzędziu `dane-gminy` i testowi, który odtwarza plik z gmin w repozytorium. */
+export function indeksGmin(tabele: readonly TabeleGminy[]): IndeksGmin {
+  const gminy: IndeksGmin['gminy'] = [];
+  for (const t of tabele) {
+    let latMin = Number.POSITIVE_INFINITY;
+    let lonMin = Number.POSITIVE_INFINITY;
+    let latMax = Number.NEGATIVE_INFINITY;
+    let lonMax = Number.NEGATIVE_INFINITY;
+    for (const rejon of Object.values(t.obrysy)) {
+      for (const pierscien of rejon) {
+        for (const [lat, lon] of pierscien) {
+          if (lat < latMin) latMin = lat;
+          if (lat > latMax) latMax = lat;
+          if (lon < lonMin) lonMin = lon;
+          if (lon > lonMax) lonMax = lon;
+        }
+      }
+    }
+    if (latMin <= latMax) gminy.push({ teryt: t.teryt, bbox: [latMin, lonMin, latMax, lonMax] });
+  }
+  gminy.sort((a, b) => (a.teryt < b.teryt ? -1 : a.teryt > b.teryt ? 1 : 0));
+  return { wersja: WERSJA_TABEL, gminy };
 }

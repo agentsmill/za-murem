@@ -54,6 +54,16 @@ export interface TabeleGminy {
   wiek2025: { M: number[]; K: number[] };
 }
 
+/** Indeks gmin: plik public/data/mieszkancy/gminy/indeks.json, wynik `npm run dane:gminy` (albo `-- --indeks` z samych
+    plików gmin z repozytorium). Dzięki niemu gra wie, której tabeli gminy szukać dla punktu, bez ściągania wszystkich:
+    `bbox` to `[latMin, lonMin, latMax, lonMax]` ze wszystkich punktów obrysów rejonów gminy (stopnie, 5 miejsc po
+    przecinku, jak w `TabeleGminy.obrysy`). Prostokąt tylko zawęża kandydatów; czy punkt naprawdę leży w gminie,
+    rozstrzyga `rejonDla` na jej tabeli. Gminy posortowane po TERYT. */
+export interface IndeksGmin {
+  wersja: number;
+  gminy: { teryt: string; bbox: [number, number, number, number] }[];
+}
+
 /** Klucze tablic trwania życia: miasta, wieś i cała Polska, osobno mężczyźni (M) i kobiety (K). */
 export type KluczQx = 'miastaM' | 'miastaK' | 'wiesM' | 'wiesK' | 'polskaM' | 'polskaK';
 
