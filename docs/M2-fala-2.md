@@ -134,82 +134,72 @@ Przejmowanie lokatorów z kierunku rozwoju (każdego lokatora da się prowadzić
 
 ## Kontrakt
 
+Stan po budowie (18.10.2026). Tam, gdzie budowa odeszła od pierwszej wersji projektu, opis niżej jest aktualny.
+
 Świat (`src/world`):
 
 - `buildInterior(w, bid)` bez zmian.
-- `settleAptsOf(w, it, opts)`: stany i zawartość mieszkań dowolnego budynku (bez reguły podwórka, bez mieszkania zarządu), na tych samych przepisach i ziarnach mieszkań co `settleApts`. `settleApts` siedziby daje ten sam wynik co dziś (test).
-- Etap 3: `wspolnyPlot(w, siatka, bids): Fence`, czysta funkcja.
+- `settleAptsOf(w, it, given?)`: stany i zawartość mieszkań dowolnego budynku (bez reguły podwórka, bez mieszkania zarządu), na tych samych przepisach i ziarnach mieszkań co `settleApts`. `settleApts` siedziby daje ten sam wynik co przedtem (test ze skrótami trzech dem).
 
 Symulacja (`src/sim`):
 
-- `src/sim/sasiedzi.ts`: typy, stany drzwi na start, nakładka wnętrz, tabele łupu usług i zapasów gospodarstw, zamiar i nastrój, wybory spotkania i ich skutki. Czyste funkcje.
-- Stan: `SimState.sasiedzi?: Sasiedzi`, którego nie ma, dopóki zarząd nie dotknie żadnych cudzych drzwi, więc stare zapisy i boty bez sąsiadów mają ten sam stan i ten sam skrót.
+- `src/sim/sasiedzi.ts`, czyste funkcje: typy stanu, wnętrza z pamięcią na świat (`wnetrze`), rodzaje drzwi (`drzwiBudynku`), stan drzwi na start, mieszkania za drzwiami, znani sąsiedzi, łup usług i mieszkań, zapasy gospodarstw, lokatorzy zapasowi, zamiar i nastrój, wybory spotkania i ich skutki, a z etapu 2 piętra (`pietraBudynku`, `pietro`, `domWyzej`), nocni goście (`nocnyGosc`, `zostaja`, `szabrownicy`) i ukryty ugryziony (`ukrytyUgryziony`, `ugryzionyOd`), z gry sieciowej `zaDrzwiami`, `kafelkiZajete`, `pokojeZajete`. Losują tylko z ziarna świata, budynku, kafelka, mieszkania, piętra albo dnia; skutki wyborów w spotkaniu i rany na piętrze z ziarna gry (`st.rng`), dopiero przy wyborze.
+- Stan: `SimState.sasiedzi?: Sasiedzi` powstaje przy pierwszych cudzych drzwiach, `SimState.zajete?: number[]` tylko w grze sieciowej. Bez nich stan, skróty botów i stare zapisy są jak przed falą 2.
 
 ```ts
 type StanDrzwi = 'zamkniete' | 'na_klucz' | 'otwarte' | 'wywazone' | 'zabite';
 interface Sasiedzi {
-  /** budynki po kolei, jak zarząd ich dotknął */
-  budynki: SasiedniBudynek[];
+  budynki: SasiedniBudynek[];          // po kolei, jak zarząd ich dotknął
   spotkanie: Spotkanie | null;
-  /** licznik spotkań */
-  nr: number;
-  /** wynik ostatniego spotkania (numer i identyfikator zdania): interfejs pokazuje go napisem po wyborze */
-  wynik: { nr: number; co: string } | null;
+  nr: number;                          // licznik spotkań
+  napis: Napis | null;                 // ostatni napis dla interfejsu (wynik spotkania, zamek, nocni goście...)
+  n: number;                           // licznik napisów: interfejs pokazuje każdy raz
 }
 interface SasiedniBudynek {
   bid: number;
-  /** drzwi zmienione w grze (kafelek i stan), rosnąco po kafelku; reszta ma stan domyślny z ziarna */
-  drzwi: { t: number; s: StanDrzwi }[];
-  /** wnętrze dołączone do mapy */
+  drzwi: { t: number; s: StanDrzwi; k?: true }[]; // wszystkie drzwi na zewnątrz i mieszkań, liczone przy pierwszym
+                                                  // dotknięciu; k: ukryty zamek, wychodzi przy próbie otwarcia
   otwarty: boolean;
-  /** mieszkania parteru: stan, gospodarstwo (−1: brak), szwendacz za drzwiami (zombie), przeszukane pomieszczenia */
-  mieszkania: { apt: number; stan: 'mieszkancy' | 'puste'; why?: AptWhy; year?: number; dom: number; zombie?: boolean; przeszukane: number[] }[];
-  /** przeszukane pomieszczenia bez mieszkania (sale, hale, zaplecza) */
-  przeszukane: number[];
+  ludzie: boolean;
+  mieszkania: { apt; stan: 'mieszkancy' | 'puste'; why?; year?; dom; zombie?; przeszukane: number[] }[];
+  przeszukane: number[];               // sale, hale, zaplecza, klatki
   domy: Gospodarstwo[];
-  pietra: number;
-  noc: { tick: number; kto: 'szabrownicy' | 'szwendacze'; zabrali: Partial<Record<Mat, number>> } | null;
+  pietra: number;                      // przeszukane piętra
+  slady: { t: number; k: DamageKind }[];
+  zawartosc?: { zepsute: number[]; smieci: [x, y, n][] };  // do położenia przy otwarciu
+  noc?: { tick; kto: 'szabrownicy' | 'szwendacze'; zabrali; pokazane? };
 }
 interface Gospodarstwo {
-  osoby: OsobaSasiada[];
-  /** mieszkanie parteru albo −1 (wyżej) i numer wejścia klatki */
-  apt: number;
-  klatka: number;
-  znani: boolean;
+  osoby: OsobaSasiada[]; apt: number; klatka: number; znani: boolean;
   zamiar: 'zyczliwi' | 'nieufni' | 'wrodzy' | 'zdesperowani';
   nastroj: 'spokoj' | 'strach' | 'gniew' | 'zal' | 'nadzieja';
-  rel: number;
-  zapasy: Partial<Record<Mat, number>>;
-  gdzie: 'u_siebie' | 'odeszli' | 'u_nas' | 'nie_zyja';
+  rel: number; zapasy; gdzie: 'u_siebie' | 'odeszli' | 'u_nas' | 'nie_zyja';
+  zal?; ludzie?: number[]; pionki?: number[];
+  szabrownicy?: true; ugryziony?: number; pytali?: true;  // etap 2
 }
-interface Spotkanie {
-  nr: number;
-  /** indeks w budynki i w domy */
-  b: number;
-  dom: number;
-  /** nasi i ich pionki */
-  my: number[];
-  oni: number[];
-  gdzie: 'drzwi' | 'mieszkanie' | 'pietro';
-  tick: number;
-}
+interface Spotkanie { nr; b; dom; my: number[]; oni: number[]; gdzie: 'drzwi' | 'mieszkanie' | 'pietro'; tick; atak: boolean; wywazone: boolean; runda?: number }
 ```
 
-- Polecenia: `{ t: 'open' | 'knock' | 'force' | 'board' | 'unboard'; ids; door }` (kafelek drzwi), `{ t: 'loot'; ids; bid; room }`, `{ t: 'carry'; ids; thing }`, `{ t: 'meet'; ids: []; nr; choice }`, w etapie 2 `{ t: 'upstairs'; ids; bid; door }`, w etapie 3 `{ t: 'enclose'; ids; bid }`, w grze sieciowej `{ t: 'zajete'; ids: []; drzwi }`. `commandsAt` dokłada w menu: „Otworzyć”, „Zapukać”, „Wyważyć drzwi”, „Zabić deskami”, „Odbić deski”, „Przeszukać [pokój]”, „Zabrać zapasy”, „Zanieść do siedziby”, „Przeszukać piętro”, „Otoczyć wspólnym płotem”.
-- Prace: `open`, `knock`, `force`, `board`, `loot`, `carry`, `meet` (czeka na wybór), `upstairs`; opisy w `jobText` („Wyważa drzwi.”, „Rozmawia z sąsiadami.”).
-- Pionek `sasiad`: osoba w `st.people` od pierwszego spotkania, przechodniość jak zarząd w swoim budynku, bez potrzeb, nie bierze poleceń.
-- Lokatorzy z generatora: `Sim.lokatorzy?: (bid) => LokatorzyBudynku | null`, źródło ustawiane poza stanem (gra z tabelami, bot z `--mieszkancy`). Wynik trafia do stanu przy pierwszym dotknięciu budynku, więc wczytana gra nie potrzebuje już tabel.
+- Polecenia: `{ t: 'open' | 'knock' | 'force' | 'board' | 'unboard'; ids; door }`, `{ t: 'loot'; ids; bid; room }`, `{ t: 'meet'; ids: []; nr; choice }`, `{ t: 'upstairs'; ids; bid; tile }` (kafelek schodów), w grze sieciowej `{ t: 'zajete'; ids: []; drzwi }`. Łup u sąsiadów niesie wspólne noszenie z surowców: `{ t: 'carry'; ids; thing }` („Zanieść na podwórko”), a po przeszukaniu pokoju `carryOn`; reguła sąsiada siedzi w `lootNear` (z wnętrza sąsiedniego budynku zbiera cały łup z tego budynku).
+- Prace: `door` (what: rodzaj), `loot` (target: numer pomieszczenia całej mapy `gid`), `meet` (czeka na wybór), `upstairs` (w fazie 1 osoba jest na górze i nie widać jej na mapie).
+- Pionek `sasiad`: osoba w `st.people` od pierwszego spotkania, nie bierze poleceń; da się go kliknąć jak mieszkańca (karta osoby).
+- Lokatorzy z generatora: `Sim.lokatorzy?: (bid) => LokatorzyBudynku | null`, źródło `zrodloLokatorow` z `src/sim/lokatorzy.ts`, ustawiane poza stanem. Wynik trafia do stanu przy pierwszym dotknięciu budynku. `Sim.budynekDoKarty(bid)` daje wpis z gry albo podgląd tego samego wpisu bez zapisu w stanie (karta budynku).
+- Zegar: o 2:00 nocni goście, o 7:00 napis o nich; wszystko tylko przy `st.sasiedzi`.
 
 Rysowanie (`src/render`):
 
-- Jedna scena przekroju dla siedziby i otwartych budynków: komórki różnych budynków się nie pokrywają, więc nowe wnętrze dokłada się do `SectionScene` zmianą mapy (w głównym wątku i w workerach), a kawałki nad budynkiem dostają przekrój.
-- Pod dachem otwartego budynku chowają się pionki, rzeczy i światła jak w siedzibie. Sprite zabitych drzwi, pionki sąsiadów z wyglądem z osoby, w etapie 3 duch płotu z postępem.
+- Jedna scena przekroju dla siedziby i otwartych budynków: `src/render/przekrojSasiadow.ts` liczy ze stanu nowe wnętrza (`SectionPart`) i wygląd drzwi (`DoorLook`), a widok wysyła je łatką sceny (`MapChange.wnetrze`, `MapChange.drzwi`) do głównego wątku i workerów; przy pierwszym dołożeniu przekrój dostaje własne kopie tablic, bo dzieli je z wnętrzem świata, które czyta symulacja. Drzwi zabite deskami mają własny wygląd, wyważone ten z fali 1.
+- Pozy: wyważanie zamachem, deski i pukanie młotkiem, zamek i przeszukanie na kolanach.
 
 Interfejs (`src/ui`, `src/main.ts`):
 
-- Polecenia w menu, karta spotkania (pauza jak przy oknach zarządu, wybór idzie poleceniem `meet`, gra rusza dalej, a wynik pokazuje napis z `sasiedzi.wynik`), karta budynku (stuknięcie w cudzy budynek bez zaznaczenia: nazwa, drzwi, znani lokatorzy według klatek, co przeszukane, nocni goście), napisy przy hałasie i rano po nocnych gościach.
-- Napisy w obu językach od początku (pary polski i angielski w nowych modułach), a po scaleniu warstwy tłumaczeń (gałąź `angielski`) przez jej `L()` i `tx()`.
-- Cel drugiego dnia „Przeszukajcie puste mieszkanie” jest w domu jednorodzinnym nie do zrobienia, bo dom ma jedno mieszkanie, zarządu (znalazła to sesja słownika miejsca). W domu cel zmienia się na „Przeszukajcie pokój u sąsiadów” i zalicza go pierwsze przeszukane pomieszczenie w sąsiednim budynku; w bloku zostaje jak jest.
+- Napisy fali 2 w obu językach w `src/content/napisy-sasiedzi.ts` (do gry idzie na razie polski, jak w surowcach).
+- Karta spotkania `src/ui/spotkanie.ts` (pauza jak okna zarządu, odcienie `sasiedzi` i `napad`, wybór poleceniem `meet`, wynik napisem w podpowiedzi), karta budynku `src/ui/budynek.ts` (klik w cudzy budynek bez zaznaczenia).
+- Cel drugiego dnia w domu rozwiązała osobna sesja („Przeszukajcie dom” z przeszukiwaniem domu komitetu, `pelna-gra`); od fali 2 cel przeszukania zalicza też pierwsze pomieszczenie przeszukane u sąsiadów.
+
+Gra sieciowa (`src/net`): `drzwiObcych(w, srodek, klatki)` w `src/net/siec.ts`, a `GraSieciowa.klatka` wysyła polecenie `zajete` po każdej zmianie listy cudzych klatek.
+
+Boty: `tests/unit/sasiedzi-play.ts` (gracz u sąsiadów), flaga `--sasiedzi` w `npm run bot` i `npm run bot:zombie`.
 
 ## Etapy
 
