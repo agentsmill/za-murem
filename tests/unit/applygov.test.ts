@@ -178,7 +178,7 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     day: 1,
     outcome,
     post: 'brama',
-    where: 'przy bramie',
+    where: { pl: 'przy bramie', en: 'przy bramie' },
     attack: 3,
     defense: 2,
     stolen: { wood: 0, supplies: 0, scrap: 0, parts: 0, meds: 0, ...stolen },
@@ -201,7 +201,7 @@ describe('applyGov: skutki zarządu w symulacji', () => {
             day: 1,
             at: minuteOf(1, 23),
             post: `d${hole.id}`,
-            where: 'przy garażach',
+            where: { pl: 'przy garażach', en: 'przy garażach' },
             attack: 3.5,
             people: 2,
           }),
@@ -238,7 +238,10 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     applyGov(
       st,
       w,
-      fx((e) => (e.raid = { day: 1, at: minuteOf(1, 23), post: 'brama', where: 'przy bramie' })),
+      fx(
+        (e) =>
+          (e.raid = { day: 1, at: minuteOf(1, 23), post: 'brama', where: { pl: 'przy bramie', en: 'przy bramie' } }),
+      ),
     );
     while (st.tick < atHour(1, 23)) sim.step();
     const wood0 = sum(st, 'drewno');
@@ -267,7 +270,10 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     applyGov(
       st,
       w,
-      fx((e) => (e.raid = { day: 1, at: minuteOf(1, 23), post: 'brama', where: 'przy bramie' })),
+      fx(
+        (e) =>
+          (e.raid = { day: 1, at: minuteOf(1, 23), post: 'brama', where: { pl: 'przy bramie', en: 'przy bramie' } }),
+      ),
     );
     while (st.tick < atHour(1, 23)) sim.step();
     const wood0 = sum(st, 'drewno');
@@ -277,7 +283,10 @@ describe('applyGov: skutki zarządu w symulacji', () => {
       fx((e) => {
         e.stock.wood = -7;
         for (const p of core(st)) e.needs.push({ id: st.people[p.person].id, d: { safe: -25 } });
-        e.log.push('Szabrownicy weszli przy bramie i zabrali: Drewno 7.');
+        e.log.push({
+          pl: 'Szabrownicy weszli przy bramie i zabrali: Drewno 7.',
+          en: 'Looters got in at the gate and took: wood 7.',
+        });
       }),
     );
     expect(st.raid!.outcome).toBe('');
@@ -296,7 +305,17 @@ describe('applyGov: skutki zarządu w symulacji', () => {
       applyGov(
         st,
         w,
-        fx((e) => (e.raid = { day: 1, at: minuteOf(1, 23), post: 'brama', where: 'przy bramie', attack: 4.6, people })),
+        fx(
+          (e) =>
+            (e.raid = {
+              day: 1,
+              at: minuteOf(1, 23),
+              post: 'brama',
+              where: { pl: 'przy bramie', en: 'przy bramie' },
+              attack: 4.6,
+              people,
+            }),
+        ),
       );
       while (st.tick < atHour(1, 23)) sim.step();
       expect(st.pawns.filter((p) => p.kind === 'szabrownik')).toHaveLength(people);
@@ -314,7 +333,16 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     applyGov(
       st,
       w,
-      fx((e) => (e.raid = { day: 1, at: minuteOf(1, 23), post: 'brama', where: 'przy bramie', people: 1 })),
+      fx(
+        (e) =>
+          (e.raid = {
+            day: 1,
+            at: minuteOf(1, 23),
+            post: 'brama',
+            where: { pl: 'przy bramie', en: 'przy bramie' },
+            people: 1,
+          }),
+      ),
     );
     while (st.tick < atHour(1, 23)) sim.step();
     expect(a.job?.phase).toBe(1);
@@ -347,7 +375,16 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     applyGov(
       st,
       w,
-      fx((e) => (e.raid = { day: 1, at: minuteOf(1, 23), post: 'brama', where: 'przy bramie', people: 2 })),
+      fx(
+        (e) =>
+          (e.raid = {
+            day: 1,
+            at: minuteOf(1, 23),
+            post: 'brama',
+            where: { pl: 'przy bramie', en: 'przy bramie' },
+            people: 2,
+          }),
+      ),
     );
     while (st.tick < atHour(1, 23)) sim.step();
     const wood0 = sum(st, 'drewno');
@@ -395,7 +432,16 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     applyGov(
       st,
       w,
-      fx((e) => (e.raid = { day: 1, at: minuteOf(1, 23), post: 'brama', where: 'przy bramie', people: 3 })),
+      fx(
+        (e) =>
+          (e.raid = {
+            day: 1,
+            at: minuteOf(1, 23),
+            post: 'brama',
+            where: { pl: 'przy bramie', en: 'przy bramie' },
+            people: 3,
+          }),
+      ),
     );
     while (st.tick < atHour(1, 23)) sim.step();
     applyGov(

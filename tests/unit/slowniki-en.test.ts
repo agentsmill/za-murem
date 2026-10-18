@@ -72,10 +72,14 @@ describe('słowniki napisów ze stanu', () => {
       expect(PROFS_EN[m], m).toBeTruthy();
       expect(zawodEn(m), m).toBe(PROFS_EN[m]);
       expect(zawodEn(f), f).toBe(PROFS_EN[m]);
-      expect(zawodEn(f.toLowerCase())[0], f).toBe(PROFS_EN[m][0].toLowerCase());
+      const low = zawodEn(f.toLowerCase());
+      expect(low.toLowerCase(), f).toBe(PROFS_EN[m].toLowerCase());
+      expect(low, f).toBe(/^[A-Z]{2,}\b/.test(PROFS_EN[m]) ? PROFS_EN[m] : PROFS_EN[m][0].toLowerCase() + PROFS_EN[m].slice(1));
       expect(zawodEn(m)).not.toMatch(POLSKIE);
     }
     expect(zawodEn('dziecko')).toBe('child');
+    expect(zawodEn('lekarz rodzinny')).toBe('GP');
+    expect(zawodEn('doradczyni ds. esg')).toBe('ESG consultant');
     expect(zawodEn('Nieznany fach')).toBe('Nieznany fach');
   });
 

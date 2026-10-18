@@ -7,6 +7,7 @@
 import './style.css';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
 import type { Person } from './content/people.ts';
+import { tr, txOf } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
@@ -494,7 +495,7 @@ function input(): GovInput {
 function applyFx(fx: ReturnType<typeof govUpdate>, hint = true): string {
   if (!sim) return '';
   applyGov(sim.st, sim.w, fx);
-  const last = fx.log[fx.log.length - 1] ?? '';
+  const last = tr(fx.log[fx.log.length - 1]);
   if (last && hint) say(last, 7000);
   return last;
 }
@@ -591,7 +592,7 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
       const odds = modal.find('[data-odds]');
       if (odds) odds.innerHTML = oddsHtml(card, assign(), nightOdds(g, i, card, assign()), names);
       const advice = modal.find('[data-advice]');
-      if (advice) advice.textContent = nightAdvice(i, card, assign());
+      if (advice) advice.textContent = tr(nightAdvice(i, card, assign()));
       const o = card.people.find((c) => c.id === id)?.options.find((q) => q.key === arg);
       const line = modal.find(`.opt[data-for="${CSS.escape(id)}"]`);
       if (line && o) line.textContent = optionDetail(o);
@@ -798,7 +799,8 @@ function tonight(p: SimPerson): string | undefined {
   const n = gov?.night;
   const key = n?.assign[p.id];
   if (n && key && key !== 'sen') {
-    const label = n.card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key)?.label ?? key;
+    const opt = n.card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key);
+    const label = opt ? tr(opt.label) : key;
     return `Tej nocy: ${label.toLowerCase()}${n.confirmed ? '' : ' (propozycja)'}.`;
   }
   if (p.post === 'koza') return 'Do rana: czuwa przy kozie.';
@@ -1183,7 +1185,8 @@ function odmianaEdytora(): Promise<Odmiana | null> {
 /** wpis do kroniki zarządu z godziną gry i podpowiedź na ekranie */
 function doKroniki(teksty: readonly string[]) {
   if (!sim || !gov || !teksty.length) return;
-  for (const txt of teksty) gov.log.push({ day: dayOf(sim.st.tick), clock: clockOf(sim.st.tick), txt, big: false });
+  for (const t of teksty)
+    gov.log.push({ day: dayOf(sim.st.tick), clock: clockOf(sim.st.tick), txt: txOf(t), big: false });
   say(teksty.join(' '), 7000);
 }
 

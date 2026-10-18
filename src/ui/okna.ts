@@ -3,6 +3,7 @@
    (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts. */
 
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
+import { tr } from '../core/jezyk.ts';
 import { deterrence, KOZA_KEY, untilWord, WOOD_PER_HOUR, watchersOf } from '../gov/noc.ts';
 import type {
   GovInput,
@@ -67,23 +68,23 @@ export const plural = (n: number, one: string, few: string, many: string): strin
 
 /** krótki opis opcji na liście wyboru */
 export function optionShort(o: NightOption, proposal: boolean): string {
-  let s = o.label;
+  let s = tr(o.label);
   // dyżur przy kozie nie broni siatki (czuwa w kuchni), więc bez obrony
   if (o.key.startsWith('warta:') && o.key !== KOZA_KEY) s += `, obrona ${num(o.guard ?? 0)}`;
   else if (o.key.startsWith('wyprawa:')) s += `, ryzyko ${pct(o.risk ?? 0)}`;
-  if (!o.ok) s += ` (${o.why ?? 'nie da rady'})`;
+  if (!o.ok) s += ` (${o.why ? tr(o.why) : 'nie da rady'})`;
   else if (proposal) s += ' · propozycja';
   return s;
 }
 
 /** co znaczy wybór: zysk, ryzyko, obrona i uwaga z karty */
 export function optionDetail(o: NightOption): string {
-  if (!o.ok) return o.why ?? 'Nie da rady.';
-  if (o.key === 'sen') return o.note ?? 'Wyśpi się i rano będzie mieć siły.';
-  if (o.key === KOZA_KEY) return o.note ?? 'Nie śpi i pilnuje ognia w kozie.';
-  if (o.key.startsWith('warta:')) return `Obrona ${num(o.guard ?? 0)}. ${o.note ?? ''}`.trim();
+  if (!o.ok) return o.why ? tr(o.why) : 'Nie da rady.';
+  if (o.key === 'sen') return o.note ? tr(o.note) : 'Wyśpi się i rano będzie mieć siły.';
+  if (o.key === KOZA_KEY) return o.note ? tr(o.note) : 'Nie śpi i pilnuje ognia w kozie.';
+  if (o.key.startsWith('warta:')) return `Obrona ${num(o.guard ?? 0)}. ${tr(o.note)}`.trim();
   const g = gainText(o.gain);
-  return `Ryzyko kłopotów ${pct(o.risk ?? 0)}.${g ? ` Może przynieść: ${g}.` : ''} ${o.note ?? ''}`.trim();
+  return `Ryzyko kłopotów ${pct(o.risk ?? 0)}.${g ? ` Może przynieść: ${g}.` : ''} ${tr(o.note)}`.trim();
 }
 
 export interface NightOdds {
@@ -113,7 +114,7 @@ export function oddsHtml(
       const who = Object.entries(assign)
         .filter(([, k]) => k === `warta:${p.key}`)
         .map(([id]) => names[id] ?? id);
-      return `<li class="post ${who.length ? 'kept' : 'open'}"><span class="post-k">${esc(p.name)}</span><b class="post-v">${
+      return `<li class="post ${who.length ? 'kept' : 'open'}"><span class="post-k">${esc(tr(p.name))}</span><b class="post-v">${
         who.length ? esc(who.join(', ')) : 'nikt'
       }</b></li>`;
     })
@@ -126,7 +127,7 @@ export function oddsHtml(
   if (h) {
     const fence = Math.round(h.fence * 100);
     return `<div class="odds"><div class="odd ${h.size >= 35 ? 'bad' : 'mid'}"><small class="odd-k">Stado nocą</small><b class="odd-v">około ${h.size}</b><em class="odd-note">${esc(
-      h.word,
+      tr(h.word),
     )} · strzał ściąga więcej</em></div><div class="odd ${fence < 50 ? 'bad' : fence < 80 ? 'mid' : 'ok'}"><small class="odd-k">Siatka</small><b class="odd-v">${fence}%</b><em class="odd-note">dzida sięga przez siatkę</em></div>${
       card.wood ? fuelHtml(card.wood, koza) : ''
     }</div><ul class="posts">${posts}</ul>`;
@@ -181,8 +182,8 @@ export function nightSheet(card: NightCard, assign: Record<string, string>, odds
           ? 'Dym z kozy widać z daleka. Kto śpi, kto pilnuje, a kto idzie po zapasy?'
           : 'Kto śpi, kto pilnuje siatki albo kozy, a kto idzie po zapasy?'
     }</p><div data-odds>${oddsHtml(card, assign, odds, names)}</div><ul class="crew">${rows}</ul>${
-      card.advice
-        ? `<p class="advice"><b class="advice-k">Zarząd radzi:</b> <span data-advice>${esc(card.advice)}</span></p>`
+      tr(card.advice)
+        ? `<p class="advice"><b class="advice-k">Zarząd radzi:</b> <span data-advice>${esc(tr(card.advice))}</span></p>`
         : ''
     }`,
     foot: `${btn('night-reset', 'Jak radzi zarząd', 'btn ghost')}${btn('night-go', 'Zacznijcie noc', 'btn go')}`,
@@ -196,9 +197,9 @@ function lawItem(o: LawOption): string {
   const act =
     o.s === 'ok'
       ? btn('law', 'Podpisać', 'btn go', o.id)
-      : `<p class="law-why">${esc(o.s === 'done' ? 'Już obowiązuje.' : (o.why ?? 'Teraz nie można.'))}</p>`;
-  return `<li class="law ${o.s}"><div class="law-head"><b class="law-n">${esc(o.name)}</b>${tag}</div><p class="law-d">${esc(
-    o.desc,
+      : `<p class="law-why">${esc(o.s === 'done' ? 'Już obowiązuje.' : o.why ? tr(o.why) : 'Teraz nie można.')}</p>`;
+  return `<li class="law ${o.s}"><div class="law-head"><b class="law-n">${esc(tr(o.name))}</b>${tag}</div><p class="law-d">${esc(
+    tr(o.desc),
   )}</p>${act}</li>`;
 }
 
@@ -219,17 +220,17 @@ export function lawSheet(p: Extract<Prompt, { k: 'uchwala' }>): Sheet {
 // ---------------------------------------------------------------- wydarzenie
 
 export function eventSheet(p: Extract<Prompt, { k: 'wydarzenie' }>): Sheet {
-  const text = p.text
+  const text = tr(p.text)
     .split(/\n+/)
     .map((l) => `<p>${esc(l)}</p>`)
     .join('');
   return {
     tone: 'wydarzenie',
     kicker: 'Na osiedlu',
-    title: esc(p.title),
+    title: esc(tr(p.title)),
     body: text,
     foot: `<div class="choices">${p.choices
-      .map((c, k) => btn('event', esc(c.label), 'btn', String(k), c.ok ? '' : ' disabled'))
+      .map((c, k) => btn('event', esc(tr(c.label)), 'btn', String(k), c.ok ? '' : ' disabled'))
       .join('')}</div>`,
   };
 }
@@ -243,7 +244,7 @@ const RAID_TITLE: Record<NightReport['raid'], string> = {
 };
 
 export function reportSheet(r: NightReport): Sheet {
-  const lines = r.lines.map((l) => `<li class="line">${esc(l)}</li>`).join('');
+  const lines = r.lines.map((l) => `<li class="line">${esc(tr(l))}</li>`).join('');
   const stolen = lootText(r.stolen);
   const loot = lootText(r.loot);
   const kit = r.kitchen ?? null;

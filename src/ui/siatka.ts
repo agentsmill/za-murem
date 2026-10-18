@@ -1,7 +1,8 @@
-/* Siatka i światło dla zarządu: dziury z World.fence z nazwą miejsca do tekstów karty nocy i raportu.
-   Czyste funkcje świata i stanu, bez DOM. Łatanie dziur i zamykanie bramy przyjdą z symulacją
+/* Siatka i światło dla zarządu: dziury z World.fence z nazwą miejsca do tekstów karty nocy i raportu (w obu
+   językach, Tx). Czyste funkcje świata i stanu, bez DOM. Łatanie dziur i zamykanie bramy przyjdą z symulacją
    (skutek patch), wtedy stan siatki trzeba brać z niej, a nie ze startu świata. */
 
+import { type Tx, tx } from '../core/jezyk.ts';
 import type { GovFence, GovLight } from '../gov/typy.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { World } from '../world/world.ts';
@@ -16,7 +17,18 @@ const DIRS = [
   'od północy',
   'od północnego wschodu',
 ];
+const DIRS_EN = [
+  'on the east side',
+  'on the south-east side',
+  'on the south side',
+  'on the south-west side',
+  'on the west side',
+  'on the north-west side',
+  'on the north side',
+  'on the north-east side',
+];
 const ORD = ['', 'druga', 'trzecia', 'czwarta'];
+const ORD_EN = ['', 'second', 'third', 'fourth'];
 
 /** wielkość dziury 0,4–0,85 z kafelka i ziarna, zawsze ta sama dla tego samego osiedla */
 function holeSize(tile: number, seed: number): number {
@@ -48,17 +60,23 @@ export function govFence(w: FenceSrc): GovFence | undefined {
   const holes = f.hole.map((t, k) => {
     const x = (t % size) + 0.5;
     const y = Math.floor(t / size) + 0.5;
-    let name: string;
-    if (trzepak && Math.hypot(trzepak.x - x, trzepak.y - y) < 4) name = 'za trzepakiem';
-    else if (dry && Math.hypot(dry.x - x, dry.y - y) < 4) name = 'przy suchym drzewie';
+    let name: Tx;
+    if (trzepak && Math.hypot(trzepak.x - x, trzepak.y - y) < 4) name = tx('za trzepakiem', 'behind the carpet rack');
+    else if (dry && Math.hypot(dry.x - x, dry.y - y) < 4) name = tx('przy suchym drzewie', 'by the dead tree');
     else {
       const a = Math.atan2(y - cy, x - cx);
-      name = DIRS[(Math.round(a / (Math.PI / 4)) + 8) % 8];
+      const d = (Math.round(a / (Math.PI / 4)) + 8) % 8;
+      name = tx(DIRS[d], DIRS_EN[d]);
     }
-    const n = used.get(name) ?? 0;
-    used.set(name, n + 1);
-    // druga dziura z tej samej strony: „przy dziurze od północy, druga”
-    return { id: k + 1, size: holeSize(t, w.seed), name: n ? `${name}, ${ORD[Math.min(n, 3)]}` : name };
+    const n = used.get(name.pl) ?? 0;
+    used.set(name.pl, n + 1);
+    // druga dziura z tej samej strony: „przy dziurze od północy, druga”, „at the hole on the north side (second)”
+    const o = Math.min(n, 3);
+    return {
+      id: k + 1,
+      size: holeSize(t, w.seed),
+      name: n ? tx(`${name.pl}, ${ORD[o]}`, `${name.en} (${ORD_EN[o]})`) : name,
+    };
   });
   return { holes, durability: 0.5 };
 }

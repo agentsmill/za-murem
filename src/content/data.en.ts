@@ -95,6 +95,8 @@ export function zawodEn(prof: string): string {
   const en = male ? PROFS_EN[male] : mieszkancyEn(prof);
   if (!en) return prof;
   const lower = prof[0] === prof[0]?.toLowerCase();
+  // skrót na początku („GP”, „ESG consultant”) zostaje wielkimi literami także w środku zdania
+  if (lower && /^[A-Z]{2,}\b/.test(en)) return en;
   return lower ? en[0].toLowerCase() + en.slice(1) : en[0].toUpperCase() + en.slice(1);
 }
 

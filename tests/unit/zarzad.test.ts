@@ -14,6 +14,7 @@ import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { confirmNight, govUpdate, loadGov, newGov, pending, saveGov, setNight, signLaw } from '../../src/gov/zarzad.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
+import { pl } from './po-angielsku.ts';
 
 /** przebieg bez odpowiadania na nic, aż pojawi się decyzja danego rodzaju */
 function until(gov: GovState, atr: Atrapa, kind: string, limit = at(3, 0)) {
@@ -54,7 +55,7 @@ describe('karta nocy', () => {
     const card = p.card;
     // czwórka zarządu, czasem ktoś dołączył z wydarzenia
     expect(card.people.length).toBeGreaterThanOrEqual(4);
-    expect(card.forecast).toContain('Pierwsza noc');
+    expect(pl(card.forecast)).toContain('Pierwsza noc');
     expect(card.chance).toBeGreaterThanOrEqual(0.05);
     expect(card.chance).toBeLessThanOrEqual(0.85);
     expect(card.posts.map((x) => x.key)).toEqual(expect.arrayContaining(['brama', 'd1', 'd2', 'd3']));
@@ -77,7 +78,7 @@ describe('karta nocy', () => {
     if (card.chance >= 0.25) expect(Object.values(p.assign)).toContain(`warta:${card.posts[0].key}`);
     // spodziewane straty widać przed decyzją
     expect(card.loss.wood + card.loss.supplies).toBeGreaterThanOrEqual(0);
-    expect(card.advice.length).toBeGreaterThan(10);
+    expect(pl(card.advice).length).toBeGreaterThan(10);
   });
 
   it('niedozwolona opcja się nie ustawia, zatwierdzenie wysyła wyprawę i wartę', () => {
@@ -111,7 +112,7 @@ describe('karta nocy', () => {
       expect(Number.isFinite(r.dTrust) && Number.isFinite(r.dAnger)).toBe(true);
       if (r.raid !== 'wtargnięcie') expect(r.stolen.wood + r.stolen.supplies).toBe(0);
       // polityka zawsze ma kogoś na warcie: wraca zmęczony albo zasnął na warcie
-      const slept = r.lines.some((l) => /zasn(ął|ęła) na warcie/.test(l));
+      const slept = r.lines.some((l) => /zasn(ął|ęła) na warcie/.test(pl(l)));
       expect(r.tired.length > 0 || slept, `ziarno ${seed}`).toBe(true);
       reports++;
       steps
@@ -119,7 +120,7 @@ describe('karta nocy', () => {
         .forEach((card, n) => {
           if (!card.text.includes('wyprawa')) return;
           back++;
-          const lines = gov.reports[n].lines;
+          const lines = gov.reports[n].lines.map(pl);
           expect(lines.some((l) => l.includes('wrócił') || l.includes('wróciła') || l.includes('trafił'))).toBe(true);
         });
     }
@@ -307,8 +308,8 @@ describe('wydarzenia', () => {
         const d = def.make(h);
         if (d === null) continue;
         const choices = def.choices(h, d);
-        expect(typeof def.title(h, d)).toBe('string');
-        expect(def.text(h, d).length).toBeGreaterThan(10);
+        expect(typeof def.title(h, d).pl).toBe('string');
+        expect(def.text(h, d).pl.length).toBeGreaterThan(10);
         const c = choices.findIndex((x) => x.ok);
         if (c >= 0) choices[c].run();
         expect(Object.values(fx.stock).every(Number.isFinite)).toBe(true);
@@ -353,7 +354,7 @@ describe('stan', () => {
     gov.lawPending = false;
     gov.report = {
       day: 1,
-      lines: ['x'],
+      lines: [{ pl: 'x', en: 'x' }],
       raid: 'brak',
       stolen: emptyEffects().stock,
       loot: emptyEffects().stock,
@@ -388,7 +389,9 @@ describe('stan', () => {
     for (const f of fs.readdirSync(dir)) {
       const src = fs.readFileSync(path.join(dir, f), 'utf8');
       expect(src, f).not.toMatch(/from '\.\.\/sim\//);
-      expect(src, f).not.toMatch(/\bdocument\b|\bwindow\b/);
+      // bez treści napisów: angielskie zdania mówią o oknach („window”), a chodzi o DOM w kodzie
+      const code = src.replace(/'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g, "''");
+      expect(code, f).not.toMatch(/\bdocument\b|\bwindow\b/);
     }
   });
 });
@@ -569,8 +572,8 @@ describe('dyżur przy kozie: karta, rada, raport rano', () => {
     if (p?.k !== 'karta') throw new Error('brak karty');
     for (const cp of p.card.people) {
       const o = cp.options.find((x) => x.key === KOZA_KEY);
-      expect(o?.label).toBe('Czuwa przy kozie');
-      expect(o?.note).toMatch(/^Nie śpi i pilnuje ognia w kozie, drewna/);
+      expect(pl(o?.label)).toBe('Czuwa przy kozie');
+      expect(pl(o?.note)).toMatch(/^Nie śpi i pilnuje ognia w kozie, drewna/);
     }
     // o 20:00 do 6:00 jest 10 godzin, po 2 sztuki na godzinę; w zapasie całe drewno
     expect(p.card.wood).toEqual(nightWood(atr.input()));
@@ -578,7 +581,7 @@ describe('dyżur przy kozie: karta, rada, raport rano', () => {
     expect(p.card.wood!.have).toBe(atr.input().stock.wood);
     // dyżur kosztuje noc snu: zarząd go nie wstawia sam, tylko o nim radzi
     expect(Object.values(p.assign)).not.toContain(KOZA_KEY);
-    expect(p.card.advice).toMatch(/Niech ktoś czuwa przy kozie: drewna starczy/);
+    expect(pl(p.card.advice)).toMatch(/Niech ktoś czuwa przy kozie: drewna starczy/);
     // bez kozy zarządu (świat bez wnętrza) nie ma ani opcji, ani zapasu
     const { card } = makeCard(newGov(1), { ...atr.input(), kitchen: null });
     expect(card.wood).toBeUndefined();
@@ -602,20 +605,20 @@ describe('dyżur przy kozie: karta, rada, raport rano', () => {
     const { card } = makeCard(newGov(2), i);
     const who = i.people[1];
     const sleep = Object.fromEntries(i.people.map((p) => [p.id, 'sen']));
-    expect(nightAdvice(i, card, sleep)).toMatch(/Bez dyżuru koza zgaśnie w nocy/);
-    expect(nightAdvice(i, card, { ...sleep, [who.id]: KOZA_KEY })).toContain(
+    expect(pl(nightAdvice(i, card, sleep))).toMatch(/Bez dyżuru koza zgaśnie w nocy/);
+    expect(pl(nightAdvice(i, card, { ...sleep, [who.id]: KOZA_KEY }))).toContain(
       `Przy kozie czuwa ${who.name}, ale drewna starczy do około północy.`,
     );
     // pełny zapas: o kozie nic, zostaje zwykła rada
     const full = at(20, 30);
     const fullCard = makeCard(newGov(2), full).card;
-    expect(nightAdvice(full, fullCard, { ...sleep, [who.id]: KOZA_KEY })).not.toMatch(/kozie/);
+    expect(pl(nightAdvice(full, fullCard, { ...sleep, [who.id]: KOZA_KEY }))).not.toMatch(/kozie/);
     // bez drewna nie ma czego radzić o kozie
     const none = at(20, 1);
-    expect(nightAdvice(none, makeCard(newGov(2), none).card, sleep)).not.toMatch(/kozie/);
+    expect(pl(nightAdvice(none, makeCard(newGov(2), none).card, sleep))).not.toMatch(/kozie/);
     // zimna kuchnia: rada mówi, ile stopni
     const cold = { ...at(20, 8), kitchen: 12, kozaLit: false };
-    expect(nightAdvice(cold, makeCard(newGov(2), cold).card, sleep)).toMatch(
+    expect(pl(nightAdvice(cold, makeCard(newGov(2), cold).card, sleep))).toMatch(
       /Koza jest zimna, w kuchni 12°C\. Niech ktoś czuwa przy kozie/,
     );
   });
@@ -642,7 +645,7 @@ describe('dyżur przy kozie: karta, rada, raport rano', () => {
       expect(report.fire).toBeGreaterThanOrEqual(0);
       expect(report.fire).toBeLessThanOrEqual(1);
       expect(report.tired).toContain(id);
-      const line = report.lines.find((l) => l.includes('przy kozie'));
+      const line = report.lines.map(pl).find((l) => l.includes('przy kozie'));
       expect(line).toMatch(new RegExp(`^${name} czuwał(a)? przy kozie`));
       expect(line).toMatch(/Rano w kuchni (ciepło|chłodno|zimno), \d+°C\.$/);
       // noc bez snu: atrapa bez posterunków dostaje ją od zarządu, symulacja z posterunkami liczy ją sama
@@ -652,6 +655,6 @@ describe('dyżur przy kozie: karta, rada, raport rano', () => {
     // bez dyżuru: nikt nie czuwał, kuchnia rano i tak w raporcie
     const { report } = kozaNight(5, true, false);
     expect(report.koza).toEqual([]);
-    expect(report.lines.some((l) => /Rano w kuchni/.test(l))).toBe(true);
+    expect(report.lines.some((l) => /Rano w kuchni/.test(pl(l)))).toBe(true);
   });
 });

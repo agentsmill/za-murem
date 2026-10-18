@@ -10,6 +10,7 @@ import { applyGov } from '../../src/sim/gov.ts';
 import { createSim } from '../../src/sim/sim.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
+import { pl } from './po-angielsku.ts';
 
 const HORDE = { near: 3, pressing: 1, killed: 0, breaches: 0, bites: 0, tonight: 8 };
 
@@ -57,9 +58,9 @@ describe('zarząd w trybie zombie', () => {
     const atr = new Atrapa(5);
     const { fxs, cards } = play(gov, atr, at(2, 7), () => ({ horde: HORDE }));
     const card = cards[0];
-    expect(card.horde).toEqual({ size: 8, word: 'małe', fence: 0.55 });
-    expect(card.forecast).toMatch(/stado/i);
-    expect(card.forecast).not.toMatch(/szabrown/i);
+    expect(card.horde).toEqual({ size: 8, word: { pl: 'małe', en: 'small' }, fence: 0.55 });
+    expect(pl(card.forecast)).toMatch(/stado/i);
+    expect(pl(card.forecast)).not.toMatch(/szabrown/i);
     expect(card.posts[0].key).toBe('siatka');
     expect(card.people[0].options.some((o) => o.key === 'warta:siatka')).toBe(true);
     expect(fxs.every((fx) => fx.raid === null && !fx.raidResult)).toBe(true);
@@ -112,7 +113,7 @@ describe('zarząd w trybie zombie', () => {
         bitten += fx.bitten?.length ?? 0;
         finds += (fx.arms?.length ?? 0) + Object.values(fx.ammo ?? {}).reduce((a, b) => a + b, 0);
       }
-      const lines = gov.reports.flatMap((r) => r.lines).join(' ');
+      const lines = gov.reports.flatMap((r) => r.lines.map(pl)).join(' ');
       if (fxs.some((fx) => fx.bitten?.length)) expect(lines).toMatch(/ugryzion/);
     }
     expect(bitten).toBeGreaterThan(0);
@@ -140,7 +141,7 @@ describe('zarząd w trybie zombie', () => {
     play(gov, atr, at(1, 16, 2), extra);
     expect(gov.trust).toBe(t0 - 5);
     expect(gov.anger).toBe(a0 + 8);
-    expect(gov.log.filter((l) => l.txt.includes(dead.name) && /nie żyje/.test(l.txt))).toHaveLength(1);
+    expect(gov.log.filter((l) => pl(l.txt).includes(dead.name) && /nie żyje/.test(pl(l.txt)))).toHaveLength(1);
     play(gov, atr, at(1, 16, 5), extra);
     expect(gov.trust).toBe(t0 - 5);
   });

@@ -10,12 +10,14 @@
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
 import { makePerson, type Person } from '../content/people.ts';
+import { type Tx, tx, txCat } from '../core/jezyk.ts';
 import { rngOf } from '../core/rng.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
 import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, LootKey, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
+import { EVENTS_EN } from './warianty.en.ts';
 
 /** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
 const STREET_IDS: ReadonlySet<string> = new Set(STREET_EVENTS.map((e) => e.id));
@@ -78,13 +80,18 @@ const RES_KEY: Record<Res, StockKey | null> = {
   prad: null,
 };
 
-/** wydarzenia M1: z 0.3 z nakładką (pora, waga z miejscem, teksty według miejsca, drewno zamiast opału) i nowe */
+/** wydarzenia M1: z 0.3 z nakładką (pora, waga z miejscem, teksty według miejsca, drewno zamiast opału) i nowe.
+    Teksty wydarzeń z 0.3 są po polsku; angielskie daje EVENTS_EN (warianty.en.ts) z tych samych danych, a bez wpisu
+    angielska strona to polski tekst. */
 export const M1_EVENTS: GEventDef[] = [
   ...OLD_EVENTS.map((o): GEventDef => {
     const d = eventDef(o.id);
     if (!d) throw new Error(`brak wydarzenia ${o.id} w treści 0.3`);
     const base = (h: GovHost, x: unknown) => d.choices(h, x).map((c) => ({ ...c, label: drewno(c.label) }));
     const w = o.w;
+    const en = () => EVENTS_EN[o.id];
+    const title = (h: GovHost, x: unknown) => o.title?.(h, x) ?? drewno(d.title(h, x));
+    const text = (h: GovHost, x: unknown) => o.text?.(h, x) ?? drewno(d.text(h, x));
     return {
       id: d.id,
       once: d.once,
@@ -92,13 +99,28 @@ export const M1_EVENTS: GEventDef[] = [
       first: o.first,
       w: w ? (h) => w(h, d.w(h)) : d.w,
       make: o.make ?? d.make,
-      title: (h, x) => o.title?.(h, x) ?? drewno(d.title(h, x)),
-      text: (h, x) => o.text?.(h, x) ?? drewno(d.text(h, x)),
+      title: (h, x) => {
+        const pl = title(h, x);
+        return tx(pl, en()?.title(h, x) ?? pl);
+      },
+      text: (h, x) => {
+        const pl = text(h, x);
+        return tx(pl, en()?.text(h, x) ?? pl);
+      },
       choices: (h, x) => {
         const b = base(h, x);
-        if (o.choices) return o.choices(h, x, b);
-        const ls = o.labels?.(h, x) ?? [];
-        return b.map((c, k) => ({ ...c, label: ls[k] ?? c.label }));
+        let pl = b;
+        if (o.choices) pl = o.choices(h, x, b);
+        else {
+          const ls = o.labels?.(h, x) ?? [];
+          pl = b.map((c, k) => ({ ...c, label: ls[k] ?? c.label }));
+        }
+        const labels = en()?.labels(
+          h,
+          x,
+          pl.map((c) => c.label),
+        );
+        return pl.map((c, k) => ({ ...c, label: tx(c.label, labels?.[k] ?? c.label) }));
       },
       log: o.log,
     };
@@ -127,8 +149,15 @@ const toPerson = (p: GovPerson): Person => ({
 });
 
 /** EventHost z 0.3 na stanie zarządu: zapasy z wejścia, zmiany idą do skutków fx; z wydarzeniem ev wpisy do kroniki
-    z jego wyborów mają drewno zamiast opału i zwroty według miejsca */
-export function makeHost(st: GovState, i: GovInput, fx: GovEffects, ev?: GEventDef): GovHost {
+    z jego wyborów mają drewno zamiast opału i zwroty według miejsca, a z danymi i numerem wyboru (pick) polski wpis
+    z 0.3 dostaje angielski z EVENTS_EN */
+export function makeHost(
+  st: GovState,
+  i: GovInput,
+  fx: GovEffects,
+  ev?: GEventDef,
+  pick?: { d: unknown; k: number },
+): GovHost {
   const people = i.people.map(toPerson);
   const away = new Set(st.night?.confirmed ? st.night.exp.flatMap((e) => e.ids) : []);
   const res = (): Record<Res, number> => {
@@ -190,9 +219,11 @@ export function makeHost(st: GovState, i: GovInput, fx: GovEffects, ev?: GEventD
       fx.sick += n;
     },
     log: (txt, big) => {
+      if (typeof txt !== 'string') return logGov(st, i, txt, !!big, fx);
       let line = drewno(txt);
       for (const [a, b] of Object.entries(ev?.log?.(h) ?? {})) line = line.replaceAll(a, b);
-      logGov(st, i, line, !!big, fx);
+      const en = ev && pick ? EVENTS_EN[ev.id]?.log?.(line, h, pick.d, pick.k) : null;
+      logGov(st, i, tx(line, en ?? line), !!big, fx);
     },
     hqName: () => i.hqName ?? 'siedziby',
     buildingName: (b) => (b === 0 ? (i.hqName ?? 'siedziby') : 'z sąsiedztwa'),
@@ -219,7 +250,7 @@ export function makeHost(st: GovState, i: GovInput, fx: GovEffects, ev?: GEventD
     // dodatki M1
     hour: () => i.hour,
     holes: () => Math.max(0, fenceOf(i).holes.length - fx.patch),
-    weakName: () => fenceOf(i, fx.patch).holes[0]?.name ?? 'w siatce',
+    weakName: () => fenceOf(i, fx.patch).holes[0]?.name ?? tx('w siatce', 'in the fence'),
     patchHole: () => {
       fx.patch += 1;
     },
@@ -348,7 +379,10 @@ function show(st: GovState, i: GovInput, fx: GovEffects, ev: ActiveEvent | null)
   logGov(st, i, def.title(makeHost(st, i, fx), ev.d), false, fx);
 }
 
-export function eventView(st: GovState, i: GovInput) {
+export function eventView(
+  st: GovState,
+  i: GovInput,
+): { id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[] } | null {
   const ev = st.ev.active;
   const def = ev && byId.get(ev.id);
   if (!ev || !def) return null;
@@ -370,11 +404,11 @@ export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): bo
     st.ev.active = null;
     return false;
   }
-  const h = makeHost(st, i, fx, def);
+  const h = makeHost(st, i, fx, def, { d: ev.d, k });
   const c = def.choices(h, ev.d)[k];
   if (!c?.ok) return false;
   st.ev.active = null;
-  logGov(st, i, `${def.title(h, ev.d)}: ${c.label}.`, false, fx);
+  logGov(st, i, txCat(def.title(h, ev.d), ': ', c.label, '.'), false, fx);
   c.run();
   decision(st, i, 'wydarzenie');
   // odstęp liczy się od decyzji, żeby wydarzenia nie przychodziły jedno za drugim

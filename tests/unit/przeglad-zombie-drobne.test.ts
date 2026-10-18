@@ -12,6 +12,7 @@ import { houseOf, inHomeApt } from '../../src/sim/house.ts';
 import { gateTiles } from '../../src/sim/perimeter.ts';
 import { createSim, type Pawn, removeCore, Sim, type SimState, spawnZombie, type Thing } from '../../src/sim/sim.ts';
 import { mockBlock } from './interior-mock.ts';
+import { pl } from './po-angielsku.ts';
 
 const w = mockBlock();
 const size = w.size;
@@ -255,7 +256,7 @@ describe('drobne z przeglądu trybu zombie', () => {
     const notes = () => {
       const card = makeCard(newGov(3, 'zombie'), govInput(st, w, 0)).card;
       const opts = card.people.find((c) => c.id === st.people[a.person].id)!.options;
-      return (key: string) => opts.find((o) => o.key === `warta:${key}`)?.note;
+      return (key: string) => pl(opts.find((o) => o.key === `warta:${key}`)?.note);
     };
     const closed = notes();
     expect(closed('siatka')).toBe(NOTE);
