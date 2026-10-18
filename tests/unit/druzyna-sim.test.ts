@@ -30,7 +30,9 @@ function world(key: string): World {
     mode }) na starcie i po pierwszej dobie. Tryb zombie z 1–3 osobami się zmienił (broń ponad liczbę osób idzie do
     magazynu, decyzja 8 z projektu), więc go tu nie ma. Tryb zombie po dobie zmienił się 18.10.2026 przy scaleniu
     szwendaczy blisko siatki (c7a5f21 z tryb-zombie: pas 15–40 m za dnia, stado z okolicy), więc te dwa skróty są
-    z pelna-gra po tym scaleniu; zwykły tryb i starty bez zmian. */
+    z pelna-gra po tym scaleniu; zwykły tryb i starty bez zmian. Po raz drugi zmieniły się 18.10.2026 z płotem
+    odpornym na napór (zombie-plot: tłok ponad próg zamiast liniowego naporu, zużycie siatki), czyli od zużycia kafelków
+    pod stadem w pierwszej dobie. */
 const PRZED: Record<string, string> = {
   'przymorze zwykly 1 start': 'bf1fc378',
   'przymorze zwykly 1 doba': '7c2439bf',
@@ -41,9 +43,9 @@ const PRZED: Record<string, string> = {
   'przymorze zwykly 5 start': 'c1d08113',
   'przymorze zwykly 5 doba': 'fc74bf7e',
   'przymorze zombie 4 start': '601e5138',
-  'przymorze zombie 4 doba': 'f5eebaf7',
+  'przymorze zombie 4 doba': '42aaaf4a',
   'przymorze zombie 5 start': '6a4a7d1c',
-  'przymorze zombie 5 doba': 'b00f03bb',
+  'przymorze zombie 5 doba': 'eb0b4e94',
   'lanciego zwykly 1 start': '540c7ccc',
   'lanciego zwykly 2 start': '712940be',
   'lanciego zwykly 3 start': '6dfb0c87',

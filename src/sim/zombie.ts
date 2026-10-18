@@ -12,8 +12,40 @@ export const CHASE_SPEED = 0.5;
 /** wzrok w metrach: za dnia, nocą, nocą na człowieka w świetle */
 export const SIGHT_DAY = 10;
 export const SIGHT_NIGHT = 5;
-/** napór: tyle wytrzymałości kafelka siatki zdejmuje jeden szwendacz na krok (3,2 na godzinę gry) */
-export const PUSH = 0.004;
+/** Napór na siatkę, łatę i zasieki (docs/POSTEP.md, „Płot odporny na napór”). Kilku szwendaczy siatki nie przewróci:
+    konstrukcję niszczy dopiero tłok, czyli więcej niż FENCE_BEARS napierających w promieniu CROWD_RADIUS kafelków od
+    naciskanego miejsca (liczy się razem z nim). Poniżej progu napierający tylko zużywają kafelek (PUSH_WEAR na krok,
+    nie poniżej FENCE_FLOOR), powyżej każdy zdejmuje jeszcze PUSH_SURGE razy tylu, ilu jest ponad próg. Tak tłum
+    18 szwendaczy zbija świeży kafelek w niecałe dwie godziny gry, 22 w trzy kwadranse, 30 w kwadrans, a 16 nie zbije
+    go nigdy (wszyscy na jednym kafelku; rozsiani po siatce zużywają ją tylko). */
+export const CROWD_RADIUS = 2;
+export const FENCE_BEARS = 16;
+export const FENCE_FLOOR = 25;
+export const PUSH_WEAR = 0.002;
+export const PUSH_SURGE = 0.001;
+
+/** Wytrzymałość kafelka (0–100), którą w jednym kroku zdejmuje jeden napierający, gdy w tłoku napiera `crowd`
+    szwendaczy (z nim), a kafelek ma `hp`. */
+export function pushOf(crowd: number, hp: number): number {
+  if (crowd > FENCE_BEARS) return PUSH_WEAR + PUSH_SURGE * (crowd - FENCE_BEARS);
+  return Math.max(0, Math.min(PUSH_WEAR, hp - FENCE_FLOOR));
+}
+
+/** Tłok przy kafelku: ilu napierających jest w promieniu CROWD_RADIUS od niego. `pressing` to liczba napierających
+    według naciskanego kafelka (kafelek siatki → ilu na niego napiera). */
+export function crowdNear(pressing: ReadonlyMap<number, number>, size: number, tile: number): number {
+  const x = tile % size;
+  const y = Math.floor(tile / size);
+  let n = 0;
+  for (let dy = -CROWD_RADIUS; dy <= CROWD_RADIUS; dy++)
+    for (let dx = -CROWD_RADIUS; dx <= CROWD_RADIUS; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < size && ny < size) n += pressing.get(ny * size + nx) ?? 0;
+    }
+  return n;
+}
+
 /** ugryzienie: zasięg w metrach, kroki między ugryzieniami, obrażenia, szansa trafienia */
 export const BITE_REACH = 1.1;
 export const BITE_CD = 30;

@@ -5,8 +5,10 @@
    wyjście i skróty są takie jak przed krokiem 5.
    Flaga może stać gdziekolwiek wśród argumentów; `ARGUMENTY` to argumenty pozycyjne bez flag (ziarno, dni, tłum…).
    Druga flaga, `--sasiedzi` (M2 fala 2), włącza w botach gracza, który od dnia 2 chodzi do sąsiednich budynków
-   (tests/unit/sasiedzi-play.ts). Inny argument od `--` (literówka, np. `--mieszkanc`) kończy bota z błędem, zamiast
-   cicho zagrać bez tego, o co chodziło.
+   (tests/unit/sasiedzi-play.ts). Dwie ostatnie znają tylko bot trybu zombie, a pozostałe boty kończą z błędem, kiedy je
+   dostaną (`tylkoZombie`): `--demo=NAZWA` (przymorze, lanciego, zielonki) wybiera osiedle, `--opal` dokłada do kozy
+   z niczego, jakby opału nie brakowało. Inny argument od `--` (literówka, np. `--mieszkanc`) kończy bota z błędem,
+   zamiast cicho zagrać bez tego, o co chodziło.
    Ziarno świata to ziarno bota (nie z adresu jak w grze), żeby przebiegi z flagą i bez niej były porównywalne. */
 
 import fs from 'node:fs';
@@ -20,13 +22,34 @@ import { buildWorld, type World } from '../src/world/world.ts';
 const PUBLIC = path.resolve(import.meta.dirname, '../public');
 const FLAGA = '--mieszkancy';
 const FLAGA_SASIEDZI = '--sasiedzi';
-const FLAGI = [FLAGA, FLAGA_SASIEDZI];
+const FLAGA_OPAL = '--opal';
+const FLAGI = [FLAGA, FLAGA_SASIEDZI, FLAGA_OPAL];
 
-const nieznane = process.argv.slice(2).filter((a) => a.startsWith('--') && !FLAGI.includes(a));
+const FLAGA_DEMO = '--demo=';
+const jestDemo = (a: string) => a.startsWith(FLAGA_DEMO);
+
+const nieznane = process.argv.slice(2).filter((a) => a.startsWith('--') && !FLAGI.includes(a) && !jestDemo(a));
 if (nieznane.length) {
   console.error(
-    `Nieznany argument: ${nieznane.join(', ')}. Bot zna tylko flagi ${FLAGI.join(' i ')} (reszta to liczby).`,
+    `Nieznany argument: ${nieznane.join(', ')}. Bot zna tylko flagi ${FLAGI.join(' i ')} oraz ${FLAGA_DEMO}NAZWA (reszta to liczby).`,
   );
+  process.exit(2);
+}
+
+/** Osiedle z `--demo=NAZWA` albo null (bot gra na Przymorzu). Nazwa musi mieć plik w public/demo/. */
+export const DEMO: string | null = process.argv.find(jestDemo)?.slice(FLAGA_DEMO.length) ?? null;
+if (DEMO !== null && !/^[a-z]+$/.test(DEMO)) {
+  console.error(`Nieznane demo: „${DEMO}”. Dema to pliki public/demo/*.json (przymorze, lanciego, zielonki).`);
+  process.exit(2);
+}
+
+/** Czy bot ma dokładać do kozy z niczego (tylko bot trybu zombie: mierzy siatkę i wartę bez wpływu zimna). */
+export const OPAL = process.argv.includes(FLAGA_OPAL);
+
+/** Boty bez `--demo=` i `--opal` kończą z błędem, kiedy je dostaną, zamiast cicho zagrać bez nich. */
+export function tylkoZombie(bot: string): void {
+  if (DEMO === null && !OPAL) return;
+  console.error(`${bot} nie zna ${DEMO === null ? FLAGA_OPAL : `${FLAGA_DEMO}NAZWA`} (tylko bot trybu zombie).`);
   process.exit(2);
 }
 
@@ -35,7 +58,7 @@ export const MIESZKANCY = process.argv.includes(FLAGA);
 /** Czy bot ma chodzić do sąsiednich budynków (M2 fala 2). */
 export const SASIEDZI = process.argv.includes(FLAGA_SASIEDZI);
 /** Argumenty pozycyjne bez flag: `ARGUMENTY[0]` to pierwszy argument po nazwie skryptu. */
-export const ARGUMENTY: string[] = process.argv.slice(2).filter((a) => !FLAGI.includes(a));
+export const ARGUMENTY: string[] = process.argv.slice(2).filter((a) => !FLAGI.includes(a) && !jestDemo(a));
 
 /** `fetch` dla wczytaj.ts: ścieżka względna to plik w public/, brak pliku to 404. */
 const zPliku: typeof fetch = async (adres) => {
