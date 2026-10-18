@@ -83,7 +83,6 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | łóżka piętrowe | bunk beds | |
 | ogródek | vegetable patch | |
 | zasieki | barricade | |
-| ognisko (na podwórku) | campfire | |
 | kuchenka, umywalka, wanna | cooker, washbasin, bath | piec w mieszkaniu też „cooker” |
 | przedpokój, pokój, sala, hala, zaplecze | hallway, room, hall, shed, back room | |
 | rodzina Kowalskich | the Kowalski family | nazwisko w formie męskiej |
