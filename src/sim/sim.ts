@@ -9,6 +9,7 @@ import { PROFS } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
+import { IN, type Interior } from '../world/interior.ts';
 import type { Tree, World } from '../world/world.ts';
 import type { Wreck } from '../world/wrecks.ts';
 import {
@@ -118,6 +119,67 @@ import {
 } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
 import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP } from './perimeter.ts';
+import {
+  atakOdRazu,
+  type DrzwiStan,
+  domTeraz,
+  domWyzej,
+  domyZapasowe,
+  drzwiBudynku,
+  type Gospodarstwo,
+  gid,
+  gidB,
+  gidRoom,
+  HALAS,
+  type Info,
+  type KontekstSpotkania,
+  kafelkiZajete,
+  kosztPlotu,
+  type LokatorzyBudynku,
+  LUP_MATS,
+  lupMieszkania,
+  lupUslug,
+  mieszkalny,
+  mieszkaniaZaDrzwiami,
+  moznaPrzeszukac,
+  type Napis,
+  NOC_BIORA,
+  NOC_POKOJE,
+  nocnyGosc,
+  nowyBudynek,
+  ODBIJANIE_TICKS,
+  OTWIERANIE_TICKS,
+  PIETRO_TICKS,
+  PUKANIE_TICKS,
+  pietraBudynku,
+  pietro,
+  plotDla,
+  poHalasie,
+  pokojSasiada,
+  przechodnie,
+  rngOfPlace,
+  type SasiedniBudynek,
+  type Sasiedzi,
+  type Skutek,
+  type Spotkanie,
+  skutek,
+  solidCell,
+  stanDrzwi,
+  szabrownicy,
+  ugryzionyOd,
+  uSasiada,
+  WARIANTY_PLOTU,
+  type WariantPlotu,
+  WYWAZ_KLATKA_TICKS,
+  WYWAZ_MIESZKANIE_TICKS,
+  type WyborSpotkania,
+  wnetrze,
+  wybory,
+  ZABIJANIE_DESKI,
+  ZABIJANIE_TICKS,
+  type Zamiar,
+  zostaja,
+} from './sasiedzi.ts';
 import {
   CARRY_MATS,
   CARRY_REACH,
@@ -262,6 +324,10 @@ const M2_JOBS = new Set<JobKind>([
   'wreck',
   'carry',
   'saw',
+  'door',
+  'loot',
+  'upstairs',
+  'plot',
   'trade',
   'rob',
   'talk',
@@ -387,9 +453,20 @@ export type JobKind =
   | 'amputate'
   | 'craft'
   | 'brace'
+  /** surowce: wrak (target: lewy górny kafelek), noszenie łupu na podwórko (target: sterta, from: kafelek, przy którym
+      zbiera), warsztat (target: warsztat) */
   | 'wreck'
   | 'carry'
   | 'saw'
+  /** M2 fala 2: praca przy cudzych drzwiach (what: open, knock, force, board, unboard; target: kafelek drzwi),
+      przeszukanie pomieszczenia sąsiada (target: gid), czekanie na wybór w spotkaniu (target: numer spotkania) */
+  | 'door'
+  | 'loot'
+  | 'meet'
+  /** etap 2: piętro sąsiada (target: indeks budynku, tile: kafelek przy schodach); w fazie 1 osoba jest na górze */
+  | 'upstairs'
+  /** etap 3: wspólny płot (target: budynek; materiał jak przy budowie, potem praca) */
+  | 'plot'
   | 'trader'
   | 'trade'
   | 'rob'
@@ -459,13 +536,16 @@ export interface Job {
 }
 
 /** zarząd (rdzeń, polecenia), tłum (tylko do pomiaru wydajności, za siatką), mieszkańcy siedziby
-    (tło z planem dnia), szabrownicy (obcy z napadu; nazwa jak w liście obcych rysowania, src/render/game.ts) */
+    (tło z planem dnia), szabrownicy (obcy z napadu; nazwa jak w liście obcych rysowania, src/render/game.ts),
+    szwendacze, lokatorzy sąsiednich budynków (M2 fala 2: pionki tylko w trakcie spotkania i po nim, dopóki zarząd
+    jest w ich budynku), handlarz pod bramą, wędrowcy, obce ekipy i ludzie handlarza (zbir) */
 export type PawnKind =
   | 'core'
   | 'crowd'
   | 'resident'
   | 'szabrownik'
   | 'zombie'
+  | 'sasiad'
   | 'handlarz'
   | 'wedrowiec'
   | 'obcy'
@@ -619,11 +699,26 @@ export type Command =
   | { t: 'dismantle'; ids: number[]; thing: number }
   | { t: 'repair'; ids: number[]; damage: number }
   | { t: 'claim'; ids: number[]; apt: number }
-  /** surowce: przeszukać albo rozebrać wrak (kafelek pod nim albo obok), zanieść stertę zza siatki na podwórko,
-      przerobić w warsztacie drewno na deski albo złom na części (n sztuk po kolei) */
+  /** surowce: przeszukać albo rozebrać wrak (kafelek pod nim albo obok), zanieść stertę zza siatki na podwórko (także
+      z wnętrza sąsiedniego budynku, wtedy razem z resztą łupu z tego budynku), przerobić w warsztacie drewno na deski
+      albo złom na części (n sztuk po kolei) */
   | { t: 'wreck'; ids: number[]; tile: number; how: 'szukaj' | 'rozbierz' }
   | { t: 'carry'; ids: number[]; thing: number }
   | { t: 'saw'; ids: number[]; what: Product; n: number }
+  /** M2 fala 2 (docs/M2-fala-2.md): cudze drzwi (kafelek drzwi budynku albo mieszkania): otworzyć (przy otwartych:
+      wejść), zapukać, wyważyć, zabić deskami, odbić deski */
+  | { t: 'open' | 'knock' | 'force' | 'board' | 'unboard'; ids: number[]; door: number }
+  /** przeszukać pomieszczenie sąsiedniego budynku (lokalny numer pomieszczenia we wnętrzu budynku bid) */
+  | { t: 'loot'; ids: number[]; bid: number; room: number }
+  /** wybór w spotkaniu z lokatorami (ids puste) */
+  | { t: 'meet'; ids: number[]; nr: number; choice: WyborSpotkania }
+  /** etap 2: przeszukać następne piętro otwartego budynku (tile: kafelek schodów) */
+  | { t: 'upstairs'; ids: number[]; bid: number; tile: number }
+  /** gra sieciowa: nowa lista drzwi klatek zajętych przez inne drużyny (ids puste) */
+  | { t: 'zajete'; ids: number[]; drzwi: number[] }
+  /** etap 3: otoczyć otwarty budynek wspólnym płotem (plan i praca), a po skończonej pracy (ids puste) nowa siatka */
+  | { t: 'enclose'; ids: number[]; bid: number; wariant?: WariantPlotu }
+  | { t: 'otocz'; ids: number[]; bid: number }
   /** handlarz: włączyć (stary zapis, ids puste), wymienić się (oferta k), napaść na niego */
   | { t: 'obcy'; ids: number[] }
   | { t: 'trade'; ids: number[]; offer: number }
@@ -769,8 +864,62 @@ export interface SimState {
   builds: BuildPlan[];
   /** wraki przeszukane i rozebrane (lewy górny kafelek), rosnąco; brak, dopóki nikt nie przeszukał wraku */
   wraki?: WreckMark[];
+  /** sąsiednie budynki (M2 fala 2): nie ma go, dopóki zarząd nie dotknie cudzych drzwi, więc gra bez sąsiadów ma ten
+      sam stan i skrót co przed falą 2, a stary zapis wczytuje się bez zmian */
+  sasiedzi?: Sasiedzi;
+  /** gra sieciowa (fala 2): drzwi klatek zajętych przez inne drużyny, rosnąco; zamknięte na stałe razem z tym, co za
+      nimi. Nie ma go w grze bez sieci. */
+  zajete?: number[];
+  /** wspólny płot (fala 2, etap 3): otoczone budynki, kształt siatki po ostatnim otoczeniu i plan w toku; nie ma go,
+      dopóki nikt nie zaczął płotu */
+  plot?: PlotStan;
   /** handlarz pod bramą (src/sim/handlarz.ts); tylko z opcją obcy albo po poleceniu 'obcy' */
   obcy?: Obcy;
+}
+
+/** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
+    i ile jej trzeba, kto pracuje (−1: nikt), kafelek podwórka, z którego się stawia, i wariant materiału z menu
+    (zapis sprzed wariantów dostaje w konstruktorze deskę i złom) */
+export interface PlotPlan {
+  bid: number;
+  need: Partial<Record<Mat, number>>;
+  have: Partial<Record<Mat, number>>;
+  work: number;
+  total: number;
+  by: number;
+  stand: number;
+  wariant: WariantPlotu;
+}
+
+export interface PlotStan {
+  /** otoczone budynki po kolei */
+  bids: number[];
+  /** kształt siatki po ostatnim otoczeniu (kafelki rosnąco, dziury ze startu na obwodzie, podwórko); brama ze świata */
+  ksztalt?: { tiles: number[]; hole: number[]; yard: number[] };
+  plan?: PlotPlan;
+}
+
+/** Siatka świata według wspólnego płotu: pierwotna zostaje w fenceBaza, a fence i jej kafelki w blocked mają kształt
+    ze stanu (bez kształtu wraca pierwotna). Świat zmienia się w miejscu, bo to ten sam obiekt dla rysowania, pamięci
+    wnętrz i klucza zapisu; siatka stoi zawsze na wolnych kafelkach, więc blocked wraca bez śladu. */
+export function ustawSiatke(w: World, k: PlotStan['ksztalt'] | undefined): void {
+  const baza = w.fenceBaza ?? w.fence;
+  const teraz = w.fence;
+  if (!baza || (!k && teraz === baza)) return;
+  for (const t of teraz.tiles) w.blocked[t] = 0;
+  for (const t of baza.tiles) w.blocked[t] = 1;
+  for (const t of baza.hole) w.blocked[t] = 0;
+  if (!k) {
+    w.fence = baza;
+    delete w.fenceBaza;
+    return;
+  }
+  for (const t of baza.tiles) w.blocked[t] = 0;
+  const f = { tiles: k.tiles, hole: k.hole, gate: baza.gate, yard: k.yard };
+  for (const t of f.tiles) w.blocked[t] = 1;
+  for (const t of f.hole) w.blocked[t] = 0;
+  w.fenceBaza = baza;
+  w.fence = f;
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -827,6 +976,8 @@ export interface SimOpts {
   crowd?: number;
   /** tryb gry, domyślnie zwykły */
   mode?: GameMode;
+  /** gra sieciowa: drzwi klatek zajętych przez inne drużyny na start (później polecenie zajete) */
+  zajete?: readonly number[];
   /** handlarz pod bramą za dnia (src/sim/handlarz.ts), tylko w zwykłym trybie; gra go włącza, boty i testy bez
       tej opcji grają jak przed nim (losowanie terminu idzie ze st.rng dopiero po całej reszcie startu) */
   obcy?: boolean;
@@ -883,7 +1034,8 @@ function homeStove(h: HouseLike, size: number, things: Thing[]): Thing | undefin
 /** czy da się teraz gotować: są zapasy, a kuchenka ma gaz albo koza zarządu się pali */
 export function canCookIn(st: SimState, w: World): boolean {
   const h = houseOf(w);
-  if (!h || !st.things.some((t) => t.kind === 'jedzenie' && t.n > 0)) return false;
+  if (!h || !st.things.some((t) => t.kind === 'jedzenie' && t.n > 0 && !uSasiada(st, w, t.y * w.size + t.x)))
+    return false;
   return (homeStove(h, w.size, st.things)?.fuel ?? 0) > 0 || (homeKoza(h, w.size, st.things)?.fuel ?? 0) > 0;
 }
 
@@ -1076,6 +1228,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     p.wait = Math.floor(rnd() * 200);
     st.pawns.push(p);
   }
+  if (opts.zajete?.length) st.zajete = [...new Set(opts.zajete)].sort((a, b) => a - b);
   if (opts.obcy) st.obcy = newObcy(st);
   return st;
 }
@@ -1171,6 +1324,8 @@ export function takeStock(st: SimState, w: World, key: keyof Loot, n: number): n
   for (const ok of order)
     for (const t of st.things.filter(ok)) {
       if (left <= 0) break;
+      // łup we wnętrzu sąsiada nie jest jeszcze nasz (M2 fala 2)
+      if (uSasiada(st, w, t.y * size + t.x)) continue;
       const k = Math.min(t.n, left);
       t.n -= k;
       left -= k;
@@ -1296,6 +1451,17 @@ export function capOf(st: SimState, w: World): number {
     zarządu można spalić, mieszkańców się nie rusza). W pustym mieszkaniu dopiero po przeszukaniu pomieszczenia:
     najpierw trzeba zajrzeć, co tam jest (przeszukanie to główne źródło materiałów). Dla menu i polecenia. */
 export function dismantlable(st: SimState, w: World, t: Thing): boolean {
+  // M2 fala 2: u sąsiada śmieci i meble pustego mieszkania dopiero po przeszukaniu pomieszczenia, u lokatorów nic
+  if (uSasiada(st, w, t.y * w.size + t.x)) {
+    const ps = pokojSasiada(st, w, t.y * w.size + t.x);
+    const b = ps ? st.sasiedzi!.budynki[ps.k] : undefined;
+    if (!ps || !b) return false;
+    const r = wnetrze(w, b.bid).rooms[ps.room];
+    const m = r.apt >= 0 ? b.mieszkania.find((x) => x.apt === r.apt) : undefined;
+    const searched = r.apt < 0 ? b.przeszukane.includes(ps.room) : !!m?.przeszukane.includes(ps.room);
+    if (!searched || (m && m.stan !== 'puste')) return false;
+    return RUBBISH.has(t.kind) || !!DISMANTLE[t.kind];
+  }
   const h = houseOf(w);
   const room = h ? h.room[t.y * w.size + t.x] : -1;
   const g = h && room >= 0 ? st.apts.find((a) => a.apt === h.rooms[room].apt) : undefined;
@@ -1702,9 +1868,20 @@ export class Sim {
       zamkniętą bramą nie), tłum do pomiarów (za siatką, bez mieszkania zarządu), obcy po stronie ulicy (bez podwórka
       i wnętrz: tak podchodzą pod siatkę i uciekają spod niej, nie skracając sobie drogi przez podwórko) */
   private lay: Record<
-    'resident' | 'szabrownik' | 'zombie' | 'crowd' | 'outside',
+    'resident' | 'szabrownik' | 'zombie' | 'crowd' | 'outside' | 'sasiad',
     { blocked: Uint8Array; reg: Int32Array }
   >;
+  /** M2 fala 2: nakładka wnętrz otwartych sąsiednich budynków (kod komórki IN i pomieszczenie gid na kafelek; null bez
+      otwartych budynków) i kafelki posadzki każdego pomieszczenia sąsiada; poza stanem, bo wynika ze świata i wpisów */
+  private nbCell: Uint8Array | null = null;
+  private nbRoom: Int32Array | null = null;
+  private readonly nbTiles = new Map<number, number[]>();
+  /** rośnie przy każdej zmianie wnętrz i drzwi sąsiadów (rysowanie przelicza przekrój tylko po zmianie) */
+  wersjaSasiadow = 0;
+  /** podglądy wpisów budynków do karty budynku (poza stanem, budynekDoKarty) */
+  private podglady = new Map<number, SasiedniBudynek>();
+  /** lokatorzy budynku z generatora mieszkańców (ustawia gra albo bot z tabelami); bez niego lokatorzy zapasowi */
+  lokatorzy: ((bid: number) => LokatorzyBudynku | null) | null = null;
   /** mieszkanie zarządu z drzwiami (1) albo null */
   private readonly mask: Uint8Array | null;
   /** pora wspólnego posiłku: mieszkańcy mogą wejść do mieszkania zarządu, do stołu */
@@ -1717,14 +1894,15 @@ export class Sim {
   /** pomieszczenie pod nogami: jak interior.room, ale drzwi należą do sąsiedniego pomieszczenia */
   private readonly roomOf: Int16Array;
   private readonly dry: number;
-  /** kafelki podwórka przy bramie, na których stoi warta (najbliżej środka bramy najpierw) */
-  private readonly gateStand: number[];
+  /** kafelki podwórka przy bramie, na których stoi warta (najbliżej środka bramy najpierw); to i maski siatki niżej
+      liczy przeliczSiatke (także po wspólnym płocie) */
+  private gateStand: number[] = [];
   /** kafelek za bramą, na którym znika i pojawia się wyprawa (−1: świat bez siatki) */
-  readonly exitTile: number;
+  exitTile = -1;
   /** kafelek przed drzwiami siedziby, do którego wraca wyprawa */
   private readonly door: number;
   /** kafelki siatki i bramy (1): przez nie da się sięgnąć tylko dzidą, kuszą i bronią palną */
-  private readonly fenceMask: Uint8Array;
+  private fenceMask: Uint8Array = new Uint8Array(0);
   /** zabici w bieżącym kroku (znikają po pętli pionków) */
   private readonly graveyard = new Set<number>();
   /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy,
@@ -1739,13 +1917,15 @@ export class Sim {
   /** wyszukiwania dróg szwendaczy w tym kroku */
   private zbudget = 0;
   /** kafelki podwórka (1) i to, czy w bieżącym kroku jest na nim wróg (liczone raz na krok) */
-  private readonly yardMask: Uint8Array;
+  private yardMask: Uint8Array = new Uint8Array(0);
   private dangerAt = -1;
   private danger = false;
 
   constructor(w: World, st: SimState) {
     this.w = w;
     this.st = st;
+    // M2 fala 2, etap 3: siatka świata według wspólnego płotu ze stanu (bez niego pierwotna)
+    ustawSiatke(w, st.plot?.ksztalt);
     // zapis sprzed broni: pusty magazyn i bez amunicji (bez losowania, żeby skrót zależał tylko od stanu)
     st.store.arms ??= [];
     st.store.ammo ??= noAmmo();
@@ -1759,6 +1939,8 @@ export class Sim {
     }
     st.dead ??= [];
     st.tally ??= zeroTally();
+    // zapis z planem wspólnego płotu sprzed wariantów materiału: deska i złom na metr
+    if (st.plot?.plan) st.plot.plan.wariant ??= 'mieszany';
     migrate(st, w);
     // zapis sprzed Thing.dead: zwłoki trzymały numer wpisu zmarłego w owner
     for (const t of st.things)
@@ -1776,6 +1958,8 @@ export class Sim {
     this.reg = new Int32Array(0);
     this.lay = {} as Sim['lay'];
     this.mealDoor = this.mealOpen();
+    // wnętrza otwartych sąsiednich budynków ze stanu (wczytany zapis) przed pierwszą przechodniością
+    if (st.sasiedzi) this.przeliczNakladke();
     this.rebuild();
     this.links = h ? roomLinks(h, w.size) : [];
     this.kinds = h ? h.rooms.map((r) => r.kind) : [];
@@ -1799,6 +1983,19 @@ export class Sim {
     this.dry = dryTreeOf(w);
     const hq = w.buildings[w.hq];
     this.door = hq?.entrances[0]?.out ?? -1;
+    this.przeliczSiatke();
+    if (h) {
+      const fires = this.fires();
+      this.boost = heatBoost(this.kinds, this.links, fires, this.outdoor());
+      this.light = roomLight(this.kinds.length, this.links, fires);
+    }
+  }
+
+  /** Posterunek przy bramie, wyjście za bramę, maski siatki i podwórka oraz numery kafelków siatki ze świata (po
+      wspólnym płocie od nowa). Liczone ze świata (z dziurami zamkniętymi), nie ze stanu: ścięte drzewo albo ognisko nie
+      może ich przesunąć, bo gra wczytana z zapisu musi iść dalej tak samo. */
+  private przeliczSiatke(): void {
+    const w = this.w;
     const shape = fenceShape(w);
     const gate = gateTiles(w);
     const size = w.size;
@@ -1807,8 +2004,6 @@ export class Sim {
     const gx = gate.reduce((a, g) => a + (g % size) + 0.5, 0) / Math.max(1, gate.length);
     const gy = gate.reduce((a, g) => a + Math.floor(g / size) + 0.5, 0) / Math.max(1, gate.length);
     const dg = (i: number) => ((i % size) + 0.5 - gx) ** 2 + (Math.floor(i / size) + 0.5 - gy) ** 2;
-    // posterunek i wyjście liczone ze świata (z dziurami zamkniętymi), nie ze stanu: ścięte drzewo albo ognisko nie może
-    // ich przesunąć, bo gra wczytana z zapisu musi iść dalej tak samo
     const still = w.blocked.slice();
     for (const t of shape?.hole ?? []) still[t] = 1;
     this.gateStand = (shape?.yard ?? [])
@@ -1817,15 +2012,11 @@ export class Sim {
     this.exitTile = exitOf(w);
     this.fenceMask = new Uint8Array(size * size);
     for (const t of shape?.tiles ?? []) this.fenceMask[t] = 1;
+    this.fenceIndex.clear();
     for (const [k, t] of (shape?.tiles ?? []).entries()) this.fenceIndex.set(t, k);
     this.yardMask = new Uint8Array(size * size);
     for (const t of shape?.yard ?? []) this.yardMask[t] = 1;
     for (const t of gate) this.fenceMask[t] = 1;
-    if (h) {
-      const fires = this.fires();
-      this.boost = heatBoost(this.kinds, this.links, fires, this.outdoor());
-      this.light = roomLight(this.kinds.length, this.links, fires);
-    }
   }
 
   push(c: Command): void {
@@ -1864,6 +2055,10 @@ export class Sim {
       this.mealDoor ? null : this.mask,
       solid,
     );
+    // wnętrza otwartych sąsiednich budynków: zarząd i obcy (szwendacze, szabrownicy) wchodzą przez otwarte i wyważone
+    // drzwi; mieszkańcy siedziby i tłum zostają przy swoim
+    this.nalozSasiadow(core);
+    this.nalozSasiadow(stranger);
     this.coreBlocked.set(core);
     this.blocked.set(stranger);
     this.reg = labelRegions(this.coreBlocked, size);
@@ -1889,6 +2084,8 @@ export class Sim {
       zombie: { blocked: zombie, reg: labelRegions(zombie, size) },
       crowd: res,
       outside: { blocked: outside, reg: labelRegions(outside, size) },
+      // lokatorzy sąsiadów na czas spotkania chodzą jak zarząd
+      sasiad: { blocked: this.coreBlocked, reg: this.reg },
     };
     // tryb zombie: pole odległości do siatki po stronie ulicy, pas za dnia, okolica stada i krawędź mapy (zapas)
     if (modeOf(this.st) === 'zombie' && shape) {
@@ -1991,6 +2188,12 @@ export class Sim {
     if (st.tick % TICKS_PER_HOUR === 0 && hourOf(st.tick) === 6) for (const p of st.pawns) p.ate = 0;
     if (st.tick % (TICKS_PER_HOUR / 2) === 0) this.syncMealDoor();
     if (st.raid) this.raidTick(st.raid);
+    // M2 fala 2: nocni goście w otwartych budynkach o 2:00, napis o 7:00 (tylko gdy zarząd dotknął cudzych drzwi)
+    if (st.sasiedzi && st.tick % TICKS_PER_HOUR === 0) {
+      const h = hourOf(st.tick);
+      if (h === 2) this.nocniGoscie();
+      else if (h === 7) this.ranoPoGosciach();
+    }
     if (st.obcy) {
       this.traderClock();
       this.wandererClock();
@@ -2028,9 +2231,16 @@ export class Sim {
           this.fightTick(p, p.job);
           continue;
         }
+        // M2 fala 2: w budynku, w którym po nocy zostali szabrownicy, czeka spotkanie
+        if (p.kind === 'core' && this.nbRoom && (st.tick + p.id) % THINK_EVERY === 0 && this.naSzabrownikow(p))
+          continue;
       }
       if (p.kind === 'zombie') {
         this.zombieTick(p);
+        continue;
+      }
+      if (p.kind === 'sasiad') {
+        this.sasiadTick(p);
         continue;
       }
       if (p.wrogi) {
@@ -2177,6 +2387,26 @@ export class Sim {
       this.arm(c.ids, c.weapon);
       return;
     }
+    // wybór w spotkaniu z lokatorami nie potrzebuje zaznaczonych (nasza osoba już przy nich stoi)
+    if (c.t === 'meet') {
+      this.wyborSpotkania(c.nr, c.choice);
+      return;
+    }
+    // wspólny płot skończony: nowa siatka od tego kroku (praca skończyła się w poprzednim)
+    if (c.t === 'otocz') {
+      this.otocz(c.bid);
+      return;
+    }
+    // gra sieciowa: klatki innych drużyn zamknięte od następnego kroku (przechodniość od nowa)
+    if (c.t === 'zajete') {
+      const d = [...new Set(c.drzwi)].sort((a, b) => a - b);
+      if (d.join() === (st.zajete ?? []).join()) return;
+      if (d.length) st.zajete = d;
+      else delete st.zajete;
+      this.rebuild();
+      this.wersjaSasiadow++;
+      return;
+    }
     if (c.t === 'laws') {
       const was = st.laws.gateClosed;
       st.laws = { ...st.laws, ...c.laws };
@@ -2235,6 +2465,11 @@ export class Sim {
     else if (c.t === 'wreck') this.startWreck(pawns[0], c.tile, c.how);
     else if (c.t === 'carry') this.startCarry(pawns[0], c.thing);
     else if (c.t === 'saw') this.startSaw(pawns[0], c.what, c.n);
+    else if (c.t === 'open' || c.t === 'knock' || c.t === 'force' || c.t === 'board' || c.t === 'unboard')
+      this.orderDoor(pawns, c.t, c.door);
+    else if (c.t === 'loot') this.startLoot(pawns[0], c.bid, c.room);
+    else if (c.t === 'upstairs') this.startUpstairs(pawns[0], c.bid, c.tile);
+    else if (c.t === 'enclose') this.startEnclose(pawns[0], c.bid, c.wariant);
     else if (c.t === 'trade') this.startTrade(pawns[0], c.offer);
     else if (c.t === 'rob') this.startRob(pawns[0]);
     else if (c.t === 'talk') this.startTalk(pawns[0], c.target);
@@ -2596,7 +2831,7 @@ export class Sim {
   }
 
   private food(): Thing | undefined {
-    return this.st.things.find((t) => t.kind === 'jedzenie' && t.n > 0);
+    return this.st.things.find((t) => t.kind === 'jedzenie' && t.n > 0 && !this.uSasiada(t));
   }
 
   private furnitureAt(x: number, y: number): boolean {
@@ -3331,6 +3566,17 @@ export class Sim {
         return this.carryWork(p, j, at);
       case 'saw':
         return this.sawWork(p, j, at);
+      case 'door':
+        return this.drzwiPraca(p, j, at);
+      case 'loot':
+        return this.lootPraca(p, j, at);
+      case 'meet':
+        // czeka na wybór gracza, dopóki trwa spotkanie, do którego należy
+        return this.st.sasiedzi?.spotkanie?.nr === j.target;
+      case 'upstairs':
+        return this.pietroPraca(p, j, at);
+      case 'plot':
+        return this.plotPraca(p, j, at);
       case 'trade':
         return this.tradeWork(p, j, at);
       case 'rob':
@@ -3468,8 +3714,9 @@ export class Sim {
     }
     const n = p.needs!;
     if (p.nap && n.rest >= REST_UNTIL) p.nap = false;
-    // w trybie zombie za siatką bez zajęcia nikt nie stoi: wraca do siedziby
-    if (modeOf(this.st) === 'zombie' && !this.insideAt(this.tileOf(p))) {
+    // w trybie zombie za siatką bez zajęcia nikt nie stoi: wraca do siedziby (w pomieszczeniu sąsiedniego budynku
+    // jest pod dachem, więc czeka tam na następne polecenie)
+    if (modeOf(this.st) === 'zombie' && !this.insideAt(this.tileOf(p)) && !this.inSasiad(this.tileOf(p))) {
       const s = this.shelterSpot(p);
       if (s >= 0 && this.go(p, s)) {
         this.setJob(p, this.newJob('go', s, s, false), false);
@@ -3479,6 +3726,11 @@ export class Sim {
     // zwłoki, które wstaną, w pobliżu: uzbrojony dobija je odruchowo (nóż w głowę); przy wrogu na podwórku
     // tylko te w budynku
     if (p.weapon && this.startFinish(p, this.yardDanger())) return;
+    // w sąsiednim budynku przy wrogu na podwórku czeka pod dachem, zamiast wracać przez podwórko
+    if (this.yardDanger() && this.inSasiad(this.tileOf(p))) {
+      p.wait = this.st.tick + THINK_EVERY;
+      return;
+    }
     // wróg na podwórku: tylko to, co w środku (sen, jedzenie, ciepło przy kozie, gotowanie)
     if (this.yardDanger() && !this.inRoom(this.tileOf(p))) {
       const s = this.shelterSpot(p);
@@ -3925,7 +4177,8 @@ export class Sim {
       (t.kind === 'deski' || t.kind === 'zlom') &&
       t.n > 0 &&
       (t.by < 0 || t.by === p.id) &&
-      this.reg[t.y * size + t.x] === region;
+      this.reg[t.y * size + t.x] === region &&
+      !this.uSasiada(t);
     const enough = (k: string) => this.st.things.reduce((a, t) => a + (t.kind === k && free(t) ? t.n : 0), 0) >= need;
     let best: Thing | undefined;
     let bd = Number.POSITIVE_INFINITY;
@@ -4334,7 +4587,14 @@ export class Sim {
     const region = this.regionOf(p);
     let n = 0;
     for (const t of this.st.things)
-      if (t.kind === m && t.n > 0 && (t.by < 0 || t.by === p.id) && this.reg[t.y * size + t.x] === region) n += t.n;
+      if (
+        t.kind === m &&
+        t.n > 0 &&
+        (t.by < 0 || t.by === p.id) &&
+        this.reg[t.y * size + t.x] === region &&
+        !this.uSasiada(t)
+      )
+        n += t.n;
     return n;
   }
 
@@ -4347,7 +4607,7 @@ export class Sim {
     for (const t of this.st.things) {
       if (t.kind !== m || t.n <= 0 || (t.by >= 0 && t.by !== p.id)) continue;
       const i = t.y * size + t.x;
-      if (this.reg[i] !== region) continue;
+      if (this.reg[i] !== region || this.uSasiada(t)) continue;
       const d = this.dist2(p, i);
       if (d < bd || (d === bd && best && t.id < best.id)) {
         bd = d;
@@ -4558,17 +4818,20 @@ export class Sim {
     }
   }
 
-  /** sterta łupu za siatką do noszenia: najbliższa pionkowi, do CARRY_REACH metrów od kafelka anchor */
+  /** Sterta łupu za siatką do noszenia: najbliższa pionkowi, do CARRY_REACH metrów od kafelka anchor. Z wnętrza
+      sąsiedniego budynku (M2 fala 2) cały łup z tego budynku, bo tam nie jest jeszcze nasz. */
   private lootNear(p: Pawn, anchor: number): Thing | undefined {
     const size = this.w.size;
     const ax = anchor % size;
     const ay = Math.floor(anchor / size);
     const region = this.regionOf(p);
+    const obcy = uSasiada(this.st, this.w, anchor) ? this.w.bid[anchor] : -1;
     let best: Thing | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.things) {
       if (!CARRY_MATS.has(t.kind) || t.n <= 0 || (t.by >= 0 && t.by !== p.id)) continue;
-      if (Math.max(Math.abs(t.x - ax), Math.abs(t.y - ay)) > CARRY_REACH) continue;
+      const far = Math.max(Math.abs(t.x - ax), Math.abs(t.y - ay)) > CARRY_REACH;
+      if (far && (obcy < 0 || this.w.bid[t.y * size + t.x] !== obcy)) continue;
       const i = t.y * size + t.x;
       if (this.insideAt(i) || this.reg[i] !== region) continue;
       const d = this.dist2(p, i);
@@ -5799,6 +6062,12 @@ export class Sim {
       if (p.kind === 'handlarz') this.traderKilled(p, by);
       return;
     }
+    // lokator sąsiedniego budynku: nie nasz, więc bez żałoby osiedla; zabójcę boli jak zabicie człowieka
+    if (p.kind === 'sasiad') {
+      if (by?.needs) this.addMood(by, 'Zabiłem sąsiada', -8, TICKS_PER_DAY);
+      this.zginalSasiad(p);
+      return;
+    }
     st.tally!.deaths++;
     const first = who?.first ?? 'sąsiad';
     for (const q of st.pawns)
@@ -6130,6 +6399,7 @@ export class Sim {
       (q.kind === 'core' ||
         q.kind === 'resident' ||
         q.kind === 'szabrownik' ||
+        q.kind === 'sasiad' ||
         q.kind === 'handlarz' ||
         q.kind === 'wedrowiec' ||
         q.kind === 'obcy') &&
@@ -6486,7 +6756,7 @@ export class Sim {
 
   /** sterty, które pionek może wziąć: jego albo niczyje */
   private freeHeaps(p: Pawn, kind: string): Thing[] {
-    return this.st.things.filter((t) => t.kind === kind && t.n > 0 && (t.by < 0 || t.by === p.id));
+    return this.st.things.filter((t) => t.kind === kind && t.n > 0 && (t.by < 0 || t.by === p.id) && !this.uSasiada(t));
   }
 
   /** czy na wolnych stertach starczy każdego materiału */
@@ -6683,7 +6953,7 @@ export class Sim {
       st.store.meds--;
       return true;
     }
-    const heap = st.things.find((t) => t.kind === 'leki' && t.n > 0);
+    const heap = st.things.find((t) => t.kind === 'leki' && t.n > 0 && !this.uSasiada(t));
     if (!heap) return false;
     heap.n--;
     if (heap.n <= 0) st.things.splice(st.things.indexOf(heap), 1);
@@ -6942,7 +7212,7 @@ export class Sim {
       let best: Thing | undefined;
       let bd = Number.POSITIVE_INFINITY;
       for (const t of this.st.things) {
-        if (t.n <= 0 || (t.by >= 0 && t.by !== p.id) || !ok(t)) continue;
+        if (t.n <= 0 || (t.by >= 0 && t.by !== p.id) || !ok(t) || this.uSasiada(t)) continue;
         // bez zarządu zapasy w pokoju z magazynem są dla nich za dobrze schowane
         if (!r.gov && this.inStore(t)) continue;
         const i = t.y * size + t.x;
@@ -7068,7 +7338,7 @@ export class Sim {
       // chwilowe nastroje wygasają, reszta dodaje się do nastroju z potrzeb
       if (p.moods.length) p.moods = p.moods.filter((m) => m.until > st.tick);
       const bonus = p.moods.reduce((a, m) => a + m.d, 0);
-      if (p.kind === 'resident') stepSafe(p.needs, this.needCtx(p, tout, night), hours, bonus);
+      if (p.kind === 'resident' || p.kind === 'sasiad') stepSafe(p.needs, this.needCtx(p, tout, night), hours, bonus);
       else stepNeeds(p.needs, this.needCtx(p, tout, night), hours, bonus);
       // gorączka: zdrowie spada liniowo do zera w chwili śmierci
       if (p.bite !== undefined) {
@@ -7185,6 +7455,1254 @@ export class Sim {
       if (s === 'cieplo') return kr >= 0 && st.temps[kr] >= WARM_ENOUGH;
       return false;
     });
+  }
+
+  /* ---------- M2 fala 2: sąsiednie budynki (docs/M2-fala-2.md, czyste funkcje w src/sim/sasiedzi.ts) ---------- */
+
+  /** stan sąsiadów; powstaje przy pierwszych cudzych drzwiach (wcześniej pola nie ma, więc skrót jest jak przed falą 2) */
+  private sasiedzi(): Sasiedzi {
+    this.st.sasiedzi ??= { budynki: [], spotkanie: null, nr: 0, napis: null, n: 0 };
+    return this.st.sasiedzi;
+  }
+
+  /** napis dla interfejsu, każdy nowy z kolejnym numerem */
+  private napisSasiada(co: string, b: number, extra: Omit<Partial<Napis>, 'n' | 'co' | 'b' | 'tick'> = {}): void {
+    const s = this.sasiedzi();
+    s.n++;
+    s.napis = { n: s.n, co, tick: this.st.tick, b, ...extra };
+  }
+
+  /** Indeks wpisu budynku. Przy pierwszym dotknięciu wpis powstaje z lokatorami z generatora mieszkańców (źródło
+      ustawione przez grę; błąd źródła daje lokatorów zapasowych), a budynek z wyważonymi już drzwiami na zewnątrz
+      od razu się otwiera. */
+  private budynekSasiada(bid: number): number {
+    const s = this.sasiedzi();
+    const have = s.budynki.findIndex((b) => b.bid === bid);
+    if (have >= 0) return have;
+    s.budynki.push(nowyBudynek(this.w, modeOf(this.st), bid, this.lokatorzyDla(bid)));
+    const k = s.budynki.length - 1;
+    const b = s.budynki[k];
+    if (drzwiBudynku(this.w, bid).zewn.some((d) => przechodnie(stanDrzwi(b, d.tile)?.s ?? 'zamkniete')))
+      this.otworzBudynek(k);
+    return k;
+  }
+
+  /** lokatorzy budynku z generatora mieszkańców (źródło ustawione przez grę) albo zapasowi; null bez mieszkań */
+  private lokatorzyDla(bid: number): LokatorzyBudynku | null {
+    const w = this.w;
+    if (!mieszkalny(w, bid)) return null;
+    let lok: LokatorzyBudynku | null = null;
+    try {
+      lok = this.lokatorzy?.(bid) ?? null;
+    } catch (e) {
+      console.warn('Sąsiedzi: lokatorzy z generatora się nie udali, są zapasowi', e);
+    }
+    return lok ?? domyZapasowe(w, wnetrze(w, bid), new Set(this.st.people.map((p) => p.first)));
+  }
+
+  /** Wpis cudzego budynku do karty budynku: z gry albo podgląd, czyli ten sam wpis, który powstanie przy pierwszym
+      dotknięciu drzwi (z ziarna świata i budynku). Podgląd nie trafia do stanu, więc oglądanie kart nie zmienia gry.
+      null dla siedziby i poza budynkami. */
+  budynekDoKarty(bid: number): { b: SasiedniBudynek; wGrze: boolean } | null {
+    const w = this.w;
+    if (bid < 0 || bid === w.hq || !w.buildings[bid]) return null;
+    const have = this.st.sasiedzi?.budynki.find((b) => b.bid === bid);
+    if (have) return { b: have, wGrze: true };
+    let p = this.podglady.get(bid);
+    if (!p) {
+      p = nowyBudynek(w, modeOf(this.st), bid, this.lokatorzyDla(bid));
+      this.podglady.set(bid, p);
+    }
+    return { b: p, wGrze: false };
+  }
+
+  /** nakładka wnętrz otwartych budynków od nowa (po otwarciu budynku i przy wczytaniu zapisu) */
+  private przeliczNakladke(): void {
+    const s = this.st.sasiedzi;
+    this.nbTiles.clear();
+    if (!s?.budynki.some((b) => b.otwarty)) {
+      this.nbCell = null;
+      this.nbRoom = null;
+      return;
+    }
+    const size = this.w.size;
+    const cell = new Uint8Array(size * size);
+    const room = new Int32Array(size * size).fill(-1);
+    s.budynki.forEach((b, k) => {
+      if (!b.otwarty) return;
+      const it = wnetrze(this.w, b.bid);
+      const B = this.w.buildings[b.bid];
+      for (let y = B.y0; y <= B.y1; y++)
+        for (let x = B.x0; x <= B.x1; x++) {
+          const i = y * size + x;
+          const c = it.cell[i];
+          if (c === IN.NONE) continue;
+          cell[i] = c;
+          if (it.room[i] < 0) continue;
+          const g = gid(k, it.room[i]);
+          room[i] = g;
+          if (c !== IN.FLOOR) continue;
+          const list = this.nbTiles.get(g);
+          if (list) list.push(i);
+          else this.nbTiles.set(g, [i]);
+        }
+    });
+    this.nbCell = cell;
+    this.nbRoom = room;
+  }
+
+  /** wnętrza otwartych budynków na warstwę przechodniości: ściany i schody blokują, posadzki i drzwi w środku
+      przechodzą, drzwi na zewnątrz i drzwi mieszkań według stanu */
+  private nalozSasiadow(layer: Uint8Array): void {
+    const s = this.st.sasiedzi;
+    const cell = this.nbCell;
+    if (!s || !cell) return;
+    const size = this.w.size;
+    for (const b of s.budynki) {
+      if (!b.otwarty) continue;
+      const B = this.w.buildings[b.bid];
+      for (let y = B.y0; y <= B.y1; y++)
+        for (let x = B.x0; x <= B.x1; x++) {
+          const i = y * size + x;
+          if (cell[i] !== IN.NONE) layer[i] = solidCell(cell[i]) ? 1 : 0;
+        }
+      for (const d of b.drzwi) layer[d.t] = przechodnie(d.s) ? 0 : 1;
+      // gra sieciowa: klatki innych drużyn zamknięte na stałe
+      for (const t of kafelkiZajete(this.st, this.w, b.bid)) layer[t] = 1;
+    }
+  }
+
+  /** kafelek w pomieszczeniu otwartego sąsiedniego budynku */
+  private inSasiad(i: number): boolean {
+    return this.nbRoom !== null && this.nbRoom[i] >= 0;
+  }
+
+  /** posadzka pomieszczenia sąsiada (gid) */
+  kafelkiPokoju(g: number): readonly number[] {
+    return this.nbTiles.get(g) ?? [];
+  }
+
+  /** posadzka mieszkania sąsiada */
+  private kafelkiMieszkania(k: number, apt: number): number[] {
+    const it = wnetrze(this.w, this.st.sasiedzi!.budynki[k].bid);
+    const out: number[] = [];
+    for (const r of it.rooms) if (r.apt === apt) out.push(...this.kafelkiPokoju(gid(k, r.id)));
+    return out;
+  }
+
+  /** kafelek z listy najbliżej danego (remis: mniejszy numer) */
+  private najblizej(tiles: readonly number[], to: number): number {
+    const size = this.w.size;
+    const tx = to % size;
+    const ty = Math.floor(to / size);
+    let best = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const i of tiles) {
+      const d = ((i % size) - tx) ** 2 + (Math.floor(i / size) - ty) ** 2;
+      if (d < bd || (d === bd && i < best)) {
+        bd = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** Wnętrze budynku dołącza do mapy: meble i śmieci jako rzeczy, nakładka i przechodniość od nowa. Mieszkanie bez
+      drzwi wejściowych (dom: drzwi domu są drzwiami mieszkania) wypuszcza szwendacza z wymarcia od razu. */
+  private otworzBudynek(k: number): void {
+    const st = this.st;
+    const b = st.sasiedzi!.budynki[k];
+    if (b.otwarty) return;
+    b.otwarty = true;
+    const it = wnetrze(this.w, b.bid);
+    const broken = new Set(b.zawartosc?.zepsute ?? []);
+    it.furniture.forEach((f, i) => {
+      const t = newThing(st, f.kind, f.x, f.y, f.w, f.h, f.rot);
+      if (broken.has(i)) t.broken = true;
+      st.things.push(t);
+    });
+    for (const [x, y, n] of b.zawartosc?.smieci ?? []) {
+      const t = newThing(st, 'smieci', x, y);
+      t.n = n;
+      st.things.push(t);
+    }
+    delete b.zawartosc;
+    this.przeliczNakladke();
+    this.rebuild();
+    this.wersjaSasiadow++;
+    const withDoor = new Set(drzwiBudynku(this.w, b.bid).mieszkan.values());
+    for (const m of b.mieszkania) if (m.zombie && !withDoor.has(m.apt)) this.wypuscSzwendacza(k, m.apt, -1);
+  }
+
+  /** szwendacz z wymarcia wychodzi z mieszkania: tuż za drzwiami (albo przy drzwiach domu), w limicie szwendaczy */
+  private wypuscSzwendacza(k: number, apt: number, door: number): void {
+    const b = this.st.sasiedzi!.budynki[k];
+    const m = b.mieszkania.find((x) => x.apt === apt);
+    if (!m?.zombie) return;
+    m.zombie = false;
+    const tiles = this.kafelkiMieszkania(k, apt);
+    if (!tiles.length || this.zombieCount() >= MAX_ZOMBIES) return;
+    const near = door >= 0 ? door : (drzwiBudynku(this.w, b.bid).zewn[0]?.tile ?? tiles[0]);
+    const look = Math.floor(rngOfPlace(this.w.seed, b.bid, apt, 0x51e6)() * 16);
+    spawnZombie(this.st, this.w, this.najblizej(tiles, near), look);
+    this.napisSasiada('szwendacz', k);
+  }
+
+  /** kafelek za drzwiami po drugiej stronie niż kafelek przed nimi (−1, gdy nie da się tam stanąć) */
+  private zaDrzwiami(door: number, stand: number): number {
+    const t = 2 * door - stand;
+    const size = this.w.size;
+    const ok =
+      t >= 0 &&
+      t < size * size &&
+      Math.abs((t % size) - (door % size)) <= 1 &&
+      Math.abs(Math.floor(t / size) - Math.floor(door / size)) <= 1;
+    return ok && !this.coreBlocked[t] ? t : -1;
+  }
+
+  /** polecenie przy cudzych drzwiach: pierwsza osoba pracuje, reszta staje obok; przy otwartych „Wejść” */
+  private orderDoor(pawns: Pawn[], t: 'open' | 'knock' | 'force' | 'board' | 'unboard', door: number): void {
+    const w = this.w;
+    const bid = w.bid[door];
+    if (bid < 0 || bid === w.hq || kafelkiZajete(this.st, w, bid).has(door)) return;
+    const k = this.budynekSasiada(bid);
+    const b = this.st.sasiedzi!.budynki[k];
+    const d = stanDrzwi(b, door);
+    if (!d) return;
+    const dz = drzwiBudynku(w, bid);
+    const stand = dz.zewn.find((x) => x.tile === door)?.out ?? dz.przed.get(door);
+    if (stand === undefined) return;
+    const p = pawns[0];
+    if (t === 'open' && przechodnie(d.s)) {
+      const inside = this.zaDrzwiami(door, stand);
+      if (inside >= 0) this.orderMove(pawns, inside, [], true);
+      return;
+    }
+    if (!this.drzwiPozwalaja(p, t, d)) return;
+    if (!this.go(p, stand)) return;
+    const j = this.newJob('door', door, stand, true);
+    j.what = t;
+    this.setJob(p, j, false);
+    if (pawns.length > 1) this.orderMove(pawns.slice(1), stand, [stand], true);
+  }
+
+  /** czy w tym stanie drzwi da się to zrobić; zabicie deskami na start pracy także wtedy, gdy na stertach są deski */
+  private drzwiPozwalaja(p: Pawn, t: string, d: DrzwiStan, start = true): boolean {
+    if (t === 'open') return d.s === 'zamkniete';
+    if (t === 'knock' || t === 'force') return d.s === 'zamkniete' || d.s === 'na_klucz';
+    if (t === 'board') return przechodnie(d.s) && (!start || this.haveHeaps(p, [['deski', ZABIJANIE_DESKI]]));
+    return d.s === 'zabite';
+  }
+
+  /** czas pracy przy drzwiach: z łomem w rękach wyważanie dwa razy krótsze */
+  private czasDrzwi(p: Pawn, t: string, zewn: boolean): number {
+    if (t === 'open') return OTWIERANIE_TICKS;
+    if (t === 'knock') return PUKANIE_TICKS;
+    if (t === 'board') return ZABIJANIE_TICKS;
+    if (t === 'unboard') return ODBIJANIE_TICKS;
+    return Math.round((zewn ? WYWAZ_KLATKA_TICKS : WYWAZ_MIESZKANIE_TICKS) * (p.weapon === 'lom' ? 0.5 : 1));
+  }
+
+  /** hałas pracy przy drzwiach (promień w metrach); z łomem wyważa się ciszej */
+  private halasDrzwi(p: Pawn, t: string, zewn: boolean): number {
+    const lom = p.weapon === 'lom';
+    if (t === 'force')
+      return zewn ? (lom ? HALAS.wywazanieLom : HALAS.wywazanie) : lom ? HALAS.mieszkanieLom : HALAS.mieszkanie;
+    if (t === 'board') return HALAS.deski;
+    if (t === 'unboard') return HALAS.odbijanie;
+    return t === 'knock' ? HALAS.pukanie : HALAS.otwieranie;
+  }
+
+  /** praca przy drzwiach: dojście, praca z hałasem co 2 sekundy, na końcu skutek */
+  private drzwiPraca(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const tick = st.tick;
+    const bid = this.w.bid[j.target];
+    const k = st.sasiedzi?.budynki.findIndex((b) => b.bid === bid) ?? -1;
+    const d = k >= 0 ? stanDrzwi(st.sasiedzi!.budynki[k], j.target) : undefined;
+    // drzwi zmieniły się w międzyczasie (ktoś inny je otworzył, wyważył albo zabił)
+    if (!d || !this.drzwiPozwalaja(p, j.what, d, false)) return false;
+    const zewn = drzwiBudynku(this.w, bid).zewn.some((x) => x.tile === j.target);
+    const size = this.w.size;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = tick;
+      j.until = tick + this.czasDrzwi(p, j.what, zewn);
+      this.face(p, (j.target % size) + 0.5, Math.floor(j.target / size) + 0.5);
+      this.addNoise(p.x, p.y, this.halasDrzwi(p, j.what, zewn));
+      return true;
+    }
+    if ((tick - j.t0) % NOISE_TICKS === 0) this.addNoise(p.x, p.y, this.halasDrzwi(p, j.what, zewn));
+    if (tick < j.until) return true;
+    return this.koniecDrzwi(p, k, d, j.what, zewn);
+  }
+
+  /** Skutek pracy przy drzwiach. true: osoba dostała nową pracę (krok za drzwi, spotkanie, noszenie). */
+  private koniecDrzwi(p: Pawn, k: number, d: DrzwiStan, t: string, zewn: boolean): boolean {
+    const b = this.st.sasiedzi!.budynki[k];
+    if (t === 'open' && d.k) {
+      d.s = 'na_klucz';
+      this.wersjaSasiadow++;
+      this.napisSasiada('na_klucz', k, { kto: p.id });
+      return false;
+    }
+    if (t === 'open' || t === 'force') {
+      d.s = t === 'open' ? 'otwarte' : 'wywazone';
+      delete d.k;
+      return this.poOtwarciu(p, k, d, zewn, t === 'force');
+    }
+    if (t === 'knock') return this.pukanie(p, k, d);
+    if (t === 'board') {
+      if (!this.takeHeaps(p, 'deski', ZABIJANIE_DESKI, -1)) return false;
+      d.s = 'zabite';
+    } else d.s = 'otwarte';
+    this.rebuild();
+    this.wersjaSasiadow++;
+    if (b.otwarty && t === 'unboard') this.napisSasiada('odbite', k, { kto: p.id });
+    return false;
+  }
+
+  /** Drzwi otwarte albo wyważone: budynek się otwiera, za drzwiami mieszkania może czekać szwendacz albo lokatorzy
+      (spotkanie), a hałas wyważania słyszą lokatorzy w domu. Przy drzwiach na zewnątrz osoba robi krok do środka. */
+  private poOtwarciu(p: Pawn, k: number, d: DrzwiStan, zewn: boolean, wywazone: boolean): boolean {
+    const b = this.st.sasiedzi!.budynki[k];
+    if (!b.otwarty) this.otworzBudynek(k);
+    else {
+      this.rebuild();
+      this.wersjaSasiadow++;
+    }
+    const dz = drzwiBudynku(this.w, b.bid);
+    const apt = dz.mieszkan.get(d.t);
+    if (wywazone) for (const i of this.domyZaDrzwiami(k, d.t)) this.slyszaHalas(k, i);
+    if (apt !== undefined) {
+      this.wypuscSzwendacza(k, apt, d.t);
+      const dom = b.domy.findIndex((g) => g.apt === apt && g.gdzie === 'u_siebie' && this.wDomuTeraz(k, g));
+      if (dom >= 0 && this.zacznijSpotkanie(p, k, dom, 'mieszkanie', wywazone)) return true;
+    }
+    if (zewn) {
+      // dom: drzwi domu prowadzą prosto do mieszkania
+      const dom = b.domy.findIndex(
+        (g, i) =>
+          g.gdzie === 'u_siebie' &&
+          this.domyZaDrzwiami(k, d.t).includes(i) &&
+          this.wDomuTeraz(k, g) &&
+          dz.mieszkan.size === 0,
+      );
+      if (dom >= 0 && this.zacznijSpotkanie(p, k, dom, 'mieszkanie', wywazone)) return true;
+      const inside = this.zaDrzwiami(d.t, this.tileOf(p));
+      if (inside >= 0 && this.go(p, inside)) {
+        this.setJob(p, this.newJob('go', inside, inside, false), false);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** gospodarstwa za drzwiami (indeksy w domy): mieszkanie za drzwiami mieszkania, a za drzwiami na zewnątrz mieszkania,
+      do których prowadzi wnętrze od tych drzwi (dom: całe, blok: mieszkania tej klatki) */
+  private domyZaDrzwiami(k: number, door: number): number[] {
+    const b = this.st.sasiedzi!.budynki[k];
+    const apts = mieszkaniaZaDrzwiami(this.w, b.bid, door);
+    return b.domy.flatMap((g, i) => (apts.has(g.apt) ? [i] : []));
+  }
+
+  /** gospodarstwo jest teraz w domu (nocą zawsze, w trybie zombie zawsze, za dnia część poza domem) */
+  private wDomuTeraz(k: number, g: Gospodarstwo): boolean {
+    return domTeraz(this.st, this.w, k, this.st.sasiedzi!.budynki[k].domy.indexOf(g));
+  }
+
+  /** hałas pod drzwiami słyszą ci, którzy są w domu: nocą strach albo gniew, relacja spada */
+  private slyszaHalas(k: number, dom: number): void {
+    const b = this.st.sasiedzi!.budynki[k];
+    const g = b.domy[dom];
+    if (g?.gdzie !== 'u_siebie' || !this.wDomuTeraz(k, g)) return;
+    Object.assign(g, poHalasie(g, this.night()));
+  }
+
+  /** Pukanie: kto jest w domu za tymi drzwiami, może otworzyć (spotkanie), wrodzy w gniewie nocą wychodzą od razu; bez
+      nikogo napis, a w trybie zombie szuranie za drzwiami mieszkania ze szwendaczem. true: zaczęło się spotkanie. */
+  private pukanie(p: Pawn, k: number, d: DrzwiStan): boolean {
+    const b = this.st.sasiedzi!.budynki[k];
+    const apt = drzwiBudynku(this.w, b.bid).mieszkan.get(d.t);
+    const home = this.domyZaDrzwiami(k, d.t).filter(
+      (i) => b.domy[i].gdzie === 'u_siebie' && this.wDomuTeraz(k, b.domy[i]),
+    );
+    if (!home.length) {
+      const z = apt !== undefined ? b.mieszkania.find((m) => m.apt === apt)?.zombie : false;
+      this.napisSasiada(z ? 'szuranie' : 'nikt', k, { kto: p.id });
+      return false;
+    }
+    // otwiera najchętniejszy: życzliwi, zdesperowani, nieufni, wrodzy
+    const order: Zamiar[] = ['zyczliwi', 'zdesperowani', 'nieufni', 'wrodzy'];
+    const dom = [...home].sort((a, c) => order.indexOf(b.domy[a].zamiar) - order.indexOf(b.domy[c].zamiar) || a - c)[0];
+    const g = b.domy[dom];
+    const noc = this.night();
+    if (!atakOdRazu(g, false, noc)) {
+      const chetnie =
+        { zyczliwi: 1, zdesperowani: 0.9, nieufni: noc ? 0.3 : 0.6, wrodzy: 0.25 }[g.zamiar] *
+        (modeOf(this.st) === 'zombie' ? 0.7 : 1);
+      if (nextRandom(this.st.rng) >= chetnie) {
+        this.napisSasiada('ktos', k, { dom, kto: p.id });
+        return false;
+      }
+    }
+    return this.zacznijSpotkanie(p, k, dom, 'drzwi', false);
+  }
+
+  /** osoby gospodarstwa do st.people przy pierwszym spotkaniu (id z nextId, dom: budynek lokatorów) */
+  private ludzieGospodarstwa(g: Gospodarstwo, bid: number): number[] {
+    if (g.ludzie) return g.ludzie;
+    g.ludzie = g.osoby.map((o) => {
+      this.st.people.push({
+        id: `s${this.st.nextId++}`,
+        first: o.first,
+        name: o.name,
+        f: o.f,
+        prof: o.prof,
+        skills: { ...o.skills },
+        age: o.age,
+        traits: [...o.traits],
+        home: bid,
+        assign: null,
+        sick: false,
+        dead: false,
+        gone: false,
+        ...(o.story ? { story: o.story } : {}),
+        ...(o.ref ? { ref: o.ref, nazwaGen: o.name } : {}),
+        ...(o.rodzina ? { rodzina: o.rodzina } : {}),
+      });
+      return this.st.people.length - 1;
+    });
+    return g.ludzie;
+  }
+
+  /** Spotkanie: lokatorzy stają się pionkami w drzwiach (obok naszej osoby) albo w mieszkaniu (przy drzwiach), nasza
+      osoba czeka na wybór gracza, interfejs pokazuje kartę. false: inne spotkanie już trwa. */
+  private zacznijSpotkanie(p: Pawn, k: number, dom: number, gdzie: Spotkanie['gdzie'], wywazone: boolean): boolean {
+    const st = this.st;
+    const s = this.sasiedzi();
+    if (s.spotkanie) return false;
+    const b = s.budynki[k];
+    const g = b.domy[dom];
+    const people = this.ludzieGospodarstwa(g, b.bid);
+    const size = this.w.size;
+    const here = this.tileOf(p);
+    let spots: number[];
+    if (gdzie === 'mieszkanie' && g.apt >= 0) {
+      const tiles = this.kafelkiMieszkania(k, g.apt);
+      spots = [...tiles].sort((a, c) => this.dist2(p, a) - this.dist2(p, c) || a - c).slice(0, g.osoby.length + 2);
+    } else {
+      spots = [];
+      for (const [dx, dy] of SPREAD) {
+        const i = (Math.floor(p.y) + dy) * size + Math.floor(p.x) + dx;
+        if (i === here || i < 0 || i >= size * size || this.coreBlocked[i] || this.reg[i] !== this.reg[here]) continue;
+        spots.push(i);
+        if (spots.length > g.osoby.length) break;
+      }
+    }
+    if (!spots.length) spots = [here];
+    const oni = people.map((person, i) => {
+      const at = spots[i % spots.length];
+      const look = 4 + Math.floor(rngOfPlace(this.w.seed, b.bid, g.apt * 16 + i, 0x100c)() * 12);
+      const q = newPawn(st, this.w, 'sasiad', person, at, at, look);
+      q.apt = g.apt;
+      // zdrowie do ran i ugryzień, a z potrzeb liczy się tylko bezpieczeństwo i nastrój (jak u mieszkańców)
+      q.needs = { food: 70, warm: 60, rest: 70, health: 100, safe: 50, mood: 0 };
+      q.needs.mood = 0.25 * 70 + 0.25 * 60 + 0.15 * 70 + 0.15 * 100 + 0.2 * 50;
+      q.wait = st.tick;
+      this.face(q, p.x, p.y);
+      st.pawns.push(q);
+      return q.id;
+    });
+    g.pionki = oni;
+    const my = st.pawns
+      .filter((q) => q.kind === 'core' && !q.away && (q === p || (q.job?.order && this.dist2(q, here) <= 16)))
+      .map((q) => q.id);
+    s.nr++;
+    s.spotkanie = {
+      nr: s.nr,
+      b: k,
+      dom,
+      my,
+      oni,
+      gdzie,
+      tick: st.tick,
+      atak: atakOdRazu(g, wywazone, this.night()),
+      wywazone,
+    };
+    for (const id of my) {
+      const q = st.pawns.find((x) => x.id === id)!;
+      const j = this.newJob('meet', s.nr, this.tileOf(q), true, 1);
+      this.setJob(q, j, false);
+      const first = st.pawns.find((x) => x.id === oni[0]);
+      if (first) this.face(q, first.x, first.y);
+    }
+    return true;
+  }
+
+  /** kontekst wyborów: jedzenie w naszych zapasach, uzbrojeni z naszych przy spotkaniu, tryb i kto u nas mówi najlepiej */
+  private kontekstSpotkania(sp: Spotkanie): KontekstSpotkania {
+    const st = this.st;
+    const our = sp.my.map((id) => st.pawns.find((q) => q.id === id)).filter((q): q is Pawn => !!q);
+    const traits = new Set(our.flatMap((q) => st.people[q.person]?.traits ?? []));
+    return {
+      jedzenie: this.naszeSztuki('jedzenie'),
+      uzbrojeni: our.filter((q) => this.armed(q).id !== 'piesci').length,
+      mode: modeOf(st),
+      mowca: traits.has('lubiany') ? 'lubiany' : traits.has('gadula') ? 'gadula' : null,
+    };
+  }
+
+  /** kontekst wyborów aktualnego spotkania dla karty (null bez spotkania) */
+  kontekstKarty(): KontekstSpotkania | null {
+    const sp = this.st.sasiedzi?.spotkanie;
+    return sp ? this.kontekstSpotkania(sp) : null;
+  }
+
+  /** co mogą powiedzieć przy rozmowie: o innych, których nie znamy, o pustym nieprzeszukanym mieszkaniu, o szwendaczu */
+  private infoSpotkania(sp: Spotkanie): Info {
+    const b = this.st.sasiedzi!.budynki[sp.b];
+    if (b.domy.some((g, i) => i !== sp.dom && !g.znani && g.gdzie === 'u_siebie')) return 'inni';
+    if (b.mieszkania.some((m) => m.zombie)) return 'lazi';
+    const it = wnetrze(this.w, b.bid);
+    if (
+      b.mieszkania.some(
+        (m) => m.stan === 'puste' && it.rooms.some((r) => r.apt === m.apt && !m.przeszukane.includes(r.id)),
+      )
+    )
+      return 'puste';
+    return 'nic';
+  }
+
+  /** wybór gracza w spotkaniu: skutek z ziarna gry (st.rng, tylko tu) */
+  private wyborSpotkania(nr: number, k: WyborSpotkania): void {
+    const s = this.st.sasiedzi;
+    const sp = s?.spotkanie;
+    if (!s || !sp || sp.nr !== nr) return;
+    const g = s.budynki[sp.b].domy[sp.dom];
+    const ctx = this.kontekstSpotkania(sp);
+    if (!wybory(sp, g, ctx).some((x) => x.k === k && x.ok)) return;
+    const sk = skutek(k, g, sp, ctx, this.infoSpotkania(sp), () => nextRandom(this.st.rng));
+    this.zastosujSkutek(sp, g, sk);
+  }
+
+  /** skutek wyboru w stanie gry i na mapie, potem koniec spotkania albo dalej karta */
+  private zastosujSkutek(sp: Spotkanie, g: Gospodarstwo, sk: Skutek): void {
+    const st = this.st;
+    const s = st.sasiedzi!;
+    const b = s.budynki[sp.b];
+    g.rel = sk.rel;
+    g.zamiar = sk.zamiar;
+    g.nastroj = sk.nastroj;
+    const our = sp.my.map((id) => st.pawns.find((q) => q.id === id)).filter((q): q is Pawn => !!q);
+    const them = sp.oni.map((id) => st.pawns.find((q) => q.id === id)).filter((q): q is Pawn => !!q);
+    const lead = our[0];
+    const extra: Omit<Partial<Napis>, 'n' | 'co' | 'b' | 'tick'> = { dom: sp.dom };
+    if (sk.info === 'inni') {
+      const other = b.domy.find((x, i) => i !== sp.dom && !x.znani && x.gdzie === 'u_siebie');
+      if (other) other.znani = true;
+    }
+    if (sk.info) extra.info = sk.info;
+    if (sk.pytali) g.pytali = true;
+    if (sk.dajemy) {
+      const n = this.wezNasze('jedzenie', sk.dajemy);
+      g.zapasy.jedzenie = (g.zapasy.jedzenie ?? 0) + n;
+      extra.ile = { jedzenie: n };
+    }
+    // szarpanina: ciosy na mapie, rany
+    if ((sk.ranaNasza || sk.ranaIch) && lead && them[0]) {
+      this.addFx('cios', them[0].x, them[0].y, lead.x, lead.y);
+      this.addFx('cios', lead.x, lead.y, them[0].x, them[0].y);
+    }
+    if (sk.ranaNasza && lead) {
+      this.hurt(lead, sk.ranaNasza, them[0] ?? null);
+      extra.kto = lead.id;
+    }
+    if (sk.ranaIch && them[0]) this.hurt(them[0], sk.ranaIch, lead ?? null);
+    if (sk.zabrane) {
+      extra.ile = { ...g.zapasy };
+      this.zostawZapasy(sp, g.zapasy);
+      g.zapasy = {};
+      for (const q of st.pawns)
+        if (q.kind === 'core' && !q.away && !this.graveyard.has(q.id))
+          this.addMood(q, 'Okradliśmy sąsiadów', -3, TICKS_PER_DAY);
+    }
+    if (sk.zaproszeni) this.przyjmijGospodarstwo(sp, g);
+    else if (sk.uciekaja) this.odchodza(sp, g);
+    if (sk.odwrot)
+      for (const q of our) {
+        const spot = this.shelterSpot(q);
+        if (spot >= 0 && this.go(q, spot)) this.setJob(q, this.newJob('go', spot, spot, false), false);
+      }
+    this.napisSasiada(sk.co, sp.b, extra);
+    if (!sk.koniec) {
+      sp.atak = false;
+      sp.runda = (sp.runda ?? 0) + 1;
+      return;
+    }
+    this.koniecSpotkania(sp);
+  }
+
+  /** koniec spotkania: nasi wracają do swoich prac, lokatorzy spotkani w drzwiach wracają do środka (znikają), a w
+      mieszkaniu zostają, dopóki zarząd jest w budynku */
+  private koniecSpotkania(sp: Spotkanie): void {
+    const st = this.st;
+    st.sasiedzi!.spotkanie = null;
+    for (const id of sp.my) {
+      const q = st.pawns.find((x) => x.id === id);
+      if (q?.job?.t === 'meet') this.done(q);
+    }
+    if (sp.gdzie === 'drzwi') this.schowajLokatorow(sp.b, sp.dom);
+  }
+
+  /** pionki lokatorów znikają z mapy (wracają do liczb gospodarstwa); osoby zostają w st.people */
+  private schowajLokatorow(k: number, dom: number): void {
+    const g = this.st.sasiedzi!.budynki[k].domy[dom];
+    for (const id of g.pionki ?? []) {
+      const q = this.st.pawns.find((x) => x.id === id);
+      if (q && !this.graveyard.has(q.id)) dropPawn(this.st, q);
+    }
+    delete g.pionki;
+  }
+
+  /** zapasy gospodarstwa na ziemię: w mieszkaniu (spotkanie w mieszkaniu) albo przy drzwiach */
+  private zostawZapasy(sp: Spotkanie, zapasy: Partial<Record<Mat, number>>): void {
+    const b = this.st.sasiedzi!.budynki[sp.b];
+    const g = b.domy[sp.dom];
+    const lead = this.st.pawns.find((q) => q.id === sp.my[0]);
+    const from = lead
+      ? this.tileOf(lead)
+      : g.pionki?.length
+        ? this.tileOf(this.st.pawns.find((q) => q.id === g.pionki![0])!)
+        : -1;
+    if (from < 0) return;
+    const tiles = sp.gdzie === 'mieszkanie' ? this.kafelkiMieszkania(sp.b, g.apt) : [];
+    for (const [m, n] of Object.entries(zapasy) as [Mat, number][]) if (n > 0) this.zostawLup(from, m, n, tiles);
+  }
+
+  /** materiał na ziemię: najpierw na podanych kafelkach (pomieszczenie), od najbliższego, potem wokół, na sterty do 10 */
+  private zostawLup(from: number, kind: string, n: number, first: readonly number[]): void {
+    const st = this.st;
+    const size = this.w.size;
+    const at = nearestFree(this.coreBlocked, size, from);
+    const tiles = [...first].sort((a, b) => this.dist2Tiles(a, at) - this.dist2Tiles(b, at) || a - b);
+    for (const [dx, dy] of SPREAD) {
+      const x = (at % size) + dx;
+      const y = Math.floor(at / size) + dy;
+      if (x >= 0 && y >= 0 && x < size && y < size) tiles.push(y * size + x);
+    }
+    let left = n;
+    for (const i of tiles) {
+      if (left <= 0) break;
+      if (this.coreBlocked[i] || this.reg[i] !== this.reg[at] || onPlan(st, size, i)) continue;
+      const x = i % size;
+      const y = Math.floor(i / size);
+      const same = st.things.find((t) => t.kind === kind && t.x === x && t.y === y);
+      if (same) {
+        const k = Math.min(left, STACK - same.n);
+        same.n += Math.max(0, k);
+        left -= Math.max(0, k);
+        continue;
+      }
+      if (this.thingAt(x, y)) continue;
+      const t = newThing(st, kind, x, y);
+      t.n = Math.min(left, STACK);
+      left -= t.n;
+      st.things.push(t);
+    }
+  }
+
+  private dist2Tiles(a: number, b: number): number {
+    const size = this.w.size;
+    return ((a % size) - (b % size)) ** 2 + (Math.floor(a / size) - Math.floor(b / size)) ** 2;
+  }
+
+  /** Zaproszeni idą do siedziby: ich pionki stają się mieszkańcami z osobami i idą drogą zarządu przez bramę do
+      mieszkania z wolnym łóżkiem (albo najmniej zatłoczonego), jak przybysze. Ich mieszkanie zostaje puste z zapasami. */
+  private przyjmijGospodarstwo(sp: Spotkanie, g: Gospodarstwo): void {
+    const st = this.st;
+    const h = this.house;
+    const b = st.sasiedzi!.budynki[sp.b];
+    g.gdzie = 'u_nas';
+    const m = b.mieszkania.find((x) => x.apt === g.apt);
+    if (m) {
+      m.stan = 'puste';
+      m.why = 'wyjazd';
+      m.year = 2051;
+      m.dom = -1;
+    }
+    // drzwi mieszkania zostają otwarte; ich zapasy leżą w mieszkaniu (w drzwiach: przy drzwiach)
+    const dz = drzwiBudynku(this.w, b.bid);
+    for (const [tile, apt] of dz.mieszkan)
+      if (apt === g.apt) {
+        const d = stanDrzwi(b, tile);
+        if (d && !przechodnie(d.s)) {
+          d.s = 'otwarte';
+          delete d.k;
+        }
+      }
+    this.zostawZapasy(sp, g.zapasy);
+    g.zapasy = {};
+    if (!h) {
+      this.schowajLokatorow(sp.b, sp.dom);
+      return;
+    }
+    const size = this.w.size;
+    const apts = residentApts(st, this.w, h);
+    // tryb zombie: ukryty ugryziony zostaje, gdy zarząd o niego zapytał, a bez pytania przychodzi z gorączką
+    const bitten = g.ugryziony !== undefined ? g.pionki?.[g.ugryziony] : undefined;
+    for (const id of g.pionki ?? []) {
+      const q = st.pawns.find((x) => x.id === id);
+      if (!q) continue;
+      if (id === bitten && g.pytali) {
+        dropPawn(st, q);
+        continue;
+      }
+      q.kind = 'resident';
+      const apt = aptFor(st, h, size, apts);
+      q.apt = apt;
+      q.needs = { food: 60, warm: 50, rest: 60, health: 100, safe: 50, mood: 0 };
+      q.needs.mood = 0.25 * 60 + 0.25 * 50 + 0.15 * 60 + 0.15 * 100 + 0.2 * 50;
+      const tiles: number[] = [];
+      for (let i = 0; i < size * size; i++) if (apt >= 0 && aptAt(h, i) === apt && !this.coreBlocked[i]) tiles.push(i);
+      const at = tiles.length ? tiles[q.id % tiles.length] : this.door;
+      q.job = {
+        t: 'arrive',
+        target: apt,
+        tile: at,
+        phase: 0,
+        from: -1,
+        t0: st.tick,
+        until: st.tick,
+        order: false,
+        n: 0,
+        what: '',
+      };
+      const bed = st.things.find(
+        (t) => BEDS.has(t.kind) && !t.broken && t.owner < 0 && apt >= 0 && aptAt(h, t.y * size + t.x) === apt,
+      );
+      if (bed) bed.owner = q.id;
+      if (id === bitten) {
+        // gorączka od kilku godzin: umrze i wstanie jeszcze tej doby, chyba że ktoś zdąży z amputacją albo go dobije
+        infect(st, q, true);
+        q.bite = st.tick - ugryzionyOd(this.w.seed, b.bid, g.apt) * TICKS_PER_HOUR;
+        const fever = q.moods[q.moods.length - 1];
+        if (fever) fever.until = q.bite + FEVER_TICKS;
+      }
+    }
+    delete g.pionki;
+    // uciekający z budynku nie są już na spotkaniu
+    sp.oni = [];
+    this.wersjaSasiadow++;
+  }
+
+  /** lokatorzy odchodzą z budynku: pionki znikają, mieszkanie puste z tym, czego nie zabrali */
+  private odchodza(sp: Spotkanie, g: Gospodarstwo): void {
+    const b = this.st.sasiedzi!.budynki[sp.b];
+    g.gdzie = 'odeszli';
+    const m = b.mieszkania.find((x) => x.apt === g.apt);
+    if (m) {
+      m.stan = 'puste';
+      m.why = 'wyjazd';
+      m.year = 2051;
+      m.dom = -1;
+    }
+    this.zostawZapasy(sp, g.zapasy);
+    g.zapasy = {};
+    this.schowajLokatorow(sp.b, sp.dom);
+    sp.oni = [];
+  }
+
+  /** zginął lokator: wypada z gospodarstwa (cały dom nie żyje, gdy nie został nikt) */
+  private zginalSasiad(p: Pawn): void {
+    for (const b of this.st.sasiedzi?.budynki ?? [])
+      for (const g of b.domy) {
+        if (!g.pionki?.includes(p.id)) continue;
+        const k = g.pionki.indexOf(p.id);
+        g.pionki.splice(k, 1);
+        const person = p.person;
+        const idx = g.ludzie?.indexOf(person) ?? -1;
+        if (idx >= 0) {
+          g.ludzie!.splice(idx, 1);
+          g.osoby.splice(idx, 1);
+          // indeks ukrytego ugryzionego przesuwa się razem z osobami (a ginie razem z nim)
+          if (g.ugryziony === idx) delete g.ugryziony;
+          else if (g.ugryziony !== undefined && g.ugryziony > idx) g.ugryziony--;
+        }
+        if (!g.osoby.length) g.gdzie = 'nie_zyja';
+        const sp = this.st.sasiedzi!.spotkanie;
+        if (sp) sp.oni = sp.oni.filter((id) => id !== p.id);
+      }
+  }
+
+  /** Pionek lokatora: w trakcie spotkania stoi i patrzy na naszą osobę; potem w swoim mieszkaniu, a gdy w budynku nie
+      ma już nikogo z zarządu (albo stał w drzwiach), znika. Spotkanie bez naszej osoby albo bez lokatorów się kończy. */
+  private sasiadTick(p: Pawn): void {
+    const st = this.st;
+    const sp = st.sasiedzi?.spotkanie;
+    if (sp?.oni.includes(p.id)) {
+      if (st.tick % THINK_EVERY !== 0) return;
+      const ours = sp.my
+        .map((id) => st.pawns.find((q) => q.id === id))
+        .filter((q) => q && q.job?.t === 'meet' && !this.graveyard.has(q.id));
+      if (!ours.length || !sp.oni.some((id) => st.pawns.some((q) => q.id === id && !this.graveyard.has(q.id)))) {
+        this.napisSasiada('przerwane', sp.b, { dom: sp.dom });
+        this.koniecSpotkania(sp);
+        return;
+      }
+      this.face(p, ours[0]!.x, ours[0]!.y);
+      return;
+    }
+    if (p.pi < p.path.length) {
+      this.walk(p);
+      return;
+    }
+    if ((st.tick + p.id) % THINK_EVERY !== 0) return;
+    const bid = this.w.bid[this.tileOf(p)];
+    const nobody = !st.pawns.some((q) => q.kind === 'core' && !q.away && this.w.bid[this.tileOf(q)] === bid);
+    if (!nobody) {
+      p.wait = st.tick;
+      return;
+    }
+    // pół godziny bez zarządu w budynku: wracają do liczb
+    if (st.tick - p.wait < TICKS_PER_HOUR / 2) return;
+    for (const b of st.sasiedzi?.budynki ?? []) {
+      const dom = b.domy.findIndex((g) => g.pionki?.includes(p.id));
+      if (dom < 0) continue;
+      this.schowajLokatorow(st.sasiedzi!.budynki.indexOf(b), dom);
+      return;
+    }
+    dropPawn(st, p);
+  }
+
+  /** Ile sztuk materiału jest w naszych stertach (bez stert we wnętrzach sąsiadów: tam łup nie jest jeszcze nasz). */
+  private naszeSztuki(kind: string): number {
+    let n = 0;
+    for (const t of this.st.things) if (t.kind === kind && t.n > 0 && !this.uSasiada(t)) n += t.n;
+    return n;
+  }
+
+  /** zabiera z naszych stert do n sztuk (od najstarszych); zwraca, ile wziął */
+  private wezNasze(kind: string, n: number): number {
+    let left = n;
+    for (const t of this.st.things) {
+      if (left <= 0) break;
+      if (t.kind !== kind || t.n <= 0 || this.uSasiada(t)) continue;
+      const k = Math.min(t.n, left);
+      t.n -= k;
+      left -= k;
+    }
+    this.st.things = this.st.things.filter((t) => !(t.kind === kind && t.n <= 0));
+    return n - left;
+  }
+
+  /** rzecz leży we wnętrzu sąsiedniego budynku (nie nasza, dopóki ktoś jej nie przyniesie) */
+  private uSasiada(t: Thing): boolean {
+    return uSasiada(this.st, this.w, t.y * this.w.size + t.x);
+  }
+
+  /* przeszukanie i noszenie */
+
+  /** przeszukać pomieszczenie sąsiada: puste mieszkanie, sala, hala, zaplecze; mieszkanie lokatorów tylko pod ich
+      nieobecność (szaber), gdy drzwi są otwarte albo wyważone */
+  private startLoot(p: Pawn, bid: number, room: number): void {
+    const s = this.st.sasiedzi;
+    const k = s?.budynki.findIndex((b) => b.bid === bid) ?? -1;
+    if (k < 0 || !s!.budynki[k].otwarty) return;
+    const g = gid(k, room);
+    if (!this.moznaSzukac(k, room)) return;
+    if (this.st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === g)) return;
+    const tiles = this.kafelkiPokoju(g);
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const size = this.w.size;
+    const cand = tiles.filter(
+      (i) => this.reg[i] === region && !taken.includes(i) && !this.furnitureAt(i % size, Math.floor(i / size)),
+    );
+    const spot = this.nearest(p, cand.length ? cand : tiles.filter((i) => this.reg[i] === region));
+    if (spot < 0 || !this.go(p, spot)) return;
+    this.setJob(p, this.newJob('loot', g, spot, true), false);
+  }
+
+  /** pomieszczenie sąsiada da się przeszukać (raz; mieszkanie lokatorów tylko pod ich nieobecność) */
+  private moznaSzukac(k: number, room: number): boolean {
+    return moznaPrzeszukac(this.st, this.w, k, room) !== null;
+  }
+
+  /** przeszukiwanie pokoju sąsiada: czas jak w siedzibie, łup na końcu, potem sam nosi łup na podwórko (noszenie
+      z surowców, carryOn: w budynku sąsiada zbiera łup z całego budynku) */
+  private lootPraca(p: Pawn, j: Job, at: boolean): boolean {
+    const k = gidB(j.target);
+    const room = gidRoom(j.target);
+    if (!this.moznaSzukac(k, room)) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = this.st.tick;
+      j.until = this.st.tick + searchTicks(this.kafelkiPokoju(j.target).length);
+      return true;
+    }
+    if (this.st.tick < j.until) return true;
+    this.lupPokoju(k, room, j.tile);
+    return this.carryOn(p, j, j.tile);
+  }
+
+  /** łup z pomieszczenia sąsiada: puste mieszkanie z tabeli fali 1 (w trybie zombie z wymarcia więcej jedzenia),
+      sala i reszta z tabeli rodzaju budynku, mieszkanie lokatorów pod ich nieobecność ich zapasy (w kuchni i pokoju);
+      deterministycznie z ziarna świata, budynku i pomieszczenia */
+  private lupPokoju(k: number, room: number, at: number): void {
+    const st = this.st;
+    const b = st.sasiedzi!.budynki[k];
+    const it = wnetrze(this.w, b.bid);
+    const r = it.rooms[room];
+    const B = this.w.buildings[b.bid];
+    const mode = modeOf(st);
+    const rnd = rngOfPlace(this.w.seed, b.bid, room, 0x100f);
+    let loot: Partial<Record<Mat, number>> = {};
+    if (r.apt < 0) {
+      loot = lupUslug(B.cls, r.kind, r.area, rnd);
+      b.przeszukane.push(room);
+      b.przeszukane.sort((x, y) => x - y);
+    } else {
+      const m = b.mieszkania.find((x) => x.apt === r.apt)!;
+      if (m.stan === 'puste') loot = lupMieszkania(m.why ?? 'wyjazd', r.kind, r.area, rnd, mode);
+      else {
+        // szaber pod nieobecność lokatorów: ich zapasy, za pierwszym pomieszczeniem całe
+        const g = b.domy[m.dom];
+        loot = { ...g.zapasy };
+        g.zapasy = {};
+        g.rel = -100;
+        g.zamiar = 'wrodzy';
+        g.nastroj = 'gniew';
+        for (const q of st.pawns)
+          if (q.kind === 'core' && !q.away && !this.graveyard.has(q.id))
+            this.addMood(q, 'Okradliśmy sąsiadów', -3, TICKS_PER_DAY);
+      }
+      m.przeszukane.push(room);
+      m.przeszukane.sort((x, y) => x - y);
+    }
+    for (const [mat, n] of Object.entries(loot) as [Mat, number][])
+      if (n > 0) this.zostawLup(at, mat, n, this.kafelkiPokoju(gid(k, room)));
+    this.wersjaSasiadow++;
+  }
+
+  /* etap 2: szabrownicy w budynku, nocni goście, piętra */
+
+  /** nasza osoba weszła do budynku, w którym po nocy zostali szabrownicy: spotkanie w środku (nocą rzucają się od razu) */
+  private naSzabrownikow(p: Pawn): boolean {
+    const s = this.st.sasiedzi;
+    if (!s || s.spotkanie || p.job?.t === 'meet') return false;
+    const tile = this.tileOf(p);
+    if (!this.inSasiad(tile)) return false;
+    const k = gidB(this.nbRoom![tile]);
+    const dom = s.budynki[k]?.domy.findIndex((g) => g.szabrownicy && g.gdzie === 'u_siebie' && !g.pionki) ?? -1;
+    return dom >= 0 && this.zacznijSpotkanie(p, k, dom, 'mieszkanie', false);
+  }
+
+  /** do budynku da się wejść z ulicy: otwarte albo wyważone drzwi na zewnątrz, przed którymi jest ulica (nie nasze
+      podwórko) */
+  private zUlicy(b: SasiedniBudynek): boolean {
+    return drzwiBudynku(this.w, b.bid).zewn.some(
+      (d) => przechodnie(stanDrzwi(b, d.tile)?.s ?? 'zamkniete') && !this.insideAt(d.out),
+    );
+  }
+
+  /** sterty materiału (łup) w budynku, od najstarszej */
+  private stertyW(bid: number): Thing[] {
+    const size = this.w.size;
+    return this.st.things.filter((t) => LUP_MATS.has(t.kind) && t.n > 0 && this.w.bid[t.y * size + t.x] === bid);
+  }
+
+  /** Nocni goście o 2:00 w otwartych budynkach z wejściem od ulicy. Zwykły tryb: szabrownicy biorą do 10 sztuk ze stert
+      i przeszukują do dwóch pomieszczeń (łup przepada), lokatorzy w domu się boją, a co trzeci raz szabrownicy zostają
+      (i potem biorą co noc). Tryb zombie: wchodzą 1–2 szwendacze. Kto przychodzi, z ziarna świata, budynku i dnia. */
+  private nocniGoscie(): void {
+    const st = this.st;
+    const s = st.sasiedzi!;
+    const mode = modeOf(st);
+    const day = dayOf(st.tick);
+    const seed = this.w.seed;
+    s.budynki.forEach((b, k) => {
+      // za wspólnym płotem (etap 3) i bez wejścia od ulicy nikt nie wchodzi
+      if (!b.otwarty || st.plot?.bids.includes(b.bid) || !this.zUlicy(b)) return;
+      const piles = this.stertyW(b.bid);
+      const squat = b.domy.find((g) => g.szabrownicy && g.gdzie === 'u_siebie');
+      const kto = squat ? 'szabrownicy' : nocnyGosc(seed, b.bid, day, mode, piles.length > 0);
+      if (!kto) return;
+      if (kto === 'szwendacze') {
+        const it = wnetrze(this.w, b.bid);
+        const tiles = it.rooms.flatMap((r) => this.kafelkiPokoju(gid(k, r.id)));
+        const r = rngOfPlace(seed, b.bid, day, 0x6a59);
+        const n = r() < 0.5 ? 2 : 1;
+        for (let i = 0; i < n && tiles.length && this.zombieCount() < MAX_ZOMBIES; i++)
+          spawnZombie(st, this.w, tiles[Math.floor(r() * tiles.length)], Math.floor(r() * 16));
+        b.noc = { tick: st.tick, kto, zabrali: {} };
+        return;
+      }
+      // ze stert do NOC_BIORA sztuk, od najstarszej
+      const zabrali: Partial<Record<Mat, number>> = {};
+      let left = NOC_BIORA;
+      for (const t of piles) {
+        if (left <= 0) break;
+        const n = Math.min(t.n, left);
+        t.n -= n;
+        left -= n;
+        zabrali[t.kind as Mat] = (zabrali[t.kind as Mat] ?? 0) + n;
+      }
+      st.things = st.things.filter((t) => !(t.n <= 0 && LUP_MATS.has(t.kind)));
+      // do NOC_POKOJE nieprzeszukanych pomieszczeń (sale i puste mieszkania): łup przepada
+      const it = wnetrze(this.w, b.bid);
+      let rooms = NOC_POKOJE;
+      for (const r of it.rooms) {
+        if (rooms <= 0) break;
+        if (moznaPrzeszukac(st, this.w, k, r.id) !== 'tak') continue;
+        if (r.apt < 0) b.przeszukane.push(r.id);
+        else b.mieszkania.find((m) => m.apt === r.apt)?.przeszukane.push(r.id);
+        rooms--;
+      }
+      b.przeszukane.sort((x, y) => x - y);
+      for (const m of b.mieszkania) m.przeszukane.sort((x, y) => x - y);
+      for (const g of b.domy)
+        if (!g.szabrownicy && g.gdzie === 'u_siebie' && g.zamiar !== 'wrodzy') g.nastroj = 'strach';
+      if (squat) {
+        for (const [m, n] of Object.entries(zabrali) as [Mat, number][]) squat.zapasy[m] = (squat.zapasy[m] ?? 0) + n;
+      } else if (zostaja(seed, b.bid, day)) {
+        const names = new Set(st.people.map((q) => q.first));
+        b.domy.push(szabrownicy(this.w, b.bid, day, names, zabrali));
+      }
+      b.noc = { tick: st.tick, kto, zabrali };
+    });
+  }
+
+  /** o 7:00 napis o nocnych gościach (w ilu budynkach i co zniknęło), raz na noc */
+  private ranoPoGosciach(): void {
+    const s = this.st.sasiedzi!;
+    const fresh: number[] = [];
+    const ile: Partial<Record<Mat, number>> = {};
+    let ludzie = false;
+    s.budynki.forEach((b, k) => {
+      if (!b.noc || b.noc.pokazane || this.st.tick - b.noc.tick > TICKS_PER_DAY) return;
+      b.noc.pokazane = true;
+      fresh.push(k);
+      if (b.noc.kto === 'szabrownicy') ludzie = true;
+      for (const [m, n] of Object.entries(b.noc.zabrali) as [Mat, number][]) ile[m] = (ile[m] ?? 0) + n;
+    });
+    if (fresh.length) this.napisSasiada(ludzie ? 'noc' : 'noc_zombie', fresh[0], { ile, ilu: fresh.length });
+  }
+
+  /** Przeszukać piętro otwartego budynku ze schodów (tile: kafelek schodów): osoba idzie na posadzkę przy schodach, na
+      godzinę znika na górze i wraca z łupem; pięter jest tyle, ile pietraBudynku. */
+  private startUpstairs(p: Pawn, bid: number, tile: number): void {
+    const s = this.st.sasiedzi;
+    const k = s?.budynki.findIndex((b) => b.bid === bid && b.otwarty) ?? -1;
+    if (k < 0 || s!.budynki[k].pietra >= pietraBudynku(this.w, bid)) return;
+    const it = wnetrze(this.w, bid);
+    if (it.cell[tile] !== IN.STAIRS) return;
+    const stand = this.przySchodach(p, it, tile);
+    if (stand < 0 || !this.go(p, stand)) return;
+    this.setJob(p, this.newJob('upstairs', k, stand, true), false);
+  }
+
+  /** posadzka przy ciągu schodów, do której osoba dojdzie, najbliżej niej (−1: żadnej) */
+  private przySchodach(p: Pawn, it: Interior, tile: number): number {
+    const size = this.w.size;
+    const seen = new Set<number>([tile]);
+    const q = [tile];
+    const out: number[] = [];
+    const region = this.regionOf(p);
+    while (q.length) {
+      const c = q.pop()!;
+      const x = c % size;
+      for (const n of [c - size, x < size - 1 ? c + 1 : -1, c + size, x > 0 ? c - 1 : -1]) {
+        if (n < 0 || n >= size * size || seen.has(n)) continue;
+        seen.add(n);
+        if (it.cell[n] === IN.STAIRS) q.push(n);
+        else if (it.cell[n] === IN.FLOOR && !this.coreBlocked[n] && this.reg[n] === region) out.push(n);
+      }
+    }
+    return out.length ? this.nearest(p, out) : -1;
+  }
+
+  /** Piętro: dojście do schodów, godzina na górze (osoby nie widać), potem łup z pustych mieszkań piętra na posadzce
+      przy schodach i noszenie na podwórko; na górze w zwykłym trybie mogą zastać ją lokatorzy (spotkanie), a w trybie
+      zombie szwendacz (rana albo ugryzienie, z ziarna gry). */
+  private pietroPraca(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const b = st.sasiedzi?.budynki[j.target];
+    if (!b?.otwarty || b.pietra >= pietraBudynku(this.w, b.bid)) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = st.tick;
+      j.until = st.tick + PIETRO_TICKS;
+      return true;
+    }
+    if (st.tick < j.until) return true;
+    const mode = modeOf(st);
+    const nr = b.pietra;
+    b.pietra++;
+    const res = pietro(this.w, b.bid, nr, b.mieszkania.length, mode);
+    const room = this.nbRoom?.[j.tile] ?? -1;
+    for (const [m, n] of Object.entries(res.lup) as [Mat, number][])
+      if (n > 0) this.zostawLup(j.tile, m, n, room >= 0 ? this.kafelkiPokoju(room) : []);
+    this.wersjaSasiadow++;
+    if (res.szwendacz) {
+      // szwendacz na klatce wyżej: jak ugryzienie przy siatce, z ziarna gry
+      if (nextRandom(st.rng) < BITE_HIT) {
+        this.hurt(p, BITE_DMG, null);
+        const bitten = !this.graveyard.has(p.id) && nextRandom(st.rng) < BITE_INFECT;
+        if (bitten) infect(st, p, nextRandom(st.rng) < LIMB);
+        this.napisSasiada(bitten ? 'pietro_ugryzienie' : 'pietro_szwendacz', j.target, { kto: p.id });
+      } else this.napisSasiada('pietro', j.target, { kto: p.id, ile: res.lup });
+    } else this.napisSasiada('pietro', j.target, { kto: p.id, ile: res.lup });
+    if (this.graveyard.has(p.id)) return false;
+    if (res.ludzie) {
+      const B = this.w.buildings[b.bid];
+      const size = this.w.size;
+      const d2 = (t: number) =>
+        ((t % size) - (j.tile % size)) ** 2 + (Math.floor(t / size) - Math.floor(j.tile / size)) ** 2;
+      const klatka =
+        B.entrances.length > 1 ? B.entrances.map((e, i) => [d2(e.tile), i]).sort((x, y) => x[0] - y[0])[0][1] : -1;
+      b.domy.push(domWyzej(this.w, b.bid, nr, klatka, mode, new Set(st.people.map((q) => q.first))));
+      if (this.zacznijSpotkanie(p, j.target, b.domy.length - 1, 'pietro', false)) return true;
+    }
+    return this.carryOn(p, j, j.tile);
+  }
+
+  /* etap 3: wspólny płot */
+
+  /** Otoczyć budynek wspólnym płotem: plan z kosztem według wariantu z menu (deska i złom na metr nowego płotu albo
+      2 sztuki jednego materiału, po 2 deski na drzwi do zabicia) i czasem (3 minuty na metr, 20 minut na drzwi), potem
+      praca jak przy budowie. Jeden plan naraz; na planie tego samego budynku polecenie znaczy „budować dalej” (wariant
+      zostaje z planu). Gdy się nie da, napis mówi dlaczego. */
+  private startEnclose(p: Pawn, bid: number, wybor?: WariantPlotu): void {
+    const st = this.st;
+    const k = st.sasiedzi?.budynki.findIndex((b) => b.bid === bid) ?? -1;
+    if (k < 0) return;
+    const plan = st.plot?.plan;
+    if (plan) {
+      if (plan.bid === bid) this.startPlot(p);
+      return;
+    }
+    const r = plotDla(st, this.w, bid);
+    if (!r) return;
+    if (!r.ok) {
+      this.napisSasiada(`plot_${r.why}`, k, r.dlugosc ? { ilu: r.dlugosc } : {});
+      return;
+    }
+    const stand = this.plotStand(r.usuniete, r.fence.yard);
+    if (stand < 0) return;
+    // wariant z polecenia (także z sieci): nieznany to deska i złom
+    const wariant = wybor && WARIANTY_PLOTU.includes(wybor) ? wybor : 'mieszany';
+    const { need, total } = kosztPlotu(r, wariant);
+    st.plot ??= { bids: [] };
+    st.plot.plan = { bid, need, have: {}, work: 0, total, by: -1, stand, wariant };
+    this.wersjaSasiadow++;
+    this.startPlot(p);
+  }
+
+  /** skąd się stawia: kafelek starego podwórka przy siatce, która zniknie (przejście do korytarza), a bez takiego
+      (budynek przy podwórku) pierwszy wolny kafelek nowego podwórka */
+  private plotStand(usuniete: readonly number[], yard: readonly number[]): number {
+    const size = this.w.size;
+    const old = this.yardMask;
+    for (const t of usuniete)
+      for (const n of [t - size, t + 1, t + size, t - 1])
+        if (n >= 0 && n < size * size && old[n] && !this.coreBlocked[n]) return n;
+    return yard.find((i) => old[i] && !this.coreBlocked[i]) ?? -1;
+  }
+
+  /** zająć się planem płotu: z materiałami od razu do pracy, inaczej po pierwszy brakujący materiał */
+  private startPlot(p: Pawn): boolean {
+    const plan = this.st.plot?.plan;
+    if (!plan) return false;
+    const holder = plan.by >= 0 && plan.by !== p.id ? this.st.pawns.find((q) => q.id === plan.by) : undefined;
+    if (holder?.job?.t === 'plot') return false;
+    const j = this.newJob('plot', plan.bid, this.tileOf(p), true);
+    if (this.ready({ need: plan.need, have: plan.have } as BuildPlan)) {
+      if (!this.go(p, plan.stand)) return false;
+      this.setJob(p, j, false);
+      j.phase = 2;
+      j.tile = plan.stand;
+      plan.by = p.id;
+      return true;
+    }
+    this.setJob(p, j, false);
+    if (!this.fetchNext(p, j, plan.need, plan.have)) {
+      p.job = null;
+      return false;
+    }
+    plan.by = p.id;
+    return true;
+  }
+
+  /** Płot: kursy po deski i złom (faza 0 i 1), potem praca przy przejściu (faza 2); po skończonej pracy nowa siatka
+      od następnego kroku (polecenie otocz w kolejce). */
+  private plotPraca(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const plan = st.plot?.plan;
+    if (!plan || plan.bid !== j.target) return false;
+    plan.by = p.id;
+    if (j.phase === 0) {
+      if (!at) return false;
+      const m = j.what as Mat;
+      return this.takeFor(p, j, (plan.need[m] ?? 0) - (plan.have[m] ?? 0), plan.stand);
+    }
+    if (j.phase === 1) {
+      if (!at) return false;
+      const m = j.what as Mat;
+      plan.have[m] = (plan.have[m] ?? 0) + j.n;
+      j.n = 0;
+      j.what = '';
+      if (this.fetchNext(p, j, plan.need, plan.have)) return true;
+      if (!this.ready({ need: plan.need, have: plan.have } as BuildPlan)) return false;
+      j.phase = 2;
+      j.t0 = st.tick;
+      return true;
+    }
+    if (!at) return false;
+    plan.work += 1;
+    if ((st.tick - j.t0) % NOISE_TICKS === 0) this.addNoise(p.x, p.y, HALAS.deski);
+    if (plan.work < plan.total) return true;
+    if (!st.cmds.some((c) => c.t === 'otocz')) st.cmds.push({ t: 'otocz', ids: [], bid: plan.bid });
+    return false;
+  }
+
+  /** Wspólny płot stoi: siatka od nowa według kształtu (liczonego jeszcze raz, teraz), wytrzymałość starych kafelków
+      zostaje, nowe mają świeżą łatę, dziury, przez które przeszło podwórko, znikają, drzwi na obwodzie zabite. */
+  private otocz(bid: number): void {
+    const st = this.st;
+    const plan = st.plot?.plan;
+    if (!plan || plan.bid !== bid) return;
+    delete st.plot!.plan;
+    const k = st.sasiedzi?.budynki.findIndex((b) => b.bid === bid) ?? -1;
+    const r = plotDla(st, this.w, bid);
+    if (!r?.ok || k < 0) {
+      if (k >= 0) this.napisSasiada('plot_brak', k);
+      return;
+    }
+    const stara = this.w.fence;
+    const f = st.fence!;
+    const hp = new Map(stara.tiles.map((t, i) => [t, f.hp[i]]));
+    f.hp = r.fence.tiles.map((t) => hp.get(t) ?? PATCH_HP);
+    const on = new Set(r.fence.tiles);
+    f.holes = f.holes.map((h) => ({ ...h, tiles: h.tiles.filter((t) => on.has(t)) })).filter((h) => h.tiles.length);
+    const b = st.sasiedzi!.budynki[k];
+    for (const t of r.zabic) {
+      const d = stanDrzwi(b, t);
+      if (d) {
+        d.s = 'zabite';
+        delete d.k;
+      }
+    }
+    st.plot!.bids.push(bid);
+    st.plot!.ksztalt = { tiles: r.fence.tiles, hole: r.fence.hole, yard: r.fence.yard };
+    ustawSiatke(this.w, st.plot!.ksztalt);
+    this.przeliczSiatke();
+    this.rebuild();
+    this.wersjaSasiadow++;
+    this.napisSasiada('plot_gotowy', k, { ilu: r.dlugosc });
   }
 
   hash(): string {

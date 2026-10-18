@@ -5,7 +5,9 @@
    (guard na posterunku KOZA_POST) i drzemka wartownika (guard w fazie 4). Prace M2: przeszukiwanie
    i przebieranie śmieci na kolanach, rozbiórka siekierą, naprawa, budowa i zajmowanie mieszkania
    młotkiem (podłoga, rura i grządki na kolanach), niesienie desek albo złomu na łatę, naprawę
-   i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Klatki liczone z czasu gry, bez
+   i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Fala 2: przy cudzych drzwiach
+   wyważanie zamachem, deski i pukanie młotkiem, zamek na kolanach, pomieszczenie sąsiada przeszukuje
+   na kolanach. Klatki liczone z czasu gry, bez
    stanu w symulacji. Dokładanie do kozy trwa w symulacji
    jeden tick, więc widok pamięta je chwilę (FeedWatch). Czyste funkcje bez PixiJS. */
 
@@ -190,6 +192,14 @@ export function poseOf(
       // warsztat: piłuje i obrabia przy stole
       case 'saw':
         return hammer();
+      // M2 fala 2: cudze drzwi (wyważanie zamachem, deski i pukanie młotkiem, zamek na kolanach), przeszukanie
+      // pomieszczenia sąsiada na kolanach
+      case 'door':
+        if (j.what === 'force') return swing();
+        if (j.what === 'open') return { pose: 'crouch', dir, frame: 0 };
+        return hammer();
+      case 'loot':
+        return knees();
       case 'warm':
         return { pose: 'crouch', dir, frame: 0 };
       case 'cook':

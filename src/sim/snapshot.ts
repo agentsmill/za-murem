@@ -25,6 +25,7 @@ import type { AptGame } from './mieszkania.ts';
 import type { Needs } from './needs.ts';
 import { jobText } from './orders.ts';
 import { durability, fenceShape } from './perimeter.ts';
+import { LUP_MATS, uSasiada } from './sasiedzi.ts';
 import {
   AMPUTATE_WINDOW,
   BURN_TICKS,
@@ -109,6 +110,9 @@ export interface SimStock {
   ammo: Record<AmmoKey, number>;
   /** wszystkie materiały w sztukach (rzeczy na mapie): drewno bez kozy, deski, złom, części, jedzenie, leki */
   mats: Record<Mat, number>;
+  /** łup we wnętrzach sąsiednich budynków (M2 fala 2): leży, ale nie jest nasz, dopóki ktoś go nie przyniesie; bez
+      niczego u sąsiadów pola nie ma */
+  uSasiadow?: Partial<Record<Mat, number>>;
 }
 
 /** mieszkanie siedziby dla interfejsu (karta mieszkania) */
@@ -263,9 +267,12 @@ function personOf(st: SimState, w: World, p: Pawn, who: Person): SimPerson {
 }
 
 export function snapshot(st: SimState, w: World): SimSnapshot {
-  const count = (k: string) => st.things.reduce((a, t) => a + (t.kind === k ? t.n : 0), 0);
-  const h = houseOf(w);
   const size = w.size;
+  // łup we wnętrzach sąsiadów (M2 fala 2) nie jest jeszcze nasz: liczy się osobno
+  const obce = (t: { x: number; y: number }) => uSasiada(st, w, t.y * size + t.x);
+  const count = (k: string) => st.things.reduce((a, t) => a + (t.kind === k && !obce(t) ? t.n : 0), 0);
+  const uSasiadow: Partial<Record<Mat, number>> = {};
+  const h = houseOf(w);
   const tick = st.tick;
   const ours = (kind: string) =>
     h ? st.things.find((t) => t.kind === kind && inHomeApt(h, t.y * size + t.x)) : undefined;
@@ -280,6 +287,10 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   let scrap = 0;
   let boards = 0;
   for (const t of st.things) {
+    if (obce(t)) {
+      if (LUP_MATS.has(t.kind)) uSasiadow[t.kind as Mat] = (uSasiadow[t.kind as Mat] ?? 0) + t.n;
+      continue;
+    }
     if (t.kind === 'drewno') {
       if (sklad.includes(t.y * size + t.x)) woodSklad += t.n;
       else woodLoose += t.n;
@@ -291,8 +302,9 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   const people: SimPerson[] = st.pawns
     .filter((p) => p.kind === 'core')
     .map((p) => personOf(st, w, p, st.people[p.person]));
+  // mieszkańcy z osobą i lokatorzy sąsiednich budynków na mapie (karta do odczytu)
   const lokatorzy: SimPerson[] = st.pawns
-    .filter((p) => p.kind === 'resident' && p.person >= 0 && st.people[p.person])
+    .filter((p) => (p.kind === 'resident' || p.kind === 'sasiad') && p.person >= 0 && st.people[p.person])
     .map((p) => personOf(st, w, p, st.people[p.person]));
   const woodCarried = people.reduce((a, p) => a + p.carry, 0);
   const fuel = koza?.fuel ?? 0;
@@ -336,6 +348,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
         jedzenie: supplies,
         leki: count('leki') + st.store.meds,
       },
+      ...(Object.keys(uSasiadow).length ? { uSasiadow } : {}),
     },
     burned: st.burned.map((b) => ({ ...b })),
     fence:

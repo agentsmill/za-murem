@@ -167,8 +167,9 @@ export const isDay2 = (gov: GovState | null): boolean => !!gov && gov.reports.le
 
 /** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie (w domu jednorodzinnym dom komitetu, słowa
     ze słownika miejsca), postawić pierwszą budowlę (dowolną; warsztat bierze tyle materiału, że zarząd stawia go
-    zwykle 3. albo 4. dnia), wzmocnić obwód, mieć drewno na noc. Co przeszukane, daje stan gry (st.apts); budowle
-    i zasieki to gotowe rzeczy w st.things; obwód liczy się też, gdy żadna dziura nie jest otwarta. */
+    zwykle 3. albo 4. dnia), wzmocnić obwód, mieć drewno na noc. Co przeszukane, daje stan gry (st.apts, a od fali 2
+    także pomieszczenia sąsiadów w st.sasiedzi); budowle i zasieki to gotowe rzeczy w st.things; obwód liczy się też,
+    gdy żadna dziura nie jest otwarta. */
 export function goalsDay2(
   st: SimState,
   gov: GovState | null,
@@ -186,7 +187,10 @@ export function goalsDay2(
 ): Goal[] {
   const w = o.words ?? wordsOf(BLOK);
   const e = o.wordsEn ?? wordsEn(BLOK);
-  const searched = st.apts.some((a) => a.searched.length > 0);
+  const uSasiadow = (st.sasiedzi?.budynki ?? []).some(
+    (b) => b.przeszukane.length > 0 || b.mieszkania.some((m) => m.przeszukane.length > 0),
+  );
+  const searched = st.apts.some((a) => a.searched.length > 0) || uSasiadow;
   const built = (kind: string) => st.things.some((t) => t.kind === kind);
   const late = !!gov?.night?.confirmed || (gov?.reports.length ?? 0) > 1;
   const b = o.touch

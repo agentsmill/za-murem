@@ -237,6 +237,20 @@ export function drzwiKlatek(w: World, srodek: LatLon): Map<string, [number, numb
   return out;
 }
 
+/** drzwi (kafelki wejść) klatek zajętych przez inne drużyny, rosnąco: dla symulacji (polecenie zajete, M2 fala 2),
+    która trzyma je zamknięte na stałe razem z tym, co za nimi */
+export function drzwiObcych(w: World, srodek: LatLon, klatki: readonly ZajetaKlatka[]): number[] {
+  const obce = new Set(klatki.filter((k) => !k.moja).map((k) => k.klucz));
+  const out: number[] = [];
+  if (!obce.size) return out;
+  for (const b of w.buildings)
+    for (const e of b.entrances) {
+      const k = kluczWejscia(w, b, e, srodek);
+      if (k && obce.has(k)) out.push(e.tile);
+    }
+  return out.sort((a, b) => a - b);
+}
+
 /** Znaczniki klatek na mapie: cudze (obca), nasze (nasza) i cel drużyny bez domu (klatka nowej siedziby); przy
     drzwiach klatki, kiedy świat je ma (drzwi), inaczej na środku klatki; tylko na mapie i tuż przy niej (20 m). */
 export function znaczniki(

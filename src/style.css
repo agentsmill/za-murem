@@ -1032,6 +1032,13 @@ a.btn {
 .sheet.koniec {
   --plate: #3a3f44;
 }
+/* M2 fala 2: spotkanie z sąsiadami (brąz drzwi) i napad sąsiadów */
+.sheet.sasiedzi {
+  --plate: #5b4630;
+}
+.sheet.napad {
+  --plate: #7a2e22;
+}
 .sheet:focus {
   outline: none;
 }

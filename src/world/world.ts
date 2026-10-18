@@ -112,6 +112,9 @@ export interface World {
   props: Prop[];
   /** dziurawa siatka z bramą wokół siedziby i podwórka; stan zmienny (łaty, nowe dziury, brama) trzyma symulacja */
   fence: Fence;
+  /** M2 fala 2, etap 3: siatka ze świata sprzed wspólnego płotu. Gdy gra otoczy sąsiedni budynek, symulacja wymienia
+      fence (i jej kafelki w blocked) na kształt ze stanu gry, a tu zostaje pierwotna, do klucza zapisu (worldKey). */
+  fenceBaza?: Fence;
   /** stany mieszkań siedziby (zarząd, mieszkańcy, puste z powodem i rokiem), po numerze mieszkania */
   apts: AptState[];
   /** uszkodzenia w pustych mieszkaniach siedziby (okno, drzwi, rura, podłoga, piec); naprawy trzyma symulacja */

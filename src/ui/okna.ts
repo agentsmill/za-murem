@@ -33,8 +33,8 @@ export interface Sheet {
   title: string;
   body: string;
   foot: string;
-  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu */
-  tone: 'noc' | 'uchwala' | 'wydarzenie' | 'raport' | 'menu' | 'ogien' | 'koniec';
+  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie) i napad (sąsiedzi atakują) */
+  tone: 'noc' | 'uchwala' | 'wydarzenie' | 'raport' | 'menu' | 'ogien' | 'koniec' | 'sasiedzi' | 'napad';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
 }

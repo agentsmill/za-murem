@@ -3,9 +3,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
 import { labelRegions } from '../../src/sim/path.ts';
-import { type AptState, type AptWhy, applyApts, settleApts } from '../../src/world/apts.ts';
+import { type AptState, type AptWhy, applyApts, settleApts, settleAptsOf } from '../../src/world/apts.ts';
 import type { Geo, Pt } from '../../src/world/geo.ts';
-import { IN } from '../../src/world/interior.ts';
+import { buildInterior, IN } from '../../src/world/interior.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS, type World } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
@@ -243,5 +243,60 @@ describe('stany mieszkań siedziby i zawartość pustych', () => {
     const w = address('zielonki');
     expect(w.apts).toEqual([{ bid: w.hq, apt: w.interior.home, state: 'zarzad' }]);
     expect(w.damage).toEqual([]);
+  });
+});
+
+describe('stany i zawartość mieszkań dowolnego budynku (fala 2)', () => {
+  /** blok przy siedzibie na Lanciego (23 m od jej drzwi, trzy klatki) */
+  const lanciego = () => {
+    const w = demo('lanciego');
+    return { w, b: w.buildings.find((x) => x.name === 'Blok nr 10F')! };
+  };
+  const aptsOf = (it: { rooms: { apt: number }[] }) => Math.max(-1, ...it.rooms.map((r) => r.apt)) + 1;
+
+  it('settleApts siedziby bez zmian po wydzieleniu zawartości pustych', () => {
+    // skróty policzone na pelna-gra 80d0fed przed wydzieleniem
+    const got = ['przymorze', 'lanciego', 'zielonki'].map((k) => hashString(JSON.stringify(settleApts(demo(k)))));
+    expect(got).toEqual(['d885a027', 'fb8901c1', '05c01e08']);
+  });
+
+  it('settleAptsOf: połowa pustych z powodem i rokiem, bez mieszkania zarządu, deterministycznie', () => {
+    const { w, b } = lanciego();
+    const it1 = buildInterior(w, b.id);
+    const n = aptsOf(it1);
+    expect(n).toBeGreaterThanOrEqual(4);
+    const r = settleAptsOf(w, it1);
+    expect(r.apts.map((a) => a.apt)).toEqual([...Array(n).keys()]);
+    expect(r.apts.every((a) => a.bid === b.id && a.state !== 'zarzad')).toBe(true);
+    const empty = r.apts.filter((a) => a.state === 'puste');
+    expect(Math.abs(empty.length - n / 2)).toBeLessThanOrEqual(1);
+    for (const a of empty) {
+      expect(WHY).toContain(a.why);
+      expect(a.year).toBeGreaterThanOrEqual(2026);
+      expect(a.year).toBeLessThanOrEqual(2051);
+    }
+    // zawartość tylko w pustych mieszkaniach tego budynku
+    for (const d of r.damage) {
+      expect(d.bid).toBe(b.id);
+      expect(empty.some((a) => a.apt === d.apt)).toBe(true);
+    }
+    for (const t of r.trash) expect(w.bid[t.y * w.size + t.x]).toBe(b.id);
+    expect(r.furniture.length).toBe(it1.furniture.length);
+    expect(settleAptsOf(w, buildInterior(w, b.id))).toEqual(r);
+  });
+
+  it('settleAptsOf: stany z zewnątrz wygrywają, zawartość idzie za nimi', () => {
+    const { w, b } = lanciego();
+    const it1 = buildInterior(w, b.id);
+    const given: AptState[] = [...Array(aptsOf(it1)).keys()].map((apt) =>
+      apt === 0
+        ? { bid: b.id, apt, state: 'puste', why: 'zalanie', year: 2040 }
+        : { bid: b.id, apt, state: 'mieszkancy' },
+    );
+    const r = settleAptsOf(w, it1, given);
+    expect(r.apts).toEqual(given);
+    expect(r.damage.map((d) => d.kind)).toContain('rura');
+    expect(r.damage.every((d) => d.apt === 0)).toBe(true);
+    expect(r.trash.every((t) => it1.rooms[it1.room[t.y * w.size + t.x]].apt === 0)).toBe(true);
   });
 });

@@ -36,6 +36,8 @@ export interface Save {
 export function worldKey(
   w: Pick<World, 'size' | 'hq' | 'buildings' | 'trees' | 'dryTree'> & {
     fence?: { tiles: number[] };
+    /** siatka sprzed wspólnego płotu (M2 fala 2): klucz liczy się ze świata, nie z gry */
+    fenceBaza?: { tiles: number[] };
     interior?: { rooms: unknown[]; furniture: unknown[] } | null;
   },
 ): string {
@@ -46,7 +48,7 @@ export function worldKey(
       w.buildings.length,
       w.trees.length,
       w.dryTree,
-      w.fence?.tiles.length ?? 0,
+      (w.fenceBaza ?? w.fence)?.tiles.length ?? 0,
       w.interior?.rooms.length ?? 0,
       w.interior?.furniture.length ?? 0,
     ]),

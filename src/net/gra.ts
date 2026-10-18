@@ -6,7 +6,8 @@
    Wszystko działa tylko z ?siec=1 w adresie strony i przy odpowiadającym serwerze (informację o danych osobowych
    i administratora danych musi jeszcze dać Mateusz). Bez tego każda metoda zachowuje się jak gra bez sieci: zwykły świat,
    bez znaczników, bez dodatkowych poleceń. Symulacji nic tu nie zmienia w trakcie kroku: zajęte klatki wchodzą do gry
-   tylko jako wejście startu (lista budynków dla buildWorld i miejsce startu zarządu przed new Sim).
+   jako wejście startu (lista budynków dla buildWorld i miejsce startu zarządu przed new Sim) i poleceniem zajete
+   w kolejce (M2 fala 2: drzwi klatek innych drużyn zamknięte na stałe, po każdej zmianie listy).
 
    Gra sieciowa należy do konta, które ją zaczęło (StanSieci.konto): wczytana na innym koncie albo bez zalogowania toczy
    się dalej bez sieci (bez zajmowania i bez chmury). Zapis w chmurze idzie od wersji, którą ta gra ostatnio wysłała
@@ -34,6 +35,7 @@ import {
   celeBezDomu,
   doZajecia,
   drzwiKlatek,
+  drzwiObcych,
   kafelekUlicy,
   klatkaPod,
   klatkaSiedziby,
@@ -396,6 +398,7 @@ export class GraSieciowa {
       if (!ukryj) this.ustawZnaczniki();
     }
     if (this.bezSieci || this.restartuje) return;
+    this.zamknijObce(sim);
     if (this.bezDomu() && !this.zajmuje && now - this.sprawdzono > 500) {
       this.sprawdzono = now;
       if (naProgu(sim.st, sim.w)) void this.zajmijSiedzibe();
@@ -404,6 +407,15 @@ export class GraSieciowa {
       this.odswiezono = now;
       void this.odswiez(this.gen);
     }
+  }
+
+  /** M2 fala 2: drzwi klatek innych drużyn do symulacji poleceniem zajete, gdy lista się zmieni (zamknięte na stałe) */
+  private zamknijObce(sim: Sim) {
+    if (!this.srodek) return;
+    const drzwi = drzwiObcych(sim.w, this.srodek, this.klatki);
+    const teraz = sim.st.zajete ?? [];
+    const czeka = sim.st.cmds.some((c) => c.t === 'zajete');
+    if (!czeka && drzwi.join() !== teraz.join()) sim.push({ t: 'zajete', ids: [], drzwi });
   }
 
   private async odswiez(gen: number) {

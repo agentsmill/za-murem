@@ -14,7 +14,10 @@
    Z flagą --mieszkancy (gdziekolwiek wśród argumentów) cały bot gra na świecie z mieszkańcami siedziby z generatora
    (tools/bot-mieszkancy.ts, jak w grze): zarząd i lokatorzy z osobami z generatora, stany mieszkań siedziby z niego;
    po linijce „Rdzeń” pojawia się jedna o mieszkańcach z adresu. Bez flagi wyjście i skróty bez zmian.
-   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] */
+   Z flagą --sasiedzi na końcu dochodzi fala 2 M2: gracz fali 1, a od dnia 2 jedna osoba u sąsiadów (otwiera najbliższy
+   budynek, przeszukuje pomieszczenia i piętra, nosi łup, rozmawia z lokatorami); liczy, ile u nich zrobiła, spotkania,
+   rany i ugryzienia, zapasy po 5 dniach i głód. Bez flagi wyjście i skróty bez zmian.
+   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi] */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -39,7 +42,8 @@ import {
 } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
-import { ARGUMENTY, MIESZKANCY, opisMieszkancow, swiatMieszkancow } from './bot-mieszkancy.ts';
+import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
+import { ARGUMENTY, MIESZKANCY, opisMieszkancow, SASIEDZI, swiatMieszkancow } from './bot-mieszkancy.ts';
 
 const SEED = Number(ARGUMENTY[0]) || 1;
 const DAYS = Number(ARGUMENTY[1]) || 45;
@@ -525,5 +529,42 @@ if (starving > 0.15) {
 if (mean(m2With.map((r) => r.work.perMin)) < 1 || Math.min(...m2With.map((r) => r.work.covered)) < 0.9) {
   console.log('  BŁĄD: dzień 2 i 3 mają dawać decyzję co minutę');
   fail = true;
+}
+
+/* ---------- fala 2 M2 (--sasiedzi): gracz fali 1 i jedna osoba u sąsiadów od dnia 2 ---------- */
+if (SASIEDZI) {
+  const t3 = performance.now();
+  console.log(
+    `\nFala 2 M2 (--sasiedzi), ${govName}: ${GOV_SEEDS.length} ziaren × ${M2_DAYS} dni, gracz fali 1 z przeszukiwaniem, a od dnia 2 ostatnia osoba z zarządu otwiera najbliższy budynek, przeszukuje pomieszczenia i piętra, nosi łup i rozmawia z lokatorami`,
+  );
+  const runs = GOV_SEEDS.map((seed) => {
+    const m2 = m2Player({ search: true, furniture: true });
+    const nb = sasiedziPlayer();
+    const w = govWorld;
+    const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, {
+      player: (sim, ww, s, order) => {
+        nb.player(sim, ww, s, order);
+        m2.player(sim, ww, s, order);
+      },
+      ...zAdresu(w),
+    });
+    const sn = snapshot(r.st, w).stock;
+    return { log: nb.log, mats: sn.mats, food: sn.supplies, hunger: r.hunger, built: m2.log.built.length };
+  });
+  const sum = (k: keyof SasiedziLog) => f1(mean(runs.map((r) => r.log[k])));
+  console.log(
+    `  u sąsiadów: otwarte budynki ${sum('opened')}, przeszukane pomieszczenia ${sum('rooms')}, piętra ${sum('floors')}, spotkania ${sum('meetings')}, rany ${sum('wounds')}, ugryzienia ${sum('bites')}`,
+  );
+  console.log(
+    `  po ${M2_DAYS} dniach: budowle ${f1(mean(runs.map((r) => r.built)))}, jedzenie ${f1(mean(runs.map((r) => r.food)))}, desek ${f1(mean(runs.map((r) => r.mats.deski)))}, złomu ${f1(mean(runs.map((r) => r.mats.zlom)))}, części ${f1(mean(runs.map((r) => r.mats.czesci)))} (bez sąsiadów wyżej: z przeszukiwaniem)`,
+  );
+  const hs = (k: keyof Hunger) => runs.reduce((a, r) => a + r.hunger[k], 0);
+  console.log(
+    `  jedzenie zarządu: rano brakło dla głodnych w ${hs('short')} z ${hs('mornings')} poranków, ktoś głodny przez ${Math.round((100 * hs('starving')) / Math.max(1, hs('samples')))}% czasu (${Math.round(performance.now() - t3)} ms)`,
+  );
+  if (mean(runs.map((r) => r.log.rooms)) < 1) {
+    console.log('  BŁĄD: gracz z sąsiadami nic u nich nie przeszukał');
+    fail = true;
+  }
 }
 if (fail) process.exit(1);

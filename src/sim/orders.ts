@@ -4,18 +4,40 @@
    Napisy (MenuItem.label, jobText) są w bieżącym języku (L z src/core/jezyk.ts, angielskie nazwy rzeczy
    z nazwy.en.ts): to tylko tekst do rysowania, nic go nie zapisuje w stanie ani nie porównuje. W Node domyślnie po
    polsku, więc testy i boty widzą polskie napisy jak dotąd. Brama albo furtka i zarząd albo komitet ze słownika
-   wspólnoty (wordsOfWorld, wordsEnOfWorld). */
+   wspólnoty (wordsOfWorld, wordsEnOfWorld). Napisy przy sąsiadach (fala 2) z src/content/napisy-sasiedzi.ts przez tr(). */
 
+import { MENU, PRACA, PRACA_DRZWI } from '../content/napisy-sasiedzi.ts';
 import { L, tr } from '../core/jezyk.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
+import { IN } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
+import { TICKS_PER_HOUR } from './clock.ts';
 import { NAPISY as HANDEL } from './handlarz.ts';
 import { dryTreeOf, houseOf, inHomeApt, type RoomKind } from './house.ts';
 import { MAT_ACC, REPAIR, RUBBISH, searchable } from './mieszkania.ts';
 import { BUILD_EN, FURNITURE_EN, MAT_EN, REPAIR_EN, ROOM_EN, THING_EN } from './nazwy.en.ts';
 import { gateTiles } from './perimeter.ts';
+import {
+  drzwiPod,
+  gidB,
+  gidRoom,
+  kafelkiZajete,
+  kosztPlotu,
+  materialNaPlot,
+  mieszkalny,
+  moznaPrzeszukac,
+  pietraBudynku,
+  plotDla,
+  pokojSasiada,
+  procentPlotu,
+  przechodnie,
+  uSasiada,
+  wariantyPlotu,
+  wnetrze,
+  ZABIJANIE_DESKI,
+} from './sasiedzi.ts';
 import {
   BRACE_COST,
   BURNABLE,
@@ -197,6 +219,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       label: L('Dobić', 'Finish off the body'),
       quick: true,
     });
+  // M2 fala 2: cudze drzwi, pomieszczenia i łup sąsiadów; w ich wnętrzu bez poleceń siedziby (gotowanie, palenie mebli)
+  out.push(...sasiedziAt(st, w, core, tile));
+  const obce = uSasiada(st, w, tile);
   const sklad = houseOf(w)?.sklad ?? [];
   const pile = thingAt(st, w, tile, 'drewno');
   if (pile && sklad.length && !sklad.includes(tile))
@@ -322,12 +347,12 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     out.push({ cmd: { t: 'chop', ids: core, tree }, label: L('Ściąć drzewo', 'Chop down the tree'), quick: near });
   }
   // kuchenka zarządu albo zapasy: gotować, gdy jest z czego i na czym
-  if ((thingAt(st, w, tile, 'kuchenka') || thingAt(st, w, tile, 'jedzenie')) && canCookIn(st, w))
+  if (!obce && (thingAt(st, w, tile, 'kuchenka') || thingAt(st, w, tile, 'jedzenie')) && canCookIn(st, w))
     out.push({ cmd: { t: 'cook', ids: core }, label: L('Gotować', 'Cook'), quick: true });
   const x = tile % w.size;
   const y = Math.floor(tile / w.size);
   const furniture = st.things.find((t) => BURNABLE[t.kind] && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
-  if (furniture)
+  if (furniture && !obce)
     out.push({
       cmd: { t: 'burn', ids: core, thing: furniture.id },
       label: L(`Spalić ${FURNITURE_ACC[furniture.kind]}`, `Burn the ${FURNITURE_EN[furniture.kind]}`),
@@ -403,6 +428,105 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       quick: false,
     });
   out.push({ cmd: { t: 'move', ids: core, to: tile }, label: L('Idź tu', 'Go here'), quick: true });
+  return out;
+}
+
+/** M2 fala 2 (docs/M2-fala-2.md): polecenia przy cudzych drzwiach (otworzyć, wejść, zapukać, wyważyć, zabić deskami,
+    odbić deski) i w pomieszczeniach otwartego sąsiada (przeszukać, a mieszkanie lokatorów okraść pod ich nieobecność).
+    Łup z jego wnętrza niesie się na podwórko poleceniem z surowców. Drzwi od ulicy budynku przy podwórku mają
+    ostrzeżenie. */
+function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuItem[] {
+  const out: MenuItem[] = [];
+  // gra sieciowa: drzwi klatki innej drużyny i wszystko za nimi bez poleceń (menu sieci mówi, czyja to klatka)
+  const dpAll = drzwiPod(st.sasiedzi, w, modeOf(st), tile);
+  const dp = dpAll && !kafelkiZajete(st, w, dpAll.bid).has(dpAll.tile) ? dpAll : null;
+  if (dp) {
+    const flat = dp.rodzaj === 'mieszkanie';
+    const warn = dp.wylom ? tr(MENU.wylom) : '';
+    const door = dp.tile;
+    const knock = mieszkalny(w, dp.bid) ? tr(flat ? MENU.zapukajMieszkanie : MENU.zapukaj) : '';
+    if (dp.s === 'zamkniete') {
+      out.push({
+        cmd: { t: 'open', ids: core, door },
+        label: `${tr(flat ? MENU.otworzMieszkanie : MENU.otworz)}${warn}`,
+        quick: true,
+      });
+      if (knock) out.push({ cmd: { t: 'knock', ids: core, door }, label: knock, quick: false });
+    }
+    if (dp.s === 'na_klucz' && knock) out.push({ cmd: { t: 'knock', ids: core, door }, label: knock, quick: true });
+    if (dp.s === 'zamkniete' || dp.s === 'na_klucz')
+      out.push({
+        cmd: { t: 'force', ids: core, door },
+        label: `${tr(flat ? MENU.wywazMieszkanie : MENU.wywaz)}${warn}`,
+        quick: false,
+      });
+    if (przechodnie(dp.s)) {
+      out.push({ cmd: { t: 'open', ids: core, door }, label: tr(MENU.wejdz), quick: true });
+      const boards = st.things.reduce(
+        (a, t) => a + (t.kind === 'deski' && !uSasiada(st, w, t.y * w.size + t.x) ? t.n : 0),
+        0,
+      );
+      if (!flat && boards >= ZABIJANIE_DESKI)
+        out.push({ cmd: { t: 'board', ids: core, door }, label: tr(MENU.zabij), quick: false });
+    }
+    if (dp.s === 'zabite' && !flat)
+      out.push({ cmd: { t: 'unboard', ids: core, door }, label: `${tr(MENU.odbij)}${warn}`, quick: true });
+  }
+  // etap 2: na schodach otwartego budynku następne piętro (rysujemy tylko parter)
+  const bid = w.bid[tile];
+  const rec = bid >= 0 ? st.sasiedzi?.budynki.find((b) => b.bid === bid && b.otwarty) : undefined;
+  if (rec && wnetrze(w, bid).cell[tile] === IN.STAIRS) {
+    const left = pietraBudynku(w, bid) - rec.pietra;
+    if (left > 0) out.push({ cmd: { t: 'upstairs', ids: core, bid, tile }, label: tr(MENU.pietro(left)), quick: true });
+  }
+  const ps = pokojSasiada(st, w, tile);
+  if (ps) {
+    const bid = st.sasiedzi!.budynki[ps.k].bid;
+    const can = moznaPrzeszukac(st, w, ps.k, ps.room);
+    const kind = wnetrze(w, bid).rooms[ps.room].kind;
+    if (can === 'tak')
+      out.push({
+        cmd: { t: 'loot', ids: core, bid, room: ps.room },
+        label: tr(MENU.przeszukaj(kind)),
+        quick: false,
+      });
+    else if (can === 'szaber')
+      out.push({
+        cmd: { t: 'loot', ids: core, bid, room: ps.room },
+        label: tr(MENU.okradnij),
+        quick: false,
+        confirm: true,
+      });
+  }
+  // etap 3: wspólny płot na drzwiach albo w pomieszczeniu otwartego budynku (z kosztem i czasem; czemu się nie da);
+  // warianty materiału, na które starcza naszych desek i złomu, a bez materiału deska i złom
+  const plotBid = dp ? dp.bid : ps ? st.sasiedzi!.budynki[ps.k].bid : -1;
+  if (plotBid >= 0 && !st.plot?.bids.includes(plotBid)) {
+    const plan = st.plot?.plan;
+    if (plan?.bid === plotBid)
+      out.push({ cmd: { t: 'enclose', ids: core, bid: plotBid }, label: tr(MENU.plotDalej), quick: false });
+    else if (!plan) {
+      const r = plotDla(st, w, plotBid);
+      if (r?.ok) {
+        for (const wariant of wariantyPlotu(r, materialNaPlot(st, w))) {
+          const k = kosztPlotu(r, wariant);
+          out.push({
+            cmd: { t: 'enclose', ids: core, bid: plotBid, wariant },
+            label: tr(MENU.plot(r.dlugosc, k.need.deski ?? 0, k.need.zlom ?? 0, k.total / TICKS_PER_HOUR, wariant)),
+            quick: false,
+            confirm: true,
+          });
+        }
+      } else if (r) {
+        out.push({
+          cmd: { t: 'enclose', ids: core, bid: plotBid },
+          label: tr(MENU.plotNie(r.why, r.dlugosc)),
+          quick: false,
+        });
+      }
+    }
+  }
+  // łup w cudzym budynku niesie się jak łup zza siatki: „Zanieść na podwórko” w commandsAt (razem z resztą z budynku)
   return out;
 }
 
@@ -663,5 +787,22 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
           L('Idzie na hałas.', 'Following the noise.'),
         ][j.phase] ?? L('Snuje się.', 'Shambling about.')
       );
+    case 'door': {
+      const v = PRACA_DRZWI[j.what] ?? PRACA_DRZWI.open;
+      return tr(walking ? v[0] : v[1]);
+    }
+    case 'loot': {
+      const b = st.sasiedzi?.budynki[gidB(j.target)];
+      const kind = b ? (wnetrze(w, b.bid).rooms[gidRoom(j.target)]?.kind ?? null) : null;
+      return tr(walking ? PRACA.idziePrzeszukac(kind) : PRACA.przeszukuje(kind));
+    }
+    case 'meet':
+      return tr(PRACA.rozmawia);
+    case 'upstairs':
+      return tr(walking ? PRACA.idzieNaSchody : PRACA.naPietrze);
+    case 'plot': {
+      const plan = st.plot?.plan;
+      return tr(PRACA.plot(j.phase, plan ? procentPlotu(plan) : 0));
+    }
   }
 }

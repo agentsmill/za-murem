@@ -111,8 +111,10 @@ async function nalozLudzi(page: Page) {
       anchor: { set: (x: number, y: number) => void };
       zIndex: number;
     };
+    type Dziecko = { texture?: Tex; constructor: unknown };
     const v = zm.view as unknown as {
-      actors: { addChild: (s: Spr) => void; children: { texture?: Tex; constructor: unknown }[] };
+      actors: { addChild: (s: Spr) => void; children: Dziecko[] };
+      terrain: { children: Dziecko[] };
     };
     const im = await new Promise<HTMLImageElement>((ok, fail) => {
       const i = new Image();
@@ -131,8 +133,11 @@ async function nalozLudzi(page: Page) {
       g.drawImage(im, (w * D + d) * K, c * K, K, K, 0, 0, K, K);
       return cv;
     };
-    // klasy Pixi z sprite'a, który już jest w scenie (strona nie wystawia modułu pixi.js)
-    const any = v.actors.children.find((c) => c.texture)!;
+    // klasy Pixi z sprite'a, który już jest w scenie (strona nie wystawia modułu pixi.js); tylko taki, którego
+    // tekstura ma Texture.from, bo warstwy w actors (np. plotLayer) trzymają pod `texture` co innego
+    const any = [...v.actors.children, ...v.terrain.children].find(
+      (c) => typeof (c.texture as { constructor?: { from?: unknown } } | undefined)?.constructor?.from === 'function',
+    )!;
     const SpriteC = any.constructor as new (t: Tex) => Spr;
     const TextureC = any.texture!.constructor as unknown as { from: (s: CanvasImageSource) => Tex };
     const zarzad = l.postacie.filter((p) => p.zarzad).length;

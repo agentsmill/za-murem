@@ -4,8 +4,10 @@
    wyrzucane, gdy jest ich za dużo. Z daleka (8 px/kafelek) wszystkie, zamawiane na starcie.
    Noc to mapa światła nad światem (light.ts), mnożona przez obraz. Przekrój: przy zbliżeniu
    kawałki nad budynkiem z wnętrzem (scene.section) rysują się z wnętrzem zamiast dachu, a meble
-   stoją w jednej warstwie z pionkami, sortowane po y. Z grafiką z PixelLab (setGrafika) trzepak
-   jest z PixelLab, teren i bloki rysują kawałki ze sceny (scene.art). */
+   stoją w jednej warstwie z pionkami, sortowane po y. Otwarte sąsiednie budynki (M2 fala 2) dokładają
+   swoje wnętrza do tego samego przekroju łatką sceny (przekrojSasiadow.ts), razem z wyglądem drzwi, a plan
+   wspólnego płotu rysuje się jako duch przyszłego obwodu z postępem (plotDuch.ts, plotLayer.ts). Z grafiką
+   z PixelLab (setGrafika) trzepak jest z PixelLab, teren i bloki rysują kawałki ze sceny (scene.art). */
 
 import {
   Application,
@@ -46,6 +48,7 @@ import { CHUNK, type Scene, TILE } from './art/scene.ts';
 import { mockWear, type WearMock } from './atrapy.ts';
 import { BuildLayer, type BuildPlan, type Placement } from './buildLayer.ts';
 import {
+  applyScenePatch,
   type ChunkPainter,
   chunksByDistance,
   chunksTouched,
@@ -79,7 +82,10 @@ import {
 } from './game.ts';
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
+import { type DuchPlotu, duchPlotu } from './plotDuch.ts';
+import { PlotLayer } from './plotLayer.ts';
 import { FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
+import { PrzekrojSasiadow } from './przekrojSasiadow.ts';
 import { burning, IN, setWear, specOf, type ThingLike } from './section.ts';
 import { smokeSources } from './smoke.ts';
 import { SmokeLayer } from './smokeLayer.ts';
@@ -221,12 +227,19 @@ export class GameView {
   private wearMock: WearMock | null = null;
   /** naprawione uszkodzenia (st.damage z fixed) już zdjęte z przekroju */
   private fixedSeen = new Set<number>();
+  /** M2 fala 2: wnętrza sąsiadów dołożone do przekroju i wersja sąsiadów z symulacji, z której są */
+  private przekrojSas = new PrzekrojSasiadow();
+  private wersjaSas = -1;
   /** plany budowy z ostatniego syncGame (st.builds) */
   private plans: readonly BuildPlan[] = [];
   /** paski postępu planów i podgląd stawiania, nad mapą światła */
   readonly buildOverlay = new Container();
   /** budowa: duchy planów w warstwie pionków, paski i podgląd stawiania */
   readonly builds = new BuildLayer(this.actors, this.buildOverlay);
+  /** M2 fala 2, etap 3: duch planu wspólnego płotu (siatka w warstwie pionków, ślad i postęp nad mapą światła) */
+  readonly plotDuch = new PlotLayer(this.actors, this.buildOverlay);
+  /** duch planu płotu z ostatniego syncGame (null: nie ma planu) */
+  private duch: DuchPlotu | null = null;
   /** światła ze stanu gry (koza, okna, ognisko, warta); view.lights to dodatki (podgląd) */
   private gameLights: Light[] = [];
   /** rzeczy, które się nie zmieniają (trzepak, siatka) i ich klucze: bez liczenia opisu co klatkę */
@@ -313,11 +326,14 @@ export class GameView {
     // do workerów
     this.wearMock = null;
     this.fixedSeen.clear();
+    this.przekrojSas = new PrzekrojSasiadow();
+    this.wersjaSas = -1;
     if (this.mockWearOn && sc.section) {
       this.wearMock = mockWear(sc.w);
       setWear(sc.section, this.wearMock.damage, this.wearMock.apts);
     }
     this.builds.mapSize = sc.w.size;
+    this.plotDuch.mapSize = sc.w.size;
     this.painter.setScene(sc);
     const n = sc.chunks;
     for (let cy = 0; cy < n; cy++)
@@ -340,17 +356,18 @@ export class GameView {
   }
 
   /**
-   * Przerysowuje kawałki pod zmianą na mapie, z workerami i bez: ścięte drzewa (felled) i kafelki
-   * ze zmienionym terenem (tiles; w.terr trzeba zmienić przed wywołaniem). Do czasu nowych tekstur
-   * widać stare, więc nic nie miga. Zwraca numery przerysowywanych kawałków.
+   * Przerysowuje kawałki pod zmianą na mapie, z workerami i bez: ścięte drzewa (felled), kafelki
+   * ze zmienionym terenem (tiles; w.terr trzeba zmienić przed wywołaniem), naprawy, wnętrza sąsiadów
+   * i ich drzwi. Scena głównego wątku dostaje tę samą łatkę co kopie w workerach. Do czasu nowych
+   * tekstur widać stare, więc nic nie miga. Zwraca numery przerysowywanych kawałków.
    */
   redraw(ch: MapChange): number[] {
     const sc = this.scene;
     if (!sc) return [];
-    for (const k of ch.felled ?? []) sc.treeGone[k] = 1;
-    for (const i of ch.fixed ?? []) sc.section?.damage?.delete(i);
+    const patch = scenePatchOf(sc, ch);
+    applyScenePatch(sc, patch);
     const touched = chunksTouched(sc, ch);
-    this.painter.patch(scenePatchOf(sc, ch));
+    this.painter.patch(patch);
     for (const k of touched) {
       const s = this.slots[k];
       s.ver++;
@@ -417,6 +434,7 @@ export class GameView {
   syncGame(sim: GameLike): void {
     if (!this.scene) return;
     const w = sim.w;
+    this.syncSasiedzi(sim);
     let g = this.game;
     // z atrapą pustych mieszkań śmieci i zepsute meble tylko z atrapy, bez tych ze świata i ze stanu gry
     const mock = this.wearMock;
@@ -462,6 +480,8 @@ export class GameView {
       });
     }
     this.plans = (sim.st as { builds?: readonly BuildPlan[] }).builds ?? [];
+    // plan wspólnego płotu: przyszły obwód (kształt z pamięci, liczony od nowa po zmianie planu, siatki albo zasieków)
+    this.duch = duchPlotu(sim.st, w);
     this.syncFelled(sim.st.felled);
     // siatka liczona od nowa tylko po zmianie w blocked (łata, nowa dziura, brama)
     const codes = fenceCodes(w.fence, sim.blocked, w.size, sim.st.fence);
@@ -498,6 +518,25 @@ export class GameView {
     g.things = [...things, ...g.props, ...fence];
     this.applyThings();
     this.gameLights = gameLights(sim, g.windows);
+  }
+
+  /** Otwarte sąsiednie budynki (M2 fala 2): po zmianie wersji w symulacji nowe wnętrza i drzwi idą do przekroju,
+      ich kawałki dostają przekrój, a rzeczy, które stoją teraz we wnętrzu, widać już tylko w przekroju. */
+  private syncSasiedzi(sim: GameLike): void {
+    const sc = this.scene!;
+    const ver = sim.wersjaSasiadow ?? 0;
+    if (!sc.section || ver === this.wersjaSas) return;
+    this.wersjaSas = ver;
+    const z = this.przekrojSas.zmiany(sim.w, sc.section, sim.st.sasiedzi);
+    if (!z) return;
+    this.redraw(z);
+    const n = sc.chunks;
+    for (const p of z.wnetrze)
+      for (let cy = Math.floor(p.y0 / CHUNK); cy <= Math.floor((p.y0 + p.h - 1) / CHUNK); cy++)
+        for (let cx = Math.floor(p.x0 / CHUNK); cx <= Math.floor((p.x0 + p.w - 1) / CHUNK); cx++)
+          this.cutChunks.add(cy * n + cx);
+    if (z.wnetrze.length)
+      for (const e of this.things.values()) e.inside = this.underRoof(e.thing.x + 0.5, e.thing.y + e.thing.h - 0.5);
   }
 
   /** rzeczy gry i dodatki do warstwy pionków (diff po miejscu i opisie sprite'a) */
@@ -744,6 +783,7 @@ export class GameView {
       (spec) => this.artOf(spec),
       (x, y) => !this.cutOn && this.underRoof(x, y),
     );
+    this.plotDuch.update(this.duch, z);
     // pionki: poza z pracy (rąbie, niesie drewno albo materiał, klęczy, gotuje, siedzi, śpi, wartuje,
     // przeszukuje, naprawia, buduje); prace M2 biorą rodzaj uszkodzenia i planu ze stanu gry
     const seen = new Set<number>();
@@ -776,8 +816,8 @@ export class GameView {
         sp.position.set(Math.round(x * TILE), Math.round(y * TILE));
       }
       sp.zIndex = pose.z ?? y;
-      // pod dachem nie widać nikogo; w przekroju tak
-      sp.visible = this.cutOn || !this.underRoof(x, y);
+      // pod dachem nie widać nikogo; w przekroju tak; kto przeszukuje piętro sąsiada, jest na górze (M2 fala 2)
+      sp.visible = (this.cutOn || !this.underRoof(x, y)) && !(p.job?.t === 'upstairs' && p.job.phase === 1);
       // obcych widać tylko w świetle: w półmroku sam ciemny zarys, w ciemności nic (szwendacza ciemny zarys)
       if (STRANGERS.has(p.kind)) {
         const vis = strangerVisibility(this.darkness, lightAt(x, y - 0.5, lights, time, this.insideFn), p.kind);
