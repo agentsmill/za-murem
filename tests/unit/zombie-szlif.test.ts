@@ -1,5 +1,6 @@
 /* Szlif trybu zombie (18.10.2026): szwendacz w łatanej dziurze zostaje po stronie ulicy; warta z bronią palną
-   nie strzela sama przez siatkę; „Do broni!” odwołuje ten sam przycisk. */
+   nie strzela sama przez siatkę; „Do broni!” odwołuje ten sam przycisk; warta przy siatce staje tam, skąd jej broń
+   sięga napierających (także na rogu siatki). */
 
 import { describe, expect, it } from 'vitest';
 import { NOTE_HOLD_FIRE } from '../../src/content/napisy-zombie.ts';
@@ -284,5 +285,39 @@ describe('„Do broni!” odwołuje ten sam przycisk', () => {
     expect(alarmOn(st)).toBe(true);
     runTo(sim, atHour(3, 6) + 40);
     expect(alarmOn(st)).toBe(false);
+  });
+});
+
+describe('warta przy siatce staje tam, skąd sięga napierających', () => {
+  it('na rogu siatki warta z dzidą 2,2 m od rogu przechodzi bliżej i zabija napierających', () => {
+    const st = createSim(w, 3, { core: 2, mode: 'zombie' });
+    st.tick = atHour(1, 23);
+    const sim = new Sim(w, st);
+    const [g, b] = st.pawns.filter((p) => p.kind === 'core');
+    g.weapon = 'dzida';
+    b.weapon = null;
+    // róg siatki atrapy: (30, 63), od ulicy (29, 63) i (30, 62), od podwórka po skosie (31, 64)
+    const corner = 63 * size + 30;
+    expect(w.fence.tiles).toContain(corner);
+    expect(w.fence.tiles).toContain(63 * size + 31);
+    expect(w.fence.tiles).toContain(64 * size + 30);
+    sim.push({ t: 'guard', ids: [g.id], post: 'siatka' });
+    runTo(sim, st.tick + 400);
+    expect(g.job?.t).toBe('guard');
+    // warta stoi na (32, 64): 2,2 m od środka rogu, ale 2,8 m i więcej od szwendaczy za nim (dzida sięga 2,6 m)
+    const spot = 64 * size + 32;
+    Object.assign(g, { x: 32.5, y: 64.5, path: [], pi: 0 });
+    g.job!.tile = spot;
+    g.job!.phase = 1;
+    const zs = [63 * size + 29, 62 * size + 30, 63 * size + 29].map((t, k) => {
+      const z = spawnZombie(st, w, t, k, true);
+      z.job!.phase = 2;
+      z.job!.target = corner;
+      return z;
+    });
+    runTo(sim, st.tick + 800);
+    const alive = zs.filter((z) => st.pawns.includes(z)).length;
+    expect(alive).toBeLessThan(2);
+    expect(Math.hypot(g.x - 30.5, g.y - 63.5)).toBeLessThan(1.5);
   });
 });

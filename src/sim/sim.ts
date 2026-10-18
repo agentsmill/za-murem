@@ -5282,12 +5282,15 @@ export class Sim {
     return free >= 0 ? free : best;
   }
 
-  /** warta przy siatce przechodzi do miejsca największego naporu, gdy stoi od niego dalej niż 2,5 m */
+  /** Warta przy siatce przechodzi do miejsca największego naporu, kiedy jej broń nie sięga nikogo, kto tam napiera
+      (na rogu siatki 2,2 m od kafelka to już za daleko na dzidę), i staje tuż przy nim od strony podwórka. */
   private followPressure(p: Pawn, j: Job): void {
     const hot = this.hotTile(p);
     if (hot < 0) return;
-    const size = this.w.size;
-    if (Math.hypot((hot % size) + 0.5 - p.x, Math.floor(hot / size) + 0.5 - p.y) <= 2.5) return;
+    const w = this.armed(p);
+    const reach = this.holdFire(w) ? { ...w, fence: false } : w;
+    for (const z of this.st.pawns)
+      if (z.kind === 'zombie' && z.job?.phase === 2 && z.job.target === hot && this.canHit(p, z, reach)) return;
     let stand = this.standBy(p, [hot], 1);
     if (stand < 0) stand = this.standBy(p, [hot], 2);
     if (stand < 0 || stand === this.tileOf(p) || !this.go(p, stand)) return;
