@@ -269,7 +269,8 @@ export function commandFor(st: SimState, w: World, ids: readonly number[], tile:
 /** co robi osoba: krótki opis do karty */
 export function jobText(st: SimState, w: World, p: Pawn): string {
   const j = p.job;
-  if (!j) return p.pi < p.path.length ? 'Idzie.' : 'Stoi i czeka na polecenie.';
+  // polecenia dostaje tylko zarząd; mieszkaniec (karta do odczytu) po prostu stoi
+  if (!j) return p.pi < p.path.length ? 'Idzie.' : p.kind === 'core' ? 'Stoi i czeka na polecenie.' : 'Stoi.';
   const walking = j.phase === 0;
   switch (j.t) {
     case 'go':

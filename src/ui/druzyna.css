@@ -340,9 +340,10 @@
 .card .story:hover {
   color: #fff;
 }
-/* na telefonie karta jest zwarta (bez zawodu i cech), więc i bez historii */
+/* na telefonie karta jest zwarta (bez zawodu i cech), ale historia zostaje, zwinięta do jednej linijki; bez zawodu nad
+   nią zajmuje jej miejsce zaraz pod imieniem */
 @media (max-width: 640px) {
   .card .story {
-    display: none;
+    margin: 2px 0 6px;
   }
 }

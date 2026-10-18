@@ -5,7 +5,8 @@
    na ziemi za oknem), ognisko, lampy warty i latarnia w ręce wartownika. Stan siatki wynika z kopii
    blocked w symulacji, jak w kontrakcie siatki: łata na dziurze i zamknięta brama to blocked = 1,
    dziura to blocked = 0.
-   Obcych (szabrownicy, wędrowcy) widać tylko w świetle. Czyste funkcje bez PixiJS. */
+   Obcych (szabrownicy, wędrowcy) widać tylko w świetle. Do tego wybór pionka pod punktem kliknięcia (pawnAt, dla
+   widoku: zarząd i mieszkańcy z osobą). Czyste funkcje bez PixiJS. */
 
 import type { World } from '../world/world.ts';
 import type { FenceState } from './art/rzeczy.ts';
@@ -210,4 +211,45 @@ export function fenceStateFn(f: FenceLike, codes: Uint8Array): (tile: number) =>
 /** jak dobrze widać obcego: 1 w dzień albo w świetle, 0 w nocnej ciemności (lit: światło w jego miejscu) */
 export function strangerVisibility(darkness: number, lit: number): number {
   return Math.max(0, Math.min(1, 1 - darkness + lit * 1.4));
+}
+
+/** to, czego wybór pionka potrzebuje (Pawn z symulacji pasuje bez zmian) */
+export interface HitPawn {
+  kind: string;
+  person: number;
+  away: boolean;
+  x: number;
+  y: number;
+}
+
+/** zarząd (pionki rdzenia) */
+export const isBoard = (p: HitPawn): boolean => p.kind === 'core';
+
+/** mieszkaniec siedziby z osobą z generatora mieszkańców; bez osoby (person −1) nie ma karty, więc nie da się go
+    wybrać */
+export const isLokator = (p: HitPawn): boolean => p.kind === 'resident' && p.person >= 0;
+
+/** Pionek pod punktem w kafelkach (tx, ty), spośród tych, które przepuszcza `accept`. Pole trafienia to postać:
+    0,6 kafelka w bok, 1,5 w górę i 0,4 w dół od stóp; przy kilku wygrywa środek postaci najbliższy punktu. Pionki na
+    wyprawie poza mapą się pomija. */
+export function pawnAt<T extends HitPawn>(
+  pawns: readonly T[],
+  tx: number,
+  ty: number,
+  accept: (p: T) => boolean,
+): T | null {
+  let best: T | null = null;
+  let bd = Number.POSITIVE_INFINITY;
+  for (const p of pawns) {
+    if (p.away || !accept(p)) continue;
+    const dx = tx - p.x;
+    const dy = ty - p.y;
+    if (Math.abs(dx) > 0.6 || dy < -1.5 || dy > 0.4) continue;
+    const d = Math.abs(dx) + Math.abs(dy + 0.6);
+    if (d < bd) {
+      bd = d;
+      best = p;
+    }
+  }
+  return best;
 }

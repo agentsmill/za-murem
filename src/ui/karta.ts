@@ -1,5 +1,8 @@
-/* Karta osoby z zarządu: paski potrzeb, chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby
-   z własnej drużyny historia pod zawodem (jedna linijka, cała po kliknięciu; stan rozwinięcia trzyma main.ts).
+/* Karta osoby: paski potrzeb, chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
+   drużyny albo z generatora mieszkańców historia pod zawodem (jedna linijka, cała po kliknięciu; stan rozwinięcia
+   trzyma main.ts). Osoba z generatora (`ref`) ma jeszcze wiersz rodziny pod zawodem, napis, że mieszkańcy są
+   wymyśleni, i przycisk zmiany imienia (`data-card="imie"`, obsługa w main.ts). Karta mieszkańca (opts.lokator) jest
+   tylko do odczytu: bez broni i amputacji, to rozkazy dla zarządu. Żadnego numeru mieszkania ani piętra w tekstach.
    Zwraca HTML z odczytu symulacji (SimPerson), bez DOM, więc da się go sprawdzić w Node. */
 
 import { DOM, type Dom, TRAITS } from '../content/data.ts';
@@ -29,20 +32,38 @@ const AMMO_WORDS: Record<string, [string, string, string]> = {
   belty: ['bełt', 'bełty', 'bełtów'],
 };
 
+/** ugryzienie z czasem; przycisk amputacji tylko wtedy, gdy karta pozwala na rozkazy i da się jeszcze uciąć */
+function biteHtml(p: SimPerson, tick: number, orders: boolean): string {
+  if (!p.bite) return '';
+  const ago = Math.max(0, Math.floor(((tick - p.bite.at) * 60) / TICKS_PER_HOUR));
+  const left = Math.max(0, Math.ceil(p.bite.left / TICKS_PER_HOUR));
+  const who = p.f ? 'Ugryziona' : 'Ugryziony';
+  const where = p.bite.limb ? ' w rękę' : '';
+  const cut =
+    orders && p.bite.amputate
+      ? ' <button type="button" class="btn mini bad" data-card="amputate" title="Ktoś z zarządu z medycyną utnie kończynę: pół godziny, nie zawsze się udaje">Amputować</button>'
+      : '';
+  return `<p class="bite">${who}${where} ${Math.floor(ago / 60)}:${String(ago % 60).padStart(2, '0')} temu. Gorączka zabije za ${left} h.${cut}</p>`;
+}
+
 /** broń z amunicją i przycisk zmiany; ugryzienie z czasem i amputacją, póki da się ją zrobić */
 function armHtml(p: SimPerson, tick: number): string {
   const w = p.weapon ? WEAPONS[p.weapon] : WEAPONS.piesci;
   const ammo = w.ammo && p.ammo !== null ? ` (${many(p.ammo, ...AMMO_WORDS[w.ammo])})` : '';
   const arm = `<p class="arm">Broń: <b>${esc(w.name)}</b>${esc(ammo)} <button type="button" class="btn mini" data-card="arm">Zmień</button></p>`;
-  if (!p.bite) return arm;
-  const ago = Math.max(0, Math.floor(((tick - p.bite.at) * 60) / TICKS_PER_HOUR));
-  const left = Math.max(0, Math.ceil(p.bite.left / TICKS_PER_HOUR));
-  const who = p.f ? 'Ugryziona' : 'Ugryziony';
-  const where = p.bite.limb ? ' w rękę' : '';
-  const cut = p.bite.amputate
-    ? ' <button type="button" class="btn mini bad" data-card="amputate" title="Ktoś z zarządu z medycyną utnie kończynę: pół godziny, nie zawsze się udaje">Amputować</button>'
-    : '';
-  return `${arm}<p class="bite">${who}${where} ${Math.floor(ago / 60)}:${String(ago % 60).padStart(2, '0')} temu. Gorączka zabije za ${left} h.${cut}</p>`;
+  return arm + biteHtml(p, tick, true);
+}
+
+/** obecni krewni z generatora w jednej linijce (bez numerów mieszkań) */
+function rodzinaHtml(rodzina: string | undefined): string {
+  return rodzina ? `<p class="rodzina"><span class="rodzina-k">Rodzina:</span> ${esc(rodzina)}</p>` : '';
+}
+
+/** Napis dla osób z generatora, że mieszkańcy są wymyśleni (RODO: widać go na każdej takiej karcie, także na telefonie
+    i na zrzucie), i przycisk własnego imienia. Osoby z losowania z adresu i z drużyny gracza go nie mają. */
+function fikcjaHtml(p: SimPerson): string {
+  if (!p.ref) return '';
+  return `<div class="osoba-fikcja"><p class="fikcja">Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.</p><button type="button" class="btn mini" data-card="imie" title="Własne imię tej osoby; zostaje tylko w tej przeglądarce">Zmień imię</button></div>`;
 }
 
 /** historia osoby: przycisk z tekstem, zwinięty do jednej linijki albo rozwinięty */
@@ -52,7 +73,18 @@ export function storyHtml(story: string | undefined, open: boolean): string {
   return `<button type="button" class="story" data-card="story" aria-expanded="${open}" title="${hint}"><span class="story-t">${esc(story)}</span></button>`;
 }
 
-export function personCard(p: SimPerson, tick: number, tonight?: string, storyOpen = false): string {
+export interface CardOpts {
+  /** mieszkaniec siedziby: karta tylko do odczytu, bez broni i amputacji (rozkazy dla zarządu) */
+  lokator?: boolean;
+}
+
+export function personCard(
+  p: SimPerson,
+  tick: number,
+  tonight?: string,
+  storyOpen = false,
+  opts: CardOpts = {},
+): string {
   const skills = Object.entries(p.skills)
     .map(([d, v]) => `<span class="tag skill">${DOM[d as Dom]} ${v}</span>`)
     .join('');
@@ -75,13 +107,15 @@ export function personCard(p: SimPerson, tick: number, tonight?: string, storyOp
   return [
     `<h2>${esc(p.name)}</h2>`,
     `<p class="sub">${esc(p.prof)}, ${wiek(p.age)}</p>`,
+    rodzinaHtml(p.rodzina),
     storyHtml(p.story, storyOpen),
     `<div class="tags">${skills}${traits}${maimed}</div>`,
-    armHtml(p, tick),
+    opts.lokator ? biteHtml(p, tick, false) : armHtml(p, tick),
     `<div class="needs">${bars}</div>`,
     moods ? `<ul class="moods">${moods}</ul>` : '',
     tonight ? `<p class="tonight">${esc(tonight)}</p>` : '',
     `<p class="doing">${esc(p.doing)}</p>`,
+    fikcjaHtml(p),
   ].join('');
 }
 

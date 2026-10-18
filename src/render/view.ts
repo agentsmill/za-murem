@@ -64,7 +64,10 @@ import {
   type GameLike,
   gameLights,
   HEAPS,
+  isBoard,
+  isLokator,
   onTables,
+  pawnAt,
   STRANGERS,
   strangerVisibility,
   type WindowSpot,
@@ -950,20 +953,14 @@ export class GameView {
   /** pionek pod punktem ekranu (tylko rdzeń) */
   pick(st: SimState, sx: number, sy: number): Pawn | null {
     const [wx, wy] = this.toWorld(sx, sy);
-    let best: Pawn | null = null;
-    let bd = Number.POSITIVE_INFINITY;
-    for (const p of st.pawns) {
-      if (p.kind !== 'core' || p.away) continue;
-      const dx = wx / TILE - p.x;
-      const dy = wy / TILE - p.y;
-      if (Math.abs(dx) > 0.6 || dy < -1.5 || dy > 0.4) continue;
-      const d = Math.abs(dx) + Math.abs(dy + 0.6);
-      if (d < bd) {
-        bd = d;
-        best = p;
-      }
-    }
-    return best;
+    return pawnAt(st.pawns, wx / TILE, wy / TILE, isBoard);
+  }
+
+  /** mieszkaniec siedziby pod punktem ekranu: tylko pionki `resident` z osobą z generatora (person ≥ 0), bo tylko
+      one mają kartę. Zarząd ma pierwszeństwo, więc wołający pyta najpierw `pick`. */
+  pickResident(st: SimState, sx: number, sy: number): Pawn | null {
+    const [wx, wy] = this.toWorld(sx, sy);
+    return pawnAt(st.pawns, wx / TILE, wy / TILE, isLokator);
   }
 
   /** kafelek pod punktem ekranu */

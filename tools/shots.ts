@@ -128,6 +128,8 @@ const SHOTS: Shot[] = [
   },
   // Wasz zarząd: sekcja zwinięta, edytor na komputerze i telefonie, liczba osób w grze, karta osoby z historią
   ...druzynaShots(),
+  // karta osoby z generatora mieszkańców (krok 5): członek zarządu i mieszkaniec, komputer i telefon
+  ...kartaShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -4272,6 +4274,299 @@ function druzynaShots(): Shot[] {
         console.log(`  historia: zwinięta ${line.h} px, rozwinięta ${full} px`);
         if (line.open !== 'false' || full <= line.h * 2) throw new Error('historia nie rozwija się z jednej linijki');
         await page.mouse.move(at.x + 300, at.y - 200);
+      },
+    },
+  ];
+}
+
+/** Karta osoby z generatora mieszkańców (krok 5): wiersz rodziny, historia (też na telefonie), napis, że mieszkańcy są
+    wymyśleni, i przycisk zmiany imienia; mieszkaniec wybrany kliknięciem ma kartę tylko do odczytu. Prawdziwe osoby
+    z generatora dochodzą do przeglądarki dopiero po spięciu w main.ts (krok 7), więc scenariusze wstrzykują dane
+    wprost do stanu symulacji (ref, rodzina, historia na osobie z zarządu; nowa osoba pod pionkiem mieszkańca), a kartę
+    otwierają prawdziwym kliknięciem albo stuknięciem. Zrzut końcowy każdego scenariusza to karta zwinięta. */
+function kartaShots(): Shot[] {
+  const RODO = /\bm\.\s?\d|\bmieszkani[ea] nr|\bpiętr/i;
+  const FIKCJA = 'Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.';
+  const ZARZAD = {
+    ref: 'o101',
+    rodzina: 'żona Halina (63), syn Piotr (31), wnuczka Zuzia (6)',
+    story:
+      'Pracował trzydzieści lat w administracji osiedla i zna każdą rurę w piwnicy. Po upadku został, bo zarząd musiał mieć kogoś, kto wie, gdzie są zawory.',
+  };
+  const MIESZKANIEC = {
+    name: 'Wiesława Dąbrowska',
+    first: 'Wiesława',
+    f: true,
+    prof: 'emerytowana księgowa',
+    age: 71,
+    skills: { uprawa: 1, med: 1 },
+    traits: ['lubiany'],
+    ref: 'o102',
+    rodzina: 'syn Krzysztof (44), wnuk Antek (14)',
+    story:
+      'Przyjechała na osiedle z synem w latach dziewięćdziesiątych, kiedy blok był jeszcze nowy. Przez wiele lat prowadziła księgi w spółdzielni. Po upadku została, bo nie miała gdzie wracać.',
+  };
+
+  /** karta jest cała na ekranie, a napis o fikcji i przycisk imienia widać w jej ramce; zwraca miary do wypisania */
+  const sprawdz = async (page: Page, kto: string, fikcja = true) => {
+    await page.waitForFunction((n) => document.querySelector('#card:not([hidden]) h2')?.textContent === n, kto, {
+      timeout: 5000,
+    });
+    const m = await page.evaluate(() => {
+      const c = document.getElementById('card')!;
+      const q = (sel: string) => {
+        const e = c.querySelector<HTMLElement>(sel);
+        if (!e) return null;
+        const b = e.getBoundingClientRect();
+        const cs = getComputedStyle(e);
+        return {
+          top: b.top,
+          bottom: b.bottom,
+          left: b.left,
+          right: b.right,
+          h: b.height,
+          shown: cs.display !== 'none' && cs.visibility !== 'hidden' && b.width > 0 && b.height > 0,
+          text: e.textContent ?? '',
+          font: cs.fontSize,
+        };
+      };
+      const r = c.getBoundingClientRect();
+      return {
+        card: { top: r.top, bottom: r.bottom, left: r.left, right: r.right },
+        vw: innerWidth,
+        vh: innerHeight,
+        html: c.innerHTML,
+        fikcja: q('.fikcja'),
+        imie: q('[data-card="imie"]'),
+        rodzina: q('.rodzina'),
+        story: q('.story'),
+        buttons: [...c.querySelectorAll<HTMLElement>('button[data-card]')].map((b) => b.dataset.card),
+        sideScroll: document.documentElement.scrollWidth > innerWidth,
+      };
+    });
+    if (RODO.test(m.html)) throw new Error('karta: numer mieszkania albo piętro w tekście');
+    if (m.sideScroll) throw new Error('karta przewija stronę w bok');
+    if (m.card.top < 0 || m.card.bottom > m.vh || m.card.left < 0 || m.card.right > m.vw)
+      throw new Error(`karta poza ekranem: ${JSON.stringify(m.card)}`);
+    const inCard = (e: { top: number; bottom: number; left: number; right: number } | null) =>
+      !!e && e.top >= m.card.top && e.bottom <= m.card.bottom && e.left >= m.card.left && e.right <= m.card.right;
+    if (fikcja) {
+      if (!m.fikcja?.shown || m.fikcja.text !== FIKCJA || !inCard(m.fikcja))
+        throw new Error('nie widać napisu o fikcji');
+      if (!m.imie?.shown || !inCard(m.imie)) throw new Error('nie widać przycisku zmiany imienia');
+    } else if (m.fikcja || m.imie) throw new Error('osoba spoza generatora ma napis o fikcji');
+    if (!m.story?.shown) throw new Error('nie widać historii');
+    console.log(
+      `  karta „${kto}”: ${Math.round(m.card.right - m.card.left)}×${Math.round(m.card.bottom - m.card.top)} px, ` +
+        `napis ${m.fikcja?.font} w ${Math.round(m.fikcja?.h ?? 0)} px, historia ${Math.round(m.story.h)} px, ` +
+        `rodzina ${m.rodzina?.shown ? 'jest' : 'schowana'}, przyciski ${m.buttons.join('+')}`,
+    );
+    return m;
+  };
+
+  const wejdz = async (page: Page, base: string) => {
+    await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+    await waitIdle(page);
+  };
+  /** dane osoby z generatora na osobie z zarządu (k-ta) */
+  const zarzadZGeneratora = (page: Page, k: number) =>
+    page.evaluate(
+      ([k, d]) => {
+        const st = window.zm!.sim!.st;
+        const p = st.pawns.filter((q) => q.kind === 'core')[k];
+        Object.assign(st.people[p.person], d);
+        return st.people[p.person].name;
+      },
+      [k, ZARZAD] as const,
+    );
+  /** nowa osoba pod pionkiem mieszkańca najbliższego k-tej osoby z zarządu */
+  const mieszkaniecZGeneratora = (page: Page, k: number, naNim = false) =>
+    page.evaluate(
+      ([k, d, naNim]) => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const core = st.pawns.filter((q) => q.kind === 'core')[k];
+        const r = st.pawns
+          .filter((q) => q.kind === 'resident' && !q.away && q.person < 0)
+          .sort((a, b) => Math.hypot(a.x - core.x, a.y - core.y) - Math.hypot(b.x - core.x, b.y - core.y))[0];
+        st.people.push({
+          id: `s${st.nextId++}`,
+          home: zm.sim!.w.hq,
+          assign: null,
+          sick: false,
+          dead: false,
+          gone: false,
+          ...d,
+          skills: { ...d.skills },
+          traits: [...d.traits],
+        });
+        r.person = st.people.length - 1;
+        // kamera między członkiem zarządu a mieszkańcem, żeby było widać obu (na telefonie: na mieszkańcu)
+        if (naNim) zm.setCam(r.x, r.y - 0.5, 1.3);
+        else zm.setCam((r.x + core.x) / 2, (r.y + core.y) / 2 - 0.5, 1.3);
+        return { id: r.id, name: d.name, dist: Math.hypot(r.x - core.x, r.y - core.y) };
+      },
+      [k, MIESZKANIEC, naNim] as const,
+    );
+  const ekran = (page: Page, id: number) =>
+    page.evaluate((id) => {
+      const zm = window.zm!;
+      const p = zm.sim!.st.pawns.find((q) => q.id === id)!;
+      const [x, y] = zm.screenOf(p.x, p.y - 0.55);
+      return { x, y };
+    }, id);
+  const rdzen = (page: Page, k: number) =>
+    page.evaluate((k) => {
+      const zm = window.zm!;
+      const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[k];
+      const [x, y] = zm.screenOf(p.x, p.y - 0.55);
+      return { x, y, id: p.id };
+    }, k);
+  const cmds = (page: Page) => page.evaluate(() => window.zm!.sim!.st.cmds.length);
+
+  /** historia: jedna linijka, po kliknięciu cała, po drugim kliknięciu znowu jedna */
+  const historia = async (page: Page, nazwa: string, tap: boolean) => {
+    const zwinieta = await page.$eval('#card .story', (e) => Math.round(e.getBoundingClientRect().height));
+    if (tap) await page.tap('#card .story');
+    else await page.click('#card .story');
+    await page.waitForSelector('#card .story[aria-expanded="true"]');
+    const pelna = await page.$eval('#card .story', (e) => Math.round(e.getBoundingClientRect().height));
+    console.log(`  historia: zwinięta ${zwinieta} px, rozwinięta ${pelna} px`);
+    if (pelna <= zwinieta * 1.5) throw new Error('historia nie rozwija się z jednej linijki');
+    await page.screenshot({ path: path.join(OUT, `${nazwa}-rozwinieta.png`) });
+    if (tap) await page.tap('#card .story');
+    else await page.click('#card .story');
+    await page.waitForSelector('#card .story[aria-expanded="false"]');
+  };
+
+  return [
+    {
+      // zarząd: osoba z generatora na komputerze; przycisk imienia nic jeszcze nie robi, ale nie wywala strony
+      name: 'karta-zarzad',
+      query: '',
+      run: async (page, base) => {
+        await wejdz(page, base);
+        const kto = await zarzadZGeneratora(page, 0);
+        const a = await rdzen(page, 0);
+        await page.mouse.click(a.x, a.y);
+        const m = await sprawdz(page, kto);
+        if (!m.rodzina?.shown || m.rodzina.text !== `Rodzina: ${ZARZAD.rodzina}`)
+          throw new Error('brak wiersza rodziny');
+        if (!m.buttons.includes('arm')) throw new Error('karta zarządu straciła zmianę broni');
+        await historia(page, 'karta-zarzad', false);
+        await page.click('#card [data-card="imie"]');
+        await page.waitForTimeout(200);
+        await page.mouse.move(a.x + 400, a.y - 250);
+      },
+    },
+    {
+      // zarząd na telefonie (390×844): historia zwinięta do jednej linijki nadal jest, napis o fikcji też
+      name: 'karta-zarzad-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await wejdz(page, base);
+        const kto = await zarzadZGeneratora(page, 0);
+        const a = await rdzen(page, 0);
+        await page.touchscreen.tap(a.x, a.y);
+        await sprawdz(page, kto);
+        await historia(page, 'karta-zarzad-telefon', true);
+        await page.tap('#card [data-card="imie"]');
+        await page.waitForTimeout(200);
+      },
+    },
+    {
+      // mieszkaniec wybrany kliknięciem: karta do odczytu, zaznaczony z zarządu zostaje zaznaczony, zarząd wygrywa
+      name: 'karta-mieszkanca',
+      query: '',
+      run: async (page, base) => {
+        await wejdz(page, base);
+        const kto0 = await zarzadZGeneratora(page, 0);
+        const r = await mieszkaniecZGeneratora(page, 0);
+        await waitIdle(page);
+        // zaznaczony członek zarządu, potem mieszkaniec
+        const a = await rdzen(page, 0);
+        await page.mouse.click(a.x, a.y);
+        await sprawdz(page, kto0);
+        const przed = await cmds(page);
+        const b = await ekran(page, r.id);
+        await page.mouse.click(b.x, b.y);
+        const m = await sprawdz(page, r.name);
+        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if ((await cmds(page)) !== przed) throw new Error('kliknięcie mieszkańca wysłało polecenie');
+        // zaznaczenie zostało: prawy przycisk na ziemi daje polecenie, a nie „Najpierw zaznaczcie”
+        await page.mouse.click(b.x + 120, b.y + 90, { button: 'right' });
+        await page.waitForTimeout(300);
+        const hint = await page.textContent('#hint');
+        if (hint?.includes('Najpierw zaznaczcie')) throw new Error('klik w mieszkańca zdjął zaznaczenie zarządu');
+        console.log(`  po prawym przycisku: polecenia ${przed} → ${await cmds(page)}, podpowiedź „${hint}”`);
+        await page.keyboard.press('Escape');
+        // mieszkaniec stoi dokładnie pod członkiem zarządu: wygrywa zarząd
+        const stos = await page.evaluate(
+          ([rid, cid]) => {
+            const st = window.zm!.sim!.st;
+            const rr = st.pawns.find((q) => q.id === rid)!;
+            const cc = st.pawns.find((q) => q.id === cid)!;
+            const was = { x: rr.x, y: rr.y };
+            rr.x = cc.x;
+            rr.y = cc.y;
+            return was;
+          },
+          [r.id, a.id] as const,
+        );
+        const c = await rdzen(page, 0);
+        await page.mouse.click(c.x, c.y);
+        await sprawdz(page, kto0);
+        await page.evaluate(
+          ([rid, was]) => {
+            const rr = window.zm!.sim!.st.pawns.find((q) => q.id === rid)!;
+            rr.x = was.x;
+            rr.y = was.y;
+          },
+          [r.id, stos] as const,
+        );
+        // pusty teren zdejmuje kartę, jak dotąd
+        const pusty = await page.evaluate(() => {
+          // punkt mapy bez przycisków i paneli nad nią, jak najdalej od zarządu (w lewym górnym rogu mapy)
+          for (let y = 140; y < innerHeight - 200; y += 40)
+            for (let x = 40; x < innerWidth - 300; x += 40)
+              if (
+                document.elementFromPoint(x, y)?.closest('#stage') &&
+                !document.elementFromPoint(x, y)?.closest('#card')
+              )
+                return { x, y };
+          return { x: 40, y: 140 };
+        });
+        await page.mouse.click(pusty.x, pusty.y);
+        await page.waitForTimeout(300);
+        const po = await page.evaluate(() => document.querySelector('#card:not([hidden]) h2')?.textContent ?? null);
+        if (po === r.name || po === kto0) throw new Error(`pusty teren zostawił kartę: ${po}`);
+        await page.keyboard.press('Escape');
+        // końcowy zrzut: sam mieszkaniec, historia zwinięta, bez podpowiedzi po poleceniu z prawego przycisku
+        await page.waitForTimeout(2800);
+        const d = await ekran(page, r.id);
+        await page.mouse.click(d.x, d.y);
+        await sprawdz(page, r.name);
+        await historia(page, 'karta-mieszkanca', false);
+        await page.mouse.move(d.x + 400, d.y - 250);
+      },
+    },
+    {
+      // mieszkaniec na telefonie: stuknięcie, karta zwarta, ale z historią i napisem
+      name: 'karta-mieszkanca-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await wejdz(page, base);
+        const r = await mieszkaniecZGeneratora(page, 0, true);
+        await waitIdle(page);
+        const b = await ekran(page, r.id);
+        await page.touchscreen.tap(b.x, b.y);
+        const m = await sprawdz(page, r.name);
+        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        await historia(page, 'karta-mieszkanca-telefon', true);
       },
     },
   ];

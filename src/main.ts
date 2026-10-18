@@ -250,6 +250,7 @@ async function enter(data: Loaded, saved?: Save) {
   sim = new Sim(world, st);
   placing = null;
   aptFocus = -1;
+  residentFocus = -1;
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   gov = saved ? saved.gov : newGov(seed, modeOf(st));
   // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
@@ -727,6 +728,14 @@ function hud(now: number) {
   $('arrive').hidden = !coming;
   if (coming && $('arriveText').textContent !== comingText(coming)) $('arriveText').textContent = comingText(coming);
   const card = $('card');
+  // karta mieszkańca z osobą (kliknięty): do odczytu, zasłania kartę zaznaczonego z zarządu, dopóki jest wybrana
+  const lok = residentFocus >= 0 ? snap.lokatorzy.find((p) => p.pawn === residentFocus) : undefined;
+  if (residentFocus >= 0 && !lok) residentFocus = -1;
+  if (lok) {
+    card.hidden = false;
+    setCard(personCard(lok, st.tick, undefined, storyOf === lok.pawn, { lokator: true }));
+    return;
+  }
   const sel = snap.people.filter((p) => selected.has(p.pawn));
   if (!sel.length) {
     // karta mieszkania po kliknięciu w mieszkanie siedziby
@@ -950,6 +959,15 @@ $('card').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-card]');
   if (!b || !sim) return;
   const st = sim.st;
+  // karta mieszkańca jest tylko do odczytu: z jej przycisków działa historia; zmiana imienia (data-card="imie", na
+  // kartach zarządu i mieszkańca) dostaje obsługę w kroku 6, na razie przycisk nic nie robi
+  if (residentFocus >= 0) {
+    if (b.dataset.card === 'story') {
+      storyOf = storyOf === residentFocus ? -1 : residentFocus;
+      hud(performance.now());
+    }
+    return;
+  }
   const sel = st.pawns.filter((p) => p.kind === 'core' && selected.has(p.id));
   if (sel.length !== 1) return;
   const p = sel[0];
@@ -1098,8 +1116,9 @@ function orderAt(sx: number, sy: number, menu: boolean) {
 
 /** zaznaczenie ludzi z zarządu prowadzi pierwszy krok samouczka */
 function selectedChanged() {
-  // zaznaczenie kogoś zamyka kartę mieszkania
+  // zaznaczenie kogoś zamyka kartę mieszkania i kartę mieszkańca
   aptFocus = -1;
+  residentFocus = -1;
   if (sim?.st.tut.step !== 0 || !selected.size) return;
   sim.push({ t: 'select', ids: [...selected] });
 }
@@ -1119,6 +1138,8 @@ let placing: {
 } | null = null;
 /** mieszkanie na karcie (klik w mieszkanie siedziby, gdy nikt nie jest zaznaczony) albo −1 */
 let aptFocus = -1;
+/** mieszkaniec z osobą na karcie do odczytu (id pionka po kliknięciu w niego) albo −1 */
+let residentFocus = -1;
 
 /** podgląd stawiania w rysowaniu (view.setPlacement, robi sesja rysowania); bez niego duch z DOM */
 /** kształt podglądu od rysowania: kafelki jako indeksy y * size + x; bad zostaje puste, bo duch i tak jest czerwony */
@@ -1449,6 +1470,14 @@ const endPointer = (e: PointerEvent) => {
     selectedChanged();
     return;
   }
+  // mieszkaniec z osobą: karta do odczytu, bez zmiany zaznaczenia i bez poleceń (zarząd miał pierwszeństwo wyżej)
+  const lok = view.pickResident(sim.st, e.offsetX, e.offsetY);
+  if (lok) {
+    residentFocus = lok.id;
+    aptFocus = -1;
+    return;
+  }
+  residentFocus = -1;
   if (d.type !== 'mouse') {
     if (selected.size) orderAt(e.offsetX, e.offsetY, false);
     else aptFocus = aptAt(sim.w, view.tileAt(e.offsetX, e.offsetY));
@@ -1553,6 +1582,7 @@ window.addEventListener('keydown', (e) => {
     else {
       selected.clear();
       aptFocus = -1;
+      residentFocus = -1;
     }
   }
   if (e.code === 'Equal' || e.code === 'NumpadAdd') view.zoomAt(view.width / 2, view.height / 2, 1.25);
