@@ -160,6 +160,14 @@ describe('HTML sekcji', () => {
     expect(h).toContain(`maxlength="400"`);
   });
 
+  it('zawód-żart mówi w edytorze, ile punktów wyda, reszta przypomina o budżecie', () => {
+    const s = wlasny(1, 12);
+    s.team[0] = { ...s.team[0], prof: 'Kucharz', skills: { uprawa: 1 }, age: 30 };
+    expect(htmlPanelu(s, { open: true, sel: 0 })).toContain('Ten zawód wyda najwyżej 3 z 6 punktów.');
+    s.team[0] = { ...s.team[0], prof: 'Murarz', skills: { bud: 3 } };
+    expect(htmlPanelu(s, { open: true, sel: 0 })).toContain('Tylko dziedziny z zawodu, razem najwyżej 6 punktów.');
+  });
+
   it('tekst gracza w historii i imieniu jest uciekany', () => {
     const s = wlasny(1, 10);
     s.team[0].story = 'Lubi <script> i "cudzysłowy" & kozy.';

@@ -188,6 +188,12 @@ function editor(o: OsobaDruzyny, k: number): string {
         `<span class="tag dz-${rodzajCechy(t)}" title="${esc(TRAITS[t]?.desc ?? '')}">${esc(nazwaCechy(t, o.f))}</span>`,
     )
     .join('');
+  // zawody-żarty nie wydadzą całego budżetu: podpowiedź mówi to wprost, żeby gasnący „+” nie wyglądał na błąd
+  const cap = dziedziny(o.prof).reduce((s, d) => s + maksimum(o.prof, d), 0);
+  const hint =
+    cap < BUDZET
+      ? `Ten zawód wyda najwyżej ${cap} z ${BUDZET} punktów.`
+      : `Tylko dziedziny z zawodu, razem najwyżej ${BUDZET} punktów.`;
   return [
     `<div class="dz-ed" role="group" aria-label="Osoba ${k + 1}">`,
     `<div class="dz-f dz-f-name"><label for="dzName">Imię i nazwisko</label><input id="dzName" data-dz="name" maxlength="40" value="${esc(o.name)}" autocomplete="off" spellcheck="false"></div>`,
@@ -197,7 +203,7 @@ function editor(o: OsobaDruzyny, k: number): string {
       o.prof,
     )
       .map((d) => skillRow(o, d))
-      .join('')}<p class="dz-dim">Tylko dziedziny z zawodu, razem najwyżej ${BUDZET} punktów.</p></div>`,
+      .join('')}<p class="dz-dim">${hint}</p></div>`,
     `<div class="dz-f dz-f-traits"><div class="dz-line dz-split"><span class="dz-k">Cechy</span><button type="button" class="btn" data-dz="traits">Losuj cechy</button></div><div class="dz-tags">${tags}</div><p class="dz-dim">Dobra i zła albo dwie złe, nigdy dwie dobre.</p></div>`,
     `<div class="dz-f dz-f-story"><div class="dz-line dz-split"><label for="dzStory">Historia</label><span class="dz-line"><small class="dz-dim dz-cnt">${o.story.length}/${HISTORIA_MAX}</small><button type="button" class="btn" data-dz="story">Wylosuj historię</button></span></div><textarea id="dzStory" data-dz="storytext" maxlength="${HISTORIA_MAX}" rows="4">${esc(o.story)}</textarea></div>`,
     `<div class="dz-foot"><button type="button" class="btn ghost" data-dz="close">Gotowe</button><button type="button" class="btn" data-dz="person">Losuj całą osobę</button></div>`,
