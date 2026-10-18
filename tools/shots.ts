@@ -3183,6 +3183,41 @@ const SHOTS: Shot[] = [
         await page.waitForSelector('#modal:not([hidden]) [data-lang="pl"]');
       },
     });
+    // najdłuższe angielskie teksty: okno wydarzenia i pomoc, na komputerze i telefonie
+    for (const phone of [false, true]) {
+      const sfx = phone ? '-telefon' : '';
+      const size = phone ? { w: 390, h: 844 } : {};
+      out.push(
+        {
+          name: `en-wydarzenie${sfx}`,
+          query: '',
+          lang: 'en',
+          ...size,
+          run: async (page, base) => {
+            await game(page, base);
+            let p: string | null = null;
+            for (let k = 0; k < 12 && p !== 'wydarzenie'; k++) p = await page.evaluate(() => window.zm!.ff(20));
+            if (p !== 'wydarzenie') throw new Error('przez cztery godziny gry nie było wydarzenia');
+            await waitIdle(page);
+            console.log(`  wydarzenie: ${await page.textContent('#sheet .sheet-title')}`);
+            await obcy(page, 'en', `en-wydarzenie${sfx}`);
+          },
+        },
+        {
+          name: `en-pomoc${sfx}`,
+          query: '',
+          lang: 'en',
+          ...size,
+          run: async (page, base) => {
+            await game(page, base);
+            await page.click('#btnMenu');
+            await page.click('#sheet [data-act="menu-help"]');
+            await page.waitForSelector('#sheet .help');
+            await obcy(page, 'en', `en-pomoc${sfx}`);
+          },
+        },
+      );
+    }
     return out;
   })(),
 ];
