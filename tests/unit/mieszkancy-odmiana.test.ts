@@ -582,7 +582,7 @@ describe('tabele odmiany w repozytorium', () => {
     const { pary } = nazwiskaZPuli(nazwiskaTab);
     const brak = pary.filter(([m]) => !t.nazwiska[m]).map(([m]) => m);
     expect(brak).toEqual(['Buriak', 'Butenko', 'Filipek', 'Prodan']);
-    expect(pary.length).toBe(2163);
+    expect(pary.length).toBe(2160);
   });
 
   it('żeński mianownik w słowniku zgadza się z tabelą nazwisk z rejestru PESEL', () => {

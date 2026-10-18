@@ -17,6 +17,7 @@ import {
   POL_KWADRATU,
 } from '../../src/mieszkancy/generuj.ts';
 import { bezPuliLokalnej, nazwiskaDlaGminy } from '../../src/mieszkancy/imiona.ts';
+import { losDla, wazony } from '../../src/mieszkancy/los.ts';
 import { type OdmianaPlik, rozpakujOdmiane, type TabelaKoncowek } from '../../src/mieszkancy/odmiana.ts';
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
 import { obsadzBudynek } from '../../src/mieszkancy/spis.ts';
@@ -142,7 +143,9 @@ describe('generujObszar i generujBudynek', () => {
     expect(bez.budynki.some((w) => w.osoby.some((o) => o.stan === 'tu'))).toBe(true);
   });
 
-  it('cały obszar dema w Node poniżej 1500 ms (cel 200 ms, mediana z 3)', () => {
+  // test czasu tylko z ZM_PERF=1: pod równoległym obciążeniem vitest mierzy zegar ściany, nie kod
+  // (npm run mieszkancy zawsze wypisuje czasy)
+  it.skipIf(!process.env.ZM_PERF)('cały obszar dema w Node poniżej 1500 ms (cel 200 ms, mediana z 3)', () => {
     for (const [nazwa, g] of DEMA) {
       const geo = demo(nazwa);
       const czasy: number[] = [];
@@ -202,6 +205,37 @@ describe('pełny generator na demach: rodzina', () => {
       }
       expect(zle, nazwa).toEqual([]);
     }
+  });
+});
+
+// ---------------------------------------------------------------- złote skróty
+
+describe('złote skróty: wynik generatora przypięty do bajtu', () => {
+  // Zmiana tylko z podbiciem WERSJA_GENERATORA. Skrót sha256 z JSON.stringify(generujObszar(…)) z pełnym zestawem
+  // (imiona, nazwiska gminy, odmiana, kronika obszaru) dla każdego dema i pierwsze liczby ziarna. Inny skrót znaczy,
+  // że te same dane i adres dają innych mieszkańców niż wcześniej: jeśli to zamierzone, podbij WERSJA_GENERATORA
+  // i wpisz nowe skróty (test przy różnicy pokazuje otrzymany). Zapisane 18.10.2026 po fali poprawek z przeglądu
+  // (R51, R52, R54). W gałęzi pelna-gra dema niosą identyfikatory OSM (gałąź swiat-id-budynkow), więc klucze budynków
+  // to osm:<id> zamiast geograficznych i skróty są inne przy tym samym generatorze (bez podbicia wersji).
+  const SKROTY: Record<string, string> = {
+    przymorze: 'af61982a41d56807726e8c525a8da03f824f5b025f4d6f01961270b2748f15ed',
+    lanciego: '150efa7fdc7620117cf513b4589bd2edfd0f0bef0638a0f47cdc437a7803095e',
+    zielonki: '00aae2a4e31094060dcd3332cb7f36701f83ec2eb7abcb8e368b239a58bf40dd',
+  };
+
+  it('wersja generatora 1', () => {
+    expect(WERSJA_GENERATORA).toBe(1);
+  });
+
+  it('skrót sha256 każdego dema z pełnym zestawem tabel', () => {
+    for (const [nazwa, o] of PELNE()) expect(skrot(o), nazwa).toBe(SKROTY[nazwa]);
+  });
+
+  it('pierwsze liczby losDla("a", 1) i losowanie ważone', () => {
+    const r = losDla('a', 1);
+    expect([r(), r(), r()]).toEqual([0.9250533184967935, 0.6815912965685129, 0.02749735489487648]);
+    expect(wazony(losDla('a', 1), [1, 2, 3, 4])).toBe(3);
+    expect(wazony(losDla('wazony', 7), [5, 0, 3, 2])).toBe(3);
   });
 });
 

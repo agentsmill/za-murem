@@ -161,11 +161,16 @@ describe('budynkiZGeo na demach', () => {
     }
   });
 
-  it('całe demo generuje się szybko (budynki to tylko mały kawałek budżetu 200 ms)', () => {
-    const t0 = performance.now();
-    budynkiZGeo(demo('lanciego'), ursynow, kraj);
-    expect(performance.now() - t0).toBeLessThan(1500);
-  });
+  // test czasu tylko z ZM_PERF=1: pod równoległym obciążeniem vitest mierzy zegar ściany, nie kod
+  // (npm run mieszkancy zawsze wypisuje czasy)
+  it.skipIf(!process.env.ZM_PERF)(
+    'całe demo generuje się szybko (budynki to tylko mały kawałek budżetu 200 ms)',
+    () => {
+      const t0 = performance.now();
+      budynkiZGeo(demo('lanciego'), ursynow, kraj);
+      expect(performance.now() - t0).toBeLessThan(1500);
+    },
+  );
 });
 
 // ---------------------------------------------------------------- dwa adresy w okolicy

@@ -717,16 +717,21 @@ describe('postarz z upadkiem: trzy dema do 2051', () => {
     expect(sprawdzone).toBeGreaterThan(20);
   });
 
-  it('całe demo (spis i postarz do 2051) w Node poniżej 1500 ms (cel 200 ms, mediana z 3)', () => {
-    for (const [nazwa, g] of DEMA) {
-      const czasy: number[] = [];
-      for (let i = 0; i < 3; i++) {
-        const t0 = performance.now();
-        postarzWszystkie(spisDema(nazwa, g), 2051, obszarGminy(g), true);
-        czasy.push(performance.now() - t0);
+  // test czasu tylko z ZM_PERF=1: pod równoległym obciążeniem vitest mierzy zegar ściany, nie kod
+  // (npm run mieszkancy zawsze wypisuje czasy)
+  it.skipIf(!process.env.ZM_PERF)(
+    'całe demo (spis i postarz do 2051) w Node poniżej 1500 ms (cel 200 ms, mediana z 3)',
+    () => {
+      for (const [nazwa, g] of DEMA) {
+        const czasy: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const t0 = performance.now();
+          postarzWszystkie(spisDema(nazwa, g), 2051, obszarGminy(g), true);
+          czasy.push(performance.now() - t0);
+        }
+        czasy.sort((a, b) => a - b);
+        expect(czasy[1], nazwa).toBeLessThan(1500);
       }
-      czasy.sort((a, b) => a - b);
-      expect(czasy[1], nazwa).toBeLessThan(1500);
-    }
-  });
+    },
+  );
 });
