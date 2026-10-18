@@ -4,10 +4,12 @@
    budynku i jak się do niego dobrać. Czego zarząd nie widział, tego karta nie zdradza: stan znajomych tylko po
    spotkaniu albo gdy to my ich przyjęliśmy lub wypędziliśmy, a nieznanych lokatorów karta nie liczy.
    widokBudynku czyta wpis budynku z gry albo podgląd z symulacji (ten sam wpis, który powstanie przy pierwszym
-   dotknięciu, bez zapisu w stanie); kartaBudynku robi z niego HTML. Napisy z src/content/napisy-sasiedzi.ts. */
+   dotknięciu, bez zapisu w stanie); kartaBudynku robi z niego HTML w bieżącym języku (tr; nazwa budynku z mapy i zawody po angielsku). Napisy
+   z src/content/napisy-sasiedzi.ts. */
 
 import type { BuildingClass } from '../content/data.ts';
 import { BUDYNEK, ileTekst, KARTA } from '../content/napisy-sasiedzi.ts';
+import { tr } from '../core/jezyk.ts';
 import { dayOf } from '../sim/clock.ts';
 import {
   drzwiBudynku,
@@ -90,16 +92,16 @@ export function widokBudynku(w: World, b: SasiedniBudynek, dotkniety: boolean, p
   };
 }
 
-/** HTML karty budynku do panelu karty (jak karta mieszkania) */
+/** HTML karty budynku do panelu karty (jak karta mieszkania), w bieżącym języku */
 export function kartaBudynku(v: WidokBudynku, touch: boolean): string {
-  const sub = [BUDYNEK.rodzaj(v.cls).pl, v.cls === 'blok' && v.levels > 1 ? BUDYNEK.pietra(v.levels).pl : '']
+  const sub = [tr(BUDYNEK.rodzaj(v.cls)), v.cls === 'blok' && v.levels > 1 ? tr(BUDYNEK.pietra(v.levels)) : '']
     .filter(Boolean)
     .join(', ');
   const people = v.znajomi.length
-    ? `<h3 class="apt-h">${esc(BUDYNEK.znacieStad.pl)}</h3><ul class="apt-list">${v.znajomi
+    ? `<h3 class="apt-h">${esc(tr(BUDYNEK.znacieStad))}</h3><ul class="apt-list">${v.znajomi
         .map((z) => {
-          const names = z.osoby.map((o) => KARTA.osoba(o.name, o.age, o.prof).pl).join('; ');
-          const where = [z.klatka >= 0 ? BUDYNEK.klatka(z.klatka).pl : '', z.gdzie ? BUDYNEK.gdzie(z.gdzie).pl : '']
+          const names = z.osoby.map((o) => tr(KARTA.osoba(o.name, o.age, o.prof))).join('; ');
+          const where = [z.klatka >= 0 ? tr(BUDYNEK.klatka(z.klatka)) : '', z.gdzie ? tr(BUDYNEK.gdzie(z.gdzie)) : '']
             .filter(Boolean)
             .join(', ');
           return `<li class="apt-i"><span>${esc(names)}</span>${where ? `<b class="apt-c">${esc(where)}</b>` : ''}</li>`;
@@ -107,21 +109,21 @@ export function kartaBudynku(v: WidokBudynku, touch: boolean): string {
         .join('')}</ul>`
     : '';
   const unknown = v.mieszkalny
-    ? `<p class="apt-none">${esc((v.znajomi.length ? BUDYNEK.wiecejLudzi : BUDYNEK.nieWiecie).pl)}</p>`
-    : `<p class="apt-none">${esc(BUDYNEK.bezMieszkan.pl)}</p>`;
+    ? `<p class="apt-none">${esc(tr(v.znajomi.length ? BUDYNEK.wiecejLudzi : BUDYNEK.nieWiecie))}</p>`
+    : `<p class="apt-none">${esc(tr(BUDYNEK.bezMieszkan))}</p>`;
   return [
-    `<h2>${esc(v.name)}</h2>`,
+    `<h2>${esc(tr(BUDYNEK.nazwa(v.name)))}</h2>`,
     `<p class="sub">${esc(sub)}</p>`,
     people,
     unknown,
-    v.drzwi ? `<p class="apt-why">${esc(BUDYNEK.drzwi(v.drzwi).pl)}</p>` : '',
+    v.drzwi ? `<p class="apt-why">${esc(tr(BUDYNEK.drzwi(v.drzwi)))}</p>` : '',
     v.pokoje
-      ? `<p class="apt-why">${esc(BUDYNEK.przeszukane(v.pokoje.n, v.pokoje.z).pl)}</p>`
-      : `<p class="apt-why">${esc(BUDYNEK.zamkniety.pl)}</p>`,
-    v.plot.otoczony ? `<p class="apt-why">${esc(BUDYNEK.otoczony.pl)}</p>` : '',
-    v.plot.pct !== null ? `<p class="apt-why">${esc(BUDYNEK.plotPlan(v.plot.pct).pl)}</p>` : '',
-    v.pietra ? `<p class="apt-why">${esc(BUDYNEK.pietraPrzeszukane(v.pietra.n, v.pietra.z).pl)}</p>` : '',
-    v.noc ? `<p class="apt-why">${esc(BUDYNEK.noc(v.noc.dzien, v.noc.kto, ileTekst(v.noc.zabrali)).pl)}</p>` : '',
-    `<p class="doing">${esc(BUDYNEK.jak(touch).pl)}</p>`,
+      ? `<p class="apt-why">${esc(tr(BUDYNEK.przeszukane(v.pokoje.n, v.pokoje.z)))}</p>`
+      : `<p class="apt-why">${esc(tr(BUDYNEK.zamkniety))}</p>`,
+    v.plot.otoczony ? `<p class="apt-why">${esc(tr(BUDYNEK.otoczony))}</p>` : '',
+    v.plot.pct !== null ? `<p class="apt-why">${esc(tr(BUDYNEK.plotPlan(v.plot.pct)))}</p>` : '',
+    v.pietra ? `<p class="apt-why">${esc(tr(BUDYNEK.pietraPrzeszukane(v.pietra.n, v.pietra.z)))}</p>` : '',
+    v.noc ? `<p class="apt-why">${esc(tr(BUDYNEK.noc(v.noc.dzien, v.noc.kto, ileTekst(v.noc.zabrali))))}</p>` : '',
+    `<p class="doing">${esc(tr(BUDYNEK.jak(touch)))}</p>`,
   ].join('');
 }

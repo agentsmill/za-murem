@@ -2,9 +2,11 @@
    cudzych drzwiach. Czyste funkcje: dostają odczyt stanu (spotkanie, gospodarstwo, wybory z src/sim/sasiedzi.ts)
    i zwracają okno (Sheet) albo zdanie. Okna nie da się zamknąć bez wyboru, bo nasi stoją w drzwiach i czekają.
    Przycisk wyboru ma data-act „meet” i data-arg z wyborem; obsługę (polecenie meet do symulacji) robi main.ts.
-   Napisy z src/content/napisy-sasiedzi.ts, na razie po polsku. */
+   Napisy z src/content/napisy-sasiedzi.ts w bieżącym języku (tr z src/core/jezyk.ts); imiona i nazwiska zostają,
+   zawody i nazwa budynku z mapy idą po angielsku. */
 
-import { KARTA, type Kto, WYBOR, ZA_MALO_JEDZENIA, zdanie } from '../content/napisy-sasiedzi.ts';
+import { BUDYNEK, type Dwa, KARTA, type Kto, WYBOR, ZA_MALO_JEDZENIA, zdanie } from '../content/napisy-sasiedzi.ts';
+import { tr } from '../core/jezyk.ts';
 import type { Gospodarstwo, Napis, Spotkanie, WyborKarty, WyborSpotkania } from '../sim/sasiedzi.ts';
 import type { Sheet } from './okna.ts';
 import { esc, pct } from './tekst.ts';
@@ -16,7 +18,7 @@ export interface WidokSpotkania {
   wybory: readonly WyborKarty[];
   /** porcje jedzenia w naszych zapasach */
   jedzenie: number;
-  /** nazwa budynku (z mapy) */
+  /** nazwa budynku (z mapy, po polsku jak w świecie) */
   budynek: string;
   /** budynek to dom jednorodzinny (w środku „w domu”, nie „w mieszkaniu”) */
   dom?: boolean;
@@ -25,7 +27,7 @@ export interface WidokSpotkania {
 /** napis na przycisku wyboru: szansa przy wyborach, które ją mają */
 function etykieta(w: WyborKarty): string {
   const s = pct(w.szansa ?? 0);
-  const f: Record<WyborSpotkania, () => { pl: string }> = {
+  const f: Record<WyborSpotkania, () => Dwa> = {
     rozmowa: WYBOR.rozmowa,
     jedzenie: WYBOR.jedzenie,
     zaproszenie: () => WYBOR.zaproszenie(s),
@@ -37,7 +39,7 @@ function etykieta(w: WyborKarty): string {
     przegonic: () => WYBOR.przegonic(s),
     reka: WYBOR.reka,
   };
-  return f[w.k]().pl;
+  return tr(f[w.k]());
 }
 
 /** okno spotkania: kto stoi w drzwiach, jak patrzy, co o nas myśli, i wybory */
@@ -50,26 +52,26 @@ export function spotkanieSheet(v: WidokSpotkania): Sheet {
       : v.dom && sp.gdzie === 'mieszkanie'
         ? KARTA.tytul.dom
         : KARTA.tytul[sp.gdzie];
-  const who = g.osoby.map((o) => `<li class="line">${esc(KARTA.osoba(o.name, o.age, o.prof).pl)}</li>`).join('');
+  const who = g.osoby.map((o) => `<li class="line">${esc(tr(KARTA.osoba(o.name, o.age, o.prof)))}</li>`).join('');
   // szabrownicy to nie lokatorzy: bez znajomości i stosunku do zarządu
   const look = [
-    (g.szabrownicy ? KARTA.szabrownicy : g.znani ? KARTA.znani : KARTA.obcy).pl,
-    KARTA.zamiar[g.zamiar].pl,
-    KARTA.nastroj[g.nastroj].pl,
+    tr(g.szabrownicy ? KARTA.szabrownicy : g.znani ? KARTA.znani : KARTA.obcy),
+    tr(KARTA.zamiar[g.zamiar]),
+    tr(KARTA.nastroj[g.nastroj]),
   ].join(' ');
   const body = [
     `<ul class="lines">${who}</ul>`,
     `<p>${esc(look)}</p>`,
-    g.ugryziony !== undefined && !g.pytali ? `<p>${esc(KARTA.reka.pl)}</p>` : '',
-    g.szabrownicy ? '' : `<p class="sub">${esc(KARTA.relacja(g.rel).pl)}</p>`,
-    sp.wywazone && !g.szabrownicy ? `<p>${esc(KARTA.wywazone.pl)}</p>` : '',
-    sp.atak ? `<p class="doing">${esc(KARTA.bezRozmowy.pl)}</p>` : '',
-    v.wybory.some((w) => w.k === 'jedzenie') ? `<p class="doing">${esc(KARTA.zapasy(v.jedzenie).pl)}</p>` : '',
+    g.ugryziony !== undefined && !g.pytali ? `<p>${esc(tr(KARTA.reka))}</p>` : '',
+    g.szabrownicy ? '' : `<p class="sub">${esc(tr(KARTA.relacja(g.rel)))}</p>`,
+    sp.wywazone && !g.szabrownicy ? `<p>${esc(tr(KARTA.wywazone))}</p>` : '',
+    sp.atak ? `<p class="doing">${esc(tr(KARTA.bezRozmowy))}</p>` : '',
+    v.wybory.some((w) => w.k === 'jedzenie') ? `<p class="doing">${esc(tr(KARTA.zapasy(v.jedzenie)))}</p>` : '',
   ].join('');
   const buttons = v.wybory
     .map((w) => {
       const danger = w.k === 'zabranie' || w.k === 'obrona';
-      const why = !w.ok && w.k === 'jedzenie' ? ` title="${esc(ZA_MALO_JEDZENIA.pl)}"` : '';
+      const why = !w.ok && w.k === 'jedzenie' ? ` title="${esc(tr(ZA_MALO_JEDZENIA))}"` : '';
       return `<button type="button" class="btn${danger ? ' danger' : ''}" data-act="meet" data-arg="${w.k}"${
         w.ok ? '' : ' disabled'
       }${why}>${esc(etykieta(w))}</button>`;
@@ -77,8 +79,8 @@ export function spotkanieSheet(v: WidokSpotkania): Sheet {
     .join('');
   return {
     tone: sp.atak ? 'napad' : 'sasiedzi',
-    kicker: `${esc(KARTA.naglowek.pl)} · ${esc(v.budynek)}`,
-    title: esc(title.pl),
+    kicker: `${esc(tr(KARTA.naglowek))} · ${esc(tr(BUDYNEK.nazwa(v.budynek)))}`,
+    title: esc(tr(title)),
     body,
     foot: `<div class="choices">${buttons}</div>`,
   };
@@ -86,5 +88,5 @@ export function spotkanieSheet(v: WidokSpotkania): Sheet {
 
 /** zdanie do podpowiedzi po napisie z symulacji (pusty napis, gdy nie ma czego powiedzieć); nazwa: budynek napisu */
 export function zdanieNapisu(n: Pick<Napis, 'co' | 'ile' | 'info' | 'ilu'>, kto: Kto | null, nazwa?: string): string {
-  return zdanie(n.co, { kto, ile: n.ile, info: n.info, nazwa, ilu: n.ilu }).pl;
+  return tr(zdanie(n.co, { kto, ile: n.ile, info: n.info, nazwa, ilu: n.ilu }));
 }

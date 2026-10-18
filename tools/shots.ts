@@ -4141,7 +4141,8 @@ const SHOTS: Shot[] = [
       await m2f2Select(page);
       const items = await m2f2DoorMenu(page, 'Blok nr 10F', 1.4);
       console.log(`  menu: ${items.join(' | ')}`);
-      if (!items.some((i) => /^Put up a shared fence \(\d+ m: \d+ planks, \d+ scrap, [\d.]+ h\)$/.test(i)))
+      // pozycja z oknem potwierdzenia kończy się wielokropkiem
+      if (!items.some((i) => /^Put up a shared fence \(\d+ m: \d+ planks, \d+ scrap, [\d.]+ h\)…?$/.test(i)))
         throw new Error('brak wspólnego płotu w menu po angielsku');
       const pl = polskieLitery(items.join(' '), []);
       if (pl.length) throw new Error(`polskie słowa w menu: ${pl.join(', ')}`);
