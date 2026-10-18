@@ -1,6 +1,7 @@
 /* Polecenia z kliknięcia i opisy prac do karty osoby. Czyste funkcje stanu i świata: interfejs pyta,
    co znaczy kliknięcie prawym przyciskiem na kafelku, i dostaje gotowe polecenie dla symulacji. */
 
+import { wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
@@ -163,11 +164,13 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       out.push({ cmd: { t: 'craft', ids: core, item: 'dzida' }, label: 'Zrobić dzidę', quick: false });
   }
   if (st.fence && gateTiles(w).includes(tile)) {
-    out.push({ cmd: { t: 'guard', ids: core, post: 'brama' }, label: 'Pilnować bramy', quick: false });
+    // w domu furtka
+    const brama = wordsOfWorld(w).brama;
+    out.push({ cmd: { t: 'guard', ids: core, post: 'brama' }, label: `Pilnować ${brama.d}`, quick: false });
     const open = st.fence.gateOpen;
     out.push({
       cmd: { t: 'gate', ids: core, open: !open },
-      label: open ? 'Zamknąć bramę' : 'Otworzyć bramę',
+      label: `${open ? 'Zamknąć' : 'Otworzyć'} ${brama.b}`,
       quick: false,
     });
   }
@@ -300,7 +303,7 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       if (j.target === STAY_YARD) return walking ? 'Idzie na podwórko.' : 'Pracuje na podwórku.';
       if (j.target === STAY_FIRE) return walking ? 'Idzie do ogniska.' : 'Grzeje się przy ognisku.';
       if (j.target === STAY_MEAL)
-        return walking ? 'Idzie na wspólny posiłek.' : 'Je wspólny posiłek przy stole zarządu.';
+        return walking ? 'Idzie na wspólny posiłek.' : `Je wspólny posiłek przy stole ${wordsOfWorld(w).zarzad.dk}.`;
       return walking ? 'Idzie do domu.' : 'Siedzi w domu.';
     case 'cook': {
       if (walking) return 'Idzie gotować.';
@@ -319,8 +322,8 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         return walking ? 'Idzie czuwać przy kozie.' : 'Czuwa przy kozie.';
       }
       if (j.target === SIATKA_POST) return walking ? 'Idzie na wartę przy siatce.' : 'Trzyma wartę przy siatce.';
-      if (walking) return j.target === 0 ? 'Idzie na wartę przy bramie.' : 'Idzie na wartę przy dziurze.';
-      return j.target === 0 ? 'Trzyma wartę przy bramie.' : 'Trzyma wartę przy dziurze.';
+      if (j.target === 0) return `${walking ? 'Idzie na wartę' : 'Trzyma wartę'} ${wordsOfWorld(w).brama.przy}.`;
+      return walking ? 'Idzie na wartę przy dziurze.' : 'Trzyma wartę przy dziurze.';
     case 'patch':
       if (j.phase === 0) return 'Idzie po deski i złom.';
       return j.phase === 1 ? 'Niesie materiał do dziury.' : 'Łata dziurę w siatce.';
