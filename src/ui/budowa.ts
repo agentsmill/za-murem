@@ -36,13 +36,14 @@ export function availableOf(st: SimState, s: SimStock): Record<Mat, number> {
 /** numery naszych mieszkań w siedzibie: mieszkanie zarządu i zajęte (st.apts) */
 export const ourApts = (st: SimState): number[] => st.apts.filter((a) => a.ours).map((a) => a.apt);
 
-/** gdzie wolno stawiać, w słowach do menu i do powodu braku miejsca */
-export const PLACE_TEXT: Record<BuildPlace, string> = {
-  pokoj: 'w pokoju naszego mieszkania',
-  kuchnia: 'w kuchni naszego mieszkania',
-  podworko: 'na podwórku za siatką',
-  obwod: 'w miejscu odcinka siatki',
-};
+/** gdzie wolno stawiać, w słowach do menu i do powodu braku miejsca (nasze mieszkanie albo dom ze słownika) */
+export const placeText = (place: BuildPlace, w: Words = wordsOf(BLOK)): string =>
+  ({
+    pokoj: `w pokoju ${w.lokal.d}`,
+    kuchnia: `w kuchni ${w.lokal.d}`,
+    podworko: 'na podwórku za siatką',
+    obwod: 'w miejscu odcinka siatki',
+  })[place];
 
 /** kafelki, na których budowla może stanąć: suma podstaw z dozwolonych zakotwiczeń (dla view.setPlacement) */
 export function okTilesOf(anchors: readonly number[], kind: BuildKind, rot: Rot, size: number): number[] {
@@ -192,13 +193,13 @@ const CATEGORIES: { key: BuildCategory['key']; title: string; places: BuildPlace
   { key: 'obwod', title: 'Obwód', places: ['obwod'] },
 ];
 
-/** skąd brać materiał, do powodu „brakuje” */
-const SOURCE: Partial<Record<Mat, string>> = {
-  deski: 'Deski daje przeszukiwanie pustych mieszkań i rozbiórka mebli.',
-  zlom: 'Złom daje przeszukiwanie i rozbiórka śmieci i sprzętów.',
-  czesci: 'Części daje przeszukiwanie i rozbiórka sprzętów.',
+/** skąd brać materiał, do powodu „brakuje” (w domu przeszukiwanie domu i gruz ze słownika) */
+const source = (w: Words): Partial<Record<Mat, string>> => ({
+  deski: `Deski daje ${w.szukanie.zrodla.deski}.`,
+  zlom: `Złom daje ${w.szukanie.zrodla.zlom}.`,
+  czesci: `Części daje ${w.szukanie.zrodla.czesci}.`,
   drewno: 'Drewno daje ścinanie drzew.',
-};
+});
 
 /** Menu budowy: kategorie z budowlami; niedostępne z powodem (nie ma gdzie postawić albo brakuje
     materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. */
@@ -218,10 +219,10 @@ export function buildMenu(
           .map(([m, n]): [Mat, number] => [m, n - (have[m] ?? 0)])
           .filter(([, n]) => n > 0);
         let why: string | undefined;
-        if (!room(kind)) why = `Nie ma gdzie postawić: brak wolnego miejsca ${PLACE_TEXT[d.place]}.`;
+        if (!room(kind)) why = `Nie ma gdzie postawić: brak wolnego miejsca ${placeText(d.place, words)}.`;
         else if (short.length)
           why =
-            `Brakuje: ${short.map(([m, n]) => `${MAT_NAME[m]} ${n}`).join(', ')}. ${SOURCE[short[0][0]] ?? ''}`.trim();
+            `Brakuje: ${short.map(([m, n]) => `${MAT_NAME[m]} ${n}`).join(', ')}. ${source(words)[short[0][0]] ?? ''}`.trim();
         return {
           kind,
           name: d.name,
@@ -229,7 +230,7 @@ export function buildMenu(
           cost: costText(d.cost),
           time: workText(d.work),
           effect: effectOf(kind, words),
-          place: PLACE_TEXT[d.place],
+          place: placeText(d.place, words),
           ok: !why,
           why,
         };

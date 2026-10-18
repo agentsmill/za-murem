@@ -164,6 +164,25 @@ export interface Words {
   mieszkamy: string;
   /** zakończenia gry w wersji dla miejsca; tych, których tu nie ma, gra bierze z 0.3 */
   koniec: Partial<Record<EndingId, { title: string; text: string }>>;
+  /** Nasze lokum w siedzibie: w bloku mieszkanie zarządu, w domu jednorodzinnym cały dom komitetu (jedyne mieszkanie
+      siedziby). M: na początek zdania („Mieszkanie zarządu”), d: „w pokoju naszego mieszkania”, w: „Tylko w kuchni
+      w naszym mieszkaniu.”, nr: nazwa na karcie („Mieszkanie 3”; dom bez numeru), menu: gdzie jesteśmy w nagłówku
+      menu poleceń, ze stanem lokum małą literą („mieszkanie 3, puste od 2034, wyjazd”; w domu sam stan). */
+  lokal: { M: string; d: string; w: string; nr: (n: number) => string; menu: (n: number, stan: string) => string };
+  /** Co przeszukiwać: w bloku puste mieszkania, w domu pomieszczenia domu komitetu (decyzja Mateusza 18.10.2026).
+      b: cel („Przeszukajcie puste mieszkanie.”), d: „przeszukiwanie pustych mieszkań”, jak: podpowiedź do celu drugiego
+      dnia, karta: polecenia na karcie lokum, pomoc: zdanie o karcie w pomocy, naglowek: sekcja pomocy, wersja: co jest
+      w wersji 0.4, zrodla: skąd deski, złom i części („Deski daje …”, „Dają je …”). */
+  szukanie: {
+    b: string;
+    d: string;
+    jak: { mysz: string; dotyk: string };
+    karta: { mysz: string; dotyk: string };
+    pomoc: { mysz: string; dotyk: string };
+    naglowek: string;
+    wersja: string;
+    zrodla: { deski: string; zlom: string; czesci: string };
+  };
   /** skąd przychodzi sąsiad z innego budynku: z bloku obok | zza płotu (według sąsiadów, w samotnym miejscu według
       siedziby). Wydarzenia mówią o sąsiadach tylko wtedy, gdy są (GovHost.neighbour: także „z waszej klatki”). */
   sasiad: string;
@@ -188,6 +207,38 @@ const BLOKOWE: Omit<Words, 'sasiad'> = {
   zaTrzepakiem: 'za trzepakiem',
   mieszkamy: 'w spółdzielni',
   koniec: {},
+  lokal: {
+    M: 'Mieszkanie',
+    d: 'naszego mieszkania',
+    w: 'w naszym mieszkaniu',
+    nr: (n) => `Mieszkanie ${n}`,
+    menu: (n, stan) => `mieszkanie ${n}, ${stan}`,
+  },
+  szukanie: {
+    b: 'puste mieszkanie',
+    d: 'pustych mieszkań',
+    jak: {
+      mysz: 'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
+      dotyk:
+        'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.',
+    },
+    karta: {
+      mysz: 'Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+      dotyk: 'Przytrzymajcie palec w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+    },
+    pomoc: {
+      mysz: 'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+      dotyk:
+        'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+    },
+    naglowek: 'Budowa i puste mieszkania',
+    wersja: 'puste mieszkania do przeszukania i naprawy',
+    zrodla: {
+      deski: 'przeszukiwanie pustych mieszkań i rozbiórka mebli',
+      zlom: 'przeszukiwanie i rozbiórka śmieci i sprzętów',
+      czesci: 'przeszukiwanie i rozbiórka sprzętów',
+    },
+  },
 };
 
 const ULICZNE: Omit<Words, 'sasiad'> = {
@@ -209,6 +260,37 @@ const ULICZNE: Omit<Words, 'sasiad'> = {
   zaTrzepakiem: null,
   mieszkamy: 'w domu',
   koniec: KONIEC_DOM,
+  // dom ma jedno mieszkanie, komitetu: na karcie i w menu poleceń bez numeru, a przeszukuje się jego pomieszczenia
+  lokal: {
+    M: 'Dom',
+    d: 'naszego domu',
+    w: 'w naszym domu',
+    nr: () => 'Dom',
+    menu: (_n, stan) => stan,
+  },
+  szukanie: {
+    b: 'dom',
+    d: 'domu',
+    jak: {
+      mysz: 'Kliknijcie dom: karta pokaże, co w nim już przeszukane. Potem prawy przycisk w domu: „Przeszukać”.',
+      dotyk: 'Stuknijcie dom: karta pokaże, co w nim już przeszukane. Potem przytrzymajcie palec w domu: „Przeszukać”.',
+    },
+    karta: {
+      mysz: 'Prawy przycisk w domu: Przeszukać.',
+      dotyk: 'Przytrzymajcie palec w domu: Przeszukać.',
+    },
+    pomoc: {
+      mysz: 'Klik w dom pokazuje jego kartę: co w nim już przeszukane. Prawy przycisk w domu: Przeszukać.',
+      dotyk: 'Stuknięcie w dom pokazuje jego kartę: co w nim już przeszukane. Przytrzymanie palca w domu: Przeszukać.',
+    },
+    naglowek: 'Budowa i przeszukiwanie domu',
+    wersja: 'dom do przeszukania',
+    zrodla: {
+      deski: 'przeszukiwanie domu i rozbiórka gruzu',
+      zlom: 'przeszukiwanie domu i rozbiórka gruzu',
+      czesci: 'przeszukiwanie domu',
+    },
+  },
 };
 
 /** słownik dla miejsca: w domu ulica i komitet ulicy, w bloku spółdzielnia i zarząd (decyzja Mateusza, 17.10.2026) */
@@ -218,8 +300,11 @@ export function wordsOf(p: GovPlace): Words {
   return { ...(p.kind === 'dom' ? ULICZNE : BLOKOWE), sasiad: houses ? 'zza płotu' : 'z bloku obok' };
 }
 
+/** opis miejsca dla świata gry (symulacja i interfejs); świat bez siedziby (atrapy w testach) to blok */
+export const placeOfWorld = (w: PlaceWorld): GovPlace => (w.buildings[w.hq] ? placeOf(w) : BLOK);
+
 /** słownik dla świata gry (teksty symulacji i interfejsu); świat bez siedziby (atrapy w testach) mówi jak blok */
-export const wordsOfWorld = (w: PlaceWorld): Words => wordsOf(w.buildings[w.hq] ? placeOf(w) : BLOK);
+export const wordsOfWorld = (w: PlaceWorld): Words => wordsOf(placeOfWorld(w));
 
 /** wolne miejsca dla mieszkańców (miejsca minus mieszkańcy); bez danych o miejscach cztery, jak dotąd */
 export function freePlaces(i: Pick<GovInput, 'cap' | 'residents'>): number {

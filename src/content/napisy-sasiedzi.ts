@@ -1,6 +1,6 @@
 /* Napisy fali 2 M2 (sąsiednie budynki, docs/M2-fala-2.md) w obu językach: menu przy cudzych drzwiach i w pomieszczeniach
-   sąsiada, opisy prac, podpowiedzi po poleceniu, karta spotkania z lokatorami, zdania po spotkaniu i przy drzwiach,
-   karta budynku i cel drugiego dnia w domu. Do gry idzie na razie polski (pl); angielski (en) podłączy warstwa języka,
+   sąsiada, opisy prac, podpowiedzi po poleceniu, karta spotkania z lokatorami, zdania po spotkaniu i przy drzwiach
+   i karta budynku. Do gry idzie na razie polski (pl); angielski (en) podłączy warstwa języka,
    tak jak napisy surowców (src/sim/surowce.ts). Czyste dane i funkcje bez DOM. */
 
 import type { RoomKind } from '../world/interior.ts';
@@ -477,21 +477,5 @@ export const BUDYNEK = {
       : {
           pl: 'Prawy przycisk na drzwiach: Otworzyć, Zapukać albo Wyważyć. W środku na pomieszczeniu: Przeszukać.',
           en: 'Right-click the door: Open, Knock or Force. Inside, on a room: Search.',
-        },
-} as const;
-
-// ---------------------------------------------------------------- cel drugiego dnia w domu
-
-export const CEL_DOM = {
-  tekst: { pl: 'Przeszukajcie pokój u sąsiadów.', en: "Search a room at the neighbours'." },
-  jak: (touch: boolean): Dwa =>
-    touch
-      ? {
-          pl: 'Stuknijcie sąsiedni dom: karta powie, co o nim wiecie. Przytrzymajcie palec na jego drzwiach: Otworzyć albo Zapukać. W pustym domu przytrzymajcie palec w pokoju: Przeszukać.',
-          en: 'Tap a neighbouring house: its card tells you what you know. Hold your finger on its door: Open or Knock. In an empty house, hold your finger on a room: Search.',
-        }
-      : {
-          pl: 'Kliknijcie sąsiedni dom: karta powie, co o nim wiecie. Prawy przycisk na jego drzwiach: Otworzyć albo Zapukać. W pustym domu prawy przycisk w pokoju: Przeszukać.',
-          en: 'Click a neighbouring house: its card tells you what you know. Right-click its door: Open or Knock. In an empty house, right-click a room: Search.',
         },
 } as const;

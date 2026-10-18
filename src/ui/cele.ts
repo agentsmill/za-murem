@@ -2,7 +2,6 @@
    z raportów zarządu. Czyste funkcje bez DOM: interfejs dostaje listę z tekstem celu i podpowiedzią
    do bieżącego kroku. Zarząd i miejsce suchego drzewa według słownika miejsca (w domu komitet i ogród). */
 
-import { CEL_DOM } from '../content/napisy-sasiedzi.ts';
 import { BLOK, type Words, wordsOf } from '../gov/miejsce.ts';
 import type { GovState } from '../gov/typy.ts';
 import { START_KIT } from '../sim/bron.ts';
@@ -127,11 +126,11 @@ export const DAY2_WOOD = 16;
 /** czy to już drugi dzień: po pierwszym raporcie rano, do raportu po drugiej nocy */
 export const isDay2 = (gov: GovState | null): boolean => !!gov && gov.reports.length === 1;
 
-/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie, postawić pierwszą budowlę (dowolną;
-    warsztat bierze tyle materiału, że zarząd stawia go zwykle 3. albo 4. dnia), wzmocnić obwód, mieć drewno
-    na noc. Co przeszukane, daje stan gry (st.apts); budowle i zasieki to gotowe rzeczy w st.things; obwód
-    liczy się też, gdy żadna dziura nie jest otwarta. W domu jednorodzinnym (jedno mieszkanie, nasze) zamiast
-    pustego mieszkania pokój u sąsiadów (M2 fala 2, st.sasiedzi); przeszukanie u sąsiadów zalicza cel też w bloku. */
+/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie (w domu jednorodzinnym dom komitetu, słowa
+    ze słownika miejsca), postawić pierwszą budowlę (dowolną; warsztat bierze tyle materiału, że zarząd stawia go
+    zwykle 3. albo 4. dnia), wzmocnić obwód, mieć drewno na noc. Co przeszukane, daje stan gry (st.apts, a od fali 2
+    także pomieszczenia sąsiadów w st.sasiedzi); budowle i zasieki to gotowe rzeczy w st.things; obwód liczy się też,
+    gdy żadna dziura nie jest otwarta. */
 export function goalsDay2(
   st: SimState,
   gov: GovState | null,
@@ -144,8 +143,6 @@ export function goalsDay2(
     holes: number;
     /** słowa miejsca (bez nich jak w bloku) */
     words?: Words;
-    /** siedziba to dom jednorodzinny: przeszukać pokój u sąsiadów */
-    dom?: boolean;
   },
 ): Goal[] {
   const w = o.words ?? wordsOf(BLOK);
@@ -170,16 +167,12 @@ export function goalsDay2(
     .slice(0, 2)
     .map(({ k }) => `${BUILDS[k].name.toLowerCase()} (${costText(BUILDS[k].cost)})`);
   return [
-    o.dom
-      ? { key: 'przeszukaj', text: CEL_DOM.tekst.pl, how: CEL_DOM.jak(o.touch).pl, done: searched }
-      : {
-          key: 'przeszukaj',
-          text: 'Przeszukajcie puste mieszkanie.',
-          how: o.touch
-            ? 'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.'
-            : 'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
-          done: searched,
-        },
+    {
+      key: 'przeszukaj',
+      text: `Przeszukajcie ${w.szukanie.b}.`,
+      how: o.touch ? w.szukanie.jak.dotyk : w.szukanie.jak.mysz,
+      done: searched,
+    },
     {
       key: 'budowla',
       text: 'Postawcie pierwszą budowlę.',
@@ -190,7 +183,7 @@ export function goalsDay2(
       ? {
           key: 'dzida',
           text: 'Zróbcie dzidę dla warty.',
-          how: `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie pustych mieszkań i rozbiórka.`,
+          how: `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${w.szukanie.d} i rozbiórka.`,
           done: spears > startSpears,
         }
       : {

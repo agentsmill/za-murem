@@ -22,6 +22,39 @@ import { h2, vnoise } from './hash.ts';
 import { C, mix, shade } from './palette.ts';
 import { NB } from './wnetrze.ts';
 
+/** Wózek z marketu handlarza: druciany kosz na stelażu z czterema kółkami i czerwoną rączką. Pełny: worek, kartony
+    i kanister w koszu. Pusty (po napaści): sam pordzewiały kosz. Rozmiar nie zależy od zawartości. */
+function wozek(full: boolean, seed: number): Sprite {
+  const wire: Paint = (u, v, bw, bh) => {
+    const edge = u === 0 || v === 0 || u === bw - 1 || v === bh - 1;
+    if (edge) return h2(u, v, seed + 1301) < 0.2 ? M.rust : M.steel;
+    return u % 3 === 0 || v % 3 === 0 ? (h2(u, v, seed + 1302) < 0.15 ? M.rust : M.steelD) : HOLE;
+  };
+  const b: Box[] = [];
+  // kółka i stelaż
+  for (const [x, y] of [
+    [7, 10],
+    [24, 10],
+    [7, 22],
+    [24, 22],
+  ])
+    b.push(box(x, y, 0, x + 2, y + 2, 3, M.ironDark, { opt: true }));
+  b.push(box(7, 10, 3, 26, 24, 4, M.steelD, { opt: true }));
+  // kosz
+  b.push(box(6, 9, 8, 27, 24, 20, M.steelD, { front: wire, back: wire, left: wire, right: wire, opt: true }));
+  b.push(box(6, 9, 7, 27, 24, 8, M.steelD, { top: wire, opt: true }));
+  // rączka z czerwonego plastiku
+  b.push(box(27, 9, 18, 30, 24, 20, 0xb2352b, { opt: true }));
+  if (full) {
+    const sack: Paint = (u, v) => (h2(u, v, seed + 1303) < 0.12 ? shade(0xc9b48a, 0.85) : 0xc9b48a);
+    const carton: Paint = (u, v, bw) => (u === bw - 1 || v === 0 ? shade(0xa98a5e, 0.8) : 0xa98a5e);
+    b.push(box(8, 11, 8, 16, 22, 21, 0xc9b48a, { top: sack, front: sack, round: true, opt: true }));
+    b.push(box(16, 11, 8, 25, 17, 19, 0xa98a5e, { top: carton, front: carton, opt: true }));
+    b.push(box(17, 17, 8, 24, 23, 23, 0xa83a2c, { top: (u) => (u % 3 ? 0xa83a2c : 0x7a2a20), opt: true })); // kanister
+  }
+  return renderBoxes(b, PX, PX, 0, [box(5, 8, 0, 31, 25, 24, 0)]);
+}
+
 /** wysokość siatki w pikselach ekranu (półtora metra) */
 export const FENCE_H = 24;
 /** linia siatki w kafelku: odcinki poziome biegną w y = FENCE_Y, pionowe w x = FENCE_X */
@@ -696,3 +729,4 @@ export const pileSprite = (kind: Pile, size: 1 | 2 | 3, seed = 0) => pile(kind, 
 export const boothSprite = (rot: Rot, lit = false, seed = 0) => budka(rot, lit, seed | 0);
 export const armchairSprite = (rot: Rot, seed = 0) => fotel(rot, seed | 0);
 export const lampSprite = (lit = false, seed = 0) => lampa(lit, seed | 0);
+export const cartSprite = (full = true, seed = 0) => wozek(full, seed | 0);

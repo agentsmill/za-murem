@@ -10,7 +10,7 @@ import { HALAS_ZOMBIE, PO_POLECENIU } from './content/napisy-sasiedzi.ts';
 import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zombie.ts';
 import type { Person } from './content/people.ts';
 import { hashString } from './core/rng.ts';
-import { BLOK, placeOf, type Words, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
+import { BLOK, type Words, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
 import {
@@ -37,6 +37,7 @@ import { WEAPONS, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
+import { NAPISY as HANDEL } from './sim/handlarz.ts';
 import { type LokatorzyGry, zrodloLokatorow } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
@@ -152,6 +153,8 @@ let seed = 0;
 let hqName = '';
 /** słowa miejsca siedziby: w domu komitet ulicy, sąsiedzi i furtka, w bloku zarząd, mieszkańcy i brama */
 let words: Words = wordsOf(BLOK);
+/** id handlarza z ostatniej klatki (−1: nie ma), żeby napis o jego przyjściu pokazał się raz */
+let traderSeen = -1;
 let fenceIn: GovInput['fence'];
 /** sekundy przy ekranie bez pauzy (dla zarządu: tempo wydarzeń) i chwila ostatniego kroku zarządu */
 let screen = 0;
@@ -323,19 +326,27 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     );
   // tłum obcych tylko do pomiarów (?perf=150); w grze są mieszkańcy siedziby, których dokłada symulacja
   const crowd = params.has('perf') ? Number(params.get('perf')) : 0;
+  // handlarz pod bramą za dnia (src/sim/handlarz.ts); ?handlarz=0 gra bez niego (porównania, stare zrzuty)
+  const obcy = params.get('handlarz') !== '0';
   // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
   let st: SimState;
   if (saved) st = saved.sim;
   else
     try {
-      st = createSim(world, seed, { ...opcje, crowd, mode, ...(l ? { mieszkancy: opcjaMieszkancow(l) } : {}) });
+      st = createSim(world, seed, {
+        ...opcje,
+        crowd,
+        mode,
+        obcy,
+        ...(l ? { mieszkancy: opcjaMieszkancow(l) } : {}),
+      });
     } catch (e) {
       if (!l) throw e;
       // osoby z generatora wywróciły symulację: gra bez nich, ze stanami mieszkań M2, jak przed krokiem 5
       console.warn('Mieszkańcy z adresu: symulacja z osobami z generatora się nie udała, gra bez nich', e);
       l = null;
       stanyM2(world);
-      st = createSim(world, seed, { ...opcje, crowd, mode });
+      st = createSim(world, seed, { ...opcje, crowd, mode, obcy });
     }
   // drużyna bez domu w grze z sąsiadami zaczyna na ulicy
   if (!saved) siec.poStarcie(st, world);
@@ -358,6 +369,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   sim = new Sim(world, st);
   napisSeen = st.sasiedzi?.n ?? 0;
   meetChosen = null;
+  // zapis sprzed handlarza: włączony od następnego kroku (w trybie zombie symulacja to pomija)
+  if (saved && obcy && !st.obcy) sim.push({ t: 'obcy', ids: [] });
+  traderSeen = st.obcy?.trader ?? -1;
   if (l && dane) mieszkancy = { l, dane, adres: data.addr };
   // lokatorzy sąsiednich budynków z generatora mieszkańców (fala 2); bez tabel zapasowi z ziarna budynku
   if (dane) sim.lokatorzy = zrodloLokatorow(world, geo, dane);
@@ -488,6 +502,10 @@ function previewNight(w: World, x: number, y: number): { things: ThingLike[]; li
 function drawState() {
   if (!sim) return;
   view.syncGame(sim);
+  // handlarz właśnie przyszedł: napis na dole ekranu
+  const tr = sim.st.obcy?.trader ?? -1;
+  if (tr >= 0 && tr !== traderSeen) say(HANDEL.przyszedl(words.brama.pod).pl, 5000);
+  traderSeen = tr;
   // ?swiatla=test: światła podglądu nocy zamiast świateł z gry
   if (preview) view.lights = preview.lights;
 }
@@ -1015,7 +1033,6 @@ function renderGoals(snap: SimSnapshot) {
       woodReady: woodReady2,
       holes: snap.fence.holes.length,
       words,
-      dom: placeOf(sim.w).kind === 'dom',
     });
     cur = currentGoal(list);
     title = 'Drugi dzień';
@@ -1481,6 +1498,9 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   upstairs: [PO_POLECENIU.upstairs[0].pl, PO_POLECENIU.upstairs[1].pl],
   meet: ['', ''],
   zajete: ['', ''],
+  trade: [HANDEL.poHandel.pl, HANDEL.poHandelWielu.pl],
+  rob: [HANDEL.poNapasc.pl, HANDEL.poNapascWielu.pl],
+  obcy: ['', ''],
 });
 
 function run(m: MenuItem) {
@@ -1568,10 +1588,10 @@ function orderAt(sx: number, sy: number, menu: boolean) {
     .filter((p) => selected.has(p.id) && p.kind === 'core')
     .map((p) => sim!.st.people[p.person]?.first ?? '');
   const head = who.length > 2 ? `${words.Zarzad} (${who.length})` : who.join(' i ') || 'Klatka';
-  // w mieszkaniu siedziby nagłówek mówi, które to mieszkanie i w jakim stanie
+  // w mieszkaniu siedziby nagłówek mówi, które to mieszkanie i w jakim stanie (w domu sam stan: dom komitetu)
   const apt = aptAt(sim.w, tile);
   const v = apt >= 0 ? aptView(sim.st, sim.w, apt, snap.apts) : null;
-  const where = v ? ` · mieszkanie ${apt + 1}, ${aptState(v, words).toLowerCase()}` : '';
+  const where = v ? ` · ${words.lokal.menu(apt + 1, aptState(v, words).toLowerCase())}` : '';
   ctx.show(items, sx, sy, `${head}${where}`, (x) => (x.confirm ? askConfirm(x) : run(x)));
 }
 

@@ -77,6 +77,7 @@ export const GAME_KINDS: ReadonlySet<string> = new Set([
   'zlom',
   'czesci',
   'leki',
+  'wozek',
   'wrak',
   'krew',
   'smieci',
@@ -106,8 +107,9 @@ export function onTables(things: readonly ThingLike[]): readonly ThingLike[] {
   });
 }
 
-/** rodzaje pionków obcych: widać je tylko w świetle (szwendacza w ciemności jako zarys, strangerVisibility) */
-export const STRANGERS: ReadonlySet<string> = new Set(['obcy', 'szabrownik', 'wedrowiec', 'zombie']);
+/** rodzaje pionków obcych: widać je tylko w świetle (szwendacza w ciemności jako zarys, strangerVisibility); handlarz
+    przychodzi za dnia */
+export const STRANGERS: ReadonlySet<string> = new Set(['obcy', 'szabrownik', 'wedrowiec', 'zombie', 'handlarz']);
 
 /** zasięg latarni wartownika w metrach: tyle, ile warta widzi w symulacji (LAMP_REACH w sim.ts) */
 export const GUARD_LAMP_R = 5;

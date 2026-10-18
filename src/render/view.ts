@@ -20,6 +20,7 @@ import {
 } from 'pixi.js';
 import type { WeaponId } from '../sim/bron.ts';
 import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
+import { TRADER_HP } from '../sim/handlarz.ts';
 import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
 import { ZOMBIE_HP } from '../sim/zombie.ts';
 import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, weaponRect } from './art/bron.ts';
@@ -937,11 +938,19 @@ export class GameView {
       if (p.away) continue;
       const sp = this.pawnSprites.get(p.id);
       if (!sp?.visible || sp.alpha < 0.3) continue;
-      const max = p.kind === 'zombie' ? ZOMBIE_HP : p.kind === 'szabrownik' ? STRANGER_HP : 100;
+      const max =
+        p.kind === 'zombie'
+          ? ZOMBIE_HP
+          : p.kind === 'szabrownik'
+            ? STRANGER_HP
+            : p.kind === 'handlarz'
+              ? TRADER_HP
+              : 100;
       const hp = p.needs ? p.needs.health : (p.hp ?? max);
       const busy =
         p.kind === 'zombie' ||
         p.kind === 'szabrownik' ||
+        (p.kind === 'handlarz' && p.job?.phase === 3) ||
         p.job?.t === 'fight' ||
         (p.job?.t === 'guard' && p.job.phase === 1) ||
         p.bite !== undefined;

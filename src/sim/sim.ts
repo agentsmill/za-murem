@@ -37,6 +37,20 @@ import {
   TICKS_PER_SECOND,
 } from './clock.ts';
 import {
+  firstVisit,
+  HAGGLE_TICKS,
+  NAPISY as HANDEL,
+  LEAVE_HOUR,
+  nextVisit,
+  type Obcy,
+  ROB_MOOD,
+  ROB_MOOD_OTHERS,
+  rollOffers,
+  TRADER_HP,
+  tickAt,
+  WAIT_TICKS,
+} from './handlarz.ts';
+import {
   dryTreeOf,
   HEAT_EVERY,
   type HouseLike,
@@ -59,10 +73,11 @@ import {
   DISMANTLE,
   damageFrom,
   dismantleTicks,
-  lootOf,
   MATS,
   REPAIR,
   RUBBISH,
+  searchable,
+  searchLoot,
   searchTicks,
   yieldOf,
 } from './mieszkania.ts';
@@ -253,6 +268,8 @@ const M2_JOBS = new Set<JobKind>([
   'door',
   'loot',
   'upstairs',
+  'trade',
+  'rob',
 ]);
 /** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
 export const GATHER_NEAR = 8;
@@ -280,6 +297,8 @@ export const LOOT_CARRY = 8;
 export const GOV_WAIT = TICKS_PER_HOUR;
 /** skąd przychodzą: mniej więcej tyle kroków od siatki */
 const RAID_FROM = 22;
+/** handlarz przychodzi z daleka, mniej więcej tyle kroków ulicą od bramy */
+const TRADER_FROM = 70;
 /** bezczynny rdzeń rozgląda się za pracą co sekundę realną */
 const THINK_EVERY = TICKS_PER_SECOND;
 /** po poleceniu „idź tu” czeka na miejscu godzinę gry, chyba że coś pilnego */
@@ -371,7 +390,10 @@ export type JobKind =
   | 'loot'
   | 'meet'
   /** etap 2: piętro sąsiada (target: indeks budynku, tile: kafelek przy schodach); w fazie 1 osoba jest na górze */
-  | 'upstairs';
+  | 'upstairs'
+  | 'trader'
+  | 'trade'
+  | 'rob';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -433,9 +455,9 @@ export interface Job {
 
 /** zarząd (rdzeń, polecenia), tłum (tylko do pomiaru wydajności, za siatką), mieszkańcy siedziby
     (tło z planem dnia), szabrownicy (obcy z napadu; nazwa jak w liście obcych rysowania, src/render/game.ts),
-    szwendacze i lokatorzy sąsiednich budynków (M2 fala 2: pionki tylko w trakcie spotkania i po nim, dopóki zarząd
-    jest w ich budynku) */
-export type PawnKind = 'core' | 'crowd' | 'resident' | 'szabrownik' | 'zombie' | 'sasiad';
+    szwendacze, lokatorzy sąsiednich budynków (M2 fala 2: pionki tylko w trakcie spotkania i po nim, dopóki zarząd
+    jest w ich budynku) i handlarz pod bramą */
+export type PawnKind = 'core' | 'crowd' | 'resident' | 'szabrownik' | 'zombie' | 'sasiad' | 'handlarz';
 
 /** wróg: szabrownik albo szwendacz (do ataku z menu i obrony) */
 export const isEnemy = (p: Pick<Pawn, 'kind'>): boolean => p.kind === 'szabrownik' || p.kind === 'zombie';
@@ -598,7 +620,11 @@ export type Command =
   /** etap 2: przeszukać następne piętro otwartego budynku (tile: kafelek schodów) */
   | { t: 'upstairs'; ids: number[]; bid: number; tile: number }
   /** gra sieciowa: nowa lista drzwi klatek zajętych przez inne drużyny (ids puste) */
-  | { t: 'zajete'; ids: number[]; drzwi: number[] };
+  | { t: 'zajete'; ids: number[]; drzwi: number[] }
+  /** handlarz: włączyć (stary zapis, ids puste), wymienić się (oferta k), napaść na niego */
+  | { t: 'obcy'; ids: number[] }
+  | { t: 'trade'; ids: number[]; offer: number }
+  | { t: 'rob'; ids: number[] };
 
 export interface Noise {
   x: number;
@@ -742,6 +768,8 @@ export interface SimState {
   /** gra sieciowa (fala 2): drzwi klatek zajętych przez inne drużyny, rosnąco; zamknięte na stałe razem z tym, co za
       nimi. Nie ma go w grze bez sieci. */
   zajete?: number[];
+  /** handlarz pod bramą (src/sim/handlarz.ts); tylko z opcją obcy albo po poleceniu 'obcy' */
+  obcy?: Obcy;
 }
 
 /** liczniki do pomiarów; poza stanem gry, żeby skrót stanu nie zależał od wnętrza A* */
@@ -800,6 +828,9 @@ export interface SimOpts {
   mode?: GameMode;
   /** gra sieciowa: drzwi klatek zajętych przez inne drużyny na start (później polecenie zajete) */
   zajete?: readonly number[];
+  /** handlarz pod bramą za dnia (src/sim/handlarz.ts), tylko w zwykłym trybie; gra go włącza, boty i testy bez
+      tej opcji grają jak przed nim (losowanie terminu idzie ze st.rng dopiero po całej reszcie startu) */
+  obcy?: boolean;
 }
 
 /** wolne kafelki przed wejściami do budynków mieszkalnych, najbliżej siedziby najpierw */
@@ -1048,8 +1079,12 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     st.pawns.push(p);
   }
   if (opts.zajete?.length) st.zajete = [...new Set(opts.zajete)].sort((a, b) => a - b);
+  if (opts.obcy && modeOf(st) !== 'zombie') st.obcy = newObcy(st);
   return st;
 }
+
+/** handlarz włączony: pierwsza wizyta drugiego dnia */
+const newObcy = (st: SimState): Obcy => ({ next: firstVisit(st.rng), offers: [], trader: -1, napad: -1, wizyty: 0 });
 
 /** pola osoby gry z osoby z generatora mieszkańców: kopie (stan nie dzieli tablic z wejściem), rodzina i historia
     tylko niepuste, `nazwaGen` to imię i nazwisko z generatora (tożsamość osoby przy wczytaniu zapisu) */
@@ -1888,7 +1923,9 @@ export class Sim {
 
   /** przechodniość i obszary dla danego rodzaju pionka */
   private layer(kind: PawnKind): { blocked: Uint8Array; reg: Int32Array } {
-    return kind === 'core' ? { blocked: this.coreBlocked, reg: this.reg } : this.lay[kind];
+    if (kind === 'core') return { blocked: this.coreBlocked, reg: this.reg };
+    // handlarz chodzi tylko po stronie ulicy
+    return kind === 'handlarz' ? this.lay.outside : this.lay[kind];
   }
 
   /** warstwa do drogi pionka: szabrownik po stronie ulicy (podchodzi, czeka, ucieka) chodzi tylko tamtędy */
@@ -1969,6 +2006,7 @@ export class Sim {
       if (h === 2) this.nocniGoscie();
       else if (h === 7) this.ranoPoGosciach();
     }
+    if (st.obcy) this.traderClock();
     if (st.noise!.length) st.noise = st.noise!.filter((n) => n.until > st.tick);
     if (st.fx!.length) st.fx = st.fx!.filter((f) => f.tick + FX_TICKS > st.tick);
     if (modeOf(st) === 'zombie') {
@@ -2040,6 +2078,10 @@ export class Sim {
         if (this.strangerTick(p)) gone = true;
         continue;
       }
+      if (p.kind === 'handlarz') {
+        if (this.traderTick(p)) gone = true;
+        continue;
+      }
       if (st.tick < p.wait) continue;
       if (p.want < 0) {
         // tłum: spacer w promieniu 28 m od swojej klatki
@@ -2056,7 +2098,8 @@ export class Sim {
       p.wait = st.tick + 60 + Math.floor(rnd() * 240);
     }
     // szabrownicy, którzy doszli tam, skąd przyszli, znikają
-    if (gone) st.pawns = st.pawns.filter((p) => !(p.kind === 'szabrownik' && p.job?.phase === 4));
+    if (gone)
+      st.pawns = st.pawns.filter((p) => !((p.kind === 'szabrownik' || p.kind === 'handlarz') && p.job?.phase === 4));
     // zabici w tym kroku znikają ze stanu (zostają po nich zwłoki)
     if (this.graveyard.size) {
       for (const id of this.graveyard) {
@@ -2072,6 +2115,7 @@ export class Sim {
   /** prędkość względem człowieka: ranny szabrownik wlecze się */
   private speedOf(p: Pawn): number {
     if (p.kind === 'szabrownik' && (p.hp ?? STRANGER_HP) < FLEE_HP) return 0.6;
+    if (p.kind === 'handlarz' && p.job?.phase === 3) return 1.3;
     if (p.kind === 'zombie') return p.job?.phase === 3 ? CHASE_SPEED : ZOMBIE_SPEED;
     return 1;
   }
@@ -2178,6 +2222,10 @@ export class Sim {
       this.unbuild(c.id);
       return;
     }
+    if (c.t === 'obcy') {
+      if (!st.obcy && modeOf(st) !== 'zombie') st.obcy = newObcy(st);
+      return;
+    }
 
     if (!pawns.length) return;
     this.tutEvent('zaznacz');
@@ -2208,6 +2256,8 @@ export class Sim {
       this.orderDoor(pawns, c.t, c.door);
     else if (c.t === 'loot') this.startLoot(pawns[0], c.bid, c.room);
     else if (c.t === 'upstairs') this.startUpstairs(pawns[0], c.bid, c.tile);
+    else if (c.t === 'trade') this.startTrade(pawns[0], c.offer);
+    else if (c.t === 'rob') this.startRob(pawns[0]);
   }
 
   /** Pora wspólnego posiłku (uchwała o kotle), w której mieszkańcy mogą wejść do mieszkania zarządu: pół godziny
@@ -3308,6 +3358,13 @@ export class Sim {
         return this.st.sasiedzi?.spotkanie?.nr === j.target;
       case 'upstairs':
         return this.pietroPraca(p, j, at);
+      case 'trade':
+        return this.tradeWork(p, j, at);
+      case 'rob':
+        return this.robWork(p, j, at);
+      // praca handlarza ma własny krok (traderTick)
+      case 'trader':
+        return false;
       case 'arrive':
         // przyjęty: zza bramy do swojego mieszkania (po kolei, gęsiego), potem plan dnia jak każdy mieszkaniec
         if (tick < j.until) return true;
@@ -4207,21 +4264,23 @@ export class Sim {
     return this.nearest(p, cand.length ? cand : this.roomTiles[room].filter((i) => this.reg[i] === region));
   }
 
-  /** przeszukać pomieszczenie pustego mieszkania (raz; nie gdy ktoś już je przeszukuje) */
+  /** przeszukać pomieszczenie pustego mieszkania albo, w domu jednorodzinnym, domu komitetu (raz; nie gdy ktoś już
+      je przeszukuje) */
   private startSearch(p: Pawn, room: number): void {
     const g = this.aptOfRoom(room);
-    if (g?.state !== 'puste' || g.searched.includes(room)) return;
+    if (!g || !searchable(this.w, g) || g.searched.includes(room)) return;
     if (this.st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room)) return;
     const spot = this.roomSpot(p, room);
     if (spot < 0 || !this.go(p, spot)) return;
     this.setJob(p, this.newJob('search', room, spot, true), false);
   }
 
-  /** łup z przeszukania: z tabeli według powodu opuszczenia, deterministycznie z ziarna gry i pomieszczenia */
+  /** łup z przeszukania: z tabeli według powodu opuszczenia (w domu komitetu z dokładką), deterministycznie z ziarna
+      gry i pomieszczenia */
   private searchDone(room: number, g: AptGame, at: number): void {
     const h = this.house!;
     const rnd = mulberry((Math.imul(this.st.seed | 0, 9973) ^ Math.imul(room + 1, 7919) ^ 0x51ab) >>> 0);
-    const loot = lootOf(g.why ?? 'wyjazd', h.rooms[room].kind, this.roomTiles[room].length, rnd);
+    const loot = searchLoot(g, h.rooms[room].kind, this.roomTiles[room].length, rnd);
     for (const [m, n] of Object.entries(loot) as [Mat, number][]) if (n > 0) this.dropMat(at, m, n, room);
     g.searched.push(room);
     g.searched.sort((a, b) => a - b);
@@ -4770,6 +4829,241 @@ export class Sim {
     }
     this.st.things = this.st.things.filter((t) => !(t.kind === kind && t.n <= 0));
     return true;
+  }
+
+  /* ---------- handlarz pod bramą (src/sim/handlarz.ts) ---------- */
+
+  /** pionek handlarza na mapie */
+  private trader(): Pawn | undefined {
+    const o = this.st.obcy;
+    return o && o.trader >= 0 ? this.st.pawns.find((p) => p.id === o.trader && p.kind === 'handlarz') : undefined;
+  }
+
+  /** termin wizyty: przychodzi za dnia (9:00–15:00), a gdy termin wypadł w nocy, przesuwa się na rano */
+  private traderClock(): void {
+    const st = this.st;
+    const o = st.obcy!;
+    if (o.next < 0 || o.trader >= 0 || st.tick < o.next) return;
+    const h = hourOf(st.tick);
+    if (h < 9 || h >= 15) {
+      o.next = tickAt(dayOf(st.tick) + (h >= 15 ? 1 : 0), 9 + 4 * nextRandom(st.rng));
+      return;
+    }
+    this.spawnTrader();
+  }
+
+  /** handlarz z daleka po stronie ulicy idzie na kafelek przy bramie; bez bramy wizyta przepada */
+  private spawnTrader(): void {
+    const st = this.st;
+    const o = st.obcy!;
+    const day = dayOf(st.tick);
+    const spot = this.outsideOf(gateTiles(this.w))[0];
+    if (spot === undefined) {
+      o.next = nextVisit(day, st.rng);
+      return;
+    }
+    const from = this.farFrom(spot, TRADER_FROM);
+    const p = newPawn(st, this.w, 'handlarz', -1, from, from, Math.floor(nextRandom(st.rng) * 16));
+    p.hp = TRADER_HP;
+    p.job = this.newJob('trader', -1, spot, false);
+    st.pawns.push(p);
+    if (from === spot || !this.go(p, spot)) {
+      st.pawns.pop();
+      o.next = nextVisit(day, st.rng);
+      return;
+    }
+    o.trader = p.id;
+    o.offers = rollOffers(st.rng);
+    o.wizyty++;
+  }
+
+  /** Krok handlarza, który nie idzie: 0 doszedł pod bramę (stawia wózek i czeka do until), 1 czeka, potem odchodzi
+      z wózkiem, 2 odszedł, 3 uciekł po napaści, 4 zniknął. true: zniknął w tym kroku. */
+  private traderTick(p: Pawn): boolean {
+    const st = this.st;
+    const o = st.obcy;
+    const j = p.job;
+    if (!o || !j) {
+      p.job = this.newJob('trader', -1, this.tileOf(p), false, 4);
+      return true;
+    }
+    if (j.phase === 0) {
+      const size = this.w.size;
+      const here = this.tileOf(p);
+      // wózek obok w tym samym rzędzie (nad handlarzem zasłaniałby mu głowę), dalej od bramy
+      const around = this.tilesAround(here, 9).filter((i) => i !== here);
+      const g0 = gateTiles(this.w)[0] ?? here;
+      const away = (i: number) =>
+        -Math.abs((i % size) - (g0 % size)) - Math.abs(Math.floor(i / size) - Math.floor(g0 / size));
+      const row = around.filter((i) => Math.floor(i / size) === Math.floor(here / size) && Math.abs(i - here) === 1);
+      const at = row.sort((a, b) => away(a) - away(b) || a - b)[0] ?? around[0] ?? here;
+      const cart = newThing(st, 'wozek', at % size, Math.floor(at / size));
+      cart.n = 1;
+      st.things.push(cart);
+      j.phase = 1;
+      j.from = cart.id;
+      j.t0 = st.tick;
+      j.until = Math.min(st.tick + WAIT_TICKS, tickAt(dayOf(st.tick), LEAVE_HOUR));
+      const g = gateTiles(this.w)[0];
+      if (g !== undefined) this.face(p, (g % size) + 0.5, Math.floor(g / size) + 0.5);
+      return false;
+    }
+    if (j.phase === 1) {
+      if (st.tick < j.until) return false;
+      // odchodzi tam, skąd przyszedł, i zabiera wózek
+      const cart = this.thing(j.from);
+      if (cart) st.things.splice(st.things.indexOf(cart), 1);
+      j.phase = 2;
+      j.from = -1;
+      o.offers = [];
+      if (this.go(p, p.home)) return false;
+    }
+    j.phase = 4;
+    if (o.trader === p.id) {
+      o.trader = -1;
+      o.offers = [];
+      if (o.napad < 0) o.next = nextVisit(dayOf(st.tick), st.rng);
+    }
+    return true;
+  }
+
+  /** na ofertę starcza materiału (z całego zapasu, jak w warsztacie) */
+  private canPay(take: Partial<Record<Mat, number>>): boolean {
+    return (Object.entries(take) as [Mat, number][]).every(([m, n]) => this.workStock(m) >= n);
+  }
+
+  /** kafelek do handlu: podwórko najbliżej handlarza (wymiana przez bramę), bez siatki tuż obok niego */
+  private tradeSpot(p: Pawn, t: Pawn): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const yard = fenceShape(this.w)?.yard ?? [];
+    let best = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const i of yard) {
+      if (this.coreBlocked[i] || this.reg[i] !== region || taken.includes(i)) continue;
+      const d = ((i % size) + 0.5 - t.x) ** 2 + (Math.floor(i / size) + 0.5 - t.y) ** 2;
+      if (d < bd || (d === bd && i < best)) {
+        bd = d;
+        best = i;
+      }
+    }
+    return best >= 0 ? best : this.besidePawn(p, t);
+  }
+
+  /** wolny kafelek tuż przy pionku t, do którego p dojdzie (−1: brak) */
+  private besidePawn(p: Pawn, t: Pawn): number {
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const tx = Math.floor(t.x);
+    const ty = Math.floor(t.y);
+    const cand: number[] = [];
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = tx + dx;
+        const y = ty + dy;
+        if ((!dx && !dy) || x < 0 || y < 0 || x >= size || y >= size) continue;
+        const i = y * size + x;
+        if (!this.coreBlocked[i] && this.reg[i] === region && !taken.includes(i)) cand.push(i);
+      }
+    return this.nearest(p, cand);
+  }
+
+  /** wymiana: jedna osoba idzie pod bramę i targuje się 5 minut; oferta, handlarz i materiał sprawdzane na końcu */
+  private startTrade(p: Pawn, k: number): void {
+    const t = this.trader();
+    const offer = this.st.obcy?.offers[k];
+    if (t?.job?.phase !== 1 || !offer || offer.left <= 0 || !this.canPay(offer.take)) return;
+    const spot = this.tradeSpot(p, t);
+    if (spot < 0 || !this.go(p, spot)) return;
+    this.setJob(p, this.newJob('trade', k, spot, true), false);
+  }
+
+  private tradeWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const t = this.trader();
+    const offer = st.obcy?.offers[j.target];
+    if (t?.job?.phase !== 1 || !offer || offer.left <= 0) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = st.tick;
+      j.until = st.tick + HAGGLE_TICKS;
+      this.face(p, t.x, t.y);
+      return true;
+    }
+    if (st.tick < j.until) return true;
+    if (!this.canPay(offer.take)) return false;
+    for (const [m, n] of Object.entries(offer.take) as [Mat, number][]) this.takeForWork(m, n);
+    for (const [m, n] of Object.entries(offer.give) as [Mat, number][])
+      if (st.fence) this.dropInYard(m, n, j.tile);
+      else this.dropMat(j.tile, m, n);
+    offer.left--;
+    return false;
+  }
+
+  /** n sztuk materiału po stronie ulicy wokół kafelka at (nie na bramie, dziurach i podwórku), na sterty tego rodzaju
+      z miejscem i na wolne kafelki; gdy tam brak miejsca, reszta jak zwykle (dropMat) */
+  private dropOutside(at: number, kind: string, n: number): void {
+    const st = this.st;
+    const size = this.w.size;
+    let left = n;
+    for (const i of this.tilesAround(at, 25)) {
+      if (left <= 0) return;
+      const x = i % size;
+      const y = Math.floor(i / size);
+      const same = st.things.find((t) => t.kind === kind && t.x === x && t.y === y);
+      if (same) {
+        const k = Math.max(0, Math.min(left, STACK - same.n));
+        same.n += k;
+        left -= k;
+      } else if (!this.thingAt(x, y)) {
+        const t = newThing(st, kind, x, y);
+        t.n = Math.min(left, STACK);
+        left -= t.n;
+        st.things.push(t);
+      }
+    }
+    if (left > 0) this.dropMat(at, kind, left);
+  }
+
+  /** napaść: jedna osoba idzie do handlarza za bramę */
+  private startRob(p: Pawn): void {
+    const t = this.trader();
+    if (t?.job?.phase !== 1) return;
+    const spot = this.besidePawn(p, t);
+    if (spot < 0 || !this.go(p, spot)) return;
+    this.setJob(p, this.newJob('rob', t.id, spot, true), false);
+  }
+
+  /** Cios, handlarz rzuca wózek i ucieka; cały jego towar zostaje przy wózku za siatką, a handlarz więcej nie
+      przychodzi. Nastrój: napastnik i reszta zarządu. */
+  private robWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const o = st.obcy;
+    const t = this.trader();
+    if (!o || !at || !t || t.id !== j.target || t.job?.phase !== 1) return false;
+    this.face(p, t.x, t.y);
+    this.addFx('cios', p.x, p.y, t.x, t.y);
+    t.hp = Math.max(1, (t.hp ?? TRADER_HP) - 25);
+    const cart = this.thing(t.job.from);
+    const size = this.w.size;
+    const drop = cart ? cart.y * size + cart.x : this.tileOf(t);
+    for (const offer of o.offers)
+      if (offer.left > 0)
+        for (const [m, n] of Object.entries(offer.give) as [Mat, number][]) this.dropOutside(drop, m, n * offer.left);
+    if (cart) cart.n = 0;
+    o.offers = [];
+    o.napad = st.tick;
+    o.next = -1;
+    t.job.phase = 3;
+    t.job.from = -1;
+    this.go(t, t.home);
+    this.addMood(p, HANDEL.nastroj.pl, ROB_MOOD, TICKS_PER_DAY);
+    for (const q of st.pawns)
+      if (q !== p && q.kind === 'core' && !q.away) this.addMood(q, HANDEL.nastroj.pl, ROB_MOOD_OTHERS, TICKS_PER_DAY);
+    return false;
   }
 
   /** miejsca dla mieszkańców od nowa (zajęcie, naprawa, budowa) */
@@ -6066,8 +6360,8 @@ export class Sim {
     return out;
   }
 
-  /** skąd przychodzą: losowy kafelek RAID_FROM kroków od siatki po stronie ulicy (albo najdalszy, jaki jest) */
-  private farFrom(spot: number): number {
+  /** skąd przychodzą: losowy kafelek far kroków od siatki po stronie ulicy (albo najdalszy, jaki jest) */
+  private farFrom(spot: number, far = RAID_FROM): number {
     const size = this.w.size;
     const { blocked } = this.lay.outside;
     const dist = new Map<number, number>([[spot, 0]]);
@@ -6077,7 +6371,7 @@ export class Sim {
     for (let qi = 0; qi < q.length; qi++) {
       const c = q[qi];
       const d = dist.get(c)!;
-      if (d === RAID_FROM) {
+      if (d === far) {
         ring.push(c);
         continue;
       }

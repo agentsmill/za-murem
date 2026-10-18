@@ -6,7 +6,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   BUDYNEK,
-  CEL_DOM,
   KARTA,
   MENU,
   PO_POLECENIU,
@@ -15,6 +14,7 @@ import {
   WYBOR,
   zdanie,
 } from '../../src/content/napisy-sasiedzi.ts';
+import { wordsOfWorld } from '../../src/gov/miejsce.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import { type Gospodarstwo, nowyBudynek, szabrownicy, wybory, znaniBudynki } from '../../src/sim/sasiedzi.ts';
 import { kartaBudynku, widokBudynku } from '../../src/ui/budynek.ts';
@@ -229,8 +229,6 @@ describe('zdania przy drzwiach i po spotkaniu', () => {
       BUDYNEK.drzwi({ otwarte: 1, na_klucz: 2 }),
       BUDYNEK.przeszukane(2, 5),
       BUDYNEK.jak(true),
-      CEL_DOM.tekst,
-      CEL_DOM.jak(false),
     ];
     for (const d of all) {
       expect(d.pl.length, d.en).toBeGreaterThan(0);
@@ -298,27 +296,21 @@ describe('karta sąsiedniego budynku', () => {
   });
 });
 
-describe('cel drugiego dnia w domu', () => {
-  it('pokój u sąsiadów zamiast pustego mieszkania; liczy się przeszukanie u sąsiadów', () => {
-    const sim = newGame('zielonki');
-    const gov = newGov(1);
-    const o = { touch: false, wood: 0, woodReady: false, holes: 0, dom: true };
-    const goal = () => goalsDay2(sim.st, gov, o).find((g) => g.key === 'przeszukaj')!;
-    expect(goal().text).toBe('Przeszukajcie pokój u sąsiadów.');
-    expect(goal().how).toContain('Kliknijcie sąsiedni dom');
-    expect(goal().done).toBe(false);
-    expect(goalsDay2(sim.st, gov, { ...o, touch: true }).find((g) => g.key === 'przeszukaj')!.how).toContain(
-      'Stuknijcie sąsiedni dom',
-    );
-    // wpis budynku z przeszukanym pokojem
-    const w = demoWorld('zielonki');
-    const { bid } = doorWhere(w, 'zwykly', () => true, ['dom']);
-    sim.st.sasiedzi = { budynki: [nowyBudynek(w, 'zwykly', bid, null)], spotkanie: null, nr: 0, napis: null, n: 0 };
-    sim.st.sasiedzi.budynki[0].przeszukane.push(0);
-    expect(goal().done).toBe(true);
-    // w bloku cel zostaje przy pustym mieszkaniu
-    expect(goalsDay2(sim.st, gov, { ...o, dom: false }).find((g) => g.key === 'przeszukaj')!.text).toBe(
-      'Przeszukajcie puste mieszkanie.',
-    );
+describe('cel drugiego dnia: przeszukanie u sąsiadów też się liczy', () => {
+  it('w domu i w bloku cel przeszukania zalicza pierwsze pomieszczenie przeszukane u sąsiadów', () => {
+    for (const [key, w] of [
+      ['zielonki', demoWorld('zielonki')],
+      ['lanciego', demoWorld('lanciego')],
+    ] as const) {
+      const sim = newGame(key);
+      const gov = newGov(1);
+      const o = { touch: false, wood: 0, woodReady: false, holes: 0, words: wordsOfWorld(w) };
+      const goal = () => goalsDay2(sim.st, gov, o).find((g) => g.key === 'przeszukaj')!;
+      expect(goal().done).toBe(false);
+      const { bid } = doorWhere(w, 'zwykly', () => true, key === 'zielonki' ? ['dom'] : ['blok']);
+      sim.st.sasiedzi = { budynki: [nowyBudynek(w, 'zwykly', bid, null)], spotkanie: null, nr: 0, napis: null, n: 0 };
+      sim.st.sasiedzi.budynki[0].przeszukane.push(0);
+      expect(goal().done).toBe(true);
+    }
   });
 });

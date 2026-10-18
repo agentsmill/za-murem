@@ -334,22 +334,23 @@ export function menuSheet(note: string): Sheet {
 const ZOMBIE_HELP =
   '<h3 class="help-h">Tryb zombie</h3><ul class="help"><li>Za siatką snują się szwendacze. Są wolni, ale idą za hałasem i za tym, co widzą. Nocą przychodzi stado i napiera na siatkę, a każdej nocy jest ich więcej.</li><li>Dzida sięga przez siatkę: warta z dzidą zabija tych, którzy napierają. Nóż, łom i siekiera działają dopiero po tej samej stronie siatki. Strzał zabija od razu, ale słychać go z daleka i ściąga następnych.</li><li>Uszkodzoną siatkę wzmacnia się deskami albo złomem, a dziurę łata. Dzidę robi się z desek i złomu na stercie. „Do broni!” wysyła wszystkich zdolnych na wartę przy siatce.</li><li>Ugryzienie to gorączka i śmierć w niecałą dobę. Kto ugryziony w rękę albo nogę, tego da się uratować amputacją w ciągu dwóch godzin. Każdy zmarły wstaje po godzinie, chyba że ktoś go dobije.</li></ul>';
 
-/** pomoc o budowie i pustych mieszkaniach (M2, fala 1) */
+/** pomoc o budowie i przeszukiwaniu (M2, fala 1): w bloku pustych mieszkań, w domu domu komitetu (słownik miejsca) */
 function buildHelp(touch: boolean, words: Words): string {
+  const s = words.szukanie;
   const items = touch
     ? [
         'Przycisk Budowa u góry otwiera menu budowy: pomieszczenie, podwórko i obwód, z kosztem, czasem pracy i działaniem.',
         'Po wyborze plan budowy jedzie za palcem: stuknięcie stawia, przyciski na dole obracają i anulują. Zielony plan da się postawić, czerwony mówi, czemu nie.',
-        `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.`,
-        'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+        `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie ${s.d} i rozbiórka.`,
+        s.pomoc.dotyk,
       ]
     : [
         'Przycisk Budowa u góry albo klawisz B otwiera menu budowy: pomieszczenie, podwórko i obwód, z kosztem, czasem pracy i działaniem.',
         'Po wyborze plan budowy jedzie za kursorem: lewy klik stawia, R obraca, prawy klik albo Esc anuluje, z Shiftem stawia się kilka naraz. Zielony plan da się postawić, czerwony mówi, czemu nie.',
-        `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.`,
-        'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
+        `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie ${s.d} i rozbiórka.`,
+        s.pomoc.mysz,
       ];
-  return `<h3 class="help-h">Budowa i puste mieszkania</h3><ul class="help">${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
+  return `<h3 class="help-h">${esc(s.naglowek)}</h3><ul class="help">${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
 }
 
 /** potwierdzenie polecenia, którego nie da się cofnąć (rozbiórka, zajęcie mieszkania; palenie ma własne okno) */
@@ -373,7 +374,7 @@ export function helpSheet(touch: boolean, zombie = false, words: Words = wordsOf
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: 'Jak grać',
-    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words)}<h3 class="help-h">${words.Zarzad}</h3><ul class="help"><li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>Każdy z ${z} ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li></ul>${zombie ? ZOMBIE_HELP : ''}<h3 class="help-h">Na razie</h3><p>W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.</p>`,
+    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words)}<h3 class="help-h">${words.Zarzad}</h3><ul class="help"><li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>Każdy z ${z} ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li></ul>${zombie ? ZOMBIE_HELP : ''}<h3 class="help-h">Na razie</h3><p>W wersji 0.4 są noce za siatką, budowa, ${words.szukanie.wersja}, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.</p>`,
     foot: btn('help-back', 'Wróć', 'btn go'),
     closable: true,
   };
