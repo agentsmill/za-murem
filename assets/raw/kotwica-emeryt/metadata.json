@@ -193,6 +193,35 @@
               "Idle/animations/stanie/north/frame_003.png"
             ]
           },
+          "smierc": {
+            "south": [
+              "Idle/animations/smierc/south/frame_000.png",
+              "Idle/animations/smierc/south/frame_001.png",
+              "Idle/animations/smierc/south/frame_002.png",
+              "Idle/animations/smierc/south/frame_003.png",
+              "Idle/animations/smierc/south/frame_004.png",
+              "Idle/animations/smierc/south/frame_005.png",
+              "Idle/animations/smierc/south/frame_006.png"
+            ],
+            "west": [
+              "Idle/animations/smierc/west/frame_000.png",
+              "Idle/animations/smierc/west/frame_001.png",
+              "Idle/animations/smierc/west/frame_002.png",
+              "Idle/animations/smierc/west/frame_003.png",
+              "Idle/animations/smierc/west/frame_004.png",
+              "Idle/animations/smierc/west/frame_005.png",
+              "Idle/animations/smierc/west/frame_006.png"
+            ],
+            "north": [
+              "Idle/animations/smierc/north/frame_000.png",
+              "Idle/animations/smierc/north/frame_001.png",
+              "Idle/animations/smierc/north/frame_002.png",
+              "Idle/animations/smierc/north/frame_003.png",
+              "Idle/animations/smierc/north/frame_004.png",
+              "Idle/animations/smierc/north/frame_005.png",
+              "Idle/animations/smierc/north/frame_006.png"
+            ]
+          },
           "drzemka-px": {
             "south": [
               "Idle/animations/drzemka-px/south/frame_000.png",
@@ -296,6 +325,15 @@
               "Idle/animations/cios/west/frame_005.png"
             ]
           },
+          "wstawanie": {
+            "west": [
+              "Idle/animations/wstawanie/west/frame_000.png",
+              "Idle/animations/wstawanie/west/frame_001.png",
+              "Idle/animations/wstawanie/west/frame_002.png",
+              "Idle/animations/wstawanie/west/frame_003.png",
+              "Idle/animations/wstawanie/west/frame_004.png"
+            ]
+          },
           "przeszukiwanie-px": {
             "west": [
               "Idle/animations/przeszukiwanie-px/west/frame_000.png",
@@ -375,5 +413,5 @@
     }
   ],
   "export_version": "3.1",
-  "export_date": "2026-10-18T20:38:54.384594"
+  "export_date": "2026-10-18T23:01:13.841336"
 }
