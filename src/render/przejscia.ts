@@ -92,13 +92,14 @@ export class PrzejsciaPionkow {
 
 /**
  * Zwłoki, które powstały podczas gry (tylko te grają upadek): zwłoki obecne w pierwszej klatce widoku, czyli z wczytanej
- * gry, leżą od razu. Pamięta też ostatni kierunek członka zarządu i to, czy leżał (po indeksie osoby), bo pionek znika
- * w tym samym ticku, w którym powstają jego zwłoki: upadek ma zacząć się w jego kierunku, a ktoś, kto zginął we śnie,
- * nie wstaje po to, żeby upaść (zwłoki leżą od razu).
+ * gry, leżą od razu. Pamięta też ostatni kierunek członka zarządu, to, czy leżał, i jego wersję kolorystyczną (po
+ * indeksie osoby), bo pionek znika w tym samym ticku, w którym powstają jego zwłoki: upadek ma zacząć się w jego
+ * kierunku i w jego ubraniu (kolor nie skacze do oryginału), a ktoś, kto zginął we śnie, nie wstaje po to, żeby upaść
+ * (zwłoki leżą od razu).
  */
 export class NoweZwloki {
   private readonly znane = new Set<number>();
-  private readonly kierunki = new Map<number, { dir: number; lezy: boolean }>();
+  private readonly kierunki = new Map<number, { dir: number; lezy: boolean; wersja: number }>();
   private pierwsza = true;
 
   /** czy rzecz o tym id właśnie powstała podczas gry (tylko przy pierwszym pytaniu o nią) */
@@ -113,9 +114,15 @@ export class NoweZwloki {
     this.pierwsza = false;
   }
 
-  /** członek zarządu o indeksie osoby patrzył w kierunku dir i (nie) leżał w ostatniej widzianej klatce */
-  zapamietaj(osoba: number, dir: number, lezy: boolean): void {
-    this.kierunki.set(osoba, { dir: dir & 3, lezy });
+  /** członek zarządu o indeksie osoby patrzył w kierunku dir, (nie) leżał i miał ubranie w wersji kolorystycznej
+      `wersja` w ostatniej widzianej klatce */
+  zapamietaj(osoba: number, dir: number, lezy: boolean, wersja = 0): void {
+    this.kierunki.set(osoba, { dir: dir & 3, lezy, wersja });
+  }
+
+  /** wersja kolorystyczna osoby z ostatniej widzianej klatki albo undefined (nikogo takiego nie widziano) */
+  wersjaZgonu(osoba: number): number | undefined {
+    return this.kierunki.get(osoba)?.wersja;
   }
 
   /** kierunek upadku zwłok o numerze rzeczy `idZwlok` po osobie zmarłego (−1: nie wiadomo): ostatni znany albo z numeru rzeczy */

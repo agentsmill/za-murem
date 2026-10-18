@@ -147,6 +147,18 @@ describe('zwłoki, które powstały podczas gry', () => {
     expect(z.kierunekZgonu(-1, 993010)).toBe(2);
   });
 
+  it('pamięta wersję kolorystyczną pionka zarządu: zwłoki mają to samo ubranie, w którym zginął (bez skoku koloru)', () => {
+    const z = new NoweZwloki();
+    z.zapamietaj(1, 0, false, 3);
+    expect(z.wersjaZgonu(1)).toBe(3);
+    z.zapamietaj(1, 2, false, 1);
+    expect(z.wersjaZgonu(1)).toBe(1);
+    // nieznana osoba: wersja z danych zwłok (undefined), a bez podanej wersji oryginał
+    expect(z.wersjaZgonu(7)).toBeUndefined();
+    z.zapamietaj(4, 0, false);
+    expect(z.wersjaZgonu(4)).toBe(0);
+  });
+
   it('wie, czy zmarły leżał (spał) w ostatniej klatce przed śmiercią: z leżącego nie ma upadku', () => {
     const z = new NoweZwloki();
     z.zapamietaj(1, 0, true);

@@ -843,7 +843,11 @@ export class GameView {
       // zmiana leżenia na podłodze uruchamia kładzenie się albo wstawanie; ostatni kierunek i leżenie członka zarządu
       // zna widok, kiedy jego pionek zniknie, a zwłoki zaczną upadek
       this.przejscia.obserwuj(p.id, pose.lie?.kind ?? null, gameT, x, y, pose.dir);
-      if (p.kind === 'core' && p.person >= 0) this.zwlokiNowe.zapamietaj(p.person, pose.dir, !!pose.lie);
+      if (p.kind === 'core' && p.person >= 0) {
+        const postac = this.ludzie?.dane.postacPionka(p, st.people);
+        const wersja = postac ? this.ludzie!.dane.wersjaPionka(p, postac) : 0;
+        this.zwlokiNowe.zapamietaj(p.person, pose.dir, !!pose.lie, wersja);
+      }
       // postać z PixelLab, gdy obsada ma tę pracę (leżącą składa lezenie.ts z jej klatki stania); szwendacze i brakujące
       // prace rysuje kod. przej, lp i ll to ten sam współdzielony wynik warstwy, więc wołamy tylko jedno z nich: co
       // najwyżej jedno jest niepuste.
@@ -1116,6 +1120,8 @@ export class GameView {
         const upadek = zw && this.ludzie!.dane.maPrzejscie(zw.postac, 'smierc');
         // kierunek upadku: ostatni, w którym patrzył zmarły (pionek znika w tym samym ticku), albo z numeru rzeczy
         const dir = zw && nowe ? this.zwlokiNowe.kierunekZgonu(zw.osoba, t.id) : kierunekZwlok(t.id);
+        // zwłoki nowe mają to ubranie, w którym zginął pionek (wersja zwłok z danych to oryginał)
+        const wersja = (zw && nowe ? this.zwlokiNowe.wersjaZgonu(zw.osoba) : undefined) ?? zw?.wersja ?? 0;
         const lz = zw && !upadek ? this.zwlokiLudzi(zw, o) : null;
         const tex = lz
           ? lz.tex
@@ -1133,9 +1139,9 @@ export class GameView {
         sp.anchor.set(0.5, 0.5);
         if (zw && upadek) {
           // ostatnia klatka upadku to leżenie; gdy zwłoki są nowe, upadek gra od początku (poniżej)
-          this.ustawKlatke(sp, this.ludzie!.zwloki(zw.postac, dir, zw.wersja)!);
+          this.ustawKlatke(sp, this.ludzie!.zwloki(zw.postac, dir, wersja)!);
           if (nowe && !this.zwlokiNowe.lezal(zw.osoba))
-            this.upadki.set(t.id, { start: gameT, dir, postac: zw.postac, wersja: zw.wersja });
+            this.upadki.set(t.id, { start: gameT, dir, postac: zw.postac, wersja });
         }
         sp.position.set((t.x + 0.5) * TILE, (t.y + 0.5) * TILE);
         // leży na ziemi: rysuje się przed tymi, którzy stoją nad nim
