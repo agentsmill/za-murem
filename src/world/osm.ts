@@ -7,6 +7,7 @@ import { L } from '../core/jezyk.ts';
 import { mulberry } from '../core/rng.ts';
 import type { AreaKind, Geo, Pt } from './geo.ts';
 import { pikselZ, tagiKlucza } from './klucze.ts';
+import { kluczPunktu } from './miasto.ts';
 
 const ENDPOINTS: [string, number][] = [
   ['https://overpass-api.de/api/interpreter', 35000],
@@ -184,7 +185,7 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
       const c = poiCat(t);
       if (c) {
         const [x, y] = P(el.lat!, el.lon!);
-        geo.poi.push({ x, y, c, n: t.name || '' });
+        geo.poi.push({ x, y, c, n: t.name || '', k: kluczPunktu(...pikselZ(el.lat!, el.lon!)) });
       }
       continue;
     }
@@ -222,7 +223,15 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
         sx += x;
         sy += y;
       }
-      geo.poi.push({ x: rd(sx / pts.length), y: rd(sy / pts.length), c, n: t.name || '' });
+      // klucz ze środka wierzchołków w stopniach (przed zaokrągleniem do 0,5 m), jak dla węzła
+      let la = 0;
+      let lo = 0;
+      for (const g of el.geometry) {
+        la += g.lat;
+        lo += g.lon;
+      }
+      const k = kluczPunktu(...pikselZ(la / el.geometry.length, lo / el.geometry.length));
+      geo.poi.push({ x: rd(sx / pts.length), y: rd(sy / pts.length), c, n: t.name || '', k });
     }
   }
   return geo;

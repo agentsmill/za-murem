@@ -5,6 +5,7 @@
 import { L } from '../core/jezyk.ts';
 import { type Geo, type GeoBuilding, type Pt, pip, polyArea } from './geo.ts';
 import { KAFEL_PX, tagiKlucza } from './klucze.ts';
+import { kluczPunktu } from './miasto.ts';
 import { poiCat } from './osm.ts';
 
 export const Z = 14;
@@ -561,7 +562,9 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
               const c = poiCat(pt);
               if (!c) continue;
               if (Math.hypot(x, y) > 720) continue;
-              geo.poi.push({ x, y, c, n: (t.name as string) || '' });
+              // klucz z surowego punktu kafelka, przed zaokrągleniem do 0,5 m (całe globalne piksele, jak klucze budynków)
+              const k = kluczPunktu(T.x * KAFEL_PX + (q[0] * KAFEL_PX) / E, T.y * KAFEL_PX + (q[1] * KAFEL_PX) / E);
+              geo.poi.push({ x, y, c, n: (t.name as string) || '', k });
             }
           continue;
         }
