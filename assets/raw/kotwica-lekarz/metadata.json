@@ -1,0 +1,36 @@
+{
+  "group_id": "6d135916-eab5-4550-ad0e-f2e975962ad8",
+  "states": [
+    {
+      "character": {
+        "id": "3b812ba0-e875-49d1-a006-798d76734f08",
+        "name": "Idle",
+        "prompt": "Polish doctor about 60 years old, white hair, long white coat over a brown sweater, stethoscope around the neck, dark trousers, leather shoes, calm",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T15:16:14.622415+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T15:23:59.085466"
+}
