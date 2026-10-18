@@ -20,10 +20,11 @@
      i 3 miejsc po przecinku.
    Gdy KAŻDY segment budynku ma poprawne oba tagi `zm:pole` i `zm:wym`, pole budynku to suma `zm:pole`, szerokość to
    mediana szerokości segmentów z `zm:wym` (ta sama idzie do reguł płyty), a długość to suma długości z `zm:wym`: tak
-   samo jak z obrysu rząd sklejonych segmentów ma długość rzędu. Suma przecenia długość obrysu w literę L (tagi nie
-   mówią o kątach), a to wpływa tylko na regułę płyty 5 kondygnacji i na klatki pojedynczego bloku (sklejony ma klatki
-   z liczby segmentów). Segment ocenia się wtedy (typ budynku, zgadywane kondygnacje) po `zm:pole`. Wystarczy, że jeden segment nie ma
-   któregoś z tagów albo ma go zepsutego, a pole i wymiary całego budynku idą z obrysu jak dotąd: z tagów segmentów nie
+   samo jak z obrysu rząd sklejonych segmentów ma długość rzędu. Suma przecenia długość budynku w literę L, w literę U
+   i ze skrzydłami równoległymi (tagi nie mówią o kątach ani o układzie segmentów), a to wpływa tylko na regułę płyty
+   5 kondygnacji: sklejony budynek ma klatki z liczby segmentów, nie z długości. Segment ocenia się wtedy (typ
+   budynku, zgadywane kondygnacje) po `zm:pole`. Wystarczy, że jeden segment nie ma któregoś z tagów albo ma go
+   zepsutego, a pole i wymiary całego budynku idą z obrysu jak dotąd: z tagów segmentów nie
    da się złożyć obrysu całości, a mieszanie źródeł dałoby niespójny budynek. Środek (`lat`, `lon`, a z nich rejon)
    zawsze idzie z obrysu. Dema nie mają tagów `zm:*`, więc ich wynik się nie zmienia. Tag `zm:bud` (klucz budynku
    generatora na każdym członku) dopisuje oznacz.ts. */
