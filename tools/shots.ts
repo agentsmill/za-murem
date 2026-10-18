@@ -5143,6 +5143,22 @@ async function fakeApi(
   });
 }
 
+/** osoby z generatora mieszkańców w grze: ile osób ma ref, zarząd z osobą z generatora, lokatorzy z osobą */
+async function mieszkancyGry(page: Page) {
+  return page.evaluate(() => {
+    const st = window.zm!.sim!.st;
+    const core = st.pawns.filter((p) => p.kind === 'core');
+    const lok = st.pawns.filter((p) => p.kind === 'resident');
+    return {
+      refs: st.people.filter((p) => p.ref).length,
+      core: core.length,
+      zarzad: core.filter((p) => !!st.people[p.person]?.ref).length,
+      lok: lok.length,
+      zOsoba: lok.filter((p) => p.person >= 0).length,
+    };
+  });
+}
+
 /** cudze klatki z pięciu budynków mieszkalnych najbliżej siedziby Lanciego (bez samej siedziby) */
 function cudzeKlatkiLanciego(): ZajetaKlatka[] {
   const a = ADDRESSES.find((x) => x.key === 'lanciego')!;
@@ -5261,6 +5277,8 @@ function siecShots(): Shot[] {
         await page.waitForSelector('#siec:not([hidden]) #scNick');
         const note = await page.$eval('#siec', (e) => e.textContent ?? '');
         if (!note.includes('bez e-maila')) throw new Error('brak notki o koncie bez e-maila');
+        // blok sieci spycha atrybucję mapy i link do danych mieszkańców niżej, ale oba zostają na karcie
+        await atrybucjaStartu(page);
       },
     },
     {
@@ -5320,6 +5338,13 @@ function siecShots(): Shot[] {
             .every((p) => w.bid[Math.floor(p.y) * w.size + Math.floor(p.x)] !== w.hq);
         });
         if (!outside) throw new Error('zarząd startuje w siedzibie zamiast na ulicy');
+        // mieszkańcy z generatora także w grze z sąsiadami: zarząd z budynku siedziby, którą wybrał start sieciowy
+        // (lokatorzy tylko w wydruku: ta siedziba nie ma pionków mieszkańców także bez generatora)
+        const m = await mieszkancyGry(page);
+        console.log(
+          `  mieszkańcy z generatora: osób ${m.refs}, zarząd z osobą ${m.zarzad}/${m.core}, lokatorzy ${m.zOsoba}/${m.lok}`,
+        );
+        if (!m.refs || m.zarzad !== m.core) throw new Error('gra z sąsiadami bez mieszkańców z generatora');
         // kamera tak, żeby było widać zarząd na ulicy i drzwi nowej siedziby
         await page.evaluate(() => {
           const zm = window.zm!;
@@ -5358,9 +5383,15 @@ function siecShots(): Shot[] {
                 .sim!.st.pawns.filter((p) => p.kind === 'core')
                 .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
                 .join(' '),
+              // osoby z generatora mieszkańców (imiona i ref) wracają z chmury takie same
+              osoby: zm
+                .sim!.st.people.filter((p) => p.ref)
+                .map((p) => `${p.ref}:${p.name}`)
+                .join(' '),
             };
           });
         const przed = await gra();
+        if (!przed.osoby) throw new Error('gra z sąsiadami bez mieszkańców z generatora');
         await page.evaluate(() => window.zm!.save());
         for (let k = 0; k < 50 && !serwer.chmura; k++) await page.waitForTimeout(100);
         if (!serwer.chmura) throw new Error('zapis nie trafił do chmury');
