@@ -184,12 +184,12 @@ describe('budynkiZGeo na demach', () => {
 // ---------------------------------------------------------------- dwa adresy w okolicy
 
 describe('ten sam budynek z dwóch adresów (warunek kroku 5)', () => {
-  // Importery mapy zaokrąglają wierzchołki do 0,5 m względem środka mapy, więc klucz `g:…` (środek i pole) zależy od
-  // adresu. Zmierzone 18.10.2026 na kafelkach z tests/fixtures/mvt (adres dema i punkt 40 m na północny wschód,
-  // budynki do 150 m od adresu, para to najbliższy środek obrysu w 2 m): Przymorze 4 budynki, 3 pary, ten sam klucz
-  // 0, te same mieszkania 0, ta sama epoka 0; Ursynów 19, 19, 0, 7, 9; Batowice 17, 17, 3, 14, 8. Kafelki nie niosą
-  // id budynków. Test zacznie przechodzić, gdy importer da kanoniczne id i geometrię budynku (krok 5); wtedy trzeba
-  // zdjąć `it.fails`.
+  // Importery mapy zaokrąglają wierzchołki do 0,5 m względem środka mapy, więc bez tagów `zm:*` klucz `g:…` (środek
+  // i pole) zależy od adresu. Od scalenia z `pelna-gra` (aae0cea) `toGeoT` daje `zm:klucz`, więc klucze i epoki są
+  // przy obu adresach te same (zmierzone 18.10.2026 na kafelkach z tests/fixtures/mvt, adres dema i punkt 40 m na
+  // północny wschód, budynki do 150 m od adresu: ten sam klucz Przymorze 4/4, Ursynów 19/19, Batowice 17/17), ale
+  // liczba mieszkań (z pola) różni się jeszcze w 1 z 4 budynków Przymorza i w 5 z 19 Ursynowa, bo `zm:pole`
+  // i `zm:wym` nie przychodzą. Test zacznie przechodzić, gdy importer da też te tagi; wtedy trzeba zdjąć `it.fails`.
   const GMINY: Record<string, TabeleGminy> = { przymorze: gdansk, lanciego: ursynow, zielonki };
   const ODLEGLOSC = 150;
 
