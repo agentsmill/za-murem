@@ -59,7 +59,7 @@ const put = (st: SimState, kind: string, n: number) => {
 };
 
 describe('Handlarz: włączanie i wizyty', () => {
-  it('bez opcji nie ma handlarza ani pola w stanie; polecenie obcy go włącza, w trybie zombie nie', () => {
+  it('bez opcji nie ma handlarza ani pola w stanie; polecenie obcy go włącza, w trybie zombie przychodzi później', () => {
     const st = createSim(w, 3, { core: 2 });
     expect('obcy' in st).toBe(false);
     const sim = new Sim(w, st);
@@ -67,8 +67,9 @@ describe('Handlarz: włączanie i wizyty', () => {
     sim.step();
     expect(st.obcy?.next).toBeGreaterThan(0);
     expect(dayOf(st.obcy!.next)).toBe(2);
+    // w trybie zombie handlarz jest, ale rzadko (tests/unit/obcy-zombie.test.ts)
     const z = createSim(w, 3, { core: 2, mode: 'zombie', obcy: true });
-    expect('obcy' in z).toBe(false);
+    expect(dayOf(z.obcy!.next)).toBe(4);
   });
 
   it('z opcją pierwsza wizyta drugiego dnia między 10:00 a 12:00, ta sama przy tym samym ziarnie', () => {

@@ -125,6 +125,21 @@ export const tickAt = (day: number, hour: number): number =>
 /** pierwsza wizyta: dzień 2, przyjście między 10:00 a 12:00 */
 export const firstVisit = (rng: RngState): number => tickAt(2, 10 + 2 * nextRandom(rng));
 
+/** Tryb zombie (Mateusz 18.10.2026: „handlarz przychodzi rzadziej, a więcej trzeba postawić na produkcję i szaber
+    graczy”): pierwsza wizyta czwartego dnia, potem co 5–7 dni. Handlarz jest ostrożny: gdy w chwili przyjścia
+    szwendacz jest do ZOMBIE_SCARE_ARRIVE m od bramy, przychodzi dwie godziny później; gdy w czasie czekania szwendacz
+    podejdzie do ZOMBIE_SCARE_WAIT m, odchodzi od razu. Wędrowców i obcych ekip w trybie zombie nie ma. */
+export const firstVisitZombie = (rng: RngState): number => tickAt(4, 10 + 2 * nextRandom(rng));
+export const nextVisitZombie = (day: number, rng: RngState): number =>
+  tickAt(day + 5 + Math.floor(nextRandom(rng) * 3), 9 + 4 * nextRandom(rng));
+export const ZOMBIE_SCARE_ARRIVE = 15;
+/** w trybie zombie handlarz zostaje tylko chwilę (45 minut gry), a co druga albo trzecia wizyta w ogóle nie dochodzi
+    do skutku (nie przeżył drogi albo zawrócił): szansa 40% */
+export const WAIT_ZOMBIE = (3 * TICKS_PER_HOUR) / 4;
+export const TRADER_NOSHOW = 0.4;
+export const ZOMBIE_SCARE_WAIT = 8;
+export const ZOMBIE_DELAY = 2 * TICKS_PER_HOUR;
+
 /** następna wizyta po wizycie z dnia day: za dwa albo trzy dni, przyjście między 9:00 a 13:00 */
 export const nextVisit = (day: number, rng: RngState): number =>
   tickAt(day + 2 + Math.floor(nextRandom(rng) * 2), 9 + 4 * nextRandom(rng));
@@ -206,6 +221,14 @@ export const NAPISY = {
     en: 'The trader left after the fight. Other traders will hear of it, and he may come back with men.',
   },
   zabity: { pl: 'Handlarz nie żyje. Jego towar jest wasz.', en: 'The trader is dead. His goods are yours.' },
+  zagryziony: {
+    pl: 'Szwendacze dopadły handlarza pod bramą. Jego wózek został.',
+    en: 'Shamblers caught the trader at the gate. His cart is still there.',
+  },
+  szwendacze: {
+    pl: 'Handlarz odszedł, bo pod bramę podeszły szwendacze.',
+    en: 'The trader left because shamblers came up to the gate.',
+  },
   zemsta: (n: number): Napis => ({
     pl: `Wracają ludzie handlarza: ${n} ${n >= 2 && n <= 4 ? 'osoby' : 'osób'} z pałkami pod siatką.`,
     en: `The trader's men are back: ${n} of them with clubs at the fence.`,

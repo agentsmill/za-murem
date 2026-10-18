@@ -688,6 +688,18 @@ Bramka: `npm test` 1852 zdanych, 1 oczekiwana porażka, 8 pominiętych (w `tests
 
 Po wciągnięciu `pelna-gra` eb28a2b z angielskim (scalenie e777fbd; konflikty w napisach `src/sim/handlarz.ts`, w etykiecie ataku i opisie pracy handlarza w `src/sim/orders.ts`, które idą teraz przez `tr()` i `L()`, i w dzienniku): nowe wieści o handlarzu i jego ludziach są w angielskim słowniku wieści `wiescEn` w `src/sim/wedrowcy.ts`. `npm test` 2012 zdanych, 1 oczekiwana porażka, 8 pominiętych; Biome czysty (1 informacja jak na `pelna-gra`); build; boty jak na `pelna-gra` (da4b24e0, dad44c81, zombie 1f6eef9b i 3e000211); `npm run shots` 193 scenariusze bez błędów.
 
+### Obcy w trybie zombie jak w The Walking Dead, 18.10.2026 wieczorem (gałąź `m2-surowce` od `pelna-gra` eb74f5b, lokalnie)
+
+Mateusz: „Oczywiście w trybie zombie handlarz przychodzi rzadziej a więcej trzeba postawić na możliwości produkcji i szabrownictwa graczy”, potem „Wędrowcy i ekipy też są ale to musi być spójne z walking dead” i „W trybie zombie handlarz jest tylko chwilę albo nawet w ogóle”. Wcześniej w trybie zombie obcych nie było wcale.
+
+- Handlarz w trybie zombie: pierwsza wizyta czwartego dnia, potem co 5–7 dni (w zwykłym co 2–3). Co druga, trzecia wizyta nie dochodzi do skutku (szansa 40%: nie przeżył drogi). Zostaje tylko 45 minut gry. Gdy przy bramie (do 15 m) kręcą się szwendacze, przychodzi dwie godziny później; gdy szwendacz podejdzie do 8 m w czasie wizyty, odchodzi z wózkiem („Handlarz odszedł, bo pod bramę podeszły szwendacze.”). Szwendacze na niego polują, a zagryziony zostawia pod bramą wózek z całym towarem.
+- Wędrowcy to ocaleni: przemykają rzadziej (co 6–14 godzin), przystają przy siatce tylko na 10–20 minut, uciekają, gdy szwendacz podejdzie do 6 m, i są dla szwendaczy ofiarą; zagryziony wstaje jak każdy zmarły. Wieści od nich są w klimacie trybu: handlarzy prawie już nie ma, auta przy ulicy w otoczeniu szwendaczy, stado ciągnie od obwodnicy, rady (nie strzelać, trzymać bramę zamkniętą, odcinać ugryzioną rękę, dobijać zmarłych).
+- Obce ekipy: co 3–5 dni, od trzeciego do piątego dnia; przed szwendaczami uciekają jak ocaleni, a wrak zostaje nieprzeszukany.
+- Główne źródła w trybie zombie to więc własny szaber i warsztat, a obcy są rzadkim dodatkiem. Wraki, noszenie łupu i warsztat działały w tym trybie już wcześniej; hałas rozbiórki ściąga szwendaczy.
+- Stary zapis zombie dostaje obcych poleceniem `obcy` przy wczytaniu, jak zwykły tryb.
+
+Bramka: `npm test` 2019 zdanych, 1 oczekiwana porażka, 8 pominiętych (nowy `tests/unit/obcy-zombie.test.ts` z 7 przypadkami); Biome czysty; build; boty jak na `pelna-gra` (da4b24e0, dad44c81, zombie 1f6eef9b i 3e000211, bo boty grają bez obcych); `npm run shots` 194 scenariusze bez błędów; zrzut `handlarz-zombie` (handlarz z wózkiem pod zamkniętą bramą, pasek z siatką i stadem) obejrzany w Chromium.
+
 ## Następne
 
 Angielski domyślnie (gałąź `angielski`, lokalnie, 18.10.2026): gotowy do scalenia do `pelna-gra` w całości (czubek gałęzi; ostatnia zmiana kodu 18a2501), ma w sobie `pelna-gra` ace6c0c z domem komitetu, handlarzem i wędrowcami. Po scaleniu i wdrożeniu Mateusz gra po angielsku i przegląda decyzje z „Decyzji” (słowniczek `docs/SLOWNICZEK-EN.md`); przełącznik EN/PL jest na karcie startowej i w Menu. Przy wdrożeniu: zapisy z nowej wersji mają w kronice teksty w obu językach przy tej samej wersji zapisu, więc stara wersja gry (wycofanie albo stary skrypt z pamięci przeglądarki) pokazałaby w kronice `[object Object]`; wycofywać tylko razem z czyszczeniem zapisów albo wcale.
@@ -749,6 +761,11 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
   - zła sława: ceny razy 1 + 0,5 × poziom (najwyżej 3), wizyty o 2 × poziom dni rzadziej, poziom spada po 15 dniach; po zabitym handlarzu bez wieści, nowy 3 dni później;
   - broń zabitych wrogów (siekiera handlarza, kije, łomy, noże jego ludzi) trafia do magazynu, jak broń każdego zmarłego; to łup z walki, ale może za mocno ruszyć uzbrojenie zarządu;
   - koszt w zaufaniu −6 i wkurzeniu +4 zostaje obok walki.
+- Obcy w trybie zombie (18.10.2026 wieczorem, kierunek Mateusza „jak w The Walking Dead”, liczby moje, do przejrzenia):
+  - handlarz: czwarty dzień, co 5–7 dni, 40% wizyt nie dochodzi do skutku, 45 minut postoju, szwendacz do 15 m przy bramie przesuwa przyjście o 2 godziny, do 8 m w czasie wizyty go płoszy; ceny bez zmian (rzadkość wystarcza);
+  - ocaleni co 6–14 godzin, 10–20 minut przy siatce; ekipy co 3–5 dni; jedni i drudzy uciekają przed szwendaczem do 6 m;
+  - szwendacze polują na handlarza, ocalałych i ekipy, a zagryzieni wstają; zagryziony handlarz zostawia wózek z towarem;
+  - przyjmowania ocalałych do siedziby dalej nie ma (przyjęcia są w wydarzeniach zarządu); ugryzionych ocalałych ukrywających ranę też nie (to ma fala 2 u sąsiadów).
 - Wędrowcy i obce ekipy (18.10.2026, sesja „Surowce”, do przejrzenia przez Mateusza; kierunek przyjęty „jest ok”, liczby moje):
   - cena napaści w zaufaniu i wkurzeniu: handlarz −6 i +4, wędrowiec −3 i +2, przegonienie ekipy nic; zarząd liczy ją od razu, nie rano;
   - stary zapis z napadniętym już handlarzem nie dostaje tej napaści wstecz (takie zapisy są tylko z gałęzi testowej);

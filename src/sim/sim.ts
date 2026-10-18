@@ -39,6 +39,7 @@ import {
   AGGRO,
   CALM_TICKS,
   firstVisit,
+  firstVisitZombie,
   HAGGLE_TICKS,
   NAPISY as HANDEL,
   HOSTILE_DMG,
@@ -46,6 +47,7 @@ import {
   KILL_DELAY_DAYS,
   LEAVE_HOUR,
   nextVisit,
+  nextVisitZombie,
   type Obcy,
   priced,
   REVENGE_CHANCE,
@@ -57,14 +59,19 @@ import {
   SLAWA_MAX,
   TRADER_FLEE,
   TRADER_HP,
+  TRADER_NOSHOW,
   TRADER_WEAPON,
   tickAt,
   WAIT_TICKS,
+  WAIT_ZOMBIE,
   ZBIR_FLEE,
   ZBIR_HP,
   ZBIR_LEAVE_HOUR,
   ZBIR_STAY,
   ZBIR_WEAPONS,
+  ZOMBIE_DELAY,
+  ZOMBIE_SCARE_ARRIVE,
+  ZOMBIE_SCARE_WAIT,
 } from './handlarz.ts';
 import {
   dryTreeOf,
@@ -136,17 +143,24 @@ import {
   CREW_SEARCH_TICKS,
   FLEE_SPEED,
   firstCrew,
+  firstCrewZombie,
   firstWanderer,
   gossip,
+  gossipZombie,
   MUG_MOOD,
   MUG_MOOD_OTHERS,
   mugLoot,
   nextCrew,
+  nextCrewZombie,
   nextWanderer,
+  nextWandererZombie,
   NAPISY as OBCY,
   PAUSE_MAX,
   PAUSE_MIN,
+  PAUSE_ZOMBIE_MAX,
+  PAUSE_ZOMBIE_MIN,
   SHOO_REACH,
+  SPOOK_R,
   TALK_EXTRA,
   TALK_MOOD,
   TALK_MOOD_TICKS,
@@ -1062,7 +1076,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     p.wait = Math.floor(rnd() * 200);
     st.pawns.push(p);
   }
-  if (opts.obcy && modeOf(st) !== 'zombie') st.obcy = newObcy(st);
+  if (opts.obcy) st.obcy = newObcy(st);
   return st;
 }
 
@@ -1070,17 +1084,21 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
 export const crewAt = (st: SimState, t: number): boolean =>
   st.pawns.some((q) => q.kind === 'obcy' && q.job?.t === 'scavenge' && q.job.target === t && q.job.phase < 2);
 
-/** handlarz, wędrowcy i ekipy włączeni: pierwsza wizyta handlarza drugiego dnia, pierwszy wędrowiec drugiego dnia
-    między 8:00 a 12:00, pierwsza ekipa trzeciego albo czwartego dnia */
-const newObcy = (st: SimState): Obcy => ({
-  next: firstVisit(st.rng),
-  offers: [],
-  trader: -1,
-  napad: -1,
-  wizyty: 0,
-  wnext: firstWanderer(st.rng),
-  enext: firstCrew(st.rng),
-});
+/** Handlarz, wędrowcy i ekipy włączeni. Zwykły tryb: handlarz drugiego dnia, pierwszy wędrowiec drugiego dnia między
+    8:00 a 12:00, pierwsza ekipa trzeciego albo czwartego dnia. Tryb zombie (jak w The Walking Dead): handlarz
+    czwartego dnia i rzadko, wędrowcy i ekipy jako ocaleni (src/sim/wedrowcy.ts). */
+const newObcy = (st: SimState): Obcy => {
+  const zombie = modeOf(st) === 'zombie';
+  return {
+    next: zombie ? firstVisitZombie(st.rng) : firstVisit(st.rng),
+    offers: [],
+    trader: -1,
+    napad: -1,
+    wizyty: 0,
+    wnext: firstWanderer(st.rng),
+    enext: zombie ? firstCrewZombie(st.rng) : firstCrew(st.rng),
+  };
+};
 
 /** pola osoby gry z osoby z generatora mieszkańców: kopie (stan nie dzieli tablic z wejściem), rodzina i historia
     tylko niepuste, `nazwaGen` to imię i nazwisko z generatora (tożsamość osoby przy wczytaniu zapisu) */
@@ -1735,8 +1753,9 @@ export class Sim {
     st.fx ??= [];
     // zapis z handlarzem sprzed wędrowców i ekip: pierwszy wędrowiec jutro rano, ekipa pojutrze (bez losowania)
     if (st.obcy) {
-      st.obcy.wnext ??= tickAt(dayOf(st.tick) + 1, 9);
-      st.obcy.enext ??= tickAt(dayOf(st.tick) + 2, 10);
+      const zombie = modeOf(st) === 'zombie';
+      st.obcy.wnext ??= zombie ? -1 : tickAt(dayOf(st.tick) + 1, 9);
+      st.obcy.enext ??= zombie ? -1 : tickAt(dayOf(st.tick) + 2, 10);
     }
     st.dead ??= [];
     st.tally ??= zeroTally();
@@ -2018,6 +2037,9 @@ export class Sim {
         if (this.hostileTick(p)) gone = true;
         continue;
       }
+      // tryb zombie: handlarz, ocalały albo ekipa, do których podchodzi szwendacz, uciekają (także w drodze)
+      if (PASSERS.has(p.kind) && p.kind !== 'szabrownik' && (st.tick + p.id) % THINK_EVERY === 0 && this.spooked(p))
+        continue;
       if (p.pi < p.path.length) {
         // praca fali 1 bez polecenia ustępuje wrogowi na podwórku także w drodze (po materiał, na plan)
         if (p.kind === 'core' && st.tick % THINK_EVERY === 0 && this.yieldsToDanger(p)) {
@@ -2184,7 +2206,7 @@ export class Sim {
       return;
     }
     if (c.t === 'obcy') {
-      if (!st.obcy && modeOf(st) !== 'zombie') st.obcy = newObcy(st);
+      if (!st.obcy) st.obcy = newObcy(st);
       return;
     }
 
@@ -4797,6 +4819,17 @@ export class Sim {
       o.next = tickAt(dayOf(st.tick) + (h >= 15 ? 1 : 0), 9 + 4 * nextRandom(st.rng));
       return;
     }
+    // tryb zombie: przy bramie kręcą się szwendacze, handlarz przyjdzie później
+    const gate = this.outsideOf(gateTiles(this.w))[0];
+    if (modeOf(st) === 'zombie' && gate !== undefined && this.walkersNear(gate, ZOMBIE_SCARE_ARRIVE)) {
+      o.next = st.tick + ZOMBIE_DELAY;
+      return;
+    }
+    // tryb zombie: co druga, trzecia wizyta nie dochodzi do skutku (nie przeżył drogi albo zawrócił)
+    if (modeOf(st) === 'zombie' && nextRandom(st.rng) < TRADER_NOSHOW) {
+      o.next = this.nextTraderVisit(0);
+      return;
+    }
     this.spawnTrader();
   }
 
@@ -4851,7 +4884,9 @@ export class Sim {
       j.phase = 1;
       j.from = cart.id;
       j.t0 = st.tick;
-      j.until = Math.min(st.tick + WAIT_TICKS, tickAt(dayOf(st.tick), LEAVE_HOUR));
+      // w trybie zombie handlarz zostaje tylko chwilę
+      const wait = modeOf(st) === 'zombie' ? WAIT_ZOMBIE : WAIT_TICKS;
+      j.until = Math.min(st.tick + wait, tickAt(dayOf(st.tick), LEAVE_HOUR));
       const g = gateTiles(this.w)[0];
       if (g !== undefined) this.face(p, (g % size) + 0.5, Math.floor(g / size) + 0.5);
       return false;
@@ -4879,7 +4914,8 @@ export class Sim {
   private nextTraderVisit(extra: number): number {
     const st = this.st;
     const lvl = st.obcy?.slawa?.lvl ?? 0;
-    return nextVisit(dayOf(st.tick), st.rng) + (SLAWA_EXTRA_DAYS * lvl + extra) * TICKS_PER_DAY;
+    const base = modeOf(st) === 'zombie' ? nextVisitZombie : nextVisit;
+    return base(dayOf(st.tick), st.rng) + (SLAWA_EXTRA_DAYS * lvl + extra) * TICKS_PER_DAY;
   }
 
   /** handlarz przeżył napaść (uciekł albo odszedł po walce): wieść idzie do innych handlarzy (ceny w górę, wizyty
@@ -4900,15 +4936,26 @@ export class Sim {
     o.wiesc = { tick: st.tick, text: (fled ? HANDEL.uciekl : HANDEL.odszedlZly).pl };
   }
 
-  /** zabity handlarz: nikt nie zanosi wieści, nowy handlarz przejmuje trasę KILL_DELAY_DAYS dni później */
-  private traderKilled(p: Pawn): void {
+  /** Zabity handlarz: nikt nie zanosi wieści, nowy handlarz przejmuje trasę KILL_DELAY_DAYS dni później. Zagryziony
+      przez szwendacze w czasie wizyty (tryb zombie) zostawia pod bramą wózek z całym towarem. */
+  private traderKilled(p: Pawn, by: Pawn | null): void {
     const st = this.st;
     const o = st.obcy;
     if (!o || o.trader !== p.id) return;
+    const bitten = by?.kind === 'zombie';
+    if (bitten) {
+      const cart = p.job?.phase === 1 ? this.thing(p.job.from) : undefined;
+      const size = this.w.size;
+      const at = cart ? cart.y * size + cart.x : this.tileOf(p);
+      for (const offer of o.offers)
+        if (offer.left > 0)
+          for (const [m, n] of Object.entries(offer.give) as [Mat, number][]) this.dropOutside(at, m, n * offer.left);
+      if (cart) cart.n = 0;
+    }
     o.trader = -1;
     o.offers = [];
     o.next = this.nextTraderVisit(KILL_DELAY_DAYS);
-    o.wiesc = { tick: st.tick, text: HANDEL.zabity.pl };
+    o.wiesc = { tick: st.tick, text: (bitten ? HANDEL.zagryziony : HANDEL.zabity).pl };
   }
 
   /** posiłki handlarza w swoim czasie: n ludzi z daleka staje pod siatką przy bramie */
@@ -5034,6 +5081,41 @@ export class Sim {
     }
     if (p.pi < p.path.length) this.walk(p);
     return false;
+  }
+
+  /** Tryb zombie: szwendacz do SPOOK_R m (handlarz: ZOMBIE_SCARE_WAIT) od obcego, który nie ucieka i nie walczy:
+      handlarz odchodzi z wózkiem (wizyta skończona), ocalały i ekipa uciekają. true: ruszył. */
+  private spooked(p: Pawn): boolean {
+    const st = this.st;
+    const j = p.job;
+    if (modeOf(st) !== 'zombie' || !j || j.phase >= 2) return false;
+    const trader = p.kind === 'handlarz';
+    if (!this.walkersNear(this.tileOf(p), trader ? ZOMBIE_SCARE_WAIT : SPOOK_R)) return false;
+    if (trader) {
+      const cart = this.thing(j.from);
+      if (cart && j.phase === 1) st.things.splice(st.things.indexOf(cart), 1);
+      j.from = -1;
+      st.obcy!.offers = [];
+      st.obcy!.wiesc = { tick: st.tick, text: HANDEL.szwendacze.pl };
+      j.phase = 2;
+      if (!this.go(p, p.home)) {
+        p.path = [];
+        p.pi = 0;
+      }
+      return true;
+    }
+    this.flee(p);
+    return true;
+  }
+
+  /** szwendacz do r metrów od kafelka */
+  private walkersNear(tile: number, r: number): boolean {
+    const size = this.w.size;
+    const x = (tile % size) + 0.5;
+    const y = Math.floor(tile / size) + 0.5;
+    return this.st.pawns.some(
+      (q) => q.kind === 'zombie' && !this.graveyard.has(q.id) && Math.hypot(q.x - x, q.y - y) <= r,
+    );
   }
 
   /** na ofertę starcza materiału (z całego zapasu, jak w warsztacie) */
@@ -5200,7 +5282,7 @@ export class Sim {
       return;
     }
     this.spawnWanderer();
-    o.wnext = nextWanderer(st.tick, st.rng);
+    o.wnext = modeOf(st) === 'zombie' ? nextWandererZombie(st.tick, st.rng) : nextWanderer(st.tick, st.rng);
   }
 
   /** wędrowiec z daleka idzie na losowy kafelek ulicy tuż przy siatce */
@@ -5230,7 +5312,9 @@ export class Sim {
     if (j.phase === 0) {
       j.phase = 1;
       j.t0 = st.tick;
-      j.until = st.tick + PAUSE_MIN + Math.floor(nextRandom(st.rng) * (PAUSE_MAX - PAUSE_MIN));
+      // ocalały w trybie zombie przystaje tylko na chwilę
+      const [a, b] = modeOf(st) === 'zombie' ? [PAUSE_ZOMBIE_MIN, PAUSE_ZOMBIE_MAX] : [PAUSE_MIN, PAUSE_MAX];
+      j.until = st.tick + a + Math.floor(nextRandom(st.rng) * (b - a));
       return false;
     }
     if (j.phase === 1) {
@@ -5257,7 +5341,7 @@ export class Sim {
       o.enext = tickAt(dayOf(st.tick) + (h >= 14 ? 1 : 0), 9 + 5 * nextRandom(st.rng));
       return;
     }
-    o.enext = nextCrew(dayOf(st.tick), st.rng);
+    o.enext = modeOf(st) === 'zombie' ? nextCrewZombie(dayOf(st.tick), st.rng) : nextCrew(dayOf(st.tick), st.rng);
     this.spawnCrew();
   }
 
@@ -5367,7 +5451,8 @@ export class Sim {
     const size = this.w.size;
     const left = wrecksOf(this.w).filter((r) => wreckStage(st.wraki, wreckTile(r, size)) === 0).length;
     const traderIn = o.next < 0 ? -1 : Math.max(0, dayOf(o.next) - dayOf(st.tick));
-    o.wiesc = { tick: st.tick, text: gossip({ traderIn, wrecksLeft: left }, st.rng).pl };
+    const ctx = { traderIn, wrecksLeft: left };
+    o.wiesc = { tick: st.tick, text: (modeOf(st) === 'zombie' ? gossipZombie : gossip)(ctx, st.rng).pl };
     return false;
   }
 
@@ -5711,7 +5796,7 @@ export class Sim {
     if (STRANGER_KINDS.has(p.kind)) {
       st.tally!.killed++;
       if (by?.needs) this.addMood(by, 'Zabiłem człowieka', -6, TICKS_PER_DAY);
-      if (p.kind === 'handlarz') this.traderKilled(p);
+      if (p.kind === 'handlarz') this.traderKilled(p, by);
       return;
     }
     st.tally!.deaths++;
@@ -6042,7 +6127,12 @@ export class Sim {
   /** ofiara: człowiek na mapie; indoor: także w pomieszczeniach (dla szwendacza, który jest w środku) */
   private isPrey(q: Pawn, indoor = false): boolean {
     return (
-      (q.kind === 'core' || q.kind === 'resident' || q.kind === 'szabrownik') &&
+      (q.kind === 'core' ||
+        q.kind === 'resident' ||
+        q.kind === 'szabrownik' ||
+        q.kind === 'handlarz' ||
+        q.kind === 'wedrowiec' ||
+        q.kind === 'obcy') &&
       !q.away &&
       !this.graveyard.has(q.id) &&
       (indoor || !this.inRoom(this.tileOf(q)))

@@ -44,6 +44,26 @@ export function nextWanderer(tick: number, rng: RngState): number {
   return tickAt(dayOf(tick) + 1, 8 + 3 * nextRandom(rng));
 }
 
+/** Tryb zombie, jak w The Walking Dead (Mateusz 18.10.2026): wędrowcy to ocaleni, którzy przemykają rzadko i tylko
+    na chwilę (10–20 minut przy siatce), ekipy przychodzą co 3–5 dni, a jedni i drudzy uciekają, gdy szwendacz
+    podejdzie do SPOOK_R m, i są dla szwendaczy ofiarą (zagryziony wstaje jak każdy zmarły). */
+export const PAUSE_ZOMBIE_MIN = TICKS_PER_HOUR / 6;
+export const PAUSE_ZOMBIE_MAX = TICKS_PER_HOUR / 3;
+export const SPOOK_R = 6;
+
+/** następny ocalały 6–14 godzin po przyjściu poprzedniego; po 16:00 następnego dnia między 8:00 a 12:00 */
+export function nextWandererZombie(tick: number, rng: RngState): number {
+  const t = tick + Math.round((6 + 8 * nextRandom(rng)) * TICKS_PER_HOUR);
+  if (dayOf(t) === dayOf(tick) && hourOf(t) < 16) return t;
+  return tickAt(dayOf(tick) + 1, 8 + 4 * nextRandom(rng));
+}
+
+/** pierwsza ekipa w trybie zombie: dzień 3–5; następna za 3–5 dni, zawsze między 9:00 a 14:00 */
+export const firstCrewZombie = (rng: RngState): number =>
+  tickAt(3 + Math.floor(3 * nextRandom(rng)), 9 + 5 * nextRandom(rng));
+export const nextCrewZombie = (day: number, rng: RngState): number =>
+  tickAt(day + 3 + Math.floor(3 * nextRandom(rng)), 9 + 5 * nextRandom(rng));
+
 /** pierwsza ekipa: dzień 3 albo 4, między 9:00 a 14:00 */
 export const firstCrew = (rng: RngState): number =>
   tickAt(3 + Math.floor(2 * nextRandom(rng)), 9 + 5 * nextRandom(rng));
@@ -122,6 +142,68 @@ export function gossipText(k: number, ctx: GossipCtx, ad: number): Napis {
   };
 }
 
+/** rady ocalałych w trybie zombie: to, czego uczy gra (hałas, zamknięta brama, amputacja, dobijanie) */
+const RADY: readonly Napis[] = [
+  {
+    pl: 'Ocalały mówi, żeby nie strzelać, bo strzał ściąga je z całej okolicy.',
+    en: 'The survivor says not to shoot: a gunshot draws them in from all around.',
+  },
+  {
+    pl: 'Ocalały mówi, że widział ludzi, którzy biorą wszystko i nie pytają. Radzi trzymać bramę zamkniętą.',
+    en: 'The survivor says he saw people who take everything and ask nothing. He says keep the gate shut.',
+  },
+  {
+    pl: 'Ocalały mówi, że ugryzioną rękę trzeba odciąć od razu, potem jest za późno.',
+    en: 'The survivor says a bitten arm has to come off at once; later it is too late.',
+  },
+  {
+    pl: 'Ocalały mówi, że zmarłych trzeba dobijać w głowę, bo po godzinie wstają.',
+    en: 'The survivor says the dead must be finished with a blow to the head, or they get up within the hour.',
+  },
+];
+
+/** Wieść w trybie zombie, od ocalałego: handlarz (prawie ich nie ma), auta, stado, rada (k i r losowane tak jak
+    w gossip). */
+export function gossipZombie(ctx: GossipCtx, rng: RngState): Napis {
+  const k = Math.floor(4 * nextRandom(rng));
+  const r = k === 3 ? Math.floor(nextRandom(rng) * RADY.length) : 0;
+  return gossipZombieText(k, ctx, r);
+}
+
+export function gossipZombieText(k: number, ctx: GossipCtx, r: number): Napis {
+  if (k === 0) {
+    if (ctx.traderIn < 0 || ctx.traderIn > 7)
+      return {
+        pl: 'Ocalały mówi, że handlarzy prawie już nie ma: większość nie przetrwała drogi.',
+        en: 'The survivor says there are hardly any traders left: most did not survive the road.',
+      };
+    const kiedy = ['jeszcze dziś', 'jutro', 'pojutrze'][ctx.traderIn] ?? `za ${ctx.traderIn} dni`;
+    const when = ['later today', 'tomorrow', 'the day after tomorrow'][ctx.traderIn] ?? `in ${ctx.traderIn} days`;
+    return {
+      pl: `Ocalały mówi, że widział handlarza z wózkiem za torami. Może dotrze tu ${kiedy}, jeśli przeżyje drogę.`,
+      en: `The survivor says he saw a trader with a cart beyond the tracks. He may get here ${when}, if he survives the road.`,
+    };
+  }
+  if (k === 1) {
+    const n = ctx.wrecksLeft;
+    return n > 0
+      ? {
+          pl: `Ocalały mówi, że przy ulicy stoją jeszcze ${n} ${aut(n)}, których nikt nie przeszukał. Pełno tam szwendaczy.`,
+          en: `The survivor says there ${n === 1 ? 'is still 1 car' : `are still ${n} cars`} by the road nobody has searched. Shamblers all around them.`,
+        }
+      : {
+          pl: 'Ocalały mówi, że w okolicy nie ma już aut, w których coś zostało.',
+          en: 'The survivor says there are no cars left around here with anything in them.',
+        };
+  }
+  if (k === 2)
+    return {
+      pl: 'Ocalały mówi, że stado ciągnie od strony obwodnicy. Tej nocy będzie ich więcej.',
+      en: 'The survivor says a herd is moving in from the ring road. There will be more of them tonight.',
+    };
+  return RADY[r] ?? RADY[0];
+}
+
 /** wieść z polskiego tekstu w stanie po angielsku: słownik ze wszystkich wariantów gossipText i przeszukali (liczby
     do 99) oraz wieści po napaści na handlarza; nieznany tekst zostaje jak jest */
 let wiesciEn: Map<string, string> | null = null;
@@ -134,12 +216,21 @@ export function wiescEn(pl: string): string {
       if (n >= 0) put(gossipText(1, { traderIn: 0, wrecksLeft: n }, 0));
     }
     put(gossipText(2, { traderIn: 0, wrecksLeft: 0 }, 0));
+    // tryb zombie: wieści ocalałych
+    for (let n = -1; n < 100; n++) {
+      put(gossipZombieText(0, { traderIn: n, wrecksLeft: 0 }, 0));
+      if (n >= 0) put(gossipZombieText(1, { traderIn: 0, wrecksLeft: n }, 0));
+    }
+    put(gossipZombieText(2, { traderIn: 0, wrecksLeft: 0 }, 0));
+    for (let r = 0; r < RADY.length; r++) put(gossipZombieText(3, { traderIn: 0, wrecksLeft: 0 }, r));
     for (let ad = 0; ad < ADS.length; ad++) put(gossipText(3, { traderIn: 0, wrecksLeft: 0 }, ad));
     for (const model of ['maluch', 'polonez']) put(NAPISY.przeszukali(model));
     // wieści po napaści na handlarza (src/sim/handlarz.ts)
     put(HANDEL.uciekl);
     put(HANDEL.odszedlZly);
     put(HANDEL.zabity);
+    put(HANDEL.szwendacze);
+    put(HANDEL.zagryziony);
     for (let n = 1; n < 10; n++) put(HANDEL.zemsta(n));
   }
   return wiesciEn.get(pl) ?? pl;

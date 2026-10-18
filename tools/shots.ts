@@ -1082,6 +1082,48 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // tryb zombie: handlarz czwartego dnia przy zamkniętej bramie, na chwilę (szwendacze zdjęte do zrzutu)
+        name: 'handlarz-zombie',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          // dzień 4, 10:00; wizyta może nie dojść do skutku, więc ponawiamy termin, aż handlarz wyjdzie
+          for (let k = 0; k < 12; k++) {
+            const here = await page.evaluate(() => {
+              const st = window.zm!.sim!.st;
+              if (k0() === 0) st.tick = 15200 + 2 * 19200;
+              st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+              if (!st.pawns.some((p) => p.kind === 'handlarz')) st.obcy!.next = st.tick;
+              return st.pawns.some((p) => p.kind === 'handlarz');
+              function k0() {
+                return st.tick < 15200 + 2 * 19200 ? 0 : 1;
+              }
+            });
+            if (here) break;
+            await page.evaluate(() => window.zm!.ff(0.2));
+          }
+          for (let k = 0; k < 30; k++) {
+            const ok = await page.evaluate(() => {
+              const st = window.zm!.sim!.st;
+              st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+              return st.pawns.find((p) => p.kind === 'handlarz')?.job?.phase === 1;
+            });
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz');
+            if (t) zm.setCam(t.x, t.y - 1, 2);
+            return t ? `${t.job?.phase}` : 'brak';
+          });
+          await waitIdle(page);
+          console.log(`  handlarz w trybie zombie: faza ${at}`);
+          if (at !== '1') throw new Error('handlarz w trybie zombie nie stanął przy bramie');
+        },
+      },
+      {
         // wędrowiec przy siatce (menu, rozmowa i wieść), potem obca ekipa przy wraku (Przeszukać wyszarzone)
         name: 'obcy',
         query: '',
