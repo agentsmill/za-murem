@@ -8,6 +8,19 @@ import { dryTreeOf, houseOf, inHomeApt, type RoomKind } from './house.ts';
 import { MAT_ACC, REPAIR, RUBBISH } from './mieszkania.ts';
 import { gateTiles } from './perimeter.ts';
 import {
+  drzwiPod,
+  gidB,
+  gidRoom,
+  LUP_MATS,
+  mieszkalny,
+  moznaPrzeszukac,
+  pokojSasiada,
+  przechodnie,
+  uSasiada,
+  wnetrze,
+  ZABIJANIE_DESKI,
+} from './sasiedzi.ts';
+import {
   BRACE_COST,
   BURNABLE,
   CAMPFIRE_WOOD,
@@ -123,6 +136,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   // zwłoki, które wstaną: dobić
   const body = thingAt(st, w, tile, 'zwloki');
   if (body && body.fuel > 0) out.push({ cmd: { t: 'finish', ids: core, thing: body.id }, label: 'Dobić', quick: true });
+  // M2 fala 2: cudze drzwi, pomieszczenia i łup sąsiadów; w ich wnętrzu bez poleceń siedziby (gotowanie, palenie mebli)
+  out.push(...sasiedziAt(st, w, core, tile));
+  const obce = uSasiada(st, w, tile);
   const sklad = houseOf(w)?.sklad ?? [];
   const pile = thingAt(st, w, tile, 'drewno');
   if (pile && sklad.length && !sklad.includes(tile))
@@ -180,12 +196,12 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     out.push({ cmd: { t: 'chop', ids: core, tree }, label: 'Ściąć drzewo', quick: near });
   }
   // kuchenka zarządu albo zapasy: gotować, gdy jest z czego i na czym
-  if ((thingAt(st, w, tile, 'kuchenka') || thingAt(st, w, tile, 'jedzenie')) && canCookIn(st, w))
+  if (!obce && (thingAt(st, w, tile, 'kuchenka') || thingAt(st, w, tile, 'jedzenie')) && canCookIn(st, w))
     out.push({ cmd: { t: 'cook', ids: core }, label: 'Gotować', quick: true });
   const x = tile % w.size;
   const y = Math.floor(tile / w.size);
   const furniture = st.things.find((t) => BURNABLE[t.kind] && x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
-  if (furniture)
+  if (furniture && !obce)
     out.push({
       cmd: { t: 'burn', ids: core, thing: furniture.id },
       label: `Spalić ${FURNITURE_ACC[furniture.kind]}`,
@@ -231,6 +247,72 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   if (woodN >= CAMPFIRE_WOOD && campfireSpotOk(st, w, tile))
     out.push({ cmd: { t: 'campfire', ids: core, at: tile }, label: 'Rozpalić ognisko tutaj', quick: false });
   out.push({ cmd: { t: 'move', ids: core, to: tile }, label: 'Idź tu', quick: true });
+  return out;
+}
+
+/** M2 fala 2 (docs/M2-fala-2.md): polecenia przy cudzych drzwiach (otworzyć, wejść, zapukać, wyważyć, zabić deskami,
+    odbić deski), w pomieszczeniach otwartego sąsiada (przeszukać, a mieszkanie lokatorów okraść pod ich nieobecność)
+    i przy łupie w jego wnętrzu (zanieść do siedziby). Drzwi od ulicy budynku przy podwórku mają ostrzeżenie. */
+function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuItem[] {
+  const out: MenuItem[] = [];
+  const dp = drzwiPod(st.sasiedzi, w, modeOf(st), tile);
+  if (dp) {
+    const flat = dp.rodzaj === 'mieszkanie';
+    const warn = dp.wylom ? ' (droga z ulicy na podwórko)' : '';
+    const door = dp.tile;
+    const knock = mieszkalny(w, dp.bid) ? (flat ? 'Zapukać do mieszkania' : 'Zapukać') : '';
+    if (dp.s === 'zamkniete') {
+      out.push({
+        cmd: { t: 'open', ids: core, door },
+        label: `${flat ? 'Otworzyć drzwi mieszkania' : 'Otworzyć drzwi'}${warn}`,
+        quick: true,
+      });
+      if (knock) out.push({ cmd: { t: 'knock', ids: core, door }, label: knock, quick: false });
+    }
+    if (dp.s === 'na_klucz' && knock) out.push({ cmd: { t: 'knock', ids: core, door }, label: knock, quick: true });
+    if (dp.s === 'zamkniete' || dp.s === 'na_klucz')
+      out.push({
+        cmd: { t: 'force', ids: core, door },
+        label: `${flat ? 'Wyważyć drzwi mieszkania' : 'Wyważyć drzwi'}${warn}`,
+        quick: false,
+      });
+    if (przechodnie(dp.s)) {
+      out.push({ cmd: { t: 'open', ids: core, door }, label: 'Wejść', quick: true });
+      const boards = st.things.reduce(
+        (a, t) => a + (t.kind === 'deski' && !uSasiada(st, w, t.y * w.size + t.x) ? t.n : 0),
+        0,
+      );
+      if (!flat && boards >= ZABIJANIE_DESKI)
+        out.push({ cmd: { t: 'board', ids: core, door }, label: 'Zabić drzwi deskami', quick: false });
+    }
+    if (dp.s === 'zabite' && !flat)
+      out.push({ cmd: { t: 'unboard', ids: core, door }, label: `Odbić deski${warn}`, quick: true });
+  }
+  const ps = pokojSasiada(st, w, tile);
+  if (ps) {
+    const bid = st.sasiedzi!.budynki[ps.k].bid;
+    const can = moznaPrzeszukac(st, w, ps.k, ps.room);
+    const kind = wnetrze(w, bid).rooms[ps.room].kind;
+    if (can === 'tak')
+      out.push({
+        cmd: { t: 'loot', ids: core, bid, room: ps.room },
+        label: `Przeszukać ${ROOM_ACC[kind]}`,
+        quick: false,
+      });
+    else if (can === 'szaber')
+      out.push({
+        cmd: { t: 'loot', ids: core, bid, room: ps.room },
+        label: 'Okraść mieszkanie (lokatorów nie ma)',
+        quick: false,
+        confirm: true,
+      });
+  }
+  // łup w cudzym budynku: zanieść do siedziby (i resztę z tego budynku)
+  const x = tile % w.size;
+  const y = Math.floor(tile / w.size);
+  const pile = st.things.find((t) => LUP_MATS.has(t.kind) && t.n > 0 && t.x === x && t.y === y);
+  if (pile && uSasiada(st, w, tile))
+    out.push({ cmd: { t: 'carry', ids: core, thing: pile.id }, label: 'Zanieść do siedziby', quick: true });
   return out;
 }
 
@@ -374,5 +456,28 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return (
         ['Snuje się.', 'Idzie do siatki.', 'Napiera na siatkę.', 'Goni.', 'Idzie na hałas.'][j.phase] ?? 'Snuje się.'
       );
+    case 'door': {
+      const v = DOOR_TEXT[j.what] ?? DOOR_TEXT.open;
+      return walking ? v[0] : v[1];
+    }
+    case 'loot': {
+      const b = st.sasiedzi?.budynki[gidB(j.target)];
+      const r = b ? wnetrze(w, b.bid).rooms[gidRoom(j.target)] : undefined;
+      const where = r ? ROOM_ACC[r.kind] : 'pomieszczenie';
+      return walking ? `Idzie przeszukać ${where} u sąsiadów.` : `Przeszukuje ${where} u sąsiadów.`;
+    }
+    case 'carry':
+      return j.phase === 0 ? 'Idzie po łup u sąsiadów.' : 'Niesie łup do siedziby.';
+    case 'meet':
+      return 'Rozmawia z sąsiadami.';
   }
 }
+
+/** opisy pracy przy cudzych drzwiach: w drodze i przy drzwiach */
+const DOOR_TEXT: Record<string, [string, string]> = {
+  open: ['Idzie otworzyć drzwi.', 'Otwiera drzwi.'],
+  knock: ['Idzie zapukać.', 'Puka do drzwi.'],
+  force: ['Idzie wyważyć drzwi.', 'Wyważa drzwi.'],
+  board: ['Idzie zabić drzwi deskami.', 'Zabija drzwi deskami.'],
+  unboard: ['Idzie odbić deski z drzwi.', 'Odbija deski z drzwi.'],
+};

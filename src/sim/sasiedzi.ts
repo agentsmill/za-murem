@@ -14,12 +14,13 @@
 import type { BuildingClass } from '../content/data.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { clamp, mulberry, type Rng } from '../core/rng.ts';
-import { type AptState, type AptWhy, settleAptsOf } from '../world/apts.ts';
+import { type AptState, type AptWhy, type DamageKind, settleAptsOf } from '../world/apts.ts';
 import { buildInterior, IN, type Interior, type RoomKind } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
 import type { Mat } from './budowle.ts';
-import { TICKS_PER_HOUR } from './clock.ts';
+import { dayOf, hourOf, TICKS_PER_HOUR } from './clock.ts';
 import { lootOf } from './mieszkania.ts';
+import type { SimState } from './sim.ts';
 import type { GameMode } from './tryb.ts';
 
 // ---------------------------------------------------------------- typy stanu
@@ -102,6 +103,11 @@ export interface SasiedniBudynek {
   domy: Gospodarstwo[];
   /** przeszukane piętra (etap 2) */
   pietra: number;
+  /** ślady w pustych mieszkaniach do przekroju (wybite okna, wyważone drzwi, zalane i spalone podłogi); bez napraw */
+  slady: { t: number; k: DamageKind }[];
+  /** zawartość pustych mieszkań do położenia przy otwarciu: zepsute meble (indeksy mebli wnętrza) i sterty śmieci
+      (x, y, wielkość); po otwarciu znika, bo meble i śmieci są już rzeczami w st.things */
+  zawartosc?: { zepsute: number[]; smieci: [number, number, number][] };
 }
 
 export interface Spotkanie {
@@ -120,16 +126,19 @@ export interface Spotkanie {
   wywazone: boolean;
 }
 
-/** wynik ostatniego spotkania do napisu w interfejsie */
-export interface WynikSpotkania {
-  nr: number;
+/** Napis dla interfejsu: wynik spotkania, zamek, pukanie bez odpowiedzi, szwendacz za drzwiami, ostrzeżenie. n rośnie
+    przy każdym nowym, więc interfejs pokazuje każdy raz (i po wczytaniu zapisu nie powtarza starego). */
+export interface Napis {
+  n: number;
   co: string;
+  tick: number;
+  /** budynek (indeks w budynki) i gospodarstwo (indeks w domy), których dotyczy */
   b: number;
-  dom: number;
+  dom?: number;
   /** co dostaliśmy albo oddaliśmy */
   ile?: Partial<Record<Mat, number>>;
-  /** nasz ranny pionek */
-  ranny?: number;
+  /** nasz pionek: ranny albo ten, który pracował przy drzwiach */
+  kto?: number;
   /** co powiedzieli przy rozmowie */
   info?: Info;
 }
@@ -140,7 +149,9 @@ export interface Sasiedzi {
   spotkanie: Spotkanie | null;
   /** licznik spotkań */
   nr: number;
-  wynik: WynikSpotkania | null;
+  /** ostatni napis i licznik napisów */
+  napis: Napis | null;
+  n: number;
 }
 
 /** lokatorzy budynku z generatora mieszkańców albo zapasowi: stany mieszkań parteru i gospodarstwa na nich */
@@ -283,6 +294,59 @@ export function drzwiNaPodworko(w: WorldLike & Pick<World, 'blocked' | 'fence'>,
   );
 }
 
+const behindMemo = new WeakMap<object, Map<string, Set<number>>>();
+
+/** Mieszkania za drzwiami: za drzwiami mieszkania to mieszkanie, za drzwiami na zewnątrz mieszkania, do których prowadzi
+    wnętrze od tych drzwi bez przechodzenia przez drzwi mieszkań i inne drzwi na zewnątrz (dom: jego mieszkanie,
+    blok: mieszkania tej klatki). Liczone raz na świat. */
+export function mieszkaniaZaDrzwiami(w: WorldLike & Pick<World, 'blocked'>, bid: number, door: number): Set<number> {
+  const dz = drzwiBudynku(w, bid);
+  const own = dz.mieszkan.get(door);
+  if (own !== undefined) return new Set([own]);
+  let m = behindMemo.get(w);
+  if (!m) {
+    m = new Map();
+    behindMemo.set(w, m);
+  }
+  const key = `${bid}:${door}`;
+  const have = m.get(key);
+  if (have) return have;
+  const it = wnetrze(w, bid);
+  const size = w.size;
+  const outer = new Set(dz.zewn.map((d) => d.tile));
+  const out = new Set<number>();
+  const seen = new Set<number>([door]);
+  const q = [door];
+  while (q.length) {
+    const c = q.pop()!;
+    const x = c % size;
+    for (const n of [c - size, x < size - 1 ? c + 1 : -1, c + size, x > 0 ? c - 1 : -1]) {
+      if (n < 0 || n >= size * size || seen.has(n) || w.bid[n] !== bid) continue;
+      const cell = it.cell[n];
+      if (cell !== IN.FLOOR && cell !== IN.DOOR) continue;
+      seen.add(n);
+      if (cell === IN.DOOR) {
+        const apt = dz.mieszkan.get(n);
+        if (apt !== undefined) out.add(apt);
+        else if (!outer.has(n)) q.push(n);
+        continue;
+      }
+      const r = it.room[n];
+      if (r >= 0 && it.rooms[r].apt >= 0) out.add(it.rooms[r].apt);
+      q.push(n);
+    }
+  }
+  m.set(key, out);
+  return out;
+}
+
+/** Kafelek we wnętrzu sąsiedniego budynku (rzeczy tam nie są nasze, dopóki ktoś ich nie przyniesie): kafelek budynku
+    innego niż siedziba. Rzeczy leżą na kafelkach budynków tylko w siedzibie i we wnętrzach otwartych sąsiadów. */
+export function uSasiada(_st: Pick<SimState, 'sasiedzi'>, w: Pick<World, 'bid' | 'hq'>, tile: number): boolean {
+  const bid = w.bid[tile];
+  return bid >= 0 && bid !== w.hq;
+}
+
 /** przechodzi się przez drzwi w tym stanie */
 export const przechodnie = (s: StanDrzwi): boolean => s === 'otwarte' || s === 'wywazone';
 
@@ -317,6 +381,106 @@ export function drzwiMieszkaniaNaStart(tile: number, m: MieszkanieSasiada, wywaz
   if (m.stan === 'mieszkancy') return { t: tile, s: 'zamkniete', k: true };
   if (m.zombie) return { t: tile, s: 'zamkniete' };
   return { t: tile, s: wywazone ? 'wywazone' : 'otwarte' };
+}
+
+/** budynek mieszkalny (blok albo dom) z mieszkaniami we wnętrzu */
+export function mieszkalny(w: WorldLike, bid: number): boolean {
+  const b = w.buildings[bid];
+  return (b.cls === 'blok' || b.cls === 'dom') && wnetrze(w, bid).rooms.some((r) => r.apt >= 0);
+}
+
+const peopleMemo = new WeakMap<object, Map<number, boolean>>();
+
+/** Na start ktoś tu mieszka, dla zamków na drzwiach: budynek mieszkalny z zamieszkanym mieszkaniem w stanach domyślnych
+    (settleAptsOf). Czysta funkcja świata, bez generatora mieszkańców, więc menu i symulacja liczą zamki tak samo. */
+export function ludzieNaStart(w: WorldLike, bid: number): boolean {
+  let m = peopleMemo.get(w);
+  if (!m) {
+    m = new Map();
+    peopleMemo.set(w, m);
+  }
+  let v = m.get(bid);
+  if (v === undefined) {
+    v = mieszkalny(w, bid) && settleAptsOf(w, wnetrze(w, bid)).apts.some((a) => a.state === 'mieszkancy');
+    m.set(bid, v);
+  }
+  return v;
+}
+
+/** stan drzwi na zewnątrz przed pierwszym dotknięciem budynku (ten sam wpis tworzy symulacja) */
+export function drzwiZewnNaStart(
+  w: WorldLike & Pick<World, 'blocked' | 'fence'>,
+  mode: GameMode,
+  bid: number,
+  tile: number,
+): DrzwiStan {
+  const yard = drzwiNaPodworko(w, bid);
+  return drzwiNaStart(w, mode, bid, tile, { ludzie: ludzieNaStart(w, bid), odUlicy: yard.size > 0 && !yard.has(tile) });
+}
+
+/** cudze drzwi pod kafelkiem, do menu i poleceń */
+export interface DrzwiPod {
+  bid: number;
+  tile: number;
+  rodzaj: 'zewn' | 'mieszkanie';
+  /** mieszkanie za drzwiami mieszkania (−1 dla drzwi na zewnątrz) */
+  apt: number;
+  /** kafelek, z którego się przy nich pracuje: przed drzwiami na zewnątrz, po drugiej stronie drzwi mieszkania */
+  stand: number;
+  s: StanDrzwi;
+  /** drzwi od ulicy budynku przy podwórku: otwarte robią drogę z ulicy przez wnętrze na podwórko */
+  wylom: boolean;
+}
+
+/** Cudze drzwi pod kafelkiem: same drzwi, kafelek przed wejściem z listy wejść budynku albo ściana i dach jeszcze
+    nieotwartego budynku (wtedy najbliższe drzwi na zewnątrz). Drzwi mieszkań tylko w otwartym budynku. Stan ze stanu
+    gry, a przed pierwszym dotknięciem z drzwiZewnNaStart. null: nic tu (także siedziba). */
+export function drzwiPod(sas: Sasiedzi | undefined, w: World, mode: GameMode, tile: number): DrzwiPod | null {
+  const size = w.size;
+  let bid = w.bid[tile];
+  let at = tile;
+  if (bid < 0) {
+    const b = w.buildings.find((x) => x.id !== w.hq && x.entrances.some((e) => e.out === tile));
+    if (!b) return null;
+    bid = b.id;
+    at = b.entrances.find((e) => e.out === tile)!.tile;
+  }
+  if (bid === w.hq || !w.buildings[bid].entrances.length) return null;
+  const rec = sas?.budynki.find((x) => x.bid === bid);
+  const dz = drzwiBudynku(w, bid);
+  let zewn = dz.zewn.find((d) => d.tile === at);
+  const apt = dz.mieszkan.get(at);
+  if (!zewn && apt === undefined) {
+    // w otwartym budynku kafelki pomieszczeń mają własne polecenia
+    if (rec?.otwarty || !dz.zewn.length) return null;
+    const x = at % size;
+    const y = Math.floor(at / size);
+    const d2 = (t: number) => ((t % size) - x) ** 2 + (Math.floor(t / size) - y) ** 2;
+    zewn = dz.zewn.reduce((a, b) => (d2(b.tile) < d2(a.tile) ? b : a));
+  }
+  if (zewn) {
+    const yard = drzwiNaPodworko(w, bid);
+    const s = (rec && stanDrzwi(rec, zewn.tile)?.s) ?? drzwiZewnNaStart(w, mode, bid, zewn.tile).s;
+    return {
+      bid,
+      tile: zewn.tile,
+      rodzaj: 'zewn',
+      apt: -1,
+      stand: zewn.out,
+      s,
+      wylom: yard.size > 0 && !yard.has(zewn.tile),
+    };
+  }
+  if (!rec?.otwarty || apt === undefined) return null;
+  return {
+    bid,
+    tile: at,
+    rodzaj: 'mieszkanie',
+    apt,
+    stand: dz.przed.get(at)!,
+    s: stanDrzwi(rec, at)?.s ?? 'otwarte',
+    wylom: false,
+  };
 }
 
 // ---------------------------------------------------------------- znani sąsiedzi
@@ -525,6 +689,52 @@ export function wDomu(seed: number, bid: number, dom: number, day: number, hour:
   return rngOfPlace(seed, bid, dom * 1000 + day, 0x7a7a)() >= POZA_DOMEM;
 }
 
+/** gospodarstwo budynku k jest teraz w domu */
+export function domTeraz(
+  st: Pick<SimState, 'sasiedzi' | 'tick' | 'mode'>,
+  w: Pick<World, 'seed'>,
+  k: number,
+  dom: number,
+): boolean {
+  const b = st.sasiedzi?.budynki[k];
+  if (!b?.domy[dom]) return false;
+  return wDomu(w.seed, b.bid, dom, dayOf(st.tick), hourOf(st.tick), st.mode ?? 'zwykly');
+}
+
+/** Pomieszczenie sąsiada da się przeszukać (raz): w otwartym budynku sala, hala, zaplecze i klatka, puste mieszkanie,
+    a mieszkanie lokatorów tylko pod ich nieobecność (szaber). */
+export function moznaPrzeszukac(
+  st: Pick<SimState, 'sasiedzi' | 'tick' | 'mode'>,
+  w: WorldLike,
+  k: number,
+  room: number,
+): 'tak' | 'szaber' | null {
+  const b = st.sasiedzi?.budynki[k];
+  if (!b?.otwarty) return null;
+  const r = wnetrze(w, b.bid).rooms[room];
+  if (!r) return null;
+  if (r.apt < 0) return b.przeszukane.includes(room) ? null : 'tak';
+  const m = b.mieszkania.find((x) => x.apt === r.apt);
+  if (!m || m.przeszukane.includes(room)) return null;
+  if (m.stan === 'puste') return 'tak';
+  const g = b.domy[m.dom];
+  return g && g.gdzie === 'u_siebie' && !domTeraz(st, w, k, m.dom) ? 'szaber' : null;
+}
+
+/** indeks wpisu otwartego budynku pod kafelkiem i lokalny numer pomieszczenia (null poza pomieszczeniami sąsiadów) */
+export function pokojSasiada(
+  st: Pick<SimState, 'sasiedzi'>,
+  w: WorldLike,
+  tile: number,
+): { k: number; room: number } | null {
+  const bid = w.bid[tile];
+  if (bid < 0) return null;
+  const k = st.sasiedzi?.budynki.findIndex((b) => b.bid === bid && b.otwarty) ?? -1;
+  if (k < 0) return null;
+  const room = wnetrze(w, bid).room[tile];
+  return room >= 0 ? { k, room } : null;
+}
+
 // ---------------------------------------------------------------- spotkanie
 
 export interface WyborKarty {
@@ -697,3 +907,85 @@ export function poHalasie(g: Gospodarstwo, noc: boolean): Pick<Gospodarstwo, 'na
 
 /** komórka wnętrza blokuje (ściana, schody) */
 export const solidCell = (c: number): boolean => c === IN.WALL || c === IN.STAIRS;
+
+/** materiały, które z sąsiadów nosi się do siedziby */
+export const LUP_MATS: ReadonlySet<string> = new Set(['deski', 'zlom', 'czesci', 'jedzenie', 'leki', 'drewno']);
+
+// ---------------------------------------------------------------- wpis budynku
+
+/** Wpis budynku przy pierwszym dotknięciu jego drzwi. Lokatorzy z generatora mieszkańców albo zapasowi (lok, null dla
+    budynku bez mieszkań); mieszkanie „zamieszkane” bez osób stoi puste, bo nie ma kogo spotkać. W trybie zombie
+    przeżywa co czwarte gospodarstwo, reszta mieszkań stoi pusta z wymarcia (2051), a w co drugim takim za drzwiami czeka
+    szwendacz. Stany i zawartość pustych z settleAptsOf, drzwi na zewnątrz i mieszkań ze stanem na start, zapasy,
+    zamiar i nastrój gospodarstw, znani sąsiedzi. Czysta funkcja: losowania z ziarna świata, budynku i mieszkania. */
+export function nowyBudynek(w: World, mode: GameMode, bid: number, lok: LokatorzyBudynku | null): SasiedniBudynek {
+  const it = wnetrze(w, bid);
+  const dz = drzwiBudynku(w, bid);
+  const n = it.rooms.reduce((m, r) => Math.max(m, r.apt + 1), 0);
+  const home = mieszkalny(w, bid);
+  const known = mode !== 'zombie' && znaniBudynki(w).includes(bid);
+  const domy: Gospodarstwo[] = [];
+  const stany: AptState[] = [];
+  const domOf = new Map<number, number>();
+  const zombieApt = new Set<number>();
+  for (let a = 0; a < n; a++) {
+    const s = home ? lok?.stany.find((x) => x.apt === a) : undefined;
+    const h = home ? lok?.domy.find((d) => d.apt === a) : undefined;
+    if (s?.state === 'mieszkancy' && h?.osoby.length) {
+      if (mode === 'zombie' && rngOfPlace(w.seed, bid, a, 0x2b1e)() >= ZOMBIE_PRZEZYLO) {
+        stany.push({ bid, apt: a, state: 'puste', why: 'wymarcie', year: 2051 });
+        if (rngOfPlace(w.seed, bid, a, 0x2b1f)() < ZOMBIE_W_MIESZKANIU) zombieApt.add(a);
+        continue;
+      }
+      const zapasy = zapasyDomu(h.osoby.length, mode, rngOfPlace(w.seed, bid, a, 0x5a9a));
+      const start = poczatek(h.osoby, zapasy, h.zal, mode, rngOfPlace(w.seed, bid, a, 0x3e3e));
+      domOf.set(a, domy.length);
+      domy.push({
+        osoby: h.osoby.map((o) => ({ ...o, skills: { ...o.skills }, traits: [...o.traits] })),
+        apt: a,
+        klatka: h.klatka,
+        znani: known,
+        ...start,
+        rel: known ? REL_ZNANI : 0,
+        zapasy,
+        gdzie: 'u_siebie',
+        ...(h.zal ? { zal: true } : {}),
+      });
+      stany.push({ bid, apt: a, state: 'mieszkancy' });
+    } else if (s?.state === 'puste') stany.push({ ...s, bid });
+    else stany.push({ bid, apt: a, state: 'puste' });
+  }
+  const r = settleAptsOf(w, it, stany);
+  const mieszkania: MieszkanieSasiada[] = r.apts.map((x) => ({
+    apt: x.apt,
+    stan: x.state === 'mieszkancy' ? 'mieszkancy' : 'puste',
+    ...(x.why ? { why: x.why } : {}),
+    ...(x.year ? { year: x.year } : {}),
+    dom: domOf.get(x.apt) ?? -1,
+    ...(zombieApt.has(x.apt) ? { zombie: true } : {}),
+    przeszukane: [],
+  }));
+  const drzwi: DrzwiStan[] = dz.zewn.map((d) => drzwiZewnNaStart(w, mode, bid, d.tile));
+  for (const [tile, apt] of dz.mieszkan) {
+    const m = mieszkania[apt];
+    const wywazone = r.damage.some((x) => x.kind === 'drzwi' && x.tile === tile);
+    if (m) drzwi.push(drzwiMieszkaniaNaStart(tile, m, wywazone));
+  }
+  drzwi.sort((a, b) => a.t - b.t);
+  const zepsute: number[] = [];
+  r.furniture.forEach((f, k) => {
+    if (f.broken) zepsute.push(k);
+  });
+  return {
+    bid,
+    drzwi,
+    otwarty: false,
+    ludzie: ludzieNaStart(w, bid),
+    mieszkania,
+    przeszukane: [],
+    domy,
+    pietra: 0,
+    slady: r.damage.map((d) => ({ t: d.tile, k: d.kind })),
+    zawartosc: { zepsute, smieci: r.trash.map((t) => [t.x, t.y, t.n]) },
+  };
+}

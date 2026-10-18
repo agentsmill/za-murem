@@ -1350,6 +1350,15 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   dismantle: ['Rozbierze to na materiał.', 'Jedna osoba rozbierze to na materiał.'],
   repair: ['Przyniesie materiał i naprawi.', 'Jedna osoba przyniesie materiał i naprawi.'],
   claim: ['Zajmie mieszkanie dla zarządu.', 'Jedna osoba zajmie mieszkanie dla zarządu.'],
+  // M2 fala 2: sąsiednie budynki
+  open: ['Otworzy drzwi.', 'Jedna osoba otworzy drzwi.'],
+  knock: ['Zapuka.', 'Jedna osoba zapuka.'],
+  force: ['Wyważy drzwi. Będzie głośno.', 'Jedna osoba wyważy drzwi. Będzie głośno.'],
+  board: ['Zabije drzwi deskami.', 'Jedna osoba zabije drzwi deskami.'],
+  unboard: ['Odbije deski z drzwi.', 'Jedna osoba odbije deski z drzwi.'],
+  loot: ['Przeszuka pomieszczenie i przyniesie łup.', 'Jedna osoba przeszuka pomieszczenie i przyniesie łup.'],
+  carry: ['Zaniesie łup do siedziby.', 'Jedna osoba zaniesie łup do siedziby.'],
+  meet: ['', ''],
 };
 
 function run(m: MenuItem) {
@@ -1358,7 +1367,9 @@ function run(m: MenuItem) {
   if (siec.obsluz(m)) return;
   sim.push(m.cmd);
   const f = FEEDBACK[m.cmd.t][m.cmd.ids.length > 1 ? 1 : 0];
-  if (f) say(f, 1800);
+  // w trybie zombie wyważanie ściąga szwendaczy z okolicy
+  const loud = m.cmd.t === 'force' && modeOf(sim.st) === 'zombie' ? ' Hałas ściągnie szwendaczy.' : '';
+  if (f) say(`${f}${loud}`, loud ? 4000 : 1800);
 }
 
 /** polecenie z potwierdzeniem: palenie mebli ma własne okno, reszta (rozbiórka, zajęcie) ogólne */
