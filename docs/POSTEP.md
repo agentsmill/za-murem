@@ -971,6 +971,8 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
   - tasowanie przez `sort` i `Math.hypot`/`sin`/`cos` mogą dawać różne wyniki w różnych przeglądarkach; ważne, gdy zapisy będą przechodzić między przeglądarkami. Tasowanie w wydarzeniach zarządu poprawione 17.10.2026 (CI na Node 24); `Math.hypot`/`sin`/`cos` w decyzjach symulacji do sprawdzenia.
 
 ## Zaparkowane
+- Menu budowy (18.10.2026), po wejściu badań: widok z kłódkami (`BUILD_MENU.showLocked`) i nazwy badań w `TECH_NAMES`, znaczek „NOWE” przy świeżo odblokowanych (potrzebuje stanu „co gracz już widział”), pracownia (miejsce do badań) jako pierwsza budowla projektu badań w zakładce Dom, kolejne zakładki (Jedzenie, Prąd, Obrona) razem z budowlami z gospodarki.
+- Menu budowy, drobiazgi z przeglądu: reset przewinięcia panelu przy otwarciu, przesunięcie `.hint` pod `build-open` jak `.placebar`, nazwa dostępnościowa przycisku ✕ i `aria-controls` zakładek, kolejność reguł `prefers-reduced-motion` na telefonie, asercje angielskiego „Needs research” w testach, Esc i ✕ przez tę samą ścieżkę `onClose`.
 - `siec-menu` w `npm run shots` raz padł pod obciążeniem (kilka sesji naraz): po zajęciu klatki nie było jeszcze znaczników „nasza”, sam scenariusz przechodzi. Dodać czekanie na znaczniki zamiast jednego odczytu (18.10.2026).
 
 - Fala 2: duch wspólnego płotu mógłby pokazywać też odcinki starej siatki, które znikną, i drzwi do zabicia deskami (dziś tylko nowe kafelki i postęp).

@@ -27,7 +27,9 @@ import {
   matsOf,
   okTilesOf,
   ourApts,
+  placeKey,
   reservedOf,
+  stockKey,
   TECH_NAMES,
   workText,
 } from '../../src/ui/budowa.ts';
@@ -180,6 +182,30 @@ describe('menu budowy', () => {
     expect(none.view).toEqual({ tab: null, kind: null });
     expect(none.body).toContain('Na razie nic nie można zbudować.');
     expect(none.body).not.toContain('data-act="build"');
+  });
+
+  it('klucz zapasu panelu bierze tylko materiały z kosztów budowli: drewno z palenia i jedzenie go nie ruszają', () => {
+    const have = { drewno: 5, deski: 20, zlom: 10, czesci: 4, jedzenie: 3, leki: 2 } as Record<Mat, number>;
+    const k = stockKey(have);
+    expect(stockKey({ ...have, drewno: 99, jedzenie: 0, leki: 7 })).toBe(k);
+    for (const m of ['deski', 'zlom', 'czesci'] as Mat[]) expect(stockKey({ ...have, [m]: have[m] + 1 })).not.toBe(k);
+  });
+
+  it('klucz miejsc panelu: ruch rzeczy i wymiana na inną o tej samej liczbie go zmieniają, brak zmian nie', () => {
+    const { st } = fresh();
+    const k = placeKey(st);
+    expect(placeKey(st)).toBe(k);
+    const t = st.things[0];
+    t.x += 1;
+    expect(placeKey(st)).not.toBe(k);
+    t.x -= 1;
+    expect(placeKey(st)).toBe(k);
+    const id = t.id;
+    t.id = id + 100000;
+    expect(placeKey(st)).not.toBe(k);
+    t.id = id;
+    st.techDone = ['t_test'];
+    expect(placeKey(st)).not.toBe(k);
   });
 
   it('czas pracy w godzinach gry, także półtorej godziny', () => {

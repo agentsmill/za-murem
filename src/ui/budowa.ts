@@ -1,7 +1,10 @@
-/* Budowa w interfejsie (docs/M2-fala-1.md): menu budowy z BUILDS (koszt, czas pracy, działanie, miejsce),
-   dozwolone miejsca w trybie stawiania z canPlace symulacji i polecenia przy planach i gotowych budowlach
-   w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM. Napisy w bieżącym języku: polskie tablice
-   zostają tutaj, angielskie leżą obok (budowa.en.ts, src/sim/budowle.en.ts, src/sim/mieszkania.en.ts). */
+/* Menu budowy w interfejsie (docs/M2-fala-1.md, docs/superpowers/specs/2026-10-18-menu-budowy-design.md): menu z BUILDS
+   jako dane (buildMenu: zakładki z BuildDef.cat, koszt, czas pracy, działanie, miejsce, powód braku, blokady badaniem
+   z BUILD_MENU i TECH_NAMES), treść panelu po prawej (buildPanelHtml: zakładki, kafelki z miniaturą, szczegóły),
+   skróty stanu panelu (stockKey, placeKey), dozwolone miejsca w trybie stawiania z canPlace symulacji i polecenia
+   przy planach i gotowych budowlach w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM
+   (DOM robi panelbudowy.ts). Napisy w bieżącym języku: polskie tablice zostają tutaj, angielskie leżą obok
+   (budowa.en.ts, src/sim/budowle.en.ts, src/sim/mieszkania.en.ts). */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
@@ -48,6 +51,31 @@ export function availableOf(st: SimState, s: SimStock): Record<Mat, number> {
   for (const m of Object.keys(have) as Mat[]) have[m] = Math.max(0, have[m] - (r[m] ?? 0));
   return have;
 }
+
+/** materiały, które występują w kosztach budowli: tylko one zmieniają treść menu (drewno z palenia w kozie czy
+    jedzenie z posiłków nie), a nowa budowla z innym materiałem dołoży go tu sama */
+function costMats(): Mat[] {
+  return [...new Set(Object.values(BUILDS).flatMap((d) => Object.keys(d.cost) as Mat[]))];
+}
+
+/** skrót zapasu z availableOf, od którego zależy treść panelu budowy */
+export const stockKey = (have: Record<Mat, number>): string =>
+  costMats()
+    .map((m) => have[m] ?? 0)
+    .join(',');
+
+/** Skrót tego, od czego zależą miejsca na budowle (canPlace): plany, rzeczy z położeniem (kupka wody nosi się po
+    podwórku bez zmiany liczby rzeczy), nasze mieszkania i odblokowane badania. */
+export const placeKey = (st: SimState): string =>
+  [
+    st.builds.map((b) => b.id).join(),
+    st.things.map((t) => `${t.id}@${t.x},${t.y}`).join(),
+    st.apts
+      .filter((a) => a.ours)
+      .map((a) => a.apt)
+      .join(),
+    st.techDone?.length ?? 0,
+  ].join('|');
 
 /** numery naszych mieszkań w siedzibie: mieszkanie zarządu i zajęte (st.apts) */
 export const ourApts = (st: SimState): number[] => st.apts.filter((a) => a.ours).map((a) => a.apt);

@@ -3323,6 +3323,14 @@ const SHOTS: Shot[] = [
         return n;
       });
       if (mutations) throw new Error(`panel przebudował się ${mutations} razy bez zmiany stanu`);
+      // fokus na „Postaw” przeżywa odświeżenie po zmianie zapasu (klawiatura)
+      await page.click('#buildPanel [data-tab="dom"]');
+      await page.click('#buildPanel .tile[data-kind="warsztat"]');
+      await page.focus('#buildPanel .bd[data-kind="warsztat"] [data-act="build"]');
+      await stockUp(page, { deski: 10 });
+      await page.waitForTimeout(400);
+      const kept = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.arg ?? '');
+      if (kept !== 'warsztat') throw new Error(`odświeżenie panelu zabrało fokus z „Postaw” (fokus: „${kept}”)`);
       // zmiana języka przy otwartym panelu (jak w en-budowa-zmiana-jezyka: przycisk języka w oknie)
       await page.evaluate(() => {
         const b = document.createElement('button');

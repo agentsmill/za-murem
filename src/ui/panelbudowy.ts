@@ -115,7 +115,9 @@ export class BuildPanel {
           ? `[data-tab="${f.dataset.tab}"]`
           : f.classList.contains('tile')
             ? `.tile[data-kind="${f.dataset.kind}"]`
-            : undefined;
+            : f.dataset.act === 'build'
+              ? `[data-act="build"][data-arg="${f.dataset.arg}"]`
+              : undefined;
     }
     const r = buildPanelHtml(
       this.hooks.menu(),

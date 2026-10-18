@@ -66,8 +66,9 @@ import {
   buildMenu,
   buildName,
   okTilesOf,
-  ourApts,
+  placeKey,
   type Rot,
+  stockKey,
   TECH_NAMES,
 } from './ui/budowa.ts';
 import { kartaBudynku, widokBudynku } from './ui/budynek.ts';
@@ -506,6 +507,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   buildPanel.hide();
   buildPanel.reset();
   menuCache = null;
+  roomMemo = null;
   aptFocus = -1;
   budFocus = -1;
   residentFocus = -1;
@@ -2033,31 +2035,33 @@ function setPlacementView(p: PlacementView): boolean {
 /** zapas z ostatniego odczytu symulacji (hud co klatkę), do menu i skrótu stanu panelu */
 let lastStock: SimStock | null = null;
 let menuCache: { key: string; menu: BuildCategory[] } | null = null;
+/** czy jest miejsce na budowlę (allowedAnchors), zapamiętane pod skrótem miejsc: zmiana samego zapasu go nie unieważnia */
+let roomMemo: { key: string; room: Map<BuildKind, boolean> } | null = null;
 
-/** skrót tego, od czego zależy treść panelu budowy: zapas bez zarezerwowanego przez plany, liczba planów i rzeczy,
-    nasze mieszkania, odblokowane badania, język. Gdy się nie zmienił, panel nie rusza DOM i nie liczy miejsc. */
+/** skrót tego, od czego zależy treść panelu budowy: język, zapas materiałów z kosztów (bez zarezerwowanego przez
+    plany) i miejsca (plany, rzeczy, mieszkania, badania). Gdy się nie zmienił, panel nie rusza DOM. */
 function buildStateKey(): string {
   if (!sim || !lastStock) return '';
-  const st = sim.st;
-  return [
-    L('pl', 'en'),
-    Object.values(availableOf(st, lastStock)).join(','),
-    st.builds.length,
-    st.things.length,
-    ourApts(st).join(','),
-    st.techDone?.length ?? 0,
-    BUILD_MENU.showLocked,
-  ].join('|');
+  return [L('pl', 'en'), stockKey(availableOf(sim.st, lastStock)), placeKey(sim.st), BUILD_MENU.showLocked].join('#');
 }
 
-/** menu budowy z aktualnego stanu; miejsca (allowedAnchors) liczone tylko, gdy zmienił się skrót stanu */
+/** menu budowy z aktualnego stanu; miejsca liczone tylko przy zmianie skrótu miejsc, nie przy każdym materiale */
 function buildMenuNow(): BuildCategory[] {
   const s = sim;
   if (!s || !lastStock) return [];
   const key = buildStateKey();
   if (menuCache?.key === key) return menuCache.menu;
-  const room = (k: BuildKind) =>
-    allowedAnchors(s.st, s.w, k, 0).length > 0 || allowedAnchors(s.st, s.w, k, 1).length > 0;
+  const pk = placeKey(s.st);
+  if (roomMemo?.key !== pk) roomMemo = { key: pk, room: new Map() };
+  const memo = roomMemo.room;
+  const room = (k: BuildKind) => {
+    let r = memo.get(k);
+    if (r === undefined) {
+      r = allowedAnchors(s.st, s.w, k, 0).length > 0 || allowedAnchors(s.st, s.w, k, 1).length > 0;
+      memo.set(k, r);
+    }
+    return r;
+  };
   const menu = buildMenu(availableOf(s.st, lastStock), room, words, wordsE, { st: s.st });
   menuCache = { key, menu };
   return menu;
