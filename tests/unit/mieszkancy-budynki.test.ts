@@ -413,23 +413,46 @@ describe('tagi zm:klucz, zm:pole, zm:wym (kanoniczny klucz i wymiary budynku)', 
     expect([b.szerokosc, b.dlugosc]).toEqual([12, 40]);
   });
 
-  it('sklejony budynek: pole to suma zm:pole, wymiary z największego członka, klatki z liczby segmentów', () => {
+  it('sklejony budynek: pole i długość to sumy z tagów, szerokość to mediana szerokości, klatki z liczby segmentów', () => {
     const geo = mapa([
       blokGeo(prostokat(0, 0, 20, 12), 5, kan('px:10:0:0:12', 230, 11.5, 20.5)),
       blokGeo(prostokat(20, 0, 40, 12), 5, kan('px:30:0:0:12', 470, 11.8, 40.2)),
     ]);
     const [b] = budynkiZGeo(geo, gdansk, kraj);
     expect(b.klucz).toBe('px:30:0:0:12');
-    expect([b.pole, b.szerokosc, b.dlugosc, b.klatki]).toEqual([700, 11.8, 40.2, 2]);
+    expect([b.pole, b.klatki]).toEqual([700, 2]);
+    expect(b.szerokosc).toBeCloseTo(11.65, 6);
+    expect(b.dlugosc).toBeCloseTo(60.7, 6);
+  });
+
+  it('rząd sklejonych segmentów z tagami ma tę długość i epokę co z obrysu (reguła płyty 5 kondygnacji)', () => {
+    // trzy segmenty 20 × 12 m, 5 kondygnacji: z obrysu długość 60 m i płyta (60 ≥ 3 × 12), niezależnie od klucza
+    const rzad = (klucz: string | null) =>
+      mapa(
+        [0, 20, 40].map((x, n) =>
+          blokGeo(prostokat(x, 0, 20, 12), 5, klucz === null ? {} : kan(`${klucz}:${n}`, 240, 12, 20.2)),
+        ),
+      );
+    const [zObrysu] = budynkiZGeo(rzad(null), gdansk, kraj);
+    expect([zObrysu.dlugosc, zObrysu.epoka]).toEqual([60, 'plyta']);
+    for (let n = 0; n < 40; n++) {
+      const [z] = budynkiZGeo(rzad(`px:${n}:0:0`), gdansk, kraj);
+      expect(z.klatki, `klucz ${n}`).toBe(3);
+      expect(Math.abs(z.dlugosc - zObrysu.dlugosc), `klucz ${n}`).toBeLessThanOrEqual(1);
+      expect(z.szerokosc, `klucz ${n}`).toBe(12);
+      expect(z.epoka, `klucz ${n}`).toBe(zObrysu.epoka);
+      expect(z.mieszkania, `klucz ${n}`).toBe(zObrysu.mieszkania);
+    }
   });
 
   it('wielka płyta z szerokości z tagów: mediana szerokości segmentów, nie obrysu', () => {
-    // dwa segmenty 11 kondygnacji: obrys L ma 60 m szerokości, ale trakty po 12 m z tagów
+    // dwa segmenty 11 kondygnacji w literę L: obrys ma 60 m szerokości, ale trakty po 12 m z tagów
     const geo = mapa([
       blokGeo(prostokat(0, 0, 60, 12), 11, kan('px:1:0:0:0', 720, 12, 60)),
       blokGeo(prostokat(0, 12, 12, 48), 11, kan('px:2:0:0:0', 576, 12, 48)),
     ]);
     const [b] = budynkiZGeo(geo, gdansk, kraj);
+    expect(b.szerokosc).toBe(12);
     expect(b.epoka).toBe('plyta');
   });
 
@@ -451,6 +474,31 @@ describe('tagi zm:klucz, zm:pole, zm:wym (kanoniczny klucz i wymiary budynku)', 
       wszystkoZObrysu.szerokosc,
       wszystkoZObrysu.dlugosc,
     ]);
+  });
+
+  it('liczby bez granic w tagach (400 cyfr, za wiele cyfr) są zepsute: wynik jak z obrysu, bez Infinity', () => {
+    const geo = (t: Record<string, string>) => mapa([blokGeo(prostokat(0, 0, 60, 20), 5, t)]);
+    const [wzor] = budynkiZGeo(geo({}), gdansk, kraj);
+    const dziewiatki = '9'.repeat(400);
+    const zle: Record<string, string>[] = [
+      { 'zm:pole': dziewiatki, 'zm:wym': '12,40' },
+      { 'zm:pole': '1000000', 'zm:wym': '12,40' },
+      { 'zm:pole': '500', 'zm:wym': `${dziewiatki},40` },
+      { 'zm:pole': '500', 'zm:wym': `12,${dziewiatki}` },
+      { 'zm:pole': '500', 'zm:wym': `12,40.${dziewiatki}` },
+      { 'zm:pole': '500', 'zm:wym': '12,10000' },
+      { 'zm:pole': '500', 'zm:wym': '12,40.1234' },
+    ];
+    for (const t of zle) {
+      const [b] = budynkiZGeo(geo(t), gdansk, kraj);
+      expect(Number.isFinite(b.dlugosc) && Number.isFinite(b.klatki) && Number.isFinite(b.pole), t['zm:wym']).toBe(
+        true,
+      );
+      expect(b, JSON.stringify(t).slice(0, 60)).toEqual(wzor);
+    }
+    // granice dozwolone: pole do 6 cyfr, wymiary do 4 cyfr z 3 miejscami po przecinku
+    const [granica] = budynkiZGeo(geo({ 'zm:pole': '999999', 'zm:wym': '9999.999,9999.999' }), gdansk, kraj);
+    expect([granica.pole, granica.szerokosc, granica.dlugosc]).toEqual([999999, 9999.999, 9999.999]);
   });
 
   it('typ budynku z map zgadywanych ocenia się po zm:pole, nie po zaokrąglonym obrysie', () => {
@@ -530,7 +578,7 @@ describe('tagi zm:klucz, zm:pole, zm:wym (kanoniczny klucz i wymiary budynku)', 
     expect(A.map((b) => b.klucz)).toEqual(['px:1000:2000:1:2', 'px:1030:2000:1:2', 'px:1100:2005:1:2']);
     const [plyta, sklejony, dom] = A;
     expect([plyta.pole, plyta.szerokosc, plyta.dlugosc, plyta.epoka]).toEqual([430, 12, 36, 'plyta']);
-    expect([sklejony.pole, sklejony.szerokosc, sklejony.dlugosc, sklejony.klatki]).toEqual([730, 12, 40.4, 2]);
+    expect([sklejony.pole, sklejony.szerokosc, sklejony.dlugosc, sklejony.klatki]).toEqual([730, 12, 60.8, 2]);
     expect([dom.pole, dom.szerokosc, dom.dlugosc, dom.klatki]).toEqual([84, 8.2, 10.2, 1]);
     // kontrola: bez tagów obrys z dwóch środków daje inne pole, więc test coś sprawdza
     const goleA = wynik(wariant(0, 0, false));

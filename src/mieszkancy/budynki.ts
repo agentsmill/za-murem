@@ -14,11 +14,14 @@
    - `zm:klucz`: `px:X:Y:DX:DY`, obrys w pikselach globalnych siatki z=14 (X, Y to najwyższy wierzchołek, DX, DY
      przesunięcie do najniższego). Gdy segment go ma, jest kluczem budynku (przed `osm:` i `g:`). W sklejonym budynku
      klucz bierze się z największego segmentu, który ma ten tag, tak samo jak dziś `id`.
-   - `zm:pole`: pole obrysu segmentu w m², liczba całkowita dodatnia ("1180").
-   - `zm:wym`: wymiary obrysu segmentu w metrach, `szer,dl` ("11.6,59.4"; kolejność wymusza min i max).
-   Gdy KAŻDY segment budynku ma poprawne oba tagi `zm:pole` i `zm:wym`, pole budynku to suma `zm:pole`, szerokość i
-   długość idą z `zm:wym` największego segmentu, a szerokość do reguł płyty to mediana szerokości segmentów z `zm:wym`.
-   Segment ocenia się wtedy (typ budynku, zgadywane kondygnacje) po `zm:pole`. Wystarczy, że jeden segment nie ma
+   - `zm:pole`: pole obrysu segmentu w m², liczba całkowita dodatnia do 6 cyfr ("1180").
+   - `zm:wym`: wymiary obrysu segmentu w metrach, `szer,dl` ("11.6,59.4"; kolejność wymusza min i max), każdy do 4 cyfr
+     i 3 miejsc po przecinku.
+   Gdy KAŻDY segment budynku ma poprawne oba tagi `zm:pole` i `zm:wym`, pole budynku to suma `zm:pole`, szerokość to
+   mediana szerokości segmentów z `zm:wym` (ta sama idzie do reguł płyty), a długość to suma długości z `zm:wym`: tak
+   samo jak z obrysu rząd sklejonych segmentów ma długość rzędu. Suma przecenia długość obrysu w literę L (tagi nie
+   mówią o kątach), a to wpływa tylko na regułę płyty 5 kondygnacji i na klatki pojedynczego bloku (sklejony ma klatki
+   z liczby segmentów). Segment ocenia się wtedy (typ budynku, zgadywane kondygnacje) po `zm:pole`. Wystarczy, że jeden segment nie ma
    któregoś z tagów albo ma go zepsutego, a pole i wymiary całego budynku idą z obrysu jak dotąd: z tagów segmentów nie
    da się złożyć obrysu całości, a mieszanie źródeł dałoby niespójny budynek. Środek (`lat`, `lon`, a z nich rejon)
    zawsze idzie z obrysu. Dema nie mają tagów `zm:*`, więc ich wynik się nie zmienia. Tag `zm:bud` (klucz budynku
@@ -195,11 +198,12 @@ interface Segment extends Obiekt {
   poziomy: number;
 }
 
-const WZOR_POLA_TAGU = /^\d{1,9}$/;
-const WZOR_WYMIARU_TAGU = /^(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)$/;
+/** Granice cyfr chronią przed liczbami nieskończonymi: pole do 999 999 m², wymiar do 9999,999 m. */
+const WZOR_POLA_TAGU = /^\d{1,6}$/;
+const WZOR_WYMIARU_TAGU = /^(\d{1,4}(?:\.\d{1,3})?),(\d{1,4}(?:\.\d{1,3})?)$/;
 
 /** Pole i wymiary z tagów `zm:pole` ("1180") i `zm:wym` ("szer,dl" w metrach). Brak któregokolwiek albo zły zapis
-    (ułamek, minus, zero, inna liczba pól) daje `undefined`, a segment liczy się wtedy z obrysu. */
+    (ułamek, minus, zero, inna liczba pól, za wiele cyfr) daje `undefined`, a segment liczy się wtedy z obrysu. */
 function kanonZTagow(t: Readonly<Record<string, string>>): Kanon | undefined {
   const poleTag = t['zm:pole'];
   const wymTag = t['zm:wym'];
@@ -209,6 +213,7 @@ function kanonZTagow(t: Readonly<Record<string, string>>): Kanon | undefined {
   const poleM2 = Number(poleTag);
   const a = Number(wym[1]);
   const b = Number(wym[2]);
+  if (!(Number.isFinite(poleM2) && Number.isFinite(a) && Number.isFinite(b))) return undefined;
   if (poleM2 <= 0 || a <= 0 || b <= 0) return undefined;
   return { pole: poleM2, szerokosc: Math.min(a, b), dlugosc: Math.max(a, b) };
 }
@@ -340,6 +345,17 @@ function najwiekszy(
   return wynik;
 }
 
+const tysieczne = (v: number): number => Math.round(v * 1000) / 1000;
+
+/** Wymiary budynku z `zm:wym` wszystkich jego segmentów: szerokość to mediana szerokości, długość to suma długości
+    (pojedynczy segment: jego własne wymiary). */
+function wymiaryZTagow(kanony: readonly Kanon[]): { szerokosc: number; dlugosc: number } {
+  return {
+    szerokosc: tysieczne(mediana(kanony.map((x) => x.szerokosc))),
+    dlugosc: tysieczne(kanony.reduce((suma, x) => suma + x.dlugosc, 0)),
+  };
+}
+
 /** Budynek z mapy razem z numerami jego segmentów w `geo.b`. */
 export interface BudynekZCzlonkami {
   budynek: Budynek;
@@ -354,7 +370,8 @@ export interface BudynekZCzlonkami {
     pojedynczy blok ma `max(1, round(długość / 20))` klatek, a dom jedną. Klucz to `zm:klucz` największego segmentu,
     który go ma, a bez niego `osm:<id>`, gdy mapa niesie tag `id` (największy segment), inaczej
     `g:<szerokość>,<długość>,<pole>` ze środka obrysu w stopniach z 5 miejscami. Pole i wymiary idą z tagów `zm:pole`
-    i `zm:wym`, gdy mają je wszystkie segmenty budynku (nagłówek pliku). Klucz `g:…` jest stały w obrębie jednego
+    i `zm:wym`, gdy mają je wszystkie segmenty budynku (pole i długość to sumy, szerokość to mediana szerokości
+    segmentów; nagłówek pliku). Klucz `g:…` jest stały w obrębie jednego
     wczytania mapy, ale nie między adresami; `osm:<id>` jest stały, choć pole może drgnąć; `zm:klucz` z `zm:pole`
     i `zm:wym` jest stały także z pola i wymiarów. */
 export function budynkiZCzlonkami(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): BudynekZCzlonkami[] {
@@ -375,21 +392,17 @@ export function budynkiZCzlonkami(geo: Geo, g: TabeleGminy | null, k: TabeleKraj
   const uzyte = new Set<string>();
   for (const grupa of czlonkowie.values()) {
     // tagi zm:pole i zm:wym liczą się tylko, gdy ma je każdy segment; inaczej cały budynek idzie z obrysu
-    const zTagow = grupa.every((s) => s.kanon !== undefined);
+    const kanony = grupa.flatMap((s) => (s.kanon ? [s.kanon] : []));
+    const zTagow = kanony.length === grupa.length;
     const poleSegmentu = (s: Segment): number => (zTagow && s.kanon ? s.kanon.pole : s.pole);
-    const najwiekszySegment = zTagow ? najwiekszy(grupa, () => true, poleSegmentu) : undefined;
     const ob: Pierscienie = grupa.flatMap((s) => s.ob);
     const sumaPol = grupa.reduce((suma, s) => suma + poleSegmentu(s), 0);
     const [cx, cy] = srodek(ob);
     const lat = zaokr5(lat0 - cy / ky);
     const lon = zaokr5(lon0 + cx / kx);
-    const wymiary = najwiekszySegment?.kanon
-      ? { szerokosc: najwiekszySegment.kanon.szerokosc, dlugosc: najwiekszySegment.kanon.dlugosc }
-      : najmniejszyProstokat(ob);
+    const wymiary = zTagow ? wymiaryZTagow(kanony) : najmniejszyProstokat(ob);
     const szerokoscSegmentu =
-      grupa.length > 1
-        ? mediana(grupa.map((x) => (zTagow && x.kanon ? x.kanon.szerokosc : najmniejszyProstokat(x.ob).szerokosc)))
-        : wymiary.szerokosc;
+      grupa.length > 1 && !zTagow ? mediana(grupa.map((x) => najmniejszyProstokat(x.ob).szerokosc)) : wymiary.szerokosc;
     const typ = grupa[0].typ;
     const poleBudynku = Math.round(sumaPol);
 
