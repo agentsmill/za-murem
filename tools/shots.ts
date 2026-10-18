@@ -195,6 +195,33 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // zwykły start bez ?stado: do 19:30 szwendacze z pasa przy siatce ściągają się pod nią
+    name: 'zombie-wieczor',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const info = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        for (let k = 0; k < 3600; k++) sim.step();
+        const w = sim.w;
+        const near = (p: { x: number; y: number }) =>
+          w.fence.tiles.some((t) => Math.hypot((t % w.size) + 0.5 - p.x, Math.floor(t / w.size) + 0.5 - p.y) <= 12);
+        const z = st.pawns.filter((p) => p.kind === 'zombie');
+        const at = z.filter(near);
+        if (at.length)
+          zm.setCam(at.reduce((a, p) => a + p.x, 0) / at.length - 4, at.reduce((a, p) => a + p.y, 0) / at.length, 1.2);
+        return { all: z.length, near: at.length };
+      });
+      console.log(`  szwendaczy: ${info.all}, do 12 m od siatki: ${info.near}`);
+      if (info.near < 4) throw new Error('szwendacze nie ściągają się pod siatkę');
+      await waitIdle(page);
+      await page.waitForTimeout(350);
+    },
+  },
+  {
     name: 'zombie-noc',
     query: '',
     run: async (page, base) => zombieNight(page, base),

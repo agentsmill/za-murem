@@ -744,9 +744,9 @@ export class GameView {
       sp.zIndex = pose.z ?? y;
       // pod dachem nie widać nikogo; w przekroju tak
       sp.visible = this.cutOn || !this.underRoof(x, y);
-      // obcych widać tylko w świetle: w półmroku sam ciemny zarys, w ciemności nic
+      // obcych widać tylko w świetle: w półmroku sam ciemny zarys, w ciemności nic (szwendacza ciemny zarys)
       if (STRANGERS.has(p.kind)) {
-        const vis = strangerVisibility(this.darkness, lightAt(x, y - 0.5, lights, time, this.insideFn));
+        const vis = strangerVisibility(this.darkness, lightAt(x, y - 0.5, lights, time, this.insideFn), p.kind);
         sp.visible &&= vis > 0.08;
         sp.alpha = Math.min(1, vis * 1.6);
         const v = Math.min(1, vis * 1.4);
