@@ -36,7 +36,7 @@ import {
 } from './gov/zarzad.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
-import { nazwaDoOkolicy, zbiorImion } from './mieszkancy/kronika.ts';
+import { nazwaDoOkolicyZDanych } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { GraSieciowa } from './net/gra.ts';
@@ -453,8 +453,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
   // okolica dla zarządu: punkty z `geo` (metry od adresu bez obrotu świata, w przeciwieństwie do `world.pois`). Nazwa
   // z osobą albo adresem odpada (pusta), bo filtr zamieniłby ją na polski opis kategorii, który wszedłby do angielskich
-  // tekstów celu; bez tabel imion (dane === null) wszystkie nazwy puste, bo filtr nie rozpozna wtedy właściciela
-  const nazwaOkolicy = nazwaDoOkolicy(dane ? zbiorImion(dane.imiona) : null);
+  // tekstów celu; bez tabel imion (dane === null) albo poza gminami z tabelami (szablon krajowy, np. adres poza Polską)
+  // wszystkie nazwy puste, bo filtr nie rozpozna wtedy właściciela
+  const nazwaOkolicy = nazwaDoOkolicyZDanych(dane);
   okolica = opcjaMiasto ? miejscaZPoi(geo.poi, nazwaOkolicy) : [];
   // mapa miasta: ten sam filtr nazw dla miejsc z doczytanych kafelków (RODO); bez położenia (proc) nie ma miasta
   mapaMiasta =
