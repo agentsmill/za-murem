@@ -32,7 +32,7 @@ Kierunek na później, Mateusz: „później ma wjechać więcej sci-fi, to w ko
 - Dwie pierwsze ery z 0.3 (11 technologii) działają naprawdę: każda daje budowlę albo odczuwalną premię w tym, co gra już ma.
 - Ukończone badanie widać od razu: karta „Odkrycie”, nowa budowla ze znaczkiem NOWE w menu budowy.
 - Książki z przeszukiwania podnoszą wiedzę osady, jak w 0.3.
-- Gra bez pracowni biegnie jak dziś (ten sam skrót stanu w botach).
+- Gra bez pracowni i bez znalezionych książek biegnie jak dziś (ten sam skrót stanu w botach).
 
 ## Nie-cele
 
@@ -82,10 +82,12 @@ Naraz trwa jedno badanie, jak w 0.3. Zmiana badania nie kasuje postępu poprzedn
 ## Tempo (moje, liczby do strojenia botem)
 
 - Postęp na godzinę gry na jedną siedzącą osobę = `TEMPO_BAZOWE · (0,7 + 0,15 · umiejętność w dziedzinie badania) · cechy`. Cechy z 0.3: pracowity ×1,1, leniwy ×0,9, Mistrz Excela ×1,05. Krzywa umiejętności jest ta sama co w projekcie pracy ludzi (`tempoPracy`), żeby zawód działał wszędzie tak samo.
-- Koszt technologii to koszt z 0.3 (12–35 w erach 1–2) w tych samych jednostkach. `TEMPO_BAZOWE` dobiera bot tak, żeby:
-  - pierwsza technologia (koszt 12) z jedną osobą bez umiejętności zajęła około pół doby pracy, czyli 5–7 godzin gry;
-  - do początku zimy (dzień 11) gracz, który stawia pracownię drugiego albo trzeciego dnia i trzyma przy stole jedną, dwie osoby za dnia, miał 4–6 technologii;
-  - cała era 2 była w zasięgu w połowie zimy, a nie przed nią.
+- Koszt technologii to koszt z 0.3 (12–35 w erach 1–2) razy mnożnik ery `KOSZT_ERY[era]` (moje, po pytaniu recenzenta), żeby późniejsze ery były droższe bez ruszania liczb z 0.3.
+- Wzorcem jest prawdziwa gra, czyli z mieszkańcami z adresu (moje, po pytaniu recenzenta): `src/main.ts` wczytuje ich przy każdym starcie z mapy, a większość lokatorów ma fach, więc dwa miejsca przy stole bywają zajęte przez lokatorów przez cały dzień. Bot z badaniami chodzi z `--mieszkancy`. `TEMPO_BAZOWE` i `KOSZT_ERY` dobiera bot tak, żeby:
+  - pierwsza technologia była gotowa w pierwszej dobie po postawieniu pracowni przy typowej obsadzie (to, co lokatorzy zrobią sami, plus jedna osoba zarządu przez kilka godzin);
+  - do początku zimy (dzień 11) gracz, który stawia pracownię drugiego albo trzeciego dnia, miał 4–6 technologii;
+  - cała era 2 była w zasięgu w połowie zimy (dzień 15–16), a nie przed nią.
+- Gra bez mieszkańców z adresu bada wolniej, bo siada tylko zarząd. To jest przyjęty koszt: taka gra zdarza się tylko przy błędzie wczytania tabel. Po scaleniu pracy ludzi zarząd bada też sam z tabeli Pracy, więc tempo trzeba będzie zmierzyć jeszcze raz (zapis w dzienniku przy scaleniu).
 - Postęp liczy symulacja w stałym kroku, w tickach pracy, bez losowania.
 
 ## Tablica badań (przyjęte: wariant C ze szkiców)
@@ -117,6 +119,8 @@ Szkice z rozmowy: `.superpowers/brainstorm/23560-1792364926/content/ekran-badan-
 - Książki liczą się do wiedzy zawsze, ale tablicę widać dopiero z pracownią. Półka w pracowni pokazuje, ile ich jest (moje).
 - Jedno źródło prawdy o książkach (moje): właścicielem jest symulacja (nowe opcjonalne pole stanu). Zarząd czyta je przez `govInput()` (jego `know()` w wydarzeniach liczy wtedy książki z symulacji), a wydarzenie „książki” dodaje je przez `GovEffects` i `applyGov()`. Pole `GovState.books` zostaje w typie dla starych zapisów: przy pierwszym kroku zarządu jego zawartość przechodzi do symulacji, a dalej pole jest puste. Wersja stanu zarządu się nie zmienia.
 - `EventHost.tech` zaczyna odpowiadać według `techDone` z symulacji (przez `govInput()`), więc wydarzenia 0.3 zależne od technologii mogą wypaść, kiedy technologia jest zbadana (moje).
+- Wiedza osady to jedna funkcja dla tablicy i dla zarządu. `know()` w wydarzeniach zarządu liczy więc od teraz także lokatorów i książki z symulacji. W grze z mieszkańcami część wydarzeń 0.3 z progiem wiedzy (lodówka z Elektryką 2, fachowiec) zachowa się inaczej niż dziś, nawet bez pracowni. To jest zamierzone: jedna wiedza, ta sama na tablicy i w wydarzeniach (moje).
+- Książki powstają także bez pracowni (z przeszukania i z wydarzenia), więc przebieg, w którym pojawi się książka, ma inny skrót stanu niż dziś. Bramka „ten sam skrót” dotyczy przebiegów bez książek i bez pracowni; każdą zmianę skrótu w botach budujący wyjaśnia w dzienniku (które pole i od którego dnia) (moje, po pytaniu recenzenta).
 
 ## Technologie ery 1 i 2 (przyjęte, przeróbki moje)
 
@@ -124,17 +128,34 @@ Nazwy, poziomy, koszty i wymagania z 0.3 bez zmian. „Działanie” to opis do 
 
 | id | nazwa | dziedzina, poziom, koszt | wymaga | rodzaj | działanie w nowej grze |
 |---|---|---|---|---|---|
-| t_kozy | Kozy w mieszkaniach | Ciepło 1, 14 | — | budowla | Koza z beczki do postawienia w pokoju naszego mieszkania, przy oknie (rura przez okno). Grzeje pokój jak koza w kuchni i tak samo pali drewno. |
+| t_kozy | Kozy w mieszkaniach | Ciepło 1, 14 | — | budowla | Koza z beczki do postawienia w pokoju naszego mieszkania, przy oknie (rura przez okno). Grzeje pokój jak koza w kuchni i tak samo pali drewno. Zarząd dokłada do niej sam (niżej, „Dokładanie”). |
 | t_okna | Folia i koce w oknach | Budowa 1, 12 | — | premia | +3°C w pomieszczeniach naszych mieszkań, za darmo. |
 | t_konserwy | Słoiki i suszarnie | Uprawa 1, 12 | — | premia | +20% plonu ogródków, szklarni i pieczarkarni. |
 | t_zielarstwo | Zielarstwo z działek | Medycyna 1, 12 | — | premia | Ogródek przy plonie daje czasem leki (moje: 1 lek z szansą 1/3, z ziarna ogródka i plonu). |
-| t_wieza | Wieże z rusztowań | Budowa 1, 15 | — | budowla | Wieża na podwórku. Warta na wieży płoszy szabrowników z dalszej odległości i dalej widzi w ciemności; w trybie zombie broń z wieży sięga dalej (moje: zasięg ×1,5). |
+| t_wieza | Wieże z rusztowań | Budowa 1, 15 | — | budowla | Wieża na podwórku i nowy posterunek „Wieża” na karcie nocy (niżej, „Wieża”). |
 | t_spawanie | Spawanie z akumulatorów | Budowa 2, 25 | t_okna | premia | Warsztat robi części 1,5× szybciej. |
 | t_barykady | Barykady z wraków | Budowa 2, 22 | t_wieza | budowla | Barykada na odcinku siatki, mocniejsza od zasieków. Koszt głównie w złomie, bo dziś złomu jest za dużo (moje: 16 złomu i 2 deski). |
-| t_wezel | Rozruch węzła cieplnego | Ciepło 2, 35 | t_kozy | budowla | Węzła i piwnic w grze nie ma, więc (moje): kocioł na klatce siedziby (w domu w przedpokoju). Grzeje naraz wszystkie nasze mieszkania, ale pali dużo drewna. |
+| t_wezel | Rozruch węzła cieplnego | Ciepło 2, 35 | t_kozy | budowla | Węzła i piwnic w grze nie ma, więc (moje): kocioł na klatce siedziby (w domu w przedpokoju). Grzeje naraz wszystkie nasze mieszkania, ale pali dużo drewna. Zarząd dokłada do niego sam. |
 | t_szklarnia | Szklarnie z folii | Uprawa 2, 30 | t_konserwy | budowla | Szklarnia na podwórku: jak ogródek, ale zimą rodzi jak jesienią. |
 | t_grzyby | Pieczarki w piwnicach | Uprawa 2, 25 | t_konserwy | budowla | Piwnic nie ma, więc (moje): pieczarkarnia w łazience naszego mieszkania. Mniejszy plon niż ogródek, ale równy przez cały rok. |
 | t_ambu | Ambulatorium polowe | Medycyna 2, 30 | t_zielarstwo | premia | Zdrowie wraca 1,6× szybciej (rany po walce, wychłodzenie, głód). |
+
+### Wieża (moje, po pytaniu recenzenta)
+
+W zwykłej grze napad rozstrzyga zarząd (`decideRaid` oddaje wynik, a liczy go `src/gov/noc.ts`: `defenseAt`, `guardValue` z posterunków), więc zasięg lampy w symulacji nic by nie zmienił. Dlatego wieża to nowy posterunek na karcie nocy:
+- „Warta na wieży” (`warta:wieza`, obok bramy, dziur, siatki i dyżuru przy kozie), dostępna, gdy wieża stoi. Kto tam stoi, widzi całe podwórko: do obrony każdego innego posterunku dochodzi połowa jego wartości warty (`guardValue`). Karta nocy pokazuje to jak inne posterunki, z wpływem na szansę napadu.
+- Pionek wartownika stoi nocą na wieży (widać go na mapie).
+- Bez zarządu (testy, boty bez zarządu): wartownik na wieży płoszy z zasięgiem lampy ×1,5.
+- Tryb zombie: wartownik na wieży z bronią dystansową (kusza, rewolwer, strzelba) strzela z zasięgiem ×1,5 do szwendaczy pod siatką. Z dzidą nie sięga siatki, więc karta mówi, że na wieżę trzeba broni dystansowej.
+
+### Dokładanie do nowych źródeł ciepła (moje, po pytaniu recenzenta)
+
+Bez dokładania koza w pokoju i kocioł nic by nie dawały nocą. Dziś zarząd sam dokłada tylko do kozy zarządu (`startRefuel` bierze `this.koza()`).
+- `startRefuel` wybiera spośród wszystkich palenisk w naszych mieszkaniach (koza zarządu, nowe kozy, kocioł) to, któremu zostało najmniej ognia, z kozą zarządu przy remisie. Zmiana jest w wyborze celu w `startRefuel`, a nie w `think()`, więc nie gryzie się z projektem pracy ludzi, który owija dokładanie w rodzaj „Ogień”.
+- Dyżur przy kozie na karcie nocy (`warta:koza`) dokłada do wszystkich palenisk w siedzibie, a wyliczenie drewna na noc (`nightWood` w `src/gov/noc.ts`) liczy każde palenisko, kocioł jako kilka koz (liczba budującego).
+- To zmienia bilans drewna w pierwszej zimie, więc bot z badaniami mierzy drewno i temperatury z kozami i kotłem.
+
+### Nowe budowle
 
 Nowe budowle razem z pracownią: 7, więc menu budowy rośnie z 6 do 13. Budowle z technologii mają `tech` w `BuildDef`; dla kotła i pieczarkarni dochodzą nowe miejsca `BuildPlace` (klatka albo przedpokój domu, łazienka). Koszty, rozmiary i czasy pracy nowych budowli dobiera budujący w skali istniejących (warsztat 20 desek i 10 złomu, ogródek 14 desek) i stroi botem.
 
@@ -169,6 +190,7 @@ Premie i budowle działają tylko po zbadaniu, więc gra bez badań ma te same l
 - Ta gałąź wystawia: w `sim.ts` metodę `startResearch(p): boolean` (szuka wolnego miejsca w pracowni i zaczyna pracę badania), a w module badań czyste `badaniaDom(st): Dom | null` (dziedzina bieżącego badania) i `badaniaWidoczne(st): boolean` (jest pracownia albo badanie). Kto scala drugi, podpina je w wpis „Badania”.
 - Krzywa umiejętności `0,7 + 0,15 · poziom` jest u mnie kopią `tempoPracy` z projektu pracy. Przy scaleniu kopia ustępuje oryginałowi. Cechy nakładam tylko w badaniach, raz.
 - Ta gałąź nie rusza `think()` zarządu. Zarząd bada na polecenie, lokatorzy przez zaczep w planie dnia. W `sim.ts` obie gałęzie dopisują po wpisie do `JobKind`, unii poleceń i konstruktora `Sim`.
+- Jedyna zmiana w zachowaniu bezczynnego zarządu to wybór paleniska w `startRefuel` (sekcja „Dokładanie”). Rodzaj „Ogień” z projektu pracy ludzi woła `startRefuel`, więc dostaje nowe paleniska bez zmian po swojej stronie.
 
 ## Szczyt drzewka (kierunek, nie w tym projekcie)
 
@@ -192,8 +214,9 @@ Testy w Node (nowe pliki w `tests/unit/`), każdy sprawdzony celowo wprowadzonym
 - menu budowy: kłódki z nazwami badań, NOWE po odkryciu.
 
 Boty:
-- `npm run bot` i `npm run bot:zombie` bez badań: te same skróty co przed zmianą.
-- Nowa polityka bota z badaniami (flaga albo osobny skrypt): stawia pracownię drugiego dnia, wybiera najtańszą dostępną technologię, sadza jedną osobę za dnia. Wynik do dziennika: ile technologii w dniu 11 i 20, którego dnia każda, zgony i jedzenie w pierwszej zimie z badaniami i bez.
+- `npm run bot` i `npm run bot:zombie` bez badań: te same skróty co przed zmianą, poza przebiegami, w których pojawi się książka albo wiedza lokatorów zmieni wydarzenie zarządu; każda zmiana skrótu wyjaśniona w dzienniku.
+- Nowa polityka bota z badaniami (flaga albo osobny skrypt, z `--mieszkancy`): stawia pracownię drugiego dnia, wybiera najtańszą dostępną technologię, sadza jedną osobę zarządu za dnia, a lokatorzy siadają sami. Wynik do dziennika: ile technologii w dniu 11 i 16, którego dnia każda, zgony, jedzenie, drewno i temperatury w pierwszej zimie z badaniami i bez. Ten sam pomiar bez `--mieszkancy` dla porównania.
+- Bot warty: noc z wartownikiem na wieży i bez, na trzech demach; zmiana szansy i wyniku napadu.
 
 Zrzuty (`npm run shots`, obejrzane w Chromium): tablica z kartkami we wszystkich stanach na komputerze i telefonie, po polsku i po angielsku; karta Odkrycie; pracownia na mapie z osobą przy stole; menu budowy z kłódkami i znaczkiem NOWE; każda z 6 nowych budowli na mapie. Wydajność: `npm run perf` bez regresji.
 
@@ -209,7 +232,14 @@ Bramka: testy, Biome na `src tests tools index.html`, build, boty, zrzuty i wyda
 
 ## Decyzje
 
-(Uzupełniane po pytaniach recenzenta i odpowiedziach integratora.)
+Po przeglądzie projektu przez recenzenta w roli budującego (19.10.2026) rozstrzygnąłem cztery pytania sam i wysłałem je nocnemu integratorowi z rekomendacją i kosztem pomyłki. Jeśli integrator zdecyduje inaczej, wpis tutaj i w sekcji, której dotyczy, zmienia się na „(integrator)”.
+
+1. Wzorcem tempa jest gra z mieszkańcami z adresu, a tempo i mnożnik kosztu ery stroi bot z `--mieszkancy` (sekcja „Tempo”). Koszt pomyłki: tylko liczby, a gra bez mieszkańców bada wolniej.
+2. Wieża to posterunek na karcie nocy, który dokłada połowę warty do każdego innego posterunku (sekcja „Wieża”). Koszt pomyłki: średni, bo rusza kartę nocy i `src/gov/noc.ts`; bierna premia byłaby mniejszą zmianą, ale bez decyzji „kto idzie na wieżę”.
+3. Zarząd sam dokłada do wszystkich palenisk, a dyżur przy kozie i drewno na noc liczą każde (sekcja „Dokładanie”). Koszt pomyłki: bilans drewna pierwszej zimy, mierzony botem.
+4. Skrót stanu może się zmienić, kiedy pojawi się książka albo wiedza lokatorów zmieni wydarzenie; każda zmiana wyjaśniona w dzienniku (sekcja „Książki”). Koszt pomyłki: tylko bramka botów.
+
+Wcześniejsze rozstrzygnięcia integratora: technologia końcowa, odczyt `badania` dla zarządu, zakładka „Cuda”, brak leku i bakteriofaga w drzewie (sekcja „Dane”).
 
 ## Zostaje budującemu
 
