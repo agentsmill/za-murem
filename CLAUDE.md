@@ -55,7 +55,7 @@ npm run dev          # serwer deweloperski, http://localhost:5173 (?demo=przymor
 npm test             # testy jednostkowe (Vitest), m.in. porównanie z oryginałem 0.3 w node:vm
 npm test -- tests/unit/sim.test.ts        # jeden plik
 npm test -- zarzad -t "ten sam przebieg"  # fragment ścieżki pliku i nazwy testu
-npx biome check src tests tools index.html  # lint zamiast npm run lint (niżej); z --write poprawia i formatuje
+npx biome check src tests tools server index.html  # lint zamiast npm run lint (niżej); z --write poprawia i formatuje
 npm run build        # typy (tsc z TypeScript 7) + build do dist/ (z dist/v03/)
 npm run bot          # nowa symulacja 45 dni bez przeglądarki [-- ziarno [dni [tłum]]]
 npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce]]
@@ -65,6 +65,7 @@ npm run perf         # klatki ze 150 pionkami [-- pionki [tempo 1-4]] [--no-work
 npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
 node tools/trzy-noce.ts        # trzy pierwsze noce zarządu na atrapie symulacji [ziarno] [--n liczba_ziaren]
 node tools/arkusz-wnetrza.ts   # arkusz grafiki zastępczej do shots/ (podobnie arkusz-wraki.ts)
+ZM_BAZA=./za-murem.db ZM_CIASTECZKO_SECURE=0 node server/main.ts  # serwer gry sieciowej na :8787 (server/README.md)
 ```
 
 - `npm run lint` (`biome check .`) pada w tym katalogu, bo Biome trafia na `biome.json` z drzew sesji w `.claude/worktrees/*`. Lokalnie Biome na katalogach jak wyżej; CI na czystym checkoucie puszcza `npm run lint`.
@@ -80,6 +81,8 @@ Symulacja (`src/sim/`): `createSim(world, seed, opts)` zwraca `SimState`, zwykł
 Zarząd (`src/gov/`: karta nocy, uchwały, zaufanie i wkurzenie, wydarzenia) nie importuje `src/sim`. Most to `src/sim/gov.ts`: `govInput()` buduje `GovInput` (odczyt w kształcie `snapshot()` z `src/sim/snapshot.ts`), `govUpdate()` oddaje `GovEffects`, a `applyGov()` stosuje je w symulacji. Zarząd ma własny stan JSON z własnym ziarnem i liczy się co sekundę przy ekranie (bez pauzy i bez otwartego okna), a nie co tick: karta nocy wypada o 20:00 czasu gry, ale tempo wydarzeń i bramki etapów mierzy się w minutach przy ekranie. `pending()` mówi, które okno czeka: karta nocy, uchwała, wydarzenie albo raport.
 
 Rysowanie (`src/render/`) tylko czyta stan. `GameView` w PixiJS 8 trzyma kawałki mapy 32×32 m w dwóch poziomach (32 i 8 px na metr), a rysuje je pula workerów na OffscreenCanvas (`chunks.ts`, `chunkWorker.ts`) albo główny wątek przy `worker=0`. PixiJS importują tylko `view.ts` i warstwy `*Layer.ts`; reszta (`chunks.ts`, `game.ts`, `section.ts`, `light.ts`, grafika zastępcza w `render/art/`) nie zależy od PixiJS i ma testy w Node. Noc to mapa światła mnożona przez obraz, przekrój to wnętrze zamiast dachu przy zbliżeniu.
+
+Gra sieciowa (projekt `docs/superpowers/specs/2026-10-18-multiplayer-design.md`, etap 1: gra jeszcze tego nie woła): `server/` to osobny serwer Node 24 bez zależności z npm (`node:http`, `node:sqlite`) z kontami, zajętymi klatkami i zapisem w chmurze, `src/net/protokol.ts` to typy wspólne z klientem `src/net/api.ts`. Klucze budynków i klatek wspólne dla graczy liczy `src/world/klucze.ts` z tagów `zm:klucz` i `zm:os`, które `toGeoT` i `toGeo` dopisują z dokładnego obrysu w pikselach kafelków; demo i stare zapisy ich nie mają. Zajęte klatki mają wchodzić do symulacji tylko jako wejście startu albo polecenie w kolejce, nigdy z sieci w środku kroku.
 
 `src/main.ts` spina całość: ekran startowy, pętla z akumulatorem stałego kroku (najwyżej 40 kroków na klatkę), krok zarządu co sekundę przy ekranie, zapis co godzinę gry do localStorage (`src/ui/zapis.ts`). Wystawia też `window.zm` dla Playwright: `ready`, `sim`, `gov`, `view`, `setCam`, `idle`, `govTick` i `ff(minuty)`, które przewija grę i staje na pierwszej decyzji zarządu. Na tej furtce stoją zrzuty i pomiary. `src/ui/` to DOM nad płótnem, `src/content/` to treść 0.3 przeniesiona bez zmiany liczb i tekstów, `src/core/rng.ts` to mulberry32 jak w 0.3 plus `hashString` do skrótów stanu.
 
