@@ -4617,11 +4617,16 @@ export class Sim {
     return modeOf(this.st) === 'zombie' && isFirearm(w);
   }
 
+  /** broń tak, jak sięga sama z siebie (warta, pilnowanie naporu): w trybie zombie broń palna nie przez siatkę */
+  private selfReach(w: Weapon): Weapon {
+    return this.holdFire(w) ? { ...w, fence: false } : w;
+  }
+
   /** warta na posterunku: najbliższy wróg w zasięgu broni (w trybie zombie z bronią palną tylko po swojej stronie) */
   private guardStrike(p: Pawn): void {
     if (this.st.tick < (p.cd ?? 0)) return;
     const w = this.armed(p);
-    const reach = this.holdFire(w) ? { ...w, fence: false } : w;
+    const reach = this.selfReach(w);
     let best: Pawn | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.pawns) {
@@ -5288,7 +5293,7 @@ export class Sim {
     const hot = this.hotTile(p);
     if (hot < 0) return;
     const w = this.armed(p);
-    const reach = this.holdFire(w) ? { ...w, fence: false } : w;
+    const reach = this.selfReach(w);
     for (const z of this.st.pawns)
       if (z.kind === 'zombie' && z.job?.phase === 2 && z.job.target === hot && this.canHit(p, z, reach)) return;
     let stand = this.standBy(p, [hot], 1);
