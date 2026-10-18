@@ -43,6 +43,8 @@ Repo: github.com/agentsmill/za-murem (publiczne), strona: agentsmill.github.io/z
 
 Wersja 0.4 (Vite 8, TypeScript 7, PixiJS 8, Vitest, Playwright, Biome) jest na `main` i na Pages od 17.10.2026. Wersja 0.3 (vanilla JS bez bundlera: `index.html`, `style.css`, `js/*.js`, `data/sample.js`) leży w `public/v03/`, a Vite kopiuje `public/` do `dist/`, więc po buildzie działa pod `/v03/`. Surowe dane Przymorza z Overpass są w `tests/fixtures/overpass/`. `tools/simtest.js` nigdy nie trafił do repo; wzorzec balansu odtwarza `npm run bot:v03`.
 
+Pełna gra po nocy z 17 na 18.10.2026 to gałąź `pelna-gra`: `main`, tryb zombie, fala 1 M2, mieszkańcy z adresu, własna drużyna i gra z sąsiadami za `?siec=1`. Jest na origin, ale nie na `main`. Stoi na serwerze Hetznera `za-murem` (kontekst `phpbotbot` w `hcloud`, adres `hcloud --context phpbotbot server ip za-murem`, gra pod `<ip z kreskami>.sslip.io`): Caddy z HTTPS i serwer gry sieciowej w Dockerze według `deploy/hetzner/`.
+
 Praca idzie na gałęziach tematycznych, często w kilku równoległych sesjach w `.claude/worktrees/`, rozdzielonych po plikach (podział i kontrakty spisuje dokument etapu, jak `docs/M1-wycinek.md`). Co leży na której gałęzi i co czeka na OK Mateusza: `docs/POSTEP.md`, sekcje „Następne” i „Decyzje”. `main` ma być zawsze grywalny, PR-y do `main` scala Mateusz.
 
 CI (`.github/workflows/ci.yml`, Node 24) puszcza lint, testy i build na każdym pushu poza `main` i na PR-ach. Push na `main` buduje i wdraża Pages (`pages.yml`), czyli od razu idzie na żywo.
@@ -68,6 +70,7 @@ npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
 node tools/trzy-noce.ts        # trzy pierwsze noce zarządu na atrapie symulacji [ziarno] [--n liczba_ziaren]
 node tools/arkusz-wnetrza.ts   # arkusz grafiki zastępczej do shots/ (podobnie arkusz-wraki.ts)
 ZM_BAZA=./za-murem.db ZM_CIASTECZKO_SECURE=0 node server/main.ts  # serwer gry sieciowej na :8787 (server/README.md)
+ZM_IP=$(hcloud --context phpbotbot server ip za-murem) deploy/hetzner/wdroz.sh  # build i wdrożenie na serwer (gra i /api)
 ```
 
 - `npm run lint` (`biome check .`) pada w tym katalogu, bo Biome trafia na `biome.json` z drzew sesji w `.claude/worktrees/*`. Lokalnie Biome na katalogach jak wyżej; CI na czystym checkoucie puszcza `npm run lint`.

@@ -402,7 +402,14 @@ Serwer: projekt `phpbotbot` w Hetznerze miał jeden serwer `phpbotbot-staging` z
 
 Liczby: testy 1443/1443, Biome, build, `npm run bot` i `npm run bot:zombie` bez błędów, wszystkie zrzuty (147) bez błędów; obejrzane m.in. `zombie-noc`, `zombie-noc-telefon`, `zombie-walka`, `m2-stawianie-telefon`, `start-telefon`, `start-zombie-telefon`, `m1-etykieta-*-telefon`. W przeglądarce na serwerze tryb zombie przeszedł pierwszą noc (stado, warta, wyprawa z miejsca, raport rano) bez błędów w konsoli.
 
-W toku tej nocy: multiplayer, etap 1 (projekt i serwer kont, gałąź `mp-serwer`), własna drużyna zarządu według `docs/superpowers/specs/2026-10-18-druzyna-design.md` (gałąź `druzyna`).
+Później tej nocy doszły do `pelna-gra` (każde z testami, Biome, buildem, botami i zrzutami, potem wdrożone):
+- Własna drużyna zarządu (`druzyna`, agent): panel „Wasz zarząd” na karcie startowej, edytor osoby, losowanie, 97 kawałków historii, `createSim(..., { team })`; bez drużyny boty z tymi samymi skrótami.
+- Gra z sąsiadami, etap 1 (`mp-serwer`, agent): projekt `docs/superpowers/specs/2026-10-18-multiplayer-design.md`, klucze budynków i klatek wspólne dla wszystkich graczy (`src/world/klucze.ts`, tagi `zm:klucz` i `zm:os`), serwer kont w `server/` (Node 24, `node:sqlite`, scrypt, ciasteczko sesji), klient `src/net/`. Przegląd osobnego recenzenta: pięć ważnych błędów, poprawione z testami.
+- Serwer gry sieciowej na Hetznerze: kontener `api` obok Caddy, bez portu na zewnątrz, `/api` przez Caddy (zdrowie 200, konto i klatki bez sesji 401, obce źródło 403). Kont na serwerze publicznym nie zakładałem.
+- Gra z sąsiadami, etap 2 (`mp-gra`, agent), tylko z `?siec=1`: logowanie i konto na karcie startowej, klatka pod adresem wolna albo start bez domu (siedzibą najbliższy wolny budynek, drużyna na ulicy), znaczniki klatek, „Zajmij klatkę” z menu, zapis w chmurze; bez przełącznika gra nie woła `/api` (sprawdzone w przeglądarce na serwerze).
+- Mieszkańcy z adresu, krok 5 (sesja „Generowanie historii postaci w grze”): zarząd i lokatorzy siedziby z generatora, rodzina i historia na karcie osoby, napis o fikcji i atrybucja GUS, PESEL, SGJP, zmiana imienia z odmianą (tylko w przeglądarce, w grze sieciowej wyłączona), puste mieszkania z rokiem i powodem.
+
+Stan końcowy `pelna-gra` (d834753 i dokumenty): testy 1787 (plus 1 oczekiwany błąd), Biome, build, `npm run bot` da4b24e0 i dad44c81, `npm run bot:zombie` 4873d659 i 34dd5c5f, 149 scenariuszy zrzutów bez błędów, wydajność przy 150 pionkach i stadzie 60 kl/s także na telefonie (CPU 4×). Na serwerze demo Przymorza ma zarząd z generatora (monter kóz, murarz, lekarz, ogrodnik z dachu).
 
 Przegląd połączenia M2 z trybem zombie (osobny recenzent, model Opus, skrypty w Node): we wszystkich 41 miejscach konfliktu zostały oba zamiary, ale styk funkcji miał błędy. Poprawione, każde z testem w `tests/unit/styk-m2-zombie.test.ts`, który na kodzie sprzed poprawek padał (8 z 8):
 - Zasieki z M2 w trybie zombie: napór zbijał kafelek pod nimi do zera i robił dziurę, a zasieki zostawały (gracz widział cały drut, szwendacze przechodzili), a ich rozbiórka łatała przerwanie za darmo. Teraz przy zerze zasieki są zniszczone, bez zwrotu materiału.
@@ -505,6 +512,12 @@ Co zostaje:
 - Poza planem kroku 5: stan pustych mieszkań poza siedzibą (inne budynki nie mają wnętrz), mieszkańcy innych klatek jako pionki, cała Polska w tabelach (krok 6), wagi fachów od okolicy (R42).
 
 ## Następne
+
+Rano 18.10.2026, po nocy integracji (dla Mateusza):
+- Zagrać w pełną grę: https://167-233-18-125.sslip.io/ (zwykły tryb i zombie, „Wasz zarząd” na karcie startowej, mieszkańcy z adresu na karcie osoby). Gra z sąsiadami: ten sam adres z `?siec=1`, dwa konta (drugie w oknie prywatnym) na tym samym adresie; drugie ma zacząć bez domu.
+- Decyzja: czy `pelna-gra` ma iść na `main` i Pages (PR przygotuję po OK).
+- Do zakładania kont przez innych potrzebna jest informacja o danych osobowych i administrator danych; do tego czasu gra z sąsiadami zostaje za `?siec=1`. Pozostałe decyzje multiplayera: sekcja „Decyzje do przejrzenia” w projekcie gry sieciowej.
+- Do przeczytania: tabela umiejętności zawodów i kawałki historii drużyny, ton historii, kroniki i fachów mieszkańców oraz lista zakazanych nazwisk.
 
 0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia, a na niej `tryb-zombie-drobne` z drobnymi poprawkami z przeglądu.
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
