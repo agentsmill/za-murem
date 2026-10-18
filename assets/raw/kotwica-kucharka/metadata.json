@@ -1,0 +1,36 @@
+{
+  "group_id": "88869fda-7481-40bc-a37f-0d242b0836e7",
+  "states": [
+    {
+      "character": {
+        "id": "980e1fd9-e766-4b59-88d2-dbcd92e286bb",
+        "name": "Idle",
+        "prompt": "stout Polish cook about 55 years old, short red-dyed hair, white apron over a flowered housecoat and a thick cardigan, slippers, wooden spoon in hand, warm and loud",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T14:59:53.522922+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T15:11:02.601009"
+}

@@ -1,0 +1,36 @@
+{
+  "group_id": "771f5a59-c997-48a0-b752-cdbd2e490b88",
+  "states": [
+    {
+      "character": {
+        "id": "7f52d5c0-ac95-4452-87e1-fd20dea11fc9",
+        "name": "Idle",
+        "prompt": "elderly Polish woman about 70 years old, short grey permed hair, round glasses, long camel wool winter coat with big buttons, burgundy knitted scarf, dark skirt, thick brown tights, sturdy black shoes, slightly hunched, sharp-eyed and bossy",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T14:43:40.074437+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T14:51:47.351211"
+}

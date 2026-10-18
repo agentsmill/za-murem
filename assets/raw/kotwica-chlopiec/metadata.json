@@ -1,0 +1,36 @@
+{
+  "group_id": "8c6f11b2-7551-4580-bef7-765c3d5f323f",
+  "states": [
+    {
+      "character": {
+        "id": "431022d6-02c7-4c82-a649-6cadad7dc7a9",
+        "name": "Idle",
+        "prompt": "Polish boy about 8 years old, messy blond hair, red knitted bobble hat, oversized patched blue winter jacket, grey tracksuit trousers, muddy rubber boots, curious and cheeky",
+        "size": {
+          "width": 36,
+          "height": 36
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T14:59:47.402383+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T15:10:53.198902"
+}

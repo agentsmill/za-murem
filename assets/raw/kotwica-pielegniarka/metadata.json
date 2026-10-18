@@ -1,0 +1,36 @@
+{
+  "group_id": "588831f2-00aa-4c2a-be0c-33563f536452",
+  "states": [
+    {
+      "character": {
+        "id": "016e91c4-023b-4213-ac47-b7333160b020",
+        "name": "Idle",
+        "prompt": "Polish nurse about 40 years old, dark hair in a bun, white medical scrubs under an open grey padded jacket, white clogs, red first aid bag on the shoulder, tired but kind",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T14:59:52.011864+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T15:10:59.358978"
+}
