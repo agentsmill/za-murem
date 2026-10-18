@@ -27,17 +27,20 @@ const dekoduj = async (b: Blob): Promise<Obraz> => {
 };
 
 describe('wczytanie grafiki z PixelLab (src/render/grafika.ts)', () => {
-  it('teren, blok, dach i trzepak z public/assets, bez obsady postaci (czeka na animacje)', async () => {
+  it('teren, blok, dach, trzepak i animacje ludzi z public/assets', async () => {
     const s = serwer();
     const g = await wczytajGrafike({ pobierz: s.pobierz, dekoduj });
     expect(g?.teren?.img.w).toBe(128);
     expect(g?.blok?.srodek[1]).toBe(13);
     expect(g?.dach?.n).toBeGreaterThan(0);
     expect(g?.trzepak?.stopy).toBeGreaterThan(0);
+    expect(g?.ludzie?.img.w).toBe(2048);
+    expect(g?.ludzie?.opis.postacie.length).toBeGreaterThan(0);
     expect(s.adresy.map((u) => u.split('/').pop()).sort()).toEqual([
       'blok.png',
       'dach.png',
       'grafika.json',
+      'ludzie.png',
       'teren.png',
       'trzepak.png',
     ]);
@@ -58,10 +61,15 @@ describe('wczytanie grafiki z PixelLab (src/render/grafika.ts)', () => {
   });
 
   it('bez jednego obrazka ta część jest z kodu, reszta z PixelLab', async () => {
-    const s = serwer({ 'dach.png': new Response('', { status: 404 }), 'trzepak.png': new Response('nie png') });
+    const s = serwer({
+      'dach.png': new Response('', { status: 404 }),
+      'trzepak.png': new Response('nie png'),
+      'ludzie.png': new Response('', { status: 500 }),
+    });
     const g = await wczytajGrafike({ pobierz: s.pobierz, dekoduj });
     expect(g?.dach).toBeNull();
     expect(g?.trzepak).toBeNull();
+    expect(g?.ludzie).toBeNull();
     expect(g?.teren).not.toBeNull();
     expect(g?.blok).not.toBeNull();
   });

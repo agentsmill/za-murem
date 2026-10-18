@@ -11,7 +11,6 @@ import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { stworzSerwer } from '../server/app.ts';
 import type { ZajetaKlatka } from '../src/net/protokol.ts';
-import { frameRect, LIE, LOOKS, POSE_FRAMES, POSES } from '../src/render/art/people.ts';
 import { nazwaBudynkuEn } from '../src/world/classify.en.ts';
 import { klatkiBudynku, kluczBudynku } from '../src/world/klucze.ts';
 import { toGeoT } from '../src/world/mvt.ts';
@@ -30,6 +29,8 @@ interface Shot {
   query: string;
   w?: number;
   h?: number;
+  /** ekran dotykowy także przy szerokim oknie (tablet): pointer coarse i dotyk w Playwright */
+  touch?: boolean;
   /** zamiast samego adresu strony: własny scenariusz */
   run?: (page: Page, base: string) => Promise<void>;
   /** błędy konsoli, których scenariusz się spodziewa (np. 404 tabel zablokowanych przez scenariusz) */
@@ -109,6 +110,69 @@ async function offlineNetwork(page: Page) {
 }
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
+/** zarząd z bronią walczy ze szwendaczami na podwórku; emeryci: cała czwórka zarządu to starsi mężczyźni (jedna postać
+    z PixelLab w czterech wersjach kolorystycznych), żeby w kadrze były postacie z PixelLab z bronią */
+async function zombieWalka(page: Page, base: string, emeryci = false) {
+  await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=11&stado=10&cam=hq,1`);
+  await waitIdle(page);
+  if (emeryci)
+    await page.evaluate(() => {
+      const zm = window.zm!;
+      const st = zm.sim!.st;
+      for (const p of st.pawns) if (p.kind === 'core') Object.assign(st.people[p.person], { f: false, age: 70 });
+      (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+    });
+  // siatka puszcza przy szwendaczach, zarząd z bronią na podwórku walczy
+  const info = await page.evaluate(() => {
+    const sim = window.zm!.sim!;
+    const st = sim.st;
+    const zs = st.pawns.filter((p) => p.kind === 'zombie');
+    const fence = sim.w.fence.tiles;
+    const size = sim.w.size;
+    const z0 = zs[0];
+    const tile = fence.reduce((b, t) =>
+      Math.hypot((t % size) - z0.x, Math.floor(t / size) - z0.y) <
+      Math.hypot((b % size) - z0.x, Math.floor(b / size) - z0.y)
+        ? t
+        : b,
+    );
+    sim.damageFence(tile, 500);
+    const core = st.pawns.filter((p) => p.kind === 'core');
+    core[0].weapon = 'lom';
+    core[1].weapon = 'dzida';
+    // szwendacze wchodzą na podwórko, potem zarząd dostaje rozkaz ataku na najbliższych
+    for (let k = 0; k < 900; k++) sim.step();
+    const yard = new Set(sim.w.fence.yard);
+    const inYard = () =>
+      st.pawns.filter((p) => p.kind === 'zombie' && yard.has(Math.floor(p.y) * size + Math.floor(p.x)));
+    for (const c of core.slice(0, 2)) {
+      const z = inYard().sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
+      if (z) sim.push({ t: 'attack', ids: [c.id], target: z.id });
+    }
+    let fights = 0;
+    for (let k = 0; k < 1600 && fights < 1; k++) {
+      sim.step();
+      if (st.fx?.some((f) => f.t === 'cios' && st.tick - f.tick < 2)) fights++;
+    }
+    const busy = st.pawns.filter((p) => p.job?.t === 'fight');
+    const at = busy.length ? busy : st.pawns.filter((p) => p.kind === 'zombie');
+    const x = at.reduce((a, p) => a + p.x, 0) / at.length;
+    const y = at.reduce((a, p) => a + p.y, 0) / at.length;
+    window.zm!.setCam(x, y, 2.2);
+    return {
+      fights,
+      killed: st.tally?.killed ?? 0,
+      bodies: st.things.filter((t) => t.kind === 'trup' || t.kind === 'zwloki').length,
+      blood: st.things.filter((t) => t.kind === 'krew').length,
+    };
+  });
+  console.log(`  walka: ${JSON.stringify(info)}`);
+  if (!info.fights) throw new Error('nikt nie walczył');
+  await waitIdle(page);
+  // pasek u góry odświeża się co 200 ms
+  await page.waitForTimeout(350);
+}
+
 const SHOTS: Shot[] = [
   // przy zoomie od 0,6 nad siedzibą widać przekrój (wnętrze ze świata) zamiast dachu
   ...DEMOS.flatMap((d) => [
@@ -257,59 +321,12 @@ const SHOTS: Shot[] = [
   {
     name: 'zombie-walka',
     query: '',
-    run: async (page, base) => {
-      await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=11&stado=10&cam=hq,1`);
-      await waitIdle(page);
-      // siatka puszcza przy szwendaczach, zarząd z bronią na podwórku walczy
-      const info = await page.evaluate(() => {
-        const sim = window.zm!.sim!;
-        const st = sim.st;
-        const zs = st.pawns.filter((p) => p.kind === 'zombie');
-        const fence = sim.w.fence.tiles;
-        const size = sim.w.size;
-        const z0 = zs[0];
-        const tile = fence.reduce((b, t) =>
-          Math.hypot((t % size) - z0.x, Math.floor(t / size) - z0.y) <
-          Math.hypot((b % size) - z0.x, Math.floor(b / size) - z0.y)
-            ? t
-            : b,
-        );
-        sim.damageFence(tile, 500);
-        const core = st.pawns.filter((p) => p.kind === 'core');
-        core[0].weapon = 'lom';
-        core[1].weapon = 'dzida';
-        // szwendacze wchodzą na podwórko, potem zarząd dostaje rozkaz ataku na najbliższych
-        for (let k = 0; k < 900; k++) sim.step();
-        const yard = new Set(sim.w.fence.yard);
-        const inYard = () =>
-          st.pawns.filter((p) => p.kind === 'zombie' && yard.has(Math.floor(p.y) * size + Math.floor(p.x)));
-        for (const c of core.slice(0, 2)) {
-          const z = inYard().sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
-          if (z) sim.push({ t: 'attack', ids: [c.id], target: z.id });
-        }
-        let fights = 0;
-        for (let k = 0; k < 1600 && fights < 1; k++) {
-          sim.step();
-          if (st.fx?.some((f) => f.t === 'cios' && st.tick - f.tick < 2)) fights++;
-        }
-        const busy = st.pawns.filter((p) => p.job?.t === 'fight');
-        const at = busy.length ? busy : st.pawns.filter((p) => p.kind === 'zombie');
-        const x = at.reduce((a, p) => a + p.x, 0) / at.length;
-        const y = at.reduce((a, p) => a + p.y, 0) / at.length;
-        window.zm!.setCam(x, y, 2.2);
-        return {
-          fights,
-          killed: st.tally?.killed ?? 0,
-          bodies: st.things.filter((t) => t.kind === 'trup' || t.kind === 'zwloki').length,
-          blood: st.things.filter((t) => t.kind === 'krew').length,
-        };
-      });
-      console.log(`  walka: ${JSON.stringify(info)}`);
-      if (!info.fights) throw new Error('nikt nie walczył');
-      await waitIdle(page);
-      // pasek u góry odświeża się co 200 ms
-      await page.waitForTimeout(350);
-    },
+    run: (page, base) => zombieWalka(page, base),
+  },
+  {
+    name: 'kotwica-walka',
+    query: '',
+    run: (page, base) => zombieWalka(page, base, true),
   },
   {
     name: 'arkusz-walki',
@@ -1887,6 +1904,243 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // zarząd z PixelLab w pozach pracy: czterech starszych mężczyzn gra jedną postać (emeryta) w czterech wersjach
+    // kolorystycznych, na podwórku (rąbie, niesie, wartuje) i w mieszkaniu (śpi, siedzi, dokłada do kozy, gotuje)
+    name: 'kotwica-pozy',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        for (const p of st.pawns) if (p.kind === 'core') Object.assign(st.people[p.person], { f: false, age: 70 });
+        (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+      });
+      await stage(page, 'podworko', 0);
+      await waitIdle(page);
+      await poseCheck(page, ['chop', 'carry', 'guard', 'carry']);
+    },
+  },
+  {
+    name: 'kotwica-pozy-dom',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        for (const p of st.pawns) if (p.kind === 'core') Object.assign(st.people[p.person], { f: false, age: 70 });
+        (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+      });
+      await stage(page, 'dom', 0);
+      await stage(page, 'dom', 1);
+      await waitIdle(page);
+      await poseCheck(page, ['lie', 'sit', 'crouch', 'cook']);
+    },
+  },
+  {
+    // leżenie z PixelLab: jeden z zarządu śpi w łóżku (głowa na poduszce, koc), drugi na podłodze obok, reszta pracuje;
+    // z --kod to samo z kodu, do porównania
+    name: 'kotwica-lezenie-dom',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      await stage(page, 'dom', 0);
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const size = sim.w.size;
+        const core = st.pawns.filter((p) => p.kind === 'core');
+        const lozko = st.things.find((t) => t.kind === 'lozko' || t.kind === 'wersalka')!;
+        const wolny = (x: number, y: number) =>
+          !sim.blocked[y * size + x] && !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+        // wolny kafelek najbliżej łóżka (poza nim), na nim ktoś śpi bez łóżka: na podłodze
+        let najblizszy: [number, number] | null = null;
+        let najblizej = 1e9;
+        for (let dy = -4; dy <= 4; dy++)
+          for (let dx = -4; dx <= 4; dx++) {
+            const x = lozko.x + dx;
+            const y = lozko.y + dy;
+            const d = Math.hypot(dx, dy);
+            // z wolnym otoczeniem 3 × 3, żeby żadna szafa nie zasłaniała leżącego
+            if (d >= 2.5 && d < najblizej && [-1, 0, 1].every((a) => [-1, 0, 1].every((b) => wolny(x + a, y + b)))) {
+              najblizej = d;
+              najblizszy = [x, y];
+            }
+          }
+        const [fx, fy] = najblizszy!;
+        const job = {
+          t: 'sleep',
+          target: -1,
+          tile: fy * size + fx,
+          phase: 1,
+          from: -1,
+          t0: st.tick,
+          until: st.tick + 99999,
+          order: false,
+        };
+        Object.assign(core[1], {
+          x: fx + 0.5,
+          y: fy + 0.5,
+          path: [],
+          pi: 0,
+          dir: 0,
+          job,
+          carry: 0,
+          wait: st.tick + 99999,
+        });
+        // kamera na obu śpiących (łóżko i podłoga), z boku od kozy i kuchni
+        zm.setCam((core[0].x + core[1].x) / 2, (core[0].y + core[1].y) / 2, 3.4);
+      });
+      await waitIdle(page);
+      const rodzaje = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm
+          .sim!.st.pawns.filter((p) => p.kind === 'core')
+          .map((p) => zm.view.poses.get(p.id)!.lie?.kind ?? 'stoi');
+      });
+      console.log(`  leżenie: ${rodzaje.join(', ')}`);
+      if (rodzaje[0] !== 'bed' || rodzaje[1] !== 'floor')
+        throw new Error(`leżenie ${rodzaje.join()} zamiast bed, floor`);
+    },
+  },
+  {
+    // zwłoki z PixelLab w rzędzie co dwa kafelki: osiem postaci (wygląd z gry 0 do 7), głową w cztery strony (strona z
+    // numeru rzeczy), a na końcu zmarły z zarządu w swojej postaci; z --kod to samo z kodu
+    name: 'kotwica-lezenie-zwloki',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      const start = await wolnyRzad(page, 18);
+      if (!start) throw new Error('nie ma wolnego rzędu 18 kafelków na zwłoki');
+      const rzad = await page.evaluate(([x0, y0]) => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        // id podzielne przez 4: rzecz o numerze k leży głową w stronę k & 3
+        for (let k = 0; k < 8; k++)
+          st.things.push({
+            id: 993000 + k,
+            kind: 'zwloki',
+            x: x0 + 2 * k,
+            y: y0,
+            w: 1,
+            h: 1,
+            rot: 0,
+            n: k,
+            fuel: 0,
+            by: -1,
+            owner: -1,
+          });
+        // dziewiąte: zmarły z zarządu (wpis zmarłych z id osoby), więc zwłoki mają tę samą postać co on za życia
+        const p0 = st.pawns.find((p) => p.kind === 'core')!;
+        const dead = st.dead!;
+        dead.push({
+          id: st.people[p0.person].id,
+          name: st.people[p0.person].name,
+          look: p0.look,
+          kind: 'core',
+          tick: st.tick,
+          cause: 'rany',
+        });
+        st.things.push({
+          id: 993008,
+          kind: 'zwloki',
+          x: x0 + 16,
+          y: y0,
+          w: 1,
+          h: 1,
+          rot: 0,
+          n: p0.look,
+          fuel: 0,
+          by: -1,
+          owner: -1,
+          dead: dead.length - 1,
+        });
+        zm.setCam(x0 + 9, y0 + 0.5, 2.2);
+        return 9;
+      }, start);
+      console.log(`  zwłoki: ${rzad}`);
+      await waitIdle(page);
+      // zwłoki członka zarządu mają teksturę postaci, którą ten sam człowiek gra za życia
+      const zgodne = await page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const v = zm.view as unknown as {
+          ludzie: null | {
+            dane: { postacPionka(p: unknown, o: unknown): unknown };
+            lezenie(p: unknown, w: number, o: number, r: string): { tex: unknown } | null;
+          };
+          corpseSprites: Map<number, { texture: unknown }>;
+        };
+        // z --kod (?grafika=kod) warstwy PixelLab nie ma, a zwłoki są z kodu
+        if (!v.ludzie) return true;
+        const p0 = st.pawns.find((p) => p.kind === 'core')!;
+        const tex = v.ludzie.lezenie(v.ludzie.dane.postacPionka(p0, st.people), 0, 993008 & 3, 'floor')!.tex;
+        return v.corpseSprites.get(993008)!.texture === tex;
+      });
+      if (!zgodne) throw new Error('zwłoki członka zarządu nie mają jego postaci');
+    },
+  },
+  {
+    // nakładka broni na klatkach ciosu z PixelLab: czterech z zarządu w rzędzie, każdy w innej klatce walki: zamach kijem
+    // z przodu i z tyłu, dokończenie z boku, pchnięcie dzidą z przodu; z --kod to samo z kodu, do porównania
+    name: 'kotwica-bron-cios',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      const start = await wolnyRzad(page, 12);
+      if (!start) throw new Error('nie ma wolnego rzędu 12 kafelków na walczących');
+      await page.evaluate(([x0, y0]) => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const size = sim.w.size;
+        const core = st.pawns.filter((p) => p.kind === 'core');
+        // bez ruchu i z pracą walki (faza 1): poza ciosu, klatka z czasu od ostatniego ciosu (cd względem ticku)
+        const ustaw = (k: number, x: number, bron: string, dir: number, od: number) => {
+          const p = core[k];
+          const job = {
+            t: 'fight',
+            target: -1,
+            tile: y0 * size + x,
+            phase: 1,
+            from: -1,
+            t0: st.tick,
+            until: st.tick + 99999,
+            order: false,
+          };
+          // od ciosu minęło `od` ticków: klatka 0 przed ciosem (ujemne), 1 tuż po (0 do 3), 2 dokończenie (4 do 9)
+          Object.assign(p, { x: x + 0.5, y: y0 + 0.5, path: [], pi: 0, dir, job, weapon: bron, wait: st.tick + 99999 });
+          p.cd = st.tick + (bron === 'dzida' ? 24 : 22) - od;
+        };
+        ustaw(0, x0 + 1, 'kij', 0, -3);
+        ustaw(1, x0 + 4, 'kij', 1, -3);
+        ustaw(2, x0 + 7, 'kij', 3, 6);
+        ustaw(3, x0 + 10, 'dzida', 0, -3);
+        zm.setCam(x0 + 4, y0 + 0.5, 3.2);
+      }, start);
+      await waitIdle(page);
+      const pozy = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm
+          .sim!.st.pawns.filter((p) => p.kind === 'core')
+          .map((p) => {
+            const pv = zm.view.poses.get(p.id)!;
+            return `${pv.pose}${pv.frame}/${pv.dir}`;
+          });
+      });
+      console.log(`  pozy: ${pozy.join(', ')}`);
+      if (pozy.join() !== 'swing0/0,swing0/1,swing2/3,aim0/0')
+        throw new Error(`pozy ${pozy.join()} zamiast swing0/0, swing0/1, swing2/3, aim0/0`);
+    },
+  },
+  {
     name: 'warta-noc',
     query: '',
     run: async (page, base) => {
@@ -2108,20 +2362,15 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       const r = await page.evaluate(() => {
         const zm = window.zm!;
-        const view = zm.view as unknown as {
-          gameLights: { r: number; inside?: boolean }[];
-          pawnSprites: Map<number, { texture: { frame: { x: number; y: number } } }>;
-        };
+        const view = zm.view as unknown as { gameLights: { r: number; inside?: boolean }[] };
         const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
-        const f = view.pawnSprites.get(p.id)!.texture.frame;
         return {
           lamps: view.gameLights.filter((l) => l.r === 5).length,
           fire: view.gameLights.filter((l) => l.inside).length,
-          x: f.x,
-          y: f.y,
+          pose: zm.view.poses.get(p.id)!.pose,
         };
       });
-      const pose = poseAt(r.x, r.y);
+      const pose = r.pose;
       console.log(`  czuwa przy kozie: poza ${pose}, latarnie ${r.lamps}, ogień kozy ${r.fire}`);
       if (pose !== 'crouch' && pose !== 'walk') throw new Error(`czuwający w pozie ${pose}`);
       if (r.lamps !== 0) throw new Error('czuwający przy kozie ma latarnię');
@@ -3130,16 +3379,11 @@ const SHOTS: Shot[] = [
         for (let k = 0; k < 30; k++) sim.step();
         zm.setCam(g.x + 1, g.y + 0.5, 2.2);
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-        const sprites = (
-          zm.view as unknown as {
-            pawnSprites: Map<number, { visible: boolean; texture: { frame: { x: number; y: number } } }>;
-          }
-        ).pawnSprites;
+        const sprites = (zm.view as unknown as { pawnSprites: Map<number, { visible: boolean }> }).pawnSprites;
         return res.map((p) => {
           const sp = sprites.get(p.id)!;
           return {
-            x: sp.texture.frame.x,
-            y: sp.texture.frame.y,
+            pose: zm.view.poses.get(p.id)!.pose,
             visible: sp.visible,
             moving: p.pi < p.path.length,
             job: p.job?.t ?? '',
@@ -3147,7 +3391,7 @@ const SHOTS: Shot[] = [
         });
       });
       await waitIdle(page);
-      const poses = got.map((g) => poseAt(g.x, g.y));
+      const poses = got.map((g) => g.pose);
       console.log(
         `  przyjęci: ${got.map((g, k) => `${g.job} ${poses[k]}${g.moving ? ' w drodze' : ''}${g.visible ? '' : ' niewidoczny'}`).join(', ')}`,
       );
@@ -3159,66 +3403,301 @@ const SHOTS: Shot[] = [
         throw new Error('przyjęci nie idą jak mieszkańcy');
     },
   },
-  // M2, fala 1: menu budowy z przycisku i klawisza B (kategorie, koszt, czas, działanie, niedostępne z powodem)
+  // M2, fala 1: panel budowy z przycisku i klawisza B (zakładki, miniatury, koszt, czas, działanie, niedostępne z powodem)
   {
     name: 'm2-menu-budowy',
     query: '',
     run: async (page, base) => {
       await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
       await waitIdle(page);
-      const menu = () =>
-        page.evaluate(() => ({
-          open: !document.getElementById('modal')!.hidden,
-          cats: [...document.querySelectorAll('#sheet .bcat-h')].map((h) => h.textContent ?? ''),
-          items: [...document.querySelectorAll('#sheet .build')].map((b) => ({
-            name: b.querySelector('.build-n')?.textContent ?? '',
-            ok: b.classList.contains('ok'),
-            meta: b.querySelector('.build-m')?.textContent ?? '',
-            effect: b.querySelector('.build-d')?.textContent ?? '',
-            button: !!b.querySelector('[data-act="build"]'),
-            why: b.querySelector('.build-why')?.textContent ?? '',
-          })),
-        }));
+      const panel = () =>
+        page.evaluate(() => {
+          const root = document.getElementById('buildPanel')!;
+          return {
+            open: !root.hidden,
+            tabs: [...root.querySelectorAll<HTMLElement>('[data-tab]')].map((t) => t.textContent ?? ''),
+            tiles: [...root.querySelectorAll<HTMLElement>('.tile')].map((t) => ({
+              kind: t.dataset.kind ?? '',
+              png: t.querySelector('img')?.getAttribute('src')?.startsWith('data:image/png') ?? false,
+            })),
+            items: [...root.querySelectorAll<HTMLElement>('.bd')].map((b) => ({
+              kind: b.dataset.kind ?? '',
+              name: b.querySelector('.build-n')?.textContent ?? '',
+              meta: b.querySelector('.build-m')?.textContent ?? '',
+              effect: b.querySelector('.build-d')?.textContent ?? '',
+              button: !!b.querySelector('[data-act="build"]'),
+              why: b.querySelector('.build-why')?.textContent ?? '',
+            })),
+          };
+        });
+      /** szczegóły budowli ze wszystkich zakładek (po kolei klika w zakładki) */
+      const allItems = async () => {
+        const out = new Map<string, Awaited<ReturnType<typeof panel>>['items'][number]>();
+        let tiles = 0;
+        for (const tab of ['dom', 'podworko', 'obwod']) {
+          await page.click(`#buildPanel [data-tab="${tab}"]`);
+          const p = await panel();
+          tiles += p.tiles.filter((t) => t.png).length;
+          for (const it of p.items) out.set(it.kind, it);
+        }
+        await page.click('#buildPanel [data-tab="dom"]');
+        return { items: [...out.values()], tiles };
+      };
       // koszty i czasy z symulacji (stroi je bot), więc porównuję z BUILDS, a nie z liczbami wpisanymi tutaj
       const { BUILDS } = await import('../src/sim/budowle.ts');
       const { costText, workText } = await import('../src/ui/budowa.ts');
-      const check = (m: Awaited<ReturnType<typeof menu>>) => {
-        if (m.cats.join('|') !== 'Pomieszczenie|Podwórko|Obwód') throw new Error(`kategorie: ${m.cats.join(', ')}`);
-        if (m.items.length !== 6) throw new Error(`budowli w menu: ${m.items.length}`);
-        for (const b of m.items) {
+      const check = (items: Awaited<ReturnType<typeof allItems>>['items']) => {
+        if (items.length !== 6) throw new Error(`budowli w panelu: ${items.length}`);
+        for (const b of items) {
           const d = Object.values(BUILDS).find((x) => x.name === b.name);
           if (!d) throw new Error(`nieznana budowla: ${b.name}`);
           if (!b.meta.includes(costText(d.cost)) || !b.meta.includes(workText(d.work)) || !b.effect)
             throw new Error(`${b.name}: koszt, czas albo działanie nie jak w BUILDS (${b.meta})`);
-          if (b.ok !== b.button || (!b.ok && !b.why)) throw new Error(`${b.name}: niedostępna bez powodu`);
+          if (b.button === !!b.why || (!b.button && !b.why))
+            throw new Error(`${b.name}: przycisk i powód razem albo żadne`);
         }
       };
-      // start gry: zapas nie starcza na nic, każda budowla wyszarzona z powodem
+      // start gry: zapas nie starcza na nic, każda budowla z powodem
       await page.click('#btnBuild');
-      await page.waitForSelector('#sheet .bcat');
-      const m0 = await menu();
-      for (const b of m0.items) console.log(`  start, ${b.name}: ${b.ok ? 'można' : b.why} (${b.meta})`);
-      check(m0);
-      if (m0.items.some((b) => b.ok)) throw new Error('na starcie gry coś da się postawić, a koszty są z bota');
+      await page.waitForSelector('#buildPanel .tile');
+      const p0 = await panel();
+      if (p0.tabs.join('|') !== 'Dom|Podwórko|Obwód') throw new Error(`zakładki: ${p0.tabs.join(', ')}`);
+      const a0 = await allItems();
+      for (const b of a0.items) console.log(`  start, ${b.name}: ${b.button ? 'można' : b.why} (${b.meta})`);
+      check(a0.items);
+      if (a0.tiles !== 6) throw new Error(`miniatur png: ${a0.tiles} z 6`);
+      if (a0.items.some((b) => b.button)) throw new Error('na starcie gry coś da się postawić, a koszty są z bota');
+      // mapa pod otwartym panelem jest klikalna: w środku ekranu leży płótno gry, nie panel
+      const under = await page.evaluate(
+        () => !!document.elementFromPoint(innerWidth * 0.4, innerHeight / 2)?.closest('#buildPanel'),
+      );
+      if (under) throw new Error('panel zasłania środek mapy');
       await page.screenshot({ path: path.join(OUT, 'm2-menu-budowy-start.png') });
       await page.keyboard.press('Escape');
-      // zapas dokładnie na warsztat: warsztat i tańsze można, magazyn (więcej desek) dalej z powodem
+      if ((await panel()).open) throw new Error('Esc nie zamknął panelu budowy');
+      // zapas dokładnie na warsztat: warsztat można, magazyn (więcej desek) dalej z powodem
       await stockUp(page, BUILDS.warsztat.cost);
       await page.keyboard.press('b');
-      await page.waitForSelector('#sheet .bcat');
-      const m = await menu();
-      for (const b of m.items) console.log(`  z zapasem na warsztat, ${b.name}: ${b.ok ? 'można' : b.why}`);
-      check(m);
-      const by = (name: string) => m.items.find((b) => b.name === name)!;
-      if (!by(BUILDS.warsztat.name).ok || by(BUILDS.magazyn.name).ok)
+      await page.waitForSelector('#buildPanel .bd[data-kind="warsztat"] [data-act="build"]', { state: 'attached' });
+      const a1 = await allItems();
+      for (const b of a1.items) console.log(`  z zapasem na warsztat, ${b.name}: ${b.button ? 'można' : b.why}`);
+      check(a1.items);
+      const by = (name: string) => a1.items.find((b) => b.name === name)!;
+      if (!by(BUILDS.warsztat.name).button || by(BUILDS.magazyn.name).button)
         throw new Error('przy zapasie na warsztat warsztat niedostępny albo magazyn dostępny');
+      // panel żyje: zapas na magazyn dochodzi przy otwartym panelu bez ponownego otwierania
+      await stockUp(page, BUILDS.magazyn.cost);
+      await page.waitForSelector('#buildPanel .bd[data-kind="magazyn"] [data-act="build"]', { state: 'attached' });
       await page.screenshot({ path: path.join(OUT, 'm2-menu-budowy-okno.png') });
-      await page.keyboard.press('Escape');
-      if ((await menu()).open) throw new Error('Esc nie zamknął menu budowy');
+      await page.click('#buildPanel [data-act="build-close"]');
+      if ((await panel()).open) throw new Error('przycisk ✕ nie zamknął panelu budowy');
+    },
+  },
+  // panel budowy na komputerze: położenie względem zoomu, paska stawiania i celów, panel zostaje otwarty przy
+  // stawianiu (kolejne plany), Esc anuluje plan, drugi Esc zamyka panel, B przełącza, zmiana języka od ręki,
+  // odświeżenie bez zmian stanu nie rusza DOM
+  {
+    name: 'panel-budowy',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      const { BUILDS } = await import('../src/sim/budowle.ts');
+      await stockUp(page, BUILDS.warsztat.cost);
+      const rect = (sel: string) =>
+        page.evaluate((sel) => {
+          const e = document.querySelector<HTMLElement>(sel);
+          if (!e || e.hidden) return null;
+          const r = e.getBoundingClientRect();
+          return { l: r.left, r: r.right, t: r.top, b: r.bottom };
+        }, sel);
+      const open = () => page.evaluate(() => window.zm!.buildPanel().open);
       await page.keyboard.press('b');
-      await page.waitForSelector('#sheet .bcat');
-      await page.click('#sheet [data-act="build-close"]');
-      if ((await menu()).open) throw new Error('przycisk Zamknij nie zamknął menu budowy');
+      await page.waitForSelector('#buildPanel .tile');
+      await page.waitForTimeout(300); // animacja wysuwania
+      const pr = (await rect('#buildPanel'))!;
+      const vw = await page.evaluate(() => innerWidth);
+      if (pr.r > vw + 0.5 || pr.l < vw * 0.6) throw new Error(`panel poza prawą krawędzią: ${JSON.stringify(pr)}`);
+      const zoom = (await rect('.mapctl'))!;
+      if (zoom.r > pr.l) throw new Error('zoom nachodzi na panel');
+      const goals = await rect('#goals');
+      if (goals && goals.r > pr.l) throw new Error('cele nachodzą na panel');
+      // klawisz B przełącza
+      await page.keyboard.press('b');
+      if (await open()) throw new Error('B nie zamknął panelu');
+      await page.keyboard.press('b');
+      if (!(await open())) throw new Error('B nie otworzył panelu');
+      // stawianie: panel zostaje, pasek stawiania obok niego
+      await chooseBuild(page, 'warsztat');
+      const placing = await page.evaluate(() => window.zm!.placing());
+      if (!placing) throw new Error('Postaw nie zaczęło stawiania');
+      if (!(await open())) throw new Error('panel zamknął się po Postaw na komputerze');
+      const bar = (await rect('#placeBar'))!;
+      if (bar.r > pr.l + 0.5) throw new Error(`pasek stawiania nachodzi na panel: ${JSON.stringify(bar)}`);
+      await page.keyboard.press('Escape');
+      if (await page.evaluate(() => window.zm!.placing())) throw new Error('Esc nie anulował planu');
+      if (!(await open())) throw new Error('pierwszy Esc zamknął panel zamiast planu');
+      // B przy stawianiu przełącza panel i nie anuluje planu
+      await chooseBuild(page, 'warsztat');
+      await page.keyboard.press('b');
+      if (await open()) throw new Error('B przy stawianiu nie zamknął panelu');
+      if (!(await page.evaluate(() => window.zm!.placing()))) throw new Error('B zamknął panel i anulował plan');
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('b');
+      await page.keyboard.press('Escape');
+      if (await open()) throw new Error('Esc bez planu nie zamknął panelu');
+      // odświeżanie bez zmian stanu: zero mutacji w panelu przez 60 klatek
+      await page.keyboard.press('b');
+      await page.waitForSelector('#buildPanel .tile');
+      const mutations = await page.evaluate(async () => {
+        let n = 0;
+        const mo = new MutationObserver((l) => {
+          n += l.length;
+        });
+        mo.observe(document.getElementById('buildPanel')!, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          characterData: true,
+        });
+        await new Promise((r) => setTimeout(r, 1200));
+        mo.disconnect();
+        return n;
+      });
+      if (mutations) throw new Error(`panel przebudował się ${mutations} razy bez zmiany stanu`);
+      // fokus na „Postaw” przeżywa odświeżenie po zmianie zapasu (klawiatura)
+      await page.click('#buildPanel [data-tab="dom"]');
+      await page.click('#buildPanel .tile[data-kind="warsztat"]');
+      await page.focus('#buildPanel .bd[data-kind="warsztat"] [data-act="build"]');
+      await stockUp(page, { deski: 10 });
+      await page.waitForTimeout(400);
+      const kept = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.arg ?? '');
+      if (kept !== 'warsztat') throw new Error(`odświeżenie panelu zabrało fokus z „Postaw” (fokus: „${kept}”)`);
+      // zmiana języka przy otwartym panelu (jak w en-budowa-zmiana-jezyka: przycisk języka w oknie)
+      await page.evaluate(() => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.lang = 'en';
+        document.querySelector('#sheet')!.appendChild(b);
+        b.click();
+        b.remove();
+      });
+      await page.waitForTimeout(150);
+      const en = await page.evaluate(() => ({
+        tabs: [...document.querySelectorAll('#buildPanel [data-tab]')].map((t) => t.textContent ?? '').join('|'),
+        kicker: document.querySelector('#buildPanel .bp-kicker')?.textContent ?? '',
+      }));
+      if (en.tabs !== 'Home|Yard|Perimeter' || en.kicker !== 'Build (B)')
+        throw new Error(`panel po zmianie języka: ${en.tabs} / ${en.kicker}`);
+      await page.evaluate(() => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.lang = 'pl';
+        document.querySelector('#sheet')!.appendChild(b);
+        b.click();
+        b.remove();
+      });
+      await page.waitForTimeout(150);
+    },
+  },
+  // panel budowy na telefonie: szuflada od dołu, po „Postaw” schodzi z drogi, a plan zostaje
+  {
+    name: 'panel-budowy-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      const { BUILDS } = await import('../src/sim/budowle.ts');
+      await stockUp(page, BUILDS.warsztat.cost);
+      const geo = () =>
+        page.evaluate(() => {
+          const r = document.getElementById('buildPanel')!.getBoundingClientRect();
+          return {
+            open: window.zm!.buildPanel().open,
+            l: r.left,
+            r: r.right,
+            t: r.top,
+            b: r.bottom,
+            w: innerWidth,
+            h: innerHeight,
+          };
+        });
+      await page.tap('#btnBuild');
+      await page.waitForSelector('#buildPanel .tile');
+      await page.waitForTimeout(300); // animacja wysuwania
+      const g = await geo();
+      if (!g.open || g.l > 1 || g.r < g.w - 1 || g.b < g.h - 60 || g.b > g.h || g.t < g.h * 0.35)
+        throw new Error(`szuflada nie jest u dołu: ${JSON.stringify(g)}`);
+      await chooseBuild(page, 'warsztat', { tap: true });
+      if ((await geo()).open) throw new Error('szuflada nie zeszła po Postaw');
+      if (!(await page.evaluate(() => window.zm!.placing()))) throw new Error('po Postaw nie ma planu');
+      // ponowne otwarcie nie anuluje planu
+      await page.tap('#btnBuild');
+      await page.waitForSelector('#buildPanel .tile');
+      if (!(await page.evaluate(() => window.zm!.placing()))) throw new Error('otwarcie panelu anulowało plan');
+      await page.waitForTimeout(300); // koniec animacji przed zrzutem
+    },
+  },
+  // panel budowy na tablecie (szeroki ekran z dotykiem): z prawej, ale po „Postaw” też schodzi
+  {
+    name: 'panel-budowy-tablet',
+    query: '',
+    w: 1024,
+    h: 768,
+    touch: true,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      if (!(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)))
+        throw new Error('tablet bez pointer: coarse, scenariusz nic nie sprawdza');
+      const { BUILDS } = await import('../src/sim/budowle.ts');
+      await stockUp(page, BUILDS.warsztat.cost);
+      await page.tap('#btnBuild');
+      await page.waitForSelector('#buildPanel .tile');
+      await page.waitForTimeout(300); // animacja wysuwania
+      const r = await page.evaluate(() => {
+        const b = document.getElementById('buildPanel')!.getBoundingClientRect();
+        return { l: b.left, b: b.bottom, w: innerWidth, h: innerHeight };
+      });
+      if (r.l < r.w * 0.6 || r.b > r.h - 5)
+        throw new Error(`panel na tablecie nie jest z prawej: ${JSON.stringify(r)}`);
+      await chooseBuild(page, 'warsztat', { tap: true });
+      if (await page.evaluate(() => window.zm!.buildPanel().open))
+        throw new Error('panel nie zszedł po Postaw na dotyku');
+      await page.tap('#btnBuild');
+      await page.waitForSelector('#buildPanel .tile');
+      await page.waitForTimeout(300); // koniec animacji przed zrzutem
+    },
+  },
+  // widok z kłódkami (?budowa=klodki: magazyn i ogródek czekają na badanie testowe): wyszarzone, z nazwą badania,
+  // bez przycisku „Postaw”
+  {
+    name: 'panel-budowy-klodki',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&budowa=klodki`);
+      await waitIdle(page);
+      await page.keyboard.press('b');
+      await page.waitForSelector('#buildPanel .tile');
+      const dom = await page.evaluate(() => ({
+        lock: [...document.querySelectorAll<HTMLElement>('#buildPanel .tile.lock')].map((t) => t.dataset.kind),
+        why: document.querySelector('#buildPanel .bd[data-kind="magazyn"] .build-why')?.textContent ?? '',
+        button: !!document.querySelector('#buildPanel .bd[data-kind="magazyn"] [data-act="build"]'),
+      }));
+      if (dom.lock.join() !== 'magazyn') throw new Error(`kłódki w Dom: ${dom.lock.join()}`);
+      if (dom.why !== 'Wymaga badania: Badanie testowe' || dom.button)
+        throw new Error(`magazyn: „${dom.why}”, przycisk: ${dom.button}`);
+      await page.click('#buildPanel .tile[data-kind="magazyn"]');
+      await page.click('#buildPanel [data-tab="podworko"]');
+      const yard = await page.evaluate(() =>
+        [...document.querySelectorAll('#buildPanel .tile.lock')].map((t) => (t as HTMLElement).dataset.kind),
+      );
+      if (yard.join() !== 'ogrodek') throw new Error(`kłódki w Podwórku: ${yard.join()}`);
+      await page.click('#buildPanel [data-tab="dom"]');
+      await page.click('#buildPanel .tile[data-kind="magazyn"]');
+      await page.waitForTimeout(300); // koniec animacji przed zrzutem
     },
   },
   // tryb stawiania myszą: duch za kursorem (zielony, gdzie wolno, czerwony z powodem), R obraca, prawy klik
@@ -3232,11 +3711,7 @@ const SHOTS: Shot[] = [
       // zapas na warsztat (koszty z bota są wyższe niż zapas na starcie)
       const { BUILDS } = await import('../src/sim/budowle.ts');
       await stockUp(page, BUILDS.warsztat.cost);
-      const choose = async (kind: string) => {
-        await page.keyboard.press('b');
-        await page.waitForSelector('#sheet .bcat');
-        await page.click(`#sheet [data-act="build"][data-arg="${kind}"]`);
-      };
+      const choose = (kind: string) => chooseBuild(page, kind);
       const state = () =>
         page.evaluate(() => {
           // podgląd z rysowania: co dostał view.setPlacement i czy duch stoi na mapie; duch z DOM to atrapa
@@ -3406,9 +3881,7 @@ const SHOTS: Shot[] = [
       await stockUp(page, BUILDS.zasieki.cost);
       const placing = () => page.evaluate(() => window.zm!.placing());
       const choose = async () => {
-        await page.tap('#btnBuild');
-        await page.waitForSelector('#sheet .bcat');
-        await page.tap('#sheet [data-act="build"][data-arg="zasieki"]');
+        await chooseBuild(page, 'zasieki', { tap: true });
         await page.waitForTimeout(150);
       };
       await choose();
@@ -3758,8 +4231,9 @@ const SHOTS: Shot[] = [
       await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
       await waitIdle(page);
       await page.click('#btnBuild');
-      await page.waitForSelector('#sheet .bcat');
-      const t = await sheetText(page);
+      await page.waitForSelector('#buildPanel .tile');
+      // textContent, bo szczegóły niewybranych budowli są schowane (innerText ich nie widzi)
+      const t = await page.evaluate(() => document.getElementById('buildPanel')!.textContent ?? '');
       console.log(`  menu budowy w domu: ${t.match(/Plan stawia[^.]*\./)?.[0] ?? t.slice(0, 120)}`);
       if (BLOKOWE_UI.test(t)) throw new Error(`menu budowy w domu ze słowem z bloku: ${t.match(BLOKOWE_UI)?.[0]}`);
       if (!t.includes('w domu zmieści się więcej ludzi')) throw new Error('łóżka piętrowe w domu nie mówią o domu');
@@ -4164,6 +4638,55 @@ const SHOTS: Shot[] = [
   // etap 3: plan wspólnego płotu w toku, duch przyszłego obwodu z postępem: z bliska po polsku, z daleka po angielsku
   m2f2PlotDuch('m2f2-plot-duch', 0.62, 'pl'),
   m2f2PlotDuch('en-m2f2-plot-duch', 0.3, 'en'),
+  m2f2('m2f2-plot-pien', 'zielonki', async (page) => {
+    // pień na linii wspólnego płotu po ścięciu staje się siatką (Mateusz: dziura po obu stronach pnia i na nim)
+    const r = await m2f2Open(page, 'Dom nr 8', false);
+    const out = await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const w = sim.w;
+      const size = w.size;
+      const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+      sim.push({ t: 'enclose', ids: [p.id], bid });
+      sim.step();
+      if (!sim.st.plot?.plan) return null;
+      sim.push({ t: 'otocz', ids: [], bid });
+      sim.step();
+      const yard = new Set(w.fence.yard);
+      const line = new Set(w.fence.tiles);
+      const ns = (i: number) => [i - size, i + size, i - 1, i + 1];
+      // drzewo, którego pień domyka nowy obwód: poza podwórkiem, bokiem przy nim, z drugiej strony wolna ulica
+      const k = w.trees.findIndex((t) => {
+        const i = Math.floor(t.y) * size + Math.floor(t.x);
+        return (
+          w.blocked[i] === 1 &&
+          !yard.has(i) &&
+          !line.has(i) &&
+          ns(i).some((n) => yard.has(n)) &&
+          ns(i).some((n) => !yard.has(n) && !line.has(n) && !w.blocked[n])
+        );
+      });
+      if (k < 0) return { k };
+      const t = w.trees[k];
+      const pien = Math.floor(t.y) * size + Math.floor(t.x);
+      sim.push({ t: 'chop', ids: [p.id], tree: k });
+      for (let n = 0; n < 20000 && !sim.st.felled.includes(k); n++) sim.step();
+      zm.setCam(t.x, t.y, 1.6);
+      return {
+        k,
+        sciete: sim.st.felled.includes(k),
+        siatka: w.fence.tiles.includes(pien),
+        blokuje: sim.blocked[pien],
+        pienNaMapie: sim.st.things.some((x) => x.kind === 'pien' && x.y * size + x.x === pien),
+      };
+    }, r.bid);
+    await page.waitForTimeout(300);
+    await waitIdle(page);
+    console.log(`  pień na linii płotu: ${JSON.stringify(out)}`);
+    if (!out || out.k < 0) throw new Error('brak drzewa na linii wspólnego płotu');
+    if (!out.sciete || !out.siatka || out.blokuje !== 1 || out.pienNaMapie)
+      throw new Error('ścięty pień na linii płotu nie stał się siatką');
+  }),
   m2f2('m2f2-plot-deski', 'lanciego', async (page) => {
     // etap 3: na podwórku same deski (złomu brak), więc menu ma tylko płot z desek; potem potwierdzenie, podpowiedź
     // po poleceniu i duch planu na 0%
@@ -4545,9 +5068,7 @@ const SHOTS: Shot[] = [
         await game(page, base);
         const { BUILDS } = await import('../src/sim/budowle.ts');
         await stockUp(page, BUILDS.warsztat.cost);
-        await page.keyboard.press('b');
-        await page.waitForSelector('#sheet .bcat');
-        await page.click('#sheet [data-act="build"][data-arg="warsztat"]');
+        await chooseBuild(page, 'warsztat');
         const [x, y] = await page.evaluate(() => {
           const w = window.zm!.sim!.w;
           const t = w.fence.yard[0];
@@ -5789,6 +6310,33 @@ async function smokeCheck(page: Page, zoom: number, min: number) {
  * (krok 0: niesie drewno do kozy, krok 1: drewno już w kozie) i gotuje; na podwórku rąbie suche drzewo,
  * niesie drewno i wartuje z lampą (praca 'guard' z symulacji).
  */
+/** początek (x, y) wolnego odcinka `dlugosc` kafelków w poziomie najbliżej siedziby (trawa, chodnik, bez rzeczy), albo null */
+async function wolnyRzad(page: Page, dlugosc: number): Promise<[number, number] | null> {
+  return page.evaluate((dlugosc) => {
+    const sim = window.zm!.sim!;
+    const st = sim.st;
+    const size = sim.w.size;
+    const b = sim.w.buildings[sim.w.hq];
+    const cx = Math.round((b.x0 + b.x1) / 2);
+    const cy = Math.round((b.y0 + b.y1) / 2);
+    const wolny = (x: number, y: number) =>
+      !sim.blocked[y * size + x] && !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+    let najlepszy: [number, number] | null = null;
+    let najblizej = 1e9;
+    for (let y = cy - 30; y <= cy + 30; y++)
+      for (let x = cx - 30; x <= cx + 14; x++) {
+        let ok = true;
+        for (let k = 0; k < dlugosc && ok; k++) ok = wolny(x + k, y);
+        const d = Math.hypot(x + dlugosc / 2 - cx, y - cy);
+        if (ok && d < najblizej) {
+          najblizej = d;
+          najlepszy = [x, y];
+        }
+      }
+    return najlepszy;
+  }, dlugosc);
+}
+
 async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
   await page.evaluate(
     ([where, step]) => {
@@ -5869,37 +6417,19 @@ async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 }
 
-/** pozy pionków zarządu po kolei: jaka klatka atlasu jest na sprite'cie (kolumna pozy albo leżenie) */
+/** pozy pionków zarządu po kolei, z ostatniej klatki widoku: nazwa pozy albo leżenie */
 async function poseCheck(page: Page, want: string[]) {
-  const got = await page.evaluate(() => {
+  const names = await page.evaluate(() => {
     const zm = window.zm!;
-    const sprites = (
-      zm.view as unknown as {
-        pawnSprites: Map<number, { texture: { frame: { x: number; y: number; width: number } } }>;
-      }
-    ).pawnSprites;
     return zm
       .sim!.st.pawns.filter((p) => p.kind === 'core')
       .map((p) => {
-        const f = sprites.get(p.id)!.texture.frame;
-        return { x: f.x, y: f.y, w: f.width };
+        const pv = zm.view.poses.get(p.id)!;
+        return pv.lie ? 'lie' : pv.pose;
       });
   });
-  const names = got.map((f) => (f.w === LIE ? 'lie' : poseAt(f.x, f.y)));
   console.log(`  pozy: ${names.join(', ')}`);
   if (names.join() !== want.join()) throw new Error(`pozy ${names.join()} zamiast ${want.join()}`);
-}
-
-/** poza z klatki atlasu ludzi (lewy górny róg klatki) */
-function poseAt(x: number, y: number): string {
-  for (let look = 0; look < LOOKS; look++)
-    for (const pose of POSES)
-      for (let d = 0; d < 4; d++)
-        for (let f = 0; f < POSE_FRAMES[pose]; f++) {
-          const [fx, fy] = frameRect(look, pose, d, f);
-          if (fx === x && fy === y) return pose;
-        }
-  return '?';
 }
 
 /**
@@ -5957,38 +6487,41 @@ async function treeStage(page: Page, zarzad: boolean) {
 
 const dist = process.argv.includes('--dist');
 const filter = process.argv.slice(2).find((a) => !a.startsWith('--'));
+/** --dalej: scenariusz, który padł, dostaje drugą próbę, a przebieg idzie dalej i na końcu wypisuje, co padło */
+const dalej = process.argv.includes('--dalej');
 const s = await openSession({ dist });
-try {
-  for (const shot of SHOTS) {
-    if (filter && !shot.name.includes(filter)) continue;
-    const mobile = (shot.w ?? 1440) < 640;
-    const page = await s.browser.newPage({
-      viewport: { width: shot.w ?? 1440, height: shot.h ?? 900 },
-      isMobile: mobile,
-      hasTouch: mobile,
-      deviceScaleFactor: mobile ? 2 : 1,
-    });
-    // język jak wybór gracza zapisany w pamięci przeglądarki (src/ui/jezyk.ts), przed skryptami strony
-    await page.addInitScript((l) => {
+
+/** jeden scenariusz w nowej stronie; strona zamyka się także po błędzie */
+async function zrzut(shot: Shot): Promise<void> {
+  const mobile = (shot.w ?? 1440) < 640;
+  const page = await s.browser.newPage({
+    viewport: { width: shot.w ?? 1440, height: shot.h ?? 900 },
+    isMobile: mobile,
+    hasTouch: mobile || !!shot.touch,
+    deviceScaleFactor: mobile ? 2 : 1,
+  });
+  // język jak wybór gracza zapisany w pamięci przeglądarki (src/ui/jezyk.ts), przed skryptami strony
+  await page.addInitScript((l) => {
+    try {
+      localStorage.setItem('za-murem-0.4-jezyk', l);
+    } catch {
+      // strona bez pamięci: gra wybierze język domyślny
+    }
+  }, shot.lang ?? 'pl');
+  // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
+  if (KOD)
+    await page.addInitScript(() => {
       try {
-        localStorage.setItem('za-murem-0.4-jezyk', l);
-      } catch {
-        // strona bez pamięci: gra wybierze język domyślny
-      }
-    }, shot.lang ?? 'pl');
-    // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
-    if (KOD)
-      await page.addInitScript(() => {
-        try {
-          const u = new URL(location.href);
-          if (!u.searchParams.has('grafika')) {
-            u.searchParams.set('grafika', 'kod');
-            history.replaceState(null, '', u);
-          }
-        } catch {
-          // strona bez adresu (about:blank, setContent): nic do zmiany
+        const u = new URL(location.href);
+        if (!u.searchParams.has('grafika')) {
+          u.searchParams.set('grafika', 'kod');
+          history.replaceState(null, '', u);
         }
-      });
+      } catch {
+        // strona bez adresu (about:blank, setContent): nic do zmiany
+      }
+    });
+  try {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => {
@@ -6010,10 +6543,51 @@ try {
     // błąd na stronie to nieudany zrzut, także dla CI
     if (errors.length) process.exitCode = 1;
     if (shot === SHOTS[0]) console.log(`  WebGL: ${await webglRenderer(page)}`);
-    await page.close();
+  } finally {
+    await page.close().catch(() => {});
   }
+}
+
+const padly: string[] = [];
+try {
+  for (const shot of SHOTS) {
+    if (filter && !shot.name.includes(filter)) continue;
+    for (let proba = 1; ; proba++) {
+      try {
+        await zrzut(shot);
+        break;
+      } catch (e) {
+        if (!dalej) throw e;
+        const opis = String(e).split('\n')[0];
+        if (proba >= 2) {
+          console.log(`${shot.name}: BŁĄD ${opis}`);
+          padly.push(shot.name);
+          process.exitCode = 1;
+          break;
+        }
+        console.log(`${shot.name}: błąd (${opis}), druga próba`);
+      }
+    }
+  }
+  if (padly.length) console.log(`Padły: ${padly.join(', ')}`);
 } finally {
   await s.close();
+}
+
+/** Wybór budowli w panelu budowy: otwiera panel (klawisz B albo przycisk przy dotyku), jeśli zamknięty, wybiera
+    zakładkę i kafelek, a „Postaw” zaczyna tryb stawiania. */
+async function chooseBuild(page: Page, kind: string, opts: { tap?: boolean } = {}) {
+  const { BUILDS } = await import('../src/sim/budowle.ts');
+  const open = await page.evaluate(() => !document.getElementById('buildPanel')!.hidden);
+  if (!open) {
+    if (opts.tap) await page.tap('#btnBuild');
+    else await page.keyboard.press('b');
+  }
+  await page.waitForSelector('#buildPanel .tile');
+  const click = (sel: string) => (opts.tap ? page.tap(sel) : page.click(sel));
+  await click(`#buildPanel [data-tab="${BUILDS[kind as keyof typeof BUILDS].cat}"]`);
+  await click(`#buildPanel .tile[data-kind="${kind}"]`);
+  await click(`#buildPanel [data-act="build"][data-arg="${kind}"]`);
 }
 
 /** Sterty materiałów na wolnych kafelkach podwórka, od jego końca (po 10, jak w składzie): koszty budowli stroi bot

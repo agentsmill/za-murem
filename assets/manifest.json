@@ -170,6 +170,8 @@
       "id": "kotwica-emeryt",
       "grupa": "kotwica-stylu",
       "co": "emeryt w kurtce, 8 kierunków, stoi",
+      "plec": "m",
+      "wiek": [58, 100],
       "narzedzie": "create_character",
       "prompt": "elderly Polish retiree man about 70 years old, grey hair and grey moustache, grey flat cap, worn brown quilted winter jacket zipped up, dark grey trousers, scuffed brown shoes, slightly hunched, tired but stubborn",
       "parametry": {
@@ -202,12 +204,184 @@
           "uwagi": "z 55 kolorów na 15–20 z palety; tryb v3 nie przyjmuje palety przy zamówieniu"
         }
       ],
-      "uwagi": "płótno 48×48, 47 px wzrostu (ludzie rysowani kodem mają 45 px), stopy w wierszu 46. Kolejne postaci w tym stylu: create_character pro ze style_character_id tej postaci albo v3 z tym samym opisem stylu."
+      "uwagi": "płótno 48×48, 47 px wzrostu (ludzie rysowani kodem mają 45 px), stopy w wierszu 46. Kolejne postaci w tym stylu: create_character pro ze style_character_id tej postaci albo v3 z tym samym opisem stylu.",
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/stanie"]
+        },
+        {
+          "nazwa": "klekanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "crouching",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 5,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/klekanie"]
+        },
+        {
+          "nazwa": "niesienie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/niesienie-px"]
+        },
+        {
+          "nazwa": "rabanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/rabanie-px"]
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/gotowanie-px"]
+        },
+        {
+          "nazwa": "siedzenie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/siedzenie-px"]
+        },
+        {
+          "nazwa": "warta-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/warta-px"]
+        },
+        {
+          "nazwa": "cios",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "cross-punch",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 6,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/cios"]
+        },
+        {
+          "nazwa": "celowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/celowanie-px"]
+        },
+        {
+          "nazwa": "przeszukiwanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/przeszukiwanie-px"]
+        },
+        {
+          "nazwa": "mlotek-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/mlotek-px"]
+        },
+        {
+          "nazwa": "deski-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/deski-px"]
+        },
+        {
+          "nazwa": "zlom-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/zlom-px"]
+        }
+      ],
+      "odrzucone": [
+        {
+          "nazwa": "rabanie",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "v3 z opisu, słabsze od pixminimax"
+        },
+        {
+          "nazwa": "niesienie",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "v3 z opisu, słabsze od pixminimax"
+        },
+        {
+          "nazwa": "siedzenie",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "v3 z opisu, słabsze od pixminimax"
+        },
+        {
+          "nazwa": "drzemka-px",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "pixminimax, nieużywana: drzemka to ostatnia klatka siedzenia"
+        },
+        {
+          "nazwa": "celowanie-px",
+          "kierunki": ["south"],
+          "koszt": 1,
+          "uwagi": "pierwsza próba, celowała w bok na kierunku południowym; zastąpiona wersją z trzema kierunkami"
+        },
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["south", "north", "west"],
+          "koszt": 3,
+          "uwagi": "pierwsza warta: blask lampy rozlany po ubraniu, zachód bez lampy; zastąpiona lampą opuszczoną przy biodrze"
+        }
+      ]
     },
     {
       "id": "kotwica-emerytka",
       "grupa": "kotwica-stylu",
       "co": "emerytka w płaszczu, 8 kierunków, stoi",
+      "plec": "k",
+      "wiek": [52, 100],
       "narzedzie": "create_character",
       "prompt": "elderly Polish woman about 70 years old, short grey permed hair, round glasses, long camel wool winter coat with big buttons, burgundy knitted scarf, dark skirt, thick brown tights, sturdy black shoes, slightly hunched, sharp-eyed and bossy",
       "parametry": {
@@ -239,12 +413,160 @@
           "pliki": ["assets/raw/kotwica-emerytka/paleta"]
         }
       ],
-      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
+      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca",
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/stanie"]
+        },
+        {
+          "nazwa": "klekanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "crouching",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 5,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/klekanie"]
+        },
+        {
+          "nazwa": "niesienie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/niesienie-px"]
+        },
+        {
+          "nazwa": "rabanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/rabanie-px"]
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/gotowanie-px"]
+        },
+        {
+          "nazwa": "siedzenie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/siedzenie-px"]
+        },
+        {
+          "nazwa": "warta-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/warta-px"]
+        },
+        {
+          "nazwa": "cios",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "cross-punch",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 6,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/cios"]
+        },
+        {
+          "nazwa": "celowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/celowanie-px"]
+        },
+        {
+          "nazwa": "przeszukiwanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/przeszukiwanie-px"]
+        },
+        {
+          "nazwa": "mlotek-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/mlotek-px"]
+        },
+        {
+          "nazwa": "deski-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/deski-px"]
+        },
+        {
+          "nazwa": "zlom-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/zlom-px"]
+        }
+      ],
+      "odrzucone": [
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["south", "north", "west"],
+          "koszt": 3,
+          "uwagi": "lampa wyciągnięta przed siebie: na południu blask lampy rozlany po płaszczu"
+        },
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["south", "north", "west"],
+          "koszt": 3,
+          "uwagi": "opis „unlit lantern, no fire, no glow” dał płaszcz w płomieniach na południu"
+        }
+      ]
     },
     {
       "id": "kotwica-zlota-raczka",
       "grupa": "kotwica-stylu",
       "co": "złota rączka w kombinezonie, 8 kierunków, stoi",
+      "plec": "m",
+      "wiek": [16, 57],
       "narzedzie": "create_character",
       "prompt": "Polish handyman about 45 years old, stubble, dark grey knitted beanie, faded navy blue work overalls over a grey hoodie, tool belt with a hammer, heavy brown work boots, broad shoulders, practical and calm",
       "parametry": {
@@ -276,12 +598,154 @@
           "pliki": ["assets/raw/kotwica-zlota-raczka/paleta"]
         }
       ],
-      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
+      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca",
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/stanie"]
+        },
+        {
+          "nazwa": "klekanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "crouching",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 5,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/klekanie"]
+        },
+        {
+          "nazwa": "niesienie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/niesienie-px"]
+        },
+        {
+          "nazwa": "rabanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/rabanie-px"]
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/gotowanie-px"]
+        },
+        {
+          "nazwa": "siedzenie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/siedzenie-px"]
+        },
+        {
+          "nazwa": "warta-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/warta-px"]
+        },
+        {
+          "nazwa": "cios",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "cross-punch",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 6,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/cios"]
+        },
+        {
+          "nazwa": "celowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/celowanie-px"]
+        },
+        {
+          "nazwa": "przeszukiwanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/przeszukiwanie-px"]
+        },
+        {
+          "nazwa": "mlotek-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/mlotek-px"]
+        },
+        {
+          "nazwa": "deski-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/deski-px"]
+        },
+        {
+          "nazwa": "zlom-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/zlom-px"]
+        }
+      ],
+      "odrzucone": [
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["south", "north", "west"],
+          "koszt": 3,
+          "uwagi": "opis „unlit lantern, no fire, no glow”, jak u emerytki; zastąpiona lampą opuszczoną przy biodrze"
+        }
+      ]
     },
     {
       "id": "kotwica-mloda",
       "grupa": "kotwica-stylu",
       "co": "młoda w parce, 8 kierunków, stoi",
+      "plec": "k",
+      "wiek": [16, 51],
       "narzedzie": "create_character",
       "prompt": "young Polish woman about 20 years old, dark brown hair in a ponytail, olive green parka with a fur-trimmed hood down, black jeans, dirty white sneakers, small dark backpack, alert and restless",
       "parametry": {
@@ -313,12 +777,146 @@
           "pliki": ["assets/raw/kotwica-mloda/paleta"]
         }
       ],
-      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca"
+      "uwagi": "te same ustawienia co emeryt 48 px, więc ten sam styl bez wzorca",
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/stanie"]
+        },
+        {
+          "nazwa": "klekanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "crouching",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 5,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/klekanie"]
+        },
+        {
+          "nazwa": "niesienie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/niesienie-px"]
+        },
+        {
+          "nazwa": "rabanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/rabanie-px"]
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/gotowanie-px"]
+        },
+        {
+          "nazwa": "siedzenie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/siedzenie-px"]
+        },
+        {
+          "nazwa": "warta-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/warta-px"]
+        },
+        {
+          "nazwa": "cios",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "cross-punch",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 6,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/cios"]
+        },
+        {
+          "nazwa": "celowanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/celowanie-px"]
+        },
+        {
+          "nazwa": "przeszukiwanie-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/przeszukiwanie-px"]
+        },
+        {
+          "nazwa": "mlotek-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/mlotek-px"]
+        },
+        {
+          "nazwa": "deski-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/deski-px"]
+        },
+        {
+          "nazwa": "zlom-px",
+          "narzedzie": "animate_character",
+          "tryb": "pixminimax",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 4,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/zlom-px"]
+        }
+      ]
     },
     {
       "id": "kotwica-chlopiec",
       "grupa": "kotwica-stylu",
       "co": "chłopiec w czapce z pomponem",
+      "plec": "m",
+      "wiek": [0, 15],
       "narzedzie": "create_character",
       "prompt": "Polish boy about 8 years old, messy blond hair, red knitted bobble hat, oversized patched blue winter jacket, grey tracksuit trousers, muddy rubber boots, curious and cheeky",
       "parametry": {
@@ -345,12 +943,36 @@
           "koszt": 0.1,
           "pliki": ["assets/raw/kotwica-chlopiec/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-chlopiec/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-chlopiec/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-dziewczynka",
       "grupa": "kotwica-stylu",
       "co": "dziewczynka w żółtym płaszczu",
+      "plec": "k",
+      "wiek": [0, 15],
       "narzedzie": "create_character",
       "prompt": "Polish girl about 10 years old, two brown braids, yellow raincoat, purple leggings, worn pink sneakers, small fabric backpack, serious",
       "parametry": {
@@ -377,12 +999,36 @@
           "koszt": 0.1,
           "pliki": ["assets/raw/kotwica-dziewczynka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dziewczynka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dziewczynka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-dresiarz",
       "grupa": "kotwica-stylu",
       "co": "dresiarz w kapturze",
+      "plec": "m",
+      "wiek": [16, 26],
       "narzedzie": "create_character",
       "prompt": "Polish young man about 19 years old, buzz cut, black tracksuit with white side stripes and the hood up, white sneakers, hands in pockets, slouching and cocky",
       "parametry": {
@@ -410,12 +1056,36 @@
           "pliki": ["assets/raw/kotwica-dresiarz/paleta"],
           "uwagi": "koszt całego wywołania zapisany przy pierwszej postaci z paczki"
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dresiarz/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dresiarz/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-pielegniarka",
       "grupa": "kotwica-stylu",
       "co": "pielęgniarka z apteczką",
+      "plec": "k",
+      "wiek": [30, 55],
       "narzedzie": "create_character",
       "prompt": "Polish nurse about 40 years old, dark hair in a bun, white medical scrubs under an open grey padded jacket, white clogs, red first aid bag on the shoulder, tired but kind",
       "parametry": {
@@ -442,12 +1112,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-pielegniarka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-pielegniarka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-pielegniarka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-kucharka",
       "grupa": "kotwica-stylu",
       "co": "kucharka w fartuchu",
+      "plec": "k",
+      "wiek": [45, 65],
       "narzedzie": "create_character",
       "prompt": "stout Polish cook about 55 years old, short red-dyed hair, white apron over a flowered housecoat and a thick cardigan, slippers, wooden spoon in hand, warm and loud",
       "parametry": {
@@ -474,12 +1168,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-kucharka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kucharka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kucharka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-informatyk",
       "grupa": "kotwica-stylu",
       "co": "informatyk z martwym laptopem",
+      "plec": "m",
+      "wiek": [24, 40],
       "narzedzie": "create_character",
       "prompt": "Polish IT specialist about 30 years old, beard, thick black glasses, faded black hoodie, cargo trousers, worn running shoes, a dead laptop under his arm, sleepy",
       "parametry": {
@@ -506,12 +1224,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-informatyk/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-informatyk/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-informatyk/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-prompt-engineer",
       "grupa": "kotwica-stylu",
       "co": "prompt engineer z pękniętym tabletem",
+      "plec": "m",
+      "wiek": [20, 34],
       "narzedzie": "create_character",
       "prompt": "young Polish prompt engineer about 26 years old, styled undercut hair, thin round glasses, beige puffer vest over a black turtleneck, slim chinos, white designer sneakers, holding a cracked tablet, smug",
       "parametry": {
@@ -541,12 +1283,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-prompt-engineer/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-prompt-engineer/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-prompt-engineer/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-doradca-esg",
       "grupa": "kotwica-stylu",
       "co": "doradca ESG z podkładką",
+      "plec": "m",
+      "wiek": [32, 50],
       "narzedzie": "create_character",
       "prompt": "Polish ESG consultant about 40 years old, slicked-back hair, crumpled navy suit with a green leaf pin, loosened tie, muddy leather shoes, clipboard in hand, overly cheerful",
       "parametry": {
@@ -573,12 +1339,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-doradca-esg/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-doradca-esg/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-doradca-esg/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-influencerka",
       "grupa": "kotwica-stylu",
       "co": "influencerka survivalowa",
+      "plec": "k",
+      "wiek": [16, 34],
       "narzedzie": "create_character",
       "prompt": "young Polish survival influencer about 24 years old, long bleached hair, camouflage cap, tactical vest over a pink hoodie, cargo pants, hiking boots, holding a dead phone on a selfie stick",
       "parametry": {
@@ -605,12 +1395,36 @@
           "koszt": 0.1,
           "pliki": ["assets/raw/kotwica-influencerka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-influencerka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-influencerka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-ochroniarz",
       "grupa": "kotwica-stylu",
       "co": "ochroniarz",
+      "plec": "m",
+      "wiek": [35, 60],
       "narzedzie": "create_character",
       "prompt": "big Polish security guard about 50 years old, shaved head, black bomber jacket, black trousers, heavy boots, walkie-talkie on the belt, arms crossed, stern",
       "parametry": {
@@ -637,12 +1451,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-ochroniarz/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-ochroniarz/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-ochroniarz/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-mechanik",
       "grupa": "kotwica-stylu",
       "co": "mechanik z kluczem",
+      "plec": "m",
+      "wiek": [38, 62],
       "narzedzie": "create_character",
       "prompt": "Polish car mechanic about 50 years old, grey moustache, oil-stained dark green work jacket, dark trousers, steel-toe boots, big wrench in hand, rag in the back pocket",
       "parametry": {
@@ -669,12 +1507,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-mechanik/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mechanik/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-mechanik/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-listonoszka",
       "grupa": "kotwica-stylu",
       "co": "listonoszka z torbą",
+      "plec": "k",
+      "wiek": [35, 58],
       "narzedzie": "create_character",
       "prompt": "Polish postwoman about 45 years old, short brown hair, faded blue uniform jacket, big leather mail bag across the body, dark trousers, sensible shoes, brisk",
       "parametry": {
@@ -701,12 +1563,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-listonoszka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-listonoszka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-listonoszka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-budowlaniec",
       "grupa": "kotwica-stylu",
       "co": "budowlaniec w kasku",
+      "plec": "m",
+      "wiek": [25, 48],
       "narzedzie": "create_character",
       "prompt": "Polish construction worker about 35 years old, white hard hat, orange high-visibility vest over a brown fleece, dusty work trousers, heavy boots, strong",
       "parametry": {
@@ -733,12 +1619,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-budowlaniec/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-budowlaniec/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-budowlaniec/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-dzialkowiczka",
       "grupa": "kotwica-stylu",
       "co": "działkowiczka w kapeluszu",
+      "plec": "k",
+      "wiek": [55, 80],
       "narzedzie": "create_character",
       "prompt": "Polish allotment gardener woman about 65 years old, wide straw hat, green quilted vest over a checked shirt, gardening gloves, rubber boots, small trowel in hand, cheerful",
       "parametry": {
@@ -765,12 +1675,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-dzialkowiczka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dzialkowiczka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-dzialkowiczka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-staruszek",
       "grupa": "kotwica-stylu",
       "co": "staruszek z laską",
+      "plec": "m",
+      "wiek": [72, 100],
       "narzedzie": "create_character",
       "prompt": "very old Polish man about 85 years old, grey beret, long dark grey wool coat, knitted scarf, wooden walking cane, hunched, slow and dignified",
       "parametry": {
@@ -797,12 +1731,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-staruszek/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-staruszek/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-staruszek/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-kioskarka",
       "grupa": "kotwica-stylu",
       "co": "kioskarka w swetrze",
+      "plec": "k",
+      "wiek": [45, 68],
       "narzedzie": "create_character",
       "prompt": "Polish kiosk saleswoman about 55 years old, curly dyed burgundy hair, thick knitted cardigan, long brown skirt, fingerless gloves, reading glasses on a chain, gossipy",
       "parametry": {
@@ -829,12 +1787,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-kioskarka/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kioskarka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kioskarka/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-kibic",
       "grupa": "kotwica-stylu",
       "co": "kibic z szalikiem",
+      "plec": "m",
+      "wiek": [18, 38],
       "narzedzie": "create_character",
       "prompt": "Polish football fan about 28 years old, short hair, white and green striped club scarf, dark padded jacket, jeans, sneakers, loud and proud",
       "parametry": {
@@ -861,12 +1843,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-kibic/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kibic/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-kibic/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-lekarz",
       "grupa": "kotwica-stylu",
       "co": "lekarz w kitlu",
+      "plec": "m",
+      "wiek": [48, 72],
       "narzedzie": "create_character",
       "prompt": "Polish doctor about 60 years old, white hair, long white coat over a brown sweater, stethoscope around the neck, dark trousers, leather shoes, calm",
       "parametry": {
@@ -894,12 +1900,36 @@
           "pliki": ["assets/raw/kotwica-lekarz/paleta"],
           "uwagi": "koszt całego wywołania zapisany przy pierwszej postaci z paczki"
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-lekarz/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-lekarz/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-weteran",
       "grupa": "kotwica-stylu",
       "co": "weteran w parce wojskowej",
+      "plec": "m",
+      "wiek": [35, 60],
       "narzedzie": "create_character",
       "prompt": "Polish ex-soldier survivalist about 45 years old, short beard, faded olive military surplus parka, knit cap, cargo trousers, combat boots, backpack with a rolled sleeping mat, watchful",
       "parametry": {
@@ -926,12 +1956,36 @@
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-weteran/paleta"]
         }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-weteran/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-weteran/Idle/animations/stanie"]
+        }
       ]
     },
     {
       "id": "kotwica-matka",
       "grupa": "kotwica-stylu",
       "co": "matka z dzieckiem na ręku",
+      "plec": "k",
+      "wiek": [24, 42],
       "narzedzie": "create_character",
       "prompt": "Polish young mother about 32 years old, brown ponytail, long quilted purple coat, carrying a baby wrapped in a blanket, jeans, ankle boots, determined",
       "parametry": {
@@ -957,6 +2011,28 @@
           "pixellab": "330b97d9-4277-48cf-a8d2-60b75d9a3d35",
           "koszt": 0,
           "pliki": ["assets/raw/kotwica-matka/paleta"]
+        }
+      ],
+      "animacje": [
+        {
+          "nazwa": "chod",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "walking-4-frames",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-matka/Idle/animations/chod"]
+        },
+        {
+          "nazwa": "stanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "breathing-idle",
+          "kierunki": ["south", "north", "west", "east"],
+          "klatek": 4,
+          "koszt": 4,
+          "pliki": ["assets/raw/kotwica-matka/Idle/animations/stanie"]
         }
       ]
     },
@@ -1082,6 +2158,402 @@
       "uwagi": "wzorzec stylu wycięty z wybranego kawałka bloku; pliki nazwane przez PixelLab od pierwszego opisu, numer na końcu to numer wariantu"
     },
     {
+      "id": "budynek-kamienica",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "kamienica miejska, 4 kondygnacje z bramą, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish prewar city tenement house (kamienica), 4 storeys, for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the flat roof seen from above fills the top part, the short front facade strip with four storeys (about 13 px per storey) sits at the bottom. The architecture must be completely different from the reference panel block. Facade: cream and ochre plaster, cracked and peeling, horizontal stone cornices between the storeys, tall narrow windows with white frames and stone lintels, small wrought-iron balconies on the second floor, rusticated ground floor with a large arched wooden gate (brama) in the middle. Roof: dark tar paper with two brick chimneys, small dormer windows along the edge, moss and rain stains. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "32279297-f99c-4315-a3d7-ac6322205992",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-kamienica/0.png",
+        "assets/raw/budynek-kamienica/1.png",
+        "assets/raw/budynek-kamienica/2.png",
+        "assets/raw/budynek-kamienica/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-kamienica/0.png",
+      "warianty": {
+        "0": "tynk kremowy i ochra, balkony kute, brama z łukiem, kominy i lukarny, mech na dachu (zatwierdzony)",
+        "1": "szara ruina z odpadającym tynkiem, zabite okna, dziury w dachu",
+        "2": "jak 0, oplątana bluszczem",
+        "3": "szara ruina z zabitymi oknami i połataną papą"
+      },
+      "uwagi": "Piętro ma około 19 px, więcej niż 13 px bloku, co pasuje do kamienicy (wyższe kondygnacje). Okna co około 25 px. Tło płaskie #b7b2a6, do wycięcia przez wypełnienie od brzegu. Dach z kominami i lukarnami."
+    },
+    {
+      "id": "budynek-ratusz",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "ratusz z wieżą zegarową i iglicą, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish town hall (ratusz) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey). The architecture must be completely different from the reference panel block. A symmetrical stately building of red brick and pale stone trim, three storeys, tall arched windows, a central entrance with steps and a stone portal, a steep red clay tile roof with the ridge running left to right, and a tall central clock tower with a pointed copper spire rising from the middle of the roof. Moss, cracks, a few broken windows. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "0e181fb9-07f9-464c-9148-8a193a0dd73b",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-ratusz/0.png",
+        "assets/raw/budynek-ratusz/1.png",
+        "assets/raw/budynek-ratusz/2.png",
+        "assets/raw/budynek-ratusz/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-ratusz/0.png",
+      "warianty": {
+        "0": "ceglany, wieża z zegarem i iglicą, trzy kondygnacje, bluszcz przy lewym skrzydle (zatwierdzony)",
+        "1": "dziury w dachu i na wieży, gruz przy schodach",
+        "2": "mech na dachu, parter zabity deskami",
+        "3": "gęsto zarośnięty bluszczem"
+      },
+      "uwagi": "Płótno 160×160, wieża sięga górnej krawędzi. Wieża jest elementem jednorazowym na osi środkowej, skrzydła do powtarzania. Tło płaskie #6f6b64."
+    },
+    {
+      "id": "budynek-muzeum",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "muzeum klasycystyczne z portykiem, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered neoclassical museum for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey). The architecture must be completely different from the reference panel block. Pale grey-beige stone facade, two storeys with tall rectangular windows, a projecting portico with four columns and a triangular pediment over wide stone steps at the centre, a low hipped copper roof with a glass skylight. Cracked stone, moss on the steps, a toppled banner. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "e5a747d8-addf-490e-8cc1-48751e35d4f7",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-muzeum/0.png",
+        "assets/raw/budynek-muzeum/1.png",
+        "assets/raw/budynek-muzeum/2.png",
+        "assets/raw/budynek-muzeum/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-muzeum/1.png",
+      "warianty": {
+        "0": "porośnięte bluszczem, zwalony sztandar",
+        "1": "czysty portyk z czterema kolumnami i frontonem, dziura w prawym skrzydle i w świetliku, sztandar na schodach (zatwierdzony)",
+        "2": "bluszcz po lewej, okna zabite deskami",
+        "3": "rdza i pęknięcia, sztandar"
+      },
+      "uwagi": "Portyk wystaje przed fasadę i zasłania pas dachu, więc to element środkowy, skrzydła boczne do powtarzania. Tło płaskie #9a958a."
+    },
+    {
+      "id": "budynek-kosciol",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "kościół ceglany z wieżą i iglicą, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish brick church (kościół) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey). The architecture must be completely different from the reference panel block. Dark red brick walls with pale stone trim, a steep gable roof of red clay tiles with the ridge running left to right, a tall square front tower with a pointed spire and a cross rising from the middle, a pointed-arch wooden double door in a stone portal with steps, tall pointed-arch windows with stained glass, buttresses along the wall. Moss, cracks, missing roof tiles. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "7c0122f8-c897-4246-8a18-54ec41e86bc5",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-kosciol/0.png",
+        "assets/raw/budynek-kosciol/1.png",
+        "assets/raw/budynek-kosciol/2.png",
+        "assets/raw/budynek-kosciol/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-kosciol/2.png",
+      "warianty": {
+        "0": "rzut izometryczny (sześcian), nie pasuje do rzutu gry",
+        "1": "rzut izometryczny, zrujnowany, nie pasuje do rzutu gry",
+        "2": "rzut jak w grze: dach z góry, wieża z iglicą i krzyżem, portal ze schodami, uszkodzone dachówki (zatwierdzony)",
+        "3": "rzut jak w grze, gęsto zarośnięty bluszczem"
+      },
+      "uwagi": "Dwie z czterech propozycji wyszły izometrycznie, więc przy kolejnych zamówieniach dopisać do opisu wyraźnie „seen straight from the front, roof from above”. Tło płaskie #7c796f, wokół kościoła cień z gruzu (ciemna plama)."
+    },
+    {
+      "id": "budynek-urzad",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "budynek publiczny z lat 60. (urząd, poczta, biblioteka), 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered 1960s Polish public building (urząd, post office or library) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the flat roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey). The architecture must be completely different from the reference panel block. Three storeys of beige and grey plaster with long horizontal ribbon windows, a glass entrance with a concrete canopy and a few steps at the centre, a flagpole and a faded sign board over the door, flat roof with ventilation boxes and an antenna. Water stains, peeling plaster, a few boarded windows. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "702adcae-e02c-4be3-bede-94a18a1105fa",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-urzad/0.png",
+        "assets/raw/budynek-urzad/1.png",
+        "assets/raw/budynek-urzad/2.png",
+        "assets/raw/budynek-urzad/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-urzad/0.png",
+      "warianty": {
+        "0": "okna pasmowe, szklane wejście z daszkiem i schodami, anteny i wentylatory na dachu (zatwierdzony)",
+        "1": "plamy i zacieki, szyld nad wejściem po lewej, nadbudówka na dachu",
+        "2": "okna zabite deskami, śmieci na dachu",
+        "3": "okna pasmowe, bluszcz, wejście po prawej"
+      },
+      "uwagi": "Fasada z oknami pasmowymi ma około 18 px na kondygnację. Tło płaskie #b7b2a6."
+    },
+    {
+      "id": "budynek-teatr",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "teatr neoklasycystyczny z kopułą, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish city theatre (teatr) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. A stately neo-baroque theatre of pale plaster and stone: a tall central section with a grand arched portal, three tall arched windows above it and a sculpted pediment, a low green copper dome rising from the roof behind the pediment, lower symmetrical side wings with tall windows, wide stone entrance steps with two iron lamp posts, a faded poster board beside the door. Moss, cracks, a few broken windows. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "554a2f39-af2e-4ad3-bcb2-9e0c731e1a1f",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-teatr/0.png",
+        "assets/raw/budynek-teatr/1.png",
+        "assets/raw/budynek-teatr/2.png",
+        "assets/raw/budynek-teatr/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-teatr/0.png",
+      "warianty": {
+        "0": "biały tynk, kopuła z miedzi, napis TEATR na tympanonie, lampy przy schodach (zatwierdzony)",
+        "1": "zarośnięty bluszczem, pnącza na kopule",
+        "2": "ozdobny szary tynk, trawa na schodach",
+        "3": "ruina: zabite wejścia, dziura w kopule"
+      },
+      "uwagi": "Płótno 160×160. Kopuła i fronton to element jednorazowy na osi środkowej, skrzydła do powtarzania. Tło płaskie #7c796f, poza dachem ciemna papa."
+    },
+    {
+      "id": "budynek-hotel",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "hotel z lat 70., 5 kondygnacji z balkonami, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered 1970s Polish state hotel (Orbis style) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the flat roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. Five storeys of concrete and dark glass with a regular grid of small balconies, a wide ground floor lobby with a big glass front and a flat concrete canopy over the entrance with steps, a faded rooftop sign with large letters, a flagpole, a flat roof with machine rooms and a satellite dish. Water stains, broken windows, peeling paint. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "b3a50263-8282-4af1-8551-b11645fdea88",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-hotel/0.png",
+        "assets/raw/budynek-hotel/1.png",
+        "assets/raw/budynek-hotel/2.png",
+        "assets/raw/budynek-hotel/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-hotel/2.png",
+      "warianty": {
+        "0": "napis ORBIS na dachu (prawdziwa marka, unikać)",
+        "1": "napis ORBIS, osmolony",
+        "2": "napis HOTEL, pięć pięter z balkonami, bluszcz (zatwierdzony, bez marki)",
+        "3": "napis ORB…, gęsty bluszcz"
+      },
+      "uwagi": "Opis zawierał „Orbis style”, więc model wpisał prawdziwą markę na dach. W opisach nie podawać nazw marek. Tło nie jest płaskie (ciemna ulica ze spękaniami i zielenią), więc kadr zostaje prostokątem. Piętro około 13 px."
+    },
+    {
+      "id": "budynek-dworzec",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "dworzec kolejowy z zegarem i wiatą peronową, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish railway station building (dworzec) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. A long symmetrical station of brick and plaster: a taller central hall with three tall arched windows and a big clock under a gable, lower wings with arched windows and doors, a hipped roof of red clay tiles with the ridge running left to right, a wooden platform canopy with iron columns along the front edge, a faded station name board, a few benches. Moss, cracks, missing tiles. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "9b03818a-14ca-4fd3-93c5-3f0809d53751",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-dworzec/0.png",
+        "assets/raw/budynek-dworzec/1.png",
+        "assets/raw/budynek-dworzec/2.png",
+        "assets/raw/budynek-dworzec/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-dworzec/1.png",
+      "warianty": {
+        "0": "ceglany, bluszcz, dziura w dachu po prawej",
+        "1": "szary tynk w hali środkowej, zegar, wiata na kolumnach (zatwierdzony)",
+        "2": "okna zabite deskami, wiata zniszczona",
+        "3": "bluszcz, ławki pod wiatą"
+      },
+      "uwagi": "Napisy na tablicach nieczytelne. Hala środkowa to element jednorazowy, skrzydła do powtarzania. Tło płaskie #9a958a."
+    },
+    {
+      "id": "budynek-willa",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "willa międzywojenna z gankiem i ogrodem, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered interwar Polish suburban villa (willa) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. Two storeys plus attic, pale yellow plaster walls with a corner bay window, a columned terrace with a balcony above it, a steep hipped roof of red clay tiles with dormer windows and a brick chimney, a low stone fence with a gate in front, an overgrown garden. Moss, cracks, missing tiles, a few boarded windows. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "86f663fb-b521-471c-beea-e26d56fe8d7f",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-willa/0.png",
+        "assets/raw/budynek-willa/1.png",
+        "assets/raw/budynek-willa/2.png",
+        "assets/raw/budynek-willa/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-willa/0.png",
+      "warianty": {
+        "0": "żółty tynk, ganek z kolumnami, lukarna, płot (zatwierdzona)",
+        "1": "dziury w dachu",
+        "2": "okna zabite deskami",
+        "3": "najgęściej zarośnięta"
+      },
+      "uwagi": "Cztery bliskie warianty tej samej willi. Ogród, ścieżka i płot są w kadrze, więc to prostokątny kawałek z własnym podłożem (bez płaskiego tła do wycięcia). Dach obejmuje większość kadru, fasada dwóch pięter ma około 26 px."
+    },
+    {
+      "id": "budynek-remiza",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "remiza OSP z wieżą do suszenia węży, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish volunteer fire station (remiza OSP) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. A small red brick building with two big red wooden garage doors with arched tops, a tall square hose-drying tower on one side with a small pyramid roof and a siren, a hipped roof of red clay tiles with the ridge running left to right, a faded sign board over the doors, a hose reel by the wall. Moss, peeling paint, rust. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "2819ebc5-5d54-462e-84b6-fe6d4773a260",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-remiza/0.png",
+        "assets/raw/budynek-remiza/1.png",
+        "assets/raw/budynek-remiza/2.png",
+        "assets/raw/budynek-remiza/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-remiza/0.png",
+      "warianty": {
+        "0": "cegła, dwie bramy garażowe, napis OSP, wieża z syreną po prawej, dziura w dachu (zatwierdzona)",
+        "1": "ruina, wieża po lewej, otwarta brama",
+        "2": "zarośnięta bluszczem, napis REMIZA",
+        "3": "ruina, wieża po lewej, otwarty dach"
+      },
+      "uwagi": "Wieża stoi z boku (po prawej albo po lewej), więc wersje 1 i 3 to odbicia układu. Budynek ma własny brązowy plac w kadrze. Tło płaskie #9a958a poza placem."
+    },
+    {
+      "id": "budynek-szpital",
+      "grupa": "budynki-publiczne-i-zabytkowe",
+      "co": "szpital z lat 70., 5 kondygnacji z czerwonym krzyżem, 4 kandydaci",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered 1970s Polish hospital block (szpital) for a top-down colony game in 2051 after the collapse. From the reference keep ONLY the projection, scale and pixel-art style: the flat roof is seen from above in the upper part, the short front facade strip below it (about 13 px per storey), seen straight from the front, NOT isometric. The architecture must be completely different from the reference panel block. Five storeys of pale plaster and grey concrete with long horizontal ribbon windows and small balconies, a covered ambulance entrance with a flat canopy and a ramp at the centre, a big red cross sign on the facade, a flat roof with ventilation boxes and a water tank. Water stains, boarded windows, moss. No frame around it.",
+      "parametry": {
+        "width": 160,
+        "height": 160,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/raw/kotwica-blok/1.png",
+            "usage": "projection, scale and pixel art style only: roof from above on top, short facade strip with 13 px per storey at the bottom, weathered look; do not copy the architecture"
+          }
+        ]
+      },
+      "pixellab": "332cc8b2-308a-42d8-9880-c2fcef291c75",
+      "koszt": 15,
+      "status": "zatwierdzony",
+      "pliki": [
+        "assets/raw/budynek-szpital/0.png",
+        "assets/raw/budynek-szpital/1.png",
+        "assets/raw/budynek-szpital/2.png",
+        "assets/raw/budynek-szpital/3.png"
+      ],
+      "wybrany": "assets/raw/budynek-szpital/0.png",
+      "warianty": {
+        "0": "pięć pięter, czerwony krzyż i napis SZPITAL, wejście z daszkiem dla karetek (zatwierdzony)",
+        "1": "zawalona prawa strona, woda i gruz przed wejściem",
+        "2": "okna zabite deskami, wrak karetki przed wejściem",
+        "3": "poplamiony, zbiorniki na dachu"
+      },
+      "uwagi": "Napis SZPITAL czytelny. Trawa, gruz i woda przy budynku są w kadrze (bez płaskiego tła). Piętro około 14 px."
+    },
+    {
       "id": "kotwica-blok-moduly",
       "grupa": "kotwica-stylu",
       "co": "zestaw modułów budynku (podłoga, ściany, narożniki, drzwi, dach) z wielkiej płyty",
@@ -1142,6 +2614,181 @@
       "status": "odrzucony",
       "pliki": ["assets/raw/kotwica-blok-edycja/edycja.png"],
       "uwagi": "skopiował wzorzec prawie bez zmian, fasada znów około 15 px na piętro"
+    },
+    {
+      "id": "strop-tynk",
+      "grupa": "pietra",
+      "co": "strop pięter, wariant „Ciepły tynk”: 16 kafelków 32 px płyty stropowej pod ciepłym beżowym tynkiem widzianej z góry (8 opisów po 2 warianty, numer i oraz i+8)",
+      "narzedzie": "create_tiles_pro",
+      "prompt": "1). [początek] plain uniform warm beige plaster, very faint grain 2). [początek] plain warm beige plaster, slightly faded and lighter 3). [początek] warm beige plaster with one faint straight panel joint across the middle 4). [początek] warm beige plaster with a small pale brown water stain in one corner 5). [początek] warm beige plaster with a single thin hairline crack 6). [początek] warm beige plaster with a small patch of lighter repaired plaster 7). [początek] warm beige plaster with a few tiny dark specks of mold in one corner 8). [początek] plain warm beige plaster, slightly darker and dustier",
+      "parametry": {
+        "tile_type": "square_topdown",
+        "tile_size": 32,
+        "tile_view": "top-down",
+        "poczatek": "top-down view of a prefab concrete floor slab covered with warm beige plaster, Polish 1970s apartment block, seen from directly above, flat matte surface, no furniture, no objects, no perspective, no shadows, no outline, seamless tile, low detail, calm low contrast, sandy peach beige colour,",
+        "style_images": [
+          "assets/wejscia/strop-wzorzec-32.png: 32×32 w kolorze płyty fasady #9a958a z assets/raw/kotwica-blok/1.png, wycinek x 46..57, y 106..110 (na fasadzie bloku nie ma okna 32×32 bez okien i szwów: płyta między oknami ma najwyżej 12×5 px, więc wzorzec jest płaski)"
+        ],
+        "style_options": {
+          "color_palette": false,
+          "outline": true,
+          "detail": true,
+          "shading": true
+        },
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "84f1ac26-af5e-47cc-8ce3-8ec0fdc60143",
+      "koszt": 10,
+      "status": "gotowy",
+      "pliki": ["assets/raw/strop-tynk"],
+      "warianty": {
+        "0": "prawie biały (#e3e0d6), odrzucony",
+        "1": "biały, odrzucony",
+        "2": "szew z ciemnymi kreskami i szary placek na dole, nie bierzemy (koliduje z szwami z kodu)",
+        "3": "plama zalania w lewym dolnym rogu (naklejka)",
+        "4": "rysa przez cały kafelek (naklejka)",
+        "5": "łata jaśniejszego tynku, biała plama z jasną obwódką (naklejka, wycinek bez dolnego pasa)",
+        "6": "ciemne plamki pleśni w dwóch rogach (naklejka, wycinek bez dolnego pasa i prawej kolumny)",
+        "7": "szary (#9a958a), odrzucony",
+        "8": "szary z ciemną ramką, odrzucony",
+        "9": "żółty (#e0d29a), odrzucony",
+        "10": "szary z pęknięciami, odrzucony",
+        "11": "ciepły, prawie pusty: tylko trzy piksele różnicy w narożnikach, nie niesie naklejki",
+        "12": "blady z szarym rogiem, odrzucony",
+        "13": "szary z kropkami, odrzucony",
+        "14": "szary ze szwem przy lewej krawędzi, odrzucony",
+        "15": "blady z kropkami, odrzucony"
+      },
+      "uzycie": {
+        "opis": "tło stropu rysuje kod z samego koloru z szumem, bo kafelki PixelLab są płaskie (1 do 3 kolorów) i mają powtarzalne narożniki po odbiciu; szwy płyt stropowych rysuje kod jak szwy papy na dachu; z kafelków zostają rzadkie naklejki: piksele w kolorze klucza są przezroczyste, reszta leży na tle. Wszystkie kolory z palety Za Murem 2051. Szum liczony od współrzędnych świata, żeby łączył się między kafelkami.",
+        "tlo": "#e0b48c",
+        "klucz": "#e3b79a",
+        "ciemny": "#9a958a",
+        "posredni": "#b7b2a6",
+        "jasny": "#e3b79a",
+        "szum": {
+          "opis": "po jednym polu szumu wartościowego na kolor (siatka co tyle px, drugie pole z siatką 2,2 razy drobniejszą z wagą 0,3); piksele z najniższych wartości pola dostają kolor, w kolejności jasny, posredni, ciemny (ciemny na wierzchu)",
+          "ciemny": {
+            "udzial": 0.03,
+            "siatka": 5
+          },
+          "posredni": {
+            "udzial": 0.14,
+            "siatka": 6
+          },
+          "jasny": {
+            "udzial": 0.12,
+            "siatka": 7
+          }
+        },
+        "szwy": [96, 64],
+        "szwy_kolor": "#b07a55",
+        "szwy_grubosc": 1,
+        "naklejki": [3, 4, 5, 6],
+        "wnetrze": [2, 2, 28, 28],
+        "wnetrze_wariantu": {
+          "3": [0, 20, 12, 12],
+          "4": [0, 0, 32, 32],
+          "5": [9, 10, 15, 12],
+          "6": [0, 0, 31, 30]
+        },
+        "gestosc": 0.12,
+        "szwy_inne": "co 32 px (siatka 1 m) czyta się jak płytki i dubluje szwy lastryko w klatce, więc 96 × 64 jak na dachu (płyty 3 × 2 m)"
+      },
+      "pomiary": {
+        "opis": "pomiary z docs/postep/pietra-strop-arkusz.png: średni kolor tła ze skryptu pomocniczego (512 × 512 px, przepis z uzycie), luminancja względna WCAG, ΔE CIE76 do średnich kolorów powierzchni z gry",
+        "tlo_srednia": "#d9b391 (217, 179, 145)",
+        "tlo_roznica_do_cdb08c": [11.7, 3.1, 4.8],
+        "luminancja_tla": 0.4902,
+        "luminancja_dachu_313336": 0.0329,
+        "stosunek_do_dachu": 14.91,
+        "R_minus_B": {
+          "strop": 72,
+          "dach_PixelLab": -5,
+          "lastryko": 16
+        },
+        "udzialy_pikseli_tla": {
+          "baza": 0.736,
+          "jasniejszy": 0.099,
+          "szary": 0.134,
+          "cien": 0.03
+        },
+        "surowe_ciepłe_kafelki_3_4_6_11": {
+          "rgb": [224.7, 182.0, 153.3],
+          "hex": "#e1b699",
+          "roznica_do_cdb08c": [19.7, 6.0, 13.3]
+        },
+        "powierzchnie": {
+          "dach PixelLab (papa)": {
+            "srednia": "#313336",
+            "strop_jasniejszy_razy": 14.91,
+            "deltaE": 60.4
+          },
+          "dach z kodu: papa": {
+            "srednia": "#585450",
+            "strop_jasniejszy_razy": 5.45,
+            "deltaE": 44.8
+          },
+          "dach z kodu: żwir": {
+            "srednia": "#9a968d",
+            "strop_jasniejszy_razy": 1.6,
+            "deltaE": 23.6
+          },
+          "dach z kodu: dachówka": {
+            "srednia": "#a24f36",
+            "strop_jasniejszy_razy": 3.63,
+            "deltaE": 40.3
+          },
+          "dach z kodu: blacha": {
+            "srednia": "#767c81",
+            "strop_jasniejszy_razy": 2.47,
+            "deltaE": 36.7
+          },
+          "lastryko klatki": {
+            "srednia": "#9a958a",
+            "strop_jasniejszy_razy": 1.62,
+            "deltaE": 22.9
+          },
+          "panele": {
+            "srednia": "#9f7850",
+            "strop_jasniejszy_razy": 2.29,
+            "deltaE": 22.8
+          },
+          "panele wytarte": {
+            "srednia": "#c4a47c",
+            "strop_jasniejszy_razy": 1.23,
+            "deltaE": 7.2
+          },
+          "linoleum kuchni": {
+            "srednia": "#cdbf9b",
+            "strop_jasniejszy_razy": 0.93,
+            "deltaE": 10.1
+          }
+        }
+      },
+      "uwagi": "Zamówienie poprawkowe po strop-tynk-v1 (szare kafelki): style_options z color_palette false, w opisie dopisane „sandy peach beige colour”. Ciepłe kafelki mają tło #e3b79a (227,183,154, kolor „skóra” z palety), czyli o 22 za dużo czerwieni względem #cdb08c, bo w palecie nie ma tak ciemnego beżu (najbliższy to #e0b48c); średnią w granicach ±14 daje dopiero tło z kodu: baza #e0b48c z plamkami #b7b2a6, #e3b79a i #9a958a (216,179,145, różnica +12, +3, +5). Strop jest 14,9 razy jaśniejszy od dachu #313336 i ma R−B 72 przy −5 na dachu i 16 w lastryko. Uwaga: od wytartych paneli (#c4a47c, ΔE 7) i linoleum kuchni (#cdbf9b, ΔE 10) odróżnia go głównie siatka szwów 3 × 2 m i szary kurz, kolor jest bliski (makieta Mateusza też to zaznaczała). Jasnej ramki kafelków nie ma, poza ciemną obwódką w #8, więc w przeciwieństwie do dachu wnętrze kafelka nie wymaga wycinka, ale naklejki mają pasy na krawędziach (#5, #6), stąd wnetrze_wariantu. Wzorzec stylu: assets/wejscia/strop-wzorzec-32.png."
+    },
+    {
+      "id": "strop-tynk-v1",
+      "grupa": "pietra",
+      "co": "strop pięter, pierwsze zamówienie: 16 kafelków 32 px, wszystkie szare (#b7b2a6) zamiast ciepłego beżu",
+      "narzedzie": "create_tiles_pro",
+      "prompt": "1). [początek] plain uniform warm beige plaster, very faint grain 2). [początek] plain warm beige plaster, slightly faded and lighter 3). [początek] warm beige plaster with one faint straight panel joint across the middle 4). [początek] warm beige plaster with a small pale brown water stain in one corner 5). [początek] warm beige plaster with a single thin hairline crack 6). [początek] warm beige plaster with a small patch of lighter repaired plaster 7). [początek] warm beige plaster with a few tiny dark specks of mold in one corner 8). [początek] plain warm beige plaster, slightly darker and dustier",
+      "parametry": {
+        "tile_type": "square_topdown",
+        "tile_size": 32,
+        "tile_view": "top-down",
+        "poczatek": "top-down view of a prefab concrete floor slab covered with warm beige plaster, Polish 1970s apartment block, seen from directly above, flat matte surface, no furniture, no objects, no perspective, no shadows, no outline, seamless tile, low detail, calm low contrast,",
+        "style_images": [
+          "assets/wejscia/strop-wzorzec-32.png (32×32 w kolorze płyty fasady #9a958a z assets/raw/kotwica-blok/1.png, wycinek x 46..57, y 106..110)"
+        ],
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "8eb5d6ca-b3f2-41e0-9482-ac10e57a86c1",
+      "koszt": 10,
+      "status": "odrzucony",
+      "pliki": ["assets/raw/strop-tynk-v1"],
+      "uwagi": "wzorzec stylu przeniósł szary odcień fasady mimo palety: średnie kolory kafelków #b7b2a6 (183,178,166), czyli o 22 za mało czerwieni i 26 za dużo niebieskiego względem #cdb08c, do tego płaskie (1 do 3 kolorów na kafelek). Ramki nie ma, poza ciemną obwódką w #15. Poprawka w strop-tynk: style_options z color_palette false."
     }
   ]
 }

@@ -388,7 +388,7 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   for (let i = 0; i < N; i++) if (bid[i] >= 0) buildings[bid[i]].tiles++;
 
   // 10. wejścia (pnie stoją co najmniej 2 m od budynków, więc nie wchodzą w drzwi)
-  for (const b of buildings) b.entrances = findEntrances(b, terr, bid, blocked, size);
+  for (const b of buildings) b.entrances = (b.id === hq ? wejscieSiedziby : findEntrances)(b, terr, bid, blocked, size);
 
   // 11. wnętrze siedziby (z mieszkaniem zarządu) nałożone na świat; inne budynki dostaną wnętrze,
   // kiedy spółdzielnia je zajmie
@@ -902,14 +902,39 @@ function plantTrees(terr: Uint8Array, blocked: Uint8Array, size: number, seed: n
 
 const DIRS: Record<Dir, [number, number]> = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] };
 
-/** Wejścia: blok ma klatki co około 20 m wzdłuż dłuższej ściany, od strony chodnika;
-    pozostałe budynki jedno wejście od strony drogi albo chodnika. */
-function findEntrances(
+/** Drzwi siedziby, która nie jest blokiem, mają prowadzić do ogródka: podwórko to prostokąt przed pierwszym wejściem
+    (fence.ts), a wyjście stykające się bokiem z jezdnią nie zostawia miejsca na siatkę, więc podwórko wychodziło za
+    domem, a drzwi i brama po przeciwnych stronach płotu (Mateusz, 19.10.2026: „wyjście z ogródka jest, ale z drugiej
+    strony i trzeba całość obejść dookoła”). Wtedy drzwi przechodzą na najlepszą ścianę, której wyjście nie styka się
+    z jezdnią; gdy takiej nie ma, zostają, jak były. Bloki bez zmian (klatki wzdłuż dłuższej ściany). */
+export function wejscieSiedziby(
   b: WorldBuilding,
   terr: Uint8Array,
   bid: Int32Array,
   blocked: Uint8Array,
   size: number,
+): Entrance[] {
+  const found = findEntrances(b, terr, bid, blocked, size);
+  if (b.cls === 'blok' || !found.length) return found;
+  const N = size * size;
+  const nearRoad = (o: number) =>
+    [o, o - size, o + size, o % size > 0 ? o - 1 : -1, o % size < size - 1 ? o + 1 : -1].some(
+      (n) => n >= 0 && n < N && terr[n] === T.ROAD,
+    );
+  if (!nearRoad(found[0].out)) return found;
+  const alt = findEntrances(b, terr, bid, blocked, size, nearRoad);
+  return alt.length ? alt : found;
+}
+
+/** Wejścia: blok ma klatki co około 20 m wzdłuż dłuższej ściany, od strony chodnika;
+    pozostałe budynki jedno wejście od strony drogi albo chodnika. `skip` odrzuca kafelki przed drzwiami. */
+export function findEntrances(
+  b: WorldBuilding,
+  terr: Uint8Array,
+  bid: Int32Array,
+  blocked: Uint8Array,
+  size: number,
+  skip?: (out: number) => boolean,
 ): Entrance[] {
   const w = b.x1 - b.x0 + 1;
   const h = b.y1 - b.y0 + 1;
@@ -925,13 +950,15 @@ function findEntrances(
       for (let x = b.x0; x <= b.x1; x++) {
         let y = d === 'S' ? b.y1 : b.y0;
         while (!inB(x, y) && y >= b.y0 && y <= b.y1) y -= dy;
-        if (inB(x, y) && walk(x + dx, y + dy)) out.push([y * size + x, (y + dy) * size + x]);
+        if (inB(x, y) && walk(x + dx, y + dy) && !skip?.((y + dy) * size + x))
+          out.push([y * size + x, (y + dy) * size + x]);
       }
     } else {
       for (let y = b.y0; y <= b.y1; y++) {
         let x = d === 'E' ? b.x1 : b.x0;
         while (!inB(x, y) && x >= b.x0 && x <= b.x1) x -= dx;
-        if (inB(x, y) && walk(x + dx, y + dy)) out.push([y * size + x, y * size + x + dx]);
+        if (inB(x, y) && walk(x + dx, y + dy) && !skip?.(y * size + x + dx))
+          out.push([y * size + x, y * size + x + dx]);
       }
     }
     return out;
