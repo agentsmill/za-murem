@@ -2,11 +2,14 @@
    menu (z linią o źródłach danych mieszkańców), jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
    (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts.
    Napisy okien są w bieżącym języku (L() przy rysowaniu, Tx w tablicach). Teksty zarządu (Tx albo polski napis ze
-   starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. */
+   starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. Słowa
+   wspólnoty (w domu komitet ulicy, w bloku zarząd spółdzielni) biorą ze słownika miejsca po polsku i po angielsku
+   (words, e); bez niego mówią jak w bloku. */
 
 import { ENDINGS_EN, PATHS_EN } from '../content/data.en.ts';
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import { deterrence, KOZA_KEY, untilWord, WOOD_PER_HOUR, watchersOf } from '../gov/noc.ts';
 import type {
   GovInput,
@@ -64,6 +67,7 @@ const btn = (act: string, label: string, cls = 'btn', arg = '', extra = '') =>
 /** tekst zarządu w bieżącym języku albo zastępczy napis, gdy pola brak (jak ?? przy zwykłych napisach) */
 const or = (t: Tx | string | null | undefined, fallback: string): string =>
   t === null || t === undefined ? fallback : tr(t);
+const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 /** 1 sztukę, 2 sztuki, 5 sztuk */
 export const plural = (n: number, one: string, few: string, many: string): string => {
@@ -193,7 +197,13 @@ export function fuelHtml(wd: NonNullable<NightCard['wood']>, koza: string[]): st
   )}</em></div>`;
 }
 
-export function nightSheet(card: NightCard, assign: Record<string, string>, odds: NightOdds): Sheet {
+export function nightSheet(
+  card: NightCard,
+  assign: Record<string, string>,
+  odds: NightOdds,
+  words: Words = wordsOf(BLOK),
+  e: WordsEn = wordsEn(BLOK),
+): Sheet {
   const names = Object.fromEntries(card.people.map((p) => [p.id, p.name]));
   const rows = card.people
     .map((p) => {
@@ -240,10 +250,10 @@ export function nightSheet(card: NightCard, assign: Record<string, string>, odds
             )
     }</p><div data-odds>${oddsHtml(card, assign, odds, names)}</div><ul class="crew">${rows}</ul>${
       advice
-        ? `<p class="advice"><b class="advice-k">${L('Zarząd radzi:', 'The board suggests:')}</b> <span data-advice>${esc(advice)}</span></p>`
+        ? `<p class="advice"><b class="advice-k">${L(`${words.Zarzad} radzi:`, `${e.Zarzad} suggests:`)}</b> <span data-advice>${esc(advice)}</span></p>`
         : ''
     }`,
-    foot: `${btn('night-reset', L('Jak radzi zarząd', 'As the board suggests'), 'btn ghost')}${btn(
+    foot: `${btn('night-reset', L(`Jak radzi ${words.zarzad.krotko}`, `As ${e.krotko} suggests`), 'btn ghost')}${btn(
       'night-go',
       L('Zacznijcie noc', 'Start the night'),
       'btn go',
@@ -268,16 +278,20 @@ function lawItem(o: LawOption): string {
   )}</p>${act}</li>`;
 }
 
-export function lawSheet(p: Extract<Prompt, { k: 'uchwala' }>): Sheet {
+export function lawSheet(
+  p: Extract<Prompt, { k: 'uchwala' }>,
+  words: Words = wordsOf(BLOK),
+  e: WordsEn = wordsEn(BLOK),
+): Sheet {
   return {
     tone: 'uchwala',
-    kicker: L(`Zebranie zarządu, dzień ${p.day}, 19:30`, `Board meeting, day ${p.day}, 19:30`),
-    title: p.first ? L('Pierwsza uchwała', 'First resolution') : L('Uchwała zarządu', 'Board resolution'),
+    kicker: L(`Zebranie ${words.zarzad.dk}, dzień ${p.day}, 19:30`, `${e.zebranie}, day ${p.day}, 19:30`),
+    title: p.first ? L('Pierwsza uchwała', 'First resolution') : L(`Uchwała ${words.zarzad.dk}`, e.uchwala),
     body: `<p class="lead">${
       p.first
         ? L(
-            'Wieczór przy kozie. Mieszkańcy czekają, jakie zasady ustalicie na pierwszą noc. Jedną uchwałę można podjąć dziś, następną najwcześniej za półtorej doby.',
-            'An evening by the stove. The residents are waiting to hear what rules you will set for the first night. You can pass one resolution today, and the next one in a day and a half at the earliest.',
+            `Wieczór przy kozie. ${wielka(words.mieszkancy.m)} czekają, jakie zasady ustalicie na pierwszą noc. Jedną uchwałę można podjąć dziś, następną najwcześniej za półtorej doby.`,
+            `An evening by the stove. The ${e.mieszkancy} are waiting to hear what rules you will set for the first night. You can pass one resolution today, and the next one in a day and a half at the earliest.`,
           )
         : L(
             'Można podjąć jedną uchwałę. Drogi porządku i wspólnoty się wykluczają.',
@@ -296,14 +310,18 @@ export function lawSheet(p: Extract<Prompt, { k: 'uchwala' }>): Sheet {
 
 // ---------------------------------------------------------------- wydarzenie
 
-export function eventSheet(p: Extract<Prompt, { k: 'wydarzenie' }>): Sheet {
+export function eventSheet(
+  p: Extract<Prompt, { k: 'wydarzenie' }>,
+  words: Words = wordsOf(BLOK),
+  e: WordsEn = wordsEn(BLOK),
+): Sheet {
   const text = tr(p.text)
     .split(/\n+/)
     .map((l) => `<p>${esc(l)}</p>`)
     .join('');
   return {
     tone: 'wydarzenie',
-    kicker: L('Na osiedlu', 'On the estate'),
+    kicker: L(words.naglowek, e.naglowek),
     title: esc(tr(p.title)),
     body: text,
     foot: `<div class="choices">${p.choices
@@ -364,7 +382,13 @@ export function reportSheet(r: NightReport): Sheet {
 
 // ---------------------------------------------------------------- palenie mebli
 
-export function burnSheet(kind: string, owner: string | null, softer: boolean): Sheet {
+export function burnSheet(
+  kind: string,
+  owner: string | null,
+  softer: boolean,
+  words: Words = wordsOf(BLOK),
+  e: WordsEn = wordsEn(BLOK),
+): Sheet {
   const wood = BURNABLE[kind] ?? 1;
   const hours = (wood * BURN_TICKS) / TICKS_PER_HOUR;
   const what = L(FURNITURE_ACC[kind] ?? 'mebel', FURNITURE_EN[kind] ?? 'furniture');
@@ -378,12 +402,12 @@ export function burnSheet(kind: string, owner: string | null, softer: boolean): 
     )}</p><p>${
       owner
         ? L(
-            `To mebel osoby: ${esc(owner)}. Bardzo to przeżyje, a reszta zarządu też to poczuje.`,
-            `It belongs to ${esc(owner)}, who will take it hard, and the rest of the board will feel it too.`,
+            `To mebel osoby: ${esc(owner)}. Bardzo to przeżyje, a reszta ${words.zarzad.dk} też to poczuje.`,
+            `It belongs to ${esc(owner)}, who will take it hard, and the rest of ${e.krotko} will feel it too.`,
           )
         : L(
-            'Zarząd to poczuje: palimy coś, co ktoś kiedyś kupił na raty.',
-            'The board will feel it: somebody once bought this on buy now, pay later.',
+            `${words.Zarzad} to poczuje: palimy coś, co ktoś kiedyś kupił na raty.`,
+            `${e.Zarzad} will feel it: somebody once bought this on buy now, pay later.`,
           )
     }${softer ? L(' Uchwała „Meble na opał” łagodzi to o połowę.', ' The “Furniture for fuel” resolution halves that.') : ''}</p>`,
     foot: `${btn('burn-no', L('Zostawić', 'Keep it'), 'btn ghost')}${btn('burn-yes', L('Spalić', 'Burn it'), 'btn danger')}`,
@@ -428,10 +452,10 @@ const ZOMBIE_HELP = tx(
 );
 
 /** pomoc o budowie i pustych mieszkaniach (M2, fala 1) */
-function buildHelp(touch: boolean): string {
+function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
   const fetch = tx(
-    'Zarząd sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.',
-    'The board fetches the materials and builds it. Planks, scrap and parts come from searching empty flats and tearing things down.',
+    `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.`,
+    `${e.Zarzad} fetches the materials and builds it. Planks, scrap and parts come from searching empty flats and tearing things down.`,
   );
   const items = touch
     ? [
@@ -446,7 +470,7 @@ function buildHelp(touch: boolean): string {
         fetch,
         tx(
           'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
-          'Tap a flat in your block to see its card: whether it is empty, why, what needs repairing and what has been searched. Press and hold inside a flat for: Search, Take apart, Fix, Claim the flat.',
+          'Tap a flat at HQ to see its card: whether it is empty, why, what needs repairing and what has been searched. Press and hold inside a flat for: Search, Take apart, Fix, Claim the flat.',
         ),
       ]
     : [
@@ -461,7 +485,7 @@ function buildHelp(touch: boolean): string {
         fetch,
         tx(
           'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
-          'Click a flat in your block to see its card: whether it is empty, why, what needs repairing and what has been searched. Right-click inside a flat for: Search, Take apart, Fix, Claim the flat.',
+          'Click a flat at HQ to see its card: whether it is empty, why, what needs repairing and what has been searched. Right-click inside a flat for: Search, Take apart, Fix, Claim the flat.',
         ),
       ];
   return `<h3 class="help-h">${L('Budowa i puste mieszkania', 'Building and empty flats')}</h3><ul class="help">${items
@@ -481,26 +505,29 @@ export function confirmSheet(label: string): Sheet {
   };
 }
 
-export function helpSheet(touch: boolean, zombie = false): Sheet {
+export function helpSheet(
+  touch: boolean,
+  zombie = false,
+  words: Words = wordsOf(BLOK),
+  e: WordsEn = wordsEn(BLOK),
+): Sheet {
+  const z = words.zarzad.dk;
   const ctl = touch
     ? L(
-        '<li>Stuknięcie w człowieka z zarządu zaznacza go.</li><li>Stuknięcie w miejsce wydaje najprostsze polecenie: idź, zetnij, zanieś, dołóż.</li><li>Przytrzymanie palca pokazuje wszystkie polecenia w tym miejscu, także palenie mebli.</li><li>Jeden palec przesuwa mapę, dwa przybliżają.</li>',
-        '<li>Tap a board member to select them.</li><li>Tap a spot to give the simplest order: go, chop, haul, feed the stove.</li><li>Press and hold to see every order for that spot, burning furniture included.</li><li>One finger moves the map, two fingers zoom.</li>',
+        `<li>Stuknięcie w człowieka z ${z} zaznacza go.</li><li>Stuknięcie w miejsce wydaje najprostsze polecenie: idź, zetnij, zanieś, dołóż.</li><li>Przytrzymanie palca pokazuje wszystkie polecenia w tym miejscu, także palenie mebli.</li><li>Jeden palec przesuwa mapę, dwa przybliżają.</li>`,
+        `<li>Tap someone from ${e.krotko} to select them.</li><li>Tap a spot to give the simplest order: go, chop, haul, feed the stove.</li><li>Press and hold to see every order for that spot, burning furniture included.</li><li>One finger moves the map, two fingers zoom.</li>`,
       )
     : L(
-        '<li>Klik zaznacza człowieka z zarządu, Shift i przeciąganie zaznacza ramką kilku naraz.</li><li>Prawy przycisk pokazuje polecenia w tym miejscu: idź, zetnij, zanieś do składu, dołóż do kozy, gotuj, spal mebel.</li><li>Kółko przybliża, przeciąganie przesuwa mapę, WASD też.</li><li>Na gładziku kliknięcie dwoma palcami albo Ctrl+klik to prawy przycisk, szczypanie przybliża, dwa palce przesuwają mapę.</li><li>Spacja to pauza, 1–4 tempo (do 8×).</li>',
-        '<li>Click a board member to select them; Shift-drag to select several with a box.</li><li>Right-click shows the orders for that spot: go, chop, haul to the woodpile, feed the stove, cook, burn furniture.</li><li>Scroll to zoom; drag or use WASD to move the map.</li><li>On a trackpad, a two-finger click or Ctrl+click works as a right-click; pinch to zoom and swipe with two fingers to move the map.</li><li>Space pauses, 1–4 set the speed (up to 8×).</li>',
+        `<li>Klik zaznacza człowieka z ${z}, Shift i przeciąganie zaznacza ramką kilku naraz.</li><li>Prawy przycisk pokazuje polecenia w tym miejscu: idź, zetnij, zanieś do składu, dołóż do kozy, gotuj, spal mebel.</li><li>Kółko przybliża, przeciąganie przesuwa mapę, WASD też.</li><li>Na gładziku kliknięcie dwoma palcami albo Ctrl+klik to prawy przycisk, szczypanie przybliża, dwa palce przesuwają mapę.</li><li>Spacja to pauza, 1–4 tempo (do 8×).</li>`,
+        `<li>Click someone from ${e.krotko} to select them; Shift-drag to select several with a box.</li><li>Right-click shows the orders for that spot: go, chop, haul to the woodpile, feed the stove, cook, burn furniture.</li><li>Scroll to zoom; drag or use WASD to move the map.</li><li>On a trackpad, a two-finger click or Ctrl+click works as a right-click; pinch to zoom and swipe with two fingers to move the map.</li><li>Space pauses, 1–4 set the speed (up to 8×).</li>`,
       );
   return {
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: L('Jak grać', 'How to play'),
-    body: `<h3 class="help-h">${L('Sterowanie', 'Controls')}</h3><ul class="help">${ctl}</ul>${buildHelp(touch)}<h3 class="help-h">${L(
-      'Zarząd',
-      'The board',
-    )}</h3><ul class="help">${L(
-      '<li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li><li>Każdy z zarządu ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li>',
-      '<li>You are the board of a housing co-op in 2051. Four people, a potbelly stove in the kitchen and a fence full of holes around the yard.</li><li>Watch everyone’s needs on their person card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 the board meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the residents’ trust and anger. At zero trust people leave; at full anger the general meeting votes the board out.</li><li>Each board member carries one weapon, and spares are kept in the storeroom (person card: “Swap”). Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li>',
+    body: `<h3 class="help-h">${L('Sterowanie', 'Controls')}</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words, e)}<h3 class="help-h">${L(words.Zarzad, e.Zarzad)}</h3><ul class="help">${L(
+      `<li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>Każdy z ${z} ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li>`,
+      `<li>You are ${e.pelny} in 2051. Four people, a potbelly stove in the kitchen and a fence full of holes around the yard.</li><li>Watch everyone’s needs on their person card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 ${e.krotko} meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the ${e.mieszkancy}’ trust and anger. At zero trust people leave; at full anger ${e.walne} votes ${e.krotko} out.</li><li>Everyone on ${e.krotko} carries one weapon, and spares are kept in the storeroom (person card: “Swap”). Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li>`,
     )}</ul>${zombie ? tr(ZOMBIE_HELP) : ''}<h3 class="help-h">${L('Na razie', 'For now')}</h3><p>${L(
       'W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.',
       'Version 0.4 has nights behind the fence, building, empty flats to search and repair, newcomers and Zombie mode. Research, winter and the rest of the economy will come in later versions.',
@@ -510,9 +537,10 @@ export function helpSheet(touch: boolean, zombie = false): Sheet {
   };
 }
 
-export function endSheet(id: EndingId): Sheet {
-  const pl = ENDINGS[id];
-  const en = ENDINGS_EN[id];
+export function endSheet(id: EndingId, words: Words = wordsOf(BLOK), e: WordsEn = wordsEn(BLOK)): Sheet {
+  // zakończenia z wersją dla miejsca ze słownika (w domu bez walnego i klatek), reszta z 0.3
+  const pl = words.koniec[id] ?? ENDINGS[id];
+  const en = e.koniec[id] ?? ENDINGS_EN[id];
   return {
     tone: 'koniec',
     kicker: L('Koniec gry', 'Game over'),

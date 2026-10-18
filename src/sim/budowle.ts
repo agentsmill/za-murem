@@ -4,6 +4,7 @@
    jest od razu w bieżącym języku (symulacja patrzy tylko na ok). */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { type Words, wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
 import { houseOf } from './house.ts';
@@ -27,8 +28,8 @@ export interface BuildDef {
   cost: Partial<Record<Mat, number>>;
   /** praca w tickach symulacji, jeden pionek */
   work: number;
-  /** jedno zdanie do menu budowy */
-  effect: string;
+  /** jedno zdanie do menu budowy; zdanie zależne od miejsca bierze słowa ze słownika wspólnoty (effectOf) */
+  effect: string | ((w: Words) => string);
 }
 
 export const BUILDS: Record<BuildKind, BuildDef> = {
@@ -66,7 +67,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
     h: 2,
     cost: { deski: 20 },
     work: TICKS_PER_HOUR,
-    effect: 'Dwa miejsca do spania, w spółdzielni zmieści się więcej ludzi.',
+    effect: (w) => `Dwa miejsca do spania, ${w.mieszkamy} zmieści się więcej ludzi.`,
   },
   ogrodek: {
     name: 'Ogródek',
@@ -117,14 +118,22 @@ export function buildTiles(kind: BuildKind, x: number, y: number, rot: number, s
   return out;
 }
 
-const WHY: Record<BuildPlace, Tx> = {
-  pokoj: tx('Tylko w pokoju w naszym mieszkaniu.', 'Only in a room of our flat.'),
-  kuchnia: tx('Tylko w kuchni w naszym mieszkaniu.', 'Only in the kitchen of our flat.'),
-  podworko: tx(
-    'Tylko na podwórku za siatką, z dala od bramy, dziur i drzwi.',
-    'Only in the yard behind the fence, away from the gate, holes and doors.',
-  ),
-  obwod: tx('Tylko na odcinku siatki.', 'Only on a stretch of the fence.'),
+/** zdanie o działaniu budowli według miejsca */
+export function effectOf(kind: BuildKind, w: Words): string {
+  const e = BUILDS[kind].effect;
+  return typeof e === 'string' ? e : e(w);
+}
+
+/** powód „nie tutaj” w obu językach; brama albo furtka (w dopełniaczu i po angielsku) ze słownika wspólnoty */
+const WHY: Record<BuildPlace, (bramy: string, gate: string) => Tx> = {
+  pokoj: () => tx('Tylko w pokoju w naszym mieszkaniu.', 'Only in a room of our flat.'),
+  kuchnia: () => tx('Tylko w kuchni w naszym mieszkaniu.', 'Only in the kitchen of our flat.'),
+  podworko: (bramy, gate) =>
+    tx(
+      `Tylko na podwórku za siatką, z dala od ${bramy}, dziur i drzwi.`,
+      `Only in the yard behind the fence, away from ${gate}, holes and doors.`,
+    ),
+  obwod: () => tx('Tylko na odcinku siatki.', 'Only on a stretch of the fence.'),
 };
 
 /** Czy budowlę wolno postawić (podgląd trybu stawiania i polecenie 'build'): w pomieszczeniu właściwego rodzaju
@@ -146,7 +155,7 @@ export function canPlace(
   const { w: bw, h: bh } = footprint(kind, rot);
   if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: L('Poza mapą.', 'Off the map.') };
   const tiles = buildTiles(kind, x, y, rot, size);
-  const no = { ok: false, why: tr(WHY[def.place]) };
+  const no = { ok: false, why: tr(WHY[def.place](wordsOfWorld(w).brama.d, wordsEnOfWorld(w).brama)) };
   const h = houseOf(w);
   const shape = fenceShape(w);
   if (def.place === 'pokoj' || def.place === 'kuchnia') {

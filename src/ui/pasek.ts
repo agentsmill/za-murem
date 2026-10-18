@@ -5,6 +5,7 @@
 
 import { SEASONS_EN } from '../content/data.en.ts';
 import { L } from '../core/jezyk.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import type { GovState } from '../gov/typy.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import { WARM_ENOUGH } from '../sim/tutorial.ts';
@@ -18,7 +19,15 @@ export interface Stat {
   title: string;
 }
 
-export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
+const wielka = (t: string): string => t[0].toUpperCase() + t.slice(1);
+
+/** words: słowa miejsca (w domu sąsiedzi, komitet ulicy i zebranie ulicy), bez nich jak w bloku */
+export function statsOf(
+  s: SimSnapshot,
+  gov: GovState | null,
+  words: Words = wordsOf(BLOK),
+  e: WordsEn = wordsEn(BLOK),
+): Stat[] {
   const k = s.stock;
   const food = k.supplies + k.meals;
   // drewno na zapas, bez tego, co już się pali (ogień ma swoje pole)
@@ -76,8 +85,8 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
         kit === null
           ? L('Siedziba nie ma kuchni z kozą', 'HQ has no kitchen with a stove')
           : L(
-              `W kuchni zarządu ${deg(kit)}${s.kozaLit ? `, koza pali się jeszcze ${num(k.fireHours)} h` : ', koza zimna'}`,
-              `Board’s kitchen: ${deg(kit)}${s.kozaLit ? `, the stove has ${num(k.fireHours)} h of fire left` : ', the stove is cold'}`,
+              `W kuchni ${words.zarzad.dk} ${deg(kit)}${s.kozaLit ? `, koza pali się jeszcze ${num(k.fireHours)} h` : ', koza zimna'}`,
+              `${wielka(e.krotko)}’s kitchen: ${deg(kit)}${s.kozaLit ? `, the stove has ${num(k.fireHours)} h of fire left` : ', the stove is cold'}`,
             ),
     },
     {
@@ -87,8 +96,8 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
       title: `${
         s.kozaLit
           ? L(
-              `Ognia w kozie na ${num(k.fireHours)} h. Zarząd sam dokłada, póki jest drewno.`,
-              `Fire in the stove for ${num(k.fireHours)} h. The board keeps feeding it while there is wood.`,
+              `Ognia w kozie na ${num(k.fireHours)} h. ${words.Zarzad} sam dokłada, póki jest drewno.`,
+              `Fire in the stove for ${num(k.fireHours)} h. ${e.Zarzad} keeps feeding it while there is wood.`,
             )
           : L(
               'Koza zimna. Bez ognia kuchnia stygnie: zetnijcie drzewo albo spalcie mebel.',
@@ -163,8 +172,8 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
       value: trust === null ? '–' : String(trust),
       level: trust === null ? 'mid' : trust < 30 ? 'bad' : trust < 45 ? 'mid' : 'ok',
       title: L(
-        'Zaufanie mieszkańców do zarządu (0–100). Przy zerze ludzie odejdą.',
-        'Residents’ trust in the board (0–100). At zero, people leave.',
+        `Zaufanie ${words.mieszkancy.d} do ${words.zarzad.d} (0–100). Przy zerze ludzie odejdą.`,
+        `${wielka(e.mieszkancy)}’ trust in ${e.krotko} (0–100). At zero, people leave.`,
       ),
     },
     {
@@ -172,8 +181,8 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
       value: anger === null ? '–' : String(anger),
       level: anger === null ? 'mid' : anger > 60 ? 'bad' : anger > 40 ? 'mid' : 'ok',
       title: L(
-        'Wkurzenie mieszkańców (0–100). Przy stu walne odwoła zarząd.',
-        'Residents’ anger (0–100). At 100, the general meeting votes the board out.',
+        `Wkurzenie ${words.mieszkancy.d} (0–100). Przy stu ${words.walne} odwoła ${words.zarzad.krotko}.`,
+        `${wielka(e.mieszkancy)}’ anger (0–100). At 100, ${e.walne} votes ${e.krotko} out.`,
       ),
     },
   ];

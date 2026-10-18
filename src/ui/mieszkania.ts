@@ -5,6 +5,7 @@
    polskie tablice zostają tutaj, angielskie leżą w mieszkania.en.ts. */
 
 import { jezyk, L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import { REPAIR } from '../sim/mieszkania.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimApt } from '../sim/snapshot.ts';
@@ -127,20 +128,23 @@ export function aptView(st: SimState, w: World, apt: number, snap: readonly SimA
   };
 }
 
-/** nagłówek stanu („Puste od 2034, wyjazd”; po angielsku „Empty since 2034, moved away”) */
-export function aptState(v: AptView): string {
-  if (v.state === 'zarzad') return L('Mieszkanie zarządu', 'The board’s flat');
+const wielka = (t: string): string => t[0].toUpperCase() + t.slice(1);
+
+/** nagłówek stanu („Puste od 2034, wyjazd”; po angielsku „Empty since 2034, moved away”); w domu mieszkanie komitetu
+    ulicy */
+export function aptState(v: AptView, words: Words = wordsOf(BLOK), e: WordsEn = wordsEn(BLOK)): string {
+  if (v.state === 'zarzad') return L(`Mieszkanie ${words.zarzad.d}`, `${wielka(e.krotko)}’s flat`);
   if (v.state === 'mieszkancy') return L('Mieszkają tu ludzie', 'People live here');
-  const head = v.ours ? L('Zajęte przez zarząd', 'Claimed by the board') : L('Puste', 'Empty');
+  const head = v.ours ? L(`Zajęte przez ${words.zarzad.krotko}`, `Claimed by ${e.krotko}`) : L('Puste', 'Empty');
   if (!v.why) return head;
   // po angielsku rok mówi, od kiedy mieszkanie stoi puste, także zajęte przez zarząd
   return jezyk() === 'en'
-    ? `${v.ours ? 'Claimed by the board, empty' : 'Empty'} since ${v.year ?? '?'}, ${WHY_SHORT_EN[v.why]}`
+    ? `${v.ours ? `Claimed by ${e.krotko}, empty` : 'Empty'} since ${v.year ?? '?'}, ${WHY_SHORT_EN[v.why]}`
     : `${head} od ${v.year ?? '?'}, ${WHY_SHORT[v.why]}`;
 }
 
 /** karta mieszkania (w miejscu karty osoby): stan, powód opuszczenia, co do naprawy, co już przeszukane */
-export function aptCard(v: AptView, touch: boolean): string {
+export function aptCard(v: AptView, touch: boolean, words: Words = wordsOf(BLOK), e: WordsEn = wordsEn(BLOK)): string {
   const empty = v.state === 'puste';
   const done = v.damages.filter((d) => d.fixed);
   const damages = v.damages.length
@@ -173,7 +177,7 @@ export function aptCard(v: AptView, touch: boolean): string {
   const year = v.year ?? 2026;
   return [
     `<h2>${L('Mieszkanie', 'Flat')} ${v.apt + 1}</h2>`,
-    `<p class="sub">${esc(aptState(v))}</p>`,
+    `<p class="sub">${esc(aptState(v, words, e))}</p>`,
     empty && v.why ? `<p class="apt-why">${esc(L(WHY_TEXT[v.why](year), WHY_TEXT_EN[v.why](year)))}</p>` : '',
     empty
       ? `<h3 class="apt-h">${L('Do naprawy', 'Repairs')}${v.damaged ? ` (${v.damaged})` : ''}</h3>${damages}`

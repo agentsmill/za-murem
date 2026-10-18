@@ -11,10 +11,11 @@ import { ENDINGS_EN } from '../../src/content/data.en.ts';
 import type { EndingId } from '../../src/content/data.ts';
 import { type Tx, tr, tx, txOf, ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
+import { BLOK, wordsEn } from '../../src/gov/miejsce.ts';
 import { KOZA_KEY, makeCard } from '../../src/gov/noc.ts';
 import type { GovInput, LawOption, NightCard, NightReport, Prompt } from '../../src/gov/typy.ts';
 import { govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
-import { BUILDS_EN } from '../../src/sim/budowle.en.ts';
+import { BUILDS_EN, effectEnOf } from '../../src/sim/budowle.en.ts';
 import { BUILDS, type BuildKind, canPlace, type Mat } from '../../src/sim/budowle.ts';
 import { START_MINUTES, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { govInput } from '../../src/sim/gov.ts';
@@ -443,13 +444,11 @@ describe('pasek, cele i przybysze po angielsku', () => {
     const g = goalsOf(st, null, { touch: false, kitchen: 9, hour: 15, wood: 2 });
     expect(g[0]).toMatchObject({
       text: 'Select someone from the board.',
-      how: 'Click a person in the board’s kitchen.',
+      how: 'Click a person in the HQ kitchen.',
     });
     expect(g.find((x) => x.key === 'cieplo')?.how).toContain('The kitchen is at 9°C now.');
     expect(g.find((x) => x.key === 'drewno')?.how).toContain('Spare wood: 2 of 6.');
-    expect(goalsOf(st, null, { touch: true, kitchen: 9, hour: 15 })[0].how).toBe(
-      'Tap a person in the board’s kitchen.',
-    );
+    expect(goalsOf(st, null, { touch: true, kitchen: 9, hour: 15 })[0].how).toBe('Tap a person in the HQ kitchen.');
     for (const mode of ['zwykly', 'zombie'] as const)
       for (const touch of [false, true]) {
         const gv = newGov(seed, mode);
@@ -501,7 +500,7 @@ describe('budowa i mieszkania po angielsku', () => {
     const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true);
     expect(menu.map((c) => c.title)).toEqual(['Indoors', 'Yard', 'Perimeter']);
     for (const b of menu.flatMap((c) => c.items)) {
-      expect(b).toMatchObject({ name: BUILDS_EN[b.kind].name, effect: BUILDS_EN[b.kind].effect, ok: true });
+      expect(b).toMatchObject({ name: BUILDS_EN[b.kind].name, effect: effectEnOf(b.kind, wordsEn(BLOK)), ok: true });
       for (const [m, n] of Object.entries(BUILDS[b.kind].cost) as [Mat, number][])
         if (n > 0) expect(b.cost).toContain(`${MAT_EN[m]} ${n}`);
     }

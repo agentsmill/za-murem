@@ -4,8 +4,9 @@
    zostają tutaj, angielskie leżą obok (budowa.en.ts, src/sim/budowle.en.ts, src/sim/mieszkania.en.ts). */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
-import { BUILDS_EN } from '../sim/budowle.en.ts';
-import { BUILDS, type BuildKind, type BuildPlace, canPlace, footprint, type Mat } from '../sim/budowle.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
+import { BUILDS_EN, effectEnOf } from '../sim/budowle.en.ts';
+import { BUILDS, type BuildKind, type BuildPlace, canPlace, effectOf, footprint, type Mat } from '../sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { MAT_EN } from '../sim/mieszkania.en.ts';
 import type { MenuItem } from '../sim/orders.ts';
@@ -227,7 +228,12 @@ const SOURCE: Partial<Record<Mat, Tx>> = {
 
 /** Menu budowy: kategorie z budowlami; niedostępne z powodem (nie ma gdzie postawić albo brakuje
     materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. */
-export function buildMenu(have: Partial<Record<Mat, number>>, room: (kind: BuildKind) => boolean): BuildCategory[] {
+export function buildMenu(
+  have: Partial<Record<Mat, number>>,
+  room: (kind: BuildKind) => boolean,
+  words: Words = wordsOf(BLOK),
+  en: WordsEn = wordsEn(BLOK),
+): BuildCategory[] {
   return CATEGORIES.map((c) => ({
     key: c.key,
     title: tr(c.title),
@@ -255,7 +261,7 @@ export function buildMenu(have: Partial<Record<Mat, number>>, room: (kind: Build
           size: `${d.w}×${d.h}`,
           cost: costText(d.cost),
           time: workText(d.work),
-          effect: L(d.effect, BUILDS_EN[kind].effect),
+          effect: L(effectOf(kind, words), effectEnOf(kind, en)),
           place: placeText(d.place),
           ok: !why,
           why,
@@ -265,7 +271,12 @@ export function buildMenu(have: Partial<Record<Mat, number>>, room: (kind: Build
 }
 
 /** okno menu budowy (przycisk „Budowa” i klawisz B) */
-export function buildSheet(menu: BuildCategory[], touch: boolean): Sheet {
+export function buildSheet(
+  menu: BuildCategory[],
+  touch: boolean,
+  words: Words = wordsOf(BLOK),
+  en: WordsEn = wordsEn(BLOK),
+): Sheet {
   const item = (b: BuildItem) =>
     `<li class="build ${b.ok ? 'ok' : 'no'}"><div class="build-head"><b class="build-n">${esc(b.name)}</b><small class="build-size">${esc(
       b.size,
@@ -281,8 +292,8 @@ export function buildSheet(menu: BuildCategory[], touch: boolean): Sheet {
     kicker: touch ? L('Budowa', 'Build') : L('Budowa (B)', 'Build (B)'),
     title: L('Co budujemy?', 'What are we building?'),
     body: `<p class="lead">${L(
-      'Plan stawia się na mapie, a zarząd sam przynosi materiały i buduje.',
-      'You place the plan on the map, and the board fetches the materials and builds it.',
+      `Plan stawia się na mapie, a ${words.zarzad.krotko} sam przynosi materiały i buduje.`,
+      `You place the plan on the map, and ${en.krotko} fetches the materials and builds it.`,
     )}${
       touch
         ? L(

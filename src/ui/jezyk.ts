@@ -5,7 +5,7 @@
    i po każdej zmianie. Przełącznik EN/PL (karta startowa i Menu) woła zmienJezyk(): zapis w pamięci, `<html lang>`,
    napisy statyczne i słuchacze z src/core/jezyk.ts, po których main.ts rysuje resztę od nowa. */
 
-import { type Lang, type Tx, tr, tx, ustawJezyk } from '../core/jezyk.ts';
+import { type Lang, poZmianieJezyka, type Tx, tr, tx, ustawJezyk } from '../core/jezyk.ts';
 import { esc } from './tekst.ts';
 
 export const JEZYK_KEY = 'za-murem-0.4-jezyk';
@@ -65,11 +65,18 @@ export function zmienJezyk(l: Lang, s: Store | null = store()): void {
       u.searchParams.delete('lang');
       history.replaceState(history.state, '', u.toString());
     }
-    document.documentElement.lang = l;
   }
+  // `<html lang>` i napisy statyczne robi słuchacz niżej, przed słuchaczami main.ts
   ustawJezyk(l);
-  if (dom()) nalozStatyczne();
 }
+
+/* Po każdej zmianie języka najpierw napisy statyczne i `<html lang>`: słuchacz z chwili importu tego modułu woła się
+   przed słuchaczami main.ts, więc te mogą nadpisać napis, który zależy od stanu gry (przycisk alarmu). */
+poZmianieJezyka((l) => {
+  if (!dom()) return;
+  document.documentElement.lang = l;
+  nalozStatyczne();
+});
 
 /** napis statyczny z index.html: selektor i teksty w obu językach (treść, title, aria-label, placeholder albo HTML) */
 export interface Statyczny {

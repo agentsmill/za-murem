@@ -2,9 +2,11 @@
    nazwa z rodzajnikiem do zdań („Build the workshop”, „Tear down the barricade”) i jedno zdanie działania, po tych
    samych kluczach co BUILDS. Słowa ze słowniczka docs/SLOWNICZEK-EN.md. */
 
+import type { WordsEn } from '../gov/miejsce.ts';
 import type { BuildKind } from './budowle.ts';
 
-export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: string }> = {
+/** działanie zależne od miejsca bierze słowa ze słownika wspólnoty, jak BUILDS[…].effect (effectEnOf) */
+export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: string | ((w: WordsEn) => string) }> = {
   warsztat: {
     name: 'Workshop',
     the: 'the workshop',
@@ -23,7 +25,7 @@ export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: s
   lozka_pietrowe: {
     name: 'Bunk beds',
     the: 'the bunk beds',
-    effect: 'Sleeps two, so the co-op has room for more people.',
+    effect: (w) => `Sleeps two, so there is room for more people ${w.mieszkamy}.`,
   },
   ogrodek: {
     name: 'Vegetable patch',
@@ -36,3 +38,9 @@ export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: s
     effect: 'Stronger than the fence or a patch, and it closes a hole.',
   },
 };
+
+/** zdanie o działaniu budowli po angielsku według miejsca, jak effectOf w budowle.ts */
+export function effectEnOf(kind: BuildKind, w: WordsEn): string {
+  const e = BUILDS_EN[kind].effect;
+  return typeof e === 'string' ? e : e(w);
+}

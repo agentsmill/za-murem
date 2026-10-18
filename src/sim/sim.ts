@@ -10,7 +10,17 @@ import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../cont
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
-import { type AmmoKey, hitChance, noAmmo, START_KIT, WEAPONS, type Weapon, type WeaponId, weaponOf } from './bron.ts';
+import {
+  type AmmoKey,
+  hitChance,
+  isFirearm,
+  noAmmo,
+  START_KIT,
+  WEAPONS,
+  type Weapon,
+  type WeaponId,
+  weaponOf,
+} from './bron.ts';
 import { BUILDS, type BuildKind, type BuildPlan, canPlace, footprint, GHOST_KINDS, type Mat } from './budowle.ts';
 import {
   daylight,
@@ -454,8 +464,9 @@ export type Command =
   | { t: 'craft'; ids: number[]; item: 'dzida' }
   /** wzmocnić kafelek siatki deskami albo złomem */
   | { t: 'brace'; ids: number[]; tile: number }
-  /** do broni: cały zdolny zarząd na wartę (przy siatce w trybie zombie, przy bramie w zwykłym) */
-  | { t: 'alarm'; ids: number[] }
+  /** do broni: cały zdolny zarząd na wartę (przy siatce w trybie zombie, przy bramie w zwykłym); off: odwołanie,
+      warta z alarmu schodzi z posterunku */
+  | { t: 'alarm'; ids: number[]; off?: boolean }
   /** M2: plan budowy w miejscu (albo przydział do planu, który tam już jest), odwołanie planu albo budowli */
   | { t: 'build'; ids: number[]; kind: BuildKind; x: number; y: number; rot: number }
   | { t: 'unbuild'; ids: number[]; id: number }
@@ -1032,6 +1043,19 @@ export function dozeOff(st: SimState, ids: readonly number[]): void {
     p.job.phase = 4;
     p.job.from = -1;
   }
+}
+
+/** Job.what warty z „Do broni!” (odwołanie zdejmuje tylko ją) */
+const ALARM_JOB = 'alarm';
+
+/** „Do broni!” trwa: ktoś z zarządu stoi na warcie z alarmu, a zaraz po kliknięciu (polecenie czeka na krok,
+    także na pauzie) decyduje ostatni alarm w kolejce. Dla przycisku, który alarm włącza i odwołuje. */
+export function alarmOn(st: SimState): boolean {
+  for (let k = st.cmds.length - 1; k >= 0; k--) {
+    const c = st.cmds[k];
+    if (c.t === 'alarm') return !c.off;
+  }
+  return st.pawns.some((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.what === ALARM_JOB);
 }
 
 /** klucz posterunku warty z Job.target, jak w karcie nocy zarządu: 'brama', 'd<id>', 'koza' */
@@ -1869,6 +1893,12 @@ export class Sim {
     let left = speed;
     while (left > 1e-9 && p.pi < p.path.length) {
       const t = p.path[p.pi];
+      // szwendacz staje przed łatą albo bramą, które zamknęły się, kiedy już szedł (droga od nowa przy zmysłach)
+      if (p.kind === 'zombie' && this.sealed(t)) {
+        p.path = [];
+        p.pi = 0;
+        break;
+      }
       const tx = (t % size) + 0.5;
       const ty = Math.floor(t / size) + 0.5;
       const dx = tx - p.x;
@@ -1962,7 +1992,7 @@ export class Sim {
     else if (c.t === 'amputate') this.orderAmputate(pawns, c.patient);
     else if (c.t === 'craft') this.orderCraft(pawns);
     else if (c.t === 'brace') this.orderBrace(pawns, c.tile);
-    else if (c.t === 'alarm') this.orderAlarm(pawns);
+    else if (c.t === 'alarm') this.orderAlarm(pawns, !!c.off);
     else if (c.t === 'search') this.startSearch(pawns[0], c.room);
     else if (c.t === 'dismantle') this.startDismantle(pawns[0], c.thing);
     else if (c.t === 'repair') this.startRepair(pawns[0], c.damage);
@@ -4516,6 +4546,13 @@ export class Sim {
       if (!t || !bare || this.across(p, t.x, t.y) || !this.retreat(p)) this.done(p);
       return;
     }
+    // walka bez rozkazu z bronią palną w trybie zombie kończy się, kiedy wróg jest za siatką
+    if (!j.order && this.holdFire(w) && this.across(p, t.x, t.y)) {
+      p.path = [];
+      p.pi = 0;
+      this.done(p);
+      return;
+    }
     if (this.canHit(p, t, w)) {
       p.path = [];
       p.pi = 0;
@@ -4574,16 +4611,28 @@ export class Sim {
     return s >= 0 ? s : this.standBy(p, [best], 2);
   }
 
-  /** warta na posterunku: najbliższy wróg w zasięgu broni */
+  /** W trybie zombie broń palna sama nie strzela przez siatkę, bo strzał ściąga stado: tylko po swojej stronie siatki
+      i na rozkaz gracza („Atakuj”). */
+  private holdFire(w: Weapon): boolean {
+    return modeOf(this.st) === 'zombie' && isFirearm(w);
+  }
+
+  /** broń tak, jak sięga sama z siebie (warta, pilnowanie naporu): w trybie zombie broń palna nie przez siatkę */
+  private selfReach(w: Weapon): Weapon {
+    return this.holdFire(w) ? { ...w, fence: false } : w;
+  }
+
+  /** warta na posterunku: najbliższy wróg w zasięgu broni (w trybie zombie z bronią palną tylko po swojej stronie) */
   private guardStrike(p: Pawn): void {
     if (this.st.tick < (p.cd ?? 0)) return;
     const w = this.armed(p);
+    const reach = this.selfReach(w);
     let best: Pawn | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.pawns) {
       if (!isEnemy(t) || t.away || this.graveyard.has(t.id)) continue;
       const d = Math.hypot(t.x - p.x, t.y - p.y);
-      if (d < bd && this.canHit(p, t, w)) {
+      if (d < bd && this.canHit(p, t, reach)) {
         bd = d;
         best = t;
       }
@@ -4878,6 +4927,7 @@ export class Sim {
     const tick = st.tick;
     if (!p.job) p.job = this.newJob('zombie', -1, this.tileOf(p), false);
     const j = p.job;
+    if (this.sealed(this.tileOf(p))) this.pushOut(p, j);
     if (j.phase === 3) {
       const t = st.pawns.find((q) => q.id === j.target);
       if (
@@ -4948,6 +4998,25 @@ export class Sim {
         // goni, a droga się skończyła: czeka na zmysły
         return;
     }
+  }
+
+  /** kafelek siatki albo bramy, przez który teraz nie da się przejść (cała siatka, łata, zasieki, zamknięta brama) */
+  private sealed(tile: number): boolean {
+    return this.fenceMask[tile] === 1 && this.blocked[tile] === 1;
+  }
+
+  /** Szwendacz w dziurze albo bramie, którą właśnie zamknięto: łata wypycha go na najbliższy wolny kafelek po stronie
+      ulicy, także gdy szedł z podwórka, i zaczyna od nowa (stado znowu idzie pod siatkę). */
+  private pushOut(p: Pawn, j: Job): void {
+    const size = this.w.size;
+    const out = nearestFree(this.lay.outside.blocked, size, this.tileOf(p));
+    p.x = (out % size) + 0.5;
+    p.y = Math.floor(out / size) + 0.5;
+    p.path = [];
+    p.pi = 0;
+    j.phase = j.what === 'stado' ? 1 : 0;
+    j.target = -1;
+    j.n = 0;
   }
 
   /** ugryzienie: trafia w 70% przypadków, 15 obrażeń */
@@ -5163,11 +5232,22 @@ export class Sim {
     heap.by = p.id;
   }
 
-  /** do broni: każdy z zarządu ze zdrowiem ponad 30 na wartę */
-  private orderAlarm(pawns: Pawn[]): void {
-    const able = pawns.filter((p) => (p.needs?.health ?? 0) > 30);
+  /** Do broni: każdy z zarządu ze zdrowiem ponad 30, kto nie stoi już na warcie, na wartę z alarmu (do 6:00 jak
+      każda warta). Odwołanie: warta z alarmu schodzi z posterunku, reszta warty zostaje. */
+  private orderAlarm(pawns: Pawn[], off: boolean): void {
+    if (off) {
+      for (const p of pawns)
+        if (p.job?.t === 'guard' && p.job.what === ALARM_JOB) {
+          p.path = [];
+          p.pi = 0;
+          this.done(p);
+        }
+      return;
+    }
+    const able = pawns.filter((p) => (p.needs?.health ?? 0) > 30 && p.job?.t !== 'guard');
     if (!able.length) return;
     this.orderGuard(able, modeOf(this.st) === 'zombie' && this.st.fence ? 'siatka' : 'brama');
+    for (const p of able) if (p.job?.t === 'guard') p.job.what = ALARM_JOB;
   }
 
   /** Kafelek siatki, na który napiera najwięcej szwendaczy (−1: nikt nie napiera). Brama nie puszcza, więc napór
@@ -5207,12 +5287,15 @@ export class Sim {
     return free >= 0 ? free : best;
   }
 
-  /** warta przy siatce przechodzi do miejsca największego naporu, gdy stoi od niego dalej niż 2,5 m */
+  /** Warta przy siatce przechodzi do miejsca największego naporu, kiedy jej broń nie sięga nikogo, kto tam napiera
+      (na rogu siatki 2,2 m od kafelka to już za daleko na dzidę), i staje tuż przy nim od strony podwórka. */
   private followPressure(p: Pawn, j: Job): void {
     const hot = this.hotTile(p);
     if (hot < 0) return;
-    const size = this.w.size;
-    if (Math.hypot((hot % size) + 0.5 - p.x, Math.floor(hot / size) + 0.5 - p.y) <= 2.5) return;
+    const w = this.armed(p);
+    const reach = this.selfReach(w);
+    for (const z of this.st.pawns)
+      if (z.kind === 'zombie' && z.job?.phase === 2 && z.job.target === hot && this.canHit(p, z, reach)) return;
     let stand = this.standBy(p, [hot], 1);
     if (stand < 0) stand = this.standBy(p, [hot], 2);
     if (stand < 0 || stand === this.tileOf(p) || !this.go(p, stand)) return;

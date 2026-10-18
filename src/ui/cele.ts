@@ -1,8 +1,10 @@
 /* Cele pierwszego dnia: kroki samouczka ze stanu symulacji (st.tut), drewno na noc i „przetrwać noc”
    z raportów zarządu. Czyste funkcje bez DOM: interfejs dostaje listę z tekstem celu i podpowiedzią
-   do bieżącego kroku, w bieżącym języku (kroki samouczka to Tx, wybór przy rysowaniu). */
+   do bieżącego kroku, w bieżącym języku (kroki samouczka to Tx, wybór przy rysowaniu). Zarząd i miejsce suchego
+   drzewa według słownika miejsca (w domu komitet i ogród), po angielsku z wordsEn. */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import type { GovState } from '../gov/typy.ts';
 import { START_KIT } from '../sim/bron.ts';
 import { BUILDS_EN } from '../sim/budowle.en.ts';
@@ -41,14 +43,14 @@ const HEAT = tx(
   'The stove heats up slowly, and 3× at the top speeds up the wait.',
 );
 
-const STEPS: Record<TutStep, { text: Tx; mouse: Tx; touch: Tx }> = {
+const steps = (w: Words, e: WordsEn): Record<TutStep, { text: Tx; mouse: Tx; touch: Tx }> => ({
   zaznacz: {
-    text: tx('Zaznaczcie kogoś z zarządu.', 'Select someone from the board.'),
-    mouse: tx('Kliknijcie człowieka w kuchni siedziby.', 'Click a person in the board’s kitchen.'),
-    touch: tx('Stuknijcie człowieka w kuchni siedziby.', 'Tap a person in the board’s kitchen.'),
+    text: tx(`Zaznaczcie kogoś z ${w.zarzad.dk}.`, `Select someone from ${e.krotko}.`),
+    mouse: tx('Kliknijcie człowieka w kuchni siedziby.', 'Click a person in the HQ kitchen.'),
+    touch: tx('Stuknijcie człowieka w kuchni siedziby.', 'Tap a person in the HQ kitchen.'),
   },
   rozkaz: {
-    text: tx('Wyślijcie go do suchego drzewa przy trzepaku.', 'Send them to the dead tree by the carpet rack.'),
+    text: tx(`Wyślijcie go do suchego drzewa ${w.drzewo}.`, `Send them to the dead tree ${e.drzewo}.`),
     mouse: tx(
       'Prawy przycisk na suchym drzewie, potem „Ściąć drzewo”.',
       'Right-click the dead tree, then “Chop down the tree”.',
@@ -77,7 +79,7 @@ const STEPS: Record<TutStep, { text: Tx; mouse: Tx; touch: Tx }> = {
     mouse: HEAT,
     touch: HEAT,
   },
-};
+});
 
 /** lista celów; pusta, gdy samouczek wyłączony i noc już przetrwana */
 export function goalsOf(
@@ -91,13 +93,19 @@ export function goalsOf(
     /** drewno na zapas teraz i czy zapas na noc już raz był */
     wood?: number;
     woodReady?: boolean;
+    /** słowa miejsca po polsku i po angielsku (bez nich jak w bloku) */
+    words?: Words;
+    wordsEn?: WordsEn;
   },
 ): Goal[] {
   const out: Goal[] = [];
   const t = st.tut;
+  const w = o.words ?? wordsOf(BLOK);
+  const e = o.wordsEn ?? wordsEn(BLOK);
+  const tut = steps(w, e);
   if (t.step >= 0)
     TUT_STEPS.forEach((key, k) => {
-      const s = STEPS[key];
+      const s = tut[key];
       let how = tr(o.touch ? s.touch : s.mouse);
       if (key === 'cieplo' && o.kitchen !== null)
         how = L(`W kuchni teraz ${deg(o.kitchen)}. ${how}`, `The kitchen is at ${deg(o.kitchen)} now. ${how}`);
@@ -133,12 +141,12 @@ export function goalsOf(
     text: L('Przetrwajcie pierwszą noc.', 'Survive the first night.'),
     how: night
       ? L(
-          'Szabrownicy przychodzą po dwudziestej trzeciej. Rano zarząd dostanie raport.',
-          'Looters come after 23:00. In the morning the board gets a report.',
+          `Szabrownicy przychodzą po dwudziestej trzeciej. Rano ${w.zarzad.krotko} dostanie raport.`,
+          `Looters come after 23:00. In the morning ${e.krotko} gets a report.`,
         )
       : L(
-          'O 19:30 zebranie zarządu, o 20:00 karta nocy: kto śpi, kto pilnuje siatki.',
-          'Board meeting at 19:30, Night orders at 20:00: who sleeps and who watches the fence.',
+          `O 19:30 zebranie ${w.zarzad.dk}, o 20:00 karta nocy: kto śpi, kto pilnuje siatki.`,
+          `${e.Zarzad === 'The board' ? 'Board' : 'Committee'} meeting at 19:30, Night orders at 20:00: who sleeps and who watches the fence.`,
         ),
     done: survived,
   });
@@ -171,8 +179,13 @@ export function goalsDay2(
     woodReady: boolean;
     /** otwarte dziury w siatce */
     holes: number;
+    /** słowa miejsca po polsku i po angielsku (bez nich jak w bloku) */
+    words?: Words;
+    wordsEn?: WordsEn;
   },
 ): Goal[] {
+  const w = o.words ?? wordsOf(BLOK);
+  const e = o.wordsEn ?? wordsEn(BLOK);
   const searched = st.apts.some((a) => a.searched.length > 0);
   const built = (kind: string) => st.things.some((t) => t.kind === kind);
   const late = !!gov?.night?.confirmed || (gov?.reports.length ?? 0) > 1;
@@ -199,11 +212,11 @@ export function goalsDay2(
       how: o.touch
         ? L(
             'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.',
-            'Tap a flat in your block: its card shows whether it is empty and what is left inside. Then press and hold inside it: “Search”.',
+            'Tap a flat at HQ: its card shows whether it is empty and what is left inside. Then press and hold inside it: “Search”.',
           )
         : L(
             'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
-            'Click a flat in your block: its card shows whether it is empty and what is left inside. Then right-click inside it: “Search”.',
+            'Click a flat at HQ: its card shows whether it is empty and what is left inside. Then right-click inside it: “Search”.',
           ),
       done: searched,
     },
@@ -211,8 +224,8 @@ export function goalsDay2(
       key: 'budowla',
       text: L('Postawcie pierwszą budowlę.', 'Put up your first structure.'),
       how: L(
-        `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. Zarząd sam przyniesie materiały i zbuduje.`,
-        `${b}: any structure will do. The cheapest are ${cheap.join(' and ')}. The board will fetch the materials and build it.`,
+        `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. ${w.Zarzad} sam przyniesie materiały i zbuduje.`,
+        `${b}: any structure will do. The cheapest are ${cheap.join(' and ')}. ${e.Zarzad} will fetch the materials and build it.`,
       ),
       done: st.things.some((t) => t.kind in BUILDS),
     },

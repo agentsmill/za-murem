@@ -6,9 +6,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
+import { BLOK, wordsOf } from '../../src/gov/miejsce.ts';
 import type { GovState } from '../../src/gov/typy.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
-import { BUILDS, type BuildKind, canPlace, footprint, type Mat } from '../../src/sim/budowle.ts';
+import { BUILDS, type BuildKind, canPlace, effectOf, footprint, type Mat } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { REPAIR } from '../../src/sim/mieszkania.ts';
 import { addResidents, createSim, Sim } from '../../src/sim/sim.ts';
@@ -70,7 +71,7 @@ describe('menu budowy', () => {
       const d = BUILDS[b.kind];
       expect(b).toMatchObject({
         name: d.name,
-        effect: d.effect,
+        effect: effectOf(b.kind, wordsOf(BLOK)),
         size: `${d.w}×${d.h}`,
         cost: costText(d.cost),
         time: workText(d.work),

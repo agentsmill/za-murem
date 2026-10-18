@@ -4,7 +4,10 @@
    teksty spoza zarządu. Odległości w kwadratach liczb całkowitych, bez Math.hypot, żeby wynik był ten sam w każdej
    przeglądarce. Ze świata tylko typy: zarząd nie ciągnie za sobą kodu świata ani symulacji. */
 
+import type { EndingId } from '../content/data.ts';
 import type { World } from '../world/world.ts';
+import { KONIEC_DOM_EN } from './tresc.en.ts';
+import { KONIEC_DOM } from './tresc.ts';
 import type { GovInput, GovPlace } from './typy.ts';
 
 /** to, czego opis miejsca potrzebuje ze świata */
@@ -135,13 +138,16 @@ function describePlace(w: PlaceWorld): GovPlace {
 /** jacy sąsiedzi są w okolicy (w 120 m): bloki, domy albo nikt (null); jedno źródło słów o sąsiadach w wydarzeniach */
 export const sasiedzi = (p: GovPlace): 'bloki' | 'domy' | null => (p.near === 'nikt' ? null : p.near);
 
-/** Słowa wspólnoty według miejsca. Kontrakt także dla tekstów spoza zarządu (cele, okna, pasek, powód nastroju). */
+/** Słowa wspólnoty według miejsca. Kontrakt także dla tekstów spoza zarządu (okna, pomoc, cele, pasek, karta osoby
+    i mieszkania, menu poleceń i budowy, powód nastroju): ich warianty dla domu i bloku są tutaj, a nie w warunkach
+    przy tekstach, żeby dało się je przetłumaczyć w jednym miejscu. */
 export interface Words {
   /** spółdzielnia | ulica: mianownik, dopełniacz i „w czym” (w spółdzielni | na ulicy) */
   wspolnota: { m: string; d: string; w: string };
-  /** zarząd | komitet ulicy: mianownik, dopełniacz, narzędnik, krótko (zarząd | komitet) i krótki dopełniacz
-      (zarządu | komitetu, np. „Zebranie komitetu przy kozie”) */
-  zarzad: { m: string; d: string; n: string; krotko: string; dk: string };
+  /** zarząd | komitet ulicy: mianownik, dopełniacz, narzędnik, krótko (zarząd | komitet), krótki dopełniacz
+      (zarządu | komitetu, np. „Zebranie komitetu przy kozie”) i pełna nazwa w bierniku (zarząd spółdzielni |
+      komitet ulicy, „Prowadzicie …”) */
+  zarzad: { m: string; d: string; n: string; krotko: string; dk: string; pelny: string };
   /** na początek zdania */
   Zarzad: string;
   /** zebranie, które może odwołać zarząd */
@@ -149,8 +155,16 @@ export interface Words {
   /** nagłówek okna wydarzenia */
   naglowek: string;
   mieszkancy: { m: string; d: string };
-  /** wejście w siatce: brama | furtka (mianownik, „przy”, „pod”) */
-  brama: { m: string; przy: string; pod: string };
+  /** wejście w siatce: brama | furtka (mianownik, dopełniacz „od bramy”, biernik „Zamknąć furtkę”, „przy”, „pod”) */
+  brama: { m: string; d: string; b: string; przy: string; pod: string };
+  /** gdzie stoi suche drzewo z samouczka: przy trzepaku | w ogrodzie (w domu trzepak zastąpią rzeczy z ogrodu) */
+  drzewo: string;
+  /** nazwa dziury w siatce tuż przy trzepaku; w domu null, wtedy dziura ma nazwę z kierunku */
+  zaTrzepakiem: string | null;
+  /** gdzie przybywa miejsc do spania: w spółdzielni | w domu („na ulicy” brzmiałoby jak bez dachu nad głową) */
+  mieszkamy: string;
+  /** zakończenia gry w wersji dla miejsca; tych, których tu nie ma, gra bierze z 0.3 */
+  koniec: Partial<Record<EndingId, { title: string; text: string }>>;
   /** skąd przychodzi sąsiad z innego budynku: z bloku obok | zza płotu (według sąsiadów, w samotnym miejscu według
       siedziby). Wydarzenia mówią o sąsiadach tylko wtedy, gdy są (GovHost.neighbour: także „z waszej klatki”). */
   sasiad: string;
@@ -158,22 +172,44 @@ export interface Words {
 
 const BLOKOWE: Omit<Words, 'sasiad'> = {
   wspolnota: { m: 'spółdzielnia', d: 'spółdzielni', w: 'w spółdzielni' },
-  zarzad: { m: 'zarząd', d: 'zarządu', n: 'zarządem', krotko: 'zarząd', dk: 'zarządu' },
+  zarzad: {
+    m: 'zarząd',
+    d: 'zarządu',
+    n: 'zarządem',
+    krotko: 'zarząd',
+    dk: 'zarządu',
+    pelny: 'zarząd spółdzielni',
+  },
   Zarzad: 'Zarząd',
   walne: 'walne',
   naglowek: 'Na osiedlu',
   mieszkancy: { m: 'mieszkańcy', d: 'mieszkańców' },
-  brama: { m: 'brama', przy: 'przy bramie', pod: 'pod bramą' },
+  brama: { m: 'brama', d: 'bramy', b: 'bramę', przy: 'przy bramie', pod: 'pod bramą' },
+  drzewo: 'przy trzepaku',
+  zaTrzepakiem: 'za trzepakiem',
+  mieszkamy: 'w spółdzielni',
+  koniec: {},
 };
 
 const ULICZNE: Omit<Words, 'sasiad'> = {
   wspolnota: { m: 'ulica', d: 'ulicy', w: 'na ulicy' },
-  zarzad: { m: 'komitet ulicy', d: 'komitetu ulicy', n: 'komitetem ulicy', krotko: 'komitet', dk: 'komitetu' },
+  zarzad: {
+    m: 'komitet ulicy',
+    d: 'komitetu ulicy',
+    n: 'komitetem ulicy',
+    krotko: 'komitet',
+    dk: 'komitetu',
+    pelny: 'komitet ulicy',
+  },
   Zarzad: 'Komitet ulicy',
   walne: 'zebranie ulicy',
   naglowek: 'Na ulicy',
   mieszkancy: { m: 'sąsiedzi', d: 'sąsiadów' },
-  brama: { m: 'furtka', przy: 'przy furtce', pod: 'pod furtką' },
+  brama: { m: 'furtka', d: 'furtki', b: 'furtkę', przy: 'przy furtce', pod: 'pod furtką' },
+  drzewo: 'w ogrodzie',
+  zaTrzepakiem: null,
+  mieszkamy: 'w domu',
+  koniec: KONIEC_DOM,
 };
 
 /** słownik dla miejsca: w domu ulica i komitet ulicy, w bloku spółdzielnia i zarząd (decyzja Mateusza, 17.10.2026) */
@@ -183,17 +219,27 @@ export function wordsOf(p: GovPlace): Words {
   return { ...(p.kind === 'dom' ? ULICZNE : BLOKOWE), sasiad: houses ? 'zza płotu' : 'z bloku obok' };
 }
 
-/** Słowa wspólnoty po angielsku, jak Words (docs/SLOWNICZEK-EN.md). Bez przypadków, z rodzajnikiem tam, gdzie zdanie
-    go potrzebuje; wielka litera na początek zdania przez `Zarzad`. */
+/** słownik dla świata gry (teksty symulacji i interfejsu); świat bez siedziby (atrapy w testach) mówi jak blok */
+export const wordsOfWorld = (w: PlaceWorld): Words => wordsOf(w.buildings[w.hq] ? placeOf(w) : BLOK);
+
+/** Słowa wspólnoty po angielsku, jak Words (docs/SLOWNICZEK-EN.md), z tych samych warunków. Bez przypadków,
+    z rodzajnikiem tam, gdzie zdanie go potrzebuje; wielka litera na początek zdania przez `Zarzad`. */
 export interface WordsEn {
   /** the co-op | the street */
   wspolnota: string;
   /** the board | the street committee */
   zarzad: string;
+  /** pełna nazwa jak Words.zarzad.pelny: the board of a housing co-op | the street committee */
+  pelny: string;
   /** The board | The street committee */
   Zarzad: string;
   /** krótko: the board | the committee */
   krotko: string;
+  /** your board | your street committee („This is your board.”) */
+  wasz: string;
+  /** zebranie i uchwała na początek zdania: Board meeting | Committee meeting, Board resolution | Committee resolution */
+  zebranie: string;
+  uchwala: string;
   /** the general meeting | the street meeting */
   walne: string;
   /** nagłówek okna wydarzenia: On the estate | On the street */
@@ -202,6 +248,14 @@ export interface WordsEn {
   mieszkancy: string;
   /** the gate | the garden gate */
   brama: string;
+  /** gdzie stoi suche drzewo z samouczka: by the carpet rack | in the garden */
+  drzewo: string;
+  /** dziura tuż przy trzepaku: behind the carpet rack; w domu null */
+  zaTrzepakiem: string | null;
+  /** gdzie przybywa miejsc do spania: in the co-op | in the house */
+  mieszkamy: string;
+  /** zakończenia gry w wersji dla miejsca, jak Words.koniec */
+  koniec: Partial<Record<EndingId, { title: string; text: string }>>;
   /** from the block next door | from over the fence (jak Words.sasiad) */
   sasiad: string;
 }
@@ -209,23 +263,39 @@ export interface WordsEn {
 const BLOKOWE_EN: Omit<WordsEn, 'sasiad'> = {
   wspolnota: 'the co-op',
   zarzad: 'the board',
+  pelny: 'the board of a housing co-op',
   Zarzad: 'The board',
   krotko: 'the board',
+  wasz: 'your board',
+  zebranie: 'Board meeting',
+  uchwala: 'Board resolution',
   walne: 'the general meeting',
   naglowek: 'On the estate',
   mieszkancy: 'residents',
   brama: 'the gate',
+  drzewo: 'by the carpet rack',
+  zaTrzepakiem: 'behind the carpet rack',
+  mieszkamy: 'in the co-op',
+  koniec: {},
 };
 
 const ULICZNE_EN: Omit<WordsEn, 'sasiad'> = {
   wspolnota: 'the street',
   zarzad: 'the street committee',
+  pelny: 'the street committee',
   Zarzad: 'The street committee',
   krotko: 'the committee',
+  wasz: 'your street committee',
+  zebranie: 'Committee meeting',
+  uchwala: 'Committee resolution',
   walne: 'the street meeting',
   naglowek: 'On the street',
   mieszkancy: 'neighbours',
   brama: 'the garden gate',
+  drzewo: 'in the garden',
+  zaTrzepakiem: null,
+  mieszkamy: 'in the house',
+  koniec: KONIEC_DOM_EN,
 };
 
 /** angielski słownik dla miejsca, z tych samych warunków co wordsOf */
@@ -237,6 +307,9 @@ export function wordsEn(p: GovPlace): WordsEn {
     sasiad: houses ? 'from over the fence' : 'from the block next door',
   };
 }
+
+/** angielski słownik dla świata gry, jak wordsOfWorld */
+export const wordsEnOfWorld = (w: PlaceWorld): WordsEn => wordsEn(w.buildings[w.hq] ? placeOf(w) : BLOK);
 
 /** wolne miejsca dla mieszkańców (miejsca minus mieszkańcy); bez danych o miejscach cztery, jak dotąd */
 export function freePlaces(i: Pick<GovInput, 'cap' | 'residents'>): number {

@@ -9,9 +9,12 @@
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
+import { ALARM_OFF_EN, ALARM_OFF_SAY_EN, ALARM_OFF_TITLE_EN } from './content/napisy-zombie.en.ts';
+import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zombie.ts';
 import type { Person } from './content/people.ts';
 import { jezyk, L, poZmianieJezyka, type Tx, tr } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
 import {
@@ -43,7 +46,7 @@ import type { LokatorzyGry } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
-import { addResidents, createSim, Sim, type SimState } from './sim/sim.ts';
+import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
@@ -74,7 +77,7 @@ import {
   zmianaZPol,
   zTejOsobyGeneratora,
 } from './ui/imiona.ts';
-import { podepnijPrzelacznik, przelacznikHtml, startJezyka } from './ui/jezyk.ts';
+import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
@@ -161,6 +164,10 @@ let gov: GovState | null = null;
 let loaded: Loaded | null = null;
 let seed = 0;
 let hqName = '';
+/** słowa miejsca siedziby: w domu komitet ulicy, sąsiedzi i furtka, w bloku zarząd, mieszkańcy i brama; po
+    angielsku wordsE */
+let words: Words = wordsOf(BLOK);
+let wordsE: WordsEn = wordsEn(BLOK);
 let fenceIn: GovInput['fence'];
 /** sekundy przy ekranie bez pauzy (dla zarządu: tempo wydarzeń) i chwila ostatniego kroku zarządu */
 let screen = 0;
@@ -288,6 +295,7 @@ poZmianieJezyka(() => {
   hud(performance.now());
   renderSpeed();
   placeInfo();
+  alarmButton(sim.st);
   if (modal.open) sheetAgain?.();
 });
 
@@ -424,7 +432,10 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   govAt = screen;
   loaded = data;
   hqName = world.buildings[world.hq]?.name ?? '';
-  fenceIn = govFence(world);
+  words = wordsOfWorld(world);
+  wordsE = wordsEnOfWorld(world);
+  $('zHome').setAttribute('aria-label', `Pokaż siedzibę ${words.zarzad.d}`);
+  fenceIn = govFence(world, words, wordsE);
   savedHour = Math.floor(st.tick / TICKS_PER_HOUR);
   $('osName').textContent = data.name;
   document.title = `Za Murem · ${data.name}`;
@@ -479,12 +490,12 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     say(
       touchUI
         ? L(
-            'To wasz zarząd. Jednym palcem przesuwacie mapę, dwoma przybliżacie. Cele są pod paskiem u góry.',
-            'This is your board. One finger moves the map, two fingers zoom. Your goals are under the bar at the top.',
+            `To wasz ${words.zarzad.m}. Jednym palcem przesuwacie mapę, dwoma przybliżacie. Cele są pod paskiem u góry.`,
+            `This is ${wordsE.wasz}. One finger moves the map, two fingers zoom. Your goals are under the bar at the top.`,
           )
         : L(
-            'To wasz zarząd. Przeciąganie przesuwa mapę, kółko przybliża. Cele pierwszego dnia są po lewej.',
-            'This is your board. Drag to move the map, scroll to zoom. Today’s goals are on the left.',
+            `To wasz ${words.zarzad.m}. Przeciąganie przesuwa mapę, kółko przybliża. Cele pierwszego dnia są po lewej.`,
+            `This is ${wordsE.wasz}. Drag to move the map, scroll to zoom. Today’s goals are on the left.`,
           ),
       9000,
     );
@@ -639,7 +650,7 @@ function showPrompt(p: Prompt) {
       decided();
     });
   else if (p.k === 'uchwala')
-    modal.show(lawSheet(p), (act, arg) => {
+    modal.show(lawSheet(p, words, wordsE), (act, arg) => {
       if (act === 'law') applyFx(signLaw(g, input(), arg));
       else if (act === 'law-skip') applyFx(signLaw(g, input(), null));
       else return;
@@ -648,7 +659,7 @@ function showPrompt(p: Prompt) {
     });
   else if (p.k === 'karta') showNight(p);
   else
-    modal.show(eventSheet(p), (act, arg) => {
+    modal.show(eventSheet(p, words, wordsE), (act, arg) => {
       if (act !== 'event') return;
       applyFx(chooseEvent(g, input(), Number(arg)));
       decided();
@@ -661,7 +672,7 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
   const names = Object.fromEntries(card.people.map((c) => [c.id, c.name]));
   const i = input();
   const assign = () => g.night?.assign ?? p.assign;
-  modal.show(nightSheet(card, assign(), nightOdds(g, i, card, assign())), (act, arg, el) => {
+  modal.show(nightSheet(card, assign(), nightOdds(g, i, card, assign()), words, wordsE), (act, arg, el) => {
     if (act === 'select') {
       const id = el.dataset.id ?? '';
       if (!setNight(g, id, arg)) {
@@ -701,7 +712,7 @@ function showEnd() {
   clearSave();
   // gra z sąsiadami: zapis w chmurze i klatki drużyny też znikają
   siec.koniec();
-  modal.show(endSheet(gov.over), (act) => {
+  modal.show(endSheet(gov.over, words, wordsE), (act) => {
     if (act === 'end-start') location.href = startUrl();
   });
 }
@@ -766,7 +777,7 @@ function watchRaid() {
     const hole = input().fence?.holes.find((h) => `d${h.id}` === r.post);
     const name = hole?.name;
     return r.post === 'brama'
-      ? L('przy bramie', 'at the gate')
+      ? L(words.brama.przy, `at ${wordsE.brama}`)
       : L(`przy dziurze ${name?.pl ?? 'w siatce'}`, `at the hole ${name?.en ?? 'in the fence'}`);
   };
   // w ciemności warta tylko słyszy (raz); patrzymy dalej, bo zaraz mogą wejść w światło lampy
@@ -910,8 +921,8 @@ function tonight(p: SimPerson): string | undefined {
   if (p.post === 'koza') return L('Do rana: czuwa przy kozie.', 'Until morning: watching the stove.');
   if (p.post)
     return L(
-      `Do rana: warta ${p.post === 'brama' ? 'przy bramie' : p.post === 'siatka' ? 'przy siatce' : 'przy dziurze w siatce'}.`,
-      `Until morning: on watch ${p.post === 'brama' ? 'at the gate' : p.post === 'siatka' ? 'at the fence' : 'at a hole in the fence'}.`,
+      `Do rana: warta ${p.post === 'brama' ? words.brama.przy : p.post === 'siatka' ? 'przy siatce' : 'przy dziurze w siatce'}.`,
+      `Until morning: on watch ${p.post === 'brama' ? `at ${wordsE.brama}` : p.post === 'siatka' ? 'at the fence' : 'at a hole in the fence'}.`,
     );
   return undefined;
 }
@@ -951,12 +962,14 @@ function hud(now: number) {
       : '';
   $('hint').textContent = warn || (now < hintUntil ? hint : '');
   $('hint').classList.toggle('warn', !!warn);
-  renderStats(statsOf(snap, gov));
+  renderStats(statsOf(snap, gov, words, wordsE));
+  alarmButton(st);
   renderGoals(snap);
   // przyjęci idą zza bramy: komunikat z przyciskiem „Pokaż”, dopóki ktoś jeszcze idzie
   const coming = arriving(st).length;
   $('arrive').hidden = !coming;
-  if (coming && $('arriveText').textContent !== comingText(coming)) $('arriveText').textContent = comingText(coming);
+  const comingLine = coming ? comingText(coming, words, wordsE) : '';
+  if (coming && $('arriveText').textContent !== comingLine) $('arriveText').textContent = comingLine;
   const card = $('card');
   // karta mieszkańca z osobą (kliknięty): do odczytu, zasłania kartę zaznaczonego z zarządu, dopóki jest wybrana
   const lok = residentFocus >= 0 ? snap.lokatorzy.find((p) => p.pawn === residentFocus) : undefined;
@@ -980,6 +993,8 @@ function hud(now: number) {
       personCard(lok, st.tick, undefined, storyOf === lok.pawn, {
         lokator: true,
         imie: imionaWGrze(siec.stan),
+        words,
+        wordsEn: wordsE,
         en: lok.ref ? angielscy?.get(lok.ref) : undefined,
       }),
     );
@@ -990,7 +1005,7 @@ function hud(now: number) {
     // karta mieszkania po kliknięciu w mieszkanie siedziby
     const apt = aptFocus >= 0 ? aptView(st, sim.w, aptFocus, snap.apts) : null;
     card.hidden = !apt;
-    if (apt) setCard(aptCard(apt, touchUI));
+    if (apt) setCard(aptCard(apt, touchUI, words, wordsE));
     return;
   }
   card.hidden = false;
@@ -1005,6 +1020,8 @@ function hud(now: number) {
     setCard(
       personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn, {
         imie: imionaWGrze(siec.stan),
+        words,
+        wordsEn: wordsE,
         en: sel[0].ref ? angielscy?.get(sel[0].ref) : undefined,
       }),
     );
@@ -1043,13 +1060,22 @@ function renderGoals(snap: SimSnapshot) {
     selected: snap.people.some((p) => selected.has(p.pawn)),
     wood,
     woodReady,
+    words,
+    wordsEn: wordsE,
   });
   let cur = currentGoal(list);
   let title = L('Pierwszy dzień', 'Day one');
   // po pierwszej nocy cele drugiego dnia: przeszukać, warsztat, obwód, drewno na noc
   if (!cur && isDay2(gov)) {
     if (wood >= DAY2_WOOD) woodReady2 = true;
-    list = goalsDay2(sim.st, gov, { touch: touchUI, wood, woodReady: woodReady2, holes: snap.fence.holes.length });
+    list = goalsDay2(sim.st, gov, {
+      touch: touchUI,
+      wood,
+      woodReady: woodReady2,
+      holes: snap.fence.holes.length,
+      words,
+      wordsEn: wordsE,
+    });
     cur = currentGoal(list);
     title = L('Drugi dzień', 'Day two');
   }
@@ -1209,7 +1235,7 @@ function showMenu() {
 function showHelp() {
   sheetAgain = showHelp;
   modal.show(
-    helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie'),
+    helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie', words, wordsE),
     (a) => {
       if (a === 'help-back') showMenu();
     },
@@ -1226,9 +1252,17 @@ $('btnMenu').onclick = () => {
 };
 
 /* ---------- broń i alarm ---------- */
+// ten sam przycisk włącza i odwołuje alarm; napis i podpowiedź bez alarmu jak w index.html (napisy statyczne)
+const ALARM_IDLE = STATYCZNE.find((x) => x.sel === '#btnAlarm')!;
 $('btnAlarm').onclick = () => {
   if (!sim || modal.open) return;
   const core = sim.st.pawns.filter((p) => p.kind === 'core' && !p.away).map((p) => p.id);
+  if (alarmOn(sim.st)) {
+    sim.push({ t: 'alarm', ids: core, off: true });
+    say(L(ALARM_OFF_SAY, ALARM_OFF_SAY_EN), 2500);
+    alarmButton(sim.st);
+    return;
+  }
   sim.push({ t: 'alarm', ids: core });
   say(
     modeOf(sim.st) === 'zombie'
@@ -1237,12 +1271,25 @@ $('btnAlarm').onclick = () => {
           'To arms! Everyone who can stand goes on watch at the fence.',
         )
       : L(
-          'Do broni! Wszyscy zdolni na wartę przy bramie.',
-          'To arms! Everyone who can stand goes on watch at the gate.',
+          `Do broni! Wszyscy zdolni na wartę ${words.brama.przy}.`,
+          `To arms! Everyone who can stand goes on watch at ${wordsE.brama}.`,
         ),
     4000,
   );
+  alarmButton(sim.st);
 };
+
+/** przycisk alarmu według stanu symulacji: „Do broni!” albo „Odwołaj”; DOM zmienia się tylko przy zmianie */
+function alarmButton(st: SimState) {
+  const b = $('btnAlarm');
+  const on = alarmOn(st);
+  const text = on ? L(ALARM_OFF, ALARM_OFF_EN) : tr(ALARM_IDLE.tekst);
+  if (b.textContent === text) return;
+  b.textContent = text;
+  b.title = on ? L(ALARM_OFF_TITLE, ALARM_OFF_TITLE_EN) : tr(ALARM_IDLE.title);
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-pressed', String(on));
+}
 
 /** kolejność broni przy „Zmień”: najpierw to, co sięga przez siatkę */
 const ARM_ORDER: readonly WeaponId[] = ['dzida', 'rewolwer', 'strzelba', 'kusza', 'siekiera', 'lom', 'kij', 'noz'];
@@ -1512,7 +1559,7 @@ $('card').addEventListener('keydown', (e) => {
 });
 
 /* ---------- polecenia ---------- */
-const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
+const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => ({
   move: ['Idzie.', 'Idą.'],
   select: ['', ''],
   chop: ['Idzie ściąć drzewo.', 'Idą ściąć drzewo.'],
@@ -1520,7 +1567,7 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   refuel: ['Dołoży do kozy.', 'Dołożą do kozy.'],
   burn: ['Rozbierze mebel na opał.', 'Rozbiorą mebel na opał.'],
   cook: ['Ugotuje coś z zapasów.', 'Ugotują coś z zapasów.'],
-  gate: ['Idzie do bramy.', 'Idą do bramy.'],
+  gate: [`Idzie do ${w.brama.d}.`, `Idą do ${w.brama.d}.`],
   guard: ['Stanie na warcie.', 'Staną na warcie.'],
   patch: ['Załata dziurę w siatce.', 'Załatają dziurę w siatce.'],
   campfire: ['Rozpali ognisko.', 'Rozpalą ognisko.'],
@@ -1542,10 +1589,10 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   search: ['Przeszuka pomieszczenie.', 'Jedna osoba przeszuka pomieszczenie.'],
   dismantle: ['Rozbierze to na materiał.', 'Jedna osoba rozbierze to na materiał.'],
   repair: ['Przyniesie materiał i naprawi.', 'Jedna osoba przyniesie materiał i naprawi.'],
-  claim: ['Zajmie mieszkanie dla zarządu.', 'Jedna osoba zajmie mieszkanie dla zarządu.'],
-};
+  claim: [`Zajmie mieszkanie dla ${w.zarzad.d}.`, `Jedna osoba zajmie mieszkanie dla ${w.zarzad.d}.`],
+});
 /** to samo po angielsku (jedna osoba, kilka osób) */
-const FEEDBACK_EN: Record<MenuItem['cmd']['t'], [string, string]> = {
+const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> => ({
   move: ['On the way.', 'On their way.'],
   select: ['', ''],
   chop: ['Off to chop down the tree.', 'Off to chop down the tree.'],
@@ -1553,7 +1600,7 @@ const FEEDBACK_EN: Record<MenuItem['cmd']['t'], [string, string]> = {
   refuel: ['Will feed the stove.', 'Will feed the stove.'],
   burn: ['Will break up the furniture for firewood.', 'Will break up the furniture for firewood.'],
   cook: ['Will cook something from the supplies.', 'Will cook something from the supplies.'],
-  gate: ['Off to the gate.', 'Off to the gate.'],
+  gate: [`Off to ${e.brama}.`, `Off to ${e.brama}.`],
   guard: ['Going on watch.', 'Going on watch.'],
   patch: ['Will patch the hole in the fence.', 'Will patch the hole in the fence.'],
   campfire: ['Will light a campfire.', 'Will light a campfire.'],
@@ -1574,8 +1621,8 @@ const FEEDBACK_EN: Record<MenuItem['cmd']['t'], [string, string]> = {
   search: ['Will search the room.', 'One person will search the room.'],
   dismantle: ['Will take it apart for materials.', 'One person will take it apart for materials.'],
   repair: ['Will bring materials and fix it.', 'One person will bring materials and fix it.'],
-  claim: ['Will claim the flat for the board.', 'One person will claim the flat for the board.'],
-};
+  claim: [`Will claim the flat for ${e.krotko}.`, `One person will claim the flat for ${e.krotko}.`],
+});
 
 function run(m: MenuItem) {
   if (!sim) return;
@@ -1583,7 +1630,7 @@ function run(m: MenuItem) {
   if (siec.obsluz(m)) return;
   sim.push(m.cmd);
   const k = m.cmd.ids.length > 1 ? 1 : 0;
-  const f = L(FEEDBACK[m.cmd.t][k], FEEDBACK_EN[m.cmd.t][k]);
+  const f = L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]);
   if (f) say(f, 1800);
 }
 
@@ -1619,7 +1666,7 @@ function askBurn(m: MenuItem) {
   sheetAgain = () => askBurn(m);
   pauseGame();
   modal.show(
-    burnSheet(thing.kind, name, softer),
+    burnSheet(thing.kind, name, softer, words, wordsE),
     (act) => {
       if (act !== 'burn-yes' && act !== 'burn-no') return;
       if (act === 'burn-yes') run(m);
@@ -1641,9 +1688,10 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   const zSieci = menu ? siec.menu(sim, tile) : [];
   if (!items.length && !zSieci.length) {
     say(
-      touchUI
-        ? L('Najpierw stuknijcie kogoś z zarządu.', 'Tap someone from the board first.')
-        : L('Najpierw zaznaczcie kogoś z zarządu.', 'Select someone from the board first.'),
+      L(
+        `Najpierw ${touchUI ? 'stuknijcie' : 'zaznaczcie'} kogoś z ${words.zarzad.dk}.`,
+        `${touchUI ? 'Tap' : 'Select'} someone from ${wordsE.krotko} first.`,
+      ),
       2500,
     );
     return;
@@ -1669,12 +1717,12 @@ function orderAt(sx: number, sy: number, menu: boolean) {
     .map((p) => sim!.st.people[p.person]?.first ?? '');
   const head =
     who.length > 2
-      ? L(`Zarząd (${who.length})`, `The board (${who.length})`)
+      ? L(`${words.Zarzad} (${who.length})`, `${wordsE.Zarzad} (${who.length})`)
       : who.join(L(' i ', ' and ')) || L('Klatka', 'Stairwell');
   // w mieszkaniu siedziby nagłówek mówi, które to mieszkanie i w jakim stanie
   const apt = aptAt(sim.w, tile);
   const v = apt >= 0 ? aptView(sim.st, sim.w, apt, snap.apts) : null;
-  const where = v ? ` · ${L('mieszkanie', 'flat')} ${apt + 1}, ${aptState(v).toLowerCase()}` : '';
+  const where = v ? ` · ${L('mieszkanie', 'flat')} ${apt + 1}, ${aptState(v, words, wordsE).toLowerCase()}` : '';
   ctx.show(items, sx, sy, `${head}${where}`, (x) => (x.confirm ? askConfirm(x) : run(x)));
 }
 
@@ -1741,7 +1789,8 @@ function openBuild() {
   const room = (k: BuildKind) =>
     allowedAnchors(s.st, s.w, k, 0).length > 0 || allowedAnchors(s.st, s.w, k, 1).length > 0;
   // materiały bez tego, co plany jeszcze zabiorą ze składu
-  modal.show(buildSheet(buildMenu(availableOf(s.st, snapshot(s.st, s.w).stock), room), touchUI), (act, arg) => {
+  const menu = buildMenu(availableOf(s.st, snapshot(s.st, s.w).stock), room, words, wordsE);
+  modal.show(buildSheet(menu, touchUI, words, wordsE), (act, arg) => {
     if (act === 'build') {
       modal.close();
       startPlacing(arg as BuildKind);
@@ -1817,8 +1866,8 @@ function placeClick(sx: number, sy: number, button: number, type: string, shift:
   sim.push({ t: 'build', ids, kind, x, y, rot });
   say(
     L(
-      `Plan: ${buildName(kind)}. Zarząd przyniesie materiały i zbuduje.`,
-      `Plan: ${buildName(kind)}. The board will bring the materials and build it.`,
+      `Plan: ${buildName(kind)}. ${words.Zarzad} przyniesie materiały i zbuduje.`,
+      `Plan: ${buildName(kind)}. ${wordsE.Zarzad} will bring the materials and build it.`,
     ),
     3000,
   );

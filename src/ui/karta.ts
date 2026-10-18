@@ -17,6 +17,7 @@ import { nazwaCechy } from '../content/druzyna.ts';
 import { nastrojEn } from '../content/nastroje.en.ts';
 import { wiek } from '../content/people.ts';
 import { jezyk, L } from '../core/jezyk.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import { AMMO_EN, WEAPONS, WEAPONS_EN } from '../sim/bron.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { NEED_LABELS, NEED_LABELS_EN, type Needs } from '../sim/needs.ts';
@@ -42,15 +43,15 @@ const AMMO_WORDS: Record<string, [string, string, string]> = {
 };
 
 /** ugryzienie z czasem; przycisk amputacji tylko wtedy, gdy karta pozwala na rozkazy i da się jeszcze uciąć */
-function biteHtml(p: SimPerson, tick: number, orders: boolean): string {
+function biteHtml(p: SimPerson, tick: number, orders: boolean, words: Words, e: WordsEn): string {
   if (!p.bite) return '';
   const ago = Math.max(0, Math.floor(((tick - p.bite.at) * 60) / TICKS_PER_HOUR));
   const left = Math.max(0, Math.ceil(p.bite.left / TICKS_PER_HOUR));
   const cut =
     orders && p.bite.amputate
       ? ` <button type="button" class="btn mini bad" data-card="amputate" title="${L(
-          'Ktoś z zarządu z medycyną utnie kończynę: pół godziny, nie zawsze się udaje',
-          'Someone from the board with Medicine takes the limb off: half an hour, and it doesn’t always work',
+          `Ktoś z ${words.zarzad.dk} z medycyną utnie kończynę: pół godziny, nie zawsze się udaje`,
+          `Someone from ${e.krotko} with Medicine takes the limb off: half an hour, and it doesn’t always work`,
         )}">${L('Amputować', 'Amputate')}</button>`
       : '';
   if (jezyk() === 'en') {
@@ -64,7 +65,7 @@ function biteHtml(p: SimPerson, tick: number, orders: boolean): string {
 }
 
 /** broń z amunicją i przycisk zmiany; ugryzienie z czasem i amputacją, póki da się ją zrobić */
-function armHtml(p: SimPerson, tick: number): string {
+function armHtml(p: SimPerson, tick: number, words: Words, e: WordsEn): string {
   const w = p.weapon ? WEAPONS[p.weapon] : WEAPONS.piesci;
   const en = jezyk() === 'en';
   const name = en ? WEAPONS_EN[w.id].name : w.name;
@@ -73,7 +74,7 @@ function armHtml(p: SimPerson, tick: number): string {
       ? ` (${en ? manyEn(p.ammo, AMMO_EN[w.ammo].one, AMMO_EN[w.ammo].other) : many(p.ammo, ...AMMO_WORDS[w.ammo])})`
       : '';
   const arm = `<p class="arm">${L('Broń:', 'Weapon:')} <b>${esc(name)}</b>${esc(ammo)} <button type="button" class="btn mini" data-card="arm">${L('Zmień', 'Swap')}</button></p>`;
-  return arm + biteHtml(p, tick, true);
+  return arm + biteHtml(p, tick, true, words, e);
 }
 
 /** obecni krewni z generatora w jednej linijce (bez numerów mieszkań) */
@@ -117,6 +118,9 @@ export interface CardOpts {
   /** angielska wersja tekstów osoby z generatora (zawód, historia, rodzina) na kartę po angielsku; czego brak, to
       zawód przez zawodEn, a historia i rodzina ze stanu */
   en?: { prof?: string; story?: string; rodzina?: string };
+  /** słowa miejsca po polsku i po angielsku (w domu komitet ulicy); bez nich jak w bloku */
+  words?: Words;
+  wordsEn?: WordsEn;
 }
 
 export function personCard(
@@ -127,6 +131,8 @@ export function personCard(
   opts: CardOpts = {},
 ): string {
   const en = jezyk() === 'en';
+  const words = opts.words ?? wordsOf(BLOK);
+  const e = opts.wordsEn ?? wordsEn(BLOK);
   const skills = Object.entries(p.skills)
     .map(([d, v]) => `<span class="tag skill">${en ? (DOM_EN[d as Dom] ?? DOM[d as Dom]) : DOM[d as Dom]} ${v}</span>`)
     .join('');
@@ -160,7 +166,7 @@ export function personCard(
     rodzinaHtml(en ? (opts.en?.rodzina ?? p.rodzina) : p.rodzina),
     storyHtml(en ? (opts.en?.story ?? p.story) : p.story, storyOpen),
     `<div class="tags">${skills}${traits}${maimed}</div>`,
-    opts.lokator ? biteHtml(p, tick, false) : armHtml(p, tick),
+    opts.lokator ? biteHtml(p, tick, false, words, e) : armHtml(p, tick, words, e),
     `<div class="needs">${bars}</div>`,
     moods ? `<ul class="moods">${moods}</ul>` : '',
     tonight ? `<p class="tonight">${esc(tonight)}</p>` : '',

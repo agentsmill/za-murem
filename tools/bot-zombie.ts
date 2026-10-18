@@ -1,8 +1,11 @@
 /* Bot trybu zombie: gra z zarządem (src/gov) na Przymorzu przez kilka nocy dwiema politykami karty nocy: warta
-   z dzidami przy siatce (dwie najzdrowsze osoby, dzidy z magazynu) i bez warty. Za dnia w obu politykach gracz
-   robi to samo: łata dziury, wzmacnia uszkodzoną siatkę, robi dzidy, czyści podwórko ze szwendaczy uzbrojonym
-   zarządem, dobija zwłoki i amputuje ugryzionych w rękę albo nogę. Na noc: stado, najwięcej napierających,
-   zabici, przerwania siatki, ugryzienia, zgony, siatka o 6:00, kto żyje. Na koniec skrót stanu (powtarzalny).
+   z dzidami przy siatce i bez warty. Na wartę idą najwyżej dwie osoby, i to tylko z dzidą: najpierw ci, którzy ją
+   mają, potem najzdrowsi, którzy wezmą dzidę z magazynu w zamian za swoją broń; ugryzieni (w gorączce) nie stoją.
+   Za dnia w obu politykach gracz robi to samo: łata dziury, wzmacnia uszkodzoną siatkę, robi dzidy, czyści
+   podwórko ze szwendaczy uzbrojonym zarządem, dobija zwłoki i amputuje ugryzionych w rękę albo nogę. Na noc
+   (od 7:00 do 7:00): stado, najwięcej napierających, zabici, przerwania siatki, ugryzienia za dnia (7–20)
+   i w nocy (20–7), zgony, siatka o 6:00, zarząd, jego średnie najedzenie i zdrowie o 7:00, mieszkańcy. Na koniec
+   skrót stanu (powtarzalny).
    Trzeci argument to liczba osób zarządu (1–5, domyślnie 4 jak w grze bez ruszania panelu „Wasz zarząd”), żeby
    zobaczyć, jak trudność rośnie przy mniejszym zarządzie.
    Z flagą --mieszkancy (gdziekolwiek wśród argumentów) bot gra na świecie z mieszkańcami siedziby z generatora
@@ -50,10 +53,15 @@ interface Night {
   pressing: number;
   killed: number;
   breaches: number;
-  bites: number;
+  /** ugryzienia za dnia (7–20) i w nocy (20–7) */
+  biteDay: number;
+  biteNight: number;
   deaths: number;
   fence: number;
   core: number;
+  /** średnie najedzenie i zdrowie zarządu o 7:00 */
+  food: number;
+  health: number;
   residents: number;
 }
 
@@ -74,6 +82,10 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
   const tally = () => ({ ...st.tally!, deaths: (st.dead ?? []).filter((d) => d.kind !== 'szabrownik').length });
   let mark = tally();
   let peak = 0;
+  // ugryzienia od ostatniego liczenia, osobno za dnia i w nocy
+  let bitesAt = st.tally!.bites;
+  let biteDay = 0;
+  let biteNight = 0;
   const door = world.buildings[world.hq].entrances[0]?.out ?? 0;
   const skip = new Set<number>();
   let asked = -1;
@@ -81,6 +93,11 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
     sim.step();
     const h = hourOf(st.tick);
     if (h >= 21 || h < 6) peak = Math.max(peak, snapshot(st, world).zombies.pressing);
+    if (st.tally!.bites !== bitesAt) {
+      if (h >= 20 || h < 7) biteNight += st.tally!.bites - bitesAt;
+      else biteDay += st.tally!.bites - bitesAt;
+      bitesAt = st.tally!.bites;
+    }
     if (st.tick % TICKS_PER_SECOND === 0) {
       const s = st.tick / TICKS_PER_SECOND;
       applyGov(st, world, govUpdate(gov, govInput(st, world, s)));
@@ -105,13 +122,28 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
           // propozycja zarządu zostaje (wyprawy po zapasy), zmienia się tylko warta przy siatce
           for (const [id, key] of Object.entries(p.assign)) if (key.startsWith('warta:')) setNight(gov, id, 'sen');
           if (policy === 'warta-dzidy') {
-            const two = core()
-              .sort((a, b) => b.needs!.health - a.needs!.health || a.id - b.id)
-              .slice(0, 2);
-            for (const q of two) {
-              if (q.weapon !== 'dzida' && st.store.arms?.includes('dzida'))
+            // warta tylko z dzidą: najpierw ci, którzy ją mają, potem najzdrowsi z dzidą z magazynu (w zamian
+            // za swoją broń); bez ugryzionych
+            let spare = (st.store.arms ?? []).filter((a) => a === 'dzida').length;
+            let guards = 0;
+            const order = core()
+              .filter((q) => q.bite === undefined)
+              .sort(
+                (a, b) =>
+                  Number(b.weapon === 'dzida') - Number(a.weapon === 'dzida') ||
+                  b.needs!.health - a.needs!.health ||
+                  a.id - b.id,
+              );
+            for (const q of order) {
+              if (guards >= 2) break;
+              const spear = q.weapon === 'dzida';
+              if (!spear && spare <= 0) continue;
+              if (!setNight(gov, st.people[q.person].id, 'warta:siatka')) continue;
+              if (!spear) {
                 sim.push({ t: 'arm', ids: [q.id], weapon: 'dzida' });
-              setNight(gov, st.people[q.person].id, 'warta:siatka');
+                spare--;
+              }
+              guards++;
             }
           }
           applyGov(st, world, confirmNight(gov, i));
@@ -211,20 +243,27 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
     if (st.tick % TICKS_PER_DAY === 16 * TICKS_PER_HOUR) {
       const now = tally();
       const snap = snapshot(st, world);
+      const avg = (k: 'food' | 'health') =>
+        snap.people.length ? snap.people.reduce((a, p) => a + p.needs[k], 0) / snap.people.length : 0;
       nights.push({
         day: dayOf(st.tick) - 1,
         horde: hordeSize(dayOf(st.tick) - 1),
         pressing: peak,
         killed: now.killed - mark.killed,
         breaches: now.breaches - mark.breaches,
-        bites: now.bites - mark.bites,
+        biteDay,
+        biteNight,
         deaths: now.deaths - mark.deaths,
         fence: snap.fence.durability,
         core: snap.people.length,
+        food: avg('food'),
+        health: avg('health'),
         residents: snap.residents,
       });
       mark = now;
       peak = 0;
+      biteDay = 0;
+      biteNight = 0;
     }
   }
   const end_ = gov.over ? `koniec gry: ${gov.over}, dzień ${dayOf(st.tick)}` : 'gra trwa';
@@ -242,9 +281,11 @@ for (const policy of ['warta-dzidy', 'bez-warty'] as const) {
   const r = play(policy);
   console.log(`\n  ${policy} (${(r.ms / 1000).toFixed(1)} s, skrót ${r.hash}; ${r.over})`);
   if (r.start && policy === 'warta-dzidy') console.log(`  ${r.start}`);
-  console.log('  noc  stado  napiera  zabici  przerwania  ugryzienia  zgony  siatka  zarząd  mieszkańcy');
+  console.log(
+    '  noc  stado  napiera  zabici  przerwania  ugryzienia dzień/noc  zgony  siatka  zarząd  najedzenie  zdrowie  mieszkańcy',
+  );
   for (const n of r.nights)
     console.log(
-      `  ${String(n.day).padStart(3)}  ${String(n.horde).padStart(5)}  ${String(n.pressing).padStart(7)}  ${String(n.killed).padStart(6)}  ${String(n.breaches).padStart(10)}  ${String(n.bites).padStart(10)}  ${String(n.deaths).padStart(5)}  ${n.fence.toFixed(2).padStart(6)}  ${String(n.core).padStart(6)}  ${String(n.residents).padStart(10)}`,
+      `  ${String(n.day).padStart(3)}  ${String(n.horde).padStart(5)}  ${String(n.pressing).padStart(7)}  ${String(n.killed).padStart(6)}  ${String(n.breaches).padStart(10)}  ${`${n.biteDay}/${n.biteNight}`.padStart(20)}  ${String(n.deaths).padStart(5)}  ${n.fence.toFixed(2).padStart(6)}  ${String(n.core).padStart(6)}  ${String(Math.round(n.food)).padStart(10)}  ${String(Math.round(n.health)).padStart(7)}  ${String(n.residents).padStart(10)}`,
     );
 }

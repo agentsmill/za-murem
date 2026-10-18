@@ -6,6 +6,8 @@
    światło, pies, brama. Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość
    z ziarna gry. Teksty karty i raportu to Tx (polski i angielski z tych samych danych, bez dodatkowych losowań). */
 
+import { NOTE_HOLD_FIRE_EN } from '../content/napisy-zombie.en.ts';
+import { NOTE_HOLD_FIRE } from '../content/napisy-zombie.ts';
 import { g } from '../content/people.ts';
 import { type Tx, tx, txJoin, txOf } from '../core/jezyk.ts';
 import { clamp } from '../core/rng.ts';
@@ -311,6 +313,9 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
               ? tx(`${g(p, 'Zmęczony', 'Zmęczona')}: może zasnąć na warcie.`, 'Tired: may fall asleep on watch.')
               : tx('Nie wyśpi się.', 'Won’t get much sleep.'),
       });
+      // broń palna sama nie strzela przez siatkę (strzał ściąga stado), kusza strzela cicho
+      if (zombie && behindWire(i, post.key) && p.arm === 'palna' && p.weapon !== 'kusza')
+        opts[opts.length - 1].note = tx(NOTE_HOLD_FIRE, NOTE_HOLD_FIRE_EN);
     }
     for (const t of targets) {
       const ok = canGo(p, t);

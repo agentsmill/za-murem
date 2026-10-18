@@ -2945,8 +2945,8 @@ const SHOTS: Shot[] = [
     run: async (page, base) => arrivals(page, base, true),
   },
   // wydarzenia z miejsca: dym z komina pierwszego dnia w bloku i w domu, wydarzenie drugiego dnia i karta nocy w domu
-  wydarzeniaDym('wydarzenia-blok-dym', 'przymorze', 'z waszej klatki'),
-  wydarzeniaDym('wydarzenia-dom-dym', 'zielonki', 'zza płotu'),
+  wydarzeniaDym('wydarzenia-blok-dym', 'przymorze', 'z waszej klatki', false),
+  wydarzeniaDym('wydarzenia-dom-dym', 'zielonki', 'zza płotu', true),
   {
     name: 'wydarzenia-dom-dzien2',
     query: '',
@@ -2965,6 +2965,10 @@ const SHOTS: Shot[] = [
           const t = await sheetText(page);
           console.log(`  wydarzenie drugiego dnia w domu: ${t.slice(0, 160)}`);
           if (FORBIDDEN_DOM.test(t)) throw new Error(`w domu słowa z bloku: ${t}`);
+          const kicker = await page.textContent('#sheet .sheet-kicker');
+          if (kicker !== 'Na ulicy') throw new Error(`nagłówek okna wydarzenia w domu: ${kicker}`);
+          const goals = (await page.textContent('#goals')) ?? '';
+          if (BLOKOWE_UI.test(goals)) throw new Error(`cele drugiego dnia w domu ze słowami z bloku: ${goals}`);
           return;
         }
         if (p) await answerFirst(page, p);
@@ -2991,13 +2995,31 @@ const SHOTS: Shot[] = [
                 .join(' | ') ?? t.slice(0, 120)
             }`,
           );
-          if (/blok|trzepak|pawilon/i.test(t)) throw new Error(`karta nocy w domu z blokowiskiem: ${t}`);
+          if (BLOKOWE_UI.test(t)) throw new Error(`karta nocy w domu z blokowiskiem: ${t}`);
           if (!t.includes('opuszczony dom obok')) throw new Error('na karcie nie ma wyprawy do opuszczonego domu obok');
+          if (!t.includes('Jak radzi komitet')) throw new Error('karta nocy w domu bez rady komitetu');
           return;
         }
         if (p) await answerFirst(page, p);
       }
       throw new Error('karta nocy się nie pokazała');
+    },
+  },
+  tekstyPomoc('teksty-blok-pomoc', 'przymorze', false),
+  tekstyPomoc('teksty-dom-pomoc', 'zielonki', true),
+  {
+    // menu budowy w domu: komitet sam przynosi materiały, łóżka piętrowe zmieszczą ludzi „w domu”
+    name: 'teksty-dom-budowa',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await page.click('#btnBuild');
+      await page.waitForSelector('#sheet .bcat');
+      const t = await sheetText(page);
+      console.log(`  menu budowy w domu: ${t.match(/Plan stawia[^.]*\./)?.[0] ?? t.slice(0, 120)}`);
+      if (BLOKOWE_UI.test(t)) throw new Error(`menu budowy w domu ze słowem z bloku: ${t.match(BLOKOWE_UI)?.[0]}`);
+      if (!t.includes('w domu zmieści się więcej ludzi')) throw new Error('łóżka piętrowe w domu nie mówią o domu');
     },
   },
   {
@@ -3317,6 +3339,9 @@ async function m2PoseStage(page: Page, where: 'dom' | 'podworko') {
 
 /** słowa, których w domu jednorodzinnym nie ma w tekstach zarządu (jak FORBIDDEN_DOM w testach) */
 const FORBIDDEN_DOM = /klatk|piętr|spółdziel|pawilon|szlaban|świetlic|czynsz|blok|mieszkani/i;
+/** słowa z bloku, których w domu nie ma w oknach, celach, pomocy, pasku i menu budowy (jak BLOKOWE
+    w tests/unit/teksty-miejsca.test.ts: łóżka piętrowe i mieszkanie siedziby zostają) */
+const BLOKOWE_UI = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszkańc/i;
 
 /** samouczek bez klikania: pierwszy z zarządu ścina suche drzewo (jak polecenie z menu) */
 async function chopDryTree(page: Page) {
@@ -3344,8 +3369,9 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
 }
 
-/** okno „Dym z komina” po rozpaleniu kozy pierwszego dnia, z sąsiadem z miejsca */
-function wydarzeniaDym(name: string, demo: string, from: string): Shot {
+/** okno „Dym z komina” po rozpaleniu kozy pierwszego dnia, z sąsiadem z miejsca; nagłówek okna, samouczek
+    i pasek według miejsca (w domu „Na ulicy”, suche drzewo w ogrodzie i komitet, w bloku osiedle i trzepak) */
+function wydarzeniaDym(name: string, demo: string, from: string, dom: boolean): Shot {
   return {
     name,
     query: '',
@@ -3360,12 +3386,47 @@ function wydarzeniaDym(name: string, demo: string, from: string): Shot {
           console.log(`  ${t.replace(/\s+/g, ' ').slice(0, 200)}`);
           if (!t.startsWith('Dym z komina')) throw new Error(`pierwsze okno to nie dym z komina: ${t.slice(0, 80)}`);
           if (!t.includes(`pani Krysia ${from}`)) throw new Error(`w dymie nie ma sąsiadki ${from}`);
+          const kicker = await page.textContent('#sheet .sheet-kicker');
+          const goals = (await page.textContent('#goals')) ?? '';
+          const bar = await page.evaluate(() =>
+            [...document.querySelectorAll<HTMLElement>('.stat')].map((e) => e.title).join(' | '),
+          );
+          console.log(`  nagłówek: ${kicker}; samouczek: ${goals.match(/Wyślijcie[^.]*\./)?.[0]}`);
+          if (kicker !== (dom ? 'Na ulicy' : 'Na osiedlu')) throw new Error(`nagłówek okna wydarzenia: ${kicker}`);
+          if (!goals.includes(`do suchego drzewa ${dom ? 'w ogrodzie' : 'przy trzepaku'}`))
+            throw new Error(`samouczek nie według miejsca: ${goals}`);
+          const word = dom ? `${goals} ${bar}`.match(BLOKOWE_UI)?.[0] : undefined;
+          if (word) throw new Error(`samouczek albo pasek w domu ze słowem z bloku: ${word}`);
           await waitIdle(page);
           return;
         }
         if (p) throw new Error(`przed dymem okno: ${p}`);
       }
       throw new Error('dym z komina się nie pokazał');
+    },
+  };
+}
+
+/** pomoc z menu według miejsca: w domu komitet ulicy, sąsiedzi i zebranie ulicy, w bloku zarząd spółdzielni
+    i walne */
+function tekstyPomoc(name: string, demo: string, dom: boolean): Shot {
+  return {
+    name,
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=${demo}&speed=0&cam=hq,1.2`);
+      await waitIdle(page);
+      await page.click('#btnMenu');
+      await page.click('#sheet [data-act="menu-help"]');
+      await page.waitForSelector('#sheet .help');
+      const t = await sheetText(page);
+      console.log(`  pomoc: ${t.match(/Prowadzicie[^.]*\./)?.[0] ?? t.slice(0, 120)}`);
+      const word = t.match(BLOKOWE_UI)?.[0];
+      if (dom && word) throw new Error(`pomoc w domu ze słowem z bloku: ${word}`);
+      if (!dom && !t.includes('Prowadzicie zarząd spółdzielni'))
+        throw new Error('pomoc w bloku nie mówi o spółdzielni');
+      // na zrzucie część o zarządzie (w domu o komitecie) i „Na razie”
+      await page.evaluate(() => document.querySelectorAll('#sheet .help-h')[2]?.scrollIntoView({ block: 'start' }));
     },
   };
 }

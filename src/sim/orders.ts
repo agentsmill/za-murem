@@ -3,9 +3,11 @@
 
    Napisy (MenuItem.label, jobText) są w bieżącym języku (L z src/core/jezyk.ts, angielskie nazwy rzeczy
    z nazwy.en.ts): to tylko tekst do rysowania, nic go nie zapisuje w stanie ani nie porównuje. W Node domyślnie po
-   polsku, więc testy i boty widzą polskie napisy jak dotąd. */
+   polsku, więc testy i boty widzą polskie napisy jak dotąd. Brama albo furtka i zarząd albo komitet ze słownika
+   wspólnoty (wordsOfWorld, wordsEnOfWorld). */
 
 import { L } from '../core/jezyk.ts';
+import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
@@ -225,15 +227,18 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       });
   }
   if (st.fence && gateTiles(w).includes(tile)) {
+    // w domu furtka
+    const brama = wordsOfWorld(w).brama;
+    const gate = wordsEnOfWorld(w).brama;
     out.push({
       cmd: { t: 'guard', ids: core, post: 'brama' },
-      label: L('Pilnować bramy', 'Keep watch at the gate'),
+      label: L(`Pilnować ${brama.d}`, `Keep watch at ${gate}`),
       quick: false,
     });
     const open = st.fence.gateOpen;
     out.push({
       cmd: { t: 'gate', ids: core, open: !open },
-      label: open ? L('Zamknąć bramę', 'Close the gate') : L('Otworzyć bramę', 'Open the gate'),
+      label: L(`${open ? 'Zamknąć' : 'Otworzyć'} ${brama.b}`, `${open ? 'Close' : 'Open'} ${gate}`),
       quick: false,
     });
   }
@@ -410,7 +415,10 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       if (j.target === STAY_MEAL)
         return walking
           ? L('Idzie na wspólny posiłek.', 'Heading to the shared meal.')
-          : L('Je wspólny posiłek przy stole zarządu.', 'Having the shared meal at the board’s table.');
+          : L(
+              `Je wspólny posiłek przy stole ${wordsOfWorld(w).zarzad.dk}.`,
+              `Having the shared meal at ${wordsEnOfWorld(w).krotko}’s table.`,
+            );
       return walking ? L('Idzie do domu.', 'Going home.') : L('Siedzi w domu.', 'Staying in.');
     case 'cook': {
       if (walking) return L('Idzie gotować.', 'Going to cook.');
@@ -439,12 +447,15 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         return walking
           ? L('Idzie na wartę przy siatce.', 'Going on watch at the fence.')
           : L('Trzyma wartę przy siatce.', 'On watch at the fence.');
-      if (walking)
-        return j.target === 0
-          ? L('Idzie na wartę przy bramie.', 'Going on watch at the gate.')
-          : L('Idzie na wartę przy dziurze.', 'Going on watch at the hole in the fence.');
-      return j.target === 0
-        ? L('Trzyma wartę przy bramie.', 'On watch at the gate.')
+      if (j.target === 0) {
+        const gate = wordsEnOfWorld(w).brama;
+        return L(
+          `${walking ? 'Idzie na wartę' : 'Trzyma wartę'} ${wordsOfWorld(w).brama.przy}.`,
+          `${walking ? 'Going on watch' : 'On watch'} at ${gate}.`,
+        );
+      }
+      return walking
+        ? L('Idzie na wartę przy dziurze.', 'Going on watch at the hole in the fence.')
         : L('Trzyma wartę przy dziurze.', 'On watch at the hole in the fence.');
     case 'patch':
       if (j.phase === 0) return L('Idzie po deski i złom.', 'Fetching planks and scrap.');
