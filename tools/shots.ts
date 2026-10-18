@@ -3722,32 +3722,12 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // karta nocy w domu dwa razy: z `miasto=0` (tylko domowe cele z TARGETS, jak przed mapą miasta) i z mapą miasta
+    // (domyślnie: wyprawy do miejsc z okolicy albo domowe cele z TARGETS); zrzut zostaje z drugiej, domyślnej gry
     name: 'wydarzenia-dom-karta',
     query: '',
     run: async (page, base) => {
-      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
-      await waitIdle(page);
-      await chopDryTree(page);
-      for (let k = 0; k < 120; k++) {
-        const p = await page.evaluate(() => window.zm!.ff(10));
-        if (p === 'karta') {
-          const t = await sheetText(page);
-          console.log(
-            `  karta nocy w domu: ${
-              t
-                .match(/Wyprawa[^\n]*/g)
-                ?.slice(0, 2)
-                .join(' | ') ?? t.slice(0, 120)
-            }`,
-          );
-          if (BLOKOWE_UI.test(t)) throw new Error(`karta nocy w domu z blokowiskiem: ${t}`);
-          if (!t.includes('opuszczony dom obok')) throw new Error('na karcie nie ma wyprawy do opuszczonego domu obok');
-          if (!t.includes('Jak radzi komitet')) throw new Error('karta nocy w domu bez rady komitetu');
-          return;
-        }
-        if (p) await answerFirst(page, p);
-      }
-      throw new Error('karta nocy się nie pokazała');
+      for (const miasto of [false, true]) await kartaNocyWDomu(page, base, miasto);
     },
   },
   tekstyPomoc('teksty-blok-pomoc', 'przymorze', false),
@@ -4830,6 +4810,42 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
   else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
+}
+
+/** nazwy domowych celów z TARGETS na karcie nocy w domu jednorodzinnym (tresc.ts: `targetName`) */
+const CELE_DOMU = ['opuszczony dom obok', 'sklep przy głównej drodze', 'garaże obok', 'szopy'];
+
+/** Karta nocy pierwszej nocy w Zielonkach (dom jednorodzinny): bez słów z bloku, z radą komitetu i z wyprawami, których
+    nazwy są domowe. Bez mapy miasta (`miasto=0`) to dokładnie domowe cele z TARGETS, w tym opuszczony dom obok; z mapą
+    każda wyprawa jest albo miejscem z okolicy („Przychodnia (Estetica Dent), 423 m”), albo domowym celem z TARGETS
+    (druga opcja bywa nim, gdy okolica ma tylko jedno miejsce). */
+async function kartaNocyWDomu(page: Page, base: string, miasto: boolean): Promise<void> {
+  const etykieta = miasto ? 'z mapą miasta' : 'bez mapy miasta';
+  await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2${miasto ? '' : '&miasto=0'}`);
+  await waitIdle(page);
+  await chopDryTree(page);
+  for (let k = 0; k < 120; k++) {
+    const p = await page.evaluate(() => window.zm!.ff(10));
+    if (p === 'karta') {
+      const t = await sheetText(page);
+      // sheetText skleja wiersze bez separatorów, a po nazwie wyprawy zawsze idzie „, ryzyko”
+      const nazwy = [...new Set([...t.matchAll(/Wyprawa (?:blisko|daleko): ([\s\S]*?), ryzyko/g)].map((m) => m[1]))];
+      console.log(`  karta nocy w domu (${etykieta}): ${nazwy.join(' | ') || t.slice(0, 120)}`);
+      if (BLOKOWE_UI.test(t)) throw new Error(`karta nocy w domu (${etykieta}) z blokowiskiem: ${t}`);
+      if (!nazwy.length) throw new Error(`na karcie nocy w domu (${etykieta}) nie ma wypraw`);
+      for (const n of nazwy)
+        if (!CELE_DOMU.includes(n) && !(miasto && /, \d+ m$/.test(n)))
+          throw new Error(
+            `wyprawa na karcie nocy w domu (${etykieta}) nie jest domowym celem ani miejscem z okolicy: ${n}`,
+          );
+      if (!miasto && !nazwy.includes('opuszczony dom obok'))
+        throw new Error('na karcie bez mapy miasta nie ma wyprawy do opuszczonego domu obok');
+      if (!t.includes('Jak radzi komitet')) throw new Error(`karta nocy w domu (${etykieta}) bez rady komitetu`);
+      return;
+    }
+    if (p) await answerFirst(page, p);
+  }
+  throw new Error(`karta nocy w domu (${etykieta}) się nie pokazała`);
 }
 
 /* ---------- M2 fala 2: pomocnicy scenariuszy m2f2-* ---------- */
