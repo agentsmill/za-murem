@@ -1869,6 +1869,12 @@ export class Sim {
     let left = speed;
     while (left > 1e-9 && p.pi < p.path.length) {
       const t = p.path[p.pi];
+      // szwendacz staje przed łatą albo bramą, które zamknęły się, kiedy już szedł (droga od nowa przy zmysłach)
+      if (p.kind === 'zombie' && this.sealed(t)) {
+        p.path = [];
+        p.pi = 0;
+        break;
+      }
       const tx = (t % size) + 0.5;
       const ty = Math.floor(t / size) + 0.5;
       const dx = tx - p.x;
@@ -4878,6 +4884,7 @@ export class Sim {
     const tick = st.tick;
     if (!p.job) p.job = this.newJob('zombie', -1, this.tileOf(p), false);
     const j = p.job;
+    if (this.sealed(this.tileOf(p))) this.pushOut(p, j);
     if (j.phase === 3) {
       const t = st.pawns.find((q) => q.id === j.target);
       if (
@@ -4948,6 +4955,25 @@ export class Sim {
         // goni, a droga się skończyła: czeka na zmysły
         return;
     }
+  }
+
+  /** kafelek siatki albo bramy, przez który teraz nie da się przejść (cała siatka, łata, zasieki, zamknięta brama) */
+  private sealed(tile: number): boolean {
+    return this.fenceMask[tile] === 1 && this.blocked[tile] === 1;
+  }
+
+  /** Szwendacz w dziurze albo bramie, którą właśnie zamknięto: łata wypycha go na najbliższy wolny kafelek po stronie
+      ulicy, także gdy szedł z podwórka, i zaczyna od nowa (stado znowu idzie pod siatkę). */
+  private pushOut(p: Pawn, j: Job): void {
+    const size = this.w.size;
+    const out = nearestFree(this.lay.outside.blocked, size, this.tileOf(p));
+    p.x = (out % size) + 0.5;
+    p.y = Math.floor(out / size) + 0.5;
+    p.path = [];
+    p.pi = 0;
+    j.phase = j.what === 'stado' ? 1 : 0;
+    j.target = -1;
+    j.n = 0;
   }
 
   /** ugryzienie: trafia w 70% przypadków, 15 obrażeń */
