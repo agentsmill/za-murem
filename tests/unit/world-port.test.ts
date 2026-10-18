@@ -16,13 +16,14 @@ const v = loadV03(undefined, [
 ]);
 const G = v.G;
 
-/** geometria bez dodatków 0.4: przejść przez budynki (pass) oraz identyfikatora OSM i daty budowy w tagach */
+/** geometria bez dodatków 0.4: przejść przez budynki (pass) oraz identyfikatora OSM, daty budowy i klucza budynku
+    z osią klatek (zm:klucz, zm:os, src/world/klucze.ts) w tagach */
 function as03(geo: Geo): Omit<Geo, 'pass'> {
   const { pass: _pass, ...rest } = geo;
   return {
     ...rest,
     b: rest.b.map((b) => {
-      const { id: _id, start_date: _start, ...t } = b.t;
+      const { id: _id, start_date: _start, 'zm:klucz': _klucz, 'zm:os': _os, ...t } = b.t;
       return { ...b, t };
     }),
   };
