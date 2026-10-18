@@ -4227,6 +4227,13 @@ function druzynaShots(): Shot[] {
         if (r.core !== 2) throw new Error(`w grze ${r.core} osób zarządu zamiast 2`);
         if (!r.arms.includes('lom') || !r.arms.includes('noz'))
           throw new Error('broń ponad liczbę osób nie trafiła do magazynu');
+        // kamera na zarządzie w kuchni siedziby (zamiast przelotu nad osiedlem)
+        await page.evaluate(() => {
+          const zm = window.zm!;
+          const p = zm.sim!.st.pawns.find((q) => q.kind === 'core')!;
+          zm.setCam(p.x, p.y, 1.3);
+        });
+        await waitIdle(page);
       },
     },
     {
