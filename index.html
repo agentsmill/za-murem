@@ -26,6 +26,9 @@
       <div class="label-row"><label for="addr">Adres twojego osiedla</label><span class="mode" role="radiogroup" aria-label="Tryb gry"><label class="mode-o"><input type="radio" name="tryb" value="zwykly" checked><span>Zwykły</span></label><label class="mode-o zombie"><input type="radio" name="tryb" value="zombie"><span>Zombie</span></label></span></div>
       <div class="row"><input id="addr" name="addr" placeholder="np. Wołoska 12, Warszawa" autocomplete="street-address"><button class="btn go" type="submit">Wczytaj osiedle</button></div>
     </form>
+    <!-- ===== Wasz zarząd: początek bloku (liczba osób i własna drużyna; treść rysuje src/ui/druzyna.ts) ===== -->
+    <section class="druzyna" id="druzyna" aria-labelledby="dzTitle"></section>
+    <!-- ===== Wasz zarząd: koniec bloku ===== -->
     <div class="alt" id="demos"></div>
     <p class="status" id="startStatus" aria-live="polite"></p>
     <p class="fine">Adres trafia do wyszukiwarki OpenStreetMap (Nominatim), mapę pobieramy z darmowych kafelków <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Dane mapy © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, kafelki © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>.</p>

@@ -126,6 +126,8 @@ const SHOTS: Shot[] = [
       if (bottom > 844) throw new Error('formularz adresu poza pierwszym ekranem telefonu');
     },
   },
+  // Wasz zarząd: sekcja zwinięta, edytor na komputerze i telefonie, liczba osób w grze, karta osoby z historią
+  ...druzynaShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -4007,4 +4009,242 @@ async function arrivals(page: Page, base: string, phone: boolean) {
   }));
   console.log(`  po godzinie gry: idzie jeszcze ${left.n}, komunikat ${left.hidden ? 'schowany' : 'widoczny'}`);
   if (!left.hidden || left.n) throw new Error('komunikat o przybyszach nie zniknął po dojściu');
+}
+
+/** Wasz zarząd (src/ui/druzyna.ts): sekcja zwinięta na karcie startowej, edytor osoby na komputerze i na telefonie,
+    liczba osób w grze (dwie osoby w trybie zombie, broń ponad liczbę osób w magazynie) i karta osoby z historią z
+    drużyny zapisanej w pamięci przeglądarki. Panel losuje drużynę ze świeżym ziarnem, więc imiona w zrzutach edytora
+    różnią się między przebiegami; karta osoby ma stałą drużynę. */
+function druzynaShots(): Shot[] {
+  const KEY = 'za-murem-0.4-druzyna';
+  const TEAM = [
+    {
+      name: 'Halina Wróbel',
+      f: true,
+      age: 67,
+      prof: 'Emerytowany inżynier',
+      skills: { bud: 3, cieplo: 2, elek: 1 },
+      traits: ['twardy', 'klotliwy'],
+      story:
+        'Projektowała kotłownie jeszcze przed asystentami AI i do dziś liczy na kartce, więc całe osiedle przychodzi do niej z rysunkiem na odwrocie kalendarza. Na każdym zebraniu ma zdanie odrębne, także wtedy, kiedy sama zgłosiła wniosek. Ma certyfikat neutralności klimatycznej oprawiony w ramkę i zimą wiesza go najbliżej kozy.',
+    },
+    {
+      name: 'Rafał Mazur',
+      f: false,
+      age: 41,
+      prof: 'Hydraulik',
+      skills: { cieplo: 4, bud: 2 },
+      traits: ['pracowity'],
+      story:
+        'W szkole zawodowej uczył się w goglach do wirtualnej rzeczywistości, a prawdziwy klucz do rur wziął do ręki dopiero przy pierwszym zamarzniętym pionie. Nie umie usiedzieć bez roboty, więc w wolne dni przebiera gwoździe według rozmiaru.',
+    },
+    {
+      name: 'Natalia Sikora',
+      f: true,
+      age: 33,
+      prof: 'Pielęgniarz',
+      skills: { med: 3, uprawa: 2, cieplo: 1 },
+      traits: ['optymista', 'gadula'],
+      story:
+        'Fachu nauczyła się na dyżurach w szkole zamienionej na szpital, gdzie całą aparaturą był termometr i spokojny głos. Uważa, że skoro bakteria zjadła kable, to przynajmniej nikt już nie dzwoni z ofertami.',
+    },
+  ];
+  /** położenie karty startowej: dół formularza, sekcji, przykładów i atrybucji */
+  const layout = (page: Page) =>
+    page.evaluate(() => {
+      const b = (sel: string) => Math.round(document.querySelector(sel)!.getBoundingClientRect().bottom);
+      return { form: b('#startForm'), druzyna: b('#druzyna'), demos: b('#demos'), fine: b('.fine'), h: innerHeight };
+    });
+  const collapsed = (page: Page) =>
+    page.evaluate(() => ({
+      hidden: (document.getElementById('dzBody') as HTMLElement | null)?.hidden ?? false,
+      sum: document.querySelector('#druzyna .dz-sum')?.textContent ?? '',
+    }));
+  /** bez przewijania w bok: nic nie wystaje poza szerokość ekranu */
+  const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
+  /** edytor osoby na otwartej karcie startowej: zasady punktów, zawód, płeć, wiek, historia, imię; na koniec
+      kafelek pokazuje to, co wpisano */
+  const editAndCheck = async (page: Page, touch: boolean) => {
+    const tap = (sel: string) => (touch ? page.tap(sel) : page.click(sel));
+    await tap('#druzyna [data-dz="toggle"]');
+    const los = await page.locator('#druzyna .dz-chip.dz-los').count();
+    if (los !== 4) throw new Error(`z adresu ${los} kafelków zamiast 4`);
+    if (!touch) await page.screenshot({ path: path.join(OUT, 'druzyna-edytor-adres.png') });
+    await tap('#druzyna [data-dz="own"]');
+    const names = await page.locator('#druzyna .dz-chip b').allTextContents();
+    console.log(`  własny zarząd: ${names.join(', ')}`);
+    if (names.length !== 4 || new Set(names.map((n) => n.split(' ')[0])).size !== 4)
+      throw new Error('własny zarząd bez czterech osób albo z powtórzonym imieniem');
+    await tap('#druzyna [data-dz="pick"][data-k="0"]');
+    await page.waitForSelector('#druzyna .dz-ed');
+    // zawód: murarz, a potem hydraulik; zmiana zawodu wstawia poziomy z PROFS (ciepło 3, zostało 3 z 6)
+    await page.selectOption('#dzProf', 'Murarz');
+    await page.selectOption('#dzProf', 'Hydraulik');
+    const pts = await page.textContent('#druzyna .dz-pts');
+    if (pts !== 'zostało 3 z 6') throw new Error(`po zmianie zawodu: ${pts}`);
+    // punkty do końca: ciepło do 4, budowa do 2, prąd do 1, ale razem najwyżej 6
+    for (let k = 0; k < 8; k++) {
+      const plus = page.locator('#druzyna [data-dz="plus"]:not([disabled])').first();
+      if (!(await plus.count())) break;
+      if (touch) await plus.tap();
+      else await plus.click();
+    }
+    const left = await page.textContent('#druzyna .dz-pts');
+    const levels = await page.locator('#druzyna .dz-skv').allTextContents();
+    console.log(`  hydraulik: poziomy ${levels.join(', ')}, ${left}`);
+    if (left !== 'zostało 0 z 6' || levels.reduce((a, v) => a + Number(v), 0) !== 6)
+      throw new Error('punkty nie skończyły się na budżecie 6');
+    if (await page.locator('#druzyna [data-dz="plus"]:not([disabled])').count())
+      throw new Error('przy wydanym budżecie da się dodać punkt');
+    // jeden punkt mniej w cieple i przycisk znowu działa
+    await tap('#druzyna [data-dz="minus"][data-d="cieplo"]');
+    if ((await page.textContent('#druzyna .dz-pts')) !== 'zostało 1 z 6') throw new Error('odjęcie punktu nie działa');
+    // płeć: kobieta, zawód w kafelku w żeńskiej formie
+    await tap('#druzyna .dz-f-who .mode-o:has(input[value="k"])');
+    const chip = await page.textContent('#druzyna .dz-chip.sel small');
+    if (!chip?.startsWith('Hydrauliczka')) throw new Error(`kafelek po zmianie płci: ${chip}`);
+    // wiek poza widełkami wraca do granicy (hydraulik 28–64)
+    await page.fill('#dzAge', '99');
+    await page.press('#dzAge', 'Tab');
+    const age = await page.inputValue('#dzAge');
+    if (age !== '64') throw new Error(`wiek 99 u hydrauliczki: ${age}`);
+    await page.fill('#dzAge', '61');
+    await page.press('#dzAge', 'Tab');
+    // imię i nazwisko trafia do kafelka
+    await page.fill('#dzName', 'Halina Wróbel');
+    if ((await page.textContent('#druzyna .dz-chip.sel b')) !== 'Halina Wróbel')
+      throw new Error('imię nie trafiło do kafelka');
+    // cechy i historia z losowania
+    await tap('#druzyna [data-dz="traits"]');
+    await tap('#druzyna [data-dz="story"]');
+    const story = await page.inputValue('#dzStory');
+    const traits = await page.locator('#druzyna .dz-tags .tag').allTextContents();
+    console.log(`  cechy: ${traits.join(', ')}; historia (${story.length} znaków): ${story}`);
+    if (!story || story.length > 400) throw new Error('historia pusta albo za długa');
+    if (!traits.length || traits.length > 2) throw new Error('cech nie jest jedna albo dwie');
+    if (!(await noSideScroll(page))) throw new Error('karta startowa przewija się w bok');
+  };
+  return [
+    {
+      // karta startowa bez ruszania zarządu: sekcja zwinięta do jednej linijki, atrybucja mapy na pierwszym ekranie
+      name: 'druzyna-zwinieta',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(base);
+        await page.waitForSelector('#demos button');
+        const c = await collapsed(page);
+        const l = await layout(page);
+        console.log(
+          `  „${c.sum}”; formularz ${l.form}, sekcja ${l.druzyna}, przykłady ${l.demos}, atrybucja ${l.fine} z ${l.h} px`,
+        );
+        if (!c.hidden) throw new Error('sekcja zarządu nie jest zwinięta');
+        if (c.sum !== '4 osoby, losowo z adresu') throw new Error(`podsumowanie: ${c.sum}`);
+        if (l.fine > l.h) throw new Error('atrybucja mapy spadła pod pierwszy ekran');
+      },
+    },
+    {
+      // edytor osoby rozwinięty na komputerze; po przeładowaniu panel pamięta własny zarząd
+      name: 'druzyna-edytor',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(base);
+        await page.waitForSelector('#demos button');
+        await editAndCheck(page, false);
+        await page.screenshot({ path: path.join(OUT, 'druzyna-edytor-cala.png'), fullPage: true });
+        await page.reload();
+        await page.waitForSelector('#demos button');
+        const c = await collapsed(page);
+        console.log(`  po przeładowaniu: „${c.sum}”`);
+        if (!c.sum.startsWith('własny: Halina,')) throw new Error('panel nie pamięta własnego zarządu');
+        await page.click('#druzyna [data-dz="toggle"]');
+        await page.click('#druzyna [data-dz="pick"][data-k="0"]');
+        await page.waitForSelector('#druzyna .dz-ed');
+        if ((await page.inputValue('#dzAge')) !== '61') throw new Error('panel nie pamięta wieku');
+        await page.locator('#druzyna .dz-ed').scrollIntoViewIfNeeded();
+      },
+    },
+    {
+      // telefon: sekcja zwinięta pod formularzem (formularz na pierwszym ekranie), potem edytor w jednej kolumnie
+      name: 'druzyna-edytor-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await page.goto(base);
+        await page.waitForSelector('#demos button');
+        const c = await collapsed(page);
+        const l = await layout(page);
+        console.log(`  zwinięta: „${c.sum}”; formularz ${l.form}, sekcja ${l.druzyna} z ${l.h} px`);
+        if (!c.hidden) throw new Error('na telefonie sekcja zarządu nie jest zwinięta');
+        if (l.form > l.h) throw new Error('formularz adresu poza pierwszym ekranem telefonu');
+        await editAndCheck(page, true);
+        await page.screenshot({ path: path.join(OUT, 'druzyna-edytor-telefon-cala.png'), fullPage: true });
+        await page.locator('#druzyna .dz-ed').scrollIntoViewIfNeeded();
+      },
+    },
+    {
+      // dwie osoby z adresu w trybie zombie: w grze dwóch z zarządu, łom i nóż z ich listy broni czekają w magazynie
+      name: 'druzyna-liczba',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(base);
+        await page.waitForSelector('#demos button');
+        await page.click('#druzyna [data-dz="toggle"]');
+        await page.click('#druzyna .dz-head .mode-o:has(input[value="2"])');
+        await page.click('.mode-o.zombie');
+        await page.click('#demos button');
+        await waitIdle(page);
+        const r = await page.evaluate(() => {
+          const st = window.zm!.sim!.st;
+          return {
+            core: st.pawns.filter((p) => p.kind === 'core').length,
+            arms: st.store.arms ?? [],
+            weapons: st.pawns.filter((p) => p.kind === 'core').map((p) => p.weapon),
+          };
+        });
+        console.log(`  zarząd ${r.core}, broń w rękach ${r.weapons.join(', ')}, w magazynie ${r.arms.join(', ')}`);
+        if (r.core !== 2) throw new Error(`w grze ${r.core} osób zarządu zamiast 2`);
+        if (!r.arms.includes('lom') || !r.arms.includes('noz'))
+          throw new Error('broń ponad liczbę osób nie trafiła do magazynu');
+      },
+    },
+    {
+      // karta osoby z historią z drużyny: najpierw jedna linijka, po kliknięciu cała
+      name: 'druzyna-karta-osoby',
+      query: '',
+      run: async (page, base) => {
+        await page.addInitScript(([k, v]) => localStorage.setItem(k, v), [
+          KEY,
+          JSON.stringify({ v: 1, n: 3, wlasny: true, team: TEAM }),
+        ] as const);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+        await waitIdle(page);
+        const people = await page.evaluate(() =>
+          window.zm!.sim!.st.people.slice(0, 3).map((p) => ({ name: p.name, prof: p.prof, story: p.story ?? '' })),
+        );
+        console.log(`  zarząd: ${people.map((p) => `${p.name} (${p.prof})`).join(', ')}`);
+        if (people.map((p) => p.name).join() !== TEAM.map((p) => p.name).join() || people.some((p) => !p.story))
+          throw new Error('zarząd w grze nie jest drużyną z panelu');
+        const at = await page.evaluate(() => {
+          const zm = window.zm!;
+          const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+          const [x, y] = zm.screenOf(p.x, p.y - 0.55);
+          return { x, y };
+        });
+        await page.mouse.click(at.x, at.y);
+        await page.waitForSelector('#card .story');
+        const line = await page.$eval('#card .story', (e) => ({
+          open: e.getAttribute('aria-expanded'),
+          h: Math.round(e.getBoundingClientRect().height),
+        }));
+        await page.screenshot({ path: path.join(OUT, 'druzyna-karta-osoby-zwinieta.png') });
+        await page.click('#card .story');
+        await page.waitForSelector('#card .story[aria-expanded="true"]');
+        const full = await page.$eval('#card .story', (e) => Math.round(e.getBoundingClientRect().height));
+        console.log(`  historia: zwinięta ${line.h} px, rozwinięta ${full} px`);
+        if (line.open !== 'false' || full <= line.h * 2) throw new Error('historia nie rozwija się z jednej linijki');
+        await page.mouse.move(at.x + 300, at.y - 200);
+      },
+    },
+  ];
 }
