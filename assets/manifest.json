@@ -2640,9 +2640,7 @@
       "pixellab": "84f1ac26-af5e-47cc-8ce3-8ec0fdc60143",
       "koszt": 10,
       "status": "gotowy",
-      "pliki": [
-        "assets/raw/strop-tynk"
-      ],
+      "pliki": ["assets/raw/strop-tynk"],
       "warianty": {
         "0": "prawie biały (#e3e0d6), odrzucony",
         "1": "biały, odrzucony",
@@ -2683,49 +2681,16 @@
             "siatka": 7
           }
         },
-        "szwy": [
-          96,
-          64
-        ],
+        "szwy": [96, 64],
         "szwy_kolor": "#b07a55",
         "szwy_grubosc": 1,
-        "naklejki": [
-          3,
-          4,
-          5,
-          6
-        ],
-        "wnetrze": [
-          2,
-          2,
-          28,
-          28
-        ],
+        "naklejki": [3, 4, 5, 6],
+        "wnetrze": [2, 2, 28, 28],
         "wnetrze_wariantu": {
-          "3": [
-            0,
-            20,
-            12,
-            12
-          ],
-          "4": [
-            0,
-            0,
-            32,
-            32
-          ],
-          "5": [
-            9,
-            10,
-            15,
-            12
-          ],
-          "6": [
-            0,
-            0,
-            31,
-            30
-          ]
+          "3": [0, 20, 12, 12],
+          "4": [0, 0, 32, 32],
+          "5": [9, 10, 15, 12],
+          "6": [0, 0, 31, 30]
         },
         "gestosc": 0.12,
         "szwy_inne": "co 32 px (siatka 1 m) czyta się jak płytki i dubluje szwy lastryko w klatce, więc 96 × 64 jak na dachu (płyty 3 × 2 m)"
@@ -2733,11 +2698,7 @@
       "pomiary": {
         "opis": "pomiary z docs/postep/pietra-strop-arkusz.png: średni kolor tła ze skryptu pomocniczego (512 × 512 px, przepis z uzycie), luminancja względna WCAG, ΔE CIE76 do średnich kolorów powierzchni z gry",
         "tlo_srednia": "#d9b391 (217, 179, 145)",
-        "tlo_roznica_do_cdb08c": [
-          11.7,
-          3.1,
-          4.8
-        ],
+        "tlo_roznica_do_cdb08c": [11.7, 3.1, 4.8],
         "luminancja_tla": 0.4902,
         "luminancja_dachu_313336": 0.0329,
         "stosunek_do_dachu": 14.91,
@@ -2753,17 +2714,9 @@
           "cien": 0.03
         },
         "surowe_ciepłe_kafelki_3_4_6_11": {
-          "rgb": [
-            224.7,
-            182.0,
-            153.3
-          ],
+          "rgb": [224.7, 182.0, 153.3],
           "hex": "#e1b699",
-          "roznica_do_cdb08c": [
-            19.7,
-            6.0,
-            13.3
-          ]
+          "roznica_do_cdb08c": [19.7, 6.0, 13.3]
         },
         "powierzchnie": {
           "dach PixelLab (papa)": {
@@ -2834,9 +2787,7 @@
       "pixellab": "8eb5d6ca-b3f2-41e0-9482-ac10e57a86c1",
       "koszt": 10,
       "status": "odrzucony",
-      "pliki": [
-        "assets/raw/strop-tynk-v1"
-      ],
+      "pliki": ["assets/raw/strop-tynk-v1"],
       "uwagi": "wzorzec stylu przeniósł szary odcień fasady mimo palety: średnie kolory kafelków #b7b2a6 (183,178,166), czyli o 22 za mało czerwieni i 26 za dużo niebieskiego względem #cdb08c, do tego płaskie (1 do 3 kolorów na kafelek). Ramki nie ma, poza ciemną obwódką w #15. Poprawka w strop-tynk: style_options z color_palette false."
     }
   ]
