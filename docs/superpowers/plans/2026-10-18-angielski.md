@@ -44,9 +44,9 @@
 - `jezyk(): Lang` (w module domyślnie `'pl'`), `ustawJezyk(l: Lang): void` (woła słuchaczy tylko przy zmianie), `poZmianieJezyka(f: (l: Lang) => void): () => void`
 - `L(pl: string, en: string): string`, `tr(t: Tx | string | null | undefined): string` (`''` dla braku)
 - `liczba(v: number, cyfry: number, lang: Lang): string` (pl: przecinek, en: kropka, oba: prawdziwy minus)
-- `src/ui/tekst.ts`: `num`, `signed`, `deg`, `pct` jak dziś, ale według `jezyk()`; nowe `many(n: number, one: string, other: string): string` („1 person”, „2 people”)
+- `src/ui/tekst.ts`: `num`, `signed`, `deg`, `pct` jak dziś, ale według `jezyk()`; nowe `manyEn(n: number, one: string, other: string): string` („1 person”, „2 people”)
 
-- [ ] Test: `tr(tx('Pauza', 'Pause'))` daje `'Pauza'`, po `ustawJezyk('en')` daje `'Pause'`; `tr('stary')` daje `'stary'` w obu; `num(1.5)` daje `'1,5'` po polsku i `'1.5'` po angielsku, `signed(-2)` daje `'−2'`; `many(1, 'person', 'people')` daje `'1 person'`, `many(0, …)` daje `'0 people'`; słuchacz z `poZmianieJezyka` woła się raz przy zmianie i wcale przy tym samym języku; `txJoin([tx('a','A'), tx('b','B')], tx(' i ', ' and '))` daje `{pl: 'a i b', en: 'A and B'}`. Po teście `ustawJezyk('pl')` (w `afterEach`).
+- [ ] Test: `tr(tx('Pauza', 'Pause'))` daje `'Pauza'`, po `ustawJezyk('en')` daje `'Pause'`; `tr('stary')` daje `'stary'` w obu; `num(1.5)` daje `'1,5'` po polsku i `'1.5'` po angielsku, `signed(-2)` daje `'−2'`; `manyEn(1, 'person', 'people')` daje `'1 person'`, `manyEn(0, …)` daje `'0 people'`; słuchacz z `poZmianieJezyka` woła się raz przy zmianie i wcale przy tym samym języku; `txJoin([tx('a','A'), tx('b','B')], tx(' i ', ' and '))` daje `{pl: 'a i b', en: 'A and B'}`. Po teście `ustawJezyk('pl')` (w `afterEach`).
 - [ ] Uruchom `npm test -- jezyk`: porażka (brak modułu).
 - [ ] Napisz moduł i zmiany w `tekst.ts`.
 - [ ] `npm test -- jezyk` przechodzi, `npm test` cały przechodzi bez zmian w innych testach.
@@ -62,7 +62,7 @@
 - `data.en.ts`: `DOM_EN: Record<Dom, string>`, `RL_EN: Record<Res, string>`, `SEASONS_EN: readonly string[]`, `TRAITS_EN: Record<string, { name: string; desc: string }>` (te same klucze co `TRAITS`), `PROFS_EN: Record<string, string>` (klucz: męska nazwa z `PROFS`), `zawodEn(prof: string): string` (przyjmuje męską albo żeńską polską nazwę z `PROFS` i nazwy z rejestru `ZAWODY_EN`; nieznana zostaje), `ZAWODY_EN: Map<string, string>` (rejestr, do którego inne moduły dopisują swoje zawody, np. generator mieszkańców), `LORE_EN`, `LORE_ZOMBIE_EN`, `przyczynaEn(cause: string): string` (`rany`, `gorączka`, `amputacja`, reszta bez zmian)
 - `nastroje.en.ts`: `nastrojEn(why: string): string` (dokładne napisy z tablicy i wzorce dla `Śmierć: …`, `Spalili …`; nieznany zostaje), `NASTROJE_EN: Readonly<Record<string, string>>`
 
-- [ ] Test: każdy klucz `TRAITS`, `DOM`, `RL`, każda męska i żeńska nazwa z `PROFS` ma angielski odpowiednik bez polskich znaków; każdy powód nastroju zapisany w kodzie literałem (`addMood(…, '…'`, `moodAll('…'`, `why: '…'` przy `moods.push`, `FEVER_MOOD`, oba warianty z `g(p, …)` w `src/gov/noc.ts`) ma wpis w `NASTROJE_EN` (test czyta źródła z `src/` i zbiera literały wyrażeniem regularnym); `nastrojEn('Śmierć: Ania')` daje `'Death: Ania'`; `nastrojEn('Spalili moją wersalkę')` daje angielskie zdanie z „sofa bed”.
+- [ ] Test: każdy klucz `TRAITS`, `DOM`, `RL`, każda męska i żeńska nazwa z `PROFS` ma angielski odpowiednik bez polskich znaków; każdy powód nastroju zapisany w kodzie literałem (`addMood(…, '…'`, `moodAll('…'`, `why: '…'` przy `moods.push`, `FEVER_MOOD`, oba warianty z `g(p, …)` w `src/gov/noc.ts`) ma wpis w `NASTROJE_EN` (test czyta źródła z `src/` i zbiera literały wyrażeniem regularnym); `nastrojEn('Śmierć: Ania')` daje `'Ania died'`; `nastrojEn('Spalili moją wersalkę')` daje angielskie zdanie z „sofa bed”.
 - [ ] Uruchom: porażka.
 - [ ] Napisz tablice (słowa ze słowniczka, ton z zasad).
 - [ ] Test przechodzi. Commit.
