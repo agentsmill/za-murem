@@ -3951,11 +3951,18 @@ const SHOTS: Shot[] = [
         p.pi = 0;
         const zombies = () => sim.st.pawns.filter((q) => q.kind === 'zombie').length;
         const before = zombies();
-        for (const t of ['open', 'force'] as const) {
-          sim.push({ t, ids: [p.id], door: e.tile });
+        const open = () => !!sim.st.sasiedzi?.budynki.find((x) => x.bid === b.id)?.otwarty;
+        // za dnia przy siatce snują się szwendacze i któryś może przerwać pracę walką: po walce osoba wraca pod drzwi
+        // i wyważa dalej (pierwsza próba to „Otworzyć”, dom bywa zamknięty na klucz)
+        for (let k = 0; k < 6 && !open(); k++) {
+          for (let i = 0; i < 3000 && p.job?.t === 'fight'; i++) sim.step();
+          p.x = (e.out % size) + 0.5;
+          p.y = Math.floor(e.out / size) + 0.5;
+          p.path = [];
+          p.pi = 0;
+          sim.push({ t: k === 0 ? 'open' : 'force', ids: [p.id], door: e.tile });
           sim.step();
           for (let i = 0; i < 3000 && p.job?.t === 'door'; i++) sim.step();
-          if (sim.st.sasiedzi?.budynki.find((x) => x.bid === b.id)?.otwarty) break;
         }
         for (let i = 0; i < 40; i++) sim.step();
         zm.setCam((b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2, 1.4);
@@ -3966,7 +3973,8 @@ const SHOTS: Shot[] = [
       const hint = await page.textContent('#hint');
       console.log(`  ${r?.name}: szwendaczy ${r?.before} → ${r?.after}, napis ${r?.napis}, podpowiedź: ${hint}`);
       if (!r) throw new Error('w Zielonkach nie ma domu ze szwendaczem z wymarcia');
-      if (r.after <= r.before) throw new Error('po otwarciu domu nie wyszedł szwendacz');
+      // szwendaczy przybywa też w stadzie, więc liczy się napis: szwendacz wyszedł z mieszkania
+      if (r.after <= r.before || r.napis !== 'szwendacz') throw new Error('po otwarciu domu nie wyszedł szwendacz');
     },
   },
   {
