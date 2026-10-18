@@ -28,6 +28,8 @@ interface Shot {
   run?: (page: Page, base: string) => Promise<void>;
   /** błędy konsoli, których scenariusz się spodziewa (np. 404 tabel zablokowanych przez scenariusz) */
   allow?: RegExp;
+  /** z allow: błąd jest spodziewany tylko dla zasobu pod tym adresem (np. tylko tabele z data/mieszkancy/) */
+  allowUrl?: RegExp;
 }
 
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
@@ -57,8 +59,15 @@ async function bezTabel(page: Page, tylko?: RegExp) {
     !tylko || tylko.test(r.request().url()) ? r.fulfill({ status: 404, body: 'brak' }) : r.fallback(),
   );
 }
-/** 404 zablokowanych tabel to spodziewany błąd konsoli */
+/** 404 zablokowanych tabel to spodziewany błąd konsoli, ale tylko dla plików z data/mieszkancy/ */
 const BRAK_TABEL = /status of 404/;
+const TABELE_URL = /\/data\/mieszkancy\//;
+/** tabele krajowe w innej wersji (200, bez błędu konsoli): gra bez danych mieszkańców, jak bez tabel */
+async function zlaWersjaKraju(page: Page) {
+  await page.route('**/data/mieszkancy/kraj.json', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ wersja: -1 }) }),
+  );
+}
 
 /** sieć podmieniona na dane testowe: Nominatim zwraca Lanciego, kafelki z tests/fixtures */
 async function offlineNetwork(page: Page) {
@@ -3932,7 +3941,8 @@ try {
       // odpowiedzi 4xx z /api (niezalogowani, zajęta klatka) to zwykły przebieg gry z sąsiadami, nie błąd strony;
       // błędy, których scenariusz się spodziewa (allow, np. 404 tabel mieszkańców), też nie
       const api = m.text().startsWith('Failed to load resource') && m.location().url.includes('/api/');
-      if (m.type() === 'error' && !api && !shot.allow?.test(m.text())) errors.push(m.text());
+      const spodziewany = !!shot.allow?.test(m.text()) && (!shot.allowUrl || shot.allowUrl.test(m.location().url));
+      if (m.type() === 'error' && !api && !spodziewany) errors.push(m.text());
     });
     const t0 = Date.now();
     if (shot.run) await shot.run(page, s.base);
@@ -4423,7 +4433,7 @@ function kartaShots(): Shot[] {
   };
 
   const wejdz = async (page: Page, base: string) => {
-    await bezTabel(page, /kraj\.json/);
+    await zlaWersjaKraju(page);
     await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
     await waitIdle(page);
   };
@@ -4735,10 +4745,82 @@ function kartaShots(): Shot[] {
         },
       },
       {
+        // zmiana imienia na prawdziwych osobach z generatora: nowe imię w linijce rodziny krewnego, Przywróć wraca do
+        // imienia z generatora, a zapamiętana zmiana trafia na tę samą osobę w nowej grze pod tym adresem
+        name: 'mieszkancy-imie',
+        query: '',
+        run: async (page, base) => {
+          await zTabel(page, base, 'przymorze');
+          // osoba z pionkiem (zarząd albo mieszkaniec z osobą), której imię stoi w linijce rodziny kogoś w grze
+          const para = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            for (const pw of st.pawns) {
+              if (pw.person < 0 || pw.away || (pw.kind !== 'core' && pw.kind !== 'resident')) continue;
+              const p = st.people[pw.person];
+              if (!p.ref) continue;
+              const k = st.people.findIndex((q) => q !== p && q.rodzina?.includes(` ${p.first} (`));
+              if (k < 0) continue;
+              zm.setCam(pw.x, pw.y - 0.5, 1.3);
+              return { pawn: pw.id, ref: p.ref, name: p.name, f: p.f, krewny: k, rodzina: st.people[k].rodzina! };
+            }
+            return null;
+          });
+          if (!para) throw new Error('nikt w grze nie ma krewnego w linijce rodziny innej osoby');
+          await waitIdle(page);
+          const nowe = para.f ? 'Bożenka' : 'Zbyszko';
+          const nazwisko = para.name.split(' ').slice(1).join(' ');
+          const stan = () =>
+            page.evaluate(
+              ([ref, k]) => {
+                const st = window.zm!.sim!.st;
+                return { name: st.people.find((q) => q.ref === ref)?.name, rodzina: st.people[k].rodzina ?? '' };
+              },
+              [para.ref, para.krewny] as const,
+            );
+          await otworzEdytor(page, para.pawn, false);
+          await wpisz(page, nowe, false);
+          await page.click('#card [data-card="imie-zapisz"]');
+          await sprawdz(page, `${nowe} ${nazwisko}`);
+          const po = await stan();
+          console.log(`  rodzina krewnego: „${para.rodzina}” → „${po.rodzina}”`);
+          if (!po.rodzina.includes(` ${nowe} (`)) throw new Error('nowe imię nie trafiło do linijki rodziny krewnego');
+          // Przywróć: imię z generatora i ta sama linijka rodziny co na starcie
+          await otworzEdytor(page, para.pawn, false);
+          await page.click('#card [data-card="imie-przywroc"]');
+          await sprawdz(page, para.name);
+          const przywrocone = await stan();
+          if (przywrocone.name !== para.name || przywrocone.rodzina !== para.rodzina)
+            throw new Error(`Przywróć nie wrócił do generatora: ${JSON.stringify(przywrocone)}`);
+          // zapamiętana zmiana: nowa gra pod tym samym adresem ma tę osobę z nowym imieniem, także w rodzinie krewnego
+          await otworzEdytor(page, para.pawn, false);
+          await wpisz(page, nowe, false);
+          await page.click('#card [data-card="imie-zapisz"]');
+          await sprawdz(page, `${nowe} ${nazwisko}`);
+          await zTabel(page, base, 'przymorze');
+          const nowaGra = await stan();
+          console.log(`  nowa gra: ${nowaGra.name}, rodzina krewnego „${nowaGra.rodzina}”`);
+          if (nowaGra.name !== `${nowe} ${nazwisko}` || !nowaGra.rodzina.includes(` ${nowe} (`))
+            throw new Error('zapamiętana zmiana imienia nie wróciła w nowej grze');
+          // końcowy zrzut: karta osoby z nowym imieniem
+          await page.evaluate((id) => {
+            const zm = window.zm!;
+            const p = zm.sim!.st.pawns.find((q) => q.id === id)!;
+            zm.setCam(p.x, p.y - 0.5, 1.3);
+          }, para.pawn);
+          await waitIdle(page);
+          const b = await ekran(page, para.pawn);
+          await page.mouse.click(b.x, b.y);
+          await sprawdz(page, `${nowe} ${nazwisko}`);
+          await page.mouse.move(b.x + 400, b.y - 250);
+        },
+      },
+      {
         // bez tabel (404): stara ścieżka bez błędu, osoby jak przed krokiem 5, bez napisu o fikcji
         name: 'mieszkancy-bez-tabel',
         query: '',
         allow: BRAK_TABEL,
+        allowUrl: TABELE_URL,
         run: async (page, base) => {
           await bezTabel(page);
           await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
@@ -4796,6 +4878,7 @@ function kartaShots(): Shot[] {
         name: 'mieszkancy-stary-zapis',
         query: '',
         allow: BRAK_TABEL,
+        allowUrl: TABELE_URL,
         run: async (page, base) => {
           await bezTabel(page);
           await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.75`);
@@ -4836,7 +4919,6 @@ function kartaShots(): Shot[] {
       // zarząd: osoba z generatora na komputerze; przycisk imienia otwiera edytor, Anuluj wraca do karty
       name: 'karta-zarzad',
       query: '',
-      allow: BRAK_TABEL,
       run: async (page, base) => {
         await wejdz(page, base);
         const kto = await zarzadZGeneratora(page, 0);
@@ -4858,7 +4940,6 @@ function kartaShots(): Shot[] {
       // zarząd na telefonie (390×844): historia zwinięta do jednej linijki nadal jest, napis o fikcji też
       name: 'karta-zarzad-telefon',
       query: '',
-      allow: BRAK_TABEL,
       w: 390,
       h: 844,
       run: async (page, base) => {
@@ -4878,7 +4959,6 @@ function kartaShots(): Shot[] {
       // mieszkaniec wybrany kliknięciem: karta do odczytu, zaznaczony z zarządu zostaje zaznaczony, zarząd wygrywa
       name: 'karta-mieszkanca',
       query: '',
-      allow: BRAK_TABEL,
       run: async (page, base) => {
         await wejdz(page, base);
         const kto0 = await zarzadZGeneratora(page, 0);
@@ -4964,7 +5044,6 @@ function kartaShots(): Shot[] {
       // mieszkaniec na telefonie: stuknięcie, karta zwarta, ale z historią i napisem
       name: 'karta-mieszkanca-telefon',
       query: '',
-      allow: BRAK_TABEL,
       w: 390,
       h: 844,
       run: async (page, base) => {
@@ -5051,7 +5130,6 @@ function kartaShots(): Shot[] {
       // Escape bez zapisu; końcowy zrzut to edytor z nowym imieniem i podpowiedzianymi formami
       name: 'imie-edytor',
       query: '',
-      allow: BRAK_TABEL,
       run: async (page, base) => {
         await wejdz(page, base);
         const r = await mieszkaniecZGeneratora(page, 0, true);
@@ -5095,7 +5173,6 @@ function kartaShots(): Shot[] {
       // edytor na telefonie (390×844) na karcie zarządu: cały na ekranie, pola od 16 px, bez przewijania w bok
       name: 'imie-edytor-telefon',
       query: '',
-      allow: BRAK_TABEL,
       w: 390,
       h: 844,
       run: async (page, base) => {
@@ -5119,7 +5196,6 @@ function kartaShots(): Shot[] {
       // i bez żądań sieci z imieniem), Przywróć wraca do imienia z generatora; końcowy zrzut to karta po zmianie
       name: 'imie-po-zmianie',
       query: '',
-      allow: BRAK_TABEL,
       run: async (page, base) => {
         const siec: string[] = [];
         page.on('request', (q) => siec.push(`${q.url()} ${q.postData() ?? ''}`));

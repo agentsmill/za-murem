@@ -304,7 +304,10 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // dostaje stany mieszkań i osoby z generatora, wznowiony zapis z osobami z generatora stany mieszkań z zapisu
   // i budynek siedziby do imion i historii (bez nowego createSim), zapis sprzed kroku 5 nic
   const t1 = performance.now();
-  let l = saved ? mieszkancyZapisu(world, geo, dane, saved.sim) : mieszkancyNowejGry(world, geo, dane, opcje.core);
+  // własna drużyna to cały zarząd: generator nie wybiera zarządu, więc żadne gospodarstwo nie wypada z mieszkańców
+  let l = saved
+    ? mieszkancyZapisu(world, geo, dane, saved.sim)
+    : mieszkancyNowejGry(world, geo, dane, opcje.team ? 0 : opcje.core);
   if (dane)
     console.info(
       `mieszkańcy ${Math.round(performance.now() - t1)} ms${l ? `, w siedzibie ${l.siedziba.osoby.length} osób` : ', bez generatora'}`,

@@ -205,6 +205,20 @@ describe('wznowienie zapisu', () => {
     }
   });
 
+  it('zapis gry z generatorem bez osób z generatora (własna drużyna): świat ze stanami mieszkań z zapisu', () => {
+    const d = demo('przymorze');
+    const start = nowaGra(d);
+    const st = poGrze(start.world, start.st);
+    for (const p of st.people) delete p.ref;
+    expect(zGeneratora(st)).toBe(false);
+    const geo = mapaMieszkancow(d.geo, d.dane);
+    const w = swiat(d, geo);
+    // warunek wstępny: stany z generatora są inne niż M2 świata
+    expect(mieszkania(w)).not.toEqual(mieszkania(start.world));
+    expect(mieszkancyZapisu(w, geo, d.dane, st)).toBeNull();
+    expect(mieszkania(w)).toEqual(mieszkania(start.world));
+  });
+
   it('zapis sprzed kroku 5 (bez osób z generatora): świat ze stanami M2, z którymi powstał, bez danych do imion', () => {
     for (const n of DEMA) {
       const d = demo(n);

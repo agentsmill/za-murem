@@ -10,11 +10,12 @@
    zostaje także po wyjątku w generatorze i pasuje do zapisów sprzed kroku 5 (ten sam `worldKey`).
 
    Wznowienie zapisu. Symulacja nie zmienia stanów mieszkań (`st.apts`: stan, powód i rok z chwili startu), a
-   zawartość pustych mieszkań (zepsute meble, śmieci, uszkodzenia) wychodzi z ziarna mieszkania i powodu. Zapis z
-   osobami z generatora (`zGeneratora`) dostaje więc na świat stany z zapisu (`stanyZapisu`): świat jest taki jak na
-   starcie tej gry, bez liczenia stanów od nowa i bez tabel. Zapis sprzed kroku 5 zostaje przy stanach M2 ze świata,
-   z którymi powstał. Generator przy wznowieniu daje tylko budynek siedziby do imion i historii (`mieszkancyZapisu`),
-   bez nowego `createSim`.
+   zawartość pustych mieszkań (zepsute meble, śmieci, uszkodzenia) wychodzi z ziarna mieszkania i powodu. Każdy zapis
+   ze stanami mieszkań dostaje więc na świat stany z zapisu (`stanyZapisu`): świat jest taki jak na starcie tej gry,
+   bez liczenia stanów od nowa i bez tabel, także gdy gra z generatorem nie ma już osób z generatora (własna drużyna,
+   mieszkańcy bez osób). Zapis sprzed kroku 5 ma stany M2, takie same jak świat, więc nic się nie zmienia. Generator
+   przy wznowieniu daje tylko budynek siedziby do imion i historii (`mieszkancyZapisu`, tylko dla zapisu z osobami
+   z generatora), bez nowego `createSim`.
 
    Deterministyczne: te same dane osiedla, ziarno i tabele dają ten sam świat i te same osoby; bez DOM i sieci. */
 
@@ -95,17 +96,18 @@ export function stanyZapisu(st: Pick<SimState, 'apts'>, bid: number): AptState[]
   });
 }
 
-/** Wznowienie zapisu `st` na świecie odtworzonym z danych osiedla. Zapis z osobami z generatora: stany mieszkań
-    z zapisu na świecie (`stanyZapisu`; także bez tabel) i budynek siedziby z generatora do imion i historii (bez
-    tabel albo po wyjątku `null`, a gra i tak się wczytuje: osoby są w zapisie). Zapis bez nich: `null`, świat
-    nietknięty (stany M2, z którymi zapis powstał). Zarząd z generatora nie jest tu potrzebny (osoby są w zapisie). */
+/** Wznowienie zapisu `st` na świecie odtworzonym z danych osiedla. Zapis ze stanami mieszkań: stany z zapisu na
+    świecie (`stanyZapisu`; także bez tabel i bez osób z generatora; zapis sprzed kroku 5 ma te same stany M2 co
+    świat). Zapis z osobami z generatora: budynek siedziby z generatora do imion i historii (bez tabel albo po wyjątku
+    `null`, a gra i tak się wczytuje: osoby są w zapisie); bez nich `null`. Zarząd z generatora nie jest tu potrzebny
+    (osoby są w zapisie). */
 export function mieszkancyZapisu(
   world: World,
   geo: Geo,
   dane: DaneMieszkancow | null,
   st: Pick<SimState, 'people' | 'apts'>,
 ): LokatorzyGry | null {
+  if (st.apts?.length) applyApts(world, settleApts(world, stanyZapisu(st, world.hq)));
   if (!zGeneratora(st)) return null;
-  applyApts(world, settleApts(world, stanyZapisu(st, world.hq)));
   return dane ? lokatorzy(world, geo, dane, 0) : null;
 }
