@@ -1,0 +1,47 @@
+# Połączenia imienia z nazwiskiem znanych żyjących osób, których generator nie nadaje. Ich nazwiska są za częste,
+# żeby je wyciąć w całości jak nazwiska polityków z zakazane-nazwiska.txt, więc gra losuje wtedy inne imię.
+# „Imię Nazwisko” w linii, nazwisko w formie, którą osoba nosi (Anna Lewandowska, Robert Lewandowski).
+# Linia zaczynająca się od # to komentarz. Po zmianie: npm run dane:imiona (lista trafia do imiona.json).
+# Lista startowa z przeglądu gałęzi, do uzupełnienia przez Mateusza.
+
+# sport
+Robert Lewandowski
+Anna Lewandowska
+Justyna Kowalczyk
+Iga Świątek
+Agnieszka Radwańska
+Adam Małysz
+Kamil Stoch
+Dawid Kubacki
+Robert Kubica
+Wojciech Szczęsny
+Jerzy Dudek
+Anita Włodarczyk
+Otylia Jędrzejczak
+Tomasz Majewski
+Robert Korzeniowski
+Bartosz Kurek
+
+# polityka (nazwiska zbyt częste na zakazane-nazwiska.txt)
+Radosław Sikorski
+Rafał Trzaskowski
+Elżbieta Witek
+Barbara Nowacka
+Michał Kamiński
+Mariusz Kamiński
+Paweł Kowal
+Michał Kołodziejczak
+Joanna Mucha
+Maciej Wąsik
+Tomasz Grodzki
+Stanisław Karczewski
+Andrzej Domański
+Adam Bodnar
+
+# kultura
+Olga Tokarczuk
+Krystyna Janda
+Piotr Adamczyk
+Edyta Górniak
+Dawid Podsiadło
+Paweł Pawlikowski

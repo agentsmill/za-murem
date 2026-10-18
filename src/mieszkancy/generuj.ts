@@ -8,7 +8,7 @@
    Tabelę nazwisk dla gminy wybiera `nazwiskaDlaGminy` (R35), a wczytuje `wczytajNazwiskaDlaGminy` (wczytaj.ts).
    Historie gospodarstw (historie.ts) powstają tylko z tabelami odmiany i kroniką obszaru w `nazwy` (R49): kronikę liczy
    raz `generujObszar` (`kronikaObszaru`), a budynek osobno dostaje ją od wywołującego; bez odmiany albo kroniki pole
-   `historia` zostaje puste. */
+   `historia` zostaje puste. Bez tabel gminy ziarnem kroniki jest klucz budynku przy adresie (`ziarnoKroniki`). */
 
 import type { Geo } from '../world/geo.ts';
 import { budynkiZGeo, metryNaStopien } from './budynki.ts';
@@ -67,23 +67,32 @@ export function budynkiObszaru(geo: Geo, g: TabeleGminy | null, k: TabeleKraju):
   });
 }
 
-/** Kronika osiedla dla obszaru (R49): `kronika` z budynków obszaru (tło osiedla), z nazwami miejsc filtrowanymi zbiorem
-    imion z tabel, z ziarnem z rejonu budynku, którego środek leży najbliżej `geo.c` (kwadrat odległości w metrach mapy,
-    przy remisie pierwszy w kolejności). Bez budynków ziarno jest puste. */
-export function kronikaObszaru(geo: Geo, budynki: readonly Budynek[], imiona: TabeleImion): WpisKroniki[] {
+/** Ziarno kroniki obszaru (R49): rejon budynku, którego środek leży najbliżej `geo.c` (kwadrat odległości w metrach
+    mapy, przy remisie pierwszy w kolejności). Bez tabel gminy budynek nie ma rejonu, więc ziarnem jest jego klucz;
+    bez budynków środek mapy z 3 miejscami po przecinku (`c:54.409,18.599`). Dzięki temu kronika bez tabel gminy nie
+    jest ta sama dla każdego adresu. Klucz budynku zależy od adresu (budynki.ts), więc to ziarno też. */
+function ziarnoKroniki(geo: Geo, budynki: readonly Budynek[]): string {
   const [lat0, lon0] = geo.c;
   const { kx, ky } = metryNaStopien(lat0);
-  let ziarno = '';
+  let srodkowy: Budynek | undefined;
   let najmniej = Number.POSITIVE_INFINITY;
   for (const b of budynki) {
     const x = (b.lon - lon0) * kx;
     const y = (lat0 - b.lat) * ky;
     if (x * x + y * y < najmniej) {
       najmniej = x * x + y * y;
-      ziarno = b.rejon;
+      srodkowy = b;
     }
   }
-  return kronika(geo, budynki, zbiorImion(imiona), ziarno);
+  if (!srodkowy) return `c:${lat0.toFixed(3)},${lon0.toFixed(3)}`;
+  return srodkowy.rejon !== '' ? srodkowy.rejon : srodkowy.klucz;
+}
+
+/** Kronika osiedla dla obszaru (R49): `kronika` z budynków obszaru (tło osiedla), z nazwami miejsc filtrowanymi zbiorem
+    imion z tabel, z ziarnem `ziarnoKroniki`: rejon budynku najbliżej `geo.c`, bez tabel gminy jego klucz, bez budynków
+    zaokrąglony środek mapy. */
+export function kronikaObszaru(geo: Geo, budynki: readonly Budynek[], imiona: TabeleImion): WpisKroniki[] {
+  return kronika(geo, budynki, zbiorImion(imiona), ziarnoKroniki(geo, budynki));
 }
 
 /** Mieszkańcy obszaru gry w 2051: budynki mieszkalne z mapy (`budynkiZGeo`) w kolejności mapy, każdy przez

@@ -17,6 +17,9 @@
      Z tej listy wypadają imiona przebrzmiałe, czyli te, których nadano w 2025 r. co najmniej dziesięć razy mniej niż
      w 2000 r. (Patryk, Kamil, Paulina, Klaudia: lata 90. brzmią w 2040 r. jak dziś Grażyna i Zbigniew).
    Osoba z wpisem `wprowadzka` po 2022 r. (przyjezdny) ma 15% szansy na imię z puli przyjezdnych (Oleksandr, Tetiana…).
+   W budynku (`nadajImiona`) imię losujemy jeszcze raz, gdy ma je już rodzeństwo albo obecny domownik, który nie jest
+   rodzicem ani dzieckiem osoby (do dziesięciu losowań), i zawsze, gdy z nazwiskiem tworzy połączenie z listy
+   `zakazanePolaczenia` (Robert Lewandowski, Anna Lewandowska: znane osoby o częstych nazwiskach).
 
    Nazwiska (`nadajImiona`). Nazwisko rodziny to para form, męska i żeńska (Kowalski, Kowalska; Nowak, Nowak), losowana
    przez `nazwiskoRodziny`: z szansą `udzialLokalnych` z puli lokalnej, inaczej z nazwisk „ogólnych” bez lokalnych
@@ -77,8 +80,11 @@ const SZANSA_PRZYJEZDNEGO = 1500;
 const SZANSA_ZONY_BIERZE = 8500;
 /** Wpis `wprowadzka` po tym roku robi z osoby przyjezdnego. */
 const ROK_PRZYJEZDNYCH = 2022;
-/** Ile razy losujemy imię, żeby rodzeństwo go nie dzieliło; po ostatnim losowaniu imię przyjmujemy. */
+/** Ile razy losujemy imię, żeby rodzeństwo i domownicy go nie dzielili; po ostatnim losowaniu imię przyjmujemy. */
 const PROBY_IMIENIA = 10;
+/** Dodatkowe losowania na trafienia w zakazane połączenie imienia z nazwiskiem (`zakazanePolaczenia`); zakazanego
+    połączenia nie przyjmujemy nigdy, a gdy wszystkie losowania trafią, imię zostaje puste. */
+const PROBY_ZAKAZU = 20;
 /** Tabela nazwisk, której używa wywołujący bez tabel gminy (R35). */
 const WOJ_ZAPASOWE = 'mazowieckie';
 
@@ -343,6 +349,14 @@ export function bezPuliLokalnej(t: TabeleNazwisk): TabeleNazwisk {
 
 type Para = Readonly<ParaNazwisk>;
 
+/** Zakazane połączenia z tabeli jako zbiór „Imię|Nazwisko”, liczony raz na tabelę. */
+const pamiecZakazow = new WeakMap<TabeleImion, ReadonlySet<string>>();
+function zakazy(t: TabeleImion): ReadonlySet<string> {
+  let z = pamiecZakazow.get(t);
+  if (!z) pamiecZakazow.set(t, (z = new Set(t.zakazanePolaczenia ?? [])));
+  return z;
+}
+
 /** Imiona i nazwiska wszystkim osobom budynku (także zmarłym i tym, którzy wyjechali), w kolejności `w.osoby`.
     Zmienia tylko `imie` i `nazwisko` w osobach `w` (patrz nagłówek: tylko na wyniku stworzonym przez wywołującego). */
 export function nadajImiona(w: WynikBudynku, t: TabeleImion, n: TabeleNazwisk, r: Rng): void {
@@ -436,13 +450,28 @@ export function nadajImiona(w: WynikBudynku, t: TabeleImion, n: TabeleNazwisk, r
 
   /** Imiona dzieci każdej matki i ojca: rodzeństwo (także przyrodnie i nieobecne) nie ma wspólnego imienia. */
   const imionaDzieci = new Map<string, Set<string>>();
+  const zakazane = zakazy(t);
+  const rodzicIDziecko = (a: Osoba, b: Osoba): boolean =>
+    a.matka === b.id || a.ojciec === b.id || b.matka === a.id || b.ojciec === a.id;
+  /** Imię osoby: do `PROBY_IMIENIA` losowań, aż nie będzie imieniem rodzeństwa ani obecnego domownika (poza
+      rodzicem i dzieckiem: imię po ojcu wolno), potem przyjmujemy ostatnie. Połączenie z nazwiskiem z listy
+      zakazanych odrzucamy zawsze (do `PROBY_ZAKAZU` dodatkowych losowań). Nazwisko osoby jest już nadane. */
   const imie = (o: Osoba): string => {
     const rodzice = [o.matka, o.ojciec].filter((id): id is string => id !== undefined);
     const zajete = rodzice.map((id) => imionaDzieci.get(id)).filter((s): s is Set<string> => s !== undefined);
+    const domownicy =
+      o.stan === 'tu'
+        ? (dom.get(o.id)?.czlonkowie ?? [])
+            .map((id) => wg.get(id))
+            .filter((x): x is Osoba => x !== undefined && x !== o && x.stan === 'tu' && !rodzicIDziecko(o, x))
+        : [];
+    const kolizja = (k: string): boolean => zajete.some((s) => s.has(k)) || domownicy.some((x) => x.imie === k);
     let wybrane = '';
-    for (let i = 0; i < PROBY_IMIENIA; i++) {
-      wybrane = imieDla(o.rocznik, o.plec, t, r, przyjezdni.has(o.id));
-      if (!zajete.some((s) => s.has(wybrane))) break;
+    for (let i = 0; i < PROBY_IMIENIA + PROBY_ZAKAZU; i++) {
+      const kandydat = imieDla(o.rocznik, o.plec, t, r, przyjezdni.has(o.id));
+      if (zakazane.has(`${kandydat}|${o.nazwisko}`)) continue;
+      wybrane = kandydat;
+      if (i >= PROBY_IMIENIA - 1 || !kolizja(kandydat)) break;
     }
     if (wybrane !== '') {
       for (const id of rodzice) {

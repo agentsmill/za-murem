@@ -773,6 +773,35 @@ describe('historie: reguły na zmyślonym budynku', () => {
     expect(jedyne(poPowrocie, [matka, ona, wrocil], [matka.id, ona.id, on.id])).toBe(false);
   });
 
+  /** Szablony stanu (2051) dla samotnej osoby w budynku `b`, z wielu ziaren. */
+  function szablonyStanu(o: Osoba, b: Partial<Budynek>, n = 300): Set<string> {
+    const h = gosp('test/b1/g0', [o.id]);
+    const w: WynikBudynku = { ...budynek([o], [h], []), budynek: { ...BUDYNEK, ...b } };
+    const ids = new Set<string>();
+    for (let i = 0; i < n; i++) {
+      for (const z of zdaniaGospodarstwa(h, w, KRONIKA_TESTOWA, odmiana, losDla('stan', i))) {
+        if (z.rodzaj === 'stan') ids.add(z.szablon);
+      }
+    }
+    return ids;
+  }
+
+  it('o windach mówi tylko blok od 5 kondygnacji', () => {
+    const senior = osoba('test/b1/o0', 'Halina', 'K', 1975);
+    expect(szablonyStanu(senior, { kondygnacje: 4 }).has('stan-windy')).toBe(false);
+    expect(szablonyStanu(senior, { kondygnacje: 2 }).has('stan-windy')).toBe(false);
+    expect(szablonyStanu(senior, { kondygnacje: 5 }).has('stan-windy')).toBe(true);
+    expect(szablonyStanu(senior, { kondygnacje: 11 }).has('stan-windy')).toBe(true);
+  });
+
+  it('„kiedyś X, dziś X” nie pada, gdy dawny zawód i fach brzmią tak samo', () => {
+    const murarz = (dawnyZawod: string, fach: string): Osoba =>
+      osoba('test/b1/o0', 'Marek', 'M', 1980, { dawnyZawod, fach });
+    expect(szablonyStanu(murarz('murarz', 'murarz'), {}).has('stan-kiedys-dzis')).toBe(false);
+    expect(szablonyStanu(murarz('elektryk', 'elektryk'), {}).has('stan-kiedys-dzis')).toBe(false);
+    expect(szablonyStanu(murarz('murarz', 'elektryk'), {}).has('stan-kiedys-dzis')).toBe(true);
+  });
+
   it('wdowa w historii: owdowiała w roku zgonu męża, z poprawną odmianą', () => {
     const x = wdowa(0, 'Halina', 2038);
     const w = budynek(x.osoby, [x.h], x.wpisy);
@@ -860,6 +889,30 @@ describe('generuj: historie w generatorze (R49)', () => {
       const najblizszy = [...budynki].sort((a, b) => odl(a) - odl(b))[0];
       expect(d.kronika).toEqual(kronika(d.geo, budynki, zbiorImion(imiona), najblizszy.rejon));
     }
+  });
+
+  it('kronikaObszaru bez tabel gminy: ziarno to klucz budynku najbliższego środkowi mapy, nie pusty napis', () => {
+    const teksty = new Set<string>();
+    for (const d of DEMA) {
+      const budynki = budynkiObszaru(d.geo, null, kraj);
+      const kx = 111320 * Math.cos((d.geo.c[0] * Math.PI) / 180);
+      const odl = (b: Budynek): number => Math.hypot((b.lon - d.geo.c[1]) * kx, (d.geo.c[0] - b.lat) * 110574);
+      const najblizszy = [...budynki].sort((a, b) => odl(a) - odl(b))[0];
+      expect(najblizszy.rejon).toBe('');
+      const k = kronikaObszaru(d.geo, budynki, imiona);
+      expect(k).toEqual(kronika(d.geo, budynki, zbiorImion(imiona), najblizszy.klucz));
+      // wpisy o kablach i ogólne (bez miejsca) zależą tylko od ziarna: przy pustym ziarnie byłyby w każdym demie te same
+      teksty.add(JSON.stringify(k.filter((w) => !w.miejsce).map((w) => [w.rok, w.tekst])));
+    }
+    expect(teksty.size).toBe(DEMA.length);
+  });
+
+  it('kronikaObszaru bez budynków: ziarno ze środka mapy zaokrąglonego do 3 miejsc, różne dla różnych adresów', () => {
+    const pusta = (c: [number, number]): Geo => ({ c, b: [], r: [], a: [], w: [], poi: [] });
+    const a = kronikaObszaru(pusta([54.4093, 18.5991]), [], imiona);
+    expect(a).toEqual(kronika(pusta([54.4093, 18.5991]), [], zbiorImion(imiona), 'c:54.409,18.599'));
+    const b = kronikaObszaru(pusta([52.1446, 21.0579]), [], imiona);
+    expect(JSON.stringify(b)).not.toBe(JSON.stringify(a));
   });
 
   it('cały obszar dema z historiami w Node poniżej 1500 ms (cel 200 ms, mediana z 3)', () => {

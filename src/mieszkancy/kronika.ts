@@ -274,8 +274,10 @@ function maOsobe(nazwa: string, imiona: ReadonlySet<string>): boolean {
 const NUMER_DOMU = /(\p{L}{2,})\.?\s+(\d{1,4}\p{L}?(?:\/\d+\p{L}?)?)(?![\p{L}\p{N}])/gu;
 const NIE_ULICA = new Set(['nr', 'no', 'numer']);
 const GODZINY = /^\d+h$/i;
+/** Słowo ulicy przed nazwą z wielkiej litery: pełne słowo („na”, „przy”, „ulica”, „ul”) ze spacją, a skrót z kropką
+    także bez spacji („ul.Grunwaldzka”). Bez lookbehind, którego Safari nie zna przed 16.4. */
 const ADRES_SLOWEM =
-  /(?:^|[^\p{L}])(?:na|przy|ul\.?|al\.?|os\.?|ulica|ulicy|aleja|alei|osiedle|osiedlu|Ul\.|Al\.|Os\.|UL\.|AL\.|OS\.)\s*(?<=\s|\.)\p{Lu}/u;
+  /(?:^|[^\p{L}])(?:(?:na|przy|ulica|ulicy|aleja|alei|osiedle|osiedlu|ul|al|os)\s+|(?:ul|al|os|Ul|Al|Os|UL|AL|OS)\.\s*)\p{Lu}/u;
 
 /** Czy nazwa (już bez patrona) ma w sobie adres: wzorce w nagłówku (R50). */
 function maAdres(nazwa: string): boolean {

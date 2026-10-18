@@ -581,16 +581,40 @@ export function zenskaForma(m: string): string {
   return m.slice(0, -1) + (wielka ? 'A' : 'a');
 }
 
-/** Zbiór WIELKICH liter z pliku zakazanych nazwisk (jedno męskie nazwisko w linii): forma męska i żeńska każdego. */
+/** Linie pliku z listą: bez pustych i bez komentarzy (linia zaczyna się od `#`, także po wcięciu), przycięte. */
+function linieListy(tekst: string): { linia: string; numer: number }[] {
+  return tekst
+    .split(/\r?\n/)
+    .map((l, i) => ({ linia: l.trim(), numer: i + 1 }))
+    .filter((l) => l.linia !== '' && !l.linia.startsWith('#'));
+}
+
+/** Zbiór WIELKICH liter z pliku zakazanych nazwisk (jedno męskie nazwisko w linii, `#` zaczyna komentarz): forma
+    męska i żeńska każdego. */
 export function nazwiskaZakazane(tekst: string): Set<string> {
   const wynik = new Set<string>();
-  for (const linia of tekst.split(/\r?\n/)) {
-    const n = linia.trim().toUpperCase();
-    if (n === '') continue;
+  for (const { linia } of linieListy(tekst)) {
+    const n = linia.toUpperCase();
     wynik.add(n);
     wynik.add(zenskaForma(n));
   }
   return wynik;
+}
+
+/** Zakazane połączenia imienia z nazwiskiem (znane żyjące osoby o częstych nazwiskach, których nie da się wyciąć
+    w całości jak nazwisk polityków): plik tools/dane/zakazane-polaczenia.txt, „Imię Nazwisko” w linii, nazwisko
+    w formie, którą ta osoba nosi (Anna Lewandowska, Robert Lewandowski), `#` zaczyna komentarz. Wynik to napisy
+    „Imię|Nazwisko” posortowane bez powtórzeń, w tej postaci w `TabeleImion.zakazanePolaczenia`. Pierwsze słowo to
+    imię, reszta nazwisko; linia z jednym słowem albo ze słowem z małej litery zatrzymuje budowę. */
+export function polaczeniaZakazane(tekst: string): string[] {
+  const wynik = new Set<string>();
+  for (const { linia, numer } of linieListy(tekst)) {
+    const slowa = linia.split(/\s+/);
+    if (slowa.length < 2 || slowa.some((s) => !/^\p{Lu}/u.test(s)))
+      throw new Error(`zakazane połączenia, linia ${numer}: „${linia}”, oczekiwano „Imię Nazwisko” z wielkich liter`);
+    wynik.add(`${slowa[0]}|${slowa.slice(1).join(' ')}`);
+  }
+  return [...wynik].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 export interface DaneNazwisk {

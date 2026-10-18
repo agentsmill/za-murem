@@ -16,6 +16,7 @@ import {
   PIERWSZY_ROK,
   type Plec,
   parsujCsv,
+  polaczeniaZakazane,
   tabeleImion,
   tabeleNazwisk,
   type WierszImienia,
@@ -145,9 +146,16 @@ export interface WynikBudowy {
   daneImion: DaneImion;
 }
 
-/** Wszystkie tabele z surowych plików. `katalog` to imiona-nazwiska/ w katalogu surowych danych. */
-export function zbudujZPlikow(katalog: string, plikZakazanych: string): WynikBudowy {
+/** Wszystkie tabele z surowych plików. `katalog` to imiona-nazwiska/ w katalogu surowych danych, `plikZakazanych`
+    lista nazwisk, których gra nie używa, a `plikPolaczen` lista zakazanych połączeń imienia z nazwiskiem
+    (`polaczeniaZakazane`), która idzie do imiona.json jako `zakazanePolaczenia`. */
+export function zbudujZPlikow(katalog: string, plikZakazanych: string, plikPolaczen: string): WynikBudowy {
   const daneImion = wczytajDaneImion(katalog);
   const { tabele, diagnostyka } = tabeleNazwisk(wczytajDaneNazwisk(katalog, plikZakazanych));
-  return { imiona: tabeleImion(daneImion), nazwiska: tabele, diagnostykaNazwisk: diagnostyka, daneImion };
+  if (!fs.existsSync(plikPolaczen)) throw new Error(`Brak pliku z zakazanymi połączeniami ${plikPolaczen}`);
+  const imiona: TabeleImion = {
+    ...tabeleImion(daneImion),
+    zakazanePolaczenia: polaczeniaZakazane(fs.readFileSync(plikPolaczen, 'utf8')),
+  };
+  return { imiona, nazwiska: tabele, diagnostykaNazwisk: diagnostyka, daneImion };
 }

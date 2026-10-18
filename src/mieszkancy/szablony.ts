@@ -29,7 +29,8 @@
 
    Warunki szablonu (pola `Szablon`) sprawdza historie.ts: okno lat zdarzenia (`od`, `do`), wiek osoby głównej w roku
    zdarzenia (`wiekOd`, `wiekDo`; dla dawnych czasów w 2026, dla stanu w 2051), pokrewieństwo osoby powiązanej (`kim`),
-   rodzaj wyjazdu (`kierunek`) i kilka cech gospodarstwa. Szablon bez danego pola nie stawia tego warunku. `motyw` to
+   rodzaj wyjazdu (`kierunek`) i kilka cech gospodarstwa i budynku (`blok`, `kondygnacjeOd`). Szablon bez danego pola
+   nie stawia tego warunku. Szablon z `{zawod}` i `{fach}` nie pasuje, gdy oba brzmią tak samo. `motyw` to
    temat, który w jednej historii może wystąpić tylko raz (dwa zdania o samotności albo o przedłużaczach to za dużo). */
 
 import { g, wiek } from '../content/people.ts';
@@ -253,6 +254,8 @@ export interface Szablon {
   ciasno?: boolean;
   /** Budynek to blok. */
   blok?: boolean;
+  /** Budynek ma co najmniej tyle kondygnacji (windy są dopiero w wyższych blokach). */
+  kondygnacjeOd?: number;
   zawod?: RodzajZawodu;
   /** Miejsce z kroniki: kategoria (klucze jak w kronika.ts). */
   kategoria?: readonly string[];
@@ -1301,6 +1304,7 @@ const STAN: readonly Szablon[] = [
   sz('stan-windy', 'stan', '{o:mian} ma {wiek}, mieszka sam{g:|a} i pamięta czasy, kiedy windy jeszcze jeździły.', {
     sam: true,
     blok: true,
+    kondygnacjeOd: 5,
     wiekOd: 60,
     motyw: 'sam',
   }),
@@ -1318,6 +1322,7 @@ const STAN: readonly Szablon[] = [
     ciasno: true,
   }),
   sz('stan-fach', 'stan', 'Na osiedlu {o:mian} jest znan{g:y|a} jako {fach}.', { motyw: 'fach' }),
+  // nie pasuje, gdy dawny zawód i fach brzmią tak samo („kiedyś murarz, dziś murarz”): historie.ts, `pasuje`
   sz('stan-kiedys-dzis', 'stan', '{o:mian}: kiedyś {zawod}, dziś {fach}.', { zawod: 'dowolny', motyw: 'fach' }),
   sz('stan-kroki', 'stan', '{o:mian} ma {wiek} i każdego na klatce rozpoznaje po krokach.', { wiekOd: 6, blok: true }),
   sz('stan-grzadki', 'stan', '{o:mian} ma {wiek} i od rana do zmroku pilnuje grządek za domem.', {
