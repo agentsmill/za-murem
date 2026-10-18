@@ -183,6 +183,61 @@ export function wordsOf(p: GovPlace): Words {
   return { ...(p.kind === 'dom' ? ULICZNE : BLOKOWE), sasiad: houses ? 'zza płotu' : 'z bloku obok' };
 }
 
+/** Słowa wspólnoty po angielsku, jak Words (docs/SLOWNICZEK-EN.md). Bez przypadków, z rodzajnikiem tam, gdzie zdanie
+    go potrzebuje; wielka litera na początek zdania przez `Zarzad`. */
+export interface WordsEn {
+  /** the co-op | the street */
+  wspolnota: string;
+  /** the board | the street committee */
+  zarzad: string;
+  /** The board | The street committee */
+  Zarzad: string;
+  /** krótko: the board | the committee */
+  krotko: string;
+  /** the general meeting | the street meeting */
+  walne: string;
+  /** nagłówek okna wydarzenia: On the estate | On the street */
+  naglowek: string;
+  /** residents | neighbours */
+  mieszkancy: string;
+  /** the gate | the garden gate */
+  brama: string;
+  /** from the block next door | from over the fence (jak Words.sasiad) */
+  sasiad: string;
+}
+
+const BLOKOWE_EN: Omit<WordsEn, 'sasiad'> = {
+  wspolnota: 'the co-op',
+  zarzad: 'the board',
+  Zarzad: 'The board',
+  krotko: 'the board',
+  walne: 'the general meeting',
+  naglowek: 'On the estate',
+  mieszkancy: 'residents',
+  brama: 'the gate',
+};
+
+const ULICZNE_EN: Omit<WordsEn, 'sasiad'> = {
+  wspolnota: 'the street',
+  zarzad: 'the street committee',
+  Zarzad: 'The street committee',
+  krotko: 'the committee',
+  walne: 'the street meeting',
+  naglowek: 'On the street',
+  mieszkancy: 'neighbours',
+  brama: 'the garden gate',
+};
+
+/** angielski słownik dla miejsca, z tych samych warunków co wordsOf */
+export function wordsEn(p: GovPlace): WordsEn {
+  const s = sasiedzi(p);
+  const houses = s === 'domy' || (s === null && p.kind === 'dom');
+  return {
+    ...(p.kind === 'dom' ? ULICZNE_EN : BLOKOWE_EN),
+    sasiad: houses ? 'from over the fence' : 'from the block next door',
+  };
+}
+
 /** wolne miejsca dla mieszkańców (miejsca minus mieszkańcy); bez danych o miejscach cztery, jak dotąd */
 export function freePlaces(i: Pick<GovInput, 'cap' | 'residents'>): number {
   if (i.cap === undefined) return 4;

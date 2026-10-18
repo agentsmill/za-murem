@@ -11,7 +11,7 @@ import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { rngOf } from '../core/rng.ts';
-import { freePlaces, placeIn, sasiedzi, wordsOf } from './miejsce.ts';
+import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
 import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, LootKey, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
@@ -256,11 +256,18 @@ export function makeHost(st: GovState, i: GovInput, fx: GovEffects, ev?: GEventD
     outdoor: () => i.outdoor,
     campfire: () => !!i.light?.campfire,
     words: () => wordsOf(placeIn(i)),
+    wordsEn: () => wordsEn(placeIn(i)),
     neighbour: () => {
       const p = placeIn(i);
       if (p.kind === 'blok' && (i.residents ?? 0) > 0) return 'z waszej klatki';
       const s = sasiedzi(p);
       return s === null ? null : s === 'bloki' ? 'z bloku obok' : 'zza płotu';
+    },
+    neighbourEn: () => {
+      const p = placeIn(i);
+      if (p.kind === 'blok' && (i.residents ?? 0) > 0) return 'from your stairwell';
+      const s = sasiedzi(p);
+      return s === null ? null : s === 'bloki' ? 'from the block next door' : 'from over the fence';
     },
     neighbours: () => sasiedzi(placeIn(i)),
   };

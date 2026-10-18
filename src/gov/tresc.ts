@@ -6,7 +6,7 @@ import { LAW, type LawPath } from '../content/data.ts';
 import type { EventChoice, EventHost } from '../content/events.ts';
 import { g } from '../content/people.ts';
 import { pick } from '../core/rng.ts';
-import type { Words } from './miejsce.ts';
+import type { Words, WordsEn } from './miejsce.ts';
 import type { GovNeeds, GovPerson, GovPlace, LootKey } from './typy.ts';
 
 // ---------------------------------------------------------------- uchwały
@@ -221,12 +221,15 @@ export interface GovHost extends EventHost {
   guarded(): boolean;
   /** skutek na rano: zmiana zapasów i linia do raportu */
   later(stock: Partial<Record<LootKey, number>>, line: string): void;
-  /** miejsce siedziby i słownik wspólnoty (w domu ulica i komitet ulicy) */
+  /** miejsce siedziby i słownik wspólnoty (w domu ulica i komitet ulicy), także po angielsku */
   place(): GovPlace;
   words(): Words;
+  wordsEn(): WordsEn;
   /** skąd przychodzi sąsiad: „z waszej klatki” (blok z mieszkańcami), „z bloku obok” albo „zza płotu” według
       sąsiadów; null, gdy w okolicy nie ma nikogo */
   neighbour(): string | null;
+  /** to samo po angielsku: from your stairwell, from the block next door, from over the fence; null jak wyżej */
+  neighbourEn(): string | null;
   /** jacy sąsiedzi są w okolicy: bloki, domy albo nikt (null); jak sasiedzi() w miejsce.ts */
   neighbours(): 'bloki' | 'domy' | null;
   /** wolne miejsca dla mieszkańców, mieszkańcy siedziby, temperatura na dworze, ognisko na podwórku */

@@ -22,6 +22,7 @@ export const NASTROJE_EN: Readonly<Record<string, string>> = {
   'Przegoniliśmy szabrowników': 'We ran the looters off',
   // zarząd: noc, wyprawy, wydarzenia
   'Sprawy spółdzielni': 'Co-op business',
+  'Sprawy ulicy': 'Street business',
   'Pożar od kozy': 'The stove started a fire',
   Choroba: 'Illness',
   'Całą noc przy kozie': 'All night by the stove',
