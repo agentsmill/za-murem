@@ -1,7 +1,8 @@
 /* Bot trybu zombie: gra z zarządem (src/gov) na Przymorzu przez kilka nocy dwiema politykami karty nocy: warta
    z dzidami przy siatce (dwie najzdrowsze osoby, dzidy z magazynu) i bez warty. Za dnia w obu politykach gracz
    robi to samo: łata dziury, wzmacnia uszkodzoną siatkę, robi dzidy, czyści podwórko ze szwendaczy uzbrojonym
-   zarządem, dobija zwłoki i amputuje ugryzionych w rękę albo nogę. Na noc: stado, najwięcej napierających,
+   zarządem, dźga dzidami przez siatkę tych, którzy stoją pod nią, rąbie drewno tylko wtedy, gdy przy bramie i drzewie
+   pusto, dobija zwłoki i amputuje ugryzionych w rękę albo nogę. Na noc: stado, najwięcej napierających,
    zabici, przerwania siatki, ugryzienia, zgony, siatka o 6:00, kto żyje. Na koniec skrót stanu (powtarzalny).
    Uruchomienie: npm run bot:zombie [-- ziarno [noce]] */
 
@@ -32,6 +33,8 @@ const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../pu
 const world = buildWorld(demo.geo, { seed: SEED, street: demo.street });
 const size = world.size;
 const yard = new Set(world.fence.yard);
+const fenceDist = (x: number, y: number) =>
+  Math.min(...world.fence.tiles.map((t) => Math.hypot((t % size) + 0.5 - x, Math.floor(t / size) + 0.5 - y)));
 
 type Policy = 'warta-dzidy' | 'bez-warty';
 
@@ -115,6 +118,17 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
         const z = inYard.sort((a, b) => Math.hypot(a.x - q.x, a.y - q.y) - Math.hypot(b.x - q.x, b.y - q.y))[0];
         sim.push({ t: 'attack', ids: [q.id], target: z.id });
       }
+      // za dnia sprzątanie przy siatce: kto ma dzidę, dźga przez siatkę szwendaczy, którzy stoją pod nią
+      if (h >= 6 && h < 20) {
+        const atFence = st.pawns.filter((p) => p.kind === 'zombie' && !yard.has(tileOf(p)) && fenceDist(p.x, p.y) <= 2);
+        for (const q of people) {
+          if (q.weapon !== 'dzida' || !atFence.length || (q.needs?.health ?? 0) <= 50) continue;
+          if (['fight', 'guard', 'amputate', 'sleep'].includes(q.job?.t ?? '')) continue;
+          const z = atFence.sort((a, b) => Math.hypot(a.x - q.x, a.y - q.y) - Math.hypot(b.x - q.x, b.y - q.y))[0];
+          const m = commandsAt(st, world, [q.id], tileOf(z)).find((c) => c.cmd.t === 'attack');
+          if (m) sim.push(m.cmd);
+        }
+      }
       // ugryziony w rękę albo nogę: amputacja przez najlepszego medyka
       for (const q of people)
         if (
@@ -163,11 +177,18 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
         const woodman = people
           .filter((p) => !['guard', 'sleep', 'amputate', 'fight', 'leave'].includes(p.job?.t ?? ''))
           .sort((a, b) => b.needs!.health - a.needs!.health || a.id - b.id)[0];
-        if (sn.wood < 8 && !chopping && woodman) {
+        // drwal wychodzi za siatkę tylko wtedy, gdy przy bramie nie stoją szwendacze
+        const gateClear = !st.pawns.some(
+          (p) =>
+            p.kind === 'zombie' &&
+            Math.hypot(p.x - ((sim.exitTile % size) + 0.5), p.y - (Math.floor(sim.exitTile / size) + 0.5)) < 12,
+        );
+        if (sn.wood < 8 && !chopping && woodman && gateClear) {
           let best = -1;
           let bd = Number.POSITIVE_INFINITY;
           world.trees.forEach((t, k) => {
             if (t.kind === 2 || st.felled.includes(k) || skip.has(k)) return;
+            if (st.pawns.some((p) => p.kind === 'zombie' && Math.hypot(p.x - t.x, p.y - t.y) < 12)) return;
             const d = Math.hypot(t.x - (door % size), t.y - Math.floor(door / size));
             if (d < bd) {
               bd = d;

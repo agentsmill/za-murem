@@ -65,7 +65,7 @@ Dzidę robi się na podwórku z 2 desek i 1 złomu (godzina gry pracy).
 - Rodzaj pionka `zombie`. Chodzą z 0,35 prędkości człowieka, a za widzianą ofiarą z 0,5.
 - Widzą człowieka z 10 m za dnia i z 5 m nocą (z 10 m, jeśli człowiek stoi w świetle). Słyszą hałas w jego promieniu.
 - Nie wchodzą do budynków (drzwi są zamknięte). Przez otwartą dziurę wchodzą na podwórko, przez zamkniętą bramę nie.
-- Za dnia po stronie ulicy snuje się min(30, 6 + 2 × dzień) szwendaczy. O 21:00 zaczyna się stado: min(60, 8 + 6 × (dzień − 1)) szwendaczy wychodzi z krawędzi mapy do 1:00 w grupach i idzie do siatki. O 6:00 ci, którzy nie napierają, rozchodzą się. Najwyżej 80 szwendaczy naraz.
+- Za dnia po stronie ulicy snuje się min(30, 6 + 2 × dzień) szwendaczy. Rodzą się w pasie 15–40 m drogi od siatki i przez dzień ściągają się pod nią (zmiana z 18.10.2026 po playteście: wcześniej losowali się po całej mapie i nie było ich widać). O 21:00 zaczyna się stado: min(60, 8 + 6 × (dzień − 1)) szwendaczy wychodzi z okolicy 50–80 m od siatki do 1:00 w grupach i idzie do siatki. O 6:00 ci, którzy nie napierają, rozchodzą się. Najwyżej 80 szwendaczy naraz.
 - Do siatki prowadzi ich pole odległości liczone od kafelków tuż za siatką (BFS po stronie ulicy, liczone przy każdej zmianie przechodniości), a do widzianej ofiary albo hałasu A* z limitem 3 wyszukiwań na krok.
 - Napór: szwendacz, który stoi przy kafelku siatki, zdejmuje mu 0,004 wytrzymałości na krok (3,2 na godzinę gry). Kafelek z wytrzymałością 0 staje się nową dziurą, którą da się załatać jak dziś.
 - Ugryzienie: zasięg 1,1 m, co 30 kroków, 15 obrażeń, 35% szans na zakażenie przy trafieniu. Zakażony słabnie liniowo do śmierci po 18 godzinach gry. W 60% ugryzień trafienie jest w rękę albo nogę i przez 2 godziny gry od ugryzienia da się amputować: ktoś z zarządu idzie do chorego, pół godziny pracy, szansa 0,5 + 0,15 × umiejętność `med` (+0,15 z lekiem z magazynu), najwyżej 0,9. Udana amputacja usuwa zakażenie, zdejmuje 35 zdrowia (zostaje co najmniej 10) i zostawia kikut (gorsza celność o 0,15). Nieudana zabija.
@@ -93,7 +93,7 @@ Wszystkie dziury ze świata załatane na start (łata 100), każdy kafelek siatk
 
 ### Rysowanie
 
-Szwendacze w atlasie ludzi (szarozielona skóra, podarte ubranie z plamami, ręce przed siebie, chwiejny chód, rzut z ugryzieniem), pozy ciosu i celowania dla ludzi, broń w ręce jako osobny sprite, zwłoki i trupy, błysk wystrzału jako krótkie światło, krew, krąg hałasu po strzale, paski życia w walce, deski na wzmocnionej siatce. Nocą szwendaczy widać tylko w świetle, tak jak szabrowników.
+Szwendacze w atlasie ludzi (szarozielona skóra, podarte ubranie z plamami, ręce przed siebie, chwiejny chód, rzut z ugryzieniem), pozy ciosu i celowania dla ludzi, broń w ręce jako osobny sprite, zwłoki i trupy, błysk wystrzału jako krótkie światło, krew, krąg hałasu po strzale, paski życia w walce, deski na wzmocnionej siatce. Nocą szwendaczy w świetle widać jak szabrowników, a w ciemności jako ciemny zarys (zmiana z 18.10.2026 po playteście: stado pod siatką ma być widać).
 
 ## Ograniczenia
 

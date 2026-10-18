@@ -227,9 +227,21 @@ Siedem drobnych uwag recenzenta, które nie wymagały decyzji Mateusza, każda z
 
 Testy 580/580, Biome na `src`, `tests`, `tools` i `index.html`, build. Boty dają ten sam przebieg co `tryb-zombie`: `npm run bot` skrót e772cf37 (po 3 dobach 7990adca), `npm run bot:zombie` ziarno 1: z wartą d5987d7e (1 zgon), bez warty fcf6aeda (3 zgony, siatka o 6:00 do 0,56). Zrzuty trybu zombie bez błędów; trupy szwendaczy obejrzane w Chromium na podwórku Przymorza (osiem wyglądów, osiem tekstur, konsola czysta). Trzy uwagi zostają w Zaparkowanych, bo potrzebują decyzji Mateusza.
 
+### Szwendaczy widać i ściągają się pod siatkę, 18.10.2026 (gałąź `tryb-zombie`)
+
+Mateusz po pierwszym graniu: zombie „nie widać nigdzie, nie ściągają”. Pomiar na Przymorzu (mapa 384 m) potwierdził: pierwszego dnia 8 szwendaczy losowało się po całej mapie, mediana 300 m drogi od siatki, żaden bliżej niż 20 m, a snucie się nie miało kierunku. Stado o 21:00 szło z krawędzi mapy i dochodziło pod siatkę między 2:00 a 5:00. Nocą w ciemności szwendaczy nie było widać wcale.
+
+Zmiany:
+- Za dnia szwendacze rodzą się w pasie 15–40 m drogi od siatki (i co najmniej 15 m w linii prostej), a co czwarty krok snucia idzie ku siatce: pierwszego dnia o 16:00 mediana 25 m, o 20:00 siedmiu z ośmiu stoi pod siatką. Ten, kto odejdzie dalej niż 40 m, wraca. Kto pod siatką zobaczy ludzi na podwórku, napiera już za dnia, więc jest co dźgać dzidą przez siatkę.
+- Stado wychodzi z okolicy 50–80 m od siatki zamiast z krawędzi mapy; pierwsze grupy napierają przed 23:00.
+- Nocą szwendacz w ciemności jest ciemnym zarysem (widoczność co najmniej 0,4), w świetle jak dotąd.
+- Bot trybu zombie gra ostrożniej, jak rozsądny gracz: za dnia kto ma dzidę, dźga przez siatkę tych, którzy pod nią stoją, a drwal wychodzi tylko wtedy, gdy przy bramie i przy drzewie nie ma szwendaczy w promieniu 12 m. Bez tego wracający z wyprawy i drwal wchodzili prosto w tłum przy bramie (22 z 39 ugryzień za siatką w drodze).
+
+Liczby: testy 583/583 (nowy `tests/unit/zombie-blisko.test.ts` na prawdziwej mapie Przymorza padał przed poprawką), Biome, build. `npm run bot` bez zmian (e772cf37, po 3 dobach 7990adca). `npm run bot:zombie`: ziarno 1 z wartą gra trwa 6 nocy, 3 zgony, 13–34 zabitych na noc w pierwszych trzech nocach, siatka o 6:00 do 0,49 po siódmej nocy; bez warty koniec gry „pustką” czwartego dnia. Ziarna 2 i 3 z wartą: 2 i 1 zgon w 5 nocach. Z wartą jest więc trudniej niż przedtem (było 1 zgon w 6 nocach), bez warty można przegrać. Nowy zrzut `zombie-wieczor` (zwykły start bez `?stado`, 19:30): sześciu szwendaczy do 12 m od siatki, widać ich jako szare sylwetki o zmierzchu; `zombie-noc-telefon` obejrzany.
+
 ## Następne
 
-0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia, a na niej `tryb-zombie-drobne` z drobnymi poprawkami z przeglądu.
+0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia, czy szwendaczy pod siatką za dnia jest dość). Gałąź `tryb-zombie` jest na GitHubie (CI zielone), PR do `main` nie jest otwarty.
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
 2. Bramka M1: Mateusz gra na swoim adresie i mówi, czy chce dalej. Przed tym nowe nagranie po spięciu (noc z wartą, szabrownikami i dymem) i bramka w minutach przy ekranie.
 3. Z playtestu dla symulacji: warta może nocą dokładać do kozy (teraz koza gaśnie około północy), krok „zanieść drewno do składu” przy 1× czeka kilka sekund na polecenie. Propozycje API zarządu od symulacji: jawny wynik napadu, siła napadu, warta spoza karty nocy.
