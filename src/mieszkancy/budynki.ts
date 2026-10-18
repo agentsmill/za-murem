@@ -1,8 +1,14 @@
 /* Budynki dla generatora mieszkańców: z mapy (`Geo`) do listy budynków mieszkalnych z rejonem, typem, wymiarami,
    klatkami, epoką budowy i liczbą mieszkań. Bez trygonometrii poza jednym miejscem (przeliczenie metrów na stopnie),
    bez pierwiastków poza `Math.sqrt` w obrys.ts, więc wynik jest taki sam w każdej przeglądarce i w Node. Losowanie
-   idzie z ziaren po kluczu budynku (`losDla`), więc nie zależy od kolejności budynków ani od tego, który adres
-   w okolicy wpisał gracz. */
+   idzie z ziaren po kluczu budynku (`losDla`), więc nie zależy od kolejności budynków na mapie.
+   Od adresu gracza zależy: importery mapy (src/world) zaokrąglają wierzchołki do 0,5 m względem środka mapy `geo.c`,
+   więc ten sam budynek wczytany z innego adresu ma trochę inny środek i pole. Klucz `g:…`, a z nim epoka i
+   mieszkania, jest stały tylko w obrębie jednego wczytania mapy. Klucz `osm:<id>` jest stały także między adresami,
+   ale mieszkania (z pola) i reguły epoki z wymiarów mogą się przesunąć o drgnięcie pola. Na kafelkach z
+   tests/fixtures/mvt, dla adresu i punktu 40 m na północny wschód, z 40 budynków do 150 m od adresu ten sam klucz w
+   obu wczytaniach mają 3 (test `it.fails` w mieszkancy-budynki.test.ts). Kanoniczne id i geometria budynku
+   z importera to warunek kroku 5. */
 
 import { classify, levelsOf } from '../world/classify.ts';
 import type { Geo, GeoBuilding } from '../world/geo.ts';
@@ -290,7 +296,8 @@ function najwiekszy(s: readonly Segment[], ma: (x: Segment) => boolean): Segment
     obróconego prostokąta, klatki, epokę i liczbę mieszkań. Segmenty bloków jednej wysokości, które się stykają albo
     są bliżej niż metr, tworzą jeden budynek (klatki = liczba segmentów); pojedynczy blok ma `max(1, round(długość /
     20))` klatek, a dom jedną. Klucz to `osm:<id>`, gdy mapa niesie tag `id` (największy segment), inaczej
-    `g:<szerokość>,<długość>,<pole>` ze środka obrysu w stopniach z 5 miejscami. więc nie zależy od adresu gracza. */
+    `g:<szerokość>,<długość>,<pole>` ze środka obrysu w stopniach z 5 miejscami. Klucz `g:…` jest stały w obrębie
+    jednego wczytania mapy, ale nie między adresami (nagłówek pliku); `osm:<id>` jest stały, choć pole może drgnąć. */
 export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Budynek[] {
   const segmenty = segmentyMieszkalne(geo);
   const korzenie = grupy(segmenty.length, parySasiadow(segmenty));

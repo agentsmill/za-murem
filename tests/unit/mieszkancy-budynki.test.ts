@@ -10,6 +10,9 @@ import { rejonDla } from '../../src/mieszkancy/rejon.ts';
 import type { Epoka, TabeleGminy, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
 import type { Budynek } from '../../src/mieszkancy/typy.ts';
 import type { Geo, GeoBuilding, GeoPoi, Pt } from '../../src/world/geo.ts';
+import { toGeoT } from '../../src/world/mvt.ts';
+import { LOAD_RADIUS } from '../../src/world/world.ts';
+import { ADDRESSES, decodedTiles } from './fixtures.ts';
 
 const PUBLIC = path.resolve(import.meta.dirname, '../../public');
 const wczytaj = <T>(plik: string): T => JSON.parse(fs.readFileSync(path.join(PUBLIC, plik), 'utf8')) as T;
@@ -161,6 +164,43 @@ describe('budynkiZGeo na demach', () => {
     const t0 = performance.now();
     budynkiZGeo(demo('lanciego'), ursynow, kraj);
     expect(performance.now() - t0).toBeLessThan(1500);
+  });
+});
+
+// ---------------------------------------------------------------- dwa adresy w okolicy
+
+describe('ten sam budynek z dwóch adresów (warunek kroku 5)', () => {
+  // Importery mapy zaokrąglają wierzchołki do 0,5 m względem środka mapy, więc klucz `g:…` (środek i pole) zależy od
+  // adresu. Zmierzone 18.10.2026 na kafelkach z tests/fixtures/mvt (adres dema i punkt 40 m na północny wschód,
+  // budynki do 150 m od adresu, para to najbliższy środek obrysu w 2 m): Przymorze 4 budynki, 3 pary, ten sam klucz
+  // 0, te same mieszkania 0, ta sama epoka 0; Ursynów 19, 19, 0, 7, 9; Batowice 17, 17, 3, 14, 8. Kafelki nie niosą
+  // id budynków. Test zacznie przechodzić, gdy importer da kanoniczne id i geometrię budynku (krok 5); wtedy trzeba
+  // zdjąć `it.fails`.
+  const GMINY: Record<string, TabeleGminy> = { przymorze: gdansk, lanciego: ursynow, zielonki };
+  const ODLEGLOSC = 150;
+
+  it.fails('budynki do 150 m od adresu mają przy adresie 40 m dalej ten sam klucz, mieszkania i epokę', () => {
+    for (const a of ADDRESSES) {
+      const tiles = decodedTiles(a);
+      const g = GMINY[a.key];
+      const tu = budynkiZGeo(toGeoT(tiles, a.lat, a.lon, LOAD_RADIUS), g, kraj);
+      const obok = new Map(
+        budynkiZGeo(toGeoT(tiles, a.lat + 0.0003, a.lon + 0.0004, LOAD_RADIUS), g, kraj).map((b) => [b.klucz, b]),
+      );
+      const kx = 111320 * Math.cos((a.lat * Math.PI) / 180);
+      const blisko = tu.filter((b) => {
+        const x = (b.lon - a.lon) * kx;
+        const y = (a.lat - b.lat) * 110574;
+        return x * x + y * y <= ODLEGLOSC * ODLEGLOSC;
+      });
+      expect(blisko.length, a.key).toBeGreaterThan(3);
+      for (const b of blisko) {
+        const drugi = obok.get(b.klucz);
+        expect(drugi, `${a.key} ${b.klucz}`).toBeDefined();
+        expect(drugi?.mieszkania, b.klucz).toBe(b.mieszkania);
+        expect(drugi?.epoka, b.klucz).toBe(b.epoka);
+      }
+    }
   });
 });
 
