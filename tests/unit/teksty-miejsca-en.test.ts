@@ -102,7 +102,7 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
       endSheet('exodus', words, e),
       endSheet('pustka', words, e),
     ];
-    for (const t of sheetTexts(sheets.flatMap((s) => s)[0])) expect(t).not.toMatch(BLOKOWE);
+    for (const t of sheetTexts(sheets.flat()[0])) expect(t).not.toMatch(BLOKOWE);
     for (const s of sheets)
       for (const t of sheetTexts(s)) {
         expect(t).not.toMatch(BLOKOWE);
