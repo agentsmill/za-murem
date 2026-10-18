@@ -4,7 +4,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { tx } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { BLOK, wordsOf } from '../../src/gov/miejsce.ts';
 import type { GovState } from '../../src/gov/typy.ts';
@@ -17,15 +18,19 @@ import { snapshot } from '../../src/sim/snapshot.ts';
 import {
   allowedAnchors,
   availableOf,
+  BUILD_MENU,
   buildItems,
   buildMenu,
-  buildSheet,
+  buildPanelHtml,
   costText,
   MAT_NAME,
   matsOf,
   okTilesOf,
   ourApts,
+  placeKey,
   reservedOf,
+  stockKey,
+  TECH_NAMES,
   workText,
 } from '../../src/ui/budowa.ts';
 import { DAY2_WOOD, goalsDay2, isDay2 } from '../../src/ui/cele.ts';
@@ -62,9 +67,41 @@ const missing = (k: BuildKind, have: Partial<Record<Mat, number>>) =>
     .join(', ');
 
 describe('menu budowy', () => {
-  it('trzy kategorie, każda budowla z kosztem, czasem pracy, działaniem i miejscem z BUILDS', () => {
+  afterEach(() => {
+    for (const k of Object.keys(BUILDS) as BuildKind[]) delete BUILDS[k].tech;
+    delete TECH_NAMES.t_test;
+    BUILD_MENU.showLocked = false;
+  });
+
+  it('zablokowane badaniem: ukryte, z flagą kłódek wyszarzone z „Wymaga badania”, zakładka bez pozycji znika', () => {
+    const rich = { deski: 999, zlom: 999, czesci: 999 };
+    const kinds = (m: ReturnType<typeof buildMenu>) => m.flatMap((c) => c.items.map((b) => b.kind));
+    BUILDS.warsztat.tech = 't_test';
+    expect(kinds(buildMenu(rich, () => true, undefined, undefined, { st: {} }))).not.toContain('warsztat');
+    expect(kinds(buildMenu(rich, () => true, undefined, undefined, { st: { techDone: ['t_test'] } }))).toContain(
+      'warsztat',
+    );
+    TECH_NAMES.t_test = tx('Badanie testowe', 'Test research');
+    const shown = buildMenu(rich, () => true, undefined, undefined, { st: {}, showLocked: true })
+      .flatMap((c) => c.items)
+      .find((b) => b.kind === 'warsztat')!;
+    expect(shown).toMatchObject({ ok: false, locked: 'Wymaga badania: Badanie testowe' });
+    expect(shown.why).toBe(shown.locked);
+    // flaga z danych działa tak samo jak opcja
+    BUILD_MENU.showLocked = true;
+    expect(kinds(buildMenu(rich, () => true, undefined, undefined, { st: {} }))).toContain('warsztat');
+    BUILD_MENU.showLocked = false;
+    // jedyna budowla zakładki zablokowana: zakładki nie ma
+    BUILDS.zasieki.tech = 't_test';
+    expect(buildMenu(rich, () => true, undefined, undefined, { st: {} }).map((c) => c.key)).toEqual([
+      'dom',
+      'podworko',
+    ]);
+  });
+
+  it('trzy zakładki, każda budowla z kosztem, czasem pracy, działaniem i miejscem z BUILDS', () => {
     const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true);
-    expect(menu.map((c) => c.title)).toEqual(['Pomieszczenie', 'Podwórko', 'Obwód']);
+    expect(menu.map((c) => c.title)).toEqual(['Dom', 'Podwórko', 'Obwód']);
     const all = menu.flatMap((c) => c.items);
     expect(all.map((b) => b.kind).sort()).toEqual((Object.keys(BUILDS) as BuildKind[]).sort());
     for (const b of all) {
@@ -94,11 +131,12 @@ describe('menu budowy', () => {
       .flatMap((c) => c.items)
       .find((b) => b.kind === 'kuchnia_spoleczna')!;
     expect(k.why).toBe('Nie ma gdzie postawić: brak wolnego miejsca w kuchni naszego mieszkania.');
-    // okno: przy zapasie dokładnie na warsztat przycisk ma warsztat, a magazyn (więcej desek) powód
+    // panel: przy zapasie dokładnie na warsztat szczegóły mają przycisk dla warsztatu, a magazyn (więcej desek) powód
     const have = BUILDS.warsztat.cost;
     expect(total('magazyn')).toBeGreaterThan(have.deski ?? 0);
-    const html = buildSheet(
+    const html = buildPanelHtml(
       buildMenu(have, () => true),
+      { tab: null, kind: null },
       false,
     ).body;
     expect(html).toContain('data-act="build" data-arg="warsztat"');
@@ -106,11 +144,68 @@ describe('menu budowy', () => {
     expect(html).toContain(`Brakuje: ${missing('magazyn', have)}.`);
     expect(html).toContain('Lewy klik stawia plan, R obraca, prawy klik albo Esc anuluje.');
     expect(
-      buildSheet(
+      buildPanelHtml(
         buildMenu({}, () => true),
+        { tab: null, kind: null },
         true,
       ).body,
     ).toContain('Stuknięcie stawia plan');
+  });
+
+  it('panel: zakładki, kafelki aktywnej zakładki z miniaturą i szczegóły z wybraną budowlą', () => {
+    const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true);
+    const r = buildPanelHtml(menu, { tab: null, kind: null }, false, undefined, undefined, (k) => `data:thumb/${k}`);
+    expect(r.view).toEqual({ tab: 'dom', kind: 'warsztat' });
+    for (const tab of ['dom', 'podworko', 'obwod']) expect(r.body).toContain(`data-tab="${tab}"`);
+    const dom = menu.find((c) => c.key === 'dom')!;
+    for (const b of dom.items) {
+      expect(r.body).toContain(`class="tile`);
+      expect(r.body).toContain(`data-kind="${b.kind}"`);
+      expect(r.body).toContain(`src="data:thumb/${b.kind}"`);
+    }
+    expect(r.body).not.toContain('data-kind="ogrodek"');
+    expect(r.body).toContain('aria-selected="true"');
+    // szczegóły: widoczny tylko wybrany
+    expect(r.body).toMatch(/<section class="bd" data-kind="warsztat">/);
+    expect(r.body).toMatch(/<section class="bd" data-kind="magazyn" hidden>/);
+    const yard = buildPanelHtml(menu, { tab: 'podworko', kind: null }, false);
+    expect(yard.view).toEqual({ tab: 'podworko', kind: 'ogrodek' });
+    expect(yard.body).toContain('data-kind="ogrodek"');
+    expect(yard.body).not.toContain('data-kind="warsztat"');
+  });
+
+  it('panel: wybór spoza aktywnej zakładki wraca do pierwszej pozycji, a puste menu daje komunikat', () => {
+    const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true);
+    expect(buildPanelHtml(menu, { tab: 'dom', kind: 'ogrodek' }, false).view).toEqual({ tab: 'dom', kind: 'warsztat' });
+    expect(buildPanelHtml(menu, { tab: 'dom', kind: 'magazyn' }, false).view).toEqual({ tab: 'dom', kind: 'magazyn' });
+    const none = buildPanelHtml([], { tab: 'dom', kind: 'warsztat' }, false);
+    expect(none.view).toEqual({ tab: null, kind: null });
+    expect(none.body).toContain('Na razie nic nie można zbudować.');
+    expect(none.body).not.toContain('data-act="build"');
+  });
+
+  it('klucz zapasu panelu bierze tylko materiały z kosztów budowli: drewno z palenia i jedzenie go nie ruszają', () => {
+    const have = { drewno: 5, deski: 20, zlom: 10, czesci: 4, jedzenie: 3, leki: 2 } as Record<Mat, number>;
+    const k = stockKey(have);
+    expect(stockKey({ ...have, drewno: 99, jedzenie: 0, leki: 7 })).toBe(k);
+    for (const m of ['deski', 'zlom', 'czesci'] as Mat[]) expect(stockKey({ ...have, [m]: have[m] + 1 })).not.toBe(k);
+  });
+
+  it('klucz miejsc panelu: ruch rzeczy i wymiana na inną o tej samej liczbie go zmieniają, brak zmian nie', () => {
+    const { st } = fresh();
+    const k = placeKey(st);
+    expect(placeKey(st)).toBe(k);
+    const t = st.things[0];
+    t.x += 1;
+    expect(placeKey(st)).not.toBe(k);
+    t.x -= 1;
+    expect(placeKey(st)).toBe(k);
+    const id = t.id;
+    t.id = id + 100000;
+    expect(placeKey(st)).not.toBe(k);
+    t.id = id;
+    st.techDone = ['t_test'];
+    expect(placeKey(st)).not.toBe(k);
   });
 
   it('czas pracy w godzinach gry, także półtorej godziny', () => {

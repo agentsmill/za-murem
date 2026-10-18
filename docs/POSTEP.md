@@ -823,6 +823,15 @@ Gałąź `zombie-plot` (wpis wyżej) weszła scaleniem bez konfliktów na `pelna
 ### Wdrożenie `pelna-gra` 30b1cb5, 18.10.2026 wieczorem (OK Mateusza: „Tak wgrywaj”)
 
 Serwer testowy (https://za-murem.5-75-147-27.sslip.io/) ma `pelna-gra` 30b1cb5: ślad ducha płotu na warstwie ziemi, kotwicę stylu w grze (trawnik, chodnik, bloki i trzepak z PixelLab) i płot odporny na napór w trybie zombie, czyli wszystko z trzech wpisów wyżej. Wdrożenie w trybie obok (`ZM_SIEC=cergo_default`): build, rsync `dist/`, kontener `za-murem-api` odtworzony z tego samego obrazu, `za-murem-www` bez przerwy. Sprawdzenie: `/`, `/v03/index.html`, `/api/zdrowie`, `/assets/grafika.json` i `/assets/teren.png` 200; skrypt gry ten sam co w lokalnym buildzie (`index-Ch10bgy5.js`, wcześniej `index-CQ2uVQ3G.js`); kontenery cergo działają bez przerwy (5 tygodni). Gra na żywo w Chromium (Lanciego, tryb zombie, stado 24 o 19:00): grafika z PixelLab wczytana we wszystkich czterech częściach, bez błędów strony, stado wzdłuż siatki, siatka 100%.
+### Menu budowy: panel z boku, 18.10.2026 (gałąź `menu-budowy`, odbita od `pelna-gra` 945f565, lokalnie, nic nie wypchnięte)
+
+Mateusz: menu budowy zasłaniało cały ekran, a ma być panel po prawej, z miniaturami, zakładkami i miejscem na mnóstwo budowli odblokowywanych technologią. Projekt `docs/superpowers/specs/2026-10-18-menu-budowy-design.md`, plan `docs/superpowers/plans/2026-10-18-menu-budowy.md`.
+
+- Panel po prawej (`src/ui/panelbudowy.ts`, `buildPanelHtml` w `src/ui/budowa.ts`, style w `src/style.css`) zamiast okna modalnego: zakładki Dom, Podwórko i Obwód, siatka kafelków z miniaturą (`src/ui/miniatura.ts`, sprite z `rzeczSprite`, czyli ten sam co na mapie), szczegóły wybranej budowli z kosztem, czasem, miejscem i przyciskiem „Postaw”. Mapa pod panelem klikalna. Zoom i pasek stawiania odsuwają się od panelu. Na komputerze panel zostaje otwarty przy stawianiu, na telefonie i dotyku schodzi po „Postaw”. Do 640 px to szuflada od dołu nad atrybucją.
+- Blokady technologią: `BuildDef.cat` i `BuildDef.tech`, `isUnlocked`, `SimState.techDone?` (celowo nieobecne w stanie, dopóki nikt nic nie odblokuje, więc skróty stanu i boty bez zmian), `canPlace` odrzuca zablokowaną budowlę. Kłódki są ukryte (`BUILD_MENU.showLocked = false`); `?budowa=klodki` pokazuje widok z kłódkami do zrzutów.
+- Sprawdzone: testy 2153 zielone, Biome, tsc i build bez błędów, `npm run bot` i `bot:zombie` identyczne z `pelna-gra` poza kolumnami czasu, perf bez zmian (60 kl/s), zrzuty `m2-menu-budowy`, `m2-stawianie`, `m2-stawianie-telefon`, `panel-budowy`, `-telefon`, `-tablet`, `-klodki` obejrzane.
+- Do przeglądu przez Mateusza (decyzje w projekcie): kłódki dopiero od badań (propozycja sesji „Pilnowanie agentów”, przyjęta roboczo), znaczek NOWE z badaniami, zakładki puste ukryte, panel zostaje otwarty przy stawianiu na komputerze, miniatury 56 px.
+- Zostaje: pracownia (miejsce do badań) jako pierwsza budowla projektu badań w zakładce Dom, kłódki i „NOWE” po wejściu badań, dalsze zakładki (Jedzenie, Prąd, Obrona) razem z budowlami z gospodarki.
 
 ## Następne
 
@@ -970,6 +979,8 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
   - tasowanie przez `sort` i `Math.hypot`/`sin`/`cos` mogą dawać różne wyniki w różnych przeglądarkach; ważne, gdy zapisy będą przechodzić między przeglądarkami. Tasowanie w wydarzeniach zarządu poprawione 17.10.2026 (CI na Node 24); `Math.hypot`/`sin`/`cos` w decyzjach symulacji do sprawdzenia.
 
 ## Zaparkowane
+- Menu budowy (18.10.2026), po wejściu badań: widok z kłódkami (`BUILD_MENU.showLocked`) i nazwy badań w `TECH_NAMES`, znaczek „NOWE” przy świeżo odblokowanych (potrzebuje stanu „co gracz już widział”), pracownia (miejsce do badań) jako pierwsza budowla projektu badań w zakładce Dom, kolejne zakładki (Jedzenie, Prąd, Obrona) razem z budowlami z gospodarki.
+- Menu budowy, drobiazgi z przeglądu: reset przewinięcia panelu przy otwarciu, przesunięcie `.hint` pod `build-open` jak `.placebar`, nazwa dostępnościowa przycisku ✕ i `aria-controls` zakładek, kolejność reguł `prefers-reduced-motion` na telefonie, asercje angielskiego „Needs research” w testach, Esc i ✕ przez tę samą ścieżkę `onClose`.
 - `siec-menu` w `npm run shots` raz padł pod obciążeniem (kilka sesji naraz): po zajęciu klatki nie było jeszcze znaczników „nasza”, sam scenariusz przechodzi. Dodać czekanie na znaczniki zamiast jednego odczytu (18.10.2026).
 
 - Fala 2: duch wspólnego płotu mógłby pokazywać też odcinki starej siatki, które znikną, i drzwi do zabicia deskami (dziś tylko nowe kafelki i postęp).

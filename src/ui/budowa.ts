@@ -1,12 +1,26 @@
-/* Budowa w interfejsie (docs/M2-fala-1.md): menu budowy z BUILDS (koszt, czas pracy, działanie, miejsce),
-   dozwolone miejsca w trybie stawiania z canPlace symulacji i polecenia przy planach i gotowych budowlach
-   w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM. Napisy w bieżącym języku: polskie tablice
-   zostają tutaj, angielskie leżą obok (budowa.en.ts, src/sim/budowle.en.ts, src/sim/mieszkania.en.ts). */
+/* Menu budowy w interfejsie (docs/M2-fala-1.md, docs/superpowers/specs/2026-10-18-menu-budowy-design.md): menu z BUILDS
+   jako dane (buildMenu: zakładki z BuildDef.cat, koszt, czas pracy, działanie, miejsce, powód braku, blokady badaniem
+   z BUILD_MENU i TECH_NAMES), treść panelu po prawej (buildPanelHtml: zakładki, kafelki z miniaturą, szczegóły),
+   skróty stanu panelu (stockKey, placeKey), dozwolone miejsca w trybie stawiania z canPlace symulacji i polecenia
+   przy planach i gotowych budowlach w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM
+   (DOM robi panelbudowy.ts). Napisy w bieżącym języku: polskie tablice zostają tutaj, angielskie leżą obok
+   (budowa.en.ts, src/sim/budowle.en.ts, src/sim/mieszkania.en.ts). */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import { BUILDS_EN, effectEnOf } from '../sim/budowle.en.ts';
-import { BUILDS, type BuildKind, type BuildPlace, canPlace, effectOf, footprint, type Mat } from '../sim/budowle.ts';
+import {
+  BUILD_CATS,
+  BUILDS,
+  type BuildCat,
+  type BuildKind,
+  type BuildPlace,
+  canPlace,
+  effectOf,
+  footprint,
+  isUnlocked,
+  type Mat,
+} from '../sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { MAT_EN } from '../sim/mieszkania.en.ts';
 import type { MenuItem } from '../sim/orders.ts';
@@ -37,6 +51,31 @@ export function availableOf(st: SimState, s: SimStock): Record<Mat, number> {
   for (const m of Object.keys(have) as Mat[]) have[m] = Math.max(0, have[m] - (r[m] ?? 0));
   return have;
 }
+
+/** materiały, które występują w kosztach budowli: tylko one zmieniają treść menu (drewno z palenia w kozie czy
+    jedzenie z posiłków nie), a nowa budowla z innym materiałem dołoży go tu sama */
+function costMats(): Mat[] {
+  return [...new Set(Object.values(BUILDS).flatMap((d) => Object.keys(d.cost) as Mat[]))];
+}
+
+/** skrót zapasu z availableOf, od którego zależy treść panelu budowy */
+export const stockKey = (have: Record<Mat, number>): string =>
+  costMats()
+    .map((m) => have[m] ?? 0)
+    .join(',');
+
+/** Skrót tego, od czego zależą miejsca na budowle (canPlace): plany, rzeczy z położeniem (kupka wody nosi się po
+    podwórku bez zmiany liczby rzeczy), nasze mieszkania i odblokowane badania. */
+export const placeKey = (st: SimState): string =>
+  [
+    st.builds.map((b) => b.id).join(),
+    st.things.map((t) => `${t.id}@${t.x},${t.y}`).join(),
+    st.apts
+      .filter((a) => a.ours)
+      .map((a) => a.apt)
+      .join(),
+    st.techDone?.length ?? 0,
+  ].join('|');
 
 /** numery naszych mieszkań w siedzibie: mieszkanie zarządu i zajęte (st.apts) */
 export const ourApts = (st: SimState): number[] => st.apts.filter((a) => a.ours).map((a) => a.apt);
@@ -186,6 +225,14 @@ export function workText(ticks: number): string {
   return m === 30 ? `${h}${L(',5', '.5')} h ${of}` : `${h} h ${m} min ${of}`;
 }
 
+/** Widok z kłódkami: do czasu badań zablokowana budowla, której nie da się odblokować, byłaby ślepą uliczką, więc
+    menu pokazuje tylko to, co wolno postawić. Gdy badania ruszą, wystarczy tu ustawić true. */
+export const BUILD_MENU: { showLocked: boolean } = { showLocked: false };
+
+/** nazwy badań do napisu „Wymaga badania”; wypełni je projekt badań (bez wpisu pokazuje się identyfikator) */
+export const TECH_NAMES: Record<string, Tx> = {};
+const techName = (id: string): string => (TECH_NAMES[id] ? tr(TECH_NAMES[id]) : id);
+
 export interface BuildItem {
   kind: BuildKind;
   name: string;
@@ -197,19 +244,21 @@ export interface BuildItem {
   ok: boolean;
   /** czemu nie (brak miejsca albo materiałów), z podpowiedzią, skąd wziąć */
   why?: string;
+  /** „Wymaga badania: …”, gdy budowla czeka na badanie (tylko przy BUILD_MENU.showLocked); jest też w why */
+  locked?: string;
 }
 
 export interface BuildCategory {
-  key: 'pomieszczenie' | 'podworko' | 'obwod';
+  key: BuildCat;
   title: string;
   items: BuildItem[];
 }
 
-const CATEGORIES: { key: BuildCategory['key']; title: Tx; places: BuildPlace[] }[] = [
-  { key: 'pomieszczenie', title: tx('Pomieszczenie', 'Indoors'), places: ['pokoj', 'kuchnia'] },
-  { key: 'podworko', title: tx('Podwórko', 'Yard'), places: ['podworko'] },
-  { key: 'obwod', title: tx('Obwód', 'Perimeter'), places: ['obwod'] },
-];
+const CAT_TITLE: Record<BuildCat, Tx> = {
+  dom: tx('Dom', 'Home'),
+  podworko: tx('Podwórko', 'Yard'),
+  obwod: tx('Obwód', 'Perimeter'),
+};
 
 /** skąd brać materiał, do powodu „brakuje”, w obu językach (w domu przeszukiwanie domu i gruz ze słownika) */
 const source = (w: Words, e: WordsEn): Partial<Record<Mat, Tx>> => ({
@@ -219,26 +268,35 @@ const source = (w: Words, e: WordsEn): Partial<Record<Mat, Tx>> => ({
   drewno: tx('Drewno daje ścinanie drzew.', 'Wood comes from chopping down trees.'),
 });
 
-/** Menu budowy: kategorie z budowlami; niedostępne z powodem (nie ma gdzie postawić albo brakuje
-    materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. */
+/** Menu budowy: zakładki z budowlami (zakładka bez pozycji znika); niedostępne z powodem (nie ma gdzie postawić
+    albo brakuje materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. Zablokowane badaniem
+    (opts.st.techDone) są ukryte, a z opts.showLocked (domyślnie BUILD_MENU.showLocked) pokazane jako „Wymaga badania”. */
 export function buildMenu(
   have: Partial<Record<Mat, number>>,
   room: (kind: BuildKind) => boolean,
   words: Words = wordsOf(BLOK),
   en: WordsEn = wordsEn(BLOK),
+  opts: { st?: Pick<SimState, 'techDone'>; showLocked?: boolean } = {},
 ): BuildCategory[] {
-  return CATEGORIES.map((c) => ({
-    key: c.key,
-    title: tr(c.title),
+  const st = opts.st ?? {};
+  const showLocked = opts.showLocked ?? BUILD_MENU.showLocked;
+  return BUILD_CATS.map((key) => ({
+    key,
+    title: tr(CAT_TITLE[key]),
     items: (Object.keys(BUILDS) as BuildKind[])
-      .filter((k) => c.places.includes(BUILDS[k].place))
+      .filter((k) => BUILDS[k].cat === key && (showLocked || isUnlocked(st, k)))
       .map((kind) => {
         const d = BUILDS[kind];
         const short = (Object.entries(d.cost) as [Mat, number][])
           .map(([m, n]): [Mat, number] => [m, n - (have[m] ?? 0)])
           .filter(([, n]) => n > 0);
         let why: string | undefined;
-        if (!room(kind))
+        let locked: string | undefined;
+        if (!isUnlocked(st, kind)) {
+          const name = techName(d.tech ?? '');
+          locked = L(`Wymaga badania: ${name}`, `Needs research: ${name}`);
+          why = locked;
+        } else if (!room(kind))
           why = L(
             `Nie ma gdzie postawić: brak wolnego miejsca ${placeText(d.place, words)}.`,
             `Nowhere to put it: no free space ${placeEn(d.place, en)}.`,
@@ -258,54 +316,80 @@ export function buildMenu(
           place: placeL(d.place, words, en),
           ok: !why,
           why,
+          locked,
         };
       }),
-  }));
+  })).filter((c) => c.items.length > 0);
 }
 
-/** okno menu budowy (przycisk „Budowa” i klawisz B) */
-export function buildSheet(
+/** co panel pokazuje: aktywna zakładka i wybrana budowla (null: pierwsza z menu) */
+export type PanelView = { tab: BuildCat | null; kind: BuildKind | null };
+
+/** Treść panelu budowy (aside obok karty osoby): zakładki, kafelki aktywnej zakładki z miniaturą i szczegóły
+    każdej jej budowli (widoczne tylko wybranej, przycisk „Postaw” tylko dla dostępnych). Wybór spoza aktywnej
+    zakładki albo spoza menu wraca do pierwszej budowli zakładki, a puste menu daje komunikat. Zwraca kształt Sheet
+    (kicker, title, body) razem z wyliczonym widokiem; miniatury podaje thumb (data: URL), w testach atrapa. */
+export function buildPanelHtml(
   menu: BuildCategory[],
+  view: PanelView,
   touch: boolean,
   words: Words = wordsOf(BLOK),
   en: WordsEn = wordsEn(BLOK),
-): Sheet {
-  const item = (b: BuildItem) =>
-    `<li class="build ${b.ok ? 'ok' : 'no'}"><div class="build-head"><b class="build-n">${esc(b.name)}</b><small class="build-size">${esc(
-      b.size,
-    )}</small></div><p class="build-d">${esc(b.effect)}</p><p class="build-m"><span class="build-cost">${esc(
+  thumb: (kind: BuildKind) => string = () => '',
+): Sheet & { view: PanelView } {
+  const kicker = touch ? L('Budowa', 'Build') : L('Budowa (B)', 'Build (B)');
+  const title = L('Co budujemy?', 'What are we building?');
+  const wrap = (body: string, v: PanelView) => ({ tone: 'menu' as const, kicker, title, body, foot: '', view: v });
+  const cat = menu.find((c) => c.key === view.tab) ?? menu[0];
+  if (!cat) {
+    return wrap(`<p class="build-empty">${L('Na razie nic nie można zbudować.', 'Nothing can be built yet.')}</p>`, {
+      tab: null,
+      kind: null,
+    });
+  }
+  const sel = cat.items.find((b) => b.kind === view.kind) ?? cat.items[0];
+  const tile = (b: BuildItem) =>
+    `<button type="button" class="tile${b.kind === sel.kind ? ' sel' : ''}${b.locked ? ' lock' : b.ok ? '' : ' no'}" data-kind="${
+      b.kind
+    }" aria-pressed="${b.kind === sel.kind}"><span class="th"><img src="${esc(thumb(b.kind))}" alt=""></span><span class="tn">${esc(
+      b.name,
+    )}</span><span class="ts">${esc(b.size)}${b.locked ? ' <span aria-hidden="true">🔒</span>' : ''}</span></button>`;
+  const detail = (b: BuildItem) =>
+    `<section class="bd" data-kind="${b.kind}"${b.kind === sel.kind ? '' : ' hidden'}><div class="build-head"><b class="build-n">${esc(
+      b.name,
+    )}</b><small class="build-size">${esc(b.size)}</small></div><p class="build-d">${esc(b.effect)}</p><p class="build-m"><span class="build-cost">${esc(
       b.cost,
     )}</span> · <span>${esc(b.time)}</span> · <span>${esc(b.place)}</span></p>${
       b.ok
         ? `<button type="button" class="btn go" data-act="build" data-arg="${b.kind}">${L('Postaw', 'Build')}</button>`
         : `<p class="build-why">${esc(b.why ?? '')}</p>`
-    }</li>`;
-  return {
-    tone: 'menu',
-    kicker: touch ? L('Budowa', 'Build') : L('Budowa (B)', 'Build (B)'),
-    title: L('Co budujemy?', 'What are we building?'),
-    body: `<p class="lead">${L(
-      `Plan stawia się na mapie, a ${words.zarzad.krotko} sam przynosi materiały i buduje.`,
-      `You place the plan on the map, and ${en.krotko} fetches the materials and does the building.`,
-    )}${
-      touch
-        ? L(
-            ' Stuknięcie stawia plan, przyciski na dole obracają i anulują.',
-            ' Tap to place the plan; the buttons at the bottom rotate and cancel.',
-          )
-        : L(
-            ' Lewy klik stawia plan, R obraca, prawy klik albo Esc anuluje.',
-            ' Left-click places the plan, R rotates, right-click or Esc cancels.',
-          )
-    }</p>${menu
-      .map(
-        (c) =>
-          `<section class="bcat" data-cat="${c.key}"><h3 class="bcat-h">${esc(c.title)}</h3><ul class="builds">${c.items
-            .map(item)
-            .join('')}</ul></section>`,
-      )
-      .join('')}`,
-    foot: `<button type="button" class="btn ghost" data-act="build-close">${L('Zamknij', 'Close')}</button>`,
-    closable: true,
-  };
+    }</section>`;
+  const lead = `<p class="lead">${L(
+    `Plan stawia się na mapie, a ${words.zarzad.krotko} sam przynosi materiały i buduje.`,
+    `You place the plan on the map, and ${en.krotko} fetches the materials and does the building.`,
+  )}${
+    touch
+      ? L(
+          ' Stuknięcie stawia plan, przyciski na dole obracają i anulują.',
+          ' Tap to place the plan; the buttons at the bottom rotate and cancel.',
+        )
+      : L(
+          ' Lewy klik stawia plan, R obraca, prawy klik albo Esc anuluje.',
+          ' Left-click places the plan, R rotates, right-click or Esc cancels.',
+        )
+  }</p>`;
+  const tabs = menu
+    .map(
+      (c) =>
+        `<button type="button" role="tab" class="btab" data-tab="${c.key}" aria-selected="${c.key === cat.key}" tabindex="${
+          c.key === cat.key ? 0 : -1
+        }">${esc(c.title)}</button>`,
+    )
+    .join('');
+  return wrap(
+    `${lead}<div class="btabs" role="tablist" aria-label="${esc(title)}">${tabs}</div><div class="bgrid" role="tabpanel">${cat.items
+      .map(tile)
+      .join('')}</div><div class="bdet">${cat.items.map(detail).join('')}</div>`,
+    { tab: cat.key, kind: sel.kind },
+  );
 }

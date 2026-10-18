@@ -863,6 +863,9 @@ export interface SimState {
   damage: DamageGame[];
   /** plany budowy w toku; gotowe budowle są w things */
   builds: BuildPlan[];
+  /** odblokowane badania (identyfikatory z BuildDef.tech); celowo brak pola, dopóki ktoś nie odblokuje pierwszego
+      badania: `sim.hash()` to skrót z całego stanu, więc zawsze obecne puste pole ruszyłoby każdy skrót */
+  techDone?: string[];
   /** wraki przeszukane i rozebrane (lewy górny kafelek), rosnąco; brak, dopóki nikt nie przeszukał wraku */
   wraki?: WreckMark[];
   /** sąsiednie budynki (M2 fala 2): nie ma go, dopóki zarząd nie dotknie cudzych drzwi, więc gra bez sąsiadów ma ten

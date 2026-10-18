@@ -462,8 +462,8 @@ function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
   const items = touch
     ? [
         tx(
-          'Przycisk Budowa u góry otwiera menu budowy: pomieszczenie, podwórko i obwód, z kosztem, czasem pracy i działaniem.',
-          'The Build button at the top opens the build menu: indoors, yard and perimeter, each with its cost, work time and effect.',
+          'Przycisk Budowa u góry otwiera panel budowy: zakładki Dom, Podwórko i Obwód, z miniaturą, kosztem, czasem pracy i działaniem.',
+          'The Build button at the top opens the build panel: Home, Yard and Perimeter tabs, each with a thumbnail, cost, work time and effect.',
         ),
         tx(
           'Po wyborze plan budowy jedzie za palcem: stuknięcie stawia, przyciski na dole obracają i anulują. Zielony plan da się postawić, czerwony mówi, czemu nie.',
@@ -474,8 +474,8 @@ function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
       ]
     : [
         tx(
-          'Przycisk Budowa u góry albo klawisz B otwiera menu budowy: pomieszczenie, podwórko i obwód, z kosztem, czasem pracy i działaniem.',
-          'The Build button at the top, or the B key, opens the build menu: indoors, yard and perimeter, each with its cost, work time and effect.',
+          'Przycisk Budowa u góry albo klawisz B otwiera panel budowy: zakładki Dom, Podwórko i Obwód, z miniaturą, kosztem, czasem pracy i działaniem.',
+          'The Build button at the top, or the B key, opens the build panel: Home, Yard and Perimeter tabs, each with a thumbnail, cost, work time and effect.',
         ),
         tx(
           'Po wyborze plan budowy jedzie za kursorem: lewy klik stawia, R obraca, prawy klik albo Esc anuluje, z Shiftem stawia się kilka naraz. Zielony plan da się postawić, czerwony mówi, czemu nie.',
