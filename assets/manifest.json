@@ -2177,16 +2177,16 @@
       },
       "pixellab": "32279297-f99c-4315-a3d7-ac6322205992",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-kamienica/0.png",
         "assets/raw/budynek-kamienica/1.png",
         "assets/raw/budynek-kamienica/2.png",
         "assets/raw/budynek-kamienica/3.png"
       ],
-      "polecany": 0,
+      "wybrany": "assets/raw/budynek-kamienica/0.png",
       "warianty": {
-        "0": "tynk kremowy i ochra, balkony kute, brama z łukiem, kominy i lukarny, mech na dachu (polecany)",
+        "0": "tynk kremowy i ochra, balkony kute, brama z łukiem, kominy i lukarny, mech na dachu (zatwierdzony)",
         "1": "szara ruina z odpadającym tynkiem, zabite okna, dziury w dachu",
         "2": "jak 0, oplątana bluszczem",
         "3": "szara ruina z zabitymi oknami i połataną papą"
@@ -2213,16 +2213,16 @@
       },
       "pixellab": "0e181fb9-07f9-464c-9148-8a193a0dd73b",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-ratusz/0.png",
         "assets/raw/budynek-ratusz/1.png",
         "assets/raw/budynek-ratusz/2.png",
         "assets/raw/budynek-ratusz/3.png"
       ],
-      "polecany": 0,
+      "wybrany": "assets/raw/budynek-ratusz/0.png",
       "warianty": {
-        "0": "ceglany, wieża z zegarem i iglicą, trzy kondygnacje, bluszcz przy lewym skrzydle (polecany)",
+        "0": "ceglany, wieża z zegarem i iglicą, trzy kondygnacje, bluszcz przy lewym skrzydle (zatwierdzony)",
         "1": "dziury w dachu i na wieży, gruz przy schodach",
         "2": "mech na dachu, parter zabity deskami",
         "3": "gęsto zarośnięty bluszczem"
@@ -2249,17 +2249,17 @@
       },
       "pixellab": "e5a747d8-addf-490e-8cc1-48751e35d4f7",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-muzeum/0.png",
         "assets/raw/budynek-muzeum/1.png",
         "assets/raw/budynek-muzeum/2.png",
         "assets/raw/budynek-muzeum/3.png"
       ],
-      "polecany": 1,
+      "wybrany": "assets/raw/budynek-muzeum/1.png",
       "warianty": {
         "0": "porośnięte bluszczem, zwalony sztandar",
-        "1": "czysty portyk z czterema kolumnami i frontonem, dziura w prawym skrzydle i w świetliku, sztandar na schodach (polecany)",
+        "1": "czysty portyk z czterema kolumnami i frontonem, dziura w prawym skrzydle i w świetliku, sztandar na schodach (zatwierdzony)",
         "2": "bluszcz po lewej, okna zabite deskami",
         "3": "rdza i pęknięcia, sztandar"
       },
@@ -2285,18 +2285,18 @@
       },
       "pixellab": "7c0122f8-c897-4246-8a18-54ec41e86bc5",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-kosciol/0.png",
         "assets/raw/budynek-kosciol/1.png",
         "assets/raw/budynek-kosciol/2.png",
         "assets/raw/budynek-kosciol/3.png"
       ],
-      "polecany": 2,
+      "wybrany": "assets/raw/budynek-kosciol/2.png",
       "warianty": {
         "0": "rzut izometryczny (sześcian), nie pasuje do rzutu gry",
         "1": "rzut izometryczny, zrujnowany, nie pasuje do rzutu gry",
-        "2": "rzut jak w grze: dach z góry, wieża z iglicą i krzyżem, portal ze schodami, uszkodzone dachówki (polecany)",
+        "2": "rzut jak w grze: dach z góry, wieża z iglicą i krzyżem, portal ze schodami, uszkodzone dachówki (zatwierdzony)",
         "3": "rzut jak w grze, gęsto zarośnięty bluszczem"
       },
       "uwagi": "Dwie z czterech propozycji wyszły izometrycznie, więc przy kolejnych zamówieniach dopisać do opisu wyraźnie „seen straight from the front, roof from above”. Tło płaskie #7c796f, wokół kościoła cień z gruzu (ciemna plama)."
@@ -2321,16 +2321,16 @@
       },
       "pixellab": "702adcae-e02c-4be3-bede-94a18a1105fa",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-urzad/0.png",
         "assets/raw/budynek-urzad/1.png",
         "assets/raw/budynek-urzad/2.png",
         "assets/raw/budynek-urzad/3.png"
       ],
-      "polecany": 0,
+      "wybrany": "assets/raw/budynek-urzad/0.png",
       "warianty": {
-        "0": "okna pasmowe, szklane wejście z daszkiem i schodami, anteny i wentylatory na dachu (polecany)",
+        "0": "okna pasmowe, szklane wejście z daszkiem i schodami, anteny i wentylatory na dachu (zatwierdzony)",
         "1": "plamy i zacieki, szyld nad wejściem po lewej, nadbudówka na dachu",
         "2": "okna zabite deskami, śmieci na dachu",
         "3": "okna pasmowe, bluszcz, wejście po prawej"
@@ -2357,16 +2357,16 @@
       },
       "pixellab": "554a2f39-af2e-4ad3-bcb2-9e0c731e1a1f",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-teatr/0.png",
         "assets/raw/budynek-teatr/1.png",
         "assets/raw/budynek-teatr/2.png",
         "assets/raw/budynek-teatr/3.png"
       ],
-      "polecany": 0,
+      "wybrany": "assets/raw/budynek-teatr/0.png",
       "warianty": {
-        "0": "biały tynk, kopuła z miedzi, napis TEATR na tympanonie, lampy przy schodach (polecany)",
+        "0": "biały tynk, kopuła z miedzi, napis TEATR na tympanonie, lampy przy schodach (zatwierdzony)",
         "1": "zarośnięty bluszczem, pnącza na kopule",
         "2": "ozdobny szary tynk, trawa na schodach",
         "3": "ruina: zabite wejścia, dziura w kopule"
@@ -2393,18 +2393,18 @@
       },
       "pixellab": "b3a50263-8282-4af1-8551-b11645fdea88",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-hotel/0.png",
         "assets/raw/budynek-hotel/1.png",
         "assets/raw/budynek-hotel/2.png",
         "assets/raw/budynek-hotel/3.png"
       ],
-      "polecany": 2,
+      "wybrany": "assets/raw/budynek-hotel/2.png",
       "warianty": {
         "0": "napis ORBIS na dachu (prawdziwa marka, unikać)",
         "1": "napis ORBIS, osmolony",
-        "2": "napis HOTEL, pięć pięter z balkonami, bluszcz (polecany, bez marki)",
+        "2": "napis HOTEL, pięć pięter z balkonami, bluszcz (zatwierdzony, bez marki)",
         "3": "napis ORB…, gęsty bluszcz"
       },
       "uwagi": "Opis zawierał „Orbis style”, więc model wpisał prawdziwą markę na dach. W opisach nie podawać nazw marek. Tło nie jest płaskie (ciemna ulica ze spękaniami i zielenią), więc kadr zostaje prostokątem. Piętro około 13 px."
@@ -2429,17 +2429,17 @@
       },
       "pixellab": "9b03818a-14ca-4fd3-93c5-3f0809d53751",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-dworzec/0.png",
         "assets/raw/budynek-dworzec/1.png",
         "assets/raw/budynek-dworzec/2.png",
         "assets/raw/budynek-dworzec/3.png"
       ],
-      "polecany": 1,
+      "wybrany": "assets/raw/budynek-dworzec/1.png",
       "warianty": {
         "0": "ceglany, bluszcz, dziura w dachu po prawej",
-        "1": "szary tynk w hali środkowej, zegar, wiata na kolumnach (polecany)",
+        "1": "szary tynk w hali środkowej, zegar, wiata na kolumnach (zatwierdzony)",
         "2": "okna zabite deskami, wiata zniszczona",
         "3": "bluszcz, ławki pod wiatą"
       },
@@ -2465,16 +2465,16 @@
       },
       "pixellab": "86f663fb-b521-471c-beea-e26d56fe8d7f",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-willa/0.png",
         "assets/raw/budynek-willa/1.png",
         "assets/raw/budynek-willa/2.png",
         "assets/raw/budynek-willa/3.png"
       ],
-      "polecany": 0,
+      "wybrany": "assets/raw/budynek-willa/0.png",
       "warianty": {
-        "0": "żółty tynk, ganek z kolumnami, lukarna, płot (polecana)",
+        "0": "żółty tynk, ganek z kolumnami, lukarna, płot (zatwierdzona)",
         "1": "dziury w dachu",
         "2": "okna zabite deskami",
         "3": "najgęściej zarośnięta"
@@ -2501,16 +2501,16 @@
       },
       "pixellab": "2819ebc5-5d54-462e-84b6-fe6d4773a260",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-remiza/0.png",
         "assets/raw/budynek-remiza/1.png",
         "assets/raw/budynek-remiza/2.png",
         "assets/raw/budynek-remiza/3.png"
       ],
-      "polecany": 0,
+      "wybrany": "assets/raw/budynek-remiza/0.png",
       "warianty": {
-        "0": "cegła, dwie bramy garażowe, napis OSP, wieża z syreną po prawej, dziura w dachu (polecana)",
+        "0": "cegła, dwie bramy garażowe, napis OSP, wieża z syreną po prawej, dziura w dachu (zatwierdzona)",
         "1": "ruina, wieża po lewej, otwarta brama",
         "2": "zarośnięta bluszczem, napis REMIZA",
         "3": "ruina, wieża po lewej, otwarty dach"
@@ -2537,16 +2537,16 @@
       },
       "pixellab": "332cc8b2-308a-42d8-9880-c2fcef291c75",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/budynek-szpital/0.png",
         "assets/raw/budynek-szpital/1.png",
         "assets/raw/budynek-szpital/2.png",
         "assets/raw/budynek-szpital/3.png"
       ],
-      "polecany": 0,
+      "wybrany": "assets/raw/budynek-szpital/0.png",
       "warianty": {
-        "0": "pięć pięter, czerwony krzyż i napis SZPITAL, wejście z daszkiem dla karetek (polecany)",
+        "0": "pięć pięter, czerwony krzyż i napis SZPITAL, wejście z daszkiem dla karetek (zatwierdzony)",
         "1": "zawalona prawa strona, woda i gruz przed wejściem",
         "2": "okna zabite deskami, wrak karetki przed wejściem",
         "3": "poplamiony, zbiorniki na dachu"
