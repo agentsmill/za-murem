@@ -520,7 +520,7 @@ Gra przestała odsyłać do wersji 0.3 (Mateusz: „chyba już nie musimy kierow
 ## Następne
 
 Rano 18.10.2026, po nocy integracji (dla Mateusza):
-- Kierunek rozwoju (`docs/superpowers/specs/2026-10-18-kierunek-rozwoju-design.md`): jedno pytanie czeka na Mateusza (kogo przy setkach ludzi gracz może przejąć ręcznie), potem przejrzenie decyzji z końca dokumentu i rozmowa o pierwszym projekcie, czyli pracy ludzi i rozporządzeniach. Usunięcie odesłań do 0.3 (75dfeeb) czeka lokalnie na OK do wdrożenia.
+- Kierunek rozwoju (`docs/superpowers/specs/2026-10-18-kierunek-rozwoju-design.md`): Mateusz zdecydował, że każdego lokatora da się ręcznie przejąć. Czeka przejrzenie decyzji z końca dokumentu i rozmowa o pierwszym projekcie, czyli pracy ludzi i rozporządzeniach.
 - Zagrać w pełną grę: https://za-murem.5-75-147-27.sslip.io/ (od rana na `cergo-rw-prod`; stary adres przekierowuje; zwykły tryb i zombie, „Wasz zarząd” na karcie startowej, mieszkańcy z adresu na karcie osoby). Gra z sąsiadami: ten sam adres z `?siec=1`, dwa konta (drugie w oknie prywatnym) na tym samym adresie; drugie ma zacząć bez domu.
 - Decyzja: czy `pelna-gra` ma iść na `main` i Pages (PR przygotuję po OK).
 - Nowe wymagania Mateusza (18.10 rano, po testach): angielska wersja językowa domyślnie (polska do wyboru); konto z e-mailem i loginem, logowanie przez magic link zamiast hasła (potrzebny dostawca wysyłki poczty); administratorem danych firma Mateusza (do informacji o danych potrzebne pełne dane firmy). Do tego czasu gra z sąsiadami zostaje za `?siec=1`. Pozostałe decyzje multiplayera: sekcja „Decyzje do przejrzenia” w projekcie gry sieciowej.
@@ -573,7 +573,7 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
 - Przegląd końcowy: uwagi przeważone według skutku dla gracza w pierwszych 10 minutach. Poprawione wszystkie krytyczne i ważne oraz tanie drobne, które gracz albo narzędzia odczują (lista wyżej).
 - M1 robią równoległe sesje z rozdzielonymi plikami, a kontrakt wnętrza spisany jest w `docs/M1-wycinek.md`. Łączy je koordynator po bramce. Koszt pomyłki: rozjazd z kontraktem do poprawienia przy łączeniu.
 - Generator wnętrz działa dla każdego budynku, bo przy zbliżeniu ma być widać wnętrza wszystkich zajętych budynków (Mateusz, 17.10.2026). Wnętrze wynika tylko ze świata, numeru budynku i ziarna, więc nie trafia do zapisu gry; przeróbki zarządu pójdą do zapisu jako zmiany.
-- Polecenia przyjmuje tylko zarząd, tłum to tło (GDD).
+- Polecenia przyjmuje tylko zarząd, tłum to tło (GDD). Zmienione 18.10.2026: każdego lokatora da się ręcznie przejąć (Mateusz, `docs/superpowers/specs/2026-10-18-kierunek-rozwoju-design.md`).
 - M1 stoi na main z workerem kawałków (OK Mateusza, 17.10.2026).
 - Kierunek po playteście (Mateusz, noc z 16 na 17.10.2026): trochę RimWorlda, trochę pierwszej wersji z jednym domem za dziurawą siatką, trochę RTS i Cywilizacji, klimat postapo, start z siatką wokół podwórka, szabrownicy, przemyślane budowanie, wnętrza z życiem. Szczegóły w `docs/M1-wycinek.md`.
 - M1 to teraz „Pierwsza noc za siatką”: kończy się nocą z decyzją (karta nocy o 20:00, warta, szabrownicy, pierwsza uchwała), a nie rozpaloną kozą. Koszt pomyłki: dłuższe M1, ale bez niego bramka „Mateusz chce dalej” by nie przeszła.

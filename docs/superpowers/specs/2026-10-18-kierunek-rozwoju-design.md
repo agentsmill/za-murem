@@ -16,7 +16,7 @@ Gra rośnie razem z osadą. Na początku to RimWorld: kilka osób z imionami, ka
 
 Duża osada według Mateusza: „Dalej możemy nimi kierować, ale głównie steruje nimi generatywny silnik w tle, który kontroluje, żeby społeczeństwo się optymalizowało, ale też jest miejsce na random. Wtedy już zaczynamy zarządzać społeczeństwem.” I dynamika: „solo drużyna jest też w stanie zasiać zamęt, taka partyzantka w społeczeństwie. Gracz kontrolujący setki osób też może poświęcić się na ręczne przesuwanie postaci w celu powstrzymania dywersji czy buntu, ale wtedy umyka mu całość obrazka.”
 
-Z tego wynikają trzy skale sterowania jednym mechanizmem (moje): przy kilku osobach ręczne polecenia, przy setkach zasady (rozporządzenia) wykonywane przez silnik, a pod nieobecność gracza w grze sieciowej same zasady. Zamknięta gra jednoosobowa stoi jak dziś. To, kogo przy setkach ludzi da się przejąć ręcznie, czeka na decyzję Mateusza (sekcja „Praca ludzi i rozporządzenia”).
+Z tego wynikają trzy skale sterowania jednym mechanizmem (moje): przy kilku osobach ręczne polecenia, przy setkach zasady (rozporządzenia) wykonywane przez silnik, a pod nieobecność gracza w grze sieciowej same zasady. Zamknięta gra jednoosobowa stoi jak dziś. Przy setkach ludzi gracz może ręcznie przejąć każdego lokatora (Mateusz, sekcja „Praca ludzi i rozporządzenia”).
 
 ## Dwa scenariusze, jeden silnik
 
@@ -42,10 +42,10 @@ Kto pracuje i kto słucha (moje, na podstawie GDD):
 - Lokatorzy to liczby w klatkach, jak w GDD i w 0.3. Każda klatka ma swoich ludzi: gospodarstwa z generatora mieszkańców dla wszystkich mieszkań klatki, a nie tylko parteru, jak dziś w `src/sim/lokatorzy.ts`. Na mapie widać ich przez ograniczoną liczbę pionków tła. Dyżur to liczba: klatka B wystawia czterech ludzi do kuchni. To ten sam model co obsada stanowisk w 0.3 (`Sim.available` i `Sim.ratio` w `public/v03/js/sim.js`: obsada razy udział wolnych rąk), więc projekt gospodarki przeniesie liczby z 0.3 na ten model.
 - Na start osada to zarząd i lokatorzy klatki siedziby, czyli w bloku kilkadziesiąt osób, a w domu jedna rodzina. Kolejne klatki i budynki dochodzą przez przyłączanie i zajmowanie klatek. Klatka jest też jednostką gry sieciowej, a cały budynek siedziby jako start dałby na falowcu tysiące ludzi.
 - Odstępstwa lokatorów liczą się grupowo („klatka C nie wystawiła dwóch ludzi na wartę”), ale komunikat może nazwać konkretną osobę z generatora.
-- Zarząd i fachowcy zawsze wykonują polecenia gracza. Rozporządzenia łamią lokatorzy, a ludzie z zarządu zawodzą tylko przez własne potrzeby i nastrój, jak dziś. Dzięki temu zostaje filar z GDD „mówię im, co robić”.
+- Zarząd i fachowcy zawsze wykonują polecenia gracza, tak samo przejęty lokator, póki gracz go prowadzi. Rozporządzenia łamią lokatorzy, a ludzie z zarządu zawodzą tylko przez własne potrzeby i nastrój, jak dziś. Dzięki temu zostaje filar z GDD „mówię im, co robić”.
 - W grze jednoosobowej rozporządzenie przejmuje rutynę tylko wtedy, gdy gracz to włączy (na przykład „karta nocy według rozporządzenia”). Domyślnie karta nocy zostaje główną decyzją wieczoru, więc bramki M1 i M2 („decyzja co minutę przy ekranie”) dalej obowiązują.
 
-Do decyzji Mateusza: czy przy setkach ludzi gracz może ręcznie przejąć dowolnego lokatora, czy polecenia zostają tylko dla zarządu i fachowców. Dziś mówił: „Dalej możemy nimi kierować” i o „ręcznym przesuwaniu postaci” przy setkach osób. W „Decyzjach” w `docs/POSTEP.md` stoi: „Polecenia przyjmuje tylko zarząd, tłum to tło”, a z rozmowy z 17.10.2026 o tym, jak nie być kopią RimWorlda: „sterowanie tylko zarządem (reszta osiedla słucha uchwał albo nie)”. Przejęcie mogłoby wyglądać tak: lokator na chwilę staje się pionkiem z generatora, słucha poleceń, a po puszczeniu wraca pod rozporządzenia. Od odpowiedzi zależą symulacja lokatorów, zaznaczanie i menu poleceń w projekcie 1.
+Przejmowanie lokatorów. Mateusz, 18.10.2026, po pytaniu z przeglądu: „Każdego lokatora da się przejąć.” To zmienia decyzję z `docs/POSTEP.md` „Polecenia przyjmuje tylko zarząd, tłum to tło” i pomysł z rozmowy z 17.10.2026 o „sterowaniu tylko zarządem”. Jak to działa (moje): lokator na chwilę staje się pionkiem z generatora mieszkańców i słucha poleceń jak ktoś z zarządu, a po puszczeniu wraca do liczb swojej klatki i pod rozporządzenia. Pełną symulację ma więc tylko ten, kogo gracz akurat prowadzi, a tłum dalej liczy się jako liczby, co oszczędza telefon. Kosztem jest uwaga, bo kiedy gracz prowadzi pojedynczych ludzi, resztą osady rządzą rozporządzenia. Projekt 1 rozszerza więc zaznaczanie i menu poleceń na mieszkańców (dziś stuknięcie w mieszkańca otwiera tylko jego kartę).
 
 Moje:
 
@@ -149,7 +149,7 @@ Mateusz wymienił najpierw gospodarkę i technologię, potem pracę ludzi. Prac�
 
 ## Decyzje do przejrzenia przez Mateusza
 
-Czeka na odpowiedź: kogo przy setkach ludzi gracz może przejąć ręcznie (sekcja „Praca ludzi i rozporządzenia”).
+Decyzja Mateusza po przeglądzie (18.10.2026): każdego lokatora da się ręcznie przejąć (sekcja „Praca ludzi i rozporządzenia”).
 
 Moje rozstrzygnięcia, w tym te po pytaniach recenzenta, który czytał dokument w roli budującego:
 
@@ -165,7 +165,7 @@ Moje rozstrzygnięcia, w tym te po pytaniach recenzenta, który czytał dokument
 
 ## Co zostaje do rozstrzygnięcia w projektach
 
-- Praca i rozporządzenia: lista reguł w pierwszej wersji, wzór posłuszeństwa, wygląd rozporządzenia na ekranie.
+- Praca i rozporządzenia: lista reguł w pierwszej wersji, wzór posłuszeństwa, wygląd rozporządzenia na ekranie, czy przejęcie lokatora kosztuje coś poza uwagą (na przykład zaufanie).
 - Gospodarka i technologia: pełne drzewka, szczyty i futurystyka w trybie zombie, łańcuchy produkcji przy setkach ludzi.
 - Klimat: źródło danych i licencja, „surowce na północy”, start jesienią, gra w tropikach.
 - Rosnąca osada: koszt uwagi w grze jednoosobowej, wielkość mapy, twarz silnika na ścieżkach.
