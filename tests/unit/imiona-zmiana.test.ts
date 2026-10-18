@@ -508,9 +508,24 @@ describe('zastosujZmiany', () => {
     expect(imieZGeneratora(p, P.l, z)).toBe(p.first);
     // stary wpis tej osoby (bez gen i bez płci): imię z generatora nieznane
     expect(imieZGeneratora(zmieniona, P.l, { imie: BOZENKA.imie, formy: BOZENKA.formy })).toBeUndefined();
-    expect(imieZGeneratora({ ...p, age: p.age + 1 }, P.l, undefined)).toBeUndefined();
+    // stary zapis bez nazwaGen: generator pod tym ref z innym wiekiem to ktoś inny
+    expect(imieZGeneratora({ ...p, age: p.age + 1, nazwaGen: undefined }, P.l, undefined)).toBeUndefined();
     expect(imieZGeneratora(zmieniona, null, undefined, p.first)).toBe(p.first);
     expect(imieZGeneratora(p, null, undefined)).toBe(p.first);
+  });
+
+  it('imieZGeneratora: po aktualizacji tabel imię z nazwaGen zapisu, nie od nowej osoby generatora pod tym ref', () => {
+    const p = nowaGra().people.find((q) => q.ref && q.nazwaGen) as Person;
+    const nazwisko = p.name.slice(p.first.length + 1);
+    // zapis z gry sprzed aktualizacji: generator dał wtedy pod tym ref „Zofię”, dziś (ta sama płeć i wiek) kogoś innego
+    const stary = { ...p, first: 'Zofia', name: `Zofia ${nazwisko}`, nazwaGen: `Zofia ${nazwisko}` };
+    expect(imieZGeneratora(stary, P.l, undefined)).toBe('Zofia');
+    // ta sama osoba po zmianie imienia w tej grze: dalej imię z nazwaGen
+    expect(imieZGeneratora({ ...stary, first: 'Bożenka', name: `Bożenka ${nazwisko}` }, P.l, undefined)).toBe('Zofia');
+    // nazwaGen bez nazwiska z zapisu: nieznane
+    expect(imieZGeneratora({ ...stary, nazwaGen: 'Zofia Inna' }, P.l, undefined)).toBeUndefined();
+    // zgodne nazwaGen: imię z generatora jak dotąd
+    expect(imieZGeneratora(p, P.l, undefined)).toBe(p.first);
   });
 
   it('osoba z generatora pamięta imię i nazwisko z generatora (nazwaGen), także po zmianie imienia', () => {

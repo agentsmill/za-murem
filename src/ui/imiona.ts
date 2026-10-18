@@ -133,20 +133,33 @@ const takaSama = (o: Osoba, p: Pick<Person, 'f' | 'age'>): boolean =>
   (o.plec === 'K') === p.f && ROK_GRY - o.rocznik === p.age;
 
 /** Imię z generatora osoby gry `p` do nowego wpisu (`ZmianaImienia.gen`): z zapisanej zmiany, która jej dotyczy (bez
-    `gen` w starym wpisie: nieznane), z budynku siedziby `l` (ta sama płeć i wiek, inaczej nieznane), a bez danych
-    mieszkańców `bezDanych` (imię sprzed pierwszej zmiany w tej grze) albo obecne imię. */
+    `gen` w starym wpisie: nieznane), z `nazwaGen` osoby (imię i nazwisko z generatora z chwili powstania gry; po
+    aktualizacji tabel generator może mieć pod tym `ref` kogoś innego o tej samej płci i wieku), z budynku siedziby `l`
+    (ta sama płeć i wiek, inaczej nieznane), a bez danych mieszkańców `bezDanych` (imię sprzed pierwszej zmiany w tej
+    grze) albo obecne imię. */
 export function imieZGeneratora(
-  p: Pick<Person, 'ref' | 'first' | 'f' | 'age'>,
+  p: Pick<Person, 'ref' | 'first' | 'name' | 'f' | 'age' | 'nazwaGen'>,
   l: LokatorzyGry | null,
   zapisana: ZmianaImienia | undefined,
   bezDanych?: string,
 ): string | undefined {
   if (zapisana && dotyczy(zapisana, p)) return zapisana.gen;
+  const zNazwyGen = p.nazwaGen === undefined ? undefined : imieZNazwyGen(p.nazwaGen, p);
+  if (zNazwyGen !== undefined) return zNazwyGen;
   if (l) {
     const o = l.siedziba.osoby.find((x) => x.id === p.ref);
-    return o && takaSama(o, p) ? o.imie : undefined;
+    const ten = o && takaSama(o, p) && (p.nazwaGen === undefined || p.nazwaGen === nazwaZGeneratora(o));
+    return ten ? o.imie : undefined;
   }
   return bezDanych ?? p.first;
+}
+
+/** imię z `nazwaGen`: bez nazwiska, które osoba nosi w grze (gracz zmienia tylko imię); gdy nazwisko się nie zgadza,
+    nieznane */
+function imieZNazwyGen(nazwaGen: string, p: Pick<Person, 'first' | 'name'>): string | undefined {
+  const nazwisko = p.name.startsWith(`${p.first} `) ? p.name.slice(p.first.length + 1) : '';
+  if (!nazwisko) return p.name === p.first ? nazwaGen : undefined;
+  return nazwaGen.endsWith(` ${nazwisko}`) ? nazwaGen.slice(0, -(nazwisko.length + 1)) : undefined;
 }
 
 /** Czy w tej grze wolno zmieniać imiona i stosować zapisane zmiany: tylko w grze bez stanu sieci. Gra z sąsiadami
