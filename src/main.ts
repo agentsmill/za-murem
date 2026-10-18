@@ -1,13 +1,16 @@
-/* Za Murem 0.4: start (z panelem „Wasz zarząd”: liczba osób i własna drużyna), wczytanie osiedla i tabel mieszkańców
+/* Za Murem 0.4: język gry (src/ui/jezyk.ts: angielski domyślnie, przełącznik EN/PL na karcie startowej i w Menu;
+   po zmianie wszystko, co widać, rysuje się od nowa), start (z panelem „Wasz zarząd”: liczba osób i własna drużyna),
+   wczytanie osiedla i tabel mieszkańców
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), zapis i sterowanie. */
 
 import './style.css';
+import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
 import type { Person } from './content/people.ts';
-import { tr, txOf } from './core/jezyk.ts';
+import { jezyk, L, poZmianieJezyka, tr, txOf } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
@@ -60,6 +63,7 @@ import {
   zastosujZmiany,
   zmianaZPol,
 } from './ui/imiona.ts';
+import { podepnijPrzelacznik, przelacznikHtml, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
@@ -90,6 +94,8 @@ import { buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
+// język przed czymkolwiek, co rysuje: ?lang=, pamięć przeglądarki, a bez nich angielski
+startJezyka({ params });
 const touchUI = matchMedia('(pointer: coarse)').matches;
 
 declare global {
@@ -166,12 +172,15 @@ let hintUntil = 0;
 const modal = new Modal($('modal'), $('sheet'));
 const ctx = new ContextMenu($('ctx'));
 
+/** okno, które jest otwarte, do narysowania od nowa po zmianie języka (ustawiają je funkcje otwierające okna) */
+let sheetAgain: (() => void) | null = null;
+
 /* ---------- ekran startowy ---------- */
 /* tryb gry: przełącznik na ekranie startowym albo ?tryb=zombie; wstęp zmienia się razem z nim */
 let mode: GameMode = parseMode(params.get('tryb'));
 const setMode = (m: GameMode) => {
   mode = m;
-  $('lore').textContent = m === 'zombie' ? LORE_ZOMBIE : LORE;
+  $('lore').textContent = m === 'zombie' ? L(LORE_ZOMBIE, LORE_ZOMBIE_EN) : L(LORE, LORE_EN);
   for (const r of document.querySelectorAll<HTMLInputElement>('input[name=tryb]')) r.checked = r.value === m;
 };
 setMode(mode);
@@ -200,17 +209,25 @@ const siec = new GraSieciowa({
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
 /** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona) */
 const startUrl = () => location.pathname + (params.get('siec') === '1' ? '?siec=1' : '');
+/** przyciski przykładowych osiedli (napisy od nowa po zmianie języka) */
+const demoButtons: { b: HTMLButtonElement; d: { name: string; label: string } }[] = [];
+const demoLabels = () => {
+  for (const { b, d } of demoButtons) {
+    b.textContent = L(`Przykład: ${d.name}`, `Example: ${d.name}`);
+    b.title = d.label;
+  }
+};
 demoList().then((list) => {
   const box = $('demos');
   for (const d of list) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'btn';
-    b.textContent = `Przykład: ${d.name}`;
-    b.title = d.label;
     b.onclick = () => start(() => loadDemo(d.key));
+    demoButtons.push({ b, d });
     box.appendChild(b);
   }
+  demoLabels();
 });
 $('startForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -218,18 +235,21 @@ $('startForm').addEventListener('submit', (e) => {
   if (q) start(() => loadAddress(q, status));
 });
 const resume = readSave();
+const resumeLabel = () => {
+  if (resume) $('btnResume').textContent = L(`Kontynuuj: ${saveLabel(resume)}`, `Continue: ${saveLabel(resume)}`);
+};
 if (resume) {
   $('resume').hidden = false;
-  $('btnResume').textContent = `Kontynuuj: ${saveLabel(resume)}`;
+  resumeLabel();
   $('btnResume').onclick = () => start(async () => resume.data, resume);
   // usunięcie zapisu w dwóch krokach, bez natywnego confirm
   let armed = 0;
   $('btnForget').onclick = () => {
     if (performance.now() - armed > 4000) {
       armed = performance.now();
-      $('btnForget').textContent = 'Na pewno? Usuń';
+      $('btnForget').textContent = L('Na pewno? Usuń', 'Sure? Delete');
       setTimeout(() => {
-        if (!$('resume').hidden) $('btnForget').textContent = 'Usuń zapis';
+        if (!$('resume').hidden) $('btnForget').textContent = L('Usuń zapis', 'Delete save');
       }, 4000);
       return;
     }
@@ -237,6 +257,26 @@ if (resume) {
     $('resume').hidden = true;
   };
 }
+/* przełącznik języka na karcie startowej (w Menu rysuje go showMenu) */
+const langStart = document.getElementById('langStart');
+const renderLang = () => {
+  if (langStart) langStart.innerHTML = przelacznikHtml(jezyk());
+};
+renderLang();
+if (langStart) podepnijPrzelacznik(langStart);
+/* zmiana języka (przełącznik EN/PL): wszystko, co widać, od nowa w nowym języku; stan gry się nie zmienia */
+poZmianieJezyka(() => {
+  renderLang();
+  setMode(mode);
+  demoLabels();
+  resumeLabel();
+  if (!sim) return;
+  ctx.close();
+  hud(performance.now());
+  renderSpeed();
+  placeInfo();
+  if (modal.open) sheetAgain?.();
+});
 
 let busy = false;
 async function start(get: () => Promise<Loaded>, saved?: Save) {
@@ -248,14 +288,14 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
     const data = await get();
     // tabele mieszkańców dla punktu osiedla (pliki gry z public/data/mieszkancy/, bez wysyłania adresu); bez nich
     // (null) gra idzie starą ścieżką
-    status('Liczę mieszkańców…');
+    status(L('Liczę mieszkańców…', 'Counting the residents…'));
     const t0 = performance.now();
     const c = data.geo?.c;
     const dane = Array.isArray(c) ? await wczytajDaneMieszkancow(c[0], c[1]) : null;
     console.info(
       `tabele mieszkańców ${Math.round(performance.now() - t0)} ms${dane ? `, gmina ${dane.gmina?.teryt ?? 'brak (szablon krajowy)'}` : ', brak: postaci jak dawniej'}`,
     );
-    status('Rysuję osiedle…');
+    status(L('Rysuję osiedle…', 'Drawing the estate…'));
     await new Promise((r) => setTimeout(r, 0));
     await enter(data, saved, dane);
     status('');
@@ -263,7 +303,12 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
     const m = (err as Error)?.message || '';
     const net = err instanceof TypeError || (err as Error)?.name === 'AbortError';
     status(
-      `${net ? 'Nie mogę połączyć się z serwerami map: brak sieci albo serwery są przeciążone.' : m || 'Coś poszło nie tak.'} Możecie zagrać na przykładowym osiedlu.`,
+      net
+        ? L(
+            'Nie mogę połączyć się z serwerami map: brak sieci albo serwery są przeciążone. Możecie zagrać na przykładowym osiedlu.',
+            'Can’t reach the map servers: no connection, or the servers are overloaded. You can play on an example estate.',
+          )
+        : `${m || L('Coś poszło nie tak.', 'Something went wrong.')} ${L('Możecie zagrać na przykładowym osiedlu.', 'You can play on an example estate.')}`,
     );
     console.error(err);
   }
@@ -400,18 +445,34 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   const first = st.pawns[0];
   if (first && st.tut.step < 0 && !saved) selected.add(first.id);
   const siecMsg = siec.komunikatStartu();
-  if (stale) say('Zapis był z innej wersji osiedla, więc gra zaczyna się od nowa.', 9000);
+  if (stale)
+    say(
+      L(
+        'Zapis był z innej wersji osiedla, więc gra zaczyna się od nowa.',
+        'The save was from a different version of the estate, so the game starts over.',
+      ),
+      9000,
+    );
   else if (siecMsg) say(siecMsg, 12000);
   else if (!saved && zombie)
     say(
-      'Za siatką snują się szwendacze, a nocą przyjdzie stado. Dzida sięga przez siatkę, strzał ściąga następnych.',
+      L(
+        'Za siatką snują się szwendacze, a nocą przyjdzie stado. Dzida sięga przez siatkę, strzał ściąga następnych.',
+        'Shamblers drift about beyond the fence, and a herd will come at night. A spear reaches through the fence, a gunshot draws more of them.',
+      ),
       9000,
     );
   else if (!saved)
     say(
       touchUI
-        ? 'To wasz zarząd. Jednym palcem przesuwacie mapę, dwoma przybliżacie. Cele są pod paskiem u góry.'
-        : 'To wasz zarząd. Przeciąganie przesuwa mapę, kółko przybliża. Cele pierwszego dnia są po lewej.',
+        ? L(
+            'To wasz zarząd. Jednym palcem przesuwacie mapę, dwoma przybliżacie. Cele są pod paskiem u góry.',
+            'This is your board. One finger moves the map, two fingers zoom. Your goals are under the bar at the top.',
+          )
+        : L(
+            'To wasz zarząd. Przeciąganie przesuwa mapę, kółko przybliża. Cele pierwszego dnia są po lewej.',
+            'This is your board. Drag to move the map, scroll to zoom. Today’s goals are on the left.',
+          ),
       9000,
     );
   renderSpeed();
@@ -547,6 +608,11 @@ function decided() {
 function showPrompt(p: Prompt) {
   if (!gov) return;
   const g = gov;
+  // po zmianie języka to samo okno od nowa, ze stanem zarządu z tej chwili (przydział na karcie nocy zostaje)
+  sheetAgain = () => {
+    const q = gov && pending(gov, input());
+    if (q) showPrompt(q);
+  };
   pauseGame();
   ctx.close();
   if (p.k === 'raport')
@@ -605,7 +671,10 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
       if (hold !== null && hold > 0 && hold < NIGHT_PACE) {
         dayPace = hold;
         hold = NIGHT_PACE;
-        say(`${line ? `${line} ` : ''}Do rana czas płynie szybciej (6×).`, 9000);
+        say(
+          `${line ? `${line} ` : ''}${L('Do rana czas płynie szybciej (6×).', 'Time runs faster until morning (6×).')}`,
+          9000,
+        );
       }
       decided();
     }
@@ -614,6 +683,7 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
 
 function showEnd() {
   if (!gov?.over) return;
+  sheetAgain = showEnd;
   pauseGame();
   clearSave();
   // gra z sąsiadami: zapis w chmurze i klatki drużyny też znikają
@@ -664,7 +734,10 @@ function watchRaid() {
       renderSpeed();
     } else hold = raidHold;
     raidHold = null;
-    say('Szabrownicy odeszli. Do rana znowu szybciej (6×).', 5000);
+    say(
+      L('Szabrownicy odeszli. Do rana znowu szybciej (6×).', 'The looters are gone. Faster again until morning (6×).'),
+      5000,
+    );
   }
   if (r?.phase !== 1 || raidSeen === r.at || modal.open) return;
   const st = sim.st;
@@ -678,13 +751,22 @@ function watchRaid() {
   const lit = them.some((q) => strangerVisibility(view.darkness, lightAt(q.x, q.y - 0.5, lights, time)) >= SEEN);
   const where = () => {
     const hole = input().fence?.holes.find((h) => `d${h.id}` === r.post);
-    return r.post === 'brama' ? 'przy bramie' : `przy dziurze ${hole?.name ?? 'w siatce'}`;
+    const name = hole?.name;
+    return r.post === 'brama'
+      ? L('przy bramie', 'at the gate')
+      : L(`przy dziurze ${name?.pl ?? 'w siatce'}`, `at the hole ${name?.en ?? 'in the fence'}`);
   };
   // w ciemności warta tylko słyszy (raz); patrzymy dalej, bo zaraz mogą wejść w światło lampy
   if (!lit) {
     if (raidHeard !== r.at) {
       raidHeard = r.at;
-      say(`Warta słyszy coś ${where()}, ale tam ciemno. Światło przy siatce pokazałoby, kto to.`, 8000);
+      say(
+        L(
+          `Warta słyszy coś ${where()}, ale tam ciemno. Światło przy siatce pokazałoby, kto to.`,
+          `The watch hears something ${where()}, but it is dark there. A light by the fence would show who it is.`,
+        ),
+        8000,
+      );
     }
     return;
   }
@@ -695,7 +777,13 @@ function watchRaid() {
     speed = 1;
     renderSpeed();
   }
-  say(`Warta widzi szabrowników ${where()}.${slow ? ' Czas zwalnia do 1×.' : ''}`, 9000);
+  say(
+    L(
+      `Warta widzi szabrowników ${where()}.${slow ? ' Czas zwalnia do 1×.' : ''}`,
+      `The watch can see looters ${where()}.${slow ? ' Time slows down to 1×.' : ''}`,
+    ),
+    9000,
+  );
   const x = them.reduce((a, p) => a + p.x, 0) / them.length;
   const y = them.reduce((a, p) => a + p.y, 0) / them.length;
   // bez zmiany przybliżenia: kamera tylko przesuwa się na miejsce
@@ -801,20 +889,26 @@ function tonight(p: SimPerson): string | undefined {
   if (n && key && key !== 'sen') {
     const opt = n.card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key);
     const label = opt ? tr(opt.label) : key;
-    return `Tej nocy: ${label.toLowerCase()}${n.confirmed ? '' : ' (propozycja)'}.`;
+    return L(
+      `Tej nocy: ${label.toLowerCase()}${n.confirmed ? '' : ' (propozycja)'}.`,
+      `Tonight: ${label[0].toLowerCase()}${label.slice(1)}${n.confirmed ? '' : ' (proposed)'}.`,
+    );
   }
-  if (p.post === 'koza') return 'Do rana: czuwa przy kozie.';
+  if (p.post === 'koza') return L('Do rana: czuwa przy kozie.', 'Until morning: watching the stove.');
   if (p.post)
-    return `Do rana: warta ${p.post === 'brama' ? 'przy bramie' : p.post === 'siatka' ? 'przy siatce' : 'przy dziurze w siatce'}.`;
+    return L(
+      `Do rana: warta ${p.post === 'brama' ? 'przy bramie' : p.post === 'siatka' ? 'przy siatce' : 'przy dziurze w siatce'}.`,
+      `Until morning: on watch ${p.post === 'brama' ? 'at the gate' : p.post === 'siatka' ? 'at the fence' : 'at a hole in the fence'}.`,
+    );
   return undefined;
 }
 
 function hud(now: number) {
   if (!sim) return;
   const st = sim.st;
-  $('hDay').textContent = `Dzień ${dayOf(st.tick)}`;
+  $('hDay').textContent = L(`Dzień ${dayOf(st.tick)}`, `Day ${dayOf(st.tick)}`);
   $('hTime').textContent = clockOf(st.tick);
-  $('fps').textContent = `${Math.round(fps)} kl/s`;
+  $('fps').textContent = L(`${Math.round(fps)} kl/s`, `${Math.round(fps)} fps`);
   const snap = snapshot(st, sim.w);
   // koza wygasła po samouczku, a drewna nie ma: decyzja gracza (drzewo albo mebel), więc ostrzeżenie wisi,
   // dopóki problem trwa (w dzień, kiedy zarząd nie śpi), i ma pierwszeństwo przed zwykłymi podpowiedziami
@@ -824,14 +918,23 @@ function hud(now: number) {
   // gorączka po ugryzieniu: niecałe 2 godziny do śmierci, a zmarły wstaje, więc ktoś z bronią powinien być przy nim
   const dying = snap.people.find((p) => p.bite && p.bite.left < 2 * TICKS_PER_HOUR);
   const fever = dying
-    ? `${dying.name} umiera w gorączce. Po śmierci wstanie: niech ktoś z bronią będzie obok, żeby dobić.`
+    ? L(
+        `${dying.name} umiera w gorączce. Po śmierci wstanie: niech ktoś z bronią będzie obok, żeby dobić.`,
+        `${dying.name} is dying of fever and will get back up after death. Have someone armed standing by to finish the job.`,
+      )
     : '';
   const warn = fever
     ? fever
     : cold
       ? touchUI
-        ? 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).'
-        : 'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (prawy przycisk na meblu).'
+        ? L(
+            'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).',
+            'The stove has gone out and there is no wood. Chop down a tree or burn some furniture (press and hold on it).',
+          )
+        : L(
+            'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (prawy przycisk na meblu).',
+            'The stove has gone out and there is no wood. Chop down a tree or burn some furniture (right-click it).',
+          )
       : '';
   $('hint').textContent = warn || (now < hintUntil ? hint : '');
   $('hint').classList.toggle('warn', !!warn);
@@ -917,13 +1020,13 @@ function renderGoals(snap: SimSnapshot) {
     woodReady,
   });
   let cur = currentGoal(list);
-  let title = 'Pierwszy dzień';
+  let title = L('Pierwszy dzień', 'Day one');
   // po pierwszej nocy cele drugiego dnia: przeszukać, warsztat, obwód, drewno na noc
   if (!cur && isDay2(gov)) {
     if (wood >= DAY2_WOOD) woodReady2 = true;
     list = goalsDay2(sim.st, gov, { touch: touchUI, wood, woodReady: woodReady2, holes: snap.fence.holes.length });
     cur = currentGoal(list);
-    title = 'Drugi dzień';
+    title = L('Drugi dzień', 'Day two');
   }
   // po drugiej nocy lista znika
   if (!cur) {
@@ -1016,8 +1119,9 @@ function placeMarker() {
   const [tx, ty] = screenOf(crown.x, crown.y);
   const arrow = edge ? `${ARROWS[(Math.round(Math.atan2(ty - cy, tx - cx) / (Math.PI / 4)) + 8) % 8]} ` : '';
   const label = el.firstElementChild as HTMLElement;
-  if (label.textContent !== `${arrow}Suche drzewo`) {
-    label.textContent = `${arrow}Suche drzewo`;
+  const dead = `${arrow}${L('Suche drzewo', 'Dead tree')}`;
+  if (label.textContent !== dead) {
+    label.textContent = dead;
     markW = label.offsetWidth || markW;
   }
 }
@@ -1051,23 +1155,23 @@ $('zHome').onclick = () => {
 
 /* ---------- menu gry (zamiast natywnego confirm) ---------- */
 function showMenu() {
-  const note = readSave()
-    ? `Gra zapisuje się sama co godzinę gry i przy zamknięciu karty. Ostatni zapis: ${saveLabel(readSave()!)}.`
-    : 'Gra zapisuje się sama co godzinę gry i przy zamknięciu karty.';
+  sheetAgain = showMenu;
+  const auto = L(
+    'Gra zapisuje się sama co godzinę gry i przy zamknięciu karty.',
+    'The game saves itself every game hour and when you close the tab.',
+  );
+  const last = readSave();
+  const note = last ? `${auto} ${L('Ostatni zapis', 'Last save')}: ${saveLabel(last)}.` : auto;
+  // przełącznik języka nad przyciskami Menu
+  const sheet = menuSheet(note);
+  sheet.body = `<div class="menu-lang" data-lang-menu>${przelacznikHtml(jezyk())}</div>${sheet.body}`;
   modal.show(
-    menuSheet(note),
+    sheet,
     (act) => {
       if (act === 'menu-back') {
         modal.close();
         nextPrompt();
-      } else if (act === 'menu-help')
-        modal.show(
-          helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie'),
-          (a) => {
-            if (a === 'help-back') showMenu();
-          },
-          nextPrompt,
-        );
+      } else if (act === 'menu-help') showHelp();
       else if (act === 'menu-start') {
         save();
         location.href = startUrl();
@@ -1076,6 +1180,19 @@ function showMenu() {
     nextPrompt,
   );
 }
+/** jak grać (z Menu) */
+function showHelp() {
+  sheetAgain = showHelp;
+  modal.show(
+    helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie'),
+    (a) => {
+      if (a === 'help-back') showMenu();
+    },
+    nextPrompt,
+  );
+}
+// przełącznik języka w Menu: kliknięcie zmienia język, a okno rysuje się od nowa przez słuchacza niżej
+podepnijPrzelacznik($('modal'));
 $('btnMenu').onclick = () => {
   if (!sim || modal.open) return;
   pauseGame();
@@ -1090,8 +1207,14 @@ $('btnAlarm').onclick = () => {
   sim.push({ t: 'alarm', ids: core });
   say(
     modeOf(sim.st) === 'zombie'
-      ? 'Do broni! Wszyscy zdolni na wartę przy siatce.'
-      : 'Do broni! Wszyscy zdolni na wartę przy bramie.',
+      ? L(
+          'Do broni! Wszyscy zdolni na wartę przy siatce.',
+          'To arms! Everyone who can stand goes on watch at the fence.',
+        )
+      : L(
+          'Do broni! Wszyscy zdolni na wartę przy bramie.',
+          'To arms! Everyone who can stand goes on watch at the gate.',
+        ),
     4000,
   );
 };
@@ -1138,17 +1261,30 @@ $('card').addEventListener('click', (e) => {
     const list = ARM_ORDER.filter((w) => have.has(w) && w !== p.weapon);
     const at = p.weapon ? ARM_ORDER.indexOf(p.weapon) : -1;
     const next = list.find((w) => ARM_ORDER.indexOf(w) > at) ?? list[0] ?? null;
-    if (next === null && !p.weapon) return say('W magazynie nie ma broni.', 2500);
+    if (next === null && !p.weapon)
+      return say(L('W magazynie nie ma broni.', 'There are no weapons in the store.'), 2500);
     sim.push({ t: 'arm', ids: [p.id], weapon: next });
-    say(next ? `Bierze ${WEAPONS[next].acc}.` : 'Odkłada broń do magazynu.', 2500);
+    say(
+      next
+        ? L(`Bierze ${WEAPONS[next].acc}.`, `Takes the ${WEAPONS[next].name.toLowerCase()}.`)
+        : L('Odkłada broń do magazynu.', 'Puts the weapon back in the store.'),
+      2500,
+    );
   } else if (b.dataset.card === 'amputate') {
     // amputuje ten z zarządu, kto najlepiej zna się na medycynie
     const doc = st.pawns
       .filter((q) => q.kind === 'core' && q !== p && !q.away && (q.needs?.health ?? 0) > 20)
       .sort((a, c) => (st.people[c.person].skills.med ?? 0) - (st.people[a.person].skills.med ?? 0) || a.id - c.id)[0];
-    if (!doc) return say('Nie ma komu amputować.', 3000);
+    if (!doc) return say(L('Nie ma komu amputować.', 'There is nobody to do the amputation.'), 3000);
     sim.push({ t: 'amputate', ids: [doc.id], patient: p.id });
-    say(`${st.people[doc.person].first} amputuje. Pół godziny, nie zawsze się udaje.`, 4000);
+    const who = st.people[doc.person].first;
+    say(
+      L(
+        `${who} amputuje. Pół godziny, nie zawsze się udaje.`,
+        `${who} is amputating. Half an hour, and it doesn’t always work.`,
+      ),
+      4000,
+    );
   }
 });
 
@@ -1222,7 +1358,11 @@ async function otworzImie(person: number, pawn: number, lokator: boolean) {
   const p = sim?.st.people[person];
   if (!p?.ref || !imionaWGrze(siec.stan)) return;
   const odm = await odmianaEdytora();
-  if (!odm) return say('Nie udało się wczytać odmiany imion. Spróbujcie jeszcze raz.', 4000);
+  if (!odm)
+    return say(
+      L('Nie udało się wczytać odmiany imion. Spróbujcie jeszcze raz.', 'Couldn’t load the name forms. Try again.'),
+      4000,
+    );
   // w czasie wczytywania gra mogła się zmienić
   if (sim?.st.people[person] !== p || !p.ref) return;
   const zapisana = zapisanaZmiana(p);
@@ -1354,13 +1494,46 @@ const FEEDBACK: Record<MenuItem['cmd']['t'], [string, string]> = {
   repair: ['Przyniesie materiał i naprawi.', 'Jedna osoba przyniesie materiał i naprawi.'],
   claim: ['Zajmie mieszkanie dla zarządu.', 'Jedna osoba zajmie mieszkanie dla zarządu.'],
 };
+/** to samo po angielsku (jedna osoba, kilka osób) */
+const FEEDBACK_EN: Record<MenuItem['cmd']['t'], [string, string]> = {
+  move: ['On the way.', 'On their way.'],
+  select: ['', ''],
+  chop: ['Off to chop down the tree.', 'Off to chop down the tree.'],
+  haul: ['Will carry the wood to the woodpile.', 'Will carry the wood to the woodpile.'],
+  refuel: ['Will feed the stove.', 'Will feed the stove.'],
+  burn: ['Will break up the furniture for firewood.', 'Will break up the furniture for firewood.'],
+  cook: ['Will cook something from the supplies.', 'Will cook something from the supplies.'],
+  gate: ['Off to the gate.', 'Off to the gate.'],
+  guard: ['Going on watch.', 'Going on watch.'],
+  patch: ['Will patch the hole in the fence.', 'Will patch the hole in the fence.'],
+  campfire: ['Will light a bonfire.', 'Will light a bonfire.'],
+  away: ['', ''],
+  back: ['', ''],
+  laws: ['', ''],
+  raid: ['', ''],
+  mend: ['', ''],
+  arm: ['', ''],
+  attack: ['Attacking.', 'Attacking.'],
+  finish: ['Will finish off the body.', 'Will finish off the body.'],
+  amputate: ['Amputating.', 'Amputating.'],
+  craft: ['Will make a spear.', 'Will make a spear.'],
+  brace: ['Will shore up the fence.', 'Will shore up the fence.'],
+  alarm: ['To arms!', 'To arms!'],
+  build: ['Getting down to building.', 'One person gets down to building.'],
+  unbuild: ['', ''],
+  search: ['Will search the room.', 'One person will search the room.'],
+  dismantle: ['Will take it apart for materials.', 'One person will take it apart for materials.'],
+  repair: ['Will bring materials and fix it.', 'One person will bring materials and fix it.'],
+  claim: ['Will claim the flat for the board.', 'One person will claim the flat for the board.'],
+};
 
 function run(m: MenuItem) {
   if (!sim) return;
   // „Zajmij klatkę” z gry z sąsiadami idzie do serwera, nie do symulacji
   if (siec.obsluz(m)) return;
   sim.push(m.cmd);
-  const f = FEEDBACK[m.cmd.t][m.cmd.ids.length > 1 ? 1 : 0];
+  const k = m.cmd.ids.length > 1 ? 1 : 0;
+  const f = L(FEEDBACK[m.cmd.t][k], FEEDBACK_EN[m.cmd.t][k]);
   if (f) say(f, 1800);
 }
 
@@ -1370,6 +1543,7 @@ function askConfirm(m: MenuItem) {
     askBurn(m);
     return;
   }
+  sheetAgain = () => askConfirm(m);
   pauseGame();
   modal.show(
     confirmSheet(m.label),
@@ -1392,6 +1566,7 @@ function askBurn(m: MenuItem) {
   // imię tylko dla mebla kogoś z zarządu (tekst mówi o „reszcie zarządu”); mieszkaniec z osobą nie jest z zarządu
   const name = owner?.kind === 'core' ? (sim.st.people[owner.person]?.name ?? null) : null;
   const softer = !!gov && lawEffects(gov).burnMood < 1;
+  sheetAgain = () => askBurn(m);
   pauseGame();
   modal.show(
     burnSheet(thing.kind, name, softer),
@@ -1415,7 +1590,12 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   // gra z sąsiadami: „Zajmij klatkę” tylko w menu (z potwierdzeniem), nigdy od stuknięcia
   const zSieci = menu ? siec.menu(sim, tile) : [];
   if (!items.length && !zSieci.length) {
-    say(touchUI ? 'Najpierw stuknijcie kogoś z zarządu.' : 'Najpierw zaznaczcie kogoś z zarządu.', 2500);
+    say(
+      touchUI
+        ? L('Najpierw stuknijcie kogoś z zarządu.', 'Tap someone from the board first.')
+        : L('Najpierw zaznaczcie kogoś z zarządu.', 'Select someone from the board first.'),
+      2500,
+    );
     return;
   }
   // plan budowy albo gotowa budowla pod kursorem: jej polecenia przed „Idź tu”, polecenia symulacji pierwsze
@@ -1437,11 +1617,14 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   const who = sim.st.pawns
     .filter((p) => selected.has(p.id) && p.kind === 'core')
     .map((p) => sim!.st.people[p.person]?.first ?? '');
-  const head = who.length > 2 ? `Zarząd (${who.length})` : who.join(' i ') || 'Klatka';
+  const head =
+    who.length > 2
+      ? L(`Zarząd (${who.length})`, `The board (${who.length})`)
+      : who.join(L(' i ', ' and ')) || L('Klatka', 'Stairwell');
   // w mieszkaniu siedziby nagłówek mówi, które to mieszkanie i w jakim stanie
   const apt = aptAt(sim.w, tile);
   const v = apt >= 0 ? aptView(sim.st, sim.w, apt, snap.apts) : null;
-  const where = v ? ` · mieszkanie ${apt + 1}, ${aptState(v).toLowerCase()}` : '';
+  const where = v ? ` · ${L('mieszkanie', 'flat')} ${apt + 1}, ${aptState(v).toLowerCase()}` : '';
   ctx.show(items, sx, sy, `${head}${where}`, (x) => (x.confirm ? askConfirm(x) : run(x)));
 }
 
@@ -1496,8 +1679,15 @@ function setPlacementView(p: PlacementView): boolean {
 }
 
 /** menu budowy: przycisk „Budowa” i klawisz B */
+/** nazwa budowli w bieżącym języku */
+const buildName = (k: BuildKind): string => BUILDS[k].name;
+
 function openBuild() {
   if (!sim || modal.open) return;
+  sheetAgain = () => {
+    modal.close();
+    openBuild();
+  };
   const s = sim;
   cancelPlacing(false);
   ctx.close();
@@ -1557,7 +1747,7 @@ function cancelPlacing(tell = true) {
   $('placeBar').hidden = true;
   $('ghost').hidden = true;
   setPlacementView(null);
-  if (tell) say('Budowa anulowana.', 1500);
+  if (tell) say(L('Budowa anulowana.', 'Building cancelled.'), 1500);
 }
 
 /** klik albo stuknięcie w trybie stawiania: lewy klik i stuknięcie stawiają, prawy klik anuluje;
@@ -1571,14 +1761,20 @@ function placeClick(sx: number, sy: number, button: number, type: string, shift:
   if (type === 'mouse' && button !== 0) return false;
   aimAt(sx, sy);
   if (!placing.ok) {
-    say(placing.why ?? 'Tu nie da się postawić.', 2500);
+    say(placing.why ?? L('Tu nie da się postawić.', 'You can’t build here.'), 2500);
     return true;
   }
   const { kind, x, y, rot } = placing;
   // kto buduje: zaznaczeni z zarządu, a bez zaznaczenia zarząd wybiera sam
   const ids = sim.st.pawns.filter((p) => selected.has(p.id) && p.kind === 'core').map((p) => p.id);
   sim.push({ t: 'build', ids, kind, x, y, rot });
-  say(`Plan: ${BUILDS[kind].name}. Zarząd przyniesie materiały i zbuduje.`, 3000);
+  say(
+    L(
+      `Plan: ${buildName(kind)}. Zarząd przyniesie materiały i zbuduje.`,
+      `Plan: ${buildName(kind)}. The board will bring the materials and build it.`,
+    ),
+    3000,
+  );
   if (shift && type === 'mouse') {
     placing.allowed = allowedAnchors(sim.st, sim.w, kind, rot);
     placing.okTiles = okTilesOf(placing.allowed, kind, rot, sim.w.size);
@@ -1590,9 +1786,16 @@ function placeClick(sx: number, sy: number, button: number, type: string, shift:
 /** napis na pasku trybu stawiania: co, czy wolno i jak sterować */
 function placeInfo() {
   if (!placing) return;
-  const name = BUILDS[placing.kind].name;
-  const state = placing.ok ? 'tu można postawić' : (placing.why ?? 'tu nie da się postawić').replace(/\.$/, '');
-  const how = touchUI ? 'Stuknięcie stawia plan.' : 'Lewy klik stawia, R obraca, prawy klik albo Esc anuluje.';
+  const name = buildName(placing.kind);
+  const state = placing.ok
+    ? L('tu można postawić', 'you can build here')
+    : (placing.why ?? L('tu nie da się postawić', 'you can’t build here')).replace(/\.$/, '');
+  const how = touchUI
+    ? L('Stuknięcie stawia plan.', 'Tap to place the plan.')
+    : L(
+        'Lewy klik stawia, R obraca, prawy klik albo Esc anuluje.',
+        'Left-click places, R rotates, right-click or Esc cancels.',
+      );
   const text = `${name}: ${state.charAt(0).toLowerCase()}${state.slice(1)}. ${how}`;
   const el = $('placeText');
   if (el.textContent !== text) el.textContent = text;

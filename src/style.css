@@ -1697,3 +1697,49 @@ a.btn {
     flex: 1 1 100%;
   }
 }
+
+/* przełącznik języka EN/PL (src/ui/jezyk.ts): segmenty jak tryb gry, w rogu karty startowej i w Menu */
+.start-card {
+  position: relative;
+}
+.lang-slot {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.lang {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.lang-b {
+  font: 600 13px / 1 var(--f-sign);
+  letter-spacing: 0.1em;
+  background: transparent;
+  color: var(--ink-dim);
+  border: 0;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.lang-b[aria-pressed="true"] {
+  background: var(--lamp);
+  color: #1d1a14;
+}
+.lang-b:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.menu-lang {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+/* na telefonie tabliczka z tytułem zajmuje całą szerokość: przełącznik we własnym wierszu nad nią */
+@media (max-width: 640px) {
+  .lang-slot {
+    position: static;
+    align-self: flex-end;
+    margin-bottom: -10px;
+  }
+}

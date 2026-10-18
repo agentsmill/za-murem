@@ -1,6 +1,8 @@
 /* Zrzuty ekranu w prawdziwym Chromium: mapy testowe, kamera i pora dnia ustawiane w adresie.
    Uruchomienie: npm run shots [-- filtr] [--dist]   (filtr: fragment nazwy; --dist: zbudowana wersja)
-   Wynik: shots/<nazwa>.png. Każdy zrzut obejrzyj, zanim zgłosisz zmianę. */
+   Wynik: shots/<nazwa>.png. Każdy zrzut obejrzyj, zanim zgłosisz zmianę.
+   Język: pole `lang` scenariusza (przez pamięć przeglądarki, jak wybór gracza). Bez pola polski, bo starsze
+   scenariusze sprawdzają polskie napisy; angielskie i polskie wersje tych samych ekranów to scenariusze en-* i pl-*. */
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -30,6 +32,8 @@ interface Shot {
   allow?: RegExp;
   /** z allow: błąd jest spodziewany tylko dla zasobu pod tym adresem (np. tylko tabele z data/mieszkancy/) */
   allowUrl?: RegExp;
+  /** język gry (domyślnie polski, nagłówek pliku) */
+  lang?: 'en' | 'pl';
 }
 
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
@@ -3022,6 +3026,143 @@ const SHOTS: Shot[] = [
       if (r.missing.length) throw new Error(`brak w rysowaniu: ${r.missing.join(', ')}`);
     },
   },
+  // angielski i polski (docs/superpowers/specs/2026-10-18-angielski-design.md): te same ekrany w obu językach, na
+  // komputerze i telefonie 390×844. Każdy wypisuje słowa, które wyglądają na drugi język (do obejrzenia: imiona
+  // i nazwy miejsc zostają polskie), a przełącznik w Menu zmienia język otwartego okna bez przeładowania.
+  ...((): Shot[] => {
+    const game = async (page: Page, base: string, q = '') => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3${q}`);
+      await waitIdle(page);
+    };
+    const pick = async (page: Page, touch: boolean) => {
+      const a = await page.evaluate(() => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+        const [x, y] = zm.screenOf(p.x, p.y - 0.55);
+        return { x, y };
+      });
+      if (touch) await page.touchscreen.tap(a.x, a.y);
+      else await page.mouse.click(a.x, a.y);
+      await page.waitForTimeout(300);
+      if (!(await page.isVisible('#card'))) throw new Error('karta osoby nie pokazała się po zaznaczeniu');
+    };
+    /** karta nocy pierwszego dnia (po pierwszej uchwale) */
+    const nightCard = async (page: Page, base: string) => {
+      await game(page, base, '&godzina=19.5');
+      await page.evaluate(() => window.zm!.govTick());
+      await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+      const p = await page.evaluate(() => window.zm!.ff(31));
+      if (p !== 'karta') throw new Error(`o 20:00 zamiast karty nocy: ${p}`);
+      await page.waitForTimeout(200);
+    };
+    /** raport rano po pierwszej nocy (wydarzenia po drodze: pierwsza możliwa odpowiedź) */
+    const report = async (page: Page, base: string) => {
+      await nightCard(page, base);
+      await page.click('#sheet [data-act="night-go"]');
+      for (let k = 0; k < 30; k++) {
+        const p = await page.evaluate(() => window.zm!.ff(30));
+        if (p === 'raport') return waitIdle(page);
+        if (p === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+        else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
+        else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
+      }
+      throw new Error('raport po nocy się nie pokazał');
+    };
+    /** słowa widoczne na stronie, które wyglądają na polskie (w angielskim) albo angielskie (w polskim) */
+    const obcy = async (page: Page, lang: 'en' | 'pl', name: string) => {
+      const words = await page.evaluate((lang) => {
+        const text = document.body.innerText;
+        const out = new Set<string>();
+        for (const w of text.split(/[^\p{L}’']+/u)) {
+          if (!w) continue;
+          if (lang === 'en' && /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(w)) out.add(w);
+          if (lang === 'pl' && /^(the|and|with|from|you|your|board|night|watch|stove|fence)$/i.test(w)) out.add(w);
+        }
+        return [...out];
+      }, lang);
+      if (words.length)
+        console.log(
+          `  ${name}: do sprawdzenia (${lang === 'en' ? 'polskie litery' : 'angielskie słowa'}): ${words.join(', ')}`,
+        );
+    };
+    const out: Shot[] = [];
+    for (const lang of ['en', 'pl'] as const)
+      for (const phone of [false, true]) {
+        const sfx = phone ? '-telefon' : '';
+        const size = phone ? { w: 390, h: 844 } : {};
+        const shot = (name: string, run: (page: Page, base: string) => Promise<void>): Shot => ({
+          name: `${lang}-${name}${sfx}`,
+          query: '',
+          lang,
+          ...size,
+          run: async (page, base) => {
+            await run(page, base);
+            const htmlLang = await page.evaluate(() => document.documentElement.lang);
+            if (htmlLang !== lang) throw new Error(`<html lang> to ${htmlLang}, a miało być ${lang}`);
+            await obcy(page, lang, `${lang}-${name}${sfx}`);
+          },
+        });
+        out.push(
+          shot('start', async (page, base) => {
+            await page.goto(base);
+            await page.waitForSelector('#demos button');
+            const lore = await page.$eval('#lore', (e) => e.textContent ?? '');
+            if (lang === 'en' ? !lore.startsWith('It is 2051.') : !lore.startsWith('Rok 2051.'))
+              throw new Error(`wstęp nie w tym języku: ${lore.slice(0, 40)}`);
+            const pressed = await page.$eval(
+              '#langStart [aria-pressed="true"]',
+              (b) => (b as HTMLElement).dataset.lang,
+            );
+            if (pressed !== lang) throw new Error(`przełącznik pokazuje ${pressed}`);
+          }),
+          shot('pasek', async (page, base) => {
+            await game(page, base, '&godzina=15');
+            await page.waitForTimeout(300);
+          }),
+          shot('karta-osoby', async (page, base) => {
+            await game(page, base);
+            await pick(page, phone);
+          }),
+          shot('karta-nocy', nightCard),
+          shot('raport', report),
+        );
+      }
+    out.push({
+      // przełącznik w Menu: z angielskiego na polski przy otwartej karcie nocy (bez przeładowania i bez utraty
+      // przydziału), potem z powrotem; zrzut po polsku
+      name: 'en-zmiana-jezyka',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await nightCard(page, base);
+        const before = await page.textContent('#sheet .sheet-kicker');
+        await page.evaluate(() => {
+          // przełącznik z Menu działa tak samo: zmienJezyk przez kliknięcie w przycisk data-lang
+          const b = document.createElement('div');
+          b.innerHTML = '<button type="button" data-lang="pl">PL</button>';
+          document.querySelector('#sheet')!.appendChild(b);
+          (b.firstChild as HTMLButtonElement).click();
+        });
+        await page.waitForTimeout(200);
+        const after = await page.textContent('#sheet .sheet-kicker');
+        const lang = await page.evaluate(() => document.documentElement.lang);
+        console.log(`  karta nocy: „${before}” → „${after}”, <html lang> ${lang}`);
+        if (before === after || lang !== 'pl') throw new Error('karta nocy nie zmieniła języka');
+        if (!(await page.isVisible('#sheet select.pick'))) throw new Error('karta nocy zniknęła po zmianie języka');
+      },
+    });
+    out.push({
+      name: 'en-menu',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await game(page, base);
+        await page.click('#btnMenu');
+        await page.waitForSelector('#modal:not([hidden]) [data-lang="pl"]');
+      },
+    });
+    return out;
+  })(),
 ];
 
 /**
@@ -3935,6 +4076,14 @@ try {
       hasTouch: mobile,
       deviceScaleFactor: mobile ? 2 : 1,
     });
+    // język jak wybór gracza zapisany w pamięci przeglądarki (src/ui/jezyk.ts), przed skryptami strony
+    await page.addInitScript((l) => {
+      try {
+        localStorage.setItem('za-murem-0.4-jezyk', l);
+      } catch {
+        // strona bez pamięci: gra wybierze język domyślny
+      }
+    }, shot.lang ?? 'pl');
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => {
