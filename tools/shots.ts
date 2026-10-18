@@ -2071,12 +2071,14 @@ const SHOTS: Shot[] = [
         const zm = window.zm!;
         const st = zm.sim!.st;
         const v = zm.view as unknown as {
-          ludzie: {
+          ludzie: null | {
             dane: { postacPionka(p: unknown, o: unknown): unknown };
             lezenie(p: unknown, w: number, o: number, r: string): { tex: unknown } | null;
           };
           corpseSprites: Map<number, { texture: unknown }>;
         };
+        // z --kod (?grafika=kod) warstwy PixelLab nie ma, a zwłoki są z kodu
+        if (!v.ludzie) return true;
         const p0 = st.pawns.find((p) => p.kind === 'core')!;
         const tex = v.ludzie.lezenie(v.ludzie.dane.postacPionka(p0, st.people), 0, 993008 & 3, 'floor')!.tex;
         return v.corpseSprites.get(993008)!.texture === tex;
