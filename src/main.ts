@@ -34,7 +34,7 @@ import { WEAPONS, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
-import type { LokatorzyGry } from './sim/lokatorzy.ts';
+import { type LokatorzyGry, zrodloLokatorow } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
@@ -348,6 +348,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     );
   sim = new Sim(world, st);
   if (l && dane) mieszkancy = { l, dane, adres: data.addr };
+  // lokatorzy sąsiednich budynków z generatora mieszkańców (fala 2); bez tabel zapasowi z ziarna budynku
+  if (dane) sim.lokatorzy = zrodloLokatorow(world, geo, dane);
   placing = null;
   aptFocus = -1;
   residentFocus = -1;

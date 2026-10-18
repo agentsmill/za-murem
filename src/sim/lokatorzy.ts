@@ -54,6 +54,7 @@ import type { Geo } from '../world/geo.ts';
 import { geoPunktu, kluczBudynku } from '../world/klucze.ts';
 import type { World, WorldBuilding } from '../world/world.ts';
 import { houseOf } from './house.ts';
+import { drzwiBudynku, type LokatorzyBudynku, mieszkaniaZaDrzwiami, type OsobaSasiada, wnetrze } from './sasiedzi.ts';
 
 /** Osoba z generatora w kształcie osoby gry (pola `Person`) z odnośnikiem do `Osoba.id` i linijką rodziny. */
 export type OsobaGry = Pick<Person, 'first' | 'name' | 'f' | 'prof' | 'skills' | 'age' | 'traits' | 'story'> & {
@@ -436,6 +437,99 @@ export function lokatorzyGry(
     }
   }
   return { siedziba, kronika, zarzad, lokatorzy, stany };
+}
+
+// ---------------------------------------------------------------- sąsiednie budynki (M2 fala 2)
+
+/** Od tego roku zgon w gospodarstwie to „niedawno”: nastrój żałoby przy spotkaniu (docs/M2-fala-2.md). */
+const ZAL_OD = 2049;
+
+/** Lokatorzy sąsiedniego budynku z generatora mieszkańców (fala 2, docs/M2-fala-2.md), w kształcie
+    `LokatorzyBudynku` dla `Sim.lokatorzy`. Budynek generatora po tagu `zm:bud` (albo zapasowy ze świata, jak siedziba),
+    pustych mieszkań parteru według udziału pustych w budynku (losowanie `losDla('mieszkania-sasiada', klucz)`), powód
+    i rok z dziennika (`powodyPustych`, rosnąco po numerze), w zamieszkanych kolejne gospodarstwa z obecnymi w kolejności
+    budynku, a numer wejścia klatki z drzwi, przez które do mieszkania się wchodzi. Osoby jak lokatorzy siedziby
+    (`osobaZ`: rodzina, historia, cechy z ziarna osoby), żal z zgonu w gospodarstwie od 2049. Budynki i kronika obszaru
+    liczą się raz, przy pierwszym pytaniu. null: budynek bez mieszkań. Czysta funkcja świata, mapy i tabel. */
+export function zrodloLokatorow(
+  world: World,
+  geo: Geo,
+  dane: DaneMieszkancow,
+): (bid: number) => LokatorzyBudynku | null {
+  let area: { budynki: Budynek[]; kronika: WpisKroniki[] } | null = null;
+  return (bid) => {
+    const b = world.buildings[bid];
+    if (!b || bid === world.hq) return null;
+    const it = wnetrze(world, bid);
+    const n = it.rooms.reduce((m, r) => Math.max(m, r.apt + 1), 0);
+    if (!n) return null;
+    const { kraj, gmina, imiona, nazwiska, odmiana } = dane;
+    if (!area) {
+      const budynki = budynkiObszaru(geo, gmina, kraj);
+      area = { budynki, kronika: kronikaObszaru(geo, budynki, imiona) };
+    }
+    const klucz = b.tags[TAG_BUDYNKU];
+    const budynek =
+      (klucz === undefined ? undefined : area.budynki.find((x) => x.klucz === klucz)) ??
+      budynekZapasowy(world, b, geo, gmina);
+    const wynik = generujBudynek(budynek, gmina, kraj, { imiona, nazwiska, odmiana, kronika: area.kronika });
+    const wg = new Map(wynik.osoby.map((o) => [o.id, o]));
+    const obecni = (g: Gospodarstwo): Osoba[] =>
+      g.czlonkowie.flatMap((id) => {
+        const o = wg.get(id);
+        return o?.stan === 'tu' ? [o] : [];
+      });
+    const zmarli = new Map<string, number>();
+    for (const d of wynik.dziennik) if (d.typ === 'zgon') zmarli.set(d.kto, d.rok);
+    const kolejka = wynik.gospodarstwa.map((g) => ({ g, osoby: obecni(g) })).filter((x) => x.osoby.length > 0);
+    const mieszkania = Math.max(1, wynik.budynek.mieszkania ?? wynik.gospodarstwa.length + wynik.puste);
+    const ile = Math.max(0, Math.min(n, Math.round((n * wynik.puste) / mieszkania)));
+    const kolejnosc = tasuj([...Array(n).keys()], losDla('mieszkania-sasiada', wynik.budynek.klucz));
+    const puste = new Set(kolejnosc.slice(0, ile));
+    const pusteRosnaco = [...Array(n).keys()].filter((a) => puste.has(a));
+    const powody = powodyPustych(wynik, pusteRosnaco.length);
+    // numer wejścia klatki z drzwi, za którymi leży mieszkanie
+    const klatka = new Map<number, number>();
+    for (const d of drzwiBudynku(world, bid).zewn)
+      if (d.wejscie >= 0)
+        for (const a of mieszkaniaZaDrzwiami(world, bid, d.tile)) if (!klatka.has(a)) klatka.set(a, d.wejscie);
+    const stany: AptState[] = [];
+    const domy: LokatorzyBudynku['domy'] = [];
+    let k = 0;
+    for (let a = 0; a < n; a++) {
+      if (puste.has(a)) {
+        const p = powody[pusteRosnaco.indexOf(a)];
+        stany.push(p ? { bid, apt: a, state: 'puste', ...p } : { bid, apt: a, state: 'puste' });
+        continue;
+      }
+      const x = kolejka[k++];
+      if (!x) {
+        // gospodarstw zabrakło: mieszkanie stoi puste (powód i rok losuje settleAptsOf)
+        stany.push({ bid, apt: a, state: 'puste' });
+        continue;
+      }
+      stany.push({ bid, apt: a, state: 'mieszkancy' });
+      const historia = x.g.historia ?? [];
+      const osoby: OsobaSasiada[] = x.osoby.map((o) => {
+        const { first, name, f, prof, skills, age, traits, story, ref, rodzina } = osobaZ(o, wynik.osoby, wg, historia);
+        return {
+          first,
+          name,
+          f,
+          prof,
+          skills,
+          age,
+          traits,
+          ref,
+          ...(story ? { story } : {}),
+          ...(rodzina ? { rodzina } : {}),
+        };
+      });
+      const zal = x.g.czlonkowie.some((id) => (zmarli.get(id) ?? 0) >= ZAL_OD);
+      domy.push({ apt: a, klatka: klatka.get(a) ?? -1, osoby, zal });
+    }
+    return { stany, domy };
+  };
 }
 
 // ---------------------------------------------------------------- imiona gracza
