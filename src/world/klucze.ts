@@ -6,9 +6,12 @@
    4096 pikseli na kafelek, około 0,35 m): wierzchołki z kafelków są tam liczbami całkowitymi, takimi samymi u każdego
    gracza, który pobrał te kafelki, niezależnie od środka mapy. toGeoT (kafelki) i toGeo (Overpass, wierzchołki
    zaokrąglone do tej samej siatki pikseli) liczą je przed zaokrągleniem geometrii do pół metra i zapisują w tagach:
-   - `zm:klucz`: „px:X:Y:DX:DY”, gdzie (X, Y) to najwyższy (przy remisie najbardziej zachodni) wierzchołek obrysu,
-     a (X + DX, Y + DY) najniższy (przy remisie najbardziej wschodni). Dwa budynki o tych samych skrajnych
-     wierzchołkach musiałyby na siebie nachodzić.
+   - `zm:klucz`: „px:X:Y:DX:DY:S”, gdzie (X, Y) to najwyższy (przy remisie najbardziej zachodni) wierzchołek
+     obrysu, (X + DX, Y + DY) najniższy (przy remisie najbardziej wschodni), wszystko w całych pikselach, a S mówi,
+     po której stronie cięciwy między nimi leży budynek (1 lewa, 2 prawa, 3 obie). S odróżnia budynki o tych samych
+     skrajnych wierzchołkach (dwa trójkąty ze wspólną ścianą po przekątnej). Liczone z całej budowli: ze wszystkich
+     jej kawałków z pobranych kafelków, także tych, których gracz nie ma na mapie (daleko od środka albo maleńkie
+     przy granicy kafelka).
    - `zm:os`: oś klatek „x1,y1,x2,y2” w globalnych pikselach: dłuższa oś najmniejszego prostokąta opisanego na
      obrysie, przez jego środek, od zachodu na wschód (przy osi dokładnie północ-południe od północy).
    Liczone są tylko dodawaniem, mnożeniem, dzieleniem i pierwiastkiem (dokładne w każdym silniku JS) i zapisywane
@@ -86,8 +89,8 @@ export function latLonZ(x: number, y: number): [number, number] {
 /** metry na globalny piksel na danej szerokości (obwód jak w geometrii gry) */
 const metrowNaPiksel = (lat: number) => (M_NA_STOPIEN * 360 * Math.cos((lat * Math.PI) / 180)) / N_PX;
 
-/** liczba do klucza: całkowita bez ułamka, inna z dwoma miejscami */
-const liczba = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(2));
+/** liczba do klucza: zawsze całkowita (wierzchołki z kafelków i tak są całkowite, przycięte na brzegu bywają nie) */
+const liczba = (v: number) => String(Math.round(v) || 0);
 
 /** otoczka wypukła (łańcuch monotoniczny Andrew), bez powtórzeń i punktów współliniowych */
 function otoczka(pts: Pt[]): Pt[] {
@@ -126,6 +129,18 @@ export function tagiKlucza(pierscienie: readonly (readonly Pt[])[]): TagiKlucza 
   const [ox, oy] = lo;
   const hull = otoczka(pts.map(([x, y]) => [x - ox, y - oy]));
   if (hull.length < 3) return null;
+  // strony cięciwy od najwyższego do najniższego wierzchołka, po których budynek ma wierzchołki (dalej niż 2 piksele):
+  // 1 lewa, 2 prawa, 3 obie. Odróżnia budynki o tych samych skrajnych wierzchołkach (dwa trójkąty ze wspólną ścianą
+  // po przekątnej), a piksel różnicy między kafelkami a Overpass go nie zmienia
+  const tx = hi[0] - ox;
+  const ty = hi[1] - oy;
+  const prog = 2 * Math.sqrt(tx * tx + ty * ty);
+  let strony = 0;
+  for (const [x, y] of hull) {
+    const w = tx * y - ty * x;
+    if (w > prog) strony |= 1;
+    else if (w < -prog) strony |= 2;
+  }
   // najmniejszy prostokąt opisany: jeden z boków leży na boku otoczki
   let best: { area: number; ux: number; uy: number; u0: number; u1: number; v0: number; v1: number } | null = null;
   for (let i = 0; i < hull.length; i++) {
@@ -165,7 +180,7 @@ export function tagiKlucza(pierscienie: readonly (readonly Pt[])[]): TagiKlucza 
   let b: Pt = [cx + ex * half, cy + ey * half];
   if (b[0] < a[0] || (b[0] === a[0] && b[1] < a[1])) [a, b] = [b, a];
   return {
-    'zm:klucz': `px:${liczba(ox)}:${liczba(oy)}:${liczba(hi[0] - ox)}:${liczba(hi[1] - oy)}`,
+    'zm:klucz': `px:${liczba(ox)}:${liczba(oy)}:${liczba(hi[0] - ox)}:${liczba(hi[1] - oy)}:${strony}`,
     'zm:os': [a[0] + ox, a[1] + oy, b[0] + ox, b[1] + oy].map((v) => v.toFixed(2)).join(','),
   };
 }

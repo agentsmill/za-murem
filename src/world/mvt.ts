@@ -458,12 +458,44 @@ interface BTmp {
   k: number;
   /** identyfikator OSM obiektu, gdy to jeden budynek */
   id?: string;
-  /** obrys w globalnych pikselach kafelków (dokładny, przed zaokrągleniem do metrów), do klucza budynku */
-  g: Pt[];
-  /** to samo dla sklejonych części */
-  gg: Pt[][];
+  /** numer tego kawałka wśród wszystkich kawałków (Kawalek), z których liczy się klucz budynku */
+  cal: number;
 }
-type SpanRec = [string, number, number, number, BTmp, DecodedTile];
+/** Kawałek budynku do klucza (src/world/klucze.ts): każdy przycięty pierścień z pobranych kafelków, także daleki od
+    środka mapy i maleńki. Klucz nie może zależeć od tego, które kawałki gracz zobaczy u siebie na mapie. */
+interface Kawalek {
+  /** obrys w globalnych pikselach kafelków (dokładny, przed zaokrągleniem do metrów) */
+  g: Pt[];
+  k: number;
+}
+type SpanRec<B> = [string, number, number, number, B, DecodedTile];
+
+/** Sklejanie kawałków budynku przeciętego granicą kafelków: ta sama wysokość, wspólny odcinek granicy.
+    Zwraca find z union-find po numerach k kawałków. */
+function sklej<B extends { k: number }>(n: number, spans: SpanRec<B>[]): (i: number) => number {
+  const par = Array.from({ length: n }, (_, i) => i);
+  const find = (i: number) => {
+    while (par[i] !== i) i = par[i] = par[par[i]];
+    return i;
+  };
+  const byKey: Record<string, SpanRec<B>[]> = {};
+  for (const s of spans) (byKey[s[0]] ||= []).push(s);
+  for (const key in byKey) {
+    const a = byKey[key];
+    for (let i = 0; i < a.length; i++)
+      for (let j = i + 1; j < a.length; j++) {
+        const s = a[i];
+        const q = a[j];
+        if (s[5] === q[5] || s[3] !== q[3]) continue;
+        if (Math.min(s[2], q[2]) - Math.max(s[1], q[1]) > 1e-6) {
+          const x = find(s[4].k);
+          const y = find(q[4].k);
+          if (x !== y) par[y] = x;
+        }
+      }
+  }
+  return find;
+}
 
 export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: number): Geo {
   const n = 2 ** Z;
@@ -487,7 +519,10 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
     }
     return a < M && b > -M && c < M && d > -M;
   };
-  const spans: SpanRec[] = [];
+  const spans: SpanRec<BTmp>[] = [];
+  /** wszystkie kawałki budynków z pobranych kafelków (do kluczy) i ich odcinki na granicach kafelków */
+  const calosc: Kawalek[] = [];
+  const spansCal: SpanRec<Kawalek>[] = [];
   /** numery domów; id: identyfikator OSM elementu z adresem (droga albo relacja), zwykle samego budynku */
   const hn: { x: number; y: number; h: string; id?: string }[] = [];
   for (const T of tiles) {
@@ -562,10 +597,15 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
           for (const rg0 of rings) {
             const rg = clipRing(rg0, E);
             if (!rg) continue;
+            // do klucza idzie każdy kawałek, do geometrii gry tylko bliskie i nie za małe (jak w 0.3)
+            const cal: Kawalek = { g: rg.map(G), k: calosc.length };
+            calosc.push(cal);
+            const brzegi = tiles.length > 1 ? borderSpans(rg, E, T.x, T.y) : [];
+            for (const s of brzegi) spansCal.push([s[0], s[1], s[2], h, cal, T]);
             const pts = rg.map(P);
             if (!near(pts) || polyArea(pts) < 4) continue;
-            const b: BTmp = { p: pts, pp: [], h, k: tmpB.length, id, g: rg.map(G), gg: [] };
-            if (tiles.length > 1) for (const s of borderSpans(rg, E, T.x, T.y)) spans.push([s[0], s[1], s[2], h, b, T]);
+            const b: BTmp = { p: pts, pp: [], h, k: tmpB.length, id, cal: cal.k };
+            for (const s of brzegi) spans.push([s[0], s[1], s[2], h, b, T]);
             tmpB.push(b);
           }
           continue;
@@ -579,28 +619,23 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
       }
     }
   }
-  // sklejanie kawałków budynku przeciętego granicą kafelków: ta sama wysokość, wspólny odcinek granicy
-  const par = tmpB.map((_, i) => i);
-  const find = (i: number) => {
-    while (par[i] !== i) i = par[i] = par[par[i]];
-    return i;
-  };
-  const byKey: Record<string, SpanRec[]> = {};
-  for (const s of spans) (byKey[s[0]] ||= []).push(s);
-  for (const key in byKey) {
-    const a = byKey[key];
-    for (let i = 0; i < a.length; i++)
-      for (let j = i + 1; j < a.length; j++) {
-        const s = a[i];
-        const q = a[j];
-        if (s[5] === q[5] || s[3] !== q[3]) continue;
-        if (Math.min(s[2], q[2]) - Math.max(s[1], q[1]) > 1e-6) {
-          const x = find(s[4].k);
-          const y = find(q[4].k);
-          if (x !== y) par[y] = x;
-        }
-      }
+  // sklejanie kawałków budynku przeciętego granicą kafelków: kawałki geometrii gry jak w 0.3, a osobno wszystkie
+  // kawałki z pobranych kafelków, z których liczy się klucz budynku (ta sama budowla u każdego gracza)
+  const find = sklej(tmpB.length, spans);
+  const findCal = sklej(calosc.length, spansCal);
+  const pierscienie = new Map<number, Pt[][]>();
+  for (const c of calosc) {
+    const r = findCal(c.k);
+    const lista = pierscienie.get(r);
+    if (lista) lista.push(c.g);
+    else pierscienie.set(r, [c.g]);
   }
+  const kluczCal = new Map<number, ReturnType<typeof tagiKlucza>>();
+  const tagiCalosci = (cal: number) => {
+    const r = findCal(cal);
+    if (!kluczCal.has(r)) kluczCal.set(r, tagiKlucza(pierscienie.get(r) ?? []));
+    return kluczCal.get(r) ?? null;
+  };
   const groups = new Map<number, BTmp[]>();
   for (const b of tmpB) {
     const r = find(b.k);
@@ -611,7 +646,6 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
     g.sort((p, q) => polyArea(q.p) - polyArea(p.p));
     const m = g[0];
     m.pp = g.slice(1).map((x) => x.p);
-    m.gg = g.slice(1).map((x) => x.g);
     // kawałki z różnych obiektów (albo bez numeru) to nie jeden budynek OSM
     if (g.some((x) => x.id !== m.id)) m.id = undefined;
     return m;
@@ -637,8 +671,8 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
       if (holders.get(only) === 1) id = only;
     }
     if (id) tags.id = id;
-    // klucz budynku i oś klatek z dokładnego obrysu w pikselach kafelków (src/world/klucze.ts)
-    const kl = tagiKlucza([b.g, ...b.gg]);
+    // klucz budynku i oś klatek z dokładnego obrysu całej budowli w pikselach kafelków (src/world/klucze.ts)
+    const kl = tagiCalosci(b.cal);
     if (kl) Object.assign(tags, kl);
     const o: GeoBuilding = { p: b.p, t: tags };
     if (b.pp.length) o.pp = b.pp;

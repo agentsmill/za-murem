@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { Geo, Pt } from '../../src/world/geo.ts';
+import { type Geo, type Pt, pip, polyArea } from '../../src/world/geo.ts';
 import {
   KLATKA_M,
   type KluczeBudynku,
@@ -158,7 +158,8 @@ describe('klucze budynków i klatek (src/world/klucze.ts)', () => {
       const pts = ring.slice(0, -1);
       const lo = pts.reduce((m, p) => (p[1] < m[1] || (p[1] === m[1] && p[0] < m[0]) ? p : m));
       const hi = pts.reduce((m, p) => (p[1] > m[1] || (p[1] === m[1] && p[0] > m[0]) ? p : m));
-      expect(t['zm:klucz']).toBe(`px:${lo[0]}:${lo[1]}:${hi[0] - lo[0]}:${hi[1] - lo[1]}`);
+      // prostokąt ma wierzchołki po obu stronach cięciwy od najwyższego do najniższego (3)
+      expect(t['zm:klucz']).toBe(`px:${lo[0]}:${lo[1]}:${hi[0] - lo[0]}:${hi[1] - lo[1]}:3`);
       // oś wzdłuż dłuższego boku (zaokrąglenie wierzchołków do piksela: ±0,5 m), od zachodu na wschód
       expect(Math.abs(dlugoscOsi(t['zm:os']) - 100), `${kat}°`).toBeLessThan(0.5);
       const [x1, y1, x2, y2] = t['zm:os'].split(',').map(Number);
@@ -174,6 +175,38 @@ describe('klucze budynków i klatek (src/world/klucze.ts)', () => {
     expect(liczbaKlatek({ tags: tagiKlucza([prostokat(54.41, 18.6, 29, 10, 0)]) ?? {} })).toBe(1);
     expect(liczbaKlatek({ tags: tagiKlucza([prostokat(54.41, 18.6, 31, 10, 0)]) ?? {} })).toBe(2);
     expect(KLATKA_M).toBe(20);
+  });
+
+  it('dwa budynki o tych samych skrajnych wierzchołkach (ściana po przekątnej) mają różne klucze', () => {
+    const [x, y] = pikselZ(54.41, 18.6).map(Math.round);
+    const lewy = tagiKlucza([
+      [
+        [x, y],
+        [x + 60, y + 120],
+        [x, y + 120],
+        [x, y],
+      ],
+    ]);
+    const prawy = tagiKlucza([
+      [
+        [x, y],
+        [x + 60, y],
+        [x + 60, y + 120],
+        [x, y],
+      ],
+    ]);
+    expect(lewy?.['zm:klucz']).toBe(`px:${x}:${y}:60:120:1`);
+    expect(prawy?.['zm:klucz']).toBe(`px:${x}:${y}:60:120:2`);
+    // piksel różnicy w wierzchołku, który nie jest skrajny (kafelki a Overpass), klucza nie zmienia
+    const obok = tagiKlucza([
+      [
+        [x, y],
+        [x + 61, y + 1],
+        [x + 60, y + 120],
+        [x, y],
+      ],
+    ]);
+    expect(obok?.['zm:klucz']).toBe(prawy?.['zm:klucz']);
   });
 
   it('budynek bez tagów (demo sprzed kluczy, osiedle zapasowe) nie ma klucza', () => {
@@ -238,6 +271,52 @@ describe('klucze budynków i klatek (src/world/klucze.ts)', () => {
       if (a.key !== 'lanciego') expect(rotated).toBeGreaterThan(0);
     });
   }
+
+  it('budynki przecięte granicą kafelków i ucięte brzegiem mapy: ten sam klucz z gęstej siatki środków', () => {
+    // punkty w budynkach przeciętych granicą kafelków (z maleńkimi kawałkami przy granicy) i w bloku, z którego
+    // gracz 300 m na północ widzi na mapie tylko jeden z czterech kawałków; metry na wschód i południe od adresu
+    const proby: [string, number, number][] = [
+      ['lanciego', 404, -255],
+      ['lanciego', 150, -257],
+      ['lanciego', 400, -265],
+      ['lanciego', 26, -291],
+      ['zielonki', -406, 272],
+      ['przymorze', -540, 340],
+      ['przymorze', -301, 352],
+      ['przymorze', 517, 349],
+    ];
+    const metryOd = (c: readonly [number, number], lat: number, lon: number): Pt => [
+      (lon - c[1]) * 111320 * Math.cos((c[0] * Math.PI) / 180),
+      (c[0] - lat) * 110574,
+    ];
+    for (const [key, bx, by] of proby) {
+      const a = ADDRESSES.find((x) => x.key === key) as (typeof ADDRESSES)[number];
+      const tiles = decodedTiles(a);
+      const [plat, plon] = shifted(a.lat, a.lon, bx, by);
+      const klucze = new Set<string>();
+      // środki 100 m na zachód od punktu, przesuwane o ułamki metra (inne zaokrąglenia do pół metra),
+      // i środki 300 m dalej we wszystkie strony (punkt przy brzegu mapy)
+      const srodki: [number, number][] = [];
+      for (let i = 0; i < 16; i++) srodki.push([-100 + i * 0.13, 50 + (i % 4) * 0.17]);
+      for (const [dx, dy] of [
+        [0, -300],
+        [0, 300],
+        [-300, 0],
+        [300, 0],
+      ])
+        srodki.push([dx, dy]);
+      for (const [dx, dy] of srodki) {
+        const c = shifted(plat, plon, dx, dy);
+        const geo = toGeoT(tiles, c[0], c[1], LOAD_RADIUS);
+        const [x, y] = metryOd(geo.c, plat, plon);
+        const trafione = geo.b.filter((b) => [b.p, ...(b.pp ?? [])].some((q) => pip(x, y, q)));
+        if (!trafione.length) continue;
+        trafione.sort((u, v) => polyArea(u.p) - polyArea(v.p));
+        klucze.add(trafione[0].t['zm:klucz']);
+      }
+      expect([...klucze], `${key} ${bx},${by}`).toHaveLength(1);
+    }
+  });
 
   it('Overpass: ten sam budynek co z kafelków ma zwykle ten sam klucz i oś', () => {
     const a = ADDRESSES[0];
