@@ -5,7 +5,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { budynkiZGeo, epokaBudynku, epokaZRoku, mieszkaniaBudynku, rokZDaty } from '../../src/mieszkancy/budynki.ts';
+import {
+  budynkiZCzlonkami,
+  budynkiZGeo,
+  epokaBudynku,
+  epokaZRoku,
+  mieszkaniaBudynku,
+  rokZDaty,
+} from '../../src/mieszkancy/budynki.ts';
+import { pierscienieBudynku, pole } from '../../src/mieszkancy/obrys.ts';
 import { rejonDla } from '../../src/mieszkancy/rejon.ts';
 import type { Epoka, TabeleGminy, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
 import type { Budynek } from '../../src/mieszkancy/typy.ts';
@@ -277,6 +285,257 @@ describe('klucz i współrzędne', () => {
     const wynik = budynkiZGeo(geo, gdansk, kraj);
     expect(wynik.length).toBe(2);
     expect(new Set(wynik.map((b) => b.klucz)).size).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------- członkowie budynków
+
+describe('budynkiZCzlonkami: indeksy geo.b sklejonych segmentów', () => {
+  const przypadki: [string, TabeleGminy][] = [
+    ['przymorze', gdansk],
+    ['lanciego', ursynow],
+    ['zielonki', zielonki],
+  ];
+
+  it('budynki są te same co z budynkiZGeo, bajt w bajt (JSON)', () => {
+    for (const [nazwa, g] of przypadki) {
+      const pary = budynkiZCzlonkami(demo(nazwa), g, kraj);
+      expect(JSON.stringify(pary.map((p) => p.budynek)), nazwa).toBe(JSON.stringify(budynkiZGeo(demo(nazwa), g, kraj)));
+      expect(JSON.stringify(budynkiZCzlonkami(demo(nazwa), null, kraj).map((p) => p.budynek)), nazwa).toBe(
+        JSON.stringify(budynkiZGeo(demo(nazwa), null, kraj)),
+      );
+    }
+  });
+
+  it('każdy indeks geo.b należy do co najwyżej jednego budynku, rosnąco, w zakresie mapy', () => {
+    for (const [nazwa, g] of przypadki) {
+      const geo = demo(nazwa);
+      const widziane = new Set<number>();
+      for (const { budynek, czlonkowie } of budynkiZCzlonkami(geo, g, kraj)) {
+        expect(czlonkowie.length, `${nazwa} ${budynek.klucz}`).toBeGreaterThanOrEqual(1);
+        expect(czlonkowie, `${nazwa} ${budynek.klucz}`).toEqual([...czlonkowie].sort((a, b) => a - b));
+        for (const i of czlonkowie) {
+          expect(Number.isInteger(i) && i >= 0 && i < geo.b.length, `${nazwa} ${i}`).toBe(true);
+          expect(widziane.has(i), `${nazwa} ${budynek.klucz} ${i}`).toBe(false);
+          widziane.add(i);
+        }
+      }
+      expect(widziane.size, nazwa).toBeGreaterThan(20);
+    }
+  });
+
+  it('członkowie to dokładnie segmenty budynku: ich pola sumują się do pola budynku, domy mają jednego, bloki klatki', () => {
+    for (const [nazwa, g] of przypadki) {
+      const geo = demo(nazwa);
+      for (const { budynek, czlonkowie } of budynkiZCzlonkami(geo, g, kraj)) {
+        const suma = czlonkowie.reduce((s, i) => s + pole(pierscienieBudynku(geo.b[i])), 0);
+        expect(budynek.pole, `${nazwa} ${budynek.klucz}`).toBe(Math.round(suma));
+        if (budynek.typ === 'dom') expect(czlonkowie.length, `${nazwa} ${budynek.klucz}`).toBe(1);
+        if (czlonkowie.length > 1) expect(budynek.klatki, `${nazwa} ${budynek.klucz}`).toBe(czlonkowie.length);
+      }
+    }
+  });
+
+  it('falowiec na Przymorzu ma co najmniej 2 członków; klucz osm:<id> pochodzi z jednego z nich', () => {
+    const geo = demo('przymorze');
+    const pary = budynkiZCzlonkami(geo, gdansk, kraj);
+    const falowiec = pary.reduce((a, b) => (b.budynek.pole > a.budynek.pole ? b : a));
+    expect(falowiec.czlonkowie.length).toBeGreaterThanOrEqual(2);
+    expect(falowiec.budynek.pole).toBeGreaterThan(5000);
+    const sklejone = pary.filter((p) => p.czlonkowie.length >= 2);
+    expect(sklejone.length).toBeGreaterThan(3);
+    for (const { budynek, czlonkowie } of pary) {
+      const m = /^osm:(.+)$/.exec(budynek.klucz);
+      if (m)
+        expect(
+          czlonkowie.map((i) => geo.b[i].t.id),
+          budynek.klucz,
+        ).toContain(m[1].replace(/#\d+$/, ''));
+    }
+  });
+});
+
+// ---------------------------------------------------------------- kanoniczne tagi zm:* z importera
+
+describe('tagi zm:klucz, zm:pole, zm:wym (kanoniczny klucz i wymiary budynku)', () => {
+  const kan = (klucz: string, p: number, szer: number, dl: number): Record<string, string> => ({
+    'zm:klucz': klucz,
+    'zm:pole': String(p),
+    'zm:wym': `${szer},${dl}`,
+  });
+
+  it('zm:klucz wygrywa z id i ze środkiem; bez niego jest osm:<id>, bez id g:…', () => {
+    const p = prostokat(0, 0, 20, 12);
+    expect(budynkiZGeo(mapa([blokGeo(p, 5, { 'zm:klucz': 'px:100:200:3:4', id: 'w5' })]), gdansk, kraj)[0].klucz).toBe(
+      'px:100:200:3:4',
+    );
+    expect(budynkiZGeo(mapa([blokGeo(p, 5, { id: 'w5' })]), gdansk, kraj)[0].klucz).toBe('osm:w5');
+    expect(budynkiZGeo(mapa([blokGeo(p, 5)]), gdansk, kraj)[0].klucz).toMatch(/^g:/);
+    // pusty tag nie jest kluczem
+    expect(budynkiZGeo(mapa([blokGeo(p, 5, { 'zm:klucz': '', id: 'w5' })]), gdansk, kraj)[0].klucz).toBe('osm:w5');
+  });
+
+  it('w sklejonym budynku klucz bierze się z największego segmentu, który go ma (jak id)', () => {
+    const duzy = blokGeo(prostokat(20, 0, 40, 12), 5, { 'zm:klucz': 'px:2:2:0:0' });
+    const maly = blokGeo(prostokat(0, 0, 20, 12), 5, { 'zm:klucz': 'px:1:1:0:0' });
+    expect(budynkiZGeo(mapa([maly, duzy]), gdansk, kraj)[0].klucz).toBe('px:2:2:0:0');
+    expect(budynkiZGeo(mapa([duzy, maly]), gdansk, kraj)[0].klucz).toBe('px:2:2:0:0');
+    // tylko mniejszy ma klucz: wygrywa on, nie id większego
+    const duzyZId = blokGeo(prostokat(20, 0, 40, 12), 5, { id: 'w2' });
+    expect(budynkiZGeo(mapa([maly, duzyZId]), gdansk, kraj)[0].klucz).toBe('px:1:1:0:0');
+  });
+
+  it('identyczne klucze px w jednej mapie dostają przyrostek #2 jak inne klucze', () => {
+    const t = { 'zm:klucz': 'px:7:7:0:0' };
+    const wynik = budynkiZGeo(
+      mapa([blokGeo(prostokat(0, 0, 20, 12), 5, t), blokGeo(prostokat(100, 0, 20, 12), 5, t)]),
+      gdansk,
+      kraj,
+    );
+    expect(wynik.map((b) => b.klucz)).toEqual(['px:7:7:0:0', 'px:7:7:0:0#2']);
+  });
+
+  it('zm:pole i zm:wym zastępują pole i wymiary z obrysu (klatki z długości z tagu)', () => {
+    const geo = (t: Record<string, string>) => mapa([blokGeo(prostokat(0, 0, 60, 20), 5, t)]);
+    const [bez] = budynkiZGeo(geo({}), gdansk, kraj);
+    expect([bez.pole, bez.szerokosc, bez.dlugosc, bez.klatki]).toEqual([1200, 20, 60, 3]);
+    const [z] = budynkiZGeo(geo(kan('px:1:2:3:4', 1180, 11.6, 59.4)), gdansk, kraj);
+    expect([z.klucz, z.pole, z.szerokosc, z.dlugosc, z.klatki]).toEqual(['px:1:2:3:4', 1180, 11.6, 59.4, 3]);
+    // mieszkania liczą się z pola z tagu
+    const epoka = z.epoka as Epoka;
+    expect(z.mieszkania).toBe(
+      mieszkaniaBudynku(bud({ klucz: z.klucz, pole: 1180, kondygnacje: 5, epoka }), gdansk, kraj),
+    );
+  });
+
+  it('wymiary w tagu mają szerokość ≤ długość nawet przy odwrotnej kolejności', () => {
+    const [b] = budynkiZGeo(mapa([blokGeo(prostokat(0, 0, 60, 20), 5, kan('px:1:1:0:0', 1100, 40, 12))]), gdansk, kraj);
+    expect([b.szerokosc, b.dlugosc]).toEqual([12, 40]);
+  });
+
+  it('sklejony budynek: pole to suma zm:pole, wymiary z największego członka, klatki z liczby segmentów', () => {
+    const geo = mapa([
+      blokGeo(prostokat(0, 0, 20, 12), 5, kan('px:10:0:0:12', 230, 11.5, 20.5)),
+      blokGeo(prostokat(20, 0, 40, 12), 5, kan('px:30:0:0:12', 470, 11.8, 40.2)),
+    ]);
+    const [b] = budynkiZGeo(geo, gdansk, kraj);
+    expect(b.klucz).toBe('px:30:0:0:12');
+    expect([b.pole, b.szerokosc, b.dlugosc, b.klatki]).toEqual([700, 11.8, 40.2, 2]);
+  });
+
+  it('wielka płyta z szerokości z tagów: mediana szerokości segmentów, nie obrysu', () => {
+    // dwa segmenty 11 kondygnacji: obrys L ma 60 m szerokości, ale trakty po 12 m z tagów
+    const geo = mapa([
+      blokGeo(prostokat(0, 0, 60, 12), 11, kan('px:1:0:0:0', 720, 12, 60)),
+      blokGeo(prostokat(0, 12, 12, 48), 11, kan('px:2:0:0:0', 576, 12, 48)),
+    ]);
+    const [b] = budynkiZGeo(geo, gdansk, kraj);
+    expect(b.epoka).toBe('plyta');
+  });
+
+  it('brak zm:pole albo zm:wym na jednym członku: pole i wymiary całego budynku z obrysu', () => {
+    const geo = mapa([
+      blokGeo(prostokat(0, 0, 20, 12), 5, kan('px:10:0:0:12', 230, 11.5, 20.5)),
+      blokGeo(prostokat(20, 0, 40, 12), 5, { 'zm:klucz': 'px:30:0:0:12', 'zm:pole': '470' }),
+    ]);
+    const [b] = budynkiZGeo(geo, gdansk, kraj);
+    expect(b.klucz).toBe('px:30:0:0:12'); // klucz nie zależy od pola i wymiarów
+    expect([b.pole, b.szerokosc, b.dlugosc, b.klatki]).toEqual([720, 12, 60, 2]);
+    const [wszystkoZObrysu] = budynkiZGeo(
+      mapa([blokGeo(prostokat(0, 0, 20, 12), 5), blokGeo(prostokat(20, 0, 40, 12), 5)]),
+      gdansk,
+      kraj,
+    );
+    expect([b.pole, b.szerokosc, b.dlugosc]).toEqual([
+      wszystkoZObrysu.pole,
+      wszystkoZObrysu.szerokosc,
+      wszystkoZObrysu.dlugosc,
+    ]);
+  });
+
+  it('typ budynku z map zgadywanych ocenia się po zm:pole, nie po zaokrąglonym obrysie', () => {
+    // 4 kondygnacje i 79 m² z obrysu to dom (próg bloku to więcej niż 80 m²), a zm:pole 82 daje blok
+    const zgadywany = (t: Record<string, string>) =>
+      mapa([budynekGeo(prostokat(0, 0, 10, 7.9), { building: 'yes', guess: '1', 'building:levels': '4', ...t })]);
+    expect(budynkiZGeo(zgadywany({}), gdansk, kraj).map((b) => b.typ)).toEqual(['dom']);
+    const [b] = budynkiZGeo(zgadywany(kan('px:3:3:0:0', 82, 7.9, 10.4)), gdansk, kraj);
+    expect([b.typ, b.pole, b.kondygnacje]).toEqual(['blok', 82, 4]);
+  });
+
+  it('zepsute zm:pole i zm:wym są ignorowane: wynik jak bez tagów', () => {
+    const geo = (t: Record<string, string>) => mapa([blokGeo(prostokat(0, 0, 60, 20), 5, t)]);
+    const [wzor] = budynkiZGeo(geo({}), gdansk, kraj);
+    const zle: Record<string, string>[] = [
+      { 'zm:pole': '12.5', 'zm:wym': '12,40' },
+      { 'zm:pole': '-5', 'zm:wym': '12,40' },
+      { 'zm:pole': 'abc', 'zm:wym': '12,40' },
+      { 'zm:pole': '', 'zm:wym': '12,40' },
+      { 'zm:pole': '0', 'zm:wym': '12,40' },
+      { 'zm:pole': '500', 'zm:wym': '12' },
+      { 'zm:pole': '500', 'zm:wym': '12,x' },
+      { 'zm:pole': '500', 'zm:wym': '0,5' },
+      { 'zm:pole': '500', 'zm:wym': '-1,20' },
+      { 'zm:pole': '500', 'zm:wym': '12,20,3' },
+      { 'zm:pole': '500' },
+      { 'zm:wym': '12,40' },
+    ];
+    for (const t of zle) {
+      const [b] = budynkiZGeo(geo(t), gdansk, kraj);
+      expect(b, JSON.stringify(t)).toEqual(wzor);
+    }
+  });
+
+  it('ten sam budynek z dwóch środków mapy (40 m dalej, inne zaokrąglenie obrysu): ten sam klucz, wymiary, mieszkania i epoka', () => {
+    const zaokr05 = (v: number): number => Math.round(v * 2) / 2;
+    /** Segmenty w dokładnych metrach względem pierwszego środka; `dx`, `dy` to przesunięcie środka mapy. */
+    const wariant = (dx: number, dy: number, tagi: boolean): Geo => {
+      const rog = (x0: number, y0: number, x1: number, y1: number): Pt[] => {
+        const [a, b, c, d] = [x0 - dx, y0 - dy, x1 - dx, y1 - dy].map(zaokr05);
+        return [
+          [a, b],
+          [c, b],
+          [c, d],
+          [a, d],
+          [a, b],
+        ];
+      };
+      const z = (t: Record<string, string>): Record<string, string> => (tagi ? t : {});
+      const [lat0, lon0] = [52, 21];
+      const kx = 111320 * Math.cos((lat0 * Math.PI) / 180);
+      return mapa(
+        [
+          // wielka płyta 5 kondygnacji: 12 × 36 m z tagu (obrys wychodzi 35,5 albo 36,5)
+          blokGeo(rog(3.3, 4.2, 39.0, 16.2), 5, z(kan('px:1000:2000:1:2', 430, 12, 36))),
+          // dwa segmenty jednego budynku
+          blokGeo(rog(3.3, 40.1, 23.7, 52.1), 4, z(kan('px:1010:2000:1:2', 245, 12, 20.4))),
+          blokGeo(rog(23.7, 40.1, 64.1, 52.1), 4, z(kan('px:1030:2000:1:2', 485, 12, 40.4))),
+          // dom
+          budynekGeo(rog(100.2, 5.1, 110.4, 13.3), {
+            building: 'house',
+            'building:levels': '2',
+            ...z(kan('px:1100:2005:1:2', 84, 8.2, 10.2)),
+          }),
+        ],
+        [],
+        [lat0 - dy / 110574, lon0 + dx / kx],
+      );
+    };
+    const wynik = (geo: Geo) => budynkiZGeo(geo, gdansk, kraj);
+    const A = wynik(wariant(0, 0, true));
+    const B = wynik(wariant(40.2, 17.3, true));
+    expect(A.length).toBe(3);
+    // niezależne od środka mapy: wszystko oprócz położenia środka (lat, lon, rejon)
+    const cechy = ({ lat: _a, lon: _o, rejon: _r, ...reszta }: Budynek) => reszta;
+    expect(B.map(cechy)).toEqual(A.map(cechy));
+    expect(A.map((b) => b.klucz)).toEqual(['px:1000:2000:1:2', 'px:1030:2000:1:2', 'px:1100:2005:1:2']);
+    const [plyta, sklejony, dom] = A;
+    expect([plyta.pole, plyta.szerokosc, plyta.dlugosc, plyta.epoka]).toEqual([430, 12, 36, 'plyta']);
+    expect([sklejony.pole, sklejony.szerokosc, sklejony.dlugosc, sklejony.klatki]).toEqual([730, 12, 40.4, 2]);
+    expect([dom.pole, dom.szerokosc, dom.dlugosc, dom.klatki]).toEqual([84, 8.2, 10.2, 1]);
+    // kontrola: bez tagów obrys z dwóch środków daje inne pole, więc test coś sprawdza
+    const goleA = wynik(wariant(0, 0, false));
+    const goleB = wynik(wariant(40.2, 17.3, false));
+    expect(goleA.map((b) => b.pole)).not.toEqual(goleB.map((b) => b.pole));
   });
 });
 

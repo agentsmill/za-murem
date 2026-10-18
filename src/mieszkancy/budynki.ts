@@ -7,8 +7,22 @@
    mieszkania, jest stały tylko w obrębie jednego wczytania mapy. Klucz `osm:<id>` jest stały także między adresami,
    ale mieszkania (z pola) i reguły epoki z wymiarów mogą się przesunąć o drgnięcie pola. Na kafelkach z
    tests/fixtures/mvt, dla adresu i punktu 40 m na północny wschód, z 40 budynków do 150 m od adresu ten sam klucz w
-   obu wczytaniach mają 3 (test `it.fails` w mieszkancy-budynki.test.ts). Kanoniczne id i geometria budynku
-   z importera to warunek kroku 5. */
+   obu wczytaniach mają 3 (test `it.fails` w mieszkancy-budynki.test.ts); zdejmuje się go, gdy importer zacznie
+   dawać poniższe tagi.
+
+   Kanoniczne tagi budynku z importera (krok 5), oba formaty stałe niezależnie od adresu:
+   - `zm:klucz`: `px:X:Y:DX:DY`, obrys w pikselach globalnych siatki z=14 (X, Y to najwyższy wierzchołek, DX, DY
+     przesunięcie do najniższego). Gdy segment go ma, jest kluczem budynku (przed `osm:` i `g:`). W sklejonym budynku
+     klucz bierze się z największego segmentu, który ma ten tag, tak samo jak dziś `id`.
+   - `zm:pole`: pole obrysu segmentu w m², liczba całkowita dodatnia ("1180").
+   - `zm:wym`: wymiary obrysu segmentu w metrach, `szer,dl` ("11.6,59.4"; kolejność wymusza min i max).
+   Gdy KAŻDY segment budynku ma poprawne oba tagi `zm:pole` i `zm:wym`, pole budynku to suma `zm:pole`, szerokość i
+   długość idą z `zm:wym` największego segmentu, a szerokość do reguł płyty to mediana szerokości segmentów z `zm:wym`.
+   Segment ocenia się wtedy (typ budynku, zgadywane kondygnacje) po `zm:pole`. Wystarczy, że jeden segment nie ma
+   któregoś z tagów albo ma go zepsutego, a pole i wymiary całego budynku idą z obrysu jak dotąd: z tagów segmentów nie
+   da się złożyć obrysu całości, a mieszanie źródeł dałoby niespójny budynek. Środek (`lat`, `lon`, a z nich rejon)
+   zawsze idzie z obrysu. Dema nie mają tagów `zm:*`, więc ich wynik się nie zmienia. Tag `zm:bud` (klucz budynku
+   generatora na każdym członku) dopisuje oznacz.ts. */
 
 import { classify, levelsOf } from '../world/classify.ts';
 import type { Geo, GeoBuilding } from '../world/geo.ts';
@@ -159,6 +173,12 @@ export function mieszkaniaBudynku(b: Budynek, g: TabeleGminy | null, k: TabeleKr
 
 // ---------------------------------------------------------------- segmenty z mapy
 
+/** Kanoniczne pole i wymiary segmentu z tagów `zm:pole` i `zm:wym` (opis w nagłówku pliku). */
+interface Kanon {
+  pole: number;
+  szerokosc: number;
+  dlugosc: number;
+}
 interface Obiekt {
   /** Numer w `geo.b`. */
   i: number;
@@ -166,11 +186,31 @@ interface Obiekt {
   ob: Pierscienie;
   ramka: Ramka;
   pole: number;
+  /** Tylko gdy segment ma poprawne `zm:pole` i `zm:wym`. */
+  kanon?: Kanon;
 }
 interface Segment extends Obiekt {
   typ: 'dom' | 'blok';
   /** Kondygnacje z tagu albo zgadnięte jak w grze (`levelsOf`). */
   poziomy: number;
+}
+
+const WZOR_POLA_TAGU = /^\d{1,9}$/;
+const WZOR_WYMIARU_TAGU = /^(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)$/;
+
+/** Pole i wymiary z tagów `zm:pole` ("1180") i `zm:wym` ("szer,dl" w metrach). Brak któregokolwiek albo zły zapis
+    (ułamek, minus, zero, inna liczba pól) daje `undefined`, a segment liczy się wtedy z obrysu. */
+function kanonZTagow(t: Readonly<Record<string, string>>): Kanon | undefined {
+  const poleTag = t['zm:pole'];
+  const wymTag = t['zm:wym'];
+  if (poleTag === undefined || wymTag === undefined || !WZOR_POLA_TAGU.test(poleTag)) return undefined;
+  const wym = WZOR_WYMIARU_TAGU.exec(wymTag);
+  if (!wym) return undefined;
+  const poleM2 = Number(poleTag);
+  const a = Number(wym[1]);
+  const b = Number(wym[2]);
+  if (poleM2 <= 0 || a <= 0 || b <= 0) return undefined;
+  return { pole: poleM2, szerokosc: Math.min(a, b), dlugosc: Math.max(a, b) };
 }
 
 /** Kategorie punktów w budynkach, jak w kroku 6 `buildWorld`: punkt należy do budynku, w którym leży (przy
@@ -216,13 +256,18 @@ function segmentyMieszkalne(geo: Geo): Segment[] {
   geo.b.forEach((b, i) => {
     const ob = pierscienieBudynku(b);
     const p = pole(ob);
-    if (p >= MIN_POLE) obiekty.push({ i, b, ob, ramka: ramka(ob), pole: p });
+    if (p >= MIN_POLE) {
+      const kanon = kanonZTagow(b.t);
+      obiekty.push(kanon ? { i, b, ob, ramka: ramka(ob), pole: p, kanon } : { i, b, ob, ramka: ramka(ob), pole: p });
+    }
   });
   const kat = kategorie(geo, obiekty);
   const wynik: Segment[] = [];
   for (const o of obiekty) {
-    const cls = classify(o.b, o.pole, kat.get(o.i) ?? []);
-    if (cls === 'blok' || cls === 'dom') wynik.push({ ...o, typ: cls, poziomy: levelsOf(o.b, cls, o.pole) });
+    // z kanonicznym polem typ i zgadywane kondygnacje nie zależą od zaokrąglenia obrysu do 0,5 m
+    const poleOceny = o.kanon?.pole ?? o.pole;
+    const cls = classify(o.b, poleOceny, kat.get(o.i) ?? []);
+    if (cls === 'blok' || cls === 'dom') wynik.push({ ...o, typ: cls, poziomy: levelsOf(o.b, cls, poleOceny) });
   }
   return wynik;
 }
@@ -282,23 +327,37 @@ function mediana(v: readonly number[]): number {
   return s.length % 2 === 1 ? s[pol] : (s[pol - 1] + s[pol]) / 2;
 }
 
-/** Segment o największym polu spośród tych, które spełniają warunek (remis: wcześniejszy na mapie). */
-function najwiekszy(s: readonly Segment[], ma: (x: Segment) => boolean): Segment | undefined {
+/** Segment o największym polu (`poleSegmentu`) spośród tych, które spełniają warunek (remis: wcześniejszy na mapie). */
+function najwiekszy(
+  s: readonly Segment[],
+  ma: (x: Segment) => boolean,
+  poleSegmentu: (x: Segment) => number,
+): Segment | undefined {
   let wynik: Segment | undefined;
   for (const x of s) {
-    if (ma(x) && (!wynik || x.pole > wynik.pole)) wynik = x;
+    if (ma(x) && (!wynik || poleSegmentu(x) > poleSegmentu(wynik))) wynik = x;
   }
   return wynik;
 }
 
-/** Budynki mieszkalne (bloki i domy) z mapy, w kolejności mapy. `g` to tabele gminy (albo `null` bez nich), `k`
-    tabele krajowe (udział gospodarstw trzypokoleniowych). Każdy budynek ma rejon środka obrysu, wymiary najmniejszego
-    obróconego prostokąta, klatki, epokę i liczbę mieszkań. Segmenty bloków jednej wysokości, które się stykają albo
-    są bliżej niż metr, tworzą jeden budynek (klatki = liczba segmentów); pojedynczy blok ma `max(1, round(długość /
-    20))` klatek, a dom jedną. Klucz to `osm:<id>`, gdy mapa niesie tag `id` (największy segment), inaczej
-    `g:<szerokość>,<długość>,<pole>` ze środka obrysu w stopniach z 5 miejscami. Klucz `g:…` jest stały w obrębie
-    jednego wczytania mapy, ale nie między adresami (nagłówek pliku); `osm:<id>` jest stały, choć pole może drgnąć. */
-export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Budynek[] {
+/** Budynek z mapy razem z numerami jego segmentów w `geo.b`. */
+export interface BudynekZCzlonkami {
+  budynek: Budynek;
+  /** Indeksy w `geo.b` sklejonych segmentów budynku, rosnąco (dom i pojedynczy blok mają jeden). */
+  czlonkowie: number[];
+}
+
+/** Budynki mieszkalne (bloki i domy) z mapy, w kolejności mapy, każdy z indeksami swoich segmentów w `geo.b`. `g` to
+    tabele gminy (albo `null` bez nich), `k` tabele krajowe (udział gospodarstw trzypokoleniowych). Każdy budynek ma
+    rejon środka obrysu, wymiary najmniejszego obróconego prostokąta, klatki, epokę i liczbę mieszkań. Segmenty bloków
+    jednej wysokości, które się stykają albo są bliżej niż metr, tworzą jeden budynek (klatki = liczba segmentów);
+    pojedynczy blok ma `max(1, round(długość / 20))` klatek, a dom jedną. Klucz to `zm:klucz` największego segmentu,
+    który go ma, a bez niego `osm:<id>`, gdy mapa niesie tag `id` (największy segment), inaczej
+    `g:<szerokość>,<długość>,<pole>` ze środka obrysu w stopniach z 5 miejscami. Pole i wymiary idą z tagów `zm:pole`
+    i `zm:wym`, gdy mają je wszystkie segmenty budynku (nagłówek pliku). Klucz `g:…` jest stały w obrębie jednego
+    wczytania mapy, ale nie między adresami; `osm:<id>` jest stały, choć pole może drgnąć; `zm:klucz` z `zm:pole`
+    i `zm:wym` jest stały także z pola i wymiarów. */
+export function budynkiZCzlonkami(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): BudynekZCzlonkami[] {
   const segmenty = segmentyMieszkalne(geo);
   const korzenie = grupy(segmenty.length, parySasiadow(segmenty));
   const [lat0, lon0] = geo.c;
@@ -312,27 +371,40 @@ export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Bu
     czlonkowie.set(korzenie[pozycja], lista);
   });
 
-  const wynik: Budynek[] = [];
+  const wynik: BudynekZCzlonkami[] = [];
   const uzyte = new Set<string>();
   for (const grupa of czlonkowie.values()) {
+    // tagi zm:pole i zm:wym liczą się tylko, gdy ma je każdy segment; inaczej cały budynek idzie z obrysu
+    const zTagow = grupa.every((s) => s.kanon !== undefined);
+    const poleSegmentu = (s: Segment): number => (zTagow && s.kanon ? s.kanon.pole : s.pole);
+    const najwiekszySegment = zTagow ? najwiekszy(grupa, () => true, poleSegmentu) : undefined;
     const ob: Pierscienie = grupa.flatMap((s) => s.ob);
-    const sumaPol = grupa.reduce((suma, s) => suma + s.pole, 0);
+    const sumaPol = grupa.reduce((suma, s) => suma + poleSegmentu(s), 0);
     const [cx, cy] = srodek(ob);
     const lat = zaokr5(lat0 - cy / ky);
     const lon = zaokr5(lon0 + cx / kx);
-    const wymiary = najmniejszyProstokat(ob);
+    const wymiary = najwiekszySegment?.kanon
+      ? { szerokosc: najwiekszySegment.kanon.szerokosc, dlugosc: najwiekszySegment.kanon.dlugosc }
+      : najmniejszyProstokat(ob);
     const szerokoscSegmentu =
-      grupa.length > 1 ? mediana(grupa.map((x) => najmniejszyProstokat(x.ob).szerokosc)) : wymiary.szerokosc;
+      grupa.length > 1
+        ? mediana(grupa.map((x) => (zTagow && x.kanon ? x.kanon.szerokosc : najmniejszyProstokat(x.ob).szerokosc)))
+        : wymiary.szerokosc;
     const typ = grupa[0].typ;
     const poleBudynku = Math.round(sumaPol);
 
-    const zId = najwiekszy(grupa, (s) => Boolean(s.b.t.id));
-    const podstawa = zId ? `osm:${zId.b.t.id}` : `g:${lat.toFixed(5)},${lon.toFixed(5)},${poleBudynku}`;
+    const zKlucza = najwiekszy(grupa, (s) => Boolean(s.b.t['zm:klucz']), poleSegmentu);
+    const zId = najwiekszy(grupa, (s) => Boolean(s.b.t.id), poleSegmentu);
+    const podstawa = zKlucza
+      ? zKlucza.b.t['zm:klucz']
+      : zId
+        ? `osm:${zId.b.t.id}`
+        : `g:${lat.toFixed(5)},${lon.toFixed(5)},${poleBudynku}`;
     let klucz = podstawa;
     for (let n = 2; uzyte.has(klucz); n++) klucz = `${podstawa}#${n}`;
     uzyte.add(klucz);
 
-    const zDaty = najwiekszy(grupa, (s) => rokZDaty(s.b.t.start_date ?? '') !== undefined);
+    const zDaty = najwiekszy(grupa, (s) => rokZDaty(s.b.t.start_date ?? '') !== undefined, poleSegmentu);
     const rok = zDaty ? rokZDaty(zDaty.b.t.start_date ?? '') : undefined;
     const budynek: Budynek = {
       klucz,
@@ -340,7 +412,7 @@ export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Bu
       lon,
       rejon: g ? rejonDla(g, lat, lon).rejon : '',
       typ,
-      kondygnacje: Math.max(1, Math.round(grupa.reduce((suma, s) => suma + s.pole * s.poziomy, 0) / sumaPol)),
+      kondygnacje: Math.max(1, Math.round(grupa.reduce((suma, s) => suma + poleSegmentu(s) * s.poziomy, 0) / sumaPol)),
       pole: poleBudynku,
       szerokosc: wymiary.szerokosc,
       dlugosc: wymiary.dlugosc,
@@ -349,7 +421,12 @@ export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Bu
     if (rok !== undefined) budynek.startDate = rok;
     budynek.epoka = epokaBudynku(budynek, g, szerokoscSegmentu);
     budynek.mieszkania = mieszkaniaBudynku(budynek, g, k);
-    wynik.push(budynek);
+    wynik.push({ budynek, czlonkowie: grupa.map((s) => s.i) });
   }
   return wynik;
+}
+
+/** Budynki mieszkalne z mapy bez indeksów segmentów, w kolejności mapy: to samo co `budynkiZCzlonkami`, pole po polu. */
+export function budynkiZGeo(geo: Geo, g: TabeleGminy | null, k: TabeleKraju): Budynek[] {
+  return budynkiZCzlonkami(geo, g, k).map((x) => x.budynek);
 }
