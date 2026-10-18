@@ -84,10 +84,10 @@ Regulamin PixelLab (pixellab.ai/termsofservice, sprawdzony 18.10.2026): wygenero
 
 ## Zasady stylu
 
-1. Najpierw kotwica stylu: jeden kafelek trawy z chodnikiem, jeden obiekt (trzepak), jedna postać (emeryt w kurtce), jeden kawałek bloku z modułów. Pokazać Mateuszowi, poprawić, zatwierdzić. Zrobiona 18.10.2026 (gałąź `kotwica-stylu`), czeka na akceptację.
-2. Z kotwicy zapisać paletę (około 32 kolory) w `assets/palette.json` i podawać ją do każdego kolejnego zamówienia.
+1. Najpierw kotwica stylu: jeden kafelek trawy z chodnikiem, jeden obiekt (trzepak), jedna postać (emeryt w kurtce), jeden kawałek bloku z modułów. Pokazać Mateuszowi, poprawić, zatwierdzić. Zatwierdzona przez Mateusza 18.10.2026 (gałąź `kotwica-stylu`): chodnik z trawnikiem, trzepak, 24 postacie (zarząd i mieszkańcy), kawałek bloku z modułów i warianty papy na dach. W manifeście mają status `zatwierdzony`.
+2. Z kotwicy zapisać paletę (około 32 kolory) w `assets/palette.json` i podawać ją do każdego kolejnego zamówienia. Zapisana 18.10.2026, razem z rampami do przemalowań ubrań.
 3. Kafelek 32 px = 1 m. Widok `low top-down` dla wszystkiego, co stoi na mapie. Postacie na płótnie 48 albo 64 px, 8 kierunków.
-4. Każdy następny asset z referencją stylu (`style_images`, `style_object_id`, `style_character_id`) do zatwierdzonej kotwicy.
+4. Każdy następny asset z referencją stylu (`style_images`, `style_object_id`, `style_character_id`) do zatwierdzonej kotwicy. Postacie: `create_character` v3 z tymi samymi ustawieniami (płótno 48, dzieci 36–40, `low top-down`, `single color outline`, `medium detail`), a w trybie pro `style_character_id` emeryta (6cef90c9-22a6-496a-b24d-9bf4df154bd3). Obiekty: `create_object_pro_flash` z paletą, wzorzec stylu trzepak. Teren: zestawy dowiązane przez base tile id chodnika i trawy (manifest, `kotwica-chodnik-trawa`). Budynki: `create_image_pro` ze wzorcem kawałka bloku (`assets/raw/kotwica-blok/1.png`).
 5. Warianty pór roku przez `create_object_state` i osobne zestawy kafelków (śnieg), nie przez filtr koloru.
 
 ## Czego nauczyła kotwica stylu (18.10.2026)

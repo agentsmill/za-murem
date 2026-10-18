@@ -58,8 +58,14 @@ interface Asset {
   pochodne?: { koszt: number }[];
 }
 
+/** paleta gry z kotwicy (assets/palette.json): kolory i rampy do przemalowań, od najciemniejszego */
+interface Paleta {
+  nazwa: string;
+  kolory: string[];
+  rampy: Record<string, string[]>;
+}
+
 interface Manifest {
-  paleta: { nazwa: string; kolory: string[]; rampy: Record<string, string[]> };
   /** postacie zarządu i mieszkańców w kolejności obsadzania pionków (najpierw zarząd) */
   zarzad: string[];
   mieszkancy: string[];
@@ -90,6 +96,7 @@ export interface Kotwica {
 }
 
 const manifest = () => json<Manifest>('assets/manifest.json');
+const paleta = () => json<Paleta>('assets/palette.json');
 const asset = (m: Manifest, id: string) => m.assety.find((a) => a.id === id)!;
 
 /** wiersz pod najniższym nieprzezroczystym pikselem */
@@ -182,6 +189,7 @@ function dachowki(): string[] {
 
 export function kotwica(): Kotwica {
   const m = manifest();
+  const pal = paleta();
   const blok = asset(m, 'kotwica-blok');
   const dach = asset(m, 'kotwica-blok-dach').uzycie!;
   const meta = json<{ tileset_data: { tiles: WangTile[] } }>('assets/raw/kotwica-chodnik-trawa/metadata.json');
@@ -200,7 +208,7 @@ export function kotwica(): Kotwica {
       return {
         kierunki: DIRS.map((d) => png(postac(id, d))),
         stopy: stopy(postac(id, 'south')),
-        warianty: Object.values(m.paleta.rampy).map((r) => DIRS.map((d) => przemaluj(postac(id, d), p, r))),
+        warianty: Object.values(pal.rampy).map((r) => DIRS.map((d) => przemaluj(postac(id, d), p, r))),
       };
     }),
     zarzad: m.zarzad.length,
@@ -209,8 +217,8 @@ export function kotwica(): Kotwica {
     dach: {
       ...dach,
       naklejki: dach.naklejki.map((i) => png(kafle[i])),
-      ciemny: m.paleta.kolory[0],
-      jasny: m.paleta.kolory[2],
+      ciemny: pal.kolory[0],
+      jasny: pal.kolory[2],
     },
   };
 }
@@ -623,7 +631,7 @@ export const kotwicaWysokiBlok = (page: Page, base: string) =>
     'Kotwica z PixelLab: najwyższy blok osiedla z tych samych modułów piętra',
   );
 
-/** arkusz kotwicy: wybrane assety w powiększeniu, z narzędziem i kosztem, zarząd z przemalowaniami, paleta */
+/** arkusz kotwicy: zatwierdzone assety w powiększeniu, z narzędziem i kosztem, zarząd z przemalowaniami, paleta */
 export async function kotwicaArkusz(page: Page) {
   const m = manifest();
   const k = kotwica();
@@ -634,7 +642,8 @@ export async function kotwicaArkusz(page: Page) {
     return `<h2>${co}<small>${a.narzedzie} · ${gen(koszt(a))}</small></h2>`;
   };
   const img = (src: string, zoom: number) => `<img src="${src}" style="zoom:${zoom}">`;
-  const rampy = Object.keys(m.paleta.rampy);
+  const pal = paleta();
+  const rampy = Object.keys(pal.rampy);
   const zarzad = m.zarzad.map((id, i) => {
     const a = asset(m, id);
     const l = k.ludzie[i];
@@ -672,7 +681,7 @@ export async function kotwicaArkusz(page: Page) {
     .pal { display: grid; grid-template-columns: repeat(16, 76px); gap: 4px; }
     .pal div { height: 40px; font: 11px/1 ui-monospace, monospace; display: flex; align-items: flex-end; padding: 3px; }
   </style>
-  <h1>Kotwica stylu z PixelLab, do akceptacji</h1>
+  <h1>Kotwica stylu z PixelLab, zatwierdzona 18.10.2026</h1>
   <p>Wybrane assety: ${gen(naKotwice)} Razem z odrzuconymi próbami ${gen(razem)} z 2000 w abonamencie, 0 USD. Każda następna postać to 2 gen., warianty kolorów ubrań robi kod za darmo. Szczegóły w assets/manifest.json.</p>
   ${zarzad.join('')}
   ${mieszkancy.length ? `<h2>Mieszkańcy: ${mieszkancy.length} postaci<small>create_character v3 · po 2 gen.</small></h2><div class="ludzie">${mieszkancy.join('')}</div>` : ''}
@@ -682,8 +691,8 @@ export async function kotwicaArkusz(page: Page) {
     <div>${opis('kotwica-blok', 'Kawałek bloku, 13 px na piętro (gra ma dziś 9)')}${img(k.blok, 2)}</div>
     <div>${opis('kotwica-blok-dach', 'Dach: 16 wariantów papy')}<div class="tiles">${kafle.join('')}</div></div>
   </div>
-  <h2>Paleta ${m.paleta.nazwa}, 32 kolory z palette.ts</h2>
-  <div class="pal">${m.paleta.kolory
+  <h2>Paleta ${pal.nazwa} (assets/palette.json), 32 kolory z palette.ts</h2>
+  <div class="pal">${pal.kolory
     .map(
       (c) =>
         `<div style="background:${c};color:${Number.parseInt(c.slice(1, 3), 16) > 150 ? '#1a1c22' : '#e3e0d6'}">${c}</div>`,

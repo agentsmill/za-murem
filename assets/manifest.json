@@ -1,52 +1,6 @@
 {
-  "opis": "Assety z PixelLab: co zamówione, czym, za ile i w jakim stanie. Koszt w generacjach abonamentu (Tier 1, 2000 generacji do 16.11.2026, 0 USD kredytów). Zasady w docs/PIXELLAB.md. Pliki w assets/raw/<id>/ są dokładnie takie, jak przyszły z PixelLab.",
-  "paleta": {
-    "nazwa": "Za Murem 2051",
-    "status": "propozycja",
-    "opis": "32 kolory wybrane z src/render/art/palette.ts: szarości i beże wielkiej płyty, asfalt, zaniedbana zieleń, rdza i brązy, pastele po termomodernizacji, okna, ciepłe światło, skóra, kurtki. Podawana do każdego zamówienia, które przyjmuje paletę; po akceptacji kotwicy przejdzie do assets/palette.json.",
-    "plik": "assets/wejscia/paleta-32.png",
-    "kolory": [
-      "#1a1c22",
-      "#313336",
-      "#46484a",
-      "#6f6b64",
-      "#7c796f",
-      "#9a958a",
-      "#b7b2a6",
-      "#cac6bc",
-      "#e3e0d6",
-      "#3a5229",
-      "#4c6631",
-      "#648043",
-      "#8a9a55",
-      "#7a4a2e",
-      "#a8682b",
-      "#c28f3c",
-      "#463324",
-      "#765e42",
-      "#8e4b36",
-      "#e0d29a",
-      "#e3b79a",
-      "#a7cbb4",
-      "#a6bfd4",
-      "#26323d",
-      "#3d5262",
-      "#f0c66a",
-      "#f5a142",
-      "#d2552a",
-      "#e0b48c",
-      "#b07a55",
-      "#3b4a5e",
-      "#5f5a3a"
-    ],
-    "rampy": {
-      "granat": ["#26323d", "#3b4a5e", "#3d5262", "#a6bfd4"],
-      "zieleń": ["#3a5229", "#4c6631", "#648043", "#8a9a55"],
-      "szarość": ["#313336", "#46484a", "#6f6b64", "#9a958a"],
-      "rdza": ["#463324", "#7a4a2e", "#8e4b36", "#d2552a"]
-    },
-    "opis_ramp": "rampy od najciemniejszego koloru; kod przemalowuje nimi ubrania postaci (pole przemalowanie: kolory ubrania i wiersze, w których leży), najciemniejszy kolor ubrania na pierwszy kolor rampy i tak dalej, żeby tłum nie wyglądał tak samo bez kolejnych generacji"
-  },
+  "opis": "Assety z PixelLab: co zamówione, czym, za ile i w jakim stanie. Koszt w generacjach abonamentu (Tier 1, 2000 generacji do 16.11.2026, 0 USD kredytów). Zasady w docs/PIXELLAB.md. Pliki w assets/raw/<id>/ są dokładnie takie, jak przyszły z PixelLab. Kotwica stylu (status zatwierdzony) przyjęta przez Mateusza 18.10.2026, paleta w assets/palette.json.",
+  "paleta": "assets/palette.json",
   "zarzad": ["kotwica-emeryt", "kotwica-emerytka", "kotwica-zlota-raczka", "kotwica-mloda"],
   "mieszkancy": [
     "kotwica-chlopiec",
@@ -98,7 +52,7 @@
       },
       "pixellab": "d4e4613e-34b7-43bf-856f-c7ae943c9221",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-chodnik-trawa/tileset.png", "assets/raw/kotwica-chodnik-trawa/metadata.json"],
       "uwagi": "16 kafelków 4×4; który kafelek pasuje do narożników, mówi metadata.json (corners i bounding_box). Płyty 16 px, czyli 2×2 na kafelek. Do następnych zestawów terenu: chodnik 8a0352db-9be9-4fea-b651-1cf40a6726ab, trawa 327c2ca7-1146-4613-9eb5-653918b607f4 (base tile id). Jednolite kafelki można odbijać w poziomie i pionie, żeby nie było widać powtórzeń."
     },
@@ -168,7 +122,7 @@
       },
       "pixellab": "b9e3a3e2-a692-402a-b085-7ba0bfc7f829",
       "koszt": 5,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-trzepak/trzepak.png"],
       "uwagi": "obrys sylwetki x 13..82, y 7..54; stopy na dole obrysu. Słupki stoją około 2 m od siebie, trzepak w grze ma 3 m."
     },
@@ -228,7 +182,7 @@
       },
       "pixellab": "6cef90c9-22a6-496a-b24d-9bf4df154bd3",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-emeryt/Idle/rotations", "assets/raw/kotwica-emeryt/metadata.json"],
       "przemalowanie": {
         "kolory": ["#463324", "#5f5a3a", "#765e42", "#b07a55"],
@@ -266,7 +220,7 @@
       },
       "pixellab": "7f52d5c0-ac95-4452-87e1-fd20dea11fc9",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-emerytka/Idle/rotations", "assets/raw/kotwica-emerytka/metadata.json"],
       "przemalowanie": {
         "kolory": ["#7a4a2e", "#a8682b", "#b07a55"],
@@ -303,7 +257,7 @@
       },
       "pixellab": "f06b4a96-4373-4f57-a658-99622d74a68d",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/rotations", "assets/raw/kotwica-zlota-raczka/metadata.json"],
       "przemalowanie": {
         "kolory": ["#26323d", "#3b4a5e", "#3d5262"],
@@ -340,7 +294,7 @@
       },
       "pixellab": "f6d0b247-198c-4ecc-8a47-54333c1e6455",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-mloda/Idle/rotations", "assets/raw/kotwica-mloda/metadata.json"],
       "przemalowanie": {
         "kolory": ["#463324", "#5f5a3a", "#765e42", "#8a9a55"],
@@ -377,7 +331,7 @@
       },
       "pixellab": "431022d6-02c7-4c82-a649-6cadad7dc7a9",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-chlopiec/Idle/rotations", "assets/raw/kotwica-chlopiec/metadata.json"],
       "pochodne": [
         {
@@ -409,7 +363,7 @@
       },
       "pixellab": "3a1dc2c8-8093-4e8c-a17c-50d972386500",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-dziewczynka/Idle/rotations", "assets/raw/kotwica-dziewczynka/metadata.json"],
       "pochodne": [
         {
@@ -441,7 +395,7 @@
       },
       "pixellab": "713f9006-293a-48de-b24c-50a02d4935e5",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-dresiarz/Idle/rotations", "assets/raw/kotwica-dresiarz/metadata.json"],
       "pochodne": [
         {
@@ -474,7 +428,7 @@
       },
       "pixellab": "016e91c4-023b-4213-ac47-b7333160b020",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-pielegniarka/Idle/rotations", "assets/raw/kotwica-pielegniarka/metadata.json"],
       "pochodne": [
         {
@@ -506,7 +460,7 @@
       },
       "pixellab": "980e1fd9-e766-4b59-88d2-dbcd92e286bb",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-kucharka/Idle/rotations", "assets/raw/kotwica-kucharka/metadata.json"],
       "pochodne": [
         {
@@ -538,7 +492,7 @@
       },
       "pixellab": "7d27bd29-55bb-44e3-b1cc-a0e233998e31",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-informatyk/Idle/rotations", "assets/raw/kotwica-informatyk/metadata.json"],
       "pochodne": [
         {
@@ -570,7 +524,7 @@
       },
       "pixellab": "f34fcdef-6edd-4458-8bd3-2a8a1f384e3b",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/kotwica-prompt-engineer/Idle/rotations",
         "assets/raw/kotwica-prompt-engineer/metadata.json"
@@ -605,7 +559,7 @@
       },
       "pixellab": "47a484fc-9cc6-46c0-b81e-9a0af374f2e4",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-doradca-esg/Idle/rotations", "assets/raw/kotwica-doradca-esg/metadata.json"],
       "pochodne": [
         {
@@ -637,7 +591,7 @@
       },
       "pixellab": "963fecf9-4c36-42ce-98f5-f149a5ae6ad3",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-influencerka/Idle/rotations", "assets/raw/kotwica-influencerka/metadata.json"],
       "pochodne": [
         {
@@ -669,7 +623,7 @@
       },
       "pixellab": "13b408c9-4bd6-4432-8dfd-572f8bd7772e",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-ochroniarz/Idle/rotations", "assets/raw/kotwica-ochroniarz/metadata.json"],
       "pochodne": [
         {
@@ -701,7 +655,7 @@
       },
       "pixellab": "74e4a444-d991-4522-a266-b94aa882cac1",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-mechanik/Idle/rotations", "assets/raw/kotwica-mechanik/metadata.json"],
       "pochodne": [
         {
@@ -733,7 +687,7 @@
       },
       "pixellab": "b84a2d1b-164e-4900-afd4-492a3eb75708",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-listonoszka/Idle/rotations", "assets/raw/kotwica-listonoszka/metadata.json"],
       "pochodne": [
         {
@@ -765,7 +719,7 @@
       },
       "pixellab": "3fe22ec0-97f4-443a-bb55-5865bcda5bf0",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-budowlaniec/Idle/rotations", "assets/raw/kotwica-budowlaniec/metadata.json"],
       "pochodne": [
         {
@@ -797,7 +751,7 @@
       },
       "pixellab": "f558535a-ce4f-4dd7-8b32-839d14366459",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-dzialkowiczka/Idle/rotations", "assets/raw/kotwica-dzialkowiczka/metadata.json"],
       "pochodne": [
         {
@@ -829,7 +783,7 @@
       },
       "pixellab": "75869a37-be96-4e71-94db-3f4ea8c16482",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-staruszek/Idle/rotations", "assets/raw/kotwica-staruszek/metadata.json"],
       "pochodne": [
         {
@@ -861,7 +815,7 @@
       },
       "pixellab": "5241a440-bc06-4228-9231-f7f3d9de0e9b",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-kioskarka/Idle/rotations", "assets/raw/kotwica-kioskarka/metadata.json"],
       "pochodne": [
         {
@@ -893,7 +847,7 @@
       },
       "pixellab": "3c4dceab-48f7-4cf3-a376-254b2b2d49d9",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-kibic/Idle/rotations", "assets/raw/kotwica-kibic/metadata.json"],
       "pochodne": [
         {
@@ -925,7 +879,7 @@
       },
       "pixellab": "3b812ba0-e875-49d1-a006-798d76734f08",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-lekarz/Idle/rotations", "assets/raw/kotwica-lekarz/metadata.json"],
       "pochodne": [
         {
@@ -958,7 +912,7 @@
       },
       "pixellab": "2f2a41bf-81f0-4258-972f-24a88b84170d",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-weteran/Idle/rotations", "assets/raw/kotwica-weteran/metadata.json"],
       "pochodne": [
         {
@@ -990,7 +944,7 @@
       },
       "pixellab": "3f6fb6ac-3f7b-4789-aebf-518e8963f7f8",
       "koszt": 2,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-matka/Idle/rotations", "assets/raw/kotwica-matka/metadata.json"],
       "pochodne": [
         {
@@ -1080,7 +1034,7 @@
       },
       "pixellab": "75487d4c-e4e7-4fdb-9b02-725c78266bab",
       "koszt": 15,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": [
         "assets/raw/kotwica-blok/0.png",
         "assets/raw/kotwica-blok/1.png",
@@ -1115,7 +1069,7 @@
       },
       "pixellab": "66ef46f5-f121-48e5-aebb-af0882e82b08",
       "koszt": 10,
-      "status": "gotowy",
+      "status": "zatwierdzony",
       "pliki": ["assets/raw/kotwica-blok-dach"],
       "uzycie": {
         "opis": "kafelki mają jasną ramkę, więc obok siebie wyglądają jak posadzka; w kadrze kotwicy dach to tło w kolorze papy z szumem i szwami, a środki wybranych kafelków są naklejkami (piksele w kolorze tła przezroczyste)",
