@@ -295,12 +295,12 @@ describe('przykłady', () => {
     const three = { cap: 8, residents: 5 };
     expect(labels('uchodzcy', group, three)).toEqual([
       'Take in as many as fit (3)',
-      'Give them Food 3 for the road',
+      'Give them food for the road (Food 3)',
       'Take everyone in (4 people on the floor)',
       'Send them away',
     ]);
     expect(EVENTS_EN.uchodzcy.text(setup(three).h, group)).toBe(
-      'At the gate, 7 people are asking to be let in. They’ve come from a block where the main pipe burst. Free places in the block: 3.',
+      'At the gate, 7 people are asking to be let in. They’ve come from a block where the main pipe burst. Free beds in the block: 3.',
     );
     const log = (line: string) => EVENTS_EN.uchodzcy.log?.(line, setup().h, group, 0);
     expect(log('Przyjęliście 1 osobę z Wilanowa.')).toBe('You took in 1 person from Wilanów.');
@@ -322,17 +322,17 @@ describe('przykłady', () => {
     const blok = setup({ residents: 4 }).h;
     const p = { ...blok.makePerson(), name: 'Halina Nowak', f: true, prof: 'Doradczyni ds. ESG' };
     expect(EVENTS_EN.fachowiec.text(blok, { p, b: 'Atrapia 7' })).toBe(
-      'Halina Nowak from Atrapia 7 let slip by the stove what she used to be: ESG consultant. She kept quiet until now, afraid someone would make her work.',
+      'Halina Nowak from Atrapia 7 let it slip by the stove that she used to be an ESG consultant. She kept quiet until now in case someone put her to work.',
     );
     const m = { ...p, name: 'Marek Nowak', f: false, prof: 'Hydraulik' };
     const fire = setup({ light: { campfire: true, gateLamp: false } }).h;
     expect(EVENTS_EN.fachowiec.text(fire, { p: m, b: 'siedziby' })).toBe(
-      'Marek Nowak from the board’s block let slip by the campfire what he used to be: plumber. He kept quiet until now, afraid someone would make him work.',
+      'Marek Nowak from the board’s block let it slip by the campfire that he used to be a plumber. He kept quiet until now in case someone put him to work.',
     );
     expect(EVENTS_EN.fachowiec.labels(fire, { p: m }, ['a', 'b'])).toEqual(['Put him to work', 'Let him rest']);
     const dom = setup({ place: zielonki, residents: 0 }).h;
     expect(EVENTS_EN.fachowiec.text(dom, { p: m, b: 'Atrapia 7' })).toMatch(
-      /^Marek Nowak from over the fence let slip/,
+      /^Marek Nowak from over the fence let it slip/,
     );
   });
 

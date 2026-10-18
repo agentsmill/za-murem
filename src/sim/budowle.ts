@@ -126,12 +126,12 @@ export function effectOf(kind: BuildKind, w: Words): string {
 
 /** powód „nie tutaj” w obu językach; brama albo furtka (w dopełniaczu i po angielsku) ze słownika wspólnoty */
 const WHY: Record<BuildPlace, (bramy: string, gate: string) => Tx> = {
-  pokoj: () => tx('Tylko w pokoju w naszym mieszkaniu.', 'Only in a room of our flat.'),
-  kuchnia: () => tx('Tylko w kuchni w naszym mieszkaniu.', 'Only in the kitchen of our flat.'),
+  pokoj: () => tx('Tylko w pokoju w naszym mieszkaniu.', 'Only in a room of your flat.'),
+  kuchnia: () => tx('Tylko w kuchni w naszym mieszkaniu.', 'Only in your kitchen.'),
   podworko: (bramy, gate) =>
     tx(
       `Tylko na podwórku za siatką, z dala od ${bramy}, dziur i drzwi.`,
-      `Only in the yard behind the fence, away from ${gate}, holes and doors.`,
+      `Only in the yard inside the fence, away from ${gate}, holes and doors.`,
     ),
   obwod: () => tx('Tylko na odcinku siatki.', 'Only on a stretch of the fence.'),
 };

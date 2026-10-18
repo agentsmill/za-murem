@@ -12,6 +12,11 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 - Tytuł „Za Murem” zostaje w obu językach. Podtytuł: „a housing co-op after the fall”.
 - Liczby z kropką dziesiętną (`src/ui/tekst.ts`), prawdziwy minus jak po polsku, stopnie Celsjusza, zegar 24-godzinny („20:00”).
 - Liczba mnoga po angielsku: jedna forma dla 1, druga dla reszty („1 person”, „2 people”, „0 people”). Zaimki z płci osoby: she/her, he/his; grupa i osoba o nieznanej płci: they.
+- Skróty w mowie i puentach („it’s”, „you’ll”), jak w historiach drużyny i wydarzeniach z 0.3; bez nich tylko suche opisy zasad.
+- Pani i pan z imieniem po polsku to po angielsku samo imię („Krysia”, przy pierwszym razie „old Krysia”), nigdy „Mrs Krysia”.
+- Zapasy w zdaniu z liczbą z przodu i „and” przed ostatnim („took 14 food and 1 scrap”); „Wood 3” tylko w kosztach i zestawieniach.
+- Podpowiedź po poleceniu jak „Off to feed the stove.”, kilka osób: „One person goes to …”; nie „Will feed the stove.”
+- Blok obok to zawsze „the block next door”.
 - Lore bez zmian: rok 2051, bakteria od miedzi z 2026 roku, prezydent USA z dziesiątej kadencji bez imienia, żadnych prawdziwych polityków.
 
 ## Pojęcia
@@ -53,7 +58,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | meblościanka | wall unit | |
 | karta nocy | Night orders | okno o 20:00 |
 | warta | the watch | na warcie: on watch; wartownik: guard |
-| wyprawa | run | supply run; blisko: short run, daleko: long run |
+| wyprawa | run | supply run, kiedy samo „run” brzmi jak bieganie albo biegunka („For supply runs”, „Out on a supply run”); blisko: short run, daleko: long run |
 | raport rano | Morning report | |
 | kronika (zarządu) | the log | |
 | kronika osiedla (generator) | estate chronicle | |
@@ -84,7 +89,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | ogródek | vegetable patch | |
 | zasieki | barricade | |
 | kuchenka, umywalka, wanna | cooker, washbasin, bath | piec w mieszkaniu też „cooker” |
-| przedpokój, pokój, sala, hala, zaplecze | hallway, room, hall, shed, back room | |
+| przedpokój, pokój, sala, hala, zaplecze | hallway, room, hall, shed, back room | hala jako cały budynek: warehouse |
 | rodzina Kowalskich | the Kowalski family | nazwisko w formie męskiej |
 
 ## Zapasy, potrzeby, broń

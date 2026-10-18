@@ -4,7 +4,7 @@
 import { type Tx, tx } from '../core/jezyk.ts';
 import { clamp, nextRandom } from '../core/rng.ts';
 import { placeIn } from './miejsce.ts';
-import { HOLE_NAMES_DOM_EN, HOLE_NAMES_EN, LOOT_LABEL_EN } from './tresc.en.ts';
+import { HOLE_NAMES_DOM_EN, HOLE_NAMES_EN } from './tresc.en.ts';
 import { HOLE_NAMES, HOLE_NAMES_DOM, LOOT_LABEL } from './tresc.ts';
 import type { GovEffects, GovFence, GovInput, GovNeeds, GovState, StockDelta, StockKey } from './typy.ts';
 
@@ -106,12 +106,22 @@ export function stockText(d: Partial<StockDelta>): string {
     .join(', ');
 }
 
-/** to samo w obu językach: „drewno 3, jedzenie 2”, „wood 3, food 2”; pusty, gdy same zera */
+/** zapasy w angielskim zdaniu: liczba przed nazwą, w liczbie pojedynczej i mnogiej */
+const STOCK_EN: Record<StockKey, [string, string]> = {
+  wood: ['wood', 'wood'],
+  supplies: ['food', 'food'],
+  scrap: ['scrap', 'scrap'],
+  parts: ['part', 'parts'],
+  meds: ['pack of meds', 'packs of meds'],
+};
+
+/** to samo w obu językach do środka zdania: „drewno 3, jedzenie 2”, „3 wood and 2 food”; pusty, gdy same zera
+    (w zestawieniach raportu i kosztach zostaje „Wood 3” z lootText) */
 export function stockTx(d: Partial<StockDelta>): Tx {
-  const en = (Object.entries(d) as [StockKey, number][])
+  const items = (Object.entries(d) as [StockKey, number][])
     .filter(([, v]) => v)
-    .map(([k, v]) => `${LOOT_LABEL_EN[k].toLowerCase()} ${Math.abs(v)}`)
-    .join(', ');
+    .map(([k, v]) => `${Math.abs(v)} ${STOCK_EN[k][Math.abs(v) === 1 ? 0 : 1]}`);
+  const en = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : (items[0] ?? '');
   return tx(stockText(d), en);
 }
 

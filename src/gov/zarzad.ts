@@ -10,7 +10,7 @@
      interfejs: pending(gov, input) → karta, uchwała, wydarzenie albo raport;
      odpowiedzi: setNight / confirmNight, signLaw, chooseEvent, ackReport (każda zwraca skutki). */
 
-import { przyczynaEn } from '../content/data.en.ts';
+import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } from './noc.ts';
@@ -143,18 +143,11 @@ function checkOver(st: GovState, i: GovInput, fx: GovEffects): void {
   if (!i.people.length) st.over = 'pustka';
   else if (st.anger >= 100) st.over = 'odwolanie';
   else if (st.trust <= 0) st.over = 'exodus';
-  if (st.over) logGov(st, i, tx(`Koniec gry: ${st.over}.`, `Game over: ${OVER_EN[st.over]}.`), true, fx);
+  if (!st.over) return;
+  // po angielsku tytuł zakończenia według miejsca („Game over: the street meeting recalled the committee.”)
+  const t = (wordsEn(placeIn(i)).koniec[st.over] ?? ENDINGS_EN[st.over]).title;
+  logGov(st, i, tx(`Koniec gry: ${st.over}.`, `Game over: ${t[0].toLowerCase()}${t.slice(1)}.`), true, fx);
 }
-
-/** zakończenie gry do wpisu w kronice po angielsku (po polsku zostaje id, jak dotąd) */
-const OVER_EN: Record<NonNullable<GovState['over']>, string> = {
-  twierdza: 'fortress',
-  wspolnota: 'community',
-  technokracja: 'technocracy',
-  odwolanie: 'the board was recalled',
-  exodus: 'exodus',
-  pustka: 'nobody left',
-};
 
 /** co czeka na decyzję gracza, w kolejności: raport rano, uchwała, karta nocy, wydarzenie */
 export function pending(st: GovState, i: GovInput): Prompt | null {

@@ -352,7 +352,7 @@ export function reportSheet(r: NightReport): Sheet {
       : '',
     stolen ? `<li class="tal bad"><small class="tal-k">${L('Zabrali', 'Taken')}</small><b>${esc(stolen)}</b></li>` : '',
     loot
-      ? `<li class="tal good"><small class="tal-k">${L('Z wypraw', 'From runs')}</small><b>${esc(loot)}</b></li>`
+      ? `<li class="tal good"><small class="tal-k">${L('Z wypraw', 'Brought back')}</small><b>${esc(loot)}</b></li>`
       : '',
     ...r.hurt.map(
       (h) =>
@@ -398,7 +398,7 @@ export function burnSheet(
     title: L(`Spalić ${esc(what)}?`, `Burn the ${esc(what)}?`),
     body: `<p>${L(
       `Da ${wood} ${plural(wood, 'sztukę', 'sztuki', 'sztuk')} drewna, około ${num(hours)} h ognia w kozie. Mebla już nie będzie.`,
-      `Good for ${manyEn(wood, 'piece', 'pieces')} of wood, about ${num(hours)} h of fire in the stove. Once it is gone, it is gone.`,
+      `Good for ${manyEn(wood, 'piece', 'pieces')} of wood, about ${num(hours)} h of fire in the stove. Once it’s gone, it’s gone.`,
     )}</p><p>${
       owner
         ? L(
@@ -407,7 +407,7 @@ export function burnSheet(
           )
         : L(
             `${words.Zarzad} to poczuje: palimy coś, co ktoś kiedyś kupił na raty.`,
-            `${e.Zarzad} will feel it: somebody once bought this on buy now, pay later.`,
+            `${e.Zarzad} will feel it: someone once bought this on interest-free instalments.`,
           )
     }${softer ? L(' Uchwała „Meble na opał” łagodzi to o połowę.', ' The “Furniture for fuel” resolution halves that.') : ''}</p>`,
     foot: `${btn('burn-no', L('Zostawić', 'Keep it'), 'btn ghost')}${btn('burn-yes', L('Spalić', 'Burn it'), 'btn danger')}`,
@@ -448,14 +448,14 @@ export function menuSheet(note: string): Sheet {
 /** pomoc trybu zombie: szwendacze, stado, broń, ugryzienia */
 const ZOMBIE_HELP = tx(
   '<h3 class="help-h">Tryb zombie</h3><ul class="help"><li>Za siatką snują się szwendacze. Są wolni, ale idą za hałasem i za tym, co widzą. Nocą przychodzi stado i napiera na siatkę, a każdej nocy jest ich więcej.</li><li>Dzida sięga przez siatkę: warta z dzidą zabija tych, którzy napierają. Nóż, łom i siekiera działają dopiero po tej samej stronie siatki. Strzał zabija od razu, ale słychać go z daleka i ściąga następnych.</li><li>Uszkodzoną siatkę wzmacnia się deskami albo złomem, a dziurę łata. Dzidę robi się z desek i złomu na stercie. „Do broni!” wysyła wszystkich zdolnych na wartę przy siatce.</li><li>Ugryzienie to gorączka i śmierć w niecałą dobę. Kto ugryziony w rękę albo nogę, tego da się uratować amputacją w ciągu dwóch godzin. Każdy zmarły wstaje po godzinie, chyba że ktoś go dobije.</li></ul>',
-  '<h3 class="help-h">Zombie mode</h3><ul class="help"><li>Shamblers drift around beyond the fence. They are slow, but they follow noise and anything they can see. At night the herd comes and pushes on the fence, and every night there are more of them.</li><li>A spear reaches through the fence: a guard with a spear kills the ones pushing on it. A knife, crowbar or axe only works on the same side of the fence. A shot kills outright, but it can be heard from far away and draws more of them in.</li><li>Shore up a damaged fence with planks or scrap, and patch any hole. Spears are made from planks and scrap at a pile. “To arms!” sends everyone who can fight to stand watch at the fence.</li><li>A bite means fever and death in less than a day. Anyone bitten on an arm or a leg can be saved by amputation within two hours. Everyone who dies gets back up an hour later, unless somebody finishes them off.</li></ul>',
+  '<h3 class="help-h">Zombie mode</h3><ul class="help"><li>Shamblers drift around beyond the fence. They are slow, but they follow noise and anything they can see. At night the herd comes and presses against the fence, and every night there are more of them.</li><li>A spear reaches through the fence: a guard with a spear kills the ones pressing against it. A knife, crowbar or axe only works on the same side of the fence. A shot kills outright, but it can be heard from far away and draws more of them in.</li><li>Shore up a damaged fence with planks or scrap, and patch any hole. Spears are made from planks and scrap: use “Make a spear” on a pile of either. “To arms!” sends everyone who can fight to stand watch at the fence.</li><li>A bite means fever and death in less than a day. Anyone bitten on an arm or a leg can be saved by amputation within two hours. Everyone who dies gets back up an hour later, unless somebody finishes them off.</li></ul>',
 );
 
 /** pomoc o budowie i pustych mieszkaniach (M2, fala 1) */
 function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
   const fetch = tx(
     `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.`,
-    `${e.Zarzad} fetches the materials and builds it. Planks, scrap and parts come from searching empty flats and tearing things down.`,
+    `${e.Zarzad} fetches the materials and does the building. Planks, scrap and parts come from searching empty flats and tearing things down.`,
   );
   const items = touch
     ? [
@@ -527,7 +527,7 @@ export function helpSheet(
     title: L('Jak grać', 'How to play'),
     body: `<h3 class="help-h">${L('Sterowanie', 'Controls')}</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words, e)}<h3 class="help-h">${L(words.Zarzad, e.Zarzad)}</h3><ul class="help">${L(
       `<li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>Każdy z ${z} ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li>`,
-      `<li>You are ${e.pelny} in 2051. Four people, a potbelly stove in the kitchen and a fence full of holes around the yard.</li><li>Watch everyone’s needs on their person card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 ${e.krotko} meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the ${e.mieszkancy}’ trust and anger. At zero trust people leave; at full anger ${e.walne} votes ${e.krotko} out.</li><li>Everyone on ${e.krotko} carries one weapon, and spares are kept in the storeroom (person card: “Swap”). Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li>`,
+      `<li>You are ${e.pelny} in 2051. Four people, a potbelly stove in the kitchen and a fence full of holes around the yard.</li><li>Watch everyone’s needs on their card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 ${e.krotko} meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the ${e.mieszkancy}’ trust and anger. At zero trust people leave; at full anger ${e.walne} votes ${e.krotko} out.</li><li>Everyone on ${e.krotko} carries one weapon, and spares are kept in the storeroom (person card: “Swap”). Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li>`,
     )}</ul>${zombie ? tr(ZOMBIE_HELP) : ''}<h3 class="help-h">${L('Na razie', 'For now')}</h3><p>${L(
       'W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.',
       'Version 0.4 has nights behind the fence, building, empty flats to search and repair, newcomers and Zombie mode. Research, winter and the rest of the economy will come in later versions.',

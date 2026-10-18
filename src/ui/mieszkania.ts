@@ -49,8 +49,8 @@ const ROOM_NAME: Partial<Record<RoomKind, Tx>> = {
   pokoj: tx('Pokój', 'Room'),
   kuchnia: tx('Kuchnia', 'Kitchen'),
   lazienka: tx('Łazienka', 'Bathroom'),
-  sala: tx('Sala', 'Main room'),
-  hala: tx('Hala', 'Hall'),
+  sala: tx('Sala', 'Hall'),
+  hala: tx('Hala', 'Shed'),
   zaplecze: tx('Zaplecze', 'Back room'),
 };
 

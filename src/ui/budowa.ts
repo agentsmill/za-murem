@@ -213,15 +213,15 @@ const CATEGORIES: { key: BuildCategory['key']; title: Tx; places: BuildPlace[] }
 const SOURCE: Partial<Record<Mat, Tx>> = {
   deski: tx(
     'Deski daje przeszukiwanie pustych mieszkań i rozbiórka mebli.',
-    'Planks come from searching empty flats and tearing down furniture.',
+    'Planks come from searching empty flats and taking furniture apart.',
   ),
   zlom: tx(
     'Złom daje przeszukiwanie i rozbiórka śmieci i sprzętów.',
-    'Scrap comes from searching and from tearing down rubbish and appliances.',
+    'Scrap comes from searching, clearing rubbish and taking appliances apart.',
   ),
   czesci: tx(
     'Części daje przeszukiwanie i rozbiórka sprzętów.',
-    'Parts come from searching and from tearing down appliances.',
+    'Parts come from searching and taking appliances apart.',
   ),
   drewno: tx('Drewno daje ścinanie drzew.', 'Wood comes from chopping down trees.'),
 };
@@ -293,7 +293,7 @@ export function buildSheet(
     title: L('Co budujemy?', 'What are we building?'),
     body: `<p class="lead">${L(
       `Plan stawia się na mapie, a ${words.zarzad.krotko} sam przynosi materiały i buduje.`,
-      `You place the plan on the map, and ${en.krotko} fetches the materials and builds it.`,
+      `You place the plan on the map, and ${en.krotko} fetches the materials and does the building.`,
     )}${
       touch
         ? L(

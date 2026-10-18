@@ -422,7 +422,7 @@ export const NEW_EVENTS: GEventDef[] = [
           h.log(
             tx(
               'Na siatce wiszą puszki z kamykami. Jak ktoś dotknie, będzie słychać.',
-              'Tins full of pebbles hang on the fence. If anyone touches it, you will hear.',
+              'Tins full of pebbles hang on the fence. If anyone touches it, you’ll hear it.',
             ),
           );
         },
@@ -514,7 +514,7 @@ export const NEW_EVENTS: GEventDef[] = [
             h.log(
               tx(
                 `${p ? p.name : 'Ktoś'} ${p ? g(p, 'zobaczył', 'zobaczyła') : 'zobaczył'}, jak ktoś ucieka w stronę ulicy. Wiedzą już, że nie śpicie.`,
-                `${p ? p.name : 'Someone'} saw somebody legging it towards the street. Now they know you are not asleep.`,
+                `${p ? p.name : 'Someone'} saw somebody legging it towards the street. Now they know you’re awake.`,
               ),
             );
           }
@@ -540,7 +540,7 @@ export const NEW_EVENTS: GEventDef[] = [
     title: (h) =>
       domyObok(h)
         ? tx('Krzyk z domu obok', 'A scream from the house next door')
-        : tx('Krzyk z bloku obok', 'A scream from the next block'),
+        : tx('Krzyk z bloku obok', 'A scream from the block next door'),
     text: (h) =>
       domyObok(h)
         ? tx(
@@ -549,7 +549,7 @@ export const NEW_EVENTS: GEventDef[] = [
           )
         : tx(
             'Z bloku obok niesie się krzyk, potem cisza. Na trzecim piętrze ktoś świeci latarką i zaraz ją gasi.',
-            'A scream comes from the next block, then silence. On the third floor someone shines a torch and switches it off straight away.',
+            'A scream comes from the block next door, then silence. On the third floor someone shines a torch and switches it off straight away.',
           ),
     choices: (h, d) => [
       {
@@ -566,11 +566,11 @@ export const NEW_EVENTS: GEventDef[] = [
               domyObok(h)
                 ? tx(
                     'Rano przyszedł sąsiad z domu obok z workiem ziemniaków. W nocy spadł ze schodów, a wasz człowiek odprowadził go do łóżka.',
-                    'In the morning the neighbour from the house next door came round with a sack of potatoes. He fell down the stairs in the night, and your person helped him back to bed.',
+                    'In the morning the neighbour from the house next door came round with a sack of potatoes. He fell down the stairs in the night, and one of your lot helped him back to bed.',
                   )
                 : tx(
                     'Rano przyszedł sąsiad z bloku obok z workiem ziemniaków. W nocy spadł ze schodów, a wasz człowiek odprowadził go do mieszkania.',
-                    'In the morning the neighbour from the next block came round with a sack of potatoes. He fell down the stairs in the night, and your person walked him back to his flat.',
+                    'In the morning the neighbour from the block next door came round with a sack of potatoes. He fell down the stairs in the night, and one of yours walked him back to his flat.',
                   ),
             );
           } else {
@@ -790,11 +790,11 @@ export const NEW_EVENTS: GEventDef[] = [
     // szron tylko przy mrozie na dworze (pierwsze jesienne noce mają kilka stopni), sąsiadka tylko, gdy jest skąd
     w: (h) => (h.outdoor() <= 1 && h.neighbour() !== null ? 0.7 : 0),
     make: () => ({}),
-    title: () => tx('Przymrozek', 'First frost'),
+    title: () => tx('Przymrozek', 'A hard frost'),
     text: (h) =>
       tx(
         `Na siatce szron. Sąsiadka ${h.neighbour() ?? 'zza płotu'} puka do drzwi: u niej ${uNiej(h)} zamarzła woda w wiadrze, a mąż kaszle.`,
-        `Frost on the fence. A neighbour ${h.neighbourEn() ?? 'from over the fence'} knocks at the door: the water in her bucket froze ${uNiejEn(h)}, and her husband has a cough.`,
+        `Frost on the fence. A neighbour ${h.neighbourEn() ?? 'from over the fence'} knocks at the door: ${uNiejEn(h)}, the water in the bucket has frozen solid, and her husband has a cough.`,
       ),
     choices: (h) => [
       {
@@ -806,7 +806,7 @@ export const NEW_EVENTS: GEventDef[] = [
         },
       },
       {
-        label: tx('Zaprosić ich do kozy', 'Invite them to the stove'),
+        label: tx('Zaprosić ich do kozy', 'Ask them in to get warm'),
         ok: true,
         run: () => {
           h.mood(1, 0);
@@ -833,7 +833,7 @@ export const NEW_EVENTS: GEventDef[] = [
     text: (h) =>
       tx(
         `Pani Halina ${h.neighbour() ?? 'zza płotu'} przyniosła latarkę na korbkę. Minuta kręcenia daje pięć minut światła, a ona już nie ma siły kręcić.`,
-        `Mrs Halina ${h.neighbourEn() ?? 'from over the fence'} has brought round a wind-up torch. A minute of cranking gives five minutes of light, and she hasn’t the strength to crank it any more.`,
+        `Old Halina ${h.neighbourEn() ?? 'from over the fence'} has brought round a wind-up torch. A minute of cranking gives five minutes of light, and she hasn’t the strength to crank it any more.`,
       ),
     choices: (h) => [
       {
@@ -850,14 +850,14 @@ export const NEW_EVENTS: GEventDef[] = [
         },
       },
       {
-        label: tx('Na wyprawy', 'For the runs'),
+        label: tx('Na wyprawy', 'For supply runs'),
         ok: true,
         run: () => {
           h.setFlag('torch');
           h.log(
             tx(
               `Latarka idzie na wyprawy. Mniej potykania się po ${dom(h) ? 'ciemnych piwnicach i garażach' : 'ciemnych klatkach'}.`,
-              `The torch goes out on the runs. Less stumbling around ${dom(h) ? 'dark cellars and garages' : 'dark stairwells'}.`,
+              `The torch goes along on supply runs. Less stumbling around ${dom(h) ? 'dark cellars and garages' : 'dark stairwells'}.`,
             ),
           );
         },
@@ -936,14 +936,14 @@ export const NEW_EVENTS: GEventDef[] = [
           : 'Smoke is rising from the stovepipe stuck out of the kitchen window. Someone has seen it: knocking at the door is';
       return tx(
         `${smoke} pani Krysia ${from}, ze słoikiem powideł z 2049 roku. Pyta, czy może posiedzieć przy kozie, bo u niej ${home} jest sześć stopni.`,
-        `${smokeEn} Mrs Krysia ${fromEn}, with a jar of plum jam from 2049. She asks if she can sit by your stove for a bit, because it is six degrees ${homeEn}.`,
+        `${smokeEn} old Krysia ${fromEn}, with a jar of plum jam from 2049. She asks if she can sit by your stove for a bit, because it’s six degrees ${homeEn}.`,
       );
     },
     choices: (h) => {
       const from = h.neighbour() ?? 'zza płotu';
       return [
         {
-          label: tx('Zaprosić do kozy', 'Invite her to the stove'),
+          label: tx('Zaprosić do kozy', 'Ask her in to get warm'),
           ok: true,
           run: () => {
             h.addRes('jedzenie', 2);
@@ -951,7 +951,7 @@ export const NEW_EVENTS: GEventDef[] = [
             h.log(
               tx(
                 `Pani Krysia opowiada, jak ${h.place().kind === 'dom' ? 'wyglądała ulica' : 'wyglądało osiedle'}, kiedy jeszcze jeździły autobusy.`,
-                `Mrs Krysia tells you what the ${h.place().kind === 'dom' ? 'street' : 'estate'} looked like back when the buses still ran.`,
+                `Krysia tells you what the ${h.place().kind === 'dom' ? 'street' : 'estate'} looked like back when the buses still ran.`,
               ),
             );
           },
@@ -966,16 +966,16 @@ export const NEW_EVENTS: GEventDef[] = [
               from === 'zza płotu'
                 ? tx(
                     'Pani Krysia wróciła do zimnego domu. Cała ulica już o tym wie.',
-                    'Mrs Krysia went back to her cold house. The whole street already knows.',
+                    'Krysia went back to her cold house. The whole street already knows.',
                   )
                 : from === 'z bloku obok'
                   ? tx(
                       'Pani Krysia wróciła do zimnego mieszkania. W bloku obok już o tym wiedzą.',
-                      'Mrs Krysia went back to her cold flat. The next block already knows.',
+                      'Krysia went back to her cold flat. The block next door already knows.',
                     )
                   : tx(
                       'Pani Krysia wróciła do zimnego mieszkania. Na klatce już o tym wiedzą.',
-                      'Mrs Krysia went back to her cold flat. The whole stairwell already knows.',
+                      'Krysia went back to her cold flat. The whole stairwell already knows.',
                     ),
             );
           },

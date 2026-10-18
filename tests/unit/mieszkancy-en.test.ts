@@ -527,28 +527,36 @@ describe('lokatorzyEn na całych obszarach dem i innych kronikach', () => {
     return { bledy, szablony, historii };
   }
 
-  it('każdy budynek obszaru trzech dem: angielskie historie bez polskich słów i z tymi samymi zdaniami', () => {
-    const szablony = new Set<string>();
-    for (const nazwa of DEMA) {
-      const wynik = sprawdzBudynki(nazwa);
-      expect(wynik.bledy.slice(0, 10), nazwa).toEqual([]);
-      expect(wynik.historii, nazwa).toBeGreaterThan(nazwa === 'zielonki' ? 20 : 500);
-      for (const s of wynik.szablony) szablony.add(s);
-    }
-    expect(szablony.size).toBeGreaterThan(120);
-  }, CIEZKI);
-
-  it('inne kroniki osiedla (inne ziarna): więcej szablonów kroniki i miejsc, dalej bez polskich słów', () => {
-    const szablony = new Set<string>();
-    for (const nazwa of DEMA) {
-      for (let i = 0; i < 3; i++) {
-        const wynik = sprawdzBudynki(nazwa, `en-${i}`);
-        expect(wynik.bledy.slice(0, 10), `${nazwa} ${i}`).toEqual([]);
+  it(
+    'każdy budynek obszaru trzech dem: angielskie historie bez polskich słów i z tymi samymi zdaniami',
+    () => {
+      const szablony = new Set<string>();
+      for (const nazwa of DEMA) {
+        const wynik = sprawdzBudynki(nazwa);
+        expect(wynik.bledy.slice(0, 10), nazwa).toEqual([]);
+        expect(wynik.historii, nazwa).toBeGreaterThan(nazwa === 'zielonki' ? 20 : 500);
         for (const s of wynik.szablony) szablony.add(s);
       }
-    }
-    expect(szablony.size).toBeGreaterThan(135);
-  }, CIEZKI);
+      expect(szablony.size).toBeGreaterThan(120);
+    },
+    CIEZKI,
+  );
+
+  it(
+    'inne kroniki osiedla (inne ziarna): więcej szablonów kroniki i miejsc, dalej bez polskich słów',
+    () => {
+      const szablony = new Set<string>();
+      for (const nazwa of DEMA) {
+        for (let i = 0; i < 3; i++) {
+          const wynik = sprawdzBudynki(nazwa, `en-${i}`);
+          expect(wynik.bledy.slice(0, 10), `${nazwa} ${i}`).toEqual([]);
+          for (const s of wynik.szablony) szablony.add(s);
+        }
+      }
+      expect(szablony.size).toBeGreaterThan(135);
+    },
+    CIEZKI,
+  );
 
   it('budynek, w którym żadne imię nie ma pewnej odmiany: szablony zapasowe po angielsku, te same zdania', () => {
     const { l, dane } = demo('przymorze');

@@ -274,7 +274,7 @@ export const STREET_EVENTS: GEventDef[] = [
           h.log(
             tx(
               'Z falownika zostały płytki w żywicy, całe. Panele dalej świecą do nikogo.',
-              'All that is left of the inverter are circuit boards in resin, intact. The panels go on shining for nobody.',
+              'All that’s left of the inverter is a couple of circuit boards in resin, intact. The panels carry on soaking up the sun for nobody.',
             ),
           );
         },

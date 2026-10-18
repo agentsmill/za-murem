@@ -60,7 +60,7 @@ export function statsOf(
             level: z.pressing ? 'bad' : z.near ? 'mid' : 'ok',
             title: L(
               `Szwendacze przy siatce: ${z.near}, napiera ${z.pressing}, na całej mapie ${z.all}. Na dworze ${deg(s.outdoor)}.`,
-              `Shamblers at the fence: ${z.near}, pushing on it: ${z.pressing}, on the whole map: ${z.all}. Outside ${deg(s.outdoor)}.`,
+              `Shamblers at the fence: ${z.near}, pressing against it: ${z.pressing}, on the whole map: ${z.all}. Outside ${deg(s.outdoor)}.`,
             ),
           },
         ]
@@ -118,7 +118,7 @@ export function statsOf(
       level: spare === 0 ? 'bad' : spare < 6 ? 'mid' : 'ok',
       title: L(
         `Drewno na zapas: w składzie ${k.woodSklad}, luzem ${k.woodLoose}, w rękach ${k.woodCarried}`,
-        `Spare wood: ${k.woodSklad} in the woodpile, ${k.woodLoose} lying around, ${k.woodCarried} being carried`,
+        `Wood: ${k.woodSklad} in the woodpile, ${k.woodLoose} lying around, ${k.woodCarried} being carried`,
       ),
     },
     // materiały z odzysku: deski, złom i części; na telefonie jedno pole zbiorcze (CSS chowa jedno albo drugie)
@@ -128,7 +128,7 @@ export function statsOf(
       level: k.boards ? 'ok' : 'mid',
       title: L(
         `Deski: ${k.boards}. Na łaty, naprawy i budowę. Dają je przeszukiwanie pustych mieszkań i rozbiórka mebli.`,
-        `Planks: ${k.boards}. For patches, repairs and building. Search empty flats and tear down furniture to get more.`,
+        `Planks: ${k.boards}. For patches, repairs and building. Search empty flats and take furniture apart to get more.`,
       ),
     },
     {
@@ -137,7 +137,7 @@ export function statsOf(
       level: k.scrap ? 'ok' : 'mid',
       title: L(
         `Złom: ${k.scrap}. Na łaty, zasieki i naprawy rur i pieców. Dają go przeszukiwanie i rozbiórka śmieci.`,
-        `Scrap: ${k.scrap}. For patches, barricades and fixing pipes and cookers. Search flats and tear down rubbish to get more.`,
+        `Scrap: ${k.scrap}. For patches, barricades and fixing pipes and cookers. Search flats and clear rubbish to get more.`,
       ),
     },
     {
@@ -146,7 +146,7 @@ export function statsOf(
       level: k.parts ? 'ok' : 'mid',
       title: L(
         `Części: ${k.parts}. Do rur, pieców i kuchni społecznej. Dają je przeszukiwanie i rozbiórka sprzętów.`,
-        `Parts: ${k.parts}. For pipes, cookers and the community kitchen. Search flats and tear down appliances to get more.`,
+        `Parts: ${k.parts}. For pipes, cookers and the community kitchen. Search flats and take appliances apart to get more.`,
       ),
     },
     {

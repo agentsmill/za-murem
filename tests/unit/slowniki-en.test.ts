@@ -86,8 +86,8 @@ describe('słowniki napisów ze stanu', () => {
   });
 
   it('przyczyny zgonów i wstępy', () => {
-    expect(przyczynaEn('rany')).toBe('of their wounds');
-    expect(przyczynaEn('gorączka')).toBe('after a bite');
+    expect(przyczynaEn('rany')).toBe('of wounds');
+    expect(przyczynaEn('gorączka')).toBe('of fever after being bitten');
     expect(przyczynaEn('amputacja')).toBe('during an amputation');
     for (const t of [LORE_EN, LORE_ZOMBIE_EN]) {
       expect(t).toMatch(/2051/);

@@ -247,7 +247,7 @@ export const SZABLONY_EN: Readonly<Record<string, string>> = {
   'urodzenie-rok-zero': '{o} was born in {rok}, year zero, although nobody called it that at the time.',
   'urodzenie-zlodzieje':
     '{o} was born in {rok}, when cables were failing everywhere and scrap thieves were getting the blame.',
-  'urodzenie-odkrycie': '{o} was born in {rok}, the year it came out what had been eating the cables.',
+  'urodzenie-odkrycie': '{o} was born in {rok}, the year everyone found out what had been eating the cables.',
   'urodzenie-malo-dzieci':
     '{o} was born in {rok}, when hardly any babies were born on the estate, so every neighbour still knows {g:him|her}.',
   'urodzenie-swieca':
@@ -392,7 +392,7 @@ export const SZABLONY_EN: Readonly<Record<string, string>> = {
   'kronika-awarie':
     'In {rok}, when the odd cable faults started on the estate, {o} called an electrician and waited three weeks for him to turn up.',
   'kronika-kropki':
-    'In {rok}, when it came out what was eating the cables, {o} threw every extension lead out of the door, as if that would help.',
+    'In {rok}, when everyone found out what was eating the cables, {o} threw every extension lead out of the door, as if that would help.',
   'kronika-latarnie':
     'When the street lights went out in {rok}, {o} was {wiek} and was scared to go out after dark for the first week only.',
   'kronika-swieczka':

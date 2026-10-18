@@ -285,7 +285,7 @@ describe('applyGov: skutki zarządu w symulacji', () => {
         for (const p of core(st)) e.needs.push({ id: st.people[p.person].id, d: { safe: -25 } });
         e.log.push({
           pl: 'Szabrownicy weszli przy bramie i zabrali: Drewno 7.',
-          en: 'Looters got in at the gate and took: wood 7.',
+          en: 'Looters got in at the gate and took 7 wood.',
         });
       }),
     );

@@ -267,7 +267,7 @@ if (resume) {
   $('btnForget').onclick = () => {
     if (performance.now() - armed > 4000) {
       armed = performance.now();
-      $('btnForget').textContent = L('Na pewno? Usuń', 'Sure? Delete');
+      $('btnForget').textContent = L('Na pewno? Usuń', 'Really delete?');
       setTimeout(() => {
         if (!$('resume').hidden) $('btnForget').textContent = L('Usuń zapis', 'Delete save');
       }, 4000);
@@ -918,7 +918,7 @@ function tonight(p: SimPerson): string | undefined {
     const label = opt ? tr(opt.label) : key;
     return L(
       `Tej nocy: ${label.toLowerCase()}${n.confirmed ? '' : ' (propozycja)'}.`,
-      `Tonight: ${label[0].toLowerCase()}${label.slice(1)}${n.confirmed ? '' : ' (proposed)'}.`,
+      `Tonight: ${label[0].toLowerCase()}${label.slice(1)}${n.confirmed ? '' : ' (suggested)'}.`,
     );
   }
   if (p.post === 'koza') return L('Do rana: czuwa przy kozie.', 'Until morning: watching the stove.');
@@ -1337,12 +1337,12 @@ $('card').addEventListener('click', (e) => {
     const at = p.weapon ? ARM_ORDER.indexOf(p.weapon) : -1;
     const next = list.find((w) => ARM_ORDER.indexOf(w) > at) ?? list[0] ?? null;
     if (next === null && !p.weapon)
-      return say(L('W magazynie nie ma broni.', 'There are no weapons in the store.'), 2500);
+      return say(L('W magazynie nie ma broni.', 'There are no weapons in the storeroom.'), 2500);
     sim.push({ t: 'arm', ids: [p.id], weapon: next });
     say(
       next
         ? L(`Bierze ${WEAPONS[next].acc}.`, `Takes ${WEAPONS_EN[next].the}.`)
-        : L('Odkłada broń do magazynu.', 'Puts the weapon back in the store.'),
+        : L('Odkłada broń do magazynu.', 'Puts the weapon back in the storeroom.'),
       2500,
     );
   } else if (b.dataset.card === 'amputate') {
@@ -1602,14 +1602,14 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   move: ['On the way.', 'On their way.'],
   select: ['', ''],
   chop: ['Off to chop down the tree.', 'Off to chop down the tree.'],
-  haul: ['Will carry the wood to the woodpile.', 'Will carry the wood to the woodpile.'],
-  refuel: ['Will feed the stove.', 'Will feed the stove.'],
-  burn: ['Will break up the furniture for firewood.', 'Will break up the furniture for firewood.'],
-  cook: ['Will cook something from the supplies.', 'Will cook something from the supplies.'],
+  haul: ['Off to carry the wood to the woodpile.', 'Off to carry the wood to the woodpile.'],
+  refuel: ['Off to feed the stove.', 'Off to feed the stove.'],
+  burn: ['Off to break up the furniture for firewood.', 'Off to break up the furniture for firewood.'],
+  cook: ['Off to cook something from the supplies.', 'Off to cook something from the supplies.'],
   gate: [`Off to ${e.brama}.`, `Off to ${e.brama}.`],
   guard: ['Going on watch.', 'Going on watch.'],
-  patch: ['Will patch the hole in the fence.', 'Will patch the hole in the fence.'],
-  campfire: ['Will light a campfire.', 'Will light a campfire.'],
+  patch: ['Off to patch the hole in the fence.', 'Off to patch the hole in the fence.'],
+  campfire: ['Off to light a campfire.', 'Off to light a campfire.'],
   away: ['', ''],
   back: ['', ''],
   laws: ['', ''],
@@ -1617,17 +1617,17 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   mend: ['', ''],
   arm: ['', ''],
   attack: ['Attacking.', 'Attacking.'],
-  finish: ['Will finish off the body.', 'Will finish off the body.'],
+  finish: ['Going to finish off the body.', 'Going to finish off the body.'],
   amputate: ['Amputating.', 'Amputating.'],
-  craft: ['Will make a spear.', 'Will make a spear.'],
-  brace: ['Will shore up the fence.', 'Will shore up the fence.'],
+  craft: ['Off to make a spear.', 'Off to make a spear.'],
+  brace: ['Off to shore up the fence.', 'Off to shore up the fence.'],
   alarm: ['To arms!', 'To arms!'],
   build: ['Getting down to building.', 'One person gets down to building.'],
   unbuild: ['', ''],
-  search: ['Will search the room.', 'One person will search the room.'],
-  dismantle: ['Will take it apart for materials.', 'One person will take it apart for materials.'],
-  repair: ['Will bring materials and fix it.', 'One person will bring materials and fix it.'],
-  claim: [`Will claim the flat for ${e.krotko}.`, `One person will claim the flat for ${e.krotko}.`],
+  search: ['Off to search the room.', 'One person goes to search the room.'],
+  dismantle: ['Off to take it apart for materials.', 'One person goes to take it apart for materials.'],
+  repair: ['Off to fetch materials and fix it.', 'One person goes to fetch materials and fix it.'],
+  claim: [`Off to claim the flat for ${e.krotko}.`, `One person goes to claim the flat for ${e.krotko}.`],
   wreck: [NAPISY.poWrak.en, NAPISY.poWrakWielu.en],
   carry: [NAPISY.poZaniesc.en, NAPISY.poZaniescWielu.en],
   saw: [NAPISY.poWarsztat.en, NAPISY.poWarsztatWielu.en],

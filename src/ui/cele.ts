@@ -125,7 +125,7 @@ export function goalsOf(
             ? 'Stuknijcie pień dowolnego drzewa albo przytrzymajcie palec na meblu, żeby go spalić.'
             : 'Prawy przycisk na dowolnym drzewie: „Ściąć drzewo”. W ostateczności spalcie mebel.'
         }`,
-        `Spare wood: ${o.wood ?? 0} of ${NIGHT_WOOD}. ${
+        `Wood stocked: ${o.wood ?? 0} of ${NIGHT_WOOD}. ${
           o.touch
             ? 'Tap the trunk of any tree, or press and hold on a piece of furniture to burn it.'
             : 'Right-click any tree: “Chop down the tree”. If all else fails, burn some furniture.'
@@ -225,7 +225,7 @@ export function goalsDay2(
       text: L('Postawcie pierwszą budowlę.', 'Put up your first structure.'),
       how: L(
         `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. ${w.Zarzad} sam przyniesie materiały i zbuduje.`,
-        `${b}: any structure will do. The cheapest are ${cheap.join(' and ')}. ${e.Zarzad} will fetch the materials and build it.`,
+        `${b}: any structure will do. The cheapest are ${cheap.join(' and ')}. ${e.Zarzad} will fetch the materials and do the building.`,
       ),
       done: st.things.some((t) => t.kind in BUILDS),
     },
@@ -257,7 +257,7 @@ export function goalsDay2(
       text: tr(WOOD_GOAL),
       how: L(
         `Drewna na zapas: ${o.wood} z ${DAY2_WOOD}. Noc zjada około 2 sztuk na godzinę, a przy kozie może ktoś czuwać.`,
-        `Spare wood: ${o.wood} of ${DAY2_WOOD}. The night eats about 2 pieces an hour, and someone can sit up with the stove.`,
+        `Wood stocked: ${o.wood} of ${DAY2_WOOD}. The night eats about 2 pieces an hour, and someone can sit up with the stove.`,
       ),
       done: o.woodReady || late,
       missed: !o.woodReady && late,

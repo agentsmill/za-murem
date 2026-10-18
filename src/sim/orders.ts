@@ -545,7 +545,9 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return L(`Buduje ${what}.`, `Building the ${whatEn}.`);
     }
     case 'leave':
-      return walking ? L('Wychodzi na wyprawę.', 'Heading out on a run.') : L('Na wyprawie.', 'Out on a run.');
+      return walking
+        ? L('Wychodzi na wyprawę.', 'Heading out on a supply run.')
+        : L('Na wyprawie.', 'Out on a supply run.');
     case 'raid':
       return (
         [

@@ -19,7 +19,7 @@ export const FACHY_EN: Readonly<Record<IdFachu, string>> = {
   majster: 'master builder',
   pomocnikBud: 'builder’s labourer',
   uszczelniacz: 'draught-proofer',
-  spawacz: 'battery welder',
+  spawacz: 'car-battery welder',
   barykadnik: 'barricade builder',
   // ciepło
   zdun: 'stove mason',

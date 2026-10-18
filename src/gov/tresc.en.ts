@@ -34,11 +34,11 @@ export const M1_LAWS_EN: Record<string, M1LawEn> = {
   },
   u_kociol: {
     name: 'The common pot',
-    desc: 'All the food goes into one pot by the stove. Everyone eats the same, including those who don’t work. Trust +2 at once and +0.3 a day, food goes 10% faster.',
+    desc: 'All the food goes into one pot by the stove. Everyone eats the same, including those who don’t work. Trust +2 at once and +0.3 a day, food runs down 10% faster.',
   },
   u_racje: {
     name: 'Starvation rations',
-    desc: 'Food goes 25% slower. Anger +0.4 a day.',
+    desc: 'Food runs down 25% more slowly. Anger +0.4 a day.',
   },
   u_meble: {
     name: 'Furniture for fuel',
@@ -51,7 +51,7 @@ export const M1_LAWS_EN: Record<string, M1LawEn> = {
 
 /** cele wypraw po id z TARGETS */
 export const TARGETS_EN: Record<string, string> = {
-  mieszkania: 'the abandoned flats in the next block',
+  mieszkania: 'the abandoned flats in the block next door',
   garaze: 'the garages behind the carpet rack',
   pawilon: 'the shopping pavilion',
   stacja: 'the petrol station by the ring road',
@@ -72,7 +72,7 @@ export const HOLE_NAMES_EN = [
   'behind the carpet rack',
   'on the street side',
   'by the bins',
-  'facing the next block',
+  'facing the block next door',
 ];
 export const HOLE_NAMES_DOM_EN = [
   'by the garage',
@@ -90,7 +90,7 @@ export const KONIEC_DOM_EN: Record<'odwolanie' | 'exodus' | 'pustka', { title: s
   },
   exodus: {
     title: 'The street emptied out',
-    text: 'People stopped believing they would make it with you. House by house, they left for other streets. All that is left are empty gardens and a letter from the bank about a mortgage instalment from 2047.',
+    text: 'People stopped believing you would get them through. House by house, they left for other streets. All that’s left is empty gardens and a letter from the bank about a mortgage instalment from 2047.',
   },
   pustka: {
     title: 'Nobody survived',

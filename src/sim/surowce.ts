@@ -153,13 +153,16 @@ export const NAPISY = {
     en: left > 1 ? `Making parts from scrap (${left} to go).` : 'Making a part from scrap.',
   }),
   /** podpowiedzi po poleceniu (jedna osoba, kilka osób: polecenie bierze jedna) */
-  poWrak: { pl: 'Weźmie się za wrak.', en: 'Will get to work on the wreck.' },
-  poWrakWielu: { pl: 'Jedna osoba weźmie się za wrak.', en: 'One person will get to work on the wreck.' },
-  poZaniesc: { pl: 'Zaniesie łup na podwórko.', en: 'Will carry the loot into the yard.' },
-  poZaniescWielu: { pl: 'Jedna osoba zaniesie łup na podwórko.', en: 'One person will carry the loot into the yard.' },
-  poWarsztat: { pl: 'Weźmie się do roboty w warsztacie.', en: 'Will get to work in the workshop.' },
+  poWrak: { pl: 'Weźmie się za wrak.', en: 'Off to work on the wreck.' },
+  poWrakWielu: { pl: 'Jedna osoba weźmie się za wrak.', en: 'One person goes to work on the wreck.' },
+  poZaniesc: { pl: 'Zaniesie łup na podwórko.', en: 'Off to carry the loot into the yard.' },
+  poZaniescWielu: {
+    pl: 'Jedna osoba zaniesie łup na podwórko.',
+    en: 'One person goes to carry the loot into the yard.',
+  },
+  poWarsztat: { pl: 'Weźmie się do roboty w warsztacie.', en: 'Off to the workshop.' },
   poWarsztatWielu: {
     pl: 'Jedna osoba weźmie się do roboty w warsztacie.',
-    en: 'One person will get to work in the workshop.',
+    en: 'One person goes to the workshop.',
   },
 } as const;

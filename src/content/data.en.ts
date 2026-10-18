@@ -36,24 +36,24 @@ export const CLS_EN: Record<BuildingClass, string> = {
   szkola: 'School',
   przychodnia: 'Clinic',
   garaz: 'Garages',
-  hala: 'Hall',
+  hala: 'Warehouse',
   kosciol: 'Church',
   inne: 'Building',
 };
 
 /** cechy po kluczu z TRAITS; po angielsku jedna forma dla obu płci */
 export const TRAITS_EN: Record<string, { name: string; desc: string }> = {
-  pracowity: { name: 'Hard-working', desc: 'As a supervisor: +10% to work.' },
-  leniwy: { name: 'Lazy', desc: 'As a supervisor: −10%, but always knows where the coffee is.' },
+  pracowity: { name: 'Hard-working', desc: 'As a supervisor: work +10%.' },
+  leniwy: { name: 'Lazy', desc: 'As a supervisor: work −10%, but always knows where the coffee is.' },
   lubiany: { name: 'Well-liked', desc: 'Trust +0.3 a day.' },
   klotliwy: { name: 'Quarrelsome', desc: 'Anger +0.3 a day.' },
   odwazny: { name: 'Brave', desc: 'Crews with them get hurt less often.' },
   tchorz: { name: 'Cowardly', desc: 'Crews with them get hurt more often.' },
   optymista: { name: 'Optimist', desc: 'Anger −0.2 a day.' },
   hipochondryk: { name: 'Hypochondriac', desc: 'Goes through 0.1 Meds a day, even when healthy.' },
-  gadula: { name: 'Chatterbox', desc: 'Talks the longest at meetings. That is all.' },
-  excel: { name: 'Excel wizard', desc: 'As common room supervisor: research +5%. Gorgeous reports.' },
-  twardy: { name: 'Tough', desc: 'Falls ill less often and dies on runs less often.' },
+  gadula: { name: 'Chatterbox', desc: 'Talks the longest at meetings. That’s it.' },
+  excel: { name: 'Excel wizard', desc: 'As common room supervisor: research +5%. Beautiful spreadsheets.' },
+  twardy: { name: 'Tough', desc: 'Falls ill less often and is less likely to die on a run.' },
 };
 
 /** zawody z PROFS po męskiej nazwie; po angielsku jedna forma dla obu płci */
@@ -120,7 +120,7 @@ export const ENDINGS_EN: Record<EndingId, { title: string; text: string }> = {
   },
   technokracja: {
     title: 'Technocracy',
-    text: 'The model from the bank’s drives has been made chair of the co-op. Rations are fair to the gram, rotas are optimal, and meetings last four minutes. Nobody knows who actually controls it. For now, everyone is fed.',
+    text: 'The AI model salvaged from the bank’s servers is now chair of the co-op. Rations are fair to the gram, rotas are optimal, and meetings last four minutes. Nobody knows who actually controls it. For now, everyone is fed.',
   },
   odwolanie: {
     title: 'The general meeting recalled the board',
@@ -128,7 +128,7 @@ export const ENDINGS_EN: Record<EndingId, { title: string; text: string }> = {
   },
   exodus: {
     title: 'The estate emptied out',
-    text: 'People stopped believing they would make it with you. Family by family, they left for other estates. All that is left are empty stairwells and service charge bills from 2047.',
+    text: 'People stopped believing you would get them through. Family by family, they left for other estates. All that’s left is empty stairwells and service charge bills from 2047.',
   },
   pustka: {
     title: 'Nobody survived',
@@ -136,10 +136,10 @@ export const ENDINGS_EN: Record<EndingId, { title: string; text: string }> = {
   },
 };
 
-/** przyczyna zgonu ze stanu symulacji (Dead.cause) do zdań: „of their wounds” */
+/** przyczyna zgonu ze stanu symulacji (Dead.cause) do zdań: „of wounds” (bez płci, której wpis zgonu nie ma) */
 const PRZYCZYNY_EN: Record<string, string> = {
-  rany: 'of their wounds',
-  gorączka: 'after a bite',
+  rany: 'of wounds',
+  gorączka: 'of fever after being bitten',
   amputacja: 'during an amputation',
 };
 export const przyczynaEn = (cause: string): string => PRZYCZYNY_EN[cause] ?? cause;
@@ -147,7 +147,7 @@ export const przyczynaEn = (cause: string): string => PRZYCZYNY_EN[cause] ?? cau
 /* Wstępy jak LORE i LORE_ZOMBIE w data.ts (lore bez zmian: rok 2051, bakteria od miedzi z 2026 roku, prezydent bez
    imienia). */
 export const LORE_EN: string =
-  'It is 2051. It all started a quarter of a century ago, in 2026, when a green startup asked its AI model for a bacterium that could recover copper from e-waste. The model exceeded expectations. The strain escaped the lab and started eating cables in walls, underground and up on the poles. For three years everyone blamed the outages on scrap thieves, and by the time someone joined the dots, the bacterium was already touring the world in containers full of e-waste. After that, things fell apart slowly: the President of the United States began his tenth term, the dollar moved to a subscription plan, the cloud went down, and the fridges, cars and door intercoms are still waiting for an update. The EU banned wood burners the day before the power went out. Influencers pivoted to survival, ESG consultants to porridge. Only the airtight survived, plus one institution: the housing cooperative. You are the board now.';
+  'It is 2051. It all started a quarter of a century ago, in 2026, when a green startup asked its AI model for a bacterium that could recover copper from e-waste. The model exceeded expectations. The strain escaped the lab and started eating cables in walls, underground and up on the poles. For three years everyone blamed the outages on scrap thieves, and by the time someone joined the dots, the bacterium was already touring the world in containers full of e-waste. After that, things fell apart slowly: the President of the United States began his tenth term, the dollar moved to a subscription plan, the cloud went down, and the fridges, cars and door intercoms are still waiting for an update. The EU banned wood burners the day before the power went out. Influencers pivoted to survival, ESG consultants to porridge. Only what was sealed airtight survived. That, and one institution: the housing cooperative. You are the board now.';
 
 export const LORE_ZOMBIE_EN: string =
-  'It is 2051. Nobody remembers any more how it started. The AI model in the bank’s server room has three hypotheses and presents each one with total confidence. Only one thing is certain: we all carry it. Whoever dies gets back up, and whoever gets bitten dies of fever within a day. Shamblers are slow and stupid, but they follow noise and gather in herds. The President of the United States, now in his tenth term, has announced that the situation is under control. Only the fenced-in survived, plus one institution: the housing cooperative. You have shored up the fence around the yard with planks, and there is a spear and an old revolver in the basement. You are the board now.';
+  'It is 2051. Nobody remembers any more how it started. The AI model in the bank’s server room has three hypotheses and presents each one with total confidence. Only one thing is certain: we all carry it. Whoever dies gets back up, and whoever gets bitten dies of fever within a day. Shamblers are slow and stupid, but they follow noise and gather in herds. The President of the United States, now in his tenth term, has announced that the situation is under control. Only what was fenced in survived. That, and one institution: the housing cooperative. You have shored up the fence around the yard with planks, and there is a spear and an old revolver in the basement. You are the board now.';

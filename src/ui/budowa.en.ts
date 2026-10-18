@@ -4,8 +4,8 @@
 import type { BuildPlace } from '../sim/budowle.ts';
 
 export const PLACE_EN: Record<BuildPlace, string> = {
-  pokoj: 'in a room of our flat',
-  kuchnia: 'in the kitchen of our flat',
-  podworko: 'in the yard behind the fence',
+  pokoj: 'in a room of your flat',
+  kuchnia: 'in your kitchen',
+  podworko: 'in the yard, inside the fence',
   obwod: 'in place of a stretch of fence',
 };

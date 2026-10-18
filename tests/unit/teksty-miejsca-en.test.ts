@@ -172,7 +172,7 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
     core.job = job('stay', STAY_MEAL);
     expect(jobText(sim.st, w, core)).toBe('Having the shared meal at the committee’s table.');
     expect(canPlace(sim.st, w, 'ogrodek', 0, 0, 0).why).toBe(
-      'Only in the yard behind the fence, away from the garden gate, holes and doors.',
+      'Only in the yard inside the fence, away from the garden gate, holes and doors.',
     );
   });
 });

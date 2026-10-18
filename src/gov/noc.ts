@@ -71,10 +71,13 @@ export const untilWordEn = (until: string): string => (until === '0:00' ? 'midni
 
 /** do której starczy drewna przy dyżurze, w słowach („drewna starczy do około 2:00.”) */
 export function woodNote(wd: { have: number; need: number; until: string }): Tx {
-  if (wd.have >= wd.need) return tx('drewna starczy do rana.', 'there is wood until morning.');
+  if (wd.have >= wd.need) return tx('drewna starczy do rana.', 'the wood will last till morning.');
   if (wd.have >= WOOD_PER_HOUR)
-    return tx(`drewna starczy do około ${untilWord(wd.until)}.`, `there is wood until about ${untilWordEn(wd.until)}.`);
-  return tx('drewna prawie nie ma.', 'there is hardly any wood.');
+    return tx(
+      `drewna starczy do około ${untilWord(wd.until)}.`,
+      `the wood will only last until about ${untilWordEn(wd.until)}.`,
+    );
+  return tx('drewna prawie nie ma.', 'there’s hardly any wood left.');
 }
 
 /** zdania po kolei w obu językach, bez pustych */
@@ -307,7 +310,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
           zombie && behindWire(i, post.key) && (p.arm === 'brak' || p.arm === 'wrecz' || !p.arm)
             ? tx(
                 'Z tą bronią nie sięgnie szwendaczy przez siatkę.',
-                'With that weapon, can’t reach the shamblers through the fence.',
+                'Can’t reach the shamblers through the fence with that.',
               )
             : p.needs.rest < 30
               ? tx(`${g(p, 'Zmęczony', 'Zmęczona')}: może zasnąć na warcie.`, 'Tired: may fall asleep on watch.')
@@ -329,7 +332,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
           : p.bitten
             ? tx(
                 g(p, 'Ugryziony, w gorączce: nie wróci z wyprawy.', 'Ugryziona, w gorączce: nie wróci z wyprawy.'),
-                'Bitten and feverish: would not come back from a run.',
+                'Bitten and feverish: wouldn’t make it back from a run.',
               )
             : t.range === 'daleko'
               ? tx('Za mało sił na daleką wyprawę.', 'Not enough energy for a long run.')
@@ -369,7 +372,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
       )
     : tx(
         `${first.pl}Szansa, że szabrownicy spróbują wejść: około ${pct}% (${cw.pl}), z jedną osobą na warcie około ${one}%. Najsłabsze miejsce: ${posts[0].name.pl}.`,
-        `${first.en}Chance that looters will try to get in: about ${pct}% (${cw.en}), with one person on watch about ${one}%. They are most likely to try ${posts[0].name.en}.`,
+        `${first.en}Chance of looters trying to get in: about ${pct}% (${cw.en}), or about ${one}% with one person on watch. They’ll most likely try ${posts[0].name.en}.`,
       );
   const card: NightCard = {
     day: nd,
@@ -443,7 +446,7 @@ export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string,
   if (card.chance >= 0.25 && !guards.length)
     fence = tx(
       `Bez warty ${at.pl} szabrownicy wejdą bez trudu${loss.pl ? ` i mogą zabrać: ${loss.pl}` : ''}.`,
-      `With nobody on watch ${at.en}, looters will walk right in${loss.en ? ` and could take: ${loss.en}` : ''}.`,
+      `With nobody on watch ${at.en}, looters will walk right in${loss.en ? ` and could take ${loss.en}` : ''}.`,
     );
   else if (guards.length && !kept.has(weak.key))
     fence = tx(
@@ -462,7 +465,7 @@ export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string,
       'Jedzenia jest na krótko. Wyprawa blisko jest bezpieczniejsza, daleka przynosi więcej.',
       'Food is running short. A short run is safer, a long one brings back more.',
     );
-  return tx('Wyśpijcie się. Jutro dzień pracy przy siatce.', 'Get some sleep. Tomorrow is a day of work on the fence.');
+  return tx('Wyśpijcie się. Jutro dzień pracy przy siatce.', 'Get some sleep. The fence needs work tomorrow.');
 }
 
 /** rada w trybie zombie: warta przy siatce i broń, która przez nią sięga; potem koza */
@@ -603,7 +606,7 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
     i,
     tx(
       `${auto ? `${wordsOf(place).Zarzad} nie zdążył się naradzić, zostaje propozycja. ` : ''}Noc: ${night.pl}.`,
-      `${auto ? `${wordsEn(place).Zarzad} ran out of time to confer, so the proposal stands. ` : ''}Night: ${night.en}.`,
+      `${auto ? `${wordsEn(place).Zarzad} ran out of time, so its suggestion stands. ` : ''}Night: ${night.en}.`,
     ),
     false,
     fx,
@@ -641,7 +644,7 @@ function returnExp(st: GovState, i: GovInput, fx: GovEffects, gr: { ids: string[
     n.lines.push(
       tx(
         `${who.pl} ${verbPl(ppl, 'trafił', 'trafiła', 'trafili', 'trafiły')} na ${zombie ? 'szwendaczy' : 'szabrowników'} (${where.pl}). ${hurt.name} ${harm}.${has.pl ? ` Udało się przynieść: ${has.pl}.` : ' Wszystko zostało po drodze.'}`,
-        `${who.en} ran into ${zombie ? 'shamblers' : 'looters'} (${where.en}). ${hurt.name} ${bitten ? 'was bitten' : 'got hurt'}.${has.en ? ` ${oni(ppl, 'He', 'She', 'They')} still brought back: ${has.en}.` : ' Everything was left behind on the way.'}`,
+        `${who.en} ran into ${zombie ? 'shamblers' : 'looters'} at ${where.en}. ${hurt.name} ${bitten ? 'was bitten' : 'got hurt'}.${has.en ? ` ${oni(ppl, 'He', 'She', 'They')} still brought back ${has.en}.` : ` ${oni(ppl, 'He', 'She', 'They')} had to drop the lot on the way back.`}`,
       ),
     );
     for (const p of ppl) fx.moods.push({ id: p.id, why: g(p, 'Ledwo uciekłem', 'Ledwo uciekłam'), d: -6, hours: 12 });
@@ -794,7 +797,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
       n.lines.push(
         tx(
           `W nocy szabrownicy podeszli ${at.pl}. ${names.pl} ${verbPl(here, 'przegonił', 'przegoniła', 'przegonili', 'przegoniły')} ich.`,
-          `In the night, looters crept up ${at.en}. ${names.en} chased them off.`,
+          `In the night, looters tried their luck ${at.en}. ${names.en} chased them off.`,
         ),
       );
     } else
@@ -824,7 +827,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
   n.lines.push(
     tx(
       `Szabrownicy weszli ${at.pl} i zabrali: ${took.pl || 'niewiele, bo nic nie leżało na wierzchu'}.`,
-      `Looters got in ${at.en} and took: ${took.en || 'not much, since nothing was lying around'}.`,
+      `Looters got in ${at.en} and took ${took.en || 'very little, since nothing was lying around'}.`,
     ),
   );
   logGov(st, i, n.lines[n.lines.length - 1], true, fx);

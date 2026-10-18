@@ -15,6 +15,7 @@
 
 import { zawodEn } from '../content/data.en.ts';
 import type { Cost } from '../content/data.ts';
+import { zPrzedimkiem } from '../mieszkancy/szablony.en.ts';
 import { nazwaBudynkuEn } from '../world/classify.en.ts';
 import type { GovHost } from './tresc.ts';
 import { bookEn, costEn, costPlEn, dziedzinaEn, fromEn, TOWER_EN } from './warianty-dane.en.ts';
@@ -116,7 +117,7 @@ const WYDARZENIA: Record<string, EventEn> = {
     title: () => 'Kids with scrap',
     text: (h) =>
       domyObok(h)
-        ? 'Kids from the houses nearby have pushed over a wheelbarrow of sheet metal and pipes from a shed they took apart. They want something to eat.'
+        ? 'Kids from the houses nearby have wheeled round a barrow of sheet metal and pipes from a shed they took apart. They want something to eat.'
         : 'Kids from the blocks next door have dragged over a trolley of sheet metal and pipes from the shopping pavilion they’ve been taking apart. They want something to eat.',
     labels: () => ['Scrap 6 for Food 1', 'Scrap 10 for Food 2', 'Not now'],
   },
@@ -188,7 +189,7 @@ const WYDARZENIA: Record<string, EventEn> = {
   krypto: {
     title: () => 'Paid in tokens',
     text: (h) =>
-      `${domyObok(h) ? 'The neighbour from over the fence' : 'A neighbour from the block next door'} wants to buy Wood 5 from you. He’s paying in tokens, which he swears are about to bounce back.`,
+      `${domyObok(h) ? 'The neighbour from over the fence' : 'A neighbour from the block next door'} wants to buy 5 wood off you. He’s paying in tokens, which he swears are about to bounce back.`,
     labels: () => ['Take the tokens', 'Laugh at him'],
     log: wpisy({ 'Tokeny dalej czekają na odbicie.': 'The tokens are still waiting to bounce back.' }),
   },
@@ -239,7 +240,7 @@ const WYDARZENIA: Record<string, EventEn> = {
       const spec = d.spec ? ` Among them: ${d.spec.name}, ${zawod(d.spec.prof)}.` : '';
       if (dom(h))
         return `A family of ${slownie(d.n)} is standing at the garden gate. They’ve come ${from} and are asking to be let in. ${free ? `Free beds in the house: ${free}.` : 'There are no free beds in the house, so they would sleep on the kitchen floor.'}${spec}`;
-      return `At the gate, ${ludzie(d.n)} ${d.n === 1 ? 'is' : 'are'} asking to be let in. They’ve come ${from}. Free places in the block: ${free}.${spec}`;
+      return `At the gate, ${ludzie(d.n)} ${d.n === 1 ? 'is' : 'are'} asking to be let in. They’ve come ${from}. Free beds in the block: ${free}.${spec}`;
     },
     // te same warunki co wybory w nakładce: wszyscy albo tylu, ilu się zmieści, jedzenie, wszyscy na podłogę, odprawa
     labels: (h, d) => {
@@ -247,7 +248,7 @@ const WYDARZENIA: Record<string, EventEn> = {
       const out: string[] = [];
       if (free >= d.n) out.push('Take everyone in');
       else if (free > 0) out.push(`Take in as many as fit (${free})`);
-      out.push('Give them Food 3 for the road');
+      out.push('Give them food for the road (Food 3)');
       if (free < d.n) out.push(`Take everyone in (${ludzie(d.n - free)} on the floor)`);
       out.push('Send them away');
       return out;
@@ -267,7 +268,7 @@ const WYDARZENIA: Record<string, EventEn> = {
       const p = d.p;
       const z = zaimki(p);
       const who = dom(h) ? `${p.name} ${h.neighbourEn() ?? 'from over the fence'}` : `${p.name} from ${budynek(d.b)}`;
-      return `${who} let slip by ${ogien(h)} what ${z.on} used to be: ${zawod(p.prof)}. ${wielka(z.on)} kept quiet until now, afraid someone would make ${z.go} work.`;
+      return `${who} let it slip by ${ogien(h)} that ${z.on} used to be ${zPrzedimkiem(zawod(p.prof))}. ${wielka(z.on)} kept quiet until now in case someone put ${z.go} to work.`;
     },
     labels: (_h, d) => {
       const z = zaimki(d.p);
@@ -298,7 +299,7 @@ const WYDARZENIA: Record<string, EventEn> = {
       dom(h)
         ? 'A badly placed stove has set the kitchen floor alight. Smoke is filling the whole house.'
         : `A flat in ${budynek(h.buildingName(d.b))} has caught fire from a badly placed stove. Smoke is pouring into the stairwell.`,
-    labels: (h) => ['All hands, put it out', dom(h) ? 'Run out into the garden' : 'Evacuate the stairwell'],
+    labels: (h) => ['Everyone grab a bucket', dom(h) ? 'Run out into the garden' : 'Evacuate the stairwell'],
     log: wpisy(
       {
         'Pożar ugaszony. Spłonął zapas opału z piwnicy.':
@@ -319,7 +320,7 @@ const WYDARZENIA: Record<string, EventEn> = {
   kradziez: {
     title: () => 'Theft from the basement',
     text: (_h, d) =>
-      `Overnight, someone carried Food ${d.loss} out of the basement of ${budynek(d.b)}. The footprints lead to a ground-floor flat.`,
+      `Overnight, someone made off with ${d.loss} food from the basement of ${budynek(d.b)}. The footprints lead to a ground-floor flat.`,
     labels: (h) => [
       ...(h.law('u_sad') ? ['Residents’ court'] : []),
       'Throw the culprit off the estate',

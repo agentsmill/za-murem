@@ -14,7 +14,7 @@ export const NASTROJE_EN: Readonly<Record<string, string>> = {
   'Rozbieramy cudze mieszkanie': 'Stripping someone else’s flat',
   'Dobiłem obcego': 'I finished off a stranger',
   'Dobiłem sąsiada': 'I finished off a neighbour',
-  'Zabiłem człowieka': 'I killed a person',
+  'Zabiłem człowieka': 'I killed someone',
   Amputacja: 'Amputation',
   'Uratowaliśmy go': 'We saved a life',
   'Gorączka po ugryzieniu': 'Fever from a bite',

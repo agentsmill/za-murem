@@ -290,7 +290,7 @@ describe('okna zarządu po angielsku', () => {
     expect(r.kicker).toBe('Morning report, day 2, 6:00');
     expect(r.title).toBe('Raid fought off');
     expect(r.body).toContain('A quiet night.');
-    expect(r.body).toContain('From runs</small><b>wood 4');
+    expect(r.body).toContain('Brought back</small><b>wood 4');
     expect(r.body).toContain('+1.5');
     expect(r.body).toContain('−1');
     expect(r.foot).toContain('New day');
@@ -447,7 +447,7 @@ describe('pasek, cele i przybysze po angielsku', () => {
       how: 'Click a person in the HQ kitchen.',
     });
     expect(g.find((x) => x.key === 'cieplo')?.how).toContain('The kitchen is at 9°C now.');
-    expect(g.find((x) => x.key === 'drewno')?.how).toContain('Spare wood: 2 of 6.');
+    expect(g.find((x) => x.key === 'drewno')?.how).toContain('Wood stocked: 2 of 6.');
     expect(goalsOf(st, null, { touch: true, kitchen: 9, hour: 15 })[0].how).toBe('Tap a person in the HQ kitchen.');
     for (const mode of ['zwykly', 'zombie'] as const)
       for (const touch of [false, true]) {
@@ -505,7 +505,7 @@ describe('budowa i mieszkania po angielsku', () => {
         if (n > 0) expect(b.cost).toContain(`${MAT_EN[m]} ${n}`);
     }
     expect(buildName('zasieki')).toBe('Barricade');
-    expect(menu.flatMap((c) => c.items).find((b) => b.kind === 'warsztat')!.place).toBe('in a room of our flat');
+    expect(menu.flatMap((c) => c.items).find((b) => b.kind === 'warsztat')!.place).toBe('in a room of your flat');
     expect(workText(TICKS_PER_HOUR)).toBe('1 h of work');
     expect(workText((3 * TICKS_PER_HOUR) / 4)).toBe('45 min of work');
     expect(workText((3 * TICKS_PER_HOUR) / 2)).toBe('1.5 h of work');
@@ -514,12 +514,12 @@ describe('budowa i mieszkania po angielsku', () => {
       .flatMap((c) => c.items)
       .find((b) => b.kind === 'warsztat')!;
     expect(poor.why).toBe(
-      `Still needed: planks ${(BUILDS.warsztat.cost.deski ?? 0) - 1}, scrap ${BUILDS.warsztat.cost.zlom}. Planks come from searching empty flats and tearing down furniture.`,
+      `Still needed: planks ${(BUILDS.warsztat.cost.deski ?? 0) - 1}, scrap ${BUILDS.warsztat.cost.zlom}. Planks come from searching empty flats and taking furniture apart.`,
     );
     const k = buildMenu({ zlom: 999, czesci: 999 }, (kind) => kind !== 'kuchnia_spoleczna')
       .flatMap((c) => c.items)
       .find((b) => b.kind === 'kuchnia_spoleczna')!;
-    expect(k.why).toBe('Nowhere to put it: no free space in the kitchen of our flat.');
+    expect(k.why).toBe('Nowhere to put it: no free space in your kitchen.');
     for (const touch of [false, true])
       for (const have of [{}, BUILDS.warsztat.cost, { deski: 999, zlom: 999, czesci: 999 }]) {
         const s = buildSheet(
@@ -576,9 +576,9 @@ describe('budowa i mieszkania po angielsku', () => {
       'Off the map.',
       'Something is in the way.',
       'Only on a stretch of the fence.',
-      'Only in the yard behind the fence, away from the gate, holes and doors.',
-      'Only in a room of our flat.',
-      'Only in the kitchen of our flat.',
+      'Only in the yard inside the fence, away from the gate, holes and doors.',
+      'Only in a room of your flat.',
+      'Only in your kitchen.',
     ])
       expect(whys).toContain(why);
     for (const why of whys) expect(polskieSlowa(why), why).toEqual([]);
