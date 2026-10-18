@@ -7,11 +7,13 @@
    dotknięciu, bez zapisu w stanie); kartaBudynku robi z niego HTML. Napisy z src/content/napisy-sasiedzi.ts. */
 
 import type { BuildingClass } from '../content/data.ts';
-import { BUDYNEK, KARTA } from '../content/napisy-sasiedzi.ts';
+import { BUDYNEK, ileTekst, KARTA } from '../content/napisy-sasiedzi.ts';
+import { dayOf } from '../sim/clock.ts';
 import {
   drzwiBudynku,
   type Gdzie,
   mieszkalny,
+  pietraBudynku,
   type SasiedniBudynek,
   type StanDrzwi,
   wnetrze,
@@ -39,6 +41,9 @@ export interface WidokBudynku {
   drzwi: Partial<Record<StanDrzwi, number>> | null;
   /** przeszukane pomieszczenia i wszystkie do przeszukania w otwartym budynku */
   pokoje: { n: number; z: number } | null;
+  /** etap 2: przeszukane piętra (w otwartym budynku z piętrami) i ostatni nocny gość (dzień gry, kto, co zniknęło) */
+  pietra: { n: number; z: number } | null;
+  noc: { dzien: number; kto: 'szabrownicy' | 'szwendacze'; zabrali: Partial<Record<string, number>> } | null;
   znajomi: ZnajomiWidok[];
 }
 
@@ -63,6 +68,8 @@ export function widokBudynku(w: World, b: SasiedniBudynek, dotkniety: boolean): 
     otwarty: b.otwarty,
     drzwi: dotkniety ? drzwi : null,
     pokoje: b.otwarty ? { n, z: it.rooms.length } : null,
+    pietra: b.otwarty && pietraBudynku(w, b.bid) > 0 ? { n: b.pietra, z: pietraBudynku(w, b.bid) } : null,
+    noc: b.noc ? { dzien: dayOf(b.noc.tick), kto: b.noc.kto, zabrali: b.noc.zabrali } : null,
     znajomi: b.domy
       .filter((g) => g.znani || g.ludzie)
       .map((g) => ({
@@ -101,6 +108,8 @@ export function kartaBudynku(v: WidokBudynku, touch: boolean): string {
     v.pokoje
       ? `<p class="apt-why">${esc(BUDYNEK.przeszukane(v.pokoje.n, v.pokoje.z).pl)}</p>`
       : `<p class="apt-why">${esc(BUDYNEK.zamkniety.pl)}</p>`,
+    v.pietra ? `<p class="apt-why">${esc(BUDYNEK.pietraPrzeszukane(v.pietra.n, v.pietra.z).pl)}</p>` : '',
+    v.noc ? `<p class="apt-why">${esc(BUDYNEK.noc(v.noc.dzien, v.noc.kto, ileTekst(v.noc.zabrali)).pl)}</p>` : '',
     `<p class="doing">${esc(BUDYNEK.jak(touch).pl)}</p>`,
   ].join('');
 }

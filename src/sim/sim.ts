@@ -9,7 +9,7 @@ import { PROFS } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
-import { IN } from '../world/interior.ts';
+import { IN, type Interior } from '../world/interior.ts';
 import type { Tree, World } from '../world/world.ts';
 import type { Wreck } from '../world/wrecks.ts';
 import {
@@ -84,6 +84,7 @@ import {
   atakOdRazu,
   type DrzwiStan,
   domTeraz,
+  domWyzej,
   domyZapasowe,
   drzwiBudynku,
   type Gospodarstwo,
@@ -94,16 +95,23 @@ import {
   type Info,
   type KontekstSpotkania,
   type LokatorzyBudynku,
+  LUP_MATS,
   lupMieszkania,
   lupUslug,
   mieszkalny,
   mieszkaniaZaDrzwiami,
   moznaPrzeszukac,
   type Napis,
+  NOC_BIORA,
+  NOC_POKOJE,
+  nocnyGosc,
   nowyBudynek,
   ODBIJANIE_TICKS,
   OTWIERANIE_TICKS,
+  PIETRO_TICKS,
   PUKANIE_TICKS,
+  pietraBudynku,
+  pietro,
   poHalasie,
   pokojSasiada,
   przechodnie,
@@ -115,6 +123,8 @@ import {
   skutek,
   solidCell,
   stanDrzwi,
+  szabrownicy,
+  ugryzionyOd,
   uSasiada,
   WYWAZ_KLATKA_TICKS,
   WYWAZ_MIESZKANIE_TICKS,
@@ -124,6 +134,7 @@ import {
   ZABIJANIE_DESKI,
   ZABIJANIE_TICKS,
   type Zamiar,
+  zostaja,
 } from './sasiedzi.ts';
 import {
   CARRY_MATS,
@@ -240,6 +251,7 @@ const M2_JOBS = new Set<JobKind>([
   'saw',
   'door',
   'loot',
+  'upstairs',
 ]);
 /** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
 export const GATHER_NEAR = 8;
@@ -356,7 +368,9 @@ export type JobKind =
       przeszukanie pomieszczenia sąsiada (target: gid), czekanie na wybór w spotkaniu (target: numer spotkania) */
   | 'door'
   | 'loot'
-  | 'meet';
+  | 'meet'
+  /** etap 2: piętro sąsiada (target: indeks budynku, tile: kafelek przy schodach); w fazie 1 osoba jest na górze */
+  | 'upstairs';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -579,7 +593,9 @@ export type Command =
   /** przeszukać pomieszczenie sąsiedniego budynku (lokalny numer pomieszczenia we wnętrzu budynku bid) */
   | { t: 'loot'; ids: number[]; bid: number; room: number }
   /** wybór w spotkaniu z lokatorami (ids puste) */
-  | { t: 'meet'; ids: number[]; nr: number; choice: WyborSpotkania };
+  | { t: 'meet'; ids: number[]; nr: number; choice: WyborSpotkania }
+  /** etap 2: przeszukać następne piętro otwartego budynku (tile: kafelek schodów) */
+  | { t: 'upstairs'; ids: number[]; bid: number; tile: number };
 
 export interface Noise {
   x: number;
@@ -1938,6 +1954,12 @@ export class Sim {
     if (st.tick % TICKS_PER_HOUR === 0 && hourOf(st.tick) === 6) for (const p of st.pawns) p.ate = 0;
     if (st.tick % (TICKS_PER_HOUR / 2) === 0) this.syncMealDoor();
     if (st.raid) this.raidTick(st.raid);
+    // M2 fala 2: nocni goście w otwartych budynkach o 2:00, napis o 7:00 (tylko gdy zarząd dotknął cudzych drzwi)
+    if (st.sasiedzi && st.tick % TICKS_PER_HOUR === 0) {
+      const h = hourOf(st.tick);
+      if (h === 2) this.nocniGoscie();
+      else if (h === 7) this.ranoPoGosciach();
+    }
     if (st.noise!.length) st.noise = st.noise!.filter((n) => n.until > st.tick);
     if (st.fx!.length) st.fx = st.fx!.filter((f) => f.tick + FX_TICKS > st.tick);
     if (modeOf(st) === 'zombie') {
@@ -1969,6 +1991,9 @@ export class Sim {
           this.fightTick(p, p.job);
           continue;
         }
+        // M2 fala 2: w budynku, w którym po nocy zostali szabrownicy, czeka spotkanie
+        if (p.kind === 'core' && this.nbRoom && (st.tick + p.id) % THINK_EVERY === 0 && this.naSzabrownikow(p))
+          continue;
       }
       if (p.kind === 'zombie') {
         this.zombieTick(p);
@@ -2163,6 +2188,7 @@ export class Sim {
     else if (c.t === 'open' || c.t === 'knock' || c.t === 'force' || c.t === 'board' || c.t === 'unboard')
       this.orderDoor(pawns, c.t, c.door);
     else if (c.t === 'loot') this.startLoot(pawns[0], c.bid, c.room);
+    else if (c.t === 'upstairs') this.startUpstairs(pawns[0], c.bid, c.tile);
   }
 
   /** Pora wspólnego posiłku (uchwała o kotle), w której mieszkańcy mogą wejść do mieszkania zarządu: pół godziny
@@ -3261,6 +3287,8 @@ export class Sim {
       case 'meet':
         // czeka na wybór gracza, dopóki trwa spotkanie, do którego należy
         return this.st.sasiedzi?.spotkanie?.nr === j.target;
+      case 'upstairs':
+        return this.pietroPraca(p, j, at);
       case 'arrive':
         // przyjęty: zza bramy do swojego mieszkania (po kolei, gęsiego), potem plan dnia jak każdy mieszkaniec
         if (tick < j.until) return true;
@@ -6831,7 +6859,7 @@ export class Sim {
     const size = this.w.size;
     const here = this.tileOf(p);
     let spots: number[];
-    if (gdzie === 'mieszkanie') {
+    if (gdzie === 'mieszkanie' && g.apt >= 0) {
       const tiles = this.kafelkiMieszkania(k, g.apt);
       spots = [...tiles].sort((a, c) => this.dist2(p, a) - this.dist2(p, c) || a - c).slice(0, g.osoby.length + 2);
     } else {
@@ -6946,6 +6974,7 @@ export class Sim {
       if (other) other.znani = true;
     }
     if (sk.info) extra.info = sk.info;
+    if (sk.pytali) g.pytali = true;
     if (sk.dajemy) {
       const n = this.wezNasze('jedzenie', sk.dajemy);
       g.zapasy.jedzenie = (g.zapasy.jedzenie ?? 0) + n;
@@ -6979,6 +7008,7 @@ export class Sim {
     this.napisSasiada(sk.co, sp.b, extra);
     if (!sk.koniec) {
       sp.atak = false;
+      sp.runda = (sp.runda ?? 0) + 1;
       return;
     }
     this.koniecSpotkania(sp);
@@ -7090,9 +7120,15 @@ export class Sim {
     }
     const size = this.w.size;
     const apts = residentApts(st, this.w, h);
+    // tryb zombie: ukryty ugryziony zostaje, gdy zarząd o niego zapytał, a bez pytania przychodzi z gorączką
+    const bitten = g.ugryziony !== undefined ? g.pionki?.[g.ugryziony] : undefined;
     for (const id of g.pionki ?? []) {
       const q = st.pawns.find((x) => x.id === id);
       if (!q) continue;
+      if (id === bitten && g.pytali) {
+        dropPawn(st, q);
+        continue;
+      }
       q.kind = 'resident';
       const apt = aptFor(st, h, size, apts);
       q.apt = apt;
@@ -7117,6 +7153,13 @@ export class Sim {
         (t) => BEDS.has(t.kind) && !t.broken && t.owner < 0 && apt >= 0 && aptAt(h, t.y * size + t.x) === apt,
       );
       if (bed) bed.owner = q.id;
+      if (id === bitten) {
+        // gorączka od kilku godzin: umrze i wstanie jeszcze tej doby, chyba że ktoś zdąży z amputacją albo go dobije
+        infect(st, q, true);
+        q.bite = st.tick - ugryzionyOd(this.w.seed, b.bid, g.apt) * TICKS_PER_HOUR;
+        const fever = q.moods[q.moods.length - 1];
+        if (fever) fever.until = q.bite + FEVER_TICKS;
+      }
     }
     delete g.pionki;
     // uciekający z budynku nie są już na spotkaniu
@@ -7153,6 +7196,9 @@ export class Sim {
         if (idx >= 0) {
           g.ludzie!.splice(idx, 1);
           g.osoby.splice(idx, 1);
+          // indeks ukrytego ugryzionego przesuwa się razem z osobami (a ginie razem z nim)
+          if (g.ugryziony === idx) delete g.ugryziony;
+          else if (g.ugryziony !== undefined && g.ugryziony > idx) g.ugryziony--;
         }
         if (!g.osoby.length) g.gdzie = 'nie_zyja';
         const sp = this.st.sasiedzi!.spotkanie;
@@ -7309,6 +7355,188 @@ export class Sim {
     for (const [mat, n] of Object.entries(loot) as [Mat, number][])
       if (n > 0) this.zostawLup(at, mat, n, this.kafelkiPokoju(gid(k, room)));
     this.wersjaSasiadow++;
+  }
+
+  /* etap 2: szabrownicy w budynku, nocni goście, piętra */
+
+  /** nasza osoba weszła do budynku, w którym po nocy zostali szabrownicy: spotkanie w środku (nocą rzucają się od razu) */
+  private naSzabrownikow(p: Pawn): boolean {
+    const s = this.st.sasiedzi;
+    if (!s || s.spotkanie || p.job?.t === 'meet') return false;
+    const tile = this.tileOf(p);
+    if (!this.inSasiad(tile)) return false;
+    const k = gidB(this.nbRoom![tile]);
+    const dom = s.budynki[k]?.domy.findIndex((g) => g.szabrownicy && g.gdzie === 'u_siebie' && !g.pionki) ?? -1;
+    return dom >= 0 && this.zacznijSpotkanie(p, k, dom, 'mieszkanie', false);
+  }
+
+  /** do budynku da się wejść z ulicy: otwarte albo wyważone drzwi na zewnątrz, przed którymi jest ulica (nie nasze
+      podwórko) */
+  private zUlicy(b: SasiedniBudynek): boolean {
+    return drzwiBudynku(this.w, b.bid).zewn.some(
+      (d) => przechodnie(stanDrzwi(b, d.tile)?.s ?? 'zamkniete') && !this.insideAt(d.out),
+    );
+  }
+
+  /** sterty materiału (łup) w budynku, od najstarszej */
+  private stertyW(bid: number): Thing[] {
+    const size = this.w.size;
+    return this.st.things.filter((t) => LUP_MATS.has(t.kind) && t.n > 0 && this.w.bid[t.y * size + t.x] === bid);
+  }
+
+  /** Nocni goście o 2:00 w otwartych budynkach z wejściem od ulicy. Zwykły tryb: szabrownicy biorą do 10 sztuk ze stert
+      i przeszukują do dwóch pomieszczeń (łup przepada), lokatorzy w domu się boją, a co trzeci raz szabrownicy zostają
+      (i potem biorą co noc). Tryb zombie: wchodzą 1–2 szwendacze. Kto przychodzi, z ziarna świata, budynku i dnia. */
+  private nocniGoscie(): void {
+    const st = this.st;
+    const s = st.sasiedzi!;
+    const mode = modeOf(st);
+    const day = dayOf(st.tick);
+    const seed = this.w.seed;
+    s.budynki.forEach((b, k) => {
+      if (!b.otwarty || !this.zUlicy(b)) return;
+      const piles = this.stertyW(b.bid);
+      const squat = b.domy.find((g) => g.szabrownicy && g.gdzie === 'u_siebie');
+      const kto = squat ? 'szabrownicy' : nocnyGosc(seed, b.bid, day, mode, piles.length > 0);
+      if (!kto) return;
+      if (kto === 'szwendacze') {
+        const it = wnetrze(this.w, b.bid);
+        const tiles = it.rooms.flatMap((r) => this.kafelkiPokoju(gid(k, r.id)));
+        const r = rngOfPlace(seed, b.bid, day, 0x6a59);
+        const n = r() < 0.5 ? 2 : 1;
+        for (let i = 0; i < n && tiles.length && this.zombieCount() < MAX_ZOMBIES; i++)
+          spawnZombie(st, this.w, tiles[Math.floor(r() * tiles.length)], Math.floor(r() * 16));
+        b.noc = { tick: st.tick, kto, zabrali: {} };
+        return;
+      }
+      // ze stert do NOC_BIORA sztuk, od najstarszej
+      const zabrali: Partial<Record<Mat, number>> = {};
+      let left = NOC_BIORA;
+      for (const t of piles) {
+        if (left <= 0) break;
+        const n = Math.min(t.n, left);
+        t.n -= n;
+        left -= n;
+        zabrali[t.kind as Mat] = (zabrali[t.kind as Mat] ?? 0) + n;
+      }
+      st.things = st.things.filter((t) => !(t.n <= 0 && LUP_MATS.has(t.kind)));
+      // do NOC_POKOJE nieprzeszukanych pomieszczeń (sale i puste mieszkania): łup przepada
+      const it = wnetrze(this.w, b.bid);
+      let rooms = NOC_POKOJE;
+      for (const r of it.rooms) {
+        if (rooms <= 0) break;
+        if (moznaPrzeszukac(st, this.w, k, r.id) !== 'tak') continue;
+        if (r.apt < 0) b.przeszukane.push(r.id);
+        else b.mieszkania.find((m) => m.apt === r.apt)?.przeszukane.push(r.id);
+        rooms--;
+      }
+      b.przeszukane.sort((x, y) => x - y);
+      for (const m of b.mieszkania) m.przeszukane.sort((x, y) => x - y);
+      for (const g of b.domy)
+        if (!g.szabrownicy && g.gdzie === 'u_siebie' && g.zamiar !== 'wrodzy') g.nastroj = 'strach';
+      if (squat) {
+        for (const [m, n] of Object.entries(zabrali) as [Mat, number][]) squat.zapasy[m] = (squat.zapasy[m] ?? 0) + n;
+      } else if (zostaja(seed, b.bid, day)) {
+        const names = new Set(st.people.map((q) => q.first));
+        b.domy.push(szabrownicy(this.w, b.bid, day, names, zabrali));
+      }
+      b.noc = { tick: st.tick, kto, zabrali };
+    });
+  }
+
+  /** o 7:00 napis o nocnych gościach (w ilu budynkach i co zniknęło), raz na noc */
+  private ranoPoGosciach(): void {
+    const s = this.st.sasiedzi!;
+    const fresh: number[] = [];
+    const ile: Partial<Record<Mat, number>> = {};
+    let ludzie = false;
+    s.budynki.forEach((b, k) => {
+      if (!b.noc || b.noc.pokazane || this.st.tick - b.noc.tick > TICKS_PER_DAY) return;
+      b.noc.pokazane = true;
+      fresh.push(k);
+      if (b.noc.kto === 'szabrownicy') ludzie = true;
+      for (const [m, n] of Object.entries(b.noc.zabrali) as [Mat, number][]) ile[m] = (ile[m] ?? 0) + n;
+    });
+    if (fresh.length) this.napisSasiada(ludzie ? 'noc' : 'noc_zombie', fresh[0], { ile, ilu: fresh.length });
+  }
+
+  /** Przeszukać piętro otwartego budynku ze schodów (tile: kafelek schodów): osoba idzie na posadzkę przy schodach, na
+      godzinę znika na górze i wraca z łupem; pięter jest tyle, ile pietraBudynku. */
+  private startUpstairs(p: Pawn, bid: number, tile: number): void {
+    const s = this.st.sasiedzi;
+    const k = s?.budynki.findIndex((b) => b.bid === bid && b.otwarty) ?? -1;
+    if (k < 0 || s!.budynki[k].pietra >= pietraBudynku(this.w, bid)) return;
+    const it = wnetrze(this.w, bid);
+    if (it.cell[tile] !== IN.STAIRS) return;
+    const stand = this.przySchodach(p, it, tile);
+    if (stand < 0 || !this.go(p, stand)) return;
+    this.setJob(p, this.newJob('upstairs', k, stand, true), false);
+  }
+
+  /** posadzka przy ciągu schodów, do której osoba dojdzie, najbliżej niej (−1: żadnej) */
+  private przySchodach(p: Pawn, it: Interior, tile: number): number {
+    const size = this.w.size;
+    const seen = new Set<number>([tile]);
+    const q = [tile];
+    const out: number[] = [];
+    const region = this.regionOf(p);
+    while (q.length) {
+      const c = q.pop()!;
+      const x = c % size;
+      for (const n of [c - size, x < size - 1 ? c + 1 : -1, c + size, x > 0 ? c - 1 : -1]) {
+        if (n < 0 || n >= size * size || seen.has(n)) continue;
+        seen.add(n);
+        if (it.cell[n] === IN.STAIRS) q.push(n);
+        else if (it.cell[n] === IN.FLOOR && !this.coreBlocked[n] && this.reg[n] === region) out.push(n);
+      }
+    }
+    return out.length ? this.nearest(p, out) : -1;
+  }
+
+  /** Piętro: dojście do schodów, godzina na górze (osoby nie widać), potem łup z pustych mieszkań piętra na posadzce
+      przy schodach i noszenie na podwórko; na górze w zwykłym trybie mogą zastać ją lokatorzy (spotkanie), a w trybie
+      zombie szwendacz (rana albo ugryzienie, z ziarna gry). */
+  private pietroPraca(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const b = st.sasiedzi?.budynki[j.target];
+    if (!b?.otwarty || b.pietra >= pietraBudynku(this.w, b.bid)) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = st.tick;
+      j.until = st.tick + PIETRO_TICKS;
+      return true;
+    }
+    if (st.tick < j.until) return true;
+    const mode = modeOf(st);
+    const nr = b.pietra;
+    b.pietra++;
+    const res = pietro(this.w, b.bid, nr, b.mieszkania.length, mode);
+    const room = this.nbRoom?.[j.tile] ?? -1;
+    for (const [m, n] of Object.entries(res.lup) as [Mat, number][])
+      if (n > 0) this.zostawLup(j.tile, m, n, room >= 0 ? this.kafelkiPokoju(room) : []);
+    this.wersjaSasiadow++;
+    if (res.szwendacz) {
+      // szwendacz na klatce wyżej: jak ugryzienie przy siatce, z ziarna gry
+      if (nextRandom(st.rng) < BITE_HIT) {
+        this.hurt(p, BITE_DMG, null);
+        const bitten = !this.graveyard.has(p.id) && nextRandom(st.rng) < BITE_INFECT;
+        if (bitten) infect(st, p, nextRandom(st.rng) < LIMB);
+        this.napisSasiada(bitten ? 'pietro_ugryzienie' : 'pietro_szwendacz', j.target, { kto: p.id });
+      } else this.napisSasiada('pietro', j.target, { kto: p.id, ile: res.lup });
+    } else this.napisSasiada('pietro', j.target, { kto: p.id, ile: res.lup });
+    if (this.graveyard.has(p.id)) return false;
+    if (res.ludzie) {
+      const B = this.w.buildings[b.bid];
+      const size = this.w.size;
+      const d2 = (t: number) =>
+        ((t % size) - (j.tile % size)) ** 2 + (Math.floor(t / size) - Math.floor(j.tile / size)) ** 2;
+      const klatka =
+        B.entrances.length > 1 ? B.entrances.map((e, i) => [d2(e.tile), i]).sort((x, y) => x[0] - y[0])[0][1] : -1;
+      b.domy.push(domWyzej(this.w, b.bid, nr, klatka, mode, new Set(st.people.map((q) => q.first))));
+      if (this.zacznijSpotkanie(p, j.target, b.domy.length - 1, 'pietro', false)) return true;
+    }
+    return this.carryOn(p, j, j.tile);
   }
 
   hash(): string {

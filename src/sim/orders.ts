@@ -3,6 +3,7 @@
 
 import { MENU, PRACA, PRACA_DRZWI } from '../content/napisy-sasiedzi.ts';
 import { wordsOfWorld } from '../gov/miejsce.ts';
+import { IN } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
@@ -15,6 +16,7 @@ import {
   gidRoom,
   mieszkalny,
   moznaPrzeszukac,
+  pietraBudynku,
   pokojSasiada,
   przechodnie,
   uSasiada,
@@ -330,6 +332,13 @@ function sasiedziAt(st: SimState, w: World, core: number[], tile: number): MenuI
     if (dp.s === 'zabite' && !flat)
       out.push({ cmd: { t: 'unboard', ids: core, door }, label: `${MENU.odbij.pl}${warn}`, quick: true });
   }
+  // etap 2: na schodach otwartego budynku następne piętro (rysujemy tylko parter)
+  const bid = w.bid[tile];
+  const rec = bid >= 0 ? st.sasiedzi?.budynki.find((b) => b.bid === bid && b.otwarty) : undefined;
+  if (rec && wnetrze(w, bid).cell[tile] === IN.STAIRS) {
+    const left = pietraBudynku(w, bid) - rec.pietra;
+    if (left > 0) out.push({ cmd: { t: 'upstairs', ids: core, bid, tile }, label: MENU.pietro(left).pl, quick: true });
+  }
   const ps = pokojSasiada(st, w, tile);
   if (ps) {
     const bid = st.sasiedzi!.budynki[ps.k].bid;
@@ -512,5 +521,7 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     }
     case 'meet':
       return PRACA.rozmawia.pl;
+    case 'upstairs':
+      return (walking ? PRACA.idzieNaSchody : PRACA.naPietrze).pl;
   }
 }

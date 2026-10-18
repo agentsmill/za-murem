@@ -1,10 +1,19 @@
 /* Pomocniki testów sąsiednich budynków (fala 2): światy dem, nowa gra, kroki do warunku, drzwi spełniające warunek
-   na start (od budynków najbliżej siedziby), lokatorzy podawani przez test (Sim.lokatorzy). */
+   na start (od budynków najbliżej siedziby), lokatorzy podawani przez test (Sim.lokatorzy), pukanie nocą do domu
+   z życzliwymi i wybór w spotkaniu. */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { hashString } from '../../src/core/rng.ts';
-import { drzwiBudynku, drzwiZewnNaStart, type LokatorzyBudynku, wnetrze } from '../../src/sim/sasiedzi.ts';
+import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
+import {
+  drzwiBudynku,
+  drzwiZewnNaStart,
+  type LokatorzyBudynku,
+  type OsobaSasiada,
+  type WyborSpotkania,
+  wnetrze,
+} from '../../src/sim/sasiedzi.ts';
 import { createSim, type Pawn, Sim } from '../../src/sim/sim.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
@@ -71,3 +80,53 @@ export const pusto =
     })),
     domy: [],
   });
+
+/** lokatorzy we wszystkich mieszkaniach: gospodarstwa po n osób z podanymi cechami */
+export const wszyscy =
+  (w: World, traits: string[], n = 2) =>
+  (bid: number): LokatorzyBudynku => {
+    const apts = Math.max(0, ...wnetrze(w, bid).rooms.map((r) => r.apt + 1));
+    const osoba = (apt: number, i: number): OsobaSasiada => ({
+      first: `Ola${apt}${i}`,
+      name: `Ola${apt}${i} Nowak`,
+      f: true,
+      prof: 'mieszkanka',
+      skills: {},
+      age: 40 + i,
+      traits,
+    });
+    return {
+      stany: [...Array(apts).keys()].map((apt) => ({ bid, apt, state: 'mieszkancy' as const })),
+      domy: [...Array(apts).keys()].map((apt) => ({
+        apt,
+        klatka: -1,
+        zal: false,
+        osoby: [...Array(n).keys()].map((i) => osoba(apt, i)),
+      })),
+    };
+  };
+
+/** godzina gry (od 15:00 pierwszego dnia) */
+export const at = (sim: Sim, hour: number) => {
+  sim.st.tick = Math.round(((hour + 24 - 15) % 24) * TICKS_PER_HOUR);
+};
+
+/** gra w Batowicach nocą: puka do domu z życzliwymi (lubiani), aż zacznie się spotkanie w drzwiach */
+export function knockHouse(seed = 5) {
+  const w = demoWorld('zielonki');
+  const sim = newGame('zielonki', 'zwykly', seed);
+  at(sim, 23);
+  sim.lokatorzy = wszyscy(w, ['lubiany']);
+  const { bid, door } = doorWhere(w, 'zwykly', () => true, ['dom']);
+  const p = core(sim)[0];
+  sim.push({ t: 'knock', ids: [p.id], door });
+  sim.step();
+  until(sim, () => p.job?.t !== 'door');
+  return { w, sim, p, bid, door };
+}
+
+export const meet = (sim: Sim, choice: WyborSpotkania) => {
+  const sp = sim.st.sasiedzi!.spotkanie!;
+  sim.push({ t: 'meet', ids: [], nr: sp.nr, choice });
+  sim.step();
+};

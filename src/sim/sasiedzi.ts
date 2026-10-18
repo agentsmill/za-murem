@@ -39,7 +39,10 @@ export type WyborSpotkania =
   | 'odejscie'
   | 'obrona'
   | 'uspokojenie'
-  | 'ucieczka';
+  | 'ucieczka'
+  /** etap 2: przegonić szabrowników, którzy zostali w budynku; zapytać o obandażowaną rękę (tryb zombie) */
+  | 'przegonic'
+  | 'reka';
 
 /** osoba lokatora w kształcie pól osoby gry (bez id: dostaje je przy pierwszym spotkaniu) */
 export type OsobaSasiada = Pick<Person, 'first' | 'name' | 'f' | 'prof' | 'skills' | 'age' | 'traits'> & {
@@ -67,6 +70,11 @@ export interface Gospodarstwo {
   ludzie?: number[];
   /** pionki na mapie (w trakcie spotkania i po nim, dopóki zarząd jest w budynku) */
   pionki?: number[];
+  /** etap 2: to nie lokatorzy, tylko szabrownicy, którzy po nocy zostali w budynku */
+  szabrownicy?: true;
+  /** tryb zombie: indeks osoby, która ukrywa ugryzienie, i czy zarząd o nie zapytał */
+  ugryziony?: number;
+  pytali?: true;
 }
 
 export interface MieszkanieSasiada {
@@ -108,6 +116,9 @@ export interface SasiedniBudynek {
   /** zawartość pustych mieszkań do położenia przy otwarciu: zepsute meble (indeksy mebli wnętrza) i sterty śmieci
       (x, y, wielkość); po otwarciu znika, bo meble i śmieci są już rzeczami w st.things */
   zawartosc?: { zepsute: number[]; smieci: [number, number, number][] };
+  /** etap 2: ostatni nocny gość (tick o 2:00, kto, co zabrał ze stert, czy szabrownicy zostali; pokazane: był już
+      napis rano) */
+  noc?: { tick: number; kto: 'szabrownicy' | 'szwendacze'; zabrali: Partial<Record<Mat, number>>; pokazane?: true };
 }
 
 export interface Spotkanie {
@@ -122,6 +133,8 @@ export interface Spotkanie {
   tick: number;
   /** wrodzy rzucają się od razu (obrona, uspokojenie, ucieczka) */
   atak: boolean;
+  /** rośnie, gdy spotkanie trwa dalej po wyborze (uspokojenie, pytanie o rękę): karta pokazuje się od nowa */
+  runda?: number;
   /** wyważyliśmy im drzwi */
   wywazone: boolean;
 }
@@ -141,6 +154,8 @@ export interface Napis {
   kto?: number;
   /** co powiedzieli przy rozmowie */
   info?: Info;
+  /** w ilu budynkach (nocni goście) */
+  ilu?: number;
 }
 
 export interface Sasiedzi {
@@ -630,22 +645,7 @@ export function domyZapasowe(
   for (const s of stany) {
     if (s.state !== 'mieszkancy') continue;
     const r = rngOfPlace(w.seed, it.building, s.apt, 0x10ca);
-    let roll = r() * ROZMIARY.reduce((a, [, wt]) => a + wt, 0);
-    const n = ROZMIARY.find(([, wt]) => (roll -= wt) < 0)?.[0] ?? 1;
-    const osoby: OsobaSasiada[] = [];
-    for (let k = 0; k < n; k++) {
-      const p = makePerson(r, used, () => 0, { home: it.building });
-      used.add(p.first);
-      osoby.push({
-        first: p.first,
-        name: p.name,
-        f: p.f,
-        prof: p.prof,
-        skills: p.skills,
-        age: p.age,
-        traits: p.traits,
-      });
-    }
+    const osoby = osobyZ(r, used, it.building);
     domy.push({ apt: s.apt, klatka: -1, osoby, zal: r() < 0.1 });
   }
   return { stany, domy };
@@ -789,19 +789,28 @@ export const szansaUspokojenia = (g: Gospodarstwo, mowca: KontekstSpotkania['mow
 /** szansa wygranej szarpaniny (obrona albo opór przy zabieraniu) */
 export const szansaWalki = (uzbrojeni: number): number => clamp(0.45 + 0.2 * Math.min(2, uzbrojeni), 0.1, 0.9);
 
-/** Wybory karty spotkania: przy ataku obrona, uspokojenie i ucieczka; inaczej rozmowa, jedzenie (przy 2 porcjach),
-    zaproszenie (od relacji 20 albo dla życzliwych i zdesperowanych), zabranie zapasów i odejście. */
+/** szansa, że szabrownicy dadzą się przegonić: bez broni rzadko, z uzbrojonym zarządem częściej niż w walce */
+export const szansaPrzegonienia = (uzbrojeni: number): number => clamp(0.3 + 0.28 * Math.min(2, uzbrojeni), 0.1, 0.9);
+
+/** Wybory karty spotkania: przy ataku obrona, uspokojenie i ucieczka (szabrowników się nie uspokaja); szabrownicy
+    w budynku: przegonić, porozmawiać, odejść; inaczej rozmowa, w trybie zombie pytanie o obandażowaną rękę, jedzenie
+    (przy 2 porcjach), zaproszenie (od relacji 20 albo dla życzliwych i zdesperowanych), zabranie zapasów i odejście. */
 export function wybory(sp: Pick<Spotkanie, 'atak'>, g: Gospodarstwo, ctx: KontekstSpotkania): WyborKarty[] {
   if (sp.atak)
     return [
       { k: 'obrona', ok: true, szansa: szansaWalki(ctx.uzbrojeni) },
-      { k: 'uspokojenie', ok: true, szansa: szansaUspokojenia(g, ctx.mowca) },
+      ...(g.szabrownicy ? [] : [{ k: 'uspokojenie' as const, ok: true, szansa: szansaUspokojenia(g, ctx.mowca) }]),
       { k: 'ucieczka', ok: true },
     ];
-  const out: WyborKarty[] = [
-    { k: 'rozmowa', ok: true },
-    { k: 'jedzenie', ok: ctx.jedzenie >= 2 },
-  ];
+  if (g.szabrownicy)
+    return [
+      { k: 'przegonic', ok: true, szansa: szansaPrzegonienia(ctx.uzbrojeni) },
+      { k: 'rozmowa', ok: true },
+      { k: 'odejscie', ok: true },
+    ];
+  const out: WyborKarty[] = [{ k: 'rozmowa', ok: true }];
+  if (g.ugryziony !== undefined && !g.pytali) out.push({ k: 'reka', ok: true });
+  out.push({ k: 'jedzenie', ok: ctx.jedzenie >= 2 });
   if (g.rel >= 20 || g.zamiar === 'zyczliwi' || g.zamiar === 'zdesperowani')
     out.push({ k: 'zaproszenie', ok: g.gdzie === 'u_siebie', szansa: szansaZaproszenia(g, ctx.mode) });
   out.push({ k: 'zabranie', ok: true, szansa: szansaOporu(g, ctx.uzbrojeni) });
@@ -832,6 +841,8 @@ export interface Skutek {
   /** nasza osoba wraca do siedziby */
   odwrot?: boolean;
   info?: Info;
+  /** zapytali o rękę: ugryziony zostanie, gdy reszta przyjdzie do nas */
+  pytali?: boolean;
 }
 
 /** Skutek wyboru. r: generator symulacji (st.rng), woła się go tylko tu. info: co mogą powiedzieć przy rozmowie
@@ -849,7 +860,13 @@ export function skutek(
   const wound = () => 15 + Math.floor(r() * 16);
   switch (k) {
     case 'rozmowa':
+      if (g.szabrownicy) return { ...base, co: 'szabr_rozmowa' };
       return { ...base, co: 'rozmowa', rel: rel(10), nastroj: g.nastroj === 'strach' ? 'spokoj' : g.nastroj, info };
+    case 'reka':
+      return { ...base, co: 'reka', rel: rel(-5), koniec: false, pytali: true };
+    case 'przegonic':
+      if (r() < szansaPrzegonienia(ctx.uzbrojeni)) return { ...base, co: 'przegonic_tak', uciekaja: true };
+      return { ...base, co: 'przegonic_nie', ranaNasza: wound(), odwrot: true };
     case 'jedzenie':
       return {
         ...base,
@@ -939,6 +956,7 @@ export function nowyBudynek(w: World, mode: GameMode, bid: number, lok: Lokatorz
       }
       const zapasy = zapasyDomu(h.osoby.length, mode, rngOfPlace(w.seed, bid, a, 0x5a9a));
       const start = poczatek(h.osoby, zapasy, h.zal, mode, rngOfPlace(w.seed, bid, a, 0x3e3e));
+      const ugryziony = mode === 'zombie' ? ukrytyUgryziony(w.seed, bid, a, h.osoby.length) : -1;
       domOf.set(a, domy.length);
       domy.push({
         osoby: h.osoby.map((o) => ({ ...o, skills: { ...o.skills }, traits: [...o.traits] })),
@@ -951,6 +969,7 @@ export function nowyBudynek(w: World, mode: GameMode, bid: number, lok: Lokatorz
         zapasy,
         gdzie: 'u_siebie',
         ...(h.zal ? { zal: true } : {}),
+        ...(ugryziony >= 0 ? { ugryziony } : {}),
       });
       stany.push({ bid, apt: a, state: 'mieszkancy' });
     } else if (s?.state === 'puste') stany.push({ ...s, bid });
@@ -990,3 +1009,153 @@ export function nowyBudynek(w: World, mode: GameMode, bid: number, lok: Lokatorz
     zawartosc: { zepsute, smieci: r.trash.map((t) => [t.x, t.y, t.n]) },
   };
 }
+
+// ---------------------------------------------------------------- etap 2: piętra, nocni goście, ukryci ugryzieni
+
+/** przeszukanie piętra trwa godzinę gry */
+export const PIETRO_TICKS = TICKS_PER_HOUR;
+/** na piętrze: lokatorzy zastają naszą osobę (zwykły tryb), szwendacz na klatce (zombie) */
+export const PIETRO_LUDZIE = 0.25;
+export const PIETRO_SZWENDACZ = 0.3;
+/** nocni goście o 2:00 w otwartym budynku z wejściem od ulicy: zwykły tryb (z łupem w środku częściej), zombie */
+export const NOC_GOSC = 0.3;
+export const NOC_GOSC_LUP = 0.4;
+export const NOC_GOSC_ZOMBIE = 0.45;
+/** w co trzecim budynku szabrownicy zostają; jednej nocy biorą tyle sztuk ze stert i przeszukują tyle pomieszczeń */
+export const NOC_ZOSTAJA = 1 / 3;
+export const NOC_BIORA = 10;
+export const NOC_POKOJE = 2;
+/** tryb zombie: co piąte ocalałe gospodarstwo ukrywa ugryzionego; ugryziony od 1 do 6 godzin */
+export const UKRYTY_UGRYZIONY = 0.2;
+
+/** Piętra do przeszukania w budynku: piętra nad parterem razy klatki (wejścia); dom parterowy nie ma żadnego. */
+export function pietraBudynku(w: Pick<World, 'buildings'>, bid: number): number {
+  const b = w.buildings[bid];
+  return Math.max(0, b.levels - 1) * Math.max(1, b.entrances.length);
+}
+
+/** Piętro nr (po kolei w budynku, od 0): łup z pustych mieszkań piętra, po jednym pomieszczeniu z każdego (zwykły
+    tryb połowa pustych po wyjeździe, zombie trzy czwarte z wymarcia), czy lokatorzy zastaną naszą osobę (zwykły tryb, gdy ktoś tam mieszka) i czy
+    czeka szwendacz (zombie). mieszkan: mieszkania parteru, z których wynika, ile ich jest na piętrze jednej klatki
+    (1–6). Z ziarna świata, budynku i numeru piętra. */
+export function pietro(
+  w: Pick<World, 'seed' | 'buildings'>,
+  bid: number,
+  nr: number,
+  mieszkan: number,
+  mode: GameMode,
+): { lup: Partial<Record<Mat, number>>; ludzie: boolean; szwendacz: boolean } {
+  const b = w.buildings[bid];
+  const r = rngOfPlace(w.seed, bid, 5000 + nr, 0x9e7e);
+  const n = clamp(Math.round(mieszkan / Math.max(1, b.entrances.length)), 1, 6);
+  const why: AptWhy = mode === 'zombie' ? 'wymarcie' : 'wyjazd';
+  const pusto = mode === 'zombie' ? 0.75 : 0.5;
+  const lup: Partial<Record<Mat, number>> = {};
+  let zamieszkane = 0;
+  for (let a = 0; a < n; a++) {
+    if (r() >= pusto) {
+      zamieszkane++;
+      continue;
+    }
+    // w godzinę na piętrze jedno pomieszczenie z pustego mieszkania: kuchnia albo pokój
+    const [kind, area] = r() < 0.5 ? (['kuchnia', 8] as const) : (['pokoj', 15] as const);
+    for (const [m, k] of Object.entries(lupMieszkania(why, kind, area, r, mode)) as [Mat, number][])
+      lup[m] = (lup[m] ?? 0) + k;
+  }
+  const s = r();
+  return {
+    lup,
+    ludzie: mode !== 'zombie' && zamieszkane > 0 && s < PIETRO_LUDZIE,
+    szwendacz: mode === 'zombie' && s < PIETRO_SZWENDACZ,
+  };
+}
+
+/** osoby z generatora fachowców 0.3 (1–4 albo podana liczba) z generatora r; used rośnie o nowe imiona */
+function osobyZ(r: Rng, used: Set<string>, bid: number, ile?: number): OsobaSasiada[] {
+  let roll = r() * ROZMIARY.reduce((a, [, wt]) => a + wt, 0);
+  const n = ile ?? ROZMIARY.find(([, wt]) => (roll -= wt) < 0)?.[0] ?? 1;
+  const osoby: OsobaSasiada[] = [];
+  for (let k = 0; k < n; k++) {
+    const p = makePerson(r, used, () => 0, { home: bid });
+    used.add(p.first);
+    osoby.push({ first: p.first, name: p.name, f: p.f, prof: p.prof, skills: p.skills, age: p.age, traits: p.traits });
+  }
+  return osoby;
+}
+
+/** gospodarstwo z piętra, które zastało naszą osobę: 1–4 osoby z ziarna budynku i piętra, nieznani, z klatki wejścia */
+export function domWyzej(
+  w: Pick<World, 'seed'>,
+  bid: number,
+  nr: number,
+  klatka: number,
+  mode: GameMode,
+  used: Set<string>,
+): Gospodarstwo {
+  const r = rngOfPlace(w.seed, bid, 5000 + nr, 0x10cb);
+  const osoby = osobyZ(r, used, bid);
+  const zapasy = zapasyDomu(osoby.length, mode, r);
+  return {
+    osoby,
+    apt: -1,
+    klatka,
+    znani: false,
+    ...poczatek(osoby, zapasy, false, mode, r),
+    rel: 0,
+    zapasy,
+    gdzie: 'u_siebie',
+  };
+}
+
+/** Kto przychodzi o 2:00 do otwartego budynku z wejściem od ulicy: szabrownicy (zwykły tryb), szwendacze (zombie)
+    albo nikt. lup: w budynku leżą sterty łupu. Z ziarna świata, budynku i dnia. */
+export function nocnyGosc(
+  seed: number,
+  bid: number,
+  day: number,
+  mode: GameMode,
+  lup: boolean,
+): 'szabrownicy' | 'szwendacze' | null {
+  const r = rngOfPlace(seed, bid, day, 0x6a57)();
+  if (mode === 'zombie') return r < NOC_GOSC_ZOMBIE ? 'szwendacze' : null;
+  return r < (lup ? NOC_GOSC_LUP : NOC_GOSC) ? 'szabrownicy' : null;
+}
+
+/** szabrownicy zostają w budynku (co trzeci raz), z ziarna świata, budynku i dnia */
+export const zostaja = (seed: number, bid: number, day: number): boolean =>
+  rngOfPlace(seed, bid, day, 0x6a58)() < NOC_ZOSTAJA;
+
+/** szabrownicy, którzy zostali: 2–3 osoby, wrodzy i wściekli, z tym, co zabrali (to wraca, gdy się ich przegoni) */
+export function szabrownicy(
+  w: Pick<World, 'seed'>,
+  bid: number,
+  day: number,
+  used: Set<string>,
+  zabrali: Partial<Record<Mat, number>>,
+): Gospodarstwo {
+  const r = rngOfPlace(w.seed, bid, day, 0x5ab1);
+  const osoby = osobyZ(r, used, bid, 2 + (r() < 0.5 ? 1 : 0));
+  return {
+    osoby,
+    apt: -1,
+    klatka: -1,
+    znani: false,
+    zamiar: 'wrodzy',
+    nastroj: 'gniew',
+    rel: -50,
+    zapasy: { ...zabrali },
+    gdzie: 'u_siebie',
+    szabrownicy: true,
+  };
+}
+
+/** tryb zombie: indeks osoby, która ukrywa ugryzienie (co piąte gospodarstwo), albo −1; z ziarna budynku i mieszkania */
+export function ukrytyUgryziony(seed: number, bid: number, apt: number, osob: number): number {
+  const r = rngOfPlace(seed, bid, apt, 0xb17e);
+  if (osob < 1 || r() >= UKRYTY_UGRYZIONY) return -1;
+  return Math.floor(r() * osob);
+}
+
+/** od ilu godzin ugryziony ukrywa ugryzienie (1–6), z ziarna budynku i mieszkania */
+export const ugryzionyOd = (seed: number, bid: number, apt: number): number =>
+  1 + Math.floor(rngOfPlace(seed, bid, apt, 0xb17f)() * 6);

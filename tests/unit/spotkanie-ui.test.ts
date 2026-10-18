@@ -16,7 +16,7 @@ import {
   zdanie,
 } from '../../src/content/napisy-sasiedzi.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
-import { type Gospodarstwo, nowyBudynek, wybory, znaniBudynki } from '../../src/sim/sasiedzi.ts';
+import { type Gospodarstwo, nowyBudynek, szabrownicy, wybory, znaniBudynki } from '../../src/sim/sasiedzi.ts';
 import { kartaBudynku, widokBudynku } from '../../src/ui/budynek.ts';
 import { goalsDay2 } from '../../src/ui/cele.ts';
 import { spotkanieSheet, zdanieNapisu } from '../../src/ui/spotkanie.ts';
@@ -103,6 +103,64 @@ describe('karta spotkania', () => {
   });
 });
 
+describe('karta spotkania, etap 2', () => {
+  it('szabrownicy w środku: inny tytuł, bez stosunku do zarządu, przegonić z szansą', () => {
+    const g = szabrownicy({ seed: 3 }, 4, 2, new Set(), { deski: 3 });
+    const sp = { nr: 4, atak: false, gdzie: 'mieszkanie' as const, wywazone: false };
+    const s = spotkanieSheet({ sp, g, wybory: wybory(sp, g, ctx(0)), jedzenie: 0, budynek: 'Blok nr 8B' });
+    expect(s.title).toBe('W środku są szabrownicy');
+    expect(s.body).toContain('To nie lokatorzy.');
+    expect(s.body).not.toContain('Stosunek do was');
+    const b = buttons(s.foot);
+    expect(b.map((x) => x.k)).toEqual(['przegonic', 'rozmowa', 'odejscie']);
+    expect(b[0].label).toMatch(/^Przegonić ich \(\d+% szans\)$/);
+  });
+
+  it('ukryty ugryziony: wskazówka o ręce i pytanie, po pytaniu już bez nich', () => {
+    const g = dom({ ugryziony: 1 });
+    const sp = { nr: 5, atak: false, gdzie: 'drzwi' as const, wywazone: false };
+    const s = spotkanieSheet({ sp, g, wybory: wybory(sp, g, ctx(4)), jedzenie: 4, budynek: 'Dom 28' });
+    expect(s.body).toContain('Ktoś z nich ma obandażowaną rękę i trzyma się z tyłu.');
+    expect(
+      buttons(s.foot)
+        .map((x) => x.k)
+        .slice(0, 2),
+    ).toEqual(['rozmowa', 'reka']);
+    const after = { ...g, pytali: true as const };
+    const s2 = spotkanieSheet({ sp, g: after, wybory: wybory(sp, after, ctx(4)), jedzenie: 4, budynek: 'Dom 28' });
+    expect(s2.body).not.toContain('obandażowaną');
+    expect(buttons(s2.foot).map((x) => x.k)).not.toContain('reka');
+  });
+
+  it('karta budynku: przeszukane piętra i nocny gość', () => {
+    const v = {
+      name: 'Blok nr 10F',
+      cls: 'blok' as const,
+      levels: 5,
+      mieszkalny: true,
+      dotkniety: true,
+      otwarty: true,
+      drzwi: { otwarte: 1 },
+      pokoje: { n: 2, z: 30 },
+      pietra: { n: 3, z: 12 },
+      noc: { dzien: 4, kto: 'szabrownicy' as const, zabrali: { deski: 4, jedzenie: 2 } },
+      znajomi: [],
+    };
+    const html = kartaBudynku(v, false);
+    expect(html).toContain('Piętra przeszukane: 3 z 12.');
+    expect(html).toContain('Dnia 4 w nocy byli tu szabrownicy. Zniknęło: deski 4, jedzenie 2.');
+    expect(kartaBudynku({ ...v, noc: { dzien: 2, kto: 'szwendacze', zabrali: {} } }, false)).toContain(
+      'Dnia 2 w nocy weszły tu szwendacze.',
+    );
+    expect(zdanieNapisu({ co: 'noc_zombie', ilu: 2 }, null, 'Dom 28')).toBe(
+      'W nocy do budynku „Dom 28” i do 1 innego weszły szwendacze.',
+    );
+    expect(zdanieNapisu({ co: 'noc', ile: { deski: 4 }, ilu: 3 }, null, 'Blok nr 10F')).toBe(
+      'W nocy ktoś był w budynku „Blok nr 10F” i w 2 innych. Zniknęło: deski 4.',
+    );
+  });
+});
+
 describe('zdania przy drzwiach i po spotkaniu', () => {
   const ALL = [
     'na_klucz',
@@ -156,7 +214,9 @@ describe('zdania przy drzwiach i po spotkaniu', () => {
 
   it('napisy menu, prac i podpowiedzi mają obie wersje, a angielska nie ma polskich liter', () => {
     const all = [
-      ...Object.values(MENU).flatMap((v) => (typeof v === 'function' ? [v('pokoj')] : [v])),
+      ...Object.values(MENU).filter((v) => typeof v !== 'function'),
+      MENU.przeszukaj('pokoj'),
+      MENU.pietro(3),
       ...Object.values(PRACA_DRZWI).flat(),
       ...Object.values(PO_POLECENIU).flat(),
       PRACA.rozmawia,

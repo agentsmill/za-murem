@@ -62,6 +62,11 @@ export const MENU = {
   /** dopisek przy drzwiach od ulicy budynku, który stoi przy podwórku */
   wylom: { pl: ' (droga z ulicy na podwórko)', en: ' (opens a way from the street into the yard)' },
   przeszukaj: (k: RoomKind): Dwa => ({ pl: `Przeszukać ${POKOJ[k].pl}`, en: `Search the ${POKOJ[k].en}` }),
+  /** etap 2: na schodach otwartego budynku; left: ile pięter zostało */
+  pietro: (left: number): Dwa => ({
+    pl: `Przeszukać piętro (zostało ${left})`,
+    en: `Search a floor upstairs (${left} left)`,
+  }),
   okradnij: { pl: 'Okraść mieszkanie (lokatorów nie ma)', en: 'Rob the flat (nobody is home)' },
 } as const;
 
@@ -99,41 +104,54 @@ export const PRACA = {
     en: `Searching the neighbours' ${k ? POKOJ[k].en : 'room'}.`,
   }),
   rozmawia: { pl: 'Rozmawia z sąsiadami.', en: 'Talking to the neighbours.' },
+  idzieNaSchody: { pl: 'Idzie na schody.', en: 'Heading for the stairs.' },
+  naPietrze: { pl: 'Przeszukuje piętro.', en: 'Searching a floor upstairs.' },
 } as const;
 
 /** podpowiedzi po poleceniu: jedna osoba, kilka zaznaczonych (polecenie bierze jedna) */
-export const PO_POLECENIU: Record<'open' | 'knock' | 'force' | 'board' | 'unboard' | 'loot', [Dwa, Dwa]> = {
-  open: [
-    { pl: 'Otworzy drzwi.', en: 'Will open the door.' },
-    { pl: 'Jedna osoba otworzy drzwi.', en: 'One person will open the door.' },
-  ],
-  knock: [
-    { pl: 'Zapuka.', en: 'Will knock.' },
-    { pl: 'Jedna osoba zapuka.', en: 'One person will knock.' },
-  ],
-  force: [
-    { pl: 'Wyważy drzwi. Będzie głośno.', en: 'Will force the door. It will be loud.' },
-    { pl: 'Jedna osoba wyważy drzwi. Będzie głośno.', en: 'One person will force the door. It will be loud.' },
-  ],
-  board: [
-    { pl: 'Zabije drzwi deskami.', en: 'Will board up the door.' },
-    { pl: 'Jedna osoba zabije drzwi deskami.', en: 'One person will board up the door.' },
-  ],
-  unboard: [
-    { pl: 'Odbije deski z drzwi.', en: 'Will pull the boards off the door.' },
-    { pl: 'Jedna osoba odbije deski z drzwi.', en: 'One person will pull the boards off the door.' },
-  ],
-  loot: [
-    {
-      pl: 'Przeszuka pomieszczenie i zaniesie łup na podwórko.',
-      en: 'Will search the room and carry the loot into the yard.',
-    },
-    {
-      pl: 'Jedna osoba przeszuka pomieszczenie i zaniesie łup.',
-      en: 'One person will search the room and carry the loot.',
-    },
-  ],
-};
+export const PO_POLECENIU: Record<'open' | 'knock' | 'force' | 'board' | 'unboard' | 'loot' | 'upstairs', [Dwa, Dwa]> =
+  {
+    upstairs: [
+      {
+        pl: 'Pójdzie przeszukać piętro. Wróci za godzinę.',
+        en: 'Will search a floor upstairs and be back in an hour.',
+      },
+      {
+        pl: 'Jedna osoba pójdzie przeszukać piętro. Wróci za godzinę.',
+        en: 'One person will search a floor upstairs and be back in an hour.',
+      },
+    ],
+    open: [
+      { pl: 'Otworzy drzwi.', en: 'Will open the door.' },
+      { pl: 'Jedna osoba otworzy drzwi.', en: 'One person will open the door.' },
+    ],
+    knock: [
+      { pl: 'Zapuka.', en: 'Will knock.' },
+      { pl: 'Jedna osoba zapuka.', en: 'One person will knock.' },
+    ],
+    force: [
+      { pl: 'Wyważy drzwi. Będzie głośno.', en: 'Will force the door. It will be loud.' },
+      { pl: 'Jedna osoba wyważy drzwi. Będzie głośno.', en: 'One person will force the door. It will be loud.' },
+    ],
+    board: [
+      { pl: 'Zabije drzwi deskami.', en: 'Will board up the door.' },
+      { pl: 'Jedna osoba zabije drzwi deskami.', en: 'One person will board up the door.' },
+    ],
+    unboard: [
+      { pl: 'Odbije deski z drzwi.', en: 'Will pull the boards off the door.' },
+      { pl: 'Jedna osoba odbije deski z drzwi.', en: 'One person will pull the boards off the door.' },
+    ],
+    loot: [
+      {
+        pl: 'Przeszuka pomieszczenie i zaniesie łup na podwórko.',
+        en: 'Will search the room and carry the loot into the yard.',
+      },
+      {
+        pl: 'Jedna osoba przeszuka pomieszczenie i zaniesie łup.',
+        en: 'One person will search the room and carry the loot.',
+      },
+    ],
+  };
 
 /** dopisek przy wyważaniu w trybie zombie */
 export const HALAS_ZOMBIE: Dwa = { pl: ' Hałas ściągnie szwendaczy.', en: ' The noise will draw the walkers.' };
@@ -149,6 +167,7 @@ export const KARTA = {
     /** spotkanie w środku domu jednorodzinnego (dom jest jednym mieszkaniem) */
     dom: { pl: 'W domu ktoś jest', en: 'Someone is in the house' },
     pietro: { pl: 'Na piętrze ktoś jest', en: 'Someone is upstairs' },
+    szabrownicy: { pl: 'W środku są szabrownicy', en: 'There are looters inside' },
   },
   znani: { pl: 'Znacie ich z widzenia.', en: 'You know them by sight.' },
   obcy: { pl: 'Nie znacie ich.', en: 'You do not know them.' },
@@ -179,12 +198,21 @@ export const KARTA = {
     return { pl: `Stosunek do was: ${pl}.`, en: `Feelings towards you: ${en}.` };
   },
   wywazone: { pl: 'Wyważyliście im drzwi.', en: 'You forced their door.' },
+  /** tryb zombie: ktoś z nich ukrywa ugryzienie */
+  reka: {
+    pl: 'Ktoś z nich ma obandażowaną rękę i trzyma się z tyłu.',
+    en: 'One of them has a bandaged hand and hangs back.',
+  },
+  szabrownicy: {
+    pl: 'To nie lokatorzy. Siedzą tu od nocy i pilnują tego, co zabrali.',
+    en: 'They are not tenants. They have been here since the night, guarding what they took.',
+  },
   bezRozmowy: { pl: 'Nie ma czasu na rozmowę.', en: 'There is no time to talk.' },
-  /** osoba: imię i nazwisko, wiek, zawód */
-  osoba: (name: string, age: number, prof: string): Dwa => ({
-    pl: `${name}, ${age} ${pl3(age, 'rok', 'lata', 'lat')}${prof ? `, ${prof}` : ''}`,
-    en: `${name}, ${age}${prof ? `, ${prof}` : ''}`,
-  }),
+  /** osoba: imię i nazwisko, wiek, zawód (małą literą: zawody 0.3 są pisane wielką) */
+  osoba: (name: string, age: number, prof: string): Dwa => {
+    const p = prof ? `, ${prof.charAt(0).toLowerCase()}${prof.slice(1)}` : '';
+    return { pl: `${name}, ${age} ${pl3(age, 'rok', 'lata', 'lat')}${p}`, en: `${name}, ${age}${p}` };
+  },
   zapasy: (n: number): Dwa => ({
     pl: `W zapasach macie ${n} ${pl3(n, 'porcję', 'porcje', 'porcji')} jedzenia.`,
     en: `You have ${n} ${n === 1 ? 'ration' : 'rations'} of food in stock.`,
@@ -207,6 +235,8 @@ export const WYBOR = {
   obrona: (s: string): Dwa => ({ pl: `Bronić się (${s} szans)`, en: `Fight back (${s} chance)` }),
   uspokojenie: (s: string): Dwa => ({ pl: `Uspokoić ich (${s} szans)`, en: `Calm them down (${s} chance)` }),
   ucieczka: (): Dwa => ({ pl: 'Uciekać do siebie', en: 'Run back home' }),
+  przegonic: (s: string): Dwa => ({ pl: `Przegonić ich (${s} szans)`, en: `Drive them off (${s} chance)` }),
+  reka: (): Dwa => ({ pl: 'Zapytać o rękę', en: 'Ask about the hand' }),
 } as const;
 
 export const ZA_MALO_JEDZENIA: Dwa = { pl: 'Za mało jedzenia w zapasach.', en: 'Not enough food in stock.' };
@@ -224,12 +254,69 @@ const oberwal = (k: Kto | null): Dwa =>
     ? { pl: `${k.first} ${k.f ? 'oberwała' : 'oberwał'}`, en: `${k.first} got hurt` }
     : { pl: 'Ktoś z was oberwał', en: 'One of you got hurt' };
 
-/** Zdanie po napisie z symulacji (st.sasiedzi.napis.co); pusty napis dla nieznanego. ile: co dostaliśmy albo daliśmy,
-    info: co powiedzieli przy rozmowie. */
-export function zdanie(co: string, o: { kto?: Kto | null; ile?: Partial<Record<string, number>>; info?: string }): Dwa {
+/** Zdanie po napisie z symulacji (st.sasiedzi.napis.co); pusty napis dla nieznanego. ile: co dostaliśmy albo daliśmy
+    (przy nocnych gościach: co zniknęło), info: co powiedzieli przy rozmowie, nazwa i ilu: budynek nocnych gości i w ilu
+    budynkach byli. */
+export function zdanie(
+  co: string,
+  o: { kto?: Kto | null; ile?: Partial<Record<string, number>>; info?: string; nazwa?: string; ilu?: number },
+): Dwa {
   const kto = o.kto ?? null;
   const ile = ileTekst(o.ile);
+  // budynek po nazwie z mapy (mianownik, więc w cudzysłowie po „budynku”) i ile jeszcze innych
+  const inne = (o.ilu ?? 1) - 1;
+  const nazwa: Dwa = o.nazwa
+    ? { pl: `budynku „${o.nazwa}”`, en: `“${o.nazwa}”` }
+    : { pl: 'budynku obok', en: 'the building next door' };
+  const gdzie: Dwa = {
+    pl: `w ${nazwa.pl}${inne > 0 ? ` i w ${inne} ${pl3(inne, 'innym', 'innych', 'innych')}` : ''}`,
+    en: `${nazwa.en}${inne > 0 ? ` and ${inne} more ${inne === 1 ? 'building' : 'buildings'}` : ''}`,
+  };
+  const dokad: Dwa = {
+    pl: `do ${nazwa.pl}${inne > 0 ? ` i do ${inne} ${pl3(inne, 'innego', 'innych', 'innych')}` : ''}`,
+    en: gdzie.en,
+  };
   switch (co) {
+    case 'szabr_rozmowa':
+      return { pl: 'Nie chcą gadać. Każą wam się wynosić.', en: 'They will not talk. They tell you to get lost.' };
+    case 'reka':
+      return {
+        pl: 'Przyznają się: ktoś z nich jest ugryziony. Gdy ich zaprosicie, ta osoba zostanie.',
+        en: 'They admit one of them is bitten. If you invite them, that person stays behind.',
+      };
+    case 'przegonic_tak':
+      return { pl: 'Przegoniliście ich. Zostawili, co zabrali.', en: 'You drove them off. They left what they took.' };
+    case 'przegonic_nie': {
+      const h = oberwal(kto);
+      return { pl: `Nie dali się przegonić. ${h.pl}.`, en: `They would not leave. ${h.en}.` };
+    }
+    case 'pietro':
+      return ile.pl
+        ? { pl: `Piętro przeszukane: ${ile.pl}.`, en: `Floor searched: ${ile.en}.` }
+        : { pl: 'Piętro przeszukane, ale nic tam nie zostało.', en: 'Floor searched, but nothing was left.' };
+    case 'pietro_szwendacz': {
+      const h = oberwal(kto);
+      return { pl: `Na piętrze był szwendacz. ${h.pl}.`, en: `There was a walker upstairs. ${h.en}.` };
+    }
+    case 'pietro_ugryzienie':
+      return kto
+        ? {
+            pl: `Na piętrze był szwendacz. ${kto.first} ${kto.f ? 'jest ugryziona' : 'jest ugryziony'}!`,
+            en: `There was a walker upstairs. ${kto.first} has been bitten!`,
+          }
+        : {
+            pl: 'Na piętrze był szwendacz. Ktoś z was jest ugryziony!',
+            en: 'There was a walker upstairs. One of you is bitten!',
+          };
+    case 'noc':
+      return ile.pl
+        ? {
+            pl: `W nocy ktoś był ${gdzie.pl}. Zniknęło: ${ile.pl}.`,
+            en: `Someone was in ${gdzie.en} at night. Gone: ${ile.en}.`,
+          }
+        : { pl: `W nocy ktoś był ${gdzie.pl}.`, en: `Someone was in ${gdzie.en} at night.` };
+    case 'noc_zombie':
+      return { pl: `W nocy ${dokad.pl} weszły szwendacze.`, en: `At night walkers got into ${dokad.en}.` };
     case 'na_klucz':
       return { pl: 'Zamknięte na klucz. Można zapukać albo wyważyć.', en: 'Locked. You can knock or force it.' };
     case 'nikt':
@@ -359,6 +446,20 @@ export const BUDYNEK = {
     const en = list.map(([s, n]) => `${n} ${STAN_DRZWI[s][3]}`);
     return { pl: `Drzwi na zewnątrz: ${pl.join(', ')}.`, en: `Outer doors: ${en.join(', ')}.` };
   },
+  pietraPrzeszukane: (n: number, z: number): Dwa => ({
+    pl: `Piętra przeszukane: ${n} z ${z}.`,
+    en: `Floors searched: ${n} of ${z}.`,
+  }),
+  /** nocny gość: dzień gry, kto i co zniknęło */
+  noc: (dzien: number, kto: 'szabrownicy' | 'szwendacze', zniknelo: Dwa): Dwa =>
+    kto === 'szwendacze'
+      ? { pl: `Dnia ${dzien} w nocy weszły tu szwendacze.`, en: `On night ${dzien} walkers got in here.` }
+      : zniknelo.pl
+        ? {
+            pl: `Dnia ${dzien} w nocy byli tu szabrownicy. Zniknęło: ${zniknelo.pl}.`,
+            en: `On night ${dzien} looters were here. Gone: ${zniknelo.en}.`,
+          }
+        : { pl: `Dnia ${dzien} w nocy byli tu szabrownicy.`, en: `On night ${dzien} looters were here.` },
   przeszukane: (n: number, z: number): Dwa => ({
     pl: `Przeszukane: ${n} z ${z} ${pl3(z, 'pomieszczenia', 'pomieszczeń', 'pomieszczeń')}.`,
     en: `Searched: ${n} of ${z} rooms.`,

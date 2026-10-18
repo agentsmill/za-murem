@@ -672,8 +672,8 @@ const SEEN = 0.25;
 /* ---------- sąsiedzi (M2 fala 2): karta spotkania i zdania przy cudzych drzwiach ---------- */
 /** numer ostatniego pokazanego napisu sąsiadów (po wczytaniu zapisu stary się nie powtarza) */
 let napisSeen = 0;
-/** spotkanie, w którym gracz już wybrał (numer i atak): karta czeka, aż symulacja rozstrzygnie wybór */
-let meetChosen: { nr: number; atak: boolean } | null = null;
+/** spotkanie, w którym gracz już wybrał (numer i runda): karta czeka, aż symulacja rozstrzygnie wybór */
+let meetChosen: { nr: number; runda: number } | null = null;
 
 /** nowy napis sąsiadów jako podpowiedź, a trwające spotkanie jako okno z pauzą (gdy nie ma innego okna) */
 function watchSasiedzi() {
@@ -685,7 +685,12 @@ function watchSasiedzi() {
     const n = s.napis;
     const q = n.kto !== undefined ? sim.st.pawns.find((p) => p.id === n.kto) : undefined;
     const person = q && q.person >= 0 ? sim.st.people[q.person] : undefined;
-    const t = zdanieNapisu(n, person ? { first: person.first, f: person.f } : null);
+    const bid = s.budynki[n.b]?.bid ?? -1;
+    const t = zdanieNapisu(
+      n,
+      person ? { first: person.first, f: person.f } : null,
+      bid >= 0 ? sim.w.buildings[bid].name : undefined,
+    );
     if (t) say(t, 6000);
   }
   const sp = s.spotkanie;
@@ -693,7 +698,7 @@ function watchSasiedzi() {
     meetChosen = null;
     return;
   }
-  if ((meetChosen && meetChosen.nr === sp.nr && meetChosen.atak === sp.atak) || modal.open) return;
+  if ((meetChosen && meetChosen.nr === sp.nr && meetChosen.runda === (sp.runda ?? 0)) || modal.open) return;
   showMeet();
 }
 
@@ -706,7 +711,7 @@ function showMeet() {
   const b = s.budynki[sp.b];
   const g = b.domy[sp.dom];
   const nr = sp.nr;
-  const atak = sp.atak;
+  const runda = sp.runda ?? 0;
   pauseGame();
   ctx.close();
   modal.show(
@@ -720,7 +725,7 @@ function showMeet() {
     }),
     (act, arg) => {
       if (act !== 'meet' || !sim) return;
-      meetChosen = { nr, atak };
+      meetChosen = { nr, runda };
       sim.push({ t: 'meet', ids: [], nr, choice: arg as WyborSpotkania });
       decided();
     },
@@ -1473,6 +1478,7 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   board: [PO_POLECENIU.board[0].pl, PO_POLECENIU.board[1].pl],
   unboard: [PO_POLECENIU.unboard[0].pl, PO_POLECENIU.unboard[1].pl],
   loot: [PO_POLECENIU.loot[0].pl, PO_POLECENIU.loot[1].pl],
+  upstairs: [PO_POLECENIU.upstairs[0].pl, PO_POLECENIU.upstairs[1].pl],
   meet: ['', ''],
 });
 

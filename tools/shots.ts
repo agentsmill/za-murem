@@ -3614,6 +3614,156 @@ const SHOTS: Shot[] = [
   m2f2Card('m2f2-karta-budynku', 1440, 900),
   m2f2Card('m2f2-karta-budynku-telefon', 390, 844),
   {
+    // etap 2: ukryty ugryziony, wskazówka o ręce i pytanie (telefon)
+    name: 'm2f2-reka-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await m2f2Knock(page, base, 'lubiany', true);
+      const t = await sheetText(page);
+      console.log(`  ${t.replace(/\s+/g, ' ').slice(0, 260)}`);
+      if (!t.includes('obandażowaną rękę')) throw new Error('brak wskazówki o ręce');
+      if (!(await page.isVisible('#sheet [data-arg="reka"]'))) throw new Error('brak „Zapytać o rękę”');
+    },
+  },
+  m2f2('m2f2-pietro', 'lanciego', async (page) => {
+    // etap 2: piętro bloku przeszukane, łup przy schodach i zdanie w podpowiedzi
+    const r = await m2f2Open(page, 'Blok nr 10F', false);
+    const out = await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const w = sim.w;
+      const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+      const it = sim.budynekDoKarty(bid)!;
+      const tiles = [...w.bid.keys()].filter((t) => w.bid[t] === bid);
+      let phase1 = false;
+      for (const tile of tiles) {
+        sim.push({ t: 'upstairs', ids: [p.id], bid, tile });
+        sim.step();
+        if (p.job?.t === 'upstairs') break;
+      }
+      if (p.job?.t !== 'upstairs') return null;
+      for (let i = 0; i < 4000 && p.job?.t === 'upstairs'; i++) {
+        sim.step();
+        if (p.job?.t === 'upstairs' && p.job.phase === 1) phase1 = true;
+      }
+      for (let i = 0; i < 3; i++) sim.step();
+      zm.setCam(p.x, p.y, 1.4);
+      return { phase1, pietra: it.b.pietra, napis: sim.st.sasiedzi?.napis?.co ?? null };
+    }, r.bid);
+    await page.waitForTimeout(300);
+    await waitIdle(page);
+    const hint = await page.textContent('#hint');
+    console.log(`  piętro: ${JSON.stringify(out)}, podpowiedź: ${hint}`);
+    if (!out?.phase1 || out.pietra !== 1) throw new Error('piętro nie zostało przeszukane');
+  }),
+  m2f2('m2f2-szabrownicy', 'lanciego', async (page) => {
+    // etap 2: szabrownicy zostali w otwartym bloku po nocy; nasza osoba wchodzi za dnia
+    const r = await m2f2Open(page, 'Blok nr 10F', false);
+    const out = await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const st = sim.st;
+      const w = sim.w;
+      const rec = st.sasiedzi!.budynki.find((b) => b.bid === bid)!;
+      const p = st.pawns.find((q) => q.kind === 'core')!;
+      const stand = [p.x, p.y];
+      const door = w.buildings[w.hq].entrances[0].out;
+      // łup w środku i osoba w domu, a potem kolejne noce o 2:00, aż szabrownicy zostaną
+      const proto = st.things.find((t) => t.kind === 'deski' || t.kind === 'zlom')!;
+      st.things.push({
+        ...proto,
+        id: st.nextId++,
+        x: Math.floor(p.x),
+        y: Math.floor(p.y),
+        kind: 'czesci',
+        n: 6,
+        by: -1,
+      });
+      let nights = 0;
+      for (let n = 0; n < 60 && !rec.domy.some((g) => g.szabrownicy); n++) {
+        p.x = (door % w.size) + 0.5;
+        p.y = Math.floor(door / w.size) + 0.5;
+        p.path = [];
+        p.pi = 0;
+        p.job = null;
+        const day = Math.floor(st.tick / 19200) + 1;
+        st.tick = (11 + 24 * day) * 800;
+        sim.step();
+        nights++;
+      }
+      // za dnia z powrotem w środku: spotkanie z szabrownikami
+      st.tick += 10 * 800;
+      p.x = stand[0];
+      p.y = stand[1];
+      p.weapon = 'siekiera';
+      for (let i = 0; i < 100 && !st.sasiedzi!.spotkanie; i++) sim.step();
+      zm.setCam(p.x, p.y, 1.4);
+      return { nights, sp: !!st.sasiedzi!.spotkanie, noc: rec.noc?.kto ?? null };
+    }, r.bid);
+    console.log(`  nocy: ${out.nights}, ostatni gość ${out.noc}, spotkanie ${out.sp}`);
+    if (!out.sp) throw new Error('szabrownicy nie czekali w środku');
+    await page.waitForSelector('#sheet [data-act="meet"]');
+    await waitIdle(page);
+    const t = await sheetText(page);
+    console.log(`  ${t.replace(/\s+/g, ' ').slice(0, 220)}`);
+    if (!t.includes('szabrownicy')) throw new Error('okno bez szabrowników');
+  }),
+  m2f2('m2f2-karta-po-nocy', 'lanciego', async (page) => {
+    // etap 2: karta otwartego bloku po nocnym gościu i z przeszukanym piętrem
+    const r = await m2f2Open(page, 'Blok nr 10F', false);
+    const at = await page.evaluate((bid) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const st = sim.st;
+      const w = sim.w;
+      const rec = st.sasiedzi!.budynki.find((b) => b.bid === bid)!;
+      const p = st.pawns.find((q) => q.kind === 'core')!;
+      const proto = st.things.find((t) => t.kind === 'deski' || t.kind === 'zlom')!;
+      st.things.push({
+        ...proto,
+        id: st.nextId++,
+        x: Math.floor(p.x),
+        y: Math.floor(p.y),
+        kind: 'deski',
+        n: 5,
+        by: -1,
+      });
+      const door = w.buildings[w.hq].entrances[0].out;
+      rec.pietra = 2;
+      for (let n = 0; n < 60 && !rec.noc; n++) {
+        p.x = (door % w.size) + 0.5;
+        p.y = Math.floor(door / w.size) + 0.5;
+        p.path = [];
+        p.pi = 0;
+        p.job = null;
+        const day = Math.floor(st.tick / 19200) + 1;
+        st.tick = (11 + 24 * day) * 800;
+        sim.step();
+      }
+      // 7:00 tej samej nocy (krok przesunął zegar o jeden tick): napis o nocnym gościu
+      st.tick += 5 * 800 - 1;
+      sim.step();
+      const b = w.buildings[bid];
+      const xy: [number, number] = [(b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2];
+      zm.setCam(xy[0], xy[1], 0.5);
+      return xy;
+    }, r.bid);
+    await waitIdle(page);
+    const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y), at);
+    await page.mouse.click(sx, sy);
+    await page.waitForTimeout(400);
+    await waitIdle(page);
+    const card = (await page.textContent('#card')) ?? '';
+    console.log(`  ${card.replace(/\s+/g, ' ').slice(0, 300)}`);
+    if (!card.includes('w nocy')) throw new Error('karta budynku bez nocnego gościa');
+    if (!card.includes('Piętra przeszukane: 2')) throw new Error('karta budynku bez pięter');
+    const hint = (await page.textContent('#hint')) ?? '';
+    console.log(`  podpowiedź: ${hint}`);
+    if (!hint.startsWith('W nocy ktoś był')) throw new Error('rano bez napisu o nocnym gościu');
+  }),
+  {
     // dom jednorodzinny: drugiego dnia cel „Przeszukajcie pokój u sąsiadów” zamiast pustego mieszkania
     name: 'm2f2-cel-dom',
     query: '',
@@ -3904,68 +4054,74 @@ async function m2f2Open(page: Page, which: string, looks: boolean, pusty = false
 /** Puka do domów w Zielonkach od najbliższego, aż ktoś otworzy (spotkanie w drzwiach), i czeka na okno spotkania.
     lubiany: o zmierzchu, lokatorzy z generatora mieszkańców (a gdy nikt nie otworzy, życzliwi z cechą lubiany);
     wrogi: o 23, kłótliwi i odważni, którzy nocą rzucają się od razu. */
-async function m2f2Knock(page: Page, base: string, kind: 'lubiany' | 'wrogi') {
+async function m2f2Knock(page: Page, base: string, kind: 'lubiany' | 'wrogi', ugryziony = false) {
   await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1&godzina=${kind === 'wrogi' ? 23 : 18.5}`);
   await waitIdle(page);
-  const r = await page.evaluate((kind) => {
-    const zm = window.zm!;
-    const sim = zm.sim!;
-    const w = sim.w;
-    const size = w.size;
-    const door = w.buildings[w.hq].entrances[0].out;
-    const d2 = (t: number) => ((t % size) - (door % size)) ** 2 + (Math.floor(t / size) - Math.floor(door / size)) ** 2;
-    const houses = w.buildings
-      .filter((b) => b.id !== w.hq && b.cls === 'dom' && b.entrances.length)
-      .sort((a, b) => d2(a.entrances[0].out) - d2(b.entrances[0].out));
-    const p = sim.st.pawns.find((q) => q.kind === 'core')!;
-    const knock = (b: (typeof houses)[number]) => {
-      const e = b.entrances[0];
-      p.x = (e.out % size) + 0.5;
-      p.y = Math.floor(e.out / size) + 0.5;
-      p.path = [];
-      p.pi = 0;
-      sim.push({ t: 'knock', ids: [p.id], door: e.tile });
-      sim.step();
-      for (let i = 0; i < 3000 && p.job?.t === 'door'; i++) sim.step();
-      return !!sim.st.sasiedzi?.spotkanie;
-    };
-    const os = (first: string, name: string, f: boolean, prof: string, age: number, traits: string[]) => ({
-      first,
-      name,
-      f,
-      prof,
-      skills: {},
-      age,
-      traits,
-    });
-    const people =
-      kind === 'wrogi'
-        ? [
-            os('Roman', 'Roman Kos', false, 'ślusarz', 48, ['klotliwy', 'odwazny']),
-            os('Bożena', 'Bożena Kos', true, 'szwaczka', 46, ['klotliwy', 'odwazny']),
-          ]
-        : [
-            os('Teresa', 'Teresa Wilk', true, 'krawcowa', 63, ['lubiany']),
-            os('Zdzisław', 'Zdzisław Wilk', false, 'kolejarz', 66, ['lubiany']),
-          ];
-    const own = (bid: number) => ({
-      stany: [{ bid, apt: 0, state: 'mieszkancy' as const }],
-      domy: [{ apt: 0, klatka: -1, zal: false, osoby: people }],
-    });
-    let gen = kind === 'lubiany';
-    if (!gen) sim.lokatorzy = own;
-    let k = 0;
-    for (; k < houses.length && k < 14; k++) {
-      if (knock(houses[k])) break;
-      if (gen && k === 7) {
-        gen = false;
-        sim.lokatorzy = own;
+  const r = await page.evaluate(
+    ([kind, ugryziony]) => {
+      const zm = window.zm!;
+      const sim = zm.sim!;
+      const w = sim.w;
+      const size = w.size;
+      const door = w.buildings[w.hq].entrances[0].out;
+      const d2 = (t: number) =>
+        ((t % size) - (door % size)) ** 2 + (Math.floor(t / size) - Math.floor(door / size)) ** 2;
+      const houses = w.buildings
+        .filter((b) => b.id !== w.hq && b.cls === 'dom' && b.entrances.length)
+        .sort((a, b) => d2(a.entrances[0].out) - d2(b.entrances[0].out));
+      const p = sim.st.pawns.find((q) => q.kind === 'core')!;
+      const knock = (b: (typeof houses)[number]) => {
+        const e = b.entrances[0];
+        p.x = (e.out % size) + 0.5;
+        p.y = Math.floor(e.out / size) + 0.5;
+        p.path = [];
+        p.pi = 0;
+        sim.push({ t: 'knock', ids: [p.id], door: e.tile });
+        sim.step();
+        for (let i = 0; i < 3000 && p.job?.t === 'door'; i++) sim.step();
+        return !!sim.st.sasiedzi?.spotkanie;
+      };
+      const os = (first: string, name: string, f: boolean, prof: string, age: number, traits: string[]) => ({
+        first,
+        name,
+        f,
+        prof,
+        skills: {},
+        age,
+        traits,
+      });
+      const people =
+        kind === 'wrogi'
+          ? [
+              os('Roman', 'Roman Kos', false, 'ślusarz', 48, ['klotliwy', 'odwazny']),
+              os('Bożena', 'Bożena Kos', true, 'szwaczka', 46, ['klotliwy', 'odwazny']),
+            ]
+          : [
+              os('Teresa', 'Teresa Wilk', true, 'krawcowa', 63, ['lubiany']),
+              os('Zdzisław', 'Zdzisław Wilk', false, 'kolejarz', 66, ['lubiany']),
+            ];
+      const own = (bid: number) => ({
+        stany: [{ bid, apt: 0, state: 'mieszkancy' as const }],
+        domy: [{ apt: 0, klatka: -1, zal: false, osoby: people }],
+      });
+      let gen = kind === 'lubiany';
+      if (!gen) sim.lokatorzy = own;
+      let k = 0;
+      for (; k < houses.length && k < 14; k++) {
+        if (knock(houses[k])) break;
+        if (gen && k === 7) {
+          gen = false;
+          sim.lokatorzy = own;
+        }
       }
-    }
-    zm.setCam(p.x, p.y - 1, 1.7);
-    const sp = sim.st.sasiedzi?.spotkanie;
-    return { house: houses[k]?.name ?? '', k, gen, sp: !!sp, atak: sp?.atak ?? null };
-  }, kind);
+      zm.setCam(p.x, p.y - 1, 1.7);
+      const sp = sim.st.sasiedzi?.spotkanie;
+      // etap 2: ktoś z nich ukrywa ugryzienie (jak w trybie zombie), zanim karta się pokaże
+      if (sp && ugryziony) sim.st.sasiedzi!.budynki[sp.b].domy[sp.dom].ugryziony = 0;
+      return { house: houses[k]?.name ?? '', k, gen, sp: !!sp, atak: sp?.atak ?? null };
+    },
+    [kind, ugryziony] as const,
+  );
   console.log(
     `  ${r.house} (${r.k + 1}. dom, lokatorzy ${r.gen ? 'z generatora' : 'ze scenariusza'}): spotkanie ${r.sp}, atak ${r.atak}`,
   );

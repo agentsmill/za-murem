@@ -12,7 +12,7 @@ import { esc, pct } from './tekst.ts';
 /** to, czego karta potrzebuje ze stanu gry */
 export interface WidokSpotkania {
   sp: Pick<Spotkanie, 'nr' | 'atak' | 'gdzie' | 'wywazone'>;
-  g: Pick<Gospodarstwo, 'osoby' | 'znani' | 'zamiar' | 'nastroj' | 'rel'>;
+  g: Pick<Gospodarstwo, 'osoby' | 'znani' | 'zamiar' | 'nastroj' | 'rel' | 'szabrownicy' | 'ugryziony' | 'pytali'>;
   wybory: readonly WyborKarty[];
   /** porcje jedzenia w naszych zapasach */
   jedzenie: number;
@@ -34,6 +34,8 @@ function etykieta(w: WyborKarty): string {
     obrona: () => WYBOR.obrona(s),
     uspokojenie: () => WYBOR.uspokojenie(s),
     ucieczka: WYBOR.ucieczka,
+    przegonic: () => WYBOR.przegonic(s),
+    reka: WYBOR.reka,
   };
   return f[w.k]().pl;
 }
@@ -43,18 +45,24 @@ export function spotkanieSheet(v: WidokSpotkania): Sheet {
   const { sp, g } = v;
   const title = sp.atak
     ? KARTA.tytul.atak
-    : v.dom && sp.gdzie === 'mieszkanie'
-      ? KARTA.tytul.dom
-      : KARTA.tytul[sp.gdzie];
+    : g.szabrownicy
+      ? KARTA.tytul.szabrownicy
+      : v.dom && sp.gdzie === 'mieszkanie'
+        ? KARTA.tytul.dom
+        : KARTA.tytul[sp.gdzie];
   const who = g.osoby.map((o) => `<li class="line">${esc(KARTA.osoba(o.name, o.age, o.prof).pl)}</li>`).join('');
-  const look = [(g.znani ? KARTA.znani : KARTA.obcy).pl, KARTA.zamiar[g.zamiar].pl, KARTA.nastroj[g.nastroj].pl].join(
-    ' ',
-  );
+  // szabrownicy to nie lokatorzy: bez znajomości i stosunku do zarządu
+  const look = [
+    (g.szabrownicy ? KARTA.szabrownicy : g.znani ? KARTA.znani : KARTA.obcy).pl,
+    KARTA.zamiar[g.zamiar].pl,
+    KARTA.nastroj[g.nastroj].pl,
+  ].join(' ');
   const body = [
     `<ul class="lines">${who}</ul>`,
     `<p>${esc(look)}</p>`,
-    `<p class="sub">${esc(KARTA.relacja(g.rel).pl)}</p>`,
-    sp.wywazone ? `<p>${esc(KARTA.wywazone.pl)}</p>` : '',
+    g.ugryziony !== undefined && !g.pytali ? `<p>${esc(KARTA.reka.pl)}</p>` : '',
+    g.szabrownicy ? '' : `<p class="sub">${esc(KARTA.relacja(g.rel).pl)}</p>`,
+    sp.wywazone && !g.szabrownicy ? `<p>${esc(KARTA.wywazone.pl)}</p>` : '',
     sp.atak ? `<p class="doing">${esc(KARTA.bezRozmowy.pl)}</p>` : '',
     v.wybory.some((w) => w.k === 'jedzenie') ? `<p class="doing">${esc(KARTA.zapasy(v.jedzenie).pl)}</p>` : '',
   ].join('');
@@ -76,7 +84,7 @@ export function spotkanieSheet(v: WidokSpotkania): Sheet {
   };
 }
 
-/** zdanie do podpowiedzi po napisie z symulacji (pusty napis, gdy nie ma czego powiedzieć) */
-export function zdanieNapisu(n: Pick<Napis, 'co' | 'ile' | 'info'>, kto: Kto | null): string {
-  return zdanie(n.co, { kto, ile: n.ile, info: n.info }).pl;
+/** zdanie do podpowiedzi po napisie z symulacji (pusty napis, gdy nie ma czego powiedzieć); nazwa: budynek napisu */
+export function zdanieNapisu(n: Pick<Napis, 'co' | 'ile' | 'info' | 'ilu'>, kto: Kto | null, nazwa?: string): string {
+  return zdanie(n.co, { kto, ile: n.ile, info: n.info, nazwa, ilu: n.ilu }).pl;
 }

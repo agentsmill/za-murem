@@ -4,69 +4,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
-import {
-  drzwiBudynku,
-  type LokatorzyBudynku,
-  mieszkaniaZaDrzwiami,
-  nowyBudynek,
-  type OsobaSasiada,
-  type WyborSpotkania,
-  wnetrze,
-} from '../../src/sim/sasiedzi.ts';
+import { drzwiBudynku, mieszkaniaZaDrzwiami, nowyBudynek } from '../../src/sim/sasiedzi.ts';
 import { Sim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
-import type { World } from '../../src/world/world.ts';
-import { core, demoWorld, doorWhere, newGame, until } from './sasiedzi-pomoc.ts';
-
-/** lokatorzy we wszystkich mieszkaniach: gospodarstwa po n osób z podanymi cechami */
-const wszyscy =
-  (w: World, traits: string[], n = 2) =>
-  (bid: number): LokatorzyBudynku => {
-    const apts = Math.max(0, ...wnetrze(w, bid).rooms.map((r) => r.apt + 1));
-    const osoba = (apt: number, i: number): OsobaSasiada => ({
-      first: `Ola${apt}${i}`,
-      name: `Ola${apt}${i} Nowak`,
-      f: true,
-      prof: 'mieszkanka',
-      skills: {},
-      age: 40 + i,
-      traits,
-    });
-    return {
-      stany: [...Array(apts).keys()].map((apt) => ({ bid, apt, state: 'mieszkancy' as const })),
-      domy: [...Array(apts).keys()].map((apt) => ({
-        apt,
-        klatka: -1,
-        zal: false,
-        osoby: [...Array(n).keys()].map((i) => osoba(apt, i)),
-      })),
-    };
-  };
-
-/** godzina gry (od 15:00 pierwszego dnia) */
-const at = (sim: Sim, hour: number) => {
-  sim.st.tick = Math.round(((hour + 24 - 15) % 24) * TICKS_PER_HOUR);
-};
-
-/** gra w Batowicach nocą: puka do domu z życzliwymi (lubiani), aż zacznie się spotkanie w drzwiach */
-function knockHouse(seed = 5) {
-  const w = demoWorld('zielonki');
-  const sim = newGame('zielonki', 'zwykly', seed);
-  at(sim, 23);
-  sim.lokatorzy = wszyscy(w, ['lubiany']);
-  const { bid, door } = doorWhere(w, 'zwykly', () => true, ['dom']);
-  const p = core(sim)[0];
-  sim.push({ t: 'knock', ids: [p.id], door });
-  sim.step();
-  until(sim, () => p.job?.t !== 'door');
-  return { w, sim, p, bid, door };
-}
-
-const meet = (sim: Sim, choice: WyborSpotkania) => {
-  const sp = sim.st.sasiedzi!.spotkanie!;
-  sim.push({ t: 'meet', ids: [], nr: sp.nr, choice });
-  sim.step();
-};
+import { at, core, demoWorld, doorWhere, knockHouse, meet, newGame, until, wszyscy } from './sasiedzi-pomoc.ts';
 
 describe('spotkania z lokatorami', () => {
   it('pukanie nocą do domu z życzliwymi: spotkanie w drzwiach, pionki lokatorów, nasza osoba czeka', () => {
