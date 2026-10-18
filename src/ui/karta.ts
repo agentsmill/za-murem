@@ -9,6 +9,7 @@
 import { DOM, type Dom, TRAITS } from '../content/data.ts';
 import { nazwaCechy } from '../content/druzyna.ts';
 import { wiek } from '../content/people.ts';
+import { BLOK, type Words, wordsOf } from '../gov/miejsce.ts';
 import { WEAPONS } from '../sim/bron.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { NEED_LABELS, type Needs } from '../sim/needs.ts';
@@ -34,7 +35,7 @@ const AMMO_WORDS: Record<string, [string, string, string]> = {
 };
 
 /** ugryzienie z czasem; przycisk amputacji tylko wtedy, gdy karta pozwala na rozkazy i da się jeszcze uciąć */
-function biteHtml(p: SimPerson, tick: number, orders: boolean): string {
+function biteHtml(p: SimPerson, tick: number, orders: boolean, words: Words): string {
   if (!p.bite) return '';
   const ago = Math.max(0, Math.floor(((tick - p.bite.at) * 60) / TICKS_PER_HOUR));
   const left = Math.max(0, Math.ceil(p.bite.left / TICKS_PER_HOUR));
@@ -42,17 +43,17 @@ function biteHtml(p: SimPerson, tick: number, orders: boolean): string {
   const where = p.bite.limb ? ' w rękę' : '';
   const cut =
     orders && p.bite.amputate
-      ? ' <button type="button" class="btn mini bad" data-card="amputate" title="Ktoś z zarządu z medycyną utnie kończynę: pół godziny, nie zawsze się udaje">Amputować</button>'
+      ? ` <button type="button" class="btn mini bad" data-card="amputate" title="Ktoś z ${words.zarzad.dk} z medycyną utnie kończynę: pół godziny, nie zawsze się udaje">Amputować</button>`
       : '';
   return `<p class="bite">${who}${where} ${Math.floor(ago / 60)}:${String(ago % 60).padStart(2, '0')} temu. Gorączka zabije za ${left} h.${cut}</p>`;
 }
 
 /** broń z amunicją i przycisk zmiany; ugryzienie z czasem i amputacją, póki da się ją zrobić */
-function armHtml(p: SimPerson, tick: number): string {
+function armHtml(p: SimPerson, tick: number, words: Words): string {
   const w = p.weapon ? WEAPONS[p.weapon] : WEAPONS.piesci;
   const ammo = w.ammo && p.ammo !== null ? ` (${many(p.ammo, ...AMMO_WORDS[w.ammo])})` : '';
   const arm = `<p class="arm">Broń: <b>${esc(w.name)}</b>${esc(ammo)} <button type="button" class="btn mini" data-card="arm">Zmień</button></p>`;
-  return arm + biteHtml(p, tick, true);
+  return arm + biteHtml(p, tick, true, words);
 }
 
 /** obecni krewni z generatora w jednej linijce (bez numerów mieszkań) */
@@ -86,6 +87,8 @@ export interface CardOpts {
   lokator?: boolean;
   /** przycisk zmiany imienia osoby z generatora (domyślnie jest; false w grze z sąsiadami, `imionaWGrze`) */
   imie?: boolean;
+  /** słowa miejsca (w domu komitet ulicy); bez nich jak w bloku */
+  words?: Words;
 }
 
 export function personCard(
@@ -95,6 +98,7 @@ export function personCard(
   storyOpen = false,
   opts: CardOpts = {},
 ): string {
+  const words = opts.words ?? wordsOf(BLOK);
   const skills = Object.entries(p.skills)
     .map(([d, v]) => `<span class="tag skill">${DOM[d as Dom]} ${v}</span>`)
     .join('');
@@ -121,7 +125,7 @@ export function personCard(
     rodzinaHtml(p.rodzina),
     storyHtml(p.story, storyOpen),
     `<div class="tags">${skills}${traits}${maimed}</div>`,
-    opts.lokator ? biteHtml(p, tick, false) : armHtml(p, tick),
+    opts.lokator ? biteHtml(p, tick, false, words) : armHtml(p, tick, words),
     `<div class="needs">${bars}</div>`,
     moods ? `<ul class="moods">${moods}</ul>` : '',
     tonight ? `<p class="tonight">${esc(tonight)}</p>` : '',

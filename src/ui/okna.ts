@@ -1,8 +1,10 @@
 /* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenie palenia mebli,
    menu (z linią o źródłach danych mieszkańców), jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
-   (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts. */
+   (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts. Słowa wspólnoty
+   (w domu komitet ulicy, w bloku zarząd spółdzielni) biorą ze słownika miejsca; bez niego mówią jak w bloku. */
 
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
+import { BLOK, type Words, wordsOf } from '../gov/miejsce.ts';
 import { deterrence, KOZA_KEY, untilWord, WOOD_PER_HOUR, watchersOf } from '../gov/noc.ts';
 import type {
   GovInput,
@@ -55,6 +57,8 @@ const gainText = (g: NightOption['gain']): string =>
 
 const btn = (act: string, label: string, cls = 'btn', arg = '', extra = '') =>
   `<button type="button" class="${cls}" data-act="${act}"${arg ? ` data-arg="${esc(arg)}"` : ''}${extra}>${label}</button>`;
+
+const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 /** 1 sztukę, 2 sztuki, 5 sztuk */
 export const plural = (n: number, one: string, few: string, many: string): string => {
@@ -150,7 +154,12 @@ export function fuelHtml(wd: NonNullable<NightCard['wood']>, koza: string[]): st
   )} · drewno ${wd.have} szt., noc zje ${wd.need} (2 na godzinę)</em></div>`;
 }
 
-export function nightSheet(card: NightCard, assign: Record<string, string>, odds: NightOdds): Sheet {
+export function nightSheet(
+  card: NightCard,
+  assign: Record<string, string>,
+  odds: NightOdds,
+  words: Words = wordsOf(BLOK),
+): Sheet {
   const names = Object.fromEntries(card.people.map((p) => [p.id, p.name]));
   const rows = card.people
     .map((p) => {
@@ -182,10 +191,10 @@ export function nightSheet(card: NightCard, assign: Record<string, string>, odds
           : 'Kto śpi, kto pilnuje siatki albo kozy, a kto idzie po zapasy?'
     }</p><div data-odds>${oddsHtml(card, assign, odds, names)}</div><ul class="crew">${rows}</ul>${
       card.advice
-        ? `<p class="advice"><b class="advice-k">Zarząd radzi:</b> <span data-advice>${esc(card.advice)}</span></p>`
+        ? `<p class="advice"><b class="advice-k">${words.Zarzad} radzi:</b> <span data-advice>${esc(card.advice)}</span></p>`
         : ''
     }`,
-    foot: `${btn('night-reset', 'Jak radzi zarząd', 'btn ghost')}${btn('night-go', 'Zacznijcie noc', 'btn go')}`,
+    foot: `${btn('night-reset', `Jak radzi ${words.zarzad.krotko}`, 'btn ghost')}${btn('night-go', 'Zacznijcie noc', 'btn go')}`,
   };
 }
 
@@ -202,14 +211,14 @@ function lawItem(o: LawOption): string {
   )}</p>${act}</li>`;
 }
 
-export function lawSheet(p: Extract<Prompt, { k: 'uchwala' }>): Sheet {
+export function lawSheet(p: Extract<Prompt, { k: 'uchwala' }>, words: Words = wordsOf(BLOK)): Sheet {
   return {
     tone: 'uchwala',
-    kicker: `Zebranie zarządu, dzień ${p.day}, 19:30`,
-    title: p.first ? 'Pierwsza uchwała' : 'Uchwała zarządu',
+    kicker: `Zebranie ${words.zarzad.dk}, dzień ${p.day}, 19:30`,
+    title: p.first ? 'Pierwsza uchwała' : `Uchwała ${words.zarzad.dk}`,
     body: `<p class="lead">${
       p.first
-        ? 'Wieczór przy kozie. Mieszkańcy czekają, jakie zasady ustalicie na pierwszą noc. Jedną uchwałę można podjąć dziś, następną najwcześniej za półtorej doby.'
+        ? `Wieczór przy kozie. ${wielka(words.mieszkancy.m)} czekają, jakie zasady ustalicie na pierwszą noc. Jedną uchwałę można podjąć dziś, następną najwcześniej za półtorej doby.`
         : 'Można podjąć jedną uchwałę. Drogi porządku i wspólnoty się wykluczają.'
     }</p><ul class="laws">${p.options.map(lawItem).join('')}</ul>`,
     foot: btn('law-skip', p.first ? 'Nic dziś nie uchwalamy (zaufanie −1)' : 'Nic dziś nie uchwalamy', 'btn ghost'),
@@ -218,14 +227,14 @@ export function lawSheet(p: Extract<Prompt, { k: 'uchwala' }>): Sheet {
 
 // ---------------------------------------------------------------- wydarzenie
 
-export function eventSheet(p: Extract<Prompt, { k: 'wydarzenie' }>): Sheet {
+export function eventSheet(p: Extract<Prompt, { k: 'wydarzenie' }>, words: Words = wordsOf(BLOK)): Sheet {
   const text = p.text
     .split(/\n+/)
     .map((l) => `<p>${esc(l)}</p>`)
     .join('');
   return {
     tone: 'wydarzenie',
-    kicker: 'Na osiedlu',
+    kicker: words.naglowek,
     title: esc(p.title),
     body: text,
     foot: `<div class="choices">${p.choices
@@ -281,7 +290,7 @@ export function reportSheet(r: NightReport): Sheet {
 
 // ---------------------------------------------------------------- palenie mebli
 
-export function burnSheet(kind: string, owner: string | null, softer: boolean): Sheet {
+export function burnSheet(kind: string, owner: string | null, softer: boolean, words: Words = wordsOf(BLOK)): Sheet {
   const wood = BURNABLE[kind] ?? 1;
   const hours = (wood * BURN_TICKS) / TICKS_PER_HOUR;
   const what = FURNITURE_ACC[kind] ?? 'mebel';
@@ -291,8 +300,8 @@ export function burnSheet(kind: string, owner: string | null, softer: boolean): 
     title: `Spalić ${esc(what)}?`,
     body: `<p>Da ${wood} ${plural(wood, 'sztukę', 'sztuki', 'sztuk')} drewna, około ${num(hours)} h ognia w kozie. Mebla już nie będzie.</p><p>${
       owner
-        ? `To mebel osoby: ${esc(owner)}. Bardzo to przeżyje, a reszta zarządu też to poczuje.`
-        : 'Zarząd to poczuje: palimy coś, co ktoś kiedyś kupił na raty.'
+        ? `To mebel osoby: ${esc(owner)}. Bardzo to przeżyje, a reszta ${words.zarzad.dk} też to poczuje.`
+        : `${words.Zarzad} to poczuje: palimy coś, co ktoś kiedyś kupił na raty.`
     }${softer ? ' Uchwała „Meble na opał” łagodzi to o połowę.' : ''}</p>`,
     foot: `${btn('burn-no', 'Zostawić', 'btn ghost')}${btn('burn-yes', 'Spalić', 'btn danger')}`,
     closable: true,
@@ -326,18 +335,18 @@ const ZOMBIE_HELP =
   '<h3 class="help-h">Tryb zombie</h3><ul class="help"><li>Za siatką snują się szwendacze. Są wolni, ale idą za hałasem i za tym, co widzą. Nocą przychodzi stado i napiera na siatkę, a każdej nocy jest ich więcej.</li><li>Dzida sięga przez siatkę: warta z dzidą zabija tych, którzy napierają. Nóż, łom i siekiera działają dopiero po tej samej stronie siatki. Strzał zabija od razu, ale słychać go z daleka i ściąga następnych.</li><li>Uszkodzoną siatkę wzmacnia się deskami albo złomem, a dziurę łata. Dzidę robi się z desek i złomu na stercie. „Do broni!” wysyła wszystkich zdolnych na wartę przy siatce.</li><li>Ugryzienie to gorączka i śmierć w niecałą dobę. Kto ugryziony w rękę albo nogę, tego da się uratować amputacją w ciągu dwóch godzin. Każdy zmarły wstaje po godzinie, chyba że ktoś go dobije.</li></ul>';
 
 /** pomoc o budowie i pustych mieszkaniach (M2, fala 1) */
-function buildHelp(touch: boolean): string {
+function buildHelp(touch: boolean, words: Words): string {
   const items = touch
     ? [
         'Przycisk Budowa u góry otwiera menu budowy: pomieszczenie, podwórko i obwód, z kosztem, czasem pracy i działaniem.',
         'Po wyborze plan budowy jedzie za palcem: stuknięcie stawia, przyciski na dole obracają i anulują. Zielony plan da się postawić, czerwony mówi, czemu nie.',
-        'Zarząd sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.',
+        `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.`,
         'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
       ]
     : [
         'Przycisk Budowa u góry albo klawisz B otwiera menu budowy: pomieszczenie, podwórko i obwód, z kosztem, czasem pracy i działaniem.',
         'Po wyborze plan budowy jedzie za kursorem: lewy klik stawia, R obraca, prawy klik albo Esc anuluje, z Shiftem stawia się kilka naraz. Zielony plan da się postawić, czerwony mówi, czemu nie.',
-        'Zarząd sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.',
+        `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.`,
         'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
       ];
   return `<h3 class="help-h">Budowa i puste mieszkania</h3><ul class="help">${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
@@ -355,22 +364,24 @@ export function confirmSheet(label: string): Sheet {
   };
 }
 
-export function helpSheet(touch: boolean, zombie = false): Sheet {
+export function helpSheet(touch: boolean, zombie = false, words: Words = wordsOf(BLOK)): Sheet {
+  const z = words.zarzad.dk;
   const ctl = touch
-    ? '<li>Stuknięcie w człowieka z zarządu zaznacza go.</li><li>Stuknięcie w miejsce wydaje najprostsze polecenie: idź, zetnij, zanieś, dołóż.</li><li>Przytrzymanie palca pokazuje wszystkie polecenia w tym miejscu, także palenie mebli.</li><li>Jeden palec przesuwa mapę, dwa przybliżają.</li>'
-    : '<li>Klik zaznacza człowieka z zarządu, Shift i przeciąganie zaznacza ramką kilku naraz.</li><li>Prawy przycisk pokazuje polecenia w tym miejscu: idź, zetnij, zanieś do składu, dołóż do kozy, gotuj, spal mebel.</li><li>Kółko przybliża, przeciąganie przesuwa mapę, WASD też.</li><li>Na gładziku kliknięcie dwoma palcami albo Ctrl+klik to prawy przycisk, szczypanie przybliża, dwa palce przesuwają mapę.</li><li>Spacja to pauza, 1–4 tempo (do 8×).</li>';
+    ? `<li>Stuknięcie w człowieka z ${z} zaznacza go.</li><li>Stuknięcie w miejsce wydaje najprostsze polecenie: idź, zetnij, zanieś, dołóż.</li><li>Przytrzymanie palca pokazuje wszystkie polecenia w tym miejscu, także palenie mebli.</li><li>Jeden palec przesuwa mapę, dwa przybliżają.</li>`
+    : `<li>Klik zaznacza człowieka z ${z}, Shift i przeciąganie zaznacza ramką kilku naraz.</li><li>Prawy przycisk pokazuje polecenia w tym miejscu: idź, zetnij, zanieś do składu, dołóż do kozy, gotuj, spal mebel.</li><li>Kółko przybliża, przeciąganie przesuwa mapę, WASD też.</li><li>Na gładziku kliknięcie dwoma palcami albo Ctrl+klik to prawy przycisk, szczypanie przybliża, dwa palce przesuwają mapę.</li><li>Spacja to pauza, 1–4 tempo (do 8×).</li>`;
   return {
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: 'Jak grać',
-    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul>${buildHelp(touch)}<h3 class="help-h">Zarząd</h3><ul class="help"><li>Prowadzicie zarząd spółdzielni w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie mieszkańców liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu walne odwoła zarząd.</li><li>Każdy z zarządu ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li></ul>${zombie ? ZOMBIE_HELP : ''}<h3 class="help-h">Na razie</h3><p>W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.</p>`,
+    body: `<h3 class="help-h">Sterowanie</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words)}<h3 class="help-h">${words.Zarzad}</h3><ul class="help"><li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>Każdy z ${z} ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li></ul>${zombie ? ZOMBIE_HELP : ''}<h3 class="help-h">Na razie</h3><p>W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.</p>`,
     foot: btn('help-back', 'Wróć', 'btn go'),
     closable: true,
   };
 }
 
-export function endSheet(id: EndingId): Sheet {
-  const e = ENDINGS[id];
+export function endSheet(id: EndingId, words: Words = wordsOf(BLOK)): Sheet {
+  // zakończenia z wersją dla miejsca ze słownika (w domu bez walnego i klatek), reszta z 0.3
+  const e = words.koniec[id] ?? ENDINGS[id];
   return {
     tone: 'koniec',
     kicker: 'Koniec gry',

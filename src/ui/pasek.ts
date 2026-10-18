@@ -2,6 +2,7 @@
    i części, jedzenie, zaufanie i wkurzenie. Wartości
    i progi liczy czysta funkcja (do testów), DOM zmienia się tylko po zmianie tekstu. */
 
+import { BLOK, type Words, wordsOf } from '../gov/miejsce.ts';
 import type { GovState } from '../gov/typy.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import { WARM_ENOUGH } from '../sim/tutorial.ts';
@@ -15,7 +16,8 @@ export interface Stat {
   title: string;
 }
 
-export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
+/** words: słowa miejsca (w domu sąsiedzi, komitet ulicy i zebranie ulicy), bez nich jak w bloku */
+export function statsOf(s: SimSnapshot, gov: GovState | null, words: Words = wordsOf(BLOK)): Stat[] {
   const k = s.stock;
   const food = k.supplies + k.meals;
   // drewno na zapas, bez tego, co już się pali (ogień ma swoje pole)
@@ -63,7 +65,7 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
       title:
         kit === null
           ? 'Siedziba nie ma kuchni z kozą'
-          : `W kuchni zarządu ${deg(kit)}${s.kozaLit ? `, koza pali się jeszcze ${num(k.fireHours)} h` : ', koza zimna'}`,
+          : `W kuchni ${words.zarzad.dk} ${deg(kit)}${s.kozaLit ? `, koza pali się jeszcze ${num(k.fireHours)} h` : ', koza zimna'}`,
     },
     {
       id: 'sFire',
@@ -71,7 +73,7 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
       level: !s.kozaLit ? (kit !== null && kit < WARM_ENOUGH ? 'bad' : 'mid') : k.fireHours < 0.5 ? 'mid' : 'ok',
       title: `${
         s.kozaLit
-          ? `Ognia w kozie na ${num(k.fireHours)} h. Zarząd sam dokłada, póki jest drewno.`
+          ? `Ognia w kozie na ${num(k.fireHours)} h. ${words.Zarzad} sam dokłada, póki jest drewno.`
           : 'Koza zimna. Bez ognia kuchnia stygnie: zetnijcie drzewo albo spalcie mebel.'
       }${watch.length ? ` Przy kozie czuwa ${watch.join(', ')}: dokłada do rana.` : ''}`,
     },
@@ -116,13 +118,13 @@ export function statsOf(s: SimSnapshot, gov: GovState | null): Stat[] {
       id: 'sTrust',
       value: trust === null ? '–' : String(trust),
       level: trust === null ? 'mid' : trust < 30 ? 'bad' : trust < 45 ? 'mid' : 'ok',
-      title: 'Zaufanie mieszkańców do zarządu (0–100). Przy zerze ludzie odejdą.',
+      title: `Zaufanie ${words.mieszkancy.d} do ${words.zarzad.d} (0–100). Przy zerze ludzie odejdą.`,
     },
     {
       id: 'sAnger',
       value: anger === null ? '–' : String(anger),
       level: anger === null ? 'mid' : anger > 60 ? 'bad' : anger > 40 ? 'mid' : 'ok',
-      title: 'Wkurzenie mieszkańców (0–100). Przy stu walne odwoła zarząd.',
+      title: `Wkurzenie ${words.mieszkancy.d} (0–100). Przy stu ${words.walne} odwoła ${words.zarzad.krotko}.`,
     },
   ];
 }
