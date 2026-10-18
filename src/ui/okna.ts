@@ -1,5 +1,5 @@
 /* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenie palenia mebli,
-   menu, jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
+   menu (z linią o źródłach danych mieszkańców), jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
    (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts. */
 
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
@@ -301,6 +301,12 @@ export function burnSheet(kind: string, owner: string | null, softer: boolean): 
 
 // ---------------------------------------------------------------- menu, jak grać, koniec
 
+/** Skąd są wymyśleni mieszkańcy: linia z sekcji „Linia do ekranu »O grze«” w public/data/mieszkancy/LICENCJE.md
+    (plik robi tools/dane/licencje.ts; test pilnuje, żeby tekst się zgadzał), a obok link do całego pliku. */
+export const DANE_MIESZKANCOW =
+  'Dane demograficzne: GUS (NSP 2021 z publikacją „Warunki mieszkaniowe w Polsce”, BDL na CC BY 4.0, BREC 2021, tablice trwania życia 2025, Prognoza ludności 2023-2060, Rocznik Demograficzny 2025, Sytuacja demograficzna Polski do 2025 r.) i Eurostat (CC BY 4.0), przetworzone na wymyślonych mieszkańców; imiona i nazwiska: rejestr PESEL, Ministerstwo Cyfryzacji, dane.gov.pl (CC0); odmiana: SGJP (BSD-2, pełna nota w repozytorium).';
+export const LICENCJE_MIESZKANCOW = 'data/mieszkancy/LICENCJE.md';
+
 export function menuSheet(note: string): Sheet {
   return {
     tone: 'menu',
@@ -309,7 +315,7 @@ export function menuSheet(note: string): Sheet {
     body: `<div class="menu-list">${btn('menu-back', 'Wróć do gry', 'btn go')}${btn('menu-help', 'Jak grać')}<a class="btn" href="v03/index.html" data-act="menu-v03">Pełna wersja 0.3</a>${btn(
       'menu-start',
       'Zapisz i wróć do ekranu startowego',
-    )}</div><p class="fine">${esc(note)}</p>`,
+    )}</div><p class="fine">${esc(note)}</p><p class="fine dane">${esc(DANE_MIESZKANCOW)} <a href="${LICENCJE_MIESZKANCOW}" target="_blank" rel="noopener">Źródła i licencje</a></p>`,
     foot: '',
     closable: true,
   };

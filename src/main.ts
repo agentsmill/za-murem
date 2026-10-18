@@ -1,4 +1,5 @@
-/* Za Murem 0.4: start (z panelem „Wasz zarząd”: liczba osób i własna drużyna), wczytanie osiedla, pętla gry
+/* Za Murem 0.4: start (z panelem „Wasz zarząd”: liczba osób i własna drużyna), wczytanie osiedla i tabel mieszkańców
+   (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), pętla gry
    z zarządem (uchwały, karta nocy, wydarzenia, raport), zapis i sterowanie. */
 
 import './style.css';
@@ -19,7 +20,7 @@ import {
 } from './gov/zarzad.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
-import { type DaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
+import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { buildScene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
 import { type Light, lightAt } from './render/light.ts';
@@ -32,7 +33,8 @@ import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
 import type { LokatorzyGry } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
-import { addResidents, createSim, Sim } from './sim/sim.ts';
+import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
+import { addResidents, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
@@ -216,9 +218,18 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
   busy = true;
   try {
     const data = await get();
+    // tabele mieszkańców dla punktu osiedla (pliki gry z public/data/mieszkancy/, bez wysyłania adresu); bez nich
+    // (null) gra idzie starą ścieżką
+    status('Liczę mieszkańców…');
+    const t0 = performance.now();
+    const c = data.geo?.c;
+    const dane = Array.isArray(c) ? await wczytajDaneMieszkancow(c[0], c[1]) : null;
+    console.info(
+      `tabele mieszkańców ${Math.round(performance.now() - t0)} ms${dane ? `, gmina ${dane.gmina?.teryt ?? 'brak (szablon krajowy)'}` : ', brak: postaci jak dawniej'}`,
+    );
     status('Rysuję osiedle…');
     await new Promise((r) => setTimeout(r, 0));
-    await enter(data, saved);
+    await enter(data, saved, dane);
     status('');
   } catch (err) {
     const m = (err as Error)?.message || '';
@@ -233,27 +244,52 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
 
 let preview: { things: ThingLike[]; lights: Light[] } | null = null;
 
-async function enter(data: Loaded, saved?: Save) {
-  // dane mieszkańców z generatora należą do jednej gry (ustawia je start z mieszkańcami, krok 5, zadanie 7)
+async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = null) {
+  // dane mieszkańców z generatora należą do jednej gry (ustawia je niżej start z mieszkańcami)
   mieszkancy = null;
   imieEdit = null;
   imionaGen.clear();
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
   const t0 = performance.now();
-  const world = buildWorld(data.geo, { seed, street: data.street });
-  const scene = buildScene(world);
-  // przekrój siedziby z wnętrzem ze świata; ?przekroj=0 zostawia dach (do porównań)
-  if (params.get('przekroj') !== '0') scene.section = sectionOf(world);
+  // mapa z tagami budynków generatora mieszkańców (bez tabel ta sama mapa); świat poza tagami jest ten sam
+  const geo = mapaMieszkancow(data.geo, dane);
+  const world = buildWorld(geo, { seed, street: data.street });
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
   // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;
+  // zarząd z panelu „Wasz zarząd”: bez ruszania go 4 osoby z siedziby (z generatora, bez tabel z ziarna adresu)
+  const opcje = druzyna?.opcje() ?? { core: 4 };
+  // mieszkańcy siedziby z generatora, zanim powstaną symulacja i scena (obie czytają stany mieszkań ze świata): nowa gra
+  // dostaje stany mieszkań i osoby z generatora, wznowiony zapis z osobami z generatora stany mieszkań z zapisu
+  // i budynek siedziby do imion i historii (bez nowego createSim), zapis sprzed kroku 5 nic
+  const t1 = performance.now();
+  let l = saved ? mieszkancyZapisu(world, geo, dane, saved.sim) : mieszkancyNowejGry(world, geo, dane, opcje.core);
+  if (dane)
+    console.info(
+      `mieszkańcy ${Math.round(performance.now() - t1)} ms${l ? `, w siedzibie ${l.siedziba.osoby.length} osób` : ', bez generatora'}`,
+    );
   // tłum obcych tylko do pomiarów (?perf=150); w grze są mieszkańcy siedziby, których dokłada symulacja
   const crowd = params.has('perf') ? Number(params.get('perf')) : 0;
   // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
-  // zarząd z panelu „Wasz zarząd”: bez ruszania go 4 osoby z adresu, jak zawsze
-  const st = saved ? saved.sim : createSim(world, seed, { ...(druzyna?.opcje() ?? { core: 4 }), crowd, mode });
+  let st: SimState;
+  if (saved) st = saved.sim;
+  else
+    try {
+      st = createSim(world, seed, { ...opcje, crowd, mode, ...(l ? { mieszkancy: opcjaMieszkancow(l) } : {}) });
+    } catch (e) {
+      if (!l) throw e;
+      // osoby z generatora wywróciły symulację: gra bez nich, ze stanami mieszkań M2, jak przed krokiem 5
+      console.warn('Mieszkańcy z adresu: symulacja z osobami z generatora się nie udała, gra bez nich', e);
+      l = null;
+      stanyM2(world);
+      st = createSim(world, seed, { ...opcje, crowd, mode });
+    }
+  // scena po stanach mieszkań na świecie: przekrój rysuje puste mieszkania, uszkodzenia i śmieci ze świata
+  const scene = buildScene(world);
+  // przekrój siedziby z wnętrzem ze świata; ?przekroj=0 zostawia dach (do porównań)
+  if (params.get('przekroj') !== '0') scene.section = sectionOf(world);
   const zombie = modeOf(st) === 'zombie';
   $('start').hidden = true;
   $('app').hidden = false;
@@ -267,6 +303,7 @@ async function enter(data: Loaded, saved?: Save) {
       (((((Number(hour) * 60 - START_MINUTES) / 60) * TICKS_PER_HOUR) % TICKS_PER_DAY) + TICKS_PER_DAY) % TICKS_PER_DAY,
     );
   sim = new Sim(world, st);
+  if (l && dane) mieszkancy = { l, dane, adres: data.addr };
   placing = null;
   aptFocus = -1;
   residentFocus = -1;
@@ -335,6 +372,8 @@ async function enter(data: Loaded, saved?: Save) {
     window.zm.sim = sim;
     window.zm.gov = gov;
   }
+  // imiona zmienione przez gracza (pamięć przeglądarki) na osobach z generatora, w nowej grze i we wznowionej
+  zastosujImiona();
   // z zapisu: raport albo karta, które czekały
   if (saved) nextPrompt();
 }
@@ -1042,9 +1081,9 @@ $('card').addEventListener('click', (e) => {
 
 /* ---------- imiona gracza (src/ui/imiona.ts) ---------- */
 /** Dane mieszkańców z generatora tej gry: wynik `lokatorzyGry` dla siedziby, tabele i adres (`Loaded.addr`, ten sam
-    napis co w zapisie gry; klucz pamięci imion). Ustawia je start gry z mieszkańcami z adresu (krok 5, zadanie 7),
-    który potem woła `zastosujImiona()` po createSim albo po wczytaniu zapisu. Bez nich (null) zmiana imienia zmienia
-    tylko imię osoby, bez historii i rodziny krewnych, pod adresem z `loaded`. */
+    napis co w zapisie gry; klucz pamięci imion). Ustawia je `enter` w nowej grze z tabelami i we wznowionym zapisie
+    z osobami z generatora, a na końcu woła `zastosujImiona()`. Bez nich (null: bez tabel, zapis sprzed kroku 5)
+    zmiana imienia zmienia tylko imię osoby, bez historii i rodziny krewnych, pod adresem z `loaded`. */
 let mieszkancy: { l: LokatorzyGry; dane: DaneMieszkancow; adres: string } | null = null;
 /** edytor imienia w karcie: osoba (indeks w st.people), jej pionek, karta mieszkańca albo zarządu, stały HTML edytora
     i odmiana do podpowiedzi form */
@@ -1078,8 +1117,8 @@ function doKroniki(teksty: readonly string[]) {
 }
 
 /** Zmiany imion (z pamięci przeglądarki albo podane) na stanie gry. Wpisy bez osoby po aktualizacji tabel: po jednym
-    komunikacie w kronice („Halina wyprowadziła się.”) i usunięcie z pamięci. Krok 5, zadanie 7 woła to po starcie gry
-    z mieszkańcami. */
+    komunikacie w kronice („Halina wyprowadziła się.”) i usunięcie z pamięci. `enter` woła to na końcu startu gry
+    (nowej i wznowionej), gdy `sim`, `gov` i `loaded` już są. */
 function zastosujImiona(zmiany?: Record<string, ZmianaImienia>): void {
   const adres = adresImion();
   if (!sim || !adres) return;
@@ -1795,12 +1834,15 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
-// wysokość górnego paska i listy celów dla przycisków mapy i podpowiedzi (pasek zawija się na telefonie)
+// wysokość górnego paska, listy celów, karty i atrybucji dla przycisków mapy i podpowiedzi (zawijają się na telefonie)
+const attrib = document.querySelector<HTMLElement>('#app .attrib');
 const bars = new ResizeObserver(() => {
   const root = document.documentElement.style;
   root.setProperty('--top-h', `${Math.round($('top').getBoundingClientRect().height)}px`);
   root.setProperty('--goals-h', `${$('goals').hidden ? 0 : Math.round($('goals').getBoundingClientRect().height)}px`);
   root.setProperty('--card-h', `${$('card').hidden ? 0 : Math.round($('card').getBoundingClientRect().height)}px`);
+  // atrybucja map i danych mieszkańców na dole: na telefonie dwa wiersze, a karta i podpowiedź stoją nad nią
+  if (attrib) root.setProperty('--attrib-h', `${Math.round(attrib.getBoundingClientRect().height)}px`);
   // pasek trybu stawiania: na telefonie podpowiedź (np. czemu tu nie wolno) idzie nad niego, a nie pod spód
   const place = $('placeBar');
   root.setProperty('--place-lift', `${place.hidden ? 0 : Math.round(place.getBoundingClientRect().height) + 20}px`);
@@ -1809,6 +1851,7 @@ bars.observe($('top'));
 bars.observe($('goals'));
 bars.observe($('card'));
 bars.observe($('placeBar'));
+if (attrib) bars.observe(attrib);
 
 /* ---------- start ---------- */
 (async () => {

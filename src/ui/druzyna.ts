@@ -1,7 +1,8 @@
 /* Panel „Wasz zarząd” na karcie startowej (docs/superpowers/specs/2026-10-18-druzyna-design.md, układ A z makiety):
-   liczba osób 1–5 i dwa tryby. Z adresu (domyślny): gra robi zarząd z ziarna adresu jak dziś, tylko w wybranej
-   liczbie. Własny: drużyna z panelu, każdą osobę da się ułożyć w edytorze albo wylosować. Zasady osoby i losowanie
-   są w src/content/druzyna.ts (te same sprawdza symulacja); tu stan panelu, jego HTML i obsługa zdarzeń.
+   liczba osób 1–5 i dwa tryby. Z adresu (domyślny): zarząd w wybranej liczbie to mieszkańcy siedziby z generatora
+   mieszkańców (src/sim/lokatorzy.ts), a bez tabel mieszkańców osoby z ziarna adresu jak dawniej. Własny: drużyna
+   z panelu, każdą osobę da się ułożyć w edytorze albo wylosować. Zasady osoby i losowanie są w src/content/druzyna.ts
+   (te same sprawdza symulacja); tu stan panelu, jego HTML i obsługa zdarzeń.
 
    Stan (liczba, tryb, własna drużyna) przeglądarka pamięta pod własnym kluczem (DRUZYNA_KEY), osobno od zapisu gry,
    więc przy następnej grze panel jest taki, jak go zostawiono. Własna drużyna zostaje w pamięci także po powrocie do
@@ -147,7 +148,7 @@ export function odswiezHistorie(o: OsobaDruzyny): void {
 
 /** podsumowanie w nagłówku zwiniętej sekcji */
 export function podsumowanie(s: StanDruzyny): string {
-  if (!s.wlasny) return `${many(s.n, 'osoba', 'osoby', 'osób')}, losowo z adresu`;
+  if (!s.wlasny) return `${many(s.n, 'osoba', 'osoby', 'osób')} z siedziby pod adresem`;
   return `własny: ${s.team
     .slice(0, s.n)
     .map((o) => pierwszeImie(o.name))
@@ -229,11 +230,11 @@ export function htmlPanelu(s: StanDruzyny, w: Widok): string {
     const o = s.wlasny ? s.team[k] : undefined;
     return o
       ? `<button type="button" class="dz-chip${k === w.sel ? ' sel' : ''}" data-dz="pick" data-k="${k}" aria-pressed="${k === w.sel}">${chipInner(o)}</button>`
-      : `<button type="button" class="dz-chip dz-los" data-dz="pick" data-k="${k}"><b>Osoba ${k + 1}</b><small>losowo z adresu</small></button>`;
+      : `<button type="button" class="dz-chip dz-los" data-dz="pick" data-k="${k}"><b>Osoba ${k + 1}</b><small>z siedziby</small></button>`;
   }).join('');
   const o = osobaW(s, w);
   const note = !s.wlasny
-    ? 'Gra wylosuje zarząd z adresu po wczytaniu osiedla. Mniej osób to trudniejsza gra.'
+    ? 'Gra wybierze zarząd spośród mieszkańców siedziby po wczytaniu osiedla. Mniej osób to trudniejsza gra.'
     : o
       ? ''
       : 'Wybierzcie osobę, żeby ją zmienić. Mniej osób to trudniejsza gra.';

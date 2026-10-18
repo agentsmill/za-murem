@@ -20,9 +20,39 @@ interface Shot {
   h?: number;
   /** zamiast samego adresu strony: własny scenariusz */
   run?: (page: Page, base: string) => Promise<void>;
+  /** błędy konsoli, których scenariusz się spodziewa (np. 404 tabel zablokowanych przez scenariusz) */
+  allow?: RegExp;
 }
 
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
+
+/** karta startowa: dół akapitu z atrybucją mapy i linku do źródeł danych mieszkańców (wypisane; sprawdza wołający) */
+async function atrybucjaStartu(page: Page) {
+  const a = await page.evaluate(() => {
+    const fine = document.querySelector('.start .fine')!.getBoundingClientRect();
+    const link = document.querySelector('.start .fine a[href="data/mieszkancy/LICENCJE.md"]')?.getBoundingClientRect();
+    return {
+      fine: Math.round(fine.bottom),
+      link: link ? Math.round(link.bottom) : Number.POSITIVE_INFINITY,
+      h: innerHeight,
+      side: document.documentElement.scrollWidth > innerWidth + 1,
+    };
+  });
+  console.log(`  atrybucja mapy kończy się na ${a.fine} px, link do danych mieszkańców na ${a.link} px z ${a.h}`);
+  if (!Number.isFinite(a.link)) throw new Error('brak linku do źródeł danych mieszkańców na karcie startowej');
+  if (a.side) throw new Error('karta startowa przewija się w bok');
+  return a;
+}
+
+/** tabele mieszkańców niedostępne (404): gra idzie starą ścieżką, postaci jak przed krokiem 5. `tylko` zawęża blokadę
+    do plików, których nazwa pasuje (np. kraj.json: gra bez generatora, ale edytor imienia dalej ma odmianę). */
+async function bezTabel(page: Page, tylko?: RegExp) {
+  await page.route('**/data/mieszkancy/**', (r) =>
+    !tylko || tylko.test(r.request().url()) ? r.fulfill({ status: 404, body: 'brak' }) : r.fallback(),
+  );
+}
+/** 404 zablokowanych tabel to spodziewany błąd konsoli */
+const BRAK_TABEL = /status of 404/;
 
 /** sieć podmieniona na dane testowe: Nominatim zwraca Lanciego, kafelki z tests/fixtures */
 async function offlineNetwork(page: Page) {
@@ -79,11 +109,15 @@ const SHOTS: Shot[] = [
   { name: 'przekroj-wylaczony', query: 'demo=przymorze&speed=0&cam=hq,1&przekroj=0' },
   { name: 'przymorze-telefon', query: 'demo=przymorze&speed=0&cam=hq,1', w: 390, h: 844 },
   {
+    // atrybucja mapy i link do źródeł danych mieszkańców na pierwszym ekranie
     name: 'start',
     query: '',
     run: async (page, base) => {
       await page.goto(base);
       await page.waitForSelector('#demos button');
+      const a = await atrybucjaStartu(page);
+      if (a.fine > a.h || a.link > a.h)
+        throw new Error('atrybucja albo link do danych mieszkańców pod pierwszym ekranem');
     },
   },
   {
@@ -98,6 +132,7 @@ const SHOTS: Shot[] = [
       const bottom = await page.$eval('#startForm', (f) => f.getBoundingClientRect().bottom);
       console.log(`  formularz kończy się na ${Math.round(bottom)} px z 844`);
       if (bottom > 844) throw new Error('formularz adresu poza pierwszym ekranem telefonu');
+      await atrybucjaStartu(page);
     },
   },
   {
@@ -3886,7 +3921,7 @@ try {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
+      if (m.type() === 'error' && !shot.allow?.test(m.text())) errors.push(m.text());
     });
     const t0 = Date.now();
     if (shot.run) await shot.run(page, s.base);
@@ -4154,7 +4189,7 @@ function druzynaShots(): Shot[] {
           `  „${c.sum}”; formularz ${l.form}, sekcja ${l.druzyna}, przykłady ${l.demos}, atrybucja ${l.fine} z ${l.h} px`,
         );
         if (!c.hidden) throw new Error('sekcja zarządu nie jest zwinięta');
-        if (c.sum !== '4 osoby, losowo z adresu') throw new Error(`podsumowanie: ${c.sum}`);
+        if (c.sum !== '4 osoby z siedziby pod adresem') throw new Error(`podsumowanie: ${c.sum}`);
         if (l.fine > l.h) throw new Error('atrybucja mapy spadła pod pierwszy ekran');
       },
     },
@@ -4281,10 +4316,12 @@ function druzynaShots(): Shot[] {
 }
 
 /** Karta osoby z generatora mieszkańców (krok 5): wiersz rodziny, historia (też na telefonie), napis, że mieszkańcy są
-    wymyśleni, i przycisk zmiany imienia; mieszkaniec wybrany kliknięciem ma kartę tylko do odczytu. Prawdziwe osoby
-    z generatora dochodzą do przeglądarki dopiero po spięciu w main.ts (krok 7), więc scenariusze wstrzykują dane
-    wprost do stanu symulacji (ref, rodzina, historia na osobie z zarządu; nowa osoba pod pionkiem mieszkańca), a kartę
-    otwierają prawdziwym kliknięciem albo stuknięciem. Zrzut końcowy każdego scenariusza to karta zwinięta. */
+    wymyśleni, i przycisk zmiany imienia; mieszkaniec wybrany kliknięciem ma kartę tylko do odczytu. Scenariusze karta-*
+    i imie-* idą starą ścieżką (bez kraj.json gra nie ma generatora, edytor imienia ma odmianę) i wstrzykują stałe dane
+    testowe wprost do stanu symulacji (ref, rodzina, historia na osobie z zarządu; nowa osoba pod pionkiem mieszkańca),
+    żeby teksty i układ karty były te same w każdym przebiegu. Scenariusze mieszkancy-* biorą prawdziwe osoby
+    z generatora na trzech demach, także na telefonie, bez tabel (404) i po wznowieniu zapisu. Kartę otwiera zawsze
+    prawdziwe kliknięcie albo stuknięcie. Zrzut końcowy każdego scenariusza to karta zwinięta. */
 function kartaShots(): Shot[] {
   const RODO = /\bm\.\s?\d|\bmieszkani[ea] nr|\bpiętr/i;
   const FIKCJA = 'Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.';
@@ -4332,8 +4369,10 @@ function kartaShots(): Shot[] {
         };
       };
       const r = c.getBoundingClientRect();
+      const at = document.querySelector('#app .attrib')!.getBoundingClientRect();
       return {
         card: { top: r.top, bottom: r.bottom, left: r.left, right: r.right },
+        attrib: { top: at.top, bottom: at.bottom, left: at.left, right: at.right },
         vw: innerWidth,
         vh: innerHeight,
         html: c.innerHTML,
@@ -4349,6 +4388,10 @@ function kartaShots(): Shot[] {
     if (m.sideScroll) throw new Error('karta przewija stronę w bok');
     if (m.card.top < 0 || m.card.bottom > m.vh || m.card.left < 0 || m.card.right > m.vw)
       throw new Error(`karta poza ekranem: ${JSON.stringify(m.card)}`);
+    // atrybucja map i danych zawsze widoczna, także pod kartą na telefonie (dwa wiersze)
+    const a = m.attrib;
+    if (a.left < m.card.right && a.right > m.card.left && a.top < m.card.bottom && a.bottom > m.card.top)
+      throw new Error(`karta zachodzi na atrybucję: karta ${JSON.stringify(m.card)}, atrybucja ${JSON.stringify(a)}`);
     const inCard = (e: { top: number; bottom: number; left: number; right: number } | null) =>
       !!e && e.top >= m.card.top && e.bottom <= m.card.bottom && e.left >= m.card.left && e.right <= m.card.right;
     if (fikcja) {
@@ -4366,6 +4409,7 @@ function kartaShots(): Shot[] {
   };
 
   const wejdz = async (page: Page, base: string) => {
+    await bezTabel(page, /kraj\.json/);
     await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
     await waitIdle(page);
   };
@@ -4501,11 +4545,282 @@ function kartaShots(): Shot[] {
     );
   };
 
+  /** gra na demie z prawdziwymi osobami z generatora (tabele z public/data/mieszkancy/); wypisuje czasy z konsoli gry
+      i liczby osób, rzuca, gdy pierwsza osoba zarządu nie jest z generatora */
+  async function zTabel(page: Page, base: string, demo: string) {
+    const czasy: string[] = [];
+    page.on('console', (m) => {
+      if (/^(tabele mieszkańców|mieszkańcy|świat) /.test(m.text())) czasy.push(m.text());
+    });
+    await page.goto(`${base}?demo=${demo}&speed=0&cam=hq,1.3`);
+    await waitIdle(page);
+    const s = await page.evaluate(() => {
+      const st = window.zm!.sim!.st;
+      const core = st.pawns.filter((p) => p.kind === 'core');
+      const lok = st.pawns.filter((p) => p.kind === 'resident');
+      return {
+        refs: st.people.filter((p) => p.ref).length,
+        zarzad: core.map((p) => st.people[p.person]?.ref ?? null),
+        lok: lok.length,
+        zOsoba: lok.filter((p) => p.person >= 0).length,
+      };
+    });
+    console.log(`  ${czasy.join('; ')}`);
+    console.log(
+      `  osoby z generatora: ${s.refs}, zarząd z osobą ${s.zarzad.filter(Boolean).length}/${s.zarzad.length}, mieszkańcy z osobą ${s.zOsoba}/${s.lok}`,
+    );
+    // pierwsza osoba zarządu zawsze z generatora; gdy w siedzibie jest mniej dorosłych z fachem niż miejsc (dom w
+    // Batowicach), reszta zarządu zostaje z losowania z adresu
+    if (!s.zarzad[0]) throw new Error('zarząd bez osób z generatora');
+    return s;
+  }
+  /** imię k-tej osoby z zarządu */
+  const imieZarzadu = (page: Page, k: number) =>
+    page.evaluate((k) => {
+      const st = window.zm!.sim!.st;
+      return st.people[st.pawns.filter((q) => q.kind === 'core')[k].person].name;
+    }, k);
+  /** mieszkaniec z osobą z generatora najbliżej k-tej osoby z zarządu, kamera na nim */
+  const lokatorZOsoba = (page: Page, k: number) =>
+    page.evaluate((k) => {
+      const zm = window.zm!;
+      const st = zm.sim!.st;
+      const core = st.pawns.filter((q) => q.kind === 'core')[k];
+      const r = st.pawns
+        .filter((q) => q.kind === 'resident' && !q.away && q.person >= 0)
+        .sort((a, b) => Math.hypot(a.x - core.x, a.y - core.y) - Math.hypot(b.x - core.x, b.y - core.y))[0];
+      if (!r) return null;
+      zm.setCam(r.x, r.y - 0.5, 1.3);
+      return { id: r.id, name: st.people[r.person].name, ref: st.people[r.person].ref };
+    }, k);
+  /** świat i stan gry mówią o mieszkaniach siedziby to samo (stan, powód, rok) */
+  const mieszkaniaZgodne = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const ws = (zm.sim!.w.apts ?? []).map((a) => `${a.apt}:${a.state}:${a.why ?? ''}:${a.year ?? ''}`).join(' ');
+      const gs = zm
+        .apts()
+        .map((a) => `${a.apt}:${a.state}:${a.why ?? ''}:${a.year ?? ''}`)
+        .join(' ');
+      return { ok: ws === gs, ws, gs };
+    });
+  /** karta zarządu z generatora: kliknięcie w k-tą osobę, karta z napisem o fikcji, historia rozwija się */
+  const kartaZarzadu = async (page: Page, nazwa: string, tap: boolean) => {
+    const kto = await imieZarzadu(page, 0);
+    const a = await rdzen(page, 0);
+    if (tap) await page.touchscreen.tap(a.x, a.y);
+    else await page.mouse.click(a.x, a.y);
+    const m = await sprawdz(page, kto);
+    if (!m.buttons.includes('arm')) throw new Error('karta zarządu bez zmiany broni');
+    console.log(`  rodzina: ${m.rodzina?.shown ? m.rodzina.text : 'brak'}`);
+    await historia(page, nazwa, tap);
+    if (!tap) await page.mouse.move(a.x + 400, a.y - 250);
+  };
+  /** karta mieszkańca z generatora: tylko do odczytu, z napisem o fikcji i historią */
+  const kartaLokatora = async (page: Page, nazwa: string, tap: boolean) => {
+    const r = await lokatorZOsoba(page, 0);
+    if (!r) throw new Error('żaden mieszkaniec nie ma osoby z generatora');
+    await waitIdle(page);
+    const b = await ekran(page, r.id);
+    if (tap) await page.touchscreen.tap(b.x, b.y);
+    else await page.mouse.click(b.x, b.y);
+    const m = await sprawdz(page, r.name);
+    if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+    console.log(`  rodzina: ${m.rodzina?.shown ? m.rodzina.text : 'brak'}`);
+    await historia(page, nazwa, tap);
+    if (!tap) await page.mouse.move(b.x + 400, b.y - 250);
+  };
+
+  function mieszkancy(): Shot[] {
+    return [
+      {
+        // Przymorze: zarząd z mieszkańców falowca, karta z rodziną, historią i napisem o fikcji
+        name: 'mieszkancy-przymorze-zarzad',
+        query: '',
+        run: async (page, base) => {
+          await zTabel(page, base, 'przymorze');
+          await kartaZarzadu(page, 'mieszkancy-przymorze-zarzad', false);
+        },
+      },
+      {
+        // Przymorze: mieszkaniec przy podwórku z osobą z generatora, karta do odczytu
+        name: 'mieszkancy-przymorze-lokator',
+        query: '',
+        run: async (page, base) => {
+          const s = await zTabel(page, base, 'przymorze');
+          if (!s.zOsoba) throw new Error('mieszkańcy bez osób z generatora');
+          const m = await mieszkaniaZgodne(page);
+          console.log(`  mieszkania siedziby: ${m.ws}`);
+          if (!m.ok) throw new Error(`świat i gra różnią się mieszkaniami: ${m.ws} / ${m.gs}`);
+          await kartaLokatora(page, 'mieszkancy-przymorze-lokator', false);
+        },
+      },
+      {
+        name: 'mieszkancy-lanciego-lokator',
+        query: '',
+        run: async (page, base) => {
+          const s = await zTabel(page, base, 'lanciego');
+          if (!s.zOsoba) throw new Error('mieszkańcy bez osób z generatora');
+          await kartaLokatora(page, 'mieszkancy-lanciego-lokator', false);
+        },
+      },
+      {
+        // Batowice: dom jednorodzinny, zarząd z jednej rodziny
+        name: 'mieszkancy-zielonki-zarzad',
+        query: '',
+        run: async (page, base) => {
+          await zTabel(page, base, 'zielonki');
+          await kartaZarzadu(page, 'mieszkancy-zielonki-zarzad', false);
+        },
+      },
+      {
+        // telefon 390×844: stuknięcie w mieszkańca, karta zwarta z napisem o fikcji i historią
+        name: 'mieszkancy-telefon',
+        query: '',
+        w: 390,
+        h: 844,
+        run: async (page, base) => {
+          await zTabel(page, base, 'przymorze');
+          await kartaLokatora(page, 'mieszkancy-telefon', true);
+        },
+      },
+      {
+        // Menu na telefonie: linia o źródłach danych mieszkańców z LICENCJE.md i link do pliku, który się otwiera
+        name: 'mieszkancy-menu-telefon',
+        query: '',
+        w: 390,
+        h: 844,
+        run: async (page, base) => {
+          await zTabel(page, base, 'przymorze');
+          await page.tap('#btnMenu');
+          await page.waitForSelector('#sheet .fine.dane a');
+          const m = await page.evaluate(() => {
+            const a = document.querySelector<HTMLAnchorElement>('#sheet .fine.dane a')!;
+            a.scrollIntoView({ block: 'nearest' });
+            const r = a.getBoundingClientRect();
+            return {
+              bottom: Math.round(r.bottom),
+              right: Math.round(r.right),
+              vh: innerHeight,
+              vw: innerWidth,
+              side: document.documentElement.scrollWidth > innerWidth + 1,
+              href: a.href,
+              linia: document.querySelector('#sheet .fine.dane')!.textContent ?? '',
+            };
+          });
+          const plik = await page.request.get(m.href);
+          const tekst = await plik.text();
+          console.log(
+            `  link ${m.href.replace(base, '')}: ${plik.status()}, ${tekst.length} znaków; dół linku ${m.bottom} z ${m.vh} px`,
+          );
+          if (m.side || m.bottom > m.vh || m.right > m.vw) throw new Error('link do źródeł danych poza ekranem');
+          if (!plik.ok() || !tekst.includes(m.linia.replace(/ Źródła i licencje$/, '')))
+            throw new Error('plik z licencjami nie ma linii z Menu');
+        },
+      },
+      {
+        // bez tabel (404): stara ścieżka bez błędu, osoby jak przed krokiem 5, bez napisu o fikcji
+        name: 'mieszkancy-bez-tabel',
+        query: '',
+        allow: BRAK_TABEL,
+        run: async (page, base) => {
+          await bezTabel(page);
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          const s = await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            return {
+              refs: st.people.filter((p) => p.ref).length,
+              lok: st.pawns.filter((p) => p.kind === 'resident').length,
+              zOsoba: st.pawns.filter((p) => p.kind === 'resident' && p.person >= 0).length,
+            };
+          });
+          console.log(`  bez tabel: osób z generatora ${s.refs}, mieszkańców ${s.lok}, z osobą ${s.zOsoba}`);
+          if (s.refs || s.zOsoba) throw new Error('bez tabel są osoby z generatora');
+          const m = await mieszkaniaZgodne(page);
+          if (!m.ok) throw new Error('świat i gra różnią się mieszkaniami');
+          const kto = await imieZarzadu(page, 0);
+          const a = await rdzen(page, 0);
+          await page.mouse.click(a.x, a.y);
+          await page.waitForFunction((n) => document.querySelector('#card:not([hidden]) h2')?.textContent === n, kto);
+          if (await page.$('#card .fikcja, #card [data-card="imie"]'))
+            throw new Error('osoba spoza generatora ma napis o fikcji albo zmianę imienia');
+          await page.mouse.move(a.x + 400, a.y - 250);
+        },
+      },
+      {
+        // zapis gry z osobami z generatora: po wczytaniu ten sam stan, świat ze stanami mieszkań z zapisu, karta
+        // mieszkańca jak przed zapisem
+        name: 'mieszkancy-wznowienie',
+        query: '',
+        run: async (page, base) => {
+          await zTabel(page, base, 'przymorze');
+          const a = await page.evaluate(() => {
+            const zm = window.zm!;
+            zm.ff(30);
+            zm.save();
+            return { tick: zm.sim!.st.tick, hash: zm.sim!.hash() };
+          });
+          await page.goto(`${base}?speed=0`);
+          await page.waitForSelector('#resume:not([hidden])');
+          await page.click('#btnResume');
+          await waitIdle(page);
+          const b = await page.evaluate(() => ({ tick: window.zm!.sim!.st.tick, hash: window.zm!.sim!.hash() }));
+          console.log(`  zapis: tick ${a.tick} → ${b.tick}, skrót ${a.hash} → ${b.hash}`);
+          if (a.hash !== b.hash) throw new Error('po wczytaniu stan gry jest inny');
+          const m = await mieszkaniaZgodne(page);
+          console.log(`  mieszkania siedziby: ${m.ws}`);
+          if (!m.ok) throw new Error(`świat i gra różnią się mieszkaniami: ${m.ws} / ${m.gs}`);
+          await kartaLokatora(page, 'mieszkancy-wznowienie', false);
+        },
+      },
+      {
+        // zapis sprzed kroku 5 (gra bez tabel), wczytany z tabelami: świat zostaje przy stanach mieszkań M2 zapisu,
+        // mieszkańcy bez osób; zrzut przekroju siedziby, żeby było widać puste mieszkania tam, gdzie mówi stan gry
+        name: 'mieszkancy-stary-zapis',
+        query: '',
+        allow: BRAK_TABEL,
+        run: async (page, base) => {
+          await bezTabel(page);
+          await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.75`);
+          await waitIdle(page);
+          const a = await page.evaluate(() => {
+            const zm = window.zm!;
+            zm.ff(30);
+            zm.save();
+            return { hash: zm.sim!.hash(), refs: zm.sim!.st.people.filter((p) => p.ref).length };
+          });
+          if (a.refs) throw new Error('gra bez tabel ma osoby z generatora');
+          await page.unroute('**/data/mieszkancy/**');
+          await page.goto(`${base}?speed=0`);
+          await page.waitForSelector('#resume:not([hidden])');
+          await page.click('#btnResume');
+          await waitIdle(page);
+          const b = await page.evaluate(() => ({
+            hash: window.zm!.sim!.hash(),
+            refs: window.zm!.sim!.st.people.filter((p) => p.ref).length,
+          }));
+          if (a.hash !== b.hash || b.refs) throw new Error('stary zapis wczytał się inaczej');
+          const m = await mieszkaniaZgodne(page);
+          console.log(`  mieszkania siedziby: ${m.ws}`);
+          if (!m.ok) throw new Error(`świat i gra różnią się mieszkaniami: ${m.ws} / ${m.gs}`);
+          await page.evaluate(() => {
+            const zm = window.zm!;
+            const hq = zm.sim!.w.buildings[zm.sim!.w.hq];
+            zm.setCam((hq.x0 + hq.x1 + 1) / 2, (hq.y0 + hq.y1 + 1) / 2, 0.75);
+          });
+          await waitIdle(page);
+        },
+      },
+    ];
+  }
+
   return [
     {
       // zarząd: osoba z generatora na komputerze; przycisk imienia otwiera edytor, Anuluj wraca do karty
       name: 'karta-zarzad',
       query: '',
+      allow: BRAK_TABEL,
       run: async (page, base) => {
         await wejdz(page, base);
         const kto = await zarzadZGeneratora(page, 0);
@@ -4527,6 +4842,7 @@ function kartaShots(): Shot[] {
       // zarząd na telefonie (390×844): historia zwinięta do jednej linijki nadal jest, napis o fikcji też
       name: 'karta-zarzad-telefon',
       query: '',
+      allow: BRAK_TABEL,
       w: 390,
       h: 844,
       run: async (page, base) => {
@@ -4546,6 +4862,7 @@ function kartaShots(): Shot[] {
       // mieszkaniec wybrany kliknięciem: karta do odczytu, zaznaczony z zarządu zostaje zaznaczony, zarząd wygrywa
       name: 'karta-mieszkanca',
       query: '',
+      allow: BRAK_TABEL,
       run: async (page, base) => {
         await wejdz(page, base);
         const kto0 = await zarzadZGeneratora(page, 0);
@@ -4622,6 +4939,7 @@ function kartaShots(): Shot[] {
       // mieszkaniec na telefonie: stuknięcie, karta zwarta, ale z historią i napisem
       name: 'karta-mieszkanca-telefon',
       query: '',
+      allow: BRAK_TABEL,
       w: 390,
       h: 844,
       run: async (page, base) => {
@@ -4640,6 +4958,7 @@ function kartaShots(): Shot[] {
       // Escape bez zapisu; końcowy zrzut to edytor z nowym imieniem i podpowiedzianymi formami
       name: 'imie-edytor',
       query: '',
+      allow: BRAK_TABEL,
       run: async (page, base) => {
         await wejdz(page, base);
         const r = await mieszkaniecZGeneratora(page, 0, true);
@@ -4683,6 +5002,7 @@ function kartaShots(): Shot[] {
       // edytor na telefonie (390×844) na karcie zarządu: cały na ekranie, pola od 16 px, bez przewijania w bok
       name: 'imie-edytor-telefon',
       query: '',
+      allow: BRAK_TABEL,
       w: 390,
       h: 844,
       run: async (page, base) => {
@@ -4706,6 +5026,7 @@ function kartaShots(): Shot[] {
       // i bez żądań sieci z imieniem), Przywróć wraca do imienia z generatora; końcowy zrzut to karta po zmianie
       name: 'imie-po-zmianie',
       query: '',
+      allow: BRAK_TABEL,
       run: async (page, base) => {
         const siec: string[] = [];
         page.on('request', (q) => siec.push(`${q.url()} ${q.postData() ?? ''}`));
@@ -4748,5 +5069,6 @@ function kartaShots(): Shot[] {
         await page.mouse.move(d.x + 400, d.y - 250);
       },
     },
+    ...mieszkancy(),
   ];
 }

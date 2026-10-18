@@ -641,11 +641,13 @@ a.btn {
     top: auto;
     bottom: 200px;
   }
+  /* karta osoby i podpowiedź nad atrybucją map i danych, która na telefonie zawija się w dwa wiersze
+     (--attrib-h mierzy main.ts; przy jednym wierszu 21 px, czyli karta 36 px od dołu jak dawniej) */
   .card {
-    bottom: 36px;
+    bottom: calc(var(--attrib-h, 21px) + 15px);
   }
   .hint {
-    bottom: calc(var(--card-h, 0px) + var(--place-lift, 0px) + 44px);
+    bottom: calc(var(--card-h, 0px) + var(--place-lift, 0px) + var(--attrib-h, 21px) + 23px);
     font-size: 13px;
   }
 }
@@ -1710,7 +1712,7 @@ a.btn {
     top: calc(var(--top-h, 0px) + var(--goals-h, 0px) + 24px);
   }
   .placebar {
-    bottom: calc(var(--card-h, 0px) + 56px);
+    bottom: calc(var(--card-h, 0px) + var(--attrib-h, 21px) + 35px);
     flex-wrap: wrap;
     justify-content: flex-end;
   }

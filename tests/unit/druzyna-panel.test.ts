@@ -33,7 +33,15 @@ const wlasny = (n = 4, seed = 1): StanDruzyny => ({ n, wlasny: true, team: losuj
 describe('stan panelu', () => {
   it('bez ruszania panelu: 4 osoby z adresu, czyli createSim(…, { core: 4 }) jak dotąd', () => {
     expect(opcjeGry(stanDomyslny())).toEqual({ core: 4 });
-    expect(podsumowanie(stanDomyslny())).toBe('4 osoby, losowo z adresu');
+    expect(podsumowanie(stanDomyslny())).toBe('4 osoby z siedziby pod adresem');
+  });
+
+  it('podsumowanie trybu z adresu z odmianą liczby osób', () => {
+    const n = (k: number) => podsumowanie({ ...stanDomyslny(), n: k });
+    expect(n(1)).toBe('1 osoba z siedziby pod adresem');
+    expect(n(2)).toBe('2 osoby z siedziby pod adresem');
+    expect(n(3)).toBe('3 osoby z siedziby pod adresem');
+    expect(n(5)).toBe('5 osób z siedziby pod adresem');
   });
 
   it('zła pamięć to stan domyślny, dobra wraca bez zmian', () => {
@@ -78,7 +86,7 @@ describe('stan panelu', () => {
     const team = structuredClone(s.team);
     wlaczZAdresu(s);
     expect(opcjeGry(s)).toEqual({ core: 4 });
-    expect(podsumowanie(s)).toBe('4 osoby, losowo z adresu');
+    expect(podsumowanie(s)).toBe('4 osoby z siedziby pod adresem');
     wlaczWlasny(s, rnd);
     expect(s.team).toEqual(team);
     expect(podsumowanie(s)).toBe(`własny: ${team.map((o) => o.name.split(' ')[0]).join(', ')}`);
@@ -125,16 +133,17 @@ describe('HTML sekcji', () => {
   it('zwinięta: nagłówek z podsumowaniem i przyciskiem, bez kafelków', () => {
     const h = htmlPanelu(stanDomyslny(), { open: false, sel: -1 });
     expect(h).toContain('Wasz zarząd');
-    expect(h).toContain('4 osoby, losowo z adresu');
+    expect(h).toContain('4 osoby z siedziby pod adresem');
     expect(h).toContain('aria-expanded="false"');
     expect(h).toContain('hidden');
     expect(h).not.toContain('dz-chip');
   });
 
-  it('rozwinięta z adresu: liczba osób, n kafelków „losowo z adresu”, przycisk własnego zarządu', () => {
+  it('rozwinięta z adresu: liczba osób, n kafelków „z siedziby”, przycisk własnego zarządu', () => {
     const s = { ...stanDomyslny(), n: 3 };
     const h = htmlPanelu(s, { open: true, sel: -1 });
-    expect(h.match(/losowo z adresu<\/small>/g)).toHaveLength(3);
+    expect(h.match(/z siedziby<\/small>/g)).toHaveLength(3);
+    expect(h).toContain('spośród mieszkańców siedziby');
     expect(h).toContain('Stwórz własny zarząd');
     expect(h.match(/name="dzN"/g)).toHaveLength(5);
     expect(h).toContain('value="3" checked');
