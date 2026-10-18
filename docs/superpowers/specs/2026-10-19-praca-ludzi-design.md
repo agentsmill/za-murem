@@ -87,7 +87,13 @@ Czego nie ma w automacie (moje, po przeglądzie): wzmacniania siatki (`brace`: s
 
 „Zlecenia za siatką” bierze sama tylko osoba z włączonym „Może wychodzić za siatkę” (integrator, punkt 7). Budynki otoczone wspólnym płotem i ich pomieszczenia są w środku (integrator). Pomieszczenia sąsiadów poza płotem są za siatką i tylko w budynkach już otwartych.
 
-Badania (integrator, punkt 2): wiersz i kolumna ukryte, dopóki gałąź sesji „Technologia i Gospodarka” nie wejdzie. Kontrakt, który zaproponowałem tamtej sesji (19.10.2026, czeka na odpowiedź): nowy moduł `src/sim/praca.ts` trzyma listę rodzajów jako wpisy `{ id, umiejetnosc(st, p), widoczny(st), znajdz(sim, p) }`; wpis `'badania'` ma `widoczny()` zwracający `false`, a tamta gałąź podmienia jego ciało (umiejętność według bieżącego badania, szukanie wolnego miejsca w pracowni, własna praca w `sim.ts`) i w swojej funkcji pracy mnoży postęp przez `tempoPracy(st, p, rodzaj)` z tego projektu. Jeśli tamta sesja odpowie inaczej, kontrakt poprawia się tutaj.
+Badania (integrator, punkt 2): kolumna ukryta, dopóki gałąź `badania` sesji „Technologia i Gospodarka” nie wejdzie. Kontrakt uzgodniony z tamtą sesją 19.10.2026:
+- `src/sim/praca.ts` (ten projekt) trzyma listę rodzajów jako wpisy `{ id, umiejetnosc(st, p), widoczny(st), znajdz(sim, p) }`. Wpis `'badania'` jest dziewiąty; do scalenia `widoczny()` zwraca `false`.
+- Gałąź `badania` wystawia w `sim.ts` metodę `startResearch(p): boolean` (wolne miejsce w pracowni, praca `'research'`) i w `src/sim/badania.ts` czyste `badaniaDom(st): Dom | null` (dziedzina bieżącego badania, `null` bez badania) i `badaniaWidoczne(st): boolean` (jest pracownia albo badanie).
+- Kto scala drugi, podpina je w ciało wpisu: `znajdz` to `sim.startResearch(p)`, `umiejetnosc` to `badaniaDom(st)`, `widoczny` to `badaniaWidoczne(st)`. Bez wybranego badania nikt nie siada.
+- Gałąź `badania` ma własną kopię krzywej `0,7 + 0,15 · poziom`, którą przy scaleniu zastępuje `tempoPracy` z tego projektu; cechy z 0.3 (pracowity +10%, leniwy −10%, Mistrz Excela +5%) nakłada raz, na wynik `tempoPracy`.
+- Tamta gałąź nie rusza `think()`: bez tego projektu zarząd bada tylko na polecenie. Mieszkańcy znający dziedzinę siadają sami przez zaczep w `plan()`, poza tabelą Pracy (decyzja Mateusza przyjęta w tamtej sesji). Wiersza mieszkańca w tabeli tamta sesja nie potrzebuje.
+- Wspólne miejsca w `sim.ts` to dopiski (`JobKind`, unia poleceń, konstruktor z `??=`), w `snapshot.ts` też; przy scaleniu bierze się oba.
 
 ### Priorytety (integrator, punkt 3; szczegóły moje)
 
@@ -216,7 +222,7 @@ Bramka: testy, Biome na `src tests tools server index.html`, build, boty, zrzuty
 
 Integrator, 19.10.2026 w nocy (do przejrzenia przez Mateusza):
 1. W tabeli zarząd; przejęty lokator dostanie wiersz, kiedy przejęcie będzie w kodzie (dziś go nie ma), reszta mieszkańców później.
-2. Osiem moich rodzajów plus dziewiąty, Badania, z kontraktem uzgadnianym z sesją „Technologia i Gospodarka”; do jej scalenia ukryte.
+2. Osiem moich rodzajów plus dziewiąty, Badania, z kontraktem uzgodnionym z sesją „Technologia i Gospodarka” (sekcja „Rodzaje pracy”); do scalenia gałęzi `badania` ukryte.
 3. Priorytety 1–4 i puste, domyślne z umiejętności zawodu.
 4. Stałe zajęcie na karcie osoby plus progi zapasów w zakładce Pracy.
 5. Potrzeby przed pracą.
