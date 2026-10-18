@@ -318,6 +318,14 @@ export function nazwaWlasnaMiejsca(poi: GeoPoi, imiona: ReadonlySet<string>): st
   return ocena.zmieniona ? '' : ocena.nazwa;
 }
 
+/** Składa nazwę miejsca dla okolicy zarządu (`GovInput.okolica`, wywołanie `miejscaZPoi`). Ze zbiorem imion to
+    `nazwaWlasnaMiejsca`. Bez zbioru (`null`: brak tabel mieszkańców, filtr nie zna imion) zawsze pusty napis, bo
+    wtedy nazwa jednoosobowej firmy („Sławomir Mielnik”) przeszłaby przez filtr, a imię i nazwisko właściciela nie
+    może trafić do tekstów gry (RODO); zostaje sama kategoria miejsca. */
+export function nazwaDoOkolicy(imiona: ReadonlySet<string> | null): (poi: GeoPoi) => string {
+  return (poi) => (imiona ? nazwaWlasnaMiejsca(poi, imiona) : '');
+}
+
 // ---------------------------------------------------------------- szablony
 
 const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);

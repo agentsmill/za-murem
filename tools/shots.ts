@@ -7800,6 +7800,21 @@ function miastoShots(): Shot[] {
         poza: ok.filter((m) => m.x * m.x + m.y * m.y > 192 * 192).length,
       };
     });
+  /** nazwy okolicy przy surowych nazwach punktów (po kluczu): osoby z przymorskiego dema, marka, patron szkoły, ile
+      wpisów ma niepustą nazwę. Bez filtra podpiętego w main.ts osoby miałyby swoje nazwy, a patron zostawałby w nazwie */
+  const nazwy = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const surowe = new Map(zm.sim!.w.pois.map((p) => [p.k, p.n]));
+      const ok = zm.okolica ?? [];
+      const wg = (n: string) => ok.filter((m) => surowe.get(m.klucz) === n).map((m) => m.nazwa);
+      return {
+        osoby: [...wg('Sławomir Mielnik'), ...wg('Kwiaciarnia u Moniki')],
+        marki: wg('Żabka'),
+        patron: wg('Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'),
+        niepuste: ok.filter((m) => m.nazwa).length,
+      };
+    });
   /** noc dnia 1 do karty: 19:30 uchwała (bez podpisu), 20:00 karta nocy; etykiety opcji wyprawy z listy wyboru osób */
   const doKarty = async (page: Page, base: string, q: string) => {
     await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=19.5${q}`);
@@ -7821,7 +7836,25 @@ function miastoShots(): Shot[] {
     {
       name: 'miasto-start',
       query: '',
+      allow: BRAK_TABEL,
+      allowUrl: TABELE_URL,
       run: async (page, base) => {
+        // bez tabel mieszkańców (404) filtr nie zna imion, więc okolica ma same puste nazwy: sama kategoria, bez nazwy
+        // jednoosobowej firmy z imieniem i nazwiskiem właściciela (RODO), także na karcie nocy
+        await bezTabel(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        const bt = await nazwy(page);
+        const btStan = await stan(page);
+        console.log(`  bez tabel: ${JSON.stringify(btStan)}, nazwy ${JSON.stringify(bt)}`);
+        if (!btStan.miasto || btStan.okolica <= 0) throw new Error('bez tabel nie ma miasta albo okolicy');
+        if (bt.niepuste) throw new Error(`bez tabel ${bt.niepuste} miejsc z nazwą (może być imię właściciela)`);
+        const btKarta = await doKarty(page, base, '');
+        console.log(`  bez tabel, karta nocy: ${btKarta.join(' | ')}`);
+        if (!btKarta.length) throw new Error('bez tabel karta nocy bez wyprawy do miejsca z okolicy');
+        if (btKarta.some((t) => t.includes('(')))
+          throw new Error(`bez tabel nazwa miejsca na karcie: ${btKarta.join(' | ')}`);
+        await page.unroute('**/data/mieszkancy/**');
         // opcja wyłączona: zarząd bez miasta, okolicy nie ma, karta nocy z celami z TARGETS
         await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9&miasto=0`);
         await waitIdle(page);
@@ -7839,6 +7872,16 @@ function miastoShots(): Shot[] {
         if (wl.okolica <= 0) throw new Error('okolica pusta (zm.okolica)');
         if (wl.zleKlucze) throw new Error(`${wl.zleKlucze} miejsc bez klucza „poi:X:Y”`);
         if (wl.poza <= 0) throw new Error('w okolicy nie ma miejsc poza mapą lokalną');
+        // filtr nazw podpięty w main.ts: nazwy z osobą puste, marka zostaje, patron szkoły odpada z nazwy
+        const nz = await nazwy(page);
+        console.log(`  nazwy: ${JSON.stringify(nz)}`);
+        if (!nz.osoby.length || nz.osoby.some((n) => n))
+          throw new Error(`nazwa z osobą w okolicy: ${nz.osoby.join(' | ')}`);
+        if (!nz.marki.length || nz.marki.some((n) => n !== 'Żabka'))
+          throw new Error(`marka po filtrze: ${nz.marki.join(' | ')}`);
+        if (!nz.patron.length || nz.patron.some((n) => n !== 'Szkoła Podstawowa Nr 44'))
+          throw new Error(`szkoła z patronem po filtrze: ${nz.patron.join(' | ')}`);
+        if (wl.bezNazwy <= 0) throw new Error('żadna nazwa nie została odfiltrowana');
         // zapis sprzed mapy miasta (bez stanu miasta w zarządzie i bez kluczy punktów): po wczytaniu miasto włączone,
         // okolica ta sama co w nowej grze
         await page.evaluate(() => {

@@ -33,7 +33,7 @@ import {
 } from './gov/zarzad.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
-import { nazwaWlasnaMiejsca, zbiorImion } from './mieszkancy/kronika.ts';
+import { nazwaDoOkolicy, zbiorImion } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { GraSieciowa } from './net/gra.ts';
@@ -428,9 +428,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
   // okolica dla zarządu: punkty z `geo` (metry od adresu bez obrotu świata, w przeciwieństwie do `world.pois`). Nazwa
   // z osobą albo adresem odpada (pusta), bo filtr zamieniłby ją na polski opis kategorii, który wszedłby do angielskich
-  // tekstów celu; bez tabel imion filtr nie zna imion, więc zostaje sam wzorzec „u Jana” i adresy
-  const imiona = dane ? zbiorImion(dane.imiona) : new Set<string>();
-  okolica = opcjaMiasto ? miejscaZPoi(geo.poi, (p) => nazwaWlasnaMiejsca(p, imiona)) : [];
+  // tekstów celu; bez tabel imion (dane === null) wszystkie nazwy puste, bo filtr nie rozpozna wtedy właściciela
+  okolica = opcjaMiasto ? miejscaZPoi(geo.poi, nazwaDoOkolicy(dane ? zbiorImion(dane.imiona) : null)) : [];
   // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;

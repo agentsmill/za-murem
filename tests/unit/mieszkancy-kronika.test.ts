@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { budynkiZGeo } from '../../src/mieszkancy/budynki.ts';
 import {
   kronika,
+  nazwaDoOkolicy,
   nazwaMiejsca,
   nazwaWlasnaMiejsca,
   type WpisKroniki,
@@ -429,6 +430,37 @@ describe('nazwaWlasnaMiejsca: nazwa celu wyprawy, pusta tam, gdzie filtr ją zmi
       'Szkoła Podstawowa Nr 44',
     );
     expect(nazwaWlasnaMiejsca(poi('sklep', ''), imiona)).toBe('');
+  });
+});
+
+describe('nazwaDoOkolicy: nazwy miejsc dla okolicy zarządu', () => {
+  it('bez zbioru imion (brak tabel mieszkańców) każda nazwa jest pusta, także zwykła i z osobą', () => {
+    const nazwa = nazwaDoOkolicy(null);
+    expect(nazwa(poi('spozywczy', 'Żabka'))).toBe('');
+    expect(nazwa(poi('spozywczy', 'Sławomir Mielnik'))).toBe('');
+    expect(nazwa(poi('budowlany', 'Usługi Remontowe Jan Nowak'))).toBe('');
+    expect(nazwa(poi('szkola', 'Szkoła Podstawowa nr 12'))).toBe('');
+    expect(nazwa(poi('sklep', ''))).toBe('');
+  });
+
+  it('ze zbiorem imion: nazwa z osobą jest pusta, zwykła zostaje (jak nazwaWlasnaMiejsca)', () => {
+    const nazwa = nazwaDoOkolicy(imiona);
+    expect(nazwa(poi('spozywczy', 'Sławomir Mielnik'))).toBe('');
+    expect(nazwa(poi('budowlany', 'Usługi Remontowe Jan Nowak'))).toBe('');
+    expect(nazwa(poi('sklep', 'Kwiaciarnia u Moniki'))).toBe('');
+    expect(nazwa(poi('spozywczy', 'Żabka'))).toBe('Żabka');
+    expect(nazwa(poi('szkola', 'Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'))).toBe('Szkoła Podstawowa Nr 44');
+  });
+
+  it('na punktach dema przymorze: z tabelami nazwy z osobą puste, bez tabel wszystkie puste', () => {
+    const punkty = demo('przymorze').poi.filter((p) => p.n);
+    expect(punkty.some((p) => p.n === 'Sławomir Mielnik')).toBe(true);
+    for (const p of punkty) {
+      expect(nazwaDoOkolicy(null)(p), p.n).toBe('');
+      const z = nazwaDoOkolicy(imiona)(p);
+      if (p.n === 'Sławomir Mielnik' || p.n === 'Kwiaciarnia u Moniki') expect(z, p.n).toBe('');
+      if (p.n === 'Żabka') expect(z, p.n).toBe('Żabka');
+    }
   });
 });
 
