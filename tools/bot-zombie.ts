@@ -5,7 +5,10 @@
    zabici, przerwania siatki, ugryzienia, zgony, siatka o 6:00, kto żyje. Na koniec skrót stanu (powtarzalny).
    Trzeci argument to liczba osób zarządu (1–5, domyślnie 4 jak w grze bez ruszania panelu „Wasz zarząd”), żeby
    zobaczyć, jak trudność rośnie przy mniejszym zarządzie.
-   Uruchomienie: npm run bot:zombie [-- ziarno [noce [osoby]]] */
+   Z flagą --mieszkancy (gdziekolwiek wśród argumentów) bot gra na świecie z mieszkańcami siedziby z generatora
+   (tools/bot-mieszkancy.ts, jak w grze: zarząd i lokatorzy z osobami z generatora, stany mieszkań siedziby z niego);
+   pod nagłówkiem pierwszej polityki jedna linijka o mieszkańcach z adresu. Bez flagi wyjście i skróty bez zmian.
+   Uruchomienie: npm run bot:zombie [-- ziarno [noce [osoby]]] [--mieszkancy] */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,13 +29,16 @@ import { AMPUTATE_WINDOW, createSim, FEVER_TICKS, type Pawn, Sim } from '../src/
 import { snapshot } from '../src/sim/snapshot.ts';
 import { hordeSize } from '../src/sim/zombie.ts';
 import { buildWorld } from '../src/world/world.ts';
+import { ARGUMENTY, MIESZKANCY, opisMieszkancow, swiatMieszkancow } from './bot-mieszkancy.ts';
 
-const SEED = Number(process.argv[2]) || 1;
-const NIGHTS = Number(process.argv[3]) || 6;
-const CORE = Math.max(1, Math.min(5, Math.round(Number(process.argv[4]) || 4)));
+const SEED = Number(ARGUMENTY[0]) || 1;
+const NIGHTS = Number(ARGUMENTY[1]) || 6;
+const CORE = Math.max(1, Math.min(5, Math.round(Number(ARGUMENTY[2]) || 4)));
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../public/demo/przymorze.json'), 'utf8'));
-const world = buildWorld(demo.geo, { seed: SEED, street: demo.street });
+// z flagą --mieszkancy świat i opcja `mieszkancy` dla createSim z generatora mieszkańców (tools/bot-mieszkancy.ts)
+const osiedle = MIESZKANCY ? await swiatMieszkancow(demo, SEED, CORE) : null;
+const world = osiedle ? osiedle.world : buildWorld(demo.geo, { seed: SEED, street: demo.street });
 const size = world.size;
 const yard = new Set(world.fence.yard);
 
@@ -51,9 +57,14 @@ interface Night {
   residents: number;
 }
 
-function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over: string } {
+function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over: string; start: string } {
   const t0 = performance.now();
-  const st = createSim(world, SEED, { core: CORE, mode: 'zombie' });
+  const st = createSim(world, SEED, {
+    core: CORE,
+    mode: 'zombie',
+    ...(osiedle ? { mieszkancy: osiedle.mieszkancy } : {}),
+  });
+  const start = osiedle ? opisMieszkancow(st) : '';
   const sim = new Sim(world, st);
   const gov = newGov(SEED, 'zombie');
   const nights: Night[] = [];
@@ -221,6 +232,7 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
     nights,
     hash: sim.hash(),
     ms: performance.now() - t0,
+    start,
     over: `${end_}, zaufanie ${Math.round(gov.trust)}, wkurzenie ${Math.round(gov.anger)}`,
   };
 }
@@ -229,6 +241,7 @@ console.log(`Bot trybu zombie, ${demo.name}, ziarno ${SEED}, noce ${NIGHTS}, zar
 for (const policy of ['warta-dzidy', 'bez-warty'] as const) {
   const r = play(policy);
   console.log(`\n  ${policy} (${(r.ms / 1000).toFixed(1)} s, skrót ${r.hash}; ${r.over})`);
+  if (r.start && policy === 'warta-dzidy') console.log(`  ${r.start}`);
   console.log('  noc  stado  napiera  zabici  przerwania  ugryzienia  zgony  siatka  zarząd  mieszkańcy');
   for (const n of r.nights)
     console.log(

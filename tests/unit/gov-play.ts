@@ -21,7 +21,16 @@ import { applyGov, govInput, lawsFrom } from '../../src/sim/gov.ts';
 import { dryTreeOf } from '../../src/sim/house.ts';
 import { HUNGRY } from '../../src/sim/needs.ts';
 import { commandFor } from '../../src/sim/orders.ts';
-import { type Command, createSim, type Laws, type Loot, Sim, type SimState, trunkOf } from '../../src/sim/sim.ts';
+import {
+  type Command,
+  createSim,
+  type Laws,
+  type Loot,
+  Sim,
+  type SimOpts,
+  type SimState,
+  trunkOf,
+} from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import type { World } from '../../src/world/world.ts';
 import type { Player } from './m2-play.ts';
@@ -66,6 +75,9 @@ export interface PlayOpts {
   /** gracz z dodatkowymi poleceniami (np. prace fali 1 M2), co sekundę przy ekranie; jego polecenia to decyzje
       rodzaju 'praca' */
   player?: Player;
+  /** zarząd i mieszkańcy siedziby z generatora mieszkańców (opcja `mieszkancy` createSim; flaga --mieszkancy botów);
+      bez niej sim powstaje jak przed krokiem 5 */
+  mieszkancy?: SimOpts['mieszkancy'];
 }
 
 /** poranek wartownika po nocy na posterunku (6:00–14:00): najedzenie i siły o 6:00, godzina pierwszego posiłku
@@ -196,7 +208,7 @@ export function playWithGov(
   core = 4,
   opts: PlayOpts = {},
 ): PlayResult {
-  const st = createSim(w, seed, { core });
+  const st = createSim(w, seed, { core, ...(opts.mieszkancy ? { mieszkancy: opts.mieszkancy } : {}) });
   const sim = new Sim(w, st);
   const gov = newGov(seed);
   const decisions: Decision[] = [];
@@ -396,8 +408,14 @@ export interface LawsRun {
 
 /** Gra bez zarządu z uchwałami o jedzeniu od startu: samouczek i drzewo na opał, kiedy drewna mało (jak w playWithGov),
     przez `days` dni od 15:00. Do porównania racji, kotła i wspólnych posiłków. */
-export function playLaws(w: World, seed: number, laws: Partial<Laws>, days: number): LawsRun {
-  const st = createSim(w, seed, { core: 4 });
+export function playLaws(
+  w: World,
+  seed: number,
+  laws: Partial<Laws>,
+  days: number,
+  mieszkancy?: SimOpts['mieszkancy'],
+): LawsRun {
+  const st = createSim(w, seed, { core: 4, ...(mieszkancy ? { mieszkancy } : {}) });
   const sim = new Sim(w, st);
   sim.setLaws(laws);
   const cores = () => st.pawns.filter((p) => p.kind === 'core' && !p.away);

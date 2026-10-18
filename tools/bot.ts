@@ -11,7 +11,10 @@
    Fala 1 M2: dni 2–5 z przeszukiwaniem pustych mieszkań, rozbiórką, naprawami i budową, a dla porównania bez
    przeszukiwania; ile budowli stoi do końca dnia 2 i 3 i ile decyzji na minutę daje dzień 2 i 3.
    Tłum za siatką jest już tylko do pomiaru wydajności (npm run perf), w grze są mieszkańcy siedziby.
-   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] */
+   Z flagą --mieszkancy (gdziekolwiek wśród argumentów) cały bot gra na świecie z mieszkańcami siedziby z generatora
+   (tools/bot-mieszkancy.ts, jak w grze): zarząd i lokatorzy z osobami z generatora, stany mieszkań siedziby z niego;
+   po linijce „Rdzeń” pojawia się jedna o mieszkańcach z adresu. Bez flagi wyjście i skróty bez zmian.
+   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,7 +25,7 @@ import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
 import { MAT_ACC } from '../src/sim/mieszkania.ts';
 import { HUNGRY } from '../src/sim/needs.ts';
 import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
-import { BURNABLE, createSim, FOOD_START, type Laws, REST_UNTIL, Sim, woodFrom } from '../src/sim/sim.ts';
+import { BURNABLE, createSim, FOOD_START, type Laws, REST_UNTIL, Sim, type SimOpts, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
@@ -36,21 +39,30 @@ import {
 } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
+import { ARGUMENTY, MIESZKANCY, opisMieszkancow, swiatMieszkancow } from './bot-mieszkancy.ts';
 
-const SEED = Number(process.argv[2]) || 1;
-const DAYS = Number(process.argv[3]) || 45;
-const CROWD = Number(process.argv[4]) || 0;
+const SEED = Number(ARGUMENTY[0]) || 1;
+const DAYS = Number(ARGUMENTY[1]) || 45;
+const CROWD = Number(ARGUMENTY[2]) || 0;
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../public/demo/przymorze.json'), 'utf8'));
 const t0 = performance.now();
-const world = buildWorld(demo.geo, { seed: SEED, street: demo.street });
-const sim = new Sim(world, createSim(world, SEED, { core: 4, crowd: CROWD }));
+// z flagą --mieszkancy świat i opcja `mieszkancy` dla createSim z generatora mieszkańców (tools/bot-mieszkancy.ts)
+const osiedle = MIESZKANCY ? await swiatMieszkancow(demo, SEED, 4) : null;
+const world = osiedle ? osiedle.world : buildWorld(demo.geo, { seed: SEED, street: demo.street });
+/** opcje createSim z mieszkańcami z adresu dla świata `w` (tylko dla świata z generatora; bez flagi puste) */
+const zAdresu = (w: World): Pick<SimOpts, 'mieszkancy'> =>
+  osiedle && w === osiedle.world ? { mieszkancy: osiedle.mieszkancy } : {};
+const sim = new Sim(world, createSim(world, SEED, { core: 4, crowd: CROWD, ...zAdresu(world) }));
 console.log(
   `Bot 0.4, ${demo.name}: ${world.buildings.length} budynków, ${world.trees.length} drzew, świat w ${Math.round(performance.now() - t0)} ms`,
 );
+// zarząd to osoby pionków rdzenia (z generatora w state.people są też mieszkańcy)
+const rdzen = sim.st.pawns.filter((p) => p.kind === 'core').map((p) => sim.st.people[p.person]);
 console.log(
-  `Rdzeń: ${sim.st.people.map((p) => `${p.name} (${p.prof.toLowerCase()})`).join(', ')}; mieszkańców ${sim.st.pawns.filter((p) => p.kind === 'resident').length}, tłum: ${CROWD}`,
+  `Rdzeń: ${rdzen.map((p) => `${p.name} (${p.prof.toLowerCase()})`).join(', ')}; mieszkańców ${sim.st.pawns.filter((p) => p.kind === 'resident').length}, tłum: ${CROWD}`,
 );
+if (osiedle) console.log(opisMieszkancow(sim.st));
 console.log(' dzień  ścieżki  nieudane  zamienione  węzłów/ścieżkę  ms/dzień  idzie');
 
 // polecenia bota: co dwie godziny gry losowy cel dla losowej osoby z rdzenia (z ziarnem bota)
@@ -99,7 +111,7 @@ const STEP_TEXT: Record<TutStep, string> = {
 const LIMIT = 5 * 60 * TICKS_PER_SECOND;
 
 function firstMinutes(name: string, w: World): boolean {
-  const s = new Sim(w, createSim(w, SEED, { core: 4, crowd: 8 }));
+  const s = new Sim(w, createSim(w, SEED, { core: 4, crowd: 8, ...zAdresu(w) }));
   const st = s.st;
   const h = houseOf(w)!;
   const dry = dryTreeOf(w);
@@ -252,7 +264,7 @@ const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.lengt
 const f1 = (v: number) => v.toFixed(1);
 for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
   const t1 = performance.now();
-  const runs = GOV_SEEDS.map((seed) => playWithGov(govWorld, seed, policy, GOV_DAYS));
+  const runs = GOV_SEEDS.map((seed) => playWithGov(govWorld, seed, policy, GOV_DAYS, 4, zAdresu(govWorld)));
   const first = (r: { decisions: Decision[] }) => r.decisions.filter((d) => d.s < 600);
   const perMin = runs.map((r) => first(r).length / 10);
   const kinds = (k: (d: Decision) => boolean) => mean(runs.map((r) => first(r).filter(k).length));
@@ -340,7 +352,10 @@ console.log(
   `\nNoc przy kozie, ${govName}: ${GOV_SEEDS.length} ziaren × ${KOZA_DAYS} noce, zawsze warta, wieczorem 16 sztuk drewna w zapasie`,
 );
 const kozaRuns = (koza: boolean) =>
-  GOV_SEEDS.flatMap((seed) => playWithGov(govWorld, seed, 'zawsze-warta', KOZA_DAYS, 4, { koza, evening: 16 }).nights);
+  GOV_SEEDS.flatMap(
+    (seed) =>
+      playWithGov(govWorld, seed, 'zawsze-warta', KOZA_DAYS, 4, { koza, evening: 16, ...zAdresu(govWorld) }).nights,
+  );
 const withDuty = kozaRuns(true);
 const without = kozaRuns(false);
 const k6 = (list: NightLog[]) => list.map((n) => n.kitchen6 ?? 0);
@@ -372,7 +387,7 @@ const lawRuns: [string, Partial<Laws>][] = [
   ['racje i kocioł', { foodMult: 0.825, sharedMeals: true }],
 ];
 const lawStats = lawRuns.map(([name, laws]) => {
-  const runs = GOV_SEEDS.map((seed) => playLaws(govWorld, seed, laws, LAW_DAYS));
+  const runs = GOV_SEEDS.map((seed) => playLaws(govWorld, seed, laws, LAW_DAYS, zAdresu(govWorld).mieszkancy));
   const empty = runs.filter((r) => r.emptyDay !== null).map((r) => r.emptyDay as number);
   const row = {
     supplies: mean(runs.map((r) => r.supplies)),
@@ -407,7 +422,7 @@ const M2_DAYS = 5;
 const endOf = (d: number) => (d - 1) * TICKS_PER_DAY + 9 * TICKS_PER_HOUR;
 {
   const w0 = govWorld;
-  const st0 = createSim(w0, GOV_SEEDS[0], { core: 4 });
+  const st0 = createSim(w0, GOV_SEEDS[0], { core: 4, ...zAdresu(w0) });
   const h0 = houseOf(w0)!;
   const empty = st0.apts.filter((a) => a.state === 'puste');
   const heaps = st0.things.filter((t) => t.kind === 'smieci');
@@ -452,7 +467,7 @@ const m2Runs = (search: boolean) =>
   GOV_SEEDS.map((seed) => {
     const { player, log } = m2Player({ search, furniture: true });
     const w = govWorld;
-    const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, { player });
+    const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, { player, ...zAdresu(w) });
     return {
       log,
       by: (d: number) => log.built.filter((b) => b.tick < endOf(d)).length,

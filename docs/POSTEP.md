@@ -441,6 +441,32 @@ Przykłady z losowania (imiona z list gry):
 
 Czeka na przeczytanie przez Mateusza przed wejściem do gry: tabela umiejętności zawodów (`UMIEJETNOSCI_ZAWODU` w `src/content/druzyna.ts`, przy każdym zawodzie komentarz, skąd dziedzina pokrewna) i pierwszy zestaw kawałków historii (`src/content/historia.ts`): ton i satyra. Większość par zawodu i pokolenia ma na razie po jednym zdaniu, więc „Wylosuj historię” zmienia głównie zdanie o cesze i satyrę; drugie warianty po przyjęciu tonu.
 
+### Mieszkańcy z adresu, krok 5: podpięcie do gry, 18.10.2026 (gałąź `mieszkancy-krok-5`, nic nie wypchnięte)
+
+Krok 5 wpina generator mieszkańców w grę. Start wczytuje tabele dla punktu osiedla („Liczę mieszkańców…”), a `src/sim/osiedle.ts` prowadzi od danych do świata i osób, tą samą drogą w grze i w botach: tagi `zm:bud` na mapie, `buildWorld`, `lokatorzyGry`, stany mieszkań siedziby z generatora na świecie (`applyApts`), `createSim` z opcją `mieszkancy`.
+
+Co jest:
+- Zarząd to osoby z generatora, które razem pokrywają potrzebne dziedziny. Lokatorzy to gospodarstwa zamieszkanych mieszkań parteru siedziby, a pionki mieszkańców mają te osoby (bez losowań z ziarna symulacji). Panel „Wasz zarząd” mówi „z siedziby pod adresem”.
+- Karta osoby z generatora ma rodzinę, historię (także na telefonie) i napis, że postać jest zmyślona. W tekstach dla gracza nie ma numerów mieszkań ani pięter.
+- Zmiana imienia z odmianą, w edytorze na karcie. Nowe imię zostaje tylko w `localStorage` przeglądarki gracza i nigdzie nie jest wysyłane; po starcie i po wznowieniu zapisu stosuje je `zastosujZmiany`. Zmiana idzie poza kolejką poleceń (imię nie wpływa na drogi), a zapis ją niesie.
+- Puste mieszkania siedziby mają rok i powód z dziennika budynku (wyjazd, wymarcie, splądrowanie, zalanie, pożar). Przy podwórku jedno stoi puste do przeszukania, jak w kontrakcie M2.
+- Atrybucja danych: link do `LICENCJE.md` obok atrybucji mapy w pasku gry i na karcie startowej, linia danych w Menu. Na telefonie atrybucja ma dwa wiersze, a karta i podpowiedź stoją nad nią.
+- Bez tabel albo po wyjątku (oznaczanie, generator, `createSim`) gra idzie jak przed krokiem 5: stany M2 i osoby z `makePerson`. Stary zapis wczytuje się na świecie ze stanami z zapisu.
+- Boty: `npm run bot -- --mieszkancy` i `npm run bot:zombie -- --mieszkancy` (flaga w dowolnym miejscu argumentów, wspólny moduł `tools/bot-mieszkancy.ts`). Całe skrypty grają na świecie z generatora, a w wydruku jest jedna linijka o zarządzie i o tym, ilu lokatorów ma osobę (5/5 na Przymorzu). Linijka „Rdzeń” bierze osoby pionków rdzenia, bo `st.people` ma teraz też mieszkańców; opcja `mieszkancy` przechodzi przez `playWithGov` i `playLaws` w `tests/unit/gov-play.ts`.
+
+Skróty botów, Przymorze, ziarno 1. Bez flagi bez zmian: `npm run bot` da4b24e0 (dzień 46) i dad44c81 (po 3 dobach), `npm run bot:zombie` 8c90e51f (warta z dzidami) i 0609ffd4 (bez warty); cały wydruk poza czasami identyczny z wydrukiem sprzed kroku. Z flagą: bot d7bf7877 i 66f79bff, zombie 0e901297 i e656a626. Oba boty z flagą kończą bez błędu i bez ostrzeżeń w konsoli, bez żadnej linii BŁĄD. W zombie z wartą gra kończy się w dniu 7 (koniec „pustka”, zaufanie 21, wkurzenie 81); bez flagi takie końce też się zdarzają (ziarna 2 i 3, bez warty, dzień 5), więc to rozrzut bota, a nie błąd. Czasy: świat z mieszkańcami w 141 ms zamiast 80 ms (tabele z dysku, tagi, generator siedziby), `npm run bot` 20 s zamiast 18 s, `npm run bot:zombie` 3,9 s zamiast 3,0 s.
+
+Zrzuty (w `shots/` poza repo): na prawdziwych danych `mieszkancy-przymorze-zarzad`, `-przymorze-lokator`, `-lanciego-lokator`, `-zielonki-zarzad` (każdy też `-rozwinieta`), `mieszkancy-telefon`, `-menu-telefon`, `-bez-tabel`, `-wznowienie`, `-stary-zapis`; starą ścieżką `karta-zarzad`, `karta-mieszkanca` (też `-telefon`, `-rozwinieta`) i `imie-edytor`, `-telefon`, `-blad`, `-niepewne`, `-po-zmianie`. Bramka tego zadania: `npm test` 1701 zdanych, 1 oczekiwana porażka (test dwóch adresów), 8 pominiętych (82 pliki), Biome czysty, `tsc --noEmit` bez błędów. Pełną bramkę kroku (dwa razy `npm test`, lint, build, `npm run shots`, `npm run mieszkancy`) puszcza integrator.
+
+Co zostaje:
+- Klucze `zm:pole` i `zm:wym` z importera mapy (mp-serwer, `klucze.ts`) jeszcze nie przychodzą. Generator czyta je, jeśli są, a dema ich nie mają; kanoniczne id budynku z importera (test `it.fails`) dalej otwarte.
+- Zmiana nazwiska z §7 projektu: plan obejmował tylko imiona.
+- Kronika zarządu po zgonie mieszkańca mówi „Nie żyje jeden z mieszkańców” bez imienia, bo `mourn` w `src/gov` kluczuje po id, a nie po osobie.
+- Krewni w rodzinie mogą z imienia wymieniać osobę zarządu, którą zastąpiła własna drużyna (potrzebna rodzina w strukturze, nie w tekście).
+- Granica gmin: gdy punkt trafia w obrysy dwóch gmin, wygrywa pierwsza z indeksu, także gdy druga ma lepsze trafienie. Nieistotne, dopóki sąsiednie gminy nie są w indeksie.
+- Główny plik urósł o 28 kB po gzipie.
+- Poza planem kroku 5: stan pustych mieszkań poza siedzibą (inne budynki nie mają wnętrz), mieszkańcy innych klatek jako pionki, cała Polska w tabelach (krok 6), wagi fachów od okolicy (R42).
+
 ## Następne
 
 0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia). Gałąź `tryb-zombie` czeka na OK do wypchnięcia, a na niej `tryb-zombie-drobne` z drobnymi poprawkami z przeglądu.
@@ -450,7 +476,7 @@ Czeka na przeczytanie przez Mateusza przed wejściem do gry: tabela umiejętnoś
 4. M2: fala 1 z rysowaniem i interfejsem, wydarzenia z miejsca, śniadanie wartownika i ogród są razem w `m2-razem` (lokalnie, 18.10.2026). Przed PR do main: decyzja Mateusza o trybie zombie (według koordynatora gryzie się z M2 w 9–12 plikach, w tym `src/sim/sim.ts`), dociągnięcie tego, co sesje M2 dopiszą po scaleniu, wydajność i playtest z bramki fali w `docs/M2-fala-1.md`.
 5. Z przeglądu wizualnego zostało: mieszkańcy w domach jednorodzinnych (Zielonki ich nie mają, decyzja dla Mateusza).
 6. Przy okazji: drzewa jako sprite'y sortowane z pionkami (teraz pionek wchodzi „na” koronę), miękkie cienie, ukośne ściany rysowane z wielokąta zamiast schodków.
-7. Mieszkańcy z adresu: krok 5 (podpięcie do gry), dopiero po scaleniu fali 1 M2 (gałąź `m2-fala-1`) i z twardym warunkiem wstępnym: importer świata daje kanoniczne id i geometrię budynku, tak żeby klucz, mieszkania i epoka budynku były te same dla każdego adresu w okolicy (dziś klucz `g:…` jest stały tylko w jednym wczytaniu mapy, test `it.fails` w `tests/unit/mieszkancy-budynki.test.ts`).
+7. Mieszkańcy z adresu: krok 5 (podpięcie do gry) jest na gałęzi `mieszkancy-krok-5` (wpis wyżej), czeka na integratora. Dalej otwarty twardy warunek z importerem: importer świata daje kanoniczne id i geometrię budynku, tak żeby klucz, mieszkania i epoka budynku były te same dla każdego adresu w okolicy (dziś klucz `g:…` jest stały tylko w jednym wczytaniu mapy, test `it.fails` w `tests/unit/mieszkancy-budynki.test.ts`).
 8. Własna drużyna zarządu (gałąź `druzyna`, lokalnie): Mateusz czyta tabelę umiejętności zawodów i kawałki historii, koordynator łączy gałąź z `pelna-gra`.
 
 ## Decyzje
@@ -498,6 +524,12 @@ Czeka na przeczytanie przez Mateusza przed wejściem do gry: tabela umiejętnoś
   - tasowanie przez `sort` i `Math.hypot`/`sin`/`cos` mogą dawać różne wyniki w różnych przeglądarkach; ważne, gdy zapisy będą przechodzić między przeglądarkami. Tasowanie w wydarzeniach zarządu poprawione 17.10.2026 (CI na Node 24); `Math.hypot`/`sin`/`cos` w decyzjach symulacji do sprawdzenia.
 
 ## Zaparkowane
+
+- Zmiana nazwiska mieszkańca przez gracza (§7 projektu mieszkańców, 18.10.2026): plan kroku 5 objął tylko imiona.
+- Imię zmarłego mieszkańca w kronice zarządu (18.10.2026): wymaga rodzaju osoby w `GovInput.dead`, żeby `mourn` nie kluczował tylko po id.
+- Znacznik na mapie przy zaznaczonym mieszkańcu (18.10.2026): zaznaczony mieszkaniec ma tylko kartę, bez znacznika na mapie.
+- Podział kodu generatora mieszkańców (18.10.2026): +28 kB po gzipie w głównym pliku; jeśli telefon wczyta się za wolno, ładować generator osobnym importem dynamicznym.
+- Jeden pomocnik `fetch` z plików `public/` dla testów i narzędzi (18.10.2026): dziś `plikowy` albo `zPliku` jest zdefiniowany w siedmiu plikach.
 
 - Trudność a liczba osób zarządu (z bota zombie, 18.10.2026): wydarzenia zarządu szybko dokładają ludzi do zarządu (z jednej osoby trzy drugiej nocy), więc wybór 1–5 osób na karcie startowej zmienia głównie pierwsze doby; do sprawdzenia botem na wielu ziarnach i ewentualnie do przemyślenia z Mateuszem, czy przy małej drużynie wydarzenia mają dokładać ludzi wolniej.
 
