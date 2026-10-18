@@ -915,18 +915,23 @@ describe('generuj: historie w generatorze (R49)', () => {
     expect(JSON.stringify(b)).not.toBe(JSON.stringify(a));
   });
 
-  it('cały obszar dema z historiami w Node poniżej 1500 ms (cel 200 ms, mediana z 3)', () => {
-    for (const d of DEMA) {
-      const czasy: number[] = [];
-      for (let i = 0; i < 3; i++) {
-        const t0 = performance.now();
-        generujObszar(d.geo, d.g, kraj, d.nazwy);
-        czasy.push(performance.now() - t0);
+  // test czasu tylko z ZM_PERF=1: pod równoległym obciążeniem vitest mierzy zegar ściany, nie kod
+  // (npm run mieszkancy zawsze wypisuje czasy)
+  it.skipIf(!process.env.ZM_PERF)(
+    'cały obszar dema z historiami w Node poniżej 1500 ms (cel 200 ms, mediana z 3)',
+    () => {
+      for (const d of DEMA) {
+        const czasy: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const t0 = performance.now();
+          generujObszar(d.geo, d.g, kraj, d.nazwy);
+          czasy.push(performance.now() - t0);
+        }
+        czasy.sort((a, b) => a - b);
+        expect(czasy[1], d.nazwa).toBeLessThan(1500);
       }
-      czasy.sort((a, b) => a - b);
-      expect(czasy[1], d.nazwa).toBeLessThan(1500);
-    }
-  });
+    },
+  );
 });
 
 describe('src/mieszkancy/szablony.ts i historie.ts: reguły modułu', () => {

@@ -549,13 +549,18 @@ describe('gospodarstwa trzypokoleniowe (osoby 0-29, 30-59 i 60+ razem)', () => {
 // ---------------------------------------------------------------- wydajność i zasady modułu
 
 describe('wydajność i zasady modułu', () => {
-  it('wszystkie budynki dema obsadzają się szybko (spis to mały kawałek budżetu 200 ms)', () => {
-    const ursynow = wczytaj<TabeleGminy>('data/mieszkancy/gminy/1465138.json');
-    const budynki = budynkiZGeo(demo('lanciego'), ursynow, kraj);
-    const t0 = performance.now();
-    for (const b of budynki) obsadzBudynek(b, marginesyDla(ursynow, b.rejon), ursynow, kraj);
-    expect(performance.now() - t0).toBeLessThan(1500);
-  });
+  // test czasu tylko z ZM_PERF=1: pod równoległym obciążeniem vitest mierzy zegar ściany, nie kod
+  // (npm run mieszkancy zawsze wypisuje czasy)
+  it.skipIf(!process.env.ZM_PERF)(
+    'wszystkie budynki dema obsadzają się szybko (spis to mały kawałek budżetu 200 ms)',
+    () => {
+      const ursynow = wczytaj<TabeleGminy>('data/mieszkancy/gminy/1465138.json');
+      const budynki = budynkiZGeo(demo('lanciego'), ursynow, kraj);
+      const t0 = performance.now();
+      for (const b of budynki) obsadzBudynek(b, marginesyDla(ursynow, b.rejon), ursynow, kraj);
+      expect(performance.now() - t0).toBeLessThan(1500);
+    },
+  );
 
   it('ipf.ts i spis.ts nie używają trygonometrii, potęg, logarytmów ani Math.random', () => {
     for (const plik of fs.readdirSync(path.join(KORZEN, 'src/mieszkancy'))) {
