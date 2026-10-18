@@ -4,8 +4,8 @@
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
-   raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta” i klawisz M, gra stoi przy otwartym oknie),
-   zapis i sterowanie. */
+   raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta” i klawisz M, gra stoi przy otwartym oknie)
+   z wysyłaniem wypraw dziennych (src/ui/wyprawa.ts: wybór osób, podsumowanie, potwierdzenie), zapis i sterowanie. */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -16,10 +16,11 @@ import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zomb
 import type { Person } from './content/people.ts';
 import { jezyk, L, poZmianieJezyka, type Tx, tr } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
+import { wyslijWyprawe } from './gov/dzienne.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
-import { wlaczMiasto } from './gov/wyprawy.ts';
+import { celZMiejsca, wlaczMiasto } from './gov/wyprawy.ts';
 import {
   ackReport,
   chooseEvent,
@@ -114,6 +115,7 @@ import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { esc } from './ui/tekst.ts';
+import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
@@ -2102,7 +2104,49 @@ function openMiasto() {
     },
   );
   const el = modal.find('[data-miasto]');
-  if (el) mapa.podepnij(el, { touch: touchUI, st: () => gov, wejscie: () => (gov && sim ? input() : null) });
+  if (el)
+    mapa.podepnij(el, {
+      touch: touchUI,
+      st: () => gov,
+      wejscie: () => (gov && sim ? input() : null),
+      onWyslij: (m) => openWyprawa(m),
+    });
+}
+
+/** plan wyprawy z karty miejsca na mapie miasta (src/ui/wyprawa.ts): wybór osób z zarządu (zaznaczeni w grze są wybrani
+    od razu), podsumowanie i potwierdzenie. „Wyślij” woła `wyslijWyprawe`: udane idzie przez `applyFx` (osoby wychodzą
+    bramą, ostatni wpis kroniki jest podpowiedzią), zapis i powrót do gry albo do decyzji, która czeka; odmowa zostaje
+    w oknie. „Wróć do mapy” otwiera mapę od nowa z tym samym widokiem i kartą; Esc zamyka jak każde okno.
+    Wysłanie z własnej woli nie jest odpowiedzią na okno zarządu, więc bez `decision()`. `wybrani`: wybór do zachowania
+    po zmianie języka. */
+function openWyprawa(m: Miejsce, wybrani?: Set<string>) {
+  const mapa = mapaMiasta;
+  const g = gov;
+  if (!sim || !g || g.over || !mapa) return;
+  const cel = celZMiejsca(m);
+  const wyb = wybrani ?? domyslniWybrani(cel, input(), g, selected);
+  sheetAgain = () => openWyprawa(m, wyb);
+  // okno mapy ustępuje planowi: widok i karta zostają w mapie na powrót
+  mapa.odepnij();
+  modal.show(
+    planWyprawySheet(cel, input(), g, wyb),
+    (act, arg) => {
+      if (act === 'wp-osoba') {
+        if (!wyb.delete(arg)) wyb.add(arg);
+        odswiezPlan(modal, cel, input(), g, wyb);
+      } else if (act === 'wp-wroc') {
+        modal.close();
+        openMiasto();
+      } else if (act === 'wyslij') {
+        const i = input();
+        const w = wyslijWyprawe(g, i, cel, kogoWyslac(cel, i, g, wyb));
+        if (!w.ok) return odswiezPlan(modal, cel, i, g, wyb, w.why);
+        applyFx(w.fx);
+        decided();
+      }
+    },
+    () => nextPrompt(),
+  );
 }
 
 function startPlacing(kind: BuildKind) {

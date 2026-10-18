@@ -7932,6 +7932,104 @@ function miastoShots(): Shot[] {
     if (!o.atrybucja.includes(atrybucja)) throw new Error(`atrybucja w stopce: ${o.atrybucja}`);
     if (!o.atrybucjaWidac) throw new Error('atrybucji map nie widać na ekranie');
   };
+  /** zaznacza w grze `n` pierwszych osób z zarządu: pierwszą kliknięciem w głowę, resztę z Shiftem (kamera na siedzibie) */
+  const zaznacz = async (page: Page, n: number) => {
+    await page.evaluate(() => {
+      const zm = window.zm!;
+      const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+      zm.setCam(p.x, p.y, 1.6);
+    });
+    await waitIdle(page);
+    for (let k = 0; k < n; k++) {
+      const [x, y] = await page.evaluate((k) => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[k];
+        return zm.screenOf(p.x, p.y - 0.55);
+      }, k);
+      if (k) await page.keyboard.down('Shift');
+      await page.mouse.click(x, y);
+      if (k) await page.keyboard.up('Shift');
+    }
+    await page.waitForTimeout(250);
+  };
+  /** karta wybranego miejsca: czy przycisk „Wyślij” jest aktywny */
+  const wyslijAktywny = (page: Page) =>
+    page.evaluate(() => {
+      const b = document.querySelector<HTMLButtonElement>('#sheet [data-miasto-karta] [data-act="wyslij"]');
+      return !!b && !b.disabled;
+    });
+  /** okno planu wyprawy: osoby (id, napis, wybrana, wyszarzona), podsumowanie, powód, przycisk „Wyślij”, przewijanie w bok */
+  const plan = (page: Page) =>
+    page.evaluate(() => {
+      const sheet = document.getElementById('sheet')!;
+      const wyslij = sheet.querySelector<HTMLButtonElement>('[data-act="wyslij"]');
+      const body = sheet.querySelector<HTMLElement>('.sheet-body');
+      return {
+        klasa: sheet.className,
+        tytul: sheet.querySelector('.sheet-title')?.textContent ?? '',
+        osoby: [...sheet.querySelectorAll<HTMLButtonElement>('[data-act="wp-osoba"]')].map((b) => ({
+          id: b.dataset.arg!,
+          tekst: b.textContent ?? '',
+          wybrana: b.getAttribute('aria-pressed') === 'true',
+          wyszarzona: b.disabled,
+        })),
+        podsumowanie: [...sheet.querySelectorAll('.wp-sum dt')].map((dt) => [
+          dt.textContent ?? '',
+          dt.nextElementSibling?.textContent ?? '',
+        ]),
+        powod: sheet.querySelector('.wp-why')?.textContent ?? '',
+        wyslij: wyslij ? { tekst: wyslij.textContent ?? '', wyszarzony: wyslij.disabled } : null,
+        wroc: sheet.querySelector('[data-act="wp-wroc"]')?.textContent ?? '',
+        bok:
+          document.documentElement.scrollWidth > innerWidth + 1 || (!!body && body.scrollWidth > body.clientWidth + 1),
+        tekst: sheet.textContent ?? '',
+        tempo: window.zm!.speed(),
+        ekran: [innerWidth, innerHeight],
+        stopka: (() => {
+          const r = sheet.querySelector('.sheet-foot')?.getBoundingClientRect();
+          return r ? [r.left, r.top, r.right, r.bottom].map(Math.round) : null;
+        })(),
+      };
+    });
+  /** otwiera mapę i wybiera pierwsze miejsce z pierścienia od–do metrów, do którego karta pozwala wysłać wyprawę;
+      zwraca je z klikniętym już „Wyślij wyprawę” (okno planu otwarte) */
+  const doPlanu = async (
+    page: Page,
+    base: string,
+    o: { dotyk?: boolean; zaznacz?: number; godzina?: string; speed?: number; od?: number; doM?: number } = {},
+  ) => {
+    await kafelkiMapy(page);
+    await page.goto(`${base}?demo=przymorze&speed=${o.speed ?? 0}&godzina=${o.godzina ?? '8'}&cam=hq,1.6`);
+    await waitIdle(page);
+    if (o.zaznacz) await zaznacz(page, o.zaznacz);
+    await otworzMape(page, o.dotyk);
+    const kandydaci = await page.evaluate(
+      ([od, doM]) =>
+        window
+          .zm!.mapa()!
+          .miejscaMapy()
+          .filter((m) => m.odl > od && m.odl < doM)
+          .sort((a, b) => Number(!!b.nazwa) - Number(!!a.nazwa) || a.odl - b.odl)
+          .slice(0, 12)
+          .map((m) => ({ klucz: m.klucz, x: m.x, y: m.y, nazwa: m.nazwa, kat: m.kat, odl: Math.round(m.odl) })),
+      [o.od ?? 280, o.doM ?? 560],
+    );
+    for (const m of kandydaci) {
+      await ustawMape(page, { cx: m.x - 60, cy: m.y + 40, mNaPiksel: 1.2 });
+      const [sx, sy] = await naEkranie(page, m.klucz);
+      if (o.dotyk) await page.touchscreen.tap(sx, sy);
+      else await page.mouse.click(sx, sy);
+      await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+      await dwieKlatki(page);
+      if (!(await wyslijAktywny(page))) continue;
+      if (o.dotyk) await page.tap('#sheet [data-miasto-karta] [data-act="wyslij"]');
+      else await page.click('#sheet [data-miasto-karta] [data-act="wyslij"]');
+      await page.waitForSelector('#sheet .wp');
+      await dwieKlatki(page);
+      return m;
+    }
+    throw new Error(`żadne z ${kandydaci.length} miejsc nie pozwala wysłać wyprawy`);
+  };
   return [
     {
       // oddalenie: całe miasto, koło osiedla i zasięg 5 km; po drodze pauza przy otwartym oknie, Esc i klawisz M,
@@ -8014,8 +8112,9 @@ function miastoShots(): Shot[] {
         console.log(`  stan: ${JSON.stringify(o.stan)}`);
         if (o.stan.wybrane !== m.klucz) throw new Error('kliknięcie w znak nie wybrało miejsca');
         if (!o.karta) throw new Error('brak karty miejsca');
-        if (!o.karta.wyszarzony || !o.karta.wyslij.includes('wkrótce'))
-          throw new Error(`przycisk wysyłki bez wysyłania: ${o.karta.wyslij}`);
+        // wysyłanie jest podpięte (zadanie 9): miejsce poza mapą osiedla za dnia ma aktywny przycisk bez dopisku
+        if (o.karta.wyszarzony || o.karta.wyslij !== 'Wyślij wyprawę')
+          throw new Error(`przycisk wysyłki: ${o.karta.wyslij}, wyszarzony: ${o.karta.wyszarzony}`);
         if (!/km|m stąd/.test(o.karta.tekst) || !/Tam jest (spokojnie|niepewnie|groźnie)/.test(o.karta.tekst))
           throw new Error('karta bez odległości albo ryzyka');
         if (!/Nietknięte|Ktoś tu był|Wybrane do cna/.test(o.karta.tekst)) throw new Error('karta bez stanu miejsca');
@@ -8087,10 +8186,281 @@ function miastoShots(): Shot[] {
         await dwieKlatki(page);
         const o = await okno(page);
         console.log(`  karta: ${o.karta?.tekst}`);
-        if (!o.karta?.wyslij.includes('soon')) throw new Error(`przycisk wysyłki: ${o.karta?.wyslij}`);
+        if (o.karta?.wyslij !== 'Send a supply run') throw new Error(`przycisk wysyłki: ${o.karta?.wyslij}`);
+        if (o.karta.wyszarzony && !/Picked clean|Too far|after dark/i.test(o.karta.tekst))
+          throw new Error(`przycisk wyszarzony bez powodu na karcie: ${o.karta.tekst}`);
         const pl = polskieLitery(o.tekst, [m.nazwa]);
         if (pl.length) throw new Error(`polskie słowa w oknie po angielsku: ${pl.join(' ')}`);
         zasady(o, ATRYBUCJA_EN);
+      },
+    },
+    {
+      // wysyłanie z mapy (komputer): karta miejsca → „Wyślij wyprawę” → okno planu. Zaznaczeni w grze są wybrani od
+      // razu, kliknięcie osoby zmienia podsumowanie, bez wybranych „Wyślij” jest wyszarzony, „Wróć do mapy” wraca
+      // do tego samego widoku i karty, a Esc zamyka okno i oddaje grze tempo
+      name: 'miasto-wysylanie',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 2 });
+        const widokPrzed = await page.evaluate(() => window.zm!.mapa()!.stan().widok);
+        let p = await plan(page);
+        console.log(`  miejsce ${JSON.stringify(m)}`);
+        console.log(
+          `  plan: ${p.tytul}; osoby ${JSON.stringify(p.osoby.map((x) => [x.tekst, x.wybrana, x.wyszarzona]))}`,
+        );
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}, powód: ${p.powod}, tempo ${p.tempo}`);
+        if (!p.klasa.includes('wyprawa')) throw new Error(`odcień okna: ${p.klasa}`);
+        if (p.tempo !== 0) throw new Error('gra nie stoi przy oknie planu');
+        if (p.osoby.length < 3) throw new Error(`za mało osób na liście: ${p.osoby.length}`);
+        const wybrane = () => p.osoby.filter((x) => x.wybrana).length;
+        if (wybrane() !== 2) throw new Error(`zaznaczeni w grze nie są wybrani od razu: ${wybrane()} z 2`);
+        if (!p.wyslij || p.wyslij.wyszarzony || p.wyslij.tekst !== 'Wyślij wyprawę')
+          throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        const klucze = p.podsumowanie.map((r) => r[0]);
+        for (const k of ['Wyjście', 'Powrót', 'Czas poza osiedlem', 'Ryzyko', 'Udźwig', 'Zostało w miejscu'])
+          if (!klucze.includes(k)) throw new Error(`podsumowanie bez wiersza „${k}”: ${klucze.join(', ')}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        // trzecia osoba: udźwig rośnie o 6, powrót jest nie później
+        const trzecia = p.osoby.find((x) => !x.wybrana && !x.wyszarzona);
+        if (!trzecia) throw new Error('nie ma kogo dobrać');
+        const udzwig = () => Number(p.podsumowanie.find((r) => r[0] === 'Udźwig')![1].match(/\d+/)![0]);
+        const przed = udzwig();
+        await page.click(`#sheet [data-act="wp-osoba"][data-arg="${trzecia.id}"]`);
+        p = await plan(page);
+        console.log(`  z trzecią osobą: ${JSON.stringify(p.podsumowanie)}`);
+        if (wybrane() !== 3 || udzwig() !== przed + 6)
+          throw new Error(`dobranie osoby: ${wybrane()} wybranych, udźwig ${udzwig()}`);
+        // bez nikogo „Wyślij” jest wyszarzony i okno mówi, czego brakuje
+        for (const x of p.osoby.filter((x) => x.wybrana))
+          await page.click(`#sheet [data-act="wp-osoba"][data-arg="${x.id}"]`);
+        p = await plan(page);
+        if (wybrane() !== 0 || !p.wyslij?.wyszarzony || p.podsumowanie.length || !p.powod.includes('Wybierz kogoś'))
+          throw new Error(`bez wybranych: ${JSON.stringify([wybrane(), p.wyslij, p.podsumowanie, p.powod])}`);
+        // „Wróć do mapy”: ten sam widok i karta tego samego miejsca, a stąd znowu do planu
+        await page.click('#sheet [data-act="wp-wroc"]');
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await czekajNaMape(page);
+        const mapa = await okno(page);
+        if (mapa.stan.wybrane !== m.klucz) throw new Error(`po powrocie do mapy wybrane: ${mapa.stan.wybrane}`);
+        if (JSON.stringify(mapa.stan.widok) !== JSON.stringify(widokPrzed)) throw new Error('widok mapy się zmienił');
+        if (mapa.tempo !== 0) throw new Error('gra ruszyła po powrocie do mapy');
+        await page.click('#sheet [data-miasto-karta] [data-act="wyslij"]');
+        await page.waitForSelector('#sheet .wp');
+        // Esc zamyka okno i oddaje grze tempo sprzed mapy (2 = 3×)
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const po = await page.evaluate(() => ({
+          tempo: window.zm!.speed(),
+          wyprawy: window.zm!.gov!.wyprawy?.length ?? 0,
+        }));
+        if (po.tempo !== 2 || po.wyprawy) throw new Error(`po Esc: ${JSON.stringify(po)}`);
+        await page.keyboard.press('KeyM');
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await czekajNaMape(page);
+        // miejsce z mapy osiedla (koło 192 m) nie jest celem: przycisk wyszarzony z powodem, a wołanie wysyłki wprost
+        // niczego nie otwiera
+        const lokalne = await page.evaluate(() => {
+          const l = window
+            .zm!.mapa()!
+            .miejscaMapy()
+            .filter((q) => q.odl < 150);
+          return l[0] ? { klucz: l[0].klucz, x: l[0].x, y: l[0].y } : null;
+        });
+        if (!lokalne) throw new Error('brak miejsca na mapie osiedla');
+        await ustawMape(page, { cx: lokalne.x - 30, cy: lokalne.y + 20, mNaPiksel: 0.7 });
+        const [lx, ly] = await naEkranie(page, lokalne.klucz);
+        await page.mouse.click(lx, ly);
+        await page.waitForFunction((k) => window.zm!.mapa()!.stan().wybrane === k, lokalne.klucz);
+        await dwieKlatki(page);
+        const osiedle = await okno(page);
+        console.log(
+          `  miejsce z mapy osiedla: ${osiedle.karta?.tekst.slice(-120)}, wyszarzony ${osiedle.karta?.wyszarzony}`,
+        );
+        if (!osiedle.karta?.wyszarzony || !/mapie osiedla/.test(osiedle.karta.tekst))
+          throw new Error('miejsce z mapy osiedla ma aktywne „Wyślij”');
+        await page.evaluate((k) => window.zm!.mapa()!.obsluz('wyslij', k), lokalne.klucz);
+        await dwieKlatki(page);
+        if (await page.locator('#sheet .wp').count()) throw new Error('wysyłka z mapy osiedla otworzyła okno planu');
+        // do zrzutu: mapa, karta tamtego miejsca, plan z trzema osobami
+        await ustawMape(page, { cx: m.x - 60, cy: m.y + 40, mNaPiksel: 1.2 });
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.mouse.click(sx, sy);
+        await page.waitForFunction((k) => window.zm!.mapa()!.stan().wybrane === k, m.klucz);
+        await page.click('#sheet [data-miasto-karta] [data-act="wyslij"]');
+        await page.waitForSelector('#sheet .wp');
+        for (const x of p.osoby.slice(0, 3)) {
+          const stan = (await plan(page)).osoby.find((y) => y.id === x.id)!;
+          if (!stan.wybrana && !stan.wyszarzona) await page.click(`#sheet [data-act="wp-osoba"][data-arg="${x.id}"]`);
+        }
+        await dwieKlatki(page);
+        p = await plan(page);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        console.log(`  do zrzutu: ${wybrane()} wybranych, ${JSON.stringify(p.podsumowanie)}`);
+      },
+    },
+    {
+      // wysyłanie z mapy (telefon 390×844): dotyk, plan bez przewijania w bok, stopka z przyciskami na ekranie
+      name: 'miasto-wysylanie-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { dotyk: true });
+        let p = await plan(page);
+        console.log(`  miejsce ${JSON.stringify(m)}, plan: ${p.tytul}, osoby ${p.osoby.length}, ekran ${p.ekran}`);
+        console.log(`  osoby: ${JSON.stringify(p.osoby.map((x) => [x.tekst, x.wybrana, x.wyszarzona]))}`);
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}, stopka ${p.stopka}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok na telefonie');
+        const [l, t, r, b] = p.stopka!;
+        if (l < 0 || t < 0 || r > p.ekran[0] || b > p.ekran[1]) throw new Error('stopka planu wychodzi za ekran');
+        // stuknięcie osoby wybiera ją, ponowne cofa wybór
+        const kto = p.osoby.find((x) => !x.wyszarzona)!;
+        await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+        const po = (await plan(page)).osoby.find((x) => x.id === kto.id)!;
+        if (po.wybrana === kto.wybrana) throw new Error('stuknięcie osoby nie zmieniło wyboru');
+        if (!kto.wybrana) {
+          // dla zrzutu zostaje wybrana
+        } else await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+        await dwieKlatki(page);
+        p = await plan(page);
+        if (!p.osoby.some((x) => x.wybrana) || p.wyslij?.wyszarzony)
+          throw new Error('na zrzucie nikt nie jest wybrany');
+      },
+    },
+    {
+      // wyprawa do końca: wysłanie, osoby wychodzą bramą, podpowiedź i wpis w kronice, przewinięcie do powrotu
+      // (zm.ff), rozliczenie łupu: zapasy, st.miasto.zabrano i wizyty, wyprawy znikają ze stanu
+      name: 'miasto-powrot',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 1 });
+        const zapasy = () =>
+          page.evaluate(async () => {
+            const load = (path: string) => import(/* @vite-ignore */ path);
+            const { snapshot } = (await load('/src/sim/snapshot.ts')) as typeof import('../src/sim/snapshot.ts');
+            const zm = window.zm!;
+            const k = snapshot(zm.sim!.st, zm.sim!.w).stock;
+            return { drewno: k.wood, jedzenie: k.supplies, zlom: k.scrap, czesci: k.parts, leki: k.meds ?? 0 };
+          });
+        const przed = await zapasy();
+        const p = await plan(page);
+        const wybrani = p.osoby.filter((x) => x.wybrana).map((x) => x.id);
+        console.log(`  wybrani: ${wybrani.join(', ')}, podsumowanie ${JSON.stringify(p.podsumowanie)}`);
+        if (wybrani.length !== 2) throw new Error(`wybranych ${wybrani.length} zamiast 2`);
+        const logPrzed = await page.evaluate(() => window.zm!.gov!.log.length);
+        await page.click('#sheet [data-act="wyslij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        // podpowiedź (ostatni wpis kroniki) pokazuje pasek przy najbliższym odświeżeniu, nie od razu
+        await page.waitForFunction(
+          () => document.getElementById('hint')?.textContent?.includes('Wyprawa do miejsca'),
+          null,
+          { timeout: 3000 },
+        );
+        const wys = await page.evaluate(() => {
+          const zm = window.zm!;
+          const g = zm.gov!;
+          return {
+            tempo: zm.speed(),
+            wyprawy: JSON.parse(JSON.stringify(g.wyprawy ?? [])),
+            log: g.log.slice(-3).map((l) => l.txt),
+            wLogu: g.log.length,
+            hint: document.getElementById('hint')!.textContent,
+            minuta: (g.log.at(-1)?.day ?? 1) * 1440,
+          };
+        });
+        console.log(`  po wysłaniu: ${JSON.stringify({ ...wys, log: wys.log.map((t) => (t as { pl: string }).pl) })}`);
+        if (wys.tempo !== 1) throw new Error(`tempo po wysłaniu: ${wys.tempo} zamiast 1`);
+        if (wys.wyprawy.length !== 1) throw new Error(`wypraw w drodze: ${wys.wyprawy.length}`);
+        const w = wys.wyprawy[0];
+        if (w.cel.klucz !== m.klucz || JSON.stringify(w.ids) !== JSON.stringify(wybrani))
+          throw new Error(`wyprawa: ${JSON.stringify(w)}`);
+        if (wys.wLogu !== logPrzed + 1) throw new Error(`wpisów w kronice: ${wys.wLogu - logPrzed} zamiast 1`);
+        if (!wys.hint?.includes('Wyprawa do miejsca')) throw new Error(`podpowiedź: ${wys.hint}`);
+        // osoby wychodzą bramą (flaga away na pionkach), jedna po drugiej; gra przewijana zm.ff
+        let poza = 0;
+        for (let k = 0; k < 8 && poza < 2; k++) {
+          const okno = await page.evaluate(() => window.zm!.ff(5));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+          poza = await page.evaluate(() => window.zm!.sim!.st.pawns.filter((q) => q.kind === 'core' && q.away).length);
+        }
+        console.log(`  po wyjściu: poza mapą ${poza}`);
+        if (poza !== 2) throw new Error(`poza mapą po wyjściu: ${poza} zamiast 2`);
+        // przewijanie do powrotu: po kawałku, bez okien decyzji po drodze
+        for (let k = 0; k < 24; k++) {
+          const wToku = await page.evaluate(() => window.zm!.gov!.wyprawy?.length ?? 0);
+          if (!wToku) break;
+          const okno = await page.evaluate(() => window.zm!.ff(30));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+        }
+        const po = await page.evaluate(() => {
+          const zm = window.zm!;
+          const g = zm.gov!;
+          return {
+            wyprawy: g.wyprawy?.length ?? 0,
+            miasto: g.miasto
+              ? { zabrano: g.miasto.zabrano, wizyty: g.miasto.wizyty, ostatnia: g.miasto.ostatnia }
+              : null,
+            log: g.log.slice(-4).map((l) => `${l.clock} ${(l.txt as { pl: string }).pl}`),
+            hint: document.getElementById('hint')!.textContent,
+            poza: zm.sim!.st.pawns.filter((q) => q.kind === 'core' && q.away).length,
+          };
+        });
+        const zapasyPo = await zapasy();
+        console.log(`  po powrocie: ${JSON.stringify(po)}`);
+        console.log(`  zapasy: ${JSON.stringify(przed)} -> ${JSON.stringify(zapasyPo)}`);
+        if (po.wyprawy) throw new Error('wyprawa dalej w drodze');
+        if (po.miasto?.wizyty[m.klucz] !== 1) throw new Error(`wizyt w miejscu: ${po.miasto?.wizyty[m.klucz]}`);
+        const zabrano = po.miasto?.zabrano[m.klucz] ?? 0;
+        const przybylo = (Object.keys(zapasyPo) as (keyof typeof zapasyPo)[]).reduce(
+          (a, k) => a + Math.max(0, zapasyPo[k] - przed[k]),
+          0,
+        );
+        if (zabrano > 0 && przybylo <= 0) throw new Error(`zabrano ${zabrano}, a zapasy się nie zmieniły`);
+        if (!po.log.some((t) => /wróci|trafili|trafił|trafiła|trafiły/.test(t)))
+          throw new Error('brak wpisu o powrocie');
+      },
+    },
+    {
+      // po angielsku: plan wyprawy bez polskich słów (poza imionami i nazwą miejsca), przycisk i podsumowanie
+      name: 'en-miasto-wysylanie',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2 });
+        const p = await plan(page);
+        console.log(`  plan: ${p.tytul}`);
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}`);
+        const imiona = await page.evaluate(() => window.zm!.sim!.st.people.flatMap((q) => [q.name, q.first]));
+        const pl = polskieLitery(p.tekst, [m.nazwa, ...imiona]);
+        if (pl.length) throw new Error(`polskie słowa w oknie planu po angielsku: ${pl.join(' ')}`);
+        if (p.wyslij?.tekst !== 'Send the supply run' || p.wyslij.wyszarzony)
+          throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.wroc !== 'Back to the map') throw new Error(`przycisk powrotu: ${p.wroc}`);
+        const klucze = p.podsumowanie.map((r) => r[0]);
+        for (const k of ['Leaving', 'Back', 'Time away', 'Risk', 'Can carry', 'Left there'])
+          if (!klucze.includes(k)) throw new Error(`podsumowanie bez wiersza „${k}”: ${klucze.join(', ')}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        // zmiana języka przy otwartym planie: to samo okno po polsku z tym samym wyborem osób, i z powrotem
+        const zmien = (l: 'en' | 'pl') =>
+          page.evaluate(async (l) => {
+            const load = (path: string) => import(/* @vite-ignore */ path);
+            ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk(l);
+          }, l);
+        await zmien('pl');
+        await page.waitForFunction(
+          () => document.querySelector('#sheet [data-act="wp-wroc"]')?.textContent === 'Wróć do mapy',
+        );
+        const pol = await plan(page);
+        if (JSON.stringify(pol.osoby.map((x) => x.wybrana)) !== JSON.stringify(p.osoby.map((x) => x.wybrana)))
+          throw new Error('zmiana języka zmieniła wybór osób');
+        if (pol.wyslij?.tekst !== 'Wyślij wyprawę') throw new Error(`po polsku: ${pol.wyslij?.tekst}`);
+        await zmien('en');
+        await page.waitForFunction(
+          () => document.querySelector('#sheet [data-act="wp-wroc"]')?.textContent === 'Back to the map',
+        );
+        await dwieKlatki(page);
       },
     },
     {

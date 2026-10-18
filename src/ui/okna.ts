@@ -34,9 +34,21 @@ export interface Sheet {
   title: string;
   body: string;
   foot: string;
-  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie), napad (sąsiedzi atakują)
-      i mapa miasta (okno na cały ekran, src/ui/miasto.ts) */
-  tone: 'noc' | 'uchwala' | 'wydarzenie' | 'raport' | 'menu' | 'ogien' | 'koniec' | 'sasiedzi' | 'napad' | 'miasto';
+  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie), napad (sąsiedzi atakują),
+      mapa miasta (okno na cały ekran, src/ui/miasto.ts) i plan wyprawy z mapy (zwykłe okno w barwie mapy,
+      src/ui/wyprawa.ts) */
+  tone:
+    | 'noc'
+    | 'uchwala'
+    | 'wydarzenie'
+    | 'raport'
+    | 'menu'
+    | 'ogien'
+    | 'koniec'
+    | 'sasiedzi'
+    | 'napad'
+    | 'miasto'
+    | 'wyprawa';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
 }

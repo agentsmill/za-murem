@@ -6,10 +6,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type Lang, type Tx, ustawJezyk } from '../../src/core/jezyk.ts';
-import { wyslijWyprawe } from '../../src/gov/dzienne.ts';
+import { type Lang, type Tx, tx, ustawJezyk } from '../../src/core/jezyk.ts';
+import { kiedyWraca, podgladWyprawy, powodOdmowy, wyslijWyprawe } from '../../src/gov/dzienne.ts';
 import type { GovInput, GovState } from '../../src/gov/typy.ts';
-import { celZMiejsca, czasWyprawyMin, MAX_DROGA_M, wlaczMiasto, zostaloZMiejsca } from '../../src/gov/wyprawy.ts';
+import {
+  celZMiejsca,
+  czasWyprawyMin,
+  MAX_DROGA_M,
+  ryzykoSlowem,
+  wlaczMiasto,
+  zostaloZMiejsca,
+} from '../../src/gov/wyprawy.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import {
   dolaczMiejsca,
@@ -32,6 +39,7 @@ import {
   type Widok,
   ZASIEG_MIASTA_M,
 } from '../../src/ui/miasto.ts';
+import { domyslniWybrani, kogoWyslac, planWyprawySheet } from '../../src/ui/wyprawa.ts';
 import type { LatLon } from '../../src/world/klucze.ts';
 import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from '../../src/world/miasto.ts';
 import { kafelkiProstokata, poiZKafelkow } from '../../src/world/miastoKafelki.ts';
@@ -620,5 +628,288 @@ describe('ikony kategorii', () => {
     // różne wzory: apteka i przychodnia różnią się kolorem, reszta kształtem
     const wzory = new Set(Object.values(IKONY).map((i) => `${i.wzor.join('')}${i.tlo}${i.znak}`));
     expect(wzory.size).toBe(Object.keys(IKONY).length);
+  });
+});
+
+// ---------------------------------------------------------------- wysyłanie wyprawy (okno planu, src/ui/wyprawa.ts)
+
+describe('planWyprawySheet', () => {
+  /** tag przycisku osoby (`data-act="wp-osoba"`) o danym id */
+  const przyciskOsoby = (html: string, id: string): string => {
+    const m = html.match(new RegExp(`<button[^>]*data-act="wp-osoba"[^>]*data-arg="${id}"[^>]*>`));
+    if (!m) throw new Error(`brak przycisku osoby ${id}`);
+    return m[0];
+  };
+  const przyciskWyslij = (html: string): string => {
+    const m = html.match(/<button[^>]*data-act="wyslij"[^>]*>/);
+    if (!m) throw new Error('brak przycisku „Wyślij”');
+    return m[0];
+  };
+  const bezZnacznikow = (s: string) => s.replace(/<[^>]*>/g, ' ');
+  /** gra za dnia o 8:00, miejsce ok. 600 m stąd (droga w obie strony ok. pół godziny), cel z zapasem */
+  function plan() {
+    const { st, i } = gra(8, 2);
+    const m = zZapasem('apteka', 600, 0);
+    return { st, i, m, cel: celZMiejsca(m) };
+  }
+  const ids = (i: GovInput) => i.people.map((p) => p.id);
+
+  describe('domyslniWybrani i kogoWyslac', () => {
+    it('osoby z zaznaczenia w grze (pionki) są od razu wybrane, reszta nie; nieznany pionek jest pomijany', () => {
+      const { st, i, cel } = plan();
+      const [a, b, c] = i.people;
+      expect([...domyslniWybrani(cel, i, st, new Set([a.pawn, c.pawn, 999]))].sort()).toEqual([a.id, c.id].sort());
+      expect(domyslniWybrani(cel, i, st, new Set()).size).toBe(0);
+      expect(b.pawn).not.toBe(a.pawn);
+    });
+
+    it('zaznaczony, ale niezdolny (ugryziony, bez sił, już na wyprawie) nie jest wybrany od razu', () => {
+      const { st, i, cel } = plan();
+      i.people[0].bitten = true;
+      i.people[1].needs.rest = 5;
+      i.people[2].away = true;
+      const wybrani = domyslniWybrani(cel, i, st, new Set(i.people.map((p) => p.pawn)));
+      expect([...wybrani]).toEqual([i.people[3].id]);
+    });
+
+    it('kogoWyslac: wybrani i zdolni, w kolejności zarządu, bez nieznanych i bez powtórzeń; wyslijWyprawe to przyjmuje', () => {
+      const { st, i, cel } = plan();
+      i.people[1].bitten = true;
+      const wybrani = new Set([i.people[2].id, i.people[0].id, i.people[1].id, 'nie-ma-takiej']);
+      const lista = kogoWyslac(cel, i, st, wybrani);
+      expect(lista).toEqual([i.people[0].id, i.people[2].id]);
+      expect(wyslijWyprawe(structuredClone(st), i, cel, lista).ok).toBe(true);
+      expect(kogoWyslac(cel, i, st, new Set())).toEqual([]);
+    });
+  });
+
+  it('okno planu: tytuł z nazwą miejsca, zamykane bez decyzji, odcień wyprawy', () => {
+    const { st, i, m } = plan();
+    const miejsce = { ...m, nazwa: 'Dbam o Zdrowie' };
+    const cel = celZMiejsca(miejsce);
+    const s = planWyprawySheet(cel, i, st, new Set());
+    expect(s.tone).toBe('wyprawa');
+    expect(s.closable).toBe(true);
+    expect(s.title).toContain('Apteka (Dbam o Zdrowie)');
+    expect(s.body).toContain('data-wp');
+    expect(s.foot).toContain('data-act="wp-wroc"');
+    expect(s.foot).toContain('data-act="wyslij"');
+  });
+
+  it('lista osób: siły, zdrowie i broń; wybrani mają aria-pressed, niewybrani nie', () => {
+    const { st, i, cel } = plan();
+    i.people[0].needs.rest = 61.4;
+    i.people[0].needs.health = 88.6;
+    i.people[1].weapon = 'dzida';
+    i.people[1].arm = 'dzida';
+    const s = planWyprawySheet(cel, i, st, new Set([i.people[0].id]));
+    for (const p of i.people) {
+      const tag = przyciskOsoby(s.body, p.id);
+      expect(tag.includes('aria-pressed="true"'), p.id).toBe(p.id === i.people[0].id);
+      expect(tag.includes('aria-pressed="false"'), p.id).toBe(p.id !== i.people[0].id);
+      expect(tag, p.id).not.toContain('disabled');
+      expect(s.body).toContain(p.name.split(' ')[0]);
+    }
+    const tekst = bezZnacznikow(s.body);
+    expect(tekst).toMatch(/siły\s+61/);
+    expect(tekst).toMatch(/zdrowie\s+89/);
+    expect(tekst).toContain('dzida');
+    expect(tekst).toContain('gołe ręce');
+    ustawJezyk('en');
+    const en = bezZnacznikow(planWyprawySheet(cel, i, st, new Set()).body);
+    expect(en).toMatch(/energy\s+61/);
+    expect(en).toMatch(/health\s+89/);
+    expect(en).toContain('spear');
+    expect(en).toContain('bare hands');
+  });
+
+  it('niezdolna osoba jest wyszarzona (disabled) z powodem z powodOdmowy i nie liczy się do wybranych', () => {
+    const { st, i, cel } = plan();
+    i.people[0].bitten = true;
+    i.people[1].needs.rest = 5;
+    i.people[2].away = true;
+    const wybrani = new Set(ids(i));
+    const s = planWyprawySheet(cel, i, st, wybrani);
+    for (const k of [0, 1, 2]) {
+      const p = i.people[k];
+      const tag = przyciskOsoby(s.body, p.id);
+      expect(tag, p.name).toContain('disabled');
+      expect(tag, p.name).toContain('aria-pressed="false"');
+      const powod = powodOdmowy(st, i, cel, [p.id]);
+      expect(powod, p.name).not.toBeNull();
+      expect(s.body, p.name).toContain(powod!.pl);
+    }
+    const wolna = przyciskOsoby(s.body, i.people[3].id);
+    expect(wolna).not.toContain('disabled');
+    expect(wolna).toContain('aria-pressed="true"');
+    // w angielskim te same powody po angielsku
+    ustawJezyk('en');
+    const en = planWyprawySheet(cel, i, st, wybrani);
+    for (const k of [0, 1, 2]) expect(en.body).toContain(powodOdmowy(st, i, cel, [i.people[k].id])!.en);
+  });
+
+  it('przycisk „Wyślij” jest wyszarzony bez wybranych (z podpowiedzią), a z wybranym aktywny i niesie klucz miejsca', () => {
+    const { st, i, cel } = plan();
+    const pusty = planWyprawySheet(cel, i, st, new Set());
+    expect(przyciskWyslij(pusty.foot)).toContain('disabled');
+    expect(bezZnacznikow(pusty.body)).toContain('Wybierz kogoś z zarządu.');
+    const jeden = planWyprawySheet(cel, i, st, new Set([i.people[0].id]));
+    expect(przyciskWyslij(jeden.foot)).not.toContain('disabled');
+    expect(przyciskWyslij(jeden.foot)).toContain(`data-arg="${cel.klucz}"`);
+    expect(bezZnacznikow(jeden.body)).not.toContain('Wybierz kogoś z zarządu.');
+    // sami niezdolni to też brak wybranych
+    i.people[0].bitten = true;
+    const niezdolny = planWyprawySheet(cel, i, st, new Set([i.people[0].id]));
+    expect(przyciskWyslij(niezdolny.foot)).toContain('disabled');
+  });
+
+  it('przycisk jest aktywny dokładnie wtedy, gdy wyslijWyprawe by się udało (też po zmroku i bez miejsca w zapasie)', () => {
+    for (const [hour, kat, x] of [
+      [8, 'apteka', 600],
+      [21, 'apteka', 600],
+      [5, 'apteka', 600],
+      [8, 'apteka', MAX_DROGA_M + 300],
+    ] as const) {
+      const { st, i } = gra(hour, 2);
+      const cel = celZMiejsca(zZapasem(kat, x, 0));
+      const wybrani = new Set([i.people[0].id, i.people[1].id]);
+      const s = planWyprawySheet(cel, i, st, wybrani);
+      const moze = wyslijWyprawe(structuredClone(st), i, cel, kogoWyslac(cel, i, st, wybrani)).ok;
+      expect(przyciskWyslij(s.foot).includes('disabled'), `${hour}:00, ${x} m`).toBe(!moze);
+    }
+    const { st, i } = gra(8, 2);
+    const cel = celZMiejsca(pusteOdLat('apteka', 600, 0));
+    const s = planWyprawySheet(cel, i, st, new Set([i.people[0].id]));
+    expect(przyciskWyslij(s.foot)).toContain('disabled');
+    expect(bezZnacznikow(s.body)).toContain('wybrane do cna');
+  });
+
+  it('podsumowanie z podgladWyprawy: wyjście, powrót, ryzyko słowem, ile uniosą, ile zostało', () => {
+    const { st, i, cel } = plan();
+    const wybrani = new Set([i.people[0].id]);
+    const pg = podgladWyprawy(st, i, cel, [...wybrani]);
+    const tekst = bezZnacznikow(planWyprawySheet(cel, i, st, wybrani).body);
+    expect(tekst).toContain('teraz, 08:00');
+    expect(tekst).toContain(kiedyWraca(pg.powrot, i.day).pl);
+    expect(tekst).toContain(ryzykoSlowem(pg.ryzyko).pl);
+    expect(tekst).toContain(`${pg.unosza} sztuk`);
+    expect(tekst).toContain(`${pg.zostalo} sztuk`);
+    ustawJezyk('en');
+    const en = bezZnacznikow(planWyprawySheet(cel, i, st, wybrani).body);
+    expect(en).toContain('now, 08:00');
+    expect(en).toContain(kiedyWraca(pg.powrot, i.day).en);
+    expect(en).toContain(ryzykoSlowem(pg.ryzyko).en);
+    expect(en).toContain(`${pg.unosza} items`);
+    expect(en).toContain(`${pg.zostalo} items`);
+  });
+
+  it('podsumowanie zmienia się z liczbą osób: więcej osób to wcześniejszy powrót i większy udźwig', () => {
+    const { st, i, cel } = plan();
+    const jedna = [i.people[0].id];
+    const trzy = i.people.slice(0, 3).map((p) => p.id);
+    const p1 = podgladWyprawy(st, i, cel, jedna);
+    const p3 = podgladWyprawy(st, i, cel, trzy);
+    expect(p3.powrot).toBeLessThan(p1.powrot);
+    expect(p3.unosza).toBeGreaterThan(p1.unosza);
+    const t1 = bezZnacznikow(planWyprawySheet(cel, i, st, new Set(jedna)).body);
+    const t3 = bezZnacznikow(planWyprawySheet(cel, i, st, new Set(trzy)).body);
+    expect(t1).not.toBe(t3);
+    expect(t1).toContain(kiedyWraca(p1.powrot, i.day).pl);
+    expect(t3).toContain(kiedyWraca(p3.powrot, i.day).pl);
+    expect(t1).toContain(`${p1.unosza} sztuk`);
+    expect(t3).toContain(`${p3.unosza} sztuk`);
+  });
+
+  it('powrót po zmroku: podsumowanie mówi „jutro” i że wrócą rano; za dnia tego dopisku nie ma', () => {
+    const { st, i, cel } = plan();
+    const wybrani = new Set([i.people[0].id]);
+    const rano = 'Wrócą dopiero rano';
+    expect(bezZnacznikow(planWyprawySheet(cel, i, st, wybrani).body)).not.toContain(rano);
+    // wyjście o 19:00 na jedną osobę: droga i przeszukanie kończą się po 20:00, więc powrót jest o świcie
+    const wieczor = { ...i, hour: 19 };
+    const pg = podgladWyprawy(st, wieczor, cel, [...wybrani]);
+    expect(kiedyWraca(pg.powrot, wieczor.day).pl).toMatch(/^jutro o /);
+    const pl = bezZnacznikow(planWyprawySheet(cel, wieczor, st, wybrani).body);
+    expect(pl).toContain(rano);
+    expect(pl).toContain(kiedyWraca(pg.powrot, wieczor.day).pl);
+    ustawJezyk('en');
+    const en = bezZnacznikow(planWyprawySheet(cel, wieczor, st, wybrani).body);
+    expect(en).toContain('only be back in the morning');
+    expect(en).toContain(kiedyWraca(pg.powrot, wieczor.day).en);
+    expect(
+      polskieSlowa(
+        en,
+        i.people.flatMap((p) => [p.name, p.first]),
+      ),
+    ).toEqual([]);
+  });
+
+  it('odmowa z wyslijWyprawe (odmowa) pokazuje się w oknie i go nie zamyka', () => {
+    const { st, i, cel } = plan();
+    const why = tx('Ktoś już tam idzie.', 'Somebody is already on the way there.');
+    const s = planWyprawySheet(cel, i, st, new Set([i.people[0].id]), why);
+    expect(s.body).toContain('Ktoś już tam idzie.');
+    expect(s.body).toMatch(/class="wp-why"[^>]*role="alert"|role="alert"[^>]*class="wp-why"/);
+    ustawJezyk('en');
+    expect(planWyprawySheet(cel, i, st, new Set([i.people[0].id]), why).body).toContain(
+      'Somebody is already on the way',
+    );
+  });
+
+  it('nie zmienia stanu zarządu ani wejścia', () => {
+    const { st, i, cel } = plan();
+    i.people[0].bitten = true;
+    const przed = JSON.stringify([st, i]);
+    planWyprawySheet(cel, i, st, new Set(ids(i)));
+    domyslniWybrani(cel, i, st, new Set([0, 1]));
+    kogoWyslac(cel, i, st, new Set(ids(i)));
+    expect(JSON.stringify([st, i])).toBe(przed);
+  });
+
+  for (const lang of ['pl', 'en'] as Lang[])
+    it(`${lang}: wszystkie napisy są w obu językach, bez polskich słów po angielsku (poza imionami i nazwą miejsca)`, () => {
+      const { st, i, m } = plan();
+      i.people[0].bitten = true;
+      i.people[1].needs.rest = 5;
+      i.people[2].weapon = 'rewolwer';
+      i.people[2].arm = 'palna';
+      const cel = celZMiejsca({ ...m, nazwa: 'Dbam o Zdrowie' });
+      ustawJezyk(lang);
+      const wybrani = new Set([i.people[2].id, i.people[3].id]);
+      const s = planWyprawySheet(
+        cel,
+        i,
+        st,
+        wybrani,
+        tx('Ktoś już tam idzie.', 'Somebody is already on the way there.'),
+      );
+      const imiona = i.people.flatMap((p) => [p.name, p.first]);
+      if (lang === 'en') {
+        for (const czesc of [s.kicker, s.title, s.body, s.foot])
+          expect(polskieSlowa(czesc, [...imiona, 'Dbam o Zdrowie']), czesc).toEqual([]);
+        expect(s.body).toContain('revolver');
+      } else expect(s.body).toContain('rewolwer');
+      // drugi język daje inny napis
+      ustawJezyk(lang === 'pl' ? 'en' : 'pl');
+      const drugi = planWyprawySheet(cel, i, st, wybrani);
+      expect(drugi.body).not.toBe(s.body);
+      expect(drugi.foot).not.toBe(s.foot);
+    });
+
+  it('nazwy osób, miejsca i powody idą przez ucieczkę HTML (także atrybuty data-*)', () => {
+    const { st, i, m } = plan();
+    i.people[0].name = '<img src=x onerror=alert(1)> "Zła"';
+    i.people[0].id = 'a"b<c>';
+    const zly = { ...m, nazwa: '<b>Sklep & "Spółka"</b>' };
+    const cel = celZMiejsca(zly);
+    const s = planWyprawySheet(cel, i, st, new Set([i.people[0].id]), tx('<i>źle</i>', '<i>bad</i>'));
+    const wszystko = s.kicker + s.title + s.body + s.foot;
+    expect(wszystko).not.toContain('<img');
+    expect(wszystko).not.toContain('<b>Sklep');
+    expect(wszystko).not.toContain('<i>źle');
+    expect(wszystko).not.toContain('a"b<c>');
+    expect(wszystko).toContain('&lt;img src=x onerror=alert(1)&gt; &quot;Zła&quot;');
+    expect(wszystko).toContain('data-arg="a&quot;b&lt;c&gt;"');
+    expect(wszystko).toContain('&lt;b&gt;Sklep &amp; &quot;Spółka&quot;&lt;/b&gt;');
   });
 });

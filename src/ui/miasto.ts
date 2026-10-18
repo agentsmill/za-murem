@@ -1,15 +1,17 @@
 /* Okno mapy miasta i karta miejsca (docs/superpowers/specs/2026-10-18-mapa-miasta-design.md, „Mapa miasta i minimapa
    na ekranie”): płótno 2D w oknie `Modal` (bez PixiJS) z tłem z kafelków OpenFreeMap, ikonami miejsc, osiedlem gracza
    (koło mapy lokalnej 192 m) i siedzibą, przesuwaniem i przybliżaniem myszą, kółkiem i palcami, oraz kartą miejsca
-   po stuknięciu w ikonę. Wysłanie wyprawy robi zadanie 9: karta ma przycisk `data-act="wyslij"`, który woła
-   `onWyslij` podane przy otwarciu, a bez niego jest wyszarzony z dopiskiem „wkrótce”.
+   po stuknięciu w ikonę. Wysłanie wyprawy to osobne okno (src/ui/wyprawa.ts): karta ma przycisk `data-act="wyslij"`,
+   który woła `onWyslij` podane przy otwarciu (tylko gdy karta mówi, że można), a bez niego jest wyszarzony
+   z dopiskiem „wkrótce”.
 
    Kontrakt.
    - Czyste funkcje (testy w Node): `rzut` i `odwrotnie` (metry od adresu ↔ piksele płótna; x na wschód, y na południe,
      bez obrotu świata, jak `Miejsce`), `przybliz` (czynnik powyżej 1 przybliża, zakres 0,5–40 m/px, punkt pod kursorem
      stoi), `trafiony` (najbliższe miejsce w promieniu w pikselach), `kafelkiWidoku` (które kafelki zamówić),
      `dolaczMiejsca` (okolica ma pierwszeństwo), `przytnijPamiec` i `PamiecKafelkow` (pamięć kafelków), `kartaMiejsca`
-     i `kartaHtml` (napisy w obu językach), `mapaMiastaSheet`, ikony kategorii `IKONY` (wzory 7×7 w palecie gry).
+     i `kartaHtml` (napisy w obu językach), `odleglosc` i `czas` (napisy z jednostkami, używa ich też okno planu wyprawy),
+     `mapaMiastaSheet`, ikony kategorii `IKONY` (wzory 7×7 w palecie gry).
    - Kafelki: powyżej 8 m/px tło z=12 (`zKafelka` ściśle), z bliska z=14, ale tylko gdy widok potrzebuje najwyżej
      MAX_KAFELKOW_14 kafelków (duży ekran przy 6–8 m/px dostaje tło z=12), i tylko w kwadracie ZASIEG_MIASTA_M wokół
      adresu (dalej nie ma po co chodzić). Zdekodowany kafelek okno od razu przerabia na ścieżki Path2D i miejsca, po
@@ -292,11 +294,11 @@ export interface KartaMiejsca {
 const NBSP = '\u00a0';
 
 /** odległość: do kilometra w metrach (co 10 m), dalej w kilometrach z jednym miejscem po przecinku */
-const odleglosc = (odl: number, lang: Lang): string =>
+export const odleglosc = (odl: number, lang: Lang): string =>
   odl < 1000 ? `${Math.round(odl / 10) * 10}${NBSP}m` : `${liczba(odl / 1000, 1, lang)}${NBSP}km`;
 
 /** czas w minutach: „45 min”, „2 h”, „2 h 8 min” (tak samo w obu językach, z twardymi spacjami) */
-const czas = (min: number): string => {
+export const czas = (min: number): string => {
   const h = Math.floor(min / 60);
   const m = Math.round(min % 60);
   return h ? (m ? `${h}${NBSP}h${NBSP}${m}${NBSP}min` : `${h}${NBSP}h`) : `${m}${NBSP}min`;
@@ -616,7 +618,8 @@ export interface ZrodloMapy {
 }
 
 /** Co okno dostaje przy otwarciu: dotyk, odczyt zarządu (stan co klatkę do przygaszania wybranych miejsc, wejście
-    tylko do karty) i (od zadania 9) wysłanie wyprawy. */
+    tylko do karty) i wysłanie wyprawy (`onWyslij`: wołane po „Wyślij wyprawę” na karcie, tylko dla miejsca, do którego
+    karta mówi, że wolno; bez niego przycisk jest wyszarzony). */
 export interface OtwarcieMapy {
   touch: boolean;
   st: () => GovState | null;
@@ -734,8 +737,12 @@ export class MapaMiasta {
     else if (act === 'miasto-dom') this.ustaw(this.domyslny());
     else if (act === 'miasto-karta-zamknij') this.wybierz(null);
     else if (act === 'wyslij') {
+      // przycisk na karcie jest wyszarzony, gdy nie można, ale i tu to samo sprawdzenie: miejsca z mapy osiedla,
+      // za dalekiego czy wybranego do cna nie wysyła się nigdy
       const m = this.miejsca.get(arg);
-      if (m && this.o?.onWyslij) this.o.onWyslij(m);
+      const st = this.o?.st();
+      const i = this.o?.wejscie();
+      if (m && st && i && this.o?.onWyslij && kartaMiejsca(m, st, i).mozna) this.o.onWyslij(m);
     } else return false;
     return true;
   }
