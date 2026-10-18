@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
+import { crowdJitter } from '../../src/render/poses.ts';
 import { PATCH_HP } from '../../src/sim/perimeter.ts';
 import { createSim, type Pawn, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
@@ -213,5 +214,32 @@ describe('napór: co widzi gracz', () => {
     ustawJezyk('en');
     expect(helpSheet(false, true).body).toMatch(/crowd/i);
     expect(helpSheet(false, true).body).not.toMatch(/tłum|siatk/i);
+  });
+});
+
+describe('napór: tłum widać', () => {
+  it('napierający na jednym kafelku nie nakładają się w jeden sprite: stałe rozsunięcie z numeru pionka, od siatki', () => {
+    const ids = Array.from({ length: 20 }, (_, k) => 100 + k);
+    for (const away of [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ] as const) {
+      const spots = ids.map((id) => crowdJitter(id, away));
+      // to samo za każdym razem (bez migotania)
+      expect(ids.map((id) => crowdJitter(id, away))).toEqual(spots);
+      // nigdy w stronę siatki, w głąb najwyżej o tyle co kafelek; wzdłuż siatki po obu stronach
+      const depth = spots.map(([dx, dy]) => dx * away[0] + dy * away[1]);
+      const along = spots.map(([dx, dy]) => dx * -away[1] + dy * away[0]);
+      for (const d of depth) {
+        expect(d).toBeGreaterThanOrEqual(0);
+        expect(d).toBeLessThanOrEqual(1);
+      }
+      expect(Math.max(...along) - Math.min(...along)).toBeGreaterThan(1.2);
+      expect(Math.max(...depth) - Math.min(...depth)).toBeGreaterThan(0.6);
+      // dwudziestu to prawie dwadzieścia różnych miejsc
+      expect(new Set(spots.map(([dx, dy]) => `${dx.toFixed(2)},${dy.toFixed(2)}`)).size).toBeGreaterThanOrEqual(18);
+    }
   });
 });

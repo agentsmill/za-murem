@@ -17,6 +17,17 @@ import { type ArmPose, thrusts } from './art/bron.ts';
 import { FRAMES, type Lie, lieHead, type Pose, type ZPose } from './art/people.ts';
 import type { ThingLike } from './section.ts';
 
+/** Napierający szwendacze stoją na środkach kafelków, więc tłum przy jednym miejscu siatki nakładałby się w jeden
+    sprite. Widok rozstawia ich stałym przesunięciem z numeru pionka: wzdłuż siatki o co najwyżej 0,9 kafelka na
+    każdą stronę i w głąb ulicy (kierunek `away` od siatki, wektor osiowy) o 0 do 1 kafelka, nigdy w stronę siatki.
+    Stan gry się nie zmienia. */
+export function crowdJitter(id: number, away: readonly [number, number] = [0, 1]): [number, number] {
+  const h = Math.imul(id + 1, 2654435761) >>> 0;
+  const along = (((h >>> 8) % 1000) / 1000 - 0.5) * 1.8;
+  const depth = ((h >>> 18) % 1000) / 1000;
+  return [away[0] * depth - away[1] * along, away[1] * depth + away[0] * along];
+}
+
 /** to, czego poza potrzebuje z pionka (Pawn z symulacji pasuje bez zmian) */
 export interface PawnLike {
   id: number;

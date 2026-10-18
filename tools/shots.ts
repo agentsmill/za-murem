@@ -5676,22 +5676,11 @@ async function zombieCrowd(page: Page, base: string) {
           Math.hypot((b.t % size) - (door % size), Math.floor(b.t / size) - Math.floor(door / size)),
       )[0];
     const out = spot.out!;
-    // dwadzieścia szwendaczy stoi tłumem tuż za siatką (kafelki w promieniu 2 od tego miejsca) i napiera na ten kafelek
-    const around: number[] = [];
-    for (let dy = -2; dy <= 2; dy++)
-      for (let dx = -2; dx <= 2; dx++) {
-        const t = out + dy * size + dx;
-        if (!yard.has(t) && sim.canWalk('zombie', t)) around.push(t);
-      }
+    // dwudziestu szwendaczy stoi dokładnie na jednym kafelku tuż za siatką (najgorszy przypadek: sprite'y nałożyłyby się
+    // w jeden, widok rozsuwa je z numeru pionka) i napiera na kafelek siatki
     let n = 0;
     for (const z of st.pawns.filter((p) => p.kind === 'zombie').slice(0, 20)) {
-      const t = around[n % around.length];
-      Object.assign(z, {
-        x: (t % size) + 0.3 + (0.4 * ((n * 7) % 5)) / 4,
-        y: Math.floor(t / size) + 0.3 + (0.4 * ((n * 3) % 5)) / 4,
-        path: [],
-        pi: 0,
-      });
+      Object.assign(z, { x: (out % size) + 0.5, y: Math.floor(out / size) + 0.5, path: [], pi: 0 });
       z.job!.phase = 2;
       z.job!.target = spot.t;
       n++;
