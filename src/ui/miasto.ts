@@ -11,7 +11,8 @@
      stoi), `trafiony` (najbliższe miejsce w promieniu w pikselach), `kafelkiWidoku` (które kafelki zamówić),
      `dolaczMiejsca` (okolica ma pierwszeństwo), `przytnijPamiec` i `PamiecKafelkow` (pamięć kafelków), `kartaMiejsca`
      i `kartaHtml` (napisy w obu językach), `odleglosc` i `czas` (napisy z jednostkami, używa ich też okno planu wyprawy),
-     `mapaMiastaSheet`, ikony kategorii `IKONY` (wzory 7×7 w palecie gry).
+     `mapaMiastaSheet`, ikony kategorii `IKONY` (wzory 7×7 w palecie gry). Minimapa (src/ui/minimapa.ts) bierze stąd
+     kolory kategorii (`ikonaKategorii`), tło lądu `LAD`, `LAMPA`, `CIEMNY` i ikonę siedziby `SIEDZIBA`.
    - Kafelki: powyżej 8 m/px tło z=12 (`zKafelka` ściśle), z bliska z=14, ale tylko gdy widok potrzebuje najwyżej
      MAX_KAFELKOW_14 kafelków (duży ekran przy 6–8 m/px dostaje tło z=12), i tylko w kwadracie ZASIEG_MIASTA_M wokół
      adresu (dalej nie ma po co chodzić). Zdekodowany kafelek okno od razu przerabia na ścieżki Path2D i miejsca, po
@@ -452,7 +453,7 @@ export interface Ikona {
 }
 
 const BIALY = css(C.line);
-const CIEMNY = css(C.shadow);
+export const CIEMNY = css(C.shadow);
 const KRZYZ = ['..###..', '..###..', '#######', '#######', '#######', '..###..', '..###..'];
 
 export const IKONY: Readonly<Record<string, Ikona>> = {
@@ -531,7 +532,7 @@ export const IKONY: Readonly<Record<string, Ikona>> = {
 };
 
 /** siedziba zarządu: domek na emalii jak na tabliczce gry */
-const SIEDZIBA: Ikona = {
+export const SIEDZIBA: Ikona = {
   wzor: ['...#...', '..###..', '.#####.', '#######', '.#...#.', '.#.#.#.', '.#.#.#.'],
   tlo: css(0x2457a8),
   znak: css(0xf4f3ee),
@@ -544,8 +545,8 @@ export function ikonaKategorii(kat: string): Ikona {
 
 // ---------------------------------------------------------------- rysowanie (tylko przeglądarka)
 
-/** tło mapy: ląd poza zabudową */
-const LAD = shade(C.grass0, 0.62);
+/** tło mapy: ląd poza zabudową (liczba w palecie; minimapa maluje nim swoje tło) */
+export const LAD = shade(C.grass0, 0.62);
 const KOLOR_POLA: Record<KlasaPola, string> = {
   zabudowa: css(mix(LAD, C.slab1, 0.22)),
   zielen: css(shade(C.park1, 0.9)),
@@ -576,7 +577,8 @@ const TRAFIENIE_PX = { dotyk: 18, mysz: 12 };
 /** stuknięcie: najwyżej tyle pikseli ruchu i milisekund */
 const STUK_PX = 6;
 const STUK_MS = 600;
-const LAMPA = '#e6a540';
+/** kolor lampy: obwódka osiedla, wybrane miejsce i znaczniki wypraw na minimapie */
+export const LAMPA = '#e6a540';
 
 /** Rysunek kafelka: ścieżki w metrach od adresu po rodzajach i prostokąt kafelka (bez bufora). */
 interface Rysunek {

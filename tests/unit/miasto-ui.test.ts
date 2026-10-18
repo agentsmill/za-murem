@@ -8,9 +8,12 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Lang, type Tx, tx, ustawJezyk } from '../../src/core/jezyk.ts';
 import { kiedyWraca, podgladWyprawy, powodOdmowy, wyslijWyprawe } from '../../src/gov/dzienne.ts';
+import { BLOK } from '../../src/gov/miejsce.ts';
+import { TARGETS } from '../../src/gov/tresc.ts';
 import type { GovInput, GovState } from '../../src/gov/typy.ts';
 import {
   celZMiejsca,
+  celZTarget,
   czasWyprawyMin,
   MAX_DROGA_M,
   ryzykoSlowem,
@@ -39,9 +42,10 @@ import {
   type Widok,
   ZASIEG_MIASTA_M,
 } from '../../src/ui/miasto.ts';
+import { celeWypraw, czyPoraNaOdswiezenie, ODSWIEZ_MS, podpisWypraw, punktyMinimapy } from '../../src/ui/minimapa.ts';
 import { domyslniWybrani, kogoWyslac, planWyprawySheet } from '../../src/ui/wyprawa.ts';
 import type { LatLon } from '../../src/world/klucze.ts';
-import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from '../../src/world/miasto.ts';
+import { type Miejsce, miejscaZPoi, PROMIEN_MAPY_LOKALNEJ, uzupelnijKlucze } from '../../src/world/miasto.ts';
 import { kafelkiProstokata, poiZKafelkow } from '../../src/world/miastoKafelki.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
 import { Atrapa } from './gov-atrapa.ts';
@@ -911,5 +915,211 @@ describe('planWyprawySheet', () => {
     expect(wszystko).toContain('&lt;img src=x onerror=alert(1)&gt; &quot;Zła&quot;');
     expect(wszystko).toContain('data-arg="a&quot;b&lt;c&gt;"');
     expect(wszystko).toContain('&lt;b&gt;Sklep &amp; &quot;Spółka&quot;&lt;/b&gt;');
+  });
+});
+
+// ---------------------------------------------------------------- minimapa (src/ui/minimapa.ts)
+
+describe('punktyMinimapy', () => {
+  const BOK = 160;
+  const ZASIEG = 720;
+
+  it('punkt (0, 0) leży w środku kwadratu, wschód w prawo, południe w dół', () => {
+    const p = punktyMinimapy(
+      [miejsce('poi:1:1', 'apteka', 0, 0), miejsce('poi:2:2', 'sklep', 360, 0), miejsce('poi:3:3', 'bank', 0, 180)],
+      [],
+      BOK,
+      ZASIEG,
+    );
+    expect(p.ikony).toEqual([
+      { px: 80, py: 80, kat: 'apteka' },
+      { px: 120, py: 80, kat: 'sklep' },
+      { px: 80, py: 100, kat: 'bank' },
+    ]);
+    // krawędzie kwadratu to dokładnie zasięg
+    const kr = punktyMinimapy(
+      [miejsce('poi:1:1', 'apteka', -ZASIEG, -ZASIEG), miejsce('poi:2:2', 'sklep', ZASIEG, ZASIEG)],
+      [],
+      BOK,
+      ZASIEG,
+    );
+    expect(kr.ikony.map((i) => [i.px, i.py])).toEqual([
+      [0, 0],
+      [BOK, BOK],
+    ]);
+  });
+
+  it('miejsca poza zasięgiem odpadają (po którejkolwiek osi), na brzegu zostają, kolejność wejścia zostaje', () => {
+    const p = punktyMinimapy(
+      [
+        miejsce('poi:1:1', 'apteka', ZASIEG + 1, 0),
+        miejsce('poi:2:2', 'sklep', 100, 50),
+        miejsce('poi:3:3', 'bank', 0, -ZASIEG - 0.5),
+        miejsce('poi:4:4', 'szkola', -ZASIEG, 10),
+        miejsce('poi:5:5', 'stacja', 5000, 5000),
+      ],
+      [],
+      BOK,
+      ZASIEG,
+    );
+    expect(p.ikony.map((i) => i.kat)).toEqual(['sklep', 'szkola']);
+    expect(punktyMinimapy([], [], BOK, ZASIEG).ikony).toEqual([]);
+  });
+
+  it('koło mapy lokalnej: środek kwadratu i promień 192 m w skali minimapy', () => {
+    const p = punktyMinimapy([], [], BOK, ZASIEG);
+    expect(p.mapaLokalna.px).toBe(BOK / 2);
+    expect(p.mapaLokalna.py).toBe(BOK / 2);
+    expect(p.mapaLokalna.r).toBeCloseTo((192 * BOK) / (2 * ZASIEG), 10);
+    expect(PROMIEN_MAPY_LOKALNEJ).toBe(192);
+    // inny bok i zasięg: ta sama skala, więc promień rośnie z bokiem, a maleje z zasięgiem
+    expect(punktyMinimapy([], [], 200, 500).mapaLokalna.r).toBeCloseTo((192 * 200) / 1000, 10);
+    // miejsce na obwodzie koła (192 m na wschód) leży na obwodzie narysowanego koła
+    const [ik] = punktyMinimapy([miejsce('poi:1:1', 'sklep', 192, 0)], [], BOK, ZASIEG).ikony;
+    expect(ik.px - p.mapaLokalna.px).toBeCloseTo(p.mapaLokalna.r, 10);
+  });
+
+  it('znaczniki wypraw: ta sama skala co ikony, cel poza zasięgiem stoi na brzegu w jego stronę (nie znika)', () => {
+    const p = punktyMinimapy(
+      [],
+      [
+        { x: 360, y: -180 },
+        { x: 0, y: 0 },
+        { x: 2000, y: 0 },
+        // dwa razy za daleko na zachód i na brzegu południowym: skala po dalszej osi, kierunek zostaje
+        { x: -1440, y: 720 },
+      ],
+      BOK,
+      ZASIEG,
+    );
+    const oczekiwane = [
+      [120, 60],
+      [80, 80],
+      [BOK, 80],
+      [0, 120],
+    ];
+    expect(p.wyprawy.length).toBe(oczekiwane.length);
+    p.wyprawy.forEach((w, k) => {
+      expect(w.px, `px ${k}`).toBeCloseTo(oczekiwane[k][0], 9);
+      expect(w.py, `py ${k}`).toBeCloseTo(oczekiwane[k][1], 9);
+    });
+  });
+
+  it('punkty nie niosą nazw ani kluczy miejsc: minimapa pokazuje tylko kategorie', () => {
+    const p = punktyMinimapy([miejsce('poi:1:1', 'sklep', 10, 20, 'Sklep Jana Kowalskiego')], [], BOK, ZASIEG);
+    expect(Object.keys(p.ikony[0]).sort()).toEqual(['kat', 'px', 'py']);
+    expect(JSON.stringify(p)).not.toMatch(/Kowalsk|poi:/);
+  });
+
+  it('nie zmienia wejścia', () => {
+    const okolica = Object.freeze([Object.freeze(miejsce('poi:1:1', 'apteka', 10, 20))]);
+    const wyprawy = Object.freeze([Object.freeze({ x: 5000, y: 1 })]);
+    expect(() => punktyMinimapy(okolica, wyprawy, BOK, ZASIEG)).not.toThrow();
+    expect(okolica[0].x).toBe(10);
+    expect(wyprawy[0].x).toBe(5000);
+  });
+
+  it('demo Przymorza: okolica mieści się w kwadracie minimapy, ikony zachowują kategorie i kolejność', () => {
+    const demo = JSON.parse(
+      fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'),
+    );
+    uzupelnijKlucze(demo.geo);
+    const okolica = miejscaZPoi(demo.geo.poi, () => '');
+    const p = punktyMinimapy(okolica, [], BOK, ZASIEG);
+    // okolica kończy się na 720 m w kółko, więc w kwadracie o połowie boku 720 m mieści się cała
+    expect(p.ikony.length).toBe(okolica.length);
+    expect(p.ikony.length).toBeGreaterThan(50);
+    p.ikony.forEach((i, k) => {
+      expect(i.kat).toBe(okolica[k].kat);
+      expect(i.px).toBeGreaterThanOrEqual(0);
+      expect(i.px).toBeLessThanOrEqual(BOK);
+      expect(i.py).toBeGreaterThanOrEqual(0);
+      expect(i.py).toBeLessThanOrEqual(BOK);
+    });
+  });
+});
+
+describe('celeWypraw (znaczniki wypraw na minimapie)', () => {
+  const sklep = celZMiejsca(miejsce('poi:11:11', 'spozywczy', 300, -120));
+  const apteka = celZMiejsca(miejsce('poi:22:22', 'apteka', -250, 90));
+  /** cel z dzisiejszych TARGETS: bez prawdziwego położenia (kat null, x = y = 0) */
+  const cel0 = celZTarget(TARGETS[0], BLOK);
+  const wypr = (cel: typeof sklep, id = 1) => ({ id, cel, ids: ['a'], wyjscie: 480, powrot: 600 });
+
+  it('bez stanu, bez wypraw i bez nocy: pusto', () => {
+    expect(celeWypraw(null)).toEqual([]);
+    expect(celeWypraw({})).toEqual([]);
+    expect(celeWypraw({ wyprawy: [], night: null })).toEqual([]);
+  });
+
+  it('wyprawy dzienne: Cel.x i Cel.y z st.wyprawy', () => {
+    expect(celeWypraw({ wyprawy: [wypr(sklep, 1), wypr(apteka, 2)] })).toEqual([
+      { x: 300, y: -120 },
+      { x: -250, y: 90 },
+    ]);
+  });
+
+  it('wyprawy nocy z karty: tylko zatwierdzone i jeszcze niewrócone, tylko z opisem celu', () => {
+    const noc = (confirmed: boolean, returned: string[]) => ({
+      confirmed,
+      returned,
+      exp: [
+        { target: sklep.klucz, cel: sklep },
+        { target: apteka.klucz, cel: apteka },
+        { target: 'stary', cel: undefined },
+      ],
+    });
+    expect(celeWypraw({ night: noc(true, []) })).toEqual([
+      { x: 300, y: -120 },
+      { x: -250, y: 90 },
+    ]);
+    // jedna wróciła
+    expect(celeWypraw({ night: noc(true, [sklep.klucz]) })).toEqual([{ x: -250, y: 90 }]);
+    // karta jeszcze nie zatwierdzona: nikt nie wyszedł
+    expect(celeWypraw({ night: noc(false, []) })).toEqual([]);
+  });
+
+  it('cele z TARGETS (bez położenia) są pomijane, nie lądują w środku mapy', () => {
+    expect(celeWypraw({ wyprawy: [wypr(cel0, 1), wypr(sklep, 2)] })).toEqual([{ x: 300, y: -120 }]);
+    expect(celeWypraw({ night: { confirmed: true, returned: [], exp: [{ target: 'garaze', cel: cel0 }] } })).toEqual(
+      [],
+    );
+  });
+
+  it('dzienne i nocne razem; prawdziwy stan zarządu bez wypraw daje pusto', () => {
+    const razem = celeWypraw({
+      wyprawy: [wypr(sklep)],
+      night: { confirmed: true, returned: [], exp: [{ target: apteka.klucz, cel: apteka }] },
+    });
+    expect(razem).toEqual([
+      { x: 300, y: -120 },
+      { x: -250, y: 90 },
+    ]);
+    expect(celeWypraw(newGov(7))).toEqual([]);
+  });
+
+  it('podpis zmienia się tylko wtedy, gdy zmienią się znaczniki', () => {
+    const a = podpisWypraw([{ x: 1, y: 2 }]);
+    expect(podpisWypraw([{ x: 1, y: 2 }])).toBe(a);
+    expect(podpisWypraw([{ x: 1, y: 3 }])).not.toBe(a);
+    expect(
+      podpisWypraw([
+        { x: 1, y: 2 },
+        { x: 5, y: 5 },
+      ]),
+    ).not.toBe(a);
+    expect(podpisWypraw([])).not.toBe(a);
+  });
+});
+
+describe('odświeżanie minimapy', () => {
+  it('co najwyżej raz na 500 ms; pierwsze odświeżenie od razu', () => {
+    expect(ODSWIEZ_MS).toBe(500);
+    expect(czyPoraNaOdswiezenie(0, null)).toBe(true);
+    expect(czyPoraNaOdswiezenie(1000, 1000)).toBe(false);
+    expect(czyPoraNaOdswiezenie(1499, 1000)).toBe(false);
+    expect(czyPoraNaOdswiezenie(1500, 1000)).toBe(true);
+    // zegar, który cofnął się (nowa karta, nowa gra), nie blokuje odświeżania
+    expect(czyPoraNaOdswiezenie(10, 90_000)).toBe(true);
   });
 });

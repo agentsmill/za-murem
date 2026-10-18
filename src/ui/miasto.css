@@ -1,6 +1,7 @@
 /* Mapa miasta (src/ui/miasto.ts): przycisk w pasku gry i okno na cały ekran z płótnem, przyciskami przybliżania,
    napisem o wczytywaniu, podpowiedzią sterowania, kartą miejsca i atrybucją map w stopce. Na telefonie (do 640 px)
-   karta miejsca to pasek na dole mapy, a atrybucja ma w stopce własny wiersz. */
+   karta miejsca to pasek na dole mapy, a atrybucja ma w stopce własny wiersz. Na końcu minimapa (src/ui/minimapa.ts):
+   kwadrat w prawym dolnym rogu gry nad paskiem atrybucji, z atrybucją map pod spodem. */
 
 /* „Mapa miasta” stoi przed „Budową”: przejmuje od niej odstęp do prawej krawędzi, żeby po zawinięciu paska trzy
    przyciski zostały razem */
@@ -211,5 +212,66 @@
   }
   .miasto-attrib {
     flex-basis: 100%;
+  }
+}
+
+/* ---------- minimapa (src/ui/minimapa.ts) ---------- */
+/* Prawy dolny róg nad paskiem atrybucji (--attrib-h mierzy main.ts): nie zasłania paska u góry, listy celów, karty
+   osoby (lewy dolny róg), podpowiedzi ani paska stawiania (środek dołu) ani przycisków przybliżania (prawa góra).
+   W index.html stoi tuż za sceną, więc wszystkie inne nakładki (podpowiedź, znacznik drzewa) leżą nad nią.
+   Poniżej 640 px szerokości (układ telefonu: przyciski przybliżania schodzą w ten sam róg) i na niskim ekranie
+   (telefon poziomo) jej nie ma: zostaje przycisk „Mapa” w pasku. */
+.minimapa {
+  --minimapa-bok: 176px;
+  position: absolute;
+  right: 8px;
+  bottom: calc(var(--attrib-h, 21px) + 16px);
+  width: var(--minimapa-bok);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.minimapa[hidden] {
+  display: none;
+}
+.minimapa-przycisk {
+  display: block;
+  padding: 0;
+  line-height: 0;
+  overflow: hidden;
+  background: rgb(31 35 38 / 0.92);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.minimapa-przycisk:hover {
+  border-color: var(--lamp);
+}
+.minimapa-przycisk:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
+}
+.minimapa-plotno {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+}
+.minimapa-attrib {
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--ink-dim);
+  background: rgb(20 22 24 / 0.8);
+  border-radius: 3px;
+}
+.minimapa-attrib a {
+  color: var(--ink-dim);
+}
+@media (max-width: 640px), (max-height: 559px) {
+  .minimapa {
+    display: none;
   }
 }

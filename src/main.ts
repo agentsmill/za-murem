@@ -4,8 +4,9 @@
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
-   raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta” i klawisz M, gra stoi przy otwartym oknie)
-   z wysyłaniem wypraw dziennych (src/ui/wyprawa.ts: wybór osób, podsumowanie, potwierdzenie), zapis i sterowanie. */
+   raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta”, klawisz M i minimapa w rogu ekranu
+   (src/ui/minimapa.ts), gra stoi przy otwartym oknie) z wysyłaniem wypraw dziennych (src/ui/wyprawa.ts: wybór osób,
+   podsumowanie, potwierdzenie), zapis i sterowanie. */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -94,6 +95,7 @@ import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { MapaMiasta, mapaMiastaSheet } from './ui/miasto.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
+import { Minimapa } from './ui/minimapa.ts';
 import {
   burnSheet,
   confirmSheet,
@@ -174,6 +176,8 @@ declare global {
       okolica: readonly Miejsce[];
       /** mapa miasta tej gry (okno, widok, kafelki); null z ?miasto=0 i na osiedlu zapasowym */
       mapa: () => MapaMiasta | null;
+      /** minimapa miasta w rogu ekranu (jej stan do zrzutów i testów); schowana i wyłączona bez mapy miasta */
+      minimapa: () => Minimapa;
       /** stan mieszkań siedziby w grze (st.apts) */
       apts: () => AptGame[];
       /** przyjęcie n osób zza bramy jak po decyzji zarządu (do zrzutów); zwraca, ilu przybyło */
@@ -199,6 +203,12 @@ const kafelkiMiasta = new KafelkiMiasta(pobierzKafelek);
 /** mapa miasta tej gry (widok i doczytane kafelki zostają między otwarciami okna); null bez opcji miasta i na osiedlu
     zapasowym, które nie ma prawdziwego położenia */
 let mapaMiasta: MapaMiasta | null = null;
+/** minimapa miasta w prawym dolnym rogu (src/ui/minimapa.ts): kropki miejsc z okolicy i wyprawy w drodze, stuknięcie
+    otwiera okno mapy (nie w trybie stawiania: klik w jej rogu to próba postawienia budowli, a `openMiasto` by ją
+    anulował); rysowana z `drawState` najwyżej co 500 ms, schowana tam, gdzie nie ma miasta (`enter`) */
+const minimapa = new Minimapa($('minimapa'), () => {
+  if (!placing) openMiasto();
+});
 /** słowa miejsca siedziby: w domu komitet ulicy, sąsiedzi i furtka, w bloku zarząd, mieszkańcy i brama; po
     angielsku wordsE */
 let words: Words = wordsOf(BLOK);
@@ -450,6 +460,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
       ? new MapaMiasta({ c: data.geo.c, okolica, kafelki: kafelkiMiasta, nazwa: nazwaOkolicy })
       : null;
   $('btnMiasto').hidden = !mapaMiasta;
+  minimapa.ustaw(mapaMiasta ? { okolica, st: () => gov } : null);
   // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;
@@ -680,6 +691,8 @@ function drawState() {
   wiescSeen = wiesc?.tick ?? -1;
   // ?swiatla=test: światła podglądu nocy zamiast świateł z gry
   if (preview) view.lights = preview.lights;
+  // minimapa sama pilnuje, żeby sprawdzać stan najwyżej co 500 ms i rysować tylko przy zmianie
+  minimapa.odswiez();
 }
 
 /* ---------- zarząd ---------- */
@@ -2667,6 +2680,7 @@ if (attrib) bars.observe(attrib);
         : null,
     okolica: [],
     mapa: () => mapaMiasta,
+    minimapa: () => minimapa,
     apts: () => sim?.st.apts ?? [],
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
     siec: () => siec.podglad(),

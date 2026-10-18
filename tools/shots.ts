@@ -8030,6 +8030,63 @@ function miastoShots(): Shot[] {
     }
     throw new Error(`żadne z ${kandydaci.length} miejsc nie pozwala wysłać wyprawy`);
   };
+  /** minimapa w rogu ekranu: stan, etykieta przycisku, atrybucja pod spodem, gdzie stoi, czy mieści się na ekranie i na
+      które nakładki gry (pasek, cele, przyciski przybliżania, karta, pasek stawiania, komunikat o przybyszach, pasek
+      atrybucji) nachodzi; liczba kolorów na płótnie (czy jest na nim rysunek) */
+  const minimapa = (page: Page) =>
+    page.evaluate(() => {
+      const root = document.getElementById('minimapa')!;
+      const btn = document.getElementById('minimapaBtn')!;
+      const cv = root.querySelector<HTMLCanvasElement>('canvas')!;
+      const cap = root.querySelector<HTMLElement>('.minimapa-attrib')!;
+      const r = root.getBoundingClientRect();
+      const b = btn.getBoundingClientRect();
+      const c = cap.getBoundingClientRect();
+      const widac = !root.hidden && r.width > 0 && r.height > 0;
+      const zachodzi = (el: Element) => {
+        const e = el as HTMLElement;
+        if (e.hidden) return false;
+        const q = e.getBoundingClientRect();
+        return (
+          q.width > 0 &&
+          q.height > 0 &&
+          q.left < r.right - 0.5 &&
+          q.right > r.left + 0.5 &&
+          q.top < r.bottom - 0.5 &&
+          q.bottom > r.top + 0.5
+        );
+      };
+      const nakladki = widac
+        ? ['#top', '#goals', '.mapctl', '#card', '#placeBar', '#arrive', '.attrib']
+            .filter((sel) => [...document.querySelectorAll(sel)].some(zachodzi))
+            .map((sel) => sel)
+        : [];
+      let kolory = 0;
+      if (widac && cv.width) {
+        const d = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data;
+        const uniq = new Set<number>();
+        for (let i = 0; i < d.length; i += 4) uniq.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+        kolory = uniq.size;
+      }
+      return {
+        stan: window.zm!.minimapa().stan(),
+        widac,
+        prostokat: [r.left, r.top, r.right, r.bottom].map(Math.round),
+        przycisk: [b.left, b.top, b.right, b.bottom].map(Math.round),
+        wEkranie: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+        // atrybucja stoi pod przyciskiem i w obrysie minimapy
+        podpisPoza:
+          widac &&
+          (c.top < b.bottom - 0.5 || c.bottom > r.bottom + 0.5 || c.left < r.left - 0.5 || c.right > r.right + 0.5),
+        aria: btn.getAttribute('aria-label') ?? '',
+        podpis: cap.textContent ?? '',
+        tekst: root.textContent ?? '',
+        czcionka: Number.parseFloat(getComputedStyle(cap).fontSize),
+        nakladki,
+        karta: !document.getElementById('card')!.hidden,
+        kolory,
+      };
+    });
   return [
     {
       // oddalenie: całe miasto, koło osiedla i zasięg 5 km; po drodze pauza przy otwartym oknie, Esc i klawisz M,
@@ -8464,6 +8521,237 @@ function miastoShots(): Shot[] {
       },
     },
     {
+      // minimapa w rogu ekranu (src/ui/minimapa.ts): kwadrat z kropkami kategorii nad paskiem atrybucji, z atrybucją
+      // map pod spodem, bez nazw; nie zasłania paska, celów, kart, przycisków przybliżania ani paska atrybucji (kilka
+      // rozmiarów okna, schowana poniżej 640 px szerokości i 560 px wysokości); rysowana tylko przy zmianie; klik,
+      // Enter i spacja otwierają okno mapy miasta
+      name: 'miasto-minimapa',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&godzina=8&cam=hq,1.3`);
+        await waitIdle(page);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().rysunki >= 1, null, { timeout: 5000 });
+        const o = await minimapa(page);
+        console.log(`  stan: ${JSON.stringify(o.stan)}, przycisk ${JSON.stringify(o.przycisk)}, podpis „${o.podpis}”`);
+        if (!o.stan.wlaczona || !o.stan.widoczna)
+          throw new Error(`minimapa nie stoi na ekranie: ${JSON.stringify(o.stan)}`);
+        if (o.stan.ikony < 50) throw new Error(`za mało kropek miejsc: ${o.stan.ikony}`);
+        if (o.stan.wyprawy) throw new Error(`znaczniki wypraw bez wypraw: ${o.stan.wyprawy}`);
+        if (o.aria !== 'Minimapa: otwórz mapę miasta') throw new Error(`etykieta przycisku: ${o.aria}`);
+        if (o.tekst.trim() !== o.podpis.trim())
+          throw new Error(`na minimapie jest coś poza atrybucją (nazwy?): ${o.tekst}`);
+        for (const z of ['współtwórcy OpenStreetMap', 'OpenFreeMap', 'OpenMapTiles'])
+          if (!o.podpis.includes(z)) throw new Error(`atrybucja pod minimapą bez „${z}”: ${o.podpis}`);
+        if (o.czcionka < 11) throw new Error(`atrybucja pod minimapą za mała: ${o.czcionka} px`);
+        if (o.kolory < 6) throw new Error(`na minimapie ${o.kolory} kolorów: nie wygląda na rysunek miejsc`);
+        // rysowana tylko przy zmianie: gra chodzi w tempie 1×, a przez półtorej sekundy nic się nie zmienia
+        const r0 = (await minimapa(page)).stan.rysunki;
+        await page.waitForTimeout(1600);
+        const r1 = (await minimapa(page)).stan.rysunki;
+        console.log(`  rysunków: ${r0} → ${r1} po 1,6 s gry bez zmian`);
+        if (r1 !== r0) throw new Error(`minimapa rysowana bez zmian: ${r0} → ${r1}`);
+        // ułożenie przy kilku rozmiarach okna (komputer, mniejszy ekran, granice 640 i 560, telefon poziomo)
+        for (const [w, h, stoi] of [
+          [1024, 700, true],
+          [700, 900, true],
+          [641, 900, true],
+          [640, 900, false],
+          [1024, 560, true],
+          [1024, 559, false],
+          [844, 390, false],
+          [1440, 900, true],
+        ] as const) {
+          await page.setViewportSize({ width: w, height: h });
+          await page.waitForTimeout(700);
+          const u = await minimapa(page);
+          console.log(
+            `  ${w}×${h}: ${u.widac ? `w ${JSON.stringify(u.prostokat)}` : 'schowana'}, nakłada się na: ${u.nakladki.join(', ') || 'nic'}`,
+          );
+          if (u.widac !== stoi)
+            throw new Error(`${w}×${h}: minimapa ${u.widac ? 'jest' : 'schowana'}, a ma ${stoi ? 'być' : 'zniknąć'}`);
+          if (u.widac && !u.wEkranie)
+            throw new Error(`${w}×${h}: minimapa wychodzi za ekran ${JSON.stringify(u.prostokat)}`);
+          if (u.nakladki.length) throw new Error(`${w}×${h}: minimapa zasłania: ${u.nakladki.join(', ')}`);
+          if (u.widac && u.podpisPoza)
+            throw new Error(`${w}×${h}: atrybucja pod minimapą wychodzi poza minimapę albo na pasek atrybucji`);
+          if (!u.widac && (await page.isVisible('#btnMiasto')) !== true)
+            throw new Error(`${w}×${h}: przycisk mapy zniknął razem z minimapą`);
+        }
+        // karta osoby (lewy dolny róg) i zaznaczeni: minimapa jej nie zasłania
+        await zaznacz(page, 2);
+        const z = await minimapa(page);
+        if (!z.karta) throw new Error('po zaznaczeniu osób nie ma karty');
+        if (z.nakladki.length) throw new Error(`minimapa zasłania: ${z.nakladki.join(', ')}`);
+        // klik otwiera okno mapy (gra staje), Esc zamyka i oddaje tempo
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        await page.click('#minimapaBtn');
+        await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+        await czekajNaMape(page);
+        let k = await okno(page);
+        console.log(`  po kliknięciu: ${JSON.stringify({ otwarta: k.stan.otwarta, tempo: k.tempo })}`);
+        if (k.tempo !== 0) throw new Error('klik w minimapę nie zatrzymał gry');
+        if (!/Mapa miasta/.test(k.tekst)) throw new Error('klik w minimapę nie otworzył okna mapy miasta');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        if ((await page.evaluate(() => window.zm!.speed())) !== tempo)
+          throw new Error('po Esc gra nie wróciła do tempa');
+        // po kliknięciu myszą przycisk nie trzyma fokusu: spacja zatrzymuje grę, zamiast otwierać okno drugi raz
+        if ((await page.evaluate(() => document.activeElement?.id)) === 'minimapaBtn')
+          throw new Error('po kliknięciu minimapa trzyma fokus');
+        await page.keyboard.press('Space');
+        if (
+          (await page.evaluate(() => window.zm!.speed())) !== 0 ||
+          (await page.evaluate(() => window.zm!.mapa()!.stan().otwarta))
+        )
+          throw new Error('spacja po kliknięciu w minimapę nie zatrzymała gry (otworzyła okno?)');
+        await page.keyboard.press('Space');
+        if ((await page.evaluate(() => window.zm!.speed())) !== tempo) throw new Error('druga spacja nie wznowiła gry');
+        // z klawiatury: przycisk bierze fokus, Enter i spacja otwierają okno (nie zmieniają tempa gry spacją)
+        for (const klawisz of ['Enter', 'Space']) {
+          await page.focus('#minimapaBtn');
+          await page.keyboard.press(klawisz);
+          await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta, null, { timeout: 3000 });
+          k = await okno(page);
+          if (k.tempo !== 0 || !/Mapa miasta/.test(k.tekst))
+            throw new Error(`${klawisz} na minimapie nie otworzył okna mapy`);
+          await page.keyboard.press('Escape');
+          await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+          if ((await page.evaluate(() => window.zm!.speed())) !== tempo)
+            throw new Error(`po ${klawisz} i Esc tempo gry się zmieniło`);
+        }
+        // tryb stawiania: klik w minimapę nie otwiera okna i nie anuluje stawiania (to próba postawienia budowli w rogu)
+        const { BUILDS } = await import('../src/sim/budowle.ts');
+        await stockUp(page, BUILDS.warsztat.cost);
+        await page.keyboard.press('b');
+        await page.waitForSelector('#sheet .bcat');
+        await page.click('#sheet [data-act="build"][data-arg="warsztat"]');
+        if (!(await page.evaluate(() => window.zm!.placing()))) throw new Error('nie ma trybu stawiania');
+        await page.click('#minimapaBtn');
+        await page.waitForTimeout(300);
+        const stawianie = await page.evaluate(() => ({
+          placing: !!window.zm!.placing(),
+          otwarta: window.zm!.mapa()!.stan().otwarta,
+        }));
+        if (!stawianie.placing || stawianie.otwarta)
+          throw new Error(`klik w minimapę w trybie stawiania: ${JSON.stringify(stawianie)}`);
+        await page.keyboard.press('Escape');
+        if (await page.evaluate(() => window.zm!.placing())) throw new Error('Esc nie anulował stawiania');
+        // po angielsku: etykieta przycisku i atrybucja pod minimapą
+        await page.evaluate(async () => {
+          const load = (path: string) => import(/* @vite-ignore */ path);
+          ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk('en');
+        });
+        const en = await minimapa(page);
+        if (en.aria !== 'Minimap: open the city map' || !en.podpis.includes('OpenStreetMap contributors'))
+          throw new Error(`po angielsku: ${en.aria} | ${en.podpis}`);
+        const pl = polskieLitery(`${en.aria} ${en.podpis}`, []);
+        if (pl.length) throw new Error(`polskie słowa w minimapie po angielsku: ${pl.join(' ')}`);
+        await page.evaluate(async () => {
+          const load = (path: string) => import(/* @vite-ignore */ path);
+          ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk('pl');
+        });
+        await page.waitForTimeout(300);
+      },
+    },
+    {
+      // znacznik wyprawy na minimapie: po wysłaniu wyprawy z mapy w miejscu celu stoi pierścień w kolorze lampy, a po
+      // powrocie znika (zrzut w drodze: miasto-minimapa-w-drodze, końcowy: po powrocie)
+      name: 'miasto-minimapa-wyprawa',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 1 });
+        await page.waitForFunction(() => window.zm!.minimapa().stan().rysunki >= 1, null, { timeout: 5000 });
+        const przed = await minimapa(page);
+        if (przed.stan.wyprawy) throw new Error('znacznik wyprawy przed wysłaniem');
+        await page.click('#sheet [data-act="wyslij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        // minimapa sprawdza stan co 500 ms, więc znacznik pojawia się najpóźniej po pół sekundy
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 1, null, { timeout: 3000 });
+        const po = await minimapa(page);
+        // gdzie ma stać: Cel.x i Cel.y z gov.wyprawy[0], w skali minimapy (punktyMinimapy)
+        const gdzie = await page.evaluate(async () => {
+          const load = (path: string) => import(/* @vite-ignore */ path);
+          const { punktyMinimapy, ZASIEG_MINIMAPY_M } = (await load(
+            '/src/ui/minimapa.ts',
+          )) as typeof import('../src/ui/minimapa.ts');
+          const zm = window.zm!;
+          const cel = zm.gov!.wyprawy![0].cel;
+          const bok = Math.round(document.querySelector<HTMLCanvasElement>('#minimapa canvas')!.clientWidth);
+          return {
+            cel: { klucz: cel.klucz, x: cel.x, y: cel.y, kat: cel.kat },
+            ...punktyMinimapy([], [cel], bok, ZASIEG_MINIMAPY_M).wyprawy[0],
+            bok,
+          };
+        });
+        console.log(`  w drodze: ${JSON.stringify(po.stan)}, cel ${JSON.stringify(gdzie)}`);
+        if (gdzie.cel.kat === null) throw new Error('cel wyprawy bez położenia (TARGETS)');
+        if (gdzie.cel.klucz !== m.klucz || gdzie.cel.x !== m.x || gdzie.cel.y !== m.y)
+          throw new Error(
+            `znacznik nie w miejscu wybranego celu: ${JSON.stringify(gdzie.cel)} zamiast ${JSON.stringify(m)}`,
+          );
+        const lampa = await page.evaluate(
+          ([px, py]) => {
+            const cv = document.querySelector<HTMLCanvasElement>('#minimapa canvas')!;
+            const dpr = cv.width / cv.clientWidth;
+            const R = 8;
+            const x0 = Math.max(0, Math.floor((px - R) * dpr));
+            const y0 = Math.max(0, Math.floor((py - R) * dpr));
+            const d = cv.getContext('2d')!.getImageData(x0, y0, Math.floor(2 * R * dpr), Math.floor(2 * R * dpr)).data;
+            let n = 0;
+            for (let i = 0; i < d.length; i += 4)
+              if (d[i] > 200 && d[i + 1] > 140 && d[i + 1] < 200 && d[i + 2] < 110) n++;
+            return n;
+          },
+          [gdzie.px, gdzie.py],
+        );
+        console.log(`  pikseli w kolorze lampy przy celu: ${lampa}`);
+        if (lampa < 15) throw new Error(`przy celu wyprawy nie ma znacznika w kolorze lampy (${lampa} pikseli)`);
+        await page.screenshot({ path: path.join(OUT, 'miasto-minimapa-w-drodze.png') });
+        // przewinięcie do powrotu: wyprawa znika ze stanu, a znacznik z minimapy (po najbliższym odświeżeniu)
+        for (let n = 0; n < 40; n++) {
+          if (!(await page.evaluate(() => window.zm!.gov!.wyprawy?.length ?? 0))) break;
+          const okno = await page.evaluate(() => window.zm!.ff(30));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+        }
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 0, null, { timeout: 3000 });
+        console.log(`  po powrocie: ${JSON.stringify((await minimapa(page)).stan)}`);
+      },
+    },
+    {
+      // telefon: minimapy nie ma na ekranie (poniżej 640 px szerokości), nic się nie rysuje, a przycisk „Mapa” w pasku
+      // otwiera okno mapy miasta
+      name: 'miasto-minimapa-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        await page.waitForTimeout(1200);
+        const o = await minimapa(page);
+        console.log(`  stan: ${JSON.stringify(o.stan)}, minimapa widoczna: ${await page.isVisible('#minimapa')}`);
+        if (!o.stan.wlaczona) throw new Error('minimapa wyłączona na telefonie (ma być tylko schowana stylem)');
+        if (o.stan.widoczna || (await page.isVisible('#minimapa'))) throw new Error('minimapa widać na telefonie');
+        if (o.stan.rysunki) throw new Error(`schowana minimapa się rysuje: ${o.stan.rysunki} razy`);
+        const b = await page.locator('#btnMiasto').boundingBox();
+        if (!b || !(await page.isVisible('#btnMiasto'))) throw new Error('przycisk „Mapa” niewidoczny na telefonie');
+        console.log(`  przycisk „Mapa”: ${await page.textContent('#btnMiasto')}, ${JSON.stringify(b)}`);
+        if (b.x < 0 || b.y < 0 || b.x + b.width > 390 || b.y + b.height > 844)
+          throw new Error('przycisk „Mapa” wychodzi za ekran');
+        if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1))
+          throw new Error('strona przewija się w bok');
+        await otworzMape(page, true);
+        const k = await okno(page);
+        if (k.tempo !== 0 || !/Mapa miasta/.test(k.tekst))
+          throw new Error('przycisk „Mapa” nie otworzył okna mapy miasta');
+        await page.tap('#sheet [data-act="miasto-zamknij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+      },
+    },
+    {
       name: 'miasto-start',
       query: '',
       allow: BRAK_TABEL,
@@ -8492,6 +8780,10 @@ function miastoShots(): Shot[] {
         console.log(`  ?miasto=0: ${JSON.stringify(wyl)}`);
         if (wyl.miasto || wyl.okolica) throw new Error('?miasto=0 nie wyłączyło miasta albo okolicy');
         if (await page.isVisible('#btnMiasto')) throw new Error('?miasto=0: przycisk mapy miasta widać');
+        // minimapa też: schowana i wyłączona (nic się nie rysuje), tak samo jak przycisk
+        const mm0 = await page.evaluate(() => window.zm!.minimapa().stan());
+        if (mm0.wlaczona || mm0.widoczna || mm0.rysunki || (await page.isVisible('#minimapa')))
+          throw new Error(`?miasto=0: minimapa na ekranie albo włączona: ${JSON.stringify(mm0)}`);
         const bez = await doKarty(page, base, '&miasto=0');
         if (bez.length) throw new Error(`?miasto=0: karta nocy z miejscami z okolicy: ${bez.join(' | ')}`);
         // domyślnie: miasto włączone, okolica z kluczami, karta nocy z miejscami z okolicy
@@ -8501,6 +8793,7 @@ function miastoShots(): Shot[] {
         console.log(`  domyślnie: ${JSON.stringify(wl)}`);
         if (!wl.miasto) throw new Error('zarząd bez stanu miasta (gov.miasto)');
         if (wl.okolica <= 0) throw new Error('okolica pusta (zm.okolica)');
+        if (!(await page.isVisible('#minimapa'))) throw new Error('domyślnie minimapy nie widać');
         if (wl.zleKlucze) throw new Error(`${wl.zleKlucze} miejsc bez klucza „poi:X:Y”`);
         if (wl.poza <= 0) throw new Error('w okolicy nie ma miejsc poza mapą lokalną');
         // filtr nazw podpięty w main.ts: nazwy z osobą puste, marka zostaje, patron szkoły odpada z nazwy

@@ -154,6 +154,19 @@ export const STATYCZNE: readonly Statyczny[] = [
     aria: tx('Mapa miasta', 'City map'),
     title: tx('Mapa miasta: miejsca na wyprawy (M)', 'City map: places for supply runs (M)'),
   },
+  // minimapa miasta (src/ui/minimapa.ts): przycisk z płótnem i atrybucja map pod nim (te same trzy źródła co w oknie mapy)
+  {
+    sel: '#minimapaBtn',
+    aria: tx('Minimapa: otwórz mapę miasta', 'Minimap: open the city map'),
+    title: tx('Minimapa: otwórz mapę miasta (M)', 'Minimap: open the city map (M)'),
+  },
+  {
+    sel: '.minimapa-attrib',
+    html: tx(
+      `© ${a('https://www.openstreetmap.org/copyright', 'współtwórcy OpenStreetMap')}, ${a('https://openfreemap.org', 'OpenFreeMap')}, ${a('https://www.openmaptiles.org/', 'OpenMapTiles')}`,
+      `© ${a('https://www.openstreetmap.org/copyright', 'OpenStreetMap contributors')}, ${a('https://openfreemap.org', 'OpenFreeMap')}, ${a('https://www.openmaptiles.org/', 'OpenMapTiles')}`,
+    ),
+  },
   { sel: '#btnBuild', tekst: tx('Budowa', 'Build') },
   { sel: '#goals', aria: tx('Cele', 'Goals') },
   { sel: '#arriveShow', tekst: tx('Pokaż', 'Show') },
