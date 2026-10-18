@@ -262,3 +262,29 @@ export function kluczeSwiata(w: Pick<World, 'size' | 'angle' | 'buildings'>, sro
     };
   });
 }
+
+/** Prostokąt w stopniach (s, w, n, e) obejmujący całą mapę świata z zapasem `zapasM` metrów: do zapytania
+    o zajęte klatki. Zapas łapie klatki budynków uciętych brzegiem mapy, których środek leży już poza nią. */
+export function prostokatMapy(
+  w: Pick<World, 'size' | 'angle'>,
+  srodek: LatLon,
+  zapasM = 150,
+): { s: number; w: number; n: number; e: number } {
+  const h = w.size / 2 + zapasM;
+  const c = Math.cos(w.angle);
+  const sn = Math.sin(w.angle);
+  const [lat0, lon0] = srodek;
+  const kx = M_NA_STOPIEN * Math.cos((lat0 * Math.PI) / 180);
+  const lat: number[] = [];
+  const lon: number[] = [];
+  for (const [tx, ty] of [
+    [-h, -h],
+    [h, -h],
+    [h, h],
+    [-h, h],
+  ]) {
+    lat.push(lat0 - (ty * c - tx * sn) / M_NA_STOPIEN_SZER);
+    lon.push(lon0 + (tx * c + ty * sn) / kx);
+  }
+  return { s: Math.min(...lat), w: Math.min(...lon), n: Math.max(...lat), e: Math.max(...lon) };
+}
