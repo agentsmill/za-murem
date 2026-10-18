@@ -1,5 +1,5 @@
-/* Za Murem 0.4: start, wczytanie osiedla, pętla gry z zarządem (uchwały, karta nocy, wydarzenia, raport),
-   zapis i sterowanie. */
+/* Za Murem 0.4: start (z panelem „Wasz zarząd”: liczba osób i własna drużyna), wczytanie osiedla, pętla gry
+   z zarządem (uchwały, karta nocy, wydarzenia, raport), zapis i sterowanie. */
 
 import './style.css';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
@@ -34,6 +34,7 @@ import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { allowedAnchors, availableOf, buildItems, buildMenu, buildSheet, okTilesOf, type Rot } from './ui/budowa.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
+import { Druzyna } from './ui/druzyna.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
@@ -149,6 +150,10 @@ const setMode = (m: GameMode) => {
 setMode(mode);
 for (const r of document.querySelectorAll<HTMLInputElement>('input[name=tryb]'))
   r.addEventListener('change', () => r.checked && setMode(parseMode(r.value)));
+/* „Wasz zarząd”: liczba osób i własna drużyna (src/ui/druzyna.ts), zwinięte do jednej linijki, dopóki gracz nie otworzy;
+   bez bloku #druzyna w index.html gra startuje z zarządem z adresu jak dawniej */
+const druzynaEl = document.getElementById('druzyna');
+const druzyna = druzynaEl ? new Druzyna(druzynaEl) : null;
 const status = (t: string) => {
   $('startStatus').textContent = t;
 };
@@ -228,7 +233,8 @@ async function enter(data: Loaded, saved?: Save) {
   // tłum obcych tylko do pomiarów (?perf=150); w grze są mieszkańcy siedziby, których dokłada symulacja
   const crowd = params.has('perf') ? Number(params.get('perf')) : 0;
   // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
-  const st = saved ? saved.sim : createSim(world, seed, { core: 4, crowd, mode });
+  // zarząd z panelu „Wasz zarząd”: bez ruszania go 4 osoby z adresu, jak zawsze
+  const st = saved ? saved.sim : createSim(world, seed, { ...(druzyna?.opcje() ?? { core: 4 }), crowd, mode });
   const zombie = modeOf(st) === 'zombie';
   $('start').hidden = true;
   $('app').hidden = false;
@@ -664,6 +670,8 @@ function frame(now: number, dtMs: number) {
 }
 
 let cardHtml = '';
+/** historia rozwinięta na karcie tej osoby (pionek); inna osoba na karcie to historia znowu w jednej linijce */
+let storyOf = -1;
 /** karta przerysowana tylko po zmianie treści, inaczej dymki z opisem cech nigdy się nie pokażą */
 function setCard(html: string) {
   if (html === cardHtml) return;
@@ -735,7 +743,7 @@ function hud(now: number) {
         touchUI,
       ),
     );
-  else setCard(personCard(sel[0], st.tick, tonight(sel[0])));
+  else setCard(personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn));
 }
 
 let goalsHtml = '';
@@ -945,7 +953,11 @@ $('card').addEventListener('click', (e) => {
   const sel = st.pawns.filter((p) => p.kind === 'core' && selected.has(p.id));
   if (sel.length !== 1) return;
   const p = sel[0];
-  if (b.dataset.card === 'arm') {
+  if (b.dataset.card === 'story') {
+    // historia z drużyny: jedna linijka albo cała, od razu na karcie
+    storyOf = storyOf === p.id ? -1 : p.id;
+    hud(performance.now());
+  } else if (b.dataset.card === 'arm') {
     // następna broń z magazynu w ustalonej kolejności, a gdy nie ma żadnej: odłożyć to, co w rękach
     const have = new Set(st.store.arms ?? []);
     const list = ARM_ORDER.filter((w) => have.has(w) && w !== p.weapon);

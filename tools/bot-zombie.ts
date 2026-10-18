@@ -3,7 +3,9 @@
    robi to samo: łata dziury, wzmacnia uszkodzoną siatkę, robi dzidy, czyści podwórko ze szwendaczy uzbrojonym
    zarządem, dobija zwłoki i amputuje ugryzionych w rękę albo nogę. Na noc: stado, najwięcej napierających,
    zabici, przerwania siatki, ugryzienia, zgony, siatka o 6:00, kto żyje. Na koniec skrót stanu (powtarzalny).
-   Uruchomienie: npm run bot:zombie [-- ziarno [noce]] */
+   Trzeci argument to liczba osób zarządu (1–5, domyślnie 4 jak w grze bez ruszania panelu „Wasz zarząd”), żeby
+   zobaczyć, jak trudność rośnie przy mniejszym zarządzie.
+   Uruchomienie: npm run bot:zombie [-- ziarno [noce [osoby]]] */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,6 +29,7 @@ import { buildWorld } from '../src/world/world.ts';
 
 const SEED = Number(process.argv[2]) || 1;
 const NIGHTS = Number(process.argv[3]) || 6;
+const CORE = Math.max(1, Math.min(5, Math.round(Number(process.argv[4]) || 4)));
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../public/demo/przymorze.json'), 'utf8'));
 const world = buildWorld(demo.geo, { seed: SEED, street: demo.street });
@@ -50,7 +53,7 @@ interface Night {
 
 function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over: string } {
   const t0 = performance.now();
-  const st = createSim(world, SEED, { core: 4, mode: 'zombie' });
+  const st = createSim(world, SEED, { core: CORE, mode: 'zombie' });
   const sim = new Sim(world, st);
   const gov = newGov(SEED, 'zombie');
   const nights: Night[] = [];
@@ -222,7 +225,7 @@ function play(policy: Policy): { nights: Night[]; hash: string; ms: number; over
   };
 }
 
-console.log(`Bot trybu zombie, ${demo.name}, ziarno ${SEED}, noce ${NIGHTS}`);
+console.log(`Bot trybu zombie, ${demo.name}, ziarno ${SEED}, noce ${NIGHTS}, zarząd ${CORE}`);
 for (const policy of ['warta-dzidy', 'bez-warty'] as const) {
   const r = play(policy);
   console.log(`\n  ${policy} (${(r.ms / 1000).toFixed(1)} s, skrót ${r.hash}; ${r.over})`);

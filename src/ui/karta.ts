@@ -1,7 +1,9 @@
-/* Karta osoby z zarządu: paski potrzeb, chwilowe nastroje z powodami, co teraz robi i co ma tej nocy.
+/* Karta osoby z zarządu: paski potrzeb, chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby
+   z własnej drużyny historia pod zawodem (jedna linijka, cała po kliknięciu; stan rozwinięcia trzyma main.ts).
    Zwraca HTML z odczytu symulacji (SimPerson), bez DOM, więc da się go sprawdzić w Node. */
 
 import { DOM, type Dom, TRAITS } from '../content/data.ts';
+import { nazwaCechy } from '../content/druzyna.ts';
 import { wiek } from '../content/people.ts';
 import { WEAPONS } from '../sim/bron.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
@@ -43,12 +45,19 @@ function armHtml(p: SimPerson, tick: number): string {
   return `${arm}<p class="bite">${who}${where} ${Math.floor(ago / 60)}:${String(ago % 60).padStart(2, '0')} temu. Gorączka zabije za ${left} h.${cut}</p>`;
 }
 
-export function personCard(p: SimPerson, tick: number, tonight?: string): string {
+/** historia osoby: przycisk z tekstem, zwinięty do jednej linijki albo rozwinięty */
+export function storyHtml(story: string | undefined, open: boolean): string {
+  if (!story) return '';
+  const hint = open ? 'Zwiń historię' : 'Cała historia';
+  return `<button type="button" class="story" data-card="story" aria-expanded="${open}" title="${hint}"><span class="story-t">${esc(story)}</span></button>`;
+}
+
+export function personCard(p: SimPerson, tick: number, tonight?: string, storyOpen = false): string {
   const skills = Object.entries(p.skills)
     .map(([d, v]) => `<span class="tag skill">${DOM[d as Dom]} ${v}</span>`)
     .join('');
   const traits = p.traits
-    .map((t) => `<span class="tag" title="${esc(TRAITS[t]?.desc ?? '')}">${esc(TRAITS[t]?.name ?? t)}</span>`)
+    .map((t) => `<span class="tag" title="${esc(TRAITS[t]?.desc ?? '')}">${esc(nazwaCechy(t, p.f))}</span>`)
     .join('');
   const maimed = p.maimed ? '<span class="tag" title="Po amputacji: gorzej trafia">kikut</span>' : '';
   const bars = NEED_ORDER.map((k) => {
@@ -66,6 +75,7 @@ export function personCard(p: SimPerson, tick: number, tonight?: string): string
   return [
     `<h2>${esc(p.name)}</h2>`,
     `<p class="sub">${esc(p.prof)}, ${wiek(p.age)}</p>`,
+    storyHtml(p.story, storyOpen),
     `<div class="tags">${skills}${traits}${maimed}</div>`,
     armHtml(p, tick),
     `<div class="needs">${bars}</div>`,
