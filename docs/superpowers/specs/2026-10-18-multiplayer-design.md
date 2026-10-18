@@ -104,7 +104,7 @@ API pod `/api` (typy w `src/net/protokol.ts`, wspólnym dla serwera i klienta):
 
 Baza: `konta` (nick, nick do porównań, skrót hasła, chwila założenia, dzień ostatniej wizyty), `sesje` (skrót tokenu, konto, termin), `klatki` (klucz klatki i budynku, środek klatki z dokładnością około 1 m, konto, czy siedziba, chwila zajęcia), `zapisy` (gzip JSON, rozmiar, wersja, chwila). Klucze obce z `ON DELETE CASCADE`.
 
-Zapis w chmurze to ten sam obiekt co w localStorage, bez `data.addr` i `data.street`: klient je usuwa, a serwer odrzuca zapis, który je ma. `PUT` z wersją, którą klient ostatnio widział: nieaktualna daje 409, żeby telefon nie nadpisał nowszej gry z komputera. Limit 3 MiB JSON. Gra wysyła zapis co 5 minut przy ekranie i z Menu, nie co godzinę gry jak do localStorage.
+Zapis w chmurze to ten sam obiekt co w localStorage, bez `data.addr` i `data.street`: klient je usuwa, a serwer odrzuca zapis, który je ma. `data.name` bywa dziś wpisanym tekstem, gdy geokoder nie poda nazwy osiedla ani ulicy, więc etap 2 ustawia go do chmury z nazwy osiedla albo na „Osiedle”. `PUT` z wersją, którą klient ostatnio widział: nieaktualna daje 409, żeby telefon nie nadpisał nowszej gry z komputera. Limit 3 MiB JSON. Gra wysyła zapis co 5 minut przy ekranie i z Menu, nie co godzinę gry jak do localStorage.
 
 Klient (`src/net/api.ts`): `fetch` do `/api` tej samej domeny z ciasteczkiem (`credentials: 'same-origin'`), wynik zawsze `{ok, dane}` albo `{ok: false, blad, komunikat}`, bez wyjątków. `serwerDostepny()` daje false na Pages, offline, po czasie i przy obcym serwerze.
 
@@ -142,7 +142,7 @@ Na połączonej gałęzi, po scaleniu M2 i trybu zombie:
 
 ### Na później
 
-Gra w czasie rzeczywistym i cudzy ludzie na mapie, handel i napady między drużynami, czat, ranking. Wygasanie klatek kont nieaktywnych (propozycja: po 60 dniach bez logowania) i usuwanie kont nieaktywnych przez rok. Kody odzyskiwania zamiast e-maila. Sprawdzanie na serwerze, czy w promieniu kilku metrów nie ma już cudzej klatki pod innym kluczem. Przeniesienie klatek, gdy po zmianie w OSM zmieni się klucz. Kilka instancji serwera (limity prób w pamięci liczyłyby się osobno). Pocztówki z PixelLab i pamięć kafelków na tym samym serwerze (z „Zaparkowanych”).
+Gra w czasie rzeczywistym i cudzy ludzie na mapie, handel i napady między drużynami, czat, ranking. Wygasanie klatek kont nieaktywnych (propozycja: po 60 dniach bez logowania) i usuwanie kont nieaktywnych przez rok. Kody odzyskiwania zamiast e-maila. Sprawdzanie na serwerze, czy w promieniu kilku metrów nie ma już cudzej klatki pod innym kluczem. Przeniesienie klatek, gdy po zmianie w OSM zmieni się klucz. Kilka instancji serwera (limity prób w pamięci liczyłyby się osobno). Nadużycia: jedna osoba z wieloma kontami może zająć dużo klatek w jednej okolicy; dziś hamują to tylko limity kont na IP i klatek na konto. Pocztówki z PixelLab i pamięć kafelków na tym samym serwerze (z „Zaparkowanych”).
 
 ## Ograniczenia
 
