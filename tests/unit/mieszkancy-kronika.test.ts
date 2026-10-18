@@ -875,3 +875,25 @@ describe('kronika: kilkanaście wspólnych zdarzeń z lat 2026 do 2051', () => {
     expect(performance.now() - t0).toBeLessThan(1500);
   });
 });
+
+// ---------------------------------------------------------------- przeglądarki
+
+describe('src/: wyrażenia regularne działają w starszym Safari', () => {
+  /** Wszystkie pliki .ts i .js w src/, rekurencyjnie. */
+  function pliki(katalog: string): string[] {
+    return fs.readdirSync(katalog, { withFileTypes: true }).flatMap((w) => {
+      const p = path.join(katalog, w.name);
+      if (w.isDirectory()) return pliki(p);
+      return /\.(ts|js|mjs)$/.test(w.name) ? [p] : [];
+    });
+  }
+
+  it('żaden plik w src/ nie ma lookbehind (`(?<=`, `(?<!`), którego Safari nie zna przed 16.4', () => {
+    const wszystkie = pliki(path.join(KORZEN, 'src'));
+    expect(wszystkie.length).toBeGreaterThan(20);
+    const z = wszystkie
+      .filter((p) => /\(\?<[=!]/.test(fs.readFileSync(p, 'utf8')))
+      .map((p) => path.relative(KORZEN, p));
+    expect(z).toEqual([]);
+  });
+});
