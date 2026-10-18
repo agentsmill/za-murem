@@ -215,10 +215,10 @@ describe('złote skróty: wynik generatora przypięty do bajtu', () => {
   // (imiona, nazwiska gminy, odmiana, kronika obszaru) dla każdego dema i pierwsze liczby ziarna. Inny skrót znaczy,
   // że te same dane i adres dają innych mieszkańców niż wcześniej: jeśli to zamierzone, podbij WERSJA_GENERATORA
   // i wpisz nowe skróty (test przy różnicy pokazuje otrzymany). Zapisane 18.10.2026 po fali poprawek z przeglądu
-  // (R51, R52).
+  // (R51, R52, R54).
   const SKROTY: Record<string, string> = {
     przymorze: '6b2cc447ed97193a3b26303b68b71cd08bfc48f08584f7f2d24a828e26f80fde',
-    lanciego: '6bf2c07f69f0c61c30bcf7a849a7049f3911452f1f292c5915c490ba4542acf9',
+    lanciego: 'aebbf97a1b11378e1f99784cdebd61b0551f5c050df654257e2a20fedea6314c',
     zielonki: '74956defb9ba59547d46b7d4200a5667f68dd1421c1d16615195d1eea0cb144e',
   };
 

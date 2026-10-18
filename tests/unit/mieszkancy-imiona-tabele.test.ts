@@ -374,6 +374,10 @@ describe('tabele nazwisk (nazwiska/<woj>.json)', () => {
     expect(zakazane.length).toBeGreaterThan(30);
     for (const n of [
       'Rakowski',
+      'Trzaskowski',
+      'Grodzki',
+      'Kołodziejczak',
+      'Bodnar',
       'Tusk',
       'Ziobro',
       'Sasin',
