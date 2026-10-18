@@ -61,7 +61,7 @@ const ROOMS: RoomKind[] = ['klatka', 'przedpokoj', 'pokoj', 'kuchnia', 'lazienka
 function wszystkie(): Dwa[] {
   const kto = { first: 'Basia', f: true };
   return [
-    ...Object.values(MENU).filter((v): v is Dwa => typeof v !== 'function'),
+    ...Object.values(MENU).filter((v) => typeof v !== 'function'),
     ...ROOMS.map((k) => MENU.przeszukaj(k)),
     MENU.pietro(3),
     MENU.plot(65, 67, 65, 3.25),
