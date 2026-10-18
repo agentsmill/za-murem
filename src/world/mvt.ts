@@ -6,6 +6,7 @@ import { L } from '../core/jezyk.ts';
 import { type Geo, type GeoBuilding, type Pt, pip, polyArea } from './geo.ts';
 import { KAFEL_PX, tagiKlucza } from './klucze.ts';
 import { poiCat } from './osm.ts';
+import { rodzajZMvt } from './rodzaje.ts';
 
 export const Z = 14;
 
@@ -556,6 +557,10 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
                   hn.push({ x, y, h: String(t.housenumber || ''), id: osmIdOf(F.id) });
                 continue;
               }
+              // rodzaj budynku (muzeum, teatr, hotel…) osobno od kategorii, bo kategoria zmienia classify()
+              const nazwa = (t.name as string) || '';
+              const rodzaj = rodzajZMvt(t.class as string, t.subclass as string, nazwa);
+              if (rodzaj && Math.hypot(x, y) <= 720) (geo.rodzaje ||= []).push({ x, y, k: rodzaj, n: nazwa });
               const pt = poiTags(t);
               if (!pt) continue;
               const c = poiCat(pt);

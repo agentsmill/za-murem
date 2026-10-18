@@ -16,10 +16,11 @@ const v = loadV03(undefined, [
 ]);
 const G = v.G;
 
-/** geometria bez dodatków 0.4: przejść przez budynki (pass) oraz identyfikatora OSM, daty budowy i klucza budynku
-    z osią klatek (zm:klucz, zm:os, src/world/klucze.ts) w tagach */
-function as03(geo: Geo): Omit<Geo, 'pass'> {
-  const { pass: _pass, ...rest } = geo;
+/** geometria bez dodatków 0.4: przejść przez budynki (pass), rodzajów punktów (rodzaje: muzeum, teatr, hotel…
+    osobno od kategorii poi) oraz identyfikatora OSM, daty budowy i klucza budynku z osią klatek (zm:klucz, zm:os,
+    src/world/klucze.ts) w tagach */
+function as03(geo: Geo): Omit<Geo, 'pass' | 'rodzaje'> {
+  const { pass: _pass, rodzaje: _rodzaje, ...rest } = geo;
   return {
     ...rest,
     b: rest.b.map((b) => {
