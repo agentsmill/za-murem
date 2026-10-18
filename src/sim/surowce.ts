@@ -129,6 +129,7 @@ export const NAPISY = {
   szukaj: (m: WreckModel): Napis => ({ pl: `Przeszukać ${MODEL_ACC[m].pl}`, en: `Search ${MODEL_ACC[m].en}` }),
   rozbierz: (m: WreckModel): Napis => ({ pl: `Rozebrać ${MODEL_ACC[m].pl}`, en: `Strip ${MODEL_ACC[m].en}` }),
   zaniesc: { pl: 'Zanieść na podwórko', en: 'Carry into the yard' },
+  obcyPrzyAucie: { pl: 'przy aucie są obcy', en: 'strangers are at the car' },
   deska: { pl: 'Piłować deskę z drewna', en: 'Saw a board from firewood' },
   deskiN: (n: number): Napis => ({ pl: `Piłować ${n} ${plural(n, 'deski', 'desek')}`, en: `Saw ${n} boards` }),
   czesc: { pl: 'Zrobić część ze złomu', en: 'Make a part from scrap' },
