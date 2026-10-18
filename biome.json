@@ -12,6 +12,7 @@
       "!tools/make-sample.cjs",
       "!public/demo",
       "!public/data",
+      "!assets/raw",
       "!.playwright-mcp"
     ]
   },

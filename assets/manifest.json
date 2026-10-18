@@ -1,0 +1,387 @@
+{
+  "opis": "Assety z PixelLab: co zamówione, czym, za ile i w jakim stanie. Koszt w generacjach abonamentu (Tier 1, 2000 generacji do 16.11.2026, 0 USD kredytów). Zasady w docs/PIXELLAB.md. Pliki w assets/raw/<id>/ są dokładnie takie, jak przyszły z PixelLab.",
+  "paleta": {
+    "nazwa": "Za Murem 2051",
+    "status": "propozycja",
+    "opis": "32 kolory wybrane z src/render/art/palette.ts: szarości i beże wielkiej płyty, asfalt, zaniedbana zieleń, rdza i brązy, pastele po termomodernizacji, okna, ciepłe światło, skóra, kurtki. Podawana do każdego zamówienia, które przyjmuje paletę; po akceptacji kotwicy przejdzie do assets/palette.json.",
+    "plik": "assets/wejscia/paleta-32.png",
+    "kolory": [
+      "#1a1c22",
+      "#313336",
+      "#46484a",
+      "#6f6b64",
+      "#7c796f",
+      "#9a958a",
+      "#b7b2a6",
+      "#cac6bc",
+      "#e3e0d6",
+      "#3a5229",
+      "#4c6631",
+      "#648043",
+      "#8a9a55",
+      "#7a4a2e",
+      "#a8682b",
+      "#c28f3c",
+      "#463324",
+      "#765e42",
+      "#8e4b36",
+      "#e0d29a",
+      "#e3b79a",
+      "#a7cbb4",
+      "#a6bfd4",
+      "#26323d",
+      "#3d5262",
+      "#f0c66a",
+      "#f5a142",
+      "#d2552a",
+      "#e0b48c",
+      "#b07a55",
+      "#3b4a5e",
+      "#5f5a3a"
+    ]
+  },
+  "wejscia": {
+    "assets/wejscia/blok-lanciego-17.png": "obraz startowy i wzorzec układu dla bloku: wycinek gry 160×128 w skali 1:1 (Lanciego, budynek 17, cztery piętra, wejście od południa), grafika rysowana kodem z 18.10.2026",
+    "assets/wejscia/paleta-32.png": "paleta jako pasek 32×1 do narzędzi, które biorą paletę z obrazka (create_image_pixflux, reduce_colors)"
+  },
+  "assety": [
+    {
+      "id": "kotwica-chodnik-trawa",
+      "grupa": "kotwica-stylu",
+      "co": "kafelki Wanga 32 px: chodnik z płyt 50 cm (lower) i zaniedbany trawnik (upper) z krawężnikiem",
+      "narzedzie": "create_topdown_tileset",
+      "prompt": {
+        "lower": "grey concrete sidewalk of a Polish housing estate made of square 50 cm paving slabs, four slabs per tile, worn and cracked plates, dirt and moss in the joints",
+        "upper": "neglected short lawn of dull olive green grass, calm low-contrast texture with subtle darker and dry yellowish patches, only a rare fallen brown leaf, no flowers",
+        "transition": "low weathered grey concrete curb"
+      },
+      "parametry": {
+        "mode": "pro",
+        "tile_size": 32,
+        "transition_size": 0.25,
+        "view": "high top-down",
+        "outline": "lineless",
+        "shading": "basic shading",
+        "detail": "low detail",
+        "palette": "Za Murem 2051",
+        "lower_base_tile_id": "8a0352db-9be9-4fea-b651-1cf40a6726ab"
+      },
+      "pixellab": "d4e4613e-34b7-43bf-856f-c7ae943c9221",
+      "koszt": 15,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-chodnik-trawa/tileset.png", "assets/raw/kotwica-chodnik-trawa/metadata.json"],
+      "uwagi": "16 kafelków 4×4; który kafelek pasuje do narożników, mówi metadata.json (corners i bounding_box). Płyty 16 px, czyli 2×2 na kafelek. Do następnych zestawów terenu: chodnik 8a0352db-9be9-4fea-b651-1cf40a6726ab, trawa 327c2ca7-1146-4613-9eb5-653918b607f4 (base tile id). Jednolite kafelki można odbijać w poziomie i pionie, żeby nie było widać powtórzeń."
+    },
+    {
+      "id": "kotwica-chodnik-trawa-v2",
+      "grupa": "kotwica-stylu",
+      "co": "druga próba kafelków chodnik i trawa (pro)",
+      "narzedzie": "create_topdown_tileset",
+      "prompt": {
+        "lower": "grey concrete sidewalk of a Polish housing estate made of square 50 cm paving slabs, four slabs per tile, worn and cracked plates, dirt and moss in the joints",
+        "upper": "neglected autumn lawn of dull olive green grass with dry yellowish patches and a few fallen brown leaves",
+        "transition": "low weathered grey concrete curb"
+      },
+      "parametry": {
+        "mode": "pro",
+        "tile_size": 32,
+        "transition_size": 0.25,
+        "view": "high top-down",
+        "outline": "lineless",
+        "shading": "basic shading",
+        "detail": "medium detail",
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "cfb1b958-d271-46f0-9182-306cc9da507c",
+      "koszt": 15,
+      "status": "odrzucony",
+      "pliki": ["assets/raw/kotwica-chodnik-trawa-v2/tileset.png", "assets/raw/kotwica-chodnik-trawa-v2/metadata.json"],
+      "uwagi": "chodnik dobry (płyty 16 px, krawężnik), ale trawnik za gęsty: czerwone kropki liści wyglądają jak maki i powtarzają się co 32 px. Chodnik przeszedł do następnej wersji przez lower_base_tile_id."
+    },
+    {
+      "id": "kotwica-chodnik-trawa-v1",
+      "grupa": "kotwica-stylu",
+      "co": "pierwsza próba kafelków chodnik i trawa w trybie standard",
+      "narzedzie": "create_topdown_tileset",
+      "prompt": {
+        "lower": "worn grey concrete sidewalk of 50 cm square paving slabs, cracked plates, moss and dirt in the seams, Polish housing estate",
+        "upper": "neglected autumn lawn, patchy dull green grass with dry yellow tufts and a few fallen brown leaves",
+        "transition": "low weathered concrete curb"
+      },
+      "parametry": {
+        "mode": "standard",
+        "tile_size": 32,
+        "transition_size": 0.25,
+        "view": "high top-down",
+        "outline": "lineless",
+        "shading": "basic shading",
+        "detail": "medium detail"
+      },
+      "pixellab": "d08a84e0-fbb6-4afb-a7c4-82afeb3007f3",
+      "koszt": 4,
+      "status": "odrzucony",
+      "pliki": ["assets/raw/kotwica-chodnik-trawa-v1/tileset.png", "assets/raw/kotwica-chodnik-trawa-v1/metadata.json"],
+      "uwagi": "jaskrawa limonkowa trawa, fioletowe płyty po 8 px (25 cm) ze wzorem w środku; tryb standard nie przyjmuje palety"
+    },
+    {
+      "id": "kotwica-trzepak",
+      "grupa": "kotwica-stylu",
+      "co": "trzepak 3 m z betonowymi stopami, od frontu",
+      "narzedzie": "create_object_pro_flash",
+      "prompt": "trzepak, a Polish housing-estate carpet-beating rack seen from the front in a low top-down RPG view: two thin vertical steel pipe posts about 1.5 m tall set 3 m apart in small concrete footings, one long thin horizontal steel pipe bar joining their tops and a second lower bar, the bars run left to right parallel to the viewer, old chipped dark green paint with rust spots, transparent background, no ground, no grass",
+      "parametry": {
+        "width": 96,
+        "height": 64,
+        "n_directions": 1,
+        "view": "low top-down",
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "b9e3a3e2-a692-402a-b085-7ba0bfc7f829",
+      "koszt": 5,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-trzepak/trzepak.png"],
+      "uwagi": "obrys sylwetki x 13..82, y 7..54; stopy na dole obrysu. Słupki stoją około 2 m od siebie, trzepak w grze ma 3 m."
+    },
+    {
+      "id": "kotwica-trzepak-v1",
+      "grupa": "kotwica-stylu",
+      "co": "pierwsza próba trzepaka jako obiekt mapy",
+      "narzedzie": "create_map_object",
+      "prompt": "trzepak: Polish housing estate carpet-beating rack, two vertical steel pipe posts set in small concrete blocks, one long horizontal steel pipe bar on top and a lower bar, old chipped green paint with rust patches, about 1.5 m tall and 3 m wide, standing on grass",
+      "parametry": {
+        "width": 96,
+        "height": 64,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "shading": "medium shading",
+        "detail": "medium detail"
+      },
+      "pixellab": "10ab39e2-e530-429b-acbd-5ec2ed377e3e",
+      "koszt": 1,
+      "status": "odrzucony",
+      "pliki": ["assets/raw/kotwica-trzepak-v1/trzepak.png"],
+      "uwagi": "rzut ukośny, grube słupki jak bambus, kępa trawy pod spodem"
+    },
+    {
+      "id": "kotwica-trzepak-v2",
+      "grupa": "kotwica-stylu",
+      "co": "druga próba trzepaka jako obiekt mapy, od frontu",
+      "narzedzie": "create_map_object",
+      "prompt": "front view of a trzepak, a carpet-beating rack from a Polish housing estate courtyard: two thin vertical steel pipe posts at the left and right edges, a long thin horizontal steel pipe bar across the top from left to right and a second bar lower down, both bars parallel to the bottom edge of the image, small grey concrete footings, chipped dark green paint with rust spots, no ground, no grass",
+      "parametry": {
+        "width": 96,
+        "height": 64,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "shading": "basic shading",
+        "detail": "medium detail"
+      },
+      "pixellab": "cdfea364-ff9a-4b8d-9aa0-70a1f5c181ba",
+      "koszt": 1,
+      "status": "odrzucony",
+      "pliki": ["assets/raw/kotwica-trzepak-v2/trzepak.png"],
+      "uwagi": "wyszedł płotek: drążki pod szczytem słupków i za grube"
+    },
+    {
+      "id": "kotwica-emeryt",
+      "grupa": "kotwica-stylu",
+      "co": "emeryt w kurtce, 8 kierunków, stoi",
+      "narzedzie": "create_character",
+      "prompt": "elderly Polish retiree man about 70 years old, grey hair and grey moustache, grey flat cap, worn brown quilted winter jacket zipped up, dark grey trousers, scuffed brown shoes, slightly hunched, tired but stubborn",
+      "parametry": {
+        "mode": "v3",
+        "size": 48,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Emeryt w kurtce 48"
+      },
+      "pixellab": "6cef90c9-22a6-496a-b24d-9bf4df154bd3",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-emeryt/Idle/rotations", "assets/raw/kotwica-emeryt/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków razem"
+          },
+          "pixellab": "5d4a0b76-fda1-4af3-8e3b-4f7de422ca1b",
+          "koszt": 0.1,
+          "pliki": ["assets/raw/kotwica-emeryt/paleta"],
+          "uwagi": "z 55 kolorów na 15–20 z palety; tryb v3 nie przyjmuje palety przy zamówieniu"
+        }
+      ],
+      "uwagi": "płótno 48×48, 47 px wzrostu (ludzie rysowani kodem mają 45 px), stopy w wierszu 46. Kolejne postaci w tym stylu: create_character pro ze style_character_id tej postaci albo v3 z tym samym opisem stylu."
+    },
+    {
+      "id": "kotwica-emeryt-64",
+      "grupa": "kotwica-stylu",
+      "co": "emeryt w kurtce na płótnie 64 px, 8 kierunków (wariant)",
+      "narzedzie": "create_character",
+      "prompt": "elderly Polish retiree man about 70 years old, grey hair and grey moustache, grey flat cap, worn brown quilted winter jacket zipped up, dark grey trousers, scuffed brown shoes, slightly hunched, tired but stubborn",
+      "parametry": {
+        "mode": "v3",
+        "size": 64,
+        "view": "low top-down",
+        "outline": "single color outline",
+        "detail": "medium detail",
+        "name": "Emeryt w kurtce"
+      },
+      "pixellab": "48bee5af-30f5-4ee6-a0d1-d9087ed124eb",
+      "koszt": 2,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-emeryt-64/Idle/rotations", "assets/raw/kotwica-emeryt-64/metadata.json"],
+      "pochodne": [
+        {
+          "narzedzie": "reduce_colors",
+          "parametry": {
+            "palette_image": "assets/wejscia/paleta-32.png",
+            "dithering": "none",
+            "klatki": "8 kierunków razem"
+          },
+          "pixellab": "4a05757e-d015-4a72-a6a2-7f38aaf71b61",
+          "koszt": 0.1,
+          "pliki": ["assets/raw/kotwica-emeryt-64/paleta"],
+          "uwagi": "z 67 kolorów na 21 z palety, wygląd prawie bez zmian; tryb v3 nie przyjmuje palety przy zamówieniu"
+        }
+      ],
+      "uwagi": "63 px wzrostu (około 2 m przy 32 px na metr); przy ludziach z gry (45 px) wygląda jak olbrzym, więc w kadrze jest wersja 48 px."
+    },
+    {
+      "id": "kotwica-blok",
+      "grupa": "kotwica-stylu",
+      "co": "kawałek bloku z wielkiej płyty: dach z papy z attyką, fasada czterech pięter z balkonami i klatka z daszkiem",
+      "narzedzie": "create_image_pro",
+      "prompt": "A piece of a weathered Polish 1970s prefabricated concrete apartment block (wielka plyta) for a top-down colony game, year 2051 after the collapse. Keep the exact layout and projection of the layout reference: the flat roof seen straight from above fills the top part, the short front facade strip with four storeys sits at the bottom. Roof: dark tar paper with gravel patches, puddles, moss, patched seams, two small vent stacks, a light concrete parapet cap along the edges. Facade: grey concrete panels with dark joints and rain stains, four rows of small dark windows, some boarded up with planks, narrow balconies with rusty railings, a stairwell entrance door with a small concrete canopy at ground level.",
+      "parametry": {
+        "width": 160,
+        "height": 128,
+        "no_background": false,
+        "palette": "Za Murem 2051",
+        "reference_images": [
+          {
+            "plik": "assets/wejscia/blok-lanciego-17.png",
+            "usage": "layout and projection to keep: roof from above on top, four-storey facade strip at the bottom, window grid, balconies and entrance positions"
+          },
+          {
+            "plik": "assets/raw/kotwica-trzepak/trzepak.png",
+            "usage": "pixel art style: outline, shading and weathering"
+          }
+        ]
+      },
+      "pixellab": "75487d4c-e4e7-4fdb-9b02-725c78266bab",
+      "koszt": 15,
+      "status": "gotowy",
+      "pliki": [
+        "assets/raw/kotwica-blok/0.png",
+        "assets/raw/kotwica-blok/1.png",
+        "assets/raw/kotwica-blok/2.png",
+        "assets/raw/kotwica-blok/3.png"
+      ],
+      "wybrany": "assets/raw/kotwica-blok/1.png",
+      "moduly": {
+        "opis": "jak z wybranego kawałka składać fasady o dowolnej długości i liczbie pięter (x, y, szerokość, wysokość w pikselach pliku): profil attyki od zewnątrz do środka, pas fasady od gzymsu do ziemi z piętrami po 13 px (gzyms z górnym piętrem, środkowe piętro powtarzane, parter z cokołem), przęsła powtarzane wzdłuż ściany i wejście z drzwiami nad kafelkiem wejścia; dach z kotwica-blok-dach",
+        "attyka": [80, 8, 1, 7],
+        "fasada": {
+          "y": 57,
+          "gora": 20,
+          "pietro": [77, 13],
+          "dol": [103, 19]
+        },
+        "przesla": [67, 59],
+        "wejscie": [32, 35],
+        "drzwi": 23
+      },
+      "uwagi": "PixelLab rysuje fasadę w naturalnej skali około 13 px na piętro (cztery piętra to 65 px z gzymsem i cokołem); gra ma dziś 9 px na piętro (scene.ts, floorH). Tło wokół budynku ma kolor attyki (#b7b2a6)."
+    },
+    {
+      "id": "kotwica-blok-dach",
+      "grupa": "kotwica-stylu",
+      "co": "kafelki dachu z papy: 16 wariantów 32 px (gładka, żwir, kałuża, mech, odpływ, gruz, spękania, szwy)",
+      "narzedzie": "create_tiles_pro",
+      "prompt": "1). plain flat black tar paper roof with a faint patched seam 2). plain flat tar paper roof with fine grey gravel 3). flat tar roof with a shallow dark puddle 4). flat tar roof with a small patch of green moss 5). plain flat tar paper roof, slightly faded 6). flat tar roof with a small round drain grate 7). flat tar roof with a few scattered bits of debris 8). plain flat tar paper roof with a straight seam",
+      "parametry": {
+        "style_images": ["assets/raw/kotwica-blok/1.png, wycinek x 73..104, y 25..56 (najspokojniejszy kawałek dachu)"],
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "66ef46f5-f121-48e5-aebb-af0882e82b08",
+      "koszt": 10,
+      "status": "gotowy",
+      "pliki": ["assets/raw/kotwica-blok-dach"],
+      "uzycie": {
+        "opis": "kafelki mają jasną ramkę, więc obok siebie wyglądają jak posadzka; w kadrze kotwicy dach to tło w kolorze papy z szumem i szwami, a środki wybranych kafelków są naklejkami (piksele w kolorze tła przezroczyste)",
+        "tlo": "#313336",
+        "szwy": [96, 64],
+        "naklejki": [1, 2, 3, 5, 6, 8, 9, 10, 11, 13, 14],
+        "wnetrze": [3, 3, 26, 26],
+        "gestosc": 0.22
+      },
+      "uwagi": "wzorzec stylu wycięty z wybranego kawałka bloku; pliki nazwane przez PixelLab od pierwszego opisu, numer na końcu to numer wariantu"
+    },
+    {
+      "id": "kotwica-blok-moduly",
+      "grupa": "kotwica-stylu",
+      "co": "zestaw modułów budynku (podłoga, ściany, narożniki, drzwi, dach) z wielkiej płyty",
+      "narzedzie": "create_building_kit",
+      "prompt": {
+        "wall": "grey prefabricated concrete large-panel wall of a 1970s Polish communist apartment block (wielka plyta), visible panel joints, rows of small dark windows, narrow balconies with rusty steel railings, weathered with rain stains",
+        "floor": "worn grey terrazzo floor of a Polish apartment stairwell",
+        "floor2": "flat black tar paper roof with gravel patches and a low concrete parapet"
+      },
+      "parametry": {
+        "tile_type": "square_topdown",
+        "tile_size": 32,
+        "wall_tiles": 2,
+        "layout": "materials",
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "a24ce333-e216-4259-b898-e78062d309a1",
+      "koszt": 10,
+      "status": "odrzucony",
+      "pliki": ["assets/raw/kotwica-blok-moduly"],
+      "uwagi": "80 kawałków 52×87. Podłoga skrócona do 32×24 (gra ma ziemię 32×32 z góry), ściana na dwa kafelki z oknami co około 21 px, bez balkonów, beton w plamy jak moro, dachy dwuspadowe i kopertowe. Druga próba miałaby sens z tile_view_angle 90 i niskim wall_angle."
+    },
+    {
+      "id": "kotwica-blok-img2img",
+      "grupa": "kotwica-stylu",
+      "co": "kawałek bloku z obrazu startowego (wycinek gry), dwie siły",
+      "narzedzie": "create_image_pixflux",
+      "prompt": "piece of a Polish 1970s prefabricated concrete apartment block (wielka plyta) in a top-down game: flat dark tar roof with gravel patches, rain stains and small vents seen from above, a low concrete parapet along its edge, below it the short front facade with four storeys of small windows in a regular grid of concrete panels, narrow balconies with rusty railings, faded pastel paint from an old thermal retrofit, and a stairwell entrance door with a small concrete canopy at ground level",
+      "parametry": {
+        "init_image": "assets/wejscia/blok-lanciego-17.png",
+        "init_image_strength": [300, 170],
+        "color_image": "assets/wejscia/paleta-32.png",
+        "width": 160,
+        "height": 128,
+        "view": "low top-down",
+        "outline": "lineless",
+        "shading": "basic shading",
+        "detail": "medium detail"
+      },
+      "pixellab": ["27d84383-63a0-431d-8e97-e29bfa6de3f4", "2ea5d4ca-1c53-43b0-b099-2a2362124704"],
+      "koszt": 2,
+      "status": "odrzucony",
+      "pliki": ["assets/raw/kotwica-blok-img2img/sila-300.png", "assets/raw/kotwica-blok-img2img/sila-170.png"],
+      "uwagi": "trzyma rzut gry (9 px na piętro), ale tylko przemalowuje wycinek na paletę, bez faktury"
+    },
+    {
+      "id": "kotwica-blok-edycja",
+      "grupa": "kotwica-stylu",
+      "co": "wycinek gry przerobiony na wygląd wybranego kandydata, z prośbą o zachowanie 9 px na piętro",
+      "narzedzie": "edit_image",
+      "prompt": "Restyle this piece of a Polish prefab concrete apartment block to the weathered look of the reference, but keep the exact layout, size and projection of the input: the flat roof seen from above fills the top, the facade strip at the bottom keeps exactly four storeys of the same height, the same window grid, the balcony positions and the entrance door with its canopy. Roof: dark tar paper with patched seams, puddles, moss, gravel and small debris. Facade: grey concrete panels with dark joints and rain stains, some windows boarded up with planks, rusty balcony railings, a little ivy at the corners. No frame or background around the building.",
+      "parametry": {
+        "image": "assets/wejscia/blok-lanciego-17.png",
+        "reference_image": "assets/raw/kotwica-blok/1.png"
+      },
+      "pixellab": "615874fb-e52e-44a2-8156-be68f319720e",
+      "koszt": 10,
+      "status": "odrzucony",
+      "pliki": ["assets/raw/kotwica-blok-edycja/edycja.png"],
+      "uwagi": "skopiował wzorzec prawie bez zmian, fasada znów około 15 px na piętro"
+    }
+  ]
+}

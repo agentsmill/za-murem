@@ -1,0 +1,36 @@
+{
+  "group_id": "92f29dc0-295a-405a-9d72-097dab1bddc1",
+  "states": [
+    {
+      "character": {
+        "id": "6cef90c9-22a6-496a-b24d-9bf4df154bd3",
+        "name": "Idle",
+        "prompt": "elderly Polish retiree man about 70 years old, grey hair and grey moustache, grey flat cap, worn brown quilted winter jacket zipped up, dark grey trousers, scuffed brown shoes, slightly hunched, tired but stubborn",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-18T12:36:59.327182+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-18T12:45:01.236493"
+}
