@@ -191,6 +191,8 @@ const SHOTS: Shot[] = [
   ...kartaShots(),
   // Gra z sąsiadami (?siec=1) z udawanym serwerem pod /api: karta startowa, znaczniki zajętych, start bez domu
   ...siecShots(),
+  // Mapa miasta w grze: okolica z punktów OSM i stan miasta w zarządzie po starcie, opcja ?miasto=0
+  ...miastoShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -7776,6 +7778,91 @@ function siecShots(): Shot[] {
           },
         );
         await waitIdle(page);
+      },
+    },
+  ];
+}
+
+/** Mapa miasta w grze (src/main.ts): po starcie demo zarząd ma stan miasta (`gov.miasto`), a `zm.okolica` miejsca z
+    punktów OSM z kluczami „poi:X:Y”; karta nocy proponuje wyprawy do tych miejsc (nazwa i odległość w metrach). Z
+    `?miasto=0` nic z tego nie ma, a karta ma dzisiejsze cele z TARGETS. Zrzut: karta nocy z miejscami z okolicy. */
+function miastoShots(): Shot[] {
+  /** stan po starcie: czy zarząd ma miasto, ile miejsc w okolicy, ile ma zły klucz albo odfiltrowaną (pustą) nazwę */
+  const stan = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const ok = zm.okolica ?? [];
+      return {
+        miasto: zm.gov?.miasto !== undefined,
+        okolica: ok.length,
+        zleKlucze: ok.filter((m) => !/^poi:\d+:\d+$/.test(m.klucz)).length,
+        bezNazwy: ok.filter((m) => !m.nazwa).length,
+        poza: ok.filter((m) => m.x * m.x + m.y * m.y > 192 * 192).length,
+      };
+    });
+  /** noc dnia 1 do karty: 19:30 uchwała (bez podpisu), 20:00 karta nocy; etykiety opcji wyprawy z listy wyboru osób */
+  const doKarty = async (page: Page, base: string, q: string) => {
+    await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=19.5${q}`);
+    await waitIdle(page);
+    const u = await page.evaluate(() => window.zm!.govTick());
+    if (u !== 'uchwala') throw new Error(`o 19:30 zamiast uchwały: ${u}`);
+    await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+    const k = await page.evaluate(() => window.zm!.ff(31));
+    if (k !== 'karta') throw new Error(`o 20:00 zamiast karty nocy: ${k}`);
+    const opcje = await page
+      .locator('#sheet select.pick')
+      .first()
+      .locator('option')
+      .evaluateAll((o) => o.map((x) => x.textContent ?? ''));
+    // cel z miejsca ma odległość przy nazwie („Sklep budowlany, 450 m”), cel z TARGETS tylko nazwę
+    return opcje.filter((t) => /, \d+ m/.test(t));
+  };
+  return [
+    {
+      name: 'miasto-start',
+      query: '',
+      run: async (page, base) => {
+        // opcja wyłączona: zarząd bez miasta, okolicy nie ma, karta nocy z celami z TARGETS
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9&miasto=0`);
+        await waitIdle(page);
+        const wyl = await stan(page);
+        console.log(`  ?miasto=0: ${JSON.stringify(wyl)}`);
+        if (wyl.miasto || wyl.okolica) throw new Error('?miasto=0 nie wyłączyło miasta albo okolicy');
+        const bez = await doKarty(page, base, '&miasto=0');
+        if (bez.length) throw new Error(`?miasto=0: karta nocy z miejscami z okolicy: ${bez.join(' | ')}`);
+        // domyślnie: miasto włączone, okolica z kluczami, karta nocy z miejscami z okolicy
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        const wl = await stan(page);
+        console.log(`  domyślnie: ${JSON.stringify(wl)}`);
+        if (!wl.miasto) throw new Error('zarząd bez stanu miasta (gov.miasto)');
+        if (wl.okolica <= 0) throw new Error('okolica pusta (zm.okolica)');
+        if (wl.zleKlucze) throw new Error(`${wl.zleKlucze} miejsc bez klucza „poi:X:Y”`);
+        if (wl.poza <= 0) throw new Error('w okolicy nie ma miejsc poza mapą lokalną');
+        // zapis sprzed mapy miasta (bez stanu miasta w zarządzie i bez kluczy punktów): po wczytaniu miasto włączone,
+        // okolica ta sama co w nowej grze
+        await page.evaluate(() => {
+          window.zm!.save();
+          const raw = JSON.parse(localStorage.getItem('za-murem-0.4-zapis')!);
+          delete raw.gov.miasto;
+          for (const p of raw.data.geo.poi) delete p.k;
+          localStorage.setItem('za-murem-0.4-zapis', JSON.stringify(raw));
+        });
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await waitIdle(page);
+        const stary = await stan(page);
+        console.log(`  stary zapis po wczytaniu: ${JSON.stringify(stary)}`);
+        if (!stary.miasto) throw new Error('stary zapis bez stanu miasta po wczytaniu');
+        if (stary.okolica !== wl.okolica || stary.zleKlucze)
+          throw new Error(
+            `okolica ze starego zapisu: ${stary.okolica} miejsc z ${wl.okolica}, złych kluczy ${stary.zleKlucze}`,
+          );
+        const z = await doKarty(page, base, '');
+        console.log(`  karta nocy, opcje z miejscami: ${z.join(' | ')}`);
+        if (!z.length) throw new Error('karta nocy bez wyprawy do miejsca z okolicy (input() bez okolicy?)');
+        await page.waitForTimeout(200);
       },
     },
   ];

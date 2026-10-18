@@ -6,7 +6,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { budynkiZGeo } from '../../src/mieszkancy/budynki.ts';
-import { kronika, nazwaMiejsca, type WpisKroniki, wolnyRok, zbiorImion } from '../../src/mieszkancy/kronika.ts';
+import {
+  kronika,
+  nazwaMiejsca,
+  nazwaWlasnaMiejsca,
+  type WpisKroniki,
+  wolnyRok,
+  zbiorImion,
+} from '../../src/mieszkancy/kronika.ts';
 import type { TabeleGminy, TabeleImion, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
 import type { Budynek } from '../../src/mieszkancy/typy.ts';
 import type { Geo, GeoPoi } from '../../src/world/geo.ts';
@@ -399,6 +406,29 @@ describe('nazwaMiejsca: imię i nazwisko w nazwie zamienia się na opis kategori
     const patroni = LANCIEGO.geo.poi.concat(PRZYMORZE.geo.poi).filter((p) => /\bim\./.test(p.n));
     expect(patroni.length).toBeGreaterThan(3);
     for (const p of patroni) expect(nazwaMiejsca(p, imiona), p.n).toBe(p.n.slice(0, p.n.indexOf(' im.')).trim());
+  });
+});
+
+describe('nazwaWlasnaMiejsca: nazwa celu wyprawy, pusta tam, gdzie filtr ją zmienił', () => {
+  it('nazwa z osobą albo adresem daje pusty napis, nie polski opis kategorii', () => {
+    expect(nazwaWlasnaMiejsca(poi('budowlany', 'Usługi Remontowe Jan Nowak'), imiona)).toBe('');
+    expect(nazwaWlasnaMiejsca(poi('spozywczy', 'Sławomir Mielnik'), imiona)).toBe('');
+    expect(nazwaWlasnaMiejsca(poi('sklep', 'Kwiaciarnia u Moniki'), imiona)).toBe('');
+    expect(nazwaWlasnaMiejsca(poi('apteka', 'Apteka na Obrońców Wybrzeża 2'), imiona)).toBe('');
+  });
+
+  it('marki i instytucje zostają, patron odpada jak w nazwaMiejsca, brak nazwy to pusty napis', () => {
+    for (const [c, n] of [
+      ['spozywczy', 'Żabka'],
+      ['apteka', 'Apteka Pod Lwem'],
+      ['szkola', 'Szkoła Podstawowa nr 12'],
+      ['szkola', 'Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'],
+    ])
+      expect(nazwaWlasnaMiejsca(poi(c, n), imiona), n).toBe(nazwaMiejsca(poi(c, n), imiona));
+    expect(nazwaWlasnaMiejsca(poi('szkola', 'Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'), imiona)).toBe(
+      'Szkoła Podstawowa Nr 44',
+    );
+    expect(nazwaWlasnaMiejsca(poi('sklep', ''), imiona)).toBe('');
   });
 });
 

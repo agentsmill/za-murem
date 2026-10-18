@@ -273,16 +273,17 @@ function brakZaspokojony(cel: Cel, stock: GovInput['stock']): number {
 const poOdleglosci = (a: Cel, b: Cel): number => a.odl - b.odl || (a.klucz < b.klucz ? -1 : a.klucz > b.klucz ? 1 : 0);
 
 /** Cele nocnych wypraw na karcie: [blisko, daleko]. Kandydaci to miejsca z `i.okolica` poza mapą lokalną, do
-    `MAX_OKOLICA_M`, z czymś jeszcze w zapasie (`zostaloZMiejsca`); mapa lokalna ma własną mapę gry, więc jej miejsca
-    nigdy nie są propozycją. „Blisko”: najbliższy kandydat do `BLISKO_DO_M`, a gdy go nie ma, po prostu najbliższy.
-    „Daleko”: spośród pozostałych kandydat o największym `brakZaspokojony`, przy remisie mniejsza odległość, potem
-    klucz. Bez `st.miasto`, bez kandydatów albo (dla „daleko”) bez drugiego kandydata miejsce zajmuje dzisiejszy cel
-    z TARGETS (`celeZTargets`), więc bez mapy miasta wynik jest taki sam jak przed nią. */
+    `MAX_OKOLICA_M`, z czymś jeszcze w zapasie (`zostaloZMiejsca`) i bez wyprawy dziennej w drodze do tego miejsca (jej
+    łup liczy się dopiero po powrocie, więc dwie wyprawy dzieliłyby jeden zapas); mapa lokalna ma własną mapę gry,
+    więc jej miejsca nigdy nie są propozycją. „Blisko”: najbliższy kandydat do `BLISKO_DO_M`, a gdy go nie ma, po
+    prostu najbliższy. „Daleko”: spośród pozostałych kandydat o największym `brakZaspokojony`, przy remisie mniejsza
+    odległość, potem klucz. Bez `st.miasto`, bez kandydatów albo (dla „daleko”) bez drugiego kandydata miejsce zajmuje
+    dzisiejszy cel z TARGETS (`celeZTargets`), więc bez mapy miasta wynik jest taki sam jak przed nią. */
 export function wybierzCeleNocy(st: GovState, i: GovInput): [Cel, Cel] {
   const zTargets = celeZTargets(st, placeIn(i));
   if (!st.miasto || !i.okolica?.length) return zTargets;
   const kandydaci = i.okolica
-    .filter((m) => !naMapieLokalnej(m) && m.odl <= MAX_OKOLICA_M)
+    .filter((m) => !naMapieLokalnej(m) && m.odl <= MAX_OKOLICA_M && !st.wyprawy?.some((w) => w.cel.klucz === m.klucz))
     .map((m) => celZMiejsca(m))
     .filter((c) => zostaloZMiejsca(st, c) > 0)
     .sort(poOdleglosci);

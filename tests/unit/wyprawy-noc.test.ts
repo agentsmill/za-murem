@@ -594,6 +594,17 @@ describe('wybierzCeleNocy', () => {
     expect(wybierzCeleNocy(st, i)).toEqual(celeZTargets(st, placeIn(i)));
   });
 
+  it('miejsce, do którego idzie wyprawa dzienna, nie jest propozycją nocy (obie wyprawy nie biorą jednego zapasu)', () => {
+    const st = zarzadMiasta();
+    const apteka = miejsce(2, 'apteka', 250);
+    st.wyprawy = [{ id: 1, cel: celZMiejsca(apteka), ids: ['a'], wyjscie: 600, powrot: 800 }];
+    const [blisko] = wybierzCeleNocy(st, wejscieOkolicy([apteka, miejsce(3, 'spozywczy', 260)]));
+    expect(blisko.klucz).toBe('poi:3:7');
+    // wyprawa do innego miejsca niczego nie zabiera z propozycji
+    st.wyprawy[0].cel = celZMiejsca(miejsce(4, 'apteka', 600));
+    expect(wybierzCeleNocy(st, wejscieOkolicy([apteka, miejsce(3, 'spozywczy', 260)]))[0].klucz).toBe('poi:2:7');
+  });
+
   describe('bez miejsc do wyboru karta ma dzisiejsze TARGETS, bez wyjątku', () => {
     const dzisiejsze = (st: GovState, i: GovInput): Cel[] => {
       const best = (r: 'blisko' | 'daleko') =>

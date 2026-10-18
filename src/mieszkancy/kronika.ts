@@ -310,6 +310,14 @@ export function nazwaMiejsca(poi: GeoPoi, imiona: ReadonlySet<string>): string {
   return ocenMiejsce(poi, imiona).nazwa;
 }
 
+/** Własna nazwa miejsca do tekstów w obu językach (cele wypraw z mapy miasta): jak `nazwaMiejsca`, ale gdy filtr zamienił
+    nazwę (była w niej osoba albo adres), pusty napis, bo polski opis kategorii nie przetłumaczy się na angielski, a
+    kategorię cel podaje sam. Nazwy marek i instytucji zostają, patron po „im.” odpada jak w `nazwaMiejsca`. */
+export function nazwaWlasnaMiejsca(poi: GeoPoi, imiona: ReadonlySet<string>): string {
+  const ocena = ocenMiejsce(poi, imiona);
+  return ocena.zmieniona ? '' : ocena.nazwa;
+}
+
 // ---------------------------------------------------------------- szablony
 
 const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);

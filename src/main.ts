@@ -18,6 +18,7 @@ import { hashString } from './core/rng.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
+import { wlaczMiasto } from './gov/wyprawy.ts';
 import {
   ackReport,
   chooseEvent,
@@ -32,6 +33,7 @@ import {
 } from './gov/zarzad.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
+import { nazwaWlasnaMiejsca, zbiorImion } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { GraSieciowa } from './net/gra.ts';
@@ -113,6 +115,7 @@ import { esc } from './ui/tekst.ts';
 import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
+import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
 import { buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -122,6 +125,8 @@ startJezyka({ params });
 const touchUI = matchMedia('(pointer: coarse)').matches;
 // grafika z PixelLab (atlasy z public/assets) pobiera się w tle od razu; ?grafika=kod: wszystko rysowane kodem
 const grafika = params.get('grafika') === 'kod' ? Promise.resolve(null) : wczytajGrafike();
+// mapa miasta (wyprawy do miejsc z okolicy, src/gov/wyprawy.ts): domyślnie włączona; ?miasto=0 gra jak przed nią
+const opcjaMiasto = params.get('miasto') !== '0';
 
 declare global {
   interface Window {
@@ -159,6 +164,8 @@ declare global {
         allowed: number;
         first: number;
       } | null;
+      /** miejsca z okolicy, które dostaje zarząd (`GovInput.okolica`); puste z ?miasto=0 (do zrzutów i testów) */
+      okolica: readonly Miejsce[];
       /** stan mieszkań siedziby w grze (st.apts) */
       apts: () => AptGame[];
       /** przyjęcie n osób zza bramy jak po decyzji zarządu (do zrzutów); zwraca, ilu przybyło */
@@ -177,6 +184,8 @@ let gov: GovState | null = null;
 let loaded: Loaded | null = null;
 let seed = 0;
 let hqName = '';
+/** miejsca z punktów OSM wokół adresu dla zarządu (liczone raz po zbudowaniu świata); puste bez opcji miasta */
+let okolica: Miejsce[] = [];
 /** słowa miejsca siedziby: w domu komitet ulicy, sąsiedzi i furtka, w bloku zarząd, mieszkańcy i brama; po
     angielsku wordsE */
 let words: Words = wordsOf(BLOK);
@@ -398,6 +407,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
   const t0 = performance.now();
+  // klucze „poi:X:Y” punktów (zapis i demo sprzed kluczy ich nie mają); przed mapaMieszkancow, żeby trafiły do mapy
+  // i zapisu. Osiedle zapasowe (proc) nie ma prawdziwego położenia, więc bez kluczy
+  if (opcjaMiasto && !data.geo.proc) uzupelnijKlucze(data.geo);
   // mapa z tagami budynków generatora mieszkańców (bez tabel ta sama mapa); świat poza tagami jest ten sam
   const geo = mapaMieszkancow(data.geo, dane);
   // gra z sąsiadami: świat bez budynków zajętych przez inne drużyny przy wyborze siedziby i bez nazwy ulicy z adresu
@@ -414,6 +426,11 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     saved,
   );
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
+  // okolica dla zarządu: punkty z `geo` (metry od adresu bez obrotu świata, w przeciwieństwie do `world.pois`). Nazwa
+  // z osobą albo adresem odpada (pusta), bo filtr zamieniłby ją na polski opis kategorii, który wszedłby do angielskich
+  // tekstów celu; bez tabel imion filtr nie zna imion, więc zostaje sam wzorzec „u Jana” i adresy
+  const imiona = dane ? zbiorImion(dane.imiona) : new Set<string>();
+  okolica = opcjaMiasto ? miejscaZPoi(geo.poi, (p) => nazwaWlasnaMiejsca(p, imiona)) : [];
   // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;
@@ -493,6 +510,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
   gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
+  // mapa miasta w nowej grze i w starym zapisie (bez losowania; wyprawa nocna w drodze kończy się po staremu)
+  if (opcjaMiasto) wlaczMiasto(gov);
   // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
   const herd = Number(params.get('stado'));
   if (!saved && zombie && herd > 0) sim.spawnAtFence(herd, world.buildings[world.hq]?.entrances[0]?.out ?? 0);
@@ -576,6 +595,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   if (window.zm) {
     window.zm.sim = sim;
     window.zm.gov = gov;
+    window.zm.okolica = okolica;
   }
   // imiona zmienione przez gracza (pamięć przeglądarki) na osobach z generatora, w nowej grze i we wznowionej
   zastosujImiona();
@@ -653,6 +673,8 @@ function input(): GovInput {
     const tiles = s.st.fence?.holes.find((x) => x.id === h.id)?.tiles ?? [];
     h.name ??= tiles.map((t) => names.get(t)).find(Boolean);
   }
+  // miejsca z okolicy dla karty nocy i wypraw dziennych; bez opcji zarząd gra na TARGETS
+  if (opcjaMiasto) i.okolica = okolica;
   // warta i dyżur przy kozie, które stoją (także z menu), zarząd bierze z posterunków osób (people[].post)
   return i;
 }
@@ -2549,6 +2571,7 @@ if (attrib) bars.observe(attrib);
             first: placing.allowed[0] ?? -1,
           }
         : null,
+    okolica: [],
     apts: () => sim?.st.apts ?? [],
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
     siec: () => siec.podglad(),
