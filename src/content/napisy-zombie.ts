@@ -4,3 +4,8 @@
 
 /** karta nocy w trybie zombie: warta z bronią palną za siatką sama nie strzela (src/sim/sim.ts, holdFire) */
 export const NOTE_HOLD_FIRE = 'Przez siatkę strzela tylko na rozkaz: strzał ściąga stado.';
+
+/** przycisk „Do broni!” w czasie alarmu (src/main.ts): ten sam przycisk odwołuje alarm */
+export const ALARM_OFF = 'Odwołaj';
+export const ALARM_OFF_TITLE = 'Odwołać alarm: kto stanął na wartę z alarmu, schodzi z posterunku';
+export const ALARM_OFF_SAY = 'Alarm odwołany.';

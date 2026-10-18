@@ -1,5 +1,5 @@
 /* Szlif trybu zombie (18.10.2026): szwendacz w łatanej dziurze zostaje po stronie ulicy; warta z bronią palną
-   nie strzela sama przez siatkę. */
+   nie strzela sama przez siatkę; „Do broni!” odwołuje ten sam przycisk. */
 
 import { describe, expect, it } from 'vitest';
 import { NOTE_HOLD_FIRE } from '../../src/content/napisy-zombie.ts';
@@ -7,7 +7,7 @@ import { makeCard } from '../../src/gov/noc.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import { govInput } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
-import { createSim, type Pawn, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
+import { alarmOn, createSim, type Pawn, SIATKA_POST, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
 import { mockBlock } from './interior-mock.ts';
 
 const w = mockBlock();
@@ -222,5 +222,67 @@ describe('broń palna w trybie zombie: strzał ściąga stado', () => {
     a.weapon = 'kusza';
     st.store.ammo!.belty = 5;
     expect(notes('zombie', a)('siatka')).not.toBe(NOTE_HOLD_FIRE);
+  });
+});
+
+describe('„Do broni!” odwołuje ten sam przycisk', () => {
+  const coreOf = (st: SimState) => st.pawns.filter((p) => p.kind === 'core');
+
+  it('drugi raz: kto stanął na wartę z alarmu, schodzi z posterunku, a kto stał wcześniej, zostaje', () => {
+    for (const mode of ['zombie', 'zwykly'] as const) {
+      const st = createSim(w, 3, { core: 3, mode });
+      st.tick = atHour(2, 10);
+      const sim = new Sim(w, st);
+      const [a, b, c] = coreOf(st);
+      const ids = [a.id, b.id, c.id];
+      sim.push({ t: 'guard', ids: [a.id], post: 'brama' });
+      runTo(sim, st.tick + 1);
+      expect(a.job?.t).toBe('guard');
+      sim.push({ t: 'alarm', ids });
+      runTo(sim, st.tick + 200);
+      expect([b.job?.t, c.job?.t]).toEqual(['guard', 'guard']);
+      expect(b.job?.target).toBe(mode === 'zombie' ? SIATKA_POST : 0);
+      // kto już stał na warcie przy bramie, nie dostaje nowego posterunku
+      expect(a.job?.t).toBe('guard');
+      expect(a.job?.target).toBe(0);
+      sim.push({ t: 'alarm', ids, off: true });
+      runTo(sim, st.tick + 200);
+      expect(b.job?.t, mode).not.toBe('guard');
+      expect(c.job?.t, mode).not.toBe('guard');
+      expect(a.job?.t, mode).toBe('guard');
+    }
+  });
+
+  it('przycisk wie, czy alarm trwa: z kolejki poleceń zaraz po kliknięciu, potem ze stanu warty', () => {
+    const st = createSim(w, 3, { core: 2, mode: 'zombie' });
+    st.tick = atHour(2, 10);
+    const sim = new Sim(w, st);
+    const ids = coreOf(st).map((p) => p.id);
+    expect(alarmOn(st)).toBe(false);
+    sim.push({ t: 'alarm', ids });
+    // na pauzie polecenie czeka w kolejce, a przycisk już mówi „Odwołaj”
+    expect(alarmOn(st)).toBe(true);
+    sim.step();
+    expect(alarmOn(st)).toBe(true);
+    sim.push({ t: 'alarm', ids, off: true });
+    expect(alarmOn(st)).toBe(false);
+    sim.step();
+    expect(alarmOn(st)).toBe(false);
+    // alarm bez nikogo zdolnego do warty nic nie zmienia
+    for (const p of coreOf(st)) p.needs!.health = 20;
+    sim.push({ t: 'alarm', ids });
+    sim.step();
+    expect(alarmOn(st)).toBe(false);
+  });
+
+  it('bez odwołania alarm trwa do 6:00 jak dotąd', () => {
+    const st = createSim(w, 3, { core: 2, mode: 'zombie' });
+    st.tick = atHour(2, 23);
+    const sim = new Sim(w, st);
+    sim.push({ t: 'alarm', ids: coreOf(st).map((p) => p.id) });
+    runTo(sim, atHour(3, 5.9));
+    expect(alarmOn(st)).toBe(true);
+    runTo(sim, atHour(3, 6) + 40);
+    expect(alarmOn(st)).toBe(false);
   });
 });

@@ -6,6 +6,7 @@
 
 import './style.css';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
+import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zombie.ts';
 import type { Person } from './content/people.ts';
 import { hashString } from './core/rng.ts';
 import { nightAdvice } from './gov/noc.ts';
@@ -38,7 +39,7 @@ import type { LokatorzyGry } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
 import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
-import { addResidents, createSim, Sim, type SimState } from './sim/sim.ts';
+import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, snapshot } from './sim/snapshot.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
@@ -834,6 +835,7 @@ function hud(now: number) {
   $('hint').textContent = warn || (now < hintUntil ? hint : '');
   $('hint').classList.toggle('warn', !!warn);
   renderStats(statsOf(snap, gov));
+  alarmButton(st);
   renderGoals(snap);
   // przyjęci idą zza bramy: komunikat z przyciskiem „Pokaż”, dopóki ktoś jeszcze idzie
   const coming = arriving(st).length;
@@ -1082,9 +1084,17 @@ $('btnMenu').onclick = () => {
 };
 
 /* ---------- broń i alarm ---------- */
+// ten sam przycisk włącza i odwołuje alarm; napis i podpowiedź bez alarmu są w index.html
+const ALARM_IDLE = { text: $('btnAlarm').textContent ?? '', title: $('btnAlarm').title };
 $('btnAlarm').onclick = () => {
   if (!sim || modal.open) return;
   const core = sim.st.pawns.filter((p) => p.kind === 'core' && !p.away).map((p) => p.id);
+  if (alarmOn(sim.st)) {
+    sim.push({ t: 'alarm', ids: core, off: true });
+    say(ALARM_OFF_SAY, 2500);
+    alarmButton(sim.st);
+    return;
+  }
   sim.push({ t: 'alarm', ids: core });
   say(
     modeOf(sim.st) === 'zombie'
@@ -1092,7 +1102,20 @@ $('btnAlarm').onclick = () => {
       : 'Do broni! Wszyscy zdolni na wartę przy bramie.',
     4000,
   );
+  alarmButton(sim.st);
 };
+
+/** przycisk alarmu według stanu symulacji: „Do broni!” albo „Odwołaj”; DOM zmienia się tylko przy zmianie */
+function alarmButton(st: SimState) {
+  const b = $('btnAlarm');
+  const on = alarmOn(st);
+  const text = on ? ALARM_OFF : ALARM_IDLE.text;
+  if (b.textContent === text) return;
+  b.textContent = text;
+  b.title = on ? ALARM_OFF_TITLE : ALARM_IDLE.title;
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-pressed', String(on));
+}
 
 /** kolejność broni przy „Zmień”: najpierw to, co sięga przez siatkę */
 const ARM_ORDER: readonly WeaponId[] = ['dzida', 'rewolwer', 'strzelba', 'kusza', 'siekiera', 'lom', 'kij', 'noz'];

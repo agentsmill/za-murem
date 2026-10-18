@@ -464,8 +464,9 @@ export type Command =
   | { t: 'craft'; ids: number[]; item: 'dzida' }
   /** wzmocnić kafelek siatki deskami albo złomem */
   | { t: 'brace'; ids: number[]; tile: number }
-  /** do broni: cały zdolny zarząd na wartę (przy siatce w trybie zombie, przy bramie w zwykłym) */
-  | { t: 'alarm'; ids: number[] }
+  /** do broni: cały zdolny zarząd na wartę (przy siatce w trybie zombie, przy bramie w zwykłym); off: odwołanie,
+      warta z alarmu schodzi z posterunku */
+  | { t: 'alarm'; ids: number[]; off?: boolean }
   /** M2: plan budowy w miejscu (albo przydział do planu, który tam już jest), odwołanie planu albo budowli */
   | { t: 'build'; ids: number[]; kind: BuildKind; x: number; y: number; rot: number }
   | { t: 'unbuild'; ids: number[]; id: number }
@@ -1042,6 +1043,19 @@ export function dozeOff(st: SimState, ids: readonly number[]): void {
     p.job.phase = 4;
     p.job.from = -1;
   }
+}
+
+/** Job.what warty z „Do broni!” (odwołanie zdejmuje tylko ją) */
+const ALARM_JOB = 'alarm';
+
+/** „Do broni!” trwa: ktoś z zarządu stoi na warcie z alarmu, a zaraz po kliknięciu (polecenie czeka na krok,
+    także na pauzie) decyduje ostatni alarm w kolejce. Dla przycisku, który alarm włącza i odwołuje. */
+export function alarmOn(st: SimState): boolean {
+  for (let k = st.cmds.length - 1; k >= 0; k--) {
+    const c = st.cmds[k];
+    if (c.t === 'alarm') return !c.off;
+  }
+  return st.pawns.some((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.what === ALARM_JOB);
 }
 
 /** klucz posterunku warty z Job.target, jak w karcie nocy zarządu: 'brama', 'd<id>', 'koza' */
@@ -1978,7 +1992,7 @@ export class Sim {
     else if (c.t === 'amputate') this.orderAmputate(pawns, c.patient);
     else if (c.t === 'craft') this.orderCraft(pawns);
     else if (c.t === 'brace') this.orderBrace(pawns, c.tile);
-    else if (c.t === 'alarm') this.orderAlarm(pawns);
+    else if (c.t === 'alarm') this.orderAlarm(pawns, !!c.off);
     else if (c.t === 'search') this.startSearch(pawns[0], c.room);
     else if (c.t === 'dismantle') this.startDismantle(pawns[0], c.thing);
     else if (c.t === 'repair') this.startRepair(pawns[0], c.damage);
@@ -5213,11 +5227,22 @@ export class Sim {
     heap.by = p.id;
   }
 
-  /** do broni: każdy z zarządu ze zdrowiem ponad 30 na wartę */
-  private orderAlarm(pawns: Pawn[]): void {
-    const able = pawns.filter((p) => (p.needs?.health ?? 0) > 30);
+  /** Do broni: każdy z zarządu ze zdrowiem ponad 30, kto nie stoi już na warcie, na wartę z alarmu (do 6:00 jak
+      każda warta). Odwołanie: warta z alarmu schodzi z posterunku, reszta warty zostaje. */
+  private orderAlarm(pawns: Pawn[], off: boolean): void {
+    if (off) {
+      for (const p of pawns)
+        if (p.job?.t === 'guard' && p.job.what === ALARM_JOB) {
+          p.path = [];
+          p.pi = 0;
+          this.done(p);
+        }
+      return;
+    }
+    const able = pawns.filter((p) => (p.needs?.health ?? 0) > 30 && p.job?.t !== 'guard');
     if (!able.length) return;
     this.orderGuard(able, modeOf(this.st) === 'zombie' && this.st.fence ? 'siatka' : 'brama');
+    for (const p of able) if (p.job?.t === 'guard') p.job.what = ALARM_JOB;
   }
 
   /** Kafelek siatki, na który napiera najwięcej szwendaczy (−1: nikt nie napiera). Brama nie puszcza, więc napór
