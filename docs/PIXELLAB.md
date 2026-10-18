@@ -109,9 +109,20 @@ Szczegóły, prompty i koszty każdej próby są w `assets/manifest.json`, zesta
 - `assets/manifest.json`: każdy asset ma id, narzędzie, prompt, parametry, identyfikator PixelLab, koszt, status (zamówiony, gotowy, zatwierdzony, odrzucony), ścieżkę pliku.
 - `assets/raw/<id>/`: pliki dokładnie tak, jak przyszły z PixelLab. Nie edytować ręcznie. Biome ich nie sprawdza.
 - `assets/wejscia/`: nasze obrazki dla PixelLab (obraz startowy, pasek palety), żeby zamówienie dało się powtórzyć.
-- `public/assets/`: atlasy i arkusze sprite'ów zrobione skryptem z `assets/raw`.
+- `public/assets/`: atlasy i arkusze sprite'ów zrobione skryptem z `assets/raw`: `npm run atlasy` (`tools/atlasy.ts`) bierze tylko assety ze statusem `zatwierdzony` i pisze `teren.png` (16 kafelków Wanga w kolejności narożników), `blok.png` (moduły kawałka bloku: gzyms z górnym piętrem, środkowe piętro, parter, wejście, przęsła, profil attyki), `dach.png` (naklejki papy bez tła), `trzepak.png`, `ludzie.png` (24 postacie po 5 wersji: oryginał i 4 przemalowania z ramp palety, po 8 kierunków, klatki 48 px) i opis `grafika.json`. Pliki są w repo, bo build ich nie robi; test `tests/unit/grafika-atlasy.test.ts` pilnuje, że odpowiadają `assets/raw` (po zmianie w surowych plikach albo w manifeście: `npm run atlasy`, sprawdzenie bez zapisu: `npm run atlasy -- --sprawdz`).
 - Każdy typ obiektu ma też grafikę zapasową rysowaną kodem, żeby gra działała bez assetów i żeby można było budować mechanikę przed grafiką.
 - Przed każdą większą paczką zamówień policzyć koszt z manifestu i zapytać Mateusza. Budżet na etap ustala Mateusz.
+
+## Kotwica w grze (M3, 18.10.2026)
+
+Gra wczytuje `public/assets/grafika.json` i atlasy przy starcie (`src/render/grafika.ts`), a rysuje z nich `src/render/art/pixellab.ts`. Bez plików, w innej wersji opisu albo bez sieci rysuje kod jak dawniej; bez jednego obrazka tylko ta część. `?grafika=kod` wyłącza grafikę z PixelLab (do porównań).
+
+- Teren w kawałkach mapy (także w workerach): trawnik, park, chodnik i ścieżka z kafelków Wanga na podwójnej siatce (narożnik kafelka Wanga w środku kafelka świata, granica terenów na krawędzi kafelka). Narożnik liczy się jako trawnik dla trawy, parku i lasu, a jako chodnik dla całej reszty, więc trawnik przy jezdni, budynku albo wodzie ma krawężnik, a przy parku przechodzi bez krawężnika. Las, jezdnia, parking, woda, piaskownica, boisko i działki zostają z kodu. Jednolite kafelki są odbite według miejsca. Chodnik przy jezdni ma krawężnik z kodu, a cały teren ciemnieje przy ścianach i w cieniu budynków jak dawniej.
+- Bloki (`cls === 'blok'`) z modułów: pas fasady z tyloma piętrami, ile ma budynek (13 px na piętro, `floorH` w stylu budynku), przęsła po x świata, nad drzwiami od południa moduł wejścia, na dachu papa z naklejkami i szwami i attyka od północy, zachodu i wschodu. Dach bez maszynowni, kominów i anten z kodu (jak w zatwierdzonym kadrze). Domy, garaże, pawilony i reszta budynków zostają z kodu, z dawną fasadą 9 px na piętro.
+- Trzepak od frontu (3×1) z PixelLab, ze stopami w tym samym wierszu kafelka co betonowe stopy trzepaka z kodu. Trzepak bokiem (1×3) zostaje z kodu, bo PixelLab dał tylko widok od frontu.
+- Postacie czekają na animacje: atlas `ludzie.png` jest gotowy, ale pionki rysuje dalej kod. Zrzut `kotwica-tlum` stawia obsadę z atlasu w miejscu pionków tylko na czas zrzutu.
+
+Koszt animacji obsady (cennik `animate_character` z opisu narzędzia, 18.10.2026): szablon (`walking-*`, `breathing-idle`, `crouching`, `picking-up`) to 1 generacja na kierunek, animacja z opisu (v3) to `ceil(płótno² · klatki / 65536)` na kierunek liczone na płótnie po wzroście sylwetki, przy postaci 48 px (płótno około 64 px) też 1 na kierunek. Prace z `POSES` w `src/render/art/people.ts`: niesienie drewna, rąbanie, klęczenie przy kozie, gotowanie, siedzenie, warta z lampą, cios, celowanie, przeszukiwanie, młotek, deski, złom i drzemka (13), do tego chód i stanie. Zarząd (4 postacie) ze wszystkim i mieszkańcy (20) z chodem i staniem to 4 · 15 + 20 · 2 = 100 animacji: 400 generacji w 4 kierunkach albo 800 w 8, bez poprawek. Tier 1 przyjmuje najwyżej 8 zadań naraz.
 
 ## Pierwsza fala assetów (wycinek pionowy)
 

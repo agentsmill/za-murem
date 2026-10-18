@@ -53,7 +53,7 @@ CI (`.github/workflows/ci.yml`, Node 24) puszcza lint, testy i build na każdym 
 
 ```bash
 npm install
-npm run dev          # serwer deweloperski, http://localhost:5173 (?demo=przymorze|lanciego|zielonki, &worker=0 bez workerów)
+npm run dev          # serwer deweloperski, http://localhost:5173 (?demo=przymorze|lanciego|zielonki, &worker=0 bez workerów, &grafika=kod bez grafiki z PixelLab)
 npm test             # testy jednostkowe (Vitest), m.in. porównanie z oryginałem 0.3 w node:vm
 npm test -- tests/unit/sim.test.ts        # jeden plik
 npm test -- zarzad -t "ten sam przebieg"  # fragment ścieżki pliku i nazwy testu
@@ -68,6 +68,7 @@ npm run bot:surowce  # raport gospodarki: wraki i warsztat z graczem fali 1 i be
 npm run shots        # zrzuty w Chromium do shots/ [-- filtr] [--dist]
 npm run perf         # klatki ze 150 pionkami [-- pionki [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5]
 npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
+npm run atlasy       # atlasy grafiki z PixelLab do public/assets/ z assets/raw (tylko zatwierdzone): [-- --sprawdz]
 node tools/trzy-noce.ts        # trzy pierwsze noce zarządu na atrapie symulacji [ziarno] [--n liczba_ziaren]
 node tools/arkusz-wnetrza.ts   # arkusz grafiki zastępczej do shots/ (podobnie arkusz-wraki.ts)
 ZM_BAZA=./za-murem.db ZM_CIASTECZKO_SECURE=0 node server/main.ts  # serwer gry sieciowej na :8787 (server/README.md)
