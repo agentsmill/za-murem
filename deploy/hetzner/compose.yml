@@ -1,4 +1,5 @@
-# Za Murem na serwerze Hetznera: Caddy z HTTPS serwuje zbudowaną grę (www/ to kopia dist/).
+# Za Murem na serwerze Hetznera: Caddy z HTTPS serwuje zbudowaną grę (www/ to kopia dist/), a /api przekazuje
+# do serwera gry sieciowej (server/, kontener api bez portu na zewnątrz: dostaje się do niego tylko Caddy).
 # Adres strony (SITE) i adres IP (IP) siedzą w pliku .env na serwerze, nie w repozytorium.
 services:
   caddy:
@@ -16,7 +17,20 @@ services:
       - ./www:/srv/www:ro
       - caddy_data:/data
       - caddy_config:/config
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ./serwer-zrodla
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      - ZM_ZRODLA=https://${SITE}
+    volumes:
+      - dane:/dane
 
 volumes:
   caddy_data:
   caddy_config:
+  dane:
