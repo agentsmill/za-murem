@@ -70,6 +70,28 @@ describe('postać pionka (płeć i wiek osoby z gry)', () => {
     expect(id(l.postacPionka({ id: 3, kind: 'sasiad', person: 2, look: 9 }, osoby))).toBe('dziewczynka');
   });
 
+  it('postać osoby bez pionka (dla zwłok członka zarządu) to ta sama, którą gra pionek z tą osobą', () => {
+    const osoby = [
+      { f: false, age: 70 },
+      { f: true, age: 30 },
+      { f: true, age: 8 },
+    ];
+    for (let k = 0; k < osoby.length; k++) {
+      expect(l.postacOsoby(k, osoby, true), `zarząd ${k}`).toBe(
+        l.postacPionka({ id: 500 + k, kind: 'core', person: k, look: k }, osoby),
+      );
+      expect(l.postacOsoby(k, osoby, false), `mieszkaniec ${k}`).toBe(
+        l.postacPionka({ id: 600 + k, kind: 'sasiad', person: k, look: k }, osoby),
+      );
+    }
+    // poza listą osób i bez postaci w tej grupie obsady: nikt
+    expect(l.postacOsoby(9, osoby, true)).toBeNull();
+    expect(l.postacOsoby(-1, osoby, false)).toBeNull();
+    const tylkoMieszkancy = new LudziePixellab(sztuczny(obsada(postac('b', false, 'm', [0, 100]))));
+    expect(tylkoMieszkancy.postacOsoby(0, osoby, true)).toBeNull();
+    expect(tylkoMieszkancy.postacOsoby(0, osoby, false)?.id).toBe('b');
+  });
+
   it('ta sama osoba w innym pionku i ten sam pionek drugi raz dają tę samą postać', () => {
     const osoby = [{ f: true, age: 50 }];
     const a = l.postacPionka({ id: 10, kind: 'sasiad', person: 0, look: 4 }, osoby);
@@ -317,5 +339,155 @@ describe('wersje kolorystyczne postaci (przemalowane ubrania)', () => {
     const baza = { ...l.klatka(ochroniarz, poza(), true, 0, 0)! };
     const w3 = l.klatka(ochroniarz, poza(), true, 0, 3)!;
     expect([w3.wersja, w3.x, w3.y]).toEqual([0, baza.x, baza.y]);
+  });
+});
+
+describe('leżenie i zwłoki postaci (komórki z klatki stania przodem)', () => {
+  const GLOWA = 0xffcc6633;
+  const GLOWA_DRUGIEJ = 0xff000099;
+  const TULOW = 0xff44aa44;
+  const ile = (px: ArrayLike<number>, kolor: number) => Array.from(px).filter((p) => p === kolor).length;
+  /** atlas 64 × 64 z dwiema klatkami stania przodem 8 × 12 w (5, 7) i (30, 7): głowa 4 wiersze, reszta tułów */
+  function zSylwetka(): { lw: LudziePixellab; p: PostacLudzi } {
+    const img = { w: 64, h: 64, px: new Uint32Array(64 * 64) };
+    for (const x0 of [5, 30])
+      for (let y = 0; y < 12; y++)
+        for (let x = 0; x < 8; x++) img.px[(7 + y) * 64 + x0 + x] = y < 4 ? (x0 === 5 ? GLOWA : GLOWA_DRUGIEJ) : TULOW;
+    const p = postac(
+      's',
+      false,
+      'm',
+      [0, 100],
+      [
+        [
+          [5, 7, 8, 12, 4, 12],
+          [30, 7, 8, 12, 4, 12],
+        ],
+        klatki(20),
+        klatki(40),
+        2,
+      ],
+    );
+    return { lw: new LudziePixellab({ opis: obsada(p), img }), p };
+  }
+
+  it('komórka powstaje z pierwszej klatki stania przodem (kierunek 0) i ma środek głowy na głowie', () => {
+    const { lw, p } = zSylwetka();
+    for (const rodzaj of ['floor', 'bed'] as const)
+      for (let o = 0; o < 4; o++) {
+        const k = lw.lezenie(p, 0, o, rodzaj)!;
+        expect(ile(k.px, GLOWA_DRUGIEJ), `${rodzaj} ${o}`).toBe(0);
+        for (const [dx, dy] of [
+          [-1, -1],
+          [0, -1],
+          [-1, 0],
+          [0, 0],
+        ])
+          expect(k.px[(k.hy + dy) * k.w + k.hx + dx], `${rodzaj} ${o} ${dx},${dy}`).toBe(GLOWA);
+      }
+    const podloga = lw.lezenie(p, 0, 0, 'floor')!;
+    expect([ile(podloga.px, GLOWA), ile(podloga.px, TULOW)]).toEqual([8 * 4, 8 * 8]);
+  });
+
+  it('ta sama komórka drugi raz to ten sam obiekt, a strona głowy liczy się modulo 4', () => {
+    const { lw, p } = zSylwetka();
+    const a = lw.lezenie(p, 0, 1, 'bed')!;
+    expect(lw.lezenie(p, 0, 1, 'bed')).toBe(a);
+    expect(lw.lezenie(p, 0, 5, 'bed')).toBe(a);
+    expect(lw.lezenie(p, 0, 2, 'bed')).not.toBe(a);
+    expect(lw.lezenie(p, 0, 1, 'floor')).not.toBe(a);
+  });
+
+  it('na podłodze leży się poziomo (głową do góry wyglądałby jak stojący), w łóżku strona głowy zostaje z łóżka', () => {
+    const { lw, p } = zSylwetka();
+    // strona głowy: 1 prawo, 3 lewo; góra i dół schodzą na poziomo
+    expect(lw.lezenie(p, 0, 0, 'floor')).toBe(lw.lezenie(p, 0, 1, 'floor'));
+    expect(lw.lezenie(p, 0, 2, 'floor')).toBe(lw.lezenie(p, 0, 3, 'floor'));
+    expect(lw.lezenie(p, 0, 1, 'floor')).not.toBe(lw.lezenie(p, 0, 3, 'floor'));
+    for (let o = 0; o < 4; o++) {
+      const k = lw.lezenie(p, 0, o, 'floor')!;
+      let n = 0;
+      let sx = 0;
+      let sy = 0;
+      for (let i = 0; i < k.px.length; i++)
+        if (k.px[i] === GLOWA) {
+          n++;
+          sx += (i % k.w) + 0.5;
+          sy += Math.floor(i / k.w) + 0.5;
+        }
+      // głowa jest z lewej albo z prawej strony środka, nie nad nim ani pod nim
+      expect(Math.abs(sx / n - k.w / 2), `${o}`).toBeGreaterThan(Math.abs(sy / n - k.h / 2) + 2);
+    }
+    expect(lw.lezenie(p, 0, 0, 'bed')).not.toBe(lw.lezenie(p, 0, 1, 'bed'));
+    expect(lw.lezenie(p, 0, 2, 'bed')).not.toBe(lw.lezenie(p, 0, 3, 'bed'));
+  });
+
+  it('postać bez klatek stania przodem nie ma leżenia (rysuje je kod)', () => {
+    const { lw, p } = zSylwetka();
+    const odbita = { ...p, animacje: { chod: p.animacje.chod, stanie: { kierunki: [2, klatki(20), klatki(40), 2] } } };
+    expect(lw.lezenie(odbita as PostacLudzi, 0, 0, 'floor')).toBeNull();
+    const bezStania = { ...p, animacje: { chod: p.animacje.chod } };
+    expect(lw.lezenie(bezStania as PostacLudzi, 0, 0, 'floor')).toBeNull();
+  });
+
+  const lp = new LudziePixellab(prawdziwy);
+  const klatkaStania = (post: PostacLudzi) => (post.animacje.stanie.kierunki[0] as KlatkaLudzi[])[0];
+  const widoczne = (post: PostacLudzi) => {
+    const [x, y, w, h] = klatkaStania(post);
+    let n = 0;
+    for (let r = 0; r < h; r++)
+      for (let c = 0; c < w; c++) if (prawdziwy.img.px[(y + r) * prawdziwy.img.w + x + c] >>> 24) n++;
+    return n;
+  };
+
+  it('każda postać prawdziwej obsady ma komórki leżenia, w których cała sylwetka jest na podłodze, a głowa w łóżku', () => {
+    for (const post of opisAtlasu.postacie)
+      for (let o = 0; o < 4; o++) {
+        const podloga = lp.lezenie(post, 0, o, 'floor')!;
+        expect(podloga.w, `${post.id} ${o}`).toBe(podloga.h);
+        expect(Array.from(podloga.px).filter((q) => q >>> 24 === 255).length, `${post.id} ${o}`).toBe(widoczne(post));
+        const lozko = lp.lezenie(post, 0, o, 'bed')!;
+        const naGlowie = [-1, 0].flatMap((dy) =>
+          [-1, 0].map((dx) => lozko.px[(lozko.hy + dy) * lozko.w + lozko.hx + dx]),
+        );
+        expect(
+          naGlowie.every((q) => q >>> 24 === 255),
+          `${post.id} ${o}`,
+        ).toBe(true);
+      }
+  });
+
+  it('wersja kolorystyczna przemalowuje ubranie w komórce (też zarządu), a widoczne piksele zostają te same', () => {
+    for (const id of ['kotwica-kibic', 'kotwica-emeryt']) {
+      const post = opisAtlasu.postacie.find((q) => q.id === id)!;
+      const baza = lp.lezenie(post, 0, 1, 'floor')!;
+      const inna = lp.lezenie(post, 2, 1, 'floor')!;
+      expect(inna, id).not.toBe(baza);
+      let rozne = 0;
+      for (let i = 0; i < baza.px.length; i++) {
+        expect(inna.px[i] >>> 24, id).toBe(baza.px[i] >>> 24);
+        if (inna.px[i] !== baza.px[i]) rozne++;
+      }
+      expect(rozne, id).toBeGreaterThan(20);
+    }
+  });
+
+  it('postać bez ubrania do przemalowania ma wszystkie wersje leżenia takie same jak oryginał', () => {
+    const ochroniarz = opisAtlasu.postacie.find((q) => q.id === 'kotwica-ochroniarz')!;
+    expect(lp.lezenie(ochroniarz, 3, 0, 'floor')).toBe(lp.lezenie(ochroniarz, 0, 0, 'floor'));
+  });
+
+  it('zwłoki dostają dorosłego mieszkańca po wyglądzie z gry, a bez mieszkańców w obsadzie nikogo', () => {
+    const ids = new Set<string>();
+    for (let look = 0; look < 30; look++) {
+      const post = lp.postacZwlok(look)!;
+      expect(post.zarzad).toBe(false);
+      expect(post.wiek[1]).toBeGreaterThanOrEqual(16);
+      expect(lp.postacZwlok(look)).toBe(post);
+      ids.add(post.id);
+    }
+    expect(ids.size).toBeGreaterThan(10);
+    const tylkoZarzad = new LudziePixellab(sztuczny(obsada(postac('z', true, 'm', [0, 100]))));
+    expect(tylkoZarzad.postacZwlok(0)).toBeNull();
   });
 });

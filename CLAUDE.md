@@ -73,6 +73,7 @@ npm run atlasy       # atlasy grafiki z PixelLab do public/assets/ z assets/raw 
 npm run animacje     # pobiera animacje postaci z PixelLab do assets/raw (zamówienia idą przez MCP): [-- id ...], potem npm run atlasy
 node tools/trzy-noce.ts        # trzy pierwsze noce zarządu na atrapie symulacji [ziarno] [--n liczba_ziaren]
 node tools/arkusz-wnetrza.ts   # arkusz grafiki zastępczej do shots/ (podobnie arkusz-wraki.ts)
+node tools/dlonie.ts           # pomiar dłoni w klatkach ciosu z PixelLab i tabela korekt nakładki broni (src/render/art/bronPixellab.ts)
 ZM_BAZA=./za-murem.db ZM_CIASTECZKO_SECURE=0 node server/main.ts  # serwer gry sieciowej na :8787 (server/README.md)
 ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh  # build i wdrożenie (gra i /api)
 ```
