@@ -118,7 +118,7 @@ import {
   WARMED,
 } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
-import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP } from './perimeter.ts';
+import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP, REINFORCED_HP } from './perimeter.ts';
 import {
   atakOdRazu,
   type DrzwiStan,
@@ -238,6 +238,7 @@ import {
   BITE_HIT_FIGHTING,
   BITE_REACH,
   CHASE_SPEED,
+  crowdNear,
   DAY_PULL,
   DISPERSE,
   distField,
@@ -247,7 +248,7 @@ import {
   hordeSize,
   MAX_ZOMBIES,
   NEAR,
-  PUSH,
+  pushOf,
   RING_FROM,
   RING_TO,
   SIGHT_DAY,
@@ -862,6 +863,9 @@ export interface SimState {
   damage: DamageGame[];
   /** plany budowy w toku; gotowe budowle są w things */
   builds: BuildPlan[];
+  /** odblokowane badania (identyfikatory z BuildDef.tech); celowo brak pola, dopóki ktoś nie odblokuje pierwszego
+      badania: `sim.hash()` to skrót z całego stanu, więc zawsze obecne puste pole ruszyłoby każdy skrót */
+  techDone?: string[];
   /** wraki przeszukane i rozebrane (lewy górny kafelek), rosnąco; brak, dopóki nikt nie przeszukał wraku */
   wraki?: WreckMark[];
   /** sąsiednie budynki (M2 fala 2): nie ma go, dopóki zarząd nie dotknie cudzych drzwi, więc gra bez sąsiadów ma ten
@@ -1916,6 +1920,9 @@ export class Sim {
   private readonly fenceIndex = new Map<number, number>();
   /** wyszukiwania dróg szwendaczy w tym kroku */
   private zbudget = 0;
+  /** napierający szwendacze według naciskanego kafelka i ich tłok przy kafelku, liczone raz na krok (tryb zombie) */
+  private readonly pressing = new Map<number, number>();
+  private readonly crowd = new Map<number, number>();
   /** kafelki podwórka (1) i to, czy w bieżącym kroku jest na nim wróg (liczone raz na krok) */
   private yardMask: Uint8Array = new Uint8Array(0);
   private dangerAt = -1;
@@ -2205,6 +2212,7 @@ export class Sim {
     if (modeOf(st) === 'zombie') {
       this.zombieClock();
       this.rise();
+      this.countPressing();
     }
     this.zbudget = 3;
     let budget = PATHS_PER_TICK;
@@ -6568,7 +6576,7 @@ export class Sim {
           this.pour(p);
           return;
         }
-        this.damageFence(t, PUSH);
+        this.press(t);
         return;
       }
       case 4:
@@ -6689,6 +6697,42 @@ export class Sim {
     }
     if (!cand.length) return;
     this.go(p, cand[Math.floor(nextRandom(st.rng) * cand.length)]);
+  }
+
+  /** Napierający szwendacze według naciskanego kafelka, raz na krok (przed ruchem pionków). */
+  private countPressing(): void {
+    this.pressing.clear();
+    this.crowd.clear();
+    for (const q of this.st.pawns)
+      if (q.kind === 'zombie' && q.job?.phase === 2 && q.job.target >= 0)
+        this.pressing.set(q.job.target, (this.pressing.get(q.job.target) ?? 0) + 1);
+  }
+
+  /** Tłok przy kafelku siatki: ilu szwendaczy napiera w promieniu CROWD_RADIUS od niego (z tymi na nim). */
+  private crowdAt(tile: number): number {
+    let n = this.crowd.get(tile);
+    if (n === undefined) {
+      n = crowdNear(this.pressing, this.w.size, tile);
+      this.crowd.set(tile, n);
+    }
+    return n;
+  }
+
+  /** wytrzymałość kafelka siatki: łaty, jeśli stoi na dziurze, inaczej samej siatki (0 poza siatką i na bramie) */
+  private wireHp(tile: number): number {
+    const f = this.st.fence;
+    if (!f) return 0;
+    const hole = f.holes.find((h) => h.tiles.includes(tile));
+    if (hole) return hole.patch;
+    const k = this.fenceIndex.get(tile);
+    return k === undefined ? 0 : f.hp[k];
+  }
+
+  /** Jeden szwendacz napiera na kafelek siatki, łaty albo zasieków: zużycie, a przy tłoku ponad próg szkoda
+      (zombie.ts, pushOf). */
+  private press(tile: number): void {
+    const dmg = pushOf(this.crowdAt(tile), this.wireHp(tile));
+    if (dmg > 0) this.damageFence(tile, dmg);
   }
 
   /** Napór albo cios w siatkę: łata traci wytrzymałość, a przy zerze dziura znowu jest otwarta; zwykły kafelek siatki
@@ -8685,7 +8729,9 @@ export class Sim {
     const stara = this.w.fence;
     const f = st.fence!;
     const hp = new Map(stara.tiles.map((t, i) => [t, f.hp[i]]));
-    f.hp = r.fence.tiles.map((t) => hp.get(t) ?? PATCH_HP);
+    // nowy płot z desek i złomu w trybie zombie jest tak mocny jak wzmocniona siatka na starcie, w zwykłym jak świeża łata
+    const fresh = modeOf(st) === 'zombie' ? REINFORCED_HP : PATCH_HP;
+    f.hp = r.fence.tiles.map((t) => hp.get(t) ?? fresh);
     const on = new Set(r.fence.tiles);
     f.holes = f.holes.map((h) => ({ ...h, tiles: h.tiles.filter((t) => on.has(t)) })).filter((h) => h.tiles.length);
     const b = st.sasiedzi!.budynki[k];

@@ -86,7 +86,7 @@ import { LightLayer } from './lightLayer.ts';
 import { LudzieLayer } from './ludzieLayer.ts';
 import { type DuchPlotu, duchPlotu } from './plotDuch.ts';
 import { PlotLayer } from './plotLayer.ts';
-import { FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
+import { crowdJitter, FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
 import { PrzekrojSasiadow } from './przekrojSasiadow.ts';
 import { burning, IN, setWear, specOf, type ThingLike } from './section.ts';
 import { smokeSources } from './smoke.ts';
@@ -838,7 +838,9 @@ export class GameView {
       } else {
         if (lp) sp.anchor.set(lp.ax / lp.w, lp.ay / lp.h);
         else sp.anchor.set(0.5, 45 / FH);
-        sp.position.set(Math.round(x * TILE), Math.round(y * TILE));
+        // napierający na siatkę stoją na środkach kafelków: tłum rozsuwamy w widoku, żeby nie był jednym sprite'em
+        const [jx, jy] = p.kind === 'zombie' && p.job?.phase === 2 ? this.crowdOffset(p) : [0, 0];
+        sp.position.set(Math.round((x + jx) * TILE), Math.round((y + jy) * TILE));
       }
       sp.zIndex = pose.z ?? y;
       // pod dachem nie widać nikogo; w przekroju tak; kto przeszukuje piętro sąsiada, jest na górze (M2 fala 2)
@@ -1005,6 +1007,16 @@ export class GameView {
         sp.destroy();
         this.corpseSprites.delete(id);
       }
+  }
+
+  /** rozsunięcie napierającego szwendacza (kafelki): od siatki, którą naciska (job.target), wzdłuż niej i w głąb ulicy */
+  private crowdOffset(p: Pawn): [number, number] {
+    const size = this.scene!.w.size;
+    const t = p.job!.target;
+    const dx = (t % size) + 0.5 - p.x;
+    const dy = Math.floor(t / size) + 0.5 - p.y;
+    const away: [number, number] = Math.abs(dx) >= Math.abs(dy) ? [dx > 0 ? -1 : 1, 0] : [0, dy > 0 ? -1 : 1];
+    return crowdJitter(p.id, t >= 0 ? away : [0, 1]);
   }
 
   /** paski życia rannych w walce i krąg hałasu po strzale (w warstwie zaznaczeń) */

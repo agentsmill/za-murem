@@ -15,7 +15,7 @@ import { commandsAt, jobText } from '../../src/sim/orders.ts';
 import { gateTiles } from '../../src/sim/perimeter.ts';
 import { createSim, type Job, Sim, STAY_MEAL } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
-import { buildMenu, buildSheet } from '../../src/ui/budowa.ts';
+import { buildMenu, buildPanelHtml } from '../../src/ui/budowa.ts';
 import { goalsDay2, goalsOf } from '../../src/ui/cele.ts';
 import { personCard } from '../../src/ui/karta.ts';
 import { aptCard, aptState, aptView } from '../../src/ui/mieszkania.ts';
@@ -154,8 +154,9 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
     expect(visible(aptCard(v, false, words, e))).not.toMatch(BLOKOWE);
     expect(aptCard(v, false, words, e)).toContain('<h2>The house</h2>');
     expect(helpSheet(false, false, words, e).body).toContain('Building and searching the house');
-    const sheet = buildSheet(
+    const sheet = buildPanelHtml(
       buildMenu({}, (kind) => kind !== 'magazyn', words, e),
+      { tab: null, kind: null },
       false,
       words,
       e,

@@ -19,9 +19,18 @@ export type BuildKind = 'warsztat' | 'kuchnia_spoleczna' | 'magazyn' | 'lozka_pi
 /** gdzie wolno postawić: pokój albo kuchnia w naszym mieszkaniu, podwórko za siatką, odcinek siatki */
 export type BuildPlace = 'pokoj' | 'kuchnia' | 'podworko' | 'obwod';
 
+/** zakładka w menu budowy; kolejna dojdzie razem z budowlami, które do niej należą (jedzenie, prąd, obrona) */
+export type BuildCat = 'dom' | 'podworko' | 'obwod';
+/** kolejność zakładek w menu */
+export const BUILD_CATS: readonly BuildCat[] = ['dom', 'podworko', 'obwod'];
+
 export interface BuildDef {
   name: string;
   place: BuildPlace;
+  /** zakładka w menu budowy */
+  cat: BuildCat;
+  /** badanie, które odblokowuje budowlę (`st.techDone`); bez pola budowla jest dostępna od początku */
+  tech?: string;
   /** rozmiar w kafelkach przy rot 0 (przy rot 1 i 3 zamienione) */
   w: number;
   h: number;
@@ -36,6 +45,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
   warsztat: {
     name: 'Warsztat',
     place: 'pokoj',
+    cat: 'dom',
     w: 2,
     h: 1,
     cost: { deski: 20, zlom: 10 },
@@ -45,6 +55,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
   kuchnia_spoleczna: {
     name: 'Kuchnia społeczna',
     place: 'kuchnia',
+    cat: 'dom',
     w: 2,
     h: 1,
     cost: { zlom: 14, czesci: 10 },
@@ -54,6 +65,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
   magazyn: {
     name: 'Magazyn',
     place: 'pokoj',
+    cat: 'dom',
     w: 2,
     h: 2,
     cost: { deski: 30 },
@@ -63,6 +75,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
   lozka_pietrowe: {
     name: 'Łóżka piętrowe',
     place: 'pokoj',
+    cat: 'dom',
     w: 1,
     h: 2,
     cost: { deski: 20 },
@@ -72,6 +85,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
   ogrodek: {
     name: 'Ogródek',
     place: 'podworko',
+    cat: 'podworko',
     w: 3,
     h: 2,
     cost: { deski: 14 },
@@ -81,6 +95,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
   zasieki: {
     name: 'Zasieki',
     place: 'obwod',
+    cat: 'obwod',
     w: 1,
     h: 1,
     cost: { zlom: 10 },
@@ -102,6 +117,13 @@ export interface BuildPlan {
   have: Partial<Record<Mat, number>>;
   work: number;
   by: number;
+}
+
+/** czy budowla jest odblokowana: bez `tech` zawsze, z `tech` po badaniu z `st.techDone` (pole jest nieobecne,
+    dopóki ktoś nie odblokuje pierwszego badania, żeby skróty stanu istniejących gier się nie ruszyły) */
+export function isUnlocked(st: Pick<SimState, 'techDone'>, kind: BuildKind): boolean {
+  const t = BUILDS[kind].tech;
+  return !t || !!st.techDone?.includes(t);
 }
 
 /** rozmiar budowli przy danym obrocie */
@@ -151,6 +173,7 @@ export function canPlace(
   rot: number,
 ): { ok: boolean; why?: string } {
   const def = BUILDS[kind];
+  if (!isUnlocked(st, kind)) return { ok: false, why: L('Wymaga badania.', 'Needs research.') };
   const size = w.size;
   const { w: bw, h: bh } = footprint(kind, rot);
   if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: L('Poza mapą.', 'Off the map.') };

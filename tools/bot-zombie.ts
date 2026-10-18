@@ -1,12 +1,13 @@
 /* Bot trybu zombie: gra z zarządem (src/gov) na Przymorzu przez kilka nocy dwiema politykami karty nocy: warta
-   z dzidami przy siatce i bez warty. Na wartę idą najwyżej dwie osoby, i to tylko z dzidą: najpierw ci, którzy ją
-   mają, potem najzdrowsi, którzy wezmą dzidę z magazynu w zamian za swoją broń; ugryzieni (w gorączce) nie stoją.
+   z dzidami przy siatce i bez warty. Na wartę idą najwyżej dwie osoby, i to tylko z dzidą (własną albo z magazynu
+   w zamian za swoją broń): najzdrowsze, kto ma mniej niż 45 zdrowia, odpoczywa; ugryzieni (w gorączce) nie stoją.
    Za dnia w obu politykach gracz robi to samo: łata dziury, wzmacnia uszkodzoną siatkę, robi dzidy, czyści
    podwórko ze szwendaczy uzbrojonym zarządem, dźga dzidami przez siatkę tych, którzy stoją pod nią, rąbie drewno
-   tylko wtedy, gdy przy bramie i drzewie pusto, dobija zwłoki i amputuje ugryzionych w rękę albo nogę. Na noc
-   (od 7:00 do 7:00): stado, najwięcej napierających, zabici, przerwania siatki, ugryzienia za dnia (7–20)
-   i w nocy (20–7), zgony, siatka o 6:00, zarząd, jego średnie najedzenie i zdrowie o 7:00, mieszkańcy. Na koniec
-   skrót stanu (powtarzalny).
+   tylko wtedy, gdy w promieniu 20 m od bramy i od drzewa nie ma szwendaczy (a gdy drewna brak i koza gaśnie,
+   rozbiera na opał meble z mieszkania zarządu, łóżka na końcu), dobija zwłoki i amputuje ugryzionych w rękę albo
+   nogę. Na noc (od 7:00 do 7:00): stado, najwięcej napierających, zabici, przerwania siatki, ugryzienia za dnia
+   (7–20) i w nocy (20–7), zgony, siatka o 6:00, zarząd, jego średnie najedzenie i zdrowie o 7:00, mieszkańcy. Na
+   koniec skrót stanu (powtarzalny).
    Trzeci argument to liczba osób zarządu (1–5, domyślnie 4 jak w grze bez ruszania panelu „Wasz zarząd”), żeby
    zobaczyć, jak trudność rośnie przy mniejszym zarządzie.
    Z flagą --mieszkancy (gdziekolwiek wśród argumentów) bot gra na świecie z mieszkańcami siedziby z generatora
@@ -15,7 +16,12 @@
    Z flagą --sasiedzi (M2 fala 2) za dnia jedna osoba z zarządu chodzi do sąsiednich budynków (tests/unit/sasiedzi-play.ts):
    pod tabelą nocy linijka, ile u nich zrobiła, spotkania, rany i ugryzienia; najedzenie w tabeli pokazuje, czy szaber
    ratuje zarząd przed głodem. Bez flagi wyjście i skróty bez zmian.
-   Uruchomienie: npm run bot:zombie [-- ziarno [noce [osoby]]] [--mieszkancy] [--sasiedzi] */
+   Z flagą --demo=NAZWA (przymorze, lanciego, zielonki) bot gra na innym osiedlu niż Przymorze; bez niej wyjście i skróty
+   bez zmian.
+   Z flagą --opal bot co 10 sekund gry dokłada do kozy, kiedy ognia zostaje na mniej niż dwie godziny, jakby opału
+   nie brakowało (w grze brakuje: bez drewna koza gaśnie, warta marznie przy siatce i po dwóch nocach schodzi
+   z posterunku, więc od nocy 4–5 siatka zostaje sama). Z tą flagą mierzy się samą siatkę z działającą wartą.
+   Uruchomienie: npm run bot:zombie [-- ziarno [noce [osoby]]] [--demo=NAZWA] [--mieszkancy] [--sasiedzi] [--opal] */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,19 +37,25 @@ import {
 } from '../src/gov/zarzad.ts';
 import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { applyGov, govInput } from '../src/sim/gov.ts';
+import { houseOf, inHomeApt } from '../src/sim/house.ts';
 import { commandsAt } from '../src/sim/orders.ts';
-import { AMPUTATE_WINDOW, createSim, FEVER_TICKS, type Pawn, Sim } from '../src/sim/sim.ts';
+import { AMPUTATE_WINDOW, BURNABLE, createSim, FEVER_TICKS, type Pawn, Sim } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { hordeSize } from '../src/sim/zombie.ts';
 import { buildWorld } from '../src/world/world.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
-import { ARGUMENTY, MIESZKANCY, opisMieszkancow, SASIEDZI, swiatMieszkancow } from './bot-mieszkancy.ts';
+import { ARGUMENTY, DEMO, MIESZKANCY, OPAL, opisMieszkancow, SASIEDZI, swiatMieszkancow } from './bot-mieszkancy.ts';
 
 const SEED = Number(ARGUMENTY[0]) || 1;
 const NIGHTS = Number(ARGUMENTY[1]) || 6;
 const CORE = Math.max(1, Math.min(5, Math.round(Number(ARGUMENTY[2]) || 4)));
 
-const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../public/demo/przymorze.json'), 'utf8'));
+const demoFile = path.resolve(import.meta.dirname, `../public/demo/${DEMO ?? 'przymorze'}.json`);
+if (!fs.existsSync(demoFile)) {
+  console.error(`Nieznane demo: „${DEMO}”. Dema to pliki public/demo/*.json (przymorze, lanciego, zielonki).`);
+  process.exit(2);
+}
+const demo = JSON.parse(fs.readFileSync(demoFile, 'utf8'));
 // z flagą --mieszkancy świat i opcja `mieszkancy` dla createSim z generatora mieszkańców (tools/bot-mieszkancy.ts)
 const osiedle = MIESZKANCY ? await swiatMieszkancow(demo, SEED, CORE) : null;
 const world = osiedle ? osiedle.world : buildWorld(demo.geo, { seed: SEED, street: demo.street });
@@ -53,6 +65,9 @@ const fenceDist = (x: number, y: number) =>
   Math.min(...world.fence.tiles.map((t) => Math.hypot((t % size) + 0.5 - x, Math.floor(t / size) + 0.5 - y)));
 
 type Policy = 'warta-dzidy' | 'bez-warty';
+
+/** na wartę staje ten, kto ma co najmniej tyle zdrowia (poniżej 30 sim zdejmuje go z posterunku) */
+const GUARD_FIT = 45;
 
 interface Night {
   day: number;
@@ -137,28 +152,33 @@ function play(policy: Policy): {
           // propozycja zarządu zostaje (wyprawy po zapasy), zmienia się tylko warta przy siatce
           for (const [id, key] of Object.entries(p.assign)) if (key.startsWith('warta:')) setNight(gov, id, 'sen');
           if (policy === 'warta-dzidy') {
-            // warta tylko z dzidą: najpierw ci, którzy ją mają, potem najzdrowsi z dzidą z magazynu (w zamian
-            // za swoją broń); bez ugryzionych
+            // warta tylko z dzidą, najwyżej dwie osoby, najzdrowsze (z własną dzidą albo z magazynu, w zamian za
+            // swoją broń); bez ugryzionych. Kto ma mniej niż GUARD_FIT zdrowia, odpoczywa, a gdyby brakowało
+            // zdrowych, staje najzdrowszy z resztą sił (poniżej 30 zdrowia i tak zszedłby z posterunku).
             let spare = (st.store.arms ?? []).filter((a) => a === 'dzida').length;
             let guards = 0;
             const order = core()
               .filter((q) => q.bite === undefined)
               .sort(
                 (a, b) =>
-                  Number(b.weapon === 'dzida') - Number(a.weapon === 'dzida') ||
                   b.needs!.health - a.needs!.health ||
+                  Number(b.weapon === 'dzida') - Number(a.weapon === 'dzida') ||
                   a.id - b.id,
               );
-            for (const q of order) {
-              if (guards >= 2) break;
-              const spear = q.weapon === 'dzida';
-              if (!spear && spare <= 0) continue;
-              if (!setNight(gov, st.people[q.person].id, 'warta:siatka')) continue;
-              if (!spear) {
-                sim.push({ t: 'arm', ids: [q.id], weapon: 'dzida' });
-                spare--;
+            for (const min of [GUARD_FIT, 30]) {
+              for (const q of order) {
+                if (guards >= 2) break;
+                if ((q.needs?.health ?? 0) < min) continue;
+                const spear = q.weapon === 'dzida';
+                if (!spear && spare <= 0) continue;
+                const id = st.people[q.person].id;
+                if (gov.night?.assign[id] === 'warta:siatka' || !setNight(gov, id, 'warta:siatka')) continue;
+                if (!spear) {
+                  sim.push({ t: 'arm', ids: [q.id], weapon: 'dzida' });
+                  spare--;
+                }
+                guards++;
               }
-              guards++;
             }
           }
           applyGov(st, world, confirmNight(gov, i));
@@ -167,6 +187,9 @@ function play(policy: Policy): {
     }
     // gracz co 10 sekund gry
     if (st.tick % (10 * TICKS_PER_SECOND) === 0) {
+      // --opal: opał do kozy z niczego (dwie godziny ognia to 1600 kroków, dokłada do czterech godzin)
+      const koza = OPAL ? st.things.find((t) => t.kind === 'koza') : undefined;
+      if (koza && koza.fuel < 2 * TICKS_PER_HOUR) koza.fuel = 4 * TICKS_PER_HOUR;
       // fala 2 (--sasiedzi): jedna osoba u sąsiadów za dnia
       nb?.player(sim, world, st.tick / TICKS_PER_SECOND, (c) => sim.push(c));
       const people = core();
@@ -241,14 +264,14 @@ function play(policy: Policy): {
         const gateClear = !st.pawns.some(
           (p) =>
             p.kind === 'zombie' &&
-            Math.hypot(p.x - ((sim.exitTile % size) + 0.5), p.y - (Math.floor(sim.exitTile / size) + 0.5)) < 12,
+            Math.hypot(p.x - ((sim.exitTile % size) + 0.5), p.y - (Math.floor(sim.exitTile / size) + 0.5)) < 20,
         );
         if (sn.wood < 8 && !chopping && woodman && gateClear) {
           let best = -1;
           let bd = Number.POSITIVE_INFINITY;
           world.trees.forEach((t, k) => {
             if (t.kind === 2 || st.felled.includes(k) || skip.has(k)) return;
-            if (st.pawns.some((p) => p.kind === 'zombie' && Math.hypot(p.x - t.x, p.y - t.y) < 12)) return;
+            if (st.pawns.some((p) => p.kind === 'zombie' && Math.hypot(p.x - t.x, p.y - t.y) < 20)) return;
             const d = Math.hypot(t.x - (door % size), t.y - Math.floor(door / size));
             if (d < bd) {
               bd = d;
@@ -259,6 +282,18 @@ function play(policy: Policy): {
             sim.push({ t: 'chop', ids: [woodman.id], tree: best });
             asked = best;
           }
+        }
+        // koza gaśnie, a drewna nie ma (drzewa stoją w tłumie szwendaczy): ktoś rozbiera mebel z mieszkania zarządu
+        // na opał, najpierw to, bez czego da się żyć, łóżka na końcu
+        const stove = st.things.find((t) => t.kind === 'koza');
+        const home = houseOf(world);
+        if (home && stove && stove.fuel < 2 * TICKS_PER_HOUR && sn.wood < 1 && free.length && !busy('burn')) {
+          const piece = ['mebloscianka', 'stol', 'wersalka', 'krzeslo', 'lozko']
+            .flatMap((k) => st.things.filter((t) => t.kind === k && BURNABLE[k] && inHomeApt(home, t.y * size + t.x)))
+            .at(0);
+          const m =
+            piece && commandsAt(st, world, [free[0].id], piece.y * size + piece.x).find((c) => c.cmd.t === 'burn');
+          if (m) sim.push(m.cmd);
         }
         const body = st.things.find((t) => t.kind === 'zwloki' && t.fuel > 0);
         if (free.length > 1 && body) sim.push({ t: 'finish', ids: [free[1].id], thing: body.id });
@@ -312,7 +347,9 @@ function play(policy: Policy): {
   };
 }
 
-console.log(`Bot trybu zombie, ${demo.name}, ziarno ${SEED}, noce ${NIGHTS}, zarząd ${CORE}`);
+console.log(
+  `Bot trybu zombie, ${demo.name}, ziarno ${SEED}, noce ${NIGHTS}, zarząd ${CORE}${OPAL ? ', z opałem do kozy z niczego' : ''}`,
+);
 for (const policy of ['warta-dzidy', 'bez-warty'] as const) {
   const r = play(policy);
   console.log(`\n  ${policy} (${(r.ms / 1000).toFixed(1)} s, skrót ${r.hash}; ${r.over})`);

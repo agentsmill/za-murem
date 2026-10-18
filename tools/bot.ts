@@ -43,8 +43,9 @@ import {
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
-import { ARGUMENTY, MIESZKANCY, opisMieszkancow, SASIEDZI, swiatMieszkancow } from './bot-mieszkancy.ts';
+import { ARGUMENTY, MIESZKANCY, opisMieszkancow, SASIEDZI, swiatMieszkancow, tylkoZombie } from './bot-mieszkancy.ts';
 
+tylkoZombie('bot');
 const SEED = Number(ARGUMENTY[0]) || 1;
 const DAYS = Number(ARGUMENTY[1]) || 45;
 const CROWD = Number(ARGUMENTY[2]) || 0;
