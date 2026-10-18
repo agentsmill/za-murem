@@ -4,6 +4,7 @@
    do `createSim` jako opcja `mieszkancy`. Bez flagi boty nie dotykają niczego stąd poza odczytem argumentów, więc ich
    wyjście i skróty są takie jak przed krokiem 5.
    Flaga może stać gdziekolwiek wśród argumentów; `ARGUMENTY` to argumenty pozycyjne bez niej (ziarno, dni, tłum…).
+   Inny argument od `--` (literówka, np. `--mieszkanc`) kończy bota z błędem, zamiast cicho zagrać bez mieszkańców.
    Ziarno świata to ziarno bota (nie z adresu jak w grze), żeby przebiegi z flagą i bez niej były porównywalne. */
 
 import fs from 'node:fs';
@@ -16,6 +17,12 @@ import { buildWorld, type World } from '../src/world/world.ts';
 
 const PUBLIC = path.resolve(import.meta.dirname, '../public');
 const FLAGA = '--mieszkancy';
+
+const nieznane = process.argv.slice(2).filter((a) => a.startsWith('--') && a !== FLAGA);
+if (nieznane.length) {
+  console.error(`Nieznany argument: ${nieznane.join(', ')}. Bot zna tylko flagę ${FLAGA} (reszta to liczby).`);
+  process.exit(2);
+}
 
 /** Czy bot ma grać z mieszkańcami z adresu. */
 export const MIESZKANCY = process.argv.includes(FLAGA);
