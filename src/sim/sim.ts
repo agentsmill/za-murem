@@ -1,7 +1,9 @@
 /* Symulacja (M1): pionki rdzenia z poleceniami i własną pracą, tłum z prostym planem, rzeczy (meble, drewno,
    koza, jedzenie, pnie), ciepło w pomieszczeniach, potrzeby i samouczek. Stały krok, ziarno i kolejka poleceń
    w stanie. Stan to zwykły obiekt (JSON), rysowanie tylko go czyta. Ten sam świat, ziarno i polecenia dają ten sam
-   stan. Bez wnętrza siedziby (świat sprzed M1) zarząd stoi, a rzeczy, ciepła i samouczka nie ma. */
+   stan. Bez wnętrza siedziby (świat sprzed M1) zarząd stoi, a rzeczy, ciepła i samouczka nie ma. Z opcją
+   `mieszkancy` (krok 5, src/sim/lokatorzy.ts) zarząd i mieszkańcy siedziby mają osoby z generatora mieszkańców;
+   bez niej stan jest taki jak przed tą opcją. */
 
 import { PROFS } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -37,6 +39,7 @@ import {
   roomLinks,
   START_TEMP,
 } from './house.ts';
+import type { OsobaGry } from './lokatorzy.ts';
 import {
   type AptGame,
   aptsFrom,
@@ -324,7 +327,8 @@ export const isEnemy = (p: Pick<Pawn, 'kind'>): boolean => p.kind === 'szabrowni
 export interface Pawn {
   id: number;
   kind: PawnKind;
-  /** osoba z rdzenia (indeks w state.people) albo −1 */
+  /** osoba (indeks w state.people): zarząd zawsze, mieszkaniec siedziby tylko z opcją mieszkancy w createSim (osoba
+      z generatora mieszkańców), reszta −1. To, że ktoś jest z zarządu, mówi kind === 'core', nie osoba. */
   person: number;
   look: number;
   x: number;
@@ -481,8 +485,9 @@ export interface Fx {
 }
 
 export interface Dead {
-  /** id osoby z zarządu (s1…), pusty napis dla innych */
+  /** id osoby z zarządu (s1…), pusty napis dla innych (także dla mieszkańca z osobą: dla zarządu to mieszkaniec) */
   id: string;
+  /** imię i nazwisko osoby (zarząd, mieszkaniec z osobą), inaczej „Mieszkaniec” albo „Szabrownik” */
   name: string;
   look: number;
   kind: PawnKind;
@@ -634,8 +639,19 @@ export interface SimOpts {
       i reszta stanu są te same co bez drużyny przy tej samej liczbie osób. Każdą osobę symulacja sprawdza jeszcze raz
       (bledyOsoby); osoba ze złymi danymi zostaje taka jak z losowania z adresu, a w konsoli jest ostrzeżenie. */
   team?: readonly OsobaDruzyny[];
-  /** mieszkańcy siedziby; domyślnie 3–8 według mieszkań połączonych z podwórkiem */
+  /** mieszkańcy siedziby; domyślnie 3–8 według mieszkań połączonych z podwórkiem (z opcją mieszkancy najwyżej tylu,
+      ilu osób jest w mieszkancy.lokatorzy) */
   residents?: number;
+  /** Zarząd i mieszkańcy siedziby z generatora mieszkańców (lokatorzyGry w src/sim/lokatorzy.ts). Losowania idą tak
+      jak bez opcji: dane osób zarzad[k] nadpisują gotowe osoby zarządu po zwykłym losowaniu (k < liczby osób zarządu;
+      gdy z generatora jest mniej osób, reszta zostaje z losowania), a własna drużyna (team) nadpisuje je jeszcze raz
+      i wygrywa. Każdy pionek mieszkańca z mieszkania a dostaje kolejną osobę z listy tego mieszkania jako nową osobę
+      w state.people (bez losowania z ziarna, id z nextId); kogo zabrakło, zostaje bez osoby. Przyjęci później
+      (uchwały, wydarzenia) zostają bez osób. */
+  mieszkancy?: {
+    zarzad: readonly OsobaGry[];
+    lokatorzy: readonly { apt: number; osoby: readonly OsobaGry[] }[];
+  };
   /** tłum za siatką, tylko do pomiaru wydajności (npm run perf); w grze 0 */
   crowd?: number;
   /** tryb gry, domyślnie zwykły */
@@ -827,6 +843,9 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     pawn.weapon = kit.core[k] ?? null;
     st.pawns.push(pawn);
   }
+  // zarząd z generatora mieszkańców: dane osób nadpisują osoby z losowania dopiero po nim (losowania te same)
+  const zarzad = opts.mieszkancy?.zarzad ?? [];
+  for (let k = 0; k < Math.min(core, zarzad.length); k++) Object.assign(st.people[k], polaZGeneratora(zarzad[k]));
   // własna drużyna: dane osób nadpisują osoby z losowania dopiero po nim (te same imiona zajęte, te same losowania)
   team?.forEach((o, k) => {
     const why = bledyOsoby(o);
@@ -837,7 +856,12 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
       );
       return;
     }
-    Object.assign(st.people[k], osobaDoGry(o as OsobaDruzyny));
+    // drużyna wygrywa z generatorem: bez jego odnośnika, rodziny i historii
+    const p = st.people[k];
+    delete p.ref;
+    delete p.rodzina;
+    delete p.story;
+    Object.assign(p, osobaDoGry(o as OsobaDruzyny));
   });
   // łóżka w mieszkaniu zarządu mają właścicieli: po jednym dla każdego z zarządu, po kolei
   if (house) {
@@ -849,7 +873,21 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
   if (house) {
     const apts = residentApts(st, w, house);
     st.cap = Math.min(8, 3 * apts.length);
-    addResidents(st, w, opts.residents ?? (apts.length ? Math.min(8, Math.max(3, 2 * apts.length + 1)) : 0));
+    const lok = opts.mieszkancy ? (opts.mieszkancy.lokatorzy ?? []) : null;
+    // wzór z M1 (najwyżej 8); z osobami z generatora nie więcej mieszkańców, niż jest osób
+    const wzor = apts.length ? Math.min(8, Math.max(3, 2 * apts.length + 1)) : 0;
+    addResidents(
+      st,
+      w,
+      opts.residents ??
+        (lok
+          ? Math.min(
+              wzor,
+              lok.reduce((a, m) => a + m.osoby.length, 0),
+            )
+          : wzor),
+    );
+    if (lok) giveResidents(st, w, lok);
   }
   const homes = homeTiles(w);
   const crowd = opts.crowd ?? 0;
@@ -864,6 +902,58 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     st.pawns.push(p);
   }
   return st;
+}
+
+/** pola osoby gry z osoby z generatora mieszkańców: kopie (stan nie dzieli tablic z wejściem), rodzina i historia
+    tylko niepuste */
+function polaZGeneratora(
+  o: OsobaGry,
+): Pick<Person, 'first' | 'name' | 'f' | 'prof' | 'skills' | 'age' | 'traits' | 'story' | 'ref' | 'rodzina'> {
+  const out: ReturnType<typeof polaZGeneratora> = {
+    first: o.first,
+    name: o.name,
+    f: o.f,
+    prof: o.prof,
+    skills: { ...o.skills },
+    age: o.age,
+    traits: [...o.traits],
+    ref: o.ref,
+  };
+  if (o.rodzina) out.rodzina = o.rodzina;
+  if (o.story) out.story = o.story;
+  return out;
+}
+
+/** Osoby dla mieszkańców siedziby (opcja mieszkancy): pionek z mieszkania a dostaje kolejną osobę z listy tego
+    mieszkania, po kolei pionków. Nowe osoby idą na koniec state.people (po zarządzie, którego osoby są pierwsze),
+    id z nextId, dom w siedzibie; bez losowania z ziarna symulacji. */
+function giveResidents(st: SimState, w: World, lok: readonly { apt: number; osoby: readonly OsobaGry[] }[]): void {
+  const taken = new Map<number, number>();
+  for (const p of st.pawns) {
+    if (p.kind !== 'resident' || p.person >= 0) continue;
+    const k = taken.get(p.apt) ?? 0;
+    taken.set(p.apt, k + 1);
+    const o = lok.find((m) => m.apt === p.apt)?.osoby[k];
+    if (!o) continue;
+    const { first, name, f, prof, skills, age, traits, ...rest } = polaZGeneratora(o);
+    st.people.push({
+      id: `s${st.nextId++}`,
+      first,
+      name,
+      f,
+      prof,
+      skills,
+      age,
+      traits,
+      home: w.hq,
+      assign: null,
+      sick: false,
+      dead: false,
+      gone: false,
+      ...rest,
+    });
+    p.person = st.people.length - 1;
+  }
 }
 
 /** Zabiera ze stanu do n sztuk: drewno (najpierw luzem, potem ze składu), zapasy (najpierw surowe, potem garnek)
@@ -4326,7 +4416,8 @@ export class Sim {
     }
     const who = p.person >= 0 ? st.people[p.person] : undefined;
     const name = who?.name ?? (p.kind === 'szabrownik' ? 'Szabrownik' : 'Mieszkaniec');
-    st.dead!.push({ id: who?.id ?? '', name, look: p.look, kind: p.kind, tick, cause });
+    // id tylko dla zarządu: mieszkaniec z osobą ma imię, ale dla zarządu (GovInput.dead) zostaje mieszkańcem
+    st.dead!.push({ id: p.kind === 'core' ? (who?.id ?? '') : '', name, look: p.look, kind: p.kind, tick, cause });
     if (away) {
       st.tally!.deaths++;
       const first = who?.first ?? 'sąsiad';
@@ -5150,7 +5241,8 @@ export class Sim {
     }
     if (j.phase === 1) {
       if (tick < j.until) return;
-      const who = st.people[p.person];
+      // amputuje ktoś z zarządu (amputateTick tylko dla rdzenia)
+      const who = p.kind === 'core' ? st.people[p.person] : undefined;
       let chance = 0.5 + 0.15 * (who?.skills.med ?? 0);
       if (st.store.meds >= 1) {
         st.store.meds--;

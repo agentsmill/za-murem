@@ -1043,7 +1043,8 @@ function askBurn(m: MenuItem) {
   const thing = sim.st.things.find((t) => t.id === c.thing);
   if (!thing) return;
   const owner = sim.st.pawns.find((p) => p.id === thing.owner);
-  const name = owner ? (sim.st.people[owner.person]?.name ?? null) : null;
+  // imię tylko dla mebla kogoś z zarządu (tekst mówi o „reszcie zarządu”); mieszkaniec z osobą nie jest z zarządu
+  const name = owner?.kind === 'core' ? (sim.st.people[owner.person]?.name ?? null) : null;
   const softer = !!gov && lawEffects(gov).burnMood < 1;
   pauseGame();
   modal.show(

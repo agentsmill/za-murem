@@ -1,8 +1,10 @@
 /* Odczyt stanu dla modułu zarządu (src/gov, karta nocy, uchwały) i dla interfejsu: ludzie zarządu z potrzebami,
-   umiejętnościami i obecną pracą, zapasy drewna i jedzenia, czas. Czysta funkcja stanu i świata. Zwraca świeże
-   obiekty (zwykły JSON), więc zmiany w wyniku nie ruszają symulacji. */
+   umiejętnościami i obecną pracą (people: tylko zarząd, z tego korzysta zarząd), mieszkańcy siedziby z osobą
+   z generatora mieszkańców (lokatorzy: tylko do kart w interfejsie), zapasy drewna i jedzenia, czas. Czysta funkcja
+   stanu i świata. Zwraca świeże obiekty (zwykły JSON), więc zmiany w wyniku nie ruszają symulacji. */
 
 import type { Dom } from '../content/data.ts';
+import type { Person } from '../content/people.ts';
 import type { World } from '../world/world.ts';
 import { type AmmoKey, noAmmo, type WeaponId, weaponOf } from './bron.ts';
 import { BUILDS, type BuildKind, footprint, type Mat } from './budowle.ts';
@@ -30,6 +32,7 @@ import {
   FEVER_TICKS,
   type JobKind,
   type Mood,
+  type Pawn,
   postKey,
   type SimState,
 } from './sim.ts';
@@ -48,8 +51,12 @@ export interface SimPerson {
   prof: string;
   skills: Partial<Record<Dom, number>>;
   traits: string[];
-  /** historia z własnej drużyny zarządu (brak: osoba z losowania z adresu) */
+  /** historia z własnej drużyny zarządu albo z generatora mieszkańców (brak: osoba z losowania z adresu) */
   story?: string;
+  /** osoba z generatora mieszkańców: `Osoba.id` (klucz zmiany imienia); brak: osoba z losowania albo z drużyny */
+  ref?: string;
+  /** obecni krewni z generatora w jednej linijce, np. „mąż Marek (54)”; brak: nie ma albo osoba spoza generatora */
+  rodzina?: string;
   needs: Needs;
   /** chwilowe nastroje z powodami, np. „Spalili moje łóżko” */
   moods: Mood[];
@@ -165,7 +172,11 @@ export interface SimSnapshot {
   outdoor: number;
   kitchen: number | null;
   kozaLit: boolean;
+  /** zarząd (pionki rdzenia), w kolejności pionków */
   people: SimPerson[];
+  /** mieszkańcy siedziby z osobą z generatora mieszkańców (opcja mieszkancy w createSim), w kolejności pionków; bez
+      opcji i w zapisie sprzed niej pusta lista. Zarząd ich nie widzi (govInput bierze people). */
+  lokatorzy: SimPerson[];
   stock: SimStock;
   /** spalone meble, po kolei */
   burned: Burned[];
@@ -205,6 +216,51 @@ function zombieCounts(st: SimState, w: World): SimSnapshot['zombies'] {
   return out;
 }
 
+/** osoba pionka (zarząd albo mieszkaniec z osobą) dla zarządu i interfejsu */
+function personOf(st: SimState, w: World, p: Pawn, who: Person): SimPerson {
+  const h = houseOf(w);
+  const size = w.size;
+  const tick = st.tick;
+  const tile = Math.floor(p.y) * size + Math.floor(p.x);
+  return {
+    pawn: p.id,
+    id: who.id,
+    name: who.name,
+    first: who.first,
+    f: who.f,
+    age: who.age,
+    prof: who.prof,
+    skills: { ...who.skills },
+    traits: [...who.traits],
+    ...(who.story ? { story: who.story } : {}),
+    ...(who.ref ? { ref: who.ref } : {}),
+    ...(who.rodzina ? { rodzina: who.rodzina } : {}),
+    needs: { ...p.needs! },
+    moods: p.moods.map((m) => ({ ...m })),
+    job: p.job ? p.job.t : null,
+    doing: jobText(st, w, p),
+    // śpi w łóżku albo przysypia na warcie
+    asleep: (p.job?.t === 'sleep' && p.job.phase === 1) || (p.job?.t === 'guard' && p.job.phase === 4),
+    inside: !p.away && !!h && (h.room[tile] >= 0 || h.doors.includes(tile)),
+    tile,
+    carry: p.carry,
+    away: p.away,
+    post: p.job?.t === 'guard' ? postKey(p.job.target) : null,
+    weapon: p.weapon ?? null,
+    ammo: ammoFor(st, p.weapon ?? null),
+    bite:
+      p.bite !== undefined
+        ? {
+            at: p.bite,
+            limb: !!p.limb,
+            left: p.bite + FEVER_TICKS - tick,
+            amputate: !!p.limb && tick <= p.bite + AMPUTATE_WINDOW,
+          }
+        : null,
+    maimed: !!p.maimed,
+  };
+}
+
 export function snapshot(st: SimState, w: World): SimSnapshot {
   const count = (k: string) => st.things.reduce((a, t) => a + (t.kind === k ? t.n : 0), 0);
   const h = houseOf(w);
@@ -233,45 +289,10 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   }
   const people: SimPerson[] = st.pawns
     .filter((p) => p.kind === 'core')
-    .map((p) => {
-      const who = st.people[p.person];
-      const tile = Math.floor(p.y) * size + Math.floor(p.x);
-      return {
-        pawn: p.id,
-        id: who.id,
-        name: who.name,
-        first: who.first,
-        f: who.f,
-        age: who.age,
-        prof: who.prof,
-        skills: { ...who.skills },
-        traits: [...who.traits],
-        ...(who.story ? { story: who.story } : {}),
-        needs: { ...p.needs! },
-        moods: p.moods.map((m) => ({ ...m })),
-        job: p.job ? p.job.t : null,
-        doing: jobText(st, w, p),
-        // śpi w łóżku albo przysypia na warcie
-        asleep: (p.job?.t === 'sleep' && p.job.phase === 1) || (p.job?.t === 'guard' && p.job.phase === 4),
-        inside: !p.away && !!h && (h.room[tile] >= 0 || h.doors.includes(tile)),
-        tile,
-        carry: p.carry,
-        away: p.away,
-        post: p.job?.t === 'guard' ? postKey(p.job.target) : null,
-        weapon: p.weapon ?? null,
-        ammo: ammoFor(st, p.weapon ?? null),
-        bite:
-          p.bite !== undefined
-            ? {
-                at: p.bite,
-                limb: !!p.limb,
-                left: p.bite + FEVER_TICKS - tick,
-                amputate: !!p.limb && tick <= p.bite + AMPUTATE_WINDOW,
-              }
-            : null,
-        maimed: !!p.maimed,
-      };
-    });
+    .map((p) => personOf(st, w, p, st.people[p.person]));
+  const lokatorzy: SimPerson[] = st.pawns
+    .filter((p) => p.kind === 'resident' && p.person >= 0 && st.people[p.person])
+    .map((p) => personOf(st, w, p, st.people[p.person]));
   const woodCarried = people.reduce((a, p) => a + p.carry, 0);
   const fuel = koza?.fuel ?? 0;
   const hour = hourOf(tick);
@@ -290,6 +311,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     kitchen: kitchen >= 0 ? st.temps[kitchen] : null,
     kozaLit: fuel > 0,
     people,
+    lokatorzy,
     stock: {
       woodSklad,
       woodLoose,
