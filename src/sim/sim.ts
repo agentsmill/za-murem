@@ -4,6 +4,7 @@
    stan. Bez wnętrza siedziby (świat sprzed M1) zarząd stoi, a rzeczy, ciepła i samouczka nie ma. */
 
 import { PROFS } from '../content/data.ts';
+import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { Tree, World } from '../world/world.ts';
@@ -624,7 +625,13 @@ export const woodFrom = (t: Tree): number =>
 export const chopTicks = (t: Tree): number => Math.round(160 + 120 * t.r);
 
 export interface SimOpts {
+  /** liczba osób zarządu, domyślnie 4 */
   core?: number;
+  /** Własna drużyna zarządu z karty startowej (src/content/druzyna.ts): do 5 osób, jej długość zastępuje core. Losowania
+      idą tak jak bez drużyny, a dane osób z drużyny nadpisują dopiero gotowe osoby, więc mieszkańcy, miejsca startowe
+      i reszta stanu są te same co bez drużyny przy tej samej liczbie osób. Każdą osobę symulacja sprawdza jeszcze raz
+      (bledyOsoby); osoba ze złymi danymi zostaje taka jak z losowania z adresu, a w konsoli jest ostrzeżenie. */
+  team?: readonly OsobaDruzyny[];
   /** mieszkańcy siedziby; domyślnie 3–8 według mieszkań połączonych z podwórkiem */
   residents?: number;
   /** tłum za siatką, tylko do pomiaru wydajności (npm run perf); w grze 0 */
@@ -732,8 +739,11 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     damage: [],
     builds: [],
   };
+  const team = druzynaDoGry(opts.team);
+  const core = team ? team.length : (opts.core ?? 4);
   const kit = START_KIT[modeOf(st)];
-  st.store.arms = [...kit.store];
+  // broń ze startu dostają kolejne osoby zarządu; gdy osób jest mniej niż broni na liście, reszta czeka w magazynie
+  st.store.arms = [...kit.store, ...kit.core.slice(core).filter((a): a is WeaponId => a !== null)];
   st.store.ammo = { ...kit.ammo };
   const rnd = rngOf(st.rng);
   const size = w.size;
@@ -797,9 +807,8 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
       t.n = pr.n ?? 1;
       st.things.push(t);
     }
-  // rdzeń: zarząd z fachem w podstawowych dziedzinach, jak na starcie 0.3
+  // rdzeń: zarząd z fachem w podstawowych dziedzinach, jak na starcie 0.3 (piąta osoba znowu z ciepłem)
   const need = ['cieplo', 'bud', 'med', 'uprawa'] as const;
-  const core = opts.core ?? 4;
   for (let k = 0; k < core; k++) {
     const d = need[k % need.length];
     const profs = PROFS.filter((p) => (p[2][d] || 0) >= 1 && (p[2][d] || 0) <= 3);
@@ -816,6 +825,18 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     pawn.weapon = kit.core[k] ?? null;
     st.pawns.push(pawn);
   }
+  // własna drużyna: dane osób nadpisują osoby z losowania dopiero po nim (te same imiona zajęte, te same losowania)
+  team?.forEach((o, k) => {
+    const why = bledyOsoby(o);
+    if (why.length) {
+      const who = (o as { name?: unknown })?.name;
+      console.warn(
+        `Drużyna: osoba ${k + 1}${typeof who === 'string' ? ` (${who})` : ''} zostaje z losowania z adresu, bo ${why.join('; ')}.`,
+      );
+      return;
+    }
+    Object.assign(st.people[k], osobaDoGry(o as OsobaDruzyny));
+  });
   // łóżka w mieszkaniu zarządu mają właścicieli: po jednym dla każdego z zarządu, po kolei
   if (house) {
     const beds = st.things.filter((t) => BEDS.has(t.kind) && inHomeApt(house, t.y * size + t.x));

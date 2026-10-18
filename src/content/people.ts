@@ -23,6 +23,9 @@ export interface Person {
   sick: boolean;
   dead: boolean;
   gone: boolean;
+  /** historia z własnej drużyny zarządu (src/content/druzyna.ts); tylko dla klimatu, na karcie osoby. Osoby z
+      losowania z adresu jej nie mają, więc pole nie trafia do ich stanu ani do skrótu. */
+  story?: string;
 }
 
 export interface MakePersonOpts {

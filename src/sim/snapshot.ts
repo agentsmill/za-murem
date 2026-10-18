@@ -48,6 +48,8 @@ export interface SimPerson {
   prof: string;
   skills: Partial<Record<Dom, number>>;
   traits: string[];
+  /** historia z własnej drużyny zarządu (brak: osoba z losowania z adresu) */
+  story?: string;
   needs: Needs;
   /** chwilowe nastroje z powodami, np. „Spalili moje łóżko” */
   moods: Mood[];
@@ -244,6 +246,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
         prof: who.prof,
         skills: { ...who.skills },
         traits: [...who.traits],
+        ...(who.story ? { story: who.story } : {}),
         needs: { ...p.needs! },
         moods: p.moods.map((m) => ({ ...m })),
         job: p.job ? p.job.t : null,
