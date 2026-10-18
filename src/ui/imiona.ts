@@ -296,16 +296,19 @@ function ustaw(p: Person, k: 'story' | 'rodzina', v: string | undefined): void {
   else delete p[k];
 }
 
-/** Ta sama osoba co w generatorze (płeć i wiek), a nie inna pod tym samym `ref` po aktualizacji tabel: zapis gry
-    trzyma swoich ludzi i nowy generator nie przepisuje im historii. */
-const taSama = (p: Person, o: OsobaGry): boolean => p.f === o.f && p.age === o.age;
+/** imię i nazwisko osoby generatora bez zmian gracza, jak w `osobaGry` */
+const nazwaZGeneratora = (o: Osoba): string => (o.nazwisko ? `${o.imie} ${o.nazwisko}` : o.imie);
 
 /** Zmiany imion na stanie gry (w miejscu; `st` to `SimState` albo cokolwiek z `people`). Wpis działa tylko na osobę,
-    której dotyczy (`dotyczy`: płeć i imię z generatora). Osoba z `ref`:
-    - z danymi mieszkańców (`l` i `dane`) i tą samą osobą w budynku siedziby: imię, `name`, historia i linijka rodziny
-      z `osobyZeZmianami` (z wpisami, które dotyczą osób budynku), więc nowe imię widać też w historiach i rodzinie
-      innych, a bez wpisu wraca imię z generatora;
-    - w pozostałych przypadkach tylko imię i pierwszy człon `name` z wpisu (bez wpisu nic).
+    której dotyczy (`dotyczy`: płeć i imię z generatora). Gdy każda osoba z `ref` ma już imię, które daje wpis (albo,
+    bez wpisu, imię z generatora), nic się nie zmienia: wczytana gra bez nowych zmian zostaje bajt w bajt, także po
+    aktualizacji tabel i szablonów (spec §9). Inaczej osoba z `ref`:
+    - z danymi mieszkańców (`l` i `dane`), gdy jest tą osobą generatora, którą zapamiętała przy powstaniu
+      (`Person.nazwaGen` równe imieniu i nazwisku z generatora, ta sama płeć i wiek): imię, `name`, historia i linijka
+      rodziny z `osobyZeZmianami` (z wpisami, które dotyczą osób budynku), więc nowe imię widać też w historiach
+      i rodzinie innych, a bez wpisu wraca imię z generatora;
+    - w pozostałych przypadkach (stary zapis bez `nazwaGen`, generator ma pod tym `ref` kogoś innego, bez danych)
+      tekst z zapisu zostaje, a wpis zmienia tylko imię i pierwszy człon `name`.
     Wpis, który nie dotyczy osoby pod swoim `ref`, nic nie zmienia. `sieroty`: wpisy z budynku siedziby (`ref`
     z prefiksem `<klucz budynku>/`) bez osoby o tym `ref` ani w grze, ani w budynku (bez danych mieszkańców zawsze
     pusto). Drugie wywołanie z tymi samymi zmianami nic już nie zmienia. */
@@ -322,22 +325,37 @@ export function zastosujZmiany(
     const o = budynek.get(ref);
     return !!o && dlaOsoby(z, o.imie, o.plec === 'K');
   };
-  const zgodne = Object.fromEntries(Object.entries(zmiany).filter(([ref, z]) => wBudynku(ref, z)));
-  const zDanych = l && dane ? osobyZeZmianami(l, dane, zgodne, refs) : new Map<string, OsobaGry>();
-  for (const p of st.people) {
-    if (!p.ref) continue;
-    const z0 = Object.hasOwn(zmiany, p.ref) ? zmiany[p.ref] : undefined;
-    const z = z0 && dotyczy(z0, p) ? z0 : undefined;
-    const o = zDanych.get(p.ref);
-    // ta sama osoba co w generatorze: płeć i wiek, a gdy wpis tej osoby zna jej imię z generatora, to też ono
-    if (o && taSama(p, o) && !(z && !wBudynku(p.ref, z))) {
-      if (p.name !== o.name) p.name = o.name;
-      if (p.first !== o.first) p.first = o.first;
-      ustaw(p, 'story', o.story);
-      ustaw(p, 'rodzina', o.rodzina);
-    } else if (z && p.first !== z.imie) {
-      p.name = zmienImie(p.name, p.first, z.imie);
-      p.first = z.imie;
+  /** wpis osoby gry, jeśli jej dotyczy */
+  const wpis = (p: Person): ZmianaImienia | undefined => {
+    const z = p.ref && Object.hasOwn(zmiany, p.ref) ? zmiany[p.ref] : undefined;
+    return z && dotyczy(z, p) ? z : undefined;
+  };
+  /** osoba generatora, którą osoba gry zapamiętała przy powstaniu (imię i nazwisko, płeć, wiek) */
+  const zGeneratora = (p: Person): Osoba | undefined => {
+    const o = p.ref ? budynek.get(p.ref) : undefined;
+    return o && p.nazwaGen !== undefined && p.nazwaGen === nazwaZGeneratora(o) && takaSama(o, p) ? o : undefined;
+  };
+  const spojne = st.people.every((p) => {
+    const imie = p.ref ? (wpis(p)?.imie ?? zGeneratora(p)?.imie) : undefined;
+    return imie === undefined || p.first === imie;
+  });
+  if (!spojne) {
+    const zgodne = Object.fromEntries(Object.entries(zmiany).filter(([ref, z]) => wBudynku(ref, z)));
+    const zDanych = l && dane ? osobyZeZmianami(l, dane, zgodne, refs) : new Map<string, OsobaGry>();
+    for (const p of st.people) {
+      if (!p.ref) continue;
+      const z = wpis(p);
+      const o = zGeneratora(p) ? zDanych.get(p.ref) : undefined;
+      // wpis tej osoby zna jej imię z generatora: inne niż w budynku znaczy, że to nie ta osoba generatora
+      if (o && !(z && !wBudynku(p.ref, z))) {
+        if (p.name !== o.name) p.name = o.name;
+        if (p.first !== o.first) p.first = o.first;
+        ustaw(p, 'story', o.story);
+        ustaw(p, 'rodzina', o.rodzina);
+      } else if (z && p.first !== z.imie) {
+        p.name = zmienImie(p.name, p.first, z.imie);
+        p.first = z.imie;
+      }
     }
   }
   if (!l || !dane) return { sieroty: [] };

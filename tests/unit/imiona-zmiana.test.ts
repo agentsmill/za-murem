@@ -513,6 +513,55 @@ describe('zastosujZmiany', () => {
     expect(imieZGeneratora(p, null, undefined)).toBe(p.first);
   });
 
+  it('osoba z generatora pamięta imię i nazwisko z generatora (nazwaGen), także po zmianie imienia', () => {
+    const st = nowaGra();
+    const zRef = st.people.filter((q) => q.ref);
+    expect(zRef.length).toBeGreaterThan(0);
+    for (const q of zRef) expect(q.nazwaGen).toBe(q.name);
+    const p = zRef[0];
+    const nazwa = p.name;
+    zastosujZmiany(st, P.l, P.dane, { [p.ref as string]: { ...BOZENKA, f: p.f } });
+    expect(p.first).toBe('Bożenka');
+    expect(p.nazwaGen).toBe(nazwa);
+  });
+
+  it('wczytana gra bez nowych zmian zostaje bajt w bajt, choć generator dałby dziś inne teksty (spec §9)', () => {
+    const st = nowaGra();
+    const [p1, p2] = st.people.filter((q) => q.ref);
+    // zapis sprzed aktualizacji szablonów: inne historie i rodzina niż z dzisiejszego generatora
+    p1.story = 'Historia ze starego szablonu.';
+    p2.rodzina = 'syn Jan (40)';
+    const przed = JSON.stringify(st.people);
+    expect(zastosujZmiany(st, P.l, P.dane, {})).toEqual({ sieroty: [] });
+    expect(JSON.stringify(st.people)).toBe(przed);
+    // z wpisem, który zapis już pokazuje: też bez zmian
+    const z = { [p1.ref as string]: { ...BOZENKA, f: p1.f, gen: p1.first } };
+    p1.name = `Bożenka${p1.name.slice(p1.first.length)}`;
+    p1.first = 'Bożenka';
+    const zWpisem = JSON.stringify(st.people);
+    zastosujZmiany(st, P.l, P.dane, z);
+    expect(JSON.stringify(st.people)).toBe(zWpisem);
+  });
+
+  it('stary zapis bez nazwaGen albo inna osoba pod ref: tekst z zapisu zostaje, wpis zmienia tylko imię', () => {
+    for (const psuj of [(q: Person) => delete q.nazwaGen, (q: Person) => (q.nazwaGen = 'Ktoś Inny')]) {
+      const st = nowaGra();
+      for (const q of st.people) if (q.ref) psuj(q);
+      const p = st.people.find((q) => q.ref) as Person;
+      p.story = 'Historia z zapisu.';
+      const przed = structuredClone(st.people);
+      const nazwisko = p.name.slice(p.first.length);
+      zastosujZmiany(st, P.l, P.dane, { [p.ref as string]: { ...BOZENKA, f: p.f, gen: p.first } });
+      expect(p.first).toBe('Bożenka');
+      expect(p.name).toBe(`Bożenka${nazwisko}`);
+      expect(p.story).toBe('Historia z zapisu.');
+      // nikt inny się nie zmienia (historie i rodzina innych zostają z zapisu)
+      st.people.forEach((q, i) => {
+        if (q !== p) expect(q).toEqual(przed[i]);
+      });
+    }
+  });
+
   it('bez danych mieszkańców zmienia tylko imię osoby z ref, bez sierot', () => {
     const people: Person[] = [
       {

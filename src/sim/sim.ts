@@ -859,6 +859,7 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
     // drużyna wygrywa z generatorem: bez jego odnośnika, rodziny i historii
     const p = st.people[k];
     delete p.ref;
+    delete p.nazwaGen;
     delete p.rodzina;
     delete p.story;
     Object.assign(p, osobaDoGry(o as OsobaDruzyny));
@@ -905,10 +906,13 @@ export function createSim(w: World, seed: number, opts: SimOpts = {}): SimState 
 }
 
 /** pola osoby gry z osoby z generatora mieszkańców: kopie (stan nie dzieli tablic z wejściem), rodzina i historia
-    tylko niepuste */
+    tylko niepuste, `nazwaGen` to imię i nazwisko z generatora (tożsamość osoby przy wczytaniu zapisu) */
 function polaZGeneratora(
   o: OsobaGry,
-): Pick<Person, 'first' | 'name' | 'f' | 'prof' | 'skills' | 'age' | 'traits' | 'story' | 'ref' | 'rodzina'> {
+): Pick<
+  Person,
+  'first' | 'name' | 'f' | 'prof' | 'skills' | 'age' | 'traits' | 'story' | 'ref' | 'nazwaGen' | 'rodzina'
+> {
   const out: ReturnType<typeof polaZGeneratora> = {
     first: o.first,
     name: o.name,
@@ -918,6 +922,7 @@ function polaZGeneratora(
     age: o.age,
     traits: [...o.traits],
     ref: o.ref,
+    nazwaGen: o.name,
   };
   if (o.rodzina) out.rodzina = o.rodzina;
   if (o.story) out.story = o.story;

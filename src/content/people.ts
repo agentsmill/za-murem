@@ -29,6 +29,9 @@ export interface Person {
   /** osoba z generatora mieszkańców (src/sim/lokatorzy.ts): `Osoba.id`, klucz zmiany imienia w przeglądarce gracza.
       Osoby z `makePerson` go nie mają. */
   ref?: string;
+  /** imię i nazwisko z generatora w chwili powstania osoby (bez zmian gracza): po aktualizacji tabel src/ui/imiona.ts
+      bierze tekst z generatora tylko dla tej samej osoby, a inaczej zostawia tekst z zapisu. Stare zapisy go nie mają. */
+  nazwaGen?: string;
   /** obecni krewni z generatora w jednej linijce, np. „mąż Marek (54), córka Agnieszka (23)”; bez numerów mieszkań
       i pięter */
   rodzina?: string;
