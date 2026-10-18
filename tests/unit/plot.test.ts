@@ -97,9 +97,9 @@ describe('wspólny płot: kształt', () => {
 });
 
 /** gra na świeżym świecie Lanciego z otwartym 10F i materiałem na płot na podwórku */
-function graZPlotem(seed = 5) {
+function graZPlotem(seed = 5, mode: 'zwykly' | 'zombie' = 'zwykly') {
   const w = swiezy('lanciego');
-  const sim = new Sim(w, createSim(w, seed, { core: 4 }));
+  const sim = new Sim(w, createSim(w, seed, { core: 4, mode }));
   const b = byName(w, 'Blok nr 10F');
   const p = core(sim)[0];
   p.weapon = 'lom';
@@ -166,6 +166,23 @@ describe('wspólny płot w symulacji', () => {
     expect(worldKey(w)).toBe(base);
     // menu już nie proponuje płotu
     expect(commandsAt(sim.st, w, [p.id], b.entrances[0].tile).some((m) => m.cmd.t === 'enclose')).toBe(false);
+  });
+
+  it('nowe kafelki płotu: w trybie zombie tak mocne jak wzmocniona siatka, w zwykłym jak świeża łata', () => {
+    for (const mode of ['zwykly', 'zombie'] as const) {
+      const { w, sim, b, p, r } = graZPlotem(5, mode);
+      const stare = new Map(w.fence.tiles.map((t, k) => [t, sim.st.fence!.hp[k]]));
+      buduj(sim, b.id, p);
+      expect(sim.st.plot?.bids, mode).toEqual([b.id]);
+      const nowe = new Set(r.nowe);
+      const hp = w.fence.tiles.map((t, k) => ({ t, v: sim.st.fence!.hp[k] })).filter((x) => nowe.has(x.t));
+      expect(hp.length).toBeGreaterThan(20);
+      // świeży płot z desek i złomu: w zombie 100 (wzmocniona siatka na starcie), w zwykłym 70 (łata)
+      for (const x of hp) expect(x.v, `${mode} kafelek ${x.t}`).toBe(mode === 'zombie' ? 100 : 70);
+      // stare kafelki zachowują swoją wytrzymałość (zombie: napór mógł ją zużyć, ale nie podnieść)
+      for (const [k, t] of w.fence.tiles.entries())
+        if (!nowe.has(t) && stare.has(t)) expect(sim.st.fence!.hp[k], mode).toBeLessThanOrEqual(stare.get(t)!);
+    }
   });
 
   it('łup w otoczonym budynku jest nasz, nocni goście nie wchodzą, zapis i wczytanie dają ten sam przebieg', () => {
