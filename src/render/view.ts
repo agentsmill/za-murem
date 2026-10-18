@@ -204,6 +204,8 @@ export class GameView {
     codes: Uint8Array | null;
     things: ThingLike[];
     simKinds: Set<string>;
+    /** podpis st.wraki z ostatniej klatki (stan wraków zmienia opis sprite'a) */
+    wrecks: string;
   } | null = null;
   /** atrapa wraków do podglądu (?wraki=atrapa), dopóki świat ich nie rozstawia */
   private mockWrecks = false;
@@ -407,7 +409,7 @@ export class GameView {
         .map((p) => ({ rot: 0, ...p }));
       if (this.mockWrecks && !props.some((p) => p.kind === 'wrak')) props.push(...mockWrecks(w));
       if (mock) props.push(...mock.trash);
-      g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simKinds: new Set() };
+      g = { sim, windows: windowSpots(w), props, fence: [], codes: null, things: [], simKinds: new Set(), wrecks: '' };
       for (const t of g.props) this.fixed.add(t);
       this.game = g;
     }
@@ -426,6 +428,21 @@ export class GameView {
         for (const i of fresh) this.fixedSeen.add(i);
         this.redraw({ fixed: fresh });
       }
+    }
+    // wraki przeszukane i rozebrane: nowy opis sprite'a (nowy obiekt, bo klucze rzeczy ze świata są zapamiętane)
+    const wraki = sim.st.wraki;
+    const sig = wraki?.map((m) => `${m.t}:${m.s}`).join() ?? '';
+    if (sig !== g.wrecks) {
+      g.wrecks = sig;
+      const size = w.size;
+      g.props = g.props.map((p) => {
+        if (p.kind !== 'wrak') return p;
+        const s = wraki?.find((m) => m.t === p.y * size + p.x)?.s ?? 0;
+        if ((p.stage ?? 0) === s) return p;
+        const q = { ...p, stage: s || undefined };
+        this.fixed.add(q);
+        return q;
+      });
     }
     this.plans = (sim.st as { builds?: readonly BuildPlan[] }).builds ?? [];
     this.syncFelled(sim.st.felled);

@@ -32,6 +32,8 @@ export interface GameLike {
     /** efekty walki z ostatnich 2 sekund (błysk strzału) */
     fx?: readonly { t: string; x: number; y: number; tick: number }[];
     fence?: FenceStateLike | null;
+    /** wraki przeszukane (s 1) i rozebrane (s 2): lewy górny kafelek (src/sim/surowce.ts) */
+    wraki?: readonly { t: number; s: number }[];
   };
   w: World;
   /** światło pomieszczeń od ognia: 1 w pomieszczeniu z palącą się kozą, 0,5 przez drzwi */
@@ -68,6 +70,8 @@ export const GAME_KINDS: ReadonlySet<string> = new Set([
   'gruz',
   'deski',
   'zlom',
+  'czesci',
+  'leki',
   'wrak',
   'krew',
   'smieci',
