@@ -1725,9 +1725,9 @@ function newPawn(
   };
 }
 
-/** Przechodniość według rodzaju pionka. Baza: świat, ścięte drzewa wolne, łaty i ogniska zablokowane. Zarząd bez otwartych
-    dziur (nie przełazi, a przez zamkniętą bramę przechodzi, bo ma klucz), mieszkańcy dodatkowo bez bramy i mieszkania
-    zarządu (zostają za siatką), obcy z dziurami, ale bez zamkniętej bramy. */
+/** Przechodniość według rodzaju pionka. Baza: świat, ścięte drzewa wolne (poza pniami na linii obwodu), łaty i ogniska
+    zablokowane. Zarząd bez otwartych dziur (nie przełazi, a przez zamkniętą bramę przechodzi, bo ma klucz), mieszkańcy
+    dodatkowo bez bramy i mieszkania zarządu (zostają za siatką), obcy z dziurami, ale bez zamkniętej bramy. */
 function composeLayers(
   w: World,
   felled: readonly number[],
@@ -1737,7 +1737,22 @@ function composeLayers(
   solid: readonly number[] = [],
 ): { core: Uint8Array; resident: Uint8Array; stranger: Uint8Array } {
   const base = w.blocked.slice();
-  if (trunk) for (const k of felled) base[trunk[k]] = 0;
+  if (trunk) {
+    // drzewa domykają obwód same (fence.ts, plot.ts): pień poza podwórkiem, który styka się z nim bokiem, zostaje po
+    // ścięciu przeszkodą, bo inaczej w siatce byłaby dziura bez łaty i zasieków; pień w podwórku się zwalnia
+    const size = w.size;
+    const yard = new Uint8Array(size * size);
+    for (const t of fenceShape(w)?.yard ?? []) yard[t] = 1;
+    const x0 = (t: number) => t % size === 0;
+    const x1 = (t: number) => t % size === size - 1;
+    const onLine = (t: number) =>
+      !yard[t] &&
+      ((t >= size && yard[t - size] === 1) ||
+        (t < size * (size - 1) && yard[t + size] === 1) ||
+        (!x0(t) && yard[t - 1] === 1) ||
+        (!x1(t) && yard[t + 1] === 1));
+    for (const k of felled) if (!onLine(trunk[k])) base[trunk[k]] = 0;
+  }
   for (const t of solid) base[t] = 1;
   const open: number[] = [];
   if (fence)
@@ -2045,9 +2060,10 @@ export class Sim {
     return r >= 0 ? this.st.temps[r] : this.outdoor();
   }
 
-  /** Przechodniość od nowa: baza ze świata, ścięte drzewa wolne, łaty i ogniska zablokowane; zarząd bez otwartych
-      dziur, mieszkańcy dodatkowo bez bramy i mieszkania zarządu, obcy z dziurami, ale bez zamkniętej bramy, tłum jak
-      mieszkańcy. Woła się przy starcie, po ścięciu drzewa, łacie, nowym ognisku i zmianie bramy. */
+  /** Przechodniość od nowa: baza ze świata, ścięte drzewa wolne (pień na linii obwodu zostaje), łaty i ogniska
+      zablokowane; zarząd bez otwartych dziur, mieszkańcy dodatkowo bez bramy i mieszkania zarządu, obcy z dziurami,
+      ale bez zamkniętej bramy, tłum jak mieszkańcy. Woła się przy starcie, po ścięciu drzewa, łacie, nowym ognisku
+      i zmianie bramy. */
   private rebuild(): void {
     const size = this.w.size;
     const solid = this.st.things
