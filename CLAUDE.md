@@ -58,7 +58,7 @@ npm test -- zarzad -t "ten sam przebieg"  # fragment ścieżki pliku i nazwy tes
 npx biome check src tests tools index.html  # lint zamiast npm run lint (niżej); z --write poprawia i formatuje
 npm run build        # typy (tsc z TypeScript 7) + build do dist/ (z dist/v03/)
 npm run bot          # nowa symulacja 45 dni bez przeglądarki [-- ziarno [dni [tłum]]]
-npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce]]
+npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce [osoby zarządu 1–5]]]
 npm run bot:v03      # wzorzec balansu na oryginale 0.3 [-- ziarno [dni]]
 npm run shots        # zrzuty w Chromium do shots/ [-- filtr] [--dist]
 npm run perf         # klatki ze 150 pionkami [-- pionki [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5]
@@ -81,7 +81,7 @@ Zarząd (`src/gov/`: karta nocy, uchwały, zaufanie i wkurzenie, wydarzenia) nie
 
 Rysowanie (`src/render/`) tylko czyta stan. `GameView` w PixiJS 8 trzyma kawałki mapy 32×32 m w dwóch poziomach (32 i 8 px na metr), a rysuje je pula workerów na OffscreenCanvas (`chunks.ts`, `chunkWorker.ts`) albo główny wątek przy `worker=0`. PixiJS importują tylko `view.ts` i warstwy `*Layer.ts`; reszta (`chunks.ts`, `game.ts`, `section.ts`, `light.ts`, grafika zastępcza w `render/art/`) nie zależy od PixiJS i ma testy w Node. Noc to mapa światła mnożona przez obraz, przekrój to wnętrze zamiast dachu przy zbliżeniu.
 
-`src/main.ts` spina całość: ekran startowy, pętla z akumulatorem stałego kroku (najwyżej 40 kroków na klatkę), krok zarządu co sekundę przy ekranie, zapis co godzinę gry do localStorage (`src/ui/zapis.ts`). Wystawia też `window.zm` dla Playwright: `ready`, `sim`, `gov`, `view`, `setCam`, `idle`, `govTick` i `ff(minuty)`, które przewija grę i staje na pierwszej decyzji zarządu. Na tej furtce stoją zrzuty i pomiary. `src/ui/` to DOM nad płótnem, `src/content/` to treść 0.3 przeniesiona bez zmiany liczb i tekstów, `src/core/rng.ts` to mulberry32 jak w 0.3 plus `hashString` do skrótów stanu.
+`src/main.ts` spina całość: ekran startowy (z panelem „Wasz zarząd”, `src/ui/druzyna.ts`: liczba osób i własna drużyna, której zasady w `src/content/druzyna.ts` sprawdza też `createSim`), pętla z akumulatorem stałego kroku (najwyżej 40 kroków na klatkę), krok zarządu co sekundę przy ekranie, zapis co godzinę gry do localStorage (`src/ui/zapis.ts`). Wystawia też `window.zm` dla Playwright: `ready`, `sim`, `gov`, `view`, `setCam`, `idle`, `govTick` i `ff(minuty)`, które przewija grę i staje na pierwszej decyzji zarządu. Na tej furtce stoją zrzuty i pomiary. `src/ui/` to DOM nad płótnem, `src/content/` to treść 0.3 przeniesiona bez zmiany liczb i tekstów, `src/core/rng.ts` to mulberry32 jak w 0.3 plus `hashString` do skrótów stanu.
 
 ## Determinizm, zapis i testy
 

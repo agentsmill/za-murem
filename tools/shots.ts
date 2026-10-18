@@ -4099,6 +4099,19 @@ function druzynaShots(): Shot[] {
     // jeden punkt mniej w cieple i przycisk znowu działa
     await tap('#druzyna [data-dz="minus"][data-d="cieplo"]');
     if ((await page.textContent('#druzyna .dz-pts')) !== 'zostało 1 z 6') throw new Error('odjęcie punktu nie działa');
+    if (!touch) {
+      // klawiatura: spacja na „+” dodaje punkt, a gdy „+” gaśnie, fokus przechodzi na „−” w tym samym wierszu
+      await page.focus('#druzyna [data-dz="plus"][data-d="cieplo"]');
+      await page.keyboard.press('Space');
+      const f1 = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.dz ?? '');
+      const p1 = await page.textContent('#druzyna .dz-pts');
+      await page.keyboard.press('Space');
+      const f2 = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.dz ?? '');
+      const p2 = await page.textContent('#druzyna .dz-pts');
+      console.log(`  klawiatura: „${p1}”, fokus na ${f1}; „${p2}”, fokus na ${f2}`);
+      if (p1 !== 'zostało 0 z 6' || f1 !== 'minus' || p2 !== 'zostało 1 z 6' || f2 !== 'minus')
+        throw new Error('przyciski punktów nie działają z klawiatury albo gubią fokus');
+    }
     // płeć: kobieta, zawód w kafelku w żeńskiej formie
     await tap('#druzyna .dz-f-who .mode-o:has(input[value="k"])');
     const chip = await page.textContent('#druzyna .dz-chip.sel small');
@@ -4151,6 +4164,14 @@ function druzynaShots(): Shot[] {
         await page.waitForSelector('#demos button');
         await editAndCheck(page, false);
         await page.screenshot({ path: path.join(OUT, 'druzyna-edytor-cala.png'), fullPage: true });
+        // Escape w edytorze zamyka go i oddaje fokus kafelkowi osoby
+        await page.focus('#dzStory');
+        await page.keyboard.press('Escape');
+        const esc = await page.evaluate(() => ({
+          editor: !!document.querySelector('#druzyna .dz-ed'),
+          focus: (document.activeElement as HTMLElement | null)?.dataset.k ?? '',
+        }));
+        if (esc.editor || esc.focus !== '0') throw new Error(`Escape: edytor ${esc.editor}, fokus na ${esc.focus}`);
         await page.reload();
         await page.waitForSelector('#demos button');
         const c = await collapsed(page);

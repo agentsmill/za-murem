@@ -1,5 +1,5 @@
-/* Za Murem 0.4: start, wczytanie osiedla, pętla gry z zarządem (uchwały, karta nocy, wydarzenia, raport),
-   zapis i sterowanie. */
+/* Za Murem 0.4: start (z panelem „Wasz zarząd”: liczba osób i własna drużyna), wczytanie osiedla, pętla gry
+   z zarządem (uchwały, karta nocy, wydarzenia, raport), zapis i sterowanie. */
 
 import './style.css';
 import { LORE, LORE_ZOMBIE } from './content/data.ts';
@@ -150,8 +150,10 @@ const setMode = (m: GameMode) => {
 setMode(mode);
 for (const r of document.querySelectorAll<HTMLInputElement>('input[name=tryb]'))
   r.addEventListener('change', () => r.checked && setMode(parseMode(r.value)));
-/* „Wasz zarząd”: liczba osób i własna drużyna (src/ui/druzyna.ts), zwinięte do jednej linijki, dopóki gracz nie otworzy */
-const druzyna = new Druzyna($('druzyna'));
+/* „Wasz zarząd”: liczba osób i własna drużyna (src/ui/druzyna.ts), zwinięte do jednej linijki, dopóki gracz nie otworzy;
+   bez bloku #druzyna w index.html gra startuje z zarządem z adresu jak dawniej */
+const druzynaEl = document.getElementById('druzyna');
+const druzyna = druzynaEl ? new Druzyna(druzynaEl) : null;
 const status = (t: string) => {
   $('startStatus').textContent = t;
 };
@@ -232,7 +234,7 @@ async function enter(data: Loaded, saved?: Save) {
   const crowd = params.has('perf') ? Number(params.get('perf')) : 0;
   // wszystko, co może się nie udać, przed przełączeniem ekranu: błąd zostaje na ekranie startowym
   // zarząd z panelu „Wasz zarząd”: bez ruszania go 4 osoby z adresu, jak zawsze
-  const st = saved ? saved.sim : createSim(world, seed, { ...druzyna.opcje(), crowd, mode });
+  const st = saved ? saved.sim : createSim(world, seed, { ...(druzyna?.opcje() ?? { core: 4 }), crowd, mode });
   const zombie = modeOf(st) === 'zombie';
   $('start').hidden = true;
   $('app').hidden = false;
