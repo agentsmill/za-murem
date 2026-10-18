@@ -773,6 +773,35 @@ describe('historie: reguły na zmyślonym budynku', () => {
     expect(jedyne(poPowrocie, [matka, ona, wrocil], [matka.id, ona.id, on.id])).toBe(false);
   });
 
+  /** Szablony stanu (2051) dla samotnej osoby w budynku `b`, z wielu ziaren. */
+  function szablonyStanu(o: Osoba, b: Partial<Budynek>, n = 300): Set<string> {
+    const h = gosp('test/b1/g0', [o.id]);
+    const w: WynikBudynku = { ...budynek([o], [h], []), budynek: { ...BUDYNEK, ...b } };
+    const ids = new Set<string>();
+    for (let i = 0; i < n; i++) {
+      for (const z of zdaniaGospodarstwa(h, w, KRONIKA_TESTOWA, odmiana, losDla('stan', i))) {
+        if (z.rodzaj === 'stan') ids.add(z.szablon);
+      }
+    }
+    return ids;
+  }
+
+  it('o windach mówi tylko blok od 5 kondygnacji', () => {
+    const senior = osoba('test/b1/o0', 'Halina', 'K', 1975);
+    expect(szablonyStanu(senior, { kondygnacje: 4 }).has('stan-windy')).toBe(false);
+    expect(szablonyStanu(senior, { kondygnacje: 2 }).has('stan-windy')).toBe(false);
+    expect(szablonyStanu(senior, { kondygnacje: 5 }).has('stan-windy')).toBe(true);
+    expect(szablonyStanu(senior, { kondygnacje: 11 }).has('stan-windy')).toBe(true);
+  });
+
+  it('„kiedyś X, dziś X” nie pada, gdy dawny zawód i fach brzmią tak samo', () => {
+    const murarz = (dawnyZawod: string, fach: string): Osoba =>
+      osoba('test/b1/o0', 'Marek', 'M', 1980, { dawnyZawod, fach });
+    expect(szablonyStanu(murarz('murarz', 'murarz'), {}).has('stan-kiedys-dzis')).toBe(false);
+    expect(szablonyStanu(murarz('elektryk', 'elektryk'), {}).has('stan-kiedys-dzis')).toBe(false);
+    expect(szablonyStanu(murarz('murarz', 'elektryk'), {}).has('stan-kiedys-dzis')).toBe(true);
+  });
+
   it('wdowa w historii: owdowiała w roku zgonu męża, z poprawną odmianą', () => {
     const x = wdowa(0, 'Halina', 2038);
     const w = budynek(x.osoby, [x.h], x.wpisy);
