@@ -13,9 +13,16 @@
    Stan i HTML to czyste funkcje (testy w Node), klasa Druzyna spina je z DOM w bloku #druzyna z index.html. Pola
    tekstowe (imię, wiek, historia) zmieniają stan bez przerysowania panelu, żeby kliknięcie zaraz po pisaniu trafiało
    w przycisk; reszta przerysowuje panel i oddaje fokus temu samemu elementowi. Losowanie w panelu nie musi być
-   powtarzalne: każde kliknięcie dostaje świeże ziarno, ale idzie przez Rng z src/core/rng.ts. */
+   powtarzalne: każde kliknięcie dostaje świeże ziarno, ale idzie przez Rng z src/core/rng.ts.
+
+   Język (src/core/jezyk.ts): napisy, zawody, cechy i dziedziny w bieżącym języku przy rysowaniu. Wylosowana historia,
+   której gracz nie zmienił (osoba ma ziarno), jest zawsze w bieżącym języku: składa się z ziarna przy wczytaniu stanu,
+   przy każdym losowaniu i po zmianie języka (Druzyna.odswiez, woła ją main.ts), a angielska ma te same zdania co
+   polska. Historia wpisana przez gracza (bez ziarna) zostaje w języku, w którym ją napisał. W pamięci przeglądarki
+   zawód to dalej męska polska nazwa z PROFS, a cechy to klucze, w obu językach. */
 
 import './druzyna.css';
+import { DOM_EN } from '../content/data.en.ts';
 import { DOM, type Dom, PROFS, TRAITS } from '../content/data.ts';
 import {
   BUDZET,
@@ -27,6 +34,7 @@ import {
   dziedziny,
   HISTORIA_MAX,
   historiaZ,
+  historiaZEn,
   losujCechy,
   losujDruzyne,
   losujOsobe,
@@ -35,13 +43,16 @@ import {
   moznaOdjac,
   naprawOsobe,
   nazwaCechy,
+  nazwaCechyEn,
   nazwaZawodu,
+  nazwaZawoduEn,
   OSOB_DOMYSLNIE,
   OSOB_MAX,
   OSOB_MIN,
   type OsobaDruzyny,
   oczyscImie,
   odejmijPunkt,
+  opisCechyEn,
   POTRZEBNE,
   pierwszeImie,
   przytnijWiek,
@@ -50,9 +61,10 @@ import {
   zmienZawod,
   zostalo,
 } from '../content/druzyna.ts';
+import { jezyk, L } from '../core/jezyk.ts';
 import { mulberry, type Rng } from '../core/rng.ts';
 import { many } from './karta.ts';
-import { esc } from './tekst.ts';
+import { esc, manyEn } from './tekst.ts';
 
 export const DRUZYNA_KEY = 'za-murem-0.4-druzyna';
 /** najwyższy poziom umiejętności w grze (kratki w edytorze) */
@@ -92,6 +104,8 @@ export function wczytajStan(raw: string | null, rnd: Rng): StanDruzyny {
       if (bledyOsoby(o).length) console.warn('Wasz zarząd: osoba z pamięci przeglądarki poprawiona według zasad.');
       s.team.push(naprawOsobe(o, rnd, zajete(s.team).used));
     }
+    // wylosowane historie w bieżącym języku (pamięć mogła je zapisać w drugim)
+    for (const o of s.team) odswiezHistorie(o);
     if (s.wlasny) uzupelnij(s, rnd);
   } catch {
     return stanDomyslny();
@@ -112,7 +126,11 @@ export function opcjeGry(s: StanDruzyny): { core: number; team?: OsobaDruzyny[] 
 
 /** dopełnia własną drużynę do n osób (nowe osoby losowe, z dziedziną z kolejności zarządu z adresu) */
 export function uzupelnij(s: StanDruzyny, rnd: Rng): void {
-  while (s.team.length < s.n) s.team.push(losujOsobe(rnd, { ...zajete(s.team), need: POTRZEBNE[s.team.length] }));
+  while (s.team.length < s.n) {
+    const o = losujOsobe(rnd, { ...zajete(s.team), need: POTRZEBNE[s.team.length] });
+    odswiezHistorie(o);
+    s.team.push(o);
+  }
 }
 
 export function ustawLiczbe(s: StanDruzyny, n: number, rnd: Rng): void {
@@ -133,34 +151,45 @@ export function wlaczZAdresu(s: StanDruzyny): void {
 
 export function losujWszystkich(s: StanDruzyny, rnd: Rng): void {
   s.team = losujDruzyne(rnd, s.n);
+  for (const o of s.team) odswiezHistorie(o);
 }
 
 /** nowa osoba na miejscu k: imię i zawód inne niż reszty drużyny */
 export function losujCalaOsobe(s: StanDruzyny, k: number, rnd: Rng): void {
   if (!s.team[k]) return;
   s.team[k] = losujOsobe(rnd, zajete(s.team.filter((_, i) => i !== k)));
+  odswiezHistorie(s.team[k]);
 }
 
-/** historia z ziarna od nowa po zmianie danych (gdy gracz jej nie pisał sam) */
+/** Historia z ziarna od nowa w bieżącym języku: po zmianie danych, po losowaniu i po zmianie języka (gdy gracz jej
+    nie pisał sam, czyli osoba ma ziarno). Angielska ma te same zdania co polska z tego ziarna. */
 export function odswiezHistorie(o: OsobaDruzyny): void {
-  if (o.ziarno !== undefined) o.story = historiaZ(o.ziarno, o);
+  if (o.ziarno !== undefined) o.story = jezyk() === 'en' ? historiaZEn(o.ziarno, o) : historiaZ(o.ziarno, o);
 }
 
 /** podsumowanie w nagłówku zwiniętej sekcji */
 export function podsumowanie(s: StanDruzyny): string {
-  if (!s.wlasny) return `${many(s.n, 'osoba', 'osoby', 'osób')} z siedziby pod adresem`;
-  return `własny: ${s.team
+  if (!s.wlasny)
+    return L(
+      `${many(s.n, 'osoba', 'osoby', 'osób')} z siedziby pod adresem`,
+      `${manyEn(s.n, 'person', 'people')} at your address`,
+    );
+  const imiona = s.team
     .slice(0, s.n)
     .map((o) => pierwszeImie(o.name))
-    .join(', ')}`;
+    .join(', ');
+  return L(`własny: ${imiona}`, `your own: ${imiona}`);
 }
 
 const osobaW = (s: StanDruzyny, w: Widok): OsobaDruzyny | null =>
   s.wlasny && w.sel >= 0 && w.sel < s.n ? (s.team[w.sel] ?? null) : null;
 
+/** zawód osoby do pokazania: po polsku w formie płci, po angielsku jedna forma */
+const zawodOsoby = (o: OsobaDruzyny): string => (jezyk() === 'en' ? nazwaZawoduEn(o.prof) : nazwaZawodu(o.prof, o.f));
+
 /** środek kafelka osoby: imię i nazwisko, zawód i wiek */
 export const chipInner = (o: OsobaDruzyny): string =>
-  `<b>${esc(oczyscImie(o.name))}</b><small>${esc(nazwaZawodu(o.prof, o.f))}, ${o.age}</small>`;
+  `<b>${esc(oczyscImie(o.name))}</b><small>${esc(zawodOsoby(o))}, ${o.age}</small>`;
 
 function radio(name: string, value: string, text: string, checked: boolean): string {
   return `<label class="mode-o"><input type="radio" name="${name}" value="${value}"${checked ? ' checked' : ''}><span>${text}</span></label>`;
@@ -169,45 +198,54 @@ function radio(name: string, value: string, text: string, checked: boolean): str
 function skillRow(o: OsobaDruzyny, d: Dom): string {
   const v = o.skills[d] ?? 0;
   const max = maksimum(o.prof, d);
+  const n = L(DOM[d], DOM_EN[d]);
   const pips = Array.from({ length: POZIOMY }, (_, i) => `<i class="${i < v ? 'on' : i < max ? '' : 'x'}"></i>`).join(
     '',
   );
-  return `<div class="dz-sk"><span class="dz-skn">${DOM[d]}</span><button type="button" class="dz-pm" data-dz="minus" data-d="${d}" aria-label="${DOM[d]}: mniej"${moznaOdjac(o, d) ? '' : ' disabled'}>−</button><span class="dz-pips" role="img" aria-label="${DOM[d]}: ${v} z ${max}">${pips}</span><button type="button" class="dz-pm" data-dz="plus" data-d="${d}" aria-label="${DOM[d]}: więcej"${moznaDodac(o, d) ? '' : ' disabled'}>+</button><b class="dz-skv">${v}</b></div>`;
+  return `<div class="dz-sk"><span class="dz-skn">${n}</span><button type="button" class="dz-pm" data-dz="minus" data-d="${d}" aria-label="${n}: ${L('mniej', 'less')}"${moznaOdjac(o, d) ? '' : ' disabled'}>−</button><span class="dz-pips" role="img" aria-label="${n}: ${L(`${v} z ${max}`, `${v} of ${max}`)}">${pips}</span><button type="button" class="dz-pm" data-dz="plus" data-d="${d}" aria-label="${n}: ${L('więcej', 'more')}"${moznaDodac(o, d) ? '' : ' disabled'}>+</button><b class="dz-skv">${v}</b></div>`;
 }
 
 const rodzajCechy = (t: string): string =>
   CECHY_DOBRE.includes(t) ? 'dobra' : CECHY_ZLE.includes(t) ? 'zla' : 'obojetna';
 
 function editor(o: OsobaDruzyny, k: number): string {
+  const en = jezyk() === 'en';
   const [a, b] = wiekZawodu(o.prof);
   const profs = PROFS.map(
-    (p) => `<option value="${esc(p[0])}"${p[0] === o.prof ? ' selected' : ''}>${esc(p[o.f ? 1 : 0])}</option>`,
+    (p) =>
+      `<option value="${esc(p[0])}"${p[0] === o.prof ? ' selected' : ''}>${esc(en ? nazwaZawoduEn(p[0]) : p[o.f ? 1 : 0])}</option>`,
   ).join('');
   const tags = o.traits
     .map(
       (t) =>
-        `<span class="tag dz-${rodzajCechy(t)}" title="${esc(TRAITS[t]?.desc ?? '')}">${esc(nazwaCechy(t, o.f))}</span>`,
+        `<span class="tag dz-${rodzajCechy(t)}" title="${esc(en ? opisCechyEn(t) : (TRAITS[t]?.desc ?? ''))}">${esc(en ? nazwaCechyEn(t) : nazwaCechy(t, o.f))}</span>`,
     )
     .join('');
   // zawody-żarty nie wydadzą całego budżetu: podpowiedź mówi to wprost, żeby gasnący „+” nie wyglądał na błąd
   const cap = dziedziny(o.prof).reduce((s, d) => s + maksimum(o.prof, d), 0);
   const hint =
     cap < BUDZET
-      ? `Ten zawód wyda najwyżej ${cap} z ${BUDZET} punktów.`
-      : `Tylko dziedziny z zawodu, razem najwyżej ${BUDZET} punktów.`;
+      ? L(
+          `Ten zawód wyda najwyżej ${cap} z ${BUDZET} punktów.`,
+          `This profession can spend at most ${cap} of the ${BUDZET} points.`,
+        )
+      : L(
+          `Tylko dziedziny z zawodu, razem najwyżej ${BUDZET} punktów.`,
+          `Only the profession’s skills, ${BUDZET} points in total at most.`,
+        );
   return [
-    `<div class="dz-ed" role="group" aria-label="Osoba ${k + 1}">`,
-    `<div class="dz-f dz-f-name"><label for="dzName">Imię i nazwisko</label><input id="dzName" data-dz="name" maxlength="40" value="${esc(o.name)}" autocomplete="off" spellcheck="false"></div>`,
-    `<div class="dz-f dz-f-who"><div class="dz-pair"><div><span class="dz-k" id="dzSexL">Płeć</span><span class="mode" role="radiogroup" aria-labelledby="dzSexL">${radio('dzSex', 'k', 'K', o.f)}${radio('dzSex', 'm', 'M', !o.f)}</span></div><div><label for="dzAge">Wiek</label><span class="dz-line"><input id="dzAge" data-dz="age" type="number" inputmode="numeric" min="${a}" max="${b}" step="1" value="${o.age}"><small class="dz-dim">${a}–${b} lat</small></span></div></div></div>`,
-    `<div class="dz-f dz-f-prof"><label for="dzProf">Zawód</label><select id="dzProf" data-dz="prof">${profs}</select></div>`,
-    `<div class="dz-f dz-f-skills"><div class="dz-line dz-split"><span class="dz-k">Umiejętności</span><span class="dz-pts" aria-live="polite">zostało ${zostalo(o.skills)} z ${BUDZET}</span></div>${dziedziny(
+    `<div class="dz-ed" role="group" aria-label="${L(`Osoba ${k + 1}`, `Person ${k + 1}`)}">`,
+    `<div class="dz-f dz-f-name"><label for="dzName">${L('Imię i nazwisko', 'Full name')}</label><input id="dzName" data-dz="name" maxlength="40" value="${esc(o.name)}" autocomplete="off" spellcheck="false"></div>`,
+    `<div class="dz-f dz-f-who"><div class="dz-pair"><div><span class="dz-k" id="dzSexL">${L('Płeć', 'Sex')}</span><span class="mode" role="radiogroup" aria-labelledby="dzSexL">${radio('dzSex', 'k', L('K', 'F'), o.f)}${radio('dzSex', 'm', 'M', !o.f)}</span></div><div><label for="dzAge">${L('Wiek', 'Age')}</label><span class="dz-line"><input id="dzAge" data-dz="age" type="number" inputmode="numeric" min="${a}" max="${b}" step="1" value="${o.age}"><small class="dz-dim">${L(`${a}–${b} lat`, `${a} to ${b}`)}</small></span></div></div></div>`,
+    `<div class="dz-f dz-f-prof"><label for="dzProf">${L('Zawód', 'Profession')}</label><select id="dzProf" data-dz="prof">${profs}</select></div>`,
+    `<div class="dz-f dz-f-skills"><div class="dz-line dz-split"><span class="dz-k">${L('Umiejętności', 'Skills')}</span><span class="dz-pts" aria-live="polite">${L(`zostało ${zostalo(o.skills)} z ${BUDZET}`, `${zostalo(o.skills)} of ${BUDZET} left`)}</span></div>${dziedziny(
       o.prof,
     )
       .map((d) => skillRow(o, d))
       .join('')}<p class="dz-dim">${hint}</p></div>`,
-    `<div class="dz-f dz-f-traits"><div class="dz-line dz-split"><span class="dz-k">Cechy</span><button type="button" class="btn" data-dz="traits">Losuj cechy</button></div><div class="dz-tags">${tags}</div><p class="dz-dim">Dobra i zła albo dwie złe, nigdy dwie dobre.</p></div>`,
-    `<div class="dz-f dz-f-story"><div class="dz-line dz-split"><label for="dzStory">Historia</label><span class="dz-line"><small class="dz-dim dz-cnt">${o.story.length}/${HISTORIA_MAX}</small><button type="button" class="btn" data-dz="story">Wylosuj historię</button></span></div><textarea id="dzStory" data-dz="storytext" maxlength="${HISTORIA_MAX}" rows="4">${esc(o.story)}</textarea></div>`,
-    `<div class="dz-foot"><button type="button" class="btn ghost" data-dz="close">Gotowe</button><button type="button" class="btn" data-dz="person">Losuj całą osobę</button></div>`,
+    `<div class="dz-f dz-f-traits"><div class="dz-line dz-split"><span class="dz-k">${L('Cechy', 'Traits')}</span><button type="button" class="btn" data-dz="traits">${L('Losuj cechy', 'Reroll traits')}</button></div><div class="dz-tags">${tags}</div><p class="dz-dim">${L('Dobra i zła albo dwie złe, nigdy dwie dobre.', 'Good and bad, or two bad. Never two good.')}</p></div>`,
+    `<div class="dz-f dz-f-story"><div class="dz-line dz-split"><label for="dzStory">${L('Historia', 'Story')}</label><span class="dz-line"><small class="dz-dim dz-cnt">${o.story.length}/${HISTORIA_MAX}</small><button type="button" class="btn" data-dz="story">${L('Wylosuj historię', 'Reroll story')}</button></span></div><textarea id="dzStory" data-dz="storytext" maxlength="${HISTORIA_MAX}" rows="4">${esc(o.story)}</textarea></div>`,
+    `<div class="dz-foot"><button type="button" class="btn ghost" data-dz="close">${L('Gotowe', 'Done')}</button><button type="button" class="btn" data-dz="person">${L('Losuj całą osobę', 'Reroll person')}</button></div>`,
     '</div>',
   ].join('');
 }
@@ -216,28 +254,34 @@ function editor(o: OsobaDruzyny, k: number): string {
     osób i przyciski trybu, pod nim kafelki osób, podpowiedź i edytor otwartej osoby. */
 export function htmlPanelu(s: StanDruzyny, w: Widok): string {
   const toggle = `<button type="button" class="btn ghost dz-toggle" data-dz="toggle" aria-expanded="${w.open}" aria-controls="dzBody">${
-    w.open ? 'Zwiń' : 'Zmień'
+    w.open ? L('Zwiń', 'Hide') : L('Zmień', 'Change')
   }</button>`;
-  const title = '<h2 class="dz-title" id="dzTitle">Wasz zarząd</h2>';
+  const title = `<h2 class="dz-title" id="dzTitle">${L('Wasz zarząd', 'Your board')}</h2>`;
   if (!w.open)
     return `<div class="dz-head">${title}<span class="dz-sum">${esc(podsumowanie(s))}</span>${toggle}</div><div class="dz-body" id="dzBody" hidden></div>`;
   const counts = Array.from({ length: OSOB_MAX }, (_, i) => radio('dzN', String(i + 1), String(i + 1), s.n === i + 1));
   const acts = s.wlasny
-    ? '<button type="button" class="btn" data-dz="all">Losuj wszystkich</button><button type="button" class="btn ghost" data-dz="addr">Wróć do losowania z adresu</button>'
-    : '<button type="button" class="btn lamp" data-dz="own">Stwórz własny zarząd</button>';
-  const bar = `<div class="dz-bar"><span class="dz-line"><span class="dz-k" id="dzNL">Ile osób</span><span class="mode" role="radiogroup" aria-labelledby="dzNL">${counts.join('')}</span></span><span class="dz-acts">${acts}</span></div>`;
+    ? `<button type="button" class="btn" data-dz="all">${L('Losuj wszystkich', 'Reroll everyone')}</button><button type="button" class="btn ghost" data-dz="addr">${L('Wróć do losowania z adresu', 'Use people from the address')}</button>`
+    : `<button type="button" class="btn lamp" data-dz="own">${L('Stwórz własny zarząd', 'Create your own board')}</button>`;
+  const bar = `<div class="dz-bar"><span class="dz-line"><span class="dz-k" id="dzNL">${L('Ile osób', 'How many')}</span><span class="mode" role="radiogroup" aria-labelledby="dzNL">${counts.join('')}</span></span><span class="dz-acts">${acts}</span></div>`;
   const chips = Array.from({ length: s.n }, (_, k) => {
     const o = s.wlasny ? s.team[k] : undefined;
     return o
       ? `<button type="button" class="dz-chip${k === w.sel ? ' sel' : ''}" data-dz="pick" data-k="${k}" aria-pressed="${k === w.sel}">${chipInner(o)}</button>`
-      : `<button type="button" class="dz-chip dz-los" data-dz="pick" data-k="${k}"><b>Osoba ${k + 1}</b><small>z siedziby</small></button>`;
+      : `<button type="button" class="dz-chip dz-los" data-dz="pick" data-k="${k}"><b>${L(`Osoba ${k + 1}`, `Person ${k + 1}`)}</b><small>${L('z siedziby', 'from the address')}</small></button>`;
   }).join('');
   const o = osobaW(s, w);
   const note = !s.wlasny
-    ? 'Gra wybierze zarząd spośród mieszkańców siedziby po wczytaniu osiedla. Mniej osób to trudniejsza gra.'
+    ? L(
+        'Gra wybierze zarząd spośród mieszkańców siedziby po wczytaniu osiedla. Mniej osób to trudniejsza gra.',
+        'Once the estate loads, the game picks your board from the people at your address. Fewer people, harder game.',
+      )
     : o
       ? ''
-      : 'Wybierzcie osobę, żeby ją zmienić. Mniej osób to trudniejsza gra.';
+      : L(
+          'Wybierzcie osobę, żeby ją zmienić. Mniej osób to trudniejsza gra.',
+          'Pick someone to edit them. Fewer people, harder game.',
+        );
   return [
     `<div class="dz-head">${title}${bar}${toggle}</div>`,
     '<div class="dz-body" id="dzBody">',
@@ -304,6 +348,20 @@ export class Druzyna {
   /** opcje zarządu do createSim */
   opcje(): { core: number; team?: OsobaDruzyny[] } {
     return opcjeGry(this.s);
+  }
+
+  /** Po zmianie języka (woła main.ts): wylosowane historie, których gracz nie zmienił (osoby z ziarnem), składa od
+      nowa w bieżącym języku i zapisuje w pamięci, a panel rysuje od nowa w tym samym stanie (rozwinięty albo zwinięty,
+      ta sama otwarta osoba). Historia napisana przez gracza zostaje, jak była. */
+  odswiez(): void {
+    let zmiana = false;
+    for (const o of this.s.team) {
+      const przed = o.story;
+      odswiezHistorie(o);
+      zmiana ||= o.story !== przed;
+    }
+    if (zmiana) this.save();
+    this.render();
   }
 
   private cur(): OsobaDruzyny | null {

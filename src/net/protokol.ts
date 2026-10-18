@@ -8,7 +8,9 @@
    - klucze klatek i budynków liczy klient (src/world/klucze.ts); serwer sprawdza ich postać i to, czy pozycja
      klatki leży przy budynku z klucza (kotwicaKlucza), więc nie da się zająć klatki w innym mieście,
    - zapis gry w chmurze to obiekt JSON bez tekstu adresu: bez data.addr i data.street, bez tagów addr:* przy
-     budynkach w data.geo i bez cyfr w data.name (zapisBezAdresu czyści, maAdres sprawdza). */
+     budynkach w data.geo i bez cyfr w data.name (zapisBezAdresu czyści, maAdres sprawdza),
+   - serwer mówi po polsku (komunikat w odpowiedzi z błędem); angielska wersja gry tłumaczy go u klienta po kodzie
+     błędu (src/net/api.ts), a powody złego nicku i hasła mają tu angielską parę (POWODY_LOGOWANIA). */
 
 /** wersja protokołu w odpowiedzi /api/zdrowie */
 export const API_WERSJA = 1;
@@ -56,21 +58,67 @@ export function kotwicaKlucza(budynek: string): { lat: number; lon: number; rozp
 /** nick do porównań (wielkość liter bez znaczenia, ta sama postać znaków Unicode) */
 export const nickKlucz = (nick: string): string => nick.normalize('NFC').toLocaleLowerCase('pl');
 
+/** Powody złego nicku i hasła w obu językach: po polsku mówi serwer, po angielsku klient w angielskiej wersji gry
+    (plik nie importuje niczego z gry, więc para to zwykły obiekt w kształcie Tx z src/core/jezyk.ts). */
+export const POWODY_LOGOWANIA = {
+  nickBrak: { pl: 'Podajcie nick.', en: 'Enter a username.' },
+  nickDlugosc: {
+    pl: `Nick ma od ${NICK_MIN} do ${NICK_MAX} znaków.`,
+    en: `A username has ${NICK_MIN} to ${NICK_MAX} characters.`,
+  },
+  nickZnaki: {
+    pl: 'W nicku mogą być litery, cyfry, kropka, podkreślnik i myślnik.',
+    en: 'A username can only have letters, digits, full stops, underscores and hyphens.',
+  },
+  hasloBrak: { pl: 'Podajcie hasło.', en: 'Enter a password.' },
+  hasloKrotkie: {
+    pl: `Hasło ma co najmniej ${HASLO_MIN} znaków.`,
+    en: `A password needs at least ${HASLO_MIN} characters.`,
+  },
+  hasloDlugie: {
+    pl: `Hasło ma najwyżej ${HASLO_MAX} znaków.`,
+    en: `A password can have at most ${HASLO_MAX} characters.`,
+  },
+} as const;
+type PowodLogowania = keyof typeof POWODY_LOGOWANIA;
+
+function powodNicku(nick: unknown): PowodLogowania | null {
+  if (typeof nick !== 'string') return 'nickBrak';
+  const n = nick.normalize('NFC');
+  if ([...n].length < NICK_MIN || [...n].length > NICK_MAX) return 'nickDlugosc';
+  if (!NICK_WZOR.test(n)) return 'nickZnaki';
+  return null;
+}
+
+function powodHasla(haslo: unknown): PowodLogowania | null {
+  if (typeof haslo !== 'string') return 'hasloBrak';
+  if (haslo.length < HASLO_MIN) return 'hasloKrotkie';
+  if (haslo.length > HASLO_MAX) return 'hasloDlugie';
+  return null;
+}
+
 /** Sprawdzenie nicku po stronie klienta i serwera; null, gdy dobry, inaczej powód po polsku. */
 export function zlyNick(nick: unknown): string | null {
-  if (typeof nick !== 'string') return 'Podajcie nick.';
-  const n = nick.normalize('NFC');
-  if ([...n].length < NICK_MIN || [...n].length > NICK_MAX) return `Nick ma od ${NICK_MIN} do ${NICK_MAX} znaków.`;
-  if (!NICK_WZOR.test(n)) return 'W nicku mogą być litery, cyfry, kropka, podkreślnik i myślnik.';
-  return null;
+  const p = powodNicku(nick);
+  return p ? POWODY_LOGOWANIA[p].pl : null;
+}
+
+/** to samo sprawdzenie nicku z powodem po angielsku (klient w angielskiej wersji gry) */
+export function zlyNickEn(nick: unknown): string | null {
+  const p = powodNicku(nick);
+  return p ? POWODY_LOGOWANIA[p].en : null;
 }
 
 /** Sprawdzenie hasła; null, gdy dobre. */
 export function zleHaslo(haslo: unknown): string | null {
-  if (typeof haslo !== 'string') return 'Podajcie hasło.';
-  if (haslo.length < HASLO_MIN) return `Hasło ma co najmniej ${HASLO_MIN} znaków.`;
-  if (haslo.length > HASLO_MAX) return `Hasło ma najwyżej ${HASLO_MAX} znaków.`;
-  return null;
+  const p = powodHasla(haslo);
+  return p ? POWODY_LOGOWANIA[p].pl : null;
+}
+
+/** to samo sprawdzenie hasła z powodem po angielsku */
+export function zleHasloEn(haslo: unknown): string | null {
+  const p = powodHasla(haslo);
+  return p ? POWODY_LOGOWANIA[p].en : null;
 }
 
 /** Kody błędów w polu „blad” odpowiedzi; siec, czas i brak_serwera daje tylko klient. */
