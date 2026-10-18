@@ -4077,6 +4077,21 @@ const SHOTS: Shot[] = [
   { name: 'kotwica-wysoki-blok', query: '', run: kotwicaWysokiBlok },
   { name: 'kotwica-tlum', query: '', run: kotwicaTlum },
   { name: 'kotwica-arkusz', query: '', run: (page) => kotwicaArkusz(page) },
+  {
+    // bez public/assets (404) gra startuje i rysuje wszystko kodem, jak przed grafiką z PixelLab
+    name: 'grafika-zapas',
+    query: '',
+    allow: /status of 404/,
+    allowUrl: /\/assets\/grafika\.json/,
+    run: async (page, base) => {
+      await page.route('**/assets/grafika.json', (r) => r.fulfill({ status: 404, body: 'brak' }));
+      await page.goto(`${base}?demo=lanciego&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const g = await page.evaluate(() => window.zm!.grafika());
+      console.log(`  grafika: ${JSON.stringify(g)}`);
+      if (g !== null) throw new Error('bez public/assets gra wzięła grafikę z PixelLab');
+    },
+  },
 ];
 
 /**
