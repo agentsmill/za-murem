@@ -239,9 +239,13 @@ Zmiany:
 
 Liczby: testy 583/583 (nowy `tests/unit/zombie-blisko.test.ts` na prawdziwej mapie Przymorza padał przed poprawką), Biome, build. `npm run bot` bez zmian (e772cf37, po 3 dobach 7990adca). `npm run bot:zombie`: ziarno 1 z wartą gra trwa 6 nocy, 3 zgony, 13–34 zabitych na noc w pierwszych trzech nocach, siatka o 6:00 do 0,49 po siódmej nocy; bez warty koniec gry „pustką” czwartego dnia. Ziarna 2 i 3 z wartą: 2 i 1 zgon w 5 nocach. Z wartą jest więc trudniej niż przedtem (było 1 zgon w 6 nocach), bez warty można przegrać. Nowy zrzut `zombie-wieczor` (zwykły start bez `?stado`, 19:30): sześciu szwendaczy do 12 m od siatki, widać ich jako szare sylwetki o zmierzchu; `zombie-noc-telefon` obejrzany.
 
+### Poprawka po wdrożeniu M1: przeciąganie myszą, 18.10.2026
+
+Mateusz po pierwszym graniu na żywo: „nie mogę nic klikać w domu i budować czy ścinać”. Przyczyna: przeciąganie lewym przyciskiem myszy rysowało ramkę zaznaczenia zamiast przesuwać mapę (choć podpowiedź mówi „Przeciąganie przesuwa mapę”), a ramka na pustym miejscu czyściła zaznaczenie. Kto próbował dojechać do suchego drzewa, tracił zaznaczoną osobę i prawy przycisk przestawał działać. Teraz lewe przeciąganie przesuwa mapę, ramka zaznacza z Shiftem (pomoc w grze to mówi), prawe przeciąganie i WASD zostają. Nowy scenariusz `mysz-przesuwanie` padał na starym kodzie (mapa 0 px, zaznaczenie zgubione), z poprawką przechodzi (200 px, zaznaczenie zostaje, ramka z Shiftem zaznacza 4 z 4). Budowania jeszcze nie ma, przychodzi w M2.
+
 ## Następne
 
-0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia, czy szwendaczy pod siatką za dnia jest dość). Gałąź `tryb-zombie` jest na GitHubie (CI zielone), PR do `main` nie jest otwarty.
+0. Mateusz gra w trybie zombie i mówi, czy to jego Walking Dead (przyczyna z wstępu, liczebność stada, jak groźne są ugryzienia, czy szwendaczy pod siatką za dnia jest dość). Gałąź `tryb-zombie` (z `main` scalonym 18.10.2026) czeka w PR do `main` na scalenie przez Mateusza.
 1. Sprawdzić rysowanie w workerach na prawdziwym telefonie. Safari ma OffscreenCanvas 2D w workerze od 16.4, starsze przejdą na główny wątek.
 2. Bramka M1: Mateusz gra na swoim adresie i mówi, czy chce dalej. Przed tym nowe nagranie po spięciu (noc z wartą, szabrownikami i dymem) i bramka w minutach przy ekranie.
 3. Z playtestu dla symulacji: warta może nocą dokładać do kozy (teraz koza gaśnie około północy), krok „zanieść drewno do składu” przy 1× czeka kilka sekund na polecenie. Propozycje API zarządu od symulacji: jawny wynik napadu, siła napadu, warta spoza karty nocy.
