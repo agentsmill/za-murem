@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { dayOf, hourOf, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
-import { firstVisit, HAGGLE_TICKS, OFFER_TIMES, rollOffers, tickAt, WAIT_TICKS } from '../../src/sim/handlarz.ts';
+import {
+  firstVisit,
+  HAGGLE_TICKS,
+  OFFER_TIMES,
+  priced,
+  rollOffers,
+  TRADER_FLEE,
+  tickAt,
+  WAIT_TICKS,
+} from '../../src/sim/handlarz.ts';
 import { commandFor, commandsAt, jobText } from '../../src/sim/orders.ts';
 import { createSim, type Pawn, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
 import { mockBlockM2 } from './interior-mock.ts';
@@ -50,7 +59,7 @@ const put = (st: SimState, kind: string, n: number) => {
 };
 
 describe('Handlarz: włączanie i wizyty', () => {
-  it('bez opcji nie ma handlarza ani pola w stanie; polecenie obcy go włącza, w trybie zombie nie', () => {
+  it('bez opcji nie ma handlarza ani pola w stanie; polecenie obcy go włącza, w trybie zombie przychodzi później', () => {
     const st = createSim(w, 3, { core: 2 });
     expect('obcy' in st).toBe(false);
     const sim = new Sim(w, st);
@@ -58,8 +67,9 @@ describe('Handlarz: włączanie i wizyty', () => {
     sim.step();
     expect(st.obcy?.next).toBeGreaterThan(0);
     expect(dayOf(st.obcy!.next)).toBe(2);
+    // w trybie zombie handlarz jest, ale rzadko (tests/unit/obcy-zombie.test.ts)
     const z = createSim(w, 3, { core: 2, mode: 'zombie', obcy: true });
-    expect('obcy' in z).toBe(false);
+    expect(dayOf(z.obcy!.next)).toBe(4);
   });
 
   it('z opcją pierwsza wizyta drugiego dnia między 10:00 a 12:00, ta sama przy tym samym ziarnie', () => {
@@ -192,33 +202,125 @@ describe('Handlarz: wymiana i napaść', () => {
     expect(st.obcy!.offers[0].left).toBe(OFFER_TIMES - 1);
   });
 
-  it('napaść: cios, handlarz rzuca wózek i ucieka, towar za siatką, nastroje, więcej nie przyjdzie', () => {
+  /** napaść do chwili, w której handlarz staje do walki */
+  const robbed = () => {
     const sim = visit();
     const st = sim.st;
     waiting(sim);
-    const offers = st.obcy!.offers.map((o) => ({ ...o, give: { ...o.give } }));
+    const p = core(st)[0];
+    sim.push({ t: 'rob', ids: [p.id] });
+    run(sim, () => st.obcy!.napad >= 0);
+    return { sim, st, p, t: trader(st)! };
+  };
+
+  it('napaść: handlarz rzuca wózek i staje do walki z siekierą jako wróg; towar za siatką, nastroje, napastnik walczy', () => {
+    const sim = visit();
+    const st = sim.st;
+    waiting(sim);
     const goods: Record<string, number> = {};
-    for (const o of offers) for (const [m, n] of Object.entries(o.give)) goods[m] = (goods[m] ?? 0) + n * o.left;
+    for (const o of st.obcy!.offers)
+      for (const [m, n] of Object.entries(o.give)) goods[m] = (goods[m] ?? 0) + n * o.left;
     const before = Object.fromEntries(Object.keys(goods).map((k) => [k, mat(st, k)]));
     const p = core(st)[0];
     sim.push({ t: 'rob', ids: [p.id] });
-    run(sim, () => p.job?.t !== 'rob' && st.obcy!.napad >= 0);
-    expect(st.obcy!.napad).toBeGreaterThan(0);
-    expect(st.obcy!.next).toBe(-1);
+    run(sim, () => st.obcy!.napad >= 0);
+    const t = trader(st)!;
+    expect(t.wrogi).toBe(true);
+    expect(t.weapon).toBe('siekiera');
+    expect(t.job?.phase).toBe(5);
+    expect(jobText(st, w, t)).toBe('Walczy z siekierą.');
     expect(st.obcy!.offers).toEqual([]);
-    expect(trader(st)?.job?.phase).toBe(3);
+    expect(st.obcy!.napady).toHaveLength(1);
     for (const [m, n] of Object.entries(goods)) expect(mat(st, m) - before[m]).toBe(n);
     const cart = st.things.find((q) => q.kind === 'wozek')!;
     expect(cart.n).toBe(0);
     expect(p.moods.find((m) => m.why === 'Napadliśmy na handlarza')?.d).toBe(-6);
     expect(core(st)[1].moods.find((m) => m.why === 'Napadliśmy na handlarza')?.d).toBe(-3);
-    run(sim, () => !trader(st));
-    expect(st.obcy!.trader).toBe(-1);
-    expect(st.obcy!.next).toBe(-1);
-    // wózek zostaje, łup da się nieść na podwórko
+    expect(p.job?.t).toBe('fight');
+    const menu = commandsAt(st, w, [p.id], Math.floor(t.y) * size + Math.floor(t.x));
+    expect(menu.some((m) => m.label === 'Atakuj handlarza')).toBe(true);
+    expect(menu.some((m) => m.cmd.t === 'trade')).toBe(false);
+    // łup da się nieść na podwórko
     const heap = st.things.find(
       (q) => q.kind in goods && !yard.has(q.y * size + q.x) && Math.hypot(q.x - cart.x, q.y - cart.y) < 5,
     )!;
     expect(commandsAt(st, w, [p.id], heap.y * size + heap.x).some((m) => m.cmd.t === 'carry')).toBe(true);
+  });
+
+  it('wrogi handlarz oddaje: zarząd obrywa', () => {
+    const { sim, st, p } = robbed();
+    p.weapon = null;
+    run(sim, () => core(st).some((q) => (q.needs?.health ?? 100) < 100), 4000);
+    expect(core(st).some((q) => (q.needs?.health ?? 100) < 100)).toBe(true);
+  });
+
+  it('ucieczka: wieść u handlarzy (ceny w górę, wizyty rzadziej), napis, następny przyjdzie', () => {
+    const { sim, st, t } = robbed();
+    const day = dayOf(st.tick);
+    t.hp = TRADER_FLEE - 1;
+    sim.step();
+    expect(t.job?.phase).toBe(3);
+    run(sim, () => !trader(st));
+    expect(st.obcy!.trader).toBe(-1);
+    expect(st.obcy!.slawa?.lvl).toBe(1);
+    expect(dayOf(st.obcy!.next) - day).toBeGreaterThanOrEqual(4);
+    expect(st.obcy!.wiesc?.text.startsWith('Handlarz uciekł')).toBe(true);
+    if (st.obcy!.zemsta) {
+      const h = hourOf(st.obcy!.zemsta.at);
+      expect(h >= 22 || h < 1).toBe(true);
+      expect(st.obcy!.zemsta.n).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('zabity handlarz: bez wieści u handlarzy, następny 3 dni później niż zwykle, zgon jako obcy', () => {
+    const { sim, st, t } = robbed();
+    const day = dayOf(st.tick);
+    sim.wound(t, 500);
+    sim.step();
+    expect(trader(st)).toBeUndefined();
+    expect(st.obcy!.trader).toBe(-1);
+    expect(st.obcy!.slawa).toBeUndefined();
+    expect(dayOf(st.obcy!.next) - day).toBeGreaterThanOrEqual(5);
+    expect(st.obcy!.wiesc?.text).toBe('Handlarz nie żyje. Jego towar jest wasz.');
+    expect(st.dead!.at(-1)).toMatchObject({ kind: 'handlarz', name: 'Handlarz' });
+    for (const q of core(st)) expect(q.moods.some((m) => m.why.startsWith('Śmierć'))).toBe(false);
+    expect(st.store.arms).toContain('siekiera');
+  });
+
+  it('zła sława: ceny razy 1 + 0,5 × poziom, poziom spada po 15 dniach', () => {
+    const o = rollOffers({ s: 9 })[0];
+    const p2 = priced(o, 2);
+    for (const [m, n] of Object.entries(o.take)) expect(p2.take[m as keyof typeof o.take]).toBe(Math.ceil(n * 2));
+    expect(priced(o, 0)).toBe(o);
+    const sim = visit();
+    const st = sim.st;
+    st.obcy!.slawa = { lvl: 2, until: st.tick + 10 * 24 * TICKS_PER_HOUR };
+    sim.step();
+    for (const off of st.obcy!.offers) for (const n of Object.values(off.take)) expect(n % 2).toBe(0);
+    st.obcy!.slawa.until = st.tick;
+    sim.step();
+    expect(st.obcy!.slawa.lvl).toBe(1);
+  });
+
+  it('posiłki: ludzie handlarza nocą pod siatką jako wrogowie z bronią, napis, o 4:00 odchodzą', () => {
+    const st = createSim(w, 3, { core: 2, obcy: true });
+    const sim = new Sim(w, st);
+    st.tick = tickAt(2, 22);
+    st.obcy!.next = tickAt(30, 10);
+    st.obcy!.wnext = tickAt(30, 10);
+    st.obcy!.enext = tickAt(30, 10);
+    st.obcy!.zemsta = { at: st.tick, n: 3 };
+    sim.step();
+    const men = st.pawns.filter((q) => q.kind === 'zbir');
+    expect(men).toHaveLength(3);
+    for (const m of men) {
+      expect(m.wrogi).toBe(true);
+      expect(['kij', 'lom', 'noz']).toContain(m.weapon);
+    }
+    expect(st.obcy!.zemsta).toBeUndefined();
+    expect(st.obcy!.wiesc?.text).toBe('Wracają ludzie handlarza: 3 osoby z pałkami pod siatką.');
+    run(sim, () => !st.pawns.some((q) => q.kind === 'zbir'), 8 * TICKS_PER_HOUR);
+    expect(st.pawns.some((q) => q.kind === 'zbir')).toBe(false);
+    expect(hourOf(st.tick) < 5 || hourOf(st.tick) >= 22).toBe(true);
   });
 });

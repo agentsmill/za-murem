@@ -165,7 +165,11 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       label:
         foe.kind === 'zombie'
           ? L('Atakuj szwendacza', 'Attack the shambler')
-          : L('Atakuj szabrownika', 'Attack the looter'),
+          : foe.kind === 'handlarz'
+            ? tr(HANDEL.atakuj)
+            : foe.kind === 'zbir'
+              ? tr(HANDEL.atakujZbira)
+              : L('Atakuj szabrownika', 'Attack the looter'),
       quick: true,
     });
   // handlarz pod bramą (na nim albo na jego wózku): jego towar, wyszarzony, gdy nie starcza materiału, i napaść
@@ -744,7 +748,12 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     case 'carry':
       return tr(walking ? NAPISY.poLup : NAPISY.niesie);
     case 'trader':
-      return tr([HANDEL.przychodzi, HANDEL.czeka, HANDEL.odchodzi, HANDEL.ucieka, HANDEL.odchodzi][j.phase]);
+      return tr(
+        [HANDEL.przychodzi, HANDEL.czeka, HANDEL.odchodzi, HANDEL.ucieka, HANDEL.odchodzi, HANDEL.walczy][j.phase] ??
+          HANDEL.czeka,
+      );
+    case 'zemsta':
+      return tr(HANDEL.zemstaPraca[Math.min(3, j.phase)]);
     case 'wander':
       return tr(OBCY.wander[Math.min(3, j.phase)]);
     case 'scavenge':

@@ -20,7 +20,7 @@ import {
 } from 'pixi.js';
 import type { WeaponId } from '../sim/bron.ts';
 import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
-import { TRADER_HP } from '../sim/handlarz.ts';
+import { TRADER_HP, ZBIR_HP } from '../sim/handlarz.ts';
 import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
 import { WANDERER_HP } from '../sim/wedrowcy.ts';
 import { ZOMBIE_HP } from '../sim/zombie.ts';
@@ -803,7 +803,8 @@ export class GameView {
       }
       if (selected.has(p.id) && sp.visible) this.markPawn(p, x, y);
       // broń w ręce: nakładka w tej samej klatce co postać (za plecami, gdy idzie od patrzącego)
-      const wid = p.kind === 'core' && !pose.lie ? (p.weapon ?? null) : null;
+      // wrogi człowiek (napadnięty handlarz, jego ludzie) też ma broń w ręce
+      const wid = (p.kind === 'core' || p.wrogi) && !pose.lie ? (p.weapon ?? null) : null;
       let ws = this.weaponSprites.get(p.id);
       if (wid && pose.arm && sp.visible) {
         if (!ws) {
@@ -948,12 +949,15 @@ export class GameView {
               ? TRADER_HP
               : p.kind === 'wedrowiec' || p.kind === 'obcy'
                 ? WANDERER_HP
-                : 100;
+                : p.kind === 'zbir'
+                  ? ZBIR_HP
+                  : 100;
       const hp = p.needs ? p.needs.health : (p.hp ?? max);
       const busy =
         p.kind === 'zombie' ||
         p.kind === 'szabrownik' ||
         ((p.kind === 'handlarz' || p.kind === 'wedrowiec' || p.kind === 'obcy') && p.job?.phase === 3) ||
+        !!p.wrogi ||
         p.job?.t === 'fight' ||
         (p.job?.t === 'guard' && p.job.phase === 1) ||
         p.bite !== undefined;

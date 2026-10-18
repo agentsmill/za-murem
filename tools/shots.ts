@@ -1006,17 +1006,44 @@ const SHOTS: Shot[] = [
             if (done) break;
             await page.evaluate(() => window.zm!.ff(1));
           }
-          await page.evaluate(() => window.zm!.ff(0.3));
+          // kilka sekund walki: handlarz z siekierą oddaje, paski życia
+          await page.evaluate(() => window.zm!.ff(0.15));
           const after = await page.evaluate(() => {
             const zm = window.zm!;
             const st = zm.sim!.st;
             const c = st.things.find((t) => t.kind === 'wozek')!;
-            zm.setCam(c.x + 0.5, c.y, 2);
-            return { napad: st.obcy!.napad, next: st.obcy!.next, cart: c.n };
+            const t = st.pawns.find((q) => q.kind === 'handlarz');
+            zm.setCam(t ? t.x : c.x + 0.5, t ? t.y - 1 : c.y, 2.2);
+            return { napad: st.obcy!.napad, cart: c.n, wrogi: !!t?.wrogi, bron: t?.weapon ?? null };
           });
           await waitIdle(page);
           console.log(`  po napaści: ${JSON.stringify(after)}`);
-          if (after.napad < 0 || after.next !== -1 || after.cart !== 0) throw new Error('napaść nie zadziałała');
+          if (after.napad < 0 || after.cart !== 0) throw new Error('napaść nie zadziałała');
+          await page.screenshot({ path: path.join(OUT, 'handlarz-walka.png') });
+          // ludzie handlarza pod siatką (za dnia, żeby było ich widać na zrzucie)
+          await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            for (const q of st.pawns) if (q.kind === 'handlarz') q.hp = 1;
+            st.obcy!.zemsta = { at: st.tick + 1, n: 4 };
+          });
+          for (let k = 0; k < 20; k++) {
+            const ok = await page.evaluate(() => {
+              const men = window.zm!.sim!.st.pawns.filter((q) => q.kind === 'zbir');
+              return men.length > 0 && men.every((q) => q.job?.phase !== 0);
+            });
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          const men = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const m = st.pawns.filter((q) => q.kind === 'zbir');
+            if (m.length) zm.setCam(m[0].x, m[0].y - 1, 1.8);
+            return m.map((q) => q.weapon).join(', ');
+          });
+          await waitIdle(page);
+          console.log(`  ludzie handlarza: ${men}`);
+          if (!men) throw new Error('nie przyszli ludzie handlarza');
         },
       },
       {
@@ -1053,6 +1080,48 @@ const SHOTS: Shot[] = [
           if (!items.some((i) => i.startsWith('Give ')) || !items.includes('Rob the trader…'))
             throw new Error('w angielskim menu handlarza nie ma towaru albo napaści');
           if (items.some((i) => /[ąćęłńóśźż]|\bboards?\b/i.test(i))) throw new Error('w menu handlarza polskie słowa');
+        },
+      },
+      {
+        // tryb zombie: handlarz czwartego dnia przy zamkniętej bramie, na chwilę (szwendacze zdjęte do zrzutu)
+        name: 'handlarz-zombie',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&cam=hq,1.3`);
+          await waitIdle(page);
+          // dzień 4, 10:00; wizyta może nie dojść do skutku, więc ponawiamy termin, aż handlarz wyjdzie
+          for (let k = 0; k < 12; k++) {
+            const here = await page.evaluate(() => {
+              const st = window.zm!.sim!.st;
+              if (k0() === 0) st.tick = 15200 + 2 * 19200;
+              st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+              if (!st.pawns.some((p) => p.kind === 'handlarz')) st.obcy!.next = st.tick;
+              return st.pawns.some((p) => p.kind === 'handlarz');
+              function k0() {
+                return st.tick < 15200 + 2 * 19200 ? 0 : 1;
+              }
+            });
+            if (here) break;
+            await page.evaluate(() => window.zm!.ff(0.2));
+          }
+          for (let k = 0; k < 30; k++) {
+            const ok = await page.evaluate(() => {
+              const st = window.zm!.sim!.st;
+              st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+              return st.pawns.find((p) => p.kind === 'handlarz')?.job?.phase === 1;
+            });
+            if (ok) break;
+            await page.evaluate(() => window.zm!.ff(1));
+          }
+          const at = await page.evaluate(() => {
+            const zm = window.zm!;
+            const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz');
+            if (t) zm.setCam(t.x, t.y - 1, 2);
+            return t ? `${t.job?.phase}` : 'brak';
+          });
+          await waitIdle(page);
+          console.log(`  handlarz w trybie zombie: faza ${at}`);
+          if (at !== '1') throw new Error('handlarz w trybie zombie nie stanął przy bramie');
         },
       },
       {
