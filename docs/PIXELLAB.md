@@ -147,6 +147,23 @@ Czego nauczyły animacje (18.10.2026):
 - Prace z opisu w wersji v3 wyszły słabsze niż w `pixminimax` za ten sam koszt, a `crouching` jest przysiadem, w którym stopy się podnoszą (klęczenie przy kozie ma tylko taką wersję).
 
 
+## Budynki publiczne i zabytkowe (18/19.10.2026)
+
+Mateusz: gra ma muzea, ratusze, kamienice i podobne obiekty, więc potrzebują własnych wizualizacji. Pierwsza partia to kamienica, ratusz, muzeum, kościół i budynek publiczny z lat 60. (urząd, poczta, biblioteka), po cztery propozycje (`assets/raw/budynek-*`, zestawienia `docs/postep/m3-budynki-zestawienie.png` i `m3-budynki-kandydaci.png`). 75 generacji z abonamentu, 0 USD. Wpisy w manifeście mają status `gotowy` do czasu wyboru Mateusza, a gra ich nie używa.
+
+Jak powstały: `create_image_pro` 160×128, ratusz i kościół 160×160 (mają wieże; powyżej 170 px zamówienie daje jednego kandydata zamiast czterech), 15 generacji za cztery propozycje, paleta `Za Murem 2051`. Kawałek bloku z kotwicy (`assets/raw/kotwica-blok/1.png`) idzie jako wzorzec rzutu, skali i stylu, z dopiskiem, że architektura ma być zupełnie inna. Wzorzec trzeba wgrać przez `get_upload_url`: adres pobrania wyniku wcześniejszego zamówienia po kilku godzinach odpowiada 404.
+
+Czego nauczyły:
+- Rzut z dachem na górze i pasem fasady pod spodem trzyma się przy opisie „the roof is seen from above in the upper part, the short front facade strip below”. Wyjątek to kościół: dwie z czterech propozycji wyszły izometrycznie jak sześcian. Przy kolejnych kościołach dopisać wprost „seen straight from the front”.
+- Kondygnacje wychodzą po około 19 px (kamienica) i 18 px (urząd), a nie 13 px jak w bloku, co pasuje do wyższych pięter budynków zabytkowych. Okna co około 25 px, czyli gęściej niż w prawdziwych kamienicach, to ta sama umowność co w bloku z kotwicy.
+- Każdy obraz używa 9–13 kolorów z palety. Tło to płaski kolor, różny dla typu (`#b7b2a6`, `#6f6b64`, `#9a958a`, `#7c796f`), do wycięcia wypełnieniem od brzegu.
+- Z czterech propozycji jedna do dwóch jest w miarę nienaruszona, reszta to warianty zarośnięte bluszczem albo zrujnowane, więc ulica kamienic nie musi powtarzać jednego wyglądu.
+
+Czego brakuje, żeby gra to pokazała:
+1. Rozpoznanie typu. Kafelki wektorowe nie mają typu budynku, a `classify()` zgaduje po wysokości, powierzchni i punktach w środku: kamienica z czterema piętrami wychodzi jako blok z balkonami, ratusz i biblioteka jako sklep (kategorie punktów `urzad` i `biblioteka` są, ale `BuildingClass` ich nie ma), a muzeum nie ma żadnej kategorii (w `AMEN` w `src/world/mvt.ts` są `library` i `townhall`, brak `museum`). Potrzebne nowe klasy i reguły zgadywania. Demo (Przymorze, Lanciego, Zielonki) nie mają takich budynków, ale nowe reguły mogą zmienić klasę innych, więc skróty botów trzeba sprawdzić.
+2. Moduły jak dla bloku (pas fasady z piętrami, przęsła, wejście, gzyms) i elementy jednorazowe na osi środkowej: wieża ratusza, portyk muzeum, wieża kościoła.
+3. Warianty i przemalowania tynku, żeby sąsiednie kamienice się nie powtarzały.
+
 ## Pierwsza fala assetów (wycinek pionowy)
 
 Teren (zestawy Wanga 32 px, połączone ze sobą):
