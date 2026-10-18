@@ -9219,14 +9219,25 @@ function miastoShots(): Shot[] {
           if ((await page.evaluate(() => window.zm!.speed())) !== tempo)
             throw new Error(`po ${klawisz} i Esc tempo gry się zmieniło`);
         }
-        // tryb stawiania: klik w minimapę nie otwiera okna i nie anuluje stawiania (to próba postawienia budowli w rogu)
+        // tryb stawiania: panel budowy zostaje otwarty z prawej, więc minimapy nie ma (na niższym oknie przykrywał ją
+        // i spod krawędzi wystawał podpis); klik w jej róg to próba postawienia budowli: okno mapy się nie otwiera,
+        // a stawianie trwa
         const { BUILDS } = await import('../src/sim/budowle.ts');
         await stockUp(page, BUILDS.warsztat.cost);
-        await page.keyboard.press('b');
-        await page.waitForSelector('#sheet .bcat');
-        await page.click('#sheet [data-act="build"][data-arg="warsztat"]');
+        const rog = (await page.locator('#minimapaBtn').boundingBox())!;
+        await chooseBuild(page, 'warsztat');
         if (!(await page.evaluate(() => window.zm!.placing()))) throw new Error('nie ma trybu stawiania');
-        await page.click('#minimapaBtn');
+        for (const [w, h] of [
+          [1024, 700],
+          [1440, 900],
+        ] as const) {
+          await page.setViewportSize({ width: w, height: h });
+          await page.waitForTimeout(500);
+          if (await page.isVisible('#minimapaBtn'))
+            throw new Error(`${w}×${h}: minimapa stoi przy otwartym panelu budowy`);
+        }
+        await page.screenshot({ path: path.join(OUT, 'miasto-minimapa-stawianie.png') });
+        await page.mouse.click(rog.x + rog.width / 2, rog.y + rog.height / 2);
         await page.waitForTimeout(300);
         const stawianie = await page.evaluate(() => ({
           placing: !!window.zm!.placing(),
@@ -9236,6 +9247,10 @@ function miastoShots(): Shot[] {
           throw new Error(`klik w minimapę w trybie stawiania: ${JSON.stringify(stawianie)}`);
         await page.keyboard.press('Escape');
         if (await page.evaluate(() => window.zm!.placing())) throw new Error('Esc nie anulował stawiania');
+        // po zamknięciu panelu budowy minimapa wraca na swoje miejsce
+        if (await page.evaluate(() => window.zm!.buildPanel().open))
+          await page.click('#buildPanel [data-act="build-close"]');
+        await page.waitForSelector('#minimapaBtn', { state: 'visible', timeout: 3000 });
         // po angielsku: etykieta przycisku i atrybucja pod minimapą
         await page.evaluate(async () => {
           const load = (path: string) => import(/* @vite-ignore */ path);

@@ -234,6 +234,12 @@
 .minimapa[hidden] {
   display: none;
 }
+/* Panel budowy (src/ui/panelbudowy.ts daje #app klasę build-open) zajmuje prawą stronę ekranu i na niższym oknie
+   przykrywał minimapę, a spod jego krawędzi wystawał ucięty podpis. Dopóki panel jest otwarty, minimapy nie ma (jak
+   przycisków na telefonie pod szufladą budowy); zostają przycisk „Mapa miasta” w pasku i atrybucja map na dole. */
+.app.build-open .minimapa {
+  display: none;
+}
 .minimapa-przycisk {
   display: block;
   padding: 0;
