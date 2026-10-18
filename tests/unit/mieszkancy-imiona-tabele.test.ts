@@ -28,6 +28,7 @@ import {
   type Plec,
   parsujCsv,
   podzialKoszykow,
+  polaczeniaZakazane,
   tabeleImion,
   tabeleNazwisk,
   wielkaLitera,
@@ -40,6 +41,7 @@ const KATALOG = path.resolve(import.meta.dirname, '../../public/data/mieszkancy'
 const IMIONA = path.join(KATALOG, 'imiona.json');
 const NAZWISKA = path.join(KATALOG, 'nazwiska');
 const ZAKAZANE = path.resolve(import.meta.dirname, '../../tools/dane/zakazane-nazwiska.txt');
+const POLACZENIA = path.resolve(import.meta.dirname, '../../tools/dane/zakazane-polaczenia.txt');
 const SUROWE_IMIONA = path.join(SUROWE, 'imiona-nazwiska');
 
 const wczytajNazwiska = (woj: string): TabeleNazwisk =>
@@ -368,9 +370,10 @@ describe('tabele nazwisk (nazwiska/<woj>.json)', () => {
       .readFileSync(ZAKAZANE, 'utf8')
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => l !== '');
+      .filter((l) => l !== '' && !l.startsWith('#'));
     expect(zakazane.length).toBeGreaterThan(30);
     for (const n of [
+      'Rakowski',
       'Tusk',
       'Ziobro',
       'Sasin',
@@ -1003,6 +1006,38 @@ describe('budowa tabel nazwisk z małych list', () => {
       new Set(['TUSK', 'KACZYŃSKI', 'KACZYŃSKA', 'SUCHOCKI', 'SUCHOCKA']),
     );
   });
+
+  it('lista zakazanych nazwisk pomija linie z komentarzem (#) i puste', () => {
+    expect(nazwiskaZakazane('# politycy\nTusk\n  # wcięty komentarz\n\n#Kaczyński\nRakowski\n')).toEqual(
+      new Set(['TUSK', 'RAKOWSKI', 'RAKOWSKA']),
+    );
+  });
+});
+
+// ---------------------------------------------------------------- zakazane połączenia imienia z nazwiskiem
+
+describe('zakazane połączenia imienia z nazwiskiem (znane osoby)', () => {
+  it('czyta „Imię Nazwisko” w linii: bez komentarzy i pustych, jako „Imię|Nazwisko”, posortowane bez powtórzeń', () => {
+    expect(
+      polaczeniaZakazane(
+        '# znane osoby\nRobert Lewandowski\n\n  Anna   Lewandowska  \nRobert Lewandowski\nJan Kowalski-Nowak\n',
+      ),
+    ).toEqual(['Anna|Lewandowska', 'Jan|Kowalski-Nowak', 'Robert|Lewandowski']);
+  });
+
+  it('linia bez nazwiska albo z małej litery zatrzymuje budowę z numerem linii', () => {
+    expect(() => polaczeniaZakazane('Robert Lewandowski\nMadonna\n')).toThrow(/linia 2/);
+    expect(() => polaczeniaZakazane('robert lewandowski\n')).toThrow(/linia 1/);
+  });
+
+  it('plik w tools/dane ma znane osoby z przeglądu, a imiona.json niesie tę samą listę', () => {
+    const lista = polaczeniaZakazane(fs.readFileSync(POLACZENIA, 'utf8'));
+    for (const p of ['Anna|Lewandowska', 'Robert|Lewandowski', 'Justyna|Kowalczyk', 'Radosław|Sikorski']) {
+      expect(lista, p).toContain(p);
+    }
+    const t = JSON.parse(fs.readFileSync(IMIONA, 'utf8')) as TabeleImion;
+    expect(t.zakazanePolaczenia).toEqual(lista);
+  });
 });
 
 // ---------------------------------------------------------------- 3. odtworzenie z surowych plików
@@ -1010,7 +1045,7 @@ describe('budowa tabel nazwisk z małych list', () => {
 describe.skipIf(!fs.existsSync(SUROWE_IMIONA))('odtworzenie tabel z surowych plików PESEL', () => {
   it('daje te same bajty co pliki w repozytorium (powtarzalność)', async () => {
     const { zbudujZPlikow } = await import('../../tools/dane/imiona-pliki.ts');
-    const wynik = zbudujZPlikow(SUROWE_IMIONA, ZAKAZANE);
+    const wynik = zbudujZPlikow(SUROWE_IMIONA, ZAKAZANE, POLACZENIA);
     expect(`${JSON.stringify(wynik.imiona)}\n`).toBe(fs.readFileSync(IMIONA, 'utf8'));
     for (const t of wynik.nazwiska) {
       const plik = path.join(NAZWISKA, `${PLIK_WOJEWODZTWA[t.woj]}.json`);

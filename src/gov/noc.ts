@@ -100,6 +100,11 @@ export function postsOf(i: GovInput, zombie = false): Post[] {
   return posts.sort((a, b) => b.weak - a.weak || (a.key < b.key ? -1 : 1));
 }
 
+/** warta stoi za siatką: przy siatce i przy zamkniętej bramie; przy otwartej dziurze i otwartej bramie broń wręcz
+    sięga szwendaczy */
+const behindWire = (i: GovInput, post: string): boolean =>
+  post === 'siatka' || (post === 'brama' && !i.fence?.gateOpen);
+
 /** szansa, że szabrownicy spróbują tej nocy */
 export function raidChance(st: GovState, i: GovInput): number {
   const f = fenceOf(i);
@@ -262,7 +267,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
         why: ok ? undefined : g(p, 'Za słaby na wartę.', 'Za słaba na wartę.'),
         guard: guardValue(st, i, p, post.key),
         note:
-          zombie && post.key !== 'brama' && (p.arm === 'brak' || p.arm === 'wrecz' || !p.arm)
+          zombie && behindWire(i, post.key) && (p.arm === 'brak' || p.arm === 'wrecz' || !p.arm)
             ? 'Z tą bronią nie sięgnie szwendaczy przez siatkę.'
             : p.needs.rest < 30
               ? `${g(p, 'Zmęczony', 'Zmęczona')}: może zasnąć na warcie.`
@@ -740,7 +745,11 @@ function hordeLines(i: GovInput, n: NonNullable<GovState['night']>): string[] {
   const z0 = n.z0 ?? { killed: 0, breaches: 0, bites: 0 };
   const out: string[] = [];
   const peak = Math.max(n.zpeak ?? 0, h.near);
-  out.push(peak ? `W nocy przy siatce było do ${peak} szwendaczy.` : 'W nocy przy siatce było spokojnie.');
+  out.push(
+    peak
+      ? `W nocy przy siatce było do ${peak} ${peak === 1 ? 'szwendacza' : 'szwendaczy'}.`
+      : 'W nocy przy siatce było spokojnie.',
+  );
   const killed = h.killed - z0.killed;
   if (killed > 0) out.push(`Zabitych szwendaczy: ${killed}.`);
   const broke = h.breaches - z0.breaches;

@@ -1,7 +1,8 @@
 /* Tabele imion i nazwisk dla generatora mieszkańców: z rejestru PESEL (Ministerstwo Cyfryzacji, dane.gov.pl, CC0;
    surowe pliki poza repozytorium, katalog imiona-nazwiska/ w ZM_SUROWE) robi `public/data/mieszkancy/imiona.json`
    i szesnaście plików `public/data/mieszkancy/nazwiska/<województwo>.json`. Reguły i opis metody: tools/dane/imiona.ts,
-   wczytywanie plików: tools/dane/imiona-pliki.ts, lista nazwisk, których gra nie używa: tools/dane/zakazane-nazwiska.txt.
+   wczytywanie plików: tools/dane/imiona-pliki.ts, lista nazwisk, których gra nie używa: tools/dane/zakazane-nazwiska.txt,
+   lista połączeń imienia z nazwiskiem znanych osób (do imiona.json): tools/dane/zakazane-polaczenia.txt.
    Wynik jest bajt w bajt powtarzalny (kolejność wszędzie z jawnym remisem, liczby całkowite).
    Uruchomienie: npm run dane:imiona */
 
@@ -14,13 +15,14 @@ import { SUROWE, wyjscie } from './dane/sciezki.ts';
 
 const KATALOG_PESEL = path.join(SUROWE, 'imiona-nazwiska');
 const ZAKAZANE = path.resolve(import.meta.dirname, 'dane/zakazane-nazwiska.txt');
+const POLACZENIA = path.resolve(import.meta.dirname, 'dane/zakazane-polaczenia.txt');
 
 const kb = (bajty: number): string => `${(bajty / 1024).toFixed(1)} KB`;
 
 function main(): void {
   if (!fs.existsSync(KATALOG_PESEL))
     throw new Error(`Brak katalogu ${KATALOG_PESEL} (katalog surowych danych: ZM_SUROWE=${SUROWE})`);
-  const { imiona, nazwiska, diagnostykaNazwisk, daneImion } = zbudujZPlikow(KATALOG_PESEL, ZAKAZANE);
+  const { imiona, nazwiska, diagnostykaNazwisk, daneImion } = zbudujZPlikow(KATALOG_PESEL, ZAKAZANE, POLACZENIA);
 
   // kontrola: liczby z badań (research_notes/…/imiona_nazwiska_pesel.md)
   const procent = (p: Plec, n: string): string => `${Math.round(kohortaImienia(daneImion, p, n).udzialZmarlych)}%`;
@@ -87,8 +89,16 @@ function main(): void {
   const zakazanych = fs
     .readFileSync(ZAKAZANE, 'utf8')
     .split(/\r?\n/)
-    .filter((l) => l.trim() !== '').length;
+    .filter((l) => l.trim() !== '' && !l.trim().startsWith('#')).length;
   console.log(`Lista zakazanych nazwisk: ${zakazanych} wpisów (męskie formy; usuwana też żeńska).`);
+  const polaczenia = imiona.zakazanePolaczenia ?? [];
+  const wszystkieImiona = new Set<string>();
+  for (const r of Object.values(imiona.lata)) for (const [n] of [...r.M, ...r.K]) wszystkieImiona.add(n);
+  for (const r of Object.values(imiona.koszyki)) for (const [n] of [...r.M, ...r.K]) wszystkieImiona.add(n);
+  const nieznane = polaczenia.filter((p) => !wszystkieImiona.has(p.split('|')[0]));
+  console.log(
+    `Zakazane połączenia imienia z nazwiskiem: ${polaczenia.length}${nieznane.length ? `; imię spoza tabel (literówka?): ${nieznane.join(', ')}` : ''}.`,
+  );
   console.log(`Razem ${zapisane.size + 1} plików, ${kb(bajty)}.`);
 }
 

@@ -544,6 +544,7 @@ interface Dom {
   wDomu: Set<string>;
   sam: boolean;
   blok: boolean;
+  kondygnacje: number;
   rokStanu: number;
   /** Nazwisko rodziny w l. mn. (`Odmiany.rodzinaGospodarstwa`) albo `undefined`. */
   rodzina?: string;
@@ -652,6 +653,7 @@ function pasuje(
   if (!flaga(f?.rodzenstwo, s.rodzenstwo) || !flaga(f?.zRodzina, s.zRodzina) || !flaga(f?.przyjezdny, s.przyjezdny))
     return false;
   if (!flaga(dom.sam, s.sam) || !flaga(dom.blok, s.blok)) return false;
+  if (s.kondygnacjeOd !== undefined && dom.kondygnacje < s.kondygnacjeOd) return false;
   if (!flaga(p.para, s.para) || !flaga(p.pokolenia, s.pokolenia)) return false;
   if (!flaga(p.dzieci, s.dzieci) || !flaga(p.ciasno, s.ciasno)) return false;
   if (s.zawod) {
@@ -660,9 +662,13 @@ function pasuje(
   }
   if (s.kategoria && !(p.kategoria && s.kategoria.includes(p.kategoria))) return false;
   if (s.temat !== undefined && s.temat !== p.temat) return false;
-  for (const slot of SLOTY.get(s.id) ?? []) {
+  const sloty = SLOTY.get(s.id) ?? [];
+  for (const slot of sloty) {
     if (!slotMa(slot, p, odm, dom)) return false;
   }
+  // „kiedyś murarz, dziś murarz” nic nie mówi
+  if (sloty.includes('zawod') && sloty.includes('fach') && p.glowna.dawnyZawod === nazwaFachuOsoby(p.glowna))
+    return false;
   return true;
 }
 
@@ -750,6 +756,7 @@ export function zdaniaGospodarstwa(
     wDomu: new Set(gosp.czlonkowie),
     sam: czlonkowie.length === 1,
     blok: w.budynek.typ === 'blok',
+    kondygnacje: w.budynek.kondygnacje,
     rokStanu: w.rok ?? 2051,
     rodzina: odm.rodzinaGospodarstwa(czlonkowie),
   };

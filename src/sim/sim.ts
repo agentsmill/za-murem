@@ -310,7 +310,7 @@ export interface Job {
   order: boolean;
   /** sztuki w rękach poza drewnem: deski albo złom na łatę (patch) */
   n: number;
-  /** co to za sztuki ('deski', 'zlom'; pusty napis: nic) */
+  /** co to za sztuki ('deski', 'zlom'; pusty napis: nic); walka: broń, z którą się zaczęła ('piesci': gołymi rękami) */
   what: string;
 }
 
@@ -390,7 +390,7 @@ export interface Thing {
   fuel: number;
   /** pionek, który ma tę rzecz w pracy (−1: wolna) */
   by: number;
-  /** właściciel mebla (pionek), −1: wspólny albo niczyj; spalenie boli go najbardziej; zwłoki: wpis w state.dead */
+  /** właściciel mebla (pionek), −1: wspólny albo niczyj; spalenie boli go najbardziej */
   owner: number;
   /** tick, o którym rzecz znika (krew, trupy, zwłoki); brak: zostaje */
   until?: number;
@@ -398,6 +398,8 @@ export interface Thing {
   broken?: boolean;
   /** zasieki: łata dziury albo wytrzymałość kafelka siatki sprzed nich (wraca przy rozbiórce) */
   prev?: number;
+  /** zwłoki: numer wpisu w state.dead (osobno od owner, bo numery pionków i wpisów się pokrywają) */
+  dead?: number;
 }
 
 /** spalony mebel: co, z którego mieszkania (−1: klatka), kto i kiedy */
@@ -1446,6 +1448,12 @@ export class Sim {
     st.dead ??= [];
     st.tally ??= zeroTally();
     migrate(st, w);
+    // zapis sprzed Thing.dead: zwłoki trzymały numer wpisu zmarłego w owner
+    for (const t of st.things)
+      if (t.kind === 'zwloki' && t.dead === undefined) {
+        t.dead = t.owner;
+        t.owner = -1;
+      }
     this.pf = new PathFinder(w.size);
     this.house = houseOf(w);
     this.trunk = Int32Array.from(w.trees, (t) => trunkOf(w, t));
@@ -1907,12 +1915,13 @@ export class Sim {
   }
 
   /** uchwały od razu (interfejs woła po podpisaniu; w kolejce poleceń, żeby zapis i powtórka ich nie gubiły) */
-  /** broń z magazynu do rąk osób z zarządu po kolei; stara wraca do magazynu; null odkłada broń */
+  /** broń z magazynu do rąk osób z zarządu po kolei; stara wraca do magazynu; null odkłada broń; kto jest
+      na wyprawie, ma przy sobie to, z czym wyszedł */
   private arm(ids: readonly number[], weapon: WeaponId | null): void {
     const st = this.st;
     const arms = st.store.arms!;
     for (const id of ids) {
-      const p = st.pawns.find((q) => q.id === id && q.kind === 'core');
+      const p = st.pawns.find((q) => q.id === id && q.kind === 'core' && !q.away);
       if (!p || (p.weapon ?? null) === weapon) continue;
       if (weapon !== null) {
         const k = arms.indexOf(weapon);
@@ -2877,7 +2886,7 @@ export class Sim {
         }
         if (tick < j.until) return true;
         body.fuel = 0;
-        const d = st.dead?.[body.owner];
+        const d = st.dead?.[body.dead ?? -1];
         this.addMood(p, d?.kind === 'szabrownik' ? 'Dobiłem obcego' : 'Dobiłem sąsiada', -4, TICKS_PER_DAY);
         return false;
       }
@@ -4144,13 +4153,25 @@ export class Sim {
   /** atak na polecenie: każdy idzie do wroga i bije, póki wróg żyje */
   private orderAttack(pawns: Pawn[], target: number): void {
     if (!this.enemy(target)) return;
-    for (const p of pawns) {
-      const j = this.newJob('fight', target, -1, true);
-      j.until = this.st.tick + FIGHT_GIVEUP;
-      this.setJob(p, j, false);
-      p.path = [];
-      p.pi = 0;
-    }
+    for (const p of pawns) this.startFight(p, target, true);
+  }
+
+  /** walka z wrogiem target; zapamiętuje broń, z którą się zaczęła */
+  private startFight(p: Pawn, target: number, order: boolean): void {
+    const j = this.newJob('fight', target, -1, order);
+    j.until = this.st.tick + FIGHT_GIVEUP;
+    j.what = this.armed(p).id;
+    this.setJob(p, j, false);
+    p.path = [];
+    p.pi = 0;
+  }
+
+  /** odwrót do mieszkania zarządu; false: nie ma dokąd */
+  private retreat(p: Pawn): boolean {
+    const spot = this.shelterSpot(p);
+    if (spot < 0 || !this.go(p, spot)) return false;
+    this.setJob(p, this.newJob('go', spot, spot, false), false);
+    return true;
   }
 
   /** broń, którą pionek naprawdę uderzy: broń palna bez amunicji bije jak gołe ręce */
@@ -4264,7 +4285,8 @@ export class Sim {
       if (t.needs.health <= 0) this.die(t, 'rany', by);
       return;
     }
-    t.hp = (t.hp ?? 100) - dmg;
+    // szabrownik ze starego zapisu nie ma pola hp (szwendacze mają je zawsze)
+    t.hp = (t.hp ?? STRANGER_HP) - dmg;
     if (t.hp <= 0) this.die(t, 'rany', by);
     else if (t.kind === 'szabrownik' && t.hp < FLEE_HP && this.st.raid && t.job && t.job.phase < 3)
       this.leaveRaid(t, this.st.raid);
@@ -4315,7 +4337,7 @@ export class Sim {
     }
     const body = newThing(st, 'zwloki', x, y);
     body.n = p.look;
-    body.owner = st.dead!.length - 1;
+    body.dead = st.dead!.length - 1;
     body.until = tick + BODY_TICKS;
     // w trybie zombie każdy zmarły wstaje, chyba że ktoś go dobije
     if (modeOf(st) === 'zombie') body.fuel = tick + RISE_TICKS;
@@ -4360,17 +4382,20 @@ export class Sim {
   }
 
   /** Walka: w zasięgu bije (co tyle kroków, ile każe broń), poza zasięgiem idzie do wroga (droga od nowa co sekundę).
-      Koniec, gdy wróg zginie, zniknie albo przez 20 sekund nie da się go uderzyć. */
+      Koniec, gdy wróg zginie, zniknie albo przez 20 sekund nie da się go uderzyć. Kto w trakcie walki ze szwendaczem
+      zostanie z gołymi rękami (odłożona broń, koniec amunicji), kończy walkę, a gdy szwendacz jest po tej samej
+      stronie siatki, wycofuje się do mieszkania zarządu. */
   private fightTick(p: Pawn, j: Job): void {
     const tick = this.st.tick;
     const t = this.enemy(j.target);
-    if (!t || tick > j.until) {
+    const w = this.armed(p);
+    const bare = t?.kind === 'zombie' && w.id === 'piesci' && j.what !== 'piesci';
+    if (!t || tick > j.until || bare) {
       p.path = [];
       p.pi = 0;
-      this.done(p);
+      if (!t || !bare || this.across(p, t.x, t.y) || !this.retreat(p)) this.done(p);
       return;
     }
-    const w = this.armed(p);
     if (this.canHit(p, t, w)) {
       p.path = [];
       p.pi = 0;
@@ -4490,10 +4515,7 @@ export class Sim {
         )
           crowd++;
       if ((p.needs?.health ?? 100) >= (j.t === 'guard' ? 50 : 30) && crowd < 3) return false;
-      const spot = this.shelterSpot(p);
-      if (spot < 0 || !this.go(p, spot)) return false;
-      this.setJob(p, this.newJob('go', spot, spot, false), false);
-      return true;
+      return this.retreat(p);
     }
     if (j && (j.t === 'leave' || j.t === 'amputate')) return false;
     // uzbrojony, który czeka albo grzeje się w pobliżu zwłok, dobija je odruchowo, zanim wstaną
@@ -4517,11 +4539,7 @@ export class Sim {
     if (!e && !(outdoors && this.yardDanger())) return false;
     if (j?.t === 'stay' && j.target === STAY_HOME && !indoorFoe) return false;
     if (e && !resident && p.weapon && this.armed(p).id !== 'piesci' && (p.needs?.health ?? 0) > 40) {
-      const f = this.newJob('fight', e.id, -1, false);
-      f.until = this.st.tick + FIGHT_GIVEUP;
-      this.setJob(p, f, false);
-      p.path = [];
-      p.pi = 0;
+      this.startFight(p, e.id, false);
       return true;
     }
     if (j?.t === 'go' && !j.order && this.inRoom(j.tile) && !indoorFoe) return false;
@@ -5013,13 +5031,14 @@ export class Sim {
     this.orderGuard(able, modeOf(this.st) === 'zombie' && this.st.fence ? 'siatka' : 'brama');
   }
 
-  /** Kafelek siatki, na który napiera najwięcej szwendaczy (−1: nikt nie napiera). Dla wartownika p: najpierw
-      miejsca, których nie pilnuje już inna warta przy siatce (do 3 m od niej albo od miejsca, do którego idzie). */
+  /** Kafelek siatki, na który napiera najwięcej szwendaczy (−1: nikt nie napiera). Brama nie puszcza, więc napór
+      na nią się nie liczy. Dla wartownika p: najpierw miejsca, których nie pilnuje już inna warta przy siatce
+      (do 3 m od niej albo od miejsca, do którego idzie). */
   private hotTile(p?: Pawn): number {
     const size = this.w.size;
     const count = new Map<number, number>();
     for (const q of this.st.pawns)
-      if (q.kind === 'zombie' && q.job?.phase === 2 && q.job.target >= 0)
+      if (q.kind === 'zombie' && q.job?.phase === 2 && this.fenceIndex.has(q.job.target))
         count.set(q.job.target, (count.get(q.job.target) ?? 0) + 1);
     const others = p
       ? this.st.pawns.filter((q) => q !== p && !q.away && q.job?.t === 'guard' && q.job.target === SIATKA_POST)

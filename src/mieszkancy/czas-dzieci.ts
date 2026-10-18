@@ -1,8 +1,10 @@
 /* Dorosłe dzieci spoza domu (R28): spis zna tylko dzieci, które mieszkają z rodzicami, więc dzieci, które
    wyprowadziły się przed 2021 rokiem, dopisujemy raz, przed pierwszym krokiem postarzania (czas.ts). Każda z nich to
    `Osoba` ze `stan: 'wyjechal'`, `dokad` i wpisem wyjazdu sprzed 2021, więc powroty (czas-ruch.ts) mogą ją ściągnąć
-   do rodzica, a opieka do rodzica 75+, który został sam. Model i liczby w `PRZEJSCIA.dzieciSpozaDomu`. Same
-   `+ - * /`, porównania i `Math.round/min/max`; losowanie przez los.ts. */
+   do rodzica, a opieka do rodzica 75+, który został sam. Ojcem jest dzisiejszy partner matki z jej gospodarstwa, ale
+   tylko gdy jest od dziecka starszy o 18-50 lat (`nowaOsoba`, `PRZEJSCIA.wiekOjca`); inaczej dziecko ma samą matkę.
+   Model i liczby w `PRZEJSCIA.dzieciSpozaDomu`. Same `+ - * /`, porównania i `Math.round/min/max`; losowanie przez
+   los.ts. */
 
 import type { Rng } from '../core/rng.ts';
 import { dokad, type Obszar } from './czas-dokad.ts';
