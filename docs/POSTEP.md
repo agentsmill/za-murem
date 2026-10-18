@@ -676,6 +676,8 @@ Gałąź `angielski` (35 commitów, 97 plików, zawierała już całą `pelna-gr
 
 ## Następne
 
+- Wdrożenie na serwer testowy (Mateusz, 18.10.2026 wieczorem: „Poczekaj i wgraj razem”): `pelna-gra` z angielskim (eb74f5b) czeka i idzie na serwer razem z falą 2, zaraz po jej scaleniu i bramce (testy, Biome, build, boty, pełne zrzuty). Na to jedno wdrożenie zgoda już jest.
+
 Angielski domyślnie (gałąź `angielski`, lokalnie, 18.10.2026): gotowy do scalenia do `pelna-gra` w całości (czubek gałęzi; ostatnia zmiana kodu 18a2501), ma w sobie `pelna-gra` ace6c0c z domem komitetu, handlarzem i wędrowcami. Po scaleniu i wdrożeniu Mateusz gra po angielsku i przegląda decyzje z „Decyzji” (słowniczek `docs/SLOWNICZEK-EN.md`); przełącznik EN/PL jest na karcie startowej i w Menu. Przy wdrożeniu: zapisy z nowej wersji mają w kronice teksty w obu językach przy tej samej wersji zapisu, więc stara wersja gry (wycofanie albo stary skrypt z pamięci przeglądarki) pokazałaby w kronice `[object Object]`; wycofywać tylko razem z czyszczeniem zapisów albo wcale.
 
 Surowce (18.10.2026): wraki, noszenie łupu i warsztat są w `pelna-gra` (64c254e). Handlarz pod bramą czeka na scalenie na gałęzi `m2-surowce` (z wciągniętą `pelna-gra` ac5fe6b). Mateusz przegląda decyzje „Surowce” i „Handlarz” w „Decyzjach” i gra: wrak za siatką („Przeszukać” na aucie, potem „Rozebrać” z menu), warsztat z menu na stole, drugiego dnia handlarz przy bramie. Wędrowcy, obce ekipy i cena napaści są na tej gałęzi (wpis wyżej), czekają na scalenie; decyzje w „Decyzjach”, wpis „Wędrowcy”.
