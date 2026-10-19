@@ -37,8 +37,8 @@ export class Portrety {
     this.zrodlo = zrodlo;
   }
 
-  /** adres obrazu portretu pionka; pusty napis, gdy pionka nie ma. Gotowe obrazy są w pamięci po postaci i wersji, więc
-      wołanie co 200 ms dla kilkunastu osób nic nie kosztuje. */
+  /** adres obrazu portretu pionka; pusty napis, gdy pionka nie ma. Wycięcie pikseli to kilkanaście mikrosekund, a gotowy
+      obraz (kodowanie PNG) jest w pamięci po postaci i wersji, więc wołanie co 200 ms dla kilkunastu osób nic nie kosztuje. */
   url(pawn: number): string {
     const p = this.zrodlo.pionek(pawn);
     if (!p) return '';

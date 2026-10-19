@@ -373,7 +373,9 @@ export class ListaLudzi {
 
   private rysuj(c: Chip, x: WierszListy): void {
     const portret = this.o.portret(x.pawn);
-    const podpis = [x.imie, x.poziom, x.wybrany, x.sledzi, x.poza, x.tytul, x.czynnosc, portret].join('|');
+    // podpowiedź „kliknij jeszcze raz” dotyczy jedynej zaznaczonej osoby, więc zmiana liczby zaznaczonych też ją zmienia
+    const sama = x.wybrany && this.o.wybrani.size === 1;
+    const podpis = [x.imie, x.poziom, x.wybrany, sama, x.sledzi, x.poza, x.tytul, x.czynnosc, portret].join('|');
     if (podpis === c.podpis) return;
     c.podpis = podpis;
     const el = c.el;
