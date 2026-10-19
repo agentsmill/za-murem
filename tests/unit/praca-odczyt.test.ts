@@ -69,6 +69,26 @@ describe('populacja', () => {
   });
 });
 
+describe('naszTerenKafelek', () => {
+  it('to samo co naszTeren na każdym kafelku (odczyt dla tools/bot-praca.ts): podwórko nasze, daleka ulica nie', () => {
+    const sim = newGame(KLUCZ);
+    const w = demoWorld(KLUCZ);
+    const s = prv(sim);
+    let nasze = 0;
+    let rozne = 0;
+    for (let i = 0; i < w.size * w.size; i++) {
+      const jest = sim.naszTerenKafelek(i);
+      if (jest !== s.naszTeren(i)) rozne++;
+      if (jest) nasze++;
+    }
+    expect(rozne).toBe(0);
+    expect(nasze).toBeGreaterThan(0);
+    expect(nasze).toBeLessThan((w.size * w.size) / 4);
+    expect(sim.naszTerenKafelek(w.fence.yard[0])).toBe(true);
+    expect(sim.naszTerenKafelek(0)).toBe(false);
+  });
+});
+
 describe('odczyt osoby: praca', () => {
   it('indeks osoby i priorytety w kolejności RODZAJE, badania ukryte na 0', () => {
     const sim = newGame(KLUCZ);

@@ -4,8 +4,10 @@
    przy warsztacie robi części ze złomu (do 10 w zapasie) i deski z nadmiaru drewna (ponad 20 sztuk, reszta zostaje
    na noc do kozy), a poza tym przeszukuje najbliższy wrak i rozbiera przeszukane. To raport, a nie bramka: ile
    wraków poszło, ile poleceń warsztatu, ile desek, złomu i części zostaje po pięciu dniach, kiedy stoją budowle
-   (zwłaszcza kuchnia społeczna, która potrzebuje 10 części) i ile decyzji na minutę daje dzień 2 i 3. Zwykłe boty
-   (npm run bot, npm run bot:zombie) nie dotykają niczego stąd.
+   (zwłaszcza kuchnia społeczna, która potrzebuje 10 części) i ile decyzji na minutę daje dzień 2 i 3. Do tego (praca
+   ludzi) którego dnia stać na najtańszy wspólny płot na Lanciego, 65 desek i 65 złomu naraz (albo 130 sztuk jednego
+   z nich), liczone co 10 sekund przy ekranie z zapasów razem z tym, co leży na ulicy; dłuższy bieg (dni) pokaże, kiedy
+   to nastąpi, jeśli nie w pięciu dniach. Zwykłe boty (npm run bot, npm run bot:zombie) nie dotykają niczego stąd.
    Uruchomienie: npm run bot:surowce [-- ziarno [dni]] */
 
 import fs from 'node:fs';
@@ -30,6 +32,9 @@ const WOOD_KEEP = 20;
 const PARTS_WANT = 10;
 /** przy rąbaniu na deski: tniemy drzewa, dopóki desek jest mniej (najdroższa budowla, magazyn, chce 30) */
 const BOARDS_WANT = 30;
+/** najtańszy wspólny płot na Lanciego: 65 desek i 65 złomu naraz, albo 130 sztuk jednego z nich */
+const PLOT = 65;
+const PLOT_JEDEN = 130;
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../public/demo/przymorze.json'), 'utf8'));
 const world = buildWorld(demo.geo, { seed: SEED, street: demo.street });
@@ -132,14 +137,32 @@ function runs(resources: boolean, chop = false) {
   return SEEDS.map((seed) => {
     const { player, log } = m2Player({ search: true, furniture: true });
     const extra: Log = { searched: 0, stripped: 0, saws: 0, chops: 0 };
-    const r = playWithGov(world, seed, 'zawsze-warta', DAYS, 4, {
-      player: resources ? withResources(player, extra, chop) : player,
-    });
+    const gracz = resources ? withResources(player, extra, chop) : player;
+    // pierwszy moment, w którym stać na najtańszy płot (tick; −1: jeszcze nie); tylko odczyt, przebieg bez zmian
+    let plot = -1;
+    let plotJeden = -1;
+    const mierz: Player = (sim, w, s, order) => {
+      gracz(sim, w, s, order);
+      if (s % 10 !== 0 || (plot >= 0 && plotJeden >= 0)) return;
+      const m = snapshot(sim.st, w).stock.mats;
+      if (plot < 0 && m.deski >= PLOT && m.zlom >= PLOT) plot = sim.st.tick;
+      if (plotJeden < 0 && (m.deski >= PLOT_JEDEN || m.zlom >= PLOT_JEDEN)) plotJeden = sim.st.tick;
+    };
+    const r = playWithGov(world, seed, 'zawsze-warta', DAYS, 4, { player: mierz });
     // decyzje w dniach 2–3 od 7:00 do 21:00
     const inside = (t: number) => (dayOf(t) === 2 || dayOf(t) === 3) && hourOf(t) >= 7 && hourOf(t) < 21;
     const mins = new Set<number>();
     for (const x of r.decisions) if (inside(x.s * TICKS_PER_SECOND)) mins.add(Math.floor(x.s / 60));
-    return { seed, log: log as M2Log, extra, mats: snapshot(r.st, world).stock.mats, minutes: mins.size, hash: r.hash };
+    return {
+      seed,
+      log: log as M2Log,
+      extra,
+      mats: snapshot(r.st, world).stock.mats,
+      minutes: mins.size,
+      hash: r.hash,
+      plot,
+      plotJeden,
+    };
   });
 }
 
@@ -156,6 +179,10 @@ function line(name: string, rs: ReturnType<typeof runs>) {
     return b ? `${r.seed}: dzień ${dayOf(b.tick)} ${clockOf(b.tick)}` : `${r.seed}: nie`;
   });
   console.log(`    ${BUILDS.kuchnia_spoleczna.name.toLowerCase()}: ${kitchen.join(', ')}`);
+  const kiedy = (t: number) => (t >= 0 ? `dzień ${dayOf(t)} ${clockOf(t)}` : `nie w ${DAYS} dniach`);
+  console.log(
+    `    płot na Lanciego (${PLOT} desek i ${PLOT} złomu naraz): ${rs.map((r) => `${r.seed}: ${kiedy(r.plot)}`).join(', ')}; ${PLOT_JEDEN} sztuk jednego materiału: ${rs.map((r) => `${r.seed}: ${kiedy(r.plotJeden)}`).join(', ')}`,
+  );
   const all = rs.map((r) => {
     const n = Object.keys(BUILDS).length;
     const b = r.log.built.length >= n ? r.log.built[n - 1] : null;

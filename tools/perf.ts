@@ -2,14 +2,15 @@
    Laptop: Chromium bez dławienia. Telefon: ekran 390×844 i procesor zdławiony 4× (CDP).
    Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
    Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5] [--m2]
-   [--demo=lanciego] [--kod] [--pietro=2]
+   [--demo=lanciego] [--kod] [--pietro=2] [--zarzad=12]
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
    --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła; --m2: budowa z fali 1,
    czyli atrapa pustych mieszkań w przekroju, cztery plany z paskami postępu i podgląd stawiania; --demo: inne demo
    niż Przymorze (--demo=atrapa-budynki: mapa z każdym z 11 wyglądów budynków z PixelLab, tests/unit/atrapa-budynki.ts);
    --kod: wszystko rysowane kodem, bez grafiki z PixelLab, do porównań przed i po;
    --pietro=N: widok pięter (?pietra=1) z wybranym piętrem N po wczytaniu, przed pomiarem; z --zoom=0.6 przekrój
-   jest włączony, a przy 0 to piętro 0 z flagą, do porównania z przebiegiem bez tej opcji).
+   jest włączony, a przy 0 to piętro 0 z flagą, do porównania z przebiegiem bez tej opcji;
+   --zarzad=N: tyle osób zarządu (?zarzad=N, najwyżej 12) zamiast czterech, żeby zmierzyć koszt pracy ludzi bez polecenia).
    Zawsze z dymem: koza zarządu rozpalona w stanie gry i ognisko na podwórku. */
 
 import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
@@ -32,6 +33,11 @@ const KOD = process.argv.includes('--kod');
 const PIETRO_ARG = process.argv.find((a) => a.startsWith('--pietro='))?.slice(9);
 const PIETRO = PIETRO_ARG === undefined ? null : Number(PIETRO_ARG);
 if (PIETRO !== null && !Number.isInteger(PIETRO)) throw new Error(`--pietro=${PIETRO_ARG}: oczekuję liczby całkowitej`);
+/** --zarzad=N: liczba osób zarządu (?zarzad=N w adresie gry); bez opcji gra jak dotąd, z czterema */
+const ZARZAD_ARG = process.argv.find((a) => a.startsWith('--zarzad='))?.slice(9);
+const ZARZAD = ZARZAD_ARG === undefined ? null : Number(ZARZAD_ARG);
+if (ZARZAD !== null && !(Number.isInteger(ZARZAD) && ZARZAD >= 1 && ZARZAD <= 12))
+  throw new Error(`--zarzad=${ZARZAD_ARG}: oczekuję liczby całkowitej 1–12`);
 const SECONDS = 10;
 
 interface Result {
@@ -60,7 +66,7 @@ try {
     const page = await ctx.newPage();
     if (DEMO === DEMO_ATRAPA) await podstawAtrape(page);
     await page.goto(
-      `${s.base}?demo=${DEMO}&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}${ZOMBIE ? '&tryb=zombie&stado=60&godzina=23' : ''}${M2 ? '&mieszkania=atrapa' : ''}${KOD ? '&grafika=kod' : ''}${PIETRO === null ? '' : '&pietra=1'}`,
+      `${s.base}?demo=${DEMO}&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}${ZOMBIE ? '&tryb=zombie&stado=60&godzina=23' : ''}${M2 ? '&mieszkania=atrapa' : ''}${KOD ? '&grafika=kod' : ''}${PIETRO === null ? '' : '&pietra=1'}${ZARZAD === null ? '' : `&zarzad=${ZARZAD}`}`,
     );
     await waitIdle(page);
     if (PIETRO !== null) {
@@ -149,6 +155,11 @@ try {
     const trees = await page.evaluate(() => (window.zm!.view as unknown as { trees: { count: number } }).trees.count);
     console.log(`${dev.name}: kłębów dymu ${puffs}, drzew jako sprite'y ${trees}`);
     console.log(`${dev.name}: kawałki rysuje ${await page.evaluate(() => window.zm!.view.painting)}`);
+    const ludzie = await page.evaluate(() => {
+      const pawns = window.zm!.sim!.st.pawns;
+      return { zarzad: pawns.filter((p) => p.kind === 'core').length, razem: pawns.length };
+    });
+    console.log(`${dev.name}: zarząd ${ludzie.zarzad} osób, pionków razem ${ludzie.razem}`);
     console.log(`${dev.name}: ${DEMO}, z PixelLab ${JSON.stringify(await page.evaluate(() => window.zm!.grafika()))}`);
     const cdp = await ctx.newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: dev.cpu });

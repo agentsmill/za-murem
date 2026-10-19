@@ -7033,6 +7033,11 @@ export class Sim {
     return this.insideAt(tile) || !!this.st.plot?.bids.includes(this.w.bid[tile]);
   }
 
+  /** Czy kafelek leży na naszym terenie (odczyt dla botów i testów, to samo co `naszTeren`; niczego nie zmienia). */
+  naszTerenKafelek(tile: number): boolean {
+    return this.naszTeren(tile);
+  }
+
   /** Spójne obszary naszego terenu: kafelki `naszTeren`, które zarząd przejdzie (−1 poza nimi). Droga w obrębie jednego
       obszaru nie wychodzi na ulicę. */
   private naszeObszary(): Int32Array {

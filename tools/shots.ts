@@ -4505,13 +4505,15 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       const [hx, hy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), far);
       await page.mouse.click(hx, hy);
+      // tyle przeszukanych, ile liczy symulacja (gracz kazał przeszukać jeden pokój, ale wolny komitet sam szabruje własny
+      // dom: praca ludzi, Szaber), nie na sztywno 1
       const card = await page
         .waitForFunction(
-          () => {
+          (n) => {
             const t = document.getElementById('card')!.textContent ?? '';
-            return t.includes('Przeszukane: 1 z') ? t : '';
+            return t.includes(`Przeszukane: ${n} z`) ? t : '';
           },
-          null,
+          done.searched,
           { timeout: 3000 },
         )
         .then((h) => h.jsonValue())

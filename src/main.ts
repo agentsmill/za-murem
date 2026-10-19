@@ -64,7 +64,7 @@ import {
   opcjaMieszkancow,
   stanyM2,
 } from './sim/osiedle.ts';
-import { RODZAJE } from './sim/praca.ts';
+import { RODZAJE, ZARZAD_MAX } from './sim/praca.ts';
 import { type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, type SimStock, snapshot } from './sim/snapshot.ts';
@@ -607,7 +607,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;
   // zarząd z panelu „Wasz zarząd”: bez ruszania go 4 osoby z siedziby (z generatora, bez tabel z ziarna adresu)
-  const opcje = druzyna?.opcje() ?? { core: 4 };
+  // ?zarzad=N: tyle osób zarządu do pomiarów (npm run perf -- --zarzad=12), także ponad 5 z panelu
+  const zarzadN = Math.floor(Number(params.get('zarzad')));
+  const opcje = zarzadN >= 1 ? { core: Math.min(zarzadN, ZARZAD_MAX) } : (druzyna?.opcje() ?? { core: 4 });
   // mieszkańcy siedziby z generatora, zanim powstaną symulacja i scena (obie czytają stany mieszkań ze świata): nowa gra
   // dostaje stany mieszkań i osoby z generatora, wznowiony zapis z osobami z generatora stany mieszkań z zapisu
   // i budynek siedziby do imion i historii (bez nowego createSim), zapis sprzed kroku 5 nic
