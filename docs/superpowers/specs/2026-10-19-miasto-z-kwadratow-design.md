@@ -169,7 +169,8 @@ Stan z przeglądu kodu na `main` b424828 i na gałęzi `mapa-miasta` 53166fc.
   - `wrogowie`: wrodzy ludzie i szwendacze za obwodem (warunek „bez wrogiej grupy w środku” ocenia projekt zwycięstwa).
   - Mur nie ma właściciela: to element świata jak budynek, nie własność drużyny (ważne w grze sieciowej).
   - Liczy się też dla uśpionych kwadratów, na zwięzłej mapie (przejście i rodzaj obwodu na kafelek) z geo i stanu. Wynik jest pamiętany po liczniku zmian obwodu (licznik w obiekcie `Sim`, poza stanem, rośnie przy każdej zmianie kafelków obwodu, bramy, dziury albo budynku na granicy), więc liczy się od nowa tylko po zmianie.
-  - `GovInput.teren` już istnieje w projekcie zwycięstwa jako `{ przylaczone }` (gałąź `warunki-zwyciestwa`); ten odczyt go rozszerza o pola wyżej, niczego nie podmienia. Zarząd dostaje go przez `govInput()` w `src/sim/gov.ts`.
+  - `GovInput.teren` już istnieje w projekcie zwycięstwa jako `{ przylaczone }` (rama zwycięstwa wchodzi do `pelna-gra` w nocy z 18 na 19.10.2026); ten odczyt go rozszerza o pokrycie dziewięciu kwadratów i skład granicy zewnętrznej, niczego nie podmienia. Zarząd dostaje go przez `govInput()` w `src/sim/gov.ts`.
+  - Kamienie drogi terytorialnej (`src/gov/zwyciestwo.ts`) zaliczają się dziś tylko po kolei. W tym etapie kamienie 2–5 zaliczają też wcześniejsze (na przykład pokrycie kwadratu domu zalicza „pierwszy sąsiedni budynek za wspólnym płotem”), żeby gracz, który otoczy murem kwadrat domu bez płotu z sąsiadem, nie został na zerze, a wpis `WKROTCE.teren` w `src/gov/zwyciestwo.ts` znika (uwaga z recenzji końcowej integratora).
 
 ### Wydajność i pamięć
 
