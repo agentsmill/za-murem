@@ -224,24 +224,52 @@ describe('kawałki mapy z wyglądami budynków', () => {
   });
 });
 
-describe('dema bez zmian po dodaniu wyglądów budynków', () => {
+/** budynki z wyglądem w demach z public/demo (przegenerowanych z rodzajami punktów): nazwa budynku → wygląd; Lanciego nie
+    ma żadnego (bloki z wielkiej płyty to nie kamienice, punkt urzędu stoi w dwunastopiętrowym bloku) */
+const WYGLADY_DEM: Record<string, Record<string, LookBudynku>> = {
+  przymorze: { 'Blok nr 19': 'urzad' },
+  lanciego: {},
+  zielonki: { 'Hala nr 106': 'urzad' },
+};
+
+describe('dema po dodaniu wyglądów budynków', () => {
   for (const key of ['przymorze', 'lanciego', 'zielonki']) {
-    it(`demo ${key}: kawałki mapy z wyglądami i bez nich są co do piksela takie same (dema nie mają takich budynków)`, () => {
+    it(`demo ${key}: wygląd mają tylko budynki z urzędem, a kawałki mapy poza nimi są co do piksela takie same jak bez wyglądów`, () => {
       const demo = JSON.parse(fs.readFileSync(path.join(ROOT, `public/demo/${key}.json`), 'utf8'));
       const sw = buildWorld(demo.geo, { seed: 1, street: demo.street });
       const z1 = buildScene(sw, g);
       const z0 = buildScene(sw, bez);
-      expect(z1.styles.some((s) => s.look)).toBe(false);
-      let razem = 0;
-      for (let k = 0; k < z1.chunks * z1.chunks; k += 7) {
+      const zWygladem = sw.buildings.filter((b) => z1.styles[b.id].look);
+      expect(Object.fromEntries(zWygladem.map((b) => [b.name, z1.styles[b.id].look]))).toEqual(WYGLADY_DEM[key]);
+      // kawałki obrysu takiego budynku i jeden kawałek wokół (ozdoby: wieża, portyk, fasada sięgają za obrys) wolno
+      // rysować inaczej, wszystkie pozostałe mają być takie same
+      const wokol = new Set<number>();
+      for (const b of zWygladem)
+        for (let cy = Math.floor(b.y0 / CHUNK) - 1; cy <= Math.floor(b.y1 / CHUNK) + 1; cy++)
+          for (let cx = Math.floor(b.x0 / CHUNK) - 1; cx <= Math.floor(b.x1 / CHUNK) + 1; cx++)
+            wokol.add(cy * z1.chunks + cx);
+      const rysuj = (k: number) => {
         const a = atrapaPlotna();
         const b = atrapaPlotna();
         drawChunk(z1, k % z1.chunks, (k / z1.chunks) | 0, 32, a.canvas);
         drawChunk(z0, k % z0.chunks, (k / z0.chunks) | 0, 32, b.canvas);
-        expect(Buffer.from(a.px().buffer).equals(Buffer.from(b.px().buffer)), `kawałek ${k}`).toBe(true);
+        return Buffer.from(a.px().buffer).equals(Buffer.from(b.px().buffer));
+      };
+      let razem = 0;
+      for (let k = 0; k < z1.chunks * z1.chunks; k += 7) {
+        if (wokol.has(k)) continue;
+        expect(rysuj(k), `kawałek ${k}`).toBe(true);
         razem++;
       }
       expect(razem).toBeGreaterThan(4);
+      // sam budynek z wyglądem jest rysowany inaczej niż bez niego: gdzieś w jego obrysie kawałek się różni
+      for (const b of zWygladem) {
+        let rozne = 0;
+        for (let cy = Math.floor(b.y0 / CHUNK); cy <= Math.floor(b.y1 / CHUNK); cy++)
+          for (let cx = Math.floor(b.x0 / CHUNK); cx <= Math.floor(b.x1 / CHUNK); cx++)
+            if (!rysuj(cy * z1.chunks + cx)) rozne++;
+        expect(rozne, b.name).toBeGreaterThan(0);
+      }
     });
   }
 });
@@ -254,6 +282,7 @@ describe('miejsceOzdoby: gdzie stoi wieża, kopuła, portyk', () => {
     y0: 10,
     x1: 29,
     y1: 20,
+    levels: 1,
     entrances: entrances.map((e) => ({ ...e, out: e.tile })),
   });
   const swiat = { size: 100 } as World;

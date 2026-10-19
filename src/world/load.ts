@@ -1,6 +1,7 @@
 /* Wczytanie osiedla: demo offline z public/demo albo adres (Nominatim → kafelki OpenFreeMap,
    a gdy nie odpowiadają, Overpass). Komunikaty dla gracza (status i błędy) są w bieżącym języku; dane osiedla nie
-   zależą od języka (Nominatim zawsze po polsku, bo z adresu liczy się ziarno i klucz imion). */
+   zależą od języka (Nominatim zawsze po polsku, bo z adresu liczy się ziarno i klucz imion). Dema mają też
+   sąsiednie kwadraty miasta (loadDemoKwadraty, tylko przy ?kwadraty=). */
 
 import { L } from '../core/jezyk.ts';
 import type { Geo } from './geo.ts';
@@ -28,6 +29,16 @@ export async function loadDemo(key: string): Promise<Loaded> {
   if (!r.ok) throw new Error(L(`Nie ma takiego przykładu: ${key}`, `No such example: ${key}.`));
   const d = await r.json();
   return { geo: d.geo, name: d.name, addr: d.addr, street: d.street, src: 'demo' };
+}
+
+/** Geo sąsiednich kwadratów dema (klucz kwadratu „sx,sy” → geo, zob. kwadraty.ts): osiem albo, gdy plik przekroczyłby
+    1,5 MB, cztery boczne (Lanciego), z public/demo/<klucz>-kwadraty.json (tools/make-demos.ts). Plik pobiera się tylko
+    przy ?kwadraty=…; dema w grze nie mają innych sąsiadów niż te z kafelków testowych. Brak pliku to błąd. */
+export async function loadDemoKwadraty(key: string): Promise<Record<string, Geo>> {
+  const r = await fetch(`demo/${encodeURIComponent(key)}-kwadraty.json`);
+  if (!r.ok)
+    throw new Error(L(`Nie ma sąsiednich kwadratów przykładu: ${key}`, `No neighbouring squares for example: ${key}.`));
+  return r.json();
 }
 
 export async function demoList(): Promise<DemoInfo[]> {

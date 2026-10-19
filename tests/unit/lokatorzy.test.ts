@@ -87,6 +87,17 @@ const bezTagu = (w: World): World => ({
   }),
 });
 
+/** Świat z siedzibą bez zm:klucz, zm:os i id OSM (mapa bez kluczy jak dawne demo, zapis sprzed kluczy): klucz zapasowej
+    siedziby idzie wtedy ze środka jej prostokąta (`kluczZapasowy`). Dema w repo są przegenerowane i klucze mają. */
+const bezKlucza = (w: World): World => ({
+  ...w,
+  buildings: w.buildings.map((b) => {
+    if (b.id !== w.hq) return b;
+    const { 'zm:klucz': _k, 'zm:os': _o, ...tags } = b.tags;
+    return { ...b, tags, osmId: undefined };
+  }),
+});
+
 describe('lokatorzyGry na demach', () => {
   it('zarząd Przymorza pokrywa co najmniej 3 z 4 potrzebnych dziedzin i ma 4 osoby', () => {
     const { zarzad } = demo('przymorze').wynik;
@@ -466,7 +477,7 @@ describe('lokatorzyGry na demach', () => {
     expect(klucz).toBeDefined();
     expect(wynik.siedziba.budynek.klucz).toBe(klucz);
 
-    const zapas = lokatorzyGry(bezTagu(world), geo, dane, { core: 4 });
+    const zapas = lokatorzyGry(bezKlucza(bezTagu(world)), geo, dane, { core: 4 });
     expect(zapas).not.toBeNull();
     const b = zapas?.siedziba.budynek as Budynek;
     expect(b.klucz).toBe(kluczZapasowy(world, geo));
@@ -481,10 +492,17 @@ describe('lokatorzyGry na demach', () => {
 
   it('Przymorze i Lanciego: siedziba nie jest budynkiem mieszkalnym na mapie, więc idzie z zapasowego', () => {
     for (const nazwa of ['przymorze', 'lanciego'] as const) {
-      const { world, geo, wynik } = demo(nazwa);
-      expect(world.buildings[world.hq].tags[TAG_BUDYNKU], nazwa).toBeUndefined();
-      expect(wynik.siedziba.budynek.klucz, nazwa).toBe(kluczZapasowy(world, geo));
+      const { world, geo, dane, wynik } = demo(nazwa);
+      const hq = world.buildings[world.hq];
+      expect(hq.tags[TAG_BUDYNKU], nazwa).toBeUndefined();
+      // dema są przegenerowane z kafelków, więc klucz zapasowej siedziby to zm:klucz jej budynku
+      expect(hq.tags['zm:klucz'], nazwa).toMatch(/^px:/);
+      expect(wynik.siedziba.budynek.klucz, nazwa).toBe(hq.tags['zm:klucz']);
       expect(wynik.siedziba.budynek.typ, nazwa).toBe('blok');
+      // bez zm:klucz i id OSM (mapa bez kluczy, dawne demo) klucz idzie ze środka prostokąta budynku
+      const bez = lokatorzyGry(bezKlucza(world), geo, dane, { core: 4 });
+      expect(bez?.siedziba.budynek.klucz, nazwa).toBe(kluczZapasowy(world, geo));
+      expect(bez?.siedziba.budynek.typ, nazwa).toBe('blok');
     }
   });
 
@@ -492,17 +510,24 @@ describe('lokatorzyGry na demach', () => {
     const { world, geo, dane, wynik } = demo('przymorze');
     const inna = world.buildings.find((b) => b.id !== world.hq && b.cls === world.buildings[world.hq].cls);
     if (!inna) throw new Error('brak innego bloku na Przymorzu');
-    // inny blok bez budynku generatora (bez tagu zm:bud) jako siedziba
+    // inny blok bez budynku generatora (bez tagu zm:bud) jako siedziba: z kluczem zm:klucz (dema są przegenerowane)
+    // klucz idzie z niego, a bez kluczy ze środka prostokąta budynku
     const swiat = bezTagu({ ...world, hq: inna.id });
     const l = lokatorzyGry(swiat, geo, dane, { core: 4 });
-    expect(l?.siedziba.budynek.klucz).toBe(kluczZapasowy(world, geo, inna.id));
+    expect(inna.tags['zm:klucz']).toMatch(/^px:/);
+    expect(l?.siedziba.budynek.klucz).toBe(inna.tags['zm:klucz']);
+    expect(lokatorzyGry(bezKlucza(swiat), geo, dane, { core: 4 })?.siedziba.budynek.klucz).toBe(
+      kluczZapasowy(world, geo, inna.id),
+    );
     expect(l?.siedziba.budynek.klucz).not.toBe(wynik.siedziba.budynek.klucz);
     const refy = new Set(wynik.siedziba.osoby.map((o) => o.id));
     expect(l?.siedziba.osoby.some((o) => refy.has(o.id))).toBe(false);
-    // z kanonicznym kluczem z importera (zm:klucz) albo id OSM klucz idzie z nich
+    // z kanonicznym kluczem z importera (zm:klucz) albo id OSM klucz idzie z nich (siedziba bez własnych kluczy z dema)
     const zKluczem = (t: Record<string, string>, osmId?: string): World => ({
-      ...world,
-      buildings: world.buildings.map((b) => (b.id === world.hq ? { ...b, tags: { ...b.tags, ...t }, osmId } : b)),
+      ...bezKlucza(world),
+      buildings: bezKlucza(world).buildings.map((b) =>
+        b.id === world.hq ? { ...b, tags: { ...b.tags, ...t }, osmId } : b,
+      ),
     });
     expect(
       lokatorzyGry(zKluczem({ 'zm:klucz': 'px:1:2:3:4:1', 'zm:os': '1,2,3,4' }), geo, dane, { core: 1 })?.siedziba

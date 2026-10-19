@@ -4,7 +4,12 @@
 
    Dla mapy miasta (miastoKafelki.ts) moduł daje też `pobierzKafelek` (bajty kafelka dowolnego poziomu, błąd to null)
    oraz wspólne z toGeoT wzory na punkty sklepów i usług: `rzutKafelka` (położenie w metrach) i `poiPunktu`
-   (kategoria, nazwa, klucz), żeby miejsca spoza obszaru startowego miały to samo `k`, `x` i `y` co w świecie gry. */
+   (kategoria, nazwa, klucz), żeby miejsca spoza obszaru startowego miały to samo `k`, `x` i `y` co w świecie gry.
+
+   Dla kwadratów miasta (geoKwadratu.ts) `toGeoT` ma opcje: `srodek` przesuwa filtr bliskości (R + 30 m) i promień miejsc
+   (720 m) z adresu na podany punkt w metrach od adresu (współrzędne geo zostają względem adresu), a `caleBudynki`
+   dokłada do budowli złapanej przez ten filtr wszystkie jej kawałki z pobranych kafelków, także dalekie i maleńkie,
+   tak jak liczy się jej klucz. Bez opcji wynik jest dokładnie taki jak dawniej (dom, zapisy, dema). */
 
 import { L } from '../core/jezyk.ts';
 import { type Geo, type GeoBuilding, type Pt, pip, polyArea } from './geo.ts';
@@ -570,13 +575,32 @@ function sklej<B extends { k: number }>(n: number, spans: SpanRec<B>[]): (i: num
   return find;
 }
 
-export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: number): Geo {
+/** opcje toGeoT dla kwadratów miasta; bez nich geo domu jest dokładnie takie jak zawsze */
+export interface OpcjeGeoT {
+  /** środek filtra bliskości i promienia miejsc: punkt w metrach od (lat0, lon0) w układzie przed obrotem; brak = adres */
+  srodek?: Pt;
+  /** budowla złapana przez filtr wchodzi do geo ze wszystkimi kawałkami z pobranych kafelków (jak przy kluczach) */
+  caleBudynki?: boolean;
+}
+
+/** promień miejsc wokół środka, w metrach */
+const PROMIEN_MIEJSC = 720;
+
+export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: number, opts?: OpcjeGeoT): Geo {
   const rzut = rzutKafelka(lat0, lon0);
   const geo: Geo = { c: [lat0, lon0], b: [], r: [], a: [], w: [], poi: [], src: 'mvt' };
   const tmpB: BTmp[] = [];
   const M = R + 30;
+  const [cx, cy] = opts?.srodek ?? [0, 0];
+  const caleBudynki = !!opts?.caleBudynki;
+  // punkt w metrach od adresu w kwadracie ±M wokół środka (bez środka: wokół adresu, jak zawsze)
+  const wZapasie = (x: number, y: number) => x - cx > -M && x - cx < M && y - cy > -M && y - cy < M;
+  // miejsca w promieniu 720 m od środka; wokół adresu zostaje Math.hypot, żeby geo domu było co do bitu jak dawniej
+  const wPromieniu = opts?.srodek
+    ? (x: number, y: number) => Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) <= PROMIEN_MIEJSC
+    : (x: number, y: number) => Math.hypot(x, y) <= PROMIEN_MIEJSC;
   const near = (pts: Pt[]) => {
-    for (const [x, y] of pts) if (x > -M && x < M && y > -M && y < M) return true;
+    for (const [x, y] of pts) if (wZapasie(x, y)) return true;
     let a = 1e9;
     let b = -1e9;
     let c = 1e9;
@@ -587,12 +611,14 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
       if (y < c) c = y;
       if (y > d) d = y;
     }
-    return a < M && b > -M && c < M && d > -M;
+    return a - cx < M && b - cx > -M && c - cy < M && d - cy > -M;
   };
   const spans: SpanRec<BTmp>[] = [];
   /** wszystkie kawałki budynków z pobranych kafelków (do kluczy) i ich odcinki na granicach kafelków */
   const calosc: Kawalek[] = [];
   const spansCal: SpanRec<Kawalek>[] = [];
+  /** kawałki budowli poza filtrem bliskości albo maleńkie (tylko z `caleBudynki`), razem z ich odcinkami na granicach */
+  const dalekie: { pts: Pt[]; h: number; id?: string; cal: number; brzegi: Span[]; T: DecodedTile }[] = [];
   /** numery domów; id: identyfikator OSM elementu z adresem (droga albo relacja), zwykle samego budynku */
   const hn: { x: number; y: number; h: string; id?: string }[] = [];
   for (const T of tiles) {
@@ -612,17 +638,17 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
               if (!inOwn(q)) continue;
               const [x, y] = P(q);
               if (lname === 'housenumber') {
-                if (Math.abs(x) < M && Math.abs(y) < M)
+                if (Math.abs(x - cx) < M && Math.abs(y - cy) < M)
                   hn.push({ x, y, h: String(t.housenumber || ''), id: osmIdOf(F.id) });
                 continue;
               }
               // rodzaj budynku (muzeum, teatr, hotel…) osobno od kategorii, bo kategoria zmienia classify()
               const nazwa = (t.name as string) || '';
               const rodzaj = rodzajZMvt(t.class as string, t.subclass as string, nazwa);
-              if (rodzaj && Math.hypot(x, y) <= 720) (geo.rodzaje ||= []).push({ x, y, k: rodzaj, n: nazwa });
+              if (rodzaj && wPromieniu(x, y)) (geo.rodzaje ||= []).push({ x, y, k: rodzaj, n: nazwa });
               const m = poiPunktu(t, T, q, E);
               if (!m) continue;
-              if (Math.hypot(x, y) > 720) continue;
+              if (!wPromieniu(x, y)) continue;
               geo.poi.push({ x, y, c: m.c, n: m.n, k: m.k });
             }
           continue;
@@ -671,7 +697,11 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
             const brzegi = tiles.length > 1 ? borderSpans(rg, E, T.x, T.y) : [];
             for (const s of brzegi) spansCal.push([s[0], s[1], s[2], h, cal, T]);
             const pts = rg.map(P);
-            if (!near(pts) || polyArea(pts) < 4) continue;
+            if (!near(pts) || polyArea(pts) < 4) {
+              // kawałek poza zapasem albo maleńki: dołączy, jeśli jakiś inny kawałek tej budowli zostanie złapany
+              if (caleBudynki) dalekie.push({ pts, h, id, cal: cal.k, brzegi, T });
+              continue;
+            }
             const b: BTmp = { p: pts, pp: [], h, k: tmpB.length, id, cal: cal.k };
             for (const s of brzegi) spans.push([s[0], s[1], s[2], h, b, T]);
             tmpB.push(b);
@@ -689,8 +719,18 @@ export function toGeoT(tiles: DecodedTile[], lat0: number, lon0: number, R: numb
   }
   // sklejanie kawałków budynku przeciętego granicą kafelków: kawałki geometrii gry jak w 0.3, a osobno wszystkie
   // kawałki z pobranych kafelków, z których liczy się klucz budynku (ta sama budowla u każdego gracza)
-  const find = sklej(tmpB.length, spans);
   const findCal = sklej(calosc.length, spansCal);
+  if (dalekie.length) {
+    // budowla złapana przez filtr (jakikolwiek jej kawałek jest w geo) dostaje wszystkie pozostałe kawałki
+    const zlapane = new Set(tmpB.map((b) => findCal(b.cal)));
+    for (const d of dalekie) {
+      if (!zlapane.has(findCal(d.cal))) continue;
+      const b: BTmp = { p: d.pts, pp: [], h: d.h, k: tmpB.length, id: d.id, cal: d.cal };
+      for (const s of d.brzegi) spans.push([s[0], s[1], s[2], d.h, b, d.T]);
+      tmpB.push(b);
+    }
+  }
+  const find = sklej(tmpB.length, spans);
   const pierscienie = new Map<number, Pt[][]>();
   for (const c of calosc) {
     const r = findCal(c.k);

@@ -24,11 +24,21 @@ function wyglady(w: World): Record<string, LookBudynku> {
   return out;
 }
 
+/** Budynki z wyglądem na trzech adresach, przejrzane ręcznie: komisariat policji w trzypiętrowym budynku na Przymorzu
+    i Zarząd Dróg Powiatu Krakowskiego w hali w Batowicach; biblioteka i poczta w długim bloku na Przymorzu (6 kategorii
+    punktów) i punkt urzędu w dwunastopiętrowym bloku w Lanciego nie zmieniają bloków. Te same wyniki dają kafelki na
+    żywo i dema z public/demo (przegenerowane z toGeoT, z rodzajami punktów). */
+const URZEDY: Record<string, Record<string, LookBudynku>> = {
+  przymorze: { 'Blok nr 19': 'urzad' },
+  lanciego: {},
+  zielonki: { 'Hala nr 106': 'urzad' },
+};
+
 describe('dema i dane z prawdziwych map', () => {
   for (const key of ['przymorze', 'lanciego', 'zielonki']) {
-    it(`demo ${key} z public/demo: żaden budynek nie dostaje wyglądu (bloki z wielkiej płyty to nie kamienice)`, () => {
+    it(`demo ${key} z public/demo: wygląd dostaje tylko budynek z urzędem (bloki z wielkiej płyty to nie kamienice)`, () => {
       const demo = JSON.parse(fs.readFileSync(path.join(ROOT, `public/demo/${key}.json`), 'utf8'));
-      expect(wyglady(buildWorld(demo.geo, { seed: 1, street: demo.street }))).toEqual({});
+      expect(wyglady(buildWorld(demo.geo, { seed: 1, street: demo.street }))).toEqual(URZEDY[key]);
     });
   }
 
@@ -36,14 +46,7 @@ describe('dema i dane z prawdziwych map', () => {
     const wyniki: Record<string, Record<string, LookBudynku>> = {};
     for (const a of ADDRESSES)
       wyniki[a.key] = wyglady(buildWorld(toGeoT(decodedTiles(a), a.lat, a.lon, LOAD_RADIUS), { seed: 1 }));
-    // przejrzane ręcznie: komisariat policji w trzypiętrowym budynku na Przymorzu i Zarząd Dróg Powiatu Krakowskiego
-    // w hali w Batowicach; biblioteka i poczta w długim bloku na Przymorzu (6 kategorii punktów) i punkt urzędu
-    // w dwunastopiętrowym bloku w Lanciego nie zmieniają bloków
-    expect(wyniki).toEqual({
-      przymorze: { 'Blok nr 19': 'urzad' },
-      lanciego: {},
-      zielonki: { 'Hala nr 106': 'urzad' },
-    });
+    expect(wyniki).toEqual(URZEDY);
   });
 
   it('z Overpass: ten sam budynek na Przymorzu to komisariat, nazwany w OSM, a sekcje bloków nie są kamienicami', () => {

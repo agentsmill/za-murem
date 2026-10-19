@@ -22,6 +22,7 @@ import {
   setNight,
   signLaw,
 } from '../../src/gov/zarzad.ts';
+import { grajDalej } from '../../src/gov/zwyciestwo.ts';
 import type { Miejsce } from '../../src/world/miasto.ts';
 
 export const TPS = 20;
@@ -291,6 +292,10 @@ export function answer(gov: GovState, atr: Atrapa, p: Prompt, policy: PolicyName
     return Object.entries(after)
       .map(([id, k]) => `${card.people.find((c) => c.id === id)?.name.split(' ')[0]}: ${k}`)
       .join(', ');
+  }
+  if (p.k === 'zwyciestwo') {
+    grajDalej(gov);
+    return `graj dalej (${p.droga})`;
   }
   const ok = p.choices.map((c, k) => [c, k] as const).filter(([c]) => c.ok);
   const pickK = policy === 'losowo' ? ok[Math.floor(r() * ok.length)][1] : ok[0][1];

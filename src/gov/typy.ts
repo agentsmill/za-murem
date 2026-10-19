@@ -12,6 +12,7 @@ import type { Tx } from '../core/jezyk.ts';
 import type { RngState } from '../core/rng.ts';
 import type { Miejsce } from '../world/miasto.ts';
 import type { Cel } from './wyprawy.ts';
+import type { Droga, StanZwyciestwa } from './zwyciestwo.ts';
 
 // ---------------------------------------------------------------- wejście
 
@@ -155,6 +156,14 @@ export interface GovInput {
       (`wybierzCeleNocy`) i nie wysyła się do nich wyprawy (`powodOdmowy`), ale karta miejsca je pokazuje. Bez pola
       albo pusta: karta nocy gra na dzisiejszych TARGETS. Zapas miejsca liczy się z klucza, nie ze stanu gry */
   okolica?: readonly Miejsce[];
+  /** warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod naszym zarządem, czyli zarząd i mieszkańcy naszych
+      budynków; bez pola zarząd liczy `people.length + residents` */
+  ludnosc?: number;
+  /** ilu ludzi mieszkało w kwadracie domu w 2021 roku według NSP; z tego liczy się cel drogi ludnościowej, bez pola
+      (albo z liczbą bez sensu) cel to 250 */
+  ludnosc2021?: number;
+  /** teren: ile budynków wspólny płot dołączył do naszego obwodu; bez pola droga terenu nie ma jak liczyć kamieni */
+  teren?: { przylaczone: number };
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -332,6 +341,7 @@ export interface LawOption {
 }
 
 export type Prompt =
+  | { k: 'zwyciestwo'; droga: Droga }
   | { k: 'raport'; report: NightReport }
   | { k: 'uchwala'; day: number; first: boolean; options: LawOption[] }
   | { k: 'karta'; card: NightCard; assign: Record<string, string> }
@@ -454,4 +464,7 @@ export interface GovState {
   miasto?: StanMiasta;
   /** wyprawy dzienne w drodze; pole od pierwszego wyjścia z mapy miasta */
   wyprawy?: Wyprawa[];
+  /** warunki zwycięstwa: kamienie milowe dróg, zwycięstwa, licznik celu ludności i kolejka epilogów w oknie; pole od
+      `wlaczZwyciestwo` (src/gov/zwyciestwo.ts), bez niego zarząd nie liczy dróg i stan zostaje jak przed nimi */
+  zwyciestwo?: StanZwyciestwa;
 }

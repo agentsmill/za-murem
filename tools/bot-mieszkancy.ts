@@ -7,16 +7,18 @@
    Druga flaga, `--sasiedzi` (M2 fala 2), włącza w botach gracza, który od dnia 2 chodzi do sąsiednich budynków
    (tests/unit/sasiedzi-play.ts). Trzecia, `--miasto` (mapa miasta), włącza w zwykłym bocie (tools/bot.ts) gracza
    wypraw dziennych do miejsc z okolicy (tests/unit/miasto-play.ts); bot trybu zombie jej nie zna i kończy z błędem
-   (`bezMiasta`). Dwie ostatnie znają tylko bot trybu zombie, a pozostałe boty kończą z błędem, kiedy je dostaną
-   (`tylkoZombie`): `--demo=NAZWA` (przymorze, lanciego, zielonki) wybiera osiedle, `--opal` dokłada do kozy
-   z niczego, jakby opału nie brakowało. Inny argument od `--` (literówka, np. `--mieszkanc`) kończy bota z błędem,
+   (`bezMiasta`). Czwarta, `--zwyciestwo` (warunki zwycięstwa), włącza w zwykłym bocie drogi do zwycięstwa w zarządzie
+   i drukuje ich kamienie po dniach (`ludnoscDema` daje ludność z 2021 roku z tabel mieszkańców, jak w grze); bot trybu
+   zombie jej nie zna i kończy z błędem (`bezZwyciestwa`). Dwie ostatnie znają tylko bot trybu zombie, a pozostałe boty
+   kończą z błędem, kiedy je dostaną (`tylkoZombie`): `--demo=NAZWA` (przymorze, lanciego, zielonki) wybiera osiedle,
+   `--opal` dokłada do kozy z niczego, jakby opału nie brakowało. Inny argument od `--` (literówka, np. `--mieszkanc`) kończy bota z błędem,
    zamiast cicho zagrać bez tego, o co chodziło.
    Ziarno świata to ziarno bota (nie z adresu jak w grze), żeby przebiegi z flagą i bez niej były porównywalne. */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { wczytajDaneMieszkancow } from '../src/mieszkancy/wczytaj.ts';
-import { mapaMieszkancow, mieszkancyNowejGry, opcjaMieszkancow } from '../src/sim/osiedle.ts';
+import { ludnoscSpisu2021, mapaMieszkancow, mieszkancyNowejGry, opcjaMieszkancow } from '../src/sim/osiedle.ts';
 import type { SimOpts, SimState } from '../src/sim/sim.ts';
 import type { Geo } from '../src/world/geo.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
@@ -25,8 +27,9 @@ const PUBLIC = path.resolve(import.meta.dirname, '../public');
 const FLAGA = '--mieszkancy';
 const FLAGA_SASIEDZI = '--sasiedzi';
 const FLAGA_MIASTO = '--miasto';
+const FLAGA_ZWYCIESTWO = '--zwyciestwo';
 const FLAGA_OPAL = '--opal';
-const FLAGI = [FLAGA, FLAGA_SASIEDZI, FLAGA_MIASTO, FLAGA_OPAL];
+const FLAGI = [FLAGA, FLAGA_SASIEDZI, FLAGA_MIASTO, FLAGA_ZWYCIESTWO, FLAGA_OPAL];
 
 const FLAGA_DEMO = '--demo=';
 const jestDemo = (a: string) => a.startsWith(FLAGA_DEMO);
@@ -70,6 +73,16 @@ export function bezMiasta(bot: string): void {
   process.exit(2);
 }
 
+/** Czy bot ma pokazać drogi do zwycięstwa (kamienie po dniach, tylko zwykły bot, tools/bot.ts). */
+export const ZWYCIESTWO = process.argv.includes(FLAGA_ZWYCIESTWO);
+
+/** Bot trybu zombie nie zna `--zwyciestwo`: kończy z błędem, zamiast cicho zagrać bez dróg do zwycięstwa. */
+export function bezZwyciestwa(bot: string): void {
+  if (!ZWYCIESTWO) return;
+  console.error(`${bot} nie zna ${FLAGA_ZWYCIESTWO} (drogi do zwycięstwa pokazuje tylko zwykły bot: npm run bot).`);
+  process.exit(2);
+}
+
 /** Argumenty pozycyjne bez flag: `ARGUMENTY[0]` to pierwszy argument po nazwie skryptu. */
 export const ARGUMENTY: string[] = process.argv.slice(2).filter((a) => !FLAGI.includes(a) && !jestDemo(a));
 
@@ -100,6 +113,15 @@ export async function swiatMieszkancow(
   const l = mieszkancyNowejGry(world, geo, dane, core);
   if (!l) throw new Error('--mieszkancy: generator mieszkańców nie dał wyniku dla siedziby');
   return { world, mieszkancy: opcjaMieszkancow(l) };
+}
+
+/** Ludność kwadratu domu z 2021 roku dla dema, tą drogą co w grze (main.ts: `mapaMieszkancow` i `ludnoscSpisu2021` z tabel
+    mieszkańców z public/data/mieszkancy/). Bez tabel `tabele` jest `false` i liczby nie ma, a cel drogi ludnościowej
+    (`celLudnosci`) to wtedy 250, jak w grze bez tabel. */
+export async function ludnoscDema(demo: { geo: Geo }): Promise<{ tabele: boolean; ludnosc2021: number | undefined }> {
+  const dane = await wczytajDaneMieszkancow(demo.geo.c[0], demo.geo.c[1], zPliku);
+  if (!dane) return { tabele: false, ludnosc2021: undefined };
+  return { tabele: true, ludnosc2021: ludnoscSpisu2021(mapaMieszkancow(demo.geo, dane), dane) };
 }
 
 /** Jedna linijka o stanie startowym: kto jest w zarządzie i ilu mieszkańców-pionków ma osobę z generatora. */

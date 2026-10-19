@@ -144,6 +144,8 @@ export const STATYCZNE: readonly Statyczny[] = [
   ),
   ...stat('sTrust', tx('zaufanie', 'trust'), tx('Zaufanie mieszkańców do zarządu', 'Residents’ trust in the board')),
   ...stat('sAnger', tx('wkurzenie', 'anger'), tx('Wkurzenie mieszkańców', 'Residents’ anger')),
+  // kafelek piętra (src/ui/pietra.ts, tylko z ?pietra=1)
+  ...stat('btnFloor', tx('piętro', 'floor'), tx('Piętro', 'Floor')),
   // mapa miasta: na telefonie krótki napis (src/ui/miasto.css), pełny w aria-label i dymku
   {
     sel: '#btnMiasto',

@@ -35,6 +35,7 @@ import {
   setNight,
   signLaw,
 } from '../src/gov/zarzad.ts';
+import { grajDalej } from '../src/gov/zwyciestwo.ts';
 import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { applyGov, govInput } from '../src/sim/gov.ts';
 import { houseOf, inHomeApt } from '../src/sim/house.ts';
@@ -47,6 +48,7 @@ import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts
 import {
   ARGUMENTY,
   bezMiasta,
+  bezZwyciestwa,
   DEMO,
   MIESZKANCY,
   OPAL,
@@ -56,6 +58,7 @@ import {
 } from './bot-mieszkancy.ts';
 
 bezMiasta('bot:zombie');
+bezZwyciestwa('bot:zombie');
 
 const SEED = Number(ARGUMENTY[0]) || 1;
 const NIGHTS = Number(ARGUMENTY[1]) || 6;
@@ -148,6 +151,7 @@ function play(policy: Policy): {
         const p = pending(gov, i);
         if (!p) break;
         if (p.k === 'raport') ackReport(gov, i);
+        else if (p.k === 'zwyciestwo') grajDalej(gov);
         else if (p.k === 'uchwala') applyGov(st, world, signLaw(gov, i, null));
         else if (p.k === 'wydarzenie')
           applyGov(
@@ -159,7 +163,7 @@ function play(policy: Policy): {
               p.choices.findIndex((c) => c.ok),
             ),
           );
-        else {
+        else if (p.k === 'karta') {
           // propozycja zarządu zostaje (wyprawy po zapasy), zmienia się tylko warta przy siatce
           for (const [id, key] of Object.entries(p.assign)) if (key.startsWith('warta:')) setNight(gov, id, 'sen');
           if (policy === 'warta-dzidy') {
@@ -193,6 +197,10 @@ function play(policy: Policy): {
             }
           }
           applyGov(st, world, confirmNight(gov, i));
+        } else {
+          // nowy rodzaj okna zarządu bez obsługi tutaj ma paść przy kompilacji (tsc), a nie zostać po cichu pominięty
+          const nic: never = p;
+          throw new Error(`okno zarządu bez obsługi: ${JSON.stringify(nic)}`);
         }
       }
     }

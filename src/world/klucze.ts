@@ -26,7 +26,8 @@
    światach o innym środku i innym obrocie siatki mają ten sam klucz, o ile oba światy postawiły w budynku tyle drzwi,
    ile ma klatek. Dziś findEntrances liczy drzwi z prostokąta na siatce, a sklepom, szkołom i halom daje jedne drzwi,
    więc dwoje drzwi może trafić do jednej klatki, a klatka może zostać bez drzwi (do zmiany w etapie 2).
-   Budynek bez tagów (demo i zapis sprzed kluczy, osiedle zapasowe) nie ma klucza: null.
+   Budynek bez tagów (zapis sprzed kluczy, osiedle zapasowe) nie ma klucza: null. Dema w public/demo są przegenerowane
+   z toGeoT (19.10.2026) i mają klucze, jak adres z kafelków.
 
    Czyste funkcje bez stanu; nie zmieniają świata ani symulacji. */
 

@@ -46,8 +46,8 @@ export interface BStyle {
   vis?: number;
 }
 
-/** budynek w zakresie, którego potrzebuje rysowanie kawałków */
-export type ArtBuilding = Pick<WorldBuilding, 'id' | 'cls' | 'x0' | 'y0' | 'x1' | 'y1' | 'entrances'>;
+/** budynek w zakresie, którego potrzebuje rysowanie kawałków (`levels` bez limitu stylu: do wyboru pięter) */
+export type ArtBuilding = Pick<WorldBuilding, 'id' | 'cls' | 'x0' | 'y0' | 'x1' | 'y1' | 'entrances' | 'levels'>;
 
 /** to, czego potrzebuje rysowanie kawałków: bez reszty świata, więc da się to wysłać do workera */
 export interface ChunkScene {
@@ -72,6 +72,10 @@ export interface ChunkScene {
   chunks: number;
   /** grafika z PixelLab do terenu i bloków albo null (wszystko z kodu) */
   art: GrafikaKawalkow | null;
+  /** scena typowego piętra całej mapy (src/render/pietro.ts) albo null, gdy widoku pięter nie ma */
+  pietra: SectionScene | null;
+  /** piętro, które rysuje przekrój: 0 to parter (obraz jak zawsze), od 1 sc.pietra zamiast sc.section */
+  pietro: number;
 }
 
 export interface Scene extends ChunkScene {
@@ -87,7 +91,16 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
       terr,
       bid,
       trees,
-      buildings: buildings.map(({ id, cls, x0, y0, x1, y1, entrances }) => ({ id, cls, x0, y0, x1, y1, entrances })),
+      buildings: buildings.map(({ id, cls, x0, y0, x1, y1, entrances, levels }) => ({
+        id,
+        cls,
+        x0,
+        y0,
+        x1,
+        y1,
+        entrances,
+        levels,
+      })),
     },
     south: sc.south,
     run: sc.run,
@@ -100,6 +113,8 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
     section: sc.section,
     chunks: sc.chunks,
     art: sc.art,
+    pietra: sc.pietra,
+    pietro: sc.pietro,
   };
 }
 
@@ -280,7 +295,7 @@ export function buildScene(w: World, art: Grafika | null = null): Scene {
   const tr = w.trees;
   for (const list of treesBy) list.sort((a, b) => tr[a].y - tr[b].y || tr[a].x - tr[b].x);
   const treeGone = new Uint8Array(w.trees.length);
-  const chunkArt = art && { teren: art.teren, blok: art.blok, dach: art.dach, budynki: art.budynki };
+  const chunkArt = art && { teren: art.teren, blok: art.blok, dach: art.dach, budynki: art.budynki, strop: art.strop };
   return {
     w,
     south,
@@ -294,5 +309,7 @@ export function buildScene(w: World, art: Grafika | null = null): Scene {
     section: null,
     chunks,
     art: chunkArt,
+    pietra: null,
+    pietro: 0,
   };
 }
