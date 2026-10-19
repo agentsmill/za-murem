@@ -7851,7 +7851,9 @@ function wydarzeniaDym(name: string, demo: string, from: string, dom: boolean): 
           const t = await sheetText(page);
           console.log(`  ${t.replace(/\s+/g, ' ').slice(0, 200)}`);
           if (!t.startsWith('Dym z komina')) throw new Error(`pierwsze okno to nie dym z komina: ${t.slice(0, 80)}`);
-          if (!t.includes(`pani Krysia ${from}`)) throw new Error(`w dymie nie ma sąsiadki ${from}`);
+          // sąsiad albo sąsiadka z prawdziwych ludzi (mieszkaniec z waszej klatki), a bez mieszkańców pani Krysia
+          if (!new RegExp(`(?:^|\\s)pani? \\p{Lu}[\\p{L}' -]*? ${from}`, 'u').test(t))
+            throw new Error(`w dymie nie ma sąsiadki ani sąsiada ${from}`);
           const kicker = await page.textContent('#sheet .sheet-kicker');
           const goals = (await page.textContent('#goals')) ?? '';
           const bar = await page.evaluate(() =>
