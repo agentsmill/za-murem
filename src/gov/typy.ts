@@ -145,6 +145,20 @@ export interface GovInput {
   dead?: { id: string; name: string; cause: string; tick: number }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
+  /** badania (src/sim/badania.ts): najwyższa era wśród zbadanych technologii (0: nic) i czy technologia końcowa jest
+      zbadana; bez pola zarząd zakłada grę bez badań */
+  badania?: { era: number; koncowa: boolean };
+  /** książki osady według dziedziny, z symulacji (w wiedzy liczą się najwyżej 2 na dziedzinę); bez pola: żadnych */
+  books?: Partial<Record<TechDom, number>>;
+  /** zbadane technologie (identyfikatory z src/sim/badania.ts); EventHost.tech czyta stąd, bez pola żadna */
+  techDone?: readonly string[];
+  /** wiedza osady w dziedzinach, ta sama co na tablicy badań (najlepsza osoba zarządu albo lokatora siedziby na
+      miejscu plus najwyżej 2 książki); bez pola EventHost.know liczy po staremu z `people` */
+  know?: Partial<Record<TechDom, number>>;
+  /** czy stoi wieża (karta nocy dostaje wtedy posterunek „Wieża”); wypełnia je zadanie o wieży */
+  wieza?: boolean;
+  /** ile palenisk (koza zarządu, kozy z beczek, kocioł liczony jako kilka) pali drewno nocą; bez pola jedno */
+  paleniska?: number;
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -194,6 +208,9 @@ export interface GovEffects {
   ammo?: Partial<Record<'naboje' | 'loftki' | 'belty', number>>;
   /** ugryzieni na wyprawie (zakażeni) */
   bitten?: string[];
+  /** znalezione książki (dziedziny), po jednej na sztukę; symulacja kładzie je na półkę osady (dodajKsiazke), trzecią
+      z dziedziny zamienia na drewno; tablica powstaje przy pierwszej książce */
+  books?: TechDom[];
 }
 
 export interface RaidPlan {
@@ -369,6 +386,8 @@ export interface GovState {
   trust: number;
   anger: number;
   laws: { signed: Record<string, boolean>; last: number; path: LawPath | null };
+  /** książki ze starych zapisów (przed badaniami zarząd trzymał je u siebie); przy pierwszym kroku zarządu idą do
+      symulacji (GovEffects.books), a pole zostaje puste. Właścicielem książek jest symulacja (SimState.books). */
   books: Partial<Record<TechDom, number>>;
   nextId: number;
   ev: {

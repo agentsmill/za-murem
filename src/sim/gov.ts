@@ -2,12 +2,16 @@
    Zarząd liczy, symulacja robi: zapasy to rzeczy na mapie (drewno w stosach, zapasy w kuchni, złom w stertach),
    potrzeby i nastroje to pionki, wyprawa wychodzi bramą, warta staje przy siatce, łaty zamykają dziury, a napad
    z planu odgrywają szabrownicy. To, co wymaga przeliczenia przechodniości albo dróg (warta, wyprawa, łaty), idzie
-   przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie. */
+   przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie.
+   Badania: odczyt niesie też eraBadan, książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
+   a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. */
 
+import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
 import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type { Arm, GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
+import { dodajKsiazke, eraBadan, koncowaZbadana, wiedza } from './badania.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
 import { dayOf, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { houseOf, inHomeApt } from './house.ts';
@@ -101,6 +105,11 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     dead: (st.dead ?? [])
       .filter((d) => d.kind === 'core' || d.kind === 'resident')
       .map((d) => ({ id: d.id, name: d.name, cause: d.cause, tick: d.tick })),
+    // badania: jedna wiedza i jedne książki dla tablicy i dla wydarzeń zarządu (src/sim/badania.ts)
+    badania: { era: eraBadan(st), koncowa: koncowaZbadana(st) },
+    books: { ...st.books },
+    techDone: [...(st.techDone ?? [])],
+    know: Object.fromEntries(TECH_DOMS.map((d) => [d, wiedza(st, d)])) as Record<TechDom, number>,
   };
 }
 
@@ -273,6 +282,8 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   if (fx.patch > 0) cmd({ t: 'mend', ids: [], n: fx.patch });
   if (fx.fire) stairFire(st, w);
   if (fx.sick > 0) sicken(st, fx.sick);
+  // znalezione książki na półkę osady; trzecia z dziedziny idzie na podpałkę (drewno przy bramie)
+  for (const d of fx.books ?? []) if (dodajKsiazke(st, d) === 'podpalka') give(st, w, 'wood', 1);
   // znaleziska z wypraw do magazynu, ugryzieni na wyprawie zakażeni
   for (const a of fx.arms ?? []) if (a in WEAPONS && a !== 'piesci') (st.store.arms ??= []).push(a as WeaponId);
   for (const [k, n] of Object.entries(fx.ammo ?? {}) as [AmmoKey, number][])

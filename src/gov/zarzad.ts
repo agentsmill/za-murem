@@ -11,6 +11,7 @@
      odpowiedzi: setNight / confirmNight, signLaw, chooseEvent, ackReport (każda zwraca skutki). */
 
 import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
+import { TECH_DOMS } from '../content/data.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } from './noc.ts';
@@ -64,6 +65,9 @@ const busy = (st: GovState) => !!st.report || st.lawPending || (!!st.night && !s
 /** krok zarządu: wieczorne zebranie, karta nocy, przebieg nocy, wydarzenia; zwraca skutki do zastosowania */
 export function govUpdate(st: GovState, i: GovInput): GovEffects {
   const fx = emptyEffects();
+  // książki ze starego zapisu (zarząd trzymał je u siebie, teraz są w symulacji) idą do niej przy pierwszym kroku
+  for (const d of TECH_DOMS) for (let k = st.books[d] ?? 0; k > 0; k--) (fx.books ??= []).push(d);
+  if (Object.keys(st.books).length) st.books = {};
   if (st.over) return fx;
   if (i.hour >= 18 && i.light?.campfire) st.evening.campfire = true;
   const t = gameMin(i);

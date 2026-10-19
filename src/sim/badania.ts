@@ -16,13 +16,20 @@
    `wiedza` to jedna wiedza osady dla tablicy i zarządu, `kartka` to stan jednej kartki tablicy, `tempoOsoby` to postęp
    na godzinę gry jednej siedzącej osoby. Dodawanie postępu w kroku, pracownia i polecenia `research` i `study` są
    w `Sim` (src/sim/sim.ts: chooseResearch, startResearch, researchTick), tak samo plan dnia lokatorów z wiedzą i ich
-   droga do pracowni (plan, labOpen); limit i napisy pracowni w budowle.ts. */
+   droga do pracowni (plan, labOpen); limit i napisy pracowni w budowle.ts.
+
+   Książki. `ksiazkaZ` losuje książkę z przeszukanego pomieszczenia z osobnego generatora z ziarna gry i klucza
+   pomieszczenia (inna stała niż `wreckRng`), więc przeszukanie nie przesuwa `st.rng` ani innych losowań; szanse
+   leżą w `SZANSA_KSIAZKI`. `dodajKsiazke` kładzie książkę na półce osady (`st.books`, najwyżej 2 na dziedzinę, pole
+   powstaje przy pierwszej) i mówi, czy trzecia z dziedziny poszła na podpałkę. Drewno z podpałki dokłada wołający,
+   bo ten moduł nie zna map ani stert: `Sim` przy pracowni albo w składzie (dropMat), `applyGov` przy bramie. */
 
 import type { TechDef, TechDom } from '../content/data.ts';
-import { ERAS, TECH } from '../content/data.ts';
+import { BOOKS, ERAS, TECH, TECH_DOMS } from '../content/data.ts';
 import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import { tx } from '../core/jezyk.ts';
+import { mulberry } from '../core/rng.ts';
 import { DZIALANIE_EN, NAZWY_ERY_EN, NAZWY_TECH_EN, PRAD_EN, SIEC_EN, SIEC_ZOMBIE_EN } from './badania.en.ts';
 import type { SimState } from './sim.ts';
 import type { GameMode } from './tryb.ts';
@@ -194,6 +201,9 @@ export function tempoOsoby(o: Pick<Person, 'skills' | 'traits'>, dom: TechDom): 
   );
 }
 
+/** ile książek z jednej dziedziny liczy się do wiedzy i mieści się na półce; kolejne idą na podpałkę */
+const KSIAZEK_NA_DZIEDZINE = 2;
+
 /** wiedza osady w dziedzinie: najwyższa umiejętność wśród żywych osób zarządu i lokatorów siedziby, którzy są na
     miejscu (nie na wyprawie), plus najwyżej 2 książki z tej dziedziny. Pionek na liście `st.pawns` żyje (zmarły
     schodzi z niej po kroku). Lokator bez osoby (`person` −1), sąsiedzi i obcy się nie liczą. */
@@ -203,7 +213,7 @@ export function wiedza(st: SimState, dom: TechDom): number {
     if ((p.kind !== 'core' && p.kind !== 'resident') || p.person < 0 || p.away) continue;
     najlepsza = Math.max(najlepsza, st.people[p.person]?.skills[dom] ?? 0);
   }
-  return najlepsza + Math.min(2, st.books?.[dom] ?? 0);
+  return najlepsza + Math.min(KSIAZEK_NA_DZIEDZINE, st.books?.[dom] ?? 0);
 }
 
 /** stan kartki na tablicy: zbadana (pieczątka), w toku (wybrana, wiedza starcza), stoi (wybrana, ale wiedza spadła
@@ -275,4 +285,34 @@ export function eraBadan(st: SimState): number {
 /** czy technologia końcowa drzewka jest zbadana */
 export function koncowaZbadana(st: SimState): boolean {
   return TECHS.some((t) => t.koncowa === true && !!st.techDone?.includes(t.id));
+}
+
+/** szansa na książkę w jednym przeszukanym pomieszczeniu: puste mieszkanie jak opuszczone mieszkania w 0.3
+    (POICAT.mieszkania.book), sala w szkole u sąsiadów więcej (liczba budującego: szkoła ma kilka sal, a dziedzin jest
+    sześć). Reszta usług u sąsiadów książek nie daje. To dane do strojenia; testy zmieniają je na czas jednego testu. */
+export const SZANSA_KSIAZKI = { mieszkanie: 0.12, szkola: 0.25 };
+
+/** Książka z przeszukania pomieszczenia o kluczu `klucz` (w siedzibie numer pomieszczenia, u sąsiadów
+    gid(k + 1, pokój), więc klucze się nie zbiegają): null, gdy rzut nie trafił, a gdy trafił, dziedzina losowana ze
+    wszystkich sześciu i tytuł z `BOOKS`. Generator z ziarna gry i klucza, inna stała niż `wreckRng`; nie dotyka
+    `st.rng`. Szansa 1 daje zawsze książkę, 0 nigdy. */
+export function ksiazkaZ(
+  seed: number,
+  klucz: number,
+  szansa = SZANSA_KSIAZKI.mieszkanie,
+): { dom: TechDom; tytul: string } | null {
+  const rnd = mulberry((Math.imul(seed | 0, 7907) ^ Math.imul(klucz + 1, 1299709) ^ 0x6b6b) >>> 0);
+  if (rnd() >= szansa) return null;
+  const dom = TECH_DOMS[Math.floor(rnd() * TECH_DOMS.length)];
+  const tytuly = BOOKS[dom];
+  return { dom, tytul: tytuly[Math.floor(rnd() * tytuly.length)] };
+}
+
+/** Książka z dziedziny `dom` na półkę osady: `st.books` (pole powstaje przy pierwszej), najwyżej 2 na dziedzinę.
+    Trzecia i kolejne nic nie zmieniają w stanie i wracają jako 'podpalka': wołający dokłada za nią 1 drewna. */
+export function dodajKsiazke(st: SimState, dom: TechDom): 'polka' | 'podpalka' {
+  const ma = st.books?.[dom] ?? 0;
+  if (ma >= KSIAZEK_NA_DZIEDZINE) return 'podpalka';
+  (st.books ??= {})[dom] = ma + 1;
+  return 'polka';
 }

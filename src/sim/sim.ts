@@ -12,7 +12,17 @@ import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '..
 import { IN, type Interior } from '../world/interior.ts';
 import type { Tree, World } from '../world/world.ts';
 import type { Wreck } from '../world/wrecks.ts';
-import { badaniaDom, badaniaWidoczne, kartka, kosztTech, TECH_BY, tempoOsoby } from './badania.ts';
+import {
+  badaniaDom,
+  badaniaWidoczne,
+  dodajKsiazke,
+  kartka,
+  kosztTech,
+  ksiazkaZ,
+  SZANSA_KSIAZKI,
+  TECH_BY,
+  tempoOsoby,
+} from './badania.ts';
 import {
   type AmmoKey,
   hitChance,
@@ -4654,7 +4664,7 @@ export class Sim {
   }
 
   /** łup z przeszukania: z tabeli według powodu opuszczenia (w domu komitetu z dokładką), deterministycznie z ziarna
-      gry i pomieszczenia */
+      gry i pomieszczenia; do tego rzut na książkę (znajdzKsiazke) z osobnego generatora */
   private searchDone(room: number, g: AptGame, at: number): void {
     const h = this.house!;
     const rnd = mulberry((Math.imul(this.st.seed | 0, 9973) ^ Math.imul(room + 1, 7919) ^ 0x51ab) >>> 0);
@@ -4662,6 +4672,16 @@ export class Sim {
     for (const [m, n] of Object.entries(loot) as [Mat, number][]) if (n > 0) this.dropMat(at, m, n, room);
     g.searched.push(room);
     g.searched.sort((a, b) => a - b);
+    this.znajdzKsiazke(ksiazkaZ(this.st.seed, room, SZANSA_KSIAZKI.mieszkanie), at);
+  }
+
+  /** Książka z przeszukania (src/sim/badania.ts: ksiazkaZ) trafia osobnym kanałem od razu na półkę osady (st.books),
+      bez sterty na mapie. Trzecia z tej samej dziedziny idzie na podpałkę: +1 drewna przy pracowni, a bez niej
+      w składzie (bez składu w miejscu przeszukania). Losowanie nie dotyka st.rng. */
+  private znajdzKsiazke(k: { dom: TechDom } | null, at: number): void {
+    if (!k || dodajKsiazke(this.st, k.dom) === 'polka') return;
+    const lab = this.st.things.find((t) => t.kind === 'pracownia');
+    this.dropMat(lab ? lab.y * this.w.size + lab.x : (this.house?.sklad[0] ?? at), 'drewno', 1);
   }
 
   canDismantle(t: Thing): boolean {
@@ -8633,7 +8653,8 @@ export class Sim {
 
   /** łup z pomieszczenia sąsiada: puste mieszkanie z tabeli fali 1 (w trybie zombie z wymarcia więcej jedzenia),
       sala i reszta z tabeli rodzaju budynku, mieszkanie lokatorów pod ich nieobecność ich zapasy (w kuchni i pokoju);
-      deterministycznie z ziarna świata, budynku i pomieszczenia */
+      deterministycznie z ziarna świata, budynku i pomieszczenia. Książkę dają puste mieszkania i sale szkół
+      (znajdzKsiazke, rzut z osobnego generatora z ziarna gry i gid(k + 1, pokój)). */
   private lupPokoju(k: number, room: number, at: number): void {
     const st = this.st;
     const b = st.sasiedzi!.budynki[k];
@@ -8643,14 +8664,19 @@ export class Sim {
     const mode = modeOf(st);
     const rnd = rngOfPlace(this.w.seed, b.bid, room, 0x100f);
     let loot: Partial<Record<Mat, number>> = {};
+    // szansa na książkę: sala szkoły, puste mieszkanie; inne usługi i zapasy lokatorów książek nie dają
+    let szansaKsiazki = 0;
     if (r.apt < 0) {
       loot = lupUslug(B.cls, r.kind, r.area, rnd);
+      if (B.cls === 'szkola') szansaKsiazki = SZANSA_KSIAZKI.szkola;
       b.przeszukane.push(room);
       b.przeszukane.sort((x, y) => x - y);
     } else {
       const m = b.mieszkania.find((x) => x.apt === r.apt)!;
-      if (m.stan === 'puste') loot = lupMieszkania(m.why ?? 'wyjazd', r.kind, r.area, rnd, mode);
-      else {
+      if (m.stan === 'puste') {
+        loot = lupMieszkania(m.why ?? 'wyjazd', r.kind, r.area, rnd, mode);
+        szansaKsiazki = SZANSA_KSIAZKI.mieszkanie;
+      } else {
         // szaber pod nieobecność lokatorów: ich zapasy, za pierwszym pomieszczeniem całe
         const g = b.domy[m.dom];
         loot = { ...g.zapasy };
@@ -8667,6 +8693,8 @@ export class Sim {
     }
     for (const [mat, n] of Object.entries(loot) as [Mat, number][])
       if (n > 0) this.zostawLup(at, mat, n, this.kafelkiPokoju(gid(k, room)));
+    // klucz gid(k + 1, pokój) nie zbiega się z numerem pomieszczenia siedziby (searchDone)
+    if (szansaKsiazki > 0) this.znajdzKsiazke(ksiazkaZ(st.seed, gid(k + 1, room), szansaKsiazki), at);
     this.wersjaSasiadow++;
   }
 
