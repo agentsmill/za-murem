@@ -11,7 +11,17 @@
    (pola powstają przy pierwszym użyciu) oraz plan dnia lokatorów z wiedzą (labOpen). Barykada z wraków stoi na odcinku
    siatki jak zasieki, ale ma BARYKADA_HP (160, zasieki 100), a wzmocnienie siatki deskami (`brace`, do 100) jej nie
    dotyka. Posterunek na wieży (WIEZA_POST, klucz 'wieza'): wartownik stoi na wolnym kafelku obrysu wieży (najwyżej tylu
-   osób, ile kafelków), jego lampa płoszy dalej (WIEZA_ZASIEG), a broń dystansowa sięga z wieży dalej. */
+   osób, ile kafelków), jego lampa płoszy dalej (WIEZA_ZASIEG), a broń dystansowa sięga z wieży dalej.
+   Polecenie gracza przeżywa walkę odruchową (zgłoszenie Mateusza z 19.10.2026): praca z polecenia (`order: true`)
+   zostaje zapamiętana w `Pawn.polecenie` jako komenda z `ids: [pionek]`, a gdy `react` przerwie ją walką albo ucieczką,
+   polecenie czeka na wznowienie (`think` → `wznow`): po wygranej walce wraca od razu, po ucieczce, gdy przez WZNOW_SPOKOJ
+   żaden wróg nie stoi w czystej linii do WZNOW_ZASIEG m od pionka i od celu polecenia; wznawia je ponowne zastosowanie
+   komendy (ta sama droga co od gracza, `rozkaz`); polecenie ma WZNOW_PROBY prób (pierwsze wykonanie i wznowienia), a przy
+   ostatnim przerwaniu przepada z wpisem w kronice zarządu (`SimState.przerwane`, GovInput.przerwane). Reguła trybu zombie, która odsyła bezczynnych spoza siatki do
+   siedziby, nie dotyka pionka, który może wznowić polecenie. Ładunek z rąk (deski z noszenia łupu, materiał na łatę
+   i budowę, drewno) nie spada pod nogi: zostaje przy pionku (`Polecenie.niesie`), wraca z nim do tej samej pracy,
+   a gdy polecenie przepadnie albo pionek zginie, leży tam, gdzie stał (w siedzibie na składzie). „Zamknięte na klucz”
+   i „Nikt nie otwiera” trzymają pionka przy drzwiach godzinę gry jak „Idź tu” (STAY_AFTER_ORDER). */
 
 import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -376,6 +386,50 @@ const M2_JOBS = new Set<JobKind>([
   'mug',
   'shoo',
 ]);
+/** jaką pracę daje pionkowi komenda gracza; tylko z taką pracą (order: true) komenda jest zapamiętywana do wznowienia
+    (Pawn.polecenie). Poza listą: warta i alarm (mają własne odejście od posterunku), atak (walka sama), wyprawa i powrót,
+    amputacja, spotkanie i wybory bez pionka. Pomocnicy (praca „go” przy cudzych komendach) nie pamiętają niczego. */
+const PRACA_POLECENIA: Partial<Record<Command['t'], JobKind>> = {
+  move: 'go',
+  chop: 'chop',
+  haul: 'haul',
+  refuel: 'refuel',
+  burn: 'burn',
+  cook: 'cook',
+  patch: 'patch',
+  campfire: 'campfire',
+  finish: 'finish',
+  craft: 'craft',
+  brace: 'brace',
+  search: 'search',
+  dismantle: 'dismantle',
+  repair: 'repair',
+  claim: 'claim',
+  build: 'build',
+  wreck: 'wreck',
+  carry: 'carry',
+  saw: 'saw',
+  study: 'research',
+  open: 'door',
+  knock: 'door',
+  force: 'door',
+  board: 'door',
+  unboard: 'door',
+  loot: 'loot',
+  upstairs: 'upstairs',
+  enclose: 'plot',
+  trade: 'trade',
+  rob: 'rob',
+  talk: 'talk',
+  mug: 'mug',
+  shoo: 'shoo',
+};
+/** rodzaje komend, które pionek wznawia po przerwaniu (klucze PRACA_POLECENIA) */
+export const POLECENIA_WZNAWIANE: readonly Command['t'][] = Object.keys(PRACA_POLECENIA) as Command['t'][];
+/** prace, w których pionek niesie materiał w Job.n i Job.what (od fazy 1, po wzięciu ze sterty), i te, w których niesie
+    drewno w rękach; przerwane z ładunkiem wracają w tym samym stanie (Sim.rozmroz) */
+const PRACE_Z_MATERIALEM = new Set<JobKind>(['carry', 'patch', 'brace', 'build', 'repair']);
+const PRACE_Z_DREWNEM = new Set<JobKind>(['haul', 'refuel', 'campfire']);
 /** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
 export const GATHER_NEAR = 8;
 /** kuchnia społeczna: porcja z niej to 85% zwykłej (nic się nie marnuje) */
@@ -423,8 +477,25 @@ const STRANGER_NAMES: Partial<Record<PawnKind, string>> = {
 };
 /** bezczynny rdzeń rozgląda się za pracą co sekundę realną */
 const THINK_EVERY = TICKS_PER_SECOND;
-/** po poleceniu „idź tu” czeka na miejscu godzinę gry, chyba że coś pilnego */
+/** po poleceniu „idź tu” czeka na miejscu godzinę gry, chyba że coś pilnego; tak samo przy cudzych drzwiach, które
+    okazały się zamknięte na klucz albo nikt za nimi nie otwiera (gracz może zapukać albo wyważyć) */
 const STAY_AFTER_ORDER = TICKS_PER_HOUR;
+/** Przerwane polecenie gracza (walka odruchowa albo ucieczka w react) wraca, ale ma najwyżej tyle prób (pierwsze
+    wykonanie i wznowienia): trzecie przerwanie kończy je wpisem w kronice, czyli wznowień jest najwyżej dwa (żeby nie było
+    pętli walka–powrót–walka). Zgłoszenie Mateusza z 19.10.2026: „kiedy gracz powalczy z zombie, od razu wraca do domu,
+    przerywa swoje polecenie”. */
+export const WZNOW_PROBY = 3;
+/** zagrożenie minęło, gdy żaden wróg nie stoi w czystej linii do tylu metrów od pionka i od celu polecenia… */
+export const WZNOW_ZASIEG = 10;
+/** …przez minutę gry (13 ticków); po wygranej walce pionek nie czeka na tę minutę, tylko sprawdza, czy nikt nie czai się dalej */
+export const WZNOW_SPOKOJ = Math.round(TICKS_PER_HOUR / 60);
+/** przerwane polecenie, którego od tylu ticków nie udało się wznowić (ranny, głodny, szwendacze przy celu), wygasa bez
+    wpisu w kronice: nie wraca rano po nocy w łóżku */
+export const WZNOW_OKNO = 3 * TICKS_PER_HOUR;
+/** wznowienie wymaga zdrowia ponad tyle: jak walka odruchowa w react */
+const WZNOW_ZDROWIE = 40;
+/** dziennik przerwanych poleceń w stanie trzyma najwyżej tyle wpisów (zarząd czyta go co sekundę) */
+const PRZERWANE_MAX = 20;
 /** grzeje się najwyżej godzinę gry naraz, potem rozgląda się od nowa (może jest głodny) */
 const WARM_MAX = TICKS_PER_HOUR;
 /** z tej odległości od kozy (m) człowiek się przy niej grzeje */
@@ -658,6 +729,27 @@ export interface Pawn {
   /** zarząd odsypia za dnia (po nocnej warcie albo po pobudce na posiłek): głodny najpierw je, potem śpi, dopóki
       siły poniżej REST_UNTIL */
   nap?: boolean;
+  /** polecenie gracza, które przeżywa walkę odruchową (WZNOW_PROBY, Sim.przerwij i wznow); pola nie ma, gdy pionek nie
+      wykonuje polecenia (praca skończona, pilna potrzeba, nowe polecenie, brak polecenia) */
+  polecenie?: Polecenie;
+}
+
+/** Polecenie gracza zapamiętane przy pionku, żeby przeżyło walkę odruchową (react): po walce albo ucieczce wraca. */
+export interface Polecenie {
+  /** komenda gracza z ids: [pionek]; wznowienie stosuje ją od nowa tą samą drogą co polecenie od gracza */
+  c: Command;
+  /** która to próba polecenia: 1 przy pierwszym wykonaniu, o jeden więcej po każdym wznowieniu; przerwanie w próbie
+      WZNOW_PROBY kończy polecenie */
+  n: number;
+  /** tick przerwania walką albo ucieczką; brak: polecenie trwa, pionek je wykonuje */
+  od?: number;
+  /** tick ostatniego zagrożenia, które pionek widział po ucieczce; wznowienie dopiero po WZNOW_SPOKOJ od niego.
+      Po wygranej walce brak: pionek wraca od razu, o ile nikt nie czai się przy nim i przy celu */
+  zag?: number;
+  /** ładunek zdjęty z rąk na czas przerwania: praca w stanie sprzed przerwania (faza, Job.n i Job.what z materiałem)
+      i drewno z rąk (Pawn.carry). Po wznowieniu wraca z pionkiem do tej samej pracy; gdy polecenie przepadnie albo pionek
+      zginie, leży tam, gdzie stał (w siedzibie na składzie). Pola nie ma, gdy pionek nic nie niósł. */
+  niesie?: { job: Job; drewno: number };
 }
 
 /** Rzecz na mapie: meble z wnętrza (kopiowane przy starcie, żeby dało się je kiedyś przestawić albo spalić),
@@ -951,6 +1043,11 @@ export interface SimState {
   plot?: PlotStan;
   /** handlarz pod bramą (src/sim/handlarz.ts); tylko z opcją obcy albo po poleceniu 'obcy' */
   obcy?: Obcy;
+  /** polecenia, które przepadły po WZNOW_PROBY próbach (szwendacze za każdym razem je przerywały), po kolei, najwyżej
+      PRZERWANE_MAX: tick, imię osoby i klucz tego, co robiła (klucz komendy, przy wraku 'wreck:szukaj' albo
+      'wreck:rozbierz'). Zarząd dopisuje je do kroniki (GovInput.przerwane, src/gov/znaleziska.ts). Pola nie ma, dopóki
+      żadne polecenie nie przepadło, więc stan gry bez takich przerwań się nie zmienia. */
+  przerwane?: { tick: number; imie: string; co: string }[];
 }
 
 /** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
@@ -1738,6 +1835,10 @@ function dropHeld(st: SimState, w: World, p: Pawn): void {
   const loads: [string, number][] = [];
   if (p.carry > 0) loads.push(['drewno', p.carry]);
   if (p.job && p.job.n > 0 && LOOSE.has(p.job.what)) loads.push([p.job.what, p.job.n]);
+  // ładunek zdjęty z rąk na czas przerwanego polecenia (Polecenie.niesie)
+  const nie = p.polecenie?.niesie;
+  if (nie && nie.drewno > 0) loads.push(['drewno', nie.drewno]);
+  if (nie && nie.job.n > 0 && LOOSE.has(nie.job.what)) loads.push([nie.job.what, nie.job.n]);
   const size = w.size;
   const from = nearestFree(w.blocked, size, Math.floor(p.y) * size + Math.floor(p.x));
   for (const [kind, n] of loads)
@@ -2559,9 +2660,14 @@ export class Sim {
       for (const p of pawns) this.comeBack(p);
       return;
     }
+    // praca z polecenia: kto dostał od gracza nową pracę, zapamiętuje komendę do wznowienia po walce (zapamietaj)
+    const przed = pawns.map((p) => p.job);
     // plan budowy i jego odwołanie nie potrzebują nikogo z zarządu (plan czeka, aż ktoś się nim zajmie)
     if (c.t === 'build') {
       this.orderBuild(pawns, c.kind, c.x, c.y, c.rot);
+      pawns.forEach((p, k) => {
+        if (p.job !== przed[k]) this.zapamietaj(p, c);
+      });
       return;
     }
     if (c.t === 'unbuild') {
@@ -2575,6 +2681,15 @@ export class Sim {
 
     if (!pawns.length) return;
     this.tutEvent('zaznacz');
+    this.rozkaz(c, pawns);
+    pawns.forEach((p, k) => {
+      if (p.job !== przed[k]) this.zapamietaj(p, c);
+    });
+  }
+
+  /** Samo polecenie dla wskazanych z zarządu (bez samouczka i bez pamiętania): ta droga od gracza i od wznowienia
+      przerwanego polecenia. */
+  private rozkaz(c: Command, pawns: Pawn[]): void {
     if (c.t === 'move') this.orderMove(pawns, c.to, [], true);
     else if (c.t === 'chop') this.orderChop(pawns, c.tree);
     else if (c.t === 'haul') this.orderHaul(pawns, c.thing);
@@ -3001,11 +3116,13 @@ export class Sim {
     p.job = j;
   }
 
-  /** koniec pracy: rzeczy wolne, od razu rozgląda się za następną */
+  /** koniec pracy: rzeczy wolne, od razu rozgląda się za następną. Praca z polecenia skończona (zrobiona, przerwana
+      pilną potrzebą albo celem, który zniknął) kończy polecenie; przerwane walką albo ucieczką czeka na wznowienie. */
   private done(p: Pawn): void {
     this.release(p);
     this.dropLoad(p);
     p.job = null;
+    if (p.polecenie && p.polecenie.od === undefined) delete p.polecenie;
     p.wait = this.st.tick;
     if (this.house && p.needs) this.think(p);
   }
@@ -3989,8 +4106,11 @@ export class Sim {
     }
     const n = p.needs!;
     if (p.nap && n.rest >= REST_UNTIL) p.nap = false;
-    // w trybie zombie za siatką bez zajęcia nikt nie stoi: wraca do siedziby (w pomieszczeniu sąsiedniego budynku
-    // jest pod dachem, więc czeka tam na następne polecenie)
+    // przerwane polecenie gracza wraca, kiedy minęło zagrożenie: przed regułą powrotu do domu, snem i resztą
+    if (p.polecenie && this.wznow(p)) return;
+    // w trybie zombie za siatką bez zajęcia i bez polecenia do wznowienia nikt nie stoi (to, co może wrócić do polecenia,
+    // wznawia je wyżej; kto jeszcze nie może, bo ranny albo szwendacze są blisko, idzie schować się jak każdy): wraca do
+    // siedziby (w pomieszczeniu sąsiedniego budynku jest pod dachem, więc czeka tam na następne polecenie)
     if (modeOf(this.st) === 'zombie' && !this.insideAt(this.tileOf(p)) && !this.inSasiad(this.tileOf(p))) {
       const s = this.shelterSpot(p);
       if (s >= 0 && this.go(p, s)) {
@@ -6276,6 +6396,212 @@ export class Sim {
     j.n = 0;
   }
 
+  /* ---------- polecenie gracza przeżywa walkę odruchową ---------- */
+
+  /** Praca z polecenia gracza (order: true, rodzaj pracy zgodny z komendą) zostaje zapamiętana w stanie pionka, żeby
+      przeżyła walkę odruchową; nowe polecenie zastępuje stare (ładunek przerwanego oddaje oddajLadunek). „Idź tu” grupy
+      pamięta kafelek tego pionka, noszenie drewna stos, który wziął. */
+  private zapamietaj(p: Pawn, c: Command): void {
+    if (p.polecenie) this.porzucPolecenie(p);
+    const j = p.job;
+    const rodzaj = PRACA_POLECENIA[c.t];
+    if (!j?.order || !rodzaj || j.t !== rodzaj) return;
+    const k: Command =
+      c.t === 'move'
+        ? { t: 'move', ids: [p.id], to: j.tile }
+        : c.t === 'haul' && j.target >= 0
+          ? { t: 'haul', ids: [p.id], thing: j.target }
+          : { ...c, ids: [p.id] };
+    p.polecenie = { c: k, n: 1 };
+  }
+
+  /** praca niesie ładunek, który da się oddać z powrotem tej samej pracy: materiał w Job.n i Job.what albo drewno
+      w rękach, w fazie dojścia z ładunkiem na miejsce (faza 0, zbieranie z kilku stert, wraca od początku) */
+  private zLadunkiem(p: Pawn, j: Job): boolean {
+    if (j.phase < 1) return false;
+    if (PRACE_Z_MATERIALEM.has(j.t)) return j.n > 0 && !!j.what;
+    return PRACE_Z_DREWNEM.has(j.t) && p.carry > 0;
+  }
+
+  /** Walka odruchowa albo ucieczka (react) zaraz zastąpi pracę pionka. Jeśli to praca z polecenia gracza, polecenie
+      zostaje do wznowienia (Polecenie.od), a ładunek z rąk zostaje przy pionku zamiast spaść pod nogi
+      (Polecenie.niesie). Kolejne przerwanie tego samego polecenia (drugi szwendacz po wygranej walce) niczego nie
+      zmienia, przy ucieczce tylko odświeża czas zagrożenia. Przerwanie w ostatniej próbie (WZNOW_PROBY) kończy
+      polecenie wpisem w kronice, a ładunek ląduje tam, gdzie pionek stoi. */
+  private przerwij(p: Pawn, ucieczka: boolean): void {
+    const pol = p.polecenie;
+    if (p.kind !== 'core' || !pol) return;
+    const tick = this.st.tick;
+    if (pol.od !== undefined) {
+      if (ucieczka) pol.zag = tick;
+      return;
+    }
+    const j = p.job;
+    if (j) {
+      // noszenie łupu (łańcuch z przeszukania wraku) wznawia się od następnej sterty łupu przy tym samym miejscu
+      if (j.t === 'carry' && j.phase === 0 && j.target >= 0) pol.c = { t: 'carry', ids: [p.id], thing: j.target };
+      if (this.zLadunkiem(p, j)) {
+        pol.niesie = { job: { ...j }, drewno: p.carry };
+        p.carry = 0;
+        // stara praca zaraz zniknie, a dropLoad nie ma tknąć ładunku
+        j.n = 0;
+      }
+    }
+    if (pol.n >= WZNOW_PROBY) {
+      this.porzucPolecenie(p, true);
+      return;
+    }
+    pol.od = tick;
+    if (ucieczka) pol.zag = tick;
+  }
+
+  /** Polecenie przepada (nowe polecenie gracza, wygaśnięcie, przerwanie w ostatniej próbie, WZNOW_PROBY); wpis: z wpisem
+      w dzienniku dla kroniki zarządu. Zapamiętany ładunek ląduje tam, gdzie pionek stoi. */
+  private porzucPolecenie(p: Pawn, wpis = false): void {
+    const pol = p.polecenie;
+    if (!pol) return;
+    if (wpis) {
+      const st = this.st;
+      const dziennik = (st.przerwane ??= []);
+      dziennik.push({
+        tick: st.tick,
+        imie: st.people[p.person]?.first ?? '',
+        co: pol.c.t === 'wreck' ? `wreck:${pol.c.how}` : pol.c.t,
+      });
+      if (dziennik.length > PRZERWANE_MAX) dziennik.splice(0, dziennik.length - PRZERWANE_MAX);
+    }
+    this.oddajLadunek(p);
+    delete p.polecenie;
+  }
+
+  /** Ładunek zapamiętany przy pionku (Polecenie.niesie) ląduje tam, gdzie pionek stoi: w siedzibie drewno na skład (co się
+      nie zmieści, pod nogi), a materiał na podwórko, jak przy zwykłym noszeniu; poza siedzibą wszystko obok pionka.
+      Woła to każdy koniec polecenia z ładunkiem: nowe polecenie, wygaśnięcie, przepadnięcie, śmierć, odejście. */
+  private oddajLadunek(p: Pawn): void {
+    const nie = p.polecenie?.niesie;
+    if (!nie) return;
+    delete p.polecenie!.niesie;
+    const tile = this.tileOf(p);
+    const wDomu = this.inRoom(tile);
+    if (nie.drewno > 0) {
+      p.carry += nie.drewno;
+      if (wDomu) this.stack(p);
+      this.dropCarry(p);
+    }
+    const { n, what } = nie.job;
+    if (n > 0 && what) {
+      if (wDomu) this.dropInYard(what, n, tile);
+      else this.dropMat(tile, what, n);
+    }
+  }
+
+  /** kafelek celu polecenia, przy którym nie może czaić się wróg, zanim pionek tam wróci; −1: polecenie nie ma celu poza
+      siedzibą (gotowanie, badania, mieszkania) albo cel się zmienia (rozmowa, handel, pościg) */
+  private celPolecenia(c: Command): number {
+    const size = this.w.size;
+    switch (c.t) {
+      case 'move':
+        return c.to;
+      case 'chop':
+        return c.tree >= 0 && c.tree < this.trunk.length ? this.trunk[c.tree] : -1;
+      case 'haul':
+      case 'refuel':
+      case 'burn':
+      case 'dismantle':
+      case 'carry':
+      case 'finish': {
+        const t = this.thing(c.thing);
+        return t ? t.y * size + t.x : -1;
+      }
+      case 'patch':
+        return this.holeById(c.hole)?.tiles[0] ?? -1;
+      case 'campfire':
+        return c.at;
+      case 'wreck':
+      case 'brace':
+      case 'upstairs':
+        return c.tile;
+      case 'open':
+      case 'knock':
+      case 'force':
+      case 'board':
+      case 'unboard':
+        return c.door;
+      case 'build':
+        return c.y * size + c.x;
+      default:
+        return -1;
+    }
+  }
+
+  /** wróg w czystej linii do WZNOW_ZASIEG m od pionka albo od celu polecenia */
+  private zagrozenie(p: Pawn, c: Command): boolean {
+    if (this.threat(p, WZNOW_ZASIEG)) return true;
+    const cel = this.celPolecenia(c);
+    if (cel < 0) return false;
+    const size = this.w.size;
+    const cx = (cel % size) + 0.5;
+    const cy = Math.floor(cel / size) + 0.5;
+    for (const t of this.st.pawns) {
+      if (!isEnemy(t) || t.away || this.graveyard.has(t.id)) continue;
+      if (Math.hypot(t.x - cx, t.y - cy) <= WZNOW_ZASIEG && this.lineCheck(cx, cy, t.x, t.y) === 'clear') return true;
+    }
+    return false;
+  }
+
+  /** Wznowienie pracy z ładunkiem: ta sama praca w stanie sprzed przerwania, ładunek znowu w rękach, droga do jej
+      miejsca od nowa (praca przy pracy po dojściu zaczyna się od początku: łatanie, wzmacnianie, rozpalanie). false, gdy
+      się nie da (droga, ktoś zajął palenisko): wtedy ładunek ląduje obok (oddajLadunek). */
+  private rozmroz(p: Pawn, nie: NonNullable<Polecenie['niesie']>): boolean {
+    const j: Job = { ...nie.job };
+    if (j.phase === 2 && (j.t === 'patch' || j.t === 'brace' || j.t === 'campfire')) j.phase = 1;
+    const koza = j.t === 'refuel' ? this.thing(j.target) : undefined;
+    if (j.t === 'refuel' && (!koza || (koza.by >= 0 && koza.by !== p.id))) return false;
+    if (!this.go(p, j.tile)) return false;
+    p.carry = nie.drewno;
+    this.setJob(p, j, true);
+    if (koza) koza.by = p.id;
+    return true;
+  }
+
+  /** Wznowienie przerwanego polecenia, gdy minęło zagrożenie: pionek zdrowy (ponad WZNOW_ZDROWIE), bez pilnej potrzeby,
+      na podwórku nie ma wroga, nikt wrogi nie stoi w czystej linii do WZNOW_ZASIEG m od niego i od celu polecenia,
+      a po ucieczce minęła jeszcze minuta gry od ostatniego zagrożenia. Komenda idzie tą samą drogą co od gracza (rozkaz), a praca z ładunkiem wraca
+      w stanie sprzed przerwania (rozmroz). Polecenie, którego od WZNOW_OKNO nie udało się wznowić, wygasa. true: pionek
+      dostał pracę. */
+  private wznow(p: Pawn): boolean {
+    const pol = p.polecenie;
+    if (!pol || pol.od === undefined) return false;
+    const tick = this.st.tick;
+    if (tick - pol.od > WZNOW_OKNO) {
+      this.porzucPolecenie(p);
+      return false;
+    }
+    // ranny, głodny, zmarznięty albo z wrogiem na podwórku nie rusza w teren: reszta myślenia robi swoje (jedzenie, sen,
+    // schronienie), a polecenie czeka dalej
+    if ((p.needs?.health ?? 0) <= WZNOW_ZDROWIE || this.urgent(p) || this.yardDanger()) return false;
+    if (this.zagrozenie(p, pol.c)) {
+      pol.zag = tick;
+      return false;
+    }
+    if (pol.zag !== undefined && tick - pol.zag < WZNOW_SPOKOJ) return false;
+    const { c, n, niesie } = pol;
+    delete pol.niesie;
+    let rozmrozone = false;
+    if (niesie) {
+      rozmrozone = this.rozmroz(p, niesie);
+      if (!rozmrozone) {
+        pol.niesie = niesie;
+        this.oddajLadunek(p);
+      }
+    }
+    if (!rozmrozone) this.rozkaz(c, [p]);
+    const j = p.job;
+    if (j && (rozmrozone || (j.order && j.t === PRACA_POLECENIA[c.t]))) p.polecenie = { c, n: n + 1 };
+    else delete p.polecenie;
+    return !!j;
+  }
+
   /* ---------- walka ---------- */
 
   /** żywy wróg z mapy (nie na wyprawie, nie zabity w tym kroku) */
@@ -6443,6 +6769,8 @@ export class Sim {
       this.addFx('smierc', p.x, p.y);
       this.dropLoad(p);
       this.dropCarry(p);
+      // ładunek zdjęty z rąk na czas przerwanego polecenia też zostaje tam, gdzie pionek stał
+      this.oddajLadunek(p);
       this.addBlood(x, y);
     }
     // broń zmarłego ktoś podnosi i odnosi do magazynu
@@ -6661,7 +6989,8 @@ export class Sim {
   }
 
   /** Wróg blisko kogoś na dworze: zarząd z bronią i zdrowiem ponad 40 walczy, reszta ucieka do domu. W środku
-      (pomieszczenia siedziby) jest bezpiecznie. true: pionek dostał nową pracę. */
+      (pomieszczenia siedziby) jest bezpiecznie. Polecenie gracza, które to przerywa, czeka na wznowienie (przerwij).
+      true: pionek dostał nową pracę. */
   private react(p: Pawn): boolean {
     const j = p.job;
     // warta i walczący: odwrót do środka, gdy wróg jest tuż obok po tej samej stronie, a sił mało albo wrogów kilku
@@ -6702,6 +7031,7 @@ export class Sim {
     if (!e && !(outdoors && this.yardDanger())) return false;
     if (j?.t === 'stay' && j.target === STAY_HOME && !indoorFoe) return false;
     if (e && !resident && p.weapon && this.armed(p).id !== 'piesci' && (p.needs?.health ?? 0) > 40) {
+      this.przerwij(p, false);
       this.startFight(p, e.id, false);
       return true;
     }
@@ -6714,6 +7044,7 @@ export class Sim {
         ? this.homeSpot(p)
         : this.shelterSpot(p);
     if (spot < 0 || !this.go(p, spot)) return false;
+    this.przerwij(p, true);
     const run = this.newJob(resident ? 'stay' : 'go', resident ? STAY_HOME : spot, spot, false);
     run.until = this.st.tick + 600;
     this.setJob(p, run, false);
@@ -8283,7 +8614,7 @@ export class Sim {
       d.s = 'na_klucz';
       this.wersjaSasiadow++;
       this.napisSasiada('na_klucz', k, { kto: p.id });
-      return false;
+      return this.czekajPrzyDrzwiach(p);
     }
     if (t === 'open' || t === 'force') {
       d.s = t === 'open' ? 'otwarte' : 'wywazone';
@@ -8299,6 +8630,28 @@ export class Sim {
     this.wersjaSasiadow++;
     if (b.otwarty && t === 'unboard') this.napisSasiada('odbite', k, { kto: p.id });
     return false;
+  }
+
+  /** Po „Zamknięte na klucz” i „Nikt nie otwiera” pionek czeka przy drzwiach jak po „Idź tu” (STAY_AFTER_ORDER), żeby gracz
+      mógł zapukać albo wyważyć; dopiero potem obowiązuje zwykła reguła (w trybie zombie powrót do siedziby). Praca przy
+      drzwiach staje się czekaniem na miejscu; przerwane przez walkę wznawia się jako „idź na to miejsce”.
+      true: pionek czeka (praca trwa). */
+  private czekajPrzyDrzwiach(p: Pawn): boolean {
+    const j = p.job;
+    if (!j) return false;
+    const tile = this.tileOf(p);
+    j.t = 'go';
+    j.phase = 1;
+    j.target = tile;
+    j.tile = tile;
+    j.from = -1;
+    j.what = '';
+    j.n = 0;
+    j.order = true;
+    j.t0 = this.st.tick;
+    j.until = this.st.tick + STAY_AFTER_ORDER;
+    if (p.polecenie) p.polecenie.c = { t: 'move', ids: [p.id], to: tile };
+    return true;
   }
 
   /** Drzwi otwarte albo wyważone: budynek się otwiera, za drzwiami mieszkania może czekać szwendacz albo lokatorzy
@@ -8369,7 +8722,7 @@ export class Sim {
     if (!home.length) {
       const z = apt !== undefined ? b.mieszkania.find((m) => m.apt === apt)?.zombie : false;
       this.napisSasiada(z ? 'szuranie' : 'nikt', k, { kto: p.id });
-      return false;
+      return this.czekajPrzyDrzwiach(p);
     }
     // otwiera najchętniejszy: życzliwi, zdesperowani, nieufni, wrodzy
     const order: Zamiar[] = ['zyczliwi', 'zdesperowani', 'nieufni', 'wrodzy'];
@@ -8382,7 +8735,7 @@ export class Sim {
         (modeOf(this.st) === 'zombie' ? 0.7 : 1);
       if (nextRandom(this.st.rng) >= chetnie) {
         this.napisSasiada('ktos', k, { dom, kto: p.id });
-        return false;
+        return this.czekajPrzyDrzwiach(p);
       }
     }
     return this.zacznijSpotkanie(p, k, dom, 'drzwi', false);
