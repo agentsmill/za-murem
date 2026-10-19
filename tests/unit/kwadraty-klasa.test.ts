@@ -4,7 +4,7 @@
    (sklejone kawałki leżą w geo w całości), a nie po rastrze kwadratu, który widzi tylko swój kawałek. Dom liczy po rastrze jak
    zawsze, więc kawałek w kwadracie obok domu zgadza się z domem dzięki temu, że miejsce leży w obrysie budynku. */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { budynkiZDomem, sasiedzi8 } from '../../src/world/kwadraty.ts';
 import { buildKwadrat, buildWorld, type World } from '../../src/world/world.ts';
 import { ADDRESSES, geoDomuTestowego, geoKwadratuTestowego, ukladTestowy } from './fixtures.ts';
@@ -72,5 +72,27 @@ describe('klasa i piętra budynku przeciętego szwem', () => {
     const szkoly = [...sasiedzi].filter(([, hb]) => dom.buildings[hb].cls === 'szkola');
     expect(szkoly.length).toBeGreaterThan(0);
     for (const [nb] of szkoly) expect(w.buildings[nb].cls).toBe('szkola');
+  });
+
+  it('przypisanie miejsc do budynków kwadratu nie woła Math.hypot: decyzja nie zależy od silnika JS (plan: nowy kod decyzji bez hypot)', () => {
+    // klasę budynku liczy classify z miejsc, a miejsce trafia do budynku po odległości od obrysu (6,5 m); świat kwadratu
+    // wejdzie do symulacji, więc próg nie może zależeć od zaokrąglenia hypot, które różni się między silnikami
+    const a = ADDRESSES[0];
+    const geoDomu = geoDomuTestowego(a);
+    const uklad = ukladTestowy(a);
+    const geo = geoKwadratuTestowego(a, 1, 0);
+    expect(geo.poi.length).toBeGreaterThan(10);
+    const bezMiejsc = { ...geo, poi: [], rodzaje: [] };
+    const wywolania = (g: typeof geo): number => {
+      const szpieg = vi.spyOn(Math, 'hypot');
+      try {
+        buildKwadrat(g, { seed: 7, uklad, sx: 1, sy: 0, geoDomu });
+        return szpieg.mock.calls.length;
+      } finally {
+        szpieg.mockRestore();
+      }
+    };
+    // reszta budowy (prostowanie, wraki) ma te same wywołania z miejscami i bez; różnica to przypisanie miejsc do budynków
+    expect(wywolania(geo)).toBe(wywolania(bezMiejsc));
   });
 });

@@ -77,6 +77,18 @@ export function segDist(px: number, py: number, ax: number, ay: number, bx: numb
   return Math.hypot(ax + t * dx - px, ay + t * dy - py);
 }
 
+/** kwadrat odległości punktu (px, py) od odcinka (ax, ay)–(bx, by): bez hypot i pierwiastka, więc decyzje liczone z niego
+    (miejsce w budynku kwadratu obok domu) wychodzą tak samo w każdym silniku JS; segDist zostaje dla domu */
+export function segDist2(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)) : 0;
+  const ex = ax + t * dx - px;
+  const ey = ay + t * dy - py;
+  return ex * ex + ey * ey;
+}
+
 /** punkt w wielokącie (parzystość przecięć), jak pip w 0.3 */
 export function pip(x: number, y: number, poly: readonly Pt[]): boolean {
   let inside = false;

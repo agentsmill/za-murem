@@ -5,6 +5,10 @@
    z kwadratami miasta (src/world/kwadraty.ts): ta sama geometria na oknie przesuniętym o wielokrotność boku.
    `buildKwadrat` buduje z niego świat kwadratu obok domu (bez siedziby, siatki, wnętrza i mieszkań); dom wygrywa na szwie
    (budynki wspólne z domem prostują się jak w domu, rotate.ts), a świat domu zostaje bit w bit taki, jaki był.
+   Z opcją `pietra` kwadrat awansuje domy po kluczu budynku, a z opcją `dom` kawałek przy szwie z domem bierze poziomy
+   budynku domu (pietra.ts), żeby dwa kawałki jednego budynku miały te same piętra. Miejsca (sklep, szkoła) kwadratu
+   trafiają do budynków po całym obrysie z geo (okno widzi tylko swój kawałek przeciętego budynku), dom po kafelkach jak
+   zawsze; odległości w tym kodzie liczą się przez kwadraty, bez Math.hypot (świat kwadratu wejdzie do symulacji).
    Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. W grze sieciowej świat może dostać listę
    budynków zajętych przez inne drużyny (bezSiedziby, klucze z klucze.ts): siedzibą zostaje wtedy najbliższy wolny
    budynek mieszkalny; bez tej opcji świat jest taki jak zawsze. Świat nie zależy od języka (nazwy budynków zostają
@@ -17,7 +21,7 @@ import { labelRegions, nearestFree } from '../sim/path.ts';
 import { type AptState, applyApts, type Damage, type Smieci, settleApts } from './apts.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
 import { applyFence, buildFence, type Fence, type Gate, gateCrowded, yardEdges } from './fence.ts';
-import { type Geo, type GeoBuilding, type GeoPoi, type Pt, pip, polyArea, segDist } from './geo.ts';
+import { type Geo, type GeoBuilding, type GeoPoi, type Pt, pip, polyArea, segDist, segDist2 } from './geo.ts';
 import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { kluczBudynku } from './klucze.ts';
@@ -406,12 +410,13 @@ function opiszBudynki(
   const obrysy = poObrysie ? kept.map((o) => [o.b.p, ...(o.b.pp ?? [])]) : null;
   const budynekPoObrysie = (px: number, py: number): number => {
     let naj = -1;
-    let bd = 6.5;
+    // do 6,5 m od obrysu; kwadraty odległości, bez hypot: świat kwadratu wejdzie do symulacji (ten sam wynik w każdym silniku)
+    let bd = 6.5 * 6.5;
     for (let i = 0; i < kept.length; i++)
       for (const r of obrysy![i]) {
         if (pip(px, py, r)) return i;
         for (let k = 0; k + 1 < r.length; k++) {
-          const d = segDist(px, py, r[k][0], r[k][1], r[k + 1][0], r[k + 1][1]);
+          const d = segDist2(px, py, r[k][0], r[k][1], r[k + 1][0], r[k + 1][1]);
           if (d < bd) {
             bd = d;
             naj = i;

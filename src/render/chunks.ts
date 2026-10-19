@@ -9,7 +9,9 @@
    Kwadraty miasta obok domu (src/world/kwadraty.ts) to osobne sceny: zamówienie niesie numer kwadratu `q` (brak: dom),
    plan zamówień mieści się w budżecie tekstur (dalekie w kilkuset sztukach, a przy dużym oddaleniu poziom „bardzo
    daleko”, 2 px na kafelek), a pula workerów dostaje scenę kwadratu dopiero przy pierwszym zamówieniu i trzyma ich
-   najwyżej MAX_SCEN_WORKERA (najdawniej użyta wypada). Szwy między kwadratami to łatki sceny (szew.ts).
+   najwyżej MAX_SCEN_WORKERA (najdawniej użyta wypada). Szwy między kwadratami to łatki sceny (szew.ts). Reguła „kawałek ma
+   już, czym go pokazać” (mozeBycPokazany) jest jedna dla zamówień, zapasu tła i kompletności widoku: przy „bardzo daleko”
+   wystarcza daleka tekstura.
    Moduł nie zależy od PixiJS, więc da się go sprawdzić w Node. */
 
 import { drawChunk } from './art/chunkArt.ts';
@@ -121,6 +123,26 @@ export function budzety(telefon: boolean): Budzety {
 }
 
 /**
+ * Czy widoczny kawałek (q, k) ma już to, czym da się go pokazać na poziomie `poziom`, więc zamówienie dla niego nie jest
+ * pilne. `ma(q, k, s, cut)` mówi, czy kawałek ma świeżą teksturę poziomu s (przekrój, gdy cut); przekroj: czy kawałek ma
+ * być z przekrojem. Z daleka wystarcza daleka, a z bardzo daleka także daleka (ostrzejsza od bardzo dalekiej); z bliska
+ * bliska (albo przekrój tam, gdzie trzeba) albo daleka. Ta sama reguła rządzi zamówieniami (planOrdersWiele), zapasem tła
+ * i kompletnością widoku (GameView), żeby widok z dalekimi teksturami przy „bardzo daleko” nie czekał w nieskończoność na
+ * bardzo dalekie, na które nie ma budżetu. Bez domknięć na kawałek: woła się ją dla każdego widocznego kawałka co klatkę.
+ */
+export function mozeBycPokazany(
+  poziom: Poziom,
+  ma: (q: number, k: number, s: number, cut?: boolean) => boolean,
+  q: number,
+  k: number,
+  przekroj: boolean,
+): boolean {
+  if (poziom === 'bardzo-daleko') return ma(q, k, LOD_VERY_FAR) || ma(q, k, LOD_FAR);
+  if (ma(q, k, LOD_FAR)) return true;
+  return poziom === 'blisko' && (ma(q, k, LOD_NEAR) || (przekroj && ma(q, k, LOD_NEAR, true)));
+}
+
+/**
  * Które tekstury wyrzucić z pamięci, żeby zostało najwyżej `limit`: te najdawniej widziane (uzyte to numer klatki, w której
  * kawałek ostatnio był na ekranie), nigdy widoczne w klatce `klatka`. Gdy widocznych jest więcej niż limit, nadmiar zostaje.
  */
@@ -146,7 +168,7 @@ export interface PlanWiele {
   vis: readonly Kawalek[];
   /** kandydaci do rysowania w tle (zwykle wszystkie kawałki, od najbliższego kamerze) */
   tlo: readonly Kawalek[];
-  has(q: number, k: number, s: number, cut?: boolean): boolean;
+  has: (q: number, k: number, s: number, cut?: boolean) => boolean;
   ver(q: number, k: number): number;
   cutOf(q: number, k: number): boolean;
   /** ile zamówień w tle wolno dołożyć: budżet tekstur poziomu minus to, co już jest i czeka jako widoczne */
@@ -175,12 +197,7 @@ export function planOrdersWiele(poziom: Poziom, p: PlanWiele): Order[] {
     ...(c.q ? { q: c.q } : {}),
   });
   for (const c of p.vis) {
-    const brak =
-      tier === LOD_VERY_FAR
-        ? !p.has(c.q, c.k, LOD_VERY_FAR) && !p.has(c.q, c.k, LOD_FAR)
-        : !p.has(c.q, c.k, LOD_FAR) &&
-          !(near && (p.has(c.q, c.k, LOD_NEAR) || (p.cutOf(c.q, c.k) && p.has(c.q, c.k, LOD_NEAR, true))));
-    if (brak) {
+    if (!mozeBycPokazany(poziom, p.has, c.q, c.k, p.cutOf(c.q, c.k))) {
       out.push(order(c, tier));
       queued.add(id(c));
     }

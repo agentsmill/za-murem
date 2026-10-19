@@ -70,6 +70,7 @@ import { mockWear, type WearMock } from './atrapy.ts';
 import { BuildLayer, type BuildPlan, type Placement } from './buildLayer.ts';
 import {
   applyScenePatch,
+  type Budzety,
   budzety,
   type ChunkPainter,
   chunksTouched,
@@ -80,6 +81,7 @@ import {
   LOD_NEAR,
   LOD_VERY_FAR,
   type MapChange,
+  mozeBycPokazany,
   ofiary,
   planOrdersWiele,
   poolSize,
@@ -129,11 +131,10 @@ const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)
 const NIGHT_MARKS = 0.35;
 /** nowych tekstur rzeczy na klatkę (wrak to około 1 ms): reszta w następnych, bez zacięcia na starcie */
 const NEW_ART_PER_FRAME = 8;
-/** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna albo ImageBitmap);
-    na telefonach mniej, bo Safari ma twardy limit pamięci płócien */
-const MAX_NEAR = PHONE ? 16 : 48;
-/** budżety tekstur kawałków wszystkich kwadratów razem (bliskie są jak dotąd MAX_NEAR) */
-const BUDZET = budzety(PHONE);
+/** budżety tekstur kawałków wszystkich kwadratów razem. Bliskie (z przekrojami) mają 4 MB tekstury i 4 MB płótna albo
+    ImageBitmap, więc na telefonach jest ich mniej (Safari ma twardy limit pamięci płócien); dalekie i bardzo dalekie:
+    zob. budzety() w chunks.ts */
+const BUDZET_DOMYSLNY = budzety(PHONE);
 /** przekrój włącza się od tego zoomu, a wyłącza dopiero poniżej CUT_OFF (bez mrugania na granicy) */
 export const CUT_ON = 0.6;
 const CUT_OFF = 0.55;
@@ -255,6 +256,8 @@ export class GameView {
   private cutOn = false;
   /** kawałki z przekrojem: nad budynkiem z wnętrzem (parter) albo nad budynkami z wybranym piętrem (pietroNr od 1) */
   private cutChunks = new Set<number>();
+  /** budżety tekstur kawałków (testy ustawiają własne, żeby sprawdzić księgowanie tak jak na telefonie) */
+  private budzet: Budzety = BUDZET_DOMYSLNY;
   /** kwadraty miasta obok domu (numer q od 1) w kolejności dodania i po numerze */
   private kw: KwadratWidoku[] = [];
   private kwMapa = new Map<number, KwadratWidoku>();
@@ -1101,9 +1104,11 @@ export class GameView {
     let zapas = Number.POSITIVE_INFINITY;
     if (wiele) {
       const trzymane = tier === LOD_VERY_FAR ? this.nVeryFar : this.nFar;
-      const limit = tier === LOD_VERY_FAR ? BUDZET.bardzoDalekie : BUDZET.dalekie;
+      const limit = tier === LOD_VERY_FAR ? this.budzet.bardzoDalekie : this.budzet.dalekie;
+      // do budżetu liczą się tylko widoczne kawałki, dla których plan zamawia teksturę pilnie (te z samą daleką przy
+      // „bardzo daleko” i z bliską przy zbliżeniu już mają, czym się je pokazuje)
       let brakujace = 0;
-      for (const c of vis) if (!has(c.q, c.k, tier)) brakujace++;
+      for (const c of vis) if (!mozeBycPokazany(poziom, has, c.q, c.k, wantCut(c.q, c.k))) brakujace++;
       zapas = Math.max(0, limit - trzymane - brakujace);
     }
     const klucz = `${Math.floor(this.cam.x / (CHUNK * TILE))},${Math.floor(this.cam.y / (CHUNK * TILE))},${this.kw.length}`;
@@ -1138,7 +1143,15 @@ export class GameView {
       // przekrój, a do czasu jego przyjścia dach z bliska; dach nigdy nie zastępuje przekroju odwrotnie
       const tex =
         (cut && s.cut) || (near && s.near) || (poziom === 'bardzo-daleko' ? s.veryFar || s.far : s.far || s.veryFar);
-      if (cut ? !has(c.q, c.k, LOD_NEAR, true) : near ? !has(c.q, c.k, LOD_NEAR) : !has(c.q, c.k, tier))
+      // z bliska komplet to bliska tekstura (albo przekrój), z daleka taka, jaką da się pokazać (z bardzo daleka wystarcza
+      // daleka: bardzo dalekiej dla niej może nie być w budżecie)
+      if (
+        cut
+          ? !has(c.q, c.k, LOD_NEAR, true)
+          : near
+            ? !has(c.q, c.k, LOD_NEAR)
+            : !mozeBycPokazany(poziom, has, c.q, c.k, false)
+      )
         complete = false;
       if (tex) {
         if (s.sprite.texture !== tex) s.sprite.texture = tex;
@@ -1151,13 +1164,13 @@ export class GameView {
       else widoczneWKwadracie.set(c.q, [c.k]);
     }
     // limit pamięci: najdawniej widziane bliskie kawałki (z przekrojami) idą do kosza
-    if (this.chunksNear > MAX_NEAR) {
+    if (this.chunksNear > this.budzet.bliskie) {
       const old = widoki
         .flatMap((w) => w.slots)
         .filter((s) => (s.near || s.cut) && s.used !== this.frameNo)
         .sort((a, b) => a.used - b.used);
       for (const s of old) {
-        if (this.chunksNear <= MAX_NEAR) break;
+        if (this.chunksNear <= this.budzet.bliskie) break;
         if (s.sprite.texture === s.near || s.sprite.texture === s.cut) {
           s.sprite.texture = s.far ?? s.veryFar ?? Texture.EMPTY;
           s.sprite.scale.set(s.far ? LOD_NEAR / LOD_FAR : s.veryFar ? LOD_NEAR / LOD_VERY_FAR : 1);
@@ -1170,8 +1183,8 @@ export class GameView {
       }
     }
     // dalekie i bardzo dalekie: ponad budżet wypadają najdawniej widziane
-    if (this.nFar > BUDZET.dalekie) this.zwolnijPoziom('far', widoki);
-    if (this.nVeryFar > BUDZET.bardzoDalekie) this.zwolnijPoziom('veryFar', widoki);
+    if (this.nFar > this.budzet.dalekie) this.zwolnijPoziom('far', widoki);
+    if (this.nVeryFar > this.budzet.bardzoDalekie) this.zwolnijPoziom('veryFar', widoki);
     // drzewa z bliska jako sprite'y z widocznych kawałków, z daleka schowane (są w kawałkach)
     let czekaDrzewo = false;
     for (const w of widoki) {
@@ -1184,7 +1197,7 @@ export class GameView {
 
   /** Wyrzuca tekstury poziomu (far albo veryFar) ponad budżet: najdawniej widziane, nigdy widoczne w tej klatce. */
   private zwolnijPoziom(poziom: 'far' | 'veryFar', widoki: readonly KwadratWidoku[]): void {
-    const limit = poziom === 'far' ? BUDZET.dalekie : BUDZET.bardzoDalekie;
+    const limit = poziom === 'far' ? this.budzet.dalekie : this.budzet.bardzoDalekie;
     const kandydaci: Array<{ id: ChunkSlot; uzyte: number }> = [];
     for (const w of widoki) for (const s of w.slots) if (s[poziom]) kandydaci.push({ id: s, uzyte: s.used });
     for (const s of ofiary(kandydaci, limit, this.frameNo)) {

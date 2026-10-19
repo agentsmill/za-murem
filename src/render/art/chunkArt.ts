@@ -5,7 +5,9 @@
    Kwadrat miasta obok domu (scena z `poczatek` i `brzeg`, zob. scene.ts i szew.ts) rysuje się tak, jakby leżał w jednej
    scenie z sąsiadami: szum, wzory fasad i dachów liczą się od współrzędnych miasta (początek kwadratu w pikselach),
    krawężniki, cienie terenu i kafelki Wanga przy krawędzi patrzą na teren sąsiada, a budynek przecięty szwem nie ma
-   w tym miejscu attyki, krawędzi dachu ani fasady (ciągnie się dalej u sąsiada). Bez tych pól rysunek jest taki jak zawsze. */
+   w tym miejscu attyki, krawędzi dachu ani fasady (ciągnie się dalej u sąsiada). Współrzędne miasta są ujemne w kwadratach
+   na zachód i północ od domu, więc wzory z resztą z dzielenia (okna, linie parkingu, pasy blachy, rzędy upraw) liczą ją
+   funkcją `mod` (zawsze nieujemna), a nie `%`. Bez tych pól rysunek jest taki jak zawsze. */
 
 import type { DamageKind } from '../../world/apts.ts';
 import { T, type Tree } from '../../world/world.ts';
@@ -47,6 +49,11 @@ function asphaltCrack(c: number, ax: number, ay: number): number {
 
 /** teren z kafelków Wanga z grafiki z PixelLab (pseudokod terenu w groundColor) */
 const WANG = -1;
+
+/** Reszta z dzielenia zawsze nieujemna. Wzory (okna, linie parkingu, pasy blachy, rzędy upraw) liczą się od współrzędnych
+    układu miasta, które w kwadratach na zachód i północ od domu są ujemne, a `%` ma wtedy znak dzielnej i warunki w rodzaju
+    „reszta mniejsza od 3” zachodziłyby zawsze albo nigdy. Dla nieujemnych daje dokładnie to samo co `%` (dom bez zmian). */
+const mod = (a: number, m: number): number => (a >= 0 ? a % m : ((a % m) + m) % m);
 
 /**
  * Kolor terenu (0xRRGGBB) w punkcie grafiki (ax, ay) na kafelku i o kodzie t. wq: kafelki Wanga nad tym
@@ -139,7 +146,7 @@ function groundColor(
       c = vnoise(ax, ay, 120, 24) < 0.5 ? C.asph1 : C.asph2;
       if (r < 0.05) c = shade(c, 0.85);
       // linie miejsc parkingowych co 2,5 m
-      if (ax % 80 < 2 && (ay & 63) < 52) c = shade(C.line, 0.85);
+      if (mod(ax, 80) < 2 && (ay & 63) < 52) c = shade(C.line, 0.85);
       if (h2(ax >> 3, ay >> 3, 25) < 0.01) c = 0x2a2a2a;
       c = asphaltCrack(c, ax, ay);
       break;
@@ -213,7 +220,7 @@ function groundColor(
     case T.ALLOT: {
       const r = h2(ax >> 1, ay >> 1, 81);
       c = r < 0.5 ? C.soil0 : C.soil1;
-      if (ay % 14 < 5 && h2(ax >> 2, ay >> 2, 82) < 0.75) c = h2(ax >> 1, ay, 83) < 0.3 ? 0x7a9a44 : C.crop;
+      if (mod(ay, 14) < 5 && h2(ax >> 2, ay >> 2, 82) < 0.75) c = h2(ax >> 1, ay, 83) < 0.3 ? 0x7a9a44 : C.crop;
       break;
     }
     default:
@@ -246,19 +253,19 @@ function facadeColor(st: BStyle, ax: number, fy: number, door: boolean, px: numb
   switch (st.kind) {
     case 'garaz': {
       // brama z poziomymi żebrami
-      const g = ax % 96;
+      const g = mod(ax, 96);
       if (g < 4) return C.metal1;
       return yIn % 3 === 0 ? shade(C.metal2, 0.85) : C.metal2;
     }
     case 'sklep': {
       if (f === 0) {
         if (yIn >= st.floorH - 2) return h2(st.seed, 1, 5) < 0.5 ? 0x9c3b30 : 0x2f6a8f; // szyld
-        return ax % 40 < 3 ? 0x5b5d5f : C.shopGlass;
+        return mod(ax, 40) < 3 ? 0x5b5d5f : C.shopGlass;
       }
       break;
     }
     case 'dom': {
-      const m = ax % 40;
+      const m = mod(ax, 40);
       if (yIn >= 3 && yIn <= 7 && m >= 12 && m <= 25) return m === 12 || m === 25 ? 0xf2efe7 : C.window;
       return yIn === 0 && f > 0 ? shade(wall, 0.9) : wall;
     }
@@ -266,8 +273,8 @@ function facadeColor(st: BStyle, ax: number, fy: number, door: boolean, px: numb
       break;
   }
   // blok i reszta: moduł 12 px, okno 6×4 z jasną ramą u góry
-  const m = ax % 12;
-  const g4 = Math.floor(ax / 24) % 4;
+  const m = mod(ax, 12);
+  const g4 = mod(Math.floor(ax / 24), 4);
   const balc = st.balconies && st.kind === 'blok' && (g4 === 1 || g4 === 2);
   if (balc && f > 0) {
     if (yIn === 0) return C.balcony; // płyta balkonu
@@ -342,7 +349,7 @@ function roofColor(
       return c;
     }
     case 'metal': {
-      c = ax % 6 < 3 ? C.metal0 : C.metal1;
+      c = mod(ax, 6) < 3 ? C.metal0 : C.metal1;
       if (h2(ax >> 2, ay >> 2, st.seed) < 0.04) c = 0x7a5a3e; // rdza
       if (edge < 2) c = shade(c, 0.75);
       return c;

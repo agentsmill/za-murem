@@ -77,6 +77,10 @@ const DRZEWA: Tree[] = [
 /** którą przekątną szachownicy wokół wspólnego rogu zajmuje trawa: 0 to (63, 63) i (64, 64), 1 to (64, 63) i (63, 64) */
 let przekatna = 0;
 
+/** początek bloku czterech kwadratów w kwadratach miasta: (0, 0) to dom i sąsiedzi na wschód i południe od niego, (−1, −1)
+    to kwadraty na zachód i północ od domu, czyli ujemne współrzędne układu miasta */
+let poczatekBloku: [number, number] = [0, 0];
+
 /** kod terenu w punkcie globalnym: szum o kilku skalach, od wody po trawę; cztery kafelki wokół wspólnego rogu
     kwadratów to szachownica (trawa i jezdnia), więc kafelki Wanga przy rogu zależą od kafelka po przekątnej */
 function teren(gx: number, gy: number): number {
@@ -176,12 +180,16 @@ function uklad(
   drzewa: readonly Tree[] = [],
 ) {
   const scalony = swiat(0, 0, 2 * N, budynki, drzewa);
-  const wzor = buildScene(scalony, art);
+  const wzor = buildScene(scalony, art, {
+    poczatek: { x: poczatekBloku[0] * N * TILE, y: poczatekBloku[1] * N * TILE },
+  });
   for (const s of wzor.styles) if (s.roof === 'tar') s.roof = 'gravel';
   const sceny = new Map<string, Scene>();
   for (const [sx, sy] of KWADRATY) {
     const w = swiat(sx * N, sy * N, N, budynki, drzewa);
-    const sc = buildScene(w, art, { poczatek: { x: sx * N * TILE, y: sy * N * TILE } });
+    const sc = buildScene(w, art, {
+      poczatek: { x: (poczatekBloku[0] + sx) * N * TILE, y: (poczatekBloku[1] + sy) * N * TILE },
+    });
     // wspólny styl: ten sam budynek opisu ma styl budynku ze sceny złożonej (jej numery to numery opisu)
     for (const b of w.buildings) sc.styles[b.id] = { ...wzor.styles[numerOpisu(w, sx * N, sy * N, b.id, budynki)] };
     sceny.set(`${sx},${sy}`, sc);
@@ -278,6 +286,31 @@ describe('szwy między kwadratami: kawałki przy szwie jak w jednej scenie', () 
       }
     }
   });
+
+  it(
+    'kwadraty na zachód i północ od domu (ujemne współrzędne miasta): kawałki wszystkich czterech są takie jak w scenie złożonej',
+    () => {
+      // ten sam opis świata, ale blok stoi w układzie miasta od (−1, −1): szum, wzory i kafelki Wanga liczą się z ujemnych
+      // współrzędnych i muszą schodzić się na szwach tak samo jak w dodatnich
+      poczatekBloku = [-1, -1];
+      try {
+        for (const [art, s] of [
+          [null, 8],
+          [null, 32],
+          [{ ...grafikaZPlikow(), budynki: null }, 8],
+        ] as const) {
+          const { wzor, sceny } = uklad(art);
+          expect(sceny.get('0,0')?.poczatek).toEqual({ x: -N * TILE, y: -N * TILE });
+          const r = roznice(wzor, sceny, s);
+          expect(r.out).toEqual([]);
+          expect(r.ile).toBe(0);
+        }
+      } finally {
+        poczatekBloku = [0, 0];
+      }
+    },
+    LIMIT_CZASU,
+  );
 
   it('maska cieni każdego kwadratu po nałożeniu szwów to wycinek maski sceny złożonej (także dachy bez cienia)', () => {
     const { wzor, sceny } = uklad(null);

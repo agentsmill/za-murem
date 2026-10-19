@@ -5,9 +5,10 @@
 import type { Application, Texture } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { CHUNK, TILE } from '../../src/render/art/scene.ts';
-import { chunksByDistance } from '../../src/render/chunks.ts';
+import { type Budzety, chunksByDistance, LOD_FAR, LOD_VERY_FAR, type Order } from '../../src/render/chunks.ts';
 import { kandydaciTla, kwadratyNaEkranie, ramkaKwadratow, widoczneKawalki } from '../../src/render/kwadratyWidok.ts';
 import { GameView } from '../../src/render/view.ts';
+import { czytajKwadraty } from '../../src/world/kwadraty.ts';
 import { malaScena } from './kwadraty-pomoc.ts';
 
 const SIZE = 384;
@@ -406,5 +407,186 @@ describe('GameView: kwadraty obok domu', () => {
     v.setScene(dom());
     v.dodajKwadrat(1, 0, malaScena(2));
     expect(v.pamiecKawalkow()).toEqual({ bliskie: 0, dalekie: 0, bardzoDalekie: 0, kwadraty: 1 });
+  });
+});
+
+/* ---------- tekstury przy dużym oddaleniu: księgowanie i budżety jak na telefonie (bez przeglądarki) ---------- */
+
+describe('GameView: tekstury „bardzo daleko” przy budżecie równym liczbie widocznych kawałków (telefon, 3×3)', () => {
+  const MALY = 64;
+  const MBOK = MALY * TILE;
+
+  interface Slot {
+    far: Texture | null;
+    veryFar: Texture | null;
+    near: Texture | null;
+    cut: Texture | null;
+    used: number;
+    ver: number;
+    stale: number;
+  }
+  /** pola widoku, do których test zagląda: budżety, księgowanie tekstur i kolejka zamówień */
+  interface Wnetrze {
+    budzet: Budzety;
+    painter: unknown;
+    frameNo: number;
+    complete: boolean;
+    pendingFar: number;
+    nFar: number;
+    nVeryFar: number;
+    chunksNear: number;
+    updateChunks(ms: number): void;
+    widoki(): Array<{ q: number; slots: Slot[] }>;
+  }
+
+  /** udawana tekstura: dropTex czyta source.resource i woła destroy */
+  const tekstura = () => ({ source: { resource: null }, destroy: () => {} }) as unknown as Texture;
+
+  /**
+   * Widok z domem i kwadratami wokół (n × n bez domu), ekran 300 × 300 px, kamera na środku domu przy najmniejszym zoomie
+   * (poniżej 0,125, czyli poziom „bardzo daleko”): widać wszystkie kawałki, 4 na kwadrat. Malarz tylko zapisuje zamówienia.
+   */
+  function oddalony(n: number, budzet: Budzety) {
+    const v = new GameView();
+    v.app = { screen: { width: 300, height: 300 } } as unknown as Application;
+    const w = v as unknown as Wnetrze;
+    w.budzet = budzet;
+    const zamowienia: Order[][] = [];
+    w.painter = {
+      failed: false,
+      order: (o: Order[]) => zamowienia.push(o),
+      take: () => [],
+      patch: () => {},
+      dodajScene: () => {},
+      setScene: () => {},
+      drop: () => {},
+    };
+    v.setScene(malaScena(1, MALY));
+    for (const [sx, sy] of czytajKwadraty(`${n}x${n}`)) v.dodajKwadrat(sx, sy, malaScena(2, MALY));
+    v.cam = { x: MBOK / 2, y: MBOK / 2, zoom: v.minZoom };
+    const sloty = () => w.widoki().flatMap((x) => x.slots);
+    /** liczniki widoku muszą zgadzać się z tym, co naprawdę leży w slotach */
+    const zgodneZeSlotami = () => {
+      const s = sloty();
+      expect(v.pamiecKawalkow()).toMatchObject({
+        dalekie: s.filter((x) => x.far).length,
+        bardzoDalekie: s.filter((x) => x.veryFar).length,
+      });
+    };
+    return { v, w, zamowienia, sloty, zgodneZeSlotami };
+  }
+
+  it('poziom „bardzo daleko” przy najmniejszym zoomie, a wszystkie kawałki widać', () => {
+    const { v, w, sloty } = oddalony(3, { bliskie: 16, dalekie: 4, bardzoDalekie: 36 });
+    expect(v.cam.zoom).toBeLessThan(0.125);
+    expect(sloty()).toHaveLength(36);
+    const widoczne = widoczneKawalki(
+      [{ q: 0, sx: 0, sy: 0 }, ...v.kwadratyObok()],
+      MALY,
+      { x0: MBOK / 2 - 3225, y0: MBOK / 2 - 3225, x1: MBOK / 2 + 3225, y1: MBOK / 2 + 3225 },
+      { x: MBOK / 2, y: MBOK / 2 },
+    );
+    expect(widoczne).toHaveLength(36);
+    w.updateChunks(0);
+    expect(w.complete).toBe(false);
+  });
+
+  it('kawałek z samą daleką teksturą wystarcza: widok jest kompletny, a jego bardzo daleka idzie z tła w zapasie budżetu', () => {
+    const { w, zamowienia, sloty, zgodneZeSlotami } = oddalony(3, { bliskie: 16, dalekie: 4, bardzoDalekie: 36 });
+    const s = sloty();
+    // 32 kawałki mają bardzo daleką, cztery tylko daleką (zostały z większego przybliżenia); budżet bardzo dalekich to 36
+    s.forEach((x, i) => {
+      if (i < 32) x.veryFar = tekstura();
+      else x.far = tekstura();
+    });
+    w.nVeryFar = 32;
+    w.nFar = 4;
+    w.updateChunks(0);
+    expect(w.complete).toBe(true);
+    // zapas to 36 - 32 = 4: dokładnie tyle bardzo dalekich z tła, tylko dla czterech kawałków z samą daleką
+    const ostatnie = zamowienia[zamowienia.length - 1];
+    expect(ostatnie).toHaveLength(4);
+    expect(ostatnie.every((o) => o.s === LOD_VERY_FAR)).toBe(true);
+    expect(w.pendingFar).toBe(4);
+    zgodneZeSlotami();
+    // po ich przyjściu nic nie czeka: widok jest w spoczynku
+    for (const x of s) if (!x.veryFar) x.veryFar = tekstura();
+    w.nVeryFar = 36;
+    w.updateChunks(0);
+    expect(w.complete).toBe(true);
+    expect(w.pendingFar).toBe(0);
+    expect(zamowienia[zamowienia.length - 1]).toEqual([]);
+    zgodneZeSlotami();
+  });
+
+  it('widocznych kawałków więcej niż budżet (5×5): widoczne dostają teksturę, żaden nie wypada, a z daleką teksturą nie trzeba czekać', () => {
+    const { w, zamowienia, sloty, zgodneZeSlotami } = oddalony(5, { bliskie: 16, dalekie: 4, bardzoDalekie: 36 });
+    const s = sloty();
+    expect(s).toHaveLength(100);
+    // 36 ma bardzo daleką (budżet), 4 samą daleką, 60 nic
+    s.forEach((x, i) => {
+      if (i < 36) x.veryFar = tekstura();
+      else if (i < 40) x.far = tekstura();
+    });
+    w.nVeryFar = 36;
+    w.nFar = 4;
+    w.updateChunks(0);
+    expect(w.complete).toBe(false);
+    const pilne = zamowienia[zamowienia.length - 1];
+    // 60 widocznych bez żadnej tekstury jest pilnych, a tła nie ma (zapas zero)
+    expect(pilne).toHaveLength(60);
+    expect(pilne.every((o) => o.s === LOD_VERY_FAR)).toBe(true);
+    // przychodzą wszystkie: ponad budżet, bo widocznych nie wolno wyrzucać
+    for (const x of s) if (!x.veryFar && !x.far) x.veryFar = tekstura();
+    w.nVeryFar = 96;
+    w.updateChunks(0);
+    expect(w.nVeryFar).toBe(96);
+    expect(s.filter((x) => x.veryFar)).toHaveLength(96);
+    expect(w.complete).toBe(true);
+    expect(w.pendingFar).toBe(0);
+    expect(zamowienia[zamowienia.length - 1]).toEqual([]);
+    zgodneZeSlotami();
+  });
+
+  it('kamera przybliżona: bardzo dalekie poza ekranem ponad budżet wypadają od najdawniej widzianych, widoczne zostają', () => {
+    const { v, w, sloty, zgodneZeSlotami } = oddalony(3, { bliskie: 16, dalekie: 4, bardzoDalekie: 20 });
+    const s = sloty();
+    s.forEach((x, i) => {
+      x.veryFar = tekstura();
+      x.used = 100 + i; // im większy numer, tym świeżej widziany
+    });
+    w.nVeryFar = 36;
+    // zoom 0,1 (wciąż „bardzo daleko”): okno 3000 px, czyli kilka kawałków wokół środka domu
+    v.cam = { x: MBOK / 2, y: MBOK / 2, zoom: 0.1 };
+    w.frameNo = 200;
+    w.updateChunks(0);
+    const widoczne = s.filter((x) => x.used === 200);
+    expect(widoczne.length).toBeGreaterThan(0);
+    expect(widoczne.length).toBeLessThan(20);
+    expect(widoczne.every((x) => x.veryFar)).toBe(true);
+    expect(w.nVeryFar).toBe(20);
+    expect(s.filter((x) => x.veryFar)).toHaveLength(20);
+    // wypadły najdawniej widziane z niewidocznych: najmniejsze numery
+    const wypadly = s.map((x, i) => (x.veryFar ? -1 : i)).filter((i) => i >= 0);
+    expect(wypadly).toHaveLength(16);
+    const przetrwaly = s.map((x, i) => (x.veryFar && x.used !== 200 ? i : -1)).filter((i) => i >= 0);
+    expect(Math.max(...wypadly)).toBeLessThan(Math.min(...przetrwaly));
+    zgodneZeSlotami();
+  });
+
+  it('zamówienia dalekie przy zoomie 0,3: bliskich nie ma, a tekstury dalekie trzymają się budżetu', () => {
+    const { v, w, zamowienia, sloty, zgodneZeSlotami } = oddalony(3, { bliskie: 16, dalekie: 10, bardzoDalekie: 36 });
+    v.cam = { x: MBOK / 2, y: MBOK / 2, zoom: 0.3 };
+    w.updateChunks(0);
+    const o = zamowienia[zamowienia.length - 1];
+    expect(o.length).toBeGreaterThan(0);
+    expect(o.every((x) => x.s === LOD_FAR)).toBe(true);
+    // widoczne najpierw, tło dalekie najwyżej do budżetu dalekich (10)
+    expect(o.length).toBeLessThanOrEqual(10);
+    for (const x of sloty().slice(0, 12)) x.far = tekstura();
+    w.nFar = 12;
+    w.updateChunks(0);
+    expect(w.nFar).toBeLessThanOrEqual(12);
+    zgodneZeSlotami();
   });
 });
