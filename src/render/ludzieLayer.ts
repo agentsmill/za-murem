@@ -1,13 +1,15 @@
 /* Postacie z PixelLab w widoku: tekstury Pixi z atlasu ludzie.png i jego przemalowanych kopii dla klatek, które wybiera
    część bez PixiJS (ludziePixellab.ts: postać, wersja kolorystyczna, prostokąt i lustro). Warstwa trzyma źródła tekstur
    i po jednej teksturze na klatkę; pionek, któremu obsada nie ma pracy, zostaje z kodu (null). Komórki leżenia i zwłok
-   (art/lezenie.ts) mają własne małe źródła, po jednym na komórkę. */
+   (art/lezenie.ts) mają własne małe źródła, po jednym na komórkę. Klatki przejść (upadek, kładzenie się, wstawanie)
+   i ostatnia klatka upadku (zwłoki) to klatki atlasu jak każde inne. */
 
 import { BufferImageSource, Rectangle, Texture, type TextureSource } from 'pixi.js';
+import type { RodzajPrzejscia } from './art/animacjePozy.ts';
 import type { KomorkaLezenia } from './art/lezenie.ts';
 import type { Lie } from './art/people.ts';
 import type { LudzieGrafika, PostacLudzi } from './art/pixellab.ts';
-import { LudziePixellab } from './ludziePixellab.ts';
+import { type KlatkaPionka, LudziePixellab } from './ludziePixellab.ts';
 import type { PoseView } from './poses.ts';
 
 /** klatka do narysowania: tekstura, punkt stóp w teksturze (anchor = ax / w, ay / h; przy leżeniu środek głowy), lustro
@@ -62,7 +64,30 @@ export class LudzieLayer {
   /** klatka pozy pv postaci w wersji kolorystycznej `wersja`, null gdy postać nie ma tej pracy */
   klatka(postac: PostacLudzi, pv: PoseView, idzie: boolean, tt: number, wersja = 0): KlatkaTekstury | null {
     const k = this.dane.klatka(postac, pv, idzie, tt, wersja);
-    if (!k) return null;
+    return k && this.tekstura(k);
+  }
+
+  /** klatka przejścia (upadek, kładzenie się, wstawanie) po `czas` sekundach od startu, w kierunku dir; null, gdy postać
+      nie ma tej animacji albo przejście już się skończyło */
+  przejscie(
+    postac: PostacLudzi,
+    rodzaj: RodzajPrzejscia,
+    dir: number,
+    czas: number,
+    wersja = 0,
+  ): KlatkaTekstury | null {
+    const k = this.dane.przejscie(postac, rodzaj, dir, czas, wersja);
+    return k && this.tekstura(k);
+  }
+
+  /** zwłoki postaci: ostatnia klatka upadku w kierunku dir; null, gdy postać nie ma upadku (zwłoki rysuje komórka leżenia) */
+  zwloki(postac: PostacLudzi, dir: number, wersja = 0): KlatkaTekstury | null {
+    const k = this.dane.klatkaZwlok(postac, dir, wersja);
+    return k && this.tekstura(k);
+  }
+
+  /** tekstura prostokąta klatki z atlasu (albo z przemalowanej kopii pasa), jedna na prostokąt i wersję */
+  private tekstura(k: KlatkaPionka): KlatkaTekstury {
     // x i y mieszczą się w 4096, wersja i pas zarządu w górnych bitach
     const klucz = ((k.wersja * 2 + (k.zarzad ? 1 : 0)) * 4096 + k.y) * 4096 + k.x;
     let tex = this.tekstury.get(klucz);

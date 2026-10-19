@@ -491,3 +491,110 @@ describe('leżenie i zwłoki postaci (komórki z klatki stania przodem)', () => 
     expect(tylkoZarzad.postacZwlok(0)).toBeNull();
   });
 });
+
+describe('klatki przejść: upadek, kładzenie się i wstawanie', () => {
+  /** postać ze sztucznymi animacjami przejść: upadek 7 klatek w trzech kierunkach (wschód to odbicie zachodu),
+      wstawanie 5 klatek tylko na zachód (reszta to jego odbicie) */
+  const zPrzejsciami = (zarzad = true) => {
+    const p = postac('z', zarzad, 'm', [0, 100]);
+    p.animacje.smierc = { kierunki: [klatki(0, 7), klatki(100, 7), klatki(200, 7), 2] };
+    p.animacje.wstawanie = { kierunki: [2, 2, klatki(300, 5), 2] };
+    return p;
+  };
+  const p = zPrzejsciami();
+  const l = new LudziePixellab(sztuczny(obsada(p)));
+  const bez = postac('b', true, 'm', [0, 100]);
+
+  it('postać bez animacji przejścia jej nie ma, a z nią tak', () => {
+    expect(l.maPrzejscie(p, 'smierc')).toBe(true);
+    expect(l.maPrzejscie(p, 'wstawanie')).toBe(true);
+    expect(l.maPrzejscie(p, 'kladzenie')).toBe(true);
+    expect(l.maPrzejscie(bez, 'smierc')).toBe(false);
+    expect(l.maPrzejscie(bez, 'kladzenie')).toBe(false);
+  });
+
+  it('liczba klatek przejścia to długość animacji (0, gdy postać jej nie ma), jedna dla wszystkich kierunków', () => {
+    expect(l.klatekPrzejscia(p, 'smierc')).toBe(7);
+    expect([l.klatekPrzejscia(p, 'wstawanie'), l.klatekPrzejscia(p, 'kladzenie')]).toEqual([5, 5]);
+    expect(l.klatekPrzejscia(bez, 'smierc')).toBe(0);
+  });
+
+  it('upadek gra klatki po kolei w kierunku pionka, wschód to odbity zachód', () => {
+    // wynik jest współdzielony, więc kopiujemy go przed następnym wywołaniem
+    const klatka = (dir: number, czas: number) => ({ ...l.przejscie(p, 'smierc', dir, czas)! });
+    // 10 klatek na sekundę: czas 0 to klatka 0, 0,25 s to klatka 2, tuż przed końcem klatka 6
+    expect(klatka(0, 0).x).toBe(0);
+    expect(klatka(1, 0.25).x).toBe(100 + 2 * 3);
+    expect(klatka(2, 0.65).x).toBe(200 + 6 * 3);
+    const wschod = klatka(3, 0.25);
+    expect(wschod.x).toBe(200 + 2 * 3);
+    expect([wschod.flip, klatka(2, 0.25).flip, klatka(0, 0.25).flip]).toEqual([true, false, false]);
+    // rozmiar i kotwica z opisu
+    expect([wschod.w, wschod.h, wschod.ax, wschod.ay]).toEqual([3, 5, 1, 4]);
+  });
+
+  it('po ostatniej klatce upadek się kończy (null), a postać bez upadku daje null od razu', () => {
+    expect(l.przejscie(p, 'smierc', 2, 0.7)).toBeNull();
+    expect(l.przejscie(p, 'smierc', 2, 100)).toBeNull();
+    expect(l.przejscie(bez, 'smierc', 2, 0)).toBeNull();
+  });
+
+  it('wstawanie gra klatki od leżącej do stojącej, a kładzenie się od stojącej do leżącej: te same klatki od tyłu', () => {
+    const wst = (czas: number, dir = 2) => ({ ...l.przejscie(p, 'wstawanie', dir, czas)! });
+    const kla = (czas: number, dir = 2) => ({ ...l.przejscie(p, 'kladzenie', dir, czas)! });
+    // 8 klatek na sekundę: klatka i trwa od i/8 s
+    for (let i = 0; i < 5; i++) {
+      expect(wst((i + 0.5) / 8).x, `wstawanie ${i}`).toBe(300 + i * 3);
+      expect(kla((i + 0.5) / 8).x, `kładzenie ${i}`).toBe(300 + (4 - i) * 3);
+    }
+    expect(l.przejscie(p, 'wstawanie', 2, 5 / 8)).toBeNull();
+    expect(l.przejscie(p, 'kladzenie', 2, 5 / 8)).toBeNull();
+    // wstawanie jest tylko na zachód: każdy inny kierunek to jego odbicie (głowa leżącego w lewo)
+    expect(wst(0, 2).flip).toBe(false);
+    expect([wst(0, 3).flip, wst(0, 0).flip, wst(0, 1).flip]).toEqual([true, true, true]);
+    expect(wst(0, 3).x).toBe(300);
+  });
+
+  it('zwłoki leżą w ostatniej klatce upadku w kierunku, w którym ktoś zginął', () => {
+    const z = (dir: number) => ({ ...l.klatkaZwlok(p, dir)! });
+    expect([z(0).x, z(1).x, z(2).x]).toEqual([0 + 6 * 3, 100 + 6 * 3, 200 + 6 * 3]);
+    expect([z(0).flip, z(1).flip, z(2).flip, z(3).flip]).toEqual([false, false, false, true]);
+    expect(z(3).x).toBe(z(2).x);
+    expect(l.klatkaZwlok(bez, 2)).toBeNull();
+  });
+
+  it('wersja kolorystyczna i pas zarządu: klatki zarządu w przemalowanej wersji leżą w jej kopii pasa', () => {
+    const pas = [40, 90] as [number, number];
+    const opis = obsada(p);
+    opis.regiony.zarzad = pas;
+    opis.rampy = { a: ['#112233'] };
+    const lw = new LudziePixellab({ opis, img: { w: 16, h: 16, px: new Uint32Array(256) } });
+    // postać bez kolorów ubrania ma jedną wersję: przemalowanie niczego nie zmienia
+    expect(lw.przejscie(p, 'smierc', 0, 0, 1)!.wersja).toBe(0);
+    const kolorowa = { ...p, przemalowanie: { kolory: ['#445566'] } };
+    const k = { ...lw.przejscie(kolorowa, 'smierc', 0, 0, 1)! };
+    expect([k.wersja, k.zarzad, k.y]).toEqual([1, true, 1 - pas[0]]);
+    expect(lw.klatkaZwlok(kolorowa, 2, 1)!.y).toBe(1 - pas[0]);
+  });
+
+  it('prawdziwa obsada: cztery postacie zarządu mają przejścia, mieszkańcy żadnych, a klatki leżą w atlasie', () => {
+    const lp = new LudziePixellab(prawdziwy);
+    for (const post of opisAtlasu.postacie) {
+      expect(lp.maPrzejscie(post, 'smierc'), post.id).toBe(post.zarzad);
+      expect(lp.maPrzejscie(post, 'kladzenie'), post.id).toBe(post.zarzad);
+      if (!post.zarzad) continue;
+      for (let dir = 0; dir < 4; dir++) {
+        const ostatnia = lp.klatkaZwlok(post, dir)!;
+        expect(ostatnia.x + ostatnia.w, `${post.id} ${dir}`).toBeLessThanOrEqual(2048);
+        for (const rodzaj of ['smierc', 'wstawanie', 'kladzenie'] as const) {
+          const k = lp.przejscie(post, rodzaj, dir, 0.05)!;
+          expect(k, `${post.id} ${rodzaj} ${dir}`).not.toBeNull();
+          expect(k.ax).toBeGreaterThanOrEqual(0);
+          expect(k.ax).toBeLessThanOrEqual(k.w);
+          expect(k.ay).toBeGreaterThan(0);
+          expect(k.ay).toBeLessThanOrEqual(k.h);
+        }
+      }
+    }
+  });
+});

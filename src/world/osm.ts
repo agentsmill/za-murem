@@ -8,6 +8,7 @@ import { mulberry } from '../core/rng.ts';
 import type { AreaKind, Geo, Pt } from './geo.ts';
 import { pikselZ, tagiKlucza } from './klucze.ts';
 import { kluczPunktu } from './miasto.ts';
+import { rodzajZTagow } from './rodzaje.ts';
 
 const ENDPOINTS: [string, number][] = [
   ['https://overpass-api.de/api/interpreter', 35000],
@@ -172,6 +173,19 @@ interface OverpassElement {
   geometry?: { lat: number; lon: number }[];
 }
 
+/** środek obrysu: średnia wierzchołków bez powtórzonego punktu zamykającego, zaokrąglona do pół metra */
+function srodek(pts: readonly Pt[]): Pt {
+  const zamkniety = pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1];
+  const n = zamkniety ? pts.length - 1 : pts.length;
+  let sx = 0;
+  let sy = 0;
+  for (let i = 0; i < n; i++) {
+    sx += pts[i][0];
+    sy += pts[i][1];
+  }
+  return [Math.round((sx / n) * 2) / 2, Math.round((sy / n) * 2) / 2];
+}
+
 /** Overpass JSON -> lekka geometria w metrach względem środka */
 export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0: number): Geo {
   const kx = 111320 * Math.cos((lat0 * Math.PI) / 180);
@@ -183,9 +197,11 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
     const t = el.tags || {};
     if (el.type === 'node') {
       const c = poiCat(t);
-      if (c) {
+      const k = rodzajZTagow(t);
+      if (c || k) {
         const [x, y] = P(el.lat!, el.lon!);
-        geo.poi.push({ x, y, c, n: t.name || '', k: kluczPunktu(...pikselZ(el.lat!, el.lon!)) });
+        if (c) geo.poi.push({ x, y, c, n: t.name || '', k: kluczPunktu(...pikselZ(el.lat!, el.lon!)) });
+        if (k) (geo.rodzaje ||= []).push({ x, y, k, n: t.name || '' });
       }
       continue;
     }
@@ -201,6 +217,12 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
       const kl = tagiKlucza([el.geometry.map((g) => pikselZ(g.lat, g.lon).map(Math.round) as Pt)]);
       if (kl) Object.assign(tags, kl);
       geo.b.push({ p: pts, t: tags });
+      // rodzaj budynku (muzeum, teatr, hotel…) z jego własnych tagów, także tych, których nie zostawiamy w budynku
+      const rodzaj = rodzajZTagow(t);
+      if (rodzaj) {
+        const [x, y] = srodek(pts);
+        (geo.rodzaje ||= []).push({ x, y, k: rodzaj, n: t.name || '' });
+      }
       continue;
     }
     if (t.highway) {
@@ -232,6 +254,11 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
       }
       const k = kluczPunktu(...pikselZ(la / el.geometry.length, lo / el.geometry.length));
       geo.poi.push({ x: rd(sx / pts.length), y: rd(sy / pts.length), c, n: t.name || '', k });
+    }
+    const rodzaj = rodzajZTagow(t);
+    if (rodzaj) {
+      const [x, y] = srodek(pts);
+      (geo.rodzaje ||= []).push({ x, y, k: rodzaj, n: t.name || '' });
     }
   }
   return geo;

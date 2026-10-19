@@ -37,8 +37,14 @@ describe('wczytanie grafiki z PixelLab (src/render/grafika.ts)', () => {
     expect(g?.trzepak?.stopy).toBeGreaterThan(0);
     expect(g?.ludzie?.img.w).toBe(2048);
     expect(g?.ludzie?.opis.postacie.length).toBeGreaterThan(0);
+    // 11 wyglądów budynków przycięte z atlasu: fasada z modułami, a dach z próbki albo papa
+    expect(Object.keys(g?.budynki ?? {})).toHaveLength(11);
+    expect(g?.budynki?.ratusz?.dach).not.toBeNull();
+    expect(g?.budynki?.kamienica?.dach).toBeNull();
+    expect(g?.budynki?.muzeum?.ozdoba?.kotwica).toBe('ziemia');
     expect(s.adresy.map((u) => u.split('/').pop()).sort()).toEqual([
       'blok.png',
+      'budynki.png',
       'dach.png',
       'grafika.json',
       'ludzie.png',
@@ -67,6 +73,7 @@ describe('wczytanie grafiki z PixelLab (src/render/grafika.ts)', () => {
       'dach.png': new Response('', { status: 404 }),
       'strop.png': new Response('', { status: 404 }),
       'trzepak.png': new Response('nie png'),
+      'budynki.png': new Response('', { status: 404 }),
       'ludzie.png': new Response('', { status: 500 }),
     });
     const g = await wczytajGrafike({ pobierz: s.pobierz, dekoduj });
@@ -75,6 +82,7 @@ describe('wczytanie grafiki z PixelLab (src/render/grafika.ts)', () => {
     expect(g?.strop?.img).toBeNull();
     expect(g?.strop?.gestosc).toBeGreaterThan(0);
     expect(g?.trzepak).toBeNull();
+    expect(g?.budynki).toBeNull();
     expect(g?.ludzie).toBeNull();
     expect(g?.teren).not.toBeNull();
     expect(g?.blok).not.toBeNull();

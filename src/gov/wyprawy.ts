@@ -88,7 +88,9 @@ export interface Cel {
   /** odległość od adresu w metrach (0 dla celu z TARGETS) */
   odl: number;
   range: 'blisko' | 'daleko';
-  /** szansa kłopotów 0–1 */
+  /** współczynnik kłopotów: `POICAT.risk` razy (1 + odl / 900), od 0,08 przy adresie po około 2,3 przy 5 km
+      (`MAX_DROGA_M`), więc może przekraczać 1; to nie prawdopodobieństwo, `expRisk` mnoży go przez cechy osoby i ucina
+      do 0,9. Cel z TARGETS ma ryzyko z `ExpTarget.risk` (0–1) */
   ryzyko: number;
   /** spodziewany łup (od, do) na wyprawę, w zapasach zarządu */
   lup: Partial<Record<LootKey, [number, number]>>;

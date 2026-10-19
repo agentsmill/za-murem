@@ -353,7 +353,7 @@ describe('kawałek w trybie piętra: strop i klatka', () => {
     const px = new Uint32Array(32 * 32);
     for (let oy = 0; oy < 32; oy++) for (let ox = 0; ox < 16; ox++) px[oy * 32 + ox] = 0xff0000ff;
     const strop: Strop = { img: { w: 32, h: 32, px }, naklejka: 32, naklejek: 1, gestosc: 1 };
-    const art: GrafikaKawalkow = { teren: null, blok: null, dach: null, strop };
+    const art: GrafikaKawalkow = { teren: null, blok: null, dach: null, budynki: null, strop };
     const img = obraz(naPietrze(2, pietra, art), SIEDZIBA, true);
     let naklejki = 0;
     for (const { x, y, d } of posadzki(SIEDZIBA)) {

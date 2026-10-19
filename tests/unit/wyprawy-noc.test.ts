@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { placeIn } from '../../src/gov/miejsce.ts';
-import { canGo, confirm, expRisk, makeCard, nightTick, rozliczWyprawe } from '../../src/gov/noc.ts';
+import { canGo, confirm, expRisk, makeCard, nightAdvice, nightTick, rozliczWyprawe } from '../../src/gov/noc.ts';
 import { TARGETS } from '../../src/gov/tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, NightCard, StockDelta } from '../../src/gov/typy.ts';
 import { emptyEffects, STOCK_KEYS, zeroStock } from '../../src/gov/wspolne.ts';
@@ -929,25 +929,25 @@ describe('pełny przebieg atrapy z okolicą', () => {
     const seed = 4;
     const atr = new Atrapa(seed);
     atr.supplies = 2;
-    atr.okolica = [miejsce(1, 'szkola', 100), miejsce(2, 'apteka', 250), miejsce(3, 'spozywczy', 500)];
+    atr.okolica = [miejsce(1, 'szkola', 100), miejsce(3, 'spozywczy', 250), miejsce(2, 'apteka', 500)];
     const gov = newGov(seed);
     wlaczMiasto(gov);
-    // do wieczoru dnia 1: karta zatwierdzona z propozycji zarządu (brak jedzenia, więc ktoś idzie blisko)
+    // do wieczoru dnia 1: karta zatwierdzona z propozycji zarządu (brak jedzenia, a najbliższe miejsce ma jedzenie, więc ktoś idzie blisko)
     run(seed, 'propozycja', at(1, 23), { gov, atr });
     const grupa = gov.night!.exp[0];
-    expect(grupa.target).toBe('poi:2:7');
-    expect(grupa.cel?.klucz).toBe('poi:2:7');
+    expect(grupa.target).toBe('poi:3:7');
+    expect(grupa.cel?.klucz).toBe('poi:3:7');
     expect(grupa.cel?.powrot).toBe(1);
     for (const id of grupa.ids) expect(atr.away[id]).toBe(at(2, 1));
     // po powrocie i rannym raporcie
     run(seed, 'propozycja', at(2, 7), { gov, atr });
     expect(atr.away).toEqual({});
     const raport = gov.reports[0];
-    expect(raport.lines.some((l) => l.pl.includes('Apteka'))).toBe(true);
-    expect(raport.lines.some((l) => l.en.includes('Pharmacy'))).toBe(true);
-    expect(gov.miasto!.wizyty['poi:2:7']).toBe(1);
-    expect(gov.miasto!.ostatnia['poi:2:7']).toBe(2);
-    expect(gov.miasto!.zabrano['poi:2:7']).toBeGreaterThan(0);
+    expect(raport.lines.some((l) => l.pl.includes('Sklep spożywczy'))).toBe(true);
+    expect(raport.lines.some((l) => l.en.includes('Food shop'))).toBe(true);
+    expect(gov.miasto!.wizyty['poi:3:7']).toBe(1);
+    expect(gov.miasto!.ostatnia['poi:3:7']).toBe(2);
+    expect(gov.miasto!.zabrano['poi:3:7']).toBeGreaterThan(0);
     expect(gov.visits).toEqual({});
   });
 
@@ -962,5 +962,81 @@ describe('pełny przebieg atrapy z okolicą', () => {
     run(seed, 'propozycja', at(2, 7), { gov, atr });
     expect(gov.visits.mieszkania).toBe(1);
     expect(gov.miasto!.zabrano).toEqual({});
+  });
+});
+
+describe('propozycja zarządu przy brakach: wyprawa tylko tam, gdzie naprawia brak (przegląd gałęzi, Minor 1)', () => {
+  /** druga noc (propozycja bierze wtedy „daleko”) z podanym zapasem i okolicą */
+  const druga = (okolica: Miejsce[] | undefined, stock: Partial<GovInput['stock']>): GovInput => ({
+    ...wejscieOkolicy(okolica, stock),
+    day: 2,
+  });
+  const jedzenieJest = { supplies: 40 };
+  const bezDrewna = { wood: 0, woodLoose: 0, woodSklad: 0 };
+  const bezJedzenia = { supplies: 0 };
+  const wyslani = (assign: Record<string, string>): string[] =>
+    Object.values(assign).filter((k) => k.startsWith('wyprawa:'));
+
+  it('miejsca i jedyny brak to drewno, a cel „daleko” go nie niesie: zarząd nikogo nie wysyła', () => {
+    const okolica = [miejsce(2, 'apteka', 250), miejsce(3, 'spozywczy', 500)];
+    const { card, assign } = makeCard(zarzadMiasta(), druga(okolica, { ...jedzenieJest, ...bezDrewna }));
+    const daleko = card.people[0].options.find((o) => o.key === 'wyprawa:daleko')!;
+    expect(daleko.cel?.zapas).not.toBeNull();
+    expect(daleko.cel?.lup.wood).toBeUndefined();
+    expect(wyslani(assign)).toEqual([]);
+  });
+
+  it('te same braki, ale cel niesie drewno (stacja paliw): zarząd wysyła', () => {
+    const okolica = [miejsce(2, 'apteka', 250), miejsce(11, 'stacja', 500)];
+    for (const m of okolica) expect(celZMiejsca(m).zapas).toBeGreaterThan(0);
+    const { card, assign } = makeCard(zarzadMiasta(), druga(okolica, { ...jedzenieJest, ...bezDrewna }));
+    const daleko = card.people[0].options.find((o) => o.key === 'wyprawa:daleko')!;
+    expect(daleko.cel?.klucz).toBe('poi:11:7');
+    expect(daleko.cel?.lup.wood).toBeDefined();
+    expect(wyslani(assign)).toEqual(['wyprawa:daleko']);
+  });
+
+  it('brak jedzenia i cel z jedzeniem: zarząd wysyła; brak jedzenia i cel bez jedzenia: nie', () => {
+    const zJedzeniem = [miejsce(2, 'apteka', 250), miejsce(3, 'spozywczy', 500)];
+    expect(wyslani(makeCard(zarzadMiasta(), druga(zJedzeniem, bezJedzenia)).assign)).toEqual(['wyprawa:daleko']);
+    const bez = [miejsce(2, 'apteka', 250), miejsce(12, 'bank', 500)];
+    for (const m of bez) expect(celZMiejsca(m).zapas).toBeGreaterThan(0);
+    const { card, assign } = makeCard(zarzadMiasta(), druga(bez, bezJedzenia));
+    expect(card.people[0].options.find((o) => o.key === 'wyprawa:daleko')!.cel?.lup.supplies).toBeUndefined();
+    expect(wyslani(assign)).toEqual([]);
+  });
+
+  it('pierwsza noc: „blisko” z miejsca też musi naprawiać brak', () => {
+    const i = { ...wejscieOkolicy([miejsce(2, 'apteka', 250), miejsce(3, 'spozywczy', 500)], bezDrewna), day: 1 };
+    expect(wyslani(makeCard(zarzadMiasta(), { ...i, stock: { ...i.stock, supplies: 40 } }).assign)).toEqual([]);
+    expect(wyslani(makeCard(zarzadMiasta(), { ...i, stock: { ...i.stock, supplies: 0 } }).assign)).toEqual([]);
+  });
+
+  it('cele z TARGETS (bez okolicy) zostają po staremu: brak drewna albo jedzenia wysyła jedną osobę', () => {
+    for (const stock of [{ ...jedzenieJest, ...bezDrewna }, bezJedzenia]) {
+      const { card, assign } = makeCard(zarzadMiasta(), druga(undefined, stock));
+      expect(card.people[0].options.find((o) => o.key === 'wyprawa:daleko')!.cel?.zapas).toBeNull();
+      expect(wyslani(assign)).toEqual(['wyprawa:daleko']);
+    }
+  });
+
+  it('rada przy braku jedzenia: z miejscami bez zdania „blisko bezpieczniejsza”, z TARGETS po staremu', () => {
+    const okolica = [miejsce(2, 'apteka', 250), miejsce(3, 'spozywczy', 500)];
+    const stock = { ...bezJedzenia, ...bezDrewna };
+    /** rada dla karty bez napadu i bez warty, żeby zdanie o jedzeniu nie ustąpiło miejsca radzie o siatce i kozie */
+    const rada = (okol: Miejsce[] | undefined) => {
+      const i = druga(okol, stock);
+      const { card } = makeCard(zarzadMiasta(), i);
+      return nightAdvice(i, { ...card, chance: 0.1 }, Object.fromEntries(i.people.map((p) => [p.id, 'sen'])));
+    };
+    const miejsca = rada(okolica);
+    expect(miejsca.pl).toMatch(/Jedzenia jest na krótko/);
+    expect(miejsca.pl).not.toMatch(/bezpieczniejsza/);
+    expect(miejsca.en).toMatch(/Food is running short/);
+    expect(miejsca.en).not.toMatch(/safer/);
+    expect(rada(undefined)).toEqual({
+      pl: 'Jedzenia jest na krótko. Wyprawa blisko jest bezpieczniejsza, daleka przynosi więcej.',
+      en: 'Food is running short. A short run is safer, a long one brings back more.',
+    });
   });
 });

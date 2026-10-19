@@ -2,8 +2,7 @@
    na ekranie”): płótno 2D w oknie `Modal` (bez PixiJS) z tłem z kafelków OpenFreeMap, ikonami miejsc, osiedlem gracza
    (koło mapy lokalnej 192 m) i siedzibą, przesuwaniem i przybliżaniem myszą, kółkiem i palcami, oraz kartą miejsca
    po stuknięciu w ikonę. Wysłanie wyprawy to osobne okno (src/ui/wyprawa.ts): karta ma przycisk `data-act="wyslij"`,
-   który woła `onWyslij` podane przy otwarciu (tylko gdy karta mówi, że można), a bez niego jest wyszarzony
-   z dopiskiem „wkrótce”.
+   który woła `onWyslij` podane przy otwarciu (tylko gdy karta mówi, że można), a bez niego jest wyszarzony.
 
    Kontrakt.
    - Czyste funkcje (testy w Node): `rzut` i `odwrotnie` (metry od adresu ↔ piksele płótna; x na wschód, y na południe,
@@ -32,7 +31,7 @@
      Trafić można tylko w to, co narysowane.
    - Okno nie zmienia stanu gry ani zarządu: karta i przygaszanie tylko czytają `GovState` i `GovInput` (pauzę i powrót
      do gry robi main.ts). Czy można wysłać wyprawę i dlaczego nie, rozstrzyga `powodOdmowy` z src/gov/dzienne.ts, ta
-     sama co w `wyslijWyprawe`; karta dokłada tylko „miejsce na mapie osiedla”. Atrybucja map jest w stopce okna zawsze.
+     sama co w `wyslijWyprawe`, także dla miejsca z mapy osiedla (karta od siebie nic nie dokłada). Atrybucja map jest w stopce okna zawsze.
    Liczby w napisach po polsku z przecinkiem, po angielsku z kropką (`liczba`), z twardą spacją przed jednostką. Bez
    hypot, sin i cos (odległość palców przez Math.sqrt); nic stąd nie trafia do stanu. */
 
@@ -307,8 +306,8 @@ export const czas = (min: number): string => {
 
 /** Karta miejsca dla stanu zarządu `st` i wejścia `i`: kategoria i nazwa, odległość i czas drogi, ryzyko słowem, co tam
     zwykle jest, ile zostało („nietknięte”, „ktoś tu był”, „wybrane do cna”), kiedy byliście ostatnio, wyprawa w drodze.
-    Czy można i dlaczego nie, mówi `powodOdmowy` z src/gov/dzienne.ts (to samo co przy wysłaniu, bez sprawdzania osób);
-    karta dokłada tylko jedno: miejsce na mapie osiedla nie jest celem wyprawy. Nic nie zmienia. */
+    Czy można i dlaczego nie, mówi `powodOdmowy` z src/gov/dzienne.ts (to samo co przy wysłaniu, bez sprawdzania osób,
+    z miejscem na mapie osiedla włącznie: nie jest celem wyprawy). Nic nie zmienia. */
 export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsca {
   const cel = celZMiejsca(m);
   const linie: Tx[] = [];
@@ -370,26 +369,17 @@ export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsc
     const kiedy = kiedyWraca(wDrodze.powrot, i.day);
     linie.push(tx(`Wyprawa jest w drodze, powrót ${kiedy.pl}.`, `A supply run is on its way, back ${kiedy.en}.`));
   }
-  // zasady wysyłki są tylko w zarządzie (te same, co sprawdzi wysłanie); karta dokłada jedno swoje: mapa osiedla
-  const powod =
-    powodOdmowy(st, i, cel) ??
-    (naMapieLokalnej(m)
-      ? tx(
-          'To miejsce jest na mapie osiedla: tam chodzi się pieszo, bez wyprawy.',
-          'This place is on your estate map: you can walk there, no supply run needed.',
-        )
-      : null);
+  // wszystkie zasady wysyłki (z mapą osiedla włącznie) są tylko w zarządzie, te same, co sprawdzi wysłanie
+  const powod = powodOdmowy(st, i, cel);
   return { tytul: cel.nazwa, linie, mozna: !powod, ...(powod ? { powod } : {}) };
 }
 
 /** HTML karty miejsca w bieżącym języku: tytuł, linie, powód i przycisk „Wyślij wyprawę” (`data-act="wyslij"`, w
-    `data-arg` klucz miejsca). Bez wysyłki (`wyslij` false, do zadania 9) przycisk jest wyszarzony z dopiskiem „wkrótce”;
-    wyszarzony także wtedy, gdy nie można. */
+    `data-arg` klucz miejsca). Przycisk jest wyszarzony, gdy nie można (`k.mozna`) albo okno nie ma wysyłki (`wyslij`
+    false, czyli bez `onWyslij`). */
 export function kartaHtml(m: Miejsce, k: KartaMiejsca, wyslij: boolean): string {
   const ik = ikonaKategorii(m.kat);
-  const etykieta = wyslij
-    ? L('Wyślij wyprawę', 'Send a supply run')
-    : L('Wyślij wyprawę (wkrótce)', 'Send a supply run (soon)');
+  const etykieta = L('Wyślij wyprawę', 'Send a supply run');
   return `<header class="mk-head"><span class="mk-znak" style="background:${ik.tlo}" aria-hidden="true"></span><h3 class="mk-t">${esc(
     tr(k.tytul),
   )}</h3><button type="button" class="mk-x" data-act="miasto-karta-zamknij" aria-label="${L('Zamknij kartę', 'Close the card')}">×</button></header><ul class="mk-l">${k.linie

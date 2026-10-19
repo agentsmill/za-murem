@@ -6,11 +6,12 @@
 import { T } from '../../world/terrain.ts';
 import type { Sprite } from './bryly.ts';
 import { h2 } from './hash.ts';
+import { LOOKI, type LookBudynku } from './lookBudynku.ts';
 import { type ThingSpec, thingSprite } from './rzeczy.ts';
 import type { Strop } from './strop.ts';
 
 /** wersja formatu grafika.json; gra nie bierze atlasów w innej wersji */
-export const WERSJA_GRAFIKI = 3;
+export const WERSJA_GRAFIKI = 4;
 
 /** klatka animacji w atlasie ludzi: prostokąt [x, y, szerokość, wysokość] i kotwica [ax, ay] (stopy postaci, środek
     korpusu) w pikselach klatki */
@@ -38,6 +39,42 @@ export interface PostacLudzi {
   animacje: Record<string, { kierunki: KierunkiLudzi }>;
   /** ubranie do przemalowania na inną rampę: kolory z palety i zakres wysokości nad stopami (od, do] w pikselach */
   przemalowanie: { kolory: string[] };
+}
+
+/** prostokąt w pikselach atlasu: [x, y, szerokość, wysokość] */
+export type Prostokat = [x: number, y: number, w: number, h: number];
+
+/**
+ * Jeden z 11 wyglądów budynków (kamienica, ratusz, muzeum…) w budynki.png. Fasada to złożone moduły jak w blok.png
+ * (kolumny: wejście z drzwiami, przęsła, profil krawędzi dachu; wiersze: gzyms z górnym piętrem, środkowe piętro,
+ * parter), a jej wiersze i kolumny (jak w opisie bloku) liczą się względem prostokąta `fasada`. Dach to próbka do
+ * powtarzania albo null (papa z dach.png jak w blokach), ozdoba to element jednorazowy na osi budynku (wieża ratusza,
+ * kopuła teatru…) z przezroczystym tłem, kotwicą [ax, ay] w pikselach prostokąta i podstawą na linii gzymsu fasady.
+ */
+export interface BudynekOpis {
+  id: string;
+  fasada: Prostokat;
+  gora: [number, number];
+  srodek: [number, number];
+  dol: [number, number];
+  wejscie: [number, number];
+  drzwi: number;
+  przesla: [number, number];
+  attyka: [number, number];
+  dach: Prostokat | null;
+  ozdoba: {
+    prostokat: Prostokat;
+    ax: number;
+    ay: number;
+    /** na czym stoi podstawa: gzyms fasady (korona nad dachem: wieża, kopuła, fronton) albo ziemia (portyk, ganek) */
+    kotwica: 'gzyms' | 'ziemia';
+    /** gdzie: przy głównym wejściu (bez wejścia na osi budynku) albo na końcu południowej ściany (wieża remizy) */
+    polozenie: 'wejscie' | 'prawo' | 'lewo';
+  } | null;
+  /** liczba pięter fasady na obrazku PixelLab: tyle, gdy dane nie podają pięter budynku */
+  pietra: number;
+  /** fasada ma zawsze `pietra` pięter, bez względu na dane (kościół, remiza) */
+  stalePietra: boolean;
 }
 
 /** opis atlasów w public/assets/grafika.json (prostokąty w pikselach plików atlasów) */
@@ -78,6 +115,9 @@ export interface OpisGrafiki {
   strop: { id: string; plik: string; naklejka: number; naklejek: number; gestosc: number };
   /** trzepak od frontu: stopy to wiersz pod stopami, podstawa to wiersz kafelka, na którym stoją stopy */
   trzepak: { id: string; plik: string; stopy: number; podstawa: number };
+  /** wyglądy budynków publicznych i zabytkowych (kamienica, ratusz, muzeum, kościół, urząd, teatr, hotel, dworzec,
+      willa, remiza, szpital) w jednym atlasie */
+  budynki: { plik: string; typy: Record<LookBudynku, BudynekOpis> };
   /** obsada: animacje postaci w jednym atlasie (klatki przycięte do sylwetki i spakowane), rampy palety do przemalowań */
   ludzie: {
     plik: string;
@@ -119,6 +159,25 @@ export interface Trzepak {
   podstawa: number;
 }
 
+/** wygląd budynku z PixelLab w grze: moduły fasady jak blok, próbka dachu (null: papa jak w blokach) i ozdoba */
+export interface BudynekGrafika {
+  fasada: Blok;
+  dach: Obraz | null;
+  ozdoba: {
+    img: Obraz;
+    /** oś i podstawa ozdoby w pikselach jej obrazu */
+    ax: number;
+    ay: number;
+    kotwica: 'gzyms' | 'ziemia';
+    polozenie: 'wejscie' | 'prawo' | 'lewo';
+  } | null;
+  /** liczba pięter fasady, gdy dane jej nie podają */
+  pietra: number;
+  /** fasada ma zawsze `pietra` pięter (kościół, remiza) */
+  stalePietra: boolean;
+}
+export type BudynkiGrafika = Partial<Record<LookBudynku, BudynekGrafika>>;
+
 /** grafika do kawałków mapy (idzie do workerów razem ze sceną) */
 export interface GrafikaKawalkow {
   teren: Teren | null;
@@ -126,6 +185,7 @@ export interface GrafikaKawalkow {
   dach: Dach | null;
   /** naklejki stropu; bez ich obrazu (img: null) strop rysuje sam kod */
   strop: Strop | null;
+  budynki: BudynkiGrafika | null;
 }
 
 /** animacje ludzi: opis postaci i klatek oraz atlas ludzie.png (tylko główny wątek, workery go nie dostają) */
@@ -142,6 +202,37 @@ export interface Grafika extends GrafikaKawalkow {
 
 const hex = (c: string) => Number.parseInt(c.slice(1), 16);
 
+/** wycinek obrazu jako osobny obraz (kopia pikseli) */
+function wytnijObraz(a: Obraz, [x, y, w, h]: Prostokat): Obraz {
+  const px = new Uint32Array(w * h);
+  for (let r = 0; r < h; r++) px.set(a.px.subarray((y + r) * a.w + x, (y + r) * a.w + x + w), r * w);
+  return { w, h, px };
+}
+
+/** wyglądy budynków z atlasu budynki.png: fasada z modułami (współrzędne od początku jej wycinka), dach, ozdoba */
+function budynkiZ(opis: OpisGrafiki['budynki'], atlas: Obraz): BudynkiGrafika {
+  const out: BudynkiGrafika = {};
+  for (const look of LOOKI) {
+    const b = opis.typy[look];
+    if (!b) continue;
+    const { id: _id, fasada, dach, ozdoba, pietra, stalePietra, ...moduly } = b;
+    out[look] = {
+      fasada: { ...moduly, img: wytnijObraz(atlas, fasada) },
+      dach: dach && wytnijObraz(atlas, dach),
+      ozdoba: ozdoba && {
+        img: wytnijObraz(atlas, ozdoba.prostokat),
+        ax: ozdoba.ax,
+        ay: ozdoba.ay,
+        kotwica: ozdoba.kotwica,
+        polozenie: ozdoba.polozenie,
+      },
+      pietra,
+      stalePietra,
+    };
+  }
+  return out;
+}
+
 /** grafika z opisu i obrazków (obraz(plik) albo null, gdy pliku nie ma); w innej wersji opisu null */
 export function grafikaZ(opis: OpisGrafiki, obraz: (plik: string) => Obraz | null): Grafika | null {
   if (opis.wersja !== WERSJA_GRAFIKI) return null;
@@ -151,6 +242,7 @@ export function grafikaZ(opis: OpisGrafiki, obraz: (plik: string) => Obraz | nul
   const strop = obraz(opis.strop.plik);
   const trzepak = obraz(opis.trzepak.plik);
   const ludzie = obraz(opis.ludzie.plik);
+  const budynki = obraz(opis.budynki.plik);
   const { id: _b, plik: _p, ...moduly } = opis.blok;
   const d = opis.dach;
   return {
@@ -168,6 +260,7 @@ export function grafikaZ(opis: OpisGrafiki, obraz: (plik: string) => Obraz | nul
     },
     strop: { img: strop, naklejka: opis.strop.naklejka, naklejek: opis.strop.naklejek, gestosc: opis.strop.gestosc },
     trzepak: trzepak && { img: trzepak, stopy: opis.trzepak.stopy, podstawa: opis.trzepak.podstawa },
+    budynki: budynki && budynkiZ(opis.budynki, budynki),
     ludzie: ludzie && { opis: opis.ludzie, img: ludzie },
   };
 }
@@ -270,6 +363,18 @@ export const blokKolor = (b: Blok, x: number, y: number): number => rgbAt(b.img,
 
 /** kolor attyki w odległości e od krawędzi dachu (0 = sama krawędź, mniej niż b.attyka[1]) */
 export const attykaKolor = (b: Blok, e: number): number => rgbAt(b.img, b.attyka[0], e);
+
+/** kolor dachu z próbki powtarzanej po świecie; ziarno budynku przesuwa wzór, żeby sąsiednie dachy nie leżały w siatce */
+export function dachProbkaKolor(d: Obraz, ax: number, ay: number, seed: number): number {
+  const x = (((ax + ((seed >>> 0) % d.w)) % d.w) + d.w) % d.w;
+  const y = (((ay + ((seed >>> 9) % d.h)) % d.h) + d.h) % d.h;
+  return rgbAt(d, x, y);
+}
+
+/** ile pięter ma fasada wyglądu: z danych budynku, a bez nich (albo dla wyglądu o stałych piętrach) tyle, ile typowo */
+export function pietraWygladu(g: BudynekGrafika, levels: number, znane: boolean): number {
+  return g.stalePietra || !znane ? g.pietra : Math.max(1, Math.min(levels, 16));
+}
 
 /** kolor 0xRRGGBB papy w punkcie dachu (piksele świata): rzadka naklejka w kafelku 32 px (miejsce i rodzaj
     z kafelka), szwy arkuszy, poza nimi tło z rzadkimi ciemnymi i jasnymi pikselami */

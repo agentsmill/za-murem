@@ -36,7 +36,7 @@ import {
 } from './gov/zarzad.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
-import { nazwaDoOkolicy, zbiorImion } from './mieszkancy/kronika.ts';
+import { nazwaDoOkolicyZDanych } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { GraSieciowa } from './net/gra.ts';
@@ -210,7 +210,7 @@ declare global {
       /** gra z sąsiadami (src/net/gra.ts): zalogowanie, stan sieci, znaczniki */
       siec: () => ReturnType<GraSieciowa['podglad']>;
       /** które części grafiki są z PixelLab (reszta z kodu); null: wszystko z kodu */
-      grafika: () => Record<'teren' | 'blok' | 'dach' | 'strop' | 'trzepak' | 'ludzie', boolean> | null;
+      grafika: () => Record<'teren' | 'blok' | 'dach' | 'strop' | 'trzepak' | 'budynki' | 'ludzie', boolean> | null;
       /** wybór piętra jak kliknięcie na liście kafelka „Piętro” (do zrzutów); nic nie robi bez ?pietra=1 i dla piętra
           spoza listy */
       pietro: (L: number) => void;
@@ -336,6 +336,8 @@ let savedHour = -1;
 const selected = new Set<number>();
 let hint = '';
 let hintUntil = 0;
+/** powroty wypraw dziennych (GovEffects.powroty), których nie dało się pokazać, bo w tym kroku czekało okno zarządu */
+let powrotyCzekaja: Tx[] = [];
 const modal = new Modal($('modal'), $('sheet'));
 const ctx = new ContextMenu($('ctx'));
 
@@ -559,8 +561,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
   // okolica dla zarządu: punkty z `geo` (metry od adresu bez obrotu świata, w przeciwieństwie do `world.pois`). Nazwa
   // z osobą albo adresem odpada (pusta), bo filtr zamieniłby ją na polski opis kategorii, który wszedłby do angielskich
-  // tekstów celu; bez tabel imion (dane === null) wszystkie nazwy puste, bo filtr nie rozpozna wtedy właściciela
-  const nazwaOkolicy = nazwaDoOkolicy(dane ? zbiorImion(dane.imiona) : null);
+  // tekstów celu; bez tabel imion (dane === null) albo poza gminami z tabelami (szablon krajowy, np. adres poza Polską)
+  // wszystkie nazwy puste, bo filtr nie rozpozna wtedy właściciela
+  const nazwaOkolicy = nazwaDoOkolicyZDanych(dane);
   okolica = opcjaMiasto ? miejscaZPoi(geo.poi, nazwaOkolicy) : [];
   // mapa miasta: ten sam filtr nazw dla miejsc z doczytanych kafelków (RODO); bez położenia (proc) nie ma miasta
   mapaMiasta =
@@ -663,6 +666,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
   gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
+  powrotyCzekaja = [];
   // mapa miasta w nowej grze i w starym zapisie (bez losowania; wyprawa nocna w drodze kończy się po staremu)
   if (opcjaMiasto) wlaczMiasto(gov);
   // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
@@ -852,6 +856,12 @@ function govStep(show: boolean): Prompt | null {
   const fx = govUpdate(gov, i);
   const p = gov.over ? null : pending(gov, i);
   applyFx(fx, !p);
+  // wynik wyprawy dziennej nie ginie pod uchwałą czy kartą: czeka na krok bez okna (raport rano ma własne linie)
+  powrotyCzekaja.push(...(fx.powroty ?? []));
+  if (!p && powrotyCzekaja.length) {
+    say(powrotyCzekaja.map(tr).join(' '), 7000);
+    powrotyCzekaja = [];
+  }
   if (gov.over) {
     if (show) showEnd();
     return null;
@@ -2874,6 +2884,7 @@ if (attrib) bars.observe(attrib);
           dach: !!g.dach,
           strop: !!g.strop?.img,
           trzepak: !!g.trzepak,
+          budynki: !!g.budynki,
           ludzie: !!g.ludzie,
         }
       );

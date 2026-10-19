@@ -382,7 +382,8 @@ describe('okno mapy miasta po angielsku', () => {
       for (const wyslij of [true, false]) {
         const html = kartaHtml(m, k, wyslij);
         expect(polskieSlowa(html, dozw), html).toEqual([]);
-        expect(html).toContain(wyslij ? 'Send a supply run' : 'Send a supply run (soon)');
+        expect(html).toContain('Send a supply run');
+        expect(html).not.toContain('(soon)');
         expect(html).toContain('Close the card');
       }
     }
@@ -535,9 +536,9 @@ describe('przegląd źródeł nowych modułów', () => {
   /** plik i najmniejsza liczba par, jaką przegląd ma w nim znaleźć (liczby z dnia pisania: pilnują, że wzorzec nie
       przestał łapać wywołań, np. po zmianie formatowania) */
   const pliki: [string, number][] = [
-    ['src/ui/miasto.ts', 30],
+    ['src/ui/miasto.ts', 28],
     ['src/ui/wyprawa.ts', 16],
-    ['src/gov/dzienne.ts', 13],
+    ['src/gov/dzienne.ts', 14],
     ['src/gov/wyprawy.ts', 4],
     ['src/gov/noc.ts', 70],
   ];

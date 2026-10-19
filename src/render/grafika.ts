@@ -1,6 +1,6 @@
 /* Wczytanie grafiki z PixelLab z public/assets (atlasy z tools/atlasy.ts) przy starcie gry: teren, moduły bloku,
-   naklejki dachu i stropu, trzepak i animacje ludzi. Bez opisu, w innej wersji albo bez sieci wszystko rysuje kod; bez
-   jednego obrazka tylko ta część. */
+   naklejki dachu i stropu, trzepak, wyglądy budynków publicznych i zabytkowych oraz animacje ludzi. Bez opisu, w innej
+   wersji albo bez sieci wszystko rysuje kod; bez jednego obrazka tylko ta część. */
 
 import { ctx2d, newCanvas } from './art/canvas.ts';
 import { type Grafika, grafikaZ, type Obraz, type OpisGrafiki, WERSJA_GRAFIKI } from './art/pixellab.ts';
@@ -37,6 +37,7 @@ export async function wczytajGrafike(
       opis.dach.plik,
       opis.strop.plik,
       opis.trzepak.plik,
+      opis.budynki.plik,
       opis.ludzie.plik,
     ];
     const obrazy = await Promise.all(

@@ -14,7 +14,7 @@
      `wyslijWyprawe`) pokazuje się w oknie nad podsumowaniem, a okno zostaje otwarte.
    - Powody dla osób i dla całej wyprawy bierze wyłącznie `powodOdmowy` z src/gov/dzienne.ts, ta sama co przy wysyłaniu
      i na karcie miejsca, więc okno, karta i wysłanie nie mogą się rozjechać. Powód wspólny (po zmroku, za daleko,
-     wybrane do cna) nie wyszarza osób jedna po drugiej, tylko stoi nad podsumowaniem i wyszarza „Wyślij”.
+     wybrane do cna, miejsce z mapy osiedla) nie wyszarza osób jedna po drugiej, tylko stoi nad podsumowaniem i wyszarza „Wyślij”.
    - `kogoWyslac(cel, i, st, wybrani)`: id wybranych i zdolnych, w kolejności zarządu: to dostaje `wyslijWyprawe`.
      `domyslniWybrani(cel, i, st, pionki)`: wybór na start z zaznaczenia w grze (id pionków → osoby z zarządu).
    - `odswiezPlan(okno, ...)`: po kliknięciu osoby zmienia w otwartym oknie tylko to, co się zmieniło (znaczniki osób,

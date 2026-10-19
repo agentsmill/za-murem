@@ -222,6 +222,8 @@ describe('scena z grafiką z PixelLab', () => {
     let bloki = 0;
     for (const b of w.buildings) {
       const s = z.styles[b.id];
+      // budynek z wyglądem (komisariat jako urząd) ma moduły swojego wyglądu, nie bloku: osobne testy niżej
+      if (s.look) continue;
       if (b.cls !== 'blok') {
         expect(s).toEqual(bez.styles[b.id]);
         continue;
@@ -253,7 +255,7 @@ describe('scena z grafiką z PixelLab', () => {
 
   it('grafika kawałków jedzie do workera ze sceną (bez trzepaka), także przez structuredClone', () => {
     const cs = chunkSceneOf(z);
-    expect(Object.keys(cs.art!).sort()).toEqual(['blok', 'dach', 'strop', 'teren']);
+    expect(Object.keys(cs.art!).sort()).toEqual(['blok', 'budynki', 'dach', 'strop', 'teren']);
     const copy = structuredClone(cs);
     expect(copy.art!.teren!.img.px).toEqual(g.teren!.img.px);
     expect(copy.art!.blok!.srodek).toEqual(g.blok!.srodek);
@@ -379,7 +381,7 @@ describe('kawałki mapy z grafiką z PixelLab', () => {
     const b = g.blok!;
     let drzwi = 0;
     for (const bud of w.buildings) {
-      if (bud.cls !== 'blok') continue;
+      if (bud.cls !== 'blok' || z.styles[bud.id].look) continue;
       const st = z.styles[bud.id];
       const rows = pasFasady(b, st.levels);
       for (const e of bud.entrances) {

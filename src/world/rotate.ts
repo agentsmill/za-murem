@@ -128,5 +128,13 @@ export function rotateGeo(geo: Geo, phi: number): Geo {
       const [x, y] = R([p.x, p.y]);
       return { ...p, x, y };
     }),
+    ...(geo.rodzaje
+      ? {
+          rodzaje: geo.rodzaje.map((p) => {
+            const [x, y] = R([p.x, p.y]);
+            return { ...p, x, y };
+          }),
+        }
+      : {}),
   };
 }

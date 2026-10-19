@@ -13,6 +13,10 @@
    w wyprawie dziennej w drodze (`wDrodze`, bo pionek ma `away` dopiero przy bramie) ma na karcie tylko sen, a propozycja
    zarządu nie daje jej warty ani wyprawy.
 
+   Propozycja zarządu przy braku jedzenia albo drewna (`propose`) posyła kogoś na wyprawę z miejsca tylko wtedy, gdy łup
+   tego miejsca zawiera to, czego brakuje; cel z TARGETS dostaje ją jak dotąd. Rada o braku jedzenia (`nightAdvice`)
+   przy miejscach nie porównuje „blisko” z „daleko”, tylko odsyła do ryzyka i łupu przy miejscu.
+
    Rozliczenie powrotu wyprawy (`rozliczWyprawe`) jest wspólne dla nocy i dla wyprawy dziennej z mapy miasta: bierze
    `Cel` (src/gov/wyprawy.ts) i osoby, losuje łup, kłopoty i znaleziska z ziarna zarządu i zwraca wpisy raportu, ranę
    i łup; zapasy, potrzeby, nastroje i powrót ludzi dopisuje do skutków (`fx`). Cel z TARGETS (`zapas === null`) liczy
@@ -499,13 +503,18 @@ function propose(st: GovState, i: GovInput, card: NightCard, lastGuards: string[
   if (card.chance >= 0.25 && free.length && open.length && !fence) a[free.shift()!.id] = `warta:${open[0].key}`;
   if (card.chance >= 0.55 && free.length >= 3 && open.length > 1 && fence < 2)
     a[free.shift()!.id] = card.horde ? 'warta:siatka' : `warta:${open[fence ? 0 : 1].key}`;
-  const short = i.stock.supplies < i.people.length * 2 || i.stock.wood < 4;
+  const lackFood = i.stock.supplies < i.people.length * 2;
+  const lackWood = i.stock.wood < 4;
   const key = nightDay(i) === 1 ? 'wyprawa:blisko' : 'wyprawa:daleko';
-  if (short && free.length >= 2) {
+  if ((lackFood || lackWood) && free.length >= 2) {
     const goer = free
       .filter((p) => card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key)?.ok)
       .sort((x, y) => y.needs.rest - x.needs.rest)[0];
-    if (goer) a[goer.id] = key;
+    // cel z miejsca (mapa miasta) zarząd proponuje tylko wtedy, gdy niesie to, czego brakuje (jedzenie albo drewno);
+    // cel z TARGETS zostaje po staremu, bo jego łup to mieszanka z mnożnikiem za wizyty
+    const cel = goer && card.people.find((c) => c.id === goer.id)?.options.find((o) => o.key === key)?.cel;
+    const naprawia = !cel || cel.zapas === null || (lackFood && !!cel.lup.supplies) || (lackWood && !!cel.lup.wood);
+    if (goer && naprawia) a[goer.id] = key;
   }
   // dyżur przy kozie zostaje decyzją gracza (kosztuje komuś noc snu): zarząd tylko o nim radzi
   return a;
@@ -538,10 +547,17 @@ export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string,
   const koza = kozaAdvice(i, card, assign);
   if (fence.pl || koza.pl) return zdania(fence, koza);
   if (i.stock.supplies < i.people.length * 2)
-    return tx(
-      'Jedzenia jest na krótko. Wyprawa blisko jest bezpieczniejsza, daleka przynosi więcej.',
-      'Food is running short. A short run is safer, a long one brings back more.',
-    );
+    // miejsca z mapy miasta nie układają się w „blisko bezpieczniejsza, daleko więcej” (kategorie mają różne ryzyko
+    // i łup), więc rada odsyła do ryzyka i łupu przy miejscu na karcie; cele z TARGETS zostają ze starym zdaniem
+    return card.people.some((p) => p.options.some((o) => o.key.startsWith('wyprawa:') && o.cel && o.cel.zapas !== null))
+      ? tx(
+          'Jedzenia jest na krótko. Wyprawa może to załatać: ryzyko i łup widać przy każdym miejscu.',
+          'Food is running short. A supply run could fix that: the risk and the haul are shown beside each place.',
+        )
+      : tx(
+          'Jedzenia jest na krótko. Wyprawa blisko jest bezpieczniejsza, daleka przynosi więcej.',
+          'Food is running short. A short run is safer, a long one brings back more.',
+        );
   return tx('Wyśpijcie się. Jutro dzień pracy przy siatce.', 'Get some sleep. The fence needs work tomorrow.');
 }
 

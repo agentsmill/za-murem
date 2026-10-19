@@ -1,6 +1,9 @@
 /* Czyste funkcje do składania atlasu animacji postaci z paczek PixelLab (tools/atlasy.ts): przycinanie klatki do
-   sylwetki, kotwica stóp animacji, wybór klatek i kierunków. Kierunki pionka w grze to 0 południe, 1 północ,
-   2 zachód, 3 wschód; paczka PixelLab ma je pod nazwami south, north, west, east. */
+   sylwetki, kotwica stóp animacji (i kotwica przejść między staniem a leżeniem), wybór klatek i kierunków. Kierunki
+   pionka w grze to 0 południe, 1 północ, 2 zachód, 3 wschód; paczka PixelLab ma je pod nazwami south, north, west,
+   east. */
+
+import { SRODEK_LEZACEGO } from '../src/render/art/animacjePozy.ts';
 
 /** obraz RGBA (4 bajty na piksel) */
 export interface Plansza {
@@ -69,6 +72,22 @@ export function kotwicaKlatki(
 }
 
 /**
+ * Kotwica klatki przejścia między staniem a leżeniem (upadek przy śmierci, wstawanie), u od 0 (stoi) do 1 (leży).
+ * Stojąca klatka ma w kotwicy dolną krawędź sylwetki (stopy na ziemi, jak klękanie) i kolumnę środka płótna, w której
+ * PixelLab stawia postać; leżąca ma w kotwicy środek sylwetki, SRODEK_LEZACEGO nad punktem pionka (tam, gdzie leży
+ * komórka leżenia w widoku). Klatki pośrednie leżą na prostej między tymi dwiema kotwicami, więc ciało opada razem
+ * z animacją, a przejście bez skoku łączy się ze staniem i z leżeniem. `k`: przycięta klatka (x: jej lewa krawędź
+ * w płótnie o szerokości plotnoW). Współrzędne całkowite, żeby rysunek zostawał ostry.
+ */
+export function kotwicaPrzejscia(k: { x: number; w: number; h: number }, plotnoW: number, u: number): [number, number] {
+  const sx = (plotnoW >> 1) - k.x;
+  const sy = k.h;
+  const lx = Math.round(k.w / 2);
+  const ly = Math.round(k.h / 2) + SRODEK_LEZACEGO;
+  return [Math.round(sx + (lx - sx) * u), Math.round(sy + (ly - sy) * u)];
+}
+
+/**
  * Kolory ubrania do przemalowania: z kandydatów (z manifestu albo zgadniętych) te, których co najmniej `prog` pikseli
  * w statycznych postaciach (wszystkie kierunki razem) leży na tułowiu, w wierszach [od, do) płótna. Kolor dzielony
  * z włosami, butami albo obrysem zostaje, bo przemalowanie nie rozróżnia części ciała, a pozy (przysiad, klęczenie,
@@ -105,9 +124,14 @@ export function klatkiAnimacji<T>(pliki: readonly T[], opcje: { bezReferencji?: 
 /**
  * Klatki po kierunkach pionka (południe, północ, zachód, wschód) z klatek po nazwach PixelLab. Wschód bez własnych
  * klatek to odbicie zachodu (w wyniku numer kierunku 2). Bez północy albo zachodu animacji nie da się złożyć (null),
- * a kierunki o różnej liczbie klatek to błąd.
+ * a kierunki o różnej liczbie klatek to błąd. `tylkoZachod` (wstawanie: południe i północ z szablonu wyszły
+ * nieużywalne, bo zaczynają się od przysiadu): bierze tylko zachód, a południe, północ i wschód to jego odbicie.
  */
-export function kierunkiAnimacji<T>(po: Partial<Record<(typeof KIERUNKI_PL)[number], T[]>>): (T[] | number)[] | null {
+export function kierunkiAnimacji<T>(
+  po: Partial<Record<(typeof KIERUNKI_PL)[number], T[]>>,
+  opcje: { tylkoZachod?: boolean } = {},
+): (T[] | number)[] | null {
+  if (opcje.tylkoZachod) return po.west ? [2, 2, po.west, 2] : null;
   if (!po.south || !po.north || !po.west) return null;
   const n = po.south.length;
   for (const [k, v] of Object.entries(po))
