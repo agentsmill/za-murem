@@ -2685,6 +2685,111 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // karta gościa w prawdziwej grze (Przymorze, obcy włączeni): zarząd planuje gościa, ten idzie ulicą pod bramę i dopiero
+        // wtedy otwiera się karta z „Pokaż”; „Pokaż” jedzie kamerą do gości (okno zostaje), „Wpuścić na noc” wpuszcza ich
+        // bramą na podwórko. Zrzuty: karta (wyd-gosc-karta-okno.png), po „Pokaż” (wyd-gosc-karta-pokaz.png) i goście na
+        // podwórku po wyborze (końcowy wyd-gosc-karta.png)
+        name: 'wyd-gosc-karta',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          const krok = await doKarty(page, 'gosc', 400);
+          await waitIdle(page);
+          const stan = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const a = zm.gov!.goscie!.aktywny!;
+            const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+            const pionki = st.pawns.filter((p) => p.kind === 'gosc' && wpis.pawns.includes(p.id));
+            return {
+              faza: wpis.faza,
+              pionki: pionki.length,
+              osoby: a.gosc.osoby.length,
+              kto: a.gosc.kto,
+              chce: a.gosc.chce,
+              haczyk: a.gosc.haczyk,
+              imie: a.gosc.osoby[0].name,
+            };
+          });
+          const tekst = await sheetText(page);
+          console.log(
+            `  karta po ${krok} krokach: ${stan.kto}/${stan.chce}/${stan.haczyk}, faza ${stan.faza}, ${stan.pionki} pionków`,
+          );
+          console.log(`  ${tekst.replace(/\s+/g, ' ').slice(0, 400)}`);
+          if (stan.faza !== 'brama') throw new Error(`karta gościa, ale faza ${stan.faza}`);
+          if (stan.pionki !== stan.osoby)
+            throw new Error(`karta o ${stan.osoby} osobach, na mapie ${stan.pionki} pionków`);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  przyciski: ${foot.join(' | ')}`);
+          if (foot[0] !== 'event-show:Pokaż') throw new Error(`pierwszy przycisk karty to nie „Pokaż”: ${foot[0]}`);
+          if (!foot.some((f) => f === 'event:Odprawić' || f.startsWith('event:Odprawić')))
+            throw new Error('karta bez „Odprawić”');
+          await page.screenshot({ path: path.join(OUT, 'wyd-gosc-karta-okno.png') });
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          const po = await page.evaluate(() => {
+            const zm = window.zm!;
+            const a = zm.gov!.goscie!.aktywny!;
+            const p = zm.sim!.st.pawns.find(
+              (q) => q.kind === 'gosc' && q.id === zm.sim!.st.goscie!.find((g) => g.id === a.gosc.id)!.pawns[0],
+            )!;
+            const [sx, sy] = zm.screenOf(p.x, p.y);
+            const r = document.getElementById('sheet')!.getBoundingClientRect();
+            const bar = document.getElementById('top')!.getBoundingClientRect().bottom;
+            return {
+              open: !document.getElementById('modal')!.hidden,
+              ev: zm.gov!.ev.active?.id ?? null,
+              sx,
+              sy,
+              pod: sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom,
+              widac: sx > 0 && sx < zm.view.width && sy > bar && sy < zm.view.height,
+            };
+          });
+          console.log(
+            `  po „Pokaż”: mówiący na ekranie (${Math.round(po.sx)}, ${Math.round(po.sy)}), okno ${po.open ? 'otwarte' : 'zamknięte'}`,
+          );
+          if (!po.open || po.ev !== 'gosc') throw new Error('„Pokaż” zamknęło okno karty');
+          if (po.pod || !po.widac) throw new Error('po „Pokaż” gościa nie widać: jest pod oknem albo poza ekranem');
+          await waitIdle(page);
+          await page.screenshot({ path: path.join(OUT, 'wyd-gosc-karta-pokaz.png') });
+          // wybór: wpuścić na noc (jest w każdej karcie), goście wchodzą bramą na podwórko
+          await page.click('#sheet .choices [data-act="event"]:has-text("Wpuścić na noc")');
+          await waitIdle(page);
+          const wejscie = await page.evaluate(() => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const st = sim.st;
+            const id = zm.gov!.goscie!.aktywny!.gosc.id;
+            const yard = new Set(sim.w.fence.yard);
+            let k = 0;
+            const wewnatrz = () =>
+              st.pawns.filter((p) => p.kind === 'gosc' && yard.has(Math.floor(p.y) * sim.w.size + Math.floor(p.x)))
+                .length;
+            const wanted = st.goscie!.find((g) => g.id === id)!.pawns.length;
+            while (k < 6000 && wewnatrz() < wanted) {
+              sim.step();
+              k++;
+            }
+            const gosci = st.pawns.filter((p) => p.kind === 'gosc');
+            const cx = gosci.reduce((a, p) => a + p.x, 0) / gosci.length;
+            const cy = gosci.reduce((a, p) => a + p.y, 0) / gosci.length;
+            zm.setCam(cx, cy, 2.4);
+            return { k, wewnatrz: wewnatrz(), wanted, faza: st.goscie!.find((g) => g.id === id)!.faza };
+          });
+          console.log(
+            `  po „Wpuścić na noc”: ${wejscie.wewnatrz}/${wejscie.wanted} na podwórku po ${wejscie.k} krokach, faza ${wejscie.faza}`,
+          );
+          if (wejscie.wewnatrz < wejscie.wanted) throw new Error('goście nie weszli na podwórko po „Wpuścić na noc”');
+          await waitIdle(page);
+          await frames(page, 3);
+        },
+      },
+      {
         name: 'm1-menu',
         query: '',
         run: async (page, base) => {

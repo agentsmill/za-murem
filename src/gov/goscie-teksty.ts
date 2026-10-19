@@ -2,8 +2,8 @@
    tabele zdań w obu językach i funkcje, które z gotowego `Gosc` składają tytuł i tekst karty. Logika składania gościa
    (wagi, tabela wykluczeń, osoby, skąd) jest w goscie.ts, który re-eksportuje stąd to, co wchodzi do jego interfejsu
    (`tekstGoscia`, `tytulGoscia`, `wariantyGoscia`, `SATYRA`), więc import z goscie.ts z briefu działa bez zmian.
-   Zależność idzie w jedną stronę: goscie.ts importuje stąd tabele (`BRON`, `AMUNICJA`, `KIERUNEK`, `KATEGORIA_SKAD`,
-   `SATYRA_KLUCZE`), a ten plik z goscie.ts bierze tylko typy.
+   Zależność idzie w jedną stronę: goscie.ts importuje stąd tabele i frazę miejsca (`BRON`, `AMUNICJA`, `KIERUNEK`,
+   `KATEGORIA_SKAD`, `frazaSkad`, `SATYRA_KLUCZE`), a ten plik z goscie.ts bierze tylko typy.
 
    Kontrakt.
    - Każdy klocek (kto, czego chce, co ma, trop haczyka) ma 3 warianty zdania po polsku i po angielsku, plus 8 linijek
@@ -99,8 +99,8 @@ export const SATYRA: Record<string, Tx> = {
     'A note with a parcel locker pickup code is pinned to a jacket. The parcel has been waiting there since 2036 and is probably doing fine.',
   ),
   hulajnoga: tx(
-    'Do plecaka przypięty jest kluczyk od hulajnogi na minuty. Hulajnogi dawno nie ma, ale ostatnia minuta podobno wciąż się nalicza.',
-    'A key to a pay-per-minute scooter is clipped to a rucksack. The scooter is long gone, but the last minute is said to be still running.',
+    'Do rękawa przypięty jest kluczyk od hulajnogi na minuty. Hulajnogi dawno nie ma, ale ostatnia minuta podobno wciąż się nalicza.',
+    'A key to a pay-per-minute scooter is pinned to a sleeve. The scooter is long gone, but the last minute is said to be still running.',
   ),
   token: tx(
     'Na sznurku na szyi wisi portfel na tokeny. Przed Wielkim Wylogowaniem kurs był wyższy niż złota, dziś nadaje się najwyżej na podpałkę.',
@@ -115,8 +115,8 @@ export const SATYRA: Record<string, Tx> = {
     'A printout of carbon credits is folded into a notebook. By the table they would cover a year of driving a car that has not existed for eight years.',
   ),
   asystent: tx(
-    'Z plecaka odzywa się cienki głosik: „Jak mogę pomóc?”. To asystent w telefonie bez sieci. Nikomu jeszcze nie pomógł, ale się stara.',
-    'A thin voice pipes up from a rucksack: “How can I help?” It is an assistant on a phone with no signal. It has not helped anyone yet, but it keeps trying.',
+    'Spod ubrania odzywa się cienki głosik: „Jak mogę pomóc?”. To asystent w telefonie bez sieci. Nikomu jeszcze nie pomógł, ale się stara.',
+    'A thin voice pipes up from under a coat: “How can I help?” It is an assistant on a phone with no signal. It has not helped anyone yet, but it keeps trying.',
   ),
   regulamin: tx(
     'Pod kurtką wydrukowany regulamin aplikacji do wynajmu rowerów miejskich. Czyta się go wieczorami: dawniej nikt nie dobrnął do końca, a teraz jest czas.',
@@ -306,11 +306,17 @@ const KTO_TEKST: Record<KtoId, Trzy> = {
       ),
   ],
   rodzina: [
+    // wózek pełen garnków to towar do wymiany, więc przy „nic” jest sam wózek
     (c) =>
-      tx(
-        `${c.Pod} stoi rodzina: ${c.n} ${c.osobPl}, wózek pełen garnków i jeden zmęczony głos. ${c.p.name} mówi, że przyszli ${c.skad.pl}.`,
-        `A family is standing at ${c.gate}: ${c.n} people, a pram full of pots and one tired voice. ${c.p.name} says they came ${c.skad.en}.`,
-      ),
+      c.g.ma === 'nic'
+        ? tx(
+            `${c.Pod} stoi rodzina: ${c.n} ${c.osobPl}, wózek i jeden zmęczony głos. ${c.p.name} mówi, że przyszli ${c.skad.pl}.`,
+            `A family is standing at ${c.gate}: ${c.n} people, a pram and one tired voice. ${c.p.name} says they came ${c.skad.en}.`,
+          )
+        : tx(
+            `${c.Pod} stoi rodzina: ${c.n} ${c.osobPl}, wózek pełen garnków i jeden zmęczony głos. ${c.p.name} mówi, że przyszli ${c.skad.pl}.`,
+            `A family is standing at ${c.gate}: ${c.n} people, a pram full of pots and one tired voice. ${c.p.name} says they came ${c.skad.en}.`,
+          ),
     (c) =>
       tx(
         `${c.Przy} czeka rodzina z bagażem, w sumie ${c.n} ${c.osobPl}. Idą ${c.skad.pl}, a ${c.z('mężczyzna', 'kobieta')} na przedzie przedstawia się jako ${c.p.name}.`,

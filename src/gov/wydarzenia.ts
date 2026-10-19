@@ -34,7 +34,11 @@
    naraz to kilka kart co kilkanaście sekund. Licznik `GovState.pogrzebN` (zgony, które przeszły przez pogrzeb) rośnie
    przy pokazaniu karty albo pominięciu zgonu, więc zgon ma najwyżej jedną kartę; zgon starszy niż `POGRZEB_DO` minut
    gry nie dostaje karty, tylko wpis w kronice, że pogrzebu nie było. W trybie zombie karta czeka, dopóki zwłoki leżą
-   i mogą wstać (`cialo` = `lezy`), a w jej danych jest los ciała. */
+   i mogą wstać (`cialo` = `lezy`), a w jej danych jest los ciała.
+   Goście z klocków (src/gov/wizyta.ts, karty `gosc` i `zlapany` dołączone do `M1_EVENTS`): wydarzenie `gosc` z puli nie
+   otwiera karty, tylko planuje wizytę (`planujGoscia` → GovEffects.gosc), a `goscTick` co sekundę przy ekranie pokazuje
+   kartę dopiero wtedy, gdy gość stoi pod bramą i nic innego nie czeka na decyzję (tak samo „Złapany”, gdy symulacja złapała
+   kradnącego). Wybór z `GChoice.zostaje` (np. „Obejrzeć ręce”) nie zamyka okna. Host dostaje metody gości z `goscHost`. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -57,6 +61,7 @@ import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Pu
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
+import { GOSC_EVENTS, goscHost, goscTick, planujGoscia } from './wizyta.ts';
 
 /** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
 const STREET_IDS: ReadonlySet<string> = new Set(STREET_EVENTS.map((e) => e.id));
@@ -170,6 +175,7 @@ export const M1_EVENTS: GEventDef[] = [
   }),
   ...NEW_EVENTS,
   ...STREET_EVENTS,
+  ...GOSC_EVENTS,
 ];
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
 // „Słoik od sąsiadki” z M1 to teraz dym z komina: stary zapis z tym oknem otwartym albo już zamkniętym działa dalej
@@ -433,6 +439,7 @@ export function makeHost(
       return s === null ? null : s === 'bloki' ? 'from the block next door' : 'from over the fence';
     },
     neighbours: () => sasiedzi(placeIn(i)),
+    ...goscHost(st, i, fx),
   };
   return h;
 }
@@ -529,7 +536,14 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   // pierwsze rozpalenie kozy widać zawsze; dym tylko wtedy, gdy stało się pierwszego dnia albo pierwszej nocy
   if (st.ev.lit === undefined && i.kozaLit) st.ev.lit = firstNight(i) ? i.screen : -1;
   const quiet = calm(st, i);
+  // gość: wizyta idzie co sekundę, także gdy coś czeka (karta, której gość odszedł, znika); karta gościa pod bramą
+  // przychodzi, gdy nic innego nie czeka na decyzję
+  const gosc = goscTick(st, i, fx, busy);
   if (st.ev.active || busy) return;
+  if (gosc) {
+    show(st, i, fx, gosc);
+    return;
+  }
   const h = makeHost(st, i, fx);
   if (dymWaits(st, h)) {
     const def = byId.get('dym');
@@ -555,6 +569,11 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
   if (!ev) {
     st.ev.next = i.screen + RETRY;
+    return;
+  }
+  // gość z klocków: wypadnięcie planuje wizytę (pionki idą do bramy), a karta przychodzi dopiero pod bramą
+  if (ev.id === 'gosc') {
+    planujGoscia(st, i, fx, pora);
     return;
   }
   show(st, i, fx, ev);
@@ -601,9 +620,11 @@ export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): bo
   const h = makeHost(st, i, fx, def, { d: ev.d, k });
   const c = def.choices(h, ev.d)[k];
   if (!c?.ok) return false;
-  st.ev.active = null;
+  // wybór z `zostaje` (np. „Obejrzeć ręce”) nie zamyka okna: karta czeka dalej, bez decyzji i bez odstępu
+  st.ev.active = c.zostaje ? ev : null;
   logGov(st, i, txCat(def.title(h, ev.d), ': ', c.label, '.'), false, fx);
   c.run();
+  if (c.zostaje) return true;
   decision(st, i, 'wydarzenie');
   // odstęp liczy się od decyzji, żeby wydarzenia nie przychodziły jedno za drugim
   st.ev.next = Math.max(st.ev.next, i.screen + nextGap(st, i.screen));

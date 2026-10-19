@@ -603,6 +603,14 @@ function nazwaWlasna(m: Miejsce, kat: string): string {
   return new RegExp(`(^|[^\\p{L}])${pl.split(' ')[0]}([^\\p{L}]|$)`, 'iu').test(n) ? '' : n;
 }
 
+/** Miejsce z okolicy w zdaniu po „od strony” („od strony apteki „Pod Różą””): kategoria i własna nazwa po filtrze
+    nazw hosta (`nazwaWlasna`); kategoria spoza `KATEGORIA_SKAD` to sklep. Tak samo opisuje miejsce `skad` gościa i
+    wiadomość, którą gość przynosi (src/gov/wizyta.ts). */
+export function frazaMiejsca(m: Miejsce): Tx {
+  const kat = Object.hasOwn(KATEGORIA_SKAD, m.kat) ? m.kat : 'sklep';
+  return frazaSkad(kat, nazwaWlasna(m, kat));
+}
+
 /** Skąd przychodzi gość: losowa strona wejścia, a po niej najbliższe miejsce z okolicy po tej stronie (porównanie
     kwadratów odległości, przy remisie pierwsze z listy). Bez miejsca po tej stronie kierunek świata. */
 function wybierzSkad(rng: Rng, okolica: readonly Miejsce[]): Gosc['skad'] {
@@ -618,8 +626,7 @@ function wybierzSkad(rng: Rng, okolica: readonly Miejsce[]): Gosc['skad'] {
     }
   }
   if (!najblizsze) return { strona, nazwa: KIERUNEK[strona] };
-  const kat = Object.hasOwn(KATEGORIA_SKAD, najblizsze.kat) ? najblizsze.kat : 'sklep';
-  return { strona, klucz: najblizsze.klucz, nazwa: frazaSkad(kat, nazwaWlasna(najblizsze, kat)) };
+  return { strona, klucz: najblizsze.klucz, nazwa: frazaMiejsca(najblizsze) };
 }
 
 // ---------------------------------------------------------------- rzecz

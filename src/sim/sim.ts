@@ -18,7 +18,7 @@
    (od strony podwórka, a kafelek we wnętrzu mieszkania zarządu, np. przed kozą, to wolne miejsce w jego pomieszczeniu).
    Rozkazy i wróg nie zmieniają `odejscie`; kto wychodzi, nie bierze poleceń.
    Goście z klocków zarządu (src/sim/gosc.ts, rodzaj `gosc`, praca `gosc`): plan `fx.gosc` wystawia grupę pionków na
-   ulicy po wskazanej stronie mapy (polecenie 'gosc'), `goscieTick` prowadzi fazy wizyty (idzie, brama, w_srodku, odchodzi,
+   ulicy po wskazanej stronie bramy (polecenie 'gosc'), `goscieTick` prowadzi fazy wizyty (idzie, brama, w_srodku, odchodzi,
    zlapany, końcowe), a pionki chodzą w `goscTick`. Rozkazy `fx.goscRozkaz` (polecenie 'goscrozkaz') odsyłają grupę,
    wpuszczają ją na noc (ognisko, sen, rano wyjście bramą), przyjmują jako mieszkańców (`zostan`) albo z mówiącym w zarządzie
    (`zarzad`, `awansuj`); kłamca o 2:00 bierze jedzenie, a czuwająca osoba zarządu go łapie. Goście są ofiarami szwendaczy
@@ -6469,7 +6469,7 @@ export class Sim {
 
   /** Nowa wizyta z planu zarządu (polecenie 'gosc'): po jednym pionku na osobę, osoby trafiają do `st.people` z
       numerami `s<n>` (id z zarządu, `g<n>p<i>`, zostają tylko w jego stanie). Start to najdalszy kafelek ulicy po
-      wskazanej stronie mapy (`startGoscia`), cel to kafelki obok siebie pod bramą (spirala wokół kafelka za bramą,
+      wskazanej stronie bramy (`startGoscia`), cel to kafelki obok siebie pod bramą (spirala wokół kafelka za bramą,
       mówiący na samym środku). Bez losowania. Świat bez bramy albo ulicy: wizyta kończy się od razu jako `nie_doszedl`.
       Ten sam id drugi raz jest pomijany. */
   private wystawGoscia(plan: PlanGoscia): void {
@@ -6886,6 +6886,10 @@ export class Sim {
       mieszkańcami). Pionki zostają tymi samymi pionkami, zmieniają rodzaj; wizyta w symulacji się kończy (`przyjety`). */
   private goscPrzyjmij(g: GoscSim, m: Pawn[], zarzad: boolean): void {
     const st = this.st;
+    // kradnący przyjęty z workiem w ręku nie zostaje z cudzym jedzeniem: łup wraca na ziemię przy nim (`ukradl` 0)
+    const zl = m.find((p) => p.id === g.zl);
+    if (zl) this.dropSack(zl);
+    g.ukradl = 0;
     g.przyjety = zarzad ? 'zarzad' : 'mieszkancy';
     g.faza = 'w_srodku';
     g.at = st.tick;
@@ -6955,9 +6959,21 @@ export class Sim {
       case 'zarzad':
         if (g.faza === 'brama' || g.faza === 'w_srodku') this.goscPrzyjmij(g, m, co === 'zarzad');
         break;
+      case 'dobij':
+        this.goscDobij(g);
+        break;
       default:
         break;
     }
+  }
+
+  /** Ktoś z zarządu dobił przez siatkę ugryzioną osobę z planu (indeks `ugryziony`), o co prosiła grupa pod bramą:
+      ginie na miejscu, reszta grupy stoi dalej. Tylko pod bramą i tylko żywy pionek tego gościa. */
+  private goscDobij(g: GoscSim): void {
+    if (g.faza !== 'brama' || g.ugryziony === undefined) return;
+    const id = g.pawns[g.ugryziony];
+    const p = this.st.pawns.find((q) => q.id === id);
+    if (p && p.kind === 'gosc' && !this.graveyard.has(id)) this.wound(p, 1000);
   }
 
   /** obcy danego rodzaju o tym id, który jeszcze nie ucieka ani nie zniknął */

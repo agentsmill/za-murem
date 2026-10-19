@@ -277,6 +277,9 @@ export function normalizujTeksty(st: GovState): GovState {
   for (const l of st.log ?? []) l.txt = txt(l.txt);
   for (const l of st.later ?? []) l.line = txt(l.line);
   for (const r of [...(st.reports ?? []), ...(st.report ? [st.report] : [])]) r.lines = r.lines.map(txt);
+  // gość prowadzony przez zarząd: miejsce „skąd” to Tx także w zapisie sprzed angielskiej wersji (gdyby pole się trafiło)
+  const skad = st.goscie?.aktywny?.gosc.skad;
+  if (skad) skad.nazwa = txt(skad.nazwa);
   const n = st.night;
   if (n) {
     n.lines = n.lines.map(txt);

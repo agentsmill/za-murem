@@ -3,7 +3,7 @@
    składa gościa i wysyła plan `PlanGoscia`; tu jest to, co symulacja robi z grupą pionków rodzaju `gosc`.
 
    Przebieg wizyty (faza grupy to `GoscSim.faza`, jej nazwy to `FazaGoscia` z src/gov/typy.ts):
-     idzie     grupa startuje na ulicy, na najdalszym kafelku wskazanej strony mapy (do GOSC_FROM kroków od bramy),
+     idzie     grupa startuje na ulicy, na najdalszym kafelku wskazanej strony bramy (do GOSC_FROM kroków od bramy),
                i idzie pod bramę; każdy na swój kafelek obok pozostałych (spirala wokół kafelka za bramą)
      brama     stoją i czekają na decyzję zarządu (najdłużej GOSC_CZEKA, potem odchodzą sami)
      w_srodku  `noc`: bramą (warstwa zarządu) do ogniska albo przed drzwi siedziby, nocą śpią na ziemi, rano między

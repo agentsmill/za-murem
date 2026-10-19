@@ -1284,3 +1284,48 @@ describe('klocki gościa: poprawki po przeglądzie (runda 1)', () => {
     }
   });
 });
+
+describe('klocki gościa: poprawki z zadania 10', () => {
+  const TORBA_PL = /plecak|worek|torb|wózek|bagaż|zawiniątk|tobołek/i;
+  const TORBA_EN = /rucksack|sack|\bbag\b|pram|luggage|bundle|belongings/i;
+  const { s: S, e: E } = SLOWA[0];
+  const rodzina = (ma: MaId, seed: number): Gosc => ({
+    id: 'g1',
+    osoby: osobyGrupy(mulberry(seed), licznik(), 'rodzina', 4, new Set<string>()),
+    kto: 'rodzina',
+    chce: 'nocleg',
+    ma,
+    haczyk: 'prawda',
+    skad: { strona: 'n', nazwa: tx('z północy', 'from the north') },
+    ...(ma === 'rzecz' ? { rzecz: { meds: 2 } } : {}),
+  });
+
+  it('wózek pełen garnków tylko wtedy, gdy rodzina ma coś do wymiany; przy „nic” sam wózek', () => {
+    for (const seed of [3, 4, 5, 6]) {
+      const nic = wariantyGoscia(rodzina('nic', seed), S, E).kto[0];
+      expect(nic.pl).toContain('wózek');
+      expect(nic.pl).not.toMatch(/garnk/);
+      expect(nic.en).toContain('pram');
+      expect(nic.en).not.toMatch(/pots/);
+      for (const ma of ['fach', 'rzecz', 'wiadomosc', 'ostrzezenie'] as const) {
+        const ma0 = wariantyGoscia(rodzina(ma, seed), S, E).kto[0];
+        expect(ma0.pl, ma).toContain('wózek pełen garnków');
+        expect(ma0.en, ma).toContain('a pram full of pots');
+      }
+    }
+  });
+
+  it('żadna linijka satyry nie zakłada plecaka ani innej torby: pasuje do gościa z dowolnym zdaniem otwierającym', () => {
+    for (const [id, t] of Object.entries(SATYRA)) {
+      expect(t.pl, id).not.toMatch(TORBA_PL);
+      expect(t.en, id).not.toMatch(TORBA_EN);
+    }
+    // w tekście gościa, który ma w zdaniu otwierającym tylko wózek albo nic, satyra nie sięga do plecaka
+    for (let seed = 1; seed <= 800; seed++) {
+      const g = gosc(seed, ctx({ mode: seed % 2 ? 'zombie' : 'zwykly' }));
+      if (!g.satyra) continue;
+      const sat = SATYRA[g.satyra];
+      expect(sat.pl).not.toMatch(TORBA_PL);
+    }
+  });
+});

@@ -266,7 +266,14 @@ describe('plan gościa: pionki na ulicy i marsz pod bramę', () => {
     expect(p.hp).toBeGreaterThan(0);
     expect(jobText(a.st, w, p)).toBe('Idzie do bramy.');
     expect(govInput(a.st, w, 0).goscie).toEqual([
-      { id: 'g1', faza: 'idzie', tile: tileOf(p), pawns: [p.id], ukradl: 0 },
+      {
+        id: 'g1',
+        faza: 'idzie',
+        tile: tileOf(p),
+        gdzie: { x: tileOf(p) % size, y: Math.floor(tileOf(p) / size) },
+        pawns: [p.id],
+        ukradl: 0,
+      },
     ]);
     // marsz pod bramę
     const n = run(a, () => grupa(a.st).faza === 'brama', 6000);
@@ -814,6 +821,82 @@ describe('przyjęcie: mieszkańcy i zarząd', () => {
     expect(p.kind).toBe('core');
     expect(p.needs).not.toBeNull();
     expect(p.job?.t).toBe('arrive');
+  });
+});
+
+describe('przyjęcie kradnącego i dobicie ugryzionego (zadanie 10)', () => {
+  it('kradnący przyjęty (zostan albo zarzad), zanim minął bramę, nie zostaje z cudzym jedzeniem: worek na ziemię, ukradl 0', () => {
+    for (const co of ['zostan', 'zarzad'] as const) {
+      const sim = gra(2, 22);
+      rdzenPoza(sim.st);
+      podBrame(sim, plan(1, 'n'));
+      wyslij(sim, { goscRozkaz: rozkazy('g1', 'noc', 'klamie') });
+      sim.step();
+      const st = sim.st;
+      const przed = food(st);
+      run(sim, () => grupa(st).krad === 'wraca', 30000);
+      const zl = czlonkowie(st)[0];
+      expect(grupa(st).ukradl).toBe(3);
+      expect(zl.sack?.supplies).toBe(3);
+      expect(food(st)).toBe(przed - 3);
+      wyslij(sim, { goscRozkaz: rozkazy('g1', co) });
+      sim.step();
+      expect(zl.sack, co).toBeUndefined();
+      expect(grupa(st).ukradl, co).toBe(0);
+      expect(food(st), co).toBe(przed);
+      expect(zl.kind, co).not.toBe('gosc');
+      expect(govInput(st, w, 0).goscie![0], co).toMatchObject({ przyjety: true, ukradl: 0 });
+    }
+  });
+
+  it('przyjęcie bez kradzieży nie rusza zapasów (worek pusty, ukradl 0 od początku)', () => {
+    const sim = gra(2, 10);
+    podBrame(sim, plan(2, 'n'));
+    const przed = food(sim.st);
+    wyslij(sim, { goscRozkaz: rozkazy('g1', 'zostan') });
+    sim.step();
+    expect(food(sim.st)).toBe(przed);
+    expect(grupa(sim.st).ukradl).toBe(0);
+  });
+
+  it('dobij: ginie osoba o indeksie ugryziony, reszta stoi dalej pod bramą, nikt nie zaraża się ani nie liczy się jako zabity wróg', () => {
+    const sim = gra(2, 10, { zombie: true });
+    podBrame(sim, plan(2, 'n', 1, 1));
+    const st = sim.st;
+    const [a, b] = czlonkowie(st);
+    wyslij(sim, { goscRozkaz: rozkazy('g1', 'dobij') });
+    sim.step();
+    expect(st.pawns.includes(b)).toBe(false);
+    expect(st.pawns.includes(a)).toBe(true);
+    expect(st.things.filter((t) => t.kind === 'zwloki')).toHaveLength(1);
+    expect(grupa(st).faza).toBe('brama');
+    expect(govInput(st, w, 0).goscie![0]).toMatchObject({ faza: 'brama', pawns: [a.id] });
+    expect(st.tally!.killed).toBe(0);
+    // drugi raz niczego nie zabija
+    wyslij(sim, { goscRozkaz: rozkazy('g1', 'dobij') });
+    sim.step();
+    expect(st.pawns.includes(a)).toBe(true);
+    // reszta może odejść
+    wyslij(sim, { goscRozkaz: rozkazy('g1', 'odejdz') });
+    run(sim, () => grupa(st).faza === 'poszedl', 8000);
+    expect(grupa(st).faza).toBe('poszedl');
+  });
+
+  it('dobij bez ugryzionego w planie albo poza fazą brama nikogo nie rusza', () => {
+    // plan bez ugryzionej osoby
+    const bez = gra(2, 10, { zombie: true });
+    podBrame(bez, plan(2, 'n'));
+    wyslij(bez, { goscRozkaz: rozkazy('g1', 'dobij') });
+    bez.step();
+    expect(czlonkowie(bez.st)).toHaveLength(2);
+    // wpuszczeni na noc: dobicie przez siatkę nie sięga
+    const noc = gra(2, 21, { zombie: true, ognisko: true });
+    podBrame(noc, plan(2, 'n', 1, 1));
+    wyslij(noc, { goscRozkaz: rozkazy('g1', 'noc') });
+    noc.step();
+    wyslij(noc, { goscRozkaz: rozkazy('g1', 'dobij') });
+    noc.step();
+    expect(czlonkowie(noc.st)).toHaveLength(2);
   });
 });
 

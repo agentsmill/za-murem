@@ -11,7 +11,7 @@ import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { RngState } from '../core/rng.ts';
 import type { Miejsce } from '../world/miasto.ts';
-import type { Strona } from './goscie.ts';
+import type { Gosc, Strona } from './goscie.ts';
 import type { Cel } from './wyprawy.ts';
 import type { Droga, StanZwyciestwa } from './zwyciestwo.ts';
 
@@ -155,11 +155,14 @@ export type FazaGoscia = 'idzie' | 'brama' | 'w_srodku' | 'odchodzi' | 'zlapany'
     (zarząd liczy, ile już przeczytał: `GovState.goscie.czytane`). `tile`: kafelek mówiącego, a gdy już go nie ma,
     pierwszego żywego albo ostatni znany kafelek grupy; `pawns`: numery pionków żywych członków grupy, mówiący
     pierwszy (po `przyjety` to już mieszkańcy albo zarząd); `ukradl`: porcje jedzenia, których z zapasów brakuje przez
-    tę grupę (wzięte i nieoddane), `przyjety`: grupa została w osiedlu (rozkaz `zostan` albo `zarzad`) */
+    tę grupę (wzięte i nieoddane), `przyjety`: grupa została w osiedlu (rozkaz `zostan` albo `zarzad`). `gdzie` to ten
+    sam kafelek co `tile`, ale jako punkt mapy w kafelkach (x, y): zarząd nie zna rozmiaru świata, a karta gościa
+    potrzebuje punktu do przycisku „Pokaż” */
 export interface GovGosc {
   id: string;
   faza: FazaGoscia;
   tile: number;
+  gdzie: Punkt;
   pawns: number[];
   ukradl: number;
   przyjety?: boolean;
@@ -171,9 +174,20 @@ export interface GovGosc {
     ognisku, śpi, rano między 6:00 a 8:00 wychodzi), `zostan` (cała grupa zostaje mieszkańcami), `zarzad` (mówiący do
     zarządu, reszta jak `zostan`), `klamie` (zaznacza kłamcę: nocą o 2:00 idzie po jedzenie), `ugryziony` (osoba
     o indeksie `ugryziony` z planu dostaje ugryzienie, jak na wyprawie), `puscic` (złapany odchodzi bez łupu, łup
-    zostaje na ziemi, `ukradl` wraca do zera). Polecenia idą kolejno w kolejce symulacji, więc `noc` i `klamie` albo
-    `zostan` i `ugryziony` z jednego wywołania można podać w dowolnej kolejności. */
-export type GoscRozkaz = 'odejdz' | 'jedzenie' | 'noc' | 'zostan' | 'zarzad' | 'klamie' | 'ugryziony' | 'puscic';
+    zostaje na ziemi, `ukradl` wraca do zera), `dobij` (pod bramą ginie osoba o indeksie `ugryziony` z planu: ktoś
+    z zarządu dobił ją przez siatkę, jak ugryzionego bliskiego, który o to prosił; reszta grupy stoi dalej). Polecenia idą
+    kolejno w kolejce symulacji, więc `noc` i `klamie` albo `zostan` i `ugryziony` z jednego wywołania można podać
+    w dowolnej kolejności. */
+export type GoscRozkaz =
+  | 'odejdz'
+  | 'jedzenie'
+  | 'noc'
+  | 'zostan'
+  | 'zarzad'
+  | 'klamie'
+  | 'ugryziony'
+  | 'puscic'
+  | 'dobij';
 
 /** Plan wizyty dla symulacji (`GovEffects.gosc`): osoby z id `g<n>p<i>` (symulacja nadaje im swoje `s<n>`, żeby nie
     zderzyły się z osobami zarządu i mieszkańców), wygląd każdej, strona wejścia (kierunek świata w układzie geo; symulacja
@@ -365,6 +379,9 @@ export interface GovEffects {
   /** polecenia dla gości (całych grup po `id`), wykonywane po kolei od następnego kroku; tablica powstaje przy
       pierwszym poleceniu */
   goscRozkaz?: { id: string; co: GoscRozkaz }[];
+  /** hałas na kafelku (numer kafelka mapy) w promieniu `r` metrów, np. pościg za gościem wpuszczonym na noc w trybie
+      zombie przyciąga szwendaczy; symulacja dopisuje go do `st.noise` jak każdy hałas (`NOISE_TICKS`, `applyGov`) */
+  halas?: { tile: number; r: number };
 }
 
 export interface RaidPlan {
@@ -606,13 +623,15 @@ export interface GovState {
   /** czy ognisko paliło się wieczorem i ile mebli spalono do poprzedniego rana */
   evening: { campfire: boolean; burned: number };
   flags: { dog: boolean; flashlight: boolean; torch: boolean };
-  /** na tę noc: podwójna warta (dzień), szabrownicy zachęceni (dzień), premia do obrony */
-  tonight: { alert: number; boost: number; bonus: number; bonusDay: number };
+  /** na tę noc: podwójna warta (dzień), szabrownicy zachęceni (dzień), premia do obrony, pościg za gościem wpuszczonym
+      na noc (dzień nocy: szansa napadu ×1,5 i napad przy bramie; pole od pierwszego takiego gościa) */
+  tonight: { alert: number; boost: number; bonus: number; bonusDay: number; poscig?: number };
   visits: Record<string, number>;
   /** kto trzymał wartę ostatniej nocy (propozycja zmienia wartowników) */
   lastGuards: string[];
-  /** skutki odłożone na rano (z wydarzeń): zapasy i linia do raportu */
-  later: { day: number; stock: Partial<StockDelta>; line: Tx }[];
+  /** skutki odłożone na rano (z wydarzeń): zapasy i linia do raportu; `sick` to chorzy do rozdania rano (gość chory
+      wpuszczony na noc albo przyjęty) */
+  later: { day: number; stock: Partial<StockDelta>; line: Tx; sick?: number }[];
   /** decyzje gracza w sekundach przy ekranie (do pomiaru tempa) */
   decisions: { s: number; k: string }[];
   /** kronika; wpis o karcie z miejscem na mapie niesie to miejsce (`gdzie`, na później: przycisk „Pokaż” w kronice) */
@@ -638,4 +657,27 @@ export interface GovState {
   /** tick ostatniego odkrycia albo znaleziska książki (GovInput.odkrycia, znaleziska), które zarząd już wpisał do
       kroniki; pole powstaje przy pierwszym takim wpisie, więc gra bez badań i książek go nie ma */
   czytane?: number;
+  /** goście z klocków (src/gov/wizyta.ts): `n` ile gości zarząd już zaplanował (id `g<n>`), `czytane` ile pierwszych
+      wpisów `GovInput.goscie` to wizyty już zakończone i rozliczone, `aktywny` to jedyna wizyta, którą zarząd
+      prowadzi (jeden gość naraz); pole od pierwszego planu, w grze bez obcych go nie ma */
+  goscie?: { n: number; czytane: number; aktywny?: AktywnyGosc };
+  /** Wskazówki na miejsca (wiadomość od gościa): klucz miejsca z okolicy (`Cel.klucz`) albo id celu z TARGETS → dzień
+      gry, w którym je dostaliśmy. Następna wyprawa do tego miejsca ma ryzyko ×0,5 i łup ×1,5, po rozliczeniu wskazówka
+      znika (`wskazowka` w src/gov/wyprawy.ts); pole od pierwszej wskazówki */
+  wskazowki?: Record<string, { dzien: number }>;
+}
+
+/** Wizyta gościa prowadzona przez zarząd: `gosc` (klocki, osoby; ten sam co w planie dla symulacji), `od` (sekunda przy
+    ekranie planu), `karta` (karta gościa pod bramą już pokazana), `zl` (karta „Złapany” już pokazana), `obejrzano` (co
+    pokazało obejrzenie rąk w trybie zombie), `noc` (wpuszczony na noc: zarząd śledzi wizytę do końca), `kradl` (linia
+    o kradzieży już wpisana), `koniec` (zarząd wydał ostatni rozkaz, wizyta przestaje być jego sprawą) */
+export interface AktywnyGosc {
+  gosc: Gosc;
+  od: number;
+  karta: boolean;
+  zl?: boolean;
+  obejrzano?: 'ugryziony' | 'czysty';
+  noc?: boolean;
+  kradl?: boolean;
+  koniec?: boolean;
 }

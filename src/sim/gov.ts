@@ -90,6 +90,7 @@ import {
   type Laws,
   LIMB,
   type Loot,
+  NOISE_TICKS,
   onPlan,
   type Pawn,
   pionekOsoby,
@@ -251,10 +252,12 @@ function goscieOdczyt(st: SimState, w: World): GovGosc[] {
     const nikogo = g.faza === 'poszedl' || g.faza === 'zginal';
     const zywi = nikogo ? [] : g.pawns.map((id) => st.pawns.find((p) => p.id === id)).filter((p): p is Pawn => !!p);
     const lider = zywi[0];
+    const tile = lider ? Math.floor(lider.y) * w.size + Math.floor(lider.x) : g.kafelek;
     return {
       id: g.id,
       faza: g.faza,
-      tile: lider ? Math.floor(lider.y) * w.size + Math.floor(lider.x) : g.kafelek,
+      tile,
+      gdzie: { x: tile % w.size, y: Math.floor(tile / w.size) },
       pawns: zywi.map((p) => p.id),
       ukradl: g.ukradl,
       ...(g.przyjety ? { przyjety: true } : {}),
@@ -530,6 +533,17 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   // goście z klocków: plan wizyty i rozkazy po kolei, przez kolejkę poleceń (pionki powstają i ruszają od następnego kroku)
   if (fx.gosc) cmd({ t: 'gosc', ids: [], plan: kopiaPlanu(fx.gosc) });
   for (const r of fx.goscRozkaz ?? []) cmd({ t: 'goscrozkaz', ids: [], id: r.id, co: r.co });
+  // hałas z zarządu (pościg za gościem w trybie zombie): jak każdy hałas, słychać go przez NOISE_TICKS
+  if (fx.halas) {
+    const noise = (st.noise ??= []);
+    noise.push({
+      x: (fx.halas.tile % w.size) + 0.5,
+      y: Math.floor(fx.halas.tile / w.size) + 0.5,
+      r: fx.halas.r,
+      until: st.tick + NOISE_TICKS,
+    });
+    if (noise.length > 20) noise.shift();
+  }
   // przyjęci przychodzą zza bramy; nikt nie znika, kto nie ma łóżka, śpi na podłodze
   if (fx.residents > 0) addResidents(st, w, fx.residents, true);
   else if (fx.residents < 0) removeResidents(st, -fx.residents);
