@@ -2,9 +2,12 @@
    na jezdni przy krawężniku, wzdłuż niej (chodnik i trawnik zostają wolne dla pieszych).
    Do około 100 m od pierwszych drzwi siedziby, poza siatką, z dala od bramy i od drzwi budynków.
    Podstawa blokuje przejście. Na jezdni zostaje co najmniej 3 m przejazdu, a wolne kafelki wokół wraku
-   tworzą jeden ciągły pierścień, więc żaden wrak niczego nie odcina. Deterministycznie z ziarna świata. */
+   tworzą jeden ciągły pierścień, więc żaden wrak niczego nie odcina. Deterministycznie z ziarna świata.
+   Kwadrat miasta obok domu (placeWrecksKwadrat) nie ma siedziby ani siatki: te same reguły na całym kwadracie, bez
+   preferencji odległości, z dala od drzwi budynków i z kafelkiem zapasu przy krawędzi kwadratu. */
 
 import { mulberry } from '../core/rng.ts';
+import type { Fence } from './fence.ts';
 import { T } from './terrain.ts';
 import type { World } from './world.ts';
 
@@ -27,6 +30,8 @@ export const WRECK_LEN: Record<WreckModel, number> = { maluch: 3, polonez: 4 };
 
 /** z czego powstają wraki: świat z siatką */
 export type WreckWorld = Pick<World, 'size' | 'terr' | 'blocked' | 'buildings' | 'hq' | 'fence' | 'seed'>;
+/** z czego powstają wraki w kwadracie obok domu: świat bez siedziby i siatki */
+export type WreckKwadrat = Pick<World, 'size' | 'terr' | 'blocked' | 'buildings' | 'seed'>;
 
 /** zasięg od pierwszych drzwi siedziby */
 const RANGE = 100;
@@ -51,12 +56,24 @@ interface Cand {
 }
 
 export function placeWrecks(w: WreckWorld): Wreck[] {
-  const { size, terr, blocked, fence } = w;
+  return ustawWraki(w, w.hq, w.fence);
+}
+
+/** Wraki w kwadracie miasta obok domu: bez siedziby i siatki, na całym kwadracie (kandydaci z jezdni i parkingów,
+    kolejność z ziarna kwadratu), od 12 do 24 sztuk. */
+export function placeWrecksKwadrat(w: WreckKwadrat): Wreck[] {
+  return ustawWraki(w, -1, null);
+}
+
+/** wspólne ustawianie wraków: z siedzibą i siatką (dom) albo bez nich (kwadrat) */
+function ustawWraki(w: WreckKwadrat, hq: number, fence: Fence | null): Wreck[] {
+  const { size, terr, blocked } = w;
   const N = size * size;
-  const b = w.buildings[w.hq];
-  const door = b.entrances[0];
-  const ax = door ? (door.tile % size) + 0.5 : (b.x0 + b.x1 + 1) / 2;
-  const ay = door ? Math.floor(door.tile / size) + 0.5 : (b.y0 + b.y1 + 1) / 2;
+  const kw = !fence;
+  const b = kw ? null : w.buildings[hq];
+  const door = b?.entrances[0];
+  const ax = door ? (door.tile % size) + 0.5 : b ? (b.x0 + b.x1 + 1) / 2 : size / 2;
+  const ay = door ? Math.floor(door.tile / size) + 0.5 : b ? (b.y0 + b.y1 + 1) / 2 : size / 2;
   const rnd = mulberry(((w.seed * 13) ^ 0xca75) >>> 0);
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < size && y < size ? y * size + x : -1);
 
@@ -81,18 +98,20 @@ export function placeWrecks(w: WreckWorld): Wreck[] {
         if (n >= 0) ban[n] = 1;
       }
   };
-  for (const t of fence.yard) ban[t] = 1;
-  for (const t of fence.tiles) keepOff(t, 1);
-  const g = fence.gate;
-  if (g.w > 0) {
-    const [rx, ry] = STEP[g.rot];
-    for (let y = g.y; y < g.y + g.h; y++)
-      for (let x = g.x; x < g.x + g.w; x++) {
-        keepOff(y * size + x, 1);
-        const o = at(x - rx, y - ry);
-        if (o >= 0) keepOff(o, 3);
-        ahead(y * size + x, -rx, -ry, 10);
-      }
+  if (fence) {
+    for (const t of fence.yard) ban[t] = 1;
+    for (const t of fence.tiles) keepOff(t, 1);
+    const g = fence.gate;
+    if (g.w > 0) {
+      const [rx, ry] = STEP[g.rot];
+      for (let y = g.y; y < g.y + g.h; y++)
+        for (let x = g.x; x < g.x + g.w; x++) {
+          keepOff(y * size + x, 1);
+          const o = at(x - rx, y - ry);
+          if (o >= 0) keepOff(o, 3);
+          ahead(y * size + x, -rx, -ry, 10);
+        }
+    }
   }
   if (door) {
     const [ox, oy] = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] }[door.dir] as [number, number];
@@ -123,10 +142,10 @@ export function placeWrecks(w: WreckWorld): Wreck[] {
 
   // kandydaci: parking z OSM albo jezdnia przy krawężniku, w zasięgu, na wolnych dozwolonych kafelkach
   const cands: Cand[] = [];
-  const X0 = Math.max(1, Math.floor(ax - RANGE));
-  const X1 = Math.min(size - 2, Math.ceil(ax + RANGE));
-  const Y0 = Math.max(1, Math.floor(ay - RANGE));
-  const Y1 = Math.min(size - 2, Math.ceil(ay + RANGE));
+  const X0 = kw ? 1 : Math.max(1, Math.floor(ax - RANGE));
+  const X1 = kw ? size - 2 : Math.min(size - 2, Math.ceil(ax + RANGE));
+  const Y0 = kw ? 1 : Math.max(1, Math.floor(ay - RANGE));
+  const Y1 = kw ? size - 2 : Math.min(size - 2, Math.ceil(ay + RANGE));
   for (let y = Y0; y <= Y1; y++)
     for (let x = X0; x <= X1; x++) {
       const t0 = y * size + x;
@@ -140,7 +159,8 @@ export function placeWrecks(w: WreckWorld): Wreck[] {
           const fw = horiz ? L : 2;
           const fh = horiz ? 2 : L;
           if (x + fw > size - 1 || y + fh > size - 1) continue;
-          const d = Math.hypot(x + fw / 2 - ax, y + fh / 2 - ay);
+          // w kwadracie bez preferencji odległości i bez zasięgu: wraki rozkładają się po całym kwadracie
+          const d = kw ? 0 : Math.hypot(x + fw / 2 - ax, y + fh / 2 - ay);
           if (d > RANGE) continue;
           let ok = true;
           let park = true;
@@ -187,7 +207,7 @@ export function placeWrecks(w: WreckWorld): Wreck[] {
     if (!c.park && !roadside(c.x, c.y, c.horiz, L, occ)) return false;
     return ringOk(c.x, c.y, fw, fh);
   };
-  const want = 4 + Math.floor(rnd() * 7);
+  const want = kw ? 12 + Math.floor(rnd() * 13) : 4 + Math.floor(rnd() * 7);
   // na parkingu najwyżej 60%, reszta przy jezdni (chyba że przy jezdni nie ma miejsca)
   const parkCap = Math.ceil(want * 0.6);
   const out: Wreck[] = [];
