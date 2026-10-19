@@ -213,6 +213,12 @@ describe('klucze budynków i klatek (src/world/klucze.ts)', () => {
     const d = JSON.parse(
       fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'),
     ) as { geo: Geo };
+    // dema w repo są przegenerowane i mają klucze; demo sprzed kluczy to to samo demo bez tagów zm:klucz i zm:os
+    expect(d.geo.b.every((b) => b.t['zm:klucz'] && b.t['zm:os'])).toBe(true);
+    for (const b of d.geo.b) {
+      delete b.t['zm:klucz'];
+      delete b.t['zm:os'];
+    }
     expect(d.geo.b.some((b) => b.t['zm:klucz'])).toBe(false);
     const w = buildWorld(d.geo, { seed: 1 });
     expect(kluczeSwiata(w, d.geo.c).every((k) => k === null)).toBe(true);
