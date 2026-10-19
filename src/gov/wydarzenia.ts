@@ -29,10 +29,12 @@
    osobie chwilowy nastrój przez GovEffects.moods.
    Pogrzeb (karta `pogrzeb`, z sytuacji jak dym): po zgonie z GovInput.dead, który ma płeć `f` (zarząd albo mieszkaniec
    z imieniem; bez imienia zgon tylko przesuwa licznik), przychodzi w ciągu doby za dnia albo wieczorem, gdy nic nie
-   czeka na decyzję, minął odstęp między wydarzeniami i nie trwa cisza ani pierwsza noc. Licznik `GovState.pogrzebN`
-   (zgony, które przeszły przez pogrzeb) rośnie przy pokazaniu karty albo pominięciu zgonu, więc zgon ma najwyżej jedną
-   kartę; zgon starszy niż `POGRZEB_DO` minut gry nie dostaje karty. W trybie zombie karta czeka, dopóki zwłoki leżą i mogą
-   wstać (`cialo` = `lezy`), a w jej danych jest los ciała. */
+   czeka na decyzję i nie trwa cisza ani pierwsza noc. Nie czeka na pełny odstęp między wydarzeniami (przy tempie 8×
+   to nawet 36 godzin gry), tylko najwyżej `POGRZEB_ODSTEP` sekund przy ekranie od ostatniej decyzji, więc kilka zgonów
+   naraz to kilka kart co kilkanaście sekund. Licznik `GovState.pogrzebN` (zgony, które przeszły przez pogrzeb) rośnie
+   przy pokazaniu karty albo pominięciu zgonu, więc zgon ma najwyżej jedną kartę; zgon starszy niż `POGRZEB_DO` minut
+   gry nie dostaje karty, tylko wpis w kronice, że pogrzebu nie było. W trybie zombie karta czeka, dopóki zwłoki leżą
+   i mogą wstać (`cialo` = `lezy`), a w jej danych jest los ciała. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -41,7 +43,16 @@ import { type Tx, tx, txCat } from '../core/jezyk.ts';
 import { rngOf } from '../core/rng.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
 import { KOZA } from './noc.ts';
-import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
+import {
+  type DanePogrzebu,
+  type GEventDef,
+  type GovHost,
+  NEW_EVENTS,
+  OLD_EVENTS,
+  type Pora,
+  poraOf,
+  REPEAT_GAP,
+} from './tresc.ts';
 import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Punkt, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
@@ -460,25 +471,50 @@ const dymWaits = (st: GovState, h: GovHost): boolean =>
 
 /** zgon starszy niż tyle minut gry (dwie doby) nie dostaje już pogrzebu: karta o dawnej śmierci nie ma sensu */
 export const POGRZEB_DO = 2 * 1440;
+/** Czekający pogrzeb przychodzi najpóźniej tyle sekund przy ekranie po ostatniej decyzji gracza, nie dopiero po pełnym
+    odstępie między wydarzeniami (100–180 s przy ekranie to przy tempie 8× nawet 36 godzin gry, a karta ma przyjść w ciągu
+    doby). Kilka zgonów naraz to kilka kart co tyle sekund. */
+export const POGRZEB_ODSTEP = 15;
 
 /** Karta pogrzebu z listy zgonów (jak dym, poza losowaniem): pierwszy zgon od licznika `pogrzebN` z imieniem, z płcią
-    w `GovInput.dead[].f`. Zgony bez imienia i starsze niż `POGRZEB_DO` przesuwają licznik bez karty. Karty nie ma też
-    nocą (tylko dzień i wieczór) i w trybie zombie, dopóki ciało leży i może wstać. Pokazana karta zjada zgon od razu. */
-function pogrzeb(st: GovState, i: GovInput, pora: Pora): ActiveEvent | null {
+    w `GovInput.dead[].f`. Zgon bez imienia przesuwa licznik po cichu, a starszy niż `POGRZEB_DO` zostaje w kronice jako
+    pogrzeb, którego nie było (nikt nie miał czasu). Karty nie ma też nocą (tylko dzień i wieczór) i w trybie zombie,
+    dopóki ciało leży i może wstać. Pokazana karta zjada zgon od razu. */
+function pogrzeb(st: GovState, i: GovInput, fx: GovEffects, pora: Pora): ActiveEvent | null {
   const dead = i.dead ?? [];
   let n = st.pogrzebN ?? st.deadN ?? 0;
   if (n >= dead.length) return null;
   const teraz = gameMin(i);
-  while (n < dead.length && (dead[n].f === undefined || teraz - (dead[n].min ?? teraz) > POGRZEB_DO)) n++;
+  while (n < dead.length) {
+    const z = dead[n];
+    if (z.f !== undefined) {
+      if (teraz - (z.min ?? teraz) <= POGRZEB_DO) break;
+      logGov(
+        st,
+        i,
+        tx(
+          `Pogrzebu nie było, bo nikt nie miał czasu. W kronice zostało tylko: ${z.name}.`,
+          `There was no funeral, because nobody had the time. All that is left in the log is: ${z.name}.`,
+        ),
+        false,
+        fx,
+      );
+    }
+    n++;
+  }
   st.pogrzebN = n;
   if (n >= dead.length || pora === 'noc') return null;
-  const d = dead[n];
-  if (d.cialo === 'lezy') return null;
+  const z = dead[n];
+  if (z.cialo === 'lezy') return null;
   st.pogrzebN = n + 1;
-  return {
-    id: 'pogrzeb',
-    d: { id: d.id, name: d.name, f: !!d.f, cause: d.cause, ...(d.cialo ? { cialo: d.cialo } : {}) },
+  const d: DanePogrzebu = {
+    id: z.id,
+    name: z.name,
+    f: !!z.f,
+    cause: z.cause,
+    ...(z.cialo ? { cialo: z.cialo } : {}),
   };
+  return { id: 'pogrzeb', d };
 }
 
 /** odstęp do następnego wydarzenia w sekundach przy ekranie */
@@ -500,17 +536,20 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
     if (def && i.screen >= (st.ev.lit ?? 0) + DYM_DELAY && poraOf(i.hour)) show(st, i, fx, activate(st, h, def));
     return;
   }
-  if (quiet || i.screen < st.ev.next || i.screen < (st.ev.warm ?? 0) + AFTER_WARM) return;
+  if (quiet || i.screen < (st.ev.warm ?? 0) + AFTER_WARM) return;
   const pora = poraOf(i.hour);
   if (!pora) return;
-  // pogrzeb po zgonie z imieniem przed losowaniem; nie zmienia odstępu, ten liczy się od decyzji gracza
-  if (!firstNight(i)) {
-    const pg = pogrzeb(st, i, pora);
+  // pogrzeb po zgonie z imieniem przed losowaniem: bez pierwszej nocy, a odstęp od ostatniej decyzji to najwyżej
+  // POGRZEB_ODSTEP (zwykły odstęp między wydarzeniami przy szybkim tempie trwałby dłużej niż doba gry)
+  const ostatnia = st.decisions.at(-1)?.s ?? Number.NEGATIVE_INFINITY;
+  if (!firstNight(i) && i.screen >= Math.min(st.ev.next, ostatnia + POGRZEB_ODSTEP)) {
+    const pg = pogrzeb(st, i, fx, pora);
     if (pg) {
       show(st, i, fx, pg);
       return;
     }
   }
+  if (i.screen < st.ev.next) return;
   st.ev.next = i.screen + nextGap(st, i.screen);
   const ev = pickGovEvent(st, h, pora, firstNight(i));
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie

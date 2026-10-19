@@ -12,7 +12,7 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { nastrojEn } from '../../src/content/nastroje.en.ts';
 import { mulberry } from '../../src/core/rng.ts';
-import { poraOf } from '../../src/gov/tresc.ts';
+import { type DanePogrzebu, poraOf } from '../../src/gov/tresc.ts';
 import type { GovEffects, GovInput, GovLokator, GovState } from '../../src/gov/typy.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
 import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
@@ -37,13 +37,6 @@ const plikowy = (async (adr: string) => {
 }) as unknown as typeof fetch;
 
 type Zgon = NonNullable<GovInput['dead']>[number];
-interface DanePogrzebu {
-  id: string;
-  name: string;
-  f: boolean;
-  cause: string;
-  cialo?: string;
-}
 
 const ev = M1_EVENTS.find((e) => e.id === 'pogrzeb')!;
 
@@ -71,14 +64,17 @@ interface Widziany {
 }
 
 /** Zarząd na atrapie co sekundę przy ekranie z listą zgonów w wejściu (atrapa sama ich nie ma). Okna odpowiada jak gracz
-    „propozycja” (pierwszy dostępny wybór), a karty pogrzebu zapisuje. */
-function graj(gov: GovState, atr: Atrapa, doMin: number, zgony: () => Zgon[], r = mulberry(7)) {
+    „propozycja” (pierwszy dostępny wybór), a karty pogrzebu zapisuje. `tempo` to tempo gry (8×: sekunda przy ekranie to
+    pięć razy mniej niż godzina gry). */
+function graj(gov: GovState, atr: Atrapa, doMin: number, zgony: () => Zgon[], r = mulberry(7), tempo = 1) {
   const widziane: Widziany[] = [];
+  atr.tempo = tempo;
   const wej = (): GovInput => ({ ...atr.input(), dead: zgony() });
   while (minAtrapy(atr) < doMin) {
     atr.tick++;
     if (atr.tick % TPH === 0) atr.hourly(lawEffects(gov).foodMult);
-    if (atr.tick % TPS !== 0) continue;
+    // sekunda przy ekranie: co 20 ticków przy 1×, co 20 × tempo ticków przy szybszym tempie
+    if (atr.tick % (TPS * tempo) !== 0) continue;
     atr.apply(govUpdate(gov, wej()));
     for (let k = 0; k < 5; k++) {
       const p = pending(gov, wej());
@@ -276,14 +272,46 @@ describe('karta pogrzeb: treść i wybory', () => {
     expect(fx.moods.every((m) => m.d === 2)).toBe(true);
   });
 
+  it('polski: imię zmarłego zawsze w mianowniku (bez odmiany nie ma „wykreślił Ewelina”)', () => {
+    const baza = setup().h.place();
+    const miejsca = [{}, { place: { ...baza, kind: 'dom' as const, near: 'domy' as const, houses: 6, blocks: 0 } }];
+    // przed imieniem może stać tylko początek zdania, cudzysłów, dwukropek albo czasownik, którego imię jest podmiotem
+    const DOZWOLONE = /(^|[.!?] |„|: |wykopał |wykopała )@$/;
+    let widzianych = 0;
+    for (const miejsce of miejsca)
+      for (const d of [DANE, DANE_M])
+        for (const cialo of [undefined, 'dobite', 'brak'] as const) {
+          const dane: DanePogrzebu = { ...d, ...(cialo ? { cialo } : {}) };
+          const tryb = cialo ? 'zombie' : 'zwykly';
+          const { h } = setup(miejsce, 1, tryb);
+          const teksty = [ev.title(h, dane).pl, ev.text(h, dane).pl, ...ev.choices(h, dane).map((c) => c.label.pl)];
+          for (let k = 0; k < 3; k++) teksty.push(...wybierz(dane, k, miejsce, tryb).fx.log.map(pl));
+          for (const t of teksty)
+            for (const m of t.matchAll(new RegExp(dane.name, 'g'))) {
+              expect(`${t.slice(Math.max(0, m.index - 12), m.index)}@`, t).toMatch(DOZWOLONE);
+              widzianych++;
+            }
+        }
+    expect(widzianych).toBeGreaterThan(20);
+    // wybór „Bez ceremonii” po imieniu w mianowniku po dwukropku
+    expect(wybierz(DANE, 2).fx.log.map(pl).join(' ')).toContain(
+      'Ktoś skreślił w grafiku dyżurów linijkę: Janina Wrona. I tyle.',
+    );
+    expect(
+      wybierz(DANE, 2)
+        .fx.log.map((l) => l.en)
+        .join(' '),
+    ).toContain('Somebody crossed a line off the duty rota: Janina Wrona.');
+  });
+
   it('angielski bez polskich słów: tytuł, tekst, wybory i wpisy do kroniki, oba rodzaje, oba miejsca, oba tryby', () => {
     const baza = setup().h.place();
     const miejsca = [{}, { place: { ...baza, kind: 'dom' as const, near: 'domy' as const, houses: 6, blocks: 0 } }];
     for (const miejsce of miejsca)
       for (const d of [DANE, DANE_M, { ...DANE, id: 's3' }, { ...DANE_M, id: 's4' }]) {
-        for (const cialo of [undefined, 'dobite', 'brak'])
+        for (const cialo of [undefined, 'dobite', 'brak'] as const)
           for (const cause of ['rany', 'gorączka', 'amputacja']) {
-            const dane = { ...d, cause, ...(cialo ? { cialo } : {}) };
+            const dane: DanePogrzebu = { ...d, cause, ...(cialo ? { cialo } : {}) };
             const { h } = setup(miejsce, 1, cialo ? 'zombie' : 'zwykly');
             const teksty = [ev.title(h, dane).en, ev.text(h, dane).en, ...ev.choices(h, dane).map((c) => c.label.en)];
             for (let k = 0; k < 3; k++) {
@@ -426,13 +454,89 @@ describe('karta pogrzeb: kiedy przychodzi', () => {
     expect(gov.pogrzebN).toBe(3);
   });
 
-  it('zgon sprzed ponad dwóch dób nie dostaje już karty (liczy się, ale bez okna)', () => {
+  it('zgon sprzed ponad dwóch dób nie dostaje karty, tylko wpis w kronice, że pogrzebu nie było (po polsku i angielsku)', () => {
     const { gov, atr } = start(1, 9);
     // zgon sprzed trzech dób, zarząd zobaczył go dopiero teraz
     const lista = [zgon('Halina Kowalska', at(3, 9) - 3 * 1440)];
     const w = graj(gov, atr, at(5, 9), () => lista);
     expect(w).toHaveLength(0);
     expect(gov.pogrzebN).toBe(1);
+    const wpisy = gov.log.filter((l) => pl(l.txt).startsWith('Pogrzebu nie było'));
+    expect(wpisy).toHaveLength(1);
+    expect(pl(wpisy[0].txt)).toBe(
+      'Pogrzebu nie było, bo nikt nie miał czasu. W kronice zostało tylko: Halina Kowalska.',
+    );
+    expect(wpisy[0].txt.en).toBe(
+      'There was no funeral, because nobody had the time. All that is left in the log is: Halina Kowalska.',
+    );
+    expect(polskieSlowa(wpisy[0].txt.en, ['Halina Kowalska'])).toEqual([]);
+    // zgon bez imienia sprzed trzech dób tylko przesuwa licznik, bez wpisu
+    const g2 = start(1, 9);
+    graj(g2.gov, g2.atr, at(5, 9), () => [zgon('Mieszkaniec', at(3, 9) - 3 * 1440, { f: undefined })]);
+    expect(g2.gov.pogrzebN).toBe(1);
+    expect(g2.gov.log.some((l) => pl(l.txt).startsWith('Pogrzebu nie było'))).toBe(false);
+  });
+
+  it('przy tempie 8× trzy zgony naraz: wszystkie trzy pogrzeby w ciągu doby gry, jeden po drugim', () => {
+    const ZGINELI = ['Halina Kowalska', 'Marek Nowak', 'Ewa Zielińska'];
+    // [dzień, godzina, minuta] zgonu: południe, wieczór, początek dnia, noc
+    const pory: [number, number, number][] = [
+      [3, 12, 0],
+      [3, 21, 30],
+      [4, 8, 30],
+      [3, 23, 30],
+    ];
+    for (const [dzien, hour, minute] of pory)
+      for (const seed of [1, 2, 3, 4]) {
+        const { gov, atr } = start(seed, 9);
+        const kiedy = at(dzien, hour, minute);
+        const lista: Zgon[] = [];
+        const opis = `${dzien}. dzień ${hour}:${String(minute).padStart(2, '0')}, ziarno ${seed}`;
+        const w = graj(
+          gov,
+          atr,
+          kiedy + 1440 + 60,
+          () => {
+            if (minAtrapy(atr) >= kiedy && !lista.length)
+              lista.push(...ZGINELI.map((n) => zgon(n, kiedy, { f: n !== 'Marek Nowak' })));
+            return lista;
+          },
+          mulberry(seed),
+          8,
+        );
+        expect(
+          w.map((x) => x.d.name),
+          opis,
+        ).toEqual(ZGINELI);
+        for (const x of w) {
+          expect(x.min - kiedy, `${opis}: ${x.d.name}`).toBeGreaterThanOrEqual(0);
+          expect(x.min - kiedy, `${opis}: ${x.d.name}`).toBeLessThanOrEqual(1440);
+          expect(['dzien', 'wieczor'], `${opis} o ${x.hour}`).toContain(poraOf(x.hour));
+        }
+        expect(gov.pogrzebN, opis).toBe(3);
+        expect(
+          gov.log.some((l) => pl(l.txt).startsWith('Pogrzebu nie było')),
+          opis,
+        ).toBe(false);
+      }
+  });
+
+  it('przy tempie 8× jeden zgon sprzed ponad dwóch dób dostaje wpis w kronice, a dwa świeże karty', () => {
+    const { gov, atr } = start(2, 9);
+    const t = at(3, 12);
+    const lista = [
+      zgon('Halina Kowalska', t - 3 * 1440),
+      zgon('Marek Nowak', t, { f: false }),
+      zgon('Ewa Zielińska', t, { f: true }),
+    ];
+    const w = graj(gov, atr, t + 1440, () => (minAtrapy(atr) >= t ? lista : []), mulberry(2), 8);
+    expect(w.map((x) => x.d.name)).toEqual(['Marek Nowak', 'Ewa Zielińska']);
+    for (const x of w) expect(x.min - t).toBeLessThanOrEqual(1440);
+    expect(gov.pogrzebN).toBe(3);
+    const wpisy = gov.log.filter((l) => pl(l.txt).startsWith('Pogrzebu nie było'));
+    expect(wpisy.map((l) => pl(l.txt))).toEqual([
+      'Pogrzebu nie było, bo nikt nie miał czasu. W kronice zostało tylko: Halina Kowalska.',
+    ]);
   });
 
   it('pierwszej nocy i przed ciepłą kuchnią karty nie ma; dzień po nocy tak', () => {
@@ -512,6 +616,48 @@ describe('karta pogrzeb: kiedy przychodzi', () => {
     expect(graj(g2.gov, g2.atr, at(3, 20), () => stare)).toHaveLength(0);
     expect(g2.gov.pogrzebN).toBe(1);
     expect(gameMin({ day: 3, hour: 9, minute: 0 })).toBe(at(3, 9));
+  });
+});
+
+// ---------------------------------------------------------------- wpis o śmierci (mourn)
+
+describe('wpis o śmierci w kronice: z imieniem dla zarządu i mieszkańca z osobą', () => {
+  /** jeden krok zarządu z jednym nowym zgonem; zwraca wpisy o śmierci i zmianę zaufania i wkurzenia */
+  function zgonWKronice(z: Zgon) {
+    const gov = newGov(1);
+    const atr = new Atrapa(1);
+    atr.tick = tickAt(3, 10);
+    const t0 = gov.trust;
+    const a0 = gov.anger;
+    govUpdate(gov, { ...atr.input(), dead: [z] });
+    const wpisy = gov.log.filter((l) => /nie żyje/i.test(pl(l.txt)));
+    return { wpisy, dTrust: gov.trust - t0, dAnger: gov.anger - a0 };
+  }
+
+  it('mieszkaniec z imieniem: „Imię nie żyje, od ran.” i „has died of wounds”, zaufanie −2 i wkurzenie +3 jak dotąd', () => {
+    const r = zgonWKronice(zgon('Halina Kowalska', at(3, 10), { f: true }));
+    expect(r.wpisy.map((l) => pl(l.txt))).toEqual(['Halina Kowalska nie żyje, od ran.']);
+    expect(r.wpisy[0].txt.en).toBe('Halina Kowalska has died of wounds.');
+    expect(polskieSlowa(r.wpisy[0].txt.en, ['Halina Kowalska'])).toEqual([]);
+    expect([r.dTrust, r.dAnger]).toEqual([-2, 3]);
+    // przyczyny po ugryzieniu i przy amputacji też z imieniem
+    const g = zgonWKronice(zgon('Marek Nowak', at(3, 10), { f: false, cause: 'gorączka' }));
+    expect(g.wpisy.map((l) => pl(l.txt))).toEqual(['Marek Nowak nie żyje, po ugryzieniu.']);
+    expect(g.wpisy[0].txt.en).toBe('Marek Nowak has died of fever after being bitten.');
+  });
+
+  it('mieszkaniec bez osoby zostaje „jednym z mieszkańców”, też po angielsku; zaufanie −2 i wkurzenie +3', () => {
+    const r = zgonWKronice(zgon('Mieszkaniec', at(3, 10), { f: undefined }));
+    expect(r.wpisy.map((l) => pl(l.txt))).toEqual(['Nie żyje jeden z mieszkańców, od ran.']);
+    expect(r.wpisy[0].txt.en).toBe('One of the residents has died of wounds.');
+    expect([r.dTrust, r.dAnger]).toEqual([-2, 3]);
+  });
+
+  it('osoba z zarządu: z imieniem, zaufanie −5 i wkurzenie +8 bez zmian', () => {
+    const r = zgonWKronice(zgon('Janina Wrona', at(3, 10), { id: 's9', f: true, cause: 'amputacja' }));
+    expect(r.wpisy.map((l) => pl(l.txt))).toEqual(['Janina Wrona nie żyje, przy amputacji.']);
+    expect(r.wpisy[0].txt.en).toBe('Janina Wrona has died during an amputation.');
+    expect([r.dTrust, r.dAnger]).toEqual([-5, 8]);
   });
 });
 

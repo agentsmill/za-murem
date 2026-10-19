@@ -238,7 +238,7 @@ describe('kradzież z głodu', () => {
     const text = def('kradziez').text(h, d);
     expect(text).toContain('Marek Nowak');
     expect(text).toMatch(/od kilku dni je za mało/);
-    expect(text).toContain('Jedzenie 5');
+    expect(text).toContain('zapasy z piwnicy w budynku Atrapia 7: jedzenie 5.');
     expect(text).not.toMatch(/parterze|piętr/);
     // przy remisie nastrojów pierwszy w kolejności
     const remis = def('kradziez').make(setup(nastroje(30, 30, 40)).h) as { lok: string };
@@ -345,10 +345,13 @@ describe('kradzież z głodu', () => {
     expect(def('kradziez').w(setup({ ...bez, residents: 0 }).h)).toBe(0);
     const d = { loss: 5, b: 'Atrapia 7' };
     expect(def('kradziez').make(h)).toEqual(d);
+    // zdanie o stracie przepisane także bez sprawcy (0.3: „… w budynku Atrapia 7 Jedzenie 5.” bez znaku przed liczbą)
     expect(def('kradziez').text(h, d)).toBe(
+      'Ktoś wyniósł nocą zapasy z piwnicy w budynku Atrapia 7: jedzenie 5. Ślady prowadzą do mieszkania na parterze.',
+    );
+    expect(eventDef('kradziez')!.text(h, d)).toBe(
       'Ktoś wyniósł nocą z piwnicy w budynku Atrapia 7 Jedzenie 5. Ślady prowadzą do mieszkania na parterze.',
     );
-    expect(def('kradziez').text(h, d)).toBe(eventDef('kradziez')!.text(h, d));
     expect(
       def('kradziez')
         .choices(h, d)
