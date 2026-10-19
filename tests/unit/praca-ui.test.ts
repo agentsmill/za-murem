@@ -6,12 +6,21 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
-import { PROG_MAX, PROGI_DOMYSLNE, type Priorytet, progi, RODZAJE, type RodzajPracy } from '../../src/sim/praca.ts';
+import {
+  PROG_MAX,
+  PROGI_DOMYSLNE,
+  type Priorytet,
+  progi,
+  RODZAJE,
+  type RodzajPracy,
+  ZAPAS_OPALU,
+} from '../../src/sim/praca.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { type SimPerson, snapshot } from '../../src/sim/snapshot.ts';
 import { personCard } from '../../src/ui/karta.ts';
 import { helpSheet } from '../../src/ui/okna.ts';
 import {
+  BEZ_OGNIA,
   KROK_PROGU,
   nalozPolecenia,
   nastepnyPriorytet,
@@ -452,6 +461,14 @@ describe('karta osoby: praca', () => {
       expect(personCard(osoba({ sam: true, job, doing: 'Śpi.' }), 0), job).not.toContain('(sam');
     expect(personCard(osoba({ sam: true, job: 'chop', doing: 'Rąbie drzewo.' }), 0)).toContain('(sama)');
   });
+
+  it('droga bez polecenia (schronienie, powrót z wyprawy, nowa osoba idzie do siedziby) nie dostaje dopisku', () => {
+    // `go` bez polecenia nie jest pracą z panelu: automat pracy nie zaczyna drogi, tylko prace (łańcuchy prac mają
+    // własne rodzaje: haul, carry, loot)
+    expect(personCard(osoba({ sam: true, job: 'go', doing: 'Idzie do siedziby.' }), 0)).not.toContain('(sam');
+    ustawJezyk('en');
+    expect(personCard(osoba({ sam: true, job: 'go', doing: 'Walking.' }), 0)).not.toContain('(on own)');
+  });
 });
 
 describe('panel Pracy: reguła klawiatury, ostrzeżenie zombie i pomoc', () => {
@@ -489,6 +506,40 @@ describe('panel Pracy: reguła klawiatury, ostrzeżenie zombie i pomoc', () => {
     expect(polskieSlowa(en, ['Anna', 'Marek', 'Krysia'])).toEqual([]);
     // telefon (bez klawiatury, bez podpowiedzi pod panelem) ma to samo ostrzeżenie
     expect(pracaPanelHtml(widok({ zombie: true, touch: true }), false)).toContain(ZA_SIATKE_ZOMBIE.pl);
+  });
+
+  it('dymek progu drewna mówi, że Warsztat zostawia ZAPAS_OPALU sztuk na opał, po polsku i po angielsku', () => {
+    const dymek = (html: string): string =>
+      /class="pr-prog" title="([^"]*)"><span class="pr-prog-k">(?:drewno|wood)</.exec(html)![1];
+    expect(dymek(pracaPanelHtml(widok(), false))).toContain(`${ZAPAS_OPALU} sztuk`);
+    ustawJezyk('en');
+    const en = dymek(pracaPanelHtml(widok(), true));
+    expect(en).toContain(`${ZAPAS_OPALU} pieces`);
+    expect(polskieSlowa(en)).toEqual([]);
+  });
+
+  it('nikt w zarządzie nie ma Ognia: linia ostrzeżenia nad tabelą, po polsku i po angielsku', () => {
+    const bezOgnia = (w: WierszPracy): WierszPracy => ({ ...w, prio: [0, ...w.prio.slice(1)], stale: null });
+    const wszyscyBez = widok({ wiersze: widok().wiersze.map(bezOgnia) });
+    // ktoś ma Ogień (domyślny widok: priorytet 1): nie ma ostrzeżenia
+    expect(pracaPanelHtml(widok(), false)).not.toContain('data-uwaga="ogien"');
+    const pl = pracaPanelHtml(wszyscyBez, false);
+    expect(pl.match(/data-uwaga="ogien"/g)).toHaveLength(1);
+    expect(pl).toContain(BEZ_OGNIA.pl);
+    expect(pl.indexOf('data-uwaga="ogien"')).toBeLessThan(pl.indexOf('<table'));
+    // stałe zajęcie Ogień przy priorytecie 0 wystarcza
+    const zeStalym = widok({ wiersze: [...wszyscyBez.wiersze.slice(1), { ...wszyscyBez.wiersze[0], stale: 'ogien' }] });
+    expect(pracaPanelHtml(zeStalym, false)).not.toContain('data-uwaga="ogien"');
+    // jedna osoba z Ogniem 4 też wystarcza
+    const zCzworka = widok({ wiersze: [...wszyscyBez.wiersze.slice(1), { ...wszyscyBez.wiersze[0], prio: prio(4) }] });
+    expect(pracaPanelHtml(zCzworka, false)).not.toContain('data-uwaga="ogien"');
+    ustawJezyk('en');
+    const en = pracaPanelHtml(wszyscyBez, true);
+    expect(en).toContain(BEZ_OGNIA.en);
+    expect(polskieSlowa(en, ['Anna', 'Marek', 'Krysia'])).toEqual([]);
+    // telefon ma to samo ostrzeżenie; pusty zarząd ma tylko komunikat o braku ludzi
+    expect(pracaPanelHtml({ ...wszyscyBez, touch: true }, false)).toContain(BEZ_OGNIA.pl);
+    expect(pracaPanelHtml(widok({ wiersze: [] }), false)).not.toContain('data-uwaga="ogien"');
   });
 
   it('dymek przełącznika „za siatkę” jest jeden: ten sam w panelu i na karcie osoby', () => {

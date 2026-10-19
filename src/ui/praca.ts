@@ -10,7 +10,8 @@
      sterują grą; panelpracy.ts to pilnuje), „Trzymać w zapasie” (drewno, deski, części, w trybie zombie dzidy: minus,
      liczba, plus po 5) i tabelę, w której wiersz to osoba, a kolumna to rodzaj pracy w kolejności `RODZAJE`. W trybie
      zombie nad tabelą stoi stała linia `.pr-uwaga` o szwendaczach za siatką (podpowiedź z `say()` chowa się na telefonie
-     pod panelem, a ostrzeżenie ma być widać tam, gdzie jest przełącznik „za siatkę”).
+     pod panelem, a ostrzeżenie ma być widać tam, gdzie jest przełącznik „za siatkę”). Gdy nikt w zarządzie nie ma
+     Ognia (priorytet 0 i bez stałego zajęcia Ogień), nad tabelą stoi też linia `data-uwaga="ogien"` (`BEZ_OGNIA`).
      Znaczniki, na których stoją zrzuty i delegacja: komórka `data-prio="<osoba>:<rodzaj>"` z cyfrą 1–4 albo pustą
      treścią (nie robi), `data-prog="<co>:<+n|-n>"`, `data-zasiatke="<osoba>"` i nagłówek `data-kol="<rodzaj>"`.
    - Kolumna `badania` jest tylko wtedy, gdy rodzaj jest w `widoczne` (gałąź z badaniami); dzidy tylko w trybie zombie.
@@ -19,7 +20,15 @@
 
 import { zawodEn } from '../content/data.en.ts';
 import { type Tx, tx } from '../core/jezyk.ts';
-import { PROG_MAX, PROGI_DOMYSLNE, type Priorytet, type Progi, RODZAJE, type RodzajPracy } from '../sim/praca.ts';
+import {
+  PROG_MAX,
+  PROGI_DOMYSLNE,
+  type Priorytet,
+  type Progi,
+  RODZAJE,
+  type RodzajPracy,
+  ZAPAS_OPALU,
+} from '../sim/praca.ts';
 import type { Command } from '../sim/sim.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import { esc } from './tekst.ts';
@@ -97,8 +106,8 @@ const PROGI: Record<keyof Progi, { nazwa: Tx; opis: Tx }> = {
   drewno: {
     nazwa: tx('drewno', 'wood'),
     opis: tx(
-      'Drwal ścina drzewa, póki w obrębie siatki leży mniej drewna niż tyle. 0 wyłącza.',
-      'Woodcutters keep chopping while there is less wood than this inside the fence. 0 turns it off.',
+      `Drwal ścina drzewa, póki w obrębie siatki leży mniej drewna niż tyle. 0 wyłącza. Warsztat piłuje na deski tylko drewno ponad ten próg i zawsze zostawia ${ZAPAS_OPALU} sztuk na opał.`,
+      `Woodcutters keep chopping while there is less wood than this inside the fence. 0 turns it off. The workshop only saws wood above this level into planks and always leaves ${ZAPAS_OPALU} pieces for the stove.`,
     ),
   },
   deski: {
@@ -136,6 +145,13 @@ export const ZA_SIATKE_OPIS: Tx = tx(
 export const ZA_SIATKE_ZOMBIE: Tx = tx(
   'Za siatką są szwendacze: kto tam wyjdzie sam, ryzykuje ugryzienie.',
   'There are shamblers outside the fence: anyone who goes out on their own risks a bite.',
+);
+
+/** ostrzeżenie w panelu Pracy, gdy nikt w zarządzie nie ma Ognia (priorytet 0 i bez stałego zajęcia Ogień): jedna
+    pomyłka w kolumnie nie może po cichu zgasić kozy */
+export const BEZ_OGNIA: Tx = tx(
+  'Nikt w zarządzie nie ma włączonego Ognia: nikt sam nie dołoży do kozy.',
+  'Nobody on the board has Fire switched on: nobody will feed the stove on their own.',
 );
 
 /** krótka nazwa rodzaju pracy (nagłówek kolumny, karta osoby) */
@@ -314,11 +330,17 @@ export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
   const uwaga = v.zombie
     ? `<p class="pr-uwaga" role="note"><span class="pr-uwaga-i" aria-hidden="true">!</span>${esc(wJezyku(ZA_SIATKE_ZOMBIE, en))}</p>`
     : '';
+  // nikt nie ma Ognia (priorytet 0 i bez stałego zajęcia Ogień): koza zgaśnie, a nikt sam do niej nie dołoży
+  const kOgien = RODZAJE.indexOf('ogien');
+  const ogien = v.wiersze.some((w) => (w.prio[kOgien] ?? 0) > 0 || w.stale === 'ogien');
+  const bezOgnia = ogien
+    ? ''
+    : `<p class="pr-uwaga pr-bez-ognia" role="alert" data-uwaga="ogien"><span class="pr-uwaga-i" aria-hidden="true">!</span>${esc(wJezyku(BEZ_OGNIA, en))}</p>`;
 
   const kolumny = `<colgroup><col class="pr-col-os">${v.widoczne.map(() => '<col class="pr-col-k">').join('')}</colgroup>`;
   const tabela = `<table class="pr-tab">${kolumny}<thead><tr><th scope="col" class="pr-os"><span class="sr">${esc(
     t('Osoba', 'Person'),
   )}</span></th>${v.widoczne.map(naglowek).join('')}</tr></thead><tbody>${v.wiersze.map(wiersz).join('')}</tbody></table>`;
 
-  return `${lead}${klawiatura}${zapas}${info}${uwaga}${tabela}`;
+  return `${lead}${klawiatura}${zapas}${info}${bezOgnia}${uwaga}${tabela}`;
 }

@@ -299,6 +299,7 @@ export function wiescEn(pl: string): string {
     // werbunek: odmowa i pytanie o rękę (wędrowiec albo ocalały)
     for (const z of [false, true]) {
       put(NAPISY.odmowa(z));
+      put(NAPISY.bezMiejsca(z));
       put(NAPISY.rekaCzysta(z));
       put(NAPISY.rekaUgryziona(z));
     }
@@ -380,6 +381,11 @@ export const NAPISY = {
   odmowa: (zombie: boolean): Napis => ({
     pl: `${zombie ? 'Ocalały' : 'Wędrowiec'} dziękuje za zaproszenie i idzie dalej.`,
     en: `The ${zombie ? 'survivor' : 'wanderer'} thanks you for the invitation and moves on.`,
+  }),
+  /** zaproszenie bez miejsca w chwili decyzji (pełny zarząd i ostatnie łóżko mieszkańców zajęte w trakcie rozmowy) */
+  bezMiejsca: (zombie: boolean): Napis => ({
+    pl: `Nie mamy już dla ${zombie ? 'ocalałego' : 'wędrowca'} miejsca, więc idzie dalej.`,
+    en: `We have no room left for the ${zombie ? 'survivor' : 'wanderer'}, so they move on.`,
   }),
   rekaCzysta: (zombie: boolean): Napis => ({
     pl: `${zombie ? 'Ocalały' : 'Wędrowiec'} podwija rękaw: ani śladu zębów.`,

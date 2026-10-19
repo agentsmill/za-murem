@@ -7101,7 +7101,8 @@ export class Sim {
   }
 
   /** Rozstrzygnięcie zaproszenia: miejsce liczy się od nowa (zarząd mógł się zapełnić, łóżko ktoś zająć), potem jedno
-      losowanie ze st.rng na szansę z szansaZaproszenia. Udane: zwerbowany; nieudane: dziękuje i idzie dalej, bez kary. */
+      losowanie ze st.rng na szansę z szansaZaproszenia. Udane: zwerbowany; nieudane: dziękuje i idzie dalej, bez kary.
+      Bez miejsca w chwili decyzji (`dokad` 'brak' albo 'dom') nie ma losowania, a wieść mówi, że miejsca już nie ma. */
   private decyzjaWerbunku(t: Pawn, r: NonNullable<Obcy['rozmowa']>): void {
     const st = this.st;
     const ok = okazjaWerbunku(st, this.w);
@@ -7110,7 +7111,9 @@ export class Sim {
       this.zwerbuj(t, r, ok);
       return;
     }
-    st.obcy!.wiesc = { tick: st.tick, text: OBCY.odmowa(modeOf(st) === 'zombie').pl };
+    const zombie = modeOf(st) === 'zombie';
+    const bezMiejsca = ok.dokad === 'brak' || ok.dokad === 'dom';
+    st.obcy!.wiesc = { tick: st.tick, text: (bezMiejsca ? OBCY.bezMiejsca(zombie) : OBCY.odmowa(zombie)).pl };
     this.wedrowiecIdzieDalej(t);
   }
 

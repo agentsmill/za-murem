@@ -717,8 +717,10 @@ describe('Miejsce ponad limit zarządu: łóżko i pojemność', () => {
     dopelnij(sim, world, ZARZAD_MAX);
     const cap = capOf(st, world);
     // do pojemności brakuje jednego mieszkańca
-    while (st.pawns.filter((q) => q.kind === 'resident').length > cap - 1) removeResidents(st, 1);
-    while (st.pawns.filter((q) => q.kind === 'resident').length < cap - 1) addResidents(st, world, 1);
+    // pętle z ograniczeniem: gdy removeResidents albo addResidents nic nie zmienia, test pada z opisem zamiast wisieć
+    const ilu = (): number => st.pawns.filter((q) => q.kind === 'resident').length;
+    while (ilu() > cap - 1) if (removeResidents(st, 1) === 0) throw new Error('removeResidents nikogo nie usunął');
+    while (ilu() < cap - 1) if (addResidents(st, world, 1) === 0) throw new Error('addResidents nikogo nie dodał');
     expect(st.pawns.filter((q) => q.kind === 'resident')).toHaveLength(cap - 1);
     const { t, p } = kolejnaRozmowa(sim);
     expect(okazjaWerbunku(st, world).dokad).toBe('mieszkaniec');
@@ -732,6 +734,11 @@ describe('Miejsce ponad limit zarządu: łóżko i pojemność', () => {
     expect(t.kind).toBe('wedrowiec');
     expect(st.obcy!.werbunek).toBeUndefined();
     expect(st.pawns.filter((q) => q.kind === 'resident')).toHaveLength(cap);
+    // wieść mówi prawdziwy powód: miejsca już nie ma (nie „dziękuje i idzie dalej”), po polsku i po angielsku
+    expect(st.obcy!.wiesc!.text).toBe('Nie mamy już dla wędrowca miejsca, więc idzie dalej.');
+    expect(wiescEn(st.obcy!.wiesc!.text)).toBe('We have no room left for the wanderer, so they move on.');
+    expect(NAPISY.bezMiejsca(true).pl).toBe('Nie mamy już dla ocalałego miejsca, więc idzie dalej.');
+    expect(NAPISY.bezMiejsca(true).en).toBe('We have no room left for the survivor, so they move on.');
   });
 });
 

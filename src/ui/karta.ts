@@ -136,8 +136,10 @@ export interface CardOpts {
   zombie?: boolean;
 }
 
-/** prace, które pionek zaczyna sam, ale nie są pracą zarządu z panelu (sen, posiłek, grzanie się): bez dopisku */
-const BEZ_DOPISKA: ReadonlySet<string> = new Set(['sleep', 'eat', 'warm']);
+/** prace, które pionek zaczyna sam, ale nie są pracą zarządu z panelu (sen, posiłek, grzanie się) i droga bez
+    polecenia (schronienie, powrót z wyprawy, nowa osoba idzie do siedziby, pomocnicy przy poleceniu): bez dopisku;
+    automat pracy nie zaczyna drogi `go`, jego łańcuchy prac mają własne rodzaje */
+const BEZ_DOPISKA: ReadonlySet<string> = new Set(['sleep', 'eat', 'warm', 'go']);
 
 /** opis pracy z dopiskiem „(sam)” / „(sama)” / „(on own)”, gdy osoba zarządu wzięła pracę bez polecenia gracza
     (`oznacz` fałszywe na karcie mieszkańca, który rozkazów nie dostaje, więc „sam” nic by tam nie mówiło) */

@@ -13469,6 +13469,68 @@ function pracaShots(): Shot[] {
     },
   });
 
+  /** Panel Pracy, gdy nikt w zarządzie nie ma Ognia (przegląd końcowy pracy ludzi): wszystkim Ogień na 0 (gra stoi,
+      więc tabela pokazuje polecenia z kolejki), nad tabelą stoi linia `data-uwaga="ogien"` w polu widzenia panelu;
+      jedna osoba z Ogniem 1 ją chowa, a zrzut pokazuje panel z ostrzeżeniem (komputer i telefon). */
+  const panelBezOgnia = (name: string, lang: 'pl' | 'en', telefon: boolean): Shot => ({
+    name,
+    query: '',
+    lang,
+    ...(telefon ? { w: 390, h: 844 } : {}),
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      await dopelnij(page, telefon ? 12 : 6);
+      await otworz(page, telefon);
+      const ustawOgien = (prio: number, tylko?: number) =>
+        page.evaluate(
+          ([pr, t]) => {
+            const sim = window.zm!.sim!;
+            for (const p of sim.st.pawns)
+              if (p.kind === 'core' && (t < 0 || p.person === t))
+                sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'ogien', prio: pr as 0 | 1 });
+          },
+          [prio, tylko ?? -1] as const,
+        );
+      const stan = () =>
+        page.evaluate(() => {
+          const panel = document.getElementById('pracaPanel')!;
+          const body = panel.querySelector<HTMLElement>('.bp-body') ?? panel;
+          const uwaga = panel.querySelector<HTMLElement>('[data-uwaga="ogien"]');
+          const tabela = panel.querySelector('table')!.getBoundingClientRect();
+          const b = body.getBoundingClientRect();
+          const u = uwaga?.getBoundingClientRect();
+          return {
+            tekst: uwaga?.textContent ?? '',
+            widac: !!u && u.width > 0 && u.top >= b.top - 1 && u.bottom <= b.bottom + 1,
+            nadTabela: !!u && u.bottom <= tabela.top + 1,
+            poziomo: document.documentElement.scrollWidth > innerWidth || body.scrollWidth > body.clientWidth + 1,
+          };
+        });
+      // jedna osoba z Ogniem: ostrzeżenia nie ma; wszyscy bez Ognia: jest
+      await ustawOgien(0);
+      await ustawOgien(1, 0);
+      await page.waitForTimeout(400);
+      const zJedna = await stan();
+      if (zJedna.tekst) throw new Error(`ostrzeżenie mimo osoby z Ogniem: „${zJedna.tekst}”`);
+      await ustawOgien(0, 0);
+      await page.waitForTimeout(400);
+      // ostrzeżenie na górze treści panelu: przewinięcie do początku, jak po otwarciu
+      await page.evaluate(() => {
+        const body = document.querySelector<HTMLElement>('#pracaPanel .bp-body');
+        if (body) body.scrollTop = 0;
+      });
+      const g = await stan();
+      console.log(`  ostrzeżenie bez Ognia: ${JSON.stringify(g)}`);
+      const oczekiwane = lang === 'en' ? 'nobody on the board has fire' : 'nikt w zarządzie nie ma włączonego ognia';
+      if (!g.tekst.toLowerCase().includes(oczekiwane)) throw new Error(`brak ostrzeżenia: „${g.tekst}”`);
+      if (!g.widac) throw new Error('ostrzeżenie jest poza widocznym polem panelu');
+      if (!g.nadTabela) throw new Error('ostrzeżenie nie stoi nad tabelą');
+      if (g.poziomo) throw new Error('panel przewija się w bok');
+      await page.waitForTimeout(150);
+    },
+  });
+
   /** „Jak grać” z menu: część „Praca” mówi o panelu Pracy i klawiszu P (na telefonie tylko o przycisku), po polsku
       i po angielsku; zrzut pokazuje tę część */
   const pomoc = (name: string, lang: 'pl' | 'en', telefon: boolean): Shot => ({
@@ -13860,6 +13922,10 @@ function pracaShots(): Shot[] {
     panelBadania('en-praca-panel-badania-telefon', 'en', true),
     panelTelefonZombie('praca-panel-telefon-zombie', 'pl'),
     panelTelefonZombie('en-praca-panel-telefon-zombie', 'en'),
+    panelBezOgnia('praca-panel-bez-ognia', 'pl', false),
+    panelBezOgnia('en-praca-panel-bez-ognia', 'en', false),
+    panelBezOgnia('praca-panel-bez-ognia-telefon', 'pl', true),
+    panelBezOgnia('en-praca-panel-bez-ognia-telefon', 'en', true),
     pomoc('praca-pomoc', 'pl', false),
     pomoc('en-praca-pomoc', 'en', false),
     pomoc('praca-pomoc-telefon', 'pl', true),
