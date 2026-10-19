@@ -15,8 +15,14 @@
    jego wybory ruszają prawdziwych ludzi (`sprawdz` do kafelka przed kozą `kafelekKozy()` albo do siatki). `krzyk` i
    `halas` dla
    „Sprawdzić” osobę z `doSprawdzenia()` (czuwającą, a gdy takiej nie ma, śpiącą, ale nie z warty) i kafelek
-   z `kafelekPrzySiatce()` (`sprawdz`). */
+   z `kafelekPrzySiatce()` (`sprawdz`).
+   `pogrzeb` to karta z sytuacji jak `dym` (waga 0, wyzwalacz w eventTick z GovInput.dead, licznik GovState.pogrzebN): po
+   zgonie kogoś z imieniem (zarząd albo mieszkaniec z osobą; dane karty `{ id, name, f, cause, cialo? }`) w trzech
+   wyborach: pochować pod trzepakiem (w domu w ogrodzie; wszystkim nastrój „Pożegnaliśmy: Imię” +2 na dobę, kopie
+   `doSprawdzenia()` za −10 odpoczynku), pożegnać przy kozie (nastrój +1) albo bez ceremonii (wkurzenie +1). W trybie
+   zombie `cialo` (dobite albo nie) idzie do tekstu; bez ciała zamiast grobu tabliczka. */
 
+import { przyczynaEn } from '../content/data.en.ts';
 import { LAW, type LawPath } from '../content/data.ts';
 import type { EventHost } from '../content/events.ts';
 import { g } from '../content/people.ts';
@@ -24,7 +30,7 @@ import { type Tx, tx, txOf } from '../core/jezyk.ts';
 import { pick } from '../core/rng.ts';
 import type { Words, WordsEn } from './miejsce.ts';
 import { M1_LAWS_EN, TARGET_VARIANTS_EN, TARGETS_EN } from './tresc.en.ts';
-import type { GameMode, GovLokator, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
+import type { Cialo, GameMode, GovLokator, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
 import { najstarszaMieszkanka, type OsobaKarty, osobaKarty } from './warianty.ts';
 
 // ---------------------------------------------------------------- uchwały
@@ -223,6 +229,13 @@ export const LOOT_LABEL: Record<LootKey, string> = {
 };
 
 // ---------------------------------------------------------------- wydarzenia
+
+/** przyczyna zgonu (GovInput.dead[].cause) do zdania: „Halina nie żyje, od ran.” (angielska: `przyczynaEn`) */
+export const PRZYCZYNA: Readonly<Record<string, string>> = {
+  rany: 'od ran',
+  gorączka: 'po ugryzieniu',
+  amputacja: 'przy amputacji',
+};
 
 export type Pora = 'dzien' | 'wieczor' | 'noc';
 
@@ -1212,6 +1225,119 @@ export const NEW_EVENTS: GEventDef[] = [
       ];
     },
   },
+  {
+    // z sytuacji, nie z losowania: po zgonie kogoś z imieniem (wydarzenia.ts, eventTick, GovInput.dead i
+    // GovState.pogrzebN), w ciągu doby, za dnia albo wieczorem
+    id: 'pogrzeb',
+    when: ['dzien', 'wieczor'],
+    w: () => 0,
+    make: () => null,
+    title: () => tx('Pogrzeb', 'A funeral'),
+    text: (h, d: DanePogrzebu) => {
+      const s = h.words();
+      const e = h.wordsEn();
+      const co = PRZYCZYNA[d.cause] ?? d.cause;
+      // zarząd (id osoby) albo mieszkaniec (puste id)
+      const kim = d.id
+        ? tx(`${g(d, 'Był', 'Była')} z ${s.zarzad.dk}.`, `${zaimek(d, 'He', 'She')} was on ${e.krotko}.`)
+        : tx(
+            `${g(d, 'Mieszkał', 'Mieszkała')} ${dom(h) ? 'pod waszym dachem' : 'w waszej klatce'}.`,
+            `${zaimek(d, 'He', 'She')} lived ${dom(h) ? 'under your roof' : 'in your stairwell'}.`,
+          );
+      const reszta = tx(
+        `Ludzie stoją na podwórku i czekają, co powie ${s.zarzad.krotko}. Akt zgonu trzeba by wystawić w aplikacji, której serwery zgasły razem z siecią.`,
+        `People are standing in the yard waiting to hear what ${e.krotko} will say. A death certificate would need an app whose servers went down with the grid.`,
+      );
+      // tryb zombie: co z ciałem (dobite, zanim wstało, albo nikt go nie dobił i już go nie ma)
+      const cialo = !d.cialo
+        ? null
+        : d.cialo === 'dobite'
+          ? tx(
+              `Dobiliście ${g(d, 'go', 'ją')}, zanim zdążył${g(d, '', 'a')} wstać. Nikt nie ma pretensji, ale nikt też nie patrzy w oczy temu, kto to zrobił.`,
+              `You finished ${zaimek(d, 'him', 'her')} off before ${zaimek(d, 'he', 'she')} could get up. Nobody blames you, but nobody looks the one who did it in the eye either.`,
+            )
+          : tx(
+              `Nikt ${g(d, 'go', 'jej')} nie dobił. Ciała nie ma na podwórku: wstało albo zostało za siatką, i nikt nie pyta, które z dwojga jest gorsze.`,
+              `Nobody finished ${zaimek(d, 'him', 'her')} off. There is no body in the yard: it either got up or stayed beyond the fence, and nobody asks which is worse.`,
+            );
+      const zdania = [tx(`${d.name} nie żyje, ${co}.`, `${d.name} has died ${przyczynaEn(d.cause)}.`), kim];
+      if (cialo) zdania.push(cialo);
+      zdania.push(reszta);
+      return tx(zdania.map((z) => z.pl).join(' '), zdania.map((z) => z.en).join(' '));
+    },
+    choices: (h, d: DanePogrzebu) => {
+      const miejsce = dom(h) ? tx('w ogrodzie', 'in the garden') : tx('pod trzepakiem', 'under the carpet rack');
+      // zombie bez ciała na mapie (wstało albo zostało za siatką): nie ma kogo grzebać, jest tabliczka
+      const tabliczka = !!d.cialo && d.cialo !== 'dobite';
+      const why = `Pożegnaliśmy: ${d.name.split(' ')[0]}`;
+      /** wszyscy, którzy znali zmarłego: zarząd i mieszkańcy z osobą */
+      const zalobnicy = () => [...h.zarzad().map((p) => p.id), ...h.lokatorzy().map((l) => l.id)];
+      return [
+        {
+          label: tabliczka
+            ? tx(`Postawić tabliczkę ${miejsce.pl}`, `Put up a plaque ${miejsce.en}`)
+            : tx(`Pochować ${miejsce.pl}`, `Bury ${zaimek(d, 'him', 'her')} ${miejsce.en}`),
+          ok: true,
+          run: () => {
+            for (const id of zalobnicy()) h.moodOf(id, why, 2, 24);
+            // kopie ten, kto może: najbardziej wypoczęty spoza warty, wyprawy i zabiegu
+            const kopacz = h.doSprawdzenia();
+            if (kopacz) h.needsOf(kopacz.id, { rest: -10 });
+            const gdzie = wielka(miejsce.pl);
+            const where = wielka(miejsce.en);
+            h.log(
+              tabliczka
+                ? tx(
+                    `${gdzie} stanęła tabliczka z napisem „${d.name}”.${kopacz ? ` Dołek pod słupek ${g(kopacz, 'wykopał', 'wykopała')} ${kopacz.name}.` : ''}`,
+                    `${where} stands a plaque reading “${d.name}”.${kopacz ? ` ${kopacz.name} dug the hole for the post.` : ''}`,
+                  )
+                : tx(
+                    `${d.name} leży teraz ${miejsce.pl}.${kopacz ? ` Grób ${g(kopacz, 'wykopał', 'wykopała')} ${kopacz.name}.` : ''}`,
+                    `${d.name} now lies ${miejsce.en}.${kopacz ? ` ${kopacz.name} dug the grave.` : ''}`,
+                  ),
+            );
+          },
+        },
+        {
+          label: tx('Pożegnać przy kozie', 'Say goodbye by the stove'),
+          ok: true,
+          run: () => {
+            for (const id of zalobnicy()) h.moodOf(id, why, 1, 24);
+            h.log(
+              tx(
+                `Przy kozie zrobiło się cicho. Każdy powiedział o ${g(d, 'zmarłym', 'zmarłej')} jedno zdanie, a potem ktoś dorzucił drewna.`,
+                `It went quiet by the stove. Everyone said one sentence about ${zaimek(d, 'him', 'her')}, and then somebody put more wood on.`,
+              ),
+            );
+          },
+        },
+        {
+          label: tx('Bez ceremonii', 'No ceremony'),
+          ok: true,
+          run: () => {
+            h.mood(0, 1);
+            h.log(
+              tx(
+                `Bez ceremonii. Ktoś wykreślił ${d.name} z grafiku dyżurów i tyle. Ludzie to zauważyli.`,
+                `No ceremony. Somebody crossed ${d.name} off the duty rota, and that was it. People noticed.`,
+              ),
+            );
+          },
+        },
+      ];
+    },
+  },
 ];
+
+/** dane karty `pogrzeb` (JSON w stanie zarządu): zmarły z GovInput.dead; `cialo` tylko w trybie zombie, a `lezy` czeka
+    na pogrzeb, więc w karcie jest tylko `dobite` albo `brak` */
+export interface DanePogrzebu {
+  /** id osoby zarządu; puste dla mieszkańca z imieniem */
+  id: string;
+  name: string;
+  f: boolean;
+  cause: string;
+  cialo?: Exclude<Cialo, 'lezy'>;
+}
 
 export { names as peopleNames };

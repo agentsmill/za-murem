@@ -36,12 +36,16 @@
    Strony świata (`strony`): kafelek podwórka przy siatce od strony najbliższych garaży i najbliższego budynku
    mieszkalnego za siatką (`stronyOf` w src/gov/miejsce.ts), z których karty „Krzyk” i „Hałas” biorą miejsce dla
    „Sprawdzić”; dziury w siatce niosą swoje kafelki (`GovHole.tiles`), gdy strony nie ma. Do tego `strony.koza`: wolny
-   kafelek przed kozą zarządu, dokąd idzie ktoś z karty „Ktoś nie może spać” (liczony przy każdym odczycie). */
+   kafelek przed kozą zarządu, dokąd idzie ktoś z karty „Ktoś nie może spać” (liczony przy każdym odczycie).
+
+   Zmarli (`dead`, `zmarli`): zarząd i mieszkańcy po kolei; do karty „Pogrzeb” każdy wpis niesie płeć `f` (gdy zmarły miał
+   osobę w `st.people`), minutę gry zgonu `min` i w trybie zombie los zwłok `cialo` (leżą, dobite, nie ma ich), liczone ze
+   zwłok na mapie (`Thing.dead`), bez nowych pól w stanie symulacji. */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
 import { placeOf, stronyOf, wordsOfWorld } from '../gov/miejsce.ts';
-import type { Arm, GovEffects, GovInput, GovLokator, LawEffects, RaidResult } from '../gov/typy.ts';
+import type { Arm, Cialo, GovEffects, GovInput, GovLokator, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
 import {
   dodajKsiazke,
@@ -56,7 +60,7 @@ import {
   wiedza,
 } from './badania.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
-import { dayOf, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
+import { dayOf, minutesAt, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { frontTile, houseOf, inHomeApt } from './house.ts';
 import { nearestFree } from './path.ts';
 import { fenceShape, gateTiles } from './perimeter.ts';
@@ -188,6 +192,41 @@ const lokatorZarzadu = (p: SimPerson): GovLokator => ({
   tile: p.tile,
 });
 
+/** Zmarli z zarządu i mieszkańcy (`GovInput.dead`), po kolei, z tym, czego potrzebuje pogrzeb: płeć `f` zmarłego, który
+    miał osobę w `st.people` (zarząd po id, mieszkaniec z imieniem po imieniu i nazwisku, bo we wpisie zgonu ma puste id;
+    mieszkaniec bez osoby jest „Mieszkańcem” i pola nie ma), minuta gry zgonu `min` i w trybie zombie los zwłok `cialo`
+    (zwłoki z wpisem w `Thing.dead`: z paliwem leżą i mogą wstać, bez paliwa ktoś je dobił; bez zwłok wstały albo zmarły
+    poza murem). Wszystko czytane ze stanu, nic nowego w stanie. */
+function zmarli(st: SimState, zombie: boolean): NonNullable<GovInput['dead']> {
+  const lista = st.dead ?? [];
+  if (!lista.length) return [];
+  const poId = new Map<string, boolean>();
+  const poImieniu = new Map<string, boolean>();
+  for (const o of st.people) {
+    poId.set(o.id, o.f);
+    if (!poImieniu.has(o.name)) poImieniu.set(o.name, o.f);
+  }
+  const zwloki = new Map<number, Thing>();
+  if (zombie) for (const t of st.things) if (t.kind === 'zwloki' && t.dead !== undefined) zwloki.set(t.dead, t);
+  const wynik: NonNullable<GovInput['dead']> = [];
+  lista.forEach((d, k) => {
+    if (d.kind !== 'core' && d.kind !== 'resident') return;
+    const f = d.id ? poId.get(d.id) : poImieniu.get(d.name);
+    const body = zwloki.get(k);
+    const cialo: Cialo = body ? (body.fuel > 0 ? 'lezy' : 'dobite') : 'brak';
+    wynik.push({
+      id: d.id,
+      name: d.name,
+      cause: d.cause,
+      tick: d.tick,
+      ...(f !== undefined ? { f } : {}),
+      min: Math.floor(minutesAt(d.tick)),
+      ...(zombie ? { cialo } : {}),
+    });
+  });
+  return wynik;
+}
+
 /** Odczyt dla zarządu: snapshot w kształcie GovInput. screen: sekundy przy ekranie od startu gry bez pauzy
     (przy 1× to tick / 20; liczy je pętla gry, bo symulacja nie wie o tempie). */
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
@@ -268,9 +307,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
         }
       : {}),
     ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
-    dead: (st.dead ?? [])
-      .filter((d) => d.kind === 'core' || d.kind === 'resident')
-      .map((d) => ({ id: d.id, name: d.name, cause: d.cause, tick: d.tick })),
+    dead: zmarli(st, zombie),
     // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (tu ich liczba
     // dla dróg), a przyłączone budynki to te, które wspólny płot już dołączył do obwodu (plan w toku się nie liczy).
     // Pole `ludnosc2021` dokłada gra (main.ts)

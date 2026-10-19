@@ -25,7 +25,7 @@ import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { wyprawyTick } from './dzienne.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, resetAssign, setAssign } from './noc.ts';
-import { FIRST_LAWS } from './tresc.ts';
+import { FIRST_LAWS, PRZYCZYNA } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
 import { lawEffects as effectsOfLaws, lawState, lawOptions as optionsOfLaws, sign } from './uchwaly.ts';
 import { wiesci } from './wiesci.ts';
@@ -141,16 +141,17 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   return fx;
 }
 
-const CAUSE: Record<string, string> = { rany: 'od ran', gorączka: 'po ugryzieniu', amputacja: 'przy amputacji' };
-
-/** nowe zgony: ktoś z zarządu to zaufanie −5 i wkurzenie +8, mieszkaniec −2 i +3; raz na zgon, linia do raportu */
+/** nowe zgony: ktoś z zarządu to zaufanie −5 i wkurzenie +8, mieszkaniec −2 i +3; raz na zgon, linia do raportu.
+    Pogrzeb (karta `pogrzeb`) ma swój licznik `pogrzebN`, który stąd tylko startuje. */
 function mourn(st: GovState, i: GovInput, fx: GovEffects): void {
   const dead = i.dead ?? [];
   const from = st.deadN ?? 0;
   if (dead.length <= from) return;
+  // licznik pogrzebów rusza od pierwszego zgonu po tej zmianie: stary zapis nie dostaje kart za dawne zgony
+  st.pogrzebN ??= from;
   st.deadN = dead.length;
   for (const d of dead.slice(from)) {
-    const why = CAUSE[d.cause] ?? d.cause;
+    const why = PRZYCZYNA[d.cause] ?? d.cause;
     const whyEn = przyczynaEn(d.cause);
     const line = d.id
       ? tx(`${d.name} nie żyje, ${why}.`, `${d.name} has died ${whyEn}.`)

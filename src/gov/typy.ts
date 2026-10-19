@@ -142,6 +142,9 @@ export interface GovLokator {
   tile: number;
 }
 
+/** los zwłok zmarłego w trybie zombie (`GovInput.dead[].cialo`): leżą i mogą wstać, dobite, nie ma ich na mapie */
+export type Cialo = 'lezy' | 'dobite' | 'brak';
+
 export interface GovInput {
   /** krok symulacji (ticki) */
   tick: number;
@@ -189,8 +192,12 @@ export interface GovInput {
     tonight: number;
     przy?: { pawn: number; x: number; y: number };
   };
-  /** zmarli (zarząd z id, mieszkańcy z pustym id) od początku gry, po kolei; lista tylko rośnie */
-  dead?: { id: string; name: string; cause: string; tick: number }[];
+  /** zmarli (zarząd z id, mieszkańcy z pustym id) od początku gry, po kolei; lista tylko rośnie. Do pogrzebu (karta
+      `pogrzeb`): `f` to płeć zmarłego i jest tylko wtedy, gdy miał osobę (zarząd albo mieszkaniec z imieniem; mieszkaniec
+      bez osoby nie ma imienia i pogrzebu), `min` to minuta gry zgonu (jak `gameMin`), a `cialo` tylko w trybie zombie: co
+      stało się ze zwłokami. `lezy`: leżą i mogą jeszcze wstać, `dobite`: ktoś je dobił, `brak`: nie ma ich na mapie
+      (wstały albo zmarły poza murem, na wyprawie) */
+  dead?: { id: string; name: string; cause: string; tick: number; f?: boolean; min?: number; cialo?: Cialo }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
   /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
@@ -562,6 +569,10 @@ export interface GovState {
   mode?: GameMode;
   /** ile zgonów z GovInput.dead zarząd już opłakał */
   deadN?: number;
+  /** ile zgonów z GovInput.dead przeszło przez pogrzeb (karta `pogrzeb`: pokazana albo pominięta, bo zmarły nie miał
+      imienia, minęły ponad dwie doby albo zgon był sprzed zapisu); pole od pierwszego zgonu po tej zmianie, w starym
+      zapisie bez niego liczy się od `deadN` */
+  pogrzebN?: number;
   /** ile napaści z GovInput.napady osiedle już policzyło (pole od pierwszej napaści) */
   napadN?: number;
   /** mapa miasta: stan odwiedzonych miejsc; pole od `wlaczMiasto` (opcja `miasto`), bez niego zarząd gra na TARGETS */
