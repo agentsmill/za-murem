@@ -17,10 +17,17 @@
    przy wznowieniu daje tylko budynek siedziby do imion i historii (`mieszkancyZapisu`, tylko dla zapisu z osobami
    z generatora), bez nowego `createSim`.
 
+   Ludność z 2021 roku (`ludnoscSpisu2021`). Z tych samych tabel, bez nowego pobierania: ilu ludzi mieszkało w kwadracie
+   domu według spisu. Liczy z niej cel drogi ludnościowej zarząd (warunki zwycięstwa, src/gov/zwyciestwo.ts); gra podaje ją
+   w odczycie (`GovInput.ludnosc2021`), a bez tabel cel zarządu to 250.
+
    Deterministyczne: te same dane osiedla, ziarno i tabele dają ten sam świat i te same osoby; bez DOM i sieci. */
 
 import { budynkiZCzlonkami } from '../mieszkancy/budynki.ts';
+import { budynkiObszaru } from '../mieszkancy/generuj.ts';
 import { oznaczGeo } from '../mieszkancy/oznacz.ts';
+import { marginesyDla } from '../mieszkancy/rejon.ts';
+import { obsadzBudynek } from '../mieszkancy/spis.ts';
 import type { DaneMieszkancow } from '../mieszkancy/wczytaj.ts';
 import { type AptState, applyApts, settleApts } from '../world/apts.ts';
 import type { Geo } from '../world/geo.ts';
@@ -37,6 +44,27 @@ export function mapaMieszkancow(geo: Geo, dane: DaneMieszkancow | null): Geo {
   } catch (e) {
     console.warn('Mieszkańcy z adresu: nie da się oznaczyć budynków, gra bez mieszkańców z generatora', e);
     return geo;
+  }
+}
+
+/** Ilu ludzi mieszkało w kwadracie domu w 2021 roku według spisu (NSP), z czego zarząd liczy cel drogi ludnościowej
+    (`GovInput.ludnosc2021`, src/gov/zwyciestwo.ts). Osoby wszystkich budynków mieszkalnych obszaru gry (`budynkiObszaru`,
+    reguła R22 generatora), każdy obsadzony na spis (`obsadzBudynek`: marginesy rejonu budynku, bez gminy marginesy
+    Polski), bez postarzania do 2051, imion i historii, więc to dziesiątki milisekund i żadnego pobierania (tabele są
+    już w `dane`). Siedziba, której generator nie uważa za mieszkalną (dema Przymorza i Lanciego), do sumy nie wchodzi.
+    `undefined` bez tabel (`dane === null`), po wyjątku (z ostrzeżeniem w konsoli) i gdy w obszarze nie ma nikogo:
+    zarząd bierze wtedy cel jak bez danych. Czysta i deterministyczna (ziarna spisu z `losDla`), niczego nie zmienia. */
+export function ludnoscSpisu2021(geo: Geo, dane: DaneMieszkancow | null): number | undefined {
+  if (!dane) return undefined;
+  try {
+    const { gmina, kraj } = dane;
+    let ludzie = 0;
+    for (const b of budynkiObszaru(geo, gmina, kraj))
+      ludzie += obsadzBudynek(b, gmina ? marginesyDla(gmina, b.rejon) : kraj.polska, gmina, kraj).osoby.length;
+    return ludzie > 0 ? ludzie : undefined;
+  } catch (e) {
+    console.warn('Mieszkańcy z adresu: nie da się policzyć ludności z 2021 roku, cel drogi ludnościowej bez danych', e);
+    return undefined;
   }
 }
 

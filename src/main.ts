@@ -55,7 +55,14 @@ import { NAPISY as HANDEL } from './sim/handlarz.ts';
 import { type LokatorzyGry, zrodloLokatorow } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
-import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
+import {
+  ludnoscSpisu2021,
+  mapaMieszkancow,
+  mieszkancyNowejGry,
+  mieszkancyZapisu,
+  opcjaMieszkancow,
+  stanyM2,
+} from './sim/osiedle.ts';
 import { type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, type SimStock, snapshot } from './sim/snapshot.ts';
@@ -214,6 +221,9 @@ let seed = 0;
 let hqName = '';
 /** miejsca z punktów OSM wokół adresu dla zarządu (liczone raz po zbudowaniu świata); puste bez opcji miasta */
 let okolica: Miejsce[] = [];
+/** ilu ludzi mieszkało w kwadracie domu w 2021 roku według spisu (liczone raz po zbudowaniu mapy, z tabel mieszkańców):
+    z tego zarząd liczy cel drogi ludnościowej (`GovInput.ludnosc2021`); bez tabel pusto i cel to 250 */
+let ludnosc2021: number | undefined;
 /** kafelki miasta na całą sesję: pobierane dopiero przy oglądaniu mapy miasta, nigdy przy starcie gry */
 const kafelkiMiasta = new KafelkiMiasta(pobierzKafelek);
 /** mapa miasta tej gry (widok i doczytane kafelki zostają między otwarciami okna); null bez opcji miasta i na osiedlu
@@ -452,6 +462,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   if (opcjaMiasto && !data.geo.proc) uzupelnijKlucze(data.geo);
   // mapa z tagami budynków generatora mieszkańców (bez tabel ta sama mapa); świat poza tagami jest ten sam
   const geo = mapaMieszkancow(data.geo, dane);
+  ludnosc2021 = ludnoscSpisu2021(geo, dane);
   // gra z sąsiadami: świat bez budynków zajętych przez inne drużyny przy wyborze siedziby i bez nazwy ulicy z adresu
   // w nazwach budynków (zapis idzie do chmury); bez sieci (bez === null) zwykły świat. Świat zawsze z mapy z tagami
   // generatora, więc mieszkańcy siedziby (także innej niż pod adresem, gdy klatkę zajęła inna drużyna) idą niżej
@@ -729,6 +740,8 @@ function input(): GovInput {
   }
   // miejsca z okolicy dla karty nocy i wypraw dziennych; bez opcji zarząd gra na TARGETS
   if (opcjaMiasto) i.okolica = okolica;
+  // ludność kwadratu domu z 2021 roku do celu drogi ludnościowej; bez tabel pole zostaje puste
+  if (ludnosc2021 !== undefined) i.ludnosc2021 = ludnosc2021;
   // warta i dyżur przy kozie, które stoją (także z menu), zarząd bierze z posterunków osób (people[].post)
   return i;
 }
