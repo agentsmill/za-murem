@@ -29,7 +29,12 @@
    Premie ery 1–2 i paleniska. Stałe premii (OKNA_PLUS, KONSERWY_PLON, ZIELARSTWO_SZANSA, SPAWANIE_TEMPO, AMBU_TEMPO,
    PIECZARKI_PLON) i wagi drewna w paleniskach (PALENISKA) leżą tu, a stosują je wołający: `Sim` (ciepło, plon,
    dokładanie, potrzeby), `pracaPrzepisu` w surowce.ts i karta nocy zarządu (`GovInput.paleniska`). Premia działa
-   tylko po zbadaniu (`st.techDone`), więc gra bez badań ma te same liczby co przed nimi. */
+   tylko po zbadaniu (`st.techDone`), więc gra bez badań ma te same liczby co przed nimi.
+
+   Odczyt dla warunków zwycięstwa. `liczbaZbadanych`, `eraBadan`, `koncowaZbadana` i `siecWlaczona` składają
+   `GovInput.badania` (src/sim/gov.ts) dla ramy zwycięstwa. Sieć włącza polecenie `siec` w pracowni (menu pracowni w
+   orders.ts, `Sim.wlaczSiec`): tylko po zbadaniu technologii końcowej przy stojącej pracowni, a znacznik
+   (`st.research.siec`) powstaje dopiero wtedy i zostaje, także po rozbiórce pracowni. */
 
 import type { TechDef, TechDom } from '../content/data.ts';
 import { BOOKS, ERAS, TECH, TECH_DOMS } from '../content/data.ts';
@@ -291,9 +296,19 @@ export function eraBadan(st: SimState): number {
   return era;
 }
 
+/** ile technologii z drzewka jest zbadanych; identyfikatory spoza drzewka (np. testowe) się nie liczą */
+export function liczbaZbadanych(st: SimState): number {
+  return (st.techDone ?? []).filter((id) => Object.hasOwn(TECH_BY, id)).length;
+}
+
 /** czy technologia końcowa drzewka jest zbadana */
 export function koncowaZbadana(st: SimState): boolean {
   return TECHS.some((t) => t.koncowa === true && !!st.techDone?.includes(t.id));
+}
+
+/** czy sieć jest już włączona (polecenie `siec` w pracowni, `Sim.wlaczSiec`); pole powstaje dopiero przy włączeniu */
+export function siecWlaczona(st: SimState): boolean {
+  return st.research?.siec === true;
 }
 
 /** Waga drewna w paleniskach (premie ery 1–2 i dokładanie): ile razy szybciej pali palenisko tego rodzaju. Koza

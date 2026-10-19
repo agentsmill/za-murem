@@ -20,6 +20,7 @@ import {
   badaniaWidoczne,
   dodajKsiazke,
   kartka,
+  koncowaZbadana,
   kosztTech,
   ksiazkaZ,
   lekZPlonu,
@@ -28,6 +29,7 @@ import {
   PIECZARKI_PLON,
   plonKonserw,
   SZANSA_KSIAZKI,
+  siecWlaczona,
   TECH_BY,
   tempoOsoby,
 } from './badania.ts';
@@ -753,6 +755,8 @@ export type Command =
   /** badania: wybór bieżącego badania (ids puste; tech null zdejmuje wybór) i zarząd do stołu pracowni */
   | { t: 'research'; ids: number[]; tech: string | null }
   | { t: 'study'; ids: number[]; thing: number }
+  /** badania: włączenie sieci po zbadaniu technologii końcowej, z menu pracowni (ids bez znaczenia, nikt nie musi iść) */
+  | { t: 'siec'; ids: number[] }
   /** M2 fala 2 (docs/M2-fala-2.md): cudze drzwi (kafelek drzwi budynku albo mieszkania): otworzyć (przy otwartych:
       wejść), zapukać, wyważyć, zabić deskami, odbić deski */
   | { t: 'open' | 'knock' | 'force' | 'board' | 'unboard'; ids: number[]; door: number }
@@ -915,8 +919,9 @@ export interface SimState {
   techDone?: string[];
   /** badania (src/sim/badania.ts): bieżące badanie (`cur`, null: nic nie wybrano), zapisany postęp każdego zaczętego
       badania w punktach (`prog`, zmiana badania go nie kasuje) i tick ukończenia zbadanych (`at`). Pola nie ma, dopóki
-      nikt nie wybierze pierwszego badania, więc gra bez badań ma ten sam skrót stanu co dotąd. */
-  research?: { cur: string | null; prog: Record<string, number>; at: Record<string, number> };
+      nikt nie wybierze pierwszego badania, więc gra bez badań ma ten sam skrót stanu co dotąd. `siec` pojawia się dopiero
+      po włączeniu sieci (polecenie `siec`) i zostaje do końca gry. */
+  research?: { cur: string | null; prog: Record<string, number>; at: Record<string, number>; siec?: true };
   /** książki osady według dziedziny (każda dodaje 1 do wiedzy, w wiedzy liczą się najwyżej 2); pola nie ma, dopóki
       nikt nie znajdzie pierwszej książki */
   books?: Partial<Record<TechDom, number>>;
@@ -2521,9 +2526,13 @@ export class Sim {
       this.syncMealDoor();
       return;
     }
-    // wybór badania nie potrzebuje nikogo z zarządu
+    // wybór badania i włączenie sieci nie potrzebują nikogo z zarządu
     if (c.t === 'research') {
       this.chooseResearch(c.tech);
+      return;
+    }
+    if (c.t === 'siec') {
+      this.wlaczSiec();
       return;
     }
     // polecenia przyjmuje tylko zarząd, tłum to tło; kto jest na wyprawie, słucha tylko wezwania z powrotem
@@ -5331,6 +5340,15 @@ export class Sim {
     if (stan !== 'do_wziecia' && stan !== 'w_toku' && stan !== 'stoi') return;
     st.research ??= { cur: null, prog: {}, at: {} };
     st.research.cur = tech;
+  }
+
+  /** Włączenie sieci: tylko gdy technologia końcowa jest zbadana i stoi pracownia; ustawia `research.siec` (pole
+      powstaje dopiero teraz, razem z `research`, jeśli go jeszcze nie ma). Drugie włączenie nic nie zmienia. */
+  private wlaczSiec(): void {
+    const st = this.st;
+    if (!koncowaZbadana(st) || !this.pracownia() || siecWlaczona(st)) return;
+    st.research ??= { cur: null, prog: {}, at: {} };
+    st.research.siec = true;
   }
 
   /** zarząd do stołu pracowni; ile miejsc, tyle osób (kolejność z zaznaczenia) */

@@ -3,7 +3,8 @@
    potrzeby i nastroje to pionki, wyprawa wychodzi bramą, warta staje przy siatce, łaty zamykają dziury, a napad
    z planu odgrywają szabrownicy. To, co wymaga przeliczenia przechodniości albo dróg (warta, wyprawa, łaty), idzie
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie.
-   Badania: odczyt niesie też eraBadan, książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
+   Badania: odczyt niesie też `badania` (pracownia, liczba zbadanych technologii, eraBadan, koncowaZbadana i siecWlaczona
+   dla ramy zwycięstwa), książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
    a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. Kozy z beczek i kocioł
    wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA), a stojąca wieża jako `wieza` (posterunek karty). */
 
@@ -12,7 +13,7 @@ import { nextRandom } from '../core/rng.ts';
 import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type { Arm, GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
-import { dodajKsiazke, eraBadan, koncowaZbadana, PALENISKA, wiedza } from './badania.ts';
+import { dodajKsiazke, eraBadan, koncowaZbadana, liczbaZbadanych, PALENISKA, siecWlaczona, wiedza } from './badania.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
 import { dayOf, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { houseOf, inHomeApt } from './house.ts';
@@ -116,7 +117,13 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
       .filter((d) => d.kind === 'core' || d.kind === 'resident')
       .map((d) => ({ id: d.id, name: d.name, cause: d.cause, tick: d.tick })),
     // badania: jedna wiedza i jedne książki dla tablicy i dla wydarzeń zarządu (src/sim/badania.ts)
-    badania: { era: eraBadan(st), koncowa: koncowaZbadana(st) },
+    badania: {
+      pracownia: st.things.some((t) => t.kind === 'pracownia'),
+      zbadane: liczbaZbadanych(st),
+      era: eraBadan(st),
+      koncowa: koncowaZbadana(st),
+      siecWlaczona: siecWlaczona(st),
+    },
     books: { ...st.books },
     techDone: [...(st.techDone ?? [])],
     know: Object.fromEntries(TECH_DOMS.map((d) => [d, wiedza(st, d)])) as Record<TechDom, number>,

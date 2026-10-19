@@ -145,9 +145,10 @@ export interface GovInput {
   dead?: { id: string; name: string; cause: string; tick: number }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
-  /** badania (src/sim/badania.ts): najwyższa era wśród zbadanych technologii (0: nic) i czy technologia końcowa jest
-      zbadana; bez pola zarząd zakłada grę bez badań */
-  badania?: { era: number; koncowa: boolean };
+  /** badania (src/sim/badania.ts): czy stoi pracownia, ile technologii z drzewka jest zbadanych (identyfikatory spoza
+      drzewka się nie liczą), najwyższa era wśród nich (0: nic), czy technologia końcowa jest zbadana i czy sieć jest
+      już włączona (polecenie `siec` w pracowni); bez pola zarząd zakłada grę bez badań. Czyta je rama zwycięstwa. */
+  badania?: { pracownia: boolean; zbadane: number; era: number; koncowa: boolean; siecWlaczona: boolean };
   /** książki osady według dziedziny, z symulacji (w wiedzy liczą się najwyżej 2 na dziedzinę); bez pola: żadnych */
   books?: Partial<Record<TechDom, number>>;
   /** zbadane technologie (identyfikatory z src/sim/badania.ts); EventHost.tech czyta stąd, bez pola żadna */

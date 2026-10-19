@@ -106,6 +106,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | jedzenie | food |
 | posiłek, porcja | meal, portion |
 | prąd | power |
+| sieć (elektryczna, technologia końcowa), Włączyć sieć | grid (Copper-free grid), Switch on the grid |
 | najedzenie | Fed |
 | ciepło | Warmth |
 | siły | Energy |

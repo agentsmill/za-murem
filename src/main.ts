@@ -1812,6 +1812,7 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   // badania: wybór z tablicy bez komunikatu, zarząd do stołu pracowni
   research: ['', ''],
   study: ['Zajmie się badaniami.', 'Zajmą się badaniami.'],
+  siec: ['Sieć włączona.', 'Sieć włączona.'],
 });
 /** to samo po angielsku (jedna osoba, kilka osób) */
 const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> => ({
@@ -1867,6 +1868,7 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   obcy: ['', ''],
   research: ['', ''],
   study: ['Off to do some research.', 'Off to do some research.'],
+  siec: ['The grid is on.', 'The grid is on.'],
 });
 
 function run(m: MenuItem) {

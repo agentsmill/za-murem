@@ -11,7 +11,7 @@ import { jezyk, L, liczba, tr } from '../core/jezyk.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import { IN } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
-import { kosztTech, nazwaTech, TECH_BY } from './badania.ts';
+import { koncowaZbadana, kosztTech, nazwaTech, siecWlaczona, TECH_BY } from './badania.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
@@ -427,6 +427,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     make('deski', tr(NAPISY.deska), (n) => tr(NAPISY.deskiN(n)));
     make('czesci', tr(NAPISY.czesc), (n) => tr(NAPISY.czesciN(n)));
   }
+  // pracownia po zbadaniu technologii końcowej: włączyć sieć (raz; epilog robi rama zwycięstwa)
+  if (things.some((t) => t.kind === 'pracownia') && koncowaZbadana(st) && !siecWlaczona(st))
+    out.push({ cmd: { t: 'siec', ids: core }, label: L('Włączyć sieć', 'Switch on the grid'), quick: false });
   // ognisko na wolnym kafelku podwórka, gdy jest z czego (drewno luzem albo w rękach)
   const woodN =
     st.things.reduce((a, t) => a + (t.kind === 'drewno' ? t.n : 0), 0) + st.pawns.reduce((a, p) => a + p.carry, 0);

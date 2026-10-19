@@ -266,9 +266,21 @@ describe('odczyt dla zarządu: badania, książki, technologie i wiedza', () => 
 
   it('badania: era 0 bez badań, po t_okna era 1, końcowa fałsz', () => {
     const st = stan();
-    expect(govInput(st, w, 0).badania).toEqual({ era: 0, koncowa: false });
+    expect(govInput(st, w, 0).badania).toEqual({
+      pracownia: false,
+      zbadane: 0,
+      era: 0,
+      koncowa: false,
+      siecWlaczona: false,
+    });
     st.techDone = ['t_okna'];
-    expect(govInput(st, w, 0).badania).toEqual({ era: 1, koncowa: false });
+    expect(govInput(st, w, 0).badania).toEqual({
+      pracownia: false,
+      zbadane: 1,
+      era: 1,
+      koncowa: false,
+      siecWlaczona: false,
+    });
     expect(govInput(st, w, 0).techDone).toEqual(['t_okna']);
   });
 
