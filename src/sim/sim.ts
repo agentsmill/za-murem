@@ -20,7 +20,9 @@
    bez werbunku. Odczyt `ileZlecen(r)` liczy czekające zlecenia rodzaju pracy na żądanie, poza stanem.
    Premie ery 1–2 (t_okna, t_konserwy, t_zielarstwo, t_spawanie, t_ambu) i
    paleniska poza kozą zarządu (koza z beczki, kocioł; waga drewna w PALENISKA) działają tylko po zbadaniu albo
-   postawieniu, więc gra bez badań ma te same liczby co przed nimi (src/sim/badania.ts).
+   postawieniu, więc gra bez badań ma te same liczby co przed nimi (src/sim/badania.ts). Do kozy dokłada się z wolnego
+   kafelka obok niej, a gdy meble i budowle zajęły wszystkie, z przechodniego kafelka z meblem (`kozaStand`), żeby koza
+   z beczki w ciasnym pokoju nie została zimna na zawsze.
    Badania: pracownia (stół z dwoma miejscami), polecenia `research` (wybór badania), `study` (zarząd do stołu) i `siec`
    (włączenie sieci po zbadaniu sieci bez miedzi), praca `research` z postępem w `researchTick`, stan `research` i `books`
    (pola powstają przy pierwszym użyciu) oraz plan dnia lokatorów z wiedzą (labOpen). Barykada z wraków stoi na odcinku
@@ -3748,8 +3750,9 @@ export class Sim {
   }
 
   /** wolny kafelek przy rzeczy (mebel stoi na przechodnim kafelku, ale pracuje się obok), osiągalny dla pionka;
-      najchętniej taki, na którym nikt nie stoi, a gdy wszystkie zajęte (kolacja przy stole), to i tak obok */
-  private beside(p: Pawn, t: Thing): number {
+      najchętniej taki, na którym nikt nie stoi, a gdy wszystkie zajęte (kolacja przy stole), to i tak obok.
+      `zMeblami`: liczą się też kafelki z meblem (pionek przechodzi przez meble), na ostatnią okazję */
+  private beside(p: Pawn, t: Thing, zMeblami = false): number {
     const size = this.w.size;
     const region = this.regionOf(p);
     const taken = this.taken(p);
@@ -3759,7 +3762,7 @@ export class Sim {
       for (let x = t.x - 1; x <= t.x + t.w; x++) {
         if (x < 0 || y < 0 || x >= size || y >= size || covers(t, x, y)) continue;
         const i = y * size + x;
-        if (this.coreBlocked[i] || this.reg[i] !== region || this.furnitureAt(x, y)) continue;
+        if (this.coreBlocked[i] || this.reg[i] !== region || (!zMeblami && this.furnitureAt(x, y))) continue;
         (taken.includes(i) ? busy : free).push(i);
       }
     return this.nearest(p, free.length ? free : busy);
@@ -3834,9 +3837,13 @@ export class Sim {
     return ok ? front : this.beside(p, t);
   }
 
-  /** skąd dokłada: do kozy od frontu, do ogniska z dowolnej strony */
+  /** skąd dokłada: do kozy od frontu, do ogniska z dowolnej strony. Gdy meble i budowle zajęły wszystkie kafelki wokół
+      kozy (koza z beczki w ciasnym pokoju zarządu), staje na przechodnim kafelku z meblem obok niej: bez tego nikt nie
+      miałby skąd dołożyć i palenisko zostałoby zimne na zawsze, choć drewno leży w składzie */
   private kozaStand(p: Pawn, koza: Thing): number {
-    return koza.kind === 'ognisko' ? this.beside(p, koza) : this.frontOf(p, koza);
+    if (koza.kind === 'ognisko') return this.beside(p, koza);
+    const stand = this.frontOf(p, koza);
+    return stand >= 0 ? stand : this.beside(p, koza, true);
   }
 
   /** gdzie się gotuje: kuchenka zarządu z gazem, a bez gazu paląca się koza (undefined: nie da się) */
