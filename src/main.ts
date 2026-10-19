@@ -124,7 +124,7 @@ import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { esc } from './ui/tekst.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
-import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
+import { clearSave, pietraWlaczone, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
 import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
@@ -210,6 +210,8 @@ let sim: Sim | null = null;
 let gov: GovState | null = null;
 let loaded: Loaded | null = null;
 let seed = 0;
+/** widok pięter obecnej gry (?pietra=1 albo pole zapisu): ustawia go `enter`, czyta `save` */
+let pietraGry = false;
 let hqName = '';
 /** miejsca z punktów OSM wokół adresu dla zarządu (liczone raz po zbudowaniu świata); puste bez opcji miasta */
 let okolica: Miejsce[] = [];
@@ -289,10 +291,11 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
-/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona, i z ?lang=, dopóki jest w adresie) */
+/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona, z ?pietra=1 i z ?lang=, dopóki są w adresie) */
 const startUrl = () => {
   const q = new URLSearchParams();
   if (params.get('siec') === '1') q.set('siec', '1');
+  if (params.get('pietra') === '1') q.set('pietra', '1');
   const lang = new URLSearchParams(location.search).get('lang');
   if (lang) q.set('lang', lang);
   const s = q.toString();
@@ -445,6 +448,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   imionaGen.clear();
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
+  // widok pięter: wczytany zapis zachowuje to, z czym go zaczęto (nie czyta adresu), nowa gra czyta ?pietra=1
+  const pietra = pietraWlaczone(saved ?? null, params);
+  pietraGry = pietra;
   const t0 = performance.now();
   // klucze „poi:X:Y” punktów (zapis i demo sprzed kluczy ich nie mają); przed mapaMieszkancow, żeby trafiły do mapy
   // i zapisu. Osiedle zapasowe (proc) nie ma prawdziwego położenia, więc bez kluczy
@@ -460,6 +466,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     (bez) =>
       buildWorld(geo, {
         seed,
+        ...(pietra ? { pietra: true } : {}),
         ...(bez === null ? { street: data.street } : bez.length ? { bezSiedziby: bez } : {}),
       }),
     saved,
@@ -886,6 +893,7 @@ function save(): boolean {
     cam: { ...view.cam },
     world: worldKey(sim.w),
     ...(siec.stan ? { siec: siec.stan } : {}),
+    ...(pietraGry ? { pietra: true } : {}),
   };
   const ok = writeSave(s);
   // gra z sąsiadami: także do chmury (najwyżej raz na minutę)
