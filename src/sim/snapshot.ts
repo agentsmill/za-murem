@@ -1,6 +1,6 @@
 /* Odczyt stanu dla modułu zarządu (src/gov, karta nocy, uchwały) i dla interfejsu: ludzie zarządu z potrzebami,
    umiejętnościami i obecną pracą (people: tylko zarząd, z tego korzysta zarząd), mieszkańcy siedziby z osobą
-   z generatora mieszkańców (lokatorzy: tylko do kart w interfejsie), zapasy drewna i jedzenia (drewno razem z ogniem
+   z generatora mieszkańców (lokatorzy: do kart w interfejsie i, bez sąsiadów, do wejścia zarządu), zapasy drewna i jedzenia (drewno razem z ogniem
    we wszystkich paleniskach naszych mieszkań), czas, badania dla tablicy korkowej (`tablica`, src/ui/badania.ts;
    `GovInput.badania` to co innego: odczyt dla ramy zwycięstwa). Czysta funkcja stanu i świata. Zwraca świeże obiekty
    (zwykły JSON), więc zmiany w wyniku nie ruszają symulacji. */
@@ -221,8 +221,10 @@ export interface SimSnapshot {
   kozaLit: boolean;
   /** zarząd (pionki rdzenia), w kolejności pionków */
   people: SimPerson[];
-  /** mieszkańcy siedziby z osobą z generatora mieszkańców (opcja mieszkancy w createSim), w kolejności pionków; bez
-      opcji i w zapisie sprzed niej pusta lista. Zarząd ich nie widzi (govInput bierze people). */
+  /** mieszkańcy siedziby z osobą z generatora mieszkańców (opcja mieszkancy w createSim) i lokatorzy sąsiednich
+      budynków (pionki `sasiad` z osobą), w kolejności pionków; bez opcji i w zapisie sprzed niej pusta lista. Zarząd
+      dostaje z nich tylko mieszkańców siedziby (`GovInput.lokatorzy`: govInput zostawia pionki rodzaju `resident`),
+      lokatorów sąsiadów nie widzi. */
   lokatorzy: SimPerson[];
   stock: SimStock;
   /** spalone meble, po kolei */

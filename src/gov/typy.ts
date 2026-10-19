@@ -119,6 +119,26 @@ export interface GovPlace {
   tower: 'wiezowiec' | 'blok' | 'szkola' | 'kosciol' | 'hala' | 'market' | null;
 }
 
+/** mieszkaniec siedziby z osobą z generatora mieszkańców: te pola osoby zarządu co `GovPerson` bez pracy, wojny i warty
+    (lokator nie dostaje poleceń od zarządu), a bez historii, odnośnika i rodziny z generatora (to czyta tylko interfejs) */
+export interface GovLokator {
+  pawn: number;
+  /** id osoby w stanie symulacji (s1, s2…), inne niż id osób zarządu */
+  id: string;
+  name: string;
+  first: string;
+  f: boolean;
+  age: number;
+  prof: string;
+  skills: Partial<Record<Dom, number>>;
+  traits: string[];
+  needs: GovNeeds;
+  asleep: boolean;
+  inside: boolean;
+  /** kafelek mapy, na którym stoi */
+  tile: number;
+}
+
 export interface GovInput {
   /** krok symulacji (ticki) */
   tick: number;
@@ -133,6 +153,9 @@ export interface GovInput {
   /** pali się koza zarządu albo któreś z nowych palenisk naszych mieszkań (koza z beczki, kocioł) */
   kozaLit: boolean;
   people: GovPerson[];
+  /** mieszkańcy siedziby z osobą z generatora mieszkańców (pionki `resident`, bez sąsiadów), w kolejności pionków;
+      bez generatora (opcja `mieszkancy` w createSim) i w ręcznym wejściu testów pola nie ma, a host oddaje pustą listę */
+  lokatorzy?: GovLokator[];
   stock: GovStock;
   /** sekundy przy ekranie od startu gry (bez pauzy); przy tempie 1× to tick / 20 */
   screen: number;

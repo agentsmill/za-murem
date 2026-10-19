@@ -15,7 +15,7 @@ import { type Tx, tx, txOf } from '../core/jezyk.ts';
 import { pick } from '../core/rng.ts';
 import type { Words, WordsEn } from './miejsce.ts';
 import { M1_LAWS_EN, TARGET_VARIANTS_EN, TARGETS_EN } from './tresc.en.ts';
-import type { GameMode, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
+import type { GameMode, GovLokator, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
 
 // ---------------------------------------------------------------- uchwały
 
@@ -269,6 +269,11 @@ export interface GovHost extends EventHost {
   neighbourEn(): string | null;
   /** jacy sąsiedzi są w okolicy: bloki, domy albo nikt (null); jak sasiedzi() w miejsce.ts */
   neighbours(): 'bloki' | 'domy' | null;
+  /** mieszkańcy siedziby z osobą z generatora mieszkańców (GovInput.lokatorzy), w kolejności pionków; bez generatora
+      pusta lista. Kopie: zmiana osoby nie rusza wejścia */
+  lokatorzy(): GovLokator[];
+  /** lokator o danym id osoby (id ze stanu symulacji, jak GovLokator.id); null: nie ma takiego (także dla osób zarządu) */
+  lokator(id: string): GovLokator | null;
   /** wolne miejsca dla mieszkańców, mieszkańcy siedziby, temperatura na dworze, ognisko na podwórku */
   free(): number;
   residents(): number;

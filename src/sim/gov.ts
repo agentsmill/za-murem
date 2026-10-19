@@ -10,6 +10,9 @@
    odczyt, `ludnosc2021` (ilu ludzi mieszkało w kwadracie domu w 2021 roku), jest z tabel mieszkańców, a nie ze stanu
    gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane w src/main.ts).
 
+   Mieszkańcy siedziby z osobą z generatora mieszkańców (pionki `resident`, bez sąsiadów) wchodzą jako `lokatorzy`,
+   w kolejności pionków, z tymi polami osoby, które zarząd czyta (`GovLokator`); bez generatora pola nie ma.
+
    Badania: odczyt niesie też `badania` (pracownia, liczba zbadanych technologii, eraBadan, koncowaZbadana i siecWlaczona
    dla ramy zwycięstwa), książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
    a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. Odkrycia (research.at)
@@ -26,7 +29,7 @@
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
 import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
-import type { Arm, GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
+import type { Arm, GovEffects, GovInput, GovLokator, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
 import {
   dodajKsiazke,
@@ -65,7 +68,7 @@ import {
   type Thing,
   takeStock,
 } from './sim.ts';
-import { snapshot } from './snapshot.ts';
+import { type SimPerson, snapshot } from './snapshot.ts';
 import { modeOf } from './tryb.ts';
 import { hordeSize } from './zombie.ts';
 
@@ -121,6 +124,23 @@ export function szwendaczPrzySiatce(st: SimState, w: World): { pawn: number; x: 
   return best;
 }
 
+/** mieszkaniec siedziby dla zarządu: tylko pola `GovLokator` (bez historii, odnośnika, rodziny, nastrojów i pracy) */
+const lokatorZarzadu = (p: SimPerson): GovLokator => ({
+  pawn: p.pawn,
+  id: p.id,
+  name: p.name,
+  first: p.first,
+  f: p.f,
+  age: p.age,
+  prof: p.prof,
+  skills: p.skills,
+  traits: p.traits,
+  needs: p.needs,
+  asleep: p.asleep,
+  inside: p.inside,
+  tile: p.tile,
+});
+
 /** Odczyt dla zarządu: snapshot w kształcie GovInput. screen: sekundy przy ekranie od startu gry bez pauzy
     (przy 1× to tick / 20; liczy je pętla gry, bo symulacja nie wie o tempie). */
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
@@ -137,6 +157,9 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
       nazwa: nazwaTech(o.id),
       dzialanie: zombie ? (TECH_BY[o.id].dzialanieZombie ?? TECH_BY[o.id].dzialanie) : TECH_BY[o.id].dzialanie,
     }));
+  // mieszkańcy siedziby z osobą; odczyt dla interfejsu ma też lokatorów sąsiadów, których zarząd nie widzi
+  const mieszkancy = new Set(st.pawns.filter((p) => p.kind === 'resident').map((p) => p.id));
+  const lokatorzy = s.lokatorzy.filter((l) => mieszkancy.has(l.pawn)).map(lokatorZarzadu);
   return {
     tick: s.tick,
     day: s.day,
@@ -148,6 +171,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     kitchen: s.kitchen,
     kozaLit: s.kozaLit,
     people: s.people.map((p) => ({ ...p, arm: armOf(p.weapon, s.stock.ammo), bitten: !!p.bite })),
+    ...(lokatorzy.length ? { lokatorzy } : {}),
     stock: {
       wood: s.stock.wood,
       woodSklad: s.stock.woodSklad,

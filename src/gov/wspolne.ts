@@ -1,5 +1,5 @@
-/* Wspólne drobiazgi zarządu: puste skutki, czas gry w minutach, kronika (wpisy w obu językach, Tx), zaufanie
-   i wkurzenie. */
+/* Wspólne drobiazgi zarządu: puste skutki, czas gry w minutach, kronika (wpisy w obu językach, Tx; wpis o karcie
+   z miejscem na mapie niesie jeszcze `gdzie`, kafelek jako `Punkt`, w `GovState.log[]`), zaufanie i wkurzenie. */
 
 import { type Tx, tx } from '../core/jezyk.ts';
 import { clamp, nextRandom } from '../core/rng.ts';

@@ -12,7 +12,10 @@
    „Pokaż”; „Szwendacz w siatce” bierze szwendacza z GovInput.horde.przy (`GovHost.przy`) i może wysłać na niego osobę
    z dzidą (`GovHost.zDzida`, `atakuj` → GovEffects.atak).
    Badania: technologie (`tech`), wiedza (`know`) i książki (`bookCount`, `addBook`) EventHost bierze z GovInput, czyli
-   z symulacji, jak tablica badań; nowa książka idzie do skutków (GovEffects.books), a nie do stanu zarządu. */
+   z symulacji, jak tablica badań; nowa książka idzie do skutków (GovEffects.books), a nie do stanu zarządu.
+   Wpis do kroniki o przyjściu takiej karty (`GovState.log[]`) niesie jej miejsce jako `gdzie` (`Punkt`), jak okno.
+   Mieszkańcy siedziby z osobą z generatora (`GovInput.lokatorzy`) wchodzą do hosta jako `lokatorzy()` i `lokator(id)`,
+   w kopiach; bez generatora lista jest pusta. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -21,7 +24,7 @@ import { type Tx, tx, txCat } from '../core/jezyk.ts';
 import { rngOf } from '../core/rng.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
 import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
-import type { GovEffects, GovInput, GovPerson, GovState, LootKey, Punkt, StockKey } from './typy.ts';
+import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Punkt, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
@@ -158,6 +161,14 @@ const toPerson = (p: GovPerson): Person => ({
   gone: false,
 });
 
+/** to samo co w wejściu, ale z własnymi obiektami w środku (zmiana w wydarzeniu nie rusza wejścia) */
+const kopiaLokatora = (l: GovLokator): GovLokator => ({
+  ...l,
+  skills: { ...l.skills },
+  traits: [...l.traits],
+  needs: { ...l.needs },
+});
+
 /** EventHost z 0.3 na stanie zarządu: zapasy z wejścia, zmiany idą do skutków fx; z wydarzeniem ev wpisy do kroniki
     z jego wyborów mają drewno zamiast opału i zwroty według miejsca, a z danymi i numerem wyboru (pick) polski wpis
     z 0.3 dostaje angielski z EVENTS_EN */
@@ -169,6 +180,7 @@ export function makeHost(
   pick?: { d: unknown; k: number },
 ): GovHost {
   const people = i.people.map(toPerson);
+  const lokatorzy = i.lokatorzy ?? [];
   const away = new Set(st.night?.confirmed ? st.night.exp.flatMap((e) => e.ids) : []);
   const res = (): Record<Res, number> => {
     const s = stockNow(i, fx);
@@ -303,6 +315,11 @@ export function makeHost(
     },
     later: (stock, line) => {
       st.later.push({ day: nd, stock: stock as Partial<Record<LootKey, number>>, line });
+    },
+    lokatorzy: () => lokatorzy.map(kopiaLokatora),
+    lokator: (id) => {
+      const l = lokatorzy.find((x) => x.id === id);
+      return l ? kopiaLokatora(l) : null;
     },
     place: () => placeIn(i),
     free: () => freePlaces(i),
