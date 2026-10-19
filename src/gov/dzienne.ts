@@ -25,8 +25,11 @@
 
    Zasady wysyłki, w tej kolejności: mapa miasta włączona (`st.miasto`), godzina od 6:00 do 19:59 (od 20:00 gra karta
    nocy), cel najwyżej `MAX_DROGA_M` od adresu i jeszcze z czymś w zapasie, lista osób niepusta, a każda z nich znana
-   zarządowi, na miejscu (nie `away`, nie w innej wyprawie), nieugryziona i zdolna do tej drogi (`canGo`), a na końcu:
-   do klucza, do którego ktoś już idzie, nie wychodzi druga wyprawa. Ta sama osoba podana dwa razy liczy się raz.
+   zarządowi, na miejscu (nie `away`, nie w innej wyprawie), nieugryziona i zdolna do tej drogi (`canGo`), do klucza,
+   do którego ktoś już idzie, nie wychodzi druga wyprawa, a na samym końcu (najniższy priorytet): miejsce z mapy
+   osiedla (koło `PROMIEN_MAPY_LOKALNEJ` wokół adresu, `naMapieLokalnej`) nie jest celem, bo tam chodzi się pieszo.
+   Ta reguła dotyczy miejsc z OSM (`cel.zapas !== null`), nie celów z TARGETS, które nie mają położenia. Ta sama osoba
+   podana dwa razy liczy się raz.
 
    Powrót po 20:00 przesuwa się na 6:00 następnego dnia, ale nie przed koniec drogi (`powrotMin`); osoba na wyprawie ma
    na karcie nocy tylko sen (src/gov/noc.ts), więc wyprawa wysłana o 19:00 nie psuje karty o 20:00. Numer wyprawy jest
@@ -34,6 +37,7 @@
 
 import { g } from '../content/people.ts';
 import { type Tx, tx, txJoin } from '../core/jezyk.ts';
+import { naMapieLokalnej } from '../world/miasto.ts';
 import { CARD_HOUR, canGo, expRisk, MORNING, rozliczWyprawe } from './noc.ts';
 import { peopleNamesTx } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, Wyprawa } from './typy.ts';
@@ -98,6 +102,12 @@ export function powodOdmowy(st: GovState, i: GovInput, cel: Cel, ids?: readonly 
   }
   if (st.wyprawy?.some((w) => w.cel.klucz === cel.klucz))
     return tx('Ktoś już tam idzie.', 'Somebody is already on the way there.');
+  // mapa osiedla ma własne miejsca, do których idzie się pieszo; cel z TARGETS (zapas null) nie ma położenia
+  if (cel.zapas !== null && naMapieLokalnej(cel))
+    return tx(
+      'To miejsce jest na mapie osiedla: tam chodzi się pieszo, bez wyprawy.',
+      'This place is on your estate map: you can walk there, no supply run needed.',
+    );
   return null;
 }
 
@@ -136,7 +146,7 @@ export function podgladWyprawy(
 /** Wysyła osoby `ids` do `cel` za dnia. Odmawia (bez żadnej zmiany stanu) z powodem z `powodOdmowy`: nie ma
     `st.miasto`, jest noc (godzina poniżej 6 albo od 20), cel leży dalej niż `MAX_DROGA_M`, w miejscu nic nie zostało,
     lista jest pusta, ktoś z listy jest nieznany, poza mapą (`away`), w innej wyprawie, ugryziony albo niezdolny
-    (`canGo`), albo ktoś już idzie do tego klucza. Inaczej zapisuje wyprawę (kopia celu, wyjście `gameMin(i)`, powrót `powrotMin`), wpis w kronice i oddaje
+    (`canGo`), ktoś już idzie do tego klucza albo miejsce leży na mapie osiedla (koło 192 m). Inaczej zapisuje wyprawę (kopia celu, wyjście `gameMin(i)`, powrót `powrotMin`), wpis w kronice i oddaje
     skutki z `away` na godzinę powrotu. Nie losuje. */
 export function wyslijWyprawe(st: GovState, i: GovInput, cel: Cel, ids: string[]): WynikWysylki {
   const why = powodOdmowy(st, i, cel, ids);

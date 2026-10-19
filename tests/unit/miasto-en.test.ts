@@ -535,9 +535,9 @@ describe('przegląd źródeł nowych modułów', () => {
   /** plik i najmniejsza liczba par, jaką przegląd ma w nim znaleźć (liczby z dnia pisania: pilnują, że wzorzec nie
       przestał łapać wywołań, np. po zmianie formatowania) */
   const pliki: [string, number][] = [
-    ['src/ui/miasto.ts', 30],
+    ['src/ui/miasto.ts', 29],
     ['src/ui/wyprawa.ts', 16],
-    ['src/gov/dzienne.ts', 13],
+    ['src/gov/dzienne.ts', 14],
     ['src/gov/wyprawy.ts', 4],
     ['src/gov/noc.ts', 70],
   ];

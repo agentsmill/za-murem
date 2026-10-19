@@ -370,15 +370,8 @@ export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsc
     const kiedy = kiedyWraca(wDrodze.powrot, i.day);
     linie.push(tx(`Wyprawa jest w drodze, powrót ${kiedy.pl}.`, `A supply run is on its way, back ${kiedy.en}.`));
   }
-  // zasady wysyłki są tylko w zarządzie (te same, co sprawdzi wysłanie); karta dokłada jedno swoje: mapa osiedla
-  const powod =
-    powodOdmowy(st, i, cel) ??
-    (naMapieLokalnej(m)
-      ? tx(
-          'To miejsce jest na mapie osiedla: tam chodzi się pieszo, bez wyprawy.',
-          'This place is on your estate map: you can walk there, no supply run needed.',
-        )
-      : null);
+  // wszystkie zasady wysyłki (z mapą osiedla włącznie) są tylko w zarządzie, te same, co sprawdzi wysłanie
+  const powod = powodOdmowy(st, i, cel);
   return { tytul: cel.nazwa, linie, mozna: !powod, ...(powod ? { powod } : {}) };
 }
 

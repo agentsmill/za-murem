@@ -5,11 +5,13 @@
 
 import { describe, expect, it } from 'vitest';
 import { kiedyWraca, podgladWyprawy, powodOdmowy, wyprawyTick, wyslijWyprawe } from '../../src/gov/dzienne.ts';
+import { placeIn } from '../../src/gov/miejsce.ts';
 import { canGo, makeCard } from '../../src/gov/noc.ts';
 import type { GovEffects, GovInput, GovState } from '../../src/gov/typy.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
 import {
   type Cel,
+  celeZTargets,
   celZMiejsca,
   czasWyprawyMin,
   MAX_DROGA_M,
@@ -74,7 +76,7 @@ describe('wyslijWyprawe: odmowy', () => {
   it('w nocy: od 20:00 do 6:00 nikt nie wychodzi, od 6:00 do 19:59 wolno', () => {
     for (const h of [20, 21, 23, 0, 3, 5]) odmowa(nowy(), wej(2, h), cel(), idy(1));
     for (const h of [6, 10, 19]) {
-      const w = wyslijWyprawe(nowy(), wej(2, h), cel('apteka', 100), idy(1));
+      const w = wyslijWyprawe(nowy(), wej(2, h), cel('apteka', 200), idy(1));
       expect(w.ok, `godzina ${h}`).toBe(true);
     }
   });
@@ -132,14 +134,14 @@ describe('wyslijWyprawe: odmowy', () => {
     const atr = new Atrapa(SEED);
     const p = atr.people[0];
     p.needs.rest = 10;
-    odmowa(nowy(), wej(2, 10, 0, atr), cel('apteka', 100), [p.id]);
+    odmowa(nowy(), wej(2, 10, 0, atr), cel('apteka', 200), [p.id]);
     p.needs.rest = 65;
     p.needs.health = 20;
-    odmowa(nowy(), wej(2, 10, 0, atr), cel('apteka', 100), [p.id]);
+    odmowa(nowy(), wej(2, 10, 0, atr), cel('apteka', 200), [p.id]);
     // rest 30 i zdrowie 50: na blisko wystarczy, na daleko nie
     p.needs.rest = 30;
     p.needs.health = 50;
-    const blisko = cel('apteka', 100);
+    const blisko = cel('apteka', 200);
     const daleko = cel('apteka', 900);
     expect(canGo(p, blisko)).toBe(true);
     expect(canGo(p, daleko)).toBe(false);
@@ -150,19 +152,19 @@ describe('wyslijWyprawe: odmowy', () => {
   it('osoba już w st.wyprawy, nawet gdy wejście nie ma jej jeszcze jako away', () => {
     const st = nowy();
     const [a, b] = idy(2);
-    expect(wyslijWyprawe(st, wej(2, 10), cel('apteka', 100, 0), [a]).ok).toBe(true);
-    odmowa(st, wej(2, 10, 1), cel('sklep', 100, 1000), [a]);
-    odmowa(st, wej(2, 10, 1), cel('sklep', 100, 1000), [b, a]);
+    expect(wyslijWyprawe(st, wej(2, 10), cel('apteka', 200, 0), [a]).ok).toBe(true);
+    odmowa(st, wej(2, 10, 1), cel('sklep', 200, 1000), [a]);
+    odmowa(st, wej(2, 10, 1), cel('sklep', 200, 1000), [b, a]);
   });
 
   it('drugie wyjście do klucza, do którego ktoś już idzie; inny klucz wolno', () => {
     const st = nowy();
     const [a, b] = idy(2);
-    const c = cel('apteka', 100);
+    const c = cel('apteka', 200);
     expect(wyslijWyprawe(st, wej(2, 10), c, [a]).ok).toBe(true);
     odmowa(st, wej(2, 10, 1), c, [b]);
     expect(st.wyprawy).toHaveLength(1);
-    expect(wyslijWyprawe(st, wej(2, 10, 2), cel('apteka', 100, 2000), [b]).ok).toBe(true);
+    expect(wyslijWyprawe(st, wej(2, 10, 2), cel('apteka', 200, 2000), [b]).ok).toBe(true);
     expect(st.wyprawy).toHaveLength(2);
   });
 
@@ -186,7 +188,7 @@ describe('powodOdmowy: jedno źródło zasad wysyłki (wyslijWyprawe i karta mie
     const atr = new Atrapa(SEED);
     const [a, b] = idy(2, atr);
     const st = nowy();
-    const wDrodze = cel('apteka', 100, 3000);
+    const wDrodze = cel('apteka', 200, 3000);
     st.wyprawy = [{ id: 1, cel: wDrodze, ids: [a], wyjscie: 600, powrot: 900 }];
     const pusty = cel('bank', 400, 5000);
     st.miasto!.zabrano[pusty.klucz] = pusty.zapas!;
@@ -233,6 +235,71 @@ describe('powodOdmowy: jedno źródło zasad wysyłki (wyslijWyprawe i karta mie
       [wej(2, 10), cel('apteka', MAX_DROGA_M + 10)],
     ] as const)
       expect(powodOdmowy(st, i, c)).toEqual(powodOdmowy(st, i, c, [a]));
+  });
+});
+
+describe('powodOdmowy: mapa lokalna (przegląd gałęzi, Minor 2)', () => {
+  /** miejsce w kole 192 m wokół adresu (mapa osiedla) */
+  const lokalne = (kat = 'apteka', od = 0): Cel => cel(kat, 150, od);
+  /** miejsce na zewnątrz koła (po drugiej stronie obwodu), o którym karta nocy i mapa miasta mówią „cel” */
+  const zewnetrzne = (): Cel => cel('apteka', 200);
+
+  it('miejsce z koła 192 m dostaje odmowę z tekstem po polsku i angielsku, miejsce spoza koła wolno', () => {
+    const p = powodOdmowy(nowy(), wej(2, 10), lokalne());
+    expect(p).not.toBeNull();
+    expect(p!.pl).toMatch(/mapie osiedla/);
+    expect(p!.en).toMatch(/estate map/);
+    expect(powodOdmowy(nowy(), wej(2, 10), zewnetrzne())).toBeNull();
+    expect(powodOdmowy(nowy(), wej(2, 10), lokalne(), idy(1))).toEqual(p);
+  });
+
+  it('brzeg koła wliczony (192 m, 0), 193 m już nie; narożnik kwadratu (140, 140) leży poza kołem', () => {
+    // klucz z zapasem, żeby „wybrane do cna” nie wyprzedziło mapy osiedla
+    const miejsce = (x: number, y: number) => {
+      for (let k = 1; ; k++) {
+        const c = celZMiejsca({ klucz: `poi:${k}:2`, kat: 'apteka', x, y, odl: Math.sqrt(x * x + y * y), nazwa: '' });
+        if (c.zapas! >= 6) return c;
+      }
+    };
+    for (const [x, y, lokalne] of [
+      [192, 0, true],
+      [0, -192, true],
+      [135, 135, true],
+      [193, 0, false],
+      [140, 140, false],
+    ] as const) {
+      const c = miejsce(x, y);
+      const mamy = (powodOdmowy(nowy(), wej(2, 10), c)?.pl ?? '').includes('mapie osiedla');
+      expect(mamy, `${x},${y}`).toBe(lokalne);
+    }
+  });
+
+  it('wyslijWyprawe odmawia miejsca z koła i niczego nie zmienia (jedno źródło zasad w zarządzie)', () => {
+    const st = nowy();
+    const why = odmowa(st, wej(2, 10), lokalne(), idy(1));
+    expect(why.pl).toMatch(/mapie osiedla/);
+    expect(why.en).toMatch(/estate map/);
+    expect(st.wyprawy).toBeUndefined();
+  });
+
+  it('najniższy priorytet: noc, odległość, wyczerpanie, osoby i „ktoś już tam idzie” wygrywają z mapą osiedla', () => {
+    const c = lokalne();
+    const noc = powodOdmowy(nowy(), wej(2, 21), c)!;
+    expect(noc.pl).toMatch(/Po zmroku/);
+    const wybrane = nowy();
+    wybrane.miasto!.zabrano[c.klucz] = c.zapas!;
+    expect(powodOdmowy(wybrane, wej(2, 10), c)!.pl).toMatch(/do cna/);
+    expect(powodOdmowy(nowy(), wej(2, 10), c, [])!.pl).toMatch(/Wybierz kogoś/);
+    expect(powodOdmowy(nowy(), wej(2, 10), c, ['s999'])!.pl).toMatch(/Nie ma takiej osoby/);
+    const idzie = nowy();
+    idzie.wyprawy = [{ id: 1, cel: c, ids: idy(1), wyjscie: 600, powrot: 900 }];
+    expect(powodOdmowy(idzie, wej(2, 10), c)!.pl).toMatch(/Ktoś już tam idzie/);
+  });
+
+  it('cel z TARGETS (zapas null, bez położenia) nie jest „na mapie osiedla”', () => {
+    const [blisko, daleko] = celeZTargets(nowy(), placeIn(wej(2, 10)));
+    expect(blisko.zapas).toBeNull();
+    for (const c of [blisko, daleko]) expect(powodOdmowy(nowy(), wej(2, 10), c, idy(1))).toBeNull();
   });
 });
 
@@ -283,7 +350,7 @@ describe('wyslijWyprawe: udane wyjście', () => {
 
   it('powrót następnego dnia dostaje w kronice słowo „jutro” / „tomorrow”', () => {
     const st = nowy();
-    const w = wyslijWyprawe(st, wej(2, 19), cel('apteka', 100), idy(1));
+    const w = wyslijWyprawe(st, wej(2, 19), cel('apteka', 200), idy(1));
     if (!w.ok) throw new Error('powinno wyjść');
     expect(w.powrot).toBe(at(3, 6));
     const wpis = st.log[st.log.length - 1].txt;
@@ -317,8 +384,8 @@ describe('wyslijWyprawe: udane wyjście', () => {
   it('wyprawy dostają różne numery, także po powrocie poprzedniej', () => {
     const st = nowy();
     const [a, b] = idy(2);
-    wyslijWyprawe(st, wej(2, 10), cel('apteka', 100, 0), [a]);
-    wyslijWyprawe(st, wej(2, 10), cel('apteka', 100, 3000), [b]);
+    wyslijWyprawe(st, wej(2, 10), cel('apteka', 200, 0), [a]);
+    wyslijWyprawe(st, wej(2, 10), cel('apteka', 200, 3000), [b]);
     const [x, y] = st.wyprawy!;
     expect(x.id).not.toBe(y.id);
   });
@@ -365,7 +432,7 @@ describe('podgladWyprawy', () => {
       p.skills = {};
     }
     const ids = idy(3, atr);
-    const blisko = podgladWyprawy(st, wej(2, 10, 0, atr), cel('apteka', 100), ids.slice(0, 1)).ryzyko;
+    const blisko = podgladWyprawy(st, wej(2, 10, 0, atr), cel('apteka', 200), ids.slice(0, 1)).ryzyko;
     const daleko = podgladWyprawy(st, wej(2, 10, 0, atr), cel('apteka', 1200), ids.slice(0, 1)).ryzyko;
     expect(daleko).toBeGreaterThan(blisko);
     const sam = podgladWyprawy(st, wej(2, 10, 0, atr), cel('apteka', 400), ids.slice(0, 1)).ryzyko;
@@ -518,8 +585,8 @@ describe('wyprawyTick', () => {
   it('dwie wyprawy w tej samej minucie wracają po kolei i każda raz', () => {
     const st = nowy();
     const [a, b] = idy(2);
-    const c1 = cel('apteka', 100, 0);
-    const c2 = cel('sklep', 100, 3000);
+    const c1 = cel('apteka', 200, 0);
+    const c2 = cel('sklep', 200, 3000);
     const w1 = wyslijWyprawe(st, wej(2, 10), c1, [a]);
     const w2 = wyslijWyprawe(st, wej(2, 10), c2, [b]);
     if (!w1.ok || !w2.ok) throw new Error('powinno wyjść');
@@ -535,7 +602,7 @@ describe('wyprawyTick', () => {
   it('wraca tylko ta, której pora; druga zostaje w drodze', () => {
     const st = nowy();
     const [a, b] = idy(2);
-    const w1 = wyslijWyprawe(st, wej(2, 10), cel('apteka', 100, 0), [a]);
+    const w1 = wyslijWyprawe(st, wej(2, 10), cel('apteka', 200, 0), [a]);
     const w2 = wyslijWyprawe(st, wej(2, 10), cel('apteka', 1500, 3000), [b]);
     if (!w1.ok || !w2.ok) throw new Error('powinno wyjść');
     expect(w1.powrot).toBeLessThan(w2.powrot);
