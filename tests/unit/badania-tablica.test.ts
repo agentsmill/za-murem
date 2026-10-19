@@ -644,6 +644,17 @@ describe('tablica badań: skala planszy do okna', () => {
     expect(skalaPlanszy(prog - 1, 1106)).toBe(1);
   });
 
+  it('okno albo plansza o zerowej, ujemnej lub nieliczbowej szerokości: skala 1 (nic nie psuje się przy ukrytej tablicy)', () => {
+    expect(skalaPlanszy(0, 1106)).toBe(1);
+    expect(skalaPlanszy(-5, 1106)).toBe(1);
+    expect(skalaPlanszy(Number.NaN, 1106)).toBe(1);
+    expect(skalaPlanszy(946, 0)).toBe(1);
+    expect(skalaPlanszy(946, -5)).toBe(1);
+    expect(skalaPlanszy(946, Number.NaN)).toBe(1);
+    expect(skalaPlanszy(0, 0)).toBe(1);
+    expect(skalaPlanszy(Number.NaN, Number.NaN)).toBe(1);
+  });
+
   it('CSS kartki nie ma czcionki mniejszej, niż zakłada próg (CZCIONKA_KARTKI_MIN): nazwa, dopisek, pieczątka, odznaki', () => {
     const css = fs.readFileSync(path.resolve(import.meta.dirname, '../../src/style.css'), 'utf8');
     const rozmiar = (selektor: string): number => {
