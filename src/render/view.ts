@@ -1206,11 +1206,17 @@ export class GameView {
     }
   }
 
-  /** pionek pod punktem ekranu (tylko rdzeń) i tylko widoczny: pod dachem albo pod stropem pięter bez przekroju
-      parteru nikogo nie widać, więc nie da się go kliknąć */
+  /** pionek pod punktem ekranu (tylko rdzeń). Na parterze bez sprawdzania widoczności, jak zawsze; na piętrze od
+      pierwszego wnętrza parteru są schowane (także z daleka, bo rysuje się dach albo strop), więc ukrytego nie da się
+      kliknąć */
   pick(st: SimState, sx: number, sy: number): Pawn | null {
     const [wx, wy] = this.toWorld(sx, sy);
-    return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isBoard(p) && (this.wnetrza || !this.underRoof(p.x, p.y)));
+    return pawnAt(
+      st.pawns,
+      wx / TILE,
+      wy / TILE,
+      (p) => isBoard(p) && (this.pietroNr === 0 || this.wnetrza || !this.underRoof(p.x, p.y)),
+    );
   }
 
   /** mieszkaniec siedziby pod punktem ekranu: tylko pionki `resident` z osobą z generatora (person ≥ 0), bo tylko

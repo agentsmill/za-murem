@@ -271,7 +271,7 @@ describe('widoczność wnętrz parteru w widoku (wnetrza, pietroAktywne, pick, p
     ({ id: 1, kind, person: 0, away: false, x, y }) as unknown as Pawn;
   const stan = (p: Pawn) => ({ pawns: [p] }) as unknown as SimState;
 
-  it('pod dachem siedziby zarząd i lokatora da się kliknąć tylko, gdy widać wnętrza parteru', () => {
+  it('pod dachem siedziby lokatora da się kliknąć tylko, gdy widać wnętrza parteru, a zarząd na parterze zawsze', () => {
     const { view, v, sc } = widok();
     const i = sc.section!.cell.indexOf(IN.FLOOR);
     const x = (i % sc.w.size) + 0.5;
@@ -288,10 +288,14 @@ describe('widoczność wnętrz parteru w widoku (wnetrza, pietroAktywne, pick, p
     view.ustawPietro(2, SEC);
     expect(kliknij(stan(zarzad)).pick).toBeNull();
     expect(kliknij(stan(lokator)).lokator).toBeNull();
-    // z daleka (bez przekroju) pod dachem też nikogo nie widać
-    view.ustawPietro(0, null);
+    // także z daleka (bez przekroju), bo rysuje się dach albo strop
     v.cutOn = false;
     expect(kliknij(stan(zarzad)).pick).toBeNull();
+    expect(kliknij(stan(lokator)).lokator).toBeNull();
+    // parter z daleka: lokatora pod dachem nie widać (pickResident tak miał od zawsze), a zarząd jest klikalny jak
+    // przed widokiem pięter (pick nie sprawdza tam widoczności)
+    view.ustawPietro(0, null);
+    expect(kliknij(stan(zarzad)).pick).toBe(zarzad);
     expect(kliknij(stan(lokator)).lokator).toBeNull();
   });
 
