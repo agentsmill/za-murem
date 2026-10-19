@@ -1,8 +1,9 @@
 /* Atlasy grafiki z PixelLab do public/assets/ (npm run atlasy). Z assets/raw bierze tylko assety ze statusem
    „zatwierdzony” w assets/manifest.json i składa je tak, jak ich potrzebuje gra: kafelki Wanga terenu w kolejności
    narożników, moduły bloku z wybranego kawałka bloku (pas fasady, przęsła, wejście, profil attyki), naklejki dachu
-   bez tła papy, trzepak i animacje postaci: klatki po palecie, przycięte do sylwetki, w dwóch pasach wierszy
-   (mieszkańcy i zarząd), z kotwicą stóp i kolorami ubrania do przemalowania w grze. Opis w grafika.json.
+   bez tła papy, naklejki stropu (wnętrza kafelków bez koloru klucza), trzepak i animacje postaci: klatki po palecie,
+   przycięte do sylwetki, w dwóch pasach wierszy (mieszkańcy i zarząd), z kotwicą stóp i kolorami ubrania do
+   przemalowania w grze. Opis w grafika.json.
    npm run atlasy -- --sprawdz: tylko sprawdza, czy public/assets jest aktualne (kod wyjścia 1, jeśli nie). */
 
 import fs from 'node:fs';
@@ -60,6 +61,15 @@ interface Dach {
   gestosc: number;
 }
 
+/** strop z kafelków „Ciepły tynk” (strop-tynk.uzycie): naklejki, ich wycinki w kafelkach i kolor klucza przezroczystości;
+    resztę przepisu (tło, ziarno, szwy) rysuje kod, src/render/art/strop.ts */
+interface StropUzycie {
+  klucz: string;
+  naklejki: number[];
+  wnetrze_wariantu: Record<string, [number, number, number, number]>;
+  gestosc: number;
+}
+
 /** kolory ubrania postaci do przemalowania i wiersze, w których leżą */
 interface Przemalowanie {
   kolory: string[];
@@ -72,7 +82,7 @@ interface Asset {
   status: string;
   wybrany?: string;
   moduly?: Moduly;
-  uzycie?: Dach;
+  uzycie?: unknown;
   przemalowanie?: Przemalowanie;
   plec?: 'm' | 'k';
   wiek?: [number, number];
@@ -234,7 +244,7 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
 
   // dach: środki wybranych kafelków papy jako naklejki w jednym rzędzie, piksele w kolorze tła przezroczyste
   const dach = asset('kotwica-blok-dach');
-  const D = dach.uzycie!;
+  const D = dach.uzycie as Dach;
   const dir = 'assets/raw/kotwica-blok-dach';
   const nr = (s: string) => Number(/(\d+)\.png$/.exec(s)![1]);
   const dachowki = fs
@@ -253,6 +263,28 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
     if (((r[i] << 16) | (r[i + 1] << 8) | r[i + 2]) === tlo) r.fill(0, i, i + 4);
   }
   out.set('dach.png', naklejki);
+
+  // strop: cztery naklejki z kafelków, każda przycięta do wnętrza wariantu i ułożona w komórce 32 × 32 px od lewego
+  // górnego rogu, piksele w kolorze klucza przezroczyste
+  const strop = asset('strop-tynk');
+  const S = strop.uzycie as StropUzycie;
+  const sdir = 'assets/raw/strop-tynk';
+  const kafelki = fs.readdirSync(path.join(ROOT, sdir)).filter((s) => s.endsWith('.png'));
+  const komorka = 32;
+  const stropNaklejki = pusty(komorka * S.naklejki.length, komorka);
+  S.naklejki.forEach((k, i) => {
+    const plik = kafelki.find((s) => nr(s) === k);
+    if (!plik) throw new Error(`atlasy: brak kafelka ${k} w ${sdir}`);
+    const [sx, sy, sw, sh] = S.wnetrze_wariantu[k];
+    if (sw > komorka || sh > komorka) throw new Error(`atlasy: naklejka ${k} stropu większa niż komórka ${komorka} px`);
+    kopiuj(wczytaj(`${sdir}/${plik}`), sx, sy, sw, sh, stropNaklejki, i * komorka, 0);
+  });
+  const klucz = hex(S.klucz);
+  for (let i = 0; i < stropNaklejki.rgba.length; i += 4) {
+    const r = stropNaklejki.rgba;
+    if (((r[i] << 16) | (r[i + 1] << 8) | r[i + 2]) === klucz) r.fill(0, i, i + 4);
+  }
+  out.set('strop.png', stropNaklejki);
 
   // trzepak tak, jak przyszedł
   const trzepak = asset('kotwica-trzepak');
@@ -378,6 +410,13 @@ export function atlasy(): Map<string, Atlas | OpisGrafiki> {
       naklejka: nw,
       naklejek: D.naklejki.length,
       gestosc: D.gestosc,
+    },
+    strop: {
+      id: strop.id,
+      plik: 'strop.png',
+      naklejka: komorka,
+      naklejek: S.naklejki.length,
+      gestosc: S.gestosc,
     },
     trzepak: { id: trzepak.id, plik: 'trzepak.png', stopy: stopy(tz), podstawa: 20 },
     ludzie: { plik: 'ludzie.png', regiony, postacie, rampy: pal.rampy },

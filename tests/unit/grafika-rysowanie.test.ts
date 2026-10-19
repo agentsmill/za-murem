@@ -204,6 +204,7 @@ describe('grafika z opisu', () => {
     };
     const g = grafikaZ(opis, obraz)!;
     expect(g.dach).toBeNull();
+    expect(g.strop?.img).toBeTruthy();
     expect(g.teren && g.blok && g.trzepak).toBeTruthy();
     expect((g.blok as Blok).srodek[1]).toBe(13);
     expect(grafikaZ({ ...opis, wersja: opis.wersja + 1 }, obraz)).toBeNull();
@@ -252,11 +253,13 @@ describe('scena z grafiką z PixelLab', () => {
 
   it('grafika kawałków jedzie do workera ze sceną (bez trzepaka), także przez structuredClone', () => {
     const cs = chunkSceneOf(z);
-    expect(Object.keys(cs.art!).sort()).toEqual(['blok', 'dach', 'teren']);
+    expect(Object.keys(cs.art!).sort()).toEqual(['blok', 'dach', 'strop', 'teren']);
     const copy = structuredClone(cs);
     expect(copy.art!.teren!.img.px).toEqual(g.teren!.img.px);
     expect(copy.art!.blok!.srodek).toEqual(g.blok!.srodek);
     expect(copy.art!.dach!.tlo).toBe(g.dach!.tlo);
+    expect(copy.art!.strop!.img!.px).toEqual(g.strop!.img!.px);
+    expect(copy.art!.strop!.gestosc).toBe(g.strop!.gestosc);
     expect(chunkSceneOf(bez).art).toBeNull();
   });
 });

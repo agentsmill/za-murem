@@ -1,5 +1,5 @@
 /* Wczytanie grafiki z PixelLab z public/assets (atlasy z tools/atlasy.ts) przy starcie gry: teren, moduły bloku,
-   naklejki dachu, trzepak i animacje ludzi. Bez opisu, w innej wersji albo bez sieci wszystko rysuje kod; bez
+   naklejki dachu i stropu, trzepak i animacje ludzi. Bez opisu, w innej wersji albo bez sieci wszystko rysuje kod; bez
    jednego obrazka tylko ta część. */
 
 import { ctx2d, newCanvas } from './art/canvas.ts';
@@ -31,7 +31,14 @@ export async function wczytajGrafike(
     const opis = (await r.json()) as OpisGrafiki;
     if (opis.wersja !== WERSJA_GRAFIKI)
       throw new Error(`grafika.json w wersji ${opis.wersja}, gra czyta ${WERSJA_GRAFIKI}`);
-    const pliki = [opis.teren.plik, opis.blok.plik, opis.dach.plik, opis.trzepak.plik, opis.ludzie.plik];
+    const pliki = [
+      opis.teren.plik,
+      opis.blok.plik,
+      opis.dach.plik,
+      opis.strop.plik,
+      opis.trzepak.plik,
+      opis.ludzie.plik,
+    ];
     const obrazy = await Promise.all(
       pliki.map(async (plik) => {
         try {

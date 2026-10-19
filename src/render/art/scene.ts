@@ -261,7 +261,7 @@ export function buildScene(w: World, art: Grafika | null = null): Scene {
   const tr = w.trees;
   for (const list of treesBy) list.sort((a, b) => tr[a].y - tr[b].y || tr[a].x - tr[b].x);
   const treeGone = new Uint8Array(w.trees.length);
-  const chunkArt = art && { teren: art.teren, blok: art.blok, dach: art.dach };
+  const chunkArt = art && { teren: art.teren, blok: art.blok, dach: art.dach, strop: art.strop };
   return {
     w,
     south,

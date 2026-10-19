@@ -1,5 +1,5 @@
 {
-  "wersja": 2,
+  "wersja": 3,
   "zrodlo": "PixelLab, kotwica stylu zatwierdzona 18.10.2026: assety ze statusem zatwierdzony z assets/manifest.json, złożone przez tools/atlasy.ts (npm run atlasy)",
   "teren": {
     "id": "kotwica-chodnik-trawa",
@@ -48,6 +48,13 @@
     "naklejka": 26,
     "naklejek": 11,
     "gestosc": 0.22
+  },
+  "strop": {
+    "id": "strop-tynk",
+    "plik": "strop.png",
+    "naklejka": 32,
+    "naklejek": 4,
+    "gestosc": 0.12
   },
   "trzepak": {
     "id": "kotwica-trzepak",

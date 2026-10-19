@@ -45,6 +45,7 @@ describe('atlasy grafiki z PixelLab (tools/atlasy.ts)', () => {
       opis.teren.id,
       opis.blok.id,
       opis.dach.id,
+      opis.strop.id,
       opis.trzepak.id,
       ...opis.ludzie.postacie.map((p) => p.id),
     ];
@@ -117,6 +118,45 @@ describe('atlasy grafiki z PixelLab (tools/atlasy.ts)', () => {
     }
     expect(widac).toBeGreaterThan(0);
     expect(d.gestosc).toBeGreaterThan(0);
+  });
+
+  it('naklejki stropu: wnętrza kafelków strop-tynk w komórkach 32 × 32, bez koloru klucza (przezroczystego)', () => {
+    const m = json<{ assety: { id: string; uzycie?: Record<string, unknown> }[] }>('assets/manifest.json');
+    const u = m.assety.find((a) => a.id === opis.strop.id)!.uzycie as {
+      klucz: string;
+      naklejki: number[];
+      wnetrze_wariantu: Record<string, [number, number, number, number]>;
+      gestosc: number;
+    };
+    const s = opis.strop;
+    const a = obraz(s.plik);
+    expect(fs.existsSync(path.join(ROOT, WYJSCIE, s.plik)), `${WYJSCIE}/${s.plik}`).toBe(true);
+    expect([a.w, a.h]).toEqual([s.naklejka * s.naklejek, s.naklejka]);
+    expect(s.naklejek).toBe(u.naklejki.length);
+    expect(s.gestosc).toBe(u.gestosc);
+    const klucz = Number.parseInt(u.klucz.slice(1), 16);
+    const dir = path.join(ROOT, 'assets/raw/strop-tynk');
+    u.naklejki.forEach((n, i) => {
+      const plik = fs.readdirSync(dir).find((f) => f.endsWith(`_${n}.png`))!;
+      const src = decodePng(fs.readFileSync(path.join(dir, plik)));
+      const [wx, wy, ww, wh] = u.wnetrze_wariantu[n];
+      let widac = 0;
+      for (let y = 0; y < s.naklejka; y++)
+        for (let x = 0; x < s.naklejka; x++) {
+          const p = px(a, i * s.naklejka + x, y);
+          const w = x < ww && y < wh;
+          const j = ((wy + y) * src.width + wx + x) * 4;
+          const z = w ? [...src.rgba.subarray(j, j + 4)] : null;
+          const jestKlucz = z !== null && ((z[0] << 16) | (z[1] << 8) | z[2]) === klucz;
+          // piksel jest widoczny tylko we wnętrzu wariantu (od lewego górnego rogu komórki) i nie w kolorze klucza
+          if (z === null || jestKlucz) expect(p[3], `naklejka ${n} (${x}, ${y})`).toBe(0);
+          else {
+            expect(p, `naklejka ${n} (${x}, ${y})`).toEqual(z);
+            widac++;
+          }
+        }
+      expect(widac, `naklejka ${n} ma widoczne piksele`).toBeGreaterThan(0);
+    });
   });
 
   it('trzepak: stopy w wierszu pod najniższym pikselem', () => {
