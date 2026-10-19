@@ -109,6 +109,7 @@ import {
 import { kartaBudynku, widokBudynku } from './ui/budynek.ts';
 import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
 import { Druzyna } from './ui/druzyna.ts';
+import { oddajFokusPoKliknieciu } from './ui/fokus.ts';
 import {
   dotyczy,
   edytorImienia,
@@ -3332,6 +3333,9 @@ for (const t of ['gesturestart', 'gesturechange'])
   document.addEventListener(t, (e) => {
     if (!$('app').hidden) e.preventDefault();
   });
+// przycisk paska po kliknięciu myszą albo stuknięciu oddaje fokus (z klawiatury go zachowuje), bo niżej spacja i Enter
+// na przycisku w fokusie klikają go, a nie zatrzymują grę
+oddajFokusPoKliknieciu(document);
 window.addEventListener('keydown', (e) => {
   // klawisze gry tylko w grze, bez otwartego okna i nie na polach ani przyciskach (spacja ma działać na przyciskach)
   const tag = (e.target as HTMLElement).tagName;
