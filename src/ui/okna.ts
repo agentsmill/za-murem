@@ -34,13 +34,27 @@ export interface Sheet {
   title: string;
   body: string;
   foot: string;
-  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie) i napad (sąsiedzi atakują) */
-  tone: 'noc' | 'uchwala' | 'wydarzenie' | 'raport' | 'menu' | 'ogien' | 'koniec' | 'sasiedzi' | 'napad';
+  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie), napad (sąsiedzi atakują),
+      mapa miasta (okno na cały ekran, src/ui/miasto.ts) i plan wyprawy z mapy (zwykłe okno w barwie mapy,
+      src/ui/wyprawa.ts) */
+  tone:
+    | 'noc'
+    | 'uchwala'
+    | 'wydarzenie'
+    | 'raport'
+    | 'menu'
+    | 'ogien'
+    | 'koniec'
+    | 'sasiedzi'
+    | 'napad'
+    | 'miasto'
+    | 'wyprawa';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
 }
 
-const LOOT: Record<LootKey, Tx> = {
+/** nazwy rodzajów łupu w obu językach (karta nocy, raport, karta miejsca na mapie miasta) */
+export const LOOT: Record<LootKey, Tx> = {
   wood: tx('drewno', 'wood'),
   supplies: tx('jedzenie', 'food'),
   scrap: tx('złom', 'scrap'),

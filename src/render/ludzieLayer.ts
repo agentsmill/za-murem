@@ -1,14 +1,20 @@
 /* Postacie z PixelLab w widoku: tekstury Pixi z atlasu ludzie.png i jego przemalowanych kopii dla klatek, które wybiera
    część bez PixiJS (ludziePixellab.ts: postać, wersja kolorystyczna, prostokąt i lustro). Warstwa trzyma źródła tekstur
-   i po jednej teksturze na klatkę; pionek, któremu obsada nie ma pracy, zostaje z kodu (null). */
+   i po jednej teksturze na klatkę; pionek, któremu obsada nie ma pracy, zostaje z kodu (null). Komórki leżenia i zwłok
+   (art/lezenie.ts) mają własne małe źródła, po jednym na komórkę. Klatki przejść (upadek, kładzenie się, wstawanie)
+   i ostatnia klatka upadku (zwłoki) to klatki atlasu jak każde inne. */
 
 import { BufferImageSource, Rectangle, Texture, type TextureSource } from 'pixi.js';
+import type { RodzajPrzejscia } from './art/animacjePozy.ts';
+import type { KomorkaLezenia } from './art/lezenie.ts';
+import type { Lie } from './art/people.ts';
 import type { LudzieGrafika, PostacLudzi } from './art/pixellab.ts';
-import { LudziePixellab } from './ludziePixellab.ts';
+import { type KlatkaPionka, LudziePixellab } from './ludziePixellab.ts';
 import type { PoseView } from './poses.ts';
 
-/** klatka do narysowania: tekstura, punkt stóp w teksturze (anchor = ax / w, ay / h), lustro poziome i znacznik klatki
-    zastępczej (poza, której postać nie ma, gra stanie, więc nakładka broni rysuje się jak przy kodzie) */
+/** klatka do narysowania: tekstura, punkt stóp w teksturze (anchor = ax / w, ay / h; przy leżeniu środek głowy), lustro
+    poziome i znacznik klatki zastępczej (poza, której postać nie ma, gra stanie, więc nakładka broni rysuje się jak przy
+    kodzie) */
 export interface KlatkaTekstury {
   tex: Texture;
   ax: number;
@@ -19,7 +25,7 @@ export interface KlatkaTekstury {
   zastepcza: boolean;
 }
 
-/** źródło tekstury z pikseli (alfa tylko 0 albo 255), bez wygładzania */
+/** źródło tekstury z pikseli (alfa prosta, nie mnożona: wgranie ją mnoży), bez wygładzania */
 function zrodloPikseli(px: Uint32Array, w: number, h: number): TextureSource {
   return new BufferImageSource({
     resource: new Uint8Array(px.buffer, px.byteOffset, px.byteLength),
@@ -37,6 +43,8 @@ export class LudzieLayer {
   private readonly zrodlo: TextureSource;
   private readonly zrodlaWersji = new Map<number, TextureSource>();
   private readonly tekstury = new Map<number, Texture>();
+  /** tekstury komórek leżenia, po obiekcie komórki (ludziePixellab trzyma jedną komórkę na postać, wersję, stronę i rodzaj) */
+  private readonly teksturyLezenia = new Map<KomorkaLezenia, Texture>();
   /** jedna odpowiedź na wszystkie wywołania klatka(): wołający zużywa ją od razu (bez śmieci co klatkę) */
   private readonly wynik: KlatkaTekstury = {
     tex: Texture.EMPTY,
@@ -56,7 +64,30 @@ export class LudzieLayer {
   /** klatka pozy pv postaci w wersji kolorystycznej `wersja`, null gdy postać nie ma tej pracy */
   klatka(postac: PostacLudzi, pv: PoseView, idzie: boolean, tt: number, wersja = 0): KlatkaTekstury | null {
     const k = this.dane.klatka(postac, pv, idzie, tt, wersja);
-    if (!k) return null;
+    return k && this.tekstura(k);
+  }
+
+  /** klatka przejścia (upadek, kładzenie się, wstawanie) po `czas` sekundach od startu, w kierunku dir; null, gdy postać
+      nie ma tej animacji albo przejście już się skończyło */
+  przejscie(
+    postac: PostacLudzi,
+    rodzaj: RodzajPrzejscia,
+    dir: number,
+    czas: number,
+    wersja = 0,
+  ): KlatkaTekstury | null {
+    const k = this.dane.przejscie(postac, rodzaj, dir, czas, wersja);
+    return k && this.tekstura(k);
+  }
+
+  /** zwłoki postaci: ostatnia klatka upadku w kierunku dir; null, gdy postać nie ma upadku (zwłoki rysuje komórka leżenia) */
+  zwloki(postac: PostacLudzi, dir: number, wersja = 0): KlatkaTekstury | null {
+    const k = this.dane.klatkaZwlok(postac, dir, wersja);
+    return k && this.tekstura(k);
+  }
+
+  /** tekstura prostokąta klatki z atlasu (albo z przemalowanej kopii pasa), jedna na prostokąt i wersję */
+  private tekstura(k: KlatkaPionka): KlatkaTekstury {
     // x i y mieszczą się w 4096, wersja i pas zarządu w górnych bitach
     const klucz = ((k.wersja * 2 + (k.zarzad ? 1 : 0)) * 4096 + k.y) * 4096 + k.x;
     let tex = this.tekstury.get(klucz);
@@ -75,6 +106,27 @@ export class LudzieLayer {
     r.h = k.h;
     r.flip = k.flip;
     r.zastepcza = k.zastepcza;
+    return r;
+  }
+
+  /** komórka leżenia postaci (strona głowy o, rodzaj: łóżko albo podłoga) w wersji kolorystycznej `wersja`: kotwica to
+      środek głowy; null, gdy postać nie ma klatki stania przodem (leżenie rysuje wtedy kod) */
+  lezenie(postac: PostacLudzi, wersja: number, o: number, rodzaj: Lie): KlatkaTekstury | null {
+    const k = this.dane.lezenie(postac, wersja, o, rodzaj);
+    if (!k) return null;
+    let tex = this.teksturyLezenia.get(k);
+    if (!tex) {
+      tex = new Texture({ source: zrodloPikseli(k.px, k.w, k.h) });
+      this.teksturyLezenia.set(k, tex);
+    }
+    const r = this.wynik;
+    r.tex = tex;
+    r.ax = k.hx;
+    r.ay = k.hy;
+    r.w = k.w;
+    r.h = k.h;
+    r.flip = false;
+    r.zastepcza = false;
     return r;
   }
 
@@ -98,6 +150,8 @@ export class LudzieLayer {
   destroy(): void {
     for (const t of this.tekstury.values()) t.destroy(false);
     this.tekstury.clear();
+    for (const t of this.teksturyLezenia.values()) t.destroy(true);
+    this.teksturyLezenia.clear();
     for (const z of this.zrodlaWersji.values()) z.destroy();
     this.zrodlaWersji.clear();
     this.zrodlo.destroy();

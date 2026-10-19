@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { SRODEK_LEZACEGO } from '../../src/render/art/animacjePozy.ts';
 import { atlasWersji, mapaPrzemalowania, type OpisGrafiki, przemalujKlatki } from '../../src/render/art/pixellab.ts';
 import { type Atlas, atlasy, PRACE, PRACE_MIESZKANCOW } from '../../tools/atlasy.ts';
-import { KIERUNKI_PL, kotwicaKlatki, przytnij, stopyWzgledne } from '../../tools/ludzie.ts';
+import { KIERUNKI_PL, kotwicaKlatki, kotwicaPrzejscia, przytnij, stopyWzgledne } from '../../tools/ludzie.ts';
 import { dociagnijDoPalety } from '../../tools/paleta.ts';
 import { decodePng } from '../../tools/png.ts';
 
@@ -106,6 +107,14 @@ describe('atlas animacji ludzi z PixelLab (public/assets/ludzie.png)', () => {
       for (const k of klucze) {
         const kier = p.animacje[k].kierunki;
         expect(kier, `${p.id} ${k}`).toHaveLength(4);
+        if (PRACE[k].tylkoZachod) {
+          // wstawanie ma własne klatki tylko na zachód, reszta kierunków to jego odbicie (numer 2)
+          expect(
+            kier.map((x) => (Array.isArray(x) ? 'klatki' : x)),
+            `${p.id} ${k}`,
+          ).toEqual([2, 2, 'klatki', 2]);
+          continue;
+        }
         for (const d of [0, 1, 2]) expect(Array.isArray(kier[d]), `${p.id} ${k} kierunek ${d}`).toBe(true);
         // wschód: własne klatki albo odbicie zachodu (numer 2); tyle samo klatek w każdym kierunku
         expect(Array.isArray(kier[3]) || kier[3] === 2, `${p.id} ${k} wschód`).toBe(true);
@@ -283,5 +292,77 @@ describe('atlas przemalowanej wersji (pixellab.ts)', () => {
     let zmienione = 0;
     for (let i = 0; i < w.length; i++) if (w[i] !== px[zarzad[0] * atlas.w + i]) zmienione++;
     expect(zmienione).toBeGreaterThan(500);
+  });
+});
+
+describe('przejścia w atlasie ludzi: upadek przy śmierci (smierc) i wstawanie z PixelLab', () => {
+  const dlugosci = (id: string, klucz: string) =>
+    postac(id).animacje[klucz].kierunki.map((k) => (Array.isArray(k) ? k.length : k));
+
+  it('postacie zarządu mają upadek w trzech kierunkach (wschód to odbicie zachodu) i wstawanie z odbiciem zachodu, mieszkańcy żadnego', () => {
+    for (const id of manifest.zarzad) {
+      expect(dlugosci(id, 'smierc'), id).toEqual([7, 7, 7, 2]);
+      // wstawanie ma tylko zachód: pozostałe kierunki to jego odbicie
+      expect(dlugosci(id, 'wstawanie'), id).toEqual([2, 2, 5, 2]);
+    }
+    for (const id of manifest.mieszkancy) {
+      expect(postac(id).animacje.smierc, id).toBeUndefined();
+      expect(postac(id).animacje.wstawanie, id).toBeUndefined();
+    }
+    expect(PRACE_MIESZKANCOW).not.toContain('smierc');
+    expect(PRACE_MIESZKANCOW).not.toContain('wstawanie');
+  });
+
+  it('klatka upadku to przycięta sylwetka klatki źródłowej, a kotwica schodzi od stóp na ziemi do środka leżącego ciała', () => {
+    for (const id of manifest.zarzad)
+      for (let d = 0; d < 3; d++) {
+        const zr = zrodlo(id, 'smierc', KIERUNKI_PL[d]);
+        const kl = postac(id).animacje.smierc.kierunki[d] as number[][];
+        expect(kl.length, `${id} ${KIERUNKI_PL[d]}`).toBe(zr.length);
+        kl.forEach((k, i) => {
+          const p = przytnij(zr[i]);
+          expect([k[2], k[3]], `${id} ${KIERUNKI_PL[d]} klatka ${i}`).toEqual([p.w, p.h]);
+          const [ax, ay] = kotwicaPrzejscia({ x: p.x, w: p.w, h: p.h }, zr[i].w, i / (kl.length - 1));
+          expect([k[4], k[5]], `${id} ${KIERUNKI_PL[d]} klatka ${i}`).toEqual([ax, ay]);
+        });
+        // pierwsza klatka stoi dolną krawędzią sylwetki w kotwicy, ostatnia leży środkiem SRODEK_LEZACEGO nad nią
+        expect(kl[0][5], `${id} ${KIERUNKI_PL[d]} start`).toBe(kl[0][3]);
+        const ost = kl[kl.length - 1];
+        expect(ost[5], `${id} ${KIERUNKI_PL[d]} koniec`).toBe(Math.round(ost[3] / 2) + SRODEK_LEZACEGO);
+        // leżący jest szerszy niż wyższy: upadek kończy się poziomo, jak komórka leżenia
+        expect(ost[2], `${id} ${KIERUNKI_PL[d]} poziomo`).toBeGreaterThan(ost[3]);
+      }
+  });
+
+  it('wstawanie to ten sam ruch w drugą stronę: pierwsza klatka leży środkiem w kotwicy, ostatnia stoi dolną krawędzią', () => {
+    for (const id of manifest.zarzad) {
+      const zr = zrodlo(id, 'wstawanie', 'west');
+      const kl = postac(id).animacje.wstawanie.kierunki[2] as number[][];
+      expect(kl.length, id).toBe(zr.length);
+      kl.forEach((k, i) => {
+        const p = przytnij(zr[i]);
+        expect([k[2], k[3]], `${id} klatka ${i}`).toEqual([p.w, p.h]);
+        const [ax, ay] = kotwicaPrzejscia({ x: p.x, w: p.w, h: p.h }, zr[i].w, 1 - i / (kl.length - 1));
+        expect([k[4], k[5]], `${id} klatka ${i}`).toEqual([ax, ay]);
+      });
+      expect(kl[0][5], `${id} start`).toBe(Math.round(kl[0][3] / 2) + SRODEK_LEZACEGO);
+      expect(kl[kl.length - 1][5], `${id} koniec`).toBe(kl[kl.length - 1][3]);
+      // leży poziomo, a na końcu stoi: pierwsza klatka szersza niż wyższa, ostatnia wyższa niż szersza
+      expect(kl[0][2], id).toBeGreaterThan(kl[0][3]);
+      expect(kl[kl.length - 1][3], id).toBeGreaterThan(kl[kl.length - 1][2]);
+    }
+  });
+
+  it('klatki przejść leżą w pasie zarządu atlasu i nie wychodzą poza obraz', () => {
+    const [od, do_] = opis.ludzie.regiony.zarzad;
+    for (const id of manifest.zarzad)
+      for (const klucz of ['smierc', 'wstawanie'])
+        for (const kier of postac(id).animacje[klucz].kierunki)
+          if (Array.isArray(kier))
+            for (const [x, y, w, h] of kier) {
+              expect(y, `${id} ${klucz}`).toBeGreaterThanOrEqual(od);
+              expect(y + h, `${id} ${klucz}`).toBeLessThanOrEqual(do_);
+              expect(x + w, `${id} ${klucz}`).toBeLessThanOrEqual(atlas.w);
+            }
   });
 });

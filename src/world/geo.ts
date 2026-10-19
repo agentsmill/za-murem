@@ -31,6 +31,9 @@ export interface GeoPoi {
   y: number;
   c: string;
   n: string;
+  /** klucz punktu „poi:X:Y” (globalny piksel z=14, miasto.ts): wspólny dla wszystkich graczy, niezależny od środka
+      mapy; brak w zapisach i demach sprzed kluczy oraz w osiedlu zapasowym (uzupelnijKlucze liczy go z położenia) */
+  k?: string;
 }
 /** punkt, który mówi, czym jest budynek (muzeum, teatr, hotel, dworzec, remiza, szpital, kościół, urząd, ratusz,
     willa): osobno od `poi`, bo kategorie punktów (`cats` budynku) zmieniają klasę budynku w classify(), a rodzaj ma

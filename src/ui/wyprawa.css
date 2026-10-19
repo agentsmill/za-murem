@@ -1,0 +1,132 @@
+/* Okno planu wyprawy z mapy miasta (src/ui/wyprawa.ts): zwykłe okno w barwie mapy, lista osób jako przełączniki
+   (wybrana ma zielony pasek i ptaszek, niezdolna jest przygaszona z powodem), podsumowanie jako tabliczka z wierszami
+   „napis – wartość” i powód nad nią. Na telefonie (do 640 px) lista i podsumowanie idą jedna pod drugą na całą szerokość. */
+
+.sheet.wyprawa {
+  --plate: #2f4a5c;
+}
+.wp-lista {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wp-os {
+  margin: 0;
+}
+.wp-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--slab-raised);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.wp-pick:hover:not(:disabled) {
+  border-color: var(--ink-dim);
+}
+.wp-pick:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
+}
+.wp-pick[aria-pressed="true"] {
+  border-color: var(--good);
+  box-shadow: inset 4px 0 0 var(--good);
+}
+.wp-pick:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* pole wyboru: puste, a po wybraniu zielone z ptaszkiem */
+.wp-ptak {
+  position: relative;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--line);
+  border-radius: 3px;
+  background: #15181a;
+}
+.wp-pick[aria-pressed="true"] .wp-ptak {
+  border-color: var(--good);
+  background: var(--good);
+}
+.wp-pick[aria-pressed="true"] .wp-ptak::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 1px;
+  width: 6px;
+  height: 12px;
+  border: solid #15181a;
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
+}
+.who-t {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.wp-pick .who-n {
+  overflow-wrap: anywhere;
+}
+.wp-pick .who-s {
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+.wp-powod {
+  color: var(--lamp);
+  font-size: 13px;
+}
+.wp-why {
+  margin: 0 0 8px;
+  color: var(--lamp);
+}
+.wp-sum {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--seam);
+  border-radius: 5px;
+  background: var(--slab-deep);
+}
+.wp-sum dt {
+  color: var(--ink-dim);
+  font: 600 12px / 1.7 var(--f-sign);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.wp-sum dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.wp-rano {
+  margin: 0 0 8px;
+  color: var(--ink-dim);
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .wp-pick {
+    padding: 6px 8px;
+  }
+  .wp-sum {
+    gap: 3px 10px;
+    padding: 7px 8px;
+  }
+}

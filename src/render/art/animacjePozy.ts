@@ -1,9 +1,46 @@
 /* Poza pionka z gry (poses.ts) → animacja postaci z PixelLab (klucz pracy w atlasie ludzi, tools/atlasy.ts) i numer
    klatki. Gra ma pozy o 1 do 4 klatkach, PixelLab animacje o własnej liczbie klatek, więc klatkę wybiera się z kroku
    pionka (chód i noszenie), z czasu (praca w pętli) albo z fazy ciosu (klatka z gry rozciągnięta na całą animację).
-   Czyste funkcje bez PixiJS. */
+   Przejścia między staniem a leżeniem (kładzenie się, wstawanie, upadek przy śmierci) nie są pozami z gry: widok
+   uruchamia je przy zmianie stanu i gra raz, od początku do końca (PRZEJSCIA, numerKlatkiPrzejscia). Czyste funkcje
+   bez PixiJS. */
 
 import type { Pose } from './people.ts';
+
+/** o ile pikseli nad punktem pionka (stopami stojącego) leży środek jego leżącego ciała: tak jak środek komórki
+    leżenia z kodu na podłodze (poses.ts: lie.y = y · 32 + głowa − 26, a komórka LIE = 48 ma środek w 24). W tym
+    miejscu kotwiczy się ostatnią klatkę upadku i pierwszą klatkę wstawania (tools/ludzie.ts), więc przejście kończy
+    się dokładnie tam, gdzie zaczyna się leżenie. */
+export const SRODEK_LEZACEGO = 2;
+
+/**
+ * Przejścia postaci z PixelLab: animacja w atlasie ludzi (klucz), czy gra od końca i tempo w klatkach na sekundę gry.
+ * Kładzenie się to wstawanie od tyłu (stoi → przysiad → półsiad), więc obie mają jedną animację z PixelLab (szablon
+ * `getting-up`), a upadek przy śmierci to szablon `falling-back-death`.
+ */
+export const PRZEJSCIA = {
+  kladzenie: { klucz: 'wstawanie', wstecz: true, tempo: 8 },
+  wstawanie: { klucz: 'wstawanie', wstecz: false, tempo: 8 },
+  smierc: { klucz: 'smierc', wstecz: false, tempo: 10 },
+} as const satisfies Record<string, { klucz: string; wstecz: boolean; tempo: number }>;
+
+export type RodzajPrzejscia = keyof typeof PRZEJSCIA;
+
+/** ile sekund gry trwa przejście o n klatkach */
+export function czasPrzejscia(rodzaj: RodzajPrzejscia, n: number): number {
+  return n / PRZEJSCIA[rodzaj].tempo;
+}
+
+/**
+ * Numer klatki animacji o n klatkach po `czas` sekundach od początku przejścia, albo null, gdy już się skończyło.
+ * Czas sprzed początku (zegar widoku o ułamek przed startem) stoi na pierwszej klatce.
+ */
+export function numerKlatkiPrzejscia(rodzaj: RodzajPrzejscia, czas: number, n: number): number | null {
+  const { tempo, wstecz } = PRZEJSCIA[rodzaj];
+  const i = Math.max(0, Math.floor(czas * tempo));
+  if (i >= n) return null;
+  return wstecz ? n - 1 - i : i;
+}
 
 /** klucz pracy w atlasie ludzi dla pozy; stojący (nie idzie) pionek w pozie chodu to oddech */
 export function kluczAnimacji(pose: Pose, idzie: boolean): string {

@@ -7,6 +7,7 @@ import { L } from '../core/jezyk.ts';
 import { mulberry } from '../core/rng.ts';
 import type { AreaKind, Geo, Pt } from './geo.ts';
 import { pikselZ, tagiKlucza } from './klucze.ts';
+import { kluczPunktu } from './miasto.ts';
 import { rodzajZTagow } from './rodzaje.ts';
 
 const ENDPOINTS: [string, number][] = [
@@ -199,7 +200,7 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
       const k = rodzajZTagow(t);
       if (c || k) {
         const [x, y] = P(el.lat!, el.lon!);
-        if (c) geo.poi.push({ x, y, c, n: t.name || '' });
+        if (c) geo.poi.push({ x, y, c, n: t.name || '', k: kluczPunktu(...pikselZ(el.lat!, el.lon!)) });
         if (k) (geo.rodzaje ||= []).push({ x, y, k, n: t.name || '' });
       }
       continue;
@@ -244,7 +245,15 @@ export function toGeo(json: { elements?: OverpassElement[] }, lat0: number, lon0
         sx += x;
         sy += y;
       }
-      geo.poi.push({ x: rd(sx / pts.length), y: rd(sy / pts.length), c, n: t.name || '' });
+      // klucz ze środka wierzchołków w stopniach (przed zaokrągleniem do 0,5 m), jak dla węzła
+      let la = 0;
+      let lo = 0;
+      for (const g of el.geometry) {
+        la += g.lat;
+        lo += g.lon;
+      }
+      const k = kluczPunktu(...pikselZ(la / el.geometry.length, lo / el.geometry.length));
+      geo.poi.push({ x: rd(sx / pts.length), y: rd(sy / pts.length), c, n: t.name || '', k });
     }
     const rodzaj = rodzajZTagow(t);
     if (rodzaj) {

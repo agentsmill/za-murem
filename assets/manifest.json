@@ -335,6 +335,26 @@
           "klatek": 4,
           "koszt": 3,
           "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/zlom-px"]
+        },
+        {
+          "nazwa": "smierc",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "falling-back-death",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 7,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/smierc"]
+        },
+        {
+          "nazwa": "wstawanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "getting-up",
+          "kierunki": ["west"],
+          "klatek": 5,
+          "koszt": 1,
+          "pliki": ["assets/raw/kotwica-emeryt/Idle/animations/wstawanie"]
         }
       ],
       "odrzucone": [
@@ -373,6 +393,30 @@
           "kierunki": ["south", "north", "west"],
           "koszt": 3,
           "uwagi": "pierwsza warta: blask lampy rozlany po ubraniu, zachód bez lampy; zastąpiona lampą opuszczoną przy biodrze"
+        },
+        {
+          "nazwa": "wstawanie",
+          "kierunki": ["south", "north"],
+          "koszt": 2,
+          "uwagi": "pilot getting-up na południe i północ: południe zaczyna się od przysiadu, północ od czworaków i traci czapkę; do wstawania i kładzenia się wystarcza zachód z odbiciem na wschód, więc u pozostałych postaci tylko zachód"
+        },
+        {
+          "nazwa": "warta-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez lampy (prawa ręka za ciałem); 19.10.2026 zastąpiony wersją z lampą w lewej ręce (bliższej widzowi przy patrzeniu na zachód), która jest teraz w animacjach"
+        },
+        {
+          "nazwa": "gotowanie-px-test",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "próba osobnej grupy: zachód z garnkiem na ziemi wyszedł, ale identyczne zamówienie w grupie gotowanie-px PixelLab uznał za to samo (nie dopiął kierunku do grupy), więc próbę usunięto, a zachód zamówiono w grupie świeżym opisem (koszt w animacjach)"
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez garnka (sama łyżka); 19.10.2026 zastąpiony wersją z dużym garnkiem na ziemi, która jest teraz w animacjach"
         }
       ]
     },
@@ -544,6 +588,26 @@
           "klatek": 4,
           "koszt": 3,
           "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/zlom-px"]
+        },
+        {
+          "nazwa": "smierc",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "falling-back-death",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 7,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/smierc"]
+        },
+        {
+          "nazwa": "wstawanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "getting-up",
+          "kierunki": ["west"],
+          "klatek": 5,
+          "koszt": 1,
+          "pliki": ["assets/raw/kotwica-emerytka/Idle/animations/wstawanie"]
         }
       ],
       "odrzucone": [
@@ -558,6 +622,12 @@
           "kierunki": ["south", "north", "west"],
           "koszt": 3,
           "uwagi": "opis „unlit lantern, no fire, no glow” dał płaszcz w płomieniach na południu"
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez garnka (sama łyżka); 19.10.2026 zastąpiony wersją z dużym garnkiem na ziemi, która jest teraz w animacjach"
         }
       ]
     },
@@ -729,6 +799,26 @@
           "klatek": 4,
           "koszt": 3,
           "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/zlom-px"]
+        },
+        {
+          "nazwa": "smierc",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "falling-back-death",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 7,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/smierc"]
+        },
+        {
+          "nazwa": "wstawanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "getting-up",
+          "kierunki": ["west"],
+          "klatek": 5,
+          "koszt": 1,
+          "pliki": ["assets/raw/kotwica-zlota-raczka/Idle/animations/wstawanie"]
         }
       ],
       "odrzucone": [
@@ -737,6 +827,12 @@
           "kierunki": ["south", "north", "west"],
           "koszt": 3,
           "uwagi": "opis „unlit lantern, no fire, no glow”, jak u emerytki; zastąpiona lampą opuszczoną przy biodrze"
+        },
+        {
+          "nazwa": "gotowanie-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez garnka (sama łyżka); 19.10.2026 zastąpiony wersją z dużym garnkiem na ziemi, która jest teraz w animacjach"
         }
       ]
     },
@@ -908,6 +1004,34 @@
           "klatek": 4,
           "koszt": 3,
           "pliki": ["assets/raw/kotwica-mloda/Idle/animations/zlom-px"]
+        },
+        {
+          "nazwa": "smierc",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "falling-back-death",
+          "kierunki": ["south", "north", "west"],
+          "klatek": 7,
+          "koszt": 3,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/smierc"]
+        },
+        {
+          "nazwa": "wstawanie",
+          "narzedzie": "animate_character",
+          "tryb": "template",
+          "szablon": "getting-up",
+          "kierunki": ["west"],
+          "klatek": 5,
+          "koszt": 1,
+          "pliki": ["assets/raw/kotwica-mloda/Idle/animations/wstawanie"]
+        }
+      ],
+      "odrzucone": [
+        {
+          "nazwa": "gotowanie-px",
+          "kierunki": ["west"],
+          "koszt": 1,
+          "uwagi": "zachód bez garnka (sama łyżka); 19.10.2026 zastąpiony wersją z dużym garnkiem na ziemi, która jest teraz w animacjach"
         }
       ]
     },
@@ -2880,6 +3004,216 @@
       "status": "odrzucony",
       "pliki": ["assets/raw/kotwica-blok-edycja/edycja.png"],
       "uwagi": "skopiował wzorzec prawie bez zmian, fasada znów około 15 px na piętro"
+    },
+    {
+      "id": "strop-tynk",
+      "grupa": "pietra",
+      "co": "strop pięter, wariant „Ciepły tynk”: 16 kafelków 32 px płyty stropowej pod ciepłym beżowym tynkiem widzianej z góry (8 opisów po 2 warianty, numer i oraz i+8)",
+      "narzedzie": "create_tiles_pro",
+      "prompt": "1). [początek] plain uniform warm beige plaster, very faint grain 2). [początek] plain warm beige plaster, slightly faded and lighter 3). [początek] warm beige plaster with one faint straight panel joint across the middle 4). [początek] warm beige plaster with a small pale brown water stain in one corner 5). [początek] warm beige plaster with a single thin hairline crack 6). [początek] warm beige plaster with a small patch of lighter repaired plaster 7). [początek] warm beige plaster with a few tiny dark specks of mold in one corner 8). [początek] plain warm beige plaster, slightly darker and dustier",
+      "parametry": {
+        "tile_type": "square_topdown",
+        "tile_size": 32,
+        "tile_view": "top-down",
+        "poczatek": "top-down view of a prefab concrete floor slab covered with warm beige plaster, Polish 1970s apartment block, seen from directly above, flat matte surface, no furniture, no objects, no perspective, no shadows, no outline, seamless tile, low detail, calm low contrast, sandy peach beige colour,",
+        "style_images": [
+          "assets/wejscia/strop-wzorzec-32.png: 32×32 w kolorze płyty fasady #9a958a z assets/raw/kotwica-blok/1.png, wycinek x 46..57, y 106..110 (na fasadzie bloku nie ma okna 32×32 bez okien i szwów: płyta między oknami ma najwyżej 12×5 px, więc wzorzec jest płaski)"
+        ],
+        "style_options": {
+          "color_palette": false,
+          "outline": true,
+          "detail": true,
+          "shading": true
+        },
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "84f1ac26-af5e-47cc-8ce3-8ec0fdc60143",
+      "koszt": 10,
+      "status": "zatwierdzony",
+      "pliki": ["assets/raw/strop-tynk"],
+      "wybrany": "tło z kodu (przepis w uzycie), szwy 96 × 64, naklejki #3, #4, #5, #6, gęstość 0,12",
+      "zatwierdzenie": "19.10.2026, Mateusz (przekazane przez sesję „Kafelki stropu PixelLab”): „Bierzemy polecany (tło z kodu, szwy 96×64, naklejki #3–#6, gęstość 0,12), ale tło bardziej beżowe niż łososiowe i szare plamy rzadsze i drobniejsze. Poprawka tylko w polach uzycie, bez nowego zamówienia.”",
+      "warianty": {
+        "0": "prawie biały (#e3e0d6), odrzucony",
+        "1": "biały, odrzucony",
+        "2": "szew z ciemnymi kreskami i szary placek na dole, nie bierzemy (koliduje z szwami z kodu)",
+        "3": "plama zalania w lewym dolnym rogu (naklejka)",
+        "4": "rysa przez cały kafelek (naklejka)",
+        "5": "łata jaśniejszego tynku, biała plama z jasną obwódką (naklejka, wycinek bez dolnego pasa)",
+        "6": "ciemne plamki pleśni w dwóch rogach (naklejka, wycinek bez dolnego pasa i prawej kolumny)",
+        "7": "szary (#9a958a), odrzucony",
+        "8": "szary z ciemną ramką, odrzucony",
+        "9": "żółty (#e0d29a), odrzucony",
+        "10": "szary z pęknięciami, odrzucony",
+        "11": "ciepły, prawie pusty: tylko trzy piksele różnicy w narożnikach, nie niesie naklejki",
+        "12": "blady z szarym rogiem, odrzucony",
+        "13": "szary z kropkami, odrzucony",
+        "14": "szary ze szwem przy lewej krawędzi, odrzucony",
+        "15": "blady z kropkami, odrzucony"
+      },
+      "uzycie": {
+        "opis": "tło stropu rysuje kod z samego koloru z drobnym ziarnem, bo kafelki PixelLab są płaskie (1 do 3 kolorów) i mają powtarzalne narożniki po odbiciu; szwy płyt stropowych rysuje kod jak szwy papy na dachu; z kafelków zostają rzadkie naklejki: piksele w kolorze klucza są przezroczyste, reszta leży na tle. Wszystkie kolory z palety Za Murem 2051. Wzór liczony od współrzędnych świata, żeby łączył się między kafelkami. Poprawka 19.10.2026 po uwagach Mateusza: beż zamiast łososia (ziarno #cac6bc po pikselu zlewa się optycznie z bazą), szare plamy rzadsze i drobniejsze.",
+        "tlo": "#e0b48c",
+        "klucz": "#e3b79a",
+        "kurz": "#cac6bc",
+        "posredni": "#b7b2a6",
+        "ciemny": "#9a958a",
+        "brazowy": "#765e42",
+        "szum": {
+          "opis": "kolejność od spodu: kurz, posredni, ciemny, brazowy (późniejszy zakrywa wcześniejszy). Rodzaj piksel to biały szum po pikselu (hash współrzędnych świata dzielonych przez siatkę, siatka 1 = pojedyncze piksele). Rodzaj pole to szum wartościowy z kratą co siatka px (drugie pole 2,2 razy drobniejsze z wagą 0,3, nie mniej niż 2 px); piksele z najniższych wartości pola dostają kolor.",
+          "kurz": {
+            "kolor": "#cac6bc",
+            "udzial": 0.28,
+            "rodzaj": "piksel",
+            "siatka": 1
+          },
+          "posredni": {
+            "kolor": "#b7b2a6",
+            "udzial": 0.05,
+            "rodzaj": "pole",
+            "siatka": 3
+          },
+          "ciemny": {
+            "kolor": "#9a958a",
+            "udzial": 0.01,
+            "rodzaj": "pole",
+            "siatka": 2
+          },
+          "brazowy": {
+            "kolor": "#765e42",
+            "udzial": 0.02,
+            "rodzaj": "piksel",
+            "siatka": 1
+          },
+          "poprzednio": "posredni #b7b2a6 0,14 (krata 6), ciemny #9a958a 0,03 (krata 5), jasny #e3b79a 0,12 (krata 7): łososiowe tło z dużymi szarymi plamami"
+        },
+        "szwy": [96, 64],
+        "szwy_kolor": "#b07a55",
+        "szwy_grubosc": 1,
+        "naklejki": [3, 4, 5, 6],
+        "wnetrze": [2, 2, 28, 28],
+        "wnetrze_wariantu": {
+          "3": [0, 20, 12, 12],
+          "4": [0, 0, 32, 32],
+          "5": [9, 10, 15, 12],
+          "6": [0, 0, 31, 30]
+        },
+        "gestosc": 0.12,
+        "szwy_inne": "co 32 px (siatka 1 m) czyta się jak płytki i dubluje szwy lastryko w klatce, więc 96 × 64 jak na dachu (płyty 3 × 2 m)",
+        "krawedz": {
+          "opis": "propozycja, gra jej nie używa: ciemniejsza krawędź stropu na granicy mieszkania (ściana do klatki i ściany zewnętrzne), żeby beżowy strop nie mylił się z linoleum (ΔE 7,5) i wytartymi panelami (ΔE 8,9); podgląd w pietra-strop-arkusz.png",
+          "kolor": "#765e42",
+          "grubosc": 2
+        }
+      },
+      "pomiary": {
+        "opis": "pomiary z docs/postep/pietra-strop-arkusz.png po poprawce tła z 19.10.2026: średni kolor tła ze skryptu pomocniczego (512 × 512 px, przepis z uzycie), luminancja względna WCAG, ΔE CIE76 do średnich kolorów powierzchni z gry",
+        "tlo_srednia": "#d6b798 (214, 182, 152)",
+        "tlo_R_minus_G": 31.0,
+        "tlo_roznica_do_cdb08c": [8.6, 6.5, 12.1],
+        "luminancja_tla": 0.5017,
+        "luminancja_dachu_313336": 0.0329,
+        "stosunek_do_dachu": 15.26,
+        "R_minus_B": {
+          "strop": 61,
+          "dach_PixelLab": -5,
+          "lastryko": 16
+        },
+        "udzialy_pikseli_tla": {
+          "baza": 0.664,
+          "kurz": 0.257,
+          "posredni": 0.049,
+          "ciemny": 0.01,
+          "brazowy": 0.02
+        },
+        "przed_poprawka": {
+          "tlo_srednia": "#d9b391 (217, 179, 145)",
+          "tlo_R_minus_G": 37.6,
+          "tlo_roznica_do_cdb08c": [11.7, 3.1, 4.8],
+          "deltaE": {
+            "linoleum kuchni": 10.1,
+            "panele wytarte": 7.2,
+            "lastryko klatki": 22.9,
+            "dach PixelLab (papa)": 60.4
+          },
+          "udzialy": "baza #e0b48c, #e3b79a 12%, #b7b2a6 14%, #9a958a 3% (pola 5 do 7 px)"
+        },
+        "surowe_ciepłe_kafelki_3_4_6_11": {
+          "rgb": [224.7, 182.0, 153.3],
+          "hex": "#e1b699",
+          "roznica_do_cdb08c": [19.7, 6.0, 13.3]
+        },
+        "powierzchnie": {
+          "dach PixelLab (papa)": {
+            "srednia": "#313336",
+            "strop_jasniejszy_razy": 15.26,
+            "deltaE": 59.6
+          },
+          "dach z kodu: papa": {
+            "srednia": "#585450",
+            "strop_jasniejszy_razy": 5.58,
+            "deltaE": 43.9
+          },
+          "dach z kodu: żwir": {
+            "srednia": "#9a968d",
+            "strop_jasniejszy_razy": 1.64,
+            "deltaE": 21.2
+          },
+          "dach z kodu: dachówka": {
+            "srednia": "#a24f36",
+            "strop_jasniejszy_razy": 3.72,
+            "deltaE": 42.8
+          },
+          "dach z kodu: blacha": {
+            "srednia": "#767c81",
+            "strop_jasniejszy_razy": 2.53,
+            "deltaE": 34.6
+          },
+          "lastryko klatki": {
+            "srednia": "#9a958a",
+            "strop_jasniejszy_razy": 1.66,
+            "deltaE": 20.6
+          },
+          "panele": {
+            "srednia": "#9f7850",
+            "strop_jasniejszy_razy": 2.35,
+            "deltaE": 24.5
+          },
+          "panele wytarte": {
+            "srednia": "#c4a47c",
+            "strop_jasniejszy_razy": 1.26,
+            "deltaE": 8.9
+          },
+          "linoleum kuchni": {
+            "srednia": "#cdbf9b",
+            "strop_jasniejszy_razy": 0.95,
+            "deltaE": 7.5
+          }
+        }
+      },
+      "uwagi": "Zamówienie poprawkowe po strop-tynk-v1 (szare kafelki): style_options z color_palette false, w opisie dopisane „sandy peach beige colour”. Ciepłe kafelki mają tło #e3b79a (227,183,154, kolor „skóra” z palety), czyli o 22 za dużo czerwieni względem #cdb08c, bo w palecie nie ma tak ciemnego beżu (najbliższy to #e0b48c), więc tło rysuje kod, a z kafelków zostają naklejki. Poprawka tła 19.10.2026 (uwaga Mateusza: za łososiowe i za duże szare plamy): R−G średniego tła spadło z 37,6 do 31,0, średnia z (217,179,145) do (214,183,152), czyli różnica do #cdb08c z +12, +3, +5 na +9, +7, +12 (w granicach ±14, a niebieski jest najbliżej granicy: R−G 30 wymagałoby +14). Bez nowego zamówienia: ziarno #cac6bc po pikselu (28%) zlewa się optycznie z bazą #e0b48c w beż, szare plamy #b7b2a6 i #9a958a spadły z 14% i 3% do 5% i 1% przy kracie 3 i 2 px, a 2% ciemnobrązowych pikseli #765e42 obniża czerwień i błękit. Strop jest 15,3 razy jaśniejszy od dachu #313336, R−B 61 przy −5 na dachu i 16 w lastryko. Po poprawce ΔE do linoleum kuchni (#cdbf9b) spadło z 10,1 do 7,5, a do wytartych paneli (#c4a47c) wzrosło z 7,2 do 8,9; do lastryko 20,6 (było 22,9), do dachu 59,6 (było 60,4). Od linoleum odróżnia strop więc coraz mniej sam kolor, dlatego w uzycie jest propozycja ciemniejszej krawędzi (pole krawedz). Jasnej ramki kafelków nie ma, poza ciemną obwódką w #8, ale naklejki #5 i #6 mają pasy na krawędziach, stąd wnetrze_wariantu. Wzorzec stylu: assets/wejscia/strop-wzorzec-32.png."
+    },
+    {
+      "id": "strop-tynk-v1",
+      "grupa": "pietra",
+      "co": "strop pięter, pierwsze zamówienie: 16 kafelków 32 px, wszystkie szare (#b7b2a6) zamiast ciepłego beżu",
+      "narzedzie": "create_tiles_pro",
+      "prompt": "1). [początek] plain uniform warm beige plaster, very faint grain 2). [początek] plain warm beige plaster, slightly faded and lighter 3). [początek] warm beige plaster with one faint straight panel joint across the middle 4). [początek] warm beige plaster with a small pale brown water stain in one corner 5). [początek] warm beige plaster with a single thin hairline crack 6). [początek] warm beige plaster with a small patch of lighter repaired plaster 7). [początek] warm beige plaster with a few tiny dark specks of mold in one corner 8). [początek] plain warm beige plaster, slightly darker and dustier",
+      "parametry": {
+        "tile_type": "square_topdown",
+        "tile_size": 32,
+        "tile_view": "top-down",
+        "poczatek": "top-down view of a prefab concrete floor slab covered with warm beige plaster, Polish 1970s apartment block, seen from directly above, flat matte surface, no furniture, no objects, no perspective, no shadows, no outline, seamless tile, low detail, calm low contrast,",
+        "style_images": [
+          "assets/wejscia/strop-wzorzec-32.png (32×32 w kolorze płyty fasady #9a958a z assets/raw/kotwica-blok/1.png, wycinek x 46..57, y 106..110)"
+        ],
+        "palette": "Za Murem 2051"
+      },
+      "pixellab": "8eb5d6ca-b3f2-41e0-9482-ac10e57a86c1",
+      "koszt": 10,
+      "status": "odrzucony",
+      "pliki": ["assets/raw/strop-tynk-v1"],
+      "uwagi": "wzorzec stylu przeniósł szary odcień fasady mimo palety: średnie kolory kafelków #b7b2a6 (183,178,166), czyli o 22 za mało czerwieni i 26 za dużo niebieskiego względem #cdb08c, do tego płaskie (1 do 3 kolorów na kafelek). Ramki nie ma, poza ciemną obwódką w #15. Poprawka w strop-tynk: style_options z color_palette false."
     }
   ]
 }

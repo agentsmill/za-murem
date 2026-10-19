@@ -1,10 +1,16 @@
 /* Gracz-bot z zarządem: symulacja i zarząd (src/gov) razem, bez przeglądarki. Zarząd co sekundę przy ekranie
    (tempo 1×: tick / 20), okna zarządu odpowiadane od razu według prostej polityki karty nocy, a w grze tylko
    polecenia, których gra wymaga: samouczek (zaznaczenie i ścięcie suchego drzewa) i kolejne drzewo, kiedy
-   opału zostaje mało. Liczy decyzje z czasem przy ekranie i skutki napadów. Używają go testy i tools/bot.ts. */
+   opału zostaje mało. Liczy decyzje z czasem przy ekranie i skutki napadów. Używają go testy i tools/bot.ts.
+
+   Opcja `miasto` (mapa miasta, docs/superpowers/specs/2026-10-18-mapa-miasta-design.md) włącza ją w zarządzie jak gra
+   (`wlaczMiasto`), daje zarządowi miejsca z okolicy w każdym wejściu (`GovInput.okolica`, także w odpowiedziach na okna)
+   i wpina gracza wypraw dziennych (tests/unit/miasto-play.ts): jego `krok` idzie co sekundę przy ekranie po oknach
+   zarządu, a `po` dostaje skutki każdego kroku zarządu. Bez opcji nic się nie zmienia (te same skróty co przed mapą). */
 
 import { raidersOf } from '../../src/gov/noc.ts';
-import type { GovEffects, GovState, NightReport, Prompt } from '../../src/gov/typy.ts';
+import type { GovEffects, GovInput, GovState, NightReport, Prompt } from '../../src/gov/typy.ts';
+import { wlaczMiasto } from '../../src/gov/wyprawy.ts';
 import {
   ackReport,
   chooseEvent,
@@ -32,6 +38,7 @@ import {
   trunkOf,
 } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
+import type { Miejsce } from '../../src/world/miasto.ts';
 import type { World } from '../../src/world/world.ts';
 import type { Player } from './m2-play.ts';
 
@@ -67,6 +74,17 @@ export interface NightLog {
   result: { people: number; slept: number; dozing: number } | null;
 }
 
+/** mapa miasta w grze z zarządem: miejsca z okolicy dla wejścia zarządu i gracz wypraw dziennych */
+export interface MiastoOpts {
+  /** miejsca z okolicy (`GovInput.okolica`), jak `okolica` w main.ts */
+  okolica: readonly Miejsce[];
+  /** co sekundę przy ekranie po oknach zarządu; skutki wysłanej wyprawy idą do symulacji przez `zastosuj` (decyzja
+      rodzaju 'praca'). Bez niego zarząd ma mapę miasta, ale nikt nie wysyła wypraw dziennych. */
+  krok?: (gov: GovState, i: GovInput, zastosuj: (fx: GovEffects, tekst: string) => void) => void;
+  /** skutki każdego kroku zarządu (`govUpdate`): tędy przychodzą powroty wypraw */
+  po?: (fx: GovEffects, i: GovInput) => void;
+}
+
 export interface PlayOpts {
   /** dyżur przy kozie każdej nocy: najbardziej wypoczęty z tych, którzy śpią */
   koza?: boolean;
@@ -78,6 +96,9 @@ export interface PlayOpts {
   /** zarząd i mieszkańcy siedziby z generatora mieszkańców (opcja `mieszkancy` createSim; flaga --mieszkancy botów);
       bez niej sim powstaje jak przed krokiem 5 */
   mieszkancy?: SimOpts['mieszkancy'];
+  /** mapa miasta (flaga --miasto botów): zarząd z `wlaczMiasto`, okolicą w wejściu i graczem wypraw dziennych; bez
+      opcji zarząd nie ma stanu miasta i gra na TARGETS jak przed mapą miasta */
+  miasto?: MiastoOpts;
 }
 
 /** poranek wartownika po nocy na posterunku (6:00–14:00): najedzenie i siły o 6:00, godzina pierwszego posiłku
@@ -132,9 +153,19 @@ function apply(st: SimState, w: World, fx: GovEffects): void {
 }
 
 /** odpowiedź na okno zarządu według polityki (jak answer() w gov-atrapa.ts, ale skutki idą do symulacji) */
-function answer(gov: GovState, sim: Sim, w: World, p: Prompt, policy: Policy, screen: number, out: Decision[]): string {
+function answer(
+  gov: GovState,
+  sim: Sim,
+  w: World,
+  p: Prompt,
+  policy: Policy,
+  screen: number,
+  out: Decision[],
+  okolica?: readonly Miejsce[],
+): string {
   const st = sim.st;
   const i = govInput(st, w, screen);
+  if (okolica) i.okolica = okolica;
   if (p.k === 'raport') {
     ackReport(gov);
     return p.report.lines.map((l) => l.pl).join(' ');
@@ -211,6 +242,14 @@ export function playWithGov(
   const st = createSim(w, seed, { core, ...(opts.mieszkancy ? { mieszkancy: opts.mieszkancy } : {}) });
   const sim = new Sim(w, st);
   const gov = newGov(seed);
+  // mapa miasta jak w grze (main.ts): stan miasta w zarządzie od początku, okolica w każdym wejściu
+  const miasto = opts.miasto;
+  if (miasto) wlaczMiasto(gov);
+  const input = (s: number): GovInput => {
+    const i = govInput(st, w, s);
+    if (miasto) i.okolica = miasto.okolica;
+    return i;
+  };
   const decisions: Decision[] = [];
   tally.asked = 0;
   tally.added = 0;
@@ -243,8 +282,10 @@ export function playWithGov(
     sim.step();
     if (st.tick % TICKS_PER_SECOND) continue;
     const s = screen();
-    const fxu = govUpdate(gov, govInput(st, w, s));
+    const iu = input(s);
+    const fxu = govUpdate(gov, iu);
     apply(st, w, fxu);
+    miasto?.po?.(fxu, iu);
     // jawny wynik napadu: zgadza się z planem (ilu ich jest) i ze snem warty na ekranie?
     const res = fxu.raidResult;
     if (res && night) {
@@ -256,9 +297,9 @@ export function playWithGov(
       };
     }
     for (let k = 0; k < 5; k++) {
-      const p = pending(gov, govInput(st, w, s));
+      const p = pending(gov, input(s));
       if (!p) break;
-      const text = answer(gov, sim, w, p, policy, s, decisions);
+      const text = answer(gov, sim, w, p, policy, s, decisions, miasto?.okolica);
       decisions.push({ s, kind: p.k, text });
       if (p.k === 'karta') {
         const assign = gov.night?.assign ?? {};
@@ -293,6 +334,10 @@ export function playWithGov(
     }
     opts.player?.(sim, w, s, (c, text) => {
       sim.push(c);
+      decisions.push({ s, kind: 'praca', text });
+    });
+    miasto?.krok?.(gov, input(s), (fx, text) => {
+      apply(st, w, fx);
       decisions.push({ s, kind: 'praca', text });
     });
     const h = hourOf(st.tick);

@@ -310,6 +310,22 @@ export function nazwaMiejsca(poi: GeoPoi, imiona: ReadonlySet<string>): string {
   return ocenMiejsce(poi, imiona).nazwa;
 }
 
+/** Własna nazwa miejsca do tekstów w obu językach (cele wypraw z mapy miasta): jak `nazwaMiejsca`, ale gdy filtr zamienił
+    nazwę (była w niej osoba albo adres), pusty napis, bo polski opis kategorii nie przetłumaczy się na angielski, a
+    kategorię cel podaje sam. Nazwy marek i instytucji zostają, patron po „im.” odpada jak w `nazwaMiejsca`. */
+export function nazwaWlasnaMiejsca(poi: GeoPoi, imiona: ReadonlySet<string>): string {
+  const ocena = ocenMiejsce(poi, imiona);
+  return ocena.zmieniona ? '' : ocena.nazwa;
+}
+
+/** Składa nazwę miejsca dla okolicy zarządu (`GovInput.okolica`, wywołanie `miejscaZPoi`). Ze zbiorem imion to
+    `nazwaWlasnaMiejsca`. Bez zbioru (`null`: brak tabel mieszkańców, filtr nie zna imion) zawsze pusty napis, bo
+    wtedy nazwa jednoosobowej firmy („Sławomir Mielnik”) przeszłaby przez filtr, a imię i nazwisko właściciela nie
+    może trafić do tekstów gry (RODO); zostaje sama kategoria miejsca. */
+export function nazwaDoOkolicy(imiona: ReadonlySet<string> | null): (poi: GeoPoi) => string {
+  return (poi) => (imiona ? nazwaWlasnaMiejsca(poi, imiona) : '');
+}
+
 // ---------------------------------------------------------------- szablony
 
 const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);

@@ -3,11 +3,24 @@
    osób), który prostokąt atlasu ludzie.png rysuje daną pozę i czy klatka jest odbita. Pionek, któremu obsada nie ma
    postaci albo pracy, zostaje z kodu (null). Tekstury z tych prostokątów robi warstwa (ludzieLayer.ts). Wybór
    postaci, numer klatki i przemalowanie to czyste funkcje (art/pixellab.ts, art/animacjePozy.ts), tu jest ich
-   zestawienie z pamięcią podręczną. */
+   zestawienie z pamięcią podręczną. Leżenie i zwłoki (komórki z klatki stania przodem, art/lezenie.ts) mają tu własny
+   wybór postaci i pamięć komórek. Przejścia między staniem a leżeniem (upadek przy śmierci, kładzenie się, wstawanie:
+   art/animacjePozy.ts, PRZEJSCIA) wybierają klatkę z czasu od startu przejścia; start i kierunek zna widok
+   (przejscia.ts), a ostatnia klatka upadku to leżenie zwłok. */
 
-import { kluczAnimacji, numerKlatki } from './art/animacjePozy.ts';
+import {
+  kluczAnimacji,
+  numerKlatki,
+  numerKlatkiPrzejscia,
+  PRZEJSCIA,
+  type RodzajPrzejscia,
+} from './art/animacjePozy.ts';
+import { type KomorkaLezenia, komorkaLezenia, wytnij } from './art/lezenie.ts';
+import type { Lie } from './art/people.ts';
 import {
   atlasWersji,
+  type KierunkiLudzi,
+  type KlatkaLudzi,
   type LudzieGrafika,
   type PostacLudzi,
   postacDlaOsoby,
@@ -69,6 +82,9 @@ export class LudziePixellab {
   private readonly rampyDublow = new Map<string, number[]>();
   /** przemalowane kopie pasów atlasu: klucz wersja × 2 + (zarząd ? 1 : 0), robione przy pierwszym użyciu */
   private readonly kopie = new Map<number, Uint32Array>();
+  /** komórki leżenia (klucz: postać, wersja, strona głowy, rodzaj), robione przy pierwszym użyciu; null: postać nie ma
+      klatki stania przodem */
+  private readonly komorki = new Map<string, KomorkaLezenia | null>();
   /** jedna odpowiedź na wszystkie wywołania klatka(): wołający zużywa ją od razu (bez śmieci co klatkę) */
   private readonly wynik: KlatkaPionka = {
     x: 0,
@@ -91,17 +107,22 @@ export class LudziePixellab {
     this.mieszkancy = this.pula.some((p) => !p.zarzad);
   }
 
+  /** postać osoby z gry (zarząd albo mieszkaniec), z jej płci i wieku: ta sama, którą gra pionek z tą osobą. null poza
+      listą osób albo bez postaci tej grupy w obsadzie. Przydaje się bez pionka (zwłoki członka zarządu). */
+  postacOsoby(person: number, osoby: readonly OsobaLudzi[], zarzad: boolean): PostacLudzi | null {
+    const osoba = osoby[person];
+    if (!osoba || !(zarzad ? this.zarzad : this.mieszkancy)) return null;
+    return postacDlaOsoby(this.pula, { f: osoba.f, age: osoba.age, zarzad }, skrot(person));
+  }
+
   /** postać pionka: zarząd z czterech postaci zarządu, reszta z mieszkańców, po płci i wieku osoby; pionek bez osoby
       (przybysz, tłum) po numerze wyglądu z gry, tylko dorosły. Wybór zostaje na stałe, dopóki pionek jest w grze. */
   postacPionka(p: PionekLudzi, osoby: readonly OsobaLudzi[]): PostacLudzi | null {
     const znana = this.postacie.get(p.id);
     if (znana !== undefined) return znana;
     const zarzad = p.kind === 'core';
-    const osoba = p.person >= 0 ? osoby[p.person] : undefined;
-    let postac: PostacLudzi | null = null;
-    if (osoba && (zarzad ? this.zarzad : this.mieszkancy))
-      postac = postacDlaOsoby(this.pula, { f: osoba.f, age: osoba.age, zarzad }, skrot(p.person));
-    else if (!zarzad && this.mieszkancy) postac = postacDlaWygladu(this.pula, p.look);
+    let postac = this.postacOsoby(p.person, osoby, zarzad);
+    if (!postac && !zarzad && this.mieszkancy && !osoby[p.person]) postac = postacDlaWygladu(this.pula, p.look);
     this.postacie.set(p.id, postac);
     return postac;
   }
@@ -195,20 +216,43 @@ export class LudziePixellab {
       zastepcza = true;
     }
     if (!an) return null;
-    let kier = an.kierunki[pv.dir & 3];
+    const kier = this.klatkiKierunku(an.kierunki, pv.dir);
+    if (!kier) return null;
+    return this.prostokat(
+      postac,
+      kier.klatki[numerKlatki(pose, frame, w, tt, kier.klatki.length)],
+      kier.flip,
+      wersja,
+      zastepcza,
+    );
+  }
+
+  /** klatki animacji w danym kierunku pionka i czy idą odbite poziomo (w opisie numer kierunku zamiast klatek); null, gdy
+      kierunek nie ma klatek */
+  private klatkiKierunku(kierunki: KierunkiLudzi, dir: number): { klatki: KlatkaLudzi[]; flip: boolean } | null {
+    let kier = kierunki[dir & 3];
     let flip = false;
     if (typeof kier === 'number') {
       flip = true;
-      kier = an.kierunki[kier];
+      kier = kierunki[kier];
     }
     if (typeof kier === 'number' || !kier?.length) return null;
-    const [x, y, sz, h, ax, ay] = kier[numerKlatki(pose, frame, w, tt, kier.length)];
-    // postać bez ubrania do przemalowania (czarny strój w kolorze obrysu) ma jedną wersję
-    const wer = postac.przemalowanie.kolory.length > 0 ? wersja : 0;
+    return { klatki: kier, flip };
+  }
+
+  /** klatka z opisu jako prostokąt do narysowania w wersji kolorystycznej `wersja` (jedna współdzielona odpowiedź) */
+  private prostokat(
+    postac: PostacLudzi,
+    kl: KlatkaLudzi,
+    flip: boolean,
+    wersja: number,
+    zastepcza: boolean,
+  ): KlatkaPionka {
+    const [x, y, sz, h, ax, ay] = kl;
+    const wer = this.wersjaPostaci(postac, wersja);
     const r = this.wynik;
     r.x = x;
-    // kopie wersji mają pas wierszy od jego początku: klatki zarządu leżą w nich od pierwszego wiersza
-    r.y = wer > 0 && postac.zarzad ? y - this.grafika.opis.regiony.zarzad[0] : y;
+    r.y = this.yKlatki(postac, wer, y);
     r.w = sz;
     r.h = h;
     r.ax = ax;
@@ -218,5 +262,83 @@ export class LudziePixellab {
     r.zarzad = postac.zarzad;
     r.zastepcza = zastepcza;
     return r;
+  }
+
+  /** czy postać ma animację tego przejścia (upadek, wstawanie, kładzenie się); bez niej przejścia nie ma, a leżenie i
+      zwłoki rysuje komórka leżenia z klatki stania albo kod */
+  maPrzejscie(postac: PostacLudzi, rodzaj: RodzajPrzejscia): boolean {
+    return !!postac.animacje[PRZEJSCIA[rodzaj].klucz];
+  }
+
+  /** ile klatek ma animacja przejścia (0, gdy postać jej nie ma): wszystkie kierunki mają tyle samo, więc liczy się z
+      zachodu; z czasem trwania (czasPrzejscia) to postęp przejścia */
+  klatekPrzejscia(postac: PostacLudzi, rodzaj: RodzajPrzejscia): number {
+    const an = postac.animacje[PRZEJSCIA[rodzaj].klucz];
+    return (an && this.klatkiKierunku(an.kierunki, 2)?.klatki.length) || 0;
+  }
+
+  /**
+   * Klatka przejścia po `czas` sekundach od jego startu, w kierunku dir (0 południe, 1 północ, 2 zachód, 3 wschód:
+   * klatki odbite, gdy kierunek ma w opisie tylko odbicie zachodu) i wersji kolorystycznej `wersja`. null, gdy postać nie
+   * ma tej animacji albo przejście już się skończyło. Wynik jest współdzielony jak w klatka().
+   */
+  przejscie(postac: PostacLudzi, rodzaj: RodzajPrzejscia, dir: number, czas: number, wersja = 0): KlatkaPionka | null {
+    const an = postac.animacje[PRZEJSCIA[rodzaj].klucz];
+    if (!an) return null;
+    const kier = this.klatkiKierunku(an.kierunki, dir);
+    if (!kier) return null;
+    const i = numerKlatkiPrzejscia(rodzaj, czas, kier.klatki.length);
+    return i === null ? null : this.prostokat(postac, kier.klatki[i], kier.flip, wersja, false);
+  }
+
+  /** ostatnia klatka upadku w kierunku dir: tak leżą zwłoki (kończy ją upadek, który zaczyna ta sama klatka); null, gdy
+      postać nie ma upadku. Wynik jest współdzielony jak w klatka(). */
+  klatkaZwlok(postac: PostacLudzi, dir: number, wersja = 0): KlatkaPionka | null {
+    const an = postac.animacje[PRZEJSCIA.smierc.klucz];
+    const kier = an && this.klatkiKierunku(an.kierunki, dir);
+    return kier ? this.prostokat(postac, kier.klatki[kier.klatki.length - 1], kier.flip, wersja, false) : null;
+  }
+
+  /** wersja, w której postać naprawdę jest rysowana: postać bez ubrania do przemalowania (czarny strój w kolorze obrysu)
+      ma jedną wersję */
+  private wersjaPostaci(postac: PostacLudzi, wersja: number): number {
+    return postac.przemalowanie.kolory.length > 0 ? wersja : 0;
+  }
+
+  /** współrzędna y klatki w obrazie wersji: kopie wersji mają pas wierszy od jego początku, więc klatki zarządu leżą w
+      nich od pierwszego wiersza */
+  private yKlatki(postac: PostacLudzi, wer: number, y: number): number {
+    return wer > 0 && postac.zarzad ? y - this.grafika.opis.regiony.zarzad[0] : y;
+  }
+
+  /** postać zwłok: rzecz `zwloki` zna tylko wygląd z gry, więc jak pionek bez osoby: dorosły mieszkaniec po wyglądzie;
+      obsada bez mieszkańców daje null (zwłoki rysuje kod) */
+  postacZwlok(look: number): PostacLudzi | null {
+    return this.mieszkancy ? postacDlaWygladu(this.pula, look) : null;
+  }
+
+  /**
+   * Komórka leżenia postaci w wersji kolorystycznej `wersja` (strona głowy o, rodzaj: łóżko albo podłoga), z klatki
+   * stania przodem (kierunek 0, klatka 0), więc bez własnych generacji. Na podłodze postać leży zawsze poziomo (o 0 i 2
+   * schodzą na 1 i 3): sylwetka przodem głową do góry wyglądałaby jak stojąca, w łóżku ten sam widok czyni czytelnym
+   * koc. null, gdy postać nie ma klatki stania przodem (leżenie rysuje wtedy kod). Ta sama komórka za każdym razem jest
+   * tym samym obiektem.
+   */
+  lezenie(postac: PostacLudzi, wersja: number, o: number, rodzaj: Lie): KomorkaLezenia | null {
+    const wer = this.wersjaPostaci(postac, wersja);
+    const strona = rodzaj === 'floor' && !(o & 1) ? (o & 3) + 1 : o & 3;
+    const klucz = `${postac.id}|${wer}|${strona}|${rodzaj}`;
+    let k = this.komorki.get(klucz);
+    if (k === undefined) {
+      const kier = postac.animacje.stanie?.kierunki[0];
+      const klatka = Array.isArray(kier) ? kier[0] : undefined;
+      if (klatka) {
+        const [x, y, w, h, ax] = klatka;
+        const zrodlo = wer > 0 ? this.pikseleWersji(postac.zarzad, wer) : this.grafika.img;
+        k = komorkaLezenia(wytnij(zrodlo, x, this.yKlatki(postac, wer, y), w, h), ax, rodzaj, strona);
+      } else k = null;
+      this.komorki.set(klucz, k);
+    }
+    return k;
   }
 }

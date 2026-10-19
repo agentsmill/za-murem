@@ -29,6 +29,24 @@ describe('atrybucja danych', () => {
     expect(statyczny('.attrib').en).toBe(pasek);
   });
 
+  it('minimapa: pod przyciskiem atrybucja trzech źródeł map w obu językach, schowana do włączenia przez grę', () => {
+    const podpis = html.match(/<p class="minimapa-attrib">(.*?)<\/p>/)?.[1] ?? '';
+    for (const m of MAPY_EN) expect(podpis).toContain(m);
+    const pl = statyczny('.minimapa-attrib').pl;
+    for (const m of MAPY) expect(pl).toContain(m);
+    expect(statyczny('.minimapa-attrib').en).toBe(podpis);
+    const blok = html.match(/<div class="minimapa" id="minimapa" hidden>[\s\S]*?<\/div>/)?.[0] ?? '';
+    expect(blok).toContain('class="minimapa-attrib"');
+    // linki atrybucji nie siedzą w przycisku (przycisk w przycisku albo link w przycisku to zły HTML i zły dotyk)
+    const przycisk = blok.match(/<button[\s\S]*?<\/button>/)?.[0] ?? '';
+    expect(przycisk).toContain('aria-label=');
+    expect(przycisk).not.toContain('<a ');
+    // zaraz za sceną: wszystkie inne nakładki gry (pasek, karta, podpowiedź, znacznik drzewa) leżą nad minimapą
+    const kolejnosc = ['id="stage"', 'id="minimapa"', 'id="top"', 'id="card"', 'id="hint"'].map((x) => html.indexOf(x));
+    expect(kolejnosc.every((k) => k > 0)).toBe(true);
+    expect([...kolejnosc].sort((a, b) => a - b)).toEqual(kolejnosc);
+  });
+
   it('karta startowa: obok danych mapy link do źródeł danych mieszkańców', () => {
     const fine = html.match(/<p class="fine">(.*?)<\/p>/)?.[1] ?? '';
     for (const t of [fine, statyczny('.start-card > p.fine').pl]) {
