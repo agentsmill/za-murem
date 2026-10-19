@@ -1,8 +1,11 @@
 /* Dema offline z kafelków testowych (tests/fixtures/mvt) do public/demo (katalog zmienia ZM_DEMA_WYJSCIE, dla testów):
    - <klucz>.json z gotową geometrią osiedla i index.json: gra wczytuje je bez sieci (przycisk przykładu, ?demo=…,
-     zrzuty). Zatwierdzone dema są świadomie starsze od toGeoT (bez zm:klucz, zm:os, kluczy miejsc i rodzajów punktów;
-     geometria ta sama), więc skrypt przepisuje je tylko, gdy ich nie ma albo gdy podano --przegeneruj. Inaczej zostają
-     bajt w bajt takie, jakie są (po przegenerowaniu dwa budynki dem zmieniłyby wygląd na urząd).
+     zrzuty). Do 19.10.2026 zatwierdzone dema były świadomie starsze od toGeoT (bez zm:klucz, zm:os, kluczy miejsc i
+     rodzajów punktów; geometria ta sama); po przegenerowaniu (`--przegeneruj`, gałąź dema-przegenerowane) mają je,
+     a dwa budynki dem mają wygląd urzędu (komisariat na Przymorzu, Zarząd Dróg w Batowicach). Skrypt przepisuje je
+     nadal tylko, gdy ich nie ma albo gdy podano --przegeneruj, żeby zmiana importera nie zmieniała ich po cichu
+     (zmienia skróty botów z --mieszkancy i wyglądy budynków, więc po niej przypnij nowe skróty w
+     tests/unit/kwadraty-dema.test.ts i mieszkancy-generuj.test.ts).
    - <klucz>-kwadraty.json z geo ośmiu sąsiednich kwadratów domu (N, NE, E, SE, S, SW, W, NW; miasto z kwadratów, etap 1)
      z kafelków testowych: gra pobiera je tylko przy ?kwadraty=… (loadDemoKwadraty w src/world/load.ts). Plik większy niż
      1,5 MB zostawia cztery boczne kwadraty (N, E, S, W). Pliki sąsiadów powstają zawsze od nowa i są deterministyczne.

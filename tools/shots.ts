@@ -50,8 +50,9 @@ interface Shot {
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
 
 /**
- * Zrzuty budynków z PixelLab (M3) na atrapie mapy z każdym z 11 wyglądów (tests/unit/atrapa-budynki.ts): dema nie mają
- * takich budynków. Atrapa idzie jako demo „atrapa-budynki” podstawione przez Playwright, bez pliku w public/demo.
+ * Zrzuty budynków z PixelLab (M3) na atrapie mapy z każdym z 11 wyglądów (tests/unit/atrapa-budynki.ts): dema mają
+ * tylko dwa urzędy (demaUrzadZrzuty). Atrapa idzie jako demo „atrapa-budynki” podstawione przez Playwright, bez pliku
+ * w public/demo.
  * Kadry w kafelkach świata (metry plus 192): kamienice i budynki publiczne przy pierwszej ulicy, hotel, szpital,
  * kościół, willa i remiza przy drugiej; każdy wygląd z bliska, a do tego widoki z daleka, nocą i na telefonie.
  */
@@ -194,6 +195,61 @@ function budynkiZrzuty(): Shot[] {
   out.push(lezace('budynki-lezace', [(xMuz + xTea) / 2, muzeum.y1 + 192 - 4, 0.75]));
   out.push(lezace('budynki-lezace-portyk', [xMuz - 2, muzeum.y1 + 192 - 1.5, 2.4]));
   return out;
+}
+
+/**
+ * Dwa budynki dem, które po przegenerowaniu dem z toGeoT (gałąź dema-przegenerowane: rodzaje punktów w `geo.rodzaje`)
+ * dostają wygląd urzędu z PixelLab: komisariat policji w „Bloku nr 19” na Przymorzu i Zarząd Dróg Powiatu Krakowskiego
+ * w „Hali nr 106” w Batowicach (demo Zielonki). Scenariusz znajduje budynek po nazwie w świecie gry, sprawdza, że jego
+ * styl ma wygląd `urzad` i że jest jedynym budynkiem dema z wyglądem, a zrzuca cały budynek z daleka i fasadę z bliska.
+ */
+function demaUrzadZrzuty(): Shot[] {
+  const kadr = (name: string, demo: string, budynek: string, blisko: boolean): Shot => ({
+    name,
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=${demo}&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const info = await page.evaluate(
+        ([nazwa, zBliska]) => {
+          const zm = window.zm!;
+          const sc = zm.view.scene!;
+          const w = zm.sim!.w;
+          const b = w.buildings.find((x) => x.name === nazwa);
+          if (!b) return null;
+          const szer = b.x1 - b.x0 + 1;
+          const gleb = b.y1 - b.y0 + 1;
+          const cx = (b.x0 + b.x1 + 1) / 2;
+          // z daleka cały budynek w oknie 1440×900 (zapas na pasek u góry i panel celów po lewej), z bliska południowa
+          // ściana z fasadą i kawałkiem dachu
+          const zoom = Math.min(1.2, 0.62 * Math.min(1440 / (szer * 32), 900 / (gleb * 32)));
+          if (zBliska) zm.setCam(cx, b.y1 + 1 - 3.5, 1.4);
+          else zm.setCam(cx, (b.y0 + b.y1 + 1) / 2, zoom);
+          return {
+            id: b.id,
+            cls: b.cls,
+            pole: b.area,
+            levels: b.levels,
+            look: sc.styles[b.id].look ?? null,
+            zWygladem: w.buildings.filter((x) => sc.styles[x.id].look).map((x) => `${x.name}: ${sc.styles[x.id].look}`),
+          };
+        },
+        [budynek, blisko] as const,
+      );
+      console.log(`  ${budynek}: ${JSON.stringify(info)}`);
+      if (!info) throw new Error(`w demie ${demo} nie ma budynku „${budynek}”`);
+      if (info.look !== 'urzad') throw new Error(`„${budynek}” ma wygląd ${info.look} zamiast urzędu`);
+      if (info.zWygladem.length !== 1)
+        throw new Error(`demo ${demo}: ${info.zWygladem.length} budynków z wyglądem (${info.zWygladem.join(', ')})`);
+      await waitIdle(page);
+    },
+  });
+  return [
+    kadr('dema-urzad-przymorze', 'przymorze', 'Blok nr 19', false),
+    kadr('dema-urzad-przymorze-blisko', 'przymorze', 'Blok nr 19', true),
+    kadr('dema-urzad-batowice', 'zielonki', 'Hala nr 106', false),
+    kadr('dema-urzad-batowice-blisko', 'zielonki', 'Hala nr 106', true),
+  ];
 }
 
 /** karta startowa: dół akapitu z atrybucją mapy i linku do źródeł danych mieszkańców (wypisane; sprawdza wołający) */
@@ -5410,6 +5466,8 @@ const SHOTS: Shot[] = [
   { name: 'kotwica-tlum', query: '', run: kotwicaTlum },
   { name: 'kotwica-arkusz', query: '', run: (page) => kotwicaArkusz(page) },
   ...budynkiZrzuty(),
+  // dwa urzędy na demach po przegenerowaniu dem (komisariat na Przymorzu, Zarząd Dróg w Batowicach)
+  ...demaUrzadZrzuty(),
   {
     // bez public/assets (404) gra startuje i rysuje wszystko kodem, jak przed grafiką z PixelLab
     name: 'grafika-zapas',
