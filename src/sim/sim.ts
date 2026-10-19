@@ -4196,6 +4196,15 @@ export class Sim {
     }
   }
 
+  /** Czy ktoś z żywych w zarządzie (także na wyprawie) może wychodzić za siatkę bez polecenia (przełącznik osoby).
+      Odczyt `ileZlecen`: cele poza naszym terenem liczą się dopiero wtedy. */
+  private ktosZaSiatke(): boolean {
+    const st = this.st;
+    return st.pawns.some(
+      (q) => q.kind === 'core' && q.person >= 0 && !this.graveyard.has(q.id) && zaSiatke(st, q.person),
+    );
+  }
+
   /** Ile zleceń rodzaju `r` czeka: liczba do nagłówka kolumny panelu pracy. Liczona na żądanie ze stanu, bez zapisu
       i bez pamięci podręcznej w stanie (`sim.hash()` się nie zmienia), więc tania i bez ścieżek A*. Liczy zlecenia,
       które szukacz rodzaju (`znajdzPrace`) wziąłby pod uwagę, bez zależności od osoby: nie patrzy na porę dnia,
@@ -4206,13 +4215,16 @@ export class Sim {
       w naszych mieszkaniach bez naprawiającego; drwal to wolne drzewa (bez ściętych, rąbanych, suchego z samouczka
       i na linii obwodu), a gdy drewna w zapasie jest tyle co próg albo więcej, 0; noszenie to stosy materiału
       z `CARRY_MATS` leżące poza podwórkiem; warsztat to ile z trzech wyrobów (deski, części, dzida) według progów
-      i zapasów jest do zrobienia; szaber to nieprzeszukane pomieszczenia w siedzibie, w otwartych budynkach sąsiadów
-      (poza mieszkaniami lokatorów) i nieprzeszukane wraki. Rodzaj, którego nie ma w tej grze (`badania` do scalenia
-      gałęzi z badaniami), ma 0. */
+      i zapasów jest do zrobienia (progi dzid, desek i części liczą same predykaty); szaber to nieprzeszukane
+      pomieszczenia w siedzibie, w otwartych budynkach sąsiadów (poza mieszkaniami lokatorów) i nieprzeszukane wraki.
+      Liczy tylko to, co ktoś z zarządu mógłby wziąć: cel poza naszym terenem (`naszTeren`: drzewo, stos na ulicy,
+      pokój w cudzym budynku, wrak) czeka dopiero wtedy, gdy ktoś z żywych w zarządzie ma przełącznik „za siatkę”
+      (`ktosZaSiatke`). Rodzaj, którego nie ma w tej grze (`badania` do scalenia gałęzi z badaniami), ma 0. */
   ileZlecen(r: RodzajPracy): number {
     const st = this.st;
     const size = this.w.size;
     if (!WPISY[r].widoczny(st)) return 0;
+    const poza = this.ktosZaSiatke();
     switch (r) {
       case 'ogien': {
         const koza = this.koza();
@@ -4252,6 +4264,7 @@ export class Sim {
         let n = 0;
         for (let k = 0; k < this.w.trees.length; k++) {
           if (k === suche || felled.has(k) || zajete.has(k)) continue;
+          if (!poza && !this.naszTeren(this.trunk[k])) continue;
           if (!naLiniiObwodu(size, this.trunk[k], (i) => this.yardMask[i] === 1)) n++;
         }
         return n;
@@ -4260,7 +4273,14 @@ export class Sim {
         if (!st.fence) return 0;
         let n = 0;
         for (const t of st.things)
-          if (CARRY_MATS.has(t.kind) && t.n > 0 && t.by < 0 && !this.insideAt(t.y * size + t.x)) n++;
+          if (
+            CARRY_MATS.has(t.kind) &&
+            t.n > 0 &&
+            t.by < 0 &&
+            !this.insideAt(t.y * size + t.x) &&
+            (poza || this.naszTeren(t.y * size + t.x))
+          )
+            n++;
         return n;
       }
       case 'warsztat':
@@ -4277,17 +4297,17 @@ export class Sim {
           }
         st.sasiedzi?.budynki.forEach((b, k) => {
           if (!b.otwarty) return;
-          for (const room of wnetrze(w, b.bid).rooms)
-            if (
-              moznaPrzeszukac(st, w, k, room.id) === 'tak' &&
-              !st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === gid(k, room.id))
-            )
-              n++;
+          for (const room of wnetrze(w, b.bid).rooms) {
+            if (moznaPrzeszukac(st, w, k, room.id) !== 'tak') continue;
+            const g = gid(k, room.id);
+            if (!poza && !this.kafelkiPokoju(g).some((i) => this.naszTeren(i))) continue;
+            if (!st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === g)) n++;
+          }
         });
         this.wrakiSwiata ??= wrecksOf(w);
         for (const wr of this.wrakiSwiata) {
           const t = wreckTile(wr, size);
-          if (wreckStage(st.wraki, t) !== 0 || crewAt(st, t)) continue;
+          if (wreckStage(st.wraki, t) !== 0 || crewAt(st, t) || (!poza && !this.naszTeren(t))) continue;
           if (!st.pawns.some((q) => q.job?.t === 'wreck' && q.job.target === t)) n++;
         }
         return n;

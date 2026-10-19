@@ -365,7 +365,7 @@ export const NAPISY = {
     en: `Invite to stay as a resident (${n}%)`,
   }),
   zaprosicBez: { pl: 'Zaprosić do nas', en: 'Invite to join us' },
-  brakLozka: { pl: 'Nie ma wolnego łóżka', en: 'No free bed' },
+  brakLozka: { pl: 'Brak miejsca', en: 'No room' },
   zapytacORege: { pl: 'Zapytać o rękę', en: 'Ask to see their arm' },
   nastrojNowy: { pl: 'Nowa osoba w zarządzie', en: 'New person on the board' },
   idzieZaprosic: { pl: 'Idzie zaprosić wędrowca do nas.', en: 'Going to invite the wanderer to stay.' },

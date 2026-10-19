@@ -452,7 +452,7 @@ describe('Pełny zarząd i łóżka mieszkańców', () => {
     );
   });
 
-  it('bez wolnego łóżka mieszkańców opcja jest wyszarzona z napisem „Nie ma wolnego łóżka”, a polecenie nic nie robi', () => {
+  it('bez wolnego łóżka mieszkańców opcja jest wyszarzona z napisem „Brak miejsca”, a polecenie nic nie robi', () => {
     const { sim, st } = gra(w, 3);
     dopelnij(sim, w, ZARZAD_MAX);
     removeResidents(st, 3);
@@ -461,9 +461,9 @@ describe('Pełny zarząd i łóżka mieszkańców', () => {
     st.obcy!.rozmowa!.cel = false;
     const item = zaprosMenu(sim, w, t)!;
     expect(item.label).toBe('Zaprosić do nas');
-    expect(item.off).toBe('Nie ma wolnego łóżka');
+    expect(item.off).toBe('Brak miejsca');
     ustawJezyk('en');
-    expect(zaprosMenu(sim, w, t)!.off).toBe('No free bed');
+    expect(zaprosMenu(sim, w, t)!.off).toBe('No room');
     ustawJezyk('pl');
     sim.push({ t: 'zapros', ids: [p.id], target: t.id });
     sim.step();
@@ -689,10 +689,10 @@ describe('Miejsce ponad limit zarządu: łóżko i pojemność', () => {
     // następny wędrowiec: opcja wyszarzona, szansy nie ma, polecenie nic nie robi
     const { t, p } = kolejnaRozmowa(sim);
     const item = zaprosMenu(sim, world, t)!;
-    expect(item.off).toBe('Nie ma wolnego łóżka');
+    expect(item.off).toBe('Brak miejsca');
     expect(szansaZaproszenia(st, world)).toBe(0);
     ustawJezyk('en');
-    expect(zaprosMenu(sim, world, t)!.off).toBe('No free bed');
+    expect(zaprosMenu(sim, world, t)!.off).toBe('No room');
     ustawJezyk('pl');
     sim.push({ t: 'zapros', ids: [p.id], target: t.id });
     sim.step();

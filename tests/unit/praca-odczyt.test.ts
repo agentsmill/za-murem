@@ -1,7 +1,9 @@
 /* Odczyt pracy ludzi dla interfejsu (src/sim/snapshot.ts): `populacja` liczy zarząd (także na wyprawie) i mieszkańców
    siedziby, bez sąsiadów i gości; `SimPerson` niesie indeks osoby, „sam” (praca bez polecenia) i ustawienia pracy
    w kolejności RODZAJE; `SimSnapshot.praca` ma progi i widoczne rodzaje; `sim.ileZlecen(r)` liczy czekające zlecenia
-   na żądanie, poza stanem. Odczyt niczego w stanie nie zmienia (ten sam skrót i ten sam JSON przed i po). */
+   na żądanie, poza stanem i tylko to, co ktoś z zarządu mógłby wziąć: poniżej progu zapasu, a cele poza naszym terenem
+   dopiero, gdy ktoś z żywych ma przełącznik „za siatkę”. Odczyt niczego w stanie nie zmienia (ten sam skrót i ten
+   sam JSON przed i po). */
 
 import { describe, expect, it } from 'vitest';
 import { makePerson } from '../../src/content/people.ts';
@@ -10,10 +12,12 @@ import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { houseOf } from '../../src/sim/house.ts';
 import { searchable } from '../../src/sim/mieszkania.ts';
 import { priorytet, progi, RODZAJE, type RodzajPracy, WPISY } from '../../src/sim/praca.ts';
+import { moznaPrzeszukac, wnetrze } from '../../src/sim/sasiedzi.ts';
 import type { Pawn, Sim, Thing } from '../../src/sim/sim.ts';
 import { populacja, snapshot } from '../../src/sim/snapshot.ts';
+import { wreckStage, wrecksOf, wreckTile } from '../../src/sim/surowce.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
-import { core, demoWorld, newGame } from './sasiedzi-pomoc.ts';
+import { core, demoWorld, newGame, pusto } from './sasiedzi-pomoc.ts';
 
 const KLUCZ = 'lanciego';
 const kolumna = (r: RodzajPracy): number => RODZAJE.indexOf(r);
@@ -23,6 +27,9 @@ interface Prywatne {
   newJob(t: 'patch', target: number, tile: number, order: boolean): NonNullable<Pawn['job']>;
   zapasDrewna(): number;
   insideAt(tile: number): boolean;
+  naszTeren(tile: number): boolean;
+  trunk: number[];
+  dry: number;
 }
 const prv = (sim: Sim): Prywatne => sim as unknown as Prywatne;
 
@@ -287,36 +294,94 @@ describe('ileZlecen', () => {
     expect(sim.ileZlecen('naprawy')).toBe(tlo);
   });
 
-  it('drwal: wolne drzewa, gdy drewna w zapasie jest mniej niż próg; nad progiem zero', () => {
+  /** włącza przełącznik „za siatkę” osobie zarządu o danym numerze na liście (polecenie, od następnego kroku) */
+  const zaSiatke = (sim: Sim, kto: number): void => {
+    sim.push({ t: 'zasiatke', ids: [], osoba: core(sim)[kto].person, on: true });
+    sim.step();
+  };
+
+  it('drwal: bez przełącznika tylko drzewa na naszym terenie, z przełącznikiem wszystkie wolne', () => {
     const sim = newGame(KLUCZ);
     const w = demoWorld(KLUCZ);
-    expect(prv(sim).zapasDrewna()).toBeLessThan(progi(sim.st).drewno);
-    const wolne = sim.ileZlecen('drwal');
-    expect(wolne).toBeGreaterThan(0);
-    expect(wolne).toBeLessThanOrEqual(w.trees.length);
-    // ścięte drzewo nie jest zleceniem
-    sim.st.felled.push(0);
+    const s = prv(sim);
+    expect(s.zapasDrewna()).toBeLessThan(progi(sim.st).drewno);
     const bez = sim.ileZlecen('drwal');
-    expect(bez).toBeLessThanOrEqual(wolne);
-    // próg 0 wyłącza robienie
-    sim.push({ t: 'prog', ids: [], co: 'drewno', n: 0 });
+    zaSiatke(sim, 0);
+    const wszystkie = sim.ileZlecen('drwal');
+    expect(wszystkie).toBeGreaterThan(bez);
+    expect(wszystkie).toBeLessThanOrEqual(w.trees.length);
+    // drzewa na naszym terenie, które liczą się przy włączonym przełączniku (ścięcie takiego zabiera dokładnie jedno)
+    const naTerenie = [...w.trees.keys()].filter((k) => s.naszTeren(s.trunk[k]));
+    const licza = naTerenie.filter((k) => {
+      sim.st.felled.push(k);
+      const mniej = sim.ileZlecen('drwal') === wszystkie - 1;
+      sim.st.felled.pop();
+      return mniej;
+    });
+    expect(licza.length).toBeGreaterThan(0);
+    // wyłączenie przełącznika zostawia tylko je
+    sim.push({ t: 'zasiatke', ids: [], osoba: core(sim)[0].person, on: false });
     sim.step();
-    expect(sim.ileZlecen('drwal')).toBe(0);
+    expect(sim.ileZlecen('drwal')).toBe(licza.length);
+    expect(bez).toBe(licza.length);
   });
 
-  it('noszenie: sterta materiału leżąca poza podwórkiem, jedna na stertę', () => {
+  it('drwal: ścięte drzewo odejmuje dokładnie jedno zlecenie, na naszym terenie i za siatką', () => {
     const sim = newGame(KLUCZ);
     const w = demoWorld(KLUCZ);
-    const przed = sim.ileZlecen('noszenie');
-    const poza = [...Array(w.size * w.size).keys()].find(
-      (i) => !w.blocked[i] && !prv(sim).insideAt(i) && !sim.st.things.some((t) => t.y * w.size + t.x === i),
-    );
-    expect(poza).toBeDefined();
+    const s = prv(sim);
+    zaSiatke(sim, 0);
+    const wolne = sim.ileZlecen('drwal');
+    const poza = [...w.trees.keys()].find((k) => k !== s.dry && !s.naszTeren(s.trunk[k]))!;
+    sim.st.felled.push(poza);
+    expect(sim.ileZlecen('drwal')).toBe(wolne - 1);
+    const na = [...w.trees.keys()].find((k) => k !== s.dry && s.naszTeren(s.trunk[k]) && !sim.st.felled.includes(k))!;
+    sim.st.felled.push(na);
+    expect(sim.ileZlecen('drwal')).toBe(wolne - 2);
+    // bez przełącznika ścięcie drzewa za siatką niczego nie zmienia, ścięcie drzewa na terenie zabiera jedno
+    sim.push({ t: 'zasiatke', ids: [], osoba: core(sim)[0].person, on: false });
+    sim.step();
+    const bez = sim.ileZlecen('drwal');
+    const drugie = [...w.trees.keys()].find(
+      (k) => k !== s.dry && !s.naszTeren(s.trunk[k]) && !sim.st.felled.includes(k),
+    )!;
+    sim.st.felled.push(drugie);
+    expect(sim.ileZlecen('drwal')).toBe(bez);
+  });
+
+  it('drwal: przełącznik zmarłej osoby nie liczy się, osoby na wyprawie tak', () => {
+    const sim = newGame(KLUCZ);
+    const bez = sim.ileZlecen('drwal');
+    zaSiatke(sim, 1);
+    const z = sim.ileZlecen('drwal');
+    expect(z).toBeGreaterThan(bez);
+    // na wyprawie dalej należy do zarządu
+    core(sim)[1].away = true;
+    expect(sim.ileZlecen('drwal')).toBe(z);
+    // zginął w tym kroku (jest na cmentarzu, pionek zniknie dopiero na końcu kroku): przełącznik już nie liczy
+    (sim as unknown as { graveyard: Set<number> }).graveyard.add(core(sim)[1].id);
+    expect(sim.ileZlecen('drwal')).toBe(bez);
+    (sim as unknown as { graveyard: Set<number> }).graveyard.clear();
+    expect(sim.ileZlecen('drwal')).toBe(z);
+    // po śmierci (pionek znika z listy) tak samo
+    sim.st.pawns = sim.st.pawns.filter((p) => p !== core(sim)[1]);
+    expect(sim.ileZlecen('drwal')).toBe(bez);
+  });
+
+  it('drwal: próg zapasu osiągnięty daje zero, także z przełącznikiem; próg 0 wyłącza robienie', () => {
+    const sim = newGame(KLUCZ);
+    const w = demoWorld(KLUCZ);
+    zaSiatke(sim, 0);
+    expect(sim.ileZlecen('drwal')).toBeGreaterThan(0);
+    // drewno na podwórku do progu
+    const wolny = w.fence.yard.find((i) => !w.blocked[i] && !sim.st.things.some((t) => t.y * w.size + t.x === i))!;
+    sim.push({ t: 'prog', ids: [], co: 'drewno', n: 5 });
+    sim.step();
     const sterta: Thing = {
       id: sim.st.nextThing++,
-      kind: 'deski',
-      x: poza! % w.size,
-      y: Math.floor(poza! / w.size),
+      kind: 'drewno',
+      x: wolny % w.size,
+      y: Math.floor(wolny / w.size),
       w: 1,
       h: 1,
       rot: 0,
@@ -326,15 +391,116 @@ describe('ileZlecen', () => {
       owner: -1,
     };
     sim.st.things.push(sterta);
-    expect(sim.ileZlecen('noszenie')).toBe(przed + 1);
-    sterta.by = core(sim)[0].id;
+    expect(prv(sim).zapasDrewna()).toBe(4);
+    expect(sim.ileZlecen('drwal')).toBeGreaterThan(0);
+    sterta.n = 5;
+    expect(sim.ileZlecen('drwal')).toBe(0);
+    sterta.n = 4;
+    expect(sim.ileZlecen('drwal')).toBeGreaterThan(0);
+    // próg 0 wyłącza robienie
+    sim.push({ t: 'prog', ids: [], co: 'drewno', n: 0 });
+    sim.step();
+    expect(sim.ileZlecen('drwal')).toBe(0);
+  });
+
+  /** sterta materiału na kafelku (do liczenia zleceń noszenia) */
+  const sterta = (sim: Sim, i: number, kind = 'deski'): Thing => {
+    const w = demoWorld(KLUCZ);
+    const t: Thing = {
+      id: sim.st.nextThing++,
+      kind,
+      x: i % w.size,
+      y: Math.floor(i / w.size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 4,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    };
+    sim.st.things.push(t);
+    return t;
+  };
+
+  it('noszenie: sterta na ulicy czeka tylko z przełącznikiem, jedna na stertę', () => {
+    const sim = newGame(KLUCZ);
+    const w = demoWorld(KLUCZ);
+    const s = prv(sim);
+    const przed = sim.ileZlecen('noszenie');
+    const poza = [...Array(w.size * w.size).keys()].find(
+      (i) => !w.blocked[i] && !s.naszTeren(i) && !sim.st.things.some((t) => t.y * w.size + t.x === i),
+    );
+    expect(poza).toBeDefined();
+    const t = sterta(sim, poza!);
+    // bez przełącznika nikt po nią nie wyjdzie
     expect(sim.ileZlecen('noszenie')).toBe(przed);
+    zaSiatke(sim, 0);
+    const z = sim.ileZlecen('noszenie');
+    expect(z).toBe(przed + 1);
+    // ktoś już ją niesie: nie czeka
+    t.by = core(sim)[0].id;
+    expect(sim.ileZlecen('noszenie')).toBe(przed);
+    // wyłączony przełącznik wraca do stanu sprzed
+    t.by = -1;
+    sim.push({ t: 'zasiatke', ids: [], osoba: core(sim)[0].person, on: false });
+    sim.step();
+    expect(sim.ileZlecen('noszenie')).toBe(przed);
+  });
+
+  it('noszenie: sterta w budynku za wspólnym płotem (nasz teren, ale nie podwórko) czeka bez przełącznika', () => {
+    const sim = newGame(KLUCZ);
+    const w = demoWorld(KLUCZ);
+    const s = prv(sim);
+    const budynek = w.buildings.find((b) => b.id !== w.hq && b.entrances.length)!;
+    const wBudynku = [...Array(w.size * w.size).keys()].find((i) => w.bid[i] === budynek.id && !s.insideAt(i));
+    expect(wBudynku).toBeDefined();
+    const przed = sim.ileZlecen('noszenie');
+    sterta(sim, wBudynku!);
+    // budynek nie jest jeszcze nasz: bez przełącznika zero
+    expect(sim.ileZlecen('noszenie')).toBe(przed);
+    sim.st.plot = { bids: [budynek.id] };
+    expect(sim.ileZlecen('noszenie')).toBe(przed + 1);
   });
 
   it('warsztat: zero bez postawionego warsztatu', () => {
     const sim = newGame(KLUCZ);
     expect(sim.st.things.some((t) => t.kind === 'warsztat')).toBe(false);
     expect(sim.ileZlecen('warsztat')).toBe(0);
+  });
+
+  it('warsztat: deski do progu liczą się; próg desek 0 albo drewno na progu daje zero', () => {
+    const sim = newGame(KLUCZ);
+    const w = demoWorld(KLUCZ);
+    const wolny = (n: number) =>
+      w.fence.yard.filter((i) => !w.blocked[i] && !sim.st.things.some((t) => t.y * w.size + t.x === i))[n];
+    const rzecz = (kind: string, i: number, n: number): Thing => ({
+      id: sim.st.nextThing++,
+      kind,
+      x: i % w.size,
+      y: Math.floor(i / w.size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    sim.st.things.push(rzecz('warsztat', wolny(0), 1), rzecz('drewno', wolny(1), 40));
+    expect(prv(sim).zapasDrewna()).toBe(40);
+    // 40 drewna przy progu 30: deski do zrobienia, części i dzidy nie (brak złomu, próg dzid 0)
+    expect(sim.ileZlecen('warsztat')).toBe(1);
+    sim.push({ t: 'prog', ids: [], co: 'drewno', n: 40 });
+    sim.step();
+    expect(sim.ileZlecen('warsztat')).toBe(0);
+    sim.push({ t: 'prog', ids: [], co: 'drewno', n: 30 });
+    sim.push({ t: 'prog', ids: [], co: 'deski', n: 0 });
+    sim.step();
+    expect(sim.ileZlecen('warsztat')).toBe(0);
+    sim.push({ t: 'prog', ids: [], co: 'deski', n: 20 });
+    sim.step();
+    expect(sim.ileZlecen('warsztat')).toBe(1);
   });
 
   it('ogień i kuchnia: gasnąca koza to jedno zlecenie; kuchnia 0 albo 1', () => {
@@ -368,5 +534,63 @@ describe('ileZlecen', () => {
       p.job = { ...prv(sim).newJob('patch', inny.id, 0, false), t: 'search' };
       expect(sim.ileZlecen('szaber')).toBe(przed - 2);
     }
+  });
+
+  it('szaber: pokoje otwartego budynku sąsiada czekają dopiero z przełącznikiem albo gdy budynek jest za naszym płotem', () => {
+    const sim = newGame(KLUCZ);
+    const w = demoWorld(KLUCZ);
+    sim.lokatorzy = pusto(w);
+    const s = sim as unknown as { budynekSasiada(bid: number): number; otworzBudynek(k: number): void };
+    // budynek, który po otwarciu ma pokoje do przeszukania (puste mieszkania albo hala)
+    const bid = w.buildings.find((b) => {
+      if (b.id === w.hq || !b.entrances.length) return false;
+      const k = s.budynekSasiada(b.id);
+      if (!sim.st.sasiedzi!.budynki[k].otwarty) s.otworzBudynek(k);
+      return wnetrze(w, b.id).rooms.some((r) => moznaPrzeszukac(sim.st, w, k, r.id) === 'tak');
+    })?.id;
+    expect(bid).toBeDefined();
+    const k = sim.st.sasiedzi!.budynki.findIndex((b) => b.bid === bid);
+    const pokoje = wnetrze(w, bid!).rooms.filter((r) => moznaPrzeszukac(sim.st, w, k, r.id) === 'tak').length;
+    expect(pokoje).toBeGreaterThan(0);
+    // inne budynki, które test otworzył po drodze, też są poza naszym terenem; liczą się razem z przełącznikiem
+    const bez = sim.ileZlecen('szaber');
+    zaSiatke(sim, 0);
+    const z = sim.ileZlecen('szaber');
+    expect(z - bez).toBeGreaterThanOrEqual(pokoje);
+    sim.push({ t: 'zasiatke', ids: [], osoba: core(sim)[0].person, on: false });
+    sim.step();
+    expect(sim.ileZlecen('szaber')).toBe(bez);
+    // za wspólnym płotem budynek jest nasz: jego pokoje czekają bez przełącznika
+    sim.st.plot = { bids: [bid!] };
+    expect(sim.ileZlecen('szaber')).toBe(bez + pokoje);
+  });
+
+  it('szaber: wraki na ulicy czekają dopiero z przełącznikiem, pokoje siedziby bez niego', () => {
+    const sim = newGame(KLUCZ);
+    const w = demoWorld(KLUCZ);
+    const bez = sim.ileZlecen('szaber');
+    const wraki = wrecksOf(w).filter((wr) => wreckStage(sim.st.wraki, wreckTile(wr, w.size)) === 0);
+    expect(wraki.length).toBeGreaterThan(0);
+    // pokoje do przeszukania w siedzibie (naszym terenie) liczą się zawsze
+    const h = houseOf(w)!;
+    const pokoje = h.rooms.filter((r) => {
+      const g = r.apt >= 0 ? sim.st.apts.find((a) => a.apt === r.apt) : undefined;
+      return g && searchable(w, g) && !g.searched.includes(r.id);
+    }).length;
+    expect(pokoje).toBeGreaterThan(0);
+    expect(bez).toBe(pokoje);
+    // pokoje otwartych budynków sąsiadów (poza mieszkaniami lokatorów) też leżą poza naszym terenem
+    const sasiedzi = (sim.st.sasiedzi?.budynki ?? []).reduce(
+      (n, b, k) =>
+        n +
+        (b.otwarty ? wnetrze(w, b.bid).rooms.filter((r) => moznaPrzeszukac(sim.st, w, k, r.id) === 'tak').length : 0),
+      0,
+    );
+    zaSiatke(sim, 0);
+    expect(sim.ileZlecen('szaber')).toBe(pokoje + sasiedzi + wraki.length);
+    // ktoś już przeszukuje jeden wrak: nie czeka
+    const t = wreckTile(wraki[0], w.size);
+    core(sim)[1].job = { ...prv(sim).newJob('patch', t, 0, false), t: 'wreck' };
+    expect(sim.ileZlecen('szaber')).toBe(pokoje + sasiedzi + wraki.length - 1);
   });
 });
