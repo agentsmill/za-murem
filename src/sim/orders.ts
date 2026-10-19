@@ -271,8 +271,8 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       cmd: { t: 'refuel', ids: core, thing: nowe.id },
       label:
         nowe.kind === 'kociol'
-          ? L('Dołożyć do kotła', 'Add wood to the boiler')
-          : L('Dołożyć do kozy z beczki', 'Add wood to the barrel stove'),
+          ? L('Dołożyć do kotła', 'Feed the boiler')
+          : L('Dołożyć do kozy z beczki', 'Feed the barrel stove'),
       quick: true,
     });
   const fire = thingAt(st, w, tile, 'ognisko');
@@ -627,6 +627,16 @@ function reachesThrough(st: SimState, id: number): boolean {
     z zarządu */
 export function commandFor(st: SimState, w: World, ids: readonly number[], tile: number): Command | null {
   return commandsAt(st, w, ids, tile).find((m) => m.quick && !m.off)?.cmd ?? null;
+}
+
+/** Potwierdzenie po poleceniu „Dołożyć” na nowym palenisku (koza z beczki, kocioł): do czego dokłada; `k` 0 to jedna osoba,
+    1 kilka. null dla kozy zarządu, ogniska i nieznanej rzeczy: tam zostaje ogólne potwierdzenie z interfejsu. */
+export function refuelFeedback(st: SimState, thing: number, k: number): string | null {
+  const kind = st.things.find((t) => t.id === thing)?.kind;
+  if (kind === 'koza_beczka')
+    return L(k ? 'Dołożą do kozy z beczki.' : 'Dołoży do kozy z beczki.', 'Off to feed the barrel stove.');
+  if (kind === 'kociol') return L(k ? 'Dołożą do kotła.' : 'Dołoży do kotła.', 'Off to feed the boiler.');
+  return null;
 }
 
 /** co robi osoba: krótki opis do karty */

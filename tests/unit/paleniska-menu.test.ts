@@ -1,14 +1,15 @@
 /* Menu pod prawym przyciskiem na nowych paleniskach (koza z beczki, kocioł) i drewno w ogniu w odczycie
    (`snapshot().stock.wood`): „Dołożyć” działa jak przy kozie zarządu (polecenie `refuel`, domyślne po kliknięciu, tylko gdy
-   jest skąd wziąć drewno), opis pracy mówi, do którego paleniska idzie, a zapas drewna w odczycie liczy ogień wszystkich
-   palenisk naszych mieszkań, żeby karta nocy nie zaniżała zapasu. Przymorze z createSim, rzeczy dokładane ręcznie. */
+   jest skąd wziąć drewno; po angielsku „Feed the barrel stove” i „Feed the boiler” według słowniczka), potwierdzenie po
+   poleceniu i opis pracy mówią, do którego paleniska idzie, a zapas drewna w odczycie liczy ogień wszystkich palenisk
+   naszych mieszkań, żeby karta nocy nie zaniżała zapasu. Przymorze z createSim, rzeczy dokładane ręcznie. */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
-import { commandFor, commandsAt, jobText } from '../../src/sim/orders.ts';
+import { commandFor, commandsAt, jobText, refuelFeedback } from '../../src/sim/orders.ts';
 import { BURN_TICKS, createSim, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { buildWorld } from '../../src/world/world.ts';
@@ -110,8 +111,30 @@ describe('menu: Dołożyć na nowych paleniskach', () => {
     const beczka = postaw(st, 'koza_beczka', x0 + 6, y0 + 4);
     const kociol = postaw(st, 'kociol', x0 + 8, y0 + 4);
     ustawJezyk('en');
-    expect(etykiety(st, ids, tile(beczka.x, beczka.y))).toContain('Add wood to the barrel stove');
-    expect(etykiety(st, ids, tile(kociol.x, kociol.y))).toContain('Add wood to the boiler');
+    // według słowniczka EN: „Feed the stove” przy kozie zarządu, więc „Feed the …” także tu
+    expect(etykiety(st, ids, tile(beczka.x, beczka.y))).toContain('Feed the barrel stove');
+    expect(etykiety(st, ids, tile(kociol.x, kociol.y))).toContain('Feed the boiler');
+  });
+
+  it('potwierdzenie po poleceniu mówi, do którego paleniska dołoży (jedna osoba i kilka, oba języki)', () => {
+    const { st, x0, y0 } = stan(true);
+    const beczka = postaw(st, 'koza_beczka', x0 + 6, y0 + 4);
+    const kociol = postaw(st, 'kociol', x0 + 8, y0 + 4);
+    const koza = st.things.find((t) => t.kind === 'koza')!;
+    expect([0, 1].map((k) => refuelFeedback(st, beczka.id, k))).toEqual([
+      'Dołoży do kozy z beczki.',
+      'Dołożą do kozy z beczki.',
+    ]);
+    expect([0, 1].map((k) => refuelFeedback(st, kociol.id, k))).toEqual(['Dołoży do kotła.', 'Dołożą do kotła.']);
+    // koza zarządu, ognisko i nieznana rzecz: ogólne potwierdzenie z main.ts (null)
+    expect(refuelFeedback(st, koza.id, 0)).toBeNull();
+    expect(refuelFeedback(st, 99999, 0)).toBeNull();
+    ustawJezyk('en');
+    expect([0, 1].map((k) => refuelFeedback(st, beczka.id, k))).toEqual([
+      'Off to feed the barrel stove.',
+      'Off to feed the barrel stove.',
+    ]);
+    expect(refuelFeedback(st, kociol.id, 1)).toBe('Off to feed the boiler.');
   });
 
   it('opis pracy: do którego paleniska idzie i dokłada', () => {

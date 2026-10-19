@@ -140,7 +140,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 
 ## Polecenia i przyciski
 
-Menu pod prawym przyciskiem, pomoc i karty cytują te same słowa: Chop down the tree, Feed the stove, Keep watch here (at the gate, at the fence, by the stove), Make a spear, Search the …, Take apart the … (śmieci i gruz: Clear the …), Fix the …, Claim the flat, Burn the …, Attack the shambler (looter), Go here. Budowle w menu budowy: Tear down. Broń na karcie osoby: Swap; po amputacji tag „stump”. Karta nocy: Raid chance, Stove overnight, As the board suggests, Start the night. Kategorie budowy: Indoors, Yard, Perimeter. Wiek na karcie to sama liczba („Nurse, 52”). Surowce: wrak „wreck” (maluch „the Fiat 126p”, polonez „the Polonez”), Search the … i Strip the … przy wraku, łup „loot”, Carry into the yard, w warsztacie Saw wood into a plank (… into 5 planks) i Make a part from scrap.
+Menu pod prawym przyciskiem, pomoc i karty cytują te same słowa: Chop down the tree, Feed the stove (Feed the barrel stove, Feed the boiler), Keep watch here (at the gate, at the fence, by the stove), Make a spear, Search the …, Take apart the … (śmieci i gruz: Clear the …), Fix the …, Claim the flat, Burn the …, Attack the shambler (looter), Go here. Budowle w menu budowy: Tear down. Broń na karcie osoby: Swap; po amputacji tag „stump”. Karta nocy: Raid chance, Stove overnight, As the board suggests, Start the night. Kategorie budowy: Indoors, Yard, Perimeter. Wiek na karcie to sama liczba („Nurse, 52”). Surowce: wrak „wreck” (maluch „the Fiat 126p”, polonez „the Polonez”), Search the … i Strip the … przy wraku, łup „loot”, Carry into the yard, w warsztacie Saw wood into a plank (… into 5 planks) i Make a part from scrap.
 
 ## Zawody-żarty
 

@@ -16,6 +16,8 @@ import { createSim, type Pawn, Sim, type SimState, type Thing } from '../../src/
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { EN } from '../../src/ui/badania.en.ts';
 import {
+  CZCIONKA_CZYTELNA,
+  CZCIONKA_KARTKI_MIN,
   czyOtworzycSama,
   KARTA_H,
   KARTA_W,
@@ -616,18 +618,47 @@ describe('tablica badań: skala planszy do okna', () => {
     expect(skalaPlanszy(1032, 1106)).toBe(0.933);
   });
 
-  it('nie mniejsza niż SKALA_MIN: na wąskim ekranie plansza woli przewijać się w poziomie, niż mieć nieczytelne kartki', () => {
-    expect(SKALA_MIN).toBeGreaterThanOrEqual(0.6);
-    expect(skalaPlanszy(300, 1106)).toBe(SKALA_MIN);
-    expect(skalaPlanszy(1, 1106)).toBe(SKALA_MIN);
+  it('próg skali to najmniejsza czytelna czcionka: kartka o najmniejszej czcionce nie schodzi w skali poniżej 9 px', () => {
+    expect(CZCIONKA_CZYTELNA).toBe(9);
+    expect(CZCIONKA_KARTKI_MIN * SKALA_MIN).toBeGreaterThanOrEqual(CZCIONKA_CZYTELNA);
+    // próg jest najmniejszą tysięczną, która to spełnia (nie ostrzejszy, niż trzeba)
+    expect(CZCIONKA_KARTKI_MIN * (SKALA_MIN - 0.001)).toBeLessThan(CZCIONKA_CZYTELNA);
+    // każda skala, jaką zwraca funkcja, daje czytelną czcionkę albo jest 1
+    for (let okno = 100; okno <= 1600; okno += 7) {
+      const k = skalaPlanszy(okno, 1106);
+      expect(k === 1 || CZCIONKA_KARTKI_MIN * k >= CZCIONKA_CZYTELNA).toBe(true);
+    }
   });
 
-  it('okno albo plansza o zerowej, ujemnej lub nieliczbowej szerokości: skala 1 (nic nie psuje się przy ukrytej tablicy)', () => {
-    expect(skalaPlanszy(0, 1106)).toBe(1);
-    expect(skalaPlanszy(-5, 1106)).toBe(1);
-    expect(skalaPlanszy(946, 0)).toBe(1);
-    expect(skalaPlanszy(Number.NaN, 1106)).toBe(1);
-    expect(skalaPlanszy(946, Number.NaN)).toBe(1);
+  it('plansza, która nie mieści się nawet w najmniejszej czytelnej skali, wraca do skali 1 i się przewija (tablet, telefon poziomo)', () => {
+    // okna planszy przy 1024, 1180 i 844 px szerokości ekranu: 690, 846 i 510 px (szczegóły zabierają 334 px)
+    for (const okno of [690, 846, 510, 300, 1]) expect(skalaPlanszy(okno, 1106), `okno ${okno} px`).toBe(1);
+    // tuż nad progiem jeszcze skalowana, tuż pod nim już nie
+    const prog = Math.ceil(1106 * SKALA_MIN);
+    expect(skalaPlanszy(prog, 1106)).toBe(SKALA_MIN);
+    expect(skalaPlanszy(prog - 1, 1106)).toBe(1);
+  });
+
+  it('CSS kartki nie ma czcionki mniejszej, niż zakłada próg (CZCIONKA_KARTKI_MIN): nazwa, dopisek, pieczątka, odznaki', () => {
+    const css = fs.readFileSync(path.resolve(import.meta.dirname, '../../src/style.css'), 'utf8');
+    const rozmiar = (selektor: string): number => {
+      const wiersze = css.split('\n');
+      const reguła = wiersze.indexOf(selektor);
+      expect(reguła, `reguła ${selektor}`).toBeGreaterThanOrEqual(0);
+      const blok = wiersze.slice(reguła).join('\n');
+      const m = /^[^{]*\{[^}]*?font:\s*\d+\s+([\d.]+)px/.exec(blok);
+      expect(m, `font w regule ${selektor}`).not.toBeNull();
+      return Number(m![1]);
+    };
+    const rozmiary = {
+      nazwa: rozmiar('.tb-kartka {'),
+      meta: rozmiar('.tb-meta {'),
+      stempel: rozmiar('.tb-stempel {'),
+      odznaki: rozmiar('.tb-bud,'),
+    };
+    for (const [co, px] of Object.entries(rozmiary)) expect(px, co).toBeGreaterThanOrEqual(CZCIONKA_KARTKI_MIN);
+    // najmniejsza z nich to dokładnie przyjęta w kodzie (próg skali liczy się od niej)
+    expect(Math.min(...Object.values(rozmiary))).toBe(CZCIONKA_KARTKI_MIN);
   });
 });
 

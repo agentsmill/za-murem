@@ -55,7 +55,7 @@ import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
 import { NAPISY as HANDEL } from './sim/handlarz.ts';
 import { type LokatorzyGry, zrodloLokatorow } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
-import { commandsAt, type MenuItem } from './sim/orders.ts';
+import { commandsAt, type MenuItem, refuelFeedback } from './sim/orders.ts';
 import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
 import { type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
@@ -2213,7 +2213,10 @@ function run(m: MenuItem) {
   const k = m.cmd.ids.length > 1 ? 1 : 0;
   // wspólny płot z jednego materiału mówi, po co idzie (deska i złom jak w feedback)
   const jeden = m.cmd.t === 'enclose' && (m.cmd.wariant === 'deski' || m.cmd.wariant === 'zlom') ? m.cmd.wariant : null;
-  const f = jeden ? tr(PO_PLOCIE[jeden][k]) : L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]);
+  // „Dołożyć” na nowym palenisku mówi, do którego (koza z beczki, kocioł); reszta z tabel feedback
+  const paleniska = m.cmd.t === 'refuel' ? refuelFeedback(sim.st, m.cmd.thing, k) : null;
+  const f =
+    paleniska ?? (jeden ? tr(PO_PLOCIE[jeden][k]) : L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]));
   // w trybie zombie wyważanie ściąga szwendaczy z okolicy
   const loud = m.cmd.t === 'force' && modeOf(sim.st) === 'zombie' ? tr(HALAS_ZOMBIE) : '';
   if (f) say(`${f}${loud}`, loud ? 4000 : 1800);

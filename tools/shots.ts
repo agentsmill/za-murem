@@ -288,11 +288,49 @@ async function tablicaUklad(page: Page) {
   return m;
 }
 
+/** Czytelność kartek: skala planszy (CSS zoom) i najmniejsza czcionka na kartce po skalowaniu (px na ekranie) spośród
+    nazwy, dopisku, pieczątki i odznak (computed fontSize razy zoom). Skalowanie czcionki sprawdza też rzeczywisty rysunek:
+    wysokość tekstu dopisku na ekranie do obliczonego rozmiaru ma być zawsze tyle samo (ok. 1,3 dla tej czcionki, w skali 1
+    i po skalowaniu), czyli rozmiar z computed fontSize razy zoom zgadza się z tym, co widać. */
+async function tablicaCzcionki(page: Page, opis: string, skalaOczekiwana?: 'jeden') {
+  const c = await page.evaluate(() => {
+    const skala =
+      Number.parseFloat(getComputedStyle(document.querySelector<HTMLElement>('#tablica .tb-board')!).zoom) || 1;
+    const rozmiary: Record<string, number> = {};
+    for (const sel of ['.tb-nazwa', '.tb-meta', '.tb-stempel', '.tb-bud', '.tb-cel']) {
+      const el = document.querySelector<HTMLElement>(`#tablica .tb-kartka ${sel}`);
+      if (el) rozmiary[sel] = Math.round(Number.parseFloat(getComputedStyle(el).fontSize) * skala * 100) / 100;
+    }
+    const meta = document.querySelector<HTMLElement>('#tablica .tb-kartka .tb-meta')!;
+    const zakres = document.createRange();
+    zakres.selectNodeContents(meta);
+    return {
+      skala,
+      rozmiary,
+      wzgledem: Math.round((zakres.getBoundingClientRect().height / rozmiary['.tb-meta']) * 100) / 100,
+    };
+  });
+  const najmniejsza = Math.min(...Object.values(c.rozmiary));
+  console.log(
+    `  ${opis}: skala ${c.skala}, czcionki kartek ${JSON.stringify(c.rozmiary)}, wysokość dopisku do rozmiaru ${c.wzgledem}`,
+  );
+  if (skalaOczekiwana === 'jeden' && c.skala !== 1)
+    throw new Error(`${opis}: skala ${c.skala}, a plansza ma zostać w skali 1`);
+  if (c.wzgledem < 1.2 || c.wzgledem > 1.45)
+    throw new Error(`${opis}: rozmiar czcionki z computed fontSize nie zgadza się z rysunkiem (${c.wzgledem})`);
+  if (c.skala !== 1 && najmniejsza < 9)
+    throw new Error(
+      `${opis}: w skali ${c.skala} najmniejsza czcionka kartki to ${najmniejsza} px, a ma być co najmniej 9`,
+    );
+  return { ...c, najmniejsza };
+}
+
 /** Tablica mieści się w oknie bez przewijania w poziomie: plansza nie jest szersza od swojego okna, każda kartka
     (z technologią końcową z ostatniej kolumny) leży w całości w oknie planszy, a szczegóły i pasek obsady w oknie
-    strony. Pionowe przewijanie planszy tylko wypisuje (wolno). */
+    strony; czcionki kartek mają co najmniej 9 px po skalowaniu. Pionowe przewijanie planszy tylko wypisuje (wolno). */
 async function tablicaMiesci(page: Page, opis: string) {
   const m = await tablicaUklad(page);
+  await tablicaCzcionki(page, opis);
   const w = await page.evaluate(() => {
     const wrap = document.querySelector<HTMLElement>('#tablica .tb-wrap')!;
     const o = wrap.getBoundingClientRect();
@@ -4041,6 +4079,47 @@ const SHOTS: Shot[] = [
       await page.setViewportSize({ width: 1280, height: 720 });
       await page.waitForTimeout(300);
       await tablicaMiesci(page, '1280×720 po zmianie rozmiaru okna');
+    },
+  },
+  // tablica na tablecie i telefonie poziomo (1024×768, 1180×820, 844×390): plansza nie mieści się w oknie nawet w najmniejszej
+  // czytelnej skali, więc zostaje w skali 1 i przewija się w bok (jak dawniej), a czcionki kartek nie spadają poniżej 9 px;
+  // 1280×720 dalej kurczy się do okna (skala 0,855, najmniejsza czcionka ok. 9,4 px)
+  {
+    name: 'badania-tablica-1024',
+    query: '',
+    w: 1024,
+    h: 768,
+    run: async (page, base) => {
+      await tablicaDemo(page, base);
+      await page.waitForTimeout(250);
+      const m = await tablicaUklad(page);
+      const c = await tablicaCzcionki(page, '1024×768', 'jeden');
+      if (!m.planszaWBok)
+        throw new Error('przy 1024 px plansza mieści się bez przewijania, a ma być w skali 1 i szersza od okna');
+      if (c.najmniejsza < 9) throw new Error(`czcionki kartek w skali 1: ${c.najmniejsza} px`);
+      await page.screenshot({ path: path.join(OUT, 'badania-tablica-1024-otwarcie.png') });
+      for (const [szer, wys] of [
+        [1180, 820],
+        [844, 390],
+        [1240, 720],
+        [1280, 720],
+      ] as const) {
+        await page.setViewportSize({ width: szer, height: wys });
+        await page.waitForTimeout(300);
+        const w = await page.evaluate(() => {
+          const wrap = document.querySelector<HTMLElement>('#tablica .tb-wrap')!;
+          return wrap.scrollWidth - wrap.clientWidth;
+        });
+        const k = await tablicaCzcionki(page, `${szer}×${wys}`, szer < 1240 ? 'jeden' : undefined);
+        console.log(`  ${szer}×${wys}: plansza szersza od okna o ${w} px`);
+        if (szer < 1240 && w <= 0) throw new Error(`${szer} px: plansza w skali 1 mieści się bez przewijania?`);
+        if (szer === 1280 && (w > 1 || k.skala >= 1))
+          throw new Error(`1280 px: plansza ma się kurczyć do okna (skala ${k.skala}, nadmiar ${w} px)`);
+      }
+      await page.setViewportSize({ width: 1024, height: 768 });
+      await page.waitForTimeout(300);
+      await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
+      await page.waitForTimeout(250);
     },
   },
   // ta sama tablica na telefonie 390×844: strona stoi w miejscu, przewija się tylko plansza w swoim oknie, szczegóły

@@ -2096,7 +2096,8 @@ a.btn {
   margin: 0 auto;
 }
 /* laptop: plansza kurczy się do okna (--tb-skala liczy main.ts z szerokości okna; rozmiar planszy w układzie też się
-   zmniejsza, więc nie przewija się w poziomie); telefon zostaje w skali 1 i przewija się palcem */
+   zmniejsza, więc nie przewija się w poziomie), ale tylko do skali, przy której najmniejsza czcionka kartki (11 px:
+   .tb-meta, .tb-stempel, .tb-bud, .tb-cel) ma 9 px; tablet i telefon zostają w skali 1 i przewijają się palcem */
 @media (min-width: 761px) {
   .tb-board {
     zoom: var(--tb-skala, 1);
@@ -2197,7 +2198,7 @@ a.btn {
   overflow: hidden;
 }
 .tb-meta {
-  font: 500 10.5px / 1.2 var(--f-body);
+  font: 500 11px / 1.2 var(--f-body);
   color: var(--papier-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -2248,7 +2249,7 @@ a.btn {
   padding: 1px 4px;
   border: 1.5px solid #3f6b2a;
   color: #3f6b2a;
-  font: 700 10px / 1 var(--f-sign);
+  font: 700 11px / 1 var(--f-sign);
   letter-spacing: 0.1em;
   transform: rotate(-8deg);
   pointer-events: none;
@@ -2259,7 +2260,7 @@ a.btn {
   top: -8px;
   padding: 1px 5px;
   border-radius: 2px;
-  font: 700 9.5px / 1.2 var(--f-sign);
+  font: 700 11px / 1.2 var(--f-sign);
   font-style: normal;
   letter-spacing: 0.08em;
   text-transform: uppercase;

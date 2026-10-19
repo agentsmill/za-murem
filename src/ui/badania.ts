@@ -17,7 +17,8 @@
    tego pliku. Wszystko leży na jednej planszy o stałym rozmiarze w pikselach (`.tb-board`): kartki i sznurki mają
    wspólne współrzędne, a na wąskim ekranie przewija się sama plansza w jej własnym oknie (`.tb-wrap`). Na laptopach
    (1280 i 1366 px) plansza kurczy się do szerokości okna (`skalaPlanszy`, CSS `zoom` z `--tb-skala`, ustawia main.ts),
-   żeby ostatnia era i szczegóły były widoczne bez przewijania w poziomie; na telefonie zostaje w skali 1 i się przewija.
+   żeby ostatnia era i szczegóły były widoczne bez przewijania w poziomie, ale tylko do skali, przy której najmniejsza
+   czcionka kartki ma jeszcze 9 px (`SKALA_MIN`); na tablecie, telefonie i w poziomie zostaje w skali 1 i się przewija.
 
    `odkrycieSheet(id)` to karta „Odkrycie” z pauzą po ukończeniu badania, w stylu kartki z tablicy (odcień `odkrycie`):
    nazwa i działanie technologii, co odblokowuje, przyciski „Postaw <budowla>” (tylko gdy odblokowuje budowlę),
@@ -336,17 +337,24 @@ export function tablicaHtml(b: SimBadania, o: { wybrana: string | null; mode: Ga
   return `<header class="tb-bar"><div class="tb-tytul"><b id="tbTytul">${L('Tablica badań', EN.tytul)}</b><small class="tb-pauza">${L('Gra stoi', EN.stoi)}</small></div><button type="button" class="btn go" data-akcja="zamknij" title="Esc · T">${L('Wróć do gry', EN.wroc)}</button></header><div class="tb-glowna"><div class="tb-wrap" tabindex="0"><div class="tb-board" style="width:${szer}px;height:${wys}px"><svg class="tb-nici" width="${szer}" height="${wys}" viewBox="0 0 ${szer} ${wys}" aria-hidden="true"><defs><marker id="tbSupel" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse"><circle cx="4" cy="4" r="3" fill="#b3261e"/></marker></defs>${nici}</svg>${naglowki}${kartki}</div></div>${szczegolyHtml(b, o, kart)}</div>${obsadaHtml(b, kart)}`;
 }
 
-/** najmniejsza skala planszy na szerokim ekranie: mniejsze kartki byłyby nieczytelne, więc poniżej plansza zostaje szersza
-    od okna i przewija się w poziomie */
-export const SKALA_MIN = 0.7;
+/** najmniejsza czcionka kartki w CSS (px, w skali 1): dopisek `.tb-meta`, pieczątka `.tb-stempel` i odznaki `.tb-bud`
+    i `.tb-cel` (nazwa `.tb-kartka` jest większa); pilnuje jej test na style.css, bo od niej zależy próg skali */
+export const CZCIONKA_KARTKI_MIN = 11;
+/** najmniejsza czytelna czcionka na ekranie (px): w żadnej skali planszy kartka nie schodzi poniżej niej */
+export const CZCIONKA_CZYTELNA = 9;
+/** najmniejsza skala planszy: przy niej najmniejsza czcionka kartki ma jeszcze CZCIONKA_CZYTELNA px (zaokrąglone w górę
+    do tysięcznych). Plansza, która nie mieści się w oknie nawet w takiej skali, zostaje w skali 1 i przewija się. */
+export const SKALA_MIN = Math.ceil((CZCIONKA_CZYTELNA / CZCIONKA_KARTKI_MIN) * 1000) / 1000;
 
 /** Skala planszy dla okna o szerokości `okno` (px, wnętrze okna planszy bez ramy i paska przewijania) i planszy
-    o szerokości `plansza` (px w skali 1): 1, gdy plansza się mieści, inaczej `okno / plansza` zaokrąglone w dół do
-    tysięcznych (żeby po przeskalowaniu mieściła się co do piksela), ale nie mniej niż SKALA_MIN. Bez sensownych wymiarów
-    (ukryta tablica ma okno 0) skala 1. */
+    o szerokości `plansza` (px w skali 1): 1, gdy plansza się mieści; `okno / plansza` zaokrąglone w dół do tysięcznych
+    (żeby po przeskalowaniu mieściła się co do piksela), gdy to co najmniej SKALA_MIN (laptopy 1280 i 1366 px); inaczej
+    znowu 1, czyli plansza się przewija w poziomie (tablet, telefon poziomo: kartki w mniejszej skali miałyby czcionki
+    poniżej CZCIONKA_CZYTELNA). Bez sensownych wymiarów (ukryta tablica ma okno 0) skala 1. */
 export function skalaPlanszy(okno: number, plansza: number): number {
   if (!(okno > 0) || !(plansza > 0)) return 1;
-  return Math.max(SKALA_MIN, Math.min(1, Math.floor((okno / plansza) * 1000) / 1000));
+  const k = Math.floor((okno / plansza) * 1000) / 1000;
+  return k >= SKALA_MIN && k < 1 ? k : 1;
 }
 
 /** Podpowiedź po „Badać”, gdy zaznaczonych jest więcej osób niż wolnych miejsc przy stole (`wolne` z `wolneMiejsca`):
