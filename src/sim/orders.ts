@@ -50,6 +50,7 @@ import {
   FURNITURE_ACC,
   isEnemy,
   KOZA_POST,
+  okazjaWerbunku,
   PATCH_COST,
   type Pawn,
   SIATKA_POST,
@@ -59,6 +60,7 @@ import {
   STAY_FIRE,
   STAY_MEAL,
   STAY_YARD,
+  szansaZaproszenia,
   type Thing,
   trunkOf,
 } from './sim.ts';
@@ -140,6 +142,28 @@ function dismantleEn(kind: string | undefined): { base: string; ing: string } {
 
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
 
+/** Po rozmowie z wędrowcem, który jeszcze stoi przy siatce: w trybie zombie „Zapytać o rękę” (raz), potem zaproszenie
+    z szansą w procentach. Przy pełnym zarządzie zaproszenie dotyczy mieszkańca i jest wyszarzone, gdy brak wolnego
+    łóżka; w domu jednorodzinnym (mieszkańcy bez mieszkań) przy pełnym zarządzie zaproszenia nie ma wcale. Kto już
+    wędrowca zaprasza, tego nie pytamy drugi raz. */
+function werbunekAt(st: SimState, w: World, core: number[], near: Pawn): MenuItem[] {
+  const r = st.obcy?.rozmowa;
+  if (near.job?.phase !== 1 || near.job.what !== 'zagadany' || !r || r.id !== near.id) return [];
+  if (st.pawns.some((q) => q.job?.t === 'zapros' && q.job.target === near.id)) return [];
+  const out: MenuItem[] = [];
+  if (modeOf(st) === 'zombie' && !r.pytali)
+    out.push({ cmd: { t: 'reka', ids: core, target: near.id }, label: tr(OBCY.zapytacORege), quick: false });
+  const ok = okazjaWerbunku(st, w);
+  const cmd = { t: 'zapros', ids: core, target: near.id } as const;
+  if (ok.dokad === 'dom') return out;
+  if (ok.dokad === 'brak') out.push({ cmd, label: tr(OBCY.zaprosicBez), quick: false, off: tr(OBCY.brakLozka) });
+  else {
+    const n = Math.round(100 * szansaZaproszenia(st, w, ok));
+    out.push({ cmd, label: tr(ok.dokad === 'zarzad' ? OBCY.zaprosic(n) : OBCY.zaprosicMieszkanca(n)), quick: false });
+  }
+  return out;
+}
+
 /** Polecenia, które mają sens na klikniętym kafelku (menu kontekstowe z GDD), „Idź tu” zawsze na końcu.
     Drewno poza składem: zanieść do składu. Koza albo ognisko, gdy jest skąd wziąć drewno: dołożyć. Drzewo: ściąć,
     od razu tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie w las ma znaczyć „idź”.
@@ -208,6 +232,7 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   if (near?.kind === 'wedrowiec') {
     if (near.job?.phase === 1 && near.job.what !== 'zagadany')
       out.push({ cmd: { t: 'talk', ids: core, target: near.id }, label: tr(OBCY.zagadac), quick: false });
+    out.push(...werbunekAt(st, w, core, near));
     out.push({ cmd: { t: 'mug', ids: core, target: near.id }, label: tr(OBCY.napasc), quick: false, confirm: true });
   } else if (near?.kind === 'obcy' && (near.job?.phase ?? 4) < 2)
     out.push({ cmd: { t: 'shoo', ids: core, target: near.id }, label: tr(OBCY.przegonic), quick: false });
@@ -766,6 +791,16 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return tr(OBCY.scavenge[Math.min(3, j.phase)]);
     case 'talk':
       return tr(walking ? OBCY.idzieZagadac : OBCY.rozmawia);
+    case 'zapros':
+      return tr(
+        j.what === 'reka'
+          ? walking
+            ? OBCY.idzieZapytac
+            : OBCY.pytaORege
+          : walking
+            ? OBCY.idzieZaprosic
+            : OBCY.zaprasza,
+      );
     case 'mug':
       return tr(OBCY.idzieNapasc);
     case 'shoo':

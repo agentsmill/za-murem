@@ -10,7 +10,10 @@
    za dnia (mozeTam). Warsztat i szaber nigdy nie ruszają materiału ani drzwi, które mają inne przeznaczenie: deski
    z nadwyżki drewna, części z nadwyżki złomu, dzidy dla nieuzbrojonych, a szaber tylko puste pomieszczenia i wraki,
    bez otwierania i wyważania drzwi. Czas ścinania, budowy, łatania, napraw, warsztatu, dzidy i gotowania dzieli
-   mnożnik z umiejętności (`tempoPracy`). */
+   mnożnik z umiejętności (`tempoPracy`). Wędrowiec po rozmowie przy siatce może zostać zaproszony (praca `zapros`,
+   `okazjaWerbunku`): przy zarządzie poniżej ZARZAD_MAX staje się osobą zarządu z id `w1`, `w2`…, przy pełnym tylko
+   mieszkańcem w wolnym łóżku; osoba, cel i ukryte ugryzienie wędrowca idą z ziarna świata i numeru, a ze st.rng jest
+   tylko samo losowanie zaproszenia, więc gry bez takich rozmów biegną jak bez werbunku. */
 
 import { PROFS } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -143,6 +146,7 @@ import {
   tempoPracy,
   type UstawieniaOsoby,
   WPISY,
+  ZARZAD_MAX,
   zaSiatke,
 } from './praca.ts';
 import {
@@ -229,6 +233,7 @@ import { TUT_STEPS, type Tutorial, type TutStep, tutAdvance, WARM_ENOUGH } from 
 import {
   CHASE_TICKS,
   CREW_SEARCH_TICKS,
+  celWedrowca,
   FLEE_SPEED,
   firstCrew,
   firstCrewZombie,
@@ -238,23 +243,31 @@ import {
   MUG_MOOD,
   MUG_MOOD_OTHERS,
   mugLoot,
+  NAPAD_PAMIEC,
+  NOWY_MOOD,
+  NOWY_MOOD_TICKS,
   nextCrew,
   nextCrewZombie,
   nextWanderer,
   nextWandererZombie,
   NAPISY as OBCY,
+  osobaWedrowca,
   PAUSE_MAX,
   PAUSE_MIN,
   PAUSE_ZOMBIE_MAX,
   PAUSE_ZOMBIE_MIN,
   SHOO_REACH,
   SPOOK_R,
+  szansaWerbunku,
   TALK_EXTRA,
   TALK_MOOD,
   TALK_MOOD_TICKS,
   TALK_TICKS,
+  ugryzienieWedrowca,
+  ugryzionyOdGodzin,
   WANDER_SPEED,
   WANDERER_HP,
+  ZAPROS_TICKS,
 } from './wedrowcy.ts';
 import {
   ambientCount,
@@ -361,6 +374,7 @@ const M2_JOBS = new Set<JobKind>([
   'trade',
   'rob',
   'talk',
+  'zapros',
   'mug',
   'shoo',
 ]);
@@ -512,6 +526,8 @@ export type JobKind =
   | 'wander'
   | 'scavenge'
   | 'talk'
+  /** werbunek wędrowca po rozmowie: what 'zapros' (zaprosić) albo 'reka' (zapytać o rękę), 2 minuty przy siatce */
+  | 'zapros'
   | 'mug'
   | 'shoo'
   | 'zemsta';
@@ -764,6 +780,10 @@ export type Command =
   | { t: 'rob'; ids: number[] }
   /** wędrowiec: zagadać, napaść (target: id pionka); obca ekipa przy wraku: przegonić */
   | { t: 'talk'; ids: number[]; target: number }
+  /** po rozmowie: zaprosić wędrowca do zarządu albo (przy pełnym zarządzie) do wolnego łóżka mieszkańców; w trybie
+      zombie najpierw zapytać o rękę (ujawnia ukryte ugryzienie) */
+  | { t: 'zapros'; ids: number[]; target: number }
+  | { t: 'reka'; ids: number[]; target: number }
   | { t: 'mug'; ids: number[]; target: number }
   | { t: 'shoo'; ids: number[]; target: number }
   /** praca ludzi (src/sim/praca.ts), wszystkie z ids pustym: priorytet rodzaju osoby (0 nie robi, 1 najważniejszy),
@@ -1616,6 +1636,62 @@ function aptFor(st: SimState, h: HouseLike, size: number, apts: readonly number[
   const roomy = apts.find((a) => living(a) < bedsIn(st, h, size, a));
   if (roomy !== undefined) return roomy;
   return apts.reduce((b, a) => (living(a) < living(b) ? a : b), apts[0] ?? -1);
+}
+
+/** Gdzie zwerbowany wędrowiec by trafił i co wpływa na szansę (src/sim/wedrowcy.ts, szansaWerbunku): 'zarzad' (zarząd
+    ma mniej niż ZARZAD_MAX osób), 'mieszkaniec' (zarząd pełny, mieszkanie z wolnym łóżkiem w apt), 'brak' (pełny
+    zarząd, mieszkańcy mają mieszkania, ale wszystkie łóżka zajęte), 'dom' (pełny zarząd, a mieszkańcy nie mają
+    mieszkań: dom jednorodzinny, gdzie dziś nie mają łóżek ani wstępu). Wolne łóżko liczy się tam, dokąd by trafił:
+    w mieszkaniu zarządu (łóżek więcej niż osób w zarządzie) albo u mieszkańców. */
+export interface OkazjaWerbunku {
+  dokad: 'zarzad' | 'mieszkaniec' | 'brak' | 'dom';
+  apt: number;
+  jedzenieNaGlowe: number;
+  wolneLozko: boolean;
+  napadDwieDoby: boolean;
+}
+
+/** Okazja do werbunku z samego stanu (menu i symulacja liczą to samo). Jedzenie: porcje surowe i ugotowane w naszych
+    stertach (bez wnętrz sąsiadów) na osobę z zarządu, także tych na wyprawie. */
+export function okazjaWerbunku(st: SimState, w: World): OkazjaWerbunku {
+  const h = houseOf(w);
+  const size = w.size;
+  const zarzad = st.pawns.reduce((a, p) => a + (p.kind === 'core' ? 1 : 0), 0);
+  let porcje = 0;
+  for (const t of st.things)
+    if ((t.kind === 'jedzenie' || t.kind === 'posilek') && t.n > 0 && !uSasiada(st, w, t.y * size + t.x)) porcje += t.n;
+  const napadDwieDoby = (st.obcy?.napady ?? []).some((n) => st.tick - n.tick < NAPAD_PAMIEC);
+  const o: OkazjaWerbunku = {
+    dokad: 'zarzad',
+    apt: -1,
+    jedzenieNaGlowe: porcje / Math.max(1, zarzad),
+    wolneLozko: false,
+    napadDwieDoby,
+  };
+  if (zarzad < ZARZAD_MAX) {
+    o.wolneLozko = !!h && bedsIn(st, h, size, h.home) > zarzad;
+    return o;
+  }
+  const apts = h ? residentApts(st, w, h) : [];
+  const living = (a: number) => st.pawns.filter((p) => p.kind === 'resident' && p.apt === a).length;
+  o.apt = h ? (apts.find((a) => living(a) < bedsIn(st, h, size, a)) ?? -1) : -1;
+  o.dokad = o.apt >= 0 ? 'mieszkaniec' : apts.length ? 'brak' : 'dom';
+  o.wolneLozko = o.apt >= 0;
+  return o;
+}
+
+/** Szansa zaproszenia obecnego rozmówcy (0, gdy nie ma rozmowy ani miejsca); menu pokazuje ją w procentach, a symulacja
+    losuje z niej dokładnie tak samo. */
+export function szansaZaproszenia(st: SimState, w: World, o: OkazjaWerbunku = okazjaWerbunku(st, w)): number {
+  const r = st.obcy?.rozmowa;
+  if (!r) return 0;
+  if (o.dokad === 'brak' || o.dokad === 'dom') return 0;
+  return szansaWerbunku({
+    jedzenieNaGlowe: o.jedzenieNaGlowe,
+    wolneLozko: o.wolneLozko,
+    napadDwieDoby: o.napadDwieDoby,
+    maCel: r.cel,
+  });
 }
 
 /** wyprowadzka: ostatni mieszkańcy znikają (łóżka wolne); zwraca, ilu ubyło */
@@ -2644,6 +2720,7 @@ export class Sim {
     else if (c.t === 'trade') this.startTrade(pawns[0], c.offer);
     else if (c.t === 'rob') this.startRob(pawns[0]);
     else if (c.t === 'talk') this.startTalk(pawns[0], c.target);
+    else if (c.t === 'zapros' || c.t === 'reka') this.startZapros(pawns[0], c.target, c.t);
     else if (c.t === 'mug') this.startChase(pawns[0], c.target, 'mug');
     else if (c.t === 'shoo') this.startChase(pawns[0], c.target, 'shoo');
   }
@@ -3856,6 +3933,8 @@ export class Sim {
         return false;
       case 'talk':
         return this.talkWork(p, j, at);
+      case 'zapros':
+        return this.zaprosWork(p, j, at);
       case 'mug':
       case 'shoo':
         return this.chaseWork(p, j);
@@ -6218,6 +6297,8 @@ export class Sim {
     p.job = this.newJob('wander', -1, spot, false);
     st.pawns.push(p);
     if (from === spot || !this.go(p, spot)) st.pawns.pop();
+    // rozmowa z poprzednim wędrowcem już nie obowiązuje
+    else delete st.obcy!.rozmowa;
   }
 
   /** Krok wędrowca, który nie idzie: 0 doszedł pod siatkę (przystaje), 1 stoi, potem idzie daleko w inną stronę,
@@ -6372,8 +6453,173 @@ export class Sim {
     const left = wrecksOf(this.w).filter((r) => wreckStage(st.wraki, wreckTile(r, size)) === 0).length;
     const traderIn = o.next < 0 ? -1 : Math.max(0, dayOf(o.next) - dayOf(st.tick));
     const ctx = { traderIn, wrecksLeft: left };
-    o.wiesc = { tick: st.tick, text: (modeOf(st) === 'zombie' ? gossipZombie : gossip)(ctx, st.rng).pl };
+    const zombie = modeOf(st) === 'zombie';
+    const gossipPl = (zombie ? gossipZombie : gossip)(ctx, st.rng).pl;
+    // rozmowa mówi też, kim jest wędrowiec (osoba z ziarna świata i numeru, nie ze st.rng), i czy idzie do rodziny
+    const seed = this.w.seed;
+    const osoba = osobaWedrowca(seed, t.id, new Set(st.people.map((q) => q.first)));
+    const cel = celWedrowca(seed, t.id);
+    o.rozmowa = { id: t.id, osoba, cel, ugryziony: zombie && ugryzienieWedrowca(seed, t.id) };
+    o.wiesc = { tick: st.tick, text: `${gossipPl}\n${OBCY.kto(osoba, cel).pl}` };
     return false;
+  }
+
+  /* ---------- werbunek wędrowców (docs/superpowers/specs/2026-10-19-praca-ludzi-design.md, część B) ---------- */
+
+  /** Zaprosić wędrowca, z którym zarząd już rozmawiał (how 'zapros'), albo w trybie zombie zapytać go o rękę (how
+      'reka'): osoba idzie na podwórko na kafelek najbliżej niego. Nic się nie dzieje, gdy wędrowiec nie stoi przy siatce
+      po rozmowie, ktoś inny już go zaprasza, zaproszenie nie ma dokąd (pełny zarząd bez wolnego łóżka mieszkańców) albo
+      o rękę już pytano. Wędrowiec zostaje przy siatce tak długo, jak osoba idzie i rozmawia. */
+  private startZapros(p: Pawn, id: number, how: 'zapros' | 'reka'): void {
+    const st = this.st;
+    const t = this.stranger(id, 'wedrowiec');
+    const r = st.obcy?.rozmowa;
+    if (t?.job?.phase !== 1 || t.job.what !== 'zagadany' || !r || r.id !== t.id) return;
+    if (st.pawns.some((q) => q.job?.t === 'zapros' && q.job.target === t.id)) return;
+    if (how === 'reka') {
+      if (modeOf(st) !== 'zombie' || r.pytali) return;
+    } else if (szansaZaproszenia(st, this.w) <= 0) return;
+    const spot = this.tradeSpot(p, t);
+    if (spot < 0 || !this.go(p, spot)) return;
+    // pięć ticków na kafelek (WALK_SPEED), potem rozmowa i chwila na odejście
+    t.job.until = Math.max(t.job.until, st.tick + p.path.length * 5 + ZAPROS_TICKS + TALK_EXTRA);
+    const j = this.newJob('zapros', t.id, spot, true);
+    j.what = how;
+    this.setJob(p, j, false);
+  }
+
+  /** zaproszenie albo pytanie o rękę: dwie minuty przy siatce, potem rozstrzygnięcie */
+  private zaprosWork(p: Pawn, j: Job, at: boolean): boolean {
+    const st = this.st;
+    const t = this.stranger(j.target, 'wedrowiec');
+    const r = st.obcy?.rozmowa;
+    if (t?.job?.phase !== 1 || !r || r.id !== t.id) return false;
+    if (j.phase === 0) {
+      if (!at) return false;
+      j.phase = 1;
+      j.t0 = st.tick;
+      j.until = st.tick + ZAPROS_TICKS;
+      t.job.until = Math.max(t.job.until, st.tick + ZAPROS_TICKS + TALK_EXTRA);
+      this.face(p, t.x, t.y);
+      this.face(t, p.x, p.y);
+      return true;
+    }
+    if (st.tick < j.until) return true;
+    if (j.what === 'reka') this.pytanieORege(t, r);
+    else this.decyzjaWerbunku(t, r);
+    return false;
+  }
+
+  /** wędrowiec idzie dalej (odmowa, ugryziony, który nie pokazał ręki): rozmowa się kończy, a w następnym kroku odchodzi
+      tak, jak po upływie czasu przy siatce */
+  private wedrowiecIdzieDalej(t: Pawn): void {
+    delete this.st.obcy!.rozmowa;
+    if (t.job) t.job.until = this.st.tick;
+  }
+
+  /** Pytanie o rękę (tryb zombie): ukryty ugryziony nie pokazuje ręki i odchodzi bez werbunku, zdrowy ją pokazuje i dalej
+      można go zaprosić; w obu razach rozmowa wie, że zapytano. */
+  private pytanieORege(t: Pawn, r: NonNullable<Obcy['rozmowa']>): void {
+    const st = this.st;
+    r.pytali = true;
+    if (r.ugryziony) {
+      st.obcy!.wiesc = { tick: st.tick, text: OBCY.rekaUgryziona(true).pl };
+      this.wedrowiecIdzieDalej(t);
+    } else st.obcy!.wiesc = { tick: st.tick, text: OBCY.rekaCzysta(true).pl };
+  }
+
+  /** Rozstrzygnięcie zaproszenia: miejsce liczy się od nowa (zarząd mógł się zapełnić, łóżko ktoś zająć), potem jedno
+      losowanie ze st.rng na szansę z szansaZaproszenia. Udane: zwerbowany; nieudane: dziękuje i idzie dalej, bez kary. */
+  private decyzjaWerbunku(t: Pawn, r: NonNullable<Obcy['rozmowa']>): void {
+    const st = this.st;
+    const ok = okazjaWerbunku(st, this.w);
+    const chance = szansaZaproszenia(st, this.w, ok);
+    if (chance > 0 && nextRandom(st.rng) < chance) {
+      this.zwerbuj(t, r, ok);
+      return;
+    }
+    st.obcy!.wiesc = { tick: st.tick, text: OBCY.odmowa(modeOf(st) === 'zombie').pl };
+    this.wedrowiecIdzieDalej(t);
+  }
+
+  /** Wędrowiec zostaje: zmienia się w osobę zarządu w swoim miejscu, ze swoim wyglądem, i wchodzi bramą (id `w1`, `w2`…,
+      domyślne priorytety pracy z umiejętności), a przy pełnym zarządzie w mieszkańca z pracą arrive do mieszkania
+      z wolnym łóżkiem. Zarząd dostaje nastrój „Nowa osoba w zarządzie”. Ukryty ugryziony, o którego nie pytano, ma
+      gorączkę od chwili ugryzienia, jak przyjęte gospodarstwa sąsiadów. */
+  private zwerbuj(t: Pawn, r: NonNullable<Obcy['rozmowa']>, ok: OkazjaWerbunku): void {
+    const st = this.st;
+    const o = st.obcy!;
+    const n = (o.werbunek = (o.werbunek ?? 0) + 1);
+    st.people.push({
+      ...r.osoba,
+      id: `w${n}`,
+      home: this.w.hq,
+      skills: { ...r.osoba.skills },
+      traits: [...r.osoba.traits],
+    });
+    t.person = st.people.length - 1;
+    delete t.hp;
+    t.path = [];
+    t.pi = 0;
+    t.want = -1;
+    t.wait = st.tick;
+    if (this.door >= 0) t.home = this.door;
+    if (ok.dokad === 'zarzad') {
+      t.kind = 'core';
+      t.needs = { food: 50, warm: 50, rest: 60, health: 90, safe: 50, mood: 0 };
+      t.needs.mood = 0.25 * 50 + 0.25 * 50 + 0.15 * 60 + 0.15 * 90 + 0.2 * 50;
+      t.job = null;
+      this.wejdzDoSiedziby(t);
+    } else {
+      const h = this.house!;
+      const size = this.w.size;
+      t.kind = 'resident';
+      t.apt = ok.apt;
+      t.needs = { food: 60, warm: 50, rest: 60, health: 100, safe: 50, mood: 0 };
+      t.needs.mood = 0.25 * 60 + 0.25 * 50 + 0.15 * 60 + 0.15 * 100 + 0.2 * 50;
+      const tiles: number[] = [];
+      for (let i = 0; i < size * size; i++) if (aptAt(h, i) === ok.apt && !this.coreBlocked[i]) tiles.push(i);
+      t.job = {
+        t: 'arrive',
+        target: ok.apt,
+        tile: tiles.length ? tiles[t.id % tiles.length] : this.door,
+        phase: 0,
+        from: -1,
+        t0: st.tick,
+        until: st.tick,
+        order: false,
+        n: 0,
+        what: '',
+      };
+      const bed = st.things.find(
+        (b) => BEDS.has(b.kind) && !b.broken && b.owner < 0 && aptAt(h, b.y * size + b.x) === ok.apt,
+      );
+      if (bed) bed.owner = t.id;
+    }
+    if (r.ugryziony && !r.pytali) {
+      infect(st, t, true);
+      t.bite = st.tick - ugryzionyOdGodzin(this.w.seed, r.id) * TICKS_PER_HOUR;
+      const fever = t.moods[t.moods.length - 1];
+      if (fever) fever.until = t.bite + FEVER_TICKS;
+    }
+    if (ok.dokad === 'zarzad')
+      for (const q of st.pawns)
+        if (q !== t && q.kind === 'core' && !q.away) this.addMood(q, OBCY.nastrojNowy.pl, NOWY_MOOD, NOWY_MOOD_TICKS);
+    delete o.rozmowa;
+  }
+
+  /** nowa osoba zarządu spoza siedziby idzie bramą do drzwi siedziby; gdy z miejsca przy siatce nie ma drogi, zaczyna
+      od wyjścia z bramy (kafelek wyjścia), jak wracający z wyprawy */
+  private wejdzDoSiedziby(t: Pawn): void {
+    if (this.door < 0) return;
+    const size = this.w.size;
+    let ok = this.go(t, this.door);
+    if (!ok && this.exitTile >= 0) {
+      t.x = (this.exitTile % size) + 0.5;
+      t.y = Math.floor(this.exitTile / size) + 0.5;
+      ok = this.go(t, this.door);
+    }
+    if (ok) t.job = this.newJob('go', this.door, this.door, false);
   }
 
   /** napaść na wędrowca (mug) albo przegonienie ekipy (shoo): osoba idzie do obcego i poprawia drogę, aż dojdzie */

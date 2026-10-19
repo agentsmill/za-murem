@@ -2,14 +2,22 @@
    wędrowca, wieści z rozmowy i napisy. Czyste dane i funkcje dla symulacji i menu. Chodzą tylko w grze z opcją
    SimOpts.obcy (jak handlarz), więc losowanie ze st.rng nie rusza gier i botów bez niej. Napisy w obu językach:
    menu i opisy prac biorą je przez tr() w bieżącym języku, a wieść zostaje w stanie po polsku (st.obcy.wiesc,
-   jak inne napisy symulacji) i po angielsku pokazuje ją wiescEn, ze słownika wszystkich wariantów. */
+   jak inne napisy symulacji) i po angielsku pokazuje ją wiescEn, ze słownika wszystkich wariantów.
 
-import { ADS_EN } from '../content/data.en.ts';
+   Werbunek (docs/superpowers/specs/2026-10-19-praca-ludzi-design.md, część B): po rozmowie wędrowiec ma osobę
+   (imię, zawód, umiejętności), cel (idzie do rodziny) i ewentualnie ukryte ugryzienie, wszystko z ziarna świata
+   i numeru wędrowca (id jego pionka), nigdy ze st.rng, żeby gry bez rozmów biegły jak dotąd. Szansa zaproszenia
+   to czysta funkcja szansaWerbunku; samo losowanie robi symulacja ze st.rng. Zaufania we wzorze nie ma, bo
+   symulacja go nie zna. */
+
+import { ADS_EN, zawodEn } from '../content/data.en.ts';
 import { ADS } from '../content/data.ts';
-import { nextRandom, type RngState } from '../core/rng.ts';
+import { makePerson, type Person, wiek } from '../content/people.ts';
+import { clamp, hashString, mulberry, nextRandom, type RngState } from '../core/rng.ts';
 import type { Mat } from './budowle.ts';
-import { dayOf, hourOf, TICKS_PER_HOUR } from './clock.ts';
+import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR } from './clock.ts';
 import { NAPISY as HANDEL, tickAt } from './handlarz.ts';
+import { UKRYTY_UGRYZIONY } from './sasiedzi.ts';
 import { WRECK_SEARCH_TICKS } from './surowce.ts';
 
 /** wędrowiec przystaje przy siatce 20–40 minut gry, po rozmowie jeszcze 10 */
@@ -33,6 +41,59 @@ export const TALK_MOOD = 3;
 export const TALK_MOOD_TICKS = 6 * TICKS_PER_HOUR;
 export const MUG_MOOD = -4;
 export const MUG_MOOD_OTHERS = -2;
+
+/** zaproszenie albo pytanie o rękę przez siatkę trwa 2 minuty gry */
+export const ZAPROS_TICKS = Math.round(TICKS_PER_HOUR / 30);
+/** nastrój reszty zarządu po nowej osobie w zarządzie (na pół doby) */
+export const NOWY_MOOD = 3;
+export const NOWY_MOOD_TICKS = 12 * TICKS_PER_HOUR;
+/** napaść na wędrowca albo handlarza obniża szansę zaproszenia przez tyle czasu */
+export const NAPAD_PAMIEC = 2 * TICKS_PER_DAY;
+
+/** ziarno wędrowca z ziarna świata i numeru (id jego pionka), nigdy ze st.rng: gra, w której nikt z wędrowcem nie
+    rozmawia, biegnie dokładnie tak jak bez werbunku. sol rozdziela niezależne losowania tego samego wędrowca. */
+const ziarnoWedrowca = (seed: number, nr: number, sol = ''): number =>
+  Number.parseInt(hashString(`${seed}:wedrowiec:${nr}${sol}`), 16);
+
+/** Osoba wędrowca (imię, wiek, zawód, umiejętności, cechy) z generatora przybyszów (makePerson). Id puste: dostaje
+    je dopiero przyjęty (w1, w2…). zajete to imiona, których generator ma unikać (zarząd), jak przy przybyszach. */
+export function osobaWedrowca(seed: number, nr: number, zajete: ReadonlySet<string> = new Set()): Person {
+  return { ...makePerson(mulberry(ziarnoWedrowca(seed, nr)), zajete, () => 0), id: '' };
+}
+
+/** połowa wędrowców idzie do rodziny: ma swój cel i o połowę mniejszą szansę, że zostanie */
+export const celWedrowca = (seed: number, nr: number): boolean => mulberry(ziarnoWedrowca(seed, nr, ':cel'))() < 0.5;
+
+/** tryb zombie: co piąty wędrowiec ukrywa ugryzienie, jak gospodarstwa sąsiadów (UKRYTY_UGRYZIONY) */
+export const ugryzienieWedrowca = (seed: number, nr: number): boolean =>
+  mulberry(ziarnoWedrowca(seed, nr, ':ugryzienie'))() < UKRYTY_UGRYZIONY;
+
+/** od ilu godzin ukryty ugryziony ma gorączkę w chwili przyjęcia (1–6, jak u sąsiadów) */
+export const ugryzionyOdGodzin = (seed: number, nr: number): number =>
+  1 + Math.floor(mulberry(ziarnoWedrowca(seed, nr, ':godziny'))() * 6);
+
+/** co wpływa na szansę, że wędrowiec zgodzi się zostać */
+export interface OkolicznosciWerbunku {
+  /** porcje jedzenia w zapasach na osobę z zarządu */
+  jedzenieNaGlowe: number;
+  /** jest wolne łóżko tam, dokąd miałby trafić */
+  wolneLozko: boolean;
+  /** w ciągu ostatnich dwóch dób zarząd napadł na wędrowca albo handlarza */
+  napadDwieDoby: boolean;
+  /** wędrowiec idzie do rodziny */
+  maCel: boolean;
+}
+
+/** Szansa zaproszenia: 0,30, +0,20 przy jedzeniu na co najmniej 2 porcje na osobę, +0,15 przy wolnym łóżku, −0,30
+    po niedawnej napaści; w zakresie 0,05–0,85, a przy celu połowa tego. Zaufania nie ma, bo symulacja go nie zna. */
+export function szansaWerbunku(o: OkolicznosciWerbunku): number {
+  const s = clamp(
+    0.3 + (o.jedzenieNaGlowe >= 2 ? 0.2 : 0) + (o.wolneLozko ? 0.15 : 0) - (o.napadDwieDoby ? 0.3 : 0),
+    0.05,
+    0.85,
+  );
+  return o.maCel ? s / 2 : s;
+}
 
 /** pierwszy wędrowiec: dzień 2, między 8:00 a 12:00 */
 export const firstWanderer = (rng: RngState): number => tickAt(2, 8 + 4 * nextRandom(rng));
@@ -232,9 +293,31 @@ export function wiescEn(pl: string): string {
     put(HANDEL.szwendacze);
     put(HANDEL.zagryziony);
     for (let n = 1; n < 10; n++) put(HANDEL.zemsta(n));
+    // werbunek: odmowa i pytanie o rękę (wędrowiec albo ocalały)
+    for (const z of [false, true]) {
+      put(NAPISY.odmowa(z));
+      put(NAPISY.rekaCzysta(z));
+      put(NAPISY.rekaUgryziona(z));
+    }
   }
-  return wiesciEn.get(pl) ?? pl;
+  const znany = wiesciEn.get(pl);
+  if (znany) return znany;
+  // wieść z rozmowy: plotka, nowa linia i kto to jest (kto: imię, zawód, wiek i cel)
+  const k = pl.indexOf('\n');
+  if (k > 0) return `${wiescEn(pl.slice(0, k))} ${ktoEn(pl.slice(k + 1))}`;
+  return pl;
 }
+
+/** angielska wersja linii NAPISY.kto z polskiej (imię, zawód i wiek z tekstu); nieznany kształt zostaje */
+function ktoEn(pl: string): string {
+  const m = /^Przedstawia się: (.+), (.+), (\d+) (?:rok|lata|lat)\.( .+)?$/.exec(pl);
+  if (!m) return pl;
+  return NAPISY.kto({ first: m[1], prof: m[2], age: Number(m[3]) }, m[4]?.trim() === CEL_PL).en;
+}
+
+/** cel wędrowca w rozmowie (połowa wędrowców idzie do rodziny) */
+const CEL_PL = 'Idzie do rodziny, więc raczej nie zostanie.';
+const CEL_EN = 'Heading to family, so unlikely to stay.';
 
 export const NAPISY = {
   zagadac: { pl: 'Zagadać', en: 'Talk to the wanderer' },
@@ -269,4 +352,43 @@ export const NAPISY = {
   poNapascWielu: { pl: 'Jedna osoba napadnie na wędrowca.', en: 'One person goes to rob the wanderer.' },
   poPrzegonic: { pl: 'Przegoni obcych.', en: 'Going to chase the strangers off.' },
   poPrzegonicWielu: { pl: 'Jedna osoba przegoni obcych.', en: 'One person goes to chase the strangers off.' },
+  // werbunek: menu, opisy prac i nastrój
+  zaprosic: (n: number): Napis => ({
+    pl: `Zaprosić do nas (${n}% szans)`,
+    en: `Invite to join us (${n}% chance)`,
+  }),
+  zaprosicMieszkanca: (n: number): Napis => ({
+    pl: `Zaprosić do nas jako mieszkańca (${n}%)`,
+    en: `Invite to stay as a resident (${n}%)`,
+  }),
+  zaprosicBez: { pl: 'Zaprosić do nas', en: 'Invite to join us' },
+  brakLozka: { pl: 'Nie ma wolnego łóżka', en: 'No free bed' },
+  zapytacORege: { pl: 'Zapytać o rękę', en: 'Ask to see their arm' },
+  nastrojNowy: { pl: 'Nowa osoba w zarządzie', en: 'New person on the board' },
+  idzieZaprosic: { pl: 'Idzie zaprosić wędrowca do nas.', en: 'Going to invite the wanderer to stay.' },
+  zaprasza: { pl: 'Zaprasza wędrowca przez siatkę.', en: 'Inviting the wanderer through the fence.' },
+  idzieZapytac: { pl: 'Idzie zapytać wędrowca o rękę.', en: 'Going to ask the wanderer about their arm.' },
+  pytaORege: { pl: 'Pyta wędrowca o rękę.', en: 'Asking the wanderer about their arm.' },
+  poZaprosic: { pl: 'Zaprosi wędrowca.', en: 'Off to invite the wanderer.' },
+  poZaprosicWielu: { pl: 'Jedna osoba zaprosi wędrowca.', en: 'One person goes to invite the wanderer.' },
+  poRege: { pl: 'Zapyta o rękę.', en: 'Off to ask about their arm.' },
+  poRegeWielu: { pl: 'Jedna osoba zapyta o rękę.', en: 'One person goes to ask about their arm.' },
+  // wieści po zaproszeniu i pytaniu o rękę (w trybie zombie mówi ocalały)
+  odmowa: (zombie: boolean): Napis => ({
+    pl: `${zombie ? 'Ocalały' : 'Wędrowiec'} dziękuje za zaproszenie i idzie dalej.`,
+    en: `The ${zombie ? 'survivor' : 'wanderer'} thanks you for the invitation and moves on.`,
+  }),
+  rekaCzysta: (zombie: boolean): Napis => ({
+    pl: `${zombie ? 'Ocalały' : 'Wędrowiec'} podwija rękaw: ani śladu zębów.`,
+    en: `The ${zombie ? 'survivor' : 'wanderer'} rolls up a sleeve: not a tooth mark.`,
+  }),
+  rekaUgryziona: (zombie: boolean): Napis => ({
+    pl: `${zombie ? 'Ocalały' : 'Wędrowiec'} nie chce pokazać ręki i odchodzi.`,
+    en: `The ${zombie ? 'survivor' : 'wanderer'} won’t show their arm and walks away.`,
+  }),
+  /** kim jest wędrowiec, z rozmowy: imię, zawód (małymi literami), wiek i ewentualnie cel */
+  kto: (o: { first: string; prof: string; age: number }, cel: boolean): Napis => ({
+    pl: `Przedstawia się: ${o.first}, ${o.prof.toLowerCase()}, ${wiek(o.age)}.${cel ? ` ${CEL_PL}` : ''}`,
+    en: `Introduces themselves: ${o.first}, ${zawodEn(o.prof.toLowerCase())}, aged ${o.age}.${cel ? ` ${CEL_EN}` : ''}`,
+  }),
 } as const;

@@ -103,6 +103,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
         }
       : {}),
     ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
+    ...(st.obcy?.werbunek ? { werbunek: zwerbowani(st) } : {}),
     dead: (st.dead ?? [])
       .filter((d) => d.kind === 'core' || d.kind === 'resident')
       .map((d) => ({ id: d.id, name: d.name, cause: d.cause, tick: d.tick })),
@@ -126,6 +127,18 @@ export function lawsFrom(l: LawEffects): Partial<Laws> {
 }
 
 const clamp100 = (v: number) => (v < 0 ? 0 : v > 100 ? 100 : v);
+
+/** Zwerbowani wędrowcy (id `w1`, `w2`…) po kolei: osoby z `st.people`, a dokąd trafili, mówi pionek (mieszkaniec albo
+    zarząd; po śmierci zarządu zostaje zarząd). Lista tylko rośnie, bo osoby ze stanu nie znikają. */
+function zwerbowani(st: SimState): NonNullable<GovInput['werbunek']> {
+  const out: { first: string; f: boolean; dokad: 'zarzad' | 'mieszkaniec' }[] = [];
+  st.people.forEach((o, k) => {
+    if (!/^w\d+$/.test(o.id)) return;
+    const mieszka = st.pawns.some((p) => p.kind === 'resident' && p.person === k);
+    out.push({ first: o.first, f: o.f, dokad: mieszka ? 'mieszkaniec' : 'zarzad' });
+  });
+  return out;
+}
 
 /** pionek zarządu osoby o id z generatora (s1, s2…) */
 function pawnOf(st: SimState, id: string): Pawn | undefined {
