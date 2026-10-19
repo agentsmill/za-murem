@@ -24,7 +24,14 @@ import {
 import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
 
-export type BuildKind = 'warsztat' | 'kuchnia_spoleczna' | 'magazyn' | 'lozka_pietrowe' | 'ogrodek' | 'zasieki';
+export type BuildKind =
+  | 'warsztat'
+  | 'kuchnia_spoleczna'
+  | 'magazyn'
+  | 'lozka_pietrowe'
+  | 'ogrodek'
+  | 'zasieki'
+  | 'pracownia';
 export const BUILD_KINDS: readonly BuildKind[] = [
   'warsztat',
   'kuchnia_spoleczna',
@@ -32,6 +39,8 @@ export const BUILD_KINDS: readonly BuildKind[] = [
   'lozka_pietrowe',
   'ogrodek',
   'zasieki',
+  // pracownia: do czasu własnego rysunku buildSprite rysuje ją gałęzią domyślną, jak zasieki
+  'pracownia',
 ];
 
 /** podstawa przy rot 0 w kafelkach (jak BUILDS w sim/budowle.ts): wzdłuż ściany × od ściany */
@@ -42,6 +51,7 @@ export const BUILD_BASE: Record<BuildKind, readonly [number, number]> = {
   lozka_pietrowe: [1, 2],
   ogrodek: [3, 2],
   zasieki: [1, 1],
+  pracownia: [2, 1],
 };
 
 const Q = {

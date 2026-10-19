@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
 import { BUILD_CATS, BUILDS, type BuildCat, type BuildKind, canPlace, isUnlocked } from '../../src/sim/budowle.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
-import { allowedAnchors } from '../../src/ui/budowa.ts';
+import { allowedAnchors, buildMenu } from '../../src/ui/budowa.ts';
 import { buildWorld } from '../../src/world/world.ts';
 
 const d = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
@@ -20,17 +20,20 @@ afterEach(() => {
 });
 
 describe('kategorie i blokady budowli', () => {
-  it('każda budowla ma zakładkę z BUILD_CATS: dom, podwórko albo obwód', () => {
+  it('każda budowla ma zakładkę z BUILD_CATS: dom, podwórko albo obwód, a cuda są ostatnie i bez budowli', () => {
     const cat = (k: BuildKind): BuildCat => BUILDS[k].cat;
-    expect(BUILD_CATS).toEqual(['dom', 'podworko', 'obwod']);
-    expect(['warsztat', 'kuchnia_spoleczna', 'magazyn', 'lozka_pietrowe'].map((k) => cat(k as BuildKind))).toEqual([
-      'dom',
-      'dom',
-      'dom',
-      'dom',
-    ]);
+    expect(BUILD_CATS).toEqual(['dom', 'podworko', 'obwod', 'cuda']);
+    expect(
+      ['warsztat', 'kuchnia_spoleczna', 'magazyn', 'lozka_pietrowe', 'pracownia'].map((k) => cat(k as BuildKind)),
+    ).toEqual(['dom', 'dom', 'dom', 'dom', 'dom']);
     expect(cat('ogrodek')).toBe('podworko');
     expect(cat('zasieki')).toBe('obwod');
+    expect((Object.keys(BUILDS) as BuildKind[]).filter((k) => cat(k) === 'cuda')).toEqual([]);
+  });
+
+  it('pusta zakładka cuda jest ukryta w menu budowy', () => {
+    const menu = buildMenu({}, () => true);
+    expect(menu.map((c) => c.key)).toEqual(['dom', 'podworko', 'obwod']);
   });
 
   it('bez pola tech budowla jest odblokowana, z polem czeka na badanie z techDone', () => {

@@ -12,6 +12,7 @@ import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '..
 import { IN, type Interior } from '../world/interior.ts';
 import type { Tree, World } from '../world/world.ts';
 import type { Wreck } from '../world/wrecks.ts';
+import { kartka, kosztTech, TECH_BY, tempoOsoby } from './badania.ts';
 import {
   type AmmoKey,
   hitChance,
@@ -325,6 +326,7 @@ const M2_JOBS = new Set<JobKind>([
   'wreck',
   'carry',
   'saw',
+  'research',
   'door',
   'loot',
   'upstairs',
@@ -335,6 +337,8 @@ const M2_JOBS = new Set<JobKind>([
   'mug',
   'shoo',
 ]);
+/** przy stole pracowni siedzą najwyżej dwie osoby naraz (każda dodaje swój postęp) */
+export const RESEARCH_SEATS = 2;
 /** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
 export const GATHER_NEAR = 8;
 /** kuchnia społeczna: porcja z niej to 85% zwykłej (nic się nie marnuje) */
@@ -459,6 +463,8 @@ export type JobKind =
   | 'wreck'
   | 'carry'
   | 'saw'
+  /** badania: stół pracowni (target: pracownia, tile: miejsce przy stole); w fazie 1 osoba siedzi i dodaje postęp */
+  | 'research'
   /** M2 fala 2: praca przy cudzych drzwiach (what: open, knock, force, board, unboard; target: kafelek drzwi),
       przeszukanie pomieszczenia sąsiada (target: gid), czekanie na wybór w spotkaniu (target: numer spotkania) */
   | 'door'
@@ -706,6 +712,9 @@ export type Command =
   | { t: 'wreck'; ids: number[]; tile: number; how: 'szukaj' | 'rozbierz' }
   | { t: 'carry'; ids: number[]; thing: number }
   | { t: 'saw'; ids: number[]; what: Product; n: number }
+  /** badania: wybór bieżącego badania (ids puste; tech null zdejmuje wybór) i zarząd do stołu pracowni */
+  | { t: 'research'; ids: number[]; tech: string | null }
+  | { t: 'study'; ids: number[]; thing: number }
   /** M2 fala 2 (docs/M2-fala-2.md): cudze drzwi (kafelek drzwi budynku albo mieszkania): otworzyć (przy otwartych:
       wejść), zapukać, wyważyć, zabić deskami, odbić deski */
   | { t: 'open' | 'knock' | 'force' | 'board' | 'unboard'; ids: number[]; door: number }
@@ -2357,6 +2366,7 @@ export class Sim {
       }
       this.graveyard.clear();
     }
+    this.researchTick();
     if (st.tick % HEAT_EVERY === 0) this.slow();
     st.tick++;
   }
@@ -2458,6 +2468,11 @@ export class Sim {
       this.syncMealDoor();
       return;
     }
+    // wybór badania nie potrzebuje nikogo z zarządu
+    if (c.t === 'research') {
+      this.chooseResearch(c.tech);
+      return;
+    }
     // polecenia przyjmuje tylko zarząd, tłum to tło; kto jest na wyprawie, słucha tylko wezwania z powrotem
     const pawns: Pawn[] = [];
     for (const id of c.ids) {
@@ -2507,6 +2522,7 @@ export class Sim {
     else if (c.t === 'wreck') this.startWreck(pawns[0], c.tile, c.how);
     else if (c.t === 'carry') this.startCarry(pawns[0], c.thing);
     else if (c.t === 'saw') this.startSaw(pawns[0], c.what, c.n);
+    else if (c.t === 'study') this.orderStudy(pawns, c.thing);
     else if (c.t === 'open' || c.t === 'knock' || c.t === 'force' || c.t === 'board' || c.t === 'unboard')
       this.orderDoor(pawns, c.t, c.door);
     else if (c.t === 'loot') this.startLoot(pawns[0], c.bid, c.room);
@@ -3636,6 +3652,8 @@ export class Sim {
         return this.carryWork(p, j, at);
       case 'saw':
         return this.sawWork(p, j, at);
+      case 'research':
+        return this.researchWork(p, j, at);
       case 'door':
         return this.drzwiPraca(p, j, at);
       case 'loot':
@@ -4375,6 +4393,8 @@ export class Sim {
       if (back > 0) this.dropMat(at, m, back);
     }
     if (kind === 'zasieki') this.fenceAt(t.y * this.w.size + t.x, false, t.prev ?? 0);
+    // stół zniknął: nikt już nie idzie do niego ani przy nim nie siedzi (wybór i postęp badań zostają)
+    if (kind === 'pracownia') this.endResearchJobs();
     this.updateCap();
   }
 
@@ -5089,6 +5109,100 @@ export class Sim {
     j.t0 = tick;
     j.until = tick + r.work;
     return true;
+  }
+
+  /* ---------- badania ---------- */
+
+  /** bieżące badanie, jeśli istnieje w drzewku (stan ze starego zapisu może wskazywać technologię, której nie ma) */
+  private researchTech(): string | null {
+    const cur = this.st.research?.cur;
+    return cur && Object.hasOwn(TECH_BY, cur) ? cur : null;
+  }
+
+  /** pracownia (jest najwyżej jedna) */
+  private pracownia(): Thing | undefined {
+    return this.st.things.find((t) => t.kind === 'pracownia');
+  }
+
+  /** Wybór badania: tylko kartka do wzięcia, w toku albo stojąca (kartki z wymaganiami, bez wiedzy, odwrócone i
+      zbadane odpadają); tech null zdejmuje wybór i podnosi wszystkich od stołu. Zmiana badania nie rusza zapisanego
+      postępu żadnego z nich. `research` powstaje dopiero przy pierwszym wyborze. */
+  private chooseResearch(tech: string | null): void {
+    const st = this.st;
+    if (tech === null) {
+      if (!st.research?.cur) return;
+      st.research.cur = null;
+      this.endResearchJobs();
+      return;
+    }
+    if (!Object.hasOwn(TECH_BY, tech)) return;
+    const stan = kartka(st, tech, modeOf(st)).stan;
+    if (stan !== 'do_wziecia' && stan !== 'w_toku' && stan !== 'stoi') return;
+    st.research ??= { cur: null, prog: {}, at: {} };
+    st.research.cur = tech;
+  }
+
+  /** zarząd do stołu pracowni; ile miejsc, tyle osób (kolejność z zaznaczenia) */
+  private orderStudy(pawns: Pawn[], thing: number): void {
+    if (this.thing(thing)?.kind !== 'pracownia') return;
+    for (const p of pawns) this.startResearch(p, true);
+  }
+
+  /** Osoba siada do badania: idzie do wolnego miejsca przy stole pracowni (dwa miejsca, każde dla jednej osoby;
+      zajęcie pamięta praca, a nie rzecz, bo `Thing.by` mieści jednego). false, gdy nic nie wybrano, badanie stoi
+      bez wiedzy, nie ma pracowni, miejsc brak albo nie da się dojść. order: z polecenia gracza, więc noc pracy nie
+      przerywa. Woła ją też praca ludzi i plan dnia lokatorów. */
+  startResearch(p: Pawn, order = false): boolean {
+    const st = this.st;
+    const cur = this.researchTech();
+    const desk = this.pracownia();
+    if (!cur || !desk || p.away || kartka(st, cur, modeOf(st)).stan !== 'w_toku') return false;
+    const seated = st.pawns.filter((q) => q !== p && q.job?.t === 'research' && q.job.target === desk.id).length;
+    if (seated >= RESEARCH_SEATS) return false;
+    const stand = this.beside(p, desk);
+    if (stand < 0 || this.taken(p).includes(stand) || !this.go(p, stand)) return false;
+    this.setJob(p, this.newJob('research', desk.id, stand, order), false);
+    return true;
+  }
+
+  /** praca przy stole: faza 0 dojście i siadanie, faza 1 siedzi (postęp liczy researchTick po kroku). Kończy się, gdy
+      stołu albo wyboru nie ma. */
+  private researchWork(p: Pawn, j: Job, at: boolean): boolean {
+    const desk = this.thing(j.target);
+    if (desk?.kind !== 'pracownia' || !this.researchTech()) return false;
+    if (j.phase === 1) return true;
+    if (!at) return false;
+    j.phase = 1;
+    j.t0 = this.st.tick;
+    this.face(p, desk.x + desk.w / 2, desk.y + desk.h / 2);
+    return true;
+  }
+
+  /** Postęp badania w tym kroku: każda siedząca osoba dodaje swoje tempo na tick (punkty na godzinę gry / ticki na
+      godzinę). Liczy się raz na krok, po usunięciu zabitych, więc wiedza osady (kto jest na miejscu) nie liczy tych,
+      którzy zginęli w tym kroku. Stojące badanie (wiedza spadła) nie rośnie. Po przekroczeniu kosztu technologia
+      trafia do techDone, tick ukończenia do `at`, wybór schodzi, a wszyscy wstają od stołu; `prog` zostaje. */
+  private researchTick(): void {
+    const st = this.st;
+    const cur = this.researchTech();
+    if (!cur) return;
+    const seated = st.pawns.filter((p) => p.job?.t === 'research' && p.job.phase === 1);
+    if (!seated.length || kartka(st, cur, modeOf(st)).stan !== 'w_toku') return;
+    const dom = TECH_BY[cur].dom;
+    let add = 0;
+    for (const p of seated) add += tempoOsoby(st.people[p.person] ?? { skills: {}, traits: [] }, dom) / TICKS_PER_HOUR;
+    const r = st.research!;
+    r.prog[cur] = (r.prog[cur] ?? 0) + add;
+    if (r.prog[cur] < kosztTech(cur)) return;
+    (st.techDone ??= []).push(cur);
+    r.at[cur] = st.tick;
+    r.cur = null;
+    this.endResearchJobs();
+  }
+
+  /** wszyscy idący do stołu i siedzący przy nim wstają (koniec badania, zdjęcie wyboru, rozbiórka pracowni) */
+  private endResearchJobs(): void {
+    for (const p of this.st.pawns) if (p.job?.t === 'research') this.done(p);
   }
 
   /** materiał na przeróbkę: wszystkie sterty danego rodzaju, także te, które ktoś właśnie niesie do składu

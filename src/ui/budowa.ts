@@ -131,6 +131,7 @@ const BUILD_ACC: Record<BuildKind, string> = {
   lozka_pietrowe: 'łóżka piętrowe',
   ogrodek: 'ogródek',
   zasieki: 'zasieki',
+  pracownia: 'pracownię',
 };
 
 /** Polecenia przy planie budowy albo gotowej budowli pod kafelkiem, do menu pod prawym przyciskiem (przed
@@ -258,6 +259,7 @@ const CAT_TITLE: Record<BuildCat, Tx> = {
   dom: tx('Dom', 'Home'),
   podworko: tx('Podwórko', 'Yard'),
   obwod: tx('Obwód', 'Perimeter'),
+  cuda: tx('Cuda', 'Wonders'),
 };
 
 /** skąd brać materiał, do powodu „brakuje”, w obu językach (w domu przeszukiwanie domu i gruz ze słownika) */

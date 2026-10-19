@@ -7,10 +7,11 @@
    wspólnoty (wordsOfWorld, wordsEnOfWorld). Napisy przy sąsiadach (fala 2) z src/content/napisy-sasiedzi.ts przez tr(). */
 
 import { MENU, PRACA, PRACA_DRZWI } from '../content/napisy-sasiedzi.ts';
-import { L, tr } from '../core/jezyk.ts';
+import { jezyk, L, liczba, tr } from '../core/jezyk.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import { IN } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
+import { kosztTech, nazwaTech, TECH_BY } from './badania.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
@@ -94,6 +95,7 @@ const BUILD_ACC: Record<BuildKind, string> = {
   lozka_pietrowe: 'łóżka piętrowe',
   ogrodek: 'ogródek',
   zasieki: 'zasieki',
+  pracownia: 'pracownię',
 };
 
 export interface MenuItem {
@@ -777,6 +779,15 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     case 'saw':
       if (walking) return tr(NAPISY.idzieWarsztat);
       return tr(j.what === 'czesci' ? NAPISY.robiCzesci(j.from) : NAPISY.pilujeDeski(j.from));
+    case 'research': {
+      if (walking) return L('Idzie do pracowni.', 'Heading to the research room.');
+      const cur = st.research?.cur;
+      if (!cur || !Object.hasOwn(TECH_BY, cur)) return L('Siedzi przy stole.', 'Sitting at the desk.');
+      // koszt bywa ułamkiem (mnożnik ery), więc z jednym miejscem po przecinku, w bieżącym języku
+      const postep = `${Math.floor(st.research?.prog[cur] ?? 0)} / ${liczba(kosztTech(cur), 1, jezyk())}`;
+      const nazwa = nazwaTech(cur);
+      return L(`Bada: ${nazwa.pl} (${postep})`, `Researching: ${nazwa.en} (${postep})`);
+    }
     case 'zombie':
       return (
         [

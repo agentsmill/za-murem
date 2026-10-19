@@ -1,11 +1,13 @@
 /* Budowle fali 1 M2 (docs/M2-fala-1.md): rodzaj, miejsce, rozmiar, koszt w materiałach i czas pracy.
    Kontrakt dla symulacji (właściciel), interfejsu i rysowania (tylko czytają). Koszty i czasy stroi bot.
    Nazwy i działanie budowli po angielsku leżą w budowle.en.ts; powód z canPlace służy tylko do wyświetlenia, więc
-   jest od razu w bieżącym języku (symulacja patrzy tylko na ok). */
+   jest od razu w bieżącym języku (symulacja patrzy tylko na ok). Pracownia (badania) jest jedna na grę: `max` w
+   BuildDef, z powodem w canPlace. */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { type Words, type WordsEn, wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import type { World } from '../world/world.ts';
+import { BUILDS_EN } from './budowle.en.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
 import { houseOf } from './house.ts';
 import { fenceShape, gateTiles } from './perimeter.ts';
@@ -14,15 +16,23 @@ import type { SimState } from './sim.ts';
 /** materiały z odzysku i zapasy */
 export type Mat = 'drewno' | 'deski' | 'zlom' | 'czesci' | 'jedzenie' | 'leki';
 
-export type BuildKind = 'warsztat' | 'kuchnia_spoleczna' | 'magazyn' | 'lozka_pietrowe' | 'ogrodek' | 'zasieki';
+export type BuildKind =
+  | 'warsztat'
+  | 'kuchnia_spoleczna'
+  | 'magazyn'
+  | 'lozka_pietrowe'
+  | 'ogrodek'
+  | 'zasieki'
+  | 'pracownia';
 
 /** gdzie wolno postawić: pokój albo kuchnia w naszym mieszkaniu, podwórko za siatką, odcinek siatki */
 export type BuildPlace = 'pokoj' | 'kuchnia' | 'podworko' | 'obwod';
 
-/** zakładka w menu budowy; kolejna dojdzie razem z budowlami, które do niej należą (jedzenie, prąd, obrona) */
-export type BuildCat = 'dom' | 'podworko' | 'obwod';
+/** zakładka w menu budowy; kolejna dojdzie razem z budowlami, które do niej należą (jedzenie, prąd, obrona);
+    „cuda” (bardzo drogie budowle końcowe z późnych er) nie ma jeszcze żadnej budowli, więc menu jej nie pokazuje */
+export type BuildCat = 'dom' | 'podworko' | 'obwod' | 'cuda';
 /** kolejność zakładek w menu */
-export const BUILD_CATS: readonly BuildCat[] = ['dom', 'podworko', 'obwod'];
+export const BUILD_CATS: readonly BuildCat[] = ['dom', 'podworko', 'obwod', 'cuda'];
 
 export interface BuildDef {
   name: string;
@@ -37,6 +47,8 @@ export interface BuildDef {
   cost: Partial<Record<Mat, number>>;
   /** praca w tickach symulacji, jeden pionek */
   work: number;
+  /** ile takich budowli wolno mieć naraz (stojące plus plany); bez pola: bez limitu */
+  max?: number;
   /** jedno zdanie do menu budowy; zdanie zależne od miejsca bierze słowa ze słownika wspólnoty (effectOf) */
   effect: string | ((w: Words) => string);
 }
@@ -101,6 +113,17 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
     cost: { zlom: 10 },
     work: (3 * TICKS_PER_HOUR) / 4,
     effect: 'Mocniejsze od siatki i łaty, zamykają dziurę.',
+  },
+  pracownia: {
+    name: 'Pracownia',
+    place: 'pokoj',
+    cat: 'dom',
+    w: 2,
+    h: 1,
+    cost: { deski: 16, czesci: 4 },
+    work: (3 * TICKS_PER_HOUR) / 2,
+    max: 1,
+    effect: 'Stół z lampą i półką na książki: przy nim dwie osoby naraz badają nowe technologie.',
   },
 };
 
@@ -174,6 +197,16 @@ export function canPlace(
 ): { ok: boolean; why?: string } {
   const def = BUILDS[kind];
   if (!isUnlocked(st, kind)) return { ok: false, why: L('Wymaga badania.', 'Needs research.') };
+  if (
+    def.max !== undefined &&
+    st.things.filter((t) => t.kind === kind).length + st.builds.filter((b) => b.kind === kind).length >= def.max
+  ) {
+    const the = BUILDS_EN[kind].the;
+    return {
+      ok: false,
+      why: L(`${def.name} już stoi.`, `${the.charAt(0).toUpperCase()}${the.slice(1)} already stands.`),
+    };
+  }
   const size = w.size;
   const { w: bw, h: bh } = footprint(kind, rot);
   if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: L('Poza mapą.', 'Off the map.') };

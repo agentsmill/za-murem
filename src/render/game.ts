@@ -90,6 +90,7 @@ export const GAME_KINDS: ReadonlySet<string> = new Set([
   'lozka_pietrowe',
   'ogrodek',
   'zasieki',
+  'pracownia',
 ]);
 
 /** sterty materiału i śmieci: ze świata (World.props), dopóki symulacja nie trzyma ich u siebie jako rzeczy

@@ -37,6 +37,11 @@ export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: s
     the: 'the barricade',
     effect: 'Stronger than the fence or a patch, and it closes a hole.',
   },
+  pracownia: {
+    name: 'Research room',
+    the: 'the research room',
+    effect: 'A desk with a lamp and a bookshelf: two people at a time research new technologies here.',
+  },
 };
 
 /** zdanie o działaniu budowli po angielsku według miejsca, jak effectOf w budowle.ts */
