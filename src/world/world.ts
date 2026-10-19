@@ -22,7 +22,7 @@ import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { kluczBudynku } from './klucze.ts';
 import { seedKwadratu, type Uklad } from './kwadraty.ts';
-import { awansujDomy } from './pietra.ts';
+import { awansujDomy, awansujDomyKwadratu, uzgodnijPietraZDomem } from './pietra.ts';
 import { fillRing, stampLine } from './raster.ts';
 import type { RodzajPunktu } from './rodzaje.ts';
 import { dominantAngle, rotateGeo, straighten, straightenZDomem } from './rotate.ts';
@@ -671,6 +671,12 @@ export interface KwadratOpts {
   /** SUROWE geo domu, takie jak dostał buildWorld (przed obrotem i prostowaniem): reguła „dom wygrywa na szwie” –
       budynki, których kawałki są też w domu, prostują się tak jak w domu. Bez niego kwadrat prostuje wszystko sam. */
   geoDomu?: Geo;
+  /** widok pięter (flaga ?pietra=1): domy od 60 m² idą do dwóch kondygnacji według skrótu z klucza budynku
+      (awansujDomyKwadratu), tak samo w każdym kwadracie; bez tej opcji poziomy są z danych */
+  pietra?: boolean;
+  /** świat domu (potrzebne tylko `size`, `bid` i `buildings`): z `pietra` kawałki budynków przy szwie z domem dostają
+      poziomy budynku domu (uzgodnijPietraZDomem) */
+  dom?: Pick<World, 'size' | 'bid' | 'buildings'>;
 }
 
 /** Geo kwadratu gotowe do rastrowania: obrót kątem układu domu (nie własnym dominantAngle kwadratu, żeby siatki się
@@ -701,7 +707,9 @@ const pustaSiatka = (): Fence => ({ tiles: [], hole: [], gate: { x: -1, y: -1, w
     i prostowanie (przygotujGeoKwadratu), teren i budynki (rastrujTeren ze skrawkami przy granicy kwadratu), opis
     budynków, drzewa i wraki z ziarna kwadratu, spójność (obszar dotykający granicy kwadratu uchodzi za połączony),
     drzwi (nie na brzegu kwadratu). Bez siedziby (hq = −1), siatki, wnętrza, suchego drzewa, stert i mieszkań.
-    Nie rzuca na kwadracie bez budynków (woda, las, pola). Współrzędne drzew, miejsc i wraków są względem kwadratu. */
+    Nie rzuca na kwadracie bez budynków (woda, las, pola). Współrzędne drzew, miejsc i wraków są względem kwadratu.
+    Z `pietra` domy awansują do dwóch kondygnacji po kluczu budynku, a z `dom` kawałki przy szwie z domem mają jego
+    poziomy (kawałki jednego budynku po obu stronach szwu wyglądają jak jedna bryła w widoku pięter). */
 export function buildKwadrat(geoIn: Geo, opts: KwadratOpts): World {
   const { uklad, sx, sy } = opts;
   const size = uklad.bok;
@@ -712,6 +720,12 @@ export function buildKwadrat(geoIn: Geo, opts: KwadratOpts): World {
   const geo = przygotujGeoKwadratu(geoIn, uklad, opts.geoDomu);
   const { terr, bid, blocked, kept } = rastrujTeren(geo, size, ox, oy, { skrawki: true });
   const { buildings, pois } = opiszBudynki(geo, kept, bid, size, ox, oy);
+  // widok pięter: awans domów po kluczu budynku (dwa kawałki jednego budynku decydują tak samo), a kawałek przy szwie
+  // z domem ma poziomy budynku domu
+  if (opts.pietra) {
+    awansujDomyKwadratu({ buildings }, opts.seed);
+    if (opts.dom) uzgodnijPietraZDomem({ size, bid, buildings }, opts.dom, sx, sy);
+  }
 
   // 9. drzewa: przy krawędzi kwadratu zostaje pas bez drzew (korona nie wychodzi poza kwadrat)
   const planted = plantTrees(terr, blocked, size, seed);

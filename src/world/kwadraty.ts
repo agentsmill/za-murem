@@ -100,3 +100,37 @@ export function sasiedzi8(sx: number, sy: number): [number, number][] {
 export function seedKwadratu(seed: number, sx: number, sy: number): number {
   return Number.parseInt(hashString(`${seed}:${sx}:${sy}`), 16);
 }
+
+/** Budynki kwadratu (sx, sy) sąsiadujące kafelkami przez szew z budynkami domu: numer budynku kwadratu → numer budynku
+    domu. To ten sam budynek po dwóch stronach granicy (dwa kawałki jednej budowli), więc kawałek sąsiada bierze od domu
+    to, czego dom nie może zmienić (poziomy, styl). Sąsiadują kafelki leżące obok siebie przez granicę: wzdłuż boku dla
+    czterech kwadratów obok domu, przez róg dla czterech narożnych; dalsze kwadraty nie mają szwu z domem (pusta mapa).
+    Budynek kwadratu, który dotyka dwóch budynków domu, dostaje pierwszy napotkany od północy i zachodu. Dwa różne
+    budynki tuż przy granicy, które się stykają, uchodzą za jeden (rzadkie i nieszkodliwe). */
+export function budynkiZDomem(
+  dom: Pick<World, 'size' | 'bid'>,
+  w: Pick<World, 'size' | 'bid'>,
+  sx: number,
+  sy: number,
+): Map<number, number> {
+  const out = new Map<number, number>();
+  if ((sx === 0 && sy === 0) || Math.abs(sx) > 1 || Math.abs(sy) > 1) return out;
+  const n = dom.size;
+  const para = (iw: number, id: number) => {
+    const bw = w.bid[iw];
+    const bd = dom.bid[id];
+    if (bw >= 0 && bd >= 0 && !out.has(bw)) out.set(bw, bd);
+  };
+  if (sx !== 0 && sy !== 0) {
+    const x = sx > 0 ? 0 : n - 1;
+    const y = sy > 0 ? 0 : n - 1;
+    para(y * n + x, (n - 1 - y) * n + (n - 1 - x));
+  } else if (sy === 0) {
+    const x = sx > 0 ? 0 : n - 1;
+    for (let y = 0; y < n; y++) para(y * n + x, y * n + (n - 1 - x));
+  } else {
+    const y = sy > 0 ? 0 : n - 1;
+    for (let x = 0; x < n; x++) para(y * n + x, (n - 1 - y) * n + x);
+  }
+  return out;
+}
