@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { isTx, type Tx, ustawJezyk } from '../../src/core/jezyk.ts';
 import type { GovState } from '../../src/gov/typy.ts';
 import { loadGov, normalizujTeksty, pending, saveGov } from '../../src/gov/zarzad.ts';
-import { at, run } from './gov-atrapa.ts';
+import { Atrapa, at, run } from './gov-atrapa.ts';
 import { playWithGov } from './gov-play.ts';
 import { mockBlock } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
@@ -54,8 +54,10 @@ describe('zarząd w obu językach', () => {
         // karta nocy otwarta (20:30) i noc po raporcie (dzień 4)
         for (const until of [at(2, 20, 30), at(4, 7)]) {
           const { gov, atr } = run(seed, policy, until);
-          // imiona i polskie nazwy miejsc zostają po polsku (słowniczek)
-          const names = [...atr.people.map((p) => p.name), ...atr.people.map((p) => p.first), 'Wilanów', 'Łódź'];
+          // imiona i polskie nazwy miejsc zostają po polsku (słowniczek); także osoby z początku gry, które potem
+          // odeszły (kłótnia o grafik), bo kronika dalej o nich mówi
+          const ludzie = [...atr.people, ...new Atrapa(seed).people];
+          const names = [...ludzie.map((p) => p.name), ...ludzie.map((p) => p.first), 'Wilanów', 'Łódź'];
           for (const t of texts(gov)) {
             n++;
             expect(isTx(t), JSON.stringify(t)).toBe(true);

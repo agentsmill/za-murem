@@ -8,7 +8,8 @@
 
    Mapa miasta: pole `okolica` (miejsca z OSM) trafia do wejścia zarządu tylko wtedy, gdy jest ustawione, a osoba
    z mapy `away` ma w wejściu `away: true`, jak pionek poza mapą w prawdziwej symulacji. Bez `okolica` wejście
-   jest takie jak przed mapą miasta. */
+   jest takie jak przed mapą miasta. Dziury w siatce mają kafelki (`GovHole.tiles`), a wejście `strony` (zmyślone numery
+   kafelków, także przed kozą), więc „Sprawdzić” z krzyku i hałasu działa na atrapie tak jak w grze. */
 
 import type { TechDom } from '../../src/content/data.ts';
 import { TECH_DOMS } from '../../src/content/data.ts';
@@ -47,12 +48,15 @@ export class Atrapa {
   meds = 0;
   fence: GovFence = {
     holes: [
-      { id: 1, size: 0.8 },
-      { id: 2, size: 0.5 },
-      { id: 3, size: 0.3 },
+      { id: 1, size: 0.8, tiles: [1101, 1102] },
+      { id: 2, size: 0.5, tiles: [2201] },
+      { id: 3, size: 0.3, tiles: [3301, 3302] },
     ],
     durability: 0.55,
   };
+  /** kafelki podwórka przy siatce od strony garaży i najbliższego budynku mieszkalnego oraz przed kozą
+      (`GovInput.strony`); zmyślone numery, atrapa nie ma mapy */
+  strony: { garaze: number; blok: number; koza: number } = { garaze: 4111, blok: 4222, koza: 4333 };
   fire = 0;
   campfire = false;
   residents = 4;
@@ -131,7 +135,11 @@ export class Atrapa {
         meds: this.meds,
       },
       screen: this.tick / TPS,
-      fence: { holes: this.fence.holes.map((x) => ({ ...x })), durability: this.fence.durability },
+      fence: {
+        holes: this.fence.holes.map((x) => ({ ...x, ...(x.tiles ? { tiles: [...x.tiles] } : {}) })),
+        durability: this.fence.durability,
+      },
+      strony: { ...this.strony },
       light: { campfire: this.campfire, gateLamp: false },
       residents: this.residents,
       burned: this.burned,
@@ -246,7 +254,7 @@ export class Atrapa {
         asleep: false,
         inside: true,
       });
-    this.people = this.people.filter((p) => !fx.leave.includes(p.id));
+    this.people = this.people.filter((p) => !fx.leave.includes(p.id) && !fx.wyrzuc?.includes(p.id));
     this.residents = Math.max(0, this.residents + fx.residents);
     if (fx.patch) this.fence.holes = [...this.fence.holes].sort((a, b) => b.size - a.size).slice(fx.patch);
     if (fx.guards.length) this.guards = fx.guards.map((g) => g.id);

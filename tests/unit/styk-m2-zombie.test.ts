@@ -165,10 +165,10 @@ describe('styk M2 i trybu zombie', () => {
 
   it('w trybie zombie nie ma wydarzeń ulicy (żywi sąsiedzi, wyjścia bez ryzyka), w zwykłym są', () => {
     for (const id of ['jablka', 'kury', 'kosiarka', 'szopa', 'plot', 'panele', 'przychodnia']) {
-      expect(fitsMode({ mode: 'zombie' }, id), id).toBe(false);
-      expect(fitsMode({ mode: 'zwykly' }, id), id).toBe(true);
+      expect(fitsMode({ mode: 'zombie' }, { id }), id).toBe(false);
+      expect(fitsMode({ mode: 'zwykly' }, { id }), id).toBe(true);
     }
-    expect(fitsMode({ mode: 'zombie' }, 'wedrowiec')).toBe(true);
+    expect(fitsMode({ mode: 'zombie' }, { id: 'wedrowiec' })).toBe(true);
   });
 
   it('cel drugiego dnia w trybie zombie to dzida dla warty, a w zwykłym obwód', () => {

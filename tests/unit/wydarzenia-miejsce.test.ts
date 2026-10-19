@@ -222,11 +222,12 @@ describe('przyjęcia według wolnych miejsc', () => {
     expect(c.residents).toBe(0);
   });
 
-  it('ktoś odchodzi z rdzenia i nie zabiera ze sobą jeszcze jednego mieszkańca', () => {
+  it('ktoś odchodzi z rdzenia bramą (wyrzuc zamiast leave) i nie zabiera ze sobą jeszcze jednego mieszkańca', () => {
     const low = { residents: 4 };
     const d = def('odejscie').make(setup(low, 1, 30).h) as { p: string };
     const { fx, lines } = pick('odejscie', d, 1, low);
-    expect(fx.leave).toEqual([d.p]);
+    expect(fx.wyrzuc).toEqual([d.p]);
+    expect(fx.leave).toEqual([]);
     expect(fx.residents).toBe(0);
     expect(lines.some((l) => l.includes('z osiedla'))).toBe(true);
   });

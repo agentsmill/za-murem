@@ -2164,6 +2164,446 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // tryb zombie: karta „Szwendacz w siatce” z przyciskiem „Pokaż”; po kliknięciu kamera jedzie na szwendacza
+        // (nad oknem, które zostaje otwarte); zrzut karty przed kliknięciem w wyd-szwendacz-karta.png, końcowy po przejeździe
+        name: 'wyd-szwendacz',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=9&stado=3&cam=hq,1.3`);
+          await waitIdle(page);
+          let id = '';
+          for (let k = 0; k < 150 && id !== 'szwendacz'; k++) {
+            const p = await page.evaluate(() => window.zm!.ff(30));
+            if (!p) continue;
+            id = p === 'wydarzenie' ? await page.evaluate(() => window.zm!.gov!.ev.active?.id ?? '') : '';
+            if (id !== 'szwendacz') await answerFirst(page, p);
+          }
+          if (id !== 'szwendacz') throw new Error('przez 75 godzin gry nie wypadła karta „Szwendacz w siatce”');
+          await waitIdle(page);
+          const przed = await page.evaluate(() => {
+            const zm = window.zm!;
+            const g = zm.gov!.ev.active!.d as { pawn: number };
+            const z = zm.sim!.st.pawns.find((q) => q.id === g.pawn);
+            return { cam: { x: zm.view.cam.x, y: zm.view.cam.y }, zoom: zm.view.cam.zoom, z: z && { x: z.x, y: z.y } };
+          });
+          console.log(
+            `  karta: ${await page.textContent('#sheet .sheet-title')}, szwendacz ${JSON.stringify(przed.z)}`,
+          );
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  przyciski: ${foot.join(' | ')}`);
+          if (foot[0] !== 'event-show:Pokaż') throw new Error(`pierwszy przycisk karty to nie „Pokaż”: ${foot[0]}`);
+          await page.screenshot({ path: path.join(OUT, 'wyd-szwendacz-karta.png') });
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          const po = await page.evaluate(() => {
+            const zm = window.zm!;
+            const open = !document.getElementById('modal')!.hidden;
+            const ev = zm.gov!.ev.active;
+            const z = zm.sim!.st.pawns.find((q) => q.id === (ev?.d as { pawn: number } | undefined)?.pawn);
+            const [sx, sy] = zm.screenOf(z!.x, z!.y);
+            const r = document.getElementById('sheet')!.getBoundingClientRect();
+            const bar = document.getElementById('top')!.getBoundingClientRect().bottom;
+            return {
+              open,
+              ev: ev?.id ?? null,
+              sx,
+              sy,
+              zoom: zm.view.cam.zoom,
+              pod: sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom,
+              widac: sx > 0 && sx < zm.view.width && sy > bar && sy < zm.view.height,
+            };
+          });
+          console.log(
+            `  po „Pokaż”: szwendacz na ekranie (${Math.round(po.sx)}, ${Math.round(po.sy)}), okno ${po.open ? 'otwarte' : 'zamknięte'}, pod oknem ${po.pod}`,
+          );
+          if (!po.open || po.ev !== 'szwendacz') throw new Error('„Pokaż” zamknęło okno karty');
+          if (po.pod || !po.widac) throw new Error('po „Pokaż” szwendacza nie widać: jest pod oknem albo poza ekranem');
+          if (Math.abs(po.zoom - przed.zoom) > 1e-6) throw new Error('„Pokaż” zmienił przybliżenie');
+          await waitIdle(page);
+        },
+      },
+      {
+        // nowa osoba zarządu (karta o chętnym do spółdzielni) czeka za bramą i idzie do siedziby; komunikat z „Pokaż”
+        name: 'wyd-przyjety',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base);
+          let joined = false;
+          for (let k = 0; k < 150 && !joined; k++) {
+            const p = await page.evaluate(() => window.zm!.ff(30));
+            if (!p) continue;
+            const id = p === 'wydarzenie' ? await page.evaluate(() => window.zm!.gov!.ev.active?.id ?? '') : '';
+            await answerFirst(page, p);
+            joined = await page.evaluate(() =>
+              window.zm!.sim!.st.pawns.some((q) => q.kind === 'core' && q.job?.t === 'arrive'),
+            );
+            if (joined) console.log(`  przyjęty kartą „${id}” po ${k + 1} krokach`);
+          }
+          if (!joined) throw new Error('przez 75 godzin gry nikt nie dołączył do zarządu');
+          const text = await page
+            .waitForFunction(
+              () => {
+                const b = document.getElementById('arrive')!;
+                return !b.hidden && (b.textContent ?? '');
+              },
+              null,
+              { timeout: 3000 },
+            )
+            .then((h) => h.jsonValue() as Promise<string>);
+          console.log(`  komunikat: ${text}`);
+          if (!text.includes('1 osoba idzie od bramy') || !text.includes('Pokaż'))
+            throw new Error('nie ma komunikatu o przybyszu z „Pokaż”');
+          const start = await page.evaluate(() => {
+            const zm = window.zm!;
+            const w = zm.sim!.w;
+            const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && q.job?.t === 'arrive')!;
+            const i = Math.floor(p.y) * w.size + Math.floor(p.x);
+            const gate = w.fence.gate;
+            zm.setCam(gate.x + gate.w / 2, gate.y + gate.h / 2, 2.5);
+            return { x: p.x, y: p.y, yard: w.fence.yard.includes(i), building: w.bid[i] >= 0 };
+          });
+          console.log(
+            `  start: (${start.x.toFixed(1)}, ${start.y.toFixed(1)}), na podwórku ${start.yard}, w budynku ${start.building}`,
+          );
+          if (start.yard || start.building) throw new Error('przyjęty nie czeka za bramą');
+          await waitIdle(page);
+          // „Pokaż” przy przybyszu: kamera na nim, przybliżenie bez zmian
+          await page.click('#arriveShow');
+          await page.waitForTimeout(1400);
+          await waitIdle(page);
+          await page.screenshot({ path: path.join(OUT, 'wyd-przyjety-pokaz.png') });
+          // kilka sekund marszu: wzdłuż płotu do bramy, a potem w bramie (zrzut, gdy stoi na kafelkach bramy)
+          await page.evaluate(() => window.zm!.ff(1.5));
+          await frames(page, 2);
+          await page.screenshot({ path: path.join(OUT, 'wyd-przyjety-brama.png') });
+          let wBramie = false;
+          for (let k = 0; k < 60 && !wBramie; k++) {
+            await page.evaluate(() => window.zm!.ff(0.25));
+            wBramie = await page.evaluate(() => {
+              const zm = window.zm!;
+              const w = zm.sim!.w;
+              const g = w.fence.gate;
+              const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && q.job?.t === 'arrive');
+              if (!p) return false;
+              const w1 = p.x >= g.x && p.x < g.x + g.w && p.y >= g.y && p.y < g.y + g.h;
+              if (w1) zm.setCam(p.x, p.y, 2.5);
+              return w1;
+            });
+          }
+          if (!wBramie) throw new Error('przyjęty nie doszedł do bramy');
+          await frames(page, 2);
+          await page.screenshot({ path: path.join(OUT, 'wyd-przyjety-w-bramie.png') });
+          // po dojściu komunikat znika, a osoba jest po naszej stronie i żyje jak reszta zarządu
+          for (let k = 0; k < 6 && (await page.evaluate(() => !document.getElementById('arrive')!.hidden)); k++) {
+            const p = await page.evaluate(() => window.zm!.ff(5));
+            if (p) throw new Error(`w trakcie przybycia otworzyło się okno: ${p}`);
+          }
+          const end = await page.evaluate(() => {
+            const zm = window.zm!;
+            const w = zm.sim!.w;
+            const st = zm.sim!.st;
+            const pawns = st.pawns.filter((q) => q.kind === 'core');
+            const p = pawns[pawns.length - 1];
+            const i = Math.floor(p.y) * w.size + Math.floor(p.x);
+            return {
+              hidden: document.getElementById('arrive')!.hidden,
+              job: p.job?.t ?? null,
+              yard: w.fence.yard.includes(i) || w.bid[i] >= 0,
+              needs: !!p.needs,
+            };
+          });
+          console.log(`  po dojściu: ${JSON.stringify(end)}`);
+          if (!end.hidden || end.job === 'arrive' || !end.yard) throw new Error('przyjęty nie doszedł do siedziby');
+          // końcowy zrzut: kamera na nim przed drzwiami siedziby
+          await page.evaluate(() => {
+            const zm = window.zm!;
+            const pawns = zm.sim!.st.pawns.filter((q) => q.kind === 'core');
+            const p = pawns[pawns.length - 1];
+            zm.setCam(p.x, p.y, 2.5);
+          });
+          await waitIdle(page);
+        },
+      },
+      {
+        // Przymorze z mieszkańcami z generatora: karta „Fachowiec z klatki” z imieniem i fachem mieszkańca; „Wciągnąć do
+        // roboty” robi z niego osobę zarządu (ten sam pionek, ta sama osoba), a karta osoby pokazuje go już z bronią
+        // (rozkazy zarządu), czego karta mieszkańca nie ma. Zrzut karty wydarzenia w wyd-fachowiec-karta.png, końcowy
+        // to karta osoby po awansie
+        name: 'wyd-fachowiec',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          const krok = await doKarty(page, 'fachowiec');
+          await waitIdle(page);
+          const przed = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const d = zm.gov!.ev.active!.d as { lok: string; p: { name: string; prof: string } };
+            const p = st.pawns.find((q) => q.person >= 0 && st.people[q.person].id === d.lok)!;
+            return {
+              lok: d.lok,
+              name: d.p.name,
+              prof: d.p.prof,
+              pawn: p.id,
+              kind: p.kind,
+              ref: !!st.people[p.person].ref,
+            };
+          });
+          const tekst = await sheetText(page);
+          console.log(
+            `  karta po ${krok} krokach: ${przed.name} (${przed.prof}), pionek ${przed.pawn} jako ${przed.kind}`,
+          );
+          console.log(`  tekst: ${tekst.replace(/\s+/g, ' ').slice(0, 400)}`);
+          if (przed.kind !== 'resident' || !przed.ref)
+            throw new Error('bohater karty nie jest mieszkańcem z generatora');
+          if (!tekst.includes(przed.name)) throw new Error('w karcie nie ma imienia mieszkańca');
+          if (!tekst.includes('z waszej klatki')) throw new Error('w karcie nie ma „z waszej klatki”');
+          await page.screenshot({ path: path.join(OUT, 'wyd-fachowiec-karta.png') });
+          await page.click('#sheet .choices [data-act="event"]:has-text("Wciągnąć do roboty")');
+          await waitIdle(page);
+          const po = await page.evaluate((lok) => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const p = st.pawns.find((q) => q.person >= 0 && st.people[q.person].id === lok)!;
+            zm.setCam(p.x, p.y - 0.5, 1.3);
+            return { pawn: p.id, kind: p.kind, people: st.pawns.filter((q) => q.kind === 'core').length };
+          }, przed.lok);
+          console.log(`  po „Wciągnąć do roboty”: pionek ${po.pawn} jako ${po.kind}, zarząd ma ${po.people} osób`);
+          if (po.pawn !== przed.pawn || po.kind !== 'core') throw new Error('mieszkaniec nie przeszedł do zarządu');
+          await waitIdle(page);
+          const b = await page.evaluate((id) => {
+            const zm = window.zm!;
+            const p = zm.sim!.st.pawns.find((q) => q.id === id)!;
+            const [x, y] = zm.screenOf(p.x, p.y - 0.55);
+            return { x, y };
+          }, po.pawn);
+          await page.mouse.click(b.x, b.y);
+          await page.waitForFunction(
+            (n) => document.querySelector('#card:not([hidden]) h2')?.textContent === n,
+            przed.name,
+            { timeout: 5000 },
+          );
+          const karta = await page.evaluate(() => ({
+            buttons: [...document.querySelectorAll<HTMLElement>('#card button[data-card]')].map((x) => x.dataset.card),
+            text: (document.getElementById('card')!.textContent ?? '').replace(/\s+/g, ' ').slice(0, 300),
+          }));
+          console.log(`  karta osoby: ${karta.buttons.join('+')}; ${karta.text}`);
+          if (!karta.buttons.includes('arm')) throw new Error('karta osoby po awansie bez rozkazów zarządu (broń)');
+          await waitIdle(page);
+        },
+      },
+      {
+        // Przymorze z mieszkańcami z generatora: karta „Kradzież z piwnicy” z imieniem sprawcy; „Wyrzucić sprawcę z osiedla”
+        // wysyła go do bramy i za bramę (praca „odejście”), zrzuty: karta (wyd-kradziez-karta.png), sprawca w bramie
+        // (wyd-kradziez-brama.png) i po wyjściu (końcowy)
+        name: 'wyd-kradziez',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          const krok = await doKarty(page, 'kradziez');
+          await waitIdle(page);
+          const przed = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const d = zm.gov!.ev.active!.d as { lok: string; p: { name: string } };
+            const p = st.pawns.find((q) => q.person >= 0 && st.people[q.person].id === d.lok)!;
+            return { lok: d.lok, name: d.p.name, pawn: p.id, kind: p.kind, x: p.x, y: p.y };
+          });
+          const tekst = await sheetText(page);
+          console.log(
+            `  karta po ${krok} krokach: sprawca ${przed.name}, pionek ${przed.pawn} (${przed.kind}) w (${przed.x.toFixed(1)}, ${przed.y.toFixed(1)})`,
+          );
+          console.log(`  tekst: ${tekst.replace(/\s+/g, ' ').slice(0, 400)}`);
+          if (przed.kind !== 'resident') throw new Error('sprawca nie jest mieszkańcem');
+          if (!tekst.includes(przed.name)) throw new Error('w karcie nie ma imienia sprawcy');
+          await page.screenshot({ path: path.join(OUT, 'wyd-kradziez-karta.png') });
+          await page.click('#sheet .choices [data-act="event"]:has-text("Wyrzucić sprawcę z osiedla")');
+          await waitIdle(page);
+          const gate = await page.evaluate(() => {
+            const g = window.zm!.sim!.w.fence.gate;
+            return { x: g.x + g.w / 2, y: g.y + g.h / 2 };
+          });
+          const dystans = () =>
+            page.evaluate(
+              ([id, gx, gy]) => {
+                const p = window.zm!.sim!.st.pawns.find((q) => q.id === id);
+                return p ? { d: Math.hypot(p.x - gx, p.y - gy), job: p.job?.t ?? null, kind: p.kind } : null;
+              },
+              [przed.pawn, gate.x, gate.y] as const,
+            );
+          const start = await dystans();
+          console.log(
+            `  po „Wyrzucić”: ${JSON.stringify(start)}, brama w (${gate.x.toFixed(1)}, ${gate.y.toFixed(1)})`,
+          );
+          if (start?.job !== 'odejscie') throw new Error('wyrzucony nie ma pracy „odejście”');
+          // idzie do bramy: kamera na bramie, zrzut, gdy stoi na jej kafelkach
+          await page.evaluate(([x, y]) => window.zm!.setCam(x, y, 2.5), [gate.x, gate.y] as const);
+          let wBramie = false;
+          let najblizej = start.d;
+          for (let k = 0; k < 400 && !wBramie; k++) {
+            const p = await page.evaluate(() => window.zm!.ff(0.5));
+            if (p) throw new Error(`w trakcie wyjścia otworzyło się okno: ${p}`);
+            const d = await dystans();
+            if (!d) break;
+            najblizej = Math.min(najblizej, d.d);
+            wBramie = await page.evaluate((id) => {
+              const zm = window.zm!;
+              const g = zm.sim!.w.fence.gate;
+              const q = zm.sim!.st.pawns.find((x) => x.id === id);
+              return !!q && q.x >= g.x && q.x < g.x + g.w && q.y >= g.y && q.y < g.y + g.h;
+            }, przed.pawn);
+          }
+          console.log(
+            `  start ${start.d.toFixed(1)} m od bramy, najbliżej ${najblizej.toFixed(1)} m, w bramie: ${wBramie}`,
+          );
+          if (!wBramie) throw new Error('wyrzucony nie doszedł do bramy');
+          await frames(page, 2);
+          await page.screenshot({ path: path.join(OUT, 'wyd-kradziez-brama.png') });
+          // za bramą idzie ulicą i znika; po wyjściu nie ma go ani w zarządzie, ani wśród mieszkańców
+          let zniknal = false;
+          for (let k = 0; k < 400 && !zniknal; k++) {
+            await page.evaluate(() => window.zm!.ff(1));
+            zniknal = !(await dystans());
+          }
+          const po = await page.evaluate((lok) => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const i = zm.gov!.ev.active;
+            return {
+              pionek: st.pawns.some((q) => q.person >= 0 && st.people[q.person].id === lok),
+              gone: st.people.find((o) => o.id === lok)?.gone,
+              okno: i?.id ?? null,
+            };
+          }, przed.lok);
+          console.log(`  po wyjściu: pionek jest ${po.pionek}, gone ${po.gone}`);
+          if (!zniknal || po.pionek || !po.gone) throw new Error('wyrzucony nie zniknął za bramą');
+          await waitIdle(page);
+        },
+      },
+      {
+        // Przymorze z mieszkańcami z generatora: pada mieszkaniec z imieniem (zgon z `wound`), a po ciszy pierwszej nocy
+        // zarząd dostaje kartę „Pogrzeb” z jego imieniem; „Pochować pod trzepakiem” daje osobom zarządu nastrój
+        // „Pożegnaliśmy: Imię”, a ktoś kopie i traci siły. Zrzut karty w wyd-pogrzeb-karta.png, końcowy to karta osoby
+        // z tym nastrojem
+        name: 'wyd-pogrzeb',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          const ofiara = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const p = st.pawns.find((q) => q.kind === 'resident' && q.person >= 0)!;
+            const o = st.people[p.person];
+            zm.sim!.wound(p, 1000);
+            return { name: o.name, first: o.first, f: o.f };
+          });
+          const krok = await doKarty(page, 'pogrzeb', 300, ofiara.name);
+          await waitIdle(page);
+          const tekst = await sheetText(page);
+          const godzina = await page.evaluate(
+            () => `${document.getElementById('hDay')?.textContent} ${document.getElementById('hTime')?.textContent}`,
+          );
+          console.log(`  karta po ${krok} krokach (${godzina}): ${tekst.replace(/\s+/g, ' ').slice(0, 500)}`);
+          if (!tekst.includes(`${ofiara.name} nie żyje, od ran.`))
+            throw new Error('w karcie nie ma zmarłego i przyczyny');
+          if (!tekst.includes('w waszej klatce')) throw new Error('w karcie nie ma klatki');
+          if (/piętr|\bm\.\s?\d|mieszkani[ea] nr/i.test(tekst))
+            throw new Error('numer mieszkania albo piętro w karcie');
+          const wybory = await page.$$eval('#sheet .choices [data-act="event"]', (l) => l.map((b) => b.textContent));
+          console.log(`  wybory: ${wybory.join(' | ')}`);
+          if (wybory.join('|') !== 'Pochować pod trzepakiem|Pożegnać przy kozie|Bez ceremonii')
+            throw new Error(`inne wybory niż w specyfikacji: ${wybory}`);
+          await page.screenshot({ path: path.join(OUT, 'wyd-pogrzeb-karta.png') });
+          await page.click('#sheet .choices [data-act="event"]:has-text("Pochować pod trzepakiem")');
+          await waitIdle(page);
+          const po = await page.evaluate((first) => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const why = `Pożegnaliśmy: ${first}`;
+            const core = st.pawns.filter((q) => q.kind === 'core');
+            const res = st.pawns.filter((q) => q.kind === 'resident' && q.person >= 0);
+            const m = (q: (typeof core)[number]) => q.moods.find((x) => x.why === why)?.d ?? null;
+            const p = core[0];
+            zm.setCam(p.x, p.y - 0.5, 1.3);
+            const log = zm.gov!.log.slice(-3).map((l) => l.txt.pl);
+            return { core: core.map(m), res: res.map(m), id: p.id, log };
+          }, ofiara.first);
+          console.log(
+            `  nastrój „Pożegnaliśmy: ${ofiara.first}”: zarząd ${po.core.join(',')}, mieszkańcy ${po.res.join(',')}`,
+          );
+          console.log(`  kronika: ${po.log.join(' / ')}`);
+          if (po.core.some((x) => x !== 2) || po.res.some((x) => x !== 2))
+            throw new Error('nastrój nie jest +2 u wszystkich');
+          await waitIdle(page);
+          const b = await page.evaluate((id) => {
+            const zm = window.zm!;
+            const p = zm.sim!.st.pawns.find((q) => q.id === id)!;
+            const [x, y] = zm.screenOf(p.x, p.y - 0.55);
+            return { x, y };
+          }, po.id);
+          await page.mouse.click(b.x, b.y);
+          await page.waitForSelector('#card:not([hidden])');
+          const karta = await page.evaluate(() =>
+            (document.getElementById('card')!.textContent ?? '').replace(/\s+/g, ' '),
+          );
+          console.log(`  karta osoby: ${karta.slice(0, 400)}`);
+          if (!karta.includes(`Pożegnaliśmy: ${ofiara.first}`)) throw new Error('karta osoby bez nastroju z pogrzebu');
+          await waitIdle(page);
+        },
+      },
+      {
+        // tryb zombie: zmarły mieszkaniec leży w mieszkaniu, ktoś z zarządu go dobija, zanim wstanie (polecenie finish), a
+        // karta „Pogrzeb” mówi, że ciało dobito; zrzut karty w wyd-pogrzeb-zombie.png
+        name: 'wyd-pogrzeb-zombie',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          const ofiara = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const core = st.pawns.filter((q) => q.kind === 'core');
+            // mieszkaniec z imieniem najbliżej zarządu, żeby dobijający zdążył przed wstaniem (godzina gry)
+            const p = st.pawns
+              .filter((q) => q.kind === 'resident' && q.person >= 0)
+              .sort(
+                (a, b) => Math.hypot(a.x - core[0].x, a.y - core[0].y) - Math.hypot(b.x - core[0].x, b.y - core[0].y),
+              )[0];
+            const o = st.people[p.person];
+            zm.sim!.wound(p, 1000);
+            const body = st.things.find((t) => t.kind === 'zwloki' && t.dead === st.dead!.length - 1)!;
+            zm.sim!.push({ t: 'finish', ids: [core[0].id], thing: body.id });
+            return { name: o.name, body: body.id, fuel: body.fuel, tick: st.tick };
+          });
+          let dobity = false;
+          for (let k = 0; k < 60 && !dobity; k++) {
+            const p = await page.evaluate(() => window.zm!.ff(2));
+            if (p) await answerFirst(page, p);
+            dobity = await page.evaluate(
+              (id) => window.zm!.sim!.st.things.find((t) => t.id === id)?.fuel === 0,
+              ofiara.body,
+            );
+          }
+          console.log(`  zwłoki ${ofiara.body} dobite: ${dobity}`);
+          if (!dobity) throw new Error('nikt nie dobił zwłok przed wstaniem');
+          const krok = await doKarty(page, 'pogrzeb', 300, ofiara.name);
+          await waitIdle(page);
+          const tekst = await sheetText(page);
+          console.log(`  karta po ${krok} krokach: ${tekst.replace(/\s+/g, ' ').slice(0, 600)}`);
+          if (!/Dobiliście (go|ją), zanim zdążył/.test(tekst)) throw new Error('w karcie nie ma, że ciało dobito');
+          await page.screenshot({ path: path.join(OUT, 'wyd-pogrzeb-zombie-karta.png') });
+          await page.click('#sheet .choices [data-act="event"]:has-text("Pochować pod trzepakiem")');
+          await waitIdle(page);
+        },
+      },
+      {
         name: 'm1-menu',
         query: '',
         run: async (page, base) => {
@@ -7015,6 +7455,27 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
   else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
+}
+
+/** Przewija grę (po pół godziny gry), odpowiadając na okna zarządu, aż wypadnie karta wydarzenia o danym id (z `kto`:
+    tylko taka, której dane mają ten napis, np. imię zmarłego); zwraca, po ilu krokach. Rzuca, gdy przez `ile` kroków jej
+    nie było. */
+async function doKarty(page: Page, id: string, ile = 300, kto = ''): Promise<number> {
+  for (let k = 0; k < ile; k++) {
+    const p = await page.evaluate(() => window.zm!.ff(30));
+    if (!p) continue;
+    const cur =
+      p === 'wydarzenie'
+        ? await page.evaluate(() => {
+            const e = window.zm!.gov!.ev.active;
+            return e ? `${e.id}|${JSON.stringify(e.d)}` : '';
+          })
+        : '';
+    const [eid, dane = ''] = [cur.slice(0, cur.indexOf('|')), cur.slice(cur.indexOf('|') + 1)];
+    if (eid === id && dane.includes(kto)) return k + 1;
+    await answerFirst(page, p);
+  }
+  throw new Error(`przez ${ile / 2} godzin gry nie wypadła karta „${id}”${kto ? ` dla „${kto}”` : ''}`);
 }
 
 /** nazwy domowych celów z TARGETS na karcie nocy w domu jednorodzinnym (tresc.ts: `targetName`) */
