@@ -2700,7 +2700,7 @@ const SHOTS: Shot[] = [
           if (bad.length) throw new Error(`telefon: ${bad.join('; ')}`);
         },
       },
-      // po playteście: noc w tempie 6× i powrót tempa rano, cel „drewno na noc”, podpowiedź o zimnej kozie
+      // po playteście: noc w tempie 6× i powrót tempa rano, cel „drewno na wieczór”, podpowiedź o zimnej kozie
       {
         name: 'm1-noc-szybciej',
         query: '',
@@ -2757,7 +2757,7 @@ const SHOTS: Shot[] = [
               await tutorial(page, base);
               await page.waitForTimeout(400);
               const g = await goal(page);
-              if (!g.startsWith('Przygotujcie drewno na noc.') || !g.includes('Drewna na zapas:'))
+              if (!g.startsWith('Przygotujcie drewno na wieczór.') || !g.includes('Drewna na zapas:'))
                 throw new Error(`po samouczku cel: ${g}`);
               console.log(`  cel: ${g}`);
               await page.evaluate(() => {

@@ -125,7 +125,15 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
     expect(goals.find((g) => g.key === 'rozkaz')?.text).toBe('Send them to the dead tree in the garden.');
     const day2 = goalsDay2(sim.st, gov, { touch: false, wood: 0, woodReady: false, holes: 2, words, wordsEn: e });
     expect(day2.find((g) => g.key === 'przeszukaj')?.text).toBe('Search the house.');
-    goals.push(...day2);
+    // najpierw zaznaczyć kogoś, potem prawy przycisk w pokoju domu; karta domu tylko pokazuje, co już przeszukane
+    expect(day2.find((g) => g.key === 'przeszukaj')?.how).toBe(
+      'Select someone from the committee and right-click inside a room of the house: “Search the …”. To see what has been searched, click the house while nobody is selected and read its card.',
+    );
+    const touchDay2 = goalsDay2(sim.st, gov, { touch: true, wood: 0, woodReady: false, holes: 2, words, wordsEn: e });
+    expect(touchDay2.find((g) => g.key === 'przeszukaj')?.how).toBe(
+      'Tap someone from the committee and press and hold inside a room of the house: “Search the …”. To see what has been searched, tap the house while nobody is selected and read its card.',
+    );
+    goals.push(...day2, ...touchDay2);
     for (const g of goals) expect(`${g.text} ${g.how}`).not.toMatch(BLOKOWE);
   });
 
@@ -194,5 +202,20 @@ describe('po angielsku w bloku (Przymorze)', () => {
     const core = sim.st.pawns.find((p) => p.kind === 'core')!;
     const labels = commandsAt(sim.st, w, [core.id], gateTiles(w)[0]).map((m) => m.label);
     expect(labels).toContain('Keep watch at the gate');
+  });
+
+  it('cel przeszukania: zaznaczyć osobę z zarządu, potem prawy przycisk w pustym mieszkaniu', () => {
+    const { sim } = game('przymorze');
+    const day2 = (touch: boolean) =>
+      goalsDay2(sim.st, null, { touch, wood: 0, woodReady: false, holes: 2, words, wordsEn: e }).find(
+        (g) => g.key === 'przeszukaj',
+      )!;
+    expect(day2(false).text).toBe('Search an empty flat.');
+    expect(day2(false).how).toBe(
+      'Select someone from the board and right-click inside an empty flat: “Search the …”. To see which flats are empty, click a flat while nobody is selected and read its card.',
+    );
+    expect(day2(true).how).toBe(
+      'Tap someone from the board and press and hold inside an empty flat: “Search the …”. To see which flats are empty, tap a flat while nobody is selected and read its card.',
+    );
   });
 });

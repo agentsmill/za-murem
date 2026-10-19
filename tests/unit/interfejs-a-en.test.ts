@@ -447,7 +447,9 @@ describe('pasek, cele i przybysze po angielsku', () => {
       how: 'Click a person in the HQ kitchen.',
     });
     expect(g.find((x) => x.key === 'cieplo')?.how).toContain('The kitchen is at 9°C now.');
-    expect(g.find((x) => x.key === 'drewno')?.how).toContain('Wood stocked: 2 of 3.');
+    expect(g.find((x) => x.key === 'drewno')).toMatchObject({ text: 'Get wood in for the evening.' });
+    expect(g.find((x) => x.key === 'drewno')?.how).toContain('Wood stocked: 2 of 3, enough fire to last till bedtime.');
+    expect(g.find((x) => x.key === 'koza')?.how).toContain('Whoever has wood will also feed it on their own.');
     expect(goalsOf(st, null, { touch: true, kitchen: 9, hour: 15 })[0].how).toBe('Tap a person in the HQ kitchen.');
     for (const mode of ['zwykly', 'zombie'] as const)
       for (const touch of [false, true]) {
@@ -456,14 +458,21 @@ describe('pasek, cele i przybysze po angielsku', () => {
         const g2 = goalsDay2(st, gv, { touch, wood: 3, woodReady: false, holes: 2 });
         for (const x of g2) texts.push(x.text, x.how);
         const b = g2.find((x) => x.key === 'budowla')!;
+        // dwie najtańsze budowle do postawienia: te za badaniem (pieczarkarnia, koza z beczki) menu budowy ukrywa
         const cheap = (Object.keys(BUILDS) as BuildKind[])
+          .filter((k) => !BUILDS[k].tech)
           .map((k) => ({ k, n: Object.values(BUILDS[k].cost).reduce((a: number, v) => a + (v ?? 0), 0) }))
           .sort((x, y) => x.n - y.n)
           .slice(0, 2);
         for (const { k } of cheap) expect(b.how).toContain(`${BUILDS_EN[k].the} (${costText(BUILDS[k].cost)})`);
+        for (const k of (Object.keys(BUILDS) as BuildKind[]).filter((x) => BUILDS[x].tech))
+          expect(b.how).not.toContain(BUILDS_EN[k].the);
         if (mode === 'zombie')
           expect(g2.find((x) => x.key === 'dzida')?.how).toContain('“Make a spear” (2 planks and 1 scrap)');
-        else expect(g2.find((x) => x.key === 'obwod')?.how).toContain('Open holes: 2.');
+        else {
+          expect(g2.find((x) => x.key === 'obwod')?.how).toContain('Open holes: 2.');
+          expect(g2.find((x) => x.key === 'obwod')?.how).toContain('a barricade in place of a stretch of fence');
+        }
       }
     for (const t of texts) expect(polskieSlowa(t), t).toEqual([]);
   });

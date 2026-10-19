@@ -235,10 +235,13 @@ describe('cele pierwszego dnia', () => {
     expect(currentGoal(goalsOf(st, null, o))?.how).toContain('W kuchni teraz 9°C');
     st.tut.step = TUT_STEPS.length;
     const gov = newGov(1);
-    // drewno na noc: postęp w podpowiedzi, zaliczone raz osiągnięte, przepada z kartą nocy
+    // drewno na wieczór: postęp w podpowiedzi (3 sztuki to ogień do snu, spalony mebel idzie najpierw do kozy),
+    // zaliczone raz osiągnięte, przepada z kartą nocy
     const wood = currentGoal(goalsOf(st, gov, { ...o, wood: 2 }))!;
     expect(wood.key).toBe('drewno');
-    expect(wood.how).toContain('Drewna na zapas: 2 z 3');
+    expect(wood.text).toBe('Przygotujcie drewno na wieczór.');
+    expect(wood.how).toContain('Drewna na zapas: 2 z 3, czyli ogień do snu.');
+    expect(wood.how).toContain('trafi najpierw do kozy, reszta na skład');
     expect(currentGoal(goalsOf(st, gov, { ...o, wood: 1, woodReady: true }))?.key).toBe('noc');
     gov.night = { confirmed: true } as GovState['night'];
     const lapsed = goalsOf(st, gov, o).find((x) => x.key === 'drewno')!;

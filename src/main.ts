@@ -1938,7 +1938,7 @@ function hud(now: number) {
 }
 
 let goalsHtml = '';
-/** zapas drewna na noc był choć raz (cel się nie cofa, kiedy koza zje drewno); drugi dzień osobno */
+/** zapas drewna na wieczór był choć raz (cel się nie cofa, kiedy koza zje drewno); drugi dzień (na noc) osobno */
 let woodReady = false;
 let woodReady2 = false;
 function renderGoals(snap: SimSnapshot) {
@@ -1972,6 +1972,7 @@ function renderGoals(snap: SimSnapshot) {
     woodReady,
     words,
     wordsEn: wordsE,
+    w: sim.w,
   });
   let cur = currentGoal(list);
   let title = L('Pierwszy dzień', 'Day one');
