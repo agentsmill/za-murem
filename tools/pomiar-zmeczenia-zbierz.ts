@@ -2,21 +2,28 @@
    na ziarno, po jednym biegu na politykę bota). Drukuje tabele w Markdownie: zgony na ziarno, przyczyny, pora
    i miejsce zakażeń i zgonów, ekspozycję zarządu (godziny na dworze, w środku i na wyprawach) oraz zaufanie, wkurzenie
    i koniec gry.
-   Uruchomienie: node tools/pomiar-zmeczenia-zbierz.ts etykieta=katalog [etykieta=katalog …] [--zgony]
-   (--zgony dopisuje listę każdego zgonu). Nic nie liczy w symulacji, tylko czyta pliki. */
+   Uruchomienie: node tools/pomiar-zmeczenia-zbierz.ts etykieta=katalog [etykieta=katalog …] [--ziarna=od-do]
+   [--krotko] [--zgony] (--ziarna zawęża ziarna, --krotko pomija tabele po ziarnach, --zgony dopisuje listę każdego
+   zgonu). Nic nie liczy w symulacji, tylko czyta pliki. */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { mulberry } from '../src/core/rng.ts';
 import type { Bieg, Zgon } from './pomiar-zmeczenia.ts';
 
 const ARGS = process.argv.slice(2);
 const LISTA = ARGS.includes('--zgony');
-const WARIANTY = ARGS.filter((a) => a.includes('=')).map((a) => {
+const KROTKO = ARGS.includes('--krotko');
+const ZAKRES = /^--ziarna=(\d+)-(\d+)$/.exec(ARGS.find((a) => a.startsWith('--ziarna=')) ?? '');
+const [OD, DO] = ZAKRES ? [Number(ZAKRES[1]), Number(ZAKRES[2])] : [0, Number.POSITIVE_INFINITY];
+const WARIANTY = ARGS.filter((a) => a.includes('=') && !a.startsWith('--')).map((a) => {
   const [etykieta, katalog] = a.split('=');
   return { etykieta, katalog: path.resolve(katalog) };
 });
 if (!WARIANTY.length) {
-  console.error('Użycie: node tools/pomiar-zmeczenia-zbierz.ts etykieta=katalog [etykieta=katalog …] [--zgony]');
+  console.error(
+    'Użycie: node tools/pomiar-zmeczenia-zbierz.ts etykieta=katalog [etykieta=katalog …] [--ziarna=od-do] [--krotko] [--zgony]',
+  );
   process.exit(2);
 }
 const POLITYKI = ['warta-dzidy', 'bez-warty'];
@@ -26,7 +33,7 @@ function wczytaj(katalog: string): Map<number, Map<string, Bieg>> {
   const out = new Map<number, Map<string, Bieg>>();
   for (const f of fs.readdirSync(katalog)) {
     const m = /^s(\d+)\.json$/.exec(f);
-    if (!m) continue;
+    if (!m || Number(m[1]) < OD || Number(m[1]) > DO) continue;
     const biegi: Bieg[] = JSON.parse(fs.readFileSync(path.join(katalog, f), 'utf8'));
     out.set(Number(m[1]), new Map(biegi.map((b) => [b.polityka, b])));
   }
@@ -58,36 +65,40 @@ function biegiWariantu(d: (typeof dane)[number], polityka: string): Bieg[] {
 const zgonyLudzi = (b: Bieg) => b.zgony.filter((z) => z.rodzaj !== 'szabrownik');
 const tabelaBota = (b: Bieg) => suma(b.noce.map((n) => n[7]));
 
-// 1. zgony na ziarno
-console.log('## Zgony na ziarno\n');
-console.log(
-  'Pierwsza liczba: zgony z dziennika pomiaru (wszyscy ludzie, także po ostatnim wierszu tabeli bota), w nawiasie',
-);
-console.log('tylko zarząd. Kolumna „koniec” to dzień końca gry, gdy gra się skończyła (pustka, bunt), inaczej „.”.\n');
-for (const polityka of POLITYKI) {
-  console.log(`### ${polityka}\n`);
-  const nagl = ['ziarno', ...dane.flatMap((d) => [`${d.etykieta} zgony`, `${d.etykieta} koniec`])];
-  const wiersze = ziarna.map((z) => [
-    z,
-    ...dane.flatMap((d) => {
-      const b = d.biegi.get(z)?.get(polityka);
-      if (!b) return ['-', '-'];
-      const core = zgonyLudzi(b).filter((x) => x.rodzaj === 'core').length;
-      const kon = /dzień (\d+)/.exec(b.koniec)?.[1];
-      return [`${zgonyLudzi(b).length} (${core})`, b.koniec.startsWith('gra trwa') ? '.' : (kon ?? '?')];
-    }),
-  ]);
-  wiersze.push([
-    'razem',
-    ...dane.flatMap((d) => {
-      const bb = biegiWariantu(d, polityka);
-      return [
-        `${suma(bb.map((b) => zgonyLudzi(b).length))} (${suma(bb.map((b) => zgonyLudzi(b).filter((x) => x.rodzaj === 'core').length))})`,
-        String(bb.filter((b) => !b.koniec.startsWith('gra trwa')).length),
-      ];
-    }),
-  ]);
-  tabela(nagl, wiersze);
+// 1. zgony na ziarno (z --krotko pomijane: przy setce ziaren to sto wierszy)
+if (!KROTKO) {
+  console.log('## Zgony na ziarno\n');
+  console.log(
+    'Pierwsza liczba: zgony z dziennika pomiaru (wszyscy ludzie, także po ostatnim wierszu tabeli bota), w nawiasie',
+  );
+  console.log(
+    'tylko zarząd. Kolumna „koniec” to dzień końca gry, gdy gra się skończyła (pustka, bunt), inaczej „.”.\n',
+  );
+  for (const polityka of POLITYKI) {
+    console.log(`### ${polityka}\n`);
+    const nagl = ['ziarno', ...dane.flatMap((d) => [`${d.etykieta} zgony`, `${d.etykieta} koniec`])];
+    const wiersze = ziarna.map((z) => [
+      z,
+      ...dane.flatMap((d) => {
+        const b = d.biegi.get(z)?.get(polityka);
+        if (!b) return ['-', '-'];
+        const core = zgonyLudzi(b).filter((x) => x.rodzaj === 'core').length;
+        const kon = /dzień (\d+)/.exec(b.koniec)?.[1];
+        return [`${zgonyLudzi(b).length} (${core})`, b.koniec.startsWith('gra trwa') ? '.' : (kon ?? '?')];
+      }),
+    ]);
+    wiersze.push([
+      'razem',
+      ...dane.flatMap((d) => {
+        const bb = biegiWariantu(d, polityka);
+        return [
+          `${suma(bb.map((b) => zgonyLudzi(b).length))} (${suma(bb.map((b) => zgonyLudzi(b).filter((x) => x.rodzaj === 'core').length))})`,
+          String(bb.filter((b) => !b.koniec.startsWith('gra trwa')).length),
+        ];
+      }),
+    ]);
+    tabela(nagl, wiersze);
+  }
 }
 
 // 2. podsumowanie liczb: tabela bota, ugryzienia, zakażenia, zaufanie, wkurzenie
@@ -124,6 +135,51 @@ console.log('w trakcie nocy, traci ostatni wiersz), „zgony” to wszystkie z d
         bb.filter((b) => !b.koniec.startsWith('gra trwa')).length,
         f1(srednia(bb.map((b) => b.zaufanie ?? 0))),
         f1(srednia(bb.map((b) => b.wkurzenie ?? 0))),
+      ]);
+    }
+  tabela(nagl, wiersze);
+}
+
+// 2b. średnie na bieg z przedziałem: na dwudziestu ziarnach różnice dwóch wariantów często mieszczą się w szumie
+console.log('## Średnie na bieg i przedział 95% (bootstrap po ziarnach)\n');
+console.log(
+  'Przy kilkunastu ziarnach przedziały dwóch wariantów zwykle się pokrywają: różnicę widać dopiero na setce.\n',
+);
+{
+  const f2 = (x: number) => (Math.round(x * 100) / 100).toFixed(2).replace('.', ',');
+  const przedzial = (xs: number[]): string => {
+    if (!xs.length) return '-';
+    const los = mulberry(7);
+    const probki: number[] = [];
+    for (let k = 0; k < 2000; k++) {
+      let s = 0;
+      for (let i = 0; i < xs.length; i++) s += xs[Math.floor(los() * xs.length)];
+      probki.push(s / xs.length);
+    }
+    probki.sort((a, b) => a - b);
+    return `${f2(srednia(xs))} [${f2(probki[49])}; ${f2(probki[1949])}]`;
+  };
+  const nagl = [
+    'wariant',
+    'polityka',
+    'biegi',
+    'zgony na bieg',
+    'z tego zarząd',
+    'koniec gry (udział)',
+    'zakażenia z wypraw',
+  ];
+  const wiersze: (string | number)[][] = [];
+  for (const d of dane)
+    for (const polityka of POLITYKI) {
+      const bb = biegiWariantu(d, polityka);
+      wiersze.push([
+        d.etykieta,
+        polityka,
+        bb.length,
+        przedzial(bb.map((b) => zgonyLudzi(b).length)),
+        przedzial(bb.map((b) => zgonyLudzi(b).filter((x) => x.rodzaj === 'core').length)),
+        przedzial(bb.map((b) => (b.koniec.startsWith('gra trwa') ? 0 : 1))),
+        przedzial(bb.map((b) => b.zakazenia.filter((z) => z.skad === 'wyprawa').length)),
       ]);
     }
   tabela(nagl, wiersze);

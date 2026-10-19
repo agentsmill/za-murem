@@ -25,8 +25,10 @@ import type { World } from '../src/world/world.ts';
 interface Widok {
   st: SimState;
   w: World;
+  exitTile: number;
   inRoom(i: number): boolean;
   inSasiad(i: number): boolean;
+  walkersNear(tile: number, r: number): boolean;
 }
 const widok = (s: Sim): Widok => s as unknown as Widok;
 
@@ -100,6 +102,8 @@ export interface Bieg {
   /** godziny gry zarządu: „pora|praca|miejsce” */
   ekspozycja: Record<string, number>;
   skladNocy: Sklad[];
+  /** brama co godzinę doby: [próbki ze szwendaczem w BRAMA_R m od miejsca powrotu za bramą, wszystkie próbki] */
+  brama: [number, number][];
   slad: string[];
 }
 
@@ -107,6 +111,8 @@ const biegi: Bieg[] = [];
 let bieg: Bieg | null = null;
 let stanBiegu: SimState | null = null;
 const POLITYKI = ['warta-dzidy', 'bez-warty'];
+/** promień (m) wokół miejsca powrotu za bramą, w którym szwendacz liczy się jako „brama zajęta” */
+const BRAMA_R = 15;
 
 const SLAD = process.env.POMIAR_SLAD?.match(/^(\d+):([\d.]+)-(\d+):([\d.]+)$/);
 const SLAD_OD = SLAD ? tickAt(Number(SLAD[1]), Number(SLAD[2])) : Number.POSITIVE_INFINITY;
@@ -213,6 +219,7 @@ function nowyBieg(sim: Sim): Bieg {
     trafienia: 0,
     ekspozycja: {},
     skladNocy: [],
+    brama: Array.from({ length: 24 }, () => [0, 0] as [number, number]),
     slad: [],
   };
   biegi.push(b);
@@ -273,6 +280,11 @@ function probkuj(sim: Sim, b: Bieg): void {
   if (t % 40 === 0) {
     const h = hourOf(t);
     const pora = h >= 20 || h < 7 ? 'noc' : 'dzień';
+    const v = widok(sim);
+    if (v.exitTile >= 0) {
+      b.brama[h][1]++;
+      if (v.walkersNear(v.exitTile, BRAMA_R)) b.brama[h][0]++;
+    }
     for (const p of core) {
       const k = `${pora}|${praca(p)}|${miejsce(sim, p)}`;
       b.ekspozycja[k] = (b.ekspozycja[k] ?? 0) + 40 / TICKS_PER_HOUR;
