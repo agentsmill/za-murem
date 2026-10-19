@@ -259,23 +259,25 @@ export function describeTile(sec: SectionScene, i: number, size: number, facade:
         ? ('out' as const)
         : (kindAt(0, 1) ?? undefined);
   switch (c) {
-    case IN.FLOOR:
-      return {
-        kind: 'floor',
-        room: (sec.room[i] >= 0 && sec.kinds[sec.room[i]]) || 'pokoj',
-        walls: maskOf((dx, dy) => at(dx, dy) === IN.WALL),
-      };
+    case IN.FLOOR: {
+      const walls = maskOf((dx, dy) => at(dx, dy) === IN.WALL);
+      // piętro: strop zakrywa wszystko oprócz klatki (posadzka bez pomieszczenia, numer −1, też jest pod stropem)
+      if (sec.pietro && (sec.room[i] < 0 || sec.kinds[sec.room[i]] !== 'klatka')) return { kind: 'strop', walls };
+      return { kind: 'floor', room: (sec.room[i] >= 0 && sec.kinds[sec.room[i]]) || 'pokoj', walls };
+    }
     case IN.STAIRS:
       return { kind: 'stairs', up: stairsUp(at), mask: maskOf((dx, dy) => at(dx, dy) === IN.STAIRS) };
     case IN.DOOR:
       return {
         kind: 'door',
         vertical: wallish(0, -1) && wallish(0, 1),
-        entrance: sec.entrances.has(i),
+        // piętro: drzwi we wnętrzu są zamknięte, a wejść z ulicy nie ma
+        entrance: !sec.pietro && sec.entrances.has(i),
         face,
         facade: face === 'out' ? facade : undefined,
         broken: sec.damage?.get(i) === 'drzwi' || undefined,
         boarded: sec.zabite?.has(i) || undefined,
+        ...(sec.pietro ? { closed: true } : {}),
       };
     default: {
       const mask = maskOf(wallish);
