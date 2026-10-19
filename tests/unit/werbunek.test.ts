@@ -631,7 +631,7 @@ describe('Tryb zombie: ugryzienie wędrowca', () => {
    (`haulOn` bez polecenia): zmienia skróty trybu zwykłego, a z dawnym `haulOn` (tylko z polecenia) wracają wartości
    z poprzedniego zdania (mock bbf6d867, 4b0de639; Przymorze da778c72; Zielonki 271ad242), tryb zombie bez zmian; i jeszcze
    raz po warunku, że Drwal nie rusza do drzew za siatką, gdy w składzie nie ma miejsca na ich drewno (`startDrwal`): bez
-   tego warunku wracają wartości z poprzednich dwóch zdań (mock 25337290, 8caed666; Przymorze 9f9e2962; Zielonki b4f9ea8f). */
+   tego warunku wracają wartości: mock 25337290, 8caed666; Przymorze 9f9e2962; Zielonki b4f9ea8f. */
 describe('Gra bez rozmów z wędrowcem', () => {
   /** gra z obcymi przez trzy doby bez żadnego polecenia (skróty: komentarz nad blokiem) */
   const bez = (world: World, seed: number, opts: Partial<SimOpts>) => {
