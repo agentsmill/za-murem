@@ -5,8 +5,12 @@
    `mieszkancy` (krok 5, src/sim/lokatorzy.ts) zarząd i mieszkańcy siedziby mają osoby z generatora mieszkańców;
    bez niej stan jest taki jak przed tą opcją. Własna praca bezczynnego zarządu (think) idzie według priorytetów
    osób z src/sim/praca.ts: po potrzebach, zimnie i gasnącej kozie biorą rodzaje pracy po kolei (ogień, kuchnia,
-   budowa, naprawy, drwal, noszenie). Bez polecenia zaczynają pracę tylko na naszym terenie (naszTeren: podwórko,
-   siedziba, budynki za wspólnym płotem); za siatkę wychodzi tylko osoba z przełącznikiem i tylko za dnia (mozeTam). */
+   budowa, naprawy, drwal, noszenie, warsztat, szaber). Bez polecenia zaczynają pracę tylko na naszym terenie
+   (naszTeren: podwórko, siedziba, budynki za wspólnym płotem); za siatkę wychodzi tylko osoba z przełącznikiem i tylko
+   za dnia (mozeTam). Warsztat i szaber nigdy nie ruszają materiału ani drzwi, które mają inne przeznaczenie: deski
+   z nadwyżki drewna, części z nadwyżki złomu, dzidy dla nieuzbrojonych, a szaber tylko puste pomieszczenia i wraki,
+   bez otwierania i wyważania drzwi. Czas ścinania, budowy, łatania, napraw, warsztatu, dzidy i gotowania dzieli
+   mnożnik z umiejętności (`tempoPracy`). */
 
 import { PROFS } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -2019,6 +2023,14 @@ export class Sim {
   wersjaSasiadow = 0;
   /** podglądy wpisów budynków do karty budynku (poza stanem, budynekDoKarty) */
   private podglady = new Map<number, SasiedniBudynek>();
+  /** pomieszczenia siedziby według mieszkania i wraki świata dla Szabru: wynikają ze świata, więc liczone raz, poza
+      stanem (szukanie roboty co sekundę nie ma ich liczyć od nowa) */
+  private pokojeMieszkan: Map<number, number[]> | null = null;
+  private wrakiSwiata: readonly Wreck[] | null = null;
+  /** spójne obszary naszego terenu (kafelki `naszTeren`, które zarząd przejdzie, bez wyjścia na ulicę); liczone
+      leniwie, kasowane przez rebuild(), poza stanem */
+  private obszaryNasze: Int32Array | null = null;
+  private zamknieteNasze: Uint8Array | null = null;
   /** lokatorzy budynku z generatora mieszkańców (ustawia gra albo bot z tabelami); bez niego lokatorzy zapasowi */
   lokatorzy: ((bid: number) => LokatorzyBudynku | null) | null = null;
   /** mieszkanie zarządu z drzwiami (1) albo null */
@@ -2191,6 +2203,8 @@ export class Sim {
       i zmianie bramy. */
   private rebuild(): void {
     const size = this.w.size;
+    this.obszaryNasze = null;
+    this.zamknieteNasze = null;
     const solid = this.st.things
       .filter((t) => t.kind === 'ognisko')
       .map((t) => t.y * size + t.x)
@@ -3490,7 +3504,7 @@ export class Sim {
           if (!at || !hot || !this.food()) return false;
           j.phase = 1;
           j.t0 = tick;
-          j.until = tick + COOK_TICKS;
+          j.until = tick + this.czasPracy(p, 'kuchnia', COOK_TICKS);
           this.face(p, stove.x + stove.w / 2, stove.y + stove.h / 2);
           return true;
         }
@@ -3688,15 +3702,17 @@ export class Sim {
           ['deski', SPEAR_BOARDS],
           ['zlom', SPEAR_SCRAP],
         ];
+        // praca bez polecenia bierze materiał tylko z naszego terenu (nie z ulicy, którą sama by nie weszła)
+        const nasze = !j.order;
         if (j.phase === 0) {
-          if (!at || !this.haveHeaps(p, need)) return false;
+          if (!at || !this.haveHeaps(p, need, nasze)) return false;
           j.phase = 1;
-          j.until = tick + CRAFT_TICKS;
+          j.until = tick + this.czasPracy(p, 'warsztat', CRAFT_TICKS);
           return true;
         }
         if (tick < j.until) return true;
-        if (this.haveHeaps(p, need)) {
-          for (const [kind, n] of need) this.takeHeaps(p, kind, n, j.from);
+        if (this.haveHeaps(p, need, nasze)) {
+          for (const [kind, n] of need) this.takeHeaps(p, kind, n, j.from, nasze);
           st.store.arms!.push('dzida');
         }
         return false;
@@ -3959,9 +3975,12 @@ export class Sim {
       2. zimno (ciepło poniżej `URGENT_WARM`): grzeje się przy kozie, i to przed każdą pracą, także przed budową planów
          (inaczej zmarznięty zaczynał pracę, którą `urgent` przerywa w następnej sekundzie, i tak w kółko);
       3. rodzaje pracy według `kolejnoscOsoby` (stałe zajęcie, potem priorytety 1–4 osoby): ogień (dokładanie do kozy
-         i noszenie drewna do składu), kuchnia, budowa planów, a od pierwszego rana (`automatRusza`) nowe rodzaje
-         (NOWE): naprawy, drwal, noszenie. Nowe rodzaje nie ruszają przy pilnej potrzebie (`urgent` przerwałby je
-         w następnej sekundzie i zerował postęp). Nocą tylko ogień (noszenie tylko stosów na naszym terenie) i kuchnia;
+         i noszenie drewna do składu), kuchnia, budowa planów (i dokańczanie planu wspólnego płotu), a od pierwszego
+         rana (`automatRusza`) nowe rodzaje (NOWE): naprawy, drwal, noszenie, warsztat, szaber. Nowe rodzaje nie ruszają
+         przy pilnej potrzebie (`urgent` przerwałby je w następnej sekundzie i zerował postęp). Ciepło poniżej COLD
+         idzie przed nowe rodzaje z priorytetem 3 i 4 (stałe zajęcie liczy się jak 1): szaber i warsztat o domyślnym
+         priorytecie trzymałyby osobę przy pracy w zimnych pomieszczeniach do nocy. Nocą tylko ogień (noszenie tylko
+         stosów na naszym terenie) i kuchnia;
       4. grzeje się przy kozie, kiedy mu zimno (ciepło poniżej COLD);
       5. czeka sekundę.
       Osoba ze wszystkimi rodzajami na 0 przechodzi więc tylko przez sen, jedzenie i ciepło.
@@ -4030,9 +4049,18 @@ export class Sim {
     const rusza = automatRusza(this.st);
     const pilne = this.urgent(p);
     const noc = this.night();
+    const stale = staleZajecie(this.st, p.person);
+    let grzal = false;
     for (const r of kolejnoscOsoby(this.st, p.person)) {
       if (NOWE.has(r) && (!rusza || pilne)) continue;
       if (noc && r !== 'ogien' && r !== 'kuchnia') continue;
+      // Zimno (ciepło poniżej COLD) idzie przed nowe rodzaje z priorytetem 3 i 4 (stałe zajęcie liczy się jak 1):
+      // inaczej szabrujący albo rąbiący cały dzień wchodzi w noc wyziębiony. Przed rodzajami z priorytetem 1 i 2 oraz
+      // przed ogniem, kuchnią i budową ogrzanie zostaje po pracy, jak przed automatem.
+      if (!grzal && n.warm < COLD && NOWE.has(r) && r !== stale && priorytet(this.st, p.person, r) >= 3) {
+        grzal = true;
+        if (this.startWarm(p)) return;
+      }
       if (this.znajdzPrace(p, r)) return;
     }
     if (n.warm < COLD && this.startWarm(p)) return;
@@ -4042,10 +4070,12 @@ export class Sim {
   /** Zaczyna zlecenie rodzaju pracy `r` dla bezczynnego pionka zarządu; false, gdy nie ma czego robić. Ogień:
       dokładanie do kozy ze składu albo noszenie leżącego drewna do składu (tylko stosy z `mozeTam`: nocą na
       naszym terenie, za dnia za siatką tylko osoba z przełącznikiem). Kuchnia: gotowanie, gdy trzeba.
-      Budowa: najstarszy plan, który da się zacząć (za dnia). Naprawy: otwarta dziura z materiałem, potem uszkodzenie
-      w naszym mieszkaniu. Drwal: najbliższe wolne drzewo, gdy drewna w zapasie jest mniej niż próg. Noszenie: łup
-      leżący poza podwórkiem. Zlecenie bez materiału albo bez drogi nie zaczyna się (sprawdzają to funkcje `start…`
-      przed liczeniem drogi), więc bezczynny z jedyną niewykonalną robotą czeka sekundę, a nie liczy A* w kółko. */
+      Budowa: najstarszy plan, który da się zacząć (za dnia), a gdy takiego nie ma, od pierwszego rana plan wspólnego
+      płotu, który ktoś zaczął i porzucił. Naprawy: otwarta dziura z materiałem, potem uszkodzenie w naszym mieszkaniu.
+      Drwal: najbliższe wolne drzewo, gdy drewna w zapasie jest mniej niż próg. Noszenie: łup leżący poza podwórkiem.
+      Warsztat: deski, części albo dzida (`startWarsztat`). Szaber: puste pomieszczenie albo wrak (`startSzaber`).
+      Zlecenie bez materiału albo bez drogi nie zaczyna się (sprawdzają to funkcje `start…` przed liczeniem drogi),
+      więc bezczynny z jedyną niewykonalną robotą czeka sekundę, a nie liczy A* w kółko. */
   private znajdzPrace(p: Pawn, r: RodzajPracy): boolean {
     switch (r) {
       case 'ogien':
@@ -4054,13 +4084,19 @@ export class Sim {
       case 'kuchnia':
         return this.shouldCook() && this.startCook(p, false);
       case 'budowa':
-        return !this.night() && this.startAnyBuild(p);
+        if (this.night()) return false;
+        // plan wspólnego płotu (zaczęty przez gracza i przerwany) dokańcza dopiero od pierwszego rana, jak nowe rodzaje
+        return this.startAnyBuild(p) || (automatRusza(this.st) && !this.urgent(p) && this.startPlot(p, false));
       case 'naprawy':
         return this.startNaprawy(p);
       case 'drwal':
         return this.startDrwal(p);
       case 'noszenie':
         return this.startNoszenie(p);
+      case 'warsztat':
+        return this.startWarsztat(p);
+      case 'szaber':
+        return this.startSzaber(p);
       case 'badania':
         // wpis i metodę `startResearch` podpina gałąź `badania`; do tego czasu wpis nie ma `znajdz`, a rodzaj jest ukryty
         return WPISY.badania.znajdz?.(this as this & { startResearch(p: Pawn): boolean }, p) ?? false;
@@ -4744,7 +4780,7 @@ export class Sim {
       return true;
     }
     if (!at) return false;
-    b.work += 1;
+    b.work += tempoPracy(st, p, 'budowa');
     const c = this.buildCenter(b.kind, b.x, b.y, b.rot);
     this.face(p, (c % this.w.size) + 0.5, Math.floor(c / this.w.size) + 0.5);
     if (b.work < BUILDS[b.kind].work) return true;
@@ -4819,14 +4855,15 @@ export class Sim {
   }
 
   /** przeszukać pomieszczenie pustego mieszkania albo, w domu jednorodzinnym, domu komitetu (raz; nie gdy ktoś już
-      je przeszukuje) */
-  private startSearch(p: Pawn, room: number): void {
+      je przeszukuje); `order` fałszywe: praca zarządu z automatu (Szaber). false, gdy się nie zaczęło. */
+  private startSearch(p: Pawn, room: number, order = true): boolean {
     const g = this.aptOfRoom(room);
-    if (!g || !searchable(this.w, g) || g.searched.includes(room)) return;
-    if (this.st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room)) return;
+    if (!g || !searchable(this.w, g) || g.searched.includes(room)) return false;
+    if (this.st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room)) return false;
     const spot = this.roomSpot(p, room);
-    if (spot < 0 || !this.go(p, spot)) return;
-    this.setJob(p, this.newJob('search', room, spot, true), false);
+    if (spot < 0 || !this.idz(p, spot, order)) return false;
+    this.setJob(p, this.newJob('search', room, spot, order), false);
+    return true;
   }
 
   /** łup z przeszukania: z tabeli według powodu opuszczenia (w domu komitetu z dokładką), deterministycznie z ziarna
@@ -5143,19 +5180,21 @@ export class Sim {
     return this.nearest(p, free);
   }
 
-  /** przeszukać albo rozebrać wrak (tile: kafelek pod nim albo obok); jedna osoba naraz, rozbiórka po przeszukaniu */
-  private startWreck(p: Pawn, tile: number, how: 'szukaj' | 'rozbierz'): void {
+  /** przeszukać albo rozebrać wrak (tile: kafelek pod nim albo obok); jedna osoba naraz, rozbiórka po przeszukaniu;
+      `order` fałszywe: praca zarządu z automatu (Szaber, tylko przeszukanie). false, gdy się nie zaczęło. */
+  private startWreck(p: Pawn, tile: number, how: 'szukaj' | 'rozbierz', order = true): boolean {
     const r = wreckAt(this.w, tile);
-    if (!r) return;
+    if (!r) return false;
     const t = wreckTile(r, this.w.size);
-    if (wreckStage(this.st.wraki, t) !== (how === 'szukaj' ? 0 : 1)) return;
-    if (this.st.pawns.some((q) => q !== p && q.job?.t === 'wreck' && q.job.target === t)) return;
-    if (crewAt(this.st, t)) return;
+    if (wreckStage(this.st.wraki, t) !== (how === 'szukaj' ? 0 : 1)) return false;
+    if (this.st.pawns.some((q) => q !== p && q.job?.t === 'wreck' && q.job.target === t)) return false;
+    if (crewAt(this.st, t)) return false;
     const stand = this.wreckStand(p, r);
-    if (stand < 0 || !this.go(p, stand)) return;
-    const j = this.newJob('wreck', t, stand, true);
+    if (stand < 0 || !this.idz(p, stand, order)) return false;
+    const j = this.newJob('wreck', t, stand, order);
     j.what = how;
     this.setJob(p, j, false);
+    return true;
   }
 
   /** Praca przy wraku: przeszukanie pół godziny (cichy szelest), rozbiórka 2–2,5 h z hałasem co 2 s, z łomem
@@ -5289,6 +5328,76 @@ export class Sim {
     return this.startCarry(p, best.id, false);
   }
 
+  /** Szaber: nieprzeszukane pomieszczenie pustego mieszkania w siedzibie (i w domu komitetu), w otoczonych budynkach
+      i w otwartych cudzych budynkach, potem wraki (tylko przeszukanie; rozbiórka hałasuje i trwa godzinami, więc
+      zostaje poleceniem). Nasz teren (siedziba, otoczone budynki) przed resztą, w obrębie najbliższe; poza naszym
+      terenem tylko przy `mozeTam` (przełącznik, dzień, bez szwendacza). Nigdy mieszkań z lokatorów (także pod ich
+      nieobecność: spada stosunek i robi się wrogość) i nigdy nie otwiera ani nie wyważa drzwi: do pomieszczenia za
+      zamkniętymi drzwiami nie ma drogi, więc go pomija. Kolejne pomieszczenia nie liczą dróg bez końca: próbuje
+      najwyżej trzech najbliższych, a każdy kandydat jest już w obszarze osoby. */
+  private startSzaber(p: Pawn): boolean {
+    const st = this.st;
+    const w = this.w;
+    const size = w.size;
+    const cele: { tier: number; d: number; typ: number; id: number; run: () => boolean }[] = [];
+    // siedziba: mieszkania z pomieszczeniami do przeszukania (reszta odpada jednym porównaniem)
+    const h = this.house;
+    if (h) {
+      if (!this.pokojeMieszkan) {
+        this.pokojeMieszkan = new Map();
+        for (const r of h.rooms)
+          if (r.apt >= 0) this.pokojeMieszkan.set(r.apt, [...(this.pokojeMieszkan.get(r.apt) ?? []), r.id]);
+      }
+      for (const g of st.apts) {
+        const pokoje = this.pokojeMieszkan.get(g.apt);
+        if (!pokoje || g.searched.length >= pokoje.length || !searchable(w, g)) continue;
+        for (const room of pokoje) {
+          if (g.searched.includes(room) || st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room))
+            continue;
+          // pokój w innej klatce tego samego bloku (droga ulicą) odpada bez liczenia miejsca i drogi
+          const posadzka = this.roomTiles[room];
+          if (!posadzka.length || !this.dojdzieWDomu(p, posadzka[0])) continue;
+          const spot = this.roomSpot(p, room);
+          // w trybie zombie nie wchodzi do pokoju, w którym (albo tuż obok którego) jest szwendacz
+          if (spot < 0 || this.zagrozone(spot, true)) continue;
+          cele.push({ tier: 0, d: this.dist2(p, spot), typ: 0, id: room, run: () => this.startSearch(p, room, false) });
+        }
+      }
+    }
+    // otwarte budynki sąsiadów: pokoje z posadzką w obszarze osoby (za zamkniętymi drzwiami nie ma drogi), na które
+    // wolno iść bez polecenia; 'szaber' z moznaPrzeszukac to mieszkanie lokatorów pod ich nieobecność: tego automat nie robi
+    st.sasiedzi?.budynki.forEach((b, k) => {
+      if (!b.otwarty) return;
+      const region = this.regionOf(p);
+      for (const r of wnetrze(w, b.bid).rooms) {
+        if (moznaPrzeszukac(st, w, k, r.id) !== 'tak') continue;
+        const g = gid(k, r.id);
+        const tiles = this.kafelkiPokoju(g);
+        const wObszarze = tiles.find((i) => this.reg[i] === region);
+        if (wObszarze === undefined || !this.mozeTam(p, wObszarze) || !this.dojdzieWDomu(p, wObszarze)) continue;
+        if (st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === g)) continue;
+        const spot = this.pokojSpot(p, tiles);
+        if (spot < 0 || this.zagrozone(spot, true)) continue;
+        const tier = this.naszTeren(spot) ? 0 : 1;
+        cele.push({ tier, d: this.dist2(p, spot), typ: 1, id: g, run: () => this.startLoot(p, b.bid, r.id, false) });
+      }
+    });
+    // wraki: tylko nieprzeszukane, na które wolno iść (najtańsze sprawdzenia najpierw)
+    this.wrakiSwiata ??= wrecksOf(w);
+    for (const wr of this.wrakiSwiata) {
+      const t = wreckTile(wr, size);
+      if (wreckStage(st.wraki, t) !== 0 || !this.mozeTam(p, t)) continue;
+      if (crewAt(st, t) || st.pawns.some((q) => q !== p && q.job?.t === 'wreck' && q.job.target === t)) continue;
+      const stand = this.wreckStand(p, wr);
+      if (stand < 0 || !this.mozeTam(p, stand) || this.zagrozone(stand) || !this.dojdzieWDomu(p, stand)) continue;
+      const tier = this.naszTeren(stand) ? 0 : 1;
+      cele.push({ tier, d: this.dist2(p, stand), typ: 2, id: t, run: () => this.startWreck(p, t, 'szukaj', false) });
+    }
+    cele.sort((a, b) => a.tier - b.tier || a.d - b.d || a.typ - b.typ || a.id - b.id);
+    for (const c of cele.slice(0, 3)) if (c.run()) return true;
+    return false;
+  }
+
   /** Noszenie łupu: przy stercie bierze do CARRY sztuk jednego materiału (n, what), na podwórku kładzie je od bramy
       w głąb, potem wraca po następną stertę przy anchor (from), aż nic nie zostanie. Przerwane: to, co w rękach,
       upada pod nogi (dropLoad). */
@@ -5399,17 +5508,20 @@ export class Sim {
   }
 
   /** Przeróbka w warsztacie: n sztuk produktu po kolei (j.from: ile zostało, j.what: produkt; n w rękach zostaje
-      zerem, bo nic się nie nosi). Materiał zużywa się na końcu każdej sztuki, jak przy dzidzie. */
-  private startSaw(p: Pawn, what: Product, n: number): void {
+      zerem, bo nic się nie nosi). Materiał zużywa się na końcu każdej sztuki, jak przy dzidzie. Bez polecenia
+      (`order` fałszywe, automat Warsztatu) materiał tylko z naszego terenu. false, gdy materiału nie starcza, nie ma
+      warsztatu albo drogi do niego. */
+  private startSaw(p: Pawn, what: Product, n: number, order = true): boolean {
     const r = RECIPES[what];
-    if (!r || n < 1 || this.workStock(r.from) < r.n) return;
+    if (!r || n < 1 || this.workStock(r.from, !order) < r.n) return false;
     const ws = this.workshopFor(p);
-    if (!ws || !this.go(p, ws.stand)) return;
-    const j = this.newJob('saw', ws.t.id, ws.stand, true);
+    if (!ws || !this.idz(p, ws.stand, order)) return false;
+    const j = this.newJob('saw', ws.t.id, ws.stand, order);
     j.what = what;
     j.from = n;
     this.setJob(p, j, false);
     ws.t.by = p.id;
+    return true;
   }
 
   private sawWork(p: Pawn, j: Job, at: boolean): boolean {
@@ -5417,30 +5529,38 @@ export class Sim {
     const ws = this.thing(j.target);
     const r = RECIPES[j.what as Product];
     if (ws?.kind !== 'warsztat' || ws.by !== p.id || !r) return false;
+    // praca bez polecenia bierze materiał tylko z naszego terenu
+    const nasze = !j.order;
     if (j.phase === 0) {
       if (!at) return false;
       // materiał w drodze (ktoś niesie drewno do składu): czeka przy warsztacie
-      if (this.workStock(r.from) < r.n) return this.inTransit(p, r.from) > 0;
+      if (this.workStock(r.from, nasze) < r.n) return this.inTransit(p, r.from) > 0;
       j.phase = 1;
       j.t0 = tick;
-      j.until = tick + r.work;
+      j.until = tick + this.czasPracy(p, 'warsztat', r.work);
       this.face(p, ws.x + ws.w / 2, ws.y + ws.h / 2);
       return true;
     }
     if (tick < j.until) return true;
-    if (!this.takeForWork(r.from, r.n)) return this.inTransit(p, r.from) > 0;
+    if (!this.takeForWork(r.from, r.n, nasze)) return this.inTransit(p, r.from) > 0;
     this.dropMat(j.tile, j.what, 1);
     j.from--;
-    if (j.from <= 0 || this.workStock(r.from) + this.inTransit(p, r.from) < r.n) return false;
+    if (j.from <= 0 || this.workStock(r.from, nasze) + this.inTransit(p, r.from) < r.n) return false;
     j.t0 = tick;
-    j.until = tick + r.work;
+    j.until = tick + this.czasPracy(p, 'warsztat', r.work);
     return true;
   }
 
   /** materiał na przeróbkę: wszystkie sterty danego rodzaju, także te, które ktoś właśnie niesie do składu
-      (inaczej piłujący kończyłby pracę za każdym razem, gdy ktoś inny weźmie stos drewna do składu) */
-  private workStock(kind: string): number {
-    return this.st.things.reduce((a, t) => a + (t.kind === kind && t.n > 0 ? t.n : 0), 0);
+      (inaczej piłujący kończyłby pracę za każdym razem, gdy ktoś inny weźmie stos drewna do składu); `nasze`: tylko
+      sterty na naszym terenie, bez wnętrz sąsiadów (praca bez polecenia) */
+  private workStock(kind: string, nasze = false): number {
+    return this.st.things.reduce((a, t) => a + (t.kind === kind && t.n > 0 && (!nasze || this.nasza(t)) ? t.n : 0), 0);
+  }
+
+  /** rzecz leży na naszym terenie i jest nasza (nie we wnętrzu sąsiada, który nie jest otoczony naszym płotem) */
+  private nasza(t: Thing): boolean {
+    return this.naszTeren(t.y * this.w.size + t.x) && !this.uSasiada(t);
   }
 
   /** sztuki materiału w rękach innych z zarządu (drewno niesione do składu, materiał na budowę) */
@@ -5455,14 +5575,14 @@ export class Sim {
   }
 
   /** Materiał na przeróbkę ze stert: najpierw wolne, potem zajęte (noszący weźmie, ile zostało); drewno najpierw
-      spoza składu, bo skład jest na noc do kozy. false, gdy nie starczy. */
-  private takeForWork(kind: string, n: number): boolean {
-    if (this.workStock(kind) < n) return false;
+      spoza składu, bo skład jest na noc do kozy. `nasze`: tylko z naszego terenu. false, gdy nie starczy. */
+  private takeForWork(kind: string, n: number, nasze = false): boolean {
+    if (this.workStock(kind, nasze) < n) return false;
     const size = this.w.size;
     const sklad = kind === 'drewno' ? (this.house?.sklad ?? []) : [];
     const rank = (t: Thing) => (t.by >= 0 ? 2 : 0) + (sklad.includes(t.y * size + t.x) ? 1 : 0);
     const piles = this.st.things
-      .filter((t) => t.kind === kind && t.n > 0)
+      .filter((t) => t.kind === kind && t.n > 0 && (!nasze || this.nasza(t)))
       .sort((a, b) => rank(a) - rank(b) || a.id - b.id);
     let left = n;
     for (const t of piles) {
@@ -5473,6 +5593,76 @@ export class Sim {
     }
     this.st.things = this.st.things.filter((t) => !(t.kind === kind && t.n <= 0));
     return true;
+  }
+
+  /** Czas pracy w tickach dla pionka: podstawa podzielona przez mnożnik z umiejętności (`tempoPracy`). Bez mnożnika
+      (1: pierwszy dzień gry, brak umiejętności) podstawa bez zaokrąglenia, tak jak przed pracą ludzi. */
+  private czasPracy(p: Pawn, r: RodzajPracy, baza: number): number {
+    const t = tempoPracy(this.st, p, r);
+    return t === 1 ? baza : Math.round(baza / t);
+  }
+
+  /** ile prac danego rodzaju (i produktu `what`, jeśli podany) trwa teraz u zarządu */
+  private wRobocie(t: JobKind, what?: string): number {
+    let n = 0;
+    for (const q of this.st.pawns) if (q.job?.t === t && (what === undefined || q.job.what === what)) n++;
+    return n;
+  }
+
+  /** sztuki materiału na naszym terenie (podwórko, siedziba, otoczone budynki; bez wnętrz sąsiadów): zapas dla progów */
+  private zapasMat(kind: string): number {
+    let n = 0;
+    for (const t of this.st.things) if (t.kind === kind && t.n > 0 && this.nasza(t)) n += t.n;
+    return n;
+  }
+
+  /** Rezerwa złomu, której Warsztat nie rusza: brak złomu otwartych planów (`need − have`, także plan wspólnego płotu)
+      i łata (`PATCH_COST`) na każdą otwartą dziurę w siatce. */
+  private rezerwaZlomu(): number {
+    const st = this.st;
+    let n = 0;
+    for (const b of st.builds) n += Math.max(0, (b.need.zlom ?? 0) - (b.have.zlom ?? 0));
+    const plan = st.plot?.plan;
+    if (plan) n += Math.max(0, (plan.need.zlom ?? 0) - (plan.have.zlom ?? 0));
+    for (const h of st.fence?.holes ?? []) if (h.patch <= 0) n += PATCH_COST;
+    return n;
+  }
+
+  /** Warsztat (tylko przy postawionym warsztacie), po jednej sztuce na pracę, według progów zapasów:
+      - deski z drewna, gdy desek jest mniej niż próg, a drewna w obrębie siatki (`zapasDrewna`: razem z kozą i tym,
+        co niosą) ponad próg drewna co najmniej na jedną sztukę, i to drewno leży na naszym terenie;
+      - części ze złomu, gdy części jest mniej niż próg, a złomu ponad rezerwę na łaty i plany (`rezerwaZlomu`)
+        co najmniej na jedną sztukę;
+      - dzida dla nieuzbrojonych, gdy bez broni jest więcej osób niż dzid w magazynie (z tymi w robocie), a dzid
+        jest mniej niż próg, i starczy desek oraz złomu na dzidę.
+      Prace w toku liczą się jak gotowe, więc dwie osoby przy dwóch warsztatach nie robią ponad próg. Próg 0
+      wyłącza robienie. */
+  private startWarsztat(p: Pawn): boolean {
+    const st = this.st;
+    if (!this.hasBuilt('warsztat')) return false;
+    const pr = progi(st);
+    const deski = RECIPES.deski;
+    const wDeskach = this.wRobocie('saw', 'deski');
+    if (
+      this.zapasMat('deski') + wDeskach < pr.deski &&
+      this.zapasDrewna() - pr.drewno - wDeskach * deski.n >= deski.n &&
+      this.startSaw(p, 'deski', 1, false)
+    )
+      return true;
+    const czesci = RECIPES.czesci;
+    const wCzesciach = this.wRobocie('saw', 'czesci');
+    if (
+      this.zapasMat('czesci') + st.store.parts + wCzesciach < pr.czesci &&
+      this.zapasMat('zlom') - this.rezerwaZlomu() - wCzesciach * czesci.n >= czesci.n &&
+      this.startSaw(p, 'czesci', 1, false)
+    )
+      return true;
+    if (pr.dzidy > 0) {
+      const bezBroni = st.pawns.filter((q) => q.kind === 'core' && !q.weapon && !this.graveyard.has(q.id)).length;
+      const dzidy = (st.store.arms ?? []).filter((a) => a === 'dzida').length + this.wRobocie('craft');
+      if (bezBroni - dzidy > 0 && dzidy < pr.dzidy && this.startCraft(p, false)) return true;
+    }
+    return false;
   }
 
   /* ---------- handlarz pod bramą (src/sim/handlarz.ts) ---------- */
@@ -6406,6 +6596,67 @@ export class Sim {
     return this.insideAt(tile) || !!this.st.plot?.bids.includes(this.w.bid[tile]);
   }
 
+  /** Spójne obszary naszego terenu: kafelki `naszTeren`, które zarząd przejdzie (−1 poza nimi). Droga w obrębie jednego
+      obszaru nie wychodzi na ulicę. */
+  private naszeObszary(): Int32Array {
+    if (!this.obszaryNasze) {
+      const n = this.w.size * this.w.size;
+      const zamkniete = new Uint8Array(n);
+      for (let i = 0; i < n; i++) zamkniete[i] = this.coreBlocked[i] || !this.naszTeren(i) ? 1 : 0;
+      this.zamknieteNasze = zamkniete;
+      this.obszaryNasze = labelRegions(zamkniete, this.w.size);
+    }
+    return this.obszaryNasze;
+  }
+
+  /** Wstępnie: czy pionek dojdzie na kafelek, nie wychodząc poza nasz teren (oba kafelki w jednym spójnym obszarze
+      naszego terenu; droga do pokoju w innej klatce tego samego bloku prowadzi ulicą, więc automat jej nie bierze).
+      Osoba z przełącznikiem „może wychodzić za siatkę” może wszędzie, o reszcie decyduje `mozeTam`. Osoba poza naszym
+      terenem (wraca do domu) przechodzi to sprawdzenie, a drogę ocenia `sciezkaWDomu`. Praca z polecenia jest poza
+      tą regułą. */
+  private dojdzieWDomu(p: Pawn, tile: number): boolean {
+    if (zaSiatke(this.st, p.person)) return true;
+    const reg = this.naszeObszary();
+    const od = reg[nearestFree(this.coreBlocked, this.w.size, this.tileOf(p))];
+    return od < 0 || reg[tile] === od;
+  }
+
+  /** Droga na kafelek dla pracy bez polecenia (`go` dla pracy z polecenia): osoba na naszym terenie idzie tylko po nim,
+      nigdy ulicą, nawet gdy ulica byłaby krótsza; osoba z przełącznikiem idzie zwykłą drogą; osoba poza naszym terenem
+      idzie do domu zwykłą drogą, którą ocenia `sciezkaWDomu`. false, gdy nie da się dojść (stan pionka bez zmian). */
+  private idz(p: Pawn, tile: number, order: boolean): boolean {
+    if (order || zaSiatke(this.st, p.person)) return this.go(p, tile);
+    const reg = this.naszeObszary();
+    const start = nearestFree(this.coreBlocked, this.w.size, this.tileOf(p));
+    if (reg[start] < 0) return this.go(p, tile) && this.sciezkaWDomu(p);
+    if (reg[tile] !== reg[start]) return false;
+    this.stats.paths++;
+    const path = this.pf.find(this.zamknieteNasze!, start, tile);
+    this.stats.nodes += this.pf.expanded;
+    if (!path) {
+      this.stats.failed++;
+      return false;
+    }
+    p.path = path;
+    p.pi = 0;
+    return true;
+  }
+
+  /** Po wyznaczeniu zwykłej drogi osobie poza naszym terenem: może na początku iść do domu, ale po wejściu na nasz teren
+      już z niego nie wychodzi. Zła droga jest kasowana. */
+  private sciezkaWDomu(p: Pawn): boolean {
+    let weszla = false;
+    for (let k = p.pi; k < p.path.length; k++) {
+      if (this.naszTeren(p.path[k])) weszla = true;
+      else if (weszla) {
+        p.path = [];
+        p.pi = 0;
+        return false;
+      }
+    }
+    return true;
+  }
+
   /** Czy pionek bez polecenia może pracować na tym kafelku: na naszym terenie zawsze, za siatką tylko osoba
       z przełącznikiem, tylko za dnia (nocą nikt bez polecenia nie wychodzi) i, w trybie zombie, tylko gdy nie ma
       szwendacza bliżej niż 10 m od celu, od samej osoby ani od wyjścia za bramę (rano stado stoi jeszcze pod siatką,
@@ -7276,20 +7527,30 @@ export class Sim {
 
   /* ---------- praca za dnia: dzidy, wzmacnianie siatki, alarm ---------- */
 
-  /** sterty, które pionek może wziąć: jego albo niczyje */
-  private freeHeaps(p: Pawn, kind: string): Thing[] {
-    return this.st.things.filter((t) => t.kind === kind && t.n > 0 && (t.by < 0 || t.by === p.id) && !this.uSasiada(t));
+  /** sterty, które pionek może wziąć: jego albo niczyje (`nasze`: tylko z naszego terenu, dla pracy bez polecenia) */
+  private freeHeaps(p: Pawn, kind: string, nasze = false): Thing[] {
+    const size = this.w.size;
+    return this.st.things.filter(
+      (t) =>
+        t.kind === kind &&
+        t.n > 0 &&
+        (t.by < 0 || t.by === p.id) &&
+        !this.uSasiada(t) &&
+        (!nasze || this.naszTeren(t.y * size + t.x)),
+    );
   }
 
   /** czy na wolnych stertach starczy każdego materiału */
-  private haveHeaps(p: Pawn, need: readonly [string, number][]): boolean {
-    return need.every(([kind, n]) => this.freeHeaps(p, kind).reduce((a, t) => a + t.n, 0) >= n);
+  private haveHeaps(p: Pawn, need: readonly [string, number][], nasze = false): boolean {
+    return need.every(([kind, n]) => this.freeHeaps(p, kind, nasze).reduce((a, t) => a + t.n, 0) >= n);
   }
 
   /** materiał ze stert: n sztuk danego rodzaju (najpierw ze sterty first), false, gdy nie starczy */
-  private takeHeaps(p: Pawn, kind: string, n: number, first: number): boolean {
+  private takeHeaps(p: Pawn, kind: string, n: number, first: number, nasze = false): boolean {
     const st = this.st;
-    const heaps = this.freeHeaps(p, kind).sort((a, b) => (a.id === first ? -1 : b.id === first ? 1 : a.id - b.id));
+    const heaps = this.freeHeaps(p, kind, nasze).sort((a, b) =>
+      a.id === first ? -1 : b.id === first ? 1 : a.id - b.id,
+    );
     if (heaps.reduce((a, t) => a + t.n, 0) < n) return false;
     let left = n;
     for (const t of heaps) {
@@ -7303,24 +7564,35 @@ export class Sim {
     return true;
   }
 
-  /** dzida: do sterty desek, potem godzina pracy na miejscu */
+  /** dzida z polecenia: do sterty desek, potem godzina pracy na miejscu */
   private orderCraft(pawns: Pawn[]): void {
-    const p = pawns[0];
+    this.startCraft(pawns[0], true);
+  }
+
+  /** Dzida: do sterty desek, potem godzina pracy na miejscu (z umiejętnością krócej). Bez polecenia (`order`
+      fałszywe, automat Warsztatu) materiał tylko z naszego terenu. false, gdy materiału nie starcza albo nie ma drogi. */
+  private startCraft(p: Pawn, order: boolean): boolean {
+    const nasze = !order;
     if (
-      !this.haveHeaps(p, [
-        ['deski', SPEAR_BOARDS],
-        ['zlom', SPEAR_SCRAP],
-      ])
+      !this.haveHeaps(
+        p,
+        [
+          ['deski', SPEAR_BOARDS],
+          ['zlom', SPEAR_SCRAP],
+        ],
+        nasze,
+      )
     )
-      return;
-    const heap = this.heapFor(p, 'deski');
-    if (!heap) return;
+      return false;
+    const heap = this.heapFor(p, 'deski', PATCH_COST, nasze);
+    if (!heap) return false;
     const ht = heap.y * this.w.size + heap.x;
-    if (!this.go(p, ht)) return;
-    const j = this.newJob('craft', -1, ht, true);
+    if (!this.idz(p, ht, order)) return false;
+    const j = this.newJob('craft', -1, ht, order);
     j.from = heap.id;
     this.setJob(p, j, false);
     heap.by = p.id;
+    return true;
   }
 
   /** wzmocnienie kafelka siatki: po materiał na stertę (2 sztuki jednego rodzaju), potem do siatki od podwórka */
@@ -8827,24 +9099,31 @@ export class Sim {
   /* przeszukanie i noszenie */
 
   /** przeszukać pomieszczenie sąsiada: puste mieszkanie, sala, hala, zaplecze; mieszkanie lokatorów tylko pod ich
-      nieobecność (szaber), gdy drzwi są otwarte albo wyważone */
-  private startLoot(p: Pawn, bid: number, room: number): void {
+      nieobecność (szaber), gdy drzwi są otwarte albo wyważone. `order` fałszywe: praca zarządu z automatu (Szaber,
+      który mieszkań lokatorów nie rusza). false, gdy się nie zaczęło. */
+  private startLoot(p: Pawn, bid: number, room: number, order = true): boolean {
     const s = this.st.sasiedzi;
     const k = s?.budynki.findIndex((b) => b.bid === bid) ?? -1;
-    if (k < 0 || !s!.budynki[k].otwarty) return;
+    if (k < 0 || !s!.budynki[k].otwarty) return false;
     const g = gid(k, room);
-    if (!this.moznaSzukac(k, room)) return;
-    if (this.st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === g)) return;
-    const tiles = this.kafelkiPokoju(g);
+    if (!this.moznaSzukac(k, room)) return false;
+    if (this.st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === g)) return false;
+    const spot = this.pokojSpot(p, this.kafelkiPokoju(g));
+    if (spot < 0 || !this.idz(p, spot, order)) return false;
+    this.setJob(p, this.newJob('loot', g, spot, order), false);
+    return true;
+  }
+
+  /** Wolny kafelek posadzki pokoju sąsiada najbliżej pionka, do którego ten dojdzie (bez mebli i cudzych miejsc
+      pracy); gdy wszystkie zajęte, najbliższy osiągalny. −1: do pokoju nie ma drogi (na przykład zamknięte drzwi). */
+  private pokojSpot(p: Pawn, tiles: readonly number[]): number {
     const region = this.regionOf(p);
     const taken = this.taken(p);
     const size = this.w.size;
     const cand = tiles.filter(
       (i) => this.reg[i] === region && !taken.includes(i) && !this.furnitureAt(i % size, Math.floor(i / size)),
     );
-    const spot = this.nearest(p, cand.length ? cand : tiles.filter((i) => this.reg[i] === region));
-    if (spot < 0 || !this.go(p, spot)) return;
-    this.setJob(p, this.newJob('loot', g, spot, true), false);
+    return this.nearest(p, cand.length ? cand : tiles.filter((i) => this.reg[i] === region));
   }
 
   /** pomieszczenie sąsiada da się przeszukać (raz; mieszkanie lokatorów tylko pod ich nieobecność) */
@@ -9135,18 +9414,20 @@ export class Sim {
     return yard.find((i) => old[i] && !this.coreBlocked[i]) ?? -1;
   }
 
-  /** zająć się planem płotu: z materiałami od razu do pracy, inaczej po pierwszy brakujący materiał. Bez polecenia
-      (`order` fałszywe, dla dokańczania płotu przez wolny zarząd) obowiązują te same reguły co przy budowie: nie przy
-      szwendaczu w trybie zombie i materiał tylko z miejsc dozwolonych bez polecenia. */
+  /** zająć się planem płotu: z materiałami od razu do pracy, inaczej po pierwszy brakujący materiał. Z polecenia
+      (`order`) i przy pierwszym planie z menu; bez polecenia woła to rodzaj Budowa (`znajdzPrace`), żeby wolny zarząd
+      dokończył plan, który ktoś zaczął i porzucił (od pierwszego rana, za dnia, bez pilnej potrzeby). Wtedy
+      obowiązują te same reguły co przy budowie planów: nie przy szwendaczu w trybie zombie i materiał tylko z miejsc
+      dozwolonych bez polecenia. Plan ma jednego wykonawcę naraz. */
   private startPlot(p: Pawn, order = true): boolean {
     const plan = this.st.plot?.plan;
     if (!plan) return false;
     const holder = plan.by >= 0 && plan.by !== p.id ? this.st.pawns.find((q) => q.id === plan.by) : undefined;
     if (holder?.job?.t === 'plot') return false;
-    if (!order && this.zagrozone(plan.stand)) return false;
+    if (!order && (this.zagrozone(plan.stand) || !this.dojdzieWDomu(p, plan.stand))) return false;
     const j = this.newJob('plot', plan.bid, this.tileOf(p), order);
     if (this.ready({ need: plan.need, have: plan.have } as BuildPlan)) {
-      if (!this.go(p, plan.stand)) return false;
+      if (!this.idz(p, plan.stand, order)) return false;
       this.setJob(p, j, false);
       j.phase = 2;
       j.tile = plan.stand;
@@ -9154,7 +9435,11 @@ export class Sim {
       return true;
     }
     this.setJob(p, j, false);
-    if (!this.fetchNext(p, j, plan.need, plan.have)) {
+    if (
+      !this.fetchNext(p, j, plan.need, plan.have) ||
+      (!order && !zaSiatke(this.st, p.person) && !this.sciezkaWDomu(p))
+    ) {
+      this.release(p);
       p.job = null;
       return false;
     }
@@ -9187,7 +9472,7 @@ export class Sim {
       return true;
     }
     if (!at) return false;
-    plan.work += 1;
+    plan.work += tempoPracy(st, p, 'budowa');
     if ((st.tick - j.t0) % NOISE_TICKS === 0) this.addNoise(p.x, p.y, HALAS.deski);
     if (plan.work < plan.total) return true;
     if (!st.cmds.some((c) => c.t === 'otocz')) st.cmds.push({ t: 'otocz', ids: [], bid: plan.bid });
