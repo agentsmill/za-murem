@@ -22,6 +22,7 @@ import {
   setNight,
   signLaw,
 } from '../../src/gov/zarzad.ts';
+import { grajDalej } from '../../src/gov/zwyciestwo.ts';
 import { dayOf, hourOf, minutesAt, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from '../../src/sim/gov.ts';
 import { dryTreeOf } from '../../src/sim/house.ts';
@@ -205,6 +206,10 @@ function answer(
     return Object.entries(after)
       .map(([id, k]) => `${card.people.find((c) => c.id === id)?.name.split(' ')[0]}: ${k}`)
       .join(', ');
+  }
+  if (p.k === 'zwyciestwo') {
+    grajDalej(gov);
+    return `graj dalej (${p.droga})`;
   }
   const k = p.choices.findIndex((c) => c.ok);
   apply(st, w, chooseEvent(gov, i, Math.max(0, k)));

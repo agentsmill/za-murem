@@ -34,6 +34,7 @@ import {
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
+import { grajDalej } from './gov/zwyciestwo.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
 import { nazwaDoOkolicy, zbiorImion } from './mieszkancy/kronika.ts';
@@ -814,7 +815,11 @@ function showPrompt(p: Prompt) {
       decided();
     });
   else if (p.k === 'karta') showNight(p);
-  else
+  else if (p.k === 'zwyciestwo') {
+    // jeszcze bez okna epilogu (dojdzie z ekranem dróg): zwycięstwo mija bez zatrzymania gry, gra rusza dalej
+    grajDalej(g);
+    decided();
+  } else
     modal.show(eventSheet(p, words, wordsE), (act, arg) => {
       if (act !== 'event') return;
       applyFx(chooseEvent(g, input(), Number(arg)));

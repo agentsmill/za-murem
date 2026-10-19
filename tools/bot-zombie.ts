@@ -159,7 +159,7 @@ function play(policy: Policy): {
               p.choices.findIndex((c) => c.ok),
             ),
           );
-        else {
+        else if (p.k === 'karta') {
           // propozycja zarządu zostaje (wyprawy po zapasy), zmienia się tylko warta przy siatce
           for (const [id, key] of Object.entries(p.assign)) if (key.startsWith('warta:')) setNight(gov, id, 'sen');
           if (policy === 'warta-dzidy') {

@@ -547,7 +547,7 @@ function firstNight(key: string) {
       if (p.k === 'raport') ackReport(gov);
       else if (p.k === 'uchwala') applyGov(sim.st, w, signLaw(gov, i, p.options.find((o) => o.s === 'ok')?.id ?? null));
       else if (p.k === 'karta') applyGov(sim.st, w, confirmNight(gov, i));
-      else
+      else if (p.k === 'wydarzenie')
         applyGov(
           sim.st,
           w,

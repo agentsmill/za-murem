@@ -10,7 +10,10 @@
      interfejs: pending(gov, input) → karta, uchwała, wydarzenie albo raport;
      odpowiedzi: setNight / confirmNight, signLaw, chooseEvent, ackReport (każda zwraca skutki).
    Wyprawa dzienna z mapy miasta (src/gov/dzienne.ts): `wyslijWyprawe` zapisuje ją w `st.wyprawy`, a `govUpdate` na
-   początku kroku woła `wyprawyTick`, który rozlicza powroty (bez `st.wyprawy` nie robi nic). */
+   początku kroku woła `wyprawyTick`, który rozlicza powroty (bez `st.wyprawy` nie robi nic).
+   Drogi do zwycięstwa (src/gov/zwyciestwo.ts): na końcu kroku, po `checkOver` i tylko w trwającej grze, `govUpdate` woła
+   `krokZwyciestwa` (kamienie milowe, licznik celu ludności, zwycięstwo; bez `st.zwyciestwo` z `wlaczZwyciestwo` nie robi
+   nic), a `pending` oddaje epilog zwycięstwa przed raportem. `grajDalej` zdejmuje epilog, zapis i gra zostają. */
 
 import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
@@ -23,6 +26,7 @@ import { lawEffects as effectsOfLaws, lawState, lawOptions as optionsOfLaws, sig
 import { wiesci } from './wiesci.ts';
 import { atHour, decision, emptyEffects, gameMin, logGov, mood, rnd, zeroStock } from './wspolne.ts';
 import { choose, eventTick, eventView, FIRST_EVENT } from './wydarzenia.ts';
+import { krokZwyciestwa } from './zwyciestwo.ts';
 
 export const GOV_VERSION = 1;
 /** wieczorne zebranie zarządu (uchwała) pół godziny przed kartą nocy */
@@ -64,8 +68,8 @@ export function newGov(seed: number, mode: GameMode = 'zwykly'): GovState {
 
 const busy = (st: GovState) => !!st.report || st.lawPending || (!!st.night && !st.night.confirmed);
 
-/** krok zarządu: powroty wypraw dziennych, wieczorne zebranie, karta nocy, przebieg nocy, wydarzenia; zwraca skutki
-    do zastosowania */
+/** krok zarządu: powroty wypraw dziennych, wieczorne zebranie, karta nocy, przebieg nocy, wydarzenia, koniec gry, drogi
+    do zwycięstwa; zwraca skutki do zastosowania */
 export function govUpdate(st: GovState, i: GovInput): GovEffects {
   const fx = emptyEffects();
   if (st.over) return fx;
@@ -122,6 +126,8 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   wiesci(st, i, fx);
   eventTick(st, i, fx, busy(st));
   checkOver(st, i, fx);
+  // drogi do zwycięstwa (bez wlaczZwyciestwo nic); w przegranej grze nikt już nie wygrywa
+  if (!st.over) krokZwyciestwa(st, i, fx);
   return fx;
 }
 
@@ -157,8 +163,9 @@ function checkOver(st: GovState, i: GovInput, fx: GovEffects): void {
   logGov(st, i, tx(`Koniec gry: ${st.over}.`, `Game over: ${t[0].toLowerCase()}${t.slice(1)}.`), true, fx);
 }
 
-/** co czeka na decyzję gracza, w kolejności: raport rano, uchwała, karta nocy, wydarzenie */
+/** co czeka na decyzję gracza, w kolejności: epilog zwycięstwa, raport rano, uchwała, karta nocy, wydarzenie */
 export function pending(st: GovState, i: GovInput): Prompt | null {
+  if (st.zwyciestwo?.epilog) return { k: 'zwyciestwo', droga: st.zwyciestwo.epilog };
   if (st.report) return { k: 'raport', report: st.report };
   if (st.lawPending) {
     const first = st.lawDay === 1;
