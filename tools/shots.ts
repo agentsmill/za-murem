@@ -10108,6 +10108,69 @@ function pietraShots(): Shot[] {
     if (!kod && !KOD && !st.strop)
       throw new Error('bez ?grafika=kod brak naklejek stropu z PixelLab (atlas strop.png)');
   };
+  /**
+   * Budynki z wyglądem z PixelLab (atrapa-budynki, flaga ?pietra=1) na piętrze L. Budynek, który ma to piętro
+   * (levels > L), pokazuje przekrój ze stropem, a niższy zostaje z dachem i ozdobą jak na parterze. Sprawdza to
+   * porównanie pikseli obrysu każdego widocznego budynku z wyglądem (z zapasem na ozdobę) na piętrze L i na parterze
+   * (piętro 0 z flagą rysuje je jak bez flagi): niższy budynek wygląda tak samo, wyższy inaczej.
+   */
+  const publiczne = (name: string, L: number, cam: string): Shot => ({
+    name,
+    query: '',
+    w: 2400,
+    h: 900,
+    run: async (page, base) => {
+      await podstawAtrape(page);
+      await page.goto(`${base}?demo=${DEMO_ATRAPA}&pietra=1&speed=0&cam=${cam}`);
+      await waitIdle(page);
+      /** widoczne w całości budynki z wyglądem: obrys z zapasem na ozdoby (wieża nad dachem, portyk przed frontem) */
+      const lista = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sc = zm.view.scene!;
+        const r = document.getElementById('stage')!.getBoundingClientRect();
+        const out: { look: string; levels: number; clip: { x: number; y: number; width: number; height: number } }[] =
+          [];
+        for (const b of sc.w.buildings) {
+          const look = sc.styles[b.id].look;
+          if (!look) continue;
+          const [xa, ya] = zm.screenOf(b.x0 - 1, b.y0 - 5);
+          const [xb, yb] = zm.screenOf(b.x1 + 2, b.y1 + 3);
+          const x = Math.floor(xa + r.x);
+          const y = Math.floor(ya + r.y);
+          const width = Math.ceil(xb + r.x) - x;
+          const height = Math.ceil(yb + r.y) - y;
+          if (x < 0 || y < 0 || x + width > innerWidth || y + height > innerHeight) continue;
+          out.push({ look, levels: b.levels, clip: { x, y, width, height } });
+        }
+        return out;
+      });
+      const klatki = async () => {
+        const out: Buffer[] = [];
+        for (const b of lista) out.push(await page.screenshot({ clip: b.clip }));
+        return out;
+      };
+      await wybierz(page, 0);
+      const parter = await klatki();
+      await wybierz(page, L);
+      const st = await sprawdz(page, L, true);
+      const pietro = await klatki();
+      const zle: string[] = [];
+      let zPietrem = 0;
+      let bezPietra = 0;
+      lista.forEach((b, k) => {
+        const maPietro = b.levels > L;
+        const taki = parter[k].equals(pietro[k]);
+        console.log(`  ${b.look} (${b.levels} kond.): ${maPietro ? 'przekrój' : 'dach'}, jak na parterze: ${taki}`);
+        if (maPietro) zPietrem++;
+        else bezPietra++;
+        if (maPietro === taki)
+          zle.push(`${b.look} (${b.levels} kond.) ${maPietro ? 'bez przekroju' : 'bez dachu i ozdoby'}`);
+      });
+      if (!zPietrem || !bezPietra)
+        throw new Error(`kadr bez budynków z piętrem (${zPietrem}) albo bez niego (${bezPietra}), lista ${st.lista}`);
+      if (zle.length) throw new Error(`budynki z PixelLab na piętrze ${L} rysują się źle: ${zle.join(', ')}`);
+    },
+  });
   return [
     // Przymorze, piętro 2 z bliska (zoom 0,75): bloki pod stropem, niższe budynki z dachem
     { name: 'pietra-przymorze-p2', query: '', run: (page, base) => przymorzeP2(page, base, false) },
@@ -10423,5 +10486,11 @@ function pietraShots(): Shot[] {
         if (st.notka) throw new Error(`przy otwartym panelu budowy stoi podpowiedź „${st.notka}”`);
       },
     },
+    // druga ulica atrapy (szpital 4 kondygnacje, kościół 1, willa 2, remiza 1), piętro 1: szpital i willa pokazują
+    // przekrój ze stropem, kościół i remiza (jedna kondygnacja) dach z wieżą
+    publiczne('pietra-budynek-publiczny-p1', 1, '229,236,0.6'),
+    // pierwsza ulica (ratusz 3, muzeum 2, teatr 3, urząd 3), piętro 2: ratusz, teatr i urząd w przekroju, muzeum z dachem
+    // i portykiem
+    publiczne('pietra-budynek-publiczny-p2', 2, '239,177,0.6'),
   ];
 }
