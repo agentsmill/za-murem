@@ -315,9 +315,16 @@ export const PATHS_PER_TICK = 4;
 export const CARRY = 6;
 /** tyle sztuk drewna na jednym kafelku składu */
 export const STACK = 10;
-/** sztuka drewna pali się w kozie pół godziny gry (20 s przy 1×): suche drzewo starcza na 3–5 godzin,
-    więc pierwszego wieczoru trzeba zdecydować, skąd wziąć opał */
-export const BURN_TICKS = TICKS_PER_HOUR / 2;
+/** sztuka drewna pali się w kozie godzinę gry (40 s przy 1×): drzewo starcza na pół dnia, a suche drzewo
+    z samouczka (połowa drewna, dryWood) na 3–5 godzin, więc pierwszego wieczoru trzeba zdecydować, skąd wziąć opał */
+export const BURN_TICKS = TICKS_PER_HOUR;
+/** Bez polecenia zarząd dokłada do kozy tylko wtedy, gdy ogień jest potrzebny: ktoś ma mniej ciepła niż KOZA_WARM,
+    mieszkanie zarządu stygnie poniżej KOZA_MIN °C (śpiącym wystarcza 12°C, bo sen dodaje 6°C), trzeba gotować,
+    a gazu nie ma, trwa samouczek albo jest wieczór od KOZA_EVENING do 22:00. Inaczej za dnia koza paliłaby się
+    od rana do nocy i zjadała cztery drzewa na dobę. */
+export const KOZA_WARM = 60;
+export const KOZA_MIN = 12;
+export const KOZA_EVENING = 18;
 /** koza mieści naraz tyle sztuk */
 export const KOZA_CAP = 4;
 /** porcje jedzenia w kuchni na start: dwa posiłki dziennie dla czterech osób na pięć dni */
@@ -1128,6 +1135,8 @@ const BEDS = new Set(['lozko', 'wersalka', 'lozka_pietrowe']);
 /** drewno ze ściętego drzewa: 3 sztuki na metr korony, z krzaka mało */
 export const woodFrom = (t: Tree): number =>
   t.kind === 2 ? Math.max(1, Math.round(t.r * 1.5)) : Math.max(2, Math.round(t.r * 3));
+/** suche drzewo z samouczka jest spróchniałe: połowa drewna, czyli zapas na start do pierwszego wieczoru */
+export const dryWood = (t: Tree): number => Math.max(2, Math.round(woodFrom(t) / 2));
 /** rąbanie trwa od kilkunastu do trzydziestu kilku sekund realnych przy 1× */
 export const chopTicks = (t: Tree): number => Math.round(160 + 120 * t.r);
 
@@ -3470,7 +3479,7 @@ export class Sim {
     if (siatka) this.przeliczSiatke();
     this.rebuild();
     if (!siatka) st.things.push(newThing(st, 'pien', t % size, Math.floor(t / size)));
-    let left = woodFrom(this.w.trees[k]);
+    let left = k === this.dry ? dryWood(this.w.trees[k]) : woodFrom(this.w.trees[k]);
     for (const [dx, dy] of SPREAD) {
       if (left <= 0) break;
       const x = (t % size) + dx;
@@ -4481,12 +4490,34 @@ export class Sim {
     }
   }
 
+  /** czy ogień w naszych paleniskach jest teraz potrzebny (warunki przy KOZA_WARM); polecenie gracza i dyżur
+      go nie pytają */
+  private kozaWanted(): boolean {
+    const st = this.st;
+    const h = this.house;
+    if (!h) return false;
+    if (st.tut.step >= 0 && st.tut.step < TUT_STEPS.length) return true;
+    const h24 = hourOf(st.tick);
+    if (h24 >= KOZA_EVENING && h24 < 22) return true;
+    const cores = st.pawns.filter((q) => q.kind === 'core' && !q.away && q.needs);
+    if (cores.some((q) => q.needs!.warm < KOZA_WARM)) return true;
+    const ours = this.ourApts();
+    if (h.rooms.some((r) => ours.has(r.apt) && st.temps[r.id] < KOZA_MIN)) return true;
+    // bez gazu gotuje się na kozie: rozpalić, zanim ktoś zgłodnieje
+    const gas = (homeStove(h, this.w.size, st.things)?.fuel ?? 0) > 0;
+    return !gas && !!this.food() && cores.some((q) => q.needs!.food < PECKISH);
+  }
+
   /** dokładanie do paleniska: z własnego drewna albo ze stosu (sam bierze tylko ze składu i dopiero, gdy ogień się
-      kończy; z polecenia z każdego stosu, kiedy tylko coś wejdzie). Bez wskazanego celu wybiera to z naszych palenisk
-      (koza zarządu, kozy z beczek, kocioł), któremu zostało najmniej ognia (paleniskoDoDolozenia). */
+      kończy i jest potrzebny, kozaWanted; z polecenia z każdego stosu, kiedy tylko coś wejdzie). Bez wskazanego celu
+      wybiera to z naszych palenisk (koza zarządu, kozy z beczek, kocioł), któremu zostało najmniej ognia
+      (paleniskoDoDolozenia). */
   private startRefuel(p: Pawn, order: boolean, koza = this.paleniskoDoDolozenia(p, order)): boolean {
     if (!koza) return false;
-    if (!order && ((koza.by >= 0 && koza.by !== p.id) || koza.fuel >= BURN_TICKS * wagaPaleniska(koza.kind)))
+    if (
+      !order &&
+      ((koza.by >= 0 && koza.by !== p.id) || koza.fuel >= BURN_TICKS * wagaPaleniska(koza.kind) || !this.kozaWanted())
+    )
       return false;
     if (this.kozaRoom(koza) < 1) return false;
     const size = this.w.size;

@@ -238,7 +238,7 @@ describe('cele pierwszego dnia', () => {
     // drewno na noc: postęp w podpowiedzi, zaliczone raz osiągnięte, przepada z kartą nocy
     const wood = currentGoal(goalsOf(st, gov, { ...o, wood: 2 }))!;
     expect(wood.key).toBe('drewno');
-    expect(wood.how).toContain('Drewna na zapas: 2 z 6');
+    expect(wood.how).toContain('Drewna na zapas: 2 z 3');
     expect(currentGoal(goalsOf(st, gov, { ...o, wood: 1, woodReady: true }))?.key).toBe('noc');
     gov.night = { confirmed: true } as GovState['night'];
     const lapsed = goalsOf(st, gov, o).find((x) => x.key === 'drewno')!;
@@ -326,7 +326,7 @@ describe('okna zarządu', () => {
     expect(r.body).toContain('drewno 4');
     expect(r.body).toContain('+1,5');
     expect(r.body).toContain('−1');
-    expect(burnSheet('mebloscianka', 'Anna Nowak', false).body).toContain('Da 6 sztuk drewna, około 3 h ognia');
+    expect(burnSheet('mebloscianka', 'Anna Nowak', false).body).toContain('Da 6 sztuk drewna, około 6 h ognia');
     expect(burnSheet('krzeslo', null, true).body).toContain('łagodzi to o połowę');
   });
 });
@@ -366,7 +366,7 @@ describe('dyżur przy kozie', () => {
   it('karta nocy, posterunek w symulacji, pasek i raport rano o kuchni', () => {
     const { sim, w, seed } = fresh();
     sim.st.tick = tickAt(20);
-    // od 20:00 do 6:00 koza zje 20 sztuk (2 na godzinę); 40 w zapasie, bo szabrownicy mogą część wynieść
+    // od 20:00 do 6:00 koza zje 10 sztuk (sztuka na godzinę); 40 w zapasie, bo szabrownicy mogą część wynieść
     const wood = emptyEffects();
     wood.stock.wood = 40;
     applyGov(sim.st, w, wood);
@@ -380,16 +380,16 @@ describe('dyżur przy kozie', () => {
     const koza = who.options.find((o) => o.key === KOZA_KEY)!;
     expect(optionShort(koza, false)).toBe('Czuwa przy kozie');
     expect(optionDetail(koza)).toBe('Nie śpi i pilnuje ognia w kozie, drewna starczy do rana.');
-    expect(p.card.wood).toEqual({ have: 40, need: 20, until: '6:00' });
+    expect(p.card.wood).toEqual({ have: 40, need: 10, until: '6:00' });
     // pas „Koza w nocy”: bez dyżuru zgaśnie, z dyżurem do rana; dyżur nie odstrasza szabrowników
     const none = Object.fromEntries(p.card.people.map((c) => [c.id, 'sen']));
     const duty = { ...none, [who.id]: KOZA_KEY };
     const names = { [who.id]: who.name };
     expect(nightSheet(p.card, none, nightOdds(gov, i, p.card, none)).body).toContain(
-      '<small class="odd-k">Koza w nocy</small><b class="odd-v">zgaśnie</b><em class="odd-note">nikt nie czuwa · drewno 40 szt., noc zje 20 (2 na godzinę)',
+      '<small class="odd-k">Koza w nocy</small><b class="odd-v">zgaśnie</b><em class="odd-note">nikt nie czuwa · drewno 40 szt., noc zje 10 (1 na godzinę)',
     );
     expect(oddsHtml(p.card, duty, nightOdds(gov, i, p.card, duty), names)).toContain(
-      `<b class="odd-v">do rana</b><em class="odd-note">czuwa ${esc(who.name)} · drewno 40 szt., noc zje 20`,
+      `<b class="odd-v">do rana</b><em class="odd-note">czuwa ${esc(who.name)} · drewno 40 szt., noc zje 10`,
     );
     expect(nightOdds(gov, i, p.card, duty).now).toBe(nightOdds(gov, i, p.card, none).now);
     // zatwierdzenie: osoba idzie do kozy (posterunek 'koza' w odczycie), pasek o tym mówi

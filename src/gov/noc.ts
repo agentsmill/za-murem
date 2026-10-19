@@ -82,11 +82,12 @@ export const CARD_HOUR = 20;
 /** do tej godziny karta czeka na decyzję, potem zostaje propozycja zarządu */
 export const CARD_DEADLINE = 22;
 export const MORNING = 6;
-/** dyżur przy kozie: posterunek jak w symulacji ('koza'); czuwający dokłada do rana, koza zjada około 2 sztuk
-    drewna na godzinę (noc 22–6 to 16, od karty o 20:00 to 20) */
+/** dyżur przy kozie: posterunek jak w symulacji ('koza'); czuwający dokłada do rana, koza zjada sztukę drewna
+    na godzinę (noc 22–6 to 8, od karty o 20:00 to 10); zarząd nie importuje symulacji, więc zgodność z BURN_TICKS
+    pilnuje test */
 export const KOZA = 'koza';
 export const KOZA_KEY = `warta:${KOZA}`;
-export const WOOD_PER_HOUR = 2;
+export const WOOD_PER_HOUR = 1;
 /** warta na wieży (badania, t_wieza): posterunek jak w symulacji ('wieza'); wartownik widzi całe podwórko, więc dokłada do
     obrony każdego innego posterunku połowę swojej wartości warty (defenseAt). Szabrownicy jej nie wybierają */
 export const WIEZA = 'wieza';

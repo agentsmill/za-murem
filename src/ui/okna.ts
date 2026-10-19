@@ -247,8 +247,8 @@ export function fuelHtml(wd: NonNullable<NightCard['wood']>, koza: string[]): st
     'Koza w nocy',
     'Stove overnight',
   )}</small><b class="odd-v">${esc(v)}</b><em class="odd-note">${esc(who)} · ${L(
-    `drewno ${wd.have} szt., noc zje ${wd.need} (2 na godzinę)`,
-    `wood ${wd.have}, the night needs ${wd.need} (2 an hour)`,
+    `drewno ${wd.have} szt., noc zje ${wd.need} (${WOOD_PER_HOUR} na godzinę)`,
+    `wood ${wd.have}, the night needs ${wd.need} (${WOOD_PER_HOUR} an hour)`,
   )}</em></div>`;
 }
 
