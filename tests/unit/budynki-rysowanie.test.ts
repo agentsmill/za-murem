@@ -254,6 +254,7 @@ describe('miejsceOzdoby: gdzie stoi wieża, kopuła, portyk', () => {
     y0: 10,
     x1: 29,
     y1: 20,
+    levels: 1,
     entrances: entrances.map((e) => ({ ...e, out: e.tile })),
   });
   const swiat = { size: 100 } as World;

@@ -8,9 +8,10 @@ import type { Sprite } from './bryly.ts';
 import { h2 } from './hash.ts';
 import { LOOKI, type LookBudynku } from './lookBudynku.ts';
 import { type ThingSpec, thingSprite } from './rzeczy.ts';
+import type { Strop } from './strop.ts';
 
 /** wersja formatu grafika.json; gra nie bierze atlasów w innej wersji */
-export const WERSJA_GRAFIKI = 3;
+export const WERSJA_GRAFIKI = 4;
 
 /** klatka animacji w atlasie ludzi: prostokąt [x, y, szerokość, wysokość] i kotwica [ax, ay] (stopy postaci, środek
     korpusu) w pikselach klatki */
@@ -109,6 +110,9 @@ export interface OpisGrafiki {
     naklejek: number;
     gestosc: number;
   };
+  /** strop pięter: rzadkie naklejki (plama, rysa, łata, pleśń) w komórkach naklejka × naklejka w jednym rzędzie, bez
+      tła (przezroczyste); tło, ziarno i szwy rysuje kod (strop.ts), gestosc: część kafelków stropu z naklejką */
+  strop: { id: string; plik: string; naklejka: number; naklejek: number; gestosc: number };
   /** trzepak od frontu: stopy to wiersz pod stopami, podstawa to wiersz kafelka, na którym stoją stopy */
   trzepak: { id: string; plik: string; stopy: number; podstawa: number };
   /** wyglądy budynków publicznych i zabytkowych (kamienica, ratusz, muzeum, kościół, urząd, teatr, hotel, dworzec,
@@ -179,6 +183,8 @@ export interface GrafikaKawalkow {
   teren: Teren | null;
   blok: Blok | null;
   dach: Dach | null;
+  /** naklejki stropu; bez ich obrazu (img: null) strop rysuje sam kod */
+  strop: Strop | null;
   budynki: BudynkiGrafika | null;
 }
 
@@ -233,6 +239,7 @@ export function grafikaZ(opis: OpisGrafiki, obraz: (plik: string) => Obraz | nul
   const teren = obraz(opis.teren.plik);
   const blok = obraz(opis.blok.plik);
   const dach = obraz(opis.dach.plik);
+  const strop = obraz(opis.strop.plik);
   const trzepak = obraz(opis.trzepak.plik);
   const ludzie = obraz(opis.ludzie.plik);
   const budynki = obraz(opis.budynki.plik);
@@ -251,6 +258,7 @@ export function grafikaZ(opis: OpisGrafiki, obraz: (plik: string) => Obraz | nul
       n: d.naklejek,
       gestosc: d.gestosc,
     },
+    strop: { img: strop, naklejka: opis.strop.naklejka, naklejek: opis.strop.naklejek, gestosc: opis.strop.gestosc },
     trzepak: trzepak && { img: trzepak, stopy: opis.trzepak.stopy, podstawa: opis.trzepak.podstawa },
     budynki: budynki && budynkiZ(opis.budynki, budynki),
     ludzie: ludzie && { opis: opis.ludzie, img: ludzie },

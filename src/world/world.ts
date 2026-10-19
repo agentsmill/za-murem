@@ -17,6 +17,7 @@ import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea, segDist } f
 import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { kluczBudynku } from './klucze.ts';
+import { awansujDomy } from './pietra.ts';
 import { fillRing, stampLine } from './raster.ts';
 import type { RodzajPunktu } from './rodzaje.ts';
 import { dominantAngle, rotateGeo, straighten } from './rotate.ts';
@@ -170,6 +171,9 @@ export interface BuildOpts {
   apts?: readonly AptState[];
   /** gra sieciowa: klucze budynków (zm:klucz), które nie mogą być siedzibą, bo zajęła je inna drużyna */
   bezSiedziby?: readonly string[];
+  /** widok pięter (flaga ?pietra=1): domy od 60 m² dostają piętro, żeby było co pokazywać (src/world/pietra.ts);
+      bez tej opcji świat jest taki jak zawsze */
+  pietra?: boolean;
 }
 
 export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
@@ -495,6 +499,8 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   // 16. mieszkania siedziby: zarząd, mieszkańcy i puste (około połowy, z powodem i rokiem), a w pustych zepsute
   // meble, sterty śmieci i uszkodzenia; stany może podać generator mieszkańców (opts.apts)
   applyApts(world, settleApts(world, opts.apts));
+  // 17. widok pięter: awans domów do dwóch kondygnacji (tylko `levels`, reszta świata bez zmian)
+  if (opts.pietra) awansujDomy(world);
   return world;
 }
 

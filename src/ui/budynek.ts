@@ -22,6 +22,7 @@ import {
   wnetrze,
 } from '../sim/sasiedzi.ts';
 import type { PlotStan } from '../sim/sim.ts';
+import { IN } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
 import { esc } from './tekst.ts';
 
@@ -53,8 +54,25 @@ export interface WidokBudynku {
   znajomi: ZnajomiWidok[];
 }
 
-/** widok karty z wpisu budynku (z gry albo z podglądu); dotkniety: wpis jest w stanie gry; plot: wspólny płot ze stanu */
-export function widokBudynku(w: World, b: SasiedniBudynek, dotkniety: boolean, plot?: PlotStan): WidokBudynku {
+/** czy wnętrze budynku ma schody (kafelek IN.STAIRS w jego obrysie): tylko ze schodów da się przeszukać piętra */
+export function maSchody(w: World, bid: number): boolean {
+  const B = w.buildings[bid];
+  const { cell } = wnetrze(w, bid);
+  for (let y = B.y0; y <= B.y1; y++)
+    for (let x = B.x0; x <= B.x1; x++) if (cell[y * w.size + x] === IN.STAIRS) return true;
+  return false;
+}
+
+/** widok karty z wpisu budynku (z gry albo z podglądu); dotkniety: wpis jest w stanie gry; plot: wspólny płot ze stanu;
+    widokPieter: gra z widokiem pięter (?pietra=1). Z nim domy dostają drugą kondygnację bez schodów we wnętrzu, więc
+    wiersz „piętra n z z” (nie ma jak ich przeszukać) znika z karty budynku bez schodów; bez flagi karta jest jak dawniej. */
+export function widokBudynku(
+  w: World,
+  b: SasiedniBudynek,
+  dotkniety: boolean,
+  plot?: PlotStan,
+  widokPieter = false,
+): WidokBudynku {
   const B = w.buildings[b.bid];
   const it = wnetrze(w, b.bid);
   const multi = B.entrances.length > 1;
@@ -78,7 +96,10 @@ export function widokBudynku(w: World, b: SasiedniBudynek, dotkniety: boolean, p
       otoczony: !!plot?.bids.includes(b.bid),
       pct: plot?.plan?.bid === b.bid ? procentPlotu(plot.plan) : null,
     },
-    pietra: b.otwarty && pietraBudynku(w, b.bid) > 0 ? { n: b.pietra, z: pietraBudynku(w, b.bid) } : null,
+    pietra:
+      b.otwarty && pietraBudynku(w, b.bid) > 0 && !(widokPieter && !maSchody(w, b.bid))
+        ? { n: b.pietra, z: pietraBudynku(w, b.bid) }
+        : null,
     noc: b.noc ? { dzien: dayOf(b.noc.tick), kto: b.noc.kto, zabrali: b.noc.zabrali } : null,
     znajomi: b.domy
       .filter((g) => g.znani || g.ludzie)
