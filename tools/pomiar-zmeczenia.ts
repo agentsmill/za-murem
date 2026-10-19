@@ -9,6 +9,7 @@
      człowiek robił na dworze;
    - ekspozycję: godziny gry zarządu według pory (noc to 20:00–7:00 jak w tabeli bota), pracy i miejsca;
    - skład zarządu o 21:00, 3:00 i 6:00 (kto na warcie, kto śpi, kto na wyprawie, siły);
+   - zajętość bramy: jak często w 15 m od miejsca powrotu za bramą stoi szwendacz, według godziny doby;
    - opcjonalny ślad: stan zarządu co POMIAR_CO minut gry w oknie POMIAR_SLAD.
    Uruchomienie: node tools/pomiar-zmeczenia.ts [ziarno [noce [osoby]]], argumenty i flagi bota są bota.
    Zmienne środowiska: POMIAR_OUT=plik.json (wynik do zebrania przez tools/pomiar-zmeczenia-zbierz.ts),
