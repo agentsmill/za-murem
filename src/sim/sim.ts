@@ -38,6 +38,7 @@ import {
   siecWlaczona,
   TECH_BY,
   tempoOsoby,
+  wolneMiejsca,
 } from './badania.ts';
 import {
   type AmmoKey,
@@ -375,8 +376,6 @@ const M2_JOBS = new Set<JobKind>([
   'mug',
   'shoo',
 ]);
-/** przy stole pracowni siedzą najwyżej dwie osoby naraz (każda dodaje swój postęp) */
-export const RESEARCH_SEATS = 2;
 /** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
 export const GATHER_NEAR = 8;
 /** kuchnia społeczna: porcja z niej to 85% zwykłej (nic się nie marnuje) */
@@ -5389,8 +5388,7 @@ export class Sim {
     const cur = this.researchTech();
     const desk = this.pracownia();
     if (!cur || !desk || p.away || kartka(st, cur, modeOf(st)).stan !== 'w_toku') return false;
-    const seated = st.pawns.filter((q) => q !== p && q.job?.t === 'research' && q.job.target === desk.id).length;
-    if (seated >= RESEARCH_SEATS) return false;
+    if (wolneMiejsca(st.pawns, desk.id, [p.id]) < 1) return false;
     const stand = this.beside(p, desk);
     if (stand < 0 || this.taken(p).includes(stand) || !this.go(p, stand)) return false;
     this.setJob(p, this.newJob('research', desk.id, stand, order), false);

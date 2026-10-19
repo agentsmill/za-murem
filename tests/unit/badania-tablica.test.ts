@@ -1,5 +1,5 @@
 /* Tablica korkowa badań (docs/superpowers/specs/2026-10-19-badania-design.md, sekcja „Tablica badań”): odczyt stanu
-   dla tablicy (`snapshot().badania`), układ kartek w kolumnach er, treść z `tablicaHtml` (kartki ze stanami, sznurki,
+   dla tablicy (`snapshot().tablica`), układ kartek w kolumnach er, treść z `tablicaHtml` (kartki ze stanami, sznurki,
    technologia końcowa, szczegóły z przyciskiem „Badać”, pasek obsady i półka z książkami, oba języki) i warunek samego
    otwarcia tablicy (`czyOtworzycSama`). Stan z createSim na Przymorzu, osoby i umiejętności ustawione ręcznie, żeby
    wynik nie zależał od losowania fachów. */
@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Dom } from '../../src/content/data.ts';
+import { type Dom, TECH_DOMS, type TechDom } from '../../src/content/data.ts';
 import { tr, ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { ERY, nazwaEry, nazwaTech, TECH_BY, TECHS, tempoOsoby } from '../../src/sim/badania.ts';
@@ -15,7 +15,15 @@ import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { createSim, type Pawn, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { EN } from '../../src/ui/badania.en.ts';
-import { czyOtworzycSama, KARTA_H, KARTA_W, tablicaHtml, uklad } from '../../src/ui/badania.ts';
+import {
+  czyOtworzycSama,
+  KARTA_H,
+  KARTA_W,
+  SKALA_MIN,
+  skalaPlanszy,
+  tablicaHtml,
+  uklad,
+} from '../../src/ui/badania.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
 import { buildWorld } from '../../src/world/world.ts';
 
@@ -75,7 +83,7 @@ function stan() {
 }
 
 const tablica = (st: SimState, wybrana: string | null = null, mode: 'zwykly' | 'zombie' = 'zwykly') => {
-  const b = snapshot(st, w).badania;
+  const b = snapshot(st, w).tablica;
   if (!b) throw new Error('brak odczytu badań');
   return tablicaHtml(b, { wybrana, mode });
 };
@@ -88,15 +96,15 @@ function kartkaHtml(html: string, id: string): string {
 }
 const ile = (html: string, wzor: RegExp) => (html.match(wzor) ?? []).length;
 
-describe('tablica badań: odczyt stanu (snapshot().badania)', () => {
+describe('tablica badań: odczyt stanu (snapshot().tablica)', () => {
   it('bez pracowni i bez stanu badań jest null', () => {
     const st = createSim(w, seed, { core: 4 });
-    expect(snapshot(st, w).badania).toBeNull();
+    expect(snapshot(st, w).tablica).toBeNull();
   });
 
   it('z pracownią: kartki w kolejności technologii, bieżące badanie, książki, odkrycia i półka', () => {
     const st = stan();
-    const b = snapshot(st, w).badania!;
+    const b = snapshot(st, w).tablica!;
     expect(b.pracownia).toBe(true);
     expect(b.cur).toBe('t_spawanie');
     expect(b.kartki.map((k) => k.id)).toEqual(TECHS.map((t) => t.id));
@@ -119,7 +127,7 @@ describe('tablica badań: odczyt stanu (snapshot().badania)', () => {
   it('badania bez pracowni, ale ze stanem (po rozbiórce), też są w odczycie', () => {
     const st = stan();
     st.things = st.things.filter((t) => t.kind !== 'pracownia');
-    const b = snapshot(st, w).badania!;
+    const b = snapshot(st, w).tablica!;
     expect(b.pracownia).toBe(false);
     expect(b.cur).toBe('t_spawanie');
   });
@@ -127,7 +135,7 @@ describe('tablica badań: odczyt stanu (snapshot().badania)', () => {
   it('znaja: kto zna dziedzinę (umiejętność co najmniej 1), od najlepszych, z zawodem', () => {
     const st = stan();
     umiejetnosci(st, 3, { bud: 3, cieplo: 1 });
-    const b = snapshot(st, w).badania!;
+    const b = snapshot(st, w).tablica!;
     expect(b.znaja.bud?.map((o) => o.skill)).toEqual([3, 2]);
     expect(b.znaja.cieplo?.map((o) => o.skill)).toEqual([1, 1]);
     expect(b.znaja.med).toHaveLength(1);
@@ -146,10 +154,10 @@ describe('tablica badań: odczyt stanu (snapshot().badania)', () => {
     expect(sim.startResearch(b2, true)).toBe(true);
     const siedzi = (p: Pawn) => p.job?.t === 'research' && p.job.phase === 1;
     // w drodze do stołu jeszcze nie siedzą
-    expect(snapshot(st, w).badania!.siedza).toEqual([]);
+    expect(snapshot(st, w).tablica!.siedza).toEqual([]);
     for (let k = 0; k < 2000 && !(siedzi(a) && siedzi(b2)); k++) sim.step();
     expect(siedzi(a) && siedzi(b2)).toBe(true);
-    const sn = snapshot(st, w).badania!;
+    const sn = snapshot(st, w).tablica!;
     expect(sn.siedza.map((s) => s.id)).toEqual([a.id, b2.id]);
     expect(sn.siedza.map((s) => s.skill)).toEqual([2, 1]);
     expect(sn.siedza[0].name).toBe(st.people[a.person].name);
@@ -196,7 +204,7 @@ describe('tablica badań: kartki', () => {
     expect(ile(html, /class="tb-kartka/g)).toBe(TECHS.length);
     for (const t of TECHS) expect(ile(html, new RegExp(`data-tech="${t.id}"`, 'g'))).toBe(1);
     const st = stan();
-    const stany = Object.fromEntries(snapshot(st, w).badania!.kartki.map((k) => [k.id, k.stan]));
+    const stany = Object.fromEntries(snapshot(st, w).tablica!.kartki.map((k) => [k.id, k.stan]));
     for (const t of TECHS) {
       const k = kartkaHtml(html, t.id);
       expect(k).toContain(`data-stan="${stany[t.id]}"`);
@@ -492,6 +500,20 @@ describe('tablica badań: pasek obsady i półka', () => {
     expect(f).toContain('Uprawa');
   });
 
+  it('półka bierze dziedziny z TECH_DOMS, w jej kolejności (nowa dziedzina dostaje własną półkę bez zmian w tablicy)', () => {
+    const dziedziny = (html: string) =>
+      [...html.slice(html.indexOf('<footer')).matchAll(/data-dom="(\w+)"/g)].map((m) => m[1]);
+    expect(dziedziny(tablica(stan()))).toEqual([...TECH_DOMS]);
+    const domy = TECH_DOMS as TechDom[];
+    domy.push('obrona' as TechDom);
+    try {
+      expect(dziedziny(tablica(stan()))).toEqual([...TECH_DOMS]);
+      expect(dziedziny(tablica(stan()))).toHaveLength(7);
+    } finally {
+      domy.pop();
+    }
+  });
+
   it('przycisk „Wróć do gry” zamyka tablicę, nagłówek mówi, że gra stoi', () => {
     const html = tablica(stan());
     expect(html).toContain('data-akcja="zamknij"');
@@ -559,7 +581,7 @@ describe('tablica badań: tryb gry', () => {
     t.tryb = 'zombie';
     try {
       const st = stan();
-      const b = snapshot(st, w).badania!;
+      const b = snapshot(st, w).tablica!;
       const html = tablicaHtml(b, { wybrana: null, mode: 'zwykly' });
       expect(html).not.toContain('data-tech="t_okna"');
       expect(html).not.toContain('data-od="t_okna"');
@@ -571,6 +593,41 @@ describe('tablica badań: tryb gry', () => {
       if (mialo) t.tryb = undefined;
       else delete t.tryb;
     }
+  });
+});
+
+describe('tablica badań: skala planszy do okna', () => {
+  // plansza szerokości 1106 px (sześć er): wnętrze okna planszy na ekranach 1280, 1366 i 1440 px to 946, 1032 i 1106 px
+  it('plansza, która mieści się w oknie, zostaje w skali 1 (także przy równej szerokości i na szerokim ekranie)', () => {
+    expect(skalaPlanszy(1106, 1106)).toBe(1);
+    expect(skalaPlanszy(1600, 1106)).toBe(1);
+  });
+
+  it('za szeroka plansza kurczy się do szerokości okna, z zaokrągleniem w dół, żeby mieściła się co do piksela', () => {
+    for (const okno of [946, 1032, 1000, 1105]) {
+      const k = skalaPlanszy(okno, 1106);
+      expect(k).toBeLessThan(1);
+      expect(k).toBeGreaterThan(0.8);
+      expect(1106 * k).toBeLessThanOrEqual(okno);
+      // ale nie mniejsza, niż trzeba: mniej niż promil ponad zaokrąglenie
+      expect(1106 * (k + 0.001)).toBeGreaterThan(okno);
+    }
+    expect(skalaPlanszy(946, 1106)).toBe(0.855);
+    expect(skalaPlanszy(1032, 1106)).toBe(0.933);
+  });
+
+  it('nie mniejsza niż SKALA_MIN: na wąskim ekranie plansza woli przewijać się w poziomie, niż mieć nieczytelne kartki', () => {
+    expect(SKALA_MIN).toBeGreaterThanOrEqual(0.6);
+    expect(skalaPlanszy(300, 1106)).toBe(SKALA_MIN);
+    expect(skalaPlanszy(1, 1106)).toBe(SKALA_MIN);
+  });
+
+  it('okno albo plansza o zerowej, ujemnej lub nieliczbowej szerokości: skala 1 (nic nie psuje się przy ukrytej tablicy)', () => {
+    expect(skalaPlanszy(0, 1106)).toBe(1);
+    expect(skalaPlanszy(-5, 1106)).toBe(1);
+    expect(skalaPlanszy(946, 0)).toBe(1);
+    expect(skalaPlanszy(Number.NaN, 1106)).toBe(1);
+    expect(skalaPlanszy(946, Number.NaN)).toBe(1);
   });
 });
 

@@ -121,7 +121,8 @@ export const BASE: Record<FurnitureKind, readonly [number, number]> = {
  * - wrak: maluch 3×2 albo polonez 4×2 przy rot 0 i 2 (1 i 3 odwrotnie), przodem na wschód przy
  *   rot 0, na południe przy 1, na zachód przy 2, na północ przy 3;
  * - budowle M2 (budowle.ts): warsztat, kuchnia_spoleczna, magazyn, lozka_pietrowe, ogrodek, zasieki, pracownia i budowle
- *   z technologii (koza_beczka, kociol, pieczarkarnia, szklarnia, barykada, wieza), każda z własnym rysunkiem;
+ *   z technologii (koza_beczka, kociol, pieczarkarnia, szklarnia, barykada, wieza), każda z własnym rysunkiem; koza_beczka
+ *   i kociol z fire 0..FIRE_FRAMES-1 pali się jak koza (ogień w drzwiczkach), bez fire jest zimna;
  * - smieci: sterta śmieci z pustego mieszkania w trzech wielkościach;
  * - meble z broken: zepsute (pociemniałe, popękane, drzazgi wokół); z burnt: okopcone (prawie czarne
  *   od sadzy, kuchenka na kafelku uszkodzenia piec);
@@ -150,7 +151,7 @@ export type ThingSpec =
   | { kind: 'posilek'; size: 0 | 1 | 2 | 3; table?: boolean; seed?: number }
   | { kind: 'wrak'; model: WreckModel; rot: Rot; seed?: number; stage?: 1 | 2 }
   | { kind: 'krew'; seed?: number }
-  | { kind: BuildKind; rot: Rot; seed?: number }
+  | { kind: BuildKind; rot: Rot; seed?: number; fire?: number }
   | { kind: 'smieci'; size: 1 | 2 | 3; seed?: number }
   | { kind: 'sznur'; rot: Rot; pranie?: boolean; seed?: number }
   | { kind: 'kompost'; rot: Rot; seed?: number }
@@ -1194,7 +1195,7 @@ export function thingSprite(spec: ThingSpec): Sprite {
   if (spec.kind === 'wrak') return wreckSprite(spec.model, spec.rot, seed, spec.stage ?? 0);
   if (spec.kind === 'smieci') return renderBoxes(smieciBoxes(spec.size, seed), PX, PX, 0, smieciEnv(spec.size));
   if ((BUILD_KINDS as readonly string[]).includes(spec.kind))
-    return buildSprite(spec.kind as BuildKind, spec.rot as Rot, seed);
+    return buildSprite(spec.kind as BuildKind, spec.rot as Rot, seed, (spec as { fire?: number }).fire);
   const f = spec as Extract<ThingSpec, { kind: FurnitureKind }>;
   const [a, b] = BASE[f.kind];
   const fire = f.kind === 'koza' && f.fire !== undefined && f.fire >= 0 ? f.fire : -1;

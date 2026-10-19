@@ -47,7 +47,7 @@ import { wczytajGrafike } from './render/grafika.ts';
 import { type Light, lightAt } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
-import { nazwaTech, odkrycia } from './sim/badania.ts';
+import { nazwaTech, odkrycia, wolneMiejsca } from './sim/badania.ts';
 import { WEAPONS, WEAPONS_EN, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
@@ -64,7 +64,7 @@ import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { NAPISY as OBCY, wiescEn } from './sim/wedrowcy.ts';
-import { czyOtworzycSama, odkrycieSheet, tablicaHtml } from './ui/badania.ts';
+import { czyOtworzycSama, odkrycieSheet, skalaPlanszy, tablicaHtml, usiadaPodpowiedz } from './ui/badania.ts';
 import {
   allowedAnchors,
   availableOf,
@@ -978,7 +978,7 @@ const badaniaOtwarta = (): boolean => !$('tablica').hidden;
     proponuje następne), plansza przewinięta do niej. Bez pracowni mówi, czego brakuje. */
 function openBadania() {
   if (!sim || modal.open || badaniaOtwarta()) return;
-  const b = snapshot(sim.st, sim.w).badania;
+  const b = snapshot(sim.st, sim.w).tablica;
   if (!b?.pracownia) {
     say(L('Najpierw postawcie pracownię (menu Budowa).', 'Build the research room first (Build menu).'), 4000);
     return;
@@ -992,15 +992,31 @@ function openBadania() {
   pauseGame();
   $('tablica').hidden = false;
   renderBadania();
-  // plansza na wybranej kartce (na telefonie widać dwie kolumny naraz)
+  dopasujTablice();
+  // plansza na wybranej kartce (na telefonie widać dwie kolumny naraz); z rysunku kartki, nie z jej offsetLeft, bo
+  // plansza bywa skalowana (CSS zoom)
   const wrap = $('tablica').querySelector<HTMLElement>('.tb-wrap');
   const kartka = wrap?.querySelector<HTMLElement>('.tb-kartka.sel');
   if (wrap && kartka) {
-    wrap.scrollLeft = kartka.offsetLeft - (wrap.clientWidth - kartka.offsetWidth) / 2;
-    wrap.scrollTop = kartka.offsetTop - (wrap.clientHeight - kartka.offsetHeight) / 2;
+    const okno = wrap.getBoundingClientRect();
+    const k = kartka.getBoundingClientRect();
+    wrap.scrollLeft += k.left + k.width / 2 - (okno.left + okno.width / 2);
+    wrap.scrollTop += k.top + k.height / 2 - (okno.top + okno.height / 2);
   }
   ($('tablica').querySelector<HTMLElement>('.tb-wrap') ?? $('tablica')).focus({ preventScroll: true });
 }
+
+/** Skala planszy do okna (`--tb-skala` na warstwie tablicy; CSS stosuje ją tylko na szerokim ekranie, na telefonie
+    plansza zostaje w skali 1 i się przewija): bez tego na laptopie 1280 px ostatnia era i szczegóły byłyby za krawędzią.
+    Woła ją otwarcie tablicy i zmiana rozmiaru okna. */
+function dopasujTablice() {
+  const el = $('tablica');
+  const wrap = el.querySelector<HTMLElement>('.tb-wrap');
+  const plansza = wrap?.querySelector<HTMLElement>('.tb-board');
+  if (!wrap || !plansza) return;
+  el.style.setProperty('--tb-skala', String(skalaPlanszy(wrap.clientWidth, Number.parseFloat(plansza.style.width))));
+}
+new ResizeObserver(() => dopasujTablice()).observe($('tablica'));
 
 /** Zamyka tablicę: następna decyzja zarządu albo powrót do gry w tym samym tempie (jak po innych oknach). */
 function closeBadania() {
@@ -1014,7 +1030,7 @@ function closeBadania() {
     a fokus wraca na wybraną kartkę. */
 function renderBadania() {
   if (!sim || !badaniaOtwarta()) return;
-  const b = snapshot(sim.st, sim.w).badania;
+  const b = snapshot(sim.st, sim.w).tablica;
   if (!b) return closeBadania();
   const el = $('tablica');
   const stara = el.querySelector<HTMLElement>('.tb-wrap');
@@ -1044,8 +1060,8 @@ function chooseBadania(tech: string) {
 }
 
 /** Przycisk „Badania” od chwili, gdy stoi pracownia, i samo otwarcie tablicy: raz po wyborze, kiedy pracownia stoi,
-    a badanie nie jest wybrane, i tylko gdy nic innego nie przeszkadza (okno zarządu w kolejce, plan budowy, napad,
-    stado pod siatką, „Do broni!”). Tanie warunki najpierw, wejście zarządu liczy się raz na ćwierć sekundy. */
+    a badanie nie jest wybrane, i tylko gdy nic innego nie przeszkadza (okno zarządu w kolejce, plan budowy, otwarty panel
+    budowy, napad, stado pod siatką, „Do broni!”). Tanie warunki najpierw, wejście zarządu liczy się raz na ćwierć sekundy. */
 function watchBadania(now: number) {
   if (!sim) return;
   const st = sim.st;
@@ -1058,7 +1074,8 @@ function watchBadania(now: number) {
   if (!lab || cur !== null || badaniaByla || badaniaOtwarta() || modal.open || now - badaniaT < 250) return;
   badaniaT = now;
   const napad = (!!st.raid && st.raid.phase < 3) || st.pawns.some((p) => p.kind === 'zombie' && p.job?.phase === 2);
-  const oknoCzeka = placing !== null || !gov || !!gov.over || pending(gov, input()) !== null;
+  // otwarty panel budowy też czeka: samo otwarcie tablicy go zamykało (openBadania), a gracz właśnie z niego wybiera
+  const oknoCzeka = placing !== null || buildPanel.open || !gov || !!gov.over || pending(gov, input()) !== null;
   if (
     czyOtworzycSama({
       pracownia: lab,
@@ -2187,7 +2204,12 @@ function run(m: MenuItem) {
   if (m.cmd.t === 'tablica') return openBadania();
   // „Zajmij klatkę” z gry z sąsiadami idzie do serwera, nie do symulacji
   if (siec.obsluz(m)) return;
+  // „Badać” przy zbyt wielu zaznaczonych: do stołu idzie tyle osób, ile jest miejsc, a podpowiedź mówi ile (przed
+  // wysłaniem polecenia, póki zajęte miejsca są takie, jak je widział gracz)
+  const miejsca =
+    m.cmd.t === 'study' ? usiadaPodpowiedz(wolneMiejsca(sim.st.pawns, m.cmd.thing, m.cmd.ids), m.cmd.ids.length) : null;
   sim.push(m.cmd);
+  if (miejsca) return say(miejsca, 4000);
   const k = m.cmd.ids.length > 1 ? 1 : 0;
   // wspólny płot z jednego materiału mówi, po co idzie (deska i złom jak w feedback)
   const jeden = m.cmd.t === 'enclose' && (m.cmd.wariant === 'deski' || m.cmd.wariant === 'zlom') ? m.cmd.wariant : null;

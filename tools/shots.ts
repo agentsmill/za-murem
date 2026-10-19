@@ -288,6 +288,77 @@ async function tablicaUklad(page: Page) {
   return m;
 }
 
+/** Tablica mieści się w oknie bez przewijania w poziomie: plansza nie jest szersza od swojego okna, każda kartka
+    (z technologią końcową z ostatniej kolumny) leży w całości w oknie planszy, a szczegóły i pasek obsady w oknie
+    strony. Pionowe przewijanie planszy tylko wypisuje (wolno). */
+async function tablicaMiesci(page: Page, opis: string) {
+  const m = await tablicaUklad(page);
+  const w = await page.evaluate(() => {
+    const wrap = document.querySelector<HTMLElement>('#tablica .tb-wrap')!;
+    const o = wrap.getBoundingClientRect();
+    const wystaje = [...document.querySelectorAll<HTMLElement>('#tablica .tb-kartka')]
+      .filter((k) => {
+        const b = k.getBoundingClientRect();
+        return b.left < o.left - 1 || b.right > o.left + wrap.clientWidth + 1;
+      })
+      .map((k) => k.dataset.tech);
+    const koncowa = document.querySelector<HTMLElement>('#tablica .tb-kartka.koncowa')?.getBoundingClientRect();
+    return {
+      wBok: wrap.scrollWidth - wrap.clientWidth,
+      wPionie: wrap.scrollHeight - wrap.clientHeight,
+      wystaje,
+      koncowa: koncowa ? { l: Math.round(koncowa.left), r: Math.round(koncowa.right) } : null,
+      skala: getComputedStyle(document.querySelector<HTMLElement>('#tablica .tb-board')!).zoom,
+    };
+  });
+  console.log(`  ${opis}: ${JSON.stringify(w)}`);
+  if (w.wBok > 1) throw new Error(`${opis}: plansza przewija się w poziomie o ${w.wBok} px`);
+  if (w.wystaje.length) throw new Error(`${opis}: kartki poza oknem planszy: ${w.wystaje.join(', ')}`);
+  if (!w.koncowa) throw new Error(`${opis}: brak technologii końcowej`);
+  return { ...m, ...w };
+}
+
+/** Górny pasek na telefonie: „Badania” (ikona) stoi w pierwszym wierszu za zegarem, a „Budowa” i „Menu” razem w drugim,
+    czyli przycisk „Badania” nie wypycha „Menu” do trzeciego wiersza; pasek nie jest wyższy niż trzy wiersze (szyld z zegarem
+    i ikoną, tempo z budową i menu, stan), a strona nie przewija się w bok. Sprawdza przy kilku szerokościach telefonu
+    (wąskie 360 i 375 px też) i zostawia okno w szerokości, od której zaczął. */
+async function pasekWRzedzie(page: Page, opis: string, szerokosci: readonly number[]) {
+  const start = page.viewportSize()!;
+  const bledy: string[] = [];
+  for (const szer of szerokosci) {
+    await page.setViewportSize({ width: szer, height: start.height });
+    await page.waitForTimeout(250);
+    const m = await page.evaluate(() => {
+      const r = (id: string) => {
+        const b = document.getElementById(id)!.getBoundingClientRect();
+        return { t: Math.round(b.top), l: Math.round(b.left), r: Math.round(b.right), w: Math.round(b.width) };
+      };
+      return {
+        zegar: r('hDay'),
+        budowa: r('btnBuild'),
+        badania: r('btnResearch'),
+        menu: r('btnMenu'),
+        pasek: Math.round(document.getElementById('top')!.getBoundingClientRect().height),
+        wBok: document.documentElement.scrollWidth > innerWidth + 1,
+      };
+    });
+    console.log(`  pasek ${opis} ${szer} px: ${JSON.stringify(m)}`);
+    if (Math.abs(m.menu.t - m.budowa.t) > 3) bledy.push(`${szer} px: „Menu” nie leży w jednym wierszu z „Budowa”`);
+    else if (m.menu.l < m.budowa.r - 1 || m.menu.r > szer)
+      bledy.push(`${szer} px: „Menu” nachodzi na „Budowa” albo wystaje`);
+    if (Math.abs(m.badania.t - m.zegar.t) > 12 || m.badania.t >= m.budowa.t)
+      bledy.push(`${szer} px: „Badania” nie stoi w pierwszym wierszu przy zegarze`);
+    if (m.badania.r > szer || m.badania.l < m.zegar.r - 1)
+      bledy.push(`${szer} px: „Badania” nachodzi na zegar albo wystaje`);
+    // trzy wiersze: szyld, tempo, stan (4 wiersze to znaczy, że coś wypadło do następnego)
+    if (m.pasek > 135) bledy.push(`${szer} px: pasek ma ${m.pasek} px wysokości (więcej niż trzy wiersze)`);
+    if (m.wBok) bledy.push(`${szer} px: strona przewija się w poziomie`);
+  }
+  await page.setViewportSize(start);
+  await page.waitForTimeout(250);
+  if (bledy.length) throw new Error(`pasek ${opis}: ${bledy.join('; ')}`);
+}
+
 const SHOTS: Shot[] = [
   // przy zoomie od 0,6 nad siedzibą widać przekrój (wnętrze ze świata) zamiast dachu
   ...DEMOS.flatMap((d) => [
@@ -3948,6 +4019,30 @@ const SHOTS: Shot[] = [
       await page.waitForTimeout(250);
     },
   },
+  // tablica na laptopach 1280×720 i 1366×768: plansza mieści się w oknie bez przewijania w poziomie (skalowana do
+  // szerokości okna), technologia końcowa z ostatniej kolumny i szczegóły wybranej kartki są w całości widoczne
+  {
+    name: 'badania-tablica-1280',
+    query: '',
+    w: 1280,
+    h: 720,
+    run: async (page, base) => {
+      await tablicaDemo(page, base);
+      await page.waitForTimeout(250);
+      await tablicaMiesci(page, '1280×720');
+      await page.screenshot({ path: path.join(OUT, 'badania-tablica-1280-bez-wyboru.png') });
+      await page.click('#tablica .tb-kartka.koncowa');
+      await page.waitForTimeout(250);
+      await tablicaMiesci(page, '1280×720, technologia końcowa');
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await page.waitForTimeout(300);
+      await tablicaMiesci(page, '1366×768');
+      await page.screenshot({ path: path.join(OUT, 'badania-tablica-1366.png') });
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.waitForTimeout(300);
+      await tablicaMiesci(page, '1280×720 po zmianie rozmiaru okna');
+    },
+  },
   // ta sama tablica na telefonie 390×844: strona stoi w miejscu, przewija się tylko plansza w swoim oknie, szczegóły
   // wysuwają się od dołu nad paskiem obsady; po zamknięciu w górnym pasku jest przycisk „Badania”
   {
@@ -3978,10 +4073,33 @@ const SHOTS: Shot[] = [
         throw new Error('przycisk nie zamknął tablicy');
       await page.waitForTimeout(300);
       await page.screenshot({ path: path.join(OUT, 'badania-tablica-telefon-pasek.png') });
+      await pasekWRzedzie(page, 'PL', [360, 375, 390, 412, 430]);
       // ponowne otwarcie przyciskiem „Badania” w górnym pasku
       await page.tap('#btnResearch');
       await page.waitForSelector('#tablica:not([hidden]) .tb-kartka');
       await page.waitForTimeout(300);
+    },
+  },
+  // górny pasek na telefonie po angielsku („Build”, „To arms!”, „Pause” inaczej szerokie niż po polsku): „Menu” też w drugim
+  // wierszu, a przycisk „Badania” to ikona z nazwą „Research” dla czytników ekranu
+  {
+    name: 'badania-tablica-telefon-pasek-en',
+    query: '',
+    w: 390,
+    h: 844,
+    lang: 'en',
+    run: async (page, base) => {
+      await tablicaDemo(page, base);
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !window.zm!.badania().open);
+      await page.waitForTimeout(300);
+      const przycisk = await page.evaluate(() => {
+        const b = document.getElementById('btnResearch')!;
+        return { tekst: b.textContent, title: b.title, rozmiar: getComputedStyle(b).fontSize };
+      });
+      console.log(`  przycisk: ${JSON.stringify(przycisk)}`);
+      if (przycisk.tekst !== 'Research') throw new Error(`nazwa przycisku „${przycisk.tekst}”, a ma być „Research”`);
+      await pasekWRzedzie(page, 'EN', [360, 375, 390, 412, 430]);
     },
   },
   // angielska tablica: napisy z badania.en.ts, nazwy technologii i er po angielsku
@@ -4002,7 +4120,7 @@ const SHOTS: Shot[] = [
     },
   },
   // samo otwarcie tablicy w grze (nie ze ?badania=demo): pracownia staje, a badanie nie jest wybrane, więc tablica otwiera
-  // się sama z pauzą; Esc zamyka i gra rusza dalej w tym samym tempie, a druga raz sama się nie otwiera. Po wyborze
+  // się sama z pauzą (ale nie przy otwartym panelu budowy: czeka, aż gracz go zamknie); Esc zamyka i gra rusza dalej w tym samym tempie, a druga raz sama się nie otwiera. Po wyborze
   // badania i zdjęciu go znowu może się otworzyć, ale nie przy „Do broni!”, tylko po jego odwołaniu
   {
     name: 'badania-tablica-sama',
@@ -4020,6 +4138,9 @@ const SHOTS: Shot[] = [
       const bez = await page.evaluate(() => document.getElementById('hint')!.textContent ?? '');
       console.log(`  T bez pracowni: „${bez}”`);
       if (!bez.includes('pracownię') || (await stan()).open) throw new Error('T bez pracowni');
+      // panel budowy otwarty (gracz właśnie z niego wybiera): samo otwarcie tablicy czeka i go nie zamyka
+      await page.keyboard.press('b');
+      await page.waitForSelector('#buildPanel .tile');
       // pracownia staje (jak po finishBuild)
       await page.evaluate(async () => {
         const budowa = '/src/ui/budowa.ts';
@@ -4044,6 +4165,15 @@ const SHOTS: Shot[] = [
           owner: -1,
         });
       });
+      await page.waitForTimeout(1200);
+      const zPanelem = await page.evaluate(() => ({
+        tablica: window.zm!.badania().open,
+        panel: window.zm!.buildPanel().open,
+      }));
+      console.log(`  po postawieniu pracowni przy otwartym panelu budowy: ${JSON.stringify(zPanelem)}`);
+      if (zPanelem.tablica || !zPanelem.panel) throw new Error('tablica otworzyła się przy otwartym panelu budowy');
+      // panel się zamyka: tablica otwiera się sama
+      await page.keyboard.press('b');
       await page.waitForFunction(() => window.zm!.badania().open, null, { timeout: 5000 });
       const otwarta = await stan();
       console.log(`  po postawieniu pracowni: ${JSON.stringify(otwarta)}`);
@@ -4247,6 +4377,88 @@ const SHOTS: Shot[] = [
       await page.evaluate(([x, y]) => window.zm!.setCam(x + 1, y + 0.5, 3.4), [lab.x, lab.y] as const);
       await waitIdle(page);
       await page.waitForTimeout(300);
+    },
+  },
+  // badania, „Badać” przy zbyt wielu zaznaczonych: jedno miejsce przy stole zajmuje ktoś spoza zaznaczenia, trzy osoby
+  // zaznaczone z menu pracowni, więc do stołu idzie jedna, a podpowiedź mówi „Usiądą 1 z 3, przy stole nie ma więcej
+  // miejsc.”; zrzut z podpowiedzią i pracownią (jedna osoba w drodze do stołu)
+  {
+    name: 'badania-pracownia-miejsca',
+    query: '',
+    run: async (page, base) => {
+      await tablicaDemo(page, base);
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !window.zm!.badania().open);
+      const start = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        const lab = st.things.find((q) => q.kind === 'pracownia')!;
+        const core = st.pawns.filter((p) => p.kind === 'core');
+        // stół wolny, potem jedna osoba (ostatnia z zarządu) zajmuje jedno miejsce: reszta zaznaczona ma jedno wolne
+        for (const p of core) if (p.job?.t === 'research') p.job = null;
+        const inny = core[core.length - 1];
+        const ok = sim.startResearch(inny, true);
+        zm.setCam(lab.x + 1, lab.y + 0.5, 1.4);
+        return {
+          lab: { x: lab.x, y: lab.y },
+          inny: inny.id,
+          ok,
+          zaznaczeni: core.slice(0, -1).map((p) => p.id),
+          rdzen: core.length,
+        };
+      });
+      console.log(`  start: ${JSON.stringify(start)}`);
+      if (!start.ok || start.rdzen < 4) throw new Error(`za mało osób albo nikt nie siadł: ${JSON.stringify(start)}`);
+      await waitIdle(page);
+      // zaznaczenie: klik w pierwszą osobę, Shift i klik w kolejne
+      const punkty = await page.evaluate((ids) => {
+        const zm = window.zm!;
+        return ids.map((id) => {
+          const p = zm.sim!.st.pawns.find((q) => q.id === id)!;
+          return zm.screenOf(p.x, p.y - 0.55);
+        });
+      }, start.zaznaczeni);
+      await page.mouse.click(punkty[0][0], punkty[0][1]);
+      await page.keyboard.down('Shift');
+      for (const [x, y] of punkty.slice(1)) await page.mouse.click(x, y);
+      await page.keyboard.up('Shift');
+      const lab = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 1, y + 0.5), [
+        start.lab.x,
+        start.lab.y,
+      ] as const);
+      await page.mouse.click(lab[0], lab[1], { button: 'right' });
+      await page.waitForSelector('#ctx:not([hidden]) .ctx-item');
+      const pozycje = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('#ctx .ctx-item')].map((b) => ({
+          tekst: b.firstChild?.textContent ?? '',
+          off: b.querySelector('.ctx-off')?.textContent ?? null,
+        })),
+      );
+      console.log(`  menu: ${JSON.stringify(pozycje)}`);
+      const badac = pozycje.find((m) => m.tekst.startsWith('Badać: '));
+      if (!badac || badac.off !== null) throw new Error(`„Badać” przy jednym wolnym miejscu: ${JSON.stringify(badac)}`);
+      await page.click('#ctx .ctx-item:has-text("Badać: ")');
+      // podpowiedź trafia do paska co 200 ms
+      await page.waitForTimeout(350);
+      const podpowiedz = await page.evaluate(() => document.getElementById('hint')!.textContent ?? '');
+      console.log(`  podpowiedź: „${podpowiedz}”`);
+      if (podpowiedz !== 'Usiądą 1 z 3, przy stole nie ma więcej miejsc.')
+        throw new Error(`podpowiedź: „${podpowiedz}”`);
+      // na pauzie polecenie czeka w kolejce symulacji do następnego kroku
+      const [dalej, chodza] = await page.evaluate(
+        ([zazn, inny]) => {
+          const sim = window.zm!.sim!;
+          sim.step();
+          const st = sim.st;
+          const przy = (id: number) => st.pawns.find((p) => p.id === id)?.job?.t === 'research';
+          return [zazn.filter(przy).length, przy(inny)] as const;
+        },
+        [start.zaznaczeni, start.inny] as const,
+      );
+      console.log(`  do stołu idzie z zaznaczonych: ${dalej}, ten drugi dalej przy stole: ${chodza}`);
+      if (dalej !== 1 || !chodza) throw new Error('do stołu ma pójść dokładnie jedna osoba z zaznaczonych');
+      await page.waitForTimeout(500);
     },
   },
   // badania, karta „Odkrycie” (docs/superpowers/specs/2026-10-19-badania-design.md, „Odkrycie”): po ukończeniu badania
@@ -4556,8 +4768,14 @@ const SHOTS: Shot[] = [
       const keys = await thingKeys(page);
       const brak = Object.keys(r).filter((k) => !keys.some((key) => key.includes(`"kind":"${k}"`)));
       if (brak.length) throw new Error(`nie narysowano: ${brak.join(', ')}`);
-      // panel budowy zasłania prawą stronę ujęć
+      // panel budowy zasłania prawą stronę ujęć, a stojąca pracownia bez wybranego badania sama otwiera tablicę (też zasłania):
+      // wybrane badanie i zamknięty panel zostawiają same budowle
+      await page.evaluate(() => {
+        window.zm!.sim!.st.research = { cur: 't_spawanie', prog: {}, at: {} };
+      });
       if (await page.evaluate(() => window.zm!.buildPanel().open)) await page.keyboard.press('b');
+      await page.waitForTimeout(500);
+      if (await page.evaluate(() => window.zm!.badania().open)) throw new Error('tablica zasłania ujęcia budowli');
       const ujecie = async (nazwa: string, x: number, y: number, zoom: number) => {
         await page.evaluate(([x, y, zoom]) => window.zm!.setCam(x, y, zoom), [x, y, zoom]);
         await waitIdle(page);
@@ -4577,6 +4795,120 @@ const SHOTS: Shot[] = [
         [sr.reduce((a, q) => a + q[0], 0) / 3 + 1, sr.reduce((a, q) => a + q[1], 0) / 3 + 1],
       );
       await waitIdle(page);
+    },
+  },
+  // badania, nowe paleniska nocą: koza z beczki (w pokoju przy oknie) i kocioł (na klatce) palą się jak koza zarządu: ogień
+  // w drzwiczkach i żar u dołu (klatki ognia w rysunku), dym z rury za ścianą, światło we wnętrzu i okna jaśniejące na
+  // zewnątrz. Zimne wyglądają jak dawniej (zrzut -zimne). Zrzut końcowy: całe mieszkanie nocą z trzema ogniami
+  {
+    name: 'badania-paleniska',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&godzina=22&cam=hq,1.6`);
+      await waitIdle(page);
+      const r = await page.evaluate(async () => {
+        const budowa = '/src/ui/budowa.ts';
+        const budowle = '/src/sim/budowle.ts';
+        const { allowedAnchors } = (await import(/* @vite-ignore */ budowa)) as typeof import('../src/ui/budowa.ts');
+        const { BUILDS, footprint } = (await import(
+          /* @vite-ignore */ budowle
+        )) as typeof import('../src/sim/budowle.ts');
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const w = zm.sim!.w;
+        const size = w.size;
+        st.techDone = [BUILDS.koza_beczka.tech, BUILDS.kociol.tech].filter((t): t is string => !!t);
+        const home = st.things.find((t) => t.kind === 'koza')!;
+        const near = (a: number, b: number) =>
+          Math.hypot((a % size) - home.x, Math.floor(a / size) - home.y) -
+          Math.hypot((b % size) - home.x, Math.floor(b / size) - home.y);
+        const out: Record<string, { x: number; y: number; rot: number }> = {};
+        for (const kind of ['koza_beczka', 'kociol'] as const) {
+          const a = allowedAnchors(st, w, kind, 0).sort(near);
+          if (!a.length) throw new Error(`brak miejsca na ${kind}`);
+          const f = footprint(kind, 0);
+          const t = {
+            id: st.nextThing++,
+            kind,
+            x: a[0] % size,
+            y: Math.floor(a[0] / size),
+            w: f.w,
+            h: f.h,
+            rot: 0,
+            n: 0,
+            fuel: 0,
+            by: -1,
+            owner: -1,
+          };
+          st.things.push(t);
+          out[kind] = { x: t.x, y: t.y, rot: 0 };
+        }
+        out.koza = { x: home.x, y: home.y, rot: home.rot };
+        return out;
+      });
+      console.log(`  postawione: ${JSON.stringify(r)}`);
+      await waitIdle(page);
+      // zimne: bez ognia w rysunku (zrzut -zimne)
+      await page.evaluate(([x, y]) => window.zm!.setCam(x, y, 1.6), [r.koza.x + 1, r.koza.y + 1]);
+      await waitIdle(page);
+      const zimne = await thingKeys(page);
+      if (zimne.some((k) => /"kind":"(koza_beczka|kociol)"[^}]*"fire"/.test(k)))
+        throw new Error('zimne palenisko ma ogień');
+      await page.screenshot({ path: path.join(OUT, 'badania-paleniska-zimne.png') });
+      // rozpalone: koza zarządu, koza z beczki i kocioł; kilka sekund gry, żeby ciepło i światło pomieszczeń się ustawiły
+      const ogien = await page.evaluate(async () => {
+        const simMod = '/src/sim/sim.ts';
+        const { BURN_TICKS } = (await import(/* @vite-ignore */ simMod)) as typeof import('../src/sim/sim.ts');
+        const sim = window.zm!.sim!;
+        for (const t of sim.st.things)
+          if (t.kind === 'koza' || t.kind === 'koza_beczka' || t.kind === 'kociol') t.fuel = 5 * BURN_TICKS;
+        for (let k = 0; k < 200; k++) sim.step();
+        return { fuel: sim.st.things.filter((t) => t.fuel > 0 && /^koza|^kociol/.test(t.kind)).map((t) => t.kind) };
+      });
+      console.log(`  pala sie: ${JSON.stringify(ogien)}`);
+      await waitIdle(page);
+      await frames(page, 6);
+      const m = await page.evaluate(async () => {
+        const smokeMod = '/src/render/smoke.ts';
+        const { smokeSources } = (await import(/* @vite-ignore */ smokeMod)) as typeof import('../src/render/smoke.ts');
+        const zm = window.zm!;
+        const v = zm.view as unknown as {
+          gameLights: { r: number; inside?: boolean; x: number; y: number }[];
+          drawn: { kind: string; x: number; y: number; w: number; h: number; rot: number; fuel?: number }[];
+          things: Map<string, unknown>;
+        };
+        const dym = smokeSources(v.drawn, zm.sim!.w).map((s) => s.key);
+        return {
+          swieca: v.gameLights.filter((l) => l.inside).length,
+          dym,
+          klucze: [...v.things.keys()].filter((k) => /"kind":"(koza|koza_beczka|kociol)"/.test(k)),
+          pokoje: zm.sim!.light.filter((l) => l > 0).length,
+        };
+      });
+      console.log(`  ${JSON.stringify(m)}`);
+      if (m.swieca < 3)
+        throw new Error(`świateł we wnętrzu: ${m.swieca}, a ma być co najmniej 3 (koza, beczka, kocioł)`);
+      for (const k of ['koza', 'koza_beczka', 'kociol'])
+        if (!m.dym.some((d) => d.startsWith(`${k}:`))) throw new Error(`brak dymu z ${k}: ${m.dym.join()}`);
+      for (const k of ['koza_beczka', 'kociol'])
+        if (!m.klucze.some((q) => q.includes(`"kind":"${k}"`) && q.includes('"fire":')))
+          throw new Error(`${k} bez ognia w rysunku`);
+      // ujęcia: kocioł z bliska, koza z beczki z bliska, całość (zrzut końcowy)
+      const ujecie = async (nazwa: string, x: number, y: number, zoom: number) => {
+        await page.evaluate(([x, y, zoom]) => window.zm!.setCam(x, y, zoom), [x, y, zoom]);
+        await waitIdle(page);
+        await frames(page, 4);
+        await page.screenshot({ path: path.join(OUT, `badania-paleniska-${nazwa}.png`) });
+      };
+      await ujecie('kociol', r.kociol.x + 1, r.kociol.y + 0.5, 3);
+      await ujecie('beczka', r.koza_beczka.x + 0.5, r.koza_beczka.y + 0.5, 3);
+      const sr = [r.koza, r.koza_beczka, r.kociol];
+      await page.evaluate(
+        ([x, y]) => window.zm!.setCam(x, y, 1.5),
+        [sr.reduce((a, q) => a + q.x, 0) / 3 + 0.5, sr.reduce((a, q) => a + q.y, 0) / 3 + 0.5],
+      );
+      await waitIdle(page);
+      await frames(page, 4);
     },
   },
   // tryb stawiania myszą: duch za kursorem (zielony, gdzie wolno, czerwony z powodem), R obraca, prawy klik

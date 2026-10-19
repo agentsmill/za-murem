@@ -1,15 +1,26 @@
 /* Odczyt stanu dla modułu zarządu (src/gov, karta nocy, uchwały) i dla interfejsu: ludzie zarządu z potrzebami,
    umiejętnościami i obecną pracą (people: tylko zarząd, z tego korzysta zarząd), mieszkańcy siedziby z osobą
-   z generatora mieszkańców (lokatorzy: tylko do kart w interfejsie), zapasy drewna i jedzenia, czas, badania dla
-   tablicy korkowej (`badania`, src/ui/badania.ts). Czysta funkcja stanu i świata. Zwraca świeże obiekty (zwykły
-   JSON), więc zmiany w wyniku nie ruszają symulacji. */
+   z generatora mieszkańców (lokatorzy: tylko do kart w interfejsie), zapasy drewna i jedzenia (drewno razem z ogniem
+   we wszystkich paleniskach naszych mieszkań), czas, badania dla tablicy korkowej (`tablica`, src/ui/badania.ts;
+   `GovInput.badania` to co innego: odczyt dla ramy zwycięstwa). Czysta funkcja stanu i świata. Zwraca świeże obiekty
+   (zwykły JSON), więc zmiany w wyniku nie ruszają symulacji. */
 
 import type { Dom, TechDom } from '../content/data.ts';
 import { TECH_DOMS } from '../content/data.ts';
 import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { World } from '../world/world.ts';
-import { badaniaDom, badaniaWidoczne, type Kartka, kartka, odkrycia, TECHS, tempoOsoby, znajacy } from './badania.ts';
+import {
+  badaniaDom,
+  badaniaWidoczne,
+  type Kartka,
+  kartka,
+  odkrycia,
+  PALENISKA,
+  TECHS,
+  tempoOsoby,
+  znajacy,
+} from './badania.ts';
 import { type AmmoKey, noAmmo, type WeaponId, weaponOf } from './bron.ts';
 import { BUILDS, type BuildKind, footprint, type Mat } from './budowle.ts';
 import {
@@ -96,7 +107,7 @@ export interface SimStock {
   woodCarried: number;
   /** ogień w kozie zarządu, w godzinach gry */
   fireHours: number;
-  /** całe drewno w sztukach, razem z tym, co jest w kozie */
+  /** całe drewno w sztukach, razem z tym, co jest w ogniu: w kozie zarządu i w nowych paleniskach naszych mieszkań */
   wood: number;
   /** zapasy jedzenia (porcje) i ugotowane porcje w garnkach */
   supplies: number;
@@ -227,8 +238,9 @@ export interface SimSnapshot {
   /** napad tej nocy albo ostatni: faza (0 czekają, 1 za siatką, 2 wchodzą albo uciekają, 3 po wszystkim),
       rozstrzygnięcie i co wynieśli; null: nie było */
   raid: { phase: number; outcome: string; took: { wood: number; supplies: number; scrap: number } } | null;
-  /** tablica badań; null bez pracowni i bez stanu badań */
-  badania: SimBadania | null;
+  /** tablica badań (src/ui/badania.ts); null bez pracowni i bez stanu badań. Nazwa inna niż `GovInput.badania`, które
+      ma kształt odczytu dla ramy zwycięstwa */
+  tablica: SimBadania | null;
 }
 
 /** odczyt badań dla tablicy: stan kartek w trybie gry, obsada stołu i tempo jej pracy */
@@ -342,6 +354,9 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   const sklad = h ? h.sklad : [];
   let woodSklad = 0;
   let woodLoose = 0;
+  // drewno w ogniu: koza zarządu (fuel liczone niżej) i nowe paleniska naszych mieszkań (koza z beczki, kocioł według
+  // PALENISKA); zbiornik trzyma sztuki jak koza, więc sztuka to BURN_TICKS ognia niezależnie od wagi paleniska
+  let woodFire = 0;
   let supplies = 0;
   let meals = 0;
   let scrap = 0;
@@ -358,6 +373,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     else if (t.kind === 'posilek') meals += t.n;
     else if (t.kind === 'zlom') scrap += t.n;
     else if (t.kind === 'deski') boards += t.n;
+    else if (t.kind !== 'koza' && Object.hasOwn(PALENISKA, t.kind)) woodFire += Math.ceil(t.fuel / BURN_TICKS);
   }
   const people: SimPerson[] = st.pawns
     .filter((p) => p.kind === 'core')
@@ -390,7 +406,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       woodLoose,
       woodCarried,
       fireHours: fuel / TICKS_PER_HOUR,
-      wood: woodSklad + woodLoose + woodCarried + Math.ceil(fuel / BURN_TICKS),
+      wood: woodSklad + woodLoose + woodCarried + Math.ceil(fuel / BURN_TICKS) + woodFire,
       supplies,
       meals,
       gasCooks: Math.floor((stove?.fuel ?? 0) / COOK_TICKS),
@@ -461,6 +477,6 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       };
     }),
     raid: st.raid ? { phase: st.raid.phase, outcome: st.raid.outcome, took: { ...st.raid.took } } : null,
-    badania: badaniaOf(st),
+    tablica: badaniaOf(st),
   };
 }

@@ -11,7 +11,16 @@ import { jezyk, L, liczba, tr } from '../core/jezyk.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import { IN } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
-import { kartka, koncowaZbadana, kosztTech, nazwaTech, siecWlaczona, TECH_BY } from './badania.ts';
+import {
+  BRAK_MIEJSCA,
+  kartka,
+  koncowaZbadana,
+  kosztTech,
+  nazwaTech,
+  siecWlaczona,
+  TECH_BY,
+  wolneMiejsca,
+} from './badania.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
@@ -53,7 +62,6 @@ import {
   KOZA_POST,
   PATCH_COST,
   type Pawn,
-  RESEARCH_SEATS,
   SIATKA_POST,
   type SimState,
   SPEAR_BOARDS,
@@ -151,9 +159,9 @@ function dismantleEn(kind: string | undefined): { base: string; ing: string } {
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
 
 /** Polecenia, które mają sens na klikniętym kafelku (menu kontekstowe z GDD), „Idź tu” zawsze na końcu.
-    Drewno poza składem: zanieść do składu. Koza albo ognisko, gdy jest skąd wziąć drewno: dołożyć. Drzewo: ściąć,
-    od razu tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie w las ma znaczyć „idź”.
-    Dziura w siatce: załatać (gdy na stertach starczy desek i złomu) i pilnować. Brama: pilnować, zamknąć albo
+    Drewno poza składem: zanieść do składu. Koza, koza z beczki, kocioł albo ognisko, gdy jest skąd wziąć drewno:
+    dołożyć. Drzewo: ściąć, od razu tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie
+    w las ma znaczyć „idź”. Dziura w siatce: załatać (gdy na stertach starczy desek i złomu) i pilnować. Brama: pilnować, zamknąć albo
     otworzyć. Wolny kafelek podwórka: rozpalić ognisko (tylko z menu). Polecenia przyjmuje tylko zarząd: bez nikogo
     z rdzenia lista jest pusta. */
 export function commandsAt(st: SimState, w: World, ids: readonly number[], tile: number): MenuItem[] {
@@ -255,6 +263,17 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       cmd: { t: 'guard', ids: core, post: 'koza' },
       label: L('Czuwać przy kozie', 'Keep watch by the stove'),
       quick: false,
+    });
+  // koza z beczki i kocioł z badań: dokładanie jak do kozy zarządu (dyżur przy kozie dotyczy tylko jej)
+  const nowe = thingAt(st, w, tile, 'koza_beczka') ?? thingAt(st, w, tile, 'kociol');
+  if (nowe && wood)
+    out.push({
+      cmd: { t: 'refuel', ids: core, thing: nowe.id },
+      label:
+        nowe.kind === 'kociol'
+          ? L('Dołożyć do kotła', 'Add wood to the boiler')
+          : L('Dołożyć do kozy z beczki', 'Add wood to the barrel stove'),
+      quick: true,
     });
   const fire = thingAt(st, w, tile, 'ognisko');
   if (fire && wood)
@@ -473,10 +492,9 @@ function pracowniaItems(st: SimState, core: number[], lab: number): MenuItem[] {
     label: L(`Badać: ${nazwa.pl}`, `Research: ${nazwa.en}`),
     quick: false,
   };
-  const inni = st.pawns.filter((p) => !core.includes(p.id) && p.job?.t === 'research' && p.job.target === lab).length;
   if (kartka(st, cur, modeOf(st)).stan !== 'w_toku')
     badac.off = L('Brakuje wiedzy w osadzie.', 'The estate lacks the know-how.');
-  else if (inni >= RESEARCH_SEATS) badac.off = L('Przy stole nie ma miejsca.', 'No free seat at the table.');
+  else if (wolneMiejsca(st.pawns, lab, core) < 1) badac.off = tr(BRAK_MIEJSCA);
   return [badac, { cmd: { t: 'tablica', ids: core }, label: L('Tablica badań', 'Research board'), quick: false }];
 }
 
@@ -640,11 +658,19 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         ? L('Idzie po drewno.', 'Fetching wood.')
         : L('Niesie drewno do składu.', 'Carrying wood to the woodpile.');
     case 'refuel': {
-      const fire = st.things.find((t) => t.id === j.target)?.kind === 'ognisko';
-      if (fire)
+      const kind = st.things.find((t) => t.id === j.target)?.kind;
+      if (kind === 'ognisko')
         return walking
           ? L('Idzie po drewno do ogniska.', 'Fetching wood for the campfire.')
           : L('Dokłada do ogniska.', 'Feeding the campfire.');
+      if (kind === 'koza_beczka')
+        return walking
+          ? L('Idzie po drewno do kozy z beczki.', 'Fetching wood for the barrel stove.')
+          : L('Dokłada do kozy z beczki.', 'Feeding the barrel stove.');
+      if (kind === 'kociol')
+        return walking
+          ? L('Idzie po drewno do kotła.', 'Fetching wood for the boiler.')
+          : L('Dokłada do kotła.', 'Feeding the boiler.');
       return walking
         ? L('Idzie po drewno do kozy.', 'Fetching wood for the stove.')
         : L('Dokłada do kozy.', 'Feeding the stove.');

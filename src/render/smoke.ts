@@ -1,4 +1,5 @@
-/* Dym z rury palącej się kozy (rura wychodzi przez okno, dym idzie z zewnątrz ściany) i z ogniska.
+/* Dym z rury palącej się kozy, kozy z beczki i kotła (rura wychodzi przez okno albo ścianę, dym idzie z zewnątrz
+   ściany) i z ogniska.
    Kłęby liczone z czasu gry, bez losowania w stanie: kłąb i rodzi się co EVERY sekund, a z numeru
    (h2) bierze drobne przesunięcia. Wznosi się coraz wolniej, rośnie, znosi go wiatr (wolno zmienny
    z czasem) i rozwiewa. Wysokość w skali brył: 16 px na metr. Czyste funkcje bez PixiJS. */
@@ -10,6 +11,7 @@ import type { ThingLike } from './section.ts';
 export interface SmokeSource {
   /** stały klucz źródła (rodzaj i miejsce) */
   key: string;
+  /** koza: dym z rury paleniska (koza zarządu, koza z beczki, kocioł); ognisko: z ogniska na podwórku */
   kind: 'koza' | 'ognisko';
   /** punkt na ziemi pod wylotem (metry) i wysokość wylotu (metry) */
   x: number;
@@ -54,9 +56,13 @@ const STEP: readonly (readonly [number, number])[] = [
 
 const windowSets = new WeakMap<object, Set<number>>();
 
+/** paleniska z rurą przez ścianę: wysokość wylotu (m), dla kotła komin sięga wyżej niż rura kozy */
+const RURA: Readonly<Record<string, number>> = { koza: 1.7, koza_beczka: 2.4, kociol: 3.4 };
+
 /**
- * Źródła dymu z rzeczy: koza z fuel > 0 (wylot rury za oknem w stronę rot, jak rura w rzeczy.ts,
- * a bez okna obok półtora metra za kozą) i ognisko z fuel > 0.
+ * Źródła dymu z rzeczy: koza, koza z beczki i kocioł z fuel > 0 (wylot rury za oknem w stronę rot, jak rura w rzeczy.ts,
+ * a bez okna półtora metra za ścianą podstawy: od jej środka, dla kozy 1×1 półtora metra za kozą) i ognisko z fuel > 0.
+ * Okno szuka się na dwóch kafelkach za krawędzią podstawy od strony ściany rot (przy kotle 2×1 za obiema połówkami).
  */
 export function smokeSources(things: readonly ThingLike[], w: Pick<World, 'size' | 'interior'>): SmokeSource[] {
   const out: SmokeSource[] = [];
@@ -69,19 +75,26 @@ export function smokeSources(things: readonly ThingLike[], w: Pick<World, 'size'
   for (const t of things) {
     if ((t.fuel ?? 0) <= 0) continue;
     const seed = ((Math.imul(t.x, 73856093) ^ Math.imul(t.y, 19349663)) >>> 0) & 0xffff;
-    if (t.kind === 'koza') {
-      const [dx, dy] = STEP[t.rot & 3];
-      let x = t.x + 0.5 + dx * 1.5;
-      let y = t.y + 0.5 + dy * 1.5;
-      for (let k = 1; k <= 2; k++) {
-        const wx = t.x + dx * k;
-        const wy = t.y + dy * k;
-        if (wx < 0 || wy < 0 || wx >= size || wy >= size || !windows.has(wy * size + wx)) continue;
-        x = wx + 0.5 + dx * 0.85;
-        y = wy + 0.5 + dy * 0.85;
-        break;
-      }
-      out.push({ key: `koza:${t.x}:${t.y}`, kind: 'koza', x, y, z: 1.7, glow: 0.45, seed });
+    const z = Object.hasOwn(RURA, t.kind) ? RURA[t.kind] : undefined;
+    if (z !== undefined) {
+      const rot = t.rot & 3;
+      const [dx, dy] = STEP[rot];
+      // krawędź podstawy od strony ściany: kafelki, z których rura może wyjść (rot 0 góra, 1 prawo, 2 dół, 3 lewo)
+      const ex = rot === 1 ? t.x + t.w - 1 : t.x;
+      const ey = rot === 2 ? t.y + t.h - 1 : t.y;
+      const dlugosc = dx === 0 ? t.w : t.h;
+      let x = t.x + t.w / 2 + dx * ((dx === 0 ? t.h : t.w) / 2 + 1);
+      let y = t.y + t.h / 2 + dy * ((dx === 0 ? t.h : t.w) / 2 + 1);
+      okno: for (let k = 1; k <= 2; k++)
+        for (let i = 0; i < dlugosc; i++) {
+          const wx = (dx === 0 ? ex + i : ex) + dx * k;
+          const wy = (dx === 0 ? ey : ey + i) + dy * k;
+          if (wx < 0 || wy < 0 || wx >= size || wy >= size || !windows.has(wy * size + wx)) continue;
+          x = wx + 0.5 + dx * 0.85;
+          y = wy + 0.5 + dy * 0.85;
+          break okno;
+        }
+      out.push({ key: `${t.kind}:${t.x}:${t.y}`, kind: 'koza', x, y, z, glow: 0.45, seed });
     } else if (t.kind === 'ognisko')
       out.push({ key: `ognisko:${t.x}:${t.y}`, kind: 'ognisko', x: t.x + 0.5, y: t.y + 0.6, z: 0.35, glow: 1, seed });
   }

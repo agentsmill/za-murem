@@ -19,7 +19,8 @@
    `kartka` to stan jednej kartki tablicy, `tempoOsoby` to postęp na godzinę gry jednej siedzącej osoby. Dodawanie
    postępu w kroku, pracownia i polecenia `research` i `study` są w `Sim` (src/sim/sim.ts: chooseResearch,
    startResearch, researchTick), tak samo plan dnia lokatorów z wiedzą i ich droga do pracowni (plan, labOpen); limit
-   i napisy pracowni w budowle.ts.
+   i napisy pracowni w budowle.ts. Miejsca przy stole: `RESEARCH_SEATS`, `zajmujeMiejsce` i `wolneMiejsca` to jedno
+   źródło predykatu „miejsce zajęte” dla `Sim.startResearch`, menu pracowni (orders.ts) i podpowiedzi po „Badać”.
 
    Książki. `ksiazkaZ` losuje książkę z przeszukanego pomieszczenia z osobnego generatora z ziarna gry i klucza
    pomieszczenia (inna stała niż `wreckRng`), więc przeszukanie nie przesuwa `st.rng` ani innych losowań; szanse
@@ -325,7 +326,7 @@ export function liczbaZbadanych(st: SimState): number {
 }
 
 /** Odkrycia: zbadane technologie z tickiem ukończenia (`research.at`), od najstarszego (przy tym samym ticku po
-    identyfikatorze). Czyta je tablica (`snapshot().badania.odkrycia`), karta „Odkrycie” i kronika zarządu
+    identyfikatorze). Czyta je tablica (`snapshot().tablica.odkrycia`), karta „Odkrycie” i kronika zarządu
     (`govInput()`), więc kolejność jest wszędzie ta sama. Bez stanu badań pusta lista. */
 export function odkrycia(st: Pick<SimState, 'research'>): { id: string; tick: number }[] {
   return Object.entries(st.research?.at ?? {})
@@ -336,6 +337,26 @@ export function odkrycia(st: Pick<SimState, 'research'>): { id: string; tick: nu
 /** czy technologia końcowa drzewka jest zbadana */
 export function koncowaZbadana(st: SimState): boolean {
   return TECHS.some((t) => t.koncowa === true && !!st.techDone?.includes(t.id));
+}
+
+/** przy stole pracowni siedzą najwyżej dwie osoby naraz (każda dodaje swój postęp) */
+export const RESEARCH_SEATS = 2;
+
+/** napis menu i podpowiedzi, gdy przy stole nie ma już wolnego miejsca */
+export const BRAK_MIEJSCA: Tx = tx('Przy stole nie ma miejsca.', 'No free seat at the table.');
+
+/** Czy pionek zajmuje miejsce przy stole pracowni `lab`: ma pracę badania z tym stołem w celu, czyli idzie do niego
+    albo przy nim siedzi. To jedyne miejsce, które to rozstrzyga: `Sim.startResearch`, menu pracowni i podpowiedź po
+    „Badać” liczą miejsca przez `wolneMiejsca`. */
+export const zajmujeMiejsce = (p: SimState['pawns'][number], lab: number): boolean =>
+  p.job?.t === 'research' && p.job.target === lab;
+
+/** Ile miejsc przy stole pracowni `lab` zostaje dla `zaznaczonych` (id pionków): RESEARCH_SEATS minus pionki spoza
+    zaznaczenia, które miejsca już zajmują. Zaznaczeni, którzy już siedzą, miejsc nie blokują, bo zaraz dostają to samo
+    polecenie i zajmą je od nowa. */
+export function wolneMiejsca(pawns: SimState['pawns'], lab: number, zaznaczeni: readonly number[] = []): number {
+  const inni = pawns.filter((p) => !zaznaczeni.includes(p.id) && zajmujeMiejsce(p, lab)).length;
+  return Math.max(0, RESEARCH_SEATS - inni);
 }
 
 /** czy sieć jest już włączona (polecenie `siec` w pracowni, `Sim.wlaczSiec`); pole powstaje dopiero przy włączeniu */

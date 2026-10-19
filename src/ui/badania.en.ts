@@ -60,6 +60,8 @@ export const EN = {
   badamy: 'Researching',
   koniec: (kiedy: string) => `done in ${kiedy}`,
   stoiKrotko: 'stalled',
+  /** podpowiedź po „Badać”, gdy zaznaczonych jest więcej osób niż wolnych miejsc przy stole */
+  usiada: (ile: number, z: number) => `${ile} of ${z} will sit down, there are no more seats.`,
   polka: 'Shelf',
   /** karta „Odkrycie”: nagłówek, tytuł, co odblokowuje i przyciski */
   badania: 'Research',

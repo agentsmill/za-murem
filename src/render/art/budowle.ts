@@ -7,12 +7,16 @@
    kotwica na środku dolnej krawędzi podstawy, rozmiar i kotwica zależą tylko od rodzaju i ustawienia.
    Ustawienie rot jak u mebli: ściana, przy której stoi (0 północ, 1 wschód, 2 południe, 3 zachód);
    ogródek, szklarnia, zasieki, barykada i wieża tylko kładą się wzdłuż (rot 0 i 2) albo w poprzek (1 i 3). Rura kozy
-   z beczki skręca pod sufitem ku ścianie rot (stoi przy oknie, a okno bywa po każdej stronie). Każdy rodzaj BuildKind
-   ma własny przypadek w buildSprite (bez gałęzi domyślnej, która rysowałaby zasieki). Czyste funkcje bez DOM. */
+   z beczki skręca pod sufitem ku ścianie rot (stoi przy oknie, a okno bywa po każdej stronie). Koza z beczki i kocioł
+   mają klatki ognia jak koza zarządu (parametr fire 0..FIRE_FRAMES-1 w buildSprite: płomień w drzwiczkach, żar u dołu;
+   bez fire są zimne). Każdy rodzaj BuildKind ma własny przypadek w buildSprite (bez gałęzi domyślnej, która rysowałaby
+   zasieki). Czyste funkcje bez DOM. */
 
 import {
   type Box,
   box,
+  FIRE_FRAMES,
+  fireColor,
   HOLE,
   LIT,
   M,
@@ -484,22 +488,27 @@ function pracownia(seed: number): Box[] {
 
 // ---------------------------------------------------------------- koza z beczki
 
-/** koza z beczki 1×1: beczka z blachy z drzwiczkami, pokrywa z rurą, która idzie pod sufit i skręca ku ścianie rot */
-function kozaBeczka(seed: number): Box[] {
+/** koza z beczki 1×1: beczka z blachy z drzwiczkami, pokrywa z rurą, która idzie pod sufit i skręca ku ścianie rot;
+    fire >= 0 to klatka ognia: płomień za drzwiczkami i żar u dołu beczki */
+function kozaBeczka(seed: number, fire: number): Box[] {
+  const burning = fire >= 0;
+  const f = burning ? fire % FIRE_FRAMES : 0;
   const r = rnd(seed, 1481);
   const paint = pick([0x3f6a8f, 0x4f7a45, 0x9a3a2e, 0xa98438] as const, r(1));
   const rim = shade(paint, 1.25);
   const barrel: Paint = (u, v, _w, h) => {
     if (v === 5 || v === h - 6) return shade(paint, 0.72); // obręcz
     if (v === 6 || v === h - 5) return rim;
+    if (burning && v >= h - 4 && h2(u, v + f, 77) < 0.3) return M.ember; // żar prześwituje u dołu
     if (h2(u, v, seed + 3) < 0.07 || (h2(u >> 1, v >> 1, seed + 4) < 0.05 && v > h / 2)) return M.rust;
     return (u + v) % 9 === 0 ? shade(paint, 0.9) : paint;
   };
   const front: Paint = (u, v, w, h) => {
-    // drzwiczki do paleniska z uchwytem i szczeliną na ciąg
+    // drzwiczki do paleniska z uchwytem i szczeliną na ciąg; palące się pokazują płomień
     if (u >= 5 && u <= 13 && v >= h - 19 && v <= h - 9) {
       if (u === 5 || u === 13 || v === h - 19 || v === h - 9) return M.ironHi;
       if (u === 12 && v === h - 14) return M.tin;
+      if (burning && u >= 6 && u <= 11 && v >= h - 18 && v <= h - 12) return fireColor(u, v, f);
       return v === h - 11 ? M.ironDark : M.iron;
     }
     return barrel(u, v, w, h);
@@ -522,16 +531,20 @@ function kozaBeczka(seed: number): Box[] {
 
 // ---------------------------------------------------------------- kocioł
 
-/** kocioł węzła 2×1: stalowy zbiornik z manometrem, palenisko z drzwiczkami, zbiornik wyrównawczy, rury z zaworami */
-function kociol(seed: number): Box[] {
+/** kocioł węzła 2×1: stalowy zbiornik z manometrem, palenisko z drzwiczkami, zbiornik wyrównawczy, rury z zaworami;
+    fire >= 0 to klatka ognia: płomień w drzwiczkach paleniska i żar w popielniku (zimny ma szczelinę ciemną) */
+function kociol(seed: number, fire: number): Box[] {
+  const burning = fire >= 0;
+  const f = burning ? fire % FIRE_FRAMES : 0;
   const r = rnd(seed, 1491);
   const tank = pick([0x7f8a8c, 0x6f8a86, 0x8a8f94] as const, r(1));
   const red = 0xb2352b;
   const b: Box[] = [box(3, 5, 0, 61, 29, 3, Q.concrete)];
   // zbiornik główny: pasy, nity, manometr z czerwoną strzałką, tabliczka
-  const body: Paint = (u, v, w) => {
+  const body: Paint = (u, v, w, h) => {
     if (v % 14 === 6 || v % 14 === 7) return v % 14 === 6 ? shade(tank, 1.18) : shade(tank, 0.7); // pas spawu
     if ((u === 1 || u === w - 2) && v % 14 === 3) return M.ironHi; // nity
+    if (burning && v >= h - 3 && h2(u, v + f, 80) < 0.35) return M.ember | LIT; // żar spod zbiornika
     if (h2(u, v, seed + 3) < 0.05) return M.rust;
     return tank;
   };
@@ -556,14 +569,16 @@ function kociol(seed: number): Box[] {
   const door: Paint = (u, v, w, h) => {
     if (u > 2 && u < w - 3 && v > 4 && v < h - 3) {
       if (u === 3 || u === w - 4 || v === 5 || v === h - 4) return M.ironHi;
-      if (v === 9 && u > 5 && u < w - 6) return M.ember | LIT;
+      if (v >= 7 && v <= 11 && u >= 5 && u <= w - 6) return burning ? fireColor(u, v, f) : M.ironDark;
       return M.iron;
     }
+    if (burning && v >= h - 3 && u > 3 && u < w - 4 && h2(u, v + f, 77) < 0.45) return M.ember | LIT; // żar w popielniku
     return shade(Q.iron, 1.05);
   };
-  b.push(
-    box(33, 9, 3, 47, 28, 21, Q.iron, { front: door, back: () => Q.iron, left: () => Q.iron, right: () => Q.iron }),
-  );
+  // żar prześwituje też przez szczeliny w bokach i z tyłu paleniska, żeby było widać ogień, gdy kocioł stoi frontem od widza
+  // (przy ścianie od południa)
+  const bok: Paint = (u, v, _w, h) => (burning && v >= h - 5 && h2(u, v + f, 78) < 0.45 ? M.ember | LIT : Q.iron);
+  b.push(box(33, 9, 3, 47, 28, 21, Q.iron, { front: door, back: bok, left: bok, right: bok }));
   // zbiornik wyrównawczy
   b.push(
     box(49, 12, 3, 60, 26, 25, red, {
@@ -835,8 +850,9 @@ export function smieciEnv(size: 1 | 2 | 3): Box[] {
   return [box(16 - R, 4, 0, 16 + R, 19 + R - 3, 14, 0)];
 }
 
-/** sprite budowli w ustawieniu rot; te same argumenty dają te same piksele */
-export function buildSprite(kind: BuildKind, rot: Rot, seed: number): Sprite {
+/** sprite budowli w ustawieniu rot; te same argumenty dają te same piksele. fire (0..FIRE_FRAMES-1) pali koza z beczki
+    i kocioł, u pozostałych budowli nic nie zmienia; bez fire wszystko jest zimne. */
+export function buildSprite(kind: BuildKind, rot: Rot, seed: number, fire = -1): Sprite {
   const [a, b] = BUILD_BASE[kind];
   const W = a * PX;
   const D = b * PX;
@@ -856,9 +872,9 @@ export function buildSprite(kind: BuildKind, rot: Rot, seed: number): Sprite {
     case 'pracownia':
       return renderBoxes(pracownia(seed), W, D, rot);
     case 'koza_beczka':
-      return renderBoxes(kozaBeczka(seed), W, D, rot);
+      return renderBoxes(kozaBeczka(seed, fire), W, D, rot);
     case 'kociol':
-      return renderBoxes(kociol(seed), W, D, rot);
+      return renderBoxes(kociol(seed, fire), W, D, rot);
     case 'pieczarkarnia':
       return renderBoxes(pieczarkarnia(seed), W, D, rot);
     case 'szklarnia':

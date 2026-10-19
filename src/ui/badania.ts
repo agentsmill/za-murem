@@ -2,7 +2,7 @@
    szkiców: tablica w pracowni na pełnym ekranie z pauzą). Czyste funkcje bez DOM i bez PixiJS, z testem w Node
    (tests/unit/badania-tablica.test.ts), jak buildPanelHtml w budowa.ts; DOM, pauzę i klawisze robi main.ts.
 
-   `tablicaHtml(b, { wybrana, mode })` składa całe wnętrze warstwy z odczytu `SimSnapshot.badania`: nagłówek z przyciskiem
+   `tablicaHtml(b, { wybrana, mode })` składa całe wnętrze warstwy z odczytu `SimSnapshot.tablica`: nagłówek z przyciskiem
    „Wróć do gry” (`data-akcja="zamknij"`), kolumny er z `ERY` od lewej (nagłówek ery na pasku papieru), kartkę na
    każdą technologię na kolorowej pinezce (stany z `kartka`: zbadana z pieczątką, w toku z paskiem postępu, do wzięcia,
    „nikt się nie zna”, „najpierw”, odwrócona; technologia końcowa ze złotą pinezką i dopiskiem „Cel”, technologia
@@ -15,20 +15,23 @@
    Układ jest policzony, a nie ręczny: `uklad` ustawia kartki w kolumnach er (kolumna to indeks ery w `ERY`, wiersze
    wychodzą ze średniej wierszy wymagań, żeby sznurki szły prosto), więc nowa technologia czy era dochodzi bez zmiany
    tego pliku. Wszystko leży na jednej planszy o stałym rozmiarze w pikselach (`.tb-board`): kartki i sznurki mają
-   wspólne współrzędne, a na wąskim ekranie przewija się sama plansza w jej własnym oknie (`.tb-wrap`).
+   wspólne współrzędne, a na wąskim ekranie przewija się sama plansza w jej własnym oknie (`.tb-wrap`). Na laptopach
+   (1280 i 1366 px) plansza kurczy się do szerokości okna (`skalaPlanszy`, CSS `zoom` z `--tb-skala`, ustawia main.ts),
+   żeby ostatnia era i szczegóły były widoczne bez przewijania w poziomie; na telefonie zostaje w skali 1 i się przewija.
 
    `odkrycieSheet(id)` to karta „Odkrycie” z pauzą po ukończeniu badania, w stylu kartki z tablicy (odcień `odkrycie`):
    nazwa i działanie technologii, co odblokowuje, przyciski „Postaw <budowla>” (tylko gdy odblokowuje budowlę),
    „Następne badanie” (otwiera tablicę) i „Dalej”; wywołuje ją main.ts ze stanu symulacji jak spotkanie z sąsiadami.
 
    `czyOtworzycSama` to warunek samego otwarcia tablicy (raz po wyborze, nigdy przy innym oknie, napadzie ani alarmie).
+   `usiadaPodpowiedz` to podpowiedź po „Badać”, gdy zaznaczonych jest więcej osób niż wolnych miejsc przy stole.
    Napisy: polskie w L(…) tutaj, angielskie w badania.en.ts; nazwy technologii i er z src/sim/badania.ts, dziedziny
    z DOM i DOM_EN, zawody przez zawodEn. */
 
 import { DOM_EN, zawodEn } from '../content/data.en.ts';
-import { DOM, type TechDom } from '../content/data.ts';
+import { DOM, TECH_DOMS, type TechDom } from '../content/data.ts';
 import { L, tr } from '../core/jezyk.ts';
-import { ERY, type Kartka, nazwaEry, nazwaTech, TECH_BY, TECHS, type TechNowa } from '../sim/badania.ts';
+import { BRAK_MIEJSCA, ERY, type Kartka, nazwaEry, nazwaTech, TECH_BY, TECHS, type TechNowa } from '../sim/badania.ts';
 import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS, type BuildKind } from '../sim/budowle.ts';
 import { dayOf } from '../sim/clock.ts';
@@ -289,12 +292,10 @@ function obsadaHtml(b: SimBadania, kart: Map<string, Kartka>): string {
           : ''
     }</span>`;
   }
-  const polka = (['bud', 'cieplo', 'elek', 'med', 'uprawa', 'it'] as const)
-    .map((d) => {
-      const n = b.ksiazki[d] ?? 0;
-      return `<span class="tb-ksiazki" data-dom="${d}" data-n="${n}" title="${esc(`${domNazwa(d)}, ${L(`książki: ${n}`, EN.ksiazki(n))}`)}">${esc(domNazwa(d))} <b>${n}</b></span>`;
-    })
-    .join('');
+  const polka = TECH_DOMS.map((d) => {
+    const n = b.ksiazki[d] ?? 0;
+    return `<span class="tb-ksiazki" data-dom="${d}" data-n="${n}" title="${esc(`${domNazwa(d)}, ${L(`książki: ${n}`, EN.ksiazki(n))}`)}">${esc(domNazwa(d))} <b>${n}</b></span>`;
+  }).join('');
   return `<footer class="tb-obsada"><div class="tb-ob-ludzie"><b>${L('Przy stole', EN.obsada)}:</b> ${ludzie}</div><div class="tb-ob-badanie">${badanie}</div><div class="tb-polka"><b>${L('Półka', EN.polka)}:</b> ${polka}</div></footer>`;
 }
 
@@ -335,10 +336,32 @@ export function tablicaHtml(b: SimBadania, o: { wybrana: string | null; mode: Ga
   return `<header class="tb-bar"><div class="tb-tytul"><b id="tbTytul">${L('Tablica badań', EN.tytul)}</b><small class="tb-pauza">${L('Gra stoi', EN.stoi)}</small></div><button type="button" class="btn go" data-akcja="zamknij" title="Esc · T">${L('Wróć do gry', EN.wroc)}</button></header><div class="tb-glowna"><div class="tb-wrap" tabindex="0"><div class="tb-board" style="width:${szer}px;height:${wys}px"><svg class="tb-nici" width="${szer}" height="${wys}" viewBox="0 0 ${szer} ${wys}" aria-hidden="true"><defs><marker id="tbSupel" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse"><circle cx="4" cy="4" r="3" fill="#b3261e"/></marker></defs>${nici}</svg>${naglowki}${kartki}</div></div>${szczegolyHtml(b, o, kart)}</div>${obsadaHtml(b, kart)}`;
 }
 
+/** najmniejsza skala planszy na szerokim ekranie: mniejsze kartki byłyby nieczytelne, więc poniżej plansza zostaje szersza
+    od okna i przewija się w poziomie */
+export const SKALA_MIN = 0.7;
+
+/** Skala planszy dla okna o szerokości `okno` (px, wnętrze okna planszy bez ramy i paska przewijania) i planszy
+    o szerokości `plansza` (px w skali 1): 1, gdy plansza się mieści, inaczej `okno / plansza` zaokrąglone w dół do
+    tysięcznych (żeby po przeskalowaniu mieściła się co do piksela), ale nie mniej niż SKALA_MIN. Bez sensownych wymiarów
+    (ukryta tablica ma okno 0) skala 1. */
+export function skalaPlanszy(okno: number, plansza: number): number {
+  if (!(okno > 0) || !(plansza > 0)) return 1;
+  return Math.max(SKALA_MIN, Math.min(1, Math.floor((okno / plansza) * 1000) / 1000));
+}
+
+/** Podpowiedź po „Badać”, gdy zaznaczonych jest więcej osób niż wolnych miejsc przy stole (`wolne` z `wolneMiejsca`):
+    ile usiądzie i że reszta nie ma miejsca; gdy miejsc nie ma wcale, ten sam napis co wyszarzone „Badać” w menu. null,
+    gdy usiądą wszyscy (zostaje zwykłe „Zajmie się badaniami.”). */
+export function usiadaPodpowiedz(wolne: number, zaznaczonych: number): string | null {
+  if (wolne >= zaznaczonych) return null;
+  if (wolne < 1) return tr(BRAK_MIEJSCA);
+  return L(`Usiądą ${wolne} z ${zaznaczonych}, przy stole nie ma więcej miejsc.`, EN.usiada(wolne, zaznaczonych));
+}
+
 /** Czy tablica ma się otworzyć sama (z pauzą): tylko gdy stoi pracownia, żadne badanie nie jest wybrane, tablica nie jest
     otwarta, nie czeka ani nie jest otwarte żadne inne okno (karta nocy, uchwała, wydarzenie, raport, spotkanie, karta
-    odkrycia), nie trwa napad ani „Do broni!” (ani stado pod siatką) i tablica nie otwierała się już sama od ostatniego
-    wyboru badania (`byla`: gracz ją zamknął bez wyboru, więc nie wyskakuje drugi raz). */
+    odkrycia, panel budowy), nie trwa napad ani „Do broni!” (ani stado pod siatką) i tablica nie otwierała się już sama od
+    ostatniego wyboru badania (`byla`: gracz ją zamknął bez wyboru, więc nie wyskakuje drugi raz). */
 export function czyOtworzycSama(o: {
   pracownia: boolean;
   cur: string | null;

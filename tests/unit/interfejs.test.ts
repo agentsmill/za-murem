@@ -72,8 +72,6 @@ const fresh = (key = 'przymorze', crowd = 0) => {
 const tickAt = (h: number) => Math.round(((h * 60 - START_MINUTES) / 60) * TICKS_PER_HOUR);
 const input = (sim: Sim, screen: number): GovInput => ({
   ...snapshot(sim.st, sim.w),
-  // odczyt badań dla tablicy ma inny kształt niż GovInput.badania (rama zwycięstwa): zarząd czyta tu tylko to drugie
-  badania: undefined,
   screen,
   fence: govFence(sim.w),
   light: govLight(sim.st),

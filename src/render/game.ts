@@ -1,7 +1,7 @@
 /* Rysowanie stanu gry: z symulacji i świata powstają rzeczy, światła i stan siatki dla widoku.
-   Rzeczy to st.things (meble, drewno, zapasy, pnie, koza z ogniem, garnek z posiłkiem na stole) plus
+   Rzeczy to st.things (meble, drewno, zapasy, pnie, koza i inne paleniska z ogniem, garnek z posiłkiem na stole) plus
    ze świata trzepak, wraki, siatka i sterty materiału (te ze świata, dopóki symulacja ich nie przejmie).
-   Światła dają koza z ogniem (we wnętrzu), okna pomieszczeń oświetlonych ogniem (sim.light, plama
+   Światła dają koza, koza z beczki i kocioł z ogniem (we wnętrzu), okna pomieszczeń oświetlonych ogniem (sim.light, plama
    na ziemi za oknem), ognisko, lampy warty i latarnia w ręce wartownika. Stan siatki wynika z kopii
    blocked w symulacji, jak w kontrakcie siatki: łata na dziurze i zamknięta brama to blocked = 1,
    dziura to blocked = 0.
@@ -172,7 +172,7 @@ export function windowSpots(w: Pick<World, 'size' | 'interior'>): WindowSpot[] {
 }
 
 /**
- * Światła ze stanu gry: koza z ogniem (inside, świeci w pomieszczeniu), okna pomieszczeń
+ * Światła ze stanu gry: koza, koza z beczki i kocioł z ogniem (inside, świecą w pomieszczeniu), okna pomieszczeń
  * oświetlonych ogniem (plama za szybą, słabsza dla pomieszczeń oświetlonych tylko przez drzwi),
  * ognisko z ogniem, lampa i budka warty (zapalone, póki fuel nie spadnie do zera).
  */
@@ -180,8 +180,8 @@ export function gameLights(g: Pick<GameLike, 'st' | 'light'>, windows: readonly 
   const out: Light[] = [];
   for (const t of g.st.things) {
     const fuel = t.fuel ?? 0;
-    if (t.kind === 'koza' && fuel > 0)
-      out.push({ x: t.x + 0.5, y: t.y + 0.5, r: 4, color: FIRE, strength: 1, flicker: 0.3, inside: true });
+    if ((t.kind === 'koza' || t.kind === 'koza_beczka' || t.kind === 'kociol') && fuel > 0)
+      out.push({ x: t.x + t.w / 2, y: t.y + 0.5, r: 4, color: FIRE, strength: 1, flicker: 0.3, inside: true });
     else if (t.kind === 'ognisko' && fuel > 0)
       out.push({ x: t.x + 0.5, y: t.y + 0.6, r: 5.5, color: FIRE, strength: 1.1, flicker: 0.35 });
     else if ((t.kind === 'lampa' || t.kind === 'budka') && (t.fuel ?? 1) > 0)
