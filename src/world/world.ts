@@ -9,6 +9,8 @@
    budynku domu (pietra.ts), żeby dwa kawałki jednego budynku miały te same piętra. Miejsca (sklep, szkoła) kwadratu
    trafiają do budynków po całym obrysie z geo (okno widzi tylko swój kawałek przeciętego budynku), dom po kafelkach jak
    zawsze; odległości w tym kodzie liczą się przez kwadraty, bez Math.hypot (świat kwadratu wejdzie do symulacji).
+   Budynek przecięty granicą okna ma w kwadracie `ramka` całego budynku (WorldBuilding.ramka, z pierścieni geo), z której
+   rysowanie liczy styl (grzbiet dachu, głębokość fasady) i rząd kominów tak samo w obu kawałkach; dom jej nie ma.
    Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. W grze sieciowej świat może dostać listę
    budynków zajętych przez inne drużyny (bezSiedziby, klucze z klucze.ts): siedzibą zostaje wtedy najbliższy wolny
    budynek mieszkalny; bez tej opcji świat jest taki jak zawsze. Świat nie zależy od języka (nazwy budynków zostają
@@ -74,6 +76,14 @@ export interface WorldBuilding {
   osmId?: string;
   /** data budowy z tagu start_date w OSM, bez zmian („1975”, „1970s”, „~1965”); tylko z Overpass */
   startDate?: string;
+  /**
+   * Ramka całego budynku w kafelkach okna, także poza oknem (x0 i y0 mogą być ujemne, x1 i y1 sięgać poza bok): tylko w
+   * świecie kwadratu obok domu i tylko dla budynku przeciętego granicą okna. Liczy się z pierścieni geo, które mają
+   * budynek w całości, więc oba kawałki jednego budynku w sąsiednich kwadratach mają tę samą ramkę w układzie miasta
+   * (przesuniętą o bok kwadratu). Styl (grzbiet dachu, głębokość fasady) i rząd kominów liczą się z niej zamiast z ramki
+   * kawałka (x0..y1). Dom i budynek w całości w oknie jej nie mają, więc wyglądają jak zawsze.
+   */
+  ramka?: { x0: number; y0: number; x1: number; y1: number };
 }
 
 export interface Tree {
@@ -465,6 +475,29 @@ function opiszBudynki(
     if (b >= 0) rodzajeOf[b].add(p.k);
   }
 
+  // ramka całego budynku (tylko kwadrat obok domu i tylko budynek wystający poza okno): z pierścieni geo, w układzie okna.
+  // Indeks kafelka liczy się w układzie adresu (floor(x + half)) i dopiero potem przesuwa o ox, oy (całkowite), więc oba
+  // kawałki jednego budynku dostają dokładnie te same liczby (to samo co floor(x − ox + half) z jednego geo)
+  const ramkaCalosci = (b: GeoBuilding): WorldBuilding['ramka'] => {
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const r of [b.p, ...(b.pp ?? [])])
+      for (const [px, py] of r) {
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
+      }
+    if (!Number.isFinite(minX)) return undefined;
+    const x0 = Math.floor(minX + half) - ox;
+    const y0 = Math.floor(minY + half) - oy;
+    const x1 = Math.floor(maxX + half) - ox;
+    const y1 = Math.floor(maxY + half) - oy;
+    return x0 >= 0 && y0 >= 0 && x1 < size && y1 < size ? undefined : { x0, y0, x1, y1 };
+  };
+
   // 7. opis budynków
   const counters: Record<string, number> = {};
   const buildings: WorldBuilding[] = kept.map((o, id) => {
@@ -486,6 +519,7 @@ function opiszBudynki(
     const rodzaje = [...rodzajeOf[id]].sort();
     const cls = classify(o.b, area, cats);
     counters[cls] = (counters[cls] || 0) + 1;
+    const ramka = poObrysie ? ramkaCalosci(o.b) : undefined;
     return {
       id,
       cls,
@@ -503,6 +537,7 @@ function opiszBudynki(
       ...(o.b.t.id ? { osmId: o.b.t.id } : {}),
       ...(o.b.t.start_date ? { startDate: o.b.t.start_date } : {}),
       ...(rodzaje.length ? { rodzaje } : {}),
+      ...(ramka ? { ramka } : {}),
     };
   });
   const pois = ox || oy ? geo.poi.map((p) => ({ ...p, x: p.x - ox, y: p.y - oy })) : geo.poi;

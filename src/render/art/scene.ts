@@ -6,8 +6,10 @@
    - maska cieni w oczkach 8 px (4 na kafelek), drzewa pogrupowane w kawałki 32×32.
    Kwadraty miasta obok domu (src/world/kwadraty.ts) mają własne sceny. Scena kwadratu zna swój początek w układzie
    miasta (`poczatek`: szum i wzory liczą się od współrzędnych miasta, więc łączą się przez szew) i brzegi sąsiadów
-   (`brzeg`: pasy terenu za krawędziami i ciągi budynków przecinanych szwem, zob. szew.ts). Bez nich (dom, gra bez
-   kwadratów) scena i rysowanie są takie jak zawsze. */
+   (`brzeg`: pasy terenu za krawędziami i ciągi budynków przecinanych szwem, zob. szew.ts). Styl budynku przeciętego
+   granicą okna (kierunek i położenie grzbietu dachu, głębokość fasady) liczy się z ramki całego budynku
+   (WorldBuilding.ramka), a nie kawałka, więc oba kawałki w sąsiednich kwadratach mają ten sam grzbiet. Bez tych pól (dom,
+   gra bez kwadratów) scena i rysowanie są takie jak zawsze. */
 
 import { hashString } from '../../core/rng.ts';
 import type { Pt } from '../../world/geo.ts';
@@ -53,7 +55,10 @@ export interface BStyle {
 }
 
 /** budynek w zakresie, którego potrzebuje rysowanie kawałków (`levels` bez limitu stylu: do wyboru pięter) */
-export type ArtBuilding = Pick<WorldBuilding, 'id' | 'cls' | 'x0' | 'y0' | 'x1' | 'y1' | 'entrances' | 'levels'>;
+export type ArtBuilding = Pick<
+  WorldBuilding,
+  'id' | 'cls' | 'x0' | 'y0' | 'x1' | 'y1' | 'entrances' | 'levels' | 'ramka'
+>;
 
 /** to, czego potrzebuje rysowanie kawałków: bez reszty świata, więc da się to wysłać do workera */
 export interface ChunkScene {
@@ -129,7 +134,7 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
       terr,
       bid,
       trees,
-      buildings: buildings.map(({ id, cls, x0, y0, x1, y1, entrances, levels }) => ({
+      buildings: buildings.map(({ id, cls, x0, y0, x1, y1, entrances, levels, ramka }) => ({
         id,
         cls,
         x0,
@@ -138,6 +143,7 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
         y1,
         entrances,
         levels,
+        ...(ramka ? { ramka } : {}),
       })),
     },
     south: sc.south,
@@ -184,7 +190,10 @@ function styleOf(
   // ziarno stylu: z numeru budynku w świecie (dom), a w kwadracie obok domu z klucza budynku (opcje sceny)
   const seed = ziarno ?? (h2(b.id, b.x0 * 7 + b.y0, w.seed) * 1e9) | 0;
   const r = (k: number) => h2(seed, k, 77);
-  const depthPx = (b.y1 - b.y0 + 1) * TILE;
+  // ramka budynku: w kwadracie obok domu budynek przecięty granicą okna ma ramkę całego budynku (WorldBuilding.ramka), więc
+  // oba jego kawałki liczą głębokość fasady i grzbiet dachu tak samo; dom i budynek w całości w oknie liczą z kafelków
+  const ram = b.ramka ?? b;
+  const depthPx = (ram.y1 - ram.y0 + 1) * TILE;
   let roof: RoofKind = 'tar';
   let wall: number = shade(WALLS[Math.floor(r(1) * WALLS.length)], 0.86);
   let floorH = 9;
@@ -243,15 +252,15 @@ function styleOf(
   let facade = modul ? pasFasady(modul, lg ? vis : levels).length : base + levels * floorH + 2;
   facade = Math.min(facade, Math.max(10, depthPx - 12));
   if (roof === 'tiles') {
-    const wpx = (b.x1 - b.x0 + 1) * TILE;
-    const roofTop = b.y0 * TILE;
-    const roofBottom = (b.y1 + 1) * TILE - facade;
+    const wpx = (ram.x1 - ram.x0 + 1) * TILE;
+    const roofTop = ram.y0 * TILE;
+    const roofBottom = (ram.y1 + 1) * TILE - facade;
     if (wpx >= roofBottom - roofTop) {
       ridge = 'h';
       ridgeAt = Math.round((roofTop + roofBottom) / 2);
     } else {
       ridge = 'v';
-      ridgeAt = Math.round(((b.x0 + b.x1 + 1) * TILE) / 2);
+      ridgeAt = Math.round(((ram.x0 + ram.x1 + 1) * TILE) / 2);
     }
   }
   const accent = [0x8a8f86, 0x9a5b3c, 0x5f7a8c, 0xb8a86a, 0x6e8a5a, 0xc7c2b6][Math.floor(r(9) * 6)];

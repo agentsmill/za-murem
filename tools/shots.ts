@@ -11584,6 +11584,9 @@ function kwadratyShots(): Shot[] {
     out.push(kadr(`kwadraty-szew-rog-${d}`, `demo=${d}&kwadraty=3x3&cam=384,384,1&speed=0`, demo(d)));
   // las i potok na szwie południowym Zielonek: cienie drzew sąsiada przechodzą przez szew, bez prostej kreski
   out.push(kadr('kwadraty-szew-las', 'demo=zielonki&kwadraty=3x3&cam=272,384,0.8&speed=0', demo('zielonki')));
+  // dachy dwuspadowe domów przeciętych szwem między dwoma kwadratami bez domu (północno-zachodni i zachodni, y = 0): jeden
+  // grzbiet na dom po obu stronach szwu, nie dwa domy jeden nad drugim (ramka całego budynku, WorldBuilding.ramka)
+  out.push(kadr('kwadraty-szew-dach-zielonki', 'demo=zielonki&kwadraty=3x3&cam=-177,0,1.3&speed=0', demo('zielonki')));
   // z daleka (zoom 0,3: dalekie kawałki, szwy w jezdniach i parkach) i na poziomie „bardzo daleko” przy skrajnych kamerach
   for (const d of DEMOS)
     out.push(kadr(`kwadraty-daleko-${d}`, `demo=${d}&kwadraty=3x3&cam=384,384,0.3&speed=0`, demo(d)));
