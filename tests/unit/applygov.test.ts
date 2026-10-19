@@ -80,7 +80,6 @@ describe('applyGov: skutki zarządu w symulacji', () => {
     const st = createSim(w, 3, { core: 3 });
     const [a, b] = core(st);
     const safe0 = b.needs!.safe;
-    const rest0 = a.needs!.rest;
     applyGov(
       st,
       w,
@@ -89,7 +88,7 @@ describe('applyGov: skutki zarządu w symulacji', () => {
         e.moods.push({ id: idOf(st, 1), why: 'Przegoniliśmy szabrowników', d: 6, hours: 12 });
       }),
     );
-    expect(a.needs!.rest).toBe(rest0 - 30);
+    expect(a.needs!.rest).toBe(35);
     expect(a.needs!.health).toBe(0);
     expect(b.needs!.safe).toBe(safe0);
     expect(b.moods).toEqual([{ why: 'Przegoniliśmy szabrowników', d: 6, until: st.tick + 12 * 800 }]);

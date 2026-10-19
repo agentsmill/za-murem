@@ -1496,6 +1496,8 @@ Boty. `npm run bot`: da4b24e0 → b265fd9a, po 3 dobach dad44c81 → a4e8ea91 (s
 
 Do przejrzenia z Mateuszem (nie ruszałem): (1) czy ten balans po D jest do przyjęcia, bo bot zombie ginie częściej (można zaostrzyć wznowienie: większy zasięg spokoju, dłuższa cisza albo brak wznawiania poza siedzibą po zmierzchu; stałe `WZNOW_ZASIEG`, `WZNOW_SPOKOJ`); (2) 3 próby to dwa wznowienia: „najwyżej 3 wznowienia” z briefu da się dostać zmianą `WZNOW_PROBY` na 4; (3) po wygranej walce, gdy kolejny szwendacz stoi w 10 m, pionek chowa się jak po ucieczce i wraca po minucie spokoju (nie czeka na miejscu).
 
+Wstrzymane przy scaleniu (nocny integrator, 19.10.2026): D (wolniejsze zmęczenie, eb5b019) cofnięte osobnym commitem do decyzji Mateusza, bo w bocie zombie na ziarnach 1–20 zgony rosną z 9 do 22 (warta z dzidami) i z 26 do 38 (bez warty), a ugryzienia z 34 do 124 i ze 137 do 217. Na serwer idą same A–C (wznowienie polecenia, ładunek, czekanie przy drzwiach), które skrótów botów na ziarnach 1–5 nie ruszają (bot da4b24e0 i dad44c81, bot:zombie 219e57bd i 7d8fe31b). Blok testów D w `tests/unit/zombie-polecenia.test.ts` jest pominięty (`describe.skip` z opisem); przywrócenie D to cofnięcie cofnięcia i zdjęcie skip.
+
 
 ## Następne
 
