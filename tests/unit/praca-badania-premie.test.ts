@@ -32,7 +32,6 @@ function czasCzesci(o: { dzien: number; godzina: number; tech?: string[]; elek?:
   for (const t of st.things) if (t.kind === 'koza') t.fuel = 10 * TICKS_PER_HOUR;
   rzecz(st, 'warsztat', 60, 61, { w: 2, h: 1 });
   rzecz(st, 'zlom', 56, 61, { n: 4 });
-  p.job = null;
   p.wait = st.tick;
   sim.push({ t: 'saw', ids: [p.id], what: 'czesci', n: 1 });
   for (let k = 0; k < 4000 && !(p.job?.t === 'saw' && p.job.phase === 1); k++) sim.step();
