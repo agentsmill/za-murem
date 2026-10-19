@@ -112,14 +112,19 @@ export function parametryProstowania(
   return { d, cx, cy };
 }
 
-/** Obraca wszystkie pierścienie budynku zgodnie z parametrami prostowania. */
-export function zastosujProstowanie(b: GeoBuilding, pr: Prostowanie): GeoBuilding {
+/** obrót punktu zgodnie z parametrami prostowania: −d wokół (cx, cy) */
+function obrotProstowania(pr: Prostowanie): (p: Pt) => Pt {
   const c = Math.cos(-pr.d);
   const s = Math.sin(-pr.d);
-  const R = ([x, y]: Pt): Pt => {
+  return ([x, y]) => {
     const [qx, qy] = rot([x - pr.cx, y - pr.cy], c, s);
     return [qx + pr.cx, qy + pr.cy];
   };
+}
+
+/** Obraca wszystkie pierścienie budynku zgodnie z parametrami prostowania. */
+export function zastosujProstowanie(b: GeoBuilding, pr: Prostowanie): GeoBuilding {
+  const R = obrotProstowania(pr);
   return { ...b, p: b.p.map(R), ...(b.pp ? { pp: b.pp.map((q) => q.map(R)) } : {}) };
 }
 
@@ -135,31 +140,55 @@ export function straighten(geo: Geo, tol = 3.5, maxDeg = 8, smallMaxDeg = 20): G
 }
 
 /** Prostowanie kwadratu obok domu z regułą „dom wygrywa na szwie” (projekt miasta z kwadratów). Świat domu się nie
-    zmienia, więc sąsiad ma się do niego dopasować: budynek, którego kawałki (te same pierścienie po obrocie, co do
-    współrzędnej) są w geo domu, prostuje się tym obrotem, który wyszedł w domu z jego kawałków, i ten obrót dostają
-    WSZYSTKIE kawałki sąsiada, także te, których dom nie ma (daleko od jego środka albo maleńkie). Dom decyduje też, czy
-    prostować w ogóle. Dzięki temu część budynku w domu jest u sąsiada bit w bit taka sama, a reszta obraca się razem
-    z nią jak jedna bryła. Budynek bez kawałków w domu albo z kawałkami z dwóch różnych budynków domu prostuje się jak
-    zwykle, z całej budowli, więc dwa sąsiednie kwadraty bez domu obracają go tak samo. Obie geo mają być już obrócone
-    kątem układu domu (rotateGeo), ale jeszcze nie wyprostowane. */
+    zmienia, więc sąsiad ma się do niego dopasować. Kawałek budynku (pierścień po obrocie, ta sama współrzędna co w geo
+    domu), który jest też w geo domu, dostaje dokładnie ten obrót, który wyszedł w domu z jego budynku (kąt i środek z
+    kawałków, jakie dom ma; dom decyduje też, czy prostować w ogóle). Dzięki temu część budynku w domu jest u sąsiada
+    bit w bit taka sama. Kawałki, których dom nie ma (daleko od jego środka albo maleńkie), dostają ten sam obrót jak
+    jedna bryła, ale tylko gdy żaden ich wierzchołek nie rusza się o więcej niż tol metrów, tak jak zwykłe prostowanie:
+    dom prostuje swoją część, więc koniec bardzo długiego bloku wokół jej środka przesunąłby się o wiele metrów, a tak
+    zostaje na miejscu i pęknięcie na styku kawałków jest mniejsze niż tol. Gdy kawałki budynku należą do kilku różnych
+    budynków domu, każdy dostaje obrót swojego, a kawałki bez odpowiednika zostają. Budynek bez kawałków w domu
+    prostuje się jak zwykle, z całej budowli, więc dwa sąsiednie kwadraty bez domu obracają go tak samo. Obie geo mają
+    być już obrócone kątem układu domu (rotateGeo), ale jeszcze nie wyprostowane. */
 export function straightenZDomem(geo: Geo, dom: Geo, tol = 3.5, maxDeg = 8, smallMaxDeg = 20): Geo {
   const wDomu = new Map<string, GeoBuilding>();
   for (const b of dom.b) for (const ring of [b.p, ...(b.pp || [])]) wDomu.set(JSON.stringify(ring), b);
+  const paramyDomu = new Map<GeoBuilding, Prostowanie | null>();
+  const paramy = (h: GeoBuilding): Prostowanie | null => {
+    let pr = paramyDomu.get(h);
+    if (pr === undefined) {
+      pr = parametryProstowania([h.p, ...(h.pp || [])], tol, maxDeg, smallMaxDeg);
+      paramyDomu.set(h, pr);
+    }
+    return pr;
+  };
+  // pierścień rusza się o nie więcej niż tol metrów
+  const wTolerancji = (ring: readonly Pt[], R: (p: Pt) => Pt) =>
+    ring.every((q) => {
+      const r = R(q);
+      return Math.sqrt((r[0] - q[0]) * (r[0] - q[0]) + (r[1] - q[1]) * (r[1] - q[1])) <= tol;
+    });
   return {
     ...geo,
     b: geo.b.map((b) => {
       const pierscienie = [b.p, ...(b.pp || [])];
-      const domowe = new Set<GeoBuilding>();
-      for (const ring of pierscienie) {
-        const h = wDomu.get(JSON.stringify(ring));
-        if (h) domowe.add(h);
+      const domowe = pierscienie.map((ring) => wDomu.get(JSON.stringify(ring)));
+      const rozne = new Set(domowe.filter((h): h is GeoBuilding => !!h));
+      if (!rozne.size) {
+        const pr = parametryProstowania(pierscienie, tol, maxDeg, smallMaxDeg);
+        return pr ? zastosujProstowanie(b, pr) : b;
       }
-      let pr: Prostowanie | null;
-      if (domowe.size === 1) {
-        const [h] = domowe;
-        pr = parametryProstowania([h.p, ...(h.pp || [])], tol, maxDeg, smallMaxDeg);
-      } else pr = parametryProstowania(pierscienie, tol, maxDeg, smallMaxDeg);
-      return pr ? zastosujProstowanie(b, pr) : b;
+      // kawałki bez odpowiednika w domu: obrót jedynego budynku domu, do którego należą pozostałe kawałki (przy kilku nie
+      // wiadomo którego, więc zostają)
+      const wzor = rozne.size === 1 ? paramy([...rozne][0]) : null;
+      const nowe = pierscienie.map((ring, k) => {
+        const h = domowe[k];
+        const pr = h ? paramy(h) : wzor;
+        if (!pr) return ring;
+        const R = obrotProstowania(pr);
+        return h || wTolerancji(ring, R) ? ring.map(R) : ring;
+      });
+      return { ...b, p: nowe[0], ...(b.pp ? { pp: nowe.slice(1) } : {}) };
     }),
   };
 }

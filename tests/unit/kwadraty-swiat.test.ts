@@ -123,24 +123,66 @@ describe('prostowanie budynków', () => {
   });
 
   describe('straightenZDomem: budynek obecny w domu prostuje się tak jak w domu', () => {
-    // budynek 80 m x 12 m przechylony o 6°, przecięty granicą kafelków: dom ma tylko kawałek A (10 m), sąsiad A i B (70 m)
-    const A = kawalek(-40, -30, 12, 6);
-    const B = kawalek(-30, 40, 12, 6);
+    /** największe przesunięcie wierzchołka między dwoma wersjami tego samego pierścienia */
+    const przesuniecie = (przed: Pt[], po: Pt[]) =>
+      Math.max(...przed.map((q, i) => Math.sqrt((q[0] - po[i][0]) ** 2 + (q[1] - po[i][1]) ** 2)));
+    const TOL = 3.5;
+
+    // budynek 24 m x 12 m przechylony o 6°, przecięty granicą kafelków: dom ma tylko kawałek A (10 m), sąsiad A i B (14 m)
+    const A = kawalek(-12, -2, 12, 6);
+    const B = kawalek(-2, 12, 12, 6);
     const sasiad = geoZ([budynek(B, A)]);
     const dom = geoZ([budynek(A)]);
 
-    it('dom prostuje swój kawałek, więc sąsiad prostuje całość tym samym obrotem (choć sam by nie prostował)', () => {
-      // sam sąsiad nie prostuje: cały budynek przesunąłby się o ponad 3,5 m
-      expect(parametryProstowania([B, A])).toBeNull();
+    it('kawałek poza domem w granicy tolerancji obraca się razem z kawałkiem domu jak jedna bryła', () => {
       const pDom = parametryProstowania([A]);
       expect(pDom).not.toBeNull();
       const wynik = straightenZDomem(sasiad, dom);
       // kawałek domu: dokładnie to samo co dom (co do bitu)
       expect(wynik.b[0].pp?.[0]).toEqual(straighten(dom).b[0].p);
-      // reszta tym samym obrotem wokół tego samego środka
+      // reszta tym samym obrotem wokół tego samego środka, bo żaden jej wierzchołek nie rusza się o więcej niż tolerancja
+      expect(przesuniecie(B, zastosujProstowanie(sasiad.b[0], pDom as NonNullable<typeof pDom>).p)).toBeLessThan(TOL);
       expect(wynik.b[0]).toEqual(zastosujProstowanie(sasiad.b[0], pDom as NonNullable<typeof pDom>));
-      // i faktycznie obrócony: różni się od wejścia
+      // i faktycznie obrócony: różni się od wejścia, a wspólny bok kawałków nie pęka
       expect(wynik.b[0].p).not.toEqual(B);
+      const [a0, a1] = [wynik.b[0].pp?.[0][1], wynik.b[0].pp?.[0][2]] as [Pt, Pt];
+      const [b0, b1] = [wynik.b[0].p[0], wynik.b[0].p[3]] as [Pt, Pt];
+      expect(Math.sqrt((a0[0] - b0[0]) ** 2 + (a0[1] - b0[1]) ** 2)).toBeLessThan(1e-6);
+      expect(Math.sqrt((a1[0] - b1[0]) ** 2 + (a1[1] - b1[1]) ** 2)).toBeLessThan(1e-6);
+    });
+
+    describe('długi blok, którego dom ma tylko środkowy kawałek', () => {
+      // 420 m przechylone o 1°: dom ma kawałek A od 160 do 330 m osi (170 m, jego obrót przesuwa wierzchołki o 1,5 m),
+      // sąsiad ma jeszcze B od 330 do 580 m, którego koniec obrót wokół środka A przesunąłby o ponad 5 m
+      const Ad = kawalek(160, 330, 12, 1);
+      const Bd = kawalek(330, 580, 12, 1);
+      const blokSasiad = geoZ([budynek(Bd, Ad)]);
+      const blokDom = geoZ([budynek(Ad)]);
+
+      it('założenie testu: obrót domu rusza kawałek domu o mniej niż tolerancję, a koniec reszty o więcej', () => {
+        const pDom = parametryProstowania([Ad]);
+        expect(pDom).not.toBeNull();
+        const domProsty = straighten(blokDom).b[0].p;
+        expect(przesuniecie(Ad, domProsty)).toBeLessThan(TOL);
+        const gdybyObrocono = zastosujProstowanie(blokSasiad.b[0], pDom as NonNullable<typeof pDom>);
+        expect(przesuniecie(Bd, gdybyObrocono.p)).toBeGreaterThan(TOL + 1);
+      });
+
+      it('kawałek domu jak w domu, a kawałek dalej niż tolerancja od środka obrotu zostaje na miejscu', () => {
+        const wynik = straightenZDomem(blokSasiad, blokDom);
+        // szew z domem: bit w bit
+        expect(wynik.b[0].pp?.[0]).toEqual(straighten(blokDom).b[0].p);
+        // reszta bloku się nie rusza, więc nie wchodzi w ulicę ani w sąsiedni budynek
+        expect(wynik.b[0].p).toEqual(Bd);
+        // pęknięcie na styku kawałków jest mniejsze niż tolerancja (ruszył się tylko kawałek domu, o mniej niż tol)
+        expect(przesuniecie(Ad, wynik.b[0].pp?.[0] ?? [])).toBeLessThan(TOL);
+      });
+
+      it('żaden wierzchołek żadnego kawałka sąsiada nie rusza się o więcej niż tolerancja', () => {
+        const wynik = straightenZDomem(blokSasiad, blokDom);
+        expect(przesuniecie(Bd, wynik.b[0].p)).toBeLessThanOrEqual(TOL);
+        expect(przesuniecie(Ad, wynik.b[0].pp?.[0] ?? [])).toBeLessThanOrEqual(TOL);
+      });
     });
 
     it('gdy dom nie prostuje swojego kawałka, sąsiad nie prostuje też reszty', () => {
@@ -158,12 +200,18 @@ describe('prostowanie budynków', () => {
       expect(wynik.b[0]).toEqual(straighten(geoZ([obcy])).b[0]);
     });
 
-    it('kawałki należące do dwóch różnych budynków domu: sąsiad prostuje po swojemu', () => {
+    it('kawałki z dwóch różnych budynków domu: każdy dostaje obrót swojego budynku, reszta zostaje', () => {
       const A1 = kawalek(-40, -30, 12, 6);
       const A2 = kawalek(30, 40, 12, 6);
       const srodek = kawalek(-30, 30, 12, 6);
-      const wynik = straightenZDomem(geoZ([budynek(srodek, A1, A2)]), geoZ([budynek(A1), budynek(A2)]));
-      expect(json(wynik)).toBe(json(straighten(geoZ([budynek(srodek, A1, A2)]))));
+      const domDwa = geoZ([budynek(A1), budynek(A2)]);
+      const wynik = straightenZDomem(geoZ([budynek(srodek, A1, A2)]), domDwa);
+      const prosty = straighten(domDwa);
+      // kawałki domu bit w bit jak w domu (każdy z własnego budynku domu)
+      expect(wynik.b[0].pp?.[0]).toEqual(prosty.b[0].p);
+      expect(wynik.b[0].pp?.[1]).toEqual(prosty.b[1].p);
+      // nie wiadomo, którym obrotem ruszyć kawałek między nimi, więc zostaje
+      expect(wynik.b[0].p).toEqual(srodek);
     });
 
     it('dom bez budynków albo pusty sąsiad nie psuje wyniku', () => {
@@ -614,17 +662,23 @@ describe('buildKwadrat: szwy z domem (różne kąty obrotu)', () => {
       }
     });
 
-    it('część budynku, której dom nie ma, obraca się razem z kawałkiem domu jak jedna bryła (bez pęknięcia)', () => {
+    it('kawałek domu jest taki jak w domu, a reszta budynku (dalej niż tolerancja od środka obrotu) zostaje, z pęknięciem mniejszym niż tolerancja', () => {
       const prz = przygotujGeoKwadratu(sasiad, uklad, dom);
       const b = prz.b[0];
       const pierwszy = przygotujGeo(dom, uklad.kat).b[0];
       // kawałek domu bit w bit jak w domu
       expect(b.pp?.[0]).toEqual(pierwszy.p);
-      // wspólny bok kawałków A i B (A: od −14 do 0 m osi, B: od 0 do 66 m) po prostowaniu nadal leży na jednej prostej
+      // kawałek B leży 66 m dalej, więc jego koniec ruszyłby się o ponad 3,5 m: zostaje taki, jaki był
+      expect(b.p).toEqual(B);
+      // wspólny bok kawałków A (od −14 do 0 m osi) i B (od 0 do 66 m) pęka o mniej niż tolerancja
       const [a0, a1] = [b.pp?.[0][1], b.pp?.[0][2]] as [Pt, Pt];
       const [b0, b1] = [b.p[0], b.p[3]] as [Pt, Pt];
-      expect(Math.hypot(a0[0] - b0[0], a0[1] - b0[1])).toBeLessThan(1e-6);
-      expect(Math.hypot(a1[0] - b1[0], a1[1] - b1[1])).toBeLessThan(1e-6);
+      const pekniecie = Math.max(
+        Math.sqrt((a0[0] - b0[0]) ** 2 + (a0[1] - b0[1]) ** 2),
+        Math.sqrt((a1[0] - b1[0]) ** 2 + (a1[1] - b1[1]) ** 2),
+      );
+      expect(pekniecie).toBeGreaterThan(0.1);
+      expect(pekniecie).toBeLessThan(3.5);
     });
   });
 });
