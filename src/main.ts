@@ -569,7 +569,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
       : null;
   $('btnMiasto').hidden = !mapaMiasta;
   minimapa.ustaw(mapaMiasta ? { okolica, st: () => gov } : null);
-  // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa
+  // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa. Przestarzały zapis
+  // zachowuje swoją flagę pięter (pietraGry, świat już z nią zbudowany), tak jak zachowuje swoje ziarno, a nie czyta
+  // ?pietra=1 z adresu
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;
   // zarząd z panelu „Wasz zarząd”: bez ruszania go 4 osoby z siedziby (z generatora, bez tabel z ziarna adresu)

@@ -1,8 +1,10 @@
 /* Wysokości budynków i lista pięter do widoku pięter (etap 1, flaga ?pietra=1,
    docs/superpowers/specs/2026-10-18-pietra-design.md, „Wysokości budynków”).
 
-   W danych OSM domy zwykle nie mają building:levels, więc świat daje im jedną kondygnację i w widoku pięter
-   wszystkie wyglądałyby jak parterówki. Awansujemy je więc do dwóch kondygnacji, ale tylko tyle, żeby co najmniej
+   Kondygnacje budynków (`levels`) pochodzą dziś z kafelków OpenFreeMap: `render_height` podzielone przez 3,5 m
+   i zaokrąglone, minimum 1 (src/world/mvt.ts). Domy zwykle mają tam niską albo żadną wysokość, więc świat daje
+   większości jedną kondygnację (nie odróżnimy domyślnej jedynki od prawdziwej) i w widoku pięter wszystkie
+   wyglądałyby jak parterówki. Awansujemy je więc do dwóch kondygnacji, ale tylko tyle, żeby co najmniej
    połowa domów od 60 m² miała piętro. Domy z danymi (levels >= 2), bloki i inne budynki zostają bez zmian.
    Kolejność awansu nie zależy od losu, tylko od skrótu z ziarna świata i numeru budynku (przy remisie rozstrzyga
    numer), więc ten sam świat daje te same wysokości. Bez flagi nic z tego nie jest wołane. */

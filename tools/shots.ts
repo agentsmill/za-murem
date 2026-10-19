@@ -9698,7 +9698,9 @@ function pietraShots(): Shot[] {
     await wybierz(page, 2);
     const st = await sprawdz(page, 2, true);
     if (kod && st.strop !== null) throw new Error('z ?grafika=kod strop wziął naklejki z PixelLab');
-    if (!kod && !st.strop) throw new Error('bez ?grafika=kod brak naklejek stropu z PixelLab (atlas strop.png)');
+    // przy `npm run shots -- --kod` cała strona dostaje ?grafika=kod, więc naklejek stropu nie ma też w „zwykłym” scenariuszu
+    if (!kod && !KOD && !st.strop)
+      throw new Error('bez ?grafika=kod brak naklejek stropu z PixelLab (atlas strop.png)');
   };
   return [
     // Przymorze, piętro 2 z bliska (zoom 0,75): bloki pod stropem, niższe budynki z dachem
