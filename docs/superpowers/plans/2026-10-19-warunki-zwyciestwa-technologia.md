@@ -52,14 +52,14 @@
 | id | nazwa PL / EN | dom | lvl | cost | req | inne |
 |---|---|---|---|---|---|---|
 | `t_fuzja` | Generator fuzji / Fusion generator | `elek` | 4 | 160 | `['t_siec']` | |
-| `t_serwer` | Superserwer AI / AI superserver | `it` | 4 | 170 | `['t_fuzja']` | |
-| `t_fabryka_bio` | Fabryka biorobotów / Biorobot factory | `bud` | 4 | 200 | `['t_serwer']` | `koncowa: true`, `tryb: 'zwykly'` |
-| `t_fabryka_hum` | Fabryka humanoidów / Humanoid factory | `bud` | 4 | 200 | `['t_serwer']` | `koncowa: true`, `tryb: 'zombie'` |
+| `t_superserwer` | Superserwer AI / AI superserver | `it` | 4 | 170 | `['t_fuzja']` | |
+| `t_fabryka_bio` | Fabryka biorobotów / Biorobot factory | `bud` | 4 | 200 | `['t_superserwer']` | `koncowa: true`, `tryb: 'zwykly'` |
+| `t_fabryka_hum` | Fabryka humanoidów / Humanoid factory | `bud` | 4 | 200 | `['t_superserwer']` | `koncowa: true`, `tryb: 'zombie'` |
 
 - `t_siec` traci `koncowa`, zostaje z `dzialanie: SIEC` i `dzialanieZombie: SIEC_ZOMBIE`.
 - Opisy (`dzialanie`, dokładnie):
   - `t_fuzja`: „Generator fuzji: mała gwiazda w kontenerze po paczkomacie. Prąd dla serwera i fabryki.” / “Fusion generator: a small star in an old parcel-locker container. Power for the server and the factory.”
-  - `t_serwer`: „Superserwer AI z dawnego centrum danych. Sam pisze sobie regulamin, ale fabrykę poprowadzi.” / “An AI superserver from an old data centre. It writes its own terms of service, but it will run the factory.”
+  - `t_superserwer`: „Superserwer AI z dawnego centrum danych. Sam pisze sobie regulamin, ale fabrykę poprowadzi.” / “An AI superserver from an old data centre. It writes its own terms of service, but it will run the factory.”
   - `t_fabryka_bio`: „Fabryka biorobotów odpornych na bakterię miedzi. Bioroboty położą nowe linie w całym mieście.” / “A factory of biorobots immune to the copper bacterium. They will lay new lines across the whole city.”
   - `t_fabryka_hum`: „Fabryka humanoidalnych żołnierzy. Wyjdą z bramy i oczyszczą miasto ze szwendaczy.” / “A factory of humanoid soldiers. They will march out of the gate and clear the city of walkers.”
 - `export function siecZbadana(st: SimState): boolean`: `t_siec` w `st.techDone`.
