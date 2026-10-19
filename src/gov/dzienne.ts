@@ -14,22 +14,30 @@
    - `podgladWyprawy(st, i, cel, ids)`: to samo, co pokaże podsumowanie przed potwierdzeniem (czas, powrót, ryzyko, ile
      uniosą, ile zostało w miejscu); nic nie zmienia i niczego nie losuje.
    - `wyprawyTick(st, i, fx)`: wołany na początku `govUpdate`. O minucie powrotu (albo później) rozlicza wyprawę przez
-     `rozliczWyprawe` (łup do `fx.stock` i `st.miasto`, ludzie do `fx.back`), linie rozliczenia idą do kroniki,
-     a wpis znika z `st.wyprawy`, więc powrót jest dokładnie raz, także po zapisie i wczytaniu w połowie drogi.
-     Nie dotyka `st.night`. Bez `st.wyprawy` nie robi nic: nie zmienia stanu ani ziarna, więc boty i testy bez mapy miasta
-     mają te same skróty co przed nią.
+     `rozliczWyprawe` (łup do `fx.stock` i `st.miasto`, ludzie do `fx.back`), a wpis znika z `st.wyprawy`, więc powrót
+     jest dokładnie raz, także po zapisie i wczytaniu w połowie drogi. Wynik powrotu to jedna pełna linia (opowieść
+     razem ze znaleziskami) w kronice i w `fx.log`. Za dnia ta sama linia idzie też do `fx.powroty`, skąd interfejs
+     pokaże ją graczowi (także gdy w chwili powrotu czeka okno). Powrót przesunięty na rano trafia do raportu nocy:
+     gdy noc jest potwierdzona, linie (osobno, jak przy nocnej wyprawie) idą do `st.later` z dniem nocy i bez zapasów
+     (łup jest już w `fx`), a `morning()` w tym samym kroku scala je do raportu; wtedy `fx.powroty` zostaje puste, bo
+     raport sam otwiera okno. Nie zmienia `st.night`. Bez `st.wyprawy` nie robi nic: nie zmienia stanu ani ziarna, więc
+     boty i testy bez mapy miasta mają te same skróty co przed nią.
 
    Zasady wysyłki, w tej kolejności: mapa miasta włączona (`st.miasto`), godzina od 6:00 do 19:59 (od 20:00 gra karta
    nocy), cel najwyżej `MAX_DROGA_M` od adresu i jeszcze z czymś w zapasie, lista osób niepusta, a każda z nich znana
-   zarządowi, na miejscu (nie `away`, nie w innej wyprawie), nieugryziona i zdolna do tej drogi (`canGo`), a na końcu:
-   do klucza, do którego ktoś już idzie, nie wychodzi druga wyprawa. Ta sama osoba podana dwa razy liczy się raz.
+   zarządowi, na miejscu (nie `away`, nie w innej wyprawie), nieugryziona i zdolna do tej drogi (`canGo`), do klucza,
+   do którego ktoś już idzie, nie wychodzi druga wyprawa, a na samym końcu (najniższy priorytet): miejsce z mapy
+   osiedla (koło `PROMIEN_MAPY_LOKALNEJ` wokół adresu, `naMapieLokalnej`) nie jest celem, bo tam chodzi się pieszo.
+   Ta reguła dotyczy miejsc z OSM (`cel.zapas !== null`), nie celów z TARGETS, które nie mają położenia. Ta sama osoba
+   podana dwa razy liczy się raz.
 
    Powrót po 20:00 przesuwa się na 6:00 następnego dnia, ale nie przed koniec drogi (`powrotMin`); osoba na wyprawie ma
    na karcie nocy tylko sen (src/gov/noc.ts), więc wyprawa wysłana o 19:00 nie psuje karty o 20:00. Numer wyprawy jest
    unikalny wśród tych, które są w drodze. Bez hypot, sin i cos; napisy od razu po polsku i angielsku. */
 
 import { g } from '../content/people.ts';
-import { type Tx, tx } from '../core/jezyk.ts';
+import { type Tx, tx, txJoin } from '../core/jezyk.ts';
+import { naMapieLokalnej } from '../world/miasto.ts';
 import { CARD_HOUR, canGo, expRisk, MORNING, rozliczWyprawe } from './noc.ts';
 import { peopleNamesTx } from './tresc.ts';
 import type { GovEffects, GovInput, GovPerson, GovState, Wyprawa } from './typy.ts';
@@ -94,6 +102,12 @@ export function powodOdmowy(st: GovState, i: GovInput, cel: Cel, ids?: readonly 
   }
   if (st.wyprawy?.some((w) => w.cel.klucz === cel.klucz))
     return tx('Ktoś już tam idzie.', 'Somebody is already on the way there.');
+  // mapa osiedla ma własne miejsca, do których idzie się pieszo; cel z TARGETS (zapas null) nie ma położenia
+  if (cel.zapas !== null && naMapieLokalnej(cel))
+    return tx(
+      'To miejsce jest na mapie osiedla: tam chodzi się pieszo, bez wyprawy.',
+      'This place is on your estate map: you can walk there, no supply run needed.',
+    );
   return null;
 }
 
@@ -132,7 +146,7 @@ export function podgladWyprawy(
 /** Wysyła osoby `ids` do `cel` za dnia. Odmawia (bez żadnej zmiany stanu) z powodem z `powodOdmowy`: nie ma
     `st.miasto`, jest noc (godzina poniżej 6 albo od 20), cel leży dalej niż `MAX_DROGA_M`, w miejscu nic nie zostało,
     lista jest pusta, ktoś z listy jest nieznany, poza mapą (`away`), w innej wyprawie, ugryziony albo niezdolny
-    (`canGo`), albo ktoś już idzie do tego klucza. Inaczej zapisuje wyprawę (kopia celu, wyjście `gameMin(i)`, powrót `powrotMin`), wpis w kronice i oddaje
+    (`canGo`), ktoś już idzie do tego klucza albo miejsce leży na mapie osiedla (koło 192 m). Inaczej zapisuje wyprawę (kopia celu, wyjście `gameMin(i)`, powrót `powrotMin`), wpis w kronice i oddaje
     skutki z `away` na godzinę powrotu. Nie losuje. */
 export function wyslijWyprawe(st: GovState, i: GovInput, cel: Cel, ids: string[]): WynikWysylki {
   const why = powodOdmowy(st, i, cel, ids);
@@ -168,8 +182,10 @@ export function wyslijWyprawe(st: GovState, i: GovInput, cel: Cel, ids: string[]
 }
 
 /** Powroty wypraw dziennych: każda, której minuta powrotu minęła (w kolejności wysłania), rozlicza się raz przez
-    `rozliczWyprawe` z osobami, które jeszcze są w zarządzie; linie rozliczenia idą do kroniki (i do `fx.log`), a wpis
-    znika z `st.wyprawy`. Wyprawa bez nikogo z żywych znika bez losowania i bez wpisu. Bez `st.wyprawy` nic nie robi. */
+    `rozliczWyprawe` z osobami, które jeszcze są w zarządzie, a wpis znika z `st.wyprawy`. Linie rozliczenia (opowieść
+    i znaleziska) składają się w jeden wpis kroniki (i `fx.log`). Za dnia ten wpis idzie też do `fx.powroty`; gdy noc
+    jest potwierdzona (powrót przesunięty na 6:00), linie idą osobno do `st.later` z dniem nocy, a rano do raportu.
+    Wyprawa bez nikogo z żywych znika bez losowania i bez wpisu. Bez `st.wyprawy` nic nie robi. */
 export function wyprawyTick(st: GovState, i: GovInput, fx: GovEffects): void {
   if (!st.wyprawy?.length) return;
   const t = gameMin(i);
@@ -181,7 +197,13 @@ export function wyprawyTick(st: GovState, i: GovInput, fx: GovEffects): void {
     }
     const ppl = w.ids.map((id) => i.people.find((p) => p.id === id)).filter((p): p is GovPerson => !!p);
     const r = rozliczWyprawe(st, i, fx, w.cel, ppl);
-    for (const line of r.lines) logGov(st, i, line, !!r.hurt, fx);
+    if (!r.lines.length) continue;
+    const calosc = txJoin(r.lines);
+    logGov(st, i, calosc, !!r.hurt, fx);
+    if (st.night?.confirmed) {
+      // powrót o 6:00: `morning()` w tym samym kroku zamyka noc raportem i scala `st.later` z dniem tej nocy
+      for (const line of r.lines) st.later.push({ day: st.night.day, stock: {}, line });
+    } else (fx.powroty ??= []).push(calosc);
   }
   st.wyprawy = wTrakcie;
 }

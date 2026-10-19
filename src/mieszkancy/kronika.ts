@@ -78,12 +78,14 @@
    Odwrotnie, marka zaczynająca się od imienia z listy i słowa z wielkiej litery ("Hugo Boss", "Max Mara") zamieni się na
    opis; to koszt filtra, który woli nie wymienić marki, niż wymienić osobę (pinuje to test "granice filtra").
 
-   `zbiorImion` składa zbiór imion z `lata`, `koszyki`, `powracajace` i `przyjezdni` w tabelach imion. */
+   `zbiorImion` składa zbiór imion z `lata`, `koszyki`, `powracajace` i `przyjezdni` w tabelach imion. Do okolicy
+   zarządu (karta nocy, mapa miasta) filtr składa `nazwaDoOkolicyZDanych`: ze zbiorem imion tylko w gminie z tabelami,
+   poza nią (adres poza Polską, szablon krajowy) i bez danych same kategorie, bo polska tabela imion nie zna obcych. */
 
 import type { Rng } from '../core/rng.ts';
 import type { Geo, GeoPoi } from '../world/geo.ts';
 import { calkowita, losDla } from './los.ts';
-import type { ImieZLiczba, TabeleImion } from './tabele.ts';
+import type { ImieZLiczba, TabeleGminy, TabeleImion } from './tabele.ts';
 import type { Budynek } from './typy.ts';
 
 export interface WpisKroniki {
@@ -324,6 +326,17 @@ export function nazwaWlasnaMiejsca(poi: GeoPoi, imiona: ReadonlySet<string>): st
     może trafić do tekstów gry (RODO); zostaje sama kategoria miejsca. */
 export function nazwaDoOkolicy(imiona: ReadonlySet<string> | null): (poi: GeoPoi) => string {
   return (poi) => (imiona ? nazwaWlasnaMiejsca(poi, imiona) : '');
+}
+
+/** `nazwaDoOkolicy` dla danych mieszkańców gry (`DaneMieszkancow`): filtr imion działa tylko tam, gdzie tabele znają
+    ludzi, czyli gdy punkt leży w gminie z własnymi tabelami (`gmina` nie jest `null`). Szablon krajowy (adres poza
+    Polską albo gmina bez tabel) ma wprawdzie polską tabelę imion, ale ta nie zna „James”, „Hans”, „Pierre”,
+    „Mohammed”, więc nazwa jednoosobowej firmy typu „James Wilson Plumbing” przeszłaby przez filtr do kart miejsc,
+    etykiet karty nocy i zapisu (RODO). Wtedy, tak samo jak bez danych, zostają same kategorie miejsc. */
+export function nazwaDoOkolicyZDanych(
+  dane: { gmina: TabeleGminy | null; imiona: TabeleImion } | null,
+): (poi: GeoPoi) => string {
+  return nazwaDoOkolicy(dane?.gmina ? zbiorImion(dane.imiona) : null);
 }
 
 // ---------------------------------------------------------------- szablony

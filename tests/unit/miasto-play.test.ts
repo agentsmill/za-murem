@@ -291,13 +291,18 @@ describe('gra z zarządem i mapą miasta na demie Przymorza (10 dni)', () => {
     const lup = Object.values(gracz.log.lup).reduce((s, v) => s + v, 0);
     expect(lup).toBeGreaterThan(0);
     for (const v of Object.values(gracz.log.lup)) expect(v).toBeGreaterThanOrEqual(0);
-    expect(gracz.log.ranni).toBeGreaterThanOrEqual(0);
     expect(gracz.log.ugryzieni).toBe(0);
     // gra stoi na zarządzie z włączoną mapą miasta, miejsca z wypraw są zapisane w stanie
     expect(r.gov.miasto).toBeDefined();
     const wizyty = Object.values(r.gov.miasto!.wizyty).reduce((s, v) => s + v, 0);
     expect(wizyty).toBeGreaterThanOrEqual(1);
     expect(wizyty).toBeLessThanOrEqual(gracz.log.wyprawy);
+    // każda wyprawa wraca: poza ostatnią (jedna naraz, bot mógł ją wysłać tuż przed końcem przebiegu) wszystkie mają wizytę
+    expect(gracz.log.wyprawy - wizyty).toBeLessThanOrEqual(1);
+    expect(r.gov.wyprawy?.length ?? 0).toBe(gracz.log.wyprawy - wizyty);
+    // łup z powrotów w logu bota to to samo, co miejsca zapisały jako zabrane
+    const zabrano = Object.values(r.gov.miasto!.zabrano).reduce((s, v) => s + v, 0);
+    expect(lup).toBe(zabrano);
   });
 
   it('przebieg jest deterministyczny: ten sam skrót symulacji, zarządu i log', () => {
