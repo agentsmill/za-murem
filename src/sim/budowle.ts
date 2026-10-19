@@ -323,10 +323,10 @@ export function boilerRooms(
 }
 
 /** Czy budowlę wolno postawić (podgląd trybu stawiania i polecenie 'build'): w pomieszczeniu właściwego rodzaju
-    w naszym mieszkaniu (bez składu drewna i kafelka przed kozą zarządu; koza z beczki w pokoju, kuchni albo
-    przedpokoju, blisko okna), kocioł na klatce siedziby (w domu w przedpokoju, tak samo bez składu i frontu kozy), na
-    wolnym podwórku z dala od bramy, dziur i wejść albo na odcinku siatki (także na dziurze, nie na
-    bramie); nie na rzeczach i nie na innym planie. Czysta funkcja stanu i świata. */
+    w naszym mieszkaniu (bez składu drewna; koza z beczki w pokoju, kuchni albo przedpokoju, blisko okna, i bez
+    kafelka przed kozą zarządu), kocioł na klatce siedziby (w domu w przedpokoju, tak samo bez składu), na wolnym
+    podwórku z dala od bramy, dziur i wejść albo na odcinku siatki (także na dziurze, nie na bramie); nie na rzeczach
+    i nie na innym planie. Czysta funkcja stanu i świata. */
 /** rzeczy, które nie zajmują miejsca (krew, trupy, zwłoki): plan budowy i ognisko mogą stanąć na nich */
 export const GHOST_KINDS: ReadonlySet<string> = new Set(['zwloki', 'trup', 'krew']);
 
@@ -362,8 +362,9 @@ export function canPlace(
   const h = houseOf(w);
   const shape = fenceShape(w);
   const kinds = PLACE_ROOMS[def.place];
-  // kafelek przed kozą zarządu generator wnętrza zostawia wolny, żeby było skąd dokładać: żadna budowla go nie zajmie
-  const front = h ? kozaFront(h, size) : -1;
+  // kafelek przed kozą zarządu generator wnętrza zostawia wolny, żeby było skąd dokładać: koza z beczki (miejsce
+  // 'okno') go nie zajmie; inne budowle go nie omijają, żeby gra bez badań szła jak dawniej
+  const front = h && def.place === 'okno' ? kozaFront(h, size) : -1;
   if (kinds) {
     if (!h) return no;
     for (const i of tiles) {
@@ -377,7 +378,7 @@ export function canPlace(
     const { rooms, przedpokoj } = boilerRooms(st, h, size);
     for (const i of tiles) {
       const r = h.room[i];
-      if (r < 0 || w.blocked[i] || h.sklad.includes(i) || i === front || !rooms.has(r)) return nie(przedpokoj);
+      if (r < 0 || w.blocked[i] || h.sklad.includes(i) || !rooms.has(r)) return nie(przedpokoj);
     }
   } else if (def.place === 'podworko') {
     if (!shape) return no;

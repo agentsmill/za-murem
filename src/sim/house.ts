@@ -2,7 +2,7 @@
    Wnętrze generuje świat (src/world/interior.ts, kontrakt z M1). Tu jest tylko jego kształt strukturalny
    z tymi samymi nazwami pól, żeby symulacja nie zależała od generatora. Wnętrze wynika ze świata i ziarna,
    więc nie trafia do zapisu gry; temperatury pomieszczeń są w stanie (SimState.temps). `heatStep` przyjmuje dodatek do
-   temperatury bazowej pomieszczeń (t_okna), a `kozaFront` wskazuje kafelek przed kozą zarządu, który zostaje wolny. */
+   temperatury bazowej pomieszczeń (t_okna), a `kozaFront` wskazuje kafelek przed kozą zarządu, który zostaje wolny dla kozy z beczki (budowle.ts). */
 
 import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';

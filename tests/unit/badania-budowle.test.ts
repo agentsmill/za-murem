@@ -353,24 +353,13 @@ describe.each(DEMA)('kafelek przed kozą zarządu zostaje wolny: %s', (_nazwa, {
     [koza.x + koza.w, koza.y],
   ][koza.rot];
 
-  it('koza z beczki, kocioł i pieczarkarnia nie stają na froncie kozy zarządu, a miejsce na kozę z beczki zostaje', () => {
+  it('koza z beczki nie staje na froncie kozy zarządu, a miejsce na kozę z beczki zostaje', () => {
     const st = gra(w, seed, 't_kozy');
     const front = fy * w.size + fx;
     expect(canPlace(st, w, 'koza_beczka', fx, fy, 0).ok, 'front kozy zarządu').toBe(false);
     for (const rot of [0, 1, 2, 3]) expect(canPlace(st, w, 'koza_beczka', fx, fy, rot).ok, `rot ${rot}`).toBe(false);
     expect(allowedAnchors(st, w, 'koza_beczka', 0)).not.toContain(front);
     expect(allowedAnchors(st, w, 'koza_beczka', 0).length).toBeGreaterThan(0);
-    // inna budowla z miejscem w mieszkaniu też go nie zajmie, jeśli jej podstawa go obejmuje
-    const st2 = gra(w, seed);
-    st2.techDone = Object.values(NOWE);
-    for (const k of Object.keys(BUILDS) as BuildKind[])
-      for (const rot of [0, 1, 2, 3] as const)
-        for (const a of allowedAnchors(st2, w, k, rot)) {
-          const b = footprint(k, rot);
-          const [ax, ay] = xy(w, a);
-          const pokrywa = fx >= ax && fx < ax + b.w && fy >= ay && fy < ay + b.h;
-          expect(pokrywa, `${k} rot ${rot} na froncie kozy`).toBe(false);
-        }
   });
 });
 
