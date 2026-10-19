@@ -415,6 +415,9 @@ const SHOTS: Shot[] = [
   ...zwyciestwoShots(),
   // Piętra (etap 1, flaga ?pietra=1): przekrój wybranego piętra ze stropem, kafelek z listą, podpowiedzi
   ...pietraShots(),
+  // Kwadraty miasta obok domu (etap 1, ?kwadraty=): 3×3 wokół dem, szwy z bliska, narożnik, daleko, mgła „brak danych”, noc,
+  // telefon, widok pięter w kwadracie obok, kliknięcie poza domem
+  ...kwadratyShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -11446,4 +11449,208 @@ function pietraShots(): Shot[] {
     // i portykiem
     publiczne('pietra-budynek-publiczny-p2', 2, '239,177,0.6'),
   ];
+}
+
+/**
+ * Kwadraty miasta obok domu (etap 1, ?kwadraty=): 3×3 wokół trzech dem, szwy z bliska (dom i sąsiad w jednym kadrze: budynki,
+ * ulice, chodniki, woda i drzewa przecięte granicą), narożnik czterech kwadratów, daleko (poziom dalekich kawałków i
+ * „bardzo daleko”), mgła „brak danych” (Lanciego ma tylko cztery boczne kwadraty, 5×5 ma osiem), noc, telefon, widok pięter
+ * w kwadracie obok i kliknięcie poza domem. Każdy scenariusz sprawdza stan, nie tylko robi zrzut: liczbę kwadratów w
+ * window.zm.kwadraty, budżety tekstur kawałków, widoczną atrybucję map; scenariusze z szwem mówią, co leży na granicy. Te
+ * same scenariusze z --kod idą bez grafiki z PixelLab (zrzuty w shots/kod/).
+ */
+function kwadratyShots(): Shot[] {
+  /** budżety tekstur z view.ts (komputer i telefon): zob. budzety() w src/render/chunks.ts */
+  const budzet = (telefon: boolean) =>
+    telefon ? { bliskie: 16, dalekie: 144, bardzoDalekie: 1296 } : { bliskie: 48, dalekie: 432, bardzoDalekie: 3600 };
+  /** stan kwadratów i pamięci kawałków oraz widoczność atrybucji map: sprawdza budżety i wypisuje liczby */
+  const sprawdz = async (page: Page, oczekiwane: { z: number; bez: number }, telefon = false) => {
+    const s = await page.evaluate(() => {
+      const zm = window.zm!;
+      const a = document.querySelector('.attrib') as HTMLElement | null;
+      const r = a?.getBoundingClientRect();
+      return {
+        kw: zm.kwadraty,
+        mem: zm.view.pamiecKawalkow(),
+        maluje: zm.view.painting,
+        atrybucja: !!a && !a.hidden && !!r && r.width > 0 && r.bottom <= innerHeight && r.right <= innerWidth,
+        tekst: a?.textContent ?? '',
+        mgla: zm.view.mgla.kwadraty.length,
+        zoom: Math.round(zm.view.cam.zoom * 1000) / 1000,
+      };
+    });
+    const z = s.kw.filter((k) => !k.brakDanych).length;
+    const bez = s.kw.filter((k) => k.brakDanych).length;
+    console.log(
+      `  kwadraty ${z} z danymi i ${bez} bez, pamięć ${JSON.stringify(s.mem)}, mgła ${s.mgla}, zoom ${s.zoom}, ${s.maluje}`,
+    );
+    const b = budzet(telefon);
+    if (z !== oczekiwane.z || bez !== oczekiwane.bez)
+      throw new Error(`kwadraty: ${z} z danymi i ${bez} bez zamiast ${oczekiwane.z} i ${oczekiwane.bez}`);
+    if (s.mem.kwadraty !== z) throw new Error(`widok ma ${s.mem.kwadraty} kwadratów obok domu zamiast ${z}`);
+    if (s.mem.bliskie > b.bliskie || s.mem.dalekie > b.dalekie || s.mem.bardzoDalekie > b.bardzoDalekie)
+      throw new Error(`tekstury ponad budżet ${JSON.stringify(b)}: ${JSON.stringify(s.mem)}`);
+    if (!s.atrybucja || !/OpenStreetMap/.test(s.tekst) || !/OpenFreeMap/.test(s.tekst) || !/OpenMapTiles/.test(s.tekst))
+      throw new Error(`atrybucja map niewidoczna albo niepełna: ${s.tekst}`);
+    return s;
+  };
+  const demo = (d: string) => (d === 'lanciego' ? { z: 4, bez: 4 } : { z: 8, bez: 0 });
+  const kadr = (
+    name: string,
+    query: string,
+    oczekiwane: { z: number; bez: number },
+    opcje: { w?: number; h?: number; telefon?: boolean; potem?: (page: Page) => Promise<void> } = {},
+  ): Shot => ({
+    name,
+    query: '',
+    w: opcje.w,
+    h: opcje.h,
+    run: async (page, base) => {
+      await page.goto(`${base}?${query}`);
+      await waitIdle(page);
+      await opcje.potem?.(page);
+      await sprawdz(page, oczekiwane, opcje.telefon);
+    },
+  });
+  const out: Shot[] = [];
+  // całość: dziewięć kwadratów (cztery wokół domu w Lanciego), kamera na wszystkie; poziom „bardzo daleko”
+  for (const d of DEMOS) out.push(kadr(`kwadraty-3x3-${d}`, `demo=${d}&kwadraty=3x3&cam=all&speed=0`, demo(d)));
+  // szwy z bliska (zoom 1): dom i sąsiad w jednym kadrze. Granica leży na środku ekranu. Przymorze: wysoki blok i długi blok
+  // przecięte szwem wschodnim; Lanciego: blok na szwie wschodnim; Zielonki: dom przecięty szwem zachodnim (dach z jednym
+  // grzbietem po obu stronach)
+  out.push(kadr('kwadraty-szew-przymorze', 'demo=przymorze&kwadraty=3x3&cam=384,67,1&speed=0', demo('przymorze')));
+  out.push(kadr('kwadraty-szew-lanciego', 'demo=lanciego&kwadraty=3x3&cam=384,215,1&speed=0', demo('lanciego')));
+  out.push(kadr('kwadraty-szew-zielonki', 'demo=zielonki&kwadraty=3x3&cam=0,17,1.4&speed=0', demo('zielonki')));
+  // szew pionowy i poziomy jednocześnie: narożnik domu i trzech sąsiadów
+  for (const d of DEMOS)
+    out.push(kadr(`kwadraty-szew-rog-${d}`, `demo=${d}&kwadraty=3x3&cam=384,384,1&speed=0`, demo(d)));
+  // las i potok na szwie południowym Zielonek: cienie drzew sąsiada przechodzą przez szew, bez prostej kreski
+  out.push(kadr('kwadraty-szew-las', 'demo=zielonki&kwadraty=3x3&cam=272,384,0.8&speed=0', demo('zielonki')));
+  // z daleka (zoom 0,3: dalekie kawałki, szwy w jezdniach i parkach) i na poziomie „bardzo daleko” przy skrajnych kamerach
+  for (const d of DEMOS)
+    out.push(kadr(`kwadraty-daleko-${d}`, `demo=${d}&kwadraty=3x3&cam=384,384,0.3&speed=0`, demo(d)));
+  out.push(kadr('kwadraty-bardzo-daleko', 'demo=przymorze&kwadraty=3x3&cam=384,384,0.1&speed=0', demo('przymorze')));
+  // mgła „brak danych”: Lanciego bez czterech narożnych kwadratów, a 5×5 z osiemnastoma bez danych (dane tylko ośmiu sąsiadów)
+  out.push(kadr('kwadraty-brak-danych-lanciego', 'demo=lanciego&kwadraty=3x3&cam=all&speed=0', demo('lanciego')));
+  out.push(kadr('kwadraty-5x5-przymorze', 'demo=przymorze&kwadraty=5x5&cam=all&speed=0', { z: 8, bez: 16 }));
+  // krawędź mgły od strony odkrytego terenu (wschodni brzeg dziewięciu kwadratów) z bliska
+  out.push(kadr('kwadraty-mgla-krawedz', 'demo=przymorze&kwadraty=3x3&cam=768,192,0.7&speed=0', demo('przymorze')));
+  // noc: ciemność i światła, szwy nie świecą
+  out.push(
+    kadr(
+      'kwadraty-noc',
+      'demo=przymorze&kwadraty=3x3&cam=384,67,0.8&speed=0&godzina=22&swiatla=test',
+      demo('przymorze'),
+    ),
+  );
+  // telefon 390×844: z bliska przy szwie i całość; budżet dalekich tekstur telefonu (144), ale przy 3×3 to wciąż komplet
+  out.push(
+    kadr('kwadraty-telefon', 'demo=przymorze&kwadraty=3x3&cam=384,67,0.8&speed=0', demo('przymorze'), {
+      w: 390,
+      h: 844,
+      telefon: true,
+    }),
+  );
+  out.push(
+    kadr('kwadraty-telefon-calosc', 'demo=przymorze&kwadraty=3x3&cam=all&speed=0', demo('przymorze'), {
+      w: 390,
+      h: 844,
+      telefon: true,
+    }),
+  );
+  // widok pięter w kwadracie obok: piętro 2 na szwie z wysokim blokiem (jego część w kwadracie obok też pokazuje przekrój,
+  // ściana cięcia przy szwie jest podwójna) i piętro 1 w Zielonkach, gdzie awansowane domy pokazują strop; pasek pięter
+  // działa dla domu jak dotąd (lista z wysokiego bloku domu)
+  out.push(
+    kadr(
+      'kwadraty-pietra-przymorze',
+      'demo=przymorze&pietra=1&kwadraty=3x3&cam=384,67,0.9&speed=0',
+      demo('przymorze'),
+      {
+        potem: async (page) => {
+          await page.evaluate(() => window.zm!.pietro(2));
+          await waitIdle(page);
+          const st = await page.evaluate(() => ({ ...window.zm!.pietra(), przekroj: window.zm!.view.section }));
+          if (st.pietro !== 2 || !st.przekroj) throw new Error(`piętro 2 nie jest widoczne: ${JSON.stringify(st)}`);
+        },
+      },
+    ),
+  );
+  out.push(
+    kadr('kwadraty-pietra-zielonki', 'demo=zielonki&pietra=1&kwadraty=3x3&cam=0,17,1.4&speed=0', demo('zielonki'), {
+      potem: async (page) => {
+        await page.evaluate(() => window.zm!.pietro(1));
+        await waitIdle(page);
+        const st = await page.evaluate(() => window.zm!.pietra());
+        if (st.pietro !== 1) throw new Error(`piętro 1 nie zostało wybrane: ${JSON.stringify(st)}`);
+      },
+    }),
+  );
+  // kliknięcie poza domem: prawy i lewy przycisk na kwadracie obok nic nie robią (bez podpowiedzi „zaznacz kogoś”, bez
+  // menu, bez karty), a w domu to samo kliknięcie daje podpowiedź (kontrola)
+  out.push({
+    name: 'kwadraty-klik-poza-domem',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&kwadraty=3x3&cam=384,192,0.7&speed=0`);
+      await waitIdle(page);
+      const stan = () =>
+        page.evaluate(() => ({
+          podpowiedz: document.getElementById('hint')!.textContent ?? '',
+          menu: !document.getElementById('ctx')!.hidden,
+          karta: !document.getElementById('card')!.hidden,
+          rozkazy: window.zm!.sim!.st.cmds.length,
+        }));
+      const przed = await stan();
+      // środek ekranu to granica; 250 px na prawo leży w kwadracie (1, 0), 250 px na lewo w domu
+      const poza = { x: 720 + 250, y: 450 };
+      const wDomu = { x: 720 - 250, y: 450 };
+      await page.mouse.click(poza.x, poza.y, { button: 'right' });
+      await page.waitForTimeout(350);
+      await page.mouse.click(poza.x, poza.y);
+      await page.waitForTimeout(350);
+      const po = await stan();
+      console.log(`  poza domem: ${JSON.stringify(po)}`);
+      if (po.podpowiedz !== przed.podpowiedz || po.menu || po.karta || po.rozkazy !== przed.rozkazy)
+        throw new Error(`kliknięcie poza domem coś zrobiło: ${JSON.stringify({ przed, po })}`);
+      // kontrola: prawy klik w domu bez zaznaczonych ludzi mówi, żeby kogoś zaznaczyć
+      await page.mouse.click(wDomu.x, wDomu.y, { button: 'right' });
+      await page.waitForTimeout(350);
+      const wDomuStan = await stan();
+      console.log(`  w domu: ${JSON.stringify(wDomuStan)}`);
+      if (wDomuStan.podpowiedz === przed.podpowiedz)
+        throw new Error('kontrola: prawy klik w domu nie zrobił nic, więc test nie dowodzi ignorowania poza domem');
+    },
+  });
+  // pamięć kawałków na telefonie (budżet 144 dalekich) przy 5×5: jazda kamerą po siatce zoomem 0,3 trzyma tekstury w
+  // budżecie, a kamera do skraju mgły nie wychodzi poza kwadraty
+  out.push({
+    name: 'kwadraty-telefon-budzet',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&kwadraty=5x5&cam=384,384,0.3&speed=0`);
+      await waitIdle(page);
+      const wyniki: string[] = [];
+      for (const [x, y] of [
+        [384, 384],
+        [-300, -300],
+        [900, -200],
+        [-200, 900],
+        [900, 900],
+        [384, 384],
+      ]) {
+        await page.evaluate(([x, y]) => window.zm!.setCam(x, y, 0.3), [x, y]);
+        await page.waitForTimeout(400);
+        await waitIdle(page);
+        const m = await page.evaluate(() => window.zm!.view.pamiecKawalkow());
+        wyniki.push(`${x},${y}: ${m.dalekie}/${m.bardzoDalekie}/${m.bliskie}`);
+        if (m.dalekie > 144 || m.bliskie > 16) throw new Error(`budżet telefonu przekroczony: ${JSON.stringify(m)}`);
+      }
+      console.log(`  dalekie/bardzo dalekie/bliskie po kolejnych kamerach: ${wyniki.join(' | ')}`);
+      await sprawdz(page, { z: 8, bez: 16 }, true);
+    },
+  });
+  return out;
 }
