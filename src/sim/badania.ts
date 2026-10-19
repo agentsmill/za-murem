@@ -11,8 +11,10 @@
    dopiero z budowlami.
 
    Odczyty stanu. Pola `research` i `books` w `SimState` (src/sim/sim.ts) są opcjonalne i powstają dopiero przy
-   pierwszym użyciu; funkcje stąd tylko je czytają, niczego do stanu nie dopisują, nie losują i nie znają języka
-   bieżącego (napisy to `Tx`). Z sim.ts moduł importuje wyłącznie typ `SimState`, żeby sim.ts mógł importować stąd.
+   pierwszym użyciu. Odczyty (`wiedza`, `kartka`, `tempoOsoby`, `kosztTech` i reszta) tylko czytają stan, niczego do
+   niego nie dopisują, nie losują i nie znają języka bieżącego (napisy to `Tx`); jedyne wyjątki to opisane niżej
+   książki: `dodajKsiazke` dopisuje `st.books`, a `ksiazkaZ` losuje z własnego generatora. Z sim.ts moduł importuje
+   wyłącznie typ `SimState`, żeby sim.ts mógł importować stąd.
    `wiedza` to jedna wiedza osady dla tablicy i zarządu, `kartka` to stan jednej kartki tablicy, `tempoOsoby` to postęp
    na godzinę gry jednej siedzącej osoby. Dodawanie postępu w kroku, pracownia i polecenia `research` i `study` są
    w `Sim` (src/sim/sim.ts: chooseResearch, startResearch, researchTick), tak samo plan dnia lokatorów z wiedzą i ich
@@ -179,13 +181,15 @@ export function nazwaEry(nr: number): Tx {
   return e.nazwa;
 }
 
-/** punkty postępu na godzinę gry dla mnożnika 1 (umiejętność 0 daje 0,7 tego, umiejętność 2 równo tyle); wstępna
-    wartość, stroi ją bot z mieszkańcami (zadanie 11 planu) */
-export const TEMPO_BAZOWE = 1.2;
+/** punkty postępu na godzinę gry dla mnożnika 1 (osoba bez umiejętności daje równo tyle, każdy poziom umiejętności
+    dokłada 10%); wstępna wartość, stroi ją bot z mieszkańcami (zadanie 11 planu) */
+export const TEMPO_BAZOWE = 1.0;
 
-/** mnożnik tempa pracy według poziomu umiejętności. To kopia `tempoPracy` z gałęzi `praca-ludzi` (src/sim/praca.ts),
-    żeby zawód działał wszędzie tak samo; przy scaleniu gałęzi ustępuje oryginałowi. */
-export const krzywaUmiejetnosci = (poziom: number): number => 0.7 + 0.15 * poziom;
+/** mnożnik tempa pracy według poziomu umiejętności: bez umiejętności dzisiejsze tempo, umiejętność tylko przyspiesza
+    (decyzja integratora i sesji pracy ludzi, 19.10.2026). To kopia `tempoPoziomu` (`1 + TEMPO_KROK * poziom`,
+    `TEMPO_KROK = 0.1`) z gałęzi `praca-ludzi` (src/sim/praca.ts), a nie `tempoPracy`, która ma jeszcze bramkę
+    pierwszego dnia, niepotrzebną badaniom. Przy scaleniu gałęzi ustępuje oryginałowi. */
+export const krzywaUmiejetnosci = (poziom: number): number => 1 + 0.1 * poziom;
 
 /** postęp na godzinę gry jednej siedzącej osoby w badaniu z dziedziny `dom`: tempo bazowe, krzywa umiejętności osoby
     w tej dziedzinie i cechy z 0.3 (pracowity ×1,1, leniwy ×0,9, Mistrz Excela ×1,05). Badać może każdy, także bez

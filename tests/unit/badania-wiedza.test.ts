@@ -265,20 +265,20 @@ describe('badania: stany kartek', () => {
 });
 
 describe('badania: tempo', () => {
-  it('krzywa umiejętności to 0,7 + 0,15 · poziom', () => {
-    expect(krzywaUmiejetnosci(0)).toBeCloseTo(0.7, 10);
-    expect(krzywaUmiejetnosci(2)).toBeCloseTo(1, 10);
-    expect(krzywaUmiejetnosci(4)).toBeCloseTo(1.3, 10);
+  it('krzywa umiejętności to 1 + 0,1 · poziom (bez umiejętności dzisiejsze tempo)', () => {
+    expect(krzywaUmiejetnosci(0)).toBeCloseTo(1, 10);
+    expect(krzywaUmiejetnosci(2)).toBeCloseTo(1.2, 10);
+    expect(krzywaUmiejetnosci(4)).toBeCloseTo(1.4, 10);
   });
 
-  it('bez umiejętności i cech tempo to TEMPO_BAZOWE · 0,7', () => {
-    expect(tempoOsoby(osoba({}), 'bud')).toBe(TEMPO_BAZOWE * 0.7);
-    expect(tempoOsoby(osoba({ med: 3 }), 'bud')).toBe(TEMPO_BAZOWE * 0.7);
+  it('bez umiejętności i cech tempo to TEMPO_BAZOWE · krzywa(0)', () => {
+    expect(tempoOsoby(osoba({}), 'bud')).toBe(TEMPO_BAZOWE * krzywaUmiejetnosci(0));
+    expect(tempoOsoby(osoba({ med: 3 }), 'bud')).toBe(TEMPO_BAZOWE * krzywaUmiejetnosci(0));
   });
 
   it('umiejętność w dziedzinie badania przyspiesza', () => {
     expect(tempoOsoby(osoba({ bud: 2 }), 'bud')).toBeGreaterThan(tempoOsoby(osoba({}), 'bud'));
-    expect(tempoOsoby(osoba({ bud: 2 }), 'bud')).toBeCloseTo(TEMPO_BAZOWE * 1, 10);
+    expect(tempoOsoby(osoba({ bud: 2 }), 'bud')).toBeCloseTo(TEMPO_BAZOWE * krzywaUmiejetnosci(2), 10);
   });
 
   it('pracowity bada szybciej niż bez cechy, a leniwy wolniej; Mistrz Excela +5%', () => {

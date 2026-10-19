@@ -81,7 +81,7 @@ Naraz trwa jedno badanie, jak w 0.3. Zmiana badania nie kasuje postępu poprzedn
 
 ## Tempo (moje, liczby do strojenia botem)
 
-- Postęp na godzinę gry na jedną siedzącą osobę = `TEMPO_BAZOWE · (0,7 + 0,15 · umiejętność w dziedzinie badania) · cechy`. Cechy z 0.3: pracowity ×1,1, leniwy ×0,9, Mistrz Excela ×1,05. Krzywa umiejętności jest ta sama co w projekcie pracy ludzi (`tempoPracy`), żeby zawód działał wszędzie tak samo.
+- Postęp na godzinę gry na jedną siedzącą osobę = `TEMPO_BAZOWE · (1 + 0,1 · umiejętność w dziedzinie badania) · cechy` (integrator i sesja pracy ludzi, 19.10.2026: bez umiejętności dzisiejsze tempo, umiejętność tylko przyspiesza). Cechy z 0.3: pracowity ×1,1, leniwy ×0,9, Mistrz Excela ×1,05. Krzywa umiejętności jest ta sama co w projekcie pracy ludzi (`tempoPoziomu`), żeby zawód działał wszędzie tak samo.
 - Koszt technologii to koszt z 0.3 (12–35 w erach 1–2) razy mnożnik ery `KOSZT_ERY[era]` (moje, po pytaniu recenzenta), żeby późniejsze ery były droższe bez ruszania liczb z 0.3.
 - Wzorcem jest prawdziwa gra, czyli z mieszkańcami z adresu (moje, po pytaniu recenzenta): `src/main.ts` wczytuje ich przy każdym starcie z mapy, a większość lokatorów ma fach, więc dwa miejsca przy stole bywają zajęte przez lokatorów przez cały dzień. Bot z badaniami chodzi z `--mieszkancy`. `TEMPO_BAZOWE` i `KOSZT_ERY` dobiera bot tak, żeby:
   - pierwsza technologia była gotowa w pierwszej dobie po postawieniu pracowni przy typowej obsadzie (to, co lokatorzy zrobią sami, plus jedna osoba zarządu przez kilka godzin);
@@ -188,7 +188,7 @@ Premie i budowle działają tylko po zbadaniu, więc gra bez badań ma te same l
 
 - Projekt pracy ludzi (gałąź `praca-ludzi`, `src/sim/praca.ts`) ma tabelę rodzajów pracy. Rodzaj „Badania” będzie tam dziewiątą kolumną, ukrytą, dopóki ta gałąź nie wejdzie.
 - Ta gałąź wystawia: w `sim.ts` metodę `startResearch(p): boolean` (szuka wolnego miejsca w pracowni i zaczyna pracę badania), a w module badań czyste `badaniaDom(st): Dom | null` (dziedzina bieżącego badania) i `badaniaWidoczne(st): boolean` (jest pracownia albo badanie). Kto scala drugi, podpina je w wpis „Badania”.
-- Krzywa umiejętności `0,7 + 0,15 · poziom` jest u mnie kopią `tempoPracy` z projektu pracy. Przy scaleniu kopia ustępuje oryginałowi. Cechy nakładam tylko w badaniach, raz.
+- Krzywa umiejętności `1 + 0,1 · poziom` jest u mnie kopią `tempoPoziomu` z projektu pracy. Przy scaleniu kopia ustępuje oryginałowi. Cechy nakładam tylko w badaniach, raz.
 - Ta gałąź nie rusza `think()` zarządu. Zarząd bada na polecenie, lokatorzy przez zaczep w planie dnia. W `sim.ts` obie gałęzie dopisują po wpisie do `JobKind`, unii poleceń i konstruktora `Sim`.
 - Jedyna zmiana w zachowaniu bezczynnego zarządu to wybór paleniska w `startRefuel` (sekcja „Dokładanie”). Rodzaj „Ogień” z projektu pracy ludzi woła `startRefuel`, więc dostaje nowe paleniska bez zmian po swojej stronie.
 
