@@ -5,12 +5,15 @@
    (quick_check i wersja schematu) i dopiero potem podmieniany, więc w katalogu nie ma niedokończonej kopii pod nazwą
    kopii, a druga kopia tego samego dnia zastępuje pierwszą. Kopie leżą na tym samym wolumenie co baza: chronią przed
    pomyłką (usunięte konto, zły zapis), nie przed utratą dysku albo maszyny. Zawierają te same dane osobowe co baza
-   (nicki, pozycje zajętych klatek, zapisy gier), więc mają prawa 0600 i znikają po `dni` dniach; usunięte konto znika
-   z kopii najpóźniej po tym czasie (do informacji o danych osobowych).
+   (nicki, pozycje zajętych klatek, zapisy gier), więc plik ma prawa 0600 od chwili utworzenia (VACUUM INTO pisze do
+   pustego pliku z 0600, który przygotowujemy, bo sam SQLite tworzyłby go z 0644 do czasu chmod), a katalog założony
+   przez serwer 0700. Kopie znikają po `dni` dniach, ale stare kasuje się dopiero po udanej nowej: usunięte konto znika
+   z kopii po tym czasie, o ile kopie się udają; gdy przestaną powstawać (pełny dysk, zły katalog), zostają ostatnie
+   dobre, także starsze niż `dni` dni (do informacji o danych osobowych).
 
    Zmienne w server/main.ts: ZM_KOPIE (katalog; brak: kopie wyłączone), ZM_KOPIE_DNI (ile ostatnich dni zostaje,
    domyślnie 7), ZM_KOPIA_GODZINA (godzina UTC, domyślnie 3). Błąd kopii (brak katalogu, pełny dysk) trafia do dziennika
-   i nie wywraca serwera; stare kopie kasuje się dopiero po udanej nowej, żeby nie zamienić ostatnich dobrych na nic. */
+   i nie wywraca serwera. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,8 +48,10 @@ export function zrobKopie(baza: Baza, katalog: string, teraz: Date, dziennik: Dz
   try {
     const cel = path.join(katalog, `za-murem-${teraz.toISOString().slice(0, 10)}.db`);
     tymczasowa = `${cel}.tmp`;
-    // niedokończona kopia z przerwanej próby; VACUUM INTO nie nadpisuje istniejącego pliku
+    // niedokończona kopia z przerwanej próby; VACUUM INTO nie nadpisuje niepustego pliku
     fs.rmSync(tymczasowa, { force: true });
+    // VACUUM INTO dopuszcza pusty plik, a ten ma 0600 od początku (nowy plik SQLite miałby 0644 do czasu chmod)
+    fs.writeFileSync(tymczasowa, '', { mode: 0o600 });
     const wersja = Number((baza.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version);
     baza.db.exec(`VACUUM INTO '${tymczasowa.replaceAll("'", "''")}'`);
     sprawdzKopie(tymczasowa, wersja);
@@ -127,7 +132,7 @@ export function planujKopie(op: OpcjeKopii): { zatrzymaj(): void } {
   const zrob = () => {
     const t = teraz();
     try {
-      fs.mkdirSync(op.katalog, { recursive: true });
+      fs.mkdirSync(op.katalog, { recursive: true, mode: 0o700 });
     } catch (e) {
       dziennik(`kopia bazy nie powiodła się: katalog ${op.katalog}: ${opis(e)}`);
       return;

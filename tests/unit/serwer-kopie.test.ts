@@ -76,6 +76,23 @@ describe('kopie bazy serwera', () => {
     baza.zamknij();
   });
 
+  it('plik kopii ma prawa 0600 od chwili utworzenia, bez okna z domyślnymi prawami przed chmod', () => {
+    const baza = otworzBaze(path.join(katalog, 'za-murem.db'));
+    const kopie = path.join(katalog, 'kopie');
+    fs.mkdirSync(kopie);
+    // bez chmod: prawa pliku zostają takie, z jakimi plik powstał (SQLite sam tworzy pliki z 0644 przy umask 022)
+    const chmod = vi.spyOn(fs, 'chmodSync').mockImplementation(() => {});
+    try {
+      const sciezka = zrobKopie(baza, kopie, new Date('2026-10-19T03:00:00Z'), () => {});
+      expect(sciezka).not.toBeNull();
+      expect(chmod).toHaveBeenCalled();
+      expect(fs.statSync(sciezka as string).mode & 0o777).toBe(0o600);
+    } finally {
+      chmod.mockRestore();
+      baza.zamknij();
+    }
+  });
+
   it('nazwa kopii z datą w UTC, a nie w strefie serwera ani w strefie podanej daty', () => {
     const baza = otworzBaze(path.join(katalog, 'za-murem.db'));
     const kopiaDir = path.join(katalog, 'kopie');
@@ -195,6 +212,23 @@ describe('harmonogram kopii', () => {
     vi.advanceTimersByTime(3 * DOBA);
     expect(fs.readdirSync(kopiaDir)).toHaveLength(3);
     expect(wpisy).toEqual([]);
+    baza.zamknij();
+  });
+
+  it('katalog kopii założony przez harmonogram ma prawa 0700 (te same dane osobowe co baza), a istniejącego katalogu nie rusza', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-19T05:00:00Z') });
+    const baza = otworzBaze(path.join(katalog, 'za-murem.db'));
+    // po godzinie kopii, więc harmonogram robi pierwszą kopię od razu i zakłada katalog (z katalogiem nadrzędnym)
+    const nowy = path.join(katalog, 'dane', 'kopie');
+    planujKopie({ baza, katalog: nowy, godzina: 3 }).zatrzymaj();
+    expect(fs.statSync(nowy).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(path.join(nowy, 'za-murem-2026-10-19.db')).mode & 0o777).toBe(0o600);
+    // katalog, który już jest (na przykład wolumen z zewnątrz), zostaje z tym, co ma
+    const istniejacy = path.join(katalog, 'wolumen');
+    fs.mkdirSync(istniejacy);
+    fs.chmodSync(istniejacy, 0o755);
+    planujKopie({ baza, katalog: istniejacy, godzina: 3 }).zatrzymaj();
+    expect(fs.statSync(istniejacy).mode & 0o777).toBe(0o755);
     baza.zamknij();
   });
 

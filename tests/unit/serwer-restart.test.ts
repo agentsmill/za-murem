@@ -121,7 +121,7 @@ describe('zamknięcie serwera przy planowym restarcie', () => {
               kody.push(kod);
               ok();
             },
-            300,
+            5000,
           );
       });
     });
@@ -141,6 +141,50 @@ describe('zamknięcie serwera przy planowym restarcie', () => {
     expect(zapis.body.dane).toEqual(dane);
   });
 
+  it('po końcu żądania w toku zamyka połączenie keep-alive od razu, a nie dopiero po limicie czasu', async () => {
+    // serwer, który odpowiada po 100 ms, i klient trzymający połączenie keep-alive po odpowiedzi
+    const srv = http.createServer((_req, res) => {
+      setTimeout(() => res.end('ok'), 100);
+    });
+    await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok));
+    const agent = new http.Agent({ keepAlive: true });
+    try {
+      const port = (srv.address() as AddressInfo).port;
+      const status = new Promise<number>((ok, blad) => {
+        http
+          .get({ host: '127.0.0.1', port, agent }, (res) => {
+            res.resume();
+            res.on('end', () => ok(res.statusCode ?? 0));
+          })
+          .on('error', blad);
+      });
+      await new Promise((ok) => setTimeout(ok, 30)); // żądanie jest już u serwera
+      const t0 = Date.now();
+      const wyjscia: number[] = [];
+      const gra = { zamknij: vi.fn() };
+      const wyszedl = new Promise<void>((ok) =>
+        zamknijPlynnie(
+          srv,
+          gra,
+          (kod) => {
+            wyjscia.push(kod);
+            ok();
+          },
+          8000,
+        ),
+      );
+      expect(await status).toBe(200);
+      await wyszedl;
+      // limit to 8 s; bez zamykania bezczynnych połączeń serwer czekałby na koniec keep-alive klienta
+      expect(Date.now() - t0).toBeLessThan(3000);
+      expect(wyjscia).toEqual([0]);
+      expect(gra.zamknij).toHaveBeenCalledTimes(1);
+    } finally {
+      agent.destroy();
+      srv.closeAllConnections();
+    }
+  }, 15_000);
+
   it('wyjście woła się dokładnie raz, także gdy po zamknięciu serwera mija jeszcze limit czasu', async () => {
     const a = await start(path.join(katalog, 'za-murem.db'));
     const kody: number[] = [];
@@ -149,38 +193,47 @@ describe('zamknięcie serwera przy planowym restarcie', () => {
     expect(kody).toEqual([0]);
   });
 
-  it('zamknięcie przy zajętej i pełnej kolejce scrypt, gdy limit czasu minie przed końcem żądań: baza spójna, konto jest', async () => {
+  it('zamknięcie przy pełnej kolejce scrypt: najpierw nadmiarowe logowania dostają 503, potem wyjście kodem 0 mimo liczących się haseł, baza spójna, konto jest', async () => {
     const plik = path.join(katalog, 'za-murem.db');
-    // kosztowniejszy scrypt i kolejka na jedno zadanie, żeby logowania stały w kolejce i dostawały 503
-    const a = await start(plik, { hasla: { logN: 14, r: 8, p: 1 }, scrypt: { naraz: 1, czeka: 1 } });
+    // jedno liczenie scrypt naraz i jedno miejsce w kolejce; koszt taki, żeby liczenie trwało dłużej niż odrzucenie z 503
+    const a = await start(plik, { hasla: { logN: 15, r: 8, p: 1 }, scrypt: { naraz: 1, czeka: 1 } });
     expect((await przegladarka(a.adres).zadanie('POST', '/api/konto', DANE)).status).toBe(201);
 
-    const kody: number[] = [];
-    const zamkniete = new Promise<void>((ok) => {
-      let raz = false;
-      a.srv.on('request', () => {
-        if (raz) return;
-        raz = true;
-        zamknijPlynnie(
-          a.srv,
-          a.gra,
-          (kod) => {
-            kody.push(kod);
-            ok();
-          },
-          5,
-        );
-      });
-    });
+    const statusy: number[] = [];
     const logowania = Array.from({ length: 6 }, () =>
       przegladarka(a.adres)
         .zadanie('POST', '/api/sesja', DANE)
         .then((r) => r.status)
-        .catch(() => 0),
+        .catch(() => 0)
+        .then((status) => {
+          statusy.push(status);
+          return status;
+        }),
     );
-    await zamkniete;
-    await Promise.all(logowania);
+    // odrzucenie z 503 wraca od razu, a liczenie hasła trwa: kolejka jest pełna, zanim zaczniemy zamykać
+    await vi.waitFor(() => expect(statusy).toContain(503), { timeout: 10_000, interval: 5 });
+    const przedZamknieciem = [...statusy];
+
+    const kody: number[] = [];
+    await new Promise<void>((ok) =>
+      zamknijPlynnie(
+        a.srv,
+        a.gra,
+        (kod) => {
+          kody.push(kod);
+          ok();
+        },
+        5,
+      ),
+    );
+    const koncowe = await Promise.all(logowania);
     expect(kody).toEqual([0]);
+    expect(przedZamknieciem).toContain(503);
+    // reszta to liczone logowania (200) albo zerwane przez zamknięcie (0), ale nic innego niż 503 i 500 z zamkniętej bazy
+    expect(
+      koncowe.every((s) => [200, 0, 503, 500].includes(s)),
+      `statusy: ${koncowe.join(', ')}`,
+    ).toBe(true);
 
     const b = await start(plik);
     expect(b.gra.baza.db.prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });

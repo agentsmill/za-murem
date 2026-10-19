@@ -40,9 +40,11 @@ export function godzinyRestartu(wartosc: string | undefined): { godziny: number 
 }
 
 /** Czyste zamknięcie: serwer HTTP przestaje przyjmować połączenia, żądania w toku (zapis w chmurze, logowanie w kolejce
-    scrypt) mają czas się skończyć, potem baza się zamyka i wołamy `wyjdz(0)`. Połączenia keep-alive i żądania, które
-    nie skończą się w `limitMs` (domyślnie 5 s), nie blokują zamknięcia: po limicie baza zamyka się i proces wychodzi.
-    Przerwane żądanie nie uszkadza bazy (WAL, każdy zapis w transakcji); klient dostaje zerwane połączenie i ponawia. */
+    scrypt) mają czas się skończyć, potem baza się zamyka i wołamy `wyjdz(0)`. Połączenia keep-alive zamykają się, gdy
+    tylko przestają obsługiwać żądanie (sprawdzenie co 25 ms), więc zamknięcie kończy się zaraz po ostatnim żądaniu w toku,
+    a nie dopiero po wygaśnięciu keep-alive klienta. Żądania, które nie skończą się w `limitMs` (domyślnie 5 s), nie
+    blokują zamknięcia: po limicie baza zamyka się i proces wychodzi. Przerwane żądanie nie uszkadza bazy (WAL, każdy
+    zapis w transakcji); klient dostaje zerwane połączenie i ponawia. */
 export function zamknijPlynnie(
   serwer: Server,
   gra: { zamknij(): void },
@@ -50,13 +52,18 @@ export function zamknijPlynnie(
   limitMs = 5000,
 ): void {
   let wyszedl = false;
+  const limit = setTimeout(() => wyjdzRaz(), limitMs);
+  const sprzatanie = setInterval(() => serwer.closeIdleConnections(), 25);
+  limit.unref();
+  sprzatanie.unref();
   const wyjdzRaz = () => {
     if (wyszedl) return;
     wyszedl = true;
+    clearTimeout(limit);
+    clearInterval(sprzatanie);
     gra.zamknij();
     wyjdz(0);
   };
   serwer.close(wyjdzRaz);
-  setTimeout(wyjdzRaz, limitMs).unref();
   serwer.closeIdleConnections();
 }
