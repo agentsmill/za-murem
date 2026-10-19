@@ -256,7 +256,11 @@ function graj(seed: number) {
       zle.push('wybrani nie są najzdrowsi');
     wyjscia.push({ dzien: i.day, godzina: i.hour, zle });
   };
-  const r = playWithGov(w, seed, 'zawsze-warta', DNI, 4, { miasto: { okolica, krok, po: gracz.po } });
+  // tylko wyprawy dzienne gracza: karta nocy nie wysyła nikogo, żeby wizyty w stanie zgadzały się z logiem bota
+  const r = playWithGov(w, seed, 'zawsze-warta', DNI, 4, {
+    miasto: { okolica, krok, po: gracz.po },
+    bezWyprawNocnych: true,
+  });
   return { r, gracz, wyjscia };
 }
 
