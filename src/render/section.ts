@@ -73,6 +73,9 @@ export interface SectionScene {
   /** przekrój ma własne tablice komórek i pomieszczeń (przed pierwszym dołożeniem wnętrza są wspólne z siedzibą
       świata, której symulacja nie może zobaczyć cudzych pomieszczeń) */
   wlasne?: boolean;
+  /** scena typowego piętra (src/render/pietro.ts): budynki od dwóch kondygnacji bez wejść i mieszkania zarządu,
+      rysowana tylko w trybie piętra */
+  pietro?: true;
 }
 
 /** Kawałek przekroju: wnętrze otwartego sąsiedniego budynku do dołożenia do sceny siedziby (M2 fala 2). Komórki
