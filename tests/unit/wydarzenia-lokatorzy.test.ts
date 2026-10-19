@@ -476,6 +476,99 @@ describe('bezsenność', () => {
     expect(def('bezsennosc').w(wszyscySpia.h)).toBe(0);
   });
 
+  it('wartownik przy siatce nigdy nie jest bohaterem, choćby miał najniższe bezpieczeństwo', () => {
+    const potrzeby = [{ safe: 5 }, { safe: 6 }, { safe: 7 }, { safe: 40 }];
+    // posterunek z odczytu symulacji: brama, dziura, siatka, wieża
+    for (const post of ['brama', 'd1', 'siatka', 'wieza']) {
+      const { h, i } = setup({ hour: 23, people: ludzie(potrzeby, [{ post }]) });
+      expect(def('bezsennosc').make(h), post).toEqual({ p: i.people[1].id });
+    }
+    // praca 'guard' bez znanego posterunku to też warta przy siatce
+    const zPraca = setup({ hour: 23, people: ludzie(potrzeby, [{ job: 'guard' }]) });
+    expect(def('bezsennosc').make(zPraca.h)).toEqual({ p: zPraca.i.people[1].id });
+    // warta z menu (GovInput.guards)
+    const menu = setup({ hour: 23, people: ludzie(potrzeby) });
+    const zMenu = setup({ hour: 23, people: ludzie(potrzeby), guards: [{ id: menu.i.people[0].id, post: 'd2' }] });
+    expect(def('bezsennosc').make(zMenu.h)).toEqual({ p: zMenu.i.people[1].id });
+    // ugryziony i operujący też zostają przy sobie
+    const chorzy = setup({ hour: 23, people: ludzie(potrzeby, [{ bitten: true }, { job: 'amputate' }]) });
+    expect(def('bezsennosc').make(chorzy.h)).toEqual({ p: chorzy.i.people[2].id });
+  });
+
+  it('warta z zatwierdzonej karty nocy też wyklucza, a plan z innej doby nie', () => {
+    const { gov, i } = setup({ hour: 23, people: ludzie([{ safe: 5 }, { safe: 6 }, { safe: 7 }, { safe: 40 }]) });
+    const [a, b, c, d] = i.people;
+    gov.night = {
+      day: 3,
+      card: {} as never,
+      assign: { [a.id]: 'warta:brama', [b.id]: 'warta:d2', [c.id]: 'sen', [d.id]: 'sen' },
+      confirmed: true,
+      raid: null,
+      exp: [],
+      lines: [],
+      hurt: [],
+      t0: 50,
+      a0: 20,
+      returned: [],
+      loot: { wood: 0, supplies: 0, scrap: 0, parts: 0, meds: 0 },
+      slept: [],
+    };
+    expect(def('bezsennosc').make(makeHost(gov, i, emptyEffects()))).toEqual({ p: c.id });
+    gov.night.day = 2;
+    expect(def('bezsennosc').make(makeHost(gov, i, emptyEffects()))).toEqual({ p: a.id });
+  });
+
+  it('osoba na dyżurze przy kozie może być bohaterem (siedzi przy kozie), choć do sprawdzania nie idzie', () => {
+    const potrzeby = [{ safe: 5 }, { safe: 60 }, { safe: 70 }, { safe: 80 }];
+    // dyżur z odczytu, z menu i z karty nocy
+    const zOdczytu = setup({ hour: 23, people: ludzie(potrzeby, [{ post: 'koza' }]) });
+    expect(def('bezsennosc').make(zOdczytu.h)).toEqual({ p: zOdczytu.i.people[0].id });
+    const baza = setup({ hour: 23, people: ludzie(potrzeby) });
+    const zMenu = setup({ hour: 23, people: ludzie(potrzeby), guards: [{ id: baza.i.people[0].id, post: 'koza' }] });
+    expect(def('bezsennosc').make(zMenu.h)).toEqual({ p: zMenu.i.people[0].id });
+    const { gov, i } = setup({ hour: 23, people: ludzie(potrzeby) });
+    gov.night = {
+      day: 3,
+      card: {} as never,
+      assign: { [i.people[0].id]: 'warta:koza' },
+      confirmed: true,
+      raid: null,
+      exp: [],
+      lines: [],
+      hurt: [],
+      t0: 50,
+      a0: 20,
+      returned: [],
+      loot: { wood: 0, supplies: 0, scrap: 0, parts: 0, meds: 0 },
+      slept: [],
+    };
+    const hKarta = makeHost(gov, i, emptyEffects());
+    expect(def('bezsennosc').make(hKarta)).toEqual({ p: i.people[0].id });
+    // do sprawdzania ten sam dyżurny nie idzie (zostaje przy kozie), choć jest najbardziej wypoczęty
+    const odpoczety = ludzie([{ rest: 99 }, { rest: 50 }, { rest: 40 }, { rest: 30 }], [{ post: 'koza' }]);
+    const k = setup({ hour: 23, people: odpoczety });
+    expect(k.h.czuwaPozaWarta().map((p) => p.id)).toContain(k.i.people[0].id);
+    expect(k.h.doSprawdzenia()?.id).toBe(k.i.people[1].id);
+    // czuwaPozaWarta oddaje kopie
+    k.h.czuwaPozaWarta()[0].needs.safe = -9;
+    expect(k.i.people[0].needs.safe).not.toBe(-9);
+  });
+
+  it('gdy każdy czuwający stoi przy siatce, śpi, jest poza mapą albo przy zabiegu, karty nie ma', () => {
+    const { h } = setup({
+      hour: 23,
+      people: ludzie([], [{ post: 'brama' }, { asleep: true }, { away: true }, { bitten: true }]),
+    });
+    expect(h.czuwaPozaWarta()).toEqual([]);
+    expect(def('bezsennosc').w(h)).toBe(0);
+    // dyżur przy kozie to jeszcze kandydat
+    const koza = setup({
+      hour: 23,
+      people: ludzie([], [{ post: 'brama' }, { asleep: true }, { away: true }, { post: 'koza' }]),
+    });
+    expect(def('bezsennosc').w(koza.h)).toBeGreaterThan(0);
+  });
+
   it('tekst i wybory jak dotąd, dla wskazanej osoby', () => {
     const { h, i } = setup({ hour: 23, people: ludzie([{ safe: 5 }]) });
     const d = def('bezsennosc').make(h) as { p: string };
@@ -502,6 +595,11 @@ describe('dym i latarka od najstarszej mieszkanki', () => {
     expect(en).not.toMatch(/Krysia/);
     expect(polskieSlowa(en, ['Halina Kowalska'])).toEqual([]);
     // słoik od niej trafia do kuchni jak dziś: Jedzenie 2
+    expect(
+      ev('dym')
+        .choices(h, d)
+        .map((c) => c.label.en),
+    ).toEqual(['Ask her in to get warm', 'Take the jar and thank her']);
     const { fx } = wybierz('dym', d, 0);
     expect(fx.stock.supplies).toBe(2);
     expect(fx.log.map(pl).join(' ')).toContain('Pani Halina opowiada, jak wyglądało osiedle');
@@ -536,6 +634,17 @@ describe('dym i latarka od najstarszej mieszkanki', () => {
     expect(dymTekst).toContain('puka pan Józef Mazur z waszej klatki');
     expect(dymTekst).toContain('u niego w mieszkaniu jest sześć stopni');
     expect(ev('dym').text(h, dym).en).toContain('He asks if he can sit');
+    // napisy wyborów po angielsku w rodzaju bohatera, a wpisy do kroniki z jego imieniem
+    expect(
+      ev('dym')
+        .choices(h, dym)
+        .map((c) => c.label.en),
+    ).toEqual(['Ask him in to get warm', 'Take the jar and thank him']);
+    const pan = wybierz('dym', dym, 1, { lokatorzy: panowie });
+    expect(pan.fx.log.map(pl).join(' ')).toContain(
+      'Pan Józef wrócił do zimnego mieszkania. Na klatce już o tym wiedzą.',
+    );
+    expect(pan.fx.log.map((l) => l.en).join(' ')).toContain('Józef went back to his cold flat.');
     const lat = def('latarka').text(h, def('latarka').make(h));
     expect(lat).toContain('Pan Józef Mazur z waszej klatki przyniósł latarkę na korbkę');
     expect(lat).toContain('a on już nie ma siły kręcić');
@@ -558,6 +667,11 @@ describe('dym i latarka od najstarszej mieszkanki', () => {
       'Pani Halina z waszej klatki przyniosła latarkę na korbkę. Minuta kręcenia daje pięć minut światła, a ona już nie ma siły kręcić.',
     );
     expect(ev('dym').text(h, {}).en).toContain('knocking at the door is old Krysia from your stairwell');
+    expect(
+      ev('dym')
+        .choices(h, {})
+        .map((c) => c.label.en),
+    ).toEqual(['Ask her in to get warm', 'Take the jar and thank her']);
     expect(ev('latarka').text(h, {}).en).toContain('Old Halina from your stairwell has brought round');
     // stary zapis okna (dane bez bohaterki) czyta się po staremu także z mieszkańcami z osobą
     const z = setup().h;
@@ -723,13 +837,21 @@ describe('„Sprawdzić” z krzyku i hałasu', () => {
       ],
       durability: 0.5,
     };
-    const { h, i } = setup({ hour: 23, fence: dziury });
+    const bezStron = { hour: 23, strony: undefined, fence: dziury };
+    const { h, i } = setup(bezStron);
     expect(h.kafelekPrzySiatce('blok')).toBe(500);
     expect(h.kafelekPrzySiatce('garaze')).toBe(500);
-    const { fx } = wybierz('krzyk', { help: false }, 0, { hour: 23, fence: dziury });
+    const { fx } = wybierz('krzyk', { help: false }, 0, bezStron);
     expect(fx.sprawdz).toEqual([{ id: i.people[0].id, tile: 500 }]);
-    // atrapa bez kafelków dziur i bez stron
-    const bez = setup({ hour: 23 });
+    // atrapa ma kafelki dziur i strony, więc bez nich trzeba je zabrać
+    const zAtrapy = setup({ hour: 23 });
+    expect(zAtrapy.h.kafelekPrzySiatce('blok')).toBe(4222);
+    expect(zAtrapy.h.kafelekPrzySiatce('garaze')).toBe(4111);
+    const bezKafelkow = {
+      holes: zAtrapy.i.fence!.holes.map(({ tiles: _t, ...d }) => d),
+      durability: 0.5,
+    };
+    const bez = setup({ hour: 23, strony: undefined, fence: bezKafelkow });
     expect(bez.h.kafelekPrzySiatce('blok')).toBeNull();
     expect(def('krzyk').choices(bez.h, { help: true })[0].ok).toBe(false);
     expect(def('halas').choices(bez.h, { cat: true })[0].ok).toBe(false);

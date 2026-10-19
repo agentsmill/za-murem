@@ -562,14 +562,16 @@ describe('zarząd bez opcji zwycięstwa', () => {
   it('cztery doby gry mają te same skróty stanu co przed modułem zwycięstwa', () => {
     // skróty przepięte 19.10.2026 po zmianie puli wydarzeń (pule według trybu, handlarz i wędrowiec z wagą 0):
     // inna pula to inne losowanie zarządu; przed zmianą były 51743a78, 1792dce3 i 7b631d3d, czyli przebieg sprzed
-    // modułu zwycięstwa. Przepięte drugi raz w zadaniu 6 wydarzeń (karty z sytuacji z mieszkańcami): kłótnia bierze
-    // parę o najniższym nastroju bez losowania, bezsenność nieśpiącego z najniższym bezpieczeństwem bez losowania,
-    // kradzież wraca co 48 godzin, odejście nie dotyczy ostatniej osoby, „Sprawdzić” z krzyku i hałasu idzie tylko
-    // osobą bez warty i snu; były 32eb97ec, 88a53f7e i 438e5c9b
+    // modułu zwycięstwa. Przepięte drugi raz w zadaniu 6 wydarzeń (karty z sytuacji z mieszkańcami), bo zmiany kart
+    // przesunęły strumień losowania zarządu: kłótnia bierze parę o najniższym nastroju bez losowania, bezsenność
+    // osobę spoza warty przy siatce bez losowania (nocą rzadko jest ktoś taki), kradzież wraca co 48 godzin, odejście
+    // nie dotyczy ostatniej osoby. Trzeci raz w poprawce zadania 6: atrapa ma teraz kafelki dziur i strony świata,
+    // więc „Sprawdzić” z krzyku i hałasu jest w niej dostępne (wcześniej zawsze wyszarzone), a przy tym wchodzi w grę
+    // wstawanie śpiącego; były 32eb97ec, 88a53f7e i 438e5c9b, potem 1859eee3, 8e1834e7 i 04753f7b
     const przebiegi = [
-      [1, 'propozycja', '1859eee3'],
-      [3, 'zawsze-warta', '8e1834e7'],
-      [5, 'losowo', '04753f7b'],
+      [1, 'propozycja', '69085683'],
+      [3, 'zawsze-warta', '00eb9415'],
+      [5, 'losowo', 'ef1cea9e'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

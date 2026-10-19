@@ -21,7 +21,8 @@
    Odstęp między powtórkami karty z nakładki (`OldEvent.gap`, np. kradzież co 48 godzin gry) idzie do `GEventDef.gap`.
    Wybór bohatera karty z ludzi zarządu: `zarzad()` (wszyscy, bez tych, co wychodzą), `nieSpia()` (czuwający) i
    `rested()` oraz `doSprawdzenia()` (najbardziej wypoczęta; do sprawdzania najpierw nieśpiąca, a gdy takiej nie ma,
-   śpiąca, ale nigdy z warty, z wyprawy ani od zabiegu), a
+   śpiąca, ale nigdy z warty, z wyprawy ani od zabiegu) i `czuwaPozaWarta()` (do bezsenności: czuwająca, nie z warty
+   przy siatce, ale może być z dyżuru przy kozie), a
    „Sprawdzić” bierze kafelek z `kafelekPrzySiatce()` (GovInput.strony albo największa dziura); `moodOf` daje jednej
    osobie chwilowy nastrój przez GovEffects.moods. */
 
@@ -31,6 +32,7 @@ import { makePerson, type Person } from '../content/people.ts';
 import { type Tx, tx, txCat } from '../core/jezyk.ts';
 import { rngOf } from '../core/rng.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
+import { KOZA } from './noc.ts';
 import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
 import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Punkt, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
@@ -213,12 +215,25 @@ export function makeHost(
   const naMiejscu = (p: GovPerson) => !p.away && !away.has(p.id) && !odchodzi(p);
   /** osoba zarządu na miejscu, która nie śpi */
   const czuwa = (p: GovPerson) => !p.asleep && naMiejscu(p);
-  /** osoba na posterunku warty: z odczytu symulacji, z menu albo z zatwierdzonej karty nocy tej nocy */
-  const naWarcie = (p: GovPerson) =>
-    !!p.post ||
-    p.job === 'guard' ||
-    !!i.guards?.some((g) => g.id === p.id) ||
-    (!!st.night?.confirmed && st.night.day === nd && !!st.night.assign[p.id]?.startsWith('warta:'));
+  /** klucz posterunku warty, na którym stoi osoba ('brama', 'd<id>', 'koza', 'siatka', 'wieza'): z odczytu symulacji, z
+      menu albo z zatwierdzonej karty nocy tej doby; null: nie stoi na żadnym. Praca 'guard' bez znanego posterunku to
+      posterunek przy siatce. */
+  const posterunek = (p: GovPerson): string | null => {
+    if (p.post) return p.post;
+    const menu = i.guards?.find((g) => g.id === p.id);
+    if (menu) return menu.post;
+    const klucz = st.night?.confirmed && st.night.day === nd ? st.night.assign[p.id] : undefined;
+    if (klucz?.startsWith('warta:')) return klucz.slice('warta:'.length);
+    return p.job === 'guard' ? 'brama' : null;
+  };
+  /** czy osoba stoi na warcie; z `dopuscKoze` dyżur przy kozie się nie liczy (siedzi przy kozie, nie pilnuje siatki) */
+  const naWarcie = (p: GovPerson, dopuscKoze = false) => {
+    const k = posterunek(p);
+    return k !== null && !(dopuscKoze && k === KOZA);
+  };
+  /** czy osoba może zająć się czymś poza swoim miejscem: nie na warcie (z `dopuscKoze` przy kozie wolno), nie
+      ugryziona (gorączka, amputacja) i nie operująca */
+  const moze = (p: GovPerson, dopuscKoze = false) => !naWarcie(p, dopuscKoze) && !p.bitten && p.job !== 'amputate';
   /** najbardziej wypoczęta z osób, które przeszły filtr; przy remisie niższe id */
   const najbardziejWypoczeta = (ok: (p: GovPerson) => boolean): GovPerson | null =>
     [...i.people].filter(ok).sort((a, b) => b.needs.rest - a.needs.rest || (a.id < b.id ? -1 : 1))[0] ?? null;
@@ -332,10 +347,10 @@ export function makeHost(
     // Najpierw ktoś, kto nie śpi; nocą zwykle śpią wszyscy poza wartownikami, więc gdy nikogo takiego nie ma, wstaje
     // najbardziej wypoczęty ze śpiących (karta mówi, że ktoś usłyszał hałas). Wartownik na posterunku, osoba na
     // wyprawie i ugryziona (gorączka, amputacja) albo operująca zostają przy sobie; wtedy „Sprawdzić” jest niedostępne.
-    doSprawdzenia: () => {
-      const moze = (p: GovPerson) => !naWarcie(p) && !p.bitten && p.job !== 'amputate';
-      return najbardziejWypoczeta((p) => czuwa(p) && moze(p)) ?? najbardziejWypoczeta((p) => naMiejscu(p) && moze(p));
-    },
+    doSprawdzenia: () =>
+      najbardziejWypoczeta((p) => czuwa(p) && moze(p)) ?? najbardziejWypoczeta((p) => naMiejscu(p) && moze(p)),
+    // bezsenność: czuwa, ale nie pilnuje siatki ani nie operuje; dyżur przy kozie wolno (siedzi przy kozie naprawdę)
+    czuwaPozaWarta: () => i.people.filter((p) => czuwa(p) && moze(p, true)).map(kopiaOsoby),
     kafelekPrzySiatce: (strona) =>
       i.strony?.[strona] ?? fenceOf(i, fx.patch).holes.find((x) => x.tiles?.length)?.tiles?.[0] ?? null,
     moodOf: (id, why, d, hours) => {

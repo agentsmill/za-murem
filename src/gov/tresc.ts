@@ -10,9 +10,10 @@
    Karty z ludźmi: mieszkańcy siedziby z osobą z generatora (`GovHost.lokatorzy()`, `lokator(id)`; bez generatora lista
    jest pusta, a karty grają po staremu) dają bohaterów kartom `dym`, `latarka` (najstarsza mieszkanka po imieniu, bez
    pięter) i, w nakładkach z warianty.ts, `fachowiec` (awans), `kradziez` (sprawca z najniższym nastrojem, nie jedzenie)
-   i `odejscie`/`klotnia` (wyjście bramą: `wyrzuc`). `bezsennosc` bierze nieśpiącego z najniższym bezpieczeństwem
-   (`nieSpia()`), a `krzyk` i `halas` dla „Sprawdzić” osobę z `doSprawdzenia()` (czuwającą, a gdy takiej nie ma,
-   śpiącą, ale nie z warty) i kafelek z `kafelekPrzySiatce()` (`sprawdz`). */
+   i `odejscie`/`klotnia` (wyjście bramą: `wyrzuc`). `bezsennosc` bierze nieśpiącego spoza warty przy siatce (może to
+   być ktoś na dyżurze przy kozie) z najniższym bezpieczeństwem (`czuwaPozaWarta()`), a `krzyk` i `halas` dla
+   „Sprawdzić” osobę z `doSprawdzenia()` (czuwającą, a gdy takiej nie ma, śpiącą, ale nie z warty) i kafelek
+   z `kafelekPrzySiatce()` (`sprawdz`). */
 
 import { LAW, type LawPath } from '../content/data.ts';
 import type { EventHost } from '../content/events.ts';
@@ -252,6 +253,9 @@ export interface GovHost extends EventHost {
   zarzad(): GovPerson[];
   /** osoby zarządu, które nie śpią i nie są na wyprawie, w kolejności osób (kopie) */
   nieSpia(): GovPerson[];
+  /** osoby zarządu, które nie śpią, nie są na wyprawie i nie pilnują siatki (brama, dziura, wieża, warta z karty nocy)
+      ani nie operują (ugryzione); dyżur przy kozie wolno, bo siedzi przy kozie; w kolejności osób (kopie) */
+  czuwaPozaWarta(): GovPerson[];
   /** najbardziej wypoczęta osoba, która może teraz iść sprawdzić hałas: najpierw spośród tych, które nie śpią, a gdy
       żadna nie może, spośród śpiących (wstaje i idzie). Nigdy nie idzie osoba na wyprawie (ani w nocnym planie
       wypraw), na posterunku warty (`GovInput.guards`, `GovPerson.post`, warta z karty nocy) ani przy zabiegu
@@ -767,12 +771,13 @@ export const NEW_EVENTS: GEventDef[] = [
     id: 'bezsennosc',
     first: true,
     when: ['noc'],
-    // bezsenność dotyka kogoś, kto naprawdę nie śpi: z osób zarządu na nogach (nie śpią i nie są na wyprawie) bierze tę
-    // z najniższym bezpieczeństwem, czyli tę, którą kroki na klatce niepokoją najbardziej (remis: kolejność osób);
-    // gdy wszyscy śpią albo są poza mapą, karty nie ma
-    w: (h) => (h.nieSpia().length ? 0.8 : 0),
+    // bezsenność dotyka kogoś, kto siedzi przy kozie i nie może zasnąć: z osób zarządu na nogach (nie śpią, nie są na
+    // wyprawie, nie pilnują siatki ani nie są przy zabiegu; dyżur przy kozie wolno) bierze tę z najniższym
+    // bezpieczeństwem, czyli tę, którą kroki na klatce niepokoją najbardziej (remis: kolejność osób); gdy nikogo takiego
+    // nie ma, karty nie ma
+    w: (h) => (h.czuwaPozaWarta().length ? 0.8 : 0),
     make: (h) => {
-      const najbardziejNiespokojny = [...h.nieSpia()].sort((a, b) => a.needs.safe - b.needs.safe)[0];
+      const najbardziejNiespokojny = [...h.czuwaPozaWarta()].sort((a, b) => a.needs.safe - b.needs.safe)[0];
       return najbardziejNiespokojny ? { p: najbardziejNiespokojny.id } : null;
     },
     title: () => tx('Ktoś nie może spać', 'Someone can’t sleep'),
@@ -1132,7 +1137,7 @@ export const NEW_EVENTS: GEventDef[] = [
       const imie = p ? p.first : 'Krysia';
       return [
         {
-          label: tx('Zaprosić do kozy', 'Ask her in to get warm'),
+          label: tx('Zaprosić do kozy', `Ask ${p ? zaimek(p, 'him', 'her') : 'her'} in to get warm`),
           ok: true,
           run: () => {
             h.addRes('jedzenie', 2);
@@ -1146,7 +1151,7 @@ export const NEW_EVENTS: GEventDef[] = [
           },
         },
         {
-          label: tx('Wziąć słoik i podziękować', 'Take the jar and thank her'),
+          label: tx('Wziąć słoik i podziękować', `Take the jar and thank ${p ? zaimek(p, 'him', 'her') : 'her'}`),
           ok: true,
           run: () => {
             h.addRes('jedzenie', 2);
