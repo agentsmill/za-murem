@@ -28,6 +28,12 @@
 - Demo Lanciego ma tylko cztery boczne kwadraty, więc na zrzucie 3×3 rogi są pod mgłą i to jest oczekiwane.
 - Bez zmian w `src/sim`, `src/gov`, `src/ui/zapis.ts`; nic nie pobiera z sieci; przy `?kwadraty=` kliknięcie i polecenie poza domem gra ignoruje.
 
+**Stan po zadaniach 6–8 (budowa na gałęzi `kwadraty-rysowanie`, wpis „Miasto z kwadratów, etap 1, zadania 6–8” w `docs/POSTEP.md`):** rysowanie wielu kwadratów, `?kwadraty=` i zrzuty z pomiarami są gotowe, z bramką i przeglądem całej gałęzi. Dla etapów dalej:
+- Kwadraty obok domu są tylko do oglądania: scena (`buildScene` z `poczatek` i `brzeg`) w `GameView.dodajKwadrat`, bez symulacji; wraki, sterty, rzeczy i pionki w nich nie są rysowane (etap 2b). Szwy to dane (`daneSzwu`, `nalozSzew` w `src/render/art/szew.ts`), nakładane tak samo w głównym wątku i w workerach.
+- Współrzędne wzorów rysowania są w układzie miasta: kwadraty na zachód i północ od domu mają je ujemne, więc każdy wzór z resztą z dzielenia używa `mod` z `chunkArt.ts`, nigdy `%` (pilnuje tego `tests/unit/kwadraty-ujemne.test.ts`; porównanie ze sceną złożoną takiego błędu nie widzi).
+- Budżety tekstur w `budzety()` (`chunks.ts`), a reguła „czym pokazać kawałek” w `mozeBycPokazany` (ta sama dla zamówień, zapasu tła i kompletności widoku); `GameView.budzet` to pole, które testy podmieniają na telefonowe.
+- `?kwadraty=` czyta `czytajKwadraty` (`NxN` od 3 do 7 albo lista par); dane tylko z dem (`public/demo/<klucz>-kwadraty.json`), prawdziwy adres niczego nie pobiera i daje mgłę „brak danych”. Nowy kod decyzji w świecie kwadratu liczy odległości przez kwadraty, bez `Math.hypot` (świat kwadratu wejdzie do symulacji).
+
 ## Global Constraints
 
 - Zadania 1–5: gałąź od `noc-integracja` fe13220; zadania 6–8: gałąź `kwadraty-rysowanie` od `pelna-gra` c7771b3. Zawsze w osobnym drzewie roboczym. Lokalne commity swobodnie; nic na GitHub ani na serwer (scala koordynator).
