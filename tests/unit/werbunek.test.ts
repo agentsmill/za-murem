@@ -19,7 +19,9 @@ import { kolejnoscOsoby, priorytet, RODZAJE, ZARZAD_MAX } from '../../src/sim/pr
 import {
   addCore,
   addResidents,
+  capOf,
   createSim,
+  okazjaWerbunku,
   type Pawn,
   removeResidents,
   Sim,
@@ -641,6 +643,131 @@ describe('Gra bez rozmów z wędrowcem', () => {
   it('ten sam skrót co przed zmianą na prawdziwych demach (Przymorze, Zielonki)', () => {
     expect(bez(swiezy('przymorze'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('143e6ce4');
     expect(bez(swiezy('zielonki'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('732dc2e0');
+  });
+});
+
+/** kolejny wędrowiec po rozmowie: czeka na jego przyjście (termin ustawiony na teraz, także po zmroku następnego dnia) */
+function kolejnaRozmowa(sim: Sim): { t: Pawn; p: Pawn } {
+  const st = sim.st;
+  st.obcy!.wnext = st.tick;
+  run(sim, () => st.pawns.some((q) => q.kind === 'wedrowiec'));
+  const t = st.pawns.find((q) => q.kind === 'wedrowiec')!;
+  expect(t).toBeDefined();
+  run(sim, () => t.job?.phase === 1);
+  const p = core(st)[0];
+  sim.push({ t: 'talk', ids: [p.id], target: t.id });
+  run(sim, () => p.job?.t === 'talk' && p.job.phase === 1);
+  run(sim, () => p.job?.t !== 'talk');
+  expect(t.job?.what).toBe('zagadany');
+  st.obcy!.rozmowa!.cel = false;
+  return { t, p };
+}
+
+describe('Miejsce ponad limit zarządu: łóżko i pojemność', () => {
+  it('Lanciego z pełnym zarządem: zwerbowani zatrzymują się na capOf, choć łóżek jest więcej', () => {
+    const world = swiezy('lanciego');
+    const { sim, st } = gra(world, 4, { core: 4, mode: 'zwykly' });
+    dopelnij(sim, world, ZARZAD_MAX);
+    const mieszkancy = () => st.pawns.filter((q) => q.kind === 'resident').length;
+    const cap = capOf(st, world);
+    expect(mieszkancy()).toBeLessThan(cap);
+    // dopóki jest miejsce (łóżko i pojemność), zaproszenie prowadzi do mieszkańca
+    let przyjeci = 0;
+    while (okazjaWerbunku(st, world).dokad === 'mieszkaniec') {
+      expect(przyjeci, 'pętla się nie kończy').toBeLessThan(10);
+      const { t, p } = kolejnaRozmowa(sim);
+      expect(zaprosMenu(sim, world, t)!.label).toMatch(/^Zaprosić do nas jako mieszkańca \(\d+%\)$/);
+      zapros(sim, p, t, true, 'zapros', world);
+      expect(t.kind).toBe('resident');
+      przyjeci++;
+    }
+    expect(przyjeci).toBeGreaterThan(0);
+    // stanęło na pojemności: nie więcej mieszkańców niż capOf
+    expect(mieszkancy()).toBe(capOf(st, world));
+    expect(mieszkancy()).toBe(cap);
+    expect(okazjaWerbunku(st, world)).toMatchObject({ dokad: 'brak', apt: -1, wolneLozko: false });
+    // następny wędrowiec: opcja wyszarzona, szansy nie ma, polecenie nic nie robi
+    const { t, p } = kolejnaRozmowa(sim);
+    const item = zaprosMenu(sim, world, t)!;
+    expect(item.off).toBe('Nie ma wolnego łóżka');
+    expect(szansaZaproszenia(st, world)).toBe(0);
+    ustawJezyk('en');
+    expect(zaprosMenu(sim, world, t)!.off).toBe('No free bed');
+    ustawJezyk('pl');
+    sim.push({ t: 'zapros', ids: [p.id], target: t.id });
+    sim.step();
+    sim.step();
+    expect(p.job?.t).not.toBe('zapros');
+    expect(t.kind).toBe('wedrowiec');
+    expect(mieszkancy()).toBe(cap);
+  });
+
+  it('miejsce liczy się od nowa w chwili decyzji: pojemność zajęta w trakcie zaproszenia odprawia wędrowca', () => {
+    const world = swiezy('lanciego');
+    const { sim, st } = gra(world, 4, { core: 4, mode: 'zwykly' });
+    dopelnij(sim, world, ZARZAD_MAX);
+    const cap = capOf(st, world);
+    // do pojemności brakuje jednego mieszkańca
+    while (st.pawns.filter((q) => q.kind === 'resident').length > cap - 1) removeResidents(st, 1);
+    while (st.pawns.filter((q) => q.kind === 'resident').length < cap - 1) addResidents(st, world, 1);
+    expect(st.pawns.filter((q) => q.kind === 'resident')).toHaveLength(cap - 1);
+    const { t, p } = kolejnaRozmowa(sim);
+    expect(okazjaWerbunku(st, world).dokad).toBe('mieszkaniec');
+    sim.push({ t: 'zapros', ids: [p.id], target: t.id });
+    run(sim, () => p.job?.t === 'zapros' && p.job.phase === 1);
+    // w trakcie zaproszenia ktoś inny zajmuje ostatnie miejsce (przyjęci zza bramy z uchwały)
+    addResidents(st, world, 1, true);
+    expect(okazjaWerbunku(st, world).dokad).toBe('brak');
+    ustawLosowanie(st, true, 0.85);
+    run(sim, () => p.job?.t !== 'zapros');
+    expect(t.kind).toBe('wedrowiec');
+    expect(st.obcy!.werbunek).toBeUndefined();
+    expect(st.pawns.filter((q) => q.kind === 'resident')).toHaveLength(cap);
+  });
+});
+
+describe('Wędrowiec czeka po rozmowie', () => {
+  it('po rozmowie stoi przy siatce jeszcze godzinę gry: po pół godzinie dalej można go zaprosić', () => {
+    const { sim, st } = gra(w, 3);
+    const { t, p } = pozagadaniu(sim);
+    st.obcy!.rozmowa!.cel = false;
+    const koniec = st.tick;
+    const miejsce = tileOf(t);
+    // 30 minut gry po rozmowie: wędrowiec nadal przy siatce, nie odszedł i nie zniknął
+    run(sim, () => st.tick >= koniec + TICKS_PER_HOUR / 2);
+    expect(st.pawns.includes(t)).toBe(true);
+    expect(t.kind).toBe('wedrowiec');
+    expect(t.job?.phase).toBe(1);
+    expect(tileOf(t)).toBe(miejsce);
+    expect(st.obcy!.rozmowa?.id).toBe(t.id);
+    // i zaproszenie jeszcze działa
+    expect(zaprosMenu(sim, w, t)).toBeDefined();
+    zapros(sim, p, t, true);
+    expect(t.kind).toBe('core');
+    expect(st.people[t.person].id).toBe('w1');
+  });
+
+  it('bez zaproszenia odchodzi dopiero po godzinie od rozmowy, a nie po dziesięciu minutach', () => {
+    const { sim, st } = gra(w, 3);
+    const { t } = pozagadaniu(sim);
+    const koniec = st.tick;
+    // rozmowa skończyła się w kroku tuż przed „koniec”
+    expect(t.job!.until).toBeGreaterThanOrEqual(koniec - 2 + TICKS_PER_HOUR);
+    run(sim, () => st.tick >= koniec + TICKS_PER_HOUR - 20);
+    expect(t.job?.phase).toBe(1);
+    run(sim, () => (t.job?.phase ?? 4) >= 2, 4000);
+    expect(t.job?.phase).toBeGreaterThanOrEqual(2);
+    expect(st.tick - koniec).toBeLessThanOrEqual(TICKS_PER_HOUR + 40);
+  });
+
+  it('gra bez rozmów ma te same skróty co przed zmianą (przedłużenie tylko po rozmowie)', () => {
+    const bez = (world: World, seed: number, opts: Partial<SimOpts>) => {
+      const sim = new Sim(world, createSim(world, seed, { obcy: true, ...opts }));
+      for (let k = 0; k < 3 * TICKS_PER_DAY; k++) sim.step();
+      return sim.hash();
+    };
+    expect(bez(w, 3, { core: 2 })).toBe('46266382');
+    expect(bez(w, 7, { core: 4 })).toBe('a6dda24c');
   });
 });
 

@@ -12,9 +12,10 @@
    bez otwierania i wyważania drzwi. Czas ścinania, budowy, łatania, napraw, warsztatu, dzidy i gotowania dzieli
    mnożnik z umiejętności (`tempoPracy`). Wędrowiec po rozmowie przy siatce może zostać zaproszony (praca `zapros`,
    `okazjaWerbunku`): przy zarządzie poniżej ZARZAD_MAX staje się osobą zarządu z id `w1`, `w2`…, przy pełnym tylko
-   mieszkańcem w wolnym łóżku; osoba, cel i ukryte ugryzienie wędrowca idą z ziarna świata i numeru, a ze st.rng jest
-   tylko samo losowanie zaproszenia, więc gry bez takich rozmów biegną jak bez werbunku. Odczyt `ileZlecen(r)` liczy
-   czekające zlecenia rodzaju pracy na żądanie, poza stanem. */
+   mieszkańcem, jeśli jest wolne łóżko w mieszkaniu mieszkańców i mieszkańców jest mniej niż `capOf`; po rozmowie
+   wędrowiec czeka przy siatce godzinę gry na zaproszenie (`PO_ROZMOWIE`). Osoba, cel i ukryte ugryzienie wędrowca idą
+   z ziarna świata i numeru, a ze st.rng jest tylko samo losowanie zaproszenia, więc gry bez takich rozmów biegną jak
+   bez werbunku. Odczyt `ileZlecen(r)` liczy czekające zlecenia rodzaju pracy na żądanie, poza stanem. */
 
 import { PROFS } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -257,6 +258,7 @@ import {
   PAUSE_MIN,
   PAUSE_ZOMBIE_MAX,
   PAUSE_ZOMBIE_MIN,
+  PO_ROZMOWIE,
   SHOO_REACH,
   SPOOK_R,
   szansaWerbunku,
@@ -1640,10 +1642,11 @@ function aptFor(st: SimState, h: HouseLike, size: number, apts: readonly number[
 }
 
 /** Gdzie zwerbowany wędrowiec by trafił i co wpływa na szansę (src/sim/wedrowcy.ts, szansaWerbunku): 'zarzad' (zarząd
-    ma mniej niż ZARZAD_MAX osób), 'mieszkaniec' (zarząd pełny, mieszkanie z wolnym łóżkiem w apt), 'brak' (pełny
-    zarząd, mieszkańcy mają mieszkania, ale wszystkie łóżka zajęte), 'dom' (pełny zarząd, a mieszkańcy nie mają
-    mieszkań: dom jednorodzinny, gdzie dziś nie mają łóżek ani wstępu). Wolne łóżko liczy się tam, dokąd by trafił:
-    w mieszkaniu zarządu (łóżek więcej niż osób w zarządzie) albo u mieszkańców. */
+    ma mniej niż ZARZAD_MAX osób), 'mieszkaniec' (zarząd pełny, mieszkanie z wolnym łóżkiem w apt i mieszkańców mniej
+    niż `capOf`), 'brak' (pełny zarząd, mieszkańcy mają mieszkania, ale wszystkie łóżka zajęte albo mieszkańców już tyle
+    co pojemność), 'dom' (pełny zarząd, a mieszkańcy nie mają mieszkań: dom jednorodzinny, gdzie dziś nie mają łóżek ani
+    wstępu). Wolne łóżko liczy się tam, dokąd by trafił: w mieszkaniu zarządu (łóżek więcej niż osób w zarządzie) albo
+    u mieszkańców (z limitem pojemności). */
 export interface OkazjaWerbunku {
   dokad: 'zarzad' | 'mieszkaniec' | 'brak' | 'dom';
   apt: number;
@@ -1675,7 +1678,11 @@ export function okazjaWerbunku(st: SimState, w: World): OkazjaWerbunku {
   }
   const apts = h ? residentApts(st, w, h) : [];
   const living = (a: number) => st.pawns.filter((p) => p.kind === 'resident' && p.apt === a).length;
-  o.apt = h ? (apts.find((a) => living(a) < bedsIn(st, h, size, a)) ?? -1) : -1;
+  const wolne = h ? apts.find((a) => living(a) < bedsIn(st, h, size, a)) : undefined;
+  // miejsce to wolne łóżko w mieszkaniu mieszkańców i mniej mieszkańców niż pojemność (`capOf`: bywa niższa od liczby
+  // łóżek, a ponad nią wydarzenia zarządu od razu liczą przeludnienie)
+  const pojemnosc = wolne !== undefined && st.pawns.filter((p) => p.kind === 'resident').length < capOf(st, w);
+  o.apt = pojemnosc ? wolne : -1;
   o.dokad = o.apt >= 0 ? 'mieszkaniec' : apts.length ? 'brak' : 'dom';
   o.wolneLozko = o.apt >= 0;
   return o;
@@ -6557,7 +6564,8 @@ export class Sim {
     }
     if (st.tick < j.until) return true;
     t.job.what = 'zagadany';
-    t.job.until = Math.max(t.job.until, st.tick + TALK_EXTRA);
+    // po rozmowie czeka na zaproszenie godzinę gry (tylko w grach z rozmową, reszta przebiega jak dotąd)
+    t.job.until = Math.max(t.job.until, st.tick + PO_ROZMOWIE);
     this.addMood(p, OBCY.nastrojRozmowa.pl, TALK_MOOD, TALK_MOOD_TICKS);
     const o = st.obcy!;
     const size = this.w.size;

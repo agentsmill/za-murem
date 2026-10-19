@@ -20,10 +20,13 @@ import { NAPISY as HANDEL, tickAt } from './handlarz.ts';
 import { UKRYTY_UGRYZIONY } from './sasiedzi.ts';
 import { WRECK_SEARCH_TICKS } from './surowce.ts';
 
-/** wędrowiec przystaje przy siatce 20–40 minut gry, po rozmowie jeszcze 10 */
+/** wędrowiec przystaje przy siatce 20–40 minut gry; rozmowa i zaproszenie dokładają mu jeszcze 10 minut (`TALK_EXTRA`) */
 export const PAUSE_MIN = TICKS_PER_HOUR / 3;
 export const PAUSE_MAX = (2 * TICKS_PER_HOUR) / 3;
 export const TALK_EXTRA = TICKS_PER_HOUR / 6;
+/** po skończonej rozmowie wędrowiec czeka przy siatce na zaproszenie jeszcze godzinę gry (10 minut gry to około 7 s przy
+    1×, gracz nie zdążyłby kliknąć); gra bez rozmów go nie zna */
+export const PO_ROZMOWIE = TICKS_PER_HOUR;
 /** rozmowa przez siatkę trwa 5 minut */
 export const TALK_TICKS = TICKS_PER_HOUR / 12;
 /** wędrowiec z plecakiem chodzi wolniej od zarządu, uciekający szybciej */
