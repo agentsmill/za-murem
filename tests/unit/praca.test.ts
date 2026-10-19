@@ -106,6 +106,23 @@ describe('domyślne priorytety', () => {
     expect(domyslnyPriorytet(st, o, 'badania')).toBe(0); // niewidoczne (bez pracowni i bez stanu badań)
   });
 
+  it('badania: bez umiejętności w dziedzinie badania 0 (także bez wybranego badania), z umiejętnością jak reszta', () => {
+    // bez pracowni i bez stanu badań rodzaju nie ma: 0
+    expect(domyslnyPriorytet(st, osoba({ bud: 4 }), 'badania')).toBe(0);
+    st.research = { cur: null, prog: {}, at: {} }; // rodzaj widoczny, ale bez wybranego badania nie ma dziedziny
+    expect(domyslnyPriorytet(st, osoba({ bud: 4 }), 'badania')).toBe(0);
+    st.research.cur = 't_okna'; // dziedzina bud
+    expect(domyslnyPriorytet(st, osoba({}), 'badania')).toBe(0);
+    expect(domyslnyPriorytet(st, osoba({ cieplo: 4, it: 4 }), 'badania')).toBe(0); // umiejętność z innej dziedziny
+    expect(domyslnyPriorytet(st, osoba({ bud: 1 }), 'badania')).toBe(2);
+    expect(domyslnyPriorytet(st, osoba({ bud: 2 }), 'badania')).toBe(2);
+    expect(domyslnyPriorytet(st, osoba({ bud: 3 }), 'badania')).toBe(1);
+    expect(domyslnyPriorytet(st, osoba({ bud: 4 }), 'badania')).toBe(1);
+    // reszta rodzajów bez zmian: bez umiejętności nadal 3
+    expect(domyslnyPriorytet(st, osoba({}), 'drwal')).toBe(3);
+    expect(domyslnyPriorytet(st, osoba({}), 'warsztat')).toBe(3);
+  });
+
   it('granice poziomów: 0 to brak, 2 to jeszcze 2, 4 to 1', () => {
     expect(domyslnyPriorytet(st, osoba({ uprawa: 0 }), 'kuchnia')).toBe(3);
     expect(domyslnyPriorytet(st, osoba({ uprawa: 2 }), 'kuchnia')).toBe(2);

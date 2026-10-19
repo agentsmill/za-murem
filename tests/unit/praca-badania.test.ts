@@ -153,7 +153,7 @@ describe('wpis badania w WPISY', () => {
     expect(sim.ileZlecen('badania')).toBe(0);
   });
 
-  it('z pracownią jest widoczny; bez wybranego badania umiejętność 0 i priorytet 3', () => {
+  it('z pracownią jest widoczny; bez wybranego badania umiejętność 0 i domyślny priorytet 0 (nie robi)', () => {
     const { sim, ludzie } = scena({ badanie: false, skills: { bud: 4 } });
     const st = sim.st;
     expect(badaniaWidoczne(st)).toBe(true);
@@ -161,7 +161,11 @@ describe('wpis badania w WPISY', () => {
     expect(badaniaDom(st)).toBeNull();
     const o = st.people[ludzie[0].person];
     expect(WPISY.badania.umiejetnosc(st, o)).toBe(0);
-    expect(domyslnyPriorytet(st, o, 'badania')).toBe(3);
+    expect(domyslnyPriorytet(st, o, 'badania')).toBe(0);
+    // kolumna jest, ale osoba jej sama nie bierze; włączona przez gracza (priorytet albo stałe zajęcie) wchodzi do kolejności
+    expect(kolejnoscOsoby(st, ludzie[0].person)).not.toContain('badania');
+    sim.push({ t: 'prio', ids: [], osoba: ludzie[0].person, rodzaj: 'badania', prio: 2 });
+    sim.step();
     expect(kolejnoscOsoby(st, ludzie[0].person)).toContain('badania');
     expect(sim.ileZlecen('badania')).toBe(0);
   });
@@ -178,8 +182,12 @@ describe('wpis badania w WPISY', () => {
     // umiejętność w innej dziedzinie niż badanie nie liczy się
     o.skills = { cieplo: 4, it: 4 };
     expect(WPISY.badania.umiejetnosc(st, o)).toBe(0);
-    expect(domyslnyPriorytet(st, o, 'badania')).toBe(3);
-    expect(priorytet(st, ludzie[0].person, 'badania')).toBe(3);
+    expect(domyslnyPriorytet(st, o, 'badania')).toBe(0);
+    expect(priorytet(st, ludzie[0].person, 'badania')).toBe(0);
+    expect(kolejnoscOsoby(st, ludzie[0].person)).not.toContain('badania');
+    // bez umiejętności w ogóle też 0
+    o.skills = {};
+    expect(domyslnyPriorytet(st, o, 'badania')).toBe(0);
   });
 
   it('stan badań bez pracowni (po rozbiórce) zostawia rodzaj widocznym, ale nikt nie siada', () => {
@@ -256,13 +264,26 @@ describe('automat: badania bez polecenia', () => {
     expect(sim.st.research!.prog[TECH]).toBeGreaterThan(0);
   });
 
-  it('osoba bez umiejętności też siada (domyślny priorytet 3), jeśli wiedzę ma ktoś inny z zarządu', () => {
+  it('osoba bez umiejętności w dziedzinie badania sama nie siada (domyślnie 0), a umiejętna tak', () => {
     const { sim, ludzie } = scena({ osoby: 2, skills: { bud: 2 } });
     // wiedzę w budownictwie daje druga osoba (bud 2), pierwsza nie umie nic (badanie jest już wybrane)
     sim.st.people[ludzie[0].person].skills = {};
-    expect(domyslnyPriorytet(sim.st, sim.st.people[ludzie[0].person], 'badania')).toBe(3);
+    expect(domyslnyPriorytet(sim.st, sim.st.people[ludzie[0].person], 'badania')).toBe(0);
+    expect(domyslnyPriorytet(sim.st, sim.st.people[ludzie[1].person], 'badania')).toBe(2);
     doBadania(sim);
-    kroki(sim, 600);
+    kroki(sim, 1000);
+    expect(badajacy(sim).map((p) => p.id)).toEqual([ludzie[1].id]);
+    expect(ludzie[0].job?.t).not.toBe('research');
+  });
+
+  it('gracz może włączyć badania osobie bez umiejętności: wtedy siada i ona (wiedzę ma ktoś inny z zarządu)', () => {
+    const { sim, ludzie } = scena({ osoby: 2, skills: { bud: 2 } });
+    sim.st.people[ludzie[0].person].skills = {};
+    sim.push({ t: 'prio', ids: [], osoba: ludzie[0].person, rodzaj: 'badania', prio: 3 });
+    sim.step();
+    expect(priorytet(sim.st, ludzie[0].person, 'badania')).toBe(3);
+    doBadania(sim);
+    kroki(sim, 1000);
     expect(
       badajacy(sim)
         .map((p) => p.id)

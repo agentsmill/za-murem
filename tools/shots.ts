@@ -13406,7 +13406,7 @@ function pracaShots(): Shot[] {
         throw new Error(`kolumny nie po ~28 px: ${g.kolumny.join()}`);
       if (telefon && g.imiona < 60) throw new Error(`kolumna imion za wąska: ${g.imiona} px`);
       if (g.domyslne.length !== g.rzedy) throw new Error('nie każdy wiersz ma komórkę badań');
-      // klik albo stuknięcie w komórkę badań osoby 0 przestawia priorytet (domyślny 2 albo 3, więc zmienia się o jeden)
+      // klik albo stuknięcie w komórkę badań osoby 0 przestawia priorytet (osoba 0 ma umiejętność w dziedzinie badania, więc domyślnie 2 i klik daje 3; bez umiejętności komórka jest pusta)
       const przed = await cyfra(page, 0, 'badania');
       if (telefon) await page.tap('#pracaPanel [data-prio="0:badania"]');
       else await page.click('#pracaPanel [data-prio="0:badania"]');

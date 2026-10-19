@@ -5,7 +5,8 @@
      w `st.people`. Funkcje tylko czytają i nigdy nie tworzą pola w stanie, więc stary zapis i gra bez zmian mają ten
      sam skrót co przed pracą ludzi. Zmiany robią polecenia przez `sim.push` (zapis stanu jest w sim.ts).
    - Kolejność rodzajów w `RODZAJE` to kolejność kolumn panelu i rozstrzyga remis priorytetów.
-   - Priorytet 0 znaczy „nie robi”, 1 najważniejszy, 4 najmniej ważny. Domyślny wynika z umiejętności zawodu.
+   - Priorytet 0 znaczy „nie robi”, 1 najważniejszy, 4 najmniej ważny. Domyślny wynika z umiejętności zawodu (Badania bez
+     umiejętności w dziedzinie badania mają domyślnie 0).
    - Tempo pracy to `1 + 0,1 · poziom`, ale dopiero od pierwszego ranka (`automatRusza`): pierwszy dzień gry jest
      taki jak przed tym projektem. Krzywa jest wspólna z badaniami.
    - Wpis `badania` bierze `umiejetnosc` (poziom osoby w dziedzinie bieżącego badania, 0 bez badania) i `widoczny`
@@ -121,6 +122,10 @@ export const WPISY: Record<RodzajPracy, WpisRodzaju> = {
 
 /** Priorytet bez zmian gracza. Ogień 1 dla każdego (każdy dokłada do kozy przed innymi pracami, jak dotąd);
     noszenie i szaber 3 dla każdego; reszta z umiejętności: 3–4 daje 1, 1–2 daje 2, brak daje 3.
+    Wyjątek: Badania bez umiejętności w dziedzinie bieżącego badania (także bez wybranego badania, kiedy dziedziny nie
+    ma) mają 0, czyli osoba sama nie siada do stołu; z umiejętnością liczą się jak reszta (3–4 daje 1, 1–2 daje 2), a
+    gracz może włączyć je każdemu w panelu Pracy (decyzja kontrolera 19.10.2026: inaczej każdy wolny z zarządu zajmuje
+    oba miejsca przy stole i badania idą około dwa razy szybciej niż w celu badań).
     Rodzaj, którego w tej grze nie ma (`widoczny` fałszywy: badania bez pracowni i bez stanu badań), ma 0. */
 export function domyslnyPriorytet(st: SimState, o: Person, r: RodzajPracy): Priorytet {
   if (!WPISY[r].widoczny(st)) return 0;
@@ -129,7 +134,7 @@ export function domyslnyPriorytet(st: SimState, o: Person, r: RodzajPracy): Prio
   const p = WPISY[r].umiejetnosc(st, o);
   if (p >= 3) return 1;
   if (p >= 1) return 2;
-  return 3;
+  return r === 'badania' ? 0 : 3;
 }
 
 /** priorytet osoby (indeks w `st.people`): zmiana gracza albo domyślny; osoba spoza listy nie robi nic */
