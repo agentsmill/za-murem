@@ -2559,6 +2559,132 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // goście z klocków bez karty (sama symulacja, bez zarządu): grupa trzech osób z ulicy staje za dnia pod bramą
+        // (wyd-gosc-brama.png), a wpuszczona wieczorem na noc siedzi i śpi na ziemi przy ognisku na podwórku
+        // (wyd-gosc-ognisko.png); pionki rodzaju `gosc` rysują się jak ludzie, a po zmroku widać je w świetle ogniska
+        name: 'wyd-gosc',
+        query: '',
+        run: async (page, base) => {
+          const plan = () => ({
+            id: 'g1',
+            strona: 'n',
+            looks: [4, 7, 9],
+            osoby: [
+              ['Teresa', 'Wojtal', true, 62],
+              ['Janusz', 'Wojtal', false, 64],
+              ['Ola', 'Wojtal', true, 11],
+            ].map(([first, sur, f, age], i) => ({
+              id: `g1p${i}`,
+              first,
+              name: `${first} ${sur}`,
+              f,
+              prof: i === 2 ? 'dziecko' : 'mieszkaniec',
+              skills: {},
+              age,
+              traits: [],
+              home: -1,
+              assign: null,
+              sick: false,
+              dead: false,
+              gone: false,
+            })),
+          });
+          const krokiDo = (faza: string, max: number) =>
+            page.evaluate(
+              ([f, n]) => {
+                const sim = window.zm!.sim!;
+                let k = 0;
+                while (k < (n as number) && sim.st.goscie?.[0]?.faza !== f) {
+                  sim.step();
+                  k++;
+                }
+                return { k, faza: sim.st.goscie?.[0]?.faza ?? null };
+              },
+              [faza, max] as const,
+            );
+          // dzień: pod bramą
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate((pl) => {
+            const sim = window.zm!.sim!;
+            if (!sim.st.obcy) throw new Error('gra bez obcych');
+            sim.st.cmds.push({ t: 'gosc', ids: [], plan: pl } as never);
+          }, plan());
+          const brama = await krokiDo('brama', 6000);
+          console.log(`  pod bramą po ${brama.k} krokach, faza ${brama.faza}`);
+          if (brama.faza !== 'brama') throw new Error('goście nie doszli pod bramę');
+          const stoja = await page.evaluate(() => {
+            const zm = window.zm!;
+            const gosci = zm.sim!.st.pawns.filter((p) => p.kind === 'gosc');
+            const cx = gosci.reduce((a, p) => a + p.x, 0) / gosci.length;
+            const cy = gosci.reduce((a, p) => a + p.y, 0) / gosci.length;
+            zm.setCam(cx, cy, 2.6);
+            return gosci.map((p) => `(${p.x.toFixed(1)}, ${p.y.toFixed(1)})`).join(' ');
+          });
+          console.log(`  stoją: ${stoja}`);
+          await waitIdle(page);
+          await frames(page, 3);
+          await page.screenshot({ path: path.join(OUT, 'wyd-gosc-brama.png') });
+          // wieczór: nowa gra, ognisko na podwórku, wpuszczeni na noc
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=21&cam=hq,1.3`);
+          await waitIdle(page);
+          const ogn = await page.evaluate((pl) => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const w = sim.w;
+            const st = sim.st;
+            const yard = w.fence.yard.filter((i) => !w.blocked[i] && !st.things.some((t) => t.x === i % w.size));
+            // ognisko na podwórku, 6 m od bramy w głąb
+            const g = w.fence.gate;
+            const gx = g.x + g.w / 2;
+            const gy = g.y;
+            const cel = yard.sort(
+              (a, b) =>
+                Math.abs(Math.hypot((a % w.size) - gx, Math.floor(a / w.size) - gy) - 6) -
+                Math.abs(Math.hypot((b % w.size) - gx, Math.floor(b / w.size) - gy) - 6),
+            )[0];
+            st.things.push({
+              id: st.nextThing++,
+              kind: 'ognisko',
+              x: cel % w.size,
+              y: Math.floor(cel / w.size),
+              w: 1,
+              h: 1,
+              rot: 0,
+              n: 0,
+              fuel: 100000,
+              by: -1,
+              owner: -1,
+            });
+            st.cmds.push({ t: 'gosc', ids: [], plan: pl } as never);
+            return { x: cel % w.size, y: Math.floor(cel / w.size) };
+          }, plan());
+          const brama2 = await krokiDo('brama', 6000);
+          if (brama2.faza !== 'brama') throw new Error('wieczorem goście nie doszli pod bramę');
+          await page.evaluate(() => {
+            window.zm!.sim!.st.cmds.push({ t: 'goscrozkaz', ids: [], id: 'g1', co: 'noc' } as never);
+          });
+          // idą bramą do ogniska i po zmroku śpią (godzina gry: 21:00 + marsz, potem do 23:00)
+          const sen = await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            let k = 0;
+            const spia = () => sim.st.pawns.filter((p) => p.kind === 'gosc' && p.job?.what === 'spi').length;
+            while (k < 8000 && spia() < 3) {
+              sim.step();
+              k++;
+            }
+            for (let j = 0; j < 80; j++) sim.step();
+            return { k, spia: spia() };
+          });
+          console.log(`  ognisko w (${ogn.x}, ${ogn.y}); śpi ${sen.spia} osób po ${sen.k} krokach`);
+          if (sen.spia < 3) throw new Error('goście nie śpią przy ognisku');
+          await page.evaluate(([x, y]) => window.zm!.setCam(x + 0.5, y + 0.5, 3), [ogn.x, ogn.y] as const);
+          await waitIdle(page);
+          await frames(page, 3);
+          await page.screenshot({ path: path.join(OUT, 'wyd-gosc-ognisko.png') });
+        },
+      },
+      {
         name: 'm1-menu',
         query: '',
         run: async (page, base) => {
