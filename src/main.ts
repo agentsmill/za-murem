@@ -64,6 +64,7 @@ import {
   opcjaMieszkancow,
   stanyM2,
 } from './sim/osiedle.ts';
+import { RODZAJE } from './sim/praca.ts';
 import { type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, type SimStock, snapshot } from './sim/snapshot.ts';
@@ -126,6 +127,7 @@ import {
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
+import { PracaPanel } from './ui/panelpracy.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
 import {
   blokujKlik,
@@ -135,6 +137,7 @@ import {
   przyjmijPietro,
   SelektorPieter,
 } from './ui/pietra.ts';
+import { nalozPolecenia, nalozPraceOsoby, widokPracy } from './ui/praca.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
@@ -195,6 +198,8 @@ declare global {
       fly: (x: number, y: number, zoom: number, ms: number) => void;
       /** panel budowy (do testów): czy otwarty, zakładka i wybrana budowla */
       buildPanel: () => { open: boolean; tab: string | null; kind: string | null };
+      /** panel Pracy (do testów i zrzutów): czy otwarty i wybrana kolumna */
+      pracaPanel: () => { open: boolean; kol: string | null };
       /** tryb stawiania (do testów): plan pod kursorem, czy wolno, ile dozwolonych miejsc i pierwsze z nich */
       placing: () => {
         kind: BuildKind;
@@ -271,7 +276,12 @@ const selektorPieter = new SelektorPieter(
   { btn: $<HTMLButtonElement>('btnFloor'), list: $('floorList'), note: $('floorNote') },
   (L) => wybierzPietro(L),
   // lista pięter nie zasłania panelu budowy (spec), więc odsuwa się od jego lewej krawędzi
-  () => (buildPanel.open ? $('buildPanel').getBoundingClientRect() : null),
+  () =>
+    buildPanel.open
+      ? $('buildPanel').getBoundingClientRect()
+      : pracaPanel.open
+        ? $('pracaPanel').getBoundingClientRect()
+        : null,
 );
 
 /** wybór piętra (lista kafelka, PageUp i PageDown, zm.pietro, powrót na parter): przełącza widok tylko przy zmianie
@@ -309,7 +319,7 @@ function odswiezPietra(): void {
   selektorPieter.odswiez(
     pietraLista,
     pietro,
-    podpowiedzPietra({ pietro, cutOn: view.section, zarzadUkryty, panelBudowy: buildPanel.open }),
+    podpowiedzPietra({ pietro, cutOn: view.section, zarzadUkryty, panelBudowy: buildPanel.open || pracaPanel.open }),
   );
 }
 
@@ -485,6 +495,7 @@ poZmianieJezyka(() => {
   siec.przerysuj();
   if (!sim) return;
   buildPanel.refresh(true);
+  pracaPanel.refresh(true);
   hqAria();
   ctx.close();
   selektorPieter.zamknij();
@@ -676,6 +687,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   placing = null;
   buildPanel.hide();
   buildPanel.reset();
+  pracaPanel.hide();
+  pracaPanel.reset();
+  lastSnap = null;
   menuCache = null;
   roomMemo = null;
   aptFocus = -1;
@@ -1316,8 +1330,26 @@ let storyOf = -1;
 /** karta przerysowana tylko po zmianie treści, inaczej dymki z opisem cech nigdy się nie pokażą */
 function setCard(html: string) {
   if (html === cardHtml) return;
+  // rozwinięta lista stałego zajęcia nie może znikać co 200 ms: karta przerysuje się, gdy lista straci fokus
+  const f = document.activeElement;
+  if (f instanceof HTMLSelectElement && $('card').contains(f)) return;
   cardHtml = html;
   $('card').innerHTML = html;
+}
+
+/** ostatni odczyt symulacji z `hud` (panel Pracy bierze z niego widok, a po kliknięciu, gdy symulacja zdążyła zrobić
+    krok, liczy nowy) */
+let lastSnap: SimSnapshot | null = null;
+/** odczyt na tę chwilę: ten z `hud`, a gdy symulacja poszła dalej, świeży */
+function snapNow(): SimSnapshot | null {
+  if (!sim) return null;
+  if (!lastSnap || lastSnap.tick !== sim.st.tick) lastSnap = snapshot(sim.st, sim.w);
+  return lastSnap;
+}
+/** osoba z ustawieniami pracy z poleceniami, które jeszcze czekają w kolejności symulacji (gra na pauzie nie wykonuje
+    kroków, a karta ma się zmienić od razu) */
+function withPendingWork(p: SimPerson, cmds: SimState['cmds']): SimPerson {
+  return { ...p, praca: { ...p.praca, ...nalozPraceOsoby(p.praca, p.osoba, cmds) } };
 }
 
 /** co osoba robi tej nocy według karty nocy (propozycja albo zatwierdzony przydział), a bez karty posterunek
@@ -1350,7 +1382,9 @@ function hud(now: number) {
   $('fps').textContent = L(`${Math.round(fps)} kl/s`, `${Math.round(fps)} fps`);
   const snap = snapshot(st, sim.w);
   lastStock = snap.stock;
+  lastSnap = snap;
   buildPanel.refresh();
+  pracaPanel.refresh();
   // koza wygasła po samouczku, a drewna nie ma: decyzja gracza (drzewo albo mebel), więc ostrzeżenie wisi,
   // dopóki problem trwa (w dzień, kiedy zarząd nie śpi), i ma pierwszeństwo przed zwykłymi podpowiedziami
   const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
@@ -1438,11 +1472,13 @@ function hud(now: number) {
     );
   else
     setCard(
-      personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn, {
+      personCard(withPendingWork(sel[0], st.cmds), st.tick, tonight(sel[0]), storyOf === sel[0].pawn, {
         imie: imionaWGrze(siec.stan),
         words,
         wordsEn: wordsE,
         en: sel[0].ref ? angielscy?.get(sel[0].ref) : undefined,
+        widoczne: snap.praca.widoczne,
+        zombie: snap.mode === 'zombie',
       }),
     );
 }
@@ -1746,7 +1782,17 @@ $('card').addEventListener('click', (e) => {
   const sel = st.pawns.filter((p) => p.kind === 'core' && selected.has(p.id));
   if (sel.length !== 1) return;
   const p = sel[0];
-  if (b.dataset.card === 'story') {
+  if (b.dataset.card === 'zasiatke') {
+    // przełącznik „może wychodzić za siatkę”: od stanu z czekającymi poleceniami, żeby na pauzie przełączał tam i z powrotem
+    const snap = snapNow();
+    const kto = snap?.people.find((q) => q.pawn === p.id);
+    if (!snap || !kto) return;
+    const on = !withPendingWork(kto, st.cmds).praca.zaSiatke;
+    sim.push({ t: 'zasiatke', ids: [], osoba: p.person, on });
+    if (on && snap.mode === 'zombie') say(ZA_SIATKA_ZOMBIE(), 5000);
+    hud(performance.now());
+    pracaPanel.refresh();
+  } else if (b.dataset.card === 'story') {
     // historia z drużyny: jedna linijka albo cała, od razu na karcie
     storyOf = storyOf === p.id ? -1 : p.id;
     hud(performance.now());
@@ -1781,6 +1827,20 @@ $('card').addEventListener('click', (e) => {
       4000,
     );
   }
+});
+
+/** wybór stałego zajęcia na karcie osoby (lista rozwijana): pusty wybór zdejmuje je */
+$('card').addEventListener('change', (e) => {
+  const s = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-card="stale"]');
+  if (!s || !sim) return;
+  const sel = sim.st.pawns.filter((p) => p.kind === 'core' && selected.has(p.id));
+  if (sel.length !== 1) return;
+  const rodzaj = RODZAJE.find((r) => r === s.value) ?? null;
+  sim.push({ t: 'stale', ids: [], osoba: sel[0].person, rodzaj });
+  // lista traci fokus, żeby karta znowu się odświeżała, i od razu pokazuje wybór z czekającego polecenia
+  s.blur();
+  hud(performance.now());
+  pracaPanel.refresh();
 });
 
 /* ---------- imiona gracza (src/ui/imiona.ts) ---------- */
@@ -2352,9 +2412,48 @@ const buildPanel = new BuildPanel($('buildPanel'), $('app'), {
 
 function openBuild() {
   if (!sim || modal.open) return;
-  if (!buildPanel.open) ctx.close();
+  if (!buildPanel.open) {
+    ctx.close();
+    pracaPanel.hide();
+  }
   buildPanel.toggle();
 }
+
+/** panel Pracy po prawej (przycisk „Praca” i klawisz P): nie-modalny jak panel budowy, razem z nim się nie otwiera.
+    Widok to odczyt symulacji z poleceniami, które jeszcze czekają w kolejności (pauza nie robi kroków), a zmiany
+    wychodzą poleceniami `prio`, `prog` i `zasiatke` do symulacji. */
+const pracaPanel = new PracaPanel($('pracaPanel'), $('app'), {
+  widok: (kol) => {
+    const snap = snapNow();
+    if (!snap || !sim) return null;
+    return nalozPolecenia(widokPracy(snap, { kol, zlecen: kol ? sim.ileZlecen(kol) : 0, touch: touchUI }), sim.st.cmds);
+  },
+  en: () => jezyk() === 'en',
+  touch: touchUI,
+  onPrio: (osoba, rodzaj, prio) => sim?.push({ t: 'prio', ids: [], osoba, rodzaj, prio }),
+  onProg: (co, n) => sim?.push({ t: 'prog', ids: [], co, n }),
+  onZaSiatke: (osoba, on) => {
+    sim?.push({ t: 'zasiatke', ids: [], osoba, on });
+    if (on && snapNow()?.mode === 'zombie') say(ZA_SIATKA_ZOMBIE(), 5000);
+  },
+  onClose: () => nextPrompt(),
+});
+
+function openPraca() {
+  if (!sim || modal.open) return;
+  if (!pracaPanel.open) {
+    ctx.close();
+    buildPanel.hide();
+  }
+  pracaPanel.toggle();
+}
+
+/** ostrzeżenie przy włączeniu „za siatkę” w trybie zombie (karta osoby ma krótszą wersję tego samego) */
+const ZA_SIATKA_ZOMBIE = (): string =>
+  L(
+    'Za siatką są szwendacze: kto tam wyjdzie sam, ryzykuje ugryzienie.',
+    'There are shamblers outside the fence: anyone who goes out on their own risks a bite.',
+  );
 
 /** okno mapy miasta: przycisk „Mapa miasta” i klawisz M. Gra stoi, póki okno jest otwarte; zamknięcie (przycisk, Esc,
     klik obok) wraca do gry albo do decyzji zarządu, która czeka */
@@ -2556,6 +2655,7 @@ function placeGhost() {
 }
 
 $('btnBuild').addEventListener('click', () => openBuild());
+$('btnPraca').addEventListener('click', () => openPraca());
 $('btnMiasto').addEventListener('click', () => openMiasto());
 // „Pokaż” przy przybyszach: kamera od razu jedzie na środek grupy, bez zmiany przybliżenia
 $('arriveShow').addEventListener('click', () => {
@@ -2862,6 +2962,7 @@ window.addEventListener('keydown', (e) => {
     renderSpeed();
   }
   if (e.code === 'KeyB') openBuild();
+  if (e.code === 'KeyP') openPraca();
   if (e.code === 'KeyM') openMiasto();
   // widok pięter: PageUp o piętro wyżej, PageDown niżej
   if (pietraGry && (e.code === 'PageUp' || e.code === 'PageDown')) {
@@ -2872,6 +2973,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') {
     if (placing) cancelPlacing();
     else if (buildPanel.open) buildPanel.hide();
+    else if (pracaPanel.open) pracaPanel.hide();
     else if (imieEdit) zamknijImie();
     else {
       selected.clear();
@@ -2950,6 +3052,7 @@ if (attrib) bars.observe(attrib);
     speed: () => speed,
     fly: (x, y, zoom, ms) => flyTo(x * TILE, y * TILE, zoom, ms),
     buildPanel: () => ({ open: buildPanel.open, ...buildPanel.current }),
+    pracaPanel: () => ({ open: pracaPanel.open, kol: pracaPanel.column }),
     placing: () =>
       placing
         ? {

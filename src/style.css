@@ -360,8 +360,9 @@ a.btn {
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
-/* Budowa i Menu przy prawej krawędzi także wtedy, gdy zawiną się do następnego wiersza (długa nazwa osiedla) */
-#btnBuild {
+/* Praca, Budowa i Menu przy prawej krawędzi także wtedy, gdy zawiną się do następnego wiersza (długa nazwa osiedla):
+   odstęp do prawej bierze pierwszy z nich (Praca; „Mapa miasta” z miasto.css przejmuje go, gdy jest w pasku) */
+#btnPraca {
   margin-left: auto;
 }
 /* licznik klatek tylko na szerokim ekranie: przy 1440 px pasek z materiałami i budową mieści się w jednym
@@ -586,17 +587,18 @@ a.btn {
 
 @media (max-width: 640px) {
   .top {
-    padding: 5px 8px;
-    gap: 6px 8px;
+    padding: 5px 6px;
+    gap: 6px 6px;
   }
-  /* na telefonie 390 px: szyld i zegar w pierwszym wierszu (zegar dopełnia wiersz, niżej), tempo, alarm,
-     budowa i menu razem w drugim, stan pod nimi (order w .stats) */
+  /* na telefonie 390 px: szyld i zegar w pierwszym wierszu (zegar dopełnia wiersz, niżej), tempo, alarm, praca,
+     budowa i menu razem w drugim (dlatego odstępy i boki przycisków ciaśniejsze niż na komputerze: z „Pracą”
+     brakowało 19 px i „Menu” spadało do trzeciego wiersza), stan pod nimi (order w .stats) */
   .top .btn {
-    padding: 6px 6px;
+    padding: 6px 5px;
     font-size: 13px;
   }
   .speed {
-    gap: 3px;
+    gap: 2px;
   }
   .top .sign {
     max-width: 150px;
@@ -611,6 +613,11 @@ a.btn {
   }
   .fps,
   .top .season {
+    display: none;
+  }
+  /* przycisk „Praca” (margin-left: auto) odsuwa swoją grupę do prawej, a pusty .spacer brał jeszcze po odstępie z obu
+     stron i wypychał „Menu” do trzeciego wiersza */
+  .spacer {
     display: none;
   }
   .mapctl {

@@ -3,12 +3,12 @@
    karta miejsca to pasek na dole mapy, a atrybucja ma w stopce własny wiersz. Na końcu minimapa (src/ui/minimapa.ts):
    kwadrat w prawym dolnym rogu gry nad paskiem atrybucji, z atrybucją map pod spodem. */
 
-/* „Mapa miasta” stoi przed „Budową”: przejmuje od niej odstęp do prawej krawędzi, żeby po zawinięciu paska trzy
+/* „Mapa miasta” stoi przed „Pracą”: przejmuje od niej odstęp do prawej krawędzi, żeby po zawinięciu paska cztery
    przyciski zostały razem */
 #btnMiasto {
   margin-left: auto;
 }
-#btnMiasto:not([hidden]) + #btnBuild {
+#btnMiasto:not([hidden]) + #btnPraca {
   margin-left: 0;
 }
 /* krótki napis przycisku tylko na telefonie */
@@ -175,7 +175,7 @@
 
 @media (max-width: 640px) {
   /* na telefonie „Mapa” stoi w pierwszym wierszu paska, za zegarem (który i tak dopełniał ten wiersz), żeby tempo,
-     alarm, budowa i menu zostały razem w drugim, a „Budowa” wróciła do prawej krawędzi */
+     alarm, praca, budowa i menu zostały razem w drugim, a „Praca” wróciła do prawej krawędzi */
   .top > .sign,
   .top > .clock {
     order: -2;
@@ -187,7 +187,7 @@
     order: -1;
     margin-left: 0;
   }
-  #btnMiasto + #btnBuild {
+  #btnMiasto:not([hidden]) + #btnPraca {
     margin-left: auto;
   }
   .mm-dlugi {
@@ -237,7 +237,8 @@
 /* Panel budowy (src/ui/panelbudowy.ts daje #app klasę build-open) zajmuje prawą stronę ekranu i na niższym oknie
    przykrywał minimapę, a spod jego krawędzi wystawał ucięty podpis. Dopóki panel jest otwarty, minimapy nie ma (jak
    przycisków na telefonie pod szufladą budowy); zostają przycisk „Mapa miasta” w pasku i atrybucja map na dole. */
-.app.build-open .minimapa {
+.app.build-open .minimapa,
+.app.praca-open .minimapa {
   display: none;
 }
 .minimapa-przycisk {

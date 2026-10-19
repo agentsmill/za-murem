@@ -6,6 +6,12 @@
    zarządu. Żadnego numeru mieszkania ani piętra w tekstach. Zwraca HTML z odczytu symulacji (SimPerson), bez DOM, więc
    da się go sprawdzić w Node.
 
+   Praca ludzi (src/sim/praca.ts): pod opisem pracy karta zarządu ma wybór stałego zajęcia (`data-card="stale"`,
+   lista rozwijana; main.ts słucha `change`) i przełącznik „może wychodzić za siatkę” (`data-card="zasiatke"`), a w trybie
+   zombie jedno zdanie, że za siatką są szwendacze. Opis pracy wziętej bez polecenia dostaje dopisek „(sam)”, „(sama)”
+   albo „(on own)”, żeby było widać, że to ustawienia z panelu Pracy, a nie rozkaz; snu, posiłku i grzania się nie
+   oznaczamy, bo to nie praca. Karta mieszkańca (tylko do odczytu) nie ma ani ustawień, ani dopisku.
+
    Język: karta rysuje się w bieżącym języku (src/core/jezyk.ts). Polskie napisy ze stanu (zawód, cechy, powody
    nastrojów) to identyfikatory tłumaczone tutaj (zawodEn, TRAITS_EN, nastrojEn), opis pracy (`doing`) przychodzi już
    w bieżącym języku z jobText. Historia i rodzina z generatora są w stanie po polsku i tak zostają, chyba że
@@ -21,7 +27,9 @@ import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce
 import { AMMO_EN, WEAPONS, WEAPONS_EN } from '../sim/bron.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { NEED_LABELS, NEED_LABELS_EN, type Needs } from '../sim/needs.ts';
+import { RODZAJE, type RodzajPracy } from '../sim/praca.ts';
 import type { SimPerson } from '../sim/snapshot.ts';
+import { nazwaRodzaju } from './praca.ts';
 import { esc, manyEn, signed } from './tekst.ts';
 
 export const NEED_ORDER: readonly (keyof Needs)[] = ['food', 'warm', 'rest', 'health', 'safe', 'mood'];
@@ -121,6 +129,54 @@ export interface CardOpts {
   /** słowa miejsca po polsku i po angielsku (w domu komitet ulicy); bez nich jak w bloku */
   words?: Words;
   wordsEn?: WordsEn;
+  /** rodzaje pracy, które w tej grze istnieją (opcje stałego zajęcia); bez tego wszystkie poza badaniami, których
+      gra może jeszcze nie mieć */
+  widoczne?: readonly RodzajPracy[];
+  /** tryb zombie: pod przełącznikiem „za siatkę” jest ostrzeżenie o szwendaczach */
+  zombie?: boolean;
+}
+
+/** prace, które pionek zaczyna sam, ale nie są pracą zarządu z panelu (sen, posiłek, grzanie się): bez dopisku */
+const BEZ_DOPISKA: ReadonlySet<string> = new Set(['sleep', 'eat', 'warm']);
+
+/** opis pracy z dopiskiem „(sam)” / „(sama)” / „(on own)”, gdy osoba zarządu wzięła pracę bez polecenia gracza
+    (`oznacz` fałszywe na karcie mieszkańca, który rozkazów nie dostaje, więc „sam” nic by tam nie mówiło) */
+function doingHtml(p: SimPerson, en: boolean, oznacz: boolean): string {
+  const dopisek =
+    oznacz && p.sam && !(p.job && BEZ_DOPISKA.has(p.job))
+      ? ` <span class="sam">${en ? '(on own)' : p.f ? '(sama)' : '(sam)'}</span>`
+      : '';
+  return `<p class="doing">${esc(p.doing)}${dopisek}</p>`;
+}
+
+/** Ustawienia pracy osoby zarządu: stałe zajęcie (osoba bierze zlecenia tego rodzaju przed wszystkimi innymi) i przełącznik
+    „może wychodzić za siatkę”; w trybie zombie pod nim jedno zdanie o szwendaczach. */
+export function pracaKartaHtml(p: SimPerson, o: { widoczne?: readonly RodzajPracy[]; zombie?: boolean } = {}): string {
+  const en = jezyk() === 'en';
+  const lista = o.widoczne ?? RODZAJE.filter((r) => r !== 'badania');
+  const opcje = [
+    `<option value=""${p.praca.stale ? '' : ' selected'}>${L('brak', 'none')}</option>`,
+    ...lista.map(
+      (r) => `<option value="${r}"${p.praca.stale === r ? ' selected' : ''}>${esc(nazwaRodzaju(r, en))}</option>`,
+    ),
+  ].join('');
+  const opis = L(
+    'Osoba bierze zlecenia tego rodzaju przed wszystkimi innymi, także gdy w panelu Pracy ma tam puste',
+    'This person takes jobs of this kind before anything else, even if the Work panel has it blank',
+  );
+  const siatka = L(
+    'Może wychodzić za siatkę bez polecenia (za dnia)',
+    'Can go outside the fence without orders (by day)',
+  );
+  const ostrzezenie = o.zombie
+    ? `<p class="pk-warn">${L(
+        'Za siatką są szwendacze: ryzyko ugryzienia.',
+        'Shamblers outside the fence: risk of a bite.',
+      )}</p>`
+    : '';
+  return `<div class="pk"><label class="pk-row" title="${esc(opis)}"><span class="pk-k">${L('Stałe zajęcie', 'Fixed job')}</span><select class="pk-sel" data-card="stale">${opcje}</select></label><button type="button" class="btn mini pk-out" data-card="zasiatke" aria-pressed="${p.praca.zaSiatke}" title="${esc(
+    siatka,
+  )}">${L('Może wychodzić za siatkę', 'Can go outside the fence')}</button>${ostrzezenie}</div>`;
 }
 
 export function personCard(
@@ -170,7 +226,8 @@ export function personCard(
     `<div class="needs">${bars}</div>`,
     moods ? `<ul class="moods">${moods}</ul>` : '',
     tonight ? `<p class="tonight">${esc(tonight)}</p>` : '',
-    `<p class="doing">${esc(p.doing)}</p>`,
+    doingHtml(p, en, !opts.lokator),
+    opts.lokator ? '' : pracaKartaHtml(p, { widoczne: opts.widoczne, zombie: opts.zombie }),
     fikcjaHtml(p, opts.imie !== false),
   ].join('');
 }
