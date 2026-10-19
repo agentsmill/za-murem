@@ -341,10 +341,10 @@ export const ARRIVE_GAP = 30;
 /** sen na podłodze: nastrój rano (punkty), siły mieszkańca po nocy w łóżku */
 export const FLOOR_MOOD = -5;
 export const RESIDENT_REST = 70;
-/** prace fali 1 M2 (przerywa je pilna potrzeba, a te bez polecenia także noc) */
 /** Rodzaj trasy pracy bez polecenia: zwykła (materiał, drewno, łup) może w trybie zwykłym za dnia iść ulicą między
     częściami naszego terenu; trasa Szabru (przeszukiwanie pomieszczeń i wraków) nigdy bez przełącznika. */
 type Trasa = 'zwykla' | 'szaber';
+/** prace fali 1 M2 (przerywa je pilna potrzeba, a te bez polecenia także noc) */
 const M2_JOBS = new Set<JobKind>([
   'search',
   'dismantle',
@@ -4071,8 +4071,9 @@ export class Sim {
   }
 
   /** Zaczyna zlecenie rodzaju pracy `r` dla bezczynnego pionka zarządu; false, gdy nie ma czego robić. Ogień:
-      dokładanie do kozy ze składu albo noszenie leżącego drewna do składu (tylko stosy z `mozeTam`: nocą na
-      naszym terenie, za dnia za siatką tylko osoba z przełącznikiem). Kuchnia: gotowanie, gdy trzeba.
+      dokładanie do kozy ze składu albo noszenie leżącego drewna do składu (tylko stosy z `mozeSam`: wolno tam pracować
+      i dojść, czyli na naszym terenie, w innej jego części tylko w trybie zwykłym za dnia, a za siatką tylko osoba
+      z przełącznikiem i za dnia). Kuchnia: gotowanie, gdy trzeba.
       Budowa: najstarszy plan, który da się zacząć (za dnia), a gdy takiego nie ma, od pierwszego rana plan wspólnego
       płotu, który ktoś zaczął i porzucił. Naprawy: otwarta dziura z materiałem, potem uszkodzenie w naszym mieszkaniu.
       Drwal: najbliższe wolne drzewo, gdy drewna w zapasie jest mniej niż próg. Noszenie: łup leżący poza podwórkiem.
@@ -4932,9 +4933,12 @@ export class Sim {
     return this.st.things.some((t) => t.kind === kind);
   }
 
-  /** kafelek, z którego się naprawia: samo uszkodzenie, gdy da się na nim stanąć, inaczej sąsiedni w mieszkaniu
-      albo na klatce */
-  private repairStand(p: Pawn, d: DamageGame): number {
+  /** Kafelek, z którego się naprawia: samo uszkodzenie, gdy da się na nim stanąć, inaczej najbliższy pionkowi sąsiedni
+      (w mieszkaniu, na klatce albo, przy oknie w ścianie zewnętrznej, na dworze). Bez polecenia (`order` false) tylko
+      kafelek, na którym wolno pracować i do którego wolno dojść (`mozeSam`): okno od ulicy naprawia się wtedy od środka
+      albo z podwórka, a gdy przy nim wolno stanąć tylko na ulicy, miejsca nie ma (−1). Najbliższy liczy się od pionka,
+      także od sterty w `takeFor`, więc i tam wybór przechodzi przez ten sam filtr. */
+  private repairStand(p: Pawn, d: DamageGame, order = true): number {
     const size = this.w.size;
     const region = this.regionOf(p);
     const x = d.tile % size;
@@ -4945,6 +4949,7 @@ export class Sim {
         const i = (y + dy) * size + x + dx;
         if (i < 0 || i >= size * size || this.coreBlocked[i] || this.reg[i] !== region) continue;
         if (this.furnitureAt(i % size, Math.floor(i / size))) continue;
+        if (!order && !this.mozeSam(p, i)) continue;
         cand.push(i);
       }
     return cand.includes(d.tile) ? d.tile : this.nearest(p, cand);
@@ -5073,7 +5078,7 @@ export class Sim {
     this.setJob(p, j, false);
     if (this.fetchNext(p, j, cost, d.have)) return true;
     // wszystko już doniesione: od razu do pracy (a gdy czegoś brakuje, a do sterty nie ma drogi, nie ma pracy)
-    const stand = this.repairStand(p, d);
+    const stand = this.repairStand(p, d, order);
     const komplet = (Object.entries(cost) as [Mat, number][]).every(([m, v]) => (d.have[m] ?? 0) >= v);
     if (!komplet || stand < 0 || !this.idz(p, stand, order)) {
       p.job = null;
@@ -5085,9 +5090,12 @@ export class Sim {
   }
 
   /** Naprawy: najpierw otwarta dziura w siatce, do której jest materiał na łatę (na naszym terenie) i miejsce, z którego
-      się łata, potem uszkodzenie w naszym mieszkaniu (`apt.ours`), które nikt nie naprawia i na które starczy materiału.
-      Najbliższe najpierw; nie wzmacnia siatki (`brace` zostaje poleceniem). W trybie zombie pomija zlecenia, przy
-      których jest szwendacz (bliżej niż 10 m). */
+      się łata, potem uszkodzenie w naszym mieszkaniu (`apt.ours`), które nikt nie naprawia, na które starczy materiału
+      i przy którym jest miejsce do pracy bez polecenia (`repairStand`: wolno tam stanąć i dojść, więc okno od ulicy
+      naprawia się od środka, a uszkodzenie w pokoju z innej klatki bloku w trybie zombie i nocą odpada). Sam kafelek
+      okna to ściana zewnętrzna poza naszym terenem, więc liczy się miejsce przy nim, nie on. Najbliższe najpierw; nie
+      wzmacnia siatki (`brace` zostaje poleceniem). W trybie zombie pomija zlecenia, przy których jest szwendacz
+      (bliżej niż 10 m). */
   private startNaprawy(p: Pawn): boolean {
     const st = this.st;
     const holes = (st.fence?.holes ?? []).filter(
@@ -5109,20 +5117,15 @@ export class Sim {
     const naprawy: [number, number][] = [];
     st.damage.forEach((d, k) => {
       if (d.fixed || !st.apts.find((a) => a.apt === d.apt)?.ours || this.zagrozone(d.tile, true)) return;
-      // uszkodzenie w pokoju z innej klatki bloku (dojście ulicą) odpada w trybie zombie i nocą, zanim policzymy miejsce
-      // do pracy
-      if (!this.dojdzieWDomu(p, d.tile)) return;
       if (st.pawns.some((q) => q.job?.t === 'repair' && q.job.target === k)) return;
       naprawy.push([this.dist2(p, d.tile), k]);
     });
     naprawy.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     for (const [, k] of naprawy) {
       const d = st.damage[k];
-      const stand = this.repairStand(p, d);
       if (
         !this.enoughFor(p, REPAIR[d.kind].cost, d.have, this.materialOk(p, false, 'repair')) ||
-        stand < 0 ||
-        !this.dojdzieWDomu(p, stand)
+        this.repairStand(p, d, false) < 0
       )
         continue;
       return this.startRepair(p, k, false);
@@ -5139,7 +5142,7 @@ export class Sim {
     if (j.phase === 0) {
       if (!at) return false;
       const m = j.what as Mat;
-      return this.takeFor(p, j, (def.cost[m] ?? 0) - (d.have[m] ?? 0), this.repairStand(p, d));
+      return this.takeFor(p, j, (def.cost[m] ?? 0) - (d.have[m] ?? 0), this.repairStand(p, d, j.order));
     }
     if (j.phase === 1) {
       if (!at) return false;

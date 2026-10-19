@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BUILDS, canPlace } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
-import { searchable } from '../../src/sim/mieszkania.ts';
+import { inHomeApt } from '../../src/sim/house.ts';
+import { REPAIR, searchable } from '../../src/sim/mieszkania.ts';
 import { fenceShape, type Hole } from '../../src/sim/perimeter.ts';
 import { progi, RODZAJE, type RodzajPracy } from '../../src/sim/praca.ts';
 import { gid, gidRoom, moznaPrzeszukac, wnetrze } from '../../src/sim/sasiedzi.ts';
@@ -41,6 +42,7 @@ interface Prywatne {
   dojdzieWDomu(p: Pawn, tile: number): boolean;
   idz(p: Pawn, tile: number, order: boolean): boolean;
   materialOk(p: Pawn, order: boolean, t: JobKind): ((tile: number) => boolean) | undefined;
+  furnitureAt(x: number, y: number): boolean;
   exitTile: number;
   roomTiles: number[][];
   tileOf(p: Pawn): number;
@@ -1626,6 +1628,160 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
         expect(sim.stats.paths - paths).toBeLessThanOrEqual(4);
       }
     }
+  });
+
+  /** Okna mieszkania zarządu: scena z osobą z Naprawami, bez szwendaczy i bez materiału, z załatanymi dziurami.
+      Kafelek okna to ściana zewnętrzna (poza naszym terenem); `miejsca` to kafelki przy oknie, na których da się stanąć
+      (jak w `repairStand`: bez ścian i mebli, w obszarze ruchu osoby). */
+  function oknaZarzadu(key: string, o: Opcje) {
+    const sc = scena({ key, rodzaje: ['naprawy'], ...o });
+    const { sim, p, s } = sc;
+    const st = sim.st;
+    st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
+    st.things = st.things.filter((t) => !['deski', 'zlom', 'czesci', 'drewno'].includes(t.kind));
+    for (const h of st.fence!.holes) h.patch = 100;
+    s.rebuild();
+    const house = sim.house!;
+    const size = s.w.size;
+    const okna = house.windows.filter((t) => [t - 1, t + 1, t - size, t + size].some((k) => inHomeApt(house, k)));
+    expect(okna.length, key).toBeGreaterThan(0);
+    expect(
+      okna.every((t) => !s.naszTeren(t)),
+      `${key}: okno poza naszym terenem`,
+    ).toBe(true);
+    const miejsca = (t: number): number[] =>
+      [-size - 1, -size, -size + 1, -1, 1, size - 1, size, size + 1]
+        .map((dd) => t + dd)
+        .filter(
+          (k) => !s.coreBlocked[k] && s.reg[k] === s.regionOf(p) && !s.furnitureAt(k % size, Math.floor(k / size)),
+        );
+    return { ...sc, st, house, size, okna, miejsca };
+  }
+
+  /** Kroki gry do warunku (najwyżej `limit`): liczy naprawy przerwane przed końcem (osoba porzuca pracę `repair`, a
+      uszkodzenie zostaje) i kroki osoby poza naszym terenem. */
+  function naprawiaj(sim: Sim, p: Pawn, koniec: () => boolean, limit: number) {
+    const s = prv(sim);
+    let przerwane = 0;
+    let krokiNaUlicy = 0;
+    let bylo = -1;
+    for (let k = 0; k < limit && !koniec(); k++) {
+      if (k % 50 === 0) {
+        podkarm(sim);
+        sim.st.pawns = sim.st.pawns.filter((q) => q.kind !== 'zombie');
+      }
+      sim.step();
+      if (!s.naszTeren(s.tileOf(p))) krokiNaUlicy++;
+      const teraz = p.job?.t === 'repair' ? p.job.target : -1;
+      if (bylo >= 0 && teraz !== bylo && !sim.st.damage[bylo].fixed) przerwane++;
+      bylo = teraz;
+    }
+    return { przerwane, krokiNaUlicy };
+  }
+
+  it('okna w mieszkaniu zarządu: Naprawy naprawiają je w trybie zombie i zwykłym za dnia z naszego terenu, bez przerywania pracy', () => {
+    const wyniki: Record<string, unknown> = {};
+    const oczekiwane: Record<string, unknown> = {};
+    for (const key of ['lanciego', 'przymorze'] as const)
+      for (const [nazwa, ctx, zaSiatke] of [
+        ['zombie za dnia', ZOMBIE_DZIEN, false],
+        ['tryb zwykły za dnia', DZIEN, false],
+        ['tryb zwykły za dnia z przełącznikiem', DZIEN, true],
+      ] as const) {
+        const opis = `${key}, ${nazwa}`;
+        const { sim, p, s, st, house, okna, miejsca } = oknaZarzadu(key, { ...ctx, zaSiatke });
+        const od = s.naszeObszary()[s.tileOf(p)];
+        const ob = s.naszeObszary();
+        // część okien wychodzi na ulicę: przy nich najbliższe miejsce bywa po stronie ulicy
+        expect(
+          okna.some((t) => miejsca(t).some((k) => !s.naszTeren(k))),
+          `${opis}: okno od ulicy`,
+        ).toBe(true);
+        // bez przełącznika naprawia się tylko z miejsca w naszej części terenu (od środka albo z podwórka); okno, przy
+        // którym da się stanąć tylko na ulicy (Lanciego: w środku pod oknem stoją meble), zostaje dla polecenia
+        const doNaprawy = okna.filter((t) => miejsca(t).some((k) => zaSiatke || ob[k] === od));
+        expect(doNaprawy.length, opis).toBeGreaterThan(0);
+        st.damage = okna.map((tile) => ({ kind: 'okno' as const, tile, apt: house.home, fixed: false, have: {} }));
+        dodajMat(sim, p, 'deski', REPAIR.okno.cost.deski! * okna.length);
+        const { n } = liczStarty(sim, p);
+        const naprawione = () => st.damage.filter((d) => d.fixed).map((d) => d.tile);
+        const { przerwane, krokiNaUlicy } = naprawiaj(sim, p, () => naprawione().length === doNaprawy.length, 8000);
+        // po naprawie wszystkiego, co się da, nie liczy dróg do okna od ulicy co sekundę
+        const drogi = sim.stats.paths;
+        naprawiaj(sim, p, () => false, 600);
+        wyniki[opis] = {
+          naprawione: naprawione().sort((a, b) => a - b),
+          przerwane,
+          starty: n.repair ?? 0,
+          ...(zaSiatke ? {} : { krokiNaUlicy, drogiPotem: sim.stats.paths - drogi <= 4 }),
+        };
+        // każde okno naprawione jedną pracą, bez przerwania w połowie, a bez przełącznika ani kroku po ulicy
+        oczekiwane[opis] = {
+          naprawione: [...doNaprawy].sort((a, b) => a - b),
+          przerwane: 0,
+          starty: doNaprawy.length,
+          ...(zaSiatke ? {} : { krokiNaUlicy: 0, drogiPotem: true }),
+        };
+      }
+    expect(wyniki).toEqual(oczekiwane);
+  });
+
+  it('okno od ulicy: miejsce do naprawy liczone od sterty (i od osoby, gdy deski już są przy oknie) też leży na naszym terenie, praca nie przerywa się', () => {
+    const wyniki: Record<string, unknown> = {};
+    const oczekiwane: Record<string, unknown> = {};
+    // Przymorze: róg podwórka przy ulicy, z którego najbliżej do okna zarządu po stronie ulicy
+    for (const [nazwa, ctx, przyOknie] of [
+      ['zombie za dnia', ZOMBIE_DZIEN, false],
+      ['tryb zwykły za dnia', DZIEN, false],
+      ['zombie za dnia, deski już przy oknie', ZOMBIE_DZIEN, true],
+      ['tryb zwykły za dnia, deski już przy oknie', DZIEN, true],
+    ] as const) {
+      const opis = `przymorze, ${nazwa}`;
+      const { sim, p, s, st, house, size, okna, miejsca } = oknaZarzadu('przymorze', ctx);
+      const ob = s.naszeObszary();
+      const od = ob[s.tileOf(p)];
+      const sklad = new Set(house.sklad);
+      const d2 = (a: number, b: number) =>
+        ((a % size) - (b % size)) ** 2 + (Math.floor(a / size) - Math.floor(b / size)) ** 2;
+      const najblizsze = (z: number, cand: number[]) =>
+        cand.reduce((b, k) => (d2(z, k) < d2(z, b) || (d2(z, k) === d2(z, b) && k < b) ? k : b), cand[0]);
+      // Okno, przy którym jest miejsce w mieszkaniu, i najbliższy mu kafelek podwórka, od którego najbliższe miejsce
+      // przy oknie leży na ulicy: tam leżą deski. Osoba stoi w mieszkaniu przy oknie, więc od niej miejsce jest
+      // w środku; po wzięciu desek miejsce liczy się od sterty. W wariancie „deski już przy oknie” (naprawa przerwana
+      // wcześniej) osoba stoi na tym kafelku podwórka i od razu idzie do pracy.
+      let okno = -1;
+      let sterta = -1;
+      let wSrodku = -1;
+      for (const t of okna) {
+        const m = miejsca(t);
+        const srodek = m.find((k) => inHomeApt(house, k));
+        if (srodek === undefined || !m.some((k) => !s.naszTeren(k))) continue;
+        let best = -1;
+        for (let i = 0; i < size * size; i++) {
+          if (ob[i] !== od || s.yardMask[i] !== 1 || s.fenceMask[i] === 1 || s.coreBlocked[i] || sklad.has(i)) continue;
+          if (s.naszTeren(najblizsze(i, m)) || (best >= 0 && d2(i, t) >= d2(best, t))) continue;
+          best = i;
+        }
+        if (best < 0) continue;
+        okno = t;
+        sterta = best;
+        wSrodku = srodek;
+        break;
+      }
+      expect(okno, `${opis}: okno, do którego od sterty najbliżej z ulicy`).toBeGreaterThanOrEqual(0);
+      const start = przyOknie ? sterta : wSrodku;
+      p.x = (start % size) + 0.5;
+      p.y = Math.floor(start / size) + 0.5;
+      odnow(sim, p);
+      st.damage = [{ kind: 'okno', tile: okno, apt: house.home, fixed: false, have: {} }];
+      if (przyOknie) st.damage[0].have = { ...REPAIR.okno.cost };
+      else dodaj(sim, 'deski', REPAIR.okno.cost.deski!, sterta);
+      const { n } = liczStarty(sim, p);
+      const wynik = naprawiaj(sim, p, () => st.damage[0].fixed, 3000);
+      wyniki[opis] = { naprawione: st.damage[0].fixed, starty: n.repair ?? 0, ...wynik };
+      oczekiwane[opis] = { naprawione: true, starty: 1, przerwane: 0, krokiNaUlicy: 0 };
+    }
+    expect(wyniki).toEqual(oczekiwane);
   });
 
   it('przełącznik nie omija reguły szwendaczy: w trybie zombie przy osobie stos w drugiej klatce odpada, bez szwendacza jest brany ulicą', () => {
