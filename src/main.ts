@@ -27,6 +27,7 @@ import {
   newGov,
   normalizujTeksty,
   pending,
+  resetNight,
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
@@ -108,6 +109,7 @@ import {
   optionDetail,
   optionText,
   reportSheet,
+  siecSheet,
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
@@ -801,7 +803,7 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
         opt.disabled = t.disabled;
       }
     } else if (act === 'night-reset') {
-      for (const c of card.people) setNight(g, c.id, c.proposal);
+      resetNight(g);
       showNight(p);
     } else if (act === 'night-go') {
       const line = applyFx(confirmNight(g, input()));
@@ -1897,7 +1899,7 @@ function run(m: MenuItem) {
   if (f) say(`${f}${loud}`, loud ? 4000 : 1800);
 }
 
-/** polecenie z potwierdzeniem: palenie mebli ma własne okno, reszta (rozbiórka, zajęcie) ogólne */
+/** polecenie z potwierdzeniem: palenie mebli i włączenie sieci mają własne okna, reszta (rozbiórka, zajęcie) ogólne */
 function askConfirm(m: MenuItem) {
   if (m.cmd.t === 'burn') {
     askBurn(m);
@@ -1906,7 +1908,8 @@ function askConfirm(m: MenuItem) {
   sheetAgain = () => askConfirm(m);
   pauseGame();
   modal.show(
-    confirmSheet(m.label),
+    // włączenie sieci ma własne pytanie i ostrzeżenie, reszta (rozbiórka, zajęcie) ogólne
+    m.cmd.t === 'siec' ? siecSheet() : confirmSheet(m.label),
     (act) => {
       if (act !== 'confirm-yes' && act !== 'confirm-no') return;
       if (act === 'confirm-yes') run(m);

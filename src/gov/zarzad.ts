@@ -14,7 +14,7 @@ import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
 import { TECH_DOMS } from '../content/data.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
-import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } from './noc.ts';
+import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, resetAssign, setAssign } from './noc.ts';
 import { FIRST_LAWS } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
 import { lawEffects as effectsOfLaws, lawState, lawOptions as optionsOfLaws, sign } from './uchwaly.ts';
@@ -172,6 +172,9 @@ export function pending(st: GovState, i: GovInput): Prompt | null {
 
 /** przydział na karcie nocy (klucz opcji z karty); false, gdy nie wolno */
 export const setNight = (st: GovState, id: string, key: string): boolean => setAssign(st, id, key);
+
+/** „Jak radzi zarząd”: cały przydział z powrotem na propozycje (wieża ma ograniczoną liczbę miejsc, więc nie osoba po osobie) */
+export const resetNight = (st: GovState): boolean => resetAssign(st);
 
 /** zatwierdzenie karty nocy: wyprawy wychodzą, warta staje, plan napadu na tę noc */
 export function confirmNight(st: GovState, i: GovInput): GovEffects {

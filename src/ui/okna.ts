@@ -1,5 +1,5 @@
-/* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenie palenia mebli,
-   menu (z linią o źródłach danych mieszkańców), jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
+/* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenia (palenie mebli, włączenie
+   sieci, polecenia nieodwracalne), menu (z linią o źródłach danych mieszkańców), jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
    (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts.
    Napisy okien są w bieżącym języku (L() przy rysowaniu, Tx w tablicach). Teksty zarządu (Tx albo polski napis ze
    starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. Słowa
@@ -529,6 +529,22 @@ export function confirmSheet(label: string): Sheet {
     title: esc(label),
     body: `<p>${L('Tego nie da się cofnąć.', 'This cannot be undone.')}</p>`,
     foot: `${btn('confirm-no', L('Nie', 'No'), 'btn ghost')}${btn('confirm-yes', label, 'btn go')}`,
+    closable: true,
+  };
+}
+
+/** potwierdzenie włączenia sieci (badania, technologia końcowa): nieodwracalne i według projektu zwycięstwa zaczyna
+    epilog; przyciski jak w `confirmSheet`, więc obsługuje je ten sam kod w main.ts */
+export function siecSheet(): Sheet {
+  return {
+    tone: 'ogien',
+    kicker: L('Na pewno?', 'Are you sure?'),
+    title: L('Włączyć sieć bez miedzi?', 'Switch on the copper-free grid?'),
+    body: `<p>${L('Tej nocy zapalą się okna w całym terenie.', 'Tonight every window on your ground will light up.')}</p><p>${L(
+      'Tego nie da się cofnąć.',
+      'This cannot be undone.',
+    )}</p>`,
+    foot: `${btn('confirm-no', L('Nie', 'No'), 'btn ghost')}${btn('confirm-yes', L('Włączyć sieć', 'Switch on the grid'), 'btn go')}`,
     closable: true,
   };
 }

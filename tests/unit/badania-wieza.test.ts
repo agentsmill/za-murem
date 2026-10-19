@@ -21,6 +21,7 @@ import {
   nightAdvice,
   nightTick,
   postsOf,
+  resetAssign,
   setAssign,
   WIEZA,
   WIEZA_KEY,
@@ -594,8 +595,9 @@ describe('wieża ma tyle miejsc, ile kafelków obrysu', () => {
     expect(core.filter((p) => p.job?.target === WIEZA_POST)).toHaveLength(4);
   });
 
-  /** sześć osób z atrapy i wieża o czterech miejscach; noc z kartą w stanie zarządu, jak o 20:00 */
-  function noc() {
+  /** sześć osób z atrapy i wieża o czterech miejscach; noc z kartą w stanie zarządu, jak o 20:00. `naWiezy`: tylu
+      pierwszych już stoi na wieży (z menu), więc zarząd proponuje ich tam */
+  function noc(naWiezy = 0) {
     const base = wejscie({ wieza: 4 });
     const dodatkowe = [4, 5].map((k) => ({
       ...base.people[0],
@@ -604,7 +606,12 @@ describe('wieża ma tyle miejsc, ile kafelków obrysu', () => {
       name: `Osoba ${k}`,
       first: `Osoba${k}`,
     }));
-    const i: GovInput = { ...base, people: [...base.people, ...dodatkowe] };
+    const ludzie = [...base.people, ...dodatkowe];
+    const i: GovInput = {
+      ...base,
+      people: ludzie,
+      ...(naWiezy ? { guards: ludzie.slice(0, naWiezy).map((p) => ({ id: p.id, post: WIEZA })) } : {}),
+    };
     const gov = newGov(1);
     const { card, assign } = makeCard(gov, i);
     gov.night = {
@@ -667,6 +674,34 @@ describe('wieża ma tyle miejsc, ile kafelków obrysu', () => {
     const stoja = { ...i, guards: ids.map((id) => ({ id, post: WIEZA })) };
     const { assign } = makeCard(newGov(1), stoja);
     expect(Object.values(assign).filter((k) => k === WIEZA_KEY)).toHaveLength(4);
+  });
+
+  it('„Jak radzi zarząd” odtwarza propozycję w całości, także gdy gracz obsadził wieżę innymi', () => {
+    const { gov, card, ids } = noc(2);
+    const propozycja = Object.fromEntries(card.people.map((p) => [p.id, p.proposal]));
+    expect(ids.filter((id) => propozycja[id] === WIEZA_KEY)).toEqual(ids.slice(0, 2));
+    // gracz zdejmuje dwie osoby z wieży i obsadza ją czterema innymi (po kolei, bo wieża ma tylko cztery miejsca)
+    for (const id of ids.slice(0, 2)) expect(setAssign(gov, id, 'sen')).toBe(true);
+    for (const id of ids.slice(2)) expect(setAssign(gov, id, WIEZA_KEY), id).toBe(true);
+    expect(ids.filter((id) => gov.night!.assign[id] === WIEZA_KEY)).toEqual(ids.slice(2));
+    expect(resetAssign(gov)).toBe(true);
+    expect(gov.night!.assign).toEqual(propozycja);
+    expect(Object.values(gov.night!.assign).filter((k) => k === WIEZA_KEY)).toHaveLength(2);
+  });
+
+  it('reset bez wieży w propozycji i po zatwierdzeniu: zwykły powrót do propozycji, po zatwierdzeniu nic', () => {
+    const { gov, card, ids } = noc();
+    const propozycja = Object.fromEntries(card.people.map((p) => [p.id, p.proposal]));
+    setAssign(gov, ids[0], WIEZA_KEY);
+    setAssign(gov, ids[1], 'warta:brama');
+    expect(resetAssign(gov)).toBe(true);
+    expect(gov.night!.assign).toEqual(propozycja);
+    gov.night!.confirmed = true;
+    setAssign(gov, ids[0], WIEZA_KEY);
+    gov.night!.assign[ids[0]] = 'sen';
+    expect(resetAssign(gov)).toBe(false);
+    expect(gov.night!.assign[ids[0]]).toBe('sen');
+    expect(resetAssign({ ...gov, night: null })).toBe(false);
   });
 
   it('okno karty: piąta osoba ma opcję wieży wyszarzoną z dopiskiem, czterej na wieży swoją aktywną', () => {

@@ -15,6 +15,7 @@ import { govInput } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { createSim, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
+import { siecSheet } from '../../src/ui/okna.ts';
 import { buildWorld } from '../../src/world/world.ts';
 
 const d = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
@@ -198,6 +199,8 @@ describe('menu pracowni: Włączyć sieć', () => {
     expect(m).toBeTruthy();
     expect(m.label).toBe('Włączyć sieć');
     expect(m.quick).toBe(false);
+    // nieodwracalne i zaczyna epilog: z potwierdzeniem, nigdy od stuknięcia
+    expect(m.confirm).toBe(true);
     expect(m.cmd).toEqual({ t: 'siec', ids: rdzen(st) });
     expect(pozycja(st, kafel(prac!) + (prac!.w - 1))).toBeTruthy();
     // wybrana pozycja naprawdę włącza sieć
@@ -216,6 +219,21 @@ describe('menu pracowni: Włączyć sieć', () => {
     const { st, prac } = gra({ pracownia: true, techDone: ['t_siec'] });
     expect(pozycja(st, kafel(prac!) + w.size * 3)).toBeUndefined();
     expect(commandsAt(st, w, [], kafel(prac!))).toEqual([]);
+  });
+
+  it('okno potwierdzenia: pytanie i ostrzeżenie w obu językach, przyciski jak w każdym potwierdzeniu', () => {
+    const pl = siecSheet();
+    expect(pl.title).toBe('Włączyć sieć bez miedzi?');
+    expect(pl.body).toContain('Tej nocy zapalą się okna w całym terenie.');
+    expect(pl.body).toContain('Tego nie da się cofnąć.');
+    expect(pl.foot).toContain('data-act="confirm-yes"');
+    expect(pl.foot).toContain('data-act="confirm-no"');
+    ustawJezyk('en');
+    const en = siecSheet();
+    expect(en.title).toBe('Switch on the copper-free grid?');
+    expect(en.body).toContain('Tonight every window on your ground will light up.');
+    expect(en.body).toContain('This cannot be undone.');
+    expect(`${en.kicker}${en.title}${en.body}${en.foot}`).not.toMatch(/[ąćęłńóśźż]/i);
   });
 
   it('znika po włączeniu sieci', () => {

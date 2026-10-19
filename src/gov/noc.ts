@@ -5,7 +5,7 @@
    było ciepło. Gdy stoi wieża (`GovInput.wieza`, liczba jej miejsc), karta ma jeszcze „Wartę na wieży” (warta:wieza): to
    przydział, nie miejsce napadu (postsOf jej nie zna), a wartownik z wieży widzi całe podwórko i dokłada do obrony
    każdego posterunku połowę swojej wartości warty. Na wieży stoi najwyżej tyle osób, ile ma miejsc (propose i setAssign
-   pilnują tego, wiezaPelna mówi, kiedy jest pełna). Przy zatwierdzeniu losuje się, czy szabrownicy
+   pilnują tego, wiezaPelna mówi, kiedy jest pełna, a resetAssign przywraca propozycję w dwóch przejściach). Przy zatwierdzeniu losuje się, czy szabrownicy
    przyjdą, gdzie i o której (23:00–4:00). O tej godzinie obronę liczy się z tego, co jest: kto nie zasnął,
    światło, pies, brama. Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość
    z ziarna gry. Teksty karty i raportu to Tx (polski i angielski z tych samych danych, bez dodatkowych losowań). */
@@ -587,6 +587,18 @@ export function setAssign(st: GovState, id: string, key: string): boolean {
   if (!opt?.ok) return false;
   if (key === WIEZA_KEY && wiezaPelna(n.card, n.assign, id)) return false;
   n.assign[id] = key;
+  return true;
+}
+
+/** „Jak radzi zarząd”: przydział z powrotem na propozycję każdej osoby; false, gdy nie ma karty albo już zatwierdzona.
+    Dwa przejścia, bo wieża ma ograniczoną liczbę miejsc: najpierw osoby, których propozycja nie jest wieżą (zwalniają
+    ją), potem te z wieżą przez limit `setAssign`. Propozycja mieści się w limicie (propose), więc wraca w całości,
+    niezależnie od kolejności osób na karcie. */
+export function resetAssign(st: GovState): boolean {
+  const n = st.night;
+  if (!n || n.confirmed) return false;
+  for (const naWiezy of [false, true])
+    for (const p of n.card.people) if ((p.proposal === WIEZA_KEY) === naWiezy) setAssign(st, p.id, p.proposal);
   return true;
 }
 

@@ -433,9 +433,15 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     make('deski', tr(NAPISY.deska), (n) => tr(NAPISY.deskiN(n)));
     make('czesci', tr(NAPISY.czesc), (n) => tr(NAPISY.czesciN(n)));
   }
-  // pracownia po zbadaniu technologii końcowej: włączyć sieć (raz; epilog robi rama zwycięstwa)
+  // pracownia po zbadaniu technologii końcowej: włączyć sieć (raz; nieodwracalne i zaczyna epilog, więc z potwierdzeniem,
+  // którego okno to `siecSheet` w src/ui/okna.ts; sam epilog robi rama zwycięstwa)
   if (things.some((t) => t.kind === 'pracownia') && koncowaZbadana(st) && !siecWlaczona(st))
-    out.push({ cmd: { t: 'siec', ids: core }, label: L('Włączyć sieć', 'Switch on the grid'), quick: false });
+    out.push({
+      cmd: { t: 'siec', ids: core },
+      label: L('Włączyć sieć', 'Switch on the grid'),
+      quick: false,
+      confirm: true,
+    });
   // ognisko na wolnym kafelku podwórka, gdy jest z czego (drewno luzem albo w rękach)
   const woodN =
     st.things.reduce((a, t) => a + (t.kind === 'drewno' ? t.n : 0), 0) + st.pawns.reduce((a, p) => a + p.carry, 0);
