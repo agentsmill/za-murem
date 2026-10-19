@@ -6,9 +6,11 @@
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
    --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła; --m2: budowa z fali 1,
    czyli atrapa pustych mieszkań w przekroju, cztery plany z paskami postępu i podgląd stawiania; --demo: inne demo
-   niż Przymorze; --kod: wszystko rysowane kodem, bez grafiki z PixelLab, do porównań przed i po).
+   niż Przymorze (--demo=atrapa-budynki: mapa z każdym z 11 wyglądów budynków z PixelLab, tests/unit/atrapa-budynki.ts);
+   --kod: wszystko rysowane kodem, bez grafiki z PixelLab, do porównań przed i po).
    Zawsze z dymem: koza zarządu rozpalona w stanie gry i ognisko na podwórku. */
 
+import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
@@ -50,6 +52,7 @@ try {
       hasTouch: dev.cpu > 1,
     });
     const page = await ctx.newPage();
+    if (DEMO === DEMO_ATRAPA) await podstawAtrape(page);
     await page.goto(
       `${s.base}?demo=${DEMO}&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}${ZOMBIE ? '&tryb=zombie&stado=60&godzina=23' : ''}${M2 ? '&mieszkania=atrapa' : ''}${KOD ? '&grafika=kod' : ''}`,
     );

@@ -1,7 +1,8 @@
 /* Dane pochodne do rysowania świata: liczone raz na mapę (w kilkanaście milisekund).
    - dla każdego kafelka budynku: odległość od dolnej (południowej) krawędzi w kolumnie,
    - styl każdego budynku (kolor ściany, wysokość fasady, rodzaj dachu); bloki z grafiką z PixelLab składają się
-     z modułów kawałka bloku (13 px na piętro zamiast 9),
+     z modułów kawałka bloku (13 px na piętro zamiast 9), a ratusze, muzea, kamienice i inne z modułów swojego
+     wyglądu (lookBudynku.ts),
    - maska cieni w oczkach 8 px (4 na kafelek), drzewa pogrupowane w kawałki 32×32. */
 
 import type { Pt } from '../../world/geo.ts';
@@ -9,8 +10,9 @@ import { fillRing } from '../../world/raster.ts';
 import { type Dir, T, type Tree, type World, type WorldBuilding } from '../../world/world.ts';
 import type { SectionScene } from '../section.ts';
 import { h2 } from './hash.ts';
+import { kontekstyLookow, type LookBudynku, type LookKontekst, lookBudynku } from './lookBudynku.ts';
 import { C, HOUSE_WALLS, shade, WALLS } from './palette.ts';
-import { type Blok, type Grafika, type GrafikaKawalkow, pasFasady } from './pixellab.ts';
+import { type Blok, type Grafika, type GrafikaKawalkow, pasFasady, pietraWygladu } from './pixellab.ts';
 
 export const TILE = 32; // pikseli grafiki na metr
 export const CHUNK = 32; // kafelków w boku kawałka
@@ -35,8 +37,13 @@ export interface BStyle {
   balconies: boolean;
   /** kolor balustrad */
   accent: number;
-  /** blok z modułów grafiki z PixelLab (pas fasady, przęsła, wejście, papa z attyką) zamiast rysowanego kodem */
+  /** budynek z modułów grafiki z PixelLab (pas fasady, przęsła, wejście, dach z attyką) zamiast rysowanego kodem: blok
+      albo jeden z 11 wyglądów (look) */
   mod?: boolean;
+  /** wygląd budynku z PixelLab (kamienica, ratusz, muzeum…), gdy ma go grafika (mod jest wtedy prawdą) */
+  look?: LookBudynku;
+  /** liczba pięter fasady z modułów wyglądu (z danych budynku albo typowa dla wyglądu); bloki jej nie mają */
+  vis?: number;
 }
 
 /** budynek w zakresie, którego potrzebuje rysowanie kawałków */
@@ -110,7 +117,8 @@ export function treeChunks(t: Tree, chunks: number): number[] {
 
 export const heightM = (levels: number) => levels * 2.8 + 1;
 
-function styleOf(b: WorldBuilding, w: World, blok: Blok | null): BStyle {
+function styleOf(b: WorldBuilding, w: World, art: GrafikaKawalkow | null, ctx: LookKontekst | undefined): BStyle {
+  const blok: Blok | null = art?.blok ?? null;
   const seed = (h2(b.id, b.x0 * 7 + b.y0, w.seed) * 1e9) | 0;
   const r = (k: number) => h2(seed, k, 77);
   const depthPx = (b.y1 - b.y0 + 1) * TILE;
@@ -161,10 +169,15 @@ function styleOf(b: WorldBuilding, w: World, blok: Blok | null): BStyle {
       wall = 0xb3aea3;
   }
   const levels = Math.max(1, Math.min(b.levels, 16));
-  // blok z modułów: fasada to pas modułów kawałka bloku (piętro jak w module, u PixelLab około 13 px)
-  const mod = b.cls === 'blok' && blok !== null;
-  if (mod) floorH = blok.srodek[1];
-  let facade = mod ? pasFasady(blok, levels).length : base + levels * floorH + 2;
+  // wygląd z PixelLab (kamienica, ratusz, muzeum…): z rodzajów punktów, nazwy i zabudowy, tylko gdy grafika go ma
+  const look = art?.budynki ? lookBudynku(b, ctx) : null;
+  const lg = look ? art?.budynki?.[look] : undefined;
+  // budynek z modułów: fasada to pas modułów (u bloku piętro jak w module kotwicy, około 13 px)
+  const mod = !!lg || (b.cls === 'blok' && blok !== null);
+  const vis = lg ? pietraWygladu(lg, levels, Number.parseInt(b.tags['building:levels'], 10) > 0) : 0;
+  const modul: Blok | null = lg ? lg.fasada : mod ? blok : null;
+  if (modul) floorH = modul.srodek[1];
+  let facade = modul ? pasFasady(modul, lg ? vis : levels).length : base + levels * floorH + 2;
   facade = Math.min(facade, Math.max(10, depthPx - 12));
   if (roof === 'tiles') {
     const wpx = (b.x1 - b.x0 + 1) * TILE;
@@ -181,10 +194,14 @@ function styleOf(b: WorldBuilding, w: World, blok: Blok | null): BStyle {
   const accent = [0x8a8f86, 0x9a5b3c, 0x5f7a8c, 0xb8a86a, 0x6e8a5a, 0xc7c2b6][Math.floor(r(9) * 6)];
   const st: BStyle = { kind: b.cls, roof, wall, facade, floorH, base, levels, seed, ridge, ridgeAt, balconies, accent };
   if (mod) st.mod = true;
+  if (lg && look) {
+    st.look = look;
+    st.vis = vis;
+  }
   return st;
 }
 
-/** scena do rysowania świata; art: grafika z PixelLab (teren, bloki), bez niej wszystko rysuje kod */
+/** scena do rysowania świata; art: grafika z PixelLab (teren, bloki, wyglądy budynków), bez niej wszystko rysuje kod */
 export function buildScene(w: World, art: Grafika | null = null): Scene {
   const size = w.size;
   const N = size * size;
@@ -208,7 +225,9 @@ export function buildScene(w: World, art: Grafika | null = null): Scene {
       y -= k;
     }
   }
-  const styles = w.buildings.map((b) => styleOf(b, w, art?.blok ?? null));
+  // kontekst zabudowy (rząd kamienic) tylko wtedy, gdy grafika ma wyglądy budynków
+  const konteksty = art?.budynki ? kontekstyLookow(w) : null;
+  const styles = w.buildings.map((b, i) => styleOf(b, w, art, konteksty?.[i]));
   const doors = new Map<number, Dir>();
   for (const b of w.buildings) for (const e of b.entrances) doors.set(e.tile, e.dir);
 
@@ -261,7 +280,7 @@ export function buildScene(w: World, art: Grafika | null = null): Scene {
   const tr = w.trees;
   for (const list of treesBy) list.sort((a, b) => tr[a].y - tr[b].y || tr[a].x - tr[b].x);
   const treeGone = new Uint8Array(w.trees.length);
-  const chunkArt = art && { teren: art.teren, blok: art.blok, dach: art.dach };
+  const chunkArt = art && { teren: art.teren, blok: art.blok, dach: art.dach, budynki: art.budynki };
   return {
     w,
     south,
