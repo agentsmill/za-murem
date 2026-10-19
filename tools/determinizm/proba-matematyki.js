@@ -5,11 +5,15 @@
      /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc tools/determinizm/proba-matematyki.js
    Stan gry stoi na kratce (pionki na środkach kafelków), więc odległości liczymy z różnic połówek całkowitych w ±200.
    kwadrat_*: ile razy x ** 2 różni się od x * x (kratka i losowe liczby); pow2_kratka to samo dla Math.pow(x, 2).
+   Liczbę obrotów pętli można zmniejszyć przez globalną N_PROBY (testy).
    hypot_*_rozne_od_sqrt: ile razy Math.hypot(a, b) różni się od Math.sqrt(a * a + b * b).
    hypot_na_progu: ile odległości na kratce jest dokładnie liczbą całkowitą (trójki pitagorejskie, osie), a sqrt_progowe:
    w ilu z nich Math.hypot nie zwraca tej liczby, czyli porównanie `hypot(…) <= próg` w tym silniku daje fałsz tam, gdzie
    dokładna arytmetyka daje prawdę. Wyniki z 19.10.2026: docs/ocena/determinizm-silnikow.md. */
 const probaMatematyki = () => {
+  // Math.pow przez zmienną: Biome zamienia bezpośrednie Math.pow(x, 2) na x ** 2, a wtedy wiersz „Math.pow” raportu
+  // mierzyłby ten sam operator co wiersz „**” (pilnuje tego tests/unit/determinizm-proba.test.ts)
+  const pow = Math.pow;
   const mulberry = (ziarno) => () => {
     ziarno = (ziarno + 0x6d2b79f5) | 0;
     let t = Math.imul(ziarno ^ (ziarno >>> 15), 1 | ziarno);
@@ -17,7 +21,7 @@ const probaMatematyki = () => {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
   const los = mulberry(12345);
-  const N = 2000000;
+  const N = globalThis.N_PROBY ?? 2000000;
   const wynik = {
     N,
     kwadrat_kratka: 0,
@@ -33,7 +37,7 @@ const probaMatematyki = () => {
     const dy = Math.round(los() * 800 - 400) / 2;
     const suma = dx * dx + dy * dy;
     if (dx ** 2 !== dx * dx) wynik.kwadrat_kratka++;
-    if (dx ** 2 !== dx * dx) wynik.pow2_kratka++;
+    if (pow(dx, 2) !== dx * dx) wynik.pow2_kratka++;
     const h = Math.hypot(dx, dy);
     const pierwiastek = Math.sqrt(suma);
     if (h !== pierwiastek) wynik.hypot_kratka_rozne_od_sqrt++;
