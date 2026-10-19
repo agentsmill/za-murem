@@ -18,6 +18,7 @@ import {
   krzywaUmiejetnosci,
   TECH_BY,
   TEMPO_BAZOWE,
+  type TechNowa,
   tempoOsoby,
   wiedza,
 } from '../../src/sim/badania.ts';
@@ -55,11 +56,25 @@ const osoba = (skills: Partial<Record<Dom, number>>, traits: string[] = []): Pic
   traits,
 });
 
+/** czynności przywracające dane technologii po teście, w kolejności odwrotnej do zmian */
+let przywroc: Array<() => void> = [];
+
+/** zmienia pole technologii na czas jednego testu: zapamiętuje, czy pole było i jaką miało wartość, a po teście
+    przywraca dokładnie to (brak pola zostaje brakiem pola) */
+function tymczasowo<K extends 'wymagaBudowli' | 'tryb'>(id: string, pole: K, wartosc: TechNowa[K]): void {
+  const t = TECH_BY[id];
+  const mialo = Object.hasOwn(t, pole);
+  const stara = t[pole];
+  t[pole] = wartosc;
+  przywroc.push(() => {
+    if (mialo) t[pole] = stara;
+    else delete t[pole];
+  });
+}
+
 afterEach(() => {
-  // testy kartek dopisują wymagania i tryb do istniejącej technologii; po każdym wracają dane z modułu
-  delete TECH_BY.t_okna.wymagaBudowli;
-  delete TECH_BY.t_okna.tryb;
-  delete TECH_BY.t_spawanie.wymagaBudowli;
+  for (const f of przywroc.reverse()) f();
+  przywroc = [];
 });
 
 describe('badania: wiedza osady', () => {
@@ -73,23 +88,28 @@ describe('badania: wiedza osady', () => {
     expect(wiedza(st, 'it')).toBe(0);
   });
 
-  it('lokator siedziby z osobą się liczy, lokator bez osoby i obcy z osobą nie', () => {
+  it('lokator siedziby z osobą się liczy, lokator bez osoby i pionki spoza osady z osobą nie', () => {
     const st = stan();
     // osoba z najwyższą umiejętnością leży na końcu listy, więc wyjdzie przy błędnym indeksie −1 (at(-1))
     st.people.push({ ...structuredClone(st.people[0]), id: 'ostatnia', skills: { bud: 5 } });
-    const lokator = st.pawns.find((q) => q.kind === 'resident' && q.person < 0);
-    expect(lokator).toBeDefined();
+    const iOstatnia = st.people.length - 1;
+    const bezOsoby = st.pawns.filter((q) => q.kind === 'resident' && q.person < 0);
+    expect(bezOsoby.length).toBeGreaterThanOrEqual(3);
+    const [lokator, sasiad, szabrownik] = bezOsoby;
+    expect(wiedza(st, 'bud')).toBe(0);
+
+    // ta sama osoba liczy się u lokatora siedziby, a u pionków spoza osady nie
+    lokator.person = iOstatnia;
+    expect(wiedza(st, 'bud')).toBe(5);
+    lokator.person = -1;
+    sasiad.kind = 'sasiad';
+    sasiad.person = iOstatnia;
+    szabrownik.kind = 'szabrownik';
+    szabrownik.person = iOstatnia;
     expect(wiedza(st, 'bud')).toBe(0);
 
     dajOsobeLokatorowi(st, { cieplo: 2 });
     expect(wiedza(st, 'cieplo')).toBe(2);
-
-    // sąsiad z osobą (np. w trakcie spotkania) nie jest z osady, choćby osoba była najlepsza w dziedzinie
-    const sasiad = st.pawns.find((q) => q.kind === 'resident' && q.person < 0);
-    expect(sasiad).toBeDefined();
-    if (!sasiad) return;
-    sasiad.kind = 'sasiad';
-    sasiad.person = st.people.length - 1;
     expect(wiedza(st, 'bud')).toBe(0);
   });
 
@@ -176,7 +196,7 @@ describe('badania: stany kartek', () => {
   it('technologia z innego trybu gry jest odwrócona', () => {
     const st = stan();
     zarzad(st, 0).o.skills = { bud: 1 };
-    TECH_BY.t_okna.tryb = 'zombie';
+    tymczasowo('t_okna', 'tryb', 'zombie');
     expect(kartka(st, 't_okna', 'zwykly').stan).toBe('odwrocona');
     expect(kartka(st, 't_okna', 'zombie').stan).toBe('do_wziecia');
   });
@@ -193,7 +213,7 @@ describe('badania: stany kartek', () => {
   it('wymagana budowla działa jak wymagana technologia: najpierw, dopóki nie stoi', () => {
     const st = stan();
     zarzad(st, 0).o.skills = { bud: 1 };
-    TECH_BY.t_okna.wymagaBudowli = ['warsztat'];
+    tymczasowo('t_okna', 'wymagaBudowli', ['warsztat']);
     const najpierw = kartka(st, 't_okna', 'zwykly');
     expect(najpierw.stan).toBe('najpierw');
     expect(najpierw.brakuje).toEqual(['warsztat']);
@@ -204,7 +224,7 @@ describe('badania: stany kartek', () => {
 
   it('brakuje wymienia najpierw technologie, potem budowle', () => {
     const st = stan();
-    TECH_BY.t_spawanie.wymagaBudowli = ['warsztat'];
+    tymczasowo('t_spawanie', 'wymagaBudowli', ['warsztat']);
     expect(kartka(st, 't_spawanie', 'zwykly').brakuje).toEqual(['t_okna', 'warsztat']);
   });
 
