@@ -69,7 +69,7 @@ npm run bot:v03      # wzorzec balansu na oryginale 0.3 [-- ziarno [dni]]
 npm run bot:surowce  # raport gospodarki: wraki i warsztat z graczem fali 1 i bez nich, 5 dni [-- ziarno [dni]]
 npm run shots        # zrzuty w Chromium do shots/ [-- filtr] [--dist] [--kod] [--dalej: padły scenariusz dostaje drugą próbę, przebieg idzie dalej]
 npm run perf         # klatki ze 150 pionkami [-- pionki [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5] [--demo=lanciego|atrapa-budynki] [--kod]
-npm run demos        # dema offline public/demo/ z tests/fixtures/mvt
+npm run demos        # dema offline public/demo/ z tests/fixtures/mvt: dokłada <klucz>-kwadraty.json (sąsiedzi domu); zatwierdzonych dem osiedli nie przepisuje (są świadomie starsze od toGeoT), robi to dopiero `-- --przegeneruj`
 npm run atlasy       # atlasy grafiki z PixelLab do public/assets/ z assets/raw (tylko zatwierdzone): [-- --sprawdz]
 npm run animacje     # pobiera animacje postaci z PixelLab do assets/raw (zamówienia idą przez MCP): [-- id ...], potem npm run atlasy
 node tools/trzy-noce.ts        # trzy pierwsze noce zarządu na atrapie symulacji [ziarno] [--n liczba_ziaren]
@@ -86,6 +86,8 @@ ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default
 ## Architektura
 
 Świat: adres → `src/world/load.ts` (Nominatim, kafelki wektorowe OpenFreeMap z=14, zapasowo Overpass; albo gotowe demo z `public/demo/`) → `Geo` w metrach względem adresu → `buildWorld` z `src/world/world.ts`: siatka 1 m o boku 384 m (dane z promienia 288 m, zapas na obrót), obrót do dominującego kierunku ścian, teren, budynki, drzewa, wnętrze siedziby, siatka z bramą wokół podwórka. Świat wynika tylko z danych osiedla i ziarna, więc nie trafia do zapisu.
+
+Miasto z kwadratów (projekt `docs/superpowers/specs/2026-10-19-miasto-z-kwadratow-design.md`, etap 1, zadania 1–5; gra jeszcze tego nie woła, rysowanie i `?kwadraty=` to zadania 6–8): `src/world/kwadraty.ts` to układ kwadratów 384 m na jednej siatce wokół domu (`Uklad`: adres, kąt obrotu domu, bok; klucz „sx,sy”; środek kwadratu w metrach od adresu przed obrotem; kafelki z=14 w promieniu 720 m od środka; ziarno kwadratu), `src/world/geoKwadratu.ts` składa geo kwadratu z kafelków (`toGeoT` z opcjami `srodek` i `caleBudynki`: budowla złapana przez filtr wchodzi w całości), a `buildKwadrat` w `src/world/world.ts` buduje z niego świat bez siedziby, siatki i wnętrza na tym samym rdzeniu terenu co dom (`rastrujTeren` na oknie przesuniętym o `sx·384`, `sy·384`; skrawek budynku przy granicy zostaje, gdy cały budynek ma co najmniej 3 kafelki). Dom wygrywa na szwie: jego świat jest bit w bit jak dawniej (`tests/unit/kwadraty-dom.test.ts` trzyma odciski z nietkniętego kodu i musi przechodzić po każdej zmianie w `src/world`), a budynki wspólne z domem prostują się jak w domu (`straightenZDomem`, dopasowanie po tych samych pierścieniach, więc `buildKwadrat` dostaje SUROWE geo domu w `geoDomu`). Dema mają sąsiadów w `public/demo/<klucz>-kwadraty.json` (`loadDemoKwadraty`).
 
 Symulacja (`src/sim/`): `createSim(world, seed, opts)` zwraca `SimState`, zwykły obiekt JSON z ziarnem i kolejką poleceń w środku. `new Sim(world, st)` dokłada to, czego w stanie nie ma (przechodniość dla każdego rodzaju pionka, regiony, A*, statystyki), a `sim.step()` robi jeden stały krok: 20 na sekundę przy 1×, 800 na godzinę gry. Interfejs i boty wysyłają polecenia przez `sim.push(...)`. `sim.ts` ma ponad 4500 linii (pionki wszystkich rodzajów, rzeczy, prace, ciepło, potrzeby, walka, szwendacze); moduły obok to w większości czyste funkcje.
 

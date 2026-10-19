@@ -12,6 +12,13 @@
 
 **Kolejność (decyzja nocnego integratora, 19.10.2026):** teraz tylko zadania 1–5 (układ, geo, rastrowanie, świat kwadratu, dema), na gałęzi od `noc-integracja` fe13220. Zadania 6–8 (rysowanie, parametr, zrzuty) dopiero na bazie, w której jest gałąź `m4-pietra`, bo zmienia te same pliki rysowania.
 
+**Stan po zadaniach 1–5 (budowa na gałęzi `miasto-kwadraty`, wpis w `docs/POSTEP.md`):** zadania 1–5 i reguła „dom wygrywa na szwie” są wykonane i przeszły bramkę; zadania 6–8 czekają na bazę z `m4-pietra`. Odstępstwa od tekstu planu, na których stoją następne zadania:
+- `buildKwadrat(geo, { seed, uklad, sx, sy, geoDomu? })`: opcja nazywa się `geoDomu` i przyjmuje SUROWE geo domu (to samo, co dostał `buildWorld`), a nie `dom` po `przygotujGeo`. Dopasowanie budynków domu do budynków sąsiada idzie po identycznych pierścieniach po obrocie (działa na demach bez kluczy), a obrót domu dostają kawałki sąsiada, jeśli żaden ich wierzchołek nie ruszy się o więcej niż 3,5 m (`straightenZDomem` w `rotate.ts`). Zadanie 7 przekazuje więc `geoDomu: geo`, nie `przygotujGeo(geo, world.angle)`.
+- Reguła skrawków w `rastrujTeren(geo, size, ox, oy, { skrawki: true })` jest ze specyfikacji (skrawek 1–2 kafelków zostaje, gdy cały budynek ma co najmniej 3 własne kafelki), nie z heurystyki „obrys co najmniej 3 m² i przecina granicę”; heurystyka dawała niezgodność sąsiednich okien na prawdziwych danych.
+- `props` świata kwadratu to same wraki (12–24 na kwadrat); `pois`, drzewa i wraki są we współrzędnych kwadratu; `interior` i `fence` są puste, `hq` i `dryTree` to −1 (kontrakt w opisie `World`).
+- `public/demo/<klucz>-kwadraty.json`: przymorze i zielonki z ośmioma sąsiadami, lanciego z czterema bocznymi (osiem miałoby 1,6 MB); zatwierdzone dema osiedli zostają bajt w bajt (`npm run demos` ich nie przepisuje bez `--przegeneruj`).
+- Zadania 6–8 dostają kwadraty z `kwadraty.ts` (`BOK_KWADRATU`, `kluczKwadratu`, `sasiedzi8`), świat z `buildKwadrat` i scenę z `buildScene` (test w `kwadraty-swiat.test.ts` pilnuje, że działa na świecie kwadratu).
+
 ## Global Constraints
 
 - Gałąź od `noc-integracja` fe13220 (to `pelna-gra` z mapą miasta i budynkami), w osobnym drzewie roboczym. Lokalne commity swobodnie; nic na GitHub ani na serwer (scala koordynator).
@@ -441,7 +448,7 @@ Expected: FAIL
 
 - [ ] **Step 3: Implement**
 
-Po zbudowaniu domu jak dziś: dla dema `loadDemoKwadraty`; dla prawdziwego adresu nic się nie pobiera, kwadraty pokazują „brak danych” (mgła z napisem). Dla każdego kwadratu z danymi `buildKwadrat` (z `dom: przygotujGeo(geo domu, world.angle)`), `buildScene`, `view.dodajKwadrat`. Symulacja dostaje tylko dom, więc kliknięcie i polecenie poza domem gra ignoruje; `cam=all` obejmuje wszystkie kwadraty.
+Po zbudowaniu domu jak dziś: dla dema `loadDemoKwadraty`; dla prawdziwego adresu nic się nie pobiera, kwadraty pokazują „brak danych” (mgła z napisem). Dla każdego kwadratu z danymi `buildKwadrat` (z `geoDomu: geo domu`, czyli surowe geo, nie `przygotujGeo`), `buildScene`, `view.dodajKwadrat`. Symulacja dostaje tylko dom, więc kliknięcie i polecenie poza domem gra ignoruje; `cam=all` obejmuje wszystkie kwadraty.
 
 - [ ] **Step 4: Run test and the game**
 
