@@ -27,6 +27,10 @@ services:
     restart: unless-stopped
     environment:
       - ZM_ZRODLA=https://${SITE}
+      # restart planowy co 48 godzin: serwer kończy się czysto, a restart: unless-stopped podnosi go od nowa na tej samej bazie
+      - ZM_RESTART_H=48
+      # codzienne kopie bazy na tym samym wolumenie (7 dni, 3:00 UTC); chronią przed pomyłką, nie przed utratą dysku
+      - ZM_KOPIE=/dane/kopie
     volumes:
       - dane:/dane
 

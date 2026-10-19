@@ -45,6 +45,15 @@ ZM_IP=1.2.3.4 deploy/hetzner/wdroz.sh
 
 Tak gra stała w nocy z 17 na 18.10.2026 na serwerze `za-murem` (kontekst `phpbotbot`, dawny `phpbotbot-staging`); od rana ten serwer tylko przekierowuje stary adres na nowy, a jego kontener `api` jest zatrzymany.
 
+## Restart planowy i kopie bazy
+
+Oba pliki compose ustawiają serwerowi gry (`api`) dwie zmienne, opisane w `server/README.md`:
+
+- `ZM_RESTART_H=48`: co 48 godzin serwer kończy się czysto, a `restart: unless-stopped` podnosi go od nowa na tej samej bazie. Odświeża się proces, nic nie ginie; gracz traci połączenie na kilka sekund. Docker bez orkiestratora tylko oznacza kontener jako niezdrowy (`HEALTHCHECK` z `server/Dockerfile`, bez drugiego w compose) i go nie restartuje, więc zawieszony serwer złapie dopiero ten restart albo ręczny `docker compose restart api`.
+- `ZM_KOPIE=/dane/kopie`: codziennie o 3:00 UTC (i po starcie, gdy tej godziny jeszcze nie było) kopia bazy na tym samym wolumenie `dane`, zostaje 7 ostatnich dni (`ZM_KOPIE_DNI`, `ZM_KOPIA_GODZINA`). Kopie chronią przed pomyłką (usunięte konto, zepsute wdrożenie), nie przed utratą dysku albo maszyny; kopia poza maszyną to osobna decyzja (miejsce, dostęp, koszt). Usunięte konto znika z kopii po 7 dniach. Przywracanie krok po kroku: `server/README.md`, „Przywracanie z kopii”.
+
+Obie zmienne wejdą na serwer przy najbliższym wdrożeniu (`wdroz.sh` kopiuje compose), po OK Mateusza: do tego czasu działający serwer na `cergo-rw-prod` jest bez restartu planowego i bez kopii. Skrypt wdrożenia i stos cergo bez zmian.
+
 ## Bez logów dostępu
 
-Caddy gry nie zapisuje logów dostępu (adresy IP to dane osobowe). Kopia bazy gry sieciowej: `server/README.md`.
+Caddy gry nie zapisuje logów dostępu (adresy IP to dane osobowe). Kopie bazy gry sieciowej: `server/README.md`.
