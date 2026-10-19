@@ -1247,6 +1247,96 @@ describe('tryb zombie: budowa i zlecenia poza naszym terenem', () => {
   });
 });
 
+/* Przegląd końcowy (korekta „za dnia nie ma wrogów na ulicy”): reguła wyjścia sprawdza każdego wroga (szwendacz, ludzie
+   handlarza, wrogi handlarz, szabrownik) bliżej niż 10 m od celu, od osoby i od wyjścia za bramę, we wszystkich trybach;
+   praca bez polecenia osoby poza naszym terenem ustępuje wrogowi, także w drodze. */
+describe('wrogowie poza trybem zombie', () => {
+  /** wrogi człowiek na kafelku: ludzie handlarza (`zbir`) albo napadnięty handlarz; stoi (zemsta w toku, do końca daleko) */
+  function wrog(st: Sim['st'], w: World, tile: number, kind: 'zbir' | 'handlarz'): Pawn {
+    const q = spawnZombie(st, w, tile, 0);
+    q.kind = kind;
+    q.wrogi = true;
+    q.hp = 100;
+    q.job = { ...q.job!, t: kind === 'zbir' ? 'zemsta' : 'trader', phase: 1, until: st.tick + 100000 };
+    return q;
+  }
+  const postaw = (q: Pawn, tile: number, size: number, dx = 0): void => {
+    q.x = (tile % size) + 0.5 + dx;
+    q.y = Math.floor(tile / size) + 0.5;
+    q.path = [];
+    q.pi = 0;
+  };
+
+  it('bezczynny z przełącznikiem nie idzie na ulicę, gdy przy celu, przy nim albo przy bramie stoi wróg', () => {
+    for (const kind of ['zbir', 'handlarz'] as const)
+      for (const gdzie of ['przy celu', 'przy osobie', 'przy bramie'] as const) {
+        const { sim, p } = scena({ zaSiatke: true });
+        const s = prv(sim);
+        const st = sim.st;
+        const u = ulicaDaleko(sim, p, 12, 12);
+        s.addWood(u, 6);
+        const miejsce = gdzie === 'przy celu' ? u : gdzie === 'przy osobie' ? s.tileOf(p) : s.exitTile;
+        const q = wrog(st, s.w, miejsce, kind);
+        postaw(q, miejsce, s.w.size);
+        expect(s.mozeTam(p, u), `${kind} ${gdzie}`).toBe(false);
+        s.think(p);
+        expect(jaka(p), `${kind} ${gdzie}`).toBe('-');
+        // wróg odszedł: idzie
+        q.away = true;
+        s.think(p);
+        expect(jaka(p), `${kind} ${gdzie}, po odejściu`).toBe('haul');
+      }
+  });
+
+  it('praca bez polecenia osoby na ulicy ustępuje wrogowi bliżej niż 10 m, z polecenia nie', () => {
+    const trwa = (order: boolean, dx: number | null): boolean => {
+      const { sim, p } = scena({ zaSiatke: true });
+      const s = prv(sim);
+      const st = sim.st;
+      const tile = ulicaDaleko(sim, p, 12);
+      postaw(p, tile, s.w.size);
+      st.tick = tickO(2, 12);
+      if (dx !== null) postaw(wrog(st, s.w, tile, 'zbir'), tile, s.w.size, dx);
+      const j = s.newJob('chop', 0, tile, order, 1);
+      j.until = st.tick + 100000;
+      p.job = j;
+      return s.work(p, j);
+    };
+    expect(trwa(false, 8)).toBe(false);
+    expect(trwa(false, 12)).toBe(true);
+    expect(trwa(false, null)).toBe(true);
+    expect(trwa(true, 8)).toBe(true);
+  });
+
+  it('w drodze na ulicę praca bez polecenia przerywa się, gdy podejdzie wróg (dalej niż zasięg obrony, bliżej niż 10 m)', () => {
+    const przebieg = (zWrogiem: boolean): string => {
+      const { sim, p } = scena({ zaSiatke: true });
+      const s = prv(sim);
+      const st = sim.st;
+      const ulica = ulicaDaleko(sim, p, 12);
+      s.addWood(ulica, 6);
+      s.think(p);
+      expect(jaka(p)).toBe('haul');
+      until(sim, () => !s.naszTeren(s.tileOf(p)), 3000);
+      expect(s.naszTeren(s.tileOf(p))).toBe(false);
+      expect(p.pi).toBeLessThan(p.path.length);
+      const q = zWrogiem ? wrog(st, s.w, s.tileOf(p), 'zbir') : null;
+      for (let n = 0; n < 2 * 20; n++) {
+        if (q) {
+          q.x = p.x + 8;
+          q.y = p.y;
+          q.path = [];
+          q.pi = 0;
+        }
+        sim.step();
+      }
+      return jaka(p);
+    };
+    expect(przebieg(false)).toBe('haul');
+    expect(przebieg(true)).not.toBe('haul');
+  });
+});
+
 describe('budowa bez polecenia: skąd bierze materiał', () => {
   function zPlanem(opcje: { zaSiatke?: boolean; godzina?: number }) {
     const sc = scena({ rodzaje: ['budowa'], ...opcje });

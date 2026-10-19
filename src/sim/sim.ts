@@ -3643,15 +3643,15 @@ export class Sim {
   }
 
   /** Praca fali 1 albo z AUTO_JOBS, do której zarząd wziął się sam, ustępuje wrogowi na podwórku, kiedy pracujący
-      jest na zewnątrz, a w trybie zombie także szwendaczowi bliżej niż 10 m od pracującego, kiedy ten stoi poza
-      naszym terenem (praca z przełącznikiem „może wychodzić za siatkę” wraca do siedziby, zamiast czekać wśród
-      szwendaczy). Sprawdza to i work(), i marsz do celu. */
+      jest na zewnątrz, a we wszystkich trybach także wrogowi (`wrogBlisko`: szwendacz, ludzie handlarza, wrogi
+      handlarz, szabrownik) bliżej niż 10 m od pracującego, kiedy ten stoi poza naszym terenem (praca z przełącznikiem
+      „może wychodzić za siatkę” wraca do siedziby, zamiast czekać wśród wrogów). Sprawdza to i work(), i marsz do celu. */
   private yieldsToDanger(p: Pawn): boolean {
     const j = p.job;
     if (!j || !(M2_JOBS.has(j.t) || AUTO_JOBS.has(j.t)) || j.order) return false;
     const tile = this.tileOf(p);
     if (this.yardDanger() && !this.inRoom(tile)) return true;
-    return !this.naszTeren(tile) && this.szwendaczBlisko(tile);
+    return !this.naszTeren(tile) && this.wrogBlisko([tile]);
   }
 
   /** Czy noc kończy tę pracę bez polecenia: każdą poza noszeniem drewna, które nocą trwa, jeśli kafelek jego
@@ -6159,7 +6159,8 @@ export class Sim {
       zajęcie pamięta praca, a nie rzecz, bo `Thing.by` mieści jednego). false, gdy nic nie wybrano, badanie stoi
       bez wiedzy, nie ma pracowni, jest noc (po dojściu i tak by wstała: `researchWork`), miejsc brak albo nie da się
       dojść. order: z polecenia gracza, więc nie ustępuje wrogowi na podwórku, ale pilna potrzeba i noc ją przerywają.
-      Woła ją też praca ludzi i plan dnia lokatorów. */
+      Woła ją też praca ludzi i plan dnia lokatorów. Zarząd bez polecenia bierze stół tylko przy regule pracy automatu
+      (`mozeSam`, droga `idz`): pracownia w innej klatce bloku w trybie zombie i nocą odpada. */
   startResearch(p: Pawn, order = false): boolean {
     const st = this.st;
     const cur = this.researchTech();
@@ -6167,7 +6168,12 @@ export class Sim {
     if (!cur || !desk || p.away || this.night() || kartka(st, cur, modeOf(st)).stan !== 'w_toku') return false;
     if (wolneMiejsca(st.pawns, desk.id, [p.id]) < 1) return false;
     const stand = this.beside(p, desk);
-    if (stand < 0 || this.taken(p).includes(stand) || !this.go(p, stand)) return false;
+    if (stand < 0 || this.taken(p).includes(stand)) return false;
+    // zarząd bez polecenia idzie do stołu jak do każdej pracy automatu: tylko tam, gdzie wolno pracować i dojść
+    // (`mozeSam`; pracownia w innej klatce bloku w trybie zombie i nocą odpada), drogą `idz`; mieszkańcy i polecenie: `go`
+    const sam = !order && p.kind === 'core';
+    if (sam && (!this.mozeSam(p, stand) || this.zagrozone(stand))) return false;
+    if (!(sam ? this.idz(p, stand, false) : this.go(p, stand))) return false;
     this.setJob(p, this.newJob('research', desk.id, stand, order), false);
     return true;
   }
@@ -7487,18 +7493,14 @@ export class Sim {
   /** Czy pionek bez polecenia może wyjść poza nasz teren do tego kafelka (albo przejść po ulicy do innej części
       naszego terenu). Do kafelka na naszym terenie, który leży w innej jego części (inna klatka bloku), wolno
       w trybie zwykłym za dnia (`ulicaMiedzyNaszymi`). Poza tym tylko osoba z przełącznikiem „może wychodzić za
-      siatkę”, tylko za dnia (nocą nikt bez polecenia nie wychodzi) i, w trybie zombie, tylko gdy nie ma szwendacza
-      bliżej niż 10 m od celu, od samej osoby ani od wyjścia za bramę (rano stado stoi jeszcze pod siatką, a droga do
-      celu prowadzi przez bramę; sam cel bez szwendacza nie wystarcza). To jedyne miejsce reguły „za siatką”
-      (`mozeTam`, `dojdzieWDomu` i `idz` biorą ją stąd). */
+      siatkę”, tylko za dnia (nocą nikt bez polecenia nie wychodzi) i tylko gdy nie ma wroga (`wrogBlisko`: szwendacz,
+      ludzie handlarza, wrogi handlarz, szabrownik; we wszystkich trybach) bliżej niż 10 m od celu, od samej osoby ani
+      od wyjścia za bramę (rano stado stoi jeszcze pod siatką, a droga do celu prowadzi przez bramę; sam cel bez wroga
+      nie wystarcza). To jedyne miejsce reguły „za siatką” (`mozeTam`, `dojdzieWDomu` i `idz` biorą ją stąd). */
   private mozeWyjsc(p: Pawn, tile: number, trasa: Trasa = 'zwykla'): boolean {
     if (this.naszTeren(tile) && this.ulicaMiedzyNaszymi(trasa)) return true;
     if (!zaSiatke(this.st, p.person) || this.night()) return false;
-    return (
-      !this.szwendaczBlisko(tile) &&
-      !this.szwendaczBlisko(this.tileOf(p)) &&
-      !(this.exitTile >= 0 && this.szwendaczBlisko(this.exitTile))
-    );
+    return !this.wrogBlisko([tile, this.tileOf(p), this.exitTile]);
   }
 
   /** Czy pionek bez polecenia może pracować na tym kafelku: na naszym terenie zawsze, poza nim tylko tam, gdzie wolno
@@ -7568,7 +7570,26 @@ export class Sim {
     return true;
   }
 
-  /** tryb zombie: żywy szwendacz w kwadracie mniejszym niż r kafelków (max(|dx|, |dy|) < r) od kafelka */
+  /** Żywy wróg (`isEnemy`: szwendacz, szabrownik, ludzie handlarza i napadnięty handlarz; nie na wyprawie ani za
+      mapą) w kwadracie mniejszym niż r kafelków (max(|dx|, |dy|) < r) od któregoś z kafelków (ujemne się pomija), we
+      wszystkich trybach: reguła wyjścia za siatkę bez polecenia (`mozeWyjsc`) i ustępowanie pracy bez polecenia poza
+      naszym terenem (`yieldsToDanger`). Jedna pętla po pionkach na wszystkie kafelki. */
+  private wrogBlisko(tiles: readonly number[], r = 10): boolean {
+    const size = this.w.size;
+    for (const q of this.st.pawns) {
+      if (!isEnemy(q) || q.away || this.graveyard.has(q.id)) continue;
+      const t = this.tileOf(q);
+      const qx = t % size;
+      const qy = Math.floor(t / size);
+      for (const tile of tiles)
+        if (tile >= 0 && Math.max(Math.abs(qx - (tile % size)), Math.abs(qy - Math.floor(tile / size))) < r)
+          return true;
+    }
+    return false;
+  }
+
+  /** tryb zombie: żywy szwendacz w kwadracie mniejszym niż r kafelków (max(|dx|, |dy|) < r) od kafelka (reguła pracy
+      przy siatce, `zagrozone`) */
   private szwendaczBlisko(tile: number, r = 10): boolean {
     if (modeOf(this.st) !== 'zombie') return false;
     const size = this.w.size;

@@ -224,6 +224,136 @@ describe('wpis badania w WPISY', () => {
   });
 });
 
+/* Przegląd końcowy: domyślny priorytet Badań zależy od dziedziny bieżącego badania i zmienia się w grze, więc jawny wybór
+   gracza zostaje w stanie także wtedy, gdy w chwili ustawienia był równy domyślnemu. */
+describe('jawny priorytet Badań nie zwija się do domyślnego', () => {
+  /** badanie t_okna (bud); pierwsza osoba zna bud (domyślnie 1), druga tylko ciepło (domyślnie 0; jej wiedza pozwala
+      potem wybrać t_kozy) */
+  function dwie(): { sim: Sim; fachowiec: number; laik: number } {
+    const { sim, ludzie } = scena({ osoby: 2, skills: { bud: 3 } });
+    const st = sim.st;
+    const [fachowiec, laik] = ludzie.map((q) => q.person);
+    st.people[laik].skills = { cieplo: 3 };
+    expect(priorytet(st, fachowiec, 'badania')).toBe(1);
+    expect(priorytet(st, laik, 'badania')).toBe(0);
+    return { sim, fachowiec, laik };
+  }
+  /** po zmianie badania na t_kozy (ciepło): fachowiec domyślnie 0, laik 1 */
+  const naKozy = (sim: Sim): void => {
+    sim.push({ t: 'research', ids: [], tech: 't_kozy' });
+    sim.step();
+    expect(badaniaDom(sim.st)).toBe('cieplo');
+  };
+
+  it('jawne ustawienie równe domyślnemu zostaje po zmianie dziedziny badania', () => {
+    const { sim, fachowiec, laik } = dwie();
+    sim.push({ t: 'prio', ids: [], osoba: fachowiec, rodzaj: 'badania', prio: 1 });
+    sim.push({ t: 'prio', ids: [], osoba: laik, rodzaj: 'badania', prio: 0 });
+    sim.step();
+    naKozy(sim);
+    expect(priorytet(sim.st, fachowiec, 'badania')).toBe(1);
+    expect(priorytet(sim.st, laik, 'badania')).toBe(0);
+  });
+
+  it('0 dla fachowca i 1 dla laika zostają po zmianie dziedziny badania', () => {
+    const { sim, fachowiec, laik } = dwie();
+    sim.push({ t: 'prio', ids: [], osoba: fachowiec, rodzaj: 'badania', prio: 0 });
+    sim.push({ t: 'prio', ids: [], osoba: laik, rodzaj: 'badania', prio: 1 });
+    sim.step();
+    naKozy(sim);
+    expect(priorytet(sim.st, fachowiec, 'badania')).toBe(0);
+    expect(priorytet(sim.st, laik, 'badania')).toBe(1);
+  });
+});
+
+/* Przegląd końcowy: badanie bez polecenia idzie do stołu jak każda praca automatu (`idz`, `mozeSam`): pracownia może stać
+   w innej klatce bloku, do której droga prowadzi ulicą, a tej drogi automat w trybie zombie i nocą nie bierze. */
+describe('droga do pracowni w innej klatce bloku', () => {
+  interface Drogi {
+    naszeObszary(): Int32Array;
+    roomTiles: number[][];
+    tileOf(p: Pawn): number;
+    regionOf(p: Pawn): number;
+    reg: Int32Array;
+    coreBlocked: Uint8Array;
+  }
+  /** Przymorze w trybie `tryb` bez szwendaczy, dzień 2, 9:00; jedna osoba z bud 3, pracownia w pokoju innej klatki bloku
+      siedziby (osiągalnym tylko ulicą), wybrane badanie t_okna */
+  function wDrugiejKlatce(tryb: 'zwykly' | 'zombie'): { sim: Sim; p: Pawn } {
+    const sim = newGame(KLUCZ, tryb, 5);
+    sim.step();
+    const st = sim.st;
+    skonczSamouczek(sim);
+    st.tick = tickAt(2, 9);
+    st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
+    for (const q of st.pawns) if (q.kind === 'resident') q.away = true;
+    const [p, ...reszta] = core(sim);
+    for (const q of reszta) q.away = true;
+    p.needs = { ...p.needs!, food: 90, rest: 90, warm: 60 };
+    st.people[p.person].skills = { bud: 3 };
+    prv(sim).koza()!.fuel = 3 * BURN_TICKS;
+    const s = sim as unknown as Drogi;
+    const obszary = s.naszeObszary();
+    const od = obszary[s.tileOf(p)];
+    const size = w.size;
+    // pokój innej klatki: jego kafelki w innym obszarze naszego terenu, ale w tym samym obszarze mapy (dojście ulicą)
+    let at = -1;
+    for (const r of sim.house!.rooms) {
+      if (r.kind !== 'pokoj' || at >= 0) continue;
+      const tiles = new Set(s.roomTiles[r.id]);
+      const t0 = s.roomTiles[r.id][0];
+      if (obszary[t0] < 0 || obszary[t0] === od || s.reg[t0] !== s.regionOf(p)) continue;
+      at =
+        s.roomTiles[r.id].find(
+          (i) =>
+            tiles.has(i + 1) &&
+            !s.coreBlocked[i] &&
+            !s.coreBlocked[i + 1] &&
+            !st.things.some((t) => [i, i + 1].includes(t.y * size + t.x)),
+        ) ?? -1;
+    }
+    expect(at, 'pokój w innej klatce').toBeGreaterThanOrEqual(0);
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'pracownia',
+      x: at % size,
+      y: Math.floor(at / size),
+      w: 2,
+      h: 1,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    sim.push({ t: 'research', ids: [], tech: TECH });
+    sim.step();
+    expect(badaniaDom(st)).toBe('bud');
+    p.job = null;
+    p.path = [];
+    p.pi = 0;
+    st.tick = tickAt(2, 9);
+    return { sim, p };
+  }
+
+  it('w trybie zombie bez polecenia nie idzie ulicą do pracowni w innej klatce (i nie liczy drogi), z polecenia idzie', () => {
+    const { sim, p } = wDrugiejKlatce('zombie');
+    const drogi = sim.stats.paths;
+    expect(sim.startResearch(p)).toBe(false);
+    expect(p.job).toBeNull();
+    expect(sim.stats.paths).toBe(drogi);
+    expect(sim.startResearch(p, true)).toBe(true);
+    expect(p.job?.order).toBe(true);
+  });
+
+  it('w trybie zwykłym za dnia przejście chodnikiem między klatkami jest dozwolone, jak przy noszeniu materiału', () => {
+    const { sim, p } = wDrugiejKlatce('zwykly');
+    expect(sim.startResearch(p)).toBe(true);
+    expect(p.job?.t).toBe('research');
+    expect(p.job?.order).toBe(false);
+  });
+});
+
 describe('tempo badań: krzywa wspólna z pracą ludzi', () => {
   it('tempoOsoby to TEMPO_BAZOWE · tempoPoziomu · cechy (cechy tylko tu, raz)', () => {
     const o = { skills: { bud: 2 }, traits: ['pracowity'] };
