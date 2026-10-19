@@ -6,6 +6,7 @@ import { commandsAt } from '../../src/sim/orders.ts';
 import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { mockBlock, mockBlockM2, mockHouse } from './interior-mock.ts';
+import { wylaczAutomat } from './praca-pomoc.ts';
 
 const w = mockBlockM2();
 const size = w.size;
@@ -678,6 +679,8 @@ describe('M2: działanie budowli', () => {
       st.things.find((t) => t.kind === 'jedzenie')!.n = 40;
       if (kitchen) await place(st, 'kuchnia_spoleczna', roomTiles(homeRoom('kuchnia')));
       const sim = new Sim(w, st);
+      // ten test liczy jedzenie z zapasów: bezczynny zarząd nie przeszukuje pustych mieszkań (łup z jedzeniem)
+      wylaczAutomat(sim);
       let cooks = 0;
       let was = false;
       // posiłki liczone po zmianie lastMeal (ile kto zjadł, niezależnie od tego, jak najedzony był na końcu)

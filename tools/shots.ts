@@ -15,6 +15,7 @@ import type { GameMode } from '../src/gov/typy.ts';
 import { DROGI, type Droga, nazwaDrogi } from '../src/gov/zwyciestwo.ts';
 import type { ZajetaKlatka } from '../src/net/protokol.ts';
 import { LOOKI } from '../src/render/art/lookBudynku.ts';
+import { NOWE, type RodzajPracy } from '../src/sim/praca.ts';
 import { nazwaBudynkuEn } from '../src/world/classify.en.ts';
 import { klatkiBudynku, kluczBudynku } from '../src/world/klucze.ts';
 import { toGeoT } from '../src/world/mvt.ts';
@@ -735,6 +736,7 @@ const SHOTS: Shot[] = [
   ...zwyciestwoShots(),
   // Piętra (etap 1, flaga ?pietra=1): przekrój wybranego piętra ze stropem, kafelek z listą, podpowiedzi
   ...pietraShots(),
+  ...pracaShots(),
   // Kwadraty miasta obok domu (etap 1, ?kwadraty=): 3×3 wokół dem, szwy z bliska, narożnik, daleko, mgła „brak danych”, noc,
   // telefon, widok pięter w kwadracie obok, kliknięcie poza domem
   ...kwadratyShots(),
@@ -6265,6 +6267,25 @@ const SHOTS: Shot[] = [
       const word = `${menu.head} ${menu.items.join(' ')}`.match(BLOKOWE_UI)?.[0];
       if (word) throw new Error(`menu poleceń w domu ze słowem z bloku: ${word}`);
       await page.screenshot({ path: path.join(OUT, 'wydarzenia-dom-dzien2-menu.png') });
+      // Szaber (praca ludzi) przeszukuje puste pomieszczenia sam, a scenariusz ma dowieść, że działa polecenie gracza:
+      // nowe rodzaje pracy na 0 wszystkim z zarządu (jak `wylaczAutomat` w testach), a tuż przed kliknięciem pokój nie jest
+      // przeszukany ani przeszukiwany przez nikogo (praca z automatu zaczęta przed wyłączeniem)
+      const przed = await page.evaluate(
+        ([room, rodzaje]) => {
+          const sim = window.zm!.sim!;
+          for (const p of sim.st.pawns)
+            if (p.kind === 'core')
+              for (const rodzaj of rodzaje as RodzajPracy[])
+                sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj, prio: 0 });
+          return {
+            przeszukany: sim.st.apts[0].searched.includes(room as number),
+            ktosSzuka: sim.st.pawns.some((p) => p.job?.t === 'search' && p.job.target === room),
+          };
+        },
+        [spot.room, [...NOWE]] as const,
+      );
+      if (przed.przeszukany || przed.ktosSzuka)
+        throw new Error(`pokój domu przed poleceniem gracza: ${JSON.stringify(przed)} (miał być wolny)`);
       await page.click('#ctx .ctx-item:has-text("Przeszukać pokój")');
       // przeszukanie trwa około godziny gry; okna po drodze: pierwsza odpowiedź
       for (let k = 0; k < 40; k++) {
@@ -6297,13 +6318,15 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       const [hx, hy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), far);
       await page.mouse.click(hx, hy);
+      // tyle przeszukanych, ile liczy symulacja (gracz kazał przeszukać jeden pokój, ale przed poleceniem wolny komitet mógł
+      // sam przeszukać inny: praca ludzi, Szaber), nie na sztywno 1
       const card = await page
         .waitForFunction(
-          () => {
+          (n) => {
             const t = document.getElementById('card')!.textContent ?? '';
-            return t.includes('Przeszukane: 1 z') ? t : '';
+            return t.includes(`Przeszukane: ${n} z`) ? t : '';
           },
-          null,
+          done.searched,
           { timeout: 3000 },
         )
         .then((h) => h.jsonValue())
@@ -7893,8 +7916,8 @@ function tekstyPomoc(name: string, demo: string, dom: boolean): Shot {
       if (dom && word) throw new Error(`pomoc w domu ze słowem z bloku: ${word}`);
       if (!dom && !t.includes('Prowadzicie zarząd spółdzielni'))
         throw new Error('pomoc w bloku nie mówi o spółdzielni');
-      // na zrzucie część o zarządzie (w domu o komitecie) i „Na razie”
-      await page.evaluate(() => document.querySelectorAll('#sheet .help-h')[2]?.scrollIntoView({ block: 'start' }));
+      // na zrzucie część o zarządzie (w domu o komitecie) i „Na razie”: czwarta po Sterowaniu, Budowie i Pracy
+      await page.evaluate(() => document.querySelectorAll('#sheet .help-h')[3]?.scrollIntoView({ block: 'start' }));
     },
   };
 }
@@ -13501,6 +13524,1149 @@ function pietraShots(): Shot[] {
   ];
 }
 
+/** Praca ludzi w interfejsie (docs/superpowers/specs/2026-10-19-praca-ludzi-design.md, „Interfejs”): panel Pracy na
+    komputerze i telefonie, po angielsku, karta osoby ze stałym zajęciem i przełącznikiem, menu wędrowca z zaproszeniem
+    i pasek na telefonie ze wszystkimi przyciskami. Panel jest sprawdzany prawdziwymi klikami (gra stoi w pauzie, więc
+    zmiany widać dzięki poleceniom, które czekają w kolejności symulacji), a stan symulacji po minucie gry. */
+function pracaShots(): Shot[] {
+  /** zarząd do n osób: kopie pionków i osób z własnymi imionami, zawodami i umiejętnościami (tylko do zrzutów) */
+  const dopelnij = (page: Page, n: number) =>
+    page.evaluate((n) => {
+      const st = window.zm!.sim!.st;
+      const lista: [string, string, string, Record<string, number>, boolean][] = [
+        ['Bogdan', 'Kowalczyk', 'murarz', { bud: 3 }, false],
+        ['Halina', 'Wróbel', 'kucharka', { uprawa: 3, cieplo: 1 }, true],
+        ['Tomasz', 'Lis', 'elektryk', { elek: 3, bud: 1 }, false],
+        ['Agnieszka', 'Mazur', 'programistka', { it: 2, elek: 1 }, true],
+        ['Wiesław', 'Kaczmarek', 'ogrodnik', { cieplo: 3, uprawa: 2 }, false],
+        ['Krystyna', 'Zając', 'pielęgniarka', { med: 3 }, true],
+        ['Marcin', 'Sikora', 'kurier', {}, false],
+        ['Danuta', 'Pawlak', 'weterynarka', { med: 2, uprawa: 1 }, true],
+        ['Jerzy', 'Michalski', 'hydraulik', { bud: 2, cieplo: 2 }, false],
+        ['Ewa', 'Duda', 'mechaniczka samochodowa', { bud: 1, elek: 2 }, true],
+        ['Piotr', 'Czarnecki', 'kucharz', { uprawa: 2 }, false],
+        ['Alicja', 'Grabowska', 'murarka', { bud: 3, cieplo: 2 }, true],
+      ];
+      let k = 0;
+      while (st.pawns.filter((p) => p.kind === 'core').length < n) {
+        const [first, last, prof, skills, f] = lista[k % lista.length];
+        const baza = st.people[0];
+        const osoba = { ...structuredClone(baza), id: `z${k}`, first, name: `${first} ${last}`, prof, skills, f };
+        delete osoba.ref;
+        delete osoba.story;
+        delete osoba.rodzina;
+        st.people.push(osoba);
+        const wzor = st.pawns.find((p) => p.kind === 'core')!;
+        const p = structuredClone(wzor);
+        p.id = st.nextPawn++;
+        p.person = st.people.length - 1;
+        p.x += ((k % 4) - 1.5) * 0.9;
+        p.y += Math.floor(k / 4) * 0.9;
+        st.pawns.push(p);
+        k++;
+      }
+    }, n);
+
+  /** komórka tabeli: jej treść ("" dla pustej) */
+  const cyfra = (page: Page, osoba: number, rodzaj: string) =>
+    page.evaluate(
+      ([o, r]) => document.querySelector(`#pracaPanel [data-prio="${o}:${r}"]`)?.textContent?.trim() ?? 'brak',
+      [osoba, rodzaj] as const,
+    );
+  const KOLEJNOSC = ['ogien', 'kuchnia', 'budowa', 'naprawy', 'drwal', 'noszenie', 'warsztat', 'szaber'];
+
+  /** otwarcie panelu klawiszem P (komputer) albo przyciskiem (telefon) i oczekiwanie na tabelę */
+  const otworz = async (page: Page, dotyk: boolean) => {
+    if (dotyk) await page.tap('#btnPraca');
+    else await page.keyboard.press('p');
+    await page.waitForSelector('#pracaPanel [data-prio]');
+    await page.waitForTimeout(300); // animacja wysuwania
+  };
+
+  /** panel Pracy na komputerze (po polsku albo po angielsku): ten sam przebieg, inne napisy */
+  const panel = (name: string, lang: 'pl' | 'en'): Shot => ({
+    name,
+    query: '',
+    lang,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      await dopelnij(page, 6);
+      await otworz(page, false);
+      const g = await page.evaluate(() => {
+        const r = document.getElementById('pracaPanel')!.getBoundingClientRect();
+        const m = document.querySelector('.mapctl')!.getBoundingClientRect();
+        return {
+          panel: { l: r.left, r: r.right, t: r.top, b: r.bottom },
+          zoomR: m.right,
+          srodek: !!document.elementFromPoint(innerWidth * 0.4, innerHeight / 2)?.closest('#pracaPanel'),
+          rzedy: document.querySelectorAll('#pracaPanel tbody tr').length,
+          naglowki: [...document.querySelectorAll('#pracaPanel [data-kol]')].map((e) => (e as HTMLElement).dataset.kol),
+          otwarty: window.zm!.pracaPanel().open,
+          klasa: document.getElementById('app')!.classList.contains('praca-open'),
+        };
+      });
+      console.log(`  panel: ${JSON.stringify(g)}`);
+      if (!g.otwarty || !g.klasa) throw new Error('klawisz P nie otworzył panelu Pracy');
+      if (g.rzedy !== 6) throw new Error(`wierszy w tabeli: ${g.rzedy} z 6`);
+      if (g.naglowki.join() !== KOLEJNOSC.join()) throw new Error(`kolumny: ${g.naglowki.join()}`);
+      if (g.srodek) throw new Error('panel zasłania środek mapy');
+      if (g.zoomR > g.panel.l + 0.5) throw new Error('przyciski zoomu nachodzą na panel');
+      if (g.panel.r > 1440 || g.panel.b > 900) throw new Error('panel wystaje poza ekran');
+
+      // priorytet: klik przestawia 1 → 2 → 3 → 4 → pusto → 1, prawy przycisk w drugą stronę (gra stoi w pauzie)
+      const start = await cyfra(page, 0, 'ogien');
+      if (start !== '1') throw new Error(`ogień osoby 0 ma ${start} zamiast 1`);
+      const sekwencja: string[] = [];
+      for (let k = 0; k < 5; k++) {
+        await page.click('#pracaPanel [data-prio="0:ogien"]');
+        sekwencja.push(await cyfra(page, 0, 'ogien'));
+      }
+      console.log(`  klik w ogień osoby 0: ${sekwencja.join(' → ')}`);
+      if (sekwencja.join() !== '2,3,4,,1') throw new Error(`cykl priorytetu: ${sekwencja.join()}`);
+      await page.click('#pracaPanel [data-prio="0:ogien"]', { button: 'right' });
+      if ((await cyfra(page, 0, 'ogien')) !== '') throw new Error('prawy przycisk nie cofnął z 1 do pustego');
+      await page.click('#pracaPanel [data-prio="0:ogien"]', { button: 'right' });
+      if ((await cyfra(page, 0, 'ogien')) !== '4') throw new Error('prawy przycisk nie cofnął z pustego do 4');
+      // klawisze: cyfra na komórce w fokusie ustawia priorytet, a tempo gry zostaje (cyfry gry są wyłączone)
+      await page.focus('#pracaPanel [data-prio="1:szaber"]');
+      await page.keyboard.press('1');
+      if ((await cyfra(page, 1, 'szaber')) !== '1') throw new Error('cyfra 1 na komórce nie ustawiła priorytetu');
+      if ((await page.evaluate(() => window.zm!.speed())) !== 0) throw new Error('cyfra w panelu zmieniła tempo gry');
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('ArrowDown');
+      const fokus = await page.evaluate(() => document.activeElement?.getAttribute('data-prio'));
+      console.log(`  fokus po strzałkach: ${fokus}`);
+      // z ostatniej komórki wiersza strzałka w prawo wchodzi w pierwszą komórkę następnego wiersza ("2:ogien"), a w dół
+      // o wiersz niżej ("3:ogien")
+      if (fokus !== '3:ogien') throw new Error(`strzałki nie przesunęły fokusu: ${fokus}`);
+
+      // progi: plus o 5, minus o 5 (próg ma wartość z pauzy, bo polecenie jeszcze czeka)
+      const wartosc = (co: string) =>
+        page.evaluate((c) => document.querySelector(`#pracaPanel [data-wart="${c}"]`)?.textContent ?? 'brak', co);
+      if ((await wartosc('drewno')) !== '30') throw new Error(`próg drewna na starcie: ${await wartosc('drewno')}`);
+      await page.click('#pracaPanel [data-prog="drewno:+5"]');
+      if ((await wartosc('drewno')) !== '35') throw new Error('plus nie podniósł progu drewna do 35');
+      await page.click('#pracaPanel [data-prog="deski:-5"]');
+      await page.click('#pracaPanel [data-prog="deski:-5"]');
+      if ((await wartosc('deski')) !== '10') throw new Error(`minus dwa razy: deski ${await wartosc('deski')}`);
+      if (await page.evaluate(() => !!document.querySelector('#pracaPanel [data-wart="dzidy"]')))
+        throw new Error('dzidy w progach poza trybem zombie');
+
+      // „za siatkę”: w trybie zwykłym przełącznik jest domyślnie włączony u wszystkich (decyzja z 19.10.2026), klik
+      // wyłącza go osobie 1 (w stanie jawne false), reszta zostaje włączona i to widać na zrzucie
+      const wlaczone = await page.evaluate(() =>
+        [...document.querySelectorAll('#pracaPanel [data-zasiatke]')].map((e) => e.getAttribute('aria-pressed')),
+      );
+      console.log(`  przełączniki „za siatkę” na starcie: ${wlaczone.join()}`);
+      if (wlaczone.length !== 6 || wlaczone.some((x) => x !== 'true'))
+        throw new Error(`w trybie zwykłym przełączniki za siatkę nie są domyślnie włączone: ${wlaczone.join()}`);
+      await page.click('#pracaPanel [data-zasiatke="1"]');
+      const pressed = await page.getAttribute('#pracaPanel [data-zasiatke="1"]', 'aria-pressed');
+      if (pressed !== 'false') throw new Error('przełącznik za siatkę nie wyłączył się');
+      // stałe zajęcie przychodzi z karty osoby: tutaj polecenie wprost, panel pokazuje gwiazdkę po odświeżeniu
+      await page.evaluate(() => {
+        const zm = window.zm!;
+        zm.sim!.push({ t: 'stale', ids: [], osoba: 2, rodzaj: 'budowa' });
+      });
+      await page.waitForTimeout(350);
+      const stale = await page.evaluate(() =>
+        [...document.querySelectorAll('#pracaPanel .pr-c.stale')].map((e) => (e as HTMLElement).dataset.prio),
+      );
+      console.log(`  stałe zajęcie w tabeli: ${stale.join(', ')}`);
+      if (stale.join() !== '2:budowa') throw new Error(`gwiazdka stałego zajęcia: ${stale.join()}`);
+
+      // po minucie gry polecenia są w stanie symulacji, a tabela pokazuje to samo, co stan
+      const p = await page.evaluate(() => window.zm!.ff(1));
+      if (p) throw new Error(`w trakcie minuty gry otworzyło się okno: ${p}`);
+      await page.waitForTimeout(350);
+      const stan = await page.evaluate(() => {
+        const st = window.zm!.sim!.st;
+        return {
+          cmds: st.cmds.length,
+          progi: st.praca?.progi,
+          zaSiatke: st.praca?.osoby?.[1]?.zaSiatke ?? null,
+          stale: st.praca?.osoby?.[2]?.stale,
+          ogien0: st.praca?.osoby?.[0]?.prio?.ogien,
+          tabelaOgien0: document.querySelector('#pracaPanel [data-prio="0:ogien"]')?.textContent,
+          tabelaDrewno: document.querySelector('#pracaPanel [data-wart="drewno"]')?.textContent,
+        };
+      });
+      console.log(`  stan po minucie gry: ${JSON.stringify(stan)}`);
+      if (stan.cmds) throw new Error('polecenia ustawień dalej czekają w kolejce po minucie gry');
+      if (stan.progi?.drewno !== 35 || stan.progi?.deski !== 10) throw new Error('progi nie doszły do stanu symulacji');
+      if (stan.zaSiatke !== false || stan.stale !== 'budowa')
+        throw new Error('za siatkę albo stałe zajęcie nie doszły do stanu');
+      if (stan.ogien0 !== 4 || stan.tabelaOgien0 !== '4')
+        throw new Error('priorytet ognia nie jest 4 w stanie i w tabeli');
+      if (stan.tabelaDrewno !== '35') throw new Error('tabela po minucie gry pokazuje inny próg');
+
+      // nagłówek kolumny: kliknięty pokazuje, ile zleceń czeka (przełącznik „za siatkę” mają inne osoby, więc drzew jest
+      // dużo); drugi klik chowa liczbę, trzeci pokazuje znowu
+      await page.click('#pracaPanel [data-kol="drwal"]');
+      const licz = await page.evaluate(() => ({
+        badge: document.querySelector('#pracaPanel [data-kol="drwal"] .pr-n')?.textContent,
+        sim: window.zm!.sim!.ileZlecen('drwal'),
+        info: document.querySelector('#pracaPanel .pr-info')?.textContent ?? '',
+      }));
+      console.log(`  drwal: znaczek ${licz.badge}, symulacja ${licz.sim}, wiersz „${licz.info}”`);
+      if (licz.sim < 1 || licz.badge !== String(licz.sim))
+        throw new Error('liczba zleceń w nagłówku nie jest z symulacji');
+      await page.click('#pracaPanel [data-kol="drwal"]');
+      if (await page.evaluate(() => !!document.querySelector('#pracaPanel .pr-n')))
+        throw new Error('drugi klik nie schował liczby');
+      await page.click('#pracaPanel [data-kol="drwal"]');
+
+      // język: wszystkie napisy panelu w wybranym języku
+      const tekst = await page.evaluate(() => {
+        const el = document.getElementById('pracaPanel')!;
+        const attrs = [...el.querySelectorAll('[title],[aria-label]')]
+          .map((e) => `${e.getAttribute('title') ?? ''} ${e.getAttribute('aria-label') ?? ''}`)
+          .join(' ');
+        return `${el.textContent ?? ''} ${attrs}`;
+      });
+      const imiona = [
+        'Bogdan',
+        'Halina',
+        'Tomasz',
+        'Agnieszka',
+        'Wiesław',
+        'Krystyna',
+        'Kowalczyk',
+        'Wróbel',
+        'Lis',
+        'Mazur',
+        'Kaczmarek',
+        'Zając',
+      ];
+      const inne = await page.evaluate(() => window.zm!.sim!.st.people.slice(0, 4).map((o) => `${o.first} ${o.name}`));
+      const polskie = polskieLitery(tekst, [...imiona, ...inne.flatMap((x) => x.split(' '))]);
+      if (lang === 'en') {
+        console.log(`  polskie litery w panelu po angielsku: ${polskie.join(', ') || 'brak'}`);
+        if (polskie.length) throw new Error(`polskie słowa w angielskim panelu: ${polskie.join(', ')}`);
+        for (const w of ['Woodcutting', 'Hauling', 'Scavenging', 'Keep in stock'])
+          if (!tekst.includes(w)) throw new Error(`w angielskim panelu brakuje „${w}”`);
+      } else if (/Keep in stock|Woodcutting|Hauling/.test(tekst)) throw new Error('angielskie napisy w polskim panelu');
+      await page.waitForTimeout(150);
+    },
+  });
+
+  /** panel Pracy w trybie zombie: w progach są dzidy z domyślnym progiem 12 */
+  const panelZombie: Shot = {
+    name: 'praca-panel-zombie',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&tryb=zombie`);
+      await waitIdle(page);
+      await dopelnij(page, 5);
+      await otworz(page, false);
+      const dzidy = await page.evaluate(() => document.querySelector('#pracaPanel [data-wart="dzidy"]')?.textContent);
+      console.log(`  próg dzid w trybie zombie: ${dzidy}`);
+      if (dzidy !== '12') throw new Error(`próg dzid w trybie zombie: ${dzidy} zamiast 12`);
+      await page.click('#pracaPanel [data-prog="dzidy:-5"]');
+      if ((await page.textContent('#pracaPanel [data-wart="dzidy"]')) !== '7')
+        throw new Error('minus nie zmienił dzid na 7');
+      await page.click('#pracaPanel [data-kol="warsztat"]');
+      await page.waitForTimeout(150);
+    },
+  };
+
+  /** Fokus i klawisze gry po obsłudze panelu myszą (spacja pauzuje, 1–4 ustawiają tempo, priorytet stoi) i z klawiatury
+      (Tab, strzałki: cyfry 0–4 ustawiają priorytet, spacja i Enter zmieniają o jeden). Gra idzie na 1×, żeby było
+      widać pauzę i tempo. */
+  const panelFokus: Shot = {
+    name: 'praca-panel-fokus',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1.3`);
+      await waitIdle(page);
+      await dopelnij(page, 4);
+      await otworz(page, false);
+      const tempo = () => page.evaluate(() => window.zm!.speed());
+      const wPanelu = () =>
+        page.evaluate(() => {
+          const f = document.activeElement;
+          return !!f && f !== document.body && !!f.closest('#pracaPanel');
+        });
+      const wartosc = (co: string) =>
+        page.evaluate((c) => document.querySelector(`#pracaPanel [data-wart="${c}"]`)?.textContent ?? 'brak', co);
+      if ((await tempo()) !== 1) throw new Error(`gra nie idzie na 1×: tempo ${await tempo()}`);
+
+      // lead mówi, jaka jest reguła
+      const lead = await page.evaluate(() => document.querySelector('#pracaPanel .pr-klaw')?.textContent ?? '');
+      console.log(`  lead klawiatury: ${lead}`);
+      if (!/Tab i strzałki/.test(lead) || !/spacja i 1–4 znów sterują grą/.test(lead))
+        throw new Error(`lead panelu nie opisuje reguły klawiatury: ${lead}`);
+
+      // klik myszą w komórkę: priorytet 1 → 2, a fokus nie zostaje w panelu
+      const przed = await cyfra(page, 0, 'ogien');
+      await page.click('#pracaPanel [data-prio="0:ogien"]');
+      const po = await cyfra(page, 0, 'ogien');
+      console.log(`  klik w ogień osoby 0: ${przed} → ${po}, fokus w panelu: ${await wPanelu()}`);
+      if (przed !== '1' || po !== '2') throw new Error(`klik nie przestawił priorytetu: ${przed} → ${po}`);
+      if (await wPanelu()) throw new Error('komórka zachowała fokus po kliknięciu myszą');
+      // spacja pauzuje grę, a priorytet nie rusza się o jeden (natywny klik przycisku)
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 0) throw new Error(`spacja po kliknięciu nie zapauzowała gry: tempo ${await tempo()}`);
+      if ((await cyfra(page, 0, 'ogien')) !== '2') throw new Error('spacja po kliknięciu zmieniła priorytet komórki');
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 1) throw new Error(`druga spacja nie wznowiła gry: tempo ${await tempo()}`);
+      // 2 ustawia tempo gry, a nie priorytet (komórka nie ma fokusu)
+      await page.keyboard.press('2');
+      if ((await tempo()) !== 2) throw new Error(`2 po kliknięciu nie ustawiło tempa: ${await tempo()}`);
+      if ((await cyfra(page, 0, 'ogien')) !== '2') throw new Error('2 po kliknięciu ustawiło priorytet komórki');
+      await page.keyboard.press('1');
+      if ((await tempo()) !== 1) throw new Error('1 po kliknięciu nie ustawiło tempa 1×');
+
+      // to samo po prawym przycisku i po innych przyciskach panelu: plus przy progu, przełącznik „za siatkę”, nagłówek
+      await page.click('#pracaPanel [data-prio="0:ogien"]', { button: 'right' });
+      if ((await cyfra(page, 0, 'ogien')) !== '1') throw new Error('prawy przycisk nie cofnął priorytetu z 2 do 1');
+      for (const [selektor, nazwa] of [
+        ['[data-prio="0:ogien"]', 'prawy przycisk w komórkę'],
+        ['[data-prog="drewno:+5"]', 'plus przy progu'],
+        ['[data-zasiatke="1"]', 'przełącznik za siatkę'],
+        ['[data-kol="drwal"]', 'nagłówek kolumny'],
+      ] as const) {
+        await page.click(`#pracaPanel ${selektor}`, selektor.startsWith('[data-prio') ? { button: 'right' } : {});
+        if (await wPanelu()) throw new Error(`${nazwa} zostawił fokus w panelu`);
+        await page.keyboard.press('Space');
+        if ((await tempo()) !== 0) throw new Error(`spacja po „${nazwa}” nie zapauzowała gry (tempo ${await tempo()})`);
+        await page.keyboard.press('Space');
+        if ((await tempo()) !== 1) throw new Error(`spacja po „${nazwa}” nie wznowiła gry (tempo ${await tempo()})`);
+      }
+      // plus przy progu poszedł raz (30 → 35), spacje go nie powtórzyły
+      if ((await wartosc('drewno')) !== '35') throw new Error(`próg drewna po spacjach: ${await wartosc('drewno')}`);
+
+      // z klawiatury (Tab i strzałki): fokus jest na komórce, cyfry 0–4 ustawiają priorytet, tempo gry stoi
+      await page.focus('#pracaPanel [data-prio="1:szaber"]');
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('ArrowLeft');
+      await page.keyboard.press('3');
+      if ((await cyfra(page, 1, 'szaber')) !== '3')
+        throw new Error('cyfra 3 na komórce z klawiatury nie ustawiła priorytetu');
+      if ((await tempo()) !== 1) throw new Error('cyfra z klawiatury w tabeli zmieniła tempo gry');
+      if (!(await wPanelu()))
+        throw new Error('po ustawieniu cyfrą fokus uciekł z komórki (przebudowa nie oddała fokusu)');
+      // Enter zmienia o jeden (3 → 4), tempo nadal stoi
+      await page.keyboard.press('Enter');
+      if ((await cyfra(page, 1, 'szaber')) !== '4') throw new Error('Enter na komórce nie zmienił priorytetu o jeden');
+      // myszą w inną komórkę: fokus znika, spacja znów pauzuje
+      await page.click('#pracaPanel [data-prio="2:ogien"]');
+      if (await wPanelu()) throw new Error('po kliknięciu myszą po obsłudze z klawiatury komórka dalej ma fokus');
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 0) throw new Error('spacja po przejściu z klawiatury na mysz nie zapauzowała gry');
+      await page.keyboard.press('Space');
+      await page.keyboard.press('4');
+      if ((await tempo()) !== 4) throw new Error(`4 po przejściu na mysz nie ustawiło tempa: ${await tempo()}`);
+      await page.keyboard.press('1');
+      console.log('  spacja i 1–4 po myszy sterują grą, z klawiatury (Tab, strzałki) cyfry ustawiają priorytet');
+      await page.waitForTimeout(150);
+    },
+  };
+
+  /** Panel otwarty przyciskiem „Praca” (główna droga, a na telefonie jedyna): klik myszą nie zostawia fokusu na przycisku,
+      więc spacja pauzuje grę (a nie przełącza panelu), także po kliknięciu komórki i bez niego; 1–4 ustawiają tempo,
+      priorytet stoi. Z klawiatury (Enter na przycisku) fokus zostaje na przycisku. Tab spoza panelu (Shift+Tab z
+      pierwszego chipu listy ludzi, która stoi w DOM za panelem, a bez niej z przycisku zoomu) wchodzi na ostatnią
+      komórkę, a przebudowa DOM przed jakimkolwiek klawiszem w panelu nie zabiera jej fokusu. */
+  const panelFokusPrzycisk: Shot = {
+    name: 'praca-panel-fokus-przycisk',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1.3`);
+      await waitIdle(page);
+      await dopelnij(page, 4);
+      const tempo = () => page.evaluate(() => window.zm!.speed());
+      const otwarty = () => page.evaluate(() => window.zm!.pracaPanel().open);
+      const aktywny = () =>
+        page.evaluate(() => {
+          const f = document.activeElement;
+          return f && f !== document.body ? `${f.tagName}#${f.id}${f.getAttribute('data-prio') ?? ''}` : 'body';
+        });
+      if ((await tempo()) !== 1) throw new Error(`gra nie idzie na 1×: tempo ${await tempo()}`);
+      await page.click('#btnPraca');
+      await page.waitForSelector('#pracaPanel [data-prio]');
+      await page.waitForTimeout(300);
+      console.log(`  po kliknięciu „Praca”: fokus ${await aktywny()}, panel ${await otwarty()}`);
+      if ((await aktywny()) === 'BUTTON#btnPraca')
+        throw new Error('przycisk „Praca” zachował fokus po kliknięciu myszą');
+      // spacja zaraz po otwarciu pauzuje grę, panel zostaje otwarty
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 0 || !(await otwarty()))
+        throw new Error(`spacja po otwarciu przyciskiem: tempo ${await tempo()}, panel ${await otwarty()}`);
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 1) throw new Error('druga spacja nie wznowiła gry');
+      // klik komórki, spacja: pauza, panel otwarty, priorytet bez zmian; 2 ustawia tempo
+      const przed = await cyfra(page, 0, 'ogien');
+      await page.click('#pracaPanel [data-prio="0:ogien"]');
+      const po = await cyfra(page, 0, 'ogien');
+      if (przed !== '1' || po !== '2') throw new Error(`klik nie przestawił priorytetu: ${przed} → ${po}`);
+      console.log(`  po kliknięciu komórki: fokus ${await aktywny()}`);
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 0) throw new Error(`spacja po otwarciu przyciskiem i kliknięciu: tempo ${await tempo()}`);
+      if (!(await otwarty())) throw new Error('spacja zamknęła panel Pracy (kliknęła przycisk „Praca”)');
+      if ((await cyfra(page, 0, 'ogien')) !== '2') throw new Error('spacja zmieniła priorytet komórki');
+      await page.keyboard.press('Space');
+      await page.keyboard.press('2');
+      if ((await tempo()) !== 2) throw new Error(`2 po otwarciu przyciskiem nie ustawiło tempa: ${await tempo()}`);
+      if ((await cyfra(page, 0, 'ogien')) !== '2') throw new Error('2 ustawiło priorytet komórki');
+      await page.keyboard.press('1');
+
+      // Tab spoza panelu: Shift+Tab z pierwszego chipu listy ludzi (lista stoi w DOM zaraz za panelem, przed przyciskami
+      // zoomu; bez widocznej listy byłby to przycisk zoomu) wchodzi na ostatnią komórkę tabeli
+      const zaPanelem = (await page.$('#lista:not([hidden]) .lp')) ? '#lista .lp' : '#zIn';
+      await page.focus(zaPanelem);
+      await page.keyboard.press('Shift+Tab');
+      const weszlo = await aktywny();
+      console.log(`  Shift+Tab z ${zaPanelem}: fokus ${weszlo}`);
+      if (!/^BUTTON#\d+:/.test(weszlo)) throw new Error(`Shift+Tab nie wszedł na komórkę panelu: ${weszlo}`);
+      // przebudowa przed jakimkolwiek klawiszem w panelu (polecenie progu czeka w kolejce, widok się zmienia)
+      await page.evaluate(() => window.zm!.sim!.push({ t: 'prog', ids: [], co: 'drewno', n: 40 }));
+      await page.waitForTimeout(450);
+      if ((await page.textContent('#pracaPanel [data-wart="drewno"]')) !== '40')
+        throw new Error('panel się nie przebudował, scenariusz nic nie sprawdza');
+      const po2 = await aktywny();
+      console.log(`  po przebudowie: fokus ${po2}`);
+      if (po2 !== weszlo) throw new Error(`przebudowa zabrała fokus wprowadzony Tabem: ${weszlo} → ${po2}`);
+
+      // z klawiatury: Enter na przycisku „Praca” otwiera panel i zostawia fokus na przycisku
+      await page.keyboard.press('Escape');
+      if (await otwarty()) throw new Error('Esc nie zamknął panelu');
+      await page.focus('#btnPraca');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('#pracaPanel [data-prio]');
+      console.log(`  Enter na przycisku: fokus ${await aktywny()}, panel ${await otwarty()}`);
+      if (!(await otwarty()) || (await aktywny()) !== 'BUTTON#btnPraca')
+        throw new Error('Enter na przycisku nie otworzył panelu albo zabrał mu fokus');
+      await page.waitForTimeout(150);
+    },
+  };
+
+  /** panel Pracy na telefonie 390×844 z dwunastoma osobami: arkusz od dołu na całą szerokość, kolumny po 30 px (tu
+      osiem, badań jeszcze nie ma), nagłówek przyklejony, przewijanie w pionie, bez przewijania w bok */
+  const panelTelefon = (name: string, lang: 'pl' | 'en'): Shot => ({
+    name,
+    query: '',
+    w: 390,
+    h: 844,
+    lang,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      await dopelnij(page, 12);
+      await otworz(page, true);
+      const g = await page.evaluate(() => {
+        const r = (e: Element | null) => e?.getBoundingClientRect();
+        const panel = document.getElementById('pracaPanel')!;
+        const body = panel.querySelector<HTMLElement>('.bp-body')!;
+        const td = panel.querySelector('tbody td')!;
+        const th = panel.querySelector('tbody th')!;
+        const wszystkie = [...panel.querySelectorAll('tbody tr:first-child td')].map((e) =>
+          Math.round(e.getBoundingClientRect().width),
+        );
+        const p = r(panel)!;
+        return {
+          panel: { l: p.left, r: p.right, t: p.top, b: p.bottom },
+          pasekB: document.getElementById('top')!.getBoundingClientRect().bottom,
+          w: innerWidth,
+          h: innerHeight,
+          rzedy: panel.querySelectorAll('tbody tr').length,
+          kolumny: wszystkie,
+          imiona: Math.round(r(th)!.width),
+          komorka: Math.round(r(td)!.width),
+          wysokosc: Math.round(r(td)!.height),
+          poziomo: document.documentElement.scrollWidth > innerWidth || body.scrollWidth > body.clientWidth + 1,
+          przewijanie: body.scrollHeight > body.clientHeight + 4,
+          ukryte: ['.mapctl', '#hint', '.card'].map((q) => {
+            const e = document.querySelector(q);
+            return !e || getComputedStyle(e).display === 'none';
+          }),
+        };
+      });
+      console.log(`  arkusz: ${JSON.stringify(g)}`);
+      if (g.panel.l > 1 || g.panel.r < g.w - 1)
+        throw new Error(`arkusz nie na całą szerokość: ${JSON.stringify(g.panel)}`);
+      if (g.panel.b < g.h - 60 || g.panel.b > g.h)
+        throw new Error(`arkusz nie jest przy dole: ${JSON.stringify(g.panel)}`);
+      if (g.panel.t < g.pasekB)
+        throw new Error(`arkusz zasłania górny pasek: ${JSON.stringify(g.panel)} pasek do ${g.pasekB}`);
+      if (g.rzedy !== 12) throw new Error(`wierszy: ${g.rzedy} z 12`);
+      if (g.kolumny.length !== 8 || g.kolumny.some((x) => x < 29 || x > 33))
+        throw new Error(`kolumny nie po 30 px: ${g.kolumny.join()}`);
+      if (g.imiona < 70) throw new Error(`kolumna imion za wąska: ${g.imiona} px`);
+      if (g.poziomo) throw new Error('arkusz przewija się w bok');
+      if (!g.przewijanie) throw new Error('dwanaście osób mieści się bez przewijania, scenariusz nic nie sprawdza');
+      if (g.ukryte.some((x) => !x))
+        throw new Error(`pod arkuszem zostały przyciski, podpowiedź albo karta: ${g.ukryte.join()}`);
+      // przewinięte do końca: nagłówek dalej na ekranie, a wszystkie wiersze do ostatniego da się obejrzeć
+      const poNaglowku = () =>
+        page.evaluate(() => {
+          const body = document.querySelector<HTMLElement>('#pracaPanel .bp-body')!;
+          body.scrollTop = body.scrollHeight;
+          const th = document.querySelector<HTMLElement>('#pracaPanel thead th:nth-child(2)')!;
+          const b = body.getBoundingClientRect();
+          const t = th.getBoundingClientRect();
+          const ostatni = [...document.querySelectorAll('#pracaPanel tbody tr')].pop()!.getBoundingClientRect();
+          return {
+            scroll: Math.round(body.scrollTop),
+            rozjazd: Math.round(t.top - b.top),
+            trafia:
+              document
+                .elementFromPoint(t.left + t.width / 2, t.top + t.height / 2)
+                ?.closest('[data-kol]')
+                ?.getAttribute('data-kol') ?? null,
+            ostatniWidac: ostatni.bottom <= b.bottom + 1 && ostatni.top >= b.top,
+          };
+        });
+      await page.waitForTimeout(100);
+      const s = await poNaglowku();
+      console.log(`  po przewinięciu do końca: ${JSON.stringify(s)}`);
+      if (s.scroll < 100) throw new Error('arkusz się nie przewinął');
+      if (s.rozjazd < -1 || s.rozjazd > 45) throw new Error(`nagłówek uciekł z ekranu: ${s.rozjazd} px od góry pola`);
+      if (s.trafia !== 'ogien') throw new Error(`nagłówek przysłonięty (trafia ${s.trafia})`);
+      if (!s.ostatniWidac) throw new Error('ostatni wiersz nie jest widoczny po przewinięciu do końca');
+      // niska ramka (iPhone SE, pasek przeglądarki): tu tabela przewija się dalej niż do swojego nagłówka, który zostaje
+      // przyklejony do górnej krawędzi pola
+      await page.setViewportSize({ width: 390, height: 560 });
+      await page.waitForTimeout(250);
+      const niska = await poNaglowku();
+      console.log(`  w niskiej ramce (390×560): ${JSON.stringify(niska)}`);
+      if (Math.abs(niska.rozjazd) > 2)
+        throw new Error(`nagłówek nie jest przyklejony: ${niska.rozjazd} px od góry pola`);
+      if (niska.trafia !== 'ogien') throw new Error(`przyklejony nagłówek przysłonięty (trafia ${niska.trafia})`);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.waitForTimeout(250);
+      await poNaglowku();
+      // stuknięcie jak klik: ostatni wiersz, komórka szabru
+      const kto = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll<HTMLElement>('#pracaPanel tbody tr')];
+        return rows[rows.length - 1].dataset.osoba!;
+      });
+      const przed = await cyfra(page, Number(kto), 'szaber');
+      await page.tap(`#pracaPanel [data-prio="${kto}:szaber"]`);
+      const po = await cyfra(page, Number(kto), 'szaber');
+      console.log(`  stuknięcie w komórkę ${kto}:szaber: ${przed || 'puste'} → ${po || 'puste'}`);
+      if (przed === po) throw new Error('stuknięcie nie zmieniło priorytetu');
+      await page.tap('#pracaPanel [data-kol="noszenie"]');
+      await page.waitForTimeout(150);
+      // dół arkusza (ostatni wiersz, przyklejony nagłówek) jako drugi zrzut, a końcowy zrzut pokazuje górę: progi zapasu
+      await page.evaluate(() => {
+        const body = document.querySelector<HTMLElement>('#pracaPanel .bp-body')!;
+        body.scrollTop = body.scrollHeight;
+      });
+      await page.waitForTimeout(100);
+      await page.screenshot({ path: path.join(OUT, `${name}-dol.png`) });
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>('#pracaPanel .bp-body')!.scrollTop = 0;
+      });
+      await page.waitForTimeout(100);
+    },
+  });
+
+  /** Panel Pracy z kolumną „Badania” (dziewiąta, tylko gdy stoi pracownia): komputer z sześcioma osobami i telefon 390×844
+      z dwunastoma. Pracownię stawia ?badania=demo (tablica otwiera się sama i trzeba ją zamknąć). Sprawdza dziewięć
+      kolumn w kolejności `RODZAJE`, brak przewijania w bok, liczbę wolnych miejsc w nagłówku kolumny i że klik w jej
+      komórkę zmienia priorytet tak samo jak w innych. */
+  const panelBadania = (name: string, lang: 'pl' | 'en', telefon: boolean): Shot => ({
+    name,
+    query: '',
+    lang,
+    w: telefon ? 390 : undefined,
+    h: telefon ? 844 : undefined,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&badania=demo`);
+      await waitIdle(page);
+      await page.waitForSelector('#tablica:not([hidden]) .tb-kartka');
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !window.zm!.badania().open);
+      await dopelnij(page, telefon ? 12 : 6);
+      await otworz(page, telefon);
+      const g = await page.evaluate(() => {
+        const panel = document.getElementById('pracaPanel')!;
+        const body = panel.querySelector<HTMLElement>('.bp-body')!;
+        const p = panel.getBoundingClientRect();
+        const kol = panel.querySelector<HTMLElement>('[data-kol="badania"]');
+        const komorki = [...panel.querySelectorAll<HTMLElement>('tbody tr:first-child td')].map((e) =>
+          Math.round(e.getBoundingClientRect().width),
+        );
+        const th = panel.querySelector('tbody th')!.getBoundingClientRect();
+        return {
+          naglowki: [...panel.querySelectorAll<HTMLElement>('[data-kol]')].map((e) => e.dataset.kol),
+          zlecen: (kol?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+          panel: { l: Math.round(p.left), r: Math.round(p.right), t: Math.round(p.top), b: Math.round(p.bottom) },
+          okno: { w: innerWidth, h: innerHeight },
+          kolumny: komorki,
+          imiona: Math.round(th.width),
+          poziomo: document.documentElement.scrollWidth > innerWidth || body.scrollWidth > body.clientWidth + 1,
+          rzedy: panel.querySelectorAll('tbody tr').length,
+          domyslne: [...panel.querySelectorAll<HTMLElement>('[data-prio$=":badania"]')].map((e) =>
+            (e.textContent ?? '').trim(),
+          ),
+        };
+      });
+      console.log(`  panel z badaniami: ${JSON.stringify(g)}`);
+      const wszystkie = [...KOLEJNOSC, 'badania'];
+      if (g.naglowki.join() !== wszystkie.join()) throw new Error(`kolumny: ${g.naglowki.join()}`);
+      if (g.kolumny.length !== 9) throw new Error(`komórek w wierszu: ${g.kolumny.length} z 9`);
+      if (g.poziomo) throw new Error('arkusz przewija się w bok');
+      if (g.panel.l < -1 || g.panel.r > g.okno.w + 1 || g.panel.b > g.okno.h + 1)
+        throw new Error('panel wystaje z ekranu');
+      if (telefon && g.kolumny.some((x) => x < 25 || x > 33))
+        throw new Error(`kolumny nie po ~28 px: ${g.kolumny.join()}`);
+      if (telefon && g.imiona < 60) throw new Error(`kolumna imion za wąska: ${g.imiona} px`);
+      if (g.domyslne.length !== g.rzedy) throw new Error('nie każdy wiersz ma komórkę badań');
+      // klik albo stuknięcie w komórkę badań osoby 0 przestawia priorytet (osoba 0 ma umiejętność w dziedzinie badania, więc domyślnie 2 i klik daje 3; bez umiejętności komórka jest pusta)
+      const przed = await cyfra(page, 0, 'badania');
+      if (telefon) await page.tap('#pracaPanel [data-prio="0:badania"]');
+      else await page.click('#pracaPanel [data-prio="0:badania"]');
+      const po = await cyfra(page, 0, 'badania');
+      console.log(`  komórka 0:badania: ${przed || 'puste'} → ${po || 'puste'}`);
+      if (przed === po) throw new Error('klik w komórkę badań nie zmienił priorytetu');
+      // po minucie gry polecenie jest w stanie symulacji
+      const p = await page.evaluate(() => window.zm!.ff(1));
+      if (p) throw new Error(`w trakcie minuty gry otworzyło się okno: ${p}`);
+      const stan = await page.evaluate(() => window.zm!.sim!.st.praca?.osoby?.[0]?.prio?.badania ?? null);
+      console.log(`  stan: praca.osoby[0].prio.badania = ${stan}`);
+      if (stan === null) throw new Error('priorytet badań nie doszedł do stanu symulacji');
+      await page.waitForTimeout(300);
+    },
+  });
+
+  /** panel Pracy na telefonie w trybie zombie: ostrzeżenie o szwendaczach stoi w panelu (podpowiedź z `say()` chowa się pod
+      arkuszem), widać je bez przewijania i po włączeniu przełącznika „za siatkę”, a po stuknięciu nic nie nachodzi */
+  const panelTelefonZombie = (name: string, lang: 'pl' | 'en'): Shot => ({
+    name,
+    query: '',
+    w: 390,
+    h: 844,
+    lang,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&tryb=zombie`);
+      await waitIdle(page);
+      await dopelnij(page, 6);
+      await otworz(page, true);
+      // stuknięcie w „Praca” nie zostawia fokusu na przycisku
+      if (await page.evaluate(() => document.activeElement?.id === 'btnPraca'))
+        throw new Error('przycisk „Praca” zachował fokus po stuknięciu');
+      await page.tap('#pracaPanel [data-zasiatke="1"]');
+      await page.waitForTimeout(200);
+      const g = await page.evaluate(() => {
+        const panel = document.getElementById('pracaPanel')!;
+        const body = panel.querySelector<HTMLElement>('.bp-body')!;
+        const uwaga = panel.querySelector<HTMLElement>('.pr-uwaga');
+        const hint = document.getElementById('hint')!;
+        const b = body.getBoundingClientRect();
+        const u = uwaga?.getBoundingClientRect();
+        const toggle = panel.querySelector('[data-zasiatke="1"]');
+        return {
+          tekst: uwaga?.textContent ?? '',
+          widac: !!u && u.width > 0 && u.top >= b.top - 1 && u.bottom <= b.bottom + 1,
+          hintUkryty: getComputedStyle(hint).display === 'none',
+          hintTekst: hint.textContent ?? '',
+          wlaczony: toggle?.getAttribute('aria-pressed'),
+          poziomo: document.documentElement.scrollWidth > innerWidth || body.scrollWidth > body.clientWidth + 1,
+        };
+      });
+      console.log(`  ostrzeżenie w panelu: ${JSON.stringify(g)}`);
+      if (g.wlaczony !== 'true') throw new Error('stuknięcie nie włączyło przełącznika za siatkę');
+      if (!g.hintUkryty) throw new Error('podpowiedź nie jest schowana pod arkuszem, scenariusz nic nie sprawdza');
+      const oczekiwane = lang === 'en' ? 'shamblers outside the fence' : 'szwendacze';
+      if (!g.tekst.toLowerCase().includes(oczekiwane)) throw new Error(`brak ostrzeżenia w panelu: „${g.tekst}”`);
+      if (!g.widac) throw new Error('ostrzeżenie jest poza widocznym polem panelu');
+      if (g.poziomo) throw new Error('arkusz przewija się w bok');
+      await page.waitForTimeout(150);
+    },
+  });
+
+  /** Panel Pracy, gdy nikt w zarządzie nie ma Ognia (przegląd końcowy pracy ludzi): wszystkim Ogień na 0 (gra stoi,
+      więc tabela pokazuje polecenia z kolejki), nad tabelą stoi linia `data-uwaga="ogien"` w polu widzenia panelu;
+      jedna osoba z Ogniem 1 ją chowa, a zrzut pokazuje panel z ostrzeżeniem (komputer i telefon). */
+  const panelBezOgnia = (name: string, lang: 'pl' | 'en', telefon: boolean): Shot => ({
+    name,
+    query: '',
+    lang,
+    ...(telefon ? { w: 390, h: 844 } : {}),
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      await dopelnij(page, telefon ? 12 : 6);
+      await otworz(page, telefon);
+      const ustawOgien = (prio: number, tylko?: number) =>
+        page.evaluate(
+          ([pr, t]) => {
+            const sim = window.zm!.sim!;
+            for (const p of sim.st.pawns)
+              if (p.kind === 'core' && (t < 0 || p.person === t))
+                sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'ogien', prio: pr as 0 | 1 });
+          },
+          [prio, tylko ?? -1] as const,
+        );
+      const stan = () =>
+        page.evaluate(() => {
+          const panel = document.getElementById('pracaPanel')!;
+          const body = panel.querySelector<HTMLElement>('.bp-body') ?? panel;
+          const uwaga = panel.querySelector<HTMLElement>('[data-uwaga="ogien"]');
+          const tabela = panel.querySelector('table')!.getBoundingClientRect();
+          const b = body.getBoundingClientRect();
+          const u = uwaga?.getBoundingClientRect();
+          return {
+            tekst: uwaga?.textContent ?? '',
+            widac: !!u && u.width > 0 && u.top >= b.top - 1 && u.bottom <= b.bottom + 1,
+            nadTabela: !!u && u.bottom <= tabela.top + 1,
+            poziomo: document.documentElement.scrollWidth > innerWidth || body.scrollWidth > body.clientWidth + 1,
+          };
+        });
+      // jedna osoba z Ogniem: ostrzeżenia nie ma; wszyscy bez Ognia: jest
+      await ustawOgien(0);
+      await ustawOgien(1, 0);
+      await page.waitForTimeout(400);
+      const zJedna = await stan();
+      if (zJedna.tekst) throw new Error(`ostrzeżenie mimo osoby z Ogniem: „${zJedna.tekst}”`);
+      await ustawOgien(0, 0);
+      await page.waitForTimeout(400);
+      // ostrzeżenie na górze treści panelu: przewinięcie do początku, jak po otwarciu
+      await page.evaluate(() => {
+        const body = document.querySelector<HTMLElement>('#pracaPanel .bp-body');
+        if (body) body.scrollTop = 0;
+      });
+      const g = await stan();
+      console.log(`  ostrzeżenie bez Ognia: ${JSON.stringify(g)}`);
+      const oczekiwane = lang === 'en' ? 'nobody on the board has fire' : 'nikt w zarządzie nie ma włączonego ognia';
+      if (!g.tekst.toLowerCase().includes(oczekiwane)) throw new Error(`brak ostrzeżenia: „${g.tekst}”`);
+      if (!g.widac) throw new Error('ostrzeżenie jest poza widocznym polem panelu');
+      if (!g.nadTabela) throw new Error('ostrzeżenie nie stoi nad tabelą');
+      if (g.poziomo) throw new Error('panel przewija się w bok');
+      await page.waitForTimeout(150);
+    },
+  });
+
+  /** „Jak grać” z menu: część „Praca” mówi o panelu Pracy i klawiszu P (na telefonie tylko o przycisku), po polsku
+      i po angielsku; zrzut pokazuje tę część */
+  const pomoc = (name: string, lang: 'pl' | 'en', telefon: boolean): Shot => ({
+    name,
+    query: '',
+    lang,
+    w: telefon ? 390 : undefined,
+    h: telefon ? 844 : undefined,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      if (telefon) await page.tap('#btnMenu');
+      else await page.click('#btnMenu');
+      await page.click('#sheet [data-act="menu-help"]');
+      await page.waitForSelector('#sheet .help');
+      const g = await page.evaluate(() => {
+        const naglowki = [...document.querySelectorAll<HTMLElement>('#sheet .help-h')];
+        const h = naglowki.find((e) => /^(Praca|Work)$/.test(e.textContent ?? ''));
+        h?.scrollIntoView({ block: 'start' });
+        const lista = h?.nextElementSibling;
+        return { naglowki: naglowki.map((e) => e.textContent), tekst: lista?.textContent ?? '' };
+      });
+      console.log(`  część „Praca” w pomocy: ${g.tekst.slice(0, 110)}…`);
+      if (!g.tekst) throw new Error(`w pomocy nie ma części Praca: ${g.naglowki.join(', ')}`);
+      const klawisz = lang === 'en' ? /the P key/ : /klawisz P/;
+      if (klawisz.test(g.tekst) === telefon)
+        throw new Error(`klawisz P w pomocy: ${klawisz.test(g.tekst)} przy telefon=${telefon}`);
+      if (lang === 'en' && /[ąćęłńóśźż]/i.test(g.tekst)) throw new Error('polskie litery w angielskiej pomocy');
+      await page.waitForTimeout(150);
+    },
+  });
+
+  /** zaznaczenie osoby z zarządu przez kliknięcie w głowę (kamera na niej) */
+  const zaznacz = async (page: Page, nr: number, dotyk: boolean) => {
+    const a = await page.evaluate((nr) => {
+      const zm = window.zm!;
+      const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[nr];
+      zm.setCam(p.x, p.y, 1.3);
+      return [p.x, p.y];
+    }, nr);
+    await waitIdle(page);
+    const [x, y] = await page.evaluate(([px, py]) => window.zm!.screenOf(px, py - 0.55), a);
+    if (dotyk) await page.touchscreen.tap(x, y);
+    else await page.mouse.click(x, y);
+    await page.waitForTimeout(300);
+    if (!(await page.isVisible('#card'))) throw new Error('karta osoby nie pokazała się po zaznaczeniu');
+  };
+
+  /** karta osoby: stałe zajęcie z listy, przełącznik „za siatkę”, dopisek przy pracy bez polecenia (a w trybie zombie
+      zdanie o szwendaczach); wybór działa na pauzie, bo karta pokazuje też polecenia, które czekają w kolejności */
+  const karta = (name: string, lang: 'pl' | 'en', zombie: boolean, w?: number, h?: number): Shot => ({
+    name,
+    query: '',
+    lang,
+    w,
+    h,
+    run: async (page, base) => {
+      const dotyk = (w ?? 1440) < 640;
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3${zombie ? '&tryb=zombie' : ''}`);
+      await waitIdle(page);
+      // dzień 3, 7:00: od rana ludzie biorą pracę sami (nowe rodzaje ruszają od dnia 3 bez względu na samouczek)
+      await page.evaluate(() => {
+        window.zm!.sim!.st.tick = 32000;
+      });
+      // ktoś sam bierze pracę: szukamy w pierwszych godzinach dnia
+      let kto = -1;
+      let praca = '';
+      for (let k = 0; k < 40 && kto < 0; k++) {
+        const znaleziony = await page.evaluate(() => {
+          const st = window.zm!.sim!.st;
+          const rdzen = st.pawns.filter((p) => p.kind === 'core');
+          const nr = rdzen.findIndex(
+            (p) => !p.away && p.job && p.job.order === false && !['sleep', 'eat', 'warm'].includes(p.job.t),
+          );
+          return nr < 0 ? null : { nr, job: rdzen[nr].job!.t };
+        });
+        if (znaleziony) {
+          kto = znaleziony.nr;
+          praca = znaleziony.job;
+        } else {
+          const p = await page.evaluate(() => window.zm!.ff(3));
+          if (p) await answerFirst(page, p);
+        }
+      }
+      if (kto < 0) throw new Error('nikt nie wziął pracy sam w pierwszych godzinach gry');
+      console.log(`  osoba ${kto} sama: ${praca}`);
+      await zaznacz(page, kto, dotyk);
+      const wygladKarty = () =>
+        page.evaluate(() => {
+          const c = document.getElementById('card')!;
+          const sel = c.querySelector<HTMLSelectElement>('select[data-card="stale"]');
+          const btn = c.querySelector('[data-card="zasiatke"]');
+          return {
+            doing: c.querySelector('.doing')?.textContent ?? '',
+            sam: c.querySelector('.doing .sam')?.textContent ?? null,
+            stale: sel?.value ?? null,
+            opcje: sel ? [...sel.options].map((o) => o.textContent) : [],
+            pressed: btn?.getAttribute('aria-pressed') ?? null,
+            ostrzezenie: c.querySelector('.pk-warn')?.textContent ?? null,
+          };
+        });
+      const k0 = await wygladKarty();
+      console.log(`  karta: ${JSON.stringify(k0)}`);
+      const sam = k0.sam ?? '';
+      if (lang === 'en' ? sam !== '(on own)' : !/^\((sam|sama)\)$/.test(sam))
+        throw new Error(`dopisek przy pracy bez polecenia: ${k0.sam}`);
+      // przełącznik „za siatkę”: domyślnie włączony w trybie zwykłym, wyłączony w zombie
+      const domyslnie = String(!zombie);
+      if (k0.stale !== '' || k0.pressed !== domyslnie)
+        throw new Error(`nowa karta ma stałe zajęcie albo przełącznik inny niż domyślny: ${JSON.stringify(k0)}`);
+      if (k0.opcje.length !== 9)
+        throw new Error(`opcji stałego zajęcia: ${k0.opcje.length} z 9 (brak plus 8 rodzajów)`);
+      if (zombie !== !!k0.ostrzezenie) throw new Error(`ostrzeżenie o szwendaczach: ${k0.ostrzezenie}`);
+      // wybór z listy: karta od razu pokazuje wybór, polecenie czeka w kolejności (gra stoi)
+      await page.selectOption('#card select[data-card="stale"]', 'drwal');
+      await page.waitForTimeout(350);
+      const k1 = await wygladKarty();
+      const czeka = await page.evaluate(() => window.zm!.sim!.st.cmds.map((c) => c.t));
+      if (k1.stale !== 'drwal' || !czeka.includes('stale'))
+        throw new Error(`wybór stałego zajęcia: ${JSON.stringify(k1)} ${czeka.join()}`);
+      // przełącznik przestawia się tam i z powrotem także na pauzie; zaczyna od domyślnej, a kończy włączony: w trybie
+      // zwykłym po czterech kliknięciach (wyłącz, włącz, wyłącz, włącz: stan wraca do domyślnej, bez wpisu), w zombie po
+      // trzech (włącz, wyłącz, włącz: jawne true)
+      const klik = dotyk ? 'tap' : 'click';
+      const klikow = zombie ? 3 : 4;
+      let oczekiwany = !zombie;
+      for (let k = 0; k < klikow; k++) {
+        await page[klik]('#card [data-card="zasiatke"]');
+        oczekiwany = !oczekiwany;
+        if ((await wygladKarty()).pressed !== String(oczekiwany))
+          throw new Error(`przełącznik po kliknięciu ${k + 1}: ${(await wygladKarty()).pressed} zamiast ${oczekiwany}`);
+      }
+      if (!oczekiwany) throw new Error('scenariusz miał skończyć z włączonym przełącznikiem');
+      // po minucie gry ustawienia są w stanie symulacji, a karta mówi to samo
+      const p = await page.evaluate(() => window.zm!.ff(1));
+      if (p) await answerFirst(page, p);
+      await page.waitForTimeout(350);
+      const stan = await page.evaluate((nr) => {
+        const st = window.zm!.sim!.st;
+        const osoba = st.pawns.filter((q) => q.kind === 'core')[nr].person;
+        return {
+          stale: st.praca?.osoby?.[osoba]?.stale,
+          zaSiatke: st.praca?.osoby?.[osoba]?.zaSiatke,
+          cmds: st.cmds.length,
+        };
+      }, kto);
+      console.log(`  stan po minucie: ${JSON.stringify(stan)}`);
+      // w zombie jawne true, w trybie zwykłym wpisu nie ma (włączony to domyślna)
+      if (stan.stale !== 'drwal' || stan.zaSiatke !== (zombie ? true : undefined) || stan.cmds)
+        throw new Error('ustawienia z karty nie doszły do stanu');
+      const k2 = await wygladKarty();
+      if (k2.stale !== 'drwal' || k2.pressed !== 'true') throw new Error(`karta po minucie: ${JSON.stringify(k2)}`);
+      if (lang === 'en') {
+        const t = await page.evaluate(() => document.getElementById('card')!.textContent ?? '');
+        for (const w of ['Fixed job', 'Can go outside the fence', 'Woodcutting'])
+          if (!t.includes(w)) throw new Error(`na angielskiej karcie brakuje „${w}”`);
+      }
+      // Lista stałego zajęcia w fokusie (zamknięta, jak po Esc albo po Tabie) nie zamraża karty: potrzeby i opis pracy
+      // odświeżają się dalej, a sama lista zostaje tym samym elementem. Zmiana stałego zajęcia z zewnątrz (panel Pracy)
+      // dochodzi do listy dopiero, gdy straci fokus.
+      await page.focus('#card select[data-card="stale"]');
+      await page.evaluate((nr) => {
+        const sel = document.querySelector('#card select[data-card="stale"]') as HTMLSelectElement & {
+          __znak?: number;
+        };
+        sel.__znak = 1;
+        window.zm!.sim!.st.pawns.filter((q) => q.kind === 'core')[nr].needs!.food = 11;
+      }, kto);
+      await page.waitForTimeout(500);
+      const zam = await page.evaluate(() => {
+        const sel = document.querySelector('#card select[data-card="stale"]') as
+          | (HTMLSelectElement & { __znak?: number })
+          | null;
+        return {
+          fokus: !!sel && document.activeElement === sel,
+          ten: sel?.__znak === 1,
+          jedzenie: document.querySelector('#card .need .need-v')?.textContent,
+          wybor: sel?.value,
+          h2: document.querySelector('#card h2')?.textContent,
+        };
+      });
+      console.log(`  karta z listą w fokusie: ${JSON.stringify(zam)}`);
+      if (!zam.fokus || !zam.ten) throw new Error('karta wymieniła listę stałego zajęcia, choć miała fokus');
+      if (zam.jedzenie !== '11') throw new Error(`karta z listą w fokusie nie odświeża potrzeb: ${zam.jedzenie}`);
+      await page.evaluate((nr) => {
+        const osoba = window.zm!.sim!.st.pawns.filter((q) => q.kind === 'core')[nr].person;
+        window.zm!.sim!.push({ t: 'stale', ids: [], osoba: osoba, rodzaj: 'kuchnia' });
+      }, kto);
+      await page.waitForTimeout(450);
+      if ((await page.inputValue('#card select[data-card="stale"]')) !== 'drwal')
+        throw new Error('lista w fokusie zmieniła wybór pod ręką');
+      await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+      await page.waitForTimeout(450);
+      const poBlur = await page.inputValue('#card select[data-card="stale"]');
+      if (poBlur !== 'kuchnia') throw new Error(`lista po utracie fokusu nie dogoniła stanu: ${poBlur}`);
+      await page.waitForTimeout(150);
+    },
+  });
+
+  /** menu wędrowca po rozmowie: „Zaprosić do nas (N% szans)”, a przy pełnym zarządzie bez miejsca wyszarzone z napisem
+      „Brak miejsca” (zarząd 12 osób i mieszkańców ponad pojemność) */
+  const wedrowiec = (name: string, lang: 'pl' | 'en', pelny: boolean): Shot => ({
+    name,
+    query: '',
+    lang,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      // dzień 2, 10:00: tylko wędrowiec (handlarz i ekipa daleko)
+      await page.evaluate(() => {
+        const o = window.zm!.sim!.st;
+        o.tick = 15200;
+        o.obcy!.next = 15200 * 20;
+        o.obcy!.wnext = 15200;
+        o.obcy!.enext = 15200 * 20;
+      });
+      if (pelny) {
+        await dopelnij(page, 12);
+        // mieszkańcy ponad pojemność siedziby: zaproszenie nie ma gdzie przyjąć
+        await page.evaluate(() => {
+          const st = window.zm!.sim!.st;
+          const wzor = st.pawns.find((p) => p.kind === 'resident')!;
+          for (let k = 0; k < 40; k++) st.pawns.push({ ...structuredClone(wzor), id: st.nextPawn++ });
+        });
+      }
+      await zaznacz(page, 0, false);
+      for (let k = 0; k < 40; k++) {
+        const ok = await page.evaluate(
+          () => window.zm!.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')?.job?.phase === 1,
+        );
+        if (ok) break;
+        await page.evaluate(() => window.zm!.ff(2));
+      }
+      const pozycja = async () => {
+        const at = await page.evaluate(() => {
+          const zm = window.zm!;
+          const t = zm.sim!.st.pawns.find((p) => p.kind === 'wedrowiec')!;
+          zm.setCam(t.x, t.y - 1, 2);
+          return [t.x, t.y - 0.4];
+        });
+        await waitIdle(page);
+        return page.evaluate(([px, py]) => window.zm!.screenOf(px, py), at);
+      };
+      const menuAt = async (x: number, y: number) => {
+        await page.mouse.click(x, y, { button: 'right' });
+        await page.waitForSelector('#ctx:not([hidden])');
+        return page.locator('#ctx .ctx-item').allTextContents();
+      };
+      const [x, y] = await pozycja();
+      const przed = await menuAt(x, y);
+      console.log(`  menu przed rozmową: ${przed.join(' | ')}`);
+      if (przed.some((i) => /Zaprosić|Invite/.test(i))) throw new Error('zaproszenie jest w menu przed rozmową');
+      await page.click(`#ctx .ctx-item:has-text("${lang === 'en' ? 'Talk to the wanderer' : 'Zagadać'}")`);
+      for (let k = 0; k < 20; k++) {
+        const done = await page.evaluate(() => !!window.zm!.sim!.st.obcy!.wiesc);
+        if (done) break;
+        await page.evaluate(() => window.zm!.ff(1));
+      }
+      await page.waitForTimeout(300);
+      const [x2, y2] = await pozycja();
+      const items = await menuAt(x2, y2);
+      const off = await page.locator('#ctx .ctx-item.off').allTextContents();
+      console.log(`  menu po rozmowie: ${items.join(' | ')} (wyszarzone: ${off.join(', ') || 'nic'})`);
+      const zapros = items.find((i) => /^(Zaprosić do nas|Invite to)/.test(i));
+      if (!zapros) throw new Error('po rozmowie w menu nie ma zaproszenia');
+      if (pelny) {
+        const w = lang === 'en' ? 'No room' : 'Brak miejsca';
+        if (!off.some((t) => t.includes(w))) throw new Error(`zaproszenie nie jest wyszarzone z napisem „${w}”`);
+      } else {
+        if (off.length) throw new Error(`zaproszenie wyszarzone przy wolnym zarządzie: ${off.join(', ')}`);
+        const re = lang === 'en' ? /^Invite to join us \(\d+% chance\)$/ : /^Zaprosić do nas \(\d+% szans\)$/;
+        if (!re.test(zapros)) throw new Error(`napis zaproszenia: „${zapros}”`);
+      }
+      await page.waitForTimeout(150);
+    },
+  });
+
+  /** Górny pasek na telefonie 390×844 albo 360×740: wszystkie przyciski widoczne, w oknie, bez nachodzenia na siebie ani
+      na pola stanu i w dwóch wierszach. Zestaw przycisków zależy od gry: bez pracowni jest 10 (tempo ×5, alarm, mapa,
+      praca, budowa, menu), z pracownią doszedł „Badania” (11, ikona w pierwszym wierszu za zegarem i „Mapą”), a z flagą
+      ?pietra=1 kafelek „Piętro” (jeszcze jeden; bez flagi go nie ma). `badania` stawia pracownię przez ?badania=demo i
+      zamyka tablicę, która otwiera się sama. */
+  const pasek = (
+    name: string,
+    lang: 'pl' | 'en',
+    w = 390,
+    h = 844,
+    opcje: { badania?: boolean; pietra?: boolean } = {},
+  ): Shot => ({
+    name,
+    query: '',
+    w,
+    h,
+    lang,
+    run: async (page, base) => {
+      const { badania = false, pietra = false } = opcje;
+      await page.goto(
+        `${base}?demo=przymorze&speed=0&cam=hq,1.3${badania ? '&badania=demo' : ''}${pietra ? '&pietra=1' : ''}`,
+      );
+      await waitIdle(page);
+      if (badania) {
+        // ?badania=demo otwiera tablicę z pauzą; Esc ją zamyka i zostaje sam pasek z przyciskiem „Badania”
+        await page.waitForSelector('#tablica:not([hidden]) .tb-kartka');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !window.zm!.badania().open);
+      }
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(() => {
+        const top = document.getElementById('top')!;
+        const tb = top.getBoundingClientRect();
+        const widoczne = [...top.querySelectorAll<HTMLElement>('button, .stat')].filter((e) => {
+          const b = e.getBoundingClientRect();
+          return !e.closest('[hidden]') && getComputedStyle(e).display !== 'none' && b.width > 0 && b.height > 0;
+        });
+        const dane = widoczne.map((e) => {
+          const b = e.getBoundingClientRect();
+          return {
+            nazwa: e.id || (e.textContent ?? '').trim().slice(0, 12),
+            przycisk: e.tagName === 'BUTTON',
+            l: Math.round(b.left),
+            r: Math.round(b.right),
+            t: Math.round(b.top),
+            b: Math.round(b.bottom),
+          };
+        });
+        const nachodzi: string[] = [];
+        for (let i = 0; i < dane.length; i++)
+          for (let j = i + 1; j < dane.length; j++) {
+            const a = dane[i];
+            const c = dane[j];
+            if (a.l < c.r - 1 && c.l < a.r - 1 && a.t < c.b - 1 && c.t < a.b - 1)
+              nachodzi.push(`${a.nazwa}/${c.nazwa}`);
+          }
+        // wiersze: górne krawędzie przycisków różnią się o kilka pikseli (ikona „Badania” jest niższa od zwykłych), więc
+        // przyciski, których górne krawędzie dzieli mniej niż 12 px, stoją w jednym wierszu
+        const tops = [...new Set(dane.filter((d) => d.przycisk).map((d) => d.t))].sort((x, y) => x - y);
+        const wiersze = tops.filter((t, k) => k === 0 || t - tops[k - 1] >= 12).length;
+        const pozycja = (id: string) => dane.find((d) => d.nazwa === id);
+        return {
+          pasek: { l: Math.round(tb.left), r: Math.round(tb.right), t: Math.round(tb.top), b: Math.round(tb.bottom) },
+          okno: innerWidth,
+          przyciski: dane.filter((d) => d.przycisk),
+          poza: dane.filter((d) => d.l < 0 || d.r > innerWidth).map((d) => d.nazwa),
+          nachodzi,
+          wiersze,
+          badania: pozycja('btnResearch'),
+          budowa: pozycja('btnBuild'),
+          menu: pozycja('btnMenu'),
+          praca: pozycja('btnPraca'),
+          mapa: pozycja('btnMiasto'),
+          ukrytyBadania: document.getElementById('btnResearch')!.hidden,
+        };
+      });
+      console.log(
+        `  pasek ${JSON.stringify(r.pasek)}, przycisków ${r.przyciski.length}: ${r.przyciski.map((p) => p.nazwa).join(' ')}`,
+      );
+      console.log(
+        `  wierszy przycisków: ${r.wiersze}, nachodzą: ${r.nachodzi.join(', ') || 'nic'}, poza oknem: ${r.poza.join(', ') || 'nic'}`,
+      );
+      const oczekiwane = 10 + (opcje.badania ? 1 : 0) + (opcje.pietra ? 1 : 0);
+      for (const id of ['btnPraca', 'btnBuild', 'btnMenu', 'btnAlarm', 'btnMiasto'])
+        if (!r.przyciski.some((p) => p.nazwa === id)) throw new Error(`na pasku nie widać przycisku ${id}`);
+      if (!!r.badania !== !!opcje.badania)
+        throw new Error(
+          `przycisk „Badania” ${r.badania ? 'jest' : 'nie ma go'} na pasku, a ma ${opcje.badania ? '' : 'nie '}być`,
+        );
+      if (r.ukrytyBadania === !!opcje.badania) throw new Error(`atrybut hidden „Badania”: ${r.ukrytyBadania}`);
+      if (r.przyciski.length !== oczekiwane)
+        throw new Error(
+          `przycisków na pasku: ${r.przyciski.length} z ${oczekiwane} (tempo ×5, alarm, mapa, praca, budowa, menu${opcje.badania ? ', badania' : ''}${opcje.pietra ? ', piętro' : ''})`,
+        );
+      if (r.nachodzi.length) throw new Error(`na pasku coś na siebie nachodzi: ${r.nachodzi.join(', ')}`);
+      if (r.poza.length) throw new Error(`poza oknem: ${r.poza.join(', ')}`);
+      if (r.pasek.b > 200) throw new Error(`pasek zajmuje ${r.pasek.b} px od góry`);
+      // tempo, alarm, praca, budowa i menu mieszczą się w jednym wierszu (drugim), a „Mapa” i ikona „Badania” stoją
+      // w pierwszym za zegarem; kafelek „Piętro” (tylko z flagą) wolno mu zawinąć się niżej, jak w pietra-pasek-*
+      if (!opcje.pietra && r.wiersze > 2) throw new Error(`przyciski w ${r.wiersze} wierszach zamiast dwóch`);
+      if (!opcje.pietra && r.badania && r.menu && r.budowa) {
+        if (r.badania.t >= r.budowa.t - 8)
+          throw new Error('ikona „Badania” nie stoi w pierwszym wierszu, nad „Budowa”');
+        if (Math.abs(r.menu.t - r.budowa.t) > 3) throw new Error('„Menu” nie stoi w jednym wierszu z „Budowa”');
+        if (r.mapa && r.badania.l < r.mapa.r - 1) throw new Error('ikona „Badania” wchodzi na „Mapę”');
+      }
+    },
+  });
+
+  return [
+    panel('praca-panel', 'pl'),
+    panel('en-praca-panel', 'en'),
+    panelZombie,
+    panelFokus,
+    panelFokusPrzycisk,
+    panelTelefon('praca-panel-telefon', 'pl'),
+    panelTelefon('en-praca-panel-telefon', 'en'),
+    panelBadania('praca-panel-badania', 'pl', false),
+    panelBadania('en-praca-panel-badania', 'en', false),
+    panelBadania('praca-panel-badania-telefon', 'pl', true),
+    panelBadania('en-praca-panel-badania-telefon', 'en', true),
+    panelTelefonZombie('praca-panel-telefon-zombie', 'pl'),
+    panelTelefonZombie('en-praca-panel-telefon-zombie', 'en'),
+    panelBezOgnia('praca-panel-bez-ognia', 'pl', false),
+    panelBezOgnia('en-praca-panel-bez-ognia', 'en', false),
+    panelBezOgnia('praca-panel-bez-ognia-telefon', 'pl', true),
+    panelBezOgnia('en-praca-panel-bez-ognia-telefon', 'en', true),
+    pomoc('praca-pomoc', 'pl', false),
+    pomoc('en-praca-pomoc', 'en', false),
+    pomoc('praca-pomoc-telefon', 'pl', true),
+    karta('praca-karta', 'pl', false),
+    karta('en-praca-karta-zombie', 'en', true),
+    karta('praca-karta-telefon', 'pl', false, 390, 844),
+    wedrowiec('wedrowiec-zapros', 'pl', false),
+    wedrowiec('en-wedrowiec-zapros', 'en', false),
+    wedrowiec('wedrowiec-brak-miejsca', 'pl', true),
+    pasek('pasek-telefon', 'pl'),
+    pasek('pasek-telefon-en', 'en'),
+    pasek('pasek-telefon-360', 'pl', 360, 740),
+    // z pracownią (przycisk „Badania”): 11 przycisków, nadal dwa wiersze
+    pasek('pasek-telefon-badania', 'pl', 390, 844, { badania: true }),
+    pasek('pasek-telefon-badania-en', 'en', 390, 844, { badania: true }),
+    pasek('pasek-telefon-badania-360', 'pl', 360, 740, { badania: true }),
+    pasek('pasek-telefon-badania-360-en', 'en', 360, 740, { badania: true }),
+    // z flagą ?pietra=1 i pracownią naraz: wszystkie przyciski, jakie pasek może mieć
+    pasek('pasek-telefon-pietra-badania', 'pl', 390, 844, { badania: true, pietra: true }),
+    pasek('pasek-telefon-pietra-badania-360', 'pl', 360, 740, { badania: true, pietra: true }),
+  ];
+}
+
 /**
  * Kwadraty miasta obok domu (etap 1, ?kwadraty=): 3×3 wokół trzech dem, szwy z bliska (dom i sąsiad w jednym kadrze: budynki,
  * ulice, chodniki, woda i drzewa przecięte granicą), narożnik czterech kwadratów, daleko (poziom dalekich kawałków i
@@ -13710,8 +14876,9 @@ function kwadratyShots(): Shot[] {
 
 /** Przyciski górnego paska i przybliżania (src/ui/fokus.ts) po kliknięciu myszą nie trzymają fokusu: Chromium daje go
     każdemu klikniętemu przyciskowi, a globalna obsługa klawiszy przepuszcza spację na przycisk w fokusie, więc spacja
-    klikałaby go drugi raz (przełączała Budowę, alarm, otwierała Menu) zamiast zatrzymać grę. Z klawiatury (Enter,
-    spacja po Tabie) fokus zostaje i przycisk działa jak zwykle. */
+    klikałaby go drugi raz (przełączała Budowę, Pracę, alarm, otwierała Menu) zamiast zatrzymać grę. Z klawiatury (Enter,
+    spacja po Tabie) fokus zostaje i przycisk działa jak zwykle. Przycisk „Praca” nie ma własnego zdejmowania fokusu:
+    oddaje go tą samą obsługą co reszta paska. */
 function pasekShots(): Shot[] {
   const fokus = (page: Page) =>
     page.evaluate(() => {
@@ -13722,6 +14889,7 @@ function pasekShots(): Shot[] {
     page.evaluate(() => ({
       tempo: window.zm!.speed(),
       budowa: window.zm!.buildPanel().open,
+      praca: window.zm!.pracaPanel().open,
       okno: !document.getElementById('modal')!.hidden,
       alarm: document.getElementById('btnAlarm')!.getAttribute('aria-pressed'),
     }));
@@ -13759,18 +14927,24 @@ function pasekShots(): Shot[] {
           ['#zHome', 'siedziba'],
         ] as const) {
           await page.click(sel);
-          await spacjaZatrzymuje(page, co, { okno: false, budowa: false });
+          await spacjaZatrzymuje(page, co, { okno: false, budowa: false, praca: false });
         }
         // alarm: kliknięcie włącza, spacja zatrzymuje grę, ale nie wyłącza alarmu
         await page.click('#btnAlarm');
         await page.waitForFunction(() => document.getElementById('btnAlarm')!.getAttribute('aria-pressed') === 'true');
-        await spacjaZatrzymuje(page, 'alarm', { alarm: 'true', okno: false });
+        await spacjaZatrzymuje(page, 'alarm', { alarm: 'true', okno: false, praca: false });
         // Budowa: kliknięcie otwiera panel, spacja zatrzymuje grę, ale go nie zamyka
         await page.click('#btnBuild');
         await page.waitForFunction(() => window.zm!.buildPanel().open);
-        await spacjaZatrzymuje(page, 'Budowa', { budowa: true, okno: false });
+        await spacjaZatrzymuje(page, 'Budowa', { budowa: true, okno: false, praca: false });
         await page.keyboard.press('Escape');
         await page.waitForFunction(() => !window.zm!.buildPanel().open);
+        // Praca: kliknięcie otwiera panel, spacja zatrzymuje grę, ale go nie zamyka (przycisk nie zachował fokusu)
+        await page.click('#btnPraca');
+        await page.waitForFunction(() => window.zm!.pracaPanel().open);
+        await spacjaZatrzymuje(page, 'Praca', { praca: true, budowa: false, okno: false });
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !window.zm!.pracaPanel().open);
         // Menu i Mapa miasta otwierają okno (gra staje), Esc je zamyka; okno nie oddaje fokusu przyciskowi
         for (const [sel, co] of [
           ['#btnMenu', 'Menu'],
@@ -13801,6 +14975,15 @@ function pasekShots(): Shot[] {
         const k = await stan(page);
         if (k.budowa || k.tempo !== 2)
           throw new Error(`spacja na Budowie z fokusem z klawiatury: ${JSON.stringify(k)} (miała zamknąć panel)`);
+        // to samo na przycisku „Praca”: Enter otwiera panel i zostawia mu fokus, spacja (klik na przycisku) go zamyka
+        await page.focus('#btnPraca');
+        await page.keyboard.press('Enter');
+        if (!(await stan(page)).praca || (await fokus(page)) !== 'button#btnPraca')
+          throw new Error('Enter na przycisku Praca nie otworzył panelu albo zabrał mu fokus');
+        await page.keyboard.press('Space');
+        const kp = await stan(page);
+        if (kp.praca || kp.tempo !== 2)
+          throw new Error(`spacja na Pracy z fokusem z klawiatury: ${JSON.stringify(kp)} (miała zamknąć panel)`);
         await page.screenshot({ path: path.join(OUT, 'pasek-fokus.png') });
       },
     },

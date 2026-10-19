@@ -1,8 +1,9 @@
 /* Zrzuty i sprawdzenia listy „moich ludzi” (src/ui/lista.ts) do `npm run shots` (scenariusze lista-*): układ przy 1440,
    1280 i 1024 px, na telefonie 390×844, po angielsku i w trybie zombie; wszystkie znaczniki stanu; kliknięcie, drugie
    kliknięcie (kamera idzie za osobą), przełączanie klawiszem, osoba na wyprawie, dwanaście osób, komunikat o przybyszach
-   i panel budowy. Każdy scenariusz sam sprawdza, że lista nie nachodzi na pasek u góry, cele dnia, kartę osoby, przyciski
-   przybliżenia, minimapę, komunikat o przybyszach, panel budowy ani znacznik suchego drzewa. */
+   i panele budowy oraz Pracy (`lista-praca*`: 1440, 1280 i 1024 px po polsku i po angielsku oraz telefon). Każdy
+   scenariusz sam sprawdza, że lista nie nachodzi na pasek u góry, cele dnia, kartę osoby, przyciski przybliżenia,
+   minimapę, komunikat o przybyszach, panel budowy, panel Pracy ani znacznik suchego drzewa. */
 
 import path from 'node:path';
 import type { Page } from '@playwright/test';
@@ -121,6 +122,7 @@ async function naruszenia(page: Page): Promise<string[]> {
       ['#minimapa', 'minimapa'],
       ['#arrive', 'komunikat o przybyszach'],
       ['#buildPanel', 'panel budowy'],
+      ['#pracaPanel', 'panel Pracy'],
       ['#treeMark .treemark-t', 'znacznik suchego drzewa'],
       ['#placeBar', 'pasek stawiania'],
     ];
@@ -601,6 +603,110 @@ export function listaShots(out: string): ShotLista[] {
         await zrzut(page, 'lista-budowa');
       },
     }),
+
+    // panel Pracy po prawej (430 px; na telefonie arkusz od dołu): lista kończy się przed nim, przyciski przybliżenia
+    // i minimapa się odsuwają. Najpierw cztery osoby z kartą osoby przy 1024×768 (najciaśniej), potem osiem osób
+    // (lista zawija się w trzeci rząd) przy 1440, 1280 i 1024 px; z kartą i ośmioma osobami przy 1024×768 trzeci rząd
+    // dotyka rogu karty, co jest znanym ograniczeniem ciasnego układu (karta nachodzi tam też na cele dnia), a nie
+    // nachodzeniem listy na panel Pracy, więc tego jednego zestawu scenariusz nie sprawdza
+    ...(['pl', 'en'] as const).map((lang) =>
+      shot({
+        name: lang === 'pl' ? 'lista-praca' : 'en-lista-praca',
+        query: '',
+        w: 1024,
+        h: 768,
+        lang,
+        run: async (page, base) => {
+          const nazwa = lang === 'pl' ? 'lista-praca' : 'en-lista-praca';
+          await start(page, base);
+          await page.keyboard.press('p');
+          await page.waitForSelector('#pracaPanel [data-prio]');
+          await page.waitForTimeout(400);
+          const [id] = await chipy(page);
+          await page.click(`#lista .lp[data-pawn="${id}"]`);
+          await page.waitForTimeout(500);
+          await bezNaruszen(page, 'z panelem Pracy i kartą osoby 1024×768 (cztery osoby)');
+          await zrzut(page, `${nazwa}-karta-1024`);
+          // pierwszy Esc zamyka panel Pracy, drugi zdejmuje zaznaczenie (karta znika); potem panel otwiera się od nowa
+          await page.keyboard.press('Escape');
+          await page.keyboard.press('Escape');
+          await dolozOsoby(page, 4);
+          await page.keyboard.press('p');
+          await page.waitForSelector('#pracaPanel [data-prio]');
+          for (const [w, h] of [
+            [1440, 900],
+            [1280, 720],
+            [1024, 768],
+            [768, 1024],
+            [700, 900],
+            [641, 900],
+          ] as const) {
+            await page.setViewportSize({ width: w, height: h });
+            await page.waitForTimeout(500);
+            // sprawdzenie nachodzenia pomija schowane przeszkody, więc panel ma być naprawdę otwarty
+            if (
+              !(await page.evaluate(
+                () => window.zm!.pracaPanel().open && !document.getElementById('pracaPanel')!.hidden,
+              ))
+            )
+              throw new Error(`${w}×${h}: panel Pracy nie jest otwarty, scenariusz nic nie sprawdza`);
+            await zrzut(page, `${nazwa}-${w}`);
+            // do 940 px lista nie mieści się obok panelu i jest schowana; szerzej stoi w całości i nie nachodzi na nic
+            const widoczna = await page.evaluate(
+              () => getComputedStyle(document.getElementById('lista')!).display !== 'none',
+            );
+            if (w <= 940) {
+              if (widoczna) throw new Error(`${w}×${h}: lista powinna być schowana przy panelu Pracy`);
+              console.log(`  z panelem Pracy ${w}×${h}: lista schowana (brak miejsca obok panelu)`);
+            } else {
+              if (!widoczna) throw new Error(`${w}×${h}: lista nie powinna znikać przy panelu Pracy`);
+              await bezNaruszen(page, `z panelem Pracy ${w}×${h}`);
+            }
+          }
+          // po zamknięciu panelu lista wraca, także przy oknie, w którym była schowana
+          await page.keyboard.press('Escape');
+          await page.waitForTimeout(300);
+          if (await page.evaluate(() => getComputedStyle(document.getElementById('lista')!).display === 'none'))
+            throw new Error('lista nie wróciła po zamknięciu panelu Pracy');
+          await bezNaruszen(page, 'po zamknięciu panelu Pracy 641×900');
+        },
+      }),
+    ),
+
+    ...(['pl', 'en'] as const).map((lang) =>
+      shot({
+        name: lang === 'pl' ? 'lista-praca-telefon' : 'en-lista-praca-telefon',
+        query: '',
+        w: 390,
+        h: 844,
+        touch: true,
+        lang,
+        run: async (page, base) => {
+          await start(page, base);
+          await dolozOsoby(page, 4);
+          await page.tap('#btnPraca');
+          await page.waitForSelector('#pracaPanel [data-prio]');
+          await page.waitForTimeout(500);
+          if (!(await page.evaluate(() => window.zm!.pracaPanel().open)))
+            throw new Error('panel Pracy nie jest otwarty, scenariusz nic nie sprawdza');
+          await zrzut(page, lang === 'pl' ? 'lista-praca-telefon-arkusz' : 'en-lista-praca-telefon-arkusz');
+          // arkusz Pracy sięga prawie pod pasek: lista jest schowana, a sheet nic nie zasłania
+          if (await page.evaluate(() => getComputedStyle(document.getElementById('lista')!).display !== 'none'))
+            throw new Error('lista powinna być schowana przy arkuszu Pracy na telefonie');
+          const kicker = await page.evaluate(() => {
+            const k = document.querySelector('#pracaPanel .bp-kicker')!.getBoundingClientRect();
+            const e = document.elementFromPoint(k.left + k.width / 2, k.top + k.height / 2);
+            return !!e?.closest('#pracaPanel');
+          });
+          if (!kicker) throw new Error('nagłówek arkusza Pracy jest czymś zasłonięty');
+          console.log('  z panelem Pracy na telefonie 390×844: lista schowana, nagłówek arkusza widoczny');
+          // po zamknięciu arkusza lista wraca na swoje miejsce pod celami dnia
+          await page.tap('#pracaPanel .bp-x');
+          await page.waitForTimeout(400);
+          await bezNaruszen(page, 'po zamknięciu arkusza Pracy na telefonie');
+        },
+      }),
+    ),
 
     shot({
       // dom jednorodzinny (Zielonki, słowa „komitet ulicy”) ma inny pasek i cele: lista dalej nie nachodzi na nic

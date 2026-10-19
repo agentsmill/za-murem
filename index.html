@@ -69,7 +69,7 @@
     </div>
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
-    <!-- kafelek „Piętro” (src/ui/pietra.ts): tylko z ?pietra=1; lista pięter stoi pod nim, podpowiedź pod paskiem. Przed „Mapą miasta”, bo miasto.css opiera się na sąsiedztwie #btnMiasto + #btnBuild -->
+    <!-- kafelek „Piętro” (src/ui/pietra.ts): tylko z ?pietra=1; lista pięter stoi pod nim, podpowiedź pod paskiem. Przed „Mapą miasta”, bo miasto.css opiera się na sąsiedztwie #btnMiasto + #btnPraca (potem #btnBuild i #btnMenu) -->
     <div class="floor-sel" id="floorSel" hidden>
       <div class="floor-anchor">
         <button type="button" class="stat floor" id="btnFloor" title="Floor" aria-keyshortcuts="PageUp PageDown"><small class="stat-k">floor</small><b class="stat-v">0</b></button>
@@ -78,6 +78,7 @@
       <p class="floor-note" id="floorNote" role="status" hidden></p>
     </div>
     <button type="button" class="btn" id="btnMiasto" aria-keyshortcuts="M" aria-label="City map" title="City map: places for supply runs (M)" hidden><span class="mm-dlugi">City map</span><span class="mm-krotki">Map</span></button>
+    <button type="button" class="btn" id="btnPraca" aria-keyshortcuts="P" title="Work: priorities and stock levels (P)">Work</button>
     <button type="button" class="btn lamp" id="btnBuild" aria-keyshortcuts="B">Build</button>
     <button type="button" class="btn" id="btnResearch" title="Research board (T)" aria-keyshortcuts="T" hidden>Research</button>
     <button type="button" class="btn ghost" id="btnMenu">Menu</button>
@@ -85,6 +86,7 @@
   <section class="goals" id="goals" aria-label="Goals"></section>
   <aside class="card" id="card" hidden></aside>
   <aside class="buildpanel" id="buildPanel" aria-label="Build" hidden></aside>
+  <aside class="buildpanel pracapanel" id="pracaPanel" aria-label="Work" hidden></aside>
   <p class="hint" id="hint"></p>
   <div class="box" id="box" hidden></div>
   <div class="plan-ghost" id="ghost" hidden><span class="plan-ghost-t" id="ghostText"></span></div>

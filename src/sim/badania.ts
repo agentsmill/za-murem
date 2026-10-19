@@ -17,7 +17,10 @@
    pierwszym użyciu. Odczyty (`wiedza`, `kartka`, `tempoOsoby`, `kosztTech` i reszta) tylko czytają stan, niczego do
    niego nie dopisują, nie losują i nie znają języka bieżącego (napisy to `Tx`); jedyne wyjątki to opisane niżej
    książki: `dodajKsiazke` dopisuje `st.books`, a `ksiazkaZ` losuje z własnego generatora. Z sim.ts moduł importuje
-   wyłącznie typ `SimState`, żeby sim.ts mógł importować stąd.
+   wyłącznie typ `SimState`, żeby sim.ts mógł importować stąd. Z src/sim/praca.ts bierze krzywą umiejętności
+   (`tempoPoziomu`), a praca.ts bierze stąd `badaniaDom` i `badaniaWidoczne` do wpisu `badania` (rodzaj pracy
+   „Badania”): to import w obie strony, bezpieczny, bo żaden z modułów nie woła drugiego przy wczytaniu, tylko w
+   funkcjach.
    `wiedza` to jedna wiedza osady dla tablicy i zarządu (`znajacy` wylicza, kto ją daje, do szczegółów kartki),
    `kartka` to stan jednej kartki tablicy, `tempoOsoby` to postęp na godzinę gry jednej siedzącej osoby. Dodawanie
    postępu w kroku, pracownia i polecenia `research` i `study` są w `Sim` (src/sim/sim.ts: chooseResearch,
@@ -64,6 +67,7 @@ import {
   SIEC_EN,
   SIEC_ZOMBIE_EN,
 } from './badania.en.ts';
+import { tempoPoziomu } from './praca.ts';
 import type { SimState } from './sim.ts';
 import { type GameMode, modeOf } from './tryb.ts';
 
@@ -289,20 +293,16 @@ export function nazwaEry(nr: number): Tx {
     wobec 16 przy 1,1), bo Przymorze jest już za szybkie, więc zostaje 1,1. Tabele: docs/POSTEP.md. */
 export const TEMPO_BAZOWE = 1.1;
 
-/** mnożnik tempa pracy według poziomu umiejętności: bez umiejętności dzisiejsze tempo, umiejętność tylko przyspiesza
-    (decyzja integratora i sesji pracy ludzi, 19.10.2026). To kopia `tempoPoziomu` (`1 + TEMPO_KROK * poziom`,
-    `TEMPO_KROK = 0.1`) z gałęzi `praca-ludzi` (src/sim/praca.ts), a nie `tempoPracy`, która ma jeszcze bramkę
-    pierwszego dnia, niepotrzebną badaniom. Przy scaleniu gałęzi ustępuje oryginałowi. */
-export const krzywaUmiejetnosci = (poziom: number): number => 1 + 0.1 * poziom;
-
 /** postęp na godzinę gry jednej siedzącej osoby w badaniu z dziedziny `dom`: tempo bazowe, krzywa umiejętności osoby
-    w tej dziedzinie i cechy z 0.3 (pracowity ×1,1, leniwy ×0,9, Mistrz Excela ×1,05). Badać może każdy, także bez
-    umiejętności; próg wiedzy dotyczy osady (`wiedza`), nie siedzącego. */
+    w tej dziedzinie (`tempoPoziomu` z src/sim/praca.ts: `1 + 0,1 · poziom`, bez umiejętności dzisiejsze tempo, wspólna
+    z pracą ludzi; bramki pierwszego dnia, którą ma `tempoPracy`, badania nie mają) i cechy z 0.3 (pracowity ×1,1,
+    leniwy ×0,9, Mistrz Excela ×1,05, nałożone tylko tutaj, raz). Badać może każdy, także bez umiejętności; próg wiedzy
+    dotyczy osady (`wiedza`), nie siedzącego. */
 export function tempoOsoby(o: Pick<Person, 'skills' | 'traits'>, dom: TechDom): number {
   const cecha = (c: string, mnoznik: number): number => (o.traits.includes(c) ? mnoznik : 1);
   return (
     TEMPO_BAZOWE *
-    krzywaUmiejetnosci(o.skills[dom] ?? 0) *
+    tempoPoziomu(o.skills[dom] ?? 0) *
     cecha('pracowity', 1.1) *
     cecha('leniwy', 0.9) *
     cecha('excel', 1.05)

@@ -8,7 +8,7 @@
       zginie albo polecenie przepadnie, leży tam, gdzie stał;
    C. „Zamknięte na klucz” i „Nikt nie otwiera” trzymają pionka przy drzwiach jak „Idź tu” (godzina gry);
    D. zmęczenie: start 80, na nogach −3,5 na godzinę, ciężka praca −6, a warta od 20:00 do 6:00 po dniu na nogach od
-      6:00 kończy się z siłami ponad 0 (wstrzymane do decyzji Mateusza, blok testów niżej pominięty).
+      6:00 kończy się z siłami ponad 0.
    Szwendaczy stawia test (spawnZombie), a cudze, które rodzą się co godzinę, są wymiatane po każdym kroku, żeby przebieg
    nie zależał od losowych narodzin. Świat: atrapa bloku (mockBlock) i demo Lanciego (drzwi sąsiada). */
 
@@ -186,8 +186,10 @@ describe('A. polecenie gracza przeżywa walkę odruchową', () => {
     }, 2500);
     expect(s.st.felled.includes(DRZEWO)).toBe(true);
     expect(weszla).toBe(false);
-    // skończona praca kończy polecenie (zwykłe done), nic się już nie wznowi
-    s.az(() => !s.a.job, 200);
+    // skończona praca kończy polecenie (zwykłe done), nic się już nie wznowi; ścięcie na polecenie za siatką kończy się
+    // wniesieniem całego drewna z tego drzewa przez tę samą osobę (praca ludzi), więc polecenie trwa do ostatniego kursu
+    s.az(() => !s.a.job, 4000);
+    expect(s.a.job).toBeNull();
     expect(s.a.polecenie).toBeUndefined();
   });
 
@@ -533,9 +535,7 @@ describe('C. zamknięte drzwi nie odsyłają do domu', () => {
   });
 });
 
-// D wstrzymane do decyzji Mateusza (19.10.2026): wolniejsze zmęczenie (eb5b019) cofnięte, bo w bocie zombie na ziarnach
-// 1–20 zgony rosną z 9 do 22 (warta z dzidami); po przywróceniu eb5b019 (git revert cofnięcia) zdjąć skip
-describe.skip('D. zmęczenie przychodzi wolniej', () => {
+describe('D. zmęczenie przychodzi wolniej', () => {
   const ctx = (o: Partial<NeedCtx> = {}): NeedCtx => ({
     temp: 20,
     fire: false,

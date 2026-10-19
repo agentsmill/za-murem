@@ -76,6 +76,7 @@ const dozwolone = (...s: (string | undefined)[]): string[] => s.flatMap((x) => (
 
 const osoba = (extra: Partial<SimPerson> = {}): SimPerson => ({
   pawn: 3,
+  osoba: 4,
   id: 's5',
   name: 'Anna Kowalska',
   first: 'Anna',
@@ -91,6 +92,8 @@ const osoba = (extra: Partial<SimPerson> = {}): SimPerson => ({
     { why: 'Śmierć: Józef', d: -10, until: 900 },
   ],
   job: null,
+  sam: false,
+  praca: { prio: [1, 3, 3, 3, 3, 3, 3, 3, 0], stale: null, zaSiatke: false },
   doing: 'Stoi.',
   asleep: false,
   inside: false,

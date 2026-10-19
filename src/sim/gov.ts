@@ -5,8 +5,8 @@
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie. Nowa osoba zarządu
    (`fx.join`) i przyjęci mieszkańcy (`fx.residents`) czekają za bramą i dochodzą do siedziby w pracy 'arrive'.
 
-   Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to zarząd i mieszkańcy
-   siedziby, a `teren.przylaczone` to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu. Trzeci
+   Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to `populacja(st).razem`
+   z odczytu symulacji (zarząd, także na wyprawie, i mieszkańcy siedziby; bez sąsiadów i gości), a `teren.przylaczone` to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu. Trzeci
    odczyt, `ludnosc2021` (ilu ludzi mieszkało w kwadracie domu w 2021 roku), jest z tabel mieszkańców, a nie ze stanu
    gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane w src/main.ts).
 
@@ -92,7 +92,7 @@ import {
   wyprowadz,
   Z_OSOBA,
 } from './sim.ts';
-import { type SimPerson, snapshot } from './snapshot.ts';
+import { populacja, type SimPerson, snapshot } from './snapshot.ts';
 import { modeOf } from './tryb.ts';
 import { hordeSize } from './zombie.ts';
 
@@ -248,16 +248,12 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
       nazwa: nazwaTech(o.id),
       dzialanie: zombie ? (TECH_BY[o.id].dzialanieZombie ?? TECH_BY[o.id].dzialanie) : TECH_BY[o.id].dzialanie,
     }));
-  // kto wychodzi bramą (wyrzucony, odchodzący), dla zarządu już go nie ma: ani osoby, ani mieszkańca
+  // kto wychodzi bramą (wyrzucony, odchodzący), dla zarządu już go nie ma: ani osoby, ani mieszkańca; liczba mieszkańców
+  // z odczytu (`populacja` w src/sim/snapshot.ts) już go pomija, tu znika jeszcze z listy osób i lokatorów
   const odchodza = new Set<number>();
-  let odchodzacyMieszkancy = 0;
-  for (const p of st.pawns)
-    if (p.job?.t === 'odejscie') {
-      odchodza.add(p.id);
-      if (p.kind === 'resident') odchodzacyMieszkancy++;
-    }
+  for (const p of st.pawns) if (p.job?.t === 'odejscie') odchodza.add(p.id);
   const people = s.people.filter((p) => !odchodza.has(p.pawn));
-  const residents = s.residents - odchodzacyMieszkancy;
+  const residents = s.residents;
   // mieszkańcy siedziby z osobą; odczyt dla interfejsu ma też lokatorów sąsiadów, których zarząd nie widzi
   const mieszkancy = new Set(st.pawns.filter((p) => p.kind === 'resident' && !odchodza.has(p.id)).map((p) => p.id));
   const lokatorzy = s.lokatorzy.filter((l) => mieszkancy.has(l.pawn)).map(lokatorZarzadu);
@@ -310,11 +306,12 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
         }
       : {}),
     ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
+    ...(st.obcy?.werbunek ? { werbunek: zwerbowani(st) } : {}),
     dead: zmarli(st, zombie),
-    // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (tu ich liczba
-    // dla dróg), a przyłączone budynki to te, które wspólny płot już dołączył do obwodu (plan w toku się nie liczy).
-    // Pole `ludnosc2021` dokłada gra (main.ts)
-    ludnosc: people.length + residents,
+    // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (`populacja`, ta
+    // sama liczba, którą czyta EventHost.pop(); kto wychodzi bramą, już się nie liczy), a przyłączone budynki to te, które
+    // wspólny płot już dołączył do obwodu (plan w toku się nie liczy). Pole `ludnosc2021` dokłada gra (main.ts)
+    ludnosc: populacja(st).razem,
     teren: { przylaczone: st.plot?.bids.length ?? 0 },
     // badania: jedna wiedza i jedne książki dla tablicy i dla wydarzeń zarządu (src/sim/badania.ts)
     badania: {
@@ -352,6 +349,18 @@ export function lawsFrom(l: LawEffects): Partial<Laws> {
 }
 
 const clamp100 = (v: number) => (v < 0 ? 0 : v > 100 ? 100 : v);
+
+/** Zwerbowani wędrowcy (id `w1`, `w2`…) po kolei: osoby z `st.people`, a dokąd trafili, mówi pionek (mieszkaniec albo
+    zarząd; po śmierci zarządu zostaje zarząd). Lista tylko rośnie, bo osoby ze stanu nie znikają. */
+function zwerbowani(st: SimState): NonNullable<GovInput['werbunek']> {
+  const out: { first: string; f: boolean; dokad: 'zarzad' | 'mieszkaniec' }[] = [];
+  st.people.forEach((o, k) => {
+    if (!/^w\d+$/.test(o.id)) return;
+    const mieszka = st.pawns.some((p) => p.kind === 'resident' && p.person === k);
+    out.push({ first: o.first, f: o.f, dokad: mieszka ? 'mieszkaniec' : 'zarzad' });
+  });
+  return out;
+}
 
 /** pionek zarządu osoby o id z generatora (s1, s2…) */
 function pawnOf(st: SimState, id: string): Pawn | undefined {
