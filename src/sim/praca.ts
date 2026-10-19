@@ -8,10 +8,14 @@
    - Priorytet 0 znaczy „nie robi”, 1 najważniejszy, 4 najmniej ważny. Domyślny wynika z umiejętności zawodu.
    - Tempo pracy to `1 + 0,1 · poziom`, ale dopiero od pierwszego ranka (`automatRusza`): pierwszy dzień gry jest
      taki jak przed tym projektem. Krzywa jest wspólna z badaniami.
-   - Wpis `badania` jest ukryty, dopóki gałąź `badania` nie podepnie w nim `umiejetnosc`, `widoczny` i `znajdz`.
+   - Wpis `badania` bierze `umiejetnosc` (poziom osoby w dziedzinie bieżącego badania, 0 bez badania) i `widoczny`
+     (stoi pracownia albo istnieje stan badań) z src/sim/badania.ts, a `znajdz` to `sim.startResearch(p)`. Moduł
+     badania.ts importuje stąd krzywą `tempoPoziomu`: import w obie strony jest bezpieczny, bo wartości z drugiego
+     modułu wołają tylko funkcje, nigdy wczytanie.
    Projekt: docs/superpowers/specs/2026-10-19-praca-ludzi-design.md, sekcja „Część A: praca”. */
 
 import type { Person } from '../content/people.ts';
+import { badaniaDom, badaniaWidoczne } from './badania.ts';
 import { dayOf, hourOf } from './clock.ts';
 import type { Pawn, SimState } from './sim.ts';
 import { modeOf } from './tryb.ts';
@@ -81,8 +85,9 @@ export interface PracaStan {
 }
 
 /** Wpis rodzaju pracy. `umiejetnosc` to poziom osoby w tym rodzaju (0: brak), `widoczny` mówi, czy rodzaj w ogóle
-    istnieje w tej grze (kolumna i automat), a `znajdz` szuka zlecenia i je zaczyna; ciała `znajdz` podpina sim.ts,
-    tu zostaje opcjonalne, żeby moduł nie importował symulacji. */
+    istnieje w tej grze (kolumna i automat), a `znajdz` szuka zlecenia i je zaczyna. Zlecenia pozostałych rodzajów
+    szuka `Sim.znajdzPrace` (sim.ts), więc `znajdz` ma tylko wpis `badania`: bierze do niego metodę `startResearch`
+    z obiektu, który dostaje, żeby moduł nie importował symulacji. */
 export interface WpisRodzaju {
   umiejetnosc(st: SimState, o: Person): number;
   widoczny(st: SimState): boolean;
@@ -101,14 +106,22 @@ export const WPISY: Record<RodzajPracy, WpisRodzaju> = {
   noszenie: { umiejetnosc: () => 0, widoczny: zawsze },
   warsztat: { umiejetnosc: (_st, o) => Math.max(poziom(o, 'elek'), poziom(o, 'it')), widoczny: zawsze },
   szaber: { umiejetnosc: () => 0, widoczny: zawsze },
-  /* ukryte do scalenia gałęzi `badania`: tam umiejetnosc to badaniaDom(st), widoczny to badaniaWidoczne(st),
-     a znajdz to sim.startResearch(p) */
-  badania: { umiejetnosc: () => 0, widoczny: () => false },
+  /* badania (kontrakt z projektu pracy ludzi, sekcja „Rodzaje pracy”): umiejętność to poziom osoby w dziedzinie
+     bieżącego badania (bez badania 0, więc bez wybranego badania domyślny priorytet 3 i nikt nie siada), rodzaj jest
+     widoczny, gdy stoi pracownia albo istnieje stan badań, a zlecenie to wolne miejsce przy stole pracowni */
+  badania: {
+    umiejetnosc: (st, o) => {
+      const dom = badaniaDom(st);
+      return dom === null ? 0 : poziom(o, dom);
+    },
+    widoczny: badaniaWidoczne,
+    znajdz: (sim, p) => sim.startResearch(p),
+  },
 };
 
 /** Priorytet bez zmian gracza. Ogień 1 dla każdego (każdy dokłada do kozy przed innymi pracami, jak dotąd);
     noszenie i szaber 3 dla każdego; reszta z umiejętności: 3–4 daje 1, 1–2 daje 2, brak daje 3.
-    Rodzaj, który w tej grze jeszcze nie istnieje (`widoczny` fałszywy, dziś badania), ma 0. */
+    Rodzaj, którego w tej grze nie ma (`widoczny` fałszywy: badania bez pracowni i bez stanu badań), ma 0. */
 export function domyslnyPriorytet(st: SimState, o: Person, r: RodzajPracy): Priorytet {
   if (!WPISY[r].widoczny(st)) return 0;
   if (r === 'ogien') return 1;

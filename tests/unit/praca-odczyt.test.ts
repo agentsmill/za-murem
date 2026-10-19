@@ -204,7 +204,7 @@ describe('odczyt osoby: praca', () => {
 });
 
 describe('odczyt gry: progi i widoczne rodzaje', () => {
-  it('domyślne progi i widoczne rodzaje bez badań', () => {
+  it('domyślne progi i widoczne rodzaje bez pracowni (bez badań)', () => {
     const sim = newGame(KLUCZ);
     const s = snapshot(sim.st, demoWorld(KLUCZ));
     expect(s.praca.progi).toEqual({ drewno: 30, deski: 20, czesci: 10, dzidy: 0 });
@@ -265,7 +265,7 @@ describe('ileZlecen', () => {
   const wszystkie = (sim: Sim): Record<RodzajPracy, number> =>
     Object.fromEntries(RODZAJE.map((r) => [r, sim.ileZlecen(r)])) as Record<RodzajPracy, number>;
 
-  it('liczba całkowita, nieujemna, badania (jeszcze ukryte) zawsze 0', () => {
+  it('liczba całkowita, nieujemna, badania (bez pracowni ukryte) zawsze 0', () => {
     for (const klucz of ['lanciego', 'przymorze', 'zielonki']) {
       const sim = newGame(klucz);
       for (let k = 0; k < 200; k++) sim.step();

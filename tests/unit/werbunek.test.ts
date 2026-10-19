@@ -641,8 +641,12 @@ describe('Gra bez rozmów z wędrowcem', () => {
   });
 
   it('ten sam skrót co przed zmianą na prawdziwych demach (Przymorze, Zielonki)', () => {
-    expect(bez(swiezy('przymorze'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('143e6ce4');
-    expect(bez(swiezy('zielonki'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('732dc2e0');
+    // Skróty przeliczone po scaleniu z `pelna-gra` b49c11c (przed nim: Przymorze 143e6ce4, Zielonki 732dc2e0). Pierwsza
+    // różnica wypada w dobie 3 przed 8:00: Szaber (automat pracy ludzi) przeszukuje pomieszczenie, a przeszukanie z
+    // gałęzi `badania` losuje książkę i dopisuje do stanu `books` i `bookLog`. Poza tymi polami stan w tym ticku jest
+    // ten sam co przed scaleniem; werbunek nic tu nie zmienia (przebieg bez rozmów).
+    expect(bez(swiezy('przymorze'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('0384b5e7');
+    expect(bez(swiezy('zielonki'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('2219d72d');
   });
 });
 

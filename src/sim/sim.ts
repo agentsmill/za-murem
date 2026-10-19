@@ -5,7 +5,7 @@
    `mieszkancy` (krok 5, src/sim/lokatorzy.ts) zarząd i mieszkańcy siedziby mają osoby z generatora mieszkańców;
    bez niej stan jest taki jak przed tą opcją. Własna praca bezczynnego zarządu (think) idzie według priorytetów
    osób z src/sim/praca.ts: po potrzebach, zimnie i gasnącej kozie biorą rodzaje pracy po kolei (ogień, kuchnia,
-   budowa, naprawy, drwal, noszenie, warsztat, szaber). Bez polecenia zaczynają pracę tylko na naszym terenie
+   budowa, naprawy, drwal, noszenie, warsztat, szaber, badania). Bez polecenia zaczynają pracę tylko na naszym terenie
    (naszTeren: podwórko, siedziba, budynki za wspólnym płotem); za siatkę wychodzi tylko osoba z przełącznikiem i tylko
    za dnia (mozeTam). Warsztat i szaber nigdy nie ruszają materiału ani drzwi, które mają inne przeznaczenie: deski
    z nadwyżki drewna, części z nadwyżki złomu, dzidy dla nieuzbrojonych, a szaber tylko puste pomieszczenia i wraki,
@@ -4280,7 +4280,9 @@ export class Sim {
          (inaczej zmarznięty zaczynał pracę, którą `urgent` przerywa w następnej sekundzie, i tak w kółko);
       3. rodzaje pracy według `kolejnoscOsoby` (stałe zajęcie, potem priorytety 1–4 osoby): ogień (dokładanie do kozy
          i noszenie drewna do składu), kuchnia, budowa planów (i dokańczanie planu wspólnego płotu), a od pierwszego
-         rana (`automatRusza`) nowe rodzaje (NOWE): naprawy, drwal, noszenie, warsztat, szaber. Nowe rodzaje nie ruszają
+         rana (`automatRusza`) nowe rodzaje (NOWE): naprawy, drwal, noszenie, warsztat, szaber, badania (wolne miejsce
+         przy stole pracowni, gdy wybrano badanie; `research` jest w M2_JOBS, więc pilna potrzeba, noc i wróg na podwórku
+         przerywają je tak jak inne prace bez polecenia). Nowe rodzaje nie ruszają
          przy pilnej potrzebie (`urgent` przerwałby je w następnej sekundzie i zerował postęp). Ciepło poniżej COLD
          idzie przed nowe rodzaje z priorytetem 3 i 4 (stałe zajęcie liczy się jak 1): szaber i warsztat o domyślnym
          priorytecie trzymałyby osobę przy pracy w zimnych pomieszczeniach do nocy. Nocą tylko ogień (noszenie tylko
@@ -4403,8 +4405,8 @@ export class Sim {
       case 'szaber':
         return this.startSzaber(p);
       case 'badania':
-        // wpis i metodę `startResearch` podpina gałąź `badania`; do tego czasu wpis nie ma `znajdz`, a rodzaj jest ukryty
-        return WPISY.badania.znajdz?.(this as this & { startResearch(p: Pawn): boolean }, p) ?? false;
+        // wolne miejsce przy stole pracowni; bez wybranego badania, w nocy i przy stoliku bez miejsc nic nie zaczyna
+        return WPISY.badania.znajdz?.(this, p) ?? false;
       default:
         return false;
     }
@@ -4433,7 +4435,8 @@ export class Sim {
       pomieszczenia w siedzibie, w otwartych budynkach sąsiadów (poza mieszkaniami lokatorów) i nieprzeszukane wraki.
       Liczy tylko to, co ktoś z zarządu mógłby wziąć: cel poza naszym terenem (`naszTeren`: drzewo, stos na ulicy,
       pokój w cudzym budynku, wrak) czeka dopiero wtedy, gdy ktoś z żywych w zarządzie ma przełącznik „za siatkę”
-      (`ktosZaSiatke`). Rodzaj, którego nie ma w tej grze (`badania` do scalenia gałęzi z badaniami), ma 0. */
+      (`ktosZaSiatke`). Badania to wolne miejsca przy stole pracowni (najwyżej `RESEARCH_SEATS`), gdy wybrane badanie idzie.
+      Rodzaj, którego nie ma w tej grze (`badania` bez pracowni i bez stanu badań), ma 0. */
   ileZlecen(r: RodzajPracy): number {
     const st = this.st;
     const size = this.w.size;
@@ -4526,8 +4529,15 @@ export class Sim {
         }
         return n;
       }
+      case 'badania': {
+        // wolne miejsca przy stole pracowni, gdy wybrane badanie idzie (te same warunki co w `startResearch`, bez pory
+        // dnia); bez pracowni i bez wybranego badania 0
+        const cur = this.researchTech();
+        const desk = this.pracownia();
+        if (!cur || !desk || kartka(st, cur, modeOf(st)).stan !== 'w_toku') return 0;
+        return wolneMiejsca(st.pawns, desk.id);
+      }
       default:
-        // badania: liczbę zleceń podepnie gałąź badania razem z wpisem w WPISY (do tego czasu rodzaj jest ukryty)
         return 0;
     }
   }

@@ -75,11 +75,21 @@ describe('rodzaje i stałe', () => {
     expect(TEMPO_KROK).toBe(0.1);
   });
 
-  it('wpis badań: umiejętność 0, niewidoczny, bez znajdz (kontrakt z gałęzią badania)', () => {
+  it('wpis badań (kontrakt z gałęzią badania): bez pracowni i badania niewidoczny, z umiejętnością 0, ze znajdz', () => {
     expect(WPISY.badania.umiejetnosc(st, osoba({ cieplo: 4, it: 4 }))).toBe(0);
     expect(WPISY.badania.widoczny(st)).toBe(false);
-    expect(WPISY.badania.znajdz).toBeUndefined();
+    expect(WPISY.badania.znajdz).toBeTypeOf('function');
     for (const r of RODZAJE) if (r !== 'badania') expect(WPISY[r].widoczny(st)).toBe(true);
+  });
+
+  it('wpis badań z wybranym badaniem: umiejętność to poziom w jego dziedzinie, widoczny też po rozbiórce pracowni', () => {
+    st.research = { cur: 't_okna', prog: {}, at: {} }; // dziedzina bud
+    expect(WPISY.badania.widoczny(st)).toBe(true);
+    expect(WPISY.badania.umiejetnosc(st, osoba({ bud: 3, it: 4 }))).toBe(3);
+    expect(WPISY.badania.umiejetnosc(st, osoba({ it: 4 }))).toBe(0);
+    st.research.cur = null;
+    expect(WPISY.badania.umiejetnosc(st, osoba({ bud: 3 }))).toBe(0);
+    expect(WPISY.badania.widoczny(st)).toBe(true);
   });
 });
 
@@ -93,7 +103,7 @@ describe('domyślne priorytety', () => {
     expect(domyslnyPriorytet(st, o, 'kuchnia')).toBe(3); // bez uprawa
     expect(domyslnyPriorytet(st, o, 'noszenie')).toBe(3);
     expect(domyslnyPriorytet(st, o, 'szaber')).toBe(3);
-    expect(domyslnyPriorytet(st, o, 'badania')).toBe(0); // niewidoczne
+    expect(domyslnyPriorytet(st, o, 'badania')).toBe(0); // niewidoczne (bez pracowni i bez stanu badań)
   });
 
   it('granice poziomów: 0 to brak, 2 to jeszcze 2, 4 to 1', () => {
@@ -260,7 +270,22 @@ describe('tempo', () => {
     expect(tempoPracy(st, p, 'szaber')).toBe(1);
     // ogień ma umiejętność cieplo tylko do domyślnych priorytetów: dokładanie i noszenie drewna nie przyspieszają
     expect(tempoPracy(st, p, 'ogien')).toBe(1);
-    expect(tempoPracy(st, p, 'badania')).toBe(1); // niewidoczny wpis, umiejętność 0
+    expect(tempoPracy(st, p, 'badania')).toBe(1); // bez wybranego badania umiejętność 0
+  });
+
+  it('badania z wybranym badaniem: krzywa w jego dziedzinie od pierwszego rana (sama krzywa, bez bramki: tempoPoziomu)', () => {
+    const p = rdzen({ cieplo: 2, bud: 4 });
+    st.research = { cur: 't_okna', prog: {}, at: {} }; // dziedzina bud
+    st.tut.step = TUT_STEPS.length;
+    st.tick = RANO_2 - 1;
+    expect(tempoPracy(st, p, 'badania')).toBe(1);
+    st.tick = RANO_2;
+    expect(tempoPracy(st, p, 'badania')).toBeCloseTo(1.4, 10);
+    expect(tempoPracy(st, p, 'badania')).toBe(tempoPoziomu(4));
+    st.research.cur = 't_kozy'; // dziedzina cieplo
+    expect(tempoPracy(st, p, 'badania')).toBeCloseTo(1.2, 10);
+    st.research.cur = null;
+    expect(tempoPracy(st, p, 'badania')).toBe(1);
   });
 
   it('bez osoby (pionek spoza zarządu) zawsze 1', () => {
