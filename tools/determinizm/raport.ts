@@ -14,6 +14,9 @@ export function kodWyjscia(s: StanBramki): 0 | 1 | 2 {
   return s.brakujaceDocelowe.length ? 2 : 0;
 }
 
+/** pierwsza linia komunikatu błędu (albo samego tekstu): do jednowierszowych wpisów w raporcie */
+export const pierwszaLinia = (e: unknown): string => String((e as Error)?.message ?? e).split('\n')[0];
+
 /** Miejsca w kodzie ze stosu V8 (Error.stack w Node): „plik:linia:kolumna” albo „plik:linia:kolumna (funkcja)”, ścieżki
     względem korzenia repozytorium, bez ramek samego narzędzia (tools/determinizm/) i bez ramek spoza plików (Array.every).
     Node usuwa typy z plików .ts, zostawiając spacje, więc numery linii zgadzają się ze źródłem. Stos innego silnika
