@@ -24,7 +24,12 @@
    pomieszczenia (inna stała niż `wreckRng`), więc przeszukanie nie przesuwa `st.rng` ani innych losowań; szanse
    leżą w `SZANSA_KSIAZKI`. `dodajKsiazke` kładzie książkę na półce osady (`st.books`, najwyżej 2 na dziedzinę, pole
    powstaje przy pierwszej) i mówi, czy trzecia z dziedziny poszła na podpałkę. Drewno z podpałki dokłada wołający,
-   bo ten moduł nie zna map ani stert: `Sim` przy pracowni albo w składzie (dropMat), `applyGov` przy bramie. */
+   bo ten moduł nie zna map ani stert: `Sim` przy pracowni albo w składzie (dropMat), `applyGov` przy bramie.
+
+   Premie ery 1–2 i paleniska. Stałe premii (OKNA_PLUS, KONSERWY_PLON, ZIELARSTWO_SZANSA, SPAWANIE_TEMPO, AMBU_TEMPO,
+   PIECZARKI_PLON) i wagi drewna w paleniskach (PALENISKA) leżą tu, a stosują je wołający: `Sim` (ciepło, plon,
+   dokładanie, potrzeby), `pracaPrzepisu` w surowce.ts i karta nocy zarządu (`GovInput.paleniska`). Premia działa
+   tylko po zbadaniu (`st.techDone`), więc gra bez badań ma te same liczby co przed nimi. */
 
 import type { TechDef, TechDom } from '../content/data.ts';
 import { BOOKS, ERAS, TECH, TECH_DOMS } from '../content/data.ts';
@@ -289,6 +294,44 @@ export function eraBadan(st: SimState): number {
 /** czy technologia końcowa drzewka jest zbadana */
 export function koncowaZbadana(st: SimState): boolean {
   return TECHS.some((t) => t.koncowa === true && !!st.techDone?.includes(t.id));
+}
+
+/** Waga drewna w paleniskach (premie ery 1–2 i dokładanie): ile razy szybciej pali palenisko tego rodzaju. Koza
+    zarządu i koza z beczki zjadają sztukę w pół godziny (BURN_TICKS), kocioł trzy razy szybciej (BURN_TICKS / 3 na
+    sztukę). `Thing.fuel` takiego paleniska liczy się w jednostkach drewna: sztuka dodaje BURN_TICKS w każdym, krok ciepła
+    odejmuje HEAT_EVERY × waga, a zbiornik mieści KOZA_CAP × waga sztuk (kocioł 12). Czas ognia to więc fuel / waga, a
+    wszystkie liczby zostają całkowite. */
+export const PALENISKA: Readonly<Record<string, number>> = { koza: 1, koza_beczka: 1, kociol: 3 };
+
+/** t_okna: o tyle °C cieplej w pomieszczeniach naszych mieszkań, za darmo (dodatek do temperatury bazowej w heatStep) */
+export const OKNA_PLUS = 3;
+/** t_konserwy: plon ogródków, szklarni i pieczarkarni razy tyle; ułamek przenosi `plonKonserw` */
+export const KONSERWY_PLON = 1.2;
+/** t_zielarstwo: szansa na lek przy plonie ogródka */
+export const ZIELARSTWO_SZANSA = 1 / 3;
+/** t_spawanie: części w warsztacie robią się tyle razy szybciej (src/sim/surowce.ts, pracaPrzepisu) */
+export const SPAWANIE_TEMPO = 1.5;
+/** t_ambu: zdrowie wraca tyle razy szybciej (pole `heal` kontekstu potrzeb) */
+export const AMBU_TEMPO = 1.6;
+/** pieczarkarnia: stały plon co GARDEN_TICKS przez cały rok, bez względu na porę (wartość wstępna, stroi zadanie 11) */
+export const PIECZARKI_PLON = 2;
+
+/** Plon po t_konserwy: `baza` razy KONSERWY_PLON, a ułamek, którego plon nie mieści, zostaje w `reszta` (to
+    `Thing.n` rzeczy uprawnej) i dołącza do następnego plonu. Liczone na całkowitych setnych, więc dziesięć plonów
+    daje dokładnie 1,2 × plon bez badania, bez dryfu liczb zmiennoprzecinkowych. */
+export function plonKonserw(baza: number, reszta: number): { n: number; reszta: number } {
+  const setne = Math.round(baza * KONSERWY_PLON * 100 + reszta * 100);
+  return { n: Math.floor(setne / 100), reszta: (setne % 100) / 100 };
+}
+
+/** Czy ogródek o `id` daje lek przy plonie w ticku `tick` (t_zielarstwo): szansa 1/3 z generatora z ziarna gry, id
+    ogródka i ticku, inna stała niż w łupie z pomieszczeń i wraków. Nie dotyka `st.rng`, więc plon nie przesuwa
+    innych losowań. */
+export function lekZPlonu(seed: number, id: number, tick: number): boolean {
+  const rnd = mulberry(
+    (Math.imul(seed | 0, 7919) ^ Math.imul(id + 1, 2654435) ^ Math.imul(tick + 1, 1299709) ^ 0x2c1e) >>> 0,
+  );
+  return rnd() < ZIELARSTWO_SZANSA;
 }
 
 /** szansa na książkę w jednym przeszukanym pomieszczeniu: puste mieszkanie jak opuszczone mieszkania w 0.3

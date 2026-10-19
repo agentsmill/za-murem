@@ -3,7 +3,9 @@
    w stanie. Stan to zwykły obiekt (JSON), rysowanie tylko go czyta. Ten sam świat, ziarno i polecenia dają ten sam
    stan. Bez wnętrza siedziby (świat sprzed M1) zarząd stoi, a rzeczy, ciepła i samouczka nie ma. Z opcją
    `mieszkancy` (krok 5, src/sim/lokatorzy.ts) zarząd i mieszkańcy siedziby mają osoby z generatora mieszkańców;
-   bez niej stan jest taki jak przed tą opcją. */
+   bez niej stan jest taki jak przed tą opcją. Premie ery 1–2 (t_okna, t_konserwy, t_zielarstwo, t_spawanie, t_ambu) i
+   paleniska poza kozą zarządu (koza z beczki, kocioł; waga drewna w PALENISKA) działają tylko po zbadaniu albo
+   postawieniu, więc gra bez badań ma te same liczby co przed nimi (src/sim/badania.ts). */
 
 import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -13,12 +15,18 @@ import { IN, type Interior } from '../world/interior.ts';
 import type { Tree, World } from '../world/world.ts';
 import type { Wreck } from '../world/wrecks.ts';
 import {
+  AMBU_TEMPO,
   badaniaDom,
   badaniaWidoczne,
   dodajKsiazke,
   kartka,
   kosztTech,
   ksiazkaZ,
+  lekZPlonu,
+  OKNA_PLUS,
+  PALENISKA,
+  PIECZARKI_PLON,
+  plonKonserw,
   SZANSA_KSIAZKI,
   TECH_BY,
   tempoOsoby,
@@ -195,6 +203,7 @@ import {
   CARRY_MATS,
   CARRY_REACH,
   type Product,
+  pracaPrzepisu,
   RECIPES,
   WRECK_SEARCH_NOISE,
   WRECK_SEARCH_TICKS,
@@ -1047,6 +1056,10 @@ function homeKoza<T extends { kind: string; x: number; y: number }>(
 ): T | undefined {
   return list.find((f) => f.kind === 'koza' && inHomeApt(h, f.y * size + f.x));
 }
+
+/** waga drewna paleniska tego rodzaju (kocioł 3, koza i koza z beczki 1); rodzaj spoza tabeli, np. ognisko, liczy się
+    jak koza */
+const wagaPaleniska = (kind: string): number => (Object.hasOwn(PALENISKA, kind) ? PALENISKA[kind] : 1);
 
 /** kuchnia zarządu: pomieszczenie z kozą zarządu, a bez niej kuchnia mieszkania zarządu (−1: brak) */
 function kitchenOf(h: HouseLike, size: number): number {
@@ -2864,7 +2877,7 @@ export class Sim {
 
   private orderRefuel(pawns: Pawn[], id: number): void {
     const koza = this.thing(id);
-    if (koza?.kind !== 'koza' && koza?.kind !== 'ognisko') return;
+    if (!koza || (!Object.hasOwn(PALENISKA, koza.kind) && koza.kind !== 'ognisko')) return;
     const [first, ...rest] = pawns;
     const taken: number[] = [];
     if (this.startRefuel(first, true, koza)) taken.push(first.job!.tile);
@@ -3179,10 +3192,51 @@ export class Sim {
     return this.nearest(p, cand);
   }
 
-  /** ile sztuk drewna jeszcze wejdzie do kozy albo ogniska */
+  /** ile sztuk drewna jeszcze wejdzie do paleniska: kozy, kozy z beczki, kotła (zbiornik KOZA_CAP × waga sztuk) albo
+      ogniska */
   private kozaRoom(koza: Thing): number {
-    const cap = koza.kind === 'ognisko' ? CAMPFIRE_CAP : KOZA_CAP;
+    const cap = koza.kind === 'ognisko' ? CAMPFIRE_CAP : KOZA_CAP * wagaPaleniska(koza.kind);
     return Math.floor((cap * BURN_TICKS - koza.fuel) / BURN_TICKS);
+  }
+
+  /** nasze mieszkania: oznaczone jako nasze i mieszkanie zarządu */
+  private ourApts(): Set<number> {
+    const ours = new Set(this.st.apts.filter((a) => a.ours).map((a) => a.apt));
+    if (this.house && this.house.home >= 0) ours.add(this.house.home);
+    return ours;
+  }
+
+  /** paleniska naszych mieszkań w stałej kolejności: koza zarządu, potem kozy z beczek i kotły w kolejności rzeczy */
+  private paleniska(): Thing[] {
+    const out: Thing[] = [];
+    const home = this.koza();
+    if (home) out.push(home);
+    for (const t of this.st.things) if (t.kind === 'koza_beczka' || t.kind === 'kociol') out.push(t);
+    return out;
+  }
+
+  /** czy paleniska trzeba teraz dołożyć: zostało mniej niż sztuka (jednostek ognia BURN_TICKS × waga), do paleniska
+      coś wejdzie, a nikt inny go nie obsługuje */
+  private doDolozenia(p: Pawn, t: Thing): boolean {
+    return (t.by < 0 || t.by === p.id) && t.fuel < BURN_TICKS * wagaPaleniska(t.kind) && this.kozaRoom(t) >= 1;
+  }
+
+  /** Palenisko, do którego pionek dołoży teraz, gdy nikt nie wskazał celu: spośród palenisk naszych mieszkań to, któremu
+      zostało najmniej ognia (fuel / waga, czyli czas do końca), przy remisie pierwsze z listy, czyli koza zarządu. Bez
+      `order` tylko takie, które trzeba dołożyć (doDolozenia); z poleceniem każde, do którego coś wejdzie. Przy samej
+      kozie zarządu wynik jest ten sam co dawniej (`this.koza()`), a gdy jej nie trzeba, nic. */
+  private paleniskoDoDolozenia(p: Pawn, order: boolean): Thing | undefined {
+    let best: Thing | undefined;
+    let bestLeft = Number.POSITIVE_INFINITY;
+    for (const t of this.paleniska()) {
+      if (order ? this.kozaRoom(t) < 1 : !this.doDolozenia(p, t)) continue;
+      const left = t.fuel / wagaPaleniska(t.kind);
+      if (left < bestLeft) {
+        bestLeft = left;
+        best = t;
+      }
+    }
+    return best;
   }
 
   /** Pień drzewa, które domykało obwód (poza podwórkiem, bokiem przy nim, jeszcze nie siatka), po ścięciu staje się
@@ -3443,8 +3497,8 @@ export class Sim {
           return true;
         }
         if (j.phase === 2) {
-          // przy stosie: drewno do rąk, potem do kozy
-          const koza = this.koza();
+          // przy stosie: drewno do rąk, potem do paleniska, które czuwający wziął na siebie
+          const koza = this.paleniskoCzuwajacego(p);
           const pile = this.thing(j.from);
           if (!koza || !at || !pile || pile.by !== p.id) return this.backToPost(p, j);
           const take = Math.min(pile.n, CARRY - p.carry, Math.max(1, this.kozaRoom(koza)));
@@ -3459,7 +3513,7 @@ export class Sim {
           return false;
         }
         if (j.phase === 3) {
-          const koza = this.koza();
+          const koza = this.paleniskoCzuwajacego(p);
           if (koza && at) {
             const add = Math.min(p.carry, this.kozaRoom(koza));
             koza.fuel += add * BURN_TICKS;
@@ -4227,11 +4281,13 @@ export class Sim {
     }
   }
 
-  /** dokładanie do kozy: z własnego drewna albo ze stosu (sam bierze tylko ze składu i dopiero, gdy ogień się
-      kończy; z polecenia z każdego stosu, kiedy tylko coś wejdzie) */
-  private startRefuel(p: Pawn, order: boolean, koza = this.koza()): boolean {
+  /** dokładanie do paleniska: z własnego drewna albo ze stosu (sam bierze tylko ze składu i dopiero, gdy ogień się
+      kończy; z polecenia z każdego stosu, kiedy tylko coś wejdzie). Bez wskazanego celu wybiera to z naszych palenisk
+      (koza zarządu, kozy z beczek, kocioł), któremu zostało najmniej ognia (paleniskoDoDolozenia). */
+  private startRefuel(p: Pawn, order: boolean, koza = this.paleniskoDoDolozenia(p, order)): boolean {
     if (!koza) return false;
-    if (!order && ((koza.by >= 0 && koza.by !== p.id) || koza.fuel >= BURN_TICKS)) return false;
+    if (!order && ((koza.by >= 0 && koza.by !== p.id) || koza.fuel >= BURN_TICKS * wagaPaleniska(koza.kind)))
+      return false;
     if (this.kozaRoom(koza) < 1) return false;
     const size = this.w.size;
     if (p.carry > 0) {
@@ -4280,12 +4336,13 @@ export class Sim {
     return true;
   }
 
-  /** Czuwający przy kozie: gdy ognia zostaje mniej niż na pół godziny, a do kozy coś wejdzie, idzie po drewno (najpierw
-      ze składu, potem z każdego stosu) albo od razu dokłada z rąk. Koza jest wtedy jego (by), żeby nikt nie szedł
+  /** Czuwający przy kozie: gdy w którymś z naszych palenisk (koza zarządu, kozy z beczek, kocioł) ognia zostaje mniej niż
+      na sztukę, a do niego coś wejdzie, idzie po drewno (najpierw ze składu, potem z każdego stosu) albo od razu
+      dokłada z rąk, najpierw do tego, któremu zostało najmniej. Palenisko jest wtedy jego (by), żeby nikt nie szedł
       z drugim naręczem. */
   private tendKoza(p: Pawn, j: Job): void {
-    const koza = this.koza();
-    if (!koza || koza.fuel >= BURN_TICKS || this.kozaRoom(koza) < 1 || (koza.by >= 0 && koza.by !== p.id)) return;
+    const koza = this.paleniskoDoDolozenia(p, false);
+    if (!koza) return;
     if (p.carry > 0) {
       this.carryToKoza(p, j, koza);
       return;
@@ -4299,6 +4356,11 @@ export class Sim {
     j.from = pile.id;
     pile.by = p.id;
     koza.by = p.id;
+  }
+
+  /** palenisko, które czuwający wziął na siebie (by), a gdy żadne, koza zarządu */
+  private paleniskoCzuwajacego(p: Pawn): Thing | undefined {
+    return this.paleniska().find((t) => t.by === p.id) ?? this.koza();
   }
 
   /** z drewnem w rękach do kozy (faza 3); bez drogi z powrotem na posterunek */
@@ -5178,7 +5240,7 @@ export class Sim {
       if (this.workStock(r.from) < r.n) return this.inTransit(p, r.from) > 0;
       j.phase = 1;
       j.t0 = tick;
-      j.until = tick + r.work;
+      j.until = tick + pracaPrzepisu(j.what as Product, this.st.techDone);
       this.face(p, ws.x + ws.w / 2, ws.y + ws.h / 2);
       return true;
     }
@@ -5188,7 +5250,7 @@ export class Sim {
     j.from--;
     if (j.from <= 0 || this.workStock(r.from) + this.inTransit(p, r.from) < r.n) return false;
     j.t0 = tick;
-    j.until = tick + r.work;
+    j.until = tick + pracaPrzepisu(j.what as Product, this.st.techDone);
     return true;
   }
 
@@ -7616,22 +7678,30 @@ export class Sim {
     if (!this.house) return;
     const st = this.st;
     const tout = this.outdoor();
-    // pali się to, co paliło się na początku kroku
+    // pali się to, co paliło się na początku kroku; kocioł zjada tyle ognia, ile wynosi jego waga
     const fires = this.fires();
     for (const t of st.things)
-      if ((t.kind === 'koza' || t.kind === 'ognisko') && t.fuel > 0) t.fuel = Math.max(0, t.fuel - HEAT_EVERY);
+      if ((Object.hasOwn(PALENISKA, t.kind) || t.kind === 'ognisko') && t.fuel > 0)
+        t.fuel = Math.max(0, t.fuel - HEAT_EVERY * wagaPaleniska(t.kind));
     // krew, trupy i zwłoki z czasem znikają
     if (st.things.some((t) => t.until !== undefined && t.until <= st.tick))
       st.things = st.things.filter((t) => t.until === undefined || t.until > st.tick);
-    this.boost = heatStep(st.temps, this.kinds, this.links, fires, tout);
-    // ogródki rosną; co trzy doby plon obok grządek
+    // folia i koce w oknach (t_okna): dodatek do temperatury bazowej w pomieszczeniach naszych mieszkań
+    this.boost = heatStep(
+      st.temps,
+      this.kinds,
+      this.links,
+      fires,
+      tout,
+      this.tech('t_okna') ? this.oknaExtra() : undefined,
+    );
+    // ogródki, szklarnie i pieczarkarnie rosną; co trzy doby plon obok grządek
     for (const t of st.things)
-      if (t.kind === 'ogrodek') {
+      if (t.kind === 'ogrodek' || t.kind === 'szklarnia' || t.kind === 'pieczarkarnia') {
         t.fuel += HEAT_EVERY;
         if (t.fuel < GARDEN_TICKS) continue;
         t.fuel = 0;
-        const n = GARDEN_YIELD[seasonOf(st.tick)];
-        if (n > 0) this.dropMat((t.y + 1) * this.w.size + t.x + 1, 'jedzenie', n);
+        this.plon(t);
       }
     this.light = roomLight(this.kinds.length, this.links, fires);
     const hours = HEAT_EVERY / TICKS_PER_HOUR;
@@ -7652,16 +7722,58 @@ export class Sim {
     this.tutCheck();
   }
 
-  /** pomieszczenia z palącą się kozą */
+  /** pomieszczenia z palącą się kozą albo kozą z beczki, a przy palącym się kotle wszystkie pomieszczenia naszych
+      mieszkań (kocioł na klatce grzeje je naraz) */
   private fires(): number[] {
     const h = this.house!;
     const out: number[] = [];
-    for (const t of this.st.things)
-      if (t.kind === 'koza' && t.fuel > 0) {
+    let kociol = false;
+    for (const t of this.st.things) {
+      if (t.fuel <= 0) continue;
+      if (t.kind === 'koza' || t.kind === 'koza_beczka') {
         const r = h.room[t.y * this.w.size + t.x];
         if (r >= 0) out.push(r);
-      }
+      } else if (t.kind === 'kociol') kociol = true;
+    }
+    if (kociol) {
+      const ours = this.ourApts();
+      for (const r of h.rooms) if (r.apt >= 0 && ours.has(r.apt) && !out.includes(r.id)) out.push(r.id);
+    }
     return out;
+  }
+
+  /** t_okna: o ile °C cieplej w każdym pomieszczeniu (OKNA_PLUS w naszych mieszkaniach, poza nimi 0) */
+  private oknaExtra(): number[] {
+    const ours = this.ourApts();
+    return this.house!.rooms.map((r) => (r.apt >= 0 && ours.has(r.apt) ? OKNA_PLUS : 0));
+  }
+
+  /** czy technologia jest zbadana (`st.techDone` powstaje dopiero przy pierwszym badaniu) */
+  private tech(id: string): boolean {
+    return this.st.techDone?.includes(id) === true;
+  }
+
+  /** Plon uprawy po trzech dobach: ogródek według pory roku, szklarnia tak samo, ale zimą jak jesienią, pieczarkarnia
+      stały przez cały rok. Po t_konserwy plon ×1,2 z ułamkiem w `Thing.n` rzeczy; po t_zielarstwo plon ogródka daje
+      czasem lek (do zapasu zarządu). Jedzenie leży obok grządek, z pieczarkarni w jej łazience. */
+  private plon(t: Thing): void {
+    const st = this.st;
+    const size = this.w.size;
+    const pora = seasonOf(st.tick);
+    const baza =
+      t.kind === 'pieczarkarnia' ? PIECZARKI_PLON : GARDEN_YIELD[t.kind === 'szklarnia' && pora === 1 ? 0 : pora];
+    let n = baza;
+    if (this.tech('t_konserwy')) {
+      const k = plonKonserw(baza, t.n);
+      n = k.n;
+      t.n = k.reszta;
+    }
+    if (n > 0) {
+      if (t.kind === 'pieczarkarnia') this.dropMat(t.y * size + t.x, 'jedzenie', n, this.roomOf[t.y * size + t.x]);
+      else this.dropMat((t.y + 1) * size + t.x + 1, 'jedzenie', n);
+    }
+    if (baza > 0 && t.kind === 'ogrodek' && this.tech('t_zielarstwo') && lekZPlonu(st.seed, t.id, st.tick))
+      st.store.meds += 1;
   }
 
   /** co nocą straszy i co uspokaja, liczone raz na krok potrzeb: warta z lampą, ogniska, otwarte dziury, obcy */
@@ -7687,10 +7799,10 @@ export class Sim {
     const inside = r >= 0;
     let fire = false;
     for (const t of this.st.things) {
-      if (t.fuel <= 0 || (t.kind !== 'koza' && t.kind !== 'ognisko')) continue;
+      if (t.fuel <= 0 || (!Object.hasOwn(PALENISKA, t.kind) && t.kind !== 'ognisko')) continue;
       const near = Math.hypot(p.x - (t.x + t.w / 2), p.y - (t.y + t.h / 2)) <= FIRE_REACH + 0.5;
-      // koza grzeje w swoim pomieszczeniu, ognisko na dworze
-      if (near && (t.kind === 'koza' ? h.room[t.y * size + t.x] === r : !inside)) fire = true;
+      // koza, koza z beczki i kocioł grzeją w swoim pomieszczeniu, ognisko na dworze
+      if (near && (t.kind === 'ognisko' ? !inside : h.room[t.y * size + t.x] === r)) fire = true;
     }
     const lit =
       a.lamps.some(([x, y]) => Math.hypot(p.x - x, p.y - y) <= LAMP_REACH) ||
@@ -7720,6 +7832,8 @@ export class Sim {
       asleep,
       floor,
       hunger: hungerRate(this.st.laws.foodMult),
+      // ambulatorium polowe (t_ambu): zdrowie wraca szybciej
+      heal: this.tech('t_ambu') ? AMBU_TEMPO : 1,
       busy: (!!j && ((j.t === 'chop' && j.phase === 1) || (j.t === 'patch' && j.phase === 2))) || p.carry > 0,
       dark,
       inside,

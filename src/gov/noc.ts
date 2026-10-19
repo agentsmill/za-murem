@@ -1,7 +1,8 @@
 /* Karta nocy jak w 0.1 i 0.2: o 20:00 zarząd proponuje, kto śpi, kto trzyma wartę (przy bramie albo
    przy dziurze w siatce) i kto idzie na wyprawę (blisko albo daleko); szansę napadu, spodziewane straty
    i łup widać przed decyzją. Dyżur przy kozie (warta:koza) wybiera gracz: zarząd tylko radzi, ile drewna
-   starczy, a rano raport mówi, czy w kuchni było ciepło. Przy zatwierdzeniu losuje się, czy szabrownicy
+   starczy (z kozami z beczek i kotłem na każde palenisko, `GovInput.paleniska`), a rano raport mówi, czy w kuchni
+   było ciepło. Przy zatwierdzeniu losuje się, czy szabrownicy
    przyjdą, gdzie i o której (23:00–4:00). O tej godzinie obronę liczy się z tego, co jest: kto nie zasnął,
    światło, pies, brama. Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość
    z ziarna gry. Teksty karty i raportu to Tx (polski i angielski z tych samych danych, bez dodatkowych losowań). */
@@ -55,13 +56,16 @@ export const WOOD_PER_HOUR = 2;
 /** warta przy siatce (brama, dziury), bez dyżuru przy kozie */
 export const isFenceGuard = (k: string): boolean => k.startsWith('warta:') && k !== KOZA_KEY;
 
-/** drewno na noc przy dyżurze od teraz do 6:00: zapas (z tym, co w kozie), ile trzeba i do której starczy */
+/** drewno na noc przy dyżurze od teraz do 6:00: zapas (z tym, co w kozie), ile trzeba i do której starczy. Dyżur dokłada
+    do wszystkich palenisk w siedzibie, więc godzina kosztuje WOOD_PER_HOUR razy liczba palenisk (`i.paleniska`: kocioł
+    liczy się jako kilka koz, bez pola jedno). */
 export function nightWood(i: GovInput): { have: number; need: number; until: string } {
   const now = i.hour + i.minute / 60;
   const left = (MORNING - now + 24) % 24;
-  const need = Math.ceil(left * WOOD_PER_HOUR);
+  const perHour = WOOD_PER_HOUR * (i.paleniska ?? 1);
+  const need = Math.ceil(left * perHour);
   const have = Math.max(0, Math.floor(i.stock.wood));
-  const end = have >= need ? MORNING : Math.floor(now + have / WOOD_PER_HOUR) % 24;
+  const end = have >= need ? MORNING : Math.floor(now + have / perHour) % 24;
   return { have, need, until: `${end}:00` };
 }
 

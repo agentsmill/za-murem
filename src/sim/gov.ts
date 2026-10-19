@@ -4,14 +4,15 @@
    z planu odgrywają szabrownicy. To, co wymaga przeliczenia przechodniości albo dróg (warta, wyprawa, łaty), idzie
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie.
    Badania: odczyt niesie też eraBadan, książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
-   a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. */
+   a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. Kozy z beczek i kocioł
+   wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA). */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
 import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type { Arm, GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
-import { dodajKsiazke, eraBadan, koncowaZbadana, wiedza } from './badania.ts';
+import { dodajKsiazke, eraBadan, koncowaZbadana, PALENISKA, wiedza } from './badania.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
 import { dayOf, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { houseOf, inHomeApt } from './house.ts';
@@ -52,10 +53,19 @@ export function armOf(weapon: WeaponId | null, ammo: Partial<Record<AmmoKey, num
 /** tick dla minuty gry liczonej od północy pierwszego dnia (jak RaidPlan.at i GovEffects.away) */
 export const tickOfMinute = (m: number): number => Math.round(((m - START_MINUTES) * TICKS_PER_HOUR) / 60);
 
+/** ile palenisk pali drewno nocą, gdy stoją kozy z beczek albo kocioł: koza zarządu 1 plus wagi nowych (kocioł 3); 0,
+    gdy nowych nie ma, wtedy karta liczy jedną kozę po staremu */
+function paleniska(st: SimState): number {
+  let nowe = 0;
+  for (const t of st.things) if (t.kind === 'koza_beczka' || t.kind === 'kociol') nowe += PALENISKA[t.kind];
+  return nowe > 0 ? 1 + nowe : 0;
+}
+
 /** Odczyt dla zarządu: snapshot w kształcie GovInput. screen: sekundy przy ekranie od startu gry bez pauzy
     (przy 1× to tick / 20; liczy je pętla gry, bo symulacja nie wie o tempie). */
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
   const s = snapshot(st, w);
+  const palenisk = paleniska(st);
   return {
     tick: s.tick,
     day: s.day,
@@ -110,6 +120,8 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     books: { ...st.books },
     techDone: [...(st.techDone ?? [])],
     know: Object.fromEntries(TECH_DOMS.map((d) => [d, wiedza(st, d)])) as Record<TechDom, number>,
+    // kozy z beczek i kocioł: dyżur przy kozie dokłada do wszystkich, a wyliczenie drewna na noc liczy każde
+    ...(palenisk > 0 ? { paleniska: palenisk } : {}),
   };
 }
 

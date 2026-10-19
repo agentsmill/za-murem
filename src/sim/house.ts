@@ -1,7 +1,8 @@
 /* Wnętrze siedziby widziane przez symulację i ciepło w pomieszczeniach.
    Wnętrze generuje świat (src/world/interior.ts, kontrakt z M1). Tu jest tylko jego kształt strukturalny
    z tymi samymi nazwami pól, żeby symulacja nie zależała od generatora. Wnętrze wynika ze świata i ziarna,
-   więc nie trafia do zapisu gry; temperatury pomieszczeń są w stanie (SimState.temps). */
+   więc nie trafia do zapisu gry; temperatury pomieszczeń są w stanie (SimState.temps). `heatStep` przyjmuje dodatek do
+   temperatury bazowej pomieszczeń (t_okna), a `kozaFront` wskazuje kafelek przed kozą zarządu, który zostaje wolny. */
 
 import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
@@ -203,17 +204,19 @@ export function roomLight(
 
 /** Jeden krok ciepła (HEAT_EVERY ticków). Pomieszczenie dąży do temperatury z zewnątrz z izolacją
     plus ocieplenie od kóz (heatBoost). Ogień grzeje szybko, bez niego temperatura zmienia się powoli.
-    Zwraca ocieplenie pomieszczeń. */
+    extra: dodatek w °C do temperatury bazowej każdego pomieszczenia (folia i koce w oknach, t_okna), bez niego
+    albo z zerami dokładnie jak dawniej. Zwraca ocieplenie pomieszczeń. */
 export function heatStep(
   temps: number[],
   kinds: readonly RoomKind[],
   links: readonly (readonly [number, number])[],
   fires: readonly number[],
   tout: number,
+  extra?: readonly number[],
 ): number[] {
   const boost = heatBoost(kinds, links, fires, tout);
   for (let r = 0; r < temps.length; r++) {
-    const base = tout + insul(kinds[r]);
+    const base = tout + insul(kinds[r]) + (extra?.[r] ?? 0);
     // pomieszczenie z ogniem w tempie ognia bez względu na pogodę, sąsiednie tym szybciej, im więcej ciepła dochodzi
     const f =
       fires.includes(r) && boost[r] > 0 ? F_FIRE : F_DRIFT + (F_FIRE - F_DRIFT) * Math.min(1, boost[r] / FULL_BOOST);
