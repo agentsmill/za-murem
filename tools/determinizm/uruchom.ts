@@ -6,6 +6,7 @@
    ani od stanu zostawionego w modułach przez pierwszy przebieg. */
 
 import type { Geo } from '../../src/world/geo.ts';
+import { zainstaluj } from './mat-proba.ts';
 import { nagrywaj, type WywolanieJson, zakodujWywolania } from './nagrywanie.ts';
 import { czesciSwiata, graj, skrotSwiata } from './przebieg.ts';
 import { psuj } from './uszkodzenie.ts';
@@ -39,6 +40,8 @@ export interface WynikNogi {
 
 export function uruchom(z: Zlecenie, dane: DaneDema, zegar: () => number): WynikNogi {
   const biegi: Bieg[] = [];
+  // łatka najpierw, uszkodzenie na wierzch: samotest psuje to, co faktycznie liczy przebieg
+  const przywrocMat = z.latka === 'mat' ? zainstaluj() : null;
   const uszkodzenie = z.psuj ? psuj(z.psuj) : null;
   try {
     for (let i = 0; i < z.powtorz; i++) {
@@ -72,6 +75,7 @@ export function uruchom(z: Zlecenie, dane: DaneDema, zegar: () => number): Wynik
     }
   } finally {
     uszkodzenie?.przywroc();
+    przywrocMat?.();
   }
   return { biegi };
 }

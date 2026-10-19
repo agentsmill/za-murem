@@ -18,10 +18,14 @@
 
    Uruchomienie: npm run determinizm [-- --demo=przymorze|lanciego|zielonki] [--godziny=24] [--zombie|--zwykly]
                                        [--seed=12345[,2,3]] [--silniki=node,chromium,jsc] [--json=plik.json]
-                                       [--nagraj[=godzina]] [--psuj=silnik:funkcja]
+                                       [--nagraj[=godzina]] [--psuj=silnik:funkcja] [--bez-swiata] [--latka=mat]
    Bez --demo: trzy dema; bez --zombie i --zwykly: oba tryby gry. --nagraj: nagrywanie przy rozbieżności jest
    domyślne; z numerem godziny (od 0) nagrywa tę godzinę gry w każdym scenariuszu, także gdy skróty są zgodne.
    --psuj=jsc:hypot to samotest bramki: noga jsc zwiększa każdy wynik hypot o jeden bit, a bramka ma to zauważyć.
+   --bez-swiata pomija porównanie świata zaraz po zbudowaniu (kafelki, budynki, drzewa), zostawia same skróty stanu gry.
+   --latka=mat to próba poprawki: w każdej nodze Math.hypot, atan2, sin i cos zastępuje deterministyczna matematyka
+   z tools/determinizm/mat-proba.ts (prototyp src/core/mat.ts). Jeśli silniki z łatką się zgadzają, a bez niej nie,
+   poprawka działa; spisu różnic Math z łatką nie robimy (liczyłby natywne funkcje, nie łatkę).
    Kod wyjścia: 0 przy zgodzie wszystkich silników docelowych (Chromium, Firefox, WebKit, Node 24), 1 przy
    rozbieżności albo niepowtarzalnym silniku (z godziną gry i skrótami każdego silnika), 2 przy braku silnika
    docelowego, 64 przy złych argumentach. Silniki dodatkowe (Node bieżący, jsc) liczą się do zgodności, ale ich brak
@@ -63,11 +67,23 @@ const execFileP = promisify(execFile);
 // argumenty
 
 const SILNIKI = ['node', 'node24', 'chromium', 'firefox', 'webkit', 'jsc'];
-const ZNANE = ['demo', 'godziny', 'zombie', 'zwykly', 'seed', 'silniki', 'json', 'nagraj', 'psuj'];
+const ZNANE = [
+  'demo',
+  'godziny',
+  'zombie',
+  'zwykly',
+  'seed',
+  'silniki',
+  'json',
+  'nagraj',
+  'psuj',
+  'bez-swiata',
+  'latka',
+];
 const argumenty = process.argv.slice(2);
 function blad(tekst: string): never {
   console.error(
-    `${tekst}\nUżycie: npm run determinizm [-- --demo=przymorze|lanciego|zielonki] [--godziny=24] [--zombie|--zwykly] [--seed=12345,2] [--silniki=${SILNIKI.join(',')}] [--json=plik.json] [--nagraj[=godzina]] [--psuj=silnik:funkcja]`,
+    `${tekst}\nUżycie: npm run determinizm [-- --demo=przymorze|lanciego|zielonki] [--godziny=24] [--zombie|--zwykly] [--seed=12345,2] [--silniki=${SILNIKI.join(',')}] [--json=plik.json] [--nagraj[=godzina]] [--psuj=silnik:funkcja] [--bez-swiata] [--latka=mat]`,
   );
   process.exit(64);
 }
@@ -95,6 +111,8 @@ if (
   (!Number.isInteger(wymuszonaGodzina) || wymuszonaGodzina < 0 || wymuszonaGodzina >= godziny)
 )
   blad(`--nagraj=godzina to liczba całkowita od 0 do ${godziny - 1}, jest „${wartosc('nagraj')}”`);
+if (wartosc('latka') !== undefined && wartosc('latka') !== 'mat') blad(`--latka to mat, jest „${wartosc('latka')}”`);
+const latka = wartosc('latka') === 'mat' ? ('mat' as const) : undefined;
 const [psujSilnik, psujFunkcja] = (wartosc('psuj') ?? '').split(':');
 if (
   wartosc('psuj') !== undefined &&
@@ -383,6 +401,7 @@ const zlecenieNogi = (n: Noga, s: Scenariusz, dodatki: Partial<Zlecenie> = {}): 
   seed: s.seed,
   powtorz: 2,
   ...(psujSilnik === n.id ? { psuj: psujFunkcja } : {}),
+  ...(latka ? { latka } : {}),
   ...dodatki,
 });
 
@@ -390,6 +409,8 @@ console.error(
   `Determinizm: ${scenariusze.length} scenariuszy po ${godziny} h gry, silniki: ${dostepne.map((n) => n.id).join(', ') || 'żaden'}`,
 );
 if (psujSilnik) console.error(`  samotest: noga ${psujSilnik} zwiększa każdy wynik ${psujFunkcja} o jeden bit`);
+if (latka)
+  console.error('  łatka mat: hypot, atan2, sin i cos z deterministycznej matematyki (tools/determinizm/mat-proba.ts)');
 
 // ---------------------------------------------------------------------------------------------------------------------
 // raport
@@ -486,10 +507,11 @@ async function nagrajScenariusz(s: Scenariusz, okno: Okno, wzorzec: Noga): Promi
       `      miejsce w kodzie: ${await miejsceWywolania(s, okno, wzorzec, r.i)}`,
     );
   }
-  // spis różnic: te same wywołania policzone od nowa w każdej nodze, funkcja po funkcji
+  // spis różnic: te same wywołania policzone od nowa w każdej nodze, funkcja po funkcji (z łatką pomijamy: liczyłby
+  // natywne funkcje Math, a nie łatkę)
   const spisy = new Map<string, SpisRoznic>();
   await Promise.all(
-    dostepne.map(async (n) => {
+    (latka ? [] : dostepne).map(async (n) => {
       try {
         spisy.set(n.id, await n.kontroluj(zakodujWywolania(wzorcowe)));
       } catch (e) {
@@ -594,7 +616,7 @@ try {
     let okno: Okno | null = null;
     // świat zaraz po zbudowaniu: stan gry go nie obejmuje, a klient i serwer muszą budować ten sam
     const rozneSwiaty = new Set(liczyly.map((n) => swiat(n, s)));
-    if (rozneSwiaty.size > 1) {
+    if (!jest('bez-swiata') && rozneSwiaty.size > 1) {
       rozbiezne = true;
       okno = { od: -1, do: 0 };
       const czesci = (n: Noga) => wyniki.get(klucz(n, s))?.biegi[0]?.swiatCzesci ?? {};
@@ -634,7 +656,7 @@ try {
           `NIEPOWTARZALNY ${n.id} w ${opisScenariusza(s)}: przebiegi różnią się po ${self.pierwsza.godzina + 1}. godzinie gry`,
           ...Object.entries(self.pierwsza.silniki).map(([id, h]) => `    ${id.padEnd(11)} ${h}`),
         );
-      } else if (new Set(biegi.map((b) => b.swiat)).size > 1) {
+      } else if (!jest('bez-swiata') && new Set(biegi.map((b) => b.swiat)).size > 1) {
         rozbiezne = true;
         opis.push(`NIEPOWTARZALNY ${n.id} w ${opisScenariusza(s)}: przebiegi budują inny świat`);
       }
@@ -684,7 +706,7 @@ try {
       const koniec = skroty(dostepne[0], s)?.at(-1);
       if (koniec)
         console.log(
-          `zgodne: ${opisScenariusza(s).padEnd(28)} świat ${swiat(dostepne[0], s)}, skrót po ${godziny} h: ${koniec}`,
+          `zgodne: ${opisScenariusza(s).padEnd(28)} ${jest('bez-swiata') ? '' : `świat ${swiat(dostepne[0], s)}, `}skrót po ${godziny} h: ${koniec}`,
         );
     }
 

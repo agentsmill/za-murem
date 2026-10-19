@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { odkodujWywolania, type WywolanieJson } from '../../tools/determinizm/nagrywanie.ts';
 import { czesciSwiata, graj, przebieg, skrotSwiata } from '../../tools/determinizm/przebieg.ts';
 import { uruchom } from '../../tools/determinizm/uruchom.ts';
 
@@ -8,6 +9,25 @@ const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../..
 const dane = { geo: demo.geo, street: demo.street as string };
 
 describe('wspólne wejście nóg silników', () => {
+  it('z łatką mat budowa świata używa deterministycznej matematyki (każde hypot to sqrt sumy kwadratów), a po przebiegu wraca Math', () => {
+    const oryginaly = [Math.hypot, Math.atan2, Math.sin, Math.cos];
+    const z = { demo: 'lanciego', godziny: 1, tryb: 'zwykly', seed: 9, powtorz: 1, nagraj: { od: -1, do: 0 } } as const;
+    const demoL = JSON.parse(
+      fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/lanciego.json'), 'utf8'),
+    );
+    const daneL = { geo: demoL.geo, street: demoL.street as string };
+    const hypoty = (nagranie: WywolanieJson[] | undefined) =>
+      odkodujWywolania(nagranie ?? []).filter(([nazwa]) => nazwa === 'hypot');
+    const natywne = hypoty(uruchom(z, daneL, () => 0).biegi[0].nagranie);
+    const lat = hypoty(uruchom({ ...z, latka: 'mat' }, daneL, () => 0).biegi[0].nagranie);
+    expect([Math.hypot, Math.atan2, Math.sin, Math.cos]).toEqual(oryginaly);
+    expect(natywne.length).toBeGreaterThan(1000);
+    expect(lat.length).toBe(natywne.length);
+    // natywny hypot w V8 różni się od sqrt sumy kwadratów w co trzecim wywołaniu na kratce, łatka nigdy
+    expect(natywne.some(([, [a, b], wynik]) => wynik !== Math.sqrt(a * a + b * b))).toBe(true);
+    expect(lat.every(([, [a, b], wynik]) => wynik === Math.sqrt(a * a + b * b))).toBe(true);
+  });
+
   it('na życzenie oddaje tablice kafelków świata (teren, numery budynków, przejścia) pierwszego przebiegu', () => {
     const z = { demo: 'zielonki', godziny: 1, tryb: 'zwykly', seed: 9, powtorz: 2 } as const;
     const bez = uruchom(z, dane, () => 0);

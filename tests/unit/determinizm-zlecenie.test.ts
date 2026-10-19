@@ -17,6 +17,8 @@ describe('zlecenie przebiegu dla nóg silników', () => {
     });
     // sama budowa świata: od kroku −1 do 0
     expect(zParametrow(odczyt(doParametrow({ ...z, nagraj: { od: -1, do: 0 } }))).nagraj).toEqual({ od: -1, do: 0 });
+    const z5: Zlecenie = { ...z, latka: 'mat' };
+    expect(zParametrow(odczyt(doParametrow(z5)))).toEqual(z5);
     const z4: Zlecenie = { ...z, kafelki: true };
     expect(zParametrow(odczyt(doParametrow(z4)))).toEqual(z4);
     expect(zParametrow(odczyt(doParametrow(z))).kafelki).toBeUndefined();
@@ -37,5 +39,6 @@ describe('zlecenie przebiegu dla nóg silników', () => {
     expect(() => zParametrow(odczyt({ demo: '../../etc/passwd' }))).toThrow(/demo/);
     expect(() => zParametrow(odczyt({ nagraj: '10' }))).toThrow(/nagraj/);
     expect(() => zParametrow(odczyt({ psuj: 'sqrt' }))).toThrow(/psuj/);
+    expect(() => zParametrow(odczyt({ latka: 'inna' }))).toThrow(/latka/);
   });
 });

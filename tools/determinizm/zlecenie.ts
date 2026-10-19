@@ -23,6 +23,8 @@ export interface Zlecenie {
   psuj?: string;
   /** oddać tablice kafelków świata pierwszego przebiegu (do policzenia, ile kafelków się rozjechało) */
   kafelki?: boolean;
+  /** próba poprawki: 'mat' podmienia Math.hypot, atan2, sin i cos deterministyczną matematyką z mat-proba.ts */
+  latka?: 'mat';
 }
 
 export const SEED_DOMYSLNE = 12345;
@@ -41,6 +43,7 @@ export function doParametrow(z: Zlecenie): Record<string, string> {
     p.nagraj = [z.nagraj.od, z.nagraj.do, ...(z.nagraj.stosPrzy === undefined ? [] : [z.nagraj.stosPrzy])].join(':');
   if (z.psuj) p.psuj = z.psuj;
   if (z.kafelki) p.kafelki = '1';
+  if (z.latka) p.latka = z.latka;
   return p;
 }
 
@@ -79,5 +82,10 @@ export function zParametrow(czytaj: (klucz: string) => string | null | undefined
     z.psuj = psuj;
   }
   if (czytaj('kafelki') === '1') z.kafelki = true;
+  const latka = czytaj('latka');
+  if (latka) {
+    if (latka !== 'mat') throw new Error(`Zlecenie: latka to mat, jest „${latka}”`);
+    z.latka = latka;
+  }
   return z;
 }

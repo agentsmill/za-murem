@@ -46,10 +46,10 @@ const liczbaArg = (nazwa: string, domyslna: number) => {
 for (const a of argumenty)
   if (
     !a.startsWith('--') ||
-    !['demo', 'godziny', 'tlum', 'powtorz', 'seed', 'json'].includes(a.slice(2).split('=')[0])
+    !['demo', 'godziny', 'tlum', 'powtorz', 'seed', 'json', 'zombie'].includes(a.slice(2).split('=')[0])
   ) {
     console.error(
-      `Nieznany argument: ${a}\nUżycie: node tools/pojemnosc.ts [--demo=...] [--godziny=24] [--tlum=150] [--powtorz=3] [--seed=12345] [--json=plik]`,
+      `Nieznany argument: ${a}\nUżycie: node tools/pojemnosc.ts [--demo=...] [--godziny=24] [--tlum=150] [--powtorz=3] [--seed=12345] [--zombie] [--json=plik]`,
     );
     process.exit(64);
   }
@@ -57,6 +57,7 @@ const godziny = Math.max(1, liczbaArg('godziny', 24));
 const tlum = liczbaArg('tlum', 150);
 const powtorz = Math.max(1, liczbaArg('powtorz', 3));
 const seed = liczbaArg('seed', 12345);
+const tryb: 'zwykly' | 'zombie' = argumenty.includes('--zombie') ? 'zombie' : 'zwykly';
 const dema = wartosc('demo') ? [wartosc('demo') as string] : DEMA;
 for (const d of dema)
   if (!DEMA.includes(d)) {
@@ -77,6 +78,8 @@ const demo = (klucz: string) =>
 const MB = 1024 * 1024;
 const kb = (n: number) => `${(n / 1024).toFixed(0)} KB`;
 const mb = (n: number) => `${(n / MB).toFixed(1)} MB`;
+const us = (msWartosc: number) =>
+  (msWartosc * 1000).toFixed(msWartosc * 1000 >= 100 ? 0 : msWartosc * 1000 >= 10 ? 1 : 2);
 const ms = (n: number) => (n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n >= 1 ? n.toFixed(2) : n.toFixed(3));
 const percentyl = (posortowane: Float64Array | number[], p: number) =>
   posortowane.length ? posortowane[Math.min(posortowane.length - 1, Math.floor(p * posortowane.length))] : Number.NaN;
@@ -94,21 +97,47 @@ const rozklad = (a: number[]): Rozklad => {
   return { p50: percentyl(s, 0.5), p99: percentyl(s, 0.99), max: s.length ? s[s.length - 1] : Number.NaN, n: a.length };
 };
 
-/** pamięć wczytanego świata drużyny (świat, stan i Sim): różnica po GC dla kilku naraz, na jeden świat */
-function pamiecSwiata(klucz: string, tlumPionkow: number, ile = 4) {
+/** nachylenie prostej najmniejszych kwadratów y(x): przyrost y na jeden x */
+function nachylenie(x: number[], y: number[]): number {
+  const sx = x.reduce((a, b) => a + b, 0) / x.length;
+  const sy = y.reduce((a, b) => a + b, 0) / y.length;
+  let licznik = 0;
+  let mianownik = 0;
+  for (let i = 0; i < x.length; i++) {
+    licznik += (x[i] - sx) * (y[i] - sy);
+    mianownik += (x[i] - sx) ** 2;
+  }
+  return licznik / mianownik;
+}
+
+/** Pamięć wczytanego świata drużyny (świat, stan i Sim) na jeden świat: nachylenie prostej `sterta + external` po
+    wymuszonym GC w zależności od liczby trzymanych światów (0, 2, 4, 6, 8, każdy z innym ziarnem), więc koszt stały
+    (moduły, tablice stałe, JIT) nie wchodzi do wyniku. */
+function pamiecSwiata(klucz: string, tlumPionkow: number) {
   const d = demo(klucz);
-  const zbuduj = (s: number) =>
-    graj({ geo: d.geo, street: d.street, seed: s, godziny: 0, tryb: 'zwykly', tlum: tlumPionkow });
+  const zbuduj = (s: number) => graj({ geo: d.geo, street: d.street, seed: s, godziny: 0, tryb, tlum: tlumPionkow });
   zbuduj(seed + 100); // rozgrzewka: moduły, tablice stałe, JIT
-  gc();
-  const przed = process.memoryUsage();
-  const trzymane = Array.from({ length: ile }, (_, k) => zbuduj(seed + k));
-  gc();
-  const po = process.memoryUsage();
-  const naSwiat = (a: number, b: number) => (b - a) / ile;
+  zbuduj(seed + 101);
+  const trzymane: ReturnType<typeof zbuduj>[] = [];
+  const liczby: number[] = [];
+  const sterta: number[] = [];
+  const rss: number[] = [];
+  const mierz = () => {
+    gc();
+    gc();
+    const m = process.memoryUsage();
+    liczby.push(trzymane.length);
+    sterta.push(m.heapUsed + m.external);
+    rss.push(m.rss);
+  };
+  mierz();
+  for (let k = 0; k < 8; k++) {
+    trzymane.push(zbuduj(seed + k));
+    if (k % 2 === 1) mierz();
+  }
   const wynik = {
-    sterta: naSwiat(przed.heapUsed + przed.external, po.heapUsed + po.external),
-    rss: naSwiat(przed.rss, po.rss),
+    sterta: nachylenie(liczby, sterta),
+    rss: nachylenie(liczby, rss),
     pionkow: trzymane[0].sim.st.pawns.length,
   };
   trzymane.length = 0;
@@ -135,7 +164,7 @@ function przebiegZPomiarem(klucz: string, tlumPionkow: number): PomiarKrokow {
   let ostatni = performance.now();
   let budowa = 0;
   graj(
-    { geo: d.geo, street: d.street, seed, godziny, tryb: 'zwykly', tlum: tlumPionkow },
+    { geo: d.geo, street: d.street, seed, godziny, tryb, tlum: tlumPionkow },
     {
       krok(tick) {
         const teraz = performance.now();
@@ -188,7 +217,7 @@ interface PomiarStanu {
 /** zapis stanu po `h` godzinach gry do JSON z gzip i wczytanie z powrotem (jak zapis w chmurze i doliczanie po powrocie) */
 function pomiarStanu(klucz: string, tlumPionkow: number, h: number): PomiarStanu {
   const d = demo(klucz);
-  const gra = graj({ geo: d.geo, street: d.street, seed, godziny: h, tryb: 'zwykly', tlum: tlumPionkow });
+  const gra = graj({ geo: d.geo, street: d.street, seed, godziny: h, tryb, tlum: tlumPionkow });
   const st = gra.sim.st;
   const json = JSON.stringify(st);
   const gz = gzipSync(json);
@@ -225,7 +254,7 @@ const naglowek = [
   `Pojemność serwera świata, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`,
   `maszyna: ${cpu[0]?.model ?? '?'}, ${cpu.length} rdzeni, ${(os.totalmem() / 1024 ** 3).toFixed(0)} GB RAM, ${os.platform()} ${os.release()}, ${os.arch()}`,
   `Node ${process.versions.node} (V8 ${process.versions.v8}), obciążenie maszyny na starcie (1, 5 i 15 min): ${obciazenie()}`,
-  `scenariusz: ${godziny} h gry od 15:00 dnia 1, ziarno ${seed}, zarząd 4 osoby z polityką „zawsze warta”, tryb zwykły; każdy pomiar czasu ${powtorz}× (najkrótszy przebieg), tłum ${tlum} pionków za siatką`,
+  `scenariusz: ${godziny} h gry od 15:00 dnia 1, ziarno ${seed}, zarząd 4 osoby z polityką „zawsze warta”, tryb ${tryb === 'zombie' ? 'zombie' : 'zwykły'}; każdy pomiar czasu ${powtorz}× (najkrótszy przebieg), tłum ${tlum} pionków za siatką`,
 ];
 for (const l of naglowek) console.log(l);
 console.log('');
@@ -256,9 +285,9 @@ for (const klucz of dema) {
       `budowa świata i stanu (buildWorld, createSim, Sim; najlepszy przebieg, już po rozgrzewce): ${ms(k.budowaMs)} ms`,
     );
     for (const l of tabelaLinie([
-      ['krok', 'liczba', 'p50 ms', 'p99 ms', 'najgorszy ms'],
-      ['zwykły', String(k.zwykly.n), ms(k.zwykly.p50), ms(k.zwykly.p99), ms(k.zwykly.max)],
-      ['z zarządem (co 20.)', String(k.zarzad.n), ms(k.zarzad.p50), ms(k.zarzad.p99), ms(k.zarzad.max)],
+      ['krok', 'liczba', 'p50 µs', 'p99 µs', 'najgorszy ms'],
+      ['zwykły', String(k.zwykly.n), us(k.zwykly.p50), us(k.zwykly.p99), ms(k.zwykly.max)],
+      ['z zarządem (co 20.)', String(k.zarzad.n), us(k.zarzad.p50), us(k.zarzad.p99), ms(k.zarzad.max)],
     ]))
       console.log(l);
     console.log(
