@@ -1478,6 +1478,8 @@ Bramka na d24438e (po scaleniu `pelna-gra` 0485db9, czystym, 0b0c3ea; commity ga
 
 Scalenia z innymi gałęziami (suche próby `git merge-tree` na d24438e, bez ruszania drzewa): z `noc-integracja` (9c34a9e) czysto. Z `praca-ludzi` (cfeac53) dwa konflikty: w `src/main.ts` to dwa sąsiednie importy (`./ui/portrety.ts` i `./ui/praca.ts`), więc rozwiązaniem jest zostawienie obu, a w tym dzienniku końcówka „Zrobione” (zostawić obie strony, jak zawsze); `index.html`, `src/ui/okna.ts` i `tools/shots.ts` scalają się same. CSS listy ma już selektor `.app.praca-open` z szerokością `--praca-w`, więc po scaleniu panel Pracy też skraca listę od prawej, a klawisze E i Q nie kolidują z P ani z Tab tej gałęzi.
 
+Scalenie i wdrożenie (nocny integrator, 19.10.2026 po południu): `lista-ludzi` 8fa20be scalona w 8371dc5 (konflikt tylko w dzienniku), bramka integratora na 8371dc5: `npm test` 4119 zdanych, 1 oczekiwana porażka, 8 pominiętych (220 plików); `npm run lint` na całym repo i build czyste; boty bez zmian (da4b24e0, dad44c81, 219e57bd, 7d8fe31b), `bot -- 1 10 --miasto` bez błędu; `npm run shots -- --dalej` kod 0 (13 min 20 s); obejrzane `lista-1280` (cztery kafelki z portretami pod paskiem, zaznaczona Marlena). Na serwer testowy razem z tym wpisem. Znane, sprzed listy (zauważył koordynator): przy 1024×768 i 1280×720 karta postaci nachodzi na cele dnia, a pierwsza podpowiedź „To wasz zarząd…” zasłania „Zmień imię”.
+
 ## Następne
 
 Rano 19.10.2026, po nocy z nocnym integratorem (dla Mateusza; szczegóły we wpisach „Noc integracji 19.10.2026” i niżej):
