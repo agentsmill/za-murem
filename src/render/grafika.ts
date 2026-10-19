@@ -1,12 +1,18 @@
 /* Wczytanie grafiki z PixelLab z public/assets (atlasy z tools/atlasy.ts) przy starcie gry: teren, moduły bloku,
    naklejki dachu i stropu, trzepak, wyglądy budynków publicznych i zabytkowych oraz animacje ludzi. Bez opisu, w innej
-   wersji albo bez sieci wszystko rysuje kod; bez jednego obrazka tylko ta część. */
+   wersji albo bez sieci wszystko rysuje kod; bez jednego obrazka tylko ta część.
+
+   Opis i atlasy mają stałe nazwy (bez odcisku jak pliki Vite), więc każde pobranie idzie z `cache: 'no-cache'`:
+   przeglądarka zawsze pyta serwer, czy plik się zmienił (zwykle 304), i nie trzyma starej wersji po wdrożeniu. Bez tego
+   opis sprzed zmiany formatu (WERSJA_GRAFIKI) zostawał w pamięci podręcznej i nowa gra rysowała wszystko kodem. */
 
 import { ctx2d, newCanvas } from './art/canvas.ts';
 import { type Grafika, grafikaZ, type Obraz, type OpisGrafiki, WERSJA_GRAFIKI } from './art/pixellab.ts';
 
 /** katalog atlasów względem strony gry (ten sam build działa lokalnie i pod adresem Pages) */
 const KATALOG = 'assets/';
+/** każde pobranie pyta serwer o zmiany, niezależnie od nagłówków pamięci podręcznej, bo nazwy plików są stałe */
+const ZE_SPRAWDZENIEM: RequestInit = { cache: 'no-cache' };
 
 /** PNG z atlasu do pikseli: obrazy mają alfę tylko 0 albo 255, więc płótno odda je bez zmian */
 async function dekodujPng(b: Blob): Promise<Obraz> {
@@ -23,10 +29,10 @@ async function dekodujPng(b: Blob): Promise<Obraz> {
 export async function wczytajGrafike(
   opts: { pobierz?: typeof fetch; dekoduj?: (b: Blob) => Promise<Obraz> } = {},
 ): Promise<Grafika | null> {
-  const pobierz = opts.pobierz ?? ((u: string | URL | Request) => fetch(u));
+  const pobierz = opts.pobierz ?? ((u: string | URL | Request, init?: RequestInit) => fetch(u, init));
   const dekoduj = opts.dekoduj ?? dekodujPng;
   try {
-    const r = await pobierz(`${KATALOG}grafika.json`);
+    const r = await pobierz(`${KATALOG}grafika.json`, ZE_SPRAWDZENIEM);
     if (!r.ok) throw new Error(`grafika.json: ${r.status}`);
     const opis = (await r.json()) as OpisGrafiki;
     if (opis.wersja !== WERSJA_GRAFIKI)
@@ -43,7 +49,7 @@ export async function wczytajGrafike(
     const obrazy = await Promise.all(
       pliki.map(async (plik) => {
         try {
-          const o = await pobierz(KATALOG + plik);
+          const o = await pobierz(KATALOG + plik, ZE_SPRAWDZENIEM);
           if (!o.ok) throw new Error(`${o.status}`);
           return await dekoduj(await o.blob());
         } catch (e) {
