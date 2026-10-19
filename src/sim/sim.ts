@@ -5,7 +5,7 @@
    `mieszkancy` (krok 5, src/sim/lokatorzy.ts) zarząd i mieszkańcy siedziby mają osoby z generatora mieszkańców;
    bez niej stan jest taki jak przed tą opcją. */
 
-import { PROFS } from '../content/data.ts';
+import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
@@ -866,6 +866,13 @@ export interface SimState {
   /** odblokowane badania (identyfikatory z BuildDef.tech); celowo brak pola, dopóki ktoś nie odblokuje pierwszego
       badania: `sim.hash()` to skrót z całego stanu, więc zawsze obecne puste pole ruszyłoby każdy skrót */
   techDone?: string[];
+  /** badania (src/sim/badania.ts): bieżące badanie (`cur`, null: nic nie wybrano), zapisany postęp każdego zaczętego
+      badania w punktach (`prog`, zmiana badania go nie kasuje) i tick ukończenia zbadanych (`at`). Pola nie ma, dopóki
+      nikt nie wybierze pierwszego badania, więc gra bez badań ma ten sam skrót stanu co dotąd. */
+  research?: { cur: string | null; prog: Record<string, number>; at: Record<string, number> };
+  /** książki osady według dziedziny (każda dodaje 1 do wiedzy, w wiedzy liczą się najwyżej 2); pola nie ma, dopóki
+      nikt nie znajdzie pierwszej książki */
+  books?: Partial<Record<TechDom, number>>;
   /** wraki przeszukane i rozebrane (lewy górny kafelek), rosnąco; brak, dopóki nikt nie przeszukał wraku */
   wraki?: WreckMark[];
   /** sąsiednie budynki (M2 fala 2): nie ma go, dopóki zarząd nie dotknie cudzych drzwi, więc gra bez sąsiadów ma ten
