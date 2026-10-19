@@ -5,11 +5,16 @@
    (angielski bez polskich słów, trop każdego haczyka, bez pięter i numerów mieszkań). */
 
 import { describe, expect, it } from 'vitest';
-import { type Dom, NAMES, SURN } from '../../src/content/data.ts';
+import { zawodEn } from '../../src/content/data.en.ts';
+import { type Dom, NAMES, SEASONS, SURN } from '../../src/content/data.ts';
 import { KAT_EN } from '../../src/content/miejsca.en.ts';
 import { tx } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import {
+  AMUNICJA,
+  BRON,
+  BRON_DEZERTERA,
+  BRON_ZWYKLA,
   type ChceId,
   chceMozliwe,
   type Gosc,
@@ -22,6 +27,7 @@ import {
   type MaId,
   maMozliwe,
   osobyGrupy,
+  PROG_FACHU,
   SATYRA,
   skladGoscia,
   stronaMiejsca,
@@ -30,10 +36,12 @@ import {
   wagaGoscia,
   wariantyGoscia,
   wygladaNaOsobe,
+  ZIMA,
   zgodnyGosc,
 } from '../../src/gov/goscie.ts';
 import { BLOK, wordsEn, wordsOf } from '../../src/gov/miejsce.ts';
 import type { GameMode, GovPlace } from '../../src/gov/typy.ts';
+import { AMMO_EN, AMMO_NAMES, WEAPONS, WEAPONS_EN } from '../../src/sim/bron.ts';
 import type { Miejsce } from '../../src/world/miasto.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
@@ -81,7 +89,11 @@ const gosc = (seed: number, c: KontekstGoscia = ctx(), n = 1): Gosc =>
 /** wszystkie imiona, nazwiska i nazwy miejsc, które w angielskim tekście zostają po polsku */
 const dozwolone = (g: Gosc, okolica: readonly Miejsce[] = []): string[] => [
   ...g.osoby.flatMap((p) => [p.name, p.first]),
-  ...okolica.map((m) => m.nazwa),
+  ...okolica.flatMap((m) => {
+    // nazwa w tekście stoi po kategorii i bez jej słowa („Apteka Pod Różą” → „Pod Różą”): wolno też każdy jej koniec
+    const slowa = m.nazwa.split(' ');
+    return slowa.map((_, i) => slowa.slice(i).join(' '));
+  }),
 ];
 
 describe('klocki gościa: skład', () => {
@@ -258,10 +270,10 @@ describe('klocki gościa: skład', () => {
           expect(Object.keys(SATYRA), co).toContain(g.satyra);
           expect(['ocaleni', 'z_ugryzionym', 'dziecko'], co).not.toContain(g.kto);
         }
-        // gość z fachem ma zawód z umiejętnością
+        // gość z fachem ma zawód z umiejętnością od progu modułu
         if (g.ma === 'fach')
           expect(
-            Object.values(g.osoby[0].skills).some((v) => (v ?? 0) >= 1),
+            Object.values(g.osoby[0].skills).some((v) => (v ?? 0) >= PROG_FACHU),
             co,
           ).toBe(true);
       }
@@ -350,8 +362,9 @@ describe('klocki gościa: skład', () => {
       }
       return { kto, haczyk };
     };
-    const zima = chorych(1);
-    const lato = chorych(3);
+    expect(ZIMA).toBe(SEASONS.indexOf('zima'));
+    const zima = chorych(ZIMA);
+    const lato = chorych(SEASONS.indexOf('lato'));
     expect(zima.kto).toBeGreaterThan(lato.kto * 1.4);
     expect(zima.haczyk).toBeGreaterThan(lato.haczyk * 1.4);
   });
@@ -417,10 +430,9 @@ describe('klocki gościa: skąd', () => {
     // północ: najbliższe miejsce od tej strony (apteka, nie przychodnia), z nazwą
     for (const g of wedlug.n!) {
       expect(g.skad.klucz).toBe('poi:n1');
-      expect(g.skad.nazwa.pl).toContain('apteki');
-      expect(g.skad.nazwa.pl).toContain('Apteka Pod Różą');
-      expect(g.skad.nazwa.en).toContain('the pharmacy');
-      expect(g.skad.nazwa.en).toContain('Apteka Pod Różą');
+      // kategoria, potem nazwa w cudzysłowie bez słowa kategorii, które już stoi przed nią
+      expect(g.skad.nazwa.pl).toBe('od strony apteki „Pod Różą”');
+      expect(g.skad.nazwa.en).toBe('from the direction of the pharmacy “Pod Różą”');
     }
     // wschód: nazwa jak imię i nazwisko odpada, zostaje sama kategoria (RODO), klucz miejsca zostaje
     for (const g of wedlug.e!) {
@@ -433,8 +445,8 @@ describe('klocki gościa: skąd', () => {
     // południe: najbliższy bank (|y| = 150), nie dalszy sklep; nazwa marki zostaje
     for (const g of wedlug.s!) {
       expect(g.skad.klucz).toBe('poi:s1');
-      expect(g.skad.nazwa.pl).toContain('banku');
-      expect(g.skad.nazwa.pl).toContain('Bank Bufor');
+      expect(g.skad.nazwa.pl).toBe('od strony banku „Bufor”');
+      expect(g.skad.nazwa.en).toBe('from the direction of the bank “Bufor”');
     }
     // zachód: miejsce na przekątnej wpada na oś x, a „u Zbyszka” to właściciel: tylko kategoria
     for (const g of wedlug.w!) {
@@ -448,8 +460,8 @@ describe('klocki gościa: skąd', () => {
     for (let seed = 1; seed <= 80; seed++) {
       const g = gosc(seed, ctx({ okolica: tylkoSklep }));
       if (g.skad.strona !== 's') continue;
-      expect(g.skad.nazwa.pl).toContain('sklepu');
-      expect(g.skad.nazwa.pl).not.toContain('(');
+      expect(g.skad.nazwa.pl).toBe('od strony sklepu');
+      expect(g.skad.nazwa.en).toBe('from the direction of the shop');
     }
   });
 
@@ -793,7 +805,7 @@ describe('klocki gościa: pełne pokrycie tekstów i drobiazgi', () => {
     skad: {
       strona: 'n',
       klucz: 'poi:n1',
-      nazwa: tx('od strony apteki (Apteka Pod Różą)', 'from the direction of the pharmacy (Apteka Pod Różą)'),
+      nazwa: tx('od strony apteki „Pod Różą”', 'from the direction of the pharmacy “Pod Różą”'),
     },
     ...(haczyk === 'ugryziony' ? { ugryziony: ilu > 1 ? 1 : 0 } : {}),
     ...(ma === 'rzecz' ? { rzecz: { arms: 'kusza', ammo: { belty: 6 } } } : {}),
@@ -817,7 +829,7 @@ describe('klocki gościa: pełne pokrycie tekstów i drobiazgi', () => {
           for (const [c, m, h] of przypadki) {
             const g = reczny(kto, c, m, h, ilu, seed);
             plec.add(`${kto}/${g.osoby[0].f}`);
-            const wolno = [...g.osoby.flatMap((p) => [p.name, p.first]), 'Apteka Pod Różą'];
+            const wolno = [...g.osoby.flatMap((p) => [p.name, p.first]), 'Pod Różą'];
             for (const { nazwa, s, e } of SLOWA) {
               const w = wariantyGoscia(g, s, e);
               for (const t of [...w.kto, ...w.chce, ...w.ma, ...w.trop]) {
@@ -925,6 +937,350 @@ describe('klocki gościa: pełne pokrycie tekstów i drobiazgi', () => {
       'Halina Kowalska',
     ]) {
       expect(wygladaNaOsobe(zle), zle).toBe(true);
+    }
+  });
+});
+
+describe('klocki gościa: poprawki po przeglądzie (runda 1)', () => {
+  const reczny = (kto: KtoId, chce: ChceId, ma: MaId, haczyk: HaczykId, ilu: number, seed: number): Gosc => ({
+    id: 'g1',
+    osoby: osobyGrupy(mulberry(seed), licznik(), kto, ilu, new Set<string>()),
+    kto,
+    chce,
+    ma,
+    haczyk,
+    skad: { strona: 'n', klucz: 'poi:n1', nazwa: tx('z północy', 'from the north') },
+    ...(haczyk === 'ugryziony' ? { ugryziony: ilu > 1 ? 1 : 0 } : {}),
+    ...(ma === 'rzecz' ? { rzecz: { arms: 'kusza', ammo: { belty: 6 } } } : {}),
+  });
+  const SEDY = [3, 4, 5, 6, 7, 8, 9, 10];
+  const { s: S, e: E } = SLOWA[0];
+
+  // ---- 1. „nic” nie przeczy torbom ani kieszeniom
+
+  const TORBA_PL = /plecak|worek|torb|wózek|bagaż|zawiniątk|tobołek/i;
+  const TORBA_EN = /rucksack|sack|\bbag\b|pram|luggage|bundle|belongings/i;
+  const BRAK_TORBY_PL = /ani torb|bez torb|nie ma torby|na grzbiecie|tylko to, co/i;
+  const BRAK_TORBY_EN = /no bag|without a bag|on (?:his|her|their) back|only what is/i;
+  const KIESZEN_PL = /kiesz/i;
+  const KIESZEN_EN = /pocket/i;
+  const PUSTE_KIESZENIE_PL = /kiesz[^.]*(?:pust|przetrząś|wywróc)/i;
+  const PUSTE_KIESZENIE_EN = /pockets?[^.]*(?:empty|searched|inside out)/i;
+
+  it('„nic” nie twierdzi, że gość nie ma torby ani że ma puste kieszenie, a satyra nie sięga do kieszeni', () => {
+    // same teksty: żadne „nic” nie mówi o torbach i kieszeniach, żadna satyra o kieszeniach
+    for (const [id, t] of Object.entries(SATYRA)) {
+      expect(t.pl, id).not.toMatch(KIESZEN_PL);
+      expect(t.en, id).not.toMatch(KIESZEN_EN);
+    }
+    const bledy: string[] = [];
+    let pary = 0;
+    for (const kto of KTOS) {
+      for (const ilu of [1, 2, 4]) {
+        for (const seed of SEDY) {
+          for (const chce of KTO[kto].chce) {
+            const g = reczny(kto, chce, 'nic', 'prawda', ilu, seed);
+            for (const { nazwa, s, e } of SLOWA) {
+              const w = wariantyGoscia(g, s, e);
+              for (const nic of w.ma) {
+                if (BRAK_TORBY_PL.test(nic.pl) || BRAK_TORBY_EN.test(nic.en))
+                  bledy.push(`brak torby ${nazwa} ${kto}: ${nic.pl} / ${nic.en}`);
+                if (TORBA_PL.test(nic.pl) || KIESZEN_PL.test(nic.pl))
+                  bledy.push(`nic o torbie ${nazwa} ${kto}: ${nic.pl}`);
+                if (TORBA_EN.test(nic.en) || KIESZEN_EN.test(nic.en))
+                  bledy.push(`nic o torbie ${nazwa} ${kto}: ${nic.en}`);
+                for (const k of w.kto) {
+                  pary++;
+                  // zdanie o kto pokazuje torbę, więc „nic” nie może jej odmawiać (i odwrotnie: odmowa przy torbie to błąd)
+                  if (TORBA_PL.test(k.pl) && BRAK_TORBY_PL.test(nic.pl)) bledy.push(`${kto}: ${k.pl} + ${nic.pl}`);
+                  if (TORBA_EN.test(k.en) && BRAK_TORBY_EN.test(nic.en)) bledy.push(`${kto}: ${k.en} + ${nic.en}`);
+                }
+                for (const [id, sat] of Object.entries(SATYRA)) {
+                  pary++;
+                  if (PUSTE_KIESZENIE_PL.test(nic.pl) && KIESZEN_PL.test(sat.pl))
+                    bledy.push(`${id}: ${nic.pl} + ${sat.pl}`);
+                  if (PUSTE_KIESZENIE_EN.test(nic.en) && KIESZEN_EN.test(sat.en))
+                    bledy.push(`${id}: ${nic.en} + ${sat.en}`);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(bledy.slice(0, 5)).toEqual([]);
+    expect(pary).toBeGreaterThan(50000);
+    // sam test ma zęby: wzorce łapią dawne zdania, które sprzeczność robiły
+    expect(
+      BRAK_TORBY_PL.test('Nie mają nic przydatnego: ani torby, ani niczego do wymiany, tylko to, co na grzbiecie.'),
+    ).toBe(true);
+    expect(BRAK_TORBY_EN.test('They have nothing useful: no bag, nothing to swap, only what is on their back.')).toBe(
+      true,
+    );
+    expect(PUSTE_KIESZENIE_PL.test('Kieszenie przetrząśnięte do dna: nic do jedzenia, nic do wymiany.')).toBe(true);
+    expect(PUSTE_KIESZENIE_EN.test('Pockets searched to the bottom: nothing to eat, nothing to swap.')).toBe(true);
+    expect(TORBA_PL.test('Pod bramą stoi chuda kobieta z plecakiem i workiem na sznurku.')).toBe(true);
+    expect(TORBA_EN.test('A thin woman with a rucksack and a sack on a string')).toBe(true);
+  });
+
+  it('w prawdziwych gościach „nic” nie idzie w parze z satyrą o kieszeni ani z odmową torby (zwykły i zombie)', () => {
+    let nic = 0;
+    for (const mode of TRYBY) {
+      for (let seed = 1; seed <= 1500; seed++) {
+        const g = gosc(seed, ctx({ mode, season: seed % 4 }));
+        if (g.ma !== 'nic') continue;
+        nic++;
+        for (const { s, e } of SLOWA) {
+          const t = tekstGoscia(g, s, e);
+          const w = wariantyGoscia(g, s, e);
+          const wybrane = w.ma.find((v) => t.pl.includes(v.pl));
+          // przy prośbie o dobicie zdania „co ma” w tekście nie ma
+          expect(Boolean(wybrane), t.pl).toBe(g.chce !== 'dobic');
+          if (wybrane) {
+            expect(wybrane.pl).not.toMatch(BRAK_TORBY_PL);
+            expect(wybrane.en).not.toMatch(BRAK_TORBY_EN);
+          }
+          expect(t.pl).not.toMatch(PUSTE_KIESZENIE_PL);
+          expect(t.en).not.toMatch(PUSTE_KIESZENIE_EN);
+          // satyra o kieszeni nie wchodzi do tekstu w ogóle
+          expect(t.pl).not.toMatch(KIESZEN_PL);
+          expect(t.en).not.toMatch(KIESZEN_EN);
+        }
+      }
+    }
+    expect(nic).toBeGreaterThan(300);
+  });
+
+  // ---- 2. uczciwość filtra nazw (RODO): moduł ufa filtrowi hosta
+
+  it('lokalna siatka nazw NIE łapie prawdziwie wyglądających nazw: pełny filtr jest po stronie hosta (nazwaDoOkolicy)', () => {
+    // te nazwy przechodzą przez wygladaNaOsobe, bo siatka zna tylko 60 słów z NAMES/SURN; nikt nie ma na niej polegać,
+    // okolica ma przychodzić z GovInput.okolica, czyli już przefiltrowana przez nazwaDoOkolicy
+    for (const przepuszczone of [
+      'Kebab Tadeusz',
+      'Piekarnia Jana',
+      'Salon Fryzjerski Mirella',
+      'Bistro Kasia',
+      'Gabinet Weterynaryjny Jan Kowalczyk',
+      'Apteka Pani Marii',
+    ]) {
+      expect(wygladaNaOsobe(przepuszczone), przepuszczone).toBe(false);
+    }
+    // a to, co siatka zna, łapie (żeby wiadomo było, co robi)
+    for (const zlapane of ['Halina Kowalska', 'u Marka', 'Dr Nowak'])
+      expect(wygladaNaOsobe(zlapane), zlapane).toBe(true);
+  });
+
+  it('pusta nazwa miejsca (filtr hosta bez tabel imion) to sama kategoria, w obu językach', () => {
+    const okolica = [miejsce('poi:n1', 'apteka', 0, -100, ''), miejsce('poi:s1', 'stacja', 0, 100, '   ')];
+    let n = 0;
+    let s = 0;
+    for (let seed = 1; seed <= 200; seed++) {
+      const g = gosc(seed, ctx({ okolica }));
+      if (g.skad.strona === 'n') {
+        n++;
+        expect(g.skad.klucz).toBe('poi:n1');
+        expect(g.skad.nazwa).toEqual({ pl: 'od strony apteki', en: 'from the direction of the pharmacy' });
+      }
+      if (g.skad.strona === 's') {
+        s++;
+        expect(g.skad.nazwa).toEqual({ pl: 'od strony stacji paliw', en: 'from the direction of the petrol station' });
+      }
+    }
+    expect(n).toBeGreaterThan(20);
+    expect(s).toBeGreaterThan(20);
+  });
+
+  it('nazwa z słowem kategorii: bez nawiasu, słowo kategorii nie powtarza się, w obu językach tak samo', () => {
+    const jak = (kat: string, nazwa: string) => {
+      const m = miejsce('poi:t', kat, 0, -50, nazwa);
+      for (let seed = 1; seed <= 100; seed++) {
+        const g = gosc(seed, ctx({ okolica: [m] }));
+        if (g.skad.strona === 'n') return g.skad.nazwa;
+      }
+      throw new Error('brak gościa z północy');
+    };
+    expect(jak('apteka', 'Apteka Pod Różą')).toEqual({
+      pl: 'od strony apteki „Pod Różą”',
+      en: 'from the direction of the pharmacy “Pod Różą”',
+    });
+    expect(jak('stacja', 'Stacja Paliw Łódź').pl).toBe('od strony stacji paliw „Łódź”');
+    expect(jak('spozywczy', 'Sklep Żabka').pl).toBe('od strony sklepu spożywczego „Żabka”');
+    // marka bez słowa kategorii: też w cudzysłowie, bez nawiasu
+    expect(jak('spozywczy', 'Żabka').pl).toBe('od strony sklepu spożywczego „Żabka”');
+    // równa kategorii (po polsku albo po angielsku) albo ze słowem kategorii w środku: sama kategoria
+    expect(jak('apteka', 'Apteka').pl).toBe('od strony apteki');
+    expect(jak('apteka', 'Pharmacy').en).toBe('from the direction of the pharmacy');
+    expect(jak('apteka', 'Pod Różą Apteka').pl).toBe('od strony apteki');
+    for (const n of ['Apteka Pod Różą', 'Żabka', 'Stacja Paliw Łódź']) {
+      const t = jak(n.startsWith('Stacja') ? 'stacja' : n === 'Żabka' ? 'spozywczy' : 'apteka', n);
+      expect(t.pl).not.toContain('(');
+      expect(t.en).not.toContain('(');
+    }
+  });
+
+  // ---- 3. fach: neutralne wprowadzenie
+
+  it('fach: zdanie o zawodzie nie obiecuje „jednego słowa”', () => {
+    for (const kto of KTOS.filter((k) => k !== 'dziecko' && k !== 'z_ugryzionym')) {
+      for (const seed of SEDY) {
+        const w = wariantyGoscia(reczny(kto, 'nocleg', 'fach', 'prawda', 1, seed), S, E);
+        for (const t of w.ma) {
+          expect(t.pl).not.toMatch(/jednym słowem/);
+          expect(t.en).not.toMatch(/in one word/);
+        }
+        expect(w.ma.some((t) => /odpowiada krótko: /.test(t.pl) && /answers briefly: /.test(t.en))).toBe(true);
+      }
+    }
+  });
+
+  // ---- 4. rodzina: partner płci przeciwnej
+
+  it('w rodzinie partner jest płci przeciwnej niż mówiący (wspólne nazwisko czyta się jak para)', () => {
+    for (let seed = 1; seed <= 80; seed++) {
+      const r = osobyGrupy(mulberry(seed), licznik(), 'rodzina', 3 + (seed % 3), new Set<string>());
+      expect(r[1].f, `${seed} ${r[0].name} / ${r[1].name}`).toBe(!r[0].f);
+      expect(Math.abs(r[1].age - r[0].age)).toBeLessThanOrEqual(6);
+    }
+    // ktoś z ugryzionym bliskim: gdy bliski jest rówieśnikiem (partnerem), też płci przeciwnej
+    let partnerzy = 0;
+    for (let seed = 1; seed <= 600; seed++) {
+      const g = gosc(seed, ctx({ mode: 'zombie' }));
+      if (g.kto !== 'z_ugryzionym') continue;
+      const [a, b] = g.osoby;
+      if (b.age >= 20 && Math.abs(a.age - b.age) <= 6) {
+        partnerzy++;
+        expect(b.f, `${a.name} / ${b.name}`).toBe(!a.f);
+      }
+    }
+    expect(partnerzy).toBeGreaterThan(10);
+  });
+
+  // ---- 5. dezerter: zawód ochroniarza
+
+  it('dezerter jest zawsze ochroniarzem, także z fachem i gdy zarząd zna już obronę', () => {
+    let dezerterow = 0;
+    for (const znane of [new Set<Dom>(), new Set<Dom>(['obrona'])]) {
+      for (let seed = 1; seed <= 1500; seed++) {
+        const g = gosc(seed, ctx({ mode: seed % 2 ? 'zombie' : 'zwykly', znane }));
+        if (g.kto !== 'dezerter') continue;
+        dezerterow++;
+        expect(g.osoby[0].prof, `${seed} ${g.ma}`).toMatch(/^Ochroniar(z|ka) z galerii$/);
+      }
+    }
+    expect(dezerterow).toBeGreaterThan(100);
+  });
+
+  // ---- 6. dobicie: bliski będący dzieckiem nie „prosił”
+
+  it('prośba o dobicie: gdy ugryziony bliski jest dzieckiem, nikt nie cytuje, że „prosił”', () => {
+    let dzieci = 0;
+    let dorosli = 0;
+    for (let seed = 1; seed <= 3000 && (dzieci < 10 || dorosli < 10); seed++) {
+      const g = gosc(seed, ctx({ mode: 'zombie' }));
+      if (g.kto !== 'z_ugryzionym' || g.chce !== 'dobic') continue;
+      const w = wariantyGoscia(g, S, E);
+      expect(w.chce).toHaveLength(3);
+      expect(new Set(w.chce.map((t) => t.pl)).size).toBe(3);
+      const calosc = w.chce.map((t) => `${t.pl} ${t.en}`).join(' ');
+      if (g.osoby[1].age < 16) {
+        dzieci++;
+        expect(calosc).not.toMatch(/prosił|begged/);
+        expect(calosc).toMatch(/zasnął|zasnęła/);
+      } else {
+        dorosli++;
+        expect(calosc).toMatch(/prosił/);
+        expect(calosc).toMatch(/begged/);
+      }
+      // polskie zdanie ma właściwy rodzaj bliskiego
+      for (const t of w.chce) expect(t.pl).not.toMatch(/zasnąłęła|zasnął[a-z]*ęła/);
+    }
+    expect(dzieci).toBeGreaterThanOrEqual(10);
+    expect(dorosli).toBeGreaterThanOrEqual(10);
+  });
+
+  // ---- 8. tabele przypięte do symulacji i do SEASONS
+
+  it('BRON i AMUNICJA zgadzają się z src/sim/bron.ts (id, amunicja, nazwy, angielskie nazwy)', () => {
+    for (const [id, b] of Object.entries(BRON)) {
+      expect(Object.hasOwn(WEAPONS, id), id).toBe(true);
+      const w = WEAPONS[id as keyof typeof WEAPONS];
+      expect(b.amunicja ?? null, id).toBe(w.ammo);
+      expect(b.mian, id).toBe(w.name);
+      expect(b.bier, id).toBe(w.acc);
+      expect(b.en.endsWith(WEAPONS_EN[id as keyof typeof WEAPONS_EN].name), id).toBe(true);
+    }
+    for (const id of [...BRON_ZWYKLA, ...BRON_DEZERTERA]) expect(Object.keys(BRON), id).toContain(id);
+    expect(Object.keys(AMUNICJA).sort()).toEqual(Object.keys(AMMO_NAMES).sort());
+    for (const [k, a] of Object.entries(AMUNICJA)) {
+      expect(a.pl, k).toBe(AMMO_NAMES[k as keyof typeof AMMO_NAMES]);
+      expect(a.en, k).toBe(AMMO_EN[k as keyof typeof AMMO_EN].name);
+    }
+    // żadna wylosowana rzecz nie ma id spoza symulacji
+    for (let seed = 1; seed <= 1000; seed++) {
+      const g = gosc(seed, ctx({ mode: seed % 2 ? 'zombie' : 'zwykly' }));
+      if (g.rzecz?.arms) expect(Object.hasOwn(WEAPONS, g.rzecz.arms), g.rzecz.arms).toBe(true);
+    }
+  });
+
+  // ---- 9. angielskie nazwy zawodów z data.en.ts, dzieci bez dyżurów
+
+  it('angielskie nazwy zawodów idą z data.en.ts, bez łatek w module', () => {
+    expect(zawodEn('Ochroniarz z galerii')).toBe('Shopping centre security guard');
+    expect(zawodEn('Informatyk z urzędu')).toBe('Council IT technician');
+    const d = [...Array(300).keys()].map((i) => gosc(i + 1)).find((x) => x.kto === 'dezerter' && x.osoby[0].f)!;
+    const g = reczny('dezerter', 'nocleg', 'fach', 'prawda', 1, 5);
+    const ang = wariantyGoscia(g, S, E)
+      .ma.map((t) => t.en)
+      .join(' ');
+    expect(ang).toMatch(/a shopping centre security guard/);
+    expect(d).toBeTruthy();
+    const it = reczny('uciekinier', 'nocleg', 'fach', 'prawda', 1, 5);
+    it.osoby[0].prof = 'Informatyk z urzędu';
+    expect(
+      wariantyGoscia(it, S, E)
+        .ma.map((t) => t.en)
+        .join(' '),
+    ).toMatch(/a council IT technician/);
+  });
+
+  it('samotne dziecko nie obiecuje dyżuru przy kozie ani nie radzi podwoić warty', () => {
+    const chce: ChceId[] = ['jedzenie', 'nocleg', 'dolaczyc'];
+    const ma: MaId[] = ['rzecz', 'wiadomosc', 'ostrzezenie', 'nic'];
+    const DYZUR = /dyżur|na wartę|stove watch|on watch/i;
+    for (const ilu of [1, 2]) {
+      for (const seed of SEDY) {
+        for (const c of chce) {
+          for (const m of ma) {
+            const g = reczny('dziecko', c, m, 'prawda', ilu, seed);
+            for (const { s, e } of SLOWA) {
+              const w = wariantyGoscia(g, s, e);
+              for (const t of [...w.kto, ...w.chce, ...w.ma, ...w.trop]) {
+                expect(t.pl, `${c}/${m} ${t.pl}`).not.toMatch(DYZUR);
+                expect(t.en, `${c}/${m} ${t.en}`).not.toMatch(DYZUR);
+              }
+            }
+          }
+        }
+      }
+    }
+    // dorosły dalej obiecuje dyżur i radzi podwoić wartę
+    const dorosly = wariantyGoscia(reczny('wedrowiec', 'dolaczyc', 'ostrzezenie', 'prawda', 1, 5), S, E);
+    expect(dorosly.chce.map((t) => t.pl).join(' ')).toMatch(/dyżur przy kozie/);
+    expect(dorosly.ma.map((t) => t.pl).join(' ')).toMatch(/na wartę dwie osoby/);
+    // dziecko nadal ma po trzy różne warianty
+    const dziecko = wariantyGoscia(reczny('dziecko', 'dolaczyc', 'ostrzezenie', 'prawda', 1, 5), S, E);
+    expect(new Set(dziecko.chce.map((t) => t.pl)).size).toBe(3);
+    expect(new Set(dziecko.ma.map((t) => t.en)).size).toBe(3);
+    // w prawdziwych gościach to samo
+    for (let seed = 1; seed <= 1500; seed++) {
+      const g = gosc(seed, ctx({ mode: seed % 2 ? 'zombie' : 'zwykly' }));
+      if (g.osoby[0].age >= 16) continue;
+      for (const { s, e } of SLOWA) {
+        const t = tekstGoscia(g, s, e);
+        expect(t.pl).not.toMatch(DYZUR);
+        expect(t.en).not.toMatch(DYZUR);
+      }
     }
   });
 });
