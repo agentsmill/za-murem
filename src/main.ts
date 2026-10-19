@@ -203,7 +203,7 @@ declare global {
       /** gra z sąsiadami (src/net/gra.ts): zalogowanie, stan sieci, znaczniki */
       siec: () => ReturnType<GraSieciowa['podglad']>;
       /** które części grafiki są z PixelLab (reszta z kodu); null: wszystko z kodu */
-      grafika: () => Record<'teren' | 'blok' | 'dach' | 'trzepak' | 'ludzie', boolean> | null;
+      grafika: () => Record<'teren' | 'blok' | 'dach' | 'strop' | 'trzepak' | 'ludzie', boolean> | null;
       /** wybór piętra jak kliknięcie na liście kafelka „Piętro” (do zrzutów); nic nie robi bez ?pietra=1 i dla piętra
           spoza listy */
       pietro: (L: number) => void;
@@ -2844,7 +2844,16 @@ if (attrib) bars.observe(attrib);
     siec: () => siec.podglad(),
     grafika: () => {
       const g = view.grafika;
-      return g && { teren: !!g.teren, blok: !!g.blok, dach: !!g.dach, trzepak: !!g.trzepak, ludzie: !!g.ludzie };
+      return (
+        g && {
+          teren: !!g.teren,
+          blok: !!g.blok,
+          dach: !!g.dach,
+          strop: !!g.strop?.img,
+          trzepak: !!g.trzepak,
+          ludzie: !!g.ludzie,
+        }
+      );
     },
     pietro: wybierzPietro,
     pietra: () => ({ wlaczone: pietraGry, pietro: view.pietro, lista: [...pietraLista] }),
