@@ -44,7 +44,8 @@ import { buildScene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
 import { wczytajGrafike } from './render/grafika.ts';
 import { type Light, lightAt } from './render/light.ts';
-import { sectionOf, type ThingLike } from './render/section.ts';
+import { sectionPietra } from './render/pietro.ts';
+import { type SectionScene, sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
 import { WEAPONS, WEAPONS_EN, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
@@ -118,6 +119,7 @@ import {
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
+import { nastepnePietro, PODPOWIEDZ_ZARZAD, podpowiedz as podpowiedzPietra, SelektorPieter } from './ui/pietra.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
@@ -130,6 +132,7 @@ import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
 import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
 import { KafelkiMiasta } from './world/miastoKafelki.ts';
 import { pobierzKafelek } from './world/mvt.ts';
+import { listaPieter } from './world/pietra.ts';
 import { buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -201,6 +204,11 @@ declare global {
       siec: () => ReturnType<GraSieciowa['podglad']>;
       /** które części grafiki są z PixelLab (reszta z kodu); null: wszystko z kodu */
       grafika: () => Record<'teren' | 'blok' | 'dach' | 'trzepak' | 'ludzie', boolean> | null;
+      /** wybór piętra jak kliknięcie na liście kafelka „Piętro” (do zrzutów); nic nie robi bez ?pietra=1 i dla piętra
+          spoza listy */
+      pietro: (L: number) => void;
+      /** widok pięter: czy włączony w tej grze, wybrane piętro i lista pięter do wyboru (do zrzutów i testów) */
+      pietra: () => { wlaczone: boolean; pietro: number; lista: number[] };
     };
   }
 }
@@ -212,6 +220,12 @@ let loaded: Loaded | null = null;
 let seed = 0;
 /** widok pięter obecnej gry (?pietra=1 albo pole zapisu): ustawia go `enter`, czyta `save` */
 let pietraGry = false;
+/** piętra do wyboru w tej grze (`listaPieter` świata z flagą; bez niej tylko parter) */
+let pietraLista: number[] = [0];
+/** scena typowego piętra całej mapy: liczona leniwie przy pierwszym wyborze piętra od pierwszego, potem trzymana */
+let scenaPietra: SectionScene | null = null;
+/** czy któryś pionek zarządu stoi w budynku zakrytym stropem albo dachem (liczone co 200 ms w `hud`) */
+let zarzadUkryty = false;
 let hqName = '';
 /** miejsca z punktów OSM wokół adresu dla zarządu (liczone raz po zbudowaniu świata); puste bez opcji miasta */
 let okolica: Miejsce[] = [];
@@ -226,6 +240,55 @@ let mapaMiasta: MapaMiasta | null = null;
 const minimapa = new Minimapa($('minimapa'), () => {
   if (!placing) openMiasto();
 });
+
+/* ---------- widok pięter (?pietra=1, src/ui/pietra.ts): kafelek „Piętro” w pasku, lista, klawisze, blokada klików ---------- */
+/** kafelek z listą pięter i podpowiedzią; widoczny tylko w grze z flagą (`enter`) */
+const selektorPieter = new SelektorPieter(
+  { btn: $<HTMLButtonElement>('btnFloor'), list: $('floorList'), note: $('floorNote') },
+  (L) => wybierzPietro(L),
+);
+
+/** wybór piętra (lista kafelka, PageUp i PageDown, zm.pietro, powrót na parter): przełącza widok tylko przy zmianie
+    piętra, bo `ustawPietro` unieważnia wszystkie kawałki z przekrojem. Scena typowego piętra liczy się raz, przy
+    pierwszym wyborze piętra od pierwszego, i idzie do widoku przy każdym takim wyborze; parter dostaje null. Piętro
+    spoza listy (bez ?pietra=1 jest tylko parter) nic nie zmienia. */
+function wybierzPietro(L: number): void {
+  if (!sim || !pietraGry || L === view.pietro || !pietraLista.includes(L)) return;
+  if (L >= 1) {
+    scenaPietra ??= sectionPietra(sim.w);
+    if (!scenaPietra) return;
+  }
+  view.ustawPietro(L, L >= 1 ? scenaPietra : null);
+  odswiezPietra();
+}
+
+/** czy któryś pionek zarządu stoi w obrysie budynku. Przy przekroju piętra od pierwszego każdy budynek ma strop albo
+    dach (siedziba z `levels` nie większym niż piętro też), więc taki pionek jest schowany. */
+function zarzadPodStropem(st: SimState, w: World): boolean {
+  if (!view.pietroAktywne()) return false;
+  return st.pawns.some((p) => p.kind === 'core' && !p.away && w.bid[Math.floor(p.y) * w.size + Math.floor(p.x)] >= 0);
+}
+
+/** kafelek: wybrane piętro, lista i podpowiedź (z `hud` co 200 ms i po zmianie piętra albo języka; bez zmian nie rusza DOM) */
+function odswiezPietra(): void {
+  if (!pietraGry) return;
+  if (sim) zarzadUkryty = zarzadPodStropem(sim.st, sim.w);
+  const pietro = view.pietro;
+  selektorPieter.odswiez(pietraLista, pietro, podpowiedzPietra({ pietro, cutOn: view.section, zarzadUkryty }));
+}
+
+/** czy punkt ekranu leży w obrysie budynku, którego parter jest schowany pod stropem albo dachem (piętro od pierwszego
+    z przekrojem): tam nic nie ma do kliknięcia */
+function podStropem(sx: number, sy: number): boolean {
+  return !!sim && view.pietroAktywne() && sim.w.bid[view.tileAt(sx, sy)] >= 0;
+}
+
+/** blokada kliknięcia pod stropem: pokazuje podpowiedź zamiast reakcji; true, gdy klik należy do blokady */
+function zablokowanyKlik(sx: number, sy: number): boolean {
+  if (!podStropem(sx, sy)) return false;
+  say(tr(PODPOWIEDZ_ZARZAD), 2500);
+  return true;
+}
 /** słowa miejsca siedziby: w domu komitet ulicy, sąsiedzi i furtka, w bloku zarząd, mieszkańcy i brama; po
     angielsku wordsE */
 let words: Words = wordsOf(BLOK);
@@ -385,6 +448,8 @@ poZmianieJezyka(() => {
   buildPanel.refresh(true);
   hqAria();
   ctx.close();
+  selektorPieter.zamknij();
+  odswiezPietra();
   // chwilowy napis był w starym języku: znika (pokazuje się na kilka sekund, więc nie ma czego tłumaczyć)
   hintUntil = 0;
   imieAgain();
@@ -541,6 +606,14 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // płótno mierzy element; był ukryty, więc trzeba przeliczyć rozmiar po odsłonięciu
   view.app.resize();
   view.setScene(scene);
+  // widok pięter od parteru (scena jest nowa, jej piętro to 0): lista ze świata, scena piętra liczona od nowa, kafelek
+  // tylko z flagą
+  pietraLista = pietra ? listaPieter(world) : [0];
+  scenaPietra = null;
+  zarzadUkryty = false;
+  selektorPieter.zamknij();
+  $('floorSel').hidden = !pietra;
+  selektorPieter.odswiez(pietraLista, 0, null);
   // ?godzina=22 (albo ?hour=22, także z ułamkiem: 18.5 to 18:30): pora dnia na start
   const hour = params.get('godzina') ?? params.get('hour');
   if (hour !== null && !saved)
@@ -1194,6 +1267,7 @@ function hud(now: number) {
   $('hint').textContent = warn || (now < hintUntil ? hint : '');
   $('hint').classList.toggle('warn', !!warn);
   renderStats(statsOf(snap, gov, words, wordsE));
+  odswiezPietra();
   alarmButton(st);
   renderGoals(snap);
   // przyjęci idą zza bramy: komunikat z przyciskiem „Pokaż”, dopóki ktoś jeszcze idzie
@@ -1433,6 +1507,8 @@ $('zIn').onclick = () => view.zoomAt(view.width / 2, view.height / 2, 1.5);
 $('zOut').onclick = () => view.zoomAt(view.width / 2, view.height / 2, 1 / 1.5);
 $('zHome').onclick = () => {
   if (!sim) return;
+  // siedziba stoi na parterze
+  wybierzPietro(0);
   const hq = sim.w.buildings[sim.w.hq];
   flyTo(((hq.x0 + hq.x1 + 1) / 2) * TILE, ((hq.y0 + hq.y1 + 1) / 2) * TILE + 120, Math.max(1, view.cam.zoom), 700);
 };
@@ -1986,6 +2062,8 @@ function askBurn(m: MenuItem) {
 function orderAt(sx: number, sy: number, menu: boolean) {
   // w trybie stawiania stuknięcie i przytrzymanie należą do planu budowy
   if (!sim || placing) return;
+  // piętro od pierwszego: pod stropem albo dachem parter jest schowany, więc polecenia tam nie idą
+  if (zablokowanyKlik(sx, sy)) return;
   const ids = [...selected];
   const tile = view.tileAt(sx, sy);
   const items = commandsAt(sim.st, sim.w, ids, tile);
@@ -2062,7 +2140,7 @@ let budFocus = -1;
 
 /** karta pod kliknięciem bez zaznaczenia: mieszkanie siedziby albo sąsiedni budynek */
 function focusTile(sx: number, sy: number) {
-  if (!sim) return;
+  if (!sim || zablokowanyKlik(sx, sy)) return;
   const tile = view.tileAt(sx, sy);
   aptFocus = aptAt(sim.w, tile);
   const bid = tile >= 0 ? sim.w.bid[tile] : -1;
@@ -2227,6 +2305,8 @@ function openWyprawa(m: Miejsce, wybrani?: Set<string>) {
 
 function startPlacing(kind: BuildKind) {
   if (!sim) return;
+  // budowle są dziś tylko na parterze i podwórku
+  wybierzPietro(0);
   const allowed = allowedAnchors(sim.st, sim.w, kind, 0);
   placing = { kind, rot: 0, x: 0, y: 0, ok: false, allowed, okTiles: okTilesOf(allowed, kind, 0, sim.w.size) };
   // plan na środku ekranu, dopóki kursor albo palec nie pokaże miejsca
@@ -2506,15 +2586,23 @@ const endPointer = (e: PointerEvent) => {
       const [x0, y0] = view.toWorld(Math.min(d.x, e.offsetX), Math.min(d.y, e.offsetY));
       const [x1, y1] = view.toWorld(Math.max(d.x, e.offsetX), Math.max(d.y, e.offsetY));
       if (!e.shiftKey) selected.clear();
+      // piętro od pierwszego: pionki w obrysach budynków są schowane pod stropem albo dachem, więc ramka ich nie bierze
+      const w = sim.w;
+      let schowani = false;
       for (const p of sim.st.pawns)
-        if (p.kind === 'core' && p.x * TILE >= x0 && p.x * TILE <= x1 && p.y * TILE >= y0 && p.y * TILE <= y1)
-          selected.add(p.id);
+        if (p.kind === 'core' && p.x * TILE >= x0 && p.x * TILE <= x1 && p.y * TILE >= y0 && p.y * TILE <= y1) {
+          if (view.pietroAktywne() && w.bid[Math.floor(p.y) * w.size + Math.floor(p.x)] >= 0) schowani = true;
+          else selected.add(p.id);
+        }
+      if (schowani) say(tr(PODPOWIEDZ_ZARZAD), 2500);
       selectedChanged();
     }
     return;
   }
   const hit = view.pick(sim.st, e.offsetX, e.offsetY);
   if (placing && placeClick(e.offsetX, e.offsetY, d.button, d.type, e.shiftKey)) return;
+  // piętro od pierwszego: klik w obrys budynku nie zaznacza, nie rozkazuje i nie otwiera kart (parter jest schowany)
+  if (zablokowanyKlik(e.offsetX, e.offsetY)) return;
   if (d.button === 2) {
     orderAt(e.offsetX, e.offsetY, true);
     return;
@@ -2648,6 +2736,11 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyB') openBuild();
   if (e.code === 'KeyM') openMiasto();
+  // widok pięter: PageUp o piętro wyżej, PageDown niżej
+  if (pietraGry && (e.code === 'PageUp' || e.code === 'PageDown')) {
+    e.preventDefault();
+    wybierzPietro(nastepnePietro(pietraLista, view.pietro, e.code === 'PageUp' ? 1 : -1));
+  }
   if (e.code === 'KeyR' && placing) rotatePlacing();
   if (e.code === 'Escape') {
     if (placing) cancelPlacing();
@@ -2753,6 +2846,8 @@ if (attrib) bars.observe(attrib);
       const g = view.grafika;
       return g && { teren: !!g.teren, blok: !!g.blok, dach: !!g.dach, trzepak: !!g.trzepak, ludzie: !!g.ludzie };
     },
+    pietro: wybierzPietro,
+    pietra: () => ({ wlaczone: pietraGry, pietro: view.pietro, lista: [...pietraLista] }),
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });

@@ -999,6 +999,85 @@ a.btn {
   font: 400 12px / 1.2 var(--f-body);
 }
 
+/* kafelek „Piętro” (src/ui/pietra.ts, tylko z ?pietra=1): pole paska, ale przycisk. Lista pięter stoi pod nim jak menu
+   kontekstowe (.ctx, nad panelem budowy i przyciskami mapy) i kończy się przy jego prawej krawędzi, bo kafelek jest
+   po prawej. Podpowiedź stoi pod paskiem, a nie pod kafelkiem, żeby po zawinięciu paska nie zasłaniała jego przycisków.
+   Na telefonie kafelek jest w pierwszym wierszu paska przy „Mapie”: w drugim (tempo, alarm, budowa, menu) nie ma już
+   miejsca, a pierwszy zawija się dopiero przy bardzo wąskim ekranie (360 px z długim zegarem: jeden wiersz więcej) */
+.floor-anchor {
+  position: relative;
+}
+.stat.floor {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.stat.floor:hover {
+  border-color: var(--ink-dim);
+}
+.stat.floor[aria-expanded="true"] {
+  border-color: var(--lamp);
+}
+.floor-list {
+  top: 100%;
+  right: 0;
+  min-width: 150px;
+  margin-top: 6px;
+  /* najwyżej 20 pięter: dalej przewijanie */
+  max-height: calc(100dvh - var(--top-h, 56px) - 24px);
+  overflow-y: auto;
+  z-index: 6;
+}
+.floor-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.floor-item.on,
+.floor-item.on:hover,
+.floor-item.on:focus-visible {
+  background: var(--lamp);
+  color: #1d1a14;
+}
+.floor-n {
+  min-width: 1.6em;
+  font: 700 16px / 1.1 var(--f-sign);
+  font-variant-numeric: tabular-nums;
+}
+.floor-t {
+  font: 500 14px / 1.2 var(--f-body);
+}
+.floor-note {
+  position: absolute;
+  top: calc(100% + 6px);
+  /* na komputerze z lewej strony przycisków mapy (zoom) pod paskiem */
+  right: 64px;
+  z-index: 5;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 24px));
+  margin: 0;
+  padding: 6px 10px;
+  background: rgb(20 22 24 / 0.9);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.3;
+  pointer-events: none;
+}
+@media (max-width: 640px) {
+  .floor-sel {
+    order: -1;
+  }
+  .stat.floor {
+    min-width: 40px;
+    padding: 2px 4px 3px;
+  }
+  /* przyciski mapy są na telefonie nisko, więc podpowiedź idzie pod sam róg paska */
+  .floor-note {
+    right: 0;
+  }
+}
+
 .modal {
   position: fixed;
   inset: 0;

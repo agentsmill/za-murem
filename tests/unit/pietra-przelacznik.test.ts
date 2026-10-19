@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { Application } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { buildScene, CHUNK, type Scene, TILE } from '../../src/render/art/scene.ts';
@@ -7,6 +9,8 @@ import { chunkiParteru, chunkiPietra, widokPietra } from '../../src/render/pietr
 import { IN, sectionOf } from '../../src/render/section.ts';
 import { GameView } from '../../src/render/view.ts';
 import type { Pawn, SimState } from '../../src/sim/sim.ts';
+import { STATYCZNE } from '../../src/ui/jezyk.ts';
+import { nastepnePietro, podpowiedz, pozycjeListy } from '../../src/ui/pietra.ts';
 import { demoSwiat } from './pietra-pomoc.ts';
 
 let pamiec: Scene | null = null;
@@ -315,5 +319,127 @@ describe('widoczność wnętrz parteru w widoku (wnetrza, pietroAktywne, pick, p
       expect(kliknij(stan(zarzad)).pick).toBe(zarzad);
       expect(kliknij(stan(lokator)).lokator).toBe(lokator);
     }
+  });
+});
+
+describe('lista pięter (pozycjeListy)', () => {
+  it('od najwyższego piętra w dół do parteru, wybrane jest tylko jedno', () => {
+    const poz = pozycjeListy([0, 1, 2, 3], 2);
+    expect(poz.map((p) => p.pietro)).toEqual([3, 2, 1, 0]);
+    expect(poz.filter((p) => p.wybrane).map((p) => p.pietro)).toEqual([2]);
+  });
+
+  it('podpis parteru to „parter”, pozostałych „piętro”, po angielsku „ground floor” i „floor”', () => {
+    const poz = pozycjeListy([0, 1, 2, 3], 0);
+    expect(poz.map((p) => p.podpis.pl)).toEqual(['piętro', 'piętro', 'piętro', 'parter']);
+    expect(poz.map((p) => p.podpis.en)).toEqual(['floor', 'floor', 'floor', 'ground floor']);
+    expect(poz[3].wybrane).toBe(true);
+  });
+
+  it('lista z samym parterem ma jedną pozycję, wybraną (kafelek nie ma pozycji bez celu)', () => {
+    const poz = pozycjeListy([0], 0);
+    expect(poz).toHaveLength(1);
+    expect(poz[0]).toMatchObject({ pietro: 0, wybrane: true });
+  });
+
+  it('nie zmienia podanej listy', () => {
+    const lista = [0, 1, 2];
+    pozycjeListy(lista, 1);
+    expect(lista).toEqual([0, 1, 2]);
+  });
+});
+
+describe('podpowiedź przy kafelku piętra (podpowiedz)', () => {
+  it('na parterze nie ma podpowiedzi, cokolwiek się dzieje', () => {
+    for (const cutOn of [false, true])
+      for (const zarzadUkryty of [false, true]) expect(podpowiedz({ pietro: 0, cutOn, zarzadUkryty })).toBeNull();
+  });
+
+  it('piętro z daleka (bez przekroju) prosi o przybliżenie, także gdy zarząd jest schowany', () => {
+    for (const zarzadUkryty of [false, true]) {
+      const t = podpowiedz({ pietro: 2, cutOn: false, zarzadUkryty });
+      expect(t).toEqual({ pl: 'Przybliż, żeby zajrzeć na piętro', en: 'Zoom in to look at the floor' });
+    }
+  });
+
+  it('piętro z bliska i zarząd pod stropem albo dachem: zarząd jest na parterze', () => {
+    expect(podpowiedz({ pietro: 2, cutOn: true, zarzadUkryty: true })).toEqual({
+      pl: 'Zarząd jest na parterze',
+      en: 'The board is on the ground floor',
+    });
+  });
+
+  it('piętro z bliska i zarząd poza obrysem zakrytego budynku: bez podpowiedzi', () => {
+    expect(podpowiedz({ pietro: 2, cutOn: true, zarzadUkryty: false })).toBeNull();
+  });
+
+  it('teksty nie mówią o numerze piętra ani o osobach (RODO)', () => {
+    for (const o of [
+      { pietro: 3, cutOn: false, zarzadUkryty: false },
+      { pietro: 3, cutOn: true, zarzadUkryty: true },
+    ]) {
+      const t = podpowiedz(o)!;
+      expect(t.pl).not.toMatch(/\d/);
+      expect(t.en).not.toMatch(/\d/);
+    }
+  });
+});
+
+describe('krok o piętro (nastepnePietro)', () => {
+  const lista = [0, 1, 2, 3];
+
+  it('w górę i w dół o jedno', () => {
+    expect(nastepnePietro(lista, 1, 1)).toBe(2);
+    expect(nastepnePietro(lista, 2, -1)).toBe(1);
+    expect(nastepnePietro(lista, 0, 1)).toBe(1);
+    expect(nastepnePietro(lista, 3, -1)).toBe(2);
+  });
+
+  it('na najwyższym piętrze krok w górę zostaje, na parterze krok w dół zostaje', () => {
+    expect(nastepnePietro(lista, 3, 1)).toBe(3);
+    expect(nastepnePietro(lista, 0, -1)).toBe(0);
+  });
+
+  it('piętro spoza listy zaciska do jej krańców', () => {
+    expect(nastepnePietro(lista, 7, 1)).toBe(3);
+    expect(nastepnePietro(lista, 7, -1)).toBe(3);
+    expect(nastepnePietro(lista, -2, -1)).toBe(0);
+    expect(nastepnePietro(lista, -2, 1)).toBe(0);
+  });
+
+  it('lista z samym parterem nigdzie nie prowadzi', () => {
+    expect(nastepnePietro([0], 0, 1)).toBe(0);
+    expect(nastepnePietro([0], 0, -1)).toBe(0);
+  });
+});
+
+describe('kafelek piętra w index.html', () => {
+  const html = fs.readFileSync(path.resolve(import.meta.dirname, '../../index.html'), 'utf8');
+
+  it('jest przyciskiem z angielskim podpisem i liczbą, schowany, dopóki gra nie włączy widoku pięter', () => {
+    expect(html).toMatch(/<button[^>]*\bid="btnFloor"/);
+    expect(html).toContain('<small class="stat-k">floor</small>');
+    expect(html).toContain('title="Floor"');
+    expect(html).toMatch(/<[^>]*\bid="floorSel"[^>]*\bhidden\b/);
+    expect(html).toMatch(/<[^>]*\bid="floorList"[^>]*\brole="menu"/);
+    expect(html).toMatch(/<[^>]*\bid="floorNote"[^>]*\brole="status"/);
+  });
+
+  it('stoi w pasku po liczniku klatek, przed „Mapą miasta”, a między nią a „Budową” nic nie ma', () => {
+    const fps = html.indexOf('id="fps"');
+    const kafelek = html.indexOf('id="btnFloor"');
+    const miasto = html.indexOf('id="btnMiasto"');
+    expect(fps).toBeGreaterThan(0);
+    expect(kafelek).toBeGreaterThan(fps);
+    expect(miasto).toBeGreaterThan(kafelek);
+    // arkusze miasta (miasto.css) opierają się na sąsiedztwie #btnMiasto + #btnBuild
+    expect(html).toMatch(/id="btnMiasto"[\s\S]*?<\/button>\s*<button[^>]*\bid="btnBuild"/);
+  });
+
+  it('ma wpis napisów statycznych w obu językach (src/ui/jezyk.ts)', () => {
+    const wpisy = STATYCZNE.filter((s) => s.sel.startsWith('#btnFloor'));
+    expect(wpisy.map((s) => s.sel).sort()).toEqual(['#btnFloor', '#btnFloor .stat-k']);
+    expect(wpisy.find((s) => s.sel === '#btnFloor .stat-k')!.tekst).toEqual({ pl: 'piętro', en: 'floor' });
+    expect(wpisy.find((s) => s.sel === '#btnFloor')!.title).toEqual({ pl: 'Piętro', en: 'Floor' });
   });
 });
