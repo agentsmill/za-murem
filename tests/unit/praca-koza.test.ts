@@ -59,9 +59,11 @@ const kozaZarzadu = (st: SimState) => st.things.find((t) => t.kind === 'koza')!;
 const rdzen = (st: SimState) => st.pawns.filter((p) => p.kind === 'core');
 const jaka = (p: Pawn): string => p.job?.t ?? '-';
 
-/** Dwie osoby zarządu w ciepłym mieszkaniu, dzień 2 o 12:00 po samouczku, sześć sztuk drewna w składzie, koza zarządu
-    z podanym ogniem; nikt nie marznie, więc ogień nie jest potrzebny, dopóki test tego nie zmieni. */
-function ustaw(ogienKozy: number, godzina = 12) {
+/** Dwie osoby zarządu w ciepłym mieszkaniu, dzień 2 o 12:00 po samouczku, sześć sztuk drewna w składzie (w jednym
+    stosie albo, z `stosy` równym 2, w dwóch po trzy: wtedy drugą osobę od tej samej kozy powstrzymuje już tylko to, że
+    koza ma obsługującego, a nie brak wolnego stosu), koza zarządu z podanym ogniem; nikt nie marznie, więc ogień nie
+    jest potrzebny, dopóki test tego nie zmieni. */
+function ustaw(ogienKozy: number, godzina = 12, stosy = 1) {
   const st = createSim(block, 5, { core: 2 });
   const sim = new Sim(block, st);
   skonczSamouczek(sim);
@@ -69,8 +71,10 @@ function ustaw(ogienKozy: number, godzina = 12) {
   for (const r of NASZE) st.temps[r] = 20;
   const koza = kozaZarzadu(st);
   koza.fuel = ogienKozy;
-  const sklad = house.sklad[0];
-  rzecz(st, 'drewno', sklad % size, Math.floor(sklad / size), { n: 6 });
+  for (let k = 0; k < stosy; k++) {
+    const sklad = house.sklad[k];
+    rzecz(st, 'drewno', sklad % size, Math.floor(sklad / size), { n: 6 / stosy });
+  }
   const [p, q] = rdzen(st);
   for (const o of [p, q]) {
     o.job = null;
@@ -120,8 +124,8 @@ describe('progi kozy i priorytet Ogień', () => {
     expect(koza.by).toBe(p.id);
   });
 
-  it('dwie osoby z Ogniem 1 w tej samej sekundzie nie dokładają do tej samej kozy', () => {
-    const { sim, p, q, koza } = ustaw(300);
+  it('dwie osoby z Ogniem 1 w tej samej sekundzie nie dokładają do tej samej kozy, także gdy drewna jest w dwóch stosach', () => {
+    const { sim, p, q, koza } = ustaw(300, 12, 2);
     p.needs!.warm = KOZA_WARM - 5;
     q.needs!.warm = KOZA_WARM - 5;
     prv(sim).think(p);
@@ -132,7 +136,7 @@ describe('progi kozy i priorytet Ogień', () => {
   });
 
   it('wieczorem (od KOZA_EVENING) ogień jest potrzebny bez marznięcia, a w tej samej sekundzie dokłada jedna osoba', () => {
-    const { sim, p, q, koza } = ustaw(300, KOZA_EVENING + 0.5);
+    const { sim, p, q, koza } = ustaw(300, KOZA_EVENING + 0.5, 2);
     expect(prv(sim).kozaWanted()).toBe(true);
     prv(sim).think(p);
     prv(sim).think(q);
