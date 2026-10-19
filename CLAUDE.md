@@ -69,7 +69,7 @@ npm run bot:zombie -- --mieszkancy  # tryb zombie z mieszkańcami z generatora (
 npm run bot:zombie:siatka  # miara siatki: bot zombie na trzech osiedlach, z mieszkańcami i bez, w której nocy siatka puszcza pierwszy raz [-- 1-6 [noce]] [--opal]
 npm run bot:v03      # wzorzec balansu na oryginale 0.3 [-- ziarno [dni]]
 npm run bot:surowce  # raport gospodarki: wraki i warsztat z graczem fali 1 i bez nich, 5 dni [-- ziarno [dni]]
-npm run bot:praca     # praca ludzi: zarząd bez gracza (3 demka, oba tryby, 3 doby) [-- ziarno] [--werbunek] [--dni=N] [--przelacznik]
+npm run bot:praca     # praca ludzi: zarząd bez gracza (3 demka, oba tryby, 3 doby) [-- ziarno] [--werbunek] [--dni=N] [--przelacznik | --bez-przelacznika]
 npm run shots        # zrzuty w Chromium do shots/ [-- filtr] [--dist] [--kod] [--dalej: padły scenariusz dostaje drugą próbę, przebieg idzie dalej]
 npm run perf         # klatki ze 150 pionkami [-- pionki [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5] [--demo=lanciego|atrapa-budynki] [--kod] [--pietro=2] [--kwadraty=3x3|5x5] [--zarzad=12]
 npm run determinizm  # bramka determinizmu silników JS: ten sam przebieg gry w Chromium, Firefoksie i WebKicie (Playwright), systemowym jsc z macOS i Node 24, skróty co godzinę gry [-- --demo=przymorze|lanciego|zielonki] [--godziny=24] [--zombie|--zwykly] [--seed=12345,2] [--silniki=node,node24,chromium,firefox,webkit,jsc] [--nagraj[=godzina]] [--psuj=silnik:funkcja] [--latka=mat] [--bez-swiata] [--json=plik]; kod wyjścia 0 zgodne, 1 rozbieżność albo padnięty silnik, 2 brak silnika docelowego albo żadnego z wybranych (nic nie pobiera, wiersz „brak (polecenie)”)

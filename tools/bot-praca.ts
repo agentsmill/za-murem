@@ -11,23 +11,31 @@
    (`populacja`: zarząd + mieszkańcy = razem) i zgony.
    „Wyjście za siatkę bez polecenia” liczy się w krokach co sekundę przy ekranie: osoba z zarządu stoi poza naszym
    terenem (`Sim.naszTerenKafelek`), a jej zajęcie nie jest poleceniem gracza (`job.order === false`) i ma cel poza naszym
-   terenem. Ma być 0, bo przełącznik „może wychodzić za siatkę” nikomu nie jest włączony. Osobno, w nawiasie, kroki
+   terenem. Przełącznik „może wychodzić za siatkę” ma domyślną zależną od trybu (decyzja Mateusza 19.10.2026: włączony
+   w trybie zwykłym, wyłączony w zombie), a bot bez flag nie ustawia go nikomu. Więc w trybie zwykłym wyjścia są
+   zamierzone (większe od 0 za dnia, bo zarząd sam ścina drzewa i szabruje za siatką), a w zombie ma być 0. Osobno, w nawiasie, kroki
    „ulicą”: zajęcie bez polecenia, w którym osoba stoi poza naszym terenem, a cel leży na naszym; to nie jest wyjście
    za siatkę. W dobie 2 jest po jednym takim kroku w większości przebiegów, ten sam krok jest w bazie bez automatu, więc
    to artefakt klasyfikatora, a nie robota automatu; przyczyny nie ustalono (dziennik, wpis o pracy ludzi). I kroki
    „walką”: wartownik z karty nocy goni szwendacza za siatką (zajęcie `fight`), czyli obrona, a nie praca z automatu.
    Łaty: załatane dziury od początku gry; „auto” to dziury, które załatał zarząd sam (zajęcie `patch` bez polecenia
    w poprzedniej sekundzie), „inne” to łaty z wydarzeń zarządu („Załatać przed nocą”), w trybie zombie też przy starcie.
-   Z flagą --przelacznik każdy z zarządu ma od początku włączone „może wychodzić za siatkę” (do porównania, ile daje
-   zdjęcie tej reguły; wtedy wyjścia za siatkę są zamierzone).
-   Linijka „płot” podaje, od której doby stać na najtańszy wspólny płot na Lanciego: 65 desek i 65 złomu naraz.
+   Z flagą --przelacznik każdy z zarządu ma od początku włączone „może wychodzić za siatkę” w obu trybach (w trybie
+   zombie to zmiana domyślnej: wyjścia za siatkę są wtedy zamierzone). Kto dojdzie do zarządu później (przybysz), dostaje
+   wymuszoną wartość w następnym kroku. Z flagą --bez-przelacznika każdy ma je wyłączone
+   w obu trybach: tak biegło to przed decyzją z 19.10.2026, więc dawny pomiar da się odtworzyć (w trybie zwykłym
+   zapis kosztuje jawne `false` w stanie, więc skrót stanu się różni od dawnego, liczby gry nie). Obie flagi naraz
+   to błąd.
+   Linijka „płot” podaje, od której doby stać na najtańszy wspólny płot na Lanciego: 65 desek i 65 złomu naraz, a na
+   końcu, ile drewna leży poza naszym terenem po ścięciu drzew za siatką (do progu drewna się nie liczy) i ile drzew
+   ścięto od początku gry.
 
    Z flagą --werbunek: Przymorze z opcją `obcy`, 10 dni, zwykły gracz (drewno na opał) i do każdego wędrowca przy siatce
    idzie ktoś z zarządu z rozmową, a po niej z zaproszeniem. Pierwsze ziarno dzień po dniu (przyszli wędrowcy, rozmowy,
    zaproszenia, zwerbowani do zarządu i do mieszkańców, ludność), potem podsumowanie pięciu ziaren. Cel projektu: 2–5
    zwerbowanych do zarządu w 10 dni.
 
-   Uruchomienie: npm run bot:praca [-- ziarno] [--werbunek] [--dni=N] [--przelacznik] */
+   Uruchomienie: npm run bot:praca [-- ziarno] [--werbunek] [--dni=N] [--przelacznik | --bez-przelacznika] */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,15 +51,27 @@ const argumenty = process.argv.slice(2);
 const WERBUNEK = argumenty.includes('--werbunek');
 const DNI_ARG = argumenty.find((a) => a.startsWith('--dni='))?.slice(6);
 const PRZELACZNIK = argumenty.includes('--przelacznik');
+const BEZ_PRZELACZNIKA = argumenty.includes('--bez-przelacznika');
 const nieznane = argumenty.filter(
-  (a) => a.startsWith('--') && a !== '--werbunek' && a !== '--przelacznik' && !a.startsWith('--dni='),
+  (a) =>
+    a.startsWith('--') &&
+    a !== '--werbunek' &&
+    a !== '--przelacznik' &&
+    a !== '--bez-przelacznika' &&
+    !a.startsWith('--dni='),
 );
 if (nieznane.length) {
   console.error(
-    `Nieznany argument: ${nieznane.join(', ')}. Bot zna tylko --werbunek, --przelacznik i --dni=N (reszta to ziarno).`,
+    `Nieznany argument: ${nieznane.join(', ')}. Bot zna tylko --werbunek, --przelacznik, --bez-przelacznika i --dni=N (reszta to ziarno).`,
   );
   process.exit(2);
 }
+if (PRZELACZNIK && BEZ_PRZELACZNIKA) {
+  console.error('--przelacznik i --bez-przelacznika wykluczają się.');
+  process.exit(2);
+}
+/** wartość przełącznika „może wychodzić za siatkę” nadana każdemu z zarządu na początku: null to domyślna trybu */
+const WYMUSZONY: boolean | null = PRZELACZNIK ? true : BEZ_PRZELACZNIKA ? false : null;
 const SEED = Number(argumenty.find((a) => !a.startsWith('--'))) || 1;
 /** dni „zarządu bez gracza” (domyślnie trzy, jak w projekcie) */
 const DNI = Number(DNI_ARG) || 3;
@@ -90,6 +110,10 @@ interface Doba {
   deski: number;
   zlom: number;
   czesci: number;
+  /** drewno leżące poza naszym terenem (na ulicy po ścięciu drzew za siatką); do progu drewna się nie liczy */
+  poza: number;
+  /** drzewa ścięte od początku gry */
+  scieto: number;
   laty: number;
   latyInne: number;
   otwarte: number;
@@ -111,9 +135,13 @@ interface Doba {
 function zapasy(sim: Sim) {
   const st = sim.st;
   const size = sim.w.size;
-  const r = { drewno: 0, deski: 0, zlom: 0, czesci: st.store.parts };
+  const r = { drewno: 0, deski: 0, zlom: 0, czesci: st.store.parts, poza: 0, scieto: st.felled.length };
   for (const t of st.things) {
-    if (t.n <= 0 || !sim.naszTerenKafelek(t.y * size + t.x)) continue;
+    if (t.n <= 0) continue;
+    if (!sim.naszTerenKafelek(t.y * size + t.x)) {
+      if (t.kind === 'drewno') r.poza += t.n;
+      continue;
+    }
     if (t.kind === 'drewno') r.drewno += t.n;
     else if (t.kind === 'deski') r.deski += t.n;
     else if (t.kind === 'zlom') r.zlom += t.n;
@@ -162,14 +190,16 @@ function dobyBezGracza(w: World, mode: GameMode): { doby: Doba[]; hash: string; 
       plot,
     } as Doba;
   };
-  let przelacznikDany = !PRZELACZNIK;
+  /** osoby, którym bot już nadał wymuszoną wartość przełącznika; kto dojdzie do zarządu później, dostaje ją przy najbliższym kroku */
+  const przelacznikDany = new Set<number>();
   const player: Player = (sim) => {
     const st = sim.st;
-    if (!przelacznikDany) {
-      przelacznikDany = true;
+    if (WYMUSZONY !== null)
       for (const p of st.pawns)
-        if (p.kind === 'core') sim.push({ t: 'zasiatke', ids: [p.id], osoba: p.person, on: true });
-    }
+        if (p.kind === 'core' && !przelacznikDany.has(p.person)) {
+          przelacznikDany.add(p.person);
+          sim.push({ t: 'zasiatke', ids: [p.id], osoba: p.person, on: WYMUSZONY });
+        }
     const doba = dayOf(st.tick);
     if (doba !== ostatniaDoba) {
       doby.push(wiersz(sim, ostatniaDoba));
@@ -207,7 +237,7 @@ function dobyBezGracza(w: World, mode: GameMode): { doby: Doba[]; hash: string; 
 
 function raportBezGracza(): void {
   console.log(
-    `Zarząd bez gracza: ${DNI} doby od 15:00 pierwszego dnia, ziarno ${SEED}, karta nocy (zawsze warta) i samouczek, nic więcej${PRZELACZNIK ? '; każdy z zarządu z przełącznikiem „może wychodzić za siatkę”' : ''}`,
+    `Zarząd bez gracza: ${DNI} doby od 15:00 pierwszego dnia, ziarno ${SEED}, karta nocy (zawsze warta) i samouczek, nic więcej${PRZELACZNIK ? '; każdy z zarządu z przełącznikiem „może wychodzić za siatkę” (także w zombie)' : BEZ_PRZELACZNIKA ? '; każdy z zarządu bez przełącznika „może wychodzić za siatkę” (także w trybie zwykłym)' : '; przełącznik „może wychodzić za siatkę” domyślny (zwykły: włączony, zombie: wyłączony)'}`,
   );
   console.log(
     '  osiedle   tryb    doba  drewno deski złom części  łaty auto+inne (otwarte)  przeszukane  wyjścia (ulicą, walką)  ciepło nastrój  ludność z+m=r  zgony',
@@ -222,7 +252,7 @@ function raportBezGracza(): void {
         );
       const plot = doby.length ? doby[doby.length - 1].plot : -1;
       console.log(
-        `            ${plot >= 0 ? `płot ${PLOT_DESKI}+${PLOT_ZLOM}: stać od doby ${dayOf(plot)} ${clockOf(plot)}` : `płot ${PLOT_DESKI}+${PLOT_ZLOM}: nie w ${DNI} dobach`}; wyjść za siatkę ${doby.reduce((a, d) => a + d.wyjscia, 0)}; skrót stanu ${hash}; ${Math.round(ms)} ms`,
+        `            ${plot >= 0 ? `płot ${PLOT_DESKI}+${PLOT_ZLOM}: stać od doby ${dayOf(plot)} ${clockOf(plot)}` : `płot ${PLOT_DESKI}+${PLOT_ZLOM}: nie w ${DNI} dobach`}; wyjść za siatkę ${doby.reduce((a, d) => a + d.wyjscia, 0)}; na koniec drewna leży poza terenem ${doby.length ? doby[doby.length - 1].poza : 0}, ścięte drzewa ${doby.length ? doby[doby.length - 1].scieto : 0}; skrót stanu ${hash}; ${Math.round(ms)} ms`,
       );
     }
   }

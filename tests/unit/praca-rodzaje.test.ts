@@ -21,6 +21,7 @@ import { progi, RODZAJE, type RodzajPracy } from '../../src/sim/praca.ts';
 import { drzwiBudynku } from '../../src/sim/sasiedzi.ts';
 import {
   BURN_TICKS,
+  CARRY,
   chopTicks,
   createSim,
   type Job,
@@ -29,6 +30,7 @@ import {
   PATCH_TICKS,
   type Pawn,
   Sim,
+  STACK,
   spawnZombie,
   type Thing,
   trunkOf,
@@ -40,7 +42,7 @@ import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { wspolnyPlot } from '../../src/world/plot.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { graZPlanem, zbudujPlot } from './praca-blok.ts';
-import { skonczSamouczek } from './praca-pomoc.ts';
+import { przelacznik, skonczSamouczek } from './praca-pomoc.ts';
 import { core, demoWorld, doorWhere, newGame, pusto, until } from './sasiedzi-pomoc.ts';
 
 /** prywatne części Sim, po które sięgają sceny (kontrakt testowy, nie API gry) */
@@ -131,8 +133,10 @@ function scena(o: Opcje = {}): Scena {
       if (r === 'ogien') continue;
       sim.push({ t: 'prio', ids: [], osoba: q.person, rodzaj: r, prio: o.rodzaje?.includes(r) ? 1 : 0 });
     }
-    if (o.zaSiatke) sim.push({ t: 'zasiatke', ids: [], osoba: q.person, on: true });
   }
+  // przełącznik „za siatkę” jest domyślnie włączony w trybie zwykłym, a te sceny zakładają, że bez `zaSiatke: true`
+  // nikt z zarządu (także na wyprawie) sam za siatkę nie wychodzi, więc ustawiany jest jawnie każdemu
+  przelacznik(sim, wszyscy, (q) => ludzie.includes(q) && !!o.zaSiatke);
   sim.step();
   for (const q of ludzie) odnow(sim, q);
   return { sim, p, ludzie };
@@ -336,6 +340,205 @@ describe('drwal', () => {
     expect(p.job!.target).not.toBe(k);
     expect(linia.map((x) => x.k)).not.toContain(p.job!.target);
     expect(naLiniiObwodu(size, s.trunk[p.job!.target], (i) => s.yardMask[i] === 1)).toBe(false);
+  });
+});
+
+/* Ścinanie za siatką z automatu (decyzja kontrolera 19.10.2026, po pomiarze „drewno zostaje na ulicy”): praca bez
+   polecenia kończy się tak samo jak ta z polecenia, czyli ta sama osoba wnosi całe drewno z tego drzewa (sterty do 4
+   kafelków od pnia), ale tylko tam, gdzie wolno bez polecenia (`mozeSam`: przełącznik, dzień, bez wroga). Kursy zostają
+   pracą bez polecenia, więc noc, pilna potrzeba i wróg je przerywają, a niewniesione drewno zostaje do zwykłego
+   noszenia. Próg drewna dalej liczy tylko drewno w obrębie siatki: po wniesieniu zapas rośnie i Drwal przestaje. */
+describe('drwal: drewno zza siatki z automatu', () => {
+  /** najbliższe osobie drzewo za siatką, do którego da się dojść i z którego jest więcej drewna niż na jeden kurs */
+  function drzewoZaSiatka(sim: Sim, p: Pawn): number {
+    const s = prv(sim);
+    let k = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < s.w.trees.length; i++) {
+      if (s.naszTeren(s.trunk[i]) || s.chopSpot(p, i) < 0 || woodFrom(s.w.trees[i]) <= CARRY) continue;
+      const d = s.dist2(p, s.trunk[i]);
+      if (d < bd) {
+        bd = d;
+        k = i;
+      }
+    }
+    expect(k).toBeGreaterThanOrEqual(0);
+    return k;
+  }
+  /** drewno poza naszym terenem w promieniu 4 kafelków od pnia */
+  const przyPniu = (sim: Sim, pien: number): number => {
+    const size = prv(sim).w.size;
+    return sim.st.things
+      .filter(
+        (t) =>
+          t.kind === 'drewno' &&
+          Math.max(Math.abs(t.x - (pien % size)), Math.abs(t.y - Math.floor(pien / size))) <= 4 &&
+          !prv(sim).naszTeren(t.y * size + t.x),
+      )
+      .reduce((a, t) => a + t.n, 0);
+  };
+
+  /** scena z osobą, która ma stałe zajęcie Drwal: bierze zlecenia Drwala przed wszystkimi, więc bez wniesienia drewna
+      po ścięciu rąbałaby drzewo za drzewem, a drewno leżałoby na ulicy */
+  function drwalStale(): Scena {
+    const sc = scena({ zaSiatke: true, rodzaje: ['drwal'] });
+    sc.sim.push({ t: 'stale', ids: [], osoba: sc.p.person, rodzaj: 'drwal' });
+    sc.sim.step();
+    odnow(sc.sim, sc.p);
+    return sc;
+  }
+
+  it('bezczynny drwal z przełącznikiem ścina drzewo za siatką i wnosi całe drewno do składu, kursy bez polecenia', () => {
+    const { sim, p } = drwalStale();
+    const s = prv(sim);
+    const size = s.w.size;
+    const k = drzewoZaSiatka(sim, p);
+    const pien = s.trunk[k];
+    const drewno = woodFrom(s.w.trees[k]);
+    expect(drewno).toBeGreaterThan(CARRY);
+    // drewno w obrębie siatki bez kozy (koza spala część w trakcie próby)
+    const wSiatce = (): number =>
+      sim.st.things.filter((t) => t.kind === 'drewno' && s.naszTeren(t.y * size + t.x)).reduce((a, t) => a + t.n, 0) +
+      p.carry;
+    const przed = wSiatce();
+    // automat zaczyna to samo, co zaczynałby Drwal: ścinanie bez polecenia
+    expect(s.startChop(p, k, false)).toBe(true);
+    expect(p.job?.order).toBe(false);
+    const praca = p.job!;
+    const widziane: string[] = [];
+    let ta = false;
+    until(
+      sim,
+      () => {
+        const j = jaka(p) + (p.job?.order ? '!' : '');
+        if (widziane[widziane.length - 1] !== j) widziane.push(j);
+        // ta sama praca przechodzi ze ścinania w noszenie z pnia (łańcuch), a nie zaczyna się od nowa po decyzji
+        if (p.job === praca && praca.t === 'haul' && praca.from === pien) ta = true;
+        return sim.st.felled.includes(k) && przyPniu(sim, pien) === 0 && p.carry === 0;
+      },
+      9000,
+    );
+    expect(ta).toBe(true);
+    expect(sim.st.felled).toContain(k);
+    // wniosła cały pień drewna do obrębu siatki, jedna osoba, żadna z prac nie była poleceniem
+    expect(wSiatce() - przed).toBe(drewno);
+    expect(widziane).toContain('chop');
+    expect(widziane).toContain('haul');
+    expect(widziane.indexOf('haul')).toBeGreaterThan(widziane.indexOf('chop'));
+    expect(widziane.filter((x) => x.endsWith('!'))).toEqual([]);
+    expect(snapshot(sim.st, s.w).people.find((q) => q.pawn === p.id)!.praca.zaSiatke).toBe(true);
+    expect(przyPniu(sim, pien)).toBe(0);
+  });
+
+  it('drewno z drzewa zza siatki podnosi zapas ponad próg, więc Drwal przestaje ścinać (próg bez zmian)', () => {
+    const { sim, p } = drwalStale();
+    const s = prv(sim);
+    const k = drzewoZaSiatka(sim, p);
+    const pien = s.trunk[k];
+    const drewno = woodFrom(s.w.trees[k]);
+    const prog = progi(sim.st).drewno;
+    // zapas tuż pod progiem: dopiero drewno z tego drzewa go przekroczy (z zapasem na spalanie w kozie)
+    ustawZapas(sim, prog + 3 - drewno);
+    const zapasPrzed = s.zapasDrewna();
+    expect(zapasPrzed).toBeLessThan(prog);
+    const starty = liczStarty(sim, p);
+    expect(s.startChop(p, k, false)).toBe(true);
+    until(sim, () => sim.st.felled.includes(k) && przyPniu(sim, pien) === 0 && p.carry === 0, 9000);
+    expect(przyPniu(sim, pien)).toBe(0);
+    expect(s.zapasDrewna()).toBeGreaterThanOrEqual(prog);
+    // jedno ścięcie wystarczyło: zanim drewno z tego drzewa było w składzie, drwal ze stałym zajęciem nie ruszył do
+    // następnego drzewa (przy drewnie leżącym za siatką zapas nie rósł i rąbałby dalej)
+    expect(starty.chop).toBe(1);
+    // nad progiem nie rusza do kolejnego drzewa (ani na naszym terenie, ani za siatką), mimo stałego zajęcia
+    for (let n = 0; n < 300; n++) sim.step();
+    expect(starty.chop).toBe(1);
+  });
+
+  it('noc o 22:00 przerywa wnoszenie: reszta drewna zostaje za siatką, nikt po nią nocą nie wychodzi', () => {
+    const { sim, p } = drwalStale();
+    const s = prv(sim);
+    const k = drzewoZaSiatka(sim, p);
+    const pien = s.trunk[k];
+    const drewno = woodFrom(s.w.trees[k]);
+    expect(s.startChop(p, k, false)).toBe(true);
+    // wnoszenie się zaczęło (pierwszy kurs po drewno), jeszcze nic nie wniesione
+    until(sim, () => p.job?.t === 'haul' && p.job.from === pien && p.job.phase === 0, 9000);
+    expect(p.job?.t).toBe('haul');
+    expect(p.job?.order).toBe(false);
+    expect(przyPniu(sim, pien)).toBe(drewno);
+    // jest 22:00 (noc): kurs w drodze po pierwszą stertę może się jeszcze skończyć (drewno w rękach niesie do składu,
+    // noszenie nocą do składu na naszym terenie trwa), ale kolejnych kursów po drewno za siatkę już nie ma
+    sim.st.tick = tickO(2, 22);
+    until(sim, () => p.carry === 0 && !sim.st.pawns.some((q) => q.job?.t === 'haul' && q.job.from === pien), 3000);
+    expect(p.carry).toBe(0);
+    const zostalo = przyPniu(sim, pien);
+    expect(zostalo).toBeGreaterThanOrEqual(drewno - CARRY);
+    expect(zostalo).toBeGreaterThan(0);
+    // reszta leży za siatką i nikt po nią nie wychodzi przez noc
+    for (let n = 0; n < 2 * TICKS_PER_HOUR; n++) {
+      sim.step();
+      expect(s.naszTeren(kafelek(sim, p)), `krok ${n}`).toBe(true);
+    }
+    expect(przyPniu(sim, pien)).toBe(zostalo);
+  });
+
+  it('pełny skład: Drwal nie bierze drzew za siatką (drewno nie miałoby gdzie trafić), drzewa w podwórku tak', () => {
+    const { sim, p } = scena({ zaSiatke: true, rodzaje: ['drwal'] });
+    const s = prv(sim);
+    // próg ponad pojemność składu, żeby to nie zapas zatrzymywał Drwala
+    sim.push({ t: 'prog', ids: [], co: 'drewno', n: 300 });
+    sim.step();
+    const zMiejscem = sim.ileZlecen('drwal');
+    for (const i of sim.house!.sklad) s.addWood(i, STACK);
+    expect(s.zapasDrewna()).toBeLessThan(progi(sim.st).drewno);
+    const pelny = sim.ileZlecen('drwal');
+    // tyle, co bez przełącznika: tylko drzewa na naszym terenie
+    expect(pelny).toBeGreaterThan(0);
+    expect(pelny).toBeLessThan(zMiejscem);
+    const bez = scena({ rodzaje: ['drwal'] });
+    bez.sim.push({ t: 'prog', ids: [], co: 'drewno', n: 300 });
+    bez.sim.step();
+    expect(pelny).toBe(bez.sim.ileZlecen('drwal'));
+    // w biegu każde ścinane drzewo leży na naszym terenie
+    odnow(sim, p);
+    const cele: number[] = [];
+    const org = s.setJob.bind(s);
+    vi.spyOn(s, 'setJob').mockImplementation((pp, j, keep) => {
+      if (pp === p && j.t === 'chop') cele.push(j.target);
+      org(pp, j, keep);
+    });
+    const sklad = sim.house!.sklad;
+    const stos = (i: number) => sim.st.things.find((t) => t.kind === 'drewno' && t.y * s.w.size + t.x === i);
+    for (let n = 0; n < 3000; n++) {
+      // skład zostaje pełny (koza zjada z niego drewno)
+      if (n % 20 === 0) for (const i of sklad) s.addWood(i, Math.max(0, STACK - (stos(i)?.n ?? 0)));
+      sim.step();
+    }
+    expect(cele.length).toBeGreaterThan(0);
+    for (const k of cele) expect(s.naszTeren(s.trunk[k]), `drzewo ${k}`).toBe(true);
+    // po zrobieniu miejsca w składzie drzewa za siatką wracają do zleceń
+    const wciazPelny = sim.ileZlecen('drwal');
+    for (const i of sklad) {
+      const pile = stos(i);
+      if (pile) pile.n = 0;
+    }
+    expect(sim.ileZlecen('drwal')).toBeGreaterThan(wciazPelny);
+  });
+
+  it('bez przełącznika ścinanie zostaje na naszym terenie: automat nie bierze drzewa za siatką', () => {
+    const { sim, p } = scena({ rodzaje: ['drwal'] });
+    const s = prv(sim);
+    const poza = [...s.w.trees.keys()].filter((i) => !s.naszTeren(s.trunk[i]));
+    expect(poza.length).toBeGreaterThan(0);
+    const cele: number[] = [];
+    const org = s.setJob.bind(s);
+    vi.spyOn(s, 'setJob').mockImplementation((pp, j, keep) => {
+      if (pp === p && j.t === 'chop') cele.push(j.target);
+      org(pp, j, keep);
+    });
+    for (let n = 0; n < 4000; n++) sim.step();
+    expect(cele.length).toBeGreaterThan(0);
+    for (const k of cele) expect(s.naszTeren(s.trunk[k]), `drzewo ${k}`).toBe(true);
   });
 });
 

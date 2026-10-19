@@ -23,6 +23,7 @@ import {
   WPISY,
   ZARZAD_MAX,
   zaSiatke,
+  zaSiatkeDomyslnie,
 } from '../../src/sim/praca.ts';
 import { createSim, type Pawn, type SimState } from '../../src/sim/sim.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
@@ -211,7 +212,8 @@ describe('stary stan bez st.praca', () => {
     for (let i = 0; i < st.people.length; i++) {
       for (const r of RODZAJE) priorytet(st, i, r);
       expect(staleZajecie(st, i)).toBeNull();
-      expect(zaSiatke(st, i)).toBe(false);
+      // tryb zwykły: przełącznik „za siatkę” domyślnie włączony (decyzja Mateusza 19.10.2026), bez śladu w stanie
+      expect(zaSiatke(st, i)).toBe(true);
       expect(kolejnoscOsoby(st, i).length).toBeGreaterThan(0);
     }
     expect(progi(st)).toEqual({ drewno: 30, deski: 20, czesci: 10, dzidy: 0 });
@@ -225,10 +227,59 @@ describe('stary stan bez st.praca', () => {
     st.praca = {};
     expect(progi(st)).toEqual(PROGI_DOMYSLNE);
     expect(staleZajecie(st, 0)).toBeNull();
-    expect(zaSiatke(st, 0)).toBe(false);
-    st.praca = { osoby: { 2: { zaSiatke: true } } };
+    expect(zaSiatke(st, 0)).toBe(true);
+    st.praca = { osoby: { 2: { zaSiatke: false } } };
+    expect(zaSiatke(st, 2)).toBe(false);
+    expect(zaSiatke(st, 0)).toBe(true);
+  });
+});
+
+describe('przełącznik „może wychodzić za siatkę”: domyślna zależy od trybu', () => {
+  it('zaSiatkeDomyslnie: włączony w trybie zwykłym (także bez pola trybu), wyłączony w zombie', () => {
+    expect(zaSiatkeDomyslnie(st)).toBe(true);
+    delete st.mode;
+    expect(zaSiatkeDomyslnie(st)).toBe(true);
+    st.mode = 'zwykly';
+    expect(zaSiatkeDomyslnie(st)).toBe(true);
+    st.mode = 'zombie';
+    expect(zaSiatkeDomyslnie(st)).toBe(false);
+  });
+
+  it('zaSiatke bez ustawień gracza: domyślna trybu dla każdej osoby z listy, osoba spoza listy nie wychodzi', () => {
+    for (let i = 0; i < st.people.length; i++) expect(zaSiatke(st, i)).toBe(true);
+    expect(zaSiatke(st, -1)).toBe(false);
+    expect(zaSiatke(st, st.people.length)).toBe(false);
+    st.mode = 'zombie';
+    for (let i = 0; i < st.people.length; i++) expect(zaSiatke(st, i)).toBe(false);
+    expect(zaSiatke(st, -1)).toBe(false);
+  });
+
+  it('jawne ustawienie gracza wygrywa z domyślną w obie strony', () => {
+    st.praca = { osoby: { 1: { zaSiatke: false }, 2: { zaSiatke: true } } };
+    expect(zaSiatke(st, 0)).toBe(true);
+    expect(zaSiatke(st, 1)).toBe(false);
+    // stary zapis: jawne `true` w trybie zwykłym znaczy to samo co brak pola
     expect(zaSiatke(st, 2)).toBe(true);
+    st.mode = 'zombie';
     expect(zaSiatke(st, 0)).toBe(false);
+    expect(zaSiatke(st, 1)).toBe(false);
+    // stary zapis: jawne `true` w trybie zombie zostaje włączeniem
+    expect(zaSiatke(st, 2)).toBe(true);
+  });
+
+  it('ustawienia osoby bez pola `zaSiatke` (tylko priorytety) mają domyślną trybu', () => {
+    st.praca = { osoby: { 0: { prio: { drwal: 4 } } } };
+    expect(zaSiatke(st, 0)).toBe(true);
+    st.mode = 'zombie';
+    expect(zaSiatke(st, 0)).toBe(false);
+  });
+
+  it('czytanie przełącznika nie zostawia śladu w stanie', () => {
+    const przed = JSON.stringify(st);
+    for (let i = 0; i < st.people.length; i++) zaSiatke(st, i);
+    zaSiatkeDomyslnie(st);
+    expect(JSON.stringify(st)).toBe(przed);
+    expect('praca' in st).toBe(false);
   });
 });
 

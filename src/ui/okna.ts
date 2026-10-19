@@ -555,8 +555,8 @@ function workHelp(touch: boolean): string {
     'The plus and minus buttons under “Keep in stock” set how much wood, planks and parts to keep; 0 turns it off.',
   );
   const card = tx(
-    'Na karcie osoby można dać jej stałe zajęcie (zlecenia tego rodzaju bierze przed wszystkimi) i pozwolić jej wychodzić za siatkę za dnia bez polecenia.',
-    'On a person’s card you can give them a fixed job (they take jobs of that kind before anything else) and let them go outside the fence by day without orders.',
+    'Na karcie osoby można dać jej stałe zajęcie (zlecenia tego rodzaju bierze przed wszystkimi) i pozwolić jej wychodzić za siatkę za dnia bez polecenia. W trybie zwykłym to pozwolenie jest domyślnie włączone, w trybie zombie wyłączone.',
+    'On a person’s card you can give them a fixed job (they take jobs of that kind before anything else) and let them go outside the fence by day without orders. In normal mode this is on by default, in zombie mode it is off.',
   );
   const items = touch
     ? [

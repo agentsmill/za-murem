@@ -13,7 +13,7 @@ import { fenceShape } from '../../src/sim/perimeter.ts';
 import { automatRusza, NOWE, priorytet, RODZAJE } from '../../src/sim/praca.ts';
 import { BURN_TICKS, type Job, type JobKind, type Pawn, type Sim, type Thing } from '../../src/sim/sim.ts';
 import type { World } from '../../src/world/world.ts';
-import { doRana, skonczSamouczek, wylaczAutomat } from './praca-pomoc.ts';
+import { doRana, przelacznik, skonczSamouczek, wylaczAutomat } from './praca-pomoc.ts';
 import { core, demoWorld, newGame, until } from './sasiedzi-pomoc.ts';
 
 /** prywatne części Sim, po które sięgają sceny (kontrakt testowy, nie API gry) */
@@ -53,6 +53,10 @@ function scena(opcje: { plan?: boolean; skills?: Record<string, number>; key?: s
   const key = opcje.key ?? 'przymorze';
   const sim = newGame(key, 'zwykly', 5);
   for (let i = 0; i < 100; i++) sim.step();
+  // przełącznik „za siatkę” jest w trybie zwykłym domyślnie włączony, a sceny zakładają, że bez polecenia testu nikt
+  // sam za siatkę nie wychodzi (test włącza go osobie, której to dotyczy)
+  przelacznik(sim, core(sim), false);
+  sim.step();
   const st = sim.st;
   const [p, ...reszta] = core(sim);
   for (const q of reszta) q.away = true;

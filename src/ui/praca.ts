@@ -5,7 +5,9 @@
    - `widokPracy(snap, …)` składa `WidokPracy` z odczytu (`SimSnapshot`): wiersz na osobę zarządu po numerze osoby,
      progi i widoczne rodzaje. `nalozPolecenia` nakłada na widok polecenia ustawień, które czekają w kolejności
      symulacji (gra na pauzie nie wykonuje kroku, a panel ma się zmienić od razu).
-   - `pracaPanelHtml(v, en)` robi treść: lead (na komputerze z regułą klawiatury: Tab i strzałki wybierają komórkę,
+   - `pracaPanelHtml(v, en)` robi treść: lead (zdanie o strzałce „za siatkę” przy osobie mówi, że jest domyślnie
+     włączona w trybie zwykłym, a wyłączona w zombie; stan każdej osoby z odczytu to `aria-pressed` przycisku
+     `data-zasiatke`; na komputerze z regułą klawiatury: Tab i strzałki wybierają komórkę,
      cyfry 0–4 ustawiają priorytet, spacja i Enter zmieniają o jeden, a po kliknięciu myszą spacja i 1–4 znów
      sterują grą; panelpracy.ts to pilnuje), „Trzymać w zapasie” (drewno, deski, części, w trybie zombie dzidy: minus,
      liczba, plus po 5) i tabelę, w której wiersz to osoba, a kolumna to rodzaj pracy w kolejności `RODZAJE`. W trybie
@@ -135,10 +137,12 @@ const PROGI: Record<keyof Progi, { nazwa: Tx; opis: Tx }> = {
 
 const wJezyku = (t: Tx, en: boolean): string => (en ? t.en : t.pl);
 
-/** dymek przełącznika „za siatkę”: ten sam w panelu Pracy i na karcie osoby */
+/** Dymek przełącznika „za siatkę”: ten sam w panelu Pracy i na karcie osoby. Mówi też, jaka jest wartość domyślna
+    (decyzja Mateusza 19.10.2026: włączony w trybie zwykłym, wyłączony w zombie, `zaSiatkeDomyslnie` w src/sim/praca.ts);
+    bez apostrofów i cudzysłowów, bo test porównuje go z atrybutem `title` po `esc`. */
 export const ZA_SIATKE_OPIS: Tx = tx(
-  'Może wychodzić za siatkę bez polecenia (za dnia)',
-  'Can go outside the fence without orders (by day)',
+  'Może wychodzić za siatkę bez polecenia (za dnia). Domyślnie włączone w trybie zwykłym, wyłączone w trybie zombie.',
+  'Can go outside the fence without orders (by day). On by default in normal mode, off in zombie mode.',
 );
 /** ostrzeżenie trybu zombie przy wychodzeniu za siatkę: w panelu Pracy (stała linia) i w podpowiedzi po włączeniu
     przełącznika (karta osoby ma krótszą wersję) */
@@ -246,14 +250,16 @@ const IKONA_ZA_SIATKE =
     panelpracy.ts. */
 export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
   const t = (pl: string, eng: string): string => (en ? eng : pl);
+  // przełącznik „za siatkę” (strzałka przy osobie) ma domyślną zależną od trybu; lead mówi tę, która obowiązuje w grze
+  const domyslnie = v.zombie ? t('wyłączona', 'off') : t('włączona', 'on');
   const lead = `<p class="lead">${esc(
     t(
       `Tak pracują sami, kiedy nikt im nie rozkazuje. 1 to najpierw, 4 na końcu, puste: nie robi. ${
         v.touch ? 'Stuknij komórkę, żeby zmienić.' : 'Klik zmienia, prawy przycisk w drugą stronę.'
-      } Gwiazdka to stałe zajęcie z karty osoby.`,
+      } Gwiazdka to stałe zajęcie z karty osoby. Strzałka przy osobie pozwala jej wychodzić za siatkę za dnia bez polecenia (domyślnie ${domyslnie}).`,
       `This is how they work when nobody gives an order. 1 goes first, 4 last, blank: won’t do it. ${
         v.touch ? 'Tap a cell to change it.' : 'Click to change, right-click to go back.'
-      } A star marks the fixed job set on the person’s card.`,
+      } A star marks the fixed job set on the person’s card. The arrow beside a person lets them go outside the fence by day without orders (${domyslnie} by default).`,
     ),
   )}</p>`;
   // reguła klawiatury (na telefonie nie ma czego opisywać): fokus po kliknięciu zdejmuje panelpracy.ts, więc spacja

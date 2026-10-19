@@ -6,8 +6,10 @@
    bez niej stan jest taki jak przed tą opcją. Własna praca bezczynnego zarządu (think) idzie według priorytetów
    osób z src/sim/praca.ts: po potrzebach, zimnie i gasnącej kozie biorą rodzaje pracy po kolei (ogień, kuchnia,
    budowa, naprawy, drwal, noszenie, warsztat, szaber, badania). Bez polecenia zaczynają pracę tylko na naszym terenie
-   (naszTeren: podwórko, siedziba, budynki za wspólnym płotem); za siatkę wychodzi tylko osoba z przełącznikiem i tylko
-   za dnia (mozeTam). Warsztat i szaber nigdy nie ruszają materiału ani drzwi, które mają inne przeznaczenie: deski
+   (naszTeren: podwórko, siedziba, budynki za wspólnym płotem); za siatkę wychodzi tylko osoba z przełącznikiem (domyślnie
+   włączony w trybie zwykłym, wyłączony w zombie: `zaSiatkeDomyslnie`) i tylko za dnia (mozeTam). Ścięcie drzewa za siatką
+   kończy się wniesieniem całego drewna z tego drzewa przez tę samą osobę, z polecenia i z automatu Drwala (`haulOn`; bez
+   polecenia tylko tam, gdzie wolno, i przerywane nocą, pilną potrzebą i wrogiem). Warsztat i szaber nigdy nie ruszają materiału ani drzwi, które mają inne przeznaczenie: deski
    z nadwyżki drewna, części z nadwyżki złomu, dzidy dla nieuzbrojonych, a szaber tylko puste pomieszczenia i wraki,
    bez otwierania i wyważania drzwi. Czas ścinania, budowy, łatania, napraw, warsztatu, dzidy i gotowania dzieli
    mnożnik z umiejętności (`tempoPracy`). Wędrowiec po rozmowie przy siatce może zostać zaproszony (praca `zapros`,
@@ -207,6 +209,7 @@ import {
   ZAPAS_OPALU,
   ZARZAD_MAX,
   zaSiatke,
+  zaSiatkeDomyslnie,
 } from './praca.ts';
 import {
   atakOdRazu,
@@ -2125,7 +2128,9 @@ function wZarzadzie(st: SimState, osoba: number): boolean {
 }
 
 /** Ustawienia pracy ludzi z polecenia gracza (`prio`, `stale`, `zasiatke`, `prog`): zapisuje w `st.praca` tylko zmiany
-    względem domyślnych, a ustawienie równe domyślnemu zdejmuje wpis. Wyjątek: priorytet Badań zostaje zapisany zawsze
+    względem domyślnych, a ustawienie równe domyślnemu zdejmuje wpis (przełącznik „za siatkę” ma domyślną zależną od
+    trybu: `zaSiatkeDomyslnie`; zapisane jest jawne `true` albo `false` tylko wtedy, gdy różni się od niej, a stary
+    zapis z wartością równą domyślnej `uporzadkujPrace` zdejmuje przy najbliższej zmianie ustawień). Wyjątek: priorytet Badań zostaje zapisany zawsze
     (domyślny zależy od dziedziny bieżącego badania). Złe dane (osoba spoza zarządu, priorytet poza 0–4,
     nieznany rodzaj albo próg, próg nie liczba) są pomijane bez śladu w stanie. */
 function ustawPrace(st: SimState, c: PolecenieUstawien): void {
@@ -2152,8 +2157,8 @@ function ustawPrace(st: SimState, c: PolecenieUstawien): void {
     } else if (c.t === 'stale') {
       if (c.rodzaj === null) delete u.stale;
       else u.stale = c.rodzaj;
-    } else if (c.on) u.zaSiatke = true;
-    else delete u.zaSiatke;
+    } else if (!!c.on === zaSiatkeDomyslnie(st)) delete u.zaSiatke;
+    else u.zaSiatke = !!c.on;
   }
   uporzadkujPrace(st);
 }
@@ -2177,7 +2182,8 @@ function uporzadkujPrace(st: SimState): void {
     }
     if (Object.keys(prio).length) nowe.prio = prio;
     if (u.stale) nowe.stale = u.stale;
-    if (u.zaSiatke) nowe.zaSiatke = true;
+    // przełącznik „za siatkę” zostaje tylko wtedy, gdy różni się od domyślnego trybu (tryb nie zmienia się w grze)
+    if (u.zaSiatke !== undefined && u.zaSiatke !== zaSiatkeDomyslnie(st)) nowe.zaSiatke = u.zaSiatke;
     if (Object.keys(nowe).length) osoby[Number(k)] = nowe;
   }
   const nad: Partial<Progi> = {};
@@ -3469,10 +3475,13 @@ export class Sim {
   /** Drwal: najbliższe wolne drzewo, gdy drewna w zapasie jest mniej niż próg. Pomija: ścięte, drzewa, które ktoś
       już rąbie (rezerwacja przez `job.target`, więc dwóch drwali nie bierze tego samego), suche drzewo z samouczka
       przed końcem jego kroku „ściąć”, drzewa na linii obwodu (ich pień po ścięciu zamienia się w kafelek siatki, który
-      da się przebić) i takie, do których nie wolno iść bez polecenia (`mozeTam`) albo przy których jest szwendacz. */
+      da się przebić) i takie, do których nie wolno iść bez polecenia (`mozeTam`) albo przy których jest szwendacz.
+      Drzewa za siatką też, gdy w składzie nie ma miejsca (`dropTile`): ścięte drewno zostałoby na ulicy, a próg liczy
+      tylko drewno w obrębie siatki, więc zapas by nie rósł i drwal rąbałby drzewo za drzewem. */
   private startDrwal(p: Pawn): boolean {
     const st = this.st;
     if (this.zapasDrewna() >= progi(st).drewno) return false;
+    const brakMiejsca = this.dropTile(p) < 0;
     const felled = new Set(st.felled);
     const zajete = new Set<number>();
     for (const q of st.pawns) if (q.job?.t === 'chop') zajete.add(q.job.target);
@@ -3484,6 +3493,7 @@ export class Sim {
       if (k === suche || felled.has(k) || zajete.has(k)) continue;
       const t = this.trunk[k];
       if (!this.mozeTam(p, t) || naLinii(t) || this.zagrozone(t)) continue;
+      if (brakMiejsca && !this.naszTeren(t)) continue;
       kandydaci.push([this.dist2(p, t), k]);
     }
     kandydaci.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -3699,6 +3709,18 @@ export class Sim {
       if (pile ? pile.n < STACK : !this.thingAt(i % size, Math.floor(i / size))) return i;
     }
     return -1;
+  }
+
+  /** czy w składzie jest miejsce na drewno, bez względu na osobę (`dropTile` dodaje, że dany pionek tam dojdzie) */
+  private skladMaMiejsce(): boolean {
+    const h = this.house;
+    if (!h) return false;
+    const size = this.w.size;
+    return h.sklad.some((i) => {
+      if (this.coreBlocked[i]) return false;
+      const pile = this.pileAt(i);
+      return pile ? pile.n < STACK : !this.thingAt(i % size, Math.floor(i / size));
+    });
   }
 
   /** dokłada drewno na kafelek (do stosu, który tam leży) */
@@ -4009,9 +4031,10 @@ export class Sim {
         if (j.phase === 1) {
           if (tick < j.until) return true;
           if (!st.felled.includes(j.target)) this.fell(j.target, j.tile);
-          // ścięcie na polecenie za siatką kończy się wniesieniem całego drewna z tego drzewa przez tę samą osobę
-          // (tak jak wrak przechodzi w noszenie łupu); bez miejsca w składzie albo drogi zostaje jak dotąd
-          return j.order && !this.naszTeren(this.trunk[j.target]) && this.haulOn(p, j, this.trunk[j.target]);
+          // ścięcie za siatką (z polecenia i z automatu Drwala) kończy się wniesieniem całego drewna z tego drzewa przez
+          // tę samą osobę (tak jak wrak przechodzi w noszenie łupu); bez miejsca w składzie albo drogi, a bez polecenia
+          // także nocą, przy wrogu i z dala od dozwolonych stert (`haulOn`), reszta zostaje jak dotąd
+          return !this.naszTeren(this.trunk[j.target]) && this.haulOn(p, j, this.trunk[j.target]);
         }
         if (!at || st.felled.includes(j.target)) return false;
         j.phase = 1;
@@ -4910,7 +4933,8 @@ export class Sim {
       plus stosy drewna poza składem na naszym terenie; kuchnia 0 albo 1 (`shouldCook`); budowa to plany bez wykonawcy
       i plan wspólnego płotu bez wykonawcy; naprawy to otwarte dziury bez łatającego i nienaprawione uszkodzenia
       w naszych mieszkaniach bez naprawiającego; drwal to wolne drzewa (bez ściętych, rąbanych, suchego z samouczka
-      i na linii obwodu), a gdy drewna w zapasie jest tyle co próg albo więcej, 0; noszenie to stosy materiału
+      i na linii obwodu, a drzewa za siatką tylko gdy w składzie jest miejsce na drewno), a gdy drewna w zapasie jest tyle
+      co próg albo więcej, 0; noszenie to stosy materiału
       z `CARRY_MATS` leżące poza podwórkiem; warsztat to ile z trzech wyrobów (deski, części, dzida) według progów
       i zapasów jest do zrobienia (progi dzid, desek i części liczą same predykaty); szaber to nieprzeszukane
       pomieszczenia w siedzibie, w otwartych budynkach sąsiadów (poza mieszkaniami lokatorów) i nieprzeszukane wraki.
@@ -4955,6 +4979,8 @@ export class Sim {
       }
       case 'drwal': {
         if (this.zapasDrewna() >= progi(st).drewno) return 0;
+        // drzewa za siatką czekają tylko wtedy, gdy w składzie jest miejsce na ich drewno (`startDrwal`)
+        const naZewnatrz = poza && this.skladMaMiejsce();
         const felled = new Set(st.felled);
         const zajete = new Set<number>();
         for (const q of st.pawns) if (q.job?.t === 'chop') zajete.add(q.job.target);
@@ -4962,7 +4988,7 @@ export class Sim {
         let n = 0;
         for (let k = 0; k < this.w.trees.length; k++) {
           if (k === suche || felled.has(k) || zajete.has(k)) continue;
-          if (!poza && !this.naszTeren(this.trunk[k])) continue;
+          if (!naZewnatrz && !this.naszTeren(this.trunk[k])) continue;
           if (!naLiniiObwodu(size, this.trunk[k], (i) => this.yardMask[i] === 1)) n++;
         }
         return n;
@@ -5399,21 +5425,25 @@ export class Sim {
     return true;
   }
 
-  /** Praca j (ścinanie z polecenia albo kurs z drewnem) przechodzi w noszenie drewna z okolicy pnia `stump` (sterty
-      do 4 kafelków od niego, poza składem) do składu: kolejny kurs z polecenia (`order`), zapamiętany pień w `j.from`.
-      false, gdy nie ma czego nosić, w składzie nie ma miejsca albo nie da się dojść. */
+  /** Praca j (ścinanie albo kurs z drewnem) przechodzi w noszenie drewna z okolicy pnia `stump` (sterty do 4 kafelków
+      od niego, poza składem) do składu: kolejny kurs z tego samego rodzaju pracy co j (`j.order`: z polecenia gracza albo
+      z automatu), zapamiętany pień w `j.from`. Z polecenia bierze każdą stertę przy pniu, bez polecenia tylko te, na
+      które wolno iść i do których wolno dojść bez polecenia (`mozeSam`: za siatką osoba z przełącznikiem, za dnia i bez
+      wroga bliżej niż 10 m, i bez szwendacza przy stercie), i takie kursy przerywa noc, pilna potrzeba i wróg jak
+      każde noszenie bez polecenia spoza siatki; niewniesione sterty zostają do zwykłego noszenia. false, gdy nie ma
+      czego nosić, w składzie nie ma miejsca albo nie da się dojść. */
   private haulOn(p: Pawn, j: Job, stump: number): boolean {
     if (p.carry > 0 || this.dropTile(p) < 0) return false;
-    const pile = this.pileFor(p, 'outside', stump);
+    const order = j.order;
+    const pile = this.pileFor(p, 'outside', stump, order ? undefined : (i) => this.mozeSam(p, i) && !this.zagrozone(i));
     if (!pile) return false;
     const pt = pile.y * this.w.size + pile.x;
-    if (!this.go(p, pt)) return false;
+    if (!(order ? this.go(p, pt) : this.idz(p, pt, false))) return false;
     j.t = 'haul';
     j.phase = 0;
     j.target = pile.id;
     j.tile = pt;
     j.from = stump;
-    j.order = true;
     pile.by = p.id;
     return true;
   }
@@ -8226,14 +8256,14 @@ export class Sim {
 
   /** Czy pionek bez polecenia może wyjść poza nasz teren do tego kafelka (albo przejść po ulicy do innej części
       naszego terenu). Do kafelka na naszym terenie, który leży w innej jego części (inna klatka bloku), wolno
-      w trybie zwykłym za dnia (`ulicaMiedzyNaszymi`). Poza tym tylko osoba z przełącznikiem „może wychodzić za
-      siatkę”, tylko za dnia (nocą nikt bez polecenia nie wychodzi) i tylko gdy nie ma wroga (`wrogBlisko`: szwendacz,
-      ludzie handlarza, wrogi handlarz, szabrownik; we wszystkich trybach) bliżej niż 10 m od celu, od samej osoby ani
-      od wyjścia za bramę (rano stado stoi jeszcze pod siatką, a droga do celu prowadzi przez bramę; sam cel bez wroga
+      w trybie zwykłym za dnia (`ulicaMiedzyNaszymi`). Poza tym tylko osoba z zarządu z przełącznikiem „może wychodzić
+      za siatkę” (domyślnie włączony w trybie zwykłym, wyłączony w zombie), tylko za dnia (nocą nikt bez polecenia nie
+      wychodzi) i tylko gdy nie ma wroga (`wrogBlisko`: szwendacz, ludzie handlarza, wrogi handlarz, szabrownik; we
+      wszystkich trybach) bliżej niż 10 m od celu, od samej osoby ani od wyjścia za bramę (rano stado stoi jeszcze pod siatką, a droga do celu prowadzi przez bramę; sam cel bez wroga
       nie wystarcza). To jedyne miejsce reguły „za siatką” (`mozeTam`, `dojdzieWDomu` i `idz` biorą ją stąd). */
   private mozeWyjsc(p: Pawn, tile: number, trasa: Trasa = 'zwykla'): boolean {
     if (this.naszTeren(tile) && this.ulicaMiedzyNaszymi(trasa)) return true;
-    if (!zaSiatke(this.st, p.person) || this.night()) return false;
+    if (p.kind !== 'core' || !zaSiatke(this.st, p.person) || this.night()) return false;
     return !this.wrogBlisko([tile, this.tileOf(p), this.exitTile]);
   }
 

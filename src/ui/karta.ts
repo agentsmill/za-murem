@@ -7,7 +7,8 @@
    da się go sprawdzić w Node.
 
    Praca ludzi (src/sim/praca.ts): pod opisem pracy karta zarządu ma wybór stałego zajęcia (`data-card="stale"`,
-   lista rozwijana; main.ts słucha `change`) i przełącznik „może wychodzić za siatkę” (`data-card="zasiatke"`), a w trybie
+   lista rozwijana; main.ts słucha `change`) i przełącznik „może wychodzić za siatkę” (`data-card="zasiatke"`, stan
+   z odczytu w `aria-pressed`; domyślnie włączony w trybie zwykłym, wyłączony w zombie, mówi o tym jego dymek), a w trybie
    zombie jedno zdanie, że za siatką są szwendacze. Opis pracy wziętej bez polecenia dostaje dopisek „(sam)”, „(sama)”
    albo „(on own)”, żeby było widać, że to ustawienia z panelu Pracy, a nie rozkaz; snu, posiłku i grzania się nie
    oznaczamy, bo to nie praca. Karta mieszkańca (tylko do odczytu) nie ma ani ustawień, ani dopisku.
