@@ -27,6 +27,7 @@ import {
   setNight,
   signLaw,
 } from '../../src/gov/zarzad.ts';
+import { grajDalej } from '../../src/gov/zwyciestwo.ts';
 import { dayOf, hourOf, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from '../../src/sim/gov.ts';
 import { dryTreeOf, houseOf } from '../../src/sim/house.ts';
@@ -94,6 +95,11 @@ function odpowiedz(gov: GovState, sim: Sim, swiat: World, p: Prompt, sekunda: nu
       if (najlepszy) setNight(gov, najlepszy.id, `warta:${p.card.posts[0].key}`);
     }
     applyGov(st, swiat, confirmNight(gov, wejscie));
+    return;
+  }
+  if (p.k === 'zwyciestwo') {
+    // epilog zwycięstwa (tylko gdy przebieg włączy drogi): zamknąć i grać dalej
+    grajDalej(gov);
     return;
   }
   const k = p.choices.findIndex((c) => c.ok);
