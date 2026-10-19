@@ -73,7 +73,7 @@ Dziewięć rodzajów w tej kolejności kolumn (ta sama kolejność rozstrzyga re
 
 | rodzaj | co robi sam (istniejące prace w `sim.ts`) | umiejętność | zlecenia za siatką |
 |---|---|---|---|
-| Ogień | dokłada do kozy i ogniska, nosi drewno do składu (`refuel`, `haul`) | `cieplo` | drewno na ulicy (Decyzje, punkt 9) |
+| Ogień | dokłada do kozy i ogniska, nosi drewno do składu (`refuel`, `haul`) | `cieplo` | drewno na ulicy |
 | Kuchnia | gotuje, kiedy `shouldCook` (`cook`) | `uprawa` | nie |
 | Budowa | buduje plany z menu budowy i dokańcza zlecony wspólny płot (`build`, `plot`) | `bud` | nie |
 | Naprawy | łata dziury w siatce, naprawia uszkodzenia w naszych mieszkaniach (`patch`, `repair`) | `bud` | nie |
@@ -121,13 +121,14 @@ Pozostałe rodzaje nie mają progów: Ogień pilnuje kozy, Kuchnia ma `shouldCoo
 ### Kiedy pracują
 
 - Potrzeby: sen i jedzenie przed pracą, jak dziś. Ogrzanie zostaje tam, gdzie dziś: po pracy, a pilne zimno (ciepło poniżej 10) przerywa pracę (moje, po przeglądzie). Przy dziewięciu rodzajach pracy ktoś może nie dochodzić do ogrzania; budujący sprawdza to pomiarem „zarząd bez gracza” i jeśli nastrój albo ciepło spadają, przesuwa ogrzanie przed rodzaje z priorytetem 3 i 4.
-- Godziny: sama praca za dnia, nocą tylko koza i kuchnia, polecenie gracza jak dziś (integrator, punkt 6). Okno dnia: Decyzje, punkt 6.
+- Godziny: sama praca za dnia, czyli 6:00–22:00 (`!night()`), jak dziś budowa i prace M2 bez polecenia; nocą tylko koza i kuchnia; polecenie gracza o każdej porze (integrator, punkt 6).
 - Przy wrogu na podwórku, w trybie zombie za siatką i przy pilnych potrzebach wszystko jak dziś: te gałęzie `think()` stoją przed pracą.
-- Polecenie gracza zawsze wygrywa i nie wraca do priorytetów, dopóki się nie skończy (`order: true`). Ścinanie na polecenie obejmuje wniesienie drewna z tego drzewa przez tę samą osobę, jak wrak przechodzi w noszenie (Decyzje, punkt 9).
+- Polecenie gracza zawsze wygrywa i nie wraca do priorytetów, dopóki się nie skończy (`order: true`).
+- Drewno zza siatki (integrator, punkt 9): ścinanie na polecenie obejmuje wniesienie całego drewna z tego drzewa przez tę samą osobę, tak jak wrak przechodzi w noszenie (`carryOn`). Bezczynni wnoszą drewno zza siatki tylko za dnia i tylko z przełącznikiem „Może wychodzić za siatkę”. Drewno w obrębie siatki noszą jak dziś, także nocą. To zmienia dzisiejsze `startHaul`, które bierze najbliższą stertę z całego obszaru, także zza bramy.
 
 ### Pierwszy dzień (integrator, punkt 9)
 
-To, co zarząd robi sam już dziś (koza, kuchnia, noszenie drewna, budowa planów), zostaje od początku gry bez zmian. Nowe rodzaje (Drwal, Naprawy, Noszenie, Warsztat, Szaber, Badania) ruszają od pierwszego rana (dzień 2, 6:00) i dopiero po skończonym samouczku (`st.tut.step` równe `TUT_STEPS.length`, albo −1 w świecie bez samouczka). Rozumienie „po celach pierwszego dnia” jako „od pierwszego rana po samouczku” jest moje, bo cele pierwszego dnia (samouczek, drewno na noc, przetrwać noc) kończą się rano.
+To, co zarząd robi sam już dziś (koza, kuchnia, noszenie drewna w obrębie siatki, budowa planów), zostaje od początku gry bez zmian. Nowe rodzaje (Drwal, Naprawy, Noszenie, Warsztat, Szaber, Badania) ruszają od pierwszego rana (dzień 2, 6:00) i dopiero po skończonym samouczku (`st.tut.step` równe `TUT_STEPS.length`, albo −1 w świecie bez samouczka). Rozumienie „po celach pierwszego dnia” jako „od pierwszego rana po samouczku” jest moje, bo cele pierwszego dnia (samouczek, drewno na noc, przetrwać noc) kończą się rano.
 
 Skutek uboczny: część celów drugiego dnia (przeszukać dom, drewno na drugą noc) zarząd może zrobić sam, jeśli gracz zostawi domyślne priorytety. Przyjmuję to: cele drugiego dnia stają się wskazówką, co warto mieć.
 
@@ -168,7 +169,7 @@ Kontrakt z projektem warunków zwycięstwa (integrator, gałąź `warunki-zwycie
 - Szansa (moje, liczby do strojenia botem): 0,30, +0,20 gdy jedzenia jest co najmniej 2 porcje na osobę w zarządzie, +0,15 gdy jest wolne łóżko, −0,30 gdy w ciągu ostatnich dwóch dób była napaść na wędrowca albo handlarza (`st.obcy.napady`); w zakresie 0,05–0,85. Połowa wędrowców ma swój cel („idzie do rodziny”, z ziarna wędrowca) i szansę o połowę mniejszą, co rozmowa mówi wprost. Zaufania we wzorze nie ma, bo symulacja go nie zna (moje, po przeglądzie; integrator przyjął wzór z zaufaniem, zanim to wyszło). Most zaufania do symulacji zrobi projekt rozporządzeń, bo posłuszeństwo i tak go potrzebuje; wtedy zaufanie może wejść do wzoru.
 - Udane zaproszenie: wędrowiec przechodzi bramą i staje się osobą zarządu (pionek `core` z osobą, jak `addCore`, z jego wyglądem i z miejsca, w którym stoi), z domyślnymi priorytetami, linią w kronice i nastrojem „Nowa osoba w zarządzie” dla reszty. Nieudane: dziękuje, idzie dalej, bez kary.
 - Tryb zombie: co piąty wędrowiec ukrywa ugryzienie, jak gospodarstwa sąsiadów (`UKRYTY_UGRYZIONY`). „Zapytać o rękę” przed zaproszeniem ujawnia je, a przyjęty bez pytania dostaje gorączkę od chwili ugryzienia. Ten sam kod co przy sąsiadach.
-- Limit: zwerbowani idą do zarządu, dopóki ma mniej niż 12 osób (jedna stała, integrator, punkt 12). Przy pełnym zarządzie zaproszenie dalej jest, a zwerbowany zostaje mieszkańcem: dostaje mieszkanie z wolnym łóżkiem albo najmniej zatłoczone, idzie tam pracą `arrive` i żyje planem dnia, tak jak przyjęte gospodarstwo sąsiadów (`przyjmijGospodarstwo`). Menu mówi wtedy, że przyjdzie jako mieszkaniec. W domu jednorodzinnym, gdzie mieszkańcy nie mają gdzie spać, przy pełnym zarządzie zaproszenia nie ma (napis „Nie ma już gdzie spać”), dopóki nie rozstrzygnie się punkt 15 Decyzji. Limit dotyczy tylko werbunku: wydarzenia dokładają jak dziś. Zmienia „Poza zakresem” z `docs/superpowers/specs/2026-10-18-wedrowcy-design.md`.
+- Limit: zwerbowani idą do zarządu, dopóki ma mniej niż 12 osób (jedna stała, integrator, punkt 12). Przy pełnym zarządzie zaproszenie dalej jest, a zwerbowany zostaje mieszkańcem: dostaje mieszkanie z wolnym łóżkiem albo najmniej zatłoczone, idzie tam pracą `arrive` i żyje planem dnia, tak jak przyjęte gospodarstwo sąsiadów (`przyjmijGospodarstwo`). Menu mówi wtedy, że przyjdzie jako mieszkaniec. W domu jednorodzinnym, gdzie mieszkańcy nie mają gdzie spać, przy pełnym zarządzie zaproszenia nie ma (napis „Nie ma już gdzie spać”), dopóki osobna poprawka uchodźców w domu (Decyzje, punkt 15) nie da mieszkańcom miejsca w domu. Limit dotyczy tylko werbunku: wydarzenia dokładają jak dziś. Zmienia „Poza zakresem” z `docs/superpowers/specs/2026-10-18-wedrowcy-design.md`.
 
 ### Przyrost ma koszt (moje)
 
@@ -176,7 +177,7 @@ Zwerbowany je i grzeje się jak każdy z zarządu, więc kolejna osoba to więce
 
 ### Uchodźcy w domu jednorodzinnym
 
-Integrator (punkt 13): naprawić w tym projekcie. Po przeglądzie wyszło, że to nie jest poprawka jednej funkcji: warstwa przechodniości mieszkańców blokuje całe mieszkanie zarządu (`homeMask` w `src/sim/house.ts`), a w domu to cały dom, więc mieszkańcy nie mają gdzie wejść ani spać, a `plan()` i `homeSpot` nie mają ich gdzie posłać. Pytanie wróciło do integratora (Decyzje, punkt 15).
+Poza tym projektem, osobną poprawką (integrator, punkt 15). To nie jest poprawka jednej funkcji: warstwa przechodniości mieszkańców blokuje całe mieszkanie zarządu (`homeMask` w `src/sim/house.ts`), a w domu to cały dom, więc mieszkańcy nie mają gdzie wejść ani spać, a `plan()` i `homeSpot` nie mają ich gdzie posłać. Ten projekt tylko nie pogarsza sprawy: w domu przy pełnym zarządzie zaproszenia wędrowca nie ma.
 
 ## Testy i bramka
 
@@ -185,7 +186,7 @@ Testy w Node (nowe pliki w `tests/unit/`), każdy, który da się zepsuć, spraw
 - kolejność: stałe zajęcie przed priorytetem 1, 1 przed 2, remis według kolumn, polecenie gracza przed wszystkim, sen i jedzenie przed pracą;
 - każdy rodzaj sam bierze swoją pracę na prawdziwej mapie (Przymorze albo Lanciego): Drwal ścina poniżej progu i przestaje nad progiem, Naprawy łatają dziurę z materiałem, Noszenie wnosi łup z otoczonego budynku, Warsztat robi deski do progu, Szaber przeszukuje puste pomieszczenie w otoczonym budynku;
 - czego nie ma w automacie: nikt sam nie wzmacnia siatki, nie ścina drzewa na linii obwodu, nie przeszukuje mieszkania z lokatorami, nie otwiera cudzych drzwi;
-- „za siatkę”: bez przełącznika nikt sam nie wychodzi za siatkę (żadna praca bez polecenia z celem za siatką, także noszenie drewna, jeśli punkt 9 Decyzji zostanie jak w mojej rekomendacji), z przełącznikiem wychodzi tylko osoba z przełącznikiem i tylko za dnia;
+- „za siatkę”: bez przełącznika nikt sam nie wychodzi za siatkę (żadna praca bez polecenia z celem za siatką, także noszenie drewna), z przełącznikiem wychodzi tylko osoba z przełącznikiem i tylko za dnia; ścinanie za siatką na polecenie kończy się wniesieniem całego drewna z drzewa przez tę samą osobę;
 - pierwszy dzień: przed pierwszym rankiem i przed końcem samouczka nowe rodzaje nic nie robią, koza, kuchnia i budowa jak dziś;
 - próg drewna liczy tylko drewno w obrębie siatki;
 - mnożnik umiejętności: ta sama praca szybciej u osoby z umiejętnością;
@@ -208,7 +209,7 @@ Bramka: testy, Biome na `src tests tools server index.html`, build, boty, zrzuty
 
 1. Model pracy w symulacji: `src/sim/praca.ts` z rodzajami, priorytetami, stałym zajęciem, progami, „za siatkę”, pierwszym dniem, mnożnikiem umiejętności, poleceniami ustawień; wpięcie w `think()`; `populacja(st)`; testy, boty i nowe skróty.
 2. Interfejs: panel Pracy, karta osoby, napisy w obu językach, zrzuty.
-3. Werbunek wędrowców (i uchodźcy w domu, jeśli integrator zostawi to w projekcie), testy, bot.
+3. Werbunek wędrowców, testy, bot.
 4. Test łańcucha płotu, pomiar kosztu płotu, wydajność, bramka i dziennik.
 
 ## Poza zakresem
@@ -218,6 +219,7 @@ Bramka: testy, Biome na `src tests tools server index.html`, build, boty, zrzuty
 - Płot przez jezdnię: osobny projekt zaraz po tym (integrator, punkt 14), bo bez niego na Przymorzu terytorium nie rośnie wcale, a zmienia drogi handlarza, wędrowców i obcych ekip, które chodzą ulicą.
 - Koszt wspólnego płotu: zostaje, dopóki bot surowców po tym projekcie nie pokaże przychodu desek i złomu przy samej pracy.
 - Kolizja liczników `Person.id` (`s1…` z symulacji, `s100…` z zarządu): osobna poprawka.
+- Uchodźcy w domu jednorodzinnym, którzy dziś nie przychodzą: osobna poprawka (integrator, punkt 15).
 - Urodziny, przyłączanie klatek i bloków, silnik w tle.
 
 ## Decyzje
@@ -228,16 +230,16 @@ Integrator, 19.10.2026 w nocy (do przejrzenia przez Mateusza):
 3. Priorytety 1–4 i puste, domyślne z umiejętności zawodu.
 4. Stałe zajęcie na karcie osoby plus progi zapasów w zakładce Pracy.
 5. Potrzeby przed pracą.
-6. Sama praca tylko za dnia. Integrator napisał „do 20:00”, ale na mojej błędnej przesłance, że tak jest dziś; dziś praca bez polecenia idzie 6:00–22:00. Zgłoszone, czeka na odpowiedź. Moja rekomendacja: jedno okno jak dziś, 6–22.
+6. Sama praca tylko za dnia, 6:00–22:00, jak dziś (najpierw padło „do 20:00” na mojej błędnej przesłance w pytaniu, potem integrator poprawił na 6–22).
 7. Przełącznik „Może wychodzić za siatkę” domyślnie wyłączony, w trybie zombie z ostrzeżeniem; teren za wspólnym płotem nasz.
 8. Mnożnik z umiejętności, liczby z bota.
-9. Nowe rodzaje dopiero po celach pierwszego dnia; to, co zarząd robi sam dziś (koza, kuchnia, noszenie drewna), bez zmian. Zgłoszone, że dzisiejsze noszenie drewna wychodzi za siatkę (także nocą i w trybie zombie), co gryzie się z punktem 7; czeka na odpowiedź. Moja rekomendacja: drewno zza siatki wnosi ta sama osoba, która ścięła na polecenie; bezczynni wnoszą drewno zza siatki tylko za dnia i z przełącznikiem.
+9. Nowe rodzaje dopiero po celach pierwszego dnia; to, co zarząd robi sam dziś (koza, kuchnia, noszenie drewna), bez zmian, z jednym wyjątkiem: drewno zza siatki wnosi ten, kto ściął drzewo na polecenie, a bezczynni wychodzą po drewno za siatkę tylko za dnia i z przełącznikiem.
 10. Nowe skróty botów z dopiskiem w dzienniku, stare zapisy z domyślnymi priorytetami.
 11. Werbunek wędrowców tak.
 12. Do zarządu, limit 12 jako jedna stała; ponad limit zwerbowani zostają mieszkańcami (tak brzmiała rekomendacja, którą integrator przyjął).
-13. Uchodźców w domu naprawić tutaj. Po przeglądzie pytanie wróciło (punkt 15).
+13. Uchodźców w domu naprawić tutaj; po przeglądzie zmienione w punkcie 15.
 14. Płot przez jezdnię osobnym projektem zaraz po tym (warunek zwycięstwa terytorialnego); jedna funkcja populacji wystawiona w `GovInput` jako `ludnosc` dla warunku ludnościowego, bot drukuje ludność po dniach.
-15. Uchodźcy w domu: (a) do zarządu, (b) wstęp mieszkańców do domu zarządu, (c) osobna poprawka. Moja rekomendacja: (c). Czeka na odpowiedź.
+15. Uchodźcy w domu jednorodzinnym osobną poprawką, poza tym projektem.
 
 Moje rozstrzygnięcia po przeglądzie oczami budującego: wzmacnianie siatki, drzewa na linii obwodu, szaber u lokatorów, cudze drzwi i naprawy w niezajętych mieszkaniach poza automatem; ogrzanie tam, gdzie dziś, z pomiarem; ustawienia na indeksie osoby, zwerbowani z id `w…`; wzór werbunku bez zaufania; próg drewna tylko w obrębie siatki; bot werbunku z opcją `obcy`.
 
