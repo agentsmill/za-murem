@@ -15,6 +15,7 @@ import type { GameMode } from '../src/gov/typy.ts';
 import { DROGI, type Droga, nazwaDrogi } from '../src/gov/zwyciestwo.ts';
 import type { ZajetaKlatka } from '../src/net/protokol.ts';
 import { LOOKI } from '../src/render/art/lookBudynku.ts';
+import { NOWE, type RodzajPracy } from '../src/sim/praca.ts';
 import { nazwaBudynkuEn } from '../src/world/classify.en.ts';
 import { klatkiBudynku, kluczBudynku } from '../src/world/klucze.ts';
 import { toGeoT } from '../src/world/mvt.ts';
@@ -4473,6 +4474,25 @@ const SHOTS: Shot[] = [
       const word = `${menu.head} ${menu.items.join(' ')}`.match(BLOKOWE_UI)?.[0];
       if (word) throw new Error(`menu poleceń w domu ze słowem z bloku: ${word}`);
       await page.screenshot({ path: path.join(OUT, 'wydarzenia-dom-dzien2-menu.png') });
+      // Szaber (praca ludzi) przeszukuje puste pomieszczenia sam, a scenariusz ma dowieść, że działa polecenie gracza:
+      // nowe rodzaje pracy na 0 wszystkim z zarządu (jak `wylaczAutomat` w testach), a tuż przed kliknięciem pokój nie jest
+      // przeszukany ani przeszukiwany przez nikogo (praca z automatu zaczęta przed wyłączeniem)
+      const przed = await page.evaluate(
+        ([room, rodzaje]) => {
+          const sim = window.zm!.sim!;
+          for (const p of sim.st.pawns)
+            if (p.kind === 'core')
+              for (const rodzaj of rodzaje as RodzajPracy[])
+                sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj, prio: 0 });
+          return {
+            przeszukany: sim.st.apts[0].searched.includes(room as number),
+            ktosSzuka: sim.st.pawns.some((p) => p.job?.t === 'search' && p.job.target === room),
+          };
+        },
+        [spot.room, [...NOWE]] as const,
+      );
+      if (przed.przeszukany || przed.ktosSzuka)
+        throw new Error(`pokój domu przed poleceniem gracza: ${JSON.stringify(przed)} (miał być wolny)`);
       await page.click('#ctx .ctx-item:has-text("Przeszukać pokój")');
       // przeszukanie trwa około godziny gry; okna po drodze: pierwsza odpowiedź
       for (let k = 0; k < 40; k++) {
@@ -4505,8 +4525,8 @@ const SHOTS: Shot[] = [
       await waitIdle(page);
       const [hx, hy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), far);
       await page.mouse.click(hx, hy);
-      // tyle przeszukanych, ile liczy symulacja (gracz kazał przeszukać jeden pokój, ale wolny komitet sam szabruje własny
-      // dom: praca ludzi, Szaber), nie na sztywno 1
+      // tyle przeszukanych, ile liczy symulacja (gracz kazał przeszukać jeden pokój, ale przed poleceniem wolny komitet mógł
+      // sam przeszukać inny: praca ludzi, Szaber), nie na sztywno 1
       const card = await page
         .waitForFunction(
           (n) => {
