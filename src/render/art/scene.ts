@@ -65,6 +65,10 @@ export interface ChunkScene {
   chunks: number;
   /** grafika z PixelLab do terenu i bloków albo null (wszystko z kodu) */
   art: GrafikaKawalkow | null;
+  /** scena typowego piętra całej mapy (src/render/pietro.ts) albo null, gdy widoku pięter nie ma */
+  pietra: SectionScene | null;
+  /** piętro, które rysuje przekrój: 0 to parter (obraz jak zawsze), od 1 sc.pietra zamiast sc.section */
+  pietro: number;
 }
 
 export interface Scene extends ChunkScene {
@@ -93,6 +97,8 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
     section: sc.section,
     chunks: sc.chunks,
     art: sc.art,
+    pietra: sc.pietra,
+    pietro: sc.pietro,
   };
 }
 
@@ -275,5 +281,7 @@ export function buildScene(w: World, art: Grafika | null = null): Scene {
     section: null,
     chunks,
     art: chunkArt,
+    pietra: null,
+    pietro: 0,
   };
 }

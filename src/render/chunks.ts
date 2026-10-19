@@ -10,7 +10,7 @@
 
 import { drawChunk } from './art/chunkArt.ts';
 import { CHUNK, type ChunkScene, chunkSceneOf, type Scene, treeChunks } from './art/scene.ts';
-import { type DoorLook, dolozCzesc, type SectionPart, ustawDrzwi } from './section.ts';
+import { type DoorLook, dolozCzesc, type SectionPart, type SectionScene, ustawDrzwi } from './section.ts';
 
 /** pikseli grafiki na kafelek: z bliska i z daleka */
 export const LOD_NEAR = 32;
@@ -91,6 +91,10 @@ export interface MapChange {
   wnetrze?: readonly SectionPart[];
   /** wygląd drzwi sąsiadów (wyważone, zabite deskami, zwykłe) */
   drzwi?: readonly DoorLook[];
+  /** widok pięter: piętro, które rysuje przekrój (0: parter), i scena typowego piętra (podaje się raz, potem
+      wystarczy samo piętro) */
+  pietro?: number;
+  pietra?: SectionScene;
 }
 
 /**
@@ -139,6 +143,9 @@ export interface ScenePatch {
   /** wnętrza sąsiadów i wygląd ich drzwi (M2 fala 2) */
   wnetrze?: SectionPart[];
   drzwi?: DoorLook[];
+  /** widok pięter: nowe piętro i scena typowego piętra (tylko gdy zmiana je podała) */
+  pietro?: number;
+  pietra?: SectionScene;
 }
 
 export function scenePatchOf(sc: ChunkScene, ch: MapChange): ScenePatch {
@@ -150,6 +157,8 @@ export function scenePatchOf(sc: ChunkScene, ch: MapChange): ScenePatch {
     fixed: [...(ch.fixed ?? [])],
     ...(ch.wnetrze?.length ? { wnetrze: [...ch.wnetrze] } : {}),
     ...(ch.drzwi?.length ? { drzwi: [...ch.drzwi] } : {}),
+    ...(ch.pietro !== undefined ? { pietro: ch.pietro } : {}),
+    ...(ch.pietra ? { pietra: ch.pietra } : {}),
   };
 }
 
@@ -164,6 +173,8 @@ export function applyScenePatch(sc: ChunkScene, p: ScenePatch): void {
     for (const part of p.wnetrze ?? []) dolozCzesc(sc.section, part, sc.w.size);
     for (const d of p.drzwi ?? []) ustawDrzwi(sc.section, d);
   }
+  if (p.pietro !== undefined) sc.pietro = p.pietro;
+  if (p.pietra) sc.pietra = p.pietra;
 }
 
 export interface ChunkPainter {
