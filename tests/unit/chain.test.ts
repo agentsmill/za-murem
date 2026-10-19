@@ -17,6 +17,7 @@ import {
 } from '../../src/sim/sim.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { type MockWorld, mockBlock, mockHouse, plainBlock, trunkTile } from './interior-mock.ts';
+import { bezPrzelacznika } from './praca-pomoc.ts';
 
 const block = mockBlock();
 const house = mockHouse();
@@ -26,7 +27,8 @@ const core = (sim: Sim) => sim.st.pawns.filter((p) => p.kind === 'core');
 const tileOf = (sim: Sim, p: Pawn) => Math.floor(p.y) * sim.w.size + Math.floor(p.x);
 const kozaOf = (st: SimState) => st.things.find((t) => t.kind === 'koza')!;
 /** Zarząd może wychodzić za siatkę bez polecenia (praca ludzi, src/sim/praca.ts): stos drewna leżący poza podwórkiem
-    bezczynni noszą do składu tylko z tym przełącznikiem i tylko za dnia; testy z drewnem na ulicy go włączają. */
+    bezczynni noszą do składu tylko z tym przełącznikiem i tylko za dnia; testy z drewnem na ulicy włączają go jawnie,
+    chociaż w trybie zwykłym jest domyślnie włączony (wtedy polecenie niczego nie zapisuje), żeby nie zależały od domyślnej. */
 const wychodziZaSiatke = (sim: Sim): void => {
   for (const p of core(sim)) sim.push({ t: 'zasiatke', ids: [], osoba: p.person, on: true });
 };
@@ -184,8 +186,10 @@ describe('zarząd sam', () => {
     expect(woodOn(st, w.size, sklad) > 0 || kozaOf(st).fuel > 0).toBe(true);
   });
 
-  it('sam nie ścina drzew i nie pali mebli', () => {
+  it('bez przełącznika „za siatkę” sam nie ścina drzew i nie pali mebli', () => {
     const sim = new Sim(w, createSim(w, 3, { core: 4 }));
+    // w trybie zwykłym przełącznik jest domyślnie włączony i zarząd sam ścina drzewa zza siatki; ten test sprawdza zarząd bez niego
+    bezPrzelacznika(sim);
     for (let k = 0; k < 2 * TICKS_PER_DAY; k++) sim.step();
     expect(sim.st.felled).toEqual([]);
     expect(sim.st.burned).toEqual([]);

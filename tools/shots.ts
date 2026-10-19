@@ -12953,10 +12953,17 @@ function pracaShots(): Shot[] {
       if (await page.evaluate(() => !!document.querySelector('#pracaPanel [data-wart="dzidy"]')))
         throw new Error('dzidy w progach poza trybem zombie');
 
-      // „za siatkę” i nagłówek kolumny (liczba zleceń z symulacji)
+      // „za siatkę”: w trybie zwykłym przełącznik jest domyślnie włączony u wszystkich (decyzja z 19.10.2026), klik
+      // wyłącza go osobie 1 (w stanie jawne false), reszta zostaje włączona i to widać na zrzucie
+      const wlaczone = await page.evaluate(() =>
+        [...document.querySelectorAll('#pracaPanel [data-zasiatke]')].map((e) => e.getAttribute('aria-pressed')),
+      );
+      console.log(`  przełączniki „za siatkę” na starcie: ${wlaczone.join()}`);
+      if (wlaczone.length !== 6 || wlaczone.some((x) => x !== 'true'))
+        throw new Error(`w trybie zwykłym przełączniki za siatkę nie są domyślnie włączone: ${wlaczone.join()}`);
       await page.click('#pracaPanel [data-zasiatke="1"]');
       const pressed = await page.getAttribute('#pracaPanel [data-zasiatke="1"]', 'aria-pressed');
-      if (pressed !== 'true') throw new Error('przełącznik za siatkę nie włączył się');
+      if (pressed !== 'false') throw new Error('przełącznik za siatkę nie wyłączył się');
       // stałe zajęcie przychodzi z karty osoby: tutaj polecenie wprost, panel pokazuje gwiazdkę po odświeżeniu
       await page.evaluate(() => {
         const zm = window.zm!;
@@ -12978,7 +12985,7 @@ function pracaShots(): Shot[] {
         return {
           cmds: st.cmds.length,
           progi: st.praca?.progi,
-          zaSiatke: st.praca?.osoby?.[1]?.zaSiatke ?? false,
+          zaSiatke: st.praca?.osoby?.[1]?.zaSiatke ?? null,
           stale: st.praca?.osoby?.[2]?.stale,
           ogien0: st.praca?.osoby?.[0]?.prio?.ogien,
           tabelaOgien0: document.querySelector('#pracaPanel [data-prio="0:ogien"]')?.textContent,
@@ -12988,13 +12995,13 @@ function pracaShots(): Shot[] {
       console.log(`  stan po minucie gry: ${JSON.stringify(stan)}`);
       if (stan.cmds) throw new Error('polecenia ustawień dalej czekają w kolejce po minucie gry');
       if (stan.progi?.drewno !== 35 || stan.progi?.deski !== 10) throw new Error('progi nie doszły do stanu symulacji');
-      if (!stan.zaSiatke || stan.stale !== 'budowa')
+      if (stan.zaSiatke !== false || stan.stale !== 'budowa')
         throw new Error('za siatkę albo stałe zajęcie nie doszły do stanu');
       if (stan.ogien0 !== 4 || stan.tabelaOgien0 !== '4')
         throw new Error('priorytet ognia nie jest 4 w stanie i w tabeli');
       if (stan.tabelaDrewno !== '35') throw new Error('tabela po minucie gry pokazuje inny próg');
 
-      // nagłówek kolumny: kliknięty pokazuje, ile zleceń czeka (po minucie gry „za siatkę” już działa, więc drzew jest
+      // nagłówek kolumny: kliknięty pokazuje, ile zleceń czeka (przełącznik „za siatkę” mają inne osoby, więc drzew jest
       // dużo); drugi klik chowa liczbę, trzeci pokazuje znowu
       await page.click('#pracaPanel [data-kol="drwal"]');
       const licz = await page.evaluate(() => ({
@@ -13637,7 +13644,10 @@ function pracaShots(): Shot[] {
       const sam = k0.sam ?? '';
       if (lang === 'en' ? sam !== '(on own)' : !/^\((sam|sama)\)$/.test(sam))
         throw new Error(`dopisek przy pracy bez polecenia: ${k0.sam}`);
-      if (k0.stale !== '' || k0.pressed !== 'false') throw new Error('nowa karta ma stałe zajęcie albo przełącznik');
+      // przełącznik „za siatkę”: domyślnie włączony w trybie zwykłym, wyłączony w zombie
+      const domyslnie = String(!zombie);
+      if (k0.stale !== '' || k0.pressed !== domyslnie)
+        throw new Error(`nowa karta ma stałe zajęcie albo przełącznik inny niż domyślny: ${JSON.stringify(k0)}`);
       if (k0.opcje.length !== 9)
         throw new Error(`opcji stałego zajęcia: ${k0.opcje.length} z 9 (brak plus 8 rodzajów)`);
       if (zombie !== !!k0.ostrzezenie) throw new Error(`ostrzeżenie o szwendaczach: ${k0.ostrzezenie}`);
@@ -13648,14 +13658,19 @@ function pracaShots(): Shot[] {
       const czeka = await page.evaluate(() => window.zm!.sim!.st.cmds.map((c) => c.t));
       if (k1.stale !== 'drwal' || !czeka.includes('stale'))
         throw new Error(`wybór stałego zajęcia: ${JSON.stringify(k1)} ${czeka.join()}`);
-      // przełącznik: włącza i wyłącza także na pauzie
+      // przełącznik przestawia się tam i z powrotem także na pauzie; zaczyna od domyślnej, a kończy włączony: w trybie
+      // zwykłym po czterech kliknięciach (wyłącz, włącz, wyłącz, włącz: stan wraca do domyślnej, bez wpisu), w zombie po
+      // trzech (włącz, wyłącz, włącz: jawne true)
       const klik = dotyk ? 'tap' : 'click';
-      await page[klik]('#card [data-card="zasiatke"]');
-      if ((await wygladKarty()).pressed !== 'true') throw new Error('przełącznik nie włączył się');
-      await page[klik]('#card [data-card="zasiatke"]');
-      if ((await wygladKarty()).pressed !== 'false') throw new Error('przełącznik nie wyłączył się');
-      await page[klik]('#card [data-card="zasiatke"]');
-      if ((await wygladKarty()).pressed !== 'true') throw new Error('przełącznik nie włączył się ponownie');
+      const klikow = zombie ? 3 : 4;
+      let oczekiwany = !zombie;
+      for (let k = 0; k < klikow; k++) {
+        await page[klik]('#card [data-card="zasiatke"]');
+        oczekiwany = !oczekiwany;
+        if ((await wygladKarty()).pressed !== String(oczekiwany))
+          throw new Error(`przełącznik po kliknięciu ${k + 1}: ${(await wygladKarty()).pressed} zamiast ${oczekiwany}`);
+      }
+      if (!oczekiwany) throw new Error('scenariusz miał skończyć z włączonym przełącznikiem');
       // po minucie gry ustawienia są w stanie symulacji, a karta mówi to samo
       const p = await page.evaluate(() => window.zm!.ff(1));
       if (p) await answerFirst(page, p);
@@ -13670,7 +13685,8 @@ function pracaShots(): Shot[] {
         };
       }, kto);
       console.log(`  stan po minucie: ${JSON.stringify(stan)}`);
-      if (stan.stale !== 'drwal' || !stan.zaSiatke || stan.cmds)
+      // w zombie jawne true, w trybie zwykłym wpisu nie ma (włączony to domyślna)
+      if (stan.stale !== 'drwal' || stan.zaSiatke !== (zombie ? true : undefined) || stan.cmds)
         throw new Error('ustawienia z karty nie doszły do stanu');
       const k2 = await wygladKarty();
       if (k2.stale !== 'drwal' || k2.pressed !== 'true') throw new Error(`karta po minucie: ${JSON.stringify(k2)}`);

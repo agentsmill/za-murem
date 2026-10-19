@@ -6,8 +6,8 @@
    bez niej stan jest taki jak przed tą opcją. Własna praca bezczynnego zarządu (think) idzie według priorytetów
    osób z src/sim/praca.ts: po potrzebach, zimnie i gasnącej kozie biorą rodzaje pracy po kolei (ogień, kuchnia,
    budowa, naprawy, drwal, noszenie, warsztat, szaber, badania). Bez polecenia zaczynają pracę tylko na naszym terenie
-   (naszTeren: podwórko, siedziba, budynki za wspólnym płotem); za siatkę wychodzi tylko osoba z przełącznikiem i tylko
-   za dnia (mozeTam). Warsztat i szaber nigdy nie ruszają materiału ani drzwi, które mają inne przeznaczenie: deski
+   (naszTeren: podwórko, siedziba, budynki za wspólnym płotem); za siatkę wychodzi tylko osoba z przełącznikiem (domyślnie
+   włączony w trybie zwykłym, wyłączony w zombie: `zaSiatkeDomyslnie`) i tylko za dnia (mozeTam). Warsztat i szaber nigdy nie ruszają materiału ani drzwi, które mają inne przeznaczenie: deski
    z nadwyżki drewna, części z nadwyżki złomu, dzidy dla nieuzbrojonych, a szaber tylko puste pomieszczenia i wraki,
    bez otwierania i wyważania drzwi. Czas ścinania, budowy, łatania, napraw, warsztatu, dzidy i gotowania dzieli
    mnożnik z umiejętności (`tempoPracy`). Wędrowiec po rozmowie przy siatce może zostać zaproszony (praca `zapros`,
@@ -192,6 +192,7 @@ import {
   ZAPAS_OPALU,
   ZARZAD_MAX,
   zaSiatke,
+  zaSiatkeDomyslnie,
 } from './praca.ts';
 import {
   atakOdRazu,
@@ -1850,7 +1851,9 @@ function wZarzadzie(st: SimState, osoba: number): boolean {
 }
 
 /** Ustawienia pracy ludzi z polecenia gracza (`prio`, `stale`, `zasiatke`, `prog`): zapisuje w `st.praca` tylko zmiany
-    względem domyślnych, a ustawienie równe domyślnemu zdejmuje wpis. Wyjątek: priorytet Badań zostaje zapisany zawsze
+    względem domyślnych, a ustawienie równe domyślnemu zdejmuje wpis (przełącznik „za siatkę” ma domyślną zależną od
+    trybu: `zaSiatkeDomyslnie`; zapisane jest jawne `true` albo `false` tylko wtedy, gdy różni się od niej, a stary
+    zapis z wartością równą domyślnej `uporzadkujPrace` zdejmuje przy najbliższej zmianie ustawień). Wyjątek: priorytet Badań zostaje zapisany zawsze
     (domyślny zależy od dziedziny bieżącego badania). Złe dane (osoba spoza zarządu, priorytet poza 0–4,
     nieznany rodzaj albo próg, próg nie liczba) są pomijane bez śladu w stanie. */
 function ustawPrace(st: SimState, c: PolecenieUstawien): void {
@@ -1877,8 +1880,8 @@ function ustawPrace(st: SimState, c: PolecenieUstawien): void {
     } else if (c.t === 'stale') {
       if (c.rodzaj === null) delete u.stale;
       else u.stale = c.rodzaj;
-    } else if (c.on) u.zaSiatke = true;
-    else delete u.zaSiatke;
+    } else if (!!c.on === zaSiatkeDomyslnie(st)) delete u.zaSiatke;
+    else u.zaSiatke = !!c.on;
   }
   uporzadkujPrace(st);
 }
@@ -1902,7 +1905,8 @@ function uporzadkujPrace(st: SimState): void {
     }
     if (Object.keys(prio).length) nowe.prio = prio;
     if (u.stale) nowe.stale = u.stale;
-    if (u.zaSiatke) nowe.zaSiatke = true;
+    // przełącznik „za siatkę” zostaje tylko wtedy, gdy różni się od domyślnego trybu (tryb nie zmienia się w grze)
+    if (u.zaSiatke !== undefined && u.zaSiatke !== zaSiatkeDomyslnie(st)) nowe.zaSiatke = u.zaSiatke;
     if (Object.keys(nowe).length) osoby[Number(k)] = nowe;
   }
   const nad: Partial<Progi> = {};
@@ -7495,14 +7499,14 @@ export class Sim {
 
   /** Czy pionek bez polecenia może wyjść poza nasz teren do tego kafelka (albo przejść po ulicy do innej części
       naszego terenu). Do kafelka na naszym terenie, który leży w innej jego części (inna klatka bloku), wolno
-      w trybie zwykłym za dnia (`ulicaMiedzyNaszymi`). Poza tym tylko osoba z przełącznikiem „może wychodzić za
-      siatkę”, tylko za dnia (nocą nikt bez polecenia nie wychodzi) i tylko gdy nie ma wroga (`wrogBlisko`: szwendacz,
-      ludzie handlarza, wrogi handlarz, szabrownik; we wszystkich trybach) bliżej niż 10 m od celu, od samej osoby ani
-      od wyjścia za bramę (rano stado stoi jeszcze pod siatką, a droga do celu prowadzi przez bramę; sam cel bez wroga
+      w trybie zwykłym za dnia (`ulicaMiedzyNaszymi`). Poza tym tylko osoba z zarządu z przełącznikiem „może wychodzić
+      za siatkę” (domyślnie włączony w trybie zwykłym, wyłączony w zombie), tylko za dnia (nocą nikt bez polecenia nie
+      wychodzi) i tylko gdy nie ma wroga (`wrogBlisko`: szwendacz, ludzie handlarza, wrogi handlarz, szabrownik; we
+      wszystkich trybach) bliżej niż 10 m od celu, od samej osoby ani od wyjścia za bramę (rano stado stoi jeszcze pod siatką, a droga do celu prowadzi przez bramę; sam cel bez wroga
       nie wystarcza). To jedyne miejsce reguły „za siatką” (`mozeTam`, `dojdzieWDomu` i `idz` biorą ją stąd). */
   private mozeWyjsc(p: Pawn, tile: number, trasa: Trasa = 'zwykla'): boolean {
     if (this.naszTeren(tile) && this.ulicaMiedzyNaszymi(trasa)) return true;
-    if (!zaSiatke(this.st, p.person) || this.night()) return false;
+    if (p.kind !== 'core' || !zaSiatke(this.st, p.person) || this.night()) return false;
     return !this.wrogBlisko([tile, this.tileOf(p), this.exitTile]);
   }
 

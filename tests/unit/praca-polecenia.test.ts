@@ -90,16 +90,18 @@ describe('prio', () => {
     ];
     ustaw(a, lista);
     ustaw(b, [...lista].reverse());
-    a.push({ t: 'zasiatke', ids: [], osoba: 0, on: true });
+    // w trybie zwykłym przełącznik jest domyślnie włączony, więc zmianą gracza jest jawne wyłączenie
+    a.push({ t: 'zasiatke', ids: [], osoba: 0, on: false });
     a.push({ t: 'stale', ids: [], osoba: 0, rodzaj: 'drwal' });
     b.push({ t: 'stale', ids: [], osoba: 0, rodzaj: 'drwal' });
-    b.push({ t: 'zasiatke', ids: [], osoba: 0, on: true });
+    b.push({ t: 'zasiatke', ids: [], osoba: 0, on: false });
     a.push({ t: 'prog', ids: [], co: 'deski', n: 5 });
     a.push({ t: 'prog', ids: [], co: 'drewno', n: 7 });
     b.push({ t: 'prog', ids: [], co: 'drewno', n: 7 });
     b.push({ t: 'prog', ids: [], co: 'deski', n: 5 });
     a.step();
     b.step();
+    expect(a.st.praca?.osoby?.[0]?.zaSiatke).toBe(false);
     expect(a.hash()).toBe(b.hash());
   });
 });
@@ -119,12 +121,28 @@ describe('stale i zasiatke', () => {
     expect('praca' in sim.st).toBe(false);
   });
 
-  it('za siatkę: włączone i wyłączone, wyłączone usuwa wpis', () => {
+  it('za siatkę w trybie zwykłym: domyślnie włączone, wyłączenie zapisuje jawne false, włączenie z powrotem usuwa wpis', () => {
     const sim = newGame('przymorze');
+    expect(zaSiatke(sim.st, 3)).toBe(true);
+    sim.push({ t: 'zasiatke', ids: [], osoba: 3, on: false });
+    expect(zaSiatke(sim.st, 3)).toBe(true);
+    sim.step();
+    expect(zaSiatke(sim.st, 3)).toBe(false);
+    expect(zaSiatke(sim.st, 2)).toBe(true);
+    expect(sim.st.praca).toEqual({ osoby: { 3: { zaSiatke: false } } });
+    sim.push({ t: 'zasiatke', ids: [], osoba: 3, on: true });
+    sim.step();
+    expect(zaSiatke(sim.st, 3)).toBe(true);
+    expect('praca' in sim.st).toBe(false);
+  });
+
+  it('za siatkę w trybie zombie: domyślnie wyłączone, włączenie zapisuje jawne true, wyłączenie z powrotem usuwa wpis', () => {
+    const sim = newGame('przymorze', 'zombie');
     expect(zaSiatke(sim.st, 3)).toBe(false);
     sim.push({ t: 'zasiatke', ids: [], osoba: 3, on: true });
     sim.step();
     expect(zaSiatke(sim.st, 3)).toBe(true);
+    expect(zaSiatke(sim.st, 2)).toBe(false);
     expect(sim.st.praca).toEqual({ osoby: { 3: { zaSiatke: true } } });
     sim.push({ t: 'zasiatke', ids: [], osoba: 3, on: false });
     sim.step();
@@ -132,10 +150,42 @@ describe('stale i zasiatke', () => {
     expect('praca' in sim.st).toBe(false);
   });
 
-  it('wyłączenie za siatką, którego nie było, nie tworzy pola', () => {
+  it('ustawienie równe domyślnej trybu nie tworzy pola (zwykły: włączone, zombie: wyłączone)', () => {
+    for (const [tryb, on] of [
+      ['zwykly', true],
+      ['zombie', false],
+    ] as const) {
+      const sim = newGame('przymorze', tryb);
+      const bez = newGame('przymorze', tryb);
+      sim.push({ t: 'zasiatke', ids: [], osoba: 0, on });
+      sim.push({ t: 'stale', ids: [], osoba: 0, rodzaj: null });
+      sim.step();
+      bez.step();
+      expect('praca' in sim.st, tryb).toBe(false);
+      expect(sim.hash(), tryb).toBe(bez.hash());
+    }
+  });
+
+  it('wartość z polecenia jest sprowadzana do true/false (zapis nie trzyma śmieci)', () => {
+    const sim = newGame('przymorze');
+    sim.push({ t: 'zasiatke', ids: [], osoba: 0, on: 0 as unknown as boolean });
+    sim.step();
+    expect(sim.st.praca).toEqual({ osoby: { 0: { zaSiatke: false } } });
+    sim.push({ t: 'zasiatke', ids: [], osoba: 0, on: 1 as unknown as boolean });
+    sim.step();
+    expect('praca' in sim.st).toBe(false);
+  });
+
+  it('inne ustawienia osoby nie ruszają przełącznika i odwrotnie', () => {
     const sim = newGame('przymorze');
     sim.push({ t: 'zasiatke', ids: [], osoba: 0, on: false });
+    sim.push({ t: 'stale', ids: [], osoba: 0, rodzaj: 'drwal' });
+    sim.step();
+    expect(sim.st.praca).toEqual({ osoby: { 0: { stale: 'drwal', zaSiatke: false } } });
     sim.push({ t: 'stale', ids: [], osoba: 0, rodzaj: null });
+    sim.step();
+    expect(sim.st.praca).toEqual({ osoby: { 0: { zaSiatke: false } } });
+    sim.push({ t: 'zasiatke', ids: [], osoba: 0, on: true });
     sim.step();
     expect('praca' in sim.st).toBe(false);
   });
@@ -210,7 +260,7 @@ describe('złe dane', () => {
     for (const osoba of zle) {
       sim.push({ t: 'prio', ids: [], osoba, rodzaj: 'drwal', prio: 4 });
       sim.push({ t: 'stale', ids: [], osoba, rodzaj: 'drwal' });
-      sim.push({ t: 'zasiatke', ids: [], osoba, on: true });
+      sim.push({ t: 'zasiatke', ids: [], osoba, on: false });
     }
     sim.step();
     bez.step();
@@ -223,7 +273,7 @@ describe('złe dane', () => {
     expect(removeCore(sim.st, sim.st.people[1].id, demoWorld('przymorze'))).toBe(true);
     sim.push({ t: 'prio', ids: [], osoba: 1, rodzaj: 'drwal', prio: 4 });
     sim.push({ t: 'stale', ids: [], osoba: 1, rodzaj: 'drwal' });
-    sim.push({ t: 'zasiatke', ids: [], osoba: 1, on: true });
+    sim.push({ t: 'zasiatke', ids: [], osoba: 1, on: false });
     sim.step();
     expect('praca' in sim.st).toBe(false);
   });
@@ -250,9 +300,10 @@ describe('odeszła osoba', () => {
     const st: SimState = sim.st;
     sim.push({ t: 'stale', ids: [], osoba: 0, rodzaj: 'drwal' });
     sim.push({ t: 'prio', ids: [], osoba: 0, rodzaj: 'kuchnia', prio: 0 });
-    sim.push({ t: 'zasiatke', ids: [], osoba: 0, on: true });
+    sim.push({ t: 'zasiatke', ids: [], osoba: 0, on: false });
     sim.step();
     expect(staleZajecie(st, 0)).toBe('drwal');
+    expect(zaSiatke(st, 0)).toBe(false);
     const ilu = st.people.length;
     expect(removeCore(st, st.people[0].id, w)).toBe(true);
     const nowa = makePerson(mulberry(11), new Set(st.people.map((o) => o.first)), () => 77);
@@ -261,7 +312,8 @@ describe('odeszła osoba', () => {
     expect(idx).toBe(ilu);
     expect(st.pawns.some((p) => p.kind === 'core' && p.person === idx)).toBe(true);
     expect(staleZajecie(st, idx)).toBeNull();
-    expect(zaSiatke(st, idx)).toBe(false);
+    // nowa osoba ma domyślny przełącznik trybu (zwykły: włączony), nie wyłączony po poprzedniku
+    expect(zaSiatke(st, idx)).toBe(true);
     for (const r of RODZAJE) expect(priorytet(st, idx, r)).toBe(domyslnyPriorytet(st, nowa, r));
     // polecenie dla nowej osoby działa, dla odeszłej nie
     sim.push({ t: 'stale', ids: [], osoba: idx, rodzaj: 'budowa' });
@@ -277,7 +329,7 @@ describe('zapis i wczytanie', () => {
     sim.push({ t: 'prio', ids: [], osoba: 0, rodzaj: 'drwal', prio: 4 });
     sim.push({ t: 'prio', ids: [], osoba: 2, rodzaj: 'kuchnia', prio: 0 });
     sim.push({ t: 'stale', ids: [], osoba: 1, rodzaj: 'budowa' });
-    sim.push({ t: 'zasiatke', ids: [], osoba: 3, on: true });
+    sim.push({ t: 'zasiatke', ids: [], osoba: 3, on: false });
     sim.push({ t: 'prog', ids: [], co: 'drewno', n: 45 });
   };
   const krok = (sim: Sim, n: number) => {
@@ -301,5 +353,32 @@ describe('zapis i wczytanie', () => {
     expect(wczytana.hash()).toBe(cala.hash());
     expect(wczytana.st.praca).toEqual(cala.st.praca);
     expect(core(wczytana)).toHaveLength(4);
+  });
+
+  it('stary zapis z jawnym `zaSiatke: true`: w trybie zwykłym to domyślna (wpis schodzi przy najbliższej zmianie ustawień), w zombie zostaje', () => {
+    const w = demoWorld('przymorze');
+    for (const tryb of ['zwykly', 'zombie'] as const) {
+      const stary = newGame('przymorze', tryb);
+      stary.st.praca = { osoby: { 1: { zaSiatke: true }, 2: { stale: 'drwal', zaSiatke: true } } };
+      const wczytana = new Sim(w, JSON.parse(JSON.stringify(stary.st)) as SimState);
+      // wczytanie nie zmienia znaczenia zapisu
+      expect(zaSiatke(wczytana.st, 1), tryb).toBe(true);
+      expect(zaSiatke(wczytana.st, 2), tryb).toBe(true);
+      expect(zaSiatke(wczytana.st, 0), tryb).toBe(tryb === 'zwykly');
+      krok(wczytana, 200);
+      expect(zaSiatke(wczytana.st, 1), tryb).toBe(true);
+      // dowolne polecenie ustawień układa stan na nowo
+      wczytana.push({ t: 'prio', ids: [], osoba: 0, rodzaj: 'drwal', prio: 4 });
+      wczytana.step();
+      expect(zaSiatke(wczytana.st, 1), tryb).toBe(true);
+      expect(zaSiatke(wczytana.st, 2), tryb).toBe(true);
+      if (tryb === 'zwykly') {
+        expect(wczytana.st.praca?.osoby?.[1], tryb).toBeUndefined();
+        expect(wczytana.st.praca?.osoby?.[2], tryb).toEqual({ stale: 'drwal' });
+      } else {
+        expect(wczytana.st.praca?.osoby?.[1], tryb).toEqual({ zaSiatke: true });
+        expect(wczytana.st.praca?.osoby?.[2], tryb).toEqual({ stale: 'drwal', zaSiatke: true });
+      }
+    }
   });
 });

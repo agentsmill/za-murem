@@ -40,7 +40,7 @@ import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { wspolnyPlot } from '../../src/world/plot.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { graZPlanem, zbudujPlot } from './praca-blok.ts';
-import { skonczSamouczek } from './praca-pomoc.ts';
+import { przelacznik, skonczSamouczek } from './praca-pomoc.ts';
 import { core, demoWorld, doorWhere, newGame, pusto, until } from './sasiedzi-pomoc.ts';
 
 /** prywatne części Sim, po które sięgają sceny (kontrakt testowy, nie API gry) */
@@ -131,8 +131,10 @@ function scena(o: Opcje = {}): Scena {
       if (r === 'ogien') continue;
       sim.push({ t: 'prio', ids: [], osoba: q.person, rodzaj: r, prio: o.rodzaje?.includes(r) ? 1 : 0 });
     }
-    if (o.zaSiatke) sim.push({ t: 'zasiatke', ids: [], osoba: q.person, on: true });
   }
+  // przełącznik „za siatkę” jest domyślnie włączony w trybie zwykłym, a te sceny zakładają, że bez `zaSiatke: true`
+  // nikt z zarządu (także na wyprawie) sam za siatkę nie wychodzi, więc ustawiany jest jawnie każdemu
+  przelacznik(sim, wszyscy, (q) => ludzie.includes(q) && !!o.zaSiatke);
   sim.step();
   for (const q of ludzie) odnow(sim, q);
   return { sim, p, ludzie };

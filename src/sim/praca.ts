@@ -4,6 +4,11 @@
    - Ustawienia gracza to `st.praca` (opcjonalne): trzyma tylko zmiany względem domyślnych (priorytet Badań zawsze, gdy
      gracz go ustawił, bo domyślny zależy od dziedziny bieżącego badania), klucz osoby to indeks w `st.people`. Funkcje tylko czytają i nigdy nie tworzą pola w stanie, więc stary zapis i gra bez zmian mają ten
      sam skrót co przed pracą ludzi. Zmiany robią polecenia przez `sim.push` (zapis stanu jest w sim.ts).
+   - Przełącznik „może wychodzić za siatkę” ma domyślną wartość zależną od trybu (`zaSiatkeDomyslnie`, decyzja
+     Mateusza 19.10.2026): włączony w trybie zwykłym, wyłączony w trybie zombie. W ustawieniach osoby leży tylko wartość
+     przeciwna do domyślnej (`zaSiatke` ma więc jawne `true` albo `false`), a wartość równa domyślnej polecenie zdejmuje.
+     Tryb nie zmienia się w trakcie gry, więc taki zapis jest jednoznaczny; stary zapis z `zaSiatke: true` w trybie
+     zwykłym znaczy to samo co brak pola (domyślnie włączony), a w trybie zombie nadal jest jawnym włączeniem.
    - Kolejność rodzajów w `RODZAJE` to kolejność kolumn panelu i rozstrzyga remis priorytetów.
    - Priorytet 0 znaczy „nie robi”, 1 najważniejszy, 4 najmniej ważny. Domyślny wynika z umiejętności zawodu (Badania bez
      umiejętności w dziedzinie badania mają domyślnie 0).
@@ -66,8 +71,9 @@ export interface UstawieniaOsoby {
   prio?: Partial<Record<RodzajPracy, Priorytet>>;
   /** stałe zajęcie: osoba bierze zlecenia tego rodzaju przed wszystkimi innymi, także gdy w tabeli jest na 0 */
   stale?: RodzajPracy;
-  /** może wychodzić za siatkę bez polecenia (tylko za dnia) */
-  zaSiatke?: true;
+  /** Przełącznik „może wychodzić za siatkę” bez polecenia (tylko za dnia): jawne `true` albo `false`, gdy gracz ustawił
+      wartość inną niż domyślna trybu (`zaSiatkeDomyslnie`); brak pola znaczy domyślną. */
+  zaSiatke?: boolean;
 }
 
 /** progi zapasów, poniżej których zarząd sam robi dany zasób; 0 wyłącza robienie */
@@ -149,9 +155,19 @@ export function staleZajecie(st: SimState, osoba: number): RodzajPracy | null {
   return st.praca?.osoby?.[osoba]?.stale ?? null;
 }
 
-/** czy osoba może sama wychodzić za siatkę (za dnia) */
+/** Domyślna wartość przełącznika „może wychodzić za siatkę” (decyzja Mateusza 19.10.2026): w trybie zwykłym włączony,
+    bo wewnątrz siatki rosną jedno–dwa drzewa na mapę i bez wyjścia nikt sam nie zetnie drewna na opał; w trybie zombie
+    wyłączony, bo za siatką chodzą szwendacze. Reguła wyjścia (`mozeWyjsc` w sim.ts) i tak ogranicza pracę bez polecenia
+    za siatką do dnia i do miejsc bez wroga bliżej niż 10 m. */
+export function zaSiatkeDomyslnie(st: SimState): boolean {
+  return modeOf(st) !== 'zombie';
+}
+
+/** czy osoba (indeks w `st.people`) może sama wychodzić za siatkę (za dnia): wartość z ustawień gracza albo domyślna
+    trybu; osoba spoza listy (pionek bez osoby ma −1) nie wychodzi */
 export function zaSiatke(st: SimState, osoba: number): boolean {
-  return st.praca?.osoby?.[osoba]?.zaSiatke === true;
+  if (!st.people[osoba]) return false;
+  return st.praca?.osoby?.[osoba]?.zaSiatke ?? zaSiatkeDomyslnie(st);
 }
 
 export const PROGI_DOMYSLNE: Progi = { drewno: 30, deski: 20, czesci: 10, dzidy: 0 };

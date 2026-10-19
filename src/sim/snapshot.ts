@@ -101,8 +101,9 @@ export interface SimPerson {
       a także sen, posiłek i grzanie się). Bezczynny i wykonujący polecenie mają `false`. */
   sam: boolean;
   /** Ustawienia pracy ludzi tej osoby (src/sim/praca.ts): priorytety rodzajów w kolejności `RODZAJE` (0 nie robi,
-      1 najważniejszy, 4 najmniej), stałe zajęcie albo null i przełącznik „może wychodzić za siatkę”. Ustawienia
-      przyjmuje tylko zarząd, więc u mieszkańca z osobą to wartości domyślne. */
+      1 najważniejszy, 4 najmniej), stałe zajęcie albo null i przełącznik „może wychodzić za siatkę” (zarząd: ustawienie
+      gracza albo domyślne trybu, włączone w zwykłym i wyłączone w zombie). Ustawienia przyjmuje tylko zarząd, więc
+      u mieszkańca z osobą to wartości domyślne, a przełącznik zawsze wyłączony. */
   praca: { prio: Priorytet[]; stale: RodzajPracy | null; zaSiatke: boolean };
   /** opis do karty osoby, np. „Rąbie suche drzewo.” */
   doing: string;
@@ -354,7 +355,8 @@ function personOf(st: SimState, w: World, p: Pawn, who: Person): SimPerson {
     praca: {
       prio: RODZAJE.map((r) => priorytet(st, p.person, r)),
       stale: staleZajecie(st, p.person),
-      zaSiatke: zaSiatke(st, p.person),
+      // przełącznik ma tylko zarząd (domyślnie włączony w trybie zwykłym, `zaSiatkeDomyslnie`); mieszkaniec z osobą nie wychodzi
+      zaSiatke: p.kind === 'core' && zaSiatke(st, p.person),
     },
     doing: jobText(st, w, p),
     // śpi w łóżku albo przysypia na warcie

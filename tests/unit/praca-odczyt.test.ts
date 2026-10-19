@@ -17,6 +17,7 @@ import type { Pawn, Sim, Thing } from '../../src/sim/sim.ts';
 import { populacja, snapshot } from '../../src/sim/snapshot.ts';
 import { wreckStage, wrecksOf, wreckTile } from '../../src/sim/surowce.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
+import { bezPrzelacznika } from './praca-pomoc.ts';
 import { core, demoWorld, newGame, pusto } from './sasiedzi-pomoc.ts';
 
 const KLUCZ = 'lanciego';
@@ -104,7 +105,8 @@ describe('odczyt osoby: praca', () => {
       expect(p.praca.prio[kolumna('szaber')]).toBe(3);
       expect(p.praca.prio[kolumna('badania')]).toBe(0);
       expect(p.praca.stale).toBeNull();
-      expect(p.praca.zaSiatke).toBe(false);
+      // w trybie zwykłym przełącznik „za siatkę” jest domyślnie włączony (decyzja 19.10.2026)
+      expect(p.praca.zaSiatke).toBe(true);
     }
   });
 
@@ -116,7 +118,7 @@ describe('odczyt osoby: praca', () => {
     sim.push({ t: 'prio', ids: [], osoba: a.person, rodzaj: 'drwal', prio: 4 });
     sim.push({ t: 'prio', ids: [], osoba: a.person, rodzaj: 'kuchnia', prio: 0 });
     sim.push({ t: 'stale', ids: [], osoba: a.person, rodzaj: 'warsztat' });
-    sim.push({ t: 'zasiatke', ids: [], osoba: a.person, on: true });
+    sim.push({ t: 'zasiatke', ids: [], osoba: a.person, on: false });
     sim.step();
     const s = snapshot(sim.st, w);
     const pa = s.people.find((p) => p.pawn === a.id)!;
@@ -124,7 +126,8 @@ describe('odczyt osoby: praca', () => {
     expect(pa.praca.prio[kolumna('drwal')]).toBe(4);
     expect(pa.praca.prio[kolumna('kuchnia')]).toBe(0);
     expect(pa.praca.stale).toBe('warsztat');
-    expect(pa.praca.zaSiatke).toBe(true);
+    // domyślnie włączony, więc zmianą gracza jest wyłączenie
+    expect(pa.praca.zaSiatke).toBe(false);
     // reszta kolumn tej osoby to domyślne
     for (const r of RODZAJE) {
       if (r === 'drwal' || r === 'kuchnia') continue;
@@ -134,11 +137,11 @@ describe('odczyt osoby: praca', () => {
     expect(s.people.find((p) => p.pawn === b.id)!.praca).toEqual(dom);
     // zdjęcie stałego zajęcia i przełącznika wraca do domyślnych
     sim.push({ t: 'stale', ids: [], osoba: a.person, rodzaj: null });
-    sim.push({ t: 'zasiatke', ids: [], osoba: a.person, on: false });
+    sim.push({ t: 'zasiatke', ids: [], osoba: a.person, on: true });
     sim.step();
     const po = snapshot(sim.st, w).people.find((p) => p.pawn === a.id)!.praca;
     expect(po.stale).toBeNull();
-    expect(po.zaSiatke).toBe(false);
+    expect(po.zaSiatke).toBe(true);
   });
 
   it('mieszkaniec z osobą (generator) ma indeks osoby i domyślne ustawienia, bez zmian gracza', () => {
@@ -322,6 +325,7 @@ describe('ileZlecen', () => {
 
   it('drwal: bez przełącznika tylko drzewa na naszym terenie, z przełącznikiem wszystkie wolne', () => {
     const sim = newGame(KLUCZ);
+    bezPrzelacznika(sim);
     const w = demoWorld(KLUCZ);
     const s = prv(sim);
     expect(s.zapasDrewna()).toBeLessThan(progi(sim.st).drewno);
@@ -358,9 +362,8 @@ describe('ileZlecen', () => {
     const na = [...w.trees.keys()].find((k) => k !== s.dry && s.naszTeren(s.trunk[k]) && !sim.st.felled.includes(k))!;
     sim.st.felled.push(na);
     expect(sim.ileZlecen('drwal')).toBe(wolne - 2);
-    // bez przełącznika ścięcie drzewa za siatką niczego nie zmienia, ścięcie drzewa na terenie zabiera jedno
-    sim.push({ t: 'zasiatke', ids: [], osoba: core(sim)[0].person, on: false });
-    sim.step();
+    // bez przełącznika (u nikogo z zarządu) ścięcie drzewa za siatką niczego nie zmienia, ścięcie drzewa na terenie zabiera jedno
+    bezPrzelacznika(sim);
     const bez = sim.ileZlecen('drwal');
     const drugie = [...w.trees.keys()].find(
       (k) => k !== s.dry && !s.naszTeren(s.trunk[k]) && !sim.st.felled.includes(k),
@@ -371,6 +374,7 @@ describe('ileZlecen', () => {
 
   it('drwal: przełącznik zmarłej osoby nie liczy się, osoby na wyprawie tak', () => {
     const sim = newGame(KLUCZ);
+    bezPrzelacznika(sim);
     const bez = sim.ileZlecen('drwal');
     zaSiatke(sim, 1);
     const z = sim.ileZlecen('drwal');
@@ -445,6 +449,7 @@ describe('ileZlecen', () => {
 
   it('noszenie: sterta na ulicy czeka tylko z przełącznikiem, jedna na stertę', () => {
     const sim = newGame(KLUCZ);
+    bezPrzelacznika(sim);
     const w = demoWorld(KLUCZ);
     const s = prv(sim);
     const przed = sim.ileZlecen('noszenie');
@@ -470,6 +475,7 @@ describe('ileZlecen', () => {
 
   it('noszenie: sterta w budynku za wspólnym płotem (nasz teren, ale nie podwórko) czeka bez przełącznika', () => {
     const sim = newGame(KLUCZ);
+    bezPrzelacznika(sim);
     const w = demoWorld(KLUCZ);
     const s = prv(sim);
     const budynek = w.buildings.find((b) => b.id !== w.hq && b.entrances.length)!;
@@ -558,6 +564,7 @@ describe('ileZlecen', () => {
 
   it('szaber: pokoje otwartego budynku sąsiada czekają dopiero z przełącznikiem albo gdy budynek jest za naszym płotem', () => {
     const sim = newGame(KLUCZ);
+    bezPrzelacznika(sim);
     const w = demoWorld(KLUCZ);
     sim.lokatorzy = pusto(w);
     const s = sim as unknown as { budynekSasiada(bid: number): number; otworzBudynek(k: number): void };
@@ -587,6 +594,7 @@ describe('ileZlecen', () => {
 
   it('szaber: wraki na ulicy czekają dopiero z przełącznikiem, pokoje siedziby bez niego', () => {
     const sim = newGame(KLUCZ);
+    bezPrzelacznika(sim);
     const w = demoWorld(KLUCZ);
     const bez = sim.ileZlecen('szaber');
     const wraki = wrecksOf(w).filter((wr) => wreckStage(sim.st.wraki, wreckTile(wr, w.size)) === 0);
