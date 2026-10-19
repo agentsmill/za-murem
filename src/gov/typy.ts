@@ -286,6 +286,15 @@ export interface GovEffects {
       symulacja wstawia polecenie 'attack' (pionka, którego już nie ma, polecenie pomija). Tablica powstaje przy
       pierwszym ataku */
   atak?: { id: string; pawn: number }[];
+  /** mieszkańcy z osobą (id osoby, jak `GovLokator.id`), którzy przechodzą do zarządu: ten sam pionek i ta sama osoba,
+      rodzaj `core`, potrzeby i łóżko zostają (`awansuj` w src/sim/sim.ts). Tablica powstaje przy pierwszym awansie */
+  awans?: string[];
+  /** osoby (mieszkańcy z osobą i osoby zarządu), które wychodzą bramą: idą do bramy, za bramą ulicą daleko od siatki
+      i znikają, łóżko jest wolne od razu (`wyprowadz`). Tablica powstaje przy pierwszym wyrzuceniu */
+  wyrzuc?: string[];
+  /** osoba zarządu idzie na kafelek (od strony podwórka, najbliższy osiągalny), stoi tam 10 minut gry i wraca do
+      zajęć (`sprawdz`). Tablica powstaje przy pierwszym sprawdzeniu */
+  sprawdz?: { id: string; tile: number }[];
 }
 
 export interface RaidPlan {

@@ -254,6 +254,12 @@ export interface GovHost extends EventHost {
   zDzida(): GovPerson | null;
   /** osoba zarządu atakuje pionek (szwendacza): symulacja wstawia polecenie 'attack' */
   atakuj(id: string, pawn: number): void;
+  /** mieszkaniec z osobą (GovLokator.id) przechodzi do zarządu: ten sam pionek, symulacja zmienia mu rodzaj */
+  awansuj(id: string): void;
+  /** mieszkaniec z osobą albo osoba zarządu wychodzi bramą i znika; do końca zdarzenia nie ma jej w `alive()` */
+  wyrzuc(id: string): void;
+  /** osoba zarządu idzie sprawdzić kafelek (numer kafelka mapy), stoi tam 10 minut gry i wraca do zajęć */
+  sprawdz(id: string, tile: number): void;
   /** wpis do kroniki: zdanie w obu językach albo polski wpis z 0.3 (angielski daje EVENTS_EN z warianty.en.ts) */
   log(txt: string | Tx, big?: boolean): void;
   /** skutek na rano: zmiana zapasów i linia do raportu */

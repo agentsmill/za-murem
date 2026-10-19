@@ -11,7 +11,11 @@
    (pola powstają przy pierwszym użyciu) oraz plan dnia lokatorów z wiedzą (labOpen). Barykada z wraków stoi na odcinku
    siatki jak zasieki, ale ma BARYKADA_HP (160, zasieki 100), a wzmocnienie siatki deskami (`brace`, do 100) jej nie
    dotyka. Posterunek na wieży (WIEZA_POST, klucz 'wieza'): wartownik stoi na wolnym kafelku obrysu wieży (najwyżej tylu
-   osób, ile kafelków), jego lampa płoszy dalej (WIEZA_ZASIEG), a broń dystansowa sięga z wieży dalej. */
+   osób, ile kafelków), jego lampa płoszy dalej (WIEZA_ZASIEG), a broń dystansowa sięga z wieży dalej.
+   Ludzie z wydarzeń zarządu (zwykłe zmiany stanu jak `addCore`, wołane z `applyGov`): `awansuj` zmienia mieszkańca z osobą
+   w zarząd (ten sam pionek), `wyprowadz` posyła mieszkańca albo osobę zarządu pracą `odejscie` do bramy (drogą zarządu),
+   dalej ulicą daleko od siatki, gdzie znika, a `sprawdz` posyła osobę zarządu pracą `sprawdz` na kafelek na 10 minut gry.
+   Rozkazy i wróg nie zmieniają `odejscie`; kto wychodzi, nie bierze poleceń. */
 
 import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -410,6 +414,12 @@ export const GOV_WAIT = TICKS_PER_HOUR;
 const RAID_FROM = 22;
 /** handlarz przychodzi z daleka, mniej więcej tyle kroków ulicą od bramy (wędrowcy i ekipy też) */
 const TRADER_FROM = 70;
+/** kto wychodzi bramą (wyrzucony mieszkaniec, odchodząca osoba zarządu), idzie ulicą tyle kroków od wyjścia za bramą */
+const ODEJSCIE_FROM = TRADER_FROM;
+/** najdłużej tyle idzie do bramy i ulicą; kto nie doszedł (droga zamknięta), znika tam, gdzie stoi */
+export const ODEJSCIE_TICKS = 2 * TICKS_PER_HOUR;
+/** sprawdzanie hałasu: na miejscu stoi 10 minut gry */
+export const SPRAWDZ_TICKS = Math.round(TICKS_PER_HOUR / 6);
 /** obcy, którzy przychodzą i znikają (praca w fazie 4: zniknął) */
 const PASSERS = new Set<PawnKind>(['szabrownik', 'handlarz', 'wedrowiec', 'obcy', 'zbir']);
 /** obcy ludzie: ich śmierć liczy się jak zabity szabrownik (bez żałoby, „Zabiłem człowieka” dla zabójcy) */
@@ -527,7 +537,13 @@ export type JobKind =
   | 'talk'
   | 'mug'
   | 'shoo'
-  | 'zemsta';
+  | 'zemsta'
+  /** wydarzenia zarządu: odejście bramą (osoba zarządu albo mieszkaniec; target −1, tile: kafelek, do którego idzie;
+      phase 0: do wyjścia za bramą drogą zarządu, 1: ulicą daleko od siatki, 4: zniknął; until: najpóźniej wtedy znika,
+      gdzie stoi) i sprawdzenie hałasu (osoba zarządu; target: kafelek z karty, tile: miejsce, na którym stanie, −1 do
+      pierwszego kroku pracy; phase 0: idzie, 1: stoi do until) */
+  | 'odejscie'
+  | 'sprawdz';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -1732,6 +1748,114 @@ export function removeCore(st: SimState, id: string, w?: World): boolean {
   return true;
 }
 
+/** Pionki z osobą w state.people i potrzebami: zarząd i mieszkańcy siedziby (gość z klocków dojdzie tu jednym słowem).
+    Skutki zarządu na potrzebach i nastrojach (`applyGov`) trafiają do każdego z nich. */
+export const Z_OSOBA: ReadonlySet<PawnKind> = new Set<PawnKind>(['core', 'resident']);
+/** Kogo zarząd może awansować do siebie (`awansuj`): mieszkańca z osobą; gość z klocków doda tu swój rodzaj. */
+const DO_AWANSU: ReadonlySet<PawnKind> = new Set<PawnKind>(['resident']);
+/** Kto może wyjść bramą (`wyprowadz`): zarząd i mieszkaniec z osobą. */
+const DO_WYJSCIA: ReadonlySet<PawnKind> = new Set<PawnKind>(['core', 'resident']);
+/** Kto może iść sprawdzić hałas (`sprawdz`): zarząd. */
+const SPRAWDZ_Z: ReadonlySet<PawnKind> = new Set<PawnKind>(['core']);
+
+/** pionek osoby o danym id (z `st.people`) wśród pionków podanych rodzajów; undefined, gdy takiego nie ma */
+export function pionekOsoby(st: SimState, id: string, rodzaje: ReadonlySet<PawnKind>): Pawn | undefined {
+  return st.pawns.find((p) => p.person >= 0 && rodzaje.has(p.kind) && st.people[p.person]?.id === id);
+}
+
+/** plany i rzeczy zajęte przez pionka wolne, a to, co niesie (drewno, materiał z pracy), zostaje na ziemi */
+function zwolnijPionka(st: SimState, w: World, p: Pawn): void {
+  for (const t of st.things) if (t.by === p.id) t.by = -1;
+  for (const b of st.builds) if (b.by === p.id) b.by = -1;
+  dropHeld(st, w, p);
+}
+
+/** Mieszkaniec z osobą przechodzi do zarządu (zdarzenie „wciągnąć do roboty”): ten sam pionek i ta sama osoba w
+    `st.people`, rodzaj `core`, więc od następnego kroku bierze polecenia i sam szuka zajęcia. Potrzeby, nastroje i łóżko
+    (`owner`) zostają jego, brak potrzeb dostaje domyślne jak w `addCore`; `apt` to −1 (zarząd nie mieszka w mieszkaniu
+    mieszkańców). Plan dnia mieszkańca się kończy. false: nie ma takiego mieszkańca (osoba zarządu, na wyprawie albo już
+    wychodząca bramą też nie). */
+export function awansuj(st: SimState, w: World, personId: string): boolean {
+  const p = pionekOsoby(st, personId, DO_AWANSU);
+  if (!p || p.away || p.job?.t === 'odejscie') return false;
+  zwolnijPionka(st, w, p);
+  p.kind = 'core';
+  p.apt = -1;
+  if (!p.needs) {
+    p.needs = { food: 50, warm: 50, rest: 60, health: 90, safe: 50, mood: 0 };
+    p.needs.mood = 0.25 * 50 + 0.25 * 50 + 0.15 * 60 + 0.15 * 90 + 0.2 * 50;
+  }
+  p.job = null;
+  p.path = [];
+  p.pi = 0;
+  p.want = -1;
+  p.wait = st.tick;
+  return true;
+}
+
+/** Mieszkaniec albo osoba zarządu wychodzi bramą (zdarzenie „wyrzucić z osiedla”, „niech idzie”): praca `odejscie`.
+    Idzie warstwą zarządu do `exitOf(w)` (przez bramę przechodzi jak przyjęty w 'arrive'), za bramą ulicą do kafelka
+    daleko od siatki i znika jak przechodnie w fazie 4 (najpóźniej po ODEJSCIE_TICKS, gdzie stoi). Łóżko i mieszkanie są
+    wolne od razu, plan budowy też, a to, co niesie, zostaje na ziemi; osoba w `st.people` dostaje `gone`, pionek
+    znika dopiero na końcu drogi. Zarząd (govInput) od razu go nie widzi: ani jako osoby, ani jako mieszkańca. Bez bramy
+    (świat bez siatki) i na wyprawie znika od razu. false: nie ma takiej osoby albo już wychodzi. */
+export function wyprowadz(st: SimState, w: World, personId: string): boolean {
+  const p = pionekOsoby(st, personId, DO_WYJSCIA);
+  if (!p || p.job?.t === 'odejscie') return false;
+  zwolnijPionka(st, w, p);
+  for (const t of st.things) if (t.owner === p.id) t.owner = -1;
+  p.apt = -1;
+  st.people[p.person].gone = true;
+  const exit = exitOf(w);
+  if (p.away || exit < 0) {
+    dropPawn(st, p);
+    return true;
+  }
+  p.path = [];
+  p.pi = 0;
+  p.want = -1;
+  p.wait = st.tick;
+  p.job = {
+    t: 'odejscie',
+    target: -1,
+    tile: exit,
+    phase: 0,
+    from: -1,
+    t0: st.tick,
+    until: st.tick + ODEJSCIE_TICKS,
+    order: false,
+    n: 0,
+    what: '',
+  };
+  return true;
+}
+
+/** Osoba zarządu idzie sprawdzić kafelek `tile` (hałas, krzyk): praca `sprawdz`. Miejsce, na którym stanie, wybiera
+    symulacja w pierwszym kroku pracy (najbliższy osiągalny kafelek, od strony podwórka), stoi tam SPRAWDZ_TICKS (10
+    minut gry) i wraca do swoich zajęć. false: nie ma takiej osoby w zarządzie, jest na wyprawie, wychodzi bramą albo
+    kafelek jest poza mapą. */
+export function sprawdz(st: SimState, w: World, personId: string, tile: number): boolean {
+  const p = pionekOsoby(st, personId, SPRAWDZ_Z);
+  if (!p || p.away || p.job?.t === 'odejscie' || !(tile >= 0 && tile < w.size * w.size)) return false;
+  zwolnijPionka(st, w, p);
+  p.path = [];
+  p.pi = 0;
+  p.want = -1;
+  p.job = {
+    t: 'sprawdz',
+    target: tile,
+    tile: -1,
+    phase: 0,
+    from: -1,
+    t0: st.tick,
+    until: 0,
+    order: false,
+    n: 0,
+    what: '',
+  };
+  return true;
+}
+
 /** nowy szwendacz na kafelku: snuje się (praca 'zombie' w fazie 0); stado: idzie do siatki */
 export function spawnZombie(st: SimState, w: World, tile: number, look: number, horde = false): Pawn {
   const p = newPawn(st, w, 'zombie', -1, tile, tile, look);
@@ -2044,6 +2168,8 @@ export class Sim {
   private fenceMask: Uint8Array = new Uint8Array(0);
   /** zabici w bieżącym kroku (znikają po pętli pionków) */
   private readonly graveyard = new Set<number>();
+  /** pionki, którzy w tym kroku doszli do końca drogi z bramy (praca `odejscie`) i znikają po pętli pionków */
+  private readonly wyszli: number[] = [];
   /** tryb zombie: kafelki tuż za siatką (po stronie ulicy), odległość do nich, kafelki przy krawędzi mapy,
       pas za dnia (FAR–NEAR m od siatki) i okolica, z której wychodzi stado (RING_FROM–RING_TO m) */
   private seeds: number[] = [];
@@ -2272,6 +2398,9 @@ export class Sim {
     if (p.wrogi) return this.lay.szabrownik;
     // przyjęty w drodze do siedziby przechodzi przez bramę jak zarząd (ktoś mu otwiera)
     if (p.kind === 'resident' && p.job?.t === 'arrive') return this.layer('core');
+    // wychodzący: do bramy drogą zarządu, za bramą ulicą jak przechodnie
+    if (p.job?.t === 'odejscie' && (p.kind === 'resident' || p.kind === 'core'))
+      return p.job.phase === 0 ? this.layer('core') : this.lay.outside;
     return this.layer(p.kind);
   }
 
@@ -2457,6 +2586,14 @@ export class Sim {
     }
     // szabrownicy, którzy doszli tam, skąd przyszli, znikają
     if (gone) st.pawns = st.pawns.filter((p) => !(PASSERS.has(p.kind) && p.job?.phase === 4));
+    // wychodzący, którzy doszli do końca drogi, znikają (nie ma po nich zwłok)
+    if (this.wyszli.length) {
+      for (const id of this.wyszli) {
+        const p = st.pawns.find((q) => q.id === id);
+        if (p) dropPawn(st, p);
+      }
+      this.wyszli.length = 0;
+    }
     // zabici w tym kroku znikają ze stanu (zostają po nich zwłoki)
     if (this.graveyard.size) {
       for (const id of this.graveyard) {
@@ -2581,7 +2718,8 @@ export class Sim {
     const pawns: Pawn[] = [];
     for (const id of c.ids) {
       const p = st.pawns.find((q) => q.id === id);
-      if (p && p.kind === 'core' && p.away === (c.t === 'back') && !pawns.includes(p)) pawns.push(p);
+      if (p && p.kind === 'core' && p.away === (c.t === 'back') && p.job?.t !== 'odejscie' && !pawns.includes(p))
+        pawns.push(p);
     }
     if (c.t === 'back') {
       for (const p of pawns) this.comeBack(p);
@@ -3899,6 +4037,10 @@ export class Sim {
         // przyjęty: zza bramy do swojego mieszkania (po kolei, gęsiego), potem plan dnia jak każdy mieszkaniec
         if (tick < j.until) return true;
         return !at && this.go(p, j.tile);
+      case 'odejscie':
+        return this.odejsciePraca(p, j, at);
+      case 'sprawdz':
+        return this.sprawdzPraca(p, j, at);
       case 'leave':
         // za bramą znika; wraca poleceniem 'back'
         if (j.phase === 1) return true;
@@ -3927,6 +4069,82 @@ export class Sim {
         return this.startHaul(p);
       }
     }
+  }
+
+  /** Odejście bramą (`wyprowadz`): faza 0 to droga zarządu do wyjścia za bramą, faza 1 ulicą do kafelka daleko od
+      siatki, faza 4 znika (po pętli pionków, jak przechodnie). Bez drogi (zamknięta) próbuje co sekundę, a po
+      ODEJSCIE_TICKS znika, gdzie stoi. Rozkazy i wróg tej pracy nie zmieniają. */
+  private odejsciePraca(p: Pawn, j: Job, at: boolean): boolean {
+    const tick = this.st.tick;
+    if (j.phase === 4) return true;
+    const znika = () => {
+      j.phase = 4;
+      this.wyszli.push(p.id);
+      return true;
+    };
+    if (tick >= j.until) return znika();
+    // droga od nowa: od razu po wyprowadzeniu, potem co sekundę, gdy się nie udała
+    const idz = (): void => {
+      if (tick < p.wait) return;
+      p.wait = this.go(p, j.tile) ? tick : tick + THINK_EVERY;
+    };
+    if (j.phase === 0) {
+      if (!at) {
+        idz();
+        return true;
+      }
+      // za bramą: ulicą dalej (warstwa ulicy od tej fazy), a bez ulicy zostaje tu i znika
+      j.phase = 1;
+      const far = this.dalekoZaBrama(p, j.tile);
+      if (far === j.tile) return znika();
+      j.tile = far;
+      p.wait = tick;
+      idz();
+      return true;
+    }
+    if (at) return znika();
+    idz();
+    return true;
+  }
+
+  /** Sprawdzenie hałasu (`sprawdz`): w pierwszym kroku wybiera miejsce (najbliższy osiągalny kafelek od strony
+      podwórka), idzie tam, stoi SPRAWDZ_TICKS i kończy pracę, więc wraca do zajęć. */
+  private sprawdzPraca(p: Pawn, j: Job, at: boolean): boolean {
+    const tick = this.st.tick;
+    if (j.phase === 1) return tick < j.until;
+    if (j.tile < 0) {
+      const stand = this.sprawdzStand(p, j.target);
+      if (stand < 0) return false;
+      j.tile = stand;
+      return this.sprawdzPraca(p, j, this.tileOf(p) === stand);
+    }
+    if (!at) return this.go(p, j.tile);
+    j.phase = 1;
+    j.t0 = tick;
+    j.until = tick + SPRAWDZ_TICKS;
+    const size = this.w.size;
+    this.face(p, (j.target % size) + 0.5, Math.floor(j.target / size) + 0.5);
+    return true;
+  }
+
+  /** gdzie stanąć, żeby sprawdzić kafelek: on sam, gdy to wolne miejsce podwórka, inaczej wolny kafelek podwórka
+      do 4 kroków od niego (najbliżej pionka), a gdy takiego brak (wejście do budynku za siatką), najbliższy osiągalny
+      kafelek; −1: nie ma dokąd iść */
+  private sprawdzStand(p: Pawn, tile: number): number {
+    const size = this.w.size;
+    if (
+      this.yardMask[tile] === 1 &&
+      !this.coreBlocked[tile] &&
+      this.reg[tile] === this.regionOf(p) &&
+      !this.taken(p).includes(tile) &&
+      !this.thingAt(tile % size, Math.floor(tile / size))
+    )
+      return tile;
+    for (let reach = 1; reach <= 4; reach++) {
+      const s = this.standBy(p, [tile], reach);
+      if (s >= 0) return s;
+    }
+    return this.goalFor(p, tile);
   }
 
   /** mebel rozebrany: znika ze stanu, drewno w rękach (reszta obok), nastrój spada wszystkim z zarządu,
@@ -6707,7 +6925,7 @@ export class Sim {
       if ((p.needs?.health ?? 100) >= (j.t === 'guard' ? 50 : 30) && crowd < 3) return false;
       return this.retreat(p);
     }
-    if (j && (j.t === 'leave' || j.t === 'amputate')) return false;
+    if (j && (j.t === 'leave' || j.t === 'amputate' || j.t === 'odejscie')) return false;
     // uzbrojony, który czeka albo grzeje się w pobliżu zwłok, dobija je odruchowo, zanim wstaną
     if (
       p.kind === 'core' &&
@@ -7573,8 +7791,9 @@ export class Sim {
     return out;
   }
 
-  /** skąd przychodzą: losowy kafelek far kroków od siatki po stronie ulicy (albo najdalszy, jaki jest) */
-  private farFrom(spot: number, far = RAID_FROM): number {
+  /** Kafelki po stronie ulicy dokładnie `far` kroków od `spot` (w kolejności przeszukiwania wszerz, więc zawsze tej
+      samej) i `last`, ostatni kafelek, który jeszcze nie jest na tej odległości (najdalszy, gdy pierścienia nie ma). */
+  private pierscien(spot: number, far: number): { ring: number[]; last: number } {
     const size = this.w.size;
     const { blocked } = this.lay.outside;
     const dist = new Map<number, number>([[spot, 0]]);
@@ -7596,7 +7815,20 @@ export class Sim {
         q.push(n);
       }
     }
+    return { ring, last };
+  }
+
+  /** skąd przychodzą: losowy kafelek far kroków od siatki po stronie ulicy (albo najdalszy, jaki jest) */
+  private farFrom(spot: number, far = RAID_FROM): number {
+    const { ring, last } = this.pierscien(spot, far);
     return ring.length ? ring[Math.floor(nextRandom(this.st.rng) * ring.length)] : last;
+  }
+
+  /** dokąd idzie ulicą wychodzący: kafelek ODEJSCIE_FROM kroków od wyjścia za bramą (z pierścienia wybiera numer
+      pionka, bez losowania, więc kilku wychodzących rozchodzi się w różne strony), a gdy ulica jest krótsza, jej koniec */
+  private dalekoZaBrama(p: Pawn, exit: number): number {
+    const { ring, last } = this.pierscien(exit, ODEJSCIE_FROM);
+    return ring.length ? ring[p.id % ring.length] : last;
   }
 
   /** n wolnych kafelków po stronie ulicy wokół środka, w tym samym obszarze dla obcych */

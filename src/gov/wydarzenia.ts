@@ -15,7 +15,9 @@
    z symulacji, jak tablica badań; nowa książka idzie do skutków (GovEffects.books), a nie do stanu zarządu.
    Wpis do kroniki o przyjściu takiej karty (`GovState.log[]`) niesie jej miejsce jako `gdzie` (`Punkt`), jak okno.
    Mieszkańcy siedziby z osobą z generatora (`GovInput.lokatorzy`) wchodzą do hosta jako `lokatorzy()` i `lokator(id)`,
-   w kopiach; bez generatora lista jest pusta. */
+   w kopiach; bez generatora lista jest pusta. Skutki na ludziach: `awansuj(id)` (mieszkaniec do zarządu), `wyrzuc(id)`
+   (mieszkaniec albo osoba zarządu wychodzi bramą, od razu znika z `alive()`) i `sprawdz(id, tile)` (osoba zarządu idzie
+   na kafelek na 10 minut gry); idą do GovEffects.awans, .wyrzuc i .sprawdz, bez powtórzeń tego samego id. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -220,7 +222,7 @@ export function makeHost(
     rule: () => true,
     pop: () => i.people.length + (i.residents ?? 0),
     cap: () => i.cap ?? i.people.length + (i.residents ?? 0) + 4,
-    alive: () => people.filter((p) => !fx.leave.includes(p.id)),
+    alive: () => people.filter((p) => !fx.leave.includes(p.id) && !fx.wyrzuc?.includes(p.id)),
     spec: (id) => people.find((p) => p.id === id),
     makePerson: (opts) => makePerson(rngOf(st.rng), new Set(people.map((p) => p.first)), () => st.nextId++, opts),
     joinPerson: (p) => {
@@ -312,6 +314,15 @@ export function makeHost(
         .sort((a, b) => b.needs.health - a.needs.health || (a.id < b.id ? -1 : 1))[0] ?? null,
     atakuj: (id, pawn) => {
       (fx.atak ??= []).push({ id, pawn });
+    },
+    awansuj: (id) => {
+      if (!fx.awans?.includes(id)) (fx.awans ??= []).push(id);
+    },
+    wyrzuc: (id) => {
+      if (!fx.wyrzuc?.includes(id)) (fx.wyrzuc ??= []).push(id);
+    },
+    sprawdz: (id, tile) => {
+      (fx.sprawdz ??= []).push({ id, tile });
     },
     later: (stock, line) => {
       st.later.push({ day: nd, stock: stock as Partial<Record<LootKey, number>>, line });
