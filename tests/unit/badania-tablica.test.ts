@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { type Dom, TECH_DOMS, type TechDom } from '../../src/content/data.ts';
 import { tr, ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
-import { ERY, nazwaEry, nazwaTech, TECH_BY, TECHS, tempoOsoby } from '../../src/sim/badania.ts';
+import { ERY, kosztTech, nazwaEry, nazwaTech, TECH_BY, TECHS, tempoOsoby } from '../../src/sim/badania.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { createSim, type Pawn, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
@@ -61,7 +61,7 @@ const umiejetnosci = (st: SimState, k: number, s: Partial<Record<Dom, number>>) 
 };
 
 /** Stan z pracownią i wszystkimi stanami kartek (oprócz „stoi”): cztery technologie zbadane (t_kozy, t_okna,
-    t_wieza, t_konserwy), w toku t_spawanie (14 z 25, Budowa 2 ma s1), brak wiedzy w t_wezel (Ciepło 2, macie 1),
+    t_wieza, t_konserwy), w toku t_spawanie (14 punktów z kosztu ery 2, Budowa 2 ma s1), brak wiedzy w t_wezel (Ciepło 2, macie 1),
     do wzięcia t_zielarstwo, t_barykady, najpierw t_ambu, a ery 3–6 odwrócone. Dwie książki (Uprawa i Medycyna). */
 function stan() {
   const st = createSim(w, seed, { core: 4 });
@@ -97,6 +97,11 @@ function kartkaHtml(html: string, id: string): string {
   return m[0];
 }
 const ile = (html: string, wzor: RegExp) => (html.match(wzor) ?? []).length;
+
+/** „14 / 33”: zapisany postęp t_spawanie i jej koszt zaokrąglony w górę, jak na kartce (mnożnik ery 2 daje ułamek) */
+const SPAWANIE = `14 / ${Math.ceil(kosztTech('t_spawanie'))}`;
+/** godziny do końca t_spawanie przy s1 (Budowa 2, bez cech) siedzącej samotnie: reszta kosztu przez tempo, w górę */
+const SPAWANIE_H = Math.ceil((kosztTech('t_spawanie') - 14) / tempoOsoby({ skills: { bud: 2 }, traits: [] }, 'bud'));
 
 describe('tablica badań: odczyt stanu (snapshot().tablica)', () => {
   it('bez pracowni i bez stanu badań jest null', () => {
@@ -228,11 +233,11 @@ describe('tablica badań: kartki', () => {
     expect(ile(kartkaHtml(html, 't_kozy'), /class="tb-stempel"/g)).toBe(1);
   });
 
-  it('w toku: „14 / 25”, pasek postępu ołówkiem i żółta kartka', () => {
+  it('w toku: postęp i koszt (14 z kosztu spawania), pasek postępu ołówkiem i żółta kartka', () => {
     const k = kartkaHtml(tablica(stan()), 't_spawanie');
-    expect(k).toContain('14 / 25');
+    expect(k).toContain(SPAWANIE);
     expect(k).toContain('class="tb-pasek"');
-    expect(k).toContain('width:56%');
+    expect(k).toContain(`width:${Math.round((100 * 14) / kosztTech('t_spawanie'))}%`);
   });
 
   it('brak wiedzy: „Ciepło 2, macie 1”, wyblakła kartka', () => {
@@ -370,7 +375,7 @@ describe('tablica badań: szczegóły wybranej kartki', () => {
     expect(szczegoly).toContain(TECH_BY.t_barykady.dzialanie.pl);
     expect(szczegoly).toContain('Wieże z rusztowań');
     expect(szczegoly).toContain('Budowa 2');
-    expect(szczegoly).toContain('22');
+    expect(szczegoly).toContain(String(Math.ceil(kosztTech('t_barykady'))));
     expect(szczegoly).toContain('data-akcja="badaj" data-arg="t_barykady"');
     expect(szczegoly).toContain('Zmień na to badanie');
     expect(szczegoly).toContain('Postęp obecnego badania zostaje');
@@ -396,8 +401,8 @@ describe('tablica badań: szczegóły wybranej kartki', () => {
     expect(sz).not.toContain('data-akcja="badaj"');
     expect(sz).toContain('Badamy to teraz');
     expect(sz).toContain('14');
-    // (25 − 14) / 1,2 punktu na godzinę = 9,2 h, więc ok. 10 h gry
-    expect(sz).toContain('ok. 10 h gry');
+    // (koszt − 14) / (TEMPO_BAZOWE · 1,2 punktu na godzinę), w górę
+    expect(sz).toContain(`ok. ${SPAWANIE_H} h gry`);
   });
 
   it('bez nikogo przy stole: nie liczy czasu', () => {
@@ -484,8 +489,8 @@ describe('tablica badań: pasek obsady i półka', () => {
     const o = st.people[a.person];
     const f = tablica(st).slice(tablica(st).indexOf('<footer'));
     expect(f).toContain('Spawanie z akumulatorów');
-    expect(f).toContain('14 / 25');
-    expect(f).toContain('koniec za ok. 10 h gry');
+    expect(f).toContain(SPAWANIE);
+    expect(f).toContain(`koniec za ok. ${SPAWANIE_H} h gry`);
     expect(f).toContain(o.name);
     expect(f).toContain(o.prof);
     expect(f).toContain('Budowa 2');
@@ -543,7 +548,7 @@ describe('tablica badań: angielski', () => {
     expect(html).toContain('Stoves in the flats');
     expect(html).toContain('1. First weeks');
     expect(html).toContain(`${EN.najpierw}Herbalism from the allotments`);
-    expect(html).toContain('14 / 25');
+    expect(html).toContain(SPAWANIE);
     expect(ile(html, /class="tb-bud"/g)).toBeGreaterThan(0);
     expect(html).toContain(`class="tb-bud">${EN.budowla}<`);
     // nic po polsku z kartek i obsady

@@ -170,8 +170,12 @@ export const ERY: readonly { nr: number; nazwa: Tx }[] = [...ERAS.slice(1), 'Bez
   nazwa: tx(pl, NAZWY_ERY_EN[i + 1]),
 }));
 
-/** mnożnik kosztu technologii według ery; ery 1 i 2 zostają jak w 0.3, resztę stroi bot (zadanie 11 planu) */
-export const KOSZT_ERY: Readonly<Record<number, number>> = { 1: 1, 2: 1, 3: 1.5, 4: 2, 5: 2.5, 6: 3 };
+/** mnożnik kosztu technologii według ery. Era 1 zostaje jak w 0.3 (12–15 punktów), era 2 kosztuje o 30% więcej (22–35
+    punktów z 0.3 → 29–46): bot z badaniami (tools/bot-badania.ts, 19.10.2026, zadanie 11 planu) pokazał, że przy
+    mnożniku 1 gracz z lokatorami o pasujących fachach kończy pierwszą erę przed dniem 7 i do zimy (dzień 11) ma 7–9
+    technologii zamiast 4–6; wyższy mnożnik ery 2 zatrzymuje tę erę na zimę, a nie zmienia pierwszej technologii. Ery 3–6
+    to wartości wstępne do czasu projektu prądu (resztę stroi bot, kiedy te ery zaczną działać). */
+export const KOSZT_ERY: Readonly<Record<number, number>> = { 1: 1, 2: 1.3, 3: 1.5, 4: 2, 5: 2.5, 6: 3 };
 
 /** wpis technologii po identyfikatorze; nieznany identyfikator to błąd, a nie cichy brak */
 function wpis(id: string): Wpis {
@@ -198,8 +202,10 @@ export function nazwaEry(nr: number): Tx {
 }
 
 /** punkty postępu na godzinę gry dla mnożnika 1 (osoba bez umiejętności daje równo tyle, każdy poziom umiejętności
-    dokłada 10%); wstępna wartość, stroi ją bot z mieszkańcami (zadanie 11 planu) */
-export const TEMPO_BAZOWE = 1.0;
+    dokłada 10%). Wartość z bota z badaniami (tools/bot-badania.ts, 19.10.2026, zadanie 11 planu): przy 1,0 pierwsza
+    technologia była gotowa w dobie po pracowni tylko w 64% przebiegów, bo jedna osoba zarządu siada za dnia na 12 godzin,
+    a najtańsza technologia ma 12 punktów; przy 1,1 w 79–86%, a do zimy nadal 4–6 technologii na większości ziaren. */
+export const TEMPO_BAZOWE = 1.1;
 
 /** mnożnik tempa pracy według poziomu umiejętności: bez umiejętności dzisiejsze tempo, umiejętność tylko przyspiesza
     (decyzja integratora i sesji pracy ludzi, 19.10.2026). To kopia `tempoPoziomu` (`1 + TEMPO_KROK * poziom`,
