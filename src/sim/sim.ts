@@ -119,6 +119,7 @@ import {
 } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
 import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP, REINFORCED_HP } from './perimeter.ts';
+import type { PracaStan } from './praca.ts';
 import {
   atakOdRazu,
   type DrzwiStan,
@@ -879,6 +880,9 @@ export interface SimState {
   plot?: PlotStan;
   /** handlarz pod bramą (src/sim/handlarz.ts); tylko z opcją obcy albo po poleceniu 'obcy' */
   obcy?: Obcy;
+  /** ustawienia pracy ludzi (src/sim/praca.ts): tylko zmiany gracza względem domyślnych; nie ma go, dopóki gracz
+      czegoś nie zmieni, więc gra bez zmian ma ten sam skrót co przed pracą ludzi */
+  praca?: PracaStan;
 }
 
 /** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
