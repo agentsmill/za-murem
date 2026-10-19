@@ -9,8 +9,9 @@
      (`data-droga`) ma nazwę drogi, listę kamieni milowych, a pod nią: przy drodze z liczbami („{ile} z {cel} osób” i pasek)
      postęp, przy drodze bez podstawy zdanie „Wkrótce: …”. Kamień ma klasę `zw-zaliczony` (zrobiony), `zw-nastepny` (pierwszy
      niezrobiony) albo `zw-dalszy` (reszta, szara); czytelnikowi ekranu mówi to ukryty dopisek „Zaliczone:” i „Następny:”,
-     więc stan nie jest tylko kolorem. Droga przebyta do końca ma klasę `zw-wygrana`, odznakę „Zwycięstwo” i nie ma już
-     zdania „Wkrótce”. Przycisk „Wróć” (`zw-wroc`) wraca do Menu, a okno zamyka się też Esc i kliknięciem obok.
+     więc stan nie jest tylko kolorem. Droga przebyta do końca ma klasę `zw-wygrana` i odznakę „Zwycięstwo”; zdanie
+     „Wkrótce” pokazuje się tylko wtedy, gdy logika je poda (`PostepDrogi.wkrotce`, po przebyciu drogi jest puste).
+     Przycisk „Wróć” (`zw-wroc`) wraca do Menu, a okno zamyka się też Esc i kliknięciem obok.
    - `epilogSheet(droga, path, mode, staty)`: okno zwycięstwa nad grą (tabliczka w złocie): tytuł to nazwa drogi (w zombie
      droga leku to „Lek”), tekst drogi, po nim zdanie ścieżki uchwał (`GovState.laws.path`: Porządek, Wspólnota, Technokracja,
      a bez ścieżki zdanie neutralne), cztery liczby (dzień, ludzie, zmarli, uchwały) i dwa przyciski: „Graj dalej”
@@ -80,8 +81,8 @@ function kamienHtml(k: Tx, n: number, zaliczone: number): string {
 function drogaHtml(d: PostepDrogi): string {
   const wygrana = d.kamienie.length > 0 && d.zaliczone >= d.kamienie.length;
   const postep = d.postep ? postepHtml(d.nazwa, d.postep) : '';
-  // droga przebyta do końca nie ma już nic „wkrótce”
-  const wkrotce = d.wkrotce && !wygrana ? `<p class="zw-wkrotce">${esc(tr(d.wkrotce))}</p>` : '';
+  // czy „Wkrótce” się pokazuje, rozstrzyga logika (`PostepDrogi.wkrotce`); okno nie ma własnej reguły
+  const wkrotce = d.wkrotce ? `<p class="zw-wkrotce">${esc(tr(d.wkrotce))}</p>` : '';
   return `<li class="zw-droga${wygrana ? ' zw-wygrana' : ''}" data-droga="${esc(d.droga)}"><div class="zw-glowa"><h3 class="zw-nazwa">${esc(
     tr(d.nazwa),
   )}</h3>${wygrana ? `<span class="zw-odznaka">${L('Zwycięstwo', 'Victory')}</span>` : ''}</div><ol class="zw-kamienie">${d.kamienie
@@ -110,7 +111,7 @@ export function drogiSheet(p: PostepDrogi[]): Sheet {
 const EPILOG: Readonly<Partial<Record<Droga, Tx>>> = {
   ludnosc: tx(
     'Na podwórku znowu jest gwarno. Na klatkach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin trzepaka. Mieszka tu połowa tylu ludzi, co w 2021 roku, kiedy wszyscy zamawiali jedzenie przez aplikację.',
-    'The courtyard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet-beating frame. Half as many people live here as in 2021, back when everyone ordered food through an app.',
+    'The yard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet rack. Half as many people live here as in 2021, back when everyone ordered food through an app.',
   ),
 };
 
@@ -126,7 +127,7 @@ const SCIEZKA: Readonly<Record<'porzadek' | 'wspolnota' | 'tech' | 'brak', Tx>> 
   ),
   tech: tx(
     'Model z dysków banku układa grafiki co do minuty. Nikt nie pyta, kto go kontroluje.',
-    "The model from the bank's disks plans the rotas to the minute. Nobody asks who controls it.",
+    'The model from the bank’s disks plans the rotas to the minute. Nobody asks who controls it.',
   ),
   brak: tx(
     'Zarząd dalej się spiera, czy to już osada, czy jeszcze spółdzielnia.',

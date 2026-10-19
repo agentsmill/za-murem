@@ -57,7 +57,7 @@ const SCIEZKI: Record<string, { pl: string; en: string }> = {
   },
   tech: {
     pl: 'Model z dysków banku układa grafiki co do minuty. Nikt nie pyta, kto go kontroluje.',
-    en: "The model from the bank's disks plans the rotas to the minute. Nobody asks who controls it.",
+    en: 'The model from the bank’s disks plans the rotas to the minute. Nobody asks who controls it.',
   },
   brak: {
     pl: 'Zarząd dalej się spiera, czy to już osada, czy jeszcze spółdzielnia.',
@@ -67,7 +67,7 @@ const SCIEZKI: Record<string, { pl: string; en: string }> = {
 
 const EPILOG_LUDNOSC = {
   pl: 'Na podwórku znowu jest gwarno. Na klatkach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin trzepaka. Mieszka tu połowa tylu ludzi, co w 2021 roku, kiedy wszyscy zamawiali jedzenie przez aplikację.',
-  en: 'The courtyard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet-beating frame. Half as many people live here as in 2021, back when everyone ordered food through an app.',
+  en: 'The yard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet rack. Half as many people live here as in 2021, back when everyone ordered food through an app.',
 };
 
 describe('ekran dróg (drogiSheet)', () => {
@@ -365,6 +365,15 @@ describe('epilog zwycięstwa (epilogSheet)', () => {
     }
     expect(wszystko(s)).not.toMatch(POLSKIE);
     expect(polskieSlowa(wszystko(s))).toEqual([]);
+  });
+
+  it('angielski epilogu trzyma się słowniczka: the yard, carpet rack, apostrof typograficzny', () => {
+    ustawJezyk('en');
+    const body = epilogSheet('ludnosc', 'tech', 'zwykly', STATY).body;
+    expect(body).toContain('The yard is noisy again.');
+    expect(body).toContain('rules for the carpet rack.');
+    expect(body).toContain('the bank’s disks');
+    expect(body).not.toMatch(/courtyard|carpet-beating|bank's/);
   });
 
   it('po angielsku także tekst zastępczy i tytuł leku w zombie', () => {

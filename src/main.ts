@@ -34,7 +34,7 @@ import {
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
-import { DROGI, type Droga, grajDalej, ocenDrogi, type PostepDrogi, wlaczZwyciestwo } from './gov/zwyciestwo.ts';
+import { type Droga, grajDalej, ocenDrogi, type PostepDrogi, wlaczZwyciestwo, wygrajDroge } from './gov/zwyciestwo.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
 import { nazwaDoOkolicy, zbiorImion } from './mieszkancy/kronika.ts';
@@ -885,8 +885,9 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
 }
 
 /** epilog zwycięstwa drogą `droga` (okno z `pending`): „Graj dalej” zdejmuje epilog, zapisuje i wraca do gry w tempie sprzed
-    okna (albo do następnej decyzji); „Nowa gra” pyta o potwierdzenie. Zapis zostaje w obu przypadkach: zwycięstwo nie
-    kończy gry, w odróżnieniu od porażki (`showEnd`) */
+    okna (albo do następnej decyzji); „Nowa gra” pyta o potwierdzenie i dopiero po „Tak” zdejmuje epilog (tak samo jak
+    „Graj dalej”), zapisuje i wychodzi na ekran startowy. Oba wybory zostawiają zapis: zwycięstwo nie kończy gry,
+    w odróżnieniu od porażki (`showEnd`) */
 function showEpilog(droga: Droga) {
   const g = gov;
   if (!g || !sim) return;
@@ -898,9 +899,13 @@ function showEpilog(droga: Droga) {
   });
 }
 
-/** potwierdzenie „Nowa gra” z epilogu: zapis tej gry zostaje na ekranie startowym (jak „Zapisz i wróć” z Menu), dopóki
-    nowa gra go nie nadpisze; „Nie” i Esc wracają do epilogu, który dalej czeka w `pending` */
+/** potwierdzenie „Nowa gra” z epilogu. „Tak” zdejmuje epilog (`grajDalej`), zapisuje i idzie na ekran startowy, bez
+    `decided()`: jego `nextPrompt()` mógłby przed wyjściem otworzyć poranny raport. Zapis zostaje (jak po „Zapisz i wróć”
+    z Menu), ale bez epilogu, więc „Kontynuuj” go nie odtwarza, a raport, który czekał, wraca; nadpisze go dopiero zapis
+    nowej gry. „Nie” i Esc wracają do epilogu, który dalej czeka w `pending`, bo decyzja jeszcze nie zapadła */
 function askNowaGra(droga: Droga) {
+  const g = gov;
+  if (!g) return;
   sheetAgain = () => askNowaGra(droga);
   modal.show(
     confirmSheet(
@@ -912,6 +917,7 @@ function askNowaGra(droga: Droga) {
     ),
     (act) => {
       if (act === 'confirm-yes') {
+        grajDalej(g);
         save();
         location.href = startUrl();
       } else if (act === 'confirm-no') {
@@ -2819,14 +2825,9 @@ if (attrib) bars.observe(attrib);
     siec: () => siec.podglad(),
     zwyciestwo: () => (sim && gov ? ocenDrogi(gov, input()) : []),
     wygraj: (droga) => {
-      if (!sim || !gov || gov.over || !Object.hasOwn(DROGI, droga)) return null;
-      wlaczZwyciestwo(gov);
-      const z = gov.zwyciestwo!;
+      if (!sim || !gov || gov.over) return null;
       const i = input();
-      if (!z.wygrane.some((w) => w.droga === droga)) z.wygrane.push({ droga, dzien: i.day, godzina: i.hour });
-      z.kamienie[droga] = DROGI[droga].kamienie.length;
-      z.epilog = droga;
-      if (modal.open) return null;
+      if (!wygrajDroge(gov, droga, i.day, i.hour) || modal.open) return null;
       const p = pending(gov, i);
       if (p) showPrompt(p);
       return p?.k ?? null;

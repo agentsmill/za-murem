@@ -2,12 +2,13 @@
    milowe i krok zarządu, który je zalicza. Funkcje na `GovInput` i `GovState`, bez symulacji (src/gov nie importuje
    src/sim), bez rysowania i bez losowania: ten sam ciąg wejść daje ten sam stan, także po zapisie i wczytaniu. Czyste
    (nic nie zmieniają) są `ocenDrogi`, `celLudnosci`, `ludnoscOf` i `nazwaDrogi`; stan zmieniają tylko `wlaczZwyciestwo`,
-   `krokZwyciestwa` i `grajDalej`, i to wyłącznie `GovState.zwyciestwo` oraz kronikę (`st.log` i `fx.log`).
+   `krokZwyciestwa`, `grajDalej` i `wygrajDroge`, i to wyłącznie `GovState.zwyciestwo` (krok także kronikę: `st.log`
+   i `fx.log`).
 
    Drogi: `technologia` („Prąd bez miedzi”), `teren` („Za Murem”), `lek`, `ludnosc` („Nowe osiedle”) i `cuda`. Na tym
    etapie gotowa jest ludnościowa w całości i pierwszy kamień terenu; technologia, lek i cuda czekają na projekty, na
-   których stoją, więc ekran dróg pokazuje przy nich „Wkrótce: …” (`PostepDrogi.wkrotce`). Treść dróg (`DROGI`) jest
-   w obu językach (Tx); nazwa drogi leku zależy od trybu gry (`nazwaDrogi`).
+   których stoją, więc ekran dróg pokazuje przy nich „Wkrótce: …” (`PostepDrogi.wkrotce`), dopóki droga nie jest przebyta
+   do końca. Treść dróg (`DROGI`) jest w obu językach (Tx); nazwa drogi leku zależy od trybu gry (`nazwaDrogi`).
 
    Stan (`GovState.zwyciestwo`, `StanZwyciestwa`) powstaje dopiero po `wlaczZwyciestwo`, tak jak `miasto` po `wlaczMiasto`
    (src/gov/wyprawy.ts): `newGov` go nie ma, `krokZwyciestwa` bez niego nie robi nic, więc skróty zarządu w botach i testach
@@ -46,6 +47,10 @@
    kroku, obie trafiają do `wygrane`, a okno dostaje pierwsza w kolejności ekranu (do rozszerzenia, gdy powstaną
    kolejne drogi z kamieniami).
 
+   Zwycięstwo na żądanie (`wygrajDroge`) służy tylko zrzutom i próbom (`window.zm.wygraj` w src/main.ts): włącza drogi,
+   wpisuje wygraną (raz), zalicza komplet kamieni drogi i ustawia jej epilog (nadpisuje czekający). Nie pisze do kroniki
+   i nie rusza niczego poza `GovState.zwyciestwo`; dla nieznanej drogi nic nie robi i zwraca `false`.
+
    Krok nie zmienia zaufania, wkurzenia, zapasów ani ziarna: żadnych bonusów do balansu, tylko kronika i podpowiedź
    (ostatni wpis w `fx.log`, który gra pokazuje jak każdy inny). Zaufanie +2 przy pierwszym kamieniu drogi, które
    wymienia projekt, jest świadomie pominięte: nagroda zmieniałaby zaufanie, od którego zależy licznik celu (próg 50),
@@ -83,7 +88,8 @@ export interface PostepDrogi {
   kamienie: Tx[];
   /** ile kamieni zapisano w stanie zarządu (0, gdy drogi nie włączono) */
   zaliczone: number;
-  /** zdanie „Wkrótce: …” dla drogi, której podstawa jeszcze nie powstała; null: droga działa i nie ma nic do dodania */
+  /** zdanie „Wkrótce: …” dla drogi, której podstawa jeszcze nie powstała; null: droga działa i nie ma nic do dodania albo
+      jest już przebyta do końca (okno pokazuje to, co tu dostanie) */
   wkrotce: Tx | null;
   /** liczby do paska („{ile} z {cel}”) dla drogi, która ma co liczyć; null: bez liczb */
   postep: { ile: number; cel: number } | null;
@@ -146,7 +152,8 @@ export const DROGI: Readonly<Record<Droga, DefDrogi>> = {
   },
 };
 
-/** „Wkrótce: …” dla dróg bez podstawy; ludność działa w całości i go nie ma, teren pokazuje go dopiero po pierwszym kamieniu. */
+/** „Wkrótce: …” dla dróg bez podstawy; ludność działa w całości i go nie ma, teren pokazuje go dopiero po pierwszym
+    kamieniu, a droga przebyta do końca nigdy (`wkrotceDrogi`). */
 const WKROTCE: Readonly<Record<Exclude<Droga, 'ludnosc'>, Tx>> = {
   technologia: tx('Wkrótce: badania w pracowni i sieć bez miedzi.', 'Coming soon: research and a copper-free grid.'),
   teren: tx('Wkrótce: sąsiednie kwadraty i mur.', 'Coming soon: neighbouring squares and the wall.'),
@@ -221,10 +228,11 @@ function spelnione(droga: Droga, i: GovInput, cel: number): number {
   return n;
 }
 
-/** „Wkrótce” drogi przy `zaliczone` kamieniach: ludność go nie ma, teren dopiero po pierwszym kamieniu (wcześniej
-    pierwszy kamień jest do zdobycia od razu), reszta zawsze. */
+/** „Wkrótce” drogi przy `zaliczone` kamieniach: ludność go nie ma, droga przebyta do końca też nie, teren dopiero po
+    pierwszym kamieniu (wcześniej pierwszy kamień jest do zdobycia od razu), reszta zawsze. To jedyne miejsce tej reguły:
+    okno pokazuje to, co dostanie w `PostepDrogi.wkrotce`. */
 function wkrotceDrogi(droga: Droga, zaliczone: number): Tx | null {
-  if (droga === 'ludnosc') return null;
+  if (droga === 'ludnosc' || zaliczone >= DROGI[droga].kamienie.length) return null;
   if (droga === 'teren' && zaliczone < 1) return null;
   return WKROTCE[droga];
 }
@@ -292,4 +300,18 @@ export function krokZwyciestwa(st: GovState, i: GovInput, fx: GovEffects): void 
     Bez stanu zwycięstwa nic nie robi. */
 export function grajDalej(st: GovState): void {
   if (st.zwyciestwo) st.zwyciestwo.epilog = null;
+}
+
+/** Zwycięstwo drogi na żądanie, tylko do zrzutów i prób (`window.zm.wygraj` w src/main.ts): włącza drogi, wpisuje wygraną
+    z dniem i godziną (raz na drogę), zalicza komplet jej kamieni i ustawia jej epilog (nadpisuje czekający, bo to
+    wyraźne żądanie). Nie pisze do kroniki, nie losuje i nie rusza niczego poza `GovState.zwyciestwo`. Zwraca `false`
+    i nic nie zmienia, gdy `droga` nie jest drogą. */
+export function wygrajDroge(st: GovState, droga: Droga, dzien: number, godzina: number): boolean {
+  if (!Object.hasOwn(DROGI, droga)) return false;
+  wlaczZwyciestwo(st);
+  const z = st.zwyciestwo!;
+  if (!wygrana(z, droga)) z.wygrane.push({ droga, dzien, godzina });
+  z.kamienie[droga] = DROGI[droga].kamienie.length;
+  z.epilog = droga;
+  return true;
 }

@@ -18,6 +18,7 @@ import {
   nazwaDrogi,
   ocenDrogi,
   wlaczZwyciestwo,
+  wygrajDroge,
 } from '../../src/gov/zwyciestwo.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
 
@@ -133,6 +134,24 @@ describe('ocenDrogi', () => {
     expect(po('ludnosc').wkrotce).toBeNull();
     expect(po('ludnosc').postep).toEqual({ ile: 40, cel: 250 });
     expect(po('teren').postep).toBeNull();
+  });
+
+  it('droga przebyta do końca nie ma już „wkrótce”: reguła mieszka w logice, nie w oknie', () => {
+    const st = wlaczony();
+    const po = (droga: Droga) => ocenDrogi(st, wej()).find((x) => x.droga === droga)!;
+    // komplet kamieni każdej drogi: ani jedna nie mówi „wkrótce”
+    Object.assign(z(st).kamienie, { technologia: 5, teren: 5, lek: 5, ludnosc: 5, cuda: 3 });
+    for (const d of ocenDrogi(st, wej())) expect(d.wkrotce, d.droga).toBeNull();
+    // o jeden kamień mniej: zdanie wraca z dokładnym tekstem, także na terenie, który ma je od pierwszego kamienia
+    Object.assign(z(st).kamienie, { technologia: 4, teren: 4, lek: 4, cuda: 2 });
+    expect(po('technologia').wkrotce?.pl).toBe('Wkrótce: badania w pracowni i sieć bez miedzi.');
+    expect(po('teren').wkrotce?.pl).toBe('Wkrótce: sąsiednie kwadraty i mur.');
+    expect(po('lek').wkrotce?.pl).toBe('Wkrótce: dalekie wyprawy po lek.');
+    expect(po('cuda').wkrotce?.en).toBe('Coming soon: wonders from late research.');
+    // zapisana liczba ponad komplet (zepsuty zapis) też znaczy „przebyta”
+    Object.assign(z(st).kamienie, { cuda: 99 });
+    expect(po('cuda').zaliczone).toBe(3);
+    expect(po('cuda').wkrotce).toBeNull();
   });
 
   it('postęp ludności bierze cel z danych 2021 i z trybu gry', () => {
@@ -1035,5 +1054,95 @@ describe('włączone drogi a reszta zarządu', () => {
     // te same decyzje gracza, poza ewentualnym „Graj dalej”
     const bezEpilogu = z.steps.filter((s) => s.kind !== 'zwyciestwo');
     expect(bezEpilogu).toEqual(bez.steps);
+  });
+});
+
+describe('wygrajDroge (zwycięstwo na żądanie, tylko do zrzutów i prób)', () => {
+  it('włącza drogi, wpisuje wygraną z dniem i godziną, zalicza komplet kamieni i ustawia epilog', () => {
+    const st = newGov(1);
+    expect(st.zwyciestwo).toBeUndefined();
+    expect(wygrajDroge(st, 'teren', 3, 14)).toBe(true);
+    expect(z(st).wygrane).toEqual([{ droga: 'teren', dzien: 3, godzina: 14 }]);
+    expect(z(st).kamienie.teren).toBe(DROGI.teren.kamienie.length);
+    expect(z(st).epilog).toBe('teren');
+    expect(pending(st, wej())).toEqual({ k: 'zwyciestwo', droga: 'teren' });
+    // ekran dróg widzi drogę jako przebytą
+    const teren = ocenDrogi(st, wej()).find((d) => d.droga === 'teren')!;
+    expect(teren.zaliczone).toBe(teren.kamienie.length);
+    expect(teren.wkrotce).toBeNull();
+  });
+
+  it('każda z pięciu dróg: wygrana, komplet jej kamieni i epilog tej drogi', () => {
+    for (const droga of DROGI_PO_KOLEI) {
+      const st = wlaczony();
+      expect(wygrajDroge(st, droga, 2, 6), droga).toBe(true);
+      expect(z(st).kamienie[droga], droga).toBe(DROGI[droga].kamienie.length);
+      expect(z(st).wygrane, droga).toEqual([{ droga, dzien: 2, godzina: 6 }]);
+      expect(z(st).epilog, droga).toBe(droga);
+    }
+  });
+
+  it('ta sama droga drugi raz: jedna wygrana w stanie, a epilog znowu czeka', () => {
+    const st = wlaczony();
+    wygrajDroge(st, 'ludnosc', 1, 15);
+    grajDalej(st);
+    expect(z(st).epilog).toBeNull();
+    wygrajDroge(st, 'ludnosc', 2, 8);
+    expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 1, godzina: 15 }]);
+    expect(z(st).epilog).toBe('ludnosc');
+  });
+
+  it('inna droga po „Graj dalej” dostaje własny epilog, a wcześniejsza wygrana zostaje', () => {
+    const st = wlaczony();
+    wygrajDroge(st, 'ludnosc', 1, 15);
+    grajDalej(st);
+    wygrajDroge(st, 'cuda', 1, 16);
+    expect(pending(st, wej())).toEqual({ k: 'zwyciestwo', droga: 'cuda' });
+    expect(z(st).wygrane.map((w) => w.droga)).toEqual(['ludnosc', 'cuda']);
+    grajDalej(st);
+    expect(pending(st, wej())).toBeNull();
+  });
+
+  it('nieznana droga: false i stan bez zmian, także bez włączania dróg', () => {
+    const st = newGov(1);
+    const przed = JSON.stringify(st);
+    for (const zla of ['wynalazek', 'toString', '__proto__', 'constructor', '']) {
+      expect(wygrajDroge(st, zla as Droga, 1, 6), zla).toBe(false);
+    }
+    expect(JSON.stringify(st)).toBe(przed);
+    expect(st.zwyciestwo).toBeUndefined();
+  });
+
+  it('niczego nie rusza poza stanem zwycięstwa: ani kroniki, ani zaufania, ziarna i zapasów', () => {
+    const a = newGov(1);
+    const b = newGov(1);
+    wygrajDroge(a, 'cuda', 4, 9);
+    const reszta = (g: GovState) => {
+      const kopia = JSON.parse(JSON.stringify(g));
+      delete kopia.zwyciestwo;
+      return kopia;
+    };
+    expect(reszta(a)).toEqual(reszta(b));
+    expect(a.log).toHaveLength(0);
+  });
+
+  it('kolejne kroki nie wygrywają jej drugi raz i nie dopisują wpisów o jej kamieniach', () => {
+    const st = wlaczony();
+    wygrajDroge(st, 'ludnosc', 1, 15);
+    grajDalej(st);
+    for (let d = 2; d <= 10; d++) krok(st, rano(d, { ludnosc: 500 }));
+    expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 1, godzina: 15 }]);
+    expect(z(st).epilog).toBeNull();
+    expect(z(st).kamienie.ludnosc).toBe(5);
+    expect(z(st).dniCelu).toBe(0);
+    expect(st.log).toHaveLength(0);
+  });
+
+  it('stan po wygrajDroge przechodzi przez JSON i oddaje ten sam epilog', () => {
+    const st = wlaczony();
+    wygrajDroge(st, 'lek', 5, 7);
+    const c = loadGov(saveGov(st));
+    expect(z(c)).toEqual(z(st));
+    expect(pending(c, wej())).toEqual({ k: 'zwyciestwo', droga: 'lek' });
   });
 });
