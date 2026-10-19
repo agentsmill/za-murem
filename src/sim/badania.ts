@@ -168,6 +168,7 @@ const DZIALAJA: Readonly<Record<string, { odblokowuje?: readonly string[]; pl: s
   t_ambu: { pl: 'Zdrowie wraca 1,6× szybciej (rany po walce, wychłodzenie, głód).' },
 };
 
+// `maWlasnyOpis` porównuje po tożsamości z tą stałą: domyślny opis odwróconej kartki musi jej używać, a nie równej kopii
 const PRAD: Tx = tx('Do tego trzeba prądu.', PRAD_EN);
 
 const SIEC_PL =

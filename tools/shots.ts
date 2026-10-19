@@ -4437,8 +4437,9 @@ const SHOTS: Shot[] = [
   },
   // tablica na tablecie i telefonie poziomo (1024×768, 1180×820, 844×390): plansza nie mieści się w oknie nawet w najmniejszej
   // czytelnej skali, więc zostaje w skali 1 i przewija się w bok (jak dawniej), a czcionki kartek nie spadają poniżej 9 px;
-  // 1280×720 dalej kurczy się do okna (skala 0,855, najmniejsza czcionka ok. 9,4 px); zrzut końcowy to prawy brzeg planszy
-  // (era 6 z fabryką celu), a `badania-tablica-1024-otwarcie` lewy
+  // 1280×720 dalej kurczy się do okna (skala 0,855, najmniejsza czcionka ok. 9,4 px). Zrzuty: `badania-tablica-1024-otwarcie`
+  // (lewy brzeg planszy), `badania-tablica-1024-era6` (prawy brzeg z erą 6 i kartą celu) i końcowy `badania-tablica-1024`
+  // (lewy brzeg, kartka do wzięcia wybrana, szczegóły z przyciskiem „Zmień na to badanie”)
   {
     name: 'badania-tablica-1024',
     query: '',
@@ -4473,10 +4474,8 @@ const SHOTS: Shot[] = [
       }
       await page.setViewportSize({ width: 1024, height: 768 });
       await page.waitForTimeout(300);
-      await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
-      await page.waitForTimeout(250);
-      // prawy brzeg planszy po przewinięciu w bok (zrzut końcowy): ostatnia kolumna, czyli sieć, generator, serwer i
-      // fabryka celu, leży w całości w oknie planszy, a kartka celu pokazuje swoje szczegóły
+      // prawy brzeg planszy po przewinięciu w bok (osobny zrzut `badania-tablica-1024-era6`): ostatnia kolumna, czyli sieć,
+      // generator, serwer i fabryka celu, leży w całości w oknie planszy, a kartka celu pokazuje swoje szczegóły
       await page.evaluate(() => {
         const wrap = document.querySelector<HTMLElement>('#tablica .tb-wrap')!;
         wrap.scrollLeft = wrap.scrollWidth;
@@ -4494,6 +4493,18 @@ const SHOTS: Shot[] = [
         });
       });
       if (poza.length) throw new Error(`po przewinięciu w prawo kartki ery 6 poza oknem planszy: ${poza.join(', ')}`);
+      await page.screenshot({ path: path.join(OUT, 'badania-tablica-1024-era6.png') });
+      // zrzut końcowy jak dawniej: lewy brzeg planszy i kartka do wzięcia wybrana, ze szczegółami i przyciskiem
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>('#tablica .tb-wrap')!.scrollLeft = 0;
+      });
+      await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
+      await page.waitForTimeout(250);
+      const przycisk = await page.evaluate(
+        () => document.querySelector<HTMLElement>('#tablica [data-akcja="badaj"]')?.dataset.arg ?? null,
+      );
+      if (przycisk !== 't_barykady')
+        throw new Error(`przy 1024 px szczegóły wybranej kartki bez przycisku: ${przycisk}`);
     },
   },
   // ta sama tablica na telefonie 390×844: strona stoi w miejscu, przewija się tylko plansza w swoim oknie, szczegóły
