@@ -342,6 +342,9 @@ export const ARRIVE_GAP = 30;
 export const FLOOR_MOOD = -5;
 export const RESIDENT_REST = 70;
 /** prace fali 1 M2 (przerywa je pilna potrzeba, a te bez polecenia także noc) */
+/** Rodzaj trasy pracy bez polecenia: zwykła (materiał, drewno, łup) może w trybie zwykłym za dnia iść ulicą między
+    częściami naszego terenu; trasa Szabru (przeszukiwanie pomieszczeń i wraków) nigdy bez przełącznika. */
+type Trasa = 'zwykla' | 'szaber';
 const M2_JOBS = new Set<JobKind>([
   'search',
   'dismantle',
@@ -4872,7 +4875,7 @@ export class Sim {
     if (!g || !searchable(this.w, g) || g.searched.includes(room)) return false;
     if (this.st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room)) return false;
     const spot = this.roomSpot(p, room);
-    if (spot < 0 || !this.idz(p, spot, order)) return false;
+    if (spot < 0 || !this.idz(p, spot, order, 'szaber')) return false;
     this.setJob(p, this.newJob('search', room, spot, order), false);
     return true;
   }
@@ -5209,7 +5212,7 @@ export class Sim {
     if (this.st.pawns.some((q) => q !== p && q.job?.t === 'wreck' && q.job.target === t)) return false;
     if (crewAt(this.st, t)) return false;
     const stand = this.wreckStand(p, r);
-    if (stand < 0 || !this.idz(p, stand, order)) return false;
+    if (stand < 0 || !this.idz(p, stand, order, 'szaber')) return false;
     const j = this.newJob('wreck', t, stand, order);
     j.what = how;
     this.setJob(p, j, false);
@@ -5353,7 +5356,8 @@ export class Sim {
       zostaje poleceniem). Nasz teren (siedziba, otoczone budynki) przed resztą, w obrębie najbliższe; poza naszym
       terenem tylko przy `mozeTam` (przełącznik, dzień, bez szwendacza). Nigdy mieszkań z lokatorów (także pod ich
       nieobecność: spada stosunek i robi się wrogość) i nigdy nie otwiera ani nie wyważa drzwi: do pomieszczenia za
-      zamkniętymi drzwiami nie ma drogi, więc go pomija. Kolejne pomieszczenia nie liczą dróg bez końca: próbuje
+      zamkniętymi drzwiami nie ma drogi, więc go pomija. Pokoje z drugich klatek bloku (dojście ulicą) tylko z przełącznikiem,
+      także w trybie zwykłym za dnia (trasa 'szaber'). Kolejne pomieszczenia nie liczą dróg bez końca: próbuje
       najwyżej trzech najbliższych, a każdy kandydat jest już w obszarze osoby. */
   private startSzaber(p: Pawn): boolean {
     const st = this.st;
@@ -5374,9 +5378,9 @@ export class Sim {
         for (const room of pokoje) {
           if (g.searched.includes(room) || st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room))
             continue;
-          // pokój w innej klatce tego samego bloku (droga ulicą) odpada w trybie zombie i nocą bez liczenia miejsca i drogi
+          // pokój w innej klatce tego samego bloku (droga ulicą) odpada bez przełącznika, bez liczenia miejsca i drogi
           const posadzka = this.roomTiles[room];
-          if (!posadzka.length || !this.dojdzieWDomu(p, posadzka[0])) continue;
+          if (!posadzka.length || !this.dojdzieWDomu(p, posadzka[0], 'szaber')) continue;
           const spot = this.roomSpot(p, room);
           // w trybie zombie nie wchodzi do pokoju, w którym (albo tuż obok którego) jest szwendacz
           if (spot < 0 || this.zagrozone(spot, true)) continue;
@@ -5394,7 +5398,8 @@ export class Sim {
         const g = gid(k, r.id);
         const tiles = this.kafelkiPokoju(g);
         const wObszarze = tiles.find((i) => this.reg[i] === region);
-        if (wObszarze === undefined || !this.mozeTam(p, wObszarze) || !this.dojdzieWDomu(p, wObszarze)) continue;
+        if (wObszarze === undefined || !this.mozeTam(p, wObszarze) || !this.dojdzieWDomu(p, wObszarze, 'szaber'))
+          continue;
         if (st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === g)) continue;
         const spot = this.pokojSpot(p, tiles);
         if (spot < 0 || this.zagrozone(spot, true)) continue;
@@ -5409,7 +5414,8 @@ export class Sim {
       if (wreckStage(st.wraki, t) !== 0 || !this.mozeTam(p, t)) continue;
       if (crewAt(st, t) || st.pawns.some((q) => q !== p && q.job?.t === 'wreck' && q.job.target === t)) continue;
       const stand = this.wreckStand(p, wr);
-      if (stand < 0 || !this.mozeTam(p, stand) || this.zagrozone(stand) || !this.dojdzieWDomu(p, stand)) continue;
+      if (stand < 0 || !this.mozeTam(p, stand) || this.zagrozone(stand) || !this.dojdzieWDomu(p, stand, 'szaber'))
+        continue;
       const tier = this.naszTeren(stand) ? 0 : 1;
       cele.push({ tier, d: this.dist2(p, stand), typ: 2, id: t, run: () => this.startWreck(p, t, 'szukaj', false) });
     }
@@ -6652,9 +6658,10 @@ export class Sim {
   }
 
   /** Czy między częściami naszego terenu (inne klatki bloku siedziby, budynki za wspólnym płotem) wolno iść ulicą:
-      w trybie zwykłym za dnia tak. W trybie zombie i nocą droga zostaje na naszym terenie. */
-  private ulicaMiedzyNaszymi(): boolean {
-    return modeOf(this.st) !== 'zombie' && !this.night();
+      w trybie zwykłym za dnia tak, ale nie na trasie Szabru (zimne puste mieszkania z drugich klatek wyziębiałyby
+      osobę do nocy; tam tylko z przełącznikiem). W trybie zombie i nocą droga zostaje na naszym terenie. */
+  private ulicaMiedzyNaszymi(trasa: Trasa = 'zwykla'): boolean {
+    return trasa !== 'szaber' && modeOf(this.st) !== 'zombie' && !this.night();
   }
 
   /** Czy pionek bez polecenia może wyjść poza nasz teren do tego kafelka (albo przejść po ulicy do innej części
@@ -6664,8 +6671,8 @@ export class Sim {
       bliżej niż 10 m od celu, od samej osoby ani od wyjścia za bramę (rano stado stoi jeszcze pod siatką, a droga do
       celu prowadzi przez bramę; sam cel bez szwendacza nie wystarcza). To jedyne miejsce reguły „za siatką”
       (`mozeTam`, `dojdzieWDomu` i `idz` biorą ją stąd). */
-  private mozeWyjsc(p: Pawn, tile: number): boolean {
-    if (this.naszTeren(tile) && this.ulicaMiedzyNaszymi()) return true;
+  private mozeWyjsc(p: Pawn, tile: number, trasa: Trasa = 'zwykla'): boolean {
+    if (this.naszTeren(tile) && this.ulicaMiedzyNaszymi(trasa)) return true;
     if (!zaSiatke(this.st, p.person) || this.night()) return false;
     return (
       !this.szwendaczBlisko(tile) &&
@@ -6686,11 +6693,11 @@ export class Sim {
       w innej klatce tego samego bloku prowadzi ulicą), a jeśli nie, tylko gdy wolno wyjść (`mozeWyjsc`: w trybie
       zwykłym za dnia na inną część naszego terenu, inaczej przełącznik). Osoba poza naszym terenem (wraca do domu)
       może iść na nasz teren; jej drogę ocenia `sciezkaWDomu`. Praca z polecenia jest poza tą regułą. */
-  private dojdzieWDomu(p: Pawn, tile: number): boolean {
+  private dojdzieWDomu(p: Pawn, tile: number, trasa: Trasa = 'zwykla'): boolean {
     const reg = this.naszeObszary();
     const od = reg[nearestFree(this.coreBlocked, this.w.size, this.tileOf(p))];
     if (od >= 0 ? reg[tile] === od : this.naszTeren(tile)) return true;
-    return this.mozeWyjsc(p, tile);
+    return this.mozeWyjsc(p, tile, trasa);
   }
 
   /** Cel i materiał pracy bez polecenia: wolno tam pracować (`mozeTam`) i wolno tam dojść (`dojdzieWDomu`). Filtr
@@ -6704,7 +6711,7 @@ export class Sim {
       naszym terenem idzie zwykłą drogą, ale tylko tam, gdzie wolno (`mozeWyjsc`); osoba poza naszym terenem wraca do
       domu zwykłą drogą, którą w trybie zombie i nocą ocenia `sciezkaWDomu`. false, gdy nie da się dojść (stan pionka
       bez zmian). */
-  private idz(p: Pawn, tile: number, order: boolean): boolean {
+  private idz(p: Pawn, tile: number, order: boolean, trasa: Trasa = 'zwykla'): boolean {
     if (order) return this.go(p, tile);
     const reg = this.naszeObszary();
     const start = nearestFree(this.coreBlocked, this.w.size, this.tileOf(p));
@@ -6720,8 +6727,8 @@ export class Sim {
       p.pi = 0;
       return true;
     }
-    if (!this.dojdzieWDomu(p, tile)) return false;
-    if (reg[start] < 0 && this.naszTeren(tile) && !this.ulicaMiedzyNaszymi())
+    if (!this.dojdzieWDomu(p, tile, trasa)) return false;
+    if (reg[start] < 0 && this.naszTeren(tile) && !this.ulicaMiedzyNaszymi(trasa))
       return this.go(p, tile) && this.sciezkaWDomu(p);
     return this.go(p, tile);
   }
@@ -9179,7 +9186,7 @@ export class Sim {
     if (!this.moznaSzukac(k, room, !order)) return false;
     if (this.st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === g)) return false;
     const spot = this.pokojSpot(p, this.kafelkiPokoju(g));
-    if (spot < 0 || !this.idz(p, spot, order)) return false;
+    if (spot < 0 || !this.idz(p, spot, order, 'szaber')) return false;
     this.setJob(p, this.newJob('loot', g, spot, order), false);
     return true;
   }

@@ -875,20 +875,49 @@ describe('szaber', () => {
     expect(z.p.job?.order).toBe(false);
   });
 
-  it('pokój w innej klatce bloku w trybie zwykłym za dnia: automat bierze go bez przełącznika, droga prowadzi ulicą', () => {
-    const { p, s } = zostajaDrugieKlatki({ ...DZIEN });
-    s.think(p);
-    expect(jaka(p)).toBe('search');
-    expect(p.job?.order).toBe(false);
+  it('pokój w innej klatce bloku w trybie zwykłym za dnia: Szaber nie bierze go bez przełącznika (0 dróg), z przełącznikiem tak, ulicą', () => {
+    const { sim, p, s, daleko } = zostajaDrugieKlatki({ ...DZIEN });
+    expect(s.startSearch(p, daleko[0], false)).toBe(false);
+    const paths = sim.stats.paths;
+    for (let k = 0; k < 6; k++) {
+      odnow(sim, p);
+      s.think(p);
+      expect(jaka(p), `próba ${k}`).toBe('-');
+    }
+    expect(sim.stats.paths).toBe(paths);
+    // z polecenia pokój jest do wzięcia
+    expect(s.startSearch(p, daleko[0], true)).toBe(true);
+    // z przełącznikiem za dnia Szaber idzie tam ulicą
+    const z = zostajaDrugieKlatki({ ...DZIEN, zaSiatke: true });
+    z.s.think(z.p);
+    expect(jaka(z.p)).toBe('search');
+    expect(z.p.job?.order).toBe(false);
     expect(
-      p.path.every((t) => s.naszTeren(t)),
+      z.p.path.every((t) => z.s.naszTeren(t)),
       'droga prowadzi ulicą',
     ).toBe(false);
   });
 
-  it('droga do pokoju w innej klatce tego samego bloku: w trybie zombie zostaje na naszym terenie, w zwykłym za dnia idzie ulicą', () => {
-    const droga = (tryb: 'zombie' | 'zwykly') => {
-      const { sim, p, s } = scena({ key: 'przymorze', rodzaje: ['szaber'], tryb });
+  it('Szaber a materiał: ten sam pokój z drugiej klatki odpada dla Szabru, a stos drewna w drugiej klatce jest noszony ulicą', () => {
+    // jedna scena: osoba ma Szaber i Ogień (haul); w drugiej klatce leży stos drewna, a pokoje siedziby do przeszukania
+    // też są tylko w drugich klatkach
+    const { sim, p, s, daleko } = zostajaDrugieKlatki({ ...DZIEN });
+    const { obca } = (() => {
+      const ob = s.naszeObszary();
+      const od = ob[s.tileOf(p)];
+      const tile = s.roomTiles[daleko[0]].find((i) => ob[i] !== od && s.reg[i] === s.regionOf(p))!;
+      return { obca: tile };
+    })();
+    s.addWood(obca, 6);
+    odnow(sim, p);
+    s.think(p);
+    // pokój odpada, wolne drewno jest brane (Ogień przed Szabrem w kolejności kolumn)
+    expect(jaka(p)).toBe('haul');
+  });
+
+  it('droga do pokoju w innej klatce tego samego bloku: Szaber bez przełącznika zostaje na naszym terenie, z przełącznikiem idzie ulicą', () => {
+    const droga = (tryb: 'zombie' | 'zwykly', zaSiatke: boolean) => {
+      const { sim, p, s } = scena({ key: 'przymorze', rodzaje: ['szaber'], tryb, zaSiatke });
       const lista: { wychodzi: boolean }[] = [];
       const oryginal = s.setJob.bind(s);
       vi.spyOn(s, 'setJob').mockImplementation((pp, j, keep) => {
@@ -904,13 +933,17 @@ describe('szaber', () => {
       }
       return { lista, przeszukane: sim.st.apts.reduce((x, g) => x + g.searched.length, 0) };
     };
-    const zombie = droga('zombie');
-    const zwykly = droga('zwykly');
+    const zombie = droga('zombie', false);
+    const zwykly = droga('zwykly', false);
+    const przelacznik = droga('zwykly', true);
     expect(zombie.lista.length).toBeGreaterThan(0);
     expect(zombie.lista.some((x) => x.wychodzi)).toBe(false);
-    // w trybie zwykłym za dnia osiągalne są też pokoje z drugich klatek, przez ulicę
-    expect(zwykly.lista.some((x) => x.wychodzi)).toBe(true);
-    expect(zwykly.przeszukane).toBeGreaterThan(zombie.przeszukane);
+    // w trybie zwykłym za dnia bez przełącznika też tylko po naszym terenie: te same pokoje co w zombie
+    expect(zwykly.lista.some((x) => x.wychodzi)).toBe(false);
+    expect(zwykly.przeszukane).toBe(zombie.przeszukane);
+    // z przełącznikiem osiągalne są też pokoje z drugich klatek, przez ulicę
+    expect(przelacznik.lista.some((x) => x.wychodzi)).toBe(true);
+    expect(przelacznik.przeszukane).toBeGreaterThan(zwykly.przeszukane);
   });
 
   it('z lokatorami: tylko klatka, nigdy mieszkania (także te, z których wyszli), stosunek bez zmian', () => {
