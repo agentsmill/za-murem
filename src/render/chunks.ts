@@ -92,7 +92,8 @@ export interface MapChange {
   /** wygląd drzwi sąsiadów (wyważone, zabite deskami, zwykłe) */
   drzwi?: readonly DoorLook[];
   /** widok pięter: piętro, które rysuje przekrój (0: parter), i scena typowego piętra (podaje się raz, potem
-      wystarczy samo piętro) */
+      wystarczy samo piętro). chunksTouched tego nie zna, więc samo GameView.redraw nic by nie unieważniło:
+      piętro zmienia się przez GameView.ustawPietro, które zwiększa wersje kawałków z przekrojem. */
   pietro?: number;
   pietra?: SectionScene;
 }

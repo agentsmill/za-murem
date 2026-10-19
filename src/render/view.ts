@@ -86,11 +86,12 @@ import {
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
 import { LudzieLayer } from './ludzieLayer.ts';
+import { chunkiParteru, chunkiPietra, widokPietra } from './pietroWidok.ts';
 import { type DuchPlotu, duchPlotu } from './plotDuch.ts';
 import { PlotLayer } from './plotLayer.ts';
 import { crowdJitter, FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
 import { PrzekrojSasiadow } from './przekrojSasiadow.ts';
-import { burning, IN, setWear, specOf, type ThingLike } from './section.ts';
+import { burning, IN, type SectionScene, setWear, specOf, type ThingLike } from './section.ts';
 import { smokeSources } from './smoke.ts';
 import { SmokeLayer } from './smokeLayer.ts';
 import { TreeLayer } from './treeLayer.ts';
@@ -201,8 +202,10 @@ export class GameView {
   private thingsPending = false;
   /** czy widać przekrój (zbliżenie nad budynkiem z wnętrzem) */
   private cutOn = false;
-  /** kawałki nad budynkiem z wnętrzem */
+  /** kawałki z przekrojem: nad budynkiem z wnętrzem (parter) albo nad budynkami z wybranym piętrem (pietroNr od 1) */
   private cutChunks = new Set<number>();
+  /** wybrane piętro (widok pięter): 0 to parter, przekrój siedziby jak zawsze; od 1 przekrój typowego piętra */
+  private pietroNr = 0;
   /** rzeczy w warstwie pionków: sprite, czy stoi we wnętrzu (widać ją tylko w przekroju), czy się pali */
   private things = new Map<string, { sprite: Sprite; thing: ThingLike; inside: boolean; fire: boolean }>();
   /** tekstury rzeczy po opisie sprite'a (rozmiar i kotwica zależą tylko od rodzaju i ustawienia) */
@@ -322,6 +325,22 @@ export class GameView {
     return this.cutOn;
   }
 
+  /** wybrane piętro: 0 to parter, od 1 przekrój typowego piętra (ustawPietro) */
+  get pietro(): number {
+    return this.pietroNr;
+  }
+
+  /** czy w tej klatce widać przekrój piętra (od pierwszego) zamiast dachu */
+  pietroAktywne(): boolean {
+    return widokPietra(this.cutOn, this.pietroNr).aktywne;
+  }
+
+  /** czy w tej klatce widać wnętrza parteru: przekrój na parterze. Na piętrze osoby, rzeczy i światła we wnętrzach
+      siedziby i otwartych sąsiadów są schowane tak jak pod dachem (underRoof). */
+  get wnetrza(): boolean {
+    return widokPietra(this.cutOn, this.pietroNr).wnetrza;
+  }
+
   get width() {
     return this.app.screen.width;
   }
@@ -362,12 +381,9 @@ export class GameView {
         this.slots.push({ sprite, near: null, far: null, cut: null, used: 0, ver: 0, stale: 0 });
       }
     this.pendingFar = n * n;
-    this.cutChunks.clear();
-    if (sc.section) {
-      const b = sc.w.buildings[sc.section.building];
-      for (let cy = Math.floor(b.y0 / CHUNK); cy <= Math.floor(b.y1 / CHUNK); cy++)
-        for (let cx = Math.floor(b.x0 / CHUNK); cx <= Math.floor(b.x1 / CHUNK); cx++) this.cutChunks.add(cy * n + cx);
-    }
+    // widok bierze piętro ze sceny (buildScene: 0, parter)
+    this.pietroNr = sc.pietro;
+    this.cutChunks = this.kawalkiPrzekroju(sc, sc.pietro);
     const side = sc.w.size * TILE;
     this.minZoom = Math.min(this.width, this.height) / side / 1.05;
   }
@@ -391,6 +407,37 @@ export class GameView {
       s.stale = (s.near ? NEAR_BIT : 0) | (s.far ? FAR_BIT : 0) | (s.cut ? CUT_BIT : 0);
     }
     return touched;
+  }
+
+  /** kawałki z przekrojem dla piętra L: od 1 budynki, które to piętro mają, na parterze siedziba i otwarci sąsiedzi */
+  private kawalkiPrzekroju(sc: Scene, L: number): Set<number> {
+    return L >= 1 ? chunkiPietra(sc, L) : chunkiParteru(sc);
+  }
+
+  /**
+   * Wybór piętra (widok pięter): 0 to parter, przekrój siedziby jak zawsze; od 1 przekrój typowego piętra ze sceny
+   * sec, którą wystarczy podać raz (przy 0 i przy następnych wyborach może być null). Łatka {pietro, pietra} idzie
+   * do workerów i na scenę głównego wątku. chunksTouched nie zna piętra, więc redraw nic by nie unieważnił: kawałki
+   * z przekrojem, stare i nowe, dostają nową wersję i tylko ich przekrój jest nieaktualny (NEAR_BIT i FAR_BIT
+   * zostają). Zamówienie rysowane przy poprzednim piętrze wraca z dawną wersją i install je odrzuca, więc wygrywa
+   * ostatni wybór; do czasu nowego przekroju widać stary, bez mrugania.
+   */
+  ustawPietro(L: number, sec: SectionScene | null): void {
+    const sc = this.scene;
+    if (!sc) return;
+    // scenę piętra wysyła się raz: ta sama jest już w scenie i w kopiach u workerów
+    const patch = scenePatchOf(sc, sec && sec !== sc.pietra ? { pietro: L, pietra: sec } : { pietro: L });
+    applyScenePatch(sc, patch);
+    this.painter.patch(patch);
+    const stare = this.cutChunks;
+    this.pietroNr = L;
+    this.cutChunks = this.kawalkiPrzekroju(sc, L);
+    for (const k of new Set([...stare, ...this.cutChunks])) {
+      const s = this.slots[k];
+      s.ver++;
+      if (s.cut) s.stale |= CUT_BIT;
+    }
+    this.odswiezWnetrza();
   }
 
   /** ścięte drzewa ze stanu gry (np. st.felled): przerysowuje kawałki tylko dla nowych */
@@ -547,13 +594,20 @@ export class GameView {
     const z = this.przekrojSas.zmiany(sim.w, sc.section, sim.st.sasiedzi);
     if (!z) return;
     this.redraw(z);
-    const n = sc.chunks;
-    for (const p of z.wnetrze)
-      for (let cy = Math.floor(p.y0 / CHUNK); cy <= Math.floor((p.y0 + p.h - 1) / CHUNK); cy++)
-        for (let cx = Math.floor(p.x0 / CHUNK); cx <= Math.floor((p.x0 + p.w - 1) / CHUNK); cx++)
-          this.cutChunks.add(cy * n + cx);
-    if (z.wnetrze.length)
-      for (const e of this.things.values()) e.inside = this.underRoof(e.thing.x + 0.5, e.thing.y + e.thing.h - 0.5);
+    // na piętrze kawałki z przekrojem to budynki z tym piętrem; kawałki sąsiada wrócą ze zbiorem parteru (chunkiParteru)
+    if (this.pietroNr === 0) {
+      const n = sc.chunks;
+      for (const p of z.wnetrze)
+        for (let cy = Math.floor(p.y0 / CHUNK); cy <= Math.floor((p.y0 + p.h - 1) / CHUNK); cy++)
+          for (let cx = Math.floor(p.x0 / CHUNK); cx <= Math.floor((p.x0 + p.w - 1) / CHUNK); cx++)
+            this.cutChunks.add(cy * n + cx);
+    }
+    if (z.wnetrze.length) this.odswiezWnetrza();
+  }
+
+  /** na nowo liczy, które rzeczy stoją we wnętrzu (pod dachem siedziby albo otwartego sąsiada) */
+  private odswiezWnetrza(): void {
+    for (const e of this.things.values()) e.inside = this.underRoof(e.thing.x + 0.5, e.thing.y + e.thing.h - 0.5);
   }
 
   /** rzeczy gry i dodatki do warstwy pionków (diff po miejscu i opisie sprite'a) */
@@ -586,7 +640,7 @@ export class GameView {
       // rzecz na stole rysuje się po stole (na blacie), krew pod wszystkim, reszta po dolnej krawędzi podstawy
       sprite.zIndex = t.table !== undefined ? t.table + 0.01 : t.kind === 'krew' ? -1 : t.y + t.h;
       const inside = this.underRoof(t.x + 0.5, t.y + t.h - 0.5);
-      sprite.visible = !inside || this.cutOn;
+      sprite.visible = !inside || this.wnetrza;
       this.actors.addChild(sprite);
       this.things.set(key, { sprite, thing: t, inside, fire: burning(t) });
     }
@@ -783,7 +837,7 @@ export class GameView {
           ),
         ]
       : this.lights;
-    const lights = this.cutOn ? all : all.filter((l) => !l.inside);
+    const lights = this.wnetrza ? all : all.filter((l) => !l.inside);
     this.darkness = darknessAt(minutesAt(st.tick));
     // nocą zaznaczenie i droga nad mapą światła (inaczej ciemnieją razem z ziemią), w dzień pod pionkami, nad śladami
     // na ziemi
@@ -795,14 +849,14 @@ export class GameView {
     // rzeczy: meble tylko w przekroju, ogień w kozie i ognisku co 150 ms następna klatka
     const flame = Math.floor(performance.now() / 150) % FIRE_FRAMES;
     for (const e of this.things.values()) {
-      e.sprite.visible = !e.inside || this.cutOn;
+      e.sprite.visible = !e.inside || this.wnetrza;
       if (e.fire && e.sprite.visible) e.sprite.texture = this.artOf(specOf(e.thing, flame)!).tex;
     }
     // plany budowy: duchy budowli z paskiem postępu (w budynku tylko w przekroju)
     this.builds.update(
       this.plans,
       (spec) => this.artOf(spec),
-      (x, y) => !this.cutOn && this.underRoof(x, y),
+      (x, y) => !this.wnetrza && this.underRoof(x, y),
     );
     this.plotDuch.update(this.duch, z);
     // pionki: poza z pracy (rąbie, niesie drewno albo materiał, klęczy, gotuje, siedzi, śpi, wartuje,
@@ -863,7 +917,7 @@ export class GameView {
       }
       sp.zIndex = pose.z ?? y;
       // pod dachem nie widać nikogo; w przekroju tak; kto przeszukuje piętro sąsiada, jest na górze (M2 fala 2)
-      sp.visible = (this.cutOn || !this.underRoof(x, y)) && !(p.job?.t === 'upstairs' && p.job.phase === 1);
+      sp.visible = (this.wnetrza || !this.underRoof(x, y)) && !(p.job?.t === 'upstairs' && p.job.phase === 1);
       // obcych widać tylko w świetle: w półmroku sam ciemny zarys, w ciemności nic (szwendacza ciemny zarys)
       if (STRANGERS.has(p.kind)) {
         const vis = strangerVisibility(this.darkness, lightAt(x, y - 0.5, lights, time, this.insideFn), p.kind);
@@ -937,7 +991,7 @@ export class GameView {
       gameT,
       this.darkness,
       z,
-      (px, py) => this.cutOn && this.underRoof(px / TILE, py / TILE),
+      (px, py) => this.wnetrza && this.underRoof(px / TILE, py / TILE),
     );
     // noc: ciemność z godziny gry, światła z gry i z listy
     const [x0, y0] = this.toWorld(0, 0);
@@ -1054,7 +1108,7 @@ export class GameView {
         this.actors.addChild(sp);
         this.corpseSprites.set(t.id, sp);
       }
-      sp.visible = this.cutOn || !this.underRoof(t.x + 0.5, t.y + 0.5);
+      sp.visible = this.wnetrza || !this.underRoof(t.x + 0.5, t.y + 0.5);
     }
     for (const [id, sp] of this.corpseSprites)
       if (!seen.has(id)) {
@@ -1152,10 +1206,11 @@ export class GameView {
     }
   }
 
-  /** pionek pod punktem ekranu (tylko rdzeń) */
+  /** pionek pod punktem ekranu (tylko rdzeń) i tylko widoczny: pod dachem albo pod stropem pięter bez przekroju
+      parteru nikogo nie widać, więc nie da się go kliknąć */
   pick(st: SimState, sx: number, sy: number): Pawn | null {
     const [wx, wy] = this.toWorld(sx, sy);
-    return pawnAt(st.pawns, wx / TILE, wy / TILE, isBoard);
+    return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isBoard(p) && (this.wnetrza || !this.underRoof(p.x, p.y)));
   }
 
   /** mieszkaniec siedziby pod punktem ekranu: tylko pionki `resident` z osobą z generatora (person ≥ 0), bo tylko
@@ -1163,7 +1218,7 @@ export class GameView {
       Zarząd ma pierwszeństwo, więc wołający pyta najpierw `pick`. */
   pickResident(st: SimState, sx: number, sy: number): Pawn | null {
     const [wx, wy] = this.toWorld(sx, sy);
-    return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isLokator(p) && (this.cutOn || !this.underRoof(p.x, p.y)));
+    return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isLokator(p) && (this.wnetrza || !this.underRoof(p.x, p.y)));
   }
 
   /** kafelek pod punktem ekranu */
