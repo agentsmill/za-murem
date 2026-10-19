@@ -31,11 +31,15 @@
    (`sprawdz`); to zwykłe zmiany stanu jak `addCore`, pionek sam dojdzie w kolejnych krokach. Kto wychodzi bramą, dla
    zarządu przestaje istnieć od razu: nie ma go w `people`, w `lokatorzy` ani w liczbie mieszkańców. `fx.needs` i
    `fx.moods` trafiają do każdego pionka z tą osobą i potrzebami (zarząd, mieszkaniec); reszta skutków (wyprawa, warta,
-   atak, odejście) tylko do zarządu. */
+   atak, odejście) tylko do zarządu.
+
+   Strony świata (`strony`): kafelek podwórka przy siatce od strony najbliższych garaży i najbliższego budynku
+   mieszkalnego za siatką (`stronyOf` w src/gov/miejsce.ts), z których karty „Krzyk” i „Hałas” biorą miejsce dla
+   „Sprawdzić”; dziury w siatce niosą swoje kafelki (`GovHole.tiles`), gdy strony nie ma. */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
-import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
+import { placeOf, stronyOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type { Arm, GovEffects, GovInput, GovLokator, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
 import {
@@ -136,6 +140,22 @@ export function szwendaczPrzySiatce(st: SimState, w: World): { pawn: number; x: 
   return best;
 }
 
+/** strony świata dla kart „Krzyk” i „Hałas” (`GovInput.strony`), liczone raz na kształt siatki i na zestaw budynków
+    otoczonych wspólnym płotem (jedno i drugie zmienia się rzadko, a obliczenie przechodzi po budynkach i podwórku) */
+const stronyPamiec = new WeakMap<
+  World,
+  { fence: World['fence']; klucz: string; strony: NonNullable<GovInput['strony']> }
+>();
+function strony(st: SimState, w: World): NonNullable<GovInput['strony']> {
+  const otoczone = st.plot?.bids ?? [];
+  const klucz = otoczone.join(',');
+  const c = stronyPamiec.get(w);
+  if (c && c.fence === w.fence && c.klucz === klucz) return c.strony;
+  const wynik = stronyOf(w, new Set(otoczone));
+  stronyPamiec.set(w, { fence: w.fence, klucz, strony: wynik });
+  return wynik;
+}
+
 /** mieszkaniec siedziby dla zarządu: tylko pola `GovLokator` (bez historii, odnośnika, rodziny, nastrojów i pracy) */
 const lokatorZarzadu = (p: SimPerson): GovLokator => ({
   pawn: p.pawn,
@@ -158,6 +178,7 @@ const lokatorZarzadu = (p: SimPerson): GovLokator => ({
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
   const s = snapshot(st, w);
   const palenisk = paleniska(st, w);
+  const stronySwiata = strony(st, w);
   const wieza = st.things.find((t) => t.kind === 'wieza');
   const zombie = modeOf(st) === 'zombie';
   const przy = zombie ? szwendaczPrzySiatce(st, w) : null;
@@ -212,6 +233,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     burned: s.burned,
     hqName,
     place: placeOf(w),
+    ...(Object.keys(stronySwiata).length ? { strony: { ...stronySwiata } } : {}),
     // warta, która stoi (z karty, z menu i przy kozie), bez śpiących na posterunku i bez tych na wyprawie
     guards: st.pawns
       .filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase !== 4)

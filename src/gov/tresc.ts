@@ -6,7 +6,13 @@
    szabrowników), a `szwendacz` karta tylko trybu zombie o prawdziwym szwendaczu przy siatce (`GovHost.przy` z
    GovInput.horde.przy; „Dobić dzidą” wysyła atak osoby z dzidą przez `GovHost.atakuj`). `wedrowiec` ma wagę 0 w obu
    trybach: opisuje człowieka pod bramą, a nikogo tam nie ma. Karta z miejscem na mapie ma `gdzie`, z którego okno
-   wydarzenia robi przycisk „Pokaż”. */
+   wydarzenia robi przycisk „Pokaż”.
+   Karty z ludźmi: mieszkańcy siedziby z osobą z generatora (`GovHost.lokatorzy()`, `lokator(id)`; bez generatora lista
+   jest pusta, a karty grają po staremu) dają bohaterów kartom `dym`, `latarka` (najstarsza mieszkanka po imieniu, bez
+   pięter) i, w nakładkach z warianty.ts, `fachowiec` (awans), `kradziez` (sprawca z najniższym nastrojem, nie jedzenie)
+   i `odejscie`/`klotnia` (wyjście bramą: `wyrzuc`). `bezsennosc` bierze nieśpiącego z najniższym bezpieczeństwem
+   (`nieSpia()`), a `krzyk` i `halas` dla „Sprawdzić” osobę z `doSprawdzenia()` i kafelek z `kafelekPrzySiatce()`
+   (`sprawdz`). */
 
 import { LAW, type LawPath } from '../content/data.ts';
 import type { EventHost } from '../content/events.ts';
@@ -16,6 +22,7 @@ import { pick } from '../core/rng.ts';
 import type { Words, WordsEn } from './miejsce.ts';
 import { M1_LAWS_EN, TARGET_VARIANTS_EN, TARGETS_EN } from './tresc.en.ts';
 import type { GameMode, GovLokator, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
+import { najstarszaMieszkanka, type OsobaKarty, osobaKarty } from './warianty.ts';
 
 // ---------------------------------------------------------------- uchwały
 
@@ -241,6 +248,20 @@ export interface GovHost extends EventHost {
   needsOf(id: string, d: Partial<GovNeeds>): void;
   /** najbardziej wypoczęta osoba, która nie śpi i nie jest na wyprawie */
   rested(): GovPerson | null;
+  /** osoby zarządu w kolejności osób (kopie), także śpiące; bez tych, które w tym wywołaniu wychodzą (`wyrzuc`, `leave`) */
+  zarzad(): GovPerson[];
+  /** osoby zarządu, które nie śpią i nie są na wyprawie, w kolejności osób (kopie) */
+  nieSpia(): GovPerson[];
+  /** najbardziej wypoczęta osoba, która może teraz iść sprawdzić hałas: nie śpi, nie jest na wyprawie (ani w nocnym
+      planie wypraw), nie stoi na posterunku warty (`GovInput.guards`, `GovPerson.post`, warta z karty nocy) i nie jest
+      przy zabiegu (ugryziona albo operuje); null: nikt nie może, wtedy „Sprawdzić” jest niedostępne */
+  doSprawdzenia(): GovPerson | null;
+  /** kafelek podwórka przy siatce od strony garaży (`garaze`) albo najbliższego budynku mieszkalnego (`blok`), z
+      `GovInput.strony`; bez niej kafelek największej otwartej dziury, a gdy i jej kafelków nie ma, null */
+  kafelekPrzySiatce(strona: 'garaze' | 'blok'): number | null;
+  /** chwilowy nastrój jednej osoby (zarządu albo mieszkańca z osobą) na `hours` godzin gry; powód to polski napis
+      z src/content/nastroje.en.ts, jak w `moodAll` */
+  moodOf(id: string, why: string, d: number, hours: number): void;
   flag(k: 'dog' | 'flashlight' | 'torch'): boolean;
   setFlag(k: 'dog' | 'flashlight' | 'torch'): void;
   gateClosed(): boolean;
@@ -348,6 +369,13 @@ const uNiej = (h: GovHost) => (h.neighbour() === 'zza płotu' ? 'w domu' : 'w mi
 const uNiejEn = (h: GovHost) => (h.neighbour() === 'zza płotu' ? 'at her house' : 'in her flat');
 /** angielski zaimek po płci osoby */
 const zaimek = (p: { f: boolean }, he: string, she: string) => (p.f ? she : he);
+
+/** dane karty `dym` i `latarka`: najstarsza mieszkanka siedziby po imieniu (`lok` to jej id, `p` to imię, rodzaj i fach do
+    tekstów), a bez mieszkańców z osobą, w domu i w ręcznym wejściu puste `{}`, czyli bohaterka jak dotąd */
+const bohaterKarty = (h: GovHost): { lok?: string; p?: OsobaKarty } => {
+  const l = dom(h) ? null : najstarszaMieszkanka(h);
+  return l ? { lok: l.id, p: osobaKarty(l) } : {};
+};
 
 /** dokąd idzie wędrowiec: losowanie z polskiej listy (jak dotąd), angielski tekst po tym samym indeksie */
 const DEST = ['do brata pod Łódź', 'nad morze, bo tam podobno łowią ryby', 'do Kielc, do matki', 'na południe'];
@@ -625,11 +653,16 @@ export const NEW_EVENTS: GEventDef[] = [
     },
     choices: (h, d) => [
       {
+        // idzie ktoś, kto nie śpi i nie stoi na warcie, na kafelek podwórka od strony garaży (albo przy największej dziurze)
         label: tx('Sprawdzić z latarką', 'Check with a torch'),
-        ok: !!h.rested(),
+        ok: !!h.doSprawdzenia() && h.kafelekPrzySiatce('garaze') !== null,
         run: () => {
-          const p = h.rested();
-          if (p) h.needsOf(p.id, { rest: -8 });
+          const p = h.doSprawdzenia();
+          const tile = h.kafelekPrzySiatce('garaze');
+          if (p && tile !== null) {
+            h.sprawdz(p.id, tile);
+            h.needsOf(p.id, { rest: -8 });
+          }
           if (d.cat) {
             h.needsAll({ safe: 5 });
             h.log(
@@ -683,11 +716,15 @@ export const NEW_EVENTS: GEventDef[] = [
           ),
     choices: (h, d) => [
       {
+        // idzie ktoś, kto nie śpi i nie stoi na warcie, na kafelek podwórka od strony najbliższego budynku mieszkalnego
+        // (albo przy największej dziurze)
         label: tx('Wysłać kogoś sprawdzić', 'Send someone to check'),
-        ok: !!h.rested(),
+        ok: !!h.doSprawdzenia() && h.kafelekPrzySiatce('blok') !== null,
         run: () => {
-          const p = h.rested();
-          if (!p) return;
+          const p = h.doSprawdzenia();
+          const tile = h.kafelekPrzySiatce('blok');
+          if (!p || tile === null) return;
+          h.sprawdz(p.id, tile);
           h.needsOf(p.id, { rest: -10 });
           if (d.help) {
             h.mood(2, 0);
@@ -728,10 +765,13 @@ export const NEW_EVENTS: GEventDef[] = [
     id: 'bezsennosc',
     first: true,
     when: ['noc'],
-    w: (h) => (h.alive().length ? 0.8 : 0),
+    // bezsenność dotyka kogoś, kto naprawdę nie śpi: z osób zarządu na nogach (nie śpią i nie są na wyprawie) bierze tę
+    // z najniższym bezpieczeństwem, czyli tę, którą kroki na klatce niepokoją najbardziej (remis: kolejność osób);
+    // gdy wszyscy śpią albo są poza mapą, karty nie ma
+    w: (h) => (h.nieSpia().length ? 0.8 : 0),
     make: (h) => {
-      const all = h.alive();
-      return { p: all[Math.floor(h.rng() * all.length)].id };
+      const najbardziejNiespokojny = [...h.nieSpia()].sort((a, b) => a.needs.safe - b.needs.safe)[0];
+      return najbardziejNiespokojny ? { p: najbardziejNiespokojny.id } : null;
     },
     title: () => tx('Ktoś nie może spać', 'Someone can’t sleep'),
     text: (h, d) => {
@@ -958,13 +998,21 @@ export const NEW_EVENTS: GEventDef[] = [
     once: true,
     when: ['dzien', 'wieczor'],
     w: (h) => (h.neighbour() === null ? 0 : 0.9),
-    make: () => ({}),
+    // w bloku z mieszkańcami z osobą latarkę przynosi najstarsza mieszkanka (albo mieszkaniec) po imieniu, z klatki
+    make: (h) => bohaterKarty(h),
     title: () => tx('Latarka na korbkę', 'A wind-up torch'),
-    text: (h) =>
-      tx(
+    text: (h, d) => {
+      const p: OsobaKarty | null = d.lok ? d.p : null;
+      if (p)
+        return tx(
+          `${g(p, 'Pan', 'Pani')} ${p.name} z waszej klatki ${g(p, 'przyniósł', 'przyniosła')} latarkę na korbkę. Minuta kręcenia daje pięć minut światła, a ${g(p, 'on', 'ona')} już nie ma siły kręcić.`,
+          `${p.name} from your stairwell has brought round a wind-up torch. A minute of cranking gives five minutes of light, and ${zaimek(p, 'he', 'she')} hasn’t the strength to crank it any more.`,
+        );
+      return tx(
         `Pani Halina ${h.neighbour() ?? 'zza płotu'} przyniosła latarkę na korbkę. Minuta kręcenia daje pięć minut światła, a ona już nie ma siły kręcić.`,
         `Old Halina ${h.neighbourEn() ?? 'from over the fence'} has brought round a wind-up torch. A minute of cranking gives five minutes of light, and she hasn’t the strength to crank it any more.`,
-      ),
+      );
+    },
     choices: (h) => [
       {
         label: tx('Dla warty', 'For the watch'),
@@ -1049,28 +1097,37 @@ export const NEW_EVENTS: GEventDef[] = [
     once: true,
     when: ['dzien', 'wieczor', 'noc'],
     w: () => 0,
-    make: () => ({}),
+    // w bloku z mieszkańcami z osobą przychodzi najstarsza mieszkanka (albo mieszkaniec) po imieniu, z klatki
+    make: (h) => bohaterKarty(h),
     title: () => tx('Dym z komina', 'Smoke from the chimney'),
-    text: (h) => {
-      const from = h.neighbour() ?? 'zza płotu';
+    text: (h, d) => {
+      const p: OsobaKarty | null = d.lok ? d.p : null;
+      const from = p ? 'z waszej klatki' : (h.neighbour() ?? 'zza płotu');
       const home = from === 'zza płotu' ? 'w domu' : 'w mieszkaniu';
       const smoke =
         h.place().kind === 'dom'
           ? 'Nad dachem idzie dym z komina. Ktoś go zobaczył: do drzwi puka'
           : 'Nad kuchnią idzie dym z rury wystawionej przez okno. Ktoś go zobaczył: puka';
-      const fromEn = h.neighbourEn() ?? 'from over the fence';
+      const fromEn = p ? 'from your stairwell' : (h.neighbourEn() ?? 'from over the fence');
       const homeEn = from === 'zza płotu' ? 'at her house' : 'in her flat';
       const smokeEn =
         h.place().kind === 'dom'
           ? 'Smoke is rising from the chimney. Someone has seen it: at the door is'
           : 'Smoke is rising from the stovepipe stuck out of the kitchen window. Someone has seen it: knocking at the door is';
+      if (p)
+        return tx(
+          `${smoke} ${g(p, 'pan', 'pani')} ${p.name} ${from}, ze słoikiem powideł z 2049 roku. Pyta, czy może posiedzieć przy kozie, bo ${g(p, 'u niego', 'u niej')} ${home} jest sześć stopni.`,
+          `${smokeEn} ${p.name} ${fromEn}, with a jar of plum jam from 2049. ${zaimek(p, 'He', 'She')} asks if ${zaimek(p, 'he', 'she')} can sit by your stove for a bit, because it’s six degrees in ${zaimek(p, 'his', 'her')} flat.`,
+        );
       return tx(
         `${smoke} pani Krysia ${from}, ze słoikiem powideł z 2049 roku. Pyta, czy może posiedzieć przy kozie, bo u niej ${home} jest sześć stopni.`,
         `${smokeEn} old Krysia ${fromEn}, with a jar of plum jam from 2049. She asks if she can sit by your stove for a bit, because it’s six degrees ${homeEn}.`,
       );
     },
-    choices: (h) => {
-      const from = h.neighbour() ?? 'zza płotu';
+    choices: (h, d) => {
+      const p: OsobaKarty | null = d.lok ? d.p : null;
+      const from = p ? 'z waszej klatki' : (h.neighbour() ?? 'zza płotu');
+      const imie = p ? p.first : 'Krysia';
       return [
         {
           label: tx('Zaprosić do kozy', 'Ask her in to get warm'),
@@ -1080,8 +1137,8 @@ export const NEW_EVENTS: GEventDef[] = [
             h.mood(2, 0);
             h.log(
               tx(
-                `Pani Krysia opowiada, jak ${h.place().kind === 'dom' ? 'wyglądała ulica' : 'wyglądało osiedle'}, kiedy jeszcze jeździły autobusy.`,
-                `Krysia tells you what the ${h.place().kind === 'dom' ? 'street' : 'estate'} looked like back when the buses still ran.`,
+                `${p ? g(p, 'Pan', 'Pani') : 'Pani'} ${imie} opowiada, jak ${h.place().kind === 'dom' ? 'wyglądała ulica' : 'wyglądało osiedle'}, kiedy jeszcze jeździły autobusy.`,
+                `${imie} tells you what the ${h.place().kind === 'dom' ? 'street' : 'estate'} looked like back when the buses still ran.`,
               ),
             );
           },
@@ -1093,20 +1150,25 @@ export const NEW_EVENTS: GEventDef[] = [
             h.addRes('jedzenie', 2);
             h.mood(-1, 1);
             h.log(
-              from === 'zza płotu'
+              p
                 ? tx(
-                    'Pani Krysia wróciła do zimnego domu. Cała ulica już o tym wie.',
-                    'Krysia went back to her cold house. The whole street already knows.',
+                    `${g(p, 'Pan', 'Pani')} ${imie} ${g(p, 'wrócił', 'wróciła')} do zimnego mieszkania. Na klatce już o tym wiedzą.`,
+                    `${imie} went back to ${zaimek(p, 'his', 'her')} cold flat. The whole stairwell already knows.`,
                   )
-                : from === 'z bloku obok'
+                : from === 'zza płotu'
                   ? tx(
-                      'Pani Krysia wróciła do zimnego mieszkania. W bloku obok już o tym wiedzą.',
-                      'Krysia went back to her cold flat. The block next door already knows.',
+                      'Pani Krysia wróciła do zimnego domu. Cała ulica już o tym wie.',
+                      'Krysia went back to her cold house. The whole street already knows.',
                     )
-                  : tx(
-                      'Pani Krysia wróciła do zimnego mieszkania. Na klatce już o tym wiedzą.',
-                      'Krysia went back to her cold flat. The whole stairwell already knows.',
-                    ),
+                  : from === 'z bloku obok'
+                    ? tx(
+                        'Pani Krysia wróciła do zimnego mieszkania. W bloku obok już o tym wiedzą.',
+                        'Krysia went back to her cold flat. The block next door already knows.',
+                      )
+                    : tx(
+                        'Pani Krysia wróciła do zimnego mieszkania. Na klatce już o tym wiedzą.',
+                        'Krysia went back to her cold flat. The whole stairwell already knows.',
+                      ),
             );
           },
         },

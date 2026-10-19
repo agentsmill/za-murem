@@ -4,13 +4,23 @@
    skutek z 0.3 nie ma w M1 sensu (przyjęcia według wolnych miejsc, podwójne liczenie ludzi).
    Czego nakładka nie zmienia, idzie z 0.3: losowanie danych, skutki, liczby. „Opał” z 0.3 to w grze „Drewno”:
    tę zamianę robi wydarzenia.ts dla tytułów, tekstów, napisów i kroniki. Teksty: docs/superpowers/specs/
-   2026-10-17-wydarzenia-z-miejsca-design.md, punkty 5 i 5a. */
+   2026-10-17-wydarzenia-z-miejsca-design.md, punkty 5 i 5a.
 
-import type { EventChoice } from '../content/events.ts';
-import { g } from '../content/people.ts';
+   Karty z prawdziwych ludzi (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 2): w bloku z mieszkańcami
+   z osobą z generatora (`GovHost.lokatorzy()`) `fachowiec` to mieszkaniec z klatki z umiejętnością, której zarząd nie
+   zna (Wciągnąć do roboty to awans), a `kradziez` przychodzi z głodu (bez uchwały u_kociol, mieszkaniec z nastrojem
+   poniżej 45; sprawca to ten z najniższym nastrojem, nowy wybór „Dać mu jeść z kotła”, odstęp 48 godzin). Dane takiej
+   karty niosą `lok` (id osoby) i `p` (imię, rodzaj, fach); bez nich i bez mieszkańców z osobą karty grają jak z 0.3.
+   `odejscie` (Niech idzie) i `klotnia` (przegrany się wyprowadza) wyprowadzają osobę zarządu bramą (`wyrzuc`) zamiast
+   ją kasować; `odejscie` nie przychodzi, gdy w zarządzie jest mniej niż dwie osoby, a `klotnia` bierze dwie osoby
+   z najniższym nastrojem i tylko gdy obie mają go poniżej 55. */
+
+import { TECH_DOMS } from '../content/data.ts';
+import { type EventChoice, eventDef } from '../content/events.ts';
+import { g, type Person } from '../content/people.ts';
 import { pick, ri } from '../core/rng.ts';
 import type { GovHost, Pora } from './tresc.ts';
-import type { GameMode } from './typy.ts';
+import type { GameMode, GovLokator, GovPerson } from './typy.ts';
 
 // biome-ignore lint/suspicious/noExplicitAny: dane wydarzeń z 0.3 mają różne kształty
 type D = any;
@@ -22,6 +32,8 @@ export interface OldEvent {
   tryby?: readonly GameMode[];
   /** dozwolone pierwszego dnia po ciszy i pierwszej nocy */
   first?: boolean;
+  /** najmniej tyle godzin gry między powtórkami (brak: REPEAT_GAP) */
+  gap?: number;
   /** waga w M1; base to waga z 0.3 na tym samym hoście */
   w?: (h: GovHost, base: number) => number;
   /** własne dane zamiast make z 0.3 */
@@ -35,6 +47,73 @@ export interface OldEvent {
   choices?: (h: GovHost, d: D, base: EventChoice[]) => EventChoice[];
   /** zwroty do podmiany w kronice z wyborów tego wydarzenia */
   log?: (h: GovHost) => Record<string, string> | null;
+}
+
+/** nastrój mieszkańca poniżej tej wartości: je za mało, kradzież z piwnicy to kradzież z głodu */
+export const GLOD_NASTROJ = 45;
+/** dwie osoby zarządu z nastrojem poniżej tej wartości mogą się pokłócić o grafik */
+export const KLOTNIA_NASTROJ = 55;
+/** dziedzina, w której zarząd wiedzy poniżej tej wartości „nie zna się” (jak w 0.3) */
+const ZNA_SIE = 3;
+
+/** osoba z karty w danych wydarzenia (JSON): imię, rodzaj i fach, do tekstów po zmianie stanu gry */
+export interface OsobaKarty {
+  id: string;
+  first: string;
+  name: string;
+  f: boolean;
+  prof: string;
+  age: number;
+}
+export const osobaKarty = (l: GovLokator): OsobaKarty => ({
+  id: l.id,
+  first: l.first,
+  name: l.name,
+  f: l.f,
+  prof: l.prof,
+  age: l.age,
+});
+
+/** Mieszkaniec z klatki, który zna się na dziedzinie, której zarząd nie zna (`know(d) < 3`): ten z najwyższą
+    umiejętnością w takiej dziedzinie, przy remisie starszy, przy remisie pierwszy w kolejności pionków; null: nikogo
+    (albo brak mieszkańców z osobą). */
+export function fachowiecZKlatki(h: GovHost): GovLokator | null {
+  const nieznane = TECH_DOMS.filter((d) => h.know(d) < ZNA_SIE);
+  let best: GovLokator | null = null;
+  let bv = 0;
+  for (const l of h.lokatorzy()) {
+    const v = Math.max(0, ...nieznane.map((d) => l.skills[d] ?? 0));
+    if (v > bv || (v > 0 && v === bv && best && l.age > best.age)) {
+      best = l;
+      bv = v;
+    }
+  }
+  return best;
+}
+
+/** mieszkaniec, który z głodu ukradł: ten z najniższym nastrojem poniżej `GLOD_NASTROJ` (remis: pierwszy w kolejności
+    pionków), o ile nie podpisano wspólnego kotła; null: nikt */
+export function glodnyMieszkaniec(h: GovHost): GovLokator | null {
+  if (h.law('u_kociol')) return null;
+  let best: GovLokator | null = null;
+  for (const l of h.lokatorzy()) if (l.needs.mood < GLOD_NASTROJ && (!best || l.needs.mood < best.needs.mood)) best = l;
+  return best;
+}
+
+/** Najstarsza mieszkanka siedziby, a gdy żadnej nie ma, najstarszy mieszkaniec (remis: pierwszy w kolejności pionków);
+    bohaterka kart `dym` i `latarka`. null: brak mieszkańców z osobą. */
+export function najstarszaMieszkanka(h: GovHost): GovLokator | null {
+  const lista = h.lokatorzy().map((l, k) => ({ l, k }));
+  lista.sort((a, b) => Number(b.l.f) - Number(a.l.f) || b.l.age - a.l.age || a.k - b.k);
+  return lista[0]?.l ?? null;
+}
+
+/** dwie osoby zarządu z najniższym nastrojem (remis: kolejność osób), o ile obie mają go poniżej `KLOTNIA_NASTROJ` */
+export function parDoKlotni(h: GovHost): [GovPerson, GovPerson] | null {
+  const lista = h.zarzad().map((p, k) => ({ p, k }));
+  lista.sort((a, b) => a.p.needs.mood - b.p.needs.mood || a.k - b.k);
+  const [a, b] = lista;
+  return a && b && a.p.needs.mood < KLOTNIA_NASTROJ && b.p.needs.mood < KLOTNIA_NASTROJ ? [a.p, b.p] : null;
 }
 
 /** „Opał 5” z 0.3 to w grze „Drewno 5”, jak na pasku i w nowych wydarzeniach */
@@ -286,33 +365,93 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'fachowiec',
     when: ['wieczor'],
-    // w bloku to ktoś z mieszkańców, w domu sąsiad zza płotu; bez nich nie ma komu się przyznać
-    w: (h, base) => (dom(h) ? (h.neighbour() ? base : 0) : h.residents() > 0 ? base : 0),
+    // w bloku z mieszkańcami z osobą to jeden z nich, z umiejętnością, której zarząd nie zna (bez takiego karty nie ma);
+    // w bloku bez nich ktoś z mieszkańców, w domu sąsiad zza płotu; bez nich nie ma komu się przyznać
+    w: (h, base) =>
+      dom(h)
+        ? h.neighbour()
+          ? base
+          : 0
+        : h.lokatorzy().length
+          ? fachowiecZKlatki(h)
+            ? base
+            : 0
+          : h.residents() > 0
+            ? base
+            : 0,
+    make: (h) => {
+      const l = dom(h) ? null : fachowiecZKlatki(h);
+      return l ? { p: osobaKarty(l), b: h.hqName(), lok: l.id } : eventDef('fachowiec')!.make(h);
+    },
     text: (h, d) => {
       const p = d.p;
-      const who = dom(h) ? `${p.name} ${h.neighbour() ?? 'zza płotu'}` : `${p.name} z budynku ${d.b}`;
+      const who = dom(h)
+        ? `${p.name} ${h.neighbour() ?? 'zza płotu'}`
+        : d.lok
+          ? `${p.name} z waszej klatki`
+          : `${p.name} z budynku ${d.b}`;
       return `${who} ${g(p, 'przyznał', 'przyznała')} ${h.campfire() ? 'przy ognisku' : 'przy kozie'}, że ${g(p, 'był', 'była')} kiedyś: ${p.prof.toLowerCase()}. Do tej pory ${g(p, 'siedział', 'siedziała')} cicho, bo bał${g(p, '', 'a')} się, że każą ${g(p, 'mu', 'jej')} pracować.`;
     },
-    // w bloku mieszkaniec przechodzi do zarządu (mieszkańców o jednego mniej), w domu sąsiad dołącza do domowników
-    choices: (h, _d, base) => [
-      {
-        ...base[0],
-        run: () => {
-          base[0].run();
-          if (!dom(h)) h.removeResident(0);
-        },
-      },
-      ...base.slice(1),
-    ],
+    // mieszkaniec z klatki przechodzi do zarządu jako ta sama osoba (awans: mieszkańców o jednego mniej bez ruszania
+    // liczby przyjętych); bez niego w bloku mieszkaniec z 0.3 dołącza do zarządu (mieszkańców o jednego mniej), w domu
+    // sąsiad dołącza do domowników
+    choices: (h, d, base) =>
+      d.lok && !dom(h)
+        ? [
+            {
+              ...base[0],
+              ok: !!h.lokator(d.lok),
+              run: () => {
+                h.awansuj(d.lok);
+                h.mood(1, 0);
+              },
+            },
+            ...base.slice(1),
+          ]
+        : [
+            {
+              ...base[0],
+              run: () => {
+                base[0].run();
+                if (!dom(h)) h.removeResident(0);
+              },
+            },
+            ...base.slice(1),
+          ],
   },
   {
     id: 'klotnia',
     when: ['wieczor'],
+    // dwie osoby zarządu z najniższym nastrojem i tylko wtedy, gdy obie mają go poniżej 55
+    w: (h, base) => (base > 0 && parDoKlotni(h) ? base : 0),
+    make: (h) => {
+      const par = parDoKlotni(h);
+      return par ? { a: par[0].id, b: par[1].id } : null;
+    },
     text: (h, d) =>
       dom(h)
         ? `${h.spec(d.a)?.name} i ${h.spec(d.b)?.name} pokłócili się o grafik dyżurów przy kozie. Reszta domu słucha zza ściany.`
         : null,
-    labels: (h) => (dom(h) ? ['Mediacja przy stole'] : []),
+    // przegrany wychodzi bramą (nie znika), a jego odejście losuje się jak w 0.3 (30%)
+    choices: (h, d, base) => {
+      const A = h.spec(d.a);
+      const B = h.spec(d.b);
+      const strona = (przegrany: Person | undefined) => () => {
+        h.mood(0, 1);
+        if (przegrany && h.rng() < 0.3) {
+          h.wyrzuc(przegrany.id);
+          h.log(
+            `${przegrany.name} ${g(przegrany, 'obraził się i wyprowadził', 'obraziła się i wyprowadziła')} do innego osiedla.`,
+            true,
+          );
+        }
+      };
+      return [
+        { ...base[0], label: dom(h) ? 'Mediacja przy stole' : base[0].label },
+        { ...base[1], run: strona(B) },
+        { ...base[2], run: strona(A) },
+      ];
+    },
     log: (h) => (dom(h) ? { 'do innego osiedla': 'na inną ulicę' } : null),
   },
   {
@@ -330,18 +469,67 @@ export const OLD_EVENTS: OldEvent[] = [
           }
         : null,
   },
-  // złodziej z piwnicy to ktoś z mieszkańców bloku; w domu tego wydarzenia nie ma (projekt), także z przyjętymi ludźmi
-  { id: 'kradziez', when: ['noc'], first: true, w: (h, base) => (!dom(h) && h.residents() > 0 ? base : 0) },
+  // złodziej z piwnicy to ktoś z mieszkańców bloku; w domu tego wydarzenia nie ma (projekt), także z przyjętymi ludźmi.
+  // Z mieszkańcami z osobą przychodzi z głodu: bez uchwały o wspólnym kotle i przy kimś z nastrojem poniżej 45, sprawcą
+  // jest najgłodniejszy (prawdziwy głód mieszkańców w symulacji to osobna decyzja). Rzadziej niż w 0.3: co 48 godzin gry.
+  {
+    id: 'kradziez',
+    when: ['noc'],
+    first: true,
+    gap: 48,
+    w: (h, base) =>
+      dom(h) ? 0 : h.lokatorzy().length ? (glodnyMieszkaniec(h) ? base : 0) : h.residents() > 0 ? base : 0,
+    make: (h) => {
+      const dane = eventDef('kradziez')!.make(h);
+      const sprawca = dane && !dom(h) ? glodnyMieszkaniec(h) : null;
+      return sprawca ? { ...dane, p: osobaKarty(sprawca), lok: sprawca.id } : dane;
+    },
+    text: (_h, d) =>
+      d.lok
+        ? `Ktoś wyniósł nocą z piwnicy w budynku ${d.b} Jedzenie ${d.loss}. Ślady prowadzą na waszą klatkę, a wszyscy wiedzą, kto od kilku dni je za mało: ${d.p.name}.`
+        : null,
+    // sprawca z klatki: wyrzucony wychodzi bramą, a nowy wybór daje mu jeść z kotła (zamiast sądu i wyrzucenia)
+    choices: (h, d, base) => {
+      if (!d.lok) return base;
+      const p = d.p;
+      const jest = !!h.lokator(d.lok);
+      const wyrzucenie = base.length - 2;
+      return [
+        ...base.slice(0, wyrzucenie),
+        {
+          ...base[wyrzucenie],
+          ok: jest,
+          run: () => {
+            h.wyrzuc(d.lok);
+            h.mood(-2, -2);
+          },
+        },
+        {
+          label: `Dać ${g(p, 'mu', 'jej')} jeść z kotła`,
+          ok: jest && h.res.jedzenie >= 2,
+          run: () => {
+            h.addRes('jedzenie', -2);
+            h.moodOf(d.lok, g(p, 'Najadł się z kotła', 'Najadła się z kotła'), 6, 24);
+            h.mood(1, 0);
+            h.log(`${p.name} ${g(p, 'zjadł', 'zjadła')} miskę z kotła, pierwszy raz od kilku dni do syta.`);
+          },
+        },
+        base[wyrzucenie + 1],
+      ];
+    },
+  },
   // dwoje losowych z zarządu i „pierwszy od upadku” (upadek trwał 25 lat): wróci z parami z generatora mieszkańców
   { id: 'wesele', when: ['dzien', 'wieczor'], w: () => 0 },
   {
     id: 'odejscie',
     when: ['dzien', 'wieczor'],
+    // ostatnia osoba zarządu nie wychodzi kartą: gra, która nie umie się skończyć (wyjście bramą jej nie kasuje)
+    w: (h, base) => (h.alive().length < 2 ? 0 : base),
     text: (h, d) => {
       const p = h.spec(d.p);
       return dom(h) && p ? `${p.name} mówi, że na sąsiedniej ulicy jest lepiej i chce się wyprowadzić.` : null;
     },
-    // odchodzi z rdzenia; w M1 rdzeń nie jest liczony drugi raz wśród mieszkańców
+    // odchodzi z rdzenia bramą (nie znika); w M1 rdzeń nie jest liczony drugi raz wśród mieszkańców
     choices: (h, d, base) => [
       ...base.slice(0, 1),
       {
@@ -349,7 +537,7 @@ export const OLD_EVENTS: OldEvent[] = [
         run: () => {
           const p = h.spec(d.p);
           if (!p) return;
-          h.personLeaves(p);
+          h.wyrzuc(p.id);
           h.log(`${p.name} ${g(p, 'odszedł', 'odeszła')} ${dom(h) ? 'z ulicy' : 'z osiedla'}.`, true);
         },
       },

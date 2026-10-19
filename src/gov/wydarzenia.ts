@@ -17,7 +17,12 @@
    Mieszkańcy siedziby z osobą z generatora (`GovInput.lokatorzy`) wchodzą do hosta jako `lokatorzy()` i `lokator(id)`,
    w kopiach; bez generatora lista jest pusta. Skutki na ludziach: `awansuj(id)` (mieszkaniec do zarządu), `wyrzuc(id)`
    (mieszkaniec albo osoba zarządu wychodzi bramą, od razu znika z `alive()`) i `sprawdz(id, tile)` (osoba zarządu idzie
-   na kafelek na 10 minut gry); idą do GovEffects.awans, .wyrzuc i .sprawdz, bez powtórzeń tego samego id. */
+   na kafelek na 10 minut gry); idą do GovEffects.awans, .wyrzuc i .sprawdz, bez powtórzeń tego samego id.
+   Odstęp między powtórkami karty z nakładki (`OldEvent.gap`, np. kradzież co 48 godzin gry) idzie do `GEventDef.gap`.
+   Wybór bohatera karty z ludzi zarządu: `zarzad()` (wszyscy, bez tych, co wychodzą), `nieSpia()` (czuwający) i
+   `rested()` oraz `doSprawdzenia()` (najbardziej wypoczęta; do sprawdzania bez warty, wyprawy, snu i zabiegu), a
+   „Sprawdzić” bierze kafelek z `kafelekPrzySiatce()` (GovInput.strony albo największa dziura); `moodOf` daje jednej
+   osobie chwilowy nastrój przez GovEffects.moods. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -112,6 +117,7 @@ export const M1_EVENTS: GEventDef[] = [
       when: o.when,
       tryby: o.tryby,
       first: o.first,
+      gap: o.gap,
       w: w ? (h) => w(h, d.w(h)) : d.w,
       make: o.make ?? d.make,
       title: (h, x) => {
@@ -146,6 +152,14 @@ export const M1_EVENTS: GEventDef[] = [
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
 // „Słoik od sąsiadki” z M1 to teraz dym z komina: stary zapis z tym oknem otwartym albo już zamkniętym działa dalej
 byId.set('sasiadka', byId.get('dym')!);
+
+/** to samo co w wejściu, ale z własnymi obiektami w środku */
+const kopiaOsoby = (p: GovPerson): GovPerson => ({
+  ...p,
+  skills: { ...p.skills },
+  traits: [...p.traits],
+  needs: { ...p.needs },
+});
 
 const toPerson = (p: GovPerson): Person => ({
   id: p.id,
@@ -193,6 +207,18 @@ export function makeHost(
     if (key) addStock(i, fx, key, v);
   };
   const nd = nightDay(i);
+  const odchodzi = (p: GovPerson) => fx.leave.includes(p.id) || !!fx.wyrzuc?.includes(p.id);
+  /** osoba zarządu, która nie śpi, nie jest na wyprawie (ani w nocnym planie wypraw) i nie wychodzi */
+  const czuwa = (p: GovPerson) => !p.asleep && !p.away && !away.has(p.id) && !odchodzi(p);
+  /** osoba na posterunku warty: z odczytu symulacji, z menu albo z zatwierdzonej karty nocy tej nocy */
+  const naWarcie = (p: GovPerson) =>
+    !!p.post ||
+    p.job === 'guard' ||
+    !!i.guards?.some((g) => g.id === p.id) ||
+    (!!st.night?.confirmed && st.night.day === nd && !!st.night.assign[p.id]?.startsWith('warta:'));
+  /** najbardziej wypoczęta z osób, które przeszły filtr; przy remisie niższe id */
+  const najbardziejWypoczeta = (ok: (p: GovPerson) => boolean): GovPerson | null =>
+    [...i.people].filter(ok).sort((a, b) => b.needs.rest - a.needs.rest || (a.id < b.id ? -1 : 1))[0] ?? null;
   const h: GovHost = {
     rng: rngOf(st.rng),
     // Fisher-Yates z ziarna zarządu: ten sam wynik w każdym silniku JS (sort z losowym porównaniem daje różne)
@@ -297,10 +323,16 @@ export function makeHost(
       for (const p of i.people) addNeeds(fx, p.id, d);
     },
     needsOf: (id, d) => addNeeds(fx, id, d),
-    rested: () =>
-      [...i.people]
-        .filter((p) => !p.asleep && !away.has(p.id))
-        .sort((a, b) => b.needs.rest - a.needs.rest || (a.id < b.id ? -1 : 1))[0] ?? null,
+    rested: () => najbardziejWypoczeta(czuwa),
+    zarzad: () => i.people.filter((p) => !odchodzi(p)).map(kopiaOsoby),
+    nieSpia: () => i.people.filter(czuwa).map(kopiaOsoby),
+    // bez zabiegu: ugryziona osoba (gorączka, amputacja) i ta, która właśnie operuje, zostają przy sobie
+    doSprawdzenia: () => najbardziejWypoczeta((p) => czuwa(p) && !naWarcie(p) && !p.bitten && p.job !== 'amputate'),
+    kafelekPrzySiatce: (strona) =>
+      i.strony?.[strona] ?? fenceOf(i, fx.patch).holes.find((x) => x.tiles?.length)?.tiles?.[0] ?? null,
+    moodOf: (id, why, d, hours) => {
+      fx.moods.push({ id, why, d, hours });
+    },
     flag: (k) => st.flags[k],
     setFlag: (k) => {
       st.flags[k] = true;

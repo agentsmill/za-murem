@@ -86,6 +86,9 @@ export interface GovHole {
   size: number;
   /** nazwa miejsca do tekstów, np. „przy garażach” (po angielsku „by the garages”) */
   name?: Tx;
+  /** kafelki dziury (numery kafelków mapy, rosnąco), skąd karta „Sprawdzić” bierze miejsce, gdy nie zna stron
+      (`GovInput.strony`); symulacja je podaje, atrapy w testach nie muszą */
+  tiles?: number[];
 }
 
 export interface GovFence {
@@ -201,6 +204,11 @@ export interface GovInput {
   /** ilu ludzi mieszkało w kwadracie domu w 2021 roku według NSP; z tego liczy się cel drogi ludnościowej, bez pola
       (albo z liczbą bez sensu) cel to 250 */
   ludnosc2021?: number;
+  /** strony świata dla kart „Krzyk z bloku obok” i „Hałas za garażami”: kafelek podwórka przy siatce od strony
+      najbliższych garaży (do 150 m od siedziby) i od strony najbliższego budynku mieszkalnego za siatką (do 120 m),
+      numer kafelka jak w `GovHole.tiles` (y * rozmiar + x). Liczy je `govInput` raz na kształt siatki; strony, których
+      świat nie ma, nie występują, a bez pola karta bierze największą dziurę (albo nie pozwala sprawdzić) */
+  strony?: { garaze?: number; blok?: number };
   /** teren: ile budynków wspólny płot dołączył do naszego obwodu; bez pola droga terenu nie ma jak liczyć kamieni */
   teren?: { przylaczone: number };
   /** badania (src/sim/badania.ts): czy stoi pracownia, ile technologii z drzewka jest zbadanych (identyfikatory spoza

@@ -267,7 +267,11 @@ const WYDARZENIA: Record<string, EventEn> = {
     text: (h, d) => {
       const p = d.p;
       const z = zaimki(p);
-      const who = dom(h) ? `${p.name} ${h.neighbourEn() ?? 'from over the fence'}` : `${p.name} from ${budynek(d.b)}`;
+      const who = dom(h)
+        ? `${p.name} ${h.neighbourEn() ?? 'from over the fence'}`
+        : d.lok
+          ? `${p.name} from your stairwell`
+          : `${p.name} from ${budynek(d.b)}`;
       return `${who} let it slip by ${ogien(h)} that ${z.on} used to be ${zPrzedimkiem(zawod(p.prof))}. ${wielka(z.on)} kept quiet until now in case someone put ${z.go} to work.`;
     },
     labels: (_h, d) => {
@@ -319,17 +323,29 @@ const WYDARZENIA: Record<string, EventEn> = {
 
   kradziez: {
     title: () => 'Theft from the basement',
+    // sprawca z klatki (d.lok): głodny mieszkaniec z imieniem, zamiast mieszkania na parterze
     text: (_h, d) =>
-      `Overnight, someone made off with ${d.loss} food from the basement of ${budynek(d.b)}. The footprints lead to a ground-floor flat.`,
-    labels: (h) => [
+      d.lok
+        ? `Overnight, someone made off with ${d.loss} food from the basement of ${budynek(d.b)}. The footprints lead to your stairwell, and everyone knows who has been eating too little for days: ${d.p.name}.`
+        : `Overnight, someone made off with ${d.loss} food from the basement of ${budynek(d.b)}. The footprints lead to a ground-floor flat.`,
+    labels: (h, d) => [
       ...(h.law('u_sad') ? ['Residents’ court'] : []),
       'Throw the culprit off the estate',
+      ...(d.lok ? [`Feed ${zaimki(d.p).go} from the pot`] : []),
       'Turn a blind eye',
     ],
-    log: wpisy({
-      'Sąd koleżeński: sprawca odpracuje szkodę przy kuchni.':
-        'Residents’ court: the culprit will work off the damage in the kitchen.',
-    }),
+    log: wpisy(
+      {
+        'Sąd koleżeński: sprawca odpracuje szkodę przy kuchni.':
+          'Residents’ court: the culprit will work off the damage in the kitchen.',
+      },
+      [
+        [
+          /^(.+) (?:zjadł|zjadła) miskę z kotła, pierwszy raz od kilku dni do syta\.$/,
+          (m) => `${m[1]} had a bowl from the pot, the first proper meal in days.`,
+        ],
+      ],
+    ),
   },
 
   // w M1 nie przychodzi (waga 0 w nakładce), ale stary zapis może mieć to okno otwarte

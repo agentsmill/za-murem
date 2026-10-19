@@ -246,7 +246,7 @@ export class Atrapa {
         asleep: false,
         inside: true,
       });
-    this.people = this.people.filter((p) => !fx.leave.includes(p.id));
+    this.people = this.people.filter((p) => !fx.leave.includes(p.id) && !fx.wyrzuc?.includes(p.id));
     this.residents = Math.max(0, this.residents + fx.residents);
     if (fx.patch) this.fence.holes = [...this.fence.holes].sort((a, b) => b.size - a.size).slice(fx.patch);
     if (fx.guards.length) this.guards = fx.guards.map((g) => g.id);
