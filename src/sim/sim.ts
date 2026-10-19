@@ -13,7 +13,8 @@
    mnożnik z umiejętności (`tempoPracy`). Wędrowiec po rozmowie przy siatce może zostać zaproszony (praca `zapros`,
    `okazjaWerbunku`): przy zarządzie poniżej ZARZAD_MAX staje się osobą zarządu z id `w1`, `w2`…, przy pełnym tylko
    mieszkańcem w wolnym łóżku; osoba, cel i ukryte ugryzienie wędrowca idą z ziarna świata i numeru, a ze st.rng jest
-   tylko samo losowanie zaproszenia, więc gry bez takich rozmów biegną jak bez werbunku. */
+   tylko samo losowanie zaproszenia, więc gry bez takich rozmów biegną jak bez werbunku. Odczyt `ileZlecen(r)` liczy
+   czekające zlecenia rodzaju pracy na żądanie, poza stanem. */
 
 import { PROFS } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -4188,6 +4189,108 @@ export class Sim {
     }
   }
 
+  /** Ile zleceń rodzaju `r` czeka: liczba do nagłówka kolumny panelu pracy. Liczona na żądanie ze stanu, bez zapisu
+      i bez pamięci podręcznej w stanie (`sim.hash()` się nie zmienia), więc tania i bez ścieżek A*. Liczy zlecenia,
+      które szukacz rodzaju (`znajdzPrace`) wziąłby pod uwagę, bez zależności od osoby: nie patrzy na porę dnia,
+      bramkę pierwszego dnia, przełącznik „za siatkę”, szwendacza ani na to, czy ktoś tam dojdzie. Zlecenie, które ktoś
+      już robi (rezerwacja przez `job.target`, `by`), nie czeka. Co liczy rodzaj: ogień to gasnąca koza bez dokładającego
+      plus stosy drewna poza składem na naszym terenie; kuchnia 0 albo 1 (`shouldCook`); budowa to plany bez wykonawcy
+      i plan wspólnego płotu bez wykonawcy; naprawy to otwarte dziury bez łatającego i nienaprawione uszkodzenia
+      w naszych mieszkaniach bez naprawiającego; drwal to wolne drzewa (bez ściętych, rąbanych, suchego z samouczka
+      i na linii obwodu), a gdy drewna w zapasie jest tyle co próg albo więcej, 0; noszenie to stosy materiału
+      z `CARRY_MATS` leżące poza podwórkiem; warsztat to ile z trzech wyrobów (deski, części, dzida) według progów
+      i zapasów jest do zrobienia; szaber to nieprzeszukane pomieszczenia w siedzibie, w otwartych budynkach sąsiadów
+      (poza mieszkaniami lokatorów) i nieprzeszukane wraki. Rodzaj, którego nie ma w tej grze (`badania` do scalenia
+      gałęzi z badaniami), ma 0. */
+  ileZlecen(r: RodzajPracy): number {
+    const st = this.st;
+    const size = this.w.size;
+    if (!WPISY[r].widoczny(st)) return 0;
+    switch (r) {
+      case 'ogien': {
+        const koza = this.koza();
+        const sklad = this.house ? this.house.sklad : [];
+        let n = koza && koza.fuel < BURN_TICKS && koza.by < 0 ? 1 : 0;
+        for (const t of st.things)
+          if (t.kind === 'drewno' && t.n > 0 && t.by < 0 && this.nasza(t) && !sklad.includes(t.y * size + t.x)) n++;
+        return n;
+      }
+      case 'kuchnia':
+        return this.shouldCook() ? 1 : 0;
+      case 'budowa': {
+        let n = st.builds.filter((b) => b.by < 0).length;
+        const plan = st.plot?.plan;
+        if (plan) {
+          const holder = plan.by >= 0 ? st.pawns.find((q) => q.id === plan.by) : undefined;
+          if (holder?.job?.t !== 'plot') n++;
+        }
+        return n;
+      }
+      case 'naprawy': {
+        let n = (st.fence?.holes ?? []).filter(
+          (h) => h.patch <= 0 && !st.pawns.some((q) => q.job?.t === 'patch' && q.job.target === h.id),
+        ).length;
+        st.damage.forEach((d, k) => {
+          if (d.fixed || !st.apts.find((a) => a.apt === d.apt)?.ours) return;
+          if (!st.pawns.some((q) => q.job?.t === 'repair' && q.job.target === k)) n++;
+        });
+        return n;
+      }
+      case 'drwal': {
+        if (this.zapasDrewna() >= progi(st).drewno) return 0;
+        const felled = new Set(st.felled);
+        const zajete = new Set<number>();
+        for (const q of st.pawns) if (q.job?.t === 'chop') zajete.add(q.job.target);
+        const suche = st.tut.step >= 0 && st.tut.step <= TUT_STEPS.indexOf('sciete') ? this.dry : -1;
+        let n = 0;
+        for (let k = 0; k < this.w.trees.length; k++) {
+          if (k === suche || felled.has(k) || zajete.has(k)) continue;
+          if (!naLiniiObwodu(size, this.trunk[k], (i) => this.yardMask[i] === 1)) n++;
+        }
+        return n;
+      }
+      case 'noszenie': {
+        if (!st.fence) return 0;
+        let n = 0;
+        for (const t of st.things)
+          if (CARRY_MATS.has(t.kind) && t.n > 0 && t.by < 0 && !this.insideAt(t.y * size + t.x)) n++;
+        return n;
+      }
+      case 'warsztat':
+        return (this.warsztatDeski() ? 1 : 0) + (this.warsztatCzesci() ? 1 : 0) + (this.warsztatDzida() ? 1 : 0);
+      case 'szaber': {
+        const w = this.w;
+        let n = 0;
+        const h = this.house;
+        if (h)
+          for (const room of h.rooms) {
+            const g = room.apt >= 0 ? st.apts.find((a) => a.apt === room.apt) : undefined;
+            if (!g || !searchable(w, g) || g.searched.includes(room.id)) continue;
+            if (!st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room.id)) n++;
+          }
+        st.sasiedzi?.budynki.forEach((b, k) => {
+          if (!b.otwarty) return;
+          for (const room of wnetrze(w, b.bid).rooms)
+            if (
+              moznaPrzeszukac(st, w, k, room.id) === 'tak' &&
+              !st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === gid(k, room.id))
+            )
+              n++;
+        });
+        this.wrakiSwiata ??= wrecksOf(w);
+        for (const wr of this.wrakiSwiata) {
+          const t = wreckTile(wr, size);
+          if (wreckStage(st.wraki, t) !== 0 || crewAt(st, t)) continue;
+          if (!st.pawns.some((q) => q.job?.t === 'wreck' && q.job.target === t)) n++;
+        }
+        return n;
+      }
+      default:
+        // badania: liczbę zleceń podepnie gałąź badania razem z wpisem w WPISY (do tego czasu rodzaj jest ukryty)
+        return 0;
+    }
+  }
+
   /** Plan dnia mieszkańca: nocą śpi w swoim mieszkaniu, rano siedzi w domu, od WORK_START do 18:00 pracuje na
       podwórku (za siatką, nie przełazi dziurami), od 18:00 grzeje się przy ognisku, jeśli się pali, potem wraca do domu. */
   private plan(p: Pawn): void {
@@ -5749,50 +5852,58 @@ export class Sim {
     return n;
   }
 
-  /** Warsztat (tylko przy postawionym warsztacie), po jednej sztuce na pracę, według progów zapasów:
-      - deski z drewna, gdy desek jest mniej niż próg, a drewna w obrębie siatki (`zapasDrewna`: razem z kozą i tym,
-        co niosą) ponad próg drewna co najmniej na jedną sztukę, i to drewno leży na naszym terenie;
-      - części ze złomu, gdy części jest mniej niż próg, a złomu ponad rezerwę na łaty i plany (`rezerwaZlomu`)
-        co najmniej na jedną sztukę;
-      - dzida dla nieuzbrojonych, gdy bez broni jest więcej osób niż dzid w magazynie (z tymi w robocie), a dzid
-        jest mniej niż próg, i starczy na nią desek ponad rezerwę na łaty i plany (`rezerwaDesek`) oraz złomu ponad
-        `rezerwaZlomu`; dzida nie zjada więc materiału na otwartą dziurę ani na plan.
-      Prace w toku liczą się jak gotowe, więc dwie osoby przy dwóch warsztatach nie robią ponad próg. Próg 0
-      wyłącza robienie. */
+  /** Warsztat (tylko przy postawionym warsztacie), po jednej sztuce na pracę, według progów zapasów (warunki w
+      `warsztatDeski`, `warsztatCzesci` i `warsztatDzida`, te same, które liczy `ileZlecen`): kolejno deski, części, dzida.
+      Prace w toku liczą się jak gotowe, więc dwie osoby przy dwóch warsztatach nie robią ponad próg. Próg 0 wyłącza
+      robienie. */
   private startWarsztat(p: Pawn): boolean {
+    if (this.warsztatDeski() && this.startSaw(p, 'deski', 1, false)) return true;
+    if (this.warsztatCzesci() && this.startSaw(p, 'czesci', 1, false)) return true;
+    return this.warsztatDzida() && this.startCraft(p, false);
+  }
+
+  /** Warsztat zrobi deski: stoi warsztat, desek (z tymi w robocie) jest mniej niż próg, a drewna w obrębie siatki
+      (`zapasDrewna`: razem z kozą i tym, co niosą) jest ponad próg drewna co najmniej na jedną sztukę, i to drewno
+      leży na naszym terenie. */
+  private warsztatDeski(): boolean {
+    if (!this.hasBuilt('warsztat')) return false;
+    const pr = progi(this.st);
+    const deski = RECIPES.deski;
+    const wDeskach = this.wRobocie('saw', 'deski');
+    return (
+      this.zapasMat('deski') + wDeskach < pr.deski && this.zapasDrewna() - pr.drewno - wDeskach * deski.n >= deski.n
+    );
+  }
+
+  /** Warsztat zrobi części: stoi warsztat, części (z tymi w robocie) jest mniej niż próg, a złomu ponad rezerwę na łaty
+      i plany (`rezerwaZlomu`) starczy co najmniej na jedną sztukę. */
+  private warsztatCzesci(): boolean {
+    if (!this.hasBuilt('warsztat')) return false;
+    const czesci = RECIPES.czesci;
+    const wCzesciach = this.wRobocie('saw', 'czesci');
+    return (
+      this.zapasMat('czesci') + this.st.store.parts + wCzesciach < progi(this.st).czesci &&
+      this.zapasMat('zlom') - this.rezerwaZlomu() - wCzesciach * czesci.n >= czesci.n
+    );
+  }
+
+  /** Warsztat zrobi dzidę dla nieuzbrojonych: stoi warsztat, próg dzid ponad 0, bez broni jest więcej osób niż dzid
+      w magazynie (z tymi w robocie), dzid jest mniej niż próg, a deski ponad rezerwę na łaty i plany (`rezerwaDesek`)
+      oraz złom ponad `rezerwaZlomu` starczą na dzidę; dzida nie zjada więc materiału na otwartą dziurę ani na plan. */
+  private warsztatDzida(): boolean {
     const st = this.st;
     if (!this.hasBuilt('warsztat')) return false;
     const pr = progi(st);
-    const deski = RECIPES.deski;
-    const wDeskach = this.wRobocie('saw', 'deski');
-    if (
-      this.zapasMat('deski') + wDeskach < pr.deski &&
-      this.zapasDrewna() - pr.drewno - wDeskach * deski.n >= deski.n &&
-      this.startSaw(p, 'deski', 1, false)
-    )
-      return true;
-    const czesci = RECIPES.czesci;
-    const wCzesciach = this.wRobocie('saw', 'czesci');
-    if (
-      this.zapasMat('czesci') + st.store.parts + wCzesciach < pr.czesci &&
-      this.zapasMat('zlom') - this.rezerwaZlomu() - wCzesciach * czesci.n >= czesci.n &&
-      this.startSaw(p, 'czesci', 1, false)
-    )
-      return true;
-    if (pr.dzidy > 0) {
-      const bezBroni = st.pawns.filter((q) => q.kind === 'core' && !q.weapon && !this.graveyard.has(q.id)).length;
-      const wDzidach = this.wRobocie('craft');
-      const dzidy = (st.store.arms ?? []).filter((a) => a === 'dzida').length + wDzidach;
-      if (
-        bezBroni - dzidy > 0 &&
-        dzidy < pr.dzidy &&
-        this.zapasMat('deski') - this.rezerwaDesek() - wDzidach * SPEAR_BOARDS >= SPEAR_BOARDS &&
-        this.zapasMat('zlom') - this.rezerwaZlomu() - wDzidach * SPEAR_SCRAP >= SPEAR_SCRAP &&
-        this.startCraft(p, false)
-      )
-        return true;
-    }
-    return false;
+    if (pr.dzidy <= 0) return false;
+    const bezBroni = st.pawns.filter((q) => q.kind === 'core' && !q.weapon && !this.graveyard.has(q.id)).length;
+    const wDzidach = this.wRobocie('craft');
+    const dzidy = (st.store.arms ?? []).filter((a) => a === 'dzida').length + wDzidach;
+    return (
+      bezBroni - dzidy > 0 &&
+      dzidy < pr.dzidy &&
+      this.zapasMat('deski') - this.rezerwaDesek() - wDzidach * SPEAR_BOARDS >= SPEAR_BOARDS &&
+      this.zapasMat('zlom') - this.rezerwaZlomu() - wDzidach * SPEAR_SCRAP >= SPEAR_SCRAP
+    );
   }
 
   /* ---------- handlarz pod bramą (src/sim/handlarz.ts) ---------- */
