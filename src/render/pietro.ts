@@ -3,11 +3,20 @@
    kondygnacji, ułożona z szablonu parteru (buildInterior bez opcji home, więc bez mieszkania zarządu):
    - drzwi na brzegu obrysu stają się ścianą z oknem (wejścia są tylko na parterze);
    - w budynku innym niż blok i dom (sklep, szkoła, hala) ściany działowe i drzwi we wnętrzu stają się posadzką bez
-     pomieszczenia, bo piętro takiego budynku to otwarta przestrzeń; schody i klatka zostają.
+     pomieszczenia, bo piętro takiego budynku to otwarta przestrzeń; schody i klatka zostają;
+   - w domu rodzaje pomieszczeń są piętrowe (NA_PIETRZE_DOM): na górze nie ma kuchni, więc kuchnia parteru to sypialnia,
+     łazienka zostaje nad łazienką, a przedpokój jest korytarzem. Rodzaj pomieszczenia widać dziś tylko we frontach
+     ścian (paski kuchni, kafelki łazienki), więc bez tego piętro domu zdradzałoby kuchnię z parteru. Bloki bez zmian
+     (decyzja do przejrzenia przez Mateusza).
    Numery pomieszczeń rosną po budynkach. Czysta funkcja bez DOM, kształt jak SectionScene. */
 
 import { buildInterior, IN, type InteriorWorld, type RoomKind } from '../world/interior.ts';
 import type { SectionScene } from './section.ts';
+
+/** Rodzaje pomieszczeń domu na piętrze (spec, „Co widać na piętrze”): kuchnia i pokój dzienny z parteru to sypialnie
+    (pokoje), pokoje zostają pokojami, łazienka łazienką, a przedpokój korytarzem (jedyny rodzaj korytarza w domu to
+    `przedpokoj`: `klatka` zostawia posadzkę odkrytą, a w domu schodów nie ma). */
+export const NA_PIETRZE_DOM: Readonly<Partial<Record<RoomKind, RoomKind>>> = { kuchnia: 'pokoj' };
 
 /** brzeg obrysu budynku id: któryś z czterech sąsiadów nie należy do budynku albo kafelek leży na brzegu mapy
     (jak isEdge w src/world/interior.ts) */
@@ -51,7 +60,7 @@ export function sectionPietra(w: InteriorWorld): SectionScene | null {
         room[i] = r;
       }
     for (const t of it.windows) windows.add(t);
-    for (const r of it.rooms) kinds.push(r.kind);
+    for (const r of it.rooms) kinds.push(b.cls === 'dom' ? (NA_PIETRZE_DOM[r.kind] ?? r.kind) : r.kind);
     otwarte.add(b.id);
   }
   return {

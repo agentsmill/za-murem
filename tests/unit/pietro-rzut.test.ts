@@ -150,6 +150,44 @@ describe('scena typowego piętra', () => {
     expect(kindy.has('klatka')).toBe(false);
   });
 
+  it('dom: na piętrze kuchnia z parteru to sypialnia, łazienka i przedpokój zostają, a bloki mają rodzaje jak parter', () => {
+    // Lanciego z flagą: 16 domów z trzema kondygnacjami z danych i bloki
+    const w = demoSwiat('lanciego', true);
+    const s = scena('lanciego', true)!;
+    const domy = new Set<string>();
+    let kuchnieParteruDomow = 0;
+    let kuchnieBlokow = 0;
+    let base = 0;
+    // numery pomieszczeń rosną po budynkach od dwóch kondygnacji w kolejności świata (sectionPietra)
+    for (const b of w.buildings.filter((q) => q.levels >= 2)) {
+      const parter = buildInterior(w, b.id);
+      for (const r of parter.rooms) {
+        const naPietrze = s.kinds[base + r.id];
+        if (b.cls === 'dom') {
+          domy.add(naPietrze);
+          if (r.kind === 'kuchnia') {
+            kuchnieParteruDomow++;
+            expect(naPietrze).toBe('pokoj');
+          } else expect(naPietrze).toBe(r.kind);
+        } else {
+          if (b.cls === 'blok' && r.kind === 'kuchnia') kuchnieBlokow++;
+          expect(naPietrze).toBe(r.kind);
+        }
+      }
+      base += parter.rooms.length;
+    }
+    expect(s.kinds).toHaveLength(base);
+    // test niczego by nie sprawdzał bez kuchni w domach parteru i w blokach
+    expect(kuchnieParteruDomow).toBeGreaterThan(0);
+    expect(kuchnieBlokow).toBeGreaterThan(0);
+    // dom na piętrze: pokoje (z kuchni też), łazienki i przedpokoje, bez kuchni i klatki
+    expect(domy.has('kuchnia')).toBe(false);
+    expect(domy.has('klatka')).toBe(false);
+    expect(domy.has('pokoj')).toBe(true);
+    expect(domy.has('lazienka')).toBe(true);
+    expect(domy.has('przedpokoj')).toBe(true);
+  });
+
   it('budynek inny niż blok i dom nie ma ścian działowych', () => {
     const g: Geo = {
       c: [0, 0],
