@@ -629,7 +629,9 @@ describe('Tryb zombie: ugryzienie wędrowca', () => {
    wyłączony wracają dokładnie dawne wartości (mock 1efcc694, 3c818c59; Przymorze b1cf8d4c; Zielonki 2219d72d); i jeszcze
    raz po decyzji kontrolera z 19.10.2026, że ścinanie z automatu za siatką kończy się wniesieniem całego drewna z drzewa
    (`haulOn` bez polecenia): zmienia skróty trybu zwykłego, a z dawnym `haulOn` (tylko z polecenia) wracają wartości
-   z poprzedniego zdania (mock bbf6d867, 4b0de639; Przymorze da778c72; Zielonki 271ad242), tryb zombie bez zmian. */
+   z poprzedniego zdania (mock bbf6d867, 4b0de639; Przymorze da778c72; Zielonki 271ad242), tryb zombie bez zmian; i jeszcze
+   raz po warunku, że Drwal nie rusza do drzew za siatką, gdy w składzie nie ma miejsca na ich drewno (`startDrwal`): bez
+   tego warunku wracają wartości z poprzednich dwóch zdań (mock 25337290, 8caed666; Przymorze 9f9e2962; Zielonki b4f9ea8f). */
 describe('Gra bez rozmów z wędrowcem', () => {
   /** gra z obcymi przez trzy doby bez żadnego polecenia (skróty: komentarz nad blokiem) */
   const bez = (world: World, seed: number, opts: Partial<SimOpts>) => {
@@ -645,10 +647,10 @@ describe('Gra bez rozmów z wędrowcem', () => {
   it('ten sam skrót co przed zmianą, mimo że wędrowcy przychodzą i odchodzą', () => {
     const a = bez(w, 3, { core: 2 });
     expect(a.wedrowcow).toBeGreaterThanOrEqual(3);
-    expect(a.hash).toBe('25337290');
+    expect(a.hash).toBe('11b2b8b3');
     expect(a.st.obcy!.rozmowa).toBeUndefined();
     expect('werbunek' in a.st.obcy!).toBe(false);
-    expect(bez(w, 7, { core: 4 }).hash).toBe('8caed666');
+    expect(bez(w, 7, { core: 4 }).hash).toBe('ce9fc89e');
     expect(bez(w, 3, { core: 4, mode: 'zombie' }).hash).toBe('07139a8c');
   });
 
@@ -657,8 +659,8 @@ describe('Gra bez rozmów z wędrowcem', () => {
     // różnica wypada w dobie 3 przed 8:00: Szaber (automat pracy ludzi) przeszukuje pomieszczenie, a przeszukanie z
     // gałęzi `badania` losuje książkę i dopisuje do stanu `books` i `bookLog`. Poza tymi polami stan w tym ticku jest
     // ten sam co przed scaleniem; werbunek nic tu nie zmienia (przebieg bez rozmów).
-    expect(bez(swiezy('przymorze'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('9f9e2962');
-    expect(bez(swiezy('zielonki'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('b4f9ea8f');
+    expect(bez(swiezy('przymorze'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('edbb0234');
+    expect(bez(swiezy('zielonki'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('59c8df21');
   });
 });
 
@@ -789,8 +791,8 @@ describe('Wędrowiec czeka po rozmowie', () => {
       for (let k = 0; k < 3 * TICKS_PER_DAY; k++) sim.step();
       return sim.hash();
     };
-    expect(bez(w, 3, { core: 2 })).toBe('25337290');
-    expect(bez(w, 7, { core: 4 })).toBe('8caed666');
+    expect(bez(w, 3, { core: 2 })).toBe('11b2b8b3');
+    expect(bez(w, 7, { core: 4 })).toBe('ce9fc89e');
   });
 });
 

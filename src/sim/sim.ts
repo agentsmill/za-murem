@@ -3160,10 +3160,13 @@ export class Sim {
   /** Drwal: najbliższe wolne drzewo, gdy drewna w zapasie jest mniej niż próg. Pomija: ścięte, drzewa, które ktoś
       już rąbie (rezerwacja przez `job.target`, więc dwóch drwali nie bierze tego samego), suche drzewo z samouczka
       przed końcem jego kroku „ściąć”, drzewa na linii obwodu (ich pień po ścięciu zamienia się w kafelek siatki, który
-      da się przebić) i takie, do których nie wolno iść bez polecenia (`mozeTam`) albo przy których jest szwendacz. */
+      da się przebić) i takie, do których nie wolno iść bez polecenia (`mozeTam`) albo przy których jest szwendacz.
+      Drzewa za siatką też, gdy w składzie nie ma miejsca (`dropTile`): ścięte drewno zostałoby na ulicy, a próg liczy
+      tylko drewno w obrębie siatki, więc zapas by nie rósł i drwal rąbałby drzewo za drzewem. */
   private startDrwal(p: Pawn): boolean {
     const st = this.st;
     if (this.zapasDrewna() >= progi(st).drewno) return false;
+    const brakMiejsca = this.dropTile(p) < 0;
     const felled = new Set(st.felled);
     const zajete = new Set<number>();
     for (const q of st.pawns) if (q.job?.t === 'chop') zajete.add(q.job.target);
@@ -3175,6 +3178,7 @@ export class Sim {
       if (k === suche || felled.has(k) || zajete.has(k)) continue;
       const t = this.trunk[k];
       if (!this.mozeTam(p, t) || naLinii(t) || this.zagrozone(t)) continue;
+      if (brakMiejsca && !this.naszTeren(t)) continue;
       kandydaci.push([this.dist2(p, t), k]);
     }
     kandydaci.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -3388,6 +3392,18 @@ export class Sim {
       if (pile ? pile.n < STACK : !this.thingAt(i % size, Math.floor(i / size))) return i;
     }
     return -1;
+  }
+
+  /** czy w składzie jest miejsce na drewno, bez względu na osobę (`dropTile` dodaje, że dany pionek tam dojdzie) */
+  private skladMaMiejsce(): boolean {
+    const h = this.house;
+    if (!h) return false;
+    const size = this.w.size;
+    return h.sklad.some((i) => {
+      if (this.coreBlocked[i]) return false;
+      const pile = this.pileAt(i);
+      return pile ? pile.n < STACK : !this.thingAt(i % size, Math.floor(i / size));
+    });
   }
 
   /** dokłada drewno na kafelek (do stosu, który tam leży) */
@@ -4482,7 +4498,8 @@ export class Sim {
       plus stosy drewna poza składem na naszym terenie; kuchnia 0 albo 1 (`shouldCook`); budowa to plany bez wykonawcy
       i plan wspólnego płotu bez wykonawcy; naprawy to otwarte dziury bez łatającego i nienaprawione uszkodzenia
       w naszych mieszkaniach bez naprawiającego; drwal to wolne drzewa (bez ściętych, rąbanych, suchego z samouczka
-      i na linii obwodu), a gdy drewna w zapasie jest tyle co próg albo więcej, 0; noszenie to stosy materiału
+      i na linii obwodu, a drzewa za siatką tylko gdy w składzie jest miejsce na drewno), a gdy drewna w zapasie jest tyle
+      co próg albo więcej, 0; noszenie to stosy materiału
       z `CARRY_MATS` leżące poza podwórkiem; warsztat to ile z trzech wyrobów (deski, części, dzida) według progów
       i zapasów jest do zrobienia (progi dzid, desek i części liczą same predykaty); szaber to nieprzeszukane
       pomieszczenia w siedzibie, w otwartych budynkach sąsiadów (poza mieszkaniami lokatorów) i nieprzeszukane wraki.
@@ -4527,6 +4544,8 @@ export class Sim {
       }
       case 'drwal': {
         if (this.zapasDrewna() >= progi(st).drewno) return 0;
+        // drzewa za siatką czekają tylko wtedy, gdy w składzie jest miejsce na ich drewno (`startDrwal`)
+        const naZewnatrz = poza && this.skladMaMiejsce();
         const felled = new Set(st.felled);
         const zajete = new Set<number>();
         for (const q of st.pawns) if (q.job?.t === 'chop') zajete.add(q.job.target);
@@ -4534,7 +4553,7 @@ export class Sim {
         let n = 0;
         for (let k = 0; k < this.w.trees.length; k++) {
           if (k === suche || felled.has(k) || zajete.has(k)) continue;
-          if (!poza && !this.naszTeren(this.trunk[k])) continue;
+          if (!naZewnatrz && !this.naszTeren(this.trunk[k])) continue;
           if (!naLiniiObwodu(size, this.trunk[k], (i) => this.yardMask[i] === 1)) n++;
         }
         return n;

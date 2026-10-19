@@ -30,6 +30,7 @@ import {
   PATCH_TICKS,
   type Pawn,
   Sim,
+  STACK,
   spawnZombie,
   type Thing,
   trunkOf,
@@ -479,6 +480,49 @@ describe('drwal: drewno zza siatki z automatu', () => {
       expect(s.naszTeren(kafelek(sim, p)), `krok ${n}`).toBe(true);
     }
     expect(przyPniu(sim, pien)).toBe(zostalo);
+  });
+
+  it('pełny skład: Drwal nie bierze drzew za siatką (drewno nie miałoby gdzie trafić), drzewa w podwórku tak', () => {
+    const { sim, p } = scena({ zaSiatke: true, rodzaje: ['drwal'] });
+    const s = prv(sim);
+    // próg ponad pojemność składu, żeby to nie zapas zatrzymywał Drwala
+    sim.push({ t: 'prog', ids: [], co: 'drewno', n: 300 });
+    sim.step();
+    const zMiejscem = sim.ileZlecen('drwal');
+    for (const i of sim.house!.sklad) s.addWood(i, STACK);
+    expect(s.zapasDrewna()).toBeLessThan(progi(sim.st).drewno);
+    const pelny = sim.ileZlecen('drwal');
+    // tyle, co bez przełącznika: tylko drzewa na naszym terenie
+    expect(pelny).toBeGreaterThan(0);
+    expect(pelny).toBeLessThan(zMiejscem);
+    const bez = scena({ rodzaje: ['drwal'] });
+    bez.sim.push({ t: 'prog', ids: [], co: 'drewno', n: 300 });
+    bez.sim.step();
+    expect(pelny).toBe(bez.sim.ileZlecen('drwal'));
+    // w biegu każde ścinane drzewo leży na naszym terenie
+    odnow(sim, p);
+    const cele: number[] = [];
+    const org = s.setJob.bind(s);
+    vi.spyOn(s, 'setJob').mockImplementation((pp, j, keep) => {
+      if (pp === p && j.t === 'chop') cele.push(j.target);
+      org(pp, j, keep);
+    });
+    const sklad = sim.house!.sklad;
+    const stos = (i: number) => sim.st.things.find((t) => t.kind === 'drewno' && t.y * s.w.size + t.x === i);
+    for (let n = 0; n < 3000; n++) {
+      // skład zostaje pełny (koza zjada z niego drewno)
+      if (n % 20 === 0) for (const i of sklad) s.addWood(i, Math.max(0, STACK - (stos(i)?.n ?? 0)));
+      sim.step();
+    }
+    expect(cele.length).toBeGreaterThan(0);
+    for (const k of cele) expect(s.naszTeren(s.trunk[k]), `drzewo ${k}`).toBe(true);
+    // po zrobieniu miejsca w składzie drzewa za siatką wracają do zleceń
+    const wciazPelny = sim.ileZlecen('drwal');
+    for (const i of sklad) {
+      const pile = stos(i);
+      if (pile) pile.n = 0;
+    }
+    expect(sim.ileZlecen('drwal')).toBeGreaterThan(wciazPelny);
   });
 
   it('bez przełącznika ścinanie zostaje na naszym terenie: automat nie bierze drzewa za siatką', () => {
