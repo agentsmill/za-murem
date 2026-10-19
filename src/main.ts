@@ -3179,12 +3179,8 @@ function placeGhost() {
 }
 
 $('btnBuild').addEventListener('click', () => openBuild());
-$('btnPraca').addEventListener('click', (e) => {
-  openPraca();
-  // klik myszą albo stuknięcie nie zostawia fokusu na przycisku (spacja ma pauzować grę, a nie przełączać panel);
-  // z klawiatury (Enter, spacja na przycisku: detail 0) fokus zostaje
-  if (e.detail > 0) $('btnPraca').blur();
-});
+// fokus po kliknięciu myszą zdejmuje z przycisku wspólna obsługa paska (src/ui/fokus.ts, `oddajFokusPoKliknieciu`)
+$('btnPraca').addEventListener('click', () => openPraca());
 $('btnMiasto').addEventListener('click', () => openMiasto());
 $('btnResearch').addEventListener('click', () => openBadania());
 // „Pokaż” przy przybyszach: kamera od razu jedzie na środek grupy, bez zmiany przybliżenia

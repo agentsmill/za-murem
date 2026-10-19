@@ -14395,8 +14395,9 @@ function kwadratyShots(): Shot[] {
 
 /** Przyciski górnego paska i przybliżania (src/ui/fokus.ts) po kliknięciu myszą nie trzymają fokusu: Chromium daje go
     każdemu klikniętemu przyciskowi, a globalna obsługa klawiszy przepuszcza spację na przycisk w fokusie, więc spacja
-    klikałaby go drugi raz (przełączała Budowę, alarm, otwierała Menu) zamiast zatrzymać grę. Z klawiatury (Enter,
-    spacja po Tabie) fokus zostaje i przycisk działa jak zwykle. */
+    klikałaby go drugi raz (przełączała Budowę, Pracę, alarm, otwierała Menu) zamiast zatrzymać grę. Z klawiatury (Enter,
+    spacja po Tabie) fokus zostaje i przycisk działa jak zwykle. Przycisk „Praca” nie ma własnego zdejmowania fokusu:
+    oddaje go tą samą obsługą co reszta paska. */
 function pasekShots(): Shot[] {
   const fokus = (page: Page) =>
     page.evaluate(() => {
@@ -14407,6 +14408,7 @@ function pasekShots(): Shot[] {
     page.evaluate(() => ({
       tempo: window.zm!.speed(),
       budowa: window.zm!.buildPanel().open,
+      praca: window.zm!.pracaPanel().open,
       okno: !document.getElementById('modal')!.hidden,
       alarm: document.getElementById('btnAlarm')!.getAttribute('aria-pressed'),
     }));
@@ -14444,18 +14446,24 @@ function pasekShots(): Shot[] {
           ['#zHome', 'siedziba'],
         ] as const) {
           await page.click(sel);
-          await spacjaZatrzymuje(page, co, { okno: false, budowa: false });
+          await spacjaZatrzymuje(page, co, { okno: false, budowa: false, praca: false });
         }
         // alarm: kliknięcie włącza, spacja zatrzymuje grę, ale nie wyłącza alarmu
         await page.click('#btnAlarm');
         await page.waitForFunction(() => document.getElementById('btnAlarm')!.getAttribute('aria-pressed') === 'true');
-        await spacjaZatrzymuje(page, 'alarm', { alarm: 'true', okno: false });
+        await spacjaZatrzymuje(page, 'alarm', { alarm: 'true', okno: false, praca: false });
         // Budowa: kliknięcie otwiera panel, spacja zatrzymuje grę, ale go nie zamyka
         await page.click('#btnBuild');
         await page.waitForFunction(() => window.zm!.buildPanel().open);
-        await spacjaZatrzymuje(page, 'Budowa', { budowa: true, okno: false });
+        await spacjaZatrzymuje(page, 'Budowa', { budowa: true, okno: false, praca: false });
         await page.keyboard.press('Escape');
         await page.waitForFunction(() => !window.zm!.buildPanel().open);
+        // Praca: kliknięcie otwiera panel, spacja zatrzymuje grę, ale go nie zamyka (przycisk nie zachował fokusu)
+        await page.click('#btnPraca');
+        await page.waitForFunction(() => window.zm!.pracaPanel().open);
+        await spacjaZatrzymuje(page, 'Praca', { praca: true, budowa: false, okno: false });
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !window.zm!.pracaPanel().open);
         // Menu i Mapa miasta otwierają okno (gra staje), Esc je zamyka; okno nie oddaje fokusu przyciskowi
         for (const [sel, co] of [
           ['#btnMenu', 'Menu'],
@@ -14486,6 +14494,15 @@ function pasekShots(): Shot[] {
         const k = await stan(page);
         if (k.budowa || k.tempo !== 2)
           throw new Error(`spacja na Budowie z fokusem z klawiatury: ${JSON.stringify(k)} (miała zamknąć panel)`);
+        // to samo na przycisku „Praca”: Enter otwiera panel i zostawia mu fokus, spacja (klik na przycisku) go zamyka
+        await page.focus('#btnPraca');
+        await page.keyboard.press('Enter');
+        if (!(await stan(page)).praca || (await fokus(page)) !== 'button#btnPraca')
+          throw new Error('Enter na przycisku Praca nie otworzył panelu albo zabrał mu fokus');
+        await page.keyboard.press('Space');
+        const kp = await stan(page);
+        if (kp.praca || kp.tempo !== 2)
+          throw new Error(`spacja na Pracy z fokusem z klawiatury: ${JSON.stringify(kp)} (miała zamknąć panel)`);
         await page.screenshot({ path: path.join(OUT, 'pasek-fokus.png') });
       },
     },

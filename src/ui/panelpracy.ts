@@ -10,9 +10,10 @@
    razu także na pauzie.
 
    Fokus i klawisze gry. Mysz i dotyk nie zostawiają fokusu w panelu ani przy przycisku, którym go otwarto: `mousedown`
-   w panelu nie daje fokusu przyciskowi (klik i tak dojdzie), a każdy element, który go miał (komórka, ale też
-   #btnPraca po kliknięciu „Praca”), go traci, więc po kliknięciu spacja nadal pauzuje, a 1–4 ustawiają tempo
-   (przycisk w fokusie przejąłby spację jako klik, a komórka cyfry jako priorytet; main.ts zostawia spację przyciskom).
+   w panelu nie daje fokusu przyciskowi (klik i tak dojdzie), a każdy element panelu, który go miał (komórka), go traci,
+   więc po kliknięciu spacja nadal pauzuje, a 1–4 ustawiają tempo (komórka cyfry w fokusie przejęłaby cyfrę jako
+   priorytet; main.ts zostawia spację przyciskom). Przycisk „Praca” w górnym pasku oddaje fokus po kliknięciu myszą jak
+   każdy przycisk paska: robi to wspólna obsługa w src/ui/fokus.ts, panel nie ma na to własnego kodu.
    Fokus jest tylko przy obsłudze z klawiatury (Tab, strzałki): wtedy cyfry 0–4 na komórce ustawiają priorytet wprost,
    strzałki chodzą po tabeli, spacja i Enter zmieniają o jeden, a przebudowa DOM oddaje fokus temu samemu elementowi.
    O tym, czy ostatnia obsługa była z klawiatury, decyduje ostatnie zdarzenie na całej stronie (klawisz albo wskaźnik,
@@ -144,8 +145,7 @@ export class PracaPanel {
     this.render(v, en);
   }
 
-  /** po obsłudze myszą albo dotykiem w panelu nie zostaje fokus nigdzie: ani w panelu, ani na przycisku „Praca”, którym go
-      otwarto (patrz nagłówek pliku) */
+  /** po obsłudze myszą albo dotykiem w panelu nie zostaje fokus nigdzie (patrz nagłówek pliku) */
   private zdejmijFokus(): void {
     this.klawiatura = false;
     const f = document.activeElement;
