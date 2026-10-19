@@ -257,6 +257,8 @@ const SHOTS: Shot[] = [
   ...siecShots(),
   // Mapa miasta w grze: okolica z punktów OSM i stan miasta w zarządzie po starcie, opcja ?miasto=0
   ...miastoShots(),
+  // Piętra (etap 1, flaga ?pietra=1): przekrój wybranego piętra ze stropem, kafelek z listą, podpowiedzi
+  ...pietraShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -9587,6 +9589,274 @@ function miastoShots(): Shot[] {
         console.log(`  karta nocy, opcje z miejscami: ${z.join(' | ')}`);
         if (!z.length) throw new Error('karta nocy bez wyprawy do miejsca z okolicy (input() bez okolicy?)');
         await page.waitForTimeout(200);
+      },
+    },
+  ];
+}
+
+/**
+ * Widok pięter (etap 1, flaga ?pietra=1): przekrój wybranego piętra ze stropem zamiast parteru. Scenariusze wybierają
+ * piętro hakiem window.zm.pietro (jak klik na liście kafelka), a stan widoku sprawdzają, nie tylko fotografują.
+ */
+function pietraShots(): Shot[] {
+  /** wybór piętra i czekanie, aż dorysują się kawałki z przekrojem */
+  const wybierz = async (page: Page, L: number) => {
+    await page.evaluate((L) => window.zm!.pietro(L), L);
+    await waitIdle(page);
+  };
+  /** stan widoku pięter: hak gry, przekrój, zoom, naklejki stropu z PixelLab i tekst notki pod kafelkiem */
+  const stan = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const notka = document.getElementById('floorNote')!;
+      return {
+        ...zm.pietra(),
+        przekroj: zm.view.section,
+        zoom: Math.round(zm.view.cam.zoom * 100) / 100,
+        strop: zm.grafika()?.strop ?? null,
+        notka: notka.hidden ? '' : (notka.textContent ?? ''),
+      };
+    });
+  /** sprawdza, że wybrane jest piętro L, a przekrój jest (nie)widoczny; wypisuje i zwraca stan */
+  const sprawdz = async (page: Page, L: number, przekroj: boolean) => {
+    const st = await stan(page);
+    console.log(`  ${JSON.stringify(st)}`);
+    if (!st.wlaczone) throw new Error('flaga ?pietra=1 nie włączyła widoku pięter');
+    if (st.pietro !== L) throw new Error(`wybrane piętro ${st.pietro} zamiast ${L} (lista ${st.lista})`);
+    if (st.przekroj !== przekroj) throw new Error(`przekrój ${st.przekroj} zamiast ${przekroj} przy zoomie ${st.zoom}`);
+    return st;
+  };
+  /** pierwszy pionek zarządu na ekranie (współrzędne strony): stoi w obrysie siedziby, więc na piętrze jest pod stropem */
+  const pionekZarzadu = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+      const r = document.getElementById('stage')!.getBoundingClientRect();
+      const [x, y] = zm.screenOf(Math.floor(p.x) + 0.5, Math.floor(p.y) + 0.5);
+      return { x: x + r.x, y: y + r.y };
+    });
+  /** lista pięter i panel budowy: położenie, liczba pozycji i czy lista się przewija */
+  const lista = (page: Page) =>
+    page.evaluate(() => {
+      const r = (id: string) => {
+        const e = document.getElementById(id)!;
+        const b = e.getBoundingClientRect();
+        return { hidden: e.hidden, l: b.left, r: b.right, t: b.top, b: b.bottom };
+      };
+      const l = document.getElementById('floorList')!;
+      return {
+        lista: r('floorList'),
+        panel: r('buildPanel'),
+        pozycje: document.querySelectorAll('#floorList [data-pietro]').length,
+        w: innerWidth,
+        h: innerHeight,
+        przewija: l.scrollHeight > l.clientHeight,
+      };
+    });
+  /** Przymorze, piętro 2 z bliska, z grafiką z PixelLab albo (kod) z ?grafika=kod, czyli strop bez naklejek */
+  const przymorzeP2 = async (page: Page, base: string, kod: boolean) => {
+    await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75${kod ? '&grafika=kod' : ''}`);
+    await waitIdle(page);
+    await wybierz(page, 2);
+    const st = await sprawdz(page, 2, true);
+    if (kod && st.strop !== null) throw new Error('z ?grafika=kod strop wziął naklejki z PixelLab');
+    if (!kod && !st.strop) throw new Error('bez ?grafika=kod brak naklejek stropu z PixelLab (atlas strop.png)');
+  };
+  return [
+    // Przymorze, piętro 2 z bliska (zoom 0,75): bloki pod stropem, niższe budynki z dachem
+    { name: 'pietra-przymorze-p2', query: '', run: (page, base) => przymorzeP2(page, base, false) },
+    // to samo bez grafiki z PixelLab: strop bez naklejek (tło, ziarno i szwy z kodu)
+    { name: 'pietra-kod', query: '', run: (page, base) => przymorzeP2(page, base, true) },
+    // Lanciego, piętro 1 przy siedzibie (blok 10G)
+    {
+      name: 'pietra-lanciego-p1',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=lanciego&pietra=1&speed=0&cam=hq,0.85`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await sprawdz(page, 1, true);
+      },
+    },
+    // najwyższy blok Przymorza (nie na brzegu mapy), piętro 11: przekrój mają tylko budynki z więcej niż 11 kondygnacjami,
+    // reszta ma dach
+    {
+      name: 'pietra-wysoki-blok-p11',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.7`);
+        await waitIdle(page);
+        const blok = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const hq = w.buildings[w.hq];
+          const srodek = (b: typeof hq) => [(b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2];
+          const [hx, hy] = srodek(hq);
+          const odHq = (b: typeof hq) => Math.hypot(srodek(b)[0] - hx, srodek(b)[1] - hy);
+          // blok przy brzegu mapy zostawiłby pół kadru pustego; wśród reszty najwyższy, przy remisie najbliższy siedziby
+          const wewnatrz = (b: typeof hq) => b.x0 > 10 && b.y0 > 10 && b.x1 < w.size - 10 && b.y1 < w.size - 10;
+          const wysokie = w.buildings
+            .filter((b) => b.cls === 'blok' && b.levels > 11 && wewnatrz(b))
+            .sort((a, c) => c.levels - a.levels || odHq(a) - odHq(c));
+          const b = wysokie[0];
+          if (!b) return null;
+          const [x, y] = srodek(b);
+          zm.setCam(x, y, 0.7);
+          const nizsze = w.buildings.filter(
+            (q) => q.levels <= 11 && q.levels >= 2 && Math.hypot(srodek(q)[0] - x, srodek(q)[1] - y) < 40,
+          );
+          return {
+            id: b.id,
+            nazwa: b.name,
+            levels: b.levels,
+            wysokich: wysokie.length,
+            nizszychWPoblizu: nizsze.length,
+          };
+        });
+        console.log(`  najwyższy blok: ${JSON.stringify(blok)}`);
+        if (!blok) throw new Error('na Przymorzu nie ma bloku wyższego niż 11 kondygnacji z dala od brzegu mapy');
+        await waitIdle(page);
+        await wybierz(page, 11);
+        await sprawdz(page, 11, true);
+      },
+    },
+    // Zielonki, piętro 1: dom z awansem (druga kondygnacja z flagi) cały pod stropem, ze ścianami działowymi
+    {
+      name: 'pietra-zielonki-dom-p1',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=zielonki&pietra=1&speed=0&cam=hq,1.6`);
+        await waitIdle(page);
+        const dom = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const hq = w.buildings[w.hq];
+          const srodek = (b: typeof hq) => [(b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2];
+          const [hx, hy] = srodek(hq);
+          const daleko = (b: typeof hq) => Math.hypot(srodek(b)[0] - hx, srodek(b)[1] - hy);
+          // dom z drugą kondygnacją (z awansu, bo OSM jej tu nie podaje), najbliższy siedzibie, choćby siedziba sama
+          const domy = w.buildings
+            .filter((b) => b.cls === 'dom' && b.levels >= 2 && b.area >= 60)
+            .sort((a, c) => daleko(a) - daleko(c));
+          const b = domy[0];
+          if (!b) return null;
+          const [x, y] = srodek(b);
+          zm.setCam(x, y, 1.6);
+          return { id: b.id, siedziba: b.id === w.hq, levels: b.levels, pole: b.area, domow: domy.length };
+        });
+        console.log(`  dom: ${JSON.stringify(dom)}`);
+        if (!dom) throw new Error('w Zielonkach żaden dom nie ma piętra');
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await sprawdz(page, 1, true);
+      },
+    },
+    // kafelek „Piętro” z otwartą listą na komputerze (Przymorze, 17 pięter), piętro 2 wybrane
+    {
+      name: 'pietra-lista-pulpit',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.click('#btnFloor');
+        const l = await lista(page);
+        console.log(`  lista: ${JSON.stringify(l)}`);
+        if (l.lista.hidden) throw new Error('kliknięcie kafelka nie otworzyło listy pięter');
+        if (l.pozycje !== 17) throw new Error(`lista ma ${l.pozycje} pozycji zamiast 17`);
+        if (l.lista.r > l.w || l.lista.b > l.h || l.lista.l < 0) throw new Error('lista wystaje poza okno');
+      },
+    },
+    // to samo na telefonie 390 × 844 (dotknięcie kafelka)
+    {
+      name: 'pietra-lista-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.tap('#btnFloor');
+        const l = await lista(page);
+        console.log(`  lista: ${JSON.stringify(l)}`);
+        if (l.lista.hidden) throw new Error('dotknięcie kafelka nie otworzyło listy pięter');
+        if (l.pozycje !== 17) throw new Error(`lista ma ${l.pozycje} pozycji zamiast 17`);
+        if (l.lista.r > l.w || l.lista.b > l.h || l.lista.l < 0) throw new Error('lista wystaje poza okno');
+        await page.waitForTimeout(150);
+      },
+    },
+    // piętro 1 przy siedzibie: zarząd jest pod stropem, więc pod kafelkiem stoi „Zarząd jest na parterze”, a klik w obrys
+    // siedziby (w miejscu pionka zarządu) nic nie zaznacza i podpowiada to samo na dole
+    {
+      name: 'pietra-zarzad-parter',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=lanciego&pietra=1&speed=0&cam=hq,1`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await page.waitForTimeout(450); // pasek odświeża notkę co 200 ms
+        const st = await sprawdz(page, 1, true);
+        if (st.notka !== 'Zarząd jest na parterze') throw new Error(`notka pod kafelkiem: „${st.notka}”`);
+        const p = await pionekZarzadu(page);
+        await page.mouse.click(p.x, p.y);
+        await page.waitForTimeout(350); // podpowiedź trafia do paska przy odświeżeniu (co 200 ms)
+        const hint = await page.evaluate(() => document.getElementById('hint')!.textContent);
+        const karta = await page.evaluate(() => !document.getElementById('card')!.hidden);
+        console.log(`  klik w pionek zarządu pod stropem: podpowiedź „${hint}”, karta ${karta}`);
+        if (hint !== 'Zarząd jest na parterze')
+          throw new Error(`klik w pionek zarządu pod stropem: podpowiedź „${hint}”`);
+        if (karta) throw new Error('klik w pionek zarządu na piętrze otworzył kartę');
+      },
+    },
+    // to samo na telefonie: notka pod paskiem
+    {
+      name: 'pietra-zarzad-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=lanciego&pietra=1&speed=0&cam=hq,1`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await page.waitForTimeout(450);
+        const st = await sprawdz(page, 1, true);
+        if (st.notka !== 'Zarząd jest na parterze') throw new Error(`notka pod kafelkiem: „${st.notka}”`);
+      },
+    },
+    // piętro 2 z daleka (zoom 0,4, poniżej progu przekroju): dachy i „Przybliż, żeby zajrzeć na piętro”
+    {
+      name: 'pietra-daleko',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.4`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.waitForTimeout(450);
+        const st = await sprawdz(page, 2, false);
+        if (st.notka !== 'Przybliż, żeby zajrzeć na piętro') throw new Error(`notka pod kafelkiem: „${st.notka}”`);
+      },
+    },
+    // panel budowy otwarty razem z listą pięter: nie zasłaniają się
+    {
+      name: 'pietra-panel-budowy',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await page.keyboard.press('b');
+        await page.waitForSelector('#buildPanel .tile');
+        await page.waitForTimeout(300); // animacja wysuwania
+        await page.click('#btnFloor');
+        const l = await lista(page);
+        console.log(`  lista: ${JSON.stringify(l.lista)}, panel: ${JSON.stringify(l.panel)}`);
+        if (l.lista.hidden) throw new Error('lista pięter nie otworzyła się przy panelu budowy');
+        if (l.panel.hidden) throw new Error('panel budowy zamknął się po otwarciu listy pięter');
+        const zachodzi =
+          l.lista.l < l.panel.r && l.lista.r > l.panel.l && l.lista.t < l.panel.b && l.lista.b > l.panel.t;
+        if (zachodzi) throw new Error('lista pięter nachodzi na panel budowy');
+        await sprawdz(page, 1, true);
       },
     },
   ];
