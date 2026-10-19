@@ -159,14 +159,32 @@ export function przebieg(d: DanePrzebiegu, haki: HakiPrzebiegu = {}): string[] {
   return graj(d, haki).skroty;
 }
 
+/** zapis świata do skrótu: tablice typowane jako liczby po przecinku, Map i Set jako listy */
+const kanoniczny = (_klucz: string, v: unknown): unknown => {
+  if (ArrayBuffer.isView(v)) return Array.from(v as unknown as ArrayLike<number>).join(',');
+  if (v instanceof Map || v instanceof Set) return [...v];
+  return v;
+};
+
 /** skrót świata zaraz po zbudowaniu: kafelki, budynki, drzewa, wnętrze siedziby, siatka i reszta. Skrót stanu gry
     (sim.hash) świata nie obejmuje, a klient i serwer muszą budować ten sam świat z tych samych danych, więc tools/
     determinizm.ts porównuje też ten skrót: rozbieżność w nim to rozbieżność w buildWorld, nie w kroku symulacji. */
 export function skrotSwiata(swiat: World): string {
-  const kanoniczny = (_klucz: string, v: unknown): unknown => {
-    if (ArrayBuffer.isView(v)) return Array.from(v as unknown as ArrayLike<number>).join(',');
-    if (v instanceof Map || v instanceof Set) return [...v];
-    return v;
-  };
   return hashString(JSON.stringify(swiat, kanoniczny));
+}
+
+/** Skróty części świata, żeby rozbieżność skrotSwiata dała się nazwać: `kafelki` (teren, numery budynków, przejścia),
+    `budynki`, `drzewa` (pozycje z ułamkiem), `kat` (obrót mapy, liczba zmiennoprzecinkowa) i `reszta` (siedziba, wnętrze,
+    rzeczy na podwórku, siatka, stany mieszkań). Różny tylko `kat` albo `drzewa` to różnica ostatnich bitów liczb, a nie
+    innej mapy; różne `kafelki` to prawdziwie inny świat. */
+export function czesciSwiata(swiat: World): Record<'kafelki' | 'budynki' | 'drzewa' | 'kat' | 'reszta', string> {
+  const { terr, bid, blocked, buildings, trees, angle, ...reszta } = swiat;
+  const h = (v: unknown) => hashString(JSON.stringify(v, kanoniczny));
+  return {
+    kafelki: h([terr, bid, blocked]),
+    budynki: h(buildings),
+    drzewa: h(trees),
+    kat: h(angle),
+    reszta: h(reszta),
+  };
 }

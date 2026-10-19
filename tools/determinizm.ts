@@ -34,10 +34,18 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { type BrowserType, chromium, firefox, webkit } from '@playwright/test';
 import { build, createServer } from 'vite';
-import { NAGRYWANE, odkodujWywolania, pierwszaRoznica, type Wywolanie } from './determinizm/nagrywanie.ts';
-import { porownaj } from './determinizm/porownanie.ts';
+import {
+  NAGRYWANE,
+  odkodujWywolania,
+  pierwszaRoznica,
+  type SpisRoznic,
+  type Wywolanie,
+  type WywolanieJson,
+  zakodujWywolania,
+} from './determinizm/nagrywanie.ts';
+import { porownaj, roznicaTablic } from './determinizm/porownanie.ts';
 import { kodWyjscia, miejscaZeStosu } from './determinizm/raport.ts';
-import type { WynikNogi } from './determinizm/uruchom.ts';
+import type { Bieg, WynikNogi } from './determinizm/uruchom.ts';
 import { doParametrow, GODZINY_DOMYSLNE, SEED_DOMYSLNE, type Tryb, type Zlecenie } from './determinizm/zlecenie.ts';
 
 const KORZEN = path.resolve(import.meta.dirname, '..');
@@ -120,6 +128,8 @@ interface Noga {
   /** przyczyna braku i polecenie, które to uzupełni */
   brak?: string;
   licz(z: Zlecenie): Promise<WynikZAgentem>;
+  /** nagrane gdzie indziej wywołania Math policzone od nowa w tej nodze: spis różnic */
+  kontroluj(nagranie: WywolanieJson[]): Promise<SpisRoznic>;
   zamknij(): Promise<void>;
 }
 
@@ -130,6 +140,9 @@ const brakNogi = (id: string, etykieta: string, docelowa: boolean, brak: string)
   wersja: null,
   brak,
   licz: async () => {
+    throw new Error(`silnik ${id}: ${brak}`);
+  },
+  kontroluj: async () => {
     throw new Error(`silnik ${id}: ${brak}`);
   },
   zamknij: async () => {},
@@ -153,6 +166,19 @@ async function nogaNode(id: string, etykieta: string, docelowa: boolean, binarka
         timeout: LIMIT_MS,
       });
       return JSON.parse(wyjscie);
+    },
+    async kontroluj(nagranie) {
+      const plik = path.join(os.tmpdir(), `zm-kontrola-${process.pid}-${id}.json`);
+      fs.writeFileSync(plik, JSON.stringify(nagranie));
+      try {
+        const { stdout: wyjscie } = await execFileP(binarka, [NOGA_NODE, `--kontrola=${plik}`], {
+          maxBuffer: MAX_BUFOR,
+          timeout: LIMIT_MS,
+        });
+        return JSON.parse(wyjscie);
+      } finally {
+        fs.rmSync(plik, { force: true });
+      }
     },
     zamknij: async () => {},
   };
@@ -232,6 +258,18 @@ async function nogaPrzegladarka(typ: BrowserType, id: string, etykieta: string):
         await kontekst.close();
       }
     },
+    async kontroluj(nagranie) {
+      const { adres } = await serwerVite();
+      const kontekst = await przegladarka.newContext();
+      try {
+        const strona = await kontekst.newPage();
+        await strona.goto(`${adres}tools/determinizm/strona.html?akcja=kontrola`);
+        await strona.waitForFunction(() => window.kontroluj, null, { timeout: LIMIT_MS, polling: 250 });
+        return await strona.evaluate((n) => window.kontroluj?.(n) ?? {}, nagranie);
+      } finally {
+        await kontekst.close();
+      }
+    },
     zamknij: () => przegladarka.close(),
   };
 }
@@ -278,6 +316,12 @@ async function nogaJsc(): Promise<Noga> {
         dane,
         `globalThis.ZLECENIE = ${JSON.stringify(z)};\nglobalThis.DANE = ${JSON.stringify({ geo: demo.geo, street: demo.street })};\n`,
       );
+      const { stdout } = await execFileP(JSC, [dane, paczka], { maxBuffer: MAX_BUFOR, timeout: LIMIT_MS });
+      return JSON.parse(stdout.trim().split('\n').pop() ?? '');
+    },
+    async kontroluj(nagranie) {
+      const dane = path.join(katalog, `dane-${n++}.mjs`);
+      fs.writeFileSync(dane, `globalThis.KONTROLA = ${JSON.stringify(nagranie)};\n`);
       const { stdout } = await execFileP(JSC, [dane, paczka], { maxBuffer: MAX_BUFOR, timeout: LIMIT_MS });
       return JSON.parse(stdout.trim().split('\n').pop() ?? '');
     },
@@ -350,16 +394,21 @@ if (psujSilnik) console.error(`  samotest: noga ${psujSilnik} zwiększa każdy w
 // ---------------------------------------------------------------------------------------------------------------------
 // raport
 
-function tabela(wiersze: string[][]): void {
+function tabelaLinie(wiersze: string[][]): string[] {
   const szer = wiersze[0].map((_, i) => Math.max(...wiersze.map((w) => [...(w[i] ?? '')].length)));
-  for (const w of wiersze)
-    console.log(
-      w
-        .map((c, i) => c.padEnd(szer[i]))
-        .join('  ')
-        .trimEnd(),
-    );
+  return wiersze.map((w) =>
+    w
+      .map((c, i) => c.padEnd(szer[i]))
+      .join('  ')
+      .trimEnd(),
+  );
 }
+const tabela = (wiersze: string[][]) => {
+  for (const l of tabelaLinie(wiersze)) console.log(l);
+};
+/** 1234 z 80000 jako „1234 (1,54%)”; przecinek dziesiętny jak w całej grze */
+const ileZ = (n: number, z: number) =>
+  n === 0 ? '0' : `${n} (${((100 * n) / z).toFixed(n * 10000 < z ? 4 : 2).replace('.', ',')}%)`;
 
 const liczbaNaTekst = (x: number) => (Object.is(x, -0) ? '-0' : String(x));
 const wywolanieNaTekst = (w: Wywolanie | undefined) =>
@@ -382,6 +431,29 @@ const opisOkna = (o: Okno) =>
 
 /** Nagrywa przedział w każdej nodze, która policzyła scenariusz, i porównuje z nagraniem wzorca: pierwsze wywołanie
     z innym wynikiem (albo argumentami), a do niego stos z Node: miejsce w kodzie. Zwraca linie raportu. */
+/** Miejsce w kodzie wywołania o numerze `i` w nagraniu przedziału: stos z czystego przebiegu w Node (numery linii
+    zgadzają się ze źródłem), bo wywołania przed pierwszą różnicą są u wszystkich silników te same. */
+async function miejsceWywolania(s: Scenariusz, okno: Okno, wzorzec: Noga, i: number): Promise<string> {
+  const nodeowa =
+    dostepne.find((n) => n === wzorzec && n.id.startsWith('node')) ?? dostepne.find((n) => n.id.startsWith('node'));
+  if (!nodeowa) return 'brak nogi Node (--silniki=node albo node24), stos z przeglądarki nie wskazuje linii';
+  try {
+    const w = await nodeowa.licz(zlecenieNogi(nodeowa, s, { powtorz: 1, nagraj: { ...okno, stosPrzy: i } }));
+    const miejsca = miejscaZeStosu(w.biegi[0].stos ?? '', KORZEN);
+    return miejsca.length ? `${miejsca.join(' <- ')} (${nodeowa.id})` : 'stos bez ramek z plików';
+  } catch (e) {
+    return `BŁĄD ${pierwszaLinia(e)}`;
+  }
+}
+
+const daneNagran: {
+  scenariusz: string;
+  okno: Okno;
+  wzorzec: string;
+  wywolan: number;
+  spisy: Record<string, SpisRoznic>;
+}[] = [];
+
 async function nagrajScenariusz(s: Scenariusz, okno: Okno, wzorzec: Noga): Promise<string[]> {
   const linie: string[] = [`  nagranie wywołań Math (${opisOkna(okno)}), wzorzec ${wzorzec.id}:`];
   const nagrania = new Map<string, Wywolanie[]>();
@@ -399,7 +471,6 @@ async function nagrajScenariusz(s: Scenariusz, okno: Okno, wzorzec: Noga): Promi
   );
   const wzorcowe = nagrania.get(wzorzec.id);
   if (!wzorcowe) return [...linie, '    brak nagrania wzorca'];
-  let pierwszy: number | null = null;
   for (const n of dostepne) {
     const inne = nagrania.get(n.id);
     if (!inne || n === wzorzec) continue;
@@ -408,7 +479,6 @@ async function nagrajScenariusz(s: Scenariusz, okno: Okno, wzorzec: Noga): Promi
       linie.push(`    ${n.id}: wywołania identyczne (${inne.length})`);
       continue;
     }
-    pierwszy = pierwszy === null ? r.i : Math.min(pierwszy, r.i);
     const tylkoWynik =
       r.a &&
       r.b &&
@@ -422,28 +492,79 @@ async function nagrajScenariusz(s: Scenariusz, okno: Okno, wzorzec: Noga): Promi
       tylkoWynik
         ? `      to funkcja ${r.a?.[0]}: te same argumenty, inny wynik`
         : '      argumenty różne: rozbieżność powstała wcześniej, poza nagrywanymi funkcjami (operator **, inna różnica silnika) albo przed nagranym przedziałem',
+      `      miejsce w kodzie: ${await miejsceWywolania(s, okno, wzorzec, r.i)}`,
     );
   }
-  if (pierwszy !== null) {
-    // stos wywołania z czystego przebiegu w Node: numery linii zgadzają się ze źródłem
-    const nodeowa =
-      dostepne.find((n) => n === wzorzec && n.id.startsWith('node')) ?? dostepne.find((n) => n.id.startsWith('node'));
-    if (nodeowa) {
+  // spis różnic: te same wywołania policzone od nowa w każdej nodze, funkcja po funkcji
+  const spisy = new Map<string, SpisRoznic>();
+  await Promise.all(
+    dostepne.map(async (n) => {
       try {
-        const w = await nodeowa.licz(zlecenieNogi(nodeowa, s, { powtorz: 1, nagraj: { ...okno, stosPrzy: pierwszy } }));
-        const miejsca = miejscaZeStosu(w.biegi[0].stos ?? '', KORZEN);
-        linie.push(
-          miejsca.length
-            ? `    miejsce w kodzie (${nodeowa.id}): ${miejsca.join(' <- ')}`
-            : '    miejsce w kodzie: stos bez ramek z plików',
-        );
+        spisy.set(n.id, await n.kontroluj(zakodujWywolania(wzorcowe)));
       } catch (e) {
-        linie.push(`    miejsce w kodzie: BŁĄD ${pierwszaLinia(e)}`);
+        linie.push(`    ${n.id}: BŁĄD spisu różnic: ${pierwszaLinia(e)}`);
       }
-    } else
-      linie.push(
-        '    miejsce w kodzie: brak nogi Node (--silniki=node albo node24), stos z przeglądarki nie wskazuje linii',
-      );
+    }),
+  );
+  daneNagran.push({
+    scenariusz: opisScenariusza(s),
+    okno,
+    wzorzec: wzorzec.id,
+    wywolan: wzorcowe.length,
+    spisy: Object.fromEntries(spisy),
+  });
+  const funkcje = [...new Set([...spisy.values()].flatMap((sp) => Object.keys(sp)))].sort();
+  const liczyly = dostepne.filter((n) => n !== wzorzec && spisy.has(n.id));
+  if (funkcje.length && liczyly.length) {
+    linie.push(
+      `  spis różnic na ${wzorcowe.length} wywołaniach z gry (wzorzec ${wzorzec.id}), każde policzone od nowa w silniku z tymi samymi argumentami:`,
+      ...tabelaLinie([
+        ['funkcja', 'wywołań', ...liczyly.map((n) => n.id)],
+        ...funkcje.map((f) => [
+          f,
+          String(spisy.get(wzorzec.id)?.[f]?.wywolan ?? ''),
+          ...liczyly.map((n) => ileZ(spisy.get(n.id)?.[f]?.roznych ?? 0, spisy.get(n.id)?.[f]?.wywolan ?? 1)),
+        ]),
+      ]).map((l) => `    ${l}`),
+    );
+    for (const n of liczyly)
+      for (const f of funkcje) {
+        const p = spisy.get(n.id)?.[f]?.przyklady[0];
+        if (p)
+          linie.push(
+            `    np. ${n.id}: ${f}(${p.argumenty.map(liczbaNaTekst).join(', ')}) = ${liczbaNaTekst(p.wynik)}, wzorzec ${liczbaNaTekst(p.wzorzec)}`,
+          );
+      }
+  }
+  return linie;
+}
+
+/** Ile kafelków świata się rozjechało: tablice kafelków z każdej nogi (świat budowany od nowa, godzina gry) porównane
+    z tablicami wzorca. Zwraca linie raportu. */
+async function opiszKafelki(s: Scenariusz, wzorzec: Noga, nogi: Noga[]): Promise<string[]> {
+  const tablice = new Map<string, NonNullable<Bieg['kafelki']>>();
+  await Promise.all(
+    nogi.map(async (n) => {
+      try {
+        const w = await n.licz(zlecenieNogi(n, s, { godziny: 1, powtorz: 1, kafelki: true }));
+        const k = w.biegi[0].kafelki;
+        if (k) tablice.set(n.id, k);
+      } catch {}
+    }),
+  );
+  const wz = tablice.get(wzorzec.id);
+  if (!wz) return [];
+  const linie: string[] = [];
+  for (const n of nogi) {
+    const k = tablice.get(n.id);
+    if (!k || n === wzorzec) continue;
+    for (const nazwa of ['terr', 'bid', 'blocked'] as const) {
+      const r = roznicaTablic(wz[nazwa], k[nazwa]);
+      if (!r.roznych) continue;
+      const gdzie = r.przyklady.map((p) => `(${p.i % wz.size},${Math.floor(p.i / wz.size)}) ${p.a}→${p.b}`).join(', ');
+      linie.push(`      ${n.id}: ${nazwa} różni się na ${r.roznych} z ${wz[nazwa].length} kafelków, np. ${gdzie}`);
+    }
+    if (!linie.length) linie.push(`      ${n.id}: tablice kafelków takie same`);
   }
   return linie;
 }
@@ -485,11 +606,22 @@ try {
     if (rozneSwiaty.size > 1) {
       rozbiezne = true;
       okno = { od: -1, do: 0 };
+      const czesci = (n: Noga) => wyniki.get(klucz(n, s))?.biegi[0]?.swiatCzesci ?? {};
+      // co dokładnie się rozjechało względem wzorca: kafelki to inna mapa, kąt albo drzewa to różnica ostatnich bitów
+      const rozne = (n: Noga) =>
+        Object.keys(czesci(wzorzec))
+          .filter((c) => czesci(n)[c] !== czesci(wzorzec)[c])
+          .join(', ');
       opis.push(
         `ROZBIEŻNOŚĆ ŚWIATA ${opisScenariusza(s)}: buildWorld buduje inny świat`,
-        ...liczyly.map((n) => `    ${n.id.padEnd(9)} ${swiat(n, s)}`),
+        ...liczyly.map(
+          (n) =>
+            `    ${n.id.padEnd(9)} ${swiat(n, s)}${n === wzorzec || !rozne(n) ? '' : `  (inne części: ${rozne(n)})`}`,
+        ),
       );
       for (const n of liczyly) if (swiat(n, s) !== swiat(wzorzec, s)) niezgodne.add(n.id);
+      if (liczyly.some((n) => rozne(n).split(', ').includes('kafelki')))
+        opis.push(...(await opiszKafelki(s, wzorzec, liczyly)));
     }
     const cross = porownaj(Object.fromEntries(liczyly.map((n) => [n.id, skroty(n, s) as string[]])));
     if (!cross.zgodne && cross.pierwsza) {
@@ -583,6 +715,7 @@ try {
         noge: noge.map((n) => ({ id: n.id, wersja: n.wersja, brak: n.brak ?? null })),
         wyniki: Object.fromEntries(wyniki),
         bledy: Object.fromEntries(bledy),
+        nagrania: daneNagran,
       }),
     );
 

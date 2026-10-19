@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { modeOf } from '../../src/sim/tryb.ts';
-import { graj, przebieg, skrotSwiata } from '../../tools/determinizm/przebieg.ts';
+import { czesciSwiata, graj, przebieg, skrotSwiata } from '../../tools/determinizm/przebieg.ts';
 
 /** dane dema z public/demo (to samo, co strona testowa pobiera przez fetch) */
 const demo = (klucz: string) =>
@@ -46,6 +46,39 @@ describe('przebieg gry do porównań silników', () => {
     expect(kroki).toHaveLength(1 + 2 * 800);
     expect(kroki[0]).toBe(-1);
     expect(kroki.every((t, i) => t === i - 1)).toBe(true);
+  });
+
+  it('części świata mówią, co się rozjechało: kafelki, budynki, drzewa, kąt obrotu albo reszta', () => {
+    const swiat = graj({ geo, seed: 5, godziny: 0, tryb: 'zwykly' }).swiat;
+    const bazowe = czesciSwiata(swiat);
+    expect(Object.keys(bazowe).sort()).toEqual(['budynki', 'drzewa', 'kafelki', 'kat', 'reszta']);
+    expect(czesciSwiata(graj({ geo, seed: 5, godziny: 0, tryb: 'zwykly' }).swiat)).toEqual(bazowe);
+    const wzorzec: Record<string, string> = bazowe;
+    const rozne = (a: Record<string, string>) => Object.keys(a).filter((k) => a[k] !== wzorzec[k]);
+
+    swiat.blocked[1000] ^= 1;
+    expect(rozne(czesciSwiata(swiat))).toEqual(['kafelki']);
+    swiat.blocked[1000] ^= 1;
+
+    // jeden bit w kącie obrotu: tak różnią się silniki w atan2, a kafelki zostają te same
+    const kat = swiat.angle;
+    swiat.angle = new Float64Array(
+      new BigUint64Array([new BigUint64Array(new Float64Array([kat]).buffer)[0] + 1n]).buffer,
+    )[0];
+    expect(swiat.angle).not.toBe(kat);
+    expect(rozne(czesciSwiata(swiat))).toEqual(['kat']);
+    swiat.angle = kat;
+
+    swiat.trees[0].x += 1e-12;
+    expect(rozne(czesciSwiata(swiat))).toEqual(['drzewa']);
+    swiat.trees[0].x -= 1e-12;
+
+    swiat.buildings[0].levels += 1;
+    expect(rozne(czesciSwiata(swiat))).toEqual(['budynki']);
+    swiat.buildings[0].levels -= 1;
+
+    swiat.hq += 1;
+    expect(rozne(czesciSwiata(swiat))).toEqual(['reszta']);
   });
 
   it('skrót świata jest powtarzalny, zależy od ziarna i zauważa jeden zmieniony kafelek', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BRAK_SKROTU, porownaj } from '../../tools/determinizm/porownanie.ts';
+import { BRAK_SKROTU, porownaj, roznicaTablic } from '../../tools/determinizm/porownanie.ts';
 import { kodWyjscia, miejscaZeStosu } from '../../tools/determinizm/raport.ts';
 
 describe('porównanie skrótów z różnych silników', () => {
@@ -65,5 +65,22 @@ describe('miejsce wywołania w kodzie ze stosu', () => {
   it('stos w innym formacie niż V8 albo bez ramek z pliku daje pustą listę', () => {
     expect(miejscaZeStosu('farTile@http://127.0.0.1:5173/src/sim/sim.ts:6454:22', korzen)).toEqual([]);
     expect(miejscaZeStosu('', korzen)).toEqual([]);
+  });
+});
+
+describe('różnica dwóch tablic kafelków', () => {
+  it('liczy kafelki o innej wartości i podaje pierwsze przykłady z indeksem', () => {
+    expect(roznicaTablic([1, 2, 3], [1, 2, 3])).toEqual({ roznych: 0, przyklady: [] });
+    const r = roznicaTablic([0, 1, 2, 3, 4, 5, 6, 7], [0, 9, 2, 8, 4, 5, 7, 7], 2);
+    expect(r.roznych).toBe(3);
+    expect(r.przyklady).toEqual([
+      { i: 1, a: 1, b: 9 },
+      { i: 3, a: 3, b: 8 },
+    ]);
+  });
+
+  it('tablica krótsza od drugiej: brakujące miejsca liczą się jako różnice', () => {
+    expect(roznicaTablic([1, 2], [1, 2, 3, 4]).roznych).toBe(2);
+    expect(roznicaTablic([], [])).toEqual({ roznych: 0, przyklady: [] });
   });
 });

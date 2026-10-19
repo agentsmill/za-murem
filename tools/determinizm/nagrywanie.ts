@@ -130,3 +130,34 @@ export const zakodujWywolania = (w: Wywolanie[]): WywolanieJson[] =>
 
 export const odkodujWywolania = (w: WywolanieJson[]): Wywolanie[] =>
   w.map(([nazwa, argumenty, wynik]) => [nazwa, argumenty.map(odkodLiczby), odkodLiczby(wynik)]);
+
+export interface RoznicaFunkcji {
+  /** ile nagranych wywołań tej funkcji policzono od nowa */
+  wywolan: number;
+  /** ile z nich dało inny wynik niż u wzorca (bit w bit) */
+  roznych: number;
+  przyklady: { argumenty: number[]; wzorzec: number; wynik: number }[];
+}
+
+export type SpisRoznic = Record<string, RoznicaFunkcji>;
+
+/** Spis różnic na prawdziwych wywołaniach z gry: każde nagrane wywołanie wzorca (inny silnik) liczy od nowa w tym
+    silniku, a wynik porównuje z nagranym bit w bit. W odróżnieniu od pierwszaRoznica nie zatrzymuje się na pierwszej
+    różnicy i nie rozjeżdża się, gdy następne argumenty zależą od wcześniejszej różnicy: każde wywołanie dostaje te
+    same argumenty co u wzorca, więc wynik to czysta miara, jak często ta funkcja różni się między silnikami na
+    liczbach, które gra naprawdę podaje. */
+export function sprawdzNagranie(wzorzec: Wywolanie[], przykladow = 3): SpisRoznic {
+  const matematyka = Math as unknown as Record<string, FunkcjaMath>;
+  const spis: SpisRoznic = {};
+  for (const [nazwa, argumenty, oczekiwany] of wzorzec) {
+    const funkcja = matematyka[nazwa];
+    if (typeof funkcja !== 'function') throw new Error(`Math.${nazwa} nie istnieje w tym silniku`);
+    const wpis = (spis[nazwa] ??= { wywolan: 0, roznych: 0, przyklady: [] });
+    wpis.wywolan++;
+    const wynik = funkcja.apply(Math, argumenty);
+    if (Object.is(wynik, oczekiwany)) continue;
+    wpis.roznych++;
+    if (wpis.przyklady.length < przykladow) wpis.przyklady.push({ argumenty, wzorzec: oczekiwany, wynik });
+  }
+  return spis;
+}

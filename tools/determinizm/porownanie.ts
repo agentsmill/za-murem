@@ -22,3 +22,21 @@ export function porownaj(wyniki: Record<string, string[]>): Porownanie {
   }
   return { zgodne: true, pierwsza: null };
 }
+
+export interface RoznicaTablic {
+  /** ile miejsc ma inną wartość (brakujące miejsca krótszej tablicy też) */
+  roznych: number;
+  przyklady: { i: number; a: number; b: number }[];
+}
+
+/** Porównanie dwóch tablic kafelków świata (teren, numery budynków, przejścia) z dwóch silników: ile kafelków się
+    różni i pierwsze przykłady z indeksem (x = i % bok, y = i / bok). */
+export function roznicaTablic(a: ArrayLike<number>, b: ArrayLike<number>, przykladow = 5): RoznicaTablic {
+  const wynik: RoznicaTablic = { roznych: 0, przyklady: [] };
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i] === b[i]) continue;
+    wynik.roznych++;
+    if (wynik.przyklady.length < przykladow) wynik.przyklady.push({ i, a: a[i], b: b[i] });
+  }
+  return wynik;
+}

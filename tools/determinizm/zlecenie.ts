@@ -21,6 +21,8 @@ export interface Zlecenie {
   nagraj?: { od: number; do: number; stosPrzy?: number };
   /** samotest bramki: nazwa funkcji Math, której każdy wynik ta noga zwiększa o jeden bit (uszkodzenie.ts) */
   psuj?: string;
+  /** oddać tablice kafelków świata pierwszego przebiegu (do policzenia, ile kafelków się rozjechało) */
+  kafelki?: boolean;
 }
 
 export const SEED_DOMYSLNE = 12345;
@@ -38,6 +40,7 @@ export function doParametrow(z: Zlecenie): Record<string, string> {
   if (z.nagraj)
     p.nagraj = [z.nagraj.od, z.nagraj.do, ...(z.nagraj.stosPrzy === undefined ? [] : [z.nagraj.stosPrzy])].join(':');
   if (z.psuj) p.psuj = z.psuj;
+  if (z.kafelki) p.kafelki = '1';
   return p;
 }
 
@@ -75,5 +78,6 @@ export function zParametrow(czytaj: (klucz: string) => string | null | undefined
       throw new Error(`Zlecenie: psuj to jedna z funkcji ${NAGRYWANE.join(', ')}, jest „${psuj}”`);
     z.psuj = psuj;
   }
+  if (czytaj('kafelki') === '1') z.kafelki = true;
   return z;
 }

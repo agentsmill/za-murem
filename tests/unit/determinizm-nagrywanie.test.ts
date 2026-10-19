@@ -5,6 +5,7 @@ import {
   nagrywaj,
   odkodujWywolania,
   pierwszaRoznica,
+  sprawdzNagranie,
   type Wywolanie,
   zakodujWywolania,
 } from '../../tools/determinizm/nagrywanie.ts';
@@ -59,6 +60,35 @@ describe('porównanie nagrań wywołań Math', () => {
     const poDrodze = odkodujWywolania(JSON.parse(JSON.stringify(zakodujWywolania(w))));
     expect(pierwszaRoznica(w, poDrodze)).toBeNull();
     expect(Object.is(poDrodze[2][2], -0)).toBe(true);
+  });
+});
+
+describe('spis różnic: nagrane wywołania policzone od nowa', () => {
+  it('liczy w tym silniku każde nagrane wywołanie i zlicza te z innym wynikiem niż u wzorca, bit w bit', () => {
+    const nagranie: Wywolanie[] = [
+      ['hypot', [3, 4], 5],
+      ['sin', [1], Math.sin(1)],
+      ['hypot', [3, 4], 5.000000000000001],
+      ['hypot', [6, 8], 10],
+      ['atan2', [0, -1], Math.PI],
+    ];
+    const spis = sprawdzNagranie(nagranie);
+    expect(spis.hypot).toEqual({
+      wywolan: 3,
+      roznych: 1,
+      przyklady: [{ argumenty: [3, 4], wzorzec: 5.000000000000001, wynik: 5 }],
+    });
+    expect(spis.sin).toEqual({ wywolan: 1, roznych: 0, przyklady: [] });
+    expect(spis.atan2.roznych).toBe(0);
+  });
+
+  it('zachowuje najwyżej tyle przykładów, ile podano, i nie psuje Math', () => {
+    const oryginal = Math.cos;
+    const nagranie: Wywolanie[] = Array.from({ length: 10 }, (_, i): Wywolanie => ['cos', [i], 42]);
+    const spis = sprawdzNagranie(nagranie, 2);
+    expect(spis.cos.roznych).toBe(10);
+    expect(spis.cos.przyklady).toHaveLength(2);
+    expect(Math.cos).toBe(oryginal);
   });
 });
 

@@ -17,6 +17,9 @@ describe('zlecenie przebiegu dla nóg silników', () => {
     });
     // sama budowa świata: od kroku −1 do 0
     expect(zParametrow(odczyt(doParametrow({ ...z, nagraj: { od: -1, do: 0 } }))).nagraj).toEqual({ od: -1, do: 0 });
+    const z4: Zlecenie = { ...z, kafelki: true };
+    expect(zParametrow(odczyt(doParametrow(z4)))).toEqual(z4);
+    expect(zParametrow(odczyt(doParametrow(z))).kafelki).toBeUndefined();
     const z3: Zlecenie = { ...z, psuj: 'hypot' };
     expect(zParametrow(odczyt(doParametrow(z3)))).toEqual(z3);
   });
