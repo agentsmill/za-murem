@@ -49,13 +49,14 @@ export function zamknijPlynnie(
   wyjdz: (kod: number) => void,
   limitMs = 5000,
 ): void {
-  serwer.close(() => {
+  let wyszedl = false;
+  const wyjdzRaz = () => {
+    if (wyszedl) return;
+    wyszedl = true;
     gra.zamknij();
     wyjdz(0);
-  });
-  setTimeout(() => {
-    gra.zamknij();
-    wyjdz(0);
-  }, limitMs).unref();
+  };
+  serwer.close(wyjdzRaz);
+  setTimeout(wyjdzRaz, limitMs).unref();
   serwer.closeIdleConnections();
 }

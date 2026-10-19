@@ -142,9 +142,19 @@ export function planujKopie(op: OpcjeKopii): { zatrzymaj(): void } {
     const dzis = Date.UTC(od.getUTCFullYear(), od.getUTCMonth(), od.getUTCDate(), godzina);
     return (dzis > od.getTime() ? dzis : dzis + DOBA_MS) - od.getTime();
   };
+  /** nic z kopii nie może wywrócić serwera: ani w terminie, ani przy starcie (także wyjątek z funkcji dziennika) */
+  const bezpiecznie = () => {
+    try {
+      zrob();
+    } catch (e) {
+      try {
+        dziennik(`kopia bazy nie powiodła się: ${opis(e)}`);
+      } catch {}
+    }
+  };
   const czekaj = () => {
     timer = setTimeout(() => {
-      zrob();
+      bezpiecznie();
       czekaj();
     }, doNastepnej(teraz()));
     timer.unref();
@@ -152,7 +162,7 @@ export function planujKopie(op: OpcjeKopii): { zatrzymaj(): void } {
 
   const start = teraz();
   const dzisiejsza = path.join(op.katalog, `za-murem-${start.toISOString().slice(0, 10)}.db`);
-  if (start.getUTCHours() >= godzina && !fs.existsSync(dzisiejsza)) zrob();
+  if (start.getUTCHours() >= godzina && !fs.existsSync(dzisiejsza)) bezpiecznie();
   czekaj();
   return { zatrzymaj: () => clearTimeout(timer) };
 }

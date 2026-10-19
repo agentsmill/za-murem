@@ -215,6 +215,30 @@ describe('harmonogram kopii', () => {
     baza.zamknij();
   });
 
+  it('wyjątek z funkcji dziennika albo informacji nie wywraca harmonogramu ani startu serwera', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-19T14:00:00Z') });
+    const baza = otworzBaze(path.join(katalog, 'za-murem.db'));
+    const kopiaDir = path.join(katalog, 'kopie');
+    const wpisy: string[] = [];
+    // info rzuca przy starcie (kopia od razu) i w terminie; dziennik zbiera, co się da
+    const plan = planujKopie({
+      baza,
+      katalog: kopiaDir,
+      dni: 7,
+      godzina: 3,
+      dziennik: (w) => wpisy.push(w),
+      info: () => {
+        throw new Error('info padło');
+      },
+    });
+    expect(fs.readdirSync(kopiaDir)).toEqual(['za-murem-2026-10-19.db']);
+    expect(() => vi.advanceTimersByTime(13 * 3600_000)).not.toThrow();
+    expect(fs.readdirSync(kopiaDir)).toEqual(['za-murem-2026-10-19.db', 'za-murem-2026-10-20.db']);
+    expect(wpisy.length).toBeGreaterThan(0);
+    plan.zatrzymaj();
+    baza.zamknij();
+  });
+
   it('godzina jest w UTC niezależnie od strefy procesu, a błąd kopii nie wywraca harmonogramu', () => {
     const staraStrefa = process.env.TZ;
     process.env.TZ = 'Pacific/Auckland';

@@ -141,6 +141,14 @@ describe('zamknięcie serwera przy planowym restarcie', () => {
     expect(zapis.body.dane).toEqual(dane);
   });
 
+  it('wyjście woła się dokładnie raz, także gdy po zamknięciu serwera mija jeszcze limit czasu', async () => {
+    const a = await start(path.join(katalog, 'za-murem.db'));
+    const kody: number[] = [];
+    zamknijPlynnie(a.srv, a.gra, (kod) => kody.push(kod), 20);
+    await new Promise((ok) => setTimeout(ok, 120));
+    expect(kody).toEqual([0]);
+  });
+
   it('zamknięcie przy zajętej i pełnej kolejce scrypt, gdy limit czasu minie przed końcem żądań: baza spójna, konto jest', async () => {
     const plik = path.join(katalog, 'za-murem.db');
     // kosztowniejszy scrypt i kolejka na jedno zadanie, żeby logowania stały w kolejce i dostawały 503
