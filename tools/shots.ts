@@ -9881,6 +9881,80 @@ function pietraShots(): Shot[] {
         if (karta) throw new Error('klik w pionek zarządu na piętrze otworzył kartę');
       },
     },
+    // widoczny pionek zarządu stoi na dworze tuż pod ścianą budynku: jego głowa leży nad kafelkiem budynku, ale lewy klik
+    // zaznacza go także na piętrze (blokada obrysu go przepuszcza), a prawy przycisk (rozkazy) w ten obrys jest zablokowany
+    {
+      name: 'pietra-pionek-przy-fasadzie',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=lanciego&pietra=1&speed=0&cam=hq,1`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        const cel = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const size = w.size;
+          const hq = w.buildings[w.hq];
+          const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+          // wolny kafelek poza budynkami, nad którym (na północy) stoi kafelek budynku, najbliższy siedziby
+          const sx = (hq.x0 + hq.x1) / 2;
+          const sy = (hq.y0 + hq.y1) / 2;
+          let best = -1;
+          let bd = Number.POSITIVE_INFINITY;
+          for (let i = size; i < size * size; i++) {
+            if (w.bid[i] >= 0 || w.bid[i - size] < 0 || w.blocked[i]) continue;
+            const d = Math.hypot((i % size) - sx, Math.floor(i / size) - sy);
+            if (d < bd) {
+              bd = d;
+              best = i;
+            }
+          }
+          p.x = (best % size) + 0.5;
+          p.y = Math.floor(best / size) + 0.5;
+          zm.setCam(p.x, p.y, 1);
+          return {
+            x: p.x,
+            y: p.y,
+            imie: zm.sim!.st.people[p.person].name,
+            kafelekPionka: best,
+            nadNim: w.bid[best - size],
+          };
+        });
+        console.log(`  pionek: ${JSON.stringify(cel)}`);
+        await waitIdle(page);
+        await page.waitForTimeout(250);
+        // głowa pionka (kafelek wyżej niż stopy) leży nad kafelkiem budynku
+        const punkt = await page.evaluate((c) => {
+          const zm = window.zm!;
+          const r = document.getElementById('stage')!.getBoundingClientRect();
+          const [x, y] = zm.screenOf(c.x, c.y - 1.0);
+          return { x: x + r.x, y: y + r.y, tile: zm.view.tileAt(x, y), bid: zm.sim!.w.bid[zm.view.tileAt(x, y)] };
+        }, cel);
+        console.log(`  klik w głowę: ${JSON.stringify(punkt)}`);
+        if (punkt.bid < 0)
+          throw new Error('głowa pionka nie leży nad kafelkiem budynku, scenariusz niczego nie sprawdza');
+        // prawy klik w ten obrys: blokada z podpowiedzią, bez menu rozkazów
+        await page.mouse.click(punkt.x, punkt.y, { button: 'right' });
+        await page.waitForTimeout(350);
+        const prawy = await page.evaluate(() => ({
+          hint: document.getElementById('hint')!.textContent,
+          menu: !document.getElementById('ctx')!.hidden,
+        }));
+        console.log(`  prawy klik: ${JSON.stringify(prawy)}`);
+        if (prawy.hint !== 'Zarząd jest na parterze' || prawy.menu)
+          throw new Error(`prawy klik w obrys nie został zablokowany: ${JSON.stringify(prawy)}`);
+        // lewy klik: pionek zaznaczony (karta osoby z jego imieniem), bez blokady
+        await page.mouse.click(punkt.x, punkt.y);
+        await page.waitForTimeout(350);
+        const lewy = await page.evaluate(() => {
+          const karta = document.getElementById('card')!;
+          return { karta: !karta.hidden, tekst: karta.textContent ?? '' };
+        });
+        console.log(`  lewy klik: karta ${lewy.karta}`);
+        if (!lewy.karta || !lewy.tekst.includes(cel.imie))
+          throw new Error(`lewy klik w głowę widocznego pionka go nie zaznaczył (karta ${lewy.karta})`);
+      },
+    },
     // to samo na telefonie: notka pod paskiem
     {
       name: 'pietra-zarzad-telefon',
