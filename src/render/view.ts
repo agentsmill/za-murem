@@ -270,6 +270,8 @@ export class GameView {
   private nVeryFar = 0;
   /** kandydaci do rysowania w tle przy wielu kwadratach: liczeni od nowa, gdy kamera zmieni kawałek albo zbiór kwadratów */
   private tloPamiec: { klucz: string; lista: Kawalek[] } | null = null;
+  /** kandydaci tła samego domu (wszystkie kawałki w kolejności numerów): niezmienni, liczeni raz na scenę */
+  private tloDom: Kawalek[] | null = null;
   /** wybrane piętro (widok pięter): 0 to parter, przekrój siedziby jak zawsze; od 1 przekrój typowego piętra */
   private pietroNr = 0;
   /** rzeczy w warstwie pionków: sprite, czy stoi we wnętrzu (widać ją tylko w przekroju), czy się pali */
@@ -430,6 +432,7 @@ export class GameView {
     this.nastepnyQ = 1;
     this.brakDanych = [];
     this.tloPamiec = null;
+    this.tloDom = null;
     for (const s of this.slots) {
       if (s.near) dropTex(s.near);
       if (s.far) dropTex(s.far);
@@ -1106,7 +1109,9 @@ export class GameView {
     const klucz = `${Math.floor(this.cam.x / (CHUNK * TILE))},${Math.floor(this.cam.y / (CHUNK * TILE))},${this.kw.length}`;
     if (wiele && this.tloPamiec?.klucz !== klucz)
       this.tloPamiec = { klucz, lista: kandydaciTla(pola, size, this.cam, false) };
-    const tlo = wiele ? (this.tloPamiec as { lista: Kawalek[] }).lista : kandydaciTla(pola, size, this.cam, true);
+    const tlo = wiele
+      ? (this.tloPamiec as { lista: Kawalek[] }).lista
+      : (this.tloDom ??= kandydaciTla(pola, size, this.cam, true));
     // nowa lista zastępuje starą: kawałki, które wyszły z ekranu, wypadają z kolejki
     const zamowienia = planOrdersWiele(poziom, {
       vis,

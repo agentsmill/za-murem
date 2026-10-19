@@ -43,7 +43,8 @@ import { nazwaDoOkolicyZDanych } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { GraSieciowa } from './net/gra.ts';
-import { buildScene, type OpcjeSceny, przesunStyl, type Scene, TILE, ziarnoStyluZKlucza } from './render/art/scene.ts';
+import { opcjeSceny } from './render/art/kwadratyScena.ts';
+import { buildScene, type Scene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
 import { wczytajGrafike } from './render/grafika.ts';
 import { type Light, lightAt } from './render/light.ts';
@@ -147,8 +148,7 @@ import { clearSave, pietraWlaczone, readSave, type Save, saveLabel, worldKey, wr
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { drogiSheet, epilogSheet, statyEpilogu } from './ui/zwyciestwo.ts';
 import type { Geo } from './world/geo.ts';
-import { kluczBudynku } from './world/klucze.ts';
-import { budynkiZDomem, czytajKwadraty, kluczKwadratu, ukladDomu } from './world/kwadraty.ts';
+import { czytajKwadraty, kluczKwadratu, ukladDomu } from './world/kwadraty.ts';
 import { demoList, type Loaded, loadAddress, loadDemo, loadDemoKwadraty } from './world/load.ts';
 import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
 import { KafelkiMiasta } from './world/miastoKafelki.ts';
@@ -828,7 +828,6 @@ async function dodajKwadraty(
     }
   }
   const uklad = ukladDomu(geo, world);
-  const bok = world.size * TILE;
   for (const [sx, sy] of lista) {
     const klucz = kluczKwadratu(sx, sy);
     const g = dane[klucz];
@@ -842,18 +841,7 @@ async function dodajKwadraty(
       const w = buildKwadrat(g, { seed, uklad, sx, sy, geoDomu: geo, ...(pietra ? { pietra: true, dom: world } : {}) });
       const t1 = performance.now();
       // budynek, który ma kawałek w domu, wygląda tak jak w domu (dom wygrywa na szwie); inne dostają ziarno z klucza
-      const zDomem = budynkiZDomem(world, w, sx, sy);
-      const opcje: OpcjeSceny = {
-        poczatek: { x: sx * bok, y: sy * bok },
-        ziarnoStylu: (b) => {
-          const k = kluczBudynku(b);
-          return k ? ziarnoStyluZKlucza(seed, k) : undefined;
-        },
-        stylDomu: (b) => {
-          const hb = zDomem.get(b.id);
-          return hb === undefined ? undefined : przesunStyl(scene.styles[hb], sx * bok, sy * bok);
-        },
-      };
+      const opcje = opcjeSceny({ swiat: w, dom: world, sceneDomu: scene, sx, sy, seed });
       const sc = buildScene(w, art, opcje);
       const q = view.dodajKwadrat(sx, sy, sc);
       out.push({ klucz, q, msSwiat: t1 - t0, msScena: performance.now() - t1, brakDanych: false });

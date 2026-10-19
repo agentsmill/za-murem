@@ -17,7 +17,7 @@ import { labelRegions, nearestFree } from '../sim/path.ts';
 import { type AptState, applyApts, type Damage, type Smieci, settleApts } from './apts.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
 import { applyFence, buildFence, type Fence, type Gate, gateCrowded, yardEdges } from './fence.ts';
-import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea, segDist } from './geo.ts';
+import { type Geo, type GeoBuilding, type GeoPoi, type Pt, pip, polyArea, segDist } from './geo.ts';
 import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { kluczBudynku } from './klucze.ts';
@@ -397,10 +397,32 @@ function opiszBudynki(
   size: number,
   ox: number,
   oy: number,
+  poObrysie = false,
 ): { buildings: WorldBuilding[]; pois: GeoPoi[] } {
   const half = size / 2;
+  // kwadrat obok domu (poObrysie): miejsce należy do budynku po całym obrysie z geo, a nie po kafelkach okna, bo okno widzi
+  // tylko swój kawałek przeciętego budynku, a miejsce leży czasem w drugim; dwa kawałki jednego budynku mają wtedy te same
+  // kategorie, czyli tę samą klasę i piętra. Dom liczy po kafelkach jak zawsze.
+  const obrysy = poObrysie ? kept.map((o) => [o.b.p, ...(o.b.pp ?? [])]) : null;
+  const budynekPoObrysie = (px: number, py: number): number => {
+    let naj = -1;
+    let bd = 6.5;
+    for (let i = 0; i < kept.length; i++)
+      for (const r of obrysy![i]) {
+        if (pip(px, py, r)) return i;
+        for (let k = 0; k + 1 < r.length; k++) {
+          const d = segDist(px, py, r[k][0], r[k][1], r[k + 1][0], r[k + 1][1]);
+          if (d < bd) {
+            bd = d;
+            naj = i;
+          }
+        }
+      }
+    return naj;
+  };
   // 6. miejsca: punkt w budynku albo najbliższy budynek do 6 m (też dla rodzajów punktów: muzeum, teatr, hotel…)
   const budynekPunktu = (px: number, py: number): number => {
+    if (obrysy) return budynekPoObrysie(px, py);
     const tx = Math.floor(px - ox + half);
     const ty = Math.floor(py - oy + half);
     if (tx < 0 || ty < 0 || tx >= size || ty >= size) return -1;
@@ -719,7 +741,7 @@ export function buildKwadrat(geoIn: Geo, opts: KwadratOpts): World {
   const oy = sy * size;
   const geo = przygotujGeoKwadratu(geoIn, uklad, opts.geoDomu);
   const { terr, bid, blocked, kept } = rastrujTeren(geo, size, ox, oy, { skrawki: true });
-  const { buildings, pois } = opiszBudynki(geo, kept, bid, size, ox, oy);
+  const { buildings, pois } = opiszBudynki(geo, kept, bid, size, ox, oy, true);
   // widok pięter: awans domów po kluczu budynku (dwa kawałki jednego budynku decydują tak samo), a kawałek przy szwie
   // z domem ma poziomy budynku domu
   if (opts.pietra) {

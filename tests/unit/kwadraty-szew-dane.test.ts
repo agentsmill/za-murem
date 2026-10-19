@@ -14,6 +14,8 @@ import { buildKwadrat, buildWorld, type World, type WorldBuilding } from '../../
 import { ADDRESSES, geoDomuTestowego, geoKwadratuTestowego, ukladTestowy } from './fixtures.ts';
 import { atrapaPlotna, grafikaZPlikow } from './grafika-pomoc.ts';
 
+/** rysowanie kawałków w Node jest wolne (kilkadziesiąt sekund na adres), a cały zestaw testów chodzi równolegle */
+const LIMIT_CZASU = 240_000;
 const BOK = 384;
 const KWADRATY: Array<[number, number]> = [
   [0, 0],
@@ -151,138 +153,146 @@ function pikseleKawalka(sc: Scene, cx: number, cy: number, s: number): Uint32Arr
 describe('szwy na prawdziwych danych: dom i trzech sąsiadów jak jedna scena', () => {
   const art: Grafika = { ...grafikaZPlikow(), budynki: null };
   for (const a of ADDRESSES) {
-    it(`${a.key}: kawałki wszystkich czterech kwadratów są takie jak w scenie złożonej (8 px), przy szwach także z bliska (32 px)`, () => {
-      const seed = 7;
-      const geoDomu = geoDomuTestowego(a);
-      const uklad = ukladTestowy(a);
-      const dom = buildWorld(geoDomu, { seed });
-      const swiaty = [dom];
-      for (const [sx, sy] of KWADRATY.slice(1))
-        swiaty.push(buildKwadrat(geoKwadratuTestowego(a, sx, sy), { seed, uklad, sx, sy, geoDomu }));
-      const { swiat, numer, konflikty } = zloz(swiaty);
-      const wzor = buildScene(swiat, art);
-      // bez drzew (korony rysuje płótno, którego atrapa nie ma); drzewa sprawdza następny test
-      wzor.treeGone.fill(1);
-      for (const s of wzor.styles) if (s.roof === 'tar') s.roof = 'gravel';
-      // style: część w kwadracie ma styl złożonego budynku przesunięty do układu kwadratu (jak styl domu w grze)
-      const sceny = swiaty.map((w, s) => {
-        const [sx, sy] = KWADRATY[s];
-        const sc = buildScene(w, art, { poczatek: { x: sx * BOK * TILE, y: sy * BOK * TILE } });
-        for (const b of w.buildings)
-          sc.styles[b.id] = przesunStyl(wzor.styles[numer(s, b.id)], sx * BOK * TILE, sy * BOK * TILE);
-        sc.treeGone.fill(1);
-        return sc;
-      });
-      sceny.forEach((sc, s) => {
-        const [sx, sy] = KWADRATY[s];
-        for (const strona of STRONY) {
-          const [dx, dy] = PRZESUNIECIE[strona];
-          const i = KWADRATY.findIndex(([x, y]) => x === sx + dx && y === sy + dy);
-          if (i >= 0) nalozSzew(sc, daneSzwu(sc, sceny[i], strona));
-        }
-      });
-      const n = wzor.chunks;
-      const roznice: string[] = [];
-      let porownane = 0;
-      let kawalkiZBudynkiem = 0;
-      let pominiete = 0;
-      // kawałek ze sklejonymi różnymi budynkami (z kafelkiem tego budynku w odległości najwyżej jednego kafelka) pomijamy
-      const zKonfliktem = (cx: number, cy: number) => {
-        for (let y = Math.max(0, cy * CHUNK - 1); y <= Math.min(2 * BOK - 1, (cy + 1) * CHUNK); y++)
-          for (let x = Math.max(0, cx * CHUNK - 1); x <= Math.min(2 * BOK - 1, (cx + 1) * CHUNK); x++)
-            if (konflikty.has(swiat.bid[y * 2 * BOK + x])) return true;
-        return false;
-      };
-      // 8 px na kafelek: pasy czterech kawałków po obu stronach szwów i cztery narożne kawałki sceny złożonej (daleko od
-      // szwów: sprawdza, że szum liczy się od współrzędnych miasta); 32 px: kawałki przy szwach co trzeci i cztery przy
-      // wspólnym rogu
-      const przySzwie = (c: number) => c >= 10 && c <= 13;
-      const narozny = (cx: number, cy: number) => (cx === 0 || cx === n - 1) && (cy === 0 || cy === n - 1);
-      for (const s of [8, 32]) {
-        const side = CHUNK * s;
-        for (let cy = 0; cy < n; cy++)
-          for (let cx = 0; cx < n; cx++) {
-            if (s === 8 && !przySzwie(cx) && !przySzwie(cy) && !narozny(cx, cy)) continue;
-            const naSzwie = (cx === 11 || cx === 12 || cy === 11 || cy === 12) && (cx + cy) % 3 === 0;
-            const wspolnyRog = (cx === 11 || cx === 12) && (cy === 11 || cy === 12);
-            if (s === 32 && !naSzwie && !wspolnyRog) continue;
-            if (konflikty.size && zKonfliktem(cx, cy)) {
-              pominiete++;
-              continue;
-            }
-            const sx = Math.floor(cx / (n / 2));
-            const sy = Math.floor(cy / (n / 2));
-            const i = KWADRATY.findIndex(([x, y]) => x === sx && y === sy);
-            const kx = cx - sx * (n / 2);
-            const ky = cy - sy * (n / 2);
-            const p = pikseleKawalka(wzor, cx, cy, s);
-            const q = pikseleKawalka(sceny[i], kx, ky, s);
-            porownane++;
-            for (let k = 0; k < p.length; k++)
-              if (p[k] !== q[k] && roznice.length < 8)
-                roznice.push(
-                  `s=${s} kawałek (${cx},${cy}) piksel (${k % side},${Math.floor(k / side)}): ${p[k].toString(16)} kontra ${q[k].toString(16)}`,
-                );
-            if (
-              s === 8 &&
-              swiat.buildings.some(
-                (b) => b.x0 < (cx + 1) * CHUNK && b.x1 >= cx * CHUNK && b.y0 < (cy + 1) * CHUNK && b.y1 >= cy * CHUNK,
-              )
-            )
-              kawalkiZBudynkiem++;
+    it(
+      `${a.key}: kawałki wszystkich czterech kwadratów są takie jak w scenie złożonej (8 px), przy szwach także z bliska (32 px)`,
+      () => {
+        const seed = 7;
+        const geoDomu = geoDomuTestowego(a);
+        const uklad = ukladTestowy(a);
+        const dom = buildWorld(geoDomu, { seed });
+        const swiaty = [dom];
+        for (const [sx, sy] of KWADRATY.slice(1))
+          swiaty.push(buildKwadrat(geoKwadratuTestowego(a, sx, sy), { seed, uklad, sx, sy, geoDomu }));
+        const { swiat, numer, konflikty } = zloz(swiaty);
+        const wzor = buildScene(swiat, art);
+        // bez drzew (korony rysuje płótno, którego atrapa nie ma); drzewa sprawdza następny test
+        wzor.treeGone.fill(1);
+        for (const s of wzor.styles) if (s.roof === 'tar') s.roof = 'gravel';
+        // style: część w kwadracie ma styl złożonego budynku przesunięty do układu kwadratu (jak styl domu w grze)
+        const sceny = swiaty.map((w, s) => {
+          const [sx, sy] = KWADRATY[s];
+          const sc = buildScene(w, art, { poczatek: { x: sx * BOK * TILE, y: sy * BOK * TILE } });
+          for (const b of w.buildings)
+            sc.styles[b.id] = przesunStyl(wzor.styles[numer(s, b.id)], sx * BOK * TILE, sy * BOK * TILE);
+          sc.treeGone.fill(1);
+          return sc;
+        });
+        sceny.forEach((sc, s) => {
+          const [sx, sy] = KWADRATY[s];
+          for (const strona of STRONY) {
+            const [dx, dy] = PRZESUNIECIE[strona];
+            const i = KWADRATY.findIndex(([x, y]) => x === sx + dx && y === sy + dy);
+            if (i >= 0) nalozSzew(sc, daneSzwu(sc, sceny[i], strona));
           }
-      }
-      expect(roznice).toEqual([]);
-      // pominięte tylko okolice skleconych kompleksów (kilka kawałków w obu poziomach), reszta porównana
-      expect(pominiete).toBeLessThan(20);
-      console.log(
-        `  ${a.key}: porównano ${porownane} kawałków, pominięto ${pominiete}, zbiorów z konfliktem ${konflikty.size}`,
-      );
-      expect(porownane).toBeGreaterThan(150);
-      expect(kawalkiZBudynkiem).toBeGreaterThan(15);
-    });
+        });
+        const n = wzor.chunks;
+        const roznice: string[] = [];
+        let porownane = 0;
+        let kawalkiZBudynkiem = 0;
+        let pominiete = 0;
+        // kawałek ze sklejonymi różnymi budynkami (z kafelkiem tego budynku w odległości najwyżej jednego kafelka) pomijamy
+        const zKonfliktem = (cx: number, cy: number) => {
+          for (let y = Math.max(0, cy * CHUNK - 1); y <= Math.min(2 * BOK - 1, (cy + 1) * CHUNK); y++)
+            for (let x = Math.max(0, cx * CHUNK - 1); x <= Math.min(2 * BOK - 1, (cx + 1) * CHUNK); x++)
+              if (konflikty.has(swiat.bid[y * 2 * BOK + x])) return true;
+          return false;
+        };
+        // 8 px na kafelek: pasy czterech kawałków po obu stronach szwów i cztery narożne kawałki sceny złożonej (daleko od
+        // szwów: sprawdza, że szum liczy się od współrzędnych miasta); 32 px: kawałki przy szwach co trzeci i cztery przy
+        // wspólnym rogu
+        const przySzwie = (c: number) => c >= 10 && c <= 13;
+        const narozny = (cx: number, cy: number) => (cx === 0 || cx === n - 1) && (cy === 0 || cy === n - 1);
+        for (const s of [8, 32]) {
+          const side = CHUNK * s;
+          for (let cy = 0; cy < n; cy++)
+            for (let cx = 0; cx < n; cx++) {
+              if (s === 8 && !przySzwie(cx) && !przySzwie(cy) && !narozny(cx, cy)) continue;
+              const naSzwie = (cx === 11 || cx === 12 || cy === 11 || cy === 12) && (cx + cy) % 3 === 0;
+              const wspolnyRog = (cx === 11 || cx === 12) && (cy === 11 || cy === 12);
+              if (s === 32 && !naSzwie && !wspolnyRog) continue;
+              if (konflikty.size && zKonfliktem(cx, cy)) {
+                pominiete++;
+                continue;
+              }
+              const sx = Math.floor(cx / (n / 2));
+              const sy = Math.floor(cy / (n / 2));
+              const i = KWADRATY.findIndex(([x, y]) => x === sx && y === sy);
+              const kx = cx - sx * (n / 2);
+              const ky = cy - sy * (n / 2);
+              const p = pikseleKawalka(wzor, cx, cy, s);
+              const q = pikseleKawalka(sceny[i], kx, ky, s);
+              porownane++;
+              for (let k = 0; k < p.length; k++)
+                if (p[k] !== q[k] && roznice.length < 8)
+                  roznice.push(
+                    `s=${s} kawałek (${cx},${cy}) piksel (${k % side},${Math.floor(k / side)}): ${p[k].toString(16)} kontra ${q[k].toString(16)}`,
+                  );
+              if (
+                s === 8 &&
+                swiat.buildings.some(
+                  (b) => b.x0 < (cx + 1) * CHUNK && b.x1 >= cx * CHUNK && b.y0 < (cy + 1) * CHUNK && b.y1 >= cy * CHUNK,
+                )
+              )
+                kawalkiZBudynkiem++;
+            }
+        }
+        expect(roznice).toEqual([]);
+        // pominięte tylko okolice skleconych kompleksów (kilka kawałków w obu poziomach), reszta porównana
+        expect(pominiete).toBeLessThan(20);
+        console.log(
+          `  ${a.key}: porównano ${porownane} kawałków, pominięto ${pominiete}, zbiorów z konfliktem ${konflikty.size}`,
+        );
+        expect(porownane).toBeGreaterThan(150);
+        expect(kawalkiZBudynkiem).toBeGreaterThan(15);
+      },
+      LIMIT_CZASU,
+    );
   }
 
   for (const a of ADDRESSES) {
-    it(`${a.key}: drzewa rysowane w każdym kawałku (własne i obce przez szew) to dokładnie drzewa sceny złożonej`, () => {
-      const seed = 7;
-      const geoDomu = geoDomuTestowego(a);
-      const uklad = ukladTestowy(a);
-      const swiaty = [buildWorld(geoDomu, { seed })];
-      for (const [sx, sy] of KWADRATY.slice(1))
-        swiaty.push(buildKwadrat(geoKwadratuTestowego(a, sx, sy), { seed, uklad, sx, sy, geoDomu }));
-      const { swiat } = zloz(swiaty);
-      const wzor = buildScene(swiat, null);
-      const sceny = swiaty.map((w, s) =>
-        buildScene(w, null, { poczatek: { x: KWADRATY[s][0] * BOK * TILE, y: KWADRATY[s][1] * BOK * TILE } }),
-      );
-      sceny.forEach((sc, s) => {
-        const [sx, sy] = KWADRATY[s];
-        for (const strona of STRONY) {
-          const [dx, dy] = PRZESUNIECIE[strona];
-          const i = KWADRATY.findIndex(([x, y]) => x === sx + dx && y === sy + dy);
-          if (i >= 0) nalozSzew(sc, daneSzwu(sc, sceny[i], strona));
-        }
-      });
-      const n = wzor.chunks;
-      const jak = (sc: Scene, ox: number, oy: number, cx: number, cy: number) =>
-        drzewaKawalka(sc, cx, cy).map((d) => `${d.t.seed}:${d.t.x + ox}:${d.t.y + oy}:${d.sucha ? 1 : 0}`);
-      const roznice: string[] = [];
-      let zObcymi = 0;
-      for (let cy = 0; cy < n; cy++)
-        for (let cx = 0; cx < n; cx++) {
-          const s = Math.floor(cx / (n / 2)) + 2 * Math.floor(cy / (n / 2));
+    it(
+      `${a.key}: drzewa rysowane w każdym kawałku (własne i obce przez szew) to dokładnie drzewa sceny złożonej`,
+      () => {
+        const seed = 7;
+        const geoDomu = geoDomuTestowego(a);
+        const uklad = ukladTestowy(a);
+        const swiaty = [buildWorld(geoDomu, { seed })];
+        for (const [sx, sy] of KWADRATY.slice(1))
+          swiaty.push(buildKwadrat(geoKwadratuTestowego(a, sx, sy), { seed, uklad, sx, sy, geoDomu }));
+        const { swiat } = zloz(swiaty);
+        const wzor = buildScene(swiat, null);
+        const sceny = swiaty.map((w, s) =>
+          buildScene(w, null, { poczatek: { x: KWADRATY[s][0] * BOK * TILE, y: KWADRATY[s][1] * BOK * TILE } }),
+        );
+        sceny.forEach((sc, s) => {
           const [sx, sy] = KWADRATY[s];
-          const kx = cx - sx * (n / 2);
-          const ky = cy - sy * (n / 2);
-          const oczekiwane = jak(wzor, 0, 0, cx, cy);
-          const dane = jak(sceny[s], sx * BOK, sy * BOK, kx, ky);
-          if (JSON.stringify(oczekiwane) !== JSON.stringify(dane) && roznice.length < 5)
-            roznice.push(`kawałek (${cx},${cy}): ${oczekiwane.length} kontra ${dane.length} drzew`);
-          if ((sceny[s].obce?.[ky * (n / 2) + kx]?.length ?? 0) > 0) zObcymi++;
-        }
-      expect(roznice).toEqual([]);
-      expect(zObcymi).toBeGreaterThan(5);
-    });
+          for (const strona of STRONY) {
+            const [dx, dy] = PRZESUNIECIE[strona];
+            const i = KWADRATY.findIndex(([x, y]) => x === sx + dx && y === sy + dy);
+            if (i >= 0) nalozSzew(sc, daneSzwu(sc, sceny[i], strona));
+          }
+        });
+        const n = wzor.chunks;
+        const jak = (sc: Scene, ox: number, oy: number, cx: number, cy: number) =>
+          drzewaKawalka(sc, cx, cy).map((d) => `${d.t.seed}:${d.t.x + ox}:${d.t.y + oy}:${d.sucha ? 1 : 0}`);
+        const roznice: string[] = [];
+        let zObcymi = 0;
+        for (let cy = 0; cy < n; cy++)
+          for (let cx = 0; cx < n; cx++) {
+            const s = Math.floor(cx / (n / 2)) + 2 * Math.floor(cy / (n / 2));
+            const [sx, sy] = KWADRATY[s];
+            const kx = cx - sx * (n / 2);
+            const ky = cy - sy * (n / 2);
+            const oczekiwane = jak(wzor, 0, 0, cx, cy);
+            const dane = jak(sceny[s], sx * BOK, sy * BOK, kx, ky);
+            if (JSON.stringify(oczekiwane) !== JSON.stringify(dane) && roznice.length < 5)
+              roznice.push(`kawałek (${cx},${cy}): ${oczekiwane.length} kontra ${dane.length} drzew`);
+            if ((sceny[s].obce?.[ky * (n / 2) + kx]?.length ?? 0) > 0) zObcymi++;
+          }
+        expect(roznice).toEqual([]);
+        expect(zObcymi).toBeGreaterThan(5);
+      },
+      LIMIT_CZASU,
+    );
   }
 });

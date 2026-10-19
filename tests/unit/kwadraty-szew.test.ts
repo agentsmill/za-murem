@@ -16,6 +16,8 @@ import { T } from '../../src/world/terrain.ts';
 import type { Tree, World, WorldBuilding } from '../../src/world/world.ts';
 import { atrapaPlotna, grafikaZPlikow } from './grafika-pomoc.ts';
 
+/** rysowanie kawałków w Node jest wolne, a cały zestaw testów chodzi równolegle */
+const LIMIT_CZASU = 240_000;
 const N = 64;
 const CHUNKS = N / CHUNK;
 
@@ -241,12 +243,16 @@ describe('szwy między kwadratami: kawałki przy szwie jak w jednej scenie', () 
   ];
   for (const [nazwa, art] of warianty) {
     for (const s of [8, 32]) {
-      it(`${nazwa}, ${s} px na kafelek: wszystkie kawałki czterech kwadratów są takie jak w scenie złożonej`, () => {
-        const { wzor, sceny } = uklad(art);
-        const r = roznice(wzor, sceny, s);
-        expect(r.out).toEqual([]);
-        expect(r.ile).toBe(0);
-      });
+      it(
+        `${nazwa}, ${s} px na kafelek: wszystkie kawałki czterech kwadratów są takie jak w scenie złożonej`,
+        () => {
+          const { wzor, sceny } = uklad(art);
+          const r = roznice(wzor, sceny, s);
+          expect(r.out).toEqual([]);
+          expect(r.ile).toBe(0);
+        },
+        LIMIT_CZASU,
+      );
     }
   }
 
