@@ -91,7 +91,7 @@ Badania (integrator, punkt 2): kolumna ukryta, dopóki gałąź `badania` sesji 
 - `src/sim/praca.ts` (ten projekt) trzyma listę rodzajów jako wpisy `{ id, umiejetnosc(st, p), widoczny(st), znajdz(sim, p) }`. Wpis `'badania'` jest dziewiąty; do scalenia `widoczny()` zwraca `false`.
 - Gałąź `badania` wystawia w `sim.ts` metodę `startResearch(p): boolean` (wolne miejsce w pracowni, praca `'research'`) i w `src/sim/badania.ts` czyste `badaniaDom(st): Dom | null` (dziedzina bieżącego badania, `null` bez badania) i `badaniaWidoczne(st): boolean` (jest pracownia albo badanie).
 - Kto scala drugi, podpina je w ciało wpisu: `znajdz` to `sim.startResearch(p)`, `umiejetnosc` to `badaniaDom(st)`, `widoczny` to `badaniaWidoczne(st)`. Bez wybranego badania nikt nie siada.
-- Gałąź `badania` ma własną kopię krzywej `0,7 + 0,15 · poziom`, którą przy scaleniu zastępuje `tempoPracy` z tego projektu; cechy z 0.3 (pracowity +10%, leniwy −10%, Mistrz Excela +5%) nakłada raz, na wynik `tempoPracy`.
+- Gałąź `badania` ma własną kopię krzywej (`krzywaUmiejetnosci`, od 19.10.2026 `1 + 0,1 · poziom` z `TEMPO_BAZOWE = 1,0`), którą przy scaleniu zastępuje `tempoPoziomu` z tego projektu (bez bramki pierwszego dnia, którą ma `tempoPracy`); cechy z 0.3 (pracowity +10%, leniwy −10%, Mistrz Excela +5%) nakłada raz, w badaniach.
 - Tamta gałąź nie rusza `think()`: bez tego projektu zarząd bada tylko na polecenie. Mieszkańcy znający dziedzinę siadają sami przez zaczep w `plan()`, poza tabelą Pracy (decyzja Mateusza przyjęta w tamtej sesji). Wiersza mieszkańca w tabeli tamta sesja nie potrzebuje.
 - Wspólne miejsca w `sim.ts` to dopiski (`JobKind`, unia poleceń, konstruktor z `??=`), w `snapshot.ts` też; przy scaleniu bierze się oba.
 
@@ -147,7 +147,7 @@ Skutek uboczny: część celów drugiego dnia (przeszukać dom, drewno na drugą
 
 Czas pracy rodzaju z umiejętnością dzieli się przez mnożnik `1 + 0,1 · poziom`: bez umiejętności dzisiejsze tempo (1,0), umiejętność tylko przyspiesza (poziom 2 daje 1,2, poziom 4 daje 1,4). Mnożnik działa od pierwszego rana, tak samo jak nowe rodzaje (przed nim zawsze 1), więc pierwszy dzień gry naprawdę jest bez zmian także u osób z umiejętnością (moje, po akcepcie: z umiejętnością od początku gotowanie i budowa szły szybciej już pierwszego dnia). Dotyczy ścinania, budowy, łatania, napraw, warsztatu, gotowania i badań; noszenia, szabru i dokładania nie. To samo działa przy poleceniu gracza. Jedna funkcja `tempoPracy(st, p, rodzaj)` w `src/sim/praca.ts` daje mnożnik wszystkim pracom. Liczbę 0,1 może zmienić bot, zasada „bez umiejętności 1” zostaje.
 
-Krzywa jest wspólna z badaniami: gałąź `badania` ma kopię `krzywaUmiejetnosci` (dziś `0,7 + 0,15 · poziom`) i `TEMPO_BAZOWE = 1,2`. Zaproponowałem tamtej sesji nową krzywą i `TEMPO_BAZOWE = 1,0` (badacz z umiejętnością 2 bez zmian, 1,2 punktu na godzinę); odpowiedź wpisuje się tutaj.
+Krzywa jest wspólna z badaniami (uzgodnione z sesją „Technologia i Gospodarka” 19.10.2026): sama krzywa to `tempoPoziomu(poziom) = 1 + 0,1 · poziom` w `src/sim/praca.ts`, a `tempoPracy` dokłada do niej bramkę pierwszego dnia. Gałąź `badania` bierze tę samą krzywą (`krzywaUmiejetnosci`) z `TEMPO_BAZOWE = 1,0` (badacz z umiejętnością 2 bez zmian, 1,2 punktu na godzinę), stroi `TEMPO_BAZOWE` swoim botem i przy scaleniu oddaje krzywą `tempoPoziomu`.
 
 ### Osoby, polecenia i stan (moje)
 
