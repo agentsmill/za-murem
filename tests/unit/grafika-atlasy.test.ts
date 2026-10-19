@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { type Atlas, atlasy, type OpisGrafiki, WYJSCIE } from '../../tools/atlasy.ts';
+import { LOOKI } from '../../src/render/art/lookBudynku.ts';
+import { ASSET_LOOKA, type Atlas, atlasy, type OpisGrafiki, WYJSCIE } from '../../tools/atlasy.ts';
 import { decodePng } from '../../tools/png.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
@@ -10,7 +11,31 @@ const json = <T>(rel: string) => JSON.parse(fs.readFileSync(path.join(ROOT, rel)
 interface Manifest {
   zarzad: string[];
   mieszkancy: string[];
-  assety: { id: string; status: string }[];
+  assety: {
+    id: string;
+    status: string;
+    wybrany?: string;
+    moduly?: {
+      attyka: [number, number, number, number];
+      fasada: { y: number; gora: number; pietro: [number, number]; dol: [number, number] };
+      przesla: [number, number];
+      przeslaPasow?: { gora?: number; pietro?: number; dol?: number };
+      wejscie: [number, number];
+      wejsciePasow?: { gora?: number; pietro?: number; dol?: number };
+      drzwi: number;
+      tlo?: string | string[];
+      dach?: 'papa' | [number, number, number, number];
+      ozdoba?: {
+        prostokat: [number, number, number, number];
+        os: number;
+        podstawa: number;
+        kotwica: string;
+        polozenie?: string;
+        tlo?: string | string[];
+        zalew?: 'obraz' | 'prostokat';
+      };
+    };
+  }[];
 }
 
 const wynik = atlasy();
@@ -45,7 +70,9 @@ describe('atlasy grafiki z PixelLab (tools/atlasy.ts)', () => {
       opis.teren.id,
       opis.blok.id,
       opis.dach.id,
+      opis.strop.id,
       opis.trzepak.id,
+      ...Object.values(opis.budynki.typy).map((t) => t.id),
       ...opis.ludzie.postacie.map((p) => p.id),
     ];
     for (const id of uzyte) expect(status.get(id), id).toBe('zatwierdzony');
@@ -119,6 +146,45 @@ describe('atlasy grafiki z PixelLab (tools/atlasy.ts)', () => {
     expect(d.gestosc).toBeGreaterThan(0);
   });
 
+  it('naklejki stropu: wnętrza kafelków strop-tynk w komórkach 32 × 32, bez koloru klucza (przezroczystego)', () => {
+    const m = json<{ assety: { id: string; uzycie?: Record<string, unknown> }[] }>('assets/manifest.json');
+    const u = m.assety.find((a) => a.id === opis.strop.id)!.uzycie as {
+      klucz: string;
+      naklejki: number[];
+      wnetrze_wariantu: Record<string, [number, number, number, number]>;
+      gestosc: number;
+    };
+    const s = opis.strop;
+    const a = obraz(s.plik);
+    expect(fs.existsSync(path.join(ROOT, WYJSCIE, s.plik)), `${WYJSCIE}/${s.plik}`).toBe(true);
+    expect([a.w, a.h]).toEqual([s.naklejka * s.naklejek, s.naklejka]);
+    expect(s.naklejek).toBe(u.naklejki.length);
+    expect(s.gestosc).toBe(u.gestosc);
+    const klucz = Number.parseInt(u.klucz.slice(1), 16);
+    const dir = path.join(ROOT, 'assets/raw/strop-tynk');
+    u.naklejki.forEach((n, i) => {
+      const plik = fs.readdirSync(dir).find((f) => f.endsWith(`_${n}.png`))!;
+      const src = decodePng(fs.readFileSync(path.join(dir, plik)));
+      const [wx, wy, ww, wh] = u.wnetrze_wariantu[n];
+      let widac = 0;
+      for (let y = 0; y < s.naklejka; y++)
+        for (let x = 0; x < s.naklejka; x++) {
+          const p = px(a, i * s.naklejka + x, y);
+          const w = x < ww && y < wh;
+          const j = ((wy + y) * src.width + wx + x) * 4;
+          const z = w ? [...src.rgba.subarray(j, j + 4)] : null;
+          const jestKlucz = z !== null && ((z[0] << 16) | (z[1] << 8) | z[2]) === klucz;
+          // piksel jest widoczny tylko we wnętrzu wariantu (od lewego górnego rogu komórki) i nie w kolorze klucza
+          if (z === null || jestKlucz) expect(p[3], `naklejka ${n} (${x}, ${y})`).toBe(0);
+          else {
+            expect(p, `naklejka ${n} (${x}, ${y})`).toEqual(z);
+            widac++;
+          }
+        }
+      expect(widac, `naklejka ${n} ma widoczne piksele`).toBeGreaterThan(0);
+    });
+  });
+
   it('trzepak: stopy w wierszu pod najniższym pikselem', () => {
     const t = opis.trzepak;
     const a = obraz(t.plik);
@@ -126,4 +192,138 @@ describe('atlasy grafiki z PixelLab (tools/atlasy.ts)', () => {
     for (let y = 0; y < a.h; y++) for (let x = 0; x < a.w; x++) if (px(a, x, y)[3]) dol = y + 1;
     expect(t.stopy).toBe(dol);
   });
+});
+
+describe('budynki publiczne i zabytkowe (budynki.png)', () => {
+  const m = json<Manifest>('assets/manifest.json');
+  const zrodlo = (id: string) => {
+    const a = m.assety.find((q) => q.id === id);
+    if (!a?.moduly || !a.wybrany) throw new Error(`${id}: brak modułów w manifeście`);
+    return { M: a.moduly, src: decodePng(fs.readFileSync(path.join(ROOT, a.wybrany))) };
+  };
+  const at = (src: { width: number; rgba: Uint8Array }, x: number, y: number) => {
+    const i = (y * src.width + x) * 4;
+    return [...src.rgba.subarray(i, i + 4)];
+  };
+  const atlas = obraz(opis.budynki.plik);
+
+  it('każdy z 11 wyglądów ma zatwierdzony asset z modułami w manifeście', () => {
+    expect(Object.keys(opis.budynki.typy).sort()).toEqual([...LOOKI].sort());
+    for (const look of LOOKI) {
+      expect(opis.budynki.typy[look].id).toBe(ASSET_LOOKA[look]);
+      expect(m.assety.find((a) => a.id === ASSET_LOOKA[look])?.moduly, look).toBeDefined();
+    }
+  });
+
+  it('prostokąty leżą w atlasie i nie nachodzą na siebie, a atlas mieści się w teksturze telefonu', () => {
+    expect(Math.max(atlas.w, atlas.h)).toBeLessThanOrEqual(4096);
+    const prostokaty: { nazwa: string; r: number[] }[] = [];
+    for (const look of LOOKI) {
+      const t = opis.budynki.typy[look];
+      prostokaty.push({ nazwa: `${look} fasada`, r: t.fasada });
+      if (t.dach) prostokaty.push({ nazwa: `${look} dach`, r: t.dach });
+      if (t.ozdoba) prostokaty.push({ nazwa: `${look} ozdoba`, r: t.ozdoba.prostokat });
+    }
+    for (const { nazwa, r } of prostokaty) {
+      expect(r[0], nazwa).toBeGreaterThanOrEqual(0);
+      expect(r[1], nazwa).toBeGreaterThanOrEqual(0);
+      expect(r[0] + r[2], nazwa).toBeLessThanOrEqual(atlas.w);
+      expect(r[1] + r[3], nazwa).toBeLessThanOrEqual(atlas.h);
+    }
+    for (let i = 0; i < prostokaty.length; i++)
+      for (let j = i + 1; j < prostokaty.length; j++) {
+        const a = prostokaty[i].r;
+        const b = prostokaty[j].r;
+        const nachodza = a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
+        expect(nachodza, `${prostokaty[i].nazwa} z ${prostokaty[j].nazwa}`).toBe(false);
+      }
+  });
+
+  it('żaden plik w public/assets nie przekracza tekstury 4096 px (telefony)', () => {
+    for (const nazwa of fs.readdirSync(path.join(ROOT, WYJSCIE)).filter((f) => f.endsWith('.png'))) {
+      const d = decodePng(fs.readFileSync(path.join(ROOT, WYJSCIE, nazwa)));
+      expect(Math.max(d.width, d.height), nazwa).toBeLessThanOrEqual(4096);
+    }
+  });
+
+  for (const look of LOOKI) {
+    it(`${look}: fasada z modułów wybranego kawałka (piętra, przęsło, wejście z drzwiami, profil krawędzi)`, () => {
+      const t = opis.budynki.typy[look];
+      const { M, src } = zrodlo(t.id);
+      const [fx, fy] = t.fasada;
+      // wiersze: gzyms z górnym piętrem, środkowe piętro i parter pod sobą, bez dziur
+      expect(t.gora).toEqual([0, M.fasada.gora]);
+      expect(t.srodek).toEqual([M.fasada.gora, M.fasada.pietro[1]]);
+      expect(t.dol).toEqual([M.fasada.gora + M.fasada.pietro[1], M.fasada.dol[1]]);
+      expect(t.dol[0] + t.dol[1]).toBeLessThanOrEqual(t.fasada[3]);
+      // kolumny: wejście, potem przęsła, potem jedna kolumna profilu
+      expect(t.wejscie).toEqual([0, M.wejscie[1]]);
+      expect(t.przesla).toEqual([M.wejscie[1], M.przesla[1]]);
+      expect(t.attyka).toEqual([M.wejscie[1] + M.przesla[1], M.attyka[3]]);
+      expect(t.fasada[2]).toBe(M.wejscie[1] + M.przesla[1] + 1);
+      expect(t.drzwi).toBeGreaterThanOrEqual(0);
+      expect(t.drzwi).toBeLessThan(t.wejscie[1]);
+      // piksele z pliku PixelLab, w miejscach policzonych z manifestu (nie z kodu składającego)
+      const wejDol = M.wejsciePasow?.dol ?? M.fasada.dol[0];
+      expect(px(atlas, fx + t.wejscie[0] + t.drzwi, fy + t.dol[0] + t.dol[1] - 1), 'parter pod drzwiami').toEqual(
+        at(src, M.wejscie[0] + M.drzwi, wejDol + M.fasada.dol[1] - 1),
+      );
+      const przPietro = M.przeslaPasow?.pietro ?? M.przesla[0];
+      expect(px(atlas, fx + t.przesla[0] + 2, fy + t.srodek[0] + 3), 'przęsło środkowego piętra').toEqual(
+        at(src, przPietro + 2, M.fasada.pietro[0] + 3),
+      );
+      const przGora = M.przeslaPasow?.gora ?? M.przesla[0];
+      expect(px(atlas, fx + t.przesla[0] + 1, fy + 1), 'przęsło gzymsu').toEqual(at(src, przGora + 1, M.fasada.y + 1));
+      for (let e = 0; e < t.attyka[1]; e++)
+        expect(px(atlas, fx + t.attyka[0], fy + e), `profil, piksel ${e}`).toEqual(
+          at(src, M.attyka[0], M.attyka[1] + e),
+        );
+    });
+
+    it(`${look}: dach (próbka albo papa) i ozdoba z przezroczystym tłem`, () => {
+      const t = opis.budynki.typy[look];
+      const { M, src } = zrodlo(t.id);
+      if (M.dach && M.dach !== 'papa') {
+        expect(t.dach).not.toBeNull();
+        expect(t.dach?.slice(2)).toEqual(M.dach.slice(2));
+        const [dx, dy] = t.dach as number[];
+        expect(px(atlas, dx + 3, dy + 4)).toEqual(at(src, M.dach[0] + 3, M.dach[1] + 4));
+      } else expect(t.dach).toBeNull();
+      if (!M.ozdoba) {
+        expect(t.ozdoba).toBeNull();
+        return;
+      }
+      const o = t.ozdoba;
+      if (!o) throw new Error(`${look}: brak ozdoby w opisie`);
+      const [ox, oy, ow, oh] = o.prostokat;
+      expect([ow, oh]).toEqual(M.ozdoba.prostokat.slice(2));
+      expect([o.ax, o.ay]).toEqual([M.ozdoba.os - M.ozdoba.prostokat[0], M.ozdoba.podstawa - M.ozdoba.prostokat[1]]);
+      expect(o.kotwica).toBe(M.ozdoba.kotwica);
+      expect(o.polozenie).toBe(M.ozdoba.polozenie ?? 'wejscie');
+      // coś zostało i coś zniknęło (tło wycięte), a to, co zostało, ma kolor z pliku
+      let widac = 0;
+      let znikl = 0;
+      for (let y = 0; y < oh; y++)
+        for (let x = 0; x < ow; x++) {
+          const p = px(atlas, ox + x, oy + y);
+          if (p[3]) {
+            widac++;
+            expect(p).toEqual(at(src, M.ozdoba.prostokat[0] + x, M.ozdoba.prostokat[1] + y));
+          } else znikl++;
+        }
+      expect(widac).toBeGreaterThan(ow * oh * 0.1);
+      expect(znikl).toBeGreaterThan(ow * oh * 0.05);
+      // zalew od brzegu prostokąta zaczyna od kolorów tła na jego brzegu: górne rogi o kolorze tła znikają
+      if (M.ozdoba.zalew === 'prostokat') {
+        const tla = [(M.ozdoba.tlo ?? M.tlo) as string | string[]].flat().map((c) => Number.parseInt(c.slice(1), 16));
+        for (const [x, y] of [
+          [0, 0],
+          [ow - 1, 0],
+        ]) {
+          const [r, g, b] = at(src, M.ozdoba.prostokat[0] + x, M.ozdoba.prostokat[1] + y);
+          if (tla.includes((r << 16) | (g << 8) | b)) expect(px(atlas, ox + x, oy + y)[3], `róg ${x},${y}`).toBe(0);
+        }
+      }
+    });
+  }
 });

@@ -10,6 +10,9 @@ import type { ActiveEvent } from '../content/events.ts';
 import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { RngState } from '../core/rng.ts';
+import type { Miejsce } from '../world/miasto.ts';
+import type { Cel } from './wyprawy.ts';
+import type { Droga, StanZwyciestwa } from './zwyciestwo.ts';
 
 // ---------------------------------------------------------------- wejście
 
@@ -48,6 +51,9 @@ export interface GovPerson {
   arm?: Arm;
   /** ugryziony (zakażony) */
   bitten?: boolean;
+  /** poza mapą na wyprawie (wyszedł bramą i jeszcze nie wrócił); bez pola: na miejscu. Mapa miasta nie wysyła
+      drugi raz kogoś, kto już jest w drodze */
+  away?: boolean;
 }
 
 export type Arm = 'brak' | 'wrecz' | 'dzida' | 'palna';
@@ -145,6 +151,19 @@ export interface GovInput {
   dead?: { id: string; name: string; cause: string; tick: number }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
+  /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
+      lokalnej (koło 192 m), posortowane po odległości. Miejsc z mapy lokalnej nie wybiera karta nocy
+      (`wybierzCeleNocy`) i nie wysyła się do nich wyprawy (`powodOdmowy`), ale karta miejsca je pokazuje. Bez pola
+      albo pusta: karta nocy gra na dzisiejszych TARGETS. Zapas miejsca liczy się z klucza, nie ze stanu gry */
+  okolica?: readonly Miejsce[];
+  /** warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod naszym zarządem, czyli zarząd i mieszkańcy naszych
+      budynków; bez pola zarząd liczy `people.length + residents` */
+  ludnosc?: number;
+  /** ilu ludzi mieszkało w kwadracie domu w 2021 roku według NSP; z tego liczy się cel drogi ludnościowej, bez pola
+      (albo z liczbą bez sensu) cel to 250 */
+  ludnosc2021?: number;
+  /** teren: ile budynków wspólny płot dołączył do naszego obwodu; bez pola droga terenu nie ma jak liczyć kamieni */
+  teren?: { przylaczone: number };
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -194,6 +213,9 @@ export interface GovEffects {
   ammo?: Partial<Record<'naboje' | 'loftki' | 'belty', number>>;
   /** ugryzieni na wyprawie (zakażeni) */
   bitten?: string[];
+  /** powroty wypraw dziennych z tego wywołania, po jednej pełnej linii na wyprawę (ta sama, co w `log`); tylko za dnia,
+      powrót przesunięty na rano idzie do raportu nocy. Interfejs pokazuje je graczowi, także po zamknięciu okna */
+  powroty?: Tx[];
 }
 
 export interface RaidPlan {
@@ -254,8 +276,10 @@ export interface NightOption {
   gain?: Partial<Record<LootKey, [number, number]>>;
   /** warta: ile obrony dodaje */
   guard?: number;
-  /** wyprawa: id celu z TARGETS */
+  /** wyprawa: id celu z TARGETS albo klucz miejsca z okolicy (`Cel.klucz`) */
   target?: string;
+  /** wyprawa: opis celu (miejsce z okolicy albo cel z TARGETS); bez pola cel szukany w TARGETS po `target` */
+  cel?: Cel;
   note?: Tx;
 }
 
@@ -317,6 +341,7 @@ export interface LawOption {
 }
 
 export type Prompt =
+  | { k: 'zwyciestwo'; droga: Droga }
   | { k: 'raport'; report: NightReport }
   | { k: 'uchwala'; day: number; first: boolean; options: LawOption[] }
   | { k: 'karta'; card: NightCard; assign: Record<string, string> }
@@ -339,8 +364,8 @@ export interface NightPlan {
     defense: number;
     stolen: StockDelta;
   } | null;
-  /** wyprawy: grupy po celu */
-  exp: { key: string; ids: string[]; target: string }[];
+  /** wyprawy: grupy po celu; `cel` to opis celu (stare grupy bez niego szukają w TARGETS po `target`) */
+  exp: { key: string; ids: string[]; target: string; cel?: Cel }[];
   /** linie raportu zbierane w nocy */
   lines: Tx[];
   hurt: { id: string; d: number }[];
@@ -360,6 +385,31 @@ export interface NightPlan {
   z0?: { killed: number; breaches: number; bites: number };
   bit0?: string[];
   zpeak?: number;
+}
+
+/** Stan miejsc z okolicy: dla klucza miejsca ile sztuk łupu już zabrano, ile było wizyt i w którym dniu gry ostatnia.
+    Miejsca się nie odnawiają. Pole `GovState.miasto` istnieje tylko po `wlaczMiasto` (src/gov/wyprawy.ts). */
+export interface StanMiasta {
+  /** klucz miejsca → sztuki łupu zabrane łącznie */
+  zabrano: Record<string, number>;
+  /** klucz miejsca → liczba wizyt */
+  wizyty: Record<string, number>;
+  /** klucz miejsca → dzień gry ostatniej wizyty */
+  ostatnia: Record<string, number>;
+}
+
+/** Wyprawa dzienna w drodze (z mapy miasta): kto idzie, dokąd i kiedy wyszła i wraca. Czasy w minutach gry od północy
+    pierwszego dnia (jak `gameMin`), a nie godziny jak `Cel.powrot`. Opis celu jest w stanie, więc powrót i łup liczą
+    się bez kafelków miasta. */
+export interface Wyprawa {
+  id: number;
+  cel: Cel;
+  /** id osób z zarządu */
+  ids: string[];
+  /** minuta gry wyjścia */
+  wyjscie: number;
+  /** minuta gry powrotu (`powrotMin`), nie godzina */
+  powrot: number;
 }
 
 export interface GovState {
@@ -410,4 +460,11 @@ export interface GovState {
   deadN?: number;
   /** ile napaści z GovInput.napady osiedle już policzyło (pole od pierwszej napaści) */
   napadN?: number;
+  /** mapa miasta: stan odwiedzonych miejsc; pole od `wlaczMiasto` (opcja `miasto`), bez niego zarząd gra na TARGETS */
+  miasto?: StanMiasta;
+  /** wyprawy dzienne w drodze; pole od pierwszego wyjścia z mapy miasta */
+  wyprawy?: Wyprawa[];
+  /** warunki zwycięstwa: kamienie milowe dróg, zwycięstwa, licznik celu ludności i kolejka epilogów w oknie; pole od
+      `wlaczZwyciestwo` (src/gov/zwyciestwo.ts), bez niego zarząd nie liczy dróg i stan zostaje jak przed nimi */
+  zwyciestwo?: StanZwyciestwa;
 }

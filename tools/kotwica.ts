@@ -112,7 +112,7 @@ async function przedPo(
     await page.goto(`${base}?${q}`);
     await waitIdle(page);
     const g = await page.evaluate(() => window.zm!.grafika());
-    const pelna = !!g && g.teren && g.blok && g.dach && g.trzepak && g.ludzie;
+    const pelna = !!g && g.teren && g.blok && g.dach && g.strop && g.trzepak && g.ludzie;
     if (pixellab ? !pelna : g)
       throw new Error(`grafika ${JSON.stringify(g)} w kadrze ${pixellab ? 'z PixelLab' : 'z kodu'}`);
     await page.addStyleTag({ content: UI });

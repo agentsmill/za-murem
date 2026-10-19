@@ -193,6 +193,35 @@
               "Idle/animations/stanie/north/frame_003.png"
             ]
           },
+          "smierc": {
+            "south": [
+              "Idle/animations/smierc/south/frame_000.png",
+              "Idle/animations/smierc/south/frame_001.png",
+              "Idle/animations/smierc/south/frame_002.png",
+              "Idle/animations/smierc/south/frame_003.png",
+              "Idle/animations/smierc/south/frame_004.png",
+              "Idle/animations/smierc/south/frame_005.png",
+              "Idle/animations/smierc/south/frame_006.png"
+            ],
+            "west": [
+              "Idle/animations/smierc/west/frame_000.png",
+              "Idle/animations/smierc/west/frame_001.png",
+              "Idle/animations/smierc/west/frame_002.png",
+              "Idle/animations/smierc/west/frame_003.png",
+              "Idle/animations/smierc/west/frame_004.png",
+              "Idle/animations/smierc/west/frame_005.png",
+              "Idle/animations/smierc/west/frame_006.png"
+            ],
+            "north": [
+              "Idle/animations/smierc/north/frame_000.png",
+              "Idle/animations/smierc/north/frame_001.png",
+              "Idle/animations/smierc/north/frame_002.png",
+              "Idle/animations/smierc/north/frame_003.png",
+              "Idle/animations/smierc/north/frame_004.png",
+              "Idle/animations/smierc/north/frame_005.png",
+              "Idle/animations/smierc/north/frame_006.png"
+            ]
+          },
           "drzemka-px": {
             "south": [
               "Idle/animations/drzemka-px/south/frame_000.png",
@@ -251,17 +280,17 @@
             ]
           },
           "warta-px": {
-            "south": [
-              "Idle/animations/warta-px/south/frame_000.png",
-              "Idle/animations/warta-px/south/frame_001.png",
-              "Idle/animations/warta-px/south/frame_002.png",
-              "Idle/animations/warta-px/south/frame_003.png"
-            ],
             "west": [
               "Idle/animations/warta-px/west/frame_000.png",
               "Idle/animations/warta-px/west/frame_001.png",
               "Idle/animations/warta-px/west/frame_002.png",
               "Idle/animations/warta-px/west/frame_003.png"
+            ],
+            "south": [
+              "Idle/animations/warta-px/south/frame_000.png",
+              "Idle/animations/warta-px/south/frame_001.png",
+              "Idle/animations/warta-px/south/frame_002.png",
+              "Idle/animations/warta-px/south/frame_003.png"
             ],
             "north": [
               "Idle/animations/warta-px/north/frame_000.png",
@@ -294,6 +323,15 @@
               "Idle/animations/cios/west/frame_003.png",
               "Idle/animations/cios/west/frame_004.png",
               "Idle/animations/cios/west/frame_005.png"
+            ]
+          },
+          "wstawanie": {
+            "west": [
+              "Idle/animations/wstawanie/west/frame_000.png",
+              "Idle/animations/wstawanie/west/frame_001.png",
+              "Idle/animations/wstawanie/west/frame_002.png",
+              "Idle/animations/wstawanie/west/frame_003.png",
+              "Idle/animations/wstawanie/west/frame_004.png"
             ]
           },
           "przeszukiwanie-px": {
@@ -343,12 +381,6 @@
             ]
           },
           "gotowanie-px": {
-            "west": [
-              "Idle/animations/gotowanie-px/west/frame_000.png",
-              "Idle/animations/gotowanie-px/west/frame_001.png",
-              "Idle/animations/gotowanie-px/west/frame_002.png",
-              "Idle/animations/gotowanie-px/west/frame_003.png"
-            ],
             "north": [
               "Idle/animations/gotowanie-px/north/frame_000.png",
               "Idle/animations/gotowanie-px/north/frame_001.png",
@@ -360,6 +392,12 @@
               "Idle/animations/gotowanie-px/south/frame_001.png",
               "Idle/animations/gotowanie-px/south/frame_002.png",
               "Idle/animations/gotowanie-px/south/frame_003.png"
+            ],
+            "west": [
+              "Idle/animations/gotowanie-px/west/frame_000.png",
+              "Idle/animations/gotowanie-px/west/frame_001.png",
+              "Idle/animations/gotowanie-px/west/frame_002.png",
+              "Idle/animations/gotowanie-px/west/frame_003.png"
             ]
           },
           "rabanie": {
@@ -375,5 +413,5 @@
     }
   ],
   "export_version": "3.1",
-  "export_date": "2026-10-18T20:38:54.384594"
+  "export_date": "2026-10-18T23:29:41.323771"
 }

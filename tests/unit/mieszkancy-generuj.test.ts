@@ -216,11 +216,13 @@ describe('złote skróty: wynik generatora przypięty do bajtu', () => {
   // że te same dane i adres dają innych mieszkańców niż wcześniej: jeśli to zamierzone, podbij WERSJA_GENERATORA
   // i wpisz nowe skróty (test przy różnicy pokazuje otrzymany). Zapisane 18.10.2026 po fali poprawek z przeglądu
   // (R51, R52, R54). W gałęzi pelna-gra dema niosą identyfikatory OSM (gałąź swiat-id-budynkow), więc klucze budynków
-  // to osm:<id> zamiast geograficznych i skróty są inne przy tym samym generatorze (bez podbicia wersji).
+  // to osm:<id> zamiast geograficznych i skróty są inne przy tym samym generatorze (bez podbicia wersji). Przepisane
+  // 19.10.2026 po przegenerowaniu dem z toGeoT (gałąź dema-przegenerowane): budynki mają zm:klucz (px:…), klucze budynków
+  // są inne, więc ziarna i mieszkańcy też, przy tym samym generatorze (bez podbicia wersji).
   const SKROTY: Record<string, string> = {
-    przymorze: 'af61982a41d56807726e8c525a8da03f824f5b025f4d6f01961270b2748f15ed',
-    lanciego: '150efa7fdc7620117cf513b4589bd2edfd0f0bef0638a0f47cdc437a7803095e',
-    zielonki: '00aae2a4e31094060dcd3332cb7f36701f83ec2eb7abcb8e368b239a58bf40dd',
+    przymorze: 'e52f97d31b31d265fdb918ea53817c205e13335f8529898370dfe995cdd87a79',
+    lanciego: 'd2fdca7baefe4fab29c61625364736dd1e4307067affea1768be78778e60976a',
+    zielonki: '6ddf008ce3fd2bae1344f73ff0cfb016ad67d4276e24a48a5298bf881bc2bbe8',
   };
 
   it('wersja generatora 1', () => {

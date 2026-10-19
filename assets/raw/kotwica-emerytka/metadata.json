@@ -94,6 +94,15 @@
               "Idle/animations/chod/east/frame_003.png"
             ]
           },
+          "wstawanie": {
+            "west": [
+              "Idle/animations/wstawanie/west/frame_000.png",
+              "Idle/animations/wstawanie/west/frame_001.png",
+              "Idle/animations/wstawanie/west/frame_002.png",
+              "Idle/animations/wstawanie/west/frame_003.png",
+              "Idle/animations/wstawanie/west/frame_004.png"
+            ]
+          },
           "stanie": {
             "west": [
               "Idle/animations/stanie/west/frame_000.png",
@@ -226,6 +235,35 @@
               "Idle/animations/cios/north/frame_005.png"
             ]
           },
+          "smierc": {
+            "west": [
+              "Idle/animations/smierc/west/frame_000.png",
+              "Idle/animations/smierc/west/frame_001.png",
+              "Idle/animations/smierc/west/frame_002.png",
+              "Idle/animations/smierc/west/frame_003.png",
+              "Idle/animations/smierc/west/frame_004.png",
+              "Idle/animations/smierc/west/frame_005.png",
+              "Idle/animations/smierc/west/frame_006.png"
+            ],
+            "north": [
+              "Idle/animations/smierc/north/frame_000.png",
+              "Idle/animations/smierc/north/frame_001.png",
+              "Idle/animations/smierc/north/frame_002.png",
+              "Idle/animations/smierc/north/frame_003.png",
+              "Idle/animations/smierc/north/frame_004.png",
+              "Idle/animations/smierc/north/frame_005.png",
+              "Idle/animations/smierc/north/frame_006.png"
+            ],
+            "south": [
+              "Idle/animations/smierc/south/frame_000.png",
+              "Idle/animations/smierc/south/frame_001.png",
+              "Idle/animations/smierc/south/frame_002.png",
+              "Idle/animations/smierc/south/frame_003.png",
+              "Idle/animations/smierc/south/frame_004.png",
+              "Idle/animations/smierc/south/frame_005.png",
+              "Idle/animations/smierc/south/frame_006.png"
+            ]
+          },
           "klekanie": {
             "south": [
               "Idle/animations/klekanie/south/frame_000.png",
@@ -341,5 +379,5 @@
     }
   ],
   "export_version": "3.1",
-  "export_date": "2026-10-18T20:24:13.131209"
+  "export_date": "2026-10-18T23:29:53.258364"
 }

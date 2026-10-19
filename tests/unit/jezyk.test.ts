@@ -6,6 +6,7 @@ import {
   jezyk,
   L,
   liczba,
+  mnogaPl,
   poZmianieJezyka,
   tr,
   tx,
@@ -69,6 +70,18 @@ describe('rdzeń języka', () => {
     expect(liczba(-2.26, 1, 'en')).toBe('−2.3');
     expect(liczba(-0.04, 1, 'pl')).toBe('0');
     expect(liczba(3, 0, 'en')).toBe('3');
+  });
+
+  it('polska liczba mnoga z liczbą: jedna, kilka (2–4 poza 12–14) i wiele', () => {
+    const osoby = (n: number) => mnogaPl(n, 'osoba', 'osoby', 'osób');
+    expect(osoby(0)).toBe('0 osób');
+    expect(osoby(1)).toBe('1 osoba');
+    for (const n of [2, 3, 4, 22, 23, 24, 32, 63, 102, 124, 1004]) expect(osoby(n), `${n}`).toBe(`${n} osoby`);
+    for (const n of [5, 9, 10, 11, 12, 13, 14, 15, 20, 21, 25, 31, 61, 100, 101, 111, 112, 113, 114, 121, 250, 500])
+      expect(osoby(n), `${n}`).toBe(`${n} osób`);
+    // liczba całkowita: ułamek zaokrągla się, a minus jest prawdziwy
+    expect(osoby(62.4)).toBe('62 osoby');
+    expect(osoby(-3)).toBe('−3 osoby');
   });
 });
 

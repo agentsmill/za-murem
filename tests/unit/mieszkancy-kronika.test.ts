@@ -6,7 +6,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { budynkiZGeo } from '../../src/mieszkancy/budynki.ts';
-import { kronika, nazwaMiejsca, type WpisKroniki, wolnyRok, zbiorImion } from '../../src/mieszkancy/kronika.ts';
+import {
+  kronika,
+  nazwaDoOkolicy,
+  nazwaDoOkolicyZDanych,
+  nazwaMiejsca,
+  nazwaWlasnaMiejsca,
+  type WpisKroniki,
+  wolnyRok,
+  zbiorImion,
+} from '../../src/mieszkancy/kronika.ts';
 import type { TabeleGminy, TabeleImion, TabeleKraju } from '../../src/mieszkancy/tabele.ts';
 import type { Budynek } from '../../src/mieszkancy/typy.ts';
 import type { Geo, GeoPoi } from '../../src/world/geo.ts';
@@ -399,6 +408,93 @@ describe('nazwaMiejsca: imię i nazwisko w nazwie zamienia się na opis kategori
     const patroni = LANCIEGO.geo.poi.concat(PRZYMORZE.geo.poi).filter((p) => /\bim\./.test(p.n));
     expect(patroni.length).toBeGreaterThan(3);
     for (const p of patroni) expect(nazwaMiejsca(p, imiona), p.n).toBe(p.n.slice(0, p.n.indexOf(' im.')).trim());
+  });
+});
+
+describe('nazwaWlasnaMiejsca: nazwa celu wyprawy, pusta tam, gdzie filtr ją zmienił', () => {
+  it('nazwa z osobą albo adresem daje pusty napis, nie polski opis kategorii', () => {
+    expect(nazwaWlasnaMiejsca(poi('budowlany', 'Usługi Remontowe Jan Nowak'), imiona)).toBe('');
+    expect(nazwaWlasnaMiejsca(poi('spozywczy', 'Sławomir Mielnik'), imiona)).toBe('');
+    expect(nazwaWlasnaMiejsca(poi('sklep', 'Kwiaciarnia u Moniki'), imiona)).toBe('');
+    expect(nazwaWlasnaMiejsca(poi('apteka', 'Apteka na Obrońców Wybrzeża 2'), imiona)).toBe('');
+  });
+
+  it('marki i instytucje zostają, patron odpada jak w nazwaMiejsca, brak nazwy to pusty napis', () => {
+    for (const [c, n] of [
+      ['spozywczy', 'Żabka'],
+      ['apteka', 'Apteka Pod Lwem'],
+      ['szkola', 'Szkoła Podstawowa nr 12'],
+      ['szkola', 'Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'],
+    ])
+      expect(nazwaWlasnaMiejsca(poi(c, n), imiona), n).toBe(nazwaMiejsca(poi(c, n), imiona));
+    expect(nazwaWlasnaMiejsca(poi('szkola', 'Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'), imiona)).toBe(
+      'Szkoła Podstawowa Nr 44',
+    );
+    expect(nazwaWlasnaMiejsca(poi('sklep', ''), imiona)).toBe('');
+  });
+});
+
+describe('nazwaDoOkolicy: nazwy miejsc dla okolicy zarządu', () => {
+  it('bez zbioru imion (brak tabel mieszkańców) każda nazwa jest pusta, także zwykła i z osobą', () => {
+    const nazwa = nazwaDoOkolicy(null);
+    expect(nazwa(poi('spozywczy', 'Żabka'))).toBe('');
+    expect(nazwa(poi('spozywczy', 'Sławomir Mielnik'))).toBe('');
+    expect(nazwa(poi('budowlany', 'Usługi Remontowe Jan Nowak'))).toBe('');
+    expect(nazwa(poi('szkola', 'Szkoła Podstawowa nr 12'))).toBe('');
+    expect(nazwa(poi('sklep', ''))).toBe('');
+  });
+
+  it('ze zbiorem imion: nazwa z osobą jest pusta, zwykła zostaje (jak nazwaWlasnaMiejsca)', () => {
+    const nazwa = nazwaDoOkolicy(imiona);
+    expect(nazwa(poi('spozywczy', 'Sławomir Mielnik'))).toBe('');
+    expect(nazwa(poi('budowlany', 'Usługi Remontowe Jan Nowak'))).toBe('');
+    expect(nazwa(poi('sklep', 'Kwiaciarnia u Moniki'))).toBe('');
+    expect(nazwa(poi('spozywczy', 'Żabka'))).toBe('Żabka');
+    expect(nazwa(poi('szkola', 'Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'))).toBe('Szkoła Podstawowa Nr 44');
+  });
+
+  it('na punktach dema przymorze: z tabelami nazwy z osobą puste, bez tabel wszystkie puste', () => {
+    const punkty = demo('przymorze').poi.filter((p) => p.n);
+    expect(punkty.some((p) => p.n === 'Sławomir Mielnik')).toBe(true);
+    for (const p of punkty) {
+      expect(nazwaDoOkolicy(null)(p), p.n).toBe('');
+      const z = nazwaDoOkolicy(imiona)(p);
+      if (p.n === 'Sławomir Mielnik' || p.n === 'Kwiaciarnia u Moniki') expect(z, p.n).toBe('');
+      if (p.n === 'Żabka') expect(z, p.n).toBe('Żabka');
+    }
+  });
+});
+
+describe('nazwaDoOkolicyZDanych: filtr tylko tam, gdzie tabele imion znają ludzi (przegląd gałęzi, I-3)', () => {
+  const obca = poi('instalator', 'James Wilson Plumbing');
+
+  it('polska tabela imion nie zna „James”: sam zbiór imion przepuszcza taką nazwę (tego pilnuje niżej reszta)', () => {
+    expect(nazwaDoOkolicy(imiona)(obca)).toBe('James Wilson Plumbing');
+    expect(nazwaDoOkolicy(imiona)(poi('instalator', 'Hans Müller Sanitär'))).toBe('Hans Müller Sanitär');
+  });
+
+  it('szablon krajowy (gmina null: adres poza Polską albo gmina bez tabel): zawsze puste, same kategorie', () => {
+    const nazwa = nazwaDoOkolicyZDanych({ gmina: null, imiona: tabeleImion });
+    expect(nazwa(obca)).toBe('');
+    expect(nazwa(poi('instalator', 'Hans Müller Sanitär'))).toBe('');
+    expect(nazwa(poi('instalator', 'Pierre Dubois Plomberie'))).toBe('');
+    expect(nazwa(poi('instalator', 'Mohammed Ali Repairs'))).toBe('');
+    expect(nazwa(poi('spozywczy', 'Sławomir Mielnik'))).toBe('');
+    expect(nazwa(poi('spozywczy', 'Żabka'))).toBe('');
+  });
+
+  it('bez danych mieszkańców: puste, jak nazwaDoOkolicy(null)', () => {
+    const nazwa = nazwaDoOkolicyZDanych(null);
+    for (const p of [obca, poi('spozywczy', 'Żabka'), poi('sklep', '')]) expect(nazwa(p), p.n).toBe('');
+  });
+
+  it('gmina z tabelami: filtr jak nazwaDoOkolicy ze zbiorem imion', () => {
+    const nazwa = nazwaDoOkolicyZDanych({ gmina: gdansk, imiona: tabeleImion });
+    const wzor = nazwaDoOkolicy(imiona);
+    expect(nazwa(poi('spozywczy', 'Sławomir Mielnik'))).toBe('');
+    expect(nazwa(poi('spozywczy', 'Żabka'))).toBe('Żabka');
+    expect(nazwa(poi('szkola', 'Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'))).toBe('Szkoła Podstawowa Nr 44');
+    for (const p of demo('przymorze').poi) expect(nazwa(p), p.n).toBe(wzor(p));
   });
 });
 

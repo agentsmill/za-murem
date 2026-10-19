@@ -4,7 +4,9 @@
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
-   raport), zapis i sterowanie. */
+   raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta”, klawisz M i minimapa w rogu ekranu
+   (src/ui/minimapa.ts), gra stoi przy otwartym oknie) z wysyłaniem wypraw dziennych (src/ui/wyprawa.ts: wybór osób,
+   podsumowanie, potwierdzenie), zapis i sterowanie. */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -15,9 +17,11 @@ import { ALARM_OFF, ALARM_OFF_SAY, ALARM_OFF_TITLE } from './content/napisy-zomb
 import type { Person } from './content/people.ts';
 import { jezyk, L, poZmianieJezyka, type Tx, tr, tx } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
+import { wyslijWyprawe } from './gov/dzienne.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
+import { celZMiejsca, wlaczMiasto } from './gov/wyprawy.ts';
 import {
   ackReport,
   chooseEvent,
@@ -30,8 +34,10 @@ import {
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
+import { type Droga, grajDalej, ocenDrogi, type PostepDrogi, wlaczZwyciestwo, wygrajDroge } from './gov/zwyciestwo.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
+import { nazwaDoOkolicyZDanych } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { GraSieciowa } from './net/gra.ts';
@@ -39,7 +45,8 @@ import { buildScene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
 import { wczytajGrafike } from './render/grafika.ts';
 import { type Light, lightAt } from './render/light.ts';
-import { sectionOf, type ThingLike } from './render/section.ts';
+import { sectionPietra } from './render/pietro.ts';
+import { type SectionScene, sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
 import { WEAPONS, WEAPONS_EN, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
@@ -49,7 +56,14 @@ import { NAPISY as HANDEL } from './sim/handlarz.ts';
 import { type LokatorzyGry, zrodloLokatorow } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
 import { commandsAt, type MenuItem } from './sim/orders.ts';
-import { mapaMieszkancow, mieszkancyNowejGry, mieszkancyZapisu, opcjaMieszkancow, stanyM2 } from './sim/osiedle.ts';
+import {
+  ludnoscSpisu2021,
+  mapaMieszkancow,
+  mieszkancyNowejGry,
+  mieszkancyZapisu,
+  opcjaMieszkancow,
+  stanyM2,
+} from './sim/osiedle.ts';
 import { type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, type SimStock, snapshot } from './sim/snapshot.ts';
@@ -92,8 +106,10 @@ import {
 import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
+import { MapaMiasta, mapaMiastaSheet } from './ui/miasto.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
 import { clearThumbs, thumbUrl } from './ui/miniatura.ts';
+import { Minimapa } from './ui/minimapa.ts';
 import {
   burnSheet,
   confirmSheet,
@@ -111,14 +127,28 @@ import {
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
+import {
+  blokujKlik,
+  nastepnePietro,
+  PODPOWIEDZ_ZARZAD,
+  podpowiedz as podpowiedzPietra,
+  przyjmijPietro,
+  SelektorPieter,
+} from './ui/pietra.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { esc } from './ui/tekst.ts';
-import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
+import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
+import { clearSave, pietraWlaczone, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
+import { drogiSheet, epilogSheet, statyEpilogu } from './ui/zwyciestwo.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
+import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
+import { KafelkiMiasta } from './world/miastoKafelki.ts';
+import { pobierzKafelek } from './world/mvt.ts';
+import { listaPieter } from './world/pietra.ts';
 import { buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -135,6 +165,8 @@ startJezyka({ params });
 const touchUI = matchMedia('(pointer: coarse)').matches;
 // grafika z PixelLab (atlasy z public/assets) pobiera się w tle od razu; ?grafika=kod: wszystko rysowane kodem
 const grafika = params.get('grafika') === 'kod' ? Promise.resolve(null) : wczytajGrafike();
+// mapa miasta (wyprawy do miejsc z okolicy, src/gov/wyprawy.ts): domyślnie włączona; ?miasto=0 gra jak przed nią
+const opcjaMiasto = params.get('miasto') !== '0';
 
 declare global {
   interface Window {
@@ -174,6 +206,12 @@ declare global {
         allowed: number;
         first: number;
       } | null;
+      /** miejsca z okolicy, które dostaje zarząd (`GovInput.okolica`); puste z ?miasto=0 (do zrzutów i testów) */
+      okolica: readonly Miejsce[];
+      /** mapa miasta tej gry (okno, widok, kafelki); null z ?miasto=0 i na osiedlu zapasowym */
+      mapa: () => MapaMiasta | null;
+      /** minimapa miasta w rogu ekranu (jej stan do zrzutów i testów); schowana i wyłączona bez mapy miasta */
+      minimapa: () => Minimapa;
       /** stan mieszkań siedziby w grze (st.apts) */
       apts: () => AptGame[];
       /** przyjęcie n osób zza bramy jak po decyzji zarządu (do zrzutów); zwraca, ilu przybyło */
@@ -181,7 +219,17 @@ declare global {
       /** gra z sąsiadami (src/net/gra.ts): zalogowanie, stan sieci, znaczniki */
       siec: () => ReturnType<GraSieciowa['podglad']>;
       /** które części grafiki są z PixelLab (reszta z kodu); null: wszystko z kodu */
-      grafika: () => Record<'teren' | 'blok' | 'dach' | 'trzepak' | 'ludzie', boolean> | null;
+      grafika: () => Record<'teren' | 'blok' | 'dach' | 'strop' | 'trzepak' | 'budynki' | 'ludzie', boolean> | null;
+      /** drogi do zwycięstwa tak, jak je widzi ekran dróg z Menu (`ocenDrogi`); pusto bez gry */
+      zwyciestwo: () => PostepDrogi[];
+      /** tylko do zrzutów: zwycięstwo drogi teraz (wygrana i wszystkie kamienie w stanie, epilog czeka); gdy żadne okno
+          nie jest otwarte, epilog od razu się pokazuje. Zwraca rodzaj okna, które się otworzyło, albo null */
+      wygraj: (droga: Droga) => string | null;
+      /** wybór piętra jak kliknięcie na liście kafelka „Piętro” (do zrzutów); nic nie robi bez ?pietra=1 i dla piętra
+          spoza listy */
+      pietro: (L: number) => void;
+      /** widok pięter: czy włączony w tej grze, wybrane piętro i lista pięter do wyboru (do zrzutów i testów) */
+      pietra: () => { wlaczone: boolean; pietro: number; lista: number[] };
     };
   }
 }
@@ -191,7 +239,93 @@ let sim: Sim | null = null;
 let gov: GovState | null = null;
 let loaded: Loaded | null = null;
 let seed = 0;
+/** widok pięter obecnej gry (?pietra=1 albo pole zapisu): ustawia go `enter`, czyta `save` */
+let pietraGry = false;
+/** piętra do wyboru w tej grze (`listaPieter` świata z flagą; bez niej tylko parter) */
+let pietraLista: number[] = [0];
+/** scena typowego piętra całej mapy: liczona leniwie przy pierwszym wyborze piętra od pierwszego, potem trzymana */
+let scenaPietra: SectionScene | null = null;
+/** czy któryś pionek zarządu stoi w budynku zakrytym stropem albo dachem (liczone co 200 ms w `hud`) */
+let zarzadUkryty = false;
 let hqName = '';
+/** miejsca z punktów OSM wokół adresu dla zarządu (liczone raz po zbudowaniu świata); puste bez opcji miasta */
+let okolica: Miejsce[] = [];
+/** ilu ludzi mieszkało w kwadracie domu w 2021 roku według spisu (liczone raz po zbudowaniu mapy, z tabel mieszkańców):
+    z tego zarząd liczy cel drogi ludnościowej (`GovInput.ludnosc2021`); bez tabel pusto i cel to 250 */
+let ludnosc2021: number | undefined;
+/** kafelki miasta na całą sesję: pobierane dopiero przy oglądaniu mapy miasta, nigdy przy starcie gry */
+const kafelkiMiasta = new KafelkiMiasta(pobierzKafelek);
+/** mapa miasta tej gry (widok i doczytane kafelki zostają między otwarciami okna); null bez opcji miasta i na osiedlu
+    zapasowym, które nie ma prawdziwego położenia */
+let mapaMiasta: MapaMiasta | null = null;
+/** minimapa miasta w prawym dolnym rogu (src/ui/minimapa.ts): kropki miejsc z okolicy i wyprawy w drodze, stuknięcie
+    otwiera okno mapy (nie w trybie stawiania: klik w jej rogu to próba postawienia budowli, a `openMiasto` by ją
+    anulował); rysowana z `drawState` najwyżej co 500 ms, schowana tam, gdzie nie ma miasta (`enter`) */
+const minimapa = new Minimapa($('minimapa'), () => {
+  if (!placing) openMiasto();
+});
+
+/* ---------- widok pięter (?pietra=1, src/ui/pietra.ts): kafelek „Piętro” w pasku, lista, klawisze, blokada klików ---------- */
+/** kafelek z listą pięter i podpowiedzią; widoczny tylko w grze z flagą (`enter`) */
+const selektorPieter = new SelektorPieter(
+  { btn: $<HTMLButtonElement>('btnFloor'), list: $('floorList'), note: $('floorNote') },
+  (L) => wybierzPietro(L),
+  // lista pięter nie zasłania panelu budowy (spec), więc odsuwa się od jego lewej krawędzi
+  () => (buildPanel.open ? $('buildPanel').getBoundingClientRect() : null),
+);
+
+/** wybór piętra (lista kafelka, PageUp i PageDown, zm.pietro, powrót na parter): przełącza widok tylko przy zmianie
+    piętra, bo `ustawPietro` unieważnia wszystkie kawałki z przekrojem. Scena typowego piętra liczy się raz, przy
+    pierwszym wyborze piętra od pierwszego, i idzie do widoku przy każdym takim wyborze; parter dostaje null. Piętro
+    spoza listy (bez ?pietra=1 jest tylko parter) nic nie zmienia, podobnie wybór w trakcie stawiania budowli
+    (przyjmijPietro). */
+function wybierzPietro(L: number): void {
+  if (
+    !sim ||
+    !pietraGry ||
+    !przyjmijPietro({ lista: pietraLista, obecne: view.pietro, docelowe: L, stawianie: !!placing })
+  )
+    return;
+  if (L >= 1) {
+    scenaPietra ??= sectionPietra(sim.w);
+    if (!scenaPietra) return;
+  }
+  view.ustawPietro(L, L >= 1 ? scenaPietra : null);
+  odswiezPietra();
+}
+
+/** czy któryś pionek zarządu stoi w obrysie budynku. Przy przekroju piętra od pierwszego każdy budynek ma strop albo
+    dach (siedziba z `levels` nie większym niż piętro też), więc taki pionek jest schowany. */
+function zarzadPodStropem(st: SimState, w: World): boolean {
+  if (!view.pietroAktywne()) return false;
+  return st.pawns.some((p) => p.kind === 'core' && !p.away && w.bid[Math.floor(p.y) * w.size + Math.floor(p.x)] >= 0);
+}
+
+/** kafelek: wybrane piętro, lista i podpowiedź (z `hud` co 200 ms i po zmianie piętra albo języka; bez zmian nie rusza DOM) */
+function odswiezPietra(): void {
+  if (!pietraGry) return;
+  if (sim) zarzadUkryty = zarzadPodStropem(sim.st, sim.w);
+  const pietro = view.pietro;
+  selektorPieter.odswiez(
+    pietraLista,
+    pietro,
+    podpowiedzPietra({ pietro, cutOn: view.section, zarzadUkryty, panelBudowy: buildPanel.open }),
+  );
+}
+
+/** czy punkt ekranu leży w obrysie budynku, którego parter jest schowany pod stropem albo dachem (piętro od pierwszego
+    z przekrojem): tam nic nie ma do kliknięcia */
+function podStropem(sx: number, sy: number): boolean {
+  return !!sim && view.pietroAktywne() && sim.w.bid[view.tileAt(sx, sy)] >= 0;
+}
+
+/** blokada kliknięcia pod stropem: pokazuje podpowiedź zamiast reakcji; true, gdy klik należy do blokady. Bez
+    argumentów blokuje każdy klik w obrys; `widocznyPionek` i `prawy` tylko w obsłudze kliknięcia mapy (blokujKlik) */
+function zablokowanyKlik(sx: number, sy: number, widocznyPionek = false, prawy = false): boolean {
+  if (!blokujKlik({ podStropem: podStropem(sx, sy), prawy, widocznyPionek })) return false;
+  say(tr(PODPOWIEDZ_ZARZAD), 2500);
+  return true;
+}
 /** słowa miejsca siedziby: w domu komitet ulicy, sąsiedzi i furtka, w bloku zarząd, mieszkańcy i brama; po
     angielsku wordsE */
 let words: Words = wordsOf(BLOK);
@@ -219,6 +353,8 @@ let savedHour = -1;
 const selected = new Set<number>();
 let hint = '';
 let hintUntil = 0;
+/** powroty wypraw dziennych (GovEffects.powroty), których nie dało się pokazać, bo w tym kroku czekało okno zarządu */
+let powrotyCzekaja: Tx[] = [];
 const modal = new Modal($('modal'), $('sheet'));
 const ctx = new ContextMenu($('ctx'));
 
@@ -257,10 +393,11 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
-/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona, i z ?lang=, dopóki jest w adresie) */
+/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona, z ?pietra=1 i z ?lang=, dopóki są w adresie) */
 const startUrl = () => {
   const q = new URLSearchParams();
   if (params.get('siec') === '1') q.set('siec', '1');
+  if (params.get('pietra') === '1') q.set('pietra', '1');
   const lang = new URLSearchParams(location.search).get('lang');
   if (lang) q.set('lang', lang);
   const s = q.toString();
@@ -350,6 +487,8 @@ poZmianieJezyka(() => {
   buildPanel.refresh(true);
   hqAria();
   ctx.close();
+  selektorPieter.zamknij();
+  odswiezPietra();
   // chwilowy napis był w starym języku: znika (pokazuje się na kilka sekund, więc nie ma czego tłumaczyć)
   hintUntil = 0;
   imieAgain();
@@ -413,9 +552,16 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   imionaGen.clear();
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
+  // widok pięter: wczytany zapis zachowuje to, z czym go zaczęto (nie czyta adresu), nowa gra czyta ?pietra=1
+  const pietra = pietraWlaczone(saved ?? null, params);
+  pietraGry = pietra;
   const t0 = performance.now();
+  // klucze „poi:X:Y” punktów (zapis i demo sprzed kluczy ich nie mają); przed mapaMieszkancow, żeby trafiły do mapy
+  // i zapisu. Osiedle zapasowe (proc) nie ma prawdziwego położenia, więc bez kluczy
+  if (opcjaMiasto && !data.geo.proc) uzupelnijKlucze(data.geo);
   // mapa z tagami budynków generatora mieszkańców (bez tabel ta sama mapa); świat poza tagami jest ten sam
   const geo = mapaMieszkancow(data.geo, dane);
+  ludnosc2021 = ludnoscSpisu2021(geo, dane);
   // gra z sąsiadami: świat bez budynków zajętych przez inne drużyny przy wyborze siedziby i bez nazwy ulicy z adresu
   // w nazwach budynków (zapis idzie do chmury); bez sieci (bez === null) zwykły świat. Świat zawsze z mapy z tagami
   // generatora, więc mieszkańcy siedziby (także innej niż pod adresem, gdy klatkę zajęła inna drużyna) idą niżej
@@ -425,12 +571,28 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     (bez) =>
       buildWorld(geo, {
         seed,
+        ...(pietra ? { pietra: true } : {}),
         ...(bez === null ? { street: data.street } : bez.length ? { bezSiedziby: bez } : {}),
       }),
     saved,
   );
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
-  // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa
+  // okolica dla zarządu: punkty z `geo` (metry od adresu bez obrotu świata, w przeciwieństwie do `world.pois`). Nazwa
+  // z osobą albo adresem odpada (pusta), bo filtr zamieniłby ją na polski opis kategorii, który wszedłby do angielskich
+  // tekstów celu; bez tabel imion (dane === null) albo poza gminami z tabelami (szablon krajowy, np. adres poza Polską)
+  // wszystkie nazwy puste, bo filtr nie rozpozna wtedy właściciela
+  const nazwaOkolicy = nazwaDoOkolicyZDanych(dane);
+  okolica = opcjaMiasto ? miejscaZPoi(geo.poi, nazwaOkolicy) : [];
+  // mapa miasta: ten sam filtr nazw dla miejsc z doczytanych kafelków (RODO); bez położenia (proc) nie ma miasta
+  mapaMiasta =
+    opcjaMiasto && !data.geo.proc
+      ? new MapaMiasta({ c: data.geo.c, okolica, kafelki: kafelkiMiasta, nazwa: nazwaOkolicy })
+      : null;
+  $('btnMiasto').hidden = !mapaMiasta;
+  minimapa.ustaw(mapaMiasta ? { okolica, st: () => gov } : null);
+  // zapis z innej wersji świata (po zmianie generatora) nie pasuje do stanu: to samo osiedle od nowa. Przestarzały zapis
+  // zachowuje swoją flagę pięter (pietraGry, świat już z nią zbudowany), tak jak zachowuje swoje ziarno, a nie czyta
+  // ?pietra=1 z adresu
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;
   // zarząd z panelu „Wasz zarząd”: bez ruszania go 4 osoby z siedziby (z generatora, bez tabel z ziarna adresu)
@@ -487,6 +649,14 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // płótno mierzy element; był ukryty, więc trzeba przeliczyć rozmiar po odsłonięciu
   view.app.resize();
   view.setScene(scene);
+  // widok pięter od parteru (scena jest nowa, jej piętro to 0): lista ze świata, scena piętra liczona od nowa, kafelek
+  // tylko z flagą
+  pietraLista = pietra ? listaPieter(world) : [0];
+  scenaPietra = null;
+  zarzadUkryty = false;
+  selektorPieter.zamknij();
+  $('floorSel').hidden = !pietra;
+  selektorPieter.odswiez(pietraLista, 0, null);
   // ?godzina=22 (albo ?hour=22, także z ułamkiem: 18.5 to 18:30): pora dnia na start
   const hour = params.get('godzina') ?? params.get('hour');
   if (hour !== null && !saved)
@@ -514,6 +684,11 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
   gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
+  powrotyCzekaja = [];
+  // mapa miasta w nowej grze i w starym zapisie (bez losowania; wyprawa nocna w drodze kończy się po staremu)
+  if (opcjaMiasto) wlaczMiasto(gov);
+  // drogi do zwycięstwa w nowej grze i w starym zapisie: kamienie, które stan już spełnia, zapisują się raz, bez epilogu
+  wlaczZwyciestwo(gov);
   // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
   const herd = Number(params.get('stado'));
   if (!saved && zombie && herd > 0) sim.spawnAtFence(herd, world.buildings[world.hq]?.entrances[0]?.out ?? 0);
@@ -597,6 +772,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   if (window.zm) {
     window.zm.sim = sim;
     window.zm.gov = gov;
+    window.zm.okolica = okolica;
   }
   // imiona zmienione przez gracza (pamięć przeglądarki) na osobach z generatora, w nowej grze i we wznowionej
   zastosujImiona();
@@ -662,6 +838,8 @@ function drawState() {
   wiescSeen = wiesc?.tick ?? -1;
   // ?swiatla=test: światła podglądu nocy zamiast świateł z gry
   if (preview) view.lights = preview.lights;
+  // minimapa sama pilnuje, żeby sprawdzać stan najwyżej co 500 ms i rysować tylko przy zmianie
+  minimapa.odswiez();
 }
 
 /* ---------- zarząd ---------- */
@@ -674,6 +852,10 @@ function input(): GovInput {
     const tiles = s.st.fence?.holes.find((x) => x.id === h.id)?.tiles ?? [];
     h.name ??= tiles.map((t) => names.get(t)).find(Boolean);
   }
+  // miejsca z okolicy dla karty nocy i wypraw dziennych; bez opcji zarząd gra na TARGETS
+  if (opcjaMiasto) i.okolica = okolica;
+  // ludność kwadratu domu z 2021 roku do celu drogi ludnościowej; bez tabel pole zostaje puste
+  if (ludnosc2021 !== undefined) i.ludnosc2021 = ludnosc2021;
   // warta i dyżur przy kozie, które stoją (także z menu), zarząd bierze z posterunków osób (people[].post)
   return i;
 }
@@ -696,6 +878,12 @@ function govStep(show: boolean): Prompt | null {
   const fx = govUpdate(gov, i);
   const p = gov.over ? null : pending(gov, i);
   applyFx(fx, !p);
+  // wynik wyprawy dziennej nie ginie pod uchwałą czy kartą: czeka na krok bez okna (raport rano ma własne linie)
+  powrotyCzekaja.push(...(fx.powroty ?? []));
+  if (!p && powrotyCzekaja.length) {
+    say(powrotyCzekaja.map(tr).join(' '), 7000);
+    powrotyCzekaja = [];
+  }
   if (gov.over) {
     if (show) showEnd();
     return null;
@@ -760,6 +948,7 @@ function showPrompt(p: Prompt) {
       decided();
     });
   else if (p.k === 'karta') showNight(p);
+  else if (p.k === 'zwyciestwo') showEpilog(p.droga);
   else
     modal.show(eventSheet(p, words, wordsE), (act, arg) => {
       if (act !== 'event') return;
@@ -807,6 +996,64 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
   });
 }
 
+/** epilog zwycięstwa drogą `droga` (okno z `pending`): „Graj dalej” zdejmuje epilog, zapisuje i wraca do gry w tempie sprzed
+    okna (albo do następnej decyzji); „Nowa gra” pyta o potwierdzenie i dopiero po „Tak” zdejmuje epilog (tak samo jak
+    „Graj dalej”), zapisuje i wychodzi na ekran startowy. Oba wybory zostawiają zapis: zwycięstwo nie kończy gry,
+    w odróżnieniu od porażki (`showEnd`) */
+function showEpilog(droga: Droga) {
+  const g = gov;
+  if (!g || !sim) return;
+  modal.show(epilogSheet(droga, g.laws.path, g.mode ?? 'zwykly', statyEpilogu(g, input())), (act) => {
+    if (act === 'zw-dalej') {
+      grajDalej(g);
+      decided();
+    } else if (act === 'zw-nowa') askNowaGra(droga);
+  });
+}
+
+/** potwierdzenie „Nowa gra” z epilogu. „Tak” zdejmuje epilog (`grajDalej`), zapisuje i idzie na ekran startowy, bez
+    `decided()`: jego `nextPrompt()` mógłby przed wyjściem otworzyć poranny raport. Zapis zostaje (jak po „Zapisz i wróć”
+    z Menu), ale bez epilogu, więc „Kontynuuj” go nie odtwarza, a raport, który czekał, wraca; nadpisze go dopiero zapis
+    nowej gry. „Nie” i Esc wracają do epilogu, który dalej czeka w `pending`, bo decyzja jeszcze nie zapadła */
+function askNowaGra(droga: Droga) {
+  const g = gov;
+  if (!g) return;
+  sheetAgain = () => askNowaGra(droga);
+  modal.show(
+    confirmSheet(
+      L('Nowa gra', 'New game'),
+      L(
+        'Wrócicie na ekran startowy. Ta gra zostaje w zapisie, dopóki nowa jej nie nadpisze.',
+        'You go back to the start screen. This game stays saved until a new one overwrites it.',
+      ),
+    ),
+    (act) => {
+      if (act === 'confirm-yes') {
+        grajDalej(g);
+        save();
+        location.href = startUrl();
+      } else if (act === 'confirm-no') {
+        modal.close();
+        nextPrompt();
+      }
+    },
+    nextPrompt,
+  );
+}
+
+/** ekran „Drogi do zwycięstwa” (z Menu): gra stoi, „Wróć” wraca do Menu, zamknięcie wraca do gry albo do decyzji, która czeka */
+function showDrogi() {
+  if (!sim || !gov) return;
+  sheetAgain = showDrogi;
+  modal.show(
+    drogiSheet(ocenDrogi(gov, input())),
+    (act) => {
+      if (act === 'zw-wroc') showMenu();
+    },
+    nextPrompt,
+  );
+}
+
 function showEnd() {
   if (!gov?.over) return;
   sheetAgain = showEnd;
@@ -832,6 +1079,7 @@ function save(): boolean {
     cam: { ...view.cam },
     world: worldKey(sim.w),
     ...(siec.stan ? { siec: siec.stan } : {}),
+    ...(pietraGry ? { pietra: true } : {}),
   };
   const ok = writeSave(s);
   // gra z sąsiadami: także do chmury (najwyżej raz na minutę)
@@ -1132,6 +1380,7 @@ function hud(now: number) {
   $('hint').textContent = warn || (now < hintUntil ? hint : '');
   $('hint').classList.toggle('warn', !!warn);
   renderStats(statsOf(snap, gov, words, wordsE));
+  odswiezPietra();
   alarmButton(st);
   renderGoals(snap);
   // przyjęci idą zza bramy: komunikat z przyciskiem „Pokaż”, dopóki ktoś jeszcze idzie
@@ -1176,7 +1425,7 @@ function hud(now: number) {
     const bud = !apt && budFocus >= 0 ? sim.budynekDoKarty(budFocus) : null;
     card.hidden = !apt && !bud;
     if (apt) setCard(aptCard(apt, touchUI, words, wordsE));
-    else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze, sim.st.plot), touchUI));
+    else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze, sim.st.plot, pietraGry), touchUI));
     return;
   }
   card.hidden = false;
@@ -1371,6 +1620,8 @@ $('zIn').onclick = () => view.zoomAt(view.width / 2, view.height / 2, 1.5);
 $('zOut').onclick = () => view.zoomAt(view.width / 2, view.height / 2, 1 / 1.5);
 $('zHome').onclick = () => {
   if (!sim) return;
+  // siedziba stoi na parterze
+  wybierzPietro(0);
   const hq = sim.w.buildings[sim.w.hq];
   flyTo(((hq.x0 + hq.x1 + 1) / 2) * TILE, ((hq.y0 + hq.y1 + 1) / 2) * TILE + 120, Math.max(1, view.cam.zoom), 700);
 };
@@ -1394,6 +1645,7 @@ function showMenu() {
         modal.close();
         nextPrompt();
       } else if (act === 'menu-help') showHelp();
+      else if (act === 'menu-zwyciestwo') showDrogi();
       else if (act === 'menu-start') {
         save();
         location.href = startUrl();
@@ -1924,6 +2176,8 @@ function askBurn(m: MenuItem) {
 function orderAt(sx: number, sy: number, menu: boolean) {
   // w trybie stawiania stuknięcie i przytrzymanie należą do planu budowy
   if (!sim || placing) return;
+  // piętro od pierwszego: pod stropem albo dachem parter jest schowany, więc polecenia tam nie idą
+  if (zablokowanyKlik(sx, sy)) return;
   const ids = [...selected];
   const tile = view.tileAt(sx, sy);
   const items = commandsAt(sim.st, sim.w, ids, tile);
@@ -2000,7 +2254,7 @@ let budFocus = -1;
 
 /** karta pod kliknięciem bez zaznaczenia: mieszkanie siedziby albo sąsiedni budynek */
 function focusTile(sx: number, sy: number) {
-  if (!sim) return;
+  if (!sim || zablokowanyKlik(sx, sy)) return;
   const tile = view.tileAt(sx, sy);
   aptFocus = aptAt(sim.w, tile);
   const bid = tile >= 0 ? sim.w.bid[tile] : -1;
@@ -2090,8 +2344,83 @@ function openBuild() {
   buildPanel.toggle();
 }
 
+/** okno mapy miasta: przycisk „Mapa miasta” i klawisz M. Gra stoi, póki okno jest otwarte; zamknięcie (przycisk, Esc,
+    klik obok) wraca do gry albo do decyzji zarządu, która czeka */
+function openMiasto() {
+  const mapa = mapaMiasta;
+  if (!sim || !mapa || modal.open) return;
+  sheetAgain = () => {
+    mapa.odepnij();
+    modal.close();
+    openMiasto();
+  };
+  cancelPlacing(false);
+  ctx.close();
+  pauseGame();
+  modal.show(
+    mapaMiastaSheet(touchUI),
+    (act, arg) => {
+      if (act === 'miasto-zamknij') {
+        mapa.odepnij();
+        modal.close();
+        nextPrompt();
+      } else mapa.obsluz(act, arg);
+    },
+    () => {
+      mapa.odepnij();
+      nextPrompt();
+    },
+  );
+  const el = modal.find('[data-miasto]');
+  if (el)
+    mapa.podepnij(el, {
+      touch: touchUI,
+      st: () => gov,
+      wejscie: () => (gov && sim ? input() : null),
+      onWyslij: (m) => openWyprawa(m),
+    });
+}
+
+/** plan wyprawy z karty miejsca na mapie miasta (src/ui/wyprawa.ts): wybór osób z zarządu (zaznaczeni w grze są wybrani
+    od razu), podsumowanie i potwierdzenie. „Wyślij” woła `wyslijWyprawe`: udane idzie przez `applyFx` (osoby wychodzą
+    bramą, ostatni wpis kroniki jest podpowiedzią), zapis i powrót do gry albo do decyzji, która czeka; odmowa zostaje
+    w oknie. „Wróć do mapy” otwiera mapę od nowa z tym samym widokiem i kartą; Esc zamyka jak każde okno.
+    Wysłanie z własnej woli nie jest odpowiedzią na okno zarządu, więc bez `decision()`. `wybrani`: wybór do zachowania
+    po zmianie języka. */
+function openWyprawa(m: Miejsce, wybrani?: Set<string>) {
+  const mapa = mapaMiasta;
+  const g = gov;
+  if (!sim || !g || g.over || !mapa) return;
+  const cel = celZMiejsca(m);
+  const wyb = wybrani ?? domyslniWybrani(cel, input(), g, selected);
+  sheetAgain = () => openWyprawa(m, wyb);
+  // okno mapy ustępuje planowi: widok i karta zostają w mapie na powrót
+  mapa.odepnij();
+  modal.show(
+    planWyprawySheet(cel, input(), g, wyb),
+    (act, arg) => {
+      if (act === 'wp-osoba') {
+        if (!wyb.delete(arg)) wyb.add(arg);
+        odswiezPlan(modal, cel, input(), g, wyb);
+      } else if (act === 'wp-wroc') {
+        modal.close();
+        openMiasto();
+      } else if (act === 'wyslij') {
+        const i = input();
+        const w = wyslijWyprawe(g, i, cel, kogoWyslac(cel, i, g, wyb));
+        if (!w.ok) return odswiezPlan(modal, cel, i, g, wyb, w.why);
+        applyFx(w.fx);
+        decided();
+      }
+    },
+    () => nextPrompt(),
+  );
+}
+
 function startPlacing(kind: BuildKind) {
   if (!sim) return;
+  // budowle są dziś tylko na parterze i podwórku
+  wybierzPietro(0);
   const allowed = allowedAnchors(sim.st, sim.w, kind, 0);
   placing = { kind, rot: 0, x: 0, y: 0, ok: false, allowed, okTiles: okTilesOf(allowed, kind, 0, sim.w.size) };
   // plan na środku ekranu, dopóki kursor albo palec nie pokaże miejsca
@@ -2215,6 +2544,7 @@ function placeGhost() {
 }
 
 $('btnBuild').addEventListener('click', () => openBuild());
+$('btnMiasto').addEventListener('click', () => openMiasto());
 // „Pokaż” przy przybyszach: kamera od razu jedzie na środek grupy, bez zmiany przybliżenia
 $('arriveShow').addEventListener('click', () => {
   const coming = sim ? arriving(sim.st) : [];
@@ -2370,15 +2700,26 @@ const endPointer = (e: PointerEvent) => {
       const [x0, y0] = view.toWorld(Math.min(d.x, e.offsetX), Math.min(d.y, e.offsetY));
       const [x1, y1] = view.toWorld(Math.max(d.x, e.offsetX), Math.max(d.y, e.offsetY));
       if (!e.shiftKey) selected.clear();
+      // piętro od pierwszego: pionki w obrysach budynków są schowane pod stropem albo dachem, więc ramka ich nie bierze
+      const w = sim.w;
+      let schowani = false;
       for (const p of sim.st.pawns)
-        if (p.kind === 'core' && p.x * TILE >= x0 && p.x * TILE <= x1 && p.y * TILE >= y0 && p.y * TILE <= y1)
-          selected.add(p.id);
+        if (p.kind === 'core' && p.x * TILE >= x0 && p.x * TILE <= x1 && p.y * TILE >= y0 && p.y * TILE <= y1) {
+          if (view.pietroAktywne() && w.bid[Math.floor(p.y) * w.size + Math.floor(p.x)] >= 0) schowani = true;
+          else selected.add(p.id);
+        }
+      if (schowani) say(tr(PODPOWIEDZ_ZARZAD), 2500);
       selectedChanged();
     }
     return;
   }
   const hit = view.pick(sim.st, e.offsetX, e.offsetY);
+  // mieszkaniec z osobą (zarząd miał pierwszeństwo niżej): karta do odczytu, bez zmiany zaznaczenia i bez poleceń
+  const lok = view.pickResident(sim.st, e.offsetX, e.offsetY);
   if (placing && placeClick(e.offsetX, e.offsetY, d.button, d.type, e.shiftKey)) return;
+  // piętro od pierwszego: klik w obrys budynku nie rozkazuje i nie otwiera kart (parter jest schowany). Widocznego
+  // pionka (`pick` i `pickResident` oddają tam tylko widocznych) da się kliknąć także przy fasadzie, lewym przyciskiem
+  if (zablokowanyKlik(e.offsetX, e.offsetY, !!(hit || lok), d.button === 2)) return;
   if (d.button === 2) {
     orderAt(e.offsetX, e.offsetY, true);
     return;
@@ -2389,8 +2730,6 @@ const endPointer = (e: PointerEvent) => {
     selectedChanged();
     return;
   }
-  // mieszkaniec z osobą (zarząd miał pierwszeństwo wyżej): karta do odczytu, bez zmiany zaznaczenia i bez poleceń
-  const lok = view.pickResident(sim.st, e.offsetX, e.offsetY);
   if (d.type !== 'mouse') {
     // dotyk: stuknięcie w pusty teren przy otwartej karcie mieszkańca tylko ją zamyka, bez polecenia
     if (residentFocus >= 0 && !lok) {
@@ -2511,6 +2850,12 @@ window.addEventListener('keydown', (e) => {
     renderSpeed();
   }
   if (e.code === 'KeyB') openBuild();
+  if (e.code === 'KeyM') openMiasto();
+  // widok pięter: PageUp o piętro wyżej, PageDown niżej
+  if (pietraGry && (e.code === 'PageUp' || e.code === 'PageDown')) {
+    e.preventDefault();
+    wybierzPietro(nastepnePietro(pietraLista, view.pietro, e.code === 'PageUp' ? 1 : -1));
+  }
   if (e.code === 'KeyR' && placing) rotatePlacing();
   if (e.code === 'Escape') {
     if (placing) cancelPlacing();
@@ -2606,13 +2951,37 @@ if (attrib) bars.observe(attrib);
             first: placing.allowed[0] ?? -1,
           }
         : null,
+    okolica: [],
+    mapa: () => mapaMiasta,
+    minimapa: () => minimapa,
     apts: () => sim?.st.apts ?? [],
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
     siec: () => siec.podglad(),
+    zwyciestwo: () => (sim && gov ? ocenDrogi(gov, input()) : []),
+    wygraj: (droga) => {
+      if (!sim || !gov || gov.over) return null;
+      const i = input();
+      if (!wygrajDroge(gov, droga, i.day, i.hour) || modal.open) return null;
+      const p = pending(gov, i);
+      if (p) showPrompt(p);
+      return p?.k ?? null;
+    },
     grafika: () => {
       const g = view.grafika;
-      return g && { teren: !!g.teren, blok: !!g.blok, dach: !!g.dach, trzepak: !!g.trzepak, ludzie: !!g.ludzie };
+      return (
+        g && {
+          teren: !!g.teren,
+          blok: !!g.blok,
+          dach: !!g.dach,
+          strop: !!g.strop?.img,
+          trzepak: !!g.trzepak,
+          budynki: !!g.budynki,
+          ludzie: !!g.ludzie,
+        }
+      );
     },
+    pietro: wybierzPietro,
+    pietra: () => ({ wlaczone: pietraGry, pietro: view.pietro, lista: [...pietraLista] }),
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });

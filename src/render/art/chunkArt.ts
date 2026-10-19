@@ -11,7 +11,9 @@ import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
 import {
   attykaKolor,
+  type BudynekGrafika,
   blokKolor,
+  dachProbkaKolor,
   kolumnaFasady,
   papaKolor,
   pasFasady,
@@ -20,7 +22,8 @@ import {
   wangRysuje,
 } from './pixellab.ts';
 import { deadTreeSprite } from './rzeczy.ts';
-import { type BStyle, CHUNK, type ChunkScene, SUB, TILE } from './scene.ts';
+import { type ArtBuilding, type BStyle, CHUNK, type ChunkScene, SUB, TILE } from './scene.ts';
+import { stropKolor } from './strop.ts';
 import { wearColor } from './szkody.ts';
 import { treeSprite } from './trees.ts';
 import { type InteriorTile, interiorColor } from './wnetrze.ts';
@@ -433,6 +436,45 @@ function roofDetails(ctx: Ctx2D, sc: ChunkScene, bid: number): void {
 }
 
 /**
+ * Lewy górny róg ozdoby wyglądu budynku (wieża, kopuła, portyk, wieża remizy) w pikselach świata. Ozdoba stoi przy
+ * głównym wejściu od południa (najbliższym osi budynku), a bez takiego wejścia na osi budynku; polozenie „prawo” albo
+ * „lewo” stawia ją na końcu południowej ściany. Podstawa leży na linii gzymsu fasady (korona nad dachem) albo na ziemi
+ * przed budynkiem (portyk ze schodami wystaje na kafelki przed ścianą).
+ */
+export function miejsceOzdoby(
+  w: ChunkScene['w'],
+  b: ArtBuilding,
+  st: Pick<BStyle, 'facade'>,
+  oz: NonNullable<BudynekGrafika['ozdoba']>,
+): [number, number] {
+  const size = w.size;
+  const mid = (b.x0 + b.x1 + 1) / 2;
+  let cx = mid * TILE;
+  let podstawa = (b.y1 + 1) * TILE;
+  let blisko = Number.POSITIVE_INFINITY;
+  for (const e of b.entrances) {
+    if (e.dir !== 'S') continue;
+    const ex = e.tile % size;
+    const ey = (e.tile - ex) / size;
+    const d = Math.abs(ex + 0.5 - mid);
+    if (d < blisko) {
+      blisko = d;
+      cx = (ex + 0.5) * TILE;
+      podstawa = (ey + 1) * TILE;
+    }
+  }
+  if (oz.polozenie === 'prawo') {
+    cx = (b.x1 + 1) * TILE - (oz.img.w - oz.ax) - 2;
+    podstawa = (b.y1 + 1) * TILE;
+  } else if (oz.polozenie === 'lewo') {
+    cx = b.x0 * TILE + oz.ax + 2;
+    podstawa = (b.y1 + 1) * TILE;
+  }
+  const y = oz.kotwica === 'gzyms' ? podstawa - st.facade - oz.ay : podstawa - oz.ay;
+  return [Math.round(cx - oz.ax), Math.round(y)];
+}
+
+/**
  * Rysuje kawałek (cx, cy) w skali s pikseli na kafelek (32 albo 8) do płótna o boku CHUNK*s.
  * Płótno może być zwykłe (główny wątek) albo OffscreenCanvas (worker). cut: przekrój, czyli
  * nad wnętrzem sc.section kafelki wnętrza zamiast dachu i fasady.
@@ -448,11 +490,21 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
   const out = new Uint32Array(img.data.buffer);
   const step = TILE / s;
   const off = step >> 1;
-  const sec = cut ? sc.section : null;
-  const facade = sec ? sc.styles[sec.building].wall : 0;
+  // tryb piętra (przekrój, sc.pietro od 1 i scena piętra): zamiast wnętrza siedziby typowe piętro mapy, ale tylko
+  // w budynkach o więcej niż sc.pietro kondygnacjach (levels budynku, bo styl tnie je do 16); niższe rysują się jak
+  // bez przekroju, czyli dachem
+  const pietro = cut && sc.pietro >= 1 && sc.pietra ? sc.pietro : 0;
+  const sec = pietro ? sc.pietra : cut ? sc.section : null;
+  // scena piętra nie ma jednego budynku (building −1): elewację każdego kafelka bierze jego budynek
+  const facade = sec && sec.building >= 0 ? sc.styles[sec.building].wall : 0;
   const teren = sc.art?.teren ?? null;
   const blok = sc.art?.blok ?? null;
   const dach = sc.art?.dach ?? null;
+  const budynki = sc.art?.budynki ?? null;
+  // otwarty w przekroju: wnętrze zamiast dachu, więc bez ozdób, maszynowni, kominów i anten; na piętrze tylko budynki,
+  // które mają to piętro (scena piętra ma w otwarte wszystkie od dwóch kondygnacji), niższe zostają z dachem i ozdobami
+  const otwarty = (b: ArtBuilding) =>
+    sec !== null && (b.id === sec.building || (!!sec.otwarte?.has(b.id) && (!pietro || b.levels > pietro)));
   /** pas fasady z modułów (wiersze atlasu od góry) po numerze budynku */
   const pasy = new Map<number, number[]>();
   for (let ty = 0; ty < CHUNK; ty++) {
@@ -470,7 +522,9 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       // na nich ślady pustego mieszkania i uszkodzenia posadzki (szkody.ts)
       // fasada z budynku kafelka: w przekroju są też otwarte sąsiednie budynki (M2 fala 2)
       const inner: InteriorTile | null =
-        sec && sec.cell[i] !== IN.NONE ? describeTile(sec, i, size, bid >= 0 ? sc.styles[bid].wall : facade) : null;
+        sec && sec.cell[i] !== IN.NONE && (!pietro || (bid >= 0 && w.buildings[bid].levels > pietro))
+          ? describeTile(sec, i, size, bid >= 0 ? sc.styles[bid].wall : facade)
+          : null;
       const dmg = inner ? sec!.damage?.get(i) : undefined;
       const rid = inner ? sec!.room[i] : -1;
       const why = rid >= 0 ? sec!.why?.get(sec!.roomApt?.[rid] ?? -1) : undefined;
@@ -487,14 +541,15 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       const wq = !inner && !st && teren && wangRysuje(t) ? wangKafel(w.terr, size, x, y) : null;
       // blok z modułów: pas fasady, środki drzwi od południa przy dole tej kolumny (moduł wejścia sięga
       // do sąsiedniej kolumny) i krawędzie dachu z attyką
-      const mod = !inner && st?.mod && blok ? blok : null;
+      const lg = !inner && st?.look ? (budynki?.[st.look] ?? null) : null;
+      const mod = !inner && st?.mod ? (lg ? lg.fasada : blok) : null;
       let rows: number[] = [];
       const doorsX: number[] = [];
       let eN = false;
       let eW = false;
       let eE = false;
       if (mod) {
-        rows = pasy.get(bid) ?? pasFasady(mod, st!.levels);
+        rows = pasy.get(bid) ?? pasFasady(mod, st!.vis ?? st!.levels);
         pasy.set(bid, rows);
         const yb = y + sc.south[i];
         for (let dx = -1; dx <= 1; dx++) {
@@ -515,7 +570,11 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
           const ax = x * TILE + px;
           let c: number;
           if (inner) {
-            c = interiorColor(inner, x, y, px, py, sec!.seed);
+            // strop piętra z naklejkami z grafiki sceny (bez niej sam kod, jak interiorColor)
+            c =
+              inner.kind === 'strop'
+                ? stropKolor(sc.art?.strop ?? null, ax, ay)
+                : interiorColor(inner, x, y, px, py, sec!.seed);
             if (dmg || why || soot) c = wearColor(c, inner, why, dmg, ax, ay, px, py, sec!.seed, wet, soot);
           } else if (mod) {
             const fy = sc.south[i] * TILE + (31 - py);
@@ -527,6 +586,7 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
             } else {
               const e = Math.min(eN ? py : TILE, eW ? px : TILE, eE ? 31 - px : TILE);
               if (e < mod.attyka[1]) c = attykaKolor(mod, e);
+              else if (lg?.dach) c = dachProbkaKolor(lg.dach, ax, ay, st!.seed);
               else c = dach ? papaKolor(dach, ax, ay) : roofColor(sc, st!, i, ax, ay, px, py, bid);
             }
           } else if (st) {
@@ -537,6 +597,30 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
             else c = roofColor(sc, st, i, ax, ay, px, py, bid);
           } else c = groundColor(sc, t, i, ax, ay, px, py, wq);
           out[o++] = rgba(c);
+        }
+      }
+    }
+  }
+  // ozdoby wyglądów budynków (wieża, kopuła, portyk): piksele sprite'a wpisane do obrazu kawałka tak jak teren i fasady
+  // (próbkowanie od środka piksela), więc działają tak samo w workerze, w głównym wątku i w Node; budynki otwarte
+  // w przekroju ich nie mają
+  if (budynki) {
+    const wx0 = cx * CHUNK * TILE;
+    const wy0 = cy * CHUNK * TILE;
+    for (const b of w.buildings) {
+      const st = sc.styles[b.id];
+      const oz = st.look ? budynki[st.look]?.ozdoba : null;
+      if (!oz || otwarty(b)) continue;
+      const [sx, sy] = miejsceOzdoby(w, b, st, oz);
+      const ox0 = Math.max(0, Math.ceil((sx - wx0 - off) / step));
+      const ox1 = Math.min(side - 1, Math.floor((sx + oz.img.w - 1 - wx0 - off) / step));
+      const oy0 = Math.max(0, Math.ceil((sy - wy0 - off) / step));
+      const oy1 = Math.min(side - 1, Math.floor((sy + oz.img.h - 1 - wy0 - off) / step));
+      for (let oy = oy0; oy <= oy1; oy++) {
+        const v = wy0 + oy * step + off - sy;
+        for (let ox = ox0; ox <= ox1; ox++) {
+          const p = oz.img.px[v * oz.img.w + (wx0 + ox * step + off - sx)];
+          if (p >>> 24) out[oy * side + ox] = p;
         }
       }
     }
@@ -555,7 +639,7 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
     if (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1) continue;
     const st = sc.styles[b.id];
     // otwarty w przekroju: bez maszynowni, kominów i anten (daszki nad wejściami zostają)
-    const open = sec !== null && (b.id === sec.building || !!sec.otwarte?.has(b.id));
+    const open = otwarty(b);
     // bloki z modułów PixelLab mają dach z samej papy z naklejkami, bez maszynowni, kominów i anten z kodu
     if (!open && b.cls === 'blok' && st.levels >= 5 && !st.mod) {
       for (const e of b.entrances) {

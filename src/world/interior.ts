@@ -101,9 +101,9 @@ export interface Room {
 export interface Interior {
   /** numer budynku */
   building: number;
-  /** kod kafelka (IN), size×size */
+  /** kod kafelka (IN), size×size (w świecie kwadratu obok domu, który nie ma siedziby, długości 0) */
   cell: Uint8Array;
-  /** numer pomieszczenia albo −1 (ściany, drzwi, poza wnętrzem); schody należą do klatki */
+  /** numer pomieszczenia albo −1 (ściany, drzwi, poza wnętrzem); schody należą do klatki; w świecie kwadratu długości 0 */
   room: Int16Array;
   rooms: Room[];
   /** kafelki drzwi, także frontowych, rosnąco */

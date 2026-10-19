@@ -1,5 +1,6 @@
 /* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenie palenia mebli,
-   menu (z linią o źródłach danych mieszkańców), jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
+   menu (z linią o źródłach danych mieszkańców i przyciskiem ekranu dróg do zwycięstwa, który rysuje src/ui/zwyciestwo.ts),
+   jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
    (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts.
    Napisy okien są w bieżącym języku (L() przy rysowaniu, Tx w tablicach). Teksty zarządu (Tx albo polski napis ze
    starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. Słowa
@@ -34,13 +35,30 @@ export interface Sheet {
   title: string;
   body: string;
   foot: string;
-  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie) i napad (sąsiedzi atakują) */
-  tone: 'noc' | 'uchwala' | 'wydarzenie' | 'raport' | 'menu' | 'ogien' | 'koniec' | 'sasiedzi' | 'napad';
+  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie), napad (sąsiedzi atakują),
+      mapa miasta (okno na cały ekran, src/ui/miasto.ts), plan wyprawy z mapy (zwykłe okno w barwie mapy,
+      src/ui/wyprawa.ts), ekran dróg do zwycięstwa (szeroka tabliczka w złocie) i epilog zwycięstwa (ta sama barwa,
+      zwykła szerokość), oba z src/ui/zwyciestwo.ts */
+  tone:
+    | 'noc'
+    | 'uchwala'
+    | 'wydarzenie'
+    | 'raport'
+    | 'menu'
+    | 'ogien'
+    | 'koniec'
+    | 'sasiedzi'
+    | 'napad'
+    | 'miasto'
+    | 'wyprawa'
+    | 'drogi'
+    | 'zwyciestwo';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
 }
 
-const LOOT: Record<LootKey, Tx> = {
+/** nazwy rodzajów łupu w obu językach (karta nocy, raport, karta miejsca na mapie miasta) */
+export const LOOT: Record<LootKey, Tx> = {
   wood: tx('drewno', 'wood'),
   supplies: tx('jedzenie', 'food'),
   scrap: tx('złom', 'scrap'),
@@ -62,7 +80,8 @@ const gainText = (g: NightOption['gain']): string =>
     .map(([k, [a, b]]) => `${tr(LOOT[k])} ${a === b ? a : `${a}–${b}`}`)
     .join(', ');
 
-const btn = (act: string, label: string, cls = 'btn', arg = '', extra = '') =>
+/** przycisk okna: `data-act` (i `data-arg`) obsługuje main.ts; `label` idzie do HTML bez ucieczki */
+export const btn = (act: string, label: string, cls = 'btn', arg = '', extra = '') =>
   `<button type="button" class="${cls}" data-act="${act}"${arg ? ` data-arg="${esc(arg)}"` : ''}${extra}>${label}</button>`;
 
 /** tekst zarządu w bieżącym języku albo zastępczy napis, gdy pola brak (jak ?? przy zwykłych napisach) */
@@ -435,7 +454,7 @@ export function menuSheet(note: string): Sheet {
     body: `<div class="menu-list">${btn('menu-back', L('Wróć do gry', 'Back to the game'), 'btn go')}${btn(
       'menu-help',
       L('Jak grać', 'How to play'),
-    )}${btn(
+    )}${btn('menu-zwyciestwo', L('Drogi do zwycięstwa', 'Roads to victory'))}${btn(
       'menu-start',
       L('Zapisz i wróć do ekranu startowego', 'Save and go back to the start screen'),
     )}</div><p class="fine">${esc(note)}</p><p class="fine dane">${esc(
@@ -489,13 +508,14 @@ function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
     .join('')}</ul>`;
 }
 
-/** potwierdzenie polecenia, którego nie da się cofnąć (rozbiórka, zajęcie mieszkania; palenie ma własne okno) */
-export function confirmSheet(label: string): Sheet {
+/** potwierdzenie polecenia, którego nie da się cofnąć (rozbiórka, zajęcie mieszkania; palenie ma własne okno); `note`
+    zastępuje zdanie „Tego nie da się cofnąć.” tam, gdzie byłoby nieprawdziwe (nowa gra po zwycięstwie zostawia zapis) */
+export function confirmSheet(label: string, note?: string): Sheet {
   return {
     tone: 'ogien',
     kicker: L('Na pewno?', 'Are you sure?'),
     title: esc(label),
-    body: `<p>${L('Tego nie da się cofnąć.', 'This cannot be undone.')}</p>`,
+    body: `<p>${note === undefined ? L('Tego nie da się cofnąć.', 'This cannot be undone.') : esc(note)}</p>`,
     foot: `${btn('confirm-no', L('Nie', 'No'), 'btn ghost')}${btn('confirm-yes', label, 'btn go')}`,
     closable: true,
   };

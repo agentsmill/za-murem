@@ -17,11 +17,23 @@
    Z flagą --sasiedzi na końcu dochodzi fala 2 M2: gracz fali 1, a od dnia 2 jedna osoba u sąsiadów (otwiera najbliższy
    budynek, przeszukuje pomieszczenia i piętra, nosi łup, rozmawia z lokatorami); liczy, ile u nich zrobiła, spotkania,
    rany i ugryzienia, zapasy po 5 dniach i głód. Bez flagi wyjście i skróty bez zmian.
-   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi] */
+   Z flagą --miasto na końcu dochodzi mapa miasta: gracz fali 1, a od dnia 2 za dnia (7–17) dwie najzdrowsze osoby idą do najbliższego
+   niewyczerpanego miejsca z okolicy poza mapą lokalną (tests/unit/miasto-play.ts: brak jedzenia to sklep spożywczy, brak
+   drewna stacja, co trzeci dzień szkoła; jedna wyprawa naraz); liczy wyprawy, łup, rannych, ugryzionych, najdalszą
+   wyprawę po dniach i zapasy po 10 dniach obok gry bez wypraw. Bez flagi wyjście i skróty bez zmian.
+   Z flagą --zwyciestwo na końcu dochodzą warunki zwycięstwa (docs/superpowers/specs/2026-10-19-warunki-zwyciestwa-design.md):
+   gracz fali 1 z drogami włączonymi w zarządzie (`wlaczZwyciestwo`) przez 30 dni na ziarnach zarządu; drukuje po dniach
+   ludność, cel drogi ludnościowej i zaliczone kamienie każdej drogi (pierwsze ziarno dzień po dniu, potem podsumowanie
+   wszystkich) i sprawdza, że kamienie nie maleją, każdy ma jeden wpis w kronice, licznik celu nie przekracza 7 dni, a ta sama
+   droga nie wygrywa dwa razy. Cel ludności liczy się jak w grze: z ludności kwadratu domu z 2021 roku z tabel mieszkańców
+   (`ludnoscDema` w tools/bot-mieszkancy.ts, jak `ludnoscSpisu2021` w main.ts), a bez tabel to 250, co nagłówek sekcji
+   mówi wprost. Bez flagi wyjście i skróty bez zmian.
+   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi] [--miasto] [--zwyciestwo] */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { nextRandom } from '../src/core/rng.ts';
+import { celLudnosci, DROGI, type Droga, ocenDrogi } from '../src/gov/zwyciestwo.ts';
 import { BUILDS, type Mat } from '../src/sim/budowle.ts';
 import { clockOf, dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
@@ -31,6 +43,7 @@ import { commandFor, commandsAt, jobText } from '../src/sim/orders.ts';
 import { BURNABLE, createSim, FOOD_START, type Laws, REST_UNTIL, Sim, type SimOpts, woodFrom } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { TUT_STEPS, type TutStep } from '../src/sim/tutorial.ts';
+import { naMapieLokalnej } from '../src/world/miasto.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
 import {
   type Decision,
@@ -42,8 +55,19 @@ import {
 } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
+import { miastoPlayer, okolicaZGeo } from '../tests/unit/miasto-play.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
-import { ARGUMENTY, MIESZKANCY, opisMieszkancow, SASIEDZI, swiatMieszkancow, tylkoZombie } from './bot-mieszkancy.ts';
+import {
+  ARGUMENTY,
+  ludnoscDema,
+  MIASTO,
+  MIESZKANCY,
+  opisMieszkancow,
+  SASIEDZI,
+  swiatMieszkancow,
+  tylkoZombie,
+  ZWYCIESTWO,
+} from './bot-mieszkancy.ts';
 
 tylkoZombie('bot');
 const SEED = Number(ARGUMENTY[0]) || 1;
@@ -566,6 +590,210 @@ if (SASIEDZI) {
   if (mean(runs.map((r) => r.log.rooms)) < 1) {
     console.log('  BŁĄD: gracz z sąsiadami nic u nich nie przeszukał');
     fail = true;
+  }
+}
+
+/* ---------- mapa miasta (--miasto): wyprawy dzienne do miejsc z okolicy ---------- */
+if (MIASTO) {
+  const t4 = performance.now();
+  const MIASTO_DAYS = 10;
+  const w = govWorld;
+  // jak w grze: okolica z geo osiedla (klucze miejsc z położenia, nazwy bez tabel mieszkańców, same kategorie)
+  const okolica = okolicaZGeo(demo.geo);
+  const poza = okolica.filter((m) => !naMapieLokalnej(m)).length;
+  console.log(
+    `\nMapa miasta (--miasto), ${govName}: ${GOV_SEEDS.length} ziaren × ${MIASTO_DAYS} dni, gracz fali 1 z przeszukiwaniem, a od dnia 2 za dnia (7–17) dwie najzdrowsze osoby idą do najbliższego niewyczerpanego miejsca poza mapą lokalną (192 m, do 2000 m): brak jedzenia (poniżej 2 porcji na osobę) to sklep spożywczy, brak drewna (poniżej 4) stacja, co trzeci dzień szkoła; jedna wyprawa naraz`,
+  );
+  console.log(
+    `  okolica: ${okolica.length} miejsc, w tym poza mapą lokalną ${poza} (najdalej ${Math.round(Math.max(...okolica.map((m) => m.odl)))} m)`,
+  );
+  const kats = ['spozywczy', 'stacja', 'szkola'];
+  const mc = (zMiastem: boolean) =>
+    GOV_SEEDS.map((seed) => {
+      const m2 = m2Player({ search: true, furniture: true });
+      const mp = miastoPlayer();
+      const r = playWithGov(w, seed, 'zawsze-warta', MIASTO_DAYS, 4, {
+        player: m2.player,
+        ...(zMiastem ? { miasto: { okolica, krok: mp.krok, po: mp.po } } : {}),
+        ...zAdresu(w),
+      });
+      return {
+        log: mp.log,
+        wysylki: mp.wysylki,
+        stock: snapshot(r.st, w).stock,
+        hunger: r.hunger,
+        built: m2.log.built.length,
+        zabrano: Object.values(r.gov.miasto?.zabrano ?? {}).reduce((a, b) => a + b, 0),
+        // z miejsc wyniesiono (po kłopotach i udźwigu) i ile razy wróciła stamtąd wyprawa, po kategoriach
+        wynos: kats.map((k) => {
+          const klucze = okolica.filter((m) => m.kat === k).map((m) => m.klucz);
+          return {
+            zabrano: klucze.reduce((a, c) => a + (r.gov.miasto?.zabrano[c] ?? 0), 0),
+            wizyty: klucze.reduce((a, c) => a + (r.gov.miasto?.wizyty[c] ?? 0), 0),
+          };
+        }),
+      };
+    });
+  const z = mc(true);
+  const bez = mc(false);
+  console.log(
+    `  wyprawy: średnio ${range(z.map((r) => r.log.wyprawy))} na grę, w tym ${kats.map((k) => `${k} ${f1(mean(z.map((r) => r.wysylki.filter((x) => x.kat === k).length)))}`).join(', ')}; z miejsc wyniesiono średnio ${f1(mean(z.map((r) => r.zabrano)))} sztuk`,
+  );
+  console.log(
+    `  z miejsca wynosi wyprawa średnio (sztuk): ${kats
+      .map((k, n) => {
+        const wiz = z.reduce((a, r) => a + r.wynos[n].wizyty, 0);
+        return `${k} ${wiz ? f1(z.reduce((a, r) => a + r.wynos[n].zabrano, 0) / wiz) : '—'}`;
+      })
+      .join(', ')}`,
+  );
+  const lup = (k: keyof (typeof z)[number]['log']['lup']) => f1(mean(z.map((r) => r.log.lup[k])));
+  console.log(
+    `  łup z powrotów (średnio na grę): jedzenie ${lup('supplies')}, drewno ${lup('wood')}, złom ${lup('scrap')}, części ${lup('parts')}, leki ${lup('meds')}; ranni ${f1(mean(z.map((r) => r.log.ranni)))}, ugryzieni ${f1(mean(z.map((r) => r.log.ugryzieni)))}`,
+  );
+  const dni = Array.from({ length: MIASTO_DAYS + 1 }, (_, k) => {
+    const m = Math.max(...z.map((r) => r.log.maxOdl[k] ?? 0));
+    return `${k + 1}: ${m ? Math.round(m) : '—'}`;
+  });
+  console.log(`  najdalsza wyprawa po dniach (największa z ziaren, m): ${dni.join(', ')}`);
+  const hz = (rs: typeof z, k: keyof Hunger) => rs.reduce((a, r) => a + r.hunger[k], 0);
+  const gl = (rs: typeof z) => Math.round((100 * hz(rs, 'starving')) / Math.max(1, hz(rs, 'samples')));
+  const zap = (rs: typeof z, k: 'supplies' | 'wood' | 'meals') => range(rs.map((r) => r.stock[k] ?? 0));
+  for (const [nazwa, rs] of [
+    ['z wyprawami', z],
+    ['bez wypraw', bez],
+  ] as const)
+    console.log(
+      `  po ${MIASTO_DAYS} dniach, ${nazwa}: jedzenie ${zap(rs, 'supplies')}, garnek ${zap(rs, 'meals')}, drewno ${zap(rs, 'wood')}, budowle ${f1(mean(rs.map((r) => r.built)))}; rano brakło jedzenia dla głodnych w ${hz(rs, 'short')} z ${hz(rs, 'mornings')} poranków, ktoś głodny przez ${gl(rs)}% czasu`,
+    );
+  console.log(`  (${Math.round(performance.now() - t4)} ms)`);
+  if (mean(z.map((r) => r.log.wyprawy)) < 1) {
+    console.log('  BŁĄD: gracz z mapą miasta nie wysłał żadnej wyprawy');
+    fail = true;
+  }
+  const jedz = mean(z.map((r) => r.stock.supplies + (r.stock.meals ?? 0)));
+  const jedzBez = mean(bez.map((r) => r.stock.supplies + (r.stock.meals ?? 0)));
+  if (jedz < 0.5 * jedzBez || gl(z) > gl(bez) + 10)
+    console.log(
+      `  UWAGA: zarząd z wyprawami ma po ${MIASTO_DAYS} dniach wyraźnie mniej jedzenia (${f1(jedz)} wobec ${f1(jedzBez)}) albo głoduje dłużej (${gl(z)}% wobec ${gl(bez)}%): do strojenia liczb w src/gov/wyprawy.ts`,
+    );
+}
+
+/* ---------- warunki zwycięstwa (--zwyciestwo): kamienie dróg po dniach ---------- */
+if (ZWYCIESTWO) {
+  const t5 = performance.now();
+  const ZW_DAYS = 30;
+  const w = govWorld;
+  // cel drogi ludnościowej jak w grze: z ludności kwadratu domu z 2021 roku z tabel mieszkańców, bez tabel 250
+  const spis = await ludnoscDema(demo);
+  const cel = celLudnosci({ ludnosc2021: spis.ludnosc2021 }, 'zwykly');
+  const skadCel = !spis.tabele
+    ? 'BEZ TABEL MIESZKAŃCÓW: brak public/data/mieszkancy/, ludnosc2021 nie podane, cel jak bez danych'
+    : spis.ludnosc2021 === undefined
+      ? 'tabele są, ale spis nic nie dał: ludnosc2021 nie podane, cel jak bez danych'
+      : `połowa z ${spis.ludnosc2021} osób mieszkających w kwadracie domu w 2021 roku, w przedziale 120–500, z tabel mieszkańców`;
+  console.log(
+    `\nWarunki zwycięstwa (--zwyciestwo), ${govName}: ${GOV_SEEDS.length} ziaren × ${ZW_DAYS} dni, gracz fali 1 z przeszukiwaniem, zarząd z włączonymi drogami (wlaczZwyciestwo)`,
+  );
+  console.log(`  cel drogi ludnościowej: ${cel} osób (${skadCel}); potem 7 dni bez głodu przy zaufaniu co najmniej 50`);
+  /** stan na koniec doby: ludzie pod zarządem, cel, kamienie dróg (w kolejności ekranu), licznik celu, zwycięstwa */
+  interface DzienZw {
+    ludzie: number;
+    cel: number;
+    kamienie: number[];
+    dniCelu: number;
+    wygrane: number;
+  }
+  const kolejnosc: Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
+  const zwRuns = GOV_SEEDS.map((seed) => {
+    const m2 = m2Player({ search: true, furniture: true });
+    const dni = new Map<number, DzienZw>();
+    let wpisy = 0;
+    const r = playWithGov(w, seed, 'zawsze-warta', ZW_DAYS, 4, {
+      player: m2.player,
+      zwyciestwo: {
+        ludnosc2021: spis.ludnosc2021,
+        po: (gov, i, fx) => {
+          // wpisy o kamieniach z każdego kroku (kronika w stanie trzyma tylko 300 ostatnich)
+          wpisy += fx.log.filter((t) => t.pl.startsWith('Droga „')).length;
+          const o = ocenDrogi(gov, i);
+          const z = gov.zwyciestwo!;
+          const lud = o.find((d) => d.droga === 'ludnosc')!;
+          // ostatnia obserwacja doby zostaje w mapie
+          dni.set(i.day, {
+            ludzie: lud.postep!.ile,
+            cel: lud.postep!.cel,
+            kamienie: kolejnosc.map((d) => o.find((x) => x.droga === d)!.zaliczone),
+            dniCelu: z.dniCelu,
+            wygrane: z.wygrane.length,
+          });
+        },
+      },
+      ...zAdresu(w),
+    });
+    return { seed, dni, wpisy, gov: r.gov, hunger: r.hunger };
+  });
+  const sumaKamieni = (d: DzienZw) => d.kamienie.reduce((a, b) => a + b, 0);
+  const ostatni = (r: (typeof zwRuns)[number]) => r.dni.get(Math.max(...r.dni.keys()))!;
+  // pierwsze ziarno dzień po dniach (stan na koniec doby; kamienie zaliczone z ilu)
+  const r0 = zwRuns[0];
+  console.log(
+    `  ziarno ${r0.seed}, stan na koniec doby (kamienie zaliczone / wszystkie; dzień 1 zaczyna się o 15:00, ostatni wiersz to koniec biegu o 15:00):`,
+  );
+  console.log(
+    `   dzień  ludność  ${'cel'.padStart(4)}  licznik  ${kolejnosc.map((d) => d.padStart(11)).join(' ')}  zwycięstwa`,
+  );
+  for (const [dzien, d] of [...r0.dni].sort((a, b) => a[0] - b[0]))
+    console.log(
+      `  ${String(dzien).padStart(6)}  ${String(d.ludzie).padStart(7)}  ${String(d.cel).padStart(4)}  ${String(d.dniCelu).padStart(7)}  ${kolejnosc.map((droga, k) => `${d.kamienie[k]}/${DROGI[droga].kamienie.length}`.padStart(11)).join(' ')}  ${String(d.wygrane).padStart(10)}`,
+    );
+  // podsumowanie wszystkich ziaren: ludzie i kamienie ludności po ZW_DAYS dniach, dzień każdego kamienia ludności
+  const ludzie = zwRuns.map((r) => ostatni(r).ludzie);
+  console.log(
+    `  po ${ZW_DAYS} dniach (${GOV_SEEDS.length} ziaren): ludzie średnio ${f1(mean(ludzie))} (od ${Math.min(...ludzie)} do ${Math.max(...ludzie)}) przy celu ${cel}; licznik celu najwyżej ${Math.max(...zwRuns.map((r) => Math.max(...[...r.dni.values()].map((d) => d.dniCelu))))} z 7; zwycięstwa ${zwRuns.reduce((a, r) => a + ostatni(r).wygrane, 0)} w ${zwRuns.length} grach`,
+  );
+  const iLud = kolejnosc.indexOf('ludnosc');
+  const dzienKamienia = (r: (typeof zwRuns)[number], k: number) =>
+    [...r.dni].sort((a, b) => a[0] - b[0]).find(([, d]) => d.kamienie[iLud] > k)?.[0];
+  console.log(
+    `  droga ludnościowa, dzień zaliczenia kamienia (po ziarnach, — gdy nie zaliczono): ${DROGI.ludnosc.kamienie
+      .map((kam, k) => `${kam.pl}: ${zwRuns.map((r) => dzienKamienia(r, k) ?? '—').join(', ')}`)
+      .join('; ')}`,
+  );
+  console.log(
+    `  pozostałe drogi (technologia, teren, lek, cuda) czekają na projekty, na których stoją: kamieni zaliczonych ${kolejnosc
+      .filter((d) => d !== 'ludnosc')
+      .map((d) => `${d} ${zwRuns.reduce((a, r) => a + ostatni(r).kamienie[kolejnosc.indexOf(d)], 0)}`)
+      .join(', ')}`,
+  );
+  const hz = (k: keyof Hunger) => zwRuns.reduce((a, r) => a + r.hunger[k], 0);
+  console.log(
+    `  jedzenie zarządu: rano brakło dla głodnych w ${hz('short')} z ${hz('mornings')} poranków, ktoś głodny przez ${Math.round((100 * hz('starving')) / Math.max(1, hz('samples')))}% czasu (${Math.round(performance.now() - t5)} ms)`,
+  );
+  // zgodność: kamienie nie maleją, każdy ma jeden wpis w kronice, licznik celu do 7, droga wygrywa najwyżej raz
+  for (const r of zwRuns) {
+    const dni = [...r.dni].sort((a, b) => a[0] - b[0]).map(([, d]) => d);
+    const maleja = dni.some((d, k) => k > 0 && d.kamienie.some((n, j) => n < dni[k - 1].kamienie[j]));
+    if (maleja) {
+      console.log(`  BŁĄD: ziarno ${r.seed}: liczba kamieni dróg zmalała między dobami`);
+      fail = true;
+    }
+    const kamieni = sumaKamieni(ostatni(r));
+    if (r.wpisy !== kamieni) {
+      console.log(
+        `  BŁĄD: ziarno ${r.seed}: ${kamieni} kamieni, a w kronice ${r.wpisy} wpisów o kamieniach (ma być po jednym)`,
+      );
+      fail = true;
+    }
+    const z = r.gov.zwyciestwo!;
+    if (dni.some((d) => d.dniCelu > 7) || new Set(z.wygrane.map((x) => x.droga)).size !== z.wygrane.length) {
+      console.log(`  BŁĄD: ziarno ${r.seed}: licznik celu ponad 7 albo ta sama droga wygrała dwa razy`);
+      fail = true;
+    }
+    if (z.epilogi.length) {
+      console.log(`  BŁĄD: ziarno ${r.seed}: epilog czeka po „Graj dalej” bota (${z.epilogi.join(', ')})`);
+      fail = true;
+    }
   }
 }
 if (fail) process.exit(1);

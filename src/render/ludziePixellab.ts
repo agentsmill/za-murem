@@ -4,13 +4,23 @@
    postaci albo pracy, zostaje z kodu (null). Tekstury z tych prostokątów robi warstwa (ludzieLayer.ts). Wybór
    postaci, numer klatki i przemalowanie to czyste funkcje (art/pixellab.ts, art/animacjePozy.ts), tu jest ich
    zestawienie z pamięcią podręczną. Leżenie i zwłoki (komórki z klatki stania przodem, art/lezenie.ts) mają tu własny
-   wybór postaci i pamięć komórek. */
+   wybór postaci i pamięć komórek. Przejścia między staniem a leżeniem (upadek przy śmierci, kładzenie się, wstawanie:
+   art/animacjePozy.ts, PRZEJSCIA) wybierają klatkę z czasu od startu przejścia; start i kierunek zna widok
+   (przejscia.ts), a ostatnia klatka upadku to leżenie zwłok. */
 
-import { kluczAnimacji, numerKlatki } from './art/animacjePozy.ts';
+import {
+  kluczAnimacji,
+  numerKlatki,
+  numerKlatkiPrzejscia,
+  PRZEJSCIA,
+  type RodzajPrzejscia,
+} from './art/animacjePozy.ts';
 import { type KomorkaLezenia, komorkaLezenia, wytnij } from './art/lezenie.ts';
 import type { Lie } from './art/people.ts';
 import {
   atlasWersji,
+  type KierunkiLudzi,
+  type KlatkaLudzi,
   type LudzieGrafika,
   type PostacLudzi,
   postacDlaOsoby,
@@ -206,14 +216,39 @@ export class LudziePixellab {
       zastepcza = true;
     }
     if (!an) return null;
-    let kier = an.kierunki[pv.dir & 3];
+    const kier = this.klatkiKierunku(an.kierunki, pv.dir);
+    if (!kier) return null;
+    return this.prostokat(
+      postac,
+      kier.klatki[numerKlatki(pose, frame, w, tt, kier.klatki.length)],
+      kier.flip,
+      wersja,
+      zastepcza,
+    );
+  }
+
+  /** klatki animacji w danym kierunku pionka i czy idą odbite poziomo (w opisie numer kierunku zamiast klatek); null, gdy
+      kierunek nie ma klatek */
+  private klatkiKierunku(kierunki: KierunkiLudzi, dir: number): { klatki: KlatkaLudzi[]; flip: boolean } | null {
+    let kier = kierunki[dir & 3];
     let flip = false;
     if (typeof kier === 'number') {
       flip = true;
-      kier = an.kierunki[kier];
+      kier = kierunki[kier];
     }
     if (typeof kier === 'number' || !kier?.length) return null;
-    const [x, y, sz, h, ax, ay] = kier[numerKlatki(pose, frame, w, tt, kier.length)];
+    return { klatki: kier, flip };
+  }
+
+  /** klatka z opisu jako prostokąt do narysowania w wersji kolorystycznej `wersja` (jedna współdzielona odpowiedź) */
+  private prostokat(
+    postac: PostacLudzi,
+    kl: KlatkaLudzi,
+    flip: boolean,
+    wersja: number,
+    zastepcza: boolean,
+  ): KlatkaPionka {
+    const [x, y, sz, h, ax, ay] = kl;
     const wer = this.wersjaPostaci(postac, wersja);
     const r = this.wynik;
     r.x = x;
@@ -227,6 +262,41 @@ export class LudziePixellab {
     r.zarzad = postac.zarzad;
     r.zastepcza = zastepcza;
     return r;
+  }
+
+  /** czy postać ma animację tego przejścia (upadek, wstawanie, kładzenie się); bez niej przejścia nie ma, a leżenie i
+      zwłoki rysuje komórka leżenia z klatki stania albo kod */
+  maPrzejscie(postac: PostacLudzi, rodzaj: RodzajPrzejscia): boolean {
+    return !!postac.animacje[PRZEJSCIA[rodzaj].klucz];
+  }
+
+  /** ile klatek ma animacja przejścia (0, gdy postać jej nie ma): wszystkie kierunki mają tyle samo, więc liczy się z
+      zachodu; z czasem trwania (czasPrzejscia) to postęp przejścia */
+  klatekPrzejscia(postac: PostacLudzi, rodzaj: RodzajPrzejscia): number {
+    const an = postac.animacje[PRZEJSCIA[rodzaj].klucz];
+    return (an && this.klatkiKierunku(an.kierunki, 2)?.klatki.length) || 0;
+  }
+
+  /**
+   * Klatka przejścia po `czas` sekundach od jego startu, w kierunku dir (0 południe, 1 północ, 2 zachód, 3 wschód:
+   * klatki odbite, gdy kierunek ma w opisie tylko odbicie zachodu) i wersji kolorystycznej `wersja`. null, gdy postać nie
+   * ma tej animacji albo przejście już się skończyło. Wynik jest współdzielony jak w klatka().
+   */
+  przejscie(postac: PostacLudzi, rodzaj: RodzajPrzejscia, dir: number, czas: number, wersja = 0): KlatkaPionka | null {
+    const an = postac.animacje[PRZEJSCIA[rodzaj].klucz];
+    if (!an) return null;
+    const kier = this.klatkiKierunku(an.kierunki, dir);
+    if (!kier) return null;
+    const i = numerKlatkiPrzejscia(rodzaj, czas, kier.klatki.length);
+    return i === null ? null : this.prostokat(postac, kier.klatki[i], kier.flip, wersja, false);
+  }
+
+  /** ostatnia klatka upadku w kierunku dir: tak leżą zwłoki (kończy ją upadek, który zaczyna ta sama klatka); null, gdy
+      postać nie ma upadku. Wynik jest współdzielony jak w klatka(). */
+  klatkaZwlok(postac: PostacLudzi, dir: number, wersja = 0): KlatkaPionka | null {
+    const an = postac.animacje[PRZEJSCIA.smierc.klucz];
+    const kier = an && this.klatkiKierunku(an.kierunki, dir);
+    return kier ? this.prostokat(postac, kier.klatki[kier.klatki.length - 1], kier.flip, wersja, false) : null;
   }
 
   /** wersja, w której postać naprawdę jest rysowana: postać bez ubrania do przemalowania (czarny strój w kolorze obrysu)

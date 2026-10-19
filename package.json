@@ -29,7 +29,8 @@
     "dane:odmiana": "node tools/dane-odmiana.ts",
     "mieszkancy": "node tools/mieszkancy.ts",
     "shots": "node tools/shots.ts",
-    "perf": "node tools/perf.ts"
+    "perf": "node tools/perf.ts",
+    "determinizm": "node tools/determinizm.ts"
   },
   "dependencies": {
     "pixi.js": "8.22.0"

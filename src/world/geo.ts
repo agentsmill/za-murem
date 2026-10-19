@@ -1,6 +1,8 @@
 /* Geometria osiedla w metrach względem punktu adresu: x na wschód, y na południe.
    Ten sam format co w 0.3 (wynik toGeo z Overpass i toGeoT z kafelków). */
 
+import type { RodzajPunktu } from './rodzaje.ts';
+
 export type Pt = [number, number];
 
 export interface GeoBuilding {
@@ -29,6 +31,19 @@ export interface GeoPoi {
   y: number;
   c: string;
   n: string;
+  /** klucz punktu „poi:X:Y” (globalny piksel z=14, miasto.ts): wspólny dla wszystkich graczy, niezależny od środka
+      mapy; brak w zapisach i demach sprzed kluczy (uzupelnijKlucze liczy go z położenia) oraz w osiedlu zapasowym
+      (genProc nie ma prawdziwego położenia, więc kluczy mu nie liczymy i mapy miasta nie ma) */
+  k?: string;
+}
+/** punkt, który mówi, czym jest budynek (muzeum, teatr, hotel, dworzec, remiza, szpital, kościół, urząd, ratusz,
+    willa): osobno od `poi`, bo kategorie punktów (`cats` budynku) zmieniają klasę budynku w classify(), a rodzaj ma
+    zmieniać tylko jego wygląd (src/world/rodzaje.ts) */
+export interface GeoRodzaj {
+  x: number;
+  y: number;
+  k: RodzajPunktu;
+  n: string;
 }
 export interface Geo {
   c: [number, number];
@@ -37,6 +52,8 @@ export interface Geo {
   a: GeoArea[];
   w: GeoWater[];
   poi: GeoPoi[];
+  /** rodzaje punktów (nowe w 0.4); pola nie ma, gdy w pobranych danych nie ma żadnego takiego punktu */
+  rodzaje?: GeoRodzaj[];
   /** przejścia przez budynki (bramy, prześwity, tunele piesze i serwisowe); nowe w 0.4 */
   pass?: GeoRoad[];
   src?: string;
