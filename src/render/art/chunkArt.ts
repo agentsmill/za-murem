@@ -1,7 +1,11 @@
 /* Rysowanie kawałka mapy (32×32 kafelki) do płótna: teren, cienie, dachy i fasady liczone
    piksel po pikselu, potem drzewa i detale dachów. Ta sama funkcja daje dwa poziomy szczegółów:
    32 px na kafelek (z bliska) i 8 px na kafelek (z daleka). Z grafiką z PixelLab (scena.art) trawnik
-   i chodnik idą z kafelków Wanga, a bloki z modułów kawałka bloku (pixellab.ts); reszta zawsze z kodu. */
+   i chodnik idą z kafelków Wanga, a bloki z modułów kawałka bloku (pixellab.ts); reszta zawsze z kodu.
+   Kwadrat miasta obok domu (scena z `poczatek` i `brzeg`, zob. scene.ts i szew.ts) rysuje się tak, jakby leżał w jednej
+   scenie z sąsiadami: szum, wzory fasad i dachów liczą się od współrzędnych miasta (początek kwadratu w pikselach),
+   krawężniki, cienie terenu i kafelki Wanga przy krawędzi patrzą na teren sąsiada, a budynek przecięty szwem nie ma
+   w tym miejscu attyki, krawędzi dachu ani fasady (ciągnie się dalej u sąsiada). Bez tych pól rysunek jest taki jak zawsze. */
 
 import type { DamageKind } from '../../world/apts.ts';
 import { T } from '../../world/world.ts';
@@ -53,8 +57,8 @@ function groundColor(
   sc: ChunkScene,
   t: number,
   i: number,
-  ax: number,
-  ay: number,
+  lax: number,
+  lay: number,
   px: number,
   py: number,
   wq: Int32Array | null,
@@ -63,10 +67,15 @@ function groundColor(
   const size = w.size;
   const x = i % size;
   const y = (i - x) / size;
-  const nN = y > 0 ? w.terr[i - size] : t;
-  const nS = y < size - 1 ? w.terr[i + size] : t;
-  const nW = x > 0 ? w.terr[i - 1] : t;
-  const nE = x < size - 1 ? w.terr[i + 1] : t;
+  // lax i lay to piksel w kwadracie (cień z maski kwadratu), ax i ay ten sam piksel w układzie miasta (szum i wzory)
+  const ax = lax + (sc.poczatek?.x ?? 0);
+  const ay = lay + (sc.poczatek?.y ?? 0);
+  // za krawędzią kwadratu teren sąsiada (brzeg), a bez sąsiada ten sam kod co kafelek, jak na brzegu mapy
+  const br = sc.brzeg;
+  const nN = y > 0 ? w.terr[i - size] : (br?.n?.[x] ?? t);
+  const nS = y < size - 1 ? w.terr[i + size] : (br?.s?.[x] ?? t);
+  const nW = x > 0 ? w.terr[i - 1] : (br?.w?.[y] ?? t);
+  const nE = x < size - 1 ? w.terr[i + 1] : (br?.e?.[y] ?? t);
   // odległość do krawędzi kafelka od strony sąsiada o innym kodzie
   const edgeTo = (pred: (n: number) => boolean): number => {
     let d = 99;
@@ -215,7 +224,7 @@ function groundColor(
   if (eb < 5) c = shade(c, 0.74 + eb * 0.05);
   // cień budynków i drzew (oczka 8 px)
   const S = size * SUB;
-  if (sc.shadow[((ay >> 3) * S + (ax >> 3)) | 0]) c = mix(c, C.shadow, 0.34);
+  if (sc.shadow[((lay >> 3) * S + (lax >> 3)) | 0]) c = mix(c, C.shadow, 0.34);
   return c;
 }
 
@@ -279,12 +288,25 @@ function facadeColor(st: BStyle, ax: number, fy: number, door: boolean, px: numb
   return wall;
 }
 
+/** Czy kafelek (x, y) kwadratu, także tuż za jego krawędzią, należy do budynku bid: w kwadracie po numerze, za krawędzią
+    po terenie sąsiada (brzeg): kafelek budynku za szwem to ten sam budynek, który ciągnie się dalej. */
+function taSamaBryla(sc: ChunkScene, bid: number, x: number, y: number): boolean {
+  const size = sc.w.size;
+  if (x >= 0 && y >= 0 && x < size && y < size) return sc.w.bid[y * size + x] === bid;
+  const br = sc.brzeg;
+  if (!br) return false;
+  if (x < 0) return br.w?.[y] === T.BUILDING;
+  if (x >= size) return br.e?.[y] === T.BUILDING;
+  if (y < 0) return br.n?.[x] === T.BUILDING;
+  return br.s?.[x] === T.BUILDING;
+}
+
 function roofColor(
   sc: ChunkScene,
   st: BStyle,
   i: number,
-  ax: number,
-  ay: number,
+  lax: number,
+  lay: number,
   px: number,
   py: number,
   bid: number,
@@ -293,23 +315,25 @@ function roofColor(
   const size = w.size;
   const x = i % size;
   const y = (i - x) / size;
-  const other = (j: number, ok: boolean) => !ok || w.bid[j] !== bid;
-  const eN = other(i - size, y > 0) ? py : 99;
-  const eW = other(i - 1, x > 0) ? px : 99;
-  const eE = other(i + 1, x < size - 1) ? 31 - px : 99;
+  // lax i lay to piksel w kwadracie (grzbiet dachu), ax i ay ten sam piksel w układzie miasta (szum i wzór dachówek)
+  const ax = lax + (sc.poczatek?.x ?? 0);
+  const ay = lay + (sc.poczatek?.y ?? 0);
+  const eN = taSamaBryla(sc, bid, x, y - 1) ? 99 : py;
+  const eW = taSamaBryla(sc, bid, x - 1, y) ? 99 : px;
+  const eE = taSamaBryla(sc, bid, x + 1, y) ? 99 : 31 - px;
   const edge = Math.min(eN, eW, eE);
   let c: number;
   switch (st.roof) {
     case 'tiles': {
       if (st.ridge === 'h') {
-        const north = ay < st.ridgeAt;
-        const row = Math.abs(ay - st.ridgeAt);
+        const north = lay < st.ridgeAt;
+        const row = Math.abs(lay - st.ridgeAt);
         c = north ? C.tile1 : C.tile2;
         if (row < 2) return 0x5e2a1d;
         if (row % 7 === 0 || ((ax + ((row / 7) | 0) * 5) % 10 === 0 && row % 7 < 6)) c = shade(c, 0.8);
       } else {
-        const west = ax < st.ridgeAt;
-        const col = Math.abs(ax - st.ridgeAt);
+        const west = lax < st.ridgeAt;
+        const col = Math.abs(lax - st.ridgeAt);
         c = west ? C.tile1 : C.tile2;
         if (col < 2) return 0x5e2a1d;
         if (col % 7 === 0 || ((ay + ((col / 7) | 0) * 5) % 10 === 0 && col % 7 < 6)) c = shade(c, 0.8);
@@ -490,6 +514,12 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
   const out = new Uint32Array(img.data.buffer);
   const step = TILE / s;
   const off = step >> 1;
+  // początek kwadratu w układzie miasta (0 w domu): szum i wzory fasad i dachów od współrzędnych miasta, odbicia kafelków
+  // Wanga od ich numerów w mieście, więc kawałki sąsiednich kwadratów łączą się bez szwu
+  const GX = sc.poczatek?.x ?? 0;
+  const GY = sc.poczatek?.y ?? 0;
+  const wangGX = GX / TILE;
+  const wangGY = GY / TILE;
   // tryb piętra (przekrój, sc.pietro od 1 i scena piętra): zamiast wnętrza siedziby typowe piętro mapy, ale tylko
   // w budynkach o więcej niż sc.pietro kondygnacjach (levels budynku, bo styl tnie je do 16); niższe rysują się jak
   // bez przekroju, czyli dachem
@@ -538,7 +568,8 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       const wet = hurt && dmg === 'podloga' ? around('podloga') : 0;
       const soot = hurt && dmg !== 'piec' ? around('piec') : 0;
       // teren z kafelków Wanga: cztery kafelki nad tym kafelkiem świata (podwójna siatka)
-      const wq = !inner && !st && teren && wangRysuje(t) ? wangKafel(w.terr, size, x, y) : null;
+      const wq =
+        !inner && !st && teren && wangRysuje(t) ? wangKafel(w.terr, size, x, y, sc.brzeg, wangGX, wangGY) : null;
       // blok z modułów: pas fasady, środki drzwi od południa przy dole tej kolumny (moduł wejścia sięga
       // do sąsiedniej kolumny) i krawędzie dachu z attyką
       const lg = !inner && st?.look ? (budynki?.[st.look] ?? null) : null;
@@ -554,12 +585,13 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
         const yb = y + sc.south[i];
         for (let dx = -1; dx <= 1; dx++) {
           const j = yb * size + x + dx;
-          if (x + dx >= 0 && x + dx < size && w.bid[j] === bid && sc.doors.get(j) === 'S')
-            doorsX.push((x + dx) * TILE + TILE / 2);
+          // drzwi liczą się od dołu budynku, który przy szwie leży u sąsiada (yb poza kwadratem): tam ich nie ma
+          if (yb < size && x + dx >= 0 && x + dx < size && w.bid[j] === bid && sc.doors.get(j) === 'S')
+            doorsX.push(GX + (x + dx) * TILE + TILE / 2);
         }
-        eN = !(y > 0 && w.bid[i - size] === bid);
-        eW = !(x > 0 && w.bid[i - 1] === bid);
-        eE = !(x < size - 1 && w.bid[i + 1] === bid);
+        eN = !taSamaBryla(sc, bid, x, y - 1);
+        eW = !taSamaBryla(sc, bid, x - 1, y);
+        eE = !taSamaBryla(sc, bid, x + 1, y);
       }
       for (let oy = 0; oy < s; oy++) {
         const py = oy * step + off;
@@ -568,31 +600,34 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
         for (let ox = 0; ox < s; ox++) {
           const px = ox * step + off;
           const ax = x * TILE + px;
+          // ten sam piksel w układzie miasta: szum, wzory fasad i dachów
+          const gax = GX + ax;
+          const gay = GY + ay;
           let c: number;
           if (inner) {
             // strop piętra z naklejkami z grafiki sceny (bez niej sam kod, jak interiorColor)
             c =
               inner.kind === 'strop'
-                ? stropKolor(sc.art?.strop ?? null, ax, ay)
+                ? stropKolor(sc.art?.strop ?? null, gax, gay)
                 : interiorColor(inner, x, y, px, py, sec!.seed);
-            if (dmg || why || soot) c = wearColor(c, inner, why, dmg, ax, ay, px, py, sec!.seed, wet, soot);
+            if (dmg || why || soot) c = wearColor(c, inner, why, dmg, gax, gay, px, py, sec!.seed, wet, soot);
           } else if (mod) {
             const fy = sc.south[i] * TILE + (31 - py);
             const fh = Math.min(st!.facade, sc.run[i] * TILE - 8);
             if (fy < fh) {
               let dX = Number.NaN;
-              for (const d of doorsX) if (ax >= d - mod.drzwi && ax < d - mod.drzwi + mod.wejscie[1]) dX = d;
-              c = blokKolor(mod, kolumnaFasady(mod, ax, dX), rows[rows.length - 1 - fy]);
+              for (const d of doorsX) if (gax >= d - mod.drzwi && gax < d - mod.drzwi + mod.wejscie[1]) dX = d;
+              c = blokKolor(mod, kolumnaFasady(mod, gax, dX), rows[rows.length - 1 - fy]);
             } else {
               const e = Math.min(eN ? py : TILE, eW ? px : TILE, eE ? 31 - px : TILE);
               if (e < mod.attyka[1]) c = attykaKolor(mod, e);
-              else if (lg?.dach) c = dachProbkaKolor(lg.dach, ax, ay, st!.seed);
-              else c = dach ? papaKolor(dach, ax, ay) : roofColor(sc, st!, i, ax, ay, px, py, bid);
+              else if (lg?.dach) c = dachProbkaKolor(lg.dach, gax, gay, st!.seed);
+              else c = dach ? papaKolor(dach, gax, gay) : roofColor(sc, st!, i, ax, ay, px, py, bid);
             }
           } else if (st) {
             const fy = sc.south[i] * TILE + (31 - py);
             const fh = Math.min(st.facade, sc.run[i] * TILE - 8);
-            if (fy < fh) c = facadeColor(st, ax, fy, door && sc.south[i] === 0, px);
+            if (fy < fh) c = facadeColor(st, gax, fy, door && sc.south[i] === 0, px);
             else if (fy < fh + 3) c = fy === fh ? 0x3f3c38 : C.parapet;
             else c = roofColor(sc, st, i, ax, ay, px, py, bid);
           } else c = groundColor(sc, t, i, ax, ay, px, py, wq);
