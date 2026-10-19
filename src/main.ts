@@ -1872,6 +1872,10 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   shoo: [OBCY.poPrzegonic.pl, OBCY.poPrzegonicWielu.pl],
   rob: [HANDEL.poNapasc.pl, HANDEL.poNapascWielu.pl],
   obcy: ['', ''],
+  prio: ['', ''],
+  stale: ['', ''],
+  zasiatke: ['', ''],
+  prog: ['', ''],
 });
 /** to samo po angielsku (jedna osoba, kilka osób) */
 const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> => ({
@@ -1925,6 +1929,10 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   shoo: [OBCY.poPrzegonic.en, OBCY.poPrzegonicWielu.en],
   rob: [HANDEL.poNapasc.en, HANDEL.poNapascWielu.en],
   obcy: ['', ''],
+  prio: ['', ''],
+  stale: ['', ''],
+  zasiatke: ['', ''],
+  prog: ['', ''],
 });
 
 function run(m: MenuItem) {

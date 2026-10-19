@@ -119,7 +119,17 @@ import {
 } from './needs.ts';
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
 import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP, REINFORCED_HP } from './perimeter.ts';
-import type { PracaStan } from './praca.ts';
+import {
+  domyslnyPriorytet,
+  PROGI_DOMYSLNE,
+  type PracaStan,
+  type Priorytet,
+  type Progi,
+  progi,
+  RODZAJE,
+  type RodzajPracy,
+  type UstawieniaOsoby,
+} from './praca.ts';
 import {
   atakOdRazu,
   type DrzwiStan,
@@ -728,7 +738,17 @@ export type Command =
   /** wędrowiec: zagadać, napaść (target: id pionka); obca ekipa przy wraku: przegonić */
   | { t: 'talk'; ids: number[]; target: number }
   | { t: 'mug'; ids: number[]; target: number }
-  | { t: 'shoo'; ids: number[]; target: number };
+  | { t: 'shoo'; ids: number[]; target: number }
+  /** praca ludzi (src/sim/praca.ts), wszystkie z ids pustym: priorytet rodzaju osoby (0 nie robi, 1 najważniejszy),
+      stałe zajęcie osoby (null: zdjąć), wyjście osoby za siatkę bez polecenia i próg zapasu (całkowity, 0–999).
+      `osoba` to indeks w st.people; tylko osoba, która jest dziś w zarządzie, przyjmuje ustawienia */
+  | { t: 'prio'; ids: number[]; osoba: number; rodzaj: RodzajPracy; prio: Priorytet }
+  | { t: 'stale'; ids: number[]; osoba: number; rodzaj: RodzajPracy | null }
+  | { t: 'zasiatke'; ids: number[]; osoba: number; on: boolean }
+  | { t: 'prog'; ids: number[]; co: keyof Progi; n: number };
+
+/** polecenia zmieniające `st.praca` */
+type PolecenieUstawien = Extract<Command, { t: 'prio' | 'stale' | 'zasiatke' | 'prog' }>;
 
 export interface Noise {
   x: number;
@@ -1624,6 +1644,76 @@ export function removeCore(st: SimState, id: string, w?: World): boolean {
   return true;
 }
 
+/** czy osoba (indeks w st.people) jest dziś w zarządzie: ma żywy pionek rdzenia; odeszła albo zmarła nie przyjmuje
+    ustawień, a jej indeks nie wraca (nowa osoba dostaje następny) */
+function wZarzadzie(st: SimState, osoba: number): boolean {
+  return Number.isInteger(osoba) && !!st.people[osoba] && st.pawns.some((p) => p.kind === 'core' && p.person === osoba);
+}
+
+/** Ustawienia pracy ludzi z polecenia gracza (`prio`, `stale`, `zasiatke`, `prog`): zapisuje w `st.praca` tylko zmiany
+    względem domyślnych, a ustawienie równe domyślnemu zdejmuje wpis. Złe dane (osoba spoza zarządu, priorytet poza 0–4,
+    nieznany rodzaj albo próg, próg nie liczba) są pomijane bez śladu w stanie. */
+function ustawPrace(st: SimState, c: PolecenieUstawien): void {
+  if (c.t === 'prog') {
+    if (!Object.hasOwn(PROGI_DOMYSLNE, c.co) || typeof c.n !== 'number' || Number.isNaN(c.n)) return;
+    const n = Math.min(999, Math.max(0, Math.trunc(c.n)));
+    const nad = ((st.praca ??= {}).progi ??= {});
+    // domyślny próg bez zmian gracza (dzidy zależą od trybu)
+    if (n === progi({ ...st, praca: undefined })[c.co]) delete nad[c.co];
+    else nad[c.co] = n;
+  } else {
+    if (!wZarzadzie(st, c.osoba)) return;
+    if (c.t === 'prio') {
+      if (!RODZAJE.includes(c.rodzaj) || !Number.isInteger(c.prio) || c.prio < 0 || c.prio > 4) return;
+    } else if (c.t === 'stale' && c.rodzaj !== null && !RODZAJE.includes(c.rodzaj)) return;
+    const u = (((st.praca ??= {}).osoby ??= {})[c.osoba] ??= {});
+    if (c.t === 'prio') {
+      const prio = (u.prio ??= {});
+      if (c.prio === domyslnyPriorytet(st, st.people[c.osoba], c.rodzaj)) delete prio[c.rodzaj];
+      else prio[c.rodzaj] = c.prio;
+    } else if (c.t === 'stale') {
+      if (c.rodzaj === null) delete u.stale;
+      else u.stale = c.rodzaj;
+    } else if (c.on) u.zaSiatke = true;
+    else delete u.zaSiatke;
+  }
+  uporzadkujPrace(st);
+}
+
+/** Po zmianie: usuwa puste obiekty i całe `st.praca`, gdy nic nie zostało (stan wraca do kształtu bez pola), a to, co
+    zostaje, układa w stałej kolejności (osoby rosnąco, rodzaje jak kolumny, progi jak w `PROGI_DOMYSLNE`), żeby ten sam
+    zestaw ustawień dawał ten sam skrót bez względu na kolejność poleceń. */
+function uporzadkujPrace(st: SimState): void {
+  const stare = st.praca;
+  if (!stare) return;
+  const osoby: Record<number, UstawieniaOsoby> = {};
+  // klucze całkowite JSON układa rosnąco sam
+  for (const k of Object.keys(stare.osoby ?? {})) {
+    const u = stare.osoby?.[Number(k)];
+    if (!u) continue;
+    const nowe: UstawieniaOsoby = {};
+    const prio: NonNullable<UstawieniaOsoby['prio']> = {};
+    for (const r of RODZAJE) {
+      const v = u.prio?.[r];
+      if (v !== undefined) prio[r] = v;
+    }
+    if (Object.keys(prio).length) nowe.prio = prio;
+    if (u.stale) nowe.stale = u.stale;
+    if (u.zaSiatke) nowe.zaSiatke = true;
+    if (Object.keys(nowe).length) osoby[Number(k)] = nowe;
+  }
+  const nad: Partial<Progi> = {};
+  for (const k of Object.keys(PROGI_DOMYSLNE) as (keyof Progi)[]) {
+    const v = stare.progi?.[k];
+    if (v !== undefined) nad[k] = v;
+  }
+  const nowa: PracaStan = {};
+  if (Object.keys(osoby).length) nowa.osoby = osoby;
+  if (Object.keys(nad).length) nowa.progi = nad;
+  if (Object.keys(nowa).length) st.praca = nowa;
+  else delete st.praca;
+}
+
 /** nowy szwendacz na kafelku: snuje się (praca 'zombie' w fazie 0); stado: idzie do siatki */
 export function spawnZombie(st: SimState, w: World, tile: number, look: number, horde = false): Pawn {
   const p = newPawn(st, w, 'zombie', -1, tile, tile, look);
@@ -2429,6 +2519,11 @@ export class Sim {
     // wybór w spotkaniu z lokatorami nie potrzebuje zaznaczonych (nasza osoba już przy nich stoi)
     if (c.t === 'meet') {
       this.wyborSpotkania(c.nr, c.choice);
+      return;
+    }
+    // ustawienia pracy ludzi nie dotyczą zaznaczonych pionków (osoba z indeksu w st.people), zmieniają się od tego kroku
+    if (c.t === 'prio' || c.t === 'stale' || c.t === 'zasiatke' || c.t === 'prog') {
+      ustawPrace(st, c);
       return;
     }
     // wspólny płot skończony: nowa siatka od tego kroku (praca skończyła się w poprzednim)
