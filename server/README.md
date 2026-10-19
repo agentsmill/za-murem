@@ -66,13 +66,13 @@ Serwer bierze adres klienta z ostatniego wpisu X-Forwarded-For, czyli z tego, kt
 
 ## Restart planowy
 
-Z `ZM_RESTART_H=48` serwer po 48 godzinach od startu sam kończy się czysto (kod 0, w dzienniku „restart planowy po 48 h”), a `restart: unless-stopped` w compose podnosi go od nowa na tej samej bazie. To nie awaria i nic nie kasuje: konta, klatki i zapisy leżą w bazie na wolumenie, więc odświeża się sam proces. Zamknięcie jest to samo co przy wdrożeniu i SIGTERM: serwer przestaje przyjmować nowe połączenia, żądania w toku (zapis w chmurze, logowanie w kolejce scrypt) mają do 5 sekund na dokończenie, potem zamyka bazę i wychodzi. Gracz traci połączenie na kilka sekund; przerwane żądanie klient ponawia.
+Z `ZM_RESTART_H=48` serwer po 48 godzinach od startu sam kończy się czysto (kod 0, w dzienniku „restart planowy po 48 h”), a `restart: unless-stopped` w compose podnosi go od nowa na tej samej bazie. To nie awaria i nic nie kasuje: konta, klatki i zapisy leżą w bazie na wolumenie, więc odświeża się sam proces. Zamknięcie jest to samo co przy wdrożeniu i SIGTERM: serwer przestaje przyjmować nowe połączenia, żądania w toku (zapis w chmurze, logowanie w kolejce scrypt) mają do 5 sekund na dokończenie, potem zamyka bazę i wychodzi. Połączenia keep-alive zamykają się, gdy tylko skończy się ich ostatnie żądanie, więc zamknięcie trwa tyle, co najdłuższe żądanie w toku (najwyżej 5 sekund). Gracz traci połączenie na kilka sekund. Klient nie ponawia przerwanego zapisu od razu: następny zapis w chmurze idzie przy najbliższym zapisie w przeglądarce, najwcześniej minutę po poprzednim. Gdyby serwer zdążył zatwierdzić zapis, a klient nie dostał potwierdzenia, ten następny zapis dostanie 409 (konflikt wersji), a klient wstrzyma zapisy w chmurze do następnego wczytania gry (zapis w przeglądarce zostaje). To rzadki przypadek, bo żądania w toku mają 5 sekund na dokończenie.
 
 Bez nadzorcy procesu (Docker z polityką restartu, systemd z `Restart=always`) restart planowy oznacza po prostu koniec serwera, więc lokalnie przy `node server/main.ts` zmiennej nie ustawiamy. `HEALTHCHECK` z `server/Dockerfile` bez orkiestratora tylko oznacza kontener jako niezdrowy i go nie restartuje: zawieszony serwer złapie dopiero kolejny restart planowy albo ręczny `docker compose restart api`.
 
 ## Kopie bazy
 
-Z `ZM_KOPIE=/dane/kopie` serwer robi kopię raz na dobę o `ZM_KOPIA_GODZINA` (domyślnie 3:00 UTC) i od razu po starcie, gdy ta godzina dzisiaj już minęła, a dzisiejszej kopii jeszcze nie ma (restarty co 48 godzin i wdrożenia mogą się zdarzyć o tej porze). Kopia to `VACUUM INTO` na działającej bazie: spójny obraz z tej chwili razem z tym, co leży jeszcze w pliku WAL, bez zatrzymywania serwera i bez blokowania cudzych zapisów (na czas kopii proces serwera stoi, zwykle ułamek sekundy). Plik `za-murem-RRRR-MM-DD.db` (data w UTC) powstaje jako `.tmp`, jest sprawdzany (`quick_check`, wersja schematu) i dopiero potem podmienia kopię z tego dnia, więc w katalogu nie ma połowicznej kopii pod nazwą kopii. Pliki mają prawa 0600. Kopie starsze niż `ZM_KOPIE_DNI` dni znikają po każdej udanej nowej (zostaje dokładnie tyle dni, ile w zmiennej, razem z dzisiejszym), a pliki o innych nazwach nigdy nie są ruszane. Błąd kopii (brak katalogu, pełny dysk) idzie do dziennika, serwer działa dalej, a stare kopie zostają.
+Z `ZM_KOPIE=/dane/kopie` serwer robi kopię raz na dobę o `ZM_KOPIA_GODZINA` (domyślnie 3:00 UTC) i od razu po starcie, gdy ta godzina dzisiaj już minęła, a dzisiejszej kopii jeszcze nie ma (restarty co 48 godzin i wdrożenia mogą się zdarzyć o tej porze). Kopia to `VACUUM INTO` na działającej bazie: spójny obraz z tej chwili razem z tym, co leży jeszcze w pliku WAL, bez zatrzymywania serwera i bez blokowania cudzych zapisów (na czas kopii proces serwera stoi, zwykle ułamek sekundy). Plik `za-murem-RRRR-MM-DD.db` (data w UTC) powstaje jako `.tmp`, jest sprawdzany (`quick_check`, wersja schematu) i dopiero potem podmienia kopię z tego dnia, więc w katalogu nie ma połowicznej kopii pod nazwą kopii. Plik ma prawa 0600 od chwili utworzenia, a katalog założony przez serwer 0700 (istniejącego katalogu, na przykład wolumenu, serwer nie rusza). Kopie starsze niż `ZM_KOPIE_DNI` dni znikają po każdej udanej nowej (zostaje dokładnie tyle dni, ile w zmiennej, razem z dzisiejszym), a pliki o innych nazwach nigdy nie są ruszane. Błąd kopii (brak katalogu, pełny dysk) idzie do dziennika, serwer działa dalej, a stare kopie zostają.
 
 Czego kopie nie dają: leżą na tym samym wolumenie co baza, więc chronią przed pomyłką (usunięte konto, zły zapis, zepsuty schemat po wdrożeniu), a nie przed utratą dysku albo maszyny. Kopia poza maszyną (miejsce, dostęp, koszt) to osobna decyzja. Kopie mają te same dane osobowe co baza (nicki, pozycje zajętych klatek, zapisy gier), więc trzymamy je tak samo ostrożnie. Konto usunięte w grze znika z kopii dopiero po `ZM_KOPIE_DNI` dniach; ten czas trzeba wpisać do informacji o danych osobowych.
 
@@ -84,7 +84,7 @@ docker exec za-murem-serwer node -e "new (require('node:sqlite').DatabaseSync)('
 
 ### Przywracanie z kopii
 
-Serwer stoi na czas przywracania. Pliki `-wal` i `-shm` starej bazy trzeba usunąć razem z plikiem bazy: inaczej SQLite nałożyłby stary dziennik na przywrócony plik. Na serwerze z compose (`/srv/za-murem`):
+Serwer stoi na czas przywracania. Pliki `-wal` i `-shm` starej bazy trzeba usunąć razem z plikiem bazy: inaczej SQLite nałożyłby stary dziennik na przywrócony plik. Kolejność jest bezpieczna na literówkę: najpierw sprawdzamy, że wybrana kopia istnieje, i kopiujemy ją obok jako `za-murem.db.nowa`, dopiero potem odkładamy starą bazę i podmieniamy plik. Zła nazwa kopii zatrzymuje skrypt, zanim cokolwiek ruszy, więc `/dane` nigdy nie zostaje bez bazy (a `docker compose start api` bez bazy założyłby pustą). Na serwerze z compose (`/srv/za-murem`):
 
 ```bash
 cd /srv/za-murem
@@ -93,9 +93,14 @@ docker compose run --rm --no-deps --entrypoint sh api -c 'ls -l /dane /dane/kopi
 docker compose run --rm --no-deps --entrypoint sh api -c '
   set -e
   cd /dane
+  KOPIA=kopie/za-murem-2026-10-18.db     # nazwa wybranej kopii
+  [ -f "$KOPIA" ]                         # literówka zatrzymuje skrypt tutaj, nic jeszcze nie ruszone
+  cp "$KOPIA" za-murem.db.nowa            # kopia obok, stara baza dalej na miejscu
   mkdir -p przed-przywroceniem
-  for f in za-murem.db za-murem.db-wal za-murem.db-shm; do [ -e "$f" ] && mv "$f" przed-przywroceniem/; done
-  cp kopie/za-murem-2026-10-18.db za-murem.db
+  for f in za-murem.db za-murem.db-wal za-murem.db-shm; do
+    if [ -e "$f" ]; then mv "$f" przed-przywroceniem/; fi
+  done
+  mv za-murem.db.nowa za-murem.db
 '
 docker compose start api
 curl -s https://<adres gry>/api/zdrowie
