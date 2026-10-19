@@ -1,9 +1,12 @@
 /* Awans mieszkańca, wyjście bramą i sprawdzanie hałasu (docs/superpowers/specs/2026-10-19-wydarzenia-design.md,
    sekcja 2, „Skutki”). `awansuj`: pionek mieszkańca z osobą zostaje tym samym pionkiem i tą samą osobą, ale rodzaju
-   `core` (bierze polecenia), z potrzebami i łóżkiem, które miał. `wyprowadz`: mieszkaniec albo osoba zarządu idzie
+   `core` (bierze polecenia), z potrzebami, które miał; jego łóżko w mieszkaniu mieszkańców jest wolne od razu (zarząd
+   śpi w mieszkaniu siedziby), więc zajmie je następny przyjęty. `wyprowadz`: mieszkaniec albo osoba zarządu idzie
    do bramy drogą zarządu, za bramą ulicą do kafelka daleko od siatki i znika; łóżko jest wolne od razu, a zarząd od
-   pierwszego odczytu nie widzi już tej osoby ani mieszkańca. `sprawdz`: osoba zarządu idzie na kafelek od strony
-   podwórka, stoi tam 10 minut gry i wraca do swoich zajęć. Skutki zarządu `awans`, `wyrzuc`, `sprawdz` i host.
+   pierwszego odczytu nie widzi już tej osoby ani mieszkańca (wyprowadzka i przyjęcia też jej nie liczą). Kto wychodzi i
+   zginie po drodze, umiera jak obcy: bez wpisu zmarłych, żałoby i licznika naszych zgonów; nie bywa pacjentem
+   amputacji. `sprawdz`: osoba zarządu idzie na kafelek od strony podwórka, stoi tam 10 minut gry i wraca do swoich
+   zajęć. Skutki zarządu `awans`, `wyrzuc`, `sprawdz` i host.
    Świat to blok M2 z siatką i bramą; mieszkańcom osoby dokładamy ręcznie (jak generator mieszkańców). */
 
 import { describe, expect, it } from 'vitest';
@@ -15,7 +18,18 @@ import { makeHost } from '../../src/gov/wydarzenia.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { commandFor, jobText } from '../../src/sim/orders.ts';
-import { awansuj, createSim, exitOf, type Pawn, Sim, type SimState, sprawdz, wyprowadz } from '../../src/sim/sim.ts';
+import {
+  addResidents,
+  awansuj,
+  createSim,
+  exitOf,
+  type Pawn,
+  removeResidents,
+  Sim,
+  type SimState,
+  sprawdz,
+  wyprowadz,
+} from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { mockBlockM2 } from './interior-mock.ts';
 
@@ -37,14 +51,19 @@ function gateIndexes(): number[] {
   return out;
 }
 
+/** pionek dostaje osobę (jak mieszkaniec z generatora mieszkańców); zwraca id osoby */
+function dajOsobe(st: SimState, pawn: Pawn, k: number): string {
+  const o: Person = makePerson(mulberry(40 + k), new Set(st.people.map((q) => q.first)), () => 200 + k);
+  st.people.push(o);
+  pawn.person = st.people.length - 1;
+  return o.id;
+}
+
 /** mieszkaniec z łóżkiem dostaje osobę (jak z generatora mieszkańców); zwraca pionek i id osoby */
 function zOsoba(st: SimState, k = 0): { pawn: Pawn; id: string } {
   const lista = residents(st).filter((p) => st.things.some((t) => t.owner === p.id));
   const pawn = lista[k];
-  const o: Person = makePerson(mulberry(40 + k), new Set(st.people.map((q) => q.first)), () => 200 + k);
-  st.people.push(o);
-  pawn.person = st.people.length - 1;
-  return { pawn, id: o.id };
+  return { pawn, id: dajOsobe(st, pawn, k) };
 }
 
 /** gra w ciągu dnia, żeby nikt nie szedł spać ani na wartę */
@@ -90,7 +109,9 @@ describe('awansuj: mieszkaniec do zarządu', () => {
     expect(personId(st, pawn)).toBe(id);
     expect(pawn.apt).toBe(-1);
     expect(pawn.needs).toEqual(needs);
-    expect(lozko.owner).toBe(pid);
+    // zarząd śpi w mieszkaniu siedziby, więc jego łóżko w mieszkaniu mieszkańców jest wolne
+    expect(lozko.owner).toBe(-1);
+    expect(st.things.some((t) => t.owner === pid)).toBe(false);
     // w odczytach: wśród zarządu, nie wśród mieszkańców
     const s = snapshot(st, w);
     expect(s.people.map((q) => q.id)).toContain(id);
@@ -184,6 +205,8 @@ describe('wyprowadz: wyjście bramą', () => {
       if (gate.has(tileOf(p))) przezBrame = true;
     }
     expect(st.pawns.includes(p)).toBe(false);
+    // doszedł i zniknął sam, a nie przez zabezpieczenie po 2 h
+    expect(st.tick - start).toBeLessThan(2 * TICKS_HOUR);
     expect(przezBrame).toBe(true);
     expect(govInput(st, w, 0).people.map((q) => q.id)).not.toContain(id);
     expect(snapshot(st, w).people.map((q) => q.id)).not.toContain(id);
@@ -211,6 +234,144 @@ describe('wyprowadz: wyjście bramą', () => {
     p.away = true;
     expect(wyprowadz(st, w, personId(st, p))).toBe(true);
     expect(st.pawns.includes(p)).toBe(false);
+  });
+});
+
+describe('awansuj: zwolnione łóżko', () => {
+  it('następny przyjęty do tego mieszkania dostaje łóżko awansowanego', () => {
+    const { st } = gra();
+    const { pawn, id } = zOsoba(st);
+    const mieszkanie = pawn.apt;
+    const lozko = st.things.find((t) => t.owner === pawn.id)!;
+    // przed awansem łóżko jest zajęte (przyjęty nie ma gdzie spać)
+    expect(awansuj(st, w, id)).toBe(true);
+    expect(lozko.owner).toBe(-1);
+    const przed = new Set(residents(st).map((p) => p.id));
+    applyGov(
+      st,
+      w,
+      fx((e) => (e.residents = 1)),
+    );
+    const nowy = residents(st).find((p) => !przed.has(p.id))!;
+    expect(nowy.apt).toBe(mieszkanie);
+    expect(lozko.owner).toBe(nowy.id);
+  });
+});
+
+describe('wychodzący a liczenie mieszkańców', () => {
+  it('removeResidents pomija wychodzącego: zabiera innych, a on dochodzi do końca drogi', () => {
+    const { st } = gra();
+    const lista = residents(st);
+    const ostatni = lista[lista.length - 1];
+    expect(wyprowadz(st, w, dajOsobe(st, ostatni, 7))).toBe(true);
+    // zarząd ma go już za odjętego (govInput.residents), więc wyprowadzka go nie liczy drugi raz
+    expect(removeResidents(st, 1)).toBe(1);
+    expect(residents(st)).toHaveLength(lista.length - 1);
+    expect(residents(st)).toContain(ostatni);
+    expect(removeResidents(st, 5)).toBe(lista.length - 2);
+    expect(residents(st)).toEqual([ostatni]);
+    expect(ostatni.job?.t).toBe('odejscie');
+  });
+
+  it('addResidents (bez bramy) nie liczy wychodzącego do miejsc: przy pełnych bez niego nikogo nie dokłada', () => {
+    const { st } = gra();
+    expect(residents(st)).toHaveLength(st.cap);
+    // kontrola: komplet mieszkańców, nikt nie wychodzi: brak miejsca
+    expect(addResidents(st, w, 1)).toBe(0);
+    // jeden wychodzi: jest miejsce dla jednego
+    expect(wyprowadz(st, w, dajOsobe(st, residents(st)[0], 8))).toBe(true);
+    expect(addResidents(st, w, 2)).toBe(1);
+    expect(residents(st).filter((p) => p.job?.t !== 'odejscie')).toHaveLength(st.cap);
+  });
+});
+
+describe('śmierć wychodzącego', () => {
+  const wychodzacy = (tryb: 'zwykly' | 'zombie') => {
+    const st = createSim(w, 3, tryb === 'zombie' ? { core: 2, mode: 'zombie' } : { core: 2 });
+    st.tick = atHour(1, 10);
+    return { st, sim: new Sim(w, st) };
+  };
+
+  for (const tryb of ['zwykly', 'zombie'] as const) {
+    for (const rodzaj of ['mieszkaniec', 'zarzad'] as const) {
+      it(`${rodzaj} w trybie ${tryb}: umiera jak obcy, bez wpisu zmarłych, żałoby i licznika zgonów`, () => {
+        const { st, sim } = wychodzacy(tryb);
+        const pawn = rodzaj === 'zarzad' ? core(st)[0] : residents(st)[0];
+        const id = rodzaj === 'zarzad' ? personId(st, pawn) : dajOsobe(st, pawn, 3);
+        const inny = rodzaj === 'zarzad' ? core(st)[1] : residents(st)[1];
+        expect(wyprowadz(st, w, id)).toBe(true);
+        for (let k = 0; k < 60; k++) sim.step();
+        expect(pawn.job?.t).toBe('odejscie');
+        const zmarli = st.dead!.length;
+        const zgony = st.tally!.deaths;
+        const obcy = st.tally!.killed;
+        const nastroje = st.pawns.filter((q) => q !== pawn).map((q) => JSON.stringify(q.moods));
+        const przed = govInput(st, w, 0).dead?.length ?? 0;
+        sim.wound(pawn, 1000);
+        sim.step();
+        expect(st.pawns.includes(pawn)).toBe(false);
+        expect(st.dead).toHaveLength(zmarli);
+        expect(st.tally!.deaths).toBe(zgony);
+        // jak po obcym: liczy się do zabitych, zwłoki leżą, w zombie wstaną
+        expect(st.tally!.killed).toBe(obcy + 1);
+        const zwloki = st.things.find((t) => t.kind === 'zwloki');
+        expect(zwloki).toBeDefined();
+        expect(zwloki!.dead).toBeUndefined();
+        if (tryb === 'zombie') expect(zwloki!.fuel).toBeGreaterThan(st.tick);
+        else expect(zwloki!.fuel).toBe(0);
+        // nikt nie żałuje: nastroje pozostałych bez zmian, zarząd nie dostaje zgonu
+        expect(st.pawns.filter((q) => q !== pawn).map((q) => JSON.stringify(q.moods))).toEqual(nastroje);
+        expect(st.pawns.some((q) => q.moods.some((m) => m.why.startsWith('Śmierć:')))).toBe(false);
+        expect(govInput(st, w, 0).dead?.length ?? 0).toBe(przed);
+        // kontrola: ten sam zgon kogoś, kto nie wychodził, jest wpisany i boli
+        sim.wound(inny, 1000);
+        sim.step();
+        expect(st.dead).toHaveLength(zmarli + 1);
+        expect(st.tally!.deaths).toBe(zgony + 1);
+      });
+    }
+  }
+});
+
+describe('amputacja a wychodzący', () => {
+  /** zarząd (chirurg) i ugryziony w rękę pacjent z zarządu, który zaraz wychodzi bramą */
+  function pacjent(): { st: SimState; sim: Sim; chirurg: Pawn; chory: Pawn } {
+    const { st, sim } = gra();
+    const [chirurg, chory] = core(st);
+    chory.bite = st.tick - 10;
+    chory.limb = true;
+    return { st, sim, chirurg, chory };
+  }
+
+  it('rozkaz amputacji wobec wychodzącego jest odrzucany, a wychodzący idzie dalej', () => {
+    const { st, sim, chirurg, chory } = pacjent();
+    // chirurg ma własne zajęcie: odrzucony rozkaz go nie rusza
+    const cel = w.fence.yard.find((i) => !st.things.some((t) => t.x === i % size && t.y === Math.floor(i / size)))!;
+    sim.push({ t: 'move', ids: [chirurg.id], to: cel });
+    sim.step();
+    expect(chirurg.job?.t).toBe('go');
+    expect(wyprowadz(st, w, personId(st, chory))).toBe(true);
+    sim.push({ t: 'amputate', ids: [chirurg.id], patient: chory.id });
+    sim.step();
+    expect(chirurg.job?.t).toBe('go');
+    expect(chirurg.job?.tile).toBe(cel);
+    for (let k = 0; k < 120; k++) sim.step();
+    expect(chirurg.job?.t).not.toBe('amputate');
+    expect(chory.job?.t === 'odejscie' || !st.pawns.includes(chory)).toBe(true);
+    expect(chory.maimed).toBeUndefined();
+  });
+
+  it('amputacja w toku kończy się, gdy chory zaczyna wychodzić: nikt nie wraca do osiedla', () => {
+    const { st, sim, chirurg, chory } = pacjent();
+    sim.push({ t: 'amputate', ids: [chirurg.id], patient: chory.id });
+    for (let k = 0; k < 400 && !(chirurg.job?.t === 'amputate' && chirurg.job.phase === 1); k++) sim.step();
+    expect(chirurg.job?.t).toBe('amputate');
+    expect(wyprowadz(st, w, personId(st, chory))).toBe(true);
+    for (let k = 0; k < 60; k++) sim.step();
+    expect(chirurg.job?.t).not.toBe('amputate');
+    expect(chory.job?.t === 'odejscie' || !st.pawns.includes(chory)).toBe(true);
+    expect(chory.maimed).toBeUndefined();
+    expect(chory.bite).toBeDefined();
   });
 });
 

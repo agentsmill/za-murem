@@ -287,7 +287,8 @@ export interface GovEffects {
       pierwszym ataku */
   atak?: { id: string; pawn: number }[];
   /** mieszkańcy z osobą (id osoby, jak `GovLokator.id`), którzy przechodzą do zarządu: ten sam pionek i ta sama osoba,
-      rodzaj `core`, potrzeby i łóżko zostają (`awansuj` w src/sim/sim.ts). Tablica powstaje przy pierwszym awansie */
+      rodzaj `core`, potrzeby zostają, a łóżko w mieszkaniu mieszkańców jest wolne od razu, bo zarząd śpi w mieszkaniu
+      siedziby (`awansuj` w src/sim/sim.ts). Tablica powstaje przy pierwszym awansie */
   awans?: string[];
   /** osoby (mieszkańcy z osobą i osoby zarządu), które wychodzą bramą: idą do bramy, za bramą ulicą daleko od siatki
       i znikają, łóżko jest wolne od razu (`wyprowadz`). Tablica powstaje przy pierwszym wyrzuceniu */

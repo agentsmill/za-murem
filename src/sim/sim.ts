@@ -1614,7 +1614,8 @@ export function addResidents(st: SimState, w: World, n: number, arrive = false):
   const wait = waitTiles(w, exit);
   let added = 0;
   for (let k = 0; k < n; k++) {
-    const have = st.pawns.filter((p) => p.kind === 'resident');
+    // kto już wychodzi bramą (praca `odejscie`), nie zajmuje miejsca: zarząd ma go za nieobecnego
+    const have = st.pawns.filter((p) => p.kind === 'resident' && p.job?.t !== 'odejscie');
     if (!arrive && have.length >= st.cap) break;
     const idx = have.length;
     const apt = arrive ? aptFor(st, h, size, apts) : apts[idx % apts.length];
@@ -1675,12 +1676,13 @@ function aptFor(st: SimState, h: HouseLike, size: number, apts: readonly number[
   return apts.reduce((b, a) => (living(a) < living(b) ? a : b), apts[0] ?? -1);
 }
 
-/** wyprowadzka: ostatni mieszkańcy znikają (łóżka wolne); zwraca, ilu ubyło */
+/** wyprowadzka: ostatni mieszkańcy znikają (łóżka wolne); zwraca, ilu ubyło. Kto już wychodzi bramą (praca `odejscie`),
+    jest dla zarządu odjęty od liczby mieszkańców, więc nie liczy się drugi raz i sam dojdzie do końca drogi. */
 export function removeResidents(st: SimState, n: number): number {
   let gone = 0;
   for (let k = st.pawns.length - 1; k >= 0 && gone < n; k--) {
     const p = st.pawns[k];
-    if (p.kind !== 'resident') continue;
+    if (p.kind !== 'resident' || p.job?.t === 'odejscie') continue;
     dropPawn(st, p);
     gone++;
   }
@@ -1771,14 +1773,16 @@ function zwolnijPionka(st: SimState, w: World, p: Pawn): void {
 }
 
 /** Mieszkaniec z osobą przechodzi do zarządu (zdarzenie „wciągnąć do roboty”): ten sam pionek i ta sama osoba w
-    `st.people`, rodzaj `core`, więc od następnego kroku bierze polecenia i sam szuka zajęcia. Potrzeby, nastroje i łóżko
-    (`owner`) zostają jego, brak potrzeb dostaje domyślne jak w `addCore`; `apt` to −1 (zarząd nie mieszka w mieszkaniu
-    mieszkańców). Plan dnia mieszkańca się kończy. false: nie ma takiego mieszkańca (osoba zarządu, na wyprawie albo już
-    wychodząca bramą też nie). */
+    `st.people`, rodzaj `core`, więc od następnego kroku bierze polecenia i sam szuka zajęcia. Potrzeby i nastroje
+    zostają, brak potrzeb dostaje domyślne jak w `addCore`; `apt` to −1 (zarząd nie mieszka w mieszkaniu mieszkańców).
+    Zarząd śpi tylko w mieszkaniu siedziby, więc rzeczy, których był właścicielem (jego łóżko w mieszkaniu mieszkańców i
+    reszta, `owner`), są wolne od razu: zajmie je następny mieszkaniec. Plan dnia mieszkańca się kończy. false: nie ma
+    takiego mieszkańca (osoba zarządu, na wyprawie albo już wychodząca bramą też nie). */
 export function awansuj(st: SimState, w: World, personId: string): boolean {
   const p = pionekOsoby(st, personId, DO_AWANSU);
   if (!p || p.away || p.job?.t === 'odejscie') return false;
   zwolnijPionka(st, w, p);
+  for (const t of st.things) if (t.owner === p.id) t.owner = -1;
   p.kind = 'core';
   p.apt = -1;
   if (!p.needs) {
@@ -6705,8 +6709,12 @@ export class Sim {
     }
     const who = p.person >= 0 ? st.people[p.person] : undefined;
     const name = who?.name ?? STRANGER_NAMES[p.kind] ?? 'Mieszkaniec';
+    // kto już wychodził bramą (wyrzucony, odchodzący; poza mapą nie bywa), nie jest już nasz: umiera jak obcy, bez wpisu
+    // zmarłych (zarząd nie żałuje), bez żałoby osiedla i bez licznika naszych zgonów; zwłoki jak po obcym
+    const odchodzil = !away && p.job?.t === 'odejscie' && (p.kind === 'core' || p.kind === 'resident');
     // id tylko dla zarządu: mieszkaniec z osobą ma imię, ale dla zarządu (GovInput.dead) zostaje mieszkańcem
-    st.dead!.push({ id: p.kind === 'core' ? (who?.id ?? '') : '', name, look: p.look, kind: p.kind, tick, cause });
+    if (!odchodzil)
+      st.dead!.push({ id: p.kind === 'core' ? (who?.id ?? '') : '', name, look: p.look, kind: p.kind, tick, cause });
     if (away) {
       st.tally!.deaths++;
       const first = who?.first ?? 'sąsiad';
@@ -6717,12 +6725,12 @@ export class Sim {
     }
     const body = newThing(st, 'zwloki', x, y);
     body.n = p.look;
-    body.dead = st.dead!.length - 1;
+    if (!odchodzil) body.dead = st.dead!.length - 1;
     body.until = tick + BODY_TICKS;
     // w trybie zombie każdy zmarły wstaje, chyba że ktoś go dobije
     if (modeOf(st) === 'zombie') body.fuel = tick + RISE_TICKS;
     st.things.push(body);
-    if (STRANGER_KINDS.has(p.kind)) {
+    if (STRANGER_KINDS.has(p.kind) || odchodzil) {
       st.tally!.killed++;
       if (by?.needs) this.addMood(by, 'Zabiłem człowieka', -6, TICKS_PER_DAY);
       if (p.kind === 'handlarz') this.traderKilled(p, by);
@@ -7649,6 +7657,8 @@ export class Sim {
     const st = this.st;
     const q = st.pawns.find((x) => x.id === patient);
     if (!q?.needs || q.bite === undefined || !q.limb || st.tick > q.bite + AMPUTATE_WINDOW) return;
+    // kto już wychodzi bramą, nie jest pacjentem zarządu (praca odejścia nie może go wrócić do osiedla)
+    if (q.job?.t === 'odejscie') return;
     const p = pawns.find((x) => x !== q);
     if (!p) return;
     const j = this.newJob('amputate', q.id, -1, true);
@@ -7677,7 +7687,8 @@ export class Sim {
     const st = this.st;
     const tick = st.tick;
     const q = st.pawns.find((x) => x.id === j.target);
-    if (!q?.needs || this.graveyard.has(q.id) || q.bite === undefined) {
+    // chory, który w trakcie zaczął wychodzić bramą (`wyprowadz`), nie jest już pacjentem
+    if (!q?.needs || this.graveyard.has(q.id) || q.bite === undefined || q.job?.t === 'odejscie') {
       this.done(p);
       return;
     }
