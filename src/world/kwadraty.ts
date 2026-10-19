@@ -13,8 +13,10 @@
 
    `kafelkiKwadratu` to kafelki OpenFreeMap z=14 do pobrania dla kwadratu: w promieniu 720 m od jego środka, tak samo
    jak dom pobiera je wokół adresu (load() w mvt.ts), więc klucze budynków liczą się z tych samych całych budowli.
-   Dla domu to dokładnie kafelki, które i tak pobiera gra. */
+   Dla domu to dokładnie kafelki, które i tak pobiera gra. `seedKwadratu` daje ziarno kwadratu poza domem (drzewa, wraki):
+   dom używa ziarna gry wprost, więc jego świat się nie zmienia. */
 
+import { hashString } from '../core/rng.ts';
 import type { Geo, Pt } from './geo.ts';
 import { tilesFor } from './mvt.ts';
 import { dominantAngle } from './rotate.ts';
@@ -92,4 +94,9 @@ export function sasiedzi8(sx: number, sy: number): [number, number][] {
     [sx - 1, sy],
     [sx - 1, sy - 1],
   ];
+}
+
+/** Ziarno kwadratu poza domem: skrót (hashString) z napisu „ziarno:sx:sy” jako liczba całkowita bez znaku. */
+export function seedKwadratu(seed: number, sx: number, sy: number): number {
+  return Number.parseInt(hashString(`${seed}:${sx}:${sy}`), 16);
 }

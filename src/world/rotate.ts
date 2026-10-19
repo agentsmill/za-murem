@@ -1,8 +1,9 @@
 /* Obrót mapy tak, żeby dominujący kierunek ścian bloków leżał wzdłuż osi siatki.
    Histogram kątów krawędzi obrysów (modulo 90°, waga = długość krawędzi), szczyt histogramu
-   wyznacza kierunek. Wybieramy obrót najbliższy północy, czyli najwyżej o 45°. */
+   wyznacza kierunek. Wybieramy obrót najbliższy północy, czyli najwyżej o 45°.
+   Prostowanie budynków (straighten) ma też wariant dla kwadratów obok domu (straightenZDomem): dom wygrywa na szwie. */
 
-import type { Geo, Pt } from './geo.ts';
+import type { Geo, GeoBuilding, Pt } from './geo.ts';
 
 const BINS = 180; // 0,5° na przedział w zakresie 0–90°
 const QUARTER = Math.PI / 2;
@@ -73,40 +74,92 @@ export function buildingTilt(rings: Pt[][], maxDev = (10 * Math.PI) / 180): numb
   return sd / sw;
 }
 
-/** Prostuje budynki prawie równoległe do siatki: obrót wokół środka budynku, jeśli żaden
-    punkt obrysu nie przesunie się o więcej niż tol metrów, a kąt nie przekracza maxDeg
-    (smallMaxDeg dla budynków o promieniu do 12 m). Mały dom można obrócić mocniej, długi blok tylko trochę. */
+/** parametry prostowania jednego budynku: obrót o −d wokół punktu (cx, cy) */
+export interface Prostowanie {
+  d: number;
+  cx: number;
+  cy: number;
+}
+
+/** Decyzja o prostowaniu budynku z jego pierścieni (zewnętrznego i części): obrót o −d wokół środka wierzchołków, jeśli
+    żaden punkt obrysu nie przesunie się o więcej niż tol metrów, a kąt nie przekracza maxDeg (smallMaxDeg dla budynków
+    o promieniu do 12 m). Mały dom można obrócić mocniej, długi blok tylko trochę. Null: budynek zostaje, jak jest. */
+export function parametryProstowania(
+  rings: readonly (readonly Pt[])[],
+  tol = 3.5,
+  maxDeg = 8,
+  smallMaxDeg = 20,
+): Prostowanie | null {
+  const d = buildingTilt(rings as Pt[][], (22 * Math.PI) / 180);
+  if (d === null || Math.abs(d) < 1e-4) return null;
+  let cx = 0;
+  let cy = 0;
+  let n = 0;
+  for (const ring of rings)
+    for (const [x, y] of ring) {
+      cx += x;
+      cy += y;
+      n++;
+    }
+  cx /= n;
+  cy /= n;
+  let far = 0;
+  for (const ring of rings) for (const [x, y] of ring) far = Math.max(far, Math.hypot(x - cx, y - cy));
+  // małe budynki (domy, garaże) można obrócić mocniej niż bloki
+  const lim = ((far <= 12 ? smallMaxDeg : maxDeg) * Math.PI) / 180;
+  // przesunięcie punktu przy obrocie o d: 2·r·sin(d/2)
+  if (Math.abs(d) > lim || 2 * far * Math.sin(Math.abs(d) / 2) > tol) return null;
+  return { d, cx, cy };
+}
+
+/** Obraca wszystkie pierścienie budynku zgodnie z parametrami prostowania. */
+export function zastosujProstowanie(b: GeoBuilding, pr: Prostowanie): GeoBuilding {
+  const c = Math.cos(-pr.d);
+  const s = Math.sin(-pr.d);
+  const R = ([x, y]: Pt): Pt => {
+    const [qx, qy] = rot([x - pr.cx, y - pr.cy], c, s);
+    return [qx + pr.cx, qy + pr.cy];
+  };
+  return { ...b, p: b.p.map(R), ...(b.pp ? { pp: b.pp.map((q) => q.map(R)) } : {}) };
+}
+
+/** Prostuje budynki prawie równoległe do siatki (parametryProstowania). */
 export function straighten(geo: Geo, tol = 3.5, maxDeg = 8, smallMaxDeg = 20): Geo {
   return {
     ...geo,
     b: geo.b.map((b) => {
-      const rings = [b.p, ...(b.pp || [])];
-      const d = buildingTilt(rings, (22 * Math.PI) / 180);
-      if (d === null || Math.abs(d) < 1e-4) return b;
-      let cx = 0;
-      let cy = 0;
-      let n = 0;
-      for (const ring of rings)
-        for (const [x, y] of ring) {
-          cx += x;
-          cy += y;
-          n++;
-        }
-      cx /= n;
-      cy /= n;
-      let far = 0;
-      for (const ring of rings) for (const [x, y] of ring) far = Math.max(far, Math.hypot(x - cx, y - cy));
-      // małe budynki (domy, garaże) można obrócić mocniej niż bloki
-      const lim = ((far <= 12 ? smallMaxDeg : maxDeg) * Math.PI) / 180;
-      // przesunięcie punktu przy obrocie o d: 2·r·sin(d/2)
-      if (Math.abs(d) > lim || 2 * far * Math.sin(Math.abs(d) / 2) > tol) return b;
-      const c = Math.cos(-d);
-      const s = Math.sin(-d);
-      const R = ([x, y]: Pt): Pt => {
-        const [qx, qy] = rot([x - cx, y - cy], c, s);
-        return [qx + cx, qy + cy];
-      };
-      return { ...b, p: b.p.map(R), ...(b.pp ? { pp: b.pp.map((q) => q.map(R)) } : {}) };
+      const pr = parametryProstowania([b.p, ...(b.pp || [])], tol, maxDeg, smallMaxDeg);
+      return pr ? zastosujProstowanie(b, pr) : b;
+    }),
+  };
+}
+
+/** Prostowanie kwadratu obok domu z regułą „dom wygrywa na szwie” (projekt miasta z kwadratów). Świat domu się nie
+    zmienia, więc sąsiad ma się do niego dopasować: budynek, którego kawałki (te same pierścienie po obrocie, co do
+    współrzędnej) są w geo domu, prostuje się tym obrotem, który wyszedł w domu z jego kawałków, i ten obrót dostają
+    WSZYSTKIE kawałki sąsiada, także te, których dom nie ma (daleko od jego środka albo maleńkie). Dom decyduje też, czy
+    prostować w ogóle. Dzięki temu część budynku w domu jest u sąsiada bit w bit taka sama, a reszta obraca się razem
+    z nią jak jedna bryła. Budynek bez kawałków w domu albo z kawałkami z dwóch różnych budynków domu prostuje się jak
+    zwykle, z całej budowli, więc dwa sąsiednie kwadraty bez domu obracają go tak samo. Obie geo mają być już obrócone
+    kątem układu domu (rotateGeo), ale jeszcze nie wyprostowane. */
+export function straightenZDomem(geo: Geo, dom: Geo, tol = 3.5, maxDeg = 8, smallMaxDeg = 20): Geo {
+  const wDomu = new Map<string, GeoBuilding>();
+  for (const b of dom.b) for (const ring of [b.p, ...(b.pp || [])]) wDomu.set(JSON.stringify(ring), b);
+  return {
+    ...geo,
+    b: geo.b.map((b) => {
+      const pierscienie = [b.p, ...(b.pp || [])];
+      const domowe = new Set<GeoBuilding>();
+      for (const ring of pierscienie) {
+        const h = wDomu.get(JSON.stringify(ring));
+        if (h) domowe.add(h);
+      }
+      let pr: Prostowanie | null;
+      if (domowe.size === 1) {
+        const [h] = domowe;
+        pr = parametryProstowania([h.p, ...(h.pp || [])], tol, maxDeg, smallMaxDeg);
+      } else pr = parametryProstowania(pierscienie, tol, maxDeg, smallMaxDeg);
+      return pr ? zastosujProstowanie(b, pr) : b;
     }),
   };
 }
