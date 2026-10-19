@@ -13,9 +13,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
+import { BUILDS, canPlace } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { REPAIR } from '../../src/sim/mieszkania.ts';
-import { type Hole, PATCH_HP } from '../../src/sim/perimeter.ts';
+import { fenceShape, type Hole, PATCH_HP } from '../../src/sim/perimeter.ts';
 import { progi, RODZAJE, type RodzajPracy } from '../../src/sim/praca.ts';
 import { drzwiBudynku } from '../../src/sim/sasiedzi.ts';
 import {
@@ -61,6 +62,9 @@ interface Prywatne {
   newJob(t: JobKind, target: number, tile: number, order: boolean, phase?: number): Job;
   work(p: Pawn, j: Job): boolean;
   lootNear(p: Pawn, anchor: number, order?: boolean): Thing | undefined;
+  startPlot(p: Pawn, order?: boolean): boolean;
+  tileOf(p: Pawn): number;
+  exitTile: number;
   coreBlocked: Uint8Array;
   fenceMask: Uint8Array;
   yardMask: Uint8Array;
@@ -173,6 +177,29 @@ function wolnyKafelek(sim: Sim, p: Pawn, gdzie: 'poza' | 'podworko'): number {
       bd = d;
       best = i;
     }
+  }
+  return best;
+}
+
+/** Wolny kafelek poza naszym terenem, do którego da się dojść, dalej niż 3 kafelki od siatki (nie `przySiatce`) i co
+    najmniej `odBramy` kafelków od bramy (Chebyshev); najbliższy osobie. */
+function ulicaDaleko(sim: Sim, p: Pawn, odBramy = 0, odOsoby = 0): number {
+  const s = prv(sim);
+  const size = s.w.size;
+  const region = s.regionOf(p);
+  const zajete = new Set(sim.st.things.map((t) => t.y * size + t.x));
+  const bx = s.exitTile % size;
+  const by = Math.floor(s.exitTile / size);
+  let best = -1;
+  let bd = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < size * size; i++) {
+    if (s.coreBlocked[i] || s.reg[i] !== region || zajete.has(i) || s.naszTeren(i)) continue;
+    if (Math.max(Math.abs((i % size) - bx), Math.abs(Math.floor(i / size) - by)) < odBramy) continue;
+    const d = s.dist2(p, i);
+    if (d < odOsoby * odOsoby) continue;
+    if (d >= bd || s.przySiatce(i)) continue;
+    bd = d;
+    best = i;
   }
   return best;
 }
@@ -914,6 +941,309 @@ describe('tryb zombie', () => {
     st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
     s.think(p);
     expect(jaka(p)).toBe('haul');
+  });
+});
+
+/** Plan budowy na wolnym miejscu: zasieki na kafelku siatki albo ogródek na podwórku (jak plan z menu budowy). */
+function planBudowy(sim: Sim, kind: 'zasieki' | 'ogrodek') {
+  const s = prv(sim);
+  const w = s.w;
+  const kafle = kind === 'zasieki' ? (fenceShape(w)?.tiles ?? []) : (fenceShape(w)?.yard ?? []);
+  let at: { x: number; y: number; rot: number } | null = null;
+  for (const rot of [0, 1])
+    for (const i of kafle)
+      if (!at && canPlace(sim.st, w, kind, i % w.size, Math.floor(i / w.size), rot).ok)
+        at = { x: i % w.size, y: Math.floor(i / w.size), rot };
+  if (!at) throw new Error(`brak miejsca na ${kind}`);
+  return { at, tile: at.y * w.size + at.x };
+}
+
+describe('tryb zombie: budowa i zlecenia poza naszym terenem', () => {
+  /** zombie, osoba z budową (i przełącznikiem, jeśli trzeba), bez szwendaczy */
+  function zScena(rodzaje: RodzajPracy[], zaSiatke = false) {
+    const sc = scena({ tryb: 'zombie', rodzaje, zaSiatke });
+    sc.sim.st.pawns = sc.sim.st.pawns.filter((q) => q.kind !== 'zombie');
+    return { ...sc, s: prv(sc.sim), st: sc.sim.st };
+  }
+
+  it('automat nie buduje zasieków przy szwendaczu (bliżej niż 10 m), bez niego buduje; z polecenia buduje', () => {
+    const { sim, p, s, st } = zScena(['budowa']);
+    const { at, tile } = planBudowy(sim, 'zasieki');
+    sim.push({ t: 'build', ids: [], kind: 'zasieki', ...at });
+    sim.step();
+    st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
+    const plan = st.builds[0];
+    plan.have = { ...BUILDS.zasieki.cost };
+    expect(s.przySiatce(tile)).toBe(true);
+    odnow(sim, p);
+    spawnZombie(st, s.w, tile, 0);
+    const starty = liczStarty(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('-');
+    expect(plan.by).toBe(-1);
+    for (let n = 0; n < 40; n++) {
+      // szwendacz stoi przy zasiekach przez dwie sekundy
+      for (const z of st.pawns.filter((q) => q.kind === 'zombie')) {
+        z.x = (tile % s.w.size) + 0.5;
+        z.y = Math.floor(tile / s.w.size) + 0.5;
+        z.job = null;
+      }
+      sim.step();
+    }
+    expect(starty.build ?? 0).toBe(0);
+    // szwendacz poszedł sobie: buduje
+    st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('build');
+    expect(p.job?.order).toBe(false);
+    // z polecenia także przy szwendaczu
+    odnow(sim, p);
+    spawnZombie(st, s.w, tile, 0);
+    sim.push({ t: 'build', ids: [p.id], kind: 'zasieki', ...at });
+    sim.step();
+    expect(jaka(p)).toBe('build');
+    expect(p.job?.order).toBe(true);
+  });
+
+  it('dokańczanie wspólnego płotu bez polecenia też omija szwendacza przy stanowisku', () => {
+    const { p, s, st } = zScena([]);
+    const size = s.w.size;
+    // stanowisko płotu: wolny kafelek podwórka tuż przy siatce
+    const stand = [...Array(size * size).keys()].find(
+      (i) =>
+        s.yardMask[i] === 1 &&
+        s.fenceMask[i] !== 1 &&
+        !s.coreBlocked[i] &&
+        s.reg[i] === s.regionOf(p) &&
+        s.przySiatce(i) &&
+        !st.things.some((t) => t.y * size + t.x === i),
+    )!;
+    expect(stand).toBeDefined();
+    st.plot = {
+      bids: [],
+      plan: { bid: 0, need: { zlom: 4 }, have: { zlom: 4 }, work: 0, total: 10, by: -1, stand, wariant: 'mieszany' },
+    };
+    spawnZombie(st, s.w, stand, 0);
+    expect(s.startPlot(p, false)).toBe(false);
+    expect(jaka(p)).toBe('-');
+    st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
+    expect(s.startPlot(p, false)).toBe(true);
+    expect(p.job?.order).toBe(false);
+  });
+
+  it('z przełącznikiem zlecenie poza naszym terenem tylko bez szwendacza bliżej niż 10 m od celu (mozeTam)', () => {
+    // łup i drewno na ulicy, dalej niż 3 kafelki od siatki: z szwendaczem obok nikt po nie nie idzie, bez niego tak
+    for (const [co, praca] of [
+      ['deski', 'carry'],
+      ['drewno', 'haul'],
+    ] as const) {
+      const { sim, p, s, st } = zScena(['noszenie'], true);
+      const u = ulicaDaleko(sim, p);
+      expect(u).toBeGreaterThanOrEqual(0);
+      expect(s.przySiatce(u), co).toBe(false);
+      expect(s.mozeTam(p, u), co).toBe(true);
+      if (co === 'deski') dodaj(sim, 'deski', 4, u);
+      else s.addWood(u, 6);
+      const z = spawnZombie(st, s.w, u, 0);
+      z.x = (u % s.w.size) + 5.5; // pięć kafelków obok
+      z.y = Math.floor(u / s.w.size) + 0.5;
+      expect(s.szwendaczBlisko(u), co).toBe(true);
+      expect(s.mozeTam(p, u), co).toBe(false);
+      s.think(p);
+      expect(jaka(p), `${co} przy szwendaczu`).toBe('-');
+      st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
+      s.think(p);
+      expect(jaka(p), `${co} bez szwendacza`).toBe(praca);
+    }
+    // na naszym terenie szwendacz za siatką tej reguły nie uruchamia
+    const { sim, p, s, st } = zScena([], true);
+    const podworko = wolnyKafelek(sim, p, 'podworko');
+    const z = spawnZombie(st, s.w, podworko, 0);
+    z.x = (podworko % s.w.size) + 2.5;
+    expect(s.szwendaczBlisko(podworko)).toBe(true);
+    expect(s.mozeTam(p, podworko)).toBe(true);
+  });
+
+  it('z przełącznikiem nie wychodzi też wtedy, gdy szwendacz jest przy osobie albo przy wyjściu za bramę, choć cel jest czysty', () => {
+    for (const gdzie of ['przy osobie', 'przy bramie'] as const) {
+      const { sim, p, s, st } = zScena(['noszenie'], true);
+      const u = ulicaDaleko(sim, p, 12, 14);
+      expect(u, gdzie).toBeGreaterThanOrEqual(0);
+      dodaj(sim, 'deski', 4, u);
+      expect(s.mozeTam(p, u), `${gdzie}, bez szwendacza`).toBe(true);
+      const miejsce = gdzie === 'przy osobie' ? s.tileOf(p) : s.exitTile;
+      const z = spawnZombie(st, s.w, miejsce, 0);
+      z.x = (miejsce % s.w.size) + 0.5;
+      z.y = Math.floor(miejsce / s.w.size) + 0.5;
+      // sam cel jest daleko od szwendacza, a mimo to zlecenia nie ma
+      expect(s.szwendaczBlisko(u), gdzie).toBe(false);
+      expect(s.mozeTam(p, u), gdzie).toBe(false);
+      s.think(p);
+      expect(jaka(p), gdzie).toBe('-');
+      st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
+      s.think(p);
+      expect(jaka(p), `${gdzie}, po odejściu szwendacza`).toBe('carry');
+    }
+  });
+
+  it('drwal z przełącznikiem omija drzewo, przy którym stoi szwendacz, i bierze inne', () => {
+    const { sim, p, s, st } = zScena(['drwal'], true);
+    // drzewa w podwórku i blisko bramy albo osoby ścięte, żeby najbliższe było za siatką i dalej niż 10 m od bramy
+    // i od osoby (inaczej szwendacz przy drzewie byłby też przy wyjściu albo przy osobie)
+    const size = s.w.size;
+    const daleko = (a: number, b: number) =>
+      Math.max(Math.abs((a % size) - (b % size)), Math.abs(Math.floor(a / size) - Math.floor(b / size))) >= 12;
+    for (let k = 0; k < s.w.trees.length; k++)
+      if (s.naszTeren(s.trunk[k]) || !daleko(s.trunk[k], s.exitTile) || !daleko(s.trunk[k], s.tileOf(p)))
+        st.felled.push(k);
+    st.felled.sort((a, b) => a - b);
+    s.think(p);
+    expect(jaka(p)).toBe('chop');
+    const k1 = p.job!.target;
+    const t1 = s.trunk[k1];
+    expect(s.naszTeren(t1)).toBe(false);
+    odnow(sim, p);
+    const z = spawnZombie(st, s.w, t1, 0);
+    z.x = (t1 % s.w.size) + 0.5;
+    z.y = Math.floor(t1 / s.w.size) + 0.5;
+    s.think(p);
+    expect(jaka(p)).toBe('chop');
+    expect(p.job!.target).not.toBe(k1);
+    expect(s.szwendaczBlisko(s.trunk[p.job!.target])).toBe(false);
+  });
+
+  it('praca bez polecenia osoby poza naszym terenem przerywa się, gdy szwendacz jest bliżej niż 10 m od niej', () => {
+    /** praca ścinania w toku (do końca daleko) osoby stojącej na ulicy; szwendacz `dx` kafelków obok */
+    const trwa = (order: boolean, dx: number | null, naTerenie = false): boolean => {
+      const { sim, p, s, st } = zScena([], true);
+      const tile = naTerenie ? wolnyKafelek(sim, p, 'podworko') : ulicaDaleko(sim, p);
+      p.x = (tile % s.w.size) + 0.5;
+      p.y = Math.floor(tile / s.w.size) + 0.5;
+      p.path = [];
+      p.pi = 0;
+      st.tick = tickO(2, 12);
+      if (dx !== null) {
+        const z = spawnZombie(st, s.w, tile, 0);
+        z.x = p.x + dx;
+        z.y = p.y;
+      }
+      const j = s.newJob('chop', 0, tile, order, 1);
+      j.until = st.tick + 100000;
+      p.job = j;
+      return s.work(p, j);
+    };
+    expect(trwa(false, 5)).toBe(false); // zbliża się szwendacz: wraca
+    expect(trwa(false, 9)).toBe(false);
+    expect(trwa(false, 12)).toBe(true); // dalej niż 10 m: pracuje
+    expect(trwa(false, null)).toBe(true);
+    expect(trwa(true, 5)).toBe(true); // z polecenia gracz decyduje
+    expect(trwa(false, 5, true)).toBe(true); // na naszym terenie ta reguła nie działa
+  });
+
+  it('w drodze za siatkę praca bez polecenia przerywa się, gdy szwendacz zbliży się do osoby (dalej niż zasięg obrony, bliżej niż 10 m)', () => {
+    const przebieg = (szwendacz: boolean): string => {
+      const { sim, p, s, st } = zScena([], true);
+      const ulica = ulicaDaleko(sim, p, 12);
+      s.addWood(ulica, 6);
+      s.think(p);
+      expect(jaka(p)).toBe('haul');
+      until(sim, () => !s.naszTeren(s.tileOf(p)), 3000);
+      expect(s.naszTeren(s.tileOf(p))).toBe(false);
+      expect(p.pi).toBeLessThan(p.path.length); // jeszcze w drodze
+      if (szwendacz) {
+        const z = spawnZombie(st, s.w, s.tileOf(p), 0);
+        z.x = p.x + 8;
+        z.y = p.y;
+      }
+      for (let n = 0; n < 2 * 20; n++) {
+        for (const z of st.pawns.filter((q) => q.kind === 'zombie')) {
+          z.x = p.x + 8;
+          z.y = p.y;
+          z.job = null;
+        }
+        sim.step();
+      }
+      return jaka(p);
+    };
+    expect(przebieg(false)).toBe('haul');
+    expect(przebieg(true)).not.toBe('haul');
+  });
+});
+
+describe('budowa bez polecenia: skąd bierze materiał', () => {
+  function zPlanem(opcje: { zaSiatke?: boolean; godzina?: number }) {
+    const sc = scena({ rodzaje: ['budowa'], ...opcje });
+    const { sim, p } = sc;
+    const s = prv(sim);
+    sim.st.things = sim.st.things.filter((t) => t.kind !== 'deski' && t.kind !== 'zlom' && t.kind !== 'czesci');
+    const { at } = planBudowy(sim, 'ogrodek');
+    sim.push({ t: 'build', ids: [], kind: 'ogrodek', ...at });
+    sim.step();
+    odnow(sim, p);
+    const plan = sim.st.builds[0];
+    // cały materiał na ulicy, na jednej stercie
+    const ulica = dodaj(sim, 'deski', BUILDS.ogrodek.cost.deski!, ulicaDaleko(sim, p));
+    return { ...sc, s, at, plan, ulica };
+  }
+
+  it('bez przełącznika nie wychodzi po materiał na ulicę, z przełącznikiem za dnia tak, z polecenia zawsze', () => {
+    const bez = zPlanem({});
+    const starty = liczStarty(bez.sim, bez.p);
+    const przed = bez.sim.stats.paths;
+    bez.s.think(bez.p);
+    expect(jaka(bez.p)).toBe('-');
+    for (let n = 0; n < TICKS_PER_HOUR; n++) {
+      bez.sim.step();
+      expect(bez.s.naszTeren(kafelek(bez.sim, bez.p)), `krok ${n}`).toBe(true);
+    }
+    expect(starty.build ?? 0).toBe(0);
+    expect(bez.sim.stats.paths - przed).toBeLessThanOrEqual(4);
+
+    const z = zPlanem({ zaSiatke: true });
+    z.s.think(z.p);
+    expect(jaka(z.p)).toBe('build');
+    expect(z.p.job?.order).toBe(false);
+    expect(z.p.job?.from).toBe(z.ulica.id);
+    // nocą nie, nawet z przełącznikiem
+    const noc = zPlanem({ zaSiatke: true, godzina: 23 });
+    noc.s.think(noc.p);
+    expect(jaka(noc.p)).toBe('-');
+
+    // z polecenia gracz posyła po materiał na ulicę bez przełącznika, jak dotąd
+    const rozkaz = zPlanem({});
+    rozkaz.sim.push({ t: 'build', ids: [rozkaz.p.id], kind: 'ogrodek', ...rozkaz.at });
+    rozkaz.sim.step();
+    expect(jaka(rozkaz.p)).toBe('build');
+    expect(rozkaz.p.job?.order).toBe(true);
+    expect(rozkaz.p.job?.from).toBe(rozkaz.ulica.id);
+  });
+});
+
+describe('zapas drewna w rękach', () => {
+  it('zapasDrewna liczy drewno niesione na naszym terenie, nie liczy niesionego poza nim ani na wyprawie', () => {
+    const { sim, ludzie } = scena({ osoby: 2 });
+    const [a, b] = ludzie;
+    const s = prv(sim);
+    const podworko = wolnyKafelek(sim, a, 'podworko');
+    const ulica = wolnyKafelek(sim, a, 'poza');
+    const na = (q: Pawn, tile: number) => {
+      q.x = (tile % s.w.size) + 0.5;
+      q.y = Math.floor(tile / s.w.size) + 0.5;
+    };
+    const baza = s.zapasDrewna();
+    na(a, podworko);
+    a.carry = 5;
+    expect(s.zapasDrewna()).toBe(baza + 5);
+    na(a, ulica);
+    expect(s.zapasDrewna()).toBe(baza);
+    na(a, podworko);
+    a.away = true;
+    expect(s.zapasDrewna()).toBe(baza);
+    a.away = false;
+    na(b, podworko);
+    b.carry = 3;
+    expect(s.zapasDrewna()).toBe(baza + 8);
   });
 });
 
