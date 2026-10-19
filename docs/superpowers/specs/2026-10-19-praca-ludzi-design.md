@@ -2,7 +2,7 @@
 
 Pierwszy projekt z `docs/superpowers/specs/2026-10-18-kierunek-rozwoju-design.md` (sekcja „Praca ludzi i rozporządzenia”, punkt 1 kolejności), w zakresie z prośby Mateusza z 19.10.2026, plus werbunek wędrowców i sprawdzenie wspólnego płotu. Rozporządzenia, dyżury klatek i przejmowanie lokatorów idą osobnym projektem (sekcja „Poza zakresem”).
 
-Projekt zaakceptował nocny integrator w zastępstwie Mateusza 19.10.2026 po niezależnej recenzji, z dziewięcioma zmianami, które są już wpisane (sekcja „Decyzje”, „Akcept”). Słowa Mateusza są w cudzysłowie. Decyzje nocnego integratora (sesja „Nocna integracja projektu”, której Mateusz zostawił decyzje na noc z 18 na 19.10.2026) są oznaczone „(integrator)” i spisane w sekcji „Decyzje”, do przejrzenia przez Mateusza rano; jeśli Mateusz powie inaczej, jego słowo wygrywa. Moje propozycje i rozstrzygnięcia są oznaczone „(moje)”.
+Projekt zaakceptował nocny integrator w zastępstwie Mateusza 19.10.2026 po niezależnej recenzji, z dziewięcioma zmianami, które są już wpisane (sekcja „Decyzje”, „Akcept”). Słowa Mateusza są w cudzysłowie. Decyzje nocnego integratora (sesja „Nocna integracja projektu”, której Mateusz zostawił decyzje na noc z 18 na 19.10.2026) są oznaczone „(integrator)” i spisane w sekcji „Decyzje”, do przejrzenia przez Mateusza rano; jeśli Mateusz powie inaczej, jego słowo wygrywa. Jedną z nich Mateusz zmienił jeszcze 19.10.2026: przełącznik „Może wychodzić za siatkę” jest domyślnie włączony w trybie zwykłym, a wyłączony w trybie zombie (sekcja „Decyzje”, punkt 7). Moje propozycje i rozstrzygnięcia są oznaczone „(moje)”.
 
 ## Po co
 
@@ -85,7 +85,7 @@ Dziewięć rodzajów w tej kolejności kolumn (ta sama kolejność rozstrzyga re
 
 Czego nie ma w automacie (moje, po przeglądzie): wzmacniania siatki (`brace`: siatka startuje z 45–75 wytrzymałości, więc zleceniem byłby prawie każdy metr po 2 sztuki materiału; zostaje poleceniem), drzew na linii obwodu (ścięty pień zamienia się w zwykły kafelek siatki, który da się przebić), przeszukiwania mieszkań z lokatorami (spada stosunek do −100 i robi się wrogość), otwierania, pukania i wyważania drzwi, napraw w niezajętych mieszkaniach (kosztują deski, a miejsca przybywa tylko w naszych). Warta nie jest rodzajem pracy: zostaje przy karcie nocy, menu i „Do broni!”. Walka (`react`), dobijanie i ucieczka działają jak dziś, przed wszystkim.
 
-„Zlecenia za siatką” bierze sama tylko osoba z włączonym „Może wychodzić za siatkę” (integrator, punkt 7). Budynki otoczone wspólnym płotem i ich pomieszczenia są w środku (integrator). Pomieszczenia sąsiadów poza płotem są za siatką i tylko w budynkach już otwartych.
+„Zlecenia za siatką” bierze sama tylko osoba z włączonym „Może wychodzić za siatkę” (integrator, punkt 7; domyślnie włączony w trybie zwykłym, wyłączony w zombie, decyzja Mateusza 19.10.2026). Reguła wyjścia (`mozeWyjsc` w `sim.ts`) się nie zmienia: bez polecenia tylko za dnia i bez wroga bliżej niż 10 m od celu, od osoby i od bramy. Budynki otoczone wspólnym płotem i ich pomieszczenia są w środku (integrator). Pomieszczenia sąsiadów poza płotem są za siatką i tylko w budynkach już otwartych.
 
 Badania (integrator, punkt 2): kolumna ukryta, dopóki gałąź `badania` sesji „Technologia i Gospodarka” nie wejdzie. Kontrakt uzgodniony z tamtą sesją 19.10.2026:
 - `src/sim/praca.ts` (ten projekt) trzyma listę rodzajów jako wpisy `{ id, umiejetnosc(st, p), widoczny(st), znajdz(sim, p) }`. Wpis `'badania'` jest dziewiąty; do scalenia `widoczny()` zwraca `false`.
@@ -107,7 +107,7 @@ Badania (integrator, punkt 2): kolumna ukryta, dopóki gałąź `badania` sesji 
 
 To jest odczytanie „automatycznego wykonywania jakiegoś zadania w ustawieniach osoby”. Na karcie osoby wybór „Stałe zajęcie: brak / jeden z rodzajów”. Osoba ze stałym zajęciem bierze zlecenia tego rodzaju przed wszystkimi innymi, także przed rodzajami z priorytetem 1, i robi je, dopóki są. Kiedy nie ma, wraca do priorytetów. Stałe zajęcie włącza ten rodzaj, nawet jeśli w tabeli był wyłączony. W tabeli osoba ze stałym zajęciem ma przy imieniu znak tego rodzaju.
 
-Przykład: Marek z „Stałe zajęcie: Drwal” i „Może wychodzić za siatkę” ścina drzewa, aż drewna jest ponad próg, potem nosi i dokłada jak inni.
+Przykład: Marek z „Stałe zajęcie: Drwal” i „Może wychodzić za siatkę” (w trybie zwykłym domyślnie włączonym) ścina drzewa, aż drewna jest ponad próg, potem nosi i dokłada jak inni.
 
 Jeżeli Mateusz miał na myśli co innego (na przykład plan godzinowy osoby), stałe zajęcie przerabia się na karcie osoby, a priorytety i progi zostają.
 
@@ -134,7 +134,7 @@ Pozostałe rodzaje nie mają progów: Ogień pilnuje kozy, Kuchnia ma `shouldCoo
 - Godziny: sama praca za dnia, czyli 6:00–22:00 (`!night()`), jak dziś budowa i prace M2 bez polecenia; nocą tylko koza i kuchnia; polecenie gracza o każdej porze (integrator, punkt 6).
 - Przy wrogu na podwórku, w trybie zombie za siatką i przy pilnych potrzebach wszystko jak dziś: te gałęzie `think()` stoją przed pracą.
 - Polecenie gracza zawsze wygrywa i nie wraca do priorytetów, dopóki się nie skończy (`order: true`).
-- Drewno zza siatki (integrator, punkt 9): ścinanie na polecenie obejmuje wniesienie całego drewna z tego drzewa przez tę samą osobę, tak jak wrak przechodzi w noszenie (`carryOn`). Bezczynni wnoszą drewno zza siatki tylko za dnia i tylko z przełącznikiem „Może wychodzić za siatkę”. Drewno w obrębie siatki noszą jak dziś, także nocą. To zmienia dzisiejsze `startHaul`, które bierze najbliższą stertę z całego obszaru, także zza bramy.
+- Drewno zza siatki (integrator, punkt 9): ścinanie na polecenie obejmuje wniesienie całego drewna z tego drzewa przez tę samą osobę, tak jak wrak przechodzi w noszenie (`carryOn`). Bezczynni wnoszą drewno zza siatki tylko za dnia i tylko z przełącznikiem „Może wychodzić za siatkę” (w trybie zwykłym jest domyślnie włączony). Drewno w obrębie siatki noszą jak dziś, także nocą. To zmienia dzisiejsze `startHaul`, które bierze najbliższą stertę z całego obszaru, także zza bramy.
 
 ### Pierwszy dzień (integrator, punkt 9)
 
@@ -156,6 +156,7 @@ Krzywa jest wspólna z badaniami (uzgodnione z sesją „Technologia i Gospodark
 - Zwerbowani wędrowcy dostają id z własnym przedrostkiem (`w1`, `w2`, …), żeby nie wejść w żaden z tych liczników.
 - Kolizja liczników `s…` to istniejący błąd (przy kolizji `applyGov` nie doda fachowca z wydarzenia, bo `pawnOf` znajdzie tego samego id). Poza tym projektem: zgłoszony integratorowi do osobnej poprawki.
 - Zmiany ustawień idą przez kolejkę poleceń w stanie (`sim.push`), jak inne polecenia, i działają od następnego kroku: priorytet osoby dla rodzaju, stałe zajęcie, „może wychodzić za siatkę”, próg zapasu.
+- Przełącznik „może wychodzić za siatkę” ma domyślną zależną od trybu (`zaSiatkeDomyslnie(st)` w `src/sim/praca.ts`: włączony w zwykłym, wyłączony w zombie). W `UstawieniaOsoby.zaSiatke` leży jawne `true` albo `false` tylko wtedy, gdy gracz ustawił wartość inną niż domyślna; polecenie `zasiatke` równe domyślnej zdejmuje wpis (tryb nie zmienia się w trakcie gry, więc zwinięcie jest jednoznaczne), a `uporzadkujPrace` zdejmuje też stary wpis równy domyślnej. Stary zapis: jawne `true` w trybie zwykłym znaczy to samo co brak pola, w zombie zostaje włączeniem; stan bez pola w trybie zwykłym ma teraz przełącznik włączony (zmiana zachowania starych zapisów, bez zmiany wersji stanu). Przełącznik ma tylko zarząd (pionek `core`): mieszkaniec z osobą z generatora w odczycie ma go wyłączony.
 - Nowe pola stanu są opcjonalne i powstają przy pierwszej zmianie gracza; stan bez nich daje domyślne ustawienia (zasada z CLAUDE.md). Wersja stanu się nie zmienia, bo stary zapis działa bez migracji.
 - Wyszukiwanie zleceń nie może rozdmuchać kosztu kroku przy 12 osobach: `think()` woła się co sekundę na osobę (`THINK_EVERY`), a każdy rodzaj ma tanie „czy w ogóle jest robota” przed szukaniem najbliższej. Pamięć „czy jest robota” trzyma `Sim` poza `SimState`, jak bufor A* i statystyki, żeby skrót stanu od niej nie zależał. Budujący mierzy `npm run perf` z 12 osobami w zarządzie.
 - „Najbliższe zlecenie” to najmniejsza odległość w liczbach całkowitych (długość drogi albo suma |dx| + |dy|), remis po indeksie zlecenia w stanie. Bez `Math.hypot`, `sin` i `cos` w decyzjach (zasada z dziennika: różne silniki JS mogą dać różne wyniki).
@@ -176,7 +177,7 @@ Cel zwycięstwa tam to połowa ludności kwadratu domu z NSP 2021, od 120 do 500
 - Panel jak panel budowy (`src/ui/panelbudowy.ts`): nie-modalny, z prawej, mapa pod nim klikalna; na telefonie arkusz na całą szerokość od dołu. Treść robi czysta funkcja do HTML z odczytu symulacji, bez DOM, z testem w Node, jak `buildPanelHtml`.
 - Na górze „Trzymać w zapasie” z trzema liczbami (drewno, deski, części: minus, liczba, plus). Pod spodem tabela: wiersz na osobę (imię, zawód, znak stałego zajęcia, przełącznik „za siatkę”), kolumna na rodzaj z krótką nazwą i dymkiem. W komórce cyfra 1–4 albo pusto. Klik albo stuknięcie przestawia 1 → 2 → 3 → 4 → pusto → 1; prawy przycisk w drugą stronę. Kliknięty nagłówek kolumny pokazuje, ile zleceń tego rodzaju czeka.
 - Na telefonie 390×844 tabela mieści dziewięć kolumn po 30 px i kolumnę imion; przy 12 osobach przewija się w pionie, nagłówek stoi.
-- Karta osoby: „Stałe zajęcie” (wybór) i „Może wychodzić za siatkę” (przełącznik). W trybie zombie przy włączeniu przełącznika ostrzeżenie, że za siatką są szwendacze (integrator, punkt 7). Wiersz „co robi” dostaje dopisek „(sama)” albo „(sam)” / „(on own)” przy pracy wziętej bez polecenia, żeby było widać, że to ustawienia, a nie rozkaz.
+- Karta osoby: „Stałe zajęcie” (wybór) i „Może wychodzić za siatkę” (przełącznik, domyślnie włączony w trybie zwykłym, wyłączony w zombie; dymek i lead panelu mówią o tym po polsku i po angielsku). W trybie zombie przy włączeniu przełącznika ostrzeżenie, że za siatką są szwendacze (integrator, punkt 7). Wiersz „co robi” dostaje dopisek „(sama)” albo „(sam)” / „(on own)” przy pracy wziętej bez polecenia, żeby było widać, że to ustawienia, a nie rozkaz.
 - Wszystkie napisy przez warstwę języka (`tr()`), oba języki, angielski według `docs/SLOWNICZEK-EN.md`. Nazwy rodzajów po angielsku ustala budujący ze słowniczkiem (propozycja: Fire, Kitchen, Build, Repair, Woodcutting, Hauling, Workshop, Scavenging, Research).
 
 ## Część B: werbunek i przyrost
@@ -205,7 +206,7 @@ Testy w Node (nowe pliki w `tests/unit/`), każdy, który da się zepsuć, spraw
 - kolejność: stałe zajęcie przed priorytetem 1, 1 przed 2, remis według kolumn, polecenie gracza przed wszystkim, sen i jedzenie przed pracą;
 - każdy rodzaj sam bierze swoją pracę na prawdziwej mapie (Przymorze albo Lanciego): Drwal ścina poniżej progu i przestaje nad progiem, Naprawy łatają dziurę z materiałem, Noszenie wnosi łup z otoczonego budynku, Warsztat robi deski do progu, Szaber przeszukuje puste pomieszczenie w otoczonym budynku;
 - czego nie ma w automacie: nikt sam nie wzmacnia siatki, nie ścina drzewa na linii obwodu, nie przeszukuje mieszkania z lokatorami, nie otwiera cudzych drzwi;
-- „za siatkę”: bez przełącznika nikt sam nie wychodzi za siatkę (żadna praca bez polecenia z celem za siatką, także noszenie drewna), z przełącznikiem wychodzi tylko osoba z przełącznikiem i tylko za dnia; ścinanie za siatką na polecenie kończy się wniesieniem całego drewna z drzewa przez tę samą osobę;
+- „za siatkę”: bez przełącznika nikt sam nie wychodzi za siatkę (żadna praca bez polecenia z celem za siatką, także noszenie drewna), z przełącznikiem wychodzi tylko osoba z przełącznikiem i tylko za dnia; przełącznik jest domyślnie włączony w trybie zwykłym, więc testy, które zakładają „bez przełącznika”, wyłączają go jawnie (`bezPrzelacznika` w `tests/unit/praca-pomoc.ts`); ścinanie za siatką na polecenie kończy się wniesieniem całego drewna z drzewa przez tę samą osobę;
 - pierwszy dzień: przed pierwszym rankiem i przed końcem samouczka nowe rodzaje nic nie robią, koza, kuchnia i budowa jak dziś;
 - próg drewna liczy tylko drewno w obrębie siatki;
 - mnożnik umiejętności: ta sama praca szybciej u osoby z umiejętnością;
@@ -220,7 +221,7 @@ Testy w Node (nowe pliki w `tests/unit/`), każdy, który da się zepsuć, spraw
 
 Boty:
 - `npm run bot` i `npm run bot:zombie` dostaną nowe skróty (zarząd sam pracuje). Nowe skróty bazowe do dziennika, z porównaniem liczb przed i po (zgony, siatka, drewno, jedzenie), razem z przypiętymi skrótami w `tests/unit/druzyna-sim.test.ts`, jeśli się zmienią (integrator, punkt 10 i akcept punkt 9).
-- Nowy pomiar „zarząd bez gracza”: trzy doby bez żadnego polecenia poza kartą nocy, na trzech demach i w obu trybach. Ile drewna, desek, części, załatanych dziur i przeszukanych pomieszczeń, ile razy ktoś sam wyszedł za siatkę (ma być 0 bez przełącznika), jak ciepło i nastrój zarządu.
+- Nowy pomiar „zarząd bez gracza”: trzy doby bez żadnego polecenia poza kartą nocy, na trzech demach i w obu trybach. Ile drewna, desek, części, załatanych dziur i przeszukanych pomieszczeń, ile razy ktoś sam wyszedł za siatkę (po decyzji z 19.10.2026: w trybie zwykłym zamierzone, w zombie ma być 0; flagi `--przelacznik` i `--bez-przelacznika` wymuszają włączony albo wyłączony w obu trybach), jak ciepło i nastrój zarządu.
 - `npm run bot:surowce` po zmianie: ile desek i złomu jest po 5 dniach i którego dnia stać na najtańszy wspólny płot na Lanciego. To liczba do projektu kosztu płotu.
 - Werbunek w bocie (z włączoną opcją `obcy`, której `bot.ts` i `bot-zombie.ts` dziś nie włączają): ilu zwerbowanych po 10 dniach przy rozmowie z każdym wędrowcem, ilu do zarządu, ilu jako mieszkańcy; cel (moje) 2–5 do zarządu w 10 dni. Bot drukuje ludność (`populacja(st)`: zarząd, mieszkańcy, razem) na koniec każdego dnia, bo z niej integrator ustawi tempo werbunku pod warunek ludnościowy.
 
@@ -258,9 +259,9 @@ Integrator, 19.10.2026 w nocy (do przejrzenia przez Mateusza):
 4. Stałe zajęcie na karcie osoby plus progi zapasów w zakładce Pracy.
 5. Potrzeby przed pracą.
 6. Sama praca tylko za dnia, 6:00–22:00, jak dziś (najpierw padło „do 20:00” na mojej błędnej przesłance w pytaniu, potem integrator poprawił na 6–22).
-7. Przełącznik „Może wychodzić za siatkę” domyślnie wyłączony, w trybie zombie z ostrzeżeniem; teren za wspólnym płotem nasz.
+7. Przełącznik „Może wychodzić za siatkę” w trybie zombie z ostrzeżeniem; teren za wspólnym płotem nasz. Domyślna wartość: integrator ustawił „domyślnie wyłączony”, Mateusz zmienił to 19.10.2026: domyślnie włączony w trybie zwykłym, wyłączony w trybie zombie. Powód: wewnątrz siatki są tylko jedno–dwa drzewa na mapę (2 z 455 na Przymorzu, 1 z 301 na Lanciego, 2 z 1604 w Zielonkach), więc przy wyłączonym przełączniku nikt sam nie ścina drewna i koza gaśnie. Reguła wyjścia bez zmian: bez polecenia tylko za dnia i bez wroga bliżej niż 10 m.
 8. Mnożnik z umiejętności, liczby z bota.
-9. Nowe rodzaje dopiero po celach pierwszego dnia; to, co zarząd robi sam dziś (koza, kuchnia, noszenie drewna), bez zmian, z jednym wyjątkiem: drewno zza siatki wnosi ten, kto ściął drzewo na polecenie, a bezczynni wychodzą po drewno za siatkę tylko za dnia i z przełącznikiem.
+9. Nowe rodzaje dopiero po celach pierwszego dnia; to, co zarząd robi sam dziś (koza, kuchnia, noszenie drewna), bez zmian, z jednym wyjątkiem: drewno zza siatki wnosi ten, kto ściął drzewo na polecenie, a bezczynni wychodzą po drewno za siatkę tylko za dnia i z przełącznikiem (od 19.10.2026 w trybie zwykłym domyślnie włączonym).
 10. Nowe skróty botów z dopiskiem w dzienniku, stare zapisy z domyślnymi priorytetami.
 11. Werbunek wędrowców tak.
 12. Do zarządu, limit 12 jako jedna stała; ponad limit zwerbowani zostają mieszkańcami (tak brzmiała rekomendacja, którą integrator przyjął).
