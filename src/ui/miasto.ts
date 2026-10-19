@@ -31,7 +31,7 @@
      Trafić można tylko w to, co narysowane.
    - Okno nie zmienia stanu gry ani zarządu: karta i przygaszanie tylko czytają `GovState` i `GovInput` (pauzę i powrót
      do gry robi main.ts). Czy można wysłać wyprawę i dlaczego nie, rozstrzyga `powodOdmowy` z src/gov/dzienne.ts, ta
-     sama co w `wyslijWyprawe`; karta dokłada tylko „miejsce na mapie osiedla”. Atrybucja map jest w stopce okna zawsze.
+     sama co w `wyslijWyprawe`, także dla miejsca z mapy osiedla (karta od siebie nic nie dokłada). Atrybucja map jest w stopce okna zawsze.
    Liczby w napisach po polsku z przecinkiem, po angielsku z kropką (`liczba`), z twardą spacją przed jednostką. Bez
    hypot, sin i cos (odległość palców przez Math.sqrt); nic stąd nie trafia do stanu. */
 
@@ -306,8 +306,8 @@ export const czas = (min: number): string => {
 
 /** Karta miejsca dla stanu zarządu `st` i wejścia `i`: kategoria i nazwa, odległość i czas drogi, ryzyko słowem, co tam
     zwykle jest, ile zostało („nietknięte”, „ktoś tu był”, „wybrane do cna”), kiedy byliście ostatnio, wyprawa w drodze.
-    Czy można i dlaczego nie, mówi `powodOdmowy` z src/gov/dzienne.ts (to samo co przy wysłaniu, bez sprawdzania osób);
-    karta dokłada tylko jedno: miejsce na mapie osiedla nie jest celem wyprawy. Nic nie zmienia. */
+    Czy można i dlaczego nie, mówi `powodOdmowy` z src/gov/dzienne.ts (to samo co przy wysłaniu, bez sprawdzania osób,
+    z miejscem na mapie osiedla włącznie: nie jest celem wyprawy). Nic nie zmienia. */
 export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsca {
   const cel = celZMiejsca(m);
   const linie: Tx[] = [];
