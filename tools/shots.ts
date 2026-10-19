@@ -173,6 +173,80 @@ async function zombieWalka(page: Page, base: string, emeryci = false) {
   await page.waitForTimeout(350);
 }
 
+/** Tablica badań z `?badania=demo` (pracownia z dwiema osobami przy stole, cztery zbadane technologie, Spawanie w toku
+    14 z 25, Rozruch węzła bez wiedzy, dwie książki): otwarta sama, z pauzą. Sprawdza, co ma być na tablicy w każdym
+    języku i na każdym ekranie, i zwraca pomiary strony, żeby scenariusz mógł sprawdzić układ (poziome przewijanie
+    strony, szczegóły i pasek obsady w oknie). */
+async function tablicaDemo(page: Page, base: string) {
+  await page.goto(`${base}?demo=przymorze&speed=0&badania=demo`);
+  await waitIdle(page);
+  await page.waitForSelector('#tablica:not([hidden]) .tb-kartka');
+  const stan = await page.evaluate(() => {
+    const kartki = [...document.querySelectorAll<HTMLElement>('#tablica .tb-kartka')];
+    const licz = (st: string) => kartki.filter((k) => k.dataset.stan === st).length;
+    return {
+      pauza: window.zm!.speed() === 0,
+      kartek: kartki.length,
+      nici: document.querySelectorAll('#tablica .tb-nic').length,
+      stany: {
+        zbadana: licz('zbadana'),
+        w_toku: licz('w_toku'),
+        brak_wiedzy: licz('brak_wiedzy'),
+        odwrocona: licz('odwrocona'),
+      },
+      wybrana: window.zm!.badania().wybrana,
+      przycisk: !document.getElementById('btnResearch')!.hidden,
+    };
+  });
+  console.log(`  tablica: ${JSON.stringify(stan)}`);
+  const { TECHS } = await import('../src/sim/badania.ts');
+  const par = TECHS.reduce((a, t) => a + t.req.length, 0);
+  if (!stan.pauza) throw new Error('tablica nie zatrzymała gry');
+  if (stan.kartek !== TECHS.length) throw new Error(`kartek ${stan.kartek}, technologii ${TECHS.length}`);
+  if (stan.nici !== par) throw new Error(`sznurków ${stan.nici}, par wymaganie–technologia ${par}`);
+  if (stan.stany.zbadana !== 4 || stan.stany.w_toku !== 1 || stan.stany.brak_wiedzy < 1)
+    throw new Error(`stany kartek: ${JSON.stringify(stan.stany)}`);
+  if (stan.wybrana !== 't_spawanie') throw new Error(`wybrana ${stan.wybrana}, a bieżące badanie to t_spawanie`);
+  if (!stan.przycisk) throw new Error('brak przycisku „Badania” przy stojącej pracowni');
+  return stan;
+}
+
+/** pomiary okna z otwartą tablicą: strona nie przewija się w bok, a szczegóły i pasek obsady mieszczą się w oknie
+    (przewijać wolno tylko planszę w jej własnym oknie) */
+async function tablicaUklad(page: Page) {
+  const m = await page.evaluate(() => {
+    const r = (sel: string) => {
+      const e = document.querySelector<HTMLElement>(sel);
+      if (!e) return null;
+      const b = e.getBoundingClientRect();
+      return { l: Math.round(b.left), t: Math.round(b.top), r: Math.round(b.right), b: Math.round(b.bottom) };
+    };
+    const wrap = document.querySelector<HTMLElement>('#tablica .tb-wrap')!;
+    return {
+      okno: [innerWidth, innerHeight],
+      stronaWBok: document.documentElement.scrollWidth > innerWidth + 1 || document.body.scrollWidth > innerWidth + 1,
+      tablicaWBok: document.getElementById('tablica')!.scrollWidth > innerWidth + 1,
+      planszaWBok: wrap.scrollWidth > wrap.clientWidth,
+      szczegoly: r('#tablica .tb-szczegoly'),
+      obsada: r('#tablica .tb-obsada'),
+      plansza: r('#tablica .tb-wrap'),
+    };
+  });
+  console.log(`  układ: ${JSON.stringify(m)}`);
+  if (m.stronaWBok || m.tablicaWBok) throw new Error('strona albo tablica przewija się w poziomie');
+  const [w, h] = m.okno;
+  for (const [nazwa, b] of [
+    ['szczegóły', m.szczegoly],
+    ['pasek obsady', m.obsada],
+    ['plansza', m.plansza],
+  ] as const) {
+    if (!b) throw new Error(`brak: ${nazwa}`);
+    if (b.l < 0 || b.t < 0 || b.r > w + 1 || b.b > h + 1)
+      throw new Error(`${nazwa} wystaje z okna: ${JSON.stringify(b)}`);
+  }
+  return m;
+}
+
 const SHOTS: Shot[] = [
   // przy zoomie od 0,6 nad siedzibą widać przekrój (wnętrze ze świata) zamiast dachu
   ...DEMOS.flatMap((d) => [
@@ -3795,6 +3869,183 @@ const SHOTS: Shot[] = [
       await page.click('#buildPanel [data-tab="dom"]');
       await page.click('#buildPanel .tile[data-kind="magazyn"]');
       await page.waitForTimeout(300); // koniec animacji przed zrzutem
+    },
+  },
+  // badania, tablica korkowa (docs/superpowers/specs/2026-10-19-badania-design.md, „Tablica badań”): otwarta sama z ?badania=demo,
+  // z pauzą; kartki w kolumnach er, czerwone sznurki, pieczątki, Spawanie w toku, Ciepło 2 bez wiedzy, odwrócone ery prądu,
+  // pasek obsady i półka z dwiema książkami. Wybór kartki do wzięcia pokazuje szczegóły z przyciskiem „Zmień na to badanie”,
+  // Esc zamyka i puszcza grę, T otwiera ponownie
+  {
+    name: 'badania-tablica',
+    query: '',
+    run: async (page, base) => {
+      await tablicaDemo(page, base);
+      await tablicaUklad(page);
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: path.join(OUT, 'badania-tablica-otwarcie.png') });
+      await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
+      const sel = await page.evaluate(() => ({
+        wybrana: window.zm!.badania().wybrana,
+        zaznaczone: [...document.querySelectorAll<HTMLElement>('#tablica .tb-kartka.sel')].map((k) => k.dataset.tech),
+        przycisk: document.querySelector<HTMLElement>('#tablica [data-akcja="badaj"]')?.dataset.arg ?? null,
+        tekst: document.querySelector('#tablica [data-akcja="badaj"]')?.textContent ?? '',
+        wyroznione: document.querySelectorAll('#tablica .tb-nic.sel').length,
+      }));
+      console.log(`  po kliknięciu: ${JSON.stringify(sel)}`);
+      if (sel.wybrana !== 't_barykady' || sel.zaznaczone.join() !== 't_barykady')
+        throw new Error(`kliknięta kartka nie jest wybrana: ${JSON.stringify(sel)}`);
+      if (sel.przycisk !== 't_barykady' || sel.tekst !== 'Zmień na to badanie')
+        throw new Error(`przycisk szczegółów: ${sel.przycisk} „${sel.tekst}”`);
+      if (sel.wyroznione !== 1) throw new Error(`sznurki wybranej kartki: ${sel.wyroznione}`);
+      await tablicaUklad(page);
+      // Esc zamyka i puszcza grę w tym samym tempie (speed=0 z adresu to pauza, więc i po zamknięciu pauza)
+      await page.keyboard.press('Escape');
+      if ((await page.evaluate(() => window.zm!.badania().open)) !== false) throw new Error('Esc nie zamknął tablicy');
+      await page.keyboard.press('t');
+      if ((await page.evaluate(() => window.zm!.badania().open)) !== true) throw new Error('T nie otworzył tablicy');
+      await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
+      await page.waitForTimeout(250);
+    },
+  },
+  // ta sama tablica na telefonie 390×844: strona stoi w miejscu, przewija się tylko plansza w swoim oknie, szczegóły
+  // wysuwają się od dołu nad paskiem obsady; po zamknięciu w górnym pasku jest przycisk „Badania”
+  {
+    name: 'badania-tablica-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await tablicaDemo(page, base);
+      const m = await tablicaUklad(page);
+      if (!m.planszaWBok) throw new Error('plansza na telefonie mieści się bez przewijania, a ma być szersza od okna');
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: path.join(OUT, 'badania-tablica-telefon-otwarcie.png') });
+      // plansza przewija się palcem po erach; kartka do wzięcia pokazuje szczegóły z przyciskiem
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>('#tablica .tb-wrap')!.scrollLeft = 0;
+      });
+      await page.tap('#tablica .tb-kartka[data-tech="t_zielarstwo"]');
+      // szczegóły wysuwają się od dołu (animacja 0,18 s): mierzymy po niej
+      await page.waitForTimeout(400);
+      await tablicaUklad(page);
+      const x = await page.evaluate(() => document.querySelector<HTMLElement>('#tablica .tb-wrap')!.scrollLeft);
+      console.log(`  plansza po stuknięciu: scrollLeft ${x}`);
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(OUT, 'badania-tablica-telefon-szczegoly.png') });
+      await page.tap('#tablica [data-akcja="zamknij"]');
+      if ((await page.evaluate(() => window.zm!.badania().open)) !== false)
+        throw new Error('przycisk nie zamknął tablicy');
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(OUT, 'badania-tablica-telefon-pasek.png') });
+      // ponowne otwarcie przyciskiem „Badania” w górnym pasku
+      await page.tap('#btnResearch');
+      await page.waitForSelector('#tablica:not([hidden]) .tb-kartka');
+      await page.waitForTimeout(300);
+    },
+  },
+  // angielska tablica: napisy z badania.en.ts, nazwy technologii i er po angielsku
+  {
+    name: 'badania-tablica-en',
+    query: '',
+    lang: 'en',
+    run: async (page, base) => {
+      await tablicaDemo(page, base);
+      await tablicaUklad(page);
+      const tekst = await page.evaluate(() => document.getElementById('tablica')!.textContent ?? '');
+      for (const slowo of ['DONE', 'Back to the game', 'Game paused', 'Shelf', 'First weeks', 'Heating 2, you have 1'])
+        if (!tekst.includes(slowo)) throw new Error(`brak „${slowo}” na angielskiej tablicy`);
+      for (const slowo of ['ZROBIONE', 'Wróć do gry', 'Półka', 'Pierwsze tygodnie'])
+        if (tekst.includes(slowo)) throw new Error(`polskie „${slowo}” na angielskiej tablicy`);
+      await page.click('#tablica .tb-kartka[data-tech="t_zielarstwo"]');
+      await page.waitForTimeout(250);
+    },
+  },
+  // samo otwarcie tablicy w grze (nie ze ?badania=demo): pracownia staje, a badanie nie jest wybrane, więc tablica otwiera
+  // się sama z pauzą; Esc zamyka i gra rusza dalej w tym samym tempie, a druga raz sama się nie otwiera. Po wyborze
+  // badania i zdjęciu go znowu może się otworzyć, ale nie przy „Do broni!”, tylko po jego odwołaniu
+  {
+    name: 'badania-tablica-sama',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=1&godzina=11&cam=hq,1.3`);
+      await waitIdle(page);
+      const stan = () => page.evaluate(() => ({ ...window.zm!.badania(), speed: window.zm!.speed() }));
+      await page.waitForTimeout(600);
+      if ((await stan()).open) throw new Error('tablica otwarta bez pracowni');
+      // klawisz T bez pracowni tylko podpowiada, czego brakuje
+      await page.keyboard.press('t');
+      // podpowiedź trafia do paska co 200 ms
+      await page.waitForTimeout(350);
+      const bez = await page.evaluate(() => document.getElementById('hint')!.textContent ?? '');
+      console.log(`  T bez pracowni: „${bez}”`);
+      if (!bez.includes('pracownię') || (await stan()).open) throw new Error('T bez pracowni');
+      // pracownia staje (jak po finishBuild)
+      await page.evaluate(async () => {
+        const budowa = '/src/ui/budowa.ts';
+        const budowle = '/src/sim/budowle.ts';
+        const { allowedAnchors } = (await import(/* @vite-ignore */ budowa)) as typeof import('../src/ui/budowa.ts');
+        const { footprint } = (await import(/* @vite-ignore */ budowle)) as typeof import('../src/sim/budowle.ts');
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const i = allowedAnchors(st, zm.sim!.w, 'pracownia', 0)[0];
+        const f = footprint('pracownia', 0);
+        st.things.push({
+          id: st.nextThing++,
+          kind: 'pracownia',
+          x: i % zm.sim!.w.size,
+          y: Math.floor(i / zm.sim!.w.size),
+          w: f.w,
+          h: f.h,
+          rot: 0,
+          n: 0,
+          fuel: 0,
+          by: -1,
+          owner: -1,
+        });
+      });
+      await page.waitForFunction(() => window.zm!.badania().open, null, { timeout: 5000 });
+      const otwarta = await stan();
+      console.log(`  po postawieniu pracowni: ${JSON.stringify(otwarta)}`);
+      if (otwarta.speed !== 0) throw new Error('samo otwarcie bez pauzy');
+      if (await page.evaluate(() => document.getElementById('btnResearch')!.hidden)) throw new Error('brak przycisku');
+      // Esc: gra rusza w tym samym tempie (1×), a tablica drugi raz sama się nie otwiera
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(900);
+      const po = await stan();
+      console.log(`  po Esc: ${JSON.stringify(po)}`);
+      if (po.open || po.speed !== 1) throw new Error(`po Esc: ${JSON.stringify(po)}`);
+      // wybór badania z tablicy (przycisk „Badać”): polecenie idzie do symulacji, tablica się zamyka
+      await page.keyboard.press('t');
+      await page.waitForSelector('#tablica [data-akcja="badaj"]');
+      const cel = await page.evaluate(() => window.zm!.badania().wybrana);
+      await page.click('#tablica [data-akcja="badaj"]');
+      await page.waitForTimeout(500);
+      const wybrane = await page.evaluate(() => ({
+        cur: window.zm!.sim!.st.research?.cur ?? null,
+        open: window.zm!.badania().open,
+        speed: window.zm!.speed(),
+      }));
+      console.log(`  po „Badać” (${cel}): ${JSON.stringify(wybrane)}`);
+      if (wybrane.cur !== cel || wybrane.open || wybrane.speed !== 1) throw new Error('wybór badania z tablicy');
+      // zdjęte badanie + „Do broni!”: tablica czeka; po odwołaniu alarmu otwiera się sama
+      await page.evaluate(() => {
+        const sim = window.zm!.sim!;
+        const core = sim.st.pawns.filter((p) => p.kind === 'core').map((p) => p.id);
+        sim.push({ t: 'research', ids: [], tech: null });
+        sim.push({ t: 'alarm', ids: core });
+      });
+      await page.waitForTimeout(1200);
+      const alarm = await stan();
+      console.log(`  przy alarmie: ${JSON.stringify(alarm)}`);
+      if (alarm.open) throw new Error('tablica otworzyła się przy „Do broni!”');
+      await page.evaluate(() => {
+        const sim = window.zm!.sim!;
+        const core = sim.st.pawns.filter((p) => p.kind === 'core').map((p) => p.id);
+        sim.push({ t: 'alarm', ids: core, off: true });
+      });
+      await page.waitForFunction(() => window.zm!.badania().open, null, { timeout: 5000 });
+      console.log('  po odwołaniu alarmu tablica otworzyła się sama');
+      await page.waitForTimeout(300);
     },
   },
   // badania, budowle z technologii: pracownia i sześć budowli (koza z beczki, kocioł, pieczarkarnia, szklarnia, wieża,

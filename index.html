@@ -65,6 +65,7 @@
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
     <button type="button" class="btn lamp" id="btnBuild" aria-keyshortcuts="B">Build</button>
+    <button type="button" class="btn" id="btnResearch" title="Research board (T)" aria-keyshortcuts="T" hidden>Research</button>
     <button type="button" class="btn ghost" id="btnMenu">Menu</button>
   </header>
   <section class="goals" id="goals" aria-label="Goals"></section>
@@ -79,6 +80,7 @@
   <div class="mapctl"><button type="button" id="zIn" aria-label="Zoom in">+</button><button type="button" id="zOut" aria-label="Zoom out">−</button><button type="button" id="zHome" aria-label="Show the board’s HQ">⌂</button></div>
   <div class="attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="data/mieszkancy/LICENCJE.md" target="_blank" rel="noopener">residents: GUS, PESEL, SGJP</a></div>
   <div class="modal" id="modal" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div></div>
+  <div class="tablica" id="tablica" role="dialog" aria-modal="true" aria-labelledby="tbTytul" hidden></div>
 </div>
 
 <script type="module" src="./src/main.ts"></script>

@@ -4,7 +4,8 @@
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
-   raport), zapis i sterowanie. */
+   raport), tablica badań (src/ui/badania.ts: warstwa na pełnym ekranie z pauzą, przycisk „Badania”, klawisz T, samo
+   otwarcie po postawieniu pracowni, ?badania=demo do zrzutów), zapis i sterowanie. */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -42,6 +43,7 @@ import { wczytajGrafike } from './render/grafika.ts';
 import { type Light, lightAt } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
+import { nazwaTech } from './sim/badania.ts';
 import { WEAPONS, WEAPONS_EN, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
@@ -58,6 +60,7 @@ import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { NAPISY as OBCY, wiescEn } from './sim/wedrowcy.ts';
+import { czyOtworzycSama, tablicaHtml } from './ui/badania.ts';
 import {
   allowedAnchors,
   availableOf,
@@ -177,6 +180,8 @@ declare global {
         allowed: number;
         first: number;
       } | null;
+      /** tablica badań (do testów): czy otwarta i której kartki szczegóły widać */
+      badania: () => { open: boolean; wybrana: string | null };
       /** stan mieszkań siedziby w grze (st.apts) */
       apts: () => AptGame[];
       /** przyjęcie n osób zza bramy jak po decyzji zarządu (do zrzutów); zwraca, ilu przybyło */
@@ -368,6 +373,7 @@ poZmianieJezyka(() => {
   placeInfo();
   alarmButton(sim.st);
   if (modal.open) sheetAgain?.();
+  renderBadania();
 });
 
 let busy = false;
@@ -509,6 +515,12 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   placing = null;
   buildPanel.hide();
   buildPanel.reset();
+  // tablica badań: nowa gra nie dziedziczy wyboru ani otwarcia; wczytana gra z już stojącą pracownią nie otwiera jej
+  // sama (gracz widzi przycisk „Badania”)
+  $('tablica').hidden = true;
+  $('tablica').innerHTML = '';
+  badaniaWybrana = null;
+  badaniaByla = st.things.some((t) => t.kind === 'pracownia');
   menuCache = null;
   roomMemo = null;
   aptFocus = -1;
@@ -605,6 +617,11 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   zastosujImiona();
   // z zapisu: raport albo karta, które czekały
   if (saved) nextPrompt();
+  // ?badania=demo (do zrzutów): pracownia z ludźmi przy stole i otwarta tablica
+  else if (params.get('badania') === 'demo') {
+    badaniaDemo(sim);
+    openBadania();
+  }
 }
 
 /**
@@ -703,7 +720,7 @@ function govStep(show: boolean): Prompt | null {
     if (show) showEnd();
     return null;
   }
-  if (p && show && !modal.open) showPrompt(p);
+  if (p && show && !modal.open && !badaniaOtwarta()) showPrompt(p);
   return p;
 }
 
@@ -894,6 +911,7 @@ function watchSasiedzi() {
     return;
   }
   if ((meetChosen && meetChosen.nr === sp.nr && meetChosen.runda === (sp.runda ?? 0)) || modal.open) return;
+  if (badaniaOtwarta()) return;
   showMeet();
 }
 
@@ -926,6 +944,182 @@ function showMeet() {
       decided();
     },
   );
+}
+
+/* ---------- tablica badań (src/ui/badania.ts): tablica korkowa na pełnym ekranie, gra stoi ---------- */
+/** technologia, której szczegóły widać na tablicy (null: podpowiedź) */
+let badaniaWybrana: string | null = null;
+/** tablica otwierała się już sama (albo gra wczytała się z pracownią i bez wyboru) od ostatniego wyboru badania
+    (czyOtworzycSama: nie wyskakuje drugi raz); zdejmuje to dopiero zobaczony wybór (`research.cur` ustawione), bo
+    polecenie wyboru czeka w kolejce do następnego kroku symulacji */
+let badaniaByla = false;
+/** chwila ostatniego sprawdzenia samego otwarcia (ms): drogie warunki raz na ćwierć sekundy */
+let badaniaT = 0;
+
+const badaniaOtwarta = (): boolean => !$('tablica').hidden;
+
+/** Otwiera tablicę: pauza (jak okna zarządu), wybrana kartka to bieżące badanie albo najtańsza do wzięcia (tablica
+    proponuje następne), plansza przewinięta do niej. Bez pracowni mówi, czego brakuje. */
+function openBadania() {
+  if (!sim || modal.open || badaniaOtwarta()) return;
+  const b = snapshot(sim.st, sim.w).badania;
+  if (!b?.pracownia) {
+    say(L('Najpierw postawcie pracownię (menu Budowa).', 'Build the research room first (Build menu).'), 4000);
+    return;
+  }
+  cancelPlacing(false);
+  ctx.close();
+  buildPanel.hide();
+  keys.clear();
+  const najtansza = b.kartki.filter((k) => k.stan === 'do_wziecia').sort((x, y) => x.koszt - y.koszt)[0];
+  badaniaWybrana = b.cur ?? najtansza?.id ?? null;
+  pauseGame();
+  $('tablica').hidden = false;
+  renderBadania();
+  // plansza na wybranej kartce (na telefonie widać dwie kolumny naraz)
+  const wrap = $('tablica').querySelector<HTMLElement>('.tb-wrap');
+  const kartka = wrap?.querySelector<HTMLElement>('.tb-kartka.sel');
+  if (wrap && kartka) {
+    wrap.scrollLeft = kartka.offsetLeft - (wrap.clientWidth - kartka.offsetWidth) / 2;
+    wrap.scrollTop = kartka.offsetTop - (wrap.clientHeight - kartka.offsetHeight) / 2;
+  }
+  ($('tablica').querySelector<HTMLElement>('.tb-wrap') ?? $('tablica')).focus({ preventScroll: true });
+}
+
+/** Zamyka tablicę: następna decyzja zarządu albo powrót do gry w tym samym tempie (jak po innych oknach). */
+function closeBadania() {
+  if (!badaniaOtwarta()) return;
+  $('tablica').hidden = true;
+  $('tablica').innerHTML = '';
+  nextPrompt();
+}
+
+/** Rysuje tablicę od nowa ze stanu gry (zmiana wybranej kartki, zmiana języka); plansza zostaje tam, gdzie była,
+    a fokus wraca na wybraną kartkę. */
+function renderBadania() {
+  if (!sim || !badaniaOtwarta()) return;
+  const b = snapshot(sim.st, sim.w).badania;
+  if (!b) return closeBadania();
+  const el = $('tablica');
+  const stara = el.querySelector<HTMLElement>('.tb-wrap');
+  const [x, y] = [stara?.scrollLeft ?? 0, stara?.scrollTop ?? 0];
+  const fokus = el.contains(document.activeElement) && document.activeElement?.classList.contains('tb-kartka');
+  el.innerHTML = tablicaHtml(b, { wybrana: badaniaWybrana, mode: modeOf(sim.st) });
+  const nowa = el.querySelector<HTMLElement>('.tb-wrap');
+  if (nowa) {
+    nowa.scrollLeft = x;
+    nowa.scrollTop = y;
+  }
+  if (fokus && badaniaWybrana)
+    el.querySelector<HTMLElement>(`.tb-kartka[data-tech="${badaniaWybrana}"]`)?.focus({ preventScroll: true });
+}
+
+/** „Badać” albo „Zmień na to badanie”: wybór idzie poleceniem do symulacji (na pauzie czeka w kolejce, więc tablica
+    zamyka się i gra rusza); po następnym ukończonym badaniu tablica znowu może otworzyć się sama (watchBadania). */
+function chooseBadania(tech: string) {
+  if (!sim) return;
+  sim.push({ t: 'research', ids: [], tech });
+  // polecenie zadziała dopiero w następnym kroku: do tego czasu `cur` jest jeszcze puste i tablica nie może się
+  // otworzyć od nowa
+  badaniaByla = true;
+  const nazwa = tr(nazwaTech(tech));
+  say(L(`Badamy: ${nazwa}.`, `Researching: ${nazwa}.`), 4000);
+  closeBadania();
+}
+
+/** Przycisk „Badania” od chwili, gdy stoi pracownia, i samo otwarcie tablicy: raz po wyborze, kiedy pracownia stoi,
+    a badanie nie jest wybrane, i tylko gdy nic innego nie przeszkadza (okno zarządu w kolejce, plan budowy, napad,
+    stado pod siatką, „Do broni!”). Tanie warunki najpierw, wejście zarządu liczy się raz na ćwierć sekundy. */
+function watchBadania(now: number) {
+  if (!sim) return;
+  const st = sim.st;
+  const lab = st.things.some((t) => t.kind === 'pracownia');
+  const przycisk = $('btnResearch');
+  if (przycisk.hidden === lab) przycisk.hidden = !lab;
+  const cur = st.research?.cur ?? null;
+  // badanie wybrane (z tablicy, z menu pracowni, przez lokatora): następne zdjęcie wyboru znowu otwiera tablicę
+  if (cur !== null) badaniaByla = false;
+  if (!lab || cur !== null || badaniaByla || badaniaOtwarta() || modal.open || now - badaniaT < 250) return;
+  badaniaT = now;
+  const napad = (!!st.raid && st.raid.phase < 3) || st.pawns.some((p) => p.kind === 'zombie' && p.job?.phase === 2);
+  const oknoCzeka = placing !== null || !gov || !!gov.over || pending(gov, input()) !== null;
+  if (
+    czyOtworzycSama({
+      pracownia: lab,
+      cur,
+      otwarta: badaniaOtwarta(),
+      oknoCzeka,
+      napad,
+      alarm: alarmOn(st),
+      byla: badaniaByla,
+    })
+  ) {
+    badaniaByla = true;
+    openBadania();
+  }
+}
+
+$('tablica').addEventListener('click', (e) => {
+  const t = e.target as HTMLElement;
+  const akcja = t.closest<HTMLElement>('[data-akcja]');
+  if (akcja?.dataset.akcja === 'zamknij') return closeBadania();
+  if (akcja?.dataset.akcja === 'badaj' && akcja.dataset.arg) return chooseBadania(akcja.dataset.arg);
+  const kartka = t.closest<HTMLElement>('.tb-kartka');
+  if (kartka?.dataset.tech) {
+    badaniaWybrana = kartka.dataset.tech;
+    renderBadania();
+  }
+});
+// Esc i T zamykają tablicę; ten słuchacz stoi przed ogólnym słuchaczem klawiszy gry, który przy otwartej tablicy nic nie robi
+window.addEventListener('keydown', (e) => {
+  if (!badaniaOtwarta() || (e.code !== 'Escape' && e.code !== 'KeyT') || e.repeat) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  closeBadania();
+});
+
+/** ?badania=demo (do zrzutów): pracownia w mieszkaniu zarządu, cztery zbadane technologie, Spawanie w toku (14 z 25;
+    Budowa 2 ma pierwsza osoba zarządu, ona i druga siedzą przy stole), Rozruch węzła bez wiedzy (Ciepło 2, macie 1)
+    i dwie książki (Uprawa, Medycyna). Umiejętności wszystkich osób są wyzerowane poza trzema ustawionymi, żeby zrzut
+    nie zależał od losowania fachów. */
+function badaniaDemo(s: Sim) {
+  const st = s.st;
+  const f = footprint('pracownia', 0);
+  const a = allowedAnchors(st, s.w, 'pracownia', 0)[0];
+  if (a !== undefined)
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'pracownia',
+      x: a % s.w.size,
+      y: Math.floor(a / s.w.size),
+      w: f.w,
+      h: f.h,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+  for (const o of st.people) o.skills = {};
+  const core = st.pawns.filter((p) => p.kind === 'core');
+  const ustaw = (k: number, skills: Person['skills']) => {
+    if (core[k]) st.people[core[k].person].skills = skills;
+  };
+  ustaw(0, { bud: 2 });
+  ustaw(1, { cieplo: 1, bud: 1 });
+  ustaw(2, { med: 1 });
+  st.techDone = ['t_kozy', 't_okna', 't_wieza', 't_konserwy'];
+  st.research = {
+    cur: 't_spawanie',
+    prog: { t_spawanie: 14 },
+    at: { t_kozy: st.tick, t_okna: st.tick, t_wieza: st.tick, t_konserwy: st.tick },
+  };
+  st.books = { uprawa: 1, med: 1 };
+  // dwie osoby przy stole naprawdę, nie na niby: kroki, aż dojdą i usiądą (nie dłużej niż 2000 ticków)
+  const siedzi = (p: (typeof core)[number]) => p.job?.t === 'research' && p.job.phase === 1;
+  const stol = core.slice(0, 2);
+  for (const p of stol) s.startResearch(p, true);
+  for (let k = 0; k < 2000 && !stol.every(siedzi); k++) s.step();
 }
 
 function watchRaid() {
@@ -1053,6 +1247,7 @@ function frame(now: number, dtMs: number) {
   }
   watchRaid();
   watchSasiedzi();
+  watchBadania(now);
   drawState();
   view.render(sim.st, mult ? acc : 1, selected);
   placeMarker();
@@ -2238,6 +2433,7 @@ function placeGhost() {
 }
 
 $('btnBuild').addEventListener('click', () => openBuild());
+$('btnResearch').addEventListener('click', () => openBadania());
 // „Pokaż” przy przybyszach: kamera od razu jedzie na środek grupy, bez zmiany przybliżenia
 $('arriveShow').addEventListener('click', () => {
   const coming = sim ? arriving(sim.st) : [];
@@ -2514,7 +2710,16 @@ for (const t of ['gesturestart', 'gesturechange'])
 window.addEventListener('keydown', (e) => {
   // klawisze gry tylko w grze, bez otwartego okna i nie na polach ani przyciskach (spacja ma działać na przyciskach)
   const tag = (e.target as HTMLElement).tagName;
-  if (!sim || $('app').hidden || modal.open || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (
+    !sim ||
+    $('app').hidden ||
+    modal.open ||
+    badaniaOtwarta() ||
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT'
+  )
+    return;
   if (tag === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return;
   if (ctx.open) return;
   keys.add(e.code);
@@ -2534,6 +2739,7 @@ window.addEventListener('keydown', (e) => {
     renderSpeed();
   }
   if (e.code === 'KeyB') openBuild();
+  if (e.code === 'KeyT' && !e.repeat) openBadania();
   if (e.code === 'KeyR' && placing) rotatePlacing();
   if (e.code === 'Escape') {
     if (placing) cancelPlacing();
@@ -2629,6 +2835,7 @@ if (attrib) bars.observe(attrib);
             first: placing.allowed[0] ?? -1,
           }
         : null,
+    badania: () => ({ open: badaniaOtwarta(), wybrana: badaniaWybrana }),
     apts: () => sim?.st.apts ?? [],
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
     siec: () => siec.podglad(),

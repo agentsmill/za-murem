@@ -15,10 +15,11 @@
    niego nie dopisują, nie losują i nie znają języka bieżącego (napisy to `Tx`); jedyne wyjątki to opisane niżej
    książki: `dodajKsiazke` dopisuje `st.books`, a `ksiazkaZ` losuje z własnego generatora. Z sim.ts moduł importuje
    wyłącznie typ `SimState`, żeby sim.ts mógł importować stąd.
-   `wiedza` to jedna wiedza osady dla tablicy i zarządu, `kartka` to stan jednej kartki tablicy, `tempoOsoby` to postęp
-   na godzinę gry jednej siedzącej osoby. Dodawanie postępu w kroku, pracownia i polecenia `research` i `study` są
-   w `Sim` (src/sim/sim.ts: chooseResearch, startResearch, researchTick), tak samo plan dnia lokatorów z wiedzą i ich
-   droga do pracowni (plan, labOpen); limit i napisy pracowni w budowle.ts.
+   `wiedza` to jedna wiedza osady dla tablicy i zarządu (`znajacy` wylicza, kto ją daje, do szczegółów kartki),
+   `kartka` to stan jednej kartki tablicy, `tempoOsoby` to postęp na godzinę gry jednej siedzącej osoby. Dodawanie
+   postępu w kroku, pracownia i polecenia `research` i `study` są w `Sim` (src/sim/sim.ts: chooseResearch,
+   startResearch, researchTick), tak samo plan dnia lokatorów z wiedzą i ich droga do pracowni (plan, labOpen); limit
+   i napisy pracowni w budowle.ts.
 
    Książki. `ksiazkaZ` losuje książkę z przeszukanego pomieszczenia z osobnego generatora z ziarna gry i klucza
    pomieszczenia (inna stała niż `wreckRng`), więc przeszukanie nie przesuwa `st.rng` ani innych losowań; szanse
@@ -224,10 +225,28 @@ const KSIAZEK_NA_DZIEDZINE = 2;
 export function wiedza(st: SimState, dom: TechDom): number {
   let najlepsza = 0;
   for (const p of st.pawns) {
-    if ((p.kind !== 'core' && p.kind !== 'resident') || p.person < 0 || p.away) continue;
+    if (!doWiedzy(p)) continue;
     najlepsza = Math.max(najlepsza, st.people[p.person]?.skills[dom] ?? 0);
   }
   return najlepsza + Math.min(KSIAZEK_NA_DZIEDZINE, st.books?.[dom] ?? 0);
+}
+
+/** czy pionek liczy się do wiedzy osady: zarząd albo lokator siedziby z osobą, na miejscu (nie na wyprawie) */
+const doWiedzy = (p: SimState['pawns'][number]): boolean =>
+  (p.kind === 'core' || p.kind === 'resident') && p.person >= 0 && !p.away;
+
+/** osoby, które liczą się do wiedzy osady w dziedzinie `dom` i mają w niej umiejętność co najmniej 1 (te same co
+    w `wiedza`, bez książek), od najwyższej umiejętności; imię i zawód do szczegółów kartki na tablicy */
+export function znajacy(st: SimState, dom: TechDom): { name: string; prof: string; skill: number }[] {
+  const out: { name: string; prof: string; skill: number }[] = [];
+  for (const p of st.pawns) {
+    if (!doWiedzy(p)) continue;
+    const o = st.people[p.person];
+    const skill = o?.skills[dom] ?? 0;
+    if (skill >= 1) out.push({ name: o.name, prof: o.prof, skill });
+  }
+  // sort jest stabilny: przy równej umiejętności zostaje kolejność pionków
+  return out.sort((a, b) => b.skill - a.skill);
 }
 
 /** stan kartki na tablicy: zbadana (pieczątka), w toku (wybrana, wiedza starcza), stoi (wybrana, ale wiedza spadła

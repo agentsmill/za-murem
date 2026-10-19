@@ -1,12 +1,15 @@
 /* Odczyt stanu dla modułu zarządu (src/gov, karta nocy, uchwały) i dla interfejsu: ludzie zarządu z potrzebami,
    umiejętnościami i obecną pracą (people: tylko zarząd, z tego korzysta zarząd), mieszkańcy siedziby z osobą
-   z generatora mieszkańców (lokatorzy: tylko do kart w interfejsie), zapasy drewna i jedzenia, czas. Czysta funkcja
-   stanu i świata. Zwraca świeże obiekty (zwykły JSON), więc zmiany w wyniku nie ruszają symulacji. */
+   z generatora mieszkańców (lokatorzy: tylko do kart w interfejsie), zapasy drewna i jedzenia, czas, badania dla
+   tablicy korkowej (`badania`, src/ui/badania.ts). Czysta funkcja stanu i świata. Zwraca świeże obiekty (zwykły
+   JSON), więc zmiany w wyniku nie ruszają symulacji. */
 
-import type { Dom } from '../content/data.ts';
+import type { Dom, TechDom } from '../content/data.ts';
+import { TECH_DOMS } from '../content/data.ts';
 import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { World } from '../world/world.ts';
+import { badaniaDom, badaniaWidoczne, type Kartka, kartka, TECHS, tempoOsoby, znajacy } from './badania.ts';
 import { type AmmoKey, noAmmo, type WeaponId, weaponOf } from './bron.ts';
 import { BUILDS, type BuildKind, footprint, type Mat } from './budowle.ts';
 import {
@@ -158,6 +161,28 @@ export interface SimLight {
   gateLamp: boolean;
 }
 
+/** badania dla tablicy korkowej (src/ui/badania.ts): bieżące badanie, stan każdej kartki, kto siedzi przy stole, kto
+    w osadzie zna dziedzinę, książki na półce i odkrycia; null bez pracowni i bez stanu badań */
+export interface SimBadania {
+  /** bieżące badanie (identyfikator technologii) albo null, gdy nic nie wybrano */
+  cur: string | null;
+  /** stan kartki każdej technologii, w kolejności `TECHS` */
+  kartki: Kartka[];
+  /** osoby siedzące przy stole (pionek w fazie siedzenia), z umiejętnością w dziedzinie bieżącego badania */
+  siedza: { id: number; name: string; prof: string; skill: number }[];
+  /** kto w osadzie zna dziedzinę (umiejętność co najmniej 1), od najlepszych: szczegóły kartki; dopisek do kontraktu
+      z planu badań, bez niego tablica nie powiedziałaby, kogo posadzić przy stole */
+  znaja: Partial<Record<TechDom, { name: string; prof: string; skill: number }[]>>;
+  /** książki na półce osady w każdej dziedzinie (najwyżej 2) */
+  ksiazki: Partial<Record<TechDom, number>>;
+  /** ukończone technologie z tickiem ukończenia, od najstarszej */
+  odkrycia: { id: string; tick: number }[];
+  /** czy stoi pracownia (po rozbiórce stan badań zostaje, a pracowni nie ma) */
+  pracownia: boolean;
+  /** punkty postępu na godzinę gry, które daje obecna obsada stołu w dziedzinie bieżącego badania */
+  tempo: number;
+}
+
 export interface SimSnapshot {
   /** tryb gry */
   mode: GameMode;
@@ -202,6 +227,36 @@ export interface SimSnapshot {
   /** napad tej nocy albo ostatni: faza (0 czekają, 1 za siatką, 2 wchodzą albo uciekają, 3 po wszystkim),
       rozstrzygnięcie i co wynieśli; null: nie było */
   raid: { phase: number; outcome: string; took: { wood: number; supplies: number; scrap: number } } | null;
+  /** tablica badań; null bez pracowni i bez stanu badań */
+  badania: SimBadania | null;
+}
+
+/** odczyt badań dla tablicy: stan kartek w trybie gry, obsada stołu i tempo jej pracy */
+function badaniaOf(st: SimState): SimBadania | null {
+  if (!badaniaWidoczne(st)) return null;
+  const mode = modeOf(st);
+  const dom = badaniaDom(st);
+  const siedza: SimBadania['siedza'] = [];
+  let tempo = 0;
+  for (const p of st.pawns) {
+    if (p.job?.t !== 'research' || p.job.phase !== 1) continue;
+    const o = st.people[p.person];
+    if (!o) continue;
+    siedza.push({ id: p.id, name: o.name, prof: o.prof, skill: dom ? (o.skills[dom] ?? 0) : 0 });
+    if (dom) tempo += tempoOsoby(o, dom);
+  }
+  return {
+    cur: st.research?.cur ?? null,
+    kartki: TECHS.map((t) => kartka(st, t.id, mode)),
+    siedza,
+    znaja: Object.fromEntries(TECH_DOMS.map((d) => [d, znajacy(st, d)])),
+    ksiazki: { ...st.books },
+    odkrycia: Object.entries(st.research?.at ?? {})
+      .map(([id, tick]) => ({ id, tick }))
+      .sort((a, b) => a.tick - b.tick || (a.id < b.id ? -1 : 1)),
+    pracownia: st.things.some((t) => t.kind === 'pracownia'),
+    tempo,
+  };
 }
 
 /** amunicja w magazynie do broni (null: broń bez amunicji) */
@@ -408,5 +463,6 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       };
     }),
     raid: st.raid ? { phase: st.raid.phase, outcome: st.raid.outcome, took: { ...st.raid.took } } : null,
+    badania: badaniaOf(st),
   };
 }

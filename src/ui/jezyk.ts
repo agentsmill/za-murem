@@ -145,6 +145,11 @@ export const STATYCZNE: readonly Statyczny[] = [
   ...stat('sTrust', tx('zaufanie', 'trust'), tx('Zaufanie mieszkańców do zarządu', 'Residents’ trust in the board')),
   ...stat('sAnger', tx('wkurzenie', 'anger'), tx('Wkurzenie mieszkańców', 'Residents’ anger')),
   { sel: '#btnBuild', tekst: tx('Budowa', 'Build') },
+  {
+    sel: '#btnResearch',
+    tekst: tx('Badania', 'Research'),
+    title: tx('Tablica badań (T)', 'Research board (T)'),
+  },
   { sel: '#goals', aria: tx('Cele', 'Goals') },
   { sel: '#arriveShow', tekst: tx('Pokaż', 'Show') },
   { sel: '#placeBar [data-place="rot"]', tekst: tx('Obróć', 'Rotate') },
