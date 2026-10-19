@@ -253,6 +253,8 @@ const minimapa = new Minimapa($('minimapa'), () => {
 const selektorPieter = new SelektorPieter(
   { btn: $<HTMLButtonElement>('btnFloor'), list: $('floorList'), note: $('floorNote') },
   (L) => wybierzPietro(L),
+  // lista pięter nie zasłania panelu budowy (spec), więc odsuwa się od jego lewej krawędzi
+  () => (buildPanel.open ? $('buildPanel').getBoundingClientRect() : null),
 );
 
 /** wybór piętra (lista kafelka, PageUp i PageDown, zm.pietro, powrót na parter): przełącza widok tylko przy zmianie
@@ -287,7 +289,11 @@ function odswiezPietra(): void {
   if (!pietraGry) return;
   if (sim) zarzadUkryty = zarzadPodStropem(sim.st, sim.w);
   const pietro = view.pietro;
-  selektorPieter.odswiez(pietraLista, pietro, podpowiedzPietra({ pietro, cutOn: view.section, zarzadUkryty }));
+  selektorPieter.odswiez(
+    pietraLista,
+    pietro,
+    podpowiedzPietra({ pietro, cutOn: view.section, zarzadUkryty, panelBudowy: buildPanel.open }),
+  );
 }
 
 /** czy punkt ekranu leży w obrysie budynku, którego parter jest schowany pod stropem albo dachem (piętro od pierwszego

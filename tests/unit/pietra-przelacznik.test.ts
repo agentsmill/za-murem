@@ -13,6 +13,7 @@ import { STATYCZNE } from '../../src/ui/jezyk.ts';
 import {
   blokujKlik,
   nastepnePietro,
+  odsuniecieOdPanelu,
   podpowiedz,
   pozycjeListy,
   przyjmijPietro,
@@ -398,6 +399,24 @@ describe('podpowiedź przy kafelku piętra (podpowiedz)', () => {
     expect(podpowiedz({ pietro: 2, cutOn: true, zarzadUkryty: false })).toBeNull();
   });
 
+  it('przy otwartym panelu budowy podpowiedzi nie ma, na żadnym piętrze ani przy żadnym zoomie', () => {
+    for (const pietro of [0, 1, 2])
+      for (const cutOn of [false, true])
+        for (const zarzadUkryty of [false, true])
+          expect(podpowiedz({ pietro, cutOn, zarzadUkryty, panelBudowy: true })).toBeNull();
+  });
+
+  it('zamknięty panel budowy (panelBudowy fałsz albo brak) nie zmienia podpowiedzi', () => {
+    for (const panelBudowy of [false, undefined]) {
+      expect(podpowiedz({ pietro: 2, cutOn: false, zarzadUkryty: false, panelBudowy })?.pl).toBe(
+        'Przybliż, żeby zajrzeć na piętro',
+      );
+      expect(podpowiedz({ pietro: 2, cutOn: true, zarzadUkryty: true, panelBudowy })?.pl).toBe(
+        'Zarząd jest na parterze',
+      );
+    }
+  });
+
   it('teksty nie mówią o numerze piętra ani o osobach (RODO)', () => {
     for (const o of [
       { pietro: 3, cutOn: false, zarzadUkryty: false },
@@ -510,6 +529,35 @@ describe('strona listy pięter (stronaListy)', () => {
 
   it('gdy nie mieści się żadna, zostaje prawa (domyślna)', () => {
     expect(stronaListy({ left: 20, right: 70 }, 300, 320)).toBe('prawa');
+  });
+});
+
+describe('lista pięter i panel budowy (odsuniecieOdPanelu)', () => {
+  // Przymorze, polski, 1440 px: kafelek 1118 do 1168 w pasku, panel budowy od 1122 do 1432 pod paskiem
+  const lista = { left: 1018, right: 1168, top: 112, bottom: 713 };
+  const panel = { left: 1122, right: 1432, top: 113, bottom: 689 };
+
+  it('lista wchodząca w panel odsuwa się tak, że kończy się przy jego lewej krawędzi z marginesem', () => {
+    const dx = odsuniecieOdPanelu(lista, panel);
+    expect(dx).toBe(1168 - 1122 + 8);
+    expect(lista.right - dx).toBeLessThanOrEqual(panel.left - 8);
+    expect(lista.right - dx).toBe(panel.left - 8);
+  });
+
+  it('bez panelu albo gdy lista i panel się nie dotykają, nie odsuwa', () => {
+    expect(odsuniecieOdPanelu(lista, null)).toBe(0);
+    expect(odsuniecieOdPanelu({ ...lista, right: 1100, left: 950 }, panel)).toBe(0);
+    // lista nad panelem (panel niżej niż lista)
+    expect(odsuniecieOdPanelu({ ...lista, bottom: 100 }, panel)).toBe(0);
+  });
+
+  it('gdy po odsunięciu lista wyszłaby za lewą krawędź okna (telefon, szuflada od dołu), zostaje na miejscu', () => {
+    const szuflada = { left: 8, right: 382, top: 420, bottom: 836 };
+    expect(odsuniecieOdPanelu({ left: 175, right: 325, top: 57, bottom: 658 }, szuflada)).toBe(0);
+  });
+
+  it('margines można zmienić', () => {
+    expect(odsuniecieOdPanelu(lista, panel, 0)).toBe(1168 - 1122);
   });
 });
 

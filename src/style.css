@@ -1004,6 +1004,18 @@ a.btn {
    po prawej. Podpowiedź stoi pod paskiem, a nie pod kafelkiem, żeby po zawinięciu paska nie zasłaniała jego przycisków.
    Na telefonie kafelek jest w pierwszym wierszu paska przy „Mapie”: w drugim (tempo, alarm, budowa, menu) nie ma już
    miejsca, a pierwszy zawija się dopiero przy bardzo wąskim ekranie (360 px z długim zegarem: jeden wiersz więcej) */
+/* Kafelek stoi po prawej, obok „Mapy miasta”, „Budowy” i „Menu”, także gdy pasek się zawinie (polski przy 1440 px:
+   drugi wiersz zaczynał się wtedy od kafelka przy lewej krawędzi). Jego `margin-left: auto` odsuwa całą czwórkę do prawej
+   krawędzi, a „Mapa miasta” i „Budowa” oddają mu swoje auto (miasto.css i #btnBuild wyżej), żeby wolne miejsce nie
+   podzieliło się między nie. Selektor `~`, bo „Mapa miasta” bywa ukryta, a nic nie może stanąć między nią a „Budową”
+   (miasto.css opiera się na #btnMiasto + #btnBuild). Bez flagi kafelek jest ukryty i pasek wygląda jak dawniej. */
+.floor-sel:not([hidden]) {
+  margin-left: auto;
+}
+.floor-sel:not([hidden]) ~ #btnMiasto,
+.floor-sel:not([hidden]) ~ #btnBuild {
+  margin-left: 0;
+}
 .floor-anchor {
   position: relative;
 }
@@ -1077,9 +1089,11 @@ a.btn {
     min-width: 40px;
     padding: 2px 4px 3px;
   }
-  /* przyciski mapy są na telefonie nisko, więc podpowiedź idzie pod sam róg paska */
+  /* przyciski mapy są na telefonie nisko, ale lista celów zajmuje całą szerokość pod paskiem (na rogu zasłaniałaby jej
+     licznik), więc podpowiedź idzie pod nią, jak komunikat o przybyszach (--goals-h mierzy main.ts) */
   .floor-note {
     right: 0;
+    top: calc(100% + var(--goals-h, 0px) + 13px);
   }
 }
 

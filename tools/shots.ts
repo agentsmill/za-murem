@@ -9653,6 +9653,44 @@ function pietraShots(): Shot[] {
         przewija: l.scrollHeight > l.clientHeight,
       };
     });
+  /** położenie kafelka „Piętro” i przycisków prawej grupy paska (px okna) */
+  const pasek = (page: Page) =>
+    page.evaluate(() => {
+      const r = (id: string) => {
+        const e = document.getElementById(id)!;
+        const b = e.getBoundingClientRect();
+        return { l: b.left, r: b.right, t: b.top, b: b.bottom, ukryty: getComputedStyle(e).display === 'none' };
+      };
+      return {
+        kafelek: r('floorSel'),
+        miasto: r('btnMiasto'),
+        budowa: r('btnBuild'),
+        menu: r('btnMenu'),
+        w: innerWidth,
+      };
+    });
+  /** Układ paska na ekranie szerszym niż telefon (od 641 px): kafelek stoi po prawej, tuż przed „Mapą miasta” (albo
+      „Budową”, gdy mapy nie ma), a nie sam przy lewej krawędzi drugiego wiersza (wybór Mateusza: „po prawej stronie
+      obok buduj i menu”), także gdy pasek się zawinie (polski przy 1440 px). `razem`: na szerokim ekranie także „Budowa”
+      i „Menu” są w jego wierszu, przy prawej krawędzi okna; na tablecie (820 px) prawa grupa zawija się tak samo jak
+      bez flagi (do wiersza zostaje tylko kafelek z „Mapą”), więc tam sprawdzamy sam kafelek. Na telefonie kafelek ma
+      własne miejsce w pierwszym wierszu. */
+  const sprawdzPasek = async (page: Page, razem: boolean) => {
+    const p = await pasek(page);
+    console.log(`  pasek: ${JSON.stringify(p)}`);
+    if (p.w <= 640) return;
+    const srodek = (r: { t: number; b: number }) => (r.t + r.b) / 2;
+    const wWierszu = (r: { t: number; b: number }) => Math.abs(srodek(p.kafelek) - srodek(r)) <= 6;
+    const nastepny = p.miasto.ukryty ? p.budowa : p.miasto;
+    if (!wWierszu(nastepny)) throw new Error('kafelek „Piętro” nie stoi w wierszu następnego przycisku');
+    const odstep = nastepny.l - p.kafelek.r;
+    if (odstep < 0 || odstep > 40)
+      throw new Error(`kafelek „Piętro” stoi ${Math.round(odstep)} px od następnego przycisku`);
+    if (!razem) return;
+    if (!wWierszu(p.budowa) || !wWierszu(p.menu))
+      throw new Error('„Budowa” i „Menu” nie stoją w wierszu kafelka „Piętro”');
+    if (p.menu.r > p.w || p.menu.r < p.w - 24) throw new Error('„Menu” nie stoi przy prawej krawędzi okna');
+  };
   /** Przymorze, piętro 2 z bliska, z grafiką z PixelLab albo (kod) z ?grafika=kod, czyli strop bez naklejek */
   const przymorzeP2 = async (page: Page, base: string, kod: boolean) => {
     await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75${kod ? '&grafika=kod' : ''}`);
@@ -9765,6 +9803,38 @@ function pietraShots(): Shot[] {
         if (l.lista.hidden) throw new Error('kliknięcie kafelka nie otworzyło listy pięter');
         if (l.pozycje !== 17) throw new Error(`lista ma ${l.pozycje} pozycji zamiast 17`);
         if (l.lista.r > l.w || l.lista.b > l.h || l.lista.l < 0) throw new Error('lista wystaje poza okno');
+        await sprawdzPasek(page, true);
+      },
+    },
+    // pasek z kafelkiem po angielsku przy 1280 px (inne napisy, inna szerokość grup) i na tablecie (dotyk, 820 px)
+    {
+      name: 'pietra-pasek-en-1280',
+      query: '',
+      w: 1280,
+      h: 800,
+      lang: 'en',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.waitForTimeout(450);
+        await sprawdzPasek(page, true);
+        await sprawdz(page, 2, true);
+      },
+    },
+    {
+      name: 'pietra-pasek-tablet',
+      query: '',
+      w: 820,
+      h: 1180,
+      touch: true,
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.waitForTimeout(450);
+        await sprawdzPasek(page, false);
+        await sprawdz(page, 2, true);
       },
     },
     // to samo na telefonie 390 × 844 (dotknięcie kafelka)
@@ -9822,6 +9892,16 @@ function pietraShots(): Shot[] {
         await page.waitForTimeout(450);
         const st = await sprawdz(page, 1, true);
         if (st.notka !== 'Zarząd jest na parterze') throw new Error(`notka pod kafelkiem: „${st.notka}”`);
+        // notka stoi pod listą celów, a nie na jej rogu (tam zasłaniałaby licznik „0 / 8”)
+        const u = await page.evaluate(() => {
+          const r = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+          return {
+            cele: { t: r('goals').top, b: r('goals').bottom },
+            notka: { t: r('floorNote').top, b: r('floorNote').bottom },
+          };
+        });
+        console.log(`  cele i notka: ${JSON.stringify(u)}`);
+        if (u.notka.t < u.cele.b) throw new Error('notka „Zarząd jest na parterze” nachodzi na listę celów');
       },
     },
     // piętro 2 z daleka (zoom 0,4, poniżej progu przekroju): dachy i „Przybliż, żeby zajrzeć na piętro”
@@ -9856,7 +9936,9 @@ function pietraShots(): Shot[] {
         const zachodzi =
           l.lista.l < l.panel.r && l.lista.r > l.panel.l && l.lista.t < l.panel.b && l.lista.b > l.panel.t;
         if (zachodzi) throw new Error('lista pięter nachodzi na panel budowy');
-        await sprawdz(page, 1, true);
+        const st = await sprawdz(page, 1, true);
+        // podpowiedź („Przybliż…”, „Zarząd jest na parterze”) nie stoi nad nagłówkiem panelu budowy
+        if (st.notka) throw new Error(`przy otwartym panelu budowy stoi podpowiedź „${st.notka}”`);
       },
     },
   ];

@@ -4,8 +4,9 @@
 
    Kontrakt.
    - Czyste funkcje (testy w Node): `pozycjeListy` (pozycje listy od najwyższego piętra), `podpowiedz` (co napisać pod
-     kafelkiem: z daleka „Przybliż…”, z bliska, gdy zarząd stoi pod stropem albo dachem, „Zarząd jest na parterze”)
-     i `nastepnePietro` (krok klawiszy PageUp i PageDown, zaciśnięty do listy).
+     kafelkiem: z daleka „Przybliż…”, z bliska, gdy zarząd stoi pod stropem albo dachem, „Zarząd jest na parterze”,
+     a przy otwartym panelu budowy nic), `nastepnePietro` (krok klawiszy PageUp i PageDown, zaciśnięty do listy),
+     `blokujKlik` (które kliknięcia w obrys budynku blokuje strop) i `przyjmijPietro` (czy wybór piętra jest przyjmowany).
    - Klasa `SelektorPieter` (tylko przeglądarka) trzyma elementy z index.html (`#btnFloor`, `#floorList`, `#floorNote`)
      i niczego nie wie o grze: `odswiez` dostaje listę pięter, wybrane piętro i podpowiedź, a wybór z listy oddaje
      funkcji `wybor`. Rysuje od nowa tylko przy zmianie (gra woła `odswiez` co 200 ms).
@@ -39,9 +40,15 @@ export function pozycjeListy(lista: readonly number[], wybrane: number): Pozycja
 }
 
 /** Podpowiedź pod kafelkiem. Na parterze jej nie ma. Na piętrze z daleka (bez przekroju) prosi o przybliżenie, z bliska
-    mówi, że zarząd jest na parterze, ale tylko wtedy, gdy któryś pionek zarządu stoi pod stropem albo dachem. */
-export function podpowiedz(o: { pietro: number; cutOn: boolean; zarzadUkryty: boolean }): Tx | null {
-  if (o.pietro < 1) return null;
+    mówi, że zarząd jest na parterze, ale tylko wtedy, gdy któryś pionek zarządu stoi pod stropem albo dachem. Przy
+    otwartym panelu budowy (`panelBudowy`) jej nie ma wcale: stałaby nad jego nagłówkiem. */
+export function podpowiedz(o: {
+  pietro: number;
+  cutOn: boolean;
+  zarzadUkryty: boolean;
+  panelBudowy?: boolean;
+}): Tx | null {
+  if (o.pietro < 1 || o.panelBudowy) return null;
   if (!o.cutOn) return PODPOWIEDZ_DALEKO;
   return o.zarzadUkryty ? PODPOWIEDZ_ZARZAD : null;
 }
@@ -89,6 +96,28 @@ export function stronaListy(
   return przycisk.left + szerokosc <= okno - margines ? 'lewa' : 'prawa';
 }
 
+/** prostokąt w px okna (jak DOMRect) */
+export interface Prostokat {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** O ile px przesunąć listę pięter w lewo, żeby nie zasłaniała panelu budowy (spec: „panel i lista pięter nie mogą się
+    zasłaniać”). Kafelek stoi po prawej, nad panelem, więc lista spod niego wchodziłaby w jego lewą część. Zero, gdy
+    panelu nie ma, gdy się z listą nie dotykają (panel na telefonie to szuflada od dołu) albo gdy po przesunięciu lista
+    wyszłaby za lewą krawędź okna (wtedy zostaje na panelu jak menu kontekstowe). `margines`: odstęp listy od panelu
+    i od lewej krawędzi okna. */
+export function odsuniecieOdPanelu(lista: Prostokat, panel: Prostokat | null, margines = 8): number {
+  if (!panel) return 0;
+  const stykaSie =
+    lista.right > panel.left && lista.left < panel.right && lista.bottom > panel.top && lista.top < panel.bottom;
+  if (!stykaSie) return 0;
+  const dx = lista.right - panel.left + margines;
+  return lista.left - dx >= margines ? dx : 0;
+}
+
 // ---------------------------------------------------------------- DOM (tylko przeglądarka)
 
 /** elementy kafelka z index.html: przycisk (z `.stat-k` i `.stat-v`), lista pięter i notka z podpowiedzią */
@@ -101,15 +130,18 @@ export interface ElementyPieter {
 export class SelektorPieter {
   private readonly el: ElementyPieter;
   private readonly wybor: (L: number) => void;
+  private readonly panel: (() => Prostokat | null) | undefined;
   private readonly root: HTMLElement;
   private otwarta = false;
   private klucz = '';
   private tekstNotki = '';
 
-  /** `wybor`: co robi wybór pozycji z listy (gra przełącza widok). Lista zamyka się po wyborze, kliknięciu obok i Esc. */
-  constructor(el: ElementyPieter, wybor: (L: number) => void) {
+  /** `wybor`: co robi wybór pozycji z listy (gra przełącza widok). Lista zamyka się po wyborze, kliknięciu obok i Esc.
+      `panel`: położenie otwartego panelu budowy (null, gdy zamknięty), żeby lista go nie zasłaniała. */
+  constructor(el: ElementyPieter, wybor: (L: number) => void, panel?: () => Prostokat | null) {
     this.el = el;
     this.wybor = wybor;
+    this.panel = panel;
     this.root = el.btn.parentElement ?? el.btn;
     el.btn.setAttribute('aria-haspopup', 'menu');
     el.btn.setAttribute('aria-controls', el.list.id);
@@ -165,6 +197,8 @@ export class SelektorPieter {
         )
         .join('');
     }
+    // panel budowy może się otworzyć albo zamknąć przy otwartej liście: lista odsuwa się od niego albo wraca
+    if (this.otwarta) this.uloz();
     const tekst = podp ? tr(podp) : '';
     if (tekst !== this.tekstNotki) {
       this.tekstNotki = tekst;
@@ -182,11 +216,19 @@ export class SelektorPieter {
     this.otwarta = otwarta;
     this.el.list.hidden = !otwarta;
     this.el.btn.setAttribute('aria-expanded', String(otwarta));
-    if (otwarta) {
-      // zmierzone na otwartej liście przy domyślnej (prawej) stronie, bo szerokość zależy od napisów
-      this.el.list.classList.remove('floor-list-lewa');
-      const strona = stronaListy(this.el.btn.getBoundingClientRect(), this.el.list.offsetWidth, innerWidth);
-      this.el.list.classList.toggle('floor-list-lewa', strona === 'lewa');
-    }
+    if (otwarta) this.uloz();
+  }
+
+  /** Strona i odsunięcie otwartej listy: strona z `stronaListy`, a przy prawej odsunięcie od panelu budowy
+      (`odsuniecieOdPanelu`). Zmierzone na liście bez klasy i bez przesunięcia, bo jej szerokość zależy od napisów. */
+  private uloz(): void {
+    const list = this.el.list;
+    list.classList.remove('floor-list-lewa');
+    list.style.right = '';
+    const strona = stronaListy(this.el.btn.getBoundingClientRect(), list.offsetWidth, innerWidth);
+    list.classList.toggle('floor-list-lewa', strona === 'lewa');
+    if (strona === 'lewa') return;
+    const dx = odsuniecieOdPanelu(list.getBoundingClientRect(), this.panel?.() ?? null);
+    if (dx > 0) list.style.right = `${dx}px`;
   }
 }
