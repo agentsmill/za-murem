@@ -26,8 +26,9 @@
    budynku, zgadywane kondygnacje) po `zm:pole`. Wystarczy, że jeden segment nie ma któregoś z tagów albo ma go
    zepsutego, a pole i wymiary całego budynku idą z obrysu jak dotąd: z tagów segmentów nie
    da się złożyć obrysu całości, a mieszanie źródeł dałoby niespójny budynek. Środek (`lat`, `lon`, a z nich rejon)
-   zawsze idzie z obrysu. Dema nie mają tagów `zm:*`, więc ich wynik się nie zmienia. Tag `zm:bud` (klucz budynku
-   generatora na każdym członku) dopisuje oznacz.ts. */
+   zawsze idzie z obrysu. Dema nie mają tagów `zm:pole` ani `zm:wym`, więc ich pole i wymiary idą z obrysu; po
+   przegenerowaniu (19.10.2026) mają za to `zm:klucz`, więc ich budynki mają klucze `px:…`, a z nich inne ziarna i inni
+   mieszkańcy niż na demach sprzed kluczy. Tag `zm:bud` (klucz budynku generatora na każdym członku) dopisuje oznacz.ts. */
 
 import { classify, levelsOf } from '../world/classify.ts';
 import type { Geo, GeoBuilding } from '../world/geo.ts';

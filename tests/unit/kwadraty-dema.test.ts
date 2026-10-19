@@ -1,8 +1,10 @@
 /* Dane sąsiadów w demach (miasto z kwadratów, etap 1, zadanie 5): public/demo/<klucz>-kwadraty.json niesie geo ośmiu
    sąsiednich kwadratów domu (N, NE, E, SE, S, SW, W, NW) z kafelków testowych, żeby `?demo=…&kwadraty=3x3` działało bez
-   sieci. Gra pobiera ten plik tylko przy `?kwadraty=` (loadDemoKwadraty). Pliki dem z samą geometrią osiedla
+   sieci. Gra pobiera ten plik tylko przy `?kwadraty=` (loadDemoKwadraty). Pliki dem z geometrią osiedla
    (<klucz>.json) i index.json zostają bajt w bajt takie, jakie są: tools/make-demos.ts nie przepisuje ich, chyba że
-   poda się --przegeneruj. Plik przekraczający 1,5 MB zostawia tylko cztery boczne kwadraty (N, E, S, W). */
+   poda się --przegeneruj. Dema osiedli były przegenerowane z toGeoT 19.10.2026 (gałąź dema-przegenerowane): mają klucze
+   budynków (zm:klucz, zm:os), klucze miejsc (k) i rodzaje punktów (Geo.rodzaje). Plik przekraczający 1,5 MB zostawia
+   tylko cztery boczne kwadraty (N, E, S, W). */
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -28,11 +30,12 @@ const poPliku = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 /** bok N, E, S, W z ośmiu sąsiadów (parzyste miejsca w kolejności N, NE, E, SE, S, SW, W, NW) */
 const boczne = (): [number, number][] => sasiedzi8(0, 0).filter((_, i) => i % 2 === 0);
 
-/** skróty plików dem z geometrią osiedla zatwierdzonych przed kwadratami (bajt w bajt, dema są świadomie starsze od toGeoT) */
+/** skróty plików dem z geometrią osiedla zatwierdzonych po przegenerowaniu z toGeoT (bajt w bajt; index.json bez zmian
+    od dem sprzed kwadratów, dema osiedli przepisane 19.10.2026: `npm run demos -- --przegeneruj`) */
 const ZATWIERDZONE: Record<string, string> = {
-  'przymorze.json': '100d86e9fb552db77ec5f3cebafb3bae1ea916072d4a304b52c36c2e79f634e3',
-  'lanciego.json': 'f526442504ecc49387f282785e474afbcc5f172641f2b8cac25496210708e208',
-  'zielonki.json': '78c79c020bab3ebc10e9801894f957b4296066da8075b42e6599f7e2435773a9',
+  'przymorze.json': '3be6d56e2326908ab4ab18f790f21f2fac31f88da9bae7303e999f0ea9b18b68',
+  'lanciego.json': '2df67ea4296fc31d3f0fbc929e7a99cb934cb6f1d9035d3ff039d3f566340bf5',
+  'zielonki.json': '0a7473d271cbd3a43ed60e0f2a962e3384b96910ab08ac69b5d01b54db4415e0',
   'index.json': '681f80f90f16acacffe4e51b4391d5e11598a722ce70c05749f26023d04fa385',
 };
 
@@ -132,9 +135,9 @@ describe('tools/make-demos.ts', () => {
       const r = uruchom(tmp);
       expect(r.status, r.stderr).toBe(0);
       for (const nazwa of Object.keys(ZATWIERDZONE)) expect(fs.existsSync(path.join(tmp, nazwa)), nazwa).toBe(true);
-      // świeże dema mają klucze budynków, których zatwierdzone nie mają
+      // świeże dema mają klucze budynków, tak samo jak zatwierdzone (przegenerowane)
       expect(wczytaj(path.join(tmp, 'przymorze.json'))).toContain('zm:klucz');
-      expect(wczytaj(path.join(DEMO, 'przymorze.json'))).not.toContain('zm:klucz');
+      expect(wczytaj(path.join(DEMO, 'przymorze.json'))).toContain('zm:klucz');
       // zepsuty plik zostaje, dopóki nie podamy --przegeneruj
       fs.writeFileSync(path.join(tmp, 'lanciego.json'), '{}');
       expect(uruchom(tmp).status).toBe(0);

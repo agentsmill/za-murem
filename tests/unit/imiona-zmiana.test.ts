@@ -392,10 +392,16 @@ describe('zastosujZmiany', () => {
       zastosujZmiany(st, P.l, P.dane, { [ref]: z });
       return st.people;
     };
-    const refs = nowaGra().people.flatMap((q) => (q.ref ? [q.ref] : []));
-    const wRodzinie = refs.find((r) => zZnacznikiem(r, ZNACZNIK).some((q) => q.rodzina?.includes('QmianQ')));
+    const osoby = nowaGra().people;
+    const refs = osoby.flatMap((q) => (q.ref ? [q.ref] : []));
+    // wpis o innej płci niż osoba pod tym ref jest pomijany, a Bożenka to imię żeńskie i Zbyszko męskie: pierwsza
+    // wybrana osoba jest kobietą, druga mężczyzną (od danych zależy tylko to, kto to jest)
+    const kobieta = (r: string) => osoby.find((q) => q.ref === r)?.f === true;
+    const wRodzinie = refs.find(
+      (r) => kobieta(r) && zZnacznikiem(r, ZNACZNIK).some((q) => q.rodzina?.includes('QmianQ')),
+    );
     const wHistorii = refs.find(
-      (r) => r !== wRodzinie && zZnacznikiem(r, ZNACZNIK).some((q) => q.story?.includes('Q')),
+      (r) => r !== wRodzinie && !kobieta(r) && zZnacznikiem(r, ZNACZNIK).some((q) => q.story?.includes('Q')),
     );
     if (!wRodzinie || !wHistorii) throw new Error('brak osób do zmiany imienia na Przymorzu');
     const st = nowaGra();
@@ -462,7 +468,20 @@ describe('zastosujZmiany', () => {
   it('wpis z innym imieniem z generatora albo inną płcią niż osoba pod tym ref nikogo nie zmienia i zostaje', () => {
     // po aktualizacji tabel pod tym samym ref może stać ktoś inny
     const st = nowaGra();
-    const [p1, p2, p3, p4] = st.people.filter((q) => q.ref);
+    const zRef = st.people.filter((q) => q.ref);
+    const [p1, p2] = zRef;
+    // p3 i p4 mają dobre wpisy, p1 i p2 pomijane; p1 i p2 nie mogą być z nimi spokrewnione ani wspomniane w ich historii
+    // (zmiana imienia małżonka zmienia linijkę rodziny drugiego małżonka bez jego wpisu, a tu chodzi o pominięte wpisy),
+    // więc p3 i p4 to pierwsze osoby, których zmiana imienia niczego u p1 i p2 nie rusza
+    const bezWplywu = (q: Person): boolean => {
+      const probny = nowaGra();
+      zastosujZmiany(probny, P.l, P.dane, { [q.ref as string]: { ...BOZENKA, f: q.f, gen: q.first } });
+      return [p1, p2].every(
+        (p) => JSON.stringify(probny.people[st.people.indexOf(p)]) === JSON.stringify(st.people[st.people.indexOf(p)]),
+      );
+    };
+    const [p3, p4] = zRef.slice(2).filter(bezWplywu);
+    if (!p3 || !p4) throw new Error('brak dwóch osób niezwiązanych z dwiema pierwszymi na Przymorzu');
     const z: Record<string, ZmianaImienia> = {
       [p1.ref as string]: { ...BOZENKA, f: p1.f, gen: 'Innaosoba' },
       [p2.ref as string]: { ...BOZENKA, f: !p2.f, gen: p2.first },

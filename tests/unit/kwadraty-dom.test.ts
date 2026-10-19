@@ -93,8 +93,9 @@ describe('świat domu bez zmian', () => {
       }).toEqual(OCZEKIWANE[a.key]);
     });
 
-    // dema w public/demo są starsze niż klucze budynków, klucze miejsc i rodzaje punktów (nie mają zm:klucz, zm:os,
-    // GeoPoi.k ani Geo.rodzaje) i tak ma zostać (dziennik: dema nie są przegenerowane), więc porównujemy samą geometrię
+    // dema w public/demo są przegenerowane z toGeoT (19.10.2026), a świat domu liczy się z kafelków bez opcji, więc
+    // geometria dema to geometria geo z kafelków; porównujemy samą geometrię, bez kluczy budynków i miejsc oraz rodzajów
+    // punktów (zm:klucz, zm:os, GeoPoi.k, Geo.rodzaje), żeby zmiana tych pól nie wymuszała przepisywania dem
     it(`${a.key}: geometria geo z kafelków to dokładnie geometria zatwierdzonego dema`, () => {
       const plik = path.resolve(import.meta.dirname, `../../public/demo/${a.key}.json`);
       const demo = JSON.parse(fs.readFileSync(plik, 'utf8'));

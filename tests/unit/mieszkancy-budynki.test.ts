@@ -110,7 +110,7 @@ describe('budynkiZGeo na demach', () => {
     expect(domy.length / wiesz.length).toBeGreaterThan(0.8);
   });
 
-  it('każdy budynek ma epokę, mieszkania, klatki, wymiary i klucz z identyfikatora OSM albo geograficznego środka', () => {
+  it('każdy budynek ma epokę, mieszkania, klatki, wymiary i klucz z zm:klucz, identyfikatora OSM albo geograficznego środka', () => {
     for (const b of [...przymorze, ...lanciego, ...wiesz]) {
       expect(EPOKI, b.klucz).toContain(b.epoka);
       expect(Number.isInteger(b.mieszkania), b.klucz).toBe(true);
@@ -119,8 +119,9 @@ describe('budynkiZGeo na demach', () => {
       expect(b.dlugosc, b.klucz).toBeGreaterThanOrEqual(b.szerokosc);
       expect(b.pole, b.klucz).toBeGreaterThanOrEqual(3);
       expect(b.kondygnacje, b.klucz).toBeGreaterThanOrEqual(1);
-      // dema z identyfikatorami OSM (gałąź swiat-id-budynkow) dają osm:<id>, mapy bez tagu id klucz geograficzny
-      expect(b.klucz, b.klucz).toMatch(/^(osm:[nwr]\d+|g:\d+\.\d{5},\d+\.\d{5},\d+)$/);
+      // dema przegenerowane z kafelków mają zm:klucz, więc klucz to px:X:Y:DX:DY:S; osm:<id> (mapy z identyfikatorami OSM)
+      // i klucz geograficzny (mapy bez tagów) zostają dla starszych map
+      expect(b.klucz, b.klucz).toMatch(/^(px:\d+:\d+:-?\d+:-?\d+:[123]|osm:[nwr]\d+|g:\d+\.\d{5},\d+\.\d{5},\d+)$/);
     }
   });
 

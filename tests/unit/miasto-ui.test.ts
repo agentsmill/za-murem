@@ -369,7 +369,9 @@ describe('dolaczMiejsca', () => {
     const demo = JSON.parse(
       fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'),
     );
-    // demo nie ma kluczy: liczą się z metrów, część wychodzi o piksel obok klucza z kafelków
+    // stare demo i stary zapis nie mają kluczy: liczą się z metrów, część wychodzi o piksel obok klucza z kafelków
+    // (demo w repo jest przegenerowane i ma klucze z kafelków, więc je wycinamy, żeby zagrać dawne demo)
+    for (const p of demo.geo.poi) delete p.k;
     uzupelnijKlucze(demo.geo);
     const okolica = miejscaZPoi(demo.geo.poi, () => '');
     const zKafelkow = miejscaZPoi(poiZKafelkow(decodedTiles(a), [a.lat, a.lon]), () => '');

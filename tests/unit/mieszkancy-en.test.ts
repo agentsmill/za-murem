@@ -553,7 +553,10 @@ describe('lokatorzyEn na całych obszarach dem i innych kronikach', () => {
           for (const s of wynik.szablony) szablony.add(s);
         }
       }
-      expect(szablony.size).toBeGreaterThan(135);
+      // obok `> 120` z testu wyżej (131 szablonów na demach sprzed przegenerowania, 133 po nim): z trzema innymi
+      // kronikami na demo szablonów jest więcej (138 przed, 135 po przegenerowaniu dem, bo inne klucze budynków to
+      // inne ziarna), więc próg leży między jednymi a drugimi
+      expect(szablony.size).toBeGreaterThan(130);
     },
     CIEZKI,
   );
