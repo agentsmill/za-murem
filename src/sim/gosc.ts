@@ -12,14 +12,18 @@
                mieszkańców (mówiący przy `zarzad` w zarząd) i na tym wizyta w symulacji się kończy (`przyjety`)
      odchodzi  idą do krawędzi mapy (praca `odejscie`, jak wyrzucony mieszkaniec; z ulicy do kafelka, z którego
                przyszli), a gdy ostatni zniknie, faza to `poszedl`; w trybie zombie szwendacz do SPOOK_R m
-               spłaszcza grupę pod bramą (ucieka szybciej)
+               płoszy grupę pod bramą (ucieka szybciej)
    `nie_doszedl`: grupa nie dotarła pod bramę w GOSC_DOJSCIE (droga zablokowana); `zginal`: nie żyje nikt.
 
    Kontrakt.
-   - Żadnego losowania: start to najdalszy kafelek strony (remis najmniejszy indeks), kafelki grupy ze spirali,
-     poranne wyjście z skrótu id gościa. Wizyta nie rusza `st.rng`.
+   - Żadnego losowania: start to kafelek najdalej w kierunku strony (remis najmniejszy indeks), kafelki grupy ze spirali,
+     poranne wyjście ze skrótu id gościa. Wizyta nie rusza `st.rng`.
    - Strona wejścia (n, e, s, w) to ta sama strona siatki mapy, bez trygonometrii: świat jest obrócony najwyżej o 45°,
-     więc błąd to co najwyżej pół ćwiartki.
+     więc błąd to co najwyżej pół ćwiartki. Stronę mierzy się od kafelka za bramą, pod którym goście czekają (e: większe
+     x, w: mniejsze x, n: mniejsze y, s: większe y), a nie od środka mapy: brama rzadko leży pośrodku, a z limitem
+     GOSC_FROM kroków połowa mapy bywa poza zasięgiem. Z kafelków ulicy po tej stronie w zasięgu wygrywa ten, który
+     leży najdalej wzdłuż osi strony, potem najdalszy krokami, potem o najmniejszym indeksie; gdy po tej stronie nie ma
+     żadnego, najdalszy krokami w ogóle.
    - `SimState.goscie` jest listą, która tylko rośnie: zarząd czyta wpisy po kolei i liczy, ile już przeczytał.
      Pola nie ma, dopóki zarząd nie wyśle pierwszego planu, więc gra bez gości ma ten sam skrót stanu. */
 
@@ -67,8 +71,9 @@ export interface GoscSim {
 
 /** życie pionka gościa (jak wędrowca) */
 export const GOSC_HP = WANDERER_HP;
-/** najdalej tyle kroków ulicą od bramy leży miejsce, z którego goście startują (marsz trwa wtedy niecałą godzinę gry,
-    więc 2 godziny GOSC_DOJSCIE wystarczają z zapasem na zablokowaną drogę i objazd) */
+/** najdalej tyle kroków ulicą od bramy leży miejsce, z którego goście startują (spośród takich kafelków wygrywa ten,
+    który leży najdalej w kierunku wskazanej strony); marsz trwa wtedy niecałą godzinę gry, więc 2 godziny GOSC_DOJSCIE
+    wystarczają z zapasem na zablokowaną drogę i objazd */
 export const GOSC_FROM = 110;
 /** nie dotarli pod bramę w 2 godziny gry: `nie_doszedl` */
 export const GOSC_DOJSCIE = 2 * TICKS_PER_HOUR;
@@ -87,21 +92,26 @@ export const GOSC_ZLAPANY_DO = 8;
 export const goscKoniec = (g: GoscSim): boolean =>
   g.przyjety !== undefined || g.faza === 'poszedl' || g.faza === 'nie_doszedl' || g.faza === 'zginal';
 
-/** czy kafelek leży po stronie mapy (środek mapy dzieli ją na połowy, n = niskie y, s = wysokie y, e = wysokie x,
-    w = niskie x); mapa ma bok `size` kafelków */
-export function poStronie(i: number, size: number, strona: string): boolean {
-  const x = i % size;
-  const y = (i - x) / size;
-  const pol = size / 2;
-  if (strona === 'n') return y < pol;
-  if (strona === 's') return y >= pol;
-  if (strona === 'e') return x >= pol;
-  return x < pol;
+/** O ile kafelków `i` leży dalej od `od` (kafelka za bramą) w kierunku strony: e = na wschód (większe x), w = na zachód,
+    n = na północ (mniejsze y), s = na południe; ujemne albo zero: nie leży po tej stronie. Mapa ma bok `size`. */
+export function przesuniecieWStrone(i: number, od: number, size: number, strona: string): number {
+  const dx = (i % size) - (od % size);
+  const dy = Math.floor(i / size) - Math.floor(od / size);
+  // `0 - d` zamiast `-d`, żeby przy zerze nie wyszło −0
+  if (strona === 'n') return 0 - dy;
+  if (strona === 's') return dy;
+  if (strona === 'e') return dx;
+  return 0 - dx;
 }
 
-/** Miejsce startu gości: kafelek ulicy (`blocked` = warstwa ulicy), najdalszy od `od` (kafelka za bramą) w kolejności
-    kroków po czterech sąsiadach, nie dalej niż `cap` kroków, leżący po wskazanej stronie mapy; remis rozstrzyga
-    najmniejszy indeks. Gdy po tej stronie nie ma żadnego, najdalszy w ogóle. −1: ulica nie ma żadnego kafelka poza `od`. */
+/** czy kafelek leży po stronie kafelka `od`: n = niższe y, s = wyższe y, e = wyższe x, w = niższe x */
+export const poStronie = (i: number, od: number, size: number, strona: string): boolean =>
+  przesuniecieWStrone(i, od, size, strona) > 0;
+
+/** Miejsce startu gości: kafelek ulicy (`blocked` = warstwa ulicy) nie dalej niż `cap` kroków (po czterech sąsiadach)
+    od `od` (kafelka za bramą), leżący po wskazanej stronie `od` i najdalej w jej kierunku (`przesuniecieWStrone`); przy
+    remisie dalszy krokami, a potem o najmniejszym indeksie. Gdy po tej stronie nie ma żadnego kafelka w zasięgu,
+    najdalszy krokami w ogóle. −1: ulica nie ma żadnego kafelka poza `od`. */
 export function startGoscia(blocked: Uint8Array, size: number, od: number, strona: string, cap: number): number {
   const dist = new Int16Array(size * size).fill(-1);
   const q = new Int32Array(size * size);
@@ -121,12 +131,18 @@ export function startGoscia(blocked: Uint8Array, size: number, od: number, stron
     }
   }
   let side = -1;
+  let sideAx = 0;
   let any = -1;
   for (let i = 0; i < size * size; i++) {
     const d = dist[i];
     if (d <= 0) continue;
     if (any < 0 || d > dist[any]) any = i;
-    if (poStronie(i, size, strona) && (side < 0 || d > dist[side])) side = i;
+    const ax = przesuniecieWStrone(i, od, size, strona);
+    if (ax <= 0) continue;
+    if (side < 0 || ax > sideAx || (ax === sideAx && d > dist[side])) {
+      side = i;
+      sideAx = ax;
+    }
   }
   return side >= 0 ? side : any;
 }

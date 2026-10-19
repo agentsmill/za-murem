@@ -1,8 +1,8 @@
 /* Gość z klocków w symulacji (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 3, „Wizyta”): plan
-   zarządu (`GovEffects.gosc`) wystawia grupę pionków rodzaju `gosc` na ulicy po wskazanej stronie mapy, grupa idzie pod
+   zarządu (`GovEffects.gosc`) wystawia grupę pionków rodzaju `gosc` na ulicy po wskazanej stronie bramy, grupa idzie pod
    bramę i czeka; rozkazy (`GovEffects.goscRozkaz`) odsyłają ją, wpuszczają na noc (ognisko, sen, rano wyjście bramą),
    przyjmują jako mieszkańców albo (mówiący) do zarządu; kłamca nocą o 2:00 bierze jedzenie, a czuwająca osoba zarządu go
-   łapie; w trybie zombie szwendacz spłasza grupę pod bramą; ugryziony zaraża się jak na wyprawie.
+   łapie; w trybie zombie szwendacz płoszy grupę pod bramą; ugryziony zaraża się jak na wyprawie.
    Świat to blok M2 z siatką i bramą (128 m); rdzeń ma dwie osoby, w razie potrzeby wysyłam je na wyprawę (`away`),
    żeby nikt nie czuwał, albo stawiam jednego na warcie przy bramie. Obcych (handlarz, wędrowcy, ekipy) odsuwam na koniec
    świata, żeby nic poza gośćmi nie przychodziło. */
@@ -19,16 +19,20 @@ import { hourOf, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import {
   GOSC_CZEKA,
   GOSC_DOJSCIE,
+  GOSC_FROM,
+  GOSC_HP,
   type GoscSim,
   goscKoniec,
   najblizszaGodzina,
   poStronie,
+  przesuniecieWStrone,
   ranoGoscia,
   startGoscia,
 } from '../../src/sim/gosc.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { tickAt } from '../../src/sim/handlarz.ts';
 import { jobText } from '../../src/sim/orders.ts';
+import { gateTiles as gateTilesOf } from '../../src/sim/perimeter.ts';
 import { awansuj, createSim, type Pawn, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { mockBlockM2 } from './interior-mock.ts';
@@ -80,20 +84,26 @@ function plan(n = 1, strona: Strona = 'n', k = 1, ugryziony?: number): PlanGosci
 
 const rozkazy = (id: string, ...co: GoscRozkaz[]): GovEffects['goscRozkaz'] => co.map((c) => ({ id, co: c }));
 
-/** gra z obcymi o danej porze; goście to jedyni, którzy przychodzą. Opcje: ognisko na podwórku, tryb zombie */
-function gra(day: number, hour: number, opt: { ognisko?: boolean; zombie?: boolean; seed?: number } = {}): Sim {
+/** gra z obcymi o danej porze; goście to jedyni, którzy przychodzą. Opcje: ognisko na podwórku (albo lista ognisk z
+    paliwem), tryb zombie */
+function gra(
+  day: number,
+  hour: number,
+  opt: { ognisko?: boolean; ogniska?: readonly { tile: number; fuel: number }[]; zombie?: boolean; seed?: number } = {},
+): Sim {
   const st = createSim(w, opt.seed ?? 3, { core: 2, obcy: true, ...(opt.zombie ? { mode: 'zombie' as const } : {}) });
-  if (opt.ognisko)
+  const ogniska = opt.ogniska ?? (opt.ognisko ? [{ tile: OGNISKO, fuel: 100 * TICKS_PER_HOUR }] : []);
+  for (const o of ogniska)
     st.things.push({
       id: st.nextThing++,
       kind: 'ognisko',
-      x: OGNISKO % size,
-      y: Math.floor(OGNISKO / size),
+      x: o.tile % size,
+      y: Math.floor(o.tile / size),
       w: 1,
       h: 1,
       rot: 0,
       n: 0,
-      fuel: 100 * TICKS_PER_HOUR,
+      fuel: o.fuel,
       by: -1,
       owner: -1,
     });
@@ -145,17 +155,22 @@ function rdzenPoza(st: SimState): void {
 }
 
 describe('funkcje czyste: strona mapy, miejsce startu, pora wyjścia', () => {
-  it('poStronie: n to niskie y, s wysokie y, e wysokie x, w niskie x', () => {
+  it('poStronie i przesuniecieWStrone: strona liczona od kafelka za bramą, nie od środka mapy', () => {
     const i = (x: number, y: number) => y * 10 + x;
-    expect(poStronie(i(5, 1), 10, 'n')).toBe(true);
-    expect(poStronie(i(5, 6), 10, 'n')).toBe(false);
-    expect(poStronie(i(5, 6), 10, 's')).toBe(true);
-    expect(poStronie(i(7, 5), 10, 'e')).toBe(true);
-    expect(poStronie(i(2, 5), 10, 'e')).toBe(false);
-    expect(poStronie(i(2, 5), 10, 'w')).toBe(true);
+    const od = i(2, 8);
+    expect(poStronie(i(5, 1), od, 10, 'n')).toBe(true);
+    expect(przesuniecieWStrone(i(5, 1), od, 10, 'n')).toBe(7);
+    expect(poStronie(i(5, 9), od, 10, 'n')).toBe(false);
+    expect(poStronie(i(5, 9), od, 10, 's')).toBe(true);
+    // „wschód” od bramy przy zachodniej krawędzi to większe x, choć połowa mapy jest dalej
+    expect(poStronie(i(3, 5), od, 10, 'e')).toBe(true);
+    expect(przesuniecieWStrone(i(7, 8), od, 10, 'e')).toBe(5);
+    expect(poStronie(i(2, 5), od, 10, 'e')).toBe(false);
+    expect(poStronie(i(1, 5), od, 10, 'w')).toBe(true);
+    expect(przesuniecieWStrone(i(2, 3), od, 10, 'w')).toBe(0);
   });
 
-  it('startGoscia: najdalszy kafelek strony w zasięgu, remis najmniejszy indeks, bez strony najdalszy w ogóle', () => {
+  it('startGoscia: najdalej w kierunku strony od bramy, potem najdalej krokami, potem najmniejszy indeks', () => {
     // ulica na planszy 9×9: poziomo wzdłuż y=4 i pionowo wzdłuż x=7, cała reszta zablokowana
     const n = 9;
     const blocked = new Uint8Array(n * n).fill(1);
@@ -164,16 +179,17 @@ describe('funkcje czyste: strona mapy, miejsce startu, pora wyjścia', () => {
       blocked[k * n + 7] = 0;
     }
     const od = 4 * n + 4;
-    // zachód: skrajny lewy kafelek poziomej ulicy (4 kroki)
+    // zachód: skrajny lewy kafelek poziomej ulicy
     expect(startGoscia(blocked, n, od, 'w', 10)).toBe(4 * n + 0);
-    // północ i południe: końce pionowej ulicy (7 kroków)
+    // północ i południe: końce pionowej ulicy (4 kroki wzdłuż osi, 7 kroków drogi)
     expect(startGoscia(blocked, n, od, 'n', 10)).toBe(0 * n + 7);
     expect(startGoscia(blocked, n, od, 's', 10)).toBe(8 * n + 7);
-    // wschód: oba końce pionowej ulicy leżą po stronie e i są tak samo daleko, wygrywa mniejszy indeks
-    expect(startGoscia(blocked, n, od, 'e', 10)).toBe(0 * n + 7);
+    // wschód: skrajny prawy kafelek poziomej ulicy (4 kroki wzdłuż osi), mimo że końce pionowej są dalej krokami
+    expect(startGoscia(blocked, n, od, 'e', 10)).toBe(4 * n + 8);
     // zasięg 3 kroki: najdalszy po stronie to kafelek o 3 kroki od `od`
     expect(startGoscia(blocked, n, od, 'w', 3)).toBe(4 * n + 1);
-    // po stronie, na której ulicy nie ma (poziomo y=4 leży w górnej połowie), bierze najdalszy w ogóle
+    // po stronie, na której ulicy nie ma (poziomo y=4 nie sięga na południe), bierze najdalszy krokami w ogóle,
+    // a przy remisie (oba końce 4 kroki) mniejszy indeks
     const poziomo = new Uint8Array(n * n).fill(1);
     for (let k = 0; k < n; k++) poziomo[4 * n + k] = 0;
     expect(startGoscia(poziomo, n, od, 's', 10)).toBe(4 * n + 0);
@@ -181,6 +197,26 @@ describe('funkcje czyste: strona mapy, miejsce startu, pora wyjścia', () => {
     const zamknieta = new Uint8Array(n * n).fill(1);
     zamknieta[od] = 0;
     expect(startGoscia(zamknieta, n, od, 'n', 10)).toBe(-1);
+  });
+
+  it('startGoscia: oś strony ważniejsza od długości drogi, przy remisie na osi wygrywa dalszy krokami', () => {
+    // ulica: z `od` dwa kroki na wschód i pięć na północ (daleko krokami, blisko na osi e), a osobno trzy kroki na wschód
+    const n = 9;
+    const blocked = new Uint8Array(n * n).fill(1);
+    const wolny = (x: number, y: number) => {
+      blocked[y * n + x] = 0;
+    };
+    for (let x = 1; x <= 4; x++) wolny(x, 4);
+    for (let y = 0; y <= 4; y++) wolny(1, y);
+    // `od` = (1,4): wschód to (2,4) (1 krok), (3,4) (2), (4,4) (3 kroki, 3 na osi); zachód: nic; północ: (1,0)
+    const od = 4 * n + 1;
+    expect(startGoscia(blocked, n, od, 'e', 20)).toBe(4 * n + 4);
+    expect(startGoscia(blocked, n, od, 'n', 20)).toBe(0 * n + 1);
+    // dwa kafelki tak samo daleko na osi e: (5,2) przez północną odnogę jest dalej krokami niż (5,4)
+    for (let x = 2; x <= 5; x++) wolny(x, 2);
+    for (let y = 2; y <= 4; y++) wolny(1, y);
+    wolny(5, 4);
+    expect(startGoscia(blocked, n, od, 'e', 20)).toBe(2 * n + 5);
   });
 
   it('ranoGoscia: najbliższe 6:00 plus 0–2 h ze skrótu id, ten sam wynik dla tego samego gościa', () => {
@@ -224,8 +260,8 @@ describe('plan gościa: pionki na ulicy i marsz pod bramę', () => {
     expect(osoba.first).toBe(p0.osoby[0].first);
     expect(a.st.people.some((q) => q.id.startsWith('g'))).toBe(false);
     expect(p.look).toBe(4);
-    // start: na ulicy, po stronie n mapy, nie dalej niż GOSC_FROM kroków, nie na podwórku
-    expect(Math.floor(p.y)).toBeLessThan(size / 2);
+    // start: na ulicy, na północ od bramy, nie dalej niż GOSC_FROM kroków, nie na podwórku
+    expect(poStronie(tileOf(p), SPOT, size, 'n')).toBe(true);
     expect(yard.has(tileOf(p))).toBe(false);
     expect(p.hp).toBeGreaterThan(0);
     expect(jobText(a.st, w, p)).toBe('Idzie do bramy.');
@@ -259,14 +295,14 @@ describe('plan gościa: pionki na ulicy i marsz pod bramę', () => {
     expect(kind(sim.st, 'gosc')).toHaveLength(2);
   });
 
-  it('strony świata: goście z każdej strony zaczynają po swojej stronie mapy', () => {
+  it('strony świata: goście z każdej strony zaczynają po swojej stronie bramy', () => {
     for (const strona of ['n', 's', 'e', 'w'] as const) {
       const sim = gra(2, 10);
       wyslij(sim, { gosc: plan(1, strona) });
       sim.step();
       const p = kind(sim.st, 'gosc')[0];
       expect(p, strona).toBeDefined();
-      expect(poStronie(tileOf(p), size, strona), strona).toBe(true);
+      expect(poStronie(tileOf(p), SPOT, size, strona), strona).toBe(true);
     }
   });
 
@@ -370,20 +406,29 @@ describe('rozkazy: odejdź, jedzenie', () => {
     expect(food(sim.st)).toBe(przed);
   });
 
-  it('rozkaz bez grupy albo po zakończeniu wizyty nic nie robi', () => {
-    const sim = gra(2, 10);
-    wyslij(sim, { goscRozkaz: rozkazy('g9', 'noc', 'odejdz', 'zostan') });
-    sim.step();
-    expect(sim.st.goscie).toBeUndefined();
-    podBrame(sim, plan(1, 'n'));
-    wyslij(sim, { goscRozkaz: rozkazy('g1', 'odejdz') });
-    run(sim, () => grupa(sim.st).faza === 'poszedl', 8000);
-    const hash = sim.hash();
-    wyslij(sim, { goscRozkaz: rozkazy('g1', 'noc', 'zostan', 'zarzad') });
-    sim.step();
-    expect(grupa(sim.st).faza).toBe('poszedl');
-    expect(kind(sim.st, 'gosc')).toHaveLength(0);
-    expect(hash).not.toBe('');
+  it('rozkaz bez grupy albo po zakończeniu wizyty nic nie robi (ten sam skrót co w grze bez rozkazu)', () => {
+    const a = gra(2, 10);
+    const b = gra(2, 10);
+    // grupy g9 nie ma: rozkazy znikają bez śladu, pole goscie nie powstaje
+    wyslij(a, { goscRozkaz: rozkazy('g9', 'noc', 'odejdz', 'zostan', 'zarzad', 'ugryziony') });
+    run(a, () => false, 5);
+    run(b, () => false, 5);
+    expect(a.st.goscie).toBeUndefined();
+    expect(a.hash()).toBe(b.hash());
+    // ta sama wizyta w obu grach, zakończona odprawieniem
+    for (const sim of [a, b]) {
+      podBrame(sim, plan(1, 'n'));
+      wyslij(sim, { goscRozkaz: rozkazy('g1', 'odejdz') });
+      run(sim, () => grupa(sim.st).faza === 'poszedl', 8000);
+    }
+    expect(a.hash()).toBe(b.hash());
+    // po końcu wizyty dodatkowe rozkazy w jednej grze nic nie zmieniają
+    wyslij(a, { goscRozkaz: rozkazy('g1', 'noc', 'zostan', 'zarzad', 'klamie', 'jedzenie', 'puscic', 'odejdz') });
+    run(a, () => false, 5);
+    run(b, () => false, 5);
+    expect(grupa(a.st).faza).toBe('poszedl');
+    expect(kind(a.st, 'gosc')).toHaveLength(0);
+    expect(a.hash()).toBe(b.hash());
   });
 });
 
@@ -450,6 +495,55 @@ describe('noc: ognisko, sen, wyjście rano', () => {
       expect(yard.has(tileOf(p))).toBe(true);
       expect(cheb(tileOf(p), drzwi)).toBeLessThanOrEqual(5);
       expect(p.job?.what).toBe('spi');
+    }
+  });
+});
+
+describe('wybór ogniska', () => {
+  const F1 = 66 * size + 32;
+  const F2 = 69 * size + 37;
+  const GORACE = 100 * TICKS_PER_HOUR;
+
+  /** wpuszczeni na noc idą do ogniska; zwraca kafelki, na których się zatrzymali */
+  function usiedli(ogniska: readonly { tile: number; fuel: number }[]): number[] {
+    const sim = gra(2, 21, { ogniska });
+    podBrame(sim, plan(3, 'n'));
+    wyslij(sim, { goscRozkaz: rozkazy('g1', 'noc') });
+    sim.step();
+    const m = czlonkowie(sim.st);
+    run(sim, () => m.every((p) => tileOf(p) === p.job?.tile && p.pi >= p.path.length), 8000);
+    return m.map(tileOf);
+  }
+
+  it('palące się ognisko wygrywa z bliższym bramie zimnym', () => {
+    const t = usiedli([
+      { tile: F1, fuel: GORACE },
+      { tile: F2, fuel: 0 },
+    ]);
+    for (const k of t) {
+      expect(cheb(k, F1)).toBeLessThanOrEqual(2);
+      expect(cheb(k, F2)).toBeGreaterThan(2);
+    }
+  });
+
+  it('z dwóch palących się wygrywa to, które jest bliżej bramy', () => {
+    const t = usiedli([
+      { tile: F1, fuel: GORACE },
+      { tile: F2, fuel: GORACE },
+    ]);
+    for (const k of t) {
+      expect(cheb(k, F2)).toBeLessThanOrEqual(2);
+      expect(cheb(k, F1)).toBeGreaterThan(2);
+    }
+  });
+
+  it('bez palących się: najbliższe bramy z zimnych, niezależnie od kolejności na liście rzeczy', () => {
+    for (const lista of [
+      [F1, F2],
+      [F2, F1],
+    ]) {
+      const t = usiedli(lista.map((tile) => ({ tile, fuel: 0 })));
+      for (const k of t) expect(cheb(k, F2)).toBeLessThanOrEqual(2);
     }
   });
 });
@@ -578,14 +672,49 @@ describe('haczyk: kłamca w nocy', () => {
       const sim = zLupem();
       const st = sim.st;
       expect(food(st)).toBe(37);
+      // łup niesie w worku jak szabrownik
+      const zl = czlonkowie(st)[0];
+      expect(zl.sack?.supplies).toBe(3);
       wyslij(sim, { goscRozkaz: rozkazy('g1', 'puscic') });
       sim.step();
+      expect(zl.sack).toBeUndefined();
       expect(grupa(st).ukradl).toBe(0);
       expect(food(st)).toBe(40);
       expect(grupa(st).faza).toBe('odchodzi');
       run(sim, () => grupa(st).faza === 'poszedl', 12000);
       expect(grupa(st).faza).toBe('poszedl');
       expect(food(st)).toBe(40);
+    });
+
+    it('puscic: łup nie ląduje na stosie drewna, który leży pod złapanym (ani w stercie, z której wziął)', () => {
+      const sim = zLupem();
+      const st = sim.st;
+      const zl = czlonkowie(st)[0];
+      const x = Math.floor(zl.x);
+      const y = Math.floor(zl.y);
+      // złapany stoi na kafelku sterty jedzenia, z której wziął; kładziemy tam jeszcze stos drewna
+      const sterta = st.things.find((t) => t.kind === 'jedzenie' && t.x === x && t.y === y)!;
+      expect(sterta.n).toBe(37);
+      st.things.push({
+        id: st.nextThing++,
+        kind: 'drewno',
+        x,
+        y,
+        w: 1,
+        h: 1,
+        rot: 0,
+        n: 4,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      });
+      wyslij(sim, { goscRozkaz: rozkazy('g1', 'puscic') });
+      sim.step();
+      expect(food(st)).toBe(40);
+      expect(sterta.n).toBe(37);
+      const zwrocone = st.things.filter((t) => t.kind === 'jedzenie' && t !== sterta);
+      expect(zwrocone.map((t) => t.n)).toEqual([3]);
+      expect(st.things.some((t) => t.kind === 'drewno' && t.x === zwrocone[0].x && t.y === zwrocone[0].y)).toBe(false);
     });
 
     it('odejdz: odchodzi z łupem, braki w zapasach zostają', () => {
@@ -598,15 +727,32 @@ describe('haczyk: kłamca w nocy', () => {
       expect(food(st)).toBe(37);
     });
 
-    it('zabity kradnący zostawia łup na ziemi', () => {
+    it('zabity kradnący zostawia łup na ziemi (przez worek), nie rusza rachunku napadu i licznika zabitych', () => {
       const sim = zLupem();
       const st = sim.st;
+      // napad z poprzedniej nocy: jego rachunek łupu nie dotyczy jedzenia gościa
+      st.raid = {
+        at: 0,
+        post: 'brama',
+        n: 1,
+        attack: 0,
+        phase: 3,
+        outcome: 'odparty',
+        gov: false,
+        loot: { wood: 0, supplies: 5, scrap: 0 },
+        took: { wood: 0, supplies: 5, scrap: 0 },
+        from: -1,
+        spot: -1,
+      };
       const zl = czlonkowie(st)[0];
       sim.wound(zl, 1000);
       sim.step();
       expect(grupa(st).faza).toBe('zginal');
       expect(grupa(st).ukradl).toBe(0);
       expect(food(st)).toBe(40);
+      expect(st.raid!.took.supplies).toBe(5);
+      expect(st.raid!.loot.supplies).toBe(5);
+      expect(st.tally!.killed).toBe(0);
     });
   });
 });
@@ -695,8 +841,9 @@ describe('śmierć i szwendacze', () => {
     expect(goscKoniec(grupa(st))).toBe(true);
     expect(kind(st, 'gosc')).toHaveLength(0);
     expect(st.things.filter((t) => t.kind === 'zwloki')).toHaveLength(3);
-    // jak obcy: nie ma wpisu żałoby u zarządu, jest w liczniku zabitych
+    // nie ma wpisu żałoby u zarządu, a licznik zabitych wrogów (raport „Zabitych szwendaczy”) ich nie liczy
     expect(govInput(st, w, 0).dead).toEqual([]);
+    expect(st.tally!.killed).toBe(0);
     expect(govInput(st, w, 0).goscie![0]).toMatchObject({ faza: 'zginal', pawns: [] });
   });
 
@@ -733,11 +880,19 @@ describe('śmierć i szwendacze', () => {
     podBrame(sim, plan(1, 'n'));
     const st = sim.st;
     const p = czlonkowie(st)[0];
-    // szwendacz tuż przy gościu: zdąży uderzyć, zanim ten ucieknie
+    // gość stoi i nie ucieka (złapany czeka na decyzję; spłoszenie dotyczy tylko idących i czekających pod bramą)
+    grupa(st).faza = 'zlapany';
+    grupa(st).rano = tickAt(5, 8);
     const z = spawnZombie(st, w, SPOT + 1, 16);
     z.job!.phase = 3;
-    run(sim, () => p.hp! < 60 || !st.pawns.includes(p), 400, [z]);
-    expect(p.hp! < 60 || !st.pawns.includes(p)).toBe(true);
+    z.job!.target = p.id;
+    run(sim, () => p.hp! < GOSC_HP || !st.pawns.includes(p), 2000, [z]);
+    // pogryziony albo zabity, a nie po prostu zniknął za mapą
+    const zyje = st.pawns.includes(p);
+    expect(zyje || grupa(st).zgin === 1).toBe(true);
+    expect(!zyje || p.hp! < GOSC_HP).toBe(true);
+    // zabity gość nie jest zabitym wrogiem
+    expect(st.tally!.killed).toBe(0);
   });
 });
 
@@ -828,17 +983,84 @@ describe('zapis, wczytanie i stare zapisy', () => {
     expect('goscie' in govInput(z, w, 0)).toBe(false);
   });
 
-  it('gra z obcymi, ale bez gości, ma ten sam skrót co przed zmianą (pole goscie nie powstaje samo)', () => {
-    const sim = gra(2, 10);
+  it('zarząd, który nie planuje gości, nie zmienia gry: applyGov bez efektów daje ten sam skrót i nie zakłada pola goscie', () => {
+    const a = gra(2, 10);
+    const b = gra(2, 10);
     for (let k = 0; k < 500; k++) {
-      przygotuj(sim.st);
-      sim.step();
+      przygotuj(a.st);
+      przygotuj(b.st);
+      if (k % 100 === 0) wyslij(a, {});
+      a.step();
+      b.step();
     }
-    expect('goscie' in sim.st).toBe(false);
+    expect('goscie' in a.st).toBe(false);
+    expect(a.hash()).toBe(b.hash());
   });
 });
 
 describe('prawdziwy świat demo', () => {
+  /** kroki po ulicy od kafelka `od` po czterech sąsiadach, do `cap`; −1: poza zasięgiem (liczone tu osobno od startGoscia) */
+  function kroki(blocked: Uint8Array, n: number, od: number, cap: number): Int16Array {
+    const dist = new Int16Array(n * n).fill(-1);
+    const kolejka = [od];
+    dist[od] = 0;
+    for (let q = 0; q < kolejka.length; q++) {
+      const c = kolejka[q];
+      if (dist[c] >= cap) continue;
+      const x = c % n;
+      for (const o of [c - n, c + n, x > 0 ? c - 1 : -1, x < n - 1 ? c + 1 : -1]) {
+        if (o < 0 || o >= n * n || dist[o] >= 0 || blocked[o]) continue;
+        dist[o] = dist[c] + 1;
+        kolejka.push(o);
+      }
+    }
+    return dist;
+  }
+
+  for (const key of ['przymorze', 'lanciego', 'zielonki'])
+    it(`${key}: każda strona daje inny start po właściwej stronie bramy, najdalej w jej kierunku`, () => {
+      const { w: dw, seed } = demoWorld(key);
+      const n = dw.size;
+      const st = createSim(dw, seed, { core: 4, obcy: true });
+      const sim = new Sim(dw, st);
+      const wnetrze = sim as unknown as {
+        lay: { outside: { blocked: Uint8Array } };
+        outsideOf(t: readonly number[]): number[];
+      };
+      const spot = wnetrze.outsideOf(gateTilesOf(dw))[0];
+      const dist = kroki(wnetrze.lay.outside.blocked, n, spot, GOSC_FROM);
+      // przesunięcie wzdłuż osi strony, policzone tu od nowa
+      const wzdluz = (i: number, strona: Strona) => {
+        const dx = (i % n) - (spot % n);
+        const dy = Math.floor(i / n) - Math.floor(spot / n);
+        return { n: -dy, s: dy, e: dx, w: -dx }[strona];
+      };
+      const strony = ['n', 'e', 's', 'w'] as const;
+      strony.forEach((strona, k) => {
+        applyGov(st, dw, { ...emptyEffects(), gosc: plan(1, strona, k + 1) });
+      });
+      sim.step();
+      const starty: number[] = [];
+      strony.forEach((strona, k) => {
+        const p = st.pawns.find((q) => q.id === grupa(st, `g${k + 1}`).pawns[0])!;
+        const start = p.home;
+        starty.push(start);
+        expect(start, strona).toBe(startGoscia(wnetrze.lay.outside.blocked, n, spot, strona, GOSC_FROM));
+        // oczekiwany: najdalej wzdłuż osi, potem najdalej krokami, potem najmniejszy indeks
+        const kandydaci: number[] = [];
+        for (let i = 0; i < n * n; i++) if (dist[i] > 0 && wzdluz(i, strona) > 0) kandydaci.push(i);
+        expect(kandydaci.length, `${strona}: są kafelki po tej stronie w zasięgu`).toBeGreaterThan(0);
+        kandydaci.sort((a, b) => wzdluz(b, strona) - wzdluz(a, strona) || dist[b] - dist[a] || a - b);
+        expect(start, strona).toBe(kandydaci[0]);
+        expect(wzdluz(start, strona), strona).toBeGreaterThan(0);
+        expect(dist[start], strona).toBeGreaterThan(0);
+        expect(poStronie(start, spot, n, strona), strona).toBe(true);
+        expect(yard.has(start) || dw.fence.yard.includes(start), strona).toBe(false);
+      });
+      // cztery strony to cztery różne starty, a nie jeden najdalszy kafelek w mapie
+      expect(new Set(starty).size).toBe(4);
+    });
+
   it('Przymorze: grupa z każdej strony dochodzi pod bramę, kłamca kradnie nocą, rano nikogo nie ma, a przebieg jest ten sam', () => {
     const { w: dw, seed } = demoWorld('przymorze');
     const przebieg = (strona: Strona) => {

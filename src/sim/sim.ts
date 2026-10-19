@@ -1761,8 +1761,7 @@ export function addCore(st: SimState, w: World, person: Person, arrive = false):
     door,
     Math.floor(rnd() * 4),
   );
-  p.needs = { food: 50, warm: 50, rest: 60, health: 90, safe: 50, mood: 0 };
-  p.needs.mood = 0.25 * 50 + 0.25 * 50 + 0.15 * 60 + 0.15 * 90 + 0.2 * 50;
+  p.needs = potrzebyStartowe(50, 50, 60, 90, 50);
   if (wait >= 0)
     p.job = {
       t: 'arrive',
@@ -1814,6 +1813,16 @@ function zwolnijPionka(st: SimState, w: World, p: Pawn): void {
   dropHeld(st, w, p);
 }
 
+/** Potrzeby startowe osoby (najedzenie, ciepło, siły, zdrowie, bezpieczeństwo); nastrój z tych samych wag co w `stepNeeds` */
+const potrzebyStartowe = (food: number, warm: number, rest: number, health: number, safe: number): Needs => ({
+  food,
+  warm,
+  rest,
+  health,
+  safe,
+  mood: 0.25 * food + 0.25 * warm + 0.15 * rest + 0.15 * health + 0.2 * safe,
+});
+
 /** Mieszkaniec z osobą przechodzi do zarządu (zdarzenie „wciągnąć do roboty”): ten sam pionek i ta sama osoba w
     `st.people`, rodzaj `core`, więc od następnego kroku bierze polecenia i sam szuka zajęcia. Potrzeby i nastroje
     zostają, brak potrzeb dostaje domyślne jak w `addCore`; `apt` to −1 (zarząd nie mieszka w mieszkaniu mieszkańców).
@@ -1828,10 +1837,7 @@ export function awansuj(st: SimState, w: World, personId: string): boolean {
   const gosc = p.kind === 'gosc';
   p.kind = 'core';
   p.apt = -1;
-  if (!p.needs) {
-    p.needs = { food: 50, warm: 50, rest: 60, health: 90, safe: 50, mood: 0 };
-    p.needs.mood = 0.25 * 50 + 0.25 * 50 + 0.15 * 60 + 0.15 * 90 + 0.2 * 50;
-  }
+  p.needs ??= potrzebyStartowe(50, 50, 60, 90, 50);
   p.path = [];
   p.pi = 0;
   p.want = -1;
@@ -3408,8 +3414,8 @@ export class Sim {
   }
 
   /** najbliższy kafelkowi wolny kafelek w tym samym obszarze, bez mebli, pnia i jedzenia: na stos, na który
-      się jeszcze zmieści, albo na pusty */
-  private spotNear(from: number, n: number): number {
+      się jeszcze zmieści, albo na pusty; `stosOk` false: bez stosów drewna (kładziemy coś innego niż drewno) */
+  private spotNear(from: number, n: number, stosOk = true): number {
     const size = this.w.size;
     const at = nearestFree(this.coreBlocked, size, from);
     const ax = at % size;
@@ -3421,7 +3427,7 @@ export class Sim {
       const i = y * size + x;
       if (this.coreBlocked[i] || this.reg[i] !== this.reg[at] || onPlan(this.st, size, i)) continue;
       const pile = this.pileAt(i);
-      if (pile ? pile.n + n <= STACK : !this.thingAt(x, y)) return i;
+      if (pile ? stosOk && pile.n + n <= STACK : !this.thingAt(x, y)) return i;
     }
     return at;
   }
@@ -6660,11 +6666,32 @@ export class Sim {
     else if (j.what === 'spi' && !this.night()) j.what = 'rdzen';
   }
 
+  /** ognisko dla gości: palące się, a gdy takich kilka, najbliższe bramy (remis: pierwsze na liście rzeczy); bez
+      palącego się najbliższe bramy z zimnych; bez ogniska undefined */
+  private goscOgnisko(): Thing | undefined {
+    const size = this.w.size;
+    const brama = gateTiles(this.w)[0] ?? this.exitTile;
+    let best: Thing | undefined;
+    let bl = 2;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.things) {
+      if (t.kind !== 'ognisko') continue;
+      const l = t.fuel > 0 ? 0 : 1;
+      const d = brama < 0 ? 0 : ((t.x % size) - (brama % size)) ** 2 + (t.y - Math.floor(brama / size)) ** 2;
+      if (l < bl || (l === bl && d < bd)) {
+        best = t;
+        bl = l;
+        bd = d;
+      }
+    }
+    return best;
+  }
+
   /** wolne kafelki podwórka przy ognisku (a bez niego przed drzwiami siedziby), najbliższe pierwsze: tu goście siedzą i
       śpią; kafelek osiągalny z podwórka, bez mebli i rzeczy */
   private goscMiejsca(n: number): number[] {
     const size = this.w.size;
-    const ognisko = this.st.things.find((t) => t.kind === 'ognisko');
+    const ognisko = this.goscOgnisko();
     const centrum = ognisko ? ognisko.y * size + ognisko.x : this.door;
     const ref = this.gateStand[0];
     const out: number[] = [];
@@ -6821,45 +6848,32 @@ export class Sim {
     }
     heap.n -= k;
     g.ukradl += k;
+    // łup niesie w worku jak szabrownik: zabity albo złapany zostawia go przez `dropSack`
+    zl.sack = { ...zl.sack, supplies: (zl.sack?.supplies ?? 0) + k };
     st.things = st.things.filter((t) => !(LOOSE.has(t.kind) && t.kind !== 'pien' && t.n <= 0));
     g.krad = 'wraca';
     this.goscOdeslij(m, true);
   }
 
-  /** jedzenie na ziemi przy kafelku (zwrócony albo upuszczony łup) */
-  private kladzJedzenie(from: number, n: number): void {
-    const st = this.st;
-    const size = this.w.size;
-    const at = this.spotNear(from, 0);
-    const t = st.things.find((q) => q.kind === 'jedzenie' && q.x === at % size && q.y === Math.floor(at / size));
-    if (t) t.n += n;
-    else {
-      const heap = newThing(st, 'jedzenie', at % size, Math.floor(at / size));
-      heap.n = n;
-      st.things.push(heap);
-    }
-  }
-
-  /** Śmierć członka wizyty: licznik zgonów, a kradnący upuszcza łup tam, gdzie padł (zapasy odzyskane). */
+  /** Śmierć członka wizyty: licznik zgonów, a gdy zginął kradnący, łup z jego worka upada na ziemię (`die` woła
+      `dropSack`), więc zapasów brakuje o tyle mniej (`ukradl` 0). */
   private goscZginal(p: Pawn): void {
     const g = this.st.goscie?.find((x) => x.pawns.includes(p.id));
     if (!g) return;
     g.zgin = (g.zgin ?? 0) + 1;
-    if (g.zl === p.id && g.ukradl > 0) {
-      this.kladzJedzenie(this.tileOf(p), g.ukradl);
-      g.ukradl = 0;
-    }
+    if (g.zl === p.id) g.ukradl = 0;
   }
 
-  /** Odejście na rozkaz: pod bramą i w drodze ulicą z powrotem na swój kafelek, w środku bramą i dalej ulicą. Złapany
-      i `bezLupu`: łup wraca na ziemię przy kradnącym, `ukradl` 0. */
+  /** Odejście na rozkaz: pod bramą i w drodze ulicą z powrotem na swój kafelek, w środku bramą i dalej ulicą. Z
+      `bezLupu` łup z worka kradnącego wraca na ziemię przy nim (`ukradl` 0), bez niego odchodzi z łupem. */
   private goscOdejdz(g: GoscSim, m: Pawn[], bezLupu: boolean): void {
     const st = this.st;
     const w = g.faza;
     if (w !== 'idzie' && w !== 'brama' && w !== 'w_srodku' && w !== 'zlapany') return;
     if (bezLupu && g.ukradl > 0) {
-      const zl = m.find((p) => p.id === g.zl) ?? m[0];
-      this.kladzJedzenie(this.tileOf(zl), g.ukradl);
+      // łup z worka kradnącego wraca na ziemię przy nim
+      const zl = m.find((p) => p.id === g.zl);
+      if (zl) this.dropSack(zl);
       g.ukradl = 0;
     }
     if (g.krad) g.krad = 'koniec';
@@ -6876,57 +6890,25 @@ export class Sim {
     g.faza = 'w_srodku';
     g.at = st.tick;
     if (g.krad) g.krad = 'koniec';
+    const h = this.house;
+    const apts = h ? residentApts(st, this.w, h) : [];
     let k = 0;
     for (const p of m) {
       if (zarzad && p === m[0] && awansuj(st, this.w, st.people[p.person].id)) continue;
-      this.goscNaMieszkanca(p, k++);
+      // jak zaproszony sąsiad (przyjmijGospodarstwo), ale po kolei gęsiego zza bramy
+      p.kind = 'resident';
+      this.goscPotrzeby(p);
+      p.path = [];
+      p.pi = 0;
+      p.want = -1;
+      p.wait = st.tick;
+      p.home = this.osadzMieszkanca(p, apts, k++ * ARRIVE_GAP);
     }
-  }
-
-  /** gość zostaje mieszkańcem jak zaproszony sąsiad (przyjmijGospodarstwo): mieszkanie z wolnym łóżkiem albo najmniej
-      zatłoczone, potrzeby, praca przyjścia (drogą zarządu przez bramę, po kolei gęsiego), łóżko w swoim mieszkaniu */
-  private goscNaMieszkanca(p: Pawn, k: number): void {
-    const st = this.st;
-    const h = this.house;
-    const size = this.w.size;
-    p.kind = 'resident';
-    this.goscPotrzeby(p);
-    p.path = [];
-    p.pi = 0;
-    p.want = -1;
-    p.wait = st.tick;
-    const apt = h ? aptFor(st, h, size, residentApts(st, this.w, h)) : -1;
-    p.apt = apt;
-    const tiles: number[] = [];
-    if (h && apt >= 0)
-      for (let i = 0; i < size * size; i++) if (aptAt(h, i) === apt && !this.coreBlocked[i]) tiles.push(i);
-    const at = tiles.length ? tiles[p.id % tiles.length] : this.door;
-    p.home = at;
-    p.job = {
-      t: 'arrive',
-      target: apt,
-      tile: at,
-      phase: 0,
-      from: -1,
-      t0: st.tick,
-      until: st.tick + k * ARRIVE_GAP,
-      order: false,
-      n: 0,
-      what: '',
-    };
-    const bed = h
-      ? st.things.find(
-          (t) => BEDS.has(t.kind) && !t.broken && t.owner < 0 && apt >= 0 && aptAt(h, t.y * size + t.x) === apt,
-        )
-      : undefined;
-    if (bed) bed.owner = p.id;
   }
 
   /** potrzeby gościa: powstają dopiero przy przyjęciu albo ugryzieniu (zakażenie i zdrowie ich wymagają) */
   private goscPotrzeby(p: Pawn): void {
-    if (p.needs) return;
-    p.needs = { food: 60, warm: 50, rest: 60, health: 100, safe: 50, mood: 0 };
-    p.needs.mood = 0.25 * 60 + 0.25 * 50 + 0.15 * 60 + 0.15 * 100 + 0.2 * 50;
+    p.needs ??= potrzebyStartowe(60, 50, 60, 100, 50);
   }
 
   /** ugryziony z planu dostaje zakażenie jak na wyprawie (raz); pionka, którego już nie ma, polecenie nie dotyczy */
@@ -6941,7 +6923,9 @@ export class Sim {
   }
 
   /** Rozkaz zarządu dla grupy (polecenie 'goscrozkaz'). Polecenie, które nie pasuje do fazy (np. `noc` nie pod bramą),
-      nic nie zmienia. `klamie` i `ugryziony` działają w każdej fazie, także po przyjęciu. */
+      nic nie zmienia. `ugryziony` działa zawsze, dopóki żyje ugryziony pionek, także po przyjęciu (kolejność `zostan`
+      i `ugryziony` z jednego wywołania nie ma znaczenia); `klamie` działa do końca albo przyjęcia wizyty (potem nic nie
+      zmienia), przed rozkazem `noc` i po nim tak samo. */
   private goscRozkaz(id: string, co: GoscRozkaz): void {
     const g = this.st.goscie?.find((x) => x.id === id);
     if (!g) return;
@@ -7241,7 +7225,8 @@ export class Sim {
     if (this.st.pawns.includes(p) && !this.graveyard.has(p.id)) this.hurt(p, dmg, null);
   }
 
-  /** łup zabitego szabrownika zostaje na podwórku według rodzaju i przestaje się liczyć jako skradziony */
+  /** łup zabitego szabrownika (albo gościa, który ukradł jedzenie) zostaje na ziemi według rodzaju i przestaje się liczyć
+      jako skradziony */
   private dropSack(p: Pawn): void {
     const st = this.st;
     const size = this.w.size;
@@ -7255,7 +7240,7 @@ export class Sim {
       if (n <= 0) continue;
       if (kind === 'drewno') this.addWood(this.spotNear(this.tileOf(p), n), n);
       else {
-        const at = this.spotNear(this.tileOf(p), 0);
+        const at = this.spotNear(this.tileOf(p), 0, false);
         const t = st.things.find((q) => q.kind === kind && q.x === at % size && q.y === Math.floor(at / size));
         if (t) t.n += n;
         else {
@@ -7264,7 +7249,8 @@ export class Sim {
           st.things.push(heap);
         }
       }
-      if (st.raid) {
+      // rachunek napadu dotyczy tylko szabrowników (łup gościa z jedzeniem nie jest łupem napadu)
+      if (st.raid && p.kind === 'szabrownik') {
         st.raid.took[k] = Math.max(0, st.raid.took[k] - n);
         st.raid.loot[k] = Math.max(0, st.raid.loot[k] - n);
       }
@@ -7361,7 +7347,8 @@ export class Sim {
     if (modeOf(st) === 'zombie') body.fuel = tick + RISE_TICKS;
     st.things.push(body);
     if (STRANGER_KINDS.has(p.kind) || odchodzil) {
-      st.tally!.killed++;
+      // goście z klocków nie są wrogami: licznik zabitych (raport „Zabitych szwendaczy”) ich nie liczy
+      if (p.kind !== 'gosc') st.tally!.killed++;
       if (by?.needs) this.addMood(by, 'Zabiłem człowieka', -6, TICKS_PER_DAY);
       if (p.kind === 'handlarz') this.traderKilled(p, by);
       return;
@@ -9558,6 +9545,41 @@ export class Sim {
     return ((a % size) - (b % size)) ** 2 + (Math.floor(a / size) - Math.floor(b / size)) ** 2;
   }
 
+  /** Pionek zostaje mieszkańcem siedziby (zaproszony sąsiad, przyjęty gość): mieszkanie z wolnym łóżkiem albo najmniej
+      zatłoczone (`aptFor`), praca przyjścia do kafelka w tym mieszkaniu (po `gap` ticków, żeby przychodzili gęsiego) i
+      łóżko w tym mieszkaniu, gdy jest wolne. Rodzaj `resident` i potrzeby ustawia wołający. Zwraca kafelek mieszkania
+      (bez mieszkania: drzwi siedziby). */
+  private osadzMieszkanca(q: Pawn, apts: readonly number[], gap: number): number {
+    const st = this.st;
+    const h = this.house;
+    const size = this.w.size;
+    const apt = h ? aptFor(st, h, size, apts) : -1;
+    q.apt = apt;
+    const tiles: number[] = [];
+    if (h && apt >= 0)
+      for (let i = 0; i < size * size; i++) if (aptAt(h, i) === apt && !this.coreBlocked[i]) tiles.push(i);
+    const at = tiles.length ? tiles[q.id % tiles.length] : this.door;
+    q.job = {
+      t: 'arrive',
+      target: apt,
+      tile: at,
+      phase: 0,
+      from: -1,
+      t0: st.tick,
+      until: st.tick + gap,
+      order: false,
+      n: 0,
+      what: '',
+    };
+    const bed = h
+      ? st.things.find(
+          (t) => BEDS.has(t.kind) && !t.broken && t.owner < 0 && apt >= 0 && aptAt(h, t.y * size + t.x) === apt,
+        )
+      : undefined;
+    if (bed) bed.owner = q.id;
+    return at;
+  }
+
   /** Zaproszeni idą do siedziby: ich pionki stają się mieszkańcami z osobami i idą drogą zarządu przez bramę do
       mieszkania z wolnym łóżkiem (albo najmniej zatłoczonego), jak przybysze. Ich mieszkanie zostaje puste z zapasami. */
   private przyjmijGospodarstwo(sp: Spotkanie, g: Gospodarstwo): void {
@@ -9588,7 +9610,6 @@ export class Sim {
       this.schowajLokatorow(sp.b, sp.dom);
       return;
     }
-    const size = this.w.size;
     const apts = residentApts(st, this.w, h);
     // tryb zombie: ukryty ugryziony zostaje, gdy zarząd o niego zapytał, a bez pytania przychodzi z gorączką
     const bitten = g.ugryziony !== undefined ? g.pionki?.[g.ugryziony] : undefined;
@@ -9600,29 +9621,8 @@ export class Sim {
         continue;
       }
       q.kind = 'resident';
-      const apt = aptFor(st, h, size, apts);
-      q.apt = apt;
-      q.needs = { food: 60, warm: 50, rest: 60, health: 100, safe: 50, mood: 0 };
-      q.needs.mood = 0.25 * 60 + 0.25 * 50 + 0.15 * 60 + 0.15 * 100 + 0.2 * 50;
-      const tiles: number[] = [];
-      for (let i = 0; i < size * size; i++) if (apt >= 0 && aptAt(h, i) === apt && !this.coreBlocked[i]) tiles.push(i);
-      const at = tiles.length ? tiles[q.id % tiles.length] : this.door;
-      q.job = {
-        t: 'arrive',
-        target: apt,
-        tile: at,
-        phase: 0,
-        from: -1,
-        t0: st.tick,
-        until: st.tick,
-        order: false,
-        n: 0,
-        what: '',
-      };
-      const bed = st.things.find(
-        (t) => BEDS.has(t.kind) && !t.broken && t.owner < 0 && apt >= 0 && aptAt(h, t.y * size + t.x) === apt,
-      );
-      if (bed) bed.owner = q.id;
+      q.needs = potrzebyStartowe(60, 50, 60, 100, 50);
+      this.osadzMieszkanca(q, apts, 0);
       if (id === bitten) {
         // gorączka od kilku godzin: umrze i wstanie jeszcze tej doby, chyba że ktoś zdąży z amputacją albo go dobije
         infect(st, q, true);
