@@ -148,11 +148,11 @@ describe('badania: technologia końcowa i ery', () => {
 });
 
 describe('badania: koszt', () => {
-  it('mnożnik ery 1 i 2 jest równy 1, więc koszt jak w 0.3', () => {
+  it('era 1 kosztuje jak w 0.3, a era 2 o 30% więcej (strojenie botem, zadanie 11 planu)', () => {
     expect(KOSZT_ERY[1]).toBe(1);
-    expect(KOSZT_ERY[2]).toBe(1);
+    expect(KOSZT_ERY[2]).toBe(1.3);
     expect(kosztTech('t_okna')).toBe(12);
-    expect(kosztTech('t_wezel')).toBe(35);
+    expect(kosztTech('t_wezel')).toBe(35 * 1.3);
   });
 
   it('koszt to koszt z TECH razy mnożnik ery, a dla technologii końcowej 150 razy mnożnik ery 6', () => {
@@ -160,8 +160,8 @@ describe('badania: koszt', () => {
     expect(kosztTech('t_siec')).toBe(150 * KOSZT_ERY[6]);
   });
 
-  it('mnożniki zaczynają od wartości z planu i nie maleją z erą', () => {
-    expect(KOSZT_ERY).toEqual({ 1: 1, 2: 1, 3: 1.5, 4: 2, 5: 2.5, 6: 3 });
+  it('mnożniki: ery 1–2 z pomiaru bota, ery 3–6 wstępne z planu, i nie maleją z erą', () => {
+    expect(KOSZT_ERY).toEqual({ 1: 1, 2: 1.3, 3: 1.5, 4: 2, 5: 2.5, 6: 3 });
     for (let nr = 2; nr <= 6; nr++) expect(KOSZT_ERY[nr]).toBeGreaterThanOrEqual(KOSZT_ERY[nr - 1]);
   });
 

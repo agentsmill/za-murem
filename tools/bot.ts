@@ -17,7 +17,14 @@
    Z flagą --sasiedzi na końcu dochodzi fala 2 M2: gracz fali 1, a od dnia 2 jedna osoba u sąsiadów (otwiera najbliższy
    budynek, przeszukuje pomieszczenia i piętra, nosi łup, rozmawia z lokatorami); liczy, ile u nich zrobiła, spotkania,
    rany i ugryzienia, zapasy po 5 dniach i głód. Bez flagi wyjście i skróty bez zmian.
-   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi] */
+   Z flagą --badania bot robi tylko pomiar tempa badań (tools/bot-badania.ts) zamiast reszty: gra z zarządem przez pierwszą
+   zimę na ziarnach 1–5 (albo jednym podanym jako pierwszy argument; drugi argument to liczba dni, domyślnie 21), z polityką
+   badań gracza i bez niej, i wypisuje dzień każdej technologii, liczbę technologii w dniu 11 i 16, zgony, jedzenie,
+   drewno i temperatury zimy. Wolno jej dołożyć --mieszkancy (wzorzec tempa), --demo=NAZWA (przymorze, lanciego,
+   zielonki), --sasiedzi (wyprawy do sąsiadów) i --jedzenie (jedzenie z niczego, bez głodu zimy). Bez flagi wyjście i skróty
+   bez zmian.
+   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi]
+                 npm run bot -- --badania [ziarno [dni]] [--mieszkancy] [--demo=NAZWA] [--sasiedzi] [--jedzenie] */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,9 +50,26 @@ import {
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
 import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
-import { ARGUMENTY, MIESZKANCY, opisMieszkancow, SASIEDZI, swiatMieszkancow, tylkoZombie } from './bot-mieszkancy.ts';
+import { pomiarBadan } from './bot-badania.ts';
+import {
+  ARGUMENTY,
+  BADANIA,
+  bezBadan,
+  MIESZKANCY,
+  opisMieszkancow,
+  SASIEDZI,
+  swiatMieszkancow,
+  tylkoZombie,
+} from './bot-mieszkancy.ts';
 
-tylkoZombie('bot');
+tylkoZombie('bot', BADANIA);
+bezBadan('bot', true);
+// --badania: sam pomiar tempa badań, bez reszty bota (pierwszy argument to ziarno, drugi liczba dni)
+if (BADANIA) {
+  const ziarno = Number(ARGUMENTY[0]);
+  await pomiarBadan(ziarno ? [ziarno] : [1, 2, 3, 4, 5], Number(ARGUMENTY[1]) || 21);
+  process.exit(0);
+}
 const SEED = Number(ARGUMENTY[0]) || 1;
 const DAYS = Number(ARGUMENTY[1]) || 45;
 const CROWD = Number(ARGUMENTY[2]) || 0;
