@@ -1,6 +1,8 @@
 /* Świat gry: siatka 1 m wokół adresu, zbudowana z geometrii OSM.
    Kolejność: obrót mapy, prostowanie budynków, teren, wody, ścieżki, chodniki, jezdnie,
    budynki, drzewa, wnętrze siedziby, suche drzewo z trzepakiem, siatka z bramą wokół podwórka.
+   Teren, wody, ścieżki, chodniki, jezdnie, budynki i przejścia przez budynki (kroki 1–5a) robi `rastrujTeren`, wspólny
+   z kwadratami miasta (src/world/kwadraty.ts): ta sama geometria na oknie przesuniętym o wielokrotność boku.
    Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. W grze sieciowej świat może dostać listę
    budynków zajętych przez inne drużyny (bezSiedziby, klucze z klucze.ts): siedzibą zostaje wtedy najbliższy wolny
    budynek mieszkalny; bez tej opcji świat jest taki jak zawsze. Świat nie zależy od języka (nazwy budynków zostają
@@ -172,12 +174,36 @@ export interface BuildOpts {
   bezSiedziby?: readonly string[];
 }
 
-export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
-  const size = opts.size ?? SIZE;
-  const half = size / 2;
+/** wynik rastrowania terenu okna: tablice kafelków i budynki, które w oknie zostały (numer budynku to pozycja w kept) */
+export interface Raster {
+  terr: Uint8Array;
+  /** numer budynku (pozycja w kept) albo −1 */
+  bid: Int32Array;
+  /** 1 = nie da się przejść (budynki i woda) */
+  blocked: Uint8Array;
+  kept: { b: GeoBuilding; area: number; tiles: number[] }[];
+}
+
+export interface OpcjeRastra {
+  /** okno kwadratu poza domem: skrawek budynku przy granicy okna (jeden albo dwa kafelki w oknie) zostaje, jeśli cały
+      budynek ma co najmniej 3 kafelki, czyli reszta leży w sąsiednim kwadracie (projekt: „Skrawek budynku mniejszy niż
+      3 kafelki zostaje budynkiem, jeśli cały budynek ma ich więcej”). Kafelki zajęte przez większy budynek nie liczą się
+      do mniejszego, jak w oknie, więc przykryty okruch odpada w każdym oknie tak samo. Bez tego (dom) budynek potrzebuje
+      co najmniej 3 kafelków w oknie. Przesunięcie okna ma być całkowite. */
+  skrawki?: boolean;
+}
+
+/** budynek rozleglejszy (w metrach) niż to ma w oknie z jednym albo dwoma kafelkami zostać jako skrawek bez liczenia */
+const MAX_SKRAWEK = 512;
+
+/** Kroki 1–5a budowy świata na oknie size×size przesuniętym o (ox, oy) metrów względem środka geo (kafelek (i, j) ma
+    środek w (i − size/2 + ½ + ox, j − size/2 + ½ + oy)): obszary, cieki, ścieżki i chodniki z OSM, chodniki wzdłuż ulic,
+    jezdnie, budynki (większe pierwsze, kafelek należy do pierwszego, który go zajął), przejścia przez budynki i woda,
+    która blokuje. Geo ma być już obrócone i wyprostowane (rotateGeo, straighten). Dla domu (0, 0) i bez opcji to dokładnie
+    to, co buildWorld robił sam; dla kwadratu (sx, sy) okno przesuwa się o (sx·size, sy·size), więc sąsiednie okna
+    schodzą się bez przerwy, bo każde rastruje tę samą geometrię. */
+export function rastrujTeren(geo: Geo, size: number, ox: number, oy: number, opts?: OpcjeRastra): Raster {
   const N = size * size;
-  const angle = dominantAngle(geoIn, half);
-  const geo = straighten(rotateGeo(geoIn, angle));
   const terr = new Uint8Array(N);
   const blocked = new Uint8Array(N);
   const bid = new Int32Array(N).fill(-1);
@@ -187,33 +213,54 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
 
   // 1. teren z obszarów
   const areas = geo.a.slice().sort((p, q) => AREA_ORDER[p.k] - AREA_ORDER[q.k]);
-  for (const a of areas) fillRing(a.p, size, set(AREA_T[a.k]));
+  for (const a of areas) fillRing(a.p, size, set(AREA_T[a.k]), ox, oy);
   // 2. cieki wodne
-  for (const w of geo.w) stampLine(w.l, 4, size, set(T.WATER));
+  for (const w of geo.w) stampLine(w.l, 4, size, set(T.WATER), ox, oy);
   // 3. ścieżki i chodniki z OSM
   for (const r of geo.r) {
     const h = roadClass(r.h);
     if (PAVED_FOOT[h])
-      stampLine(r.l, PAVED_FOOT[h], size, (i) => {
-        if (terr[i] !== T.WATER) terr[i] = T.SIDEWALK;
-      });
+      stampLine(
+        r.l,
+        PAVED_FOOT[h],
+        size,
+        (i) => {
+          if (terr[i] !== T.WATER) terr[i] = T.SIDEWALK;
+        },
+        ox,
+        oy,
+      );
     else if (DIRT_FOOT[h])
-      stampLine(r.l, DIRT_FOOT[h], size, (i) => {
-        if (terr[i] !== T.WATER && terr[i] !== T.SIDEWALK) terr[i] = T.PATH;
-      });
+      stampLine(
+        r.l,
+        DIRT_FOOT[h],
+        size,
+        (i) => {
+          if (terr[i] !== T.WATER && terr[i] !== T.SIDEWALK) terr[i] = T.PATH;
+        },
+        ox,
+        oy,
+      );
   }
   // 4. chodniki wzdłuż ulic (po 2 m z każdej strony), potem jezdnie
   for (const r of geo.r) {
     const h = roadClass(r.h);
     if (!SIDEWALK_ROADS.has(h)) continue;
-    stampLine(r.l, ROAD_W[h] + 4, size, (i) => {
-      const t = terr[i];
-      if (t === T.GRASS || t === T.PARK || t === T.WOOD || t === T.PATH) terr[i] = T.SIDEWALK;
-    });
+    stampLine(
+      r.l,
+      ROAD_W[h] + 4,
+      size,
+      (i) => {
+        const t = terr[i];
+        if (t === T.GRASS || t === T.PARK || t === T.WOOD || t === T.PATH) terr[i] = T.SIDEWALK;
+      },
+      ox,
+      oy,
+    );
   }
   for (const r of geo.r) {
     const w = ROAD_W[roadClass(r.h)];
-    if (w) stampLine(r.l, w, size, set(T.ROAD));
+    if (w) stampLine(r.l, w, size, set(T.ROAD), ox, oy);
   }
   // 5. budynki: najpierw większe, kafelek należy do pierwszego budynku, który go zajął
   const order = geo.b
@@ -224,17 +271,75 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   order.forEach((o, k) => {
     const list: number[] = [];
     for (const ring of [o.b.p, ...(o.b.pp || [])])
-      fillRing(ring, size, (i) => {
-        if (owner[i] === -1) {
-          owner[i] = k;
-          list.push(i);
-        }
-      });
+      fillRing(
+        ring,
+        size,
+        (i) => {
+          if (owner[i] === -1) {
+            owner[i] = k;
+            list.push(i);
+          }
+        },
+        ox,
+        oy,
+      );
     tilesOf.push(list);
   });
-  const kept: { b: GeoBuilding; area: number; tiles: number[] }[] = [];
+  // skrawki: ile kafelków budynek k zająłby w całości, bez przycięcia do okna, przy tej samej kolejności zajmowania
+  // kafelków (większe budynki pierwsze). Liczone w małym oknie wokół budynku, tylko dla budynków z jednym albo dwoma
+  // kafelkami w oknie. Budynek rozleglejszy niż MAX_SKRAWEK to na pewno prawdziwy budynek, nie okruch.
+  const ramki: ([number, number, number, number] | undefined)[] = [];
+  const ramka = (k: number) => {
+    let r = ramki[k];
+    if (!r) {
+      let a = Number.POSITIVE_INFINITY;
+      let b = Number.NEGATIVE_INFINITY;
+      let c = Number.POSITIVE_INFINITY;
+      let d = Number.NEGATIVE_INFINITY;
+      for (const ring of [order[k].b.p, ...(order[k].b.pp || [])])
+        for (const [x, y] of ring) {
+          if (x < a) a = x;
+          if (x > b) b = x;
+          if (y < c) c = y;
+          if (y > d) d = y;
+        }
+      r = ramki[k] = [a, b, c, d];
+    }
+    return r;
+  };
+  const kafelkowWCalosci = (k: number): number => {
+    const [bx0, bx1, by0, by1] = ramka(k);
+    const bok = Math.max(bx1 - bx0, by1 - by0);
+    if (bok > MAX_SKRAWEK) return Number.POSITIVE_INFINITY;
+    const sizeL = 2 * Math.ceil(bok / 2 + 2);
+    const hL = sizeL / 2;
+    // środek okna lokalnego na kratce okna głównego (przesunięcie o całą liczbę metrów od ox, oy)
+    const oxL = ox + Math.round((bx0 + bx1) / 2 - ox);
+    const oyL = oy + Math.round((by0 + by1) / 2 - oy);
+    const lok = new Int32Array(sizeL * sizeL).fill(-1);
+    for (let q = 0; q <= k; q++) {
+      const [a, b, c, d] = ramka(q);
+      if (b < oxL - hL || a > oxL + hL || d < oyL - hL || c > oyL + hL) continue;
+      for (const ring of [order[q].b.p, ...(order[q].b.pp || [])])
+        fillRing(
+          ring,
+          sizeL,
+          (i) => {
+            if (lok[i] === -1) lok[i] = q;
+          },
+          oxL,
+          oyL,
+        );
+    }
+    let n = 0;
+    for (let i = 0; i < lok.length; i++) if (lok[i] === k) n++;
+    return n;
+  };
+  const kept: Raster['kept'] = [];
   order.forEach((o, k) => {
-    if (tilesOf[k].length >= 3) kept.push({ b: o.b, area: o.area, tiles: tilesOf[k] });
+    const n = tilesOf[k].length;
+    if (n >= 3 || (opts?.skrawki && n >= 1 && kafelkowWCalosci(k) >= 3))
+      kept.push({ b: o.b, area: o.area, tiles: tilesOf[k] });
   });
   kept.forEach((o, id) => {
     for (const i of o.tiles) {
@@ -246,17 +351,35 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   // 5a. przejścia przez budynki (bramy, prześwity): wycięte w budynku jako chodnik albo jezdnia
   for (const r of geo.pass || []) {
     const car = r.h === 'service' || r.h === 'residential';
-    stampLine(r.l, car ? 3.5 : 2.5, size, (i) => {
-      if (bid[i] < 0) return;
-      bid[i] = -1;
-      blocked[i] = 0;
-      terr[i] = car ? T.ROAD : T.SIDEWALK;
-    });
+    stampLine(
+      r.l,
+      car ? 3.5 : 2.5,
+      size,
+      (i) => {
+        if (bid[i] < 0) return;
+        bid[i] = -1;
+        blocked[i] = 0;
+        terr[i] = car ? T.ROAD : T.SIDEWALK;
+      },
+      ox,
+      oy,
+    );
   }
   kept.forEach((o, id) => {
     o.tiles = o.tiles.filter((i) => bid[i] === id);
   });
   for (let i = 0; i < N; i++) if (terr[i] === T.WATER) blocked[i] = 1;
+  return { terr, bid, blocked, kept };
+}
+
+export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
+  const size = opts.size ?? SIZE;
+  const half = size / 2;
+  const N = size * size;
+  const angle = dominantAngle(geoIn, half);
+  const geo = straighten(rotateGeo(geoIn, angle));
+  // 1–5a. teren, wody, ścieżki, chodniki, jezdnie, budynki i przejścia przez budynki (wspólny rdzeń z kwadratami miasta)
+  const { terr, bid, blocked, kept } = rastrujTeren(geo, size, 0, 0);
 
   // 6. miejsca: punkt w budynku albo najbliższy budynek do 6 m (też dla rodzajów punktów: muzeum, teatr, hotel…)
   const budynekPunktu = (px: number, py: number): number => {
