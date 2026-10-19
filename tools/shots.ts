@@ -11,11 +11,14 @@ import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { stworzSerwer } from '../server/app.ts';
 import type { ZajetaKlatka } from '../src/net/protokol.ts';
+import { LOOKI } from '../src/render/art/lookBudynku.ts';
 import { nazwaBudynkuEn } from '../src/world/classify.en.ts';
 import { klatkiBudynku, kluczBudynku } from '../src/world/klucze.ts';
 import { toGeoT } from '../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS } from '../src/world/world.ts';
+import { atrapaBudynki, srodekKafelki } from '../tests/unit/atrapa-budynki.ts';
 import { ADDRESSES, decodedTiles } from '../tests/unit/fixtures.ts';
+import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
@@ -42,6 +45,48 @@ interface Shot {
 }
 
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
+
+/**
+ * Zrzuty budynków z PixelLab (M3) na atrapie mapy z każdym z 11 wyglądów (tests/unit/atrapa-budynki.ts): dema nie mają
+ * takich budynków. Atrapa idzie jako demo „atrapa-budynki” podstawione przez Playwright, bez pliku w public/demo.
+ * Kadry w kafelkach świata (metry plus 192): kamienice i budynki publiczne przy pierwszej ulicy, hotel, szpital,
+ * kościół, willa i remiza przy drugiej; każdy wygląd z bliska, a do tego widoki z daleka, nocą i na telefonie.
+ */
+function budynkiZrzuty(): Shot[] {
+  const { budynki } = atrapaBudynki();
+  const kadr = (name: string, cam: string, extra = '', w?: number, h?: number): Shot => ({
+    name,
+    query: '',
+    w,
+    h,
+    run: async (page, base) => {
+      await podstawAtrape(page);
+      await page.goto(`${base}?demo=${DEMO_ATRAPA}&speed=0&cam=${cam}${extra}`);
+      await waitIdle(page);
+    },
+  });
+  const szer = (look: string) => budynki.filter((b) => b.look === look);
+  const kam = szer('kamienica');
+  const xKam = (kam[0].x0 + kam[kam.length - 1].x1) / 2 + 192;
+  const yKam = kam[0].y1 - 10 + 192;
+  const teatr = szer('teatr')[0];
+  const [xTeatr, yTeatr] = srodekKafelki(teatr);
+  const out: Shot[] = [
+    kadr('budynki-calosc', 'all'),
+    kadr('budynki-kamienice', `${xKam},${yKam},0.8`),
+    kadr('budynki-ulica-publiczna', `${192 + 50},${192 - 16},0.45`),
+    kadr('budynki-ulica-druga', `${192 + 17},${192 + 46},0.5`),
+    kadr('budynki-noc', `${192 + 50},${192 - 16},0.7`, '&godzina=22&swiatla=test'),
+    kadr('budynki-telefon', `${xTeatr},${yTeatr + 3},0.6`, '', 390, 844),
+    kadr('budynki-noc-telefon', `${xTeatr},${yTeatr + 3},0.6`, '&godzina=22&swiatla=test', 390, 844),
+  ];
+  for (const look of LOOKI) {
+    if (look === 'kamienica') continue;
+    const [x, y] = srodekKafelki(szer(look)[0]);
+    out.push(kadr(`budynki-${look}`, `${x},${y + 3},1.3`));
+  }
+  return out;
+}
 
 /** karta startowa: dół akapitu z atrybucją mapy i linku do źródeł danych mieszkańców (wypisane; sprawdza wołający) */
 async function atrybucjaStartu(page: Page) {
@@ -5248,6 +5293,7 @@ const SHOTS: Shot[] = [
   { name: 'kotwica-wysoki-blok', query: '', run: kotwicaWysokiBlok },
   { name: 'kotwica-tlum', query: '', run: kotwicaTlum },
   { name: 'kotwica-arkusz', query: '', run: (page) => kotwicaArkusz(page) },
+  ...budynkiZrzuty(),
   {
     // bez public/assets (404) gra startuje i rysuje wszystko kodem, jak przed grafiką z PixelLab
     name: 'grafika-zapas',

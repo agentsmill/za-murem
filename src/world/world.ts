@@ -18,6 +18,7 @@ import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { kluczBudynku } from './klucze.ts';
 import { fillRing, stampLine } from './raster.ts';
+import type { RodzajPunktu } from './rodzaje.ts';
 import { dominantAngle, rotateGeo, straighten } from './rotate.ts';
 import { T } from './terrain.ts';
 import { placeWrecks, type Wreck } from './wrecks.ts';
@@ -53,6 +54,9 @@ export interface WorldBuilding {
   x1: number;
   y1: number;
   cats: string[];
+  /** rodzaje punktów w budynku (muzeum, teatr, hotel…), osobno od `cats`: nie zmieniają klasy, tylko wygląd; pola
+      nie ma, gdy w budynku ani przy nim nie ma żadnego takiego punktu (src/world/rodzaje.ts) */
+  rodzaje?: RodzajPunktu[];
   entrances: Entrance[];
   tags: Record<string, string>;
   /** identyfikator OSM budynku („w123” droga, „r45” relacja), gdy źródło go podaje: Overpass zawsze, kafelki
@@ -254,14 +258,11 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
   });
   for (let i = 0; i < N; i++) if (terr[i] === T.WATER) blocked[i] = 1;
 
-  // 6. miejsca: punkt w budynku albo najbliższy budynek do 6 m
-  const pois = geo.poi;
-  const catsOf: Set<string>[] = kept.map(() => new Set());
-  const namedOf: (string | null)[] = kept.map(() => null);
-  for (const p of pois) {
-    const tx = Math.floor(p.x + half);
-    const ty = Math.floor(p.y + half);
-    if (tx < 0 || ty < 0 || tx >= size || ty >= size) continue;
+  // 6. miejsca: punkt w budynku albo najbliższy budynek do 6 m (też dla rodzajów punktów: muzeum, teatr, hotel…)
+  const budynekPunktu = (px: number, py: number): number => {
+    const tx = Math.floor(px + half);
+    const ty = Math.floor(py + half);
+    if (tx < 0 || ty < 0 || tx >= size || ty >= size) return -1;
     let b = bid[ty * size + tx];
     if (b < 0) {
       let bd = 6.5;
@@ -278,10 +279,23 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
           }
         }
     }
+    return b;
+  };
+  const pois = geo.poi;
+  const catsOf: Set<string>[] = kept.map(() => new Set());
+  const namedOf: (string | null)[] = kept.map(() => null);
+  for (const p of pois) {
+    const b = budynekPunktu(p.x, p.y);
     if (b >= 0) {
       catsOf[b].add(p.c);
       if (p.n && !namedOf[b]) namedOf[b] = p.n;
     }
+  }
+  // rodzaje punktów osobno od kategorii: kategorie zmieniają classify(), rodzaje tylko wygląd budynku
+  const rodzajeOf: Set<RodzajPunktu>[] = kept.map(() => new Set());
+  for (const p of geo.rodzaje ?? []) {
+    const b = budynekPunktu(p.x, p.y);
+    if (b >= 0) rodzajeOf[b].add(p.k);
   }
 
   // 7. opis budynków
@@ -302,6 +316,7 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
     }
     const area = Math.max(o.area, o.tiles.length * 0.9);
     const cats = [...catsOf[id]];
+    const rodzaje = [...rodzajeOf[id]].sort();
     const cls = classify(o.b, area, cats);
     counters[cls] = (counters[cls] || 0) + 1;
     return {
@@ -320,6 +335,7 @@ export function buildWorld(geoIn: Geo, opts: BuildOpts): World {
       tags: o.b.t,
       ...(o.b.t.id ? { osmId: o.b.t.id } : {}),
       ...(o.b.t.start_date ? { startDate: o.b.t.start_date } : {}),
+      ...(rodzaje.length ? { rodzaje } : {}),
     };
   });
 
