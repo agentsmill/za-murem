@@ -6,7 +6,12 @@
    Opcja `miasto` (mapa miasta, docs/superpowers/specs/2026-10-18-mapa-miasta-design.md) włącza ją w zarządzie jak gra
    (`wlaczMiasto`), daje zarządowi miejsca z okolicy w każdym wejściu (`GovInput.okolica`, także w odpowiedziach na okna)
    i wpina gracza wypraw dziennych (tests/unit/miasto-play.ts): jego `krok` idzie co sekundę przy ekranie po oknach
-   zarządu, a `po` dostaje skutki każdego kroku zarządu. Bez opcji nic się nie zmienia (te same skróty co przed mapą). */
+   zarządu, a `po` dostaje skutki każdego kroku zarządu. Bez opcji nic się nie zmienia (te same skróty co przed mapą).
+
+   Opcja `zwyciestwo` (warunki zwycięstwa, docs/superpowers/specs/2026-10-19-warunki-zwyciestwa-design.md) włącza drogi
+   w zarządzie jak gra (`wlaczZwyciestwo`), podaje w każdym wejściu ludność kwadratu domu z 2021 roku
+   (`GovInput.ludnosc2021`, w grze z `ludnoscSpisu2021`) i woła `po` po każdym kroku zarządu. Bez opcji zarząd nie ma
+   stanu zwycięstwa i skróty są takie jak przed drogami. */
 
 import { raidersOf } from '../../src/gov/noc.ts';
 import type { GovEffects, GovInput, GovState, NightReport, Prompt } from '../../src/gov/typy.ts';
@@ -22,7 +27,7 @@ import {
   setNight,
   signLaw,
 } from '../../src/gov/zarzad.ts';
-import { grajDalej } from '../../src/gov/zwyciestwo.ts';
+import { grajDalej, wlaczZwyciestwo } from '../../src/gov/zwyciestwo.ts';
 import { dayOf, hourOf, minutesAt, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { applyGov, govInput, lawsFrom } from '../../src/sim/gov.ts';
 import { dryTreeOf } from '../../src/sim/house.ts';
@@ -86,6 +91,16 @@ export interface MiastoOpts {
   po?: (fx: GovEffects, i: GovInput) => void;
 }
 
+/** drogi do zwycięstwa w grze z zarządem (flaga --zwyciestwo botów): zarząd z `wlaczZwyciestwo` jak w grze */
+export interface ZwyciestwoOpts {
+  /** ilu ludzi mieszkało w kwadracie domu w 2021 roku (`GovInput.ludnosc2021`, w grze z `ludnoscSpisu2021`); bez pola
+      cel drogi ludnościowej to 250 */
+  ludnosc2021?: number;
+  /** po każdym kroku zarządu (co sekundę przy ekranie): stan zarządu, wejście, z którego go policzono, i skutki kroku
+      (w nich nowe wpisy kroniki, których sam stan nie zachowa: kronika trzyma 300 ostatnich) */
+  po?: (gov: GovState, i: GovInput, fx: GovEffects) => void;
+}
+
 export interface PlayOpts {
   /** dyżur przy kozie każdej nocy: najbardziej wypoczęty z tych, którzy śpią */
   koza?: boolean;
@@ -100,6 +115,9 @@ export interface PlayOpts {
   /** mapa miasta (flaga --miasto botów): zarząd z `wlaczMiasto`, okolicą w wejściu i graczem wypraw dziennych; bez
       opcji zarząd nie ma stanu miasta i gra na TARGETS jak przed mapą miasta */
   miasto?: MiastoOpts;
+  /** drogi do zwycięstwa (flaga --zwyciestwo botów): zarząd z `wlaczZwyciestwo`, `ludnosc2021` w wejściu i `po` po każdym
+      kroku; bez opcji zarząd nie ma stanu zwycięstwa i gra jak przed drogami */
+  zwyciestwo?: ZwyciestwoOpts;
 }
 
 /** poranek wartownika po nocy na posterunku (6:00–14:00): najedzenie i siły o 6:00, godzina pierwszego posiłku
@@ -250,9 +268,13 @@ export function playWithGov(
   // mapa miasta jak w grze (main.ts): stan miasta w zarządzie od początku, okolica w każdym wejściu
   const miasto = opts.miasto;
   if (miasto) wlaczMiasto(gov);
+  // drogi do zwycięstwa jak w grze (main.ts): stan od początku, ludność z 2021 roku w każdym wejściu
+  const zw = opts.zwyciestwo;
+  if (zw) wlaczZwyciestwo(gov);
   const input = (s: number): GovInput => {
     const i = govInput(st, w, s);
     if (miasto) i.okolica = miasto.okolica;
+    if (zw?.ludnosc2021 !== undefined) i.ludnosc2021 = zw.ludnosc2021;
     return i;
   };
   const decisions: Decision[] = [];
@@ -291,6 +313,7 @@ export function playWithGov(
     const fxu = govUpdate(gov, iu);
     apply(st, w, fxu);
     miasto?.po?.(fxu, iu);
+    zw?.po?.(gov, iu, fxu);
     // jawny wynik napadu: zgadza się z planem (ilu ich jest) i ze snem warty na ekranie?
     const res = fxu.raidResult;
     if (res && night) {

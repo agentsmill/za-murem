@@ -21,11 +21,19 @@
    niewyczerpanego miejsca z okolicy poza mapą lokalną (tests/unit/miasto-play.ts: brak jedzenia to sklep spożywczy, brak
    drewna stacja, co trzeci dzień szkoła; jedna wyprawa naraz); liczy wyprawy, łup, rannych, ugryzionych, najdalszą
    wyprawę po dniach i zapasy po 10 dniach obok gry bez wypraw. Bez flagi wyjście i skróty bez zmian.
-   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi] [--miasto] */
+   Z flagą --zwyciestwo na końcu dochodzą warunki zwycięstwa (docs/superpowers/specs/2026-10-19-warunki-zwyciestwa-design.md):
+   gracz fali 1 z drogami włączonymi w zarządzie (`wlaczZwyciestwo`) przez 30 dni na ziarnach zarządu; drukuje po dniach
+   ludność, cel drogi ludnościowej i zaliczone kamienie każdej drogi (pierwsze ziarno dzień po dniu, potem podsumowanie
+   wszystkich) i sprawdza, że kamienie nie maleją, każdy ma jeden wpis w kronice, licznik celu nie przekracza 7 dni, a ta sama
+   droga nie wygrywa dwa razy. Cel ludności liczy się jak w grze: z ludności kwadratu domu z 2021 roku z tabel mieszkańców
+   (`ludnoscDema` w tools/bot-mieszkancy.ts, jak `ludnoscSpisu2021` w main.ts), a bez tabel to 250, co nagłówek sekcji
+   mówi wprost. Bez flagi wyjście i skróty bez zmian.
+   Uruchomienie: npm run bot [-- ziarno [dni [tłum]]] [--mieszkancy] [--sasiedzi] [--miasto] [--zwyciestwo] */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { nextRandom } from '../src/core/rng.ts';
+import { celLudnosci, DROGI, type Droga, ocenDrogi } from '../src/gov/zwyciestwo.ts';
 import { BUILDS, type Mat } from '../src/sim/budowle.ts';
 import { clockOf, dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { dryTreeOf, houseOf, inHomeApt } from '../src/sim/house.ts';
@@ -51,12 +59,14 @@ import { miastoPlayer, okolicaZGeo } from '../tests/unit/miasto-play.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
 import {
   ARGUMENTY,
+  ludnoscDema,
   MIASTO,
   MIESZKANCY,
   opisMieszkancow,
   SASIEDZI,
   swiatMieszkancow,
   tylkoZombie,
+  ZWYCIESTWO,
 } from './bot-mieszkancy.ts';
 
 tylkoZombie('bot');
@@ -667,5 +677,123 @@ if (MIASTO) {
     console.log(
       `  UWAGA: zarząd z wyprawami ma po ${MIASTO_DAYS} dniach wyraźnie mniej jedzenia (${f1(jedz)} wobec ${f1(jedzBez)}) albo głoduje dłużej (${gl(z)}% wobec ${gl(bez)}%): do strojenia liczb w src/gov/wyprawy.ts`,
     );
+}
+
+/* ---------- warunki zwycięstwa (--zwyciestwo): kamienie dróg po dniach ---------- */
+if (ZWYCIESTWO) {
+  const t5 = performance.now();
+  const ZW_DAYS = 30;
+  const w = govWorld;
+  // cel drogi ludnościowej jak w grze: z ludności kwadratu domu z 2021 roku z tabel mieszkańców, bez tabel 250
+  const spis = await ludnoscDema(demo);
+  const cel = celLudnosci({ ludnosc2021: spis.ludnosc2021 }, 'zwykly');
+  const skadCel = !spis.tabele
+    ? 'BEZ TABEL MIESZKAŃCÓW: brak public/data/mieszkancy/, ludnosc2021 nie podane, cel jak bez danych'
+    : spis.ludnosc2021 === undefined
+      ? 'tabele są, ale spis nic nie dał: ludnosc2021 nie podane, cel jak bez danych'
+      : `połowa z ${spis.ludnosc2021} osób mieszkających w kwadracie domu w 2021 roku, w przedziale 120–500, z tabel mieszkańców`;
+  console.log(
+    `\nWarunki zwycięstwa (--zwyciestwo), ${govName}: ${GOV_SEEDS.length} ziaren × ${ZW_DAYS} dni, gracz fali 1 z przeszukiwaniem, zarząd z włączonymi drogami (wlaczZwyciestwo)`,
+  );
+  console.log(`  cel drogi ludnościowej: ${cel} osób (${skadCel}); potem 7 dni bez głodu przy zaufaniu co najmniej 50`);
+  /** stan na koniec doby: ludzie pod zarządem, cel, kamienie dróg (w kolejności ekranu), licznik celu, zwycięstwa */
+  interface DzienZw {
+    ludzie: number;
+    cel: number;
+    kamienie: number[];
+    dniCelu: number;
+    wygrane: number;
+  }
+  const kolejnosc: Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
+  const zwRuns = GOV_SEEDS.map((seed) => {
+    const m2 = m2Player({ search: true, furniture: true });
+    const dni = new Map<number, DzienZw>();
+    let wpisy = 0;
+    const r = playWithGov(w, seed, 'zawsze-warta', ZW_DAYS, 4, {
+      player: m2.player,
+      zwyciestwo: {
+        ludnosc2021: spis.ludnosc2021,
+        po: (gov, i, fx) => {
+          // wpisy o kamieniach z każdego kroku (kronika w stanie trzyma tylko 300 ostatnich)
+          wpisy += fx.log.filter((t) => t.pl.startsWith('Droga „')).length;
+          const o = ocenDrogi(gov, i);
+          const z = gov.zwyciestwo!;
+          const lud = o.find((d) => d.droga === 'ludnosc')!;
+          // ostatnia obserwacja doby zostaje w mapie
+          dni.set(i.day, {
+            ludzie: lud.postep!.ile,
+            cel: lud.postep!.cel,
+            kamienie: kolejnosc.map((d) => o.find((x) => x.droga === d)!.zaliczone),
+            dniCelu: z.dniCelu,
+            wygrane: z.wygrane.length,
+          });
+        },
+      },
+      ...zAdresu(w),
+    });
+    return { seed, dni, wpisy, gov: r.gov, hunger: r.hunger };
+  });
+  const sumaKamieni = (d: DzienZw) => d.kamienie.reduce((a, b) => a + b, 0);
+  const ostatni = (r: (typeof zwRuns)[number]) => r.dni.get(Math.max(...r.dni.keys()))!;
+  // pierwsze ziarno dzień po dniach (stan na koniec doby; kamienie zaliczone z ilu)
+  const r0 = zwRuns[0];
+  console.log(
+    `  ziarno ${r0.seed}, stan na koniec doby (kamienie zaliczone / wszystkie; dzień 1 zaczyna się o 15:00, ostatni wiersz to koniec biegu o 15:00):`,
+  );
+  console.log(
+    `   dzień  ludność  ${'cel'.padStart(4)}  licznik  ${kolejnosc.map((d) => d.padStart(11)).join(' ')}  zwycięstwa`,
+  );
+  for (const [dzien, d] of [...r0.dni].sort((a, b) => a[0] - b[0]))
+    console.log(
+      `  ${String(dzien).padStart(6)}  ${String(d.ludzie).padStart(7)}  ${String(d.cel).padStart(4)}  ${String(d.dniCelu).padStart(7)}  ${kolejnosc.map((droga, k) => `${d.kamienie[k]}/${DROGI[droga].kamienie.length}`.padStart(11)).join(' ')}  ${String(d.wygrane).padStart(10)}`,
+    );
+  // podsumowanie wszystkich ziaren: ludzie i kamienie ludności po ZW_DAYS dniach, dzień każdego kamienia ludności
+  const ludzie = zwRuns.map((r) => ostatni(r).ludzie);
+  console.log(
+    `  po ${ZW_DAYS} dniach (${GOV_SEEDS.length} ziaren): ludzie średnio ${f1(mean(ludzie))} (od ${Math.min(...ludzie)} do ${Math.max(...ludzie)}) przy celu ${cel}; licznik celu najwyżej ${Math.max(...zwRuns.map((r) => Math.max(...[...r.dni.values()].map((d) => d.dniCelu))))} z 7; zwycięstwa ${zwRuns.reduce((a, r) => a + ostatni(r).wygrane, 0)} w ${zwRuns.length} grach`,
+  );
+  const iLud = kolejnosc.indexOf('ludnosc');
+  const dzienKamienia = (r: (typeof zwRuns)[number], k: number) =>
+    [...r.dni].sort((a, b) => a[0] - b[0]).find(([, d]) => d.kamienie[iLud] > k)?.[0];
+  console.log(
+    `  droga ludnościowa, dzień zaliczenia kamienia (po ziarnach, — gdy nie zaliczono): ${DROGI.ludnosc.kamienie
+      .map((kam, k) => `${kam.pl}: ${zwRuns.map((r) => dzienKamienia(r, k) ?? '—').join(', ')}`)
+      .join('; ')}`,
+  );
+  console.log(
+    `  pozostałe drogi (technologia, teren, lek, cuda) czekają na projekty, na których stoją: kamieni zaliczonych ${kolejnosc
+      .filter((d) => d !== 'ludnosc')
+      .map((d) => `${d} ${zwRuns.reduce((a, r) => a + ostatni(r).kamienie[kolejnosc.indexOf(d)], 0)}`)
+      .join(', ')}`,
+  );
+  const hz = (k: keyof Hunger) => zwRuns.reduce((a, r) => a + r.hunger[k], 0);
+  console.log(
+    `  jedzenie zarządu: rano brakło dla głodnych w ${hz('short')} z ${hz('mornings')} poranków, ktoś głodny przez ${Math.round((100 * hz('starving')) / Math.max(1, hz('samples')))}% czasu (${Math.round(performance.now() - t5)} ms)`,
+  );
+  // zgodność: kamienie nie maleją, każdy ma jeden wpis w kronice, licznik celu do 7, droga wygrywa najwyżej raz
+  for (const r of zwRuns) {
+    const dni = [...r.dni].sort((a, b) => a[0] - b[0]).map(([, d]) => d);
+    const maleja = dni.some((d, k) => k > 0 && d.kamienie.some((n, j) => n < dni[k - 1].kamienie[j]));
+    if (maleja) {
+      console.log(`  BŁĄD: ziarno ${r.seed}: liczba kamieni dróg zmalała między dobami`);
+      fail = true;
+    }
+    const kamieni = sumaKamieni(ostatni(r));
+    if (r.wpisy !== kamieni) {
+      console.log(
+        `  BŁĄD: ziarno ${r.seed}: ${kamieni} kamieni, a w kronice ${r.wpisy} wpisów o kamieniach (ma być po jednym)`,
+      );
+      fail = true;
+    }
+    const z = r.gov.zwyciestwo!;
+    if (dni.some((d) => d.dniCelu > 7) || new Set(z.wygrane.map((x) => x.droga)).size !== z.wygrane.length) {
+      console.log(`  BŁĄD: ziarno ${r.seed}: licznik celu ponad 7 albo ta sama droga wygrała dwa razy`);
+      fail = true;
+    }
+    if (z.epilog) {
+      console.log(`  BŁĄD: ziarno ${r.seed}: epilog czeka po „Graj dalej” bota (${z.epilog})`);
+      fail = true;
+    }
+  }
 }
 if (fail) process.exit(1);

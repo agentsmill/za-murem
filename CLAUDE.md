@@ -62,6 +62,7 @@ npm run build        # typy (tsc z TypeScript 7) + build do dist/ (z dist/v03/)
 npm run bot          # nowa symulacja 45 dni bez przeglądarki [-- ziarno [dni [tłum]]]
 npm run bot -- --mieszkancy         # to samo z zarządem i mieszkańcami siedziby z generatora (tabele z public/data/mieszkancy/)
 npm run bot -- --miasto             # na końcu mapa miasta: od dnia 2 za dnia dwie osoby idą do miejsc z okolicy (gracz z tests/unit/miasto-play.ts); bez flagi wyjście i skróty bez zmian
+npm run bot -- --zwyciestwo         # na końcu warunki zwycięstwa: 30 dni gracza fali 1 z włączonymi drogami, po dniach ludność, cel (z tabel mieszkańców, bez nich 250, nagłówek mówi który) i kamienie dróg; bez flagi wyjście i skróty bez zmian
 npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce [osoby zarządu 1–5]]] [--demo=przymorze|lanciego|zielonki] [--opal]
 npm run bot:zombie -- --mieszkancy  # tryb zombie z mieszkańcami z generatora (flaga w dowolnym miejscu argumentów)
 npm run bot:zombie:siatka  # miara siatki: bot zombie na trzech osiedlach, z mieszkańcami i bez, w której nocy siatka puszcza pierwszy raz [-- 1-6 [noce]] [--opal]

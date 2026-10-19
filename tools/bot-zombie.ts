@@ -48,6 +48,7 @@ import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts
 import {
   ARGUMENTY,
   bezMiasta,
+  bezZwyciestwa,
   DEMO,
   MIESZKANCY,
   OPAL,
@@ -57,6 +58,7 @@ import {
 } from './bot-mieszkancy.ts';
 
 bezMiasta('bot:zombie');
+bezZwyciestwa('bot:zombie');
 
 const SEED = Number(ARGUMENTY[0]) || 1;
 const NIGHTS = Number(ARGUMENTY[1]) || 6;
