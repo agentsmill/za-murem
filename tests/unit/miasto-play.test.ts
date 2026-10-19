@@ -258,6 +258,8 @@ function graj(seed: number) {
       zle.push('wybrani nie są najzdrowsi');
     wyjscia.push({ dzien: i.day, godzina: i.hour, zle });
   };
+  // tylko wyprawy dzienne gracza: karta nocy nie wysyła nikogo (`bezWyprawNocnych`, po wolniejszym zmęczeniu zarząd
+  // ma siły na nocną wyprawę), żeby wizyty w stanie zgadzały się z logiem bota.
   // Karta nocy też wysyła wyprawy do miejsc z okolicy, a ich wizyty trafiają do `miasto.wizyty`, choć log bota liczy
   // tylko jego wyprawy dzienne. Test zakłada, że wizyty pochodzą z wypraw bota, więc zarząd ma robić tylko to, co
   // przed pracą ludzi (src/sim/praca.ts): to praca ludzi (drwal, szaber, noszenie) zmienia zapasy i to, kto wieczorem
@@ -273,6 +275,7 @@ function graj(seed: number) {
   const r = playWithGov(w, seed, 'zawsze-warta', DNI, 4, {
     miasto: { okolica, krok, po: gracz.po },
     player: bezAutomatu,
+    bezWyprawNocnych: true,
   });
   return { r, gracz, wyjscia };
 }

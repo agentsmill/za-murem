@@ -248,16 +248,12 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
       nazwa: nazwaTech(o.id),
       dzialanie: zombie ? (TECH_BY[o.id].dzialanieZombie ?? TECH_BY[o.id].dzialanie) : TECH_BY[o.id].dzialanie,
     }));
-  // kto wychodzi bramą (wyrzucony, odchodzący), dla zarządu już go nie ma: ani osoby, ani mieszkańca
+  // kto wychodzi bramą (wyrzucony, odchodzący), dla zarządu już go nie ma: ani osoby, ani mieszkańca; liczba mieszkańców
+  // z odczytu (`populacja` w src/sim/snapshot.ts) już go pomija, tu znika jeszcze z listy osób i lokatorów
   const odchodza = new Set<number>();
-  let odchodzacyMieszkancy = 0;
-  for (const p of st.pawns)
-    if (p.job?.t === 'odejscie') {
-      odchodza.add(p.id);
-      if (p.kind === 'resident') odchodzacyMieszkancy++;
-    }
+  for (const p of st.pawns) if (p.job?.t === 'odejscie') odchodza.add(p.id);
   const people = s.people.filter((p) => !odchodza.has(p.pawn));
-  const residents = s.residents - odchodzacyMieszkancy;
+  const residents = s.residents;
   // mieszkańcy siedziby z osobą; odczyt dla interfejsu ma też lokatorów sąsiadów, których zarząd nie widzi
   const mieszkancy = new Set(st.pawns.filter((p) => p.kind === 'resident' && !odchodza.has(p.id)).map((p) => p.id));
   const lokatorzy = s.lokatorzy.filter((l) => mieszkancy.has(l.pawn)).map(lokatorZarzadu);

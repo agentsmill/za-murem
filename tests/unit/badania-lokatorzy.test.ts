@@ -481,5 +481,6 @@ describe('badania: lokatorzy a determinizm', () => {
 });
 
 /** Skrót stanu bez pracowni po 8000 krokach z `nowa`, policzony na gałęzi przed zadaniem 4. Zmienia się tylko razem
-    z resztą symulacji (jak skróty w druzyna-sim.test.ts), a nie z samą pracownią. */
-const SKROT_BEZ_PRACOWNI = '6a255af6';
+    z resztą symulacji (jak skróty w druzyna-sim.test.ts), a nie z samą pracownią. Od 19.10.2026 z wolniejszym zmęczeniem
+    (zombie-polecenia, needs.ts); dawny: 6a255af6. */
+const SKROT_BEZ_PRACOWNI = '100b099c';

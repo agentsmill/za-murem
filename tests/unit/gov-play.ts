@@ -72,6 +72,9 @@ export interface NightLog {
   /** raport zarządu rano */
   report: NightReport['raid'] | null;
   stolen: Loot;
+  /** ilu obcych (szabrowników) zabito od karty do raportu: ich łup zostaje na podwórku, więc `raid.took` bywa mniejsze
+      niż `stolen` z raportu zarządu */
+  killed: number;
   /** średnie bezpieczeństwo rano o 7:00: zarząd i mieszkańcy */
   safeCore: number;
   safeRes: number;
@@ -130,6 +133,9 @@ export interface PlayOpts {
   /** jedyne polecenie gracza to samouczek (zaznaczenie i ścięcie suchego drzewa); bez drzew na opał, gdy drewna zostaje
       mało, więc zapasy drewna zależą tylko od tego, co zarząd robi sam (tools/bot-praca.ts) */
   tylkoSamouczek?: boolean;
+  /** karta nocy nie wysyła nikogo na wyprawę (zostaje sen z propozycji); dla testów, które liczą tylko wyprawy dzienne:
+      po wolniejszym zmęczeniu zarząd co noc proponuje wyprawę, bo ma siły na daleką drogę */
+  bezWyprawNocnych?: boolean;
 }
 
 /** poranek wartownika po nocy na posterunku (6:00–14:00): najedzenie i siły o 6:00, godzina pierwszego posiłku
@@ -193,6 +199,7 @@ function answer(
   screen: number,
   out: Decision[],
   okolica?: readonly Miejsce[],
+  bezWypraw = false,
 ): string {
   const st = sim.st;
   const i = govInput(st, w, screen);
@@ -216,6 +223,8 @@ function answer(
       const cur = p.assign[cp.id] ?? 'sen';
       if (policy === 'nigdy-warty' && cur.startsWith('warta:') && setNight(gov, cp.id, 'sen'))
         out.push({ s: screen, kind: 'przydział', text: `${cp.name}: sen zamiast warty` });
+      if (bezWypraw && cur.startsWith('wyprawa:') && setNight(gov, cp.id, 'sen'))
+        out.push({ s: screen, kind: 'przydział', text: `${cp.name}: sen zamiast wyprawy` });
     }
     if (policy === 'zawsze-warta') {
       const assign = gov.night!.assign;
@@ -313,6 +322,8 @@ export function playWithGov(
     if (c) order(c, 'ścinaj suche drzewo');
   }
   let night: NightLog | null = null;
+  /** obcy zabici do chwili karty tej nocy (różnica do raportu to NightLog.killed) */
+  let killed0 = 0;
   let fireN = 0;
   const mornings: GuardMorning[] = [];
   const hunger: Hunger = { mornings: 0, short: 0, samples: 0, starving: 0 };
@@ -344,16 +355,18 @@ export function playWithGov(
     for (let k = 0; k < 5; k++) {
       const p = pending(gov, input(s));
       if (!p) break;
-      const text = answer(gov, sim, w, p, policy, s, decisions, miasto?.okolica);
+      const text = answer(gov, sim, w, p, policy, s, decisions, miasto?.okolica, opts.bezWyprawNocnych);
       decisions.push({ s, kind: p.k, text });
       if (p.k === 'karta') {
         const assign = gov.night?.assign ?? {};
+        killed0 = st.tally?.killed ?? 0;
         night = {
           day: p.card.day,
           guards: Object.values(assign).filter((x) => x.startsWith('warta:')).length,
           raid: null,
           report: null,
           stolen: { wood: 0, supplies: 0, scrap: 0 },
+          killed: 0,
           safeCore: 0,
           safeRes: 0,
           koza: false,
@@ -375,6 +388,7 @@ export function playWithGov(
       if (p.k === 'raport' && night) {
         night.report = p.report.raid;
         night.stolen = { wood: p.report.stolen.wood, supplies: p.report.stolen.supplies, scrap: p.report.stolen.scrap };
+        night.killed = (st.tally?.killed ?? 0) - killed0;
       }
     }
     opts.player?.(sim, w, s, (c, text) => {

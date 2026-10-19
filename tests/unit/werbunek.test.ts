@@ -649,11 +649,12 @@ describe('Gra bez rozmów z wędrowcem', () => {
     expect(a.wedrowcow).toBeGreaterThanOrEqual(3);
     // skróty przeliczone po scaleniu przełącznika „za siatkę” domyślnie włączonego (praca-ludzi) z kozą z głową
     // i wydarzeniami etapów 1–2: każda strona osobno dawała 11b2b8b3 i ce9fc89e, razem automat wcześniej idzie po drewno za siatkę
-    expect(a.hash).toBe('f77e096b');
+    // Potem jeszcze raz po wolniejszym zmęczeniu (start z siłami 80, na nogach −3,5 na godzinę, przy pracy −6).
+    expect(a.hash).toBe('974faae2');
     expect(a.st.obcy!.rozmowa).toBeUndefined();
     expect('werbunek' in a.st.obcy!).toBe(false);
-    expect(bez(w, 7, { core: 4 }).hash).toBe('a5eeb997');
-    expect(bez(w, 3, { core: 4, mode: 'zombie' }).hash).toBe('07139a8c');
+    expect(bez(w, 7, { core: 4 }).hash).toBe('a54a84fc');
+    expect(bez(w, 3, { core: 4, mode: 'zombie' }).hash).toBe('8086882c');
   });
 
   it('ten sam skrót co przed zmianą na prawdziwych demach (Przymorze, Zielonki)', () => {
@@ -668,8 +669,9 @@ describe('Gra bez rozmów z wędrowcem', () => {
     // Przeliczone znów po scaleniu z pełną grą (wydarzenia etapów 1–2) i z przełącznikiem „za siatkę” domyślnie
     // włączonym w trybie zwykłym (decyzja Mateusza 19.10.2026; na praca-ludzi były edbb0234 i 59c8df21, a przed
     // tym scaleniem b1cf8d4c i a9cefa21).
-    expect(bez(swiezy('przymorze'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('60cdcbe4');
-    expect(bez(swiezy('zielonki'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('d1bc0167');
+    // Potem jeszcze raz po wolniejszym zmęczeniu (start z siłami 80, na nogach −3,5 na godzinę, przy pracy −6).
+    expect(bez(swiezy('przymorze'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('6d823f70');
+    expect(bez(swiezy('zielonki'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('aa0a106b');
   });
 });
 
@@ -802,8 +804,9 @@ describe('Wędrowiec czeka po rozmowie', () => {
     };
     // skróty przeliczone po scaleniu przełącznika „za siatkę” domyślnie włączonego (praca-ludzi) z kozą z głową
     // i wydarzeniami etapów 1–2: każda strona osobno dawała 11b2b8b3 i ce9fc89e, razem automat wcześniej idzie po drewno za siatkę
-    expect(bez(w, 3, { core: 2 })).toBe('f77e096b');
-    expect(bez(w, 7, { core: 4 })).toBe('a5eeb997');
+    // Potem jeszcze raz po wolniejszym zmęczeniu (start z siłami 80, na nogach −3,5 na godzinę, przy pracy −6).
+    expect(bez(w, 3, { core: 2 })).toBe('974faae2');
+    expect(bez(w, 7, { core: 4 })).toBe('a54a84fc');
   });
 });
 

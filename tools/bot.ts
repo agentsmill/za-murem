@@ -324,12 +324,18 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
   const entered = raided.filter((n) => n.raid!.outcome === 'wtargnięcie');
   const repelled = raided.filter((n) => n.raid!.outcome === 'odparty');
   const quiet = nights.filter((n) => !n.raid);
-  // zgodność: wynik i łup jak w raporcie, tylu szabrowników, ilu wynika z siły, uśpiona warta przysypia na ekranie
+  // zgodność: wynik i łup jak w raporcie (gdy ktoś zabił szabrownika, jego łup został na podwórku, więc wyniesione
+  // jest najwyżej tyle, ile w raporcie), tylu szabrowników, ilu wynika z siły, uśpiona warta przysypia na ekranie
   const mismatch = nights.filter(
     (n) =>
       (n.report === 'brak') !== !n.raid ||
       (n.raid && n.report !== n.raid.outcome) ||
-      (n.report === 'wtargnięcie' && JSON.stringify(n.raid!.took) !== JSON.stringify(n.stolen)) ||
+      (n.report === 'wtargnięcie' &&
+        (n.killed
+          ? n.raid!.took.wood > n.stolen.wood ||
+            n.raid!.took.supplies > n.stolen.supplies ||
+            n.raid!.took.scrap > n.stolen.scrap
+          : JSON.stringify(n.raid!.took) !== JSON.stringify(n.stolen))) ||
       (n.raid && n.result && n.raid.n !== n.result.people) ||
       (n.result && n.result.dozing !== n.result.slept),
   ).length;
