@@ -62,7 +62,7 @@ Naraz trwa jedno badanie, jak w 0.3. Zmiana badania nie kasuje postępu poprzedn
 
 ## Pracownia (przyjęte, liczby moje)
 
-- Nowa budowla `pracownia`: zakładka Dom, miejsce `pokoj` w naszym mieszkaniu, 2×1 kafelka, stół z lampą i półką na książki. Koszt 16 desek i 4 części, praca około półtorej godziny gry jednej osoby. Bot może zmienić liczby.
+- Nowa budowla `pracownia`: zakładka Dom, miejsce `pokoj` w naszym mieszkaniu, 2×1 kafelka, stół z lampą i półką na książki. Koszt 14 desek i 4 części (z 16: bot z badaniami w Zielonkach nie miał jednej deski, zadanie 11), praca około półtorej godziny gry jednej osoby.
 - Najwyżej jedna pracownia (moje). `canPlace` dostaje powód „Pracownia już stoi”. Druga pracownia, większe stoły i szybsze badania mogą przyjść z technologią w późniejszym projekcie.
 - Dwa miejsca przy stole (przyjęte): dwie osoby badają naraz, każda dodaje swój postęp.
 - Rozbiórka pracowni (polecenie `unbuild`) nie kasuje postępu ani zbadanych technologii.

@@ -151,7 +151,8 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
     cat: 'dom',
     w: 2,
     h: 1,
-    cost: { deski: 16, czesci: 4 },
+    // 14 desek (nie 16): bot z badaniami (zadanie 11 planu) nie stawiał pracowni w Zielonkach, gdzie brakowało jednej deski
+    cost: { deski: 14, czesci: 4 },
     work: (3 * TICKS_PER_HOUR) / 2,
     max: 1,
     effect: 'Stół z lampą i półką na książki: przy nim dwie osoby naraz badają nowe technologie.',

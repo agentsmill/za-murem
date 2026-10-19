@@ -78,7 +78,7 @@ describe('pracownia: budowla', () => {
       cat: 'dom',
       w: 2,
       h: 1,
-      cost: { deski: 16, czesci: 4 },
+      cost: { deski: 14, czesci: 4 },
       work: (3 * TICKS_PER_HOUR) / 2,
       max: 1,
     });

@@ -3,7 +3,7 @@
    i stawia plan budowli, kiedy materiały wystarczą. Wpina się w playWithGov (PlayOpts.player), więc decyzje liczą
    się razem z oknami zarządu i drewnem na opał. Używają go testy i tools/bot.ts.
    Opcja `badania` (npm run bot -- --badania; docs/superpowers/specs/2026-10-19-badania-design.md, „Testy i bramka”)
-   dokłada politykę badań do tej samej kolejki: pracownia idzie na jej początek (stoi, gdy starczy 16 desek i 4 części, od
+   dokłada politykę badań do tej samej kolejki: pracownia idzie na jej początek (stoi, gdy starczy 14 desek i 4 części, od
    dnia 2), potem, jak wybiera człowiek przy tablicy, najtańsza kartka „do wzięcia”, a za dnia (7:00–20:00) jedna wolna
    osoba z zarządu, najszybsza w dziedzinie badania, siada przy stole; lokatorzy z wiedzą siadają sami. Budowle z zebranych
    technologii dochodzą na koniec kolejki, kiedy są odblokowane. Bez opcji bot gra jak dotąd: te same polecenia i te same
