@@ -1261,6 +1261,10 @@ Bramka po zmianie: `npm test` 152 pliki, 2880 zdanych (2853 i 27 nowych), 1 ocze
 
 Propozycja dla koordynatora: moduł może wejść do `pelna-gra` od razu. To dwa nowe pliki i wpis w dzienniku, bez zmian w istniejącym kodzie i bez importów w żadną stronę, więc nie rusza skrótów ani zapisów. `origin/pelna-gra` stoi na fe13220, więc o ile nic się tam nie zmieniło, wystarczy przewinięcie (`git merge --ff-only miasto-kafelki`). Nowy kod innych sesji w `src/sim` (praca ludzi, badania i reszta) powinien liczyć numery kafelków przez `gid`, `gxy` i `sasiadKafelka` zamiast przez `size`, a numery budynków i drzew przez `bGlob`, `bKw` i `bLok`: z pionka to `gid(mapa, Math.floor(p.x), Math.floor(p.y))`, a dopóki nie ma więcej kwadratów, mapa to `mapaDomu()`. Zadania 2–10 planu czekają na scalenie badań i pracy ludzi, bo przepisują `src/sim/sim.ts` (samych miejsc z `size` jest tam około 260).
 
+### Przegenerowane dema w `pelna-gra`, 19.10.2026 rano (scalenie 2604497; Mateusz: „tak”)
+
+Gałąź `dema-przegenerowane` (07fea4c, wpis w „Następnych”) weszła scaleniem; konflikt tylko w tym dzienniku, a przy jego rozwiązaniu wrócił przestarzały akapit o warunkach zwycięstwa, usunięty. Kod gry bez zmian poza komentarzami; dane trzech dem z kluczami budynków i miejsc oraz rodzajami punktów. Bramka na 2604497: Biome na całym repo; build; `npm test` 3423 zdanych i 2 z limitem czasu 60 s w pełnym przebiegu przy obciążeniu maszyny około 20 (`budynki-rysowanie.test.ts`, `grafika-ludzie.test.ts`; osobno oba pliki 41 zdanych w 38 s); boty bez `--mieszkancy` bez zmian (da4b24e0, dad44c81, 18b03936, e8b7d9d5), z `--mieszkancy` nowe jak w raporcie (b561747b i 3a6aab9c, 53e78049 i 16e86174); pełne `npm run shots -- --dalej` 307 scenariuszy bez błędów i bez drugich prób; obejrzane `dema-urzad-przymorze-blisko` (Blok nr 19: papa i niska fasada urzędu z wejściami) i `dema-urzad-batowice-blisko` (Hala nr 106: płaski ciemny dach i cienka fasada, wygląda jak biurowiec). Otwarta zostaje decyzja Mateusza o blaszanym dachu hali.
+
 ## Następne
 
 Rano 19.10.2026, po nocy z nocnym integratorem (dla Mateusza; szczegóły we wpisach „Noc integracji 19.10.2026” i niżej):
