@@ -556,8 +556,9 @@ export function confirmSheet(label: string, note?: string): Sheet {
   };
 }
 
-/** potwierdzenie włączenia sieci (badania, technologia końcowa): nieodwracalne i według projektu zwycięstwa zaczyna
-    epilog; przyciski jak w `confirmSheet`, więc obsługuje je ten sam kod w main.ts */
+/** potwierdzenie włączenia sieci (badania, zbadana sieć bez miedzi): nieodwracalne, więc z potwierdzeniem; włączona sieć
+    to czwarty kamień drogi technologii, a epilog daje dopiero fabryka; przyciski jak w `confirmSheet`, więc obsługuje je
+    ten sam kod w main.ts */
 export function siecSheet(): Sheet {
   return {
     tone: 'ogien',

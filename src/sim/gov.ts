@@ -15,7 +15,8 @@
    i książki znalezione w przeszukaniach (bookLog) wchodzą jako `odkrycia` i `znaleziska`, z których zarząd pisze
    kronikę (src/gov/znaleziska.ts); bez badań i książek tych pól nie ma. Kozy z beczek i kocioł
    wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA), a stojąca wieża jako `wieza`, liczba jej miejsc
-   (posterunek karty). */
+   (posterunek karty). W `badania` pole `koncowa` mówi, że zbadana jest fabryka bieżącego trybu (`koncowaZbadana`), a nie
+   sama sieć. */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';

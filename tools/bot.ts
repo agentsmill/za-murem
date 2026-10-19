@@ -783,7 +783,7 @@ if (ZWYCIESTWO) {
       .join('; ')}`,
   );
   console.log(
-    `  pozostałe drogi (technologia, teren, lek, cuda) czekają na projekty, na których stoją: kamieni zaliczonych ${kolejnosc
+    `  pozostałe drogi (technologia, teren, lek, cuda): ten gracz nie buduje pracowni ani wspólnego płotu, a lek i cuda czekają na projekty, na których stoją; kamieni zaliczonych ${kolejnosc
       .filter((d) => d !== 'ludnosc')
       .map((d) => `${d} ${zwRuns.reduce((a, r) => a + ostatni(r).kamienie[kolejnosc.indexOf(d)], 0)}`)
       .join(', ')}`,

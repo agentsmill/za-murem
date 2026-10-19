@@ -1,8 +1,8 @@
 /* Odczyt badań dla warunków zwycięstwa i „Włączenie sieci” (kontrakt z projektem warunków zwycięstwa, nocny
-   integrator 19.10.2026): `GovInput.badania` ma kształt { pracownia, zbadane, era, koncowa, siecWlaczona }, polecenie
-   `siec` włącza sieć tylko po zbadaniu technologii końcowej przy stojącej pracowni (pole stanu powstaje dopiero przy
-   włączeniu, drugie włączenie nic nie zmienia), a menu pracowni ma pozycję „Włączyć sieć” tylko do włączenia.
-   Przymorze z dema. */
+   integrator 19.10.2026): `GovInput.badania` ma kształt { pracownia, zbadane, era, koncowa, siecWlaczona }, gdzie
+   `koncowa` to zbadana fabryka bieżącego trybu (sama sieć nią nie jest), polecenie `siec` włącza sieć po zbadaniu samej
+   sieci (t_siec, jeszcze przed fabryką) przy stojącej pracowni (pole stanu powstaje dopiero przy włączeniu, drugie
+   włączenie nic nie zmienia), a menu pracowni ma pozycję „Włączyć sieć” tylko do włączenia. Przymorze z dema. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,6 +14,7 @@ import { type BuildKind, footprint } from '../../src/sim/budowle.ts';
 import { govInput } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { createSim, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
+import type { GameMode } from '../../src/sim/tryb.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
 import { siecSheet } from '../../src/ui/okna.ts';
 import { buildWorld } from '../../src/world/world.ts';
@@ -46,9 +47,10 @@ function place(st: SimState, kind: BuildKind): Thing {
   return t;
 }
 
-/** świeża gra; pracownia i zbadane technologie dopiero na życzenie (pola powstają przy pierwszym użyciu) */
-function gra(opts: { pracownia?: boolean; techDone?: string[] } = {}) {
-  const st = createSim(w, seed, { core: 4 });
+/** świeża gra (domyślnie zwykła); pracownia i zbadane technologie dopiero na życzenie (pola powstają przy pierwszym
+    użyciu) */
+function gra(opts: { pracownia?: boolean; techDone?: string[]; mode?: GameMode } = {}) {
+  const st = createSim(w, seed, { core: 4, mode: opts.mode });
   const prac = opts.pracownia ? place(st, 'pracownia') : undefined;
   if (opts.techDone) st.techDone = [...opts.techDone];
   return { st, sim: new Sim(w, st), prac };
@@ -86,9 +88,26 @@ describe('odczyt badań dla zarządu: kształt GovInput.badania', () => {
     expect(badania(sam)).toMatchObject({ zbadane: 0, era: 0 });
   });
 
-  it('technologia końcowa zbadana: koncowa true, era 6, ale sieć jeszcze nie włączona', () => {
-    const { st } = gra({ pracownia: true, techDone: ['t_siec'] });
-    expect(badania(st)).toEqual({ pracownia: true, zbadane: 1, era: 6, koncowa: true, siecWlaczona: false });
+  it('sama sieć zbadana: era 6, ale koncowa false (celem jest fabryka), sieć jeszcze nie włączona', () => {
+    for (const mode of ['zwykly', 'zombie'] as const) {
+      const { st } = gra({ pracownia: true, techDone: ['t_siec'], mode });
+      expect(badania(st), mode).toEqual({ pracownia: true, zbadane: 1, era: 6, koncowa: false, siecWlaczona: false });
+    }
+  });
+
+  it('fabryka bieżącego trybu zbadana: koncowa true; fabryka drugiego trybu w techDone nie daje celu', () => {
+    const zFabryka = (mode: GameMode, fabryka: string) =>
+      badania(gra({ pracownia: true, techDone: ['t_siec', fabryka], mode }).st);
+    expect(zFabryka('zwykly', 't_fabryka_bio')).toEqual({
+      pracownia: true,
+      zbadane: 2,
+      era: 6,
+      koncowa: true,
+      siecWlaczona: false,
+    });
+    expect(zFabryka('zwykly', 't_fabryka_hum')).toMatchObject({ zbadane: 2, era: 6, koncowa: false });
+    expect(zFabryka('zombie', 't_fabryka_hum')).toMatchObject({ zbadane: 2, era: 6, koncowa: true });
+    expect(zFabryka('zombie', 't_fabryka_bio')).toMatchObject({ zbadane: 2, era: 6, koncowa: false });
   });
 
   it('odczyt tylko czyta: nie tworzy pól w stanie', () => {
@@ -100,7 +119,7 @@ describe('odczyt badań dla zarządu: kształt GovInput.badania', () => {
 });
 
 describe('polecenie siec', () => {
-  it('bez technologii końcowej nic nie robi i nie tworzy pola, nawet przy stojącej pracowni', () => {
+  it('bez zbadanej sieci nic nie robi i nie tworzy pola, nawet przy stojącej pracowni', () => {
     const { st, sim } = gra({ pracownia: true, techDone: ['t_okna'] });
     const kontrolna = gra({ pracownia: true, techDone: ['t_okna'] });
     siec(sim);
@@ -111,7 +130,7 @@ describe('polecenie siec', () => {
     expect(sim.hash()).toBe(kontrolna.sim.hash());
   });
 
-  it('bez pracowni nic nie robi, choć technologia końcowa jest zbadana', () => {
+  it('bez pracowni nic nie robi, choć sieć jest zbadana', () => {
     const { st, sim } = gra({ techDone: ['t_siec'] });
     const kontrolna = gra({ techDone: ['t_siec'] });
     siec(sim);
@@ -121,13 +140,13 @@ describe('polecenie siec', () => {
     expect(sim.hash()).toBe(kontrolna.sim.hash());
   });
 
-  it('z t_siec i pracownią włącza sieć, a odczyt dla zarządu to widzi', () => {
+  it('z samą t_siec (bez fabryki) i pracownią włącza sieć, a odczyt dla zarządu to widzi', () => {
     const { st, sim } = gra({ pracownia: true, techDone: ['t_siec'] });
     expect(siecWlaczona(st)).toBe(false);
     siec(sim);
     expect(siecWlaczona(st)).toBe(true);
     expect(st.research?.siec).toBe(true);
-    expect(badania(st)).toEqual({ pracownia: true, zbadane: 1, era: 6, koncowa: true, siecWlaczona: true });
+    expect(badania(st)).toEqual({ pracownia: true, zbadane: 1, era: 6, koncowa: false, siecWlaczona: true });
   });
 
   it('nie potrzebuje zaznaczonych osób ani nie rusza badania w toku', () => {
@@ -188,18 +207,18 @@ describe('stan bez włączenia sieci', () => {
 });
 
 describe('menu pracowni: Włączyć sieć', () => {
-  it('pozycji nie ma bez technologii końcowej', () => {
+  it('pozycji nie ma bez zbadanej sieci', () => {
     const { st, prac } = gra({ pracownia: true, techDone: ['t_okna'] });
     expect(pozycja(st, kafel(prac!))).toBeUndefined();
   });
 
-  it('po zbadaniu technologii końcowej jest na pracowni, na obu jej kafelkach, i wysyła polecenie siec', () => {
+  it('po zbadaniu sieci (bez fabryki) jest na pracowni, na obu jej kafelkach, i wysyła polecenie siec', () => {
     const { st, sim, prac } = gra({ pracownia: true, techDone: ['t_siec'] });
     const m = pozycja(st, kafel(prac!))!;
     expect(m).toBeTruthy();
     expect(m.label).toBe('Włączyć sieć');
     expect(m.quick).toBe(false);
-    // nieodwracalne i zaczyna epilog: z potwierdzeniem, nigdy od stuknięcia
+    // nieodwracalne, więc z potwierdzeniem, nigdy od stuknięcia (czwarty kamień drogi technologii, epilog daje dopiero fabryka)
     expect(m.confirm).toBe(true);
     expect(m.cmd).toEqual({ t: 'siec', ids: rdzen(st) });
     expect(pozycja(st, kafel(prac!) + (prac!.w - 1))).toBeTruthy();

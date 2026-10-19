@@ -104,6 +104,10 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | NOWE (znaczek w menu budowy) | NEW | przy świeżo odblokowanej budowli |
 | wymaga badania (kłódka) | Needs research | „Needs research: <name>” |
 | era badań | era | First weeks, Tinkering, Power, Communications, Silicon, Without copper |
+| generator fuzji (technologia ery 6) | Fusion generator | opis: „a small star in an old parcel-locker container”; w łańcuchu ery 6 stoi po sieci (Copper-free grid) |
+| superserwer AI (technologia ery 6) | AI superserver | „superserver” jedno słowo, „AI” bez kropek; opis: „It writes its own terms of service” |
+| fabryka biorobotów (cel drzewa badań w zwykłej grze) | Biorobot factory | „biorobots” jedno słowo, bez łącznika; odporne na bakterię od miedzi: „immune to the copper bacterium” |
+| fabryka humanoidów (cel drzewa badań w trybie zombie) | Humanoid factory | żołnierze: „humanoid soldiers”; wychodzą z bramy i czyszczą miasto ze szwendaczy: „clear the city of walkers” |
 | książka (z przeszukania) | book | „Found a book: …”; trzecia z dziedziny „went for kindling” („It went for kindling.”) |
 | kuchenka, umywalka, wanna | cooker, washbasin, bath | piec w mieszkaniu też „cooker” |
 | przedpokój, pokój, sala, hala, zaplecze | hallway, room, hall, shed, back room | hala jako cały budynek: warehouse |
@@ -122,7 +126,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | jedzenie | food |
 | posiłek, porcja | meal, portion |
 | prąd | power |
-| sieć (elektryczna, technologia końcowa), Włączyć sieć | grid (Copper-free grid), Switch on the grid |
+| sieć (elektryczna, pierwsza technologia łańcucha ery 6), Włączyć sieć | grid (Copper-free grid), Switch on the grid |
 | najedzenie | Fed |
 | ciepło | Warmth |
 | siły | Energy |
@@ -156,7 +160,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 
 ## Polecenia i przyciski
 
-Menu pod prawym przyciskiem, pomoc i karty cytują te same słowa: Chop down the tree, Feed the stove (Feed the barrel stove, Feed the boiler), Keep watch here (at the gate, at the fence, by the stove), Make a spear, Search the …, Take apart the … (śmieci i gruz: Clear the …), Fix the …, Claim the flat, Burn the …, Attack the shambler (looter), Go here. Budowle w menu budowy: Tear down. Broń na karcie osoby: Swap; po amputacji tag „stump”. Karta nocy: Raid chance, Stove overnight, As the board suggests, Start the night. Kategorie budowy: Indoors, Yard, Perimeter. Wiek na karcie to sama liczba („Nurse, 52”). Surowce: wrak „wreck” (maluch „the Fiat 126p”, polonez „the Polonez”), Search the … i Strip the … przy wraku, łup „loot”, Carry into the yard, w warsztacie Saw wood into a plank (… into 5 planks) i Make a part from scrap. Badania: przy pracowni Research: <name>, Research board i Choose research, po technologii końcowej Switch on the grid (z potwierdzeniem „Switch on the copper-free grid?”).
+Menu pod prawym przyciskiem, pomoc i karty cytują te same słowa: Chop down the tree, Feed the stove (Feed the barrel stove, Feed the boiler), Keep watch here (at the gate, at the fence, by the stove), Make a spear, Search the …, Take apart the … (śmieci i gruz: Clear the …), Fix the …, Claim the flat, Burn the …, Attack the shambler (looter), Go here. Budowle w menu budowy: Tear down. Broń na karcie osoby: Swap; po amputacji tag „stump”. Karta nocy: Raid chance, Stove overnight, As the board suggests, Start the night. Kategorie budowy: Indoors, Yard, Perimeter. Wiek na karcie to sama liczba („Nurse, 52”). Surowce: wrak „wreck” (maluch „the Fiat 126p”, polonez „the Polonez”), Search the … i Strip the … przy wraku, łup „loot”, Carry into the yard, w warsztacie Saw wood into a plank (… into 5 planks) i Make a part from scrap. Badania: przy pracowni Research: <name>, Research board i Choose research, po zbadaniu sieci bez miedzi (Copper-free grid, przed fabryką) Switch on the grid (z potwierdzeniem „Switch on the copper-free grid?”).
 
 ## Zawody-żarty
 
