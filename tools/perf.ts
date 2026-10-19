@@ -2,12 +2,14 @@
    Laptop: Chromium bez dławienia. Telefon: ekran 390×844 i procesor zdławiony 4× (CDP).
    Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
    Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5] [--m2]
-   [--demo=lanciego] [--kod] [--pietro=2] [--kwadraty=3x3]
+   [--demo=lanciego] [--kod] [--pietro=2] [--kwadraty=3x3] [--goscie=4]
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
    --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła; --m2: budowa z fali 1,
    czyli atrapa pustych mieszkań w przekroju, cztery plany z paskami postępu i podgląd stawiania; --demo: inne demo
    niż Przymorze (--demo=atrapa-budynki: mapa z każdym z 11 wyglądów budynków z PixelLab, tests/unit/atrapa-budynki.ts);
    --kod: wszystko rysowane kodem, bez grafiki z PixelLab, do porównań przed i po;
+   --goscie=N: N grup po 6 gości z klocków (rodzaj `gosc`) z czterech stron stoi pod bramą przed pomiarem; z --noc widać
+   je jako ciemne zarysy (koszt rysowania gości w ciemności);
    --pietro=N: widok pięter (?pietra=1) z wybranym piętrem N po wczytaniu, przed pomiarem; z --zoom=0.6 przekrój
    jest włączony, a przy 0 to piętro 0 z flagą, do porównania z przebiegiem bez tej opcji;
    --kwadraty=3x3|5x5: ?kwadraty= z kwadratami miasta obok domu (src/world/kwadraty.ts), kamera zaczyna na rogu domu i
@@ -34,6 +36,8 @@ const ZOOM = Number(process.argv.find((a) => a.startsWith('--zoom='))?.slice(7))
 const M2 = process.argv.includes('--m2');
 const DEMO = process.argv.find((a) => a.startsWith('--demo='))?.slice(7) || 'przymorze';
 const KOD = process.argv.includes('--kod');
+/** --goscie=N: N grup po 6 gości z klocków pod bramą (pionki rodzaju `gosc`), do pomiaru kosztu ich rysowania */
+const GOSCIE = Number(process.argv.find((a) => a.startsWith('--goscie='))?.slice(9)) || 0;
 /** --pietro=N: flaga ?pietra=1 i wybór piętra N (także 0) przez window.zm.pietro; bez opcji gra jak dotąd, bez flagi */
 const PIETRO_ARG = process.argv.find((a) => a.startsWith('--pietro='))?.slice(9);
 const PIETRO = PIETRO_ARG === undefined ? null : Number(PIETRO_ARG);
@@ -116,6 +120,47 @@ try {
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       return (zm.view as unknown as { smoke: { count: number } }).smoke.count;
     });
+    if (GOSCIE > 0) {
+      // grupy gości z czterech stron: plan zarządu przez kolejkę poleceń, potem marsz pod bramę (około 700 kroków)
+      const g = await page.evaluate((k) => {
+        const zm = window.zm!;
+        const sim = zm.sim!;
+        const st = sim.st;
+        if (!st.obcy) throw new Error('gra bez obcych: goście nie powstaną');
+        const strony = ['n', 'e', 's', 'w'];
+        for (let n = 0; n < k; n++)
+          st.cmds.push({
+            t: 'gosc',
+            ids: [],
+            plan: {
+              id: `p${n + 1}`,
+              strona: strony[n % 4],
+              looks: [4, 5, 6, 7, 8, 9],
+              osoby: Array.from({ length: 6 }, (_, i) => ({
+                id: `p${n + 1}p${i}`,
+                first: 'Gość',
+                name: `Gość ${n + 1}.${i}`,
+                f: i % 2 === 0,
+                prof: 'mieszkaniec',
+                skills: {},
+                age: 30 + i,
+                traits: [],
+                home: -1,
+                assign: null,
+                sick: false,
+                dead: false,
+                gone: false,
+              })),
+            },
+          } as never);
+        for (let t = 0; t < 1500; t++) sim.step();
+        return {
+          gosci: st.pawns.filter((p) => p.kind === 'gosc').length,
+          podBrama: (st.goscie ?? []).filter((x) => x.faza === 'brama').length,
+        };
+      }, GOSCIE);
+      console.log(`${dev.name}: gości ${g.gosci}, grup pod bramą ${g.podBrama} z ${GOSCIE}`);
+    }
     if (M2) {
       // plany budowy na podwórku (st.builds) i podgląd stawiania z podświetlonymi kafelkami
       const m2 = await page.evaluate(async () => {

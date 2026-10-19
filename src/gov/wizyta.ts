@@ -8,16 +8,22 @@
      godzin gry) ma wagę 0 bez `GovInput.goscie` (gra bez obcych) i gdy zarząd prowadzi już jakiegoś gościa (jeden naraz).
      Kiedy wypada, `eventTick` (wydarzenia.ts) nie pokazuje karty, tylko woła `planujGoscia`: gość z klocków, plan dla
      symulacji, wpis `GovState.goscie.aktywny`. Tylko ziarno zarządu (`st.rng`), w stałej kolejności: klocki gościa, potem
-     wygląd.
+     wygląd. Plan nie jest kartą, więc nie zjada odstępu między wydarzeniami: zaraz po nim losuje się jeszcze raz wśród
+     reszty (gość ma już odstęp i wagę 0), a gdy nic nie pasuje, następna próba za `RETRY` sekund (bez tego w pierwszych
+     dziesięciu minutach gry z obcymi brakowało decyzji w co piątej minucie).
    - `goscTick` (co sekundę przy ekranie, z `eventTick`): znajduje wpis wizyty w `GovInput.goscie`, oddaje kartę gościa,
      gdy faza to `brama`, a nic innego nie czeka na decyzję, i kartę „Złapany”, gdy faza to `zlapany`; zamyka kartę,
      której gość odszedł albo zginął (wpis w kronice, wybór nie steruje niczym, bo każdy wybór sprawdza fazę w chwili
-     kliknięcia); zapisuje rano linię o skradzionych porcjach (kłamca, który uciekł z łupem); kończy wizytę, gdy
-     symulacja ją skończyła (`poszedl`, `nie_doszedl`, `zginal`) albo zarząd wydał ostatni rozkaz (`koniec`).
+     kliknięcia); zapisuje do porannego raportu jedną linię o nocy z gościem: o 5:00, jeśli wciąż śpi u nas, żyje i niczego
+     nie wziął, a inaczej linię o skradzionych porcjach (kłamca, który uciekł z łupem) albo o śmierci, żeby raport nie
+     przeczył sam sobie; kończy wizytę, gdy symulacja ją skończyła (`poszedl`, `nie_doszedl`, `zginal`) albo zarząd wydał
+     ostatni rozkaz (`koniec`).
    - Wybory zależą od tego, czego gość chce (`chce`), co ma (`ma`), pory (brama na kłódkę po 20:00 odbiera „Wpuścić na
      noc”), zapasów (jedzenie, leki), wolnych miejsc (`h.free()`: „Przyjąć” przy mniejszej liczbie miejsc mówi, ilu
-     będzie spać na podłodze, jak `uchodzcy`) i trybu (zombie: „Obejrzeć ręce”, „Dobić przez siatkę”). Karta mówi tyle osób,
-     ilu jest żywych pionków (`GovGosc.pawns`).
+     będzie spać na podłodze, jak `uchodzcy`) i trybu (zombie: „Obejrzeć ręce”, „Dobić przez siatkę”). Karta mówi o żywych:
+     `widoczny` bierze z `osoby` tylko indeksy z `GovGosc.zywi` (symulacja zachowuje kolejność planu i usuwa zmarłych), więc
+     mówiący to pierwsza żywa osoba (tak samo kradnie i jest łapana w symulacji), liczba osób to liczba pionków, a ugryzienie
+     idzie za nosicielem; zmarły nosiciel robi z gościa dla karty zdrowego (nie ma co oglądać ani dobijać).
    - Haczyk. Kłamca wpuszczony na noc dostaje rozkaz `klamie` (o 2:00 idzie po jedzenie, patrz src/sim/sim.ts); chory
      wpuszczony albo przyjęty rozdaje rano chorobę (`GovState.later[].sick`); ktoś za nim idzie: w zwykłym trybie szansa
      napadu tej nocy ×1,5 i napad przy bramie (`poscigNocy` w noc.ts), w zombie hałas przy bramie (`GovEffects.halas`,
@@ -25,7 +31,7 @@
      ugryzienie z pewnością (przy zdrowym kosztuje zaufanie −1, a karta zostaje bez tego wyboru).
    - Co ma: rzecz (broń i amunicja do magazynu przez `fx.arms` i `fx.ammo`, leki do zapasów), wiadomość (wskazówka na
      miejsce: `GovState.wskazowki`, patrz src/gov/wyprawy.ts), ostrzeżenie (`setAlertNight`, podwójna warta tej nocy),
-     fach (po „Przyjąć do zarządu”, bo do zarządu wchodzi mówiący z jego umiejętnościami). Nagroda idzie po nakarmieniu,
+     fach (po „Przyjąć do zarządu”, bo do zarządu wchodzi pierwsza żywa osoba z jej umiejętnościami). Nagroda idzie po nakarmieniu,
      nocy, przyjęciu, wymianie, lekach i przechowaniu, nie po odprawie.
    - Wiadomość dotyczy miejsca z mapy miasta (`celWiadomosci`): `skad.klucz` gościa, o ile da się tam jeszcze iść z karty
      nocy (poza mapą lokalną, do `MAX_OKOLICA_M`, z zapasem), a inaczej najbliższe takie miejsce po stronie gościa albo
@@ -45,9 +51,9 @@ import { type Miejsce, naMapieLokalnej } from '../world/miasto.ts';
 import {
   AMUNICJA,
   BRON,
-  frazaMiejsca,
   type Gosc,
   type KontekstGoscia,
+  opisMiejsca,
   PROG_FACHU,
   skladGoscia,
   stronaMiejsca,
@@ -194,11 +200,11 @@ const dostepne = (st: GovState, m: Miejsce): boolean =>
 export function celWiadomosci(st: GovState, i: GovInput, g: Gosc): { klucz: string; nazwa: Tx } {
   const okolica = st.miasto ? (i.okolica ?? []) : [];
   const wlasne = g.skad.klucz ? okolica.find((x) => x.klucz === g.skad.klucz) : undefined;
-  if (wlasne && dostepne(st, wlasne)) return { klucz: wlasne.klucz, nazwa: g.skad.nazwa };
+  if (wlasne && dostepne(st, wlasne)) return { klucz: wlasne.klucz, nazwa: opisMiejsca(wlasne) };
   const bliskie = (a: Miejsce, b: Miejsce) => a.odl - b.odl || (a.klucz < b.klucz ? -1 : 1);
   const mozliwe = okolica.filter((m) => dostepne(st, m)).sort(bliskie);
   const m = mozliwe.find((x) => stronaMiejsca(x.x, x.y) === g.skad.strona) ?? mozliwe[0];
-  if (m) return { klucz: m.klucz, nazwa: frazaMiejsca(m) };
+  if (m) return { klucz: m.klucz, nazwa: opisMiejsca(m) };
   const t = TARGETS.filter((x) => x.range === 'daleko').sort(
     (a, b) => (st.visits[a.id] ?? 0) - (st.visits[b.id] ?? 0),
   )[0];
@@ -355,12 +361,31 @@ export function goscTick(st: GovState, i: GovInput, fx: GovEffects, zajete: bool
     st.later.push({ day: nightDay(i), stock: {}, line });
     logGov(st, i, line, true, fx);
   }
+  // noc u nas: linia do porannego raportu o 5:00, jeśli gość wciąż śpi u nas, żyje i niczego nie wziął (kto uciekł z łupem,
+  // ma linię o kradzieży, kto zginął, o śmierci), żeby raport nie przeczył sam sobie
+  if (
+    a.noc &&
+    !a.liniaNocy &&
+    !a.kradl &&
+    i.hour === 5 &&
+    e.faza === 'w_srodku' &&
+    e.pawns.length > 0 &&
+    e.ukradl === 0
+  ) {
+    a.liniaNocy = true;
+    st.later.push({ day: nightDay(i), stock: {}, line: nocGoscia(widoczny(g, e)) });
+  }
   const slowa = wordsOf(placeIn(i));
   const slowaEn = wordsEn(placeIn(i));
   if (KONCOWE.has(e.faza)) {
     if (ev) logGov(st, i, znikniecie(g, e.faza, slowa, slowaEn), false, fx);
     else if (!a.karta) logGov(st, i, planPrzepadl(e.faza, slowa, slowaEn), false, fx);
-    else if (a.noc && e.faza === 'zginal') logGov(st, i, nocnyZgon(g), true, fx);
+    else if (a.noc && e.faza === 'zginal') {
+      const zgon = nocnyZgon(g);
+      logGov(st, i, zgon, true, fx);
+      // do raportu nocy, jeśli ta jeszcze trwa (rano 6–8 gość wychodzi, a raport już poszedł)
+      if (i.hour < 6 || i.hour >= 8) st.later.push({ day: nightDay(i), stock: {}, line: zgon });
+    }
     if (ev) st.ev.active = null;
     delete s.aktywny;
     while (s.czytane < i.goscie.length && KONCOWE.has(i.goscie[s.czytane].faza)) s.czytane++;
@@ -393,13 +418,26 @@ const wielu = (g: Gosc): boolean => g.osoby.length > 1;
 const goEn = (g: Gosc): string => (wielu(g) ? 'them' : mowiacy(g).f ? 'her' : 'him');
 const ludzieEn = (n: number): string => `${n} ${n === 1 ? 'person' : 'people'}`;
 
-/** Gość tak, jak widzi go karta: tylu osób, ilu jest żywych pionków (kto nie dotarł pod bramę, nie jest na karcie). Reszta
-    klocków bez zmian; ugryzienie, którego nosiciel zginął, odpada. */
+/** Gość tak, jak widzi go karta: tylko żywi członkowie grupy, w kolejności symulacji (`GovGosc.zywi`: indeksy w `osoby`),
+    więc mówiący to pierwsza żywa osoba, a liczba osób to liczba pionków pod bramą. Ugryzienie przechodzi na nowy indeks
+    nosiciela; gdy nosiciel nie żyje, gość jest dla karty zdrowy (ani oglądanie rąk, ani tekst nie mówią o zwłokach), a ktoś
+    z ugryzionym bliskim jest zwykłym wędrowcem, który nie prosi już o dobicie. Wszyscy żywi albo wpis bez żywych (grupa
+    skończona): bez zmian. */
 function widoczny(g: Gosc, w: GovGosc | null): Gosc {
-  const zywi = w ? w.pawns.length : g.osoby.length;
-  if (zywi <= 0 || zywi >= g.osoby.length) return g;
-  const out: Gosc = { ...g, osoby: g.osoby.slice(0, zywi) };
-  if (g.ugryziony !== undefined && g.ugryziony >= zywi) delete out.ugryziony;
+  if (!w || w.zywi.length === 0) return g;
+  const idx = w.zywi.filter((k) => k >= 0 && k < g.osoby.length);
+  if (idx.length === 0 || (idx.length === g.osoby.length && idx.every((k, j) => k === j))) return g;
+  const out: Gosc = { ...g, osoby: idx.map((k) => g.osoby[k]) };
+  delete out.ugryziony;
+  if (g.ugryziony === undefined) return out;
+  const j = idx.indexOf(g.ugryziony);
+  if (j >= 0) {
+    out.ugryziony = j;
+    return out;
+  }
+  if (g.haczyk === 'ugryziony') out.haczyk = 'prawda';
+  if (g.kto === 'z_ugryzionym') out.kto = 'wedrowiec';
+  if (g.chce === 'dobic') out.chce = 'nocleg';
   return out;
 }
 
@@ -451,8 +489,8 @@ function nagroda(h: GovHost, g: Gosc): void {
     const m = h.wskazowka(g);
     h.log(
       tx(
-        `Wieści o miejscu${m.pl.startsWith('od ') ? ' ' : ': '}${m.pl}. Nikt tam nie zaglądał od miesięcy: następna wyprawa będzie bezpieczniejsza i da więcej.`,
-        `News of a place${m.en.startsWith('from ') ? ' ' : ': '}${m.en}. Nobody has looked in there for months: the next run will be safer and bring back more.`,
+        `Wieść o miejscu: ${m.pl}. Nikt tam nie zaglądał od miesięcy: następna wyprawa będzie bezpieczniejsza i da więcej.`,
+        `News of a place: ${m.en}. Nobody has looked in there for months: the next run will be safer and bring back more.`,
       ),
       true,
     );
@@ -524,9 +562,9 @@ function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
   /** haczyk po przyjęciu do osiedla albo wpuszczeniu: ugryzienie, choroba i pościg mają skutki (pościg w zwykłym trybie to
       napad przy bramie, w zombie hałas przy bramie) */
   const haczyk = (): void => {
-    if (g0.haczyk === 'ugryziony') h.goscRozkaz(id, 'ugryziony');
-    if (g0.haczyk === 'chory') h.chorobaRano(liniaChoroby(s, e));
-    if (g0.haczyk === 'poscig') {
+    if (g.haczyk === 'ugryziony') h.goscRozkaz(id, 'ugryziony');
+    if (g.haczyk === 'chory') h.chorobaRano(liniaChoroby(s, e));
+    if (g.haczyk === 'poscig') {
       if (zombie) h.halas(w?.tile ?? 0, HALAS_PROMIEN);
       else h.poscig();
     }
@@ -537,11 +575,10 @@ function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
     ok: pod && !h.gateClosed(),
     run: () => {
       h.goscRozkaz(id, 'noc');
-      if (g0.haczyk === 'klamie') h.goscRozkaz(id, 'klamie');
+      if (g.haczyk === 'klamie') h.goscRozkaz(id, 'klamie');
       haczyk();
       h.mood(1, 0);
       nagroda(h, g0);
-      h.later({}, nocGoscia(g));
     },
   };
   const jedzenie: GChoice = {
@@ -639,7 +676,7 @@ function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
   };
   const dobic: GChoice = {
     label: tx('Dobić przez siatkę dzidą', 'Finish the bitten one off with a spear through the fence'),
-    ok: pod && !!h.zDzida() && g0.ugryziony !== undefined,
+    ok: pod && !!h.zDzida() && g.ugryziony !== undefined,
     run: () => {
       const dobijajacy = h.zDzida();
       if (!dobijajacy) return;
@@ -660,7 +697,7 @@ function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
     ok: pod,
     zostaje: true,
     run: () => {
-      const bity = g0.haczyk === 'ugryziony';
+      const bity = g.haczyk === 'ugryziony';
       h.obejrzano(bity ? 'ugryziony' : 'czysty');
       if (!bity) h.mood(-1, 0);
     },
@@ -671,12 +708,12 @@ function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
     jedzenie: [jedzenie, noc],
     leki: [leki, noc, jedzenie],
     wymiana: [wymiana, noc],
-    dolaczyc: [zostan, ...(g0.ma === 'fach' && fachNowy(h, mowiacy(g0)) ? [zarzad] : []), noc, jedzenie],
+    dolaczyc: [zostan, ...(g.ma === 'fach' && fachNowy(h, mowiacy(g)) ? [zarzad] : []), noc, jedzenie],
     przechowac: [przechowac, noc],
     wiadomosc: [wiadomosc, noc, jedzenie],
     dobic: [dobic, noc],
   };
-  return [...wedlugChce[g0.chce], ...(zombie && !k.obejrzano ? [obejrzec] : []), odprawic];
+  return [...wedlugChce[g.chce], ...(zombie && !k.obejrzano ? [obejrzec] : []), odprawic];
 }
 
 const gosc: GEventDef<DaneGoscia> = {
@@ -712,7 +749,7 @@ const gosc: GEventDef<DaneGoscia> = {
 function wyboryZlapanego(h: GovHost, d: DaneGoscia): GChoice[] {
   const k = h.gosc(d.id);
   if (!k) return [];
-  const g = k.gosc;
+  const g = widoczny(k.gosc, k.wpis);
   const w = k.wpis;
   const zl = w?.faza === 'zlapany';
   const p = mowiacy(g);
@@ -778,10 +815,12 @@ const zlapany: GEventDef<DaneGoscia> = {
   text: (h, d) => {
     const k = h.gosc(d.id);
     if (!k) return tx('Nikt już tu nie stoi.', 'Nobody is standing here now.');
-    const p = mowiacy(k.gosc);
+    // kradnie pierwsza żywa osoba (symulacja bierze `m[0]`), więc karta nazywa ją tak samo
+    const gz = widoczny(k.gosc, k.wpis);
+    const p = mowiacy(gz);
     const ukradl = k.wpis?.ukradl ?? 0;
     const ktore = ukradl === 1 ? 'która nie była' : 'które nie były';
-    const reszta = wielu(k.gosc)
+    const reszta = wielu(gz)
       ? tx(
           ' Reszta grupy stoi z boku i udaje, że śpi.',
           ' The rest of the group stand to one side and pretend to be asleep.',

@@ -39,7 +39,8 @@
    kafelek przed kozą zarządu, dokąd idzie ktoś z karty „Ktoś nie może spać” (liczony przy każdym odczycie).
 
    Goście z klocków (src/sim/gosc.ts): `GovInput.goscie` jest tylko w grze z obcymi (`st.obcy`), choćby puste, i niesie
-   wszystkie wizyty po kolei (`GovGosc`: faza, kafelek mówiącego, żywe pionki, porcje wzięte przez kłamcę, `przyjety`);
+   wszystkie wizyty po kolei (`GovGosc`: faza, kafelek mówiącego, żywe pionki i ich indeksy w planie `zywi`, porcje wzięte przez
+   kłamcę, `przyjety`);
    `fx.gosc` (plan wizyty) i `fx.goscRozkaz` (rozkazy dla grup) idą do kolejki poleceń jako 'gosc' i 'goscrozkaz', więc
    pionki powstają i ruszają od następnego kroku, a zapis niczego nie gubi. Plan idzie jako kopia osób, bo kolejka jest
    częścią stanu symulacji, a osoby gościa zostają też w stanie zarządu.
@@ -250,15 +251,22 @@ function goscieOdczyt(st: SimState, w: World): GovGosc[] {
   return (st.goscie ?? []).map((g) => {
     // po `poszedl` i `zginal` nikogo już nie ma (zakończone wizyty zostają w liście, więc nie szukamy po próżnicy)
     const nikogo = g.faza === 'poszedl' || g.faza === 'zginal';
-    const zywi = nikogo ? [] : g.pawns.map((id) => st.pawns.find((p) => p.id === id)).filter((p): p is Pawn => !!p);
-    const lider = zywi[0];
+    // żywi w kolejności planu: pionek i jego indeks w `PlanGoscia.osoby` (symulacja zachowuje kolejność, usuwa zmarłych)
+    const zywi: { k: number; p: Pawn }[] = [];
+    if (!nikogo)
+      g.pawns.forEach((id, k) => {
+        const p = st.pawns.find((q) => q.id === id);
+        if (p) zywi.push({ k, p });
+      });
+    const lider = zywi[0]?.p;
     const tile = lider ? Math.floor(lider.y) * w.size + Math.floor(lider.x) : g.kafelek;
     return {
       id: g.id,
       faza: g.faza,
       tile,
       gdzie: { x: tile % w.size, y: Math.floor(tile / w.size) },
-      pawns: zywi.map((p) => p.id),
+      pawns: zywi.map((z) => z.p.id),
+      zywi: zywi.map((z) => z.k),
       ukradl: g.ukradl,
       ...(g.przyjety ? { przyjety: true } : {}),
     };

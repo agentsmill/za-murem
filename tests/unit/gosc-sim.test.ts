@@ -33,7 +33,7 @@ import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { tickAt } from '../../src/sim/handlarz.ts';
 import { jobText } from '../../src/sim/orders.ts';
 import { gateTiles as gateTilesOf } from '../../src/sim/perimeter.ts';
-import { awansuj, createSim, type Pawn, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
+import { awansuj, createSim, type Pawn, RISE_TICKS, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { mockBlockM2 } from './interior-mock.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
@@ -272,6 +272,7 @@ describe('plan gościa: pionki na ulicy i marsz pod bramę', () => {
         tile: tileOf(p),
         gdzie: { x: tileOf(p) % size, y: Math.floor(tileOf(p) / size) },
         pawns: [p.id],
+        zywi: [0],
         ukradl: 0,
       },
     ]);
@@ -882,6 +883,30 @@ describe('przyjęcie kradnącego i dobicie ugryzionego (zadanie 10)', () => {
     expect(grupa(st).faza).toBe('poszedl');
   });
 
+  it('dobity przez siatkę nie wstaje: zwłoki bez czasu wstania leżą po godzinie, a po zwykłej śmierci gościa wstają', () => {
+    const rozegraj = (dobij: boolean) => {
+      const sim = gra(2, 10, { zombie: true });
+      podBrame(sim, plan(2, 'n', 1, 1));
+      const st = sim.st;
+      const [, b] = czlonkowie(st);
+      if (dobij) wyslij(sim, { goscRozkaz: rozkazy('g1', 'dobij') });
+      else sim.wound(b, 1000);
+      sim.step();
+      const zwloki = st.things.filter((t) => t.kind === 'zwloki');
+      expect(zwloki).toHaveLength(1);
+      const { id, fuel } = zwloki[0];
+      // godzina gry i trochę, bez filtrowania szwendaczy (`run` ich usuwa)
+      for (let k = 0; k < RISE_TICKS + 100; k++) sim.step();
+      // wstałe zwłoki znikają z mapy (powstaje szwendacz), dobite leżą dalej
+      return { fuel, leza: st.things.some((t) => t.id === id) };
+    };
+    expect(rozegraj(true)).toEqual({ fuel: 0, leza: true });
+    // kontrola: ten sam gość zabity zwyczajnie dostaje czas wstania i wstaje
+    const zwykly = rozegraj(false);
+    expect(zwykly.fuel).toBeGreaterThan(0);
+    expect(zwykly.leza).toBe(false);
+  });
+
   it('dobij bez ugryzionego w planie albo poza fazą brama nikogo nie rusza', () => {
     // plan bez ugryzionej osoby
     const bez = gra(2, 10, { zombie: true });
@@ -909,11 +934,21 @@ describe('śmierć i szwendacze', () => {
     sim.wound(a, 1000);
     sim.step();
     expect(grupa(st).faza).toBe('brama');
-    expect(govInput(st, w, 0).goscie![0]).toMatchObject({ faza: 'brama', tile: tileOf(b), pawns: [b.id, c.id] });
+    expect(govInput(st, w, 0).goscie![0]).toMatchObject({
+      faza: 'brama',
+      tile: tileOf(b),
+      pawns: [b.id, c.id],
+      zywi: [1, 2],
+    });
     // rozkaz dotyczy żywych
     sim.wound(b, 1000);
     sim.step();
-    expect(govInput(st, w, 0).goscie![0]).toMatchObject({ faza: 'brama', tile: tileOf(c), pawns: [c.id] });
+    expect(govInput(st, w, 0).goscie![0]).toMatchObject({
+      faza: 'brama',
+      tile: tileOf(c),
+      pawns: [c.id],
+      zywi: [2],
+    });
     wyslij(sim, { goscRozkaz: rozkazy('g1', 'odejdz') });
     sim.step();
     expect(grupa(st).faza).toBe('odchodzi');
@@ -927,7 +962,7 @@ describe('śmierć i szwendacze', () => {
     // nie ma wpisu żałoby u zarządu, a licznik zabitych wrogów (raport „Zabitych szwendaczy”) ich nie liczy
     expect(govInput(st, w, 0).dead).toEqual([]);
     expect(st.tally!.killed).toBe(0);
-    expect(govInput(st, w, 0).goscie![0]).toMatchObject({ faza: 'zginal', pawns: [] });
+    expect(govInput(st, w, 0).goscie![0]).toMatchObject({ faza: 'zginal', pawns: [], zywi: [] });
   });
 
   it('część zginęła, reszta odeszła: faza poszedl, nie zginal', () => {

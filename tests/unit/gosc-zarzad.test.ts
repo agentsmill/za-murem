@@ -40,12 +40,14 @@ import {
   saveGov,
 } from '../../src/gov/zarzad.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
+import { tickAt as tickSim } from '../../src/sim/handlarz.ts';
 import { createSim, NOISE_TICKS, Sim, type SimState } from '../../src/sim/sim.ts';
 import type { Miejsce } from '../../src/world/miasto.ts';
 import type { World } from '../../src/world/world.ts';
 import { swiatMieszkancow } from '../../tools/bot-mieszkancy.ts';
 import { Atrapa, answer, at, TPH, TPS } from './gov-atrapa.ts';
-import { mockBlock } from './interior-mock.ts';
+import { playWithGov } from './gov-play.ts';
+import { mockBlock, mockBlockM2 } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
@@ -108,10 +110,13 @@ function stan(
         tile: 1234,
         gdzie: { x: 34, y: 12 },
         pawns: g.osoby.map((_, k) => 100 + k),
+        zywi: g.osoby.map((_, k) => k),
         ukradl: 0,
         ...o.wpis,
       }
     : null;
+  // wpis z mniejszą liczbą pionków bez własnych indeksów: żyją pierwsi (dawne zachowanie testów)
+  if (wpis && o.wpis?.pawns && !o.wpis.zywi) wpis.zywi = o.wpis.pawns.map((_, k) => k);
   const i: GovInput = {
     ...atr.input(),
     screen: 1000,
@@ -155,6 +160,11 @@ const zFaza = (s: Stan, faza: FazaGoscia, over: Partial<GovGosc> = {}, input: Pa
   goscie: s.i.goscie!.map((w) => ({ ...w, faza, ...over })),
   ...input,
 });
+
+/** o 5:00 następnej doby gość wciąż śpi u nas (faza w_srodku): zarząd dopisuje do porannego raportu linię o nocy */
+function oPiatej(s: Stan, wpis: Partial<GovGosc> = {}, faza: FazaGoscia = 'w_srodku'): void {
+  eventTick(s.gov, zFaza(s, faza, wpis, { day: 4, hour: 5, minute: 10 }), emptyEffects(), false);
+}
 
 /** zarząd bez ludzi do pilnowania: wszyscy poza mapą (na wyprawie) */
 const wszyscyPozaMapa = (people: GovPerson[]): GovPerson[] => people.map((p) => ({ ...p, away: true }));
@@ -238,7 +248,7 @@ describe('wydarzenie gosc: waga i plan', () => {
     expect(pending(s.gov, s.i)).toBeNull();
     expect(s.gov.log.some((l) => /pod bramą|at the gate/i.test(l.txt.pl + l.txt.en))).toBe(false);
     // symulacja pokazuje wpis: idzie, karty nadal nie ma
-    const w: GovGosc = { id: 'g1', faza: 'idzie', tile: 50, gdzie: { x: 50, y: 0 }, pawns: [1], ukradl: 0 };
+    const w: GovGosc = { id: 'g1', faza: 'idzie', tile: 50, gdzie: { x: 50, y: 0 }, pawns: [1], zywi: [0], ukradl: 0 };
     for (let k = 0; k < 5; k++) {
       eventTick(s.gov, { ...s.i, screen: s.i.screen + k, goscie: [w] }, emptyEffects(), false);
       expect(s.gov.ev.active).toBeNull();
@@ -287,7 +297,7 @@ describe('wydarzenie gosc: waga i plan', () => {
       eventTick(s.gov, i, fx, false);
       if (fx.gosc) {
         plany.push(fx.gosc.id);
-        w = { id: fx.gosc.id, faza: 'idzie', tile: 5, gdzie: { x: 5, y: 0 }, pawns: [1], ukradl: 0 };
+        w = { id: fx.gosc.id, faza: 'idzie', tile: 5, gdzie: { x: 5, y: 0 }, pawns: [1], zywi: [0], ukradl: 0 };
       }
       // wizyta kończy się dopiero po 100 s: do tego czasu żadnego nowego planu
       if (sek === 100 && w) w = { ...w, faza: 'poszedl' };
@@ -331,7 +341,7 @@ describe('wydarzenie gosc: waga i plan', () => {
       const s = tylkoGosc();
       eventTick(s.gov, s.i, emptyEffects(), false);
       const kroki = s.gov.log.length;
-      const w: GovGosc = { id: 'g1', faza, tile: 5, gdzie: { x: 5, y: 0 }, pawns: [], ukradl: 0 };
+      const w: GovGosc = { id: 'g1', faza, tile: 5, gdzie: { x: 5, y: 0 }, pawns: [], zywi: [], ukradl: 0 };
       eventTick(s.gov, { ...s.i, goscie: [w] }, emptyEffects(), false);
       expect(s.gov.ev.active, faza).toBeNull();
       expect(s.gov.goscie!.aktywny, faza).toBeUndefined();
@@ -424,7 +434,12 @@ describe('karta gościa pod bramą', () => {
     expect(s.gov.trust).toBe(t0 + 1);
     expect(s.gov.goscie!.aktywny!.noc).toBe(true);
     expect(s.gov.goscie!.aktywny!.koniec).toBeUndefined();
-    expect(s.gov.later.map((l) => l.line.pl).join(' ')).toMatch(/Noc u was/);
+    // linia o nocy czeka do 5:00: dopiero wtedy wiadomo, że gość został i żyje (nie kradnie, nie zginął)
+    expect(s.gov.later).toHaveLength(0);
+    oPiatej(s);
+    expect(s.gov.later.map((l) => [l.day, l.line.pl.startsWith('Noc u was')])).toEqual([[3, true]]);
+    oPiatej(s);
+    expect(s.gov.later).toHaveLength(1);
     // Przyjąć do spółdzielni
     s = stan(reczny({ chce: 'dolaczyc', kto: 'rodzina', ilu: 3 }));
     fx = wybierz(s, 'Przyjąć do spółdzielni');
@@ -622,6 +637,7 @@ describe('haczyk gościa', () => {
           tile: 50,
           gdzie: { x: 50, y: 0 },
           pawns: faza === 'poszedl' ? [] : [100],
+          zywi: faza === 'poszedl' ? [] : [0],
           ukradl: min < at(4, 2, 10) ? 0 : 3,
         },
       ];
@@ -887,7 +903,7 @@ describe('haczyk gościa', () => {
     atr.woodSklad = 30;
     atr.tick = tickAt(3, 19);
     const { fx } = przezNoc(s.gov, atr, at(4, 7), () => [
-      { id: 'g1', faza: 'w_srodku', tile: 5, gdzie: { x: 5, y: 0 }, pawns: [100], ukradl: 0 },
+      { id: 'g1', faza: 'w_srodku', tile: 5, gdzie: { x: 5, y: 0 }, pawns: [100], zywi: [0], ukradl: 0 },
     ]);
     expect(fx.reduce((a, f) => a + f.sick, 0)).toBe(1);
     expect(s.gov.reports.find((r) => r.day === 3)!.lines.some((l) => l.pl.includes('dreszcze'))).toBe(true);
@@ -990,10 +1006,10 @@ describe('wiadomość od gościa: wskazówka na miejsce', () => {
     wybierz(s, 'Wpuścić na noc');
     expect(s.gov.wskazowki).toEqual({ 'poi:400:0': { dzien: 3 } });
     // linia w kronice nazywa miejsce (kategoria i nazwa jak w frazaSkad)
-    const linia = s.gov.log.find((l) => l.txt.pl.startsWith('Wieści o miejscu'))!;
+    const linia = s.gov.log.find((l) => l.txt.pl.startsWith('Wieść o miejscu: '))!;
     expect(linia.big).toBe(true);
-    expect(linia.txt.pl).toContain('od strony apteki „Pod Różą”');
-    expect(linia.txt.en).toContain('from the direction of the pharmacy “Pod Różą”');
+    expect(linia.txt.pl).toContain('Wieść o miejscu: apteka „Pod Różą”. Nikt tam nie zaglądał');
+    expect(linia.txt.en).toContain('News of a place: the pharmacy “Pod Różą”. Nobody has looked in there');
     expect(polskieSlowa(linia.txt.en, ['Pod Różą'])).toEqual([]);
     // ryzyko wyprawy tam jest o połowę mniejsze (karta pokazuje już zmniejszone)
     const cel = celZMiejsca(apteka);
@@ -1069,7 +1085,7 @@ describe('wiadomość od gościa: wskazówka na miejsce', () => {
     wybierz(bez, 'Wpuścić na noc');
     expect(Object.keys(bez.gov.wskazowki!)).toEqual([dalekie[0]]);
     expect(
-      bez.gov.log.some((l) => l.txt.pl.startsWith('Wieści o miejscu: ') && l.txt.pl.includes('pawilon handlowy')),
+      bez.gov.log.some((l) => l.txt.pl.startsWith('Wieść o miejscu: ') && l.txt.pl.includes('pawilon handlowy')),
     ).toBe(true);
     expect(
       bez.gov.log.some((l) => l.txt.en.startsWith('News of a place: ') && l.txt.en.includes('shopping pavilion')),
@@ -1136,14 +1152,14 @@ describe('wiadomość od gościa: wskazówka na miejsce', () => {
     let s = przy([lokalne, wschodDaleko, wschodBlizej, zachod]);
     expect(Object.keys(s.gov.wskazowki!)).toEqual([wschodBlizej.klucz]);
     // linia w kronice nazywa miejsce kategorią i nazwą jak „skąd”
-    const linia = s.gov.log.find((l) => l.txt.pl.startsWith('Wieści o miejscu'))!;
-    expect(linia.txt.pl).toContain('od strony apteki „Zielony Kącik”');
-    expect(linia.txt.en).toContain('from the direction of the pharmacy “Zielony Kącik”');
+    const linia = s.gov.log.find((l) => l.txt.pl.startsWith('Wieść o miejscu'))!;
+    expect(linia.txt.pl).toContain('Wieść o miejscu: apteka „Zielony Kącik”.');
+    expect(linia.txt.en).toContain('News of a place: the pharmacy “Zielony Kącik”.');
     // nic po stronie gościa: najbliższe w ogóle
     s = przy([lokalne, zachod]);
     expect(Object.keys(s.gov.wskazowki!)).toEqual([zachod.klucz]);
-    expect(s.gov.log.find((l) => l.txt.pl.startsWith('Wieści o miejscu'))!.txt.pl).toContain(
-      'od strony sklepu spożywczego „Pod Kasztanem”',
+    expect(s.gov.log.find((l) => l.txt.pl.startsWith('Wieść o miejscu'))!.txt.pl).toContain(
+      'Wieść o miejscu: sklep spożywczy „Pod Kasztanem”.',
     );
     // to samo miejsce wskazane przez gościa, gdy da się tam iść: jego fraza „skąd”
     const dobre = stan(wiadomosc(), { input: { okolica: [apteka, wschodBlizej] } });
@@ -1349,6 +1365,201 @@ describe('gość w domu i gość z nocy', () => {
   });
 });
 
+describe('karta po śmierci członka grupy', () => {
+  const rodzina = (over: Partial<Gosc> = {}) => reczny({ kto: 'rodzina', chce: 'dolaczyc', ilu: 3, ...over });
+
+  it('zmarły mówiący: karta nazywa pierwszą żywą osobę, liczba osób zgadza się z pionkami, a Przyjąć do zarządu dotyczy jej', () => {
+    const g = rodzina({ ma: 'fach' });
+    g.osoby[0].skills = { elek: 3 };
+    g.osoby[1].skills = { med: 3 };
+    const wpis = { pawns: [101, 102], zywi: [1, 2] };
+    const brakWiedzy = { know: { bud: 0, cieplo: 0, elek: 0, med: 0, uprawa: 0, it: 0 } };
+    const s = stan(g, { wpis, input: { cap: 20, residents: 0, ...brakWiedzy } });
+    const v = eventView(s.gov, s.i)!;
+    expect(v.text.pl).toContain(g.osoby[1].name);
+    expect(v.text.pl).not.toContain(g.osoby[0].name);
+    expect(v.text.pl).toMatch(/2 osoby|2 osób/);
+    expect(v.text.en).toContain(g.osoby[1].name);
+    expect(v.text.en).not.toContain(g.osoby[0].name);
+    expect(v.text.en).toMatch(/\b2 people\b/);
+    // do zarządu wchodzi pierwsza żywa osoba (ta, która miała fach, nie zmarły mówiący)
+    expect(etykiety(s)[1]).toBe(`Przyjąć do zarządu (${g.osoby[1].first})`);
+    // fach ma tylko zmarły: zarząd nie ma kogo przyjmować
+    const stary = rodzina({ ma: 'fach' });
+    stary.osoby[0].skills = { elek: 3 };
+    expect(
+      etykiety(stan(stary, { wpis, input: { cap: 20, residents: 0, ...brakWiedzy } })).some((e) =>
+        e.startsWith('Przyjąć do zarządu'),
+      ),
+    ).toBe(false);
+    // przyjęcie: wpis w kronice o żywych (2 osoby, pierwszy żywy na czele), nie o zmarłym
+    wybierz(s, 'Przyjąć do spółdzielni');
+    const linia = s.gov.log.find((l) => l.txt.pl.startsWith('Przyjęliście: '))!;
+    expect(linia.txt.pl).toBe(`Przyjęliście: ${g.osoby[1].name} i reszta (2 osoby).`);
+    expect(linia.txt.en).toBe(`You took in ${g.osoby[1].name} and the others (2 people).`);
+    // wszyscy żywi (indeksy po kolei): bez przycinania, jak dotąd
+    const calosc = stan(g, { input: { cap: 20, residents: 0 } });
+    expect(eventView(calosc.gov, calosc.i)!.text.pl).toContain(g.osoby[0].name);
+    // indeksy poza listą osób (plan ucięty do 12) odpadają, a wpis bez indeksów nie przycina
+    const poza = stan(g, { wpis: { pawns: [101, 150], zywi: [1, 40] } });
+    expect(eventView(poza.gov, poza.i)!.text.pl).toContain(g.osoby[1].name);
+  });
+
+  it('karta „Złapany” nazywa tę samą osobę co symulacja (pierwszą żywą), też po śmierci mówiącego', () => {
+    const g = rodzina({ haczyk: 'klamie', chce: 'nocleg' });
+    const s = stan(g, {
+      wpis: { faza: 'zlapany', ukradl: 2, pawns: [101, 102], zywi: [1, 2] },
+      karta: false,
+      aktywny: { noc: true },
+    });
+    eventTick(s.gov, s.i, emptyEffects(), false);
+    const v = eventView(s.gov, s.i)!;
+    expect(v.id).toBe('zlapany');
+    expect(v.text.pl).toContain(g.osoby[1].name);
+    expect(v.text.pl).not.toContain(g.osoby[0].name);
+    expect(v.text.en).toContain(g.osoby[1].name);
+    expect(v.text.en).not.toContain(g.osoby[0].name);
+    // reszta grupy: jedna osoba, więc bez zdania o reszcie
+    expect(v.text.pl).toContain('Reszta grupy');
+    wybierz(s, 'Oddać jedzenie');
+    expect(s.gov.later.some((l) => l.line.pl.startsWith(g.osoby[1].name))).toBe(true);
+    expect(s.gov.later.some((l) => l.line.pl.includes(g.osoby[0].name))).toBe(false);
+  });
+
+  it('zmarły nosiciel ugryzienia: bez oglądania rąk jako ugryzionego, bez rozkazu ugryziony i bez prośby o dobicie', () => {
+    const ocaleni = () => reczny({ kto: 'ocaleni', ilu: 3, chce: 'nocleg', haczyk: 'ugryziony', ugryziony: 1 });
+    // żywy nosiciel: „Obejrzeć ręce” odsłania ugryzienie, „Wpuścić na noc” zaraża
+    let g = ocaleni();
+    let s = stan(g, { mode: 'zombie' });
+    wybierz(s, 'Obejrzeć ręce');
+    expect(tekstKarty(s)).toContain(`U ${g.osoby[1].first} pod rękawem jest świeże ugryzienie.`);
+    // nosiciel zmarł (żywi 0 i 2): ręce czyste, imię zmarłego nie pada, rozkazu ugryziony nie ma
+    g = ocaleni();
+    const t0 = 50;
+    s = stan(g, { mode: 'zombie', wpis: { pawns: [100, 102], zywi: [0, 2] } });
+    expect(s.gov.trust).toBe(t0);
+    wybierz(s, 'Obejrzeć ręce');
+    expect(s.gov.goscie!.aktywny!.obejrzano).toBe('czysty');
+    expect(tekstKarty(s)).toContain('Obejrzeliście ręce: czyste');
+    expect(tekstKarty(s)).not.toContain(g.osoby[1].first);
+    expect(eventView(s.gov, s.i)!.text.en).not.toContain(g.osoby[1].first);
+    expect(s.gov.trust).toBe(t0 - 1);
+    s = stan(g, { mode: 'zombie', wpis: { pawns: [100, 102], zywi: [0, 2] } });
+    expect(rozkazy(wybierz(s, 'Wpuścić na noc'))).toEqual(['noc']);
+    // mówiący zmarł, nosiciel żyje: indeks ugryzionego idzie za osobą (żywi 1 i 2, nosiciel 2 to teraz druga osoba)
+    g = reczny({ kto: 'ocaleni', ilu: 3, chce: 'nocleg', haczyk: 'ugryziony', ugryziony: 2 });
+    s = stan(g, { mode: 'zombie', wpis: { pawns: [101, 102], zywi: [1, 2] } });
+    wybierz(s, 'Obejrzeć ręce');
+    expect(tekstKarty(s)).toContain(`U ${g.osoby[2].first} pod rękawem jest świeże ugryzienie.`);
+    // ktoś z ugryzionym bliskim, który prosił o dobicie, a bliski nie żyje: zwykły wędrowiec, bez „Dobić”
+    const bliski = () => reczny({ kto: 'z_ugryzionym', chce: 'dobic', haczyk: 'ugryziony', ugryziony: 1 });
+    g = bliski();
+    s = stan(g, { mode: 'zombie', wpis: { pawns: [100], zywi: [0] } });
+    s.i.people = s.i.people.map((p, k) => (k === 0 ? { ...p, arm: 'dzida' as const } : p));
+    expect(etykiety(s).some((e) => e.startsWith('Dobić'))).toBe(false);
+    expect(eventView(s.gov, s.i)!.title.pl).toMatch(/^Wędrowi/);
+    expect(tekstKarty(s)).not.toContain(g.osoby[1].first);
+    // żywy bliski: dobicie jak dotąd
+    s = stan(bliski(), { mode: 'zombie' });
+    s.i.people = s.i.people.map((p, k) => (k === 0 ? { ...p, arm: 'dzida' as const } : p));
+    expect(etykiety(s)[0]).toBe('Dobić przez siatkę dzidą');
+  });
+
+  it('zmarły mówiący w prawdziwej symulacji: odczyt ma żywych po indeksach, a karta nazywa następnego i liczy pionki', () => {
+    const w = mockBlockM2();
+    const st = createSim(w, 3, { core: 2, obcy: true });
+    const sim = new Sim(w, st);
+    st.tick = tickSim(2, 10);
+    const o = st.obcy!;
+    o.next = o.wnext = o.enext = tickSim(30, 10);
+    const g = rodzina();
+    applyGov(st, w, {
+      ...emptyEffects(),
+      gosc: { id: 'g1', osoby: g.osoby, looks: [4, 5, 6], strona: 'n' },
+    });
+    for (let k = 0; k < 6000 && st.goscie?.[0]?.faza !== 'brama'; k++) sim.step();
+    expect(st.goscie![0].faza).toBe('brama');
+    expect(govInput(st, w, 0).goscie![0]).toMatchObject({ zywi: [0, 1, 2] });
+    // mówiący ginie, sim zachowuje kolejność planu
+    sim.wound(st.pawns.find((p) => p.id === st.goscie![0].pawns[0])!, 1000);
+    sim.step();
+    const odczyt = govInput(st, w, 1000);
+    expect(odczyt.goscie![0].zywi).toEqual([1, 2]);
+    expect(odczyt.goscie![0].pawns).toEqual(st.goscie![0].pawns.slice(1));
+    const gov = newGov(3);
+    gov.goscie = { n: 1, czytane: 0, aktywny: { gosc: g, od: 0, karta: false } };
+    eventTick(gov, odczyt, emptyEffects(), false);
+    expect(gov.ev.active?.id).toBe('gosc');
+    const v = eventView(gov, odczyt)!;
+    expect(v.text.pl).toContain(g.osoby[1].name);
+    expect(v.text.pl).not.toContain(g.osoby[0].name);
+    expect(v.text.pl).toMatch(/2 osoby|2 osób/);
+    // imię pierwszego żywego pionka to imię z karty
+    const lider = st.pawns.find((p) => p.id === odczyt.goscie![0].pawns[0])!;
+    expect(st.people[lider.person].name).toBe(g.osoby[1].name);
+  });
+});
+
+describe('linia o nocy z gościem w porannym raporcie', () => {
+  /** gość wpuszczony na noc o 19:00 trzeciego dnia, jego fazy w nocy według `wpis`; raport z nocy 3 */
+  function noc(g: Gosc, wpis: (min: number) => Partial<GovGosc> & { faza: FazaGoscia }) {
+    const s = stan(g);
+    wybierz(s, 'Wpuścić na noc');
+    s.gov.ev.active = null;
+    const atr = new Atrapa(3);
+    atr.supplies = 30;
+    atr.woodSklad = 30;
+    atr.tick = tickAt(3, 19);
+    przezNoc(s.gov, atr, at(4, 7), (min) => {
+      const w = wpis(min);
+      const zywi = w.faza === 'poszedl' || w.faza === 'zginal' ? [] : [0];
+      return [{ id: 'g1', tile: 50, gdzie: { x: 50, y: 0 }, pawns: zywi.map((k) => 100 + k), zywi, ukradl: 0, ...w }];
+    });
+    return s.gov.reports.find((r) => r.day === 3)!.lines.map((l) => l.pl);
+  }
+
+  it('gość spał u nas całą noc: jedna linia o nocy, bez linii o kradzieży i śmierci', () => {
+    const g = reczny({ chce: 'nocleg' });
+    g.osoby[0].f = true;
+    const linie = noc(g, () => ({ faza: 'w_srodku' }));
+    expect(linie.filter((l) => l.startsWith('Noc u was'))).toEqual([`Noc u was spędziła ${g.osoby[0].name}.`]);
+    expect(linie.some((l) => /zniknęły|nie przeżył/.test(l))).toBe(false);
+  });
+
+  it('gość, który wyszedł przed 5:00, uciekł z łupem albo zginął: raport nie mówi, że spędził noc', () => {
+    const wyszedl = noc(reczny({ chce: 'nocleg' }), (min) => ({ faza: min < at(4, 1) ? 'w_srodku' : 'poszedl' }));
+    expect(wyszedl.some((l) => l.startsWith('Noc u was'))).toBe(false);
+    const g = reczny({ chce: 'nocleg', haczyk: 'klamie' });
+    const kradl = noc(g, (min) =>
+      min < at(4, 2, 10) ? { faza: 'w_srodku' } : { faza: min < at(4, 3) ? 'odchodzi' : 'poszedl', ukradl: 3 },
+    );
+    expect(kradl.some((l) => l.startsWith('Noc u was'))).toBe(false);
+    expect(kradl.filter((l) => l.includes('zniknęły 3 porcje')).length).toBe(1);
+    // zginął w nocy: wpis o śmierci w raporcie, bez „spędził noc”
+    const m = reczny({ chce: 'nocleg' });
+    m.osoby[0].f = false;
+    const zginal = noc(m, (min) => ({ faza: min < at(4, 3) ? 'w_srodku' : 'zginal' }));
+    expect(zginal.some((l) => l.startsWith('Noc u was'))).toBe(false);
+    expect(zginal).toContain(`${m.osoby[0].name} nie przeżył nocy u was.`);
+  });
+
+  it('linia o nocy tylko raz i tylko o 5:00: nie od razu po wyborze, nie w dzień i nie dla odprawionego', () => {
+    const s = stan(reczny({ chce: 'nocleg' }));
+    wybierz(s, 'Wpuścić na noc');
+    for (const hour of [6, 7, 12, 22, 3]) {
+      eventTick(s.gov, zFaza(s, 'w_srodku', {}, { day: 4, hour, minute: 10 }), emptyEffects(), false);
+      expect(s.gov.later, `godzina ${hour}`).toHaveLength(0);
+    }
+    oPiatej(s);
+    oPiatej(s);
+    expect(s.gov.later.filter((l) => l.line.pl.startsWith('Noc u was'))).toHaveLength(1);
+    const o = stan(reczny({ chce: 'nocleg' }));
+    wybierz(o, 'Odprawić');
+    oPiatej(o);
+    expect(o.gov.later).toHaveLength(0);
+  });
+});
+
 describe('zapis i wczytanie', () => {
   it('zapis i wczytanie z otwartą kartą gościa: ta sama karta', () => {
     const s = stan(reczny({ kto: 'rodzina', ilu: 3, chce: 'dolaczyc', ma: 'rzecz', rzecz: { meds: 2 } }), {
@@ -1424,6 +1635,7 @@ describe('język i teksty kart', () => {
           if (k >= 0 && v.choices[k].ok) {
             const dlugosc = s.gov.log.length;
             const fx = chooseEvent(s.gov, s.i, k);
+            oPiatej(s);
             teksty.push(
               ...s.gov.log.slice(dlugosc).map((l) => l.txt.en),
               ...s.gov.later.map((l) => l.line.en),
@@ -1476,10 +1688,12 @@ describe('język i teksty kart', () => {
     ] as const) {
       const s = stan(g);
       wybierz(s, o);
+      oPiatej(s);
       expect(s.gov.later[0].line.pl).toBe(`Noc u was ${g.osoby[0].f ? 'spędziła' : 'spędził'} ${g.osoby[0].name}.`);
     }
     const s = stan(reczny({ kto: 'rodzina', ilu: 4, chce: 'dolaczyc' }), { input: { cap: 9, residents: 8 } });
     wybierz(s, 'Wpuścić na noc');
+    oPiatej(s);
     expect(s.gov.later[0].line.pl).toMatch(/^Noc u was spędzili goście: .+ i reszta \(4 osoby\)\.$/);
     expect(s.gov.later[0].line.en).toMatch(/and the others \(4 people\) spent the night with you\.$/);
   });
@@ -1498,13 +1712,13 @@ interface Gra {
 
 /** Przymorze z mieszkańcami z generatora, obcy włączeni (jak w przeglądarce), zarząd co sekundę przy ekranie, okna
     odpowiadane losowym dostępnym wyborem (karta nocy zatwierdzona, raport przeczytany, uchwała odłożona). `przy` woła się
-    co sekundę po oknach i może podmienić stan gry (zapis i wczytanie); `naKarcie` dostaje każde okno wydarzenia przed
-    odpowiedzią. Zwraca grę po `dni` dobach od 15:00 pierwszego dnia. */
+    co sekundę po oknach, a `naKarcie` dostaje każde okno wydarzenia przed odpowiedzią; oba mogą podmienić stan gry
+    (zapis i wczytanie). Zwraca grę po `dni` dobach od 15:00 pierwszego dnia. */
 async function graj(
   seed: number,
   dni: number,
   hooki: {
-    naKarcie?: (p: Extract<Prompt, { k: 'wydarzenie' }>, i: GovInput, g: Gra) => void;
+    naKarcie?: (p: Extract<Prompt, { k: 'wydarzenie' }>, i: GovInput, g: Gra) => Gra | undefined;
     przy?: (g: Gra) => Gra | undefined;
   } = {},
 ): Promise<Gra> {
@@ -1518,11 +1732,16 @@ async function graj(
     const sek = g.st.tick / TPS;
     applyGov(g.st, w, govUpdate(g.gov, govInput(g.st, w, sek)));
     for (let k = 0; k < 6; k++) {
-      const i = govInput(g.st, w, sek);
+      let i = govInput(g.st, w, sek);
       const p = pending(g.gov, i);
       if (!p) break;
       if (p.k === 'wydarzenie') {
-        hooki.naKarcie?.(p, i, g);
+        // hak może podmienić grę (zapis i wczytanie przy otwartej karcie): odpowiedź idzie już do wczytanej
+        const zam = hooki.naKarcie?.(p, i, g);
+        if (zam) {
+          g = zam;
+          i = govInput(g.st, w, sek);
+        }
         const ok = p.choices.map((c, j) => [c, j] as const).filter(([c]) => c.ok);
         applyGov(g.st, w, chooseEvent(g.gov, i, ok[Math.floor(r() * ok.length)][1]));
       } else if (p.k === 'karta') applyGov(g.st, w, confirmNight(g.gov, i));
@@ -1539,7 +1758,7 @@ describe('spis gier z obcymi', () => {
   it('spis 5 gier po 5 dób z obcymi: każda karta gosc ma pionek gosc w fazie brama w chwili pokazania', async () => {
     const DNI = 5;
     const GRY = [11, 12, 13, 14, 15];
-    const razem = { karty: 0, gosc: 0, zlapany: 0, wizyt: 0, pelneGrupy: 0 };
+    const razem = { karty: 0, gosc: 0, zlapany: 0, wizyt: 0, pelneGrupy: 0, martwiNaKarcie: 0 };
     const wypisz: string[] = [];
     for (const seed of GRY) {
       const na = { karty: 0, gosc: 0, zlapany: 0 };
@@ -1559,6 +1778,17 @@ describe('spis gier z obcymi', () => {
           expect(pionki.some((q) => Math.floor(q.y) * g.w.size + Math.floor(q.x) === wpis.tile)).toBe(true);
           expect(pionki.length).toBeLessThanOrEqual(aktywny.gosc.osoby.length);
           if (pionki.length === aktywny.gosc.osoby.length) razem.pelneGrupy++;
+          // karta mówi o żywych: indeksy `zywi` zgadzają się z osobami pionków (imiona z `st.people`), a zmarłych w karcie nie ma
+          const zywe = wpis.zywi.map((k) => aktywny.gosc.osoby[k]);
+          expect(
+            wpis.pawns.map((id) => g.st.people[g.st.pawns.find((q) => q.id === id)!.person].name),
+            `${seed}: imiona żywych`,
+          ).toEqual(zywe.map((o) => o.name));
+          const martwi = aktywny.gosc.osoby.filter((_, k) => !wpis.zywi.includes(k));
+          for (const o of martwi)
+            for (const t of [p.title.pl, p.text.pl, ...p.choices.map((c) => c.label.pl)])
+              expect(t, `${seed}: zmarły ${o.name} na karcie`).not.toContain(o.first);
+          razem.martwiNaKarcie += martwi.length;
           // liczba osób w tekście grupy to liczba pionków
           if (p.id === 'gosc' && (aktywny.gosc.kto === 'rodzina' || aktywny.gosc.kto === 'ocaleni'))
             expect(p.text.pl, `${seed}: ${aktywny.gosc.kto}`).toMatch(new RegExp(`\\b${pionki.length}\\b`));
@@ -1585,28 +1815,83 @@ describe('spis gier z obcymi', () => {
     expect(razem.gosc).toBeLessThan(razem.karty / 2);
   }, 600_000);
 
-  it('ten sam przebieg po drugim razie, a zapis i wczytanie w połowie wizyty nie zmieniają go', async () => {
+  it('tempo na początku gry z obcymi: decyzja w prawie każdej z pierwszych dziesięciu minut (prawdziwa symulacja, wylosowany gość nie zjada odstępu)', async () => {
+    // Tak samo jak test gęstości decyzji z zarzad.test.ts (≥ 8 z 9 minut od drugiej do dziesiątej), ale na prawdziwej
+    // symulacji z obcymi, jak w przeglądarce. Przed zmianą (wylosowany gość zjadał odstęp, a plan nie był kartą) 23 z 30
+    // gier miało co najmniej 8 pokrytych minut; bez gości (BASE 3c23992) wszystkie 10 pierwszych ziaren i 26 z 30 miało
+    // wszystkie 9. Próg to wynik BASE na tych 10 ziarnach (10 z 10 co najmniej 8 minut).
+    let osiem = 0;
+    let dziewiec = 0;
+    let wizyt = 0;
+    const wypisz: string[] = [];
+    for (let seed = 1; seed <= 10; seed++) {
+      const { world: w, mieszkancy } = await swiatMieszkancow(DEMO, seed, 4);
+      const r = playWithGov(w, seed, 'zawsze-warta', 1, 4, { obcy: true, mieszkancy });
+      const d = r.gov.decisions.map((x) => x.s).filter((x) => x <= 600);
+      const pokryte = Array.from({ length: 9 }, (_, m) => d.some((x) => x >= (m + 1) * 60 && x < (m + 2) * 60)).filter(
+        Boolean,
+      ).length;
+      if (pokryte >= 8) osiem++;
+      if (pokryte === 9) dziewiec++;
+      wizyt += r.gov.goscie?.n ?? 0;
+      wypisz.push(`${seed}:${pokryte}`);
+    }
+    console.info(
+      `tempo: minut z decyzją na ziarno ${wypisz.join(' ')}; >=8: ${osiem}/10, 9: ${dziewiec}/10, wizyt ${wizyt}`,
+    );
+    // goście naprawdę wchodzą do puli w tych grach
+    expect(wizyt).toBeGreaterThanOrEqual(5);
+    expect(osiem).toBe(10);
+    expect(dziewiec).toBeGreaterThanOrEqual(9);
+  }, 600_000);
+
+  it('ten sam przebieg po drugim razie, a zapis i wczytanie w połowie wizyty nie zmieniają go: gość idzie, stoi pod bramą z otwartą kartą, śpi u nas', async () => {
+    const przeladuj = (g: Gra): Gra => {
+      const st = JSON.parse(JSON.stringify(g.st)) as SimState;
+      return { w: g.w, st, sim: new Sim(g.w, st), gov: loadGov(saveGov(g.gov)) };
+    };
+    /** faza wizyty, którą prowadzi zarząd, w symulacji */
+    const faza = (g: Gra) => g.st.goscie?.find((x) => x.id === g.gov.goscie?.aktywny?.gosc.id)?.faza;
+    const odczyt = (g: Gra) => ({ hash: g.sim.hash(), gov: saveGov(g.gov), goscie: JSON.stringify(g.st.goscie) });
     for (const seed of [21, 22]) {
-      const odczyt = (g: Gra) => ({ hash: g.sim.hash(), gov: saveGov(g.gov), goscie: JSON.stringify(g.st.goscie) });
       const a = odczyt(await graj(seed, 4));
       const b = odczyt(await graj(seed, 4));
       expect(b, `ziarno ${seed}: drugi przebieg`).toEqual(a);
       expect(a.goscie, `ziarno ${seed}: byli goście`).toBeTruthy();
-      // zapis i wczytanie raz, gdy gość śpi u nas (wizyta w środku nocy) albo stoi pod bramą z otwartą kartą
-      let wczytan = 0;
-      const c = odczyt(
-        await graj(seed, 4, {
-          przy: (g) => {
-            const w = g.gov.goscie?.aktywny;
-            if (wczytan >= 2 || !w?.noc || (g.st.tick / TPS) % 7 !== 0) return undefined;
-            wczytan++;
-            const st = JSON.parse(JSON.stringify(g.st)) as SimState;
-            return { w: g.w, st, sim: new Sim(g.w, st), gov: loadGov(saveGov(g.gov)) };
-          },
-        }),
-      );
-      expect(wczytan, `ziarno ${seed}: zapisów`).toBeGreaterThan(0);
-      expect(c, `ziarno ${seed}: po zapisie`).toEqual(a);
+      // trzy chwile wizyty, po dwa zapisy każda: gość jeszcze idzie ulicą, karta pod bramą jest otwarta, gość śpi u nas
+      const sceny: Record<
+        string,
+        { naKarcie?: (p: { id: string }, i: GovInput, g: Gra) => Gra | undefined; przy?: (g: Gra) => Gra | undefined }
+      > = {
+        idzie: { przy: (g) => (faza(g) === 'idzie' && !g.gov.goscie!.aktywny!.karta ? przeladuj(g) : undefined) },
+        karta: { naKarcie: (p, _i, g) => (p.id === 'gosc' ? przeladuj(g) : undefined) },
+        noc: { przy: (g) => (g.gov.goscie?.aktywny?.noc && faza(g) === 'w_srodku' ? przeladuj(g) : undefined) },
+      };
+      for (const [nazwa, hak] of Object.entries(sceny)) {
+        let wczytan = 0;
+        const c = odczyt(
+          await graj(seed, 4, {
+            naKarcie: hak.naKarcie
+              ? (p, i, g) => {
+                  const zam = wczytan < 2 ? hak.naKarcie!(p, i, g) : undefined;
+                  if (zam) wczytan++;
+                  return zam;
+                }
+              : undefined,
+            przy: hak.przy
+              ? (g) => {
+                  // co 7. sekunda przy ekranie, najwyżej dwa razy w grze
+                  if (wczytan >= 2 || (g.st.tick / TPS) % 7 !== 0) return undefined;
+                  const zam = hak.przy!(g);
+                  if (zam) wczytan++;
+                  return zam;
+                }
+              : undefined,
+          }),
+        );
+        expect(wczytan, `ziarno ${seed}, ${nazwa}: zapisów`).toBeGreaterThan(0);
+        expect(c, `ziarno ${seed}, ${nazwa}: po zapisie`).toEqual(a);
+      }
     }
   }, 600_000);
 });

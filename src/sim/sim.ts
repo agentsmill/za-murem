@@ -6973,7 +6973,11 @@ export class Sim {
     if (g.faza !== 'brama' || g.ugryziony === undefined) return;
     const id = g.pawns[g.ugryziony];
     const p = this.st.pawns.find((q) => q.id === id);
-    if (p && p.kind === 'gosc' && !this.graveyard.has(id)) this.wound(p, 1000);
+    if (p?.kind !== 'gosc' || this.graveyard.has(id)) return;
+    this.wound(p, 1000);
+    // dobity nie wstanie: w trybie zombie zwłoki dostają czas wstania (`fuel`), a dobite go nie mają, jak po `finish`
+    const body = this.graveyard.has(id) ? this.st.things.findLast((t) => t.kind === 'zwloki') : undefined;
+    if (body) body.fuel = 0;
   }
 
   /** obcy danego rodzaju o tym id, który jeszcze nie ucieka ani nie zniknął */

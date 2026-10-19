@@ -8,6 +8,7 @@
    Obcych (szabrownicy, wędrowcy) widać tylko w świetle. Do tego wybór pionka pod punktem kliknięcia (pawnAt, dla
    widoku: zarząd, mieszkańcy z osobą i lokatorzy sąsiednich budynków ze spotkania). Czyste funkcje bez PixiJS. */
 
+import { GOSC_HP } from '../sim/gosc.ts';
 import type { Sasiedzi } from '../sim/sasiedzi.ts';
 import type { PlotStan } from '../sim/sim.ts';
 import type { World } from '../world/world.ts';
@@ -117,8 +118,9 @@ export function onTables(things: readonly ThingLike[]): readonly ThingLike[] {
   });
 }
 
-/** rodzaje pionków obcych: widać je tylko w świetle (szwendacza w ciemności jako zarys, strangerVisibility); handlarz
-    przychodzi za dnia, gość z klocków pod bramą i przy ogniu (wpuszczony siedzi w świetle ogniska) */
+/** rodzaje pionków obcych: widać je tylko w świetle (szwendacza i gościa z klocków w ciemności jako zarys,
+    strangerVisibility); handlarz przychodzi za dnia, gość z klocków o każdej porze (karta jest nocą równie często co za
+    dnia), wpuszczony siedzi w świetle ogniska */
 export const STRANGERS: ReadonlySet<string> = new Set([
   'obcy',
   'szabrownik',
@@ -237,15 +239,22 @@ export function fenceStateFn(f: FenceLike, codes: Uint8Array): (tile: number) =>
   return (tile) => at.get(tile) ?? 'cala';
 }
 
-/** szwendacz w ciemności: ciemny zarys, żeby było widać, gdzie napiera stado */
+/** szwendacz i gość w ciemności: ciemny zarys, żeby było widać, gdzie napiera stado i kto stoi pod bramą albo śpi przy ogniu */
 export const ZOMBIE_SHADOW = 0.4;
+/** rodzaje obcych, których w ciemności widać jako zarys (`ZOMBIE_SHADOW`), nigdy całkiem ukryte */
+const ZAWSZE_ZARYS: ReadonlySet<string> = new Set(['zombie', 'gosc']);
 
 /** jak dobrze widać obcego: 1 w dzień albo w świetle, 0 w nocnej ciemności (lit: światło w jego miejscu);
-    szwendacza w ciemności widać jako ciemny zarys (ZOMBIE_SHADOW) */
+    szwendacza i gościa z klocków w ciemności widać jako ciemny zarys (ZOMBIE_SHADOW): karta, „Pokaż” i noc przy ogniu
+    potrzebują go widocznego o każdej porze */
 export function strangerVisibility(darkness: number, lit: number, kind = ''): number {
   const v = Math.max(0, Math.min(1, 1 - darkness + lit * 1.4));
-  return kind === 'zombie' ? Math.max(ZOMBIE_SHADOW, v) : v;
+  return ZAWSZE_ZARYS.has(kind) ? Math.max(ZOMBIE_SHADOW, v) : v;
 }
+
+/** pełne życie gościa na pasku: życie pionka (`GOSC_HP`), a po przyjęciu albo ugryzieniu (pionek ma potrzeby, `hp` zastępuje
+    `needs.health`) skala zdrowia 0–100 */
+export const goscMaxHp = (p: { needs?: unknown }): number => (p.needs ? 100 : GOSC_HP);
 
 /** to, czego wybór pionka potrzebuje (Pawn z symulacji pasuje bez zmian) */
 export interface HitPawn {

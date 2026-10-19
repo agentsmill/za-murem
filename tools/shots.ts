@@ -2624,6 +2624,7 @@ const SHOTS: Shot[] = [
           console.log(`  stoją: ${stoja}`);
           await waitIdle(page);
           await frames(page, 3);
+          await gosciNarysowani(page, 'pod bramą za dnia');
           await page.screenshot({ path: path.join(OUT, 'wyd-gosc-brama.png') });
           // wieczór: nowa gra, ognisko na podwórku, wpuszczeni na noc
           await page.goto(`${base}?demo=przymorze&speed=0&godzina=21&cam=hq,1.3`);
@@ -2681,6 +2682,7 @@ const SHOTS: Shot[] = [
           await page.evaluate(([x, y]) => window.zm!.setCam(x + 0.5, y + 0.5, 3), [ogn.x, ogn.y] as const);
           await waitIdle(page);
           await frames(page, 3);
+          await gosciNarysowani(page, 'przy ognisku nocą');
           await page.screenshot({ path: path.join(OUT, 'wyd-gosc-ognisko.png') });
         },
       },
@@ -2756,6 +2758,8 @@ const SHOTS: Shot[] = [
           if (!po.open || po.ev !== 'gosc') throw new Error('„Pokaż” zamknęło okno karty');
           if (po.pod || !po.widac) throw new Error('po „Pokaż” gościa nie widać: jest pod oknem albo poza ekranem');
           await waitIdle(page);
+          await frames(page, 3);
+          await gosciNarysowani(page, 'po „Pokaż”');
           await page.screenshot({ path: path.join(OUT, 'wyd-gosc-karta-pokaz.png') });
           // wybór: wpuścić na noc (jest w każdej karcie), goście wchodzą bramą na podwórko
           await page.click('#sheet .choices [data-act="event"]:has-text("Wpuścić na noc")');
@@ -2787,6 +2791,7 @@ const SHOTS: Shot[] = [
           if (wejscie.wewnatrz < wejscie.wanted) throw new Error('goście nie weszli na podwórko po „Wpuścić na noc”');
           await waitIdle(page);
           await frames(page, 3);
+          await gosciNarysowani(page, 'na podwórku po „Wpuścić na noc”');
         },
       },
       {
@@ -8384,6 +8389,27 @@ async function m2Stage(page: Page, what: 'budowle' | 'plany' | 'stawianie-ok' | 
     } else zm.setCam(koza.x, koza.y + 2, 1.6);
     return { placed };
   }, what);
+}
+
+/** Czy pionki gości z klocków (rodzaj `gosc`) są narysowane: sprite w widoku ma `visible` i `alpha` > 0 (nocą obcych
+    chowa ciemność, gościa nie: ciemny zarys). Rzuca, gdy nie ma gości albo któryś jest ukryty; `co` do komunikatu. */
+async function gosciNarysowani(page: Page, co: string): Promise<void> {
+  const r = await page.evaluate(() => {
+    const zm = window.zm!;
+    const sprites = (zm.view as unknown as { pawnSprites: Map<number, { visible: boolean; alpha: number }> })
+      .pawnSprites;
+    const gosci = zm.sim!.st.pawns.filter((p) => p.kind === 'gosc');
+    return {
+      godzina: document.getElementById('hTime')?.textContent ?? '',
+      sprites: gosci.map((p) => {
+        const sp = sprites.get(p.id);
+        return { id: p.id, visible: !!sp?.visible, alpha: sp ? Math.round(sp.alpha * 100) / 100 : 0 };
+      }),
+    };
+  });
+  console.log(`  ${co} (${r.godzina}): sprite'y gości ${JSON.stringify(r.sprites)}`);
+  if (!r.sprites.length) throw new Error(`${co}: nie ma pionków gości`);
+  if (r.sprites.some((x) => !x.visible || x.alpha <= 0)) throw new Error(`${co}: gość nie jest narysowany`);
 }
 
 /** n klatek przeglądarki */

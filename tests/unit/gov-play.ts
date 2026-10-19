@@ -112,6 +112,9 @@ export interface PlayOpts {
   /** zarząd i mieszkańcy siedziby z generatora mieszkańców (opcja `mieszkancy` createSim; flaga --mieszkancy botów);
       bez niej sim powstaje jak przed krokiem 5 */
   mieszkancy?: SimOpts['mieszkancy'];
+  /** obcy (handlarz, wędrowcy, ekipy, goście z klocków) jak w grze w przeglądarce, gdzie `obcy` jest domyślnie włączone;
+      bez opcji sim powstaje bez nich, jak w botach */
+  obcy?: boolean;
   /** mapa miasta (flaga --miasto botów): zarząd z `wlaczMiasto`, okolicą w wejściu i graczem wypraw dziennych; bez
       opcji zarząd nie ma stanu miasta i gra na TARGETS jak przed mapą miasta */
   miasto?: MiastoOpts;
@@ -262,7 +265,11 @@ export function playWithGov(
   core = 4,
   opts: PlayOpts = {},
 ): PlayResult {
-  const st = createSim(w, seed, { core, ...(opts.mieszkancy ? { mieszkancy: opts.mieszkancy } : {}) });
+  const st = createSim(w, seed, {
+    core,
+    ...(opts.mieszkancy ? { mieszkancy: opts.mieszkancy } : {}),
+    ...(opts.obcy ? { obcy: true } : {}),
+  });
   const sim = new Sim(w, st);
   const gov = newGov(seed);
   // mapa miasta jak w grze (main.ts): stan miasta w zarządzie od początku, okolica w każdym wejściu

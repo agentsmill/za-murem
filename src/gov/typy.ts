@@ -157,13 +157,16 @@ export type FazaGoscia = 'idzie' | 'brama' | 'w_srodku' | 'odchodzi' | 'zlapany'
     pierwszy (po `przyjety` to już mieszkańcy albo zarząd); `ukradl`: porcje jedzenia, których z zapasów brakuje przez
     tę grupę (wzięte i nieoddane), `przyjety`: grupa została w osiedlu (rozkaz `zostan` albo `zarzad`). `gdzie` to ten
     sam kafelek co `tile`, ale jako punkt mapy w kafelkach (x, y): zarząd nie zna rozmiaru świata, a karta gościa
-    potrzebuje punktu do przycisku „Pokaż” */
+    potrzebuje punktu do przycisku „Pokaż”. `zywi` to indeksy w `PlanGoscia.osoby` żywych członków grupy w kolejności
+    `pawns` (tablice równoległe): symulacja zachowuje kolejność planu i usuwa zmarłych, więc mówiący to pierwsza żywa
+    osoba (`osoby[zywi[0]]`), a nie zawsze `osoby[0]`; karta czyta stąd, kto stoi pod bramą (`widoczny` w wizyta.ts) */
 export interface GovGosc {
   id: string;
   faza: FazaGoscia;
   tile: number;
   gdzie: Punkt;
   pawns: number[];
+  zywi: number[];
   ukradl: number;
   przyjety?: boolean;
 }
@@ -670,7 +673,7 @@ export interface GovState {
 /** Wizyta gościa prowadzona przez zarząd: `gosc` (klocki, osoby; ten sam co w planie dla symulacji), `od` (sekunda przy
     ekranie planu), `karta` (karta gościa pod bramą już pokazana), `zl` (karta „Złapany” już pokazana), `obejrzano` (co
     pokazało obejrzenie rąk w trybie zombie), `noc` (wpuszczony na noc: zarząd śledzi wizytę do końca), `kradl` (linia
-    o kradzieży już wpisana), `koniec` (zarząd wydał ostatni rozkaz, wizyta przestaje być jego sprawą) */
+    o kradzieży już wpisana), `liniaNocy` (linia o nocy już w raporcie), `koniec` (zarząd wydał ostatni rozkaz, wizyta przestaje być jego sprawą) */
 export interface AktywnyGosc {
   gosc: Gosc;
   od: number;
@@ -679,5 +682,7 @@ export interface AktywnyGosc {
   obejrzano?: 'ugryziony' | 'czysty';
   noc?: boolean;
   kradl?: boolean;
+  /** linia o nocy z gościem już w porannym raporcie (o 5:00, jeśli wciąż śpi u nas, żywy i bez kradzieży) */
+  liniaNocy?: boolean;
   koniec?: boolean;
 }

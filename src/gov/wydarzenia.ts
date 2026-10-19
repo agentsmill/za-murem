@@ -36,7 +36,8 @@
    gry nie dostaje karty, tylko wpis w kronice, że pogrzebu nie było. W trybie zombie karta czeka, dopóki zwłoki leżą
    i mogą wstać (`cialo` = `lezy`), a w jej danych jest los ciała.
    Goście z klocków (src/gov/wizyta.ts, karty `gosc` i `zlapany` dołączone do `M1_EVENTS`): wydarzenie `gosc` z puli nie
-   otwiera karty, tylko planuje wizytę (`planujGoscia` → GovEffects.gosc), a `goscTick` co sekundę przy ekranie pokazuje
+   otwiera karty, tylko planuje wizytę (`planujGoscia` → GovEffects.gosc) i od razu losuje jeszcze raz wśród reszty (plan nie
+   zjada odstępu między kartami), a `goscTick` co sekundę przy ekranie pokazuje
    kartę dopiero wtedy, gdy gość stoi pod bramą i nic innego nie czeka na decyzję (tak samo „Złapany”, gdy symulacja złapała
    kradnącego). Wybór z `GChoice.zostaje` (np. „Obejrzeć ręce”) nie zamyka okna. Host dostaje metody gości z `goscHost`. */
 
@@ -565,15 +566,17 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   }
   if (i.screen < st.ev.next) return;
   st.ev.next = i.screen + nextGap(st, i.screen);
-  const ev = pickGovEvent(st, h, pora, firstNight(i));
+  let ev = pickGovEvent(st, h, pora, firstNight(i));
+  // gość z klocków: wypadnięcie planuje wizytę (pionki idą do bramy), a karta przychodzi dopiero pod bramą. Plan nie jest
+  // kartą, więc nie zjada odstępu: losujemy jeszcze raz wśród reszty (gosc ma już odstęp i wagę 0), a gdy nic nie pasuje,
+  // następna próba za RETRY sekund, jak po pustym losowaniu
+  if (ev?.id === 'gosc') {
+    planujGoscia(st, i, fx, pora);
+    ev = pickGovEvent(st, h, pora, firstNight(i));
+  }
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
   if (!ev) {
     st.ev.next = i.screen + RETRY;
-    return;
-  }
-  // gość z klocków: wypadnięcie planuje wizytę (pionki idą do bramy), a karta przychodzi dopiero pod bramą
-  if (ev.id === 'gosc') {
-    planujGoscia(st, i, fx, pora);
     return;
   }
   show(st, i, fx, ev);

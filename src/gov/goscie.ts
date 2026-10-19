@@ -47,7 +47,7 @@
 import { type Dom, NAMES, POICAT, PROFS, type Prof, SEASONS, SURN } from '../content/data.ts';
 import { KAT_EN } from '../content/miejsca.en.ts';
 import { makePerson, type Person } from '../content/people.ts';
-import type { Tx } from '../core/jezyk.ts';
+import { type Tx, tx } from '../core/jezyk.ts';
 import { pick, type Rng, ri } from '../core/rng.ts';
 import type { Miejsce } from '../world/miasto.ts';
 import { AMUNICJA, BRON, frazaSkad, KATEGORIA_SKAD, KIERUNEK, SATYRA_KLUCZE } from './goscie-teksty.ts';
@@ -609,6 +609,17 @@ function nazwaWlasna(m: Miejsce, kat: string): string {
 export function frazaMiejsca(m: Miejsce): Tx {
   const kat = Object.hasOwn(KATEGORIA_SKAD, m.kat) ? m.kat : 'sklep';
   return frazaSkad(kat, nazwaWlasna(m, kat));
+}
+
+/** Samo miejsce z okolicy, w mianowniku, do zdania o nim („apteka „Pod Różą””, „the pharmacy “Pod Różą””): kategoria
+    z POICAT małą literą i własna nazwa po filtrze hosta (`nazwaWlasna`); bez nazwy sama kategoria. Używa tego wiadomość
+    od gościa (src/gov/wizyta.ts): mówi, o jakim miejscu gość coś wie, a nie z której strony przyszedł. */
+export function opisMiejsca(m: Miejsce): Tx {
+  const kat = Object.hasOwn(KATEGORIA_SKAD, m.kat) ? m.kat : 'sklep';
+  const wlasna = nazwaWlasna(m, kat);
+  const pl = POICAT[kat].name.toLowerCase();
+  const en = KATEGORIA_SKAD[kat].en;
+  return wlasna ? tx(`${pl} „${wlasna}”`, `${en} “${wlasna}”`) : tx(pl, en);
 }
 
 /** Skąd przychodzi gość: losowa strona wejścia, a po niej najbliższe miejsce z okolicy po tej stronie (porównanie
