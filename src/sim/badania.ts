@@ -32,6 +32,10 @@
    dokładanie, potrzeby), `pracaPrzepisu` w surowce.ts i karta nocy zarządu (`GovInput.paleniska`). Premia działa
    tylko po zbadaniu (`st.techDone`), więc gra bez badań ma te same liczby co przed nimi.
 
+   Odkrycia. `odkrycia(st)` to zbadane technologie z tickiem ukończenia (`research.at`), od najstarszej: czyta je tablica,
+   karta „Odkrycie” i kronika zarządu (`govInput()`, src/gov/znaleziska.ts); dziennik znalezisk książek to
+   `SimState.bookLog` (pisze go `Sim.znajdzKsiazke`).
+
    Odczyt dla warunków zwycięstwa. `liczbaZbadanych`, `eraBadan`, `koncowaZbadana` i `siecWlaczona` składają
    `GovInput.badania` (src/sim/gov.ts) dla ramy zwycięstwa. Sieć włącza polecenie `siec` w pracowni (menu pracowni w
    orders.ts, `Sim.wlaczSiec`): tylko po zbadaniu technologii końcowej przy stojącej pracowni, a znacznik
@@ -104,7 +108,7 @@ const DZIALAJA: Readonly<Record<string, { odblokowuje?: readonly string[]; pl: s
   t_zielarstwo: { pl: 'Ogródek przy plonie daje czasem leki: jeden lek z szansą 1/3.' },
   t_wieza: {
     odblokowuje: ['wieza'],
-    pl: 'Wieża na podwórku i nowy posterunek „Wieża” na karcie nocy.',
+    pl: 'Wieża na podwórku i nowy posterunek „Warta na wieży” na karcie nocy: stojący tam dokłada połowę swojej warty do obrony każdego innego posterunku.',
   },
   t_spawanie: { pl: 'Warsztat robi części 1,5× szybciej.' },
   t_barykady: {
@@ -121,7 +125,7 @@ const DZIALAJA: Readonly<Record<string, { odblokowuje?: readonly string[]; pl: s
   },
   t_grzyby: {
     odblokowuje: ['pieczarkarnia'],
-    pl: 'Pieczarkarnia w łazience naszego mieszkania. Mniejszy plon niż ogródek, ale równy przez cały rok.',
+    pl: 'Pieczarkarnia w łazience naszego mieszkania. Plon mniejszy niż w ogródku wiosną i latem, ale taki sam przez cały rok, także zimą.',
   },
   t_ambu: { pl: 'Zdrowie wraca 1,6× szybciej (rany po walce, wychłodzenie, głód).' },
 };
@@ -318,6 +322,15 @@ export function eraBadan(st: SimState): number {
 /** ile technologii z drzewka jest zbadanych; identyfikatory spoza drzewka (np. testowe) się nie liczą */
 export function liczbaZbadanych(st: SimState): number {
   return (st.techDone ?? []).filter((id) => Object.hasOwn(TECH_BY, id)).length;
+}
+
+/** Odkrycia: zbadane technologie z tickiem ukończenia (`research.at`), od najstarszego (przy tym samym ticku po
+    identyfikatorze). Czyta je tablica (`snapshot().badania.odkrycia`), karta „Odkrycie” i kronika zarządu
+    (`govInput()`), więc kolejność jest wszędzie ta sama. Bez stanu badań pusta lista. */
+export function odkrycia(st: Pick<SimState, 'research'>): { id: string; tick: number }[] {
+  return Object.entries(st.research?.at ?? {})
+    .map(([id, tick]) => ({ id, tick }))
+    .sort((a, b) => a.tick - b.tick || (a.id < b.id ? -1 : 1));
 }
 
 /** czy technologia końcowa drzewka jest zbadana */

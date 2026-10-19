@@ -9,7 +9,7 @@ import { TECH_DOMS } from '../content/data.ts';
 import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { World } from '../world/world.ts';
-import { badaniaDom, badaniaWidoczne, type Kartka, kartka, TECHS, tempoOsoby, znajacy } from './badania.ts';
+import { badaniaDom, badaniaWidoczne, type Kartka, kartka, odkrycia, TECHS, tempoOsoby, znajacy } from './badania.ts';
 import { type AmmoKey, noAmmo, type WeaponId, weaponOf } from './bron.ts';
 import { BUILDS, type BuildKind, footprint, type Mat } from './budowle.ts';
 import {
@@ -251,9 +251,7 @@ function badaniaOf(st: SimState): SimBadania | null {
     siedza,
     znaja: Object.fromEntries(TECH_DOMS.map((d) => [d, znajacy(st, d)])),
     ksiazki: { ...st.books },
-    odkrycia: Object.entries(st.research?.at ?? {})
-      .map(([id, tick]) => ({ id, tick }))
-      .sort((a, b) => a.tick - b.tick || (a.id < b.id ? -1 : 1)),
+    odkrycia: odkrycia(st),
     pracownia: st.things.some((t) => t.kind === 'pracownia'),
     tempo,
   };

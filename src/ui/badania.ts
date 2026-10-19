@@ -17,6 +17,10 @@
    tego pliku. Wszystko leży na jednej planszy o stałym rozmiarze w pikselach (`.tb-board`): kartki i sznurki mają
    wspólne współrzędne, a na wąskim ekranie przewija się sama plansza w jej własnym oknie (`.tb-wrap`).
 
+   `odkrycieSheet(id)` to karta „Odkrycie” z pauzą po ukończeniu badania, w stylu kartki z tablicy (odcień `odkrycie`):
+   nazwa i działanie technologii, co odblokowuje, przyciski „Postaw <budowla>” (tylko gdy odblokowuje budowlę),
+   „Następne badanie” (otwiera tablicę) i „Dalej”; wywołuje ją main.ts ze stanu symulacji jak spotkanie z sąsiadami.
+
    `czyOtworzycSama` to warunek samego otwarcia tablicy (raz po wyborze, nigdy przy innym oknie, napadzie ani alarmie).
    Napisy: polskie w L(…) tutaj, angielskie w badania.en.ts; nazwy technologii i er z src/sim/badania.ts, dziedziny
    z DOM i DOM_EN, zawody przez zawodEn. */
@@ -31,6 +35,8 @@ import { dayOf } from '../sim/clock.ts';
 import type { SimBadania } from '../sim/snapshot.ts';
 import type { GameMode } from '../sim/tryb.ts';
 import { EN } from './badania.en.ts';
+import { buildName, postawLabel } from './budowa.ts';
+import type { Sheet } from './okna.ts';
 import { esc, num } from './tekst.ts';
 
 /** wymiary kartki i planszy w pikselach (współrzędne wspólne dla kartek i sznurków) */
@@ -343,4 +349,34 @@ export function czyOtworzycSama(o: {
   byla: boolean;
 }): boolean {
   return o.pracownia && o.cur === null && !o.otwarta && !o.oknoCzeka && !o.napad && !o.alarm && !o.byla;
+}
+
+/** Karta „Odkrycie” po ukończeniu badania `id`: nazwa technologii w tytule, jedno zdanie o tym, co daje (w trybie zombie
+    opis `dzialanieZombie`), co odblokowuje, i przyciski: „Postaw <budowla>” (`odkrycie-postaw`, `data-arg` to rodzaj
+    budowli; po jednym na budowlę, dziś najwyżej jeden), „Następne badanie” (`odkrycie-nastepne`) i „Dalej”
+    (`odkrycie-dalej`). Esc i klik obok też zamykają (jak „Dalej”). Nieznana technologia (np. ze starego zapisu) daje kartę
+    z samym identyfikatorem i bez przycisku stawiania. */
+export function odkrycieSheet(id: string, mode: GameMode = 'zwykly'): Sheet {
+  const t = Object.hasOwn(TECH_BY, id) ? TECH_BY[id] : undefined;
+  const budowle = (t?.odblokowuje ?? []).filter((k): k is BuildKind => Object.hasOwn(BUILDS, k));
+  const opis = t ? tr(mode === 'zombie' ? (t.dzialanieZombie ?? t.dzialanie) : t.dzialanie) : '';
+  const odblokowuje = budowle.length
+    ? `<p class="odk-nowe">${L('Odblokowuje', EN.odblokowuje)}: ${esc(budowle.map(buildName).join(', '))}.</p>`
+    : '';
+  const przyciski = [
+    ...budowle.map(
+      (k) =>
+        `<button type="button" class="btn go" data-act="odkrycie-postaw" data-arg="${k}">${esc(postawLabel(k))}</button>`,
+    ),
+    `<button type="button" class="btn${budowle.length ? '' : ' go'}" data-act="odkrycie-nastepne">${L('Następne badanie', EN.nastepne)}</button>`,
+    `<button type="button" class="btn ghost" data-act="odkrycie-dalej">${L('Dalej', EN.dalej)}</button>`,
+  ];
+  return {
+    tone: 'odkrycie',
+    kicker: esc(t ? `${L('Badania', EN.badania)} · ${domNazwa(t.dom)} ${t.lvl}` : L('Badania', EN.badania)),
+    title: esc(`${L('Odkrycie', EN.odkrycie)}: ${t ? tr(nazwaTech(id)) : id}`),
+    body: `${opis ? `<p class="odk-opis">${esc(opis)}</p>` : ''}${odblokowuje}`,
+    foot: przyciski.join(''),
+    closable: true,
+  };
 }

@@ -763,6 +763,9 @@ export type Command =
   | { t: 'study'; ids: number[]; thing: number }
   /** badania: włączenie sieci po zbadaniu technologii końcowej, z menu pracowni (ids bez znaczenia, nikt nie musi iść) */
   | { t: 'siec'; ids: number[] }
+  /** badania: „Tablica badań” i „Wybrać badanie” z menu pracowni otwierają tablicę w interfejsie (main.ts przechwytuje to
+      polecenie przed symulacją; gdyby tu trafiło, nic nie zmienia) */
+  | { t: 'tablica'; ids: number[] }
   /** M2 fala 2 (docs/M2-fala-2.md): cudze drzwi (kafelek drzwi budynku albo mieszkania): otworzyć (przy otwartych:
       wejść), zapukać, wyważyć, zabić deskami, odbić deski */
   | { t: 'open' | 'knock' | 'force' | 'board' | 'unboard'; ids: number[]; door: number }
@@ -931,6 +934,11 @@ export interface SimState {
   /** książki osady według dziedziny (każda dodaje 1 do wiedzy, w wiedzy liczą się najwyżej 2); pola nie ma, dopóki
       nikt nie znajdzie pierwszej książki */
   books?: Partial<Record<TechDom, number>>;
+  /** dziennik książek znalezionych w przeszukanych pomieszczeniach (siedziba i sąsiedzi), po kolei: tick, dziedzina,
+      tytuł i `podpalka`, gdy to trzecia z dziedziny i poszła na drewno. Zarząd czyta go przez `govInput()` do kroniki,
+      interfejs do podpowiedzi „Znaleźli książkę…”. Książki z wydarzenia zarządu go nie zasilają (mają własny wpis).
+      Pola nie ma, dopóki nikt nie znajdzie książki w przeszukaniu. */
+  bookLog?: { tick: number; dom: TechDom; tytul: string; podpalka?: true }[];
   /** wraki przeszukane i rozebrane (lewy górny kafelek), rosnąco; brak, dopóki nikt nie przeszukał wraku */
   wraki?: WreckMark[];
   /** sąsiednie budynki (M2 fala 2): nie ma go, dopóki zarząd nie dotknie cudzych drzwi, więc gra bez sąsiadów ma ten
@@ -2541,6 +2549,7 @@ export class Sim {
       this.wlaczSiec();
       return;
     }
+    if (c.t === 'tablica') return;
     // polecenia przyjmuje tylko zarząd, tłum to tło; kto jest na wyprawie, słucha tylko wezwania z powrotem
     const pawns: Pawn[] = [];
     for (const id of c.ids) {
@@ -4801,10 +4810,18 @@ export class Sim {
   }
 
   /** Książka z przeszukania (src/sim/badania.ts: ksiazkaZ) trafia osobnym kanałem od razu na półkę osady (st.books),
-      bez sterty na mapie. Trzecia z tej samej dziedziny idzie na podpałkę: +1 drewna przy pracowni, a bez niej
-      w składzie (bez składu w miejscu przeszukania). Losowanie nie dotyka st.rng. */
-  private znajdzKsiazke(k: { dom: TechDom } | null, at: number): void {
-    if (!k || dodajKsiazke(this.st, k.dom) === 'polka') return;
+      bez sterty na mapie, i do dziennika znalezisk (st.bookLog). Trzecia z tej samej dziedziny idzie na podpałkę: +1
+      drewna przy pracowni, a bez niej w składzie (bez składu w miejscu przeszukania). Losowanie nie dotyka st.rng. */
+  private znajdzKsiazke(k: { dom: TechDom; tytul: string } | null, at: number): void {
+    if (!k) return;
+    const polka = dodajKsiazke(this.st, k.dom) === 'polka';
+    (this.st.bookLog ??= []).push({
+      tick: this.st.tick,
+      dom: k.dom,
+      tytul: k.tytul,
+      ...(polka ? {} : { podpalka: true }),
+    });
+    if (polka) return;
     const lab = this.st.things.find((t) => t.kind === 'pracownia');
     this.dropMat(lab ? lab.y * this.w.size + lab.x : (this.house?.sklad[0] ?? at), 'drewno', 1);
   }

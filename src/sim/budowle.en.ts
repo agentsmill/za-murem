@@ -56,7 +56,8 @@ export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: s
   pieczarkarnia: {
     name: 'Mushroom farm',
     the: 'the mushroom farm',
-    effect: 'A smaller yield than a vegetable patch, but steady all year round.',
+    effect:
+      'A smaller yield than a vegetable patch in spring and summer, but the same all year round, winter included.',
   },
   szklarnia: {
     name: 'Greenhouse',
@@ -71,7 +72,8 @@ export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: s
   wieza: {
     name: 'Tower',
     the: 'the tower',
-    effect: 'A guard on the tower sees the whole yard. You can have one.',
+    effect:
+      'A “Watch on the tower” post on the Night orders: whoever stands there adds half their watch to the defence of every other post. You can have one.',
   },
 };
 

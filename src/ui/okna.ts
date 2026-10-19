@@ -44,8 +44,9 @@ export interface Sheet {
   title: string;
   body: string;
   foot: string;
-  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie) i napad (sąsiedzi atakują) */
-  tone: 'noc' | 'uchwala' | 'wydarzenie' | 'raport' | 'menu' | 'ogien' | 'koniec' | 'sasiedzi' | 'napad';
+  /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie), napad (sąsiedzi atakują)
+      i odkrycie (karta po ukończeniu badania, w kolorze korka tablicy) */
+  tone: 'noc' | 'uchwala' | 'wydarzenie' | 'raport' | 'menu' | 'ogien' | 'koniec' | 'sasiedzi' | 'napad' | 'odkrycie';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
 }

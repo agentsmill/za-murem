@@ -11,7 +11,7 @@ import { jezyk, L, liczba, tr } from '../core/jezyk.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import { IN } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
-import { koncowaZbadana, kosztTech, nazwaTech, siecWlaczona, TECH_BY } from './badania.ts';
+import { kartka, koncowaZbadana, kosztTech, nazwaTech, siecWlaczona, TECH_BY } from './badania.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
@@ -53,6 +53,7 @@ import {
   KOZA_POST,
   PATCH_COST,
   type Pawn,
+  RESEARCH_SEATS,
   SIATKA_POST,
   type SimState,
   SPEAR_BOARDS,
@@ -433,6 +434,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     make('deski', tr(NAPISY.deska), (n) => tr(NAPISY.deskiN(n)));
     make('czesci', tr(NAPISY.czesc), (n) => tr(NAPISY.czesciN(n)));
   }
+  // pracownia: zarząd do stołu i tablica badań (Badać: <nazwa>, Tablica badań albo Wybrać badanie)
+  const lab = things.find((t) => t.kind === 'pracownia');
+  if (lab) out.push(...pracowniaItems(st, core, lab.id));
   // pracownia po zbadaniu technologii końcowej: włączyć sieć (raz; nieodwracalne i zaczyna epilog, więc z potwierdzeniem,
   // którego okno to `siecSheet` w src/ui/okna.ts; sam epilog robi rama zwycięstwa)
   if (things.some((t) => t.kind === 'pracownia') && koncowaZbadana(st) && !siecWlaczona(st))
@@ -453,6 +457,27 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     });
   out.push({ cmd: { t: 'move', ids: core, to: tile }, label: L('Idź tu', 'Go here'), quick: true });
   return out;
+}
+
+/** Polecenia przy pracowni (badania). Z wybranym badaniem „Badać: <nazwa>” (polecenie `study`: zaznaczeni siadają do
+    stołu) i „Tablica badań”; bez wybranego „Wybrać badanie” (otwiera tablicę). „Badać” nie znika, kiedy nie da się
+    usiąść, tylko jest wyszarzone z powodem: oba miejsca zajęli inni (zaznaczeni, którzy już siedzą, nie liczą się) albo
+    badanie stanęło, bo osadzie zabrakło wiedzy. Polecenie `tablica` przechwytuje interfejs (main.ts). */
+function pracowniaItems(st: SimState, core: number[], lab: number): MenuItem[] {
+  const cur = st.research?.cur;
+  if (!cur || !Object.hasOwn(TECH_BY, cur))
+    return [{ cmd: { t: 'tablica', ids: core }, label: L('Wybrać badanie', 'Choose research'), quick: false }];
+  const nazwa = nazwaTech(cur);
+  const badac: MenuItem = {
+    cmd: { t: 'study', ids: core, thing: lab },
+    label: L(`Badać: ${nazwa.pl}`, `Research: ${nazwa.en}`),
+    quick: false,
+  };
+  const inni = st.pawns.filter((p) => !core.includes(p.id) && p.job?.t === 'research' && p.job.target === lab).length;
+  if (kartka(st, cur, modeOf(st)).stan !== 'w_toku')
+    badac.off = L('Brakuje wiedzy w osadzie.', 'The estate lacks the know-how.');
+  else if (inni >= RESEARCH_SEATS) badac.off = L('Przy stole nie ma miejsca.', 'No free seat at the table.');
+  return [badac, { cmd: { t: 'tablica', ids: core }, label: L('Tablica badań', 'Research board'), quick: false }];
 }
 
 /** M2 fala 2 (docs/M2-fala-2.md): polecenia przy cudzych drzwiach (otworzyć, wejść, zapukać, wyważyć, zabić deskami,

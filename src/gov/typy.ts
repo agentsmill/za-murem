@@ -151,6 +151,14 @@ export interface GovInput {
   badania?: { pracownia: boolean; zbadane: number; era: number; koncowa: boolean; siecWlaczona: boolean };
   /** książki osady według dziedziny, z symulacji (w wiedzy liczą się najwyżej 2 na dziedzinę); bez pola: żadnych */
   books?: Partial<Record<TechDom, number>>;
+  /** zbadane technologie z tickiem ukończenia, od najstarszej, z nazwą i działaniem w obu językach; zarząd dopisuje do
+      kroniki każde odkrycie z tickiem nowszym niż `GovState.czytane` i podnosi zaufanie o 1 (src/gov/znaleziska.ts).
+      Bez pola (gra bez badań) żadnych. */
+  odkrycia?: readonly { id: string; tick: number; nazwa: Tx; dzialanie: Tx }[];
+  /** książki znalezione w przeszukanych pomieszczeniach (dziennik symulacji `bookLog`), po kolei; `podpalka`: trzecia
+      z dziedziny, poszła na drewno. Zarząd dopisuje do kroniki wpisy z tickiem nowszym niż `GovState.czytane`.
+      Książki z wydarzenia „książki” tu nie trafiają: wydarzenie ma własny wpis. Bez pola: żadnych. */
+  znaleziska?: readonly { tick: number; dom: TechDom; tytul: string; podpalka?: boolean }[];
   /** zbadane technologie (identyfikatory z src/sim/badania.ts); EventHost.tech czyta stąd, bez pola żadna */
   techDone?: readonly string[];
   /** wiedza osady w dziedzinach, ta sama co na tablicy badań (najlepsza osoba zarządu albo lokatora siedziby na
@@ -435,4 +443,7 @@ export interface GovState {
   deadN?: number;
   /** ile napaści z GovInput.napady osiedle już policzyło (pole od pierwszej napaści) */
   napadN?: number;
+  /** tick ostatniego odkrycia albo znaleziska książki (GovInput.odkrycia, znaleziska), które zarząd już wpisał do
+      kroniki; pole powstaje przy pierwszym takim wpisie, więc gra bez badań i książek go nie ma */
+  czytane?: number;
 }

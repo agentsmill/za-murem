@@ -211,6 +211,47 @@ async function tablicaDemo(page: Page, base: string) {
   return stan;
 }
 
+/** Start do scenariuszy karty „Odkrycie”: demo z pracownią i dwiema osobami przy stole (jak ?badania=demo), gra w 1×,
+    tablica zamknięta Esc-em, więc gra rusza. */
+async function odkrycieStart(page: Page, base: string) {
+  await page.goto(`${base}?demo=przymorze&speed=1&badania=demo`);
+  await waitIdle(page);
+  await page.waitForSelector('#tablica:not([hidden]) .tb-kartka');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !window.zm!.badania().open && window.zm!.speed() === 1);
+}
+
+/** Wybiera badanie `tech` (null: najtańsze do wzięcia), zostawia mu kilka setnych punktu do końca, sadza dwie osoby
+    przy stole (po poprzednim odkryciu wszyscy wstają) i przewija grę po kwadransie gry, aż badanie się skończy:
+    karta „Odkrycie” pojawia się w następnej klatce. Zwraca identyfikator badania. */
+async function odkryjBadanie(page: Page, tech: string | null) {
+  const id = await page.evaluate(async (tech) => {
+    const zm = window.zm!;
+    const sim = zm.sim!;
+    const mod = '/src/sim/badania.ts';
+    const b = (await import(/* @vite-ignore */ mod)) as typeof import('../src/sim/badania.ts');
+    const wybrane =
+      tech ??
+      b.TECHS.filter((t) => b.kartka(sim.st, t.id, 'zwykly').stan === 'do_wziecia').sort(
+        (x, y) => b.kosztTech(x.id) - b.kosztTech(y.id),
+      )[0].id;
+    sim.push({ t: 'research', ids: [], tech: wybrane });
+    sim.step();
+    sim.st.research!.prog[wybrane] = b.kosztTech(wybrane) - 0.05;
+    for (const p of sim.st.pawns.filter((q) => q.kind === 'core').slice(0, 2))
+      if (p.job?.t !== 'research') sim.startResearch(p, true);
+    return wybrane;
+  }, tech);
+  console.log(`  badanie: ${id}`);
+  // do dwóch godzin gry (siadanie przy stole trwa), klatka po każdym kwadransie, żeby widok zdążył pokazać kartę
+  for (let k = 0; k < 8; k++) {
+    await page.evaluate(() => window.zm!.ff(15));
+    await frames(page, 2);
+    if (await page.evaluate(() => !!document.querySelector('#modal:not([hidden]) .sheet.odkrycie'))) return id;
+  }
+  throw new Error(`badanie ${id} nie skończyło się w dwie godziny gry`);
+}
+
 /** pomiary okna z otwartą tablicą: strona nie przewija się w bok, a szczegóły i pasek obsady mieszczą się w oknie
     (przewijać wolno tylko planszę w jej własnym oknie) */
 async function tablicaUklad(page: Page) {
@@ -4046,6 +4087,327 @@ const SHOTS: Shot[] = [
       await page.waitForFunction(() => window.zm!.badania().open, null, { timeout: 5000 });
       console.log('  po odwołaniu alarmu tablica otworzyła się sama');
       await page.waitForTimeout(300);
+    },
+  },
+  // badania, menu budowy z kłódkami i znaczkiem NOWE (docs/superpowers/specs/2026-10-19-badania-design.md, „Odkrycie”):
+  // od chwili, gdy stoi pracownia, budowle z jeszcze niezbadanych technologii są wyszarzone z „Wymaga badania: <nazwa>”,
+  // pracownia mówi „Pracownia już stoi.”, a budowle z odkrytych technologii (koza z beczki, wieża) mają NOWE, dopóki gracz
+  // nie otworzy ich szczegółów; widziane zostają w pamięci przeglądarki, a nowa gra zaczyna od pustej
+  {
+    name: 'badania-menu-klodki',
+    query: '',
+    run: async (page, base) => {
+      await tablicaDemo(page, base);
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !window.zm!.badania().open);
+      await page.keyboard.press('b');
+      await page.waitForSelector('#buildPanel .tile');
+      const kafelki = () =>
+        page.evaluate(() =>
+          Object.fromEntries(
+            [...document.querySelectorAll<HTMLElement>('#buildPanel .tile')].map((t) => [
+              t.dataset.kind ?? '',
+              `${t.classList.contains('lock') ? 'kłódka' : t.classList.contains('no') ? 'nie' : 'ok'}${t.querySelector('.tnew') ? '+NOWE' : ''}`,
+            ]),
+          ),
+        );
+      const dom = await kafelki();
+      console.log(`  Dom: ${JSON.stringify(dom)}`);
+      const oczekDom = {
+        warsztat: 'nie',
+        kuchnia_spoleczna: 'nie',
+        magazyn: 'nie',
+        lozka_pietrowe: 'nie',
+        pracownia: 'nie',
+        koza_beczka: 'nie+NOWE',
+        kociol: 'kłódka',
+        pieczarkarnia: 'kłódka',
+      };
+      for (const [k, v] of Object.entries(oczekDom))
+        if (dom[k] !== v) throw new Error(`Dom: ${k} to „${dom[k]}”, miało być „${v}”`);
+      // pracownia stoi: powód to limit, a nie brak miejsca
+      await page.click('#buildPanel .tile[data-kind="pracownia"]');
+      const stoi = await page.evaluate(
+        () => document.querySelector('#buildPanel .bd[data-kind="pracownia"] .build-why')?.textContent ?? '',
+      );
+      console.log(`  pracownia: „${stoi}”`);
+      if (stoi !== 'Pracownia już stoi.') throw new Error(`pracownia: „${stoi}”`);
+      // kłódka z nazwą badania z tablicy
+      await page.click('#buildPanel .tile[data-kind="kociol"]');
+      const kociol = await page.evaluate(
+        () => document.querySelector('#buildPanel .bd[data-kind="kociol"] .build-why')?.textContent ?? '',
+      );
+      console.log(`  kocioł: „${kociol}”`);
+      if (kociol !== 'Wymaga badania: Rozruch węzła cieplnego') throw new Error(`kocioł: „${kociol}”`);
+      await page.click('#buildPanel [data-tab="podworko"]');
+      const podworko = await kafelki();
+      console.log(`  Podwórko: ${JSON.stringify(podworko)}`);
+      if (podworko.szklarnia !== 'kłódka' || podworko.wieza !== 'nie+NOWE' || podworko.ogrodek === undefined)
+        throw new Error(`Podwórko: ${JSON.stringify(podworko)}`);
+      // wieża jest odkryta, ale nikt jeszcze nie otworzył jej szczegółów; zrzut z kłódkami i NOWE
+      // otwarcie szczegółów kozy zdejmuje jej NOWE (i tylko jej), a wybór zostaje w pamięci przeglądarki
+      await page.click('#buildPanel [data-tab="dom"]');
+      await page.click('#buildPanel .tile[data-kind="koza_beczka"]');
+      const po = await kafelki();
+      if (po.koza_beczka !== 'nie') throw new Error(`po otwarciu szczegółów kozy: „${po.koza_beczka}”`);
+      const pamiec = await page.evaluate(() => localStorage.getItem('za-murem-0.4-nowe'));
+      console.log(`  pamięć: ${pamiec}`);
+      if (!pamiec?.includes('koza_beczka') || pamiec.includes('wieza')) throw new Error(`pamięć NOWE: ${pamiec}`);
+      await page.click('#buildPanel [data-tab="podworko"]');
+      if ((await kafelki()).wieza !== 'nie+NOWE') throw new Error('NOWE przy wieży zniknęło razem z kozą');
+      await page.click('#buildPanel [data-tab="dom"]');
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: path.join(OUT, 'badania-menu-klodki-po.png') });
+      // nowa gra (to samo demo od nowa) zaczyna bez widzianych budowli; zrzut końcowy: kłódki, NOWE przy kozie i wybrany kocioł
+      await tablicaDemo(page, base);
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('b');
+      await page.waitForSelector('#buildPanel .tile');
+      if ((await kafelki()).koza_beczka !== 'nie+NOWE') throw new Error('nowa gra odziedziczyła widziane budowle');
+      await page.click('#buildPanel .tile[data-kind="kociol"]');
+      await page.waitForTimeout(350);
+    },
+  },
+  // badania, pracownia na mapie z dwiema osobami przy stole i menu pod prawym przyciskiem na niej: „Badać: <nazwa>”
+  // wyszarzone z „Przy stole nie ma miejsca.” dla osoby spoza stołu, dla siedzącej zwykłe, „Tablica badań” otwiera tablicę
+  {
+    name: 'badania-pracownia',
+    query: '',
+    run: async (page, base) => {
+      await tablicaDemo(page, base);
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !window.zm!.badania().open);
+      const lab = await page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const t = st.things.find((q) => q.kind === 'pracownia')!;
+        const siedza = st.pawns.filter((p) => p.job?.t === 'research' && p.job.phase === 1).map((p) => p.id);
+        zm.setCam(t.x + 1, t.y + 0.5, 3.4);
+        return { x: t.x, y: t.y, siedza };
+      });
+      console.log(`  pracownia (${lab.x}, ${lab.y}), siedzą: ${lab.siedza.join()}`);
+      if (lab.siedza.length !== 2) throw new Error(`przy stole siedzi ${lab.siedza.length} osób`);
+      await waitIdle(page);
+      // menu: osoba spoza stołu (trzecia z zarządu) i prawy przycisk na pracowni
+      const pozycje = async (kto: number) => {
+        const pt = await page.evaluate(
+          ([kto, lx, ly]) => {
+            const zm = window.zm!;
+            const core = zm.sim!.st.pawns.filter((p) => p.kind === 'core');
+            const p = core[kto];
+            // plansza pokazuje i osobę, i pracownię
+            zm.setCam(
+              (p.x + lx + 1) / 2,
+              (p.y + ly) / 2,
+              Math.min(3.4, Math.max(1.2, 640 / (32 * (Math.abs(p.x - lx) + 8)))),
+            );
+            return { id: p.id };
+          },
+          [kto, lab.x, lab.y] as const,
+        );
+        await frames(page, 3);
+        const where = await page.evaluate(
+          ([id, lx, ly]) => {
+            const zm = window.zm!;
+            const p = zm.sim!.st.pawns.find((q) => q.id === id)!;
+            return { osoba: zm.screenOf(p.x, p.y - 0.55), lab: zm.screenOf(lx + 1, ly + 0.5) };
+          },
+          [pt.id, lab.x, lab.y] as const,
+        );
+        await page.mouse.click(where.osoba[0], where.osoba[1]);
+        await page.mouse.click(where.lab[0], where.lab[1], { button: 'right' });
+        await page.waitForSelector('#ctx:not([hidden]) .ctx-item');
+        return page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>('#ctx .ctx-item')].map((b) => ({
+            tekst: b.firstChild?.textContent ?? '',
+            off: b.querySelector('.ctx-off')?.textContent ?? null,
+          })),
+        );
+      };
+      const zStolu = await pozycje(2);
+      console.log(`  menu osoby spoza stołu: ${JSON.stringify(zStolu)}`);
+      const badac = zStolu.find((m) => m.tekst.startsWith('Badać: '));
+      if (badac?.tekst !== 'Badać: Spawanie z akumulatorów' || badac.off !== 'Przy stole nie ma miejsca.')
+        throw new Error(`„Badać” bez miejsca: ${JSON.stringify(badac)}`);
+      if (!zStolu.some((m) => m.tekst === 'Tablica badań' && m.off === null)) throw new Error('brak „Tablica badań”');
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: path.join(OUT, 'badania-pracownia-menu.png') });
+      // „Tablica badań” z menu otwiera tablicę z pauzą
+      await page.click('#ctx .ctx-item:has-text("Tablica badań")');
+      await page.waitForFunction(() => window.zm!.badania().open, null, { timeout: 3000 });
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !window.zm!.badania().open);
+      // osoba siedząca przy stole dostaje zwykłe „Badać”, bez powodu
+      const zeStolu = await pozycje(0);
+      console.log(`  menu osoby przy stole: ${JSON.stringify(zeStolu)}`);
+      const siedzacy = zeStolu.find((m) => m.tekst.startsWith('Badać: '));
+      if (!siedzacy || siedzacy.off !== null) throw new Error(`„Badać” osoby przy stole: ${JSON.stringify(siedzacy)}`);
+      // zrzut końcowy: pracownia z dwiema osobami przy stole, bez menu
+      await page.keyboard.press('Escape');
+      await page.evaluate(([x, y]) => window.zm!.setCam(x + 1, y + 0.5, 3.4), [lab.x, lab.y] as const);
+      await waitIdle(page);
+      await page.waitForTimeout(300);
+    },
+  },
+  // badania, karta „Odkrycie” (docs/superpowers/specs/2026-10-19-badania-design.md, „Odkrycie”): po ukończeniu badania
+  // gra staje i pokazuje kartę (nazwa, działanie, co odblokowuje, „Postaw <budowla>”, „Następne badanie”, „Dalej”);
+  // „Postaw” otwiera menu budowy na tej budowli, „Dalej” puszcza grę bez samego otwarcia tablicy, „Następne badanie”
+  // otwiera tablicę; kronika dostaje wpis, zaufanie rośnie o 1, a książka z przeszukania daje podpowiedź
+  {
+    name: 'badania-odkrycie',
+    query: '',
+    run: async (page, base) => {
+      await odkrycieStart(page, base);
+      const zaufanie0 = await page.evaluate(() => window.zm!.gov!.trust);
+      await odkryjBadanie(page, 't_barykady');
+      const karta = await page.evaluate(() => ({
+        kicker: document.querySelector('#modal .sheet-kicker')?.textContent ?? '',
+        tytul: document.querySelector('#modal .sheet-title')?.textContent ?? '',
+        tekst: document.querySelector('#modal .sheet-body')?.textContent ?? '',
+        przyciski: [...document.querySelectorAll('#modal .sheet-foot button')].map((b) => b.textContent),
+        speed: window.zm!.speed(),
+        tablica: window.zm!.badania().open,
+      }));
+      console.log(`  karta: ${JSON.stringify(karta)}`);
+      if (karta.tytul !== 'Odkrycie: Barykady z wraków') throw new Error(`tytuł karty: „${karta.tytul}”`);
+      if (karta.speed !== 0) throw new Error('karta nie zatrzymała gry');
+      if (karta.tablica) throw new Error('tablica otworzyła się razem z kartą');
+      if (!karta.tekst.includes('Odblokowuje: Barykada.'))
+        throw new Error(`karta nie mówi, co odblokowuje: ${karta.tekst}`);
+      if (karta.przyciski.join('|') !== 'Postaw barykadę|Następne badanie|Dalej')
+        throw new Error(`przyciski karty: ${karta.przyciski.join('|')}`);
+      // kronika i zaufanie (krok zarządu liczy się co sekundę przy ekranie, ff robi go po drodze)
+      await page.evaluate(() => window.zm!.govTick());
+      const kronika = await page.evaluate(() => ({
+        wpis: window.zm!.gov!.log.map((l) => l.txt.pl).filter((t) => t.startsWith('Odkrycie: ')),
+        zaufanie: window.zm!.gov!.trust,
+      }));
+      console.log(`  kronika: ${JSON.stringify(kronika)}, zaufanie ${zaufanie0} → ${kronika.zaufanie}`);
+      if (kronika.wpis.length !== 1 || !kronika.wpis[0].startsWith('Odkrycie: Barykady z wraków. '))
+        throw new Error(`wpis w kronice: ${JSON.stringify(kronika.wpis)}`);
+      // zrzut końcowy: karta z pauzą nad mapą
+      await page.waitForTimeout(250);
+    },
+  },
+  // przebieg po karcie „Odkrycie”: „Postaw barykadę” otwiera menu budowy na tej budowli (bez NOWE), „Dalej” puszcza grę
+  // bez samego otwarcia tablicy, „Następne badanie” otwiera tablicę z pauzą, a książka z przeszukania daje podpowiedź
+  // i wpis w kronice
+  {
+    name: 'badania-odkrycie-przebieg',
+    query: '',
+    run: async (page, base) => {
+      await odkrycieStart(page, base);
+      await odkryjBadanie(page, 't_barykady');
+      // „Postaw barykadę”: menu budowy na zakładce Obwód z wybraną barykadą, bez znaczka NOWE
+      await page.click('#modal [data-act="odkrycie-postaw"]');
+      const panel = await page.evaluate(() => ({
+        ...window.zm!.buildPanel(),
+        modal: !document.getElementById('modal')!.hidden,
+        speed: window.zm!.speed(),
+        nowe: !!document.querySelector('#buildPanel .tile[data-kind="barykada"] .tnew'),
+      }));
+      console.log(`  po „Postaw”: ${JSON.stringify(panel)}`);
+      if (
+        !panel.open ||
+        panel.tab !== 'obwod' ||
+        panel.kind !== 'barykada' ||
+        panel.modal ||
+        panel.nowe ||
+        panel.speed !== 1
+      )
+        throw new Error(`po „Postaw”: ${JSON.stringify(panel)}`);
+      await page.keyboard.press('b');
+      // drugie odkrycie, bez budowli: „Dalej” puszcza grę, a tablica nie otwiera się sama
+      await odkryjBadanie(page, 't_zielarstwo');
+      const druga = await page.evaluate(() => ({
+        postaw: !!document.querySelector('#modal [data-act="odkrycie-postaw"]'),
+        tytul: document.querySelector('#modal .sheet-title')?.textContent ?? '',
+      }));
+      if (druga.postaw || druga.tytul !== 'Odkrycie: Zielarstwo z działek')
+        throw new Error(`druga karta: ${JSON.stringify(druga)}`);
+      await page.click('#modal [data-act="odkrycie-dalej"]');
+      await page.waitForTimeout(1000);
+      const dalej = await page.evaluate(() => ({ speed: window.zm!.speed(), tablica: window.zm!.badania().open }));
+      console.log(`  po „Dalej”: ${JSON.stringify(dalej)}`);
+      if (dalej.speed !== 1 || dalej.tablica) throw new Error(`po „Dalej”: ${JSON.stringify(dalej)}`);
+      // trzecie odkrycie i „Następne badanie”: otwiera tablicę z pauzą, Esc puszcza grę
+      await odkryjBadanie(page, null);
+      await page.click('#modal [data-act="odkrycie-nastepne"]');
+      await page.waitForFunction(() => window.zm!.badania().open, null, { timeout: 3000 });
+      const tab = await page.evaluate(() => ({ speed: window.zm!.speed(), wybrana: window.zm!.badania().wybrana }));
+      console.log(`  po „Następne badanie”: ${JSON.stringify(tab)}`);
+      if (tab.speed !== 0 || !tab.wybrana) throw new Error(`tablica z karty: ${JSON.stringify(tab)}`);
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !window.zm!.badania().open);
+      if ((await page.evaluate(() => window.zm!.speed())) !== 1) throw new Error('po Esc gra nie ruszyła');
+      // książka z przeszukania: podpowiedź i wpis w kronice
+      await page.evaluate(() => {
+        const st = window.zm!.sim!.st;
+        st.bookLog = [{ tick: st.tick, dom: 'uprawa', tytul: 'Ogród na balkonie' }];
+      });
+      // podpowiedź przychodzi z klatką, wpis w kronice z najbliższym krokiem zarządu (co sekundę przy ekranie)
+      await page.waitForTimeout(1500);
+      const ksiazka = await page.evaluate(() => ({
+        podpowiedz: document.getElementById('hint')!.textContent ?? '',
+        kronika: window.zm!.gov!.log.map((l) => l.txt.pl).filter((t) => t.startsWith('Znaleźli książkę')),
+      }));
+      console.log(`  książka: ${JSON.stringify(ksiazka)}`);
+      if (!ksiazka.podpowiedz.includes('Znaleźli książkę „Ogród na balkonie” (Uprawa +1).'))
+        throw new Error(`podpowiedź o książce: „${ksiazka.podpowiedz}”`);
+      if (ksiazka.kronika.join() !== 'Znaleźli książkę „Ogród na balkonie” (Uprawa +1).')
+        throw new Error(`kronika o książce: ${JSON.stringify(ksiazka.kronika)}`);
+    },
+  },
+  // karta „Odkrycie” na telefonie 390×844: mieści się w oknie (przycisków trzy, mogą zawinąć się do drugiego wiersza)
+  {
+    name: 'badania-odkrycie-telefon',
+    query: '',
+    w: 390,
+    h: 844,
+    run: async (page, base) => {
+      await odkrycieStart(page, base);
+      await odkryjBadanie(page, 't_barykady');
+      const m = await page.evaluate(() => {
+        const r = document.getElementById('sheet')!.getBoundingClientRect();
+        return {
+          okno: [innerWidth, innerHeight],
+          karta: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)],
+          wBok: document.documentElement.scrollWidth > innerWidth + 1,
+          przyciski: [...document.querySelectorAll<HTMLElement>('#sheet .sheet-foot button')].map((b) => {
+            const q = b.getBoundingClientRect();
+            return [Math.round(q.left), Math.round(q.right)];
+          }),
+        };
+      });
+      console.log(`  karta na telefonie: ${JSON.stringify(m)}`);
+      if (m.wBok) throw new Error('strona przewija się w bok');
+      if (m.karta[0] < 0 || m.karta[2] > m.okno[0] || m.karta[1] < 0 || m.karta[3] > m.okno[1])
+        throw new Error(`karta poza oknem: ${JSON.stringify(m)}`);
+      if (m.przyciski.some(([l, r]) => l < m.karta[0] || r > m.karta[2])) throw new Error('przycisk poza kartą');
+      await page.waitForTimeout(250);
+    },
+  },
+  // ta sama karta po angielsku: „Discovery: …”, „Build the wreck wall”, „Next research”, „Continue”
+  {
+    name: 'badania-odkrycie-en',
+    query: '',
+    lang: 'en',
+    run: async (page, base) => {
+      await odkrycieStart(page, base);
+      await odkryjBadanie(page, 't_barykady');
+      const tekst = await page.evaluate(() => document.getElementById('sheet')!.textContent ?? '');
+      console.log(`  karta: ${tekst}`);
+      for (const slowo of [
+        'Discovery: Wreck walls',
+        'Unlocks: Wreck wall.',
+        'Build the wreck wall',
+        'Next research',
+        'Continue',
+      ])
+        if (!tekst.includes(slowo)) throw new Error(`brak „${slowo}” na angielskiej karcie`);
+      for (const slowo of ['Odkrycie', 'Odblokowuje', 'Postaw', 'Następne', 'Dalej'])
+        if (tekst.includes(slowo)) throw new Error(`polskie „${slowo}” na angielskiej karcie`);
+      await page.waitForTimeout(250);
     },
   },
   // badania, budowle z technologii: pracownia i sześć budowli (koza z beczki, kocioł, pieczarkarnia, szklarnia, wieża,

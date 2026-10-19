@@ -28,8 +28,9 @@ afterEach(() => {
 
 const wood = (st: SimState) => st.things.filter((t) => t.kind === 'drewno').reduce((a, t) => a + t.n, 0);
 const sumaKsiazek = (st: SimState) => Object.values(st.books ?? {}).reduce((a, n) => a + (n ?? 0), 0);
-/** skrót stanu bez książek: reszta stanu po przeszukaniu z książką ma się nie różnić od przeszukania bez niej */
-const bezKsiazek = (st: SimState) => hashString(JSON.stringify({ ...st, books: undefined }));
+/** skrót stanu bez książek i ich dziennika znalezisk: reszta stanu po przeszukaniu z książką ma się nie różnić od
+    przeszukania bez niej */
+const bezKsiazek = (st: SimState) => hashString(JSON.stringify({ ...st, books: undefined, bookLog: undefined }));
 
 describe('ksiazkaZ: losowanie z osobnego generatora', () => {
   const seed = 2051;

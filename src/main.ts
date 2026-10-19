@@ -5,7 +5,10 @@
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), tablica badań (src/ui/badania.ts: warstwa na pełnym ekranie z pauzą, przycisk „Badania”, klawisz T, samo
-   otwarcie po postawieniu pracowni, ?badania=demo do zrzutów), zapis i sterowanie. */
+   otwarcie po postawieniu pracowni, ?badania=demo do zrzutów), karta „Odkrycie” po ukończeniu badania (w kolejce okien
+   jak spotkanie z sąsiadami, przyciski „Postaw <budowla>”, „Następne badanie”, „Dalej”), podpowiedź o książce znalezionej
+   w przeszukaniu, znaczek NOWE w menu budowy (pamięć przeglądarki, src/ui/nowe.ts) i „Tablica badań” z menu pracowni,
+   zapis i sterowanie. */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -32,6 +35,7 @@ import {
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
+import { tekstKsiazki } from './gov/znaleziska.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
@@ -43,7 +47,7 @@ import { wczytajGrafike } from './render/grafika.ts';
 import { type Light, lightAt } from './render/light.ts';
 import { sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
-import { nazwaTech } from './sim/badania.ts';
+import { nazwaTech, odkrycia } from './sim/badania.ts';
 import { WEAPONS, WEAPONS_EN, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
@@ -60,7 +64,7 @@ import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { NAPISY as OBCY, wiescEn } from './sim/wedrowcy.ts';
-import { czyOtworzycSama, tablicaHtml } from './ui/badania.ts';
+import { czyOtworzycSama, odkrycieSheet, tablicaHtml } from './ui/badania.ts';
 import {
   allowedAnchors,
   availableOf,
@@ -69,6 +73,7 @@ import {
   buildItems,
   buildMenu,
   buildName,
+  noweBudowle,
   okTilesOf,
   placeKey,
   type Rot,
@@ -98,6 +103,7 @@ import { groupCard, personCard } from './ui/karta.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
 import { clearThumbs, thumbUrl } from './ui/miniatura.ts';
+import { wczytajWidziane, zapiszWidziane, zapomnijWidziane } from './ui/nowe.ts';
 import {
   burnSheet,
   confirmSheet,
@@ -505,6 +511,12 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   sim = new Sim(world, st);
   napisSeen = st.sasiedzi?.n ?? 0;
   meetChosen = null;
+  // karta „Odkrycie”, podpowiedź o książce i znaczek NOWE: stare odkrycia i książki się nie powtarzają, widziane budowle
+  // wznowionej gry wracają z pamięci przeglądarki, nowa gra zaczyna od pustej
+  zapamietajOdkrycia();
+  kluczGry = hashString(`${data.addr}|${seed}`);
+  if (!saved) zapomnijWidziane(kluczGry);
+  widziane = wczytajWidziane(kluczGry);
   // zapis sprzed handlarza: włączony od następnego kroku (w trybie zombie symulacja to pomija)
   if (saved && obcy && !st.obcy) sim.push({ t: 'obcy', ids: [] });
   traderSeen = st.obcy?.trader ?? -1;
@@ -620,6 +632,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // ?badania=demo (do zrzutów): pracownia z ludźmi przy stole i otwarta tablica
   else if (params.get('badania') === 'demo') {
     badaniaDemo(sim);
+    zapamietajOdkrycia();
+    // technologie z dema były „zbadane” od razu, więc kronika i zaufanie liczą dopiero te po nich
+    if (gov && odkrycieSeen >= 0) gov.czytane = odkrycieSeen;
     openBadania();
   }
 }
@@ -949,9 +964,10 @@ function showMeet() {
 /* ---------- tablica badań (src/ui/badania.ts): tablica korkowa na pełnym ekranie, gra stoi ---------- */
 /** technologia, której szczegóły widać na tablicy (null: podpowiedź) */
 let badaniaWybrana: string | null = null;
-/** tablica otwierała się już sama (albo gra wczytała się z pracownią i bez wyboru) od ostatniego wyboru badania
-    (czyOtworzycSama: nie wyskakuje drugi raz); zdejmuje to dopiero zobaczony wybór (`research.cur` ustawione), bo
-    polecenie wyboru czeka w kolejce do następnego kroku symulacji */
+/** tablica otwierała się już sama (albo gra wczytała się z pracownią i bez wyboru, albo po ukończonym badaniu pokazała
+    się karta „Odkrycie”, która ją zastępuje) od ostatniego wyboru badania (czyOtworzycSama: nie wyskakuje drugi raz);
+    zdejmuje to dopiero zobaczony wybór (`research.cur` ustawione), bo polecenie wyboru czeka w kolejce do następnego
+    kroku symulacji */
 let badaniaByla = false;
 /** chwila ostatniego sprawdzenia samego otwarcia (ms): drogie warunki raz na ćwierć sekundy */
 let badaniaT = 0;
@@ -1077,6 +1093,86 @@ window.addEventListener('keydown', (e) => {
   e.stopImmediatePropagation();
   closeBadania();
 });
+
+/* ---------- karta „Odkrycie”, książki z przeszukań i znaczek NOWE w menu budowy (src/ui/badania.ts, nowe.ts) ---------- */
+/** tick ostatniego odkrycia, dla którego karta już się pokazała (po wczytaniu gry stare się nie powtarzają) */
+let odkrycieSeen = -1;
+/** tick ostatniej książki z przeszukania, o której gra już powiedziała */
+let ksiazkaSeen = -1;
+/** klucz gry w pamięci przeglądarki: adres i ziarno (nowa gra pod tym samym adresem kasuje wpis w `enter`) */
+let kluczGry = '';
+/** budowle z odkrytych technologii, które gracz już widział (postawił albo otworzył ich szczegóły) */
+let widziane = new Set<string>();
+
+/** ostatnie ukończone badanie i ostatnia książka z przeszukania w stanie: od nich liczą się „nowe” (start gry, wczytanie) */
+function zapamietajOdkrycia() {
+  if (!sim) return;
+  const od = odkrycia(sim.st);
+  odkrycieSeen = od.length ? od[od.length - 1].tick : -1;
+  const log = sim.st.bookLog;
+  ksiazkaSeen = log?.length ? log[log.length - 1].tick : -1;
+}
+
+/** Nowe ukończone badanie: karta „Odkrycie” z pauzą, w kolejce okien jak spotkanie z sąsiadami (czeka, aż zamknie się
+    inne okno albo tablica). Karta zastępuje samo otwarcie tablicy po tym badaniu (przycisk „Następne badanie”). */
+function watchOdkrycia() {
+  if (!sim?.st.research) return;
+  const nowe = odkrycia(sim.st).find((o) => o.tick > odkrycieSeen);
+  if (!nowe) return;
+  badaniaByla = true;
+  if (modal.open || badaniaOtwarta()) return;
+  odkrycieSeen = nowe.tick;
+  showOdkrycie(nowe.id);
+}
+
+/** Karta „Odkrycie”: „Postaw <budowla>” otwiera menu budowy na tej budowli, „Następne badanie” tablicę, „Dalej” (albo
+    Esc) wraca do gry; wszystkie trzy puszczają pauzę przez nextPrompt (następna decyzja zarządu albo gra). */
+function showOdkrycie(id: string) {
+  if (!sim) return;
+  sheetAgain = () => showOdkrycie(id);
+  pauseGame();
+  ctx.close();
+  modal.show(
+    odkrycieSheet(id, modeOf(sim.st)),
+    (act, arg) => {
+      if (act === 'odkrycie-postaw') {
+        decided();
+        openBuildOn(arg as BuildKind);
+      } else if (act === 'odkrycie-nastepne') {
+        // tablica zamknie się sama w nextPrompt; do tego czasu gra stoi dalej
+        modal.close();
+        openBadania();
+      } else if (act === 'odkrycie-dalej') decided();
+    },
+    nextPrompt,
+  );
+}
+
+/** podpowiedź o książce znalezionej w przeszukaniu („Znaleźli książkę „…” (Uprawa +1).”); kilka naraz to ostatnia */
+function watchKsiazki() {
+  const log = sim?.st.bookLog;
+  if (!log?.length) return;
+  const nowe = log.filter((k) => k.tick > ksiazkaSeen);
+  if (!nowe.length) return;
+  ksiazkaSeen = nowe[nowe.length - 1].tick;
+  say(tr(tekstKsiazki(nowe[nowe.length - 1])), 6000);
+}
+
+/** gracz zobaczył budowlę (otworzył jej szczegóły, postawił ją): znaczek NOWE znika i zostaje w pamięci przeglądarki */
+function widzialemBudowle(kind: BuildKind) {
+  if (!sim || widziane.has(kind) || !noweBudowle(sim.st, widziane).has(kind)) return;
+  widziane.add(kind);
+  zapiszWidziane(kluczGry, widziane);
+}
+
+/** Menu budowy na wybranej budowli (karta „Odkrycie”): zakładka tej budowli, jej szczegóły. */
+function openBuildOn(kind: BuildKind) {
+  if (!sim) return;
+  ctx.close();
+  // najpierw pamięć (panel rysuje się już bez znaczka NOWE), potem panel na szczegółach tej budowli
+  widzialemBudowle(kind);
+  buildPanel.showOn(BUILDS[kind].cat, kind);
+}
 
 /** ?badania=demo (do zrzutów): pracownia w mieszkaniu zarządu, cztery zbadane technologie, Spawanie w toku (14 z 25;
     Budowa 2 ma pierwsza osoba zarządu, ona i druga siedzą przy stole), Rozruch węzła bez wiedzy (Ciepło 2, macie 1)
@@ -1247,7 +1343,10 @@ function frame(now: number, dtMs: number) {
   }
   watchRaid();
   watchSasiedzi();
+  // karta „Odkrycie” przed samym otwarciem tablicy: zastępuje je po ukończonym badaniu
+  watchOdkrycia();
   watchBadania(now);
+  watchKsiazki();
   drawState();
   view.render(sim.st, mult ? acc : 1, selected);
   placeMarker();
@@ -2020,6 +2119,7 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   obcy: ['', ''],
   // badania: wybór z tablicy bez komunikatu, zarząd do stołu pracowni
   research: ['', ''],
+  tablica: ['', ''],
   study: ['Zajmie się badaniami.', 'Zajmą się badaniami.'],
   siec: ['Sieć włączona.', 'Sieć włączona.'],
 });
@@ -2076,12 +2176,15 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   rob: [HANDEL.poNapasc.en, HANDEL.poNapascWielu.en],
   obcy: ['', ''],
   research: ['', ''],
+  tablica: ['', ''],
   study: ['Off to do some research.', 'Off to do some research.'],
   siec: ['The grid is on.', 'The grid is on.'],
 });
 
 function run(m: MenuItem) {
   if (!sim) return;
+  // „Tablica badań” i „Wybrać badanie” z menu pracowni otwierają tablicę, symulacja o nich nie wie
+  if (m.cmd.t === 'tablica') return openBadania();
   // „Zajmij klatkę” z gry z sąsiadami idzie do serwera, nie do symulacji
   if (siec.obsluz(m)) return;
   sim.push(m.cmd);
@@ -2260,7 +2363,13 @@ let roomMemo: { key: string; room: Map<BuildKind, boolean> } | null = null;
     plany) i miejsca (plany, rzeczy, mieszkania, badania). Gdy się nie zmienił, panel nie rusza DOM. */
 function buildStateKey(): string {
   if (!sim || !lastStock) return '';
-  return [L('pl', 'en'), stockKey(availableOf(sim.st, lastStock)), placeKey(sim.st), BUILD_MENU.showLocked].join('#');
+  return [
+    L('pl', 'en'),
+    stockKey(availableOf(sim.st, lastStock)),
+    placeKey(sim.st),
+    BUILD_MENU.showLocked,
+    [...noweBudowle(sim.st, widziane)].sort().join(),
+  ].join('#');
 }
 
 /** menu budowy z aktualnego stanu; miejsca liczone tylko przy zmianie skrótu miejsc, nie przy każdym materiale */
@@ -2280,7 +2389,7 @@ function buildMenuNow(): BuildCategory[] {
     }
     return r;
   };
-  const menu = buildMenu(availableOf(s.st, lastStock), room, words, wordsE, { st: s.st });
+  const menu = buildMenu(availableOf(s.st, lastStock), room, words, wordsE, { st: s.st, widziane });
   menuCache = { key, menu };
   return menu;
 }
@@ -2293,7 +2402,9 @@ const buildPanel = new BuildPanel($('buildPanel'), $('app'), {
   words: () => words,
   en: () => wordsE,
   touch: touchUI,
+  onSeen: widzialemBudowle,
   onPlace: (kind) => {
+    widzialemBudowle(kind);
     startPlacing(kind);
     nextPrompt();
     // na dotyku plan jedzie za palcem, więc szuflada schodzi z drogi; na komputerze panel zostaje na kolejne plany

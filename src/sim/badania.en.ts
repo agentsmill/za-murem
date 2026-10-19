@@ -50,14 +50,15 @@ export const DZIALANIE_EN: Readonly<Record<string, string>> = {
   t_okna: '+3°C in the rooms of your flats, free of charge.',
   t_konserwy: '+20% yield from vegetable patches, greenhouses and mushroom farms.',
   t_zielarstwo: 'A vegetable patch sometimes gives meds at harvest: one med, with a one in three chance.',
-  t_wieza: 'A tower in the yard and a new Tower post on the Night orders.',
+  t_wieza:
+    'A tower in the yard and a new “Watch on the tower” post on the Night orders: whoever stands there adds half their watch to the defence of every other post.',
   t_spawanie: 'The workshop makes parts 1.5× faster.',
   t_barykady: 'A wreck wall on a stretch of the fence, sturdier than the plain barricade. Costs mostly scrap.',
   t_wezel:
     'A boiler in the HQ stairwell (in a house, the hallway) heats all your flats at once, but burns a lot of wood. The board stokes it on its own.',
   t_szklarnia: 'A greenhouse in the yard: like a vegetable patch, but in winter it yields as it does in autumn.',
   t_grzyby:
-    'A mushroom farm in the bathroom of your flat. A smaller yield than a vegetable patch, but steady all year round.',
+    'A mushroom farm in the bathroom of your flat. A smaller yield than a vegetable patch in spring and summer, but the same all year round, winter included.',
   t_ambu: 'Health comes back 1.6× faster (wounds from fighting, chill, hunger).',
 };
 

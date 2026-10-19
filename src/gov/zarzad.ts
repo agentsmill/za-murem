@@ -8,7 +8,10 @@
      const gov = newGov(seed);
      co krok: apply(govUpdate(gov, input));
      interfejs: pending(gov, input) → karta, uchwała, wydarzenie albo raport;
-     odpowiedzi: setNight / confirmNight, signLaw, chooseEvent, ackReport (każda zwraca skutki). */
+     odpowiedzi: setNight / confirmNight, signLaw, chooseEvent, ackReport (każda zwraca skutki).
+
+   Odkrycia z badań i książki znalezione w przeszukanych pomieszczeniach wchodzą do kroniki w kroku zarządu
+   (`znaleziska` z src/gov/znaleziska.ts, wejście GovInput.odkrycia i znaleziska), odkrycie podnosi zaufanie o 1. */
 
 import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
 import { TECH_DOMS } from '../content/data.ts';
@@ -21,6 +24,7 @@ import { lawEffects as effectsOfLaws, lawState, lawOptions as optionsOfLaws, sig
 import { wiesci } from './wiesci.ts';
 import { atHour, decision, emptyEffects, gameMin, logGov, mood, rnd, zeroStock } from './wspolne.ts';
 import { choose, eventTick, eventView, FIRST_EVENT } from './wydarzenia.ts';
+import { znaleziska } from './znaleziska.ts';
 
 export const GOV_VERSION = 1;
 /** wieczorne zebranie zarządu (uchwała) pół godziny przed kartą nocy */
@@ -117,6 +121,7 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   if (st.night && !st.night.confirmed && (i.hour >= CARD_DEADLINE || i.day > st.night.day)) confirm(st, i, fx, true);
   nightTick(st, i, fx);
   mourn(st, i, fx);
+  znaleziska(st, i);
   wiesci(st, i, fx);
   eventTick(st, i, fx, busy(st));
   checkOver(st, i, fx);

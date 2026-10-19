@@ -77,6 +77,9 @@ export interface BuildDef {
   work: number;
   /** ile takich budowli wolno mieć naraz (stojące plus plany); bez pola: bez limitu */
   max?: number;
+  /** zdanie, gdy limit `max` jest wykorzystany; bez pola „<nazwa> już stoi.” (pasuje do rodzaju żeńskiego i do
+      większości nazw w liczbie pojedynczej), budowla innego rodzaju gramatycznego daje tu własne */
+  juzStoi?: Tx;
   /** jedno zdanie do menu budowy; zdanie zależne od miejsca bierze słowa ze słownika wspólnoty (effectOf) */
   effect: string | ((w: Words) => string);
 }
@@ -184,7 +187,7 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
     h: 1,
     cost: { deski: 8 },
     work: TICKS_PER_HOUR,
-    effect: 'Mniejszy plon niż ogródek, ale równy przez cały rok.',
+    effect: 'Plon mniejszy niż w ogródku wiosną i latem, ale taki sam przez cały rok, także zimą.',
   },
   szklarnia: {
     name: 'Szklarnia',
@@ -218,7 +221,8 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
     cost: { deski: 24, zlom: 6 },
     work: 2 * TICKS_PER_HOUR,
     max: 1,
-    effect: 'Wartownik na wieży widzi całe podwórko. Można mieć jedną.',
+    effect:
+      'Posterunek „Warta na wieży” na karcie nocy: stojący tam dokłada połowę swojej warty do obrony każdego innego posterunku. Można mieć jedną.',
   },
 };
 
@@ -235,6 +239,20 @@ export interface BuildPlan {
   have: Partial<Record<Mat, number>>;
   work: number;
   by: number;
+}
+
+/** Powód, gdy limit `max` budowli jest wykorzystany (stojące plus plany), w bieżącym języku: „Pracownia już stoi.”,
+    „The research room already stands.”, albo własne zdanie z `BuildDef.juzStoi`. null, gdy budowla nie ma limitu albo
+    można postawić następną. Woła go canPlace i menu budowy (src/ui/budowa.ts), więc oba mówią to samo. */
+export function limitWhy(st: Partial<Pick<SimState, 'things' | 'builds'>>, kind: BuildKind): string | null {
+  const def = BUILDS[kind];
+  if (def.max === undefined) return null;
+  const ile =
+    (st.things ?? []).filter((t) => t.kind === kind).length + (st.builds ?? []).filter((b) => b.kind === kind).length;
+  if (ile < def.max) return null;
+  if (def.juzStoi) return tr(def.juzStoi);
+  const the = BUILDS_EN[kind].the;
+  return L(`${def.name} już stoi.`, `${the.charAt(0).toUpperCase()}${the.slice(1)} already stands.`);
 }
 
 /** czy budowla jest odblokowana: bez `tech` zawsze, z `tech` po badaniu z `st.techDone` (pole jest nieobecne,
@@ -346,16 +364,8 @@ export function canPlace(
 ): { ok: boolean; why?: string } {
   const def = BUILDS[kind];
   if (!isUnlocked(st, kind)) return { ok: false, why: L('Wymaga badania.', 'Needs research.') };
-  if (
-    def.max !== undefined &&
-    st.things.filter((t) => t.kind === kind).length + st.builds.filter((b) => b.kind === kind).length >= def.max
-  ) {
-    const the = BUILDS_EN[kind].the;
-    return {
-      ok: false,
-      why: L(`${def.name} już stoi.`, `${the.charAt(0).toUpperCase()}${the.slice(1)} already stands.`),
-    };
-  }
+  const limit = limitWhy(st, kind);
+  if (limit) return { ok: false, why: limit };
   const size = w.size;
   const { w: bw, h: bh } = footprint(kind, rot);
   if (x < 0 || y < 0 || x + bw > size || y + bh > size) return { ok: false, why: L('Poza mapą.', 'Off the map.') };

@@ -132,12 +132,12 @@ Nazwy, poziomy, koszty i wymagania z 0.3 bez zmian. „Działanie” to opis do 
 | t_okna | Folia i koce w oknach | Budowa 1, 12 | — | premia | +3°C w pomieszczeniach naszych mieszkań, za darmo. |
 | t_konserwy | Słoiki i suszarnie | Uprawa 1, 12 | — | premia | +20% plonu ogródków, szklarni i pieczarkarni. |
 | t_zielarstwo | Zielarstwo z działek | Medycyna 1, 12 | — | premia | Ogródek przy plonie daje czasem leki (moje: 1 lek z szansą 1/3, z ziarna ogródka i plonu). |
-| t_wieza | Wieże z rusztowań | Budowa 1, 15 | — | budowla | Wieża na podwórku i nowy posterunek „Wieża” na karcie nocy (niżej, „Wieża”). |
+| t_wieza | Wieże z rusztowań | Budowa 1, 15 | — | budowla | Wieża na podwórku i nowy posterunek „Warta na wieży” na karcie nocy: stojący tam dokłada połowę swojej warty do obrony każdego innego posterunku (niżej, „Wieża”). |
 | t_spawanie | Spawanie z akumulatorów | Budowa 2, 25 | t_okna | premia | Warsztat robi części 1,5× szybciej. |
 | t_barykady | Barykady z wraków | Budowa 2, 22 | t_wieza | budowla | Barykada na odcinku siatki, mocniejsza od zasieków. Koszt głównie w złomie, bo dziś złomu jest za dużo (moje: 16 złomu i 2 deski). |
 | t_wezel | Rozruch węzła cieplnego | Ciepło 2, 35 | t_kozy | budowla | Węzła i piwnic w grze nie ma, więc (moje): kocioł na klatce siedziby (w domu w przedpokoju). Grzeje naraz wszystkie nasze mieszkania, ale pali dużo drewna. Zarząd dokłada do niego sam. |
 | t_szklarnia | Szklarnie z folii | Uprawa 2, 30 | t_konserwy | budowla | Szklarnia na podwórku: jak ogródek, ale zimą rodzi jak jesienią. |
-| t_grzyby | Pieczarki w piwnicach | Uprawa 2, 25 | t_konserwy | budowla | Piwnic nie ma, więc (moje): pieczarkarnia w łazience naszego mieszkania. Mniejszy plon niż ogródek, ale równy przez cały rok. |
+| t_grzyby | Pieczarki w piwnicach | Uprawa 2, 25 | t_konserwy | budowla | Piwnic nie ma, więc (moje): pieczarkarnia w łazience naszego mieszkania. Plon mniejszy niż w ogródku wiosną i latem, ale taki sam przez cały rok, także zimą (ogródek zimą nie rodzi). |
 | t_ambu | Ambulatorium polowe | Medycyna 2, 30 | t_zielarstwo | premia | Zdrowie wraca 1,6× szybciej (rany po walce, wychłodzenie, głód). |
 
 ### Wieża (moje, po pytaniu recenzenta)

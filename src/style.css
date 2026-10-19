@@ -1039,6 +1039,12 @@ a.btn {
 .sheet.napad {
   --plate: #7a2e22;
 }
+/* badania: karta „Odkrycie” po ukończeniu badania, w kolorze korka tablicy; treść jak kartka z tablicy (papier) */
+.sheet.odkrycie {
+  --plate: #8a5f33;
+  --papier: #f1ead6;
+  --atrament: #2b2b2b;
+}
 .sheet:focus {
   outline: none;
 }
@@ -1074,6 +1080,37 @@ a.btn {
 .sheet-body > p {
   margin: 0 0 10px;
   text-wrap: pretty;
+}
+.sheet.odkrycie .sheet-body {
+  position: relative;
+  margin: 14px 14px 4px;
+  padding: 16px 16px 8px;
+  background: var(--papier);
+  color: var(--atrament);
+  box-shadow: 2px 4px 8px rgb(0 0 0 / 0.45);
+  transform: rotate(-0.4deg);
+}
+.sheet.odkrycie .sheet-body::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 11px;
+  height: 11px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgb(255 255 255 / 0.55) 0 12%, transparent 32%), #c0392b;
+  box-shadow: 1px 2px 2px rgb(0 0 0 / 0.5);
+}
+.sheet.odkrycie .odk-opis {
+  font-size: 17px;
+  line-height: 1.4;
+}
+.sheet.odkrycie .odk-nowe {
+  font: 700 14px / 1.3 var(--f-sign);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2e5d2a;
 }
 .lead {
   color: var(--ink-dim);
@@ -1707,6 +1744,7 @@ a.btn {
   gap: 6px;
 }
 .tile {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1760,6 +1798,19 @@ a.btn {
 .tile .ts {
   font-size: 11px;
   color: var(--ink-dim);
+}
+/* znaczek NOWE na kafelku budowli z odkrytej technologii, której gracz jeszcze nie widział */
+.tile .tnew {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 1px 5px;
+  font: 700 10px / 1.3 var(--f-sign);
+  letter-spacing: 0.1em;
+  color: #1c1c1c;
+  background: var(--lamp);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
 }
 .bdet {
   padding-top: 10px;

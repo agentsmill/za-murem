@@ -61,4 +61,10 @@ export const EN = {
   koniec: (kiedy: string) => `done in ${kiedy}`,
   stoiKrotko: 'stalled',
   polka: 'Shelf',
+  /** karta „Odkrycie”: nagłówek, tytuł, co odblokowuje i przyciski */
+  badania: 'Research',
+  odkrycie: 'Discovery',
+  odblokowuje: 'Unlocks',
+  nastepne: 'Next research',
+  dalej: 'Continue',
 } as const;

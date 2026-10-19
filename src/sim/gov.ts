@@ -5,7 +5,9 @@
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie.
    Badania: odczyt niesie też `badania` (pracownia, liczba zbadanych technologii, eraBadan, koncowaZbadana i siecWlaczona
    dla ramy zwycięstwa), książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
-   a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. Kozy z beczek i kocioł
+   a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. Odkrycia (research.at)
+   i książki znalezione w przeszukaniach (bookLog) wchodzą jako `odkrycia` i `znaleziska`, z których zarząd pisze
+   kronikę (src/gov/znaleziska.ts); bez badań i książek tych pól nie ma. Kozy z beczek i kocioł
    wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA), a stojąca wieża jako `wieza`, liczba jej miejsc
    (posterunek karty). */
 
@@ -14,7 +16,18 @@ import { nextRandom } from '../core/rng.ts';
 import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type { Arm, GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
-import { dodajKsiazke, eraBadan, koncowaZbadana, liczbaZbadanych, PALENISKA, siecWlaczona, wiedza } from './badania.ts';
+import {
+  dodajKsiazke,
+  eraBadan,
+  koncowaZbadana,
+  liczbaZbadanych,
+  nazwaTech,
+  odkrycia,
+  PALENISKA,
+  siecWlaczona,
+  TECH_BY,
+  wiedza,
+} from './badania.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
 import { dayOf, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { houseOf, inHomeApt } from './house.ts';
@@ -69,6 +82,15 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
   const s = snapshot(st, w);
   const palenisk = paleniska(st);
   const wieza = st.things.find((t) => t.kind === 'wieza');
+  const zombie = modeOf(st) === 'zombie';
+  // zbadane technologie z drzewka (identyfikatory spoza niego, np. testowe, kronika pomija) z opisem w obu językach
+  const odkryte = odkrycia(st)
+    .filter((o) => Object.hasOwn(TECH_BY, o.id))
+    .map((o) => ({
+      ...o,
+      nazwa: nazwaTech(o.id),
+      dzialanie: zombie ? (TECH_BY[o.id].dzialanieZombie ?? TECH_BY[o.id].dzialanie) : TECH_BY[o.id].dzialanie,
+    }));
   return {
     tick: s.tick,
     day: s.day,
@@ -102,7 +124,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     guards: st.pawns
       .filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase !== 4)
       .map((p) => ({ id: st.people[p.person].id, post: postKey(p.job!.target) })),
-    ...(modeOf(st) === 'zombie'
+    ...(zombie
       ? {
           horde: {
             near: s.zombies.near,
@@ -129,6 +151,9 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     books: { ...st.books },
     techDone: [...(st.techDone ?? [])],
     know: Object.fromEntries(TECH_DOMS.map((d) => [d, wiedza(st, d)])) as Record<TechDom, number>,
+    // odkrycia i książki z przeszukań do kroniki (src/gov/znaleziska.ts); gra bez badań i książek nie ma tych pól
+    ...(odkryte.length ? { odkrycia: odkryte } : {}),
+    ...(st.bookLog?.length ? { znaleziska: st.bookLog.map((k) => ({ ...k })) } : {}),
     // kozy z beczek i kocioł: dyżur przy kozie dokłada do wszystkich, a wyliczenie drewna na noc liczy każde
     ...(palenisk > 0 ? { paleniska: palenisk } : {}),
     // stoi wieża: karta nocy dostaje posterunek „Warta na wieży” (src/gov/noc.ts) dla tylu osób, ile kafelków ma jej

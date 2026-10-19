@@ -5,15 +5,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { tx } from '../../src/core/jezyk.ts';
+import { tr, tx, ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { BLOK, wordsOf } from '../../src/gov/miejsce.ts';
 import type { GovState } from '../../src/gov/typy.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
+import { nazwaTech, PIECZARKI_PLON, TECH_BY } from '../../src/sim/badania.ts';
+import { BUILDS_EN } from '../../src/sim/budowle.en.ts';
 import { BUILDS, type BuildKind, canPlace, effectOf, footprint, type Mat } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { REPAIR } from '../../src/sim/mieszkania.ts';
-import { addResidents, createSim, Sim } from '../../src/sim/sim.ts';
+import { addResidents, createSim, GARDEN_YIELD, Sim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import {
   allowedAnchors,
@@ -25,6 +27,7 @@ import {
   costText,
   MAT_NAME,
   matsOf,
+  noweBudowle,
   okTilesOf,
   ourApts,
   placeKey,
@@ -107,6 +110,223 @@ describe('menu budowy', () => {
       'dom',
       'podworko',
     ]);
+  });
+
+  /** pracownia stoi (rzecz w st.things), położenie bez znaczenia dla menu */
+  const pracownia = (st: SimState) =>
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'pracownia',
+      x: 1,
+      y: 1,
+      w: 2,
+      h: 1,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+  const bogaty = { deski: 999, zlom: 999, czesci: 999 };
+  const pozycja = (m: ReturnType<typeof buildMenu>, k: BuildKind) =>
+    m.flatMap((c) => c.items).find((b) => b.kind === k);
+
+  it('kłódki od chwili, gdy stoi pracownia: szklarnia z „Wymaga badania: Szklarnie z folii”, po badaniu bez kłódki', () => {
+    const { st } = fresh();
+    const menu = () => buildMenu(bogaty, () => true, undefined, undefined, { st });
+    // bez pracowni budowle z technologii są ukryte
+    expect(pozycja(menu(), 'szklarnia')).toBeUndefined();
+    expect(pozycja(menu(), 'kociol')).toBeUndefined();
+    pracownia(st);
+    const szkl = pozycja(menu(), 'szklarnia')!;
+    expect(szkl).toMatchObject({ ok: false, locked: 'Wymaga badania: Szklarnie z folii' });
+    expect(szkl.why).toBe(szkl.locked);
+    expect(pozycja(menu(), 'kociol')!.locked).toBe('Wymaga badania: Rozruch węzła cieplnego');
+    expect(buildPanelHtml(menu(), { tab: 'podworko', kind: 'szklarnia' }, false).body).toMatch(
+      /class="tile sel lock"[^>]*data-kind="szklarnia"/,
+    );
+    ustawJezyk('en');
+    expect(pozycja(menu(), 'szklarnia')!.locked).toBe(`Needs research: ${tr(nazwaTech('t_szklarnia'))}`);
+    ustawJezyk('pl');
+    // po badaniu: bez kłódki i do postawienia
+    st.techDone = ['t_konserwy', 't_szklarnia'];
+    const po = pozycja(menu(), 'szklarnia')!;
+    expect(po.locked).toBeUndefined();
+    expect(po.ok).toBe(true);
+    // rozbiórka pracowni chowa kłódki przed następnymi badaniami, zbadana budowla zostaje
+    st.things = st.things.filter((t) => t.kind !== 'pracownia');
+    expect(pozycja(menu(), 'szklarnia')?.ok).toBe(true);
+    expect(pozycja(menu(), 'kociol')).toBeUndefined();
+    // opcja showLocked nadal wymusza kłódki bez pracowni (zrzuty, ?budowa=klodki)
+    expect(
+      pozycja(
+        buildMenu(bogaty, () => true, undefined, undefined, { st, showLocked: true }),
+        'kociol',
+      )!.locked,
+    ).toBe('Wymaga badania: Rozruch węzła cieplnego');
+  });
+
+  it('nazwy badań w kłódkach biorą się z tablicy badań dla każdej technologii z budowlą', () => {
+    for (const t of Object.values(TECH_BY)) expect(TECH_NAMES[t.id], t.id).toEqual(nazwaTech(t.id));
+    for (const k of Object.keys(BUILDS) as BuildKind[]) {
+      const id = BUILDS[k].tech;
+      if (id) expect(tr(TECH_NAMES[id]), k).not.toBe(id);
+    }
+  });
+
+  it('stojąca pracownia (albo plan) mówi „Pracownia już stoi.”, a nie „Nie ma gdzie postawić”', () => {
+    const { st } = fresh();
+    const menu = (room = false) => buildMenu(bogaty, () => room, undefined, undefined, { st });
+    // jeszcze nie stoi: zwykły powód braku miejsca
+    expect(pozycja(menu(), 'pracownia')!.why).toMatch(/^Nie ma gdzie postawić/);
+    expect(pozycja(menu(true), 'pracownia')).toMatchObject({ ok: true });
+    pracownia(st);
+    for (const room of [false, true]) {
+      const p = pozycja(menu(room), 'pracownia')!;
+      expect(p).toMatchObject({ ok: false, why: 'Pracownia już stoi.' });
+    }
+    ustawJezyk('en');
+    expect(pozycja(menu(), 'pracownia')!.why).toBe('The research room already stands.');
+    ustawJezyk('pl');
+    // szczegóły w panelu niosą ten sam powód i nie mają przycisku „Postaw”
+    const html = buildPanelHtml(menu(), { tab: 'dom', kind: 'pracownia' }, false).body;
+    expect(html).toContain('<p class="build-why">Pracownia już stoi.</p>');
+    expect(html).not.toContain('data-act="build" data-arg="pracownia"');
+    // sam plan też wypełnia limit
+    st.things = st.things.filter((t) => t.kind !== 'pracownia');
+    st.builds.push({ id: 900, kind: 'pracownia', x: 1, y: 1, rot: 0, need: {}, have: {}, work: 1, by: -1 });
+    expect(pozycja(menu(), 'pracownia')!.why).toBe('Pracownia już stoi.');
+    // canPlace mówi to samo
+    expect(canPlace(st, fresh().w, 'pracownia', 1, 1, 0).why).toBe('Pracownia już stoi.');
+  });
+
+  it('wieża: „Wieża już stoi.”, a budowla innego rodzaju może mieć własny napis (BuildDef.juzStoi)', () => {
+    const { w, st } = fresh();
+    st.techDone = ['t_wieza', 't_kozy'];
+    const menu = () => buildMenu(bogaty, () => false, undefined, undefined, { st });
+    expect(pozycja(menu(), 'wieza')!.why).toMatch(/^Nie ma gdzie postawić/);
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'wieza',
+      x: 1,
+      y: 1,
+      w: 2,
+      h: 2,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    expect(pozycja(menu(), 'wieza')!.why).toBe('Wieża już stoi.');
+    ustawJezyk('en');
+    expect(pozycja(menu(), 'wieza')!.why).toBe('The tower already stands.');
+    ustawJezyk('pl');
+    // własny napis dla budowli, której domyślne zdanie by nie pasowało
+    BUILDS.wieza.juzStoi = tx('Wieża jest już postawiona.', 'The tower is up already.');
+    try {
+      expect(pozycja(menu(), 'wieza')!.why).toBe('Wieża jest już postawiona.');
+      expect(canPlace(st, w, 'wieza', 1, 1, 0).why).toBe('Wieża jest już postawiona.');
+      ustawJezyk('en');
+      expect(pozycja(menu(), 'wieza')!.why).toBe('The tower is up already.');
+    } finally {
+      delete BUILDS.wieza.juzStoi;
+      ustawJezyk('pl');
+    }
+    // budowla bez limitu nigdy nie dostaje tego powodu
+    expect(pozycja(menu(), 'warsztat')!.why).toMatch(/^Nie ma gdzie postawić/);
+  });
+
+  it('NOWE: budowle z odkrytych technologii, dopóki gracz ich nie postawi ani nie otworzy ich szczegółów', () => {
+    const { st } = fresh();
+    expect([...noweBudowle(st, new Set())]).toEqual([]);
+    st.techDone = ['t_okna', 't_kozy', 't_wezel'];
+    // technologia bez budowli (t_okna) nic nie daje, reszta tak
+    expect([...noweBudowle(st, new Set())].sort()).toEqual(['kociol', 'koza_beczka']);
+    expect([...noweBudowle(st, new Set(['kociol']))]).toEqual(['koza_beczka']);
+    // postawiona albo zaplanowana przestaje być nowa
+    st.builds.push({ id: 901, kind: 'kociol', x: 1, y: 1, rot: 0, need: {}, have: {}, work: 1, by: -1 });
+    expect([...noweBudowle(st, new Set())]).toEqual(['koza_beczka']);
+    st.builds = [];
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'koza_beczka',
+      x: 1,
+      y: 1,
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    expect([...noweBudowle(st, new Set())]).toEqual(['kociol']);
+    // budowle bez technologii nigdy nie są nowe
+    expect([...noweBudowle(st, new Set())].some((k) => !BUILDS[k as BuildKind].tech)).toBe(false);
+  });
+
+  it('NOWE w menu i na kafelku: tylko z podaną pamięcią widzianych, po polsku „NOWE”, po angielsku „NEW”', () => {
+    const { st } = fresh();
+    st.techDone = ['t_kozy', 't_wezel', 't_konserwy', 't_szklarnia'];
+    const bez = buildMenu(bogaty, () => true, undefined, undefined, { st });
+    expect(bez.flatMap((c) => c.items).some((b) => b.nowe)).toBe(false);
+    const widziane = new Set<string>(['kociol']);
+    const menu = buildMenu(bogaty, () => true, undefined, undefined, { st, widziane });
+    expect(
+      menu
+        .flatMap((c) => c.items)
+        .filter((b) => b.nowe)
+        .map((b) => b.kind)
+        .sort(),
+    ).toEqual(['koza_beczka', 'szklarnia']);
+    const dom = buildPanelHtml(menu, { tab: 'dom', kind: 'warsztat' }, false).body;
+    expect(dom).toMatch(/data-kind="koza_beczka"[^>]*>(?:(?!<\/button>).)*<span class="tnew">NOWE<\/span>/);
+    expect(dom).not.toMatch(/data-kind="kociol"[^>]*>(?:(?!<\/button>).)*tnew/);
+    expect(dom).not.toMatch(/data-kind="warsztat"[^>]*>(?:(?!<\/button>).)*tnew/);
+    ustawJezyk('en');
+    expect(
+      buildPanelHtml(
+        buildMenu(bogaty, () => true, undefined, undefined, { st, widziane }),
+        { tab: 'dom', kind: 'warsztat' },
+        false,
+      ).body,
+    ).toContain('<span class="tnew">NEW</span>');
+    ustawJezyk('pl');
+    // zablokowana kłódką nigdy nie jest nowa (nie jest odkryta)
+    pracownia(st);
+    st.techDone = ['t_kozy'];
+    const zKlodka = buildMenu(bogaty, () => true, undefined, undefined, { st, widziane: new Set() });
+    expect(pozycja(zKlodka, 'szklarnia')).toMatchObject({ locked: expect.any(String) });
+    expect(pozycja(zKlodka, 'szklarnia')!.nowe).toBeUndefined();
+  });
+
+  it('teksty działania nowych budowli zgadzają się z tym, co robią (wieża, pieczarkarnia, szklarnia)', () => {
+    const slowa = wordsOf(BLOK);
+    // wieża: posterunek na karcie nocy, połowa warty do każdego innego posterunku
+    expect(effectOf('wieza', slowa)).toBe(
+      'Posterunek „Warta na wieży” na karcie nocy: stojący tam dokłada połowę swojej warty do obrony każdego innego posterunku. Można mieć jedną.',
+    );
+    expect(BUILDS_EN.wieza.effect).toBe(
+      'A “Watch on the tower” post on the Night orders: whoever stands there adds half their watch to the defence of every other post. You can have one.',
+    );
+    expect(TECH_BY.t_wieza.dzialanie.pl).toContain('„Warta na wieży”');
+    expect(TECH_BY.t_wieza.dzialanie.en).toContain('“Watch on the tower”');
+    // pieczarkarnia: 2 porcje co trzy doby przez cały rok, także zimą, kiedy ogródek nie rodzi; latem ogródek daje więcej
+    expect(PIECZARKI_PLON).toBe(2);
+    expect(GARDEN_YIELD[1]).toBe(0);
+    expect(GARDEN_YIELD[3]).toBeGreaterThan(PIECZARKI_PLON);
+    expect(effectOf('pieczarkarnia', slowa)).toBe(
+      'Plon mniejszy niż w ogródku wiosną i latem, ale taki sam przez cały rok, także zimą.',
+    );
+    expect(BUILDS_EN.pieczarkarnia.effect).toBe(
+      'A smaller yield than a vegetable patch in spring and summer, but the same all year round, winter included.',
+    );
+    expect(TECH_BY.t_grzyby.dzialanie.pl).toContain(effectOf('pieczarkarnia', slowa));
+    expect(TECH_BY.t_grzyby.dzialanie.en).toContain(BUILDS_EN.pieczarkarnia.effect);
+    // szklarnia: zimą jak jesienią (to zdanie zgadza się z plonem)
+    expect(effectOf('szklarnia', slowa)).toBe('Jak ogródek, ale zimą rodzi jak jesienią.');
+    expect(GARDEN_YIELD[0]).toBeGreaterThan(GARDEN_YIELD[1]);
   });
 
   it('trzy zakładki, każda budowla z kosztem, czasem pracy, działaniem i miejscem z BUILDS', () => {

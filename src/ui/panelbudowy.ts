@@ -19,6 +19,8 @@ export interface BuildPanelHooks {
   touch: boolean;
   /** „Postaw” przy wybranej budowli */
   onPlace(kind: BuildKind): void;
+  /** gracz otworzył szczegóły budowli (kliknął jej kafelek albo doszedł do niego strzałkami): znaczek NOWE znika */
+  onSeen(kind: BuildKind): void;
   /** panel zamknięty przyciskiem ✕ */
   onClose(): void;
 }
@@ -74,6 +76,13 @@ export class BuildPanel {
     this.refresh(true);
   }
 
+  /** otwiera panel od razu na zakładce i budowli (karta „Odkrycie”: „Postaw <budowla>”); szczegóły są widoczne, ale
+      znaczek NOWE zdejmuje dopiero main.ts (widzialemBudowle) */
+  showOn(tab: BuildCat, kind: BuildKind): void {
+    this.view = { tab, kind };
+    this.show();
+  }
+
   hide(): void {
     this.el.hidden = true;
     this.app.classList.remove('build-open');
@@ -102,6 +111,7 @@ export class BuildPanel {
   /** wybór zakładki (kind null) albo budowli; fokus zostaje na klikniętym elemencie */
   private pick(v: PanelView): void {
     this.view = v;
+    if (v.kind) this.hooks.onSeen(v.kind);
     this.render(v.kind ? `.tile[data-kind="${v.kind}"]` : `[data-tab="${v.tab}"]`);
   }
 
