@@ -13,7 +13,8 @@
    dla ramy zwycięstwa), książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
    a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. Odkrycia (research.at)
    i książki znalezione w przeszukaniach (bookLog) wchodzą jako `odkrycia` i `znaleziska`, z których zarząd pisze
-   kronikę (src/gov/znaleziska.ts); bez badań i książek tych pól nie ma. Kozy z beczek i kocioł
+   kronikę (src/gov/znaleziska.ts); bez badań i książek tych pól nie ma. Tą samą drogą idą do kroniki polecenia, które
+   przepadły po trzech przerwaniach przez szwendaczy (`przerwane` z SimState.przerwane). Kozy z beczek i kocioł
    wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA), a stojąca wieża jako `wieza`, liczba jej miejsc
    (posterunek karty). W `badania` pole `koncowa` mówi, że zbadana jest fabryka bieżącego trybu (`koncowaZbadana`), a nie
    sama sieć. */
@@ -169,6 +170,8 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     // odkrycia i książki z przeszukań do kroniki (src/gov/znaleziska.ts); gra bez badań i książek nie ma tych pól
     ...(odkryte.length ? { odkrycia: odkryte } : {}),
     ...(st.bookLog?.length ? { znaleziska: st.bookLog.map((k) => ({ ...k })) } : {}),
+    // polecenia, które przepadły po kilku przerwaniach przez szwendaczy, do kroniki; bez takich przerwań pola nie ma
+    ...(st.przerwane?.length ? { przerwane: st.przerwane.map((k) => ({ ...k })) } : {}),
     // kozy z beczek i kocioł: dyżur przy kozie dokłada do wszystkich, a wyliczenie drewna na noc liczy każde
     ...(palenisk > 0 ? { paleniska: palenisk } : {}),
     // stoi wieża: karta nocy dostaje posterunek „Warta na wieży” (src/gov/noc.ts) dla tylu osób, ile kafelków ma jej

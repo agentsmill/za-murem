@@ -189,6 +189,10 @@ export interface GovInput {
       z dziedziny, poszła na drewno. Zarząd dopisuje do kroniki wpisy z tickiem nowszym niż `GovState.czytane`.
       Książki z wydarzenia „książki” tu nie trafiają: wydarzenie ma własny wpis. Bez pola: żadnych. */
   znaleziska?: readonly { tick: number; dom: TechDom; tytul: string; podpalka?: boolean }[];
+  /** polecenia, które przepadły, bo szwendacze przerywały je trzy razy (dziennik symulacji `SimState.przerwane`), po kolei:
+      tick, imię osoby i klucz tego, co robiła (klucz komendy, przy wraku 'wreck:szukaj' albo 'wreck:rozbierz'). Zarząd
+      dopisuje do kroniki wpisy z tickiem nowszym niż `GovState.czytane` (src/gov/znaleziska.ts). Bez pola: żadnych. */
+  przerwane?: readonly { tick: number; imie: string; co: string }[];
   /** zbadane technologie (identyfikatory z src/sim/badania.ts); EventHost.tech czyta stąd, bez pola żadna */
   techDone?: readonly string[];
   /** wiedza osady w dziedzinach, ta sama co na tablicy badań (najlepsza osoba zarządu albo lokatora siedziby na
@@ -511,7 +515,8 @@ export interface GovState {
   /** warunki zwycięstwa: kamienie milowe dróg, zwycięstwa, licznik celu ludności i kolejka epilogów w oknie; pole od
       `wlaczZwyciestwo` (src/gov/zwyciestwo.ts), bez niego zarząd nie liczy dróg i stan zostaje jak przed nimi */
   zwyciestwo?: StanZwyciestwa;
-  /** tick ostatniego odkrycia albo znaleziska książki (GovInput.odkrycia, znaleziska), które zarząd już wpisał do
-      kroniki; pole powstaje przy pierwszym takim wpisie, więc gra bez badań i książek go nie ma */
+  /** tick ostatniego odkrycia, znaleziska książki albo przepadłego polecenia (GovInput.odkrycia, znaleziska, przerwane),
+      które zarząd już wpisał do kroniki; pole powstaje przy pierwszym takim wpisie, więc gra bez badań, książek
+      i przerwanych poleceń go nie ma */
   czytane?: number;
 }

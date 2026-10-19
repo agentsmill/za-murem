@@ -2,7 +2,8 @@
    Nastrój nie ma własnej dynamiki: wynika z pozostałych potrzeb plus chwilowe nastroje (spalone meble,
    ciepły posiłek), później dojdą cechy i wydarzenia. Zdrowie na razie tylko spada i wraca; choroby,
    leczenie i śmierć przyjdą razem z systemami z 0.3. Powrót zdrowia mnoży `NeedCtx.heal` (ambulatorium polowe, t_ambu).
-   Nazwy pasków są w obu językach (NEED_LABELS, NEED_LABELS_EN). */
+   Siły (`rest`) ubywają wolno (REST_AWAKE, REST_BUSY), żeby zarząd wytrzymał dzień pracy i noc warty; liczby i ich
+   powód przy stałych niżej. Nazwy pasków są w obu językach (NEED_LABELS, NEED_LABELS_EN). */
 
 export interface Needs {
   /** najedzenie */
@@ -78,11 +79,20 @@ export const COLD = 40;
 export const WARMED = 90;
 export const TIRED = 15;
 
+/** Siły na godzinę gry (zgłoszenie Mateusza z 19.10.2026, tryb zombie: „nie wytrzymają jednej pracy, nawet przez jedną
+    noc”). Na nogach ubywa 3,5 (było 5), przy ciężkiej pracy (rąbanie, łatanie, noszenie drewna) 6 (było 9), więc po
+    dniu na nogach od 6:00 zarząd ma wieczorem około 50 (dawniej 30) i warta od 20:00 do 6:00 kończy się z siłami
+    ponad 0 (dawniej schodziły do zera około 2:00). Sen bez zmian: w łóżku +12, na podłodze +8. */
+export const REST_AWAKE = 3.5;
+export const REST_BUSY = 6;
+/** siły na starcie: grę zaczyna się o 15:00 po nocy w łóżku, a nie w połowie zmęczenia (było 65) */
+export const REST_START = 80;
+
 const clamp100 = (v: number) => (v < 0 ? 0 : v > 100 ? 100 : v);
 
 /** potrzeby na starcie: po obiedzie, zmarznięci po zimnej nocy, niespokojni, w połowie dnia */
 export function startNeeds(): Needs {
-  const n: Needs = { food: 55, warm: 45, rest: 65, health: 100, safe: 60, mood: 0 };
+  const n: Needs = { food: 55, warm: 45, rest: REST_START, health: 100, safe: 60, mood: 0 };
   n.mood = moodOf(n);
   return n;
 }
@@ -119,7 +129,7 @@ export function stepSafe(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
 /** h: godziny gry od ostatniego kroku; bonus: suma chwilowych nastrojów (punkty) */
 export function stepNeeds(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
   n.food = clamp100(n.food - (c.asleep ? 2 : 4) * (c.hunger ?? 1) * h);
-  n.rest = clamp100(n.rest + (c.asleep ? (c.floor ? 8 : 12) : c.busy ? -9 : -5) * h);
+  n.rest = clamp100(n.rest + (c.asleep ? (c.floor ? 8 : 12) : c.busy ? -REST_BUSY : -REST_AWAKE) * h);
   // pod kocem o 6°C cieplej; przy palącej się kozie grzeje się szybko bez względu na pokój
   const t = c.temp + (c.asleep ? 6 : 0);
   const dw = c.fire ? 40 : t >= COMFORT ? 15 : t - COMFORT;
