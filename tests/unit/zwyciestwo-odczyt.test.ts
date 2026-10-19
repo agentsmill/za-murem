@@ -1,9 +1,11 @@
 /* Odczyt dla dróg zwycięstwa (src/sim/gov.ts, src/sim/osiedle.ts): `govInput` podaje ludność pod zarządem (`ludnosc`:
    zarząd i mieszkańcy) i liczbę budynków, które wspólny płot dołączył do naszego obwodu (`teren.przylaczone`, ze stanu
-   `SimState.plot`), a `ludnoscSpisu2021` liczy z generatora mieszkańców, ilu ludzi mieszkało w kwadracie domu w 2021
-   roku (z tego zarząd bierze cel drogi ludnościowej). Ludność na atrapie bloku, płot na świeżym świecie Lanciego tym
-   samym przebiegiem co w plot.test.ts (otoczenie zmienia świat w miejscu, więc świat jest własny), 2021 na trzech
-   demach i tabelach z public/ (atrapa `fetch` czyta pliki). Odczyt niczego nie zmienia: skrót symulacji zostaje. */
+   `SimState.plot`), razem z liczbą budynków w okolicy, które da się w ogóle otoczyć (`teren.mozliwe`, `doOtoczenia`
+   w src/sim/sasiedzi.ts: liczone raz na świat z pierwotnej siatki, bez losowania), a `ludnoscSpisu2021` liczy
+   z generatora mieszkańców, ilu ludzi mieszkało w kwadracie domu w 2021 roku (z tego zarząd bierze cel drogi
+   ludnościowej). Ludność na atrapie bloku, płot na świeżym świecie Lanciego tym samym przebiegiem co w plot.test.ts
+   (otoczenie zmienia świat w miejscu, więc świat jest własny), 2021 na trzech demach i tabelach z public/ (atrapa
+   `fetch` czyta pliki). Odczyt niczego nie zmienia: skrót symulacji zostaje. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,16 +13,17 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
-import { celLudnosci, krokZwyciestwa, ludnoscOf, wlaczZwyciestwo } from '../../src/gov/zwyciestwo.ts';
+import { celLudnosci, krokZwyciestwa, ludnoscOf, ocenDrogi, wlaczZwyciestwo } from '../../src/gov/zwyciestwo.ts';
 import { budynkiObszaru } from '../../src/mieszkancy/generuj.ts';
 import { marginesyDla } from '../../src/mieszkancy/rejon.ts';
 import { obsadzBudynek } from '../../src/mieszkancy/spis.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow } from '../../src/mieszkancy/wczytaj.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { ludnoscSpisu2021, mapaMieszkancow } from '../../src/sim/osiedle.ts';
-import { kosztPlotu, plotDla } from '../../src/sim/sasiedzi.ts';
-import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
+import { doOtoczenia, drzwiBudynku, kosztPlotu, plotDla } from '../../src/sim/sasiedzi.ts';
+import { createSim, Sim, type SimState, ustawSiatke } from '../../src/sim/sim.ts';
 import type { Geo } from '../../src/world/geo.ts';
+import * as plot from '../../src/world/plot.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { mockBlockM2 } from './interior-mock.ts';
 import { core, until } from './sasiedzi-pomoc.ts';
@@ -130,12 +133,16 @@ function buduj(sim: Sim, bid: number, p: ReturnType<typeof core>[number]) {
   }
 }
 
+/** ile budynków do 150 m od drzwi siedziby da się otoczyć wspólnym płotem, na trzech demach (sonda z projektu ścieżki
+    celów, potwierdzona na tym generatorze świata): Przymorze 0 z 17 (każdy stoi za jezdnią), Lanciego 4, Zielonki 5 */
+const DO_OTOCZENIA = { przymorze: 0, lanciego: 4, zielonki: 5 } as const;
+
 describe('teren w odczycie: budynki, które wspólny płot dołączył do obwodu', () => {
   it('przed płotem 0, w trakcie budowy nadal 0, po zbudowaniu wokół 10F 1; to samo widzi droga terenu', () => {
     const { w, sim, b, p } = graZPlotem();
     expect(sim.st.plot).toBeUndefined();
     const przed = govInput(sim.st, w, 0);
-    expect(przed.teren).toEqual({ przylaczone: 0 });
+    expect(przed.teren).toEqual({ przylaczone: 0, mozliwe: DO_OTOCZENIA.lanciego });
 
     // droga terenu: zarząd z włączonymi drogami nie zalicza kamienia, dopóki płotu nie ma
     const gov = newGov(1);
@@ -148,13 +155,14 @@ describe('teren w odczycie: budynki, które wspólny płot dołączył do obwodu
     sim.step();
     expect(sim.st.plot?.plan?.bid).toBe(b.id);
     expect(sim.st.plot?.bids).toEqual([]);
-    expect(govInput(sim.st, w, 0).teren).toEqual({ przylaczone: 0 });
+    expect(govInput(sim.st, w, 0).teren).toEqual({ przylaczone: 0, mozliwe: DO_OTOCZENIA.lanciego });
 
     buduj(sim, b.id, p);
     expect(sim.st.plot?.bids).toEqual([b.id]);
     const skrot = sim.hash();
     const po = govInput(sim.st, w, 0);
-    expect(po.teren).toEqual({ przylaczone: 1 });
+    // liczba budynków do otoczenia to cecha świata, a nie stanu: po płocie ta sama
+    expect(po.teren).toEqual({ przylaczone: 1, mozliwe: DO_OTOCZENIA.lanciego });
     expect(sim.hash()).toBe(skrot);
     // ludność w tym samym odczycie dalej zarząd i mieszkańcy
     expect(po.ludnosc).toBe(po.people.length + (po.residents ?? 0));
@@ -167,21 +175,130 @@ describe('teren w odczycie: budynki, które wspólny płot dołączył do obwodu
     krokZwyciestwa(gov, govInput(sim.st, w, 0), emptyEffects());
     expect(gov.zwyciestwo!.kamienie.teren).toBe(1);
 
-    // zapis i wczytanie na świeżym świecie: płot dalej dołącza ten sam budynek
+    // zapis i wczytanie na świeżym świecie: płot dalej dołącza ten sam budynek, a pierwszy odczyt `mozliwe` pada już na
+    // świecie ze wspólnym płotem (siatka inna niż na starcie), więc liczba musi iść z pierwotnej siatki
     const w2 = swiezy('lanciego');
     const kopia = new Sim(w2, JSON.parse(JSON.stringify(sim.st)) as SimState);
-    expect(govInput(kopia.st, w2, 0).teren).toEqual({ przylaczone: 1 });
+    expect(w2.fenceBaza).toBeDefined();
+    expect(govInput(kopia.st, w2, 0).teren).toEqual({ przylaczone: 1, mozliwe: DO_OTOCZENIA.lanciego });
   });
 
   it('stan bez pola plot (nowa gra, zapis sprzed płotu) i z pustą listą to 0, a każdy otoczony budynek to jeden', () => {
     const w = swiezy('lanciego');
     const st = createSim(w, 5, { core: 4 });
     expect(st.plot).toBeUndefined();
-    expect(govInput(st, w, 0).teren).toEqual({ przylaczone: 0 });
+    const mozliwe = DO_OTOCZENIA.lanciego;
+    expect(govInput(st, w, 0).teren).toEqual({ przylaczone: 0, mozliwe });
     st.plot = { bids: [] };
-    expect(govInput(st, w, 0).teren).toEqual({ przylaczone: 0 });
+    expect(govInput(st, w, 0).teren).toEqual({ przylaczone: 0, mozliwe });
     st.plot.bids.push(3, 7);
-    expect(govInput(st, w, 0).teren).toEqual({ przylaczone: 2 });
+    expect(govInput(st, w, 0).teren).toEqual({ przylaczone: 2, mozliwe });
+  });
+});
+
+// ---------------------------------------------------------------- teren: ile budynków da się otoczyć
+
+/** drzwi budynku na zewnątrz w kształcie, który bierze wspolnyPlot */
+const drzwiNaZewnatrz = (w: World, bid: number) => drzwiBudynku(w, bid).zewn.map((d) => ({ tile: d.tile, out: d.out }));
+
+describe('teren w odczycie: ile budynków w okolicy da się otoczyć (doOtoczenia, teren.mozliwe)', () => {
+  it('trzy dema: Przymorze 0 (każdy sąsiad za jezdnią), Lanciego 4, Zielonki 5', () => {
+    for (const [klucz, ile] of Object.entries(DO_OTOCZENIA)) expect(doOtoczenia(swiezy(klucz)), klucz).toBe(ile);
+  });
+
+  it('liczone raz na świat: drugie wywołanie nie woła wspolnyPlot, inny świat liczy od nowa', () => {
+    const w = swiezy('lanciego');
+    const szpieg = vi.spyOn(plot, 'wspolnyPlot');
+    const pierwsze = doOtoczenia(w);
+    const wywolan = szpieg.mock.calls.length;
+    // jedno wywołanie na każdy budynek z drzwiami na zewnątrz do 150 m od drzwi siedziby
+    expect(wywolan).toBeGreaterThan(pierwsze);
+    expect(doOtoczenia(w)).toBe(pierwsze);
+    expect(doOtoczenia(w)).toBe(pierwsze);
+    expect(szpieg.mock.calls.length).toBe(wywolan);
+    // inny świat z tych samych danych: ten sam wynik (bez losowania), ale liczony od nowa
+    expect(doOtoczenia(swiezy('lanciego'))).toBe(pierwsze);
+    expect(szpieg.mock.calls.length).toBe(2 * wywolan);
+  });
+
+  it('nie losuje i niczego nie zmienia w świecie ani w jego siatce', () => {
+    const w = swiezy('lanciego');
+    const blocked = w.blocked.slice();
+    const siatka = JSON.stringify(w.fence);
+    const los = vi.spyOn(Math, 'random');
+    expect(doOtoczenia(w)).toBe(DO_OTOCZENIA.lanciego);
+    expect(los).not.toHaveBeenCalled();
+    expect(w.blocked).toEqual(blocked);
+    expect(JSON.stringify(w.fence)).toBe(siatka);
+    expect(w.fenceBaza).toBeUndefined();
+  });
+
+  it('liczy z pierwotnej siatki: świat ze wspólnym płotem (wczytany zapis) daje tyle samo co świeży', () => {
+    const baza = swiezy('lanciego');
+    // kształty siatki po otoczeniu każdego z budynków, które się da, takie jak w stanie gry po zbudowaniu płotu
+    const ksztalty = baza.buildings.flatMap((b) => {
+      if (b.id === baza.hq) return [];
+      const r = plot.wspolnyPlot(baza, baza.fence, drzwiNaZewnatrz(baza, b.id), new Set());
+      return r.ok ? [{ bid: b.id, tiles: r.fence.tiles, hole: r.fence.hole, yard: r.fence.yard }] : [];
+    });
+    expect(ksztalty.length).toBeGreaterThan(1);
+    for (const { bid, ...ksztalt } of ksztalty) {
+      // świat ma już inną siatkę niż na starcie, a pierwszy odczyt pada dopiero teraz (po płocie wokół budynku `bid`
+      // kafelki tego płotu liczyłyby się jak gotowy mur i płot do jeszcze jednego sąsiada zmieściłby się w limicie
+      // długości, więc liczenie z bieżącego `blocked` dałoby 5 zamiast 4)
+      const w = swiezy('lanciego');
+      ustawSiatke(w, ksztalt);
+      expect(w.fenceBaza, `${bid}`).toBeDefined();
+      expect(w.fence.tiles, `${bid}`).not.toEqual(w.fenceBaza!.tiles);
+      expect(doOtoczenia(w), `płot wokół ${bid}`).toBe(DO_OTOCZENIA.lanciego);
+    }
+  });
+
+  it('bez siedziby albo bez siatki zero, a nie wyjątek', () => {
+    const w = swiezy('lanciego');
+    expect(doOtoczenia({ ...w, hq: -1 })).toBe(0);
+    expect(doOtoczenia({ ...w, fence: { ...w.fence, tiles: [] } })).toBe(0);
+    expect(doOtoczenia({ ...w, fence: undefined as never })).toBe(0);
+  });
+
+  it('govInput niesie to w teren.mozliwe obok przylaczone, a skrót symulacji zostaje', () => {
+    for (const [klucz, ile] of Object.entries(DO_OTOCZENIA)) {
+      const w = swiezy(klucz);
+      const st = createSim(w, 5, { core: 4 });
+      const sim = new Sim(w, st);
+      for (let k = 0; k < 40; k++) sim.step();
+      const skrot = sim.hash();
+      expect(govInput(st, w, 0).teren, klucz).toEqual({ przylaczone: 0, mozliwe: ile });
+      expect(sim.hash(), klucz).toBe(skrot);
+    }
+  });
+
+  it('droga terenu z tego odczytu: Przymorze „Wkrótce” o płocie przez jezdnię, Lanciego i Zielonki „co dalej” o płocie', () => {
+    const gov = newGov(1);
+    wlaczZwyciestwo(gov);
+    for (const [klucz, ile] of Object.entries(DO_OTOCZENIA)) {
+      const w = swiezy(klucz);
+      const teren = ocenDrogi(gov, govInput(createSim(w, 5, { core: 4 }), w, 0)).find((d) => d.droga === 'teren')!;
+      if (ile === 0) {
+        expect(teren.dalej, klucz).toBeNull();
+        expect(teren.wkrotce?.pl, klucz).toBe('Wkrótce: wspólny płot przez jezdnię.');
+      } else {
+        expect(teren.dalej?.pl, klucz).toBe('Otoczcie wspólnym płotem pierwszy sąsiedni budynek.');
+        expect(teren.wkrotce, klucz).toBeNull();
+      }
+    }
+  });
+
+  it('droga technologii z tego odczytu mówi słowami miejsca: w domu (Zielonki) „waszego domu”, w blokach „waszego mieszkania”', () => {
+    const gov = newGov(1);
+    wlaczZwyciestwo(gov);
+    for (const klucz of Object.keys(DO_OTOCZENIA)) {
+      const w = swiezy(klucz);
+      const tech = ocenDrogi(gov, govInput(createSim(w, 5, { core: 4 }), w, 0)).find((d) => d.droga === 'technologia')!;
+      const lokum = klucz === 'zielonki' ? ['waszego domu', 'your house'] : ['waszego mieszkania', 'your flat'];
+      expect(tech.dalej?.pl, klucz).toBe(`Postawcie pracownię w pokoju ${lokum[0]} (Budowa, zakładka Dom).`);
+      expect(tech.dalej?.en, klucz).toBe(`Build a research room in a room of ${lokum[1]} (Build, Home tab).`);
+    }
   });
 });
 
