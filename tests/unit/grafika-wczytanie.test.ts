@@ -10,15 +10,18 @@ const DIR = path.resolve(import.meta.dirname, '../../public/assets');
 /** pobieranie z public/assets jak z serwera gry; brak: zamienia nazwę pliku na odpowiedź (404, zły opis) */
 function serwer(brak: Record<string, Response> = {}) {
   const adresy: string[] = [];
-  const pobierz = async (url: string | URL | Request) => {
+  /** tryb pamięci podręcznej każdego pobrania (`init.cache`), w kolejności adresów */
+  const tryby: (RequestCache | undefined)[] = [];
+  const pobierz = async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url);
     adresy.push(u);
+    tryby.push(init?.cache);
     const nazwa = u.split('/').pop()!;
     if (brak[nazwa]) return brak[nazwa].clone();
     const f = path.join(DIR, nazwa);
     return fs.existsSync(f) ? new Response(fs.readFileSync(f)) : new Response('brak', { status: 404 });
   };
-  return { adresy, pobierz: pobierz as typeof fetch };
+  return { adresy, tryby, pobierz: pobierz as typeof fetch };
 }
 
 const dekoduj = async (b: Blob): Promise<Obraz> => {
@@ -53,6 +56,14 @@ describe('wczytanie grafiki z PixelLab (src/render/grafika.ts)', () => {
       'trzepak.png',
     ]);
     expect(s.adresy.every((u) => u.startsWith('assets/'))).toBe(true);
+  });
+
+  it('opis i atlasy pobiera ze sprawdzeniem w serwerze (stałe nazwy plików, stara wersja nie zostaje po wdrożeniu)', async () => {
+    const s = serwer();
+    await wczytajGrafike({ pobierz: s.pobierz, dekoduj });
+    // opis i siedem atlasów, każde z cache: 'no-cache': przeglądarka pyta serwer, czy plik się zmienił
+    expect(s.tryby).toHaveLength(8);
+    expect(s.tryby.every((t) => t === 'no-cache')).toBe(true);
   });
 
   it('bez opisu (404), z opisem w innej wersji albo bez sieci: null, czyli wszystko z kodu', async () => {
