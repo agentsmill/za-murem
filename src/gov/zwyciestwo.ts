@@ -10,6 +10,13 @@
    których stoją, więc ekran dróg pokazuje przy nich „Wkrótce: …” (`PostepDrogi.wkrotce`), dopóki droga nie jest przebyta
    do końca. Treść dróg (`DROGI`) jest w obu językach (Tx); nazwa drogi leku zależy od trybu gry (`nazwaDrogi`).
 
+   Co dalej (`PostepDrogi.dalej`). Droga, którą da się grać już teraz (ludność w całości, pierwszy kamień terenu), mówi
+   jednym zdaniem, co zrobić, żeby zaliczyć jej następny kamień: ludność „Zbierzcie N osób pod zarządem.” (N to próg
+   kamienia, z polską liczbą mnogą), przy ostatnim kamieniu „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków
+   „(n z 7)”, teren „Otoczcie wspólnym płotem pierwszy sąsiedni budynek.”. Droga z „Wkrótce” i droga przebyta do końca nie
+   mają zdania (`null`), więc „Wkrótce” i „co dalej” nigdy nie występują razem. Licznik poranków jest też liczbami
+   w `PostepDrogi.seria` (`{ dni, z }`, tylko ludność).
+
    Stan (`GovState.zwyciestwo`, `StanZwyciestwa`) powstaje dopiero po `wlaczZwyciestwo`, tak jak `miasto` po `wlaczMiasto`
    (src/gov/wyprawy.ts): `newGov` go nie ma, `krokZwyciestwa` bez niego nie robi nic, więc skróty zarządu w botach i testach
    bez tej opcji zostają bez zmian. Gra włącza drogi przy nowej grze i przy wczytaniu starego zapisu (`enter` w src/main.ts,
@@ -37,19 +44,24 @@
 
    Licznik celu (`dniCelu`). Dzień gry liczy się raz na zmianę `GovInput.day` (`ostatniDzien`), rano od 6:00, więc to doby gry,
    a nie sekundy przy ekranie. O tej porze licznik rośnie o 1, gdy ludność jest co najmniej równa celowi, nikt z zarządu nie ma
-   jedzenia poniżej 25, a zaufanie wynosi co najmniej 50; inaczej wraca do zera. Siódmy poranek z rzędu zalicza piąty
-   kamień ludnościowy. Po zwycięstwie licznik stoi.
+   jedzenia poniżej 25, a zaufanie wynosi co najmniej 50; inaczej wraca do zera, a jeśli seria już coś znaczyła (licznik
+   większy od zera), krok dopisuje do kroniki (bez `big`) zdanie „Seria poranków do celu przerwana po {n} z 7.”, żeby
+   gracz wiedział, czemu licznik wrócił do zera. Siódmy poranek z rzędu zalicza piąty kamień ludnościowy. Po zwycięstwie
+   licznik stoi.
 
-   Zwycięstwo to zaliczenie ostatniego kamienia drogi. Krok zapisuje je w `wygrane` (droga, dzień i godzina gry) i ustawia
-   `epilog`, który `pending` (src/gov/zarzad.ts) oddaje przed innymi oknami jako `{ k: 'zwyciestwo', droga }`. „Graj dalej”
-   (`grajDalej`) tylko zdejmuje epilog: gra i zapis zostają, ta sama droga nie wygrywa drugi raz (pilnuje tego `wygrane`),
-   a zwycięstwo innej drogi później dostaje własny epilog. Epilog czeka jeden naraz: gdyby dwie drogi wygrały w tym samym
-   kroku, obie trafiają do `wygrane`, a okno dostaje pierwsza w kolejności ekranu (do rozszerzenia, gdy powstaną
-   kolejne drogi z kamieniami).
+   Zwycięstwo to zaliczenie ostatniego kamienia drogi. Krok zapisuje je w `wygrane` (droga, dzień i godzina gry) i dokłada
+   drogę na koniec kolejki epilogów `epilogi` (FIFO); `pending` (src/gov/zarzad.ts) oddaje przed innymi oknami pierwszy
+   z kolejki jako `{ k: 'zwyciestwo', droga }`. „Graj dalej” (`grajDalej`) zdejmuje tylko ten pierwszy epilog: gra i zapis
+   zostają, ta sama droga nie wygrywa drugi raz (pilnuje tego `wygrane`), a następny epilog z kolejki pokazuje się zaraz po
+   nim. Gdy dwie drogi wygrają w tym samym kroku, obie trafiają do `wygrane` i do kolejki w kolejności ekranu, a gracz
+   widzi dwa epilogi jeden po drugim; zwycięstwo, gdy epilog już czeka, staje w kolejce za nim. Stan sprzed kolejki (zapis
+   deweloperski z jednym polem `epilog`: droga albo null) `wlaczZwyciestwo` czyta jak kolejkę z jednym epilogiem albo pustą
+   i usuwa stare pole, bez podbijania wersji zapisu.
 
    Zwycięstwo na żądanie (`wygrajDroge`) służy tylko zrzutom i próbom (`window.zm.wygraj` w src/main.ts): włącza drogi,
-   wpisuje wygraną (raz), zalicza komplet kamieni drogi i ustawia jej epilog (nadpisuje czekający). Nie pisze do kroniki
-   i nie rusza niczego poza `GovState.zwyciestwo`; dla nieznanej drogi nic nie robi i zwraca `false`.
+   wpisuje wygraną (raz), zalicza komplet kamieni drogi i dokłada jej epilog na koniec kolejki (raz: epilog tej samej drogi,
+   który już czeka, nie dubluje się). Nie pisze do kroniki i nie rusza niczego poza `GovState.zwyciestwo`; dla nieznanej
+   drogi nic nie robi i zwraca `false`.
 
    Krok nie zmienia zaufania, wkurzenia, zapasów ani ziarna: żadnych bonusów do balansu, tylko kronika i podpowiedź
    (ostatni wpis w `fx.log`, który gra pokazuje jak każdy inny). Zaufanie +2 przy pierwszym kamieniu drogi, które
@@ -57,7 +69,7 @@
    więc pierwszy kamień mógłby po cichu uratować licznik; do dodania razem ze strojeniem balansu. Bez hypot, sin i cos;
    napisy od razu po polsku i angielsku. */
 
-import { type Tx, tx } from '../core/jezyk.ts';
+import { mnogaPl, type Tx, tx } from '../core/jezyk.ts';
 import type { GameMode, GovEffects, GovInput, GovState } from './typy.ts';
 import { logGov } from './wspolne.ts';
 
@@ -73,14 +85,15 @@ export interface StanZwyciestwa {
   dniCelu: number;
   /** dzień gry (`GovInput.day`), którego poranek licznik już policzył; 0: jeszcze żaden */
   ostatniDzien: number;
-  /** droga, której epilog czeka w oknie; null: nic nie czeka */
-  epilog: Droga | null;
+  /** epilogi czekające w oknie, w kolejności zwycięstw (FIFO): `pending` oddaje pierwszy, `grajDalej` go zdejmuje;
+      pusta kolejka: nic nie czeka. Zapis sprzed kolejki ma w tym miejscu pole `epilog` (`wlaczZwyciestwo` je przepisuje) */
+  epilogi: Droga[];
   /** cel drogi ludnościowej zapisany przy pierwszym kroku z użytecznymi danymi 2021 (po połowieniu w trybie zombie);
       brak pola: celu jeszcze nie zamrożono (nie było danych albo stary zapis), droga liczy go na bieżąco */
   cel?: number;
 }
 
-/** Jedna droga na ekranie dróg: nazwa, kamienie, ile zaliczono, „wkrótce” i postęp liczbowy. */
+/** Jedna droga na ekranie dróg: nazwa, kamienie, ile zaliczono, „wkrótce”, „co dalej”, postęp liczbowy i seria poranków. */
 export interface PostepDrogi {
   droga: Droga;
   nazwa: Tx;
@@ -91,8 +104,15 @@ export interface PostepDrogi {
   /** zdanie „Wkrótce: …” dla drogi, której podstawa jeszcze nie powstała; null: droga działa i nie ma nic do dodania albo
       jest już przebyta do końca (okno pokazuje to, co tu dostanie) */
   wkrotce: Tx | null;
+  /** jedno zdanie „co dalej” do następnego otwartego kamienia drogi, którą da się grać już teraz (ludność w całości,
+      pierwszy kamień terenu); null: droga ma „Wkrótce” (technologia, lek, cuda, teren po pierwszym kamieniu) albo jest
+      przebyta do końca. Okno pokazuje je pod następnym kamieniem, więc „Wkrótce” i „co dalej” nie występują razem */
+  dalej: Tx | null;
   /** liczby do paska („{ile} z {cel}”) dla drogi, która ma co liczyć; null: bez liczb */
   postep: { ile: number; cel: number } | null;
+  /** licznik poranków celu ludności (`dni` z `z`, jak `StanZwyciestwa.dniCelu`) dla drogi ludnościowej, także po
+      zwycięstwie (stoi na `z`); null: inne drogi nie mają serii */
+  seria: { dni: number; z: number } | null;
 }
 
 /** Definicja drogi: nazwa i kamienie milowe po kolei, obie w obu językach. */
@@ -161,10 +181,16 @@ const WKROTCE: Readonly<Record<Exclude<Droga, 'ludnosc'>, Tx>> = {
   cuda: tx('Wkrótce: cuda z późnych badań.', 'Coming soon: wonders from late research.'),
 };
 
+/** „Co dalej” przy pierwszym kamieniu terenu (reszta terenu to „Wkrótce”, `wkrotceDrogi`) */
+const DALEJ_TEREN = tx(
+  'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
+  'Put a shared fence round the first building next door.',
+);
+
 /** drogi w kolejności ekranu */
 const KOLEJNOSC: readonly Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
 
-/** progi osób dla pierwszych trzech kamieni ludności; czwarty to połowa celu, piąty licznik */
+/** progi osób dla pierwszych trzech kamieni ludności; czwarty to połowa celu (`progiLudnosci`), piąty licznik */
 const PROGI_LUDNOSCI: readonly number[] = [10, 25, 50];
 /** cel ludności: bez danych z 2021 roku, dolna i górna granica przy danych */
 const CEL_BEZ_DANYCH = 250;
@@ -179,6 +205,18 @@ const GLOD_PONIZEJ = 25;
 /** zaufanie, przy którym cel się liczy */
 const ZAUFANIE_OD = 50;
 
+/** „Co dalej” dla kamieni ludności przed ostatnim: zebrać `n` osób pod zarządem (polska liczba mnoga: „63 osoby”) */
+const dalejOsoby = (n: number): Tx =>
+  tx(`Zbierzcie ${mnogaPl(n, 'osoba', 'osoby', 'osób')} pod zarządem.`, `Get ${n} people under the board.`);
+
+/** „Co dalej” dla ostatniego kamienia ludności: utrzymać cel siedem poranków, z licznikiem `dni` z 7. Warunki w zdaniu
+    to te same stałe, którymi liczy `krokZwyciestwa` (poranek, głód, zaufanie, liczba dni). */
+const dalejSeria = (dni: number): Tx =>
+  tx(
+    `Utrzymajcie cel ${DNI_CELU} poranków z rzędu: o ${PORANEK}:00 nikt z zarządu nie jest głodny, a zaufanie wynosi co najmniej ${ZAUFANIE_OD} (${dni} z ${DNI_CELU}).`,
+    `Hold the target for ${DNI_CELU} mornings in a row: at ${PORANEK}:00 nobody on the board is hungry and trust is at least ${ZAUFANIE_OD} (${dni} of ${DNI_CELU}).`,
+  );
+
 /** Nazwa drogi w trybie gry: droga leku w zombie nazywa się „Lek”, reszta tak samo w obu trybach. */
 export function nazwaDrogi(droga: Droga, mode: GameMode): Tx {
   const def = DROGI[droga];
@@ -186,13 +224,19 @@ export function nazwaDrogi(droga: Droga, mode: GameMode): Tx {
 }
 
 /** Włącza drogi w stanie zarządu: dokłada puste liczniki. Idempotentne, bez losowania; wołają to gra przy nowej grze
-    i przy wczytaniu starego zapisu. `newGov` bez opcji tego nie robi. */
+    i przy wczytaniu starego zapisu. `newGov` bez opcji tego nie robi. Stan sprzed kolejki epilogów (zapis deweloperski
+    z jednym polem `epilog`: droga albo null) czyta jak kolejkę z jednym epilogiem albo pustą i usuwa stare pole, bez
+    podbijania wersji zapisu. */
 export function wlaczZwyciestwo(st: GovState): void {
-  st.zwyciestwo ??= { kamienie: {}, wygrane: [], dniCelu: 0, ostatniDzien: 0, epilog: null };
+  st.zwyciestwo ??= { kamienie: {}, wygrane: [], dniCelu: 0, ostatniDzien: 0, epilogi: [] };
+  const z: StanZwyciestwa & { epilog?: Droga | null } = st.zwyciestwo;
+  if (!Array.isArray(z.epilogi)) z.epilogi = z.epilog && Object.hasOwn(DROGI, z.epilog) ? [z.epilog] : [];
+  delete z.epilog;
 }
 
-/** Czy liczba ze spisu 2021 nadaje się do celu: skończona i dodatnia (0, ujemna, NaN i nieskończoność to brak danych). */
-const maDaneSpisu = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0;
+/** Czy liczba ze spisu 2021 nadaje się do celu i do epilogu: skończona i dodatnia (0, ujemna, NaN i nieskończoność to
+    brak danych). */
+export const maDaneSpisu = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0;
 
 /** Cel drogi ludnościowej: połowa ludności kwadratu domu z 2021 roku w przedziale 120–500, bez danych (albo z liczbą bez
     sensu) 250; w trybie zombie połowa tego. Zawsze liczba całkowita w przedziale: zwykły 120–500, zombie 60–250. */
@@ -216,13 +260,17 @@ export function ludnoscOf(i: GovInput): number {
 /** Czy droga już wygrała (jest w `wygrane`). */
 const wygrana = (z: { wygrane: { droga: Droga }[] }, droga: Droga): boolean => z.wygrane.some((w) => w.droga === droga);
 
+/** Progi osób czterech pierwszych kamieni ludności przy celu `cel`: 10, 25, 50 i połowa celu w górę. Piąty kamień to
+    licznik poranków, nie próg. Przy małym celu połowa bywa niższa od 50, ale kamienie idą po kolei (`spelnione`). */
+const progiLudnosci = (cel: number): number[] => [...PROGI_LUDNOSCI, Math.ceil(cel / 2)];
+
 /** Ile pierwszych kamieni drogi spełnia sam odczyt (kamienie idą po kolei, więc liczy się początek listy). Piąty kamień
     ludności nie wchodzi w rachubę, bo daje go licznik poranków; drogi bez odczytu mają 0. */
 function spelnione(droga: Droga, i: GovInput, cel: number): number {
   if (droga === 'teren') return (i.teren?.przylaczone ?? 0) >= 1 ? 1 : 0;
   if (droga !== 'ludnosc') return 0;
   const ile = ludnoscOf(i);
-  const progi = [...PROGI_LUDNOSCI, Math.ceil(cel / 2)];
+  const progi = progiLudnosci(cel);
   let n = 0;
   while (n < progi.length && ile >= progi[n]) n++;
   return n;
@@ -237,11 +285,26 @@ function wkrotceDrogi(droga: Droga, zaliczone: number): Tx | null {
   return WKROTCE[droga];
 }
 
+/** „Co dalej” drogi przy `zaliczone` kamieniach: jedno zdanie do następnego otwartego kamienia, ale tylko tam, gdzie da się
+    go zdobyć już teraz, czyli gdzie nie ma „Wkrótce” (`wkrotceDrogi` rozstrzyga o tym jako jedyne): ludność w całości
+    (zebrać próg kamienia, a przy ostatnim utrzymać cel przez siedem poranków z licznikiem `dniCelu`) i pierwszy kamień
+    terenu (wspólny płot). Droga przebyta do końca i droga z „Wkrótce” nie mają zdania. */
+function dalejDrogi(droga: Droga, zaliczone: number, cel: number, dniCelu: number): Tx | null {
+  if (zaliczone >= DROGI[droga].kamienie.length || wkrotceDrogi(droga, zaliczone)) return null;
+  if (droga === 'teren') return DALEJ_TEREN;
+  if (droga !== 'ludnosc') return null;
+  const progi = progiLudnosci(cel);
+  return zaliczone < progi.length ? dalejOsoby(progi[zaliczone]) : dalejSeria(dniCelu);
+}
+
 /** Postęp pięciu dróg w kolejności ekranu (technologia, teren, lek, ludność, cuda) z odczytu i stanu zarządu. Czysta:
     nic nie zmienia i niczego nie losuje. `zaliczone` to kamienie zapisane w stanie (0 bez `wlaczZwyciestwo`), a nie
-    chwilowy odczyt, więc kamień raz zaliczony nie znika, gdy ludność spadnie; `postep` ma tylko ludność. */
+    chwilowy odczyt, więc kamień raz zaliczony nie znika, gdy ludność spadnie; `postep` i `seria` ma tylko ludność,
+    `dalej` ludność i pierwszy kamień terenu, `wkrotce` pozostałe (nigdy oba naraz). */
 export function ocenDrogi(st: GovState, i: GovInput): PostepDrogi[] {
   const mode = st.mode ?? 'zwykly';
+  const cel = celGry(st, i);
+  const dniCelu = st.zwyciestwo?.dniCelu ?? 0;
   return KOLEJNOSC.map((droga) => {
     const def = DROGI[droga];
     const zaliczone = Math.min(st.zwyciestwo?.kamienie[droga] ?? 0, def.kamienie.length);
@@ -251,7 +314,9 @@ export function ocenDrogi(st: GovState, i: GovInput): PostepDrogi[] {
       kamienie: [...def.kamienie],
       zaliczone,
       wkrotce: wkrotceDrogi(droga, zaliczone),
-      postep: droga === 'ludnosc' ? { ile: ludnoscOf(i), cel: celGry(st, i) } : null,
+      dalej: dalejDrogi(droga, zaliczone, cel, dniCelu),
+      postep: droga === 'ludnosc' ? { ile: ludnoscOf(i), cel } : null,
+      seria: droga === 'ludnosc' ? { dni: dniCelu, z: DNI_CELU } : null,
     };
   });
 }
@@ -269,9 +334,9 @@ function zalicz(st: GovState, i: GovInput, fx: GovEffects, droga: Droga, ile: nu
 }
 
 /** Krok zarządu dla dróg (woła go `govUpdate` po `checkOver`, tylko w trwającej grze): zamraża cel ludności przy
-    pierwszych danych z 2021 roku, zalicza kamienie, które spełnia odczyt, liczy poranki celu i zgłasza zwycięstwo
-    z epilogiem. Bez `st.zwyciestwo` nie robi nic. Nie losuje i nie zmienia niczego poza stanem zwycięstwa i kroniką
-    (`st.log` i `fx.log`). */
+    pierwszych danych z 2021 roku, zalicza kamienie, które spełnia odczyt, liczy poranki celu (z wpisem w kronice, gdy
+    seria pęka) i zgłasza zwycięstwo z epilogiem w kolejce. Bez `st.zwyciestwo` nie robi nic. Nie losuje i nie zmienia
+    niczego poza stanem zwycięstwa i kroniką (`st.log` i `fx.log`). */
 export function krokZwyciestwa(st: GovState, i: GovInput, fx: GovEffects): void {
   const z = st.zwyciestwo;
   if (!z) return;
@@ -285,33 +350,48 @@ export function krokZwyciestwa(st: GovState, i: GovInput, fx: GovEffects): void 
     if (!wygrana(z, 'ludnosc')) {
       const trzyma =
         ludnoscOf(i) >= cel && st.trust >= ZAUFANIE_OD && !i.people.some((p) => p.needs.food < GLOD_PONIZEJ);
-      z.dniCelu = trzyma ? z.dniCelu + 1 : 0;
+      const przed = z.dniCelu;
+      z.dniCelu = trzyma ? przed + 1 : 0;
+      // seria, która już coś znaczyła, a pękła: jedno zdanie w kronice (bez wielkiej czcionki), żeby gracz wiedział, czemu
+      // licznik wrócił do zera; seria od zera nie ma czego przerywać
+      if (!trzyma && przed > 0)
+        logGov(
+          st,
+          i,
+          tx(
+            `Seria poranków do celu przerwana po ${przed} z ${DNI_CELU}.`,
+            `The run of mornings towards the target broke after ${przed} of ${DNI_CELU}.`,
+          ),
+          false,
+          fx,
+        );
       if (z.dniCelu >= DNI_CELU) zalicz(st, i, fx, 'ludnosc', DROGI.ludnosc.kamienie.length);
     }
   }
   for (const droga of KOLEJNOSC) {
     if ((z.kamienie[droga] ?? 0) < DROGI[droga].kamienie.length || wygrana(z, droga)) continue;
     z.wygrane.push({ droga, dzien: i.day, godzina: i.hour });
-    z.epilog ??= droga;
+    z.epilogi.push(droga);
   }
 }
 
-/** „Graj dalej”: zdejmuje epilog. Wygrana zostaje w `wygrane`, zapis i gra idą dalej, ta sama droga nie wygra drugi raz.
-    Bez stanu zwycięstwa nic nie robi. */
+/** „Graj dalej”: zdejmuje pierwszy epilog z kolejki, a następny (jeśli czeka) pokaże się zaraz po nim. Wygrana zostaje
+    w `wygrane`, zapis i gra idą dalej, ta sama droga nie wygra drugi raz. Bez stanu zwycięstwa albo przy pustej kolejce
+    nic nie robi. */
 export function grajDalej(st: GovState): void {
-  if (st.zwyciestwo) st.zwyciestwo.epilog = null;
+  st.zwyciestwo?.epilogi.shift();
 }
 
 /** Zwycięstwo drogi na żądanie, tylko do zrzutów i prób (`window.zm.wygraj` w src/main.ts): włącza drogi, wpisuje wygraną
-    z dniem i godziną (raz na drogę), zalicza komplet jej kamieni i ustawia jej epilog (nadpisuje czekający, bo to
-    wyraźne żądanie). Nie pisze do kroniki, nie losuje i nie rusza niczego poza `GovState.zwyciestwo`. Zwraca `false`
-    i nic nie zmienia, gdy `droga` nie jest drogą. */
+    z dniem i godziną (raz na drogę), zalicza komplet jej kamieni i dokłada jej epilog na koniec kolejki (raz: epilog tej
+    samej drogi, który już czeka, nie dubluje się). Nie pisze do kroniki, nie losuje i nie rusza niczego poza
+    `GovState.zwyciestwo`. Zwraca `false` i nic nie zmienia, gdy `droga` nie jest drogą. */
 export function wygrajDroge(st: GovState, droga: Droga, dzien: number, godzina: number): boolean {
   if (!Object.hasOwn(DROGI, droga)) return false;
   wlaczZwyciestwo(st);
   const z = st.zwyciestwo!;
   if (!wygrana(z, droga)) z.wygrane.push({ droga, dzien, godzina });
   z.kamienie[droga] = DROGI[droga].kamienie.length;
-  z.epilog = droga;
+  if (!z.epilogi.includes(droga)) z.epilogi.push(droga);
   return true;
 }

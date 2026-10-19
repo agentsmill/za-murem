@@ -1,7 +1,9 @@
 /* Warunki zwycięstwa, etap 1 (src/gov/zwyciestwo.ts): pięć dróg i ich kamienie milowe, droga ludnościowa (cel to
-   połowa ludności z 2021 roku, utrzymany przez 7 poranków bez głodu przy zaufaniu co najmniej 50), kamień terenu,
-   epilog w `pending` i „Graj dalej”. Czyste funkcje na wejściu z atrapy symulacji (tests/unit/gov-atrapa.ts), bez
-   symulacji i bez sieci. Moduł jest opcją: bez `wlaczZwyciestwo` stan i skróty zarządu zostają jak przed nim. */
+   połowa ludności z 2021 roku, utrzymany przez 7 poranków bez głodu przy zaufaniu co najmniej 50, z wpisem w kronice,
+   gdy seria pęka), kamień terenu, zdanie „co dalej” i seria poranków w `ocenDrogi`, kolejka epilogów (FIFO, także ze
+   starego kształtu stanu z jednym polem `epilog`) w `pending` i „Graj dalej”. Czyste funkcje na wejściu z atrapy
+   symulacji (tests/unit/gov-atrapa.ts), bez symulacji i bez sieci. Moduł jest opcją: bez `wlaczZwyciestwo` stan
+   i skróty zarządu zostają jak przed nim. */
 
 import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
@@ -21,6 +23,7 @@ import {
   wygrajDroge,
 } from '../../src/gov/zwyciestwo.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
+import { polskieSlowa } from './po-angielsku.ts';
 
 const DROGI_PO_KOLEI: Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
 const POLSKIE_LITERY = /[ąćęłńóśźż]/i;
@@ -280,12 +283,250 @@ describe('ocenDrogi', () => {
   });
 });
 
+describe('„co dalej” i seria poranków w ocenDrogi', () => {
+  const po = (st: GovState, i: GovInput, droga: Droga) => ocenDrogi(st, i).find((x) => x.droga === droga)!;
+  /** stan z włączonymi drogami, `n` zaliczonymi kamieniami ludności i `dni` porankami celu */
+  const zKamieniami = (n: number, dni = 0, mode: GameMode = 'zwykly'): GovState => {
+    const st = wlaczony(mode);
+    z(st).kamienie.ludnosc = n;
+    z(st).dniCelu = dni;
+    return st;
+  };
+  const seriaWpis = (l: { txt: { pl: string } }) => l.txt.pl.startsWith('Seria poranków');
+
+  it('ludność: zdanie „zbierzcie N osób” z progiem następnego kamienia, po polsku i po angielsku', () => {
+    const progi = [10, 25, 50, 125];
+    progi.forEach((prog, n) => {
+      expect(po(zKamieniami(n), wej(), 'ludnosc').dalej, `${n} kamieni`).toEqual({
+        pl: `Zbierzcie ${prog} osób pod zarządem.`,
+        en: `Get ${prog} people under the board.`,
+      });
+    });
+  });
+
+  it('próg czwartego kamienia idzie za celem: z zapisanego celu, z danych 2021 i z trybu zombie', () => {
+    const zapisany = zKamieniami(3);
+    z(zapisany).cel = 500;
+    expect(po(zapisany, wej(), 'ludnosc').dalej?.pl).toBe('Zbierzcie 250 osób pod zarządem.');
+    // zapisany cel wygrywa z bieżącym odczytem
+    expect(po(zapisany, wej({ ludnosc2021: 100 }), 'ludnosc').dalej?.pl).toBe('Zbierzcie 250 osób pod zarządem.');
+    // bez zapisanego celu cel z bieżących danych
+    expect(po(zKamieniami(3), wej({ ludnosc2021: 1000 }), 'ludnosc').dalej?.pl).toBe(
+      'Zbierzcie 250 osób pod zarządem.',
+    );
+    expect(po(zKamieniami(3), wej({ ludnosc2021: 100 }), 'ludnosc').dalej?.pl).toBe('Zbierzcie 60 osób pod zarządem.');
+    // zombie: cel 125, połowa w górę to 63
+    expect(po(zKamieniami(3, 0, 'zombie'), wej(), 'ludnosc').dalej?.en).toBe('Get 63 people under the board.');
+  });
+
+  it('polska liczba mnoga przy progu: „62 osoby”, „65 osób”, „112 osób”, „121 osób”', () => {
+    // ludnosc2021 → cel (połowa, 120–500) → próg czwartego kamienia (połowa celu w górę)
+    const przypadki: [number, string][] = [
+      [240, '60 osób'],
+      [246, '62 osoby'],
+      [250, '63 osoby'],
+      [256, '64 osoby'],
+      [260, '65 osób'],
+      [448, '112 osób'],
+      [482, '121 osób'],
+      [1000, '250 osób'],
+    ];
+    for (const [spis, forma] of przypadki)
+      expect(po(zKamieniami(3), wej({ ludnosc2021: spis }), 'ludnosc').dalej?.pl, `spis ${spis}`).toBe(
+        `Zbierzcie ${forma} pod zarządem.`,
+      );
+    // ten sam próg po angielsku jest zawsze „people”
+    expect(po(zKamieniami(3), wej({ ludnosc2021: 246 }), 'ludnosc').dalej?.en).toBe('Get 62 people under the board.');
+  });
+
+  it('ostatni otwarty kamień ludności: dokładnie zdanie o siedmiu porankach z licznikiem {n} z 7', () => {
+    for (const n of [0, 1, 3, 6])
+      expect(po(zKamieniami(4, n), wej(), 'ludnosc').dalej, `${n} poranków`).toEqual({
+        pl: `Utrzymajcie cel 7 poranków z rzędu: o 6:00 nikt z zarządu nie jest głodny, a zaufanie wynosi co najmniej 50 (${n} z 7).`,
+        en: `Hold the target for 7 mornings in a row: at 6:00 nobody on the board is hungry and trust is at least 50 (${n} of 7).`,
+      });
+  });
+
+  it('ludność przebyta do końca nie ma zdania „co dalej”', () => {
+    expect(po(zKamieniami(5, 7), wej(), 'ludnosc').dalej).toBeNull();
+    // zapisana liczba ponad komplet (zepsuty zapis) też znaczy „przebyta”
+    expect(po(zKamieniami(99, 7), wej(), 'ludnosc').dalej).toBeNull();
+  });
+
+  it('teren: przed pierwszym kamieniem zdanie o płocie, potem „Wkrótce” i brak zdania', () => {
+    const st = wlaczony();
+    expect(po(st, wej(), 'teren').dalej).toEqual({
+      pl: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
+      en: 'Put a shared fence round the first building next door.',
+    });
+    expect(po(st, wej(), 'teren').wkrotce).toBeNull();
+    for (const n of [1, 2, 3, 4]) {
+      z(st).kamienie.teren = n;
+      expect(po(st, wej(), 'teren').dalej, `${n} kamieni`).toBeNull();
+      expect(po(st, wej(), 'teren').wkrotce, `${n} kamieni`).not.toBeNull();
+    }
+    z(st).kamienie.teren = 5;
+    expect(po(st, wej(), 'teren').dalej).toBeNull();
+  });
+
+  it('technologia, lek i cuda nie mają zdania na żadnym etapie: czekają na projekty („Wkrótce”)', () => {
+    for (const mode of ['zwykly', 'zombie'] as const)
+      for (const droga of ['technologia', 'lek', 'cuda'] as const)
+        for (let n = 0; n <= DROGI[droga].kamienie.length; n++) {
+          const st = wlaczony(mode);
+          z(st).kamienie[droga] = n;
+          expect(po(st, wej(), droga).dalej, `${droga} ${n} ${mode}`).toBeNull();
+        }
+  });
+
+  it('zdanie „co dalej” i „Wkrótce” nigdy razem, a przebyta droga nie ma żadnego', () => {
+    for (const mode of ['zwykly', 'zombie'] as const)
+      for (const droga of DROGI_PO_KOLEI)
+        for (let n = 0; n <= DROGI[droga].kamienie.length; n++) {
+          const st = wlaczony(mode);
+          z(st).kamienie[droga] = n;
+          const d = po(st, wej(), droga);
+          expect(d.dalej !== null && d.wkrotce !== null, `${droga} ${n}`).toBe(false);
+          if (n === DROGI[droga].kamienie.length) expect([d.dalej, d.wkrotce], `${droga} ${n}`).toEqual([null, null]);
+        }
+  });
+
+  it('bez stanu zwycięstwa (stary stan) też: pierwsze zdania i seria od zera', () => {
+    const st = newGov(1);
+    expect(po(st, wej(), 'ludnosc').dalej?.pl).toBe('Zbierzcie 10 osób pod zarządem.');
+    expect(po(st, wej(), 'teren').dalej?.pl).toBe('Otoczcie wspólnym płotem pierwszy sąsiedni budynek.');
+    expect(po(st, wej(), 'ludnosc').seria).toEqual({ dni: 0, z: 7 });
+    expect(st.zwyciestwo).toBeUndefined();
+  });
+
+  it('seria to licznik poranków celu tylko przy drodze ludnościowej, reszta ma null', () => {
+    const st = wlaczony();
+    for (const d of ocenDrogi(st, wej()))
+      expect(d.seria, d.droga).toEqual(d.droga === 'ludnosc' ? { dni: 0, z: 7 } : null);
+    for (let d = 1; d <= 3; d++) krok(st, rano(d, { ludnosc: CEL }));
+    expect(po(st, wej(), 'ludnosc').seria).toEqual({ dni: 3, z: 7 });
+    expect(po(st, wej(), 'teren').seria).toBeNull();
+    // przerwana seria wraca do zera
+    krok(st, rano(4, zJedzeniem(rano(4, { ludnosc: CEL }), 3)));
+    expect(po(st, wej(), 'ludnosc').seria).toEqual({ dni: 0, z: 7 });
+  });
+
+  it('zdanie ostatniego kamienia i seria liczą to samo, a po siódmym poranku licznik stoi na 7', () => {
+    const st = wlaczony();
+    for (let d = 1; d <= 3; d++) krok(st, rano(d, { ludnosc: CEL }));
+    const lud = po(st, wej(), 'ludnosc');
+    expect(lud.zaliczone).toBe(4);
+    expect(lud.seria).toEqual({ dni: 3, z: 7 });
+    expect(lud.dalej?.pl).toContain('(3 z 7).');
+    expect(lud.dalej?.en).toContain('(3 of 7).');
+    for (let d = 4; d <= 7; d++) krok(st, rano(d, { ludnosc: CEL }));
+    const wygrana = po(st, wej(), 'ludnosc');
+    expect(wygrana.dalej).toBeNull();
+    expect(wygrana.seria).toEqual({ dni: 7, z: 7 });
+  });
+
+  it('po angielsku zdania „co dalej” nie mają polskich liter ani słówek, na każdym etapie', () => {
+    let sprawdzone = 0;
+    for (const mode of ['zwykly', 'zombie'] as const)
+      for (const droga of ['teren', 'ludnosc'] as const)
+        for (let n = 0; n < DROGI[droga].kamienie.length; n++) {
+          const st = wlaczony(mode);
+          z(st).kamienie[droga] = n;
+          z(st).dniCelu = 4;
+          const dalej = po(st, wej({ ludnosc2021: 246 }), droga).dalej;
+          if (!dalej) continue;
+          sprawdzone++;
+          expect(dalej.en, `${droga} ${n}`).not.toMatch(POLSKIE_LITERY);
+          expect(polskieSlowa(dalej.en), `${droga} ${n}`).toEqual([]);
+          expect(dalej.en, `${droga} ${n}`).not.toBe(dalej.pl);
+        }
+    // w każdym z dwóch trybów: teren jedno zdanie (przed pierwszym kamieniem), ludność pięć (cztery progi i seria)
+    expect(sprawdzone).toBe(2 * (1 + 5));
+  });
+
+  it('seria poranków zeruje się z wpisem w kronice: jedno zdanie z długością serii, bez wielkiej czcionki', () => {
+    const st = wlaczony();
+    // seria od zera, która nie ruszyła, nic nie przerywa
+    krok(st, rano(1, { ludnosc: CEL - 1 }));
+    krok(st, rano(2, { ludnosc: CEL - 1 }));
+    expect(st.log.filter(seriaWpis)).toEqual([]);
+    for (let d = 3; d <= 5; d++) krok(st, rano(d, { ludnosc: CEL }));
+    expect(z(st).dniCelu).toBe(3);
+    expect(st.log.filter(seriaWpis)).toEqual([]);
+    const fx = krok(st, rano(6, zJedzeniem(rano(6, { ludnosc: CEL }), 3)));
+    expect(z(st).dniCelu).toBe(0);
+    const wpisy = st.log.filter(seriaWpis);
+    expect(wpisy).toHaveLength(1);
+    expect(wpisy[0].txt).toEqual({
+      pl: 'Seria poranków do celu przerwana po 3 z 7.',
+      en: 'The run of mornings towards the target broke after 3 of 7.',
+    });
+    expect(wpisy[0].big).toBe(false);
+    expect(wpisy[0].day).toBe(6);
+    expect(wpisy[0].clock).toBe('06:00');
+    expect(fx.log).toContainEqual(wpisy[0].txt);
+    // seria znów od zera, więc kolejne nieudane poranki nic nie dopisują
+    krok(st, rano(7, { ludnosc: CEL - 1 }));
+    krok(st, rano(8, zJedzeniem(rano(8, { ludnosc: CEL }), 3)));
+    expect(st.log.filter(seriaWpis)).toHaveLength(1);
+  });
+
+  it('każda przyczyna przerwania serii dopisuje wpis: za mało ludzi, głód, zaufanie poniżej 50', () => {
+    const wpisy = (przerwij: (st: GovState, d: number) => GovInput) => {
+      const st = wlaczony();
+      st.trust = 60;
+      krok(st, rano(1, { ludnosc: CEL }));
+      krok(st, rano(2, { ludnosc: CEL }));
+      krok(st, przerwij(st, 3));
+      return st.log.filter(seriaWpis).map((l) => l.txt.pl);
+    };
+    const oczekiwany = ['Seria poranków do celu przerwana po 2 z 7.'];
+    expect(wpisy((_st, d) => rano(d, { ludnosc: CEL - 1 }))).toEqual(oczekiwany);
+    expect(wpisy((_st, d) => zJedzeniem(rano(d, { ludnosc: CEL }), 24))).toEqual(oczekiwany);
+    expect(
+      wpisy((st, d) => {
+        st.trust = 49;
+        return rano(d, { ludnosc: CEL });
+      }),
+    ).toEqual(oczekiwany);
+    // kontrola: bez przerwania nie ma wpisu
+    expect(wpisy((_st, d) => rano(d, { ludnosc: CEL }))).toEqual([]);
+  });
+
+  it('po zwycięstwie licznik stoi i nic nie mówi o przerwaniu serii', () => {
+    const st = wlaczony();
+    for (let d = 1; d <= 7; d++) krok(st, rano(d, { ludnosc: CEL }));
+    const wpisy = st.log.length;
+    krok(st, rano(8, zJedzeniem(rano(8, { ludnosc: CEL }), 3)));
+    krok(st, rano(9, { ludnosc: 5 }));
+    expect(st.log).toHaveLength(wpisy);
+    expect(st.log.filter(seriaWpis)).toEqual([]);
+    expect(z(st).dniCelu).toBe(7);
+  });
+
+  it('wpis o przerwaniu nie rusza zaufania, wkurzenia, zapasów ani ziarna', () => {
+    const st = wlaczony();
+    for (let d = 1; d <= 3; d++) krok(st, rano(d, { ludnosc: CEL }));
+    const bez = (s: GovState) => {
+      const kopia = JSON.parse(JSON.stringify(s));
+      delete kopia.zwyciestwo;
+      delete kopia.log;
+      return kopia;
+    };
+    const przed = bez(st);
+    const fx = krok(st, rano(4, zJedzeniem(rano(4, { ludnosc: CEL }), 3)));
+    expect(bez(st)).toEqual(przed);
+    expect(fx).toEqual({ ...emptyEffects(), log: fx.log });
+    expect(fx.log).toHaveLength(1);
+  });
+});
+
 describe('wlaczZwyciestwo', () => {
   it('dokłada puste liczniki, jest idempotentne i nie rusza reszty stanu', () => {
     const st = newGov(1);
     const rng = { ...st.rng };
     wlaczZwyciestwo(st);
-    expect(st.zwyciestwo).toEqual({ kamienie: {}, wygrane: [], dniCelu: 0, ostatniDzien: 0, epilog: null });
+    expect(st.zwyciestwo).toEqual({ kamienie: {}, wygrane: [], dniCelu: 0, ostatniDzien: 0, epilogi: [] });
     expect(st.rng).toEqual(rng);
 
     const stan = st.zwyciestwo!;
@@ -299,7 +540,7 @@ describe('wlaczZwyciestwo', () => {
   it('stan z kamieniami, zwycięstwem i epilogiem przechodzi przez JSON bez zmian', () => {
     const st = wlaczony();
     for (let d = 1; d <= 7; d++) krok(st, rano(d, { ludnosc: CEL }));
-    expect(z(st).epilog).toBe('ludnosc');
+    expect(z(st).epilogi).toEqual(['ludnosc']);
     const wczytany = loadGov(saveGov(st));
     expect(wczytany.zwyciestwo).toEqual(st.zwyciestwo);
     expect(JSON.stringify(wczytany)).toBe(JSON.stringify(st));
@@ -560,7 +801,7 @@ describe('licznik „cel przez 7 dni”', () => {
     for (let d = 1; d <= 6; d++) {
       krok(st, rano(d, { ludnosc: CEL }));
       expect(z(st).dniCelu).toBe(d);
-      expect(z(st).epilog).toBeNull();
+      expect(z(st).epilogi).toEqual([]);
       expect(z(st).wygrane).toEqual([]);
     }
     expect(z(st).kamienie.ludnosc).toBe(4);
@@ -570,7 +811,7 @@ describe('licznik „cel przez 7 dni”', () => {
     expect(z(st).dniCelu).toBe(7);
     expect(z(st).kamienie.ludnosc).toBe(5);
     expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 7, godzina: 6 }]);
-    expect(z(st).epilog).toBe('ludnosc');
+    expect(z(st).epilogi).toEqual(['ludnosc']);
     expect(st.log).toHaveLength(wpisy + 1);
     expect(st.log.at(-1)!.txt).toEqual({
       pl: 'Droga „Nowe osiedle”: Cel przez 7 dni.',
@@ -594,10 +835,10 @@ describe('licznik „cel przez 7 dni”', () => {
     expect(z(st).dniCelu).toBe(0);
     for (let d = 7; d <= 12; d++) {
       krok(st, rano(d, { ludnosc: CEL }));
-      expect(z(st).epilog, `dzień ${d}`).toBeNull();
+      expect(z(st).epilogi, `dzień ${d}`).toEqual([]);
     }
     krok(st, rano(13, { ludnosc: CEL }));
-    expect(z(st).epilog).toBe('ludnosc');
+    expect(z(st).epilogi).toEqual(['ludnosc']);
     expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 13, godzina: 6 }]);
   });
 
@@ -605,13 +846,13 @@ describe('licznik „cel przez 7 dni”', () => {
     const st = wlaczony();
     for (let d = 1; d <= 7; d++) krok(st, rano(d, { ludnosc: CEL }));
     grajDalej(st);
-    expect(z(st).epilog).toBeNull();
+    expect(z(st).epilogi).toEqual([]);
     const wpisy = st.log.length;
     // dalsze poranki: raz z głodem (zerowanie), potem znów pełne siedem
     for (let d = 8; d <= 30; d++) {
       const i = d === 12 ? zJedzeniem(rano(d, { ludnosc: CEL }), 5) : rano(d, { ludnosc: CEL });
       krok(st, i);
-      expect(z(st).epilog, `dzień ${d}`).toBeNull();
+      expect(z(st).epilogi, `dzień ${d}`).toEqual([]);
     }
     expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 7, godzina: 6 }]);
     expect(z(st).kamienie.ludnosc).toBe(5);
@@ -641,18 +882,18 @@ describe('epilog w pending i „Graj dalej”', () => {
     const i = wej();
     expect(pending(st, i)).toEqual({ k: 'raport', report: r });
 
-    z(st).epilog = 'ludnosc';
+    z(st).epilogi = ['ludnosc'];
     expect(pending(st, i)).toEqual({ k: 'zwyciestwo', droga: 'ludnosc' });
 
     grajDalej(st);
-    expect(z(st).epilog).toBeNull();
+    expect(z(st).epilogi).toEqual([]);
     expect(pending(st, i)).toEqual({ k: 'raport', report: r });
   });
 
   it('epilog idzie też przed uchwałą z wieczornego zebrania', () => {
     const st = wlaczony();
     st.lawPending = true;
-    z(st).epilog = 'ludnosc';
+    z(st).epilogi = ['ludnosc'];
     expect(pending(st, wej())?.k).toBe('zwyciestwo');
     grajDalej(st);
     expect(pending(st, wej())?.k).toBe('uchwala');
@@ -669,27 +910,76 @@ describe('epilog w pending i „Graj dalej”', () => {
       { droga: 'ludnosc', dzien: 7, godzina: 6 },
       { droga: 'cuda', dzien: 8, godzina: 6 },
     ]);
-    expect(z(st).epilog).toBe('cuda');
+    expect(z(st).epilogi).toEqual(['cuda']);
     expect(pending(st, rano(8, { ludnosc: CEL }))).toEqual({ k: 'zwyciestwo', droga: 'cuda' });
     grajDalej(st);
     // ani ludność, ani cuda nie wygrywają drugi raz
     for (let d = 9; d <= 20; d++) krok(st, rano(d, { ludnosc: CEL }));
-    expect(z(st).epilog).toBeNull();
+    expect(z(st).epilogi).toEqual([]);
     expect(z(st).wygrane).toHaveLength(2);
   });
 
-  it('epilog czeka jeden naraz: gdy dwie drogi wygrają razem, obie są w wygranych, a okno dostaje pierwsza z ekranu', () => {
+  it('dwie drogi wygrywają w jednym kroku: dwa epilogi jeden po drugim, w kolejności ekranu', () => {
     const st = wlaczony();
     z(st).kamienie.technologia = DROGI.technologia.kamienie.length;
     z(st).kamienie.cuda = DROGI.cuda.kamienie.length;
     krok(st, rano(3, { ludnosc: 8 }));
     expect(z(st).wygrane.map((w) => w.droga)).toEqual(['technologia', 'cuda']);
-    expect(z(st).epilog).toBe('technologia');
-    // epilog, który jeszcze czeka w oknie, nie jest nadpisywany przez kolejne zwycięstwo
+    expect(z(st).epilogi).toEqual(['technologia', 'cuda']);
+    const i = rano(3, { ludnosc: 8 });
+    // okno dostaje pierwszy, drugi czeka za nim
+    expect(pending(st, i)).toEqual({ k: 'zwyciestwo', droga: 'technologia' });
+    expect(pending(st, i)).toEqual({ k: 'zwyciestwo', droga: 'technologia' });
+    grajDalej(st);
+    expect(z(st).epilogi).toEqual(['cuda']);
+    expect(pending(st, i)).toEqual({ k: 'zwyciestwo', droga: 'cuda' });
+    grajDalej(st);
+    expect(z(st).epilogi).toEqual([]);
+    expect(pending(st, i)).toBeNull();
+    // obie wygrane zostają w stanie i żadna nie wraca
+    for (let d = 4; d <= 12; d++) krok(st, rano(d, { ludnosc: 8 }));
+    expect(z(st).wygrane.map((w) => w.droga)).toEqual(['technologia', 'cuda']);
+    expect(z(st).epilogi).toEqual([]);
+  });
+
+  it('zwycięstwo, gdy epilog już czeka, staje w kolejce za nim i niczego nie nadpisuje', () => {
+    const st = wlaczony();
+    z(st).kamienie.technologia = DROGI.technologia.kamienie.length;
+    krok(st, rano(3, { ludnosc: 8 }));
+    expect(z(st).epilogi).toEqual(['technologia']);
     z(st).kamienie.lek = DROGI.lek.kamienie.length;
     krok(st, rano(4, { ludnosc: 8 }));
-    expect(z(st).wygrane.map((w) => w.droga)).toEqual(['technologia', 'cuda', 'lek']);
-    expect(z(st).epilog).toBe('technologia');
+    z(st).kamienie.cuda = DROGI.cuda.kamienie.length;
+    krok(st, rano(5, { ludnosc: 8 }));
+    expect(z(st).wygrane.map((w) => w.droga)).toEqual(['technologia', 'lek', 'cuda']);
+    expect(z(st).epilogi).toEqual(['technologia', 'lek', 'cuda']);
+    // po kolei, w takiej kolejności, w jakiej drogi wygrały
+    const widziane: (string | undefined)[] = [];
+    for (let p = pending(st, wej()); p; p = pending(st, wej())) {
+      widziane.push(p.k === 'zwyciestwo' ? p.droga : undefined);
+      grajDalej(st);
+    }
+    expect(widziane).toEqual(['technologia', 'lek', 'cuda']);
+  });
+
+  it('„Graj dalej” zdejmuje tylko pierwszy epilog, a przy pustej kolejce nic nie psuje', () => {
+    const st = wlaczony();
+    grajDalej(st);
+    expect(z(st).epilogi).toEqual([]);
+    z(st).epilogi = ['teren', 'lek', 'cuda'];
+    grajDalej(st);
+    expect(z(st).epilogi).toEqual(['lek', 'cuda']);
+  });
+
+  it('ludność i teren wygrywają w jednym kroku: epilogi w kolejności ekranu, teren przed ludnością', () => {
+    const st = wlaczony();
+    // ludność wygrywa siódmego poranka, a teren (ręcznie) dochodzi w tym samym kroku
+    for (let d = 1; d <= 6; d++) krok(st, rano(d, { ludnosc: CEL }));
+    z(st).kamienie.teren = DROGI.teren.kamienie.length;
+    krok(st, rano(7, { ludnosc: CEL }));
+    // kolejność ekranu: teren stoi przed ludnością
+    expect(z(st).epilogi).toEqual(['teren', 'ludnosc']);
+    expect(z(st).wygrane.map((w) => w.droga)).toEqual(['teren', 'ludnosc']);
   });
 
   it('bez epilogu pending jest taki jak przed modułem', () => {
@@ -714,7 +1004,7 @@ describe('epilog w pending i „Graj dalej”', () => {
     for (let d = 1; d <= 7; d++) krok(st, rano(d, { ludnosc: CEL }));
     grajDalej(st);
     for (let d = 8; d <= 20; d++) krok(st, rano(d, { ludnosc: CEL }));
-    expect(z(st).epilog).toBeNull();
+    expect(z(st).epilogi).toEqual([]);
     expect(pending(st, rano(20, { ludnosc: CEL }))).toBeNull();
     expect(z(st).wygrane).toHaveLength(1);
   });
@@ -743,7 +1033,7 @@ describe('zapis i wczytanie', () => {
     }
     expect(JSON.stringify(c)).toBe(JSON.stringify(a));
     expect(z(c).wygrane).toEqual([{ droga: 'ludnosc', dzien: 7, godzina: 6 }]);
-    expect(z(c).epilog).toBe('ludnosc');
+    expect(z(c).epilogi).toEqual(['ludnosc']);
   });
 
   it('wczytanie z epilogiem czekającym w oknie oddaje ten sam epilog', () => {
@@ -751,6 +1041,64 @@ describe('zapis i wczytanie', () => {
     for (let d = 1; d <= 7; d++) krok(st, rano(d, { ludnosc: CEL }));
     const c = loadGov(saveGov(st));
     expect(pending(c, rano(7))).toEqual({ k: 'zwyciestwo', droga: 'ludnosc' });
+  });
+
+  it('wczytanie z kolejką dwóch epilogów oddaje je po kolei', () => {
+    const st = wlaczony();
+    wygrajDroge(st, 'teren', 3, 9);
+    wygrajDroge(st, 'cuda', 3, 10);
+    const c = loadGov(saveGov(st));
+    expect(z(c).epilogi).toEqual(['teren', 'cuda']);
+    expect(pending(c, wej())).toEqual({ k: 'zwyciestwo', droga: 'teren' });
+    grajDalej(c);
+    expect(pending(c, wej())).toEqual({ k: 'zwyciestwo', droga: 'cuda' });
+    grajDalej(c);
+    expect(pending(c, wej())).toBeNull();
+  });
+
+  it('stan sprzed kolejki (jedno pole `epilog` z drogą) czyta się jak kolejkę z jednym epilogiem', () => {
+    const st = wlaczony();
+    for (let d = 1; d <= 7; d++) krok(st, rano(d, { ludnosc: CEL }));
+    // zapis w dawnym kształcie (zapisy deweloperskie): `epilog: Droga | null` zamiast `epilogi`
+    const stary = JSON.parse(saveGov(st));
+    stary.zwyciestwo.epilog = stary.zwyciestwo.epilogi[0];
+    delete stary.zwyciestwo.epilogi;
+    const c = loadGov(JSON.stringify(stary));
+    wlaczZwyciestwo(c);
+    expect(z(c).epilogi).toEqual(['ludnosc']);
+    expect('epilog' in z(c)).toBe(false);
+    expect(pending(c, rano(7))).toEqual({ k: 'zwyciestwo', droga: 'ludnosc' });
+    grajDalej(c);
+    expect(pending(c, rano(7))).toBeNull();
+    // po tym samym „Graj dalej” taki sam stan jak z nowego kształtu
+    grajDalej(st);
+    expect(c.zwyciestwo).toEqual(st.zwyciestwo);
+    // kolejne poranki: ani drugi epilog, ani drugie zwycięstwo
+    for (let d = 8; d <= 20; d++) krok(c, rano(d, { ludnosc: CEL }));
+    expect(z(c).epilogi).toEqual([]);
+    expect(z(c).wygrane).toHaveLength(1);
+  });
+
+  it('stary kształt z `epilog: null` to pusta kolejka, a ponowne włączenie niczego nie zmienia', () => {
+    const stary = JSON.parse(saveGov(wlaczony()));
+    stary.zwyciestwo.epilog = null;
+    delete stary.zwyciestwo.epilogi;
+    const c = loadGov(JSON.stringify(stary));
+    wlaczZwyciestwo(c);
+    expect(z(c).epilogi).toEqual([]);
+    expect('epilog' in z(c)).toBe(false);
+    const przed = JSON.stringify(c);
+    wlaczZwyciestwo(c);
+    expect(JSON.stringify(c)).toBe(przed);
+  });
+
+  it('stary kształt przechodzi też przez wygrajDroge, bez gubienia czekającego epilogu', () => {
+    const stary = JSON.parse(saveGov(wlaczony()));
+    stary.zwyciestwo.epilog = 'lek';
+    delete stary.zwyciestwo.epilogi;
+    const c = loadGov(JSON.stringify(stary));
+    expect(wygrajDroge(c, 'cuda', 2, 6)).toBe(true);
+    expect(z(c).epilogi).toEqual(['lek', 'cuda']);
   });
 });
 
@@ -767,7 +1115,7 @@ describe('stary zapis bez stanu zwycięstwa', () => {
     // co sekundę przy ekranie, bez lawiny wpisów
     for (let s = 0; s < 300; s++) krok(st, i);
     expect(st.log).toHaveLength(2);
-    expect(z(st).epilog).toBeNull();
+    expect(z(st).epilogi).toEqual([]);
     expect(z(st).wygrane).toEqual([]);
   });
 
@@ -777,14 +1125,14 @@ describe('stary zapis bez stanu zwycięstwa', () => {
     krok(st, wej({ day: 40, hour: 15, ludnosc: 500 }));
     expect(z(st).kamienie.ludnosc).toBe(4);
     expect(st.log).toHaveLength(4);
-    expect(z(st).epilog).toBeNull();
+    expect(z(st).epilogi).toEqual([]);
     expect(z(st).wygrane).toEqual([]);
     expect(pending(st, wej({ day: 40, hour: 15, ludnosc: 500 }))).toBeNull();
     // siedem poranków z rzędu, licząc od dnia włączenia
     for (let d = 41; d <= 45; d++) krok(st, rano(d, { ludnosc: 500 }));
-    expect(z(st).epilog).toBeNull();
+    expect(z(st).epilogi).toEqual([]);
     krok(st, rano(46, { ludnosc: 500 }));
-    expect(z(st).epilog).toBe('ludnosc');
+    expect(z(st).epilogi).toEqual(['ludnosc']);
   });
 });
 
@@ -797,7 +1145,7 @@ describe('tryb zombie', () => {
     expect(z(st).dniCelu).toBe(1);
     for (let d = 3; d <= 8; d++) krok(st, rano(d, { ludnosc: 125 }));
     expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 8, godzina: 6 }]);
-    expect(z(st).epilog).toBe('ludnosc');
+    expect(z(st).epilogi).toEqual(['ludnosc']);
   });
 
   it('„połowa celu” to połowa celu zombie (63 przy 125), zaokrąglona w górę', () => {
@@ -973,6 +1321,25 @@ describe('krok zwycięstwa w govUpdate', () => {
     expect(fx.log.some((t) => t.pl === 'Droga „Nowe osiedle”: 10 osób.')).toBe(true);
   });
 
+  it('przerwana seria poranków przez cały govUpdate: wpis w kronice i w skutkach tego kroku', () => {
+    const gov = newGov(1);
+    wlaczZwyciestwo(gov);
+    const atr = new Atrapa(1);
+    const poranek = (day: number, food: number): GovInput => {
+      const i = { ...atr.input(), day, hour: 6, minute: 0, ludnosc: CEL };
+      return { ...i, people: i.people.map((p) => ({ ...p, needs: { ...p.needs, food } })) };
+    };
+    for (let d = 1; d <= 3; d++) govUpdate(gov, poranek(d, 100));
+    expect(z(gov).dniCelu).toBe(3);
+    expect(gov.log.filter((l) => l.txt.pl.startsWith('Seria poranków'))).toEqual([]);
+    const fx = govUpdate(gov, poranek(4, 10));
+    expect(z(gov).dniCelu).toBe(0);
+    const wpisy = gov.log.filter((l) => l.txt.pl.startsWith('Seria poranków'));
+    expect(wpisy.map((l) => l.txt.pl)).toEqual(['Seria poranków do celu przerwana po 3 z 7.']);
+    expect(wpisy[0].big).toBe(false);
+    expect(fx.log.map((t) => t.pl)).toContain('Seria poranków do celu przerwana po 3 z 7.');
+  });
+
   it('po końcu gry krok zwycięstwa nie liczy kamieni ani zwycięstwa', () => {
     const gov = newGov(1);
     wlaczZwyciestwo(gov);
@@ -981,7 +1348,7 @@ describe('krok zwycięstwa w govUpdate', () => {
     expect(gov.over).toBe('pustka');
     expect(z(gov).kamienie).toEqual({});
     expect(z(gov).ostatniDzien).toBe(0);
-    expect(z(gov).epilog).toBeNull();
+    expect(z(gov).epilogi).toEqual([]);
   });
 
   it('siedem poranków przez cały govUpdate: epilog staje przed porannym raportem, po „Graj dalej” raport czeka', () => {
@@ -1000,7 +1367,7 @@ describe('krok zwycięstwa w govUpdate', () => {
       for (const p of atr.people) p.needs.food = 100;
       gov.trust = Math.max(gov.trust, 60);
       atr.apply(govUpdate(gov, atr.input()));
-      if (z(gov).epilog && epilogOd === null) {
+      if (z(gov).epilogi.length && epilogOd === null) {
         epilogOd = minuta();
         // poranny raport czeka w tej samej chwili, ale epilog jest pierwszy
         expect(gov.report).toBeTruthy();
@@ -1014,7 +1381,7 @@ describe('krok zwycięstwa w govUpdate', () => {
     // pierwszy poranek liczy się w dniu 1 (start o 15:00), więc siódmy to 7. dzień o 6:00
     expect(z(gov).wygrane).toEqual([{ droga: 'ludnosc', dzien: 7, godzina: 6 }]);
     expect(epilogOd).toBe(at(7, 6));
-    expect(z(gov).epilog).toBeNull();
+    expect(z(gov).epilogi).toEqual([]);
     expect(z(gov).kamienie.ludnosc).toBe(5);
     // kamienie od pierwszego dnia, po jednym wpisie, a piąty dopiero siódmego poranka
     expect(gov.log.filter((l) => l.txt.pl.startsWith('Droga ')).map((l) => `${l.day} ${l.txt.pl}`)).toEqual([
@@ -1042,10 +1409,13 @@ describe('włączone drogi a reszta zarządu', () => {
     expect(z.gov.zwyciestwo!.kamienie.ludnosc).toBeGreaterThanOrEqual(4);
     expect(bez.gov.zwyciestwo).toBeUndefined();
 
+    // wpisy modułu drog w kronice: kamienie („Droga …”) i przerwane serie poranków („Seria poranków …”)
+    const wpisDrog = (l: { txt: { pl: string } }) =>
+      l.txt.pl.startsWith('Droga ') || l.txt.pl.startsWith('Seria poranków');
     const reszta = (g: GovState) => {
       const kopia = JSON.parse(JSON.stringify(g));
       delete kopia.zwyciestwo;
-      kopia.log = kopia.log.filter((l: { txt: { pl: string } }) => !l.txt.pl.startsWith('Droga '));
+      kopia.log = kopia.log.filter((l: { txt: { pl: string } }) => !wpisDrog(l));
       return kopia;
     };
     expect(reszta(z.gov)).toEqual(reszta(bez.gov));
@@ -1064,7 +1434,7 @@ describe('wygrajDroge (zwycięstwo na żądanie, tylko do zrzutów i prób)', ()
     expect(wygrajDroge(st, 'teren', 3, 14)).toBe(true);
     expect(z(st).wygrane).toEqual([{ droga: 'teren', dzien: 3, godzina: 14 }]);
     expect(z(st).kamienie.teren).toBe(DROGI.teren.kamienie.length);
-    expect(z(st).epilog).toBe('teren');
+    expect(z(st).epilogi).toEqual(['teren']);
     expect(pending(st, wej())).toEqual({ k: 'zwyciestwo', droga: 'teren' });
     // ekran dróg widzi drogę jako przebytą
     const teren = ocenDrogi(st, wej()).find((d) => d.droga === 'teren')!;
@@ -1078,7 +1448,7 @@ describe('wygrajDroge (zwycięstwo na żądanie, tylko do zrzutów i prób)', ()
       expect(wygrajDroge(st, droga, 2, 6), droga).toBe(true);
       expect(z(st).kamienie[droga], droga).toBe(DROGI[droga].kamienie.length);
       expect(z(st).wygrane, droga).toEqual([{ droga, dzien: 2, godzina: 6 }]);
-      expect(z(st).epilog, droga).toBe(droga);
+      expect(z(st).epilogi, droga).toEqual([droga]);
     }
   });
 
@@ -1086,10 +1456,20 @@ describe('wygrajDroge (zwycięstwo na żądanie, tylko do zrzutów i prób)', ()
     const st = wlaczony();
     wygrajDroge(st, 'ludnosc', 1, 15);
     grajDalej(st);
-    expect(z(st).epilog).toBeNull();
+    expect(z(st).epilogi).toEqual([]);
     wygrajDroge(st, 'ludnosc', 2, 8);
     expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 1, godzina: 15 }]);
-    expect(z(st).epilog).toBe('ludnosc');
+    expect(z(st).epilogi).toEqual(['ludnosc']);
+  });
+
+  it('ta sama droga dwa razy bez „Graj dalej” po drodze czeka w kolejce raz', () => {
+    const st = wlaczony();
+    wygrajDroge(st, 'ludnosc', 1, 15);
+    wygrajDroge(st, 'ludnosc', 1, 16);
+    expect(z(st).epilogi).toEqual(['ludnosc']);
+    expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 1, godzina: 15 }]);
+    grajDalej(st);
+    expect(pending(st, wej())).toBeNull();
   });
 
   it('inna droga po „Graj dalej” dostaje własny epilog, a wcześniejsza wygrana zostaje', () => {
@@ -1101,6 +1481,19 @@ describe('wygrajDroge (zwycięstwo na żądanie, tylko do zrzutów i prób)', ()
     expect(z(st).wygrane.map((w) => w.droga)).toEqual(['ludnosc', 'cuda']);
     grajDalej(st);
     expect(pending(st, wej())).toBeNull();
+  });
+
+  it('dwie drogi na żądanie, jedna po drugiej: dwa epilogi po kolei, bez nadpisywania czekającego', () => {
+    const st = wlaczony();
+    wygrajDroge(st, 'ludnosc', 1, 15);
+    wygrajDroge(st, 'teren', 1, 16);
+    expect(z(st).epilogi).toEqual(['ludnosc', 'teren']);
+    expect(pending(st, wej())).toEqual({ k: 'zwyciestwo', droga: 'ludnosc' });
+    grajDalej(st);
+    expect(pending(st, wej())).toEqual({ k: 'zwyciestwo', droga: 'teren' });
+    grajDalej(st);
+    expect(pending(st, wej())).toBeNull();
+    expect(z(st).wygrane.map((w) => w.droga)).toEqual(['ludnosc', 'teren']);
   });
 
   it('nieznana droga: false i stan bez zmian, także bez włączania dróg', () => {
@@ -1132,7 +1525,7 @@ describe('wygrajDroge (zwycięstwo na żądanie, tylko do zrzutów i prób)', ()
     grajDalej(st);
     for (let d = 2; d <= 10; d++) krok(st, rano(d, { ludnosc: 500 }));
     expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 1, godzina: 15 }]);
-    expect(z(st).epilog).toBeNull();
+    expect(z(st).epilogi).toEqual([]);
     expect(z(st).kamienie.ludnosc).toBe(5);
     expect(z(st).dniCelu).toBe(0);
     expect(st.log).toHaveLength(0);

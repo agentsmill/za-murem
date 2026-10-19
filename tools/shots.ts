@@ -10,7 +10,7 @@ import http from 'node:http';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { stworzSerwer } from '../server/app.ts';
-import type { Tx } from '../src/core/jezyk.ts';
+import { mnogaPl, type Tx } from '../src/core/jezyk.ts';
 import type { GameMode } from '../src/gov/typy.ts';
 import { DROGI, type Droga, nazwaDrogi } from '../src/gov/zwyciestwo.ts';
 import type { ZajetaKlatka } from '../src/net/protokol.ts';
@@ -410,8 +410,8 @@ const SHOTS: Shot[] = [
   ...siecShots(),
   // Mapa miasta w grze: okolica z punktów OSM i stan miasta w zarządzie po starcie, opcja ?miasto=0
   ...miastoShots(),
-  // Warunki zwycięstwa, etap 1: ekran dróg z Menu (komputer, telefon, angielski), cele z danych 2021, epilog,
-  // „Graj dalej”, „Nowa gra” i „Kontynuuj”, stary zapis bez dróg
+  // Warunki zwycięstwa, etap 1: ekran dróg z Menu (komputer, telefon, angielski, ostatni kamień z serią poranków), cele
+  // z danych 2021, epilog (jeden i dwa po kolei), „Graj dalej”, „Nowa gra” i „Kontynuuj”, stary zapis bez dróg
   ...zwyciestwoShots(),
   {
     name: 'zombie-dzien',
@@ -10009,7 +10009,10 @@ function miastoShots(): Shot[] {
  * ekran „Drogi do zwycięstwa” z Menu na komputerze, na telefonie i po angielsku (także zmiana języka przy otwartym
  * oknie), cele drogi ludnościowej z danych 2021 w trzech demach, epilog zwycięstwa (gra stoi, „Graj dalej” oddaje tempo
  * sprzed epilogu, epilog nie wraca, zapis zostaje), „Nowa gra” z potwierdzeniem i „Kontynuuj” oraz stary zapis bez dróg.
- * Ekran dróg otwiera się z Menu tak jak u gracza, a „Graj dalej” i „Nowa gra” są prawdziwymi kliknięciami; zwycięstwo
+ * Po recenzji końcowej do tego: zdanie „co dalej” pod następnym kamieniem (start gry w każdym scenariuszu ekranu dróg,
+ * ostatni kamień ludności z serią poranków na komputerze po polsku i na telefonie po angielsku), drogi z „Wkrótce” bez
+ * złotego następnego kamienia, ostatnie zdanie epilogu z liczbą ludzi i spisem 2021 oraz dwa epilogi jeden po drugim
+ * (kolejka). Ekran dróg otwiera się z Menu tak jak u gracza, a „Graj dalej” i „Nowa gra” są prawdziwymi kliknięciami; zwycięstwo
  * na żądanie to `zm.wygraj` (tylko do zrzutów, prawdziwe zwycięstwo liczy się dopiero po siedmiu porankach, tym zajmują
  * się testy i `npm run bot -- --zwyciestwo`). Zrzut zapisany na końcu scenariusza pokazuje okno, o które chodzi.
  */
@@ -10078,7 +10081,8 @@ function zwyciestwoShots(): Shot[] {
             wygrana: w.classList.contains('zw-wygrana'),
             odznaka: w.querySelector('.zw-odznaka')?.textContent ?? null,
             kamienie: [...w.querySelectorAll<HTMLElement>('.zw-kamien')].map((k) => ({
-              tekst: k.lastChild?.textContent ?? '',
+              tekst: k.querySelector('.zw-tekst')?.textContent ?? '',
+              dalej: k.querySelector('.zw-dalej')?.textContent ?? null,
               stan: k.classList.contains('zw-zaliczony')
                 ? 'zaliczony'
                 : k.classList.contains('zw-nastepny')
@@ -10103,10 +10107,31 @@ function zwyciestwoShots(): Shot[] {
       };
     });
   type EkranDrog = Awaited<ReturnType<typeof ekranDrog>>;
+  /** zdania „co dalej” dosłownie (poprawki po recenzji końcowej etapu 1), na starcie gry: ludność przed pierwszym
+      kamieniem (10 osób) i teren przed pierwszym kamieniem (płot); reszta dróg nie ma zdania */
+  const DALEJ_START: Partial<Record<Droga, Tx>> = {
+    teren: {
+      pl: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
+      en: 'Put a shared fence round the first building next door.',
+    },
+    ludnosc: { pl: 'Zbierzcie 10 osób pod zarządem.', en: 'Get 10 people under the board.' },
+  };
+  /** ostatni kamień ludności z licznikiem poranków `n`: zdanie o siedmiu porankach dosłownie */
+  const dalejSeria = (n: number): Tx => ({
+    pl: `Utrzymajcie cel 7 poranków z rzędu: o 6:00 nikt z zarządu nie jest głodny, a zaufanie wynosi co najmniej 50 (${n} z 7).`,
+    en: `Hold the target for 7 mornings in a row: at 6:00 nobody on the board is hungry and trust is at least 50 (${n} of 7).`,
+  });
   /** wiersze ekranu zgadzają się z `DROGI` (nazwy i kamienie w języku `lang`), z kolejnością ekranu i z tym, co daje
-      `zm.zwyciestwo()` (`ocenDrogi`): ile kamieni zaliczone, który następny, ludność z liczbą i paskiem, „Wkrótce”, odznaka.
-      Zwraca ocenę dróg z gry */
-  const sprawdzDrogi = async (page: Page, o: EkranDrog, lang: 'pl' | 'en', mode: GameMode) => {
+      `zm.zwyciestwo()` (`ocenDrogi`): ile kamieni zaliczone, który następny (tylko na drodze bez „Wkrótce”), zdanie „co
+      dalej” pod następnym kamieniem, ludność z liczbą i paskiem, „Wkrótce”, odznaka. `oczekiwaneDalej` to zdania
+      „co dalej” dosłownie z planu poprawek (droga → tekst, brak drogi: bez zdania). Zwraca ocenę dróg z gry */
+  const sprawdzDrogi = async (
+    page: Page,
+    o: EkranDrog,
+    lang: 'pl' | 'en',
+    mode: GameMode,
+    oczekiwaneDalej?: Partial<Record<Droga, Tx>>,
+  ) => {
     const oceny = await page.evaluate(() => window.zm!.zwyciestwo());
     if (oceny.length !== KOLEJNOSC.length) throw new Error(`zm.zwyciestwo() daje ${oceny.length} dróg`);
     if (o.wiersze.length !== KOLEJNOSC.length) throw new Error(`na ekranie ${o.wiersze.length} wierszy zamiast 5`);
@@ -10128,16 +10153,29 @@ function zwyciestwoShots(): Shot[] {
       if (naEkranie.join('|') !== kamienie.join('|')) throw blad(`kamienie ${naEkranie.join(' | ')}`);
       if (w.kamienie.length !== d.kamienie.length)
         throw blad(`kamieni ${w.kamienie.length}, w ocenie ${d.kamienie.length}`);
-      // zaliczone, potem jeden następny (gdy droga niedokończona), reszta dalsza; stan mówi też dopisek dla czytnika
-      const wzor = w.kamienie.map((_, n) =>
-        n < d.zaliczone ? 'zaliczony' : n === d.zaliczone ? 'nastepny' : 'dalszy',
-      );
+      // zaliczone, potem jeden następny (gdy droga niedokończona i bez „Wkrótce”: droga z „Wkrótce” nie ma czego zdobyć
+      // już teraz, więc jej otwarte kamienie są wszystkie dalsze), reszta dalsza; stan mówi też dopisek dla czytnika
+      const nastepny = d.wkrotce ? -1 : d.zaliczone;
+      const wzor = w.kamienie.map((_, n) => (n < d.zaliczone ? 'zaliczony' : n === nastepny ? 'nastepny' : 'dalszy'));
       const stany = w.kamienie.map((x) => x.stan);
       if (stany.join() !== wzor.join()) throw blad(`stany kamieni ${stany.join()} zamiast ${wzor.join()}`);
       w.kamienie.forEach((x) => {
         const dopisek = sr[x.stan];
         if (x.czytnik !== dopisek) throw blad(`dopisek dla czytnika „${x.czytnik}” zamiast „${dopisek}” (${x.tekst})`);
       });
+      // zdanie „co dalej” stoi pod następnym kamieniem i pod żadnym innym; droga z „Wkrótce” albo przebyta go nie ma
+      const zdania = w.kamienie.flatMap((x, n) => (x.dalej === null ? [] : [{ n, tekst: x.dalej }]));
+      const dalej = d.dalej ? d.dalej[lang] : null;
+      if (dalej === null) {
+        if (zdania.length) throw blad(`zdanie „co dalej” bez zdania w ocenie: ${JSON.stringify(zdania)}`);
+      } else if (zdania.length !== 1 || zdania[0].n !== nastepny || zdania[0].tekst !== dalej) {
+        throw blad(`zdanie „co dalej” ${JSON.stringify(zdania)} zamiast „${dalej}” pod kamieniem ${nastepny}`);
+      }
+      if (d.wkrotce && d.dalej) throw blad('„Wkrótce” i „co dalej” naraz');
+      if (oczekiwaneDalej) {
+        const wzorDalej = oczekiwaneDalej[droga]?.[lang] ?? null;
+        if (dalej !== wzorDalej) throw blad(`zdanie „co dalej” „${dalej}” zamiast „${wzorDalej}” z planu`);
+      }
       const wkrotce = d.wkrotce ? d.wkrotce[lang] : null;
       if (w.wkrotce !== wkrotce) throw blad(`„Wkrótce”: ${w.wkrotce} zamiast ${wkrotce}`);
       // dosłowne zdania z planu, żeby literówka w DROGI nie przeszła razem z ekranem
@@ -10165,7 +10203,7 @@ function zwyciestwoShots(): Shot[] {
       const z = window.zm!.gov!.zwyciestwo;
       return z
         ? {
-            epilog: z.epilog,
+            epilogi: [...z.epilogi],
             wygrane: z.wygrane.map((w) => w.droga),
             kamienie: { ...z.kamienie },
             dniCelu: z.dniCelu,
@@ -10173,6 +10211,19 @@ function zwyciestwoShots(): Shot[] {
           }
         : null;
     });
+  /** stan z ostatnim kamieniem ludności i serią `dni` poranków, ustawiony wprost (prawdziwa seria to kilka dób gry):
+      40 przyjętych ludzi, zapisany cel obniżony do 40 (żeby liczby na pasku zgadzały się z kamieniami), cztery kamienie
+      i `dni` poranków celu. Zwraca liczbę ludzi pod zarządem */
+  const ustawSerie = async (page: Page, dni: number): Promise<number> => {
+    await page.evaluate(() => window.zm!.admit(40));
+    await page.evaluate((d) => {
+      const z = window.zm!.gov!.zwyciestwo!;
+      z.cel = 40;
+      z.kamienie.ludnosc = 4;
+      z.dniCelu = d;
+    }, dni);
+    return ludzi(page);
+  };
   /** epilog z DOM: czy okno otwarte, rodzaj, nagłówek, akapity, liczby, przyciski (akcja, napis, prostokąt), przewijanie
       w bok, prostokąt okna, tempo gry i krok symulacji */
   const epilogDom = (page: Page) =>
@@ -10219,10 +10270,30 @@ function zwyciestwoShots(): Shot[] {
   };
   /** liczba ludzi z oceny dróg (to samo, co w epilogu: zarząd i mieszkańcy pod zarządem) */
   const ludzi = async (page: Page) => (await page.evaluate(() => window.zm!.zwyciestwo()))[3].postep!.ile;
-  /** zdania epilogu dosłownie z planu (plan docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-rama.md, sekcja „Teksty”), polskie i angielskie */
-  const OPOWIESC: Tx = {
-    pl: 'Na podwórku znowu jest gwarno. Na klatkach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin trzepaka. Mieszka tu połowa tylu ludzi, co w 2021 roku, kiedy wszyscy zamawiali jedzenie przez aplikację.',
-    en: 'The yard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet rack. Half as many people live here as in 2021, back when everyone ordered food through an app.',
+  /** dwa pierwsze zdania epilogu ludności dosłownie z planu (plan docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-rama.md,
+      sekcja „Teksty”), polskie i angielskie; trzecie zdanie ma prawdziwe liczby (poprawki po recenzji końcowej) */
+  const PODWORKO: Tx = {
+    pl: 'Na podwórku znowu jest gwarno. Na klatkach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin trzepaka.',
+    en: 'The yard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet rack.',
+  };
+  /** cały tekst drogi w epilogu ludności ze spisem 2021: dwa zdania i trzecie z liczbą ludzi dziś i spisem */
+  const opowiesc = (lang: 'pl' | 'en', ile: number, spis: number): string =>
+    lang === 'pl'
+      ? `${PODWORKO.pl} Mieszka tu ${mnogaPl(ile, 'osoba', 'osoby', 'osób')}, a w 2021 roku, kiedy wszyscy zamawiali jedzenie przez aplikację, mieszkało ${spis}.`
+      : `${PODWORKO.en} ${ile} ${ile === 1 ? 'person lives' : 'people live'} here now; in 2021, back when everyone ordered food through an app, there were ${spis}.`;
+  /** tekst drogi z otwartego epilogu zgadza się z grą: ludzie dziś jak w ocenie dróg, spis 2021 z tekstu, a ten spis daje
+      dokładnie cel drogi (połowa, od 120 do 500), więc liczba w epilogu jest tą, z której liczy się cel. Nie twierdzi,
+      że ludzi jest „połowa” z 2021 roku. Zwraca spis z tekstu */
+  const sprawdzOpowiesc = async (page: Page, tekst: string, lang: 'pl' | 'en'): Promise<number> => {
+    const spis = Number(/(?:mieszkało|there were) (\d+)\.$/.exec(tekst)?.[1]);
+    if (!Number.isFinite(spis) || spis <= 0) throw new Error(`epilog bez spisu 2021: ${tekst}`);
+    const ocena = (await page.evaluate(() => window.zm!.zwyciestwo()))[3].postep!;
+    const oczekiwany = opowiesc(lang, ocena.ile, spis);
+    if (tekst !== oczekiwany) throw new Error(`tekst drogi w epilogu:\n  ${tekst}\nzamiast\n  ${oczekiwany}`);
+    const cel = Math.min(500, Math.max(120, Math.round(spis / 2)));
+    if (ocena.cel !== cel) throw new Error(`spis ${spis} z epilogu daje cel ${cel}, a gra ma ${ocena.cel}`);
+    if (/połowa tylu|Half as many/.test(tekst)) throw new Error(`epilog dalej mówi o połowie: ${tekst}`);
+    return spis;
   };
   const SCIEZKA_TECH: Tx = {
     pl: 'Model z dysków banku układa grafiki co do minuty. Nikt nie pyta, kto go kontroluje.',
@@ -10254,7 +10325,7 @@ function zwyciestwoShots(): Shot[] {
         await page.waitForSelector('#sheet .zw-drogi .zw-droga');
         await dwieKlatki(page);
         const o = await ekranDrog(page);
-        const oceny = await sprawdzDrogi(page, o, 'pl', 'zwykly');
+        const oceny = await sprawdzDrogi(page, o, 'pl', 'zwykly', DALEJ_START);
         const lud = oceny[3];
         console.log(
           `  okno: ${o.klasa} „${o.tytul}”, ludność ${lud.postep!.ile} z ${lud.postep!.cel}, kamienie ${oceny.map((d) => `${d.droga} ${d.zaliczone}/${d.kamienie.length}`).join(', ')}`,
@@ -10302,7 +10373,7 @@ function zwyciestwoShots(): Shot[] {
         await waitIdle(page);
         await otworzDrogi(page, true, 'zwyciestwo-menu-telefon');
         const o = await ekranDrog(page);
-        await sprawdzDrogi(page, o, 'pl', 'zwykly');
+        await sprawdzDrogi(page, o, 'pl', 'zwykly', DALEJ_START);
         console.log(
           `  okno ${o.arkusz}, stopka ${o.stopka}, wiersze ${o.wiersze.map((w) => w.prostokat.join(',')).join(' | ')}, lista się przewija: ${o.przewija}`,
         );
@@ -10361,7 +10432,7 @@ function zwyciestwoShots(): Shot[] {
         await page.waitForSelector('#sheet .zw-drogi .zw-droga');
         await dwieKlatki(page);
         const en = await ekranDrog(page);
-        await sprawdzDrogi(page, en, 'en', 'zwykly');
+        await sprawdzDrogi(page, en, 'en', 'zwykly', DALEJ_START);
         const pl0 = polskieLitery(en.tekst, []);
         if (pl0.length) throw new Error(`polskie słowa w ekranie dróg po angielsku: ${pl0.join(' ')}`);
         if (en.tytul !== 'Roads to victory') throw new Error(`tytuł po angielsku: ${en.tytul}`);
@@ -10379,7 +10450,7 @@ function zwyciestwoShots(): Shot[] {
           () => document.querySelector('#sheet .sheet-title')?.textContent === 'Drogi do zwycięstwa',
         );
         const pl = await ekranDrog(page);
-        await sprawdzDrogi(page, pl, 'pl', 'zwykly');
+        await sprawdzDrogi(page, pl, 'pl', 'zwykly', DALEJ_START);
         if (stany(pl) !== stany(en)) throw new Error('zmiana języka zmieniła stany kamieni');
         if (pl.tempo !== 0) throw new Error(`po zmianie języka gra ruszyła: tempo ${pl.tempo}`);
         if (pl.wiersze[0].nazwa !== 'Prąd bez miedzi') throw new Error(`nazwa po polsku: ${pl.wiersze[0].nazwa}`);
@@ -10388,10 +10459,97 @@ function zwyciestwoShots(): Shot[] {
           () => document.querySelector('#sheet .sheet-title')?.textContent === 'Roads to victory',
         );
         const znowu = await ekranDrog(page);
-        await sprawdzDrogi(page, znowu, 'en', 'zwykly');
+        await sprawdzDrogi(page, znowu, 'en', 'zwykly', DALEJ_START);
         const pl1 = polskieLitery(znowu.tekst, []);
         if (pl1.length) throw new Error(`polskie słowa po powrocie do angielskiego: ${pl1.join(' ')}`);
         if (stany(znowu) !== stany(en)) throw new Error('powrót do angielskiego zmienił stany kamieni');
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // ostatni kamień ludności z licznikiem poranków (komputer, polski): stan ustawiony wprost, bo prawdziwa seria to
+      // kilka dób gry (cztery kamienie, trzy poranki z siedmiu, cel 40 przy 49 ludziach). Pod złotym „Cel przez 7 dni”
+      // stoi zdanie o siedmiu porankach dosłownie z „(3 z 7)”, tylko ono i zdanie o płocie przy terenie; technologia,
+      // lek i cuda (z „Wkrótce”) nie mają złotego kamienia ani „Następny:”; `zm.zwyciestwo()` ma serię {3, 7}
+      name: 'zwyciestwo-drogi-seria',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+        await waitIdle(page);
+        const ile = await ustawSerie(page, 3);
+        await otworzDrogi(page);
+        const o = await ekranDrog(page);
+        const oceny = await sprawdzDrogi(page, o, 'pl', 'zwykly', {
+          teren: DALEJ_START.teren!,
+          ludnosc: dalejSeria(3),
+        });
+        const lud = oceny[3];
+        console.log(
+          `  ludność ${lud.postep!.ile} z ${lud.postep!.cel}, seria ${JSON.stringify(lud.seria)}, zdanie: ${o.wiersze[3].kamienie[4].dalej}`,
+        );
+        if (lud.zaliczone !== 4 || JSON.stringify(lud.seria) !== '{"dni":3,"z":7}')
+          throw new Error(`ocena ludności: ${lud.zaliczone} kamieni, seria ${JSON.stringify(lud.seria)}`);
+        if (lud.postep!.ile !== ile || lud.postep!.cel !== 40) throw new Error(`pasek: ${JSON.stringify(lud.postep)}`);
+        // złoty następny jest tylko na ludności (ostatni kamień) i na terenie (pierwszy), nigdzie indziej
+        const zlote = o.wiersze.filter((w) => w.kamienie.some((k) => k.stan === 'nastepny')).map((w) => w.droga);
+        if (zlote.join() !== 'teren,ludnosc') throw new Error(`następny kamień na drogach ${zlote.join()}`);
+        for (const w of o.wiersze.filter((w) => w.wkrotce))
+          if (w.kamienie.some((k) => k.stan === 'nastepny' || k.czytnik === 'Następny: '))
+            throw new Error(`droga ${w.droga} z „Wkrótce” ma następny kamień`);
+        if (o.bok) throw new Error('ekran dróg przewija się w bok');
+        if (o.tempo !== 0) throw new Error(`gra nie stoi przy oknie dróg: tempo ${o.tempo}`);
+      },
+    },
+    {
+      // to samo po angielsku na telefonie (390×844, stuknięcia): zdanie o siedmiu porankach po angielsku z „(3 of 7)”
+      // mieści się w karcie, nie wychodzi poza nią ani w bok, po przewinięciu karty ludności jest w całości nad stopką,
+      // bez polskich liter; drogi z „Coming soon” bez „Next:”
+      name: 'en-zwyciestwo-drogi-seria-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+        await waitIdle(page);
+        await ustawSerie(page, 3);
+        await otworzDrogi(page, true);
+        const o = await ekranDrog(page);
+        await sprawdzDrogi(page, o, 'en', 'zwykly', { teren: DALEJ_START.teren!, ludnosc: dalejSeria(3) });
+        const pl0 = polskieLitery(o.tekst, []);
+        if (pl0.length) throw new Error(`polskie słowa w ekranie dróg po angielsku: ${pl0.join(' ')}`);
+        if (o.bok) throw new Error('ekran dróg przewija się w bok na telefonie');
+        // karta ludności z przewiniętą listą: zdanie w karcie, w oknie i nad stopką, bez ucinania tekstu
+        const uklad = await page.evaluate(() => {
+          const karta = document.querySelector<HTMLElement>('#sheet .zw-droga[data-droga="ludnosc"]')!;
+          karta.scrollIntoView({ block: 'center' });
+          const zdanie = karta.querySelector<HTMLElement>('.zw-dalej')!;
+          const prostokat = (e: Element) => {
+            const r = e.getBoundingClientRect();
+            return [r.left, r.top, r.right, r.bottom].map(Math.round);
+          };
+          return {
+            karta: prostokat(karta),
+            zdanie: prostokat(zdanie),
+            lista: prostokat(document.querySelector('#sheet .sheet-body')!),
+            stopka: prostokat(document.querySelector('#sheet .sheet-foot')!),
+            ucina: zdanie.scrollWidth > zdanie.clientWidth + 1,
+            wiersze: Math.round(
+              zdanie.getBoundingClientRect().height / parseFloat(getComputedStyle(zdanie).lineHeight),
+            ),
+          };
+        });
+        console.log(`  karta ${uklad.karta}, zdanie ${uklad.zdanie} (${uklad.wiersze} wierszy), lista ${uklad.lista}`);
+        const [kl, kt, kr, kb] = uklad.karta;
+        const [zl, zt, zr, zb] = uklad.zdanie;
+        if (zl < kl || zr > kr || zt < kt || zb > kb)
+          throw new Error(`zdanie poza kartą: ${uklad.zdanie} / ${uklad.karta}`);
+        if (zt < uklad.lista[1] || zb > uklad.lista[3] || zb > uklad.stopka[1] + 1)
+          throw new Error(
+            `zdanie poza widoczną częścią listy: ${uklad.zdanie}, lista ${uklad.lista}, stopka ${uklad.stopka}`,
+          );
+        if (uklad.ucina) throw new Error('zdanie wychodzi poza kartę w bok');
+        if (uklad.wiersze > 6) throw new Error(`zdanie ma ${uklad.wiersze} wierszy`);
         await dwieKlatki(page);
       },
     },
@@ -10408,7 +10566,7 @@ function zwyciestwoShots(): Shot[] {
         const tempo = await page.evaluate(() => window.zm!.speed());
         if (tempo !== 2) throw new Error(`tempo przed epilogiem: ${tempo}`);
         const przed = await stanZw(page);
-        if (!przed || przed.epilog !== null || przed.wygrane.length)
+        if (!przed || przed.epilogi.length || przed.wygrane.length)
           throw new Error(`stan na starcie: ${JSON.stringify(przed)}`);
         const ile = await ludzi(page);
         const rodzaj = await page.evaluate(() => window.zm!.wygraj('ludnosc'));
@@ -10421,7 +10579,8 @@ function zwyciestwoShots(): Shot[] {
         );
         if (e.kicker !== 'Zwycięstwo' || e.tytul !== 'Nowe osiedle')
           throw new Error(`nagłówek: ${e.kicker} / ${e.tytul}`);
-        if (e.opowiesc !== OPOWIESC.pl) throw new Error(`tekst drogi: ${e.opowiesc}`);
+        const spis = await sprawdzOpowiesc(page, e.opowiesc, 'pl');
+        console.log(`  spis 2021 w epilogu: ${spis}, ludzi ${ile}`);
         if (e.sciezka !== SCIEZKA_BRAK.pl) throw new Error(`zdanie ścieżki bez ścieżki: ${e.sciezka}`);
         const staty = ['Dzień 1', `Ludzi: ${ile}`, 'Zmarli: 0', 'Uchwały: 0'];
         if (e.staty.join('|') !== staty.join('|'))
@@ -10445,15 +10604,15 @@ function zwyciestwoShots(): Shot[] {
         const po = await page.evaluate(() => window.zm!.speed());
         if (po !== tempo) throw new Error(`po „Graj dalej” tempo ${po} zamiast ${tempo}`);
         const stan = await stanZw(page);
-        if (!stan || stan.epilog !== null || stan.wygrane.join() !== 'ludnosc' || stan.kamienie.ludnosc !== 5)
+        if (!stan || stan.epilogi.length || stan.wygrane.join() !== 'ludnosc' || stan.kamienie.ludnosc !== 5)
           throw new Error(`stan po „Graj dalej”: ${JSON.stringify(stan)}`);
         // zapis zostaje (zwycięstwo nie kasuje gry, w odróżnieniu od porażki), już bez epilogu
         const zapis = await page.evaluate((k) => {
           const raw = localStorage.getItem(k);
           const z = raw ? JSON.parse(raw).gov.zwyciestwo : null;
-          return z ? { epilog: z.epilog, wygrane: z.wygrane.length } : null;
+          return z ? { epilogi: z.epilogi, wygrane: z.wygrane.length } : null;
         }, SAVE);
-        if (!zapis || zapis.epilog !== null || zapis.wygrane !== 1)
+        if (!zapis || zapis.epilogi.length || zapis.wygrane !== 1)
           throw new Error(`zapis po „Graj dalej”: ${JSON.stringify(zapis)}`);
         // dwie sekundy gry bez epilogu: krok symulacji rośnie, okno się nie otwiera, wygrana jest jedna
         const s0 = await page.evaluate(() => ({ ekran: window.zm!.screen(), tick: window.zm!.sim!.st.tick }));
@@ -10470,7 +10629,7 @@ function zwyciestwoShots(): Shot[] {
         if (s1.otwarte)
           throw new Error(`po 2 s gry otworzyło się okno: ${await page.textContent('#sheet .sheet-title')}`);
         const dalej = await stanZw(page);
-        if (!dalej || dalej.epilog !== null || dalej.wygrane.length !== 1)
+        if (!dalej || dalej.epilogi.length || dalej.wygrane.length !== 1)
           throw new Error(`epilog wrócił albo wygrana się powtórzyła: ${JSON.stringify(dalej)}`);
         await page.screenshot({ path: path.join(OUT, 'zwyciestwo-epilog-po.png') });
         // zrzut: epilog otwarty od nowa (wygrana nie dubluje się w stanie)
@@ -10509,7 +10668,7 @@ function zwyciestwoShots(): Shot[] {
           `  epilog po angielsku: ${e.kicker} / ${e.tytul}; ${e.staty.join(' | ')}; ${e.przyciski.map((p) => p.tekst).join(' | ')}`,
         );
         if (e.kicker !== 'Victory' || e.tytul !== 'A new estate') throw new Error(`nagłówek: ${e.kicker} / ${e.tytul}`);
-        if (e.opowiesc !== OPOWIESC.en) throw new Error(`tekst drogi: ${e.opowiesc}`);
+        await sprawdzOpowiesc(page, e.opowiesc, 'en');
         if (e.sciezka !== SCIEZKA_TECH.en) throw new Error(`zdanie ścieżki Technokracja: ${e.sciezka}`);
         const staty = ['Day 1', `People: ${ile}`, 'Deaths: 0', 'Resolutions: 0'];
         if (e.staty.join('|') !== staty.join('|')) throw new Error(`liczby epilogu: ${e.staty.join(' | ')}`);
@@ -10531,8 +10690,8 @@ function zwyciestwoShots(): Shot[] {
         await zmienJezyk(page, 'pl');
         await page.waitForFunction(() => document.querySelector('#sheet .sheet-kicker')?.textContent === 'Zwycięstwo');
         const pl = await epilogDom(page);
-        if (pl.opowiesc !== OPOWIESC.pl || pl.sciezka !== SCIEZKA_TECH.pl)
-          throw new Error(`epilog po polsku: ${pl.opowiesc} / ${pl.sciezka}`);
+        await sprawdzOpowiesc(page, pl.opowiesc, 'pl');
+        if (pl.sciezka !== SCIEZKA_TECH.pl) throw new Error(`zdanie ścieżki po polsku: ${pl.sciezka}`);
         if (pl.staty.join('|') !== ['Dzień 1', `Ludzi: ${ile}`, 'Zmarli: 0', 'Uchwały: 0'].join('|'))
           throw new Error(`liczby epilogu po polsku: ${pl.staty.join(' | ')}`);
         if (pl.przyciski.map((p) => p.tekst).join('|') !== 'Nowa gra|Graj dalej')
@@ -10541,7 +10700,8 @@ function zwyciestwoShots(): Shot[] {
         await zmienJezyk(page, 'en');
         await page.waitForFunction(() => document.querySelector('#sheet .sheet-kicker')?.textContent === 'Victory');
         const en = await epilogDom(page);
-        if (en.opowiesc !== OPOWIESC.en || en.sciezka !== SCIEZKA_TECH.en) throw new Error('powrót do angielskiego');
+        await sprawdzOpowiesc(page, en.opowiesc, 'en');
+        if (en.sciezka !== SCIEZKA_TECH.en) throw new Error('powrót do angielskiego: zdanie ścieżki');
         const pl1 = polskieLitery(en.tekst, []);
         if (pl1.length) throw new Error(`polskie słowa po powrocie do angielskiego: ${pl1.join(' ')}`);
         // stuknięcie „Keep playing”
@@ -10553,6 +10713,54 @@ function zwyciestwoShots(): Shot[] {
         if ((await page.evaluate(() => window.zm!.wygraj('ludnosc'))) !== 'zwyciestwo')
           throw new Error('epilog nie otworzył się drugi raz');
         await page.waitForSelector('#sheet.zwyciestwo');
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // dwie drogi wygrywają naraz: dwa epilogi jeden po drugim (kolejka `epilogi`). Pierwszy otwiera `zm.wygraj`, druga
+      // droga czeka za nim (okno jest otwarte, więc nic się nie otwiera), „Graj dalej” pokazuje drugi epilog w tym samym
+      // trybie pauzy, drugi „Graj dalej” oddaje tempo sprzed epilogów; obie wygrane zostają w stanie, kolejka pusta
+      name: 'zwyciestwo-dwa-epilogi',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=2&cam=hq,1.3`);
+        await waitIdle(page);
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        if ((await page.evaluate(() => window.zm!.wygraj('ludnosc'))) !== 'zwyciestwo')
+          throw new Error('pierwszy epilog się nie otworzył');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        if ((await page.evaluate(() => window.zm!.wygraj('teren'))) !== null)
+          throw new Error('drugi epilog otworzył się nad pierwszym');
+        let stan = await stanZw(page);
+        if (stan?.epilogi.join() !== 'ludnosc,teren') throw new Error(`kolejka epilogów: ${JSON.stringify(stan)}`);
+        const pierwszy = await epilogDom(page);
+        if (pierwszy.tytul !== 'Nowe osiedle') throw new Error(`pierwszy epilog: ${pierwszy.tytul}`);
+        // „Graj dalej”: okno zostaje, ale z drugim epilogiem; gra dalej stoi
+        await page.click('#sheet [data-act="zw-dalej"]');
+        await page.waitForFunction(() => document.querySelector('#sheet .sheet-title')?.textContent === 'Za Murem');
+        const drugi = await epilogDom(page);
+        console.log(`  drugi epilog: ${drugi.kicker} / ${drugi.tytul}: ${drugi.opowiesc}`);
+        if (!drugi.otwarte || drugi.tempo !== 0)
+          throw new Error('po pierwszym „Graj dalej” gra ruszyła albo okno zniknęło');
+        if (drugi.opowiesc !== 'Droga „Za Murem” przebyta do końca.')
+          throw new Error(`tekst drugiego: ${drugi.opowiesc}`);
+        naEkranie(drugi, 'drugi epilog');
+        stan = await stanZw(page);
+        if (stan?.epilogi.join() !== 'teren')
+          throw new Error(`kolejka po pierwszym „Graj dalej”: ${JSON.stringify(stan)}`);
+        // drugi „Graj dalej”: okno się zamyka, tempo wraca, kolejka pusta, obie wygrane w stanie
+        await page.click('#sheet [data-act="zw-dalej"]');
+        await zamkniete(page, 'po drugim „Graj dalej”');
+        const po = await page.evaluate(() => window.zm!.speed());
+        if (po !== tempo) throw new Error(`po drugim „Graj dalej” tempo ${po} zamiast ${tempo}`);
+        stan = await stanZw(page);
+        if (!stan || stan.epilogi.length || stan.wygrane.join() !== 'ludnosc,teren')
+          throw new Error(`stan po obu epilogach: ${JSON.stringify(stan)}`);
+        // na zrzucie drugi epilog otwarty od nowa (wygrana się nie dubluje)
+        if ((await page.evaluate(() => window.zm!.wygraj('teren'))) !== 'zwyciestwo')
+          throw new Error('epilog nie otworzył się drugi raz');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        if ((await stanZw(page))?.wygrane.length !== 2) throw new Error('wygrana zapisała się drugi raz');
         await dwieKlatki(page);
       },
     },
@@ -10591,14 +10799,14 @@ function zwyciestwoShots(): Shot[] {
         await page.click('#sheet [data-act="confirm-no"]');
         await page.waitForSelector('#sheet.zwyciestwo');
         let stan = await stanZw(page);
-        if (stan?.epilog !== 'ludnosc') throw new Error(`po „Nie” epilog zdjęty: ${JSON.stringify(stan)}`);
+        if (stan?.epilogi.join() !== 'ludnosc') throw new Error(`po „Nie” epilog zdjęty: ${JSON.stringify(stan)}`);
         // Esc na potwierdzeniu → też epilog
         await page.click('#sheet [data-act="zw-nowa"]');
         await page.waitForSelector('#sheet [data-act="confirm-yes"]');
         await page.keyboard.press('Escape');
         await page.waitForSelector('#sheet.zwyciestwo');
         stan = await stanZw(page);
-        if (stan?.epilog !== 'ludnosc') throw new Error(`po Esc epilog zdjęty: ${JSON.stringify(stan)}`);
+        if (stan?.epilogi.join() !== 'ludnosc') throw new Error(`po Esc epilog zdjęty: ${JSON.stringify(stan)}`);
         if ((await page.evaluate(() => window.zm!.speed())) !== 0) throw new Error('gra ruszyła przy epilogu po „Nie”');
         // „Nowa gra” → „Nowa gra” w potwierdzeniu: ekran startowy z zapisem
         await page.click('#sheet [data-act="zw-nowa"]');
@@ -10608,12 +10816,12 @@ function zwyciestwoShots(): Shot[] {
         const zapis = await page.evaluate((k) => {
           const raw = localStorage.getItem(k);
           const z = raw ? JSON.parse(raw).gov.zwyciestwo : null;
-          return z ? { epilog: z.epilog, wygrane: z.wygrane.map((w: { droga: string }) => w.droga) } : null;
+          return z ? { epilogi: z.epilogi, wygrane: z.wygrane.map((w: { droga: string }) => w.droga) } : null;
         }, SAVE);
         console.log(
           `  ekran startowy, zapis: ${JSON.stringify(zapis)}, przycisk: ${await page.textContent('#btnResume')}`,
         );
-        if (!zapis || zapis.epilog !== null || zapis.wygrane.join() !== 'ludnosc')
+        if (!zapis || zapis.epilogi.length || zapis.wygrane.join() !== 'ludnosc')
           throw new Error(`zapis po „Nowa gra”: ${JSON.stringify(zapis)}`);
         // „Kontynuuj”: gra wraca bez epilogu, zwycięstwo zostaje w stanie
         await page.click('#btnResume');
@@ -10621,7 +10829,7 @@ function zwyciestwoShots(): Shot[] {
         const wczytany = await stanZw(page);
         if (
           !wczytany ||
-          wczytany.epilog !== null ||
+          wczytany.epilogi.length ||
           wczytany.wygrane.join() !== 'ludnosc' ||
           wczytany.kamienie.ludnosc !== 5
         )
@@ -10636,13 +10844,13 @@ function zwyciestwoShots(): Shot[] {
         console.log(
           `  po „Kontynuuj” i 2 s gry: ${JSON.stringify(dalej)}, okno ${otwarte ? 'otwarte' : 'zamknięte'}, tempo ${tempo}`,
         );
-        if (otwarte || dalej?.epilog !== null || dalej.wygrane.length !== 1)
+        if (otwarte || dalej?.epilogi.length || dalej?.wygrane.length !== 1)
           throw new Error(`epilog wrócił po „Kontynuuj”: ${JSON.stringify(dalej)}, okno ${otwarte}`);
         if (tempo < 1) throw new Error(`gra po „Kontynuuj” stoi: tempo ${tempo}`);
         // na ekranie dróg droga ludnościowa przebyta (odznaka), reszta bez zmian
         await otworzDrogi(page);
         const o = await ekranDrog(page);
-        await sprawdzDrogi(page, o, 'pl', 'zwykly');
+        await sprawdzDrogi(page, o, 'pl', 'zwykly', { teren: DALEJ_START.teren! });
         if (!o.wiersze[3].wygrana) throw new Error('droga ludnościowa po zwycięstwie bez odznaki');
       },
     },
@@ -10682,7 +10890,7 @@ function zwyciestwoShots(): Shot[] {
         if (zombie.cel !== 250) throw new Error(`cel w trybie zombie: ${zombie.cel} zamiast 250`);
         await otworzDrogi(page);
         const o = await ekranDrog(page);
-        await sprawdzDrogi(page, o, 'pl', 'zombie');
+        await sprawdzDrogi(page, o, 'pl', 'zombie', DALEJ_START);
         if (o.wiersze[2].nazwa !== 'Lek') throw new Error(`droga leku w trybie zombie: ${o.wiersze[2].nazwa}`);
       },
     },
@@ -10729,7 +10937,7 @@ function zwyciestwoShots(): Shot[] {
           throw new Error(`kamienie ludności ${stan.kamienie.ludnosc} zamiast ${oczekiwane}`);
         if (wpisy.length !== oczekiwane)
           throw new Error(`wpisów w kronice ${wpisy.length} zamiast ${oczekiwane} (lawina?): ${wpisy.join(' | ')}`);
-        if (stan.epilog !== null || stan.wygrane.length || otwarte)
+        if (stan.epilogi.length || stan.wygrane.length || otwarte)
           throw new Error(`epilog wstecz za stary stan: ${JSON.stringify(stan)}`);
         if (stan.dniCelu !== 0) throw new Error(`licznik celu ${stan.dniCelu} przy ${ile} z ${cel} osób`);
         // ekran dróg zgadza się z kroniką

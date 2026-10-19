@@ -1,6 +1,7 @@
 /* Okna warunków zwycięstwa (src/ui/zwyciestwo.ts): ekran „Drogi do zwycięstwa” z Menu i epilog zwycięstwa, oba na
    złotej tabliczce. Ekran dróg jest szeroki: karty dróg w dwóch kolumnach, a w karcie kamienie milowe jako oś czasu
-   (zrobiony zielony z ptaszkiem, następny w złotej obwódce, reszta szara). Epilog ma zwykłą szerokość okna: tekst drogi,
+   (zrobiony zielony z ptaszkiem, następny w złotej obwódce ze zdaniem „co dalej” pod spodem, reszta szara; droga
+   z „Wkrótce” nie ma następnego, wszystkie jej otwarte kamienie są szare). Epilog ma zwykłą szerokość okna: tekst drogi,
    zdanie ścieżki uchwał i cztery liczby. Na telefonie (do 640 px) karty idą jedna pod drugą, a liczby epilogu w dwóch
    kolumnach. */
 
@@ -119,6 +120,15 @@
 }
 .zw-nastepny .zw-znak {
   border-color: var(--lamp);
+}
+/* zdanie „co dalej” pod następnym kamieniem: zwykła waga, żeby nie wyglądało jak drugi kamień */
+.zw-dalej {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-dim);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
 }
 
 /* postęp liczbowy (droga ludnościowa) i zdanie „Wkrótce: …” */

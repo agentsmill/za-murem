@@ -2,6 +2,8 @@
    „Stan, odczyt i okna”): ekran „Drogi do zwycięstwa” z Menu i epilog zwycięstwa. Czyste funkcje dają HTML w kształcie
    `Sheet`, więc testy idą w Node, bez DOM, na samym `body` i `foot`; wygląd ocenia się w prawdziwym Chromium na zrzutach.
    Dwa języki: po polsku teksty z tabeli planu etapu 1, po angielsku te same bez polskiej litery i polskiego słówka.
+   Poprawki po recenzji końcowej: zdanie „co dalej” pod następnym kamieniem, drogi z „Wkrótce” bez następnego kamienia,
+   ostatnie zdanie epilogu ludności z prawdziwymi liczbami (ludzie dziś, spis 2021, polska liczba mnoga).
    Na końcu przegląd źródeł: każda para `L('…', '…')` i `tx('…', '…')` w module, także z gałęzi, których żaden scenariusz
    nie dotyka. */
 
@@ -42,6 +44,10 @@ const wiersze = (s: Sheet): string[] => s.body.split('<li class="zw-droga').slic
 const wiersz = (s: Sheet, droga: Droga): string => wiersze(s).find((w) => w.includes(`data-droga="${droga}"`))!;
 /** ile kamieni wiersza ma daną klasę (zaliczony, nastepny, dalszy) */
 const ile = (w: string, klasa: string): number => (w.match(new RegExp(`class="zw-kamien ${klasa}"`, 'g')) ?? []).length;
+/** klasy kamieni wiersza po kolei (zw-zaliczony, zw-nastepny, zw-dalszy) */
+const klasyKamieni = (w: string): string[] => [...w.matchAll(/class="zw-kamien (zw-\w+)"/g)].map((m) => m[1]);
+/** kamienie wiersza jako kawałki HTML, każdy od klasy kamienia do końca jego <li> */
+const kamienie = (w: string): string[] => w.split('<li class="zw-kamien ').slice(1);
 
 const STATY: StatyEpilogu = { dzien: 12, ludzi: 130, zmarli: 3, uchwaly: 2 };
 
@@ -65,9 +71,22 @@ const SCIEZKI: Record<string, { pl: string; en: string }> = {
   },
 };
 
-const EPILOG_LUDNOSC = {
-  pl: 'Na podwórku znowu jest gwarno. Na klatkach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin trzepaka. Mieszka tu połowa tylu ludzi, co w 2021 roku, kiedy wszyscy zamawiali jedzenie przez aplikację.',
-  en: 'The yard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet rack. Half as many people live here as in 2021, back when everyone ordered food through an app.',
+/** dwa pierwsze zdania epilogu ludności (bez zmian); trzecie ma prawdziwe liczby (`ZDANIE_LUDZI`) */
+const PODWORKO = {
+  pl: 'Na podwórku znowu jest gwarno. Na klatkach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin trzepaka.',
+  en: 'The yard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet rack.',
+};
+
+/** ostatnie zdanie epilogu ludności ze spisem 2021 i bez niego, dosłownie z poprawek po recenzji końcowej */
+const ZDANIE_LUDZI = {
+  zeSpisem: (ludzi: string, spis: string) => ({
+    pl: `Mieszka tu ${ludzi}, a w 2021 roku, kiedy wszyscy zamawiali jedzenie przez aplikację, mieszkało ${spis}.`,
+    en: `${ludzi} live here now; in 2021, back when everyone ordered food through an app, there were ${spis}.`,
+  }),
+  bezSpisu: (ludzi: string) => ({
+    pl: `Mieszka tu ${ludzi} i nikt już nie zamawia jedzenia przez aplikację.`,
+    en: `${ludzi} live here now, and nobody orders food through an app any more.`,
+  }),
 };
 
 describe('ekran dróg (drogiSheet)', () => {
@@ -148,12 +167,87 @@ describe('ekran dróg (drogiSheet)', () => {
     // klasy idą po kolei: trzy zaliczone, potem następny, potem dalszy
     const klasy = [...w.matchAll(/class="zw-kamien (zw-\w+)"/g)].map((m) => m[1]);
     expect(klasy).toEqual(['zw-zaliczony', 'zw-zaliczony', 'zw-zaliczony', 'zw-nastepny', 'zw-dalszy']);
-    // droga bez kamieni: pierwszy jest następny, żaden nie jest zaliczony
-    const pusta = wiersz(s, 'technologia');
+    // droga grywalna bez kamieni (teren przed pierwszym): pierwszy jest następny, żaden nie jest zaliczony
+    const pusta = wiersz(s, 'teren');
     expect(ile(pusta, 'zw-zaliczony')).toBe(0);
     expect(ile(pusta, 'zw-nastepny')).toBe(1);
     expect(ile(pusta, 'zw-dalszy')).toBe(4);
-    expect([...pusta.matchAll(/class="zw-kamien (zw-\w+)"/g)][0][1]).toBe('zw-nastepny');
+    expect(klasyKamieni(pusta)[0]).toBe('zw-nastepny');
+  });
+
+  it('droga z „Wkrótce” rysuje otwarte kamienie jako dalsze: bez złotego następnego i bez „Następny:”', () => {
+    const s = drogi(stan({ technologia: 0, teren: 1, lek: 0, cuda: 1 }), wej());
+    for (const droga of ['technologia', 'teren', 'lek', 'cuda'] as const) {
+      const w = wiersz(s, droga);
+      expect(w, droga).toContain('class="zw-wkrotce"');
+      expect(ile(w, 'zw-nastepny'), droga).toBe(0);
+      expect(w, droga).not.toContain('Następny');
+      expect(w, droga).not.toContain('zw-dalej');
+    }
+    // zaliczone zostają zaliczone, reszta jest dalsza
+    expect(klasyKamieni(wiersz(s, 'technologia'))).toEqual(Array(5).fill('zw-dalszy'));
+    expect(klasyKamieni(wiersz(s, 'teren'))).toEqual(['zw-zaliczony', ...Array(4).fill('zw-dalszy')]);
+    expect(klasyKamieni(wiersz(s, 'cuda'))).toEqual(['zw-zaliczony', 'zw-dalszy', 'zw-dalszy']);
+    // dopisek dla czytnika ekranu mają tylko zaliczone
+    expect(wiersz(s, 'teren').match(/class="sr">Zaliczone: </g)).toHaveLength(1);
+    // droga bez „Wkrótce” (teren przed pierwszym kamieniem, ludność) dalej ma złoty następny
+    const grywalne = drogi(stan(), wej());
+    expect(klasyKamieni(wiersz(grywalne, 'teren'))[0]).toBe('zw-nastepny');
+    expect(klasyKamieni(wiersz(grywalne, 'ludnosc'))[0]).toBe('zw-nastepny');
+    expect(wiersz(grywalne, 'teren')).toContain('Następny: ');
+  });
+
+  it('pod następnym kamieniem stoi zdanie „co dalej”: próg ludności, siedem poranków z licznikiem, płot dla terenu', () => {
+    const zdanie = (w: string) => kamienie(w).filter((k) => k.includes('class="zw-dalej"'));
+    // kamień „25 osób” jest następny i tylko on ma zdanie
+    const przed = wiersz(drogi(stan({ ludnosc: 1 }), wej({ ludnosc: 12 })), 'ludnosc');
+    expect(zdanie(przed)).toHaveLength(1);
+    expect(zdanie(przed)[0].startsWith('zw-nastepny"')).toBe(true);
+    expect(zdanie(przed)[0]).toContain('25 osób</span><span class="zw-dalej">Zbierzcie 25 osób pod zarządem.</span>');
+    // ostatni kamień: licznik poranków dosłownie ze stanu
+    const st = stan({ ludnosc: 4 });
+    st.zwyciestwo!.dniCelu = 3;
+    const ostatni = wiersz(drogi(st, wej({ ludnosc: 260 })), 'ludnosc');
+    expect(zdanie(ostatni)).toHaveLength(1);
+    expect(zdanie(ostatni)[0]).toContain(
+      'Cel przez 7 dni</span><span class="zw-dalej">Utrzymajcie cel 7 poranków z rzędu',
+    );
+    expect(zdanie(ostatni)[0]).toContain(
+      'o 6:00 nikt z zarządu nie jest głodny, a zaufanie wynosi co najmniej 50 (3 z 7).',
+    );
+    // teren przed pierwszym kamieniem: płot
+    const teren = wiersz(drogi(stan(), wej()), 'teren');
+    expect(zdanie(teren)).toHaveLength(1);
+    expect(zdanie(teren)[0]).toContain('Otoczcie wspólnym płotem pierwszy sąsiedni budynek.');
+    // po pierwszym kamieniu terenu zdanie znika (jest „Wkrótce”), a droga przebyta do końca nie ma go wcale
+    expect(drogi(stan({ teren: 1 }), wej()).body).not.toContain('Otoczcie');
+    expect(zdanie(wiersz(drogi(stan({ ludnosc: 5 }), wej({ ludnosc: 260 })), 'ludnosc'))).toEqual([]);
+    // technologia, lek i cuda nie mają zdania w ogóle
+    const wkrotce = drogi(stan(), wej());
+    for (const droga of ['technologia', 'lek', 'cuda'] as const)
+      expect(wiersz(wkrotce, droga)).not.toContain('zw-dalej');
+  });
+
+  it('zdanie „co dalej” zmienia się z licznikiem i z kamieniem, a nie stoi na jednym tekście', () => {
+    const zdaniaLudnosci = (st: GovState) => {
+      const w = wiersz(drogi(st, wej({ ludnosc: 60 })), 'ludnosc');
+      return w.match(/class="zw-dalej">([^<]*)</)?.[1];
+    };
+    expect(zdaniaLudnosci(stan({ ludnosc: 0 }))).toBe('Zbierzcie 10 osób pod zarządem.');
+    expect(zdaniaLudnosci(stan({ ludnosc: 2 }))).toBe('Zbierzcie 50 osób pod zarządem.');
+    expect(zdaniaLudnosci(stan({ ludnosc: 3 }))).toBe('Zbierzcie 125 osób pod zarządem.');
+    const st = stan({ ludnosc: 4 });
+    expect(zdaniaLudnosci(st)).toContain('(0 z 7).');
+    st.zwyciestwo!.dniCelu = 6;
+    expect(zdaniaLudnosci(st)).toContain('(6 z 7).');
+  });
+
+  it('zdanie „co dalej” idzie przez ucieczkę HTML', () => {
+    const p = ocenDrogi(stan(), wej());
+    const zly = { ...p[3], zaliczone: 1, dalej: tx('<b>a</b> & "b"', '<b>a</b>') };
+    const s = drogiSheet([zly]);
+    expect(s.body).not.toContain('<b>a');
+    expect(s.body).toContain('&lt;b&gt;a&lt;/b&gt; &amp; &quot;b&quot;');
   });
 
   it('czytelnikowi ekranu mówią zaliczone i następny; wyróżnienie nie jest tylko kolorem', () => {
@@ -250,6 +344,29 @@ describe('ekran dróg (drogiSheet)', () => {
     expect(polskieSlowa(wszystko(po))).toEqual([]);
   });
 
+  it('po angielsku „co dalej” pod następnym kamieniem, a drogi z „Coming soon” bez „Next:”', () => {
+    ustawJezyk('en');
+    const st = stan({ ludnosc: 1 });
+    const s = drogi(st, wej({ ludnosc: 30 }));
+    expect(wiersz(s, 'ludnosc')).toContain('class="zw-dalej">Get 25 people under the board.<');
+    expect(wiersz(s, 'teren')).toContain('class="zw-dalej">Put a shared fence round the first building next door.<');
+    st.zwyciestwo!.kamienie.ludnosc = 4;
+    st.zwyciestwo!.dniCelu = 2;
+    const ostatni = drogi(st, wej({ ludnosc: 260 }));
+    expect(wiersz(ostatni, 'ludnosc')).toContain(
+      'class="zw-dalej">Hold the target for 7 mornings in a row: at 6:00 nobody on the board is hungry and trust is at least 50 (2 of 7).<',
+    );
+    for (const droga of ['technologia', 'lek', 'cuda'] as const) {
+      expect(wiersz(s, droga), droga).not.toContain('Next: ');
+      expect(ile(wiersz(s, droga), 'zw-nastepny'), droga).toBe(0);
+    }
+    expect(wiersz(s, 'ludnosc')).toContain('class="sr">Next: <');
+    for (const ekran of [s, ostatni]) {
+      expect(wszystko(ekran)).not.toMatch(POLSKIE);
+      expect(polskieSlowa(wszystko(ekran))).toEqual([]);
+    }
+  });
+
   it('po angielsku zombie: droga leku to „The cure”', () => {
     ustawJezyk('en');
     const s = drogi(stan({}, 'zombie'), wej());
@@ -264,7 +381,48 @@ describe('epilog zwycięstwa (epilogSheet)', () => {
     expect(s.kicker).toBe('Zwycięstwo');
     expect(s.title).toBe('Nowe osiedle');
     expect(s.tone).toBe('zwyciestwo');
-    expect(s.body).toContain(EPILOG_LUDNOSC.pl);
+    // dwa pierwsze zdania bez zmian, trzecie z liczbą ludzi (STATY nie ma spisu 2021)
+    expect(s.body).toContain(`${PODWORKO.pl} ${ZDANIE_LUDZI.bezSpisu('130 osób').pl}`);
+  });
+
+  it('ostatnie zdanie ma prawdziwe liczby: ze spisem 2021 ludzie dziś i spis, bez niego tylko ludzie', () => {
+    const ze = epilogSheet('ludnosc', null, 'zwykly', { ...STATY, spis: 2623 }).body;
+    expect(ze).toContain(`${PODWORKO.pl} ${ZDANIE_LUDZI.zeSpisem('130 osób', '2623').pl}`);
+    const bez = epilogSheet('ludnosc', null, 'zwykly', STATY).body;
+    expect(bez).toContain(`${PODWORKO.pl} ${ZDANIE_LUDZI.bezSpisu('130 osób').pl}`);
+    expect(bez).not.toContain('w 2021 roku');
+    // żaden nie twierdzi, że ludzi jest „połowa” z 2021 roku (przy przycięciu celu do 120–500 to nieprawda)
+    for (const body of [ze, bez]) {
+      expect(body).not.toContain('połowa tylu');
+      expect(body).not.toContain('Half as many');
+    }
+  });
+
+  it('liczba mnoga przy ludziach: 1 osoba, 62 osoby, 125 osób, także 112 osób', () => {
+    const body = (ludzi: number) => epilogSheet('ludnosc', null, 'zwykly', { ...STATY, ludzi }).body;
+    expect(body(0)).toContain('Mieszka tu 0 osób i nikt');
+    expect(body(1)).toContain('Mieszka tu 1 osoba i nikt');
+    for (const n of [2, 4, 22, 62, 63, 104]) expect(body(n), `${n}`).toContain(`Mieszka tu ${n} osoby i nikt`);
+    for (const n of [5, 12, 14, 21, 112, 125, 500]) expect(body(n), `${n}`).toContain(`Mieszka tu ${n} osób i nikt`);
+    // to samo ze spisem: liczba mnoga dotyczy tylko ludzi dziś, spis to goła liczba
+    const ze = epilogSheet('ludnosc', null, 'zwykly', { ...STATY, ludzi: 63, spis: 2622 }).body;
+    expect(ze).toContain(
+      'Mieszka tu 63 osoby, a w 2021 roku, kiedy wszyscy zamawiali jedzenie przez aplikację, mieszkało 2622.',
+    );
+  });
+
+  it('spis do niczego (0, ujemny, NaN, nieskończony) to epilog bez spisu', () => {
+    for (const spis of [0, -5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const body = epilogSheet('ludnosc', null, 'zwykly', { ...STATY, spis }).body;
+      expect(body, `${spis}`).toContain(ZDANIE_LUDZI.bezSpisu('130 osób').pl);
+      expect(body, `${spis}`).not.toContain('w 2021 roku');
+    }
+  });
+
+  it('liczby ostatniego zdania idą przez num: całkowite, bez ułamków', () => {
+    const body = epilogSheet('ludnosc', null, 'zwykly', { ...STATY, ludzi: 130.6, spis: 2623.4 }).body;
+    expect(body).toContain('Mieszka tu 131 osób, a w 2021 roku');
+    expect(body).toContain('mieszkało 2623.');
   });
 
   it('zdanie ścieżki uchwał dla każdej z czterech wartości, zawsze tylko jedno', () => {
@@ -288,7 +446,8 @@ describe('epilog zwycięstwa (epilogSheet)', () => {
 
   it('zdanie ścieżki stoi po tekście drogi', () => {
     const body = epilogSheet('ludnosc', 'wspolnota', 'zwykly', STATY).body;
-    expect(body.indexOf(SCIEZKI.wspolnota.pl)).toBeGreaterThan(body.indexOf(EPILOG_LUDNOSC.pl));
+    expect(body.indexOf(SCIEZKI.wspolnota.pl)).toBeGreaterThan(body.indexOf(PODWORKO.pl));
+    expect(body.indexOf(SCIEZKI.wspolnota.pl)).toBeGreaterThan(body.indexOf('Mieszka tu 130 osób'));
   });
 
   it('statystyki: dzień, ludzie, zmarli i uchwały', () => {
@@ -328,7 +487,8 @@ describe('epilog zwycięstwa (epilogSheet)', () => {
       const s = epilogSheet(droga, 'porzadek', 'zwykly', STATY);
       expect(s.title, droga).toBe(nazwaDrogi(droga, 'zwykly').pl);
       expect(s.body, droga).toContain(`Droga „${nazwaDrogi(droga, 'zwykly').pl}” przebyta do końca.`);
-      expect(s.body, droga).not.toContain(EPILOG_LUDNOSC.pl);
+      expect(s.body, droga).not.toContain(PODWORKO.pl);
+      expect(s.body, droga).not.toContain('Mieszka tu');
       expect(s.body, droga).toContain(SCIEZKI.porzadek.pl);
       expect(s.body, droga).toContain('Ludzi: 130');
     }
@@ -345,7 +505,7 @@ describe('epilog zwycięstwa (epilogSheet)', () => {
     const s = epilogSheet('ludnosc', 'wspolnota', 'zwykly', STATY);
     expect(s.kicker).toBe('Victory');
     expect(s.title).toBe('A new estate');
-    expect(s.body).toContain(EPILOG_LUDNOSC.en);
+    expect(s.body).toContain(`${PODWORKO.en} ${ZDANIE_LUDZI.bezSpisu('130 people').en}`);
     expect(s.body).toContain(SCIEZKI.wspolnota.en);
     expect(s.body).toContain('Day 12');
     expect(s.body).toContain('People: 130');
@@ -365,6 +525,19 @@ describe('epilog zwycięstwa (epilogSheet)', () => {
     }
     expect(wszystko(s)).not.toMatch(POLSKIE);
     expect(polskieSlowa(wszystko(s))).toEqual([]);
+  });
+
+  it('po angielsku ostatnie zdanie: ze spisem i bez, liczba pojedyncza i mnoga, bez polskich słów', () => {
+    ustawJezyk('en');
+    const ze = epilogSheet('ludnosc', null, 'zwykly', { ...STATY, spis: 2623 });
+    expect(ze.body).toContain(`${PODWORKO.en} ${ZDANIE_LUDZI.zeSpisem('130 people', '2623').en}`);
+    expect(wszystko(ze)).not.toMatch(POLSKIE);
+    expect(polskieSlowa(wszystko(ze))).toEqual([]);
+    const body = (ludzi: number) => epilogSheet('ludnosc', null, 'zwykly', { ...STATY, ludzi }).body;
+    expect(body(1)).toContain('1 person lives here now, and nobody orders food through an app any more.');
+    expect(body(2)).toContain('2 people live here now, and nobody orders food');
+    expect(body(0)).toContain('0 people live here now, and nobody orders food');
+    expect(body(130)).not.toContain('Half as many');
   });
 
   it('angielski epilogu trzyma się słowniczka: the yard, carpet rack, apostrof typograficzny', () => {
@@ -401,6 +574,12 @@ describe('statystyki epilogu (statyEpilogu)', () => {
       ],
     });
     expect(statyEpilogu(st, i)).toEqual({ dzien: 14, ludzi: 140, zmarli: 2, uchwaly: 2 });
+  });
+
+  it('spis 2021 z odczytu, gdy jest do użytku; inaczej pola nie ma', () => {
+    expect(statyEpilogu(stan(), wej({ ludnosc2021: 2623 })).spis).toBe(2623);
+    for (const n of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+      expect('spis' in statyEpilogu(stan(), wej({ ludnosc2021: n })), `${n}`).toBe(false);
   });
 
   it('bez pól `ludnosc` i `dead` ludzie to zarząd i mieszkańcy, zmarłych zero, bez uchwał zero', () => {

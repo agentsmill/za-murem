@@ -197,6 +197,10 @@ function play(policy: Policy): {
             }
           }
           applyGov(st, world, confirmNight(gov, i));
+        } else {
+          // nowy rodzaj okna zarządu bez obsługi tutaj ma paść przy kompilacji (tsc), a nie zostać po cichu pominięty
+          const nic: never = p;
+          throw new Error(`okno zarządu bez obsługi: ${JSON.stringify(nic)}`);
         }
       }
     }

@@ -790,8 +790,8 @@ if (ZWYCIESTWO) {
       console.log(`  BŁĄD: ziarno ${r.seed}: licznik celu ponad 7 albo ta sama droga wygrała dwa razy`);
       fail = true;
     }
-    if (z.epilog) {
-      console.log(`  BŁĄD: ziarno ${r.seed}: epilog czeka po „Graj dalej” bota (${z.epilog})`);
+    if (z.epilogi.length) {
+      console.log(`  BŁĄD: ziarno ${r.seed}: epilog czeka po „Graj dalej” bota (${z.epilogi.join(', ')})`);
       fail = true;
     }
   }

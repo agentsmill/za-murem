@@ -464,7 +464,7 @@ export interface GovState {
   miasto?: StanMiasta;
   /** wyprawy dzienne w drodze; pole od pierwszego wyjścia z mapy miasta */
   wyprawy?: Wyprawa[];
-  /** warunki zwycięstwa: kamienie milowe dróg, zwycięstwa, licznik celu ludności i epilog w oknie; pole od
+  /** warunki zwycięstwa: kamienie milowe dróg, zwycięstwa, licznik celu ludności i kolejka epilogów w oknie; pole od
       `wlaczZwyciestwo` (src/gov/zwyciestwo.ts), bez niego zarząd nie liczy dróg i stan zostaje jak przed nimi */
   zwyciestwo?: StanZwyciestwa;
 }

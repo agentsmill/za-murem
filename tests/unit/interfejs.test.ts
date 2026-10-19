@@ -562,6 +562,11 @@ function firstNight(key: string) {
             ),
           ),
         );
+      else {
+        // nowy rodzaj okna zarządu bez obsługi tutaj ma paść przy kompilacji (tsc), a nie kręcić pętli w nieskończoność
+        const nic: never = p;
+        throw new Error(`okno zarządu bez obsługi: ${JSON.stringify(nic)}`);
+      }
     }
   }
   return { sim, gov, decisions };
