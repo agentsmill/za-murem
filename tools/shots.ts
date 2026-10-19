@@ -4094,8 +4094,10 @@ const SHOTS: Shot[] = [
       // koszty i czasy z symulacji (stroi je bot), więc porównuję z BUILDS, a nie z liczbami wpisanymi tutaj
       const { BUILDS } = await import('../src/sim/budowle.ts');
       const { costText, workText } = await import('../src/ui/budowa.ts');
+      // na starcie panel pokazuje budowle bez technologii (te z technologią kryje, kłódek nie ma): sześć dawnych i pracownia
+      const WIDOCZNE = Object.values(BUILDS).filter((d) => !d.tech).length;
       const check = (items: Awaited<ReturnType<typeof allItems>>['items']) => {
-        if (items.length !== 6) throw new Error(`budowli w panelu: ${items.length}`);
+        if (items.length !== WIDOCZNE) throw new Error(`budowli w panelu: ${items.length} z ${WIDOCZNE}`);
         for (const b of items) {
           const d = Object.values(BUILDS).find((x) => x.name === b.name);
           if (!d) throw new Error(`nieznana budowla: ${b.name}`);
@@ -4113,7 +4115,7 @@ const SHOTS: Shot[] = [
       const a0 = await allItems();
       for (const b of a0.items) console.log(`  start, ${b.name}: ${b.button ? 'można' : b.why} (${b.meta})`);
       check(a0.items);
-      if (a0.tiles !== 6) throw new Error(`miniatur png: ${a0.tiles} z 6`);
+      if (a0.tiles !== WIDOCZNE) throw new Error(`miniatur png: ${a0.tiles} z ${WIDOCZNE}`);
       if (a0.items.some((b) => b.button)) throw new Error('na starcie gry coś da się postawić, a koszty są z bota');
       // mapa pod otwartym panelem jest klikalna: w środku ekranu leży płótno gry, nie panel
       const under = await page.evaluate(
