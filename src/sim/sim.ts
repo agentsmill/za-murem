@@ -7,7 +7,9 @@
    osób z src/sim/praca.ts: po potrzebach, zimnie i gasnącej kozie biorą rodzaje pracy po kolei (ogień, kuchnia,
    budowa, naprawy, drwal, noszenie, warsztat, szaber, badania). Bez polecenia zaczynają pracę tylko na naszym terenie
    (naszTeren: podwórko, siedziba, budynki za wspólnym płotem); za siatkę wychodzi tylko osoba z przełącznikiem (domyślnie
-   włączony w trybie zwykłym, wyłączony w zombie: `zaSiatkeDomyslnie`) i tylko za dnia (mozeTam). Warsztat i szaber nigdy nie ruszają materiału ani drzwi, które mają inne przeznaczenie: deski
+   włączony w trybie zwykłym, wyłączony w zombie: `zaSiatkeDomyslnie`) i tylko za dnia (mozeTam). Ścięcie drzewa za siatką
+   kończy się wniesieniem całego drewna z tego drzewa przez tę samą osobę, z polecenia i z automatu Drwala (`haulOn`; bez
+   polecenia tylko tam, gdzie wolno, i przerywane nocą, pilną potrzebą i wrogiem). Warsztat i szaber nigdy nie ruszają materiału ani drzwi, które mają inne przeznaczenie: deski
    z nadwyżki drewna, części z nadwyżki złomu, dzidy dla nieuzbrojonych, a szaber tylko puste pomieszczenia i wraki,
    bez otwierania i wyważania drzwi. Czas ścinania, budowy, łatania, napraw, warsztatu, dzidy i gotowania dzieli
    mnożnik z umiejętności (`tempoPracy`). Wędrowiec po rozmowie przy siatce może zostać zaproszony (praca `zapros`,
@@ -3696,9 +3698,10 @@ export class Sim {
         if (j.phase === 1) {
           if (tick < j.until) return true;
           if (!st.felled.includes(j.target)) this.fell(j.target, j.tile);
-          // ścięcie na polecenie za siatką kończy się wniesieniem całego drewna z tego drzewa przez tę samą osobę
-          // (tak jak wrak przechodzi w noszenie łupu); bez miejsca w składzie albo drogi zostaje jak dotąd
-          return j.order && !this.naszTeren(this.trunk[j.target]) && this.haulOn(p, j, this.trunk[j.target]);
+          // ścięcie za siatką (z polecenia i z automatu Drwala) kończy się wniesieniem całego drewna z tego drzewa przez
+          // tę samą osobę (tak jak wrak przechodzi w noszenie łupu); bez miejsca w składzie albo drogi, a bez polecenia
+          // także nocą, przy wrogu i z dala od dozwolonych stert (`haulOn`), reszta zostaje jak dotąd
+          return !this.naszTeren(this.trunk[j.target]) && this.haulOn(p, j, this.trunk[j.target]);
         }
         if (!at || st.felled.includes(j.target)) return false;
         j.phase = 1;
@@ -4946,21 +4949,25 @@ export class Sim {
     return true;
   }
 
-  /** Praca j (ścinanie z polecenia albo kurs z drewnem) przechodzi w noszenie drewna z okolicy pnia `stump` (sterty
-      do 4 kafelków od niego, poza składem) do składu: kolejny kurs z polecenia (`order`), zapamiętany pień w `j.from`.
-      false, gdy nie ma czego nosić, w składzie nie ma miejsca albo nie da się dojść. */
+  /** Praca j (ścinanie albo kurs z drewnem) przechodzi w noszenie drewna z okolicy pnia `stump` (sterty do 4 kafelków
+      od niego, poza składem) do składu: kolejny kurs z tego samego rodzaju pracy co j (`j.order`: z polecenia gracza albo
+      z automatu), zapamiętany pień w `j.from`. Z polecenia bierze każdą stertę przy pniu, bez polecenia tylko te, na
+      które wolno iść i do których wolno dojść bez polecenia (`mozeSam`: za siatką osoba z przełącznikiem, za dnia i bez
+      wroga bliżej niż 10 m, i bez szwendacza przy stercie), i takie kursy przerywa noc, pilna potrzeba i wróg jak
+      każde noszenie bez polecenia spoza siatki; niewniesione sterty zostają do zwykłego noszenia. false, gdy nie ma
+      czego nosić, w składzie nie ma miejsca albo nie da się dojść. */
   private haulOn(p: Pawn, j: Job, stump: number): boolean {
     if (p.carry > 0 || this.dropTile(p) < 0) return false;
-    const pile = this.pileFor(p, 'outside', stump);
+    const order = j.order;
+    const pile = this.pileFor(p, 'outside', stump, order ? undefined : (i) => this.mozeSam(p, i) && !this.zagrozone(i));
     if (!pile) return false;
     const pt = pile.y * this.w.size + pile.x;
-    if (!this.go(p, pt)) return false;
+    if (!(order ? this.go(p, pt) : this.idz(p, pt, false))) return false;
     j.t = 'haul';
     j.phase = 0;
     j.target = pile.id;
     j.tile = pt;
     j.from = stump;
-    j.order = true;
     pile.by = p.id;
     return true;
   }
