@@ -3671,12 +3671,18 @@ const SHOTS: Shot[] = [
       await page.waitForTimeout(300); // koniec animacji przed zrzutem
     },
   },
-  // widok z kłódkami (?budowa=klodki: magazyn i ogródek czekają na badanie testowe): wyszarzone, z nazwą badania,
-  // bez przycisku „Postaw”
+  // widok z kłódkami (?budowa=klodki: magazyn i ogródek czekają na badanie testowe, a budowle z technologii ery 1 i 2
+  // na swoje): wyszarzone, z nazwą badania, bez przycisku „Postaw”
   {
     name: 'panel-budowy-klodki',
     query: '',
     run: async (page, base) => {
+      const { BUILDS } = await import('../src/sim/budowle.ts');
+      // w stronie magazyn i ogródek dostają badanie testowe, a budowle z technologii mają je od początku
+      const zamkniete = (cat: string) =>
+        (Object.keys(BUILDS) as (keyof typeof BUILDS)[])
+          .filter((k) => BUILDS[k].cat === cat && (BUILDS[k].tech || k === 'magazyn' || k === 'ogrodek'))
+          .join();
       await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&budowa=klodki`);
       await waitIdle(page);
       await page.keyboard.press('b');
@@ -3686,7 +3692,7 @@ const SHOTS: Shot[] = [
         why: document.querySelector('#buildPanel .bd[data-kind="magazyn"] .build-why')?.textContent ?? '',
         button: !!document.querySelector('#buildPanel .bd[data-kind="magazyn"] [data-act="build"]'),
       }));
-      if (dom.lock.join() !== 'magazyn') throw new Error(`kłódki w Dom: ${dom.lock.join()}`);
+      if (dom.lock.join() !== zamkniete('dom')) throw new Error(`kłódki w Dom: ${dom.lock.join()}`);
       if (dom.why !== 'Wymaga badania: Badanie testowe' || dom.button)
         throw new Error(`magazyn: „${dom.why}”, przycisk: ${dom.button}`);
       await page.click('#buildPanel .tile[data-kind="magazyn"]');
@@ -3694,10 +3700,177 @@ const SHOTS: Shot[] = [
       const yard = await page.evaluate(() =>
         [...document.querySelectorAll('#buildPanel .tile.lock')].map((t) => (t as HTMLElement).dataset.kind),
       );
-      if (yard.join() !== 'ogrodek') throw new Error(`kłódki w Podwórku: ${yard.join()}`);
+      if (yard.join() !== zamkniete('podworko')) throw new Error(`kłódki w Podwórku: ${yard.join()}`);
       await page.click('#buildPanel [data-tab="dom"]');
       await page.click('#buildPanel .tile[data-kind="magazyn"]');
       await page.waitForTimeout(300); // koniec animacji przed zrzutem
+    },
+  },
+  // badania, budowle z technologii: pracownia i sześć budowli (koza z beczki, kocioł, pieczarkarnia, szklarnia, wieża,
+  // barykada) po zbadaniu. Menu pokazuje je w zakładkach, tryb stawiania z interfejsu stawia plan kozy przy oknie
+  // (z duchem w mapie), a gotowe budowle stoją w miejscach, które dopuszcza canPlace; ujęcia: mieszkanie, klatka,
+  // podwórko z obwodem (zrzut końcowy)
+  {
+    name: 'badania-budowle',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.6`);
+      await waitIdle(page);
+      const { BUILDS } = await import('../src/sim/budowle.ts');
+      const wszystkie = Object.keys(BUILDS).filter((k) => BUILDS[k as keyof typeof BUILDS].tech);
+      const tech = wszystkie.map((k) => BUILDS[k as keyof typeof BUILDS].tech);
+      if (wszystkie.join() !== 'koza_beczka,kociol,pieczarkarnia,szklarnia,barykada,wieza')
+        throw new Error(`budowle z technologii: ${wszystkie.join()}`);
+      // przed badaniem menu ich nie pokazuje
+      await page.keyboard.press('b');
+      await page.waitForSelector('#buildPanel .tile');
+      const przed = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('#buildPanel .tile')].map((t) => t.dataset.kind),
+      );
+      if (przed.some((k) => wszystkie.includes(k ?? ''))) throw new Error(`przed badaniem w menu: ${przed.join()}`);
+      await page.keyboard.press('b');
+      // po badaniu: wszystkie sześć w zakładkach Dom, Podwórko i Obwód, a pracownia w Domu
+      await page.evaluate((tech) => {
+        window.zm!.sim!.st.techDone = tech as string[];
+      }, tech);
+      for (const k of wszystkie) await stockUp(page, BUILDS[k as keyof typeof BUILDS].cost);
+      await page.keyboard.press('b');
+      await page.waitForSelector('#buildPanel .tile');
+      const zakladki: Record<string, string[]> = {};
+      for (const tab of ['dom', 'podworko', 'obwod']) {
+        await page.click(`#buildPanel [data-tab="${tab}"]`);
+        zakladki[tab] = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>('#buildPanel .tile')].map((t) => t.dataset.kind ?? ''),
+        );
+      }
+      console.log(`  menu: ${JSON.stringify(zakladki)}`);
+      const oczek: Record<string, string> = {
+        dom: 'warsztat,kuchnia_spoleczna,magazyn,lozka_pietrowe,pracownia,koza_beczka,kociol,pieczarkarnia',
+        podworko: 'ogrodek,szklarnia,wieza',
+        obwod: 'zasieki,barykada',
+      };
+      for (const [tab, kinds] of Object.entries(oczek))
+        if (zakladki[tab].join() !== kinds) throw new Error(`zakładka ${tab}: ${zakladki[tab].join()}`);
+      await page.click('#buildPanel [data-tab="dom"]');
+      await page.click('#buildPanel .tile[data-kind="kociol"]');
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(OUT, 'badania-budowle-menu.png') });
+      await page.keyboard.press('b');
+      // tryb stawiania z interfejsu: koza z beczki tylko tuż przy oknie, duch w mapie
+      await chooseBuild(page, 'koza_beczka');
+      const p0 = await page.evaluate(() => window.zm!.placing());
+      if (!p0 || p0.allowed < 1) throw new Error('koza z beczki bez dozwolonego miejsca');
+      const size = await page.evaluate(() => window.zm!.sim!.w.size);
+      const spot = [p0.first % size, Math.floor(p0.first / size)] as const;
+      await page.evaluate(([x, y]) => window.zm!.setCam(x + 0.5, y + 1, 2.4), spot);
+      await waitIdle(page);
+      const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x + 0.5, y + 0.5), spot);
+      await page.mouse.move(sx, sy);
+      await page.waitForTimeout(200);
+      const dobrze = await page.evaluate(() => window.zm!.placing());
+      if (!dobrze?.ok) throw new Error(`podgląd kozy przy oknie nie jest zielony: ${dobrze?.why}`);
+      await page.screenshot({ path: path.join(OUT, 'badania-budowle-koza-stawianie.png') });
+      await page.mouse.click(sx, sy);
+      await frames(page, 3);
+      // na pauzie polecenie budowy czeka w kolejce symulacji
+      const plan = await page.evaluate(() =>
+        window
+          .zm!.sim!.st.cmds.filter((c) => (c as { t: string }).t === 'build')
+          .map((c) => c as unknown as { kind: string; x: number; y: number }),
+      );
+      if (plan.length !== 1 || plan[0].kind !== 'koza_beczka' || plan[0].x !== spot[0] || plan[0].y !== spot[1])
+        throw new Error(`plan kozy: ${JSON.stringify(plan)}`);
+      await page.evaluate(() => {
+        window.zm!.sim!.st.cmds = [];
+      });
+      // gotowe budowle w miejscach z canPlace: pracownia, koza z beczki, pieczarkarnia, kocioł, szklarnia, wieża, barykada
+      const r = await page.evaluate(async () => {
+        // moduły gry z serwera Vite (te same adresy co w main.ts, więc te same egzemplarze); ścieżki w zmiennych, bo
+        // tsc nie zna adresów serwera
+        const budowa = '/src/ui/budowa.ts';
+        const budowle = '/src/sim/budowle.ts';
+        const { allowedAnchors } = (await import(/* @vite-ignore */ budowa)) as typeof import('../src/ui/budowa.ts');
+        const { footprint } = (await import(/* @vite-ignore */ budowle)) as typeof import('../src/sim/budowle.ts');
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const w = zm.sim!.w;
+        const size = w.size;
+        const put = (kind: string, i: number, rot: number) => {
+          const f = footprint(kind as 'warsztat', rot);
+          st.things.push({
+            id: st.nextThing++,
+            kind,
+            x: i % size,
+            y: Math.floor(i / size),
+            w: f.w,
+            h: f.h,
+            rot,
+            n: 0,
+            fuel: 0,
+            by: -1,
+            owner: -1,
+          });
+        };
+        const out: Record<string, [number, number]> = {};
+        const near = (cx: number, cy: number) => (a: number, b: number) =>
+          Math.hypot((a % size) - cx, Math.floor(a / size) - cy) -
+          Math.hypot((b % size) - cx, Math.floor(b / size) - cy);
+        const home = st.things.find((t) => t.kind === 'koza')!;
+        const gate = w.fence.gate;
+        // najbliżej kozy zarządu w mieszkaniu, najbliżej bramy na podwórku i na obwodzie; wieża z dala od szklarni,
+        // żeby jedna nie zasłaniała drugiej
+        for (const [kind, around] of [
+          ['pracownia', [home.x, home.y]],
+          ['koza_beczka', [home.x, home.y]],
+          ['pieczarkarnia', [home.x, home.y]],
+          ['kociol', [home.x, home.y]],
+          ['szklarnia', [gate.x, gate.y]],
+          ['wieza', [gate.x, gate.y]],
+          ['barykada', [gate.x, gate.y]],
+        ] as const) {
+          let a = allowedAnchors(st, w, kind as 'warsztat', 0).sort(near(around[0], around[1]));
+          if (kind === 'wieza') {
+            const [gx, gy] = out.szklarnia;
+            a = a.filter((i) => Math.max(Math.abs((i % size) - gx), Math.abs(Math.floor(i / size) - gy)) >= 6);
+          }
+          if (!a.length) throw new Error(`brak miejsca na ${kind}`);
+          let i = a[0];
+          let rot = 0;
+          if (kind === 'barykada') {
+            i = a[3] ?? a[0];
+            rot = w.fence.tiles.includes(i - 1) || w.fence.tiles.includes(i + 1) ? 0 : 1;
+          }
+          put(kind, i, rot);
+          out[kind] = [i % size, Math.floor(i / size)];
+        }
+        return out;
+      });
+      console.log(`  postawione: ${JSON.stringify(r)}`);
+      await waitIdle(page);
+      const keys = await thingKeys(page);
+      const brak = Object.keys(r).filter((k) => !keys.some((key) => key.includes(`"kind":"${k}"`)));
+      if (brak.length) throw new Error(`nie narysowano: ${brak.join(', ')}`);
+      // panel budowy zasłania prawą stronę ujęć
+      if (await page.evaluate(() => window.zm!.buildPanel().open)) await page.keyboard.press('b');
+      const ujecie = async (nazwa: string, x: number, y: number, zoom: number) => {
+        await page.evaluate(([x, y, zoom]) => window.zm!.setCam(x, y, zoom), [x, y, zoom]);
+        await waitIdle(page);
+        await page.screenshot({ path: path.join(OUT, `badania-budowle-${nazwa}.png`) });
+      };
+      await ujecie('mieszkanie', r.pracownia[0] + 1, r.pracownia[1] + 1, 2);
+      await ujecie('koza', r.koza_beczka[0] + 0.5, r.koza_beczka[1] + 0.5, 3);
+      await ujecie('lazienka', r.pieczarkarnia[0] + 0.5, r.pieczarkarnia[1] + 0.5, 3);
+      await ujecie('klatka', r.kociol[0] + 1, r.kociol[1] + 0.5, 2.4);
+      await ujecie('szklarnia', r.szklarnia[0] + 1.5, r.szklarnia[1] + 1, 2.4);
+      await ujecie('wieza', r.wieza[0] + 1, r.wieza[1] + 0.5, 2);
+      await ujecie('barykada', r.barykada[0] + 0.5, r.barykada[1] + 0.5, 3);
+      // zrzut końcowy: podwórko między szklarnią, wieżą i barykadą
+      const sr = [r.szklarnia, r.wieza, r.barykada];
+      await page.evaluate(
+        ([x, y]) => window.zm!.setCam(x, y, 1.3),
+        [sr.reduce((a, q) => a + q[0], 0) / 3 + 1, sr.reduce((a, q) => a + q[1], 0) / 3 + 1],
+      );
+      await waitIdle(page);
     },
   },
   // tryb stawiania myszą: duch za kursorem (zielony, gdzie wolno, czerwony z powodem), R obraca, prawy klik

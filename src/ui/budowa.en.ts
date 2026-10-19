@@ -8,6 +8,8 @@ export const placeEn = (place: BuildPlace, e: WordsEn): string =>
   ({
     pokoj: `in a room of ${e.lokal.w}`,
     kuchnia: `in the kitchen of ${e.lokal.w}`,
+    lazienka: `in the bathroom of ${e.lokal.w}`,
+    klatka: 'in the HQ stairwell (in a house, the hallway)',
     podworko: 'in the yard, inside the fence',
     obwod: 'in place of a stretch of fence',
   })[place];

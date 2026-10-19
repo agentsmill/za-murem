@@ -13,8 +13,10 @@ import {
   BUILD_CATS,
   BUILDS,
   type BuildCat,
+  type BuildDef,
   type BuildKind,
   type BuildPlace,
+  boilerRooms,
   canPlace,
   effectOf,
   footprint,
@@ -85,11 +87,14 @@ export const placeText = (place: BuildPlace, w: Words = wordsOf(BLOK)): string =
   ({
     pokoj: `w pokoju ${w.lokal.d}`,
     kuchnia: `w kuchni ${w.lokal.d}`,
+    lazienka: `w łazience ${w.lokal.d}`,
+    klatka: 'na klatce siedziby (w domu w przedpokoju)',
     podworko: 'na podwórku za siatką',
     obwod: 'w miejscu odcinka siatki',
   })[place];
-/** to samo w bieżącym języku */
-const placeL = (place: BuildPlace, w: Words, e: WordsEn): string => L(placeText(place, w), placeEn(place, e));
+/** miejsce budowli do menu po polsku i po angielsku: miejsce z BuildDef, a koza z beczki dodatkowo „przy oknie” */
+const placeDefPl = (d: BuildDef, w: Words): string => placeText(d.place, w) + (d.przyOknie ? ', przy oknie' : '');
+const placeDefEn = (d: BuildDef, e: WordsEn): string => placeEn(d.place, e) + (d.przyOknie ? ', by a window' : '');
 
 /** nazwa budowli w bieżącym języku (menu, pasek trybu stawiania, duch planu) */
 export const buildName = (kind: BuildKind): string => L(BUILDS[kind].name, BUILDS_EN[kind].name);
@@ -103,15 +108,22 @@ export function okTilesOf(anchors: readonly number[], kind: BuildKind, rot: Rot,
 }
 
 /** Kafelki, od których (jako lewego górnego) budowla może stanąć według canPlace symulacji, do podświetlenia
-    w trybie stawiania. Pytam tylko o pomieszczenia naszych mieszkań, podwórko albo siatkę, a nie o całą mapę:
-    lewy górny kafelek leży zawsze w tym samym miejscu co cała budowla. */
+    w trybie stawiania. Pytam tylko o pomieszczenia naszych mieszkań, klatkę siedziby (kocioł), podwórko albo siatkę,
+    a nie o całą mapę: lewy górny kafelek leży zawsze w tym samym miejscu co cała budowla. */
 export function allowedAnchors(st: SimState, w: World, kind: BuildKind, rot: Rot): number[] {
   const place = BUILDS[kind].place;
   const inside = w.interior;
   let cand: number[];
   if (place === 'podworko') cand = w.fence.yard;
   else if (place === 'obwod') cand = w.fence.tiles;
-  else {
+  else if (place === 'klatka') {
+    // klatka siedziby (w domu przedpokój naszego mieszkania), jak w canPlace
+    const { rooms } = boilerRooms(st, inside, w.size);
+    cand = [];
+    inside.room.forEach((r, i) => {
+      if (r >= 0 && rooms.has(r)) cand.push(i);
+    });
+  } else {
     const ours = ourApts(st);
     cand = [];
     inside.room.forEach((r, i) => {
@@ -132,6 +144,12 @@ const BUILD_ACC: Record<BuildKind, string> = {
   ogrodek: 'ogródek',
   zasieki: 'zasieki',
   pracownia: 'pracownię',
+  koza_beczka: 'kozę z beczki',
+  kociol: 'kocioł',
+  pieczarkarnia: 'pieczarkarnię',
+  szklarnia: 'szklarnię',
+  barykada: 'barykadę',
+  wieza: 'wieżę',
 };
 
 /** Polecenia przy planie budowy albo gotowej budowli pod kafelkiem, do menu pod prawym przyciskiem (przed
@@ -300,8 +318,8 @@ export function buildMenu(
           why = locked;
         } else if (!room(kind))
           why = L(
-            `Nie ma gdzie postawić: brak wolnego miejsca ${placeText(d.place, words)}.`,
-            `Nowhere to put it: no free space ${placeEn(d.place, en)}.`,
+            `Nie ma gdzie postawić: brak wolnego miejsca ${placeDefPl(d, words)}.`,
+            `Nowhere to put it: no free space ${placeDefEn(d, en)}.`,
           );
         else if (short.length) {
           const list = short.map(([m, n]) => `${matName(m)} ${n}`).join(', ');
@@ -315,7 +333,7 @@ export function buildMenu(
           cost: costText(d.cost),
           time: workText(d.work),
           effect: L(effectOf(kind, words), effectEnOf(kind, en)),
-          place: placeL(d.place, words, en),
+          place: L(placeDefPl(d, words), placeDefEn(d, en)),
           ok: !why,
           why,
           locked,

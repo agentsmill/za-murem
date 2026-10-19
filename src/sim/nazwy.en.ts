@@ -50,6 +50,12 @@ export const BUILD_EN: Readonly<Record<BuildKind, string>> = {
   ogrodek: 'vegetable patch',
   zasieki: 'barricade',
   pracownia: 'research room',
+  koza_beczka: 'barrel stove',
+  kociol: 'boiler',
+  pieczarkarnia: 'mushroom farm',
+  szklarnia: 'greenhouse',
+  barykada: 'wreck wall',
+  wieza: 'tower',
 };
 
 /** materiały, jak MAT_ACC w mieszkania.ts */

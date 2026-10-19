@@ -42,6 +42,37 @@ export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: s
     the: 'the research room',
     effect: 'A desk with a lamp and a bookshelf: two people at a time research new technologies here.',
   },
+  koza_beczka: {
+    name: 'Barrel stove',
+    the: 'the barrel stove',
+    effect:
+      'Heats a room and burns wood like the kitchen stove. The flue goes out through the window, so it stands right by one.',
+  },
+  kociol: {
+    name: 'Boiler',
+    the: 'the boiler',
+    effect: 'Heats all your flats at once, but burns a lot of wood.',
+  },
+  pieczarkarnia: {
+    name: 'Mushroom farm',
+    the: 'the mushroom farm',
+    effect: 'A smaller yield than a vegetable patch, but steady all year round.',
+  },
+  szklarnia: {
+    name: 'Greenhouse',
+    the: 'the greenhouse',
+    effect: 'Like a vegetable patch, but in winter it yields as it does in autumn.',
+  },
+  barykada: {
+    name: 'Wreck wall',
+    the: 'the wreck wall',
+    effect: 'Built from wrecks, sturdier than the barricade, and it closes a hole. Costs mostly scrap.',
+  },
+  wieza: {
+    name: 'Tower',
+    the: 'the tower',
+    effect: 'A guard on the tower sees the whole yard. You can have one.',
+  },
 };
 
 /** zdanie o działaniu budowli po angielsku według miejsca, jak effectOf w budowle.ts */

@@ -120,8 +120,8 @@ export const BASE: Record<FurnitureKind, readonly [number, number]> = {
  *   blacie stołu (rysowany na wysokości TABLE_TOP, bez cienia na podłodze);
  * - wrak: maluch 3×2 albo polonez 4×2 przy rot 0 i 2 (1 i 3 odwrotnie), przodem na wschód przy
  *   rot 0, na południe przy 1, na zachód przy 2, na północ przy 3;
- * - budowle M2 (budowle.ts): warsztat, kuchnia_spoleczna, magazyn, lozka_pietrowe, ogrodek, zasieki, pracownia (do czasu
- *   własnego rysunku jak zasieki);
+ * - budowle M2 (budowle.ts): warsztat, kuchnia_spoleczna, magazyn, lozka_pietrowe, ogrodek, zasieki, pracownia i budowle
+ *   z technologii (koza_beczka, kociol, pieczarkarnia, szklarnia, barykada, wieza), każda z własnym rysunkiem;
  * - smieci: sterta śmieci z pustego mieszkania w trzech wielkościach;
  * - meble z broken: zepsute (pociemniałe, popękane, drzazgi wokół); z burnt: okopcone (prawie czarne
  *   od sadzy, kuchenka na kafelku uszkodzenia piec);
@@ -179,7 +179,13 @@ export function footprint(spec: ThingSpec): { w: number; h: number } {
     case 'lozka_pietrowe':
     case 'ogrodek':
     case 'zasieki':
-    case 'pracownia': {
+    case 'pracownia':
+    case 'koza_beczka':
+    case 'kociol':
+    case 'pieczarkarnia':
+    case 'szklarnia':
+    case 'barykada':
+    case 'wieza': {
       const [a, b] = BUILD_BASE[spec.kind];
       return spec.rot & 1 ? { w: b, h: a } : { w: a, h: b };
     }

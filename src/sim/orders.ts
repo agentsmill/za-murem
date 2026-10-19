@@ -96,6 +96,12 @@ const BUILD_ACC: Record<BuildKind, string> = {
   ogrodek: 'ogródek',
   zasieki: 'zasieki',
   pracownia: 'pracownię',
+  koza_beczka: 'kozę z beczki',
+  kociol: 'kocioł',
+  pieczarkarnia: 'pieczarkarnię',
+  szklarnia: 'szklarnię',
+  barykada: 'barykadę',
+  wieza: 'wieżę',
 };
 
 export interface MenuItem {
