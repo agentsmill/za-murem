@@ -156,9 +156,9 @@ export interface GovInput {
   /** wiedza osady w dziedzinach, ta sama co na tablicy badań (najlepsza osoba zarządu albo lokatora siedziby na
       miejscu plus najwyżej 2 książki); bez pola EventHost.know liczy po staremu z `people` */
   know?: Partial<Record<TechDom, number>>;
-  /** czy stoi wieża z rusztowań (karta nocy dostaje wtedy „Wartę na wieży”, klucz `warta:wieza`); src/sim/gov.ts
-      wypełnia je tylko przy stojącej wieży */
-  wieza?: boolean;
+  /** ile osób mieści wieża z rusztowań (kafelki jej obrysu: 2×2 to 4); karta nocy dostaje wtedy „Wartę na wieży”, klucz
+      `warta:wieza`, dla najwyżej tylu osób. src/sim/gov.ts wypełnia je tylko przy stojącej wieży */
+  wieza?: number;
   /** ile palenisk (koza zarządu, kozy z beczek, kocioł liczony jako kilka) pali drewno nocą; bez pola jedno */
   paleniska?: number;
 }
@@ -295,9 +295,10 @@ export interface NightCard {
   forecast: Tx;
   /** miejsca do pilnowania: brama i dziury, od najsłabszego */
   posts: { key: string; name: Tx; weak: number }[];
-  /** stoi wieża: każdy ma opcję `warta:wieza`, a okno karty dopisuje ją do wykazu posterunków (to nie miejsce napadu,
+  /** stoi wieża: każdy ma opcję `warta:wieza`, ale na wieży może być najwyżej tyle osób, ile jest miejsc (to pole;
+      pełna wieża blokuje opcję pozostałym), a okno karty dopisuje ją do wykazu posterunków (to nie miejsce napadu,
       więc nie ma jej w `posts`); bez wieży pola brak */
-  wieza?: boolean;
+  wieza?: number;
   /** spodziewane straty, jeśli wejdą (do porównania z wartą) */
   loss: { wood: number; supplies: number };
   /** tryb zombie: ilu szwendaczy przyjdzie w stadzie, słowo do tego i wytrzymałość siatki 0–1 */

@@ -3,7 +3,8 @@
    a wieża to posterunek „Warta na wieży” (warta:wieza) na karcie nocy. Wartownik z wieży dokłada do obrony każdego
    innego posterunku połowę swojej wartości warty (nie stałe 0,5), nocą stoi na kafelku wieży, bez zarządu płoszy
    z zasięgiem lampy ×1,5, a w trybie zombie strzela bronią dystansową z zasięgiem ×1,5. Wieża nie jest celem napadu:
-   postsOf jej nie zna. Przymorze z dema (blok). */
+   postsOf jej nie zna. Na wieży staje najwyżej tyle osób, ile ma kafelków (karta nocy, lista wyboru, propozycja), a
+   wzmocnienie siatki deskami nie dotyka barykady. Przymorze z dema (blok). */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,9 +21,11 @@ import {
   nightAdvice,
   nightTick,
   postsOf,
+  setAssign,
   WIEZA,
   WIEZA_KEY,
   watchersOf,
+  wiezaPelna,
 } from '../../src/gov/noc.ts';
 import type { GovInput } from '../../src/gov/typy.ts';
 import { emptyEffects, round1 } from '../../src/gov/wspolne.ts';
@@ -30,7 +33,7 @@ import { newGov } from '../../src/gov/zarzad.ts';
 import { type PawnLike, WIEZA_POST as POSE_WIEZA_POST, poseOf } from '../../src/render/poses.ts';
 import { canPlace, footprint } from '../../src/sim/budowle.ts';
 import { govInput } from '../../src/sim/gov.ts';
-import { jobText } from '../../src/sim/orders.ts';
+import { commandsAt, jobText } from '../../src/sim/orders.ts';
 import {
   BARYKADA_HP,
   createSim,
@@ -211,7 +214,7 @@ describe('posterunek wieży na karcie nocy', () => {
   it('klucz warta:wieza ma każda osoba, gdy wieża stoi, bez wieży nikt', () => {
     expect(WIEZA).toBe('wieza');
     expect(WIEZA_KEY).toBe('warta:wieza');
-    const z = makeCard(newGov(1), wejscie({ wieza: true })).card;
+    const z = makeCard(newGov(1), wejscie({ wieza: 4 })).card;
     for (const p of z.people) {
       const o = p.options.find((x) => x.key === WIEZA_KEY)!;
       expect(o, p.name).toBeTruthy();
@@ -221,18 +224,18 @@ describe('posterunek wieży na karcie nocy', () => {
     const bez = makeCard(newGov(1), wejscie()).card;
     for (const p of bez.people) expect(p.options.some((x) => x.key === WIEZA_KEY)).toBe(false);
     expect(bez.wieza).toBeUndefined();
-    expect(z.wieza).toBe(true);
+    expect(z.wieza).toBe(4);
   });
 
   it('wieża nie jest celem napadu: postsOf jej nie zna, a karta nie dopisuje jej do miejsc do pilnowania', () => {
-    const i = wejscie({ wieza: true });
+    const i = wejscie({ wieza: 4 });
     expect(postsOf(i).map((p) => p.key)).not.toContain(WIEZA);
     expect(postsOf(i, true).map((p) => p.key)).not.toContain(WIEZA);
     expect(makeCard(newGov(1), i).card.posts.map((p) => p.key)).not.toContain(WIEZA);
   });
 
   it('warta na wieży liczy się jako warta przy siatce (odstrasza), a zarząd sam nikogo tam nie wysyła', () => {
-    const i = wejscie({ wieza: true });
+    const i = wejscie({ wieza: 4 });
     expect(isFenceGuard(WIEZA_KEY)).toBe(true);
     const { card, assign } = makeCard(newGov(1), i);
     expect(Object.values(assign)).not.toContain(WIEZA_KEY);
@@ -242,7 +245,7 @@ describe('posterunek wieży na karcie nocy', () => {
 
   it('opcja dokłada tyle obrony, ile wartownik daje każdemu innemu posterunkowi (połowa jego wartości)', () => {
     const st = newGov(1);
-    const i = wejscie({ wieza: true });
+    const i = wejscie({ wieza: 4 });
     const { card } = makeCard(st, i);
     const p = i.people[0];
     const o = card.people.find((c) => c.id === p.id)!.options.find((x) => x.key === WIEZA_KEY)!;
@@ -252,7 +255,7 @@ describe('posterunek wieży na karcie nocy', () => {
 
   it('karta w interfejsie pokazuje wieżę w wykazie posterunków i w liście wyboru; bez wieży jej nie ma', () => {
     const st = newGov(1);
-    const i = wejscie({ wieza: true });
+    const i = wejscie({ wieza: 4 });
     const { card, assign } = makeCard(st, i);
     const odds = { chance: card.chance, now: card.chance, watchers: 0 };
     const html = nightSheet(card, assign, odds).body;
@@ -273,7 +276,7 @@ describe('posterunek wieży na karcie nocy', () => {
 
 describe('obrona z wieży', () => {
   const st = newGov(1);
-  const i = wejscie({ wieza: true });
+  const i = wejscie({ wieza: 4 });
   // odważny, bez umiejętności, wypoczęty: wartość warty równo 3,0 (2,5 × 1,2)
   const p = { ...i.people[0], traits: ['odwazny'], skills: {}, arm: 'brak' as const };
   const gv = guardValue(st, i, p, 'brama');
@@ -307,7 +310,7 @@ describe('wartownik na wieży w symulacji', () => {
     const { st } = gra();
     expect(govInput(st, w, 0).wieza).toBeUndefined();
     wieza(st);
-    expect(govInput(st, w, 0).wieza).toBe(true);
+    expect(govInput(st, w, 0).wieza).toBe(4);
   });
 
   it('wieża w planie jeszcze nie jest posterunkiem, polecenie bez wieży nic nie robi', () => {
@@ -461,7 +464,7 @@ describe('tryb zombie: zasięg strzału z wieży', () => {
 
   it('karta nocy: z dzidą „Na wieży trzeba broni dystansowej.”, z kuszą nie', () => {
     const st = newGov(3, 'zombie');
-    const i = wejscie({ wieza: true });
+    const i = wejscie({ wieza: 4 });
     const dzida = { ...i.people[0], arm: 'dzida' as const, weapon: 'dzida' };
     const kusza = { ...i.people[1], arm: 'palna' as const, weapon: 'kusza' };
     const gol = { ...i.people[2], arm: 'brak' as const, weapon: null };
@@ -478,7 +481,7 @@ describe('tryb zombie: zasięg strzału z wieży', () => {
   });
 
   it('w zwykłej grze nota o broni dystansowej się nie pojawia', () => {
-    const i = wejscie({ wieza: true });
+    const i = wejscie({ wieza: 4 });
     const dzida = { ...i.people[0], arm: 'dzida' as const, weapon: 'dzida' };
     const { card } = makeCard(newGov(1), { ...i, people: [dzida, ...i.people.slice(1)] });
     const o = card.people[0].options.find((x) => x.key === WIEZA_KEY)!;
@@ -488,7 +491,7 @@ describe('tryb zombie: zasięg strzału z wieży', () => {
 
 describe('zbieg z obwodem i widokiem', () => {
   it('rada w trybie zombie nie liczy wartownika z wieży bez broni dystansowej jako warty przy siatce', () => {
-    const i = wejscie({ wieza: true });
+    const i = wejscie({ wieza: 4 });
     const dzida = { ...i.people[0], arm: 'dzida' as const, weapon: 'dzida' };
     const kusza = { ...i.people[0], arm: 'palna' as const, weapon: 'kusza' };
     const { card } = makeCard(newGov(3, 'zombie'), { ...i, people: [dzida, ...i.people.slice(1)] });
@@ -526,7 +529,7 @@ describe('rozstrzygnięcie napadu z wartą na wieży', () => {
     const gov = newGov(1);
     const atr = new Atrapa(1);
     atr.tick = 5 * TPH;
-    const i20: GovInput = { ...atr.input(), wieza: true };
+    const i20: GovInput = { ...atr.input(), wieza: 4 };
     const odwazni = i20.people.map((p) => ({ ...p, traits: ['odwazny'], skills: {}, arm: 'brak' as const }));
     const wej = { ...i20, people: odwazni };
     const { card, assign } = makeCard(gov, wej);
@@ -551,7 +554,7 @@ describe('rozstrzygnięcie napadu z wartą na wieży', () => {
     const rano = new Atrapa(1);
     rano.tick = (24 + 5 - 15) * TPH;
     const fx = emptyEffects();
-    nightTick(gov, { ...rano.input(), wieza: true, people: odwazni }, fx);
+    nightTick(gov, { ...rano.input(), wieza: 4, people: odwazni }, fx);
     return fx.raidResult!.defense;
   }
 
@@ -568,5 +571,205 @@ describe('rozstrzygnięcie napadu z wartą na wieży', () => {
     // odważny wypoczęty ma 3,0: z wieży 1,5, przy bramie całe 3,0
     expect(round1(zWiezy - nikt)).toBe(1.5);
     expect(round1(zBramy - nikt)).toBe(3);
+  });
+});
+
+describe('wieża ma tyle miejsc, ile kafelków obrysu', () => {
+  it('wieża 2×2 mieści cztery osoby: odczyt mówi o czterech miejscach i tyle osób staje na niej w symulacji', () => {
+    const st = createSim(w, seed, { core: 6 });
+    st.techDone = ['t_wieza'];
+    const sim = new Sim(w, st);
+    wieza(st);
+    expect(govInput(st, w, 0).wieza).toBe(4);
+    const core = st.pawns.filter((p) => p.kind === 'core');
+    expect(core).toHaveLength(6);
+    sim.push({ t: 'guard', ids: core.map((p) => p.id), post: WIEZA });
+    const stoi = () => core.filter((p) => p.job?.t === 'guard' && p.job.target === WIEZA_POST && p.job.phase === 1);
+    for (let k = 0; k < 4 * 800 && stoi().length < 4; k++) sim.step();
+    expect(stoi()).toHaveLength(4);
+    for (let k = 0; k < 800; k++) sim.step();
+    expect(stoi()).toHaveLength(4);
+    expect(new Set(stoi().map((p) => p.job!.tile)).size).toBe(4);
+    // piąta i szósta osoba nie dostają posterunku wieży
+    expect(core.filter((p) => p.job?.target === WIEZA_POST)).toHaveLength(4);
+  });
+
+  /** sześć osób z atrapy i wieża o czterech miejscach; noc z kartą w stanie zarządu, jak o 20:00 */
+  function noc() {
+    const base = wejscie({ wieza: 4 });
+    const dodatkowe = [4, 5].map((k) => ({
+      ...base.people[0],
+      pawn: k,
+      id: `s${k + 10}`,
+      name: `Osoba ${k}`,
+      first: `Osoba${k}`,
+    }));
+    const i: GovInput = { ...base, people: [...base.people, ...dodatkowe] };
+    const gov = newGov(1);
+    const { card, assign } = makeCard(gov, i);
+    gov.night = {
+      day: 1,
+      card,
+      assign,
+      confirmed: false,
+      raid: null,
+      exp: [],
+      lines: [],
+      hurt: [],
+      t0: 50,
+      a0: 20,
+      returned: [],
+      loot: { wood: 0, supplies: 0, scrap: 0, parts: 0, meds: 0 },
+      slept: [],
+    };
+    return { gov, i, card, ids: i.people.map((p) => p.id) };
+  }
+
+  it('karta niesie liczbę miejsc wieży, a bez wieży nie ma pola', () => {
+    const { card } = noc();
+    expect(card.wieza).toBe(4);
+    expect(card.people).toHaveLength(6);
+  });
+
+  it('czterech może iść na wieżę, piąty już nie: setAssign odmawia, a przydział zostaje', () => {
+    const { gov, ids } = noc();
+    for (const id of ids.slice(0, 4)) expect(setAssign(gov, id, WIEZA_KEY), id).toBe(true);
+    expect(setAssign(gov, ids[4], WIEZA_KEY)).toBe(false);
+    expect(setAssign(gov, ids[5], WIEZA_KEY)).toBe(false);
+    expect(gov.night!.assign[ids[4]]).not.toBe(WIEZA_KEY);
+    expect(Object.values(gov.night!.assign).filter((k) => k === WIEZA_KEY)).toHaveLength(4);
+  });
+
+  it('kto stoi na wieży, może swój wybór potwierdzić, a po zejściu jednego miejsce zajmuje następny', () => {
+    const { gov, ids } = noc();
+    for (const id of ids.slice(0, 4)) setAssign(gov, id, WIEZA_KEY);
+    expect(setAssign(gov, ids[0], WIEZA_KEY)).toBe(true);
+    expect(setAssign(gov, ids[4], WIEZA_KEY)).toBe(false);
+    expect(setAssign(gov, ids[0], 'sen')).toBe(true);
+    expect(setAssign(gov, ids[4], WIEZA_KEY)).toBe(true);
+    expect(Object.values(gov.night!.assign).filter((k) => k === WIEZA_KEY)).toHaveLength(4);
+    // inne posterunki i sen nie mają takiego limitu
+    expect(setAssign(gov, ids[5], 'warta:brama')).toBe(true);
+  });
+
+  it('wiezaPelna: pełna dla każdego poza tymi, którzy na niej stoją; bez wieży nigdy', () => {
+    const { card, ids } = noc();
+    const naWiezy = Object.fromEntries(ids.slice(0, 4).map((id) => [id, WIEZA_KEY]));
+    expect(wiezaPelna(card, {}, ids[4])).toBe(false);
+    expect(wiezaPelna(card, Object.fromEntries(ids.slice(0, 3).map((id) => [id, WIEZA_KEY])), ids[4])).toBe(false);
+    expect(wiezaPelna(card, naWiezy, ids[4])).toBe(true);
+    expect(wiezaPelna(card, naWiezy, ids[0])).toBe(false);
+    expect(wiezaPelna({ ...card, wieza: undefined }, naWiezy, ids[4])).toBe(false);
+  });
+
+  it('propozycja zarządu nie wysyła na wieżę więcej osób, niż jest miejsc, nawet gdy stoi tam więcej', () => {
+    const { i, ids } = noc();
+    const stoja = { ...i, guards: ids.map((id) => ({ id, post: WIEZA })) };
+    const { assign } = makeCard(newGov(1), stoja);
+    expect(Object.values(assign).filter((k) => k === WIEZA_KEY)).toHaveLength(4);
+  });
+
+  it('okno karty: piąta osoba ma opcję wieży wyszarzoną z dopiskiem, czterej na wieży swoją aktywną', () => {
+    const { card, ids } = noc();
+    const assign = Object.fromEntries(card.people.map((p) => [p.id, 'sen']));
+    const odds = { chance: card.chance, now: card.chance, watchers: 0 };
+    const opcja = (html: string, id: string) => {
+      const sel = html.split(`data-id="${id}"`)[1].split('</select>')[0];
+      return sel.match(/<option value="warta:wieza"[^>]*>[^<]*<\/option>/)![0];
+    };
+    // wieża wolna: nikt nie ma jej wyszarzonej
+    const wolna = nightSheet(card, assign, odds).body;
+    for (const id of ids) expect(opcja(wolna, id)).not.toContain('disabled');
+    // cztery osoby na wieży: reszta ma ją wyszarzoną, ci na niej nie
+    for (const id of ids.slice(0, 4)) assign[id] = WIEZA_KEY;
+    const pelna = nightSheet(card, assign, odds).body;
+    for (const id of ids.slice(0, 4)) expect(opcja(pelna, id), id).not.toContain('disabled');
+    for (const id of ids.slice(4)) {
+      expect(opcja(pelna, id), id).toContain('disabled');
+      expect(opcja(pelna, id), id).toContain('wieża pełna');
+    }
+    ustawJezyk('en');
+    expect(opcja(nightSheet(card, assign, odds).body, ids[4])).toContain('tower full');
+  });
+});
+
+describe('wzmacnianie siatki a barykada', () => {
+  /** barykada postawiona na kafelku siatki i zbita naporem do 60, plus sterta desek: wzmocnienie byłoby możliwe */
+  function uszkodzona() {
+    const { st, sim } = gra();
+    const [b] = odcinki(st, 'barykada', 1);
+    postaw(st, sim, 'barykada', b);
+    sim.damageFence(b, 100);
+    const k = w.fence.tiles.indexOf(b);
+    expect(st.fence!.hp[k]).toBe(60);
+    sterta(st, 'deski', w.fence.yard.filter((i) => !w.blocked[i])[8], 10);
+    const core = st.pawns.find((p) => p.kind === 'core')!;
+    return { st, sim, b, k, core };
+  }
+
+  it('menu kafelka z uszkodzoną barykadą nie ma „Wzmocnić”, a zwykłego uszkodzonego kafelka ma', () => {
+    const { st, b, core } = uszkodzona();
+    const brace = (tile: number) => commandsAt(st, w, [core.id], tile).some((m) => m.cmd.t === 'brace');
+    expect(brace(b)).toBe(false);
+    // kontrola: ten sam materiał i uszkodzony zwykły kafelek siatki dostają „Wzmocnić”
+    const [zwykly] = odcinki(st, 'zasieki', 2).filter((t) => t !== b);
+    st.fence!.hp[w.fence.tiles.indexOf(zwykly)] = 60;
+    expect(brace(zwykly)).toBe(true);
+    const m = commandsAt(st, w, [core.id], zwykly).find((x) => x.cmd.t === 'brace')!;
+    expect(m.label).toBe('Wzmocnić siatkę');
+  });
+
+  it('polecenie brace na barykadzie nic nie robi: wytrzymałość i praca zostają, sterta nie jest zajęta', () => {
+    const { st, sim, b, k, core } = uszkodzona();
+    // samo przyjęcie rozkazu odmawia od razu (nie bierze sterty ani nie rusza w drogę)
+    (sim as unknown as { orderBrace(p: Pawn[], tile: number): void }).orderBrace([core], b);
+    expect(core.job).toBeNull();
+    expect(st.things.every((t) => t.by !== core.id)).toBe(true);
+    sim.push({ t: 'brace', ids: [core.id], tile: b });
+    for (let n = 0; n < 6 * 800; n++) sim.step();
+    expect(st.fence!.hp[k]).toBe(60);
+    expect(core.job?.t).not.toBe('brace');
+  });
+
+  it('wzmacnianie w toku kończy się, gdy na kafelku stanie barykada, i nie rusza jej wytrzymałości', () => {
+    const { st, sim } = gra();
+    const [t] = odcinki(st, 'barykada', 1);
+    const k = w.fence.tiles.indexOf(t);
+    st.fence!.hp[k] = 60;
+    sterta(st, 'deski', w.fence.yard.filter((i) => !w.blocked[i])[8], 10);
+    const core = st.pawns.find((p) => p.kind === 'core')!;
+    sim.push({ t: 'brace', ids: [core.id], tile: t });
+    sim.step();
+    expect(core.job?.t).toBe('brace');
+    // barykada staje na kafelku w trakcie (z wytrzymałością 60 po naporze)
+    const f = footprint('barykada', 0);
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'barykada',
+      x: t % size,
+      y: Math.floor(t / size),
+      w: f.w,
+      h: f.h,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    for (let n = 0; n < 6 * 800; n++) sim.step();
+    expect(st.fence!.hp[k]).toBe(60);
+    expect(core.job?.t).not.toBe('brace');
+  });
+
+  it('zwykłe wzmocnienie dalej działa: uszkodzony kafelek bez barykady wraca najwyżej do 100', () => {
+    const { st, sim } = gra();
+    const [t] = odcinki(st, 'zasieki', 1);
+    const k = w.fence.tiles.indexOf(t);
+    st.fence!.hp[k] = 60;
+    sterta(st, 'deski', w.fence.yard.filter((i) => !w.blocked[i])[8], 10);
+    const core = st.pawns.find((p) => p.kind === 'core')!;
+    sim.push({ t: 'brace', ids: [core.id], tile: t });
+    for (let n = 0; n < 6 * 800 && st.fence!.hp[k] === 60; n++) sim.step();
+    expect(st.fence!.hp[k]).toBe(100);
   });
 });

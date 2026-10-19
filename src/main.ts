@@ -16,7 +16,7 @@ import type { Person } from './content/people.ts';
 import { jezyk, L, poZmianieJezyka, type Tx, tr, tx } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
-import { nightAdvice } from './gov/noc.ts';
+import { nightAdvice, WIEZA_KEY } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
 import {
   ackReport,
@@ -106,6 +106,7 @@ import {
   nightSheet,
   oddsHtml,
   optionDetail,
+  optionText,
   reportSheet,
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
@@ -788,6 +789,17 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
       const o = card.people.find((c) => c.id === id)?.options.find((q) => q.key === arg);
       const line = modal.find(`.opt[data-for="${CSS.escape(id)}"]`);
       if (line && o) line.textContent = optionDetail(o);
+      // wieża ma ograniczoną liczbę miejsc: lista każdej osoby zgadza się z tym, kto już na niej stoi
+      for (const c of card.people) {
+        const opt = modal.find<HTMLOptionElement>(
+          `select.pick[data-id="${CSS.escape(c.id)}"] option[value="${WIEZA_KEY}"]`,
+        );
+        const wieza = c.options.find((q) => q.key === WIEZA_KEY);
+        if (!opt || !wieza) continue;
+        const t = optionText(card, assign(), c.id, wieza, wieza.key === c.proposal);
+        opt.textContent = t.text;
+        opt.disabled = t.disabled;
+      }
     } else if (act === 'night-reset') {
       for (const c of card.people) setNight(g, c.id, c.proposal);
       showNight(p);

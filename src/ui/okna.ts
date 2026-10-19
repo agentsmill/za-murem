@@ -4,13 +4,23 @@
    Napisy okien są w bieżącym języku (L() przy rysowaniu, Tx w tablicach). Teksty zarządu (Tx albo polski napis ze
    starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. Słowa
    wspólnoty (w domu komitet ulicy, w bloku zarząd spółdzielni) biorą ze słownika miejsca po polsku i po angielsku
-   (words, e); bez niego mówią jak w bloku. */
+   (words, e); bez niego mówią jak w bloku. Lista wyboru karty nocy (optionText) wyszarza „Wartę na wieży”, gdy wszystkie
+   miejsca wieży zajmują inni (jak setAssign w src/gov/noc.ts). */
 
 import { ENDINGS_EN, PATHS_EN } from '../content/data.en.ts';
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
-import { deterrence, KOZA_KEY, untilWord, WIEZA, WOOD_PER_HOUR, watchersOf } from '../gov/noc.ts';
+import {
+  deterrence,
+  KOZA_KEY,
+  untilWord,
+  WIEZA,
+  WIEZA_KEY,
+  WOOD_PER_HOUR,
+  watchersOf,
+  wiezaPelna,
+} from '../gov/noc.ts';
 import type {
   GovInput,
   GovState,
@@ -89,6 +99,23 @@ export function optionShort(o: NightOption, proposal: boolean): string {
   if (!o.ok) s += ` (${or(o.why, L('nie da rady', 'not possible'))})`;
   else if (proposal) s += L(' · propozycja', ' · suggested');
   return s;
+}
+
+/** Tekst i dostępność opcji `o` na liście wyboru osoby `id` przy obecnym przydziale: jak `optionShort`, a pełna wieża
+    (wszystkie jej miejsca zajęte przez innych) jest wyszarzona z dopiskiem. Woła ją okno karty przy rysowaniu i przy
+    każdej zmianie przydziału, żeby lista każdej osoby zgadzała się z `setAssign`. */
+export function optionText(
+  card: NightCard,
+  assign: Record<string, string>,
+  id: string,
+  o: NightOption,
+  proposal: boolean,
+): { text: string; disabled: boolean } {
+  const full = o.key === WIEZA_KEY && wiezaPelna(card, assign, id);
+  return {
+    text: full ? `${optionShort(o, proposal)} (${L('wieża pełna', 'tower full')})` : optionShort(o, proposal),
+    disabled: !o.ok || full,
+  };
 }
 
 /** co znaczy wybór: zysk, ryzyko, obrona i uwaga z karty */
@@ -215,10 +242,10 @@ export function nightSheet(
     .map((p) => {
       const sel = assign[p.id] ?? p.proposal;
       const opts = p.options
-        .map(
-          (o) =>
-            `<option value="${esc(o.key)}"${o.key === sel ? ' selected' : ''}${o.ok ? '' : ' disabled'}>${esc(optionShort(o, o.key === p.proposal))}</option>`,
-        )
+        .map((o) => {
+          const t = optionText(card, assign, p.id, o, o.key === p.proposal);
+          return `<option value="${esc(o.key)}"${o.key === sel ? ' selected' : ''}${t.disabled ? ' disabled' : ''}>${esc(t.text)}</option>`;
+        })
         .join('');
       const cur = p.options.find((o) => o.key === sel) ?? p.options[0];
       return `<li class="mate"><div class="who"><b class="who-n">${esc(p.name)}</b><small class="who-s">${L(

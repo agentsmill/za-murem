@@ -279,11 +279,17 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       quick: false,
     });
   }
-  // siatka: wzmocnić uszkodzony kafelek (2 deski albo 2 złomu ze stert), w trybie zombie pilnować przy siatce
+  // siatka: wzmocnić uszkodzony kafelek (2 deski albo 2 złomu ze stert; nie pod barykadą, która ma 160, a wzmocnienie
+  // sięga 100), w trybie zombie pilnować przy siatce
   const k = w.fence?.tiles.indexOf(tile) ?? -1;
   if (st.fence && k >= 0 && !st.fence.holes.some((h) => h.tiles.includes(tile))) {
     const mat = (kind: string) => st.things.reduce((a, t) => a + (t.kind === kind ? t.n : 0), 0);
-    if (st.fence.hp[k] > 0 && st.fence.hp[k] < 100 && (mat('deski') >= BRACE_COST || mat('zlom') >= BRACE_COST))
+    if (
+      st.fence.hp[k] > 0 &&
+      st.fence.hp[k] < 100 &&
+      !thingAt(st, w, tile, 'barykada') &&
+      (mat('deski') >= BRACE_COST || mat('zlom') >= BRACE_COST)
+    )
       out.push({
         cmd: { t: 'brace', ids: core, tile },
         label: L('Wzmocnić siatkę', 'Shore up the fence'),

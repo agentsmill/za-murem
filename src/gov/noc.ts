@@ -2,9 +2,10 @@
    przy dziurze w siatce) i kto idzie na wyprawę (blisko albo daleko); szansę napadu, spodziewane straty
    i łup widać przed decyzją. Dyżur przy kozie (warta:koza) wybiera gracz: zarząd tylko radzi, ile drewna
    starczy (z kozami z beczek i kotłem na każde palenisko, `GovInput.paleniska`), a rano raport mówi, czy w kuchni
-   było ciepło. Gdy stoi wieża (`GovInput.wieza`), karta ma jeszcze „Wartę na wieży” (warta:wieza): to przydział, nie
-   miejsce napadu (postsOf jej nie zna), a wartownik z wieży widzi całe podwórko i dokłada do obrony każdego posterunku
-   połowę swojej wartości warty. Przy zatwierdzeniu losuje się, czy szabrownicy
+   było ciepło. Gdy stoi wieża (`GovInput.wieza`, liczba jej miejsc), karta ma jeszcze „Wartę na wieży” (warta:wieza): to
+   przydział, nie miejsce napadu (postsOf jej nie zna), a wartownik z wieży widzi całe podwórko i dokłada do obrony
+   każdego posterunku połowę swojej wartości warty. Na wieży stoi najwyżej tyle osób, ile ma miejsc (propose i setAssign
+   pilnują tego, wiezaPelna mówi, kiedy jest pełna). Przy zatwierdzeniu losuje się, czy szabrownicy
    przyjdą, gdzie i o której (23:00–4:00). O tej godzinie obronę liczy się z tego, co jest: kto nie zasnął,
    światło, pies, brama. Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość
    z ziarna gry. Teksty karty i raportu to Tx (polski i angielski z tych samych danych, bez dodatkowych losowań). */
@@ -403,7 +404,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
     wood,
   };
   if (zombie) card.horde = { size, word, fence };
-  if (i.wieza) card.wieza = true;
+  if (i.wieza) card.wieza = i.wieza;
   const assign = propose(i, card, st.lastGuards);
   for (const cp of card.people) cp.proposal = assign[cp.id];
   card.advice = nightAdvice(i, card, assign);
@@ -446,6 +447,8 @@ function propose(i: GovInput, card: NightCard, lastGuards: string[]): Record<str
   for (const s of standingGuards(i)) {
     const key = `warta:${s.post}`;
     if (card.people.find((c) => c.id === s.id)?.options.some((o) => o.key === key && o.ok)) {
+      // wieża ma tyle miejsc, ile kafelków: nadmiarowi zostają bez przydziału (stoją przy siatce, nie na wieży)
+      if (key === WIEZA_KEY && wiezaPelna(card, a, s.id)) continue;
       a[s.id] = key;
       standing.add(s.id);
     }
@@ -567,12 +570,22 @@ function kozaAdvice(i: GovInput, card: NightCard, assign: Record<string, string>
   return tx(`${now.pl} Niech ktoś czuwa przy kozie: ${wn.pl}`, `${now.en} Have someone keep the stove going: ${wn.en}`);
 }
 
-/** zmiana przydziału na karcie; false, gdy takiej opcji nie ma albo nie wolno */
+/** czy na wieży nie ma już miejsca dla osoby `id`: stoi na niej (w przydziale) tyle innych osób, ile ma miejsc
+    (`card.wieza`, kafelki jej obrysu). Kto już tam jest, może swój wybór podtrzymać; bez wieży nigdy. */
+export function wiezaPelna(card: NightCard, assign: Record<string, string>, id: string): boolean {
+  if (!card.wieza) return false;
+  let inni = 0;
+  for (const [kto, key] of Object.entries(assign)) if (kto !== id && key === WIEZA_KEY) inni++;
+  return inni >= card.wieza;
+}
+
+/** zmiana przydziału na karcie; false, gdy takiej opcji nie ma albo nie wolno (też: wieża pełna) */
 export function setAssign(st: GovState, id: string, key: string): boolean {
   const n = st.night;
   if (!n || n.confirmed) return false;
   const opt = n.card.people.find((p) => p.id === id)?.options.find((o) => o.key === key);
   if (!opt?.ok) return false;
+  if (key === WIEZA_KEY && wiezaPelna(n.card, n.assign, id)) return false;
   n.assign[id] = key;
   return true;
 }

@@ -5,7 +5,13 @@
    `mieszkancy` (krok 5, src/sim/lokatorzy.ts) zarząd i mieszkańcy siedziby mają osoby z generatora mieszkańców;
    bez niej stan jest taki jak przed tą opcją. Premie ery 1–2 (t_okna, t_konserwy, t_zielarstwo, t_spawanie, t_ambu) i
    paleniska poza kozą zarządu (koza z beczki, kocioł; waga drewna w PALENISKA) działają tylko po zbadaniu albo
-   postawieniu, więc gra bez badań ma te same liczby co przed nimi (src/sim/badania.ts). */
+   postawieniu, więc gra bez badań ma te same liczby co przed nimi (src/sim/badania.ts).
+   Badania: pracownia (stół z dwoma miejscami), polecenia `research` (wybór badania), `study` (zarząd do stołu) i `siec`
+   (włączenie sieci po technologii końcowej), praca `research` z postępem w `researchTick`, stan `research` i `books`
+   (pola powstają przy pierwszym użyciu) oraz plan dnia lokatorów z wiedzą (labOpen). Barykada z wraków stoi na odcinku
+   siatki jak zasieki, ale ma BARYKADA_HP (160, zasieki 100), a wzmocnienie siatki deskami (`brace`, do 100) jej nie
+   dotyka. Posterunek na wieży (WIEZA_POST, klucz 'wieza'): wartownik stoi na wolnym kafelku obrysu wieży (najwyżej tylu
+   osób, ile kafelków), jego lampa płoszy dalej (WIEZA_ZASIEG), a broń dystansowa sięga z wieży dalej. */
 
 import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -3715,7 +3721,7 @@ export class Sim {
       case 'brace': {
         const f = st.fence;
         const k = this.fenceIndex.get(j.target);
-        if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100) return false;
+        if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100 || this.barykadaNa(j.target)) return false;
         const size = this.w.size;
         if (j.phase === 0) {
           const heap = this.thing(j.from);
@@ -7234,11 +7240,18 @@ export class Sim {
     heap.by = p.id;
   }
 
-  /** wzmocnienie kafelka siatki: po materiał na stertę (2 sztuki jednego rodzaju), potem do siatki od podwórka */
+  /** czy na kafelku siatki stoi barykada (ma 160 wytrzymałości, więc wzmocnienie deskami, które sięga 100, jej nie dotyka) */
+  private barykadaNa(tile: number): boolean {
+    const size = this.w.size;
+    return this.st.things.some((t) => t.kind === 'barykada' && t.y * size + t.x === tile);
+  }
+
+  /** wzmocnienie kafelka siatki: po materiał na stertę (2 sztuki jednego rodzaju), potem do siatki od podwórka; nie pod
+      barykadą */
   private orderBrace(pawns: Pawn[], tile: number): void {
     const f = this.st.fence;
     const k = this.fenceIndex.get(tile);
-    if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100) return;
+    if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100 || this.barykadaNa(tile)) return;
     if (f.holes.some((h) => h.tiles.includes(tile))) return;
     const p = pawns[0];
     const heap = this.heapFor(p, '', BRACE_COST);
