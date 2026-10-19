@@ -5,8 +5,12 @@
    - `widokPracy(snap, …)` składa `WidokPracy` z odczytu (`SimSnapshot`): wiersz na osobę zarządu po numerze osoby,
      progi i widoczne rodzaje. `nalozPolecenia` nakłada na widok polecenia ustawień, które czekają w kolejności
      symulacji (gra na pauzie nie wykonuje kroku, a panel ma się zmienić od razu).
-   - `pracaPanelHtml(v, en)` robi treść: „Trzymać w zapasie” (drewno, deski, części, w trybie zombie dzidy: minus,
-     liczba, plus po 5) i tabelę, w której wiersz to osoba, a kolumna to rodzaj pracy w kolejności `RODZAJE`.
+   - `pracaPanelHtml(v, en)` robi treść: lead (na komputerze z regułą klawiatury: Tab i strzałki wybierają komórkę,
+     cyfry 0–4 ustawiają priorytet, spacja i Enter zmieniają o jeden, a po kliknięciu myszą spacja i 1–4 znów
+     sterują grą; panelpracy.ts to pilnuje), „Trzymać w zapasie” (drewno, deski, części, w trybie zombie dzidy: minus,
+     liczba, plus po 5) i tabelę, w której wiersz to osoba, a kolumna to rodzaj pracy w kolejności `RODZAJE`. W trybie
+     zombie nad tabelą stoi stała linia `.pr-uwaga` o szwendaczach za siatką (podpowiedź z `say()` chowa się na telefonie
+     pod panelem, a ostrzeżenie ma być widać tam, gdzie jest przełącznik „za siatkę”).
      Znaczniki, na których stoją zrzuty i delegacja: komórka `data-prio="<osoba>:<rodzaj>"` z cyfrą 1–4 albo pustą
      treścią (nie robi), `data-prog="<co>:<+n|-n>"`, `data-zasiatke="<osoba>"` i nagłówek `data-kol="<rodzaj>"`.
    - Kolumna `badania` jest tylko wtedy, gdy rodzaj jest w `widoczne` (gałąź z badaniami); dzidy tylko w trybie zombie.
@@ -15,15 +19,13 @@
 
 import { zawodEn } from '../content/data.en.ts';
 import { type Tx, tx } from '../core/jezyk.ts';
-import { PROGI_DOMYSLNE, type Priorytet, type Progi, RODZAJE, type RodzajPracy } from '../sim/praca.ts';
+import { PROG_MAX, PROGI_DOMYSLNE, type Priorytet, type Progi, RODZAJE, type RodzajPracy } from '../sim/praca.ts';
 import type { Command } from '../sim/sim.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import { esc } from './tekst.ts';
 
 /** o ile zmienia próg jeden klik plusa albo minusa */
 export const KROK_PROGU = 5;
-/** największy próg (tak samo przycina symulacja) */
-export const PROG_MAX = 999;
 
 /** wiersz tabeli: jedna osoba zarządu */
 export interface WierszPracy {
@@ -123,6 +125,18 @@ const PROGI: Record<keyof Progi, { nazwa: Tx; opis: Tx }> = {
 };
 
 const wJezyku = (t: Tx, en: boolean): string => (en ? t.en : t.pl);
+
+/** dymek przełącznika „za siatkę”: ten sam w panelu Pracy i na karcie osoby */
+export const ZA_SIATKE_OPIS: Tx = tx(
+  'Może wychodzić za siatkę bez polecenia (za dnia)',
+  'Can go outside the fence without orders (by day)',
+);
+/** ostrzeżenie trybu zombie przy wychodzeniu za siatkę: w panelu Pracy (stała linia) i w podpowiedzi po włączeniu
+    przełącznika (karta osoby ma krótszą wersję) */
+export const ZA_SIATKE_ZOMBIE: Tx = tx(
+  'Za siatką są szwendacze: kto tam wyjdzie sam, ryzykuje ugryzienie.',
+  'There are shamblers outside the fence: anyone who goes out on their own risks a bite.',
+);
 
 /** krótka nazwa rodzaju pracy (nagłówek kolumny, karta osoby) */
 export const nazwaRodzaju = (r: RodzajPracy, en: boolean): string => wJezyku(NAZWY[r], en);
@@ -226,6 +240,16 @@ export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
       } A star marks the fixed job set on the person’s card.`,
     ),
   )}</p>`;
+  // reguła klawiatury (na telefonie nie ma czego opisywać): fokus po kliknięciu zdejmuje panelpracy.ts, więc spacja
+  // i 1–4 po myszy sterują grą, a na komórce, do której doszło się Tabem albo strzałkami, cyfry ustawiają priorytet
+  const klawiatura = v.touch
+    ? ''
+    : `<p class="lead pr-klaw">${esc(
+        t(
+          'Z klawiatury: Tab i strzałki wybierają komórkę, cyfry 0–4 ustawiają jej priorytet, spacja i Enter zmieniają o jeden. Po kliknięciu myszą spacja i 1–4 znów sterują grą.',
+          'From the keyboard: Tab and the arrows pick a cell, digits 0–4 set its priority, Space and Enter step it by one. After a mouse click, Space and 1–4 control the game again.',
+        ),
+      )}</p>`;
 
   const klucze: (keyof Progi)[] = ['drewno', 'deski', 'czesci'];
   if (v.zombie) klucze.push('dzidy');
@@ -249,7 +273,7 @@ export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
   )}</h3><div class="pr-progi">${klucze.map(prog).join('')}</div></section>`;
 
   if (!v.wiersze.length)
-    return `${lead}${zapas}<p class="build-empty">${esc(t('Nikogo w zarządzie.', 'Nobody on the board.'))}</p>`;
+    return `${lead}${klawiatura}${zapas}<p class="build-empty">${esc(t('Nikogo w zarządzie.', 'Nobody on the board.'))}</p>`;
 
   const naglowek = (r: RodzajPracy): string => {
     const wybrana = v.kol === r;
@@ -267,10 +291,7 @@ export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
     )}">${p ? p : ''}</button></td>`;
   };
   const wiersz = (w: WierszPracy): string => {
-    const tytulOut = t(
-      'Może wychodzić za siatkę bez polecenia (za dnia)',
-      'Can go outside the fence without orders (by day)',
-    );
+    const tytulOut = wJezyku(ZA_SIATKE_OPIS, en);
     return `<tr data-osoba="${w.osoba}"><th scope="row" class="pr-os"><span class="pr-im">${esc(w.imie)}</span><small class="pr-zaw">${esc(
       en ? zawodEn(w.zawod) : w.zawod,
     )}</small><button type="button" class="pr-out" data-zasiatke="${w.osoba}" aria-pressed="${w.zaSiatke}" aria-label="${esc(
@@ -289,10 +310,15 @@ export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
         ),
       )}</p>`;
 
+  // tryb zombie: ostrzeżenie stoi nad tabelą przez cały czas, nie tylko po włączeniu przełącznika (telefon nie ma tam podpowiedzi)
+  const uwaga = v.zombie
+    ? `<p class="pr-uwaga" role="note"><span class="pr-uwaga-i" aria-hidden="true">!</span>${esc(wJezyku(ZA_SIATKE_ZOMBIE, en))}</p>`
+    : '';
+
   const kolumny = `<colgroup><col class="pr-col-os">${v.widoczne.map(() => '<col class="pr-col-k">').join('')}</colgroup>`;
   const tabela = `<table class="pr-tab">${kolumny}<thead><tr><th scope="col" class="pr-os"><span class="sr">${esc(
     t('Osoba', 'Person'),
   )}</span></th>${v.widoczne.map(naglowek).join('')}</tr></thead><tbody>${v.wiersze.map(wiersz).join('')}</tbody></table>`;
 
-  return `${lead}${zapas}${info}${tabela}`;
+  return `${lead}${klawiatura}${zapas}${info}${uwaga}${tabela}`;
 }

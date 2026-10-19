@@ -137,6 +137,8 @@ export function zaSiatke(st: SimState, osoba: number): boolean {
 }
 
 export const PROGI_DOMYSLNE: Progi = { drewno: 30, deski: 20, czesci: 10, dzidy: 0 };
+/** największy próg zapasu: tak przycina polecenie `prog` (`ustawPrace`), a panel Pracy nie pozwala wyjść ponad to */
+export const PROG_MAX = 999;
 /** w trybie zombie zarząd trzyma zapas dzid, bo noc przychodzi ze stadem */
 export const DZIDY_ZOMBIE = 12;
 

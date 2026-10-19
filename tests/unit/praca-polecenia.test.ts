@@ -10,6 +10,7 @@ import { mulberry } from '../../src/core/rng.ts';
 import {
   domyslnyPriorytet,
   kolejnoscOsoby,
+  PROG_MAX,
   PROGI_DOMYSLNE,
   priorytet,
   progi,
@@ -158,7 +159,8 @@ describe('prog', () => {
       sim.step();
     };
     set(1500);
-    expect(progi(sim.st).drewno).toBe(999);
+    expect(PROG_MAX).toBe(999);
+    expect(progi(sim.st).drewno).toBe(PROG_MAX);
     set(-5);
     expect(progi(sim.st).drewno).toBe(0);
     set(12.9);

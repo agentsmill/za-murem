@@ -4,15 +4,21 @@
    wtedy, gdy zmieni się widok (JSON widoku i język), deleguje kliknięcia i klawisze i daje #app klasę praca-open,
    po której CSS odsuwa przyciski zoomu i chowa minimapę.
    Obsługa: klik w komórkę przestawia priorytet 1 → 2 → 3 → 4 → pusto → 1, prawy przycisk (na telefonie długie
-   przytrzymanie) w drugą stronę, na komórce w fokusie cyfry 0–4 ustawiają priorytet wprost, strzałki chodzą po tabeli;
-   plus i minus przy progach zmieniają o 5; przycisk ze strzałką przez linię przełącza „za siatkę”; kliknięty
-   nagłówek kolumny pokazuje, ile zleceń czeka (drugi klik chowa). Polecenia wychodzą przez haki do main.ts
-   (`sim.push`), a widok z haka `widok` ma na sobie jeszcze czekające polecenia, więc zmiana jest widać od razu także
-   na pauzie. Bez PixiJS. */
+   przytrzymanie) w drugą stronę; plus i minus przy progach zmieniają o 5; przycisk ze strzałką przez linię przełącza
+   „za siatkę”; kliknięty nagłówek kolumny pokazuje, ile zleceń czeka (drugi klik chowa). Polecenia wychodzą przez haki
+   do main.ts (`sim.push`), a widok z haka `widok` ma na sobie jeszcze czekające polecenia, więc zmiana jest widać od
+   razu także na pauzie.
+
+   Fokus i klawisze gry. Mysz i dotyk nie zostawiają fokusu w panelu: `mousedown` na przycisku nie bierze go od strony,
+   a ten, który go miał, go traci, więc po kliknięciu spacja nadal pauzuje, a 1–4 ustawiają tempo (przycisk w fokusie
+   przejąłby spację jako klik, a komórka cyfry jako priorytet). Fokus jest tylko przy obsłudze z klawiatury (Tab,
+   strzałki): wtedy cyfry 0–4 na komórce ustawiają priorytet wprost, strzałki chodzą po tabeli, spacja i Enter
+   zmieniają o jeden, a przebudowa DOM oddaje fokus temu samemu elementowi. Tę regułę opisuje lead w praca.ts.
+   Bez PixiJS. */
 
 import { L } from '../core/jezyk.ts';
-import { type Priorytet, type Progi, RODZAJE, type RodzajPracy } from '../sim/praca.ts';
-import { KROK_PROGU, nastepnyPriorytet, PROG_MAX, pracaPanelHtml, type WidokPracy } from './praca.ts';
+import { PROG_MAX, type Priorytet, type Progi, RODZAJE, type RodzajPracy } from '../sim/praca.ts';
+import { KROK_PROGU, nastepnyPriorytet, pracaPanelHtml, type WidokPracy } from './praca.ts';
 import './praca.css';
 
 export interface PracaPanelHooks {
@@ -42,6 +48,9 @@ export class PracaPanel {
   private kol: RodzajPracy | null = null;
   private view: WidokPracy | null = null;
   private key = '';
+  /** ostatnia obsługa w panelu poszła z klawiatury (Tab, strzałki, cyfry): tylko wtedy fokus przeżywa przebudowę;
+      klik myszą albo stuknięcie zdejmują go i zerują flagę */
+  private klawiatura = false;
   private readonly el: HTMLElement;
   private readonly app: HTMLElement;
   private readonly hooks: PracaPanelHooks;
@@ -56,9 +65,15 @@ export class PracaPanel {
       '<header class="bp-head"><b class="bp-kicker"></b><button type="button" class="bp-x" data-act="praca-close">✕</button></header><div class="bp-body"></div>';
     this.kicker = el.querySelector<HTMLElement>('.bp-kicker')!;
     this.body = el.querySelector<HTMLElement>('.bp-body')!;
+    el.addEventListener('mousedown', (e) => {
+      // przycisk nie bierze fokusu od myszy (klik i tak dojdzie), a poprzedni fokus w panelu znika
+      if ((e.target as HTMLElement).closest('button')) e.preventDefault();
+      this.zdejmijFokus();
+    });
     el.addEventListener('click', (e) => this.click(e.target as HTMLElement, false));
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
+      this.zdejmijFokus();
       this.click(e.target as HTMLElement, true);
     });
     el.addEventListener('keydown', (e) => this.keys(e));
@@ -82,6 +97,7 @@ export class PracaPanel {
   hide(): void {
     this.el.hidden = true;
     this.app.classList.remove('praca-open');
+    this.klawiatura = false;
   }
 
   toggle(): void {
@@ -110,11 +126,19 @@ export class PracaPanel {
     this.render(v, en);
   }
 
-  /** przebudowuje DOM; fokus wraca na ten sam element (po atrybucie), a przewinięcie zostaje */
+  /** po obsłudze myszą albo dotykiem w panelu nie zostaje fokus (patrz nagłówek pliku) */
+  private zdejmijFokus(): void {
+    this.klawiatura = false;
+    const f = document.activeElement;
+    if (f instanceof HTMLElement && this.el.contains(f)) f.blur();
+  }
+
+  /** przebudowuje DOM; po obsłudze z klawiatury fokus wraca na ten sam element (po atrybucie), po myszy nie wraca
+      nigdzie; przewinięcie zostaje */
   private render(v: WidokPracy, en: boolean): void {
     let sel: string | undefined;
     const f = document.activeElement;
-    if (f instanceof HTMLElement && this.el.contains(f)) {
+    if (this.klawiatura && f instanceof HTMLElement && this.el.contains(f)) {
       for (const a of ['prio', 'prog', 'zasiatke', 'kol'] as const) {
         const val = f.dataset[a];
         if (val !== undefined) {
@@ -186,9 +210,11 @@ export class PracaPanel {
     this.refresh(true);
   }
 
-  /** klawisze w panelu: cyfry 0–4 na komórce ustawiają priorytet, strzałki chodzą po komórkach; obsłużone nie idą do gry
-      (cyfry zmieniałyby tempo, strzałki przesuwały mapę) */
+  /** klawisze w panelu (fokus jest tu tylko po obsłudze z klawiatury): cyfry 0–4 na komórce ustawiają priorytet,
+      strzałki chodzą po komórkach; obsłużone nie idą do gry (cyfry zmieniałyby tempo, strzałki przesuwały mapę).
+      Spacja i Enter na komórce to zwykły klik przycisku (main.ts zostawia je przyciskom), czyli o jeden dalej. */
   private keys(e: KeyboardEvent): void {
+    this.klawiatura = true;
     const t = e.target as HTMLElement;
     const cell = t.closest<HTMLElement>('[data-prio]');
     if (!cell) return;

@@ -311,7 +311,7 @@ it('budowa z bud 3 idzie 1,3 raza szybciej', ...)
   - `st.obcy.rozmowa?: { id: number; osoba: Person; cel: boolean; ugryziony: boolean; pytali?: true }` (ustawiane na końcu `talkWork`, jeden wędrowiec naraz) i `st.obcy.werbunek?: number` (licznik id `w…`).
   - Polecenia `| { t: 'zapros'; ids: number[]; target: number }`, `| { t: 'reka'; ids: number[]; target: number }`; praca `'zapros'` (`j.what` `'zapros'` albo `'reka'`, 2 minuty przy siatce jak `talk`, potem losowanie z `st.rng`).
   - Skutek: zarząd poniżej `ZARZAD_MAX` → wędrowiec staje się osobą zarządu w swoim miejscu i ze swoim wyglądem (`Person.id = 'w' + n`), wchodzi bramą, kronika i nastrój „Nowa osoba w zarządzie”; zarząd pełny i wolne łóżko mieszkańców → mieszkaniec z pracą `arrive` do mieszkania z wolnym łóżkiem; ugryziony bez pytania → `p.bite` od chwili przyjęcia; „reka” u ugryzionego → odchodzi, bez werbunku; porażka → idzie dalej.
-  - Menu (`commandsAt`): po rozmowie „Zaprosić do nas (N% szans)” albo „Zaprosić do nas jako mieszkańca (N%)”; bez miejsca wyszarzone z napisem „Nie ma wolnego łóżka”; w trybie zombie „Zapytać o rękę” przed zaproszeniem.
+  - Menu (`commandsAt`): po rozmowie „Zaprosić do nas (N% szans)” albo „Zaprosić do nas jako mieszkańca (N%)”; bez miejsca wyszarzone z napisem „Brak miejsca”; w trybie zombie „Zapytać o rękę” przed zaproszeniem.
 
 - [ ] **Step 1: Testy**
 

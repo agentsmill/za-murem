@@ -6,21 +6,23 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
-import { PROGI_DOMYSLNE, type Priorytet, RODZAJE, type RodzajPracy } from '../../src/sim/praca.ts';
+import { PROG_MAX, PROGI_DOMYSLNE, type Priorytet, progi, RODZAJE, type RodzajPracy } from '../../src/sim/praca.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { type SimPerson, snapshot } from '../../src/sim/snapshot.ts';
 import { personCard } from '../../src/ui/karta.ts';
+import { helpSheet } from '../../src/ui/okna.ts';
 import {
   KROK_PROGU,
   nalozPolecenia,
   nastepnyPriorytet,
   nazwaRodzaju,
   opisRodzaju,
-  PROG_MAX,
   pracaPanelHtml,
   type WidokPracy,
   type WierszPracy,
   widokPracy,
+  ZA_SIATKE_OPIS,
+  ZA_SIATKE_ZOMBIE,
 } from '../../src/ui/praca.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
@@ -449,5 +451,84 @@ describe('karta osoby: praca', () => {
     for (const job of ['sleep', 'eat', 'warm'] as const)
       expect(personCard(osoba({ sam: true, job, doing: 'Śpi.' }), 0), job).not.toContain('(sam');
     expect(personCard(osoba({ sam: true, job: 'chop', doing: 'Rąbie drzewo.' }), 0)).toContain('(sama)');
+  });
+});
+
+describe('panel Pracy: reguła klawiatury, ostrzeżenie zombie i pomoc', () => {
+  it('lead na komputerze mówi, kiedy spacja i cyfry sterują grą, a kiedy komórką; telefon tego nie ma', () => {
+    const pl = pracaPanelHtml(widok(), false);
+    expect(pl).toContain('class="lead pr-klaw"');
+    expect(pl).toMatch(/Z klawiatury: Tab i strzałki wybierają komórkę, cyfry 0–4 ustawiają jej priorytet/);
+    expect(pl).toMatch(/spacja i Enter zmieniają o jeden/);
+    expect(pl).toMatch(/Po kliknięciu myszą spacja i 1–4 znów sterują grą/);
+    const en = pracaPanelHtml(widok(), true);
+    expect(en).toMatch(/From the keyboard: Tab and the arrows pick a cell, digits 0–4 set its priority/);
+    expect(en).toMatch(/Space and Enter step it by one/);
+    expect(en).toMatch(/After a mouse click, Space and 1–4 control the game again/);
+    // telefon: nie ma klawiatury, więc reguły nie ma ani po polsku, ani po angielsku
+    for (const jezykEn of [false, true]) {
+      const telefon = pracaPanelHtml(widok({ touch: true }), jezykEn);
+      expect(telefon).not.toContain('pr-klaw');
+      expect(telefon).not.toMatch(/klawiatury|keyboard/);
+    }
+  });
+
+  it('tryb zombie: stała linia o szwendaczach nad tabelą, po polsku i po angielsku; poza zombie jej nie ma', () => {
+    const zwykly = pracaPanelHtml(widok(), false);
+    expect(zwykly).not.toContain('pr-uwaga');
+    expect(zwykly).not.toContain('szwendacz');
+    const pl = pracaPanelHtml(widok({ zombie: true }), false);
+    expect(pl.match(/class="pr-uwaga"/g)).toHaveLength(1);
+    expect(pl).toContain(ZA_SIATKE_ZOMBIE.pl);
+    // linia stoi nad tabelą (przy kolumnie przełączników), nie pod nią
+    expect(pl.indexOf('pr-uwaga')).toBeLessThan(pl.indexOf('<table'));
+    ustawJezyk('en');
+    const en = pracaPanelHtml(widok({ zombie: true }), true);
+    expect(en.match(/class="pr-uwaga"/g)).toHaveLength(1);
+    expect(en).toContain(ZA_SIATKE_ZOMBIE.en);
+    expect(polskieSlowa(en, ['Anna', 'Marek', 'Krysia'])).toEqual([]);
+    // telefon (bez klawiatury, bez podpowiedzi pod panelem) ma to samo ostrzeżenie
+    expect(pracaPanelHtml(widok({ zombie: true, touch: true }), false)).toContain(ZA_SIATKE_ZOMBIE.pl);
+  });
+
+  it('dymek przełącznika „za siatkę” jest jeden: ten sam w panelu i na karcie osoby', () => {
+    for (const en of [false, true]) {
+      ustawJezyk(en ? 'en' : 'pl');
+      const dymek = en ? ZA_SIATKE_OPIS.en : ZA_SIATKE_OPIS.pl;
+      expect(pracaPanelHtml(widok(), en)).toContain(`title="${dymek}"`);
+      expect(personCard(osoba(), 0, undefined, false, { widoczne: WIDOCZNE })).toContain(`title="${dymek}"`);
+    }
+  });
+
+  it('Pomoc wspomina panel Pracy i klawisz P po polsku i po angielsku, na telefonie bez klawisza', () => {
+    const pl = helpSheet(false).body;
+    expect(pl).toContain('<h3 class="help-h">Praca</h3>');
+    expect(pl).toMatch(/Przycisk Praca u góry albo klawisz P otwiera panel Pracy/);
+    expect(pl).toMatch(/cyfry 0–4 ustawiają jej priorytet/);
+    const telefon = helpSheet(true).body;
+    expect(telefon).toMatch(/Przycisk Praca u góry otwiera panel Pracy/);
+    expect(telefon).not.toMatch(/klawisz P/);
+    ustawJezyk('en');
+    const en = helpSheet(false).body;
+    expect(en).toContain('<h3 class="help-h">Work</h3>');
+    expect(en).toMatch(/The Work button at the top, or the P key, opens the Work panel/);
+    expect(polskieSlowa(en.replace(/<[^>]*>/g, ' '))).toEqual([]);
+    const enTelefon = helpSheet(true).body;
+    expect(enTelefon).toMatch(/The Work button at the top opens the Work panel/);
+    expect(enTelefon).not.toMatch(/the P key/);
+    expect(polskieSlowa(enTelefon.replace(/<[^>]*>/g, ' '))).toEqual([]);
+  });
+
+  it('jedno PROG_MAX w symulacji: panel i polecenie przycinają do tego samego', () => {
+    expect(PROG_MAX).toBe(999);
+    const w = demoWorld('lanciego');
+    const sim = new Sim(w, createSim(w, 5, { core: 4, mode: 'zwykly' }));
+    sim.push({ t: 'prog', ids: [], co: 'drewno', n: PROG_MAX + 500 });
+    sim.step();
+    expect(progi(sim.st).drewno).toBe(PROG_MAX);
+    const v = widokPracy(snapshot(sim.st, w), { kol: null, zlecen: 0, touch: false });
+    expect(v.progi.drewno).toBe(PROG_MAX);
+    // plus przy maksimum jest wyłączony w tym samym miejscu, w którym kończy się symulacja
+    expect(komorka(pracaPanelHtml(v, false), 'data-prog="drewno:+5"')?.attrs).toContain('disabled');
   });
 });

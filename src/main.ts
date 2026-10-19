@@ -137,7 +137,7 @@ import {
   przyjmijPietro,
   SelektorPieter,
 } from './ui/pietra.ts';
-import { nalozPolecenia, nalozPraceOsoby, widokPracy } from './ui/praca.ts';
+import { nalozPolecenia, nalozPraceOsoby, widokPracy, ZA_SIATKE_ZOMBIE } from './ui/praca.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
@@ -1325,17 +1325,41 @@ function frame(now: number, dtMs: number) {
 }
 
 let cardHtml = '';
+/** czyją kartę pokazuje `cardHtml` (język i pionek; pusty: bez klucza, karta zawsze przerysowywana w całości) */
+let cardKey = '';
 /** historia rozwinięta na karcie tej osoby (pionek); inna osoba na karcie to historia znowu w jednej linijce */
 let storyOf = -1;
-/** karta przerysowana tylko po zmianie treści, inaczej dymki z opisem cech nigdy się nie pokażą */
-function setCard(html: string) {
-  if (html === cardHtml) return;
-  // rozwinięta lista stałego zajęcia nie może znikać co 200 ms: karta przerysuje się, gdy lista straci fokus
+/** Karta przerysowana tylko po zmianie treści, inaczej dymki z opisem cech nigdy się nie pokażą. Lista stałego zajęcia
+    (`select` w bloku `.pk`) nie może znikać spod ręki, gdy jest w użyciu (otwarta, po Esc albo po Tabie): wtedy przy tej
+    samej osobie (`key`) przerysowuje się wszystko poza blokiem `.pk`, więc potrzeby i opis pracy dalej się odświeżają.
+    Blok dogania stan, gdy lista straci fokus (słuchacz `focusout` niżej). */
+function setCard(html: string, key = '') {
+  if (html === cardHtml && key === cardKey) return;
+  const card = $('card');
   const f = document.activeElement;
-  if (f instanceof HTMLSelectElement && $('card').contains(f)) return;
+  const pk = key && key === cardKey && f instanceof HTMLSelectElement && card.contains(f) ? f.closest('.pk') : null;
+  if (pk?.parentElement === card) {
+    const nowa = document.createElement('template');
+    nowa.innerHTML = html;
+    const pkNowy = [...nowa.content.children].find((c) => c.classList.contains('pk'));
+    if (pkNowy) {
+      while (card.firstChild !== pk) card.firstChild?.remove();
+      while (pk.nextSibling) pk.nextSibling.remove();
+      while (nowa.content.firstChild !== pkNowy) card.insertBefore(nowa.content.firstChild!, pk);
+      pkNowy.remove();
+      card.append(...nowa.content.childNodes);
+      cardHtml = html;
+      return;
+    }
+  }
+  card.innerHTML = html;
   cardHtml = html;
-  $('card').innerHTML = html;
+  cardKey = key;
 }
+// lista stałego zajęcia straciła fokus: blok `.pk` mógł zostać w tyle, więc następna klatka przerysowuje całą kartę
+$('card').addEventListener('focusout', (e) => {
+  if (e.target instanceof HTMLSelectElement) cardHtml = '';
+});
 
 /** ostatni odczyt symulacji z `hud` (panel Pracy bierze z niego widok, a po kliknięciu, gdy symulacja zdążyła zrobić
     krok, liczy nowy) */
@@ -1480,6 +1504,7 @@ function hud(now: number) {
         widoczne: snap.praca.widoczne,
         zombie: snap.mode === 'zombie',
       }),
+      `${jezyk()}:${sel[0].pawn}`,
     );
 }
 
@@ -1789,7 +1814,7 @@ $('card').addEventListener('click', (e) => {
     if (!snap || !kto) return;
     const on = !withPendingWork(kto, st.cmds).praca.zaSiatke;
     sim.push({ t: 'zasiatke', ids: [], osoba: p.person, on });
-    if (on && snap.mode === 'zombie') say(ZA_SIATKA_ZOMBIE(), 5000);
+    if (on && snap.mode === 'zombie') say(tr(ZA_SIATKE_ZOMBIE), 5000);
     hud(performance.now());
     pracaPanel.refresh();
   } else if (b.dataset.card === 'story') {
@@ -1837,7 +1862,8 @@ $('card').addEventListener('change', (e) => {
   if (sel.length !== 1) return;
   const rodzaj = RODZAJE.find((r) => r === s.value) ?? null;
   sim.push({ t: 'stale', ids: [], osoba: sel[0].person, rodzaj });
-  // lista traci fokus, żeby karta znowu się odświeżała, i od razu pokazuje wybór z czekającego polecenia
+  // lista traci fokus (słuchacz `focusout` przy setCard każe przerysować kartę w całości) i od razu pokazuje wybór
+  // z czekającego polecenia
   s.blur();
   hud(performance.now());
   pracaPanel.refresh();
@@ -2434,7 +2460,7 @@ const pracaPanel = new PracaPanel($('pracaPanel'), $('app'), {
   onProg: (co, n) => sim?.push({ t: 'prog', ids: [], co, n }),
   onZaSiatke: (osoba, on) => {
     sim?.push({ t: 'zasiatke', ids: [], osoba, on });
-    if (on && snapNow()?.mode === 'zombie') say(ZA_SIATKA_ZOMBIE(), 5000);
+    if (on && snapNow()?.mode === 'zombie') say(tr(ZA_SIATKE_ZOMBIE), 5000);
   },
   onClose: () => nextPrompt(),
 });
@@ -2447,13 +2473,6 @@ function openPraca() {
   }
   pracaPanel.toggle();
 }
-
-/** ostrzeżenie przy włączeniu „za siatkę” w trybie zombie (karta osoby ma krótszą wersję tego samego) */
-const ZA_SIATKA_ZOMBIE = (): string =>
-  L(
-    'Za siatką są szwendacze: kto tam wyjdzie sam, ryzykuje ugryzienie.',
-    'There are shamblers outside the fence: anyone who goes out on their own risks a bite.',
-  );
 
 /** okno mapy miasta: przycisk „Mapa miasta” i klawisz M. Gra stoi, póki okno jest otwarte; zamknięcie (przycisk, Esc,
     klik obok) wraca do gry albo do decyzji zarządu, która czeka */

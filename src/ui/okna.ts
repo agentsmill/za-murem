@@ -1,7 +1,8 @@
 /* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenie palenia mebli,
    menu (z linią o źródłach danych mieszkańców i przyciskiem ekranu dróg do zwycięstwa, który rysuje src/ui/zwyciestwo.ts),
-   jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
-   (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts.
+   jak grać (sterowanie, budowa, praca ludzi z panelem Pracy i klawiszem P, zarząd, tryb zombie) i koniec gry. Czyste
+   funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach (nagłówek, tytuł, treść, przyciski); przyciski
+   mają data-act i data-arg, które obsługuje main.ts.
    Napisy okien są w bieżącym języku (L() przy rysowaniu, Tx w tablicach). Teksty zarządu (Tx albo polski napis ze
    starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. Słowa
    wspólnoty (w domu komitet ulicy, w bloku zarząd spółdzielni) biorą ze słownika miejsca po polsku i po angielsku
@@ -508,6 +509,44 @@ function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
     .join('')}</ul>`;
 }
 
+/** Pomoc o pracy ludzi (docs/superpowers/specs/2026-10-19-praca-ludzi-design.md): panel Pracy (przycisk u góry i klawisz
+    P), priorytety rodzajów pracy, zapasy, reguła klawiatury w tabeli (ta sama, co w leadzie panelu, patrz
+    src/ui/panelpracy.ts) i ustawienia na karcie osoby. Bez słów miejsca: tekst jest taki sam w bloku i w domu. */
+function workHelp(touch: boolean): string {
+  const stock = tx(
+    'Plus i minus pod „Trzymać w zapasie” ustawiają, ile drewna, desek i części ma leżeć w zapasie; 0 wyłącza.',
+    'The plus and minus buttons under “Keep in stock” set how much wood, planks and parts to keep; 0 turns it off.',
+  );
+  const card = tx(
+    'Na karcie osoby można dać jej stałe zajęcie (zlecenia tego rodzaju bierze przed wszystkimi) i pozwolić jej wychodzić za siatkę za dnia bez polecenia.',
+    'On a person’s card you can give them a fixed job (they take jobs of that kind before anything else) and let them go outside the fence by day without orders.',
+  );
+  const items = touch
+    ? [
+        tx(
+          'Przycisk Praca u góry otwiera panel Pracy: tabela, kto czym zajmuje się sam, gdy nikt nie wydaje rozkazów. 1 to najpierw, 4 na końcu, puste: nie robi. Stuknij komórkę, żeby zmienić priorytet, przytrzymaj, żeby cofnąć.',
+          'The Work button at the top opens the Work panel: a table of what each person does on their own when nobody gives an order. 1 goes first, 4 last, blank: won’t do it. Tap a cell to change it, press and hold to go back.',
+        ),
+        stock,
+        card,
+      ]
+    : [
+        tx(
+          'Przycisk Praca u góry albo klawisz P otwiera panel Pracy: tabela, kto czym zajmuje się sam, gdy nikt nie wydaje rozkazów. 1 to najpierw, 4 na końcu, puste: nie robi. Klik w komórkę zmienia priorytet, prawy przycisk w drugą stronę.',
+          'The Work button at the top, or the P key, opens the Work panel: a table of what each person does on their own when nobody gives an order. 1 goes first, 4 last, blank: won’t do it. Click a cell to change it, right-click to go back.',
+        ),
+        stock,
+        tx(
+          'Z klawiatury: Tab i strzałki wybierają komórkę, cyfry 0–4 ustawiają jej priorytet. Po kliknięciu myszą spacja i 1–4 znów sterują grą.',
+          'From the keyboard: Tab and the arrows pick a cell, digits 0–4 set its priority. After a mouse click, Space and 1–4 control the game again.',
+        ),
+        card,
+      ];
+  return `<h3 class="help-h">${L('Praca', 'Work')}</h3><ul class="help">${items
+    .map((t) => `<li>${esc(tr(t))}</li>`)
+    .join('')}</ul>`;
+}
+
 /** potwierdzenie polecenia, którego nie da się cofnąć (rozbiórka, zajęcie mieszkania; palenie ma własne okno); `note`
     zastępuje zdanie „Tego nie da się cofnąć.” tam, gdzie byłoby nieprawdziwe (nowa gra po zwycięstwie zostawia zapis) */
 export function confirmSheet(label: string, note?: string): Sheet {
@@ -541,7 +580,7 @@ export function helpSheet(
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: L('Jak grać', 'How to play'),
-    body: `<h3 class="help-h">${L('Sterowanie', 'Controls')}</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words, e)}<h3 class="help-h">${L(words.Zarzad, e.Zarzad)}</h3><ul class="help">${L(
+    body: `<h3 class="help-h">${L('Sterowanie', 'Controls')}</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words, e)}${workHelp(touch)}<h3 class="help-h">${L(words.Zarzad, e.Zarzad)}</h3><ul class="help">${L(
       `<li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>Każdy z ${z} ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li>`,
       `<li>You are ${e.pelny} in 2051. Four people, a potbelly stove in the kitchen and a fence full of holes around the yard.</li><li>Watch everyone’s needs on their card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 ${e.krotko} meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the ${e.mieszkancy}’ trust and anger. At zero trust people leave; at full anger ${e.walne} votes ${e.krotko} out.</li><li>Everyone on ${e.krotko} carries one weapon, and spares are kept in the storeroom (person card: “Swap”). Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li>`,
     )}</ul>${zombie ? tr(ZOMBIE_HELP) : ''}<h3 class="help-h">${L('Na razie', 'For now')}</h3><p>${L(

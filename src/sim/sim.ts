@@ -136,6 +136,7 @@ import {
   domyslnyPriorytet,
   kolejnoscOsoby,
   NOWE,
+  PROG_MAX,
   PROGI_DOMYSLNE,
   type PracaStan,
   type Priorytet,
@@ -1767,7 +1768,7 @@ function wZarzadzie(st: SimState, osoba: number): boolean {
 function ustawPrace(st: SimState, c: PolecenieUstawien): void {
   if (c.t === 'prog') {
     if (!Object.hasOwn(PROGI_DOMYSLNE, c.co) || typeof c.n !== 'number' || Number.isNaN(c.n)) return;
-    const n = Math.min(999, Math.max(0, Math.trunc(c.n)));
+    const n = Math.min(PROG_MAX, Math.max(0, Math.trunc(c.n)));
     const nad = ((st.praca ??= {}).progi ??= {});
     // domyślny próg bez zmian gracza (dzidy zależą od trybu)
     if (n === progi({ ...st, praca: undefined })[c.co]) delete nad[c.co];

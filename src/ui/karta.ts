@@ -22,14 +22,14 @@ import { DOM, type Dom, TRAITS } from '../content/data.ts';
 import { nazwaCechy } from '../content/druzyna.ts';
 import { nastrojEn } from '../content/nastroje.en.ts';
 import { wiek } from '../content/people.ts';
-import { jezyk, L } from '../core/jezyk.ts';
+import { jezyk, L, tr } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import { AMMO_EN, WEAPONS, WEAPONS_EN } from '../sim/bron.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { NEED_LABELS, NEED_LABELS_EN, type Needs } from '../sim/needs.ts';
 import { RODZAJE, type RodzajPracy } from '../sim/praca.ts';
 import type { SimPerson } from '../sim/snapshot.ts';
-import { nazwaRodzaju } from './praca.ts';
+import { nazwaRodzaju, ZA_SIATKE_OPIS } from './praca.ts';
 import { esc, manyEn, signed } from './tekst.ts';
 
 export const NEED_ORDER: readonly (keyof Needs)[] = ['food', 'warm', 'rest', 'health', 'safe', 'mood'];
@@ -164,10 +164,7 @@ export function pracaKartaHtml(p: SimPerson, o: { widoczne?: readonly RodzajPrac
     'Osoba bierze zlecenia tego rodzaju przed wszystkimi innymi, także gdy w panelu Pracy ma tam puste',
     'This person takes jobs of this kind before anything else, even if the Work panel has it blank',
   );
-  const siatka = L(
-    'Może wychodzić za siatkę bez polecenia (za dnia)',
-    'Can go outside the fence without orders (by day)',
-  );
+  const siatka = tr(ZA_SIATKE_OPIS);
   const ostrzezenie = o.zombie
     ? `<p class="pk-warn">${L(
         'Za siatką są szwendacze: ryzyko ugryzienia.',

@@ -6078,8 +6078,8 @@ function tekstyPomoc(name: string, demo: string, dom: boolean): Shot {
       if (dom && word) throw new Error(`pomoc w domu ze słowem z bloku: ${word}`);
       if (!dom && !t.includes('Prowadzicie zarząd spółdzielni'))
         throw new Error('pomoc w bloku nie mówi o spółdzielni');
-      // na zrzucie część o zarządzie (w domu o komitecie) i „Na razie”
-      await page.evaluate(() => document.querySelectorAll('#sheet .help-h')[2]?.scrollIntoView({ block: 'start' }));
+      // na zrzucie część o zarządzie (w domu o komitecie) i „Na razie”: czwarta po Sterowaniu, Budowie i Pracy
+      await page.evaluate(() => document.querySelectorAll('#sheet .help-h')[3]?.scrollIntoView({ block: 'start' }));
     },
   };
 }
@@ -11747,6 +11747,99 @@ function pracaShots(): Shot[] {
     },
   };
 
+  /** Fokus i klawisze gry po obsłudze panelu myszą (spacja pauzuje, 1–4 ustawiają tempo, priorytet stoi) i z klawiatury
+      (Tab, strzałki: cyfry 0–4 ustawiają priorytet, spacja i Enter zmieniają o jeden). Gra idzie na 1×, żeby było
+      widać pauzę i tempo. */
+  const panelFokus: Shot = {
+    name: 'praca-panel-fokus',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1.3`);
+      await waitIdle(page);
+      await dopelnij(page, 4);
+      await otworz(page, false);
+      const tempo = () => page.evaluate(() => window.zm!.speed());
+      const wPanelu = () =>
+        page.evaluate(() => {
+          const f = document.activeElement;
+          return !!f && f !== document.body && !!f.closest('#pracaPanel');
+        });
+      const wartosc = (co: string) =>
+        page.evaluate((c) => document.querySelector(`#pracaPanel [data-wart="${c}"]`)?.textContent ?? 'brak', co);
+      if ((await tempo()) !== 1) throw new Error(`gra nie idzie na 1×: tempo ${await tempo()}`);
+
+      // lead mówi, jaka jest reguła
+      const lead = await page.evaluate(() => document.querySelector('#pracaPanel .pr-klaw')?.textContent ?? '');
+      console.log(`  lead klawiatury: ${lead}`);
+      if (!/Tab i strzałki/.test(lead) || !/spacja i 1–4 znów sterują grą/.test(lead))
+        throw new Error(`lead panelu nie opisuje reguły klawiatury: ${lead}`);
+
+      // klik myszą w komórkę: priorytet 1 → 2, a fokus nie zostaje w panelu
+      const przed = await cyfra(page, 0, 'ogien');
+      await page.click('#pracaPanel [data-prio="0:ogien"]');
+      const po = await cyfra(page, 0, 'ogien');
+      console.log(`  klik w ogień osoby 0: ${przed} → ${po}, fokus w panelu: ${await wPanelu()}`);
+      if (przed !== '1' || po !== '2') throw new Error(`klik nie przestawił priorytetu: ${przed} → ${po}`);
+      if (await wPanelu()) throw new Error('komórka zachowała fokus po kliknięciu myszą');
+      // spacja pauzuje grę, a priorytet nie rusza się o jeden (natywny klik przycisku)
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 0) throw new Error(`spacja po kliknięciu nie zapauzowała gry: tempo ${await tempo()}`);
+      if ((await cyfra(page, 0, 'ogien')) !== '2') throw new Error('spacja po kliknięciu zmieniła priorytet komórki');
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 1) throw new Error(`druga spacja nie wznowiła gry: tempo ${await tempo()}`);
+      // 2 ustawia tempo gry, a nie priorytet (komórka nie ma fokusu)
+      await page.keyboard.press('2');
+      if ((await tempo()) !== 2) throw new Error(`2 po kliknięciu nie ustawiło tempa: ${await tempo()}`);
+      if ((await cyfra(page, 0, 'ogien')) !== '2') throw new Error('2 po kliknięciu ustawiło priorytet komórki');
+      await page.keyboard.press('1');
+      if ((await tempo()) !== 1) throw new Error('1 po kliknięciu nie ustawiło tempa 1×');
+
+      // to samo po prawym przycisku i po innych przyciskach panelu: plus przy progu, przełącznik „za siatkę”, nagłówek
+      await page.click('#pracaPanel [data-prio="0:ogien"]', { button: 'right' });
+      if ((await cyfra(page, 0, 'ogien')) !== '1') throw new Error('prawy przycisk nie cofnął priorytetu z 2 do 1');
+      for (const [selektor, nazwa] of [
+        ['[data-prio="0:ogien"]', 'prawy przycisk w komórkę'],
+        ['[data-prog="drewno:+5"]', 'plus przy progu'],
+        ['[data-zasiatke="1"]', 'przełącznik za siatkę'],
+        ['[data-kol="drwal"]', 'nagłówek kolumny'],
+      ] as const) {
+        await page.click(`#pracaPanel ${selektor}`, selektor.startsWith('[data-prio') ? { button: 'right' } : {});
+        if (await wPanelu()) throw new Error(`${nazwa} zostawił fokus w panelu`);
+        await page.keyboard.press('Space');
+        if ((await tempo()) !== 0) throw new Error(`spacja po „${nazwa}” nie zapauzowała gry (tempo ${await tempo()})`);
+        await page.keyboard.press('Space');
+        if ((await tempo()) !== 1) throw new Error(`spacja po „${nazwa}” nie wznowiła gry (tempo ${await tempo()})`);
+      }
+      // plus przy progu poszedł raz (30 → 35), spacje go nie powtórzyły
+      if ((await wartosc('drewno')) !== '35') throw new Error(`próg drewna po spacjach: ${await wartosc('drewno')}`);
+
+      // z klawiatury (Tab i strzałki): fokus jest na komórce, cyfry 0–4 ustawiają priorytet, tempo gry stoi
+      await page.focus('#pracaPanel [data-prio="1:szaber"]');
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('ArrowLeft');
+      await page.keyboard.press('3');
+      if ((await cyfra(page, 1, 'szaber')) !== '3')
+        throw new Error('cyfra 3 na komórce z klawiatury nie ustawiła priorytetu');
+      if ((await tempo()) !== 1) throw new Error('cyfra z klawiatury w tabeli zmieniła tempo gry');
+      if (!(await wPanelu()))
+        throw new Error('po ustawieniu cyfrą fokus uciekł z komórki (przebudowa nie oddała fokusu)');
+      // Enter zmienia o jeden (3 → 4), tempo nadal stoi
+      await page.keyboard.press('Enter');
+      if ((await cyfra(page, 1, 'szaber')) !== '4') throw new Error('Enter na komórce nie zmienił priorytetu o jeden');
+      // myszą w inną komórkę: fokus znika, spacja znów pauzuje
+      await page.click('#pracaPanel [data-prio="2:ogien"]');
+      if (await wPanelu()) throw new Error('po kliknięciu myszą po obsłudze z klawiatury komórka dalej ma fokus');
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 0) throw new Error('spacja po przejściu z klawiatury na mysz nie zapauzowała gry');
+      await page.keyboard.press('Space');
+      await page.keyboard.press('4');
+      if ((await tempo()) !== 4) throw new Error(`4 po przejściu na mysz nie ustawiło tempa: ${await tempo()}`);
+      await page.keyboard.press('1');
+      console.log('  spacja i 1–4 po myszy sterują grą, z klawiatury (Tab, strzałki) cyfry ustawiają priorytet');
+      await page.waitForTimeout(150);
+    },
+  };
+
   /** panel Pracy na telefonie 390×844 z dwunastoma osobami: arkusz od dołu na całą szerokość, kolumny po 30 px (tu
       osiem, badań jeszcze nie ma), nagłówek przyklejony, przewijanie w pionie, bez przewijania w bok */
   const panelTelefon = (name: string, lang: 'pl' | 'en'): Shot => ({
@@ -11868,6 +11961,81 @@ function pracaShots(): Shot[] {
     },
   });
 
+  /** panel Pracy na telefonie w trybie zombie: ostrzeżenie o szwendaczach stoi w panelu (podpowiedź z `say()` chowa się pod
+      arkuszem), widać je bez przewijania i po włączeniu przełącznika „za siatkę”, a po stuknięciu nic nie nachodzi */
+  const panelTelefonZombie = (name: string, lang: 'pl' | 'en'): Shot => ({
+    name,
+    query: '',
+    w: 390,
+    h: 844,
+    lang,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&tryb=zombie`);
+      await waitIdle(page);
+      await dopelnij(page, 6);
+      await otworz(page, true);
+      await page.tap('#pracaPanel [data-zasiatke="1"]');
+      await page.waitForTimeout(200);
+      const g = await page.evaluate(() => {
+        const panel = document.getElementById('pracaPanel')!;
+        const body = panel.querySelector<HTMLElement>('.bp-body')!;
+        const uwaga = panel.querySelector<HTMLElement>('.pr-uwaga');
+        const hint = document.getElementById('hint')!;
+        const b = body.getBoundingClientRect();
+        const u = uwaga?.getBoundingClientRect();
+        const toggle = panel.querySelector('[data-zasiatke="1"]');
+        return {
+          tekst: uwaga?.textContent ?? '',
+          widac: !!u && u.width > 0 && u.top >= b.top - 1 && u.bottom <= b.bottom + 1,
+          hintUkryty: getComputedStyle(hint).display === 'none',
+          hintTekst: hint.textContent ?? '',
+          wlaczony: toggle?.getAttribute('aria-pressed'),
+          poziomo: document.documentElement.scrollWidth > innerWidth || body.scrollWidth > body.clientWidth + 1,
+        };
+      });
+      console.log(`  ostrzeżenie w panelu: ${JSON.stringify(g)}`);
+      if (g.wlaczony !== 'true') throw new Error('stuknięcie nie włączyło przełącznika za siatkę');
+      if (!g.hintUkryty) throw new Error('podpowiedź nie jest schowana pod arkuszem, scenariusz nic nie sprawdza');
+      const oczekiwane = lang === 'en' ? 'shamblers outside the fence' : 'szwendacze';
+      if (!g.tekst.toLowerCase().includes(oczekiwane)) throw new Error(`brak ostrzeżenia w panelu: „${g.tekst}”`);
+      if (!g.widac) throw new Error('ostrzeżenie jest poza widocznym polem panelu');
+      if (g.poziomo) throw new Error('arkusz przewija się w bok');
+      await page.waitForTimeout(150);
+    },
+  });
+
+  /** „Jak grać” z menu: część „Praca” mówi o panelu Pracy i klawiszu P (na telefonie tylko o przycisku), po polsku
+      i po angielsku; zrzut pokazuje tę część */
+  const pomoc = (name: string, lang: 'pl' | 'en', telefon: boolean): Shot => ({
+    name,
+    query: '',
+    lang,
+    w: telefon ? 390 : undefined,
+    h: telefon ? 844 : undefined,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      await waitIdle(page);
+      if (telefon) await page.tap('#btnMenu');
+      else await page.click('#btnMenu');
+      await page.click('#sheet [data-act="menu-help"]');
+      await page.waitForSelector('#sheet .help');
+      const g = await page.evaluate(() => {
+        const naglowki = [...document.querySelectorAll<HTMLElement>('#sheet .help-h')];
+        const h = naglowki.find((e) => /^(Praca|Work)$/.test(e.textContent ?? ''));
+        h?.scrollIntoView({ block: 'start' });
+        const lista = h?.nextElementSibling;
+        return { naglowki: naglowki.map((e) => e.textContent), tekst: lista?.textContent ?? '' };
+      });
+      console.log(`  część „Praca” w pomocy: ${g.tekst.slice(0, 110)}…`);
+      if (!g.tekst) throw new Error(`w pomocy nie ma części Praca: ${g.naglowki.join(', ')}`);
+      const klawisz = lang === 'en' ? /the P key/ : /klawisz P/;
+      if (klawisz.test(g.tekst) === telefon)
+        throw new Error(`klawisz P w pomocy: ${klawisz.test(g.tekst)} przy telefon=${telefon}`);
+      if (lang === 'en' && /[ąćęłńóśźż]/i.test(g.tekst)) throw new Error('polskie litery w angielskiej pomocy');
+      await page.waitForTimeout(150);
+    },
+  });
+
   /** zaznaczenie osoby z zarządu przez kliknięcie w głowę (kamera na niej) */
   const zaznacz = async (page: Page, nr: number, dotyk: boolean) => {
     const a = await page.evaluate((nr) => {
@@ -11984,6 +12152,44 @@ function pracaShots(): Shot[] {
         for (const w of ['Fixed job', 'Can go outside the fence', 'Woodcutting'])
           if (!t.includes(w)) throw new Error(`na angielskiej karcie brakuje „${w}”`);
       }
+      // Lista stałego zajęcia w fokusie (zamknięta, jak po Esc albo po Tabie) nie zamraża karty: potrzeby i opis pracy
+      // odświeżają się dalej, a sama lista zostaje tym samym elementem. Zmiana stałego zajęcia z zewnątrz (panel Pracy)
+      // dochodzi do listy dopiero, gdy straci fokus.
+      await page.focus('#card select[data-card="stale"]');
+      await page.evaluate((nr) => {
+        const sel = document.querySelector('#card select[data-card="stale"]') as HTMLSelectElement & {
+          __znak?: number;
+        };
+        sel.__znak = 1;
+        window.zm!.sim!.st.pawns.filter((q) => q.kind === 'core')[nr].needs!.food = 11;
+      }, kto);
+      await page.waitForTimeout(500);
+      const zam = await page.evaluate(() => {
+        const sel = document.querySelector('#card select[data-card="stale"]') as
+          | (HTMLSelectElement & { __znak?: number })
+          | null;
+        return {
+          fokus: !!sel && document.activeElement === sel,
+          ten: sel?.__znak === 1,
+          jedzenie: document.querySelector('#card .need .need-v')?.textContent,
+          wybor: sel?.value,
+          h2: document.querySelector('#card h2')?.textContent,
+        };
+      });
+      console.log(`  karta z listą w fokusie: ${JSON.stringify(zam)}`);
+      if (!zam.fokus || !zam.ten) throw new Error('karta wymieniła listę stałego zajęcia, choć miała fokus');
+      if (zam.jedzenie !== '11') throw new Error(`karta z listą w fokusie nie odświeża potrzeb: ${zam.jedzenie}`);
+      await page.evaluate((nr) => {
+        const osoba = window.zm!.sim!.st.pawns.filter((q) => q.kind === 'core')[nr].person;
+        window.zm!.sim!.push({ t: 'stale', ids: [], osoba: osoba, rodzaj: 'kuchnia' });
+      }, kto);
+      await page.waitForTimeout(450);
+      if ((await page.inputValue('#card select[data-card="stale"]')) !== 'drwal')
+        throw new Error('lista w fokusie zmieniła wybór pod ręką');
+      await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+      await page.waitForTimeout(450);
+      const poBlur = await page.inputValue('#card select[data-card="stale"]');
+      if (poBlur !== 'kuchnia') throw new Error(`lista po utracie fokusu nie dogoniła stanu: ${poBlur}`);
       await page.waitForTimeout(150);
     },
   });
@@ -12134,8 +12340,14 @@ function pracaShots(): Shot[] {
     panel('praca-panel', 'pl'),
     panel('en-praca-panel', 'en'),
     panelZombie,
+    panelFokus,
     panelTelefon('praca-panel-telefon', 'pl'),
     panelTelefon('en-praca-panel-telefon', 'en'),
+    panelTelefonZombie('praca-panel-telefon-zombie', 'pl'),
+    panelTelefonZombie('en-praca-panel-telefon-zombie', 'en'),
+    pomoc('praca-pomoc', 'pl', false),
+    pomoc('en-praca-pomoc', 'en', false),
+    pomoc('praca-pomoc-telefon', 'pl', true),
     karta('praca-karta', 'pl', false),
     karta('en-praca-karta-zombie', 'en', true),
     karta('praca-karta-telefon', 'pl', false, 390, 844),
