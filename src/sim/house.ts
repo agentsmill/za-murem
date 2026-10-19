@@ -72,6 +72,17 @@ export function inHomeApt(h: HouseLike, i: number): boolean {
   return h.home >= 0 && r >= 0 && h.rooms[r].apt === h.home;
 }
 
+/** kafelek przed kozą zarządu, z którego się ją obsługuje (strona przeciwna do ściany `rot`, tak jak liczy go
+    `frontOf` w symulacji); generator wnętrza trzyma go wolnym, więc budowle go nie zajmują. −1: wnętrze bez kozy
+    zarządu */
+export function kozaFront(h: HouseLike, size: number): number {
+  const k = h.furniture.find((f) => f.kind === 'koza' && inHomeApt(h, f.y * size + f.x));
+  if (!k) return -1;
+  const cx = k.x + (k.w >> 1);
+  const cy = k.y + (k.h >> 1);
+  return [(k.y + k.h) * size + cx, cy * size + k.x - 1, (k.y - 1) * size + cx, cy * size + k.x + k.w][k.rot];
+}
+
 /** kafelki mieszkania zarządu (1): jego pomieszczenia i drzwi, które do nich prowadzą */
 export function homeMask(h: HouseLike, size: number): Uint8Array {
   const N = size * size;

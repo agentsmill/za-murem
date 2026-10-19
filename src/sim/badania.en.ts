@@ -46,7 +46,7 @@ export const NAZWY_ERY_EN: Readonly<Record<number, string>> = {
 /** zdanie o działaniu technologii w nowej grze, tylko dla tych, które coś robią (dziala w TECHS) */
 export const DZIALANIE_EN: Readonly<Record<string, string>> = {
   t_kozy:
-    'A potbelly stove made from a barrel, set up in a room of your flat by the window (the flue goes out through it). Heats the room like the kitchen stove and burns wood the same way. The board stokes it on its own.',
+    'A potbelly stove made from a barrel, set up in a room, the kitchen or the hallway of your flat, close to a window (the flue goes out through it). Heats the room like the kitchen stove and burns wood the same way. The board stokes it on its own.',
   t_okna: '+3°C in the rooms of your flats, free of charge.',
   t_konserwy: '+20% yield from vegetable patches, greenhouses and mushroom farms.',
   t_zielarstwo: 'A vegetable patch sometimes gives meds at harvest: one med, with a one in three chance.',

@@ -342,6 +342,66 @@ describe.each(DEMA)(
   },
 );
 
+describe.each(DEMA)('kafelek przed kozą zarządu zostaje wolny: %s', (_nazwa, { w, seed }) => {
+  const h = houseOf(w)!;
+  const koza = h.furniture.find((f) => f.kind === 'koza')!;
+  /** kafelek, z którego się obsługuje kozę: strona przeciwna do ściany rot (0 ściana u góry, więc front pod kozą) */
+  const [fx, fy] = [
+    [koza.x, koza.y + koza.h],
+    [koza.x - 1, koza.y],
+    [koza.x, koza.y - 1],
+    [koza.x + koza.w, koza.y],
+  ][koza.rot];
+
+  it('koza z beczki, kocioł i pieczarkarnia nie stają na froncie kozy zarządu, a miejsce na kozę z beczki zostaje', () => {
+    const st = gra(w, seed, 't_kozy');
+    const front = fy * w.size + fx;
+    expect(canPlace(st, w, 'koza_beczka', fx, fy, 0).ok, 'front kozy zarządu').toBe(false);
+    for (const rot of [0, 1, 2, 3]) expect(canPlace(st, w, 'koza_beczka', fx, fy, rot).ok, `rot ${rot}`).toBe(false);
+    expect(allowedAnchors(st, w, 'koza_beczka', 0)).not.toContain(front);
+    expect(allowedAnchors(st, w, 'koza_beczka', 0).length).toBeGreaterThan(0);
+    // inna budowla z miejscem w mieszkaniu też go nie zajmie, jeśli jej podstawa go obejmuje
+    const st2 = gra(w, seed);
+    st2.techDone = Object.values(NOWE);
+    for (const k of Object.keys(BUILDS) as BuildKind[])
+      for (const rot of [0, 1, 2, 3] as const)
+        for (const a of allowedAnchors(st2, w, k, rot)) {
+          const b = footprint(k, rot);
+          const [ax, ay] = xy(w, a);
+          const pokrywa = fx >= ax && fx < ax + b.w && fy >= ay && fy < ay + b.h;
+          expect(pokrywa, `${k} rot ${rot} na froncie kozy`).toBe(false);
+        }
+  });
+});
+
+describe('kocioł nie stoi na składzie drewna', () => {
+  it('kafelek składu w klatce odrzuca kocioł, a po zdjęciu składu go przyjmuje', () => {
+    const { w, seed } = przymorze;
+    const h = houseOf(w)!;
+    const st = gra(w, seed, 't_wezel');
+    const a = allowedAnchors(st, w, 'kociol', 0)[0];
+    const [x, y] = xy(w, a);
+    expect(canPlace(st, w, 'kociol', x, y, 0)).toEqual({ ok: true });
+    // skład drewna kładziemy chwilowo na drugim kafelku podstawy (generator trzyma go przy kozie, nie na klatce)
+    h.sklad.push(a + 1);
+    try {
+      expect(canPlace(st, w, 'kociol', x, y, 0).ok).toBe(false);
+      expect(allowedAnchors(st, w, 'kociol', 0)).not.toContain(a);
+    } finally {
+      h.sklad.pop();
+    }
+    expect(canPlace(st, w, 'kociol', x, y, 0)).toEqual({ ok: true });
+  });
+});
+
+describe('opis technologii t_kozy mówi to samo co miejsce „okno”', () => {
+  it('pokój, kuchnia albo przedpokój naszego mieszkania, blisko okna, w obu językach', () => {
+    const op = TECH_BY.t_kozy.dzialanie;
+    expect(op.pl).toContain('w pokoju, kuchni albo przedpokoju naszego mieszkania, blisko okna (rura przez okno)');
+    expect(op.en).toContain('in a room, the kitchen or the hallway of your flat, close to a window');
+  });
+});
+
 describe('wieża jest jedna', () => {
   it('druga odmowa przy stojącej i przy planie, z powodem w obu językach', () => {
     const { w, seed } = przymorze;

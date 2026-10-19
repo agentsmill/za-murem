@@ -15,7 +15,7 @@ import { type Words, type WordsEn, wordsEnOfWorld, wordsOfWorld } from '../gov/m
 import type { World } from '../world/world.ts';
 import { BUILDS_EN } from './budowle.en.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
-import { type HouseLike, houseOf } from './house.ts';
+import { type HouseLike, houseOf, kozaFront } from './house.ts';
 import { fenceShape, gateTiles } from './perimeter.ts';
 import type { SimState } from './sim.ts';
 
@@ -323,9 +323,9 @@ export function boilerRooms(
 }
 
 /** Czy budowlę wolno postawić (podgląd trybu stawiania i polecenie 'build'): w pomieszczeniu właściwego rodzaju
-    w naszym mieszkaniu (bez składu drewna; koza z beczki w pokoju, kuchni albo przedpokoju, blisko okna), kocioł na
-    klatce siedziby (w domu
-    w przedpokoju), na wolnym podwórku z dala od bramy, dziur i wejść albo na odcinku siatki (także na dziurze, nie na
+    w naszym mieszkaniu (bez składu drewna i kafelka przed kozą zarządu; koza z beczki w pokoju, kuchni albo
+    przedpokoju, blisko okna), kocioł na klatce siedziby (w domu w przedpokoju, tak samo bez składu i frontu kozy), na
+    wolnym podwórku z dala od bramy, dziur i wejść albo na odcinku siatki (także na dziurze, nie na
     bramie); nie na rzeczach i nie na innym planie. Czysta funkcja stanu i świata. */
 /** rzeczy, które nie zajmują miejsca (krew, trupy, zwłoki): plan budowy i ognisko mogą stanąć na nich */
 export const GHOST_KINDS: ReadonlySet<string> = new Set(['zwloki', 'trup', 'krew']);
@@ -362,11 +362,13 @@ export function canPlace(
   const h = houseOf(w);
   const shape = fenceShape(w);
   const kinds = PLACE_ROOMS[def.place];
+  // kafelek przed kozą zarządu generator wnętrza zostawia wolny, żeby było skąd dokładać: żadna budowla go nie zajmie
+  const front = h ? kozaFront(h, size) : -1;
   if (kinds) {
     if (!h) return no;
     for (const i of tiles) {
       const r = h.room[i];
-      if (r < 0 || w.blocked[i] || h.sklad.includes(i) || !kinds.includes(h.rooms[r].kind)) return no;
+      if (r < 0 || w.blocked[i] || h.sklad.includes(i) || i === front || !kinds.includes(h.rooms[r].kind)) return no;
       if (!st.apts.find((a) => a.apt === h.rooms[r].apt)?.ours) return no;
       if (def.place === 'okno' && !nearWindow(h, i, size)) return no;
     }
@@ -375,7 +377,7 @@ export function canPlace(
     const { rooms, przedpokoj } = boilerRooms(st, h, size);
     for (const i of tiles) {
       const r = h.room[i];
-      if (r < 0 || w.blocked[i] || !rooms.has(r)) return nie(przedpokoj);
+      if (r < 0 || w.blocked[i] || h.sklad.includes(i) || i === front || !rooms.has(r)) return nie(przedpokoj);
     }
   } else if (def.place === 'podworko') {
     if (!shape) return no;

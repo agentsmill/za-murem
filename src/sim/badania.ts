@@ -86,7 +86,7 @@ const WPISY: Readonly<Record<string, Wpis>> = {
 const DZIALAJA: Readonly<Record<string, { odblokowuje?: readonly string[]; pl: string }>> = {
   t_kozy: {
     odblokowuje: ['koza_beczka'],
-    pl: 'Koza z beczki do postawienia w pokoju naszego mieszkania, przy oknie (rura przez okno). Grzeje pokój jak koza w kuchni i tak samo pali drewno. Zarząd dokłada do niej sam.',
+    pl: 'Koza z beczki do postawienia w pokoju, kuchni albo przedpokoju naszego mieszkania, blisko okna (rura przez okno). Grzeje pokój jak koza w kuchni i tak samo pali drewno. Zarząd dokłada do niej sam.',
   },
   t_okna: { pl: '+3°C w pomieszczeniach naszych mieszkań, za darmo.' },
   t_konserwy: { pl: '+20% plonu ogródków, szklarni i pieczarkarni.' },

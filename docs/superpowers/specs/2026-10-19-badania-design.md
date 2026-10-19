@@ -128,7 +128,7 @@ Nazwy, poziomy, koszty i wymagania z 0.3 bez zmian. „Działanie” to opis do 
 
 | id | nazwa | dziedzina, poziom, koszt | wymaga | rodzaj | działanie w nowej grze |
 |---|---|---|---|---|---|
-| t_kozy | Kozy w mieszkaniach | Ciepło 1, 14 | — | budowla | Koza z beczki do postawienia w pokoju naszego mieszkania, przy oknie (rura przez okno). Grzeje pokój jak koza w kuchni i tak samo pali drewno. Zarząd dokłada do niej sam (niżej, „Dokładanie”). |
+| t_kozy | Kozy w mieszkaniach | Ciepło 1, 14 | — | budowla | Koza z beczki do postawienia w pokoju, kuchni albo przedpokoju naszego mieszkania, blisko okna (rura przez okno). Grzeje pokój jak koza w kuchni i tak samo pali drewno. Zarząd dokłada do niej sam (niżej, „Dokładanie”). |
 | t_okna | Folia i koce w oknach | Budowa 1, 12 | — | premia | +3°C w pomieszczeniach naszych mieszkań, za darmo. |
 | t_konserwy | Słoiki i suszarnie | Uprawa 1, 12 | — | premia | +20% plonu ogródków, szklarni i pieczarkarni. |
 | t_zielarstwo | Zielarstwo z działek | Medycyna 1, 12 | — | premia | Ogródek przy plonie daje czasem leki (moje: 1 lek z szansą 1/3, z ziarna ogródka i plonu). |
