@@ -2,7 +2,9 @@
    przy dziurze w siatce) i kto idzie na wyprawę (blisko albo daleko); szansę napadu, spodziewane straty
    i łup widać przed decyzją. Dyżur przy kozie (warta:koza) wybiera gracz: zarząd tylko radzi, ile drewna
    starczy (z kozami z beczek i kotłem na każde palenisko, `GovInput.paleniska`), a rano raport mówi, czy w kuchni
-   było ciepło. Przy zatwierdzeniu losuje się, czy szabrownicy
+   było ciepło. Gdy stoi wieża (`GovInput.wieza`), karta ma jeszcze „Wartę na wieży” (warta:wieza): to przydział, nie
+   miejsce napadu (postsOf jej nie zna), a wartownik z wieży widzi całe podwórko i dokłada do obrony każdego posterunku
+   połowę swojej wartości warty. Przy zatwierdzeniu losuje się, czy szabrownicy
    przyjdą, gdzie i o której (23:00–4:00). O tej godzinie obronę liczy się z tego, co jest: kto nie zasnął,
    światło, pies, brama. Wyprawy wracają o 1:00 (blisko) albo o świcie (daleko), o 6:00 raport. Losowość
    z ziarna gry. Teksty karty i raportu to Tx (polski i angielski z tych samych danych, bez dodatkowych losowań). */
@@ -53,6 +55,10 @@ export const MORNING = 6;
 export const KOZA = 'koza';
 export const KOZA_KEY = `warta:${KOZA}`;
 export const WOOD_PER_HOUR = 2;
+/** warta na wieży (badania, t_wieza): posterunek jak w symulacji ('wieza'); wartownik widzi całe podwórko, więc dokłada do
+    obrony każdego innego posterunku połowę swojej wartości warty (defenseAt). Szabrownicy jej nie wybierają */
+export const WIEZA = 'wieza';
+export const WIEZA_KEY = `warta:${WIEZA}`;
 /** warta przy siatce (brama, dziury), bez dyżuru przy kozie */
 export const isFenceGuard = (k: string): boolean => k.startsWith('warta:') && k !== KOZA_KEY;
 
@@ -207,13 +213,19 @@ export function guardValue(st: GovState, i: GovInput, p: GovPerson, post: string
   return round1(v);
 }
 
-function defenseAt(st: GovState, i: GovInput, post: string, guards: { p: GovPerson; post: string }[]): number {
+/** obrona posterunku post z wart na nocy: sama brama i pies, warta na tym posterunku w pełni, warta z innego 0,5,
+    a z wieży połowa jej wartości (widzi całe podwórko); dyżur przy kozie nie broni siatki */
+export function defenseAt(st: GovState, i: GovInput, post: string, guards: { p: GovPerson; post: string }[]): number {
   const f = fenceOf(i);
   const nd = st.night?.day ?? nightDay(i);
   let d = 0;
   if (post === 'brama') d += 2 + 2 * f.durability + (law(st, 'u_warty') ? 1.5 : 0);
   if (st.flags.dog) d += post === 'brama' ? 1 : 0.5;
-  for (const gd of guards) if (gd.post !== KOZA) d += gd.post === post ? guardValue(st, i, gd.p, gd.post) : 0.5;
+  for (const gd of guards) {
+    if (gd.post === KOZA) continue;
+    if (gd.post === post) d += guardValue(st, i, gd.p, gd.post);
+    else d += gd.post === WIEZA ? 0.5 * guardValue(st, i, gd.p, gd.post) : 0.5;
+  }
   if (st.tonight.alert === nd) d += 3;
   if (st.tonight.bonusDay === nd) d += st.tonight.bonus;
   return round1(d);
@@ -324,6 +336,7 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
       if (zombie && behindWire(i, post.key) && p.arm === 'palna' && p.weapon !== 'kusza')
         opts[opts.length - 1].note = tx(NOTE_HOLD_FIRE, NOTE_HOLD_FIRE_EN);
     }
+    if (i.wieza) opts.push(wiezaOption(st, i, p, zombie));
     for (const t of targets) {
       const ok = canGo(p, t);
       const where = targetNameTx(t, placeIn(i));
@@ -390,10 +403,38 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
     wood,
   };
   if (zombie) card.horde = { size, word, fence };
+  if (i.wieza) card.wieza = true;
   const assign = propose(i, card, st.lastGuards);
   for (const cp of card.people) cp.proposal = assign[cp.id];
   card.advice = nightAdvice(i, card, assign);
   return { card, assign };
+}
+
+/** opcja „Warta na wieży” osoby: obrona to to, co dokłada do każdego innego posterunku (połowa jej wartości warty).
+    W trybie zombie wieża jest dla broni dystansowej: z dzidą ani gołymi rękami nie sięga siatki, a broń palna (nie
+    kusza) przez siatkę sama nie strzela, jak przy każdej warcie za siatką. */
+function wiezaOption(st: GovState, i: GovInput, p: GovPerson, zombie: boolean): NightOption {
+  const ok = p.needs.health >= 20;
+  const tired =
+    p.needs.rest < 30
+      ? tx(`${g(p, 'Zmęczony', 'Zmęczona')}: może zasnąć na warcie.`, 'Tired: may fall asleep on watch.')
+      : tx('Nie wyśpi się.', 'Won’t get much sleep.');
+  let note: Tx;
+  if (zombie && p.arm !== 'palna') note = tx('Na wieży trzeba broni dystansowej.', 'The tower needs a ranged weapon.');
+  else if (zombie && p.weapon !== 'kusza') note = tx(NOTE_HOLD_FIRE, NOTE_HOLD_FIRE_EN);
+  else
+    note = tx(
+      `Z wieży widać całe podwórko: dokłada połowę swojej warty do obrony każdego posterunku. ${tired.pl}`,
+      `The whole yard is in view from the tower: adds half of their defence to every post. ${tired.en}`,
+    );
+  return {
+    key: WIEZA_KEY,
+    label: tx('Warta na wieży', 'Watch on the tower'),
+    ok,
+    why: ok ? undefined : tx(g(p, 'Za słaby na wartę.', 'Za słaba na wartę.'), 'Too weak for the watch.'),
+    guard: round1(0.5 * guardValue(st, i, p, WIEZA)),
+    note,
+  };
 }
 
 /** propozycja zarządu: warta przy najsłabszym miejscu, przy dużym ryzyku druga, wyprawa przy brakach */
@@ -474,7 +515,10 @@ export function nightAdvice(i: GovInput, card: NightCard, assign: Record<string,
 
 /** rada w trybie zombie: warta przy siatce i broń, która przez nią sięga; potem koza */
 function hordeAdvice(i: GovInput, card: NightCard, assign: Record<string, string>): Tx {
-  const guards = i.people.filter((p) => isFenceGuard(assign[p.id] ?? ''));
+  // wartownik na wieży liczy się, tylko gdy ma z czego strzelać (bez broni dystansowej nie sięga siatki)
+  const guards = i.people.filter(
+    (p) => isFenceGuard(assign[p.id] ?? '') && (assign[p.id] !== WIEZA_KEY || p.arm === 'palna'),
+  );
   const pct = Math.round((card.horde?.fence ?? 1) * 100);
   let fence: Tx;
   if (!guards.length)

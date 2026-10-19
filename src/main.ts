@@ -1086,6 +1086,7 @@ function tonight(p: SimPerson): string | undefined {
     );
   }
   if (p.post === 'koza') return L('Do rana: czuwa przy kozie.', 'Until morning: watching the stove.');
+  if (p.post === 'wieza') return L('Do rana: warta na wieży.', 'Until morning: on watch on the tower.');
   if (p.post)
     return L(
       `Do rana: warta ${p.post === 'brama' ? words.brama.przy : p.post === 'siatka' ? 'przy siatce' : 'przy dziurze w siatce'}.`,

@@ -7,8 +7,10 @@
    Dochodzą trzy miejsca: łazienka naszego mieszkania, klatka siedziby (w domu, który klatki nie ma, przedpokój
    naszego mieszkania) i „okno” dla kozy z beczki: pokój, kuchnia albo przedpokój naszego mieszkania, najwyżej 2 m od
    okna tego samego pomieszczenia (rura idzie wzdłuż ściany; w głębokich mieszkaniach okna mają tylko kuchnia i łazienka,
-   a przy samym oknie stoi już koza zarządu). Tu są tylko dane i miejsca; działanie (ciepło, plon, wytrzymałość,
-   posterunek) dopisują zadania, które z nich korzystają. */
+   a przy samym oknie stoi już koza zarządu). Tu są tylko dane i miejsca; działanie dopisują moduły, które z nich
+   korzystają (symulacja, zarząd). Budowle z miejscem 'obwod' (zasieki, barykada) stoją na odcinku siatki:
+   `naObwodzie` mówi o tym symulacji (wytrzymałość kafelka: ZASIEKI_HP, BARYKADA_HP w sim.ts), rysowaniu i płotowi
+   z sąsiadem. */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { type Words, type WordsEn, wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
@@ -241,6 +243,10 @@ export function isUnlocked(st: Pick<SimState, 'techDone'>, kind: BuildKind): boo
   const t = BUILDS[kind].tech;
   return !t || !!st.techDone?.includes(t);
 }
+
+/** czy rzecz ze stanu to budowla stawiana na odcinku siatki (miejsce 'obwod': zasieki, barykada); inne rzeczy
+    (sterty, meble) nie są ani budowlami, ani na obwodzie */
+export const naObwodzie = (kind: string): boolean => BUILDS[kind as BuildKind]?.place === 'obwod';
 
 /** rozmiar budowli przy danym obrocie */
 export function footprint(kind: BuildKind, rot: number): { w: number; h: number } {

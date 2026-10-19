@@ -1555,6 +1555,97 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // badania, wieża: karta nocy ze stojącą wieżą ma „Wartę na wieży” w liście wyboru i wiersz „na wieży” w wykazie
+        // posterunków (bez wpływu na miejsca napadu); wybrana osoba podnosi obronę, a po zatwierdzeniu nocy stoi na
+        // wieży (zrzut karty, potem zrzut mapy z wartownikiem)
+        name: 'm1-karta-nocy-wieza',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base, '&godzina=19.5');
+          // wieża stoi na podwórku od badania t_wieza (rzecz wprost w stanie, jak w zrzucie badania-budowle)
+          const wieza = await page.evaluate(async () => {
+            const budowa = '/src/ui/budowa.ts';
+            const budowle = '/src/sim/budowle.ts';
+            const { allowedAnchors } = (await import(
+              /* @vite-ignore */ budowa
+            )) as typeof import('../src/ui/budowa.ts');
+            const { footprint } = (await import(/* @vite-ignore */ budowle)) as typeof import('../src/sim/budowle.ts');
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const w = zm.sim!.w;
+            st.techDone = ['t_wieza'];
+            const gate = w.fence.gate;
+            const a = allowedAnchors(st, w, 'wieza', 0).sort(
+              (p, q) =>
+                Math.hypot((p % w.size) - gate.x, Math.floor(p / w.size) - gate.y) -
+                Math.hypot((q % w.size) - gate.x, Math.floor(q / w.size) - gate.y),
+            )[0];
+            const f = footprint('wieza', 0);
+            st.things.push({
+              id: st.nextThing++,
+              kind: 'wieza',
+              x: a % w.size,
+              y: Math.floor(a / w.size),
+              w: f.w,
+              h: f.h,
+              rot: 0,
+              n: 0,
+              fuel: 0,
+              by: -1,
+              owner: -1,
+            });
+            return { x: a % w.size, y: Math.floor(a / w.size) };
+          });
+          await page.evaluate(() => window.zm!.govTick());
+          await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+          const p = await page.evaluate(() => window.zm!.ff(31));
+          if (p !== 'karta') throw new Error(`o 20:00 zamiast karty nocy: ${p}`);
+          const wiersze = await page.locator('#sheet .posts .post-k').allTextContents();
+          console.log(`  posterunki na karcie: ${wiersze.join(' | ')}`);
+          if (wiersze[wiersze.length - 1] !== 'na wieży') throw new Error(`brak wiersza wieży: ${wiersze.join(', ')}`);
+          // wszyscy śpią (szansa bez warty), potem pierwsza osoba na wieży: wiersz pokazuje jej imię, a szansa spada,
+          // bo wartownik z wieży też odstrasza; druga osoba przy bramie, żeby obrona z wieży była widoczna na karcie
+          for (const sel of await page.locator('#sheet select.pick').all()) await sel.selectOption('sen');
+          const bez = await page.textContent('#sheet .odd-v');
+          const wieza0 = page.locator('#sheet select.pick').nth(0);
+          const opcje = await wieza0
+            .locator('option:not([disabled])')
+            .evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value));
+          if (!opcje.includes('warta:wieza')) throw new Error(`osoba nie ma wieży w liście: ${opcje.join(', ')}`);
+          await wieza0.selectOption('warta:wieza');
+          await page.waitForTimeout(200);
+          const naWiezy = await page.textContent('#sheet .odd-v');
+          const kto = await page.locator('#sheet .posts .post-v').last().textContent();
+          const opis = await page.locator('#sheet .opt').nth(0).textContent();
+          console.log(`  szansa ${bez} → ${naWiezy}, na wieży: ${kto}; opis: ${opis}`);
+          if (kto === 'nikt') throw new Error('wiersz wieży po wyborze wciąż pusty');
+          if (bez === naWiezy) throw new Error('wartownik z wieży nie zmienił szansy napadu na karcie');
+          await page.locator('#sheet select.pick').nth(1).selectOption('warta:brama');
+          await page.waitForTimeout(200);
+          await page.screenshot({ path: path.join(OUT, 'm1-karta-nocy-wieza-karta.png') });
+          // noc: osoba schodzi na wieżę i stoi tam na warcie (wydarzenia po drodze dostają pierwszą odpowiedź)
+          await page.click('#sheet [data-act="night-go"]');
+          for (let k = 0; k < 8; k++) {
+            const q = await page.evaluate(() => window.zm!.ff(5));
+            if (q === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+            else if (q) throw new Error(`po karcie okno: ${q}`);
+          }
+          const stoi = await page.evaluate((t) => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const g = st.pawns.find((q) => q.job?.t === 'guard' && q.job.target === -3);
+            zm.setCam(t.x + 1, t.y + 0.5, 2);
+            return g ? { x: g.x, y: g.y, phase: g.job!.phase } : null;
+          }, wieza);
+          if (!stoi) throw new Error('nikt nie stoi na wieży po zatwierdzeniu nocy');
+          await waitIdle(page);
+          console.log(
+            `  na wieży (${wieza.x}, ${wieza.y}) stoi wartownik w (${stoi.x.toFixed(1)}, ${stoi.y.toFixed(1)}), faza ${stoi.phase}`,
+          );
+          await page.screenshot({ path: path.join(OUT, 'm1-karta-nocy-wieza-noc.png') });
+        },
+      },
+      {
         name: 'm1-raport',
         query: '',
         run: async (page, base) => {

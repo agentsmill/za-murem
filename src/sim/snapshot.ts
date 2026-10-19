@@ -75,7 +75,7 @@ export interface SimPerson {
   carry: number;
   /** na wyprawie poza mapą */
   away: boolean;
-  /** posterunek warty tej nocy ('brama', 'd<id>', 'koza') albo null */
+  /** posterunek warty tej nocy ('brama', 'd<id>', 'koza', 'siatka', 'wieza') albo null */
   post: string | null;
   /** broń w rękach albo null (gołe ręce) i amunicja do niej w magazynie (null: broń bez amunicji) */
   weapon: WeaponId | null;

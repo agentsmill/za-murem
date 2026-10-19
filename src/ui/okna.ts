@@ -10,7 +10,7 @@ import { ENDINGS_EN, PATHS_EN } from '../content/data.en.ts';
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
-import { deterrence, KOZA_KEY, untilWord, WOOD_PER_HOUR, watchersOf } from '../gov/noc.ts';
+import { deterrence, KOZA_KEY, untilWord, WIEZA, WOOD_PER_HOUR, watchersOf } from '../gov/noc.ts';
 import type {
   GovInput,
   GovState,
@@ -129,12 +129,17 @@ export function oddsHtml(
   names: Record<string, string>,
 ): string {
   const loss = lootText(card.loss) || L('niewiele, wszystko jest pod dachem', 'not much, it is all indoors');
-  const posts = card.posts
+  // wieża to przydział, nie miejsce napadu: jej wiersz jest za miejscami do pilnowania
+  const rows = [
+    ...card.posts.map((p) => ({ key: p.key, name: tr(p.name) })),
+    ...(card.wieza ? [{ key: WIEZA, name: L('na wieży', 'on the tower') }] : []),
+  ];
+  const posts = rows
     .map((p) => {
       const who = Object.entries(assign)
         .filter(([, k]) => k === `warta:${p.key}`)
         .map(([id]) => names[id] ?? id);
-      return `<li class="post ${who.length ? 'kept' : 'open'}"><span class="post-k">${esc(tr(p.name))}</span><b class="post-v">${
+      return `<li class="post ${who.length ? 'kept' : 'open'}"><span class="post-k">${esc(p.name)}</span><b class="post-v">${
         who.length ? esc(who.join(', ')) : L('nikt', 'nobody')
       }</b></li>`;
     })

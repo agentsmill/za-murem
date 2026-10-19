@@ -39,7 +39,7 @@ export interface GovPerson {
   job: string | null;
   asleep: boolean;
   inside: boolean;
-  /** posterunek warty, jeśli stoi ('brama', 'd<id>', 'koza'), jak SimPerson.post. Z tym polem zarząd wie, że
+  /** posterunek warty, jeśli stoi ('brama', 'd<id>', 'koza', 'siatka', 'wieza'), jak SimPerson.post. Z tym polem zarząd wie, że
       symulacja sama prowadzi noc na posterunku (kto stoi, ten nie śpi), więc rano nie odejmuje już sił */
   post?: string | null;
   /** broń (id z src/sim/bron.ts) i jej rodzaj do warty i wypraw: gołe ręce (albo broń palna bez amunicji),
@@ -155,7 +155,8 @@ export interface GovInput {
   /** wiedza osady w dziedzinach, ta sama co na tablicy badań (najlepsza osoba zarządu albo lokatora siedziby na
       miejscu plus najwyżej 2 książki); bez pola EventHost.know liczy po staremu z `people` */
   know?: Partial<Record<TechDom, number>>;
-  /** czy stoi wieża (karta nocy dostaje wtedy posterunek „Wieża”); wypełnia je zadanie o wieży */
+  /** czy stoi wieża z rusztowań (karta nocy dostaje wtedy „Wartę na wieży”, klucz `warta:wieza`); src/sim/gov.ts
+      wypełnia je tylko przy stojącej wieży */
   wieza?: boolean;
   /** ile palenisk (koza zarządu, kozy z beczek, kocioł liczony jako kilka) pali drewno nocą; bez pola jedno */
   paleniska?: number;
@@ -259,7 +260,7 @@ export interface LawEffects {
 export type LootKey = StockKey;
 
 export interface NightOption {
-  /** 'sen', 'warta:brama', 'warta:d<id>', 'wyprawa:blisko', 'wyprawa:daleko' */
+  /** 'sen', 'warta:brama', 'warta:d<id>', 'warta:wieza', 'wyprawa:blisko', 'wyprawa:daleko' */
   key: string;
   label: Tx;
   ok: boolean;
@@ -269,7 +270,7 @@ export interface NightOption {
   risk?: number;
   /** wyprawa: spodziewany łup (od, do) */
   gain?: Partial<Record<LootKey, [number, number]>>;
-  /** warta: ile obrony dodaje */
+  /** warta: ile obrony dodaje (na wieży: tyle, ile dokłada do każdego innego posterunku) */
   guard?: number;
   /** wyprawa: id celu z TARGETS */
   target?: string;
@@ -293,6 +294,9 @@ export interface NightCard {
   forecast: Tx;
   /** miejsca do pilnowania: brama i dziury, od najsłabszego */
   posts: { key: string; name: Tx; weak: number }[];
+  /** stoi wieża: każdy ma opcję `warta:wieza`, a okno karty dopisuje ją do wykazu posterunków (to nie miejsce napadu,
+      więc nie ma jej w `posts`); bez wieży pola brak */
+  wieza?: boolean;
   /** spodziewane straty, jeśli wejdą (do porównania z wartą) */
   loss: { wood: number; supplies: number };
   /** tryb zombie: ilu szwendaczy przyjdzie w stadzie, słowo do tego i wytrzymałość siatki 0–1 */

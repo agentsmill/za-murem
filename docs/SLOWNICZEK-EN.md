@@ -58,6 +58,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | meblościanka | wall unit | |
 | karta nocy | Night orders | okno o 20:00 |
 | warta | the watch | na warcie: on watch; wartownik: guard |
+| wieża (z rusztowań) | the tower | Warta na wieży: Watch on the tower; na wieży: on the tower; „Na wieży trzeba broni dystansowej”: The tower needs a ranged weapon |
 | wyprawa | run | supply run, kiedy samo „run” brzmi jak bieganie albo biegunka („For supply runs”, „Out on a supply run”); blisko: short run, daleko: long run |
 | raport rano | Morning report | |
 | kronika (zarządu) | the log | |

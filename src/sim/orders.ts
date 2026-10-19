@@ -62,6 +62,7 @@ import {
   STAY_YARD,
   type Thing,
   trunkOf,
+  WIEZA_POST,
 } from './sim.ts';
 import { BATCH, CARRY_MATS, NAPISY, type Product, RECIPES, wreckAt, wreckStage, wreckTile } from './surowce.ts';
 import { modeOf } from './tryb.ts';
@@ -666,6 +667,10 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         return walking
           ? L('Idzie na wartę przy siatce.', 'Going on watch at the fence.')
           : L('Trzyma wartę przy siatce.', 'On watch at the fence.');
+      if (j.target === WIEZA_POST)
+        return walking
+          ? L('Idzie na wartę na wieżę.', 'Going on watch on the tower.')
+          : L('Trzyma wartę na wieży.', 'On watch on the tower.');
       if (j.target === 0) {
         const gate = wordsEnOfWorld(w).brama;
         return L(

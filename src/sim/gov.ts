@@ -5,7 +5,7 @@
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie.
    Badania: odczyt niesie też eraBadan, książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
    a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. Kozy z beczek i kocioł
-   wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA). */
+   wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA), a stojąca wieża jako `wieza` (posterunek karty). */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
@@ -122,6 +122,8 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     know: Object.fromEntries(TECH_DOMS.map((d) => [d, wiedza(st, d)])) as Record<TechDom, number>,
     // kozy z beczek i kocioł: dyżur przy kozie dokłada do wszystkich, a wyliczenie drewna na noc liczy każde
     ...(palenisk > 0 ? { paleniska: palenisk } : {}),
+    // stoi wieża: karta nocy dostaje posterunek „Warta na wieży” (src/gov/noc.ts); bez wieży pole nie istnieje
+    ...(st.things.some((t) => t.kind === 'wieza') ? { wieza: true } : {}),
   };
 }
 

@@ -35,6 +35,7 @@ import {
   type AmmoKey,
   hitChance,
   isFirearm,
+  isRanged,
   noAmmo,
   START_KIT,
   WEAPONS,
@@ -42,7 +43,16 @@ import {
   type WeaponId,
   weaponOf,
 } from './bron.ts';
-import { BUILDS, type BuildKind, type BuildPlan, canPlace, footprint, GHOST_KINDS, type Mat } from './budowle.ts';
+import {
+  BUILDS,
+  type BuildKind,
+  type BuildPlan,
+  canPlace,
+  footprint,
+  GHOST_KINDS,
+  type Mat,
+  naObwodzie,
+} from './budowle.ts';
 import {
   daylight,
   dayOf,
@@ -368,6 +378,10 @@ export const GARDEN_TICKS = 3 * TICKS_PER_DAY;
 export const GARDEN_YIELD: readonly number[] = [2, 0, 4, 6];
 /** wytrzymałość zasieków (siatka 45–75, świeża łata 70) */
 export const ZASIEKI_HP = 100;
+/** wytrzymałość barykady z wraków (badania, t_barykady): mocniejsza od zasieków */
+export const BARYKADA_HP = 160;
+/** wytrzymałość kafelka siatki albo łaty pod budowlą z obwodu (zasieki, barykada) */
+const obwodHp = (kind: string): number => (kind === 'barykada' ? BARYKADA_HP : ZASIEKI_HP);
 /** zajęcie mieszkania (oznaczenie drzwi i spis) trwa kwadrans gry */
 export const CLAIM_TICKS = TICKS_PER_HOUR / 4;
 /** warta trwa do tej godziny rano */
@@ -376,6 +390,8 @@ export const GUARD_UNTIL = 6;
 export const KOZA_POST = -1;
 /** zasięg światła (m): lampa warty i ognisko; w nim nie jest ciemno, a szabrownicy się płoszą */
 export const LAMP_REACH = 5;
+/** wartownik na wieży (badania, t_wieza) sięga dalej: lampą (bez zarządu) i bronią dystansową (tryb zombie) ×1,5 */
+export const WIEZA_ZASIEG = 1.5;
 export const CAMPFIRE_LIGHT = 6;
 /** szabrownicy pokazują się za siatką pół godziny gry przed napadem i czekają w ciemności */
 export const SNEAK_TICKS = TICKS_PER_HOUR / 2;
@@ -440,6 +456,8 @@ export const BRACE_TICKS = Math.round(TICKS_PER_HOUR / 3);
 export const BRACE_HP = 50;
 /** posterunek warty „przy siatce”: tam, gdzie napiera najwięcej szwendaczy (klucz 'siatka') */
 export const SIATKA_POST = -2;
+/** posterunek warty na wieży z rusztowań (klucz 'wieza'): wartownik stoi na kafelku wieży */
+export const WIEZA_POST = -3;
 /** co tyle kroków warta przy siatce sprawdza, czy napór się nie przesunął */
 const SIATKA_EVERY = 10 * TICKS_PER_SECOND;
 /** dobicie zwłok (nóż w głowę) trwa sekundę */
@@ -660,7 +678,7 @@ export interface Thing {
   until?: number;
   /** zepsuty mebel ze świata (w pustym mieszkaniu): z rozbiórki połowa materiału */
   broken?: boolean;
-  /** zasieki: łata dziury albo wytrzymałość kafelka siatki sprzed nich (wraca przy rozbiórce) */
+  /** zasieki i barykada: łata dziury albo wytrzymałość kafelka siatki sprzed nich (wraca przy rozbiórce) */
   prev?: number;
   /** zwłoki: numer wpisu w state.dead (osobno od owner, bo numery pionków i wpisów się pokrywają) */
   dead?: number;
@@ -1441,9 +1459,17 @@ export function alarmOn(st: SimState): boolean {
   return st.pawns.some((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.what === ALARM_JOB);
 }
 
-/** klucz posterunku warty z Job.target, jak w karcie nocy zarządu: 'brama', 'd<id>', 'koza' */
+/** klucz posterunku warty z Job.target, jak w karcie nocy zarządu: 'brama', 'd<id>', 'koza', 'siatka', 'wieza' */
 export const postKey = (target: number): string =>
-  target === KOZA_POST ? 'koza' : target === SIATKA_POST ? 'siatka' : target === 0 ? 'brama' : `d${target}`;
+  target === KOZA_POST
+    ? 'koza'
+    : target === SIATKA_POST
+      ? 'siatka'
+      : target === WIEZA_POST
+        ? 'wieza'
+        : target === 0
+          ? 'brama'
+          : `d${target}`;
 
 /** mieszkania inne niż zarządu, do których z podwórka da się dojść bez wychodzenia za siatkę, rosnąco */
 function residentApts(st: SimState, w: World, h: HouseLike): number[] {
@@ -2692,11 +2718,13 @@ export class Sim {
     this.rebuild();
   }
 
-  /** posterunek warty z klucza 'brama' / 'd<id>' / 'koza': 0 brama, id dziury, KOZA_POST, null: nie ma takiego */
+  /** posterunek warty z klucza 'brama' / 'd<id>' / 'koza' / 'siatka' / 'wieza': 0 brama, id dziury, KOZA_POST,
+      SIATKA_POST, WIEZA_POST (gdy wieża stoi), null: nie ma takiego */
   private postOf(post: string): number | null {
     if (post === 'brama') return this.gateStand.length ? 0 : null;
     if (post === 'koza') return this.koza() ? KOZA_POST : null;
     if (post === 'siatka') return this.st.fence ? SIATKA_POST : null;
+    if (post === 'wieza') return this.wieza() ? WIEZA_POST : null;
     const id = /^d(\d+)$/.exec(post)?.[1];
     return id && this.holeById(Number(id)) ? Number(id) : null;
   }
@@ -2726,8 +2754,20 @@ export class Sim {
     return this.nearest(p, cand);
   }
 
-  /** gdzie stoi warta: przy bramie najbliżej jej środka, przy dziurze tuż obok od strony podwórka, przy kozie przed nią */
+  /** gdzie stoi warta: przy bramie najbliżej jej środka, przy dziurze tuż obok od strony podwórka, przy kozie przed
+      nią, na wieży na jej wolnym kafelku najbliżej pionka */
   private guardStand(p: Pawn, post: number): number {
+    if (post === WIEZA_POST) {
+      const tower = this.wieza();
+      if (!tower) return -1;
+      const taken = this.taken(p);
+      const region = this.regionOf(p);
+      const tiles: number[] = [];
+      for (let y = tower.y; y < tower.y + tower.h; y++)
+        for (let x = tower.x; x < tower.x + tower.w; x++) tiles.push(y * this.w.size + x);
+      const free = tiles.filter((i) => !this.coreBlocked[i] && !taken.includes(i) && this.reg[i] === region);
+      return this.nearest(p, free);
+    }
     if (post === SIATKA_POST) {
       const hot = this.hotTile(p);
       if (hot >= 0) {
@@ -2954,6 +2994,11 @@ export class Sim {
   /** koza zarządu (w jego mieszkaniu) */
   private koza(): Thing | undefined {
     return this.house ? homeKoza(this.house, this.w.size, this.st.things) : undefined;
+  }
+
+  /** wieża z rusztowań na podwórku (stoi najwyżej jedna) */
+  private wieza(): Thing | undefined {
+    return this.st.things.find((t) => t.kind === 'wieza');
   }
 
   /** stos drewna na kafelku */
@@ -3486,6 +3531,8 @@ export class Sim {
             p.nap = true;
             return false;
           }
+          // rozebrana wieża: nie ma już na czym stać
+          if (j.target === WIEZA_POST && !this.wieza()) return false;
           // warta bije każdego wroga w zasięgu swojej broni, nie schodząc z posterunku
           if ((tick + p.id) % 5 === 0) this.guardStrike(p);
           // przy siatce: idzie tam, gdzie napór się przesunął
@@ -4502,7 +4549,7 @@ export class Sim {
   }
 
   /** Odwołanie planu (doniesione materiały zostają obok) albo rozbiórka gotowej budowli (wraca połowa kosztu,
-      zasieki przestają trzymać siatkę). */
+      zasieki i barykada przestają trzymać siatkę). */
   private unbuild(id: number): void {
     const st = this.st;
     const k = st.builds.findIndex((b) => b.id === id);
@@ -4523,7 +4570,7 @@ export class Sim {
       const back = Math.floor(n / 2);
       if (back > 0) this.dropMat(at, m, back);
     }
-    if (kind === 'zasieki') this.fenceAt(t.y * this.w.size + t.x, false, t.prev ?? 0);
+    if (naObwodzie(kind)) this.fenceAt(t.y * this.w.size + t.x, false, t.prev ?? 0);
     // stół zniknął: nikt już nie idzie do niego ani przy nim nie siedzi (wybór i postęp badań zostają)
     if (kind === 'pracownia') this.endResearchJobs();
     this.updateCap();
@@ -4664,14 +4711,16 @@ export class Sim {
       by: -1,
       owner: -1,
     });
-    if (b.kind === 'zasieki') st.things[st.things.length - 1].prev = this.fenceAt(b.y * this.w.size + b.x, true);
+    if (naObwodzie(b.kind))
+      st.things[st.things.length - 1].prev = this.fenceAt(b.y * this.w.size + b.x, true, 0, b.kind);
     this.updateCap();
   }
 
-  /** Zasieki na odcinku siatki: dziura pod nimi zamknięta, kafelek siatki twardszy. Zwraca to, co było wcześniej
-      (łata dziury sprzed pierwszych zasieków na niej albo wytrzymałość kafelka). Przy rozbiórce (on: false) wraca
-      `prev`, chyba że na tej samej dziurze stoją jeszcze inne zasieki. */
-  private fenceAt(tile: number, on: boolean, prev = 0): number {
+  /** Zasieki albo barykada na odcinku siatki: dziura pod nimi zamknięta, kafelek siatki twardszy (ZASIEKI_HP albo
+      BARYKADA_HP według `kind`). Zwraca to, co było wcześniej (łata dziury sprzed pierwszej takiej budowli na niej
+      albo wytrzymałość kafelka). Przy rozbiórce (on: false) wraca `prev`, chyba że na tej samej dziurze stoi jeszcze
+      inna budowla z obwodu: wtedy dziura zostaje załatana jej wytrzymałością. */
+  private fenceAt(tile: number, on: boolean, prev = 0, kind = 'zasieki'): number {
     const f = this.st.fence;
     const shape = fenceShape(this.w);
     if (!f || !shape) return 0;
@@ -4679,17 +4728,18 @@ export class Sim {
     const hole = f.holes.find((x) => x.tiles.includes(tile));
     if (hole) {
       const other = this.st.things.find(
-        (t) => t.kind === 'zasieki' && t.y * size + t.x !== tile && hole.tiles.includes(t.y * size + t.x),
+        (t) => naObwodzie(t.kind) && t.y * size + t.x !== tile && hole.tiles.includes(t.y * size + t.x),
       );
       const was = other?.prev ?? hole.patch;
-      hole.patch = on || other ? ZASIEKI_HP : prev;
+      const held = other ? obwodHp(other.kind) : 0;
+      hole.patch = on ? Math.max(obwodHp(kind), held) : other ? held : prev;
       this.rebuild();
       return was;
     }
     const k = shape.tiles.indexOf(tile);
     if (k < 0) return 0;
     const was = f.hp[k];
-    f.hp[k] = on ? ZASIEKI_HP : prev;
+    f.hp[k] = on ? obwodHp(kind) : prev;
     return was;
   }
 
@@ -6520,11 +6570,13 @@ export class Sim {
     return this.holdFire(w) ? { ...w, fence: false } : w;
   }
 
-  /** warta na posterunku: najbliższy wróg w zasięgu broni (w trybie zombie z bronią palną tylko po swojej stronie) */
+  /** warta na posterunku: najbliższy wróg w zasięgu broni (w trybie zombie z bronią palną tylko po swojej stronie);
+      z wieży broń dystansowa (kusza, rewolwer, strzelba) sięga ×1,5 dalej, dzida i broń wręcz jak dotąd */
   private guardStrike(p: Pawn): void {
     if (this.st.tick < (p.cd ?? 0)) return;
     const w = this.armed(p);
-    const reach = this.selfReach(w);
+    let reach = this.selfReach(w);
+    if (p.job?.target === WIEZA_POST && isRanged(w)) reach = { ...reach, reach: reach.reach * WIEZA_ZASIEG };
     let best: Pawn | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.pawns) {
@@ -7064,7 +7116,7 @@ export class Sim {
       if (hole.patch <= 0) return;
       hole.patch = Math.max(0, hole.patch - amount);
       if (hole.patch === 0) {
-        this.wreckZasieki(hole.tiles);
+        this.wreckObwod(hole.tiles);
         this.breach();
       }
       return;
@@ -7073,7 +7125,7 @@ export class Sim {
     if (k === undefined || f.hp[k] <= 0) return;
     f.hp[k] = Math.max(0, f.hp[k] - amount);
     if (f.hp[k] > 0) return;
-    this.wreckZasieki([tile]);
+    this.wreckObwod([tile]);
     const id = f.holes.reduce((m, h) => Math.max(m, h.id), 0) + 1;
     f.holes.push({ id, tiles: [tile], size: 0.6, patch: 0 });
     this.breach();
@@ -7084,15 +7136,15 @@ export class Sim {
     this.rebuild();
   }
 
-  /** Zasieki (M2) na kafelkach, które napór zbił do zera: zniszczone, bez zwrotu materiału, żeby widok pokazał
-      dziurę, a rozbiórka nie łatała przerwania za darmo. */
-  private wreckZasieki(tiles: readonly number[]): void {
+  /** Zasieki (M2) i barykady z wraków na kafelkach, które napór zbił do zera: zniszczone, bez zwrotu materiału, żeby
+      widok pokazał dziurę, a rozbiórka nie łatała przerwania za darmo. */
+  private wreckObwod(tiles: readonly number[]): void {
     const st = this.st;
     const size = this.w.size;
     let gone = false;
     for (let k = st.things.length - 1; k >= 0; k--) {
       const t = st.things[k];
-      if (t.kind !== 'zasieki' || !tiles.includes(t.y * size + t.x)) continue;
+      if (!naObwodzie(t.kind) || !tiles.includes(t.y * size + t.x)) continue;
       st.things.splice(k, 1);
       gone = true;
     }
@@ -7396,10 +7448,15 @@ export class Sim {
     }
   }
 
-  /** lampa warty albo palące się ognisko w zasięgu */
+  /** lampa warty (z wieży sięga ×1,5 dalej) albo palące się ognisko w zasięgu */
   private litNear(x: number, y: number): boolean {
     for (const q of this.st.pawns)
-      if (!q.away && q.job?.t === 'guard' && q.job.phase === 1 && Math.hypot(q.x - x, q.y - y) <= LAMP_REACH)
+      if (
+        !q.away &&
+        q.job?.t === 'guard' &&
+        q.job.phase === 1 &&
+        Math.hypot(q.x - x, q.y - y) <= (q.job.target === WIEZA_POST ? LAMP_REACH * WIEZA_ZASIEG : LAMP_REACH)
+      )
         return true;
     return this.st.things.some(
       (t) => t.kind === 'ognisko' && t.fuel > 0 && Math.hypot(t.x + 0.5 - x, t.y + 0.5 - y) <= CAMPFIRE_LIGHT,
