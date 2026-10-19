@@ -5,12 +5,14 @@
    `tablicaHtml(b, { wybrana, mode })` składa całe wnętrze warstwy z odczytu `SimSnapshot.tablica`: nagłówek z przyciskiem
    „Wróć do gry” (`data-akcja="zamknij"`), kolumny er z `ERY` od lewej (nagłówek ery na pasku papieru), kartkę na
    każdą technologię na kolorowej pinezce (stany z `kartka`: zbadana z pieczątką, w toku z paskiem postępu, do wzięcia,
-   „nikt się nie zna”, „najpierw”, odwrócona; technologia końcowa ze złotą pinezką i dopiskiem „Cel”, technologia
-   z budowlą z dopiskiem „budowla”), czerwony sznurek SVG od wymagania do kartki, szczegóły wybranej kartki (nazwa,
-   działanie w nowej grze, dziedzina i poziom, wymagania, koszt i szacowany czas przy obecnej obsadzie, kto w osadzie
-   zna dziedzinę, przycisk `data-akcja="badaj"` z `data-arg` technologii) i pasek obsady na dole (kto siedzi przy
-   stole, bieżące badanie z postępem, półka z książkami w każdej z sześciu dziedzin). Kartki wskazuje `data-tech`.
-   Technologia z polem `tryb` innym niż bieżący tryb gry nie ma kartki ani sznurków.
+   „nikt się nie zna”, „najpierw”, odwrócona; technologia końcowa (fabryka bieżącego trybu) ze złotą pinezką
+   i dopiskiem „Cel”, technologia z budowlą z dopiskiem „budowla”), czerwony sznurek SVG od wymagania do kartki,
+   szczegóły wybranej kartki (nazwa, działanie w nowej grze, dziedzina i poziom, wymagania, koszt i szacowany czas przy
+   obecnej obsadzie, kto w osadzie zna dziedzinę, przycisk `data-akcja="badaj"` z `data-arg` technologii; odwrócona
+   kartka z własnym opisem, jak sieć, generator, serwer i fabryka, dostaje pod nim dopisek „Do tego trzeba prądu”)
+   i pasek obsady na dole (kto siedzi przy stole, bieżące badanie z postępem, półka z książkami w każdej z sześciu
+   dziedzin). Kartki wskazuje `data-tech`. Technologia z polem `tryb` innym niż bieżący tryb gry nie ma kartki ani
+   sznurków (fabryka drugiego trybu), więc w każdym trybie na tablicy leży dokładnie jeden cel.
 
    Układ jest policzony, a nie ręczny: `uklad` ustawia kartki w kolumnach er (kolumna to indeks ery w `ERY`, wiersze
    wychodzą ze średniej wierszy wymagań, żeby sznurki szły prosto), więc nowa technologia czy era dochodzi bez zmiany
@@ -39,6 +41,7 @@ import {
   ERY,
   type Kartka,
   kosztDoPokazania,
+  maWlasnyOpis,
   nazwaEry,
   nazwaTech,
   postepDoPokazania,
@@ -252,8 +255,9 @@ function szczegolyHtml(
     const dzien = dzienOdkrycia(b, t.id);
     stan = `<p class="tb-d-stan ok">${dzien === null ? L('Zbadane.', EN.zbadane(null)) : L(`Zbadane, dzień ${dzien}.`, EN.zbadane(dzien))}</p>`;
   } else if (k.stan === 'odwrocona') {
-    // technologia końcowa ma własny opis (sieć), a dopisek o prądzie dokłada tablica ze stanu kartki
-    stan = t.koncowa ? `<p class="tb-d-stan brak">${L('Do tego trzeba prądu.', EN.prad)}</p>` : '';
+    // technologia z własnym opisem (ery 6) nie ma „Do tego trzeba prądu” jako opisu, więc dopisek dokłada tablica ze
+    // stanu kartki; kartka z domyślnym opisem ma go już w opisie
+    stan = maWlasnyOpis(t) ? `<p class="tb-d-stan brak">${L('Do tego trzeba prądu.', EN.prad)}</p>` : '';
   } else {
     if (k.stan === 'najpierw')
       stan = `<p class="tb-d-stan brak">${L('Najpierw zbadajcie', EN.najpierwZbadajcie)}: ${esc(k.brakuje.map(nazwaBrakujacego).join(', '))}.</p>`;

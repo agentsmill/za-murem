@@ -1,10 +1,12 @@
 /* Dane technologii nowej gry (docs/superpowers/specs/2026-10-19-badania-design.md, sekcje „Technologie ery 1 i 2”,
-   „Ery 3–5” i „Dane”): 24 technologie z 0.3 plus technologia końcowa, ery 1–6, koszty z mnożnikiem ery i nazwy w obu
-   językach. Liczby z 0.3 bierze się z TECH, więc test porównuje z nim zamiast spisywać je drugi raz. */
+   „Ery 3–5” i „Dane”): 24 technologie z 0.3 plus łańcuch ery 6 (sieć bez miedzi, generator fuzji, superserwer AI i dwie
+   fabryki, z których celem jest ta z bieżącego trybu), ery 1–6, koszty z mnożnikiem ery i nazwy w obu językach. Liczby
+   z 0.3 bierze się z TECH, więc test porównuje z nim zamiast spisywać je drugi raz. Łańcuch fabryki ma osobny plik
+   (badania-fabryka.test.ts). */
 
 import { describe, expect, it } from 'vitest';
 import { ERAS, TECH } from '../../src/content/data.ts';
-import { ERY, KOSZT_ERY, kosztTech, nazwaEry, nazwaTech, TECH_BY, TECHS } from '../../src/sim/badania.ts';
+import { ERY, KOSZT_ERY, kosztTech, maWlasnyOpis, nazwaEry, nazwaTech, TECH_BY, TECHS } from '../../src/sim/badania.ts';
 
 const ID_0_3 = Object.keys(TECH);
 const DZIALAJA = [
@@ -21,18 +23,20 @@ const DZIALAJA = [
   't_ambu',
 ];
 const PRAD = { pl: 'Do tego trzeba prądu.', en: 'This needs power.' };
+/** łańcuch ery 6, w kolejności za siecią; wszystkie odwrócone, ale z własnym opisem zamiast „Do tego trzeba prądu” */
+const ERA_6 = ['t_siec', 't_fuzja', 't_superserwer', 't_fabryka_bio', 't_fabryka_hum'];
 
 describe('badania: lista technologii', () => {
-  it('25 technologii z unikalnymi identyfikatorami, w kolejności z 0.3 i technologia końcowa na końcu', () => {
-    expect(TECHS).toHaveLength(25);
+  it('29 technologii z unikalnymi identyfikatorami, w kolejności z 0.3, a po nich łańcuch ery 6 z siecią na początku', () => {
+    expect(TECHS).toHaveLength(29);
     const ids = TECHS.map((t) => t.id);
-    expect(new Set(ids).size).toBe(25);
+    expect(new Set(ids).size).toBe(29);
     expect(ids.slice(0, 24)).toEqual(ID_0_3);
-    expect(ids[24]).toBe('t_siec');
+    expect(ids.slice(24)).toEqual(ERA_6);
   });
 
   it('TECH_BY indeksuje wszystkie technologie po identyfikatorze', () => {
-    expect(Object.keys(TECH_BY)).toHaveLength(25);
+    expect(Object.keys(TECH_BY)).toHaveLength(29);
     for (const t of TECHS) expect(TECH_BY[t.id]).toBe(t);
   });
 
@@ -48,7 +52,7 @@ describe('badania: lista technologii', () => {
       stan.set(id, 'gotowe');
     };
     for (const t of TECHS) odwiedz(t.id);
-    expect(stan.size).toBe(25);
+    expect(stan.size).toBe(29);
   });
 
   it('24 technologie z 0.3 mają era, dom, lvl i req jak w TECH, a polską nazwę z TECH', () => {
@@ -88,24 +92,33 @@ describe('badania: co działa w nowej grze', () => {
     for (const t of TECHS) expect([...t.odblokowuje], t.id).toEqual(budowle[t.id] ?? []);
   });
 
-  it('żadna technologia nie wymaga jeszcze budowli i żadna nie ma ograniczonego trybu', () => {
-    for (const t of TECHS) {
-      expect(t.wymagaBudowli, t.id).toBeUndefined();
-      expect(t.tryb, t.id).toBeUndefined();
-    }
+  it('żadna technologia nie wymaga jeszcze budowli, a tryb gry mają tylko dwie fabryki', () => {
+    for (const t of TECHS) expect(t.wymagaBudowli, t.id).toBeUndefined();
+    expect(Object.fromEntries(TECHS.filter((t) => t.tryb !== undefined).map((t) => [t.id, t.tryb]))).toEqual({
+      t_fabryka_bio: 'zwykly',
+      t_fabryka_hum: 'zombie',
+    });
   });
 
-  it('technologie bez działania w nowej grze, poza końcową, mówią, że trzeba do tego prądu, w obu językach', () => {
-    for (const t of TECHS.filter((x) => !x.dziala && !x.koncowa)) expect(t.dzialanie, t.id).toEqual(PRAD);
+  it('technologie bez działania w nowej grze, poza pięcioma z ery 6 z własnym opisem, mówią, że trzeba do tego prądu, w obu językach', () => {
+    for (const t of TECHS.filter((x) => !x.dziala && !ERA_6.includes(x.id))) {
+      expect(t.dzialanie, t.id).toEqual(PRAD);
+      expect(maWlasnyOpis(t), t.id).toBe(false);
+    }
     for (const t of TECHS.filter((x) => x.dziala)) expect(t.dzialanie.pl, t.id).not.toBe(PRAD.pl);
+    // ery 6 opisują swoją rzecz, a „Do tego trzeba prądu” dopisuje im tablica ze stanu kartki
+    for (const id of ERA_6) {
+      expect(TECH_BY[id].dziala, id).toBe(false);
+      expect(TECH_BY[id].dzialanie, id).not.toEqual(PRAD);
+      expect(maWlasnyOpis(TECH_BY[id]), id).toBe(true);
+    }
   });
 });
 
 describe('badania: technologia końcowa i ery', () => {
-  it('dokładnie jedna technologia jest końcowa: Sieć bez miedzi w ostatniej erze', () => {
-    const koncowe = TECHS.filter((t) => t.koncowa);
-    expect(koncowe.map((t) => t.id)).toEqual(['t_siec']);
-    const t = koncowe[0];
+  it('sieć bez miedzi stoi w ostatniej erze i nie jest już końcowa: celem są dopiero fabryki', () => {
+    const t = TECH_BY.t_siec;
+    expect(t.koncowa).toBeUndefined();
     expect(t.era).toBe(Math.max(...ERY.map((e) => e.nr)));
     expect(t.dom).toBe('elek');
     expect(t.lvl).toBe(4);
@@ -114,7 +127,24 @@ describe('badania: technologia końcowa i ery', () => {
     expect(nazwaTech('t_siec')).toEqual({ pl: 'Sieć bez miedzi', en: 'Copper-free grid' });
   });
 
-  it('technologia końcowa opisuje sieć bez miedzi w trybie zwykłym, a jej cichą wersję osobno na tryb zombie', () => {
+  it('technologie końcowe to dwie fabryki w ostatniej erze, po jednej na tryb gry, oparte na Superserwerze AI', () => {
+    const koncowe = TECHS.filter((t) => t.koncowa);
+    expect(koncowe.map((t) => [t.id, t.tryb])).toEqual([
+      ['t_fabryka_bio', 'zwykly'],
+      ['t_fabryka_hum', 'zombie'],
+    ]);
+    for (const t of koncowe) {
+      expect(t.era).toBe(Math.max(...ERY.map((e) => e.nr)));
+      expect(t.dom).toBe('bud');
+      expect(t.lvl).toBe(4);
+      expect([...t.req]).toEqual(['t_superserwer']);
+      expect(t.dziala).toBe(false);
+    }
+    expect(nazwaTech('t_fabryka_bio')).toEqual({ pl: 'Fabryka biorobotów', en: 'Biorobot factory' });
+    expect(nazwaTech('t_fabryka_hum')).toEqual({ pl: 'Fabryka humanoidów', en: 'Humanoid factory' });
+  });
+
+  it('sieć bez miedzi opisuje sieć w trybie zwykłym, a jej cichą wersję osobno na tryb zombie', () => {
     const { dzialanie: d, dzialanieZombie: z } = TECH_BY.t_siec;
     expect(d.pl).toMatch(/aluminium/);
     expect(d.pl).toMatch(/światłowod/);
@@ -155,9 +185,10 @@ describe('badania: koszt', () => {
     expect(kosztTech('t_wezel')).toBe(35 * 1.3);
   });
 
-  it('koszt to koszt z TECH razy mnożnik ery, a dla technologii końcowej 150 razy mnożnik ery 6', () => {
+  it('koszt to koszt z TECH razy mnożnik ery, a dla ery 6 koszt bazowy (150, 160, 170, 200 i 200) razy mnożnik ery 6', () => {
     for (const id of ID_0_3) expect(kosztTech(id), id).toBe(TECH[id].cost * KOSZT_ERY[TECH[id].era]);
     expect(kosztTech('t_siec')).toBe(150 * KOSZT_ERY[6]);
+    expect(ERA_6.map((id) => kosztTech(id))).toEqual([450, 480, 510, 600, 600]);
   });
 
   it('mnożniki: ery 1–2 z pomiaru bota, ery 3–6 wstępne z planu, i nie maleją z erą', () => {

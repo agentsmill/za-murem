@@ -4,7 +4,8 @@
    angielskie leżą tutaj. Słowa ze słowniczka docs/SLOWNICZEK-EN.md (koza to „the stove”, siedziba to „HQ”, karta nocy
    to „Night orders”, ogródek to „vegetable patch”, zasieki to „barricade”, a barykady z wraków to „Wreck walls”). */
 
-/** nazwa technologii po angielsku, po identyfikatorze (24 z 0.3 w kolejności data.ts i technologia końcowa) */
+/** nazwa technologii po angielsku, po identyfikatorze (24 z 0.3 w kolejności data.ts i pięć z ery 6: sieć, generator fuzji,
+    superserwer AI i dwie fabryki) */
 export const NAZWY_TECH_EN: Readonly<Record<string, string>> = {
   t_kozy: 'Stoves in the flats',
   t_okna: 'Plastic sheeting and blankets on the windows',
@@ -31,9 +32,13 @@ export const NAZWY_TECH_EN: Readonly<Record<string, string>> = {
   t_serwer: 'Salvaged server',
   t_model: 'Local language model',
   t_siec: 'Copper-free grid',
+  t_fuzja: 'Fusion generator',
+  t_superserwer: 'AI superserver',
+  t_fabryka_bio: 'Biorobot factory',
+  t_fabryka_hum: 'Humanoid factory',
 };
 
-/** nazwa ery po angielsku, po numerze ery (1–5 jak ERAS w data.ts, 6 to era technologii końcowej) */
+/** nazwa ery po angielsku, po numerze ery (1–5 jak ERAS w data.ts, 6 to era sieci bez miedzi i fabryki) */
 export const NAZWY_ERY_EN: Readonly<Record<number, string>> = {
   1: 'First weeks',
   2: 'Tinkering',
@@ -65,10 +70,21 @@ export const DZIALANIE_EN: Readonly<Record<string, string>> = {
 /** technologia bez działania w nowej grze: kartka leży odwrócona, dopóki ktoś nie dopisze działania */
 export const PRAD_EN = 'This needs power.';
 
-/** opis technologii końcowej w trybie zwykłym: sieć bez miedzi, której bakteria nie ruszy (cel drzewka) */
+/** opis sieci bez miedzi (technologia ery 6, już nie końcowa) w trybie zwykłym: prąd, którego bakteria nie ruszy */
 export const SIEC_EN =
   'A grid of aluminium instead of copper, optical fibre and resin-sealed cells: power the bacterium will not touch.';
 
-/** opis technologii końcowej w trybie zombie: ta sama sieć, a do tego cicha, bo hałas ściąga stado (projekt warunków
-    zwycięstwa) */
+/** opis sieci w trybie zombie: ta sama sieć, a do tego cicha, bo hałas ściąga stado (projekt warunków zwycięstwa) */
 export const SIEC_ZOMBIE_EN = `${SIEC_EN} In this mode it is also silent, because noise draws the herd.`;
+
+/** opisy reszty łańcucha ery 6 (docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-technologia.md, zadanie 1): generator
+    fuzji, superserwer AI i dwie fabryki, każda dla swojego trybu. Kartki są odwrócone, więc to opisy tego, do czego
+    prowadzi droga, a nie działania w nowej grze. */
+export const FUZJA_EN =
+  'Fusion generator: a small star in an old parcel-locker container. Power for the server and the factory.';
+export const SERWER_AI_EN =
+  'An AI superserver from an old data centre. It writes its own terms of service, but it will run the factory.';
+export const FABRYKA_BIO_EN =
+  'A factory of biorobots immune to the copper bacterium. They will lay new lines across the whole city.';
+export const FABRYKA_HUM_EN =
+  'A factory of humanoid soldiers. They will march out of the gate and clear the city of walkers.';

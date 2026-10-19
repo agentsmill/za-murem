@@ -385,9 +385,10 @@ async function zombieWalka(page: Page, base: string, emeryci = false) {
 /** Tablica badań z `?badania=demo` (pracownia z dwiema osobami przy stole, cztery zbadane technologie, Spawanie w toku
     14 z 25, Rozruch węzła bez wiedzy, dwie książki): otwarta sama, z pauzą. Sprawdza, co ma być na tablicy w każdym
     języku i na każdym ekranie, i zwraca pomiary strony, żeby scenariusz mógł sprawdzić układ (poziome przewijanie
-    strony, szczegóły i pasek obsady w oknie). */
-async function tablicaDemo(page: Page, base: string) {
-  await page.goto(`${base}?demo=przymorze&speed=0&badania=demo`);
+    strony, szczegóły i pasek obsady w oknie). `tryb` to tryb gry z adresu (`?tryb=zombie`): tablica pokazuje technologie
+    tego trybu (bez fabryki drugiego trybu) i dokładnie jedną złotą kartkę celu, fabrykę tego trybu. */
+async function tablicaDemo(page: Page, base: string, tryb: 'zwykly' | 'zombie' = 'zwykly') {
+  await page.goto(`${base}?demo=przymorze&speed=0&badania=demo${tryb === 'zombie' ? '&tryb=zombie' : ''}`);
   await waitIdle(page);
   await page.waitForSelector('#tablica:not([hidden]) .tb-kartka');
   const stan = await page.evaluate(() => {
@@ -405,14 +406,20 @@ async function tablicaDemo(page: Page, base: string) {
       },
       wybrana: window.zm!.badania().wybrana,
       przycisk: !document.getElementById('btnResearch')!.hidden,
+      cele: [...document.querySelectorAll<HTMLElement>('#tablica .tb-kartka.koncowa')].map((k) => k.dataset.tech),
     };
   });
   console.log(`  tablica: ${JSON.stringify(stan)}`);
   const { TECHS } = await import('../src/sim/badania.ts');
-  const par = TECHS.reduce((a, t) => a + t.req.length, 0);
+  // fabryka drugiego trybu nie ma kartki ani sznurków, więc kartki i sznurki liczą się dla trybu z adresu
+  const naTablicy = TECHS.filter((t) => t.tryb === undefined || t.tryb === tryb);
+  const par = naTablicy.reduce((a, t) => a + t.req.length, 0);
   if (!stan.pauza) throw new Error('tablica nie zatrzymała gry');
-  if (stan.kartek !== TECHS.length) throw new Error(`kartek ${stan.kartek}, technologii ${TECHS.length}`);
+  if (stan.kartek !== naTablicy.length) throw new Error(`kartek ${stan.kartek}, technologii ${naTablicy.length}`);
   if (stan.nici !== par) throw new Error(`sznurków ${stan.nici}, par wymaganie–technologia ${par}`);
+  const cel = tryb === 'zombie' ? 't_fabryka_hum' : 't_fabryka_bio';
+  if (stan.cele.join() !== cel)
+    throw new Error(`złote kartki celu: ${stan.cele.join() || 'brak'}, ma być jedna: ${cel}`);
   if (stan.stany.zbadana !== 4 || stan.stany.w_toku !== 1 || stan.stany.brak_wiedzy < 1)
     throw new Error(`stany kartek: ${JSON.stringify(stan.stany)}`);
   if (stan.wybrana !== 't_spawanie') throw new Error(`wybrana ${stan.wybrana}, a bieżące badanie to t_spawanie`);
@@ -563,6 +570,38 @@ async function tablicaMiesci(page: Page, opis: string) {
   if (w.wystaje.length) throw new Error(`${opis}: kartki poza oknem planszy: ${w.wystaje.join(', ')}`);
   if (!w.koncowa) throw new Error(`${opis}: brak technologii końcowej`);
   return { ...m, ...w };
+}
+
+/** Scenariusz tablicy badań dla trybu gry (`badania-tablica` i `badania-tablica-zombie`): tablica otwarta sama z pauzą,
+    układ kartek w oknie, wybór kartki do wzięcia pokazuje szczegóły z przyciskiem „Zmień na to badanie”, Esc zamyka
+    i puszcza grę, T otwiera ponownie. */
+async function tablicaGlowna(page: Page, base: string, tryb: 'zwykly' | 'zombie') {
+  await tablicaDemo(page, base, tryb);
+  await tablicaUklad(page);
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: path.join(OUT, `badania-tablica${tryb === 'zombie' ? '-zombie' : ''}-otwarcie.png`) });
+  await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
+  const sel = await page.evaluate(() => ({
+    wybrana: window.zm!.badania().wybrana,
+    zaznaczone: [...document.querySelectorAll<HTMLElement>('#tablica .tb-kartka.sel')].map((k) => k.dataset.tech),
+    przycisk: document.querySelector<HTMLElement>('#tablica [data-akcja="badaj"]')?.dataset.arg ?? null,
+    tekst: document.querySelector('#tablica [data-akcja="badaj"]')?.textContent ?? '',
+    wyroznione: document.querySelectorAll('#tablica .tb-nic.sel').length,
+  }));
+  console.log(`  po kliknięciu: ${JSON.stringify(sel)}`);
+  if (sel.wybrana !== 't_barykady' || sel.zaznaczone.join() !== 't_barykady')
+    throw new Error(`kliknięta kartka nie jest wybrana: ${JSON.stringify(sel)}`);
+  if (sel.przycisk !== 't_barykady' || sel.tekst !== 'Zmień na to badanie')
+    throw new Error(`przycisk szczegółów: ${sel.przycisk} „${sel.tekst}”`);
+  if (sel.wyroznione !== 1) throw new Error(`sznurki wybranej kartki: ${sel.wyroznione}`);
+  await tablicaUklad(page);
+  // Esc zamyka i puszcza grę w tym samym tempie (speed=0 z adresu to pauza, więc i po zamknięciu pauza)
+  await page.keyboard.press('Escape');
+  if ((await page.evaluate(() => window.zm!.badania().open)) !== false) throw new Error('Esc nie zamknął tablicy');
+  await page.keyboard.press('t');
+  if ((await page.evaluate(() => window.zm!.badania().open)) !== true) throw new Error('T nie otworzył tablicy');
+  await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
+  await page.waitForTimeout(250);
 }
 
 /** Górny pasek na telefonie: „Badania” (ikona) stoi w pierwszym wierszu za zegarem, a „Budowa” i „Menu” razem w drugim,
@@ -4363,34 +4402,14 @@ const SHOTS: Shot[] = [
   {
     name: 'badania-tablica',
     query: '',
-    run: async (page, base) => {
-      await tablicaDemo(page, base);
-      await tablicaUklad(page);
-      await page.waitForTimeout(250);
-      await page.screenshot({ path: path.join(OUT, 'badania-tablica-otwarcie.png') });
-      await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
-      const sel = await page.evaluate(() => ({
-        wybrana: window.zm!.badania().wybrana,
-        zaznaczone: [...document.querySelectorAll<HTMLElement>('#tablica .tb-kartka.sel')].map((k) => k.dataset.tech),
-        przycisk: document.querySelector<HTMLElement>('#tablica [data-akcja="badaj"]')?.dataset.arg ?? null,
-        tekst: document.querySelector('#tablica [data-akcja="badaj"]')?.textContent ?? '',
-        wyroznione: document.querySelectorAll('#tablica .tb-nic.sel').length,
-      }));
-      console.log(`  po kliknięciu: ${JSON.stringify(sel)}`);
-      if (sel.wybrana !== 't_barykady' || sel.zaznaczone.join() !== 't_barykady')
-        throw new Error(`kliknięta kartka nie jest wybrana: ${JSON.stringify(sel)}`);
-      if (sel.przycisk !== 't_barykady' || sel.tekst !== 'Zmień na to badanie')
-        throw new Error(`przycisk szczegółów: ${sel.przycisk} „${sel.tekst}”`);
-      if (sel.wyroznione !== 1) throw new Error(`sznurki wybranej kartki: ${sel.wyroznione}`);
-      await tablicaUklad(page);
-      // Esc zamyka i puszcza grę w tym samym tempie (speed=0 z adresu to pauza, więc i po zamknięciu pauza)
-      await page.keyboard.press('Escape');
-      if ((await page.evaluate(() => window.zm!.badania().open)) !== false) throw new Error('Esc nie zamknął tablicy');
-      await page.keyboard.press('t');
-      if ((await page.evaluate(() => window.zm!.badania().open)) !== true) throw new Error('T nie otworzył tablicy');
-      await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
-      await page.waitForTimeout(250);
-    },
+    run: (page, base) => tablicaGlowna(page, base, 'zwykly'),
+  },
+  // ta sama tablica w trybie zombie (?tryb=zombie): w ostatniej kolumnie sieć, generator, serwer i złota Fabryka
+  // humanoidów zamiast Fabryki biorobotów, jedna kartka celu
+  {
+    name: 'badania-tablica-zombie',
+    query: '',
+    run: (page, base) => tablicaGlowna(page, base, 'zombie'),
   },
   // tablica na laptopach 1280×720 i 1366×768: plansza mieści się w oknie bez przewijania w poziomie (skalowana do
   // szerokości okna), technologia końcowa z ostatniej kolumny i szczegóły wybranej kartki są w całości widoczne
@@ -4418,7 +4437,8 @@ const SHOTS: Shot[] = [
   },
   // tablica na tablecie i telefonie poziomo (1024×768, 1180×820, 844×390): plansza nie mieści się w oknie nawet w najmniejszej
   // czytelnej skali, więc zostaje w skali 1 i przewija się w bok (jak dawniej), a czcionki kartek nie spadają poniżej 9 px;
-  // 1280×720 dalej kurczy się do okna (skala 0,855, najmniejsza czcionka ok. 9,4 px)
+  // 1280×720 dalej kurczy się do okna (skala 0,855, najmniejsza czcionka ok. 9,4 px); zrzut końcowy to prawy brzeg planszy
+  // (era 6 z fabryką celu), a `badania-tablica-1024-otwarcie` lewy
   {
     name: 'badania-tablica-1024',
     query: '',
@@ -4455,6 +4475,25 @@ const SHOTS: Shot[] = [
       await page.waitForTimeout(300);
       await page.click('#tablica .tb-kartka[data-tech="t_barykady"]');
       await page.waitForTimeout(250);
+      // prawy brzeg planszy po przewinięciu w bok (zrzut końcowy): ostatnia kolumna, czyli sieć, generator, serwer i
+      // fabryka celu, leży w całości w oknie planszy, a kartka celu pokazuje swoje szczegóły
+      await page.evaluate(() => {
+        const wrap = document.querySelector<HTMLElement>('#tablica .tb-wrap')!;
+        wrap.scrollLeft = wrap.scrollWidth;
+      });
+      await page.click('#tablica .tb-kartka.koncowa');
+      await page.waitForTimeout(250);
+      const poza = await page.evaluate(() => {
+        const okno = document.querySelector<HTMLElement>('#tablica .tb-wrap')!.getBoundingClientRect();
+        const cel = document.querySelector<HTMLElement>('#tablica .tb-kartka.koncowa')!.dataset.tech!;
+        return ['t_siec', 't_fuzja', 't_superserwer', cel].filter((id) => {
+          const b = document
+            .querySelector<HTMLElement>(`#tablica .tb-kartka[data-tech="${id}"]`)!
+            .getBoundingClientRect();
+          return b.left < okno.left - 1 || b.right > okno.right + 1;
+        });
+      });
+      if (poza.length) throw new Error(`po przewinięciu w prawo kartki ery 6 poza oknem planszy: ${poza.join(', ')}`);
     },
   },
   // ta sama tablica na telefonie 390×844: strona stoi w miejscu, przewija się tylko plansza w swoim oknie, szczegóły

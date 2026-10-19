@@ -7,7 +7,7 @@
    paleniska poza kozą zarządu (koza z beczki, kocioł; waga drewna w PALENISKA) działają tylko po zbadaniu albo
    postawieniu, więc gra bez badań ma te same liczby co przed nimi (src/sim/badania.ts).
    Badania: pracownia (stół z dwoma miejscami), polecenia `research` (wybór badania), `study` (zarząd do stołu) i `siec`
-   (włączenie sieci po technologii końcowej), praca `research` z postępem w `researchTick`, stan `research` i `books`
+   (włączenie sieci po zbadaniu sieci bez miedzi), praca `research` z postępem w `researchTick`, stan `research` i `books`
    (pola powstają przy pierwszym użyciu) oraz plan dnia lokatorów z wiedzą (labOpen). Barykada z wraków stoi na odcinku
    siatki jak zasieki, ale ma BARYKADA_HP (160, zasieki 100), a wzmocnienie siatki deskami (`brace`, do 100) jej nie
    dotyka. Posterunek na wieży (WIEZA_POST, klucz 'wieza'): wartownik stoi na wolnym kafelku obrysu wieży (najwyżej tylu
@@ -26,7 +26,6 @@ import {
   badaniaWidoczne,
   dodajKsiazke,
   kartka,
-  koncowaZbadana,
   kosztTech,
   ksiazkaZ,
   lekZPlonu,
@@ -36,6 +35,7 @@ import {
   plonKonserw,
   SZANSA_KSIAZKI,
   siecWlaczona,
+  siecZbadana,
   TECH_BY,
   tempoOsoby,
   wolneMiejsca,
@@ -760,7 +760,7 @@ export type Command =
   /** badania: wybór bieżącego badania (ids puste; tech null zdejmuje wybór) i zarząd do stołu pracowni */
   | { t: 'research'; ids: number[]; tech: string | null }
   | { t: 'study'; ids: number[]; thing: number }
-  /** badania: włączenie sieci po zbadaniu technologii końcowej, z menu pracowni (ids bez znaczenia, nikt nie musi iść) */
+  /** badania: włączenie sieci po zbadaniu sieci bez miedzi (t_siec), z menu pracowni (ids bez znaczenia, nikt nie musi iść) */
   | { t: 'siec'; ids: number[] }
   /** badania: „Tablica badań” i „Wybrać badanie” z menu pracowni otwierają tablicę w interfejsie (main.ts przechwytuje to
       polecenie przed symulacją; gdyby tu trafiło, nic nie zmienia) */
@@ -5364,11 +5364,12 @@ export class Sim {
     st.research.cur = tech;
   }
 
-  /** Włączenie sieci: tylko gdy technologia końcowa jest zbadana i stoi pracownia; ustawia `research.siec` (pole
-      powstaje dopiero teraz, razem z `research`, jeśli go jeszcze nie ma). Drugie włączenie nic nie zmienia. */
+  /** Włączenie sieci: tylko gdy sieć bez miedzi (`t_siec`) jest zbadana, choćby bez fabryki, i stoi pracownia; ustawia
+      `research.siec` (pole powstaje dopiero teraz, razem z `research`, jeśli go jeszcze nie ma). Drugie włączenie nic
+      nie zmienia. */
   private wlaczSiec(): void {
     const st = this.st;
-    if (!koncowaZbadana(st) || !this.pracownia() || siecWlaczona(st)) return;
+    if (!siecZbadana(st) || !this.pracownia() || siecWlaczona(st)) return;
     st.research ??= { cur: null, prog: {}, at: {} };
     st.research.siec = true;
   }

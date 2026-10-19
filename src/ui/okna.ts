@@ -556,7 +556,7 @@ export function confirmSheet(label: string, note?: string): Sheet {
   };
 }
 
-/** potwierdzenie włączenia sieci (badania, technologia końcowa): nieodwracalne i według projektu zwycięstwa zaczyna
+/** potwierdzenie włączenia sieci (badania, zbadana sieć bez miedzi): nieodwracalne i według projektu zwycięstwa zaczyna
     epilog; przyciski jak w `confirmSheet`, więc obsługuje je ten sam kod w main.ts */
 export function siecSheet(): Sheet {
   return {

@@ -16,6 +16,7 @@ import {
   koncowaZbadana,
   kosztTech,
   krzywaUmiejetnosci,
+  siecZbadana,
   TECH_BY,
   TEMPO_BAZOWE,
   type TechNowa,
@@ -336,12 +337,19 @@ describe('badania: odczyty stanu', () => {
     expect(eraBadan(st)).toBe(2);
   });
 
-  it('koncowaZbadana mówi, czy technologia końcowa jest w techDone', () => {
+  it('koncowaZbadana mówi, czy fabryka bieżącego trybu jest w techDone; sama sieć to jeszcze nie cel', () => {
     const st = stan();
     expect(koncowaZbadana(st)).toBe(false);
+    expect(siecZbadana(st)).toBe(false);
     st.techDone = ['t_okna', 't_spawanie'];
     expect(koncowaZbadana(st)).toBe(false);
     st.techDone.push('t_siec');
+    expect(koncowaZbadana(st)).toBe(false);
+    expect(siecZbadana(st)).toBe(true);
+    // zwykła gra: fabryka humanoidów (tryb zombie) nie liczy się, fabryka biorobotów tak
+    st.techDone.push('t_fabryka_hum');
+    expect(koncowaZbadana(st)).toBe(false);
+    st.techDone.push('t_fabryka_bio');
     expect(koncowaZbadana(st)).toBe(true);
   });
 });
@@ -367,6 +375,7 @@ describe('badania: stan nie powstaje sam', () => {
     badaniaWidoczne(st);
     eraBadan(st);
     koncowaZbadana(st);
+    siecZbadana(st);
     expect(JSON.stringify(st)).toBe(przed);
   });
 });

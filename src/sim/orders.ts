@@ -14,12 +14,12 @@ import type { World } from '../world/world.ts';
 import {
   BRAK_MIEJSCA,
   kartka,
-  koncowaZbadana,
   kosztDoPokazania,
   kosztTech,
   nazwaTech,
   postepDoPokazania,
   siecWlaczona,
+  siecZbadana,
   TECH_BY,
   wolneMiejsca,
 } from './badania.ts';
@@ -458,9 +458,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   // pracownia: zarząd do stołu i tablica badań (Badać: <nazwa>, Tablica badań albo Wybrać badanie)
   const lab = things.find((t) => t.kind === 'pracownia');
   if (lab) out.push(...pracowniaItems(st, core, lab.id));
-  // pracownia po zbadaniu technologii końcowej: włączyć sieć (raz; nieodwracalne i zaczyna epilog, więc z potwierdzeniem,
-  // którego okno to `siecSheet` w src/ui/okna.ts; sam epilog robi rama zwycięstwa)
-  if (things.some((t) => t.kind === 'pracownia') && koncowaZbadana(st) && !siecWlaczona(st))
+  // pracownia po zbadaniu sieci bez miedzi (jeszcze przed fabryką): włączyć sieć (raz; nieodwracalne i zaczyna epilog, więc
+  // z potwierdzeniem, którego okno to `siecSheet` w src/ui/okna.ts; sam epilog robi rama zwycięstwa)
+  if (things.some((t) => t.kind === 'pracownia') && siecZbadana(st) && !siecWlaczona(st))
     out.push({
       cmd: { t: 'siec', ids: core },
       label: L('Włączyć sieć', 'Switch on the grid'),
