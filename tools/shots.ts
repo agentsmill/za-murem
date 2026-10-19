@@ -11422,7 +11422,7 @@ function miastoShots(): Shot[] {
  * się testy i `npm run bot -- --zwyciestwo`). Zrzut zapisany na końcu scenariusza pokazuje okno, o które chodzi.
  * Droga technologii (docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-technologia.md, zadanie 2): na ekranie dróg ma
  * sześć kamieni i na starcie złoty pierwszy kamień ze zdaniem o pracowni (bez „Wkrótce”: odczyt badań w grze jest zawsze),
- * po dwóch kamieniach (stan ustawiony wprost, bo ery 3–6 są odwrócone) „Wkrótce” o prądzie z projektu gospodarki, a jej
+ * po dwóch kamieniach (stan ustawiony wprost, bo ery 3–6 są odwrócone) „Wkrótce: ery 3–6 czekają na prąd.”, a jej
  * epilog z fabryką bieżącego trybu ma osobne scenariusze w zwykłej grze i w zombie.
  */
 function zwyciestwoShots(): Shot[] {
@@ -11430,12 +11430,13 @@ function zwyciestwoShots(): Shot[] {
   const SAVE = 'za-murem-0.4-zapis';
   /** zdania „Wkrótce” dosłownie z planu (plan docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-rama.md, sekcja „Teksty”):
       droga → polski i angielski napis; teren dopiero po pierwszym kamieniu, więc go tu nie ma, a technologia (w grze odczyt
-      badań jest zawsze) dopiero od drugiego kamienia, o prądzie z projektu gospodarki (plan docs/superpowers/plans/
-      2026-10-19-warunki-zwyciestwa-technologia.md, zadanie 2); dawne „Wkrótce” technologii jest tylko bez odczytu badań */
+      badań jest zawsze) dopiero od drugiego kamienia, o prądzie, bez nazwy projektu (plan docs/superpowers/plans/
+      2026-10-19-warunki-zwyciestwa-technologia.md, zadanie 2, w brzmieniu z poprawki po przeglądzie); dawne „Wkrótce”
+      technologii jest tylko bez odczytu badań */
   const WKROTCE: Partial<Record<Droga, Tx>> = {
     technologia: {
-      pl: 'Wkrótce: ery 3–6 czekają na prąd z projektu gospodarki.',
-      en: 'Coming soon: eras 3–6 are waiting for power from the economy project.',
+      pl: 'Wkrótce: ery 3–6 czekają na prąd.',
+      en: 'Coming soon: eras 3–6 are waiting for power.',
     },
     lek: { pl: 'Wkrótce: dalekie wyprawy po lek.', en: 'Coming soon: long runs for the cure.' },
     cuda: { pl: 'Wkrótce: cuda z późnych badań.', en: 'Coming soon: wonders from late research.' },
@@ -12084,7 +12085,7 @@ function zwyciestwoShots(): Shot[] {
     },
     {
       // technologia z dwoma kamieniami (komputer, polski): pracownia i pierwsze badanie zaliczone, a Wkrótce mówi o prądzie
-      // z projektu gospodarki (tak daleko gracz dochodzi dziś, bo ery 3–6 są odwrócone). Stan ustawiony wprost jak w
+      // („ery 3–6 czekają na prąd”; tak daleko gracz dochodzi dziś, bo ery 3–6 są odwrócone). Stan ustawiony wprost jak w
       // `ustawSerie`, kamienie z prawdziwego odczytu sprawdzają testy. Wiersz bez złotego następnego kamienia i bez zdania
       // „co dalej”, reszta ekranu jak na starcie (teren i ludność ze zdaniem „co dalej”, lek i cuda z „Wkrótce”)
       name: 'zwyciestwo-drogi-technologia',

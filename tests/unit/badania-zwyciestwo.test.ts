@@ -218,7 +218,7 @@ describe('menu pracowni: Włączyć sieć', () => {
     expect(m).toBeTruthy();
     expect(m.label).toBe('Włączyć sieć');
     expect(m.quick).toBe(false);
-    // nieodwracalne i zaczyna epilog: z potwierdzeniem, nigdy od stuknięcia
+    // nieodwracalne, więc z potwierdzeniem, nigdy od stuknięcia (czwarty kamień drogi technologii, epilog daje dopiero fabryka)
     expect(m.confirm).toBe(true);
     expect(m.cmd).toEqual({ t: 'siec', ids: rdzen(st) });
     expect(pozycja(st, kafel(prac!) + (prac!.w - 1))).toBeTruthy();

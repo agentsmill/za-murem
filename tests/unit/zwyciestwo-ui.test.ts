@@ -220,7 +220,7 @@ describe('ekran dróg (drogiSheet)', () => {
     // od dwóch kamieni: „Wkrótce” o prądzie, otwarte kamienie szare, bez „Następny:” i bez zdania „co dalej”
     for (const n of [2, 3, 4, 5]) {
       const w = wiersz(drogi(stan({ technologia: n }), odczyt), 'technologia');
-      expect(w, `${n}`).toContain('<p class="zw-wkrotce">Wkrótce: ery 3–6 czekają na prąd z projektu gospodarki.</p>');
+      expect(w, `${n}`).toContain('<p class="zw-wkrotce">Wkrótce: ery 3–6 czekają na prąd.</p>');
       expect(klasyKamieni(w), `${n}`).toEqual([...Array(n).fill('zw-zaliczony'), ...Array(6 - n).fill('zw-dalszy')]);
       expect(w, `${n}`).not.toContain('Następny');
       expect(w, `${n}`).not.toContain('zw-dalej');
@@ -252,7 +252,7 @@ describe('ekran dróg (drogiSheet)', () => {
     );
     const dalej = drogi(stan({ technologia: 3 }), odczyt);
     expect(wiersz(dalej, 'technologia')).toContain(
-      '<p class="zw-wkrotce">Coming soon: eras 3–6 are waiting for power from the economy project.</p>',
+      '<p class="zw-wkrotce">Coming soon: eras 3–6 are waiting for power.</p>',
     );
     expect(wiersz(dalej, 'technologia')).toContain('Copper-free grid');
     expect(wiersz(dalej, 'technologia')).toContain('class="sr">Done: <');

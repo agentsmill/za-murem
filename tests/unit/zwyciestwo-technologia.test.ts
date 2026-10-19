@@ -2,8 +2,8 @@
    docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-technologia.md, zadanie 2). Sześć kamieni liczy się z odczytu
    badań (`GovInput.badania` i `GovInput.techDone`) po kolei i bez cofania: pracownia, pierwsze badanie, era 3, włączona
    sieć, generator fuzji i uruchomiona fabryka (`badania.fabryka`, etap 2). Przy braku pracowni i przed pierwszym
-   badaniem ekran mówi „co dalej”, od drugiego kamienia „Wkrótce” o prądzie z projektu gospodarki (ery 3–6 są dziś
-   odwrócone), a bez odczytu badań zostaje dawny „Wkrótce”. Epilog fabryki ma własne zdanie w każdym trybie i języku.
+   badaniem ekran mówi „co dalej”, od drugiego kamienia „Wkrótce” o prądzie (ery 3–6 są dziś odwrócone, a zdanie nie
+   wymienia projektu, na którym stoi), a bez odczytu badań zostaje dawny „Wkrótce”. Epilog fabryki ma własne zdanie w każdym trybie i języku.
    Czyste funkcje na wejściu z atrapy (tests/unit/gov-atrapa.ts), bez symulacji i bez sieci; na końcu jeden scenariusz
    z odczytem z prawdziwej symulacji (Przymorze z dema), żeby `GovInput.badania` składane w src/sim/gov.ts zgadzało się
    z tym, czego droga oczekuje. W grze etapu 1 odczyt dochodzi najdalej do drugiego kamienia, więc dalsze kamienie
@@ -55,8 +55,8 @@ const KAMIENIE: [string, string][] = [
 
 /** „Wkrótce” z odczytem badań (od drugiego kamienia) i bez odczytu (dawne zdanie), dosłownie z planu */
 const WKROTCE_PRAD = {
-  pl: 'Wkrótce: ery 3–6 czekają na prąd z projektu gospodarki.',
-  en: 'Coming soon: eras 3–6 are waiting for power from the economy project.',
+  pl: 'Wkrótce: ery 3–6 czekają na prąd.',
+  en: 'Coming soon: eras 3–6 are waiting for power.',
 };
 const WKROTCE_BEZ_ODCZYTU = {
   pl: 'Wkrótce: badania w pracowni i sieć bez miedzi.',
@@ -155,6 +155,16 @@ describe('definicja drogi technologii', () => {
 
   it('generator, od którego zależy piąty kamień, jest w drzewie badań pod tym identyfikatorem (era 6)', () => {
     expect(TECHS.find((t) => t.id === 't_fuzja')?.era).toBe(6);
+  });
+
+  it('bezpiecznik: żadna technologia ery 3–6 jeszcze nie działa, a gdy dostaną prąd, trzeba przejrzeć „Wkrótce” drogi', () => {
+    // Gdy ten test padnie, ery 3–6 dostały prąd (projekt gospodarki) i część technologii ma `dziala: true`. Wtedy
+    // przejrzyj w src/gov/zwyciestwo.ts: `WKROTCE_PRAD` (zdanie „ery 3–6 czekają na prąd” przestaje być prawdą), zdania
+    // `DALEJ_TECHNOLOGIA` i próg „Wkrótce” w `wkrotceDrogi` (dziś od drugiego kamienia), a potem popraw ten test.
+    expect(
+      TECHS.filter((t) => t.era >= 3 && t.dziala).map((t) => t.id),
+      'ery 3–6 mają już działające technologie: przejrzyj WKROTCE_PRAD, DALEJ_TECHNOLOGIA i próg w wkrotceDrogi',
+    ).toEqual([]);
   });
 });
 
@@ -389,7 +399,7 @@ describe('ocenDrogi dla technologii: „co dalej” i „Wkrótce”', () => {
     expect(d.wkrotce).toBeNull();
   });
 
-  it('od drugiego kamienia „Wkrótce” o prądzie z projektu gospodarki i żadnego „co dalej”', () => {
+  it('od drugiego kamienia „Wkrótce” o prądzie i żadnego „co dalej”', () => {
     for (let n = 2; n <= 5; n++) {
       const d = tech(zKamieniami(n), wej());
       expect(d.zaliczone, `${n}`).toBe(n);

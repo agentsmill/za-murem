@@ -36,7 +36,7 @@
      w etapie 2 zamiast tego postawiony) i fabryka uruchomiona (`badania.fabryka`, etap 2: dziś nikt go nie ustawia, więc
      w grze droga kończy się przed szóstym kamieniem). Kamienie idą po kolei: późniejszy warunek bez wcześniejszych nic
      nie daje. Bez `GovInput.badania` (gra bez badań) droga stoi na zerze i dostaje dawne „Wkrótce: badania w pracowni
-     i sieć bez miedzi.”; z odczytem „Wkrótce” o prądzie z projektu gospodarki pokazuje się od drugiego kamienia, a przy
+     i sieć bez miedzi.”; z odczytem „Wkrótce: ery 3–6 czekają na prąd.” pokazuje się od drugiego kamienia, a przy
      zerze i jednym kamieniu zamiast niego jest „co dalej”. Ery 3–6 są dziś odwrócone, więc kamienie od trzeciego
      ustawiają tylko testy i `window.zm`;
    - lek, cuda: jeszcze żaden, bo nie ma odczytu; dojdą z projektami, na których stoją.
@@ -195,11 +195,9 @@ const WKROTCE: Readonly<Record<Exclude<Droga, 'ludnosc'>, Tx>> = {
 };
 
 /** „Wkrótce” technologii przy odczycie badań, od drugiego zaliczonego kamienia: ery 3–6 są odwrócone, dopóki projekt
-    gospodarki nie da im prądu (`wkrotceDrogi`). Bez odczytu badań zostaje dawne `WKROTCE.technologia`. */
-const WKROTCE_PRAD = tx(
-  'Wkrótce: ery 3–6 czekają na prąd z projektu gospodarki.',
-  'Coming soon: eras 3–6 are waiting for power from the economy project.',
-);
+    gospodarki nie da im prądu (`wkrotceDrogi`). Gracz nie zna tego projektu, więc zdanie nie wymienia go i mówi tylko,
+    że ery czekają na prąd. Bez odczytu badań zostaje dawne `WKROTCE.technologia`. */
+const WKROTCE_PRAD = tx('Wkrótce: ery 3–6 czekają na prąd.', 'Coming soon: eras 3–6 are waiting for power.');
 
 /** „Co dalej” przy pierwszym kamieniu terenu (reszta terenu to „Wkrótce”, `wkrotceDrogi`) */
 const DALEJ_TEREN = tx(

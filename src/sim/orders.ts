@@ -458,8 +458,9 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   // pracownia: zarząd do stołu i tablica badań (Badać: <nazwa>, Tablica badań albo Wybrać badanie)
   const lab = things.find((t) => t.kind === 'pracownia');
   if (lab) out.push(...pracowniaItems(st, core, lab.id));
-  // pracownia po zbadaniu sieci bez miedzi (jeszcze przed fabryką): włączyć sieć (raz; nieodwracalne i zaczyna epilog, więc
-  // z potwierdzeniem, którego okno to `siecSheet` w src/ui/okna.ts; sam epilog robi rama zwycięstwa)
+  // pracownia po zbadaniu sieci bez miedzi (jeszcze przed fabryką): włączyć sieć (raz; nieodwracalne, więc z potwierdzeniem,
+  // którego okno to `siecSheet` w src/ui/okna.ts). To czwarty kamień drogi technologii (`siecWlaczona` w odczycie dla ramy
+  // zwycięstwa); epilog daje dopiero fabryka
   if (things.some((t) => t.kind === 'pracownia') && siecZbadana(st) && !siecWlaczona(st))
     out.push({
       cmd: { t: 'siec', ids: core },
