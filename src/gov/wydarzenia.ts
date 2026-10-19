@@ -20,7 +20,8 @@
    na kafelek na 10 minut gry); idą do GovEffects.awans, .wyrzuc i .sprawdz, bez powtórzeń tego samego id.
    Odstęp między powtórkami karty z nakładki (`OldEvent.gap`, np. kradzież co 48 godzin gry) idzie do `GEventDef.gap`.
    Wybór bohatera karty z ludzi zarządu: `zarzad()` (wszyscy, bez tych, co wychodzą), `nieSpia()` (czuwający) i
-   `rested()` oraz `doSprawdzenia()` (najbardziej wypoczęta; do sprawdzania bez warty, wyprawy, snu i zabiegu), a
+   `rested()` oraz `doSprawdzenia()` (najbardziej wypoczęta; do sprawdzania najpierw nieśpiąca, a gdy takiej nie ma,
+   śpiąca, ale nigdy z warty, z wyprawy ani od zabiegu), a
    „Sprawdzić” bierze kafelek z `kafelekPrzySiatce()` (GovInput.strony albo największa dziura); `moodOf` daje jednej
    osobie chwilowy nastrój przez GovEffects.moods. */
 
@@ -208,8 +209,10 @@ export function makeHost(
   };
   const nd = nightDay(i);
   const odchodzi = (p: GovPerson) => fx.leave.includes(p.id) || !!fx.wyrzuc?.includes(p.id);
-  /** osoba zarządu, która nie śpi, nie jest na wyprawie (ani w nocnym planie wypraw) i nie wychodzi */
-  const czuwa = (p: GovPerson) => !p.asleep && !p.away && !away.has(p.id) && !odchodzi(p);
+  /** osoba zarządu na miejscu: nie jest na wyprawie (ani w nocnym planie wypraw) i nie wychodzi */
+  const naMiejscu = (p: GovPerson) => !p.away && !away.has(p.id) && !odchodzi(p);
+  /** osoba zarządu na miejscu, która nie śpi */
+  const czuwa = (p: GovPerson) => !p.asleep && naMiejscu(p);
   /** osoba na posterunku warty: z odczytu symulacji, z menu albo z zatwierdzonej karty nocy tej nocy */
   const naWarcie = (p: GovPerson) =>
     !!p.post ||
@@ -326,8 +329,13 @@ export function makeHost(
     rested: () => najbardziejWypoczeta(czuwa),
     zarzad: () => i.people.filter((p) => !odchodzi(p)).map(kopiaOsoby),
     nieSpia: () => i.people.filter(czuwa).map(kopiaOsoby),
-    // bez zabiegu: ugryziona osoba (gorączka, amputacja) i ta, która właśnie operuje, zostają przy sobie
-    doSprawdzenia: () => najbardziejWypoczeta((p) => czuwa(p) && !naWarcie(p) && !p.bitten && p.job !== 'amputate'),
+    // Najpierw ktoś, kto nie śpi; nocą zwykle śpią wszyscy poza wartownikami, więc gdy nikogo takiego nie ma, wstaje
+    // najbardziej wypoczęty ze śpiących (karta mówi, że ktoś usłyszał hałas). Wartownik na posterunku, osoba na
+    // wyprawie i ugryziona (gorączka, amputacja) albo operująca zostają przy sobie; wtedy „Sprawdzić” jest niedostępne.
+    doSprawdzenia: () => {
+      const moze = (p: GovPerson) => !naWarcie(p) && !p.bitten && p.job !== 'amputate';
+      return najbardziejWypoczeta((p) => czuwa(p) && moze(p)) ?? najbardziejWypoczeta((p) => naMiejscu(p) && moze(p));
+    },
     kafelekPrzySiatce: (strona) =>
       i.strony?.[strona] ?? fenceOf(i, fx.patch).holes.find((x) => x.tiles?.length)?.tiles?.[0] ?? null,
     moodOf: (id, why, d, hours) => {

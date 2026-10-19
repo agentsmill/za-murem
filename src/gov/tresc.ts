@@ -11,8 +11,8 @@
    jest pusta, a karty grają po staremu) dają bohaterów kartom `dym`, `latarka` (najstarsza mieszkanka po imieniu, bez
    pięter) i, w nakładkach z warianty.ts, `fachowiec` (awans), `kradziez` (sprawca z najniższym nastrojem, nie jedzenie)
    i `odejscie`/`klotnia` (wyjście bramą: `wyrzuc`). `bezsennosc` bierze nieśpiącego z najniższym bezpieczeństwem
-   (`nieSpia()`), a `krzyk` i `halas` dla „Sprawdzić” osobę z `doSprawdzenia()` i kafelek z `kafelekPrzySiatce()`
-   (`sprawdz`). */
+   (`nieSpia()`), a `krzyk` i `halas` dla „Sprawdzić” osobę z `doSprawdzenia()` (czuwającą, a gdy takiej nie ma,
+   śpiącą, ale nie z warty) i kafelek z `kafelekPrzySiatce()` (`sprawdz`). */
 
 import { LAW, type LawPath } from '../content/data.ts';
 import type { EventHost } from '../content/events.ts';
@@ -252,9 +252,10 @@ export interface GovHost extends EventHost {
   zarzad(): GovPerson[];
   /** osoby zarządu, które nie śpią i nie są na wyprawie, w kolejności osób (kopie) */
   nieSpia(): GovPerson[];
-  /** najbardziej wypoczęta osoba, która może teraz iść sprawdzić hałas: nie śpi, nie jest na wyprawie (ani w nocnym
-      planie wypraw), nie stoi na posterunku warty (`GovInput.guards`, `GovPerson.post`, warta z karty nocy) i nie jest
-      przy zabiegu (ugryziona albo operuje); null: nikt nie może, wtedy „Sprawdzić” jest niedostępne */
+  /** najbardziej wypoczęta osoba, która może teraz iść sprawdzić hałas: najpierw spośród tych, które nie śpią, a gdy
+      żadna nie może, spośród śpiących (wstaje i idzie). Nigdy nie idzie osoba na wyprawie (ani w nocnym planie
+      wypraw), na posterunku warty (`GovInput.guards`, `GovPerson.post`, warta z karty nocy) ani przy zabiegu
+      (ugryziona albo operuje); null: nikt nie może, wtedy „Sprawdzić” jest niedostępne */
   doSprawdzenia(): GovPerson | null;
   /** kafelek podwórka przy siatce od strony garaży (`garaze`) albo najbliższego budynku mieszkalnego (`blok`), z
       `GovInput.strony`; bez niej kafelek największej otwartej dziury, a gdy i jej kafelków nie ma, null */
@@ -653,7 +654,8 @@ export const NEW_EVENTS: GEventDef[] = [
     },
     choices: (h, d) => [
       {
-        // idzie ktoś, kto nie śpi i nie stoi na warcie, na kafelek podwórka od strony garaży (albo przy największej dziurze)
+        // idzie ktoś spoza warty (czuwający, a nocą wstaje najbardziej wypoczęty ze śpiących), na kafelek podwórka od
+        // strony garaży (albo przy największej dziurze)
         label: tx('Sprawdzić z latarką', 'Check with a torch'),
         ok: !!h.doSprawdzenia() && h.kafelekPrzySiatce('garaze') !== null,
         run: () => {
@@ -716,8 +718,8 @@ export const NEW_EVENTS: GEventDef[] = [
           ),
     choices: (h, d) => [
       {
-        // idzie ktoś, kto nie śpi i nie stoi na warcie, na kafelek podwórka od strony najbliższego budynku mieszkalnego
-        // (albo przy największej dziurze)
+        // idzie ktoś spoza warty (czuwający, a nocą wstaje najbardziej wypoczęty ze śpiących), na kafelek podwórka od
+        // strony najbliższego budynku mieszkalnego (albo przy największej dziurze)
         label: tx('Wysłać kogoś sprawdzić', 'Send someone to check'),
         ok: !!h.doSprawdzenia() && h.kafelekPrzySiatce('blok') !== null,
         run: () => {

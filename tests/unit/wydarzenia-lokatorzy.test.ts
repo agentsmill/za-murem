@@ -22,9 +22,10 @@ import { chooseEvent, newGov } from '../../src/gov/zarzad.ts';
 import { wczytajDaneMieszkancow } from '../../src/mieszkancy/wczytaj.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { mapaMieszkancow, mieszkancyNowejGry, opcjaMieszkancow } from '../../src/sim/osiedle.ts';
-import { createSim, type SimState } from '../../src/sim/sim.ts';
+import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { Atrapa } from './gov-atrapa.ts';
+import { playWithGov } from './gov-play.ts';
 import { pl, polski, polskieSlowa } from './po-angielsku.ts';
 
 const def = (id: string) => polski(M1_EVENTS.find((e) => e.id === id)!);
@@ -199,16 +200,32 @@ describe('kradzież z głodu', () => {
   /** nastroje trzech mieszkańców po kolei */
   const nastroje = (...m: number[]) => ({ lokatorzy: kopie(TROJE, m) });
 
-  it('wypada tylko bez podpisanej uchwały u_kociol i przy mieszkańcu z nastrojem poniżej 45', () => {
+  it('wypada tylko bez podpisanej uchwały u_kociol, z lokatorem z osobą, i bez progu głodu', () => {
+    // zadowoleni mieszkańcy też kradną, tylko rzadziej (czynnik w następnym teście)
+    expect(def('kradziez').w(setup(nastroje(80, 70, 90)).h)).toBeGreaterThan(0);
     expect(def('kradziez').w(setup(nastroje(60, 44, 60)).h)).toBeGreaterThan(0);
-    // nastrój 45 to jeszcze nie głód
-    expect(def('kradziez').w(setup(nastroje(60, 45, 60)).h)).toBe(0);
-    expect(def('kradziez').w(setup(nastroje(80, 70, 60)).h)).toBe(0);
     const zKotlem = setup(nastroje(60, 30, 60));
     zKotlem.gov.laws.signed.u_kociol = true;
     expect(def('kradziez').w(makeHost(zKotlem.gov, zKotlem.i, emptyEffects()))).toBe(0);
     // zapasów musi być z czego zabrać (waga z 0.3)
     expect(def('kradziez').w(setup({ ...nastroje(60, 30, 60), stock: { wood: 5, supplies: 8 } }).h)).toBe(0);
+  });
+
+  it('waga to waga z 0.3 razy clamp((65 − nastrój) / 20, 0,25, 1) z nastroju sprawcy (najniższego)', () => {
+    const baza = def('kradziez').w(setup({ lokatorzy: undefined }).h);
+    expect(baza).toBe(1.5);
+    // [nastrój najniższego, oczekiwany czynnik]
+    const przypadki: [number, number][] = [
+      [70, 0.25],
+      [65, 0.25],
+      [55, 0.5],
+      [45, 1],
+      [30, 1],
+    ];
+    for (const [m, f] of przypadki)
+      expect(def('kradziez').w(setup(nastroje(m + 10, m, m + 20)).h), `nastrój ${m}`).toBeCloseTo(baza * f, 10);
+    // liczy się najniższy nastrój, nie pierwszy
+    expect(def('kradziez').w(setup(nastroje(70, 70, 55)).h)).toBeCloseTo(baza * 0.5, 10);
   });
 
   it('sprawcą jest ten z najniższym nastrojem, a tekst z jego imieniem mówi, że od kilku dni je za mało', () => {
@@ -641,9 +658,44 @@ describe('„Sprawdzić” z krzyku i hałasu', () => {
     expect(makeHost(gov, wejscie, emptyEffects()).doSprawdzenia()?.id).toBe(a.id);
   });
 
-  it('gdy nikt nie może, „Sprawdzić” jest niedostępne, a „Zamknąć drzwi” nie', () => {
-    const wszyscySpia = ludzie([], [{ asleep: true }, { asleep: true }, { asleep: true }, { asleep: true }]);
-    const { h } = setup({ ...noc, people: wszyscySpia });
+  it('gdy nikt nie czuwa, wstaje najbardziej wypoczęty ze śpiących spoza warty, wyprawy i zabiegu', () => {
+    // 0 śpi na warcie (post), 1 śpi i jest ugryziony, 2 śpi, 3 śpi (wypoczęta mniej)
+    const spiacy = ludzie(
+      [{ rest: 99 }, { rest: 98 }, { rest: 80 }, { rest: 50 }],
+      [{ asleep: true, post: 'brama' }, { asleep: true, bitten: true }, { asleep: true }, { asleep: true }],
+    );
+    const { h, i } = setup({ ...noc, people: spiacy });
+    expect(h.nieSpia()).toEqual([]);
+    expect(h.doSprawdzenia()?.id).toBe(i.people[2].id);
+    expect(def('krzyk').choices(h, { help: true })[0].ok).toBe(true);
+    expect(def('halas').choices(h, { cat: true })[0].ok).toBe(true);
+    const k = wybierz('krzyk', { help: true }, 0, { ...noc, people: spiacy });
+    expect(k.fx.sprawdz).toEqual([{ id: i.people[2].id, tile: 4222 }]);
+    // koszt snu zostaje na tym, kto idzie
+    expect(k.fx.needs).toEqual([{ id: i.people[2].id, d: { rest: -10 } }]);
+    const hl = wybierz('halas', { cat: true }, 0, { ...noc, people: spiacy });
+    expect(hl.fx.sprawdz).toEqual([{ id: i.people[2].id, tile: 4111 }]);
+    expect(hl.fx.needs.find((n) => n.id === i.people[2].id)?.d.rest).toBe(-8);
+  });
+
+  it('czuwający ma pierwszeństwo przed śpiącym, choćby był mniej wypoczęty', () => {
+    const { h, i } = setup({
+      ...noc,
+      people: ludzie(
+        [{ rest: 99 }, { rest: 40 }, { rest: 98 }, { rest: 97 }],
+        [{ asleep: true }, {}, { asleep: true }, { asleep: true }],
+      ),
+    });
+    expect(h.doSprawdzenia()?.id).toBe(i.people[1].id);
+  });
+
+  it('gdy wszyscy są na warcie, na wyprawie, ugryzieni albo operują, „Sprawdzić” jest niedostępne, a „Zamknąć drzwi” nie', () => {
+    const zajeci = ludzie(
+      [{ rest: 90 }, { rest: 90 }, { rest: 90 }, { rest: 90 }],
+      [{ post: 'brama' }, { away: true, asleep: true }, { bitten: true, asleep: true }, { job: 'amputate' }],
+    );
+    const { h } = setup({ ...noc, people: zajeci });
+    expect(h.doSprawdzenia()).toBeNull();
     expect(
       def('krzyk')
         .choices(h, { help: true })
@@ -655,8 +707,12 @@ describe('„Sprawdzić” z krzyku i hałasu', () => {
         .map((c) => c.ok),
     ).toEqual([false, true]);
     // wybór niedostępnego niczego nie robi
-    const { fx } = wybierz('halas', { cat: true }, 0, { ...noc, people: wszyscySpia });
+    const { fx } = wybierz('halas', { cat: true }, 0, { ...noc, people: zajeci });
     expect(fx.sprawdz).toBeUndefined();
+    // śpiący wartownik z menu (GovInput.guards) też zostaje na posterunku
+    const spiaca = ludzie([], [{ asleep: true }, { asleep: true }, { asleep: true }, { asleep: true }]);
+    const z = setup({ ...noc, people: spiaca, guards: spiaca.map((p) => ({ id: p.id, post: 'd1' })) });
+    expect(z.h.doSprawdzenia()).toBeNull();
   });
 
   it('bez stron: kafelek największej dziury, a bez kafelków dziur „Sprawdzić” jest niedostępne', () => {
@@ -841,6 +897,7 @@ function demoWorld(key: string): World {
 describe('na prawdziwej symulacji z mieszkańcami z generatora', () => {
   let w: World;
   let st: SimState;
+  let mieszkancy: ReturnType<typeof opcjaMieszkancow>;
   const seed = 2051;
 
   beforeAll(async () => {
@@ -855,7 +912,8 @@ describe('na prawdziwej symulacji z mieszkańcami z generatora', () => {
     w = buildWorld(geo, { seed, street: demo.street });
     const l = mieszkancyNowejGry(w, geo, dane, 4);
     if (!l) throw new Error('generator mieszkańców nie dał wyniku dla przymorza');
-    st = createSim(w, seed, { core: 4, mieszkancy: opcjaMieszkancow(l) });
+    mieszkancy = opcjaMieszkancow(l);
+    st = createSim(w, seed, { core: 4, mieszkancy });
   }, 60_000);
 
   it('fachowiec: Wciągnąć do roboty przenosi mieszkańca do zarządu (ten sam pionek, rodzaj core)', () => {
@@ -896,4 +954,43 @@ describe('na prawdziwej symulacji z mieszkańcami z generatora', () => {
     const kto = kopia.pawns.find((p) => p.kind === 'core' && kopia.people[p.person].id === fx.sprawdz?.[0].id);
     expect(kto?.job?.t).toBe('sprawdz');
   });
+  it('krzyk w nocy, gdy śpią wszyscy: wstaje śpiąca osoba, idzie na kafelek i wraca do spania', () => {
+    const gra = structuredClone(st);
+    const sim = new Sim(w, gra);
+    // pierwsza noc: aż wszyscy z zarządu śpią (bez zarządu karty nocy nikt nie stoi na warcie)
+    let i = govInput(gra, w, 0);
+    for (let n = 0; n < 12_000 && !(i.night && i.people.every((p) => p.asleep)); n++) {
+      sim.step();
+      if (n % 20 === 0) i = govInput(gra, w, 0);
+    }
+    expect(i.night && i.people.every((p) => p.asleep)).toBe(true);
+    const gov = newGov(seed);
+    gov.ev.active = { id: 'krzyk', d: { help: false } };
+    const fx = chooseEvent(gov, i, 0);
+    const idx = fx.sprawdz?.[0];
+    expect(idx?.tile).toBe(i.strony?.blok);
+    // najbardziej wypoczęty ze śpiących
+    const najlepszy = [...i.people].sort((a, b) => b.needs.rest - a.needs.rest || (a.id < b.id ? -1 : 1))[0];
+    expect(idx?.id).toBe(najlepszy.id);
+    applyGov(gra, w, fx);
+    const pionek = gra.pawns.find((p) => p.kind === 'core' && gra.people[p.person].id === idx?.id);
+    expect(pionek?.job?.t).toBe('sprawdz');
+    // idzie, stoi i po kilku godzinach gry nie tkwi już w sprawdzaniu (wraca do planu dnia)
+    let sprawdzal = false;
+    for (let n = 0; n < 4000; n++) {
+      sim.step();
+      if (pionek?.job?.t === 'sprawdz') sprawdzal = true;
+    }
+    expect(sprawdzal).toBe(true);
+    expect(pionek?.job?.t).not.toBe('sprawdz');
+  });
+
+  it('kradzież wypada w normalnej grze z mieszkańcami z osobą, bez wspólnego kotła', () => {
+    let razy = 0;
+    for (const ziarno of [1, 2, 3, 4]) {
+      const r = playWithGov(w, ziarno, 'zawsze-warta', 6, 4, { mieszkancy });
+      razy += r.decisions.filter((d) => d.kind === 'wydarzenie' && d.text.startsWith('Kradzież z piwnicy')).length;
+    }
+    expect(razy).toBeGreaterThan(0);
+  }, 120_000);
 });

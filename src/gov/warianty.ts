@@ -8,8 +8,8 @@
 
    Karty z prawdziwych ludzi (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 2): w bloku z mieszkańcami
    z osobą z generatora (`GovHost.lokatorzy()`) `fachowiec` to mieszkaniec z klatki z umiejętnością, której zarząd nie
-   zna (Wciągnąć do roboty to awans), a `kradziez` przychodzi z głodu (bez uchwały u_kociol, mieszkaniec z nastrojem
-   poniżej 45; sprawca to ten z najniższym nastrojem, nowy wybór „Dać mu jeść z kotła”, odstęp 48 godzin). Dane takiej
+   zna (Wciągnąć do roboty to awans), a `kradziez` przychodzi z głodu (bez uchwały u_kociol; sprawca to mieszkaniec
+   z najniższym nastrojem, waga razy czynnik z jego nastroju, nowy wybór „Dać mu jeść z kotła”, odstęp 48 godzin). Dane takiej
    karty niosą `lok` (id osoby) i `p` (imię, rodzaj, fach); bez nich i bez mieszkańców z osobą karty grają jak z 0.3.
    `odejscie` (Niech idzie) i `klotnia` (przegrany się wyprowadza) wyprowadzają osobę zarządu bramą (`wyrzuc`) zamiast
    ją kasować; `odejscie` nie przychodzi, gdy w zarządzie jest mniej niż dwie osoby, a `klotnia` bierze dwie osoby
@@ -49,8 +49,10 @@ export interface OldEvent {
   log?: (h: GovHost) => Record<string, string> | null;
 }
 
-/** nastrój mieszkańca poniżej tej wartości: je za mało, kradzież z piwnicy to kradzież z głodu */
-export const GLOD_NASTROJ = 45;
+/** kradzież z piwnicy w grze z mieszkańcami z osobą: waga z 0.3 razy czynnik z nastroju najgłodniejszego (patrz
+    `czynnikKradziezy`): do tego nastroju (włącznie) kradnie się z pełną wagą, od `NASTROJ_SYTY` w górę z jedną czwartą */
+export const NASTROJ_GLODNY = 45;
+export const NASTROJ_SYTY = 65;
 /** dwie osoby zarządu z nastrojem poniżej tej wartości mogą się pokłócić o grafik */
 export const KLOTNIA_NASTROJ = 55;
 /** dziedzina, w której zarząd wiedzy poniżej tej wartości „nie zna się” (jak w 0.3) */
@@ -91,12 +93,18 @@ export function fachowiecZKlatki(h: GovHost): GovLokator | null {
   return best;
 }
 
-/** mieszkaniec, który z głodu ukradł: ten z najniższym nastrojem poniżej `GLOD_NASTROJ` (remis: pierwszy w kolejności
-    pionków), o ile nie podpisano wspólnego kotła; null: nikt */
-export function glodnyMieszkaniec(h: GovHost): GovLokator | null {
+/** czynnik wagi kradzieży z nastroju sprawcy: clamp((65 − nastrój) / 20, 0,25, 1), czyli 1 przy nastroju do 45,
+    0,25 od 65 w górę (zadowoleni mieszkańcy kradną rzadko, ale się zdarza) */
+export const czynnikKradziezy = (nastroj: number): number =>
+  Math.min(1, Math.max(0.25, (NASTROJ_SYTY - nastroj) / (NASTROJ_SYTY - NASTROJ_GLODNY)));
+
+/** mieszkaniec, który ukradł z piwnicy: ten z najniższym nastrojem (remis: pierwszy w kolejności pionków), o ile nie
+    podpisano wspólnego kotła; null: nikt (albo brak mieszkańców z osobą). Głód mieszkańców w symulacji jest tylko
+    przybliżony nastrojem (jedzą wspólnie albo wcale), więc nie ma progu, a o wadze decyduje `czynnikKradziezy`. */
+export function sprawcaKradziezy(h: GovHost): GovLokator | null {
   if (h.law('u_kociol')) return null;
   let best: GovLokator | null = null;
-  for (const l of h.lokatorzy()) if (l.needs.mood < GLOD_NASTROJ && (!best || l.needs.mood < best.needs.mood)) best = l;
+  for (const l of h.lokatorzy()) if (!best || l.needs.mood < best.needs.mood) best = l;
   return best;
 }
 
@@ -470,18 +478,23 @@ export const OLD_EVENTS: OldEvent[] = [
         : null,
   },
   // złodziej z piwnicy to ktoś z mieszkańców bloku; w domu tego wydarzenia nie ma (projekt), także z przyjętymi ludźmi.
-  // Z mieszkańcami z osobą przychodzi z głodu: bez uchwały o wspólnym kotle i przy kimś z nastrojem poniżej 45, sprawcą
-  // jest najgłodniejszy (prawdziwy głód mieszkańców w symulacji to osobna decyzja). Rzadziej niż w 0.3: co 48 godzin gry.
+  // Z mieszkańcami z osobą przychodzi z głodu: bez uchwały o wspólnym kotle, sprawcą jest mieszkaniec z najniższym
+  // nastrojem, a waga to waga z 0.3 razy czynnik z jego nastroju (1 do 45, jedna czwarta od 65; prawdziwy głód
+  // mieszkańców w symulacji to osobna decyzja). Rzadziej niż w 0.3: co 48 godzin gry.
   {
     id: 'kradziez',
     when: ['noc'],
     first: true,
     gap: 48,
-    w: (h, base) =>
-      dom(h) ? 0 : h.lokatorzy().length ? (glodnyMieszkaniec(h) ? base : 0) : h.residents() > 0 ? base : 0,
+    w: (h, base) => {
+      if (dom(h)) return 0;
+      if (!h.lokatorzy().length) return h.residents() > 0 ? base : 0;
+      const sprawca = sprawcaKradziezy(h);
+      return sprawca ? base * czynnikKradziezy(sprawca.needs.mood) : 0;
+    },
     make: (h) => {
       const dane = eventDef('kradziez')!.make(h);
-      const sprawca = dane && !dom(h) ? glodnyMieszkaniec(h) : null;
+      const sprawca = dane && !dom(h) ? sprawcaKradziezy(h) : null;
       return sprawca ? { ...dane, p: osobaKarty(sprawca), lok: sprawca.id } : dane;
     },
     text: (_h, d) =>
