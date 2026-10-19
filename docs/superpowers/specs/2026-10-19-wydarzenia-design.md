@@ -88,7 +88,7 @@ Pięć etapów, każdy grywalny sam w sobie i scalany po swojej bramce:
 
 ### Szwendacz w siatce (zombie)
 
-Nowa karta `szwendacz` w trybie zombie, za dnia, gdy `GovInput.horde.pressing > 0` albo przy siatce stoi szwendacz (`near > 0`). Mówi o prawdziwym szwendaczu: symulacja podaje w `GovInput` kafelek najbliższego napierającego (`horde.przy?: {x, y}`), karta ma „Pokaż”. Wybory: „Dobić dzidą” (dostępne, gdy ktoś z zarządu ma dzidę i nie śpi: ta osoba idzie na posterunek przy siatce najbliżej szwendacza na godzinę, a dobija warta, która już dziś bije przez siatkę), „Zostawić, niech wisi” (bezpieczeństwo −3 wszystkim), „Zasłonić kocem, żeby dzieci nie patrzyły” (nastrój +, bez walki).
+Nowa karta `szwendacz` w trybie zombie, za dnia, gdy `GovInput.horde.pressing > 0` albo przy siatce stoi szwendacz (`near > 0`). Mówi o prawdziwym szwendaczu: symulacja podaje w `GovInput` kafelek najbliższego napierającego (`horde.przy?: {x, y}`), karta ma „Pokaż”. Wybory: „Dobić dzidą” (dostępne, gdy ktoś z zarządu ma dzidę i nie śpi: ta osoba dostaje polecenie ataku na tego szwendacza i bije go dzidą przez siatkę, jak przy ataku z menu; moja decyzja w trakcie budowy zamiast godziny na posterunku), „Zostawić, niech wisi” (bezpieczeństwo −3 wszystkim), „Zasłonić kocem, żeby dzieci nie patrzyły” (nastrój +, bez walki).
 
 ### Przyjęci do zarządu wchodzą bramą
 
@@ -112,7 +112,7 @@ Bez generatora lista jest pusta i karty działają jak dziś (bez imion). Liczba
 
 ### Skutki
 
-- `GovEffects.awans?: string[]`: mieszkaniec przechodzi do zarządu. Ten sam pionek, ta sama osoba w `st.people`, `kind` z `resident` na `core`, potrzeby i miejsce zostają, łóżko zostaje jego. Dziś takiej drogi nie ma; wzorem jest `przyjmijGospodarstwo` w `src/sim/sim.ts` (sąsiad zostaje mieszkańcem przez zmianę `kind`, mieszkanie, potrzeby i pracę przyjścia).
+- `GovEffects.awans?: string[]`: mieszkaniec przechodzi do zarządu. Ten sam pionek, ta sama osoba w `st.people`, `kind` z `resident` na `core`, potrzeby i miejsce zostają, a łóżko w mieszkaniu mieszkańców się zwalnia, bo zarząd śpi w mieszkaniu siedziby (moja decyzja w trakcie budowy). Dziś takiej drogi nie ma; wzorem jest `przyjmijGospodarstwo` w `src/sim/sim.ts` (sąsiad zostaje mieszkańcem przez zmianę `kind`, mieszkanie, potrzeby i pracę przyjścia).
 - `GovEffects.wyrzuc?: string[]`: mieszkaniec idzie do bramy (przez bramę przechodzi warstwą zarządu, jak w pracy `arrive`), za bramą idzie po stronie ulicy do kafelka daleko od siatki i znika (jak przechodnie z `PASSERS` w fazie 4). Łóżko jest wolne od razu.
 
 - `GovEffects.sprawdz?: { id: string; tile: number }[]`: osoba z zarządu idzie na kafelek (od strony podwórka, najbliższy osiągalny), stoi tam 10 minut gry i wraca do swoich zajęć. Używają tego wybory „sprawdzić” w kartach `krzyk` (wejście do budynku, z którego niesie się krzyk, albo siatka od jego strony) i `halas` (siatka od strony garaży albo najbliższa dziura).
