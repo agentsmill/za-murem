@@ -6,7 +6,9 @@
    ani od stanu zostawionego w modułach przez pierwszy przebieg. */
 
 import type { Geo } from '../../src/world/geo.ts';
-import { przebieg } from './przebieg.ts';
+import { nagrywaj, type WywolanieJson, zakodujWywolania } from './nagrywanie.ts';
+import { graj, skrotSwiata } from './przebieg.ts';
+import { psuj } from './uszkodzenie.ts';
 import type { Zlecenie } from './zlecenie.ts';
 
 export interface DaneDema {
@@ -17,8 +19,14 @@ export interface DaneDema {
 export interface Bieg {
   /** sim.hash() po każdej pełnej godzinie gry */
   skroty: string[];
+  /** skrót świata zaraz po zbudowaniu (skrotSwiata): stan gry go nie obejmuje, a świat musi być u wszystkich ten sam */
+  swiat: string;
   /** czas przebiegu w ms według zegara nogi */
   ms: number;
+  /** nagranie wywołań Math w przedziale kroków ze zlecenia (tylko pierwszy przebieg), gotowe do JSON */
+  nagranie?: WywolanieJson[];
+  /** stos wywołania `nagraj.stosPrzy` (w Node z plikiem i linią) */
+  stos?: string;
 }
 
 export interface WynikNogi {
@@ -27,10 +35,27 @@ export interface WynikNogi {
 
 export function uruchom(z: Zlecenie, dane: DaneDema, zegar: () => number): WynikNogi {
   const biegi: Bieg[] = [];
-  for (let i = 0; i < z.powtorz; i++) {
-    const t0 = zegar();
-    const skroty = przebieg({ geo: dane.geo, street: dane.street, seed: z.seed, godziny: z.godziny, tryb: z.tryb });
-    biegi.push({ skroty, ms: zegar() - t0 });
+  const uszkodzenie = z.psuj ? psuj(z.psuj) : null;
+  try {
+    for (let i = 0; i < z.powtorz; i++) {
+      uszkodzenie?.zeruj();
+      const nagrywanie =
+        i === 0 && z.nagraj ? nagrywaj(z.nagraj.od, z.nagraj.do, { stosPrzy: z.nagraj.stosPrzy }) : null;
+      const t0 = zegar();
+      const gra = graj(
+        { geo: dane.geo, street: dane.street, seed: z.seed, godziny: z.godziny, tryb: z.tryb },
+        nagrywanie ? { krok: nagrywanie.krok } : {},
+      );
+      const bieg: Bieg = { skroty: gra.skroty, swiat: skrotSwiata(gra.swiat), ms: zegar() - t0 };
+      if (nagrywanie) {
+        bieg.nagranie = zakodujWywolania(nagrywanie.zatrzymaj());
+        const stos = nagrywanie.stos();
+        if (stos) bieg.stos = stos;
+      }
+      biegi.push(bieg);
+    }
+  } finally {
+    uszkodzenie?.przywroc();
   }
   return { biegi };
 }

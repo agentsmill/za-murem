@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { przebieg } from '../../tools/determinizm/przebieg.ts';
+import { graj, przebieg, skrotSwiata } from '../../tools/determinizm/przebieg.ts';
 import { uruchom } from '../../tools/determinizm/uruchom.ts';
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/zielonki.json'), 'utf8'));
@@ -18,5 +18,8 @@ describe('wspólne wejście nóg silników', () => {
       expect(b.ms).toBe(10);
     }
     expect(r.biegi[0].skroty).toEqual(przebieg({ ...dane, seed: 9, godziny: 3, tryb: 'zwykly' }));
+    // skrót świata (kafelki, budynki, drzewa…) każdy przebieg ma ten sam i zgodny z budową świata wprost
+    const swiat = skrotSwiata(graj({ ...dane, seed: 9, godziny: 0, tryb: 'zwykly' }).swiat);
+    for (const b of r.biegi) expect(b.swiat).toBe(swiat);
   });
 });

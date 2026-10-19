@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BRAK_SKROTU, porownaj } from '../../tools/determinizm/porownanie.ts';
-import { kodWyjscia } from '../../tools/determinizm/raport.ts';
+import { kodWyjscia, miejscaZeStosu } from '../../tools/determinizm/raport.ts';
 
 describe('porównanie skrótów z różnych silników', () => {
   it('porownaj znajduje pierwszą rozbieżną godzinę', () => {
@@ -38,5 +38,32 @@ describe('kod wyjścia bramki determinizmu', () => {
 
   it('rozbieżność ważniejsza niż brak silnika: nie da się jej przykryć kodem 2', () => {
     expect(kodWyjscia({ rozbiezne: true, brakujaceDocelowe: ['firefox'] })).toBe(1);
+  });
+});
+
+describe('miejsce wywołania w kodzie ze stosu', () => {
+  const korzen = '/Users/ktos/gra';
+  const stos = [
+    'Error',
+    '    at matematyka.<computed> (file:///Users/ktos/gra/tools/determinizm/nagrywanie.ts:71:57)',
+    '    at file:///Users/ktos/gra/src/sim/sim.ts:6454:40',
+    '    at Array.every (<anonymous>)',
+    '    at Sim.farTile (file:///Users/ktos/gra/src/sim/sim.ts:6454:22)',
+    '    at Sim.topUp (file:///Users/ktos/gra/src/sim/sim.ts:6437:22)',
+    '    at Sim.step (file:///Users/ktos/gra/src/sim/sim.ts:2240:12)',
+  ].join('\n');
+
+  it('pomija ramki narzędzia i silnika, resztę podaje jako plik:linia:kolumna względem korzenia', () => {
+    expect(miejscaZeStosu(stos, korzen)).toEqual([
+      'src/sim/sim.ts:6454:40',
+      'src/sim/sim.ts:6454:22 (Sim.farTile)',
+      'src/sim/sim.ts:6437:22 (Sim.topUp)',
+    ]);
+    expect(miejscaZeStosu(stos, `${korzen}/`, 1)).toEqual(['src/sim/sim.ts:6454:40']);
+  });
+
+  it('stos w innym formacie niż V8 albo bez ramek z pliku daje pustą listę', () => {
+    expect(miejscaZeStosu('farTile@http://127.0.0.1:5173/src/sim/sim.ts:6454:22', korzen)).toEqual([]);
+    expect(miejscaZeStosu('', korzen)).toEqual([]);
   });
 });

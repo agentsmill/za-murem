@@ -14,6 +14,7 @@
    zapisuje `sim.hash()`; `przebieg` oddaje same skróty. Hak `krok(tick)` jest wołany przed każdym krokiem symulacji
    (tick to numer kroku od 0): tędy podpina się nagrywanie wywołań Math (nagrywanie.ts); hak niczego nie zmienia. */
 
+import { hashString } from '../../src/core/rng.ts';
 import type { GovState, Prompt } from '../../src/gov/zarzad.ts';
 import {
   ackReport,
@@ -46,7 +47,8 @@ export interface DanePrzebiegu {
 }
 
 export interface HakiPrzebiegu {
-  /** przed każdym krokiem symulacji; tick to numer kroku (st.tick przed krokiem), od 0 */
+  /** przed budową świata z tickiem −1 (żeby nagranie mogło objąć też budowę świata), potem przed każdym krokiem
+      symulacji; tick to numer kroku (st.tick przed krokiem), od 0 */
   krok?(tick: number): void;
 }
 
@@ -115,6 +117,7 @@ function przeszukaj(sim: Sim, swiat: World): boolean {
 }
 
 export function graj(d: DanePrzebiegu, haki: HakiPrzebiegu = {}): WynikGry {
+  haki.krok?.(-1);
   const swiat = buildWorld(d.geo, { seed: d.seed, street: d.street });
   const st = createSim(swiat, d.seed, { core: 4, mode: d.tryb, obcy: true });
   const sim = new Sim(swiat, st);
@@ -154,4 +157,16 @@ export function graj(d: DanePrzebiegu, haki: HakiPrzebiegu = {}): WynikGry {
 /** skróty stanu gry po każdej pełnej godzinie gry */
 export function przebieg(d: DanePrzebiegu, haki: HakiPrzebiegu = {}): string[] {
   return graj(d, haki).skroty;
+}
+
+/** skrót świata zaraz po zbudowaniu: kafelki, budynki, drzewa, wnętrze siedziby, siatka i reszta. Skrót stanu gry
+    (sim.hash) świata nie obejmuje, a klient i serwer muszą budować ten sam świat z tych samych danych, więc tools/
+    determinizm.ts porównuje też ten skrót: rozbieżność w nim to rozbieżność w buildWorld, nie w kroku symulacji. */
+export function skrotSwiata(swiat: World): string {
+  const kanoniczny = (_klucz: string, v: unknown): unknown => {
+    if (ArrayBuffer.isView(v)) return Array.from(v as unknown as ArrayLike<number>).join(',');
+    if (v instanceof Map || v instanceof Set) return [...v];
+    return v;
+  };
+  return hashString(JSON.stringify(swiat, kanoniczny));
 }

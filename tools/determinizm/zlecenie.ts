@@ -3,6 +3,7 @@
    strony testowej (?demo=przymorze&...) albo globalna ZLECENIE w paczce dla jsc. Geo dema nie jest częścią zlecenia:
    noga bierze je z public/demo/<demo>.json (strona przez fetch, Node z pliku), a jsc dostaje je wstawione do pliku. */
 
+import { NAGRYWANE } from './nagrywanie.ts';
 import type { DanePrzebiegu } from './przebieg.ts';
 
 export type Tryb = DanePrzebiegu['tryb'];
@@ -15,9 +16,11 @@ export interface Zlecenie {
   seed: number;
   /** ile razy z rzędu w tym samym procesie liczyć ten sam przebieg (powtarzalność w obrębie silnika) */
   powtorz: number;
-  /** nagrywanie wywołań Math w krokach [od, do) pierwszego przebiegu; stosPrzy: numer nagranego wywołania, którego
-      stos ma wrócić (tylko tam, gdzie stos wskazuje plik i linię, czyli w Node) */
+  /** nagrywanie wywołań Math w krokach [od, do) pierwszego przebiegu (od −1: już od budowy świata); stosPrzy: numer
+      nagranego wywołania, którego stos ma wrócić (tylko tam, gdzie stos wskazuje plik i linię, czyli w Node) */
   nagraj?: { od: number; do: number; stosPrzy?: number };
+  /** samotest bramki: nazwa funkcji Math, której każdy wynik ta noga zwiększa o jeden bit (uszkodzenie.ts) */
+  psuj?: string;
 }
 
 export const SEED_DOMYSLNE = 12345;
@@ -34,6 +37,7 @@ export function doParametrow(z: Zlecenie): Record<string, string> {
   };
   if (z.nagraj)
     p.nagraj = [z.nagraj.od, z.nagraj.do, ...(z.nagraj.stosPrzy === undefined ? [] : [z.nagraj.stosPrzy])].join(':');
+  if (z.psuj) p.psuj = z.psuj;
   return p;
 }
 
@@ -62,8 +66,14 @@ export function zParametrow(czytaj: (klucz: string) => string | null | undefined
     const [od, do_, stos, ...reszta] = nagraj.split(':');
     if (od === undefined || do_ === undefined || reszta.length)
       throw new Error(`Zlecenie: nagraj to od:do albo od:do:stos, jest „${nagraj}”`);
-    z.nagraj = { od: liczba('nagraj od', od, 0), do: liczba('nagraj do', do_, 1) };
+    z.nagraj = { od: liczba('nagraj od', od, -1), do: liczba('nagraj do', do_, 0) };
     if (stos !== undefined) z.nagraj.stosPrzy = liczba('nagraj stos', stos, 0);
+  }
+  const psuj = czytaj('psuj');
+  if (psuj) {
+    if (!(NAGRYWANE as readonly string[]).includes(psuj))
+      throw new Error(`Zlecenie: psuj to jedna z funkcji ${NAGRYWANE.join(', ')}, jest „${psuj}”`);
+    z.psuj = psuj;
   }
   return z;
 }

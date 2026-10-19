@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { modeOf } from '../../src/sim/tryb.ts';
-import { graj, przebieg } from '../../tools/determinizm/przebieg.ts';
+import { graj, przebieg, skrotSwiata } from '../../tools/determinizm/przebieg.ts';
 
 /** dane dema z public/demo (to samo, co strona testowa pobiera przez fetch) */
 const demo = (klucz: string) =>
@@ -38,13 +38,25 @@ describe('przebieg gry do porównań silników', () => {
     expect(modeOf(graj({ geo, seed: 12345, godziny: 1, tryb: 'zombie' }).sim.st)).toBe('zombie');
   });
 
-  it('hak krok widzi każdy krok symulacji raz i po kolei, a wynik się nie zmienia', () => {
+  it('hak krok widzi najpierw budowę świata (krok −1), potem każdy krok symulacji raz i po kolei, a wynik się nie zmienia', () => {
     const bez = przebieg({ geo, seed: 5, godziny: 2, tryb: 'zwykly' });
     const kroki: number[] = [];
     const z = przebieg({ geo, seed: 5, godziny: 2, tryb: 'zwykly' }, { krok: (tick) => kroki.push(tick) });
     expect(z).toEqual(bez);
-    expect(kroki).toHaveLength(2 * 800);
-    expect(kroki[0]).toBe(0);
-    expect(kroki.every((t, i) => t === i)).toBe(true);
+    expect(kroki).toHaveLength(1 + 2 * 800);
+    expect(kroki[0]).toBe(-1);
+    expect(kroki.every((t, i) => t === i - 1)).toBe(true);
+  });
+
+  it('skrót świata jest powtarzalny, zależy od ziarna i zauważa jeden zmieniony kafelek', () => {
+    const a = graj({ geo, seed: 5, godziny: 0, tryb: 'zwykly' }).swiat;
+    expect(skrotSwiata(graj({ geo, seed: 5, godziny: 0, tryb: 'zwykly' }).swiat)).toBe(skrotSwiata(a));
+    expect(skrotSwiata(graj({ geo, seed: 6, godziny: 0, tryb: 'zwykly' }).swiat)).not.toBe(skrotSwiata(a));
+    const przed = skrotSwiata(a);
+    a.blocked[1000] ^= 1;
+    expect(skrotSwiata(a)).not.toBe(przed);
+    a.blocked[1000] ^= 1;
+    a.trees[0].x += 1e-12;
+    expect(skrotSwiata(a)).not.toBe(przed);
   });
 });
