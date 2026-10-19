@@ -19,9 +19,18 @@
 - `public/demo/<klucz>-kwadraty.json`: przymorze i zielonki z ośmioma sąsiadami, lanciego z czterema bocznymi (osiem miałoby 1,6 MB); zatwierdzone dema osiedli zostają bajt w bajt (`npm run demos` ich nie przepisuje bez `--przegeneruj`).
 - Zadania 6–8 dostają kwadraty z `kwadraty.ts` (`BOK_KWADRATU`, `kluczKwadratu`, `sasiedzi8`), świat z `buildKwadrat` i scenę z `buildScene` (test w `kwadraty-swiat.test.ts` pilnuje, że działa na świecie kwadratu).
 
+**Uzupełnienia przed zadaniami 6–8 (19.10.2026, po scaleniu pięter; decyzje nocnego integratora i uwagi z zadań 1–5):**
+- Baza: `pelna-gra` c7771b3 (zadania 1–5, `src/sim/kafelki.ts`, piętra etap 1 za flagą `?pietra=1`, rama zwycięstwa, fundament gry sieciowej). Gałąź `kwadraty-rysowanie`.
+- Piętra: `buildKwadrat` przyjmuje `pietra?: boolean` tak jak `buildWorld` i przy fladze woła `awansujDomy` z `src/world/pietra.ts` na świecie kwadratu. Części budynku przeciętego granicą mają tę samą liczbę kondygnacji: część budynku dopasowanego do domu bierze `levels` z budynku domu, a części budynku dzielonego przez dwa kwadraty bez domu dostają decyzję liczoną z tego samego klucza (nie z lokalnego numeru budynku). Test na to w zadaniu 6.
+- Widok pięter i rysowanie kwadratów muszą się zgadzać w `src/render/view.ts`, `src/render/chunks.ts`, `src/render/art/scene.ts` i `src/render/art/chunkArt.ts`: z `?pietra=1&kwadraty=3x3` pasek pięter działa dla domu jak dziś, a budynki w kwadratach rysują się tak, jak widok pięter rysuje dziś budynki poza siedzibą. Zrzut tego w zadaniu 8.
+- Styl budynku (grafika z PixelLab i kolory z kodu) bierze ziarno z klucza budynku (`zm:klucz`, a bez klucza z dopasowania pierścieni do domu), nie z lokalnego `b.id`, żeby ten sam budynek po obu stronach szwu wyglądał tak samo; dom bez zmian (jego wygląd nie może się zmienić, zrzuty domu bajt w bajt).
+- Pas bez drzew przy szwie (korony nie przechodzą przez granicę): sprawdź na zrzutach z bliska; jeśli widać, rysuj w kawałkach przy granicy korony drzew sąsiada.
+- Demo Lanciego ma tylko cztery boczne kwadraty, więc na zrzucie 3×3 rogi są pod mgłą i to jest oczekiwane.
+- Bez zmian w `src/sim`, `src/gov`, `src/ui/zapis.ts`; nic nie pobiera z sieci; przy `?kwadraty=` kliknięcie i polecenie poza domem gra ignoruje.
+
 ## Global Constraints
 
-- Gałąź od `noc-integracja` fe13220 (to `pelna-gra` z mapą miasta i budynkami), w osobnym drzewie roboczym. Lokalne commity swobodnie; nic na GitHub ani na serwer (scala koordynator).
+- Zadania 1–5: gałąź od `noc-integracja` fe13220; zadania 6–8: gałąź `kwadraty-rysowanie` od `pelna-gra` c7771b3. Zawsze w osobnym drzewie roboczym. Lokalne commity swobodnie; nic na GitHub ani na serwer (scala koordynator).
 - Bez zmian w `src/sim`, `src/gov` i `src/ui/zapis.ts`. `npm run demos` nie zmienia istniejących plików dem (`public/demo/przymorze.json`, `lanciego.json`, `zielonki.json`, `index.json` bajt w bajt), tylko dokłada pliki sąsiadów.
 - Nic nie pobiera z sieci: dane kwadratów tylko z kafelków testowych (`tests/fixtures/mvt`) i plików dem; kwadrat bez danych to „brak danych”.
 - Świat domu bit w bit jak dziś: `buildWorld(geo, opts)` daje te same `terr`, `bid`, `blocked` i ten sam `worldKey`. Na szwie dom wygrywa (sekcja „Reguła: dom wygrywa na szwie” przed zadaniem 3).
