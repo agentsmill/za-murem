@@ -1,6 +1,7 @@
-/* Nakładki zarządu na wydarzenia z 0.3 (src/content/events.ts zostaje bajt w bajt): pora dnia, flaga pierwszej nocy,
-   waga z warunkami miejsca, teksty i napisy według miejsca (dom albo blok, jacy sąsiedzi), zwroty w kronice i własne
-   wybory tam, gdzie skutek z 0.3 nie ma w M1 sensu (przyjęcia według wolnych miejsc, podwójne liczenie ludzi).
+/* Nakładki zarządu na wydarzenia z 0.3 (src/content/events.ts zostaje bajt w bajt): pora dnia, tryby gry (`tryby`:
+   w trybie zombie nie przychodzą karty o ludziach, których na mapie nie ma), flaga pierwszej nocy, waga z warunkami
+   miejsca, teksty i napisy według miejsca (dom albo blok, jacy sąsiedzi), zwroty w kronice i własne wybory tam, gdzie
+   skutek z 0.3 nie ma w M1 sensu (przyjęcia według wolnych miejsc, podwójne liczenie ludzi).
    Czego nakładka nie zmienia, idzie z 0.3: losowanie danych, skutki, liczby. „Opał” z 0.3 to w grze „Drewno”:
    tę zamianę robi wydarzenia.ts dla tytułów, tekstów, napisów i kroniki. Teksty: docs/superpowers/specs/
    2026-10-17-wydarzenia-z-miejsca-design.md, punkty 5 i 5a. */
@@ -9,6 +10,7 @@ import type { EventChoice } from '../content/events.ts';
 import { g } from '../content/people.ts';
 import { pick, ri } from '../core/rng.ts';
 import type { GovHost, Pora } from './tresc.ts';
+import type { GameMode } from './typy.ts';
 
 // biome-ignore lint/suspicious/noExplicitAny: dane wydarzeń z 0.3 mają różne kształty
 type D = any;
@@ -16,6 +18,8 @@ type D = any;
 export interface OldEvent {
   id: string;
   when: readonly Pora[];
+  /** w jakich trybach gry wydarzenie wchodzi do puli (brak: w obu) */
+  tryby?: readonly GameMode[];
   /** dozwolone pierwszego dnia po ciszy i pierwszej nocy */
   first?: boolean;
   /** waga w M1; base to waga z 0.3 na tym samym hoście */
@@ -88,6 +92,10 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'handlarz',
     when: ['dzien'],
+    // prawdziwy handlarz chodzi w symulacji (src/sim/handlarz.ts), a ta karta opisuje go bez nikogo pod bramą: waga 0
+    // w obu trybach; tryby tylko zwykły, żeby przy ewentualnym powrocie karty zombie jej nie dostał
+    tryby: ['zwykly'],
+    w: () => 0,
     text: (h) => `${wielka(h.words().brama.pod)} stoi facet z wózkiem z marketu. Wymieni jedną rzecz i idzie dalej.`,
   },
   {
@@ -150,6 +158,8 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'czynsz',
     when: ['dzien', 'wieczor'],
+    // w trybie zombie nikt nie ściąga czynszu ani rat
+    tryby: ['zwykly'],
     // w domu nie ma czynszu, jest rata kredytu; skutki te same
     title: (h) => (dom(h) ? 'Rata kredytu za 2047' : null),
     text: (h) =>
@@ -164,6 +174,8 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'krypto',
     when: ['dzien'],
+    // w trybie zombie sąsiad zza płotu nie handluje tokenami
+    tryby: ['zwykly'],
     w: (h, base) => (nikt(h) ? 0 : base),
     text: (h) =>
       domyObok(h)
@@ -181,6 +193,8 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'aktywisci',
     when: ['dzien'],
+    // protest przy stadzie nie ma sensu
+    tryby: ['zwykly'],
     text: (h) =>
       dom(h)
         ? 'Grupka aktywistów z sąsiedniej ulicy protestuje przeciw dymowi z waszego komina. Sami są zmarznięci na kość.'
@@ -200,6 +214,8 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'influencer',
     when: ['dzien'],
+    // vlog przy stadzie też nie
+    tryby: ['zwykly'],
     text: (h, d) =>
       dom(h)
         ? `Pod furtką nagrywa vloga ${d.p.name} z ring lightem na baterie. Mówi, że ma dwa miliony obserwujących. Internetu nie ma od trzech lat.`
@@ -213,6 +229,8 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'uchodzcy',
     when: ['dzien'],
+    // w trybie zombie ocaleni przychodzą jako goście (ukryte ugryzienie potrzebuje prawdziwej osoby pod bramą)
+    tryby: ['zwykly'],
     // obcy pod bramą od drugiego dnia; rzadziej, kiedy jest ciasno
     w: (h) => (h.day() >= 2 ? 0.8 * admitWeight(h.free()) : 0),
     make: (h) => {
@@ -340,6 +358,8 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'obserwacja',
     when: ['dzien'],
+    // zapowiada szabrowników, których w trybie zombie nie ma
+    tryby: ['zwykly'],
     // w 0.3 od piątego dnia; w M1 pierwsza noc jest o szabrownikach, więc już po południu pierwszego
     w: (h) => (h.hour() >= 13 ? 1.2 : 0),
     first: true,

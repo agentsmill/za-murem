@@ -9,7 +9,7 @@ import { type Tx, tx, txOf } from '../core/jezyk.ts';
 import { pick } from '../core/rng.ts';
 import type { Words, WordsEn } from './miejsce.ts';
 import { M1_LAWS_EN, TARGET_VARIANTS_EN, TARGETS_EN } from './tresc.en.ts';
-import type { GovNeeds, GovPerson, GovPlace, LootKey } from './typy.ts';
+import type { GameMode, GovNeeds, GovPerson, GovPlace, LootKey } from './typy.ts';
 
 // ---------------------------------------------------------------- uchwały
 
@@ -269,6 +269,9 @@ export interface GEventDef<D = any> {
   /** najmniej tyle godzin gry między powtórkami (domyślnie REPEAT_GAP) */
   gap?: number;
   when: readonly Pora[];
+  /** w jakich trybach gry wydarzenie wchodzi do puli (brak: w obu); wydarzenia ulicy odpadają w zombie osobno,
+      patrz `fitsMode` w wydarzenia.ts */
+  tryby?: readonly GameMode[];
   /** dozwolone pierwszego dnia po ciszy i pierwszej nocy (do 8:00 drugiego dnia): siatka, obcy, noc */
   first?: boolean;
   /** zwroty do podmiany w kronice z wyborów tego wydarzenia (według miejsca; tylko polskie wpisy z 0.3) */
@@ -335,7 +338,9 @@ export const NEW_EVENTS: GEventDef[] = [
     first: true,
     gap: 30,
     when: ['wieczor', 'noc'],
-    w: (h) => (h.gateClosed() ? 0.4 : 1),
+    // waga 0 w obu trybach: karta opisuje człowieka pod bramą, a nikogo tam nie ma; wraca jako prawdziwy gość
+    // (stara waga: h.gateClosed() ? 0.4 : 1)
+    w: () => 0,
     make: (h) => ({
       thief: h.rng() < 0.3,
       dest: pick(DEST, h.rng),
@@ -393,6 +398,8 @@ export const NEW_EVENTS: GEventDef[] = [
     first: true,
     gap: 20,
     when: ['dzien', 'wieczor'],
+    // „udawać” podbija napad szabrowników, a w trybie zombie ich nie ma: tam jest slady_z
+    tryby: ['zwykly'],
     w: (h) => (h.holes() > 0 && h.hour() >= 15 ? 1.4 : 0),
     make: (h) => ({ where: h.weakName() }),
     title: () => tx('Ślady przy siatce', 'Tracks by the fence'),
@@ -428,6 +435,50 @@ export const NEW_EVENTS: GEventDef[] = [
         },
       },
       { label: tx('Udawać, że nic nie widać', 'Pretend you saw nothing'), ok: true, run: () => h.setRaidBoost() },
+    ],
+  },
+  {
+    // „Ślady przy siatce” w trybie zombie: ścieżkę wydeptało stado, nie ludzie, więc „udawać” odpada (podbijało napad
+    // szabrowników, a ich w tym trybie nie ma); zamiast niego warta z dzidą. Warunek, pora i odstęp jak w slady.
+    id: 'slady_z',
+    first: true,
+    gap: 20,
+    when: ['dzien', 'wieczor'],
+    tryby: ['zombie'],
+    w: (h) => (h.holes() > 0 && h.hour() >= 15 ? 1.4 : 0),
+    make: (h) => ({ where: h.weakName() }),
+    title: () => tx('Ślady przy siatce', 'Tracks by the fence'),
+    text: (_h, d) => {
+      // stary zapis ma tu polską nazwę dziury
+      const where = txOf(d.where);
+      return tx(
+        `Przy dziurze ${where.pl} szwendacze wydeptali ścieżkę w błocie. Na drucie wisi strzęp kurtki, a obok biegną dwie wleczone bruzdy.`,
+        `Shamblers have worn a path through the mud to the hole ${where.en}. A scrap of jacket hangs off the wire, and two dragging furrows run alongside.`,
+      );
+    },
+    choices: (h) => [
+      {
+        label: tx('Załatać przed nocą (Złom 2)', 'Patch it up before dark (Scrap 2)'),
+        ok: h.res.zlom >= 2,
+        run: () => {
+          h.pay({ zlom: 2 });
+          h.patchHole();
+          h.log(tx('Dziura załatana deskami i drutem.', 'The hole is patched up with planks and wire.'));
+        },
+      },
+      {
+        label: tx('Postawić tam kogoś z dzidą na noc', 'Post someone there with a spear for the night'),
+        ok: true,
+        run: () => {
+          h.guardBonus(1);
+          h.log(
+            tx(
+              'Na noc przy dziurze stanie ktoś z dzidą. Kto się zbliży, dostanie w zęby.',
+              'Someone with a spear will stand by the hole tonight. Whatever comes close gets it in the teeth.',
+            ),
+          );
+        },
+      },
     ],
   },
   {

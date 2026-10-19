@@ -103,7 +103,9 @@ describe('zarząd w trybie zombie', () => {
   it('wyprawy w trybie zombie: kłopoty to czasem ugryzienie, a znaleziska to broń i amunicja', () => {
     let bitten = 0;
     let finds = 0;
-    for (let seed = 1; seed <= 30; seed++) {
+    // ugryzienie to ok. 5% wypraw (kłopot × co trzeci), więc ziaren musi być sporo; zmiana puli wydarzeń przesuwa
+    // losowanie zarządu i ugryzienia wypadają na innych ziarnach (przy 30 ziarnach bywało jedno albo żadne)
+    for (let seed = 1; seed <= 60; seed++) {
       const gov = newGov(seed, 'zombie');
       const atr = new Atrapa(seed);
       // zapasy na wykończeniu: zarząd proponuje wyprawy

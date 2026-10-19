@@ -6,6 +6,8 @@
    Pierwszy dzień (decyzja Mateusza, 17.10.2026): dopóki kuchnia się nie nagrzeje, cisza bez losowych wydarzeń;
    koza pierwszy raz się pali, więc po chwili ktoś widzi dym i przychodzi; do rana drugiego dnia tylko wydarzenia
    pierwszej nocy (siatka, obcy, noc), reszta od drugiego dnia.
+   Pule według trybu gry: wydarzenie ma opcjonalne `tryby` (brak: oba tryby), `fitsMode` sprawdza je razem z wykluczeniem
+   wydarzeń ulicy w trybie zombie; karty o ludziach, których na mapie nie ma, w zombie nie przychodzą.
    Badania: technologie (`tech`), wiedza (`know`) i książki (`bookCount`, `addBook`) EventHost bierze z GovInput, czyli
    z symulacji, jak tablica badań; nowa książka idzie do skutków (GovEffects.books), a nie do stanu zarządu. */
 
@@ -24,9 +26,11 @@ import { EVENTS_EN } from './warianty.en.ts';
 /** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
 const STREET_IDS: ReadonlySet<string> = new Set(STREET_EVENTS.map((e) => e.id));
 
-/** czy wydarzenie pasuje do trybu gry (w trybie zombie bez wydarzeń ulicy) */
-export const fitsMode = (st: Pick<GovState, 'mode'>, id: string): boolean =>
-  !(st.mode === 'zombie' && STREET_IDS.has(id));
+/** czy wydarzenie pasuje do trybu gry: jego `tryby` (brak: oba) i w trybie zombie bez wydarzeń ulicy */
+export const fitsMode = (st: Pick<GovState, 'mode'>, e: Pick<GEventDef, 'id' | 'tryby'>): boolean => {
+  const mode = st.mode ?? 'zwykly';
+  return (e.tryby?.includes(mode) ?? true) && !(mode === 'zombie' && STREET_IDS.has(e.id));
+};
 
 import { drewno } from './warianty.ts';
 import {
@@ -98,6 +102,7 @@ export const M1_EVENTS: GEventDef[] = [
       id: d.id,
       once: d.once,
       when: o.when,
+      tryby: o.tryby,
       first: o.first,
       w: w ? (h) => w(h, d.w(h)) : d.w,
       make: o.make ?? d.make,
@@ -326,8 +331,7 @@ function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): Act
   const fresh = (e: GEventDef) =>
     st.ev.last[e.id] === undefined || h.t - st.ev.last[e.id] >= (e.gap ?? REPEAT_GAP) * 60;
   const pool = M1_EVENTS.filter(
-    (e) =>
-      e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e.id),
+    (e) => e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e),
   )
     .map((e) => [e, e.w(h)] as const)
     .filter((x) => x[1] > 0);
