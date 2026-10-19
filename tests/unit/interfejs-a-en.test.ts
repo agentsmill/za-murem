@@ -212,13 +212,13 @@ describe('okna zarządu po angielsku', () => {
 
   it('koza w nocy i blok szansy: do rana, do północy, bez drewna, zgaśnie', () => {
     ustawJezyk('en');
-    const v = (have: number, until: string, who: string[]) => fuelHtml({ have, need: 20, until }, who);
+    const v = (have: number, until: string, who: string[]) => fuelHtml({ have, need: 10, until }, who);
     expect(v(40, '6:00', ['Ania'])).toContain(
-      '<b class="odd-v">till morning</b><em class="odd-note">stove watch: Ania · wood 40, the night needs 20 (2 an hour)',
+      '<b class="odd-v">till morning</b><em class="odd-note">stove watch: Ania · wood 40, the night needs 10 (1 an hour)',
     );
     expect(v(8, '0:00', ['Ania'])).toContain('till midnight');
     expect(v(5, '22:00', ['Ania', 'Bartek'])).toContain('till 22:00');
-    expect(v(1, '20:00', ['Ania'])).toContain('no wood');
+    expect(v(0, '20:00', ['Ania'])).toContain('no wood');
     expect(v(40, '6:00', [])).toContain('<b class="odd-v">goes out</b><em class="odd-note">no stove watch');
     for (const h of [v(40, '6:00', ['Ania']), v(8, '0:00', []), v(0, '20:00', ['Ania'])])
       expect(polskieSlowa(h, ['Ania', 'Bartek'])).toEqual([]);
@@ -319,7 +319,7 @@ describe('okna zarządu po angielsku', () => {
         expect(polskieSlowa(all(burnSheet(kind, owner, softer)), ['Anna Nowak']), kind).toEqual([]);
     const wall = burnSheet('mebloscianka', 'Anna Nowak', false);
     expect(wall.title).toBe('Burn the wall unit?');
-    expect(wall.body).toContain('Good for 6 pieces of wood, about 3 h of fire');
+    expect(wall.body).toContain('Good for 6 pieces of wood, about 6 h of fire');
     expect(wall.body).toContain('It belongs to Anna Nowak');
     expect(burnSheet('krzeslo', null, true).body).toContain('Good for 1 piece of wood');
     expect(burnSheet('krzeslo', null, true).body).toContain('“Furniture for fuel” resolution halves that');
@@ -447,7 +447,7 @@ describe('pasek, cele i przybysze po angielsku', () => {
       how: 'Click a person in the HQ kitchen.',
     });
     expect(g.find((x) => x.key === 'cieplo')?.how).toContain('The kitchen is at 9°C now.');
-    expect(g.find((x) => x.key === 'drewno')?.how).toContain('Wood stocked: 2 of 6.');
+    expect(g.find((x) => x.key === 'drewno')?.how).toContain('Wood stocked: 2 of 3.');
     expect(goalsOf(st, null, { touch: true, kitchen: 9, hour: 15 })[0].how).toBe('Tap a person in the HQ kitchen.');
     for (const mode of ['zwykly', 'zombie'] as const)
       for (const touch of [false, true]) {

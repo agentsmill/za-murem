@@ -569,10 +569,12 @@ describe('zarząd bez opcji zwycięstwa', () => {
   });
 
   it('cztery doby gry mają te same skróty stanu co przed modułem zwycięstwa', () => {
+    // skróty po zmianie kozy na sztukę na godzinę (WOOD_PER_HOUR 1, 19.10.2026); z dawnymi 2 sztukami były to
+    // 51743a78, 1792dce3 i 7b631d3d
     const przebiegi = [
-      [1, 'propozycja', '51743a78'],
-      [3, 'zawsze-warta', '1792dce3'],
-      [5, 'losowo', '7b631d3d'],
+      [1, 'propozycja', '651e9fe7'],
+      [3, 'zawsze-warta', 'ca868e42'],
+      [5, 'losowo', '829d4a08'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

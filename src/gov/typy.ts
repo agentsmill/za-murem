@@ -354,7 +354,7 @@ export interface NightCard {
   people: NightCardPerson[];
   advice: Tx;
   /** koza zarządu na noc (bez kozy brak): drewno w zapasie razem z tym w kozie, ile zje do 6:00 przy dyżurze
-      od zatwierdzenia karty (2 sztuki na godzinę) i do której godziny starczy ognia ('6:00' to do rana) */
+      od zatwierdzenia karty (sztuka na godzinę) i do której godziny starczy ognia ('6:00' to do rana) */
   wood?: { have: number; need: number; until: string };
 }
 

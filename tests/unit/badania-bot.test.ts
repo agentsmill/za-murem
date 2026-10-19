@@ -35,7 +35,9 @@ describe('bot z badaniami: polityka gracza', () => {
     const lab = z.m2.log.built.find((b) => b.kind === 'pracownia');
     expect(lab).toBeDefined();
     expect(dayOf(lab!.tick)).toBeLessThanOrEqual(4);
-    expect(z.m2.log.built[0].kind).toBe('pracownia');
+    // pierwszy plan budowy; krótsze budowle z dalszej kolejki (zasieki: 45 minut pracy) mogą stanąć wcześniej, bo ktoś
+    // inny z zarządu stawia je w tym samym czasie
+    expect(z.r.decisions.find((x) => x.text.startsWith('budowa'))?.text).toBe('budowa: Pracownia');
   });
 
   it('wybiera najtańszą kartkę do wzięcia: pierwsza zbadana technologia ma najmniejszy koszt w drzewku', () => {

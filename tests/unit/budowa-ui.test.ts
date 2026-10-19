@@ -684,7 +684,7 @@ describe('cele drugiego dnia', () => {
     expect(g[2].how).toContain(`Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)})`);
     expect(g[2].how).toContain('Otwartych dziur: 2.');
     expect(g[3].how).toBe(
-      `Drewna na zapas: 3 z ${DAY2_WOOD}. Noc zjada około 2 sztuk na godzinę, a przy kozie może ktoś czuwać.`,
+      `Drewna na zapas: 3 z ${DAY2_WOOD}. Noc zjada około sztuki na godzinę, a przy kozie może ktoś czuwać.`,
     );
     // dowolna gotowa budowla zalicza „pierwszą budowlę”, ale nie obwód
     const empty = st.apts.find((a) => a.state === 'puste')!;

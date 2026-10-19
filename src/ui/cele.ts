@@ -24,8 +24,8 @@ export interface Goal {
   missed?: boolean;
 }
 
-/** tyle drewna na zapas (w składzie, luzem i w rękach) wystarcza, żeby koza dotrwała do snu */
-export const NIGHT_WOOD = 6;
+/** tyle drewna na zapas (w składzie, luzem i w rękach) wystarcza, żeby koza dotrwała do snu: trzy godziny ognia */
+export const NIGHT_WOOD = 3;
 
 const WOOD_GOAL = tx('Przygotujcie drewno na noc.', 'Get wood in for the night.');
 
@@ -159,8 +159,8 @@ export const currentGoal = (goals: Goal[]): Goal | null => goals.find((g) => !g.
 /** znacznik nad suchym drzewem: dopóki zarząd go nie zetnie */
 export const markTree = (st: SimState): boolean => st.tut.step >= 0 && st.tut.step <= TUT_STEPS.indexOf('sciete');
 
-/** drewno na drugą noc: noc 22–6 zjada około 16 sztuk (2 na godzinę), także z dyżurem przy kozie */
-export const DAY2_WOOD = 16;
+/** drewno na drugą noc: noc 22–6 zjada około 8 sztuk (sztuka na godzinę), także z dyżurem przy kozie */
+export const DAY2_WOOD = 8;
 
 /** czy to już drugi dzień: po pierwszym raporcie rano, do raportu po drugiej nocy */
 export const isDay2 = (gov: GovState | null): boolean => !!gov && gov.reports.length === 1;
@@ -252,8 +252,8 @@ export function goalsDay2(
       key: 'drewno2',
       text: tr(WOOD_GOAL),
       how: L(
-        `Drewna na zapas: ${o.wood} z ${DAY2_WOOD}. Noc zjada około 2 sztuk na godzinę, a przy kozie może ktoś czuwać.`,
-        `Wood stocked: ${o.wood} of ${DAY2_WOOD}. The night eats about 2 pieces an hour, and someone can sit up with the stove.`,
+        `Drewna na zapas: ${o.wood} z ${DAY2_WOOD}. Noc zjada około sztuki na godzinę, a przy kozie może ktoś czuwać.`,
+        `Wood stocked: ${o.wood} of ${DAY2_WOOD}. The night eats about one piece an hour, and someone can sit up with the stove.`,
       ),
       done: o.woodReady || late,
       missed: !o.woodReady && late,
