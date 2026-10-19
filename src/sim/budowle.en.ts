@@ -46,7 +46,7 @@ export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: s
     name: 'Barrel stove',
     the: 'the barrel stove',
     effect:
-      'Heats a room and burns wood like the kitchen stove. The flue goes out through the window, so it stands right by one.',
+      'Heats a room and burns wood like the kitchen stove. The flue goes out through the window, so it stands near one.',
   },
   kociol: {
     name: 'Boiler',

@@ -3707,7 +3707,7 @@ const SHOTS: Shot[] = [
     },
   },
   // badania, budowle z technologii: pracownia i sześć budowli (koza z beczki, kocioł, pieczarkarnia, szklarnia, wieża,
-  // barykada) po zbadaniu. Menu pokazuje je w zakładkach, tryb stawiania z interfejsu stawia plan kozy przy oknie
+  // barykada) po zbadaniu. Menu pokazuje je w zakładkach, tryb stawiania z interfejsu stawia plan kozy blisko okna
   // (z duchem w mapie), a gotowe budowle stoją w miejscach, które dopuszcza canPlace; ujęcia: mieszkanie, klatka,
   // podwórko z obwodem (zrzut końcowy)
   {
@@ -3756,7 +3756,7 @@ const SHOTS: Shot[] = [
       await page.waitForTimeout(300);
       await page.screenshot({ path: path.join(OUT, 'badania-budowle-menu.png') });
       await page.keyboard.press('b');
-      // tryb stawiania z interfejsu: koza z beczki tylko tuż przy oknie, duch w mapie
+      // tryb stawiania z interfejsu: koza z beczki tylko blisko okna (pokój, kuchnia albo przedpokój), duch w mapie
       await chooseBuild(page, 'koza_beczka');
       const p0 = await page.evaluate(() => window.zm!.placing());
       if (!p0 || p0.allowed < 1) throw new Error('koza z beczki bez dozwolonego miejsca');
@@ -3768,7 +3768,7 @@ const SHOTS: Shot[] = [
       await page.mouse.move(sx, sy);
       await page.waitForTimeout(200);
       const dobrze = await page.evaluate(() => window.zm!.placing());
-      if (!dobrze?.ok) throw new Error(`podgląd kozy przy oknie nie jest zielony: ${dobrze?.why}`);
+      if (!dobrze?.ok) throw new Error(`podgląd kozy blisko okna nie jest zielony: ${dobrze?.why}`);
       await page.screenshot({ path: path.join(OUT, 'badania-budowle-koza-stawianie.png') });
       await page.mouse.click(sx, sy);
       await frames(page, 3);
@@ -3828,7 +3828,9 @@ const SHOTS: Shot[] = [
           ['wieza', [gate.x, gate.y]],
           ['barykada', [gate.x, gate.y]],
         ] as const) {
-          let a = allowedAnchors(st, w, kind as 'warsztat', 0).sort(near(around[0], around[1]));
+          // koza z beczki w pokoju obok pracowni, a nie przed kozą zarządu w kuchni
+          const [ax, ay] = kind === 'koza_beczka' ? out.pracownia : around;
+          let a = allowedAnchors(st, w, kind as 'warsztat', 0).sort(near(ax, ay));
           if (kind === 'wieza') {
             const [gx, gy] = out.szklarnia;
             a = a.filter((i) => Math.max(Math.abs((i % size) - gx), Math.abs(Math.floor(i / size) - gy)) >= 6);

@@ -13,7 +13,6 @@ import {
   BUILD_CATS,
   BUILDS,
   type BuildCat,
-  type BuildDef,
   type BuildKind,
   type BuildPlace,
   boilerRooms,
@@ -22,6 +21,7 @@ import {
   footprint,
   isUnlocked,
   type Mat,
+  PLACE_ROOMS,
 } from '../sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { MAT_EN } from '../sim/mieszkania.en.ts';
@@ -89,12 +89,12 @@ export const placeText = (place: BuildPlace, w: Words = wordsOf(BLOK)): string =
     kuchnia: `w kuchni ${w.lokal.d}`,
     lazienka: `w łazience ${w.lokal.d}`,
     klatka: 'na klatce siedziby (w domu w przedpokoju)',
+    okno: `w pokoju, kuchni albo przedpokoju ${w.lokal.d}, blisko okna`,
     podworko: 'na podwórku za siatką',
     obwod: 'w miejscu odcinka siatki',
   })[place];
-/** miejsce budowli do menu po polsku i po angielsku: miejsce z BuildDef, a koza z beczki dodatkowo „przy oknie” */
-const placeDefPl = (d: BuildDef, w: Words): string => placeText(d.place, w) + (d.przyOknie ? ', przy oknie' : '');
-const placeDefEn = (d: BuildDef, e: WordsEn): string => placeEn(d.place, e) + (d.przyOknie ? ', by a window' : '');
+/** to samo w bieżącym języku */
+const placeL = (place: BuildPlace, w: Words, e: WordsEn): string => L(placeText(place, w), placeEn(place, e));
 
 /** nazwa budowli w bieżącym języku (menu, pasek trybu stawiania, duch planu) */
 export const buildName = (kind: BuildKind): string => L(BUILDS[kind].name, BUILDS_EN[kind].name);
@@ -126,8 +126,9 @@ export function allowedAnchors(st: SimState, w: World, kind: BuildKind, rot: Rot
   } else {
     const ours = ourApts(st);
     cand = [];
+    const kinds = PLACE_ROOMS[place] ?? [];
     inside.room.forEach((r, i) => {
-      if (r >= 0 && ours.includes(inside.rooms[r].apt) && inside.rooms[r].kind === place) cand.push(i);
+      if (r >= 0 && ours.includes(inside.rooms[r].apt) && kinds.includes(inside.rooms[r].kind)) cand.push(i);
     });
   }
   return cand.filter((i) => canPlace(st, w, kind, i % w.size, Math.floor(i / w.size), rot).ok);
@@ -318,8 +319,8 @@ export function buildMenu(
           why = locked;
         } else if (!room(kind))
           why = L(
-            `Nie ma gdzie postawić: brak wolnego miejsca ${placeDefPl(d, words)}.`,
-            `Nowhere to put it: no free space ${placeDefEn(d, en)}.`,
+            `Nie ma gdzie postawić: brak wolnego miejsca ${placeText(d.place, words)}.`,
+            `Nowhere to put it: no free space ${placeEn(d.place, en)}.`,
           );
         else if (short.length) {
           const list = short.map(([m, n]) => `${matName(m)} ${n}`).join(', ');
@@ -333,7 +334,7 @@ export function buildMenu(
           cost: costText(d.cost),
           time: workText(d.work),
           effect: L(effectOf(kind, words), effectEnOf(kind, en)),
-          place: L(placeDefPl(d, words), placeDefEn(d, en)),
+          place: placeL(d.place, words, en),
           ok: !why,
           why,
           locked,

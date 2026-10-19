@@ -1,6 +1,6 @@
 /* Sześć budowli z technologii ery 1 i 2 oraz pracownia na mapie (docs/superpowers/specs/2026-10-19-badania-design.md,
    „Nowe budowle”): dane z projektu, zgodność z TECH_BY[*].odblokowuje, miejsca (kocioł na klatce siedziby albo w
-   przedpokoju domu, pieczarkarnia w łazience, koza z beczki przy oknie, wieża jedna), odmowa przed badaniem, plan po
+   przedpokoju domu, pieczarkarnia w łazience, koza z beczki blisko okna, wieża jedna), odmowa przed badaniem, plan po
    badaniu, własny rysunek każdej budowli (nie zasieki z gałęzi domyślnej). Działanie (ciepło, plon, wytrzymałość,
    posterunek) zrobią późniejsze zadania. Przymorze i Lanciego (bloki) oraz Zielonki (dom) z dem. */
 
@@ -58,14 +58,15 @@ const xy = (world: World, i: number): [number, number] => [i % world.size, Math.
 
 describe('dane: sześć budowli z projektu', () => {
   it('rodzaj, miejsce, zakładka, rozmiar, koszt i badanie słowo w słowo z opisu zadania', () => {
+    // miejsce „okno” (pokój, kuchnia albo przedpokój naszego mieszkania blisko okna) zamiast „pokoj” z opisu zadania:
+    // rozstrzygnięcie koordynatora, bo na Lanciego pokoje nie mają okna
     expect(BUILDS.koza_beczka).toMatchObject({
-      place: 'pokoj',
+      place: 'okno',
       cat: 'dom',
       w: 1,
       h: 1,
       cost: { zlom: 8, czesci: 1 },
       tech: 't_kozy',
-      przyOknie: true,
     });
     expect(BUILDS.kociol).toMatchObject({
       place: 'klatka',
@@ -99,8 +100,6 @@ describe('dane: sześć budowli z projektu', () => {
       tech: 't_wieza',
       max: 1,
     });
-    for (const k of ['warsztat', 'ogrodek', 'zasieki', 'pracownia'] as const)
-      expect(BUILDS[k].przyOknie).toBeUndefined();
   });
 
   it('każdy rodzaj z odblokowuje ma BUILDS[k].tech równe tej technologii i na odwrót', () => {
@@ -142,24 +141,23 @@ describe('dane: sześć budowli z projektu', () => {
     expect(wDomu).toEqual(expect.arrayContaining(['koza_beczka', 'kociol', 'pieczarkarnia', 'pracownia']));
   });
 
-  it('opis miejsca w menu: klatka siedziby z domem w przedpokoju, łazienka naszego mieszkania, koza przy oknie', () => {
+  it('opis miejsca w menu: klatka siedziby z domem w przedpokoju, łazienka naszego mieszkania, koza blisko okna', () => {
     expect(placeText('klatka')).toBe('na klatce siedziby (w domu w przedpokoju)');
+    expect(placeText('okno')).toBe('w pokoju, kuchni albo przedpokoju naszego mieszkania, blisko okna');
     expect(placeText('lazienka')).toBe('w łazience naszego mieszkania');
     expect(placeText('pokoj')).toBe('w pokoju naszego mieszkania');
     const st = gra(przymorze.w, przymorze.seed);
     st.techDone = Object.values(NOWE);
     const menu = buildMenu({ zlom: 99, deski: 99, czesci: 99 }, () => true, undefined, undefined, { st });
     const miejsce = (k: BuildKind) => menu.flatMap((c) => c.items).find((b) => b.kind === k)!.place;
-    expect(miejsce('koza_beczka')).toBe('w pokoju naszego mieszkania, przy oknie');
+    expect(miejsce('koza_beczka')).toBe('w pokoju, kuchni albo przedpokoju naszego mieszkania, blisko okna');
     expect(miejsce('warsztat')).toBe('w pokoju naszego mieszkania');
     expect(miejsce('kociol')).toBe('na klatce siedziby (w domu w przedpokoju)');
   });
 });
 
-describe.each(DEMA)('miejsca i odmowa przed badaniem: %s', (nazwa, { w, seed }) => {
-  // Lanciego: mieszkanie zarządu leży w głębi budynku, okna mają tylko kuchnia i łazienka, więc w pokoju nie ma
-  // kafelka przy oknie (osobny test niżej)
-  for (const k of RODZAJE.filter((q) => !(nazwa.startsWith('Lanciego') && q === 'koza_beczka'))) {
+describe.each(DEMA)('miejsca i odmowa przed badaniem: %s', (_nazwa, { w, seed }) => {
+  for (const k of RODZAJE) {
     it(`${k}: przed badaniem canPlace odrzuca, po wpisaniu techDone przyjmuje i plan staje`, () => {
       const st = gra(w, seed, NOWE[k]);
       const kotwice = allowedAnchors(st, w, k, 0);
@@ -248,40 +246,7 @@ describe('Przymorze (blok): kocioł na klatce siedziby, pieczarkarnia w łazienc
     expect(canPlace(st, w, 'pieczarkarnia', ...xy(w, kuchnia), 0).why).toBe('Only in the bathroom of your flat.');
   });
 
-  it('koza z beczki: tylko w pokoju naszego mieszkania i tylko tuż przy oknie z wnętrza', () => {
-    const st = gra(w, seed, 't_kozy');
-    const okno = new Set(h.windows);
-    const przyOknie = (i: number) => [i - 1, i + 1, i - w.size, i + w.size].some((n) => okno.has(n));
-    const kotwice = allowedAnchors(st, w, 'koza_beczka', 0);
-    expect(kotwice.length).toBeGreaterThan(0);
-    for (const a of kotwice) {
-      expect(rodzaj(a)).toBe('pokoj');
-      expect(apt(a)).toBe(h.home);
-      expect(przyOknie(a), `${a} bez okna obok`).toBe(true);
-    }
-    // wolny kafelek pokoju naszego mieszkania z dala od okna: odmowa z powodem
-    const zajete = new Set(st.things.map((t) => t.y * w.size + t.x));
-    const daleko = h.room.findIndex(
-      (r, i) =>
-        r >= 0 && rodzaj(i) === 'pokoj' && apt(i) === h.home && !przyOknie(i) && !w.blocked[i] && !zajete.has(i),
-    );
-    expect(daleko).toBeGreaterThanOrEqual(0);
-    const c = canPlace(st, w, 'koza_beczka', ...xy(w, daleko), 0);
-    expect(c.ok).toBe(false);
-    expect(c.why).toBe('Tylko w pokoju w naszym mieszkaniu, przy oknie.');
-    ustawJezyk('en');
-    expect(canPlace(st, w, 'koza_beczka', ...xy(w, daleko), 0).why).toBe(
-      'Only in a room of your flat, next to a window.',
-    );
-    ustawJezyk('pl');
-    // kafelek przy oknie, ale w kuchni (tam stoi koza zarządu): też nie, bo to nie pokój
-    const kuchniaPrzyOknie = h.room.findIndex(
-      (r, i) => r >= 0 && rodzaj(i) === 'kuchnia' && apt(i) === h.home && przyOknie(i) && !w.blocked[i],
-    );
-    if (kuchniaPrzyOknie >= 0) expect(canPlace(st, w, 'koza_beczka', ...xy(w, kuchniaPrzyOknie), 0).ok).toBe(false);
-  });
-
-  it('koza z beczki nie stanie na zajętym kafelku ani na planie, a okno obok ma każdy obrót', () => {
+  it('koza z beczki nie stanie na planie, a obrót nie zmienia, czy wolno (rura skręca ku ścianie rot)', () => {
     const st = gra(w, seed, 't_kozy');
     const a = allowedAnchors(st, w, 'koza_beczka', 0)[0];
     const [x, y] = xy(w, a);
@@ -319,26 +284,63 @@ describe('Zielonki (dom): kocioł w przedpokoju, pieczarkarnia w łazience', () 
     expect(kotwice.length).toBeGreaterThan(0);
     for (const a of kotwice) expect(rodzaj(a)).toBe('lazienka');
   });
-
-  it('koza z beczki staje w pokoju domu przy oknie', () => {
-    const st = gra(w, seed, 't_kozy');
-    const kotwice = allowedAnchors(st, w, 'koza_beczka', 0);
-    expect(kotwice.length).toBeGreaterThan(0);
-    for (const a of kotwice) expect(rodzaj(a)).toBe('pokoj');
-  });
 });
 
-describe('Lanciego: mieszkanie w głębi budynku', () => {
-  it('koza z beczki nie ma gdzie stanąć, bo pokoje nie mają okna, a menu mówi dlaczego', () => {
-    const { w, seed } = lanciego;
-    const st = gra(w, seed, 't_kozy');
-    expect(allowedAnchors(st, w, 'koza_beczka', 0)).toEqual([]);
-    const menu = buildMenu({ zlom: 99, czesci: 99 }, () => false, undefined, undefined, { st });
-    const koza = menu.flatMap((c) => c.items).find((b) => b.kind === 'koza_beczka')!;
-    expect(koza.ok).toBe(false);
-    expect(koza.why).toBe('Nie ma gdzie postawić: brak wolnego miejsca w pokoju naszego mieszkania, przy oknie.');
-  });
-});
+describe.each(DEMA)(
+  'koza z beczki blisko okna, w pokoju, kuchni albo przedpokoju, nie w łazience: %s',
+  (_nazwa, { w, seed }) => {
+    const h = houseOf(w)!;
+    const rodzaj = (i: number) => h.rooms[h.room[i]].kind;
+    const apt = (i: number) => h.rooms[h.room[i]].apt;
+    /** niezależnie od canPlace: okno ściany zewnętrznej w odległości najwyżej r kafelków (po współrzędnych) */
+    const oknoW = (i: number, r: number) =>
+      h.windows.some(
+        (s) =>
+          Math.max(Math.abs((s % w.size) - (i % w.size)), Math.abs(Math.floor(s / w.size) - Math.floor(i / w.size))) <=
+          r,
+      );
+    const naszeKafelki = (rodzaje: readonly string[]) =>
+      Array.from(h.room, (_r, i) => i).filter(
+        (i) => h.room[i] >= 0 && rodzaje.includes(rodzaj(i)) && apt(i) === h.home && !w.blocked[i],
+      );
+
+    it('po badaniu jest co najmniej jedno miejsce, każde w naszym pokoju, kuchni albo przedpokoju i blisko okna', () => {
+      const st = gra(w, seed, 't_kozy');
+      const kotwice = allowedAnchors(st, w, 'koza_beczka', 0);
+      expect(kotwice.length).toBeGreaterThan(0);
+      for (const a of kotwice) {
+        expect(['pokoj', 'kuchnia', 'przedpokoj'], `${a}`).toContain(rodzaj(a));
+        expect(apt(a)).toBe(h.home);
+        expect(oknoW(a, 2), `${a} bez okna w zasięgu`).toBe(true);
+        expect(h.sklad.includes(a)).toBe(false);
+      }
+      expect(allowedAnchors(gra(w, seed), w, 'koza_beczka', 0)).toEqual([]);
+    });
+
+    it('w łazience odmowa, choć to nasze mieszkanie, z powodem w obu językach', () => {
+      const st = gra(w, seed, 't_kozy');
+      const lazienka = naszeKafelki(['lazienka']);
+      expect(lazienka.length).toBeGreaterThan(0);
+      for (const i of lazienka) expect(canPlace(st, w, 'koza_beczka', ...xy(w, i), 0).ok, `${i}`).toBe(false);
+      const c = canPlace(st, w, 'koza_beczka', ...xy(w, lazienka[0]), 0);
+      expect(c.why).toMatch(
+        /^Tylko w pokoju, kuchni albo przedpokoju naszego (mieszkania|domu), najwyżej 2 m od okna\.$/,
+      );
+      ustawJezyk('en');
+      expect(canPlace(st, w, 'koza_beczka', ...xy(w, lazienka[0]), 0).why).toMatch(
+        /^Only in a room, the kitchen or the hallway of your (flat|house), within 2 m of a window\.$/,
+      );
+    });
+
+    it('z dala od okna odmowa, także w pokoju, kuchni i przedpokoju naszego mieszkania', () => {
+      const st = gra(w, seed, 't_kozy');
+      const daleko = naszeKafelki(['pokoj', 'kuchnia', 'przedpokoj']).filter((i) => !oknoW(i, 3));
+      // każde mieszkanie z dem ma jakiś kafelek poza zasięgiem okna (3 m: z zapasem nad 2 m)
+      expect(daleko.length).toBeGreaterThan(0);
+      for (const i of daleko) expect(canPlace(st, w, 'koza_beczka', ...xy(w, i), 0).ok, `${i}`).toBe(false);
+    });
+  },
+);
 
 describe('wieża jest jedna', () => {
   it('druga odmowa przy stojącej i przy planie, z powodem w obu językach', () => {
@@ -384,7 +386,10 @@ describe('plan kończy się stojącą budowlą', () => {
   for (const [nazwa, { w, seed }, k] of [
     ['kocioł na klatce', przymorze, 'kociol'],
     ['pieczarkarnia w łazience', przymorze, 'pieczarkarnia'],
-    ['koza z beczki przy oknie', przymorze, 'koza_beczka'],
+    ['koza z beczki blisko okna', przymorze, 'koza_beczka'],
+    ['koza z beczki w kuchni głębokiego mieszkania', lanciego, 'koza_beczka'],
+    ['kocioł na klatce w głębokim mieszkaniu', lanciego, 'kociol'],
+    ['koza z beczki w domu', zielonki, 'koza_beczka'],
     ['kocioł w przedpokoju domu', zielonki, 'kociol'],
     ['pieczarkarnia w łazience domu', zielonki, 'pieczarkarnia'],
   ] as const) {

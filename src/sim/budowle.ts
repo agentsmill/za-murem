@@ -4,9 +4,11 @@
    jest od razu w bieżącym języku (symulacja patrzy tylko na ok). Pracownia (badania) jest jedna na grę: `max` w
    BuildDef, z powodem w canPlace. Budowle z technologii (docs/superpowers/specs/2026-10-19-badania-design.md, „Nowe
    budowle”): koza z beczki, kocioł, pieczarkarnia, szklarnia, barykada i wieża mają `tech` i stoją dopiero po badaniu.
-   Dochodzą dwa miejsca: łazienka naszego mieszkania i klatka siedziby (w domu, który klatki nie ma, przedpokój
-   naszego mieszkania), a koza z beczki ma w BuildDef `przyOknie`: kafelek tuż obok okna ściany zewnętrznej. Tu są
-   tylko dane i miejsca; działanie (ciepło, plon, wytrzymałość, posterunek) dopisują zadania, które z nich korzystają. */
+   Dochodzą trzy miejsca: łazienka naszego mieszkania, klatka siedziby (w domu, który klatki nie ma, przedpokój
+   naszego mieszkania) i „okno” dla kozy z beczki: pokój, kuchnia albo przedpokój naszego mieszkania, najwyżej 2 m od
+   okna tego samego pomieszczenia (rura idzie wzdłuż ściany; w głębokich mieszkaniach okna mają tylko kuchnia i łazienka,
+   a przy samym oknie stoi już koza zarządu). Tu są tylko dane i miejsca; działanie (ciepło, plon, wytrzymałość,
+   posterunek) dopisują zadania, które z nich korzystają. */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { type Words, type WordsEn, wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
@@ -36,8 +38,21 @@ export type BuildKind =
   | 'wieza';
 
 /** gdzie wolno postawić: pokój, kuchnia albo łazienka w naszym mieszkaniu, klatka siedziby (w domu przedpokój naszego
-    mieszkania), podwórko za siatką, odcinek siatki */
-export type BuildPlace = 'pokoj' | 'kuchnia' | 'lazienka' | 'klatka' | 'podworko' | 'obwod';
+    mieszkania), pokój, kuchnia albo przedpokój naszego mieszkania blisko okna (`okno`), podwórko za siatką, odcinek
+    siatki */
+export type BuildPlace = 'pokoj' | 'kuchnia' | 'lazienka' | 'klatka' | 'okno' | 'podworko' | 'obwod';
+
+/** rodzaje pomieszczeń naszych mieszkań, w których stoi budowla z danym miejscem (miejsca bez wpisu to klatka,
+    podwórko i obwód, które mają własne sprawdzenie) */
+export const PLACE_ROOMS: Readonly<Partial<Record<BuildPlace, readonly string[]>>> = {
+  pokoj: ['pokoj'],
+  kuchnia: ['kuchnia'],
+  lazienka: ['lazienka'],
+  okno: ['pokoj', 'kuchnia', 'przedpokoj'],
+};
+
+/** do ilu metrów (kafelków, najdalej w prostej linii po kafelkach) od okna stoi budowla z miejscem `okno` */
+export const ZASIEG_OKNA = 2;
 
 /** zakładka w menu budowy; kolejna dojdzie razem z budowlami, które do niej należą (jedzenie, prąd, obrona);
     „cuda” (bardzo drogie budowle końcowe z późnych er) nie ma jeszcze żadnej budowli, więc menu jej nie pokazuje */
@@ -60,8 +75,6 @@ export interface BuildDef {
   work: number;
   /** ile takich budowli wolno mieć naraz (stojące plus plany); bez pola: bez limitu */
   max?: number;
-  /** stoi tylko tuż obok okna z wnętrza (kafelek, którego sąsiad z czterech stron to okno ściany zewnętrznej) */
-  przyOknie?: true;
   /** jedno zdanie do menu budowy; zdanie zależne od miejsca bierze słowa ze słownika wspólnoty (effectOf) */
   effect: string | ((w: Words) => string);
 }
@@ -140,15 +153,14 @@ export const BUILDS: Record<BuildKind, BuildDef> = {
   },
   koza_beczka: {
     name: 'Koza z beczki',
-    place: 'pokoj',
+    place: 'okno',
     cat: 'dom',
     tech: 't_kozy',
-    przyOknie: true,
     w: 1,
     h: 1,
     cost: { zlom: 8, czesci: 1 },
     work: TICKS_PER_HOUR,
-    effect: 'Grzeje pokój i pali drewno jak koza w kuchni. Rura idzie przez okno, więc stoi tuż przy nim.',
+    effect: 'Grzeje pomieszczenie i pali drewno jak koza w kuchni. Rura idzie przez okno, więc stoi blisko niego.',
   },
   kociol: {
     name: 'Kocioł',
@@ -255,6 +267,11 @@ const WHY: Record<BuildPlace, (w: Words, e: WordsEn) => Tx> = {
   pokoj: (w, e) => tx(`Tylko w pokoju ${w.lokal.w}.`, `Only in a room of ${e.lokal.w}.`),
   kuchnia: (w, e) => tx(`Tylko w kuchni ${w.lokal.w}.`, `Only in the kitchen of ${e.lokal.w}.`),
   lazienka: (w, e) => tx(`Tylko w łazience ${w.lokal.w}.`, `Only in the bathroom of ${e.lokal.w}.`),
+  okno: (w, e) =>
+    tx(
+      `Tylko w pokoju, kuchni albo przedpokoju ${w.lokal.d}, najwyżej ${ZASIEG_OKNA} m od okna.`,
+      `Only in a room, the kitchen or the hallway of ${e.lokal.w}, within ${ZASIEG_OKNA} m of a window.`,
+    ),
   klatka: () => tx('Tylko na klatce schodowej siedziby.', 'Only in the HQ stairwell.'),
   podworko: (w, e) =>
     tx(
@@ -264,19 +281,24 @@ const WHY: Record<BuildPlace, (w: Words, e: WordsEn) => Tx> = {
   obwod: () => tx('Tylko na odcinku siatki.', 'Only on a stretch of the fence.'),
 };
 
-/** powód odmowy dla budowli, której miejsce ma wariant: koza z beczki tuż przy oknie, kocioł w domu bez klatki w
-    przedpokoju (przedpokoj: true); reszta według WHY */
+/** powód odmowy dla budowli, której miejsce ma wariant: kocioł w domu bez klatki w przedpokoju (przedpokoj: true);
+    reszta według WHY */
 function whyNo(def: BuildDef, w: Words, e: WordsEn, przedpokoj: boolean): Tx {
-  if (def.przyOknie)
-    return tx(`Tylko w pokoju ${w.lokal.w}, przy oknie.`, `Only in a room of ${e.lokal.w}, next to a window.`);
   if (def.place === 'klatka' && przedpokoj)
     return tx(`Tylko w przedpokoju ${w.lokal.w}.`, `Only in the hallway of ${e.lokal.w}.`);
   return WHY[def.place](w, e);
 }
 
-/** czy kafelek wnętrza leży tuż obok okna ściany zewnętrznej (sąsiad z czterech stron to kafelek z oknem) */
-export function nextToWindow(h: Pick<HouseLike, 'windows'>, i: number, size: number): boolean {
-  return h.windows.some((s) => s === i - 1 || s === i + 1 || s === i - size || s === i + size);
+/** Czy kafelek wnętrza i jest blisko okna swojego pomieszczenia: okno ściany zewnętrznej, którego któryś sąsiad z czterech
+    stron leży w tym samym pomieszczeniu, w odległości najwyżej ZASIEG_OKNA kafelków (po współrzędnych, jak „kwadrat”). */
+export function nearWindow(h: Pick<HouseLike, 'windows' | 'room'>, i: number, size: number): boolean {
+  const r = h.room[i];
+  if (r < 0) return false;
+  const [x, y] = [i % size, Math.floor(i / size)];
+  return h.windows.some((s) => {
+    if (Math.max(Math.abs((s % size) - x), Math.abs(Math.floor(s / size) - y)) > ZASIEG_OKNA) return false;
+    return h.room[s - 1] === r || h.room[s + 1] === r || h.room[s - size] === r || h.room[s + size] === r;
+  });
 }
 
 /** Pomieszczenia, w których stoi kocioł (place 'klatka'): klatki siedziby, z których drzwi prowadzą do pomieszczenia
@@ -301,7 +323,8 @@ export function boilerRooms(
 }
 
 /** Czy budowlę wolno postawić (podgląd trybu stawiania i polecenie 'build'): w pomieszczeniu właściwego rodzaju
-    w naszym mieszkaniu (bez składu drewna; koza z beczki dodatkowo tuż przy oknie), kocioł na klatce siedziby (w domu
+    w naszym mieszkaniu (bez składu drewna; koza z beczki w pokoju, kuchni albo przedpokoju, blisko okna), kocioł na
+    klatce siedziby (w domu
     w przedpokoju), na wolnym podwórku z dala od bramy, dziur i wejść albo na odcinku siatki (także na dziurze, nie na
     bramie); nie na rzeczach i nie na innym planie. Czysta funkcja stanu i świata. */
 /** rzeczy, które nie zajmują miejsca (krew, trupy, zwłoki): plan budowy i ognisko mogą stanąć na nich */
@@ -338,13 +361,14 @@ export function canPlace(
   const no = nie();
   const h = houseOf(w);
   const shape = fenceShape(w);
-  if (def.place === 'pokoj' || def.place === 'kuchnia' || def.place === 'lazienka') {
+  const kinds = PLACE_ROOMS[def.place];
+  if (kinds) {
     if (!h) return no;
     for (const i of tiles) {
       const r = h.room[i];
-      if (r < 0 || w.blocked[i] || h.sklad.includes(i) || h.rooms[r].kind !== def.place) return no;
+      if (r < 0 || w.blocked[i] || h.sklad.includes(i) || !kinds.includes(h.rooms[r].kind)) return no;
       if (!st.apts.find((a) => a.apt === h.rooms[r].apt)?.ours) return no;
-      if (def.przyOknie && !nextToWindow(h, i, size)) return no;
+      if (def.place === 'okno' && !nearWindow(h, i, size)) return no;
     }
   } else if (def.place === 'klatka') {
     if (!h) return no;
