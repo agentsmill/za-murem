@@ -471,6 +471,8 @@ const SHOTS: Shot[] = [
   ...zwyciestwoShots(),
   // Piętra (etap 1, flaga ?pietra=1): przekrój wybranego piętra ze stropem, kafelek z listą, podpowiedzi
   ...pietraShots(),
+  // Fokus przycisków paska po kliknięciu myszą: spacja dalej zatrzymuje grę, z klawiatury fokus zostaje
+  ...pasekShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -8845,6 +8847,24 @@ function siecShots(): Shot[] {
   ];
 }
 
+/** kafelki dla okna mapy miasta: szablon i z=14 z tests/fixtures; inne z=14 puste albo (zerwane) bez sieci; z=12 puste */
+async function kafelkiMapy(page: Page, zerwane = false): Promise<void> {
+  await page.route('https://tiles.openfreemap.org/planet', (r) =>
+    r.fulfill({ contentType: 'application/json', body: fs.readFileSync(path.join(FIX, 'tj.json'), 'utf8') }),
+  );
+  await page.route(/tiles\.openfreemap\.org\/planet\/.+\/(\d+)\/(\d+)\/(\d+)\.pbf/, (r) => {
+    const m = r
+      .request()
+      .url()
+      .match(/\/(\d+)\/(\d+)\/(\d+)\.pbf/)!;
+    const f = path.join(FIX, `t_${m[2]}_${m[3]}.pbf`);
+    if (m[1] === '14' && fs.existsSync(f))
+      return r.fulfill({ contentType: 'application/x-protobuf', body: fs.readFileSync(f) });
+    if (m[1] === '14' && zerwane) return r.abort('internetdisconnected');
+    return r.fulfill({ status: 204, body: '' });
+  });
+}
+
 /** Mapa miasta w grze (src/main.ts): po starcie demo zarząd ma stan miasta (`gov.miasto`), a `zm.okolica` miejsca z
     punktów OSM z kluczami „poi:X:Y”; karta nocy proponuje wyprawy do tych miejsc (nazwa i odległość w metrach). Z
     `?miasto=0` nic z tego nie ma, a karta ma dzisiejsze cele z TARGETS. Zrzut: karta nocy z miejscami z okolicy.
@@ -8896,23 +8916,6 @@ function miastoShots(): Shot[] {
       .evaluateAll((o) => o.map((x) => x.textContent ?? ''));
     // cel z miejsca ma odległość przy nazwie („Sklep budowlany, 450 m”), cel z TARGETS tylko nazwę
     return opcje.filter((t) => /, \d+ m/.test(t));
-  };
-  /** kafelki dla okna mapy: szablon i z=14 z tests/fixtures; inne z=14 puste albo (zerwane) bez sieci; z=12 puste */
-  const kafelkiMapy = async (page: Page, zerwane = false) => {
-    await page.route('https://tiles.openfreemap.org/planet', (r) =>
-      r.fulfill({ contentType: 'application/json', body: fs.readFileSync(path.join(FIX, 'tj.json'), 'utf8') }),
-    );
-    await page.route(/tiles\.openfreemap\.org\/planet\/.+\/(\d+)\/(\d+)\/(\d+)\.pbf/, (r) => {
-      const m = r
-        .request()
-        .url()
-        .match(/\/(\d+)\/(\d+)\/(\d+)\.pbf/)!;
-      const f = path.join(FIX, `t_${m[2]}_${m[3]}.pbf`);
-      if (m[1] === '14' && fs.existsSync(f))
-        return r.fulfill({ contentType: 'application/x-protobuf', body: fs.readFileSync(f) });
-      if (m[1] === '14' && zerwane) return r.abort('internetdisconnected');
-      return r.fulfill({ status: 204, body: '' });
-    });
   };
   const dwieKlatki = (page: Page) =>
     page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -11503,5 +11506,104 @@ function pietraShots(): Shot[] {
     // pierwsza ulica (ratusz 3, muzeum 2, teatr 3, urząd 3), piętro 2: ratusz, teatr i urząd w przekroju, muzeum z dachem
     // i portykiem
     publiczne('pietra-budynek-publiczny-p2', 2, '239,177,0.6'),
+  ];
+}
+
+/** Przyciski górnego paska i przybliżania (src/ui/fokus.ts) po kliknięciu myszą nie trzymają fokusu: Chromium daje go
+    każdemu klikniętemu przyciskowi, a globalna obsługa klawiszy przepuszcza spację na przycisk w fokusie, więc spacja
+    klikałaby go drugi raz (przełączała Budowę, alarm, otwierała Menu) zamiast zatrzymać grę. Z klawiatury (Enter,
+    spacja po Tabie) fokus zostaje i przycisk działa jak zwykle. */
+function pasekShots(): Shot[] {
+  const fokus = (page: Page) =>
+    page.evaluate(() => {
+      const a = document.activeElement;
+      return !a || a === document.body ? 'body' : `${a.tagName.toLowerCase()}${a.id ? `#${a.id}` : ''}`;
+    });
+  const stan = (page: Page) =>
+    page.evaluate(() => ({
+      tempo: window.zm!.speed(),
+      budowa: window.zm!.buildPanel().open,
+      okno: !document.getElementById('modal')!.hidden,
+      alarm: document.getElementById('btnAlarm')!.getAttribute('aria-pressed'),
+    }));
+  /** spacja po kliknięciu myszą: gra staje (a przy drugiej spacji rusza w tempie 1×), nic się nie przełącza */
+  const spacjaZatrzymuje = async (page: Page, co: string, bez: Partial<Awaited<ReturnType<typeof stan>>>) => {
+    // po oknie (Menu, Mapa miasta) fokus może jeszcze stać na schowanym #sheet; ważne, że nie na przycisku
+    const f = await fokus(page);
+    if (f.startsWith('button')) throw new Error(`${co}: po kliknięciu myszą fokus został na ${f}`);
+    await page.keyboard.press('Space');
+    const s = await stan(page);
+    console.log(`  ${co}: po spacji ${JSON.stringify(s)}`);
+    if (s.tempo !== 0) throw new Error(`${co}: spacja nie zatrzymała gry (tempo ${s.tempo})`);
+    for (const [k, v] of Object.entries(bez))
+      if (s[k as keyof typeof s] !== v) throw new Error(`${co}: spacja zmieniła ${k} na ${s[k as keyof typeof s]}`);
+    await page.keyboard.press('Space');
+    const t = (await stan(page)).tempo;
+    if (t !== 1) throw new Error(`${co}: druga spacja nie wznowiła gry (tempo ${t})`);
+  };
+  return [
+    {
+      name: 'pasek-fokus',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&godzina=8&cam=hq,1`);
+        await waitIdle(page);
+        // tempo, alarm i przybliżanie
+        for (const [sel, co] of [
+          ['#speed [data-s="2"]', 'tempo 3×'],
+          ['#speed [data-s="3"]', 'tempo 6×'],
+          ['#speed [data-s="4"]', 'tempo 8×'],
+          ['#speed [data-s="1"]', 'tempo 1×'],
+          ['#zIn', 'przybliż'],
+          ['#zOut', 'oddal'],
+          ['#zHome', 'siedziba'],
+        ] as const) {
+          await page.click(sel);
+          await spacjaZatrzymuje(page, co, { okno: false, budowa: false });
+        }
+        // alarm: kliknięcie włącza, spacja zatrzymuje grę, ale nie wyłącza alarmu
+        await page.click('#btnAlarm');
+        await page.waitForFunction(() => document.getElementById('btnAlarm')!.getAttribute('aria-pressed') === 'true');
+        await spacjaZatrzymuje(page, 'alarm', { alarm: 'true', okno: false });
+        // Budowa: kliknięcie otwiera panel, spacja zatrzymuje grę, ale go nie zamyka
+        await page.click('#btnBuild');
+        await page.waitForFunction(() => window.zm!.buildPanel().open);
+        await spacjaZatrzymuje(page, 'Budowa', { budowa: true, okno: false });
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !window.zm!.buildPanel().open);
+        // Menu i Mapa miasta otwierają okno (gra staje), Esc je zamyka; okno nie oddaje fokusu przyciskowi
+        for (const [sel, co] of [
+          ['#btnMenu', 'Menu'],
+          ['#btnMiasto', 'Mapa miasta'],
+        ] as const) {
+          if (!(await page.isVisible(sel))) {
+            if (sel === '#btnMenu') throw new Error('nie ma przycisku Menu');
+            console.log(`  ${co}: przycisk schowany, pomijam`);
+            continue;
+          }
+          await page.click(sel);
+          await page.waitForFunction(() => !document.getElementById('modal')!.hidden);
+          await page.keyboard.press('Escape');
+          await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+          await page.waitForFunction(() => window.zm!.speed() === 1);
+          await spacjaZatrzymuje(page, co, { okno: false, budowa: false });
+        }
+        // z klawiatury fokus zostaje: Enter na tempie 3× ustawia je, Enter na Budowie otwiera panel, spacja go zamyka
+        await page.focus('#speed [data-s="2"]');
+        await page.keyboard.press('Enter');
+        if ((await stan(page)).tempo !== 2 || (await fokus(page)) !== 'button')
+          throw new Error('Enter na przycisku tempa nie ustawił 3× albo zabrał mu fokus');
+        await page.focus('#btnBuild');
+        await page.keyboard.press('Enter');
+        if (!(await stan(page)).budowa || (await fokus(page)) !== 'button#btnBuild')
+          throw new Error('Enter na Budowie nie otworzył panelu albo zabrał jej fokus');
+        await page.keyboard.press('Space');
+        const k = await stan(page);
+        if (k.budowa || k.tempo !== 2)
+          throw new Error(`spacja na Budowie z fokusem z klawiatury: ${JSON.stringify(k)} (miała zamknąć panel)`);
+        await page.screenshot({ path: path.join(OUT, 'pasek-fokus.png') });
+      },
+    },
   ];
 }
