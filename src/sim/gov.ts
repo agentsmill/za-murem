@@ -4,8 +4,8 @@
    z planu odgrywają szabrownicy. To, co wymaga przeliczenia przechodniości albo dróg (warta, wyprawa, łaty), idzie
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie.
 
-   Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to zarząd i mieszkańcy
-   siedziby, a `teren.przylaczone` to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu. Trzeci
+   Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to `populacja(st).razem`
+   z odczytu symulacji (zarząd, także na wyprawie, i mieszkańcy siedziby; bez sąsiadów i gości), a `teren.przylaczone` to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu. Trzeci
    odczyt, `ludnosc2021` (ilu ludzi mieszkało w kwadracie domu w 2021 roku), jest z tabel mieszkańców, a nie ze stanu
    gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane w src/main.ts). */
 
@@ -38,7 +38,7 @@ import {
   type Thing,
   takeStock,
 } from './sim.ts';
-import { snapshot } from './snapshot.ts';
+import { populacja, snapshot } from './snapshot.ts';
 import { modeOf } from './tryb.ts';
 import { hordeSize } from './zombie.ts';
 
@@ -107,10 +107,10 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     dead: (st.dead ?? [])
       .filter((d) => d.kind === 'core' || d.kind === 'resident')
       .map((d) => ({ id: d.id, name: d.name, cause: d.cause, tick: d.tick })),
-    // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (tu ich liczba
-    // dla dróg), a przyłączone budynki to te, które wspólny płot już dołączył do obwodu (plan w toku się nie liczy).
-    // Pole `ludnosc2021` dokłada gra (main.ts)
-    ludnosc: s.people.length + s.residents,
+    // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (`populacja`, ta
+    // sama liczba, którą czyta EventHost.pop()), a przyłączone budynki to te, które wspólny płot już dołączył do obwodu
+    // (plan w toku się nie liczy). Pole `ludnosc2021` dokłada gra (main.ts)
+    ludnosc: populacja(st).razem,
     teren: { przylaczone: st.plot?.bids.length ?? 0 },
   };
 }
