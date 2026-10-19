@@ -85,6 +85,111 @@ function budynkiZrzuty(): Shot[] {
     const [x, y] = srodekKafelki(szer(look)[0]);
     out.push(kadr(`budynki-${look}`, `${x},${y + 3},1.3`));
   }
+  // leżące postacie obok budynków: zwłoki przy muzeum (jedne u stóp schodów portyku) i dwóch z zarządu śpi na ziemi
+  // przed teatrem. Ludzie rysują się nad kawałkami mapy, w których siedzą ozdoby budynków (portyk, schody), więc leżący
+  // mają być widoczni na schodach i obok, a ozdoby nie zasłaniać ich ani nie znikać pod nimi
+  const muzeum = szer('muzeum')[0];
+  const [xMuz] = srodekKafelki(muzeum);
+  const [xTea] = srodekKafelki(teatr);
+  const lezace = (name: string, cam: [number, number, number]): Shot => ({
+    name,
+    query: '',
+    run: async (page, base) => {
+      await podstawAtrape(page);
+      await page.goto(`${base}?demo=${DEMO_ATRAPA}&speed=0&cam=all`);
+      await waitIdle(page);
+      await page.evaluate(
+        ([xm, ym, xt, yt, kam]) => {
+          const zm = window.zm!;
+          const sim = zm.sim!;
+          const st = sim.st;
+          const size = sim.w.size;
+          // najbliższy wolny kafelek poza budynkiem i rzeczami
+          const wolny = (x0: number, y0: number): [number, number] => {
+            for (let r = 0; r <= 4; r++)
+              for (let dy = -r; dy <= r; dy++)
+                for (let dx = -r; dx <= r; dx++) {
+                  if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                  const x = Math.round(x0) + dx;
+                  const y = Math.round(y0) + dy;
+                  const i = y * size + x;
+                  if (
+                    !sim.blocked[i] &&
+                    sim.w.bid[i] < 0 &&
+                    !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h)
+                  )
+                    return [x, y];
+                }
+            throw new Error('brak wolnego kafelka obok budynku');
+          };
+          // zwłoki: u stóp schodów portyku, po obu stronach schodów i przy dalszym końcu ściany
+          const zwloki: [number, number, number][] = [
+            [xm, ym, 2],
+            [xm - 5, ym + 1, 5],
+            [xm + 4, ym + 1, 7],
+          ];
+          zwloki.forEach(([x, y, n], k) => {
+            const [wx, wy] = wolny(x, y);
+            st.things.push({
+              id: 995000 + k,
+              kind: 'zwloki',
+              x: wx,
+              y: wy,
+              w: 1,
+              h: 1,
+              rot: 0,
+              n,
+              fuel: 0,
+              by: -1,
+              owner: -1,
+            });
+          });
+          // dwóch z zarządu śpi na ziemi przed drzwiami teatru, jak w scenariuszu kotwica-lezenie-dom
+          const core = st.pawns.filter((p) => p.kind === 'core');
+          [xt - 2.5, xt + 2.5].forEach((x, k) => {
+            const [fx, fy] = wolny(x, yt + 1);
+            const job = {
+              t: 'sleep',
+              target: -1,
+              tile: fy * size + fx,
+              phase: 1,
+              from: -1,
+              t0: st.tick,
+              until: st.tick + 99999,
+              order: false,
+            };
+            Object.assign(core[k], {
+              x: fx + 0.5,
+              y: fy + 0.5,
+              path: [],
+              pi: 0,
+              dir: 0,
+              job,
+              carry: 0,
+              wait: st.tick + 99999,
+            });
+          });
+          zm.setCam(kam[0], kam[1], kam[2]);
+        },
+        [xMuz, muzeum.y1 + 192, xTea, teatr.y1 + 192, cam] as const,
+      );
+      await waitIdle(page);
+      // śpiący kładą się z animacji: gra na pauzie stoi w czasie, więc przewijamy
+      await przewin(page, 1.5);
+      const rodzaje = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm
+          .sim!.st.pawns.filter((p) => p.kind === 'core')
+          .slice(0, 2)
+          .map((p) => zm.view.poses.get(p.id)!.lie?.kind ?? 'stoi');
+      });
+      console.log(`  leżenie: ${rodzaje.join(', ')}`);
+      if (rodzaje.some((k) => k !== 'floor')) throw new Error(`leżenie ${rodzaje.join()} zamiast floor, floor`);
+    },
+  });
+  // szeroki widok z muzeum i teatrem, a z bliska schody portyku muzeum z leżącymi przy nich
+  out.push(lezace('budynki-lezace', [(xMuz + xTea) / 2, muzeum.y1 + 192 - 4, 0.75]));
+  out.push(lezace('budynki-lezace-portyk', [xMuz - 2, muzeum.y1 + 192 - 1.5, 2.4]));
   return out;
 }
 

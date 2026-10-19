@@ -546,12 +546,13 @@ describe('kartaHtml', () => {
   const { st, i } = gra();
   const m = zZapasem('apteka', 600, 0);
   for (const lang of ['pl', 'en'] as Lang[])
-    it(`${lang}: bez wysyłki przycisk „Wyślij wyprawę” jest wyszarzony z dopiskiem, z wysyłką aktywny`, () => {
+    it(`${lang}: bez wysyłki przycisk „Wyślij wyprawę” jest wyszarzony (bez dopisku), z wysyłką aktywny`, () => {
       ustawJezyk(lang);
       const k = kartaMiejsca(m, st, i);
       const bez = kartaHtml(m, k, false);
       expect(bez).toMatch(/<button[^>]*data-act="wyslij"[^>]*disabled/);
-      expect(bez).toContain(lang === 'pl' ? 'wkrótce' : 'soon');
+      expect(bez).toContain(lang === 'pl' ? 'Wyślij wyprawę' : 'Send a supply run');
+      expect(bez).not.toMatch(/wkrótce|soon/);
       const z = kartaHtml(m, k, true);
       expect(z).toMatch(/<button[^>]*data-act="wyslij"/);
       expect(z).not.toMatch(/data-act="wyslij"[^>]*disabled/);

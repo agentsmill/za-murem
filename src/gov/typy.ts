@@ -151,7 +151,9 @@ export interface GovInput {
   dead?: { id: string; name: string; cause: string; tick: number }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
-  /** mapa miasta: miejsca z okolicy (sklepy i usługi z OSM) poza mapą lokalną, posortowane po odległości; bez pola
+  /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
+      lokalnej (koło 192 m), posortowane po odległości. Miejsc z mapy lokalnej nie wybiera karta nocy
+      (`wybierzCeleNocy`) i nie wysyła się do nich wyprawy (`powodOdmowy`), ale karta miejsca je pokazuje. Bez pola
       albo pusta: karta nocy gra na dzisiejszych TARGETS. Zapas miejsca liczy się z klucza, nie ze stanu gry */
   okolica?: readonly Miejsce[];
   /** warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod naszym zarządem, czyli zarząd i mieszkańcy naszych
@@ -211,6 +213,9 @@ export interface GovEffects {
   ammo?: Partial<Record<'naboje' | 'loftki' | 'belty', number>>;
   /** ugryzieni na wyprawie (zakażeni) */
   bitten?: string[];
+  /** powroty wypraw dziennych z tego wywołania, po jednej pełnej linii na wyprawę (ta sama, co w `log`); tylko za dnia,
+      powrót przesunięty na rano idzie do raportu nocy. Interfejs pokazuje je graczowi, także po zamknięciu okna */
+  powroty?: Tx[];
 }
 
 export interface RaidPlan {
