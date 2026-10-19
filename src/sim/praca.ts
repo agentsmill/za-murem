@@ -155,9 +155,11 @@ export function zaSiatke(st: SimState, osoba: number): boolean {
 }
 
 export const PROGI_DOMYSLNE: Progi = { drewno: 30, deski: 20, czesci: 10, dzidy: 0 };
-/** Drewno, którego Warsztat nie piłuje na deski bez względu na próg drewna: zapas opału na jedną noc (koza zjada nocą
-    około 20 sztuk; tyle samo zostawia bot surowców). Deski z drewna są tylko z nadwyżki ponad max(próg drewna, to),
-    więc próg drewna 0 wyłącza Drwala, ale nie oddaje opału na deski. */
+/** Drewno, którego Warsztat nie piłuje na deski bez względu na próg drewna: zapas opału (tyle samo zostawia bot
+    surowców). Liczba pochodzi sprzed kozy z głową, kiedy sztuka paliła się pół godziny i noc zjadała około 20 sztuk; od
+    kozy z głową (godzina na sztukę, `BURN_TICKS`) noc zjada około 10, więc 20 to zapas na dwie noce. Wartości nie ruszam
+    bez pomiaru (balans), a zapas na dwie noce jest bezpieczniejszy dla ludzi niż na jedną. Deski z drewna są tylko
+    z nadwyżki ponad max(próg drewna, to), więc próg drewna 0 wyłącza Drwala, ale nie oddaje opału na deski. */
 export const ZAPAS_OPALU = 20;
 /** największy próg zapasu: tak przycina polecenie `prog` (`ustawPrace`), a panel Pracy nie pozwala wyjść ponad to */
 export const PROG_MAX = 999;

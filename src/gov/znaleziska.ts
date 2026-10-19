@@ -60,6 +60,8 @@ const CO_PRZERWALA: Record<string, readonly [string, string]> = {
   trade: ['wymiana z handlarzem', 'trading'],
   rob: ['napaść na handlarza', 'robbing the trader'],
   talk: ['rozmowa z wędrowcem', 'talking to the wanderer'],
+  zapros: ['zapraszanie wędrowca', 'inviting the wanderer'],
+  reka: ['pytanie wędrowca o rękę', 'asking the wanderer to show their arm'],
   mug: ['napaść na wędrowca', 'mugging the wanderer'],
   shoo: ['przeganianie obcej ekipy', 'driving off a crew'],
 };

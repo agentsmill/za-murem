@@ -444,7 +444,9 @@ const M2_JOBS = new Set<JobKind>([
 ]);
 /** jaką pracę daje pionkowi komenda gracza; tylko z taką pracą (order: true) komenda jest zapamiętywana do wznowienia
     (Pawn.polecenie). Poza listą: warta i alarm (mają własne odejście od posterunku), atak (walka sama), wyprawa i powrót,
-    amputacja, spotkanie i wybory bez pionka. Pomocnicy (praca „go” przy cudzych komendach) nie pamiętają niczego. */
+    amputacja, spotkanie, wybory bez pionka i ustawienia pracy ludzi (`prio`, `stale`, `zasiatke`, `prog`: nie dają pracy).
+    Pomocnicy (praca „go” przy cudzych komendach) nie pamiętają niczego. Zaproszenie wędrowca i pytanie o rękę (praca ludzi,
+    obie dają pracę `zapros`) wracają jak rozmowa: jeśli wędrowiec już poszedł, wznowienie nie daje pracy i polecenie znika. */
 const PRACA_POLECENIA: Partial<Record<Command['t'], JobKind>> = {
   move: 'go',
   chop: 'chop',
@@ -477,6 +479,8 @@ const PRACA_POLECENIA: Partial<Record<Command['t'], JobKind>> = {
   trade: 'trade',
   rob: 'rob',
   talk: 'talk',
+  zapros: 'zapros',
+  reka: 'zapros',
   mug: 'mug',
   shoo: 'shoo',
 };
@@ -2904,13 +2908,16 @@ export class Sim {
       for (const p of pawns) this.comeBack(p);
       return;
     }
-    // praca z polecenia: kto dostał od gracza nową pracę, zapamiętuje komendę do wznowienia po walce (zapamietaj)
-    const przed = pawns.map((p) => p.job);
+    // praca z polecenia: kto dostał od gracza nową pracę albo kogo praca z automatu (order false) stała się pracą z polecenia
+    // (ścinanie, przeszukanie, naprawa: ten sam obiekt pracy, `podnies`), zapamiętuje komendę do wznowienia po walce
+    const przed = pawns.map((p) => ({ job: p.job, order: p.job?.order === true }));
+    const nowaPraca = (p: Pawn, k: number): boolean =>
+      p.job !== przed[k].job || (p.job?.order === true && !przed[k].order);
     // plan budowy i jego odwołanie nie potrzebują nikogo z zarządu (plan czeka, aż ktoś się nim zajmie)
     if (c.t === 'build') {
       this.orderBuild(pawns, c.kind, c.x, c.y, c.rot);
       pawns.forEach((p, k) => {
-        if (p.job !== przed[k]) this.zapamietaj(p, c);
+        if (nowaPraca(p, k)) this.zapamietaj(p, c);
       });
       return;
     }
@@ -2927,7 +2934,7 @@ export class Sim {
     this.tutEvent('zaznacz');
     this.rozkaz(c, pawns);
     pawns.forEach((p, k) => {
-      if (p.job !== przed[k]) this.zapamietaj(p, c);
+      if (nowaPraca(p, k)) this.zapamietaj(p, c);
     });
   }
 
@@ -4454,9 +4461,14 @@ export class Sim {
   }
 
   /** Bezczynny rdzeń sam: śpi w nocy albo z wyczerpania, je, gdy głodny, a potem po kolei:
-      1. koza, w której zostało mniej niż `BURN_TICKS` ognia: dokłada do niej, niezależnie od priorytetów osoby i przed
-         wszystkimi pracami z tabeli; ale tylko ten, kto ma Ogień włączony (priorytet większy od 0 albo stałe zajęcie):
-         wybór gracza „Ogień: nie robi” wygrywa z dawnym obyczajem, że dokłada każdy bezczynny;
+      1. koza zarządu, w której zostało mniej niż `BURN_TICKS` (sztuka, godzina) ognia: dokłada do niej, niezależnie od
+         priorytetów osoby i przed wszystkimi pracami z tabeli; ale tylko ten, kto ma Ogień włączony (priorytet większy od 0
+         albo stałe zajęcie): wybór gracza „Ogień: nie robi” wygrywa z dawnym obyczajem, że dokłada każdy bezczynny, a to,
+         czy ogień jest w ogóle potrzebny (`kozaWanted`: ciepło poniżej KOZA_WARM, mieszkanie poniżej KOZA_MIN, wieczór od
+         KOZA_EVENING, samouczek, gotowanie bez gazu), rozstrzyga `startRefuel` bez polecenia. Celem jest tu koza zarządu
+         (`startRefuel(p, false, koza)`), a nie palenisko „z najmniejszym ogniem”: ta reguła (kozy z beczek, kocioł z badań)
+         zostaje w rodzaju Ogień niżej (świadoma decyzja po scaleniu z badaniami: koza zarządu, w której kończy się ogień,
+         ma pierwszeństwo, reszta palenisk czeka na rodzaj Ogień);
       2. zimno (ciepło poniżej `URGENT_WARM`): grzeje się przy kozie, i to przed każdą pracą, także przed budową planów
          (inaczej zmarznięty zaczynał pracę, którą `urgent` przerywa w następnej sekundzie, i tak w kółko);
       3. rodzaje pracy według `kolejnoscOsoby` (stałe zajęcie, potem priorytety 1–4 osoby): ogień (dokładanie do kozy
@@ -7517,8 +7529,12 @@ export class Sim {
   }
 
   /** praca niesie ładunek, który da się oddać z powrotem tej samej pracy: materiał w Job.n i Job.what albo drewno
-      w rękach, w fazie dojścia z ładunkiem na miejsce (faza 0, zbieranie z kilku stert, wraca od początku) */
+      w rękach, w fazie dojścia z ładunkiem na miejsce (faza 0, zbieranie z kilku stert, wraca od początku). Wyjątek: kurs
+      noszenia drewna z drzewa ściętego na polecenie za siatką (haulOn, `Job.from` to pień) wraca w tym samym stanie także
+      z pustymi rękami, w drodze po następny stos (rozmroz wybiera wtedy stos od nowa), żeby walka w tej drodze nie
+      zostawiała drewna na ulicy. */
   private zLadunkiem(p: Pawn, j: Job): boolean {
+    if (j.t === 'haul' && j.from >= 0) return true;
     if (j.phase < 1) return false;
     if (PRACE_Z_MATERIALEM.has(j.t)) return j.n > 0 && !!j.what;
     return PRACE_Z_DREWNEM.has(j.t) && p.carry > 0;
@@ -7693,6 +7709,15 @@ export class Sim {
   private rozmroz(p: Pawn, nie: NonNullable<Polecenie['niesie']>): boolean {
     const j: Job = { ...nie.job };
     if (j.phase === 2 && (j.t === 'patch' || j.t === 'brace' || j.t === 'campfire')) j.phase = 1;
+    // kurs noszenia drewna z pustymi rękami: stos z drzewa wybiera się od nowa (poprzedni mógł już zniknąć); gdy żadnego
+    // nie ma, nie ma czego nosić
+    if (j.t === 'haul' && j.from >= 0 && nie.drewno === 0) {
+      const stos = this.pileFor(p, 'outside', j.from);
+      if (!stos) return false;
+      j.target = stos.id;
+      j.tile = stos.y * this.w.size + stos.x;
+      j.phase = 0;
+    }
     if (!this.celWolny(p, j) || !this.go(p, j.tile)) return false;
     if (p.carry > 0) {
       if (this.inRoom(this.tileOf(p))) this.stack(p);
@@ -7707,6 +7732,9 @@ export class Sim {
     } else if (j.t === 'refuel') {
       const koza = this.thing(j.target);
       if (koza) koza.by = p.id;
+    } else if (j.t === 'haul' && j.target >= 0) {
+      const stos = this.thing(j.target);
+      if (stos) stos.by = p.id;
     }
     return true;
   }
@@ -7740,6 +7768,11 @@ export class Sim {
       if (!rozmrozone) {
         pol.niesie = niesie;
         this.oddajLadunek(p);
+        // łańcuch noszenia drewna, w którym nie ma już czego nosić, kończy polecenie: nie ma po co wracać do pnia
+        if (niesie.job.t === 'haul' && niesie.job.from >= 0) {
+          delete p.polecenie;
+          return false;
+        }
       }
     }
     if (!rozmrozone) this.rozkaz(c, [p]);
@@ -8043,17 +8076,20 @@ export class Sim {
     return modeOf(this.st) === 'zombie' && (zawsze || this.przySiatce(tile)) && this.szwendaczBlisko(tile);
   }
 
-  /** Drewno w zapasie dla progu Drwala: w składzie, luzem na naszym terenie, w rękach zarządu na naszym terenie i
-      w kozie. Drewno na ulicy się nie liczy (pasek u góry je liczy), bo bez przełącznika nikt go nie wniesie i drwal
-      stanąłby przy „pełnym” zapasie; drewno w rękach kogoś poza naszym terenem albo na wyprawie też nie (próg to
-      zapas „w obrębie siatki”). */
+  /** Drewno w zapasie dla progu Drwala: w składzie, luzem na naszym terenie, w rękach zarządu na naszym terenie (także to
+      zdjęte z rąk na czas przerwanego polecenia, `Polecenie.niesie`) i w ogniu wszystkich naszych palenisk (koza zarządu,
+      kozy z beczek, kocioł: sztuka to BURN_TICKS ognia niezależnie od wagi paleniska). Tak samo liczy pasek u góry
+      (`snapshot().stock.wood`), z jedną różnicą: drewna na ulicy ten zapas nie liczy, bo bez przełącznika nikt go nie
+      wniesie i drwal stanąłby przy „pełnym” zapasie; drewno w rękach kogoś poza naszym terenem albo na wyprawie też nie
+      (próg to zapas „w obrębie siatki”). */
   private zapasDrewna(): number {
     const size = this.w.size;
     let n = 0;
     for (const t of this.st.things) if (t.kind === 'drewno' && t.n > 0 && this.naszTeren(t.y * size + t.x)) n += t.n;
-    for (const q of this.st.pawns) if (q.kind === 'core' && !q.away && this.naszTeren(this.tileOf(q))) n += q.carry;
-    const koza = this.koza();
-    if (koza) n += Math.ceil(koza.fuel / BURN_TICKS);
+    for (const q of this.st.pawns)
+      if (q.kind === 'core' && !q.away && this.naszTeren(this.tileOf(q)))
+        n += q.carry + (q.polecenie?.niesie?.drewno ?? 0);
+    for (const t of this.paleniska()) n += Math.ceil(t.fuel / BURN_TICKS);
     return n;
   }
 
