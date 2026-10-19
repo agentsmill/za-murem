@@ -1299,7 +1299,9 @@ function blockedPierwotne(w: Pick<World, 'blocked' | 'fence' | 'fenceBaza'>): Ui
     `blocked`, więc wynik jest ten sam w nowej grze i po wczytaniu zapisu (z bieżącego `blocked` po płocie wokół jednego
     budynku wychodziło o jeden więcej: jego kafelki liczyły się jak gotowy mur i płot do następnego sąsiada mieścił się
     w limicie długości `PLOT_MAX`). Liczone raz na świat (`WeakMap`, poza stanem, więc skrót symulacji go nie widzi),
-    bez losowania i bez zmian w świecie; świat bez siedziby albo bez siatki (atrapy w testach) daje 0. */
+    bez losowania i bez zmian w świecie; świat bez siedziby albo bez siatki (atrapy w testach) daje 0.
+    Drzwi budynku to jego wnętrze (`drzwiBudynku` buduje `wnetrze`, a to około 0,4 MB, które zostaje w pamięci świata na
+    zawsze), więc kandydaci odpadają najpierw po ramce budynku: wnętrza budują się tylko budynkom w zasięgu. */
 export function doOtoczenia(w: World): number {
   let ile = otoczeniaMemo.get(w);
   if (ile === undefined) {
@@ -1314,15 +1316,23 @@ function policzOtoczenie(w: World): number {
   const wejscie = w.buildings[w.hq]?.entrances[0]?.out ?? -1;
   const baza = w.fenceBaza ?? w.fence;
   if (wejscie < 0 || !baza?.tiles.length) return 0;
-  const x0 = wejscie % size;
-  const y0 = Math.floor(wejscie / size);
+  const hx = wejscie % size;
+  const hy = Math.floor(wejscie / size);
   const lim = DO_OTOCZENIA_M * DO_OTOCZENIA_M;
+  // ramka budynku z zapasem 2 kafelków: drzwi stoją na kafelku budynku (w jego ramce), a kafelek przed nimi jest jego
+  // sąsiadem, więc leży najwyżej o 1 od ramki; budynek, którego ramka jest dalej niż zasięg + 2, nie ma drzwi w zasięgu
+  const limRamki = (DO_OTOCZENIA_M + 2) ** 2;
   const swiat: PlotWorld = { size, terr: w.terr, bid: w.bid, blocked: blockedPierwotne(w) };
   let ile = 0;
   for (let bid = 0; bid < w.buildings.length; bid++) {
     if (bid === w.hq) continue;
+    // najpierw ramka (tania), dopiero potem drzwi, które budują wnętrze budynku i trzymają je w pamięci świata
+    const b = w.buildings[bid];
+    const dx = Math.max(b.x0 - hx, 0, hx - b.x1);
+    const dy = Math.max(b.y0 - hy, 0, hy - b.y1);
+    if (dx * dx + dy * dy > limRamki) continue;
     const drzwi = drzwiBudynku(w, bid).zewn.map((d) => ({ tile: d.tile, out: d.out }));
-    const blisko = drzwi.some((d) => ((d.out % size) - x0) ** 2 + (Math.floor(d.out / size) - y0) ** 2 <= lim);
+    const blisko = drzwi.some((d) => ((d.out % size) - hx) ** 2 + (Math.floor(d.out / size) - hy) ** 2 <= lim);
     if (blisko && wspolnyPlot(swiat, baza, drzwi, new Set()).ok) ile++;
   }
   return ile;

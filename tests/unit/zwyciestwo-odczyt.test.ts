@@ -23,6 +23,7 @@ import { ludnoscSpisu2021, mapaMieszkancow } from '../../src/sim/osiedle.ts';
 import { doOtoczenia, drzwiBudynku, kosztPlotu, plotDla } from '../../src/sim/sasiedzi.ts';
 import { createSim, Sim, type SimState, ustawSiatke } from '../../src/sim/sim.ts';
 import type { Geo } from '../../src/world/geo.ts';
+import * as interior from '../../src/world/interior.ts';
 import * as plot from '../../src/world/plot.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { mockBlockM2 } from './interior-mock.ts';
@@ -201,9 +202,55 @@ describe('teren w odczycie: budynki, które wspólny płot dołączył do obwodu
 /** drzwi budynku na zewnątrz w kształcie, który bierze wspolnyPlot */
 const drzwiNaZewnatrz = (w: World, bid: number) => drzwiBudynku(w, bid).zewn.map((d) => ({ tile: d.tile, out: d.out }));
 
+/** kwadrat odległości (w kafelkach) od kafelka przed pierwszymi drzwiami siedziby do ramki budynku `bid` */
+function doRamki2(w: World, bid: number): number {
+  const wejscie = w.buildings[w.hq].entrances[0].out;
+  const hx = wejscie % w.size;
+  const hy = Math.floor(wejscie / w.size);
+  const b = w.buildings[bid];
+  const dx = Math.max(b.x0 - hx, 0, hx - b.x1);
+  const dy = Math.max(b.y0 - hy, 0, hy - b.y1);
+  return dx * dx + dy * dy;
+}
+
 describe('teren w odczycie: ile budynków w okolicy da się otoczyć (doOtoczenia, teren.mozliwe)', () => {
   it('trzy dema: Przymorze 0 (każdy sąsiad za jezdnią), Lanciego 4, Zielonki 5', () => {
     for (const [klucz, ile] of Object.entries(DO_OTOCZENIA)) expect(doOtoczenia(swiezy(klucz)), klucz).toBe(ile);
+  });
+
+  it('wnętrza (a z nimi drzwi) budują się tylko budynkom, których ramka jest w zasięgu, a nie wszystkim; liczby te same', () => {
+    for (const [klucz, ile] of Object.entries(DO_OTOCZENIA)) {
+      const w = swiezy(klucz);
+      const szpieg = vi.spyOn(interior, 'buildInterior');
+      expect(doOtoczenia(w), klucz).toBe(ile);
+      const zbudowane = szpieg.mock.calls.map(([, bid]) => bid as number);
+      szpieg.mockRestore();
+      // wnętrze każdego budynku najwyżej raz, a siedziby wcale (ma swoje, ze świata)
+      expect(new Set(zbudowane).size, klucz).toBe(zbudowane.length);
+      expect(zbudowane, klucz).not.toContain(w.hq);
+      // nie wszystkim: tylko tym, których ramka leży najwyżej 150 m + 2 kafelki zapasu od kafelka przed drzwiami siedziby
+      expect(zbudowane.length, klucz).toBeLessThan(w.buildings.length - 1);
+      const wZasiegu = w.buildings.filter((b) => b.id !== w.hq && doRamki2(w, b.id) <= (150 + 2) ** 2).map((b) => b.id);
+      const rosnaco = [...zbudowane].sort((a, b) => a - b);
+      expect(rosnaco, klucz).toEqual(wZasiegu);
+    }
+  });
+
+  it('kafelek przed każdymi drzwiami na zewnątrz leży najwyżej o jeden od ramki budynku (na tym stoi filtr po ramce)', () => {
+    for (const klucz of Object.keys(DO_OTOCZENIA)) {
+      const w = swiezy(klucz);
+      let drzwi = 0;
+      for (const b of w.buildings)
+        for (const d of drzwiBudynku(w, b.id).zewn) {
+          const x = d.out % w.size;
+          const y = Math.floor(d.out / w.size);
+          const odRamki = Math.max(b.x0 - x, 0, x - b.x1) + Math.max(b.y0 - y, 0, y - b.y1);
+          expect(odRamki, `${klucz} budynek ${b.id}, drzwi ${d.tile}`).toBeLessThanOrEqual(1);
+          drzwi++;
+        }
+      // pilnuje, że pętla coś sprawdziła
+      expect(drzwi, klucz).toBeGreaterThan(40);
+    }
   });
 
   it('liczone raz na świat: drugie wywołanie nie woła wspolnyPlot, inny świat liczy od nowa', () => {

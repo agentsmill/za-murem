@@ -76,7 +76,7 @@ import {
   stanyM2,
 } from './sim/osiedle.ts';
 import { RODZAJE, ZARZAD_MAX } from './sim/praca.ts';
-import { type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
+import { doOtoczenia, type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, type SimStock, snapshot } from './sim/snapshot.ts';
 import { NAPISY } from './sim/surowce.ts';
@@ -678,6 +678,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     saved,
   );
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
+  // liczba budynków do otoczenia płotem (`GovInput.teren.mozliwe`) liczy się raz na świat: tu, pod ekranem ładowania,
+  // a nie w pierwszej sekundzie gry
+  doOtoczenia(world);
   // okolica dla zarządu: punkty z `geo` (metry od adresu bez obrotu świata, w przeciwieństwie do `world.pois`). Nazwa
   // z osobą albo adresem odpada (pusta), bo filtr zamieniłby ją na polski opis kategorii, który wszedłby do angielskich
   // tekstów celu; bez tabel imion (dane === null) albo poza gminami z tabelami (szablon krajowy, np. adres poza Polską)
