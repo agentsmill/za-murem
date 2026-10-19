@@ -66,6 +66,9 @@ export class Atrapa {
   /** miejsca z okolicy (mapa miasta) przekazywane do wejścia; bez pola zarząd gra na TARGETS jak dotąd */
   okolica?: Miejsce[];
   guards: string[] = [];
+  /** tempo gry (1, 3, 6, 8): sekundy przy ekranie w wejściu liczą się jak w grze (`screen` rośnie raz na 20 × tempo
+      ticków), więc odstępy zarządu w sekundach przy ekranie to przy 8× kilka godzin gry na sekundę */
+  tempo = 1;
   /** półka osady: książki według dziedziny (jak SimState.books) */
   books: Partial<Record<TechDom, number>> = {};
 
@@ -134,7 +137,7 @@ export class Atrapa {
         parts: this.parts,
         meds: this.meds,
       },
-      screen: this.tick / TPS,
+      screen: this.tick / (TPS * this.tempo),
       fence: {
         holes: this.fence.holes.map((x) => ({ ...x, ...(x.tiles ? { tiles: [...x.tiles] } : {}) })),
         durability: this.fence.durability,

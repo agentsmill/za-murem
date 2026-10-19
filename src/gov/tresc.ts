@@ -1318,8 +1318,9 @@ export const NEW_EVENTS: GEventDef[] = [
             h.mood(0, 1);
             h.log(
               tx(
-                `Bez ceremonii. Ktoś wykreślił ${d.name} z grafiku dyżurów i tyle. Ludzie to zauważyli.`,
-                `No ceremony. Somebody crossed ${d.name} off the duty rota, and that was it. People noticed.`,
+                // imię w mianowniku po dwukropku: w src/gov nie ma odmiany, a „wykreślił Ewelina” byłoby błędem
+                `Bez ceremonii. Ktoś skreślił w grafiku dyżurów linijkę: ${d.name}. I tyle. Ludzie to zauważyli.`,
+                `No ceremony. Somebody crossed a line off the duty rota: ${d.name}. That was it. People noticed.`,
               ),
             );
           },

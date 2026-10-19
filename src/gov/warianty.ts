@@ -13,7 +13,8 @@
    karty niosą `lok` (id osoby) i `p` (imię, rodzaj, fach); bez nich i bez mieszkańców z osobą karty grają jak z 0.3.
    `odejscie` (Niech idzie) i `klotnia` (przegrany się wyprowadza) wyprowadzają osobę zarządu bramą (`wyrzuc`) zamiast
    ją kasować; `odejscie` nie przychodzi, gdy w zarządzie jest mniej niż dwie osoby, a `klotnia` bierze dwie osoby
-   z najniższym nastrojem i tylko gdy obie mają go poniżej 55. */
+   z najniższym nastrojem i tylko gdy obie mają go poniżej 55. Zdanie o stracie w `kradziez` jest przepisane zawsze (0.3
+   ma „… w budynku X Jedzenie 3.” bez znaku przed liczbą): „zapasy z piwnicy w budynku X: jedzenie 3”. */
 
 import { TECH_DOMS } from '../content/data.ts';
 import { type EventChoice, eventDef } from '../content/events.ts';
@@ -497,10 +498,12 @@ export const OLD_EVENTS: OldEvent[] = [
       const sprawca = dane && !dom(h) ? sprawcaKradziezy(h) : null;
       return sprawca ? { ...dane, p: osobaKarty(sprawca), lok: sprawca.id } : dane;
     },
+    // zdanie z 0.3 („… w budynku X Jedzenie 3.”) nie ma znaku przed liczbą, więc przepisane w obu przypadkach: zapasy
+    // z dwukropkiem po budynku
     text: (_h, d) =>
       d.lok
-        ? `Ktoś wyniósł nocą z piwnicy w budynku ${d.b} Jedzenie ${d.loss}. Ślady prowadzą na waszą klatkę, a wszyscy wiedzą, kto od kilku dni je za mało: ${d.p.name}.`
-        : null,
+        ? `Ktoś wyniósł nocą zapasy z piwnicy w budynku ${d.b}: jedzenie ${d.loss}. Ślady prowadzą na waszą klatkę, a wszyscy wiedzą, kto od kilku dni je za mało: ${d.p.name}.`
+        : `Ktoś wyniósł nocą zapasy z piwnicy w budynku ${d.b}: jedzenie ${d.loss}. Ślady prowadzą do mieszkania na parterze.`,
     // sprawca z klatki: wyrzucony wychodzi bramą, a nowy wybór daje mu jeść z kotła (zamiast sądu i wyrzucenia)
     choices: (h, d, base) => {
       if (!d.lok) return base;
