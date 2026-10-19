@@ -170,6 +170,11 @@ export const STATYCZNE: readonly Statyczny[] = [
     ),
   },
   { sel: '#btnBuild', tekst: tx('Budowa', 'Build') },
+  {
+    sel: '#btnResearch',
+    tekst: tx('Badania', 'Research'),
+    title: tx('Tablica badań (T)', 'Research board (T)'),
+  },
   { sel: '#goals', aria: tx('Cele', 'Goals') },
   { sel: '#arriveShow', tekst: tx('Pokaż', 'Show') },
   { sel: '#placeBar [data-place="rot"]', tekst: tx('Obróć', 'Rotate') },

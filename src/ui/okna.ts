@@ -1,17 +1,28 @@
-/* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenie palenia mebli,
-   menu (z linią o źródłach danych mieszkańców i przyciskiem ekranu dróg do zwycięstwa, który rysuje src/ui/zwyciestwo.ts),
-   jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
+/* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenia (palenie mebli, włączenie
+   sieci, polecenia nieodwracalne), menu (z linią o źródłach danych mieszkańców i przyciskiem ekranu dróg do
+   zwycięstwa, który rysuje src/ui/zwyciestwo.ts), jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i
+   zwracają HTML w czterech częściach
    (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts.
    Napisy okien są w bieżącym języku (L() przy rysowaniu, Tx w tablicach). Teksty zarządu (Tx albo polski napis ze
    starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. Słowa
    wspólnoty (w domu komitet ulicy, w bloku zarząd spółdzielni) biorą ze słownika miejsca po polsku i po angielsku
-   (words, e); bez niego mówią jak w bloku. */
+   (words, e); bez niego mówią jak w bloku. Lista wyboru karty nocy (optionText) wyszarza „Wartę na wieży”, gdy wszystkie
+   miejsca wieży zajmują inni (jak setAssign w src/gov/noc.ts). */
 
 import { ENDINGS_EN, PATHS_EN } from '../content/data.en.ts';
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
-import { deterrence, KOZA_KEY, untilWord, WOOD_PER_HOUR, watchersOf } from '../gov/noc.ts';
+import {
+  deterrence,
+  KOZA_KEY,
+  untilWord,
+  WIEZA,
+  WIEZA_KEY,
+  WOOD_PER_HOUR,
+  watchersOf,
+  wiezaPelna,
+} from '../gov/noc.ts';
 import type {
   GovInput,
   GovState,
@@ -38,7 +49,8 @@ export interface Sheet {
   /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie), napad (sąsiedzi atakują),
       mapa miasta (okno na cały ekran, src/ui/miasto.ts), plan wyprawy z mapy (zwykłe okno w barwie mapy,
       src/ui/wyprawa.ts), ekran dróg do zwycięstwa (szeroka tabliczka w złocie) i epilog zwycięstwa (ta sama barwa,
-      zwykła szerokość), oba z src/ui/zwyciestwo.ts */
+      zwykła szerokość), oba z src/ui/zwyciestwo.ts, i odkrycie (karta po ukończeniu badania, w kolorze korka
+      tablicy) */
   tone:
     | 'noc'
     | 'uchwala'
@@ -52,7 +64,8 @@ export interface Sheet {
     | 'miasto'
     | 'wyprawa'
     | 'drogi'
-    | 'zwyciestwo';
+    | 'zwyciestwo'
+    | 'odkrycie';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
 }
@@ -110,6 +123,23 @@ export function optionShort(o: NightOption, proposal: boolean): string {
   return s;
 }
 
+/** Tekst i dostępność opcji `o` na liście wyboru osoby `id` przy obecnym przydziale: jak `optionShort`, a pełna wieża
+    (wszystkie jej miejsca zajęte przez innych) jest wyszarzona z dopiskiem. Woła ją okno karty przy rysowaniu i przy
+    każdej zmianie przydziału, żeby lista każdej osoby zgadzała się z `setAssign`. */
+export function optionText(
+  card: NightCard,
+  assign: Record<string, string>,
+  id: string,
+  o: NightOption,
+  proposal: boolean,
+): { text: string; disabled: boolean } {
+  const full = o.key === WIEZA_KEY && wiezaPelna(card, assign, id);
+  return {
+    text: full ? `${optionShort(o, proposal)} (${L('wieża pełna', 'tower full')})` : optionShort(o, proposal),
+    disabled: !o.ok || full,
+  };
+}
+
 /** co znaczy wybór: zysk, ryzyko, obrona i uwaga z karty */
 export function optionDetail(o: NightOption): string {
   if (!o.ok) return or(o.why, L('Nie da rady.', 'Not possible.'));
@@ -148,12 +178,17 @@ export function oddsHtml(
   names: Record<string, string>,
 ): string {
   const loss = lootText(card.loss) || L('niewiele, wszystko jest pod dachem', 'not much, it is all indoors');
-  const posts = card.posts
+  // wieża to przydział, nie miejsce napadu: jej wiersz jest za miejscami do pilnowania
+  const rows = [
+    ...card.posts.map((p) => ({ key: p.key, name: tr(p.name) })),
+    ...(card.wieza ? [{ key: WIEZA, name: L('na wieży', 'on the tower') }] : []),
+  ];
+  const posts = rows
     .map((p) => {
       const who = Object.entries(assign)
         .filter(([, k]) => k === `warta:${p.key}`)
         .map(([id]) => names[id] ?? id);
-      return `<li class="post ${who.length ? 'kept' : 'open'}"><span class="post-k">${esc(tr(p.name))}</span><b class="post-v">${
+      return `<li class="post ${who.length ? 'kept' : 'open'}"><span class="post-k">${esc(p.name)}</span><b class="post-v">${
         who.length ? esc(who.join(', ')) : L('nikt', 'nobody')
       }</b></li>`;
     })
@@ -229,10 +264,10 @@ export function nightSheet(
     .map((p) => {
       const sel = assign[p.id] ?? p.proposal;
       const opts = p.options
-        .map(
-          (o) =>
-            `<option value="${esc(o.key)}"${o.key === sel ? ' selected' : ''}${o.ok ? '' : ' disabled'}>${esc(optionShort(o, o.key === p.proposal))}</option>`,
-        )
+        .map((o) => {
+          const t = optionText(card, assign, p.id, o, o.key === p.proposal);
+          return `<option value="${esc(o.key)}"${o.key === sel ? ' selected' : ''}${t.disabled ? ' disabled' : ''}>${esc(t.text)}</option>`;
+        })
         .join('');
       const cur = p.options.find((o) => o.key === sel) ?? p.options[0];
       return `<li class="mate"><div class="who"><b class="who-n">${esc(p.name)}</b><small class="who-s">${L(
@@ -517,6 +552,22 @@ export function confirmSheet(label: string, note?: string): Sheet {
     title: esc(label),
     body: `<p>${note === undefined ? L('Tego nie da się cofnąć.', 'This cannot be undone.') : esc(note)}</p>`,
     foot: `${btn('confirm-no', L('Nie', 'No'), 'btn ghost')}${btn('confirm-yes', label, 'btn go')}`,
+    closable: true,
+  };
+}
+
+/** potwierdzenie włączenia sieci (badania, technologia końcowa): nieodwracalne i według projektu zwycięstwa zaczyna
+    epilog; przyciski jak w `confirmSheet`, więc obsługuje je ten sam kod w main.ts */
+export function siecSheet(): Sheet {
+  return {
+    tone: 'ogien',
+    kicker: L('Na pewno?', 'Are you sure?'),
+    title: L('Włączyć sieć bez miedzi?', 'Switch on the copper-free grid?'),
+    body: `<p>${L('Tej nocy zapalą się okna w całym terenie.', 'Tonight every window on your ground will light up.')}</p><p>${L(
+      'Tego nie da się cofnąć.',
+      'This cannot be undone.',
+    )}</p>`,
+    foot: `${btn('confirm-no', L('Nie', 'No'), 'btn ghost')}${btn('confirm-yes', L('Włączyć sieć', 'Switch on the grid'), 'btn go')}`,
     closable: true,
   };
 }

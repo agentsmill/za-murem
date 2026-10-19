@@ -47,6 +47,7 @@ import { buildWorld } from '../src/world/world.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
 import {
   ARGUMENTY,
+  bezBadan,
   bezMiasta,
   bezZwyciestwa,
   DEMO,
@@ -59,6 +60,7 @@ import {
 
 bezMiasta('bot:zombie');
 bezZwyciestwa('bot:zombie');
+bezBadan('bot:zombie');
 
 const SEED = Number(ARGUMENTY[0]) || 1;
 const NIGHTS = Number(ARGUMENTY[1]) || 6;

@@ -22,7 +22,7 @@ import { type AptState, type AptWhy, type DamageKind, settleAptsOf } from '../wo
 import { buildInterior, IN, type Interior, type RoomKind } from '../world/interior.ts';
 import { type PlotWynik, wspolnyPlot } from '../world/plot.ts';
 import type { World } from '../world/world.ts';
-import type { Mat } from './budowle.ts';
+import { type Mat, naObwodzie } from './budowle.ts';
 import { dayOf, hourOf, TICKS_PER_HOUR } from './clock.ts';
 import { lootOf } from './mieszkania.ts';
 import type { PlotPlan, PlotStan, SimState } from './sim.ts';
@@ -1258,14 +1258,14 @@ export interface StanPlotu {
   fence?: object | null;
 }
 
-/** Kształt wspólnego płotu dla otwartego sąsiedniego budynku z obecnej siatki świata (korytarz omija zasieki na
-    siatce); null: budynku nie da się otoczyć (nie jest otwarty, już otoczony, gra bez siatki). Ten sam wynik liczą menu,
-    symulacja i duch planu na mapie (src/render/plotDuch.ts). */
+/** Kształt wspólnego płotu dla otwartego sąsiedniego budynku z obecnej siatki świata (korytarz omija zasieki i
+    barykady na siatce); null: budynku nie da się otoczyć (nie jest otwarty, już otoczony, gra bez siatki). Ten sam
+    wynik liczą menu, symulacja i duch planu na mapie (src/render/plotDuch.ts). */
 export function plotDla(st: StanPlotu, w: World, bid: number): PlotWynik | null {
   const rec = st.sasiedzi?.budynki.find((b) => b.bid === bid);
   if (!rec?.otwarty || st.plot?.bids.includes(bid) || !w.fence?.tiles.length || !st.fence) return null;
   const size = w.size;
-  const zasieki = new Set(st.things.filter((t) => t.kind === 'zasieki').map((t) => t.y * size + t.x));
+  const zasieki = new Set(st.things.filter((t) => naObwodzie(t.kind)).map((t) => t.y * size + t.x));
   const drzwi = drzwiBudynku(w, bid).zewn.map((d) => ({ tile: d.tile, out: d.out }));
   return wspolnyPlot(w, w.fence, drzwi, zasieki);
 }

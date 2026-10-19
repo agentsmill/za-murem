@@ -30,6 +30,7 @@ import {
   TextureStyle,
 } from 'pixi.js';
 import type { WeaponId } from '../sim/bron.ts';
+import { naObwodzie } from '../sim/budowle.ts';
 import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
 import { TRADER_HP, ZBIR_HP } from '../sim/handlarz.ts';
 import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
@@ -851,7 +852,7 @@ export class GameView {
       for (const t of g.fence) this.fixed.add(t);
     }
     // zepsute meble ze stanu gry (symulacja przepisuje broken z mebli świata), z atrapą tylko z atrapy;
-    // okopcona kuchenka na kafelku uszkodzenia piec (po naprawie znowu cała); zasieki stoją zamiast
+    // okopcona kuchenka na kafelku uszkodzenia piec (po naprawie znowu cała); zasieki i barykada stoją zamiast
     // odcinka siatki
     let things = onTables(sim.st.things);
     if (mock) things = things.filter((t) => t.kind !== 'smieci');
@@ -873,7 +874,7 @@ export class GameView {
           : { ...t, broken: broken || undefined, burnt: burnt || undefined };
       });
     }
-    const wire = new Set(sim.st.things.filter((t) => t.kind === 'zasieki').map((t) => t.y * w.size + t.x));
+    const wire = new Set(sim.st.things.filter((t) => naObwodzie(t.kind)).map((t) => t.y * w.size + t.x));
     const fence = wire.size ? g.fence.filter((t) => !wire.has(t.y * w.size + t.x)) : g.fence;
     g.things = [...things, ...g.props, ...fence];
     this.applyThings();

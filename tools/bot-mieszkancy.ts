@@ -13,6 +13,10 @@
    kończą z błędem, kiedy je dostaną (`tylkoZombie`): `--demo=NAZWA` (przymorze, lanciego, zielonki) wybiera osiedle,
    `--opal` dokłada do kozy z niczego, jakby opału nie brakowało. Inny argument od `--` (literówka, np. `--mieszkanc`) kończy bota z błędem,
    zamiast cicho zagrać bez tego, o co chodziło.
+   Flaga `--badania` (docs/superpowers/specs/2026-10-19-badania-design.md, „Tempo”) włącza w `npm run bot` politykę
+   badań i pomiar tempa (tools/bot-badania.ts); tylko ten bot ją zna, pozostałe kończą z błędem (`bezBadan`), a `--demo=NAZWA`
+   wolno mu wtedy dostać (`tylkoZombie('bot', true)`). Do niej `--jedzenie`: jedzenie z niczego, żeby głód zimy nie zatrzymał
+   badań (jak `--opal` w bocie trybu zombie); bez `--badania` kończy bota z błędem.
    Ziarno świata to ziarno bota (nie z adresu jak w grze), żeby przebiegi z flagą i bez niej były porównywalne. */
 
 import fs from 'node:fs';
@@ -29,7 +33,9 @@ const FLAGA_SASIEDZI = '--sasiedzi';
 const FLAGA_MIASTO = '--miasto';
 const FLAGA_ZWYCIESTWO = '--zwyciestwo';
 const FLAGA_OPAL = '--opal';
-const FLAGI = [FLAGA, FLAGA_SASIEDZI, FLAGA_MIASTO, FLAGA_ZWYCIESTWO, FLAGA_OPAL];
+const FLAGA_BADANIA = '--badania';
+const FLAGA_JEDZENIE = '--jedzenie';
+const FLAGI = [FLAGA, FLAGA_SASIEDZI, FLAGA_MIASTO, FLAGA_ZWYCIESTWO, FLAGA_OPAL, FLAGA_BADANIA, FLAGA_JEDZENIE];
 
 const FLAGA_DEMO = '--demo=';
 const jestDemo = (a: string) => a.startsWith(FLAGA_DEMO);
@@ -52,10 +58,32 @@ if (DEMO !== null && !/^[a-z]+$/.test(DEMO)) {
 /** Czy bot ma dokładać do kozy z niczego (tylko bot trybu zombie: mierzy siatkę i wartę bez wpływu zimna). */
 export const OPAL = process.argv.includes(FLAGA_OPAL);
 
-/** Boty bez `--demo=` i `--opal` kończą z błędem, kiedy je dostaną, zamiast cicho zagrać bez nich. */
-export function tylkoZombie(bot: string): void {
+/** Boty bez `--demo=` i `--opal` kończą z błędem, kiedy je dostaną, zamiast cicho zagrać bez nich. Bot z `--badania`
+    zna `--demo=` (`zDemo`: pomiar tempa badań idzie na trzech osiedlach), ale `--opal` dalej nie. */
+export function tylkoZombie(bot: string, zDemo = false): void {
   if (DEMO === null && !OPAL) return;
+  if (zDemo && !OPAL) return;
   console.error(`${bot} nie zna ${DEMO === null ? FLAGA_OPAL : `${FLAGA_DEMO}NAZWA`} (tylko bot trybu zombie).`);
+  process.exit(2);
+}
+
+/** Czy bot ma grać z badaniami (polityka badań i pomiar tempa, tylko `npm run bot`). */
+export const BADANIA = process.argv.includes(FLAGA_BADANIA);
+
+/** Czy pomiar badań ma dokładać jedzenie z niczego (głód zimy zatrzymuje badania; ta flaga mierzy samo tempo). */
+export const JEDZENIE = process.argv.includes(FLAGA_JEDZENIE);
+
+/** Boty, które nie znają `--badania` i `--jedzenie`, kończą z błędem, kiedy je dostaną, zamiast cicho zagrać bez nich;
+    `--jedzenie` bez `--badania` nie ma sensu także w `npm run bot`. */
+export function bezBadan(bot: string, zBadaniami = false): void {
+  const zle = [
+    ...(BADANIA && !zBadaniami ? [FLAGA_BADANIA] : []),
+    ...(JEDZENIE && !(BADANIA && zBadaniami) ? [FLAGA_JEDZENIE] : []),
+  ];
+  if (!zle.length) return;
+  console.error(
+    `${bot} nie zna ${zle.join(' i ')}${zBadaniami ? ' bez --badania' : ' (tylko npm run bot -- --badania)'}.`,
+  );
   process.exit(2);
 }
 

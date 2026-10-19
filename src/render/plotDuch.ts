@@ -6,8 +6,10 @@
 
    Czysta funkcja stanu i świata bez PixiJS (rysuje plotLayer.ts), nic nie zapisuje w stanie. plotDla przechodzi
    całą mapę, więc kształt liczy się od nowa tylko po zmianie tego, od czego zależy: budynek planu, siatka świata
-   (wspólny płot podmienia obiekt w.fence), zasieki i otoczone budynki. Pamięć jest na obiekt świata. */
+   (wspólny płot podmienia obiekt w.fence), zasieki i barykady na siatce oraz otoczone budynki. Pamięć jest na obiekt
+   świata. */
 
+import { naObwodzie } from '../sim/budowle.ts';
 import { plotDla, procentPlotu, type StanPlotu } from '../sim/sasiedzi.ts';
 import type { Fence } from '../world/fence.ts';
 import type { World } from '../world/world.ts';
@@ -46,7 +48,7 @@ export function duchPlotu(st: StanPlotu, w: World): DuchPlotu | null {
   if (!plan) return null;
   const size = w.size;
   const zasieki = st.things
-    .filter((t) => t.kind === 'zasieki')
+    .filter((t) => naObwodzie(t.kind))
     .map((t) => t.y * size + t.x)
     .join();
   const otoczone = st.plot?.bids.length ?? 0;

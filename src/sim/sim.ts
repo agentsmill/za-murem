@@ -3,9 +3,17 @@
    w stanie. Stan to zwykły obiekt (JSON), rysowanie tylko go czyta. Ten sam świat, ziarno i polecenia dają ten sam
    stan. Bez wnętrza siedziby (świat sprzed M1) zarząd stoi, a rzeczy, ciepła i samouczka nie ma. Z opcją
    `mieszkancy` (krok 5, src/sim/lokatorzy.ts) zarząd i mieszkańcy siedziby mają osoby z generatora mieszkańców;
-   bez niej stan jest taki jak przed tą opcją. */
+   bez niej stan jest taki jak przed tą opcją. Premie ery 1–2 (t_okna, t_konserwy, t_zielarstwo, t_spawanie, t_ambu) i
+   paleniska poza kozą zarządu (koza z beczki, kocioł; waga drewna w PALENISKA) działają tylko po zbadaniu albo
+   postawieniu, więc gra bez badań ma te same liczby co przed nimi (src/sim/badania.ts).
+   Badania: pracownia (stół z dwoma miejscami), polecenia `research` (wybór badania), `study` (zarząd do stołu) i `siec`
+   (włączenie sieci po technologii końcowej), praca `research` z postępem w `researchTick`, stan `research` i `books`
+   (pola powstają przy pierwszym użyciu) oraz plan dnia lokatorów z wiedzą (labOpen). Barykada z wraków stoi na odcinku
+   siatki jak zasieki, ale ma BARYKADA_HP (160, zasieki 100), a wzmocnienie siatki deskami (`brace`, do 100) jej nie
+   dotyka. Posterunek na wieży (WIEZA_POST, klucz 'wieza'): wartownik stoi na wolnym kafelku obrysu wieży (najwyżej tylu
+   osób, ile kafelków), jego lampa płoszy dalej (WIEZA_ZASIEG), a broń dystansowa sięga z wieży dalej. */
 
-import { PROFS } from '../content/data.ts';
+import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
@@ -13,9 +21,30 @@ import { IN, type Interior } from '../world/interior.ts';
 import type { Tree, World } from '../world/world.ts';
 import type { Wreck } from '../world/wrecks.ts';
 import {
+  AMBU_TEMPO,
+  badaniaDom,
+  badaniaWidoczne,
+  dodajKsiazke,
+  kartka,
+  koncowaZbadana,
+  kosztTech,
+  ksiazkaZ,
+  lekZPlonu,
+  OKNA_PLUS,
+  PALENISKA,
+  PIECZARKI_PLON,
+  plonKonserw,
+  SZANSA_KSIAZKI,
+  siecWlaczona,
+  TECH_BY,
+  tempoOsoby,
+  wolneMiejsca,
+} from './badania.ts';
+import {
   type AmmoKey,
   hitChance,
   isFirearm,
+  isRanged,
   noAmmo,
   START_KIT,
   WEAPONS,
@@ -23,7 +52,16 @@ import {
   type WeaponId,
   weaponOf,
 } from './bron.ts';
-import { BUILDS, type BuildKind, type BuildPlan, canPlace, footprint, GHOST_KINDS, type Mat } from './budowle.ts';
+import {
+  BUILDS,
+  type BuildKind,
+  type BuildPlan,
+  canPlace,
+  footprint,
+  GHOST_KINDS,
+  type Mat,
+  naObwodzie,
+} from './budowle.ts';
 import {
   daylight,
   dayOf,
@@ -76,6 +114,7 @@ import {
 } from './handlarz.ts';
 import {
   dryTreeOf,
+  frontTile,
   HEAT_EVERY,
   type HouseLike,
   heatBoost,
@@ -184,6 +223,7 @@ import {
   CARRY_MATS,
   CARRY_REACH,
   type Product,
+  pracaPrzepisu,
   RECIPES,
   WRECK_SEARCH_NOISE,
   WRECK_SEARCH_TICKS,
@@ -325,6 +365,7 @@ const M2_JOBS = new Set<JobKind>([
   'wreck',
   'carry',
   'saw',
+  'research',
   'door',
   'loot',
   'upstairs',
@@ -344,6 +385,10 @@ export const GARDEN_TICKS = 3 * TICKS_PER_DAY;
 export const GARDEN_YIELD: readonly number[] = [2, 0, 4, 6];
 /** wytrzymałość zasieków (siatka 45–75, świeża łata 70) */
 export const ZASIEKI_HP = 100;
+/** wytrzymałość barykady z wraków (badania, t_barykady): mocniejsza od zasieków */
+export const BARYKADA_HP = 160;
+/** wytrzymałość kafelka siatki albo łaty pod budowlą z obwodu (zasieki, barykada) */
+const obwodHp = (kind: string): number => (kind === 'barykada' ? BARYKADA_HP : ZASIEKI_HP);
 /** zajęcie mieszkania (oznaczenie drzwi i spis) trwa kwadrans gry */
 export const CLAIM_TICKS = TICKS_PER_HOUR / 4;
 /** warta trwa do tej godziny rano */
@@ -352,6 +397,8 @@ export const GUARD_UNTIL = 6;
 export const KOZA_POST = -1;
 /** zasięg światła (m): lampa warty i ognisko; w nim nie jest ciemno, a szabrownicy się płoszą */
 export const LAMP_REACH = 5;
+/** wartownik na wieży (badania, t_wieza) sięga dalej: lampą (bez zarządu) i bronią dystansową (tryb zombie) ×1,5 */
+export const WIEZA_ZASIEG = 1.5;
 export const CAMPFIRE_LIGHT = 6;
 /** szabrownicy pokazują się za siatką pół godziny gry przed napadem i czekają w ciemności */
 export const SNEAK_TICKS = TICKS_PER_HOUR / 2;
@@ -416,6 +463,8 @@ export const BRACE_TICKS = Math.round(TICKS_PER_HOUR / 3);
 export const BRACE_HP = 50;
 /** posterunek warty „przy siatce”: tam, gdzie napiera najwięcej szwendaczy (klucz 'siatka') */
 export const SIATKA_POST = -2;
+/** posterunek warty na wieży z rusztowań (klucz 'wieza'): wartownik stoi na kafelku wieży */
+export const WIEZA_POST = -3;
 /** co tyle kroków warta przy siatce sprawdza, czy napór się nie przesunął */
 const SIATKA_EVERY = 10 * TICKS_PER_SECOND;
 /** dobicie zwłok (nóż w głowę) trwa sekundę */
@@ -459,6 +508,8 @@ export type JobKind =
   | 'wreck'
   | 'carry'
   | 'saw'
+  /** badania: stół pracowni (target: pracownia, tile: miejsce przy stole); w fazie 1 osoba siedzi i dodaje postęp */
+  | 'research'
   /** M2 fala 2: praca przy cudzych drzwiach (what: open, knock, force, board, unboard; target: kafelek drzwi),
       przeszukanie pomieszczenia sąsiada (target: gid), czekanie na wybór w spotkaniu (target: numer spotkania) */
   | 'door'
@@ -634,7 +685,7 @@ export interface Thing {
   until?: number;
   /** zepsuty mebel ze świata (w pustym mieszkaniu): z rozbiórki połowa materiału */
   broken?: boolean;
-  /** zasieki: łata dziury albo wytrzymałość kafelka siatki sprzed nich (wraca przy rozbiórce) */
+  /** zasieki i barykada: łata dziury albo wytrzymałość kafelka siatki sprzed nich (wraca przy rozbiórce) */
   prev?: number;
   /** zwłoki: numer wpisu w state.dead (osobno od owner, bo numery pionków i wpisów się pokrywają) */
   dead?: number;
@@ -706,6 +757,14 @@ export type Command =
   | { t: 'wreck'; ids: number[]; tile: number; how: 'szukaj' | 'rozbierz' }
   | { t: 'carry'; ids: number[]; thing: number }
   | { t: 'saw'; ids: number[]; what: Product; n: number }
+  /** badania: wybór bieżącego badania (ids puste; tech null zdejmuje wybór) i zarząd do stołu pracowni */
+  | { t: 'research'; ids: number[]; tech: string | null }
+  | { t: 'study'; ids: number[]; thing: number }
+  /** badania: włączenie sieci po zbadaniu technologii końcowej, z menu pracowni (ids bez znaczenia, nikt nie musi iść) */
+  | { t: 'siec'; ids: number[] }
+  /** badania: „Tablica badań” i „Wybrać badanie” z menu pracowni otwierają tablicę w interfejsie (main.ts przechwytuje to
+      polecenie przed symulacją; gdyby tu trafiło, nic nie zmienia) */
+  | { t: 'tablica'; ids: number[] }
   /** M2 fala 2 (docs/M2-fala-2.md): cudze drzwi (kafelek drzwi budynku albo mieszkania): otworzyć (przy otwartych:
       wejść), zapukać, wyważyć, zabić deskami, odbić deski */
   | { t: 'open' | 'knock' | 'force' | 'board' | 'unboard'; ids: number[]; door: number }
@@ -866,6 +925,19 @@ export interface SimState {
   /** odblokowane badania (identyfikatory z BuildDef.tech); celowo brak pola, dopóki ktoś nie odblokuje pierwszego
       badania: `sim.hash()` to skrót z całego stanu, więc zawsze obecne puste pole ruszyłoby każdy skrót */
   techDone?: string[];
+  /** badania (src/sim/badania.ts): bieżące badanie (`cur`, null: nic nie wybrano), zapisany postęp każdego zaczętego
+      badania w punktach (`prog`, zmiana badania go nie kasuje) i tick ukończenia zbadanych (`at`). Pola nie ma, dopóki
+      nikt nie wybierze pierwszego badania, więc gra bez badań ma ten sam skrót stanu co dotąd. `siec` pojawia się dopiero
+      po włączeniu sieci (polecenie `siec`) i zostaje do końca gry. */
+  research?: { cur: string | null; prog: Record<string, number>; at: Record<string, number>; siec?: true };
+  /** książki osady według dziedziny (każda dodaje 1 do wiedzy, w wiedzy liczą się najwyżej 2); pola nie ma, dopóki
+      nikt nie znajdzie pierwszej książki */
+  books?: Partial<Record<TechDom, number>>;
+  /** dziennik książek znalezionych w przeszukanych pomieszczeniach (siedziba i sąsiedzi), po kolei: tick, dziedzina,
+      tytuł i `podpalka`, gdy to trzecia z dziedziny i poszła na drewno. Zarząd czyta go przez `govInput()` do kroniki,
+      interfejs do podpowiedzi „Znaleźli książkę…”. Książki z wydarzenia zarządu go nie zasilają (mają własny wpis).
+      Pola nie ma, dopóki nikt nie znajdzie książki w przeszukaniu. */
+  bookLog?: { tick: number; dom: TechDom; tytul: string; podpalka?: true }[];
   /** wraki przeszukane i rozebrane (lewy górny kafelek), rosnąco; brak, dopóki nikt nie przeszukał wraku */
   wraki?: WreckMark[];
   /** sąsiednie budynki (M2 fala 2): nie ma go, dopóki zarząd nie dotknie cudzych drzwi, więc gra bez sąsiadów ma ten
@@ -1021,6 +1093,10 @@ function homeKoza<T extends { kind: string; x: number; y: number }>(
 ): T | undefined {
   return list.find((f) => f.kind === 'koza' && inHomeApt(h, f.y * size + f.x));
 }
+
+/** waga drewna paleniska tego rodzaju (kocioł 3, koza i koza z beczki 1); rodzaj spoza tabeli, np. ognisko, liczy się
+    jak koza */
+const wagaPaleniska = (kind: string): number => (Object.hasOwn(PALENISKA, kind) ? PALENISKA[kind] : 1);
 
 /** kuchnia zarządu: pomieszczenie z kozą zarządu, a bez niej kuchnia mieszkania zarządu (−1: brak) */
 function kitchenOf(h: HouseLike, size: number): number {
@@ -1401,9 +1477,17 @@ export function alarmOn(st: SimState): boolean {
   return st.pawns.some((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.what === ALARM_JOB);
 }
 
-/** klucz posterunku warty z Job.target, jak w karcie nocy zarządu: 'brama', 'd<id>', 'koza' */
+/** klucz posterunku warty z Job.target, jak w karcie nocy zarządu: 'brama', 'd<id>', 'koza', 'siatka', 'wieza' */
 export const postKey = (target: number): string =>
-  target === KOZA_POST ? 'koza' : target === SIATKA_POST ? 'siatka' : target === 0 ? 'brama' : `d${target}`;
+  target === KOZA_POST
+    ? 'koza'
+    : target === SIATKA_POST
+      ? 'siatka'
+      : target === WIEZA_POST
+        ? 'wieza'
+        : target === 0
+          ? 'brama'
+          : `d${target}`;
 
 /** mieszkania inne niż zarządu, do których z podwórka da się dojść bez wychodzenia za siatkę, rosnąco */
 function residentApts(st: SimState, w: World, h: HouseLike): number[] {
@@ -1911,6 +1995,8 @@ export class Sim {
   private readonly mask: Uint8Array | null;
   /** pora wspólnego posiłku: mieszkańcy mogą wejść do mieszkania zarządu, do stołu */
   private mealDoor = false;
+  /** praca w pracowni: mieszkańcy mogą wejść do mieszkania zarządu, do stołu pracowni (liczone w każdym kroku) */
+  private labDoor = false;
   private readonly trunk: Int32Array;
   private readonly links: [number, number][];
   private readonly kinds: RoomKind[];
@@ -1991,6 +2077,7 @@ export class Sim {
     this.reg = new Int32Array(0);
     this.lay = {} as Sim['lay'];
     this.mealDoor = this.mealOpen();
+    this.labDoor = this.labOpen();
     // wnętrza otwartych sąsiednich budynków ze stanu (wczytany zapis) przed pierwszą przechodniością
     if (st.sasiedzi) this.przeliczNakladke();
     this.rebuild();
@@ -2072,9 +2159,9 @@ export class Sim {
   }
 
   /** Przechodniość od nowa: baza ze świata, ścięte drzewa wolne (pień na linii obwodu zostaje), łaty i ogniska
-      zablokowane; zarząd bez otwartych dziur, mieszkańcy dodatkowo bez bramy i mieszkania zarządu, obcy z dziurami,
-      ale bez zamkniętej bramy, tłum jak mieszkańcy. Woła się przy starcie, po ścięciu drzewa, łacie, nowym ognisku
-      i zmianie bramy. */
+      zablokowane; zarząd bez otwartych dziur, mieszkańcy dodatkowo bez bramy i mieszkania zarządu (do wejścia na
+      posiłek albo do pracowni), obcy z dziurami, ale bez zamkniętej bramy, tłum jak mieszkańcy. Woła się przy starcie,
+      po ścięciu drzewa, łacie, nowym ognisku, zmianie bramy i drzwi mieszkania zarządu. */
   private rebuild(): void {
     const size = this.w.size;
     const solid = this.st.things
@@ -2086,7 +2173,7 @@ export class Sim {
       this.st.felled,
       this.trunk,
       this.st.fence,
-      this.mealDoor ? null : this.mask,
+      this.mealDoor || this.labDoor ? null : this.mask,
       solid,
     );
     // wnętrza otwartych sąsiednich budynków: zarząd i obcy (szwendacze, szabrownicy) wchodzą przez otwarte i wyważone
@@ -2221,6 +2308,7 @@ export class Sim {
     // racje liczą posiłki od 6:00; w porze wspólnego posiłku mieszkańcy mogą wejść do stołu zarządu
     if (st.tick % TICKS_PER_HOUR === 0 && hourOf(st.tick) === 6) for (const p of st.pawns) p.ate = 0;
     if (st.tick % (TICKS_PER_HOUR / 2) === 0) this.syncMealDoor();
+    this.syncLabDoor();
     if (st.raid) this.raidTick(st.raid);
     // M2 fala 2: nocni goście w otwartych budynkach o 2:00, napis o 7:00 (tylko gdy zarząd dotknął cudzych drzwi)
     if (st.sasiedzi && st.tick % TICKS_PER_HOUR === 0) {
@@ -2297,12 +2385,11 @@ export class Sim {
         continue;
       }
       if (p.kind === 'core' || p.kind === 'resident') {
-        // wspólny posiłek: mieszkaniec zostawia podwórko albo dom i idzie do stołu
+        // wspólny posiłek: mieszkaniec zostawia podwórko, dom albo stół pracowni i idzie do stołu zarządu
         if (
           p.kind === 'resident' &&
           st.tick % THINK_EVERY === 0 &&
-          p.job?.t === 'stay' &&
-          p.job.target !== STAY_MEAL &&
+          ((p.job?.t === 'stay' && p.job.target !== STAY_MEAL) || p.job?.t === 'research') &&
           this.mealDue(p)
         )
           this.plan(p);
@@ -2350,6 +2437,7 @@ export class Sim {
       }
       this.graveyard.clear();
     }
+    this.researchTick();
     if (st.tick % HEAT_EVERY === 0) this.slow();
     st.tick++;
   }
@@ -2451,6 +2539,16 @@ export class Sim {
       this.syncMealDoor();
       return;
     }
+    // wybór badania i włączenie sieci nie potrzebują nikogo z zarządu
+    if (c.t === 'research') {
+      this.chooseResearch(c.tech);
+      return;
+    }
+    if (c.t === 'siec') {
+      this.wlaczSiec();
+      return;
+    }
+    if (c.t === 'tablica') return;
     // polecenia przyjmuje tylko zarząd, tłum to tło; kto jest na wyprawie, słucha tylko wezwania z powrotem
     const pawns: Pawn[] = [];
     for (const id of c.ids) {
@@ -2500,6 +2598,7 @@ export class Sim {
     else if (c.t === 'wreck') this.startWreck(pawns[0], c.tile, c.how);
     else if (c.t === 'carry') this.startCarry(pawns[0], c.thing);
     else if (c.t === 'saw') this.startSaw(pawns[0], c.what, c.n);
+    else if (c.t === 'study') this.orderStudy(pawns, c.thing);
     else if (c.t === 'open' || c.t === 'knock' || c.t === 'force' || c.t === 'board' || c.t === 'unboard')
       this.orderDoor(pawns, c.t, c.door);
     else if (c.t === 'loot') this.startLoot(pawns[0], c.bid, c.room);
@@ -2536,6 +2635,58 @@ export class Sim {
     if (open === this.mealDoor) return;
     this.mealDoor = open;
     this.rebuild();
+  }
+
+  /** Droga mieszkańców do pracowni, która stoi w mieszkaniu zarządu. Przechodniość mieszkańców ma jedną warstwę, więc
+      mieszkanie otwiera się dla nich wszystkich naraz, ale do stołu siadają tylko ci z wiedzą (`labSkill`). Otwarte
+      w godzinach mieszkańców na podwórku (`residentDay`), gdy stoi pracownia, jest wybrane badanie i któryś z mieszkańców
+      ma w jego dziedzinie umiejętność; poza nimi dopóki ktoś z nich jeszcze tam jest (wychodzi przy otwartych
+      drzwiach, jak spóźniony na obiad), ale tylko w grze, w której są badania (bez nich mieszkanie zostaje, jak było).
+      Wynika wyłącznie ze stanu, więc po wczytaniu zapisu wychodzi tak samo, i dlatego liczy się w każdym kroku, a nie
+      co pół godziny jak pora posiłku: wybór badania, koniec badania i stawianie pracowni wypadają w dowolnym ticku. */
+  private labOpen(): boolean {
+    if (!this.house) return false;
+    const st = this.st;
+    const dom = badaniaDom(st);
+    if (
+      dom !== null &&
+      this.residentDay() &&
+      st.things.some((t) => t.kind === 'pracownia') &&
+      st.pawns.some((p) => this.labSkill(p, dom))
+    )
+      return true;
+    // drzwi mieszkania liczą się do niego: stół pracowni stoi przy drzwiach, więc siedzi się też w progu
+    const mask = this.mask;
+    const size = this.w.size;
+    return (
+      !!mask &&
+      st.pawns.some(
+        (p) =>
+          p.kind === 'resident' &&
+          mask[Math.floor(p.y) * size + Math.floor(p.x)] === 1 &&
+          (p.job === null || p.job.t === 'stay' || p.job.t === 'research'),
+      ) &&
+      badaniaWidoczne(st)
+    );
+  }
+
+  /** drzwi do pracowni dla mieszkańców: przechodniość od nowa tylko przy zmianie */
+  private syncLabDoor(): void {
+    const open = this.labOpen();
+    if (open === this.labDoor) return;
+    this.labDoor = open;
+    this.rebuild();
+  }
+
+  /** godziny mieszkańców na podwórku: od początku pracy (uchwała o zebraniach go przesuwa) do 18:00, nie w nocy */
+  private residentDay(): boolean {
+    const h = hourOf(this.st.tick);
+    return !this.night() && h >= this.st.laws.workStart && h < 18;
+  }
+
+  /** czy mieszkaniec ma osobę z umiejętnością co najmniej 1 w dziedzinie badania; bez osoby, sąsiad i zarząd nie */
+  private labSkill(p: Pawn, dom: TechDom): boolean {
+    return p.kind === 'resident' && p.person >= 0 && (this.st.people[p.person]?.skills[dom] ?? 0) >= 1;
   }
 
   /** pierwsza godzina wspólnego posiłku (13:00–14:00, 19:00–20:00) */
@@ -2590,11 +2741,13 @@ export class Sim {
     this.rebuild();
   }
 
-  /** posterunek warty z klucza 'brama' / 'd<id>' / 'koza': 0 brama, id dziury, KOZA_POST, null: nie ma takiego */
+  /** posterunek warty z klucza 'brama' / 'd<id>' / 'koza' / 'siatka' / 'wieza': 0 brama, id dziury, KOZA_POST,
+      SIATKA_POST, WIEZA_POST (gdy wieża stoi), null: nie ma takiego */
   private postOf(post: string): number | null {
     if (post === 'brama') return this.gateStand.length ? 0 : null;
     if (post === 'koza') return this.koza() ? KOZA_POST : null;
     if (post === 'siatka') return this.st.fence ? SIATKA_POST : null;
+    if (post === 'wieza') return this.wieza() ? WIEZA_POST : null;
     const id = /^d(\d+)$/.exec(post)?.[1];
     return id && this.holeById(Number(id)) ? Number(id) : null;
   }
@@ -2624,8 +2777,20 @@ export class Sim {
     return this.nearest(p, cand);
   }
 
-  /** gdzie stoi warta: przy bramie najbliżej jej środka, przy dziurze tuż obok od strony podwórka, przy kozie przed nią */
+  /** gdzie stoi warta: przy bramie najbliżej jej środka, przy dziurze tuż obok od strony podwórka, przy kozie przed
+      nią, na wieży na jej wolnym kafelku najbliżej pionka */
   private guardStand(p: Pawn, post: number): number {
+    if (post === WIEZA_POST) {
+      const tower = this.wieza();
+      if (!tower) return -1;
+      const taken = this.taken(p);
+      const region = this.regionOf(p);
+      const tiles: number[] = [];
+      for (let y = tower.y; y < tower.y + tower.h; y++)
+        for (let x = tower.x; x < tower.x + tower.w; x++) tiles.push(y * this.w.size + x);
+      const free = tiles.filter((i) => !this.coreBlocked[i] && !taken.includes(i) && this.reg[i] === region);
+      return this.nearest(p, free);
+    }
     if (post === SIATKA_POST) {
       const hot = this.hotTile(p);
       if (hot >= 0) {
@@ -2776,7 +2941,7 @@ export class Sim {
 
   private orderRefuel(pawns: Pawn[], id: number): void {
     const koza = this.thing(id);
-    if (koza?.kind !== 'koza' && koza?.kind !== 'ognisko') return;
+    if (!koza || (!Object.hasOwn(PALENISKA, koza.kind) && koza.kind !== 'ognisko')) return;
     const [first, ...rest] = pawns;
     const taken: number[] = [];
     if (this.startRefuel(first, true, koza)) taken.push(first.job!.tile);
@@ -2852,6 +3017,11 @@ export class Sim {
   /** koza zarządu (w jego mieszkaniu) */
   private koza(): Thing | undefined {
     return this.house ? homeKoza(this.house, this.w.size, this.st.things) : undefined;
+  }
+
+  /** wieża z rusztowań na podwórku (stoi najwyżej jedna) */
+  private wieza(): Thing | undefined {
+    return this.st.things.find((t) => t.kind === 'wieza');
   }
 
   /** stos drewna na kafelku */
@@ -3036,12 +3206,9 @@ export class Sim {
       (skład też się nadaje) */
   private frontOf(p: Pawn, t: Thing): number {
     const size = this.w.size;
-    const cx = t.x + (t.w >> 1);
-    const cy = t.y + (t.h >> 1);
-    const front = [(t.y + t.h) * size + cx, cy * size + t.x - 1, (t.y - 1) * size + cx, cy * size + t.x + t.w][t.rot];
+    const front = frontTile(t, size);
     const region = this.regionOf(p);
     const ok =
-      front !== undefined &&
       front >= 0 &&
       front < size * size &&
       !this.coreBlocked[front] &&
@@ -3091,10 +3258,51 @@ export class Sim {
     return this.nearest(p, cand);
   }
 
-  /** ile sztuk drewna jeszcze wejdzie do kozy albo ogniska */
+  /** ile sztuk drewna jeszcze wejdzie do paleniska: kozy, kozy z beczki, kotła (zbiornik KOZA_CAP × waga sztuk) albo
+      ogniska */
   private kozaRoom(koza: Thing): number {
-    const cap = koza.kind === 'ognisko' ? CAMPFIRE_CAP : KOZA_CAP;
+    const cap = koza.kind === 'ognisko' ? CAMPFIRE_CAP : KOZA_CAP * wagaPaleniska(koza.kind);
     return Math.floor((cap * BURN_TICKS - koza.fuel) / BURN_TICKS);
+  }
+
+  /** nasze mieszkania: oznaczone jako nasze i mieszkanie zarządu */
+  private ourApts(): Set<number> {
+    const ours = new Set(this.st.apts.filter((a) => a.ours).map((a) => a.apt));
+    if (this.house && this.house.home >= 0) ours.add(this.house.home);
+    return ours;
+  }
+
+  /** paleniska naszych mieszkań w stałej kolejności: koza zarządu, potem kozy z beczek i kotły w kolejności rzeczy */
+  private paleniska(): Thing[] {
+    const out: Thing[] = [];
+    const home = this.koza();
+    if (home) out.push(home);
+    for (const t of this.st.things) if (t.kind === 'koza_beczka' || t.kind === 'kociol') out.push(t);
+    return out;
+  }
+
+  /** czy paleniska trzeba teraz dołożyć: zostało mniej niż sztuka (jednostek ognia BURN_TICKS × waga), do paleniska
+      coś wejdzie, a nikt inny go nie obsługuje */
+  private doDolozenia(p: Pawn, t: Thing): boolean {
+    return (t.by < 0 || t.by === p.id) && t.fuel < BURN_TICKS * wagaPaleniska(t.kind) && this.kozaRoom(t) >= 1;
+  }
+
+  /** Palenisko, do którego pionek dołoży teraz, gdy nikt nie wskazał celu: spośród palenisk naszych mieszkań to, któremu
+      zostało najmniej ognia (fuel / waga, czyli czas do końca), przy remisie pierwsze z listy, czyli koza zarządu. Bez
+      `order` tylko takie, które trzeba dołożyć (doDolozenia); z poleceniem każde, do którego coś wejdzie. Przy samej
+      kozie zarządu wynik jest ten sam co dawniej (`this.koza()`), a gdy jej nie trzeba, nic. */
+  private paleniskoDoDolozenia(p: Pawn, order: boolean): Thing | undefined {
+    let best: Thing | undefined;
+    let bestLeft = Number.POSITIVE_INFINITY;
+    for (const t of this.paleniska()) {
+      if (order ? this.kozaRoom(t) < 1 : !this.doDolozenia(p, t)) continue;
+      const left = t.fuel / wagaPaleniska(t.kind);
+      if (left < bestLeft) {
+        bestLeft = left;
+        best = t;
+      }
+    }
+    return best;
   }
 
   /** Pień drzewa, które domykało obwód (poza podwórkiem, bokiem przy nim, jeszcze nie siatka), po ścięciu staje się
@@ -3346,6 +3554,8 @@ export class Sim {
             p.nap = true;
             return false;
           }
+          // rozebrana wieża: nie ma już na czym stać
+          if (j.target === WIEZA_POST && !this.wieza()) return false;
           // warta bije każdego wroga w zasięgu swojej broni, nie schodząc z posterunku
           if ((tick + p.id) % 5 === 0) this.guardStrike(p);
           // przy siatce: idzie tam, gdzie napór się przesunął
@@ -3355,8 +3565,8 @@ export class Sim {
           return true;
         }
         if (j.phase === 2) {
-          // przy stosie: drewno do rąk, potem do kozy
-          const koza = this.koza();
+          // przy stosie: drewno do rąk, potem do paleniska, które czuwający wziął na siebie
+          const koza = this.paleniskoCzuwajacego(p);
           const pile = this.thing(j.from);
           if (!koza || !at || !pile || pile.by !== p.id) return this.backToPost(p, j);
           const take = Math.min(pile.n, CARRY - p.carry, Math.max(1, this.kozaRoom(koza)));
@@ -3371,7 +3581,7 @@ export class Sim {
           return false;
         }
         if (j.phase === 3) {
-          const koza = this.koza();
+          const koza = this.paleniskoCzuwajacego(p);
           if (koza && at) {
             const add = Math.min(p.carry, this.kozaRoom(koza));
             koza.fuel += add * BURN_TICKS;
@@ -3519,7 +3729,7 @@ export class Sim {
       case 'brace': {
         const f = st.fence;
         const k = this.fenceIndex.get(j.target);
-        if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100) return false;
+        if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100 || this.barykadaNa(j.target)) return false;
         const size = this.w.size;
         if (j.phase === 0) {
           const heap = this.thing(j.from);
@@ -3629,6 +3839,8 @@ export class Sim {
         return this.carryWork(p, j, at);
       case 'saw':
         return this.sawWork(p, j, at);
+      case 'research':
+        return this.researchWork(p, j, at);
       case 'door':
         return this.drzwiPraca(p, j, at);
       case 'loot':
@@ -3835,7 +4047,9 @@ export class Sim {
   }
 
   /** Plan dnia mieszkańca: nocą śpi w swoim mieszkaniu, rano siedzi w domu, od WORK_START do 18:00 pracuje na
-      podwórku (za siatką, nie przełazi dziurami), od 18:00 grzeje się przy ognisku, jeśli się pali, potem wraca do domu. */
+      podwórku (za siatką, nie przełazi dziurami) albo, gdy ma wiedzę w dziedzinie bieżącego badania i przy stole
+      pracowni jest wolne miejsce, bada w pracowni, od 18:00 grzeje się przy ognisku, jeśli się pali, potem wraca
+      do domu. */
   private plan(p: Pawn): void {
     const st = this.st;
     const h = hourOf(st.tick);
@@ -3849,10 +4063,14 @@ export class Sim {
       }
     }
     let kind = STAY_HOME;
-    if (!this.night() && h >= st.laws.workStart && h < 18) kind = STAY_YARD;
+    if (this.residentDay()) kind = STAY_YARD;
     else if (h >= 18 && h < 20 && this.campfire()) kind = STAY_FIRE;
     // wróg na podwórku: nikt tam nie wychodzi
     if (kind !== STAY_HOME && this.yardDanger()) kind = STAY_HOME;
+    // zamiast podwórka: stół pracowni (zajęte miejsca, głód i pora posiłku zostawiają plan jak był)
+    const dom = badaniaDom(st);
+    if (kind === STAY_YARD && dom !== null && this.labSkill(p, dom) && !this.urgent(p) && !this.mealDue(p))
+      if (this.startResearch(p)) return;
     const spot = kind === STAY_YARD ? this.yardSpot(p) : kind === STAY_FIRE ? this.fireSpot(p) : this.homeSpot(p);
     if (spot >= 0 && this.go(p, spot)) {
       const j = this.newJob('stay', kind, spot, false);
@@ -4131,11 +4349,13 @@ export class Sim {
     }
   }
 
-  /** dokładanie do kozy: z własnego drewna albo ze stosu (sam bierze tylko ze składu i dopiero, gdy ogień się
-      kończy; z polecenia z każdego stosu, kiedy tylko coś wejdzie) */
-  private startRefuel(p: Pawn, order: boolean, koza = this.koza()): boolean {
+  /** dokładanie do paleniska: z własnego drewna albo ze stosu (sam bierze tylko ze składu i dopiero, gdy ogień się
+      kończy; z polecenia z każdego stosu, kiedy tylko coś wejdzie). Bez wskazanego celu wybiera to z naszych palenisk
+      (koza zarządu, kozy z beczek, kocioł), któremu zostało najmniej ognia (paleniskoDoDolozenia). */
+  private startRefuel(p: Pawn, order: boolean, koza = this.paleniskoDoDolozenia(p, order)): boolean {
     if (!koza) return false;
-    if (!order && ((koza.by >= 0 && koza.by !== p.id) || koza.fuel >= BURN_TICKS)) return false;
+    if (!order && ((koza.by >= 0 && koza.by !== p.id) || koza.fuel >= BURN_TICKS * wagaPaleniska(koza.kind)))
+      return false;
     if (this.kozaRoom(koza) < 1) return false;
     const size = this.w.size;
     if (p.carry > 0) {
@@ -4184,12 +4404,13 @@ export class Sim {
     return true;
   }
 
-  /** Czuwający przy kozie: gdy ognia zostaje mniej niż na pół godziny, a do kozy coś wejdzie, idzie po drewno (najpierw
-      ze składu, potem z każdego stosu) albo od razu dokłada z rąk. Koza jest wtedy jego (by), żeby nikt nie szedł
+  /** Czuwający przy kozie: gdy w którymś z naszych palenisk (koza zarządu, kozy z beczek, kocioł) ognia zostaje mniej niż
+      na sztukę, a do niego coś wejdzie, idzie po drewno (najpierw ze składu, potem z każdego stosu) albo od razu
+      dokłada z rąk, najpierw do tego, któremu zostało najmniej. Palenisko jest wtedy jego (by), żeby nikt nie szedł
       z drugim naręczem. */
   private tendKoza(p: Pawn, j: Job): void {
-    const koza = this.koza();
-    if (!koza || koza.fuel >= BURN_TICKS || this.kozaRoom(koza) < 1 || (koza.by >= 0 && koza.by !== p.id)) return;
+    const koza = this.paleniskoDoDolozenia(p, false);
+    if (!koza) return;
     if (p.carry > 0) {
       this.carryToKoza(p, j, koza);
       return;
@@ -4203,6 +4424,11 @@ export class Sim {
     j.from = pile.id;
     pile.by = p.id;
     koza.by = p.id;
+  }
+
+  /** palenisko, które czuwający wziął na siebie (by), a gdy żadne, koza zarządu */
+  private paleniskoCzuwajacego(p: Pawn): Thing | undefined {
+    return this.paleniska().find((t) => t.by === p.id) ?? this.koza();
   }
 
   /** z drewnem w rękach do kozy (faza 3); bez drogi z powrotem na posterunek */
@@ -4346,7 +4572,7 @@ export class Sim {
   }
 
   /** Odwołanie planu (doniesione materiały zostają obok) albo rozbiórka gotowej budowli (wraca połowa kosztu,
-      zasieki przestają trzymać siatkę). */
+      zasieki i barykada przestają trzymać siatkę). */
   private unbuild(id: number): void {
     const st = this.st;
     const k = st.builds.findIndex((b) => b.id === id);
@@ -4367,7 +4593,9 @@ export class Sim {
       const back = Math.floor(n / 2);
       if (back > 0) this.dropMat(at, m, back);
     }
-    if (kind === 'zasieki') this.fenceAt(t.y * this.w.size + t.x, false, t.prev ?? 0);
+    if (naObwodzie(kind)) this.fenceAt(t.y * this.w.size + t.x, false, t.prev ?? 0);
+    // stół zniknął: nikt już nie idzie do niego ani przy nim nie siedzi (wybór i postęp badań zostają)
+    if (kind === 'pracownia') this.endResearchJobs();
     this.updateCap();
   }
 
@@ -4506,14 +4734,16 @@ export class Sim {
       by: -1,
       owner: -1,
     });
-    if (b.kind === 'zasieki') st.things[st.things.length - 1].prev = this.fenceAt(b.y * this.w.size + b.x, true);
+    if (naObwodzie(b.kind))
+      st.things[st.things.length - 1].prev = this.fenceAt(b.y * this.w.size + b.x, true, 0, b.kind);
     this.updateCap();
   }
 
-  /** Zasieki na odcinku siatki: dziura pod nimi zamknięta, kafelek siatki twardszy. Zwraca to, co było wcześniej
-      (łata dziury sprzed pierwszych zasieków na niej albo wytrzymałość kafelka). Przy rozbiórce (on: false) wraca
-      `prev`, chyba że na tej samej dziurze stoją jeszcze inne zasieki. */
-  private fenceAt(tile: number, on: boolean, prev = 0): number {
+  /** Zasieki albo barykada na odcinku siatki: dziura pod nimi zamknięta, kafelek siatki twardszy (ZASIEKI_HP albo
+      BARYKADA_HP według `kind`). Zwraca to, co było wcześniej (łata dziury sprzed pierwszej takiej budowli na niej
+      albo wytrzymałość kafelka). Przy rozbiórce (on: false) wraca `prev`, chyba że na tej samej dziurze stoi jeszcze
+      inna budowla z obwodu: wtedy dziura zostaje załatana jej wytrzymałością. */
+  private fenceAt(tile: number, on: boolean, prev = 0, kind = 'zasieki'): number {
     const f = this.st.fence;
     const shape = fenceShape(this.w);
     if (!f || !shape) return 0;
@@ -4521,17 +4751,18 @@ export class Sim {
     const hole = f.holes.find((x) => x.tiles.includes(tile));
     if (hole) {
       const other = this.st.things.find(
-        (t) => t.kind === 'zasieki' && t.y * size + t.x !== tile && hole.tiles.includes(t.y * size + t.x),
+        (t) => naObwodzie(t.kind) && t.y * size + t.x !== tile && hole.tiles.includes(t.y * size + t.x),
       );
       const was = other?.prev ?? hole.patch;
-      hole.patch = on || other ? ZASIEKI_HP : prev;
+      const held = other ? obwodHp(other.kind) : 0;
+      hole.patch = on ? Math.max(obwodHp(kind), held) : other ? held : prev;
       this.rebuild();
       return was;
     }
     const k = shape.tiles.indexOf(tile);
     if (k < 0) return 0;
     const was = f.hp[k];
-    f.hp[k] = on ? ZASIEKI_HP : prev;
+    f.hp[k] = on ? obwodHp(kind) : prev;
     return was;
   }
 
@@ -4566,7 +4797,7 @@ export class Sim {
   }
 
   /** łup z przeszukania: z tabeli według powodu opuszczenia (w domu komitetu z dokładką), deterministycznie z ziarna
-      gry i pomieszczenia */
+      gry i pomieszczenia; do tego rzut na książkę (znajdzKsiazke) z osobnego generatora */
   private searchDone(room: number, g: AptGame, at: number): void {
     const h = this.house!;
     const rnd = mulberry((Math.imul(this.st.seed | 0, 9973) ^ Math.imul(room + 1, 7919) ^ 0x51ab) >>> 0);
@@ -4574,6 +4805,24 @@ export class Sim {
     for (const [m, n] of Object.entries(loot) as [Mat, number][]) if (n > 0) this.dropMat(at, m, n, room);
     g.searched.push(room);
     g.searched.sort((a, b) => a - b);
+    this.znajdzKsiazke(ksiazkaZ(this.st.seed, room, SZANSA_KSIAZKI.mieszkanie), at);
+  }
+
+  /** Książka z przeszukania (src/sim/badania.ts: ksiazkaZ) trafia osobnym kanałem od razu na półkę osady (st.books),
+      bez sterty na mapie, i do dziennika znalezisk (st.bookLog). Trzecia z tej samej dziedziny idzie na podpałkę: +1
+      drewna przy pracowni, a bez niej w składzie (bez składu w miejscu przeszukania). Losowanie nie dotyka st.rng. */
+  private znajdzKsiazke(k: { dom: TechDom; tytul: string } | null, at: number): void {
+    if (!k) return;
+    const polka = dodajKsiazke(this.st, k.dom) === 'polka';
+    (this.st.bookLog ??= []).push({
+      tick: this.st.tick,
+      dom: k.dom,
+      tytul: k.tytul,
+      ...(polka ? {} : { podpalka: true }),
+    });
+    if (polka) return;
+    const lab = this.st.things.find((t) => t.kind === 'pracownia');
+    this.dropMat(lab ? lab.y * this.w.size + lab.x : (this.house?.sklad[0] ?? at), 'drewno', 1);
   }
 
   canDismantle(t: Thing): boolean {
@@ -5070,7 +5319,7 @@ export class Sim {
       if (this.workStock(r.from) < r.n) return this.inTransit(p, r.from) > 0;
       j.phase = 1;
       j.t0 = tick;
-      j.until = tick + r.work;
+      j.until = tick + pracaPrzepisu(j.what as Product, this.st.techDone);
       this.face(p, ws.x + ws.w / 2, ws.y + ws.h / 2);
       return true;
     }
@@ -5080,8 +5329,112 @@ export class Sim {
     j.from--;
     if (j.from <= 0 || this.workStock(r.from) + this.inTransit(p, r.from) < r.n) return false;
     j.t0 = tick;
-    j.until = tick + r.work;
+    j.until = tick + pracaPrzepisu(j.what as Product, this.st.techDone);
     return true;
+  }
+
+  /* ---------- badania ---------- */
+
+  /** bieżące badanie, jeśli istnieje w drzewku (stan ze starego zapisu może wskazywać technologię, której nie ma) */
+  private researchTech(): string | null {
+    const cur = this.st.research?.cur;
+    return cur && Object.hasOwn(TECH_BY, cur) ? cur : null;
+  }
+
+  /** pracownia (jest najwyżej jedna) */
+  private pracownia(): Thing | undefined {
+    return this.st.things.find((t) => t.kind === 'pracownia');
+  }
+
+  /** Wybór badania: tylko kartka do wzięcia, w toku albo stojąca (kartki z wymaganiami, bez wiedzy, odwrócone i
+      zbadane odpadają); tech null zdejmuje wybór i podnosi wszystkich od stołu. Zmiana badania nie rusza zapisanego
+      postępu żadnego z nich. `research` powstaje dopiero przy pierwszym wyborze. */
+  private chooseResearch(tech: string | null): void {
+    const st = this.st;
+    if (tech === null) {
+      if (!st.research?.cur) return;
+      st.research.cur = null;
+      this.endResearchJobs();
+      return;
+    }
+    if (!Object.hasOwn(TECH_BY, tech)) return;
+    const stan = kartka(st, tech, modeOf(st)).stan;
+    if (stan !== 'do_wziecia' && stan !== 'w_toku' && stan !== 'stoi') return;
+    st.research ??= { cur: null, prog: {}, at: {} };
+    st.research.cur = tech;
+  }
+
+  /** Włączenie sieci: tylko gdy technologia końcowa jest zbadana i stoi pracownia; ustawia `research.siec` (pole
+      powstaje dopiero teraz, razem z `research`, jeśli go jeszcze nie ma). Drugie włączenie nic nie zmienia. */
+  private wlaczSiec(): void {
+    const st = this.st;
+    if (!koncowaZbadana(st) || !this.pracownia() || siecWlaczona(st)) return;
+    st.research ??= { cur: null, prog: {}, at: {} };
+    st.research.siec = true;
+  }
+
+  /** zarząd do stołu pracowni; ile miejsc, tyle osób (kolejność z zaznaczenia) */
+  private orderStudy(pawns: Pawn[], thing: number): void {
+    if (this.thing(thing)?.kind !== 'pracownia') return;
+    for (const p of pawns) this.startResearch(p, true);
+  }
+
+  /** Osoba siada do badania: idzie do wolnego miejsca przy stole pracowni (dwa miejsca, każde dla jednej osoby;
+      zajęcie pamięta praca, a nie rzecz, bo `Thing.by` mieści jednego). false, gdy nic nie wybrano, badanie stoi
+      bez wiedzy, nie ma pracowni, miejsc brak albo nie da się dojść. order: z polecenia gracza, więc noc pracy nie
+      przerywa. Woła ją też praca ludzi i plan dnia lokatorów. */
+  startResearch(p: Pawn, order = false): boolean {
+    const st = this.st;
+    const cur = this.researchTech();
+    const desk = this.pracownia();
+    if (!cur || !desk || p.away || kartka(st, cur, modeOf(st)).stan !== 'w_toku') return false;
+    if (wolneMiejsca(st.pawns, desk.id, [p.id]) < 1) return false;
+    const stand = this.beside(p, desk);
+    if (stand < 0 || this.taken(p).includes(stand) || !this.go(p, stand)) return false;
+    this.setJob(p, this.newJob('research', desk.id, stand, order), false);
+    return true;
+  }
+
+  /** praca przy stole: faza 0 dojście i siadanie, faza 1 siedzi (postęp liczy researchTick po kroku). Kończy się, gdy
+      stołu albo wyboru nie ma. */
+  private researchWork(p: Pawn, j: Job, at: boolean): boolean {
+    const desk = this.thing(j.target);
+    if (desk?.kind !== 'pracownia' || !this.researchTech()) return false;
+    // mieszkaniec bada w swoich godzinach na podwórku, potem wstaje (zarząd siedzi, dopóki mu się nie każe wstać)
+    if (p.kind === 'resident' && !this.residentDay()) return false;
+    if (j.phase === 1) return true;
+    if (!at) return false;
+    j.phase = 1;
+    j.t0 = this.st.tick;
+    this.face(p, desk.x + desk.w / 2, desk.y + desk.h / 2);
+    return true;
+  }
+
+  /** Postęp badania w tym kroku: każda siedząca osoba dodaje swoje tempo na tick (punkty na godzinę gry / ticki na
+      godzinę). Liczy się raz na krok, po usunięciu zabitych, więc wiedza osady (kto jest na miejscu) nie liczy tych,
+      którzy zginęli w tym kroku. Stojące badanie (wiedza spadła) nie rośnie. Po przekroczeniu kosztu technologia
+      trafia do techDone, tick ukończenia do `at`, wybór schodzi, a wszyscy wstają od stołu; `prog` zostaje. */
+  private researchTick(): void {
+    const st = this.st;
+    const cur = this.researchTech();
+    if (!cur) return;
+    const seated = st.pawns.filter((p) => p.job?.t === 'research' && p.job.phase === 1);
+    if (!seated.length || kartka(st, cur, modeOf(st)).stan !== 'w_toku') return;
+    const dom = TECH_BY[cur].dom;
+    let add = 0;
+    for (const p of seated) add += tempoOsoby(st.people[p.person] ?? { skills: {}, traits: [] }, dom) / TICKS_PER_HOUR;
+    const r = st.research!;
+    r.prog[cur] = (r.prog[cur] ?? 0) + add;
+    if (r.prog[cur] < kosztTech(cur)) return;
+    (st.techDone ??= []).push(cur);
+    r.at[cur] = st.tick;
+    r.cur = null;
+    this.endResearchJobs();
+  }
+
+  /** wszyscy idący do stołu i siedzący przy nim wstają (koniec badania, zdjęcie wyboru, rozbiórka pracowni) */
+  private endResearchJobs(): void {
+    for (const p of this.st.pawns) if (p.job?.t === 'research') this.done(p);
   }
 
   /** materiał na przeróbkę: wszystkie sterty danego rodzaju, także te, które ktoś właśnie niesie do składu
@@ -6256,11 +6609,13 @@ export class Sim {
     return this.holdFire(w) ? { ...w, fence: false } : w;
   }
 
-  /** warta na posterunku: najbliższy wróg w zasięgu broni (w trybie zombie z bronią palną tylko po swojej stronie) */
+  /** warta na posterunku: najbliższy wróg w zasięgu broni (w trybie zombie z bronią palną tylko po swojej stronie);
+      z wieży broń dystansowa (kusza, rewolwer, strzelba) sięga ×1,5 dalej, dzida i broń wręcz jak dotąd */
   private guardStrike(p: Pawn): void {
     if (this.st.tick < (p.cd ?? 0)) return;
     const w = this.armed(p);
-    const reach = this.selfReach(w);
+    let reach = this.selfReach(w);
+    if (p.job?.target === WIEZA_POST && isRanged(w)) reach = { ...reach, reach: reach.reach * WIEZA_ZASIEG };
     let best: Pawn | undefined;
     let bd = Number.POSITIVE_INFINITY;
     for (const t of this.st.pawns) {
@@ -6800,7 +7155,7 @@ export class Sim {
       if (hole.patch <= 0) return;
       hole.patch = Math.max(0, hole.patch - amount);
       if (hole.patch === 0) {
-        this.wreckZasieki(hole.tiles);
+        this.wreckObwod(hole.tiles);
         this.breach();
       }
       return;
@@ -6809,7 +7164,7 @@ export class Sim {
     if (k === undefined || f.hp[k] <= 0) return;
     f.hp[k] = Math.max(0, f.hp[k] - amount);
     if (f.hp[k] > 0) return;
-    this.wreckZasieki([tile]);
+    this.wreckObwod([tile]);
     const id = f.holes.reduce((m, h) => Math.max(m, h.id), 0) + 1;
     f.holes.push({ id, tiles: [tile], size: 0.6, patch: 0 });
     this.breach();
@@ -6820,15 +7175,15 @@ export class Sim {
     this.rebuild();
   }
 
-  /** Zasieki (M2) na kafelkach, które napór zbił do zera: zniszczone, bez zwrotu materiału, żeby widok pokazał
-      dziurę, a rozbiórka nie łatała przerwania za darmo. */
-  private wreckZasieki(tiles: readonly number[]): void {
+  /** Zasieki (M2) i barykady z wraków na kafelkach, które napór zbił do zera: zniszczone, bez zwrotu materiału, żeby
+      widok pokazał dziurę, a rozbiórka nie łatała przerwania za darmo. */
+  private wreckObwod(tiles: readonly number[]): void {
     const st = this.st;
     const size = this.w.size;
     let gone = false;
     for (let k = st.things.length - 1; k >= 0; k--) {
       const t = st.things[k];
-      if (t.kind !== 'zasieki' || !tiles.includes(t.y * size + t.x)) continue;
+      if (!naObwodzie(t.kind) || !tiles.includes(t.y * size + t.x)) continue;
       st.things.splice(k, 1);
       gone = true;
     }
@@ -6900,11 +7255,18 @@ export class Sim {
     heap.by = p.id;
   }
 
-  /** wzmocnienie kafelka siatki: po materiał na stertę (2 sztuki jednego rodzaju), potem do siatki od podwórka */
+  /** czy na kafelku siatki stoi barykada (ma 160 wytrzymałości, więc wzmocnienie deskami, które sięga 100, jej nie dotyka) */
+  private barykadaNa(tile: number): boolean {
+    const size = this.w.size;
+    return this.st.things.some((t) => t.kind === 'barykada' && t.y * size + t.x === tile);
+  }
+
+  /** wzmocnienie kafelka siatki: po materiał na stertę (2 sztuki jednego rodzaju), potem do siatki od podwórka; nie pod
+      barykadą */
   private orderBrace(pawns: Pawn[], tile: number): void {
     const f = this.st.fence;
     const k = this.fenceIndex.get(tile);
-    if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100) return;
+    if (!f || k === undefined || f.hp[k] <= 0 || f.hp[k] >= 100 || this.barykadaNa(tile)) return;
     if (f.holes.some((h) => h.tiles.includes(tile))) return;
     const p = pawns[0];
     const heap = this.heapFor(p, '', BRACE_COST);
@@ -7132,10 +7494,15 @@ export class Sim {
     }
   }
 
-  /** lampa warty albo palące się ognisko w zasięgu */
+  /** lampa warty (z wieży sięga ×1,5 dalej) albo palące się ognisko w zasięgu */
   private litNear(x: number, y: number): boolean {
     for (const q of this.st.pawns)
-      if (!q.away && q.job?.t === 'guard' && q.job.phase === 1 && Math.hypot(q.x - x, q.y - y) <= LAMP_REACH)
+      if (
+        !q.away &&
+        q.job?.t === 'guard' &&
+        q.job.phase === 1 &&
+        Math.hypot(q.x - x, q.y - y) <= (q.job.target === WIEZA_POST ? LAMP_REACH * WIEZA_ZASIEG : LAMP_REACH)
+      )
         return true;
     return this.st.things.some(
       (t) => t.kind === 'ognisko' && t.fuel > 0 && Math.hypot(t.x + 0.5 - x, t.y + 0.5 - y) <= CAMPFIRE_LIGHT,
@@ -7412,22 +7779,30 @@ export class Sim {
     if (!this.house) return;
     const st = this.st;
     const tout = this.outdoor();
-    // pali się to, co paliło się na początku kroku
+    // pali się to, co paliło się na początku kroku; kocioł zjada tyle ognia, ile wynosi jego waga
     const fires = this.fires();
     for (const t of st.things)
-      if ((t.kind === 'koza' || t.kind === 'ognisko') && t.fuel > 0) t.fuel = Math.max(0, t.fuel - HEAT_EVERY);
+      if ((Object.hasOwn(PALENISKA, t.kind) || t.kind === 'ognisko') && t.fuel > 0)
+        t.fuel = Math.max(0, t.fuel - HEAT_EVERY * wagaPaleniska(t.kind));
     // krew, trupy i zwłoki z czasem znikają
     if (st.things.some((t) => t.until !== undefined && t.until <= st.tick))
       st.things = st.things.filter((t) => t.until === undefined || t.until > st.tick);
-    this.boost = heatStep(st.temps, this.kinds, this.links, fires, tout);
-    // ogródki rosną; co trzy doby plon obok grządek
+    // folia i koce w oknach (t_okna): dodatek do temperatury bazowej w pomieszczeniach naszych mieszkań
+    this.boost = heatStep(
+      st.temps,
+      this.kinds,
+      this.links,
+      fires,
+      tout,
+      this.tech('t_okna') ? this.oknaExtra() : undefined,
+    );
+    // ogródki, szklarnie i pieczarkarnie rosną; co trzy doby plon obok grządek
     for (const t of st.things)
-      if (t.kind === 'ogrodek') {
+      if (t.kind === 'ogrodek' || t.kind === 'szklarnia' || t.kind === 'pieczarkarnia') {
         t.fuel += HEAT_EVERY;
         if (t.fuel < GARDEN_TICKS) continue;
         t.fuel = 0;
-        const n = GARDEN_YIELD[seasonOf(st.tick)];
-        if (n > 0) this.dropMat((t.y + 1) * this.w.size + t.x + 1, 'jedzenie', n);
+        this.plon(t);
       }
     this.light = roomLight(this.kinds.length, this.links, fires);
     const hours = HEAT_EVERY / TICKS_PER_HOUR;
@@ -7448,16 +7823,58 @@ export class Sim {
     this.tutCheck();
   }
 
-  /** pomieszczenia z palącą się kozą */
+  /** pomieszczenia z palącą się kozą albo kozą z beczki, a przy palącym się kotle wszystkie pomieszczenia naszych
+      mieszkań (kocioł na klatce grzeje je naraz) */
   private fires(): number[] {
     const h = this.house!;
     const out: number[] = [];
-    for (const t of this.st.things)
-      if (t.kind === 'koza' && t.fuel > 0) {
+    let kociol = false;
+    for (const t of this.st.things) {
+      if (t.fuel <= 0) continue;
+      if (t.kind === 'koza' || t.kind === 'koza_beczka') {
         const r = h.room[t.y * this.w.size + t.x];
         if (r >= 0) out.push(r);
-      }
+      } else if (t.kind === 'kociol') kociol = true;
+    }
+    if (kociol) {
+      const ours = this.ourApts();
+      for (const r of h.rooms) if (r.apt >= 0 && ours.has(r.apt) && !out.includes(r.id)) out.push(r.id);
+    }
     return out;
+  }
+
+  /** t_okna: o ile °C cieplej w każdym pomieszczeniu (OKNA_PLUS w naszych mieszkaniach, poza nimi 0) */
+  private oknaExtra(): number[] {
+    const ours = this.ourApts();
+    return this.house!.rooms.map((r) => (r.apt >= 0 && ours.has(r.apt) ? OKNA_PLUS : 0));
+  }
+
+  /** czy technologia jest zbadana (`st.techDone` powstaje dopiero przy pierwszym badaniu) */
+  private tech(id: string): boolean {
+    return this.st.techDone?.includes(id) === true;
+  }
+
+  /** Plon uprawy po trzech dobach: ogródek według pory roku, szklarnia tak samo, ale zimą jak jesienią, pieczarkarnia
+      stały przez cały rok. Po t_konserwy plon ×1,2 z ułamkiem w `Thing.n` rzeczy; po t_zielarstwo plon ogródka daje
+      czasem lek (do zapasu zarządu). Jedzenie leży obok grządek, z pieczarkarni w jej łazience. */
+  private plon(t: Thing): void {
+    const st = this.st;
+    const size = this.w.size;
+    const pora = seasonOf(st.tick);
+    const baza =
+      t.kind === 'pieczarkarnia' ? PIECZARKI_PLON : GARDEN_YIELD[t.kind === 'szklarnia' && pora === 1 ? 0 : pora];
+    let n = baza;
+    if (this.tech('t_konserwy')) {
+      const k = plonKonserw(baza, t.n);
+      n = k.n;
+      t.n = k.reszta;
+    }
+    if (n > 0) {
+      if (t.kind === 'pieczarkarnia') this.dropMat(t.y * size + t.x, 'jedzenie', n, this.roomOf[t.y * size + t.x]);
+      else this.dropMat((t.y + 1) * size + t.x + 1, 'jedzenie', n);
+    }
+    if (baza > 0 && t.kind === 'ogrodek' && this.tech('t_zielarstwo') && lekZPlonu(st.seed, t.id, st.tick))
+      st.store.meds += 1;
   }
 
   /** co nocą straszy i co uspokaja, liczone raz na krok potrzeb: warta z lampą, ogniska, otwarte dziury, obcy */
@@ -7483,10 +7900,10 @@ export class Sim {
     const inside = r >= 0;
     let fire = false;
     for (const t of this.st.things) {
-      if (t.fuel <= 0 || (t.kind !== 'koza' && t.kind !== 'ognisko')) continue;
+      if (t.fuel <= 0 || (!Object.hasOwn(PALENISKA, t.kind) && t.kind !== 'ognisko')) continue;
       const near = Math.hypot(p.x - (t.x + t.w / 2), p.y - (t.y + t.h / 2)) <= FIRE_REACH + 0.5;
-      // koza grzeje w swoim pomieszczeniu, ognisko na dworze
-      if (near && (t.kind === 'koza' ? h.room[t.y * size + t.x] === r : !inside)) fire = true;
+      // koza, koza z beczki i kocioł grzeją w swoim pomieszczeniu, ognisko na dworze
+      if (near && (t.kind === 'ognisko' ? !inside : h.room[t.y * size + t.x] === r)) fire = true;
     }
     const lit =
       a.lamps.some(([x, y]) => Math.hypot(p.x - x, p.y - y) <= LAMP_REACH) ||
@@ -7516,6 +7933,8 @@ export class Sim {
       asleep,
       floor,
       hunger: hungerRate(this.st.laws.foodMult),
+      // ambulatorium polowe (t_ambu): zdrowie wraca szybciej
+      heal: this.tech('t_ambu') ? AMBU_TEMPO : 1,
       busy: (!!j && ((j.t === 'chop' && j.phase === 1) || (j.t === 'patch' && j.phase === 2))) || p.carry > 0,
       dark,
       inside,
@@ -8449,7 +8868,8 @@ export class Sim {
 
   /** łup z pomieszczenia sąsiada: puste mieszkanie z tabeli fali 1 (w trybie zombie z wymarcia więcej jedzenia),
       sala i reszta z tabeli rodzaju budynku, mieszkanie lokatorów pod ich nieobecność ich zapasy (w kuchni i pokoju);
-      deterministycznie z ziarna świata, budynku i pomieszczenia */
+      deterministycznie z ziarna świata, budynku i pomieszczenia. Książkę dają puste mieszkania i sale szkół
+      (znajdzKsiazke, rzut z osobnego generatora z ziarna gry i gid(k + 1, pokój)). */
   private lupPokoju(k: number, room: number, at: number): void {
     const st = this.st;
     const b = st.sasiedzi!.budynki[k];
@@ -8459,14 +8879,19 @@ export class Sim {
     const mode = modeOf(st);
     const rnd = rngOfPlace(this.w.seed, b.bid, room, 0x100f);
     let loot: Partial<Record<Mat, number>> = {};
+    // szansa na książkę: sala szkoły, puste mieszkanie; inne usługi i zapasy lokatorów książek nie dają
+    let szansaKsiazki = 0;
     if (r.apt < 0) {
       loot = lupUslug(B.cls, r.kind, r.area, rnd);
+      if (B.cls === 'szkola') szansaKsiazki = SZANSA_KSIAZKI.szkola;
       b.przeszukane.push(room);
       b.przeszukane.sort((x, y) => x - y);
     } else {
       const m = b.mieszkania.find((x) => x.apt === r.apt)!;
-      if (m.stan === 'puste') loot = lupMieszkania(m.why ?? 'wyjazd', r.kind, r.area, rnd, mode);
-      else {
+      if (m.stan === 'puste') {
+        loot = lupMieszkania(m.why ?? 'wyjazd', r.kind, r.area, rnd, mode);
+        szansaKsiazki = SZANSA_KSIAZKI.mieszkanie;
+      } else {
         // szaber pod nieobecność lokatorów: ich zapasy, za pierwszym pomieszczeniem całe
         const g = b.domy[m.dom];
         loot = { ...g.zapasy };
@@ -8483,6 +8908,8 @@ export class Sim {
     }
     for (const [mat, n] of Object.entries(loot) as [Mat, number][])
       if (n > 0) this.zostawLup(at, mat, n, this.kafelkiPokoju(gid(k, room)));
+    // klucz gid(k + 1, pokój) nie zbiega się z numerem pomieszczenia siedziby (searchDone)
+    if (szansaKsiazki > 0) this.znajdzKsiazke(ksiazkaZ(st.seed, gid(k + 1, room), szansaKsiazki), at);
     this.wersjaSasiadow++;
   }
 

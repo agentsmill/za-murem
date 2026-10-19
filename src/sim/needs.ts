@@ -1,7 +1,8 @@
 /* Potrzeby ludzi z rdzenia w skali 0–100, liczone co HEAT_EVERY ticków razem z ciepłem.
    Nastrój nie ma własnej dynamiki: wynika z pozostałych potrzeb plus chwilowe nastroje (spalone meble,
    ciepły posiłek), później dojdą cechy i wydarzenia. Zdrowie na razie tylko spada i wraca; choroby,
-   leczenie i śmierć przyjdą razem z systemami z 0.3. Nazwy pasków są w obu językach (NEED_LABELS, NEED_LABELS_EN). */
+   leczenie i śmierć przyjdą razem z systemami z 0.3. Powrót zdrowia mnoży `NeedCtx.heal` (ambulatorium polowe, t_ambu).
+   Nazwy pasków są w obu językach (NEED_LABELS, NEED_LABELS_EN). */
 
 export interface Needs {
   /** najedzenie */
@@ -63,6 +64,8 @@ export interface NeedCtx {
   raided?: boolean;
   /** mnożnik spadku najedzenia (racje: głód wraca szybciej), domyślnie 1 */
   hunger?: number;
+  /** mnożnik powrotu zdrowia (ambulatorium polowe, t_ambu), domyślnie 1; ubytku zdrowia nie rusza */
+  heal?: number;
 }
 
 /** poniżej tej temperatury ciepło spada (o punkt na godzinę za każdy stopień), powyżej rośnie */
@@ -125,7 +128,7 @@ export function stepNeeds(n: Needs, c: NeedCtx, h: number, bonus = 0): void {
   if (n.warm < 15) dh -= 1.5;
   if (n.food < 10) dh -= 1;
   if (n.rest < 10) dh -= 0.5;
-  if (dh === 0 && n.warm > 50 && n.food > 30) dh = 0.5;
+  if (dh === 0 && n.warm > 50 && n.food > 30) dh = 0.5 * (c.heal ?? 1);
   n.health = clamp100(n.health + dh * h);
   // bezpieczeństwo dochodzi do celu ze stałą czasową 2 h
   n.safe = clamp100(n.safe + (safeTarget(c) - n.safe) * Math.min(1, h / 2));
