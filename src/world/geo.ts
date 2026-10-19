@@ -30,7 +30,8 @@ export interface GeoPoi {
   c: string;
   n: string;
   /** klucz punktu „poi:X:Y” (globalny piksel z=14, miasto.ts): wspólny dla wszystkich graczy, niezależny od środka
-      mapy; brak w zapisach i demach sprzed kluczy oraz w osiedlu zapasowym (uzupelnijKlucze liczy go z położenia) */
+      mapy; brak w zapisach i demach sprzed kluczy (uzupelnijKlucze liczy go z położenia) oraz w osiedlu zapasowym
+      (genProc nie ma prawdziwego położenia, więc kluczy mu nie liczymy i mapy miasta nie ma) */
   k?: string;
 }
 export interface Geo {

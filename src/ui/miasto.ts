@@ -2,8 +2,7 @@
    na ekranie”): płótno 2D w oknie `Modal` (bez PixiJS) z tłem z kafelków OpenFreeMap, ikonami miejsc, osiedlem gracza
    (koło mapy lokalnej 192 m) i siedzibą, przesuwaniem i przybliżaniem myszą, kółkiem i palcami, oraz kartą miejsca
    po stuknięciu w ikonę. Wysłanie wyprawy to osobne okno (src/ui/wyprawa.ts): karta ma przycisk `data-act="wyslij"`,
-   który woła `onWyslij` podane przy otwarciu (tylko gdy karta mówi, że można), a bez niego jest wyszarzony
-   z dopiskiem „wkrótce”.
+   który woła `onWyslij` podane przy otwarciu (tylko gdy karta mówi, że można), a bez niego jest wyszarzony.
 
    Kontrakt.
    - Czyste funkcje (testy w Node): `rzut` i `odwrotnie` (metry od adresu ↔ piksele płótna; x na wschód, y na południe,
@@ -376,13 +375,11 @@ export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsc
 }
 
 /** HTML karty miejsca w bieżącym języku: tytuł, linie, powód i przycisk „Wyślij wyprawę” (`data-act="wyslij"`, w
-    `data-arg` klucz miejsca). Bez wysyłki (`wyslij` false, do zadania 9) przycisk jest wyszarzony z dopiskiem „wkrótce”;
-    wyszarzony także wtedy, gdy nie można. */
+    `data-arg` klucz miejsca). Przycisk jest wyszarzony, gdy nie można (`k.mozna`) albo okno nie ma wysyłki (`wyslij`
+    false, czyli bez `onWyslij`). */
 export function kartaHtml(m: Miejsce, k: KartaMiejsca, wyslij: boolean): string {
   const ik = ikonaKategorii(m.kat);
-  const etykieta = wyslij
-    ? L('Wyślij wyprawę', 'Send a supply run')
-    : L('Wyślij wyprawę (wkrótce)', 'Send a supply run (soon)');
+  const etykieta = L('Wyślij wyprawę', 'Send a supply run');
   return `<header class="mk-head"><span class="mk-znak" style="background:${ik.tlo}" aria-hidden="true"></span><h3 class="mk-t">${esc(
     tr(k.tytul),
   )}</h3><button type="button" class="mk-x" data-act="miasto-karta-zamknij" aria-label="${L('Zamknij kartę', 'Close the card')}">×</button></header><ul class="mk-l">${k.linie

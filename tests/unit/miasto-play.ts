@@ -39,7 +39,7 @@ const DO_GODZINY = 17;
 /** ile osób wychodzi na jedną wyprawę */
 const OSOB = 2;
 /** miejsca dalej niż tyle metrów od adresu bot pomija (gra dopuszcza 5000 m) */
-export const MAX_ODL_BOTA_M = 2000;
+const MAX_ODL_BOTA_M = 2000;
 /** jedzenie poniżej tylu porcji na osobę to brak jedzenia, drewno poniżej tylu sztuk to brak opału, szkoła co tyle dni */
 const MIN_JEDZENIA_NA_OSOBE = 2;
 const MIN_DREWNA = 4;
