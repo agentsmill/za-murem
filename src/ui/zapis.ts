@@ -1,6 +1,9 @@
 /* Zapis gry w przeglądarce (localStorage): dane osiedla, z których świat odtwarza się deterministycznie,
-   ziarno, stan symulacji, stan zarządu i czas przy ekranie. Jeden zapis na przeglądarkę. Zapis nie zależy od języka;
-   tylko etykieta wznowienia (`saveLabel`) jest w bieżącym języku. */
+   ziarno, stan symulacji, stan zarządu, stan ścieżki celów (`cele`, src/ui/sciezka.ts) i czas przy ekranie. Jeden zapis
+   na przeglądarkę. Zapis nie zależy od języka; tylko etykieta wznowienia (`saveLabel`) jest w bieżącym języku.
+   Kontrola kształtu w `readSave` jest dwojakiego rodzaju: pole, od którego zależy świat albo przebieg gry (wersje,
+   `siec`, `pietra`), przy złym kształcie odrzuca cały zapis, a `cele`, które dotyczy tylko interfejsu, przy złym
+   kształcie znika z zapisu i reszta wczytuje się jak zawsze. */
 
 import { L } from '../core/jezyk.ts';
 import { hashString } from '../core/rng.ts';
@@ -10,6 +13,7 @@ import type { SimState } from '../sim/sim.ts';
 import { modeOf } from '../sim/tryb.ts';
 import type { Loaded } from '../world/load.ts';
 import type { World } from '../world/world.ts';
+import { jestStanSciezki, type StanSciezki } from './sciezka.ts';
 
 export const SAVE_KEY = 'za-murem-0.4-zapis';
 export const SAVE_VERSION = 1;
@@ -33,6 +37,10 @@ export interface Save {
   /** widok pięter (?pietra=1): świat buduje się z awansowanymi domami; nieobecne przy wyłączonej fladze, więc zapis
       sprzed zmiany i zapis bez flagi są bajt w bajt takie same. O fladze wczytanej gry decyduje to pole, nie adres */
   pietra?: true;
+  /** stan ścieżki celów (src/ui/sciezka.ts): zaliczone i przepadłe cele, otwarty rozdział, okazja. Tylko interfejs:
+      ani symulacja, ani zarząd go nie znają. Pole opcjonalne: zapis sprzed ścieżki go nie ma (ścieżka zaczyna wtedy
+      od stanu na start, `stanZZapisu`), a pole o złym kształcie `readSave` zdejmuje z zapisu */
+  cele?: StanSciezki;
 }
 
 /** czy gra ma widok pięter: zapis wygrywa z adresem (wczytana gra zachowuje to, z czym ją zaczęto), nowa gra czyta
@@ -95,6 +103,8 @@ export function readSave(from: Store | null = store()): Save | null {
     if (s.siec && !(Array.isArray(s.siec.zajete) && s.siec.zajete.every((k) => typeof k === 'string'))) return null;
     // flaga pięter buduje świat, więc inna wartość niż `true` (także `false`) to zły zapis
     if (s.pietra !== undefined && s.pietra !== true) return null;
+    // stan ścieżki celów to sprawa samego interfejsu, więc zły kształt (także z chmury) to brak pola, a nie zły zapis
+    if (s.cele !== undefined && !jestStanSciezki(s.cele)) delete s.cele;
     return s;
   } catch {
     return null;

@@ -166,6 +166,7 @@ import {
 import { Portrety } from './ui/portrety.ts';
 import { nalozPolecenia, nalozPraceOsoby, widokPracy, ZA_SIATKE_ZOMBIE } from './ui/praca.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
+import { nowyStanSciezki, type StanSciezki, stanZZapisu, zalicz, zaliczony } from './ui/sciezka.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
@@ -287,6 +288,9 @@ const view = new GameView();
 let kwadratyGry: KwadratGry[] = [];
 let sim: Sim | null = null;
 let gov: GovState | null = null;
+/** stan ścieżki celów (src/ui/sciezka.ts): zaliczenia, których nie widać w stanie gry (drewno, które koza zje); nowy
+    przy nowej grze, z zapisu przy wznowieniu, do zapisu w `Save.cele` */
+let sciezka: StanSciezki = nowyStanSciezki();
 let loaded: Loaded | null = null;
 let seed = 0;
 /** widok pięter obecnej gry (?pietra=1 albo pole zapisu): ustawia go `enter`, czyta `save` */
@@ -810,6 +814,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
   gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
+  // ścieżka celów: z zapisu (zapis bez pola albo z polem o złym kształcie zaczyna od pierwszego dnia, a po pierwszym
+  // raporcie od drugiego), nowa gra od początku
+  sciezka = saved ? stanZZapisu(saved.cele, st, gov) : nowyStanSciezki();
   powrotyCzekaja = [];
   // mapa miasta w nowej grze i w starym zapisie (bez losowania; wyprawa nocna w drodze kończy się po staremu)
   if (opcjaMiasto) wlaczMiasto(gov);
@@ -1288,6 +1295,7 @@ function save(): boolean {
     world: worldKey(sim.w),
     ...(siec.stan ? { siec: siec.stan } : {}),
     ...(pietraGry ? { pietra: true } : {}),
+    cele: sciezka,
   };
   const ok = writeSave(s);
   // gra z sąsiadami: także do chmury (najwyżej raz na minutę)
@@ -2011,9 +2019,11 @@ function hud(now: number) {
 }
 
 let goalsHtml = '';
-/** zapas drewna na wieczór był choć raz (cel się nie cofa, kiedy koza zje drewno); drugi dzień (na noc) osobno */
-let woodReady = false;
-let woodReady2 = false;
+/** Zapas drewna na wieczór (pierwszy dzień) i na noc (drugi dzień) zaliczony choć raz: cel się nie cofa, kiedy koza
+    zje drewno. Zaliczenie siedzi w stanie ścieżki, a ten idzie do zapisu (`Save.cele`), więc przeładowanie strony go
+    nie gubi (usterka U6: dawniej pamięć strony i cel przepadał z kartą nocy). */
+const DREWNO_WIECZOR = 'r0.drewno';
+const DREWNO_NOC = 'r1.drewno2';
 function renderGoals(snap: SimSnapshot) {
   const el = $('goals');
   if (!sim) return;
@@ -2035,14 +2045,15 @@ function renderGoals(snap: SimSnapshot) {
     return;
   }
   const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
-  if (wood >= NIGHT_WOOD && sim.st.tut.step >= TUT_STEPS.length) woodReady = true;
+  if (wood >= NIGHT_WOOD && sim.st.tut.step >= TUT_STEPS.length && !zaliczony(sciezka, DREWNO_WIECZOR))
+    sciezka = zalicz(sciezka, DREWNO_WIECZOR, sim.st.tick);
   let list = goalsOf(sim.st, gov, {
     touch: touchUI,
     kitchen: snap.kitchen,
     hour: snap.hour,
     selected: snap.people.some((p) => selected.has(p.pawn)),
     wood,
-    woodReady,
+    woodReady: zaliczony(sciezka, DREWNO_WIECZOR),
     words,
     wordsEn: wordsE,
     w: sim.w,
@@ -2051,11 +2062,11 @@ function renderGoals(snap: SimSnapshot) {
   let title = L('Pierwszy dzień', 'Day one');
   // po pierwszej nocy cele drugiego dnia: przeszukać, warsztat, obwód, drewno na noc
   if (!cur && isDay2(gov)) {
-    if (wood >= DAY2_WOOD) woodReady2 = true;
+    if (wood >= DAY2_WOOD && !zaliczony(sciezka, DREWNO_NOC)) sciezka = zalicz(sciezka, DREWNO_NOC, sim.st.tick);
     list = goalsDay2(sim.st, gov, {
       touch: touchUI,
       wood,
-      woodReady: woodReady2,
+      woodReady: zaliczony(sciezka, DREWNO_NOC),
       holes: snap.fence.holes.length,
       words,
       wordsEn: wordsE,

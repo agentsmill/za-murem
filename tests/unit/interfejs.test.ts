@@ -41,6 +41,7 @@ import {
   reportSheet,
 } from '../../src/ui/okna.ts';
 import { statsOf } from '../../src/ui/pasek.ts';
+import { nowyStanSciezki, stanZZapisu, zalicz, zdarzenieUi } from '../../src/ui/sciezka.ts';
 import { govFence, govLight } from '../../src/ui/siatka.ts';
 import { deg, esc, num, pct, signed } from '../../src/ui/tekst.ts';
 import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSave } from '../../src/ui/zapis.ts';
@@ -525,6 +526,8 @@ describe('zapis gry', () => {
     const back = readSave(store)!;
     expect(back.sim).toEqual(sim.st);
     expect(back.gov).toEqual(gov);
+    // zapis bez stanu ścieżki celów (sprzed ścieżki) wczytuje się jak dotąd, bez pola
+    expect('cele' in back).toBe(false);
     expect(saveLabel(back)).toBe(`${data.name}, dzień 1, 15:00`);
     // wczytany stan daje tę samą symulację
     const again = new Sim(sim.w, back.sim);
@@ -547,6 +550,29 @@ describe('zapis gry', () => {
     };
     expect(writeSave(save, full)).toBe(false);
     expect(writeSave(save, null)).toBe(false);
+  });
+  it('stan ścieżki celów jedzie w zapisie obok stanu gry i nie zmienia jego przebiegu', () => {
+    const { sim, seed } = fresh();
+    const { data } = demo('przymorze');
+    const gov = newGov(seed);
+    const cele = zalicz(zdarzenieUi(nowyStanSciezki(), 'lista', 40), 'r0.drewno', 41);
+    const save: Save = { v: 1, at: 1, data, seed, sim: sim.st, gov, screen: 12.5, cele };
+    const store = memory();
+    expect(writeSave(save, store)).toBe(true);
+    const back = readSave(store)!;
+    expect(back.cele).toEqual(cele);
+    expect(back.sim).toEqual(sim.st);
+    expect(back.gov).toEqual(gov);
+    // ścieżka czyta stan gry i niczego w nim nie zapisuje: wczytana symulacja przebiega tak samo
+    const again = new Sim(sim.w, back.sim);
+    for (let k = 0; k < 200; k++) {
+      sim.step();
+      again.step();
+    }
+    expect(again.hash()).toBe(sim.hash());
+    // stan ścieżki z zapisu to ten sam stan, a zapis bez niego (stary) zaczyna od pierwszego dnia
+    expect(stanZZapisu(back.cele, back.sim, back.gov)).toEqual(cele);
+    expect(stanZZapisu(undefined, back.sim, back.gov)).toEqual(nowyStanSciezki());
   });
   it('odcisk świata: ten sam dla tego samego osiedla, inny dla innego', () => {
     const a = worldKey(demo('przymorze').w);
