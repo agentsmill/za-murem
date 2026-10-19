@@ -13354,6 +13354,75 @@ function pracaShots(): Shot[] {
     },
   });
 
+  /** Panel Pracy z kolumną „Badania” (dziewiąta, tylko gdy stoi pracownia): komputer z sześcioma osobami i telefon 390×844
+      z dwunastoma. Pracownię stawia ?badania=demo (tablica otwiera się sama i trzeba ją zamknąć). Sprawdza dziewięć
+      kolumn w kolejności `RODZAJE`, brak przewijania w bok, liczbę wolnych miejsc w nagłówku kolumny i że klik w jej
+      komórkę zmienia priorytet tak samo jak w innych. */
+  const panelBadania = (name: string, lang: 'pl' | 'en', telefon: boolean): Shot => ({
+    name,
+    query: '',
+    lang,
+    w: telefon ? 390 : undefined,
+    h: telefon ? 844 : undefined,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&badania=demo`);
+      await waitIdle(page);
+      await page.waitForSelector('#tablica:not([hidden]) .tb-kartka');
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !window.zm!.badania().open);
+      await dopelnij(page, telefon ? 12 : 6);
+      await otworz(page, telefon);
+      const g = await page.evaluate(() => {
+        const panel = document.getElementById('pracaPanel')!;
+        const body = panel.querySelector<HTMLElement>('.bp-body')!;
+        const p = panel.getBoundingClientRect();
+        const kol = panel.querySelector<HTMLElement>('[data-kol="badania"]');
+        const komorki = [...panel.querySelectorAll<HTMLElement>('tbody tr:first-child td')].map((e) =>
+          Math.round(e.getBoundingClientRect().width),
+        );
+        const th = panel.querySelector('tbody th')!.getBoundingClientRect();
+        return {
+          naglowki: [...panel.querySelectorAll<HTMLElement>('[data-kol]')].map((e) => e.dataset.kol),
+          zlecen: (kol?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+          panel: { l: Math.round(p.left), r: Math.round(p.right), t: Math.round(p.top), b: Math.round(p.bottom) },
+          okno: { w: innerWidth, h: innerHeight },
+          kolumny: komorki,
+          imiona: Math.round(th.width),
+          poziomo: document.documentElement.scrollWidth > innerWidth || body.scrollWidth > body.clientWidth + 1,
+          rzedy: panel.querySelectorAll('tbody tr').length,
+          domyslne: [...panel.querySelectorAll<HTMLElement>('[data-prio$=":badania"]')].map((e) =>
+            (e.textContent ?? '').trim(),
+          ),
+        };
+      });
+      console.log(`  panel z badaniami: ${JSON.stringify(g)}`);
+      const wszystkie = [...KOLEJNOSC, 'badania'];
+      if (g.naglowki.join() !== wszystkie.join()) throw new Error(`kolumny: ${g.naglowki.join()}`);
+      if (g.kolumny.length !== 9) throw new Error(`komórek w wierszu: ${g.kolumny.length} z 9`);
+      if (g.poziomo) throw new Error('arkusz przewija się w bok');
+      if (g.panel.l < -1 || g.panel.r > g.okno.w + 1 || g.panel.b > g.okno.h + 1)
+        throw new Error('panel wystaje z ekranu');
+      if (telefon && g.kolumny.some((x) => x < 25 || x > 33))
+        throw new Error(`kolumny nie po ~28 px: ${g.kolumny.join()}`);
+      if (telefon && g.imiona < 60) throw new Error(`kolumna imion za wąska: ${g.imiona} px`);
+      if (g.domyslne.length !== g.rzedy) throw new Error('nie każdy wiersz ma komórkę badań');
+      // klik albo stuknięcie w komórkę badań osoby 0 przestawia priorytet (domyślny 2 albo 3, więc zmienia się o jeden)
+      const przed = await cyfra(page, 0, 'badania');
+      if (telefon) await page.tap('#pracaPanel [data-prio="0:badania"]');
+      else await page.click('#pracaPanel [data-prio="0:badania"]');
+      const po = await cyfra(page, 0, 'badania');
+      console.log(`  komórka 0:badania: ${przed || 'puste'} → ${po || 'puste'}`);
+      if (przed === po) throw new Error('klik w komórkę badań nie zmienił priorytetu');
+      // po minucie gry polecenie jest w stanie symulacji
+      const p = await page.evaluate(() => window.zm!.ff(1));
+      if (p) throw new Error(`w trakcie minuty gry otworzyło się okno: ${p}`);
+      const stan = await page.evaluate(() => window.zm!.sim!.st.praca?.osoby?.[0]?.prio?.badania ?? null);
+      console.log(`  stan: praca.osoby[0].prio.badania = ${stan}`);
+      if (stan === null) throw new Error('priorytet badań nie doszedł do stanu symulacji');
+      await page.waitForTimeout(300);
+    },
+  });
+
   /** panel Pracy na telefonie w trybie zombie: ostrzeżenie o szwendaczach stoi w panelu (podpowiedź z `say()` chowa się pod
       arkuszem), widać je bez przewijania i po włączeniu przełącznika „za siatkę”, a po stuknięciu nic nie nachodzi */
   const panelTelefonZombie = (name: string, lang: 'pl' | 'en'): Shot => ({
@@ -13668,16 +13737,35 @@ function pracaShots(): Shot[] {
     },
   });
 
-  /** górny pasek na telefonie 390×844: wszystkie przyciski widoczne, w oknie, bez nachodzenia na siebie ani na pola stanu */
-  const pasek = (name: string, lang: 'pl' | 'en', w = 390, h = 844): Shot => ({
+  /** Górny pasek na telefonie 390×844 albo 360×740: wszystkie przyciski widoczne, w oknie, bez nachodzenia na siebie ani
+      na pola stanu i w dwóch wierszach. Zestaw przycisków zależy od gry: bez pracowni jest 10 (tempo ×5, alarm, mapa,
+      praca, budowa, menu), z pracownią doszedł „Badania” (11, ikona w pierwszym wierszu za zegarem i „Mapą”), a z flagą
+      ?pietra=1 kafelek „Piętro” (jeszcze jeden; bez flagi go nie ma). `badania` stawia pracownię przez ?badania=demo i
+      zamyka tablicę, która otwiera się sama. */
+  const pasek = (
+    name: string,
+    lang: 'pl' | 'en',
+    w = 390,
+    h = 844,
+    opcje: { badania?: boolean; pietra?: boolean } = {},
+  ): Shot => ({
     name,
     query: '',
     w,
     h,
     lang,
     run: async (page, base) => {
-      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+      const { badania = false, pietra = false } = opcje;
+      await page.goto(
+        `${base}?demo=przymorze&speed=0&cam=hq,1.3${badania ? '&badania=demo' : ''}${pietra ? '&pietra=1' : ''}`,
+      );
       await waitIdle(page);
+      if (badania) {
+        // ?badania=demo otwiera tablicę z pauzą; Esc ją zamyka i zostaje sam pasek z przyciskiem „Badania”
+        await page.waitForSelector('#tablica:not([hidden]) .tb-kartka');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !window.zm!.badania().open);
+      }
       await page.waitForTimeout(400);
       const r = await page.evaluate(() => {
         const top = document.getElementById('top')!;
@@ -13705,13 +13793,24 @@ function pracaShots(): Shot[] {
             if (a.l < c.r - 1 && c.l < a.r - 1 && a.t < c.b - 1 && c.t < a.b - 1)
               nachodzi.push(`${a.nazwa}/${c.nazwa}`);
           }
+        // wiersze: górne krawędzie przycisków różnią się o kilka pikseli (ikona „Badania” jest niższa od zwykłych), więc
+        // przyciski, których górne krawędzie dzieli mniej niż 12 px, stoją w jednym wierszu
+        const tops = [...new Set(dane.filter((d) => d.przycisk).map((d) => d.t))].sort((x, y) => x - y);
+        const wiersze = tops.filter((t, k) => k === 0 || t - tops[k - 1] >= 12).length;
+        const pozycja = (id: string) => dane.find((d) => d.nazwa === id);
         return {
           pasek: { l: Math.round(tb.left), r: Math.round(tb.right), t: Math.round(tb.top), b: Math.round(tb.bottom) },
           okno: innerWidth,
           przyciski: dane.filter((d) => d.przycisk),
           poza: dane.filter((d) => d.l < 0 || d.r > innerWidth).map((d) => d.nazwa),
           nachodzi,
-          wiersze: new Set(dane.filter((d) => d.przycisk).map((d) => d.t)).size,
+          wiersze,
+          badania: pozycja('btnResearch'),
+          budowa: pozycja('btnBuild'),
+          menu: pozycja('btnMenu'),
+          praca: pozycja('btnPraca'),
+          mapa: pozycja('btnMiasto'),
+          ukrytyBadania: document.getElementById('btnResearch')!.hidden,
         };
       });
       console.log(
@@ -13720,15 +13819,30 @@ function pracaShots(): Shot[] {
       console.log(
         `  wierszy przycisków: ${r.wiersze}, nachodzą: ${r.nachodzi.join(', ') || 'nic'}, poza oknem: ${r.poza.join(', ') || 'nic'}`,
       );
+      const oczekiwane = 10 + (opcje.badania ? 1 : 0) + (opcje.pietra ? 1 : 0);
       for (const id of ['btnPraca', 'btnBuild', 'btnMenu', 'btnAlarm', 'btnMiasto'])
         if (!r.przyciski.some((p) => p.nazwa === id)) throw new Error(`na pasku nie widać przycisku ${id}`);
-      if (r.przyciski.length !== 10)
-        throw new Error(`przycisków na pasku: ${r.przyciski.length} z 10 (tempo ×5, alarm, mapa, praca, budowa, menu)`);
+      if (!!r.badania !== !!opcje.badania)
+        throw new Error(
+          `przycisk „Badania” ${r.badania ? 'jest' : 'nie ma go'} na pasku, a ma ${opcje.badania ? '' : 'nie '}być`,
+        );
+      if (r.ukrytyBadania === !!opcje.badania) throw new Error(`atrybut hidden „Badania”: ${r.ukrytyBadania}`);
+      if (r.przyciski.length !== oczekiwane)
+        throw new Error(
+          `przycisków na pasku: ${r.przyciski.length} z ${oczekiwane} (tempo ×5, alarm, mapa, praca, budowa, menu${opcje.badania ? ', badania' : ''}${opcje.pietra ? ', piętro' : ''})`,
+        );
       if (r.nachodzi.length) throw new Error(`na pasku coś na siebie nachodzi: ${r.nachodzi.join(', ')}`);
       if (r.poza.length) throw new Error(`poza oknem: ${r.poza.join(', ')}`);
       if (r.pasek.b > 200) throw new Error(`pasek zajmuje ${r.pasek.b} px od góry`);
-      // przy 390 px tempo, alarm, praca, budowa i menu mieszczą się w jednym wierszu (drugim), a mapa stoi w pierwszym
-      if (w >= 390 && r.wiersze > 2) throw new Error(`przyciski w ${r.wiersze} wierszach zamiast dwóch`);
+      // tempo, alarm, praca, budowa i menu mieszczą się w jednym wierszu (drugim), a „Mapa” i ikona „Badania” stoją
+      // w pierwszym za zegarem; kafelek „Piętro” (tylko z flagą) wolno mu zawinąć się niżej, jak w pietra-pasek-*
+      if (!opcje.pietra && r.wiersze > 2) throw new Error(`przyciski w ${r.wiersze} wierszach zamiast dwóch`);
+      if (!opcje.pietra && r.badania && r.menu && r.budowa) {
+        if (r.badania.t >= r.budowa.t - 8)
+          throw new Error('ikona „Badania” nie stoi w pierwszym wierszu, nad „Budowa”');
+        if (Math.abs(r.menu.t - r.budowa.t) > 3) throw new Error('„Menu” nie stoi w jednym wierszu z „Budowa”');
+        if (r.mapa && r.badania.l < r.mapa.r - 1) throw new Error('ikona „Badania” wchodzi na „Mapę”');
+      }
     },
   });
 
@@ -13740,6 +13854,10 @@ function pracaShots(): Shot[] {
     panelFokusPrzycisk,
     panelTelefon('praca-panel-telefon', 'pl'),
     panelTelefon('en-praca-panel-telefon', 'en'),
+    panelBadania('praca-panel-badania', 'pl', false),
+    panelBadania('en-praca-panel-badania', 'en', false),
+    panelBadania('praca-panel-badania-telefon', 'pl', true),
+    panelBadania('en-praca-panel-badania-telefon', 'en', true),
     panelTelefonZombie('praca-panel-telefon-zombie', 'pl'),
     panelTelefonZombie('en-praca-panel-telefon-zombie', 'en'),
     pomoc('praca-pomoc', 'pl', false),
@@ -13754,6 +13872,14 @@ function pracaShots(): Shot[] {
     pasek('pasek-telefon', 'pl'),
     pasek('pasek-telefon-en', 'en'),
     pasek('pasek-telefon-360', 'pl', 360, 740),
+    // z pracownią (przycisk „Badania”): 11 przycisków, nadal dwa wiersze
+    pasek('pasek-telefon-badania', 'pl', 390, 844, { badania: true }),
+    pasek('pasek-telefon-badania-en', 'en', 390, 844, { badania: true }),
+    pasek('pasek-telefon-badania-360', 'pl', 360, 740, { badania: true }),
+    pasek('pasek-telefon-badania-360-en', 'en', 360, 740, { badania: true }),
+    // z flagą ?pietra=1 i pracownią naraz: wszystkie przyciski, jakie pasek może mieć
+    pasek('pasek-telefon-pietra-badania', 'pl', 390, 844, { badania: true, pietra: true }),
+    pasek('pasek-telefon-pietra-badania-360', 'pl', 360, 740, { badania: true, pietra: true }),
   ];
 }
 
