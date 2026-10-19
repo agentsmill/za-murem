@@ -2,13 +2,14 @@
 
 import { buildScene, type Scene } from '../../src/render/art/scene.ts';
 import { T } from '../../src/world/terrain.ts';
-import type { World } from '../../src/world/world.ts';
+import type { Tree, World } from '../../src/world/world.ts';
 
-/** mała scena size × size (domyślnie 64, czyli 2 × 2 kawałki) z samą trawą; opcja budynki dokłada prostokąty */
+/** mała scena size × size (domyślnie 64, czyli 2 × 2 kawałki) z samą trawą; opcje: budynki (prostokąty) i drzewa */
 export function malaScena(
   seed = 1,
   size = 64,
   budynki: Array<{ x0: number; y0: number; x1: number; y1: number; levels?: number }> = [],
+  drzewa: Tree[] = [],
 ): Scene {
   const terr = new Uint8Array(size * size).fill(T.GRASS);
   const bid = new Int32Array(size * size).fill(-1);
@@ -41,7 +42,7 @@ export function malaScena(
     bid,
     blocked: new Uint8Array(size * size),
     buildings,
-    trees: [],
+    trees: drzewa,
     pois: [],
     hq: -1,
     seed,

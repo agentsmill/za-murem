@@ -293,6 +293,20 @@ describe('GameView: kwadraty obok domu', () => {
     expect(zapis).toEqual(['scena 1 ta', 'łatka 1 w', 'łatka dom e']);
   });
 
+  it('ścięte drzewo domu przy szwie znika też z drzew obcych kwadratu obok', () => {
+    const v = widok();
+    const drzewo = { x: 62, y: 20, kind: 0 as const, r: 3.4, seed: 5 };
+    const d = malaScena(1, MALY, [], [drzewo]);
+    v.setScene(d);
+    const k = malaScena(2);
+    v.dodajKwadrat(1, 0, k);
+    // drzewo domu 2 m od wschodniej krawędzi sięga kwadratu obok: jest w jego drzewach obcych (w jego układzie: x − 64)
+    expect(k.obce?.flat().map((t) => [t.x, t.y, t.seed])).toContainEqual([62 - MALY, 20, 5]);
+    v.redraw({ felled: [0] });
+    expect(k.obce?.flat().length ?? 0).toBe(0);
+    expect(k.brzeg?.drzewa?.w).toBeUndefined();
+  });
+
   it('kamera mieści się w prostokącie kwadratów, a najmniejszy zoom pokazuje je wszystkie', () => {
     const v = widok(1440, 900);
     v.setScene(dom());

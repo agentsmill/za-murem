@@ -2,7 +2,8 @@
    wielu kwadratów”). Każdy kwadrat ma własną scenę (scene.ts) i rysuje kawałki tylko ze swoich danych, więc przy
    wspólnej krawędzi brakuje mu tego, co leży po drugiej stronie: terenu (krawężnik, brzeg wody i kafelki Wanga patrzą na
    sąsiada), reszty przeciętego budynku (fasada i attyka nie mogą kończyć się na szwie) i cieni, które sąsiad rzuca
-   na ten kwadrat (cień pada w górę i w prawo, więc przychodzi od południa, zachodu i południowego zachodu).
+   na ten kwadrat (cień pada w górę i w prawo, więc przychodzi od południa, zachodu i południowego zachodu), a także
+   drzew sąsiada, których cień i korona sięgają przez szew (rysują się w kawałkach przy szwie jak własne).
    Dane szwu (`DaneSzwu`) to czysty wynik liczony ze światów i stylów obu scen (`daneSzwu`), niewielki, więc idzie do
    workerów jako część łatki sceny; `nalozSzew` stosuje go do sceny (w głównym wątku i w workerze tak samo).
    Wynik nie zależy od kolejności dodawania kwadratów: dane szwu dwóch kwadratów to funkcja ich światów, a nakładanie
@@ -10,7 +11,8 @@
    po nałożeniu: tylko te przy wspólnej krawędzi. Moduł nie zależy od PixiJS ani od DOM. */
 
 import { T } from '../../world/terrain.ts';
-import { type BrylaCienia, type ChunkScene, obliczKolumny, rzucCienie, SUB } from './scene.ts';
+import type { Tree } from '../../world/world.ts';
+import { type BrylaCienia, type ChunkScene, obliczKolumny, rzucCienie, SUB, treeChunks } from './scene.ts';
 
 /** strona kwadratu, po której leży sąsiad (y rośnie na południe) */
 export type Strona = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
@@ -67,15 +69,20 @@ export interface DaneSzwu {
   kont?: Uint8Array;
   /** cień, który budynki sąsiada rzucają na ten kwadrat (s, w, sw); brak, gdy żaden nie sięga */
   sombra?: ProstokatMaski;
+  /** drzewa sąsiada w ZASIEG_DRZEW metrów od tego kwadratu, w układzie tego kwadratu (poza nim); brak, gdy żadnego */
+  drzewa?: Tree[];
 }
 
 /** najdłuższy ciąg budynku za szwem, który ma znaczenie (Uint8; fasada ma najwyżej kilka kafelków) */
 export const MAX_KONT = 255;
+/** drzewa sąsiada dalej niż tyle metrów od kwadratu nie dotykają jego kawałków: korona do 3,6 m i dwa metry zapasu w
+    chunksTouched, cień drzewa w górę do ok. 1,2 + 1,4·r (6,3 m) i w prawo do ok. 1,5·r (5,4 m) */
+export const ZASIEG_DRZEW = 10;
 /** zasięg cienia najwyższego budynku (16 kondygnacji): na północ ok. 10,1 m, na wschód ok. 5,1 m; w oczkach z zapasem */
 const CIEN_PN = 12 * SUB;
 const CIEN_WS = 6 * SUB;
 
-type Zrodlo = Pick<ChunkScene, 'w' | 'styles'>;
+type Zrodlo = Pick<ChunkScene, 'w' | 'styles' | 'treeGone'>;
 
 /** kolumna (x = 0 albo size − 1) i wiersz (y = 0 albo size − 1) terenu jako pas */
 function pas(terr: Uint8Array, size: number, os: 'wiersz' | 'kolumna', nr: number): Uint8Array {
@@ -104,6 +111,21 @@ function kontynuacje(a: Zrodlo, b: Zrodlo, doDolu: boolean): Uint8Array | undefi
     jakis = true;
   }
   return jakis ? out : undefined;
+}
+
+/** Drzewa sąsiada b (leży po stronie `strona` kwadratu a) w ZASIEG_DRZEW metrach od a, w układzie a; pomija ścięte. */
+function drzewaZSasiada(a: Zrodlo, b: Zrodlo & Pick<ChunkScene, 'treeGone'>, strona: Strona): Tree[] | undefined {
+  const size = a.w.size;
+  const [dx, dy] = PRZESUNIECIE[strona];
+  const out: Tree[] = [];
+  b.w.trees.forEach((t, k) => {
+    if (b.treeGone[k]) return;
+    const x = t.x + dx * size;
+    const y = t.y + dy * size;
+    if (x < -ZASIEG_DRZEW || y < -ZASIEG_DRZEW || x > size + ZASIEG_DRZEW || y > size + ZASIEG_DRZEW) return;
+    out.push({ ...t, x, y });
+  });
+  return out.length ? out : undefined;
 }
 
 /** Cień budynków sąsiada b (leży po stronie s, w, sw kwadratu a) w oknie maski kwadratu a. */
@@ -149,27 +171,49 @@ export function daneSzwu(a: Zrodlo, b: Zrodlo, strona: Strona): DaneSzwu {
   const bt = b.w.terr;
   switch (strona) {
     case 'n':
-      return { strona, teren: pas(bt, size, 'wiersz', size - 1), kont: kontynuacje(a, b, false) };
+      return {
+        strona,
+        teren: pas(bt, size, 'wiersz', size - 1),
+        kont: kontynuacje(a, b, false),
+        ...drzewa(a, b, strona),
+      };
     case 's':
       return {
         strona,
         teren: pas(bt, size, 'wiersz', 0),
         kont: kontynuacje(a, b, true),
         sombra: cienZSasiada(a, b, strona),
+        ...drzewa(a, b, strona),
       };
     case 'w':
-      return { strona, teren: pas(bt, size, 'kolumna', size - 1), sombra: cienZSasiada(a, b, strona) };
+      return {
+        strona,
+        teren: pas(bt, size, 'kolumna', size - 1),
+        sombra: cienZSasiada(a, b, strona),
+        ...drzewa(a, b, strona),
+      };
     case 'e':
-      return { strona, teren: pas(bt, size, 'kolumna', 0) };
+      return { strona, teren: pas(bt, size, 'kolumna', 0), ...drzewa(a, b, strona) };
     case 'nw':
-      return { strona, teren: Uint8Array.of(bt[size * size - 1]) };
+      return { strona, teren: Uint8Array.of(bt[size * size - 1]), ...drzewa(a, b, strona) };
     case 'ne':
-      return { strona, teren: Uint8Array.of(bt[(size - 1) * size]) };
+      return { strona, teren: Uint8Array.of(bt[(size - 1) * size]), ...drzewa(a, b, strona) };
     case 'sw':
-      return { strona, teren: Uint8Array.of(bt[size - 1]), sombra: cienZSasiada(a, b, strona) };
+      return {
+        strona,
+        teren: Uint8Array.of(bt[size - 1]),
+        sombra: cienZSasiada(a, b, strona),
+        ...drzewa(a, b, strona),
+      };
     case 'se':
-      return { strona, teren: Uint8Array.of(bt[0]) };
+      return { strona, teren: Uint8Array.of(bt[0]), ...drzewa(a, b, strona) };
   }
+}
+
+/** pole `drzewa` danych szwu, gdy sąsiad ma drzewa w zasięgu */
+function drzewa(a: Zrodlo, b: Zrodlo, strona: Strona): { drzewa?: Tree[] } {
+  const d = drzewaZSasiada(a, b, strona);
+  return d ? { drzewa: d } : {};
 }
 
 /** Nakłada dane szwu na scenę (w głównym wątku i w workerze): pas terenu, ciągi budynków (south i run kolumn liczą się
@@ -205,12 +249,31 @@ export function nalozSzew(sc: ChunkScene, d: DaneSzwu): void {
       break;
   }
   if (d.strona === 'n' || d.strona === 's') obliczKolumny(sc.w, sc.south, sc.run, br.kontN, br.kontS);
+  // drzewa sąsiada po tej stronie (podmiana, nie dokładanie) i z nich drzewa obce po kawałkach
+  const dz = { ...br.drzewa };
+  if (d.drzewa) dz[d.strona] = d.drzewa;
+  else delete dz[d.strona];
+  br.drzewa = Object.keys(dz).length ? dz : undefined;
+  przeliczObce(sc, dz);
   const m = d.sombra;
   if (m) {
     const S = sc.w.size * SUB;
     for (let y = 0; y < m.h; y++)
       for (let x = 0; x < m.w; x++) if (m.dane[y * m.w + x]) sc.shadow[(m.y + y) * S + m.x + x] = 1;
   }
+}
+
+/** drzewa obce po kawałkach z drzew sąsiadów po wszystkich stronach (zob. ChunkScene.obce) */
+function przeliczObce(sc: ChunkScene, drzewa: Partial<Record<Strona, Tree[]>>): void {
+  const wszystkie = Object.values(drzewa).flatMap((l) => l ?? []);
+  if (!wszystkie.length) {
+    sc.obce = undefined;
+    return;
+  }
+  const po: Tree[][] = Array.from({ length: sc.chunks * sc.chunks }, () => []);
+  for (const t of wszystkie) for (const c of treeChunks(t, sc.chunks)) po[c].push(t);
+  for (const l of po) l.sort((x, y) => x.y - y.y || x.x - y.x);
+  sc.obce = po;
 }
 
 /** Kawałki sceny (numer cy·chunks + cx), które zmienia szew po stronie `strona`: te przy wspólnej krawędzi, dla

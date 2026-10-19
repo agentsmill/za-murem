@@ -9,6 +9,7 @@
    (`brzeg`: pasy terenu za krawędziami i ciągi budynków przecinanych szwem, zob. szew.ts). Bez nich (dom, gra bez
    kwadratów) scena i rysowanie są takie jak zawsze. */
 
+import { hashString } from '../../core/rng.ts';
 import type { Pt } from '../../world/geo.ts';
 import { fillRing } from '../../world/raster.ts';
 import { type Dir, T, type Tree, type World, type WorldBuilding } from '../../world/world.ts';
@@ -17,6 +18,7 @@ import { h2 } from './hash.ts';
 import { kontekstyLookow, type LookBudynku, type LookKontekst, lookBudynku } from './lookBudynku.ts';
 import { C, HOUSE_WALLS, shade, WALLS } from './palette.ts';
 import { type Blok, type Grafika, type GrafikaKawalkow, pasFasady, pietraWygladu } from './pixellab.ts';
+import type { Strona } from './szew.ts';
 
 export const TILE = 32; // pikseli grafiki na metr
 export const CHUNK = 32; // kafelków w boku kawałka
@@ -85,6 +87,10 @@ export interface ChunkScene {
   poczatek?: { x: number; y: number };
   /** pasy sąsiadów za krawędziami kwadratu; brak: nikogo obok (rysowanie jak zawsze, krawędź kwadratu to brzeg mapy) */
   brzeg?: Brzeg;
+  /** drzewa sąsiadów, których cień albo korona sięga kawałków tej sceny (w jej układzie), po numerach kawałków i posortowane
+      po y i x: rysują się w kawałkach przy szwie jak własne drzewa (cień pada w górę i w prawo, korona wystaje poza kwadrat);
+      brak: nikogo obok. Liczy je nalozSzew z brzeg.drzewa. */
+  obce?: Tree[][];
 }
 
 /**
@@ -105,6 +111,9 @@ export interface Brzeg {
   se?: number;
   kontN?: Uint8Array;
   kontS?: Uint8Array;
+  /** drzewa sąsiada po każdej stronie, które sięgają tego kwadratu, w jego układzie (współrzędne mogą być ujemne albo
+      większe od rozmiaru); z nich liczy się ChunkScene.obce */
+  drzewa?: Partial<Record<Strona, Tree[]>>;
 }
 
 export interface Scene extends ChunkScene {
@@ -146,6 +155,7 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
     pietro: sc.pietro,
     ...(sc.poczatek ? { poczatek: sc.poczatek } : {}),
     ...(sc.brzeg ? { brzeg: sc.brzeg } : {}),
+    ...(sc.obce ? { obce: sc.obce } : {}),
   };
 }
 
@@ -263,6 +273,12 @@ export interface OpcjeSceny {
   ziarnoStylu?: (b: WorldBuilding) => number | undefined;
   /** gotowy styl budynku, gdy kawałek budynku domu leży w tym kwadracie: dom wygrywa na szwie (patrz przesunStyl) */
   stylDomu?: (b: WorldBuilding) => BStyle | undefined;
+}
+
+/** Ziarno stylu budynku kwadratu obok domu z jego klucza (zm:klucz) i ziarna gry: ten sam budynek po obu stronach szwu
+    ma ten sam kolor ściany, szum dachu i zapalone okna, niezależnie od numeru w kwadracie. */
+export function ziarnoStyluZKlucza(seedGry: number, klucz: string): number {
+  return Number.parseInt(hashString(`${seedGry}:styl:${klucz}`), 16) | 0;
 }
 
 /** Styl budynku domu w układzie kwadratu, którego początek leży o (dx, dy) pikseli od początku domu: grzbiet dachu

@@ -6,7 +6,9 @@
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta”, klawisz M i minimapa w rogu ekranu
    (src/ui/minimapa.ts), gra stoi przy otwartym oknie) z wysyłaniem wypraw dziennych (src/ui/wyprawa.ts: wybór osób,
-   podsumowanie, potwierdzenie), zapis i sterowanie. */
+   podsumowanie, potwierdzenie), zapis i sterowanie. ?kwadraty=3x3 (albo lista „1,0;0,-1”, src/world/kwadraty.ts) dokłada do
+   widoku kwadraty miasta obok domu z danych dema (public/demo/<klucz>-kwadraty.json), z mgłą „brak danych” tam, gdzie
+   danych nie ma: tylko do oglądania, symulacja i polecenia znają sam dom (`dodajKwadraty`, window.zm.kwadraty). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -41,7 +43,7 @@ import { nazwaDoOkolicyZDanych } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { GraSieciowa } from './net/gra.ts';
-import { buildScene, TILE } from './render/art/scene.ts';
+import { buildScene, type OpcjeSceny, przesunStyl, type Scene, TILE, ziarnoStyluZKlucza } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
 import { wczytajGrafike } from './render/grafika.ts';
 import { type Light, lightAt } from './render/light.ts';
@@ -144,12 +146,15 @@ import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui
 import { clearSave, pietraWlaczone, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { drogiSheet, epilogSheet, statyEpilogu } from './ui/zwyciestwo.ts';
-import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
+import type { Geo } from './world/geo.ts';
+import { kluczBudynku } from './world/klucze.ts';
+import { budynkiZDomem, czytajKwadraty, kluczKwadratu, ukladDomu } from './world/kwadraty.ts';
+import { demoList, type Loaded, loadAddress, loadDemo, loadDemoKwadraty } from './world/load.ts';
 import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
 import { KafelkiMiasta } from './world/miastoKafelki.ts';
 import { pobierzKafelek } from './world/mvt.ts';
 import { listaPieter } from './world/pietra.ts';
-import { buildWorld, T, type World } from './world/world.ts';
+import { buildKwadrat, buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -230,11 +235,25 @@ declare global {
       pietro: (L: number) => void;
       /** widok pięter: czy włączony w tej grze, wybrane piętro i lista pięter do wyboru (do zrzutów i testów) */
       pietra: () => { wlaczone: boolean; pietro: number; lista: number[] };
+      /** kwadraty miasta obok domu z ?kwadraty= (do zrzutów i pomiarów): klucz „sx,sy”, numer w widoku, czas budowy świata
+          i sceny w ms; q −1 i brakDanych dla kwadratu bez danych (prawdziwy adres, brzeg danych dema) */
+      kwadraty: readonly KwadratGry[];
     };
   }
 }
 
+/** kwadrat miasta z ?kwadraty= w tej grze (window.zm.kwadraty) */
+interface KwadratGry {
+  klucz: string;
+  q: number;
+  msSwiat: number;
+  msScena: number;
+  brakDanych: boolean;
+}
+
 const view = new GameView();
+/** kwadraty obok domu tej gry (window.zm.kwadraty); pusta lista bez ?kwadraty= */
+let kwadratyGry: KwadratGry[] = [];
 let sim: Sim | null = null;
 let gov: GovState | null = null;
 let loaded: Loaded | null = null;
@@ -657,6 +676,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   selektorPieter.zamknij();
   $('floorSel').hidden = !pietra;
   selektorPieter.odswiez(pietraLista, 0, null);
+  // ?kwadraty=: kwadraty miasta obok domu do oglądania (zrzuty i pomiary); symulacja ich nie zna
+  kwadratyGry = await dodajKwadraty(data, geo, world, scene, art, pietra);
+  if (window.zm) window.zm.kwadraty = kwadratyGry;
   // ?godzina=22 (albo ?hour=22, także z ułamkiem: 18.5 to 18:30): pora dnia na start
   const hour = params.get('godzina') ?? params.get('hour');
   if (hour !== null && !saved)
@@ -718,8 +740,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   else if (cam) {
     // cam=x,y,zoom w kafelkach albo cam=hq,zoom (siedziba) albo cam=all (całe osiedle)
     const parts = cam.split(',');
-    if (parts[0] === 'all')
-      Object.assign(view.cam, { x: (world.size * TILE) / 2, y: (world.size * TILE) / 2, zoom: view.minZoom });
+    if (parts[0] === 'all') Object.assign(view.cam, { ...view.srodek, zoom: view.minZoom });
     else if (parts[0] === 'hq') Object.assign(view.cam, { x: hx, y: hy, zoom: Number(parts[1]) || 1 });
     else {
       const [x, y, z] = parts.map(Number);
@@ -727,7 +748,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     }
   } else {
     // najpierw całe osiedle, potem zjazd do siedziby
-    Object.assign(view.cam, { x: (world.size * TILE) / 2, y: (world.size * TILE) / 2, zoom: view.minZoom });
+    Object.assign(view.cam, { ...view.srodek, zoom: view.minZoom });
     flyTo(hx, hy, 1, 2400);
   }
   // ?swiatla=test zapala kozę i stawia przy zarządzie ognisko i lampę warty, ze światłami
@@ -778,6 +799,73 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   zastosujImiona();
   // z zapisu: raport albo karta, które czekały
   if (saved) nextPrompt();
+}
+
+/**
+ * Kwadraty miasta obok domu z parametru ?kwadraty= (czytajKwadraty): dla dema ich dane z public/demo/<klucz>-kwadraty.json
+ * (loadDemoKwadraty), dla prawdziwego adresu niczego nie pobieramy, więc stoi tam mgła z napisem „brak danych”. Każdy
+ * kwadrat to świat z buildKwadrat (z surowym geo domu, żeby budynki przy szwie prostowały się jak w domu, i z domem do
+ * poziomów pięter), scena z ziarnem stylu z klucza budynku i stylem domu na szwie, i dodajKwadrat w widoku. Symulacja
+ * dostaje tylko dom. Zwraca czasy budowy do window.zm.kwadraty.
+ */
+async function dodajKwadraty(
+  data: Loaded,
+  geo: Geo,
+  world: World,
+  scene: Scene,
+  art: Awaited<typeof grafika>,
+  pietra: boolean,
+): Promise<KwadratGry[]> {
+  const lista = czytajKwadraty(params.get('kwadraty'));
+  const out: KwadratGry[] = [];
+  if (!lista.length) return out;
+  let dane: Record<string, Geo> = {};
+  if (data.src === 'demo' && data.key) {
+    try {
+      dane = await loadDemoKwadraty(data.key);
+    } catch (err) {
+      console.warn('Kwadraty obok domu: brak danych dema', err);
+    }
+  }
+  const uklad = ukladDomu(geo, world);
+  const bok = world.size * TILE;
+  for (const [sx, sy] of lista) {
+    const klucz = kluczKwadratu(sx, sy);
+    const g = dane[klucz];
+    if (!g) {
+      view.dodajBrakDanych(sx, sy);
+      out.push({ klucz, q: -1, msSwiat: 0, msScena: 0, brakDanych: true });
+      continue;
+    }
+    try {
+      const t0 = performance.now();
+      const w = buildKwadrat(g, { seed, uklad, sx, sy, geoDomu: geo, ...(pietra ? { pietra: true, dom: world } : {}) });
+      const t1 = performance.now();
+      // budynek, który ma kawałek w domu, wygląda tak jak w domu (dom wygrywa na szwie); inne dostają ziarno z klucza
+      const zDomem = budynkiZDomem(world, w, sx, sy);
+      const opcje: OpcjeSceny = {
+        poczatek: { x: sx * bok, y: sy * bok },
+        ziarnoStylu: (b) => {
+          const k = kluczBudynku(b);
+          return k ? ziarnoStyluZKlucza(seed, k) : undefined;
+        },
+        stylDomu: (b) => {
+          const hb = zDomem.get(b.id);
+          return hb === undefined ? undefined : przesunStyl(scene.styles[hb], sx * bok, sy * bok);
+        },
+      };
+      const sc = buildScene(w, art, opcje);
+      const q = view.dodajKwadrat(sx, sy, sc);
+      out.push({ klucz, q, msSwiat: t1 - t0, msScena: performance.now() - t1, brakDanych: false });
+    } catch (err) {
+      console.warn(`Kwadrat ${klucz}: nie udało się zbudować`, err);
+      view.dodajBrakDanych(sx, sy);
+      out.push({ klucz, q: -1, msSwiat: 0, msScena: 0, brakDanych: true });
+    }
+    // oddech dla przeglądarki między kwadratami (budowa jednego to dziesiątki milisekund)
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  return out;
 }
 
 /**
@@ -2180,6 +2268,8 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   if (zablokowanyKlik(sx, sy)) return;
   const ids = [...selected];
   const tile = view.tileAt(sx, sy);
+  // kwadraty obok domu są tylko do oglądania: polecenie poza domem gra ignoruje
+  if (tile < 0) return;
   const items = commandsAt(sim.st, sim.w, ids, tile);
   // gra z sąsiadami: „Zajmij klatkę” tylko w menu (z potwierdzeniem), nigdy od stuknięcia
   const zSieci = menu ? siec.menu(sim, tile) : [];
@@ -2256,6 +2346,7 @@ let budFocus = -1;
 function focusTile(sx: number, sy: number) {
   if (!sim || zablokowanyKlik(sx, sy)) return;
   const tile = view.tileAt(sx, sy);
+  if (tile < 0) return;
   aptFocus = aptAt(sim.w, tile);
   const bid = tile >= 0 ? sim.w.bid[tile] : -1;
   budFocus = aptFocus < 0 && bid >= 0 && bid !== sim.w.hq ? bid : -1;
@@ -2432,6 +2523,7 @@ function startPlacing(kind: BuildKind) {
 function aimAt(sx: number, sy: number) {
   if (!sim || !placing) return;
   const t = view.tileAt(sx, sy);
+  if (t < 0) return;
   const { w: fw, h: fh } = footprint(placing.kind, placing.rot);
   placing.x = (t % sim.w.size) - Math.floor((fw - 1) / 2);
   placing.y = Math.floor(t / sim.w.size) - Math.floor((fh - 1) / 2);
@@ -2713,6 +2805,8 @@ const endPointer = (e: PointerEvent) => {
     }
     return;
   }
+  // klik poza domem, gdy obok są kwadraty tylko do oglądania: gra go ignoruje (nic nie zaznacza, nie rozkazuje, nie stawia)
+  if (view.maKwadraty && view.tileAt(e.offsetX, e.offsetY) < 0) return;
   const hit = view.pick(sim.st, e.offsetX, e.offsetY);
   // mieszkaniec z osobą (zarząd miał pierwszeństwo niżej): karta do odczytu, bez zmiany zaznaczenia i bez poleceń
   const lok = view.pickResident(sim.st, e.offsetX, e.offsetY);
@@ -2982,6 +3076,7 @@ if (attrib) bars.observe(attrib);
     },
     pietro: wybierzPietro,
     pietra: () => ({ wlaczone: pietraGry, pietro: view.pietro, lista: [...pietraLista] }),
+    kwadraty: [],
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });

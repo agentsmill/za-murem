@@ -7,13 +7,13 @@
    ścieżkami (kominy, anteny, maszynownie) i drzewa nie wchodzą do porównania. */
 
 import { describe, expect, it } from 'vitest';
-import { drawChunk } from '../../src/render/art/chunkArt.ts';
+import { drawChunk, drzewaKawalka } from '../../src/render/art/chunkArt.ts';
 import { vnoise } from '../../src/render/art/hash.ts';
 import type { Grafika } from '../../src/render/art/pixellab.ts';
 import { buildScene, CHUNK, chunkSceneOf, type Scene, SUB, TILE } from '../../src/render/art/scene.ts';
 import { daneSzwu, kawalkiSzwu, nalozSzew, PRZESUNIECIE, STRONY, type Strona } from '../../src/render/art/szew.ts';
 import { T } from '../../src/world/terrain.ts';
-import type { World, WorldBuilding } from '../../src/world/world.ts';
+import type { Tree, World, WorldBuilding } from '../../src/world/world.ts';
 import { atrapaPlotna, grafikaZPlikow } from './grafika-pomoc.ts';
 
 const N = 64;
@@ -47,6 +47,31 @@ const BUDYNKI: Prost[] = [
   { x0: 84, y0: 52, x1: 96, y1: 74, cls: 'blok', levels: 16 }, // wysoki przez szew poziomy w B i D (fasada przez szew)
 ];
 
+/** drzewa opisu globalnego (współrzędne w świecie 2N × 2N): przy szwach (pień kilka metrów od nich, korony i cienie
+    sięgają przez szew), na szwie pionowym x = 64 i poziomym y = 64, w narożniku i z dala od szwów; różne wielkości */
+const DRZEWA: Tree[] = [
+  { x: 62.2, y: 20.5, kind: 0, r: 3.6, seed: 11 },
+  { x: 65.8, y: 22.1, kind: 1, r: 3.0, seed: 12 },
+  { x: 30.4, y: 61.9, kind: 0, r: 3.4, seed: 13 },
+  { x: 31.2, y: 66.3, kind: 0, r: 2.2, seed: 14 },
+  { x: 61.5, y: 61.7, kind: 0, r: 3.6, seed: 15 },
+  { x: 66.2, y: 66.4, kind: 1, r: 3.1, seed: 16 },
+  { x: 62.6, y: 66.1, kind: 0, r: 2.6, seed: 17 },
+  { x: 66.7, y: 62.4, kind: 2, r: 1.4, seed: 18 },
+  { x: 100.3, y: 40.2, kind: 0, r: 3.5, seed: 19 },
+  { x: 5.5, y: 100.8, kind: 0, r: 2.9, seed: 20 },
+  { x: 90.9, y: 61.8, kind: 1, r: 3.3, seed: 21 },
+  { x: 91.4, y: 66.6, kind: 0, r: 3.6, seed: 22 },
+  { x: 3.1, y: 3.4, kind: 0, r: 3.0, seed: 23 },
+  { x: 123.4, y: 123.2, kind: 0, r: 3.2, seed: 24 },
+  { x: 40.0, y: 40.0, kind: 0, r: 3.5, seed: 25 },
+  { x: 40.2, y: 69.9, kind: 1, r: 3.4, seed: 26 },
+  { x: 76.5, y: 33.3, kind: 0, r: 3.6, seed: 27 },
+  { x: 50.8, y: 10.7, kind: 0, r: 3.1, seed: 28 },
+  { x: 70.1, y: 100.4, kind: 0, r: 3.6, seed: 29 },
+  { x: 12.4, y: 80.8, kind: 1, r: 2.5, seed: 30 },
+];
+
 /** którą przekątną szachownicy wokół wspólnego rogu zajmuje trawa: 0 to (63, 63) i (64, 64), 1 to (64, 63) i (63, 64) */
 let przekatna = 0;
 
@@ -67,7 +92,7 @@ function teren(gx: number, gy: number): number {
 
 /** świat okna (ox, oy, size) opisu globalnego: teren i budynki przycięte do okna, numery budynków w kolejności opisu;
     scalony (ox = oy = 0, size = 2N) ma jeden numer na budynek */
-function swiat(ox: number, oy: number, size: number, budynki: readonly Prost[]): World {
+function swiat(ox: number, oy: number, size: number, budynki: readonly Prost[], drzewa: readonly Tree[] = []): World {
   const terr = new Uint8Array(size * size);
   const bid = new Int32Array(size * size).fill(-1);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) terr[y * size + x] = teren(ox + x, oy + y);
@@ -107,7 +132,9 @@ function swiat(ox: number, oy: number, size: number, budynki: readonly Prost[]):
     bid,
     blocked: new Uint8Array(size * size),
     buildings,
-    trees: [],
+    trees: drzewa
+      .filter((t) => t.x >= ox && t.x < ox + size && t.y >= oy && t.y < oy + size)
+      .map((t) => ({ ...t, x: t.x - ox, y: t.y - oy })),
     pois: [],
     hq: -1,
     seed: 1,
@@ -140,13 +167,18 @@ function strona(dx: number, dy: number): Strona {
 
 /** cztery sceny kwadratów połączone szwami z początkiem w układzie miasta i scena złożona (wzorzec); style budynków
     przeciętych szwem są wspólne (w grze robi to ziarno z klucza budynku i styl domu), dachy bez detali ścieżkami */
-function uklad(art: Grafika | null, polaczone = true, budynki: readonly Prost[] = BUDYNKI) {
-  const scalony = swiat(0, 0, 2 * N, budynki);
+function uklad(
+  art: Grafika | null,
+  polaczone = true,
+  budynki: readonly Prost[] = BUDYNKI,
+  drzewa: readonly Tree[] = [],
+) {
+  const scalony = swiat(0, 0, 2 * N, budynki, drzewa);
   const wzor = buildScene(scalony, art);
   for (const s of wzor.styles) if (s.roof === 'tar') s.roof = 'gravel';
   const sceny = new Map<string, Scene>();
   for (const [sx, sy] of KWADRATY) {
-    const w = swiat(sx * N, sy * N, N, budynki);
+    const w = swiat(sx * N, sy * N, N, budynki, drzewa);
     const sc = buildScene(w, art, { poczatek: { x: sx * N * TILE, y: sy * N * TILE } });
     // wspólny styl: ten sam budynek opisu ma styl budynku ze sceny złożonej (jej numery to numery opisu)
     for (const b of w.buildings) sc.styles[b.id] = { ...wzor.styles[numerOpisu(w, sx * N, sy * N, b.id, budynki)] };
@@ -261,6 +293,44 @@ describe('szwy między kwadratami: kawałki przy szwie jak w jednej scenie', () 
     expect(zCieniem).toBeGreaterThan(1000);
   });
 
+  it('drzewa: cienie i korony drzew sąsiada, które sięgają kawałka przez szew, rysują się w nim jak w scenie złożonej', () => {
+    // ścięte drzewa (tu seed 13 i 22 przy szwach) nie rysują się ani u siebie, ani jako obce u sąsiada: szwy nakłada się po
+    // ścięciu, więc scena sąsiada ich nie dostaje
+    const { wzor, sceny } = uklad(null, false, BUDYNKI, DRZEWA);
+    for (const sc of [wzor, ...sceny.values()])
+      sc.w.trees.forEach((t, k) => {
+        if (t.seed === 13 || t.seed === 22) sc.treeGone[k] = 1;
+      });
+    for (const [sx, sy] of KWADRATY)
+      for (const strona of STRONY) {
+        const [dx, dy] = PRZESUNIECIE[strona];
+        const sasiad = sceny.get(`${sx + dx},${sy + dy}`);
+        const sc = sceny.get(`${sx},${sy}`) as Scene;
+        if (sasiad) nalozSzew(sc, daneSzwu(sc, sasiad, strona));
+      }
+    let zPozyczonymi = 0;
+    for (let cy = 0; cy < 2 * CHUNKS; cy++)
+      for (let cx = 0; cx < 2 * CHUNKS; cx++) {
+        const sx = Math.floor(cx / CHUNKS);
+        const sy = Math.floor(cy / CHUNKS);
+        const sc = sceny.get(`${sx},${sy}`) as Scene;
+        const jak = (s: Scene, ox: number, oy: number, x: number, y: number) =>
+          drzewaKawalka(s, x, y).map((d) => `${d.t.seed}:${d.t.x + ox}:${d.t.y + oy}:${d.sucha ? 1 : 0}`);
+        const oczekiwane = jak(wzor, 0, 0, cx, cy);
+        const dane = jak(sc, sx * N, sy * N, cx - sx * CHUNKS, cy - sy * CHUNKS);
+        expect(dane, `kawałek (${cx},${cy})`).toEqual(oczekiwane);
+        if (
+          drzewaKawalka(sc, cx - sx * CHUNKS, cy - sy * CHUNKS).length >
+          (sc.treesBy[(cy % CHUNKS) * CHUNKS + (cx % CHUNKS)] ?? []).length
+        )
+          zPozyczonymi++;
+      }
+    // są kawałki, w których rysuje się drzewo spoza kwadratu (test sprawdza coś), a ścięte nie rysują się nigdzie
+    expect(zPozyczonymi).toBeGreaterThan(4);
+    for (const sc of sceny.values())
+      for (const l of sc.obce ?? []) for (const t of l) expect([13, 22]).not.toContain(t.seed);
+  });
+
   it('wynik nie zależy od kolejności nakładania szwów, a nałożenie drugi raz nic nie zmienia', () => {
     const a = uklad(null).sceny;
     const b = uklad(null).sceny;
@@ -279,6 +349,7 @@ describe('szwy między kwadratami: kawałki przy szwie jak w jednej scenie', () 
       expect(y.south).toEqual(x.south);
       expect(y.run).toEqual(x.run);
       expect(y.brzeg).toEqual(x.brzeg);
+      expect(y.obce).toEqual(x.obce);
     }
   });
 

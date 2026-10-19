@@ -56,7 +56,16 @@ import {
 import { type Grafika, type PostacLudzi, rzeczSprite } from './art/pixellab.ts';
 import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec } from './art/rzeczy.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
-import { daneSzwu, kawalkiSzwu, PRZECIWNA, PRZESUNIECIE, STRONY, type Strona } from './art/szew.ts';
+import {
+  daneSzwu,
+  kawalkiSzwu,
+  PRZECIWNA,
+  PRZESUNIECIE,
+  STRONY,
+  type Strona,
+  stronaZPrzesuniecia,
+  ZASIEG_DRZEW,
+} from './art/szew.ts';
 import { mockWear, type WearMock } from './atrapy.ts';
 import { BuildLayer, type BuildPlan, type Placement } from './buildLayer.ts';
 import {
@@ -591,6 +600,25 @@ export class GameView {
     for (const k of kawalkiSzwu(kv.scene.chunks, strona)) this.uniewaznij(kv.slots[k]);
   }
 
+  /** Po ścięciu drzew domu: kwadraty obok, do których sięgały, dostają szew od domu od nowa (jego drzewa obce bez ściętych). */
+  private odswiezDrzewaPrzezSzwy(sciete: readonly { x: number; y: number }[]): void {
+    const dom = this.scene;
+    if (!dom) return;
+    const size = dom.w.size;
+    for (const kv of this.kw) {
+      if (Math.abs(kv.sx) > 1 || Math.abs(kv.sy) > 1) continue;
+      // drzewo domu w układzie kwadratu obok: przesunięte o −(sx, sy) rozmiarów
+      const blisko = sciete.some((t) => {
+        const x = t.x - kv.sx * size;
+        const y = t.y - kv.sy * size;
+        return x >= -ZASIEG_DRZEW && y >= -ZASIEG_DRZEW && x <= size + ZASIEG_DRZEW && y <= size + ZASIEG_DRZEW;
+      });
+      if (!blisko) continue;
+      const strona = stronaZPrzesuniecia(-kv.sx, -kv.sy);
+      this.nalozSzew(kv, daneSzwu(kv.scene, dom, strona), strona);
+    }
+  }
+
   /** nowa wersja kawałka: tekstury sprzed zmiany widać, dopóki nie przyjdą nowe */
   private uniewaznij(s: ChunkSlot): void {
     s.ver++;
@@ -644,6 +672,8 @@ export class GameView {
     applyScenePatch(sc, patch);
     const touched = chunksTouched(sc, ch);
     this.painter.patch(patch);
+    // ścięte drzewo domu przy szwie przestaje rzucać cień i koronę na kwadraty obok
+    if (ch.felled?.length && this.kw.length) this.odswiezDrzewaPrzezSzwy(ch.felled.map((k) => sc.w.trees[k]));
     for (const k of touched) {
       const s = this.slots[k];
       s.ver++;

@@ -8,7 +8,7 @@
    w tym miejscu attyki, krawędzi dachu ani fasady (ciągnie się dalej u sąsiada). Bez tych pól rysunek jest taki jak zawsze. */
 
 import type { DamageKind } from '../../world/apts.ts';
-import { T } from '../../world/world.ts';
+import { T, type Tree } from '../../world/world.ts';
 import { describeTile, IN } from '../section.ts';
 import { type AnyCanvas, type Ctx2D, ctx2d, newCanvas } from './canvas.ts';
 import { h2, vnoise } from './hash.ts';
@@ -741,14 +741,14 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
   }
   // cienie drzew: miękkie elipsy w trzech warstwach (każda w jednej ścieżce, żeby nakładające się
   // nie ciemniały podwójnie), od szerokiej i jasnej do węższej i ciemniejszej w środku; ścięte drzewa
-  // (treeGone) już się nie rysują, suche (bez liści) ma cień lżejszy i mniejszy
-  const list = sc.treesBy[cy * sc.chunks + cx].filter((k) => !sc.treeGone[k]);
-  const shade = (ks: number[], k: number, a: number) => {
-    if (!ks.length) return;
+  // (treeGone) już się nie rysują, suche (bez liści) ma cień lżejszy i mniejszy; drzewa sąsiednich kwadratów, które
+  // sięgają kawałka przez szew, rysują się razem z własnymi
+  const list = drzewaKawalka(sc, cx, cy);
+  const shade = (ds: readonly DrzewoKawalka[], k: number, a: number) => {
+    if (!ds.length) return;
     for (const [m, f] of SOFT) {
       ctx.beginPath();
-      for (const ti of ks) {
-        const t = w.trees[ti];
+      for (const { t } of ds) {
         const sx = (t.x + t.r * 0.45) * TILE;
         const sy = (t.y - 1.2 - t.r * 0.55) * TILE;
         const rx = t.r * TILE * 0.95 * k * m;
@@ -760,24 +760,58 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
     }
   };
   shade(
-    list.filter((k) => k !== sc.dryTree),
+    list.filter((d) => !d.sucha),
     1,
     0.3,
   );
   shade(
-    list.filter((k) => k === sc.dryTree),
+    list.filter((d) => d.sucha),
     0.8,
     0.13,
   );
   // drzewa od tyłu do przodu, ale tylko z daleka: z bliska stoją jako sprite'y w warstwie pionków
   // (treeLayer.ts), sortowane po y razem z pionkami
   if (s < TILE)
-    for (const k of list) {
-      const t = w.trees[k];
-      const sp = k === sc.dryTree ? deadTree(t) : treeSprite(t);
+    for (const { t, sucha } of list) {
+      const sp = sucha ? deadTree(t) : treeSprite(t);
       ctx.drawImage(sp.canvas, t.x * TILE - sp.ax, t.y * TILE - sp.ay);
     }
   ctx.restore();
+}
+
+/** drzewo rysowane w kawałku: opis i czy to suche drzewo (bez liści) */
+export interface DrzewoKawalka {
+  t: Tree;
+  sucha: boolean;
+}
+
+/**
+ * Drzewa rysowane w kawałku (cx, cy) w kolejności od tyłu do przodu (rosnące y, potem x): własne, które nie są ścięte,
+ * i obce z kwadratów obok, których cień albo korona sięga kawałka przez szew (sc.obce). Bez obcych to lista z treesBy,
+ * jak zawsze. Współrzędne w układzie sceny.
+ */
+export function drzewaKawalka(sc: ChunkScene, cx: number, cy: number): DrzewoKawalka[] {
+  const k = cy * sc.chunks + cx;
+  const trees = sc.w.trees;
+  const wlasne: DrzewoKawalka[] = [];
+  for (const i of sc.treesBy[k]) if (!sc.treeGone[i]) wlasne.push({ t: trees[i], sucha: i === sc.dryTree });
+  const obce = sc.obce?.[k];
+  if (!obce?.length) return wlasne;
+  // scalenie dwóch list posortowanych po (y, x); przy remisie własne pierwsze
+  const out: DrzewoKawalka[] = [];
+  let a = 0;
+  let b = 0;
+  while (a < wlasne.length || b < obce.length) {
+    if (b >= obce.length) out.push(wlasne[a++]);
+    else if (a >= wlasne.length) out.push({ t: obce[b++], sucha: false });
+    else {
+      const w = wlasne[a].t;
+      const o = obce[b];
+      if (w.y < o.y || (w.y === o.y && w.x <= o.x)) out.push(wlasne[a++]);
+      else out.push({ t: obce[b++], sucha: false });
+    }
+  }
+  return out;
 }
 
 /** warstwy miękkiego cienia drzewa: skala elipsy i udział krycia (razem w środku pełne krycie) */
