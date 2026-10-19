@@ -3,7 +3,8 @@
    w stanie. Stan to zwykły obiekt (JSON), rysowanie tylko go czyta. Ten sam świat, ziarno i polecenia dają ten sam
    stan. Bez wnętrza siedziby (świat sprzed M1) zarząd stoi, a rzeczy, ciepła i samouczka nie ma. Z opcją
    `mieszkancy` (krok 5, src/sim/lokatorzy.ts) zarząd i mieszkańcy siedziby mają osoby z generatora mieszkańców;
-   bez niej stan jest taki jak przed tą opcją. */
+   bez niej stan jest taki jak przed tą opcją. Własna praca bezczynnego zarządu (think) idzie według priorytetów
+   osób z src/sim/praca.ts: po potrzebach, zimnie i gasnącej kozie biorą rodzaje pracy po kolei. */
 
 import { PROFS } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
@@ -120,7 +121,10 @@ import {
 import { labelRegions, nearestFree, nearestInRegion, PathFinder } from './path.ts';
 import { type FenceState, fenceShape, gateTiles, type Hole, initFence, PATCH_HP, REINFORCED_HP } from './perimeter.ts';
 import {
+  automatRusza,
   domyslnyPriorytet,
+  kolejnoscOsoby,
+  NOWE,
   PROGI_DOMYSLNE,
   type PracaStan,
   type Priorytet,
@@ -129,6 +133,7 @@ import {
   RODZAJE,
   type RodzajPracy,
   type UstawieniaOsoby,
+  WPISY,
 } from './praca.ts';
 import {
   atakOdRazu,
@@ -346,6 +351,13 @@ const M2_JOBS = new Set<JobKind>([
   'mug',
   'shoo',
 ]);
+/** Prace spoza fali 1, które zarząd bierze sam w ramach pracy ludzi (src/sim/praca.ts) albo dziś tylko na polecenie:
+    ścinanie, łatanie siatki, dzidy i noszenie drewna. Bez polecenia (`!order`) przerywa je to samo co prace M2:
+    pilna potrzeba, noc i wróg na podwórku, kiedy pracujący jest na zewnątrz; `haul` nocą tylko wtedy, gdy kafelek
+    jego sterty leży poza siatką (noszenie w obrębie siatki trwa i w nocy). Prace z polecenia przerywają się jak dziś. */
+const AUTO_JOBS = new Set<JobKind>(['chop', 'patch', 'craft', 'haul']);
+/** poniżej tego ciepła zimno jest pilne: przerywa prace M2 i AUTO_JOBS, a think() grzeje przed każdą pracą */
+const URGENT_WARM = 10;
 /** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
 export const GATHER_NEAR = 8;
 /** kuchnia społeczna: porcja z niej to 85% zwykłej (nic się nie marnuje) */
@@ -3105,8 +3117,8 @@ export class Sim {
   }
 
   /** wolny stos drewna najbliżej pionka: w składzie, poza nim albo gdziekolwiek (najpierw w składzie);
-      near: tylko stosy do 4 m od tego kafelka */
-  private pileFor(p: Pawn, where: 'sklad' | 'outside' | 'any', near = -1): Thing | undefined {
+      near: tylko stosy do 4 m od tego kafelka; inside: tylko stosy w obrębie siatki (insideAt) */
+  private pileFor(p: Pawn, where: 'sklad' | 'outside' | 'any', near = -1, inside = false): Thing | undefined {
     const size = this.w.size;
     const sklad = this.house ? this.house.sklad : [];
     const region = this.regionOf(p);
@@ -3121,6 +3133,7 @@ export class Sim {
       const inSklad = sklad.includes(i);
       if ((where === 'sklad' && !inSklad) || (where === 'outside' && inSklad)) continue;
       if (near >= 0 && Math.max(Math.abs(t.x - (near % size)), Math.abs(t.y - Math.floor(near / size))) > 4) continue;
+      if (inside && !this.insideAt(i)) continue;
       const d = this.dist2(p, i) - (where === 'any' && inSklad ? 1e6 : 0);
       if (d < bd || (d === bd && best && t.id < best.id)) {
         bd = d;
@@ -3256,10 +3269,19 @@ export class Sim {
     } else if (this.house && p.needs && this.st.tick >= p.wait) this.think(p);
   }
 
-  /** praca fali 1, do której zarząd wziął się sam, ustępuje wrogowi na podwórku, kiedy pracujący jest na zewnątrz */
+  /** praca fali 1 albo z AUTO_JOBS, do której zarząd wziął się sam, ustępuje wrogowi na podwórku, kiedy pracujący
+      jest na zewnątrz */
   private yieldsToDanger(p: Pawn): boolean {
     const j = p.job;
-    return !!j && M2_JOBS.has(j.t) && !j.order && this.yardDanger() && !this.inRoom(this.tileOf(p));
+    return (
+      !!j && (M2_JOBS.has(j.t) || AUTO_JOBS.has(j.t)) && !j.order && this.yardDanger() && !this.inRoom(this.tileOf(p))
+    );
+  }
+
+  /** Czy noc kończy tę pracę bez polecenia: każdą poza noszeniem drewna, które nocą trwa, jeśli kafelek jego
+      sterty (w drodze po drewno) albo składu (z drewnem w rękach) leży w obrębie siatki. */
+  private nightStops(j: Job): boolean {
+    return this.night() && (j.t !== 'haul' || !this.insideAt(j.tile));
   }
 
   /** praca pionka, który nie idzie: doszedł do celu albo pracuje; false, gdy praca się skończyła
@@ -3269,11 +3291,13 @@ export class Sim {
     const tick = st.tick;
     const at = this.tileOf(p) === j.tile;
     // prace fali 1 ustępują pilnej potrzebie, a te, do których zarząd wziął się sam, także nocy i wrogowi na
-    // podwórku, kiedy pracujący jest na zewnątrz (plan czeka z doniesionym materiałem i postępem pracy)
+    // podwórku, kiedy pracujący jest na zewnątrz (plan czeka z doniesionym materiałem i postępem pracy); prace
+    // z AUTO_JOBS tak samo, ale tylko bez polecenia (z polecenia przerywa je to, co dziś), a noszenie drewna nocą
+    // tylko spoza siatki
     if (
-      M2_JOBS.has(j.t) &&
+      (M2_JOBS.has(j.t) || (AUTO_JOBS.has(j.t) && !j.order)) &&
       tick % THINK_EVERY === 0 &&
-      (this.urgent(p) || (!j.order && this.night()) || this.yieldsToDanger(p))
+      (this.urgent(p) || (!j.order && this.nightStops(j)) || this.yieldsToDanger(p))
     )
       return false;
     switch (j.t) {
@@ -3860,15 +3884,24 @@ export class Sim {
     return h >= 22 || h < 6;
   }
 
-  /** potrzeba, która przerywa czekanie po poleceniu */
+  /** potrzeba, która przerywa czekanie po poleceniu i prace M2 oraz AUTO_JOBS */
   private urgent(p: Pawn): boolean {
     const n = p.needs;
-    return !!n && (n.warm < 10 || n.food < 10 || n.rest < 5);
+    return !!n && (n.warm < URGENT_WARM || n.food < 10 || n.rest < 5);
   }
 
-  /** Bezczynny rdzeń sam: śpi w nocy albo z wyczerpania, je, gdy głodny, dokłada do kozy, gdy się kończy,
-      zanosi leżące drewno do składu i grzeje się przy kozie, kiedy mu zimno. Sam nie ścina drzew:
-      to polecenie gracza (samouczek). */
+  /** Bezczynny rdzeń sam: śpi w nocy albo z wyczerpania, je, gdy głodny, a potem po kolei:
+      1. koza, w której zostało mniej niż `BURN_TICKS` ognia: dokłada do niej, niezależnie od priorytetów osoby i przed
+         wszystkimi pracami z tabeli;
+      2. zimno (ciepło poniżej `URGENT_WARM`): grzeje się przy kozie, i to przed każdą pracą, także przed budową planów
+         (inaczej zmarznięty zaczynał pracę, którą `urgent` przerywa w następnej sekundzie, i tak w kółko);
+      3. rodzaje pracy według `kolejnoscOsoby` (stałe zajęcie, potem priorytety 1–4 osoby): ogień (dokładanie do kozy
+         i noszenie drewna do składu), kuchnia, budowa planów; nowe rodzaje (NOWE) dopiero od pierwszego rana
+         (`automatRusza`) i na razie nic nie robią. Nocą tylko ogień (noszenie tylko stosów w obrębie siatki) i kuchnia;
+      4. grzeje się przy kozie, kiedy mu zimno (ciepło poniżej COLD);
+      5. czeka sekundę.
+      Osoba ze wszystkimi rodzajami na 0 przechodzi więc tylko przez sen, jedzenie i ciepło (i gasnącą kozę).
+      Sam nie ścina drzew: to polecenie gracza (samouczek). */
   private think(p: Pawn): void {
     if (p.kind === 'resident') {
       this.plan(p);
@@ -3925,12 +3958,41 @@ export class Sim {
       return;
     }
     if (this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
-    if (this.startRefuel(p, false) || this.startHaul(p)) return;
-    if (this.shouldCook() && this.startCook(p, false)) return;
-    // plany budowy czekają: za dnia wolny zarząd sam przynosi materiały i buduje
-    if (!this.night() && this.startAnyBuild(p)) return;
+    // gasnąca koza i zimno przed każdą pracą (kroki 1 i 2 w opisie think)
+    const koza = this.koza();
+    if (koza && koza.fuel < BURN_TICKS && this.startRefuel(p, false, koza)) return;
+    if (n.warm < URGENT_WARM && this.startWarm(p)) return;
+    const rusza = automatRusza(this.st);
+    const noc = this.night();
+    for (const r of kolejnoscOsoby(this.st, p.person)) {
+      if (NOWE.has(r) && !rusza) continue;
+      if (noc && r !== 'ogien' && r !== 'kuchnia') continue;
+      if (this.znajdzPrace(p, r)) return;
+    }
     if (n.warm < COLD && this.startWarm(p)) return;
     p.wait = this.st.tick + THINK_EVERY;
+  }
+
+  /** Zaczyna zlecenie rodzaju pracy `r` dla bezczynnego pionka zarządu; false, gdy nie ma czego robić. Ogień:
+      dokładanie do kozy ze składu albo noszenie leżącego drewna do składu (nocą tylko stosy w obrębie siatki,
+      bo praca zza niej przerwałaby się w następnej sekundzie). Kuchnia: gotowanie, gdy trzeba.
+      Budowa: najstarszy plan, który da się zacząć (za dnia). Rodzaje z NOWE czekają na zadania, które je
+      podpinają. */
+  private znajdzPrace(p: Pawn, r: RodzajPracy): boolean {
+    switch (r) {
+      case 'ogien':
+        // dla gasnącej kozy dokładanie próbował już think() przed pracami; tu zostaje, bo ogień to dokładanie razem z noszeniem
+        return this.startRefuel(p, false) || this.startHaul(p, this.night());
+      case 'kuchnia':
+        return this.shouldCook() && this.startCook(p, false);
+      case 'budowa':
+        return !this.night() && this.startAnyBuild(p);
+      case 'badania':
+        // wpis i metodę `startResearch` podpina gałąź `badania`; do tego czasu wpis nie ma `znajdz`, a rodzaj jest ukryty
+        return WPISY.badania.znajdz?.(this as this & { startResearch(p: Pawn): boolean }, p) ?? false;
+      default:
+        return false;
+    }
   }
 
   /** Plan dnia mieszkańca: nocą śpi w swoim mieszkaniu, rano siedzi w domu, od WORK_START do 18:00 pracuje na
@@ -4256,7 +4318,10 @@ export class Sim {
     return true;
   }
 
-  private startHaul(p: Pawn): boolean {
+  /** Noszenie drewna do składu: z rąk albo z najbliższego stosu poza składem. `wSiatce`: tylko stosy w obrębie
+      siatki (nocą nikt bez polecenia nie wychodzi po drewno za siatkę, a praca poza nią i tak przerwałaby się
+      w następnej sekundzie). */
+  private startHaul(p: Pawn, wSiatce = false): boolean {
     const size = this.w.size;
     const dest = this.dropTile(p);
     if (dest < 0) return false;
@@ -4265,7 +4330,7 @@ export class Sim {
       this.setJob(p, this.newJob('haul', -1, dest, false, 1), true);
       return true;
     }
-    const pile = this.pileFor(p, 'outside');
+    const pile = this.pileFor(p, 'outside', -1, wSiatce);
     if (!pile) return false;
     const pt = pile.y * size + pile.x;
     if (!this.go(p, pt)) return false;
