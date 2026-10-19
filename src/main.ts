@@ -6,7 +6,14 @@
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta”, klawisz M i minimapa w rogu ekranu
    (src/ui/minimapa.ts), gra stoi przy otwartym oknie) z wysyłaniem wypraw dziennych (src/ui/wyprawa.ts: wybór osób,
-   podsumowanie, potwierdzenie), zapis i sterowanie. */
+   podsumowanie, potwierdzenie), tablica badań (src/ui/badania.ts: warstwa na pełnym ekranie z pauzą, przycisk
+   „Badania”, klawisz T, samo otwarcie po postawieniu pracowni, ?badania=demo do zrzutów), karta „Odkrycie” po
+   ukończeniu badania (w kolejce okien jak spotkanie z sąsiadami, przyciski „Postaw <budowla>”, „Następne badanie”,
+   „Dalej”), podpowiedź o książce znalezionej w przeszukaniu, znaczek NOWE w menu budowy (pamięć przeglądarki,
+   src/ui/nowe.ts) i „Tablica badań” z menu pracowni, zapis i sterowanie. ?kwadraty=3x3 (albo lista „1,0;0,-1”,
+   src/world/kwadraty.ts) dokłada do widoku kwadraty miasta obok domu z danych dema (public/demo/<klucz>-kwadraty.json),
+   z mgłą „brak danych” tam, gdzie danych nie ma: tylko do oglądania, symulacja i polecenia znają sam dom
+   (`dodajKwadraty`, window.zm.kwadraty). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -19,7 +26,7 @@ import { jezyk, L, poZmianieJezyka, type Tx, tr, tx } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
 import { wyslijWyprawe } from './gov/dzienne.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
-import { nightAdvice } from './gov/noc.ts';
+import { nightAdvice, WIEZA_KEY } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
 import { celZMiejsca, wlaczMiasto } from './gov/wyprawy.ts';
 import {
@@ -31,9 +38,11 @@ import {
   newGov,
   normalizujTeksty,
   pending,
+  resetNight,
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
+import { tekstKsiazki } from './gov/znaleziska.ts';
 import { type Droga, grajDalej, ocenDrogi, type PostepDrogi, wlaczZwyciestwo, wygrajDroge } from './gov/zwyciestwo.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
@@ -41,13 +50,15 @@ import { nazwaDoOkolicyZDanych } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { GraSieciowa } from './net/gra.ts';
-import { buildScene, TILE } from './render/art/scene.ts';
+import { opcjeSceny } from './render/art/kwadratyScena.ts';
+import { buildScene, type Scene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
 import { wczytajGrafike } from './render/grafika.ts';
 import { type Light, lightAt } from './render/light.ts';
 import { sectionPietra } from './render/pietro.ts';
 import { type SectionScene, sectionOf, type ThingLike } from './render/section.ts';
 import { GameView } from './render/view.ts';
+import { nazwaTech, odkrycia, wolneMiejsca } from './sim/badania.ts';
 import { WEAPONS, WEAPONS_EN, type WeaponId } from './sim/bron.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from './sim/budowle.ts';
 import { clockOf, dayOf, SPEEDS, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from './sim/clock.ts';
@@ -55,7 +66,7 @@ import { applyGov, govInput, lawsFrom } from './sim/gov.ts';
 import { NAPISY as HANDEL } from './sim/handlarz.ts';
 import { type LokatorzyGry, zrodloLokatorow } from './sim/lokatorzy.ts';
 import type { AptGame } from './sim/mieszkania.ts';
-import { commandsAt, type MenuItem } from './sim/orders.ts';
+import { commandsAt, type MenuItem, refuelFeedback } from './sim/orders.ts';
 import {
   ludnoscSpisu2021,
   mapaMieszkancow,
@@ -73,6 +84,15 @@ import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { NAPISY as OBCY, wiescEn } from './sim/wedrowcy.ts';
 import {
+  czyOtworzycSama,
+  czyPokazacOdkrycie,
+  napadTrwa,
+  odkrycieSheet,
+  skalaPlanszy,
+  tablicaHtml,
+  usiadaPodpowiedz,
+} from './ui/badania.ts';
+import {
   allowedAnchors,
   availableOf,
   BUILD_MENU,
@@ -80,6 +100,7 @@ import {
   buildItems,
   buildMenu,
   buildName,
+  noweBudowle,
   okTilesOf,
   placeKey,
   type Rot,
@@ -111,6 +132,7 @@ import { MapaMiasta, mapaMiastaSheet } from './ui/miasto.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
 import { clearThumbs, thumbUrl } from './ui/miniatura.ts';
 import { Minimapa } from './ui/minimapa.ts';
+import { wczytajWidziane, zapiszWidziane, zapomnijWidziane } from './ui/nowe.ts';
 import {
   burnSheet,
   confirmSheet,
@@ -123,7 +145,9 @@ import {
   nightSheet,
   oddsHtml,
   optionDetail,
+  optionText,
   reportSheet,
+  siecSheet,
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
@@ -147,12 +171,14 @@ import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui
 import { clearSave, pietraWlaczone, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { drogiSheet, epilogSheet, statyEpilogu } from './ui/zwyciestwo.ts';
-import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
+import type { Geo } from './world/geo.ts';
+import { czytajKwadraty, kluczKwadratu, ukladDomu } from './world/kwadraty.ts';
+import { demoList, type Loaded, loadAddress, loadDemo, loadDemoKwadraty } from './world/load.ts';
 import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
 import { KafelkiMiasta } from './world/miastoKafelki.ts';
 import { pobierzKafelek } from './world/mvt.ts';
 import { listaPieter } from './world/pietra.ts';
-import { buildWorld, T, type World } from './world/world.ts';
+import { buildKwadrat, buildWorld, T, type World } from './world/world.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -217,6 +243,8 @@ declare global {
       mapa: () => MapaMiasta | null;
       /** minimapa miasta w rogu ekranu (jej stan do zrzutów i testów); schowana i wyłączona bez mapy miasta */
       minimapa: () => Minimapa;
+      /** tablica badań (do testów): czy otwarta i której kartki szczegóły widać */
+      badania: () => { open: boolean; wybrana: string | null };
       /** stan mieszkań siedziby w grze (st.apts) */
       apts: () => AptGame[];
       /** przyjęcie n osób zza bramy jak po decyzji zarządu (do zrzutów); zwraca, ilu przybyło */
@@ -235,11 +263,25 @@ declare global {
       pietro: (L: number) => void;
       /** widok pięter: czy włączony w tej grze, wybrane piętro i lista pięter do wyboru (do zrzutów i testów) */
       pietra: () => { wlaczone: boolean; pietro: number; lista: number[] };
+      /** kwadraty miasta obok domu z ?kwadraty= (do zrzutów i pomiarów): klucz „sx,sy”, numer w widoku, czas budowy świata
+          i sceny w ms; q −1 i brakDanych dla kwadratu bez danych (prawdziwy adres, brzeg danych dema) */
+      kwadraty: readonly KwadratGry[];
     };
   }
 }
 
+/** kwadrat miasta z ?kwadraty= w tej grze (window.zm.kwadraty) */
+interface KwadratGry {
+  klucz: string;
+  q: number;
+  msSwiat: number;
+  msScena: number;
+  brakDanych: boolean;
+}
+
 const view = new GameView();
+/** kwadraty obok domu tej gry (window.zm.kwadraty); pusta lista bez ?kwadraty= */
+let kwadratyGry: KwadratGry[] = [];
 let sim: Sim | null = null;
 let gov: GovState | null = null;
 let loaded: Loaded | null = null;
@@ -515,6 +557,7 @@ poZmianieJezyka(() => {
   placeInfo();
   alarmButton(sim.st);
   if (modal.open) sheetAgain?.();
+  renderBadania();
 });
 
 let busy = false;
@@ -670,6 +713,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   selektorPieter.zamknij();
   $('floorSel').hidden = !pietra;
   selektorPieter.odswiez(pietraLista, 0, null);
+  // ?kwadraty=: kwadraty miasta obok domu do oglądania (zrzuty i pomiary); symulacja ich nie zna
+  kwadratyGry = await dodajKwadraty(data, geo, world, scene, art, pietra);
+  if (window.zm) window.zm.kwadraty = kwadratyGry;
   // ?godzina=22 (albo ?hour=22, także z ułamkiem: 18.5 to 18:30): pora dnia na start
   const hour = params.get('godzina') ?? params.get('hour');
   if (hour !== null && !saved)
@@ -679,6 +725,12 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   sim = new Sim(world, st);
   napisSeen = st.sasiedzi?.n ?? 0;
   meetChosen = null;
+  // karta „Odkrycie”, podpowiedź o książce i znaczek NOWE: stare odkrycia i książki się nie powtarzają, widziane budowle
+  // wznowionej gry wracają z pamięci przeglądarki, nowa gra zaczyna od pustej
+  zapamietajOdkrycia();
+  kluczGry = hashString(`${data.addr}|${seed}`);
+  if (!saved) zapomnijWidziane(kluczGry);
+  widziane = wczytajWidziane(kluczGry);
   // zapis sprzed handlarza: włączony od następnego kroku (w trybie zombie symulacja to pomija)
   if (saved && obcy && !st.obcy) sim.push({ t: 'obcy', ids: [] });
   traderSeen = st.obcy?.trader ?? -1;
@@ -692,6 +744,12 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   pracaPanel.hide();
   pracaPanel.reset();
   lastSnap = null;
+  // tablica badań: nowa gra nie dziedziczy wyboru ani otwarcia; wczytana gra z już stojącą pracownią nie otwiera jej
+  // sama (gracz widzi przycisk „Badania”)
+  $('tablica').hidden = true;
+  $('tablica').innerHTML = '';
+  badaniaWybrana = null;
+  badaniaByla = st.things.some((t) => t.kind === 'pracownia');
   menuCache = null;
   roomMemo = null;
   aptFocus = -1;
@@ -734,8 +792,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   else if (cam) {
     // cam=x,y,zoom w kafelkach albo cam=hq,zoom (siedziba) albo cam=all (całe osiedle)
     const parts = cam.split(',');
-    if (parts[0] === 'all')
-      Object.assign(view.cam, { x: (world.size * TILE) / 2, y: (world.size * TILE) / 2, zoom: view.minZoom });
+    if (parts[0] === 'all') Object.assign(view.cam, { ...view.srodek, zoom: view.minZoom });
     else if (parts[0] === 'hq') Object.assign(view.cam, { x: hx, y: hy, zoom: Number(parts[1]) || 1 });
     else {
       const [x, y, z] = parts.map(Number);
@@ -743,7 +800,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     }
   } else {
     // najpierw całe osiedle, potem zjazd do siedziby
-    Object.assign(view.cam, { x: (world.size * TILE) / 2, y: (world.size * TILE) / 2, zoom: view.minZoom });
+    Object.assign(view.cam, { ...view.srodek, zoom: view.minZoom });
     flyTo(hx, hy, 1, 2400);
   }
   // ?swiatla=test zapala kozę i stawia przy zarządzie ognisko i lampę warty, ze światłami
@@ -794,6 +851,69 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   zastosujImiona();
   // z zapisu: raport albo karta, które czekały
   if (saved) nextPrompt();
+  // ?badania=demo (do zrzutów): pracownia z ludźmi przy stole i otwarta tablica
+  else if (params.get('badania') === 'demo') {
+    badaniaDemo(sim);
+    zapamietajOdkrycia();
+    // technologie z dema były „zbadane” od razu, więc kronika i zaufanie liczą dopiero te po nich
+    if (gov && odkrycieSeen >= 0) gov.czytane = odkrycieSeen;
+    openBadania();
+  }
+}
+
+/**
+ * Kwadraty miasta obok domu z parametru ?kwadraty= (czytajKwadraty): dla dema ich dane z public/demo/<klucz>-kwadraty.json
+ * (loadDemoKwadraty), dla prawdziwego adresu niczego nie pobieramy, więc stoi tam mgła z napisem „brak danych”. Każdy
+ * kwadrat to świat z buildKwadrat (z surowym geo domu, żeby budynki przy szwie prostowały się jak w domu, i z domem do
+ * poziomów pięter), scena z ziarnem stylu z klucza budynku i stylem domu na szwie, i dodajKwadrat w widoku. Symulacja
+ * dostaje tylko dom. Zwraca czasy budowy do window.zm.kwadraty.
+ */
+async function dodajKwadraty(
+  data: Loaded,
+  geo: Geo,
+  world: World,
+  scene: Scene,
+  art: Awaited<typeof grafika>,
+  pietra: boolean,
+): Promise<KwadratGry[]> {
+  const lista = czytajKwadraty(params.get('kwadraty'));
+  const out: KwadratGry[] = [];
+  if (!lista.length) return out;
+  let dane: Record<string, Geo> = {};
+  if (data.src === 'demo' && data.key) {
+    try {
+      dane = await loadDemoKwadraty(data.key);
+    } catch (err) {
+      console.warn('Kwadraty obok domu: brak danych dema', err);
+    }
+  }
+  const uklad = ukladDomu(geo, world);
+  for (const [sx, sy] of lista) {
+    const klucz = kluczKwadratu(sx, sy);
+    const g = dane[klucz];
+    if (!g) {
+      view.dodajBrakDanych(sx, sy);
+      out.push({ klucz, q: -1, msSwiat: 0, msScena: 0, brakDanych: true });
+      continue;
+    }
+    try {
+      const t0 = performance.now();
+      const w = buildKwadrat(g, { seed, uklad, sx, sy, geoDomu: geo, ...(pietra ? { pietra: true, dom: world } : {}) });
+      const t1 = performance.now();
+      // budynek, który ma kawałek w domu, wygląda tak jak w domu (dom wygrywa na szwie); inne dostają ziarno z klucza
+      const opcje = opcjeSceny({ swiat: w, dom: world, sceneDomu: scene, sx, sy, seed });
+      const sc = buildScene(w, art, opcje);
+      const q = view.dodajKwadrat(sx, sy, sc);
+      out.push({ klucz, q, msSwiat: t1 - t0, msScena: performance.now() - t1, brakDanych: false });
+    } catch (err) {
+      console.warn(`Kwadrat ${klucz}: nie udało się zbudować`, err);
+      view.dodajBrakDanych(sx, sy);
+      out.push({ klucz, q: -1, msSwiat: 0, msScena: 0, brakDanych: true });
+    }
+    // oddech dla przeglądarki między kwadratami (budowa jednego to dziesiątki milisekund)
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  return out;
 }
 
 /**
@@ -904,7 +1024,7 @@ function govStep(show: boolean): Prompt | null {
     if (show) showEnd();
     return null;
   }
-  if (p && show && !modal.open) showPrompt(p);
+  if (p && show && !modal.open && !badaniaOtwarta()) showPrompt(p);
   return p;
 }
 
@@ -993,8 +1113,19 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
       const o = card.people.find((c) => c.id === id)?.options.find((q) => q.key === arg);
       const line = modal.find(`.opt[data-for="${CSS.escape(id)}"]`);
       if (line && o) line.textContent = optionDetail(o);
+      // wieża ma ograniczoną liczbę miejsc: lista każdej osoby zgadza się z tym, kto już na niej stoi
+      for (const c of card.people) {
+        const opt = modal.find<HTMLOptionElement>(
+          `select.pick[data-id="${CSS.escape(c.id)}"] option[value="${WIEZA_KEY}"]`,
+        );
+        const wieza = c.options.find((q) => q.key === WIEZA_KEY);
+        if (!opt || !wieza) continue;
+        const t = optionText(card, assign(), c.id, wieza, wieza.key === c.proposal);
+        opt.textContent = t.text;
+        opt.disabled = t.disabled;
+      }
     } else if (act === 'night-reset') {
-      for (const c of card.people) setNight(g, c.id, c.proposal);
+      resetNight(g);
       showNight(p);
     } else if (act === 'night-go') {
       const line = applyFx(confirmNight(g, input()));
@@ -1144,6 +1275,7 @@ function watchSasiedzi() {
     return;
   }
   if ((meetChosen && meetChosen.nr === sp.nr && meetChosen.runda === (sp.runda ?? 0)) || modal.open) return;
+  if (badaniaOtwarta()) return;
   showMeet();
 }
 
@@ -1176,6 +1308,289 @@ function showMeet() {
       decided();
     },
   );
+}
+
+/* ---------- tablica badań (src/ui/badania.ts): tablica korkowa na pełnym ekranie, gra stoi ---------- */
+/** technologia, której szczegóły widać na tablicy (null: podpowiedź) */
+let badaniaWybrana: string | null = null;
+/** tablica otwierała się już sama (albo gra wczytała się z pracownią i bez wyboru, albo po ukończonym badaniu pokazała
+    się karta „Odkrycie”, która ją zastępuje) od ostatniego wyboru badania (czyOtworzycSama: nie wyskakuje drugi raz);
+    zdejmuje to dopiero zobaczony wybór (`research.cur` ustawione), bo polecenie wyboru czeka w kolejce do następnego
+    kroku symulacji */
+let badaniaByla = false;
+/** chwila ostatniego sprawdzenia samego otwarcia (ms): drogie warunki raz na ćwierć sekundy */
+let badaniaT = 0;
+
+const badaniaOtwarta = (): boolean => !$('tablica').hidden;
+
+/** Otwiera tablicę: pauza (jak okna zarządu), wybrana kartka to bieżące badanie albo najtańsza do wzięcia (tablica
+    proponuje następne), plansza przewinięta do niej. Bez pracowni mówi, czego brakuje. */
+function openBadania() {
+  if (!sim || modal.open || badaniaOtwarta()) return;
+  const b = snapshot(sim.st, sim.w).tablica;
+  if (!b?.pracownia) {
+    say(L('Najpierw postawcie pracownię (menu Budowa).', 'Build the research room first (Build menu).'), 4000);
+    return;
+  }
+  cancelPlacing(false);
+  ctx.close();
+  buildPanel.hide();
+  keys.clear();
+  const najtansza = b.kartki.filter((k) => k.stan === 'do_wziecia').sort((x, y) => x.koszt - y.koszt)[0];
+  badaniaWybrana = b.cur ?? najtansza?.id ?? null;
+  pauseGame();
+  $('tablica').hidden = false;
+  renderBadania();
+  dopasujTablice();
+  // plansza na wybranej kartce (na telefonie widać dwie kolumny naraz); z rysunku kartki, nie z jej offsetLeft, bo
+  // plansza bywa skalowana (CSS zoom)
+  const wrap = $('tablica').querySelector<HTMLElement>('.tb-wrap');
+  const kartka = wrap?.querySelector<HTMLElement>('.tb-kartka.sel');
+  if (wrap && kartka) {
+    const okno = wrap.getBoundingClientRect();
+    const k = kartka.getBoundingClientRect();
+    wrap.scrollLeft += k.left + k.width / 2 - (okno.left + okno.width / 2);
+    wrap.scrollTop += k.top + k.height / 2 - (okno.top + okno.height / 2);
+  }
+  ($('tablica').querySelector<HTMLElement>('.tb-wrap') ?? $('tablica')).focus({ preventScroll: true });
+}
+
+/** Skala planszy do okna (`--tb-skala` na warstwie tablicy; CSS stosuje ją tylko na szerokim ekranie, na telefonie
+    plansza zostaje w skali 1 i się przewija): bez tego na laptopie 1280 px ostatnia era i szczegóły byłyby za krawędzią.
+    Woła ją otwarcie tablicy i zmiana rozmiaru okna. */
+function dopasujTablice() {
+  const el = $('tablica');
+  const wrap = el.querySelector<HTMLElement>('.tb-wrap');
+  const plansza = wrap?.querySelector<HTMLElement>('.tb-board');
+  if (!wrap || !plansza) return;
+  el.style.setProperty('--tb-skala', String(skalaPlanszy(wrap.clientWidth, Number.parseFloat(plansza.style.width))));
+}
+new ResizeObserver(() => dopasujTablice()).observe($('tablica'));
+
+/** Zamyka tablicę: następna decyzja zarządu albo powrót do gry w tym samym tempie (jak po innych oknach). */
+function closeBadania() {
+  if (!badaniaOtwarta()) return;
+  $('tablica').hidden = true;
+  $('tablica').innerHTML = '';
+  nextPrompt();
+}
+
+/** Rysuje tablicę od nowa ze stanu gry (zmiana wybranej kartki, zmiana języka); plansza zostaje tam, gdzie była,
+    a fokus wraca na wybraną kartkę. */
+function renderBadania() {
+  if (!sim || !badaniaOtwarta()) return;
+  const b = snapshot(sim.st, sim.w).tablica;
+  if (!b) return closeBadania();
+  const el = $('tablica');
+  const stara = el.querySelector<HTMLElement>('.tb-wrap');
+  const [x, y] = [stara?.scrollLeft ?? 0, stara?.scrollTop ?? 0];
+  const fokus = el.contains(document.activeElement) && document.activeElement?.classList.contains('tb-kartka');
+  el.innerHTML = tablicaHtml(b, { wybrana: badaniaWybrana, mode: modeOf(sim.st) });
+  const nowa = el.querySelector<HTMLElement>('.tb-wrap');
+  if (nowa) {
+    nowa.scrollLeft = x;
+    nowa.scrollTop = y;
+  }
+  if (fokus && badaniaWybrana)
+    el.querySelector<HTMLElement>(`.tb-kartka[data-tech="${badaniaWybrana}"]`)?.focus({ preventScroll: true });
+}
+
+/** „Badać” albo „Zmień na to badanie”: wybór idzie poleceniem do symulacji (na pauzie czeka w kolejce, więc tablica
+    zamyka się i gra rusza); po następnym ukończonym badaniu tablica znowu może otworzyć się sama (watchBadania). */
+function chooseBadania(tech: string) {
+  if (!sim) return;
+  sim.push({ t: 'research', ids: [], tech });
+  // polecenie zadziała dopiero w następnym kroku: do tego czasu `cur` jest jeszcze puste i tablica nie może się
+  // otworzyć od nowa
+  badaniaByla = true;
+  const nazwa = tr(nazwaTech(tech));
+  say(L(`Badamy: ${nazwa}.`, `Researching: ${nazwa}.`), 4000);
+  closeBadania();
+}
+
+/** Przycisk „Badania” od chwili, gdy stoi pracownia, i samo otwarcie tablicy: raz po wyborze, kiedy pracownia stoi,
+    a badanie nie jest wybrane, i tylko gdy nic innego nie przeszkadza (okno zarządu w kolejce, plan budowy, otwarty panel
+    budowy, napad, stado pod siatką, „Do broni!”). Tanie warunki najpierw, wejście zarządu liczy się raz na ćwierć sekundy. */
+function watchBadania(now: number) {
+  if (!sim) return;
+  const st = sim.st;
+  const lab = st.things.some((t) => t.kind === 'pracownia');
+  const przycisk = $('btnResearch');
+  if (przycisk.hidden === lab) przycisk.hidden = !lab;
+  const cur = st.research?.cur ?? null;
+  // badanie wybrane (z tablicy, z menu pracowni, przez lokatora): następne zdjęcie wyboru znowu otwiera tablicę
+  if (cur !== null) badaniaByla = false;
+  if (!lab || cur !== null || badaniaByla || badaniaOtwarta() || modal.open || now - badaniaT < 250) return;
+  badaniaT = now;
+  const napad = napadTrwa(st);
+  // otwarty panel budowy też czeka: samo otwarcie tablicy go zamykało (openBadania), a gracz właśnie z niego wybiera
+  const oknoCzeka = placing !== null || buildPanel.open || !gov || !!gov.over || pending(gov, input()) !== null;
+  if (
+    czyOtworzycSama({
+      pracownia: lab,
+      cur,
+      otwarta: badaniaOtwarta(),
+      oknoCzeka,
+      napad,
+      alarm: alarmOn(st),
+      byla: badaniaByla,
+    })
+  ) {
+    badaniaByla = true;
+    openBadania();
+  }
+}
+
+$('tablica').addEventListener('click', (e) => {
+  const t = e.target as HTMLElement;
+  const akcja = t.closest<HTMLElement>('[data-akcja]');
+  if (akcja?.dataset.akcja === 'zamknij') return closeBadania();
+  if (akcja?.dataset.akcja === 'badaj' && akcja.dataset.arg) return chooseBadania(akcja.dataset.arg);
+  const kartka = t.closest<HTMLElement>('.tb-kartka');
+  if (kartka?.dataset.tech) {
+    badaniaWybrana = kartka.dataset.tech;
+    renderBadania();
+  }
+});
+// Esc i T zamykają tablicę; ten słuchacz stoi przed ogólnym słuchaczem klawiszy gry, który przy otwartej tablicy nic nie robi
+window.addEventListener('keydown', (e) => {
+  if (!badaniaOtwarta() || (e.code !== 'Escape' && e.code !== 'KeyT') || e.repeat) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  closeBadania();
+});
+
+/* ---------- karta „Odkrycie”, książki z przeszukań i znaczek NOWE w menu budowy (src/ui/badania.ts, nowe.ts) ---------- */
+/** tick ostatniego odkrycia, dla którego karta już się pokazała (po wczytaniu gry stare się nie powtarzają) */
+let odkrycieSeen = -1;
+/** tick ostatniej książki z przeszukania, o której gra już powiedziała */
+let ksiazkaSeen = -1;
+/** klucz gry w pamięci przeglądarki: adres i ziarno (nowa gra pod tym samym adresem kasuje wpis w `enter`) */
+let kluczGry = '';
+/** budowle z odkrytych technologii, które gracz już widział (postawił albo otworzył ich szczegóły) */
+let widziane = new Set<string>();
+
+/** ostatnie ukończone badanie i ostatnia książka z przeszukania w stanie: od nich liczą się „nowe” (start gry, wczytanie) */
+function zapamietajOdkrycia() {
+  if (!sim) return;
+  const od = odkrycia(sim.st);
+  odkrycieSeen = od.length ? od[od.length - 1].tick : -1;
+  const log = sim.st.bookLog;
+  ksiazkaSeen = log?.length ? log[log.length - 1].tick : -1;
+}
+
+/** Nowe ukończone badanie: karta „Odkrycie” z pauzą, w kolejce okien jak spotkanie z sąsiadami (czeka, aż zamknie się
+    inne okno albo tablica, i aż skończy się napad oraz „Do broni!”). Karta zastępuje samo otwarcie tablicy po tym
+    badaniu (przycisk „Następne badanie”). */
+function watchOdkrycia() {
+  if (!sim?.st.research) return;
+  const nowe = odkrycia(sim.st).find((o) => o.tick > odkrycieSeen);
+  if (!nowe) return;
+  badaniaByla = true;
+  // czeka na inne okno albo tablicę, a także na koniec napadu i „Do broni!”, tak jak samo otwarcie tablicy
+  if (
+    !czyPokazacOdkrycie({
+      oknoOtwarte: modal.open || badaniaOtwarta(),
+      napad: napadTrwa(sim.st),
+      alarm: alarmOn(sim.st),
+    })
+  )
+    return;
+  odkrycieSeen = nowe.tick;
+  showOdkrycie(nowe.id);
+}
+
+/** Karta „Odkrycie”: „Postaw <budowla>” otwiera menu budowy na tej budowli, „Następne badanie” tablicę, „Dalej” (albo
+    Esc) wraca do gry; wszystkie trzy puszczają pauzę przez nextPrompt (następna decyzja zarządu albo gra). */
+function showOdkrycie(id: string) {
+  if (!sim) return;
+  sheetAgain = () => showOdkrycie(id);
+  pauseGame();
+  ctx.close();
+  modal.show(
+    odkrycieSheet(id, modeOf(sim.st)),
+    (act, arg) => {
+      if (act === 'odkrycie-postaw') {
+        decided();
+        openBuildOn(arg as BuildKind);
+      } else if (act === 'odkrycie-nastepne') {
+        // tablica zamknie się sama w nextPrompt; do tego czasu gra stoi dalej
+        modal.close();
+        openBadania();
+      } else if (act === 'odkrycie-dalej') decided();
+    },
+    nextPrompt,
+  );
+}
+
+/** podpowiedź o książce znalezionej w przeszukaniu („Znaleźli książkę „…” (Uprawa +1).”); kilka naraz to ostatnia */
+function watchKsiazki() {
+  const log = sim?.st.bookLog;
+  if (!log?.length) return;
+  const nowe = log.filter((k) => k.tick > ksiazkaSeen);
+  if (!nowe.length) return;
+  ksiazkaSeen = nowe[nowe.length - 1].tick;
+  say(tr(tekstKsiazki(nowe[nowe.length - 1])), 6000);
+}
+
+/** gracz zobaczył budowlę (otworzył jej szczegóły, postawił ją): znaczek NOWE znika i zostaje w pamięci przeglądarki */
+function widzialemBudowle(kind: BuildKind) {
+  if (!sim || widziane.has(kind) || !noweBudowle(sim.st, widziane).has(kind)) return;
+  widziane.add(kind);
+  zapiszWidziane(kluczGry, widziane);
+}
+
+/** Menu budowy na wybranej budowli (karta „Odkrycie”): zakładka tej budowli, jej szczegóły. */
+function openBuildOn(kind: BuildKind) {
+  if (!sim) return;
+  ctx.close();
+  // najpierw pamięć (panel rysuje się już bez znaczka NOWE), potem panel na szczegółach tej budowli
+  widzialemBudowle(kind);
+  buildPanel.showOn(BUILDS[kind].cat, kind);
+}
+
+/** ?badania=demo (do zrzutów): pracownia w mieszkaniu zarządu, cztery zbadane technologie, Spawanie w toku (14 z 25;
+    Budowa 2 ma pierwsza osoba zarządu, ona i druga siedzą przy stole), Rozruch węzła bez wiedzy (Ciepło 2, macie 1)
+    i dwie książki (Uprawa, Medycyna). Umiejętności wszystkich osób są wyzerowane poza trzema ustawionymi, żeby zrzut
+    nie zależał od losowania fachów. */
+function badaniaDemo(s: Sim) {
+  const st = s.st;
+  const f = footprint('pracownia', 0);
+  const a = allowedAnchors(st, s.w, 'pracownia', 0)[0];
+  if (a !== undefined)
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'pracownia',
+      x: a % s.w.size,
+      y: Math.floor(a / s.w.size),
+      w: f.w,
+      h: f.h,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+  for (const o of st.people) o.skills = {};
+  const core = st.pawns.filter((p) => p.kind === 'core');
+  const ustaw = (k: number, skills: Person['skills']) => {
+    if (core[k]) st.people[core[k].person].skills = skills;
+  };
+  ustaw(0, { bud: 2 });
+  ustaw(1, { cieplo: 1, bud: 1 });
+  ustaw(2, { med: 1 });
+  st.techDone = ['t_kozy', 't_okna', 't_wieza', 't_konserwy'];
+  st.research = {
+    cur: 't_spawanie',
+    prog: { t_spawanie: 14 },
+    at: { t_kozy: st.tick, t_okna: st.tick, t_wieza: st.tick, t_konserwy: st.tick },
+  };
+  st.books = { uprawa: 1, med: 1 };
+  // dwie osoby przy stole naprawdę, nie na niby: kroki, aż dojdą i usiądą (nie dłużej niż 2000 ticków)
+  const siedzi = (p: (typeof core)[number]) => p.job?.t === 'research' && p.job.phase === 1;
+  const stol = core.slice(0, 2);
+  for (const p of stol) s.startResearch(p, true);
+  for (let k = 0; k < 2000 && !stol.every(siedzi); k++) s.step();
 }
 
 function watchRaid() {
@@ -1303,6 +1718,10 @@ function frame(now: number, dtMs: number) {
   }
   watchRaid();
   watchSasiedzi();
+  // karta „Odkrycie” przed samym otwarciem tablicy: zastępuje je po ukończonym badaniu
+  watchOdkrycia();
+  watchBadania(now);
+  watchKsiazki();
   drawState();
   view.render(sim.st, mult ? acc : 1, selected);
   placeMarker();
@@ -1392,6 +1811,7 @@ function tonight(p: SimPerson): string | undefined {
     );
   }
   if (p.post === 'koza') return L('Do rana: czuwa przy kozie.', 'Until morning: watching the stove.');
+  if (p.post === 'wieza') return L('Do rana: warta na wieży.', 'Until morning: on watch on the tower.');
   if (p.post)
     return L(
       `Do rana: warta ${p.post === 'brama' ? words.brama.przy : p.post === 'siatka' ? 'przy siatce' : 'przy dziurze w siatce'}.`,
@@ -2154,6 +2574,11 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   stale: ['', ''],
   zasiatke: ['', ''],
   prog: ['', ''],
+  // badania: wybór z tablicy bez komunikatu, zarząd do stołu pracowni
+  research: ['', ''],
+  tablica: ['', ''],
+  study: ['Zajmie się badaniami.', 'Zajmą się badaniami.'],
+  siec: ['Sieć włączona.', 'Sieć włączona.'],
 });
 /** to samo po angielsku (jedna osoba, kilka osób) */
 const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> => ({
@@ -2213,23 +2638,37 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   stale: ['', ''],
   zasiatke: ['', ''],
   prog: ['', ''],
+  research: ['', ''],
+  tablica: ['', ''],
+  study: ['Off to do some research.', 'Off to do some research.'],
+  siec: ['The grid is on.', 'The grid is on.'],
 });
 
 function run(m: MenuItem) {
   if (!sim) return;
+  // „Tablica badań” i „Wybrać badanie” z menu pracowni otwierają tablicę, symulacja o nich nie wie
+  if (m.cmd.t === 'tablica') return openBadania();
   // „Zajmij klatkę” z gry z sąsiadami idzie do serwera, nie do symulacji
   if (siec.obsluz(m)) return;
+  // „Badać” przy zbyt wielu zaznaczonych: do stołu idzie tyle osób, ile jest miejsc, a podpowiedź mówi ile (przed
+  // wysłaniem polecenia, póki zajęte miejsca są takie, jak je widział gracz)
+  const miejsca =
+    m.cmd.t === 'study' ? usiadaPodpowiedz(wolneMiejsca(sim.st.pawns, m.cmd.thing, m.cmd.ids), m.cmd.ids.length) : null;
   sim.push(m.cmd);
+  if (miejsca) return say(miejsca, 4000);
   const k = m.cmd.ids.length > 1 ? 1 : 0;
   // wspólny płot z jednego materiału mówi, po co idzie (deska i złom jak w feedback)
   const jeden = m.cmd.t === 'enclose' && (m.cmd.wariant === 'deski' || m.cmd.wariant === 'zlom') ? m.cmd.wariant : null;
-  const f = jeden ? tr(PO_PLOCIE[jeden][k]) : L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]);
+  // „Dołożyć” na nowym palenisku mówi, do którego (koza z beczki, kocioł); reszta z tabel feedback
+  const paleniska = m.cmd.t === 'refuel' ? refuelFeedback(sim.st, m.cmd.thing, k) : null;
+  const f =
+    paleniska ?? (jeden ? tr(PO_PLOCIE[jeden][k]) : L(feedback(words)[m.cmd.t][k], feedbackEn(wordsE)[m.cmd.t][k]));
   // w trybie zombie wyważanie ściąga szwendaczy z okolicy
   const loud = m.cmd.t === 'force' && modeOf(sim.st) === 'zombie' ? tr(HALAS_ZOMBIE) : '';
   if (f) say(`${f}${loud}`, loud ? 4000 : 1800);
 }
 
-/** polecenie z potwierdzeniem: palenie mebli ma własne okno, reszta (rozbiórka, zajęcie) ogólne */
+/** polecenie z potwierdzeniem: palenie mebli i włączenie sieci mają własne okna, reszta (rozbiórka, zajęcie) ogólne */
 function askConfirm(m: MenuItem) {
   if (m.cmd.t === 'burn') {
     askBurn(m);
@@ -2238,7 +2677,8 @@ function askConfirm(m: MenuItem) {
   sheetAgain = () => askConfirm(m);
   pauseGame();
   modal.show(
-    confirmSheet(m.label),
+    // włączenie sieci ma własne pytanie i ostrzeżenie, reszta (rozbiórka, zajęcie) ogólne
+    m.cmd.t === 'siec' ? siecSheet() : confirmSheet(m.label),
     (act) => {
       if (act !== 'confirm-yes' && act !== 'confirm-no') return;
       if (act === 'confirm-yes') run(m);
@@ -2280,6 +2720,8 @@ function orderAt(sx: number, sy: number, menu: boolean) {
   if (zablokowanyKlik(sx, sy)) return;
   const ids = [...selected];
   const tile = view.tileAt(sx, sy);
+  // kwadraty obok domu są tylko do oglądania: polecenie poza domem gra ignoruje
+  if (tile < 0) return;
   const items = commandsAt(sim.st, sim.w, ids, tile);
   // gra z sąsiadami: „Zajmij klatkę” tylko w menu (z potwierdzeniem), nigdy od stuknięcia
   const zSieci = menu ? siec.menu(sim, tile) : [];
@@ -2356,6 +2798,7 @@ let budFocus = -1;
 function focusTile(sx: number, sy: number) {
   if (!sim || zablokowanyKlik(sx, sy)) return;
   const tile = view.tileAt(sx, sy);
+  if (tile < 0) return;
   aptFocus = aptAt(sim.w, tile);
   const bid = tile >= 0 ? sim.w.bid[tile] : -1;
   budFocus = aptFocus < 0 && bid >= 0 && bid !== sim.w.hq ? bid : -1;
@@ -2396,7 +2839,13 @@ let roomMemo: { key: string; room: Map<BuildKind, boolean> } | null = null;
     plany) i miejsca (plany, rzeczy, mieszkania, badania). Gdy się nie zmienił, panel nie rusza DOM. */
 function buildStateKey(): string {
   if (!sim || !lastStock) return '';
-  return [L('pl', 'en'), stockKey(availableOf(sim.st, lastStock)), placeKey(sim.st), BUILD_MENU.showLocked].join('#');
+  return [
+    L('pl', 'en'),
+    stockKey(availableOf(sim.st, lastStock)),
+    placeKey(sim.st),
+    BUILD_MENU.showLocked,
+    [...noweBudowle(sim.st, widziane)].sort().join(),
+  ].join('#');
 }
 
 /** menu budowy z aktualnego stanu; miejsca liczone tylko przy zmianie skrótu miejsc, nie przy każdym materiale */
@@ -2416,7 +2865,7 @@ function buildMenuNow(): BuildCategory[] {
     }
     return r;
   };
-  const menu = buildMenu(availableOf(s.st, lastStock), room, words, wordsE, { st: s.st });
+  const menu = buildMenu(availableOf(s.st, lastStock), room, words, wordsE, { st: s.st, widziane });
   menuCache = { key, menu };
   return menu;
 }
@@ -2429,7 +2878,9 @@ const buildPanel = new BuildPanel($('buildPanel'), $('app'), {
   words: () => words,
   en: () => wordsE,
   touch: touchUI,
+  onSeen: widzialemBudowle,
   onPlace: (kind) => {
+    widzialemBudowle(kind);
     startPlacing(kind);
     nextPrompt();
     // na dotyku plan jedzie za palcem, więc szuflada schodzi z drogi; na komputerze panel zostaje na kolejne plany
@@ -2564,6 +3015,7 @@ function startPlacing(kind: BuildKind) {
 function aimAt(sx: number, sy: number) {
   if (!sim || !placing) return;
   const t = view.tileAt(sx, sy);
+  if (t < 0) return;
   const { w: fw, h: fh } = footprint(placing.kind, placing.rot);
   placing.x = (t % sim.w.size) - Math.floor((fw - 1) / 2);
   placing.y = Math.floor(t / sim.w.size) - Math.floor((fh - 1) / 2);
@@ -2683,6 +3135,7 @@ $('btnPraca').addEventListener('click', (e) => {
   if (e.detail > 0) $('btnPraca').blur();
 });
 $('btnMiasto').addEventListener('click', () => openMiasto());
+$('btnResearch').addEventListener('click', () => openBadania());
 // „Pokaż” przy przybyszach: kamera od razu jedzie na środek grupy, bez zmiany przybliżenia
 $('arriveShow').addEventListener('click', () => {
   const coming = sim ? arriving(sim.st) : [];
@@ -2851,6 +3304,8 @@ const endPointer = (e: PointerEvent) => {
     }
     return;
   }
+  // klik poza domem, gdy obok są kwadraty tylko do oglądania: gra go ignoruje (nic nie zaznacza, nie rozkazuje, nie stawia)
+  if (view.maKwadraty && view.tileAt(e.offsetX, e.offsetY) < 0) return;
   const hit = view.pick(sim.st, e.offsetX, e.offsetY);
   // mieszkaniec z osobą (zarząd miał pierwszeństwo niżej): karta do odczytu, bez zmiany zaznaczenia i bez poleceń
   const lok = view.pickResident(sim.st, e.offsetX, e.offsetY);
@@ -2968,7 +3423,16 @@ for (const t of ['gesturestart', 'gesturechange'])
 window.addEventListener('keydown', (e) => {
   // klawisze gry tylko w grze, bez otwartego okna i nie na polach ani przyciskach (spacja ma działać na przyciskach)
   const tag = (e.target as HTMLElement).tagName;
-  if (!sim || $('app').hidden || modal.open || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (
+    !sim ||
+    $('app').hidden ||
+    modal.open ||
+    badaniaOtwarta() ||
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT'
+  )
+    return;
   if (tag === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return;
   if (ctx.open) return;
   keys.add(e.code);
@@ -2995,6 +3459,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     wybierzPietro(nastepnePietro(pietraLista, view.pietro, e.code === 'PageUp' ? 1 : -1));
   }
+  if (e.code === 'KeyT' && !e.repeat) openBadania();
   if (e.code === 'KeyR' && placing) rotatePlacing();
   if (e.code === 'Escape') {
     if (placing) cancelPlacing();
@@ -3095,6 +3560,7 @@ if (attrib) bars.observe(attrib);
     okolica: [],
     mapa: () => mapaMiasta,
     minimapa: () => minimapa,
+    badania: () => ({ open: badaniaOtwarta(), wybrana: badaniaWybrana }),
     apts: () => sim?.st.apts ?? [],
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
     siec: () => siec.podglad(),
@@ -3123,6 +3589,7 @@ if (attrib) bars.observe(attrib);
     },
     pietro: wybierzPietro,
     pietra: () => ({ wlaczone: pietraGry, pietro: view.pietro, lista: [...pietraLista] }),
+    kwadraty: [],
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });

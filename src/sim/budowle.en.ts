@@ -37,6 +37,44 @@ export const BUILDS_EN: Record<BuildKind, { name: string; the: string; effect: s
     the: 'the barricade',
     effect: 'Stronger than the fence or a patch, and it closes a hole.',
   },
+  pracownia: {
+    name: 'Research room',
+    the: 'the research room',
+    effect: 'A desk with a lamp and a bookshelf: two people at a time research new technologies here.',
+  },
+  koza_beczka: {
+    name: 'Barrel stove',
+    the: 'the barrel stove',
+    effect:
+      'Heats a room and burns wood like the kitchen stove. The flue goes out through the window, so it stands near one.',
+  },
+  kociol: {
+    name: 'Boiler',
+    the: 'the boiler',
+    effect: 'Heats all your flats at once, but burns a lot of wood.',
+  },
+  pieczarkarnia: {
+    name: 'Mushroom farm',
+    the: 'the mushroom farm',
+    effect:
+      'A smaller yield than a vegetable patch in spring and summer, but the same all year round, winter included.',
+  },
+  szklarnia: {
+    name: 'Greenhouse',
+    the: 'the greenhouse',
+    effect: 'Like a vegetable patch, but in winter it yields as it does in autumn.',
+  },
+  barykada: {
+    name: 'Wreck wall',
+    the: 'the wreck wall',
+    effect: 'Built from wrecks, sturdier than the barricade, and it closes a hole. Costs mostly scrap.',
+  },
+  wieza: {
+    name: 'Tower',
+    the: 'the tower',
+    effect:
+      'A “Watch on the tower” post on the Night orders: whoever stands there adds half their watch to the defence of every other post. You can have one.',
+  },
 };
 
 /** zdanie o działaniu budowli po angielsku według miejsca, jak effectOf w budowle.ts */

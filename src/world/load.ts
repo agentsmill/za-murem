@@ -15,6 +15,8 @@ export interface Loaded {
   addr: string;
   street: string;
   src: 'demo' | 'mvt' | 'overpass';
+  /** klucz dema (public/demo/<klucz>.json) dla src „demo”: z niego idzie plik sąsiednich kwadratów */
+  key?: string;
 }
 
 export interface DemoInfo {
@@ -28,7 +30,7 @@ export async function loadDemo(key: string): Promise<Loaded> {
   const r = await fetch(`demo/${encodeURIComponent(key)}.json`);
   if (!r.ok) throw new Error(L(`Nie ma takiego przykładu: ${key}`, `No such example: ${key}.`));
   const d = await r.json();
-  return { geo: d.geo, name: d.name, addr: d.addr, street: d.street, src: 'demo' };
+  return { geo: d.geo, name: d.name, addr: d.addr, street: d.street, src: 'demo', key };
 }
 
 /** Geo sąsiednich kwadratów dema (klucz kwadratu „sx,sy” → geo, zob. kwadraty.ts): osiem albo, gdy plik przekroczyłby

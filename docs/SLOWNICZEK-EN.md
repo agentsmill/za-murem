@@ -58,6 +58,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | meblościanka | wall unit | |
 | karta nocy | Night orders | okno o 20:00 |
 | warta | the watch | na warcie: on watch; wartownik: guard |
+| wieża (z rusztowań) | the tower | Warta na wieży: Watch on the tower; na wieży: on the tower; „Na wieży trzeba broni dystansowej”: The tower needs a ranged weapon |
 | wyprawa | run | supply run, kiedy samo „run” brzmi jak bieganie albo biegunka („For supply runs”, „Out on a supply run”); blisko: short run, daleko: long run |
 | raport rano | Morning report | |
 | kronika (zarządu) | the log | |
@@ -88,6 +89,22 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | łóżka piętrowe | bunk beds | |
 | ogródek | vegetable patch | |
 | zasieki | barricade | |
+| barykada z wraków | wreck wall | budowla „Wreck wall”, technologia „Wreck walls”; „barricade” zostaje przy zasiekach |
+| koza z beczki | barrel stove | „the barrel stove”; zwykła koza to dalej „the stove” |
+| kocioł | boiler | „the boiler”; ogrzewa wszystkie mieszkania zarządu |
+| pieczarkarnia | mushroom farm | |
+| szklarnia | greenhouse | |
+| wieża (budowla) | Tower | nazwa budowli w menu budowy; w zdaniu „the tower” |
+| pracownia | research room | „Research room”; stół z lampą i regałem, przy którym siedzą badacze |
+| badania | research | przycisk „Research” w górnym pasku (klawisz T), polecenie przy stole „Research: <name>” |
+| tablica badań | Research board | tablica korkowa na pełnym ekranie z pauzą; polecenie w menu pracowni tak samo |
+| wybrać badanie | Choose research | polecenie w menu pracowni, gdy żadne badanie nie jest wybrane |
+| odkrycie (karta po badaniu) | Discovery | karta: Discovery, Unlocks, Next research, Continue; wpis w kronice „Discovery: …” |
+| odblokowuje (na karcie Odkrycie) | Unlocks | |
+| NOWE (znaczek w menu budowy) | NEW | przy świeżo odblokowanej budowli |
+| wymaga badania (kłódka) | Needs research | „Needs research: <name>” |
+| era badań | era | First weeks, Tinkering, Power, Communications, Silicon, Without copper |
+| książka (z przeszukania) | book | „Found a book: …”; trzecia z dziedziny „went for kindling” („It went for kindling.”) |
 | kuchenka, umywalka, wanna | cooker, washbasin, bath | piec w mieszkaniu też „cooker” |
 | przedpokój, pokój, sala, hala, zaplecze | hallway, room, hall, shed, back room | hala jako cały budynek: warehouse |
 | rodzina Kowalskich | the Kowalski family | nazwisko w formie męskiej |
@@ -105,6 +122,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 | jedzenie | food |
 | posiłek, porcja | meal, portion |
 | prąd | power |
+| sieć (elektryczna, technologia końcowa), Włączyć sieć | grid (Copper-free grid), Switch on the grid |
 | najedzenie | Fed |
 | ciepło | Warmth |
 | siły | Energy |
@@ -138,7 +156,7 @@ Ustalony 18.10.2026 w sesji `angielski` (projekt: `docs/superpowers/specs/2026-1
 
 ## Polecenia i przyciski
 
-Menu pod prawym przyciskiem, pomoc i karty cytują te same słowa: Chop down the tree, Feed the stove, Keep watch here (at the gate, at the fence, by the stove), Make a spear, Search the …, Take apart the … (śmieci i gruz: Clear the …), Fix the …, Claim the flat, Burn the …, Attack the shambler (looter), Go here. Budowle w menu budowy: Tear down. Broń na karcie osoby: Swap; po amputacji tag „stump”. Karta nocy: Raid chance, Stove overnight, As the board suggests, Start the night. Kategorie budowy: Indoors, Yard, Perimeter. Wiek na karcie to sama liczba („Nurse, 52”). Surowce: wrak „wreck” (maluch „the Fiat 126p”, polonez „the Polonez”), Search the … i Strip the … przy wraku, łup „loot”, Carry into the yard, w warsztacie Saw wood into a plank (… into 5 planks) i Make a part from scrap.
+Menu pod prawym przyciskiem, pomoc i karty cytują te same słowa: Chop down the tree, Feed the stove (Feed the barrel stove, Feed the boiler), Keep watch here (at the gate, at the fence, by the stove), Make a spear, Search the …, Take apart the … (śmieci i gruz: Clear the …), Fix the …, Claim the flat, Burn the …, Attack the shambler (looter), Go here. Budowle w menu budowy: Tear down. Broń na karcie osoby: Swap; po amputacji tag „stump”. Karta nocy: Raid chance, Stove overnight, As the board suggests, Start the night. Kategorie budowy: Indoors, Yard, Perimeter. Wiek na karcie to sama liczba („Nurse, 52”). Surowce: wrak „wreck” (maluch „the Fiat 126p”, polonez „the Polonez”), Search the … i Strip the … przy wraku, łup „loot”, Carry into the yard, w warsztacie Saw wood into a plank (… into 5 planks) i Make a part from scrap. Badania: przy pracowni Research: <name>, Research board i Choose research, po technologii końcowej Switch on the grid (z potwierdzeniem „Switch on the copper-free grid?”).
 
 ## Zawody-żarty
 

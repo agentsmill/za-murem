@@ -32,7 +32,7 @@ export interface ThingLike {
   rot: number;
   /** sztuki (drewno, jedzenie, porcje w garnku, sterty materiału); przy śmieciach wielkość sterty 1–3 */
   n?: number;
-  /** ogień (koza, ognisko): pali się, gdy więcej niż 0 */
+  /** ogień (koza, koza z beczki, kocioł, ognisko): pali się, gdy więcej niż 0 */
   fuel?: number;
   /** wrak samochodu: 'maluch' albo 'polonez'; stage: 1 przeszukany, 2 szkielet (st.wraki) */
   model?: string;
@@ -330,8 +330,11 @@ const FURNITURE = new Set([
   'umywalka',
 ]);
 
-/** czy rzecz się pali (koza, ognisko z ogniem): wtedy sprite ma klatki ognia */
-export const burning = (t: ThingLike) => (t.kind === 'koza' || t.kind === 'ognisko') && (t.fuel ?? 0) > 0;
+/** rzeczy z ogniem w rysunku: koza zarządu, koza z beczki i kocioł z technologii oraz ognisko */
+const FIRE_KINDS: ReadonlySet<string> = new Set(['koza', 'koza_beczka', 'kociol', 'ognisko']);
+
+/** czy rzecz się pali (koza, koza z beczki, kocioł, ognisko z ogniem): wtedy sprite ma klatki ognia */
+export const burning = (t: ThingLike) => FIRE_KINDS.has(t.kind) && (t.fuel ?? 0) > 0;
 
 /** stos 1–2 sztuk to mały, 3–5 średni, więcej duży */
 export const pileSize = (n = 1): 1 | 2 | 3 => (n >= 6 ? 3 : n >= 3 ? 2 : 1);
@@ -347,7 +350,7 @@ const seedOf = (t: ThingLike) => ((Math.imul(t.x, 73856093) ^ Math.imul(t.y, 193
 
 /**
  * Opis sprite'a rzeczy dla thingSprite albo null dla rodzaju bez grafiki. fire to klatka ognia
- * (0..FIRE_FRAMES−1) dla palącej się kozy i ogniska.
+ * (0..FIRE_FRAMES−1) dla palącej się kozy, kozy z beczki, kotła i ogniska.
  */
 export function specOf(t: ThingLike, fire = 0): ThingSpec | null {
   if (t.spec) return t.spec;
@@ -356,7 +359,8 @@ export function specOf(t: ThingLike, fire = 0): ThingSpec | null {
   const f = burning(t) ? fire % FIRE_FRAMES : undefined;
   if (FURNITURE.has(t.kind))
     return { kind: t.kind as 'koza', rot, seed, fire: f, broken: t.broken || undefined, burnt: t.burnt || undefined };
-  if ((BUILD_KINDS as readonly string[]).includes(t.kind)) return { kind: t.kind as 'warsztat', rot, seed: seed % 8 };
+  if ((BUILD_KINDS as readonly string[]).includes(t.kind))
+    return { kind: t.kind as 'warsztat', rot, seed: seed % 8, ...(f === undefined ? {} : { fire: f }) };
   switch (t.kind) {
     case 'drewno':
     case 'jedzenie':

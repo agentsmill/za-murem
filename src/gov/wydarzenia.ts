@@ -5,7 +5,9 @@
    kiedy na decyzję czeka karta nocy, uchwała, raport albo poprzednie wydarzenie.
    Pierwszy dzień (decyzja Mateusza, 17.10.2026): dopóki kuchnia się nie nagrzeje, cisza bez losowych wydarzeń;
    koza pierwszy raz się pali, więc po chwili ktoś widzi dym i przychodzi; do rana drugiego dnia tylko wydarzenia
-   pierwszej nocy (siatka, obcy, noc), reszta od drugiego dnia. */
+   pierwszej nocy (siatka, obcy, noc), reszta od drugiego dnia.
+   Badania: technologie (`tech`), wiedza (`know`) i książki (`bookCount`, `addBook`) EventHost bierze z GovInput, czyli
+   z symulacji, jak tablica badań; nowa książka idzie do skutków (GovEffects.books), a nie do stanu zarządu. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -192,8 +194,12 @@ export function makeHost(
     day: () => i.day,
     season: () => i.season,
     law: (id) => law(st, id),
-    tech: () => false,
-    know: (d) => Math.max(0, ...i.people.map((p) => p.skills[d] ?? 0)) + Math.min(2, st.books[d as TechDom] ?? 0),
+    // technologie i wiedza z symulacji (jedna wiedza z tablicą badań: zarząd, lokatorzy i książki); bez nich, w testach
+    // z ręcznym wejściem, po staremu
+    tech: (id) => !!i.techDone?.includes(id),
+    know: (d) =>
+      i.know?.[d as TechDom] ??
+      Math.max(0, ...i.people.map((p) => p.skills[d] ?? 0)) + Math.min(2, st.books[d as TechDom] ?? 0),
     rule: () => true,
     pop: () => ludnoscOf(i),
     cap: () => i.cap ?? i.people.length + (i.residents ?? 0) + 4,
@@ -239,9 +245,10 @@ export function makeHost(
       fx.fire = true;
     },
     hasWorking: () => false,
-    bookCount: (d) => st.books[d] ?? 0,
+    // książki mieszkają w symulacji; nowa idzie do skutków, a do liczenia wlicza się ta, która w tym kroku już czeka
+    bookCount: (d) => (i.books?.[d] ?? 0) + (fx.books?.filter((b) => b === d).length ?? 0),
     addBook: (d) => {
-      st.books[d] = (st.books[d] ?? 0) + 1;
+      (fx.books ??= []).push(d);
     },
     setAlertNight: () => {
       st.tonight.alert = nd;

@@ -3,7 +3,9 @@
    (32 px na kafelek, także przekrój) rysują już tylko cień drzewa, dalekie (8 px) mają drzewa
    w sobie, więc przy oddaleniu sprite'ów nie ma i nic nie kosztują. Suche drzewo z grafiki
    zastępczej, ścięte (treeGone) znikają. Za koroną ktoś z zarządu nie ginie: widok rysuje jego
-   zarys na wierzchu (covering mówi, czy punkt leży za którąś z koron). */
+   zarys na wierzchu (covering mówi, czy punkt leży za którąś z koron). Warstwa kwadratu obok domu (kwadraty.ts) ma
+   początek (ox, oy) w pikselach układu miasta: sprite'y stoją w mieście, a ich kolejność rysowania (zIndex) to y miasta,
+   więc drzewa sąsiednich kwadratów i pionki sortują się razem. */
 
 import { BufferImageSource, type Container, Sprite, Texture } from 'pixi.js';
 import type { Tree } from '../world/world.ts';
@@ -45,9 +47,25 @@ export class TreeLayer {
   pending = false;
 
   private readonly layer: Container;
+  /** początek kwadratu w pikselach grafiki układu miasta (dom: 0, 0) */
+  private readonly ox: number;
+  private readonly oy: number;
 
-  constructor(layer: Container) {
+  constructor(layer: Container, ox = 0, oy = 0) {
     this.layer = layer;
+    this.ox = ox;
+    this.oy = oy;
+  }
+
+  /** niszczy sprite'y i tekstury drzew (kwadrat znika z widoku) */
+  destroy(): void {
+    for (const s of this.sprites.values()) s.destroy();
+    this.sprites.clear();
+    for (const a of this.arts.values()) a.tex.destroy(true);
+    this.arts.clear();
+    this.wanted = [];
+    this.sig = '';
+    this.pending = false;
   }
 
   /** ile sprite'ów drzew widać (do pomiarów i zrzutów) */
@@ -120,8 +138,8 @@ export class TreeLayer {
         }
         sp = new Sprite(art.tex);
         // lewy górny róg na całym pikselu: ostre piksele przy ruchu kamery
-        sp.position.set(Math.round(t.x * TILE - art.ax), Math.round(t.y * TILE - art.ay));
-        sp.zIndex = t.y;
+        sp.position.set(Math.round(this.ox + t.x * TILE - art.ax), Math.round(this.oy + t.y * TILE - art.ay));
+        sp.zIndex = this.oy / TILE + t.y;
         this.layer.addChild(sp);
         this.sprites.set(k, sp);
       }

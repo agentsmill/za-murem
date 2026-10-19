@@ -1,6 +1,8 @@
 /* Menu budowy w interfejsie (docs/M2-fala-1.md, docs/superpowers/specs/2026-10-18-menu-budowy-design.md): menu z BUILDS
    jako dane (buildMenu: zakładki z BuildDef.cat, koszt, czas pracy, działanie, miejsce, powód braku, blokady badaniem
-   z BUILD_MENU i TECH_NAMES), treść panelu po prawej (buildPanelHtml: zakładki, kafelki z miniaturą, szczegóły),
+   z nazwami z TECH_NAMES i kłódkami od chwili, gdy stoi pracownia, albo z BUILD_MENU; „Pracownia już stoi.” przy
+   wykorzystanym limicie; znaczek NOWE przy budowlach z odkrytych technologii, których gracz jeszcze nie widział,
+   `noweBudowle`), treść panelu po prawej (buildPanelHtml: zakładki, kafelki z miniaturą, szczegóły),
    skróty stanu panelu (stockKey, placeKey), dozwolone miejsca w trybie stawiania z canPlace symulacji i polecenia
    przy planach i gotowych budowlach w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM
    (DOM robi panelbudowy.ts). Napisy w bieżącym języku: polskie tablice zostają tutaj, angielskie leżą obok
@@ -8,6 +10,7 @@
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
+import { nazwaTech, TECHS } from '../sim/badania.ts';
 import { BUILDS_EN, effectEnOf } from '../sim/budowle.en.ts';
 import {
   BUILD_CATS,
@@ -15,11 +18,14 @@ import {
   type BuildCat,
   type BuildKind,
   type BuildPlace,
+  boilerRooms,
   canPlace,
   effectOf,
   footprint,
   isUnlocked,
+  limitWhy,
   type Mat,
+  PLACE_ROOMS,
 } from '../sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { MAT_EN } from '../sim/mieszkania.en.ts';
@@ -85,6 +91,9 @@ export const placeText = (place: BuildPlace, w: Words = wordsOf(BLOK)): string =
   ({
     pokoj: `w pokoju ${w.lokal.d}`,
     kuchnia: `w kuchni ${w.lokal.d}`,
+    lazienka: `w łazience ${w.lokal.d}`,
+    klatka: 'na klatce siedziby (w domu w przedpokoju)',
+    okno: `w pokoju, kuchni albo przedpokoju ${w.lokal.d}, blisko okna`,
     podworko: 'na podwórku za siatką',
     obwod: 'w miejscu odcinka siatki',
   })[place];
@@ -103,19 +112,27 @@ export function okTilesOf(anchors: readonly number[], kind: BuildKind, rot: Rot,
 }
 
 /** Kafelki, od których (jako lewego górnego) budowla może stanąć według canPlace symulacji, do podświetlenia
-    w trybie stawiania. Pytam tylko o pomieszczenia naszych mieszkań, podwórko albo siatkę, a nie o całą mapę:
-    lewy górny kafelek leży zawsze w tym samym miejscu co cała budowla. */
+    w trybie stawiania. Pytam tylko o pomieszczenia naszych mieszkań, klatkę siedziby (kocioł), podwórko albo siatkę,
+    a nie o całą mapę: lewy górny kafelek leży zawsze w tym samym miejscu co cała budowla. */
 export function allowedAnchors(st: SimState, w: World, kind: BuildKind, rot: Rot): number[] {
   const place = BUILDS[kind].place;
   const inside = w.interior;
   let cand: number[];
   if (place === 'podworko') cand = w.fence.yard;
   else if (place === 'obwod') cand = w.fence.tiles;
-  else {
-    const ours = ourApts(st);
+  else if (place === 'klatka') {
+    // klatka siedziby (w domu przedpokój naszego mieszkania), jak w canPlace
+    const { rooms } = boilerRooms(st, inside, w.size);
     cand = [];
     inside.room.forEach((r, i) => {
-      if (r >= 0 && ours.includes(inside.rooms[r].apt) && inside.rooms[r].kind === place) cand.push(i);
+      if (r >= 0 && rooms.has(r)) cand.push(i);
+    });
+  } else {
+    const ours = ourApts(st);
+    cand = [];
+    const kinds = PLACE_ROOMS[place] ?? [];
+    inside.room.forEach((r, i) => {
+      if (r >= 0 && ours.includes(inside.rooms[r].apt) && kinds.includes(inside.rooms[r].kind)) cand.push(i);
     });
   }
   return cand.filter((i) => canPlace(st, w, kind, i % w.size, Math.floor(i / w.size), rot).ok);
@@ -131,7 +148,17 @@ const BUILD_ACC: Record<BuildKind, string> = {
   lozka_pietrowe: 'łóżka piętrowe',
   ogrodek: 'ogródek',
   zasieki: 'zasieki',
+  pracownia: 'pracownię',
+  koza_beczka: 'kozę z beczki',
+  kociol: 'kocioł',
+  pieczarkarnia: 'pieczarkarnię',
+  szklarnia: 'szklarnię',
+  barykada: 'barykadę',
+  wieza: 'wieżę',
 };
+
+/** napis przycisku stawiania w bieżącym języku: „Postaw szklarnię”, „Build the greenhouse” (karta „Odkrycie”) */
+export const postawLabel = (kind: BuildKind): string => L(`Postaw ${BUILD_ACC[kind]}`, `Build ${BUILDS_EN[kind].the}`);
 
 /** Polecenia przy planie budowy albo gotowej budowli pod kafelkiem, do menu pod prawym przyciskiem (przed
     „Idź tu”): zaznaczeni z zarządu biorą się do planu, plan można odwołać (przyniesione materiały zostają obok),
@@ -225,13 +252,30 @@ export function workText(ticks: number): string {
   return m === 30 ? `${h}${L(',5', '.5')} h ${of}` : `${h} h ${m} min ${of}`;
 }
 
-/** Widok z kłódkami: do czasu badań zablokowana budowla, której nie da się odblokować, byłaby ślepą uliczką, więc
-    menu pokazuje tylko to, co wolno postawić. Gdy badania ruszą, wystarczy tu ustawić true. */
+/** Widok z kłódkami: budowle z technologii, których jeszcze nie zbadano, są wyszarzone z napisem „Wymaga badania”
+    od chwili, gdy stoi pracownia (wcześniej pierwsze dni pokazywałyby rzeczy nie do zdobycia, a menu pokazuje tylko to,
+    co wolno postawić). `showLocked: true` wymusza kłódki także bez pracowni (zrzuty z ?budowa=klodki, próby). */
 export const BUILD_MENU: { showLocked: boolean } = { showLocked: false };
 
-/** nazwy badań do napisu „Wymaga badania”; wypełni je projekt badań (bez wpisu pokazuje się identyfikator) */
-export const TECH_NAMES: Record<string, Tx> = {};
+/** nazwy badań do napisu „Wymaga badania”: wszystkie technologie z tablicy badań (src/sim/badania.ts); test może dopisać
+    własny identyfikator, bez wpisu pokazuje się sam identyfikator */
+export const TECH_NAMES: Record<string, Tx> = Object.fromEntries(TECHS.map((t) => [t.id, nazwaTech(t.id)]));
 const techName = (id: string): string => (TECH_NAMES[id] ? tr(TECH_NAMES[id]) : id);
+
+/** stan, od którego zależy menu: zbadane technologie, a do kłódek i limitów też rzeczy i plany */
+type MenuStan = Pick<SimState, 'techDone'> & Partial<Pick<SimState, 'things' | 'builds'>>;
+
+/** Budowle z odkrytych technologii (BuildDef.tech zbadane), które gracz jeszcze nie postawił (stoi albo plan) i nie
+    otworzył ich szczegółów (`widziane`): dostają znaczek NOWE w menu. Budowle bez technologii nigdy nie są nowe. */
+export function noweBudowle(st: MenuStan, widziane: ReadonlySet<string>): Set<BuildKind> {
+  const out = new Set<BuildKind>();
+  for (const k of Object.keys(BUILDS) as BuildKind[]) {
+    if (!BUILDS[k].tech || !isUnlocked(st, k) || widziane.has(k)) continue;
+    if ((st.things ?? []).some((t) => t.kind === k) || (st.builds ?? []).some((b) => b.kind === k)) continue;
+    out.add(k);
+  }
+  return out;
+}
 
 export interface BuildItem {
   kind: BuildKind;
@@ -244,8 +288,11 @@ export interface BuildItem {
   ok: boolean;
   /** czemu nie (brak miejsca albo materiałów), z podpowiedzią, skąd wziąć */
   why?: string;
-  /** „Wymaga badania: …”, gdy budowla czeka na badanie (tylko przy BUILD_MENU.showLocked); jest też w why */
+  /** „Wymaga badania: …”, gdy budowla czeka na badanie (od chwili, gdy stoi pracownia, albo przy
+      BUILD_MENU.showLocked); jest też w why */
   locked?: string;
+  /** znaczek NOWE: budowla z odkrytej technologii, której gracz jeszcze nie widział (opts.widziane) */
+  nowe?: true;
 }
 
 export interface BuildCategory {
@@ -258,6 +305,7 @@ const CAT_TITLE: Record<BuildCat, Tx> = {
   dom: tx('Dom', 'Home'),
   podworko: tx('Podwórko', 'Yard'),
   obwod: tx('Obwód', 'Perimeter'),
+  cuda: tx('Cuda', 'Wonders'),
 };
 
 /** skąd brać materiał, do powodu „brakuje”, w obu językach (w domu przeszukiwanie domu i gruz ze słownika) */
@@ -268,18 +316,22 @@ const source = (w: Words, e: WordsEn): Partial<Record<Mat, Tx>> => ({
   drewno: tx('Drewno daje ścinanie drzew.', 'Wood comes from chopping down trees.'),
 });
 
-/** Menu budowy: zakładki z budowlami (zakładka bez pozycji znika); niedostępne z powodem (nie ma gdzie postawić
-    albo brakuje materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. Zablokowane badaniem
-    (opts.st.techDone) są ukryte, a z opts.showLocked (domyślnie BUILD_MENU.showLocked) pokazane jako „Wymaga badania”. */
+/** Menu budowy: zakładki z budowlami (zakładka bez pozycji znika); niedostępne z powodem (limit „już stoi”, nie ma gdzie
+    postawić albo brakuje materiałów). room(kind): czy jest choć jedno wolne miejsce na tę budowlę. Zablokowane badaniem
+    (opts.st.techDone) są ukryte, a pokazane jako „Wymaga badania” od chwili, gdy stoi pracownia (opts.st.things), albo
+    z opts.showLocked (domyślnie BUILD_MENU.showLocked). opts.widziane: budowle z odkrytych technologii, które gracz już
+    widział; z nią (nawet pustą) budowle odkryte i jeszcze nie widziane dostają nowe: true. */
 export function buildMenu(
   have: Partial<Record<Mat, number>>,
   room: (kind: BuildKind) => boolean,
   words: Words = wordsOf(BLOK),
   en: WordsEn = wordsEn(BLOK),
-  opts: { st?: Pick<SimState, 'techDone'>; showLocked?: boolean } = {},
+  opts: { st?: MenuStan; showLocked?: boolean; widziane?: ReadonlySet<string> } = {},
 ): BuildCategory[] {
   const st = opts.st ?? {};
-  const showLocked = opts.showLocked ?? BUILD_MENU.showLocked;
+  const showLocked =
+    opts.showLocked ?? (BUILD_MENU.showLocked || (st.things ?? []).some((t) => t.kind === 'pracownia'));
+  const nowe = opts.widziane ? noweBudowle(st, opts.widziane) : new Set<BuildKind>();
   return BUILD_CATS.map((key) => ({
     key,
     title: tr(CAT_TITLE[key]),
@@ -292,11 +344,13 @@ export function buildMenu(
           .filter(([, n]) => n > 0);
         let why: string | undefined;
         let locked: string | undefined;
+        const limit = limitWhy(st, kind);
         if (!isUnlocked(st, kind)) {
           const name = techName(d.tech ?? '');
           locked = L(`Wymaga badania: ${name}`, `Needs research: ${name}`);
           why = locked;
-        } else if (!room(kind))
+        } else if (limit) why = limit;
+        else if (!room(kind))
           why = L(
             `Nie ma gdzie postawić: brak wolnego miejsca ${placeText(d.place, words)}.`,
             `Nowhere to put it: no free space ${placeEn(d.place, en)}.`,
@@ -317,6 +371,7 @@ export function buildMenu(
           ok: !why,
           why,
           locked,
+          ...(nowe.has(kind) ? { nowe: true as const } : {}),
         };
       }),
   })).filter((c) => c.items.length > 0);
@@ -353,7 +408,9 @@ export function buildPanelHtml(
       b.kind
     }" aria-pressed="${b.kind === sel.kind}"><span class="th"><img src="${esc(thumb(b.kind))}" alt=""></span><span class="tn">${esc(
       b.name,
-    )}</span><span class="ts">${esc(b.size)}${b.locked ? ' <span aria-hidden="true">🔒</span>' : ''}</span></button>`;
+    )}</span><span class="ts">${esc(b.size)}${b.locked ? ' <span aria-hidden="true">🔒</span>' : ''}</span>${
+      b.nowe ? `<span class="tnew">${L('NOWE', 'NEW')}</span>` : ''
+    }</button>`;
   const detail = (b: BuildItem) =>
     `<section class="bd" data-kind="${b.kind}"${b.kind === sel.kind ? '' : ' hidden'}><div class="build-head"><b class="build-n">${esc(
       b.name,

@@ -8,6 +8,7 @@ import type { Sprite } from './bryly.ts';
 import { h2 } from './hash.ts';
 import { LOOKI, type LookBudynku } from './lookBudynku.ts';
 import { type ThingSpec, thingSprite } from './rzeczy.ts';
+import type { Brzeg } from './scene.ts';
 import type { Strop } from './strop.ts';
 
 /** wersja formatu grafika.json; gra nie bierze atlasów w innej wersji */
@@ -274,24 +275,44 @@ function rgbAt(o: Obraz, x: number, y: number): number {
 // ---------------------------------------------------------------- teren
 
 /** klasa terenu w narożniku kafelka Wanga: 1 trawnik (trawa, park, las), 0 chodnik i cała reszta (jezdnia,
-    budynek, woda); poza mapą jak na jej brzegu */
-export function wangKlasa(terr: ArrayLike<number>, size: number, x: number, y: number): number {
+    budynek, woda); poza mapą jak na jej brzegu, a przy kwadracie z sąsiadem (brzeg) jak u sąsiada */
+export function wangKlasa(terr: ArrayLike<number>, size: number, x: number, y: number, brzeg?: Brzeg): number {
+  if (brzeg && (x < 0 || y < 0 || x >= size || y >= size)) {
+    const za = terenZaBrzegiem(brzeg, size, x, y);
+    if (za !== undefined) return za === T.GRASS || za === T.PARK || za === T.WOOD ? 1 : 0;
+  }
   const cx = x < 0 ? 0 : x >= size ? size - 1 : x;
   const cy = y < 0 ? 0 : y >= size ? size - 1 : y;
   const t = terr[cy * size + cx];
   return t === T.GRASS || t === T.PARK || t === T.WOOD ? 1 : 0;
 }
 
+/** Kod terenu kafelka (x, y) tuż za krawędzią kwadratu (jedna z jego współrzędnych to −1 albo size, w narożniku obie),
+    z pasów sąsiadów w brzegu; undefined, gdy sąsiada po tej stronie nie ma albo punkt leży dalej niż jeden kafelek za
+    krawędzią. Bez sąsiada po przekątnej narożnik bierze kafelek sąsiada z boku, który stoi najbliżej (jak rzut na
+    brzeg mapy: współrzędna, która wypada poza wszystkimi kwadratami, zostaje przy krawędzi). */
+export function terenZaBrzegiem(brzeg: Brzeg, size: number, x: number, y: number): number | undefined {
+  if (x < -1 || y < -1 || x > size || y > size) return undefined;
+  const dx = x < 0 ? -1 : x >= size ? 1 : 0;
+  const dy = y < 0 ? -1 : y >= size ? 1 : 0;
+  if (dx === 0 && dy === 0) return undefined;
+  if (dy === 0) return (dx < 0 ? brzeg.w : brzeg.e)?.[y];
+  if (dx === 0) return (dy < 0 ? brzeg.n : brzeg.s)?.[x];
+  const rog = dy < 0 ? (dx < 0 ? brzeg.nw : brzeg.ne) : dx < 0 ? brzeg.sw : brzeg.se;
+  if (rog !== undefined) return rog;
+  return (dy < 0 ? brzeg.n : brzeg.s)?.[dx < 0 ? 0 : size - 1] ?? (dx < 0 ? brzeg.w : brzeg.e)?.[dy < 0 ? 0 : size - 1];
+}
+
 /** czy teren o tym kodzie rysuje się z kafelków Wanga (trawnik, park, chodnik, ścieżka); reszta zostaje z kodu */
 export const wangRysuje = (t: number): boolean => t === T.GRASS || t === T.PARK || t === T.SIDEWALK || t === T.PATH;
 
 /** numer kafelka Wanga o narożniku NW w środku kafelka świata (x, y): narożniki NW NE SW SE od najstarszego bitu */
-function wangNumer(terr: ArrayLike<number>, size: number, x: number, y: number): number {
+function wangNumer(terr: ArrayLike<number>, size: number, x: number, y: number, brzeg?: Brzeg): number {
   return (
-    (wangKlasa(terr, size, x, y) << 3) |
-    (wangKlasa(terr, size, x + 1, y) << 2) |
-    (wangKlasa(terr, size, x, y + 1) << 1) |
-    wangKlasa(terr, size, x + 1, y + 1)
+    (wangKlasa(terr, size, x, y, brzeg) << 3) |
+    (wangKlasa(terr, size, x + 1, y, brzeg) << 2) |
+    (wangKlasa(terr, size, x, y + 1, brzeg) << 1) |
+    wangKlasa(terr, size, x + 1, y + 1, brzeg)
   );
 }
 
@@ -299,15 +320,25 @@ function wangNumer(terr: ArrayLike<number>, size: number, x: number, y: number):
  * Cztery kafelki Wanga nad kafelkiem świata (x, y), po ćwiartkach NW NE SW SE: numer | odbicie << 4. Kafelki Wanga
  * leżą na podwójnej siatce, przesunięte o pół kafelka: ich narożniki wypadają w środkach kafelków świata, więc
  * granica terenów leży na krawędzi kafelka świata. Jednolity kafelek (sam trawnik albo sam chodnik) jest odbity
- * w poziomie (bit 1) i w pionie (bit 2) według miejsca, żeby nie było widać powtórzeń.
+ * w poziomie (bit 1) i w pionie (bit 2) według miejsca, żeby nie było widać powtórzeń. Przy kwadracie miasta z sąsiadami
+ * (brzeg) kafelki przy krawędzi patrzą na teren sąsiada, a odbicie liczy się od współrzędnych miasta (gx, gy: przesunięcie
+ * kwadratu w kafelkach), więc wzór łączy się przez szew.
  */
-export function wangKafel(terr: ArrayLike<number>, size: number, x: number, y: number): Int32Array {
+export function wangKafel(
+  terr: ArrayLike<number>,
+  size: number,
+  x: number,
+  y: number,
+  brzeg?: Brzeg,
+  gx = 0,
+  gy = 0,
+): Int32Array {
   const q = new Int32Array(4);
   for (let k = 0; k < 4; k++) {
     const wx = x - 1 + (k & 1);
     const wy = y - 1 + (k >> 1);
-    const n = wangNumer(terr, size, wx, wy);
-    const f = n === 0 || n === 15 ? Math.floor(h2(wx, wy, 4242) * 4) : 0;
+    const n = wangNumer(terr, size, wx, wy, brzeg);
+    const f = n === 0 || n === 15 ? Math.floor(h2(wx + gx, wy + gy, 4242) * 4) : 0;
     q[k] = n | (f << 4);
   }
   return q;

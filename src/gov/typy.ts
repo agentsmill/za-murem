@@ -42,7 +42,7 @@ export interface GovPerson {
   job: string | null;
   asleep: boolean;
   inside: boolean;
-  /** posterunek warty, jeśli stoi ('brama', 'd<id>', 'koza'), jak SimPerson.post. Z tym polem zarząd wie, że
+  /** posterunek warty, jeśli stoi ('brama', 'd<id>', 'koza', 'siatka', 'wieza'), jak SimPerson.post. Z tym polem zarząd wie, że
       symulacja sama prowadzi noc na posterunku (kto stoi, ten nie śpi), więc rano nie odejmuje już sił */
   post?: string | null;
   /** broń (id z src/sim/bron.ts) i jej rodzaj do warty i wypraw: gołe ręce (albo broń palna bez amunicji),
@@ -124,6 +124,7 @@ export interface GovInput {
   night: boolean;
   outdoor: number;
   kitchen: number | null;
+  /** pali się koza zarządu albo któreś z nowych palenisk naszych mieszkań (koza z beczki, kocioł) */
   kozaLit: boolean;
   people: GovPerson[];
   stock: GovStock;
@@ -167,6 +168,30 @@ export interface GovInput {
   ludnosc2021?: number;
   /** teren: ile budynków wspólny płot dołączył do naszego obwodu; bez pola droga terenu nie ma jak liczyć kamieni */
   teren?: { przylaczone: number };
+  /** badania (src/sim/badania.ts): czy stoi pracownia, ile technologii z drzewka jest zbadanych (identyfikatory spoza
+      drzewka się nie liczą), najwyższa era wśród nich (0: nic), czy technologia końcowa jest zbadana i czy sieć jest
+      już włączona (polecenie `siec` w pracowni); bez pola zarząd zakłada grę bez badań. Czyta je rama zwycięstwa. */
+  badania?: { pracownia: boolean; zbadane: number; era: number; koncowa: boolean; siecWlaczona: boolean };
+  /** książki osady według dziedziny, z symulacji (w wiedzy liczą się najwyżej 2 na dziedzinę); bez pola: żadnych */
+  books?: Partial<Record<TechDom, number>>;
+  /** zbadane technologie z tickiem ukończenia, od najstarszej, z nazwą i działaniem w obu językach; zarząd dopisuje do
+      kroniki każde odkrycie z tickiem nowszym niż `GovState.czytane` i podnosi zaufanie o 1 (src/gov/znaleziska.ts).
+      Bez pola (gra bez badań) żadnych. */
+  odkrycia?: readonly { id: string; tick: number; nazwa: Tx; dzialanie: Tx }[];
+  /** książki znalezione w przeszukanych pomieszczeniach (dziennik symulacji `bookLog`), po kolei; `podpalka`: trzecia
+      z dziedziny, poszła na drewno. Zarząd dopisuje do kroniki wpisy z tickiem nowszym niż `GovState.czytane`.
+      Książki z wydarzenia „książki” tu nie trafiają: wydarzenie ma własny wpis. Bez pola: żadnych. */
+  znaleziska?: readonly { tick: number; dom: TechDom; tytul: string; podpalka?: boolean }[];
+  /** zbadane technologie (identyfikatory z src/sim/badania.ts); EventHost.tech czyta stąd, bez pola żadna */
+  techDone?: readonly string[];
+  /** wiedza osady w dziedzinach, ta sama co na tablicy badań (najlepsza osoba zarządu albo lokatora siedziby na
+      miejscu plus najwyżej 2 książki); bez pola EventHost.know liczy po staremu z `people` */
+  know?: Partial<Record<TechDom, number>>;
+  /** ile osób mieści wieża z rusztowań (kafelki jej obrysu: 2×2 to 4); karta nocy dostaje wtedy „Wartę na wieży”, klucz
+      `warta:wieza`, dla najwyżej tylu osób. src/sim/gov.ts wypełnia je tylko przy stojącej wieży */
+  wieza?: number;
+  /** ile palenisk (koza zarządu, kozy z beczek, kocioł liczony jako kilka) pali drewno nocą; bez pola jedno */
+  paleniska?: number;
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -219,6 +244,9 @@ export interface GovEffects {
   /** powroty wypraw dziennych z tego wywołania, po jednej pełnej linii na wyprawę (ta sama, co w `log`); tylko za dnia,
       powrót przesunięty na rano idzie do raportu nocy. Interfejs pokazuje je graczowi, także po zamknięciu okna */
   powroty?: Tx[];
+  /** znalezione książki (dziedziny), po jednej na sztukę; symulacja kładzie je na półkę osady (dodajKsiazke), trzecią
+      z dziedziny zamienia na drewno; tablica powstaje przy pierwszej książce */
+  books?: TechDom[];
 }
 
 export interface RaidPlan {
@@ -267,7 +295,7 @@ export interface LawEffects {
 export type LootKey = StockKey;
 
 export interface NightOption {
-  /** 'sen', 'warta:brama', 'warta:d<id>', 'wyprawa:blisko', 'wyprawa:daleko' */
+  /** 'sen', 'warta:brama', 'warta:d<id>', 'warta:wieza', 'wyprawa:blisko', 'wyprawa:daleko' */
   key: string;
   label: Tx;
   ok: boolean;
@@ -277,7 +305,7 @@ export interface NightOption {
   risk?: number;
   /** wyprawa: spodziewany łup (od, do) */
   gain?: Partial<Record<LootKey, [number, number]>>;
-  /** warta: ile obrony dodaje */
+  /** warta: ile obrony dodaje (na wieży: tyle, ile dokłada do każdego innego posterunku) */
   guard?: number;
   /** wyprawa: id celu z TARGETS albo klucz miejsca z okolicy (`Cel.klucz`) */
   target?: string;
@@ -303,6 +331,10 @@ export interface NightCard {
   forecast: Tx;
   /** miejsca do pilnowania: brama i dziury, od najsłabszego */
   posts: { key: string; name: Tx; weak: number }[];
+  /** stoi wieża: każdy ma opcję `warta:wieza`, ale na wieży może być najwyżej tyle osób, ile jest miejsc (to pole;
+      pełna wieża blokuje opcję pozostałym), a okno karty dopisuje ją do wykazu posterunków (to nie miejsce napadu,
+      więc nie ma jej w `posts`); bez wieży pola brak */
+  wieza?: number;
   /** spodziewane straty, jeśli wejdą (do porównania z wartą) */
   loss: { wood: number; supplies: number };
   /** tryb zombie: ilu szwendaczy przyjdzie w stadzie, słowo do tego i wytrzymałość siatki 0–1 */
@@ -422,6 +454,8 @@ export interface GovState {
   trust: number;
   anger: number;
   laws: { signed: Record<string, boolean>; last: number; path: LawPath | null };
+  /** książki ze starych zapisów (przed badaniami zarząd trzymał je u siebie); przy pierwszym kroku zarządu idą do
+      symulacji (GovEffects.books), a pole zostaje puste. Właścicielem książek jest symulacja (SimState.books). */
   books: Partial<Record<TechDom, number>>;
   nextId: number;
   ev: {
@@ -472,4 +506,7 @@ export interface GovState {
   /** warunki zwycięstwa: kamienie milowe dróg, zwycięstwa, licznik celu ludności i kolejka epilogów w oknie; pole od
       `wlaczZwyciestwo` (src/gov/zwyciestwo.ts), bez niego zarząd nie liczy dróg i stan zostaje jak przed nimi */
   zwyciestwo?: StanZwyciestwa;
+  /** tick ostatniego odkrycia albo znaleziska książki (GovInput.odkrycia, znaleziska), które zarząd już wpisał do
+      kroniki; pole powstaje przy pierwszym takim wpisie, więc gra bez badań i książek go nie ma */
+  czytane?: number;
 }

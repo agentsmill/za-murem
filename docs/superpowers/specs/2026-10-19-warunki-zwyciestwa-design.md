@@ -65,11 +65,15 @@ Gra sieciowa w czasie rzeczywistym (decyzja Mateusza z 19.10.2026 w sesji odkryw
 
 ### 1. Technologiczna: „Prąd bez miedzi” (nazwa moja)
 
-Bakteria zjadła miedź i z nią prąd, więc zwycięstwo technologiczne to sieć, której bakteria nie ruszy: aluminium, światłowód, ogniwa w żywicy (kierunek rozwoju wymienia je jako futurystykę). W trybie zombie ta sama sieć jest dodatkowo cicha, bo hałas ściąga stado (podatek od techniki z kierunku rozwoju).
+Bakteria zjadła miedź i z nią prąd. Droga prowadzi od sieci, której bakteria nie ruszy (aluminium, światłowód, ogniwa w żywicy; kierunek rozwoju wymienia je jako futurystykę), przez generator fuzji, do fabryki. W trybie zombie sieć jest dodatkowo cicha, bo hałas ściąga stado (podatek od techniki z kierunku rozwoju).
 
-- Warunek: zbadana technologia końcowa (jedna, oznaczona w drzewie, do której prowadzą wszystkie ery) i „Włączenie sieci” w pracowni. Tej nocy o 20:00 zapalają się okna w całym naszym terenie (mapa światła już jest), a potem epilog.
-- Kamienie: pracownia postawiona; pierwsze badanie; era 3; era 5; sieć włączona.
-- Kontrakt z sesją badań: w drzewie flaga `koncowa` i numer ery przy każdej technologii; odczyt dla zarządu `badania: { era: number; koncowa: boolean }`. Bakteriofaga i leku w drzewie nie ma (to fabuła).
+Koniec drogi to obraz Mateusza z 19.10.2026 (sesja badań): „Mam generator fuzji podłączony do super serwera AI obsługującego fabrykę humanoidalnych żołnierzy w wersji zombie, z bakterią to podobnie, ale zamiast fabryki humanoidów to bioroboty odporne na bakterię miedzi”, i jego decyzja przed południem tego dnia: „koniec drogi technologii to fabryka (zombie: humanoidalni żołnierze, zwykły: bioroboty odporne na bakterię), sieć bez miedzi i generator fuzji jako wcześniejsze kamienie”.
+
+- Łańcuch (moje, poza słowami Mateusza): „Sieć bez miedzi” przestaje być technologią końcową i zostaje wymaganiem dalszych. Dochodzą „Generator fuzji” (technologia i budowla), „Superserwer AI” (technologia; satyra na dzisiejsze centra danych) i technologia końcowa „Fabryka”, zależna od trybu: w zombie „Fabryka humanoidów” (żołnierze, którzy czyszczą miasto ze szwendaczy), w zwykłym „Fabryka biorobotów” (bioroboty odporne na bakterię, które kładą nowe linie). Fabryka to budowla bardzo droga i wielodniowa, a po postawieniu „Uruchomić fabrykę” (nieodwracalne, z potwierdzeniem) daje zwycięstwo i epilog.
+- „Włączyć sieć” zostaje akcją pracowni: tej nocy o 20:00 zapalają się okna w całym naszym terenie (mapa światła już jest). To kamień drogi, nie jej koniec.
+- Kamienie: pracownia postawiona; pierwsze badanie; era 3; sieć bez miedzi włączona; generator fuzji postawiony; fabryka uruchomiona.
+- Kontrakt z badaniami: w drzewie flaga `koncowa` (teraz przy fabryce) i numer ery przy każdej technologii; odczyt dla zarządu `GovInput.badania` (`pracownia`, `zbadane`, `era`, `koncowa`, `siecWlaczona`) dostaje `fuzja` (stoi generator) i `fabryka` (fabryka uruchomiona). Bakteriofaga i leku w drzewie nie ma (to fabuła).
+- Szczegóły budowli (miejsce, rozmiar, koszt, czas budowy), nazwy w obu językach i tekst epilogu rozpisuje plan `docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-technologia.md`.
 
 ### 2. Terytorialna: „Za Murem”
 
@@ -158,7 +162,7 @@ Każdy etap: `npm test`, `npm run lint` na całym repo, build, boty bez flagi z 
 1. Zwycięstwo nie kończy gry: epilog, „Graj dalej”, zapis zostaje, kolejne zwycięstwa się liczą.
 2. Pięć dróg teraz, federacja później.
 3. Nazwy: „Prąd bez miedzi”, „Za Murem”, „Wyłącznik z pakietu premium” i „Lek”, „Nowe osiedle”, „Cuda”.
-4. Technologiczne to sieć bez miedzi i noc, w której zapalają się okna.
+4. Technologiczne to fabryka (zombie: humanoidalni żołnierze, zwykły: bioroboty odporne na bakterię), a sieć bez miedzi z nocą, w której zapalają się okna, i generator fuzji to wcześniejsze kamienie (rozstrzygnięte przez Mateusza 19.10.2026 przed południem).
 5. Teren: mur jako nowy obwód, 80% każdego z dziewięciu kwadratów, bez wrogów w środku.
 6. Lek w zwykłym trybie to wyłącznik z pakietu premium z rozwidleniem według ścieżki uchwał; w zombie śledztwo aż do stolicy za granicą; wylęgarnia i synteza to budowle fabularne, nie z badań.
 7. Ludność: połowa ludności kwadratu z 2021 roku, od 120 do 500, przez 7 dni bez głodu; w zombie połowa celu.

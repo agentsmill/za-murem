@@ -11,7 +11,12 @@
    rysuje postać z animacji PixelLab (ludzieLayer.ts), gdy obsada ma daną pozę: inaczej kod. Leżącego pionka i zwłoki
    składa warstwa z klatki stania przodem (art/lezenie.ts). Zmianę leżenia na podłodze widok sam zamienia w przejście
    (przejscia.ts): kładzenie się i wstawanie grają raz z animacji PixelLab, a zwłoki członka zarządu, który zginął
-   podczas gry, upadają i zostają na ostatniej klatce upadku; stan tych przejść jest tylko tu, nie w SimState. */
+   podczas gry, upadają i zostają na ostatniej klatce upadku; stan tych przejść jest tylko tu, nie w SimState.
+   Kwadraty miasta obok domu (src/world/kwadraty.ts) dokłada dodajKwadrat: każdy ma własną scenę, kawałki w układzie
+   miasta (kwadrat (sx, sy) zaczyna się w (sx·bok, sy·bok) pikseli), szwy z sąsiadami (szew.ts), drzewa i mgłę nad
+   nieodkrytymi kwadratami (mglaLayer.ts). Tekstury kawałków mają budżety (chunks.ts, budzety): z bliska najwyżej kilkadziesiąt
+   (4 MiB sztuka), z daleka kilkaset (256 KiB), a poniżej zoomu 0,125 poziom „bardzo daleko” (2 px na metr, 16 KiB). Dom jest
+   kwadratem 0 i rysuje się jak zawsze, także bez żadnych kwadratów obok; pionki, rzeczy, światła i budowa są tylko w domu. */
 
 import {
   Application,
@@ -25,6 +30,7 @@ import {
   TextureStyle,
 } from 'pixi.js';
 import type { WeaponId } from '../sim/bron.ts';
+import { naObwodzie } from '../sim/budowle.ts';
 import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
 import { TRADER_HP, ZBIR_HP } from '../sim/handlarz.ts';
 import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
@@ -51,20 +57,37 @@ import {
 import { type Grafika, type PostacLudzi, rzeczSprite } from './art/pixellab.ts';
 import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec } from './art/rzeczy.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
+import {
+  daneSzwu,
+  kawalkiSzwu,
+  PRZECIWNA,
+  PRZESUNIECIE,
+  STRONY,
+  type Strona,
+  stronaZPrzesuniecia,
+  ZASIEG_DRZEW,
+} from './art/szew.ts';
 import { mockWear, type WearMock } from './atrapy.ts';
 import { BuildLayer, type BuildPlan, type Placement } from './buildLayer.ts';
 import {
   applyScenePatch,
+  type Budzety,
+  budzety,
   type ChunkPainter,
-  chunksByDistance,
   chunksTouched,
   type Done,
   InlinePainter,
+  type Kawalek,
   LOD_FAR,
   LOD_NEAR,
+  LOD_VERY_FAR,
   type MapChange,
-  planOrders,
+  mozeBycPokazany,
+  ofiary,
+  planOrdersWiele,
   poolSize,
+  poziomZoomu,
+  type ScenePatch,
   scenePatchOf,
   spawnChunkWorker,
   WorkerPainter,
@@ -86,9 +109,12 @@ import {
   type WindowSpot,
   windowSpots,
 } from './game.ts';
+import { kandydaciTla, kwadratyNaEkranie, ramkaKwadratow, widoczneKawalki } from './kwadratyWidok.ts';
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
 import { type KlatkaTekstury, LudzieLayer } from './ludzieLayer.ts';
+import { MglaLayer } from './mglaLayer.ts';
+import { sectionPietra } from './pietro.ts';
 import { chunkiParteru, chunkiPietra, przekrojPietra, wnetrzaParteru } from './pietroWidok.ts';
 import { type DuchPlotu, duchPlotu } from './plotDuch.ts';
 import { PlotLayer } from './plotLayer.ts';
@@ -106,9 +132,10 @@ const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)
 const NIGHT_MARKS = 0.35;
 /** nowych tekstur rzeczy na klatkę (wrak to około 1 ms): reszta w następnych, bez zacięcia na starcie */
 const NEW_ART_PER_FRAME = 8;
-/** limit bliskich kawałków w pamięci (każdy to 4 MB tekstury i 4 MB płótna albo ImageBitmap);
-    na telefonach mniej, bo Safari ma twardy limit pamięci płócien */
-const MAX_NEAR = PHONE ? 16 : 48;
+/** budżety tekstur kawałków wszystkich kwadratów razem. Bliskie (z przekrojami) mają 4 MB tekstury i 4 MB płótna albo
+    ImageBitmap, więc na telefonach jest ich mniej (Safari ma twardy limit pamięci płócien); dalekie i bardzo dalekie:
+    zob. budzety() w chunks.ts */
+const BUDZET_DOMYSLNY = budzety(PHONE);
 /** przekrój włącza się od tego zoomu, a wyłącza dopiero poniżej CUT_OFF (bez mrugania na granicy) */
 export const CUT_ON = 0.6;
 const CUT_OFF = 0.55;
@@ -117,6 +144,8 @@ interface ChunkSlot {
   sprite: Sprite;
   near: Texture | null;
   far: Texture | null;
+  /** poziom „bardzo daleko” (2 px na kafelek), tylko przy kilku kwadratach i dużym oddaleniu */
+  veryFar: Texture | null;
   /** przekrój z bliska: wnętrze zamiast dachu (tylko kawałki nad budynkiem z wnętrzem) */
   cut: Texture | null;
   used: number;
@@ -129,8 +158,28 @@ interface ChunkSlot {
 const NEAR_BIT = 1;
 const FAR_BIT = 2;
 const CUT_BIT = 4;
-const bitOf = (s: number, cut?: boolean) => (cut ? CUT_BIT : s === LOD_NEAR ? NEAR_BIT : FAR_BIT);
-const texOf = (sl: ChunkSlot, s: number, cut?: boolean) => (cut ? sl.cut : s === LOD_NEAR ? sl.near : sl.far);
+const VERY_FAR_BIT = 8;
+const bitOf = (s: number, cut?: boolean) =>
+  cut ? CUT_BIT : s === LOD_NEAR ? NEAR_BIT : s === LOD_VERY_FAR ? VERY_FAR_BIT : FAR_BIT;
+const texOf = (sl: ChunkSlot, s: number, cut?: boolean) =>
+  cut ? sl.cut : s === LOD_NEAR ? sl.near : s === LOD_VERY_FAR ? (sl.veryFar ?? null) : sl.far;
+
+/** Kwadrat miasta obok domu w widoku (numer q od 1). Dom (q = 0) trzyma GameView w polach scene, slots i cutChunks. */
+interface KwadratWidoku {
+  q: number;
+  sx: number;
+  sy: number;
+  scene: Scene;
+  slots: ChunkSlot[];
+  /** kawałki z przekrojem wybranego piętra (puste na parterze i dopóki scena piętra kwadratu się nie policzy) */
+  cutChunks: Set<number>;
+  /** piętro, dla którego policzono scenę piętra i cutChunks (−1: jeszcze nie) */
+  pietraL: number;
+  /** początek kwadratu w pikselach grafiki układu miasta */
+  ox: number;
+  oy: number;
+  trees: TreeLayer;
+}
 
 export interface Camera {
   /** środek widoku w pikselach grafiki */
@@ -208,6 +257,25 @@ export class GameView {
   private cutOn = false;
   /** kawałki z przekrojem: nad budynkiem z wnętrzem (parter) albo nad budynkami z wybranym piętrem (pietroNr od 1) */
   private cutChunks = new Set<number>();
+  /** budżety tekstur kawałków (testy ustawiają własne, żeby sprawdzić księgowanie tak jak na telefonie) */
+  private budzet: Budzety = BUDZET_DOMYSLNY;
+  /** kwadraty miasta obok domu (numer q od 1) w kolejności dodania i po numerze */
+  private kw: KwadratWidoku[] = [];
+  private kwMapa = new Map<number, KwadratWidoku>();
+  private nastepnyQ = 1;
+  /** kwadraty, o które poproszono (?kwadraty=), a danych dla nich nie ma: mgła z napisem „brak danych” */
+  private brakDanych: Array<{ sx: number; sy: number }> = [];
+  /** mgła nad nieodkrytymi kwadratami przy odkrytych */
+  readonly mgla = new MglaLayer();
+  /** prostokąt wszystkich kwadratów i próśb bez danych w pikselach grafiki: w nim mieści się kamera */
+  private zakres = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  /** tekstury dalekie i bardzo dalekie w pamięci (wszystkie kwadraty razem) */
+  private nFar = 0;
+  private nVeryFar = 0;
+  /** kandydaci do rysowania w tle przy wielu kwadratach: liczeni od nowa, gdy kamera zmieni kawałek albo zbiór kwadratów */
+  private tloPamiec: { klucz: string; lista: Kawalek[] } | null = null;
+  /** kandydaci tła samego domu (wszystkie kawałki w kolejności numerów): niezmienni, liczeni raz na scenę */
+  private tloDom: Kawalek[] | null = null;
   /** wybrane piętro (widok pięter): 0 to parter, przekrój siedziby jak zawsze; od 1 przekrój typowego piętra */
   private pietroNr = 0;
   /** rzeczy w warstwie pionków: sprite, czy stoi we wnętrzu (widać ją tylko w przekroju), czy się pali */
@@ -290,6 +358,7 @@ export class GameView {
     this.app.canvas.classList.add('game-canvas');
     this.root.addChild(
       this.terrain,
+      this.mgla.container,
       this.ground,
       this.marks,
       this.actors,
@@ -361,13 +430,24 @@ export class GameView {
   }
 
   setScene(sc: Scene): void {
+    for (const k of this.kw) this.usunKwadrat(k);
+    this.kw = [];
+    this.kwMapa.clear();
+    this.nastepnyQ = 1;
+    this.brakDanych = [];
+    this.tloPamiec = null;
+    this.tloDom = null;
     for (const s of this.slots) {
       if (s.near) dropTex(s.near);
       if (s.far) dropTex(s.far);
+      if (s.veryFar) dropTex(s.veryFar);
       if (s.cut) dropTex(s.cut);
       s.sprite.destroy();
     }
     this.slots = [];
+    this.chunksNear = 0;
+    this.nFar = 0;
+    this.nVeryFar = 0;
     this.terrain.removeChildren();
     this.scene = sc;
     // atrapa pustych mieszkań w przekroju (zamiast stanów i uszkodzeń ze świata), zanim scena pójdzie
@@ -390,14 +470,200 @@ export class GameView {
         sprite.position.set(cx * CHUNK * TILE, cy * CHUNK * TILE);
         sprite.visible = false;
         this.terrain.addChild(sprite);
-        this.slots.push({ sprite, near: null, far: null, cut: null, used: 0, ver: 0, stale: 0 });
+        this.slots.push({ sprite, near: null, far: null, veryFar: null, cut: null, used: 0, ver: 0, stale: 0 });
       }
     this.pendingFar = n * n;
     // widok bierze piętro ze sceny (buildScene: 0, parter)
     this.pietroNr = sc.pietro;
     this.cutChunks = this.kawalkiPrzekroju(sc, sc.pietro);
-    const side = sc.w.size * TILE;
-    this.minZoom = Math.min(this.width, this.height) / side / 1.05;
+    this.przeliczZakres();
+    this.odswiezMgle();
+  }
+
+  /** Dom jako kwadrat 0 w tej samej postaci co kwadraty obok (pola scene, slots i cutChunks widoku są jego). */
+  private domWidoku(): KwadratWidoku {
+    return {
+      q: 0,
+      sx: 0,
+      sy: 0,
+      scene: this.scene!,
+      slots: this.slots,
+      cutChunks: this.cutChunks,
+      pietraL: this.pietroNr,
+      ox: 0,
+      oy: 0,
+      trees: this.trees,
+    };
+  }
+
+  /** dom i kwadraty obok, dom pierwszy */
+  private widoki(): KwadratWidoku[] {
+    return this.scene ? [this.domWidoku(), ...this.kw] : [];
+  }
+
+  /** kwadrat o danym położeniu (dom też) albo undefined */
+  private kwadratNa(sx: number, sy: number): KwadratWidoku | undefined {
+    if (sx === 0 && sy === 0) return this.scene ? this.domWidoku() : undefined;
+    return this.kw.find((k) => k.sx === sx && k.sy === sy);
+  }
+
+  /** Numery kwadratów w widoku (dom i kwadraty obok) i ich położenie, dla funkcji z kwadratyWidok.ts. */
+  private pola() {
+    return [{ q: 0, sx: 0, sy: 0 }, ...this.kw.map((k) => ({ q: k.q, sx: k.sx, sy: k.sy }))];
+  }
+
+  /** czy w widoku są kwadraty obok domu albo prośby bez danych (wtedy kliknięcie poza domem nic nie znaczy) */
+  get maKwadraty(): boolean {
+    return this.kw.length > 0 || this.brakDanych.length > 0;
+  }
+
+  /** środek prostokąta wszystkich kwadratów w pikselach grafiki (dla `cam=all`) */
+  get srodek(): { x: number; y: number } {
+    const r = this.zakres;
+    return { x: (r.x0 + r.x1) / 2, y: (r.y0 + r.y1) / 2 };
+  }
+
+  /** Dokłada kwadrat miasta obok domu (sx, sy) ze sceną zbudowaną z jego świata (buildScene z poczatek kwadratu). Scena
+      łączy się szwami z sąsiadami, którzy już są w widoku (dom też): oba kwadraty dostają pasy terenu, ciągi budynków i
+      cień, a kawałki przy wspólnej krawędzi przerysują się z nimi. Zwraca numer kwadratu q (dom to 0). */
+  dodajKwadrat(sx: number, sy: number, scene: Scene): number {
+    if (!this.scene) throw new Error('dodajKwadrat przed setScene');
+    if (this.kwadratNa(sx, sy)) throw new Error(`kwadrat ${sx},${sy} już jest w widoku`);
+    if (scene.w.size !== this.scene.w.size) throw new Error('kwadrat o innym rozmiarze niż dom');
+    const bok = scene.w.size * TILE;
+    // szum i wzory sceny liczą się od współrzędnych miasta; scena bez początku dostaje go tu
+    scene.poczatek ??= { x: sx * bok, y: sy * bok };
+    const q = this.nastepnyQ++;
+    const kv: KwadratWidoku = {
+      q,
+      sx,
+      sy,
+      scene,
+      slots: [],
+      cutChunks: new Set(),
+      pietraL: this.pietroNr === 0 ? 0 : -1,
+      ox: sx * bok,
+      oy: sy * bok,
+      trees: new TreeLayer(this.actors, sx * bok, sy * bok),
+    };
+    const n = scene.chunks;
+    for (let cy = 0; cy < n; cy++)
+      for (let cx = 0; cx < n; cx++) {
+        const sprite = new Sprite();
+        sprite.position.set(kv.ox + cx * CHUNK * TILE, kv.oy + cy * CHUNK * TILE);
+        sprite.visible = false;
+        this.terrain.addChild(sprite);
+        kv.slots.push({ sprite, near: null, far: null, veryFar: null, cut: null, used: 0, ver: 0, stale: 0 });
+      }
+    this.kw.push(kv);
+    this.kwMapa.set(q, kv);
+    this.painter.dodajScene(q, scene);
+    for (const strona of STRONY) {
+      const [dx, dy] = PRZESUNIECIE[strona];
+      const sasiad = this.kwadratNa(sx + dx, sy + dy);
+      if (!sasiad || sasiad === kv) continue;
+      this.nalozSzew(kv, daneSzwu(scene, sasiad.scene, strona), strona);
+      this.nalozSzew(sasiad, daneSzwu(sasiad.scene, scene, PRZECIWNA[strona]), PRZECIWNA[strona]);
+    }
+    // piętro wybrane przed dodaniem kwadratu obowiązuje i w nim: scena piętra policzy się, gdy kwadrat będzie widać
+    // (pietraL: −1), a do tego czasu ma on dachy
+    this.tloPamiec = null;
+    this.przeliczZakres();
+    this.odswiezMgle();
+    return q;
+  }
+
+  /** Kwadrat, o który poproszono, a danych dla niego nie ma: mgła z napisem „brak danych”, kamera może do niego dojechać. */
+  dodajBrakDanych(sx: number, sy: number): void {
+    if (this.kwadratNa(sx, sy) || this.brakDanych.some((b) => b.sx === sx && b.sy === sy)) return;
+    this.brakDanych.push({ sx, sy });
+    this.przeliczZakres();
+    this.odswiezMgle();
+  }
+
+  /** Numery kwadratów (dom 0, potem kwadraty obok), które przecinają ekran, od najbliższego środkowi widoku. */
+  kwadratyWidoczne(): number[] {
+    if (!this.scene) return [];
+    const [x0, y0] = this.toWorld(0, 0);
+    const [x1, y1] = this.toWorld(this.width, this.height);
+    return kwadratyNaEkranie(this.pola(), this.scene.w.size, { x0, y0, x1, y1 }, this.cam);
+  }
+
+  /** Ilu kwadratów obok domu jest w widoku i jakie mają położenie (do pomiarów i zrzutów). */
+  kwadratyObok(): Array<{ q: number; sx: number; sy: number }> {
+    return this.kw.map((k) => ({ q: k.q, sx: k.sx, sy: k.sy }));
+  }
+
+  /** Stan tekstur i budżetów (do pomiarów): ile tekstur każdego poziomu trzyma widok. */
+  pamiecKawalkow(): { bliskie: number; dalekie: number; bardzoDalekie: number; kwadraty: number } {
+    return { bliskie: this.chunksNear, dalekie: this.nFar, bardzoDalekie: this.nVeryFar, kwadraty: this.kw.length };
+  }
+
+  /** nakłada dane szwu na scenę kwadratu (tu i w workerach) i unieważnia kawałki przy wspólnej krawędzi */
+  private nalozSzew(kv: KwadratWidoku, dane: ReturnType<typeof daneSzwu>, strona: Strona): void {
+    const patch: ScenePatch = { tiles: [], terr: [], felled: [], szwy: [dane], ...(kv.q ? { q: kv.q } : {}) };
+    applyScenePatch(kv.scene, patch);
+    this.painter.patch(patch);
+    for (const k of kawalkiSzwu(kv.scene.chunks, strona)) this.uniewaznij(kv.slots[k]);
+  }
+
+  /** Po ścięciu drzew domu: kwadraty obok, do których sięgały, dostają szew od domu od nowa (jego drzewa obce bez ściętych). */
+  private odswiezDrzewaPrzezSzwy(sciete: readonly { x: number; y: number }[]): void {
+    const dom = this.scene;
+    if (!dom) return;
+    const size = dom.w.size;
+    for (const kv of this.kw) {
+      if (Math.abs(kv.sx) > 1 || Math.abs(kv.sy) > 1) continue;
+      // drzewo domu w układzie kwadratu obok: przesunięte o −(sx, sy) rozmiarów
+      const blisko = sciete.some((t) => {
+        const x = t.x - kv.sx * size;
+        const y = t.y - kv.sy * size;
+        return x >= -ZASIEG_DRZEW && y >= -ZASIEG_DRZEW && x <= size + ZASIEG_DRZEW && y <= size + ZASIEG_DRZEW;
+      });
+      if (!blisko) continue;
+      const strona = stronaZPrzesuniecia(-kv.sx, -kv.sy);
+      this.nalozSzew(kv, daneSzwu(kv.scene, dom, strona), strona);
+    }
+  }
+
+  /** nowa wersja kawałka: tekstury sprzed zmiany widać, dopóki nie przyjdą nowe */
+  private uniewaznij(s: ChunkSlot): void {
+    s.ver++;
+    s.stale = (s.near ? NEAR_BIT : 0) | (s.far ? FAR_BIT : 0) | (s.veryFar ? VERY_FAR_BIT : 0) | (s.cut ? CUT_BIT : 0);
+  }
+
+  /** zwalnia sprite'y, tekstury i drzewa kwadratu */
+  private usunKwadrat(kv: KwadratWidoku): void {
+    for (const s of kv.slots) {
+      for (const t of [s.near, s.far, s.veryFar, s.cut]) if (t) dropTex(t);
+      s.sprite.destroy();
+    }
+    kv.trees.destroy();
+  }
+
+  /** zakres kamery i najmniejszy zoom z prostokąta wszystkich kwadratów (i próśb bez danych) */
+  private przeliczZakres(): void {
+    const sc = this.scene;
+    if (!sc) return;
+    const size = sc.w.size;
+    const side = size * TILE;
+    if (!this.maKwadraty) {
+      this.zakres = { x0: 0, y0: 0, x1: side, y1: side };
+      this.minZoom = Math.min(this.width, this.height) / side / 1.05;
+      return;
+    }
+    const r = ramkaKwadratow([...this.pola(), ...this.brakDanych], size);
+    this.zakres = r;
+    this.minZoom = Math.min(this.width / (r.x1 - r.x0), this.height / (r.y1 - r.y0)) / 1.05;
+  }
+
+  /** mgła od nowa dla bieżącego zbioru kwadratów */
+  private odswiezMgle(): void {
+    const sc = this.scene;
+    if (!sc) return;
+    const odkryte = new Set(['0,0', ...this.kw.map((k) => `${k.sx},${k.sy}`)]);
+    const brak = new Set(this.brakDanych.map((b) => `${b.sx},${b.sy}`));
+    this.mgla.ustaw(this.maKwadraty ? odkryte : new Set(), this.maKwadraty ? brak : new Set(), sc.w.size);
   }
 
   /**
@@ -413,10 +679,13 @@ export class GameView {
     applyScenePatch(sc, patch);
     const touched = chunksTouched(sc, ch);
     this.painter.patch(patch);
+    // ścięte drzewo domu przy szwie przestaje rzucać cień i koronę na kwadraty obok
+    if (ch.felled?.length && this.kw.length) this.odswiezDrzewaPrzezSzwy(ch.felled.map((k) => sc.w.trees[k]));
     for (const k of touched) {
       const s = this.slots[k];
       s.ver++;
-      s.stale = (s.near ? NEAR_BIT : 0) | (s.far ? FAR_BIT : 0) | (s.cut ? CUT_BIT : 0);
+      s.stale =
+        (s.near ? NEAR_BIT : 0) | (s.far ? FAR_BIT : 0) | (s.veryFar ? VERY_FAR_BIT : 0) | (s.cut ? CUT_BIT : 0);
     }
     return touched;
   }
@@ -448,6 +717,22 @@ export class GameView {
       const s = this.slots[k];
       s.ver++;
       if (s.cut) s.stale |= CUT_BIT;
+    }
+    // kwadraty obok domu: stary przekrój odpada od razu, nowy (scena piętra kwadratu) policzy się, gdy kwadrat będzie
+    // widać (przygotujPietro); parter nie ma w nich przekroju
+    for (const kv of this.kw) {
+      for (const k of kv.cutChunks) {
+        const s = kv.slots[k];
+        s.ver++;
+        if (s.cut) s.stale |= CUT_BIT;
+      }
+      kv.cutChunks = new Set();
+      kv.pietraL = L === 0 ? 0 : -1;
+      if (L === 0) {
+        const patch: ScenePatch = { ...scenePatchOf(kv.scene, { pietro: 0 }), q: kv.q };
+        applyScenePatch(kv.scene, patch);
+        this.painter.patch(patch);
+      }
     }
     this.odswiezWnetrza();
   }
@@ -567,7 +852,7 @@ export class GameView {
       for (const t of g.fence) this.fixed.add(t);
     }
     // zepsute meble ze stanu gry (symulacja przepisuje broken z mebli świata), z atrapą tylko z atrapy;
-    // okopcona kuchenka na kafelku uszkodzenia piec (po naprawie znowu cała); zasieki stoją zamiast
+    // okopcona kuchenka na kafelku uszkodzenia piec (po naprawie znowu cała); zasieki i barykada stoją zamiast
     // odcinka siatki
     let things = onTables(sim.st.things);
     if (mock) things = things.filter((t) => t.kind !== 'smieci');
@@ -589,7 +874,7 @@ export class GameView {
           : { ...t, broken: broken || undefined, burnt: burnt || undefined };
       });
     }
-    const wire = new Set(sim.st.things.filter((t) => t.kind === 'zasieki').map((t) => t.y * w.size + t.x));
+    const wire = new Set(sim.st.things.filter((t) => naObwodzie(t.kind)).map((t) => t.y * w.size + t.x));
     const fence = wire.size ? g.fence.filter((t) => !wire.has(t.y * w.size + t.x)) : g.fence;
     g.things = [...things, ...g.props, ...fence];
     this.applyThings();
@@ -704,15 +989,24 @@ export class GameView {
 
   clampCam(): void {
     if (!this.scene) return;
-    const side = this.scene.w.size * TILE;
-    this.cam.x = Math.max(0, Math.min(side, this.cam.x));
-    this.cam.y = Math.max(0, Math.min(side, this.cam.y));
+    const r = this.zakres;
+    this.cam.x = Math.max(r.x0, Math.min(r.x1, this.cam.x));
+    this.cam.y = Math.max(r.y0, Math.min(r.y1, this.cam.y));
+  }
+
+  /** kawałek (q, k) z listy gotowych albo undefined, gdy kwadratu już nie ma */
+  private slotOf(q: number | undefined, k: number): ChunkSlot | undefined {
+    return q ? this.kwMapa.get(q)?.slots[k] : this.slots[k];
   }
 
   /** gotowe kawałki do slotów jako tekstury */
   private install(done: Done[]): void {
     for (const d of done) {
-      const s = this.slots[d.k];
+      const s = this.slotOf(d.q, d.k);
+      if (!s) {
+        freeSrc(d.src);
+        continue;
+      }
       const isNear = d.s === LOD_NEAR;
       const bit = bitOf(d.s, d.cut);
       const old = texOf(s, d.s, d.cut);
@@ -732,9 +1026,12 @@ export class GameView {
       } else if (isNear) {
         s.near = t;
         if (!old) this.chunksNear++;
+      } else if (d.s === LOD_VERY_FAR) {
+        s.veryFar = t;
+        if (!old) this.nVeryFar++;
       } else {
         s.far = t;
-        if (!old) this.pendingFar--;
+        if (!old) this.nFar++;
       }
       s.stale &= ~bit;
       if (old) {
@@ -744,17 +1041,37 @@ export class GameView {
     }
   }
 
+  /** Kwadrat obok domu na ekranie z wybranym piętrem od pierwszego dostaje scenę piętra (liczy się tu, najwyżej jeden
+      kwadrat na klatkę, bo sectionPietra to kilkadziesiąt milisekund) i kawałki z przekrojem; bez budynków od dwóch
+      kondygnacji nie ma przekroju. Widok pięter w kwadracie wygląda jak w domu poza siedzibą. */
+  private przygotujPietro(kv: KwadratWidoku): void {
+    const L = this.pietroNr;
+    const sec = sectionPietra(kv.scene.w);
+    kv.pietraL = L;
+    kv.cutChunks = sec ? chunkiPietra(kv.scene, L) : new Set();
+    const patch: ScenePatch = {
+      ...scenePatchOf(kv.scene, { pietro: L, ...(sec ? { pietra: sec } : {}) }),
+      q: kv.q,
+    };
+    applyScenePatch(kv.scene, patch);
+    this.painter.patch(patch);
+    // zamówienia przekroju w locie z poprzedniego piętra mają starą wersję i zostaną odrzucone
+    for (const k of kv.cutChunks) kv.slots[k].ver++;
+  }
+
   /** zamawia brakujące kawałki (najpierw widoczne, od środka ekranu) i pokazuje gotowe */
   private updateChunks(budgetMs: number): void {
     const sc = this.scene!;
-    const n = sc.chunks;
     const z = this.cam.zoom;
-    const near = z >= 0.5;
+    const wiele = this.kw.length > 0;
+    const poziom = poziomZoomu(z, wiele);
+    const near = poziom === 'blisko';
     const linear = z < 1;
     if (linear !== this.nearIsLinear) {
       this.nearIsLinear = linear;
-      for (const s of this.slots)
-        for (const t of [s.near, s.cut]) if (t) t.source.scaleMode = linear ? 'linear' : 'nearest';
+      for (const w of this.widoki())
+        for (const s of w.slots)
+          for (const t of [s.near, s.cut]) if (t) t.source.scaleMode = linear ? 'linear' : 'nearest';
     }
     const t0 = performance.now();
     // gotowe od poprzedniej klatki; jeśli workery padły, dalej rysuje główny wątek
@@ -762,56 +1079,102 @@ export class GameView {
     if (this.painter.failed) {
       this.painter = new InlinePainter();
       this.painter.setScene(sc);
+      for (const k of this.kw) this.painter.dodajScene(k.q, k.scene);
     }
+    const widoki = this.widoki();
+    const widok = (q: number) => (q ? (this.kwMapa.get(q) as KwadratWidoku) : widoki[0]);
     const [x0, y0] = this.toWorld(0, 0);
     const [x1, y1] = this.toWorld(this.width, this.height);
-    const span = CHUNK * TILE;
-    const order = chunksByDistance(
-      n,
-      Math.max(0, Math.floor(x0 / span)),
-      Math.max(0, Math.floor(y0 / span)),
-      Math.min(n - 1, Math.floor(x1 / span)),
-      Math.min(n - 1, Math.floor(y1 / span)),
-      (this.cam.x / span) | 0,
-      (this.cam.y / span) | 0,
-    );
-    const slots = this.slots;
+    const pola = widoki.map((w) => ({ q: w.q, sx: w.sx, sy: w.sy }));
+    const size = sc.w.size;
+    const vis = widoczneKawalki(pola, size, { x0, y0, x1, y1 }, this.cam);
+    // widoki pięter w kwadratach obok: scena piętra kwadratu na ekranie, jeden kwadrat na klatkę
+    if (this.pietroNr >= 1) {
+      const naEkranie = new Set(vis.map((c) => c.q));
+      const doPrzygotowania = this.kw.find((k) => k.pietraL !== this.pietroNr && naEkranie.has(k.q));
+      if (doPrzygotowania) this.przygotujPietro(doPrzygotowania);
+    }
     // tekstura sprzed zmiany na mapie się nie liczy: kawałek trzeba zamówić od nowa
-    const has = (k: number, s: number, cut?: boolean) =>
-      texOf(slots[k], s, cut) !== null && !(slots[k].stale & bitOf(s, cut));
-    const wantCut = (k: number) => this.cutOn && this.cutChunks.has(k);
+    const has = (q: number, k: number, s: number, cut?: boolean) => {
+      const sl = widok(q).slots[k];
+      return texOf(sl, s, cut) !== null && !(sl.stale & bitOf(s, cut));
+    };
+    const wantCut = (q: number, k: number) => this.cutOn && widok(q).cutChunks.has(k);
+    // zapas na dalekie w tle: budżet poziomu minus to, co już jest i czego brakuje widocznym (sam dom: bez ograniczeń)
+    const tier = poziom === 'bardzo-daleko' ? LOD_VERY_FAR : LOD_FAR;
+    let zapas = Number.POSITIVE_INFINITY;
+    if (wiele) {
+      const trzymane = tier === LOD_VERY_FAR ? this.nVeryFar : this.nFar;
+      const limit = tier === LOD_VERY_FAR ? this.budzet.bardzoDalekie : this.budzet.dalekie;
+      // do budżetu liczą się tylko widoczne kawałki, dla których plan zamawia teksturę pilnie (te z samą daleką przy
+      // „bardzo daleko” i z bliską przy zbliżeniu już mają, czym się je pokazuje)
+      let brakujace = 0;
+      for (const c of vis) if (!mozeBycPokazany(poziom, has, c.q, c.k, wantCut(c.q, c.k))) brakujace++;
+      zapas = Math.max(0, limit - trzymane - brakujace);
+    }
+    const klucz = `${Math.floor(this.cam.x / (CHUNK * TILE))},${Math.floor(this.cam.y / (CHUNK * TILE))},${this.kw.length}`;
+    if (wiele && this.tloPamiec?.klucz !== klucz)
+      this.tloPamiec = { klucz, lista: kandydaciTla(pola, size, this.cam, false) };
+    const tlo = wiele
+      ? (this.tloPamiec as { lista: Kawalek[] }).lista
+      : (this.tloDom ??= kandydaciTla(pola, size, this.cam, true));
     // nowa lista zastępuje starą: kawałki, które wyszły z ekranu, wypadają z kolejki
-    this.painter.order(
-      planOrders(order, slots.length, has, near, (k) => slots[k].ver, wantCut),
-      budgetMs,
-    );
+    const zamowienia = planOrdersWiele(poziom, {
+      vis,
+      tlo,
+      has,
+      ver: (q, k) => widok(q).slots[k].ver,
+      cutOf: wantCut,
+      zapas,
+    });
+    this.painter.order(zamowienia, budgetMs);
     this.install(this.painter.take());
-    for (const s of slots) s.sprite.visible = false;
+    // dalekie w tle, na które jeszcze czekamy (bez tych, które tylko trzeba odświeżyć po zmianie na mapie)
+    let czeka = 0;
+    for (const o of zamowienia) if (o.s !== LOD_NEAR && texOf(widok(o.q ?? 0).slots[o.k], o.s) === null) czeka++;
+    this.pendingFar = czeka;
+    for (const w of widoki) for (const s of w.slots) s.sprite.visible = false;
     let complete = true;
-    for (const k of order) {
-      const s = slots[k];
+    const widoczneWKwadracie = new Map<number, number[]>();
+    for (const c of vis) {
+      const w = widok(c.q);
+      const s = w.slots[c.k];
       s.used = this.frameNo;
-      const cut = wantCut(k);
+      const cut = wantCut(c.q, c.k);
       // przekrój, a do czasu jego przyjścia dach z bliska; dach nigdy nie zastępuje przekroju odwrotnie
-      const tex = (cut && s.cut) || (near && s.near) || s.far;
-      if (cut ? !has(k, LOD_NEAR, true) : near ? !has(k, LOD_NEAR) : !has(k, LOD_FAR)) complete = false;
+      const tex =
+        (cut && s.cut) || (near && s.near) || (poziom === 'bardzo-daleko' ? s.veryFar || s.far : s.far || s.veryFar);
+      // z bliska komplet to bliska tekstura (albo przekrój), z daleka taka, jaką da się pokazać (z bardzo daleka wystarcza
+      // daleka: bardzo dalekiej dla niej może nie być w budżecie)
+      if (
+        cut
+          ? !has(c.q, c.k, LOD_NEAR, true)
+          : near
+            ? !has(c.q, c.k, LOD_NEAR)
+            : !mozeBycPokazany(poziom, has, c.q, c.k, false)
+      )
+        complete = false;
       if (tex) {
         if (s.sprite.texture !== tex) s.sprite.texture = tex;
         // skala co klatkę: po wyrzuceniu bliskiego kawałka sprite może już mieć daleką teksturę
-        s.sprite.scale.set(tex === s.far ? LOD_NEAR / LOD_FAR : 1);
+        s.sprite.scale.set(tex === s.veryFar ? LOD_NEAR / LOD_VERY_FAR : tex === s.far ? LOD_NEAR / LOD_FAR : 1);
         s.sprite.visible = true;
       }
+      const lista = widoczneWKwadracie.get(c.q);
+      if (lista) lista.push(c.k);
+      else widoczneWKwadracie.set(c.q, [c.k]);
     }
     // limit pamięci: najdawniej widziane bliskie kawałki (z przekrojami) idą do kosza
-    if (this.chunksNear > MAX_NEAR) {
-      const old = this.slots
+    if (this.chunksNear > this.budzet.bliskie) {
+      const old = widoki
+        .flatMap((w) => w.slots)
         .filter((s) => (s.near || s.cut) && s.used !== this.frameNo)
         .sort((a, b) => a.used - b.used);
       for (const s of old) {
-        if (this.chunksNear <= MAX_NEAR) break;
+        if (this.chunksNear <= this.budzet.bliskie) break;
         if (s.sprite.texture === s.near || s.sprite.texture === s.cut) {
-          s.sprite.texture = s.far ?? Texture.EMPTY;
-          s.sprite.scale.set(LOD_NEAR / LOD_FAR);
+          s.sprite.texture = s.far ?? s.veryFar ?? Texture.EMPTY;
+          s.sprite.scale.set(s.far ? LOD_NEAR / LOD_FAR : s.veryFar ? LOD_NEAR / LOD_VERY_FAR : 1);
         }
         for (const t of [s.near, s.cut]) if (t) dropTex(t);
         this.chunksNear -= (s.near ? 1 : 0) + (s.cut ? 1 : 0);
@@ -820,10 +1183,33 @@ export class GameView {
         s.stale &= ~(NEAR_BIT | CUT_BIT);
       }
     }
+    // dalekie i bardzo dalekie: ponad budżet wypadają najdawniej widziane
+    if (this.nFar > this.budzet.dalekie) this.zwolnijPoziom('far', widoki);
+    if (this.nVeryFar > this.budzet.bardzoDalekie) this.zwolnijPoziom('veryFar', widoki);
     // drzewa z bliska jako sprite'y z widocznych kawałków, z daleka schowane (są w kawałkach)
-    this.trees.update(sc, order, near, linear);
-    this.complete = complete && !this.thingsPending && !this.trees.pending;
+    let czekaDrzewo = false;
+    for (const w of widoki) {
+      w.trees.update(w.scene, widoczneWKwadracie.get(w.q) ?? [], near, linear);
+      if (w.trees.pending) czekaDrzewo = true;
+    }
+    this.complete = complete && !this.thingsPending && !czekaDrzewo;
     this.chunkMs = performance.now() - t0;
+  }
+
+  /** Wyrzuca tekstury poziomu (far albo veryFar) ponad budżet: najdawniej widziane, nigdy widoczne w tej klatce. */
+  private zwolnijPoziom(poziom: 'far' | 'veryFar', widoki: readonly KwadratWidoku[]): void {
+    const limit = poziom === 'far' ? this.budzet.dalekie : this.budzet.bardzoDalekie;
+    const kandydaci: Array<{ id: ChunkSlot; uzyte: number }> = [];
+    for (const w of widoki) for (const s of w.slots) if (s[poziom]) kandydaci.push({ id: s, uzyte: s.used });
+    for (const s of ofiary(kandydaci, limit, this.frameNo)) {
+      const t = s[poziom] as Texture;
+      if (s.sprite.texture === t) s.sprite.texture = Texture.EMPTY;
+      dropTex(t);
+      s[poziom] = null;
+      s.stale &= ~(poziom === 'far' ? FAR_BIT : VERY_FAR_BIT);
+      if (poziom === 'far') this.nFar--;
+      else this.nVeryFar--;
+    }
   }
 
   /** zapamiętuje pozycje przed krokiem symulacji (do płynnego ruchu między krokami) */
@@ -839,6 +1225,7 @@ export class GameView {
     this.root.position.set(Math.round(this.width / 2 - this.cam.x * z), Math.round(this.height / 2 - this.cam.y * z));
     this.cutOn = this.scene.section !== null && z >= (this.cutOn ? CUT_OFF : CUT_ON);
     this.updateChunks(this.frameNo < 3 ? 400 : 10);
+    this.mgla.update(z);
     // światła: z gry i dodatki (ten sam ogień nie świeci dwa razy); we wnętrzu tylko w przekroju
     const time = performance.now() / 1000;
     const all = this.gameLights.length
@@ -1332,10 +1719,16 @@ export class GameView {
     return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isLokator(p) && (this.wnetrza || !this.underRoof(p.x, p.y)));
   }
 
-  /** kafelek pod punktem ekranu */
+  /** kafelek pod punktem ekranu; z kwadratami obok domu punkt poza domem to −1 (gra ignoruje tam kliknięcia i polecenia),
+      bez nich punkt poza mapą trafia w najbliższy kafelek brzegu jak zawsze */
   tileAt(sx: number, sy: number): number {
     const [wx, wy] = this.toWorld(sx, sy);
     const size = this.scene!.w.size;
+    if (this.maKwadraty) {
+      const x = Math.floor(wx / TILE);
+      const y = Math.floor(wy / TILE);
+      return x < 0 || y < 0 || x >= size || y >= size ? -1 : y * size + x;
+    }
     const tx = Math.max(0, Math.min(size - 1, Math.floor(wx / TILE)));
     const ty = Math.max(0, Math.min(size - 1, Math.floor(wy / TILE)));
     return ty * size + tx;

@@ -2,10 +2,10 @@
    mebla siekierą, niesienie naręcza drewna, klęczenie przy kozie (grzanie rąk, dokładanie drewna),
    gotowanie, siedzenie na krześle przy stole, sen w łóżku pod kocem (także na łóżkach piętrowych)
    albo na podłodze, warta z lampą (praca 'guard' przy bramie albo dziurze), czuwanie przy kozie
-   (guard na posterunku KOZA_POST) i drzemka wartownika (guard w fazie 4). Prace M2: przeszukiwanie
-   i przebieranie śmieci na kolanach, rozbiórka siekierą, naprawa, budowa i zajmowanie mieszkania
-   młotkiem (podłoga, rura i grządki na kolanach), niesienie desek albo złomu na łatę, naprawę
-   i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Fala 2: przy cudzych drzwiach
+   (guard na posterunku KOZA_POST), warta na wieży (rysuje się przed jej sprite'em) i drzemka wartownika (guard
+   w fazie 4). Prace M2: przeszukiwanie i przebieranie śmieci na kolanach, rozbiórka siekierą, naprawa, budowa
+   i zajmowanie mieszkania młotkiem (podłoga, rura i grządki na kolanach), niesienie desek albo złomu na łatę,
+   naprawę i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Fala 2: przy cudzych drzwiach
    wyważanie zamachem, deski i pukanie młotkiem, zamek na kolanach, pomieszczenie sąsiada przeszukuje
    na kolanach. Klatki liczone z czasu gry, bez
    stanu w symulacji. Dokładanie do kozy trwa w symulacji
@@ -85,6 +85,9 @@ const BUNK_LOW = 10;
 const BUNK_HIGH = 26;
 /** posterunek warty przy kozie zarządu (KOZA_POST w sim.ts): czuwa przy ogniu, bez latarni */
 export const KOZA_POST = -1;
+/** posterunek warty na wieży (WIEZA_POST w sim.ts): wartownik stoi na kafelku wieży i rysuje się przed nią, bo sprite
+    wieży (z kabiną na palach) zasłoniłby go, a z wieży ma być widoczny */
+export const WIEZA_POST = -3;
 /** cykl czuwania przy kozie (s gry): tyle klęczy przy ogniu, resztę stoi */
 const VIGIL = 19;
 const VIGIL_KNEEL = 14;
@@ -216,6 +219,16 @@ export function poseOf(
       case 'cook':
         return { pose: 'cook', dir, frame: Math.floor(tt * 2) % 2 };
       case 'guard': {
+        if (j.target === WIEZA_POST) {
+          const tower = things.find((c) => c.kind === 'wieza');
+          return {
+            pose: 'guard',
+            dir,
+            frame: Math.floor(tt) % 2,
+            arm: 'hold',
+            ...(tower ? { z: tower.y + tower.h + 0.01 } : {}),
+          };
+        }
         if (j.target !== KOZA_POST) return { pose: 'guard', dir, frame: Math.floor(tt) % 2, arm: 'hold' };
         // czuwanie przy kozie: na krześle siedzi, bez krzesła klęczy przy ogniu i co jakiś czas wstaje
         const chair = things.find((c) => c.kind === 'krzeslo' && covers(c, p.x, p.y));

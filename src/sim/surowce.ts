@@ -1,12 +1,13 @@
 /* Surowce na mapie (docs/superpowers/specs/2026-10-18-surowce-design.md): wraki do przeszukania i rozbiórki, łup
-   zza siatki niesiony na podwórko i przeróbka w warsztacie (drewno na deski, złom na części). Czyste dane i funkcje
-   dla symulacji, menu i rysowania. Łup z wraku losuje generator z ziarna gry i kafelka wraku, a nie st.rng, więc
-   przeszukanie nie przesuwa innych losowań. Stan wraków (st.wraki) powstaje dopiero przy pierwszym przeszukaniu,
+   zza siatki niesiony na podwórko i przeróbka w warsztacie (drewno na deski, złom na części; czas jednej sztuki liczy
+   `pracaPrzepisu`, części po t_spawanie krócej). Czyste dane i funkcje dla symulacji, menu i rysowania. Łup z wraku
+   losuje generator z ziarna gry i kafelka wraku, a nie st.rng, więc przeszukanie nie przesuwa innych losowań. Stan wraków (st.wraki) powstaje dopiero przy pierwszym przeszukaniu,
    żeby gra bez wraków miała ten sam stan i skrót co przed tą zmianą. Napisy są w obu językach: menu, opisy prac
    i podpowiedzi biorą je przez tr() w bieżącym języku (deski to „planks”, bo „board” to zarząd). */
 
 import { mulberry } from '../core/rng.ts';
 import type { Wreck, WreckModel } from '../world/wrecks.ts';
+import { SPAWANIE_TEMPO } from './badania.ts';
 import type { Mat } from './budowle.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
 
@@ -101,6 +102,12 @@ export const RECIPES: Record<Product, { from: Mat; n: number; work: number }> = 
   deski: { from: 'drewno', n: 2, work: TICKS_PER_HOUR / 3 },
   czesci: { from: 'zlom', n: 2, work: TICKS_PER_HOUR },
 };
+/** praca przy jednej sztuce produktu w tickach: z tabeli RECIPES, a części po zbadaniu spawania z akumulatorów
+    (t_spawanie) 1,5× krócej. Bez badania dokładnie `RECIPES[what].work`. */
+export function pracaPrzepisu(what: Product, techDone?: readonly string[]): number {
+  const praca = RECIPES[what].work;
+  return what === 'czesci' && techDone?.includes('t_spawanie') ? praca / SPAWANIE_TEMPO : praca;
+}
 /** ile sztuk naraz daje drugie polecenie w menu warsztatu */
 export const BATCH = 5;
 

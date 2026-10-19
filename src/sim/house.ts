@@ -1,7 +1,9 @@
 /* Wnętrze siedziby widziane przez symulację i ciepło w pomieszczeniach.
    Wnętrze generuje świat (src/world/interior.ts, kontrakt z M1). Tu jest tylko jego kształt strukturalny
    z tymi samymi nazwami pól, żeby symulacja nie zależała od generatora. Wnętrze wynika ze świata i ziarna,
-   więc nie trafia do zapisu gry; temperatury pomieszczeń są w stanie (SimState.temps). */
+   więc nie trafia do zapisu gry; temperatury pomieszczeń są w stanie (SimState.temps). `heatStep` przyjmuje dodatek do
+   temperatury bazowej pomieszczeń (t_okna), a `frontTile` liczy kafelek przed meblem przy ścianie, a `kozaFront` ten przed kozą zarządu, który zostaje wolny dla
+   kozy z beczki (budowle.ts). */
 
 import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
@@ -70,6 +72,23 @@ export function dryTreeOf(w: World): number {
 export function inHomeApt(h: HouseLike, i: number): boolean {
   const r = h.room[i];
   return h.home >= 0 && r >= 0 && h.rooms[r].apt === h.home;
+}
+
+/** Kafelek przed meblem albo rzeczą przy ścianie (koza, kuchenka): strona przeciwna do ściany `rot` (0 góra, 1 prawo,
+    2 dół, 3 lewo), pośrodku boku. Kontrakt wnętrza trzyma go wolnym. To jedyne miejsce, które go liczy: stoi na nim
+    pionek obsługujący mebel (`Sim.frontOf`) i na nim opiera się rezerwacja miejsca w `canPlace` (`kozaFront`). −1 dla
+    `rot` spoza 0–3. */
+export function frontTile(t: { x: number; y: number; w: number; h: number; rot: number }, size: number): number {
+  const cx = t.x + (t.w >> 1);
+  const cy = t.y + (t.h >> 1);
+  return [(t.y + t.h) * size + cx, cy * size + t.x - 1, (t.y - 1) * size + cx, cy * size + t.x + t.w][t.rot] ?? -1;
+}
+
+/** kafelek przed kozą zarządu, z którego się ją obsługuje (`frontTile` jej mebla); generator wnętrza trzyma go wolnym,
+    więc koza z beczki go nie zajmuje. −1: wnętrze bez kozy zarządu */
+export function kozaFront(h: HouseLike, size: number): number {
+  const k = h.furniture.find((f) => f.kind === 'koza' && inHomeApt(h, f.y * size + f.x));
+  return k ? frontTile(k, size) : -1;
 }
 
 /** kafelki mieszkania zarządu (1): jego pomieszczenia i drzwi, które do nich prowadzą */
@@ -192,17 +211,19 @@ export function roomLight(
 
 /** Jeden krok ciepła (HEAT_EVERY ticków). Pomieszczenie dąży do temperatury z zewnątrz z izolacją
     plus ocieplenie od kóz (heatBoost). Ogień grzeje szybko, bez niego temperatura zmienia się powoli.
-    Zwraca ocieplenie pomieszczeń. */
+    extra: dodatek w °C do temperatury bazowej każdego pomieszczenia (folia i koce w oknach, t_okna), bez niego
+    albo z zerami dokładnie jak dawniej. Zwraca ocieplenie pomieszczeń. */
 export function heatStep(
   temps: number[],
   kinds: readonly RoomKind[],
   links: readonly (readonly [number, number])[],
   fires: readonly number[],
   tout: number,
+  extra?: readonly number[],
 ): number[] {
   const boost = heatBoost(kinds, links, fires, tout);
   for (let r = 0; r < temps.length; r++) {
-    const base = tout + insul(kinds[r]);
+    const base = tout + insul(kinds[r]) + (extra?.[r] ?? 0);
     // pomieszczenie z ogniem w tempie ognia bez względu na pogodę, sąsiednie tym szybciej, im więcej ciepła dochodzi
     const f =
       fires.includes(r) && boost[r] > 0 ? F_FIRE : F_DRIFT + (F_FIRE - F_DRIFT) * Math.min(1, boost[r] / FULL_BOOST);

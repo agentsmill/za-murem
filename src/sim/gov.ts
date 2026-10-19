@@ -7,12 +7,33 @@
    Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to `populacja(st).razem`
    z odczytu symulacji (zarząd, także na wyprawie, i mieszkańcy siedziby; bez sąsiadów i gości), a `teren.przylaczone` to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu. Trzeci
    odczyt, `ludnosc2021` (ilu ludzi mieszkało w kwadracie domu w 2021 roku), jest z tabel mieszkańców, a nie ze stanu
-   gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane w src/main.ts). */
+   gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane w src/main.ts).
 
+   Badania: odczyt niesie też `badania` (pracownia, liczba zbadanych technologii, eraBadan, koncowaZbadana i siecWlaczona
+   dla ramy zwycięstwa), książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
+   a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. Odkrycia (research.at)
+   i książki znalezione w przeszukaniach (bookLog) wchodzą jako `odkrycia` i `znaleziska`, z których zarząd pisze
+   kronikę (src/gov/znaleziska.ts); bez badań i książek tych pól nie ma. Kozy z beczek i kocioł
+   wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA), a stojąca wieża jako `wieza`, liczba jej miejsc
+   (posterunek karty). */
+
+import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
 import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type { Arm, GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
+import {
+  dodajKsiazke,
+  eraBadan,
+  koncowaZbadana,
+  liczbaZbadanych,
+  nazwaTech,
+  odkrycia,
+  PALENISKA,
+  siecWlaczona,
+  TECH_BY,
+  wiedza,
+} from './badania.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
 import { dayOf, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { houseOf, inHomeApt } from './house.ts';
@@ -53,10 +74,32 @@ export function armOf(weapon: WeaponId | null, ammo: Partial<Record<AmmoKey, num
 /** tick dla minuty gry liczonej od północy pierwszego dnia (jak RaidPlan.at i GovEffects.away) */
 export const tickOfMinute = (m: number): number => Math.round(((m - START_MINUTES) * TICKS_PER_HOUR) / 60);
 
+/** ile palenisk pali drewno nocą, gdy stoją kozy z beczek albo kocioł: koza zarządu 1 (jeśli stoi w jego mieszkaniu)
+    plus wagi nowych (kocioł 3); 0, gdy nowych nie ma, wtedy karta liczy jedną kozę po staremu */
+function paleniska(st: SimState, w: World): number {
+  let nowe = 0;
+  for (const t of st.things) if (t.kind === 'koza_beczka' || t.kind === 'kociol') nowe += PALENISKA[t.kind];
+  if (nowe === 0) return 0;
+  const h = houseOf(w);
+  const koza = h !== null && st.things.some((t) => t.kind === 'koza' && inHomeApt(h, t.y * w.size + t.x));
+  return (koza ? 1 : 0) + nowe;
+}
+
 /** Odczyt dla zarządu: snapshot w kształcie GovInput. screen: sekundy przy ekranie od startu gry bez pauzy
     (przy 1× to tick / 20; liczy je pętla gry, bo symulacja nie wie o tempie). */
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
   const s = snapshot(st, w);
+  const palenisk = paleniska(st, w);
+  const wieza = st.things.find((t) => t.kind === 'wieza');
+  const zombie = modeOf(st) === 'zombie';
+  // zbadane technologie z drzewka (identyfikatory spoza niego, np. testowe, kronika pomija) z opisem w obu językach
+  const odkryte = odkrycia(st)
+    .filter((o) => Object.hasOwn(TECH_BY, o.id))
+    .map((o) => ({
+      ...o,
+      nazwa: nazwaTech(o.id),
+      dzialanie: zombie ? (TECH_BY[o.id].dzialanieZombie ?? TECH_BY[o.id].dzialanie) : TECH_BY[o.id].dzialanie,
+    }));
   return {
     tick: s.tick,
     day: s.day,
@@ -90,7 +133,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     guards: st.pawns
       .filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase !== 4)
       .map((p) => ({ id: st.people[p.person].id, post: postKey(p.job!.target) })),
-    ...(modeOf(st) === 'zombie'
+    ...(zombie
       ? {
           horde: {
             near: s.zombies.near,
@@ -112,6 +155,25 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     // (plan w toku się nie liczy). Pole `ludnosc2021` dokłada gra (main.ts)
     ludnosc: populacja(st).razem,
     teren: { przylaczone: st.plot?.bids.length ?? 0 },
+    // badania: jedna wiedza i jedne książki dla tablicy i dla wydarzeń zarządu (src/sim/badania.ts)
+    badania: {
+      pracownia: st.things.some((t) => t.kind === 'pracownia'),
+      zbadane: liczbaZbadanych(st),
+      era: eraBadan(st),
+      koncowa: koncowaZbadana(st),
+      siecWlaczona: siecWlaczona(st),
+    },
+    books: { ...st.books },
+    techDone: [...(st.techDone ?? [])],
+    know: Object.fromEntries(TECH_DOMS.map((d) => [d, wiedza(st, d)])) as Record<TechDom, number>,
+    // odkrycia i książki z przeszukań do kroniki (src/gov/znaleziska.ts); gra bez badań i książek nie ma tych pól
+    ...(odkryte.length ? { odkrycia: odkryte } : {}),
+    ...(st.bookLog?.length ? { znaleziska: st.bookLog.map((k) => ({ ...k })) } : {}),
+    // kozy z beczek i kocioł: dyżur przy kozie dokłada do wszystkich, a wyliczenie drewna na noc liczy każde
+    ...(palenisk > 0 ? { paleniska: palenisk } : {}),
+    // stoi wieża: karta nocy dostaje posterunek „Warta na wieży” (src/gov/noc.ts) dla tylu osób, ile kafelków ma jej
+    // obrys (tyle da się ustawić na posterunku, guardStand); bez wieży pole nie istnieje
+    ...(wieza ? { wieza: wieza.w * wieza.h } : {}),
   };
 }
 
@@ -296,6 +358,8 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   if (fx.patch > 0) cmd({ t: 'mend', ids: [], n: fx.patch });
   if (fx.fire) stairFire(st, w);
   if (fx.sick > 0) sicken(st, fx.sick);
+  // znalezione książki na półkę osady; trzecia z dziedziny idzie na podpałkę (drewno przy bramie)
+  for (const d of fx.books ?? []) if (dodajKsiazke(st, d) === 'podpalka') give(st, w, 'wood', 1);
   // znaleziska z wypraw do magazynu, ugryzieni na wyprawie zakażeni
   for (const a of fx.arms ?? []) if (a in WEAPONS && a !== 'piesci') (st.store.arms ??= []).push(a as WeaponId);
   for (const [k, n] of Object.entries(fx.ammo ?? {}) as [AmmoKey, number][])

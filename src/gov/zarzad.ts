@@ -14,19 +14,24 @@
    Drogi do zwycięstwa (src/gov/zwyciestwo.ts): na końcu kroku, po `checkOver` i tylko w trwającej grze, `govUpdate` woła
    `krokZwyciestwa` (kamienie milowe, licznik celu ludności, zwycięstwo; bez `st.zwyciestwo` z `wlaczZwyciestwo` nie robi
    nic), a `pending` oddaje epilog zwycięstwa przed raportem (pierwszy z kolejki `epilogi`). `grajDalej` zdejmuje pierwszy
-   epilog, następny z kolejki pokazuje się zaraz po nim; zapis i gra zostają. */
+   epilog, następny z kolejki pokazuje się zaraz po nim; zapis i gra zostają.
+
+   Odkrycia z badań i książki znalezione w przeszukanych pomieszczeniach wchodzą do kroniki w kroku zarządu
+   (`znaleziska` z src/gov/znaleziska.ts, wejście GovInput.odkrycia i znaleziska), odkrycie podnosi zaufanie o 1. */
 
 import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
+import { TECH_DOMS } from '../content/data.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { wyprawyTick } from './dzienne.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
-import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } from './noc.ts';
+import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, resetAssign, setAssign } from './noc.ts';
 import { FIRST_LAWS } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
 import { lawEffects as effectsOfLaws, lawState, lawOptions as optionsOfLaws, sign } from './uchwaly.ts';
 import { przyjeciaZUlicy, wiesci } from './wiesci.ts';
 import { atHour, decision, emptyEffects, gameMin, logGov, mood, rnd, zeroStock } from './wspolne.ts';
 import { choose, eventTick, eventView, FIRST_EVENT } from './wydarzenia.ts';
+import { znaleziska } from './znaleziska.ts';
 import { krokZwyciestwa } from './zwyciestwo.ts';
 
 export const GOV_VERSION = 1;
@@ -73,6 +78,9 @@ const busy = (st: GovState) => !!st.report || st.lawPending || (!!st.night && !s
     do zwycięstwa; zwraca skutki do zastosowania */
 export function govUpdate(st: GovState, i: GovInput): GovEffects {
   const fx = emptyEffects();
+  // książki ze starego zapisu (zarząd trzymał je u siebie, teraz są w symulacji) idą do niej przy pierwszym kroku
+  for (const d of TECH_DOMS) for (let k = st.books[d] ?? 0; k > 0; k--) (fx.books ??= []).push(d);
+  if (Object.keys(st.books).length) st.books = {};
   if (st.over) return fx;
   if (i.hour >= 18 && i.light?.campfire) st.evening.campfire = true;
   // powroty wypraw dziennych z mapy miasta (bez st.wyprawy nic: skróty botów bez mapy zostają)
@@ -124,6 +132,7 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   if (st.night && !st.night.confirmed && (i.hour >= CARD_DEADLINE || i.day > st.night.day)) confirm(st, i, fx, true);
   nightTick(st, i, fx);
   mourn(st, i, fx);
+  znaleziska(st, i);
   wiesci(st, i, fx);
   przyjeciaZUlicy(st, i, fx);
   eventTick(st, i, fx, busy(st));
@@ -185,6 +194,9 @@ export function pending(st: GovState, i: GovInput): Prompt | null {
 
 /** przydział na karcie nocy (klucz opcji z karty); false, gdy nie wolno */
 export const setNight = (st: GovState, id: string, key: string): boolean => setAssign(st, id, key);
+
+/** „Jak radzi zarząd”: cały przydział z powrotem na propozycje (wieża ma ograniczoną liczbę miejsc, więc nie osoba po osobie) */
+export const resetNight = (st: GovState): boolean => resetAssign(st);
 
 /** zatwierdzenie karty nocy: wyprawy wychodzą, warta staje, plan napadu na tę noc */
 export function confirmNight(st: GovState, i: GovInput): GovEffects {
