@@ -10,8 +10,10 @@
    Karty z ludźmi: mieszkańcy siedziby z osobą z generatora (`GovHost.lokatorzy()`, `lokator(id)`; bez generatora lista
    jest pusta, a karty grają po staremu) dają bohaterów kartom `dym`, `latarka` (najstarsza mieszkanka po imieniu, bez
    pięter) i, w nakładkach z warianty.ts, `fachowiec` (awans), `kradziez` (sprawca z najniższym nastrojem, nie jedzenie)
-   i `odejscie`/`klotnia` (wyjście bramą: `wyrzuc`). `bezsennosc` bierze nieśpiącego spoza warty przy siatce (może to
-   być ktoś na dyżurze przy kozie) z najniższym bezpieczeństwem (`czuwaPozaWarta()`), a `krzyk` i `halas` dla
+   i `odejscie`/`klotnia` (wyjście bramą: `wyrzuc`). `bezsennosc` bierze spoza warty przy siatce (dyżur przy kozie wolno)
+   nieśpiącego z najniższym bezpieczeństwem (`czuwaPozaWarta()`), a gdy nikt nie czuwa, śpiącego (`spiPozaWarta()`);
+   jego wybory ruszają prawdziwych ludzi (`sprawdz` do kafelka przed kozą `kafelekKozy()` albo do siatki). `krzyk` i
+   `halas` dla
    „Sprawdzić” osobę z `doSprawdzenia()` (czuwającą, a gdy takiej nie ma, śpiącą, ale nie z warty) i kafelek
    z `kafelekPrzySiatce()` (`sprawdz`). */
 
@@ -256,11 +258,20 @@ export interface GovHost extends EventHost {
   /** osoby zarządu, które nie śpią, nie są na wyprawie i nie pilnują siatki (brama, dziura, wieża, warta z karty nocy)
       ani nie operują (ugryzione); dyżur przy kozie wolno, bo siedzi przy kozie; w kolejności osób (kopie) */
   czuwaPozaWarta(): GovPerson[];
+  /** to samo dla śpiących: osoby zarządu, które śpią, są na miejscu, nie pilnują siatki i nie są przy zabiegu (dyżur
+      przy kozie wolno); w kolejności osób (kopie) */
+  spiPozaWarta(): GovPerson[];
+  /** klucz posterunku warty, na którym stoi osoba zarządu ('brama', 'd<id>', 'koza', 'siatka', 'wieza'; z odczytu, menu
+      albo zatwierdzonej karty nocy); null: nie stoi na żadnym albo nie ma takiej osoby */
+  posterunek(id: string): string | null;
+  /** wolny kafelek przed kozą zarządu (`GovInput.strony.koza`); null: brak kozy albo wejścia bez strony */
+  kafelekKozy(): number | null;
   /** najbardziej wypoczęta osoba, która może teraz iść sprawdzić hałas: najpierw spośród tych, które nie śpią, a gdy
       żadna nie może, spośród śpiących (wstaje i idzie). Nigdy nie idzie osoba na wyprawie (ani w nocnym planie
       wypraw), na posterunku warty (`GovInput.guards`, `GovPerson.post`, warta z karty nocy) ani przy zabiegu
-      (ugryziona albo operuje); null: nikt nie może, wtedy „Sprawdzić” jest niedostępne */
-  doSprawdzenia(): GovPerson | null;
+      (ugryziona albo operuje); `oprocz` to id osoby, której nie brać (np. bohater karty); null: nikt nie może, wtedy
+      „Sprawdzić” jest niedostępne */
+  doSprawdzenia(oprocz?: string): GovPerson | null;
   /** kafelek podwórka przy siatce od strony garaży (`garaze`) albo najbliższego budynku mieszkalnego (`blok`), z
       `GovInput.strony`; bez niej kafelek największej otwartej dziury, a gdy i jej kafelków nie ma, null */
   kafelekPrzySiatce(strona: 'garaze' | 'blok'): number | null;
@@ -771,45 +782,64 @@ export const NEW_EVENTS: GEventDef[] = [
     id: 'bezsennosc',
     first: true,
     when: ['noc'],
-    // bezsenność dotyka kogoś, kto siedzi przy kozie i nie może zasnąć: z osób zarządu na nogach (nie śpią, nie są na
-    // wyprawie, nie pilnują siatki ani nie są przy zabiegu; dyżur przy kozie wolno) bierze tę z najniższym
-    // bezpieczeństwem, czyli tę, którą kroki na klatce niepokoją najbardziej (remis: kolejność osób); gdy nikogo takiego
-    // nie ma, karty nie ma
-    w: (h) => (h.czuwaPozaWarta().length ? 0.8 : 0),
+    // Bezsenność dotyka osoby zarządu spoza warty przy siatce (dyżur przy kozie wolno; nie na wyprawie, nie przy
+    // zabiegu) o najniższym bezpieczeństwie, czyli tej, którą kroki na klatce niepokoją najbardziej (remis: kolejność
+    // osób). Najpierw z tych, którzy nie śpią (siedzą przy kozie); nocą śpią wszyscy poza wartą, więc gdy nikt nie
+    // czuwa, z tych, którzy śpią (`spi`: ciągle się budzi). Karty nie ma tylko, gdy nie ma żadnych z dwóch.
+    w: (h) => (h.czuwaPozaWarta().length || h.spiPozaWarta().length ? 0.8 : 0),
     make: (h) => {
-      const najbardziejNiespokojny = [...h.czuwaPozaWarta()].sort((a, b) => a.needs.safe - b.needs.safe)[0];
-      return najbardziejNiespokojny ? { p: najbardziejNiespokojny.id } : null;
+      const najbardziejNiespokojny = (l: GovPerson[]) => [...l].sort((a, b) => a.needs.safe - b.needs.safe)[0];
+      const czuwa = najbardziejNiespokojny(h.czuwaPozaWarta());
+      if (czuwa) return { p: czuwa.id };
+      const spi = najbardziejNiespokojny(h.spiPozaWarta());
+      return spi ? { p: spi.id, spi: true } : null;
     },
     title: () => tx('Ktoś nie może spać', 'Someone can’t sleep'),
     text: (h, d) => {
       const p = h.spec(d.p)!;
+      const kroki = dom(h) ? 'na strychu' : 'na klatce';
+      const krokiEn = dom(h) ? 'in the attic' : 'in the stairwell';
+      if (d.spi)
+        return tx(
+          `${p.name} co chwilę się budzi i nie może zasnąć. Mówi, że ciągle słyszy kroki ${kroki}.`,
+          `${p.name} keeps waking up and can’t get back to sleep. ${zaimek(p, 'He', 'She')} keeps hearing footsteps ${krokiEn}.`,
+        );
       return tx(
-        `${p.name} siedzi przy kozie i nie może zasnąć. Mówi, że ciągle słyszy kroki ${dom(h) ? 'na strychu' : 'na klatce'}.`,
-        `${p.name} is sitting by the stove and can’t get to sleep. ${zaimek(p, 'He', 'She')} keeps hearing footsteps ${dom(h) ? 'in the attic' : 'in the stairwell'}.`,
+        `${p.name} siedzi przy kozie i nie może zasnąć. Mówi, że ciągle słyszy kroki ${kroki}.`,
+        `${p.name} is sitting by the stove and can’t get to sleep. ${zaimek(p, 'He', 'She')} keeps hearing footsteps ${krokiEn}.`,
       );
     },
     choices: (h, d) => {
       const p = h.spec(d.p)!;
+      const koza = h.kafelekKozy();
+      const siatka = h.kafelekPrzySiatce('blok');
       return [
         {
+          // bohater idzie do kozy (chyba że już ma tam dyżur) i drugi wolny człowiek dosiada się do niego
           label: tx(
             `Posiedzieć ${g(p, 'z nim', 'z nią')} przy kozie`,
             `Sit with ${zaimek(p, 'him', 'her')} by the stove`,
           ),
-          ok: true,
+          ok: koza !== null,
           run: () => {
-            const o = h.rested();
-            if (o && o.id !== d.p) h.needsOf(o.id, { rest: -5 });
+            const o = h.doSprawdzenia(d.p);
+            if (koza !== null) {
+              if (h.posterunek(d.p) !== 'koza') h.sprawdz(d.p, koza);
+              if (o) h.sprawdz(o.id, koza);
+            }
+            if (o) h.needsOf(o.id, { rest: -5 });
             h.needsOf(d.p, { safe: 10, rest: 5 });
           },
         },
         {
+          // bohater idzie na podwórko przy siatce
           label: tx(
             'Niech pilnuje, skoro nie śpi',
             `Let ${zaimek(p, 'him', 'her')} keep watch, since ${zaimek(p, 'he', 'she')} is up anyway`,
           ),
-          ok: true,
+          ok: siatka !== null,
           run: () => {
+            if (siatka !== null) h.sprawdz(d.p, siatka);
             h.guardBonus(1.5);
             h.needsOf(d.p, { rest: -10 });
             h.log(

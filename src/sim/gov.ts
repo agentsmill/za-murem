@@ -35,7 +35,8 @@
 
    Strony świata (`strony`): kafelek podwórka przy siatce od strony najbliższych garaży i najbliższego budynku
    mieszkalnego za siatką (`stronyOf` w src/gov/miejsce.ts), z których karty „Krzyk” i „Hałas” biorą miejsce dla
-   „Sprawdzić”; dziury w siatce niosą swoje kafelki (`GovHole.tiles`), gdy strony nie ma. */
+   „Sprawdzić”; dziury w siatce niosą swoje kafelki (`GovHole.tiles`), gdy strony nie ma. Do tego `strony.koza`: wolny
+   kafelek przed kozą zarządu, dokąd idzie ktoś z karty „Ktoś nie może spać” (liczony przy każdym odczycie). */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
@@ -56,7 +57,7 @@ import {
 } from './badania.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
 import { dayOf, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
-import { houseOf, inHomeApt } from './house.ts';
+import { frontTile, houseOf, inHomeApt } from './house.ts';
 import { nearestFree } from './path.ts';
 import { fenceShape, gateTiles } from './perimeter.ts';
 import {
@@ -156,6 +157,20 @@ function strony(st: SimState, w: World): NonNullable<GovInput['strony']> {
   return wynik;
 }
 
+/** wolny kafelek przy kozie zarządu (przed nią, `frontTile`, który kontrakt wnętrza trzyma wolnym), a gdy zajęty przez
+    mur albo mebel, najbliższy wolny; undefined: zarząd nie ma kozy w swoim mieszkaniu. Nie jest w pamięci stron
+    świata, bo koza może się spalić albo zmienić miejsce. */
+function kafelekKozy(st: SimState, w: World): number | undefined {
+  const h = houseOf(w);
+  const size = w.size;
+  const koza = h ? st.things.find((t) => t.kind === 'koza' && inHomeApt(h, t.y * size + t.x)) : undefined;
+  if (!koza) return undefined;
+  const front = frontTile(koza, size);
+  return front >= 0 && front < size * size && !w.blocked[front]
+    ? front
+    : nearestFree(w.blocked, size, koza.y * size + koza.x);
+}
+
 /** mieszkaniec siedziby dla zarządu: tylko pola `GovLokator` (bez historii, odnośnika, rodziny, nastrojów i pracy) */
 const lokatorZarzadu = (p: SimPerson): GovLokator => ({
   pawn: p.pawn,
@@ -178,7 +193,8 @@ const lokatorZarzadu = (p: SimPerson): GovLokator => ({
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
   const s = snapshot(st, w);
   const palenisk = paleniska(st, w);
-  const stronySwiata = strony(st, w);
+  const kozaTile = kafelekKozy(st, w);
+  const stronyZKoza = { ...strony(st, w), ...(kozaTile !== undefined ? { koza: kozaTile } : {}) };
   const wieza = st.things.find((t) => t.kind === 'wieza');
   const zombie = modeOf(st) === 'zombie';
   const przy = zombie ? szwendaczPrzySiatce(st, w) : null;
@@ -233,7 +249,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     burned: s.burned,
     hqName,
     place: placeOf(w),
-    ...(Object.keys(stronySwiata).length ? { strony: { ...stronySwiata } } : {}),
+    ...(Object.keys(stronyZKoza).length ? { strony: stronyZKoza } : {}),
     // warta, która stoi (z karty, z menu i przy kozie), bez śpiących na posterunku i bez tych na wyprawie
     guards: st.pawns
       .filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase !== 4)

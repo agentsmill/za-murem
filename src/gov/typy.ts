@@ -204,11 +204,12 @@ export interface GovInput {
   /** ilu ludzi mieszkało w kwadracie domu w 2021 roku według NSP; z tego liczy się cel drogi ludnościowej, bez pola
       (albo z liczbą bez sensu) cel to 250 */
   ludnosc2021?: number;
-  /** strony świata dla kart „Krzyk z bloku obok” i „Hałas za garażami”: kafelek podwórka przy siatce od strony
-      najbliższych garaży (do 150 m od siedziby) i od strony najbliższego budynku mieszkalnego za siatką (do 120 m),
-      numer kafelka jak w `GovHole.tiles` (y * rozmiar + x). Liczy je `govInput` raz na kształt siatki; strony, których
-      świat nie ma, nie występują, a bez pola karta bierze największą dziurę (albo nie pozwala sprawdzić) */
-  strony?: { garaze?: number; blok?: number };
+  /** strony świata dla kart „Krzyk z bloku obok”, „Hałas za garażami” i „Ktoś nie może spać”: kafelek podwórka przy
+      siatce od strony najbliższych garaży (do 150 m od siedziby) i od strony najbliższego budynku mieszkalnego za
+      siatką (do 120 m), numer kafelka jak w `GovHole.tiles` (y * rozmiar + x). `garaze` i `blok` liczy `govInput` raz
+      na kształt siatki; strony, których świat nie ma, nie występują, a bez pola karta bierze największą dziurę (albo
+      nie pozwala sprawdzić). `koza`: wolny kafelek przed kozą zarządu we wnętrzu jego mieszkania, bez kozy brak */
+  strony?: { garaze?: number; blok?: number; koza?: number };
   /** teren: ile budynków wspólny płot dołączył do naszego obwodu; bez pola droga terenu nie ma jak liczyć kamieni */
   teren?: { przylaczone: number };
   /** badania (src/sim/badania.ts): czy stoi pracownia, ile technologii z drzewka jest zbadanych (identyfikatory spoza

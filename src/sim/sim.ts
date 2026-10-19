@@ -14,7 +14,8 @@
    osób, ile kafelków), jego lampa płoszy dalej (WIEZA_ZASIEG), a broń dystansowa sięga z wieży dalej.
    Ludzie z wydarzeń zarządu (zwykłe zmiany stanu jak `addCore`, wołane z `applyGov`): `awansuj` zmienia mieszkańca z osobą
    w zarząd (ten sam pionek), `wyprowadz` posyła mieszkańca albo osobę zarządu pracą `odejscie` do bramy (drogą zarządu),
-   dalej ulicą daleko od siatki, gdzie znika, a `sprawdz` posyła osobę zarządu pracą `sprawdz` na kafelek na 10 minut gry.
+   dalej ulicą daleko od siatki, gdzie znika, a `sprawdz` posyła osobę zarządu pracą `sprawdz` na kafelek na 10 minut gry
+   (od strony podwórka, a kafelek we wnętrzu mieszkania zarządu, np. przed kozą, to wolne miejsce w jego pomieszczeniu).
    Rozkazy i wróg nie zmieniają `odejscie`; kto wychodzi, nie bierze poleceń. */
 
 import { PROFS, type TechDom } from '../content/data.ts';
@@ -1835,7 +1836,8 @@ export function wyprowadz(st: SimState, w: World, personId: string): boolean {
 }
 
 /** Osoba zarządu idzie sprawdzić kafelek `tile` (hałas, krzyk): praca `sprawdz`. Miejsce, na którym stanie, wybiera
-    symulacja w pierwszym kroku pracy (najbliższy osiągalny kafelek, od strony podwórka), stoi tam SPRAWDZ_TICKS (10
+    symulacja w pierwszym kroku pracy (od strony podwórka; kafelek w mieszkaniu zarządu: wolny kafelek jego
+    pomieszczenia najbliżej niego), stoi tam SPRAWDZ_TICKS (10
     minut gry) i wraca do swoich zajęć. false: nie ma takiej osoby w zarządzie, jest na wyprawie, wychodzi bramą albo
     kafelek jest poza mapą. */
 export function sprawdz(st: SimState, w: World, personId: string, tile: number): boolean {
@@ -4131,11 +4133,41 @@ export class Sim {
     return true;
   }
 
-  /** gdzie stanąć, żeby sprawdzić kafelek: on sam, gdy to wolne miejsce podwórka, inaczej wolny kafelek podwórka
+  /** wolny kafelek pomieszczenia najbliżej kafelka we wnętrzu mieszkania zarządu (przy kozie siadają obok siebie);
+      −1: pomieszczenie nie ma wolnego miejsca osiągalnego dla pionka */
+  private standInRoom(p: Pawn, tile: number): number {
+    const h = this.house;
+    const r = h ? h.room[tile] : -1;
+    if (r < 0) return -1;
+    const size = this.w.size;
+    const region = this.regionOf(p);
+    const taken = this.taken(p);
+    const tx = tile % size;
+    const ty = Math.floor(tile / size);
+    let best = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const i of this.roomTiles[r]) {
+      if (this.coreBlocked[i] || this.reg[i] !== region || taken.includes(i)) continue;
+      if (this.thingAt(i % size, Math.floor(i / size))) continue;
+      const d = ((i % size) - tx) ** 2 + (Math.floor(i / size) - ty) ** 2;
+      if (d < bd || (d === bd && i < best)) {
+        bd = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** gdzie stanąć, żeby sprawdzić kafelek: gdy leży we wnętrzu mieszkania zarządu (koza), wolny kafelek jego
+      pomieszczenia najbliżej niego; inaczej on sam, gdy to wolne miejsce podwórka, inaczej wolny kafelek podwórka
       do 4 kroków od niego (najbliżej pionka), a gdy takiego brak (wejście do budynku za siatką), najbliższy osiągalny
       kafelek; −1: nie ma dokąd iść */
   private sprawdzStand(p: Pawn, tile: number): number {
     const size = this.w.size;
+    if (this.house && inHomeApt(this.house, tile)) {
+      const s = this.standInRoom(p, tile);
+      if (s >= 0) return s;
+    }
     if (
       this.yardMask[tile] === 1 &&
       !this.coreBlocked[tile] &&

@@ -567,11 +567,13 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // osobę spoza warty przy siatce bez losowania (nocą rzadko jest ktoś taki), kradzież wraca co 48 godzin, odejście
     // nie dotyczy ostatniej osoby. Trzeci raz w poprawce zadania 6: atrapa ma teraz kafelki dziur i strony świata,
     // więc „Sprawdzić” z krzyku i hałasu jest w niej dostępne (wcześniej zawsze wyszarzone), a przy tym wchodzi w grę
-    // wstawanie śpiącego; były 32eb97ec, 88a53f7e i 438e5c9b, potem 1859eee3, 8e1834e7 i 04753f7b
+    // wstawanie śpiącego. Czwarty raz w drugiej poprawce zadania 6: bezsenność bierze też śpiącego (ciągle się budzi),
+    // a jej wybory wysyłają ludzi do kozy (atrapa ma kafelek przed kozą) albo do siatki; były 32eb97ec, 88a53f7e
+    // i 438e5c9b, potem 1859eee3, 8e1834e7 i 04753f7b, potem 69085683, 00eb9415 i ef1cea9e
     const przebiegi = [
-      [1, 'propozycja', '69085683'],
-      [3, 'zawsze-warta', '00eb9415'],
-      [5, 'losowo', 'ef1cea9e'],
+      [1, 'propozycja', '7fa6ef50'],
+      [3, 'zawsze-warta', 'b2171b99'],
+      [5, 'losowo', '943895c7'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

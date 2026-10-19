@@ -21,6 +21,7 @@ import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, newGov } from '../../src/gov/zarzad.ts';
 import { wczytajDaneMieszkancow } from '../../src/mieszkancy/wczytaj.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
+import { frontTile, houseOf, inHomeApt } from '../../src/sim/house.ts';
 import { mapaMieszkancow, mieszkancyNowejGry, opcjaMieszkancow } from '../../src/sim/osiedle.ts';
 import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
@@ -468,12 +469,97 @@ describe('bezsenność', () => {
     expect(def('bezsennosc').make(h)).toEqual({ p: i.people[1].id });
   });
 
-  it('gdy wszyscy śpią albo są na wyprawie, karty nie ma', () => {
-    const wszyscySpia = setup({
+  it('gdy nikt nie czuwa, bohaterem jest śpiący o najniższym bezpieczeństwie, spoza warty przy siatce', () => {
+    // 0 śpi na warcie przy bramie (najniższe safe), 1 śpi, 2 śpi (najniższe z wolnych), 3 śpi
+    const { h, i } = setup({
       hour: 23,
-      people: ludzie([], [{ asleep: true }, { asleep: true }, { asleep: true }, { asleep: true }]),
+      people: ludzie(
+        [{ safe: 1 }, { safe: 30 }, { safe: 12 }, { safe: 50 }],
+        [{ asleep: true, post: 'brama' }, { asleep: true }, { asleep: true }, { asleep: true }],
+      ),
     });
-    expect(def('bezsennosc').w(wszyscySpia.h)).toBe(0);
+    expect(h.czuwaPozaWarta()).toEqual([]);
+    expect(def('bezsennosc').w(h)).toBeGreaterThan(0);
+    expect(def('bezsennosc').make(h)).toEqual({ p: i.people[2].id, spi: true });
+    // przy remisie bezpieczeństwa pierwszy w kolejności osób
+    const remis = setup({
+      hour: 23,
+      people: ludzie(
+        [{ safe: 20 }, { safe: 20 }, { safe: 60 }, { safe: 60 }],
+        [{ asleep: true }, { asleep: true }, { asleep: true }, { asleep: true }],
+      ),
+    });
+    expect(def('bezsennosc').make(remis.h)).toEqual({ p: remis.i.people[0].id, spi: true });
+  });
+
+  it('czuwający ma pierwszeństwo przed śpiącym, choćby ten miał niższe bezpieczeństwo', () => {
+    const { h, i } = setup({
+      hour: 23,
+      people: ludzie(
+        [{ safe: 5 }, { safe: 70 }, { safe: 6 }, { safe: 7 }],
+        [{ asleep: true }, {}, { asleep: true }, { asleep: true }],
+      ),
+    });
+    expect(def('bezsennosc').make(h)).toEqual({ p: i.people[1].id });
+  });
+
+  it('śpiący wartownik, na wyprawie, ugryziony i operujący nie są bohaterami; śpiący dyżur przy kozie jest', () => {
+    const wszyscyZajeci = setup({
+      hour: 23,
+      people: ludzie(
+        [],
+        [
+          { asleep: true, post: 'd1' },
+          { asleep: true, away: true },
+          { asleep: true, bitten: true },
+          { asleep: true, job: 'amputate' },
+        ],
+      ),
+    });
+    expect(wszyscyZajeci.h.spiPozaWarta()).toEqual([]);
+    expect(def('bezsennosc').w(wszyscyZajeci.h)).toBe(0);
+    const zKoza = setup({
+      hour: 23,
+      people: ludzie(
+        [{ safe: 5 }],
+        [
+          { asleep: true, post: 'koza' },
+          { asleep: true, post: 'siatka' },
+          { asleep: true, post: 'wieza' },
+          { asleep: true, away: true },
+        ],
+      ),
+    });
+    expect(def('bezsennosc').make(zKoza.h)).toEqual({ p: zKoza.i.people[0].id, spi: true });
+    // spiPozaWarta oddaje kopie
+    zKoza.h.spiPozaWarta()[0].needs.safe = -9;
+    expect(zKoza.i.people[0].needs.safe).toBe(5);
+  });
+
+  it('tekst zależy od przypadku: przy kozie, albo ciągle się budzi (bez słowa o kozie), po polsku i angielsku', () => {
+    const czuwajacy = setup({ hour: 23, people: ludzie([{ safe: 5 }]) });
+    const dc = def('bezsennosc').make(czuwajacy.h);
+    const imie = czuwajacy.i.people[0].name;
+    expect(def('bezsennosc').text(czuwajacy.h, dc)).toBe(
+      `${imie} siedzi przy kozie i nie może zasnąć. Mówi, że ciągle słyszy kroki na klatce.`,
+    );
+    const spiacy = setup({
+      hour: 23,
+      people: ludzie([{ safe: 5 }], [{ asleep: true }, { asleep: true }, { asleep: true }, { asleep: true }]),
+    });
+    const ds = def('bezsennosc').make(spiacy.h);
+    const kto = spiacy.i.people[0];
+    expect(def('bezsennosc').text(spiacy.h, ds)).toBe(
+      `${kto.name} co chwilę się budzi i nie może zasnąć. Mówi, że ciągle słyszy kroki na klatce.`,
+    );
+    expect(def('bezsennosc').text(spiacy.h, ds)).not.toMatch(/koz/);
+    const en = ev('bezsennosc').text(spiacy.h, ds).en;
+    expect(en).toBe(
+      `${kto.name} keeps waking up and can’t get back to sleep. ${kto.f ? 'She' : 'He'} keeps hearing footsteps in the stairwell.`,
+    );
+    expect(polskieSlowa(en, [kto.name])).toEqual([]);
+    // starego okna (dane tylko z id) nie rusza
+    expect(def('bezsennosc').text(spiacy.h, { p: kto.id })).toContain('siedzi przy kozie');
   });
 
   it('wartownik przy siatce nigdy nie jest bohaterem, choćby miał najniższe bezpieczeństwo', () => {
@@ -554,21 +640,6 @@ describe('bezsenność', () => {
     expect(k.i.people[0].needs.safe).not.toBe(-9);
   });
 
-  it('gdy każdy czuwający stoi przy siatce, śpi, jest poza mapą albo przy zabiegu, karty nie ma', () => {
-    const { h } = setup({
-      hour: 23,
-      people: ludzie([], [{ post: 'brama' }, { asleep: true }, { away: true }, { bitten: true }]),
-    });
-    expect(h.czuwaPozaWarta()).toEqual([]);
-    expect(def('bezsennosc').w(h)).toBe(0);
-    // dyżur przy kozie to jeszcze kandydat
-    const koza = setup({
-      hour: 23,
-      people: ludzie([], [{ post: 'brama' }, { asleep: true }, { away: true }, { post: 'koza' }]),
-    });
-    expect(def('bezsennosc').w(koza.h)).toBeGreaterThan(0);
-  });
-
   it('tekst i wybory jak dotąd, dla wskazanej osoby', () => {
     const { h, i } = setup({ hour: 23, people: ludzie([{ safe: 5 }]) });
     const d = def('bezsennosc').make(h) as { p: string };
@@ -576,6 +647,144 @@ describe('bezsenność', () => {
     expect(def('bezsennosc').text(h, d)).toBe(
       `${i.people[0].name} siedzi przy kozie i nie może zasnąć. Mówi, że ciągle słyszy kroki na klatce.`,
     );
+  });
+});
+
+describe('bezsenność: wybory ruszają prawdziwych ludzi', () => {
+  /** noc, atrapa ze stronami (koza 4333, siatka 4222); 0 bohater (najniższe safe), 1 wypoczęty wolny, 2 wypoczęty na
+      warcie, 3 śpi */
+  const noc = { hour: 23 };
+  const ludzieNocy = () =>
+    ludzie(
+      [
+        { safe: 5, rest: 40 },
+        { safe: 60, rest: 70 },
+        { safe: 60, rest: 99 },
+        { safe: 60, rest: 95 },
+      ],
+      [{}, {}, { post: 'brama' }, { asleep: true }],
+    );
+
+  it('Posiedzieć przy kozie: bohater i najbardziej wypoczęty inny wolny człowiek idą do kozy, skutki jak dotąd', () => {
+    const { h, i } = setup({ ...noc, people: ludzieNocy() });
+    const d = def('bezsennosc').make(h);
+    expect(d).toEqual({ p: i.people[0].id });
+    const w = def('bezsennosc').choices(h, d);
+    expect(w.map((c) => c.ok)).toEqual([true, true, true]);
+    const { fx } = wybierz('bezsennosc', d, 0, { ...noc, people: ludzieNocy() });
+    // czuwający 1 (nie wartownik 2, nie śpiący 3, nie bohater)
+    expect(fx.sprawdz).toEqual([
+      { id: i.people[0].id, tile: 4333 },
+      { id: i.people[1].id, tile: 4333 },
+    ]);
+    expect(fx.needs).toContainEqual({ id: i.people[0].id, d: { safe: 10, rest: 5 } });
+    expect(fx.needs).toContainEqual({ id: i.people[1].id, d: { rest: -5 } });
+  });
+
+  it('Posiedzieć przy kozie: bez innego wolnego idzie sam bohater, a śpiący drugi wstaje, gdy nikt nie czuwa', () => {
+    const sam = ludzie([{ safe: 5 }], [{}, { post: 'brama' }, { away: true }, { bitten: true }]);
+    const a = wybierz('bezsennosc', { p: sam[0].id }, 0, { ...noc, people: sam });
+    expect(a.fx.sprawdz).toEqual([{ id: sam[0].id, tile: 4333 }]);
+    // wszyscy śpią: bohater (najniższe safe) i najbardziej wypoczęty inny
+    const spia = ludzie(
+      [{ safe: 5, rest: 10 }, { rest: 30 }, { rest: 80 }, { rest: 50 }],
+      [{ asleep: true }, { asleep: true }, { asleep: true }, { asleep: true }],
+    );
+    const { h, i } = setup({ ...noc, people: spia });
+    const d = def('bezsennosc').make(h);
+    expect(d).toEqual({ p: i.people[0].id, spi: true });
+    const b = wybierz('bezsennosc', d, 0, { ...noc, people: spia });
+    expect(b.fx.sprawdz).toEqual([
+      { id: i.people[0].id, tile: 4333 },
+      { id: i.people[2].id, tile: 4333 },
+    ]);
+  });
+
+  it('Posiedzieć przy kozie: bohater z dyżuru przy kozie już tam jest i nie dostaje sprawdzania', () => {
+    const ppl = ludzie([{ safe: 5 }, { rest: 80 }], [{ post: 'koza' }]);
+    const a = wybierz('bezsennosc', { p: ppl[0].id }, 0, { ...noc, people: ppl });
+    expect(a.fx.sprawdz).toEqual([{ id: ppl[1].id, tile: 4333 }]);
+    // dyżur z karty nocy też
+    const { gov, i } = setup({ ...noc, people: ludzie([{ safe: 5 }, { rest: 80 }]) });
+    gov.night = {
+      day: 3,
+      card: {} as never,
+      assign: { [i.people[0].id]: 'warta:koza' },
+      confirmed: true,
+      raid: null,
+      exp: [],
+      lines: [],
+      hurt: [],
+      t0: 50,
+      a0: 20,
+      returned: [],
+      loot: { wood: 0, supplies: 0, scrap: 0, parts: 0, meds: 0 },
+      slept: [],
+    };
+    gov.ev.active = { id: 'bezsennosc', d: { p: i.people[0].id } };
+    const fx = chooseEvent(gov, i, 0);
+    expect(fx.sprawdz).toEqual([{ id: i.people[1].id, tile: 4333 }]);
+  });
+
+  it('Niech pilnuje: bohater idzie na podwórko przy siatce, premia warty 1,5, sen −10 i wpis', () => {
+    const { h, i } = setup({ ...noc, people: ludzieNocy() });
+    const d = def('bezsennosc').make(h);
+    const { gov, fx } = wybierz('bezsennosc', d, 1, { ...noc, people: ludzieNocy() });
+    expect(fx.sprawdz).toEqual([{ id: i.people[0].id, tile: 4222 }]);
+    expect(fx.needs).toEqual([{ id: i.people[0].id, d: { rest: -10 } }]);
+    expect(gov.tonight.bonus).toBe(1.5);
+    expect(fx.log.map(pl).some((l) => l.includes('resztę nocy przy oknie od podwórka'))).toBe(true);
+  });
+
+  it('Kazać się położyć: bez ruchu, bezpieczeństwo −5', () => {
+    const { h, i } = setup({ ...noc, people: ludzieNocy() });
+    const d = def('bezsennosc').make(h);
+    const { fx } = wybierz('bezsennosc', d, 2, { ...noc, people: ludzieNocy() });
+    expect(fx.sprawdz).toBeUndefined();
+    expect(fx.needs).toEqual([{ id: i.people[0].id, d: { safe: -5 } }]);
+  });
+
+  it('wybór z ruchem jest niedostępny tylko, gdy nie zna kafelka', () => {
+    const { h } = setup({ ...noc, people: ludzieNocy() });
+    const d = def('bezsennosc').make(h);
+    const bezKozy = setup({ ...noc, people: ludzieNocy(), strony: { garaze: 1, blok: 2 } });
+    expect(
+      def('bezsennosc')
+        .choices(bezKozy.h, d)
+        .map((c) => c.ok),
+    ).toEqual([false, true, true]);
+    const bezSiatki = setup({
+      ...noc,
+      people: ludzieNocy(),
+      strony: { koza: 3 },
+      fence: { holes: [{ id: 1, size: 0.5 }], durability: 0.5 },
+    });
+    expect(
+      def('bezsennosc')
+        .choices(bezSiatki.h, d)
+        .map((c) => c.ok),
+    ).toEqual([true, false, true]);
+    const nic = setup({ ...noc, people: ludzieNocy(), strony: undefined, fence: { holes: [], durability: 1 } });
+    expect(
+      def('bezsennosc')
+        .choices(nic.h, d)
+        .map((c) => c.ok),
+    ).toEqual([false, false, true]);
+    expect(nic.h.kafelekKozy()).toBeNull();
+    // niedostępny wybór niczego nie robi
+    const { fx } = wybierz('bezsennosc', d, 0, { ...noc, people: ludzieNocy(), strony: undefined });
+    expect(fx.sprawdz).toBeUndefined();
+    expect(fx.needs).toEqual([]);
+  });
+
+  it('po angielsku napisy wyborów zostają w rodzaju bohatera', () => {
+    const { h } = setup({ ...noc, people: ludzieNocy() });
+    const d = def('bezsennosc').make(h);
+    const imie = ev('bezsennosc')
+      .choices(h, d)
+      .map((c) => c.label.en);
+    expect(imie[0]).toMatch(/^Sit with (him|her) by the stove$/);
+    expect(imie[2]).toMatch(/^Send (him|her) to bed$/);
   });
 });
 
@@ -969,7 +1178,9 @@ describe('strony świata (GovInput.strony)', () => {
     const i = govInput(st, w, 0);
     expect(i.strony).toBeDefined();
     const yard = new Set(w.fence.yard);
-    for (const t of Object.values(i.strony ?? {})) {
+    for (const [strona, t] of Object.entries(i.strony ?? {})) {
+      // garaże i blok to kafelki podwórka; koza leży we wnętrzu (osobny test)
+      if (strona === 'koza') continue;
       expect(yard.has(t)).toBe(true);
       expect(w.blocked[t]).toBe(0);
     }
@@ -996,10 +1207,35 @@ describe('strony świata (GovInput.strony)', () => {
     expect(hashString(JSON.stringify(st))).toBe(przed);
   });
 
-  it('świat bez siatki nie ma stron', () => {
+  it('świat bez siatki nie ma stron przy siatce (garaże, blok); koza zostaje', () => {
     const w = demoWorld('przymorze');
     const bez = { ...w, fence: { ...w.fence, tiles: [], yard: [] } } as World;
-    expect(govInput(createSim(bez, 7, { core: 2 }), bez, 0).strony).toBeUndefined();
+    const s = govInput(createSim(bez, 7, { core: 2 }), bez, 0).strony;
+    expect(s?.garaze).toBeUndefined();
+    expect(s?.blok).toBeUndefined();
+  });
+
+  it('strony.koza: wolny kafelek przed kozą zarządu we wnętrzu jego mieszkania, zmienia się razem z kozą, bez kozy go nie ma', () => {
+    const w = demoWorld('przymorze');
+    const st = createSim(w, 7, { core: 4 });
+    const h = houseOf(w)!;
+    const size = w.size;
+    const koza = st.things.find((t) => t.kind === 'koza' && inHomeApt(h, t.y * size + t.x));
+    expect(koza, 'zarząd ma kozę w mieszkaniu').toBeTruthy();
+    const kafel = govInput(st, w, 0).strony?.koza;
+    expect(kafel).toBe(frontTile(koza!, size));
+    expect(inHomeApt(h, kafel!)).toBe(true);
+    expect(w.blocked[kafel!]).toBe(0);
+    // obok kozy: najwyżej dwa kafelki od niej
+    const dx = Math.abs((kafel! % size) - koza!.x);
+    const dy = Math.abs(Math.floor(kafel! / size) - koza!.y);
+    expect(Math.max(dx, dy)).toBeLessThanOrEqual(2);
+    // bez kozy w mieszkaniu zarządu pola nie ma (garaże i blok zostają)
+    const bezKozy = structuredClone(st);
+    bezKozy.things = bezKozy.things.filter((t) => t.kind !== 'koza');
+    const s = govInput(bezKozy, w, 0).strony;
+    expect(s?.koza).toBeUndefined();
+    expect(s?.blok).toBe(govInput(st, w, 0).strony?.blok);
   });
 });
 
@@ -1105,6 +1341,58 @@ describe('na prawdziwej symulacji z mieszkańcami z generatora', () => {
     }
     expect(sprawdzal).toBe(true);
     expect(pionek?.job?.t).not.toBe('sprawdz');
+  });
+
+  it('bezsenność w nocy, gdy śpią wszyscy: śpiący bohater wstaje, idzie do kozy z drugą osobą i wraca do spania', () => {
+    const gra = structuredClone(st);
+    const sim = new Sim(w, gra);
+    let i = govInput(gra, w, 0);
+    for (let n = 0; n < 12_000 && !(i.night && i.people.every((p) => p.asleep)); n++) {
+      sim.step();
+      if (n % 20 === 0) i = govInput(gra, w, 0);
+    }
+    expect(i.night && i.people.every((p) => p.asleep)).toBe(true);
+    const koza = i.strony?.koza;
+    expect(koza).toBeDefined();
+    const gov = newGov(seed);
+    const d = def('bezsennosc').make(makeHost(gov, i, emptyEffects())) as { p: string; spi?: boolean };
+    expect(d.spi).toBe(true);
+    // bohater to śpiący o najniższym bezpieczeństwie (remis: pierwszy)
+    const bohater = [...i.people].sort((a, b) => a.needs.safe - b.needs.safe)[0];
+    expect(d.p).toBe(bohater.id);
+    gov.ev.active = { id: 'bezsennosc', d };
+    const fx = chooseEvent(gov, i, 0);
+    expect(fx.sprawdz).toHaveLength(2);
+    expect(fx.sprawdz?.[0]).toEqual({ id: bohater.id, tile: koza });
+    const druga = fx.sprawdz?.[1];
+    expect(druga?.tile).toBe(koza);
+    expect(druga?.id).not.toBe(bohater.id);
+    applyGov(gra, w, fx);
+    const pionek = (id?: string) => gra.pawns.find((p) => p.kind === 'core' && gra.people[p.person].id === id)!;
+    const ona = pionek(bohater.id);
+    const ono = pionek(druga?.id);
+    expect(ona.job?.t).toBe('sprawdz');
+    expect(ono.job?.t).toBe('sprawdz');
+    // stoją przy kozie, we wnętrzu mieszkania zarządu, a potem wracają do snu
+    const h = houseOf(w)!;
+    const size = w.size;
+    const blisko = (p: typeof ona) =>
+      Math.max(Math.abs(Math.floor(p.x) - (koza! % size)), Math.abs(Math.floor(p.y) - Math.floor(koza! / size))) <= 3;
+    let stali = 0;
+    let wewnatrz = true;
+    let spiPotem = false;
+    for (let n = 0; n < 3000; n++) {
+      sim.step();
+      for (const p of [ona, ono])
+        if (p.job?.t === 'sprawdz' && p.job.phase === 1) {
+          stali++;
+          wewnatrz &&= inHomeApt(h, Math.floor(p.y) * size + Math.floor(p.x)) && blisko(p);
+        }
+      if (n > 1500 && ona.job?.t === 'sleep' && ono.job?.t === 'sleep') spiPotem = true;
+    }
+    expect(stali).toBeGreaterThan(200);
+    expect(wewnatrz).toBe(true);
+    expect(spiPotem).toBe(true);
   });
 
   it('kradzież wypada w normalnej grze z mieszkańcami z osobą, bez wspólnego kotła', () => {

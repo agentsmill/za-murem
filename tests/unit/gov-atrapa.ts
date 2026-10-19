@@ -9,7 +9,7 @@
    Mapa miasta: pole `okolica` (miejsca z OSM) trafia do wejścia zarządu tylko wtedy, gdy jest ustawione, a osoba
    z mapy `away` ma w wejściu `away: true`, jak pionek poza mapą w prawdziwej symulacji. Bez `okolica` wejście
    jest takie jak przed mapą miasta. Dziury w siatce mają kafelki (`GovHole.tiles`), a wejście `strony` (zmyślone numery
-   kafelków), więc „Sprawdzić” z krzyku i hałasu działa na atrapie tak jak w grze. */
+   kafelków, także przed kozą), więc „Sprawdzić” z krzyku i hałasu działa na atrapie tak jak w grze. */
 
 import type { TechDom } from '../../src/content/data.ts';
 import { TECH_DOMS } from '../../src/content/data.ts';
@@ -54,9 +54,9 @@ export class Atrapa {
     ],
     durability: 0.55,
   };
-  /** kafelki podwórka przy siatce od strony garaży i najbliższego budynku mieszkalnego (`GovInput.strony`); zmyślone
-      numery, atrapa nie ma mapy */
-  strony: { garaze: number; blok: number } = { garaze: 4111, blok: 4222 };
+  /** kafelki podwórka przy siatce od strony garaży i najbliższego budynku mieszkalnego oraz przed kozą
+      (`GovInput.strony`); zmyślone numery, atrapa nie ma mapy */
+  strony: { garaze: number; blok: number; koza: number } = { garaze: 4111, blok: 4222, koza: 4333 };
   fire = 0;
   campfire = false;
   residents = 4;

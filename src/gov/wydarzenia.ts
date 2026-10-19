@@ -20,10 +20,12 @@
    na kafelek na 10 minut gry); idą do GovEffects.awans, .wyrzuc i .sprawdz, bez powtórzeń tego samego id.
    Odstęp między powtórkami karty z nakładki (`OldEvent.gap`, np. kradzież co 48 godzin gry) idzie do `GEventDef.gap`.
    Wybór bohatera karty z ludzi zarządu: `zarzad()` (wszyscy, bez tych, co wychodzą), `nieSpia()` (czuwający) i
-   `rested()` oraz `doSprawdzenia()` (najbardziej wypoczęta; do sprawdzania najpierw nieśpiąca, a gdy takiej nie ma,
-   śpiąca, ale nigdy z warty, z wyprawy ani od zabiegu) i `czuwaPozaWarta()` (do bezsenności: czuwająca, nie z warty
-   przy siatce, ale może być z dyżuru przy kozie), a
-   „Sprawdzić” bierze kafelek z `kafelekPrzySiatce()` (GovInput.strony albo największa dziura); `moodOf` daje jednej
+   `rested()` oraz `doSprawdzenia(oprocz?)` (najbardziej wypoczęta; do sprawdzania najpierw nieśpiąca, a gdy takiej nie
+   ma, śpiąca, ale nigdy z warty, z wyprawy ani od zabiegu) i `czuwaPozaWarta()`/`spiPozaWarta()` (do bezsenności:
+   czuwająca, a gdy takiej nie ma, śpiąca; nie z warty przy siatce, ale może być z dyżuru przy kozie; `posterunek(id)`
+   mówi, na którym stoi), a
+   „Sprawdzić” bierze kafelek z `kafelekPrzySiatce()` (GovInput.strony albo największa dziura), a „Ktoś nie może spać”
+   kafelek przed kozą z `kafelekKozy()` (GovInput.strony.koza); `moodOf` daje jednej
    osobie chwilowy nastrój przez GovEffects.moods. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
@@ -347,10 +349,17 @@ export function makeHost(
     // Najpierw ktoś, kto nie śpi; nocą zwykle śpią wszyscy poza wartownikami, więc gdy nikogo takiego nie ma, wstaje
     // najbardziej wypoczęty ze śpiących (karta mówi, że ktoś usłyszał hałas). Wartownik na posterunku, osoba na
     // wyprawie i ugryziona (gorączka, amputacja) albo operująca zostają przy sobie; wtedy „Sprawdzić” jest niedostępne.
-    doSprawdzenia: () =>
-      najbardziejWypoczeta((p) => czuwa(p) && moze(p)) ?? najbardziejWypoczeta((p) => naMiejscu(p) && moze(p)),
-    // bezsenność: czuwa, ale nie pilnuje siatki ani nie operuje; dyżur przy kozie wolno (siedzi przy kozie naprawdę)
+    doSprawdzenia: (oprocz) =>
+      najbardziejWypoczeta((p) => p.id !== oprocz && czuwa(p) && moze(p)) ??
+      najbardziejWypoczeta((p) => p.id !== oprocz && naMiejscu(p) && moze(p)),
+    // bezsenność: czuwa (albo śpi i się budzi), ale nie pilnuje siatki ani nie operuje; dyżur przy kozie wolno
     czuwaPozaWarta: () => i.people.filter((p) => czuwa(p) && moze(p, true)).map(kopiaOsoby),
+    spiPozaWarta: () => i.people.filter((p) => p.asleep && naMiejscu(p) && moze(p, true)).map(kopiaOsoby),
+    posterunek: (id) => {
+      const p = i.people.find((x) => x.id === id);
+      return p ? posterunek(p) : null;
+    },
+    kafelekKozy: () => i.strony?.koza ?? null,
     kafelekPrzySiatce: (strona) =>
       i.strony?.[strona] ?? fenceOf(i, fx.patch).holes.find((x) => x.tiles?.length)?.tiles?.[0] ?? null,
     moodOf: (id, why, d, hours) => {
