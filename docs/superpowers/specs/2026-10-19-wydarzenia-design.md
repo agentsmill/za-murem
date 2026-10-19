@@ -23,7 +23,7 @@ Dziś karty zarządu żyją obok prawdziwych obcych z symulacji. Karta „Handla
 
 ## Cele
 
-- Każda karta, która mówi o człowieku poza zarządem, mówi o pionku, który jest na mapie albo był (zmarły, odszedł bramą).
+- Każda karta, która stawia człowieka pod bramą, przy drzwiach albo na podwórku, albo kogoś wpuszcza czy wypuszcza, mówi o pionkach, które są na mapie (tylu, ilu mówi karta). Nie dotyczy to wydarzeń ulicy (sąsiedzi zza płotu u siebie), znalezisk (lodówka, dron, automat, książki, domofon, smartfon) i odgłosów zza siatki (krzyk, hałas): tam nikt nie przychodzi do nas (moja decyzja po pytaniu recenzenta).
 - Wybór w karcie zmienia to, co widać: gość wchodzi albo odchodzi, mieszkaniec przechodzi do zarządu albo wychodzi bramą, złodziej idzie do kuchni.
 - Dwie gry na tym samym adresie mają różne historie: inni goście, inne wątki sezonu, inni znajomi wracają.
 - Tryb zombie nie dostaje kart, które w nim nie mają sensu.
@@ -63,7 +63,7 @@ Pięć etapów, każdy grywalny sam w sobie i scalany po swojej bramce:
 
 1. Karty, które kłamią: wyłączone karty bez ludzi, pule według trybu, przyjęci do zarządu wchodzą bramą, nowa karta zombie z prawdziwym szwendaczem.
 2. Mieszkańcy widoczni dla zarządu: osoby mieszkańców w `GovInput`, awans, wyrzucenie bramą, karty z sytuacji (kradzież z głodu, kłótnia, bezsenność, pogrzeb, sąsiadka z imieniem).
-3. Gość z klocków i zwierzęta: zarząd składa gościa, symulacja go wystawia, karta otwiera się pod bramą, wybór jest poleceniem; pies i kot jako pionki.
+3. Gość z klocków i zwierzęta: zarząd składa gościa (osobę albo grupę), symulacja go wystawia, karta otwiera się pod bramą, wybór jest poleceniem; karty z 0.3, w których ktoś przychodzi pod bramę, dostają gości tak samo; pies i kot jako pionki.
 4. Pamięć o znajomych: kto był i jak go potraktowano, powroty, znajomy wśród szabrowników.
 5. Łańcuchy, wątki sezonu i narrator.
 
@@ -77,9 +77,12 @@ Pięć etapów, każdy grywalny sam w sobie i scalany po swojej bramce:
 |---|---|---|---|
 | `handlarz` | nie | nie | prawdziwy handlarz jest w symulacji (Mateusz) |
 | `wedrowiec` | od etapu 3 jako gość | od etapu 3 jako gość | w etapie 1 waga 0, bo nikogo nie ma pod bramą |
-| `czynsz`, `krypto` | tak | nie | Mateusz |
-| `aktywisci`, `influencer`, `obserwacja` | tak | nie | protest i vlog przy stadzie, a obserwacja zapowiada szabrowników, których w trybie zombie nie ma (moja decyzja) |
-| `uchodzcy` | tak | nie, od etapu 3 ocaleni jako goście | ukryte ugryzienie potrzebuje gościa (moja decyzja) |
+| `czynsz` | tak | nie | Mateusz |
+| `krypto` | od etapu 3 jako karta z gościem | nie | Mateusz; sąsiad z tokenami przychodzi pod bramę |
+| `aktywisci`, `influencer` | od etapu 3 jako karta z gościem | nie | protest i vlog przy stadzie nie pasują (moja decyzja); w zwykłym trybie stoją pod bramą naprawdę |
+| `dzieci` | od etapu 3 jako karta z gościem | od etapu 3 jako karta z gościem | dzieciaki ze złomem stoją pod bramą |
+| `obserwacja` | tak | nie | zapowiada szabrowników, których w trybie zombie nie ma (moja decyzja) |
+| `uchodzcy` | od etapu 3 jako karta z gościem | nie, ocaleni jako goście z klocków | ukryte ugryzienie potrzebuje gościa (moja decyzja) |
 | `slady` | tak | wariant zombie | „udawać” nie może podbijać napadu szabrowników; w trybie zombie ślady to wydeptana ścieżka szwendaczy, wybory: łata albo warta z dzidą (moja decyzja) |
 | reszta | tak | tak | |
 
@@ -112,12 +115,16 @@ Bez generatora lista jest pusta i karty działają jak dziś (bez imion). Liczba
 - `GovEffects.awans?: string[]`: mieszkaniec przechodzi do zarządu. Ten sam pionek, ta sama osoba w `st.people`, `kind` z `resident` na `core`, potrzeby i miejsce zostają, łóżko zostaje jego. Dziś takiej drogi nie ma; wzorem jest `przyjmijGospodarstwo` w `src/sim/sim.ts` (sąsiad zostaje mieszkańcem przez zmianę `kind`, mieszkanie, potrzeby i pracę przyjścia).
 - `GovEffects.wyrzuc?: string[]`: mieszkaniec idzie do bramy (przez bramę przechodzi warstwą zarządu, jak w pracy `arrive`), za bramą idzie po stronie ulicy do kafelka daleko od siatki i znika (jak przechodnie z `PASSERS` w fazie 4). Łóżko jest wolne od razu.
 
-Host zarządu dostaje: `lokatorzy()`, `lokator(id)`, `awansuj(id)`, `wyrzuc(id)`.
+- `GovEffects.sprawdz?: { id: string; tile: number }[]`: osoba z zarządu idzie na kafelek (od strony podwórka, najbliższy osiągalny), stoi tam 10 minut gry i wraca do swoich zajęć. Używają tego wybory „sprawdzić” w kartach `krzyk` (wejście do budynku, z którego niesie się krzyk, albo siatka od jego strony) i `halas` (siatka od strony garaży albo najbliższa dziura).
+- `GovEffects.needs` i `GovEffects.moods` działają też dla mieszkańców i gości z osobą (dziś tylko dla zarządu).
+
+Host zarządu dostaje: `lokatorzy()`, `lokator(id)`, `awansuj(id)`, `wyrzuc(id)` (mieszkaniec albo osoba zarządu wychodzi bramą), `sprawdz(id, tile)`.
 
 ### Karty z sytuacji
 
 - `fachowiec` w bloku: kandydat to mieszkaniec z umiejętnością w dziedzinie, której zarząd nie zna (`know(d) < 3`), najstarszy z najwyższą umiejętnością; tekst z jego imieniem i fachem; „Wciągnąć do roboty” to awans. Bez kandydata karty nie ma. W domu bez zmian (sąsiad zza płotu dołącza przez przyjście bramą).
-- `kradziez`: tylko gdy ktoś z mieszkańców ma `needs.food <= 20` (moja decyzja zamiast „od kilku godzin”: symulacja nie liczy czasu głodu); sprawca to najbardziej głodny. Wybory: sąd koleżeński (z uchwałą), „Wyrzucić z osiedla” (wyrzucenie bramą), nowe „Dać mu jeść z kotła” (Jedzenie 2, jego jedzenie +30, zaufanie +1), „Przymknąć oko”. Strata jedzenia jak w 0.3. Odstęp 48 godzin gry zamiast 16.
+- `kradziez`: mieszkańcy w symulacji nie głodnieją (`stepSafe` rusza tylko bezpieczeństwo i nastrój, jedzą tylko przy wspólnym kotle), więc głód jest przybliżony (moja decyzja po pytaniu recenzenta, bez zmiany ekonomii): karta wypada, gdy uchwała o wspólnym kotle nie jest podpisana i któryś mieszkaniec ma nastrój poniżej 45; sprawcą jest ten z najniższym nastrojem, a tekst mówi, że od kilku dni je za mało. Wybory: sąd koleżeński (z uchwałą), „Wyrzucić z osiedla” (wyjście bramą), nowe „Dać mu jeść z kotła” (Jedzenie 2, jego nastrój „Najadł się z kotła” +6 na dobę, zaufanie +1), „Przymknąć oko”. Strata jedzenia jak w 0.3. Odstęp 48 godzin gry zamiast 16. Prawdziwy głód mieszkańców to osobna decyzja o ekonomii (zaparkowane).
+- `odejscie` („Niech idzie”) i `klotnia` (przegrany się wyprowadza): osoba z zarządu idzie do bramy i wychodzi tą samą drogą co wyrzucony mieszkaniec, zamiast zniknąć.
 - `klotnia`: para z zarządu z najniższym nastrojem (remis: kolejność osób); bez dwóch osób z nastrojem poniżej 55 karty nie ma (moja decyzja co do progu).
 - `bezsennosc`: osoba z najniższym bezpieczeństwem, która nie śpi, zamiast losowej.
 - `dym` (sąsiadka z klatki) i `latarka` (pani z trzeciego piętra): w bloku z mieszkańcami z osobą bohaterką jest najstarsza mieszkanka (albo mieszkaniec, z rodzajem przez `g()`), z imieniem i klatką zamiast piętra. Słoik od niej trafia do kuchni jak dziś. Bez mieszkańców z osobą tekst jak dziś.
@@ -127,12 +134,13 @@ Host zarządu dostaje: `lokatorzy()`, `lokator(id)`, `awansuj(id)`, `wyrzuc(id)`
 
 ### Klocki
 
-Nowy moduł `src/gov/goscie.ts` (czyste dane i funkcje, teksty w obu językach). Gość:
+Nowy moduł `src/gov/goscie.ts` (czyste dane i funkcje, teksty w obu językach). Gość to grupa od 1 do 12 osób, które przychodzą razem; pierwsza mówi (moja decyzja po pytaniu recenzenta: rodzina, ocaleni, chłopak z babcią i ktoś z ugryzionym bliskim muszą stać na mapie wszyscy):
 
 ```ts
 interface Gosc {
   id: string;            // 'g1', 'g2'… z licznika w stanie zarządu
-  osoba: Person;         // imię, płeć, wiek, fach, cechy
+  osoby: Person[];       // 1–12, osoby[0] mówi; imię, płeć, wiek, fach, cechy
+  ugryziony?: number;    // indeks w osoby, gdy haczyk to ugryzienie (zombie)
   kto: KtoId; chce: ChceId; ma: MaId; haczyk: HaczykId;
   skad: { strona: 'n' | 'e' | 's' | 'w'; nazwa: Tx; klucz?: string };  // klucz miejsca z okolicy, gdy jest
   satyra?: SatyraId;
@@ -151,26 +159,30 @@ interface Gosc {
 
 Klocki mają wagi zależne od trybu, pory i stanu (zima: częściej chory; dużo jedzenia w zapasie: częściej kłamie; po napaści na wędrowca: rzadziej przychodzą). Niezgodne pary są wykluczone tabelą (samotne dziecko nie dezerteruje). Tekst karty składa się z: kto i skąd, czego chce, jedno zdanie, po którym uważny gracz zgadnie haczyk („ogląda się co chwilę za siebie”, „trzyma rękę w kieszeni kurtki”), linijka satyry.
 
-Osoba gościa: `makePerson` z ziarna zarządu z fachem i wiekiem pasującymi do archetypu (moja decyzja na teraz: imiona z list 0.3, bez tabel generatora, bo zarząd ich nie ma; podmiana na imiona z generatora to osobny krok, interfejs `Gosc.osoba` się nie zmienia).
+Osoby gościa: `makePerson` z ziarna zarządu z fachem i wiekiem pasującymi do archetypu, w rodzinie wspólne nazwisko mówiącego (moja decyzja na teraz: imiona z list 0.3, bez tabel generatora, bo zarząd ich nie ma; podmiana na imiona z generatora to osobny krok, interfejs `Gosc.osoby` się nie zmienia). Wielkość grupy z archetypu: wędrowiec, dezerter, uciekinier, chory, znajomy 1; dziecko 1–2; rodzina 3–5; ocaleni 2–4; ktoś z ugryzionym bliskim 2.
 
 ### Wizyta
 
-1. Goście chodzą tylko w grze z obcymi (`SimOpts.obcy`, jak handlarz i wędrowcy; gra włącza ją domyślnie, boty i testy bez niej grają bez gości). Zarząd wie o tym z `GovInput.goscie` (pole jest, choćby puste, tylko z obcymi). Pula kart dostaje wydarzenie `gosc` (oba tryby, dzień, wieczór i noc, waga jak dziś wędrowiec razem z uchodźcami; bez `GovInput.goscie` waga 0). Kiedy wypada, zarząd nie pokazuje karty, tylko składa gościa i wysyła plan: `GovEffects.gosc?: { id; osoba; look; strona }`. Najwyżej jeden gość naraz. Stan zarządu `st.goscie?: { n: number; aktywny?: { gosc: Gosc; od: number /*sekunda przy ekranie*/ } }`.
-2. Symulacja wystawia pionek gościa: nowy rodzaj `gosc` z osobą w `st.people` (`person >= 0`) i wyglądem z planu. Start bez losowania ze `st.rng`: najdalszy kafelek strony ulicy (`lay.outside`) po podanej stronie mapy; cel to kafelek przy bramie od zewnątrz (`outsideOf(gateTiles)`). Póki jest za siatką, chodzi warstwą ulicy jak wędrowiec; wpuszczony przechodzi bramę warstwą zarządu jak w pracy `arrive`. W trybie zombie szwendacze na niego polują (`isPrey`) i płoszy się jak wędrowiec (`spooked`): ucieka, plan kończy się fazą `poszedl`. `GovInput.goscie?: { id; faza: 'idzie' | 'brama' | 'w_srodku' | 'odchodzi' | 'zlapany' | 'poszedl' | 'nie_doszedl' | 'zginal'; tile; pawn }[]`, zakończone wpisy znikają po odczycie przez zarząd (licznik jak `napadN`).
+1. Goście chodzą tylko w grze z obcymi (`SimOpts.obcy`, jak handlarz i wędrowcy; gra włącza ją domyślnie, boty i testy bez niej grają bez gości). Zarząd wie o tym z `GovInput.goscie` (pole jest, choćby puste, tylko z obcymi). Pula kart dostaje wydarzenie `gosc` (oba tryby, dzień, wieczór i noc, waga jak dziś wędrowiec razem z uchodźcami; bez `GovInput.goscie` waga 0). Kiedy wypada, zarząd nie pokazuje karty, tylko składa gościa i wysyła plan: `GovEffects.gosc?: { id; osoby: Person[]; looks: number[]; strona }`. Najwyżej jeden gość naraz. Stan zarządu `st.goscie?: { n: number; aktywny?: { gosc: Gosc; od: number /*sekunda przy ekranie*/ } }`.
+2. Symulacja wystawia pionki gościa, po jednym na osobę: nowy rodzaj `gosc` z osobą w `st.people` (`person >= 0`) i wyglądem z planu; grupa idzie razem (reszta na kafelkach obok mówiącego, jak przyjęci czekający za bramą). Start bez losowania ze `st.rng`: najdalszy kafelek strony ulicy (`lay.outside`) po podanej stronie mapy; cel to kafelek przy bramie od zewnątrz (`outsideOf(gateTiles)`). Póki jest za siatką, chodzi warstwą ulicy jak wędrowiec; wpuszczony przechodzi bramę warstwą zarządu jak w pracy `arrive`. W trybie zombie szwendacze na niego polują (`isPrey`) i płoszy się jak wędrowiec (`spooked`): ucieka, plan kończy się fazą `poszedl`. `GovInput.goscie?: { id; faza: 'idzie' | 'brama' | 'w_srodku' | 'odchodzi' | 'zlapany' | 'poszedl' | 'nie_doszedl' | 'zginal'; tile; pawns: number[] }[]` (faza grupy: faza mówiącego; `zginal`, gdy zginęli wszyscy, a kafelek to mówiący albo pierwszy żywy), zakończone wpisy znikają po odczycie przez zarząd (licznik jak `napadN`).
 3. Karta otwiera się, gdy gość ma fazę `brama` (i nic innego nie czeka na decyzję). Karta ma „Pokaż” na kafelku gościa. Gdy nie dojdzie w 2 godziny gry (zablokowana droga, szwendacze), plan przepada bez karty.
 4. Wybory to polecenia dla gościa: `GovEffects.goscRozkaz?: { id; co: 'odejdz' | 'jedzenie' | 'noc' | 'zostan' | 'zarzad' }[]`:
    - „Odprawić”: odchodzi tam, skąd przyszedł.
    - „Podać jedzenie przez siatkę (Jedzenie 1)”: jedna porcja znika ze zapasów, gość odchodzi.
    - „Wpuścić na noc” (bez uchwały o bramie na kłódkę): wchodzi bramą, idzie do ogniska albo kozy, siedzi, śpi przy ogniu; rano między 6 a 8 wychodzi bramą.
-   - „Przyjąć do spółdzielni” (gdy chce dołączyć i są wolne miejsca): zostaje mieszkańcem jak w `przyjmijGospodarstwo` (rodzaj `resident`, mieszkanie, potrzeby, praca przyjścia, łóżko); z fachem, którego zarząd nie zna, do wyboru „Przyjąć do zarządu” (rodzaj `core` jak przy awansie).
+   - „Przyjąć do spółdzielni” (gdy chce dołączyć): cała grupa zostaje mieszkańcami jak w `przyjmijGospodarstwo` (rodzaj `resident`, mieszkanie, potrzeby, praca przyjścia, łóżko); gdy wolnych miejsc jest mniej niż osób, karta mówi, ilu będzie spać na podłodze, tak jak dziś przy uchodźcach; z fachem, którego zarząd nie zna, do wyboru „Przyjąć do zarządu” (mówiący jako `core` jak przy awansie, reszta jako mieszkańcy).
    - Wymiana i leki: gdy chce wymiany albo leków, wybór z kosztem (Jedzenie, Leki) i nagrodą z klocka „co ma”.
 5. Haczyk działa w symulacji albo w zarządzie:
    - kłamie i wpuszczony na noc: o 2:00 idzie do najbliższej sterty jedzenia, bierze do 3 porcji i wychodzi bramą albo dziurą; gdy po drodze ktoś z zarządu nie śpi w promieniu 8 m (warta, dyżur przy kozie), gość jest złapany (`zlapany`), a zarząd pokazuje kartę „Złapany” z wyborami: oddać i wyrzucić, wyrzucić z łupem, zatrzymać do rana (pilnuje go ktoś z zarządu, odpoczynek −10);
    - chory i wpuszczony albo przyjęty: rano choroba jednej osoby (`fx.sick`);
    - ktoś za nim idzie i wpuszczony: zwykły tryb: szansa napadu tej nocy razy 1,5 i napad przy bramie; zombie: hałas przy bramie przyciąga szwendaczy z okolicy;
-   - ugryziony (zombie) i wpuszczony albo przyjęty: pionek dostaje ugryzienie jak dziś ludzie (`infect`), więc gorączka i przemiana idą znaną drogą; wybór „Obejrzeć ręce” (zawsze dostępny w trybie zombie) odsłania ugryzienie z pewnością, a przy zdrowym gościu kosztuje zaufanie −1 i karta pokazuje się dalej bez tego wyboru.
+   - ugryziony (zombie) i wpuszczony albo przyjęty: pionek osoby `ugryziony` dostaje ugryzienie jak dziś ludzie (`infect`), więc gorączka i przemiana idą znaną drogą; wybór „Obejrzeć ręce” (zawsze dostępny w trybie zombie) odsłania ugryzienie z pewnością, a przy zdrowym gościu kosztuje zaufanie −1 i karta pokazuje się dalej bez tego wyboru.
 6. Co ma, po przyjęciu, nakarmieniu albo nocy: fach (przy przyjęciu do zarządu), rzecz (broń albo amunicja do magazynu przez `fx.arms`/`fx.ammo`, leki, latarka jako dzisiejsza flaga), wiadomość o miejscu z okolicy (`GovState.wskazowki?: Record<kluczMiejsca, { dzien }>`: następna wyprawa tam ma ryzyko razy 0,5 i łup razy 1,5; bez mapy miasta wiadomość o celu z `TARGETS`), ostrzeżenie (podwójna warta tej nocy jak `setAlertNight`).
 7. Rano po nocy z gościem linia w raporcie (`later()`), po kradzieży z liczbą zabranych porcji.
+
+### Karty z gościem
+
+Karty, w których ktoś przychodzi pod bramę, dostają gościa przed kartą tak samo jak goście z klocków. `GEventDef.gosc?: (h: GovHost, d: D) => PlanGoscia | null` mówi, kogo wystawić (osoby, kto, strona), a karta pokazuje się dopiero, gdy grupa stoi pod bramą; tekst i wybory zostają z 0.3 albo z nakładki, ale skutki przyjęcia i odprawienia sterują tymi pionkami (`h.przyjmijGosci()`, `h.przyjmijDoZarzadu(i)`, `h.odprawGosci()`, `h.nakarmGosci()`) zamiast dokładać nowych mieszkańców albo osoby przed drzwiami. Dotyczy: `uchodzcy` (n osób z karty, w bloku 4–12, w domu 2–4, mówiący z karty, gdy jest), `influencer` (1), `aktywisci` (4, grzeją się do rana przy kozie i odchodzą bramą), `dzieci` (2–3 dzieciaków), `krypto` (sąsiad z bloku obok, 1), `fachowiec` w domu (sąsiad zza płotu podchodzi do furtki, 1). Bez `GovInput.goscie` (gra bez obcych) te karty mają wagę 0.
 
 Dzisiejsze wędrowce za dnia w symulacji (zagadać, napaść, wieść) zostają bez zmian obok gości z kart.
 
@@ -235,6 +247,9 @@ Podział na pliki poza wymienionymi, nazwy prac w symulacji, dokładne kafelki w
 - `aktywisci`, `influencer`, `obserwacja` i `uchodzcy` wyłączone w trybie zombie; ślady z wariantem zombie.
 - Głód sprawcy kradzieży jako próg potrzeby (20), bez liczenia godzin.
 - Imiona gości z list 0.3 do czasu podpięcia generatora.
+- Gość jako grupa 1–12 osób; mówi pierwsza.
+- Kradzież z przybliżonego głodu (nastrój poniżej 45 bez wspólnego kotła), bez zmiany ekonomii mieszkańców.
+- Zasada „karta o człowieku to pionek” obejmuje karty z kimś pod bramą i wpuszczanie albo wypuszczanie ludzi; wydarzenia ulicy, znaleziska i odgłosy zostają jak są, a „sprawdzić” przy odgłosach wysyła osobę z zarządu, która naprawdę idzie.
 - Ujemny znajomy w trybie zombie nie wraca.
 - Kot nie ginie w środku, pies może zginąć od szwendacza.
 - Liczby narratora i nastawień jak wyżej, do strojenia.

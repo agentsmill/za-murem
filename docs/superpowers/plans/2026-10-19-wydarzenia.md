@@ -25,8 +25,8 @@
 
 - Zapis i wczytanie w środku wizyty gościa (gość w drodze, pod bramą z otwartą kartą, w środku nocą, w trakcie kradzieży): po wczytaniu ten sam przebieg i ta sama karta. Test w zadaniu 10.
 - Karta gościa otwarta, a gość ucieka (szwendacz, w trybie zombie) albo ginie, zanim gracz wybierze: wybór nie może sterować pionkiem, którego nie ma; karta zamyka się z linią w kronice. Test w zadaniu 10.
-- Stary zapis bez nowych pól (`goscie`, `znajomi`, `watki`, `napiecie`, flaga `cat`, rodzaje pionków) wczytuje się i gra dalej. Test w zadaniach 9, 13 i 14.
-- Zmiana języka przy otwartej karcie gościa, złapanego złodzieja i kroku łańcucha: tekst w drugim języku bez polskich słów. Test w zadaniu 8 i 15.
+- Stary zapis bez nowych pól (`goscie`, `znajomi`, `watki`, `napiecie`, flaga `cat`, rodzaje pionków) wczytuje się i gra dalej. Test w zadaniach 9, 14 i 15.
+- Zmiana języka przy otwartej karcie gościa, złapanego złodzieja i kroku łańcucha: tekst w drugim języku bez polskich słów. Test w zadaniu 8 i 16.
 - Gra bez generatora mieszkańców (brak tabel, własna drużyna, `?handlarz=0`): karty działają jak dziś, bez wyjątków. Test w zadaniach 4 i 6.
 
 ---
@@ -141,40 +141,42 @@ export interface GovLokator {
 ### Task 5: Awans mieszkańca i wyjście bramą
 
 **Files:**
-- Modify: `src/sim/sim.ts` (nowe funkcje, praca `odejscie`), `src/sim/gov.ts` (`applyGov`), `src/gov/typy.ts` (`GovEffects.awans`, `GovEffects.wyrzuc`), `src/gov/tresc.ts` + `src/gov/wydarzenia.ts` (host)
+- Modify: `src/sim/sim.ts` (nowe funkcje, prace `odejscie` i `sprawdz`), `src/sim/gov.ts` (`applyGov`, `pawnOf` dla każdego pionka z osobą i potrzebami), `src/gov/typy.ts` (`GovEffects.awans`, `GovEffects.wyrzuc`, `GovEffects.sprawdz`), `src/gov/tresc.ts` + `src/gov/wydarzenia.ts` (host)
 - Test: `tests/unit/awans-wyrzucenie.test.ts`
 
 **Interfaces:**
-- Produces: `export function awansuj(st: SimState, w: World, personId: string): boolean` (pionek `resident` tej osoby staje się `core`; potrzeby zostają; mieszkanie `apt` = −1; łóżko zostaje jego), `export function wyrzucLokatora(st: SimState, w: World, personId: string): boolean` (praca `odejscie`: do `exitOf(w)` warstwą zarządu, potem warstwą ulicy do kafelka 70 kroków od siatki, potem znika jak przechodnie w fazie 4; łóżko wolne od razu), `GovEffects.awans?: string[]`, `GovEffects.wyrzuc?: string[]`, `GovHost.awansuj(id: string): void`, `GovHost.wyrzuc(id: string): void`.
+- Produces: `export function awansuj(st: SimState, w: World, personId: string): boolean` (pionek tej osoby rodzaju `resident` albo `gosc` staje się `core`; potrzeby zostają albo dostaje domyślne jak w `addCore`; mieszkanie `apt` = −1; łóżko zostaje jego), `export function wyprowadz(st: SimState, w: World, personId: string): boolean` (mieszkaniec albo osoba zarządu: praca `odejscie` do `exitOf(w)` warstwą zarządu, potem warstwą ulicy do kafelka 70 kroków od siatki, potem znika jak przechodnie w fazie 4; łóżko wolne od razu; osoba zarządu dostaje `gone` jak w `removeCore`), `export function sprawdz(st: SimState, w: World, personId: string, tile: number): boolean` (osoba zarządu: praca `sprawdz` do najbliższego osiągalnego kafelka przy `tile`, 10 minut gry tam, koniec pracy), `GovEffects.awans?: string[]`, `GovEffects.wyrzuc?: string[]`, `GovEffects.sprawdz?: { id: string; tile: number }[]`, `GovHost.awansuj(id: string): void`, `GovHost.wyrzuc(id: string): void` (mieszkaniec albo osoba zarządu), `GovHost.sprawdz(id: string, tile: number): void`. `fx.needs` i `fx.moods` trafiają do każdego pionka z tą osobą i potrzebami (zarząd, mieszkaniec, gość).
 
-- [ ] **Step 1: Write the failing tests:** `awansuj: ten sam pionek, ta sama osoba, kind core, bierze polecenia (commandFor)`, `wyrzucLokatora: pionek wychodzi bramą i znika w ciągu 2 h gry, residents −1`, `zapis i wczytanie w połowie drogi wyrzuconego nie zmienia skrótu po 2 h`, `applyGov stosuje fx.awans i fx.wyrzuc`.
+- [ ] **Step 1: Write the failing tests:** `awansuj: ten sam pionek, ta sama osoba, kind core, bierze polecenia (commandFor)`, `wyprowadz mieszkańca: pionek wychodzi bramą i znika w ciągu 2 h gry, residents −1`, `wyprowadz osobę zarządu: wychodzi bramą, znika, nie ma jej w people zarządu`, `sprawdz: osoba idzie, stoi 10 minut i wraca do zajęć`, `fx.moods trafia do mieszkańca z osobą`, `zapis i wczytanie w połowie drogi wyrzuconego nie zmienia skrótu po 2 h`, `applyGov stosuje fx.awans, fx.wyrzuc i fx.sprawdz`.
 - [ ] **Step 2: Run** `npm test -- awans-wyrzucenie`: FAIL.
 - [ ] **Step 3: Implement** według wzoru `przyjmijGospodarstwo` i pracy `arrive`; warstwa w `layerOf` dla pracy `odejscie` jak dla `arrive` do wyjścia za bramę.
 - [ ] **Step 4: Run** `npm test -- awans-wyrzucenie applygov sim`: PASS.
-- [ ] **Step 5: Commit** `git commit -m "Symulacja: awans mieszkańca do zarządu i wyjście bramą"`
+- [ ] **Step 5: Commit** `git commit -m "Symulacja: awans do zarządu, wyjście bramą i sprawdzanie"`
 
 ### Task 6: Karty z sytuacji z mieszkańcami
 
 **Files:**
-- Modify: `src/gov/warianty.ts` (`fachowiec`, `kradziez`, `klotnia`), `src/gov/warianty.en.ts`, `src/gov/tresc.ts` (`bezsennosc`, `dym`, `latarka`)
+- Modify: `src/gov/warianty.ts` (`fachowiec`, `kradziez`, `klotnia`, `odejscie`), `src/gov/warianty.en.ts`, `src/gov/tresc.ts` (`bezsennosc`, `dym`, `latarka`, `krzyk`, `halas`)
 - Test: `tests/unit/wydarzenia-lokatorzy.test.ts`
 
 **Interfaces:**
-- Consumes: `GovHost.lokatorzy/lokator/awansuj/wyrzuc` (zadania 4–5).
+- Consumes: `GovHost.lokatorzy/lokator/awansuj/wyrzuc/sprawdz` (zadania 4–5).
 
 - [ ] **Step 1: Write the failing tests** (host z atrapy z trzema mieszkańcami z imionami):
   - `fachowiec w bloku bierze mieszkańca z umiejętnością, której zarząd nie zna, a Wciągnąć to awans tej osoby` (tekst zawiera jej imię; `fx.awans` = [jej id]; `fx.join` puste),
-  - `kradziez wypada tylko przy mieszkańcu z jedzeniem <= 20, sprawcą jest najbardziej głodny, Wyrzucić to fx.wyrzuc`,
-  - `Dać mu jeść z kotła: Jedzenie −2, jego jedzenie +30, zaufanie +1`,
+  - `kradziez wypada tylko bez podpisanej uchwały u_kociol i przy mieszkańcu z nastrojem < 45, sprawcą jest ten z najniższym nastrojem, tekst z jego imieniem mówi, że od kilku dni je za mało, Wyrzucić to fx.wyrzuc`,
+  - `Dać mu jeść z kotła: Jedzenie −2, jego nastrój „Najadł się z kotła” +6 na 24 h (fx.moods), zaufanie +1`,
+  - `odejscie Niech idzie i klotnia z wyprowadzką: fx.wyrzuc tej osoby zarządu zamiast fx.leave`,
+  - `krzyk i halas: Sprawdzić wysyła fx.sprawdz z kafelkiem siatki od właściwej strony (krzyk: od strony najbliższego budynku mieszkalnego za siatką; halas: od strony garaży albo przy największej dziurze)`,
   - `kradziez ma odstęp 48 godzin gry`,
   - `klotnia bierze dwie osoby zarządu z najniższym nastrojem, bez pary poniżej 55 karty nie ma`,
   - `bezsennosc bierze nieśpiącego z najniższym bezpieczeństwem`,
   - `dym i latarka w bloku z mieszkańcami mówią o najstarszej mieszkance po imieniu, bez słowa „piętr”`,
   - `bez mieszkańców z osobą teksty jak dziś` (porównanie z dzisiejszym tekstem).
 - [ ] **Step 2: Run** `npm test -- wydarzenia-lokatorzy`: FAIL.
-- [ ] **Step 3: Implement.** Angielskie odpowiedniki w `warianty.en.ts` (nowy wybór „Feed him from the pot” / „Feed her from the pot”).
+- [ ] **Step 3: Implement.** Angielskie odpowiedniki w `warianty.en.ts` (nowy wybór „Feed him from the pot” / „Feed her from the pot”). Kafelek dla `krzyk`/`halas` przychodzi z wejścia: nowe `GovInput.strony?: { garaze?: number; blok?: number }` (kafelek podwórka przy siatce najbliżej garaży i najbliżej budynku mieszkalnego za siatką), liczone w `govInput` ze świata; przy dziurze bez stron kafelek dziury.
 - [ ] **Step 4: Run** `npm test -- wydarzenia-lokatorzy wydarzenia03-en zarzad-jezyk events wydarzenia-miejsce`: PASS (test zgodności z 0.3 bez zmian).
-- [ ] **Step 5: Commit** `git commit -m "Wydarzenia: fachowiec, kradzież, kłótnia i sąsiadki z prawdziwych mieszkańców"`
+- [ ] **Step 5: Commit** `git commit -m "Wydarzenia: fachowiec, kradzież, kłótnia, odejście i sąsiadki z prawdziwych ludzi"`
 
 ### Task 7: Pogrzeb
 
@@ -208,25 +210,26 @@ export type MaId = 'fach' | 'rzecz' | 'wiadomosc' | 'ostrzezenie' | 'nic';
 export type HaczykId = 'prawda' | 'klamie' | 'chory' | 'poscig' | 'ugryziony';
 export type Strona = 'n' | 'e' | 's' | 'w';
 export interface Gosc {
-  id: string; osoba: Person; kto: KtoId; chce: ChceId; ma: MaId; haczyk: HaczykId;
+  id: string; osoby: Person[] /*1–12, [0] mówi*/; ugryziony?: number /*indeks w osoby*/; kto: KtoId; chce: ChceId; ma: MaId; haczyk: HaczykId;
   skad: { strona: Strona; nazwa: Tx; klucz?: string }; satyra?: string; wraca?: string;
   rzecz?: { arms?: string; meds?: number; ammo?: Partial<Record<'naboje' | 'loftki' | 'belty', number>> };
 }
 export interface KontekstGoscia {
   mode: GameMode; pora: Pora; season: number; zapasy: number; okolica: readonly Miejsce[];
   znane: ReadonlySet<Dom>; napady: number; dom: boolean;
-  /** narrator po długim spokoju (zadanie 15): haczyk inny niż 'prawda' ×1,5 */
+  /** narrator po długim spokoju (zadanie 16): haczyk inny niż 'prawda' ×1,5 */
   ostrzej?: boolean;
 }
 export function skladGoscia(rng: Rng, n: number, ctx: KontekstGoscia, used: ReadonlySet<string>): Gosc;
 export function tytulGoscia(g: Gosc, s: Words, e: WordsEn): Tx;
 export function tekstGoscia(g: Gosc, s: Words, e: WordsEn): Tx;   // kto i skąd, czego chce, zdanie z tropem haczyka, satyra
-export const KTO: Record<KtoId, { tryby: readonly GameMode[]; chce: readonly ChceId[]; wiek: [number, number] }>;
+export const KTO: Record<KtoId, { tryby: readonly GameMode[]; chce: readonly ChceId[]; wiek: [number, number]; ilu: [number, number] }>;
+export function osobyGrupy(rng: Rng, n: () => number, kto: KtoId, ilu: number, used: ReadonlySet<string>): Person[];  // też dla kart z gościem (zadanie 11)
 ```
 
-- [ ] **Step 1: Write the failing tests:** `ten sam rng daje tego samego gościa`, `200 gości z 200 ziaren: każdy kto/chce/ma/haczyk zgodny z trybem i tabelą wykluczeń`, `ugryziony i ocaleni tylko w zombie, kłamie i pościg tylko w zwykłym`, `zimą chory częściej niż latem (1000 losowań)`, `skąd bierze miejsce z okolicy od strony wejścia, bez nazwy, która wygląda na imię i nazwisko`, `tekstGoscia po angielsku bez polskich słów (lista z zarzad-jezyk)`, `trop haczyka: każdy haczyk ma co najmniej 3 zdania tropu w obu językach`.
+- [ ] **Step 1: Write the failing tests:** `ten sam rng daje tego samego gościa`, `wielkość grupy z KTO.ilu (wędrowiec 1, rodzina 3–5, ocaleni 2–4, z_ugryzionym 2), rodzina ma wspólne nazwisko (forma żeńska i męska), ugryziony to indeks w osoby`, `200 gości z 200 ziaren: każdy kto/chce/ma/haczyk zgodny z trybem i tabelą wykluczeń`, `ugryziony i ocaleni tylko w zombie, kłamie i pościg tylko w zwykłym`, `zimą chory częściej niż latem (1000 losowań)`, `skąd bierze miejsce z okolicy od strony wejścia, bez nazwy, która wygląda na imię i nazwisko`, `tekstGoscia po angielsku bez polskich słów (lista z zarzad-jezyk)`, `trop haczyka: każdy haczyk ma co najmniej 3 zdania tropu w obu językach`.
 - [ ] **Step 2: Run** `npm test -- goscie-klocki`: FAIL.
-- [ ] **Step 3: Implement.** Osoba: `makePerson(rng, used, () => n, { prof })` z fachem pasującym do archetypu i wiekiem z `KTO[kto].wiek`. Wagi: zima `chory` ×2, zapasy > 20 `klamie` ×1,5, każda napaść −20% szansy na gościa (zwraca to `wagaGoscia(ctx): number`, też eksport). Treść pierwszej paczki: po 3 warianty zdania na kto, chce, ma i trop haczyka, 8 linijek satyry, w obu językach.
+- [ ] **Step 3: Implement.** Osoby: `makePerson(rng, used, n, { prof })` z fachem pasującym do archetypu i wiekiem z `KTO[kto].wiek` dla mówiącego; reszta grupy z wiekiem rodziny (dzieci 4–15, dziadkowie 65–85) i nazwiskiem mówiącego. `KTO.ilu`: wędrowiec, dezerter, uciekinier, chory, znajomy [1,1]; dziecko [1,2]; rodzina [3,5]; ocaleni [2,4]; z_ugryzionym [2,2]. Wagi: zima `chory` ×2, zapasy > 20 `klamie` ×1,5, każda napaść −20% szansy na gościa (zwraca to `wagaGoscia(ctx): number`, też eksport). Treść pierwszej paczki: po 3 warianty zdania na kto, chce, ma i trop haczyka, 8 linijek satyry, w obu językach.
 - [ ] **Step 4: Run**: PASS.
 - [ ] **Step 5: Commit** `git commit -m "Zarząd: goście składani z klocków"`
 
@@ -237,22 +240,22 @@ export const KTO: Record<KtoId, { tryby: readonly GameMode[]; chce: readonly Chc
 - Test: `tests/unit/gosc-sim.test.ts`
 
 **Interfaces:**
-- Consumes: `Gosc` (zadanie 8) tylko jako `osoba`, `look`, `strona` w planie.
+- Consumes: `Gosc` (zadanie 8) tylko jako `osoby`, `looks`, `strona` w planie.
 - Produces:
 
 ```ts
 // typy.ts
 export type FazaGoscia = 'idzie' | 'brama' | 'w_srodku' | 'odchodzi' | 'zlapany' | 'poszedl' | 'nie_doszedl' | 'zginal';
-export interface GovGosc { id: string; faza: FazaGoscia; tile: number; pawn: number; ukradl: number }
+export interface GovGosc { id: string; faza: FazaGoscia; tile: number; pawns: number[]; ukradl: number }
 // GovInput.goscie?: GovGosc[]  (obecne, choćby puste, tylko gdy st.obcy)
-// GovEffects.gosc?: { id: string; osoba: Person; look: number; strona: Strona };
+// GovEffects.gosc?: { id: string; osoby: Person[]; looks: number[]; strona: Strona; ugryziony?: number };
 // GovEffects.goscRozkaz?: { id: string; co: 'odejdz' | 'jedzenie' | 'noc' | 'zostan' | 'zarzad' | 'klamie' | 'ugryziony' | 'puscic' }[];
-// sim.ts: SimState.goscie?: { id: string; pawn: number; faza: FazaGoscia; at: number; klamie?: boolean; ukradl: number }[]
+// sim.ts: SimState.goscie?: { id: string; pawns: number[]; faza: FazaGoscia; at: number; klamie?: boolean; ukradl: number; ugryziony?: number }[]
 ```
 
-Fazy w symulacji: `idzie` (warstwa ulicy do `outsideOf(gateTiles)[0]`), `brama` (czeka), po `noc` faza `w_srodku` (warstwa zarządu przez bramę, do kafelka przy ognisku albo przed drzwiami siedziby, śpi tam; o 6:00 + 0–2 h wychodzi bramą: `odchodzi`), po `klamie` przy `w_srodku`: o 2:00 idzie do sterty `jedzenie`, bierze do 3 sztuk (`ukradl`), wychodzi bramą albo najbliższą dziurą; gdy po drodze w promieniu 8 m jest pionek zarządu, który nie śpi: faza `zlapany` i stoi; `puscic`: wychodzi bez łupu (łup zostaje na ziemi), `zostan`: jak `przyjmijGospodarstwo` (rodzaj `resident`), `zarzad`: jak `awansuj`, `ugryziony`: `infect(st, p, true)` przy wejściu. Gość, który nie dojdzie do bramy w 2 h gry: `nie_doszedl` i odchodzi. Zakończone wpisy (`poszedl`, `nie_doszedl`, `zginal`, przyjęci) zostają w `SimState.goscie` do odczytu przez zarząd (licznik `GovState.goscie.czytane`).
+Grupa: po pionku na osobę; mówiący prowadzi, reszta idzie na kafelki obok niego (jak `SPREAD` przy przyjętych), faza grupy to faza mówiącego, a gdy mówiący zginie, prowadzi następny żywy. Rozkazy dotyczą całej grupy (`zarzad`: mówiący do zarządu, reszta jak `zostan`). Fazy w symulacji: `idzie` (warstwa ulicy do `outsideOf(gateTiles)[0]`), `brama` (czeka), po `noc` faza `w_srodku` (warstwa zarządu przez bramę, do kafelka przy ognisku albo przed drzwiami siedziby, śpi tam; o 6:00 + 0–2 h wychodzi bramą: `odchodzi`), po `klamie` przy `w_srodku`: o 2:00 idzie do sterty `jedzenie`, bierze do 3 sztuk (`ukradl`), wychodzi bramą albo najbliższą dziurą; gdy po drodze w promieniu 8 m jest pionek zarządu, który nie śpi: faza `zlapany` i stoi; `puscic`: wychodzi bez łupu (łup zostaje na ziemi), `zostan`: jak `przyjmijGospodarstwo` (rodzaj `resident`, wszyscy), `zarzad`: mówiący jak `awansuj`, `ugryziony`: `infect(st, p, true)` przy wejściu osoby z indeksem `ugryziony`. Gość, który nie dojdzie do bramy w 2 h gry: `nie_doszedl` i odchodzi. Zakończone wpisy (`poszedl`, `nie_doszedl`, `zginal`, przyjęci) zostają w `SimState.goscie` do odczytu przez zarząd (licznik `GovState.goscie.czytane`).
 
-- [ ] **Step 1: Write the failing tests:** `plan gościa wystawia pionek z osobą po stronie ulicy i prowadzi go pod bramę bez losowania ze st.rng` (skrót `st.rng` przed i po wystawieniu ten sam), `rozkaz odejdz: gość znika za mapą`, `noc: gość wchodzi bramą i śpi przy ognisku, rano wychodzi`, `klamie bez warty: o 2:00 bierze jedzenie i wychodzi, sterta mniejsza o ukradl`, `klamie z wartownikiem w pobliżu: faza zlapany`, `zostan: rodzaj resident z mieszkaniem`, `zarzad: rodzaj core`, `w trybie zombie szwendacz przy bramie płoszy gościa: poszedl`, `zapis i wczytanie gościa w środku nocy: ten sam skrót po 6 h`, `stary zapis bez goscie się wczytuje`, `bez obcy GovInput.goscie nie ma`.
+- [ ] **Step 1: Write the failing tests:** `plan gościa wystawia pionek z osobą po stronie ulicy i prowadzi go pod bramę bez losowania ze st.rng` (skrót `st.rng` przed i po wystawieniu ten sam), `rozkaz odejdz: gość znika za mapą`, `noc: gość wchodzi bramą i śpi przy ognisku, rano wychodzi`, `klamie bez warty: o 2:00 bierze jedzenie i wychodzi, sterta mniejsza o ukradl`, `klamie z wartownikiem w pobliżu: faza zlapany`, `grupa trzech osób dochodzi razem i staje obok siebie pod bramą`, `zostan: cała grupa jako resident z mieszkaniami`, `zarzad: mówiący core, reszta resident`, `śmierć mówiącego: prowadzi następny żywy, faza zginal dopiero, gdy nie żyje nikt`, `w trybie zombie szwendacz przy bramie płoszy gościa: poszedl`, `zapis i wczytanie gościa w środku nocy: ten sam skrót po 6 h`, `stary zapis bez goscie się wczytuje`, `bez obcy GovInput.goscie nie ma`.
 - [ ] **Step 2: Run** `npm test -- gosc-sim`: FAIL.
 - [ ] **Step 3: Implement** według Interfaces; start pionka: najdalszy kafelek `lay.outside` (BFS od kafelka przy bramie) leżący po podanej stronie środka mapy, remis najmniejszy indeks.
 - [ ] **Step 4: Run** `npm test -- gosc-sim wedrowcy handlarz obcy-zombie sim`: PASS.
@@ -273,6 +276,7 @@ Fazy w symulacji: `idzie` (warstwa ulicy do `outsideOf(gateTiles)[0]`), `brama` 
   - `gdy wypada gosc, zarząd wysyła plan i nie pokazuje karty, póki gość nie ma fazy brama`,
   - `karta przy fazie brama ma gdzie z kafelka gościa i wybory z chce`,
   - `Odprawić, Jedzenie przez siatkę, Wpuścić na noc, Przyjąć dają właściwe goscRozkaz`,
+  - `karta grupy mówi tyle osób, ilu jest pionków, a Przyjąć przy mniejszej liczbie wolnych miejsc mówi, ilu będzie spać na podłodze`,
   - `Wpuścić na noc niedostępne przy bramie na kłódkę po 20:00`,
   - `kłamca wpuszczony na noc dostaje rozkaz klamie, rano linia o liczbie zabranych porcji`,
   - `złapany: karta z trzema wyborami (oddać i wyrzucić, wyrzucić z łupem, zatrzymać do rana)`,
@@ -287,7 +291,25 @@ Fazy w symulacji: `idzie` (warstwa ulicy do `outsideOf(gateTiles)[0]`), `brama` 
 - [ ] **Step 4: Run** `npm test -- gosc-zarzad gosc-sim zarzad wyprawy`: PASS.
 - [ ] **Step 5: Commit** `git commit -m "Zarząd: karta gościa pod bramą, haczyki i wskazówki"`
 
-### Task 11: Pies i kot
+### Task 11: Karty z 0.3 z gościem pod bramą
+
+**Files:**
+- Modify: `src/gov/tresc.ts` (`GEventDef.gosc`, `PlanGoscia`), `src/gov/wydarzenia.ts` (karta czeka na grupę jak gość z klocków; host `przyjmijGosci`, `przyjmijDoZarzadu`, `odprawGosci`, `nakarmGosci`), `src/gov/warianty.ts` (`uchodzcy`, `influencer`, `aktywisci`, `dzieci`, `krypto`, `fachowiec` w domu), `src/gov/warianty.en.ts`
+- Test: `tests/unit/karty-z-gosciem.test.ts`
+
+**Interfaces:**
+- Consumes: `osobyGrupy` (zadanie 8), `GovEffects.gosc/goscRozkaz`, `GovGosc` (zadanie 9), mechanika czekania na fazę `brama` i „Pokaż” (zadanie 10).
+- Produces: `export interface PlanGoscia { osoby: Person[]; kto: KtoId | 'sasiad' | 'aktywisci' | 'influencer' | 'dzieci'; strona?: Strona }`, `GEventDef.gosc?: (h: GovHost, d: D) => PlanGoscia | null`; host: `przyjmijGosci(): void` (`goscRozkaz` `zostan`), `przyjmijDoZarzadu(i: number): void` (osoba `i` do zarządu, reszta `zostan`), `odprawGosci(): void` (`odejdz`), `nakarmGosci(n: number): void` (`jedzenie`, Jedzenie −n), `nocGosci(): void` (`noc`).
+
+Karta z `gosc` w danych z `make` dostaje osoby: `uchodzcy` n osób (mówiący to `d.spec`, gdy jest), `influencer` 1 (`d.p`), `aktywisci` 4, `dzieci` 2–3 (wiek 9–15), `krypto` 1 (sąsiad z bloku obok), `fachowiec` w domu 1 (`d.p`). Wybory nakładek zamiast `addPeople`/`joinPerson` wołają metody hosta: uchodźcy „Przyjąć …” to `przyjmijGosci` (mówiący z fachem do zarządu, gdy 0.3 tak robiło), aktywiści „Zaprosić do ciepła” to `nocGosci`, influencerka „Przyjąć” to `przyjmijDoZarzadu(0)`, dzieciaki po wymianie `odprawGosci`, krypto po decyzji `odprawGosci`, fachowiec w domu `przyjmijDoZarzadu(0)`. Bez `GovInput.goscie` te karty mają wagę 0.
+
+- [ ] **Step 1: Write the failing tests:** `uchodzcy: plan n osób, karta dopiero przy fazie brama, tekst z liczbą n równą liczbie pionków`, `Przyjąć wszystkich to goscRozkaz zostan dla tej grupy, bez fx.residents i bez fx.join`, `influencer Przyjąć to zarzad dla tej osoby, imię w karcie równe imieniu pionka`, `aktywisci Zaprosić do ciepła: noc, rano odchodzą`, `dzieci i krypto po decyzji odchodzą`, `fachowiec w domu przychodzi do furtki`, `bez GovInput.goscie waga 0 dla wszystkich sześciu`, `test zgodności z 0.3 bez zmian`, `angielski bez polskich słów`.
+- [ ] **Step 2: Run** `npm test -- karty-z-gosciem`: FAIL.
+- [ ] **Step 3: Implement** według Interfaces (wspólna droga z kartą gościa z klocków w `wydarzenia.ts`, bez drugiej kopii logiki czekania).
+- [ ] **Step 4: Run** `npm test -- karty-z-gosciem gosc-zarzad events wydarzenia-miejsce wydarzenia03-en przyjecia`: PASS.
+- [ ] **Step 5: Commit** `git commit -m "Wydarzenia: uchodźcy, influencerka, aktywiści, dzieciaki i sąsiad naprawdę pod bramą"`
+
+### Task 12: Pies i kot
 
 **Files:**
 - Modify: `src/sim/sim.ts` (rodzaje `pies`, `kot`, zachowanie, szczekanie, `isPrey` dla psa, `die` bez wstawania i bez wpisu zmarłych), `src/sim/gov.ts` (`applyGov`: `fx.zwierze`), `src/gov/typy.ts` (`GovEffects.zwierze`, `GovState.flags.cat`), `src/gov/tresc.ts` (`pies`, `kot` ustawiają zwierzę), `src/render/art/zwierzeta.ts` (nowy atlas rysowany kodem), `src/render/view.ts` + `src/render/poses.ts` + `src/render/ludziePixellab.ts` (wyłączenie z ludzi PixelLab)
@@ -303,7 +325,7 @@ Fazy w symulacji: `idzie` (warstwa ulicy do `outsideOf(gateTiles)[0]`), `brama` 
 
 ## Etap 4: pamięć o znajomych
 
-### Task 12: Znajomi, powroty i znajomy w napadzie
+### Task 13: Znajomi, powroty i znajomy w napadzie
 
 **Files:**
 - Create: `src/gov/znajomi.ts`
@@ -335,7 +357,7 @@ Nastawienie: nakarmiony +1, nocleg +1, przyjęty +2, odprawiony 0 (−1, gdy chc
 
 ## Etap 5: łańcuchy, wątki sezonu, narrator
 
-### Task 13: Silnik łańcuchów i wątki sezonu
+### Task 14: Silnik łańcuchów i wątki sezonu
 
 **Files:**
 - Create: `src/gov/watki.ts`
@@ -361,14 +383,14 @@ Kroki z dojrzałym hakiem wypadają przed zwykłą pulą z szansą 0,6 przy każ
 - [ ] **Step 2–4:** FAIL, implement, PASS.
 - [ ] **Step 5: Commit** `git commit -m "Zarząd: silnik łańcuchów i wątki sezonu"`
 
-### Task 14: Dwanaście łańcuchów
+### Task 15: Dwanaście łańcuchów
 
 **Files:**
 - Modify: `src/gov/watki.ts` (treść `LANCUCHY`), ewentualnie `src/gov/watki-tresc.ts`, jeśli plik przekroczy 800 linii
 - Test: `tests/unit/watki-tresc.test.ts`
 
 **Interfaces:**
-- Consumes: `Krok`, `Lancuch`, `hak` (zadanie 13); `GovHost` z `lokatorzy`, `awansuj`, `wyrzuc`; plan gościa (zadania 9–10); `zapamietaj` (zadanie 12); `wskazowka` (zadanie 10).
+- Consumes: `Krok`, `Lancuch`, `hak` (zadanie 14); `GovHost` z `lokatorzy`, `awansuj`, `wyrzuc`; plan gościa (zadania 9–11); `zapamietaj` (zadanie 13); `wskazowka` (zadanie 10).
 
 Łańcuchy (3 tylko zwykły, 3 tylko zombie, 6 w obu), każdy 2–4 kroki, każdy kończy się czymś widocznym (gość, wskazówka, znajomy, awans, rzecz, zgon w zombie):
 1. obie: światło w oknie naprzeciwko → chłopak z babcią pod bramą (gość) → babcia chora, prośba o leki → apteka (wskazówka) albo znajomy −2;
@@ -388,7 +410,7 @@ Kroki z dojrzałym hakiem wypadają przed zwykłą pulą z szansą 0,6 przy każ
 - [ ] **Step 2–4:** FAIL, napisać treść (ton jak w `src/gov/tresc.ts` i `src/gov/ulica.ts`: zwykłe zdania, konkret z podwórka, satyra na dzisiejszą technikę oglądaną z 2051), PASS.
 - [ ] **Step 5: Commit** `git commit -m "Dwanaście łańcuchów historii, po polsku i po angielsku"`
 
-### Task 15: Narrator
+### Task 16: Narrator
 
 **Files:**
 - Create: `src/gov/narrator.ts`
@@ -404,7 +426,7 @@ Liczby ze spec: napad +20 (wtargnięcie +30), zgon +25, rana +10, średnie jedze
 - [ ] **Step 2–4:** FAIL, implement, PASS.
 - [ ] **Step 5: Commit** `git commit -m "Zarząd: narrator z krzywą napięcia"`
 
-### Task 16: Bramka końcowa, spis i dziennik
+### Task 17: Bramka końcowa, spis i dziennik
 
 **Files:**
 - Modify: `tools/shots.ts` (scenariusze `wyd-watek` i `en-wyd-watek`), `docs/OCENA-wydarzenia.md` (sekcja „Po budowie” ze spisem), `docs/POSTEP.md` (wpis, skróty botów, decyzje do przejrzenia)
