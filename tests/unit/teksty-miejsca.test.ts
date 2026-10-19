@@ -205,7 +205,9 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
     expect(help).toContain(
       'Klik w dom pokazuje jego kartę: co w nim już przeszukane. Prawy przycisk w domu: Przeszukać.',
     );
-    expect(help).toContain('W wersji 0.4 są noce za siatką, budowa, dom do przeszukania, przybysze i tryb zombie.');
+    expect(help).toContain(
+      'W wersji 0.4 są noce za siatką, budowa, dom do przeszukania, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.',
+    );
   });
 
   it('cel drugiego dnia: dom komitetu do przeszukania, pierwsze pomieszczenie zalicza cel', () => {
@@ -365,7 +367,9 @@ describe('w bloku po staremu (Przymorze)', () => {
       'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
     );
     expect(help).toContain('Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.');
-    expect(help).toContain('budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie.');
+    expect(help).toContain(
+      'W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.',
+    );
     expect(helpSheet(true, false, words).body).toContain(
       'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
     );

@@ -6349,6 +6349,12 @@ const SHOTS: Shot[] = [
   },
   tekstyPomoc('teksty-blok-pomoc', 'przymorze', false),
   tekstyPomoc('teksty-dom-pomoc', 'zielonki', true),
+  // „Jak grać” według gry: liczba osób z ?zarzad=N, siatka w zombie, klawisze M i T tylko na komputerze, angielski
+  // bez polskich liter (npm run shots -- jak-grac)
+  jakGrac('jak-grac', { osob: 2 }),
+  jakGrac('jak-grac-zombie', { osob: 5, zombie: true }),
+  jakGrac('jak-grac-telefon', { osob: 3, telefon: true }),
+  jakGrac('en-jak-grac', { lang: 'en', osob: 1 }),
   {
     // menu budowy w domu: komitet sam przynosi materiały, łóżka piętrowe zmieszczą ludzi „w domu”
     name: 'teksty-dom-budowa',
@@ -7916,8 +7922,75 @@ function tekstyPomoc(name: string, demo: string, dom: boolean): Shot {
       if (dom && word) throw new Error(`pomoc w domu ze słowem z bloku: ${word}`);
       if (!dom && !t.includes('Prowadzicie zarząd spółdzielni'))
         throw new Error('pomoc w bloku nie mówi o spółdzielni');
-      // na zrzucie część o zarządzie (w domu o komitecie) i „Na razie”: czwarta po Sterowaniu, Budowie i Pracy
-      await page.evaluate(() => document.querySelectorAll('#sheet .help-h')[3]?.scrollIntoView({ block: 'start' }));
+      // na zrzucie część o zarządzie (w domu o komitecie) i „Na razie”: po Sterowaniu, Budowie, Pracy, Poza siatką
+      // i Badaniach, więc szukana po nagłówku, a nie po numerze
+      await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('#sheet .help-h')]
+          .find((h) => /^(Zarząd|Komitet ulicy)$/.test(h.textContent ?? ''))
+          ?.scrollIntoView({ block: 'start' }),
+      );
+    },
+  };
+}
+
+/**
+ * „Jak grać” z menu według gry (docs/superpowers/specs/2026-10-19-sciezka-celow-design.md, U11 i U12): zdanie o zarządzie
+ * ma liczbę osób z gry (`?zarzad=N`, nie zawsze cztery) słownie, siatka w trybie zombie jest wzmocniona, a nie dziurawa,
+ * części „Poza siatką” i „Badania” mówią o klawiszach M i T (na telefonie bez klawiszy), a po angielsku nie ma polskich
+ * liter. Zrzut pokazuje część „Poza siatką” z „Badaniami” pod nią.
+ */
+function jakGrac(name: string, o: { lang?: 'en' | 'pl'; zombie?: boolean; osob: number; telefon?: boolean }): Shot {
+  const en = o.lang === 'en';
+  const zombie = o.zombie ?? false;
+  const telefon = o.telefon ?? false;
+  const SLOWNIE: Record<number, [string, string]> = {
+    1: ['Jedna osoba', 'One person'],
+    2: ['Dwie osoby', 'Two people'],
+    3: ['Trzy osoby', 'Three people'],
+    4: ['Cztery osoby', 'Four people'],
+    5: ['Pięć osób', 'Five people'],
+  };
+  return {
+    name,
+    query: '',
+    ...(o.lang ? { lang: o.lang } : {}),
+    ...(telefon ? { w: 390, h: 844 } : {}),
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&zarzad=${o.osob}${zombie ? '&tryb=zombie' : ''}`);
+      await waitIdle(page);
+      if (telefon) await page.tap('#btnMenu');
+      else await page.click('#btnMenu');
+      await page.click('#sheet [data-act="menu-help"]');
+      await page.waitForSelector('#sheet .help');
+      const g = await page.evaluate(() => {
+        const naglowki = [...document.querySelectorAll<HTMLElement>('#sheet .help-h')];
+        const sekcja = (re: RegExp) => naglowki.find((h) => re.test(h.textContent ?? ''));
+        const tekst = (h?: HTMLElement) => h?.nextElementSibling?.textContent ?? '';
+        const poza = sekcja(/^(Poza siatką|Beyond the fence)$/);
+        poza?.scrollIntoView({ block: 'start' });
+        return {
+          naglowki: naglowki.map((h) => h.textContent ?? ''),
+          zarzad: tekst(sekcja(/^(Zarząd|Komitet ulicy|The board|The street committee)$/)),
+          poza: tekst(poza),
+          badania: tekst(sekcja(/^(Badania|Research)$/)),
+          caly: document.querySelector('#sheet')?.textContent ?? '',
+        };
+      });
+      console.log(`  nagłówki: ${g.naglowki.join(' | ')}`);
+      console.log(`  zarząd: ${g.zarzad.slice(0, 150)}…`);
+      const [slowoPl, slowoEn] = SLOWNIE[o.osob];
+      const zdanie = en
+        ? `${slowoEn}, a potbelly stove in the kitchen and ${zombie ? 'a reinforced fence' : 'a fence full of holes'}`
+        : `${slowoPl}, koza w kuchni i ${zombie ? 'wzmocniona' : 'dziurawa'} siatka`;
+      if (!g.zarzad.includes(zdanie)) throw new Error(`zdanie o zarządzie bez „${zdanie}”: ${g.zarzad.slice(0, 200)}`);
+      if (!g.poza || !g.badania) throw new Error(`brak części Poza siatką albo Badania: ${g.naglowki.join(', ')}`);
+      const klawisze = en ? [/the M key/, /the T key/] : [/klawisz M/, /klawisz T/];
+      if (klawisze[0].test(g.poza) === telefon) throw new Error(`klawisz M w pomocy: ${klawisze[0].test(g.poza)}`);
+      if (klawisze[1].test(g.badania) === telefon)
+        throw new Error(`klawisz T w pomocy: ${klawisze[1].test(g.badania)}`);
+      if (en && /[ąćęłńóśźż]/i.test(g.caly)) throw new Error('polskie litery w angielskiej pomocy');
+      if (!en && !zombie && /szwendacz/i.test(g.caly)) throw new Error('szwendacze w pomocy trybu zwykłego');
+      await page.waitForTimeout(150);
     },
   };
 }
@@ -11403,7 +11476,7 @@ function miastoShots(): Shot[] {
         const imiona = await page.evaluate(() => window.zm!.sim!.st.people.flatMap((q) => [q.name, q.first]));
         const pl = polskieLitery(p.tekst, [m.nazwa, ...imiona]);
         if (pl.length) throw new Error(`polskie słowa w oknie planu po angielsku: ${pl.join(' ')}`);
-        if (p.wyslij?.tekst !== 'Send the supply run' || p.wyslij.wyszarzony)
+        if (p.wyslij?.tekst !== 'Send a supply run' || p.wyslij.wyszarzony)
           throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
         if (p.wroc !== 'Back to the map') throw new Error(`przycisk powrotu: ${p.wroc}`);
         const klucze = p.podsumowanie.map((r) => r[0]);
@@ -11806,7 +11879,7 @@ function miastoShots(): Shot[] {
         if (p.bok) throw new Error('okno planu przewija się w bok na telefonie');
         const [l, t, r, b] = p.stopka!;
         if (l < 0 || t < 0 || r > p.ekran[0] || b > p.ekran[1]) throw new Error('stopka planu wychodzi za ekran');
-        if (p.wyslij?.tekst !== 'Send the supply run') throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.wyslij?.tekst !== 'Send a supply run') throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
         if (p.wroc !== 'Back to the map') throw new Error(`przycisk powrotu: ${p.wroc}`);
         // wybór osoby dotykiem, jak w zwykłym trybie
         const kto = p.osoby.find((x) => !x.wyszarzona)!;

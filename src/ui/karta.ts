@@ -51,7 +51,8 @@ const AMMO_WORDS: Record<string, [string, string, string]> = {
   belty: ['bełt', 'bełty', 'bełtów'],
 };
 
-/** ugryzienie z czasem; przycisk amputacji tylko wtedy, gdy karta pozwala na rozkazy i da się jeszcze uciąć */
+/** ugryzienie z czasem; przycisk amputacji tylko wtedy, gdy karta pozwala na rozkazy i da się jeszcze uciąć. Ugryzienie
+    w kończynę (`limb`) mówi „w rękę albo nogę” (“on an arm or a leg”), bo symulacja nie odróżnia ręki od nogi. */
 function biteHtml(p: SimPerson, tick: number, orders: boolean, words: Words, e: WordsEn): string {
   if (!p.bite) return '';
   const ago = Math.max(0, Math.floor(((tick - p.bite.at) * 60) / TICKS_PER_HOUR));
@@ -66,10 +67,10 @@ function biteHtml(p: SimPerson, tick: number, orders: boolean, words: Words, e: 
   if (jezyk() === 'en') {
     const h = Math.floor(ago / 60);
     const when = h ? `${h} h ${String(ago % 60).padStart(2, '0')} min` : `${ago} min`;
-    return `<p class="bite">Bitten${p.bite.limb ? ' on the arm' : ''} ${when} ago. The fever will kill ${p.f ? 'her' : 'him'} in ${left} h.${cut}</p>`;
+    return `<p class="bite">Bitten${p.bite.limb ? ' on an arm or a leg' : ''} ${when} ago. The fever will kill ${p.f ? 'her' : 'him'} in ${left} h.${cut}</p>`;
   }
   const who = p.f ? 'Ugryziona' : 'Ugryziony';
-  const where = p.bite.limb ? ' w rękę' : '';
+  const where = p.bite.limb ? ' w rękę albo nogę' : '';
   return `<p class="bite">${who}${where} ${Math.floor(ago / 60)}:${String(ago % 60).padStart(2, '0')} temu. Gorączka zabije za ${left} h.${cut}</p>`;
 }
 

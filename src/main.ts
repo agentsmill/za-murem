@@ -385,6 +385,9 @@ function zablokowanyKlik(sx: number, sy: number, widocznyPionek = false, prawy =
     angielsku wordsE */
 let words: Words = wordsOf(BLOK);
 let wordsE: WordsEn = wordsEn(BLOK);
+/** ile osób liczył zarząd, gdy gra się zaczęła albo wczytała (pionki rdzenia), do zdania „Jak grać” o starcie; przed grą
+    nic, wtedy pomoc mówi o czterech osobach, jak panel „Wasz zarząd” */
+let zarzadStart: number | undefined;
 /** id handlarza z ostatniej klatki (−1: nie ma), żeby napis o jego przyjściu pokazał się raz */
 let traderSeen = -1;
 /** tick ostatniej pokazanej wieści (st.obcy.wiesc) */
@@ -821,6 +824,10 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   govAt = screen;
   loaded = data;
   hqName = world.buildings[world.hq]?.name ?? '';
+  // „Jak grać” mówi o zarządzie ze startu gry, nie zawsze o czterech: nowa gra ma tu rdzeń jeszcze sprzed pierwszego
+  // przyjęcia (tyle, ile dał panel „Wasz zarząd”, `opcje.core`, albo długość własnej drużyny), wczytany zapis rdzeń z chwili
+  // wczytania (zapis nie trzyma liczby ze startu)
+  zarzadStart = st.pawns.filter((p) => p.kind === 'core').length || undefined;
   words = wordsOfWorld(world);
   wordsE = wordsEnOfWorld(world);
   hqAria();
@@ -2215,7 +2222,7 @@ function showMenu() {
 function showHelp() {
   sheetAgain = showHelp;
   modal.show(
-    helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie', words, wordsE),
+    helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie', words, wordsE, { osob: zarzadStart }),
     (a) => {
       if (a === 'help-back') showMenu();
     },
