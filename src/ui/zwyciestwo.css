@@ -1,0 +1,219 @@
+/* Okna warunków zwycięstwa (src/ui/zwyciestwo.ts): ekran „Drogi do zwycięstwa” z Menu i epilog zwycięstwa, oba na
+   złotej tabliczce. Ekran dróg jest szeroki: karty dróg w dwóch kolumnach, a w karcie kamienie milowe jako oś czasu
+   (zrobiony zielony z ptaszkiem, następny w złotej obwódce, reszta szara). Epilog ma zwykłą szerokość okna: tekst drogi,
+   zdanie ścieżki uchwał i cztery liczby. Na telefonie (do 640 px) karty idą jedna pod drugą, a liczby epilogu w dwóch
+   kolumnach. */
+
+.sheet.drogi,
+.sheet.zwyciestwo {
+  --plate: #7a5a12;
+}
+.sheet.drogi {
+  width: min(820px, 100%);
+}
+.sheet.zwyciestwo {
+  border-color: #a98322;
+}
+
+/* ---------- ekran dróg ---------- */
+.zw-drogi {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.zw-droga {
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--seam);
+  border-radius: 6px;
+  background: var(--slab-deep);
+}
+.zw-droga.zw-wygrana {
+  border-color: var(--good);
+}
+.zw-glowa {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.zw-nazwa {
+  margin: 0;
+  font: 700 19px / 1.1 var(--f-sign);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.zw-odznaka {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--good);
+  color: #15181a;
+  font: 700 12px / 1.3 var(--f-sign);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* kamienie milowe: oś czasu, marker na lewej krawędzi i kreska łącząca z następnym */
+.zw-kamienie {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.zw-kamien {
+  position: relative;
+  margin: 0;
+  padding: 3px 0 3px 24px;
+  color: var(--ink-dim);
+  font-size: 14px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.zw-kamien:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 19px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--seam);
+}
+.zw-znak {
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  background: var(--slab-deep);
+}
+.zw-zaliczony {
+  color: var(--ink);
+}
+.zw-zaliczony:not(:last-child)::before {
+  background: var(--good);
+}
+.zw-zaliczony .zw-znak {
+  border-color: var(--good);
+  background: var(--good);
+}
+.zw-zaliczony .zw-znak::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 3px;
+  height: 7px;
+  border: solid #15181a;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.zw-nastepny {
+  color: var(--ink);
+  font-weight: 600;
+}
+.zw-nastepny .zw-znak {
+  border-color: var(--lamp);
+}
+
+/* postęp liczbowy (droga ludnościowa) i zdanie „Wkrótce: …” */
+.zw-postep {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.zw-pasek {
+  flex: 1;
+  min-width: 0;
+  height: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--slab);
+  box-shadow: inset 0 0 0 1px var(--seam);
+  accent-color: var(--good);
+  appearance: none;
+}
+.zw-pasek::-webkit-progress-bar {
+  border-radius: 4px;
+  background: var(--slab);
+}
+.zw-pasek::-webkit-progress-value {
+  border-radius: 4px;
+  background: var(--good);
+}
+.zw-pasek::-moz-progress-bar {
+  border-radius: 4px;
+  background: var(--good);
+}
+.zw-liczby {
+  flex: none;
+  font: 700 14px / 1.2 var(--f-sign);
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.zw-wkrotce {
+  margin: 8px 0 0;
+  color: var(--ink-dim);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ---------- epilog ---------- */
+.sheet.zwyciestwo .sheet-title {
+  font-size: 30px;
+}
+.sheet.zwyciestwo .zw-opowiesc {
+  margin: 4px 0 12px;
+  font-size: 17px;
+  line-height: 1.5;
+}
+.sheet.zwyciestwo .zw-sciezka {
+  margin: 0 0 16px;
+  color: var(--ink-dim);
+  font-style: italic;
+}
+.zw-staty {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--seam);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.zw-stat {
+  margin: 0;
+  padding: 9px 6px;
+  border: 1px solid var(--seam);
+  border-radius: 5px;
+  background: var(--slab-deep);
+  text-align: center;
+  font: 700 17px / 1.2 var(--f-sign);
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .zw-drogi {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .zw-droga {
+    padding: 9px 10px 10px;
+  }
+  .sheet.zwyciestwo .sheet-title {
+    font-size: 24px;
+  }
+  .sheet.zwyciestwo .zw-opowiesc {
+    font-size: 16px;
+  }
+  .zw-staty {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

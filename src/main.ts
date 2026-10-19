@@ -34,7 +34,7 @@ import {
   setNight,
   signLaw,
 } from './gov/zarzad.ts';
-import { grajDalej } from './gov/zwyciestwo.ts';
+import { DROGI, type Droga, grajDalej, ocenDrogi, type PostepDrogi, wlaczZwyciestwo } from './gov/zwyciestwo.ts';
 import { type LokatorEn, lokatorzyEn } from './mieszkancy/angielski.ts';
 import type { Odmiana } from './mieszkancy/historie.ts';
 import { nazwaDoOkolicy, zbiorImion } from './mieszkancy/kronika.ts';
@@ -134,6 +134,7 @@ import { esc } from './ui/tekst.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import { clearSave, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
+import { drogiSheet, epilogSheet, statyEpilogu } from './ui/zwyciestwo.ts';
 import { demoList, type Loaded, loadAddress, loadDemo } from './world/load.ts';
 import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
 import { KafelkiMiasta } from './world/miastoKafelki.ts';
@@ -209,6 +210,11 @@ declare global {
       siec: () => ReturnType<GraSieciowa['podglad']>;
       /** które części grafiki są z PixelLab (reszta z kodu); null: wszystko z kodu */
       grafika: () => Record<'teren' | 'blok' | 'dach' | 'trzepak' | 'budynki' | 'ludzie', boolean> | null;
+      /** drogi do zwycięstwa tak, jak je widzi ekran dróg z Menu (`ocenDrogi`); pusto bez gry */
+      zwyciestwo: () => PostepDrogi[];
+      /** tylko do zrzutów: zwycięstwo drogi teraz (wygrana i wszystkie kamienie w stanie, epilog czeka); gdy żadne okno
+          nie jest otwarte, epilog od razu się pokazuje. Zwraca rodzaj okna, które się otworzyło, albo null */
+      wygraj: (droga: Droga) => string | null;
     };
   }
 }
@@ -575,6 +581,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
   // mapa miasta w nowej grze i w starym zapisie (bez losowania; wyprawa nocna w drodze kończy się po staremu)
   if (opcjaMiasto) wlaczMiasto(gov);
+  // drogi do zwycięstwa w nowej grze i w starym zapisie: kamienie, które stan już spełnia, zapisują się raz, bez epilogu
+  wlaczZwyciestwo(gov);
   // ?stado=N: od razu N szwendaczy pod siatką przy siedzibie (podgląd i zrzuty)
   const herd = Number(params.get('stado'));
   if (!saved && zombie && herd > 0) sim.spawnAtFence(herd, world.buildings[world.hq]?.entrances[0]?.out ?? 0);
@@ -828,11 +836,8 @@ function showPrompt(p: Prompt) {
       decided();
     });
   else if (p.k === 'karta') showNight(p);
-  else if (p.k === 'zwyciestwo') {
-    // jeszcze bez okna epilogu (dojdzie z ekranem dróg): zwycięstwo mija bez zatrzymania gry, gra rusza dalej
-    grajDalej(g);
-    decided();
-  } else
+  else if (p.k === 'zwyciestwo') showEpilog(p.droga);
+  else
     modal.show(eventSheet(p, words, wordsE), (act, arg) => {
       if (act !== 'event') return;
       applyFx(chooseEvent(g, input(), Number(arg)));
@@ -877,6 +882,58 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
       decided();
     }
   });
+}
+
+/** epilog zwycięstwa drogą `droga` (okno z `pending`): „Graj dalej” zdejmuje epilog, zapisuje i wraca do gry w tempie sprzed
+    okna (albo do następnej decyzji); „Nowa gra” pyta o potwierdzenie. Zapis zostaje w obu przypadkach: zwycięstwo nie
+    kończy gry, w odróżnieniu od porażki (`showEnd`) */
+function showEpilog(droga: Droga) {
+  const g = gov;
+  if (!g || !sim) return;
+  modal.show(epilogSheet(droga, g.laws.path, g.mode ?? 'zwykly', statyEpilogu(g, input())), (act) => {
+    if (act === 'zw-dalej') {
+      grajDalej(g);
+      decided();
+    } else if (act === 'zw-nowa') askNowaGra(droga);
+  });
+}
+
+/** potwierdzenie „Nowa gra” z epilogu: zapis tej gry zostaje na ekranie startowym (jak „Zapisz i wróć” z Menu), dopóki
+    nowa gra go nie nadpisze; „Nie” i Esc wracają do epilogu, który dalej czeka w `pending` */
+function askNowaGra(droga: Droga) {
+  sheetAgain = () => askNowaGra(droga);
+  modal.show(
+    confirmSheet(
+      L('Nowa gra', 'New game'),
+      L(
+        'Wrócicie na ekran startowy. Ta gra zostaje w zapisie, dopóki nowa jej nie nadpisze.',
+        'You go back to the start screen. This game stays saved until a new one overwrites it.',
+      ),
+    ),
+    (act) => {
+      if (act === 'confirm-yes') {
+        save();
+        location.href = startUrl();
+      } else if (act === 'confirm-no') {
+        modal.close();
+        nextPrompt();
+      }
+    },
+    nextPrompt,
+  );
+}
+
+/** ekran „Drogi do zwycięstwa” (z Menu): gra stoi, „Wróć” wraca do Menu, zamknięcie wraca do gry albo do decyzji, która czeka */
+function showDrogi() {
+  if (!sim || !gov) return;
+  sheetAgain = showDrogi;
+  modal.show(
+    drogiSheet(ocenDrogi(gov, input())),
+    (act) => {
+      if (act === 'zw-wroc') showMenu();
+    },
+    nextPrompt,
+  );
 }
 
 function showEnd() {
@@ -1466,6 +1523,7 @@ function showMenu() {
         modal.close();
         nextPrompt();
       } else if (act === 'menu-help') showHelp();
+      else if (act === 'menu-zwyciestwo') showDrogi();
       else if (act === 'menu-start') {
         save();
         location.href = startUrl();
@@ -2759,6 +2817,20 @@ if (attrib) bars.observe(attrib);
     apts: () => sim?.st.apts ?? [],
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
     siec: () => siec.podglad(),
+    zwyciestwo: () => (sim && gov ? ocenDrogi(gov, input()) : []),
+    wygraj: (droga) => {
+      if (!sim || !gov || gov.over || !Object.hasOwn(DROGI, droga)) return null;
+      wlaczZwyciestwo(gov);
+      const z = gov.zwyciestwo!;
+      const i = input();
+      if (!z.wygrane.some((w) => w.droga === droga)) z.wygrane.push({ droga, dzien: i.day, godzina: i.hour });
+      z.kamienie[droga] = DROGI[droga].kamienie.length;
+      z.epilog = droga;
+      if (modal.open) return null;
+      const p = pending(gov, i);
+      if (p) showPrompt(p);
+      return p?.k ?? null;
+    },
     grafika: () => {
       const g = view.grafika;
       return (

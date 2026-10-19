@@ -810,6 +810,140 @@ describe('cel z danych 2021 w liczniku', () => {
   });
 });
 
+describe('cel zapamiętany w stanie (zamrożony przy pierwszych danych 2021)', () => {
+  it('pierwszy krok z danymi 2021 zapisuje cel, tak jak liczy go celLudnosci (zwykły i zombie)', () => {
+    const zwykly = wlaczony();
+    expect(z(zwykly).cel).toBeUndefined();
+    krok(zwykly, wej({ ludnosc: 8, ludnosc2021: 1000 }));
+    expect(z(zwykly).cel).toBe(500);
+    // 100 osób sprzed upadku to dolna granica 120, w zombie połowa po przycięciu
+    const zombie = wlaczony('zombie');
+    krok(zombie, wej({ ludnosc: 8, ludnosc2021: 1000 }));
+    expect(z(zombie).cel).toBe(250);
+    const maly = wlaczony('zombie');
+    krok(maly, wej({ ludnosc: 8, ludnosc2021: 100 }));
+    expect(z(maly).cel).toBe(60);
+  });
+
+  it('późniejszy krok bez danych 2021 zostaje przy zapisanym celu: ludność 300 nie liczy się do 500', () => {
+    const st = wlaczony();
+    krok(st, rano(1, { ludnosc: 300, ludnosc2021: 1000 }));
+    expect(z(st).cel).toBe(500);
+    expect(z(st).dniCelu).toBe(0);
+    // gdyby cel wrócił do 250, 300 osób liczyłoby poranki
+    for (let d = 2; d <= 6; d++) krok(st, rano(d, { ludnosc: 300 }));
+    expect(z(st).dniCelu).toBe(0);
+    expect(z(st).cel).toBe(500);
+    // cel 500 trzyma licznik, także bez danych w wejściu
+    for (let d = 7; d <= 13; d++) krok(st, rano(d, { ludnosc: 500 }));
+    expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 13, godzina: 6 }]);
+  });
+
+  it('progi kamieni idą od zapisanego celu także wtedy, gdy późniejsze kroki nie mają danych 2021', () => {
+    const st = wlaczony();
+    krok(st, wej({ ludnosc: 200, ludnosc2021: 1000 }));
+    // połowa celu 500 to 250, więc 200 osób to trzy kamienie (z celem 250 byłby już czwarty)
+    expect(z(st).kamienie.ludnosc).toBe(3);
+    krok(st, wej({ ludnosc: 249 }));
+    expect(z(st).kamienie.ludnosc).toBe(3);
+    krok(st, wej({ ludnosc: 250 }));
+    expect(z(st).kamienie.ludnosc).toBe(4);
+  });
+
+  it('inne dane 2021 w późniejszym kroku nie zmieniają zapisanego celu', () => {
+    const st = wlaczony();
+    krok(st, rano(1, { ludnosc: 300, ludnosc2021: 1000 }));
+    krok(st, rano(2, { ludnosc: 300, ludnosc2021: 100 }));
+    expect(z(st).cel).toBe(500);
+    // z danymi 100 cel byłby 120 i 300 osób liczyłoby poranek
+    expect(z(st).dniCelu).toBe(0);
+  });
+
+  it('ocenDrogi czyta zapisany cel, a bez zapisanego liczy na bieżąco i niczego nie zapisuje', () => {
+    const ludnosc = (st: GovState, i: GovInput) => ocenDrogi(st, i).find((x) => x.droga === 'ludnosc')!.postep;
+    const st = wlaczony();
+    // jeszcze nic nie zapisano: cel z bieżących danych, stan bez zmian
+    const przed = JSON.stringify(st);
+    expect(ludnosc(st, wej({ ludnosc: 40, ludnosc2021: 1000 }))).toEqual({ ile: 40, cel: 500 });
+    expect(ludnosc(st, wej({ ludnosc: 40 }))).toEqual({ ile: 40, cel: 250 });
+    expect(JSON.stringify(st)).toBe(przed);
+    // po zapisie ekran dróg pokazuje ten sam cel także bez danych w wejściu
+    krok(st, wej({ ludnosc: 40, ludnosc2021: 1000 }));
+    expect(ludnosc(st, wej({ ludnosc: 41 }))).toEqual({ ile: 41, cel: 500 });
+    expect(ludnosc(st, wej({ ludnosc: 41, ludnosc2021: 100 }))).toEqual({ ile: 41, cel: 500 });
+    // w zombie zapisany cel jest już po połowieniu i nie dzieli się drugi raz
+    const zombie = wlaczony('zombie');
+    krok(zombie, wej({ ludnosc: 40, ludnosc2021: 1000 }));
+    expect(ludnosc(zombie, wej({ ludnosc: 41 }))).toEqual({ ile: 41, cel: 250 });
+  });
+
+  it('bez danych 2021 w ogóle nic się nie zapisuje, a cel to 250 jak dotąd', () => {
+    const st = wlaczony();
+    for (let d = 1; d <= 7; d++) krok(st, rano(d, { ludnosc: CEL }));
+    expect('cel' in z(st)).toBe(false);
+    expect(z(st).wygrane).toEqual([{ droga: 'ludnosc', dzien: 7, godzina: 6 }]);
+    const zombie = wlaczony('zombie');
+    krok(zombie, rano(1, { ludnosc: 125 }));
+    expect('cel' in z(zombie)).toBe(false);
+    expect(z(zombie).dniCelu).toBe(1);
+  });
+
+  it('dane bez sensu (0, ujemne, NaN) nie zamrażają celu, dopiero użyteczne dane', () => {
+    const st = wlaczony();
+    for (const n of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      krok(st, wej({ ludnosc: 8, ludnosc2021: n }));
+      expect('cel' in z(st), `${n}`).toBe(false);
+    }
+    krok(st, wej({ ludnosc: 8, ludnosc2021: 600 }));
+    expect(z(st).cel).toBe(300);
+  });
+
+  it('zapisany cel przechodzi przez JSON i zarządu (saveGov/loadGov), a dalsze kroki idą od niego', () => {
+    const st = wlaczony();
+    for (let d = 1; d <= 3; d++) krok(st, rano(d, { ludnosc: 500, ludnosc2021: 1000 }));
+    expect(z(st).dniCelu).toBe(3);
+    const c = loadGov(saveGov(st));
+    expect(z(c).cel).toBe(500);
+    expect(JSON.parse(JSON.stringify(z(st)))).toEqual(z(c));
+    // wznowiona gra bez tabel: 499 osób nie wystarcza do zapisanego celu 500 (z celem 250 by wystarczyło)
+    krok(c, rano(4, { ludnosc: 499 }));
+    expect(z(c).dniCelu).toBe(0);
+    // ten sam przebieg bez zapisu i wczytania daje ten sam stan
+    const a = wlaczony();
+    for (let d = 1; d <= 3; d++) krok(a, rano(d, { ludnosc: 500, ludnosc2021: 1000 }));
+    krok(a, rano(4, { ludnosc: 499 }));
+    expect(JSON.stringify(c)).toBe(JSON.stringify(a));
+  });
+
+  it('stan sprzed pola `cel` (stary zapis) liczy cel na bieżąco i zapisuje go przy pierwszych danych', () => {
+    const st = loadGov(saveGov(wlaczony()));
+    expect('cel' in z(st)).toBe(false);
+    // bez danych tak jak dotąd: 250
+    krok(st, rano(1, { ludnosc: CEL }));
+    expect(z(st).dniCelu).toBe(1);
+    expect('cel' in z(st)).toBe(false);
+    // dane 2021 pojawiają się później (gra wczytana z tabelami): cel zamraża się od teraz
+    krok(st, rano(2, { ludnosc: CEL, ludnosc2021: 1000 }));
+    expect(z(st).cel).toBe(500);
+    expect(z(st).dniCelu).toBe(0);
+  });
+
+  it('zapis celu niczego nie zmienia w kroku poza polem `cel`: kamienie i wpisy tak jak z celem liczonym na bieżąco', () => {
+    const st = wlaczony();
+    for (const ludnosc of [9, 12, 30, 60, 130, 250, 500]) krok(st, wej({ ludnosc, ludnosc2021: 1000 }));
+    // cel 500: progi 10, 25, 50 i połowa 250; 130 osób to jeszcze nie połowa celu
+    expect(teksty(st)).toEqual([
+      'Droga „Nowe osiedle”: 10 osób.',
+      'Droga „Nowe osiedle”: 25 osób.',
+      'Droga „Nowe osiedle”: 50 osób.',
+      'Droga „Nowe osiedle”: Połowa celu.',
+    ]);
+    expect(z(st).cel).toBe(500);
+    expect(st.trust).toBe(50);
+    expect(st.anger).toBe(20);
+  });
+});
+
 describe('krok zwycięstwa w govUpdate', () => {
   it('govUpdate zalicza kamień z odczytu i oddaje wpis w skutkach', () => {
     const gov = newGov(1);

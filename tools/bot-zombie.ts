@@ -35,6 +35,7 @@ import {
   setNight,
   signLaw,
 } from '../src/gov/zarzad.ts';
+import { grajDalej } from '../src/gov/zwyciestwo.ts';
 import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { applyGov, govInput } from '../src/sim/gov.ts';
 import { houseOf, inHomeApt } from '../src/sim/house.ts';
@@ -148,6 +149,7 @@ function play(policy: Policy): {
         const p = pending(gov, i);
         if (!p) break;
         if (p.k === 'raport') ackReport(gov, i);
+        else if (p.k === 'zwyciestwo') grajDalej(gov);
         else if (p.k === 'uchwala') applyGov(st, world, signLaw(gov, i, null));
         else if (p.k === 'wydarzenie')
           applyGov(

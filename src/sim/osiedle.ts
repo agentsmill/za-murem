@@ -51,7 +51,7 @@ export function mapaMieszkancow(geo: Geo, dane: DaneMieszkancow | null): Geo {
     (`GovInput.ludnosc2021`, src/gov/zwyciestwo.ts). Osoby wszystkich budynków mieszkalnych obszaru gry (`budynkiObszaru`,
     reguła R22 generatora), każdy obsadzony na spis (`obsadzBudynek`: marginesy rejonu budynku, bez gminy marginesy
     Polski), bez postarzania do 2051, imion i historii, więc to dziesiątki milisekund i żadnego pobierania (tabele są
-    już w `dane`). Siedziba, której generator nie uważa za mieszkalną (dema Przymorza i Lanciego), do sumy nie wchodzi.
+    już w `dane`). Siedziba spoza budynków generatora (na demach tylko Przymorze) do sumy nie wchodzi.
     `undefined` bez tabel (`dane === null`), po wyjątku (z ostrzeżeniem w konsoli) i gdy w obszarze nie ma nikogo:
     zarząd bierze wtedy cel jak bez danych. Czysta i deterministyczna (ziarna spisu z `losDla`), niczego nie zmienia. */
 export function ludnoscSpisu2021(geo: Geo, dane: DaneMieszkancow | null): number | undefined {
