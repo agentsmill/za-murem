@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { ocenDrogi } from '../../src/gov/zwyciestwo.ts';
+import { TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { playWithGov } from './gov-play.ts';
 import { mockBlock } from './interior-mock.ts';
 
@@ -25,5 +27,42 @@ describe('gra z zarządem (bot)', () => {
     const a = playWithGov(w, 5, 'nigdy-warty', 2);
     for (const n of a.nights) expect(n.guards).toBe(0);
     expect(playWithGov(w, 5, 'nigdy-warty', 2).hash).toBe(a.hash);
+  });
+});
+
+describe('drogi do zwycięstwa w grze bota (opcja `zwyciestwo`, flaga --zwyciestwo botów)', () => {
+  it('bez opcji zarząd nie ma stanu zwycięstwa, z opcją ma, a symulacja idzie tak samo (ten sam skrót)', () => {
+    const bez = playWithGov(w, 3, 'zawsze-warta', 2);
+    expect(bez.gov.zwyciestwo).toBeUndefined();
+    const z = playWithGov(w, 3, 'zawsze-warta', 2, 4, { zwyciestwo: {} });
+    expect(z.gov.zwyciestwo).toBeDefined();
+    expect(z.hash).toBe(bez.hash);
+  });
+
+  it('`po` woła się co sekundę przy ekranie, a ludnosc2021 idzie do każdego wejścia i daje cel z połowy spisu', () => {
+    const spis = new Set<number | undefined>();
+    const cele = new Set<number>();
+    let kroki = 0;
+    playWithGov(w, 3, 'zawsze-warta', 2, 4, {
+      zwyciestwo: {
+        ludnosc2021: 1000,
+        po: (gov, i) => {
+          kroki++;
+          spis.add(i.ludnosc2021);
+          cele.add(ocenDrogi(gov, i).find((d) => d.droga === 'ludnosc')!.postep!.cel);
+        },
+      },
+    });
+    expect(kroki).toBe((2 * TICKS_PER_DAY) / TICKS_PER_SECOND);
+    expect([...spis]).toEqual([1000]);
+    expect([...cele]).toEqual([500]);
+  });
+
+  it('bez ludnosc2021 (bez tabel mieszkańców) cel drogi ludnościowej to 250', () => {
+    const cele = new Set<number>();
+    playWithGov(w, 3, 'zawsze-warta', 1, 4, {
+      zwyciestwo: { po: (gov, i) => cele.add(ocenDrogi(gov, i).find((d) => d.droga === 'ludnosc')!.postep!.cel) },
+    });
+    expect([...cele]).toEqual([250]);
   });
 });

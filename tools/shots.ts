@@ -10,12 +10,18 @@ import http from 'node:http';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { stworzSerwer } from '../server/app.ts';
+import { mnogaPl, type Tx } from '../src/core/jezyk.ts';
+import type { GameMode } from '../src/gov/typy.ts';
+import { DROGI, type Droga, nazwaDrogi } from '../src/gov/zwyciestwo.ts';
 import type { ZajetaKlatka } from '../src/net/protokol.ts';
+import { LOOKI } from '../src/render/art/lookBudynku.ts';
 import { nazwaBudynkuEn } from '../src/world/classify.en.ts';
 import { klatkiBudynku, kluczBudynku } from '../src/world/klucze.ts';
 import { toGeoT } from '../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS } from '../src/world/world.ts';
+import { atrapaBudynki, srodekKafelki } from '../tests/unit/atrapa-budynki.ts';
 import { ADDRESSES, decodedTiles } from '../tests/unit/fixtures.ts';
+import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
@@ -42,6 +48,209 @@ interface Shot {
 }
 
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
+
+/**
+ * Zrzuty budynków z PixelLab (M3) na atrapie mapy z każdym z 11 wyglądów (tests/unit/atrapa-budynki.ts): dema mają
+ * tylko dwa urzędy (demaUrzadZrzuty). Atrapa idzie jako demo „atrapa-budynki” podstawione przez Playwright, bez pliku
+ * w public/demo.
+ * Kadry w kafelkach świata (metry plus 192): kamienice i budynki publiczne przy pierwszej ulicy, hotel, szpital,
+ * kościół, willa i remiza przy drugiej; każdy wygląd z bliska, a do tego widoki z daleka, nocą i na telefonie.
+ */
+function budynkiZrzuty(): Shot[] {
+  const { budynki } = atrapaBudynki();
+  const kadr = (name: string, cam: string, extra = '', w?: number, h?: number): Shot => ({
+    name,
+    query: '',
+    w,
+    h,
+    run: async (page, base) => {
+      await podstawAtrape(page);
+      await page.goto(`${base}?demo=${DEMO_ATRAPA}&speed=0&cam=${cam}${extra}`);
+      await waitIdle(page);
+    },
+  });
+  const szer = (look: string) => budynki.filter((b) => b.look === look);
+  const kam = szer('kamienica');
+  const xKam = (kam[0].x0 + kam[kam.length - 1].x1) / 2 + 192;
+  const yKam = kam[0].y1 - 10 + 192;
+  const teatr = szer('teatr')[0];
+  const [xTeatr, yTeatr] = srodekKafelki(teatr);
+  const out: Shot[] = [
+    kadr('budynki-calosc', 'all'),
+    kadr('budynki-kamienice', `${xKam},${yKam},0.8`),
+    kadr('budynki-ulica-publiczna', `${192 + 50},${192 - 16},0.45`),
+    kadr('budynki-ulica-druga', `${192 + 17},${192 + 46},0.5`),
+    kadr('budynki-noc', `${192 + 50},${192 - 16},0.7`, '&godzina=22&swiatla=test'),
+    kadr('budynki-telefon', `${xTeatr},${yTeatr + 3},0.6`, '', 390, 844),
+    kadr('budynki-noc-telefon', `${xTeatr},${yTeatr + 3},0.6`, '&godzina=22&swiatla=test', 390, 844),
+  ];
+  for (const look of LOOKI) {
+    if (look === 'kamienica') continue;
+    const [x, y] = srodekKafelki(szer(look)[0]);
+    out.push(kadr(`budynki-${look}`, `${x},${y + 3},1.3`));
+  }
+  // leżące postacie obok budynków: zwłoki przy muzeum (jedne u stóp schodów portyku) i dwóch z zarządu śpi na ziemi
+  // przed teatrem. Ludzie rysują się nad kawałkami mapy, w których siedzą ozdoby budynków (portyk, schody), więc leżący
+  // mają być widoczni na schodach i obok, a ozdoby nie zasłaniać ich ani nie znikać pod nimi
+  const muzeum = szer('muzeum')[0];
+  const [xMuz] = srodekKafelki(muzeum);
+  const [xTea] = srodekKafelki(teatr);
+  const lezace = (name: string, cam: [number, number, number]): Shot => ({
+    name,
+    query: '',
+    run: async (page, base) => {
+      await podstawAtrape(page);
+      await page.goto(`${base}?demo=${DEMO_ATRAPA}&speed=0&cam=all`);
+      await waitIdle(page);
+      await page.evaluate(
+        ([xm, ym, xt, yt, kam]) => {
+          const zm = window.zm!;
+          const sim = zm.sim!;
+          const st = sim.st;
+          const size = sim.w.size;
+          // najbliższy wolny kafelek poza budynkiem i rzeczami
+          const wolny = (x0: number, y0: number): [number, number] => {
+            for (let r = 0; r <= 4; r++)
+              for (let dy = -r; dy <= r; dy++)
+                for (let dx = -r; dx <= r; dx++) {
+                  if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                  const x = Math.round(x0) + dx;
+                  const y = Math.round(y0) + dy;
+                  const i = y * size + x;
+                  if (
+                    !sim.blocked[i] &&
+                    sim.w.bid[i] < 0 &&
+                    !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h)
+                  )
+                    return [x, y];
+                }
+            throw new Error('brak wolnego kafelka obok budynku');
+          };
+          // zwłoki: u stóp schodów portyku, po obu stronach schodów i przy dalszym końcu ściany
+          const zwloki: [number, number, number][] = [
+            [xm, ym, 2],
+            [xm - 5, ym + 1, 5],
+            [xm + 4, ym + 1, 7],
+          ];
+          zwloki.forEach(([x, y, n], k) => {
+            const [wx, wy] = wolny(x, y);
+            st.things.push({
+              id: 995000 + k,
+              kind: 'zwloki',
+              x: wx,
+              y: wy,
+              w: 1,
+              h: 1,
+              rot: 0,
+              n,
+              fuel: 0,
+              by: -1,
+              owner: -1,
+            });
+          });
+          // dwóch z zarządu śpi na ziemi przed drzwiami teatru, jak w scenariuszu kotwica-lezenie-dom
+          const core = st.pawns.filter((p) => p.kind === 'core');
+          [xt - 2.5, xt + 2.5].forEach((x, k) => {
+            const [fx, fy] = wolny(x, yt + 1);
+            const job = {
+              t: 'sleep',
+              target: -1,
+              tile: fy * size + fx,
+              phase: 1,
+              from: -1,
+              t0: st.tick,
+              until: st.tick + 99999,
+              order: false,
+            };
+            Object.assign(core[k], {
+              x: fx + 0.5,
+              y: fy + 0.5,
+              path: [],
+              pi: 0,
+              dir: 0,
+              job,
+              carry: 0,
+              wait: st.tick + 99999,
+            });
+          });
+          zm.setCam(kam[0], kam[1], kam[2]);
+        },
+        [xMuz, muzeum.y1 + 192, xTea, teatr.y1 + 192, cam] as const,
+      );
+      await waitIdle(page);
+      // śpiący kładą się z animacji: gra na pauzie stoi w czasie, więc przewijamy
+      await przewin(page, 1.5);
+      const rodzaje = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm
+          .sim!.st.pawns.filter((p) => p.kind === 'core')
+          .slice(0, 2)
+          .map((p) => zm.view.poses.get(p.id)!.lie?.kind ?? 'stoi');
+      });
+      console.log(`  leżenie: ${rodzaje.join(', ')}`);
+      if (rodzaje.some((k) => k !== 'floor')) throw new Error(`leżenie ${rodzaje.join()} zamiast floor, floor`);
+    },
+  });
+  // szeroki widok z muzeum i teatrem, a z bliska schody portyku muzeum z leżącymi przy nich
+  out.push(lezace('budynki-lezace', [(xMuz + xTea) / 2, muzeum.y1 + 192 - 4, 0.75]));
+  out.push(lezace('budynki-lezace-portyk', [xMuz - 2, muzeum.y1 + 192 - 1.5, 2.4]));
+  return out;
+}
+
+/**
+ * Dwa budynki dem, które po przegenerowaniu dem z toGeoT (gałąź dema-przegenerowane: rodzaje punktów w `geo.rodzaje`)
+ * dostają wygląd urzędu z PixelLab: komisariat policji w „Bloku nr 19” na Przymorzu i Zarząd Dróg Powiatu Krakowskiego
+ * w „Hali nr 106” w Batowicach (demo Zielonki). Scenariusz znajduje budynek po nazwie w świecie gry, sprawdza, że jego
+ * styl ma wygląd `urzad` i że jest jedynym budynkiem dema z wyglądem, a zrzuca cały budynek z daleka i fasadę z bliska.
+ */
+function demaUrzadZrzuty(): Shot[] {
+  const kadr = (name: string, demo: string, budynek: string, blisko: boolean): Shot => ({
+    name,
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=${demo}&speed=0&cam=hq,1`);
+      await waitIdle(page);
+      const info = await page.evaluate(
+        ([nazwa, zBliska]) => {
+          const zm = window.zm!;
+          const sc = zm.view.scene!;
+          const w = zm.sim!.w;
+          const b = w.buildings.find((x) => x.name === nazwa);
+          if (!b) return null;
+          const szer = b.x1 - b.x0 + 1;
+          const gleb = b.y1 - b.y0 + 1;
+          const cx = (b.x0 + b.x1 + 1) / 2;
+          // z daleka cały budynek w oknie 1440×900 (zapas na pasek u góry i panel celów po lewej), z bliska południowa
+          // ściana z fasadą i kawałkiem dachu
+          const zoom = Math.min(1.2, 0.62 * Math.min(1440 / (szer * 32), 900 / (gleb * 32)));
+          if (zBliska) zm.setCam(cx, b.y1 + 1 - 3.5, 1.4);
+          else zm.setCam(cx, (b.y0 + b.y1 + 1) / 2, zoom);
+          return {
+            id: b.id,
+            cls: b.cls,
+            pole: b.area,
+            levels: b.levels,
+            look: sc.styles[b.id].look ?? null,
+            zWygladem: w.buildings.filter((x) => sc.styles[x.id].look).map((x) => `${x.name}: ${sc.styles[x.id].look}`),
+          };
+        },
+        [budynek, blisko] as const,
+      );
+      console.log(`  ${budynek}: ${JSON.stringify(info)}`);
+      if (!info) throw new Error(`w demie ${demo} nie ma budynku „${budynek}”`);
+      if (info.look !== 'urzad') throw new Error(`„${budynek}” ma wygląd ${info.look} zamiast urzędu`);
+      if (info.zWygladem.length !== 1)
+        throw new Error(`demo ${demo}: ${info.zWygladem.length} budynków z wyglądem (${info.zWygladem.join(', ')})`);
+      await waitIdle(page);
+    },
+  });
+  return [
+    kadr('dema-urzad-przymorze', 'przymorze', 'Blok nr 19', false),
+    kadr('dema-urzad-przymorze-blisko', 'przymorze', 'Blok nr 19', true),
+    kadr('dema-urzad-batowice', 'zielonki', 'Hala nr 106', false),
+    kadr('dema-urzad-batowice-blisko', 'zielonki', 'Hala nr 106', true),
+  ];
+}
 
 /** karta startowa: dół akapitu z atrybucją mapy i linku do źródeł danych mieszkańców (wypisane; sprawdza wołający) */
 async function atrybucjaStartu(page: Page) {
@@ -479,6 +688,13 @@ const SHOTS: Shot[] = [
   ...kartaShots(),
   // Gra z sąsiadami (?siec=1) z udawanym serwerem pod /api: karta startowa, znaczniki zajętych, start bez domu
   ...siecShots(),
+  // Mapa miasta w grze: okolica z punktów OSM i stan miasta w zarządzie po starcie, opcja ?miasto=0
+  ...miastoShots(),
+  // Warunki zwycięstwa, etap 1: ekran dróg z Menu (komputer, telefon, angielski, ostatni kamień z serią poranków), cele
+  // z danych 2021, epilog (jeden i dwa po kolei), „Graj dalej”, „Nowa gra” i „Kontynuuj”, stary zapis bez dróg
+  ...zwyciestwoShots(),
+  // Piętra (etap 1, flaga ?pietra=1): przekrój wybranego piętra ze stropem, kafelek z listą, podpowiedzi
+  ...pietraShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -2312,6 +2528,8 @@ const SHOTS: Shot[] = [
         zm.setCam((core[0].x + core[1].x) / 2, (core[0].y + core[1].y) / 2, 3.4);
       });
       await waitIdle(page);
+      // kto położył się na podłodze, kładzie się z animacji PixelLab: gra na pauzie stoi w czasie, więc przewijamy
+      await przewin(page, 1.5);
       const rodzaje = await page.evaluate(() => {
         const zm = window.zm!;
         return zm
@@ -2381,6 +2599,8 @@ const SHOTS: Shot[] = [
       }, start);
       console.log(`  zwłoki: ${rzad}`);
       await waitIdle(page);
+      // zwłoki członka zarządu, który zginął podczas gry, upadają (animacja z PixelLab): przewijamy, aż zostaną na ostatniej klatce
+      await przewin(page, 1.5);
       // zwłoki członka zarządu mają teksturę postaci, którą ten sam człowiek gra za życia
       const zgodne = await page.evaluate(() => {
         const zm = window.zm!;
@@ -2388,18 +2608,128 @@ const SHOTS: Shot[] = [
         const v = zm.view as unknown as {
           ludzie: null | {
             dane: { postacPionka(p: unknown, o: unknown): unknown };
-            lezenie(p: unknown, w: number, o: number, r: string): { tex: unknown } | null;
+            zwloki(p: unknown, dir: number, w: number): { tex: unknown } | null;
           };
           corpseSprites: Map<number, { texture: unknown }>;
         };
         // z --kod (?grafika=kod) warstwy PixelLab nie ma, a zwłoki są z kodu
         if (!v.ludzie) return true;
         const p0 = st.pawns.find((p) => p.kind === 'core')!;
-        const tex = v.ludzie.lezenie(v.ludzie.dane.postacPionka(p0, st.people), 0, 993008 & 3, 'floor')!.tex;
-        return v.corpseSprites.get(993008)!.texture === tex;
+        const postac = v.ludzie.dane.postacPionka(p0, st.people);
+        // upadek skończył się na ostatniej klatce w kierunku, w którym patrzył zmarły (jedna z czterech)
+        const tekstury = [0, 1, 2, 3].map((d) => v.ludzie!.zwloki(postac, d, 0)!.tex);
+        return tekstury.includes(v.corpseSprites.get(993008)!.texture);
       });
       if (!zgodne) throw new Error('zwłoki członka zarządu nie mają jego postaci');
     },
+  },
+  {
+    // upadek przy śmierci z PixelLab: czterech z zarządu w czterech kierunkach (zachód, południe, północ, wschód), każdy
+    // w siedmiu klatkach upadku obok siebie (zwłoki zamrożone w kolejnych klatkach animacji, od stania po leżenie);
+    // z --kod to samo ze zwłok z kodu, do porównania
+    name: 'kotwica-upadek',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+      await waitIdle(page);
+      const start = await wolnyBlok(page, 15, 9);
+      if (!start) throw new Error('nie ma wolnego bloku 15 × 9 kafelków na upadki');
+      const wynik = await page.evaluate(() => {
+        const zm = window.zm!;
+        const st = zm.sim!.st;
+        const core = st.pawns.filter((p) => p.kind === 'core');
+        // postacie zarządu po płci i wieku: emeryt, emerytka, złota rączka, młoda; kierunki zachód, południe, północ, wschód
+        const osoby = [
+          { f: false, age: 70 },
+          { f: true, age: 70 },
+          { f: false, age: 30 },
+          { f: true, age: 25 },
+        ];
+        const kierunki = [2, 0, 1, 3] as const;
+        core.forEach((p, k) => {
+          Object.assign(st.people[p.person], osoby[k]);
+          p.dir = kierunki[k];
+        });
+        (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+        return core.map((p) => p.person);
+      });
+      // widok zapamiętuje kierunek zarządu z klatki, więc zwłoki dostają go dopiero po niej
+      await frames(page, 3);
+      const ids = await page.evaluate(
+        ([x0, y0, osoby]) => {
+          const zm = window.zm!;
+          const st = zm.sim!.st;
+          const dead = st.dead!;
+          const ids: number[][] = [];
+          osoby.forEach((osoba, k) => {
+            dead.push({
+              id: st.people[osoba].id,
+              name: st.people[osoba].name,
+              look: k,
+              kind: 'core',
+              tick: st.tick,
+              cause: 'rany',
+            });
+            ids.push([]);
+            for (let c = 0; c < 7; c++) {
+              const id = 994000 + k * 10 + c;
+              ids[k].push(id);
+              st.things.push({
+                id,
+                kind: 'zwloki',
+                x: x0 + 2 * c,
+                y: y0 + 2 * k,
+                w: 1,
+                h: 1,
+                rot: 0,
+                n: k,
+                fuel: 0,
+                by: -1,
+                owner: -1,
+                dead: dead.length - 1,
+              });
+            }
+          });
+          // środek kadru bliżej lewej, żeby pierwsza kolumna nie wypadała pod panelem celów
+          zm.setCam(x0 + 5.5, y0 + 3.5, 2.2);
+          return ids;
+        },
+        [start[0], start[1], wynik] as const,
+      );
+      await frames(page, 3);
+      // zamrażamy kolejne klatki upadku: zwłoki o numerze c w kolumnie c pokazują c-tą klatkę (10 klatek na sekundę gry)
+      const zamrozone = await page.evaluate((ids) => {
+        const v = window.zm!.view as unknown as { upadki: Map<number, { start: number }> };
+        let n = 0;
+        for (const rzad of ids)
+          rzad.forEach((id, c) => {
+            const u = v.upadki.get(id);
+            if (!u) return;
+            u.start -= (c + 0.5) / 10;
+            n++;
+          });
+        return n;
+      }, ids);
+      console.log(`  upadki zamrożone: ${zamrozone}`);
+      // z grafiką: 4 × 7 upadków w toku; z --kod żadnego (zwłoki z kodu)
+      if (!KOD && zamrozone !== 28) throw new Error(`zamrożonych upadków ${zamrozone} zamiast 28`);
+      if (KOD && zamrozone !== 0) throw new Error(`z --kod upadków ${zamrozone} zamiast 0`);
+      await frames(page, 3);
+    },
+  },
+  {
+    // wstawanie z PixelLab: czterech z zarządu leży na podłodze (zachód i wschód głową w prawo i w lewo, południe i
+    // północ na zmianę), każdy budzi się w innej fazie wstawania (klatki 0 do 3 z 5); z --kod to samo z kodu
+    name: 'kotwica-wstawanie',
+    query: '',
+    run: async (page, base) => przejsciaPionkow(page, base, 'wstawanie'),
+  },
+  {
+    // kładzenie się z PixelLab: czterech z zarządu kładzie się na podłodze, każdy w innej fazie (animacja wstawania od
+    // końca, od stania do półsiadu); z --kod to samo z kodu
+    name: 'kotwica-kladzenie',
+    query: '',
+    run: async (page, base) => przejsciaPionkow(page, base, 'kladzenie'),
   },
   {
     // nakładka broni na klatkach ciosu z PixelLab: czterech z zarządu w rzędzie, każdy w innej klatce walki: zamach kijem
@@ -5483,32 +5813,12 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // karta nocy w domu dwa razy: z `miasto=0` (tylko domowe cele z TARGETS, jak przed mapą miasta) i z mapą miasta
+    // (domyślnie: wyprawy do miejsc z okolicy albo domowe cele z TARGETS); zrzut zostaje z drugiej, domyślnej gry
     name: 'wydarzenia-dom-karta',
     query: '',
     run: async (page, base) => {
-      await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2`);
-      await waitIdle(page);
-      await chopDryTree(page);
-      for (let k = 0; k < 120; k++) {
-        const p = await page.evaluate(() => window.zm!.ff(10));
-        if (p === 'karta') {
-          const t = await sheetText(page);
-          console.log(
-            `  karta nocy w domu: ${
-              t
-                .match(/Wyprawa[^\n]*/g)
-                ?.slice(0, 2)
-                .join(' | ') ?? t.slice(0, 120)
-            }`,
-          );
-          if (BLOKOWE_UI.test(t)) throw new Error(`karta nocy w domu z blokowiskiem: ${t}`);
-          if (!t.includes('opuszczony dom obok')) throw new Error('na karcie nie ma wyprawy do opuszczonego domu obok');
-          if (!t.includes('Jak radzi komitet')) throw new Error('karta nocy w domu bez rady komitetu');
-          return;
-        }
-        if (p) await answerFirst(page, p);
-      }
-      throw new Error('karta nocy się nie pokazała');
+      for (const miasto of [false, true]) await kartaNocyWDomu(page, base, miasto);
     },
   },
   tekstyPomoc('teksty-blok-pomoc', 'przymorze', false),
@@ -6442,6 +6752,9 @@ const SHOTS: Shot[] = [
   { name: 'kotwica-wysoki-blok', query: '', run: kotwicaWysokiBlok },
   { name: 'kotwica-tlum', query: '', run: kotwicaTlum },
   { name: 'kotwica-arkusz', query: '', run: (page) => kotwicaArkusz(page) },
+  ...budynkiZrzuty(),
+  // dwa urzędy na demach po przegenerowaniu dem (komisariat na Przymorzu, Zarząd Dróg w Batowicach)
+  ...demaUrzadZrzuty(),
   {
     // bez public/assets (404) gra startuje i rysuje wszystko kodem, jak przed grafiką z PixelLab
     name: 'grafika-zapas',
@@ -6639,6 +6952,42 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'uchwala') await page.click('#sheet [data-act="law-skip"]');
   else if (p === 'karta') await page.click('#sheet [data-act="night-go"]');
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
+}
+
+/** nazwy domowych celów z TARGETS na karcie nocy w domu jednorodzinnym (tresc.ts: `targetName`) */
+const CELE_DOMU = ['opuszczony dom obok', 'sklep przy głównej drodze', 'garaże obok', 'szopy'];
+
+/** Karta nocy pierwszej nocy w Zielonkach (dom jednorodzinny): bez słów z bloku, z radą komitetu i z wyprawami, których
+    nazwy są domowe. Bez mapy miasta (`miasto=0`) to dokładnie domowe cele z TARGETS, w tym opuszczony dom obok; z mapą
+    każda wyprawa jest albo miejscem z okolicy („Przychodnia (Estetica Dent), 423 m”), albo domowym celem z TARGETS
+    (druga opcja bywa nim, gdy okolica ma tylko jedno miejsce). */
+async function kartaNocyWDomu(page: Page, base: string, miasto: boolean): Promise<void> {
+  const etykieta = miasto ? 'z mapą miasta' : 'bez mapy miasta';
+  await page.goto(`${base}?demo=zielonki&speed=0&cam=hq,1.2${miasto ? '' : '&miasto=0'}`);
+  await waitIdle(page);
+  await chopDryTree(page);
+  for (let k = 0; k < 120; k++) {
+    const p = await page.evaluate(() => window.zm!.ff(10));
+    if (p === 'karta') {
+      const t = await sheetText(page);
+      // sheetText skleja wiersze bez separatorów, a po nazwie wyprawy zawsze idzie „, ryzyko”
+      const nazwy = [...new Set([...t.matchAll(/Wyprawa (?:blisko|daleko): ([\s\S]*?), ryzyko/g)].map((m) => m[1]))];
+      console.log(`  karta nocy w domu (${etykieta}): ${nazwy.join(' | ') || t.slice(0, 120)}`);
+      if (BLOKOWE_UI.test(t)) throw new Error(`karta nocy w domu (${etykieta}) z blokowiskiem: ${t}`);
+      if (!nazwy.length) throw new Error(`na karcie nocy w domu (${etykieta}) nie ma wypraw`);
+      for (const n of nazwy)
+        if (!CELE_DOMU.includes(n) && !(miasto && /, \d+ m$/.test(n)))
+          throw new Error(
+            `wyprawa na karcie nocy w domu (${etykieta}) nie jest domowym celem ani miejscem z okolicy: ${n}`,
+          );
+      if (!miasto && !nazwy.includes('opuszczony dom obok'))
+        throw new Error('na karcie bez mapy miasta nie ma wyprawy do opuszczonego domu obok');
+      if (!t.includes('Jak radzi komitet')) throw new Error(`karta nocy w domu (${etykieta}) bez rady komitetu`);
+      return;
+    }
+    if (p) await answerFirst(page, p);
+  }
+  throw new Error(`karta nocy w domu (${etykieta}) się nie pokazała`);
 }
 
 /* ---------- M2 fala 2: pomocnicy scenariuszy m2f2-* ---------- */
@@ -7705,6 +8054,147 @@ async function stage(page: Page, where: 'dom' | 'podworko', step: number) {
     [where, step] as const,
   );
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+/** przesuwa zegar gry o `sekundy` (20 ticków na sekundę) bez kroków symulacji, żeby przejścia widoku (kładzenie się,
+    wstawanie, upadek) zdążyły się skończyć przy grze na pauzie: ich czas to czas gry, a na pauzie nie płynie. Kroków
+    symulacji nie robimy, bo pionki ze scenariusza budziłyby się (praca snu kończy się za dnia); potem dwie klatki widoku */
+async function przewin(page: Page, sekundy: number) {
+  await page.evaluate((s) => {
+    window.zm!.sim!.st.tick += Math.round(s * 20);
+  }, sekundy);
+  await frames(page, 2);
+}
+
+/** wolny blok w × h kafelków najbliżej siedziby (jak wolnyRzad, ale na kilka rzędów i poza koronami drzew, które
+    przykrywają pionki) albo null */
+async function wolnyBlok(page: Page, w: number, h: number): Promise<[number, number] | null> {
+  return page.evaluate(
+    ([w, h]) => {
+      const sim = window.zm!.sim!;
+      const st = sim.st;
+      const size = sim.w.size;
+      const b = sim.w.buildings[sim.w.hq];
+      const cx = Math.round((b.x0 + b.x1) / 2);
+      const cy = Math.round((b.y0 + b.y1) / 2);
+      // kafelki pod koronami drzew (bez krzaków): korona rysuje się nad pionkami
+      const korona = new Uint8Array(size * size);
+      for (const t of sim.w.trees) {
+        if (t.kind === 2) continue;
+        const r = Math.ceil(t.r) + 1;
+        for (let dy = -r; dy <= r; dy++)
+          for (let dx = -r; dx <= r; dx++) {
+            const x = Math.floor(t.x) + dx;
+            const y = Math.floor(t.y) + dy;
+            if (x >= 0 && y >= 0 && x < size && y < size && Math.hypot(x + 0.5 - t.x, y + 0.5 - t.y) <= t.r + 0.7)
+              korona[y * size + x] = 1;
+          }
+      }
+      const wolny = (x: number, y: number) =>
+        !sim.blocked[y * size + x] &&
+        !korona[y * size + x] &&
+        !st.things.some((t) => x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h);
+      let najlepszy: [number, number] | null = null;
+      let najblizej = 1e9;
+      for (let y = cy - 30; y <= cy + 30; y++)
+        for (let x = cx - 30; x <= cx + 14; x++) {
+          const d = Math.hypot(x + w / 2 - cx, y + h / 2 - cy);
+          if (d >= najblizej) continue;
+          let ok = true;
+          for (let j = 0; j < h && ok; j++) for (let i = 0; i < w && ok; i++) ok = wolny(x + i, y + j);
+          if (ok) {
+            najblizej = d;
+            najlepszy = [x, y];
+          }
+        }
+      return najlepszy;
+    },
+    [w, h] as const,
+  );
+}
+
+/**
+ * Czterech z zarządu w rzędzie co dwa kafelki, każdy w innej fazie kładzenia się albo wstawania na podłodze (fazy 0 do 3
+ * animacji o 5 klatkach): stan jest w widoku, więc fazy ustawia się przesunięciem startu przejścia (gra stoi na pauzie).
+ * Wstawanie: najpierw leżą (kładzenie się kończy przewinięciem czasu), potem tracą pracę snu i wstają. Kładzenie się:
+ * stoją, potem dostają pracę snu. Kierunki: zachód, wschód, południe, północ (strony głowy w prawo, w lewo, w lewo, w prawo).
+ */
+async function przejsciaPionkow(page: Page, base: string, rodzaj: 'wstawanie' | 'kladzenie') {
+  await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,2`);
+  await waitIdle(page);
+  const start = await wolnyBlok(page, 9, 3);
+  if (!start) throw new Error('nie ma wolnego bloku 9 × 3 kafelków na pionki');
+  await page.evaluate(([x0, y0]) => {
+    const zm = window.zm!;
+    const st = zm.sim!.st;
+    const core = st.pawns.filter((p) => p.kind === 'core');
+    const osoby = [
+      { f: false, age: 70 },
+      { f: true, age: 70 },
+      { f: false, age: 30 },
+      { f: true, age: 25 },
+    ];
+    core.forEach((p, k) => {
+      Object.assign(st.people[p.person], osoby[k]);
+      Object.assign(p, {
+        x: x0 + 2 * k + 0.5,
+        y: y0 + 1.5,
+        path: [],
+        pi: 0,
+        dir: [2, 3, 0, 1][k],
+        job: null,
+        carry: 0,
+        wait: st.tick + 99999,
+      });
+    });
+    (zm.view as unknown as { ludzie: { zapomnijWszystko(): void } | null }).ludzie?.zapomnijWszystko();
+    zm.setCam(x0 + 3.5, y0 + 1.5, 3.4);
+  }, start);
+  // pionki stoją co najmniej jedną klatkę, żeby widok je zobaczył na stojąco
+  await frames(page, 3);
+  const spij = () =>
+    page.evaluate(() => {
+      const st = window.zm!.sim!.st;
+      const size = window.zm!.sim!.w.size;
+      for (const p of st.pawns.filter((q) => q.kind === 'core'))
+        p.job = {
+          t: 'sleep',
+          target: -1,
+          tile: Math.floor(p.y) * size + Math.floor(p.x),
+          phase: 1,
+          from: -1,
+          t0: st.tick,
+          until: st.tick + 99999,
+          order: false,
+        } as NonNullable<typeof p.job>;
+    });
+  await spij();
+  if (rodzaj === 'wstawanie') {
+    // leżą po skończonym kładzeniu się, potem się budzą
+    await przewin(page, 1.5);
+    await page.evaluate(() => {
+      for (const p of window.zm!.sim!.st.pawns.filter((q) => q.kind === 'core')) p.job = null;
+    });
+  }
+  await frames(page, 3);
+  // fazy 0 do 3 z 5 klatek (8 klatek na sekundę gry): start przejścia cofnięty o k + 0,5 klatki
+  const fazy = await page.evaluate(() => {
+    const zm = window.zm!;
+    const v = zm.view as unknown as { przejscia: { biezace: Map<number, { rodzaj: string; start: number }> } };
+    return zm
+      .sim!.st.pawns.filter((p) => p.kind === 'core')
+      .map((p, k) => {
+        const pr = v.przejscia.biezace.get(p.id);
+        if (!pr) return null;
+        pr.start -= (k + 0.5) / 8;
+        return pr.rodzaj;
+      });
+  });
+  console.log(`  przejścia: ${fazy.join(', ')}`);
+  // z grafiką każdy z czterech ma swoje przejście, z --kod żadnego (leżenie z kodu)
+  const oczekiwane = KOD ? [null, null, null, null] : [rodzaj, rodzaj, rodzaj, rodzaj];
+  if (fazy.join() !== oczekiwane.join()) throw new Error(`przejścia ${fazy.join()} zamiast ${oczekiwane.join()}`);
+  await frames(page, 3);
 }
 
 /** pozy pionków zarządu po kolei, z ostatniej klatki widoku: nazwa pozy albo leżenie */
@@ -9642,5 +10132,2666 @@ function siecShots(): Shot[] {
         await waitIdle(page);
       },
     },
+  ];
+}
+
+/** Mapa miasta w grze (src/main.ts): po starcie demo zarząd ma stan miasta (`gov.miasto`), a `zm.okolica` miejsca z
+    punktów OSM z kluczami „poi:X:Y”; karta nocy proponuje wyprawy do tych miejsc (nazwa i odległość w metrach). Z
+    `?miasto=0` nic z tego nie ma, a karta ma dzisiejsze cele z TARGETS. Zrzut: karta nocy z miejscami z okolicy.
+    Okno mapy miasta (src/ui/miasto.ts, zrzuty miasto-mapa*): kafelki z=14 z tests/fixtures (cztery wokół Przymorza),
+    reszta z=14 pusta (204) albo zerwana (brak sieci), tło z=12 zawsze puste (204), czyli mapa bez tła z niższego
+    poziomu: z daleka widać tylko to, co doczytały kafelki z=14. */
+function miastoShots(): Shot[] {
+  /** stan po starcie: czy zarząd ma miasto, ile miejsc w okolicy, ile ma zły klucz albo odfiltrowaną (pustą) nazwę */
+  const stan = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const ok = zm.okolica ?? [];
+      return {
+        miasto: zm.gov?.miasto !== undefined,
+        okolica: ok.length,
+        zleKlucze: ok.filter((m) => !/^poi:\d+:\d+$/.test(m.klucz)).length,
+        bezNazwy: ok.filter((m) => !m.nazwa).length,
+        poza: ok.filter((m) => m.x * m.x + m.y * m.y > 192 * 192).length,
+      };
+    });
+  /** nazwy okolicy przy surowych nazwach punktów (po kluczu): osoby z przymorskiego dema, marka, patron szkoły, ile
+      wpisów ma niepustą nazwę. Bez filtra podpiętego w main.ts osoby miałyby swoje nazwy, a patron zostawałby w nazwie */
+  const nazwy = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const surowe = new Map(zm.sim!.w.pois.map((p) => [p.k, p.n]));
+      const ok = zm.okolica ?? [];
+      const wg = (n: string) => ok.filter((m) => surowe.get(m.klucz) === n).map((m) => m.nazwa);
+      return {
+        osoby: [...wg('Sławomir Mielnik'), ...wg('Kwiaciarnia u Moniki')],
+        marki: wg('Żabka'),
+        patron: wg('Szkoła Podstawowa Nr 44 im. Adama Mickiewicza'),
+        niepuste: ok.filter((m) => m.nazwa).length,
+      };
+    });
+  /** noc dnia 1 do karty: 19:30 uchwała (bez podpisu), 20:00 karta nocy; etykiety opcji wyprawy z listy wyboru osób */
+  const doKarty = async (page: Page, base: string, q: string) => {
+    await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3&godzina=19.5${q}`);
+    await waitIdle(page);
+    const u = await page.evaluate(() => window.zm!.govTick());
+    if (u !== 'uchwala') throw new Error(`o 19:30 zamiast uchwały: ${u}`);
+    await page.click('#sheet [data-act="law"][data-arg="u_warty"]');
+    const k = await page.evaluate(() => window.zm!.ff(31));
+    if (k !== 'karta') throw new Error(`o 20:00 zamiast karty nocy: ${k}`);
+    const opcje = await page
+      .locator('#sheet select.pick')
+      .first()
+      .locator('option')
+      .evaluateAll((o) => o.map((x) => x.textContent ?? ''));
+    // cel z miejsca ma odległość przy nazwie („Sklep budowlany, 450 m”), cel z TARGETS tylko nazwę
+    return opcje.filter((t) => /, \d+ m/.test(t));
+  };
+  /** kafelki dla okna mapy: szablon i z=14 z tests/fixtures; inne z=14 puste albo (zerwane) bez sieci; z=12 puste */
+  const kafelkiMapy = async (page: Page, zerwane = false) => {
+    await page.route('https://tiles.openfreemap.org/planet', (r) =>
+      r.fulfill({ contentType: 'application/json', body: fs.readFileSync(path.join(FIX, 'tj.json'), 'utf8') }),
+    );
+    await page.route(/tiles\.openfreemap\.org\/planet\/.+\/(\d+)\/(\d+)\/(\d+)\.pbf/, (r) => {
+      const m = r
+        .request()
+        .url()
+        .match(/\/(\d+)\/(\d+)\/(\d+)\.pbf/)!;
+      const f = path.join(FIX, `t_${m[2]}_${m[3]}.pbf`);
+      if (m[1] === '14' && fs.existsSync(f))
+        return r.fulfill({ contentType: 'application/x-protobuf', body: fs.readFileSync(f) });
+      if (m[1] === '14' && zerwane) return r.abort('internetdisconnected');
+      return r.fulfill({ status: 204, body: '' });
+    });
+  };
+  const dwieKlatki = (page: Page) =>
+    page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  /** czeka, aż okno mapy narysuje widok i skończy pobierać jego kafelki */
+  const czekajNaMape = async (page: Page) => {
+    await dwieKlatki(page);
+    await page.waitForFunction(
+      () => {
+        const s = window.zm!.mapa()?.stan();
+        return !!s?.otwarta && s.wTrakcie === 0;
+      },
+      null,
+      { timeout: 30_000, polling: 100 },
+    );
+    await dwieKlatki(page);
+  };
+  const otworzMape = async (page: Page, dotyk = false) => {
+    if (dotyk) await page.tap('#btnMiasto');
+    else await page.click('#btnMiasto');
+    await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+    await czekajNaMape(page);
+  };
+  const ustawMape = async (page: Page, w: { cx: number; cy: number; mNaPiksel: number }) => {
+    await page.evaluate((w) => window.zm!.mapa()!.ustaw(w), w);
+    await czekajNaMape(page);
+  };
+  /** okno mapy: przewijanie w bok, atrybucja w stopce i czy ją widać, karta miejsca, stan mapy, tempo gry */
+  const okno = (page: Page) =>
+    page.evaluate(() => {
+      const at = document.querySelector<HTMLElement>('#sheet .miasto-attrib');
+      const ar = at?.getBoundingClientRect();
+      const karta = document.querySelector<HTMLElement>('#sheet [data-miasto-karta]');
+      const kr = karta?.getBoundingClientRect();
+      const wyslij = karta?.querySelector<HTMLButtonElement>('[data-act="wyslij"]');
+      return {
+        bok: document.documentElement.scrollWidth > innerWidth + 1,
+        atrybucja: at?.textContent ?? '',
+        atrybucjaWidac: !!ar && ar.width > 0 && ar.top >= 0 && ar.bottom <= innerHeight + 0.5,
+        karta:
+          karta && !karta.hidden && kr
+            ? {
+                tekst: karta.textContent ?? '',
+                prostokat: [kr.left, kr.top, kr.right, kr.bottom].map(Math.round),
+                wyslij: wyslij?.textContent ?? '',
+                wyszarzony: !!wyslij?.disabled,
+              }
+            : null,
+        tekst: document.querySelector('#sheet')?.textContent ?? '',
+        ekran: [innerWidth, innerHeight],
+        stan: window.zm!.mapa()!.stan(),
+        tempo: window.zm!.speed(),
+      };
+    });
+  /** miejsce poza mapą osiedla w pierścieniu od–do metrów, najchętniej z nazwą */
+  const miejsceMapy = (page: Page, od: number, doM: number) =>
+    page.evaluate(
+      ([od, doM]) => {
+        const l = window
+          .zm!.mapa()!
+          .miejscaMapy()
+          .filter((m) => m.odl > od && m.odl < doM);
+        const m = l.find((x) => x.nazwa) ?? l[0];
+        if (!m) throw new Error(`brak miejsca między ${od} a ${doM} m`);
+        return { klucz: m.klucz, x: m.x, y: m.y, nazwa: m.nazwa, kat: m.kat };
+      },
+      [od, doM],
+    );
+  const naEkranie = (page: Page, klucz: string) =>
+    page.evaluate((k) => {
+      const p = window.zm!.mapa()!.naEkranie(k);
+      if (!p) throw new Error(`miejsca ${k} nie ma na ekranie`);
+      return p;
+    }, klucz);
+  const ATRYBUCJA_PL = '© współtwórcy OpenStreetMap, OpenFreeMap, OpenMapTiles';
+  const ATRYBUCJA_EN = '© OpenStreetMap contributors, OpenFreeMap, OpenMapTiles';
+  /** wspólne sprawdzenia okna: bez przewijania w bok, atrybucja w stopce widoczna */
+  const zasady = (o: Awaited<ReturnType<typeof okno>>, atrybucja: string) => {
+    if (o.bok) throw new Error('okno mapy przewija się w bok');
+    if (!o.atrybucja.includes(atrybucja)) throw new Error(`atrybucja w stopce: ${o.atrybucja}`);
+    if (!o.atrybucjaWidac) throw new Error('atrybucji map nie widać na ekranie');
+  };
+  /** zaznacza w grze `n` pierwszych osób z zarządu: pierwszą kliknięciem w głowę, resztę z Shiftem (kamera na siedzibie) */
+  const zaznacz = async (page: Page, n: number) => {
+    await page.evaluate(() => {
+      const zm = window.zm!;
+      const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[0];
+      zm.setCam(p.x, p.y, 1.6);
+    });
+    await waitIdle(page);
+    for (let k = 0; k < n; k++) {
+      const [x, y] = await page.evaluate((k) => {
+        const zm = window.zm!;
+        const p = zm.sim!.st.pawns.filter((q) => q.kind === 'core')[k];
+        return zm.screenOf(p.x, p.y - 0.55);
+      }, k);
+      if (k) await page.keyboard.down('Shift');
+      await page.mouse.click(x, y);
+      if (k) await page.keyboard.up('Shift');
+    }
+    await page.waitForTimeout(250);
+  };
+  /** karta wybranego miejsca: czy przycisk „Wyślij” jest aktywny */
+  const wyslijAktywny = (page: Page) =>
+    page.evaluate(() => {
+      const b = document.querySelector<HTMLButtonElement>('#sheet [data-miasto-karta] [data-act="wyslij"]');
+      return !!b && !b.disabled;
+    });
+  /** okno planu wyprawy: osoby (id, napis, wybrana, wyszarzona), podsumowanie, powód, przycisk „Wyślij”, przewijanie w bok */
+  const plan = (page: Page) =>
+    page.evaluate(() => {
+      const sheet = document.getElementById('sheet')!;
+      const wyslij = sheet.querySelector<HTMLButtonElement>('[data-act="wyslij"]');
+      const body = sheet.querySelector<HTMLElement>('.sheet-body');
+      return {
+        klasa: sheet.className,
+        tytul: sheet.querySelector('.sheet-title')?.textContent ?? '',
+        osoby: [...sheet.querySelectorAll<HTMLButtonElement>('[data-act="wp-osoba"]')].map((b) => ({
+          id: b.dataset.arg!,
+          tekst: b.textContent ?? '',
+          wybrana: b.getAttribute('aria-pressed') === 'true',
+          wyszarzona: b.disabled,
+        })),
+        podsumowanie: [...sheet.querySelectorAll('.wp-sum dt')].map((dt) => [
+          dt.textContent ?? '',
+          dt.nextElementSibling?.textContent ?? '',
+        ]),
+        powod: sheet.querySelector('.wp-why')?.textContent ?? '',
+        wyslij: wyslij ? { tekst: wyslij.textContent ?? '', wyszarzony: wyslij.disabled } : null,
+        wroc: sheet.querySelector('[data-act="wp-wroc"]')?.textContent ?? '',
+        bok:
+          document.documentElement.scrollWidth > innerWidth + 1 || (!!body && body.scrollWidth > body.clientWidth + 1),
+        tekst: sheet.textContent ?? '',
+        tempo: window.zm!.speed(),
+        ekran: [innerWidth, innerHeight],
+        stopka: (() => {
+          const r = sheet.querySelector('.sheet-foot')?.getBoundingClientRect();
+          return r ? [r.left, r.top, r.right, r.bottom].map(Math.round) : null;
+        })(),
+      };
+    });
+  /** otwiera mapę i wybiera pierwsze miejsce z pierścienia od–do metrów, do którego karta pozwala wysłać wyprawę;
+      zwraca je z klikniętym już „Wyślij wyprawę” (okno planu otwarte) */
+  const doPlanu = async (
+    page: Page,
+    base: string,
+    o: {
+      dotyk?: boolean;
+      zaznacz?: number;
+      godzina?: string;
+      speed?: number;
+      od?: number;
+      doM?: number;
+      /** dopisek do adresu, np. `&tryb=zombie` */
+      q?: string;
+    } = {},
+  ) => {
+    await kafelkiMapy(page);
+    await page.goto(`${base}?demo=przymorze&speed=${o.speed ?? 0}&godzina=${o.godzina ?? '8'}&cam=hq,1.6${o.q ?? ''}`);
+    await waitIdle(page);
+    if (o.zaznacz) await zaznacz(page, o.zaznacz);
+    await otworzMape(page, o.dotyk);
+    const kandydaci = await page.evaluate(
+      ([od, doM]) =>
+        window
+          .zm!.mapa()!
+          .miejscaMapy()
+          .filter((m) => m.odl > od && m.odl < doM)
+          .sort((a, b) => Number(!!b.nazwa) - Number(!!a.nazwa) || a.odl - b.odl)
+          .slice(0, 12)
+          .map((m) => ({ klucz: m.klucz, x: m.x, y: m.y, nazwa: m.nazwa, kat: m.kat, odl: Math.round(m.odl) })),
+      [o.od ?? 280, o.doM ?? 560],
+    );
+    for (const m of kandydaci) {
+      await ustawMape(page, { cx: m.x - 60, cy: m.y + 40, mNaPiksel: 1.2 });
+      const [sx, sy] = await naEkranie(page, m.klucz);
+      if (o.dotyk) await page.touchscreen.tap(sx, sy);
+      else await page.mouse.click(sx, sy);
+      await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+      await dwieKlatki(page);
+      if (!(await wyslijAktywny(page))) continue;
+      if (o.dotyk) await page.tap('#sheet [data-miasto-karta] [data-act="wyslij"]');
+      else await page.click('#sheet [data-miasto-karta] [data-act="wyslij"]');
+      await page.waitForSelector('#sheet .wp');
+      await dwieKlatki(page);
+      return m;
+    }
+    throw new Error(`żadne z ${kandydaci.length} miejsc nie pozwala wysłać wyprawy`);
+  };
+  /** minimapa w rogu ekranu: stan, etykieta przycisku, atrybucja pod spodem, gdzie stoi, czy mieści się na ekranie i na
+      które nakładki gry (pasek, cele, przyciski przybliżania, karta, pasek stawiania, komunikat o przybyszach, pasek
+      atrybucji) nachodzi; liczba kolorów na płótnie (czy jest na nim rysunek) */
+  const minimapa = (page: Page) =>
+    page.evaluate(() => {
+      const root = document.getElementById('minimapa')!;
+      const btn = document.getElementById('minimapaBtn')!;
+      const cv = root.querySelector<HTMLCanvasElement>('canvas')!;
+      const cap = root.querySelector<HTMLElement>('.minimapa-attrib')!;
+      const r = root.getBoundingClientRect();
+      const b = btn.getBoundingClientRect();
+      const c = cap.getBoundingClientRect();
+      const widac = !root.hidden && r.width > 0 && r.height > 0;
+      const zachodzi = (el: Element) => {
+        const e = el as HTMLElement;
+        if (e.hidden) return false;
+        const q = e.getBoundingClientRect();
+        return (
+          q.width > 0 &&
+          q.height > 0 &&
+          q.left < r.right - 0.5 &&
+          q.right > r.left + 0.5 &&
+          q.top < r.bottom - 0.5 &&
+          q.bottom > r.top + 0.5
+        );
+      };
+      const nakladki = widac
+        ? ['#top', '#goals', '.mapctl', '#card', '#placeBar', '#arrive', '.attrib']
+            .filter((sel) => [...document.querySelectorAll(sel)].some(zachodzi))
+            .map((sel) => sel)
+        : [];
+      let kolory = 0;
+      if (widac && cv.width) {
+        const d = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data;
+        const uniq = new Set<number>();
+        for (let i = 0; i < d.length; i += 4) uniq.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+        kolory = uniq.size;
+      }
+      return {
+        stan: window.zm!.minimapa().stan(),
+        widac,
+        prostokat: [r.left, r.top, r.right, r.bottom].map(Math.round),
+        przycisk: [b.left, b.top, b.right, b.bottom].map(Math.round),
+        wEkranie: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+        // atrybucja stoi pod przyciskiem i w obrysie minimapy
+        podpisPoza:
+          widac &&
+          (c.top < b.bottom - 0.5 || c.bottom > r.bottom + 0.5 || c.left < r.left - 0.5 || c.right > r.right + 0.5),
+        aria: btn.getAttribute('aria-label') ?? '',
+        podpis: cap.textContent ?? '',
+        tekst: root.textContent ?? '',
+        czcionka: Number.parseFloat(getComputedStyle(cap).fontSize),
+        nakladki,
+        karta: !document.getElementById('card')!.hidden,
+        kolory,
+      };
+    });
+  return [
+    {
+      // oddalenie: całe miasto, koło osiedla i zasięg 5 km; po drodze pauza przy otwartym oknie, Esc i klawisz M,
+      // przesuwanie myszą i kółko
+      name: 'miasto-mapa',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,0.9`);
+        await waitIdle(page);
+        const przed = await page.evaluate(() => window.zm!.speed());
+        if ((await page.getAttribute('#btnMiasto', 'aria-label')) !== 'Mapa miasta')
+          throw new Error('brak przycisku mapy');
+        await otworzMape(page);
+        let o = await okno(page);
+        const okolica = await page.evaluate(() => window.zm!.okolica.length);
+        console.log(`  otwarta: ${JSON.stringify(o.stan)}, tempo ${o.tempo} (przed ${przed}), okolica ${okolica}`);
+        if (o.tempo !== 0) throw new Error('gra nie stoi przy otwartej mapie miasta');
+        if (o.stan.z !== 14 || o.stan.rysunki.z14 < 4 || o.stan.brak)
+          throw new Error(`kafelki z bliska: ${JSON.stringify(o.stan)}`);
+        if (o.stan.miejsca <= okolica) throw new Error('z kafelków nie doszły miejsca spoza okolicy');
+        if (o.stan.znaki < 10) throw new Error(`za mało znaków miejsc: ${o.stan.znaki}`);
+        zasady(o, ATRYBUCJA_PL);
+        // Esc zamyka i gra wraca do tempa sprzed okna; M otwiera znowu, z kafelkami z pamięci
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const po = await page.evaluate(() => ({
+          tempo: window.zm!.speed(),
+          otwarta: window.zm!.mapa()!.stan().otwarta,
+        }));
+        if (po.tempo !== przed || po.otwarta) throw new Error(`po Esc: ${JSON.stringify(po)}`);
+        await page.keyboard.press('KeyM');
+        await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+        await czekajNaMape(page);
+        // przeciągnięcie przesuwa mapę o tyle metrów, ile pikseli razy skala
+        const w0 = (await okno(page)).stan.widok!;
+        await page.mouse.move(700, 450);
+        await page.mouse.down();
+        await page.mouse.move(640, 410, { steps: 6 });
+        await page.mouse.move(580, 370, { steps: 6 });
+        await page.mouse.up();
+        await dwieKlatki(page);
+        const w1 = (await okno(page)).stan.widok!;
+        const dx = (w1.cx - w0.cx) / w0.mNaPiksel;
+        const dy = (w1.cy - w0.cy) / w0.mNaPiksel;
+        console.log(`  przeciągnięcie o (−120, −80) px: widok o (${dx.toFixed(1)}, ${dy.toFixed(1)}) px`);
+        if (Math.abs(dx - 120) > 1 || Math.abs(dy - 80) > 1) throw new Error('przeciąganie nie przesuwa mapy');
+        await page.mouse.wheel(0, 400);
+        await dwieKlatki(page);
+        const w2 = (await okno(page)).stan.widok!;
+        if (!(w2.mNaPiksel > w1.mNaPiksel)) throw new Error('kółko nie oddala mapy');
+        // całe miasto z daleka: tło z=12 (tu puste), zasięg 5 km, to, co doczytały kafelki z=14
+        await ustawMape(page, { cx: 0, cy: 0, mNaPiksel: 12 });
+        o = await okno(page);
+        console.log(`  z daleka: ${JSON.stringify(o.stan)}`);
+        if (o.stan.z !== 12) throw new Error('z daleka nie ma tła z poziomu 12');
+        if (!o.stan.napis.includes('Przybliżcie')) throw new Error(`napis z daleka: ${o.stan.napis}`);
+        // pamięć: najwyżej 24 kafelki z=14 (zdekodowany waży kilka MB; okno trzyma tylko ścieżki)
+        if (o.stan.rysunki.z14 > 24) throw new Error(`za dużo kafelków z=14 w pamięci: ${o.stan.rysunki.z14}`);
+        zasady(o, ATRYBUCJA_PL);
+      },
+    },
+    {
+      // z bliska: budynki i ulice z kafelków z=14, znaki miejsc i karta miejsca po kliknięciu w znak
+      name: 'miasto-mapa-blisko',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        await otworzMape(page);
+        const m = await miejsceMapy(page, 260, 650);
+        await ustawMape(page, { cx: m.x - 60, cy: m.y + 40, mNaPiksel: 1.2 });
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.mouse.click(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        const o = await okno(page);
+        console.log(`  miejsce ${JSON.stringify(m)}, karta: ${o.karta?.tekst}`);
+        console.log(`  stan: ${JSON.stringify(o.stan)}`);
+        if (o.stan.wybrane !== m.klucz) throw new Error('kliknięcie w znak nie wybrało miejsca');
+        if (!o.karta) throw new Error('brak karty miejsca');
+        // wysyłanie jest podpięte (zadanie 9): miejsce poza mapą osiedla za dnia ma aktywny przycisk bez dopisku
+        if (o.karta.wyszarzony || o.karta.wyslij !== 'Wyślij wyprawę')
+          throw new Error(`przycisk wysyłki: ${o.karta.wyslij}, wyszarzony: ${o.karta.wyszarzony}`);
+        if (!/km|m stąd/.test(o.karta.tekst) || !/Tam jest (spokojnie|niepewnie|groźnie)/.test(o.karta.tekst))
+          throw new Error('karta bez odległości albo ryzyka');
+        if (!/Nietknięte|Ktoś tu był|Wybrane do cna/.test(o.karta.tekst)) throw new Error('karta bez stanu miejsca');
+        zasady(o, ATRYBUCJA_PL);
+        // klik obok znaku zamyka kartę, a klik znowu w znak ją otwiera
+        await page.mouse.click(sx - 150, sy + 120);
+        await page.waitForSelector('#sheet [data-miasto-karta][hidden]', { state: 'attached' });
+        await page.mouse.click(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // telefon: dotyk, karta miejsca na dole, bez przewijania w bok; kafelki poza tests/fixtures zerwane (bez sieci),
+      // więc mapa rysuje to, co ma, z napisem, że reszta się nie wczytała. Bez tabel mieszkańców (404) filtr nazw nie
+      // zna imion, więc także miejsca z kafelków mają same kategorie (RODO: nazwa jednoosobowej firmy to osoba)
+      name: 'miasto-mapa-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      allow: /ERR_INTERNET_DISCONNECTED|Failed to load resource|status of 404/,
+      allowUrl: /tiles\.openfreemap\.org|\/data\/mieszkancy\//,
+      run: async (page, base) => {
+        await kafelkiMapy(page, true);
+        await bezTabel(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        await otworzMape(page, true);
+        let o = await okno(page);
+        console.log(`  telefon: ${JSON.stringify(o.stan)}`);
+        const nazwy = await page.evaluate(() => {
+          const l = window.zm!.mapa()!.miejscaMapy();
+          return { razem: l.length, zNazwa: l.filter((m) => m.nazwa).map((m) => m.nazwa) };
+        });
+        if (nazwy.razem <= 190 || nazwy.zNazwa.length)
+          throw new Error(`bez tabel miejsca z kafelków z nazwą: ${JSON.stringify(nazwy)}`);
+        if (!o.stan.brak || !o.stan.napis.includes('Reszta miasta się nie wczytała'))
+          throw new Error(`bez sieci brak napisu o reszcie miasta: ${JSON.stringify(o.stan)}`);
+        if (o.stan.rysunki.z14 < 4) throw new Error('kafelki z tests/fixtures się nie narysowały');
+        const m = await miejsceMapy(page, 230, 520);
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.touchscreen.tap(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        o = await okno(page);
+        console.log(`  miejsce ${JSON.stringify(m)}, karta ${JSON.stringify(o.karta?.prostokat)} na ${o.ekran}`);
+        if (o.stan.wybrane !== m.klucz) throw new Error('stuknięcie w znak nie wybrało miejsca');
+        const [l, t, r, b] = o.karta!.prostokat;
+        if (l < 0 || t < 0 || r > o.ekran[0] || b > o.ekran[1]) throw new Error('karta miejsca wychodzi za ekran');
+        zasady(o, ATRYBUCJA_PL);
+      },
+    },
+    {
+      // po angielsku: okno, karta miejsca i atrybucja bez polskich słów (poza nazwą miejsca z mapy)
+      name: 'en-miasto-mapa',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        if ((await page.getAttribute('#btnMiasto', 'aria-label')) !== 'City map')
+          throw new Error('przycisk mapy po angielsku');
+        await otworzMape(page);
+        const m = await miejsceMapy(page, 300, 700);
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.mouse.click(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        const o = await okno(page);
+        console.log(`  karta: ${o.karta?.tekst}`);
+        if (o.karta?.wyslij !== 'Send a supply run') throw new Error(`przycisk wysyłki: ${o.karta?.wyslij}`);
+        if (o.karta.wyszarzony && !/Picked clean|Too far|after dark/i.test(o.karta.tekst))
+          throw new Error(`przycisk wyszarzony bez powodu na karcie: ${o.karta.tekst}`);
+        const pl = polskieLitery(o.tekst, [m.nazwa]);
+        if (pl.length) throw new Error(`polskie słowa w oknie po angielsku: ${pl.join(' ')}`);
+        zasady(o, ATRYBUCJA_EN);
+      },
+    },
+    {
+      // wysyłanie z mapy (komputer): karta miejsca → „Wyślij wyprawę” → okno planu. Zaznaczeni w grze są wybrani od
+      // razu, kliknięcie osoby zmienia podsumowanie, bez wybranych „Wyślij” jest wyszarzony, „Wróć do mapy” wraca
+      // do tego samego widoku i karty, a Esc zamyka okno i oddaje grze tempo
+      name: 'miasto-wysylanie',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 2 });
+        const widokPrzed = await page.evaluate(() => window.zm!.mapa()!.stan().widok);
+        let p = await plan(page);
+        console.log(`  miejsce ${JSON.stringify(m)}`);
+        console.log(
+          `  plan: ${p.tytul}; osoby ${JSON.stringify(p.osoby.map((x) => [x.tekst, x.wybrana, x.wyszarzona]))}`,
+        );
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}, powód: ${p.powod}, tempo ${p.tempo}`);
+        if (!p.klasa.includes('wyprawa')) throw new Error(`odcień okna: ${p.klasa}`);
+        if (p.tempo !== 0) throw new Error('gra nie stoi przy oknie planu');
+        if (p.osoby.length < 3) throw new Error(`za mało osób na liście: ${p.osoby.length}`);
+        const wybrane = () => p.osoby.filter((x) => x.wybrana).length;
+        if (wybrane() !== 2) throw new Error(`zaznaczeni w grze nie są wybrani od razu: ${wybrane()} z 2`);
+        if (!p.wyslij || p.wyslij.wyszarzony || p.wyslij.tekst !== 'Wyślij wyprawę')
+          throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        const klucze = p.podsumowanie.map((r) => r[0]);
+        for (const k of ['Wyjście', 'Powrót', 'Czas poza osiedlem', 'Ryzyko', 'Udźwig', 'Zostało w miejscu'])
+          if (!klucze.includes(k)) throw new Error(`podsumowanie bez wiersza „${k}”: ${klucze.join(', ')}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        // trzecia osoba: udźwig rośnie o 6, powrót jest nie później
+        const trzecia = p.osoby.find((x) => !x.wybrana && !x.wyszarzona);
+        if (!trzecia) throw new Error('nie ma kogo dobrać');
+        const udzwig = () => Number(p.podsumowanie.find((r) => r[0] === 'Udźwig')![1].match(/\d+/)![0]);
+        const przed = udzwig();
+        await page.click(`#sheet [data-act="wp-osoba"][data-arg="${trzecia.id}"]`);
+        p = await plan(page);
+        console.log(`  z trzecią osobą: ${JSON.stringify(p.podsumowanie)}`);
+        if (wybrane() !== 3 || udzwig() !== przed + 6)
+          throw new Error(`dobranie osoby: ${wybrane()} wybranych, udźwig ${udzwig()}`);
+        // bez nikogo „Wyślij” jest wyszarzony i okno mówi, czego brakuje
+        for (const x of p.osoby.filter((x) => x.wybrana))
+          await page.click(`#sheet [data-act="wp-osoba"][data-arg="${x.id}"]`);
+        p = await plan(page);
+        if (wybrane() !== 0 || !p.wyslij?.wyszarzony || p.podsumowanie.length || !p.powod.includes('Wybierz kogoś'))
+          throw new Error(`bez wybranych: ${JSON.stringify([wybrane(), p.wyslij, p.podsumowanie, p.powod])}`);
+        // „Wróć do mapy”: ten sam widok i karta tego samego miejsca, a stąd znowu do planu
+        await page.click('#sheet [data-act="wp-wroc"]');
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await czekajNaMape(page);
+        const mapa = await okno(page);
+        if (mapa.stan.wybrane !== m.klucz) throw new Error(`po powrocie do mapy wybrane: ${mapa.stan.wybrane}`);
+        if (JSON.stringify(mapa.stan.widok) !== JSON.stringify(widokPrzed)) throw new Error('widok mapy się zmienił');
+        if (mapa.tempo !== 0) throw new Error('gra ruszyła po powrocie do mapy');
+        await page.click('#sheet [data-miasto-karta] [data-act="wyslij"]');
+        await page.waitForSelector('#sheet .wp');
+        // Esc zamyka okno i oddaje grze tempo sprzed mapy (2 = 3×)
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const po = await page.evaluate(() => ({
+          tempo: window.zm!.speed(),
+          wyprawy: window.zm!.gov!.wyprawy?.length ?? 0,
+        }));
+        if (po.tempo !== 2 || po.wyprawy) throw new Error(`po Esc: ${JSON.stringify(po)}`);
+        await page.keyboard.press('KeyM');
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await czekajNaMape(page);
+        // miejsce z mapy osiedla (koło 192 m) nie jest celem: przycisk wyszarzony z powodem, a wołanie wysyłki wprost
+        // niczego nie otwiera
+        const lokalne = await page.evaluate(() => {
+          const l = window
+            .zm!.mapa()!
+            .miejscaMapy()
+            .filter((q) => q.odl < 150);
+          return l[0] ? { klucz: l[0].klucz, x: l[0].x, y: l[0].y } : null;
+        });
+        if (!lokalne) throw new Error('brak miejsca na mapie osiedla');
+        await ustawMape(page, { cx: lokalne.x - 30, cy: lokalne.y + 20, mNaPiksel: 0.7 });
+        const [lx, ly] = await naEkranie(page, lokalne.klucz);
+        await page.mouse.click(lx, ly);
+        await page.waitForFunction((k) => window.zm!.mapa()!.stan().wybrane === k, lokalne.klucz);
+        await dwieKlatki(page);
+        const osiedle = await okno(page);
+        console.log(
+          `  miejsce z mapy osiedla: ${osiedle.karta?.tekst.slice(-120)}, wyszarzony ${osiedle.karta?.wyszarzony}`,
+        );
+        if (!osiedle.karta?.wyszarzony || !/mapie osiedla/.test(osiedle.karta.tekst))
+          throw new Error('miejsce z mapy osiedla ma aktywne „Wyślij”');
+        await page.evaluate((k) => window.zm!.mapa()!.obsluz('wyslij', k), lokalne.klucz);
+        await dwieKlatki(page);
+        if (await page.locator('#sheet .wp').count()) throw new Error('wysyłka z mapy osiedla otworzyła okno planu');
+        // do zrzutu: mapa, karta tamtego miejsca, plan z trzema osobami
+        await ustawMape(page, { cx: m.x - 60, cy: m.y + 40, mNaPiksel: 1.2 });
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.mouse.click(sx, sy);
+        await page.waitForFunction((k) => window.zm!.mapa()!.stan().wybrane === k, m.klucz);
+        await page.click('#sheet [data-miasto-karta] [data-act="wyslij"]');
+        await page.waitForSelector('#sheet .wp');
+        for (const x of p.osoby.slice(0, 3)) {
+          const stan = (await plan(page)).osoby.find((y) => y.id === x.id)!;
+          if (!stan.wybrana && !stan.wyszarzona) await page.click(`#sheet [data-act="wp-osoba"][data-arg="${x.id}"]`);
+        }
+        await dwieKlatki(page);
+        p = await plan(page);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        console.log(`  do zrzutu: ${wybrane()} wybranych, ${JSON.stringify(p.podsumowanie)}`);
+      },
+    },
+    {
+      // wysyłanie z mapy (telefon 390×844): dotyk, plan bez przewijania w bok, stopka z przyciskami na ekranie
+      name: 'miasto-wysylanie-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { dotyk: true });
+        let p = await plan(page);
+        console.log(`  miejsce ${JSON.stringify(m)}, plan: ${p.tytul}, osoby ${p.osoby.length}, ekran ${p.ekran}`);
+        console.log(`  osoby: ${JSON.stringify(p.osoby.map((x) => [x.tekst, x.wybrana, x.wyszarzona]))}`);
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}, stopka ${p.stopka}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok na telefonie');
+        const [l, t, r, b] = p.stopka!;
+        if (l < 0 || t < 0 || r > p.ekran[0] || b > p.ekran[1]) throw new Error('stopka planu wychodzi za ekran');
+        // stuknięcie osoby wybiera ją, ponowne cofa wybór
+        const kto = p.osoby.find((x) => !x.wyszarzona)!;
+        await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+        const po = (await plan(page)).osoby.find((x) => x.id === kto.id)!;
+        if (po.wybrana === kto.wybrana) throw new Error('stuknięcie osoby nie zmieniło wyboru');
+        if (!kto.wybrana) {
+          // dla zrzutu zostaje wybrana
+        } else await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+        await dwieKlatki(page);
+        p = await plan(page);
+        if (!p.osoby.some((x) => x.wybrana) || p.wyslij?.wyszarzony)
+          throw new Error('na zrzucie nikt nie jest wybrany');
+      },
+    },
+    {
+      // wyprawa do końca: wysłanie, osoby wychodzą bramą, podpowiedź i wpis w kronice, przewinięcie do powrotu
+      // (zm.ff), rozliczenie łupu: zapasy, st.miasto.zabrano i wizyty, wyprawy znikają ze stanu
+      name: 'miasto-powrot',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 1 });
+        const zapasy = () =>
+          page.evaluate(async () => {
+            const load = (path: string) => import(/* @vite-ignore */ path);
+            const { snapshot } = (await load('/src/sim/snapshot.ts')) as typeof import('../src/sim/snapshot.ts');
+            const zm = window.zm!;
+            const k = snapshot(zm.sim!.st, zm.sim!.w).stock;
+            return { drewno: k.wood, jedzenie: k.supplies, zlom: k.scrap, czesci: k.parts, leki: k.meds ?? 0 };
+          });
+        const przed = await zapasy();
+        const p = await plan(page);
+        const wybrani = p.osoby.filter((x) => x.wybrana).map((x) => x.id);
+        console.log(`  wybrani: ${wybrani.join(', ')}, podsumowanie ${JSON.stringify(p.podsumowanie)}`);
+        if (wybrani.length !== 2) throw new Error(`wybranych ${wybrani.length} zamiast 2`);
+        const logPrzed = await page.evaluate(() => window.zm!.gov!.log.length);
+        await page.click('#sheet [data-act="wyslij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        // podpowiedź (ostatni wpis kroniki) pokazuje pasek przy najbliższym odświeżeniu, nie od razu
+        await page.waitForFunction(
+          () => document.getElementById('hint')?.textContent?.includes('Wyprawa do miejsca'),
+          null,
+          { timeout: 3000 },
+        );
+        const wys = await page.evaluate(() => {
+          const zm = window.zm!;
+          const g = zm.gov!;
+          return {
+            tempo: zm.speed(),
+            wyprawy: JSON.parse(JSON.stringify(g.wyprawy ?? [])),
+            log: g.log.slice(-3).map((l) => l.txt),
+            wLogu: g.log.length,
+            hint: document.getElementById('hint')!.textContent,
+            minuta: (g.log.at(-1)?.day ?? 1) * 1440,
+          };
+        });
+        console.log(`  po wysłaniu: ${JSON.stringify({ ...wys, log: wys.log.map((t) => (t as { pl: string }).pl) })}`);
+        if (wys.tempo !== 1) throw new Error(`tempo po wysłaniu: ${wys.tempo} zamiast 1`);
+        if (wys.wyprawy.length !== 1) throw new Error(`wypraw w drodze: ${wys.wyprawy.length}`);
+        const w = wys.wyprawy[0];
+        if (w.cel.klucz !== m.klucz || JSON.stringify(w.ids) !== JSON.stringify(wybrani))
+          throw new Error(`wyprawa: ${JSON.stringify(w)}`);
+        if (wys.wLogu !== logPrzed + 1) throw new Error(`wpisów w kronice: ${wys.wLogu - logPrzed} zamiast 1`);
+        if (!wys.hint?.includes('Wyprawa do miejsca')) throw new Error(`podpowiedź: ${wys.hint}`);
+        // osoby wychodzą bramą (flaga away na pionkach), jedna po drugiej; gra przewijana zm.ff
+        let poza = 0;
+        for (let k = 0; k < 8 && poza < 2; k++) {
+          const okno = await page.evaluate(() => window.zm!.ff(5));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+          poza = await page.evaluate(() => window.zm!.sim!.st.pawns.filter((q) => q.kind === 'core' && q.away).length);
+        }
+        console.log(`  po wyjściu: poza mapą ${poza}`);
+        if (poza !== 2) throw new Error(`poza mapą po wyjściu: ${poza} zamiast 2`);
+        // przewijanie do powrotu: po kawałku, bez okien decyzji po drodze
+        for (let k = 0; k < 24; k++) {
+          const wToku = await page.evaluate(() => window.zm!.gov!.wyprawy?.length ?? 0);
+          if (!wToku) break;
+          const okno = await page.evaluate(() => window.zm!.ff(30));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+        }
+        const po = await page.evaluate(() => {
+          const zm = window.zm!;
+          const g = zm.gov!;
+          return {
+            wyprawy: g.wyprawy?.length ?? 0,
+            miasto: g.miasto
+              ? { zabrano: g.miasto.zabrano, wizyty: g.miasto.wizyty, ostatnia: g.miasto.ostatnia }
+              : null,
+            log: g.log.slice(-4).map((l) => `${l.clock} ${(l.txt as { pl: string }).pl}`),
+            hint: document.getElementById('hint')!.textContent,
+            poza: zm.sim!.st.pawns.filter((q) => q.kind === 'core' && q.away).length,
+          };
+        });
+        const zapasyPo = await zapasy();
+        console.log(`  po powrocie: ${JSON.stringify(po)}`);
+        console.log(`  zapasy: ${JSON.stringify(przed)} -> ${JSON.stringify(zapasyPo)}`);
+        if (po.wyprawy) throw new Error('wyprawa dalej w drodze');
+        if (po.miasto?.wizyty[m.klucz] !== 1) throw new Error(`wizyt w miejscu: ${po.miasto?.wizyty[m.klucz]}`);
+        const zabrano = po.miasto?.zabrano[m.klucz] ?? 0;
+        const przybylo = (Object.keys(zapasyPo) as (keyof typeof zapasyPo)[]).reduce(
+          (a, k) => a + Math.max(0, zapasyPo[k] - przed[k]),
+          0,
+        );
+        if (zabrano > 0 && przybylo <= 0) throw new Error(`zabrano ${zabrano}, a zapasy się nie zmieniły`);
+        if (!po.log.some((t) => /wróci|trafili|trafił|trafiła|trafiły/.test(t)))
+          throw new Error('brak wpisu o powrocie');
+      },
+    },
+    {
+      // po angielsku: plan wyprawy bez polskich słów (poza imionami i nazwą miejsca), przycisk i podsumowanie
+      name: 'en-miasto-wysylanie',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2 });
+        const p = await plan(page);
+        console.log(`  plan: ${p.tytul}`);
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}`);
+        const imiona = await page.evaluate(() => window.zm!.sim!.st.people.flatMap((q) => [q.name, q.first]));
+        const pl = polskieLitery(p.tekst, [m.nazwa, ...imiona]);
+        if (pl.length) throw new Error(`polskie słowa w oknie planu po angielsku: ${pl.join(' ')}`);
+        if (p.wyslij?.tekst !== 'Send the supply run' || p.wyslij.wyszarzony)
+          throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.wroc !== 'Back to the map') throw new Error(`przycisk powrotu: ${p.wroc}`);
+        const klucze = p.podsumowanie.map((r) => r[0]);
+        for (const k of ['Leaving', 'Back', 'Time away', 'Risk', 'Can carry', 'Left there'])
+          if (!klucze.includes(k)) throw new Error(`podsumowanie bez wiersza „${k}”: ${klucze.join(', ')}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        // zmiana języka przy otwartym planie: to samo okno po polsku z tym samym wyborem osób, i z powrotem
+        const zmien = (l: 'en' | 'pl') =>
+          page.evaluate(async (l) => {
+            const load = (path: string) => import(/* @vite-ignore */ path);
+            ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk(l);
+          }, l);
+        await zmien('pl');
+        await page.waitForFunction(
+          () => document.querySelector('#sheet [data-act="wp-wroc"]')?.textContent === 'Wróć do mapy',
+        );
+        const pol = await plan(page);
+        if (JSON.stringify(pol.osoby.map((x) => x.wybrana)) !== JSON.stringify(p.osoby.map((x) => x.wybrana)))
+          throw new Error('zmiana języka zmieniła wybór osób');
+        if (pol.wyslij?.tekst !== 'Wyślij wyprawę') throw new Error(`po polsku: ${pol.wyslij?.tekst}`);
+        await zmien('en');
+        await page.waitForFunction(
+          () => document.querySelector('#sheet [data-act="wp-wroc"]')?.textContent === 'Back to the map',
+        );
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // minimapa w rogu ekranu (src/ui/minimapa.ts): kwadrat z kropkami kategorii nad paskiem atrybucji, z atrybucją
+      // map pod spodem, bez nazw; nie zasłania paska, celów, kart, przycisków przybliżania ani paska atrybucji (kilka
+      // rozmiarów okna, schowana poniżej 640 px szerokości i 560 px wysokości); rysowana tylko przy zmianie; klik,
+      // Enter i spacja otwierają okno mapy miasta
+      name: 'miasto-minimapa',
+      query: '',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&godzina=8&cam=hq,1.3`);
+        await waitIdle(page);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().rysunki >= 1, null, { timeout: 5000 });
+        const o = await minimapa(page);
+        console.log(`  stan: ${JSON.stringify(o.stan)}, przycisk ${JSON.stringify(o.przycisk)}, podpis „${o.podpis}”`);
+        if (!o.stan.wlaczona || !o.stan.widoczna)
+          throw new Error(`minimapa nie stoi na ekranie: ${JSON.stringify(o.stan)}`);
+        if (o.stan.ikony < 50) throw new Error(`za mało kropek miejsc: ${o.stan.ikony}`);
+        if (o.stan.wyprawy) throw new Error(`znaczniki wypraw bez wypraw: ${o.stan.wyprawy}`);
+        if (o.aria !== 'Minimapa: otwórz mapę miasta') throw new Error(`etykieta przycisku: ${o.aria}`);
+        if (o.tekst.trim() !== o.podpis.trim())
+          throw new Error(`na minimapie jest coś poza atrybucją (nazwy?): ${o.tekst}`);
+        for (const z of ['współtwórcy OpenStreetMap', 'OpenFreeMap', 'OpenMapTiles'])
+          if (!o.podpis.includes(z)) throw new Error(`atrybucja pod minimapą bez „${z}”: ${o.podpis}`);
+        if (o.czcionka < 11) throw new Error(`atrybucja pod minimapą za mała: ${o.czcionka} px`);
+        if (o.kolory < 6) throw new Error(`na minimapie ${o.kolory} kolorów: nie wygląda na rysunek miejsc`);
+        // rysowana tylko przy zmianie: gra chodzi w tempie 1×, a przez półtorej sekundy nic się nie zmienia
+        const r0 = (await minimapa(page)).stan.rysunki;
+        await page.waitForTimeout(1600);
+        const r1 = (await minimapa(page)).stan.rysunki;
+        console.log(`  rysunków: ${r0} → ${r1} po 1,6 s gry bez zmian`);
+        if (r1 !== r0) throw new Error(`minimapa rysowana bez zmian: ${r0} → ${r1}`);
+        // ułożenie przy kilku rozmiarach okna (komputer, mniejszy ekran, granice 640 i 560, telefon poziomo)
+        for (const [w, h, stoi] of [
+          [1024, 700, true],
+          [700, 900, true],
+          [641, 900, true],
+          [640, 900, false],
+          [1024, 560, true],
+          [1024, 559, false],
+          [844, 390, false],
+          [1440, 900, true],
+        ] as const) {
+          await page.setViewportSize({ width: w, height: h });
+          await page.waitForTimeout(700);
+          const u = await minimapa(page);
+          console.log(
+            `  ${w}×${h}: ${u.widac ? `w ${JSON.stringify(u.prostokat)}` : 'schowana'}, nakłada się na: ${u.nakladki.join(', ') || 'nic'}`,
+          );
+          if (u.widac !== stoi)
+            throw new Error(`${w}×${h}: minimapa ${u.widac ? 'jest' : 'schowana'}, a ma ${stoi ? 'być' : 'zniknąć'}`);
+          if (u.widac && !u.wEkranie)
+            throw new Error(`${w}×${h}: minimapa wychodzi za ekran ${JSON.stringify(u.prostokat)}`);
+          if (u.nakladki.length) throw new Error(`${w}×${h}: minimapa zasłania: ${u.nakladki.join(', ')}`);
+          if (u.widac && u.podpisPoza)
+            throw new Error(`${w}×${h}: atrybucja pod minimapą wychodzi poza minimapę albo na pasek atrybucji`);
+          if (!u.widac && (await page.isVisible('#btnMiasto')) !== true)
+            throw new Error(`${w}×${h}: przycisk mapy zniknął razem z minimapą`);
+        }
+        // karta osoby (lewy dolny róg) i zaznaczeni: minimapa jej nie zasłania
+        await zaznacz(page, 2);
+        const z = await minimapa(page);
+        if (!z.karta) throw new Error('po zaznaczeniu osób nie ma karty');
+        if (z.nakladki.length) throw new Error(`minimapa zasłania: ${z.nakladki.join(', ')}`);
+        // klik otwiera okno mapy (gra staje), Esc zamyka i oddaje tempo
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        await page.click('#minimapaBtn');
+        await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+        await czekajNaMape(page);
+        let k = await okno(page);
+        console.log(`  po kliknięciu: ${JSON.stringify({ otwarta: k.stan.otwarta, tempo: k.tempo })}`);
+        if (k.tempo !== 0) throw new Error('klik w minimapę nie zatrzymał gry');
+        if (!/Mapa miasta/.test(k.tekst)) throw new Error('klik w minimapę nie otworzył okna mapy miasta');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        if ((await page.evaluate(() => window.zm!.speed())) !== tempo)
+          throw new Error('po Esc gra nie wróciła do tempa');
+        // po kliknięciu myszą przycisk nie trzyma fokusu: spacja zatrzymuje grę, zamiast otwierać okno drugi raz
+        if ((await page.evaluate(() => document.activeElement?.id)) === 'minimapaBtn')
+          throw new Error('po kliknięciu minimapa trzyma fokus');
+        await page.keyboard.press('Space');
+        if (
+          (await page.evaluate(() => window.zm!.speed())) !== 0 ||
+          (await page.evaluate(() => window.zm!.mapa()!.stan().otwarta))
+        )
+          throw new Error('spacja po kliknięciu w minimapę nie zatrzymała gry (otworzyła okno?)');
+        await page.keyboard.press('Space');
+        if ((await page.evaluate(() => window.zm!.speed())) !== tempo) throw new Error('druga spacja nie wznowiła gry');
+        // z klawiatury: przycisk bierze fokus, Enter i spacja otwierają okno (nie zmieniają tempa gry spacją)
+        for (const klawisz of ['Enter', 'Space']) {
+          await page.focus('#minimapaBtn');
+          await page.keyboard.press(klawisz);
+          await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta, null, { timeout: 3000 });
+          k = await okno(page);
+          if (k.tempo !== 0 || !/Mapa miasta/.test(k.tekst))
+            throw new Error(`${klawisz} na minimapie nie otworzył okna mapy`);
+          await page.keyboard.press('Escape');
+          await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+          if ((await page.evaluate(() => window.zm!.speed())) !== tempo)
+            throw new Error(`po ${klawisz} i Esc tempo gry się zmieniło`);
+        }
+        // tryb stawiania: panel budowy zostaje otwarty z prawej, więc minimapy nie ma (na niższym oknie przykrywał ją
+        // i spod krawędzi wystawał podpis); klik w jej róg to próba postawienia budowli: okno mapy się nie otwiera,
+        // a stawianie trwa
+        const { BUILDS } = await import('../src/sim/budowle.ts');
+        await stockUp(page, BUILDS.warsztat.cost);
+        const rog = (await page.locator('#minimapaBtn').boundingBox())!;
+        await chooseBuild(page, 'warsztat');
+        if (!(await page.evaluate(() => window.zm!.placing()))) throw new Error('nie ma trybu stawiania');
+        for (const [w, h] of [
+          [1024, 700],
+          [1440, 900],
+        ] as const) {
+          await page.setViewportSize({ width: w, height: h });
+          await page.waitForTimeout(500);
+          if (await page.isVisible('#minimapaBtn'))
+            throw new Error(`${w}×${h}: minimapa stoi przy otwartym panelu budowy`);
+        }
+        await page.screenshot({ path: path.join(OUT, 'miasto-minimapa-stawianie.png') });
+        await page.mouse.click(rog.x + rog.width / 2, rog.y + rog.height / 2);
+        await page.waitForTimeout(300);
+        const stawianie = await page.evaluate(() => ({
+          placing: !!window.zm!.placing(),
+          otwarta: window.zm!.mapa()!.stan().otwarta,
+        }));
+        if (!stawianie.placing || stawianie.otwarta)
+          throw new Error(`klik w minimapę w trybie stawiania: ${JSON.stringify(stawianie)}`);
+        await page.keyboard.press('Escape');
+        if (await page.evaluate(() => window.zm!.placing())) throw new Error('Esc nie anulował stawiania');
+        // po zamknięciu panelu budowy minimapa wraca na swoje miejsce
+        if (await page.evaluate(() => window.zm!.buildPanel().open))
+          await page.click('#buildPanel [data-act="build-close"]');
+        await page.waitForSelector('#minimapaBtn', { state: 'visible', timeout: 3000 });
+        // po angielsku: etykieta przycisku i atrybucja pod minimapą
+        await page.evaluate(async () => {
+          const load = (path: string) => import(/* @vite-ignore */ path);
+          ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk('en');
+        });
+        const en = await minimapa(page);
+        if (en.aria !== 'Minimap: open the city map' || !en.podpis.includes('OpenStreetMap contributors'))
+          throw new Error(`po angielsku: ${en.aria} | ${en.podpis}`);
+        const pl = polskieLitery(`${en.aria} ${en.podpis}`, []);
+        if (pl.length) throw new Error(`polskie słowa w minimapie po angielsku: ${pl.join(' ')}`);
+        await page.evaluate(async () => {
+          const load = (path: string) => import(/* @vite-ignore */ path);
+          ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk('pl');
+        });
+        await page.waitForTimeout(300);
+      },
+    },
+    {
+      // znacznik wyprawy na minimapie: po wysłaniu wyprawy z mapy w miejscu celu stoi pierścień w kolorze lampy, a po
+      // powrocie znika (zrzut w drodze: miasto-minimapa-w-drodze, końcowy: po powrocie)
+      name: 'miasto-minimapa-wyprawa',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 1 });
+        await page.waitForFunction(() => window.zm!.minimapa().stan().rysunki >= 1, null, { timeout: 5000 });
+        const przed = await minimapa(page);
+        if (przed.stan.wyprawy) throw new Error('znacznik wyprawy przed wysłaniem');
+        await page.click('#sheet [data-act="wyslij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        // minimapa sprawdza stan co 500 ms, więc znacznik pojawia się najpóźniej po pół sekundy
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 1, null, { timeout: 3000 });
+        const po = await minimapa(page);
+        // gdzie ma stać: Cel.x i Cel.y z gov.wyprawy[0], w skali minimapy (punktyMinimapy)
+        const gdzie = await page.evaluate(async () => {
+          const load = (path: string) => import(/* @vite-ignore */ path);
+          const { punktyMinimapy, ZASIEG_MINIMAPY_M } = (await load(
+            '/src/ui/minimapa.ts',
+          )) as typeof import('../src/ui/minimapa.ts');
+          const zm = window.zm!;
+          const cel = zm.gov!.wyprawy![0].cel;
+          const bok = Math.round(document.querySelector<HTMLCanvasElement>('#minimapa canvas')!.clientWidth);
+          return {
+            cel: { klucz: cel.klucz, x: cel.x, y: cel.y, kat: cel.kat },
+            ...punktyMinimapy([], [cel], bok, ZASIEG_MINIMAPY_M).wyprawy[0],
+            bok,
+          };
+        });
+        console.log(`  w drodze: ${JSON.stringify(po.stan)}, cel ${JSON.stringify(gdzie)}`);
+        if (gdzie.cel.kat === null) throw new Error('cel wyprawy bez położenia (TARGETS)');
+        if (gdzie.cel.klucz !== m.klucz || gdzie.cel.x !== m.x || gdzie.cel.y !== m.y)
+          throw new Error(
+            `znacznik nie w miejscu wybranego celu: ${JSON.stringify(gdzie.cel)} zamiast ${JSON.stringify(m)}`,
+          );
+        const lampa = await page.evaluate(
+          ([px, py]) => {
+            const cv = document.querySelector<HTMLCanvasElement>('#minimapa canvas')!;
+            const dpr = cv.width / cv.clientWidth;
+            const R = 8;
+            const x0 = Math.max(0, Math.floor((px - R) * dpr));
+            const y0 = Math.max(0, Math.floor((py - R) * dpr));
+            const d = cv.getContext('2d')!.getImageData(x0, y0, Math.floor(2 * R * dpr), Math.floor(2 * R * dpr)).data;
+            let n = 0;
+            for (let i = 0; i < d.length; i += 4)
+              if (d[i] > 200 && d[i + 1] > 140 && d[i + 1] < 200 && d[i + 2] < 110) n++;
+            return n;
+          },
+          [gdzie.px, gdzie.py],
+        );
+        console.log(`  pikseli w kolorze lampy przy celu: ${lampa}`);
+        if (lampa < 15) throw new Error(`przy celu wyprawy nie ma znacznika w kolorze lampy (${lampa} pikseli)`);
+        await page.screenshot({ path: path.join(OUT, 'miasto-minimapa-w-drodze.png') });
+        // przewinięcie do powrotu: wyprawa znika ze stanu, a znacznik z minimapy (po najbliższym odświeżeniu)
+        for (let n = 0; n < 40; n++) {
+          if (!(await page.evaluate(() => window.zm!.gov!.wyprawy?.length ?? 0))) break;
+          const okno = await page.evaluate(() => window.zm!.ff(30));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+        }
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 0, null, { timeout: 3000 });
+        console.log(`  po powrocie: ${JSON.stringify((await minimapa(page)).stan)}`);
+      },
+    },
+    {
+      // telefon: minimapy nie ma na ekranie (poniżej 640 px szerokości), nic się nie rysuje, a przycisk „Mapa” w pasku
+      // otwiera okno mapy miasta
+      name: 'miasto-minimapa-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        await page.waitForTimeout(1200);
+        const o = await minimapa(page);
+        console.log(`  stan: ${JSON.stringify(o.stan)}, minimapa widoczna: ${await page.isVisible('#minimapa')}`);
+        if (!o.stan.wlaczona) throw new Error('minimapa wyłączona na telefonie (ma być tylko schowana stylem)');
+        if (o.stan.widoczna || (await page.isVisible('#minimapa'))) throw new Error('minimapa widać na telefonie');
+        if (o.stan.rysunki) throw new Error(`schowana minimapa się rysuje: ${o.stan.rysunki} razy`);
+        const b = await page.locator('#btnMiasto').boundingBox();
+        if (!b || !(await page.isVisible('#btnMiasto'))) throw new Error('przycisk „Mapa” niewidoczny na telefonie');
+        console.log(`  przycisk „Mapa”: ${await page.textContent('#btnMiasto')}, ${JSON.stringify(b)}`);
+        if (b.x < 0 || b.y < 0 || b.x + b.width > 390 || b.y + b.height > 844)
+          throw new Error('przycisk „Mapa” wychodzi za ekran');
+        if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1))
+          throw new Error('strona przewija się w bok');
+        await otworzMape(page, true);
+        const k = await okno(page);
+        if (k.tempo !== 0 || !/Mapa miasta/.test(k.tekst))
+          throw new Error('przycisk „Mapa” nie otworzył okna mapy miasta');
+        await page.tap('#sheet [data-act="miasto-zamknij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+      },
+    },
+    {
+      // telefon po angielsku: okno mapy i karta miejsca bez polskich słów (poza nazwą miejsca), karta na ekranie;
+      // kafelki poza tests/fixtures zerwane i bez tabel mieszkańców, jak w miasto-mapa-telefon
+      name: 'en-miasto-mapa-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      allow: /ERR_INTERNET_DISCONNECTED|Failed to load resource|status of 404/,
+      allowUrl: /tiles\.openfreemap\.org|\/data\/mieszkancy\//,
+      run: async (page, base) => {
+        await kafelkiMapy(page, true);
+        await bezTabel(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        if ((await page.getAttribute('#btnMiasto', 'aria-label')) !== 'City map')
+          throw new Error('przycisk mapy po angielsku');
+        await otworzMape(page, true);
+        const m = await miejsceMapy(page, 230, 520);
+        const [sx, sy] = await naEkranie(page, m.klucz);
+        await page.touchscreen.tap(sx, sy);
+        await page.waitForSelector('#sheet [data-miasto-karta]:not([hidden])');
+        await dwieKlatki(page);
+        const o = await okno(page);
+        console.log(`  telefon po angielsku, karta: ${o.karta?.tekst}`);
+        if (o.stan.wybrane !== m.klucz) throw new Error('stuknięcie w znak nie wybrało miejsca');
+        if (!o.stan.napis.includes('The rest of the city didn’t load'))
+          throw new Error(`napis o reszcie miasta: ${o.stan.napis}`);
+        if (o.karta?.wyslij !== 'Send a supply run') throw new Error(`przycisk wysyłki: ${o.karta?.wyslij}`);
+        const pl = polskieLitery(o.tekst, [m.nazwa]);
+        if (pl.length) throw new Error(`polskie słowa w oknie po angielsku: ${pl.join(' ')}`);
+        const [l, t, r, b] = o.karta!.prostokat;
+        if (l < 0 || t < 0 || r > o.ekran[0] || b > o.ekran[1]) throw new Error('karta miejsca wychodzi za ekran');
+        zasady(o, ATRYBUCJA_EN);
+      },
+    },
+    {
+      // minimapa po angielsku (komputer): przycisk, dymek i atrybucja bez polskich słów; klik otwiera okno mapy
+      name: 'en-miasto-minimapa',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&speed=1&godzina=8&cam=hq,1.3`);
+        await waitIdle(page);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().rysunki >= 1, null, { timeout: 5000 });
+        const o = await minimapa(page);
+        console.log(`  stan: ${JSON.stringify(o.stan)}, etykieta „${o.aria}”, podpis „${o.podpis}”`);
+        if (!o.stan.wlaczona || !o.stan.widoczna) throw new Error(`minimapa nie stoi: ${JSON.stringify(o.stan)}`);
+        if (o.aria !== 'Minimap: open the city map') throw new Error(`etykieta przycisku: ${o.aria}`);
+        const tytul = await page.getAttribute('#minimapaBtn', 'title');
+        if (tytul !== 'Minimap: open the city map (M)') throw new Error(`dymek przycisku: ${tytul}`);
+        for (const z of ['OpenStreetMap contributors', 'OpenFreeMap', 'OpenMapTiles'])
+          if (!o.podpis.includes(z)) throw new Error(`atrybucja minimapy bez „${z}”: ${o.podpis}`);
+        const pl = polskieLitery(`${o.aria} ${tytul} ${o.tekst}`, []);
+        if (pl.length) throw new Error(`polskie słowa przy minimapie po angielsku: ${pl.join(' ')}`);
+        if (o.podpisPoza || !o.wEkranie) throw new Error('minimapa albo jej podpis poza ekranem');
+        if (o.nakladki.length) throw new Error(`minimapa nachodzi na: ${o.nakladki.join(', ')}`);
+        await page.click('#minimapaBtn');
+        await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+        await czekajNaMape(page);
+        const k = await okno(page);
+        if (!/City map/.test(k.tekst)) throw new Error('klik w minimapę nie otworzył okna mapy po angielsku');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // tryb zombie (komputer): mapa miasta, karta miejsca, plan i wysłanie wyprawy jak w zwykłym trybie; wyprawa
+      // jest w stanie zarządu i na minimapie. Zrzuty: plan wyprawy (miasto-zombie-plan) i minimapa z wyprawą w drodze
+      name: 'miasto-zombie',
+      query: '',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { zaznacz: 2, speed: 1, q: '&tryb=zombie' });
+        const tryb = await page.evaluate(() => window.zm!.sim!.st.mode);
+        if (tryb !== 'zombie') throw new Error(`tryb gry: ${tryb}`);
+        const p = await plan(page);
+        console.log(
+          `  zombie, miejsce ${JSON.stringify(m)}, plan: ${p.tytul}, podsumowanie ${JSON.stringify(p.podsumowanie)}`,
+        );
+        if (p.osoby.filter((x) => x.wybrana).length !== 2) throw new Error('zaznaczeni nie są wybrani');
+        if (!p.wyslij || p.wyslij.wyszarzony || p.wyslij.tekst !== 'Wyślij wyprawę')
+          throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok');
+        if (p.podsumowanie.length < 5) throw new Error(`podsumowanie: ${JSON.stringify(p.podsumowanie)}`);
+        await page.screenshot({ path: path.join(OUT, 'miasto-zombie-plan.png') });
+        await page.click('#sheet [data-act="wyslij"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const w = await page.evaluate(() => JSON.parse(JSON.stringify(window.zm!.gov!.wyprawy ?? [])));
+        if (w.length !== 1 || w[0].cel.klucz !== m.klucz) throw new Error(`wyprawa w stanie: ${JSON.stringify(w)}`);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 1, null, { timeout: 3000 });
+        const o = await minimapa(page);
+        console.log(`  minimapa w trybie zombie: ${JSON.stringify(o.stan)}`);
+        if (!o.stan.widoczna || o.nakladki.length) throw new Error(`minimapa: ${JSON.stringify([o.stan, o.nakladki])}`);
+        // wyprawa wraca także w trybie zombie: kłopoty to szwendacze, nie szabrownicy
+        for (let n = 0; n < 40; n++) {
+          if (!(await page.evaluate(() => window.zm!.gov!.wyprawy?.length ?? 0))) break;
+          const okno = await page.evaluate(() => window.zm!.ff(30));
+          if (okno === 'wydarzenie') await page.click('#sheet .choices [data-act="event"]:not([disabled])');
+          else if (okno) throw new Error(`po drodze okno decyzji: ${okno}`);
+        }
+        const log = await page.evaluate(() => window.zm!.gov!.log.slice(-4).map((l) => (l.txt as { pl: string }).pl));
+        console.log(`  po powrocie: ${log.join(' | ')}`);
+        if (await page.evaluate(() => window.zm!.gov!.wyprawy?.length)) throw new Error('wyprawa dalej w drodze');
+        if (log.some((t) => /szabrown/.test(t))) throw new Error(`szabrownicy w trybie zombie: ${log.join(' | ')}`);
+        await page.waitForFunction(() => window.zm!.minimapa().stan().wyprawy === 0, null, { timeout: 3000 });
+      },
+    },
+    {
+      // tryb zombie na telefonie po angielsku: plan wyprawy bez przewijania w bok i bez polskich słów, stopka na ekranie
+      name: 'en-miasto-zombie-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        const m = await doPlanu(page, base, { dotyk: true, q: '&tryb=zombie' });
+        const tryb = await page.evaluate(() => window.zm!.sim!.st.mode);
+        if (tryb !== 'zombie') throw new Error(`tryb gry: ${tryb}`);
+        const p = await plan(page);
+        console.log(`  zombie po angielsku, plan: ${p.tytul}, osoby ${p.osoby.length}, ekran ${p.ekran}`);
+        console.log(`  podsumowanie: ${JSON.stringify(p.podsumowanie)}, stopka ${p.stopka}`);
+        const imiona = await page.evaluate(() => window.zm!.sim!.st.people.flatMap((q) => [q.name, q.first]));
+        const pl = polskieLitery(p.tekst, [m.nazwa, ...imiona]);
+        if (pl.length) throw new Error(`polskie słowa w oknie planu po angielsku: ${pl.join(' ')}`);
+        if (p.bok) throw new Error('okno planu przewija się w bok na telefonie');
+        const [l, t, r, b] = p.stopka!;
+        if (l < 0 || t < 0 || r > p.ekran[0] || b > p.ekran[1]) throw new Error('stopka planu wychodzi za ekran');
+        if (p.wyslij?.tekst !== 'Send the supply run') throw new Error(`przycisk wysyłki: ${JSON.stringify(p.wyslij)}`);
+        if (p.wroc !== 'Back to the map') throw new Error(`przycisk powrotu: ${p.wroc}`);
+        // wybór osoby dotykiem, jak w zwykłym trybie
+        const kto = p.osoby.find((x) => !x.wyszarzona)!;
+        await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+        await dwieKlatki(page);
+        const po = (await plan(page)).osoby.find((x) => x.id === kto.id)!;
+        if (po.wybrana === kto.wybrana) throw new Error('stuknięcie osoby nie zmieniło wyboru');
+        if (!po.wybrana) {
+          await page.tap(`#sheet [data-act="wp-osoba"][data-arg="${kto.id}"]`);
+          await dwieKlatki(page);
+        }
+      },
+    },
+    {
+      name: 'miasto-start',
+      query: '',
+      allow: BRAK_TABEL,
+      allowUrl: TABELE_URL,
+      run: async (page, base) => {
+        // bez tabel mieszkańców (404) filtr nie zna imion, więc okolica ma same puste nazwy: sama kategoria, bez nazwy
+        // jednoosobowej firmy z imieniem i nazwiskiem właściciela (RODO), także na karcie nocy
+        await bezTabel(page);
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        const bt = await nazwy(page);
+        const btStan = await stan(page);
+        console.log(`  bez tabel: ${JSON.stringify(btStan)}, nazwy ${JSON.stringify(bt)}`);
+        if (!btStan.miasto || btStan.okolica <= 0) throw new Error('bez tabel nie ma miasta albo okolicy');
+        if (bt.niepuste) throw new Error(`bez tabel ${bt.niepuste} miejsc z nazwą (może być imię właściciela)`);
+        const btKarta = await doKarty(page, base, '');
+        console.log(`  bez tabel, karta nocy: ${btKarta.join(' | ')}`);
+        if (!btKarta.length) throw new Error('bez tabel karta nocy bez wyprawy do miejsca z okolicy');
+        if (btKarta.some((t) => t.includes('(')))
+          throw new Error(`bez tabel nazwa miejsca na karcie: ${btKarta.join(' | ')}`);
+        await page.unroute('**/data/mieszkancy/**');
+        // opcja wyłączona: zarząd bez miasta, okolicy nie ma, karta nocy z celami z TARGETS
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9&miasto=0`);
+        await waitIdle(page);
+        const wyl = await stan(page);
+        console.log(`  ?miasto=0: ${JSON.stringify(wyl)}`);
+        if (wyl.miasto || wyl.okolica) throw new Error('?miasto=0 nie wyłączyło miasta albo okolicy');
+        if (await page.isVisible('#btnMiasto')) throw new Error('?miasto=0: przycisk mapy miasta widać');
+        // minimapa też: schowana i wyłączona (nic się nie rysuje), tak samo jak przycisk
+        const mm0 = await page.evaluate(() => window.zm!.minimapa().stan());
+        if (mm0.wlaczona || mm0.widoczna || mm0.rysunki || (await page.isVisible('#minimapa')))
+          throw new Error(`?miasto=0: minimapa na ekranie albo włączona: ${JSON.stringify(mm0)}`);
+        const bez = await doKarty(page, base, '&miasto=0');
+        if (bez.length) throw new Error(`?miasto=0: karta nocy z miejscami z okolicy: ${bez.join(' | ')}`);
+        // domyślnie: miasto włączone, okolica z kluczami, karta nocy z miejscami z okolicy
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,0.9`);
+        await waitIdle(page);
+        const wl = await stan(page);
+        console.log(`  domyślnie: ${JSON.stringify(wl)}`);
+        if (!wl.miasto) throw new Error('zarząd bez stanu miasta (gov.miasto)');
+        if (wl.okolica <= 0) throw new Error('okolica pusta (zm.okolica)');
+        if (!(await page.isVisible('#minimapa'))) throw new Error('domyślnie minimapy nie widać');
+        if (wl.zleKlucze) throw new Error(`${wl.zleKlucze} miejsc bez klucza „poi:X:Y”`);
+        if (wl.poza <= 0) throw new Error('w okolicy nie ma miejsc poza mapą lokalną');
+        // filtr nazw podpięty w main.ts: nazwy z osobą puste, marka zostaje, patron szkoły odpada z nazwy
+        const nz = await nazwy(page);
+        console.log(`  nazwy: ${JSON.stringify(nz)}`);
+        if (!nz.osoby.length || nz.osoby.some((n) => n))
+          throw new Error(`nazwa z osobą w okolicy: ${nz.osoby.join(' | ')}`);
+        if (!nz.marki.length || nz.marki.some((n) => n !== 'Żabka'))
+          throw new Error(`marka po filtrze: ${nz.marki.join(' | ')}`);
+        if (!nz.patron.length || nz.patron.some((n) => n !== 'Szkoła Podstawowa Nr 44'))
+          throw new Error(`szkoła z patronem po filtrze: ${nz.patron.join(' | ')}`);
+        if (wl.bezNazwy <= 0) throw new Error('żadna nazwa nie została odfiltrowana');
+        // zapis sprzed mapy miasta (bez stanu miasta w zarządzie i bez kluczy punktów): po wczytaniu miasto włączone,
+        // okolica ta sama co w nowej grze
+        await page.evaluate(() => {
+          window.zm!.save();
+          const raw = JSON.parse(localStorage.getItem('za-murem-0.4-zapis')!);
+          delete raw.gov.miasto;
+          for (const p of raw.data.geo.poi) delete p.k;
+          localStorage.setItem('za-murem-0.4-zapis', JSON.stringify(raw));
+        });
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await waitIdle(page);
+        const stary = await stan(page);
+        console.log(`  stary zapis po wczytaniu: ${JSON.stringify(stary)}`);
+        if (!stary.miasto) throw new Error('stary zapis bez stanu miasta po wczytaniu');
+        if (stary.okolica !== wl.okolica || stary.zleKlucze)
+          throw new Error(
+            `okolica ze starego zapisu: ${stary.okolica} miejsc z ${wl.okolica}, złych kluczy ${stary.zleKlucze}`,
+          );
+        const z = await doKarty(page, base, '');
+        console.log(`  karta nocy, opcje z miejscami: ${z.join(' | ')}`);
+        if (!z.length) throw new Error('karta nocy bez wyprawy do miejsca z okolicy (input() bez okolicy?)');
+        await page.waitForTimeout(200);
+      },
+    },
+  ];
+}
+
+/**
+ * Warunki zwycięstwa, etap 1 (docs/superpowers/specs/2026-10-19-warunki-zwyciestwa-design.md, okna w src/ui/zwyciestwo.ts):
+ * ekran „Drogi do zwycięstwa” z Menu na komputerze, na telefonie i po angielsku (także zmiana języka przy otwartym
+ * oknie), cele drogi ludnościowej z danych 2021 w trzech demach, epilog zwycięstwa (gra stoi, „Graj dalej” oddaje tempo
+ * sprzed epilogu, epilog nie wraca, zapis zostaje), „Nowa gra” z potwierdzeniem i „Kontynuuj” oraz stary zapis bez dróg.
+ * Po recenzji końcowej do tego: zdanie „co dalej” pod następnym kamieniem (start gry w każdym scenariuszu ekranu dróg,
+ * ostatni kamień ludności z serią poranków na komputerze po polsku i na telefonie po angielsku), drogi z „Wkrótce” bez
+ * złotego następnego kamienia, ostatnie zdanie epilogu z liczbą ludzi i spisem 2021 oraz dwa epilogi jeden po drugim
+ * (kolejka). Ekran dróg otwiera się z Menu tak jak u gracza, a „Graj dalej” i „Nowa gra” są prawdziwymi kliknięciami; zwycięstwo
+ * na żądanie to `zm.wygraj` (tylko do zrzutów, prawdziwe zwycięstwo liczy się dopiero po siedmiu porankach, tym zajmują
+ * się testy i `npm run bot -- --zwyciestwo`). Zrzut zapisany na końcu scenariusza pokazuje okno, o które chodzi.
+ */
+function zwyciestwoShots(): Shot[] {
+  const KOLEJNOSC: readonly Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
+  const SAVE = 'za-murem-0.4-zapis';
+  /** zdania „Wkrótce” dosłownie z planu (plan docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-rama.md, sekcja „Teksty”): droga → polski i angielski napis; teren dopiero po pierwszym
+      kamieniu, więc go tu nie ma */
+  const WKROTCE: Partial<Record<Droga, Tx>> = {
+    technologia: {
+      pl: 'Wkrótce: badania w pracowni i sieć bez miedzi.',
+      en: 'Coming soon: research and a copper-free grid.',
+    },
+    lek: { pl: 'Wkrótce: dalekie wyprawy po lek.', en: 'Coming soon: long runs for the cure.' },
+    cuda: { pl: 'Wkrótce: cuda z późnych badań.', en: 'Coming soon: wonders from late research.' },
+  };
+  const dwieKlatki = (page: Page) =>
+    page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  /** zmiana języka jak z przełącznika, bez zapisu w pamięci (słuchacz w main.ts rysuje otwarte okno od nowa) */
+  const zmienJezyk = (page: Page, l: 'en' | 'pl') =>
+    page.evaluate(async (l) => {
+      const load = (path: string) => import(/* @vite-ignore */ path);
+      ((await load('/src/core/jezyk.ts')) as typeof import('../src/core/jezyk.ts')).ustawJezyk(l);
+    }, l);
+  /** okno zamyka się w ciągu kilku sekund; inaczej błąd z tytułem okna, które zostało (np. epilog, który wraca) */
+  const zamkniete = async (page: Page, po: string) => {
+    try {
+      await page.waitForFunction(() => document.getElementById('modal')!.hidden, null, { timeout: 5000 });
+    } catch {
+      throw new Error(`${po} okno się nie zamknęło, na ekranie „${await page.textContent('#sheet .sheet-title')}”`);
+    }
+  };
+  /** Menu → „Drogi do zwycięstwa”, tak jak robi to gracz (na telefonie stuknięciami); czeka na wiersze dróg. `menuZrzut`
+      to nazwa pliku w shots/ ze zrzutem samego Menu z nowym przyciskiem, zanim zostanie naciśnięty */
+  const otworzDrogi = async (page: Page, dotyk = false, menuZrzut?: string) => {
+    const kliknij = (sel: string) => (dotyk ? page.tap(sel) : page.click(sel));
+    await kliknij('#btnMenu');
+    await page.waitForSelector('#sheet [data-act="menu-zwyciestwo"]');
+    await dwieKlatki(page);
+    if (menuZrzut) await page.screenshot({ path: path.join(OUT, `${menuZrzut}.png`) });
+    await kliknij('#sheet [data-act="menu-zwyciestwo"]');
+    await page.waitForSelector('#sheet .zw-drogi .zw-droga');
+    await dwieKlatki(page);
+  };
+  /** ekran dróg z DOM: tytuł, wiersze (droga, nazwa, kamienie z tekstem, stanem i dopiskiem dla czytnika ekranu, liczby,
+      pasek, „Wkrótce”, odznaka, prostokąt), przewijanie w bok, stopka, prostokąt okna, tempo gry */
+  const ekranDrog = (page: Page) =>
+    page.evaluate(() => {
+      const sheet = document.getElementById('sheet')!;
+      const body = sheet.querySelector<HTMLElement>('.sheet-body');
+      const prostokat = (e: Element) => {
+        const r = e.getBoundingClientRect();
+        return [r.left, r.top, r.right, r.bottom].map(Math.round);
+      };
+      const stopka = sheet.querySelector('.sheet-foot');
+      return {
+        klasa: sheet.className,
+        kicker: sheet.querySelector('.sheet-kicker')?.textContent ?? '',
+        tytul: sheet.querySelector('.sheet-title')?.textContent ?? '',
+        tekst: sheet.textContent ?? '',
+        wiersze: [...sheet.querySelectorAll<HTMLElement>('.zw-droga')].map((w) => {
+          const pasek = w.querySelector<HTMLProgressElement>('progress');
+          return {
+            droga: w.dataset.droga ?? '',
+            nazwa: w.querySelector('.zw-nazwa')?.textContent ?? '',
+            wygrana: w.classList.contains('zw-wygrana'),
+            odznaka: w.querySelector('.zw-odznaka')?.textContent ?? null,
+            kamienie: [...w.querySelectorAll<HTMLElement>('.zw-kamien')].map((k) => ({
+              tekst: k.querySelector('.zw-tekst')?.textContent ?? '',
+              dalej: k.querySelector('.zw-dalej')?.textContent ?? null,
+              stan: k.classList.contains('zw-zaliczony')
+                ? 'zaliczony'
+                : k.classList.contains('zw-nastepny')
+                  ? 'nastepny'
+                  : 'dalszy',
+              czytnik: k.querySelector('.sr')?.textContent ?? '',
+            })),
+            liczby: w.querySelector('.zw-liczby')?.textContent ?? null,
+            pasek: pasek ? { value: pasek.value, max: pasek.max } : null,
+            wkrotce: w.querySelector('.zw-wkrotce')?.textContent ?? null,
+            prostokat: prostokat(w),
+          };
+        }),
+        bok:
+          document.documentElement.scrollWidth > innerWidth + 1 || (!!body && body.scrollWidth > body.clientWidth + 1),
+        przewija: !!body && body.scrollHeight > body.clientHeight + 1,
+        ekran: [innerWidth, innerHeight],
+        stopka: stopka ? prostokat(stopka) : null,
+        arkusz: prostokat(sheet),
+        wroc: sheet.querySelector('[data-act="zw-wroc"]')?.textContent ?? '',
+        tempo: window.zm!.speed(),
+      };
+    });
+  type EkranDrog = Awaited<ReturnType<typeof ekranDrog>>;
+  /** zdania „co dalej” dosłownie (poprawki po recenzji końcowej etapu 1), na starcie gry: ludność przed pierwszym
+      kamieniem (10 osób) i teren przed pierwszym kamieniem (płot); reszta dróg nie ma zdania */
+  const DALEJ_START: Partial<Record<Droga, Tx>> = {
+    teren: {
+      pl: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
+      en: 'Put a shared fence round the first building next door.',
+    },
+    ludnosc: { pl: 'Zbierzcie 10 osób pod zarządem.', en: 'Get 10 people under the board.' },
+  };
+  /** ostatni kamień ludności z licznikiem poranków `n`: zdanie o siedmiu porankach dosłownie */
+  const dalejSeria = (n: number): Tx => ({
+    pl: `Utrzymajcie cel 7 poranków z rzędu: o 6:00 nikt z zarządu nie jest głodny, a zaufanie wynosi co najmniej 50 (${n} z 7).`,
+    en: `Hold the target for 7 mornings in a row: at 6:00 nobody on the board is hungry and trust is at least 50 (${n} of 7).`,
+  });
+  /** wiersze ekranu zgadzają się z `DROGI` (nazwy i kamienie w języku `lang`), z kolejnością ekranu i z tym, co daje
+      `zm.zwyciestwo()` (`ocenDrogi`): ile kamieni zaliczone, który następny (tylko na drodze bez „Wkrótce”), zdanie „co
+      dalej” pod następnym kamieniem, ludność z liczbą i paskiem, „Wkrótce”, odznaka. `oczekiwaneDalej` to zdania
+      „co dalej” dosłownie z planu poprawek (droga → tekst, brak drogi: bez zdania). Zwraca ocenę dróg z gry */
+  const sprawdzDrogi = async (
+    page: Page,
+    o: EkranDrog,
+    lang: 'pl' | 'en',
+    mode: GameMode,
+    oczekiwaneDalej?: Partial<Record<Droga, Tx>>,
+  ) => {
+    const oceny = await page.evaluate(() => window.zm!.zwyciestwo());
+    if (oceny.length !== KOLEJNOSC.length) throw new Error(`zm.zwyciestwo() daje ${oceny.length} dróg`);
+    if (o.wiersze.length !== KOLEJNOSC.length) throw new Error(`na ekranie ${o.wiersze.length} wierszy zamiast 5`);
+    // dopisek dla czytnika ekranu przy kamieniu: zaliczony i następny go mają, dalszy nie
+    const sr: Record<string, string> =
+      lang === 'pl'
+        ? { zaliczony: 'Zaliczone: ', nastepny: 'Następny: ', dalszy: '' }
+        : { zaliczony: 'Done: ', nastepny: 'Next: ', dalszy: '' };
+    KOLEJNOSC.forEach((droga, k) => {
+      const w = o.wiersze[k];
+      const d = oceny[k];
+      const def = DROGI[droga];
+      const blad = (co: string) => new Error(`droga „${droga}”: ${co}`);
+      if (w.droga !== droga || d.droga !== droga) throw blad(`kolejność: ekran ${w.droga}, ocena ${d.droga}`);
+      const nazwa = nazwaDrogi(droga, mode)[lang];
+      if (w.nazwa !== nazwa) throw blad(`nazwa „${w.nazwa}” zamiast „${nazwa}”`);
+      const kamienie = def.kamienie.map((x) => x[lang]);
+      const naEkranie = w.kamienie.map((x) => x.tekst);
+      if (naEkranie.join('|') !== kamienie.join('|')) throw blad(`kamienie ${naEkranie.join(' | ')}`);
+      if (w.kamienie.length !== d.kamienie.length)
+        throw blad(`kamieni ${w.kamienie.length}, w ocenie ${d.kamienie.length}`);
+      // zaliczone, potem jeden następny (gdy droga niedokończona i bez „Wkrótce”: droga z „Wkrótce” nie ma czego zdobyć
+      // już teraz, więc jej otwarte kamienie są wszystkie dalsze), reszta dalsza; stan mówi też dopisek dla czytnika
+      const nastepny = d.wkrotce ? -1 : d.zaliczone;
+      const wzor = w.kamienie.map((_, n) => (n < d.zaliczone ? 'zaliczony' : n === nastepny ? 'nastepny' : 'dalszy'));
+      const stany = w.kamienie.map((x) => x.stan);
+      if (stany.join() !== wzor.join()) throw blad(`stany kamieni ${stany.join()} zamiast ${wzor.join()}`);
+      w.kamienie.forEach((x) => {
+        const dopisek = sr[x.stan];
+        if (x.czytnik !== dopisek) throw blad(`dopisek dla czytnika „${x.czytnik}” zamiast „${dopisek}” (${x.tekst})`);
+      });
+      // zdanie „co dalej” stoi pod następnym kamieniem i pod żadnym innym; droga z „Wkrótce” albo przebyta go nie ma
+      const zdania = w.kamienie.flatMap((x, n) => (x.dalej === null ? [] : [{ n, tekst: x.dalej }]));
+      const dalej = d.dalej ? d.dalej[lang] : null;
+      if (dalej === null) {
+        if (zdania.length) throw blad(`zdanie „co dalej” bez zdania w ocenie: ${JSON.stringify(zdania)}`);
+      } else if (zdania.length !== 1 || zdania[0].n !== nastepny || zdania[0].tekst !== dalej) {
+        throw blad(`zdanie „co dalej” ${JSON.stringify(zdania)} zamiast „${dalej}” pod kamieniem ${nastepny}`);
+      }
+      if (d.wkrotce && d.dalej) throw blad('„Wkrótce” i „co dalej” naraz');
+      if (oczekiwaneDalej) {
+        const wzorDalej = oczekiwaneDalej[droga]?.[lang] ?? null;
+        if (dalej !== wzorDalej) throw blad(`zdanie „co dalej” „${dalej}” zamiast „${wzorDalej}” z planu`);
+      }
+      const wkrotce = d.wkrotce ? d.wkrotce[lang] : null;
+      if (w.wkrotce !== wkrotce) throw blad(`„Wkrótce”: ${w.wkrotce} zamiast ${wkrotce}`);
+      // dosłowne zdania z planu, żeby literówka w DROGI nie przeszła razem z ekranem
+      const wzorWkrotce = WKROTCE[droga]?.[lang] ?? null;
+      if (droga !== 'teren' && droga !== 'ludnosc' && w.wkrotce !== wzorWkrotce)
+        throw blad(`„Wkrótce” inne niż w planie: ${w.wkrotce}`);
+      const przebyta = d.zaliczone >= def.kamienie.length;
+      if (w.wygrana !== przebyta || (w.odznaka !== null) !== przebyta)
+        throw blad(`odznaka zwycięstwa: ${w.odznaka}, droga ${przebyta ? 'przebyta' : 'w toku'}`);
+      if (przebyta && w.odznaka !== (lang === 'pl' ? 'Zwycięstwo' : 'Victory')) throw blad(`odznaka „${w.odznaka}”`);
+      if (d.postep) {
+        const ile = d.postep.ile;
+        const cel = d.postep.cel;
+        const liczby = lang === 'pl' ? `${ile} z ${cel} osób` : `${ile} of ${cel} people`;
+        if (w.liczby !== liczby) throw blad(`liczby „${w.liczby}” zamiast „${liczby}”`);
+        if (!w.pasek || w.pasek.max !== cel || w.pasek.value !== Math.min(ile, cel))
+          throw blad(`pasek ${JSON.stringify(w.pasek)} przy ${ile} z ${cel}`);
+      } else if (w.liczby !== null || w.pasek) throw blad('liczby albo pasek przy drodze bez postępu');
+    });
+    return oceny;
+  };
+  /** stan zwycięstwa w zarządzie (to, co trafia do zapisu) albo null, gdy dróg nie włączono */
+  const stanZw = (page: Page) =>
+    page.evaluate(() => {
+      const z = window.zm!.gov!.zwyciestwo;
+      return z
+        ? {
+            epilogi: [...z.epilogi],
+            wygrane: z.wygrane.map((w) => w.droga),
+            kamienie: { ...z.kamienie },
+            dniCelu: z.dniCelu,
+            cel: z.cel ?? null,
+          }
+        : null;
+    });
+  /** stan z ostatnim kamieniem ludności i serią `dni` poranków, ustawiony wprost (prawdziwa seria to kilka dób gry):
+      40 przyjętych ludzi, zapisany cel obniżony do 40 (żeby liczby na pasku zgadzały się z kamieniami), cztery kamienie
+      i `dni` poranków celu. Zwraca liczbę ludzi pod zarządem */
+  const ustawSerie = async (page: Page, dni: number): Promise<number> => {
+    await page.evaluate(() => window.zm!.admit(40));
+    await page.evaluate((d) => {
+      const z = window.zm!.gov!.zwyciestwo!;
+      z.cel = 40;
+      z.kamienie.ludnosc = 4;
+      z.dniCelu = d;
+    }, dni);
+    return ludzi(page);
+  };
+  /** epilog z DOM: czy okno otwarte, rodzaj, nagłówek, akapity, liczby, przyciski (akcja, napis, prostokąt), przewijanie
+      w bok, prostokąt okna, tempo gry i krok symulacji */
+  const epilogDom = (page: Page) =>
+    page.evaluate(() => {
+      const sheet = document.getElementById('sheet')!;
+      const body = sheet.querySelector<HTMLElement>('.sheet-body');
+      const prostokat = (e: Element) => {
+        const r = e.getBoundingClientRect();
+        return [r.left, r.top, r.right, r.bottom].map(Math.round);
+      };
+      return {
+        otwarte: !document.getElementById('modal')!.hidden,
+        klasa: sheet.className,
+        kicker: sheet.querySelector('.sheet-kicker')?.textContent ?? '',
+        tytul: sheet.querySelector('.sheet-title')?.textContent ?? '',
+        opowiesc: sheet.querySelector('.zw-opowiesc')?.textContent ?? '',
+        sciezka: sheet.querySelector('.zw-sciezka')?.textContent ?? '',
+        staty: [...sheet.querySelectorAll('.zw-stat')].map((e) => e.textContent ?? ''),
+        przyciski: [...sheet.querySelectorAll<HTMLButtonElement>('.sheet-foot button')].map((b) => ({
+          akcja: b.dataset.act ?? '',
+          tekst: b.textContent ?? '',
+          prostokat: prostokat(b),
+        })),
+        tekst: sheet.textContent ?? '',
+        bok:
+          document.documentElement.scrollWidth > innerWidth + 1 || (!!body && body.scrollWidth > body.clientWidth + 1),
+        ekran: [innerWidth, innerHeight],
+        arkusz: prostokat(sheet),
+        tempo: window.zm!.speed(),
+        tick: window.zm!.sim!.st.tick,
+      };
+    });
+  type EpilogDom = Awaited<ReturnType<typeof epilogDom>>;
+  /** okno mieści się na ekranie, nie przewija się w bok, a oba przyciski są w nim w całości */
+  const naEkranie = (e: EpilogDom, co: string) => {
+    if (e.bok) throw new Error(`${co} przewija się w bok`);
+    const [l, t, r, b] = e.arkusz;
+    if (l < 0 || t < 0 || r > e.ekran[0] || b > e.ekran[1]) throw new Error(`${co} wychodzi za ekran: ${e.arkusz}`);
+    for (const p of e.przyciski) {
+      const [pl, pt, pr, pb] = p.prostokat;
+      if (pl < 0 || pt < 0 || pr > e.ekran[0] || pb > e.ekran[1] || pr - pl < 40)
+        throw new Error(`${co}: przycisk „${p.tekst}” poza ekranem albo za wąski: ${p.prostokat}`);
+    }
+  };
+  /** liczba ludzi z oceny dróg (to samo, co w epilogu: zarząd i mieszkańcy pod zarządem) */
+  const ludzi = async (page: Page) => (await page.evaluate(() => window.zm!.zwyciestwo()))[3].postep!.ile;
+  /** dwa pierwsze zdania epilogu ludności dosłownie z planu (plan docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-rama.md,
+      sekcja „Teksty”), polskie i angielskie; trzecie zdanie ma prawdziwe liczby (poprawki po recenzji końcowej) */
+  const PODWORKO: Tx = {
+    pl: 'Na podwórku znowu jest gwarno. Na klatkach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin trzepaka.',
+    en: 'The yard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet rack.',
+  };
+  /** cały tekst drogi w epilogu ludności ze spisem 2021: dwa zdania i trzecie z liczbą ludzi dziś i spisem */
+  const opowiesc = (lang: 'pl' | 'en', ile: number, spis: number): string =>
+    lang === 'pl'
+      ? `${PODWORKO.pl} Mieszka tu ${mnogaPl(ile, 'osoba', 'osoby', 'osób')}, a w 2021 roku, kiedy wszyscy zamawiali jedzenie przez aplikację, mieszkało ${spis}.`
+      : `${PODWORKO.en} ${ile} ${ile === 1 ? 'person lives' : 'people live'} here now; in 2021, back when everyone ordered food through an app, there were ${spis}.`;
+  /** tekst drogi z otwartego epilogu zgadza się z grą: ludzie dziś jak w ocenie dróg, spis 2021 z tekstu, a ten spis daje
+      dokładnie cel drogi (połowa, od 120 do 500), więc liczba w epilogu jest tą, z której liczy się cel. Nie twierdzi,
+      że ludzi jest „połowa” z 2021 roku. Zwraca spis z tekstu */
+  const sprawdzOpowiesc = async (page: Page, tekst: string, lang: 'pl' | 'en'): Promise<number> => {
+    const spis = Number(/(?:mieszkało|there were) (\d+)\.$/.exec(tekst)?.[1]);
+    if (!Number.isFinite(spis) || spis <= 0) throw new Error(`epilog bez spisu 2021: ${tekst}`);
+    const ocena = (await page.evaluate(() => window.zm!.zwyciestwo()))[3].postep!;
+    const oczekiwany = opowiesc(lang, ocena.ile, spis);
+    if (tekst !== oczekiwany) throw new Error(`tekst drogi w epilogu:\n  ${tekst}\nzamiast\n  ${oczekiwany}`);
+    const cel = Math.min(500, Math.max(120, Math.round(spis / 2)));
+    if (ocena.cel !== cel) throw new Error(`spis ${spis} z epilogu daje cel ${cel}, a gra ma ${ocena.cel}`);
+    if (/połowa tylu|Half as many/.test(tekst)) throw new Error(`epilog dalej mówi o połowie: ${tekst}`);
+    return spis;
+  };
+  const SCIEZKA_TECH: Tx = {
+    pl: 'Model z dysków banku układa grafiki co do minuty. Nikt nie pyta, kto go kontroluje.',
+    en: 'The model from the bank’s disks plans the rotas to the minute. Nobody asks who controls it.',
+  };
+  const SCIEZKA_BRAK: Tx = {
+    pl: 'Zarząd dalej się spiera, czy to już osada, czy jeszcze spółdzielnia.',
+    en: 'The board is still arguing whether this is a settlement now or still a housing co-op.',
+  };
+
+  return [
+    {
+      // ekran dróg z Menu (komputer, polski, Przymorze): przycisk w Menu, pięć wierszy w kolejności ekranu z kamieniami
+      // (zaliczone, następny, reszta), droga ludnościowa z liczbą i paskiem do celu 500 z danych 2021, pozostałe z
+      // „Wkrótce”; gra stoi, dopóki okno otwarte; „Wróć” wraca do Menu, a Esc oddaje grę w tempie sprzed Menu
+      name: 'zwyciestwo-drogi',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1.3`);
+        await waitIdle(page);
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        if (tempo !== 1) throw new Error(`tempo przed Menu: ${tempo}`);
+        await page.click('#btnMenu');
+        const przycisk = await page.textContent('#sheet [data-act="menu-zwyciestwo"]');
+        if (przycisk !== 'Drogi do zwycięstwa') throw new Error(`przycisk w Menu: ${przycisk}`);
+        await dwieKlatki(page);
+        await page.screenshot({ path: path.join(OUT, 'zwyciestwo-menu.png') });
+        await page.click('#sheet [data-act="menu-zwyciestwo"]');
+        await page.waitForSelector('#sheet .zw-drogi .zw-droga');
+        await dwieKlatki(page);
+        const o = await ekranDrog(page);
+        const oceny = await sprawdzDrogi(page, o, 'pl', 'zwykly', DALEJ_START);
+        const lud = oceny[3];
+        console.log(
+          `  okno: ${o.klasa} „${o.tytul}”, ludność ${lud.postep!.ile} z ${lud.postep!.cel}, kamienie ${oceny.map((d) => `${d.droga} ${d.zaliczone}/${d.kamienie.length}`).join(', ')}`,
+        );
+        console.log(`  „Wkrótce”: ${o.wiersze.map((w) => w.wkrotce ?? '—').join(' | ')}`);
+        if (o.tytul !== 'Drogi do zwycięstwa') throw new Error(`tytuł okna: ${o.tytul}`);
+        if (o.wroc !== 'Wróć') throw new Error(`przycisk powrotu: ${o.wroc}`);
+        if (o.tempo !== 0) throw new Error(`gra nie stanęła przy oknie dróg: tempo ${o.tempo}`);
+        if (o.bok) throw new Error('ekran dróg przewija się w bok');
+        if (lud.postep!.cel !== 500) throw new Error(`cel ludności na Przymorzu: ${lud.postep!.cel} zamiast 500`);
+        if (lud.postep!.ile < 1) throw new Error(`ludność ${lud.postep!.ile}`);
+        // początek gry: droga terenu bez „Wkrótce” (pierwszy kamień do zdobycia od razu), reszta dróg ma je
+        const teren = o.wiersze[1];
+        if (teren.wkrotce !== null || teren.kamienie[0].stan !== 'nastepny')
+          throw new Error(`teren na starcie: ${JSON.stringify(teren)}`);
+        for (const i of [0, 2, 4])
+          if (!o.wiersze[i].wkrotce) throw new Error(`brak „Wkrótce” przy ${o.wiersze[i].droga}`);
+        // desktop: dwie kolumny kart
+        const lewe = new Set(o.wiersze.map((w) => w.prostokat[0]));
+        if (lewe.size !== 2) throw new Error(`karty dróg w ${lewe.size} kolumnach zamiast dwóch`);
+        // „Wróć” wraca do Menu, ekran dróg otwiera się ponownie, Esc zamyka i oddaje tempo sprzed Menu
+        await page.click('#sheet [data-act="zw-wroc"]');
+        await page.waitForSelector('#sheet [data-act="menu-zwyciestwo"]');
+        const tytulMenu = await page.textContent('#sheet .sheet-title');
+        if (tytulMenu !== 'Menu') throw new Error(`po „Wróć” okno „${tytulMenu}” zamiast Menu`);
+        await page.click('#sheet [data-act="menu-zwyciestwo"]');
+        await page.waitForSelector('#sheet .zw-drogi');
+        await page.keyboard.press('Escape');
+        await zamkniete(page, 'po Esc na ekranie dróg');
+        const po = await page.evaluate(() => window.zm!.speed());
+        if (po !== tempo) throw new Error(`po Esc tempo ${po} zamiast ${tempo}`);
+        // na zrzucie ekran dróg otwarty od nowa
+        await otworzDrogi(page);
+      },
+    },
+    {
+      // ten sam ekran na telefonie (390×844): karty jedna pod drugą na całą szerokość okna, bez przewijania w bok, okno
+      // i stopka z „Wróć” na ekranie, lista przewija się w oknie (ostatnia droga widać po przewinięciu: zrzut -dol)
+      name: 'zwyciestwo-drogi-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1`);
+        await waitIdle(page);
+        await otworzDrogi(page, true, 'zwyciestwo-menu-telefon');
+        const o = await ekranDrog(page);
+        await sprawdzDrogi(page, o, 'pl', 'zwykly', DALEJ_START);
+        console.log(
+          `  okno ${o.arkusz}, stopka ${o.stopka}, wiersze ${o.wiersze.map((w) => w.prostokat.join(',')).join(' | ')}, lista się przewija: ${o.przewija}`,
+        );
+        if (o.bok) throw new Error('ekran dróg przewija się w bok na telefonie');
+        const [l, t, r, b] = o.arkusz;
+        if (l < 0 || t < 0 || r > o.ekran[0] || b > o.ekran[1]) throw new Error(`okno wychodzi za ekran: ${o.arkusz}`);
+        if (!o.stopka || o.stopka[2] > o.ekran[0] || o.stopka[3] > o.ekran[1])
+          throw new Error(`stopka z „Wróć” poza ekranem: ${o.stopka}`);
+        const lewe = new Set(o.wiersze.map((w) => w.prostokat[0]));
+        const prawe = new Set(o.wiersze.map((w) => w.prostokat[2]));
+        if (lewe.size !== 1 || prawe.size !== 1)
+          throw new Error(`karty nie w jednej kolumnie: ${[...lewe]} / ${[...prawe]}`);
+        o.wiersze.forEach((w, k) => {
+          if (k && w.prostokat[1] < o.wiersze[k - 1].prostokat[3] - 1)
+            throw new Error(`karta ${w.droga} nachodzi na poprzednią`);
+        });
+        if (!o.przewija)
+          throw new Error(
+            'pięć kart jedna pod drugą mieści się bez przewijania: sprawdź, czy lista jest w jednej kolumnie',
+          );
+        // przewinięcie do dołu: ostatnia droga („Cuda”) w całości nad stopką
+        await page.evaluate(() => {
+          const b = document.querySelector<HTMLElement>('#sheet .sheet-body')!;
+          b.scrollTop = b.scrollHeight;
+        });
+        await dwieKlatki(page);
+        const dol = await ekranDrog(page);
+        const cuda = dol.wiersze[4];
+        if (!dol.stopka || cuda.prostokat[3] > dol.stopka[1] + 1 || cuda.prostokat[1] < 0)
+          throw new Error(`po przewinięciu „Cuda” nie widać w całości: ${cuda.prostokat}, stopka ${dol.stopka}`);
+        await page.screenshot({ path: path.join(OUT, 'zwyciestwo-drogi-telefon-dol.png') });
+        await page.evaluate(() => {
+          document.querySelector<HTMLElement>('#sheet .sheet-body')!.scrollTop = 0;
+        });
+        // stuknięcie „Wróć” wraca do Menu, ekran dróg otwiera się ponownie
+        await page.tap('#sheet [data-act="zw-wroc"]');
+        await page.waitForSelector('#sheet [data-act="menu-zwyciestwo"]');
+        await page.tap('#sheet [data-act="menu-zwyciestwo"]');
+        await page.waitForSelector('#sheet .zw-drogi');
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // angielski: ekran dróg bez polskich liter (tytuł, nazwy, kamienie, „Coming soon”, liczby), zmiana języka przy
+      // otwartym oknie rysuje je od nowa po polsku i z powrotem po angielsku (te same stany kamieni, gra nadal stoi)
+      name: 'en-zwyciestwo-drogi',
+      query: '',
+      lang: 'en',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1.3`);
+        await waitIdle(page);
+        await page.click('#btnMenu');
+        const przycisk = await page.textContent('#sheet [data-act="menu-zwyciestwo"]');
+        if (przycisk !== 'Roads to victory') throw new Error(`przycisk w Menu: ${przycisk}`);
+        await page.click('#sheet [data-act="menu-zwyciestwo"]');
+        await page.waitForSelector('#sheet .zw-drogi .zw-droga');
+        await dwieKlatki(page);
+        const en = await ekranDrog(page);
+        await sprawdzDrogi(page, en, 'en', 'zwykly', DALEJ_START);
+        const pl0 = polskieLitery(en.tekst, []);
+        if (pl0.length) throw new Error(`polskie słowa w ekranie dróg po angielsku: ${pl0.join(' ')}`);
+        if (en.tytul !== 'Roads to victory') throw new Error(`tytuł po angielsku: ${en.tytul}`);
+        if (en.wroc !== 'Back') throw new Error(`przycisk powrotu po angielsku: ${en.wroc}`);
+        const nazwy = en.wiersze.map((w) => w.nazwa).join(' | ');
+        if (nazwy !== 'Power without copper | Za Murem | The premium-tier kill switch | A new estate | Wonders')
+          throw new Error(`nazwy dróg po angielsku: ${nazwy}`);
+        if (en.wiersze[0].wkrotce !== 'Coming soon: research and a copper-free grid.')
+          throw new Error(`„Coming soon” przy technologii: ${en.wiersze[0].wkrotce}`);
+        console.log(`  po angielsku: ${nazwy}; ${en.wiersze[3].liczby}`);
+        // zmiana języka przy otwartym oknie: to samo okno po polsku, z tymi samymi stanami kamieni, i z powrotem
+        const stany = (o: EkranDrog) => o.wiersze.map((w) => w.kamienie.map((k) => k.stan).join()).join(';');
+        await zmienJezyk(page, 'pl');
+        await page.waitForFunction(
+          () => document.querySelector('#sheet .sheet-title')?.textContent === 'Drogi do zwycięstwa',
+        );
+        const pl = await ekranDrog(page);
+        await sprawdzDrogi(page, pl, 'pl', 'zwykly', DALEJ_START);
+        if (stany(pl) !== stany(en)) throw new Error('zmiana języka zmieniła stany kamieni');
+        if (pl.tempo !== 0) throw new Error(`po zmianie języka gra ruszyła: tempo ${pl.tempo}`);
+        if (pl.wiersze[0].nazwa !== 'Prąd bez miedzi') throw new Error(`nazwa po polsku: ${pl.wiersze[0].nazwa}`);
+        await zmienJezyk(page, 'en');
+        await page.waitForFunction(
+          () => document.querySelector('#sheet .sheet-title')?.textContent === 'Roads to victory',
+        );
+        const znowu = await ekranDrog(page);
+        await sprawdzDrogi(page, znowu, 'en', 'zwykly', DALEJ_START);
+        const pl1 = polskieLitery(znowu.tekst, []);
+        if (pl1.length) throw new Error(`polskie słowa po powrocie do angielskiego: ${pl1.join(' ')}`);
+        if (stany(znowu) !== stany(en)) throw new Error('powrót do angielskiego zmienił stany kamieni');
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // ostatni kamień ludności z licznikiem poranków (komputer, polski): stan ustawiony wprost, bo prawdziwa seria to
+      // kilka dób gry (cztery kamienie, trzy poranki z siedmiu, cel 40 przy 49 ludziach). Pod złotym „Cel przez 7 dni”
+      // stoi zdanie o siedmiu porankach dosłownie z „(3 z 7)”, tylko ono i zdanie o płocie przy terenie; technologia,
+      // lek i cuda (z „Wkrótce”) nie mają złotego kamienia ani „Następny:”; `zm.zwyciestwo()` ma serię {3, 7}
+      name: 'zwyciestwo-drogi-seria',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+        await waitIdle(page);
+        const ile = await ustawSerie(page, 3);
+        await otworzDrogi(page);
+        const o = await ekranDrog(page);
+        const oceny = await sprawdzDrogi(page, o, 'pl', 'zwykly', {
+          teren: DALEJ_START.teren!,
+          ludnosc: dalejSeria(3),
+        });
+        const lud = oceny[3];
+        console.log(
+          `  ludność ${lud.postep!.ile} z ${lud.postep!.cel}, seria ${JSON.stringify(lud.seria)}, zdanie: ${o.wiersze[3].kamienie[4].dalej}`,
+        );
+        if (lud.zaliczone !== 4 || JSON.stringify(lud.seria) !== '{"dni":3,"z":7}')
+          throw new Error(`ocena ludności: ${lud.zaliczone} kamieni, seria ${JSON.stringify(lud.seria)}`);
+        if (lud.postep!.ile !== ile || lud.postep!.cel !== 40) throw new Error(`pasek: ${JSON.stringify(lud.postep)}`);
+        // złoty następny jest tylko na ludności (ostatni kamień) i na terenie (pierwszy), nigdzie indziej
+        const zlote = o.wiersze.filter((w) => w.kamienie.some((k) => k.stan === 'nastepny')).map((w) => w.droga);
+        if (zlote.join() !== 'teren,ludnosc') throw new Error(`następny kamień na drogach ${zlote.join()}`);
+        for (const w of o.wiersze.filter((w) => w.wkrotce))
+          if (w.kamienie.some((k) => k.stan === 'nastepny' || k.czytnik === 'Następny: '))
+            throw new Error(`droga ${w.droga} z „Wkrótce” ma następny kamień`);
+        if (o.bok) throw new Error('ekran dróg przewija się w bok');
+        if (o.tempo !== 0) throw new Error(`gra nie stoi przy oknie dróg: tempo ${o.tempo}`);
+      },
+    },
+    {
+      // to samo po angielsku na telefonie (390×844, stuknięcia): zdanie o siedmiu porankach po angielsku z „(3 of 7)”
+      // mieści się w karcie, nie wychodzi poza nią ani w bok, po przewinięciu karty ludności jest w całości nad stopką,
+      // bez polskich liter; drogi z „Coming soon” bez „Next:”
+      name: 'en-zwyciestwo-drogi-seria-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1`);
+        await waitIdle(page);
+        await ustawSerie(page, 3);
+        await otworzDrogi(page, true);
+        const o = await ekranDrog(page);
+        await sprawdzDrogi(page, o, 'en', 'zwykly', { teren: DALEJ_START.teren!, ludnosc: dalejSeria(3) });
+        const pl0 = polskieLitery(o.tekst, []);
+        if (pl0.length) throw new Error(`polskie słowa w ekranie dróg po angielsku: ${pl0.join(' ')}`);
+        if (o.bok) throw new Error('ekran dróg przewija się w bok na telefonie');
+        // karta ludności z przewiniętą listą: zdanie w karcie, w oknie i nad stopką, bez ucinania tekstu
+        const uklad = await page.evaluate(() => {
+          const karta = document.querySelector<HTMLElement>('#sheet .zw-droga[data-droga="ludnosc"]')!;
+          karta.scrollIntoView({ block: 'center' });
+          const zdanie = karta.querySelector<HTMLElement>('.zw-dalej')!;
+          const prostokat = (e: Element) => {
+            const r = e.getBoundingClientRect();
+            return [r.left, r.top, r.right, r.bottom].map(Math.round);
+          };
+          return {
+            karta: prostokat(karta),
+            zdanie: prostokat(zdanie),
+            lista: prostokat(document.querySelector('#sheet .sheet-body')!),
+            stopka: prostokat(document.querySelector('#sheet .sheet-foot')!),
+            ucina: zdanie.scrollWidth > zdanie.clientWidth + 1,
+            wiersze: Math.round(
+              zdanie.getBoundingClientRect().height / parseFloat(getComputedStyle(zdanie).lineHeight),
+            ),
+          };
+        });
+        console.log(`  karta ${uklad.karta}, zdanie ${uklad.zdanie} (${uklad.wiersze} wierszy), lista ${uklad.lista}`);
+        const [kl, kt, kr, kb] = uklad.karta;
+        const [zl, zt, zr, zb] = uklad.zdanie;
+        if (zl < kl || zr > kr || zt < kt || zb > kb)
+          throw new Error(`zdanie poza kartą: ${uklad.zdanie} / ${uklad.karta}`);
+        if (zt < uklad.lista[1] || zb > uklad.lista[3] || zb > uklad.stopka[1] + 1)
+          throw new Error(
+            `zdanie poza widoczną częścią listy: ${uklad.zdanie}, lista ${uklad.lista}, stopka ${uklad.stopka}`,
+          );
+        if (uklad.ucina) throw new Error('zdanie wychodzi poza kartę w bok');
+        if (uklad.wiersze > 6) throw new Error(`zdanie ma ${uklad.wiersze} wierszy`);
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // epilog (komputer, polski): zwycięstwo na żądanie otwiera epilog „Nowe osiedle” z tekstem drogi, zdaniem ścieżki
+      // uchwał (bez ścieżki: neutralne) i czterema liczbami; gra stoi (tempo 0, krok symulacji nie rusza), Esc okna nie
+      // zamyka; „Graj dalej” oddaje tempo sprzed epilogu (3×), zapis zostaje już bez epilogu, a po dwóch sekundach gry
+      // epilog nie wraca i zwycięstwo drogi nie zapisuje się drugi raz. Na zrzucie epilog otwarty od nowa
+      name: 'zwyciestwo-epilog',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=2&cam=hq,1.3`);
+        await waitIdle(page);
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        if (tempo !== 2) throw new Error(`tempo przed epilogiem: ${tempo}`);
+        const przed = await stanZw(page);
+        if (!przed || przed.epilogi.length || przed.wygrane.length)
+          throw new Error(`stan na starcie: ${JSON.stringify(przed)}`);
+        const ile = await ludzi(page);
+        const rodzaj = await page.evaluate(() => window.zm!.wygraj('ludnosc'));
+        if (rodzaj !== 'zwyciestwo') throw new Error(`wygraj(ludnosc) otworzyło „${rodzaj}”`);
+        await page.waitForSelector('#sheet.zwyciestwo');
+        await dwieKlatki(page);
+        const e = await epilogDom(page);
+        console.log(
+          `  epilog: ${e.kicker} / ${e.tytul}; ${e.staty.join(' | ')}; przyciski ${e.przyciski.map((p) => p.tekst).join(' | ')}`,
+        );
+        if (e.kicker !== 'Zwycięstwo' || e.tytul !== 'Nowe osiedle')
+          throw new Error(`nagłówek: ${e.kicker} / ${e.tytul}`);
+        const spis = await sprawdzOpowiesc(page, e.opowiesc, 'pl');
+        console.log(`  spis 2021 w epilogu: ${spis}, ludzi ${ile}`);
+        if (e.sciezka !== SCIEZKA_BRAK.pl) throw new Error(`zdanie ścieżki bez ścieżki: ${e.sciezka}`);
+        const staty = ['Dzień 1', `Ludzi: ${ile}`, 'Zmarli: 0', 'Uchwały: 0'];
+        if (e.staty.join('|') !== staty.join('|'))
+          throw new Error(`liczby epilogu: ${e.staty.join(' | ')} zamiast ${staty.join(' | ')}`);
+        if (e.przyciski.map((p) => `${p.akcja}:${p.tekst}`).join('|') !== 'zw-nowa:Nowa gra|zw-dalej:Graj dalej')
+          throw new Error(`przyciski epilogu: ${JSON.stringify(e.przyciski)}`);
+        naEkranie(e, 'epilog');
+        // gra stoi, dopóki epilog otwarty: tempo 0, krok symulacji bez zmian, Esc go nie zamyka
+        if (e.tempo !== 0) throw new Error(`gra nie stanęła przy epilogu: tempo ${e.tempo}`);
+        await page.waitForTimeout(700);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
+        const stoi = await epilogDom(page);
+        if (!stoi.otwarte || stoi.klasa.includes('drogi') || !stoi.klasa.includes('zwyciestwo'))
+          throw new Error('Esc zamknął epilog (odpowiedź ma być obowiązkowa)');
+        if (stoi.tick !== e.tick || stoi.tempo !== 0)
+          throw new Error(`gra szła przy epilogu: krok ${e.tick} → ${stoi.tick}, tempo ${stoi.tempo}`);
+        // „Graj dalej”
+        await page.click('#sheet [data-act="zw-dalej"]');
+        await zamkniete(page, 'po „Graj dalej”');
+        const po = await page.evaluate(() => window.zm!.speed());
+        if (po !== tempo) throw new Error(`po „Graj dalej” tempo ${po} zamiast ${tempo}`);
+        const stan = await stanZw(page);
+        if (!stan || stan.epilogi.length || stan.wygrane.join() !== 'ludnosc' || stan.kamienie.ludnosc !== 5)
+          throw new Error(`stan po „Graj dalej”: ${JSON.stringify(stan)}`);
+        // zapis zostaje (zwycięstwo nie kasuje gry, w odróżnieniu od porażki), już bez epilogu
+        const zapis = await page.evaluate((k) => {
+          const raw = localStorage.getItem(k);
+          const z = raw ? JSON.parse(raw).gov.zwyciestwo : null;
+          return z ? { epilogi: z.epilogi, wygrane: z.wygrane.length } : null;
+        }, SAVE);
+        if (!zapis || zapis.epilogi.length || zapis.wygrane !== 1)
+          throw new Error(`zapis po „Graj dalej”: ${JSON.stringify(zapis)}`);
+        // dwie sekundy gry bez epilogu: krok symulacji rośnie, okno się nie otwiera, wygrana jest jedna
+        const s0 = await page.evaluate(() => ({ ekran: window.zm!.screen(), tick: window.zm!.sim!.st.tick }));
+        await page.waitForFunction((s) => window.zm!.screen() >= s + 2.2, s0.ekran, { timeout: 20_000 });
+        const s1 = await page.evaluate(() => ({
+          tick: window.zm!.sim!.st.tick,
+          otwarte: !document.getElementById('modal')!.hidden,
+        }));
+        console.log(
+          `  po „Graj dalej”: tempo ${po}, ${s1.tick - s0.tick} kroków w ${Math.round((s1.tick - s0.tick) / 20)} s gry, okno ${s1.otwarte ? 'otwarte' : 'zamknięte'}`,
+        );
+        if (s1.tick - s0.tick < 40)
+          throw new Error(`gra stoi po „Graj dalej”: ${s1.tick - s0.tick} kroków w 2 s przy ekranie`);
+        if (s1.otwarte)
+          throw new Error(`po 2 s gry otworzyło się okno: ${await page.textContent('#sheet .sheet-title')}`);
+        const dalej = await stanZw(page);
+        if (!dalej || dalej.epilogi.length || dalej.wygrane.length !== 1)
+          throw new Error(`epilog wrócił albo wygrana się powtórzyła: ${JSON.stringify(dalej)}`);
+        await page.screenshot({ path: path.join(OUT, 'zwyciestwo-epilog-po.png') });
+        // zrzut: epilog otwarty od nowa (wygrana nie dubluje się w stanie)
+        if ((await page.evaluate(() => window.zm!.wygraj('ludnosc'))) !== 'zwyciestwo')
+          throw new Error('epilog nie otworzył się drugi raz');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        const znowu = await stanZw(page);
+        if (znowu?.wygrane.length !== 1) throw new Error(`wygrana zapisała się drugi raz: ${JSON.stringify(znowu)}`);
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // epilog na telefonie po angielsku (390×844, ścieżka Technokracja): bez polskich liter, okno i oba przyciski na
+      // ekranie, liczby w dwóch kolumnach; zmiana języka przy otwartym epilogu rysuje go po polsku i z powrotem;
+      // stuknięcie „Keep playing” zamyka okno i oddaje tempo, zrzut z epilogiem otwartym od nowa
+      name: 'en-zwyciestwo-epilog-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1`);
+        await waitIdle(page);
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        const ile = await ludzi(page);
+        // ścieżka uchwał ustawiona wprost (do podpisania uchwał trzeba by przejść dni gry): trzecie zdanie epilogu
+        await page.evaluate(() => {
+          window.zm!.gov!.laws.path = 'tech';
+        });
+        if ((await page.evaluate(() => window.zm!.wygraj('ludnosc'))) !== 'zwyciestwo')
+          throw new Error('epilog się nie otworzył');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        await dwieKlatki(page);
+        const e = await epilogDom(page);
+        console.log(
+          `  epilog po angielsku: ${e.kicker} / ${e.tytul}; ${e.staty.join(' | ')}; ${e.przyciski.map((p) => p.tekst).join(' | ')}`,
+        );
+        if (e.kicker !== 'Victory' || e.tytul !== 'A new estate') throw new Error(`nagłówek: ${e.kicker} / ${e.tytul}`);
+        await sprawdzOpowiesc(page, e.opowiesc, 'en');
+        if (e.sciezka !== SCIEZKA_TECH.en) throw new Error(`zdanie ścieżki Technokracja: ${e.sciezka}`);
+        const staty = ['Day 1', `People: ${ile}`, 'Deaths: 0', 'Resolutions: 0'];
+        if (e.staty.join('|') !== staty.join('|')) throw new Error(`liczby epilogu: ${e.staty.join(' | ')}`);
+        if (e.przyciski.map((p) => `${p.akcja}:${p.tekst}`).join('|') !== 'zw-nowa:New game|zw-dalej:Keep playing')
+          throw new Error(`przyciski epilogu: ${JSON.stringify(e.przyciski)}`);
+        const pl0 = polskieLitery(e.tekst, []);
+        if (pl0.length) throw new Error(`polskie słowa w epilogu po angielsku: ${pl0.join(' ')}`);
+        naEkranie(e, 'epilog');
+        if (e.tempo !== 0) throw new Error(`gra nie stanęła przy epilogu: tempo ${e.tempo}`);
+        // liczby w dwóch kolumnach (telefon)
+        const kolumny = await page.evaluate(
+          () =>
+            new Set(
+              [...document.querySelectorAll('#sheet .zw-stat')].map((s) => Math.round(s.getBoundingClientRect().left)),
+            ).size,
+        );
+        if (kolumny !== 2) throw new Error(`liczby epilogu w ${kolumny} kolumnach zamiast dwóch`);
+        // zmiana języka przy otwartym epilogu: po polsku (z tą samą ścieżką i tymi samymi liczbami) i z powrotem
+        await zmienJezyk(page, 'pl');
+        await page.waitForFunction(() => document.querySelector('#sheet .sheet-kicker')?.textContent === 'Zwycięstwo');
+        const pl = await epilogDom(page);
+        await sprawdzOpowiesc(page, pl.opowiesc, 'pl');
+        if (pl.sciezka !== SCIEZKA_TECH.pl) throw new Error(`zdanie ścieżki po polsku: ${pl.sciezka}`);
+        if (pl.staty.join('|') !== ['Dzień 1', `Ludzi: ${ile}`, 'Zmarli: 0', 'Uchwały: 0'].join('|'))
+          throw new Error(`liczby epilogu po polsku: ${pl.staty.join(' | ')}`);
+        if (pl.przyciski.map((p) => p.tekst).join('|') !== 'Nowa gra|Graj dalej')
+          throw new Error('przyciski po polsku');
+        if (pl.tempo !== 0 || !pl.otwarte) throw new Error('po zmianie języka epilog zniknął albo gra ruszyła');
+        await zmienJezyk(page, 'en');
+        await page.waitForFunction(() => document.querySelector('#sheet .sheet-kicker')?.textContent === 'Victory');
+        const en = await epilogDom(page);
+        await sprawdzOpowiesc(page, en.opowiesc, 'en');
+        if (en.sciezka !== SCIEZKA_TECH.en) throw new Error('powrót do angielskiego: zdanie ścieżki');
+        const pl1 = polskieLitery(en.tekst, []);
+        if (pl1.length) throw new Error(`polskie słowa po powrocie do angielskiego: ${pl1.join(' ')}`);
+        // stuknięcie „Keep playing”
+        await page.tap('#sheet [data-act="zw-dalej"]');
+        await zamkniete(page, 'po stuknięciu „Keep playing”');
+        const po = await page.evaluate(() => window.zm!.speed());
+        if (po !== tempo) throw new Error(`po stuknięciu „Keep playing” tempo ${po} zamiast ${tempo}`);
+        // zrzut: epilog otwarty od nowa
+        if ((await page.evaluate(() => window.zm!.wygraj('ludnosc'))) !== 'zwyciestwo')
+          throw new Error('epilog nie otworzył się drugi raz');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // dwie drogi wygrywają naraz: dwa epilogi jeden po drugim (kolejka `epilogi`). Pierwszy otwiera `zm.wygraj`, druga
+      // droga czeka za nim (okno jest otwarte, więc nic się nie otwiera), „Graj dalej” pokazuje drugi epilog w tym samym
+      // trybie pauzy, drugi „Graj dalej” oddaje tempo sprzed epilogów; obie wygrane zostają w stanie, kolejka pusta
+      name: 'zwyciestwo-dwa-epilogi',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=2&cam=hq,1.3`);
+        await waitIdle(page);
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        if ((await page.evaluate(() => window.zm!.wygraj('ludnosc'))) !== 'zwyciestwo')
+          throw new Error('pierwszy epilog się nie otworzył');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        if ((await page.evaluate(() => window.zm!.wygraj('teren'))) !== null)
+          throw new Error('drugi epilog otworzył się nad pierwszym');
+        let stan = await stanZw(page);
+        if (stan?.epilogi.join() !== 'ludnosc,teren') throw new Error(`kolejka epilogów: ${JSON.stringify(stan)}`);
+        const pierwszy = await epilogDom(page);
+        if (pierwszy.tytul !== 'Nowe osiedle') throw new Error(`pierwszy epilog: ${pierwszy.tytul}`);
+        // „Graj dalej”: okno zostaje, ale z drugim epilogiem; gra dalej stoi
+        await page.click('#sheet [data-act="zw-dalej"]');
+        await page.waitForFunction(() => document.querySelector('#sheet .sheet-title')?.textContent === 'Za Murem');
+        const drugi = await epilogDom(page);
+        console.log(`  drugi epilog: ${drugi.kicker} / ${drugi.tytul}: ${drugi.opowiesc}`);
+        if (!drugi.otwarte || drugi.tempo !== 0)
+          throw new Error('po pierwszym „Graj dalej” gra ruszyła albo okno zniknęło');
+        if (drugi.opowiesc !== 'Droga „Za Murem” przebyta do końca.')
+          throw new Error(`tekst drugiego: ${drugi.opowiesc}`);
+        naEkranie(drugi, 'drugi epilog');
+        stan = await stanZw(page);
+        if (stan?.epilogi.join() !== 'teren')
+          throw new Error(`kolejka po pierwszym „Graj dalej”: ${JSON.stringify(stan)}`);
+        // drugi „Graj dalej”: okno się zamyka, tempo wraca, kolejka pusta, obie wygrane w stanie
+        await page.click('#sheet [data-act="zw-dalej"]');
+        await zamkniete(page, 'po drugim „Graj dalej”');
+        const po = await page.evaluate(() => window.zm!.speed());
+        if (po !== tempo) throw new Error(`po drugim „Graj dalej” tempo ${po} zamiast ${tempo}`);
+        stan = await stanZw(page);
+        if (!stan || stan.epilogi.length || stan.wygrane.join() !== 'ludnosc,teren')
+          throw new Error(`stan po obu epilogach: ${JSON.stringify(stan)}`);
+        // na zrzucie drugi epilog otwarty od nowa (wygrana się nie dubluje)
+        if ((await page.evaluate(() => window.zm!.wygraj('teren'))) !== 'zwyciestwo')
+          throw new Error('epilog nie otworzył się drugi raz');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        if ((await stanZw(page))?.wygrane.length !== 2) throw new Error('wygrana zapisała się drugi raz');
+        await dwieKlatki(page);
+      },
+    },
+    {
+      // „Nowa gra” z epilogu: potwierdzenie, „Nie” i Esc wracają do epilogu (decyzja jeszcze nie zapadła, epilog czeka),
+      // „Nowa gra” w potwierdzeniu zdejmuje epilog, zapisuje i idzie na ekran startowy; „Kontynuuj” wczytuje ten zapis
+      // bez epilogu, a zwycięstwo zostaje zapisane w stanie zarządu (wygrane) i nie wraca po dwóch sekundach gry
+      name: 'zwyciestwo-nowa-gra',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1.3`);
+        await waitIdle(page);
+        if ((await page.evaluate(() => window.zm!.wygraj('ludnosc'))) !== 'zwyciestwo')
+          throw new Error('epilog się nie otworzył');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        // „Nowa gra” → potwierdzenie
+        await page.click('#sheet [data-act="zw-nowa"]');
+        await page.waitForSelector('#sheet [data-act="confirm-yes"]');
+        const pytanie = await page.textContent('#sheet .sheet-title');
+        const odpowiedzi = await page.locator('#sheet .sheet-foot button').allTextContents();
+        console.log(`  potwierdzenie: „${pytanie}”, przyciski ${odpowiedzi.join(' | ')}`);
+        if (pytanie !== 'Nowa gra' || odpowiedzi.join('|') !== 'Nie|Nowa gra')
+          throw new Error('potwierdzenie „Nowa gra”');
+        // zmiana języka przy otwartym pytaniu rysuje je od nowa (po angielsku i z powrotem), a pytanie dalej czeka
+        await zmienJezyk(page, 'en');
+        await page.waitForFunction(() => document.querySelector('#sheet .sheet-title')?.textContent === 'New game');
+        const en = await page.locator('#sheet .sheet-foot button').allTextContents();
+        const tekstEn = (await page.textContent('#sheet .sheet-body')) ?? '';
+        if (en.join('|') !== 'No|New game' || !tekstEn.startsWith('You go back to the start screen.'))
+          throw new Error(`pytanie po angielsku: ${en.join(' | ')} / ${tekstEn}`);
+        const polskie = polskieLitery(`${en.join(' ')} ${tekstEn}`, []);
+        if (polskie.length) throw new Error(`polskie słowa w pytaniu po angielsku: ${polskie.join(' ')}`);
+        await zmienJezyk(page, 'pl');
+        await page.waitForFunction(() => document.querySelector('#sheet .sheet-title')?.textContent === 'Nowa gra');
+        // „Nie” → epilog czeka dalej
+        await page.click('#sheet [data-act="confirm-no"]');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        let stan = await stanZw(page);
+        if (stan?.epilogi.join() !== 'ludnosc') throw new Error(`po „Nie” epilog zdjęty: ${JSON.stringify(stan)}`);
+        // Esc na potwierdzeniu → też epilog
+        await page.click('#sheet [data-act="zw-nowa"]');
+        await page.waitForSelector('#sheet [data-act="confirm-yes"]');
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#sheet.zwyciestwo');
+        stan = await stanZw(page);
+        if (stan?.epilogi.join() !== 'ludnosc') throw new Error(`po Esc epilog zdjęty: ${JSON.stringify(stan)}`);
+        if ((await page.evaluate(() => window.zm!.speed())) !== 0) throw new Error('gra ruszyła przy epilogu po „Nie”');
+        // „Nowa gra” → „Nowa gra” w potwierdzeniu: ekran startowy z zapisem
+        await page.click('#sheet [data-act="zw-nowa"]');
+        await page.waitForSelector('#sheet [data-act="confirm-yes"]');
+        await page.click('#sheet [data-act="confirm-yes"]');
+        await page.waitForSelector('#resume:not([hidden])');
+        const zapis = await page.evaluate((k) => {
+          const raw = localStorage.getItem(k);
+          const z = raw ? JSON.parse(raw).gov.zwyciestwo : null;
+          return z ? { epilogi: z.epilogi, wygrane: z.wygrane.map((w: { droga: string }) => w.droga) } : null;
+        }, SAVE);
+        console.log(
+          `  ekran startowy, zapis: ${JSON.stringify(zapis)}, przycisk: ${await page.textContent('#btnResume')}`,
+        );
+        if (!zapis || zapis.epilogi.length || zapis.wygrane.join() !== 'ludnosc')
+          throw new Error(`zapis po „Nowa gra”: ${JSON.stringify(zapis)}`);
+        // „Kontynuuj”: gra wraca bez epilogu, zwycięstwo zostaje w stanie
+        await page.click('#btnResume');
+        await waitIdle(page);
+        const wczytany = await stanZw(page);
+        if (
+          !wczytany ||
+          wczytany.epilogi.length ||
+          wczytany.wygrane.join() !== 'ludnosc' ||
+          wczytany.kamienie.ludnosc !== 5
+        )
+          throw new Error(`stan po „Kontynuuj”: ${JSON.stringify(wczytany)}`);
+        if (!(await page.evaluate(() => document.getElementById('modal')!.hidden)))
+          throw new Error('po „Kontynuuj” otwarte okno');
+        const s0 = await page.evaluate(() => window.zm!.screen());
+        await page.waitForFunction((s) => window.zm!.screen() >= s + 2.2, s0, { timeout: 20_000 });
+        const dalej = await stanZw(page);
+        const otwarte = await page.evaluate(() => !document.getElementById('modal')!.hidden);
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        console.log(
+          `  po „Kontynuuj” i 2 s gry: ${JSON.stringify(dalej)}, okno ${otwarte ? 'otwarte' : 'zamknięte'}, tempo ${tempo}`,
+        );
+        if (otwarte || dalej?.epilogi.length || dalej?.wygrane.length !== 1)
+          throw new Error(`epilog wrócił po „Kontynuuj”: ${JSON.stringify(dalej)}, okno ${otwarte}`);
+        if (tempo < 1) throw new Error(`gra po „Kontynuuj” stoi: tempo ${tempo}`);
+        // na ekranie dróg droga ludnościowa przebyta (odznaka), reszta bez zmian
+        await otworzDrogi(page);
+        const o = await ekranDrog(page);
+        await sprawdzDrogi(page, o, 'pl', 'zwykly', { teren: DALEJ_START.teren! });
+        if (!o.wiersze[3].wygrana) throw new Error('droga ludnościowa po zwycięstwie bez odznaki');
+      },
+    },
+    {
+      // cele drogi ludnościowej z danych 2021 w grze (main.ts liczy je z tabel mieszkańców): Przymorze i Lanciego 500,
+      // Zielonki 120; bez tabel 250; tryb zombie połowa (250 na Przymorzu) i droga leku nazwana „Lek”. Zrzut: ekran
+      // dróg w trybie zombie
+      name: 'zwyciestwo-cel',
+      query: '',
+      allow: BRAK_TABEL,
+      allowUrl: TABELE_URL,
+      run: async (page, base) => {
+        const cel = async (q: string) => {
+          await page.goto(`${base}?${q}&speed=0&cam=hq,1`);
+          await waitIdle(page);
+          const l = (await page.evaluate(() => window.zm!.zwyciestwo()))[3];
+          return l.postep!;
+        };
+        for (const [demo, oczekiwany] of [
+          ['przymorze', 500],
+          ['lanciego', 500],
+          ['zielonki', 120],
+        ] as const) {
+          const p = await cel(`demo=${demo}`);
+          console.log(`  ${demo}: ${p.ile} z ${p.cel}`);
+          if (p.cel !== oczekiwany) throw new Error(`cel na ${demo}: ${p.cel} zamiast ${oczekiwany}`);
+        }
+        // bez tabel mieszkańców (404): cel jak bez danych
+        await bezTabel(page);
+        const bez = await cel('demo=przymorze');
+        console.log(`  przymorze bez tabel: ${bez.ile} z ${bez.cel}`);
+        if (bez.cel !== 250) throw new Error(`cel bez tabel: ${bez.cel} zamiast 250`);
+        await page.unroute('**/data/mieszkancy/**');
+        // tryb zombie: połowa celu z danych, droga leku jako „Lek”
+        const zombie = await cel('demo=przymorze&tryb=zombie');
+        console.log(`  przymorze w trybie zombie: ${zombie.ile} z ${zombie.cel}`);
+        if (zombie.cel !== 250) throw new Error(`cel w trybie zombie: ${zombie.cel} zamiast 250`);
+        await otworzDrogi(page);
+        const o = await ekranDrog(page);
+        await sprawdzDrogi(page, o, 'pl', 'zombie', DALEJ_START);
+        if (o.wiersze[2].nazwa !== 'Lek') throw new Error(`droga leku w trybie zombie: ${o.wiersze[2].nazwa}`);
+      },
+    },
+    {
+      // stary zapis bez dróg (sprzed warunków zwycięstwa) z gromadą ludzi: po „Kontynuuj” gra włącza drogi, kamienie ludności,
+      // które stan już spełnia, zapisują się raz (po jednym wpisie w kronice, bez lawiny co sekundę) i bez epilogu wstecz
+      name: 'zwyciestwo-stary-zapis',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1.3`);
+        await waitIdle(page);
+        // 40 przyjętych (ile da się zmieścić, wypisane niżej), zapis, a z zapisu znika pole `zwyciestwo`
+        const przyjeci = await page.evaluate(() => window.zm!.admit(40));
+        await page.evaluate((k) => {
+          window.zm!.save();
+          const raw = JSON.parse(localStorage.getItem(k)!);
+          delete raw.gov.zwyciestwo;
+          localStorage.setItem(k, JSON.stringify(raw));
+        }, SAVE);
+        const ile = await ludzi(page);
+        await page.goto(`${base}?speed=1`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await waitIdle(page);
+        const s0 = await page.evaluate(() => window.zm!.screen());
+        await page.waitForFunction((s) => window.zm!.screen() >= s + 3.2, s0, { timeout: 20_000 });
+        // progi kamieni ludności: 10, 25 i 50 osób, potem połowa celu z oceny dróg (piąty kamień daje licznik poranków)
+        const cel = (await page.evaluate(() => window.zm!.zwyciestwo()))[3].postep!.cel;
+        const progi = [10, 25, 50, Math.ceil(cel / 2)];
+        const oczekiwane = progi.filter((p) => ile >= p).length;
+        const stan = await stanZw(page);
+        const wpisy = await page.evaluate(() =>
+          window
+            .zm!.gov!.log.map((l) => (l.txt as { pl: string }).pl)
+            .filter((t) => t.startsWith('Droga „Nowe osiedle”')),
+        );
+        const otwarte = await page.evaluate(() => !document.getElementById('modal')!.hidden);
+        console.log(
+          `  przyjęto ${przyjeci}, ludzi ${ile}, kamienie ludności ${stan?.kamienie.ludnosc}/${oczekiwane}, wpisy: ${wpisy.join(' | ')}`,
+        );
+        if (!stan) throw new Error('po wczytaniu starego zapisu gra nie włączyła dróg');
+        if (oczekiwane < 2) throw new Error(`za mało ludzi do próby: ${ile}`);
+        if ((stan.kamienie.ludnosc ?? 0) !== oczekiwane)
+          throw new Error(`kamienie ludności ${stan.kamienie.ludnosc} zamiast ${oczekiwane}`);
+        if (wpisy.length !== oczekiwane)
+          throw new Error(`wpisów w kronice ${wpisy.length} zamiast ${oczekiwane} (lawina?): ${wpisy.join(' | ')}`);
+        if (stan.epilogi.length || stan.wygrane.length || otwarte)
+          throw new Error(`epilog wstecz za stary stan: ${JSON.stringify(stan)}`);
+        if (stan.dniCelu !== 0) throw new Error(`licznik celu ${stan.dniCelu} przy ${ile} z ${cel} osób`);
+        // ekran dróg zgadza się z kroniką
+        await otworzDrogi(page);
+        const o = await ekranDrog(page);
+        const oceny = await sprawdzDrogi(page, o, 'pl', 'zwykly');
+        if (oceny[3].zaliczone !== oczekiwane)
+          throw new Error(`ekran dróg: ${oceny[3].zaliczone} kamieni ludności zamiast ${oczekiwane}`);
+      },
+    },
+  ];
+}
+
+/**
+ * Widok pięter (etap 1, flaga ?pietra=1): przekrój wybranego piętra ze stropem zamiast parteru. Scenariusze wybierają
+ * piętro hakiem window.zm.pietro (jak klik na liście kafelka), a stan widoku sprawdzają, nie tylko fotografują.
+ */
+function pietraShots(): Shot[] {
+  /** wybór piętra i czekanie, aż dorysują się kawałki z przekrojem */
+  const wybierz = async (page: Page, L: number) => {
+    await page.evaluate((L) => window.zm!.pietro(L), L);
+    await waitIdle(page);
+  };
+  /** stan widoku pięter: hak gry, przekrój, zoom, naklejki stropu z PixelLab i tekst notki pod kafelkiem */
+  const stan = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const notka = document.getElementById('floorNote')!;
+      return {
+        ...zm.pietra(),
+        przekroj: zm.view.section,
+        zoom: Math.round(zm.view.cam.zoom * 100) / 100,
+        strop: zm.grafika()?.strop ?? null,
+        notka: notka.hidden ? '' : (notka.textContent ?? ''),
+      };
+    });
+  /** sprawdza, że wybrane jest piętro L, a przekrój jest (nie)widoczny; wypisuje i zwraca stan */
+  const sprawdz = async (page: Page, L: number, przekroj: boolean) => {
+    const st = await stan(page);
+    console.log(`  ${JSON.stringify(st)}`);
+    if (!st.wlaczone) throw new Error('flaga ?pietra=1 nie włączyła widoku pięter');
+    if (st.pietro !== L) throw new Error(`wybrane piętro ${st.pietro} zamiast ${L} (lista ${st.lista})`);
+    if (st.przekroj !== przekroj) throw new Error(`przekrój ${st.przekroj} zamiast ${przekroj} przy zoomie ${st.zoom}`);
+    return st;
+  };
+  /** pierwszy pionek zarządu na ekranie (współrzędne strony): stoi w obrysie siedziby, więc na piętrze jest pod stropem */
+  const pionekZarzadu = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+      const r = document.getElementById('stage')!.getBoundingClientRect();
+      const [x, y] = zm.screenOf(Math.floor(p.x) + 0.5, Math.floor(p.y) + 0.5);
+      return { x: x + r.x, y: y + r.y };
+    });
+  /** lista pięter i panel budowy: położenie, liczba pozycji i czy lista się przewija */
+  const lista = (page: Page) =>
+    page.evaluate(() => {
+      const r = (id: string) => {
+        const e = document.getElementById(id)!;
+        const b = e.getBoundingClientRect();
+        return { hidden: e.hidden, l: b.left, r: b.right, t: b.top, b: b.bottom };
+      };
+      const l = document.getElementById('floorList')!;
+      return {
+        lista: r('floorList'),
+        panel: r('buildPanel'),
+        pozycje: document.querySelectorAll('#floorList [data-pietro]').length,
+        w: innerWidth,
+        h: innerHeight,
+        przewija: l.scrollHeight > l.clientHeight,
+      };
+    });
+  /** położenie kafelka „Piętro” i przycisków prawej grupy paska (px okna) */
+  const pasek = (page: Page) =>
+    page.evaluate(() => {
+      const r = (id: string) => {
+        const e = document.getElementById(id)!;
+        const b = e.getBoundingClientRect();
+        return { l: b.left, r: b.right, t: b.top, b: b.bottom, ukryty: getComputedStyle(e).display === 'none' };
+      };
+      return {
+        kafelek: r('btnFloor'),
+        miasto: r('btnMiasto'),
+        budowa: r('btnBuild'),
+        menu: r('btnMenu'),
+        w: innerWidth,
+      };
+    });
+  /** Układ paska na ekranie szerszym niż telefon (od 641 px): kafelek stoi po prawej, tuż przed „Mapą miasta” (albo
+      „Budową”, gdy mapy nie ma), a nie sam przy lewej krawędzi drugiego wiersza (wybór Mateusza: „po prawej stronie
+      obok buduj i menu”), także gdy pasek się zawinie (polski przy 1440 px). `razem`: na szerokim ekranie także „Budowa”
+      i „Menu” są w jego wierszu, przy prawej krawędzi okna; na tablecie (820 px) prawa grupa zawija się tak samo jak
+      bez flagi (do wiersza zostaje tylko kafelek z „Mapą”), więc tam sprawdzamy sam kafelek. Na telefonie kafelek ma
+      własne miejsce w pierwszym wierszu. */
+  const sprawdzPasek = async (page: Page, razem: boolean) => {
+    const p = await pasek(page);
+    console.log(`  pasek: ${JSON.stringify(p)}`);
+    if (p.w <= 640) return;
+    const srodek = (r: { t: number; b: number }) => (r.t + r.b) / 2;
+    const wWierszu = (r: { t: number; b: number }) => Math.abs(srodek(p.kafelek) - srodek(r)) <= 6;
+    const nastepny = p.miasto.ukryty ? p.budowa : p.miasto;
+    if (!wWierszu(nastepny)) throw new Error('kafelek „Piętro” nie stoi w wierszu następnego przycisku');
+    const odstep = nastepny.l - p.kafelek.r;
+    if (odstep < 0 || odstep > 40)
+      throw new Error(`kafelek „Piętro” stoi ${Math.round(odstep)} px od następnego przycisku`);
+    if (!razem) return;
+    if (!wWierszu(p.budowa) || !wWierszu(p.menu))
+      throw new Error('„Budowa” i „Menu” nie stoją w wierszu kafelka „Piętro”');
+    if (p.menu.r > p.w || p.menu.r < p.w - 24) throw new Error('„Menu” nie stoi przy prawej krawędzi okna');
+  };
+  /** Przymorze, piętro 2 z bliska, z grafiką z PixelLab albo (kod) z ?grafika=kod, czyli strop bez naklejek */
+  const przymorzeP2 = async (page: Page, base: string, kod: boolean) => {
+    await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75${kod ? '&grafika=kod' : ''}`);
+    await waitIdle(page);
+    await wybierz(page, 2);
+    const st = await sprawdz(page, 2, true);
+    if (kod && st.strop !== null) throw new Error('z ?grafika=kod strop wziął naklejki z PixelLab');
+    // przy `npm run shots -- --kod` cała strona dostaje ?grafika=kod, więc naklejek stropu nie ma też w „zwykłym” scenariuszu
+    if (!kod && !KOD && !st.strop)
+      throw new Error('bez ?grafika=kod brak naklejek stropu z PixelLab (atlas strop.png)');
+  };
+  /**
+   * Budynki z wyglądem z PixelLab (atrapa-budynki, flaga ?pietra=1) na piętrze L. Budynek, który ma to piętro
+   * (levels > L), pokazuje przekrój ze stropem, a niższy zostaje z dachem i ozdobą jak na parterze. Sprawdza to
+   * porównanie pikseli obrysu każdego widocznego budynku z wyglądem (z zapasem na ozdobę) na piętrze L i na parterze
+   * (piętro 0 z flagą rysuje je jak bez flagi): niższy budynek wygląda tak samo, wyższy inaczej.
+   */
+  const publiczne = (name: string, L: number, cam: string): Shot => ({
+    name,
+    query: '',
+    w: 2400,
+    h: 900,
+    run: async (page, base) => {
+      await podstawAtrape(page);
+      await page.goto(`${base}?demo=${DEMO_ATRAPA}&pietra=1&speed=0&cam=${cam}`);
+      await waitIdle(page);
+      /** widoczne w całości budynki z wyglądem: obrys z zapasem na ozdoby (wieża nad dachem, portyk przed frontem) */
+      const lista = await page.evaluate(() => {
+        const zm = window.zm!;
+        const sc = zm.view.scene!;
+        const r = document.getElementById('stage')!.getBoundingClientRect();
+        const out: { look: string; levels: number; clip: { x: number; y: number; width: number; height: number } }[] =
+          [];
+        for (const b of sc.w.buildings) {
+          const look = sc.styles[b.id].look;
+          if (!look) continue;
+          const [xa, ya] = zm.screenOf(b.x0 - 1, b.y0 - 5);
+          const [xb, yb] = zm.screenOf(b.x1 + 2, b.y1 + 3);
+          const x = Math.floor(xa + r.x);
+          const y = Math.floor(ya + r.y);
+          const width = Math.ceil(xb + r.x) - x;
+          const height = Math.ceil(yb + r.y) - y;
+          if (x < 0 || y < 0 || x + width > innerWidth || y + height > innerHeight) continue;
+          out.push({ look, levels: b.levels, clip: { x, y, width, height } });
+        }
+        return out;
+      });
+      const klatki = async () => {
+        const out: Buffer[] = [];
+        for (const b of lista) out.push(await page.screenshot({ clip: b.clip }));
+        return out;
+      };
+      await wybierz(page, 0);
+      const parter = await klatki();
+      await wybierz(page, L);
+      const st = await sprawdz(page, L, true);
+      const pietro = await klatki();
+      const zle: string[] = [];
+      let zPietrem = 0;
+      let bezPietra = 0;
+      lista.forEach((b, k) => {
+        const maPietro = b.levels > L;
+        const taki = parter[k].equals(pietro[k]);
+        console.log(`  ${b.look} (${b.levels} kond.): ${maPietro ? 'przekrój' : 'dach'}, jak na parterze: ${taki}`);
+        if (maPietro) zPietrem++;
+        else bezPietra++;
+        if (maPietro === taki)
+          zle.push(`${b.look} (${b.levels} kond.) ${maPietro ? 'bez przekroju' : 'bez dachu i ozdoby'}`);
+      });
+      if (!zPietrem || !bezPietra)
+        throw new Error(`kadr bez budynków z piętrem (${zPietrem}) albo bez niego (${bezPietra}), lista ${st.lista}`);
+      if (zle.length) throw new Error(`budynki z PixelLab na piętrze ${L} rysują się źle: ${zle.join(', ')}`);
+    },
+  });
+  return [
+    // Przymorze, piętro 2 z bliska (zoom 0,75): bloki pod stropem, niższe budynki z dachem
+    { name: 'pietra-przymorze-p2', query: '', run: (page, base) => przymorzeP2(page, base, false) },
+    // to samo bez grafiki z PixelLab: strop bez naklejek (tło, ziarno i szwy z kodu)
+    { name: 'pietra-kod', query: '', run: (page, base) => przymorzeP2(page, base, true) },
+    // Lanciego, piętro 1 przy siedzibie (blok 10G)
+    {
+      name: 'pietra-lanciego-p1',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=lanciego&pietra=1&speed=0&cam=hq,0.85`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await sprawdz(page, 1, true);
+      },
+    },
+    // najwyższy blok Przymorza (nie na brzegu mapy), piętro 11: przekrój mają tylko budynki z więcej niż 11 kondygnacjami,
+    // reszta ma dach
+    {
+      name: 'pietra-wysoki-blok-p11',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.7`);
+        await waitIdle(page);
+        const blok = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const hq = w.buildings[w.hq];
+          const srodek = (b: typeof hq) => [(b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2];
+          const [hx, hy] = srodek(hq);
+          const odHq = (b: typeof hq) => Math.hypot(srodek(b)[0] - hx, srodek(b)[1] - hy);
+          // blok przy brzegu mapy zostawiłby pół kadru pustego; wśród reszty najwyższy, przy remisie najbliższy siedziby
+          const wewnatrz = (b: typeof hq) => b.x0 > 10 && b.y0 > 10 && b.x1 < w.size - 10 && b.y1 < w.size - 10;
+          const wysokie = w.buildings
+            .filter((b) => b.cls === 'blok' && b.levels > 11 && wewnatrz(b))
+            .sort((a, c) => c.levels - a.levels || odHq(a) - odHq(c));
+          const b = wysokie[0];
+          if (!b) return null;
+          const [x, y] = srodek(b);
+          zm.setCam(x, y, 0.7);
+          const nizsze = w.buildings.filter(
+            (q) => q.levels <= 11 && q.levels >= 2 && Math.hypot(srodek(q)[0] - x, srodek(q)[1] - y) < 40,
+          );
+          return {
+            id: b.id,
+            nazwa: b.name,
+            levels: b.levels,
+            wysokich: wysokie.length,
+            nizszychWPoblizu: nizsze.length,
+          };
+        });
+        console.log(`  najwyższy blok: ${JSON.stringify(blok)}`);
+        if (!blok) throw new Error('na Przymorzu nie ma bloku wyższego niż 11 kondygnacji z dala od brzegu mapy');
+        await waitIdle(page);
+        await wybierz(page, 11);
+        await sprawdz(page, 11, true);
+      },
+    },
+    // Zielonki, piętro 1: dom z awansem (druga kondygnacja z flagi) cały pod stropem, ze ścianami działowymi
+    {
+      name: 'pietra-zielonki-dom-p1',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=zielonki&pietra=1&speed=0&cam=hq,1.6`);
+        await waitIdle(page);
+        const dom = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const hq = w.buildings[w.hq];
+          const srodek = (b: typeof hq) => [(b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2];
+          const [hx, hy] = srodek(hq);
+          const daleko = (b: typeof hq) => Math.hypot(srodek(b)[0] - hx, srodek(b)[1] - hy);
+          // dom z drugą kondygnacją (z awansu, bo OSM jej tu nie podaje), najbliższy siedzibie, choćby siedziba sama
+          const domy = w.buildings
+            .filter((b) => b.cls === 'dom' && b.levels >= 2 && b.area >= 60)
+            .sort((a, c) => daleko(a) - daleko(c));
+          const b = domy[0];
+          if (!b) return null;
+          const [x, y] = srodek(b);
+          zm.setCam(x, y, 1.6);
+          return { id: b.id, siedziba: b.id === w.hq, levels: b.levels, pole: b.area, domow: domy.length };
+        });
+        console.log(`  dom: ${JSON.stringify(dom)}`);
+        if (!dom) throw new Error('w Zielonkach żaden dom nie ma piętra');
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await sprawdz(page, 1, true);
+      },
+    },
+    // kafelek „Piętro” z otwartą listą na komputerze (Przymorze, 17 pięter), piętro 2 wybrane
+    {
+      name: 'pietra-lista-pulpit',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.click('#btnFloor');
+        const l = await lista(page);
+        console.log(`  lista: ${JSON.stringify(l)}`);
+        if (l.lista.hidden) throw new Error('kliknięcie kafelka nie otworzyło listy pięter');
+        if (l.pozycje !== 17) throw new Error(`lista ma ${l.pozycje} pozycji zamiast 17`);
+        if (l.lista.r > l.w || l.lista.b > l.h || l.lista.l < 0) throw new Error('lista wystaje poza okno');
+        await sprawdzPasek(page, true);
+      },
+    },
+    // pasek z kafelkiem po angielsku przy 1280 px (inne napisy, inna szerokość grup) i na tablecie (dotyk, 820 px)
+    {
+      name: 'pietra-pasek-en-1280',
+      query: '',
+      w: 1280,
+      h: 800,
+      lang: 'en',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.waitForTimeout(450);
+        await sprawdzPasek(page, true);
+        await sprawdz(page, 2, true);
+      },
+    },
+    {
+      name: 'pietra-pasek-tablet',
+      query: '',
+      w: 820,
+      h: 1180,
+      touch: true,
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.waitForTimeout(450);
+        await sprawdzPasek(page, false);
+        await sprawdz(page, 2, true);
+      },
+    },
+    // to samo na telefonie 390 × 844 (dotknięcie kafelka)
+    {
+      name: 'pietra-lista-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.tap('#btnFloor');
+        const l = await lista(page);
+        console.log(`  lista: ${JSON.stringify(l)}`);
+        if (l.lista.hidden) throw new Error('dotknięcie kafelka nie otworzyło listy pięter');
+        if (l.pozycje !== 17) throw new Error(`lista ma ${l.pozycje} pozycji zamiast 17`);
+        if (l.lista.r > l.w || l.lista.b > l.h || l.lista.l < 0) throw new Error('lista wystaje poza okno');
+        await page.waitForTimeout(150);
+      },
+    },
+    // piętro 1 przy siedzibie: zarząd jest pod stropem, więc pod kafelkiem stoi „Zarząd jest na parterze”, a klik w obrys
+    // siedziby (w miejscu pionka zarządu) nic nie zaznacza i podpowiada to samo na dole
+    {
+      name: 'pietra-zarzad-parter',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=lanciego&pietra=1&speed=0&cam=hq,1`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await page.waitForTimeout(450); // pasek odświeża notkę co 200 ms
+        const st = await sprawdz(page, 1, true);
+        if (st.notka !== 'Zarząd jest na parterze') throw new Error(`notka pod kafelkiem: „${st.notka}”`);
+        const p = await pionekZarzadu(page);
+        await page.mouse.click(p.x, p.y);
+        await page.waitForTimeout(350); // podpowiedź trafia do paska przy odświeżeniu (co 200 ms)
+        const hint = await page.evaluate(() => document.getElementById('hint')!.textContent);
+        const karta = await page.evaluate(() => !document.getElementById('card')!.hidden);
+        console.log(`  klik w pionek zarządu pod stropem: podpowiedź „${hint}”, karta ${karta}`);
+        if (hint !== 'Zarząd jest na parterze')
+          throw new Error(`klik w pionek zarządu pod stropem: podpowiedź „${hint}”`);
+        if (karta) throw new Error('klik w pionek zarządu na piętrze otworzył kartę');
+      },
+    },
+    // widoczny pionek zarządu stoi na dworze tuż pod ścianą budynku: jego głowa leży nad kafelkiem budynku, ale lewy klik
+    // zaznacza go także na piętrze (blokada obrysu go przepuszcza), a prawy przycisk (rozkazy) w ten obrys jest zablokowany
+    {
+      name: 'pietra-pionek-przy-fasadzie',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=lanciego&pietra=1&speed=0&cam=hq,1`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        const cel = await page.evaluate(() => {
+          const zm = window.zm!;
+          const w = zm.sim!.w;
+          const size = w.size;
+          const hq = w.buildings[w.hq];
+          const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && !q.away)!;
+          // wolny kafelek poza budynkami, nad którym (na północy) stoi kafelek budynku, najbliższy siedziby
+          const sx = (hq.x0 + hq.x1) / 2;
+          const sy = (hq.y0 + hq.y1) / 2;
+          let best = -1;
+          let bd = Number.POSITIVE_INFINITY;
+          for (let i = size; i < size * size; i++) {
+            if (w.bid[i] >= 0 || w.bid[i - size] < 0 || w.blocked[i]) continue;
+            const d = Math.hypot((i % size) - sx, Math.floor(i / size) - sy);
+            if (d < bd) {
+              bd = d;
+              best = i;
+            }
+          }
+          p.x = (best % size) + 0.5;
+          p.y = Math.floor(best / size) + 0.5;
+          zm.setCam(p.x, p.y, 1);
+          return {
+            x: p.x,
+            y: p.y,
+            imie: zm.sim!.st.people[p.person].name,
+            kafelekPionka: best,
+            nadNim: w.bid[best - size],
+          };
+        });
+        console.log(`  pionek: ${JSON.stringify(cel)}`);
+        await waitIdle(page);
+        await page.waitForTimeout(250);
+        // głowa pionka (kafelek wyżej niż stopy) leży nad kafelkiem budynku
+        const punkt = await page.evaluate((c) => {
+          const zm = window.zm!;
+          const r = document.getElementById('stage')!.getBoundingClientRect();
+          const [x, y] = zm.screenOf(c.x, c.y - 1.0);
+          return { x: x + r.x, y: y + r.y, tile: zm.view.tileAt(x, y), bid: zm.sim!.w.bid[zm.view.tileAt(x, y)] };
+        }, cel);
+        console.log(`  klik w głowę: ${JSON.stringify(punkt)}`);
+        if (punkt.bid < 0)
+          throw new Error('głowa pionka nie leży nad kafelkiem budynku, scenariusz niczego nie sprawdza');
+        // prawy klik w ten obrys: blokada z podpowiedzią, bez menu rozkazów
+        await page.mouse.click(punkt.x, punkt.y, { button: 'right' });
+        await page.waitForTimeout(350);
+        const prawy = await page.evaluate(() => ({
+          hint: document.getElementById('hint')!.textContent,
+          menu: !document.getElementById('ctx')!.hidden,
+        }));
+        console.log(`  prawy klik: ${JSON.stringify(prawy)}`);
+        if (prawy.hint !== 'Zarząd jest na parterze' || prawy.menu)
+          throw new Error(`prawy klik w obrys nie został zablokowany: ${JSON.stringify(prawy)}`);
+        // lewy klik: pionek zaznaczony (karta osoby z jego imieniem), bez blokady
+        await page.mouse.click(punkt.x, punkt.y);
+        await page.waitForTimeout(350);
+        const lewy = await page.evaluate(() => {
+          const karta = document.getElementById('card')!;
+          return { karta: !karta.hidden, tekst: karta.textContent ?? '' };
+        });
+        console.log(`  lewy klik: karta ${lewy.karta}`);
+        if (!lewy.karta || !lewy.tekst.includes(cel.imie))
+          throw new Error(`lewy klik w głowę widocznego pionka go nie zaznaczył (karta ${lewy.karta})`);
+      },
+    },
+    // to samo na telefonie: notka pod paskiem
+    {
+      name: 'pietra-zarzad-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=lanciego&pietra=1&speed=0&cam=hq,1`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await page.waitForTimeout(450);
+        const st = await sprawdz(page, 1, true);
+        if (st.notka !== 'Zarząd jest na parterze') throw new Error(`notka pod kafelkiem: „${st.notka}”`);
+        // notka stoi pod listą celów, a nie na jej rogu (tam zasłaniałaby licznik „0 / 8”)
+        const u = await page.evaluate(() => {
+          const r = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+          return {
+            cele: { t: r('goals').top, b: r('goals').bottom },
+            notka: { t: r('floorNote').top, b: r('floorNote').bottom },
+          };
+        });
+        console.log(`  cele i notka: ${JSON.stringify(u)}`);
+        if (u.notka.t < u.cele.b) throw new Error('notka „Zarząd jest na parterze” nachodzi na listę celów');
+      },
+    },
+    // piętro 2 z daleka (zoom 0,4, poniżej progu przekroju): dachy i „Przybliż, żeby zajrzeć na piętro”
+    {
+      name: 'pietra-daleko',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.4`);
+        await waitIdle(page);
+        await wybierz(page, 2);
+        await page.waitForTimeout(450);
+        const st = await sprawdz(page, 2, false);
+        if (st.notka !== 'Przybliż, żeby zajrzeć na piętro') throw new Error(`notka pod kafelkiem: „${st.notka}”`);
+      },
+    },
+    // panel budowy otwarty razem z listą pięter: nie zasłaniają się
+    {
+      name: 'pietra-panel-budowy',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&pietra=1&speed=0&cam=hq,0.75`);
+        await waitIdle(page);
+        await wybierz(page, 1);
+        await page.keyboard.press('b');
+        await page.waitForSelector('#buildPanel .tile');
+        await page.waitForTimeout(300); // animacja wysuwania
+        await page.click('#btnFloor');
+        const l = await lista(page);
+        console.log(`  lista: ${JSON.stringify(l.lista)}, panel: ${JSON.stringify(l.panel)}`);
+        if (l.lista.hidden) throw new Error('lista pięter nie otworzyła się przy panelu budowy');
+        if (l.panel.hidden) throw new Error('panel budowy zamknął się po otwarciu listy pięter');
+        const zachodzi =
+          l.lista.l < l.panel.r && l.lista.r > l.panel.l && l.lista.t < l.panel.b && l.lista.b > l.panel.t;
+        if (zachodzi) throw new Error('lista pięter nachodzi na panel budowy');
+        const st = await sprawdz(page, 1, true);
+        // podpowiedź („Przybliż…”, „Zarząd jest na parterze”) nie stoi nad nagłówkiem panelu budowy
+        if (st.notka) throw new Error(`przy otwartym panelu budowy stoi podpowiedź „${st.notka}”`);
+      },
+    },
+    // druga ulica atrapy (szpital 4 kondygnacje, kościół 1, willa 2, remiza 1), piętro 1: szpital i willa pokazują
+    // przekrój ze stropem, kościół i remiza (jedna kondygnacja) dach z wieżą
+    publiczne('pietra-budynek-publiczny-p1', 1, '229,236,0.6'),
+    // pierwsza ulica (ratusz 3, muzeum 2, teatr 3, urząd 3), piętro 2: ratusz, teatr i urząd w przekroju, muzeum z dachem
+    // i portykiem
+    publiczne('pietra-budynek-publiczny-p2', 2, '239,177,0.6'),
   ];
 }

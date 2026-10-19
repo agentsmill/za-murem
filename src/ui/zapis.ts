@@ -30,7 +30,15 @@ export interface Save {
   /** gra sieciowa (src/net/siec.ts, StanSieci): budynki, które nie mogą być siedzibą (świat buduje się z nimi tak
       samo), czy drużyna ma już dom, konto gry i wersja zapisu w chmurze; brak: gra bez sieci */
   siec?: { zajete: string[]; dom: boolean; utracony?: string; konto?: string; wersja?: number };
+  /** widok pięter (?pietra=1): świat buduje się z awansowanymi domami; nieobecne przy wyłączonej fladze, więc zapis
+      sprzed zmiany i zapis bez flagi są bajt w bajt takie same. O fladze wczytanej gry decyduje to pole, nie adres */
+  pietra?: true;
 }
+
+/** czy gra ma widok pięter: zapis wygrywa z adresem (wczytana gra zachowuje to, z czym ją zaczęto), nowa gra czyta
+    `?pietra=1` */
+export const pietraWlaczone = (saved: Pick<Save, 'pietra'> | null, params: URLSearchParams): boolean =>
+  saved ? saved.pietra === true : params.get('pietra') === '1';
 
 /** odcisk świata z danych osiedla: inna wersja generatora daje inny odcisk */
 export function worldKey(
@@ -85,6 +93,8 @@ export function readSave(from: Store | null = store()): Save | null {
     if (s.v !== SAVE_VERSION || s.sim?.v !== 3 || s.gov?.v !== 1 || !s.data?.geo) return null;
     // stan gry sieciowej buduje świat (lista wykluczeń), więc zły kształt to zły zapis (także z chmury)
     if (s.siec && !(Array.isArray(s.siec.zajete) && s.siec.zajete.every((k) => typeof k === 'string'))) return null;
+    // flaga pięter buduje świat, więc inna wartość niż `true` (także `false`) to zły zapis
+    if (s.pietra !== undefined && s.pietra !== true) return null;
     return s;
   } catch {
     return null;

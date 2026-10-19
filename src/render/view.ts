@@ -9,7 +9,9 @@
    wspólnego płotu rysuje się jako duch przyszłego obwodu z postępem (plotDuch.ts, plotLayer.ts). Z grafiką
    z PixelLab (setGrafika) trzepak jest z PixelLab, teren i bloki rysują kawałki ze sceny (scene.art), a pionki
    rysuje postać z animacji PixelLab (ludzieLayer.ts), gdy obsada ma daną pozę: inaczej kod. Leżącego pionka i zwłoki
-   składa warstwa z klatki stania przodem (art/lezenie.ts). */
+   składa warstwa z klatki stania przodem (art/lezenie.ts). Zmianę leżenia na podłodze widok sam zamienia w przejście
+   (przejscia.ts): kładzenie się i wstawanie grają raz z animacji PixelLab, a zwłoki członka zarządu, który zginął
+   podczas gry, upadają i zostają na ostatniej klatce upadku; stan tych przejść jest tylko tu, nie w SimState. */
 
 import {
   Application,
@@ -29,6 +31,7 @@ import { TRADER_HP, ZBIR_HP } from '../sim/handlarz.ts';
 import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
 import { WANDERER_HP } from '../sim/wedrowcy.ts';
 import { ZOMBIE_HP } from '../sim/zombie.ts';
+import { czasPrzejscia } from './art/animacjePozy.ts';
 import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, thrusts, weaponRect } from './art/bron.ts';
 import { korektaDloni } from './art/bronPixellab.ts';
 import {
@@ -46,7 +49,7 @@ import {
   zFrameRect,
   zLieRect,
 } from './art/people.ts';
-import { type Grafika, rzeczSprite } from './art/pixellab.ts';
+import { type Grafika, type PostacLudzi, rzeczSprite } from './art/pixellab.ts';
 import { type Sprite as ArtSprite, FIRE_FRAMES, type ThingSpec } from './art/rzeczy.ts';
 import { CHUNK, type Scene, TILE } from './art/scene.ts';
 import { mockWear, type WearMock } from './atrapy.ts';
@@ -86,12 +89,14 @@ import {
 } from './game.ts';
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
-import { LudzieLayer } from './ludzieLayer.ts';
+import { type KlatkaTekstury, LudzieLayer } from './ludzieLayer.ts';
+import { chunkiParteru, chunkiPietra, przekrojPietra, wnetrzaParteru } from './pietroWidok.ts';
 import { type DuchPlotu, duchPlotu } from './plotDuch.ts';
 import { PlotLayer } from './plotLayer.ts';
 import { crowdJitter, FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
+import { kierunekAnimacjiLezenia, kierunekZwlok, NoweZwloki, PrzejsciaPionkow, STRONA_PODLOGI } from './przejscia.ts';
 import { PrzekrojSasiadow } from './przekrojSasiadow.ts';
-import { burning, IN, setWear, specOf, type ThingLike } from './section.ts';
+import { burning, IN, type SectionScene, setWear, specOf, type ThingLike } from './section.ts';
 import { smokeSources } from './smoke.ts';
 import { SmokeLayer } from './smokeLayer.ts';
 import { TreeLayer } from './treeLayer.ts';
@@ -202,8 +207,10 @@ export class GameView {
   private thingsPending = false;
   /** czy widać przekrój (zbliżenie nad budynkiem z wnętrzem) */
   private cutOn = false;
-  /** kawałki nad budynkiem z wnętrzem */
+  /** kawałki z przekrojem: nad budynkiem z wnętrzem (parter) albo nad budynkami z wybranym piętrem (pietroNr od 1) */
   private cutChunks = new Set<number>();
+  /** wybrane piętro (widok pięter): 0 to parter, przekrój siedziby jak zawsze; od 1 przekrój typowego piętra */
+  private pietroNr = 0;
   /** rzeczy w warstwie pionków: sprite, czy stoi we wnętrzu (widać ją tylko w przekroju), czy się pali */
   private things = new Map<string, { sprite: Sprite; thing: ThingLike; inside: boolean; fire: boolean }>();
   /** tekstury rzeczy po opisie sprite'a (rozmiar i kotwica zależą tylko od rodzaju i ustawienia) */
@@ -259,6 +266,12 @@ export class GameView {
   grafika: Grafika | null = null;
   /** postacie z PixelLab (animacje z atlasu ludzie.png) albo null: pionki rysuje kod */
   private ludzie: LudzieLayer | null = null;
+  /** kładzenie się i wstawanie pionków z PixelLab na podłodze (stan tylko w widoku) */
+  private przejscia = new PrzejsciaPionkow();
+  /** zwłoki powstałe podczas gry (tylko one upadają) i ostatnie kierunki członków zarządu */
+  private zwlokiNowe = new NoweZwloki();
+  /** upadki zwłok w toku: numer rzeczy → czas gry startu, kierunek upadku, postać i wersja kolorystyczna */
+  private upadki = new Map<number, { start: number; dir: number; postac: PostacLudzi; wersja: number }>();
 
   /** workers: false wymusza rysowanie kawałków w głównym wątku (adres ?worker=0) */
   async init(host: HTMLElement, opts: { workers?: boolean } = {}): Promise<void> {
@@ -304,9 +317,11 @@ export class GameView {
     this.grafika = g;
     this.ludzie?.destroy();
     this.ludzie = g?.ludzie ? new LudzieLayer(g.ludzie) : null;
-    // zwłoki dostają teksturę raz, przy powstaniu: po zmianie grafiki rysują się od nowa
+    // zwłoki dostają teksturę raz, przy powstaniu: po zmianie grafiki rysują się od nowa, bez upadku (nie są nowe)
     for (const sp of this.corpseSprites.values()) sp.destroy();
     this.corpseSprites.clear();
+    this.upadki.clear();
+    this.przejscia = new PrzejsciaPionkow();
     for (const e of this.things.values()) e.sprite.destroy();
     this.things.clear();
     for (const a of this.thingArt.values()) a.tex.destroy(true);
@@ -321,6 +336,22 @@ export class GameView {
   /** czy w tej klatce widać przekrój zamiast dachu */
   get section(): boolean {
     return this.cutOn;
+  }
+
+  /** wybrane piętro: 0 to parter, od 1 przekrój typowego piętra (ustawPietro) */
+  get pietro(): number {
+    return this.pietroNr;
+  }
+
+  /** czy w tej klatce widać przekrój piętra (od pierwszego) zamiast dachu */
+  pietroAktywne(): boolean {
+    return przekrojPietra(this.cutOn, this.pietroNr);
+  }
+
+  /** czy w tej klatce widać wnętrza parteru: przekrój na parterze. Na piętrze osoby, rzeczy i światła we wnętrzach
+      siedziby i otwartych sąsiadów są schowane tak jak pod dachem (underRoof). */
+  get wnetrza(): boolean {
+    return wnetrzaParteru(this.cutOn, this.pietroNr);
   }
 
   get width() {
@@ -363,12 +394,9 @@ export class GameView {
         this.slots.push({ sprite, near: null, far: null, cut: null, used: 0, ver: 0, stale: 0 });
       }
     this.pendingFar = n * n;
-    this.cutChunks.clear();
-    if (sc.section) {
-      const b = sc.w.buildings[sc.section.building];
-      for (let cy = Math.floor(b.y0 / CHUNK); cy <= Math.floor(b.y1 / CHUNK); cy++)
-        for (let cx = Math.floor(b.x0 / CHUNK); cx <= Math.floor(b.x1 / CHUNK); cx++) this.cutChunks.add(cy * n + cx);
-    }
+    // widok bierze piętro ze sceny (buildScene: 0, parter)
+    this.pietroNr = sc.pietro;
+    this.cutChunks = this.kawalkiPrzekroju(sc, sc.pietro);
     const side = sc.w.size * TILE;
     this.minZoom = Math.min(this.width, this.height) / side / 1.05;
   }
@@ -392,6 +420,37 @@ export class GameView {
       s.stale = (s.near ? NEAR_BIT : 0) | (s.far ? FAR_BIT : 0) | (s.cut ? CUT_BIT : 0);
     }
     return touched;
+  }
+
+  /** kawałki z przekrojem dla piętra L: od 1 budynki, które to piętro mają, na parterze siedziba i otwarci sąsiedzi */
+  private kawalkiPrzekroju(sc: Scene, L: number): Set<number> {
+    return L >= 1 ? chunkiPietra(sc, L) : chunkiParteru(sc);
+  }
+
+  /**
+   * Wybór piętra (widok pięter): 0 to parter, przekrój siedziby jak zawsze; od 1 przekrój typowego piętra ze sceny
+   * sec, którą wystarczy podać raz (przy 0 i przy następnych wyborach może być null). Łatka {pietro, pietra} idzie
+   * do workerów i na scenę głównego wątku. chunksTouched nie zna piętra, więc redraw nic by nie unieważnił: kawałki
+   * z przekrojem, stare i nowe, dostają nową wersję i tylko ich przekrój jest nieaktualny (NEAR_BIT i FAR_BIT
+   * zostają). Zamówienie rysowane przy poprzednim piętrze wraca z dawną wersją i install je odrzuca, więc wygrywa
+   * ostatni wybór; do czasu nowego przekroju widać stary, bez mrugania.
+   */
+  ustawPietro(L: number, sec: SectionScene | null): void {
+    const sc = this.scene;
+    if (!sc) return;
+    // scenę piętra wysyła się raz: ta sama jest już w scenie i w kopiach u workerów
+    const patch = scenePatchOf(sc, sec && sec !== sc.pietra ? { pietro: L, pietra: sec } : { pietro: L });
+    applyScenePatch(sc, patch);
+    this.painter.patch(patch);
+    const stare = this.cutChunks;
+    this.pietroNr = L;
+    this.cutChunks = this.kawalkiPrzekroju(sc, L);
+    for (const k of new Set([...stare, ...this.cutChunks])) {
+      const s = this.slots[k];
+      s.ver++;
+      if (s.cut) s.stale |= CUT_BIT;
+    }
+    this.odswiezWnetrza();
   }
 
   /** ścięte drzewa ze stanu gry (np. st.felled): przerysowuje kawałki tylko dla nowych */
@@ -548,13 +607,20 @@ export class GameView {
     const z = this.przekrojSas.zmiany(sim.w, sc.section, sim.st.sasiedzi);
     if (!z) return;
     this.redraw(z);
-    const n = sc.chunks;
-    for (const p of z.wnetrze)
-      for (let cy = Math.floor(p.y0 / CHUNK); cy <= Math.floor((p.y0 + p.h - 1) / CHUNK); cy++)
-        for (let cx = Math.floor(p.x0 / CHUNK); cx <= Math.floor((p.x0 + p.w - 1) / CHUNK); cx++)
-          this.cutChunks.add(cy * n + cx);
-    if (z.wnetrze.length)
-      for (const e of this.things.values()) e.inside = this.underRoof(e.thing.x + 0.5, e.thing.y + e.thing.h - 0.5);
+    // na piętrze kawałki z przekrojem to budynki z tym piętrem; kawałki sąsiada wrócą ze zbiorem parteru (chunkiParteru)
+    if (this.pietroNr === 0) {
+      const n = sc.chunks;
+      for (const p of z.wnetrze)
+        for (let cy = Math.floor(p.y0 / CHUNK); cy <= Math.floor((p.y0 + p.h - 1) / CHUNK); cy++)
+          for (let cx = Math.floor(p.x0 / CHUNK); cx <= Math.floor((p.x0 + p.w - 1) / CHUNK); cx++)
+            this.cutChunks.add(cy * n + cx);
+    }
+    if (z.wnetrze.length) this.odswiezWnetrza();
+  }
+
+  /** na nowo liczy, które rzeczy stoją we wnętrzu (pod dachem siedziby albo otwartego sąsiada) */
+  private odswiezWnetrza(): void {
+    for (const e of this.things.values()) e.inside = this.underRoof(e.thing.x + 0.5, e.thing.y + e.thing.h - 0.5);
   }
 
   /** rzeczy gry i dodatki do warstwy pionków (diff po miejscu i opisie sprite'a) */
@@ -587,7 +653,7 @@ export class GameView {
       // rzecz na stole rysuje się po stole (na blacie), krew pod wszystkim, reszta po dolnej krawędzi podstawy
       sprite.zIndex = t.table !== undefined ? t.table + 0.01 : t.kind === 'krew' ? -1 : t.y + t.h;
       const inside = this.underRoof(t.x + 0.5, t.y + t.h - 0.5);
-      sprite.visible = !inside || this.cutOn;
+      sprite.visible = !inside || this.wnetrza;
       this.actors.addChild(sprite);
       this.things.set(key, { sprite, thing: t, inside, fire: burning(t) });
     }
@@ -784,7 +850,7 @@ export class GameView {
           ),
         ]
       : this.lights;
-    const lights = this.cutOn ? all : all.filter((l) => !l.inside);
+    const lights = this.wnetrza ? all : all.filter((l) => !l.inside);
     this.darkness = darknessAt(minutesAt(st.tick));
     // nocą zaznaczenie i droga nad mapą światła (inaczej ciemnieją razem z ziemią), w dzień pod pionkami, nad śladami
     // na ziemi
@@ -796,14 +862,14 @@ export class GameView {
     // rzeczy: meble tylko w przekroju, ogień w kozie i ognisku co 150 ms następna klatka
     const flame = Math.floor(performance.now() / 150) % FIRE_FRAMES;
     for (const e of this.things.values()) {
-      e.sprite.visible = !e.inside || this.cutOn;
+      e.sprite.visible = !e.inside || this.wnetrza;
       if (e.fire && e.sprite.visible) e.sprite.texture = this.artOf(specOf(e.thing, flame)!).tex;
     }
     // plany budowy: duchy budowli z paskiem postępu (w budynku tylko w przekroju)
     this.builds.update(
       this.plans,
       (spec) => this.artOf(spec),
-      (x, y) => !this.cutOn && this.underRoof(x, y),
+      (x, y) => !this.wnetrza && this.underRoof(x, y),
     );
     this.plotDuch.update(this.duch, z);
     // pionki: poza z pracy (rąbie, niesie drewno albo materiał, klęczy, gotuje, siedzi, śpi, wartuje,
@@ -829,9 +895,19 @@ export class GameView {
       const y = pv ? pv[1] + (p.y - pv[1]) * alpha : p.y;
       const pose = poseOf(p, gameT, st.things, p.kind === 'core' && this.feed.feeding(p, st.tick), ctx);
       this.poses.set(p.id, pose);
+      // zmiana leżenia na podłodze uruchamia kładzenie się albo wstawanie; ostatni kierunek i leżenie członka zarządu
+      // zna widok, kiedy jego pionek zniknie, a zwłoki zaczną upadek
+      this.przejscia.obserwuj(p.id, pose.lie?.kind ?? null, gameT, x, y, pose.dir);
+      if (p.kind === 'core' && p.person >= 0) {
+        const postac = this.ludzie?.dane.postacPionka(p, st.people);
+        const wersja = postac ? this.ludzie!.dane.wersjaPionka(p, postac) : 0;
+        this.zwlokiNowe.zapamietaj(p.person, pose.dir, !!pose.lie, wersja);
+      }
       // postać z PixelLab, gdy obsada ma tę pracę (leżącą składa lezenie.ts z jej klatki stania); szwendacze i brakujące
-      // prace rysuje kod. lp i ll to ten sam współdzielony wynik warstwy, więc co najwyżej jedno z nich jest niepuste.
-      const lp = this.ludzieKlatka(p, st, pose, gameT);
+      // prace rysuje kod. przej, lp i ll to ten sam współdzielony wynik warstwy, więc wołamy tylko jedno z nich: co
+      // najwyżej jedno jest niepuste.
+      const przej = this.ludziePrzejscie(p, st, pose, gameT);
+      const lp = przej ? przej.kl : this.ludzieKlatka(p, st, pose, gameT);
       const ll = lp ? null : this.ludzieLezenie(p, st, pose);
       const pl = lp ?? ll;
       sp.texture = pl
@@ -840,7 +916,8 @@ export class GameView {
           ? this.zombieTexture(p.look, pose)
           : this.frameTexture(this.poseTex, this.atlas!, p.look % LOOKS, pose);
       sp.scale.x = lp?.flip ? -1 : 1;
-      if (pose.lie) {
+      // kładzenie się gra klatkami stojącymi na stopach (jak zwykła klatka), więc pozycja jak u stojącego, a nie leżącego
+      if (pose.lie && !przej) {
         const [hx, hy] = lieHead(pose.lie.o);
         let dx = 0;
         let dy = 0;
@@ -860,11 +937,20 @@ export class GameView {
         else sp.anchor.set(0.5, 45 / FH);
         // napierający na siatkę stoją na środkach kafelków: tłum rozsuwamy w widoku, żeby nie był jednym sprite'em
         const [jx, jy] = p.kind === 'zombie' && p.job?.phase === 2 ? this.crowdOffset(p) : [0, 0];
-        sp.position.set(Math.round((x + jx) * TILE), Math.round((y + jy) * TILE));
+        // pobudka: pionek rusza z miejsca, w którym leżał (od pobudki zdążył już ruszyć ścieżką), a prawdziwe położenie
+        // dogania do końca animacji, na początku powoli, na końcu szybciej, jak ktoś, kto wstał i dopiero idzie
+        let px = x;
+        let py = y;
+        if (przej?.pr.rodzaj === 'wstawanie') {
+          const e = przej.u * przej.u;
+          px = przej.pr.x + (x - przej.pr.x) * e;
+          py = przej.pr.y + (y - przej.pr.y) * e;
+        }
+        sp.position.set(Math.round((px + jx) * TILE), Math.round((py + jy) * TILE));
       }
       sp.zIndex = pose.z ?? y;
       // pod dachem nie widać nikogo; w przekroju tak; kto przeszukuje piętro sąsiada, jest na górze (M2 fala 2)
-      sp.visible = (this.cutOn || !this.underRoof(x, y)) && !(p.job?.t === 'upstairs' && p.job.phase === 1);
+      sp.visible = (this.wnetrza || !this.underRoof(x, y)) && !(p.job?.t === 'upstairs' && p.job.phase === 1);
       // obcych widać tylko w świetle: w półmroku sam ciemny zarys, w ciemności nic (szwendacza ciemny zarys)
       if (STRANGERS.has(p.kind)) {
         const vis = strangerVisibility(this.darkness, lightAt(x, y - 0.5, lights, time, this.insideFn), p.kind);
@@ -877,7 +963,7 @@ export class GameView {
       if (selected.has(p.id) && sp.visible) this.markPawn(p, x, y);
       // broń w ręce: nakładka w tej samej klatce co postać (za plecami, gdy idzie od patrzącego)
       // wrogi człowiek (napadnięty handlarz, jego ludzie) też ma broń w ręce
-      const wid = (p.kind === 'core' || p.wrogi) && !pose.lie ? (p.weapon ?? null) : null;
+      const wid = (p.kind === 'core' || p.wrogi) && !pose.lie && !przej ? (p.weapon ?? null) : null;
       let ws = this.weaponSprites.get(p.id);
       // postać z PixelLab celuje z pistoletem narysowanym w klatkach, więc nakładka broni tylko przy innych pozach
       // (klatka zastępcza, czyli stanie mieszkańca bez celowania, broni nie ma: nakładka rysuje się jak przy kodzie)
@@ -923,6 +1009,7 @@ export class GameView {
         sp.destroy();
         this.pawnSprites.delete(id);
         this.ludzie?.dane.zapomnij(id);
+        this.przejscia.zapomnij(id);
         this.poses.delete(id);
         this.feed.forget(id);
         this.xraySprites.get(id)?.destroy();
@@ -930,7 +1017,7 @@ export class GameView {
         this.weaponSprites.get(id)?.destroy();
         this.weaponSprites.delete(id);
       }
-    this.drawCorpses(st);
+    this.drawCorpses(st, gameT);
     this.drawCombat(st);
     // dym z kozy (przez okno) i z ogniska, z czasu gry; widać go także przy dachu
     this.smoke.update(
@@ -938,7 +1025,7 @@ export class GameView {
       gameT,
       this.darkness,
       z,
-      (px, py) => this.cutOn && this.underRoof(px / TILE, py / TILE),
+      (px, py) => this.wnetrza && this.underRoof(px / TILE, py / TILE),
     );
     // noc: ciemność z godziny gry, światła z gry i z listy
     const [x0, y0] = this.toWorld(0, 0);
@@ -964,19 +1051,51 @@ export class GameView {
     );
   }
 
+  /** klatka przejścia pionka z PixelLab (kładzenie się albo wstawanie na podłodze), jego przejście i postęp od 0 do 1;
+      null: brak przejścia, postać nie ma animacji (wtedy leży od razu, a po pobudce od razu stoi) albo przejście właśnie
+      się skończyło (znika). Animacja jest z zachodu albo jego lustra, po stronie głowy leżącego (z kierunku pionka z
+      chwili leżenia), więc łączy się z komórką leżenia bez skoku. */
+  private ludziePrzejscie(p: Pawn, st: SimState, pose: PoseView, gameT: number) {
+    const pr = this.przejscia.aktywne(p.id);
+    if (!pr) return null;
+    const postac = this.ludzie && !pose.zpose ? this.ludzie.dane.postacPionka(p, st.people) : null;
+    const n = postac ? this.ludzie!.dane.klatekPrzejscia(postac, pr.rodzaj) : 0;
+    const czas = gameT - pr.start;
+    const kl =
+      postac && n > 0
+        ? this.ludzie!.przejscie(
+            postac,
+            pr.rodzaj,
+            kierunekAnimacjiLezenia(STRONA_PODLOGI[pr.dir & 3]),
+            czas,
+            this.ludzie!.dane.wersjaPionka(p, postac),
+          )
+        : null;
+    if (!kl) {
+      this.przejscia.zakoncz(p.id);
+      return null;
+    }
+    return { kl, pr, u: Math.min(1, Math.max(0, czas / czasPrzejscia(pr.rodzaj, n))) };
+  }
+
   /** komórka leżenia postaci z PixelLab dla leżącego pionka (w łóżku albo na podłodze) albo null (kod): nie szwendacz,
-      obsada ma jego postać z klatką stania przodem */
+      obsada ma jego postać z klatką stania przodem. Postać z kładzeniem i wstawaniem leży na podłodze głową po stronie,
+      po której kończy się jej upadek w kierunku pionka (STRONA_PODLOGI), żeby przejście łączyło się z leżeniem. */
   private ludzieLezenie(p: Pawn, st: SimState, pose: PoseView) {
     if (!this.ludzie || pose.zpose || !pose.lie) return null;
     const postac = this.ludzie.dane.postacPionka(p, st.people);
     if (!postac) return null;
-    return this.ludzie.lezenie(postac, this.ludzie.dane.wersjaPionka(p, postac), pose.lie.o, pose.lie.kind);
+    const o =
+      pose.lie.kind === 'floor' && this.ludzie.dane.maPrzejscie(postac, 'wstawanie')
+        ? STRONA_PODLOGI[pose.dir & 3]
+        : pose.lie.o;
+    return this.ludzie.lezenie(postac, this.ludzie.dane.wersjaPionka(p, postac), o, pose.lie.kind);
   }
 
-  /** zwłoki człowieka z PixelLab, na podłodze; środek komórki to środek ciała, więc kładzie się go środkiem kafelka.
+  /** postać zwłok człowieka z PixelLab, jej wersja kolorystyczna i indeks osoby zmarłego z zarządu (−1: inny zmarły).
       Zmarły z zarządu to ta sama postać co za życia (wpis zmarłych zna id osoby), inni to dorosły mieszkaniec po
       wyglądzie z gry (rzecz zna tylko wygląd). null: zwłoki rysuje kod */
-  private zwlokiLudzi(st: SimState, t: { id: number; n: number; dead?: number }, o: number) {
+  private zwlokiPostac(st: SimState, t: { id: number; n: number; dead?: number }) {
     if (!this.ludzie) return null;
     const zmarly = t.dead !== undefined ? st.dead?.[t.dead] : undefined;
     const osoba = zmarly?.kind === 'core' && zmarly.id ? st.people.findIndex((q) => q.id === zmarly.id) : -1;
@@ -987,7 +1106,20 @@ export class GameView {
       { id: t.id, kind: osoba >= 0 ? 'core' : 'zwloki', person: osoba, look: t.n },
       postac,
     );
-    return this.ludzie.lezenie(postac, wersja, o, 'floor');
+    return { postac, wersja, osoba };
+  }
+
+  /** zwłoki bez upadku z PixelLab, na podłodze: komórka leżenia z klatki stania; jej środek to środek ciała, więc kładzie
+      się ją środkiem kafelka. null: zwłoki rysuje kod */
+  private zwlokiLudzi(zw: { postac: PostacLudzi; wersja: number }, o: number) {
+    return this.ludzie?.lezenie(zw.postac, zw.wersja, o, 'floor') ?? null;
+  }
+
+  /** klatka z atlasu (upadek albo ostatnia klatka upadku) na sprite'cie zwłok: kotwica w środku leżącego ciała */
+  private ustawKlatke(sp: Sprite, kl: KlatkaTekstury): void {
+    sp.texture = kl.tex;
+    sp.anchor.set(kl.ax / kl.w, kl.ay / kl.h);
+    sp.scale.x = kl.flip ? -1 : 1;
   }
 
   /** klatka atlasu szwendaczy: chód albo ugryzienie, kierunek, klatka */
@@ -1027,41 +1159,72 @@ export class GameView {
   }
 
   /** zwłoki ludzi (postać z PixelLab albo atlas ludzi z kodu, leżenie na podłodze) i trupy szwendaczy (atlas szwendaczy)
-      na ziemi */
-  private drawCorpses(st: SimState): void {
+      na ziemi. Zwłoki członka zarządu, który zginął podczas gry, upadają (animacja z PixelLab, raz) i zostają na jej
+      ostatniej klatce; te z wczytanej gry albo po śmierci we śnie leżą od razu. Inne zwłoki to komórka leżenia. */
+  private drawCorpses(st: SimState, gameT: number): void {
     const seen = new Set<number>();
     for (const t of st.things) {
       if (t.kind !== 'zwloki' && t.kind !== 'trup') continue;
       seen.add(t.id);
+      // pierwsze pytanie o rzecz po pierwszej klatce widoku to zgon, który zdarzył się podczas gry
+      const nowe = this.zwlokiNowe.nowe(t.id);
       let sp = this.corpseSprites.get(t.id);
       if (!sp) {
         const o = t.id & 3;
-        const lz = t.kind === 'zwloki' ? this.zwlokiLudzi(st, t, o) : null;
+        const zw = t.kind === 'zwloki' ? this.zwlokiPostac(st, t) : null;
+        const upadek = zw && this.ludzie!.dane.maPrzejscie(zw.postac, 'smierc');
+        // kierunek upadku: ostatni, w którym patrzył zmarły (pionek znika w tym samym ticku), albo z numeru rzeczy
+        const dir = zw && nowe ? this.zwlokiNowe.kierunekZgonu(zw.osoba, t.id) : kierunekZwlok(t.id);
+        // zwłoki nowe mają to ubranie, w którym zginął pionek (wersja zwłok z danych to oryginał)
+        const wersja = (zw && nowe ? this.zwlokiNowe.wersjaZgonu(zw.osoba) : undefined) ?? zw?.wersja ?? 0;
+        const lz = zw && !upadek ? this.zwlokiLudzi(zw, o) : null;
         const tex = lz
           ? lz.tex
-          : t.kind === 'trup'
-            ? this.zombieLieTexture(t.n, o)
-            : this.frameTexture(this.poseTex, this.atlas!, t.n % LOOKS, {
-                pose: 'walk',
-                dir: 0,
-                frame: 0,
-                lie: { kind: 'floor', o, x: 0, y: 0 },
-              });
+          : upadek
+            ? Texture.EMPTY
+            : t.kind === 'trup'
+              ? this.zombieLieTexture(t.n, o)
+              : this.frameTexture(this.poseTex, this.atlas!, t.n % LOOKS, {
+                  pose: 'walk',
+                  dir: 0,
+                  frame: 0,
+                  lie: { kind: 'floor', o, x: 0, y: 0 },
+                });
         sp = new Sprite(tex);
         sp.anchor.set(0.5, 0.5);
+        if (zw && upadek) {
+          // ostatnia klatka upadku to leżenie; gdy zwłoki są nowe, upadek gra od początku (poniżej)
+          this.ustawKlatke(sp, this.ludzie!.zwloki(zw.postac, dir, wersja)!);
+          if (nowe && !this.zwlokiNowe.lezal(zw.osoba))
+            this.upadki.set(t.id, { start: gameT, dir, postac: zw.postac, wersja });
+        }
         sp.position.set((t.x + 0.5) * TILE, (t.y + 0.5) * TILE);
         // leży na ziemi: rysuje się przed tymi, którzy stoją nad nim
         sp.zIndex = t.y + 0.3;
         this.actors.addChild(sp);
         this.corpseSprites.set(t.id, sp);
       }
-      sp.visible = this.cutOn || !this.underRoof(t.x + 0.5, t.y + 0.5);
+      sp.visible = this.wnetrza || !this.underRoof(t.x + 0.5, t.y + 0.5);
     }
     for (const [id, sp] of this.corpseSprites)
       if (!seen.has(id)) {
         sp.destroy();
         this.corpseSprites.delete(id);
+        this.upadki.delete(id);
       }
+    // upadki w toku: klatka z czasu od startu, a po ostatniej sprite zostaje na klatce, na której leżą zwłoki
+    for (const [id, u] of this.upadki) {
+      const sp = this.corpseSprites.get(id);
+      const kl = sp && this.ludzie?.przejscie(u.postac, 'smierc', u.dir, gameT - u.start, u.wersja);
+      if (sp && kl) {
+        this.ustawKlatke(sp, kl);
+        continue;
+      }
+      const lezy = this.ludzie?.zwloki(u.postac, u.dir, u.wersja);
+      if (sp && lezy) this.ustawKlatke(sp, lezy);
+      this.upadki.delete(id);
+    }
+    this.zwlokiNowe.koniecKlatki();
   }
 
   /** rozsunięcie napierającego szwendacza (kafelki): od siatki, którą naciska (job.target), wzdłuż niej i w głąb ulicy */
@@ -1153,10 +1316,13 @@ export class GameView {
     }
   }
 
-  /** pionek pod punktem ekranu (tylko rdzeń) */
+  /** pionek pod punktem ekranu (tylko rdzeń). Bez przekroju piętra bez sprawdzania widoczności, jak zawsze (parter
+      i piętro wybrane, ale oglądane z daleka); gdy widać przekrój piętra od pierwszego, wnętrza parteru są schowane pod
+      stropem albo dachem, więc ukrytego nie da się kliknąć */
   pick(st: SimState, sx: number, sy: number): Pawn | null {
     const [wx, wy] = this.toWorld(sx, sy);
-    return pawnAt(st.pawns, wx / TILE, wy / TILE, isBoard);
+    const aktywne = this.pietroAktywne();
+    return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isBoard(p) && (!aktywne || !this.underRoof(p.x, p.y)));
   }
 
   /** mieszkaniec siedziby pod punktem ekranu: tylko pionki `resident` z osobą z generatora (person ≥ 0), bo tylko
@@ -1164,7 +1330,7 @@ export class GameView {
       Zarząd ma pierwszeństwo, więc wołający pyta najpierw `pick`. */
   pickResident(st: SimState, sx: number, sy: number): Pawn | null {
     const [wx, wy] = this.toWorld(sx, sy);
-    return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isLokator(p) && (this.cutOn || !this.underRoof(p.x, p.y)));
+    return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isLokator(p) && (this.wnetrza || !this.underRoof(p.x, p.y)));
   }
 
   /** kafelek pod punktem ekranu */

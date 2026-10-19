@@ -2,13 +2,17 @@
    Laptop: Chromium bez dławienia. Telefon: ekran 390×844 i procesor zdławiony 4× (CDP).
    Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
    Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5] [--m2]
-   [--demo=lanciego] [--kod]
+   [--demo=lanciego] [--kod] [--pietro=2]
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
    --noc: 22:00 z trzema światłami przy siedzibie, czyli koszt mapy światła; --m2: budowa z fali 1,
    czyli atrapa pustych mieszkań w przekroju, cztery plany z paskami postępu i podgląd stawiania; --demo: inne demo
-   niż Przymorze; --kod: wszystko rysowane kodem, bez grafiki z PixelLab, do porównań przed i po).
+   niż Przymorze (--demo=atrapa-budynki: mapa z każdym z 11 wyglądów budynków z PixelLab, tests/unit/atrapa-budynki.ts);
+   --kod: wszystko rysowane kodem, bez grafiki z PixelLab, do porównań przed i po;
+   --pietro=N: widok pięter (?pietra=1) z wybranym piętrem N po wczytaniu, przed pomiarem; z --zoom=0.6 przekrój
+   jest włączony, a przy 0 to piętro 0 z flagą, do porównania z przebiegiem bez tej opcji).
    Zawsze z dymem: koza zarządu rozpalona w stanie gry i ognisko na podwórku. */
 
+import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
@@ -24,6 +28,10 @@ const ZOOM = Number(process.argv.find((a) => a.startsWith('--zoom='))?.slice(7))
 const M2 = process.argv.includes('--m2');
 const DEMO = process.argv.find((a) => a.startsWith('--demo='))?.slice(7) || 'przymorze';
 const KOD = process.argv.includes('--kod');
+/** --pietro=N: flaga ?pietra=1 i wybór piętra N (także 0) przez window.zm.pietro; bez opcji gra jak dotąd, bez flagi */
+const PIETRO_ARG = process.argv.find((a) => a.startsWith('--pietro='))?.slice(9);
+const PIETRO = PIETRO_ARG === undefined ? null : Number(PIETRO_ARG);
+if (PIETRO !== null && !Number.isInteger(PIETRO)) throw new Error(`--pietro=${PIETRO_ARG}: oczekuję liczby całkowitej`);
 const SECONDS = 10;
 
 interface Result {
@@ -50,10 +58,24 @@ try {
       hasTouch: dev.cpu > 1,
     });
     const page = await ctx.newPage();
+    if (DEMO === DEMO_ATRAPA) await podstawAtrape(page);
     await page.goto(
-      `${s.base}?demo=${DEMO}&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}${ZOMBIE ? '&tryb=zombie&stado=60&godzina=23' : ''}${M2 ? '&mieszkania=atrapa' : ''}${KOD ? '&grafika=kod' : ''}`,
+      `${s.base}?demo=${DEMO}&perf=${PAWNS}&cam=hq,${ZOOM}&speed=${SPEED}${NO_WORKER ? '&worker=0' : ''}${NIGHT ? '&godzina=22&swiatla=test' : ''}${ZOMBIE ? '&tryb=zombie&stado=60&godzina=23' : ''}${M2 ? '&mieszkania=atrapa' : ''}${KOD ? '&grafika=kod' : ''}${PIETRO === null ? '' : '&pietra=1'}`,
     );
     await waitIdle(page);
+    if (PIETRO !== null) {
+      // wybór piętra jak kliknięcie na liście kafelka (pierwsze sectionPietra liczy się tu, przed pomiarem klatek)
+      const t = await page.evaluate((n) => {
+        const zm = window.zm!;
+        const t0 = performance.now();
+        zm.pietro(n);
+        return performance.now() - t0;
+      }, PIETRO);
+      await waitIdle(page);
+      const st = await page.evaluate(() => ({ ...window.zm!.pietra(), przekroj: window.zm!.view.section }));
+      console.log(`${dev.name}: piętro ${PIETRO}: wybór ${t.toFixed(0)} ms, stan ${JSON.stringify(st)}`);
+      if (st.pietro !== PIETRO) throw new Error(`piętro ${PIETRO} nie zostało wybrane (lista ${st.lista})`);
+    }
     // dym: koza zarządu rozpalona w stanie gry i ognisko na podwórku
     const puffs = await page.evaluate(async () => {
       const zm = window.zm!;

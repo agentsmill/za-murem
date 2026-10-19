@@ -7,6 +7,7 @@
 import type { Dir } from '../../world/world.ts';
 import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
+import { stropKolor } from './strop.ts';
 
 const PX = 32; // pikseli grafiki na metr (TILE ze scene.ts)
 /** wysokość frontu ściany: dolny pas kafelka ściany, kiedy na południe od niej nie ma ściany */
@@ -43,6 +44,7 @@ export const NB = { N: 1, E: 2, S: 4, W: 8, NE: 16, SE: 32, SW: 64, NW: 128 } as
  *   poziomej, E albo W: w pionowej), room to pomieszczenie po drugiej stronie, lit to nocne okno
  *   ze światłem z wnętrza.
  * - stairs: up to kierunek wchodzenia; mask to sąsiedzi będący schodami (poręcz z pozostałych boków).
+ * - strop: widok piętra, płyta stropowa zakrywa posadzkę mieszkania; walls to maska sąsiednich ścian jak w floor.
  */
 export type InteriorTile =
   | { kind: 'floor'; room: RoomKind; walls?: number }
@@ -56,9 +58,12 @@ export type InteriorTile =
       broken?: boolean;
       /** zabite deskami (M2 fala 2): dwie deski w poprzek skrzydła */
       boarded?: boolean;
+      /** zamknięte (widok piętra): skrzydło zamyka przejście zamiast progu */
+      closed?: boolean;
     }
   | { kind: 'window'; mask: number; out: number; room: RoomKind; lit?: boolean; facade?: number; broken?: boolean }
-  | { kind: 'stairs'; up: Dir; mask?: number };
+  | { kind: 'stairs'; up: Dir; mask?: number }
+  | { kind: 'strop'; walls?: number };
 
 /** kolory wnętrza; bazowe z palette.ts */
 const K = {
@@ -471,6 +476,10 @@ function doorColor(
     const c = boards(t.vertical, px, py, s);
     if (c !== null) return c;
   }
+  if (t.closed) {
+    const c = closedLeaf(t.vertical, leaf, ax, ay, px, py, s);
+    if (c !== null) return c;
+  }
   if (!t.vertical) {
     if (py >= FT) {
       // front: ościeżnica, skrzydło, nad nim kawałek ściany
@@ -552,6 +561,36 @@ function boards(vertical: boolean, px: number, py: number, s: number): number | 
   }
   if (py >= 4 && py <= 27 && ((px >= 9 && px <= 11) || (px >= 20 && px <= 22))) return wood(py - 4, px);
   return null;
+}
+
+/** skrzydło zamkniętych drzwi widziane z góry, zamiast progu: jasna płyta drewna między ościeżnicami, klamka przy
+    krawędzi; null: tu drzwi wyglądają jak zawsze (front ściany, ościeża, przecięte skrzydło przy froncie) */
+function closedLeaf(
+  vertical: boolean,
+  leaf: number,
+  ax: number,
+  ay: number,
+  px: number,
+  py: number,
+  s: number,
+): number | null {
+  // u biegnie wzdłuż skrzydła, v w poprzek: słoje wzdłuż, wierzch jaśniejszy od frontu
+  const wood = (u: number, v: number) => {
+    const g = vnoise(u, v * 3, 9, s + 703);
+    return shade(g > 0.66 ? K.ven1 : g < 0.12 ? shade(leaf, 1.08) : leaf, 1.12);
+  };
+  if (!vertical) {
+    if (py >= FT - 2 || px <= 2 || px >= 29) return null;
+    if (px === 3 || px === 28) return K.frame;
+    if (py === 0) return K.edge;
+    if (px >= 23 && px <= 24 && py >= 9 && py <= 10) return K.handle;
+    return wood(ax, ay);
+  }
+  if (py <= 2 || py >= 29) return null;
+  if (py === 3 || py === 28) return K.frame;
+  if (px === 0 || px === 31) return K.edge;
+  if (py >= 23 && py <= 24 && px >= 9 && px <= 10) return K.handle;
+  return wood(ay, ax);
 }
 
 function threshold(ent: boolean, ax: number, ay: number, s: number): number {
@@ -711,6 +750,8 @@ export function interiorColor(t: InteriorTile, tx: number, ty: number, px: numbe
       return windowColor(t, ax, ay, px, py, s);
     case 'stairs':
       return stairsColor(t, ax, ay, px, py, s);
+    case 'strop':
+      return stropKolor(null, ax, ay);
     default:
       return 0xff00ff;
   }

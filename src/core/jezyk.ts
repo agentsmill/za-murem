@@ -78,3 +78,14 @@ export function liczba(v: number, cyfry: number, lang: Lang): string {
   const s = String(Math.abs(r));
   return (r < 0 ? '−' : '') + (lang === 'pl' ? s.replace('.', ',') : s);
 }
+
+/** polska liczba mnoga z liczbą: forma dla 1 („1 osoba”), dla 2–4 poza 12–14 („3 osoby”, „22 osoby”) i dla reszty
+    („5 osób”, „12 osób”, „0 osób”); wołający podaje trzy formy, liczba jest zaokrąglona do całkowitej */
+export function mnogaPl(n: number, jedna: string, kilka: string, wiele: string): string {
+  const k = Math.round(n);
+  const a = Math.abs(k);
+  let forma = wiele;
+  if (a === 1) forma = jedna;
+  else if (a % 10 >= 2 && a % 10 <= 4 && (a % 100 < 12 || a % 100 > 14)) forma = kilka;
+  return `${liczba(k, 0, 'pl')} ${forma}`;
+}

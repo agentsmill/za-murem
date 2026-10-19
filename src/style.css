@@ -1020,6 +1020,104 @@ a.btn {
   font: 400 12px / 1.2 var(--f-body);
 }
 
+/* kafelek „Piętro” (src/ui/pietra.ts, tylko z ?pietra=1): pole paska, ale przycisk. Lista pięter stoi pod nim jak menu
+   kontekstowe (.ctx, nad panelem budowy i przyciskami mapy) i kończy się przy jego prawej krawędzi, bo kafelek jest
+   po prawej. Podpowiedź stoi pod paskiem, a nie pod kafelkiem, żeby po zawinięciu paska nie zasłaniała jego przycisków.
+   Na telefonie kafelek jest w pierwszym wierszu paska przy „Mapie”: w drugim (tempo, alarm, budowa, menu) nie ma już
+   miejsca, a pierwszy zawija się dopiero przy bardzo wąskim ekranie (360 px z długim zegarem: jeden wiersz więcej) */
+/* Kafelek stoi po prawej, obok „Mapy miasta”, „Budowy” i „Menu”, także gdy pasek się zawinie (polski przy 1440 px:
+   drugi wiersz zaczynał się wtedy od kafelka przy lewej krawędzi). Jego pole rośnie jak .spacer i przyciska kafelek do
+   prawej krawędzi pola, więc w wierszu bez .spacer (zawinięcie tuż przed kafelkiem) wolne miejsce zabiera ono, a nie
+   `margin-left: auto` „Mapy miasta” z miasto.css, i kafelek zostaje tuż przed nią. Jeśli zawinie się za kafelkiem,
+   „Mapa miasta” sama odsuwa swoją grupę do prawej (jak bez flagi). Nic nie trzeba wstawiać między #btnMiasto
+   i #btnBuild (miasto.css opiera się na #btnMiasto + #btnBuild), a bez flagi kafelek jest ukryty i pasek wygląda jak
+   dawniej. */
+.floor-sel:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+.floor-anchor {
+  position: relative;
+}
+.stat.floor {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.stat.floor:hover {
+  border-color: var(--ink-dim);
+}
+.stat.floor[aria-expanded="true"] {
+  border-color: var(--lamp);
+}
+.floor-list {
+  top: 100%;
+  right: 0;
+  min-width: 150px;
+  margin-top: 6px;
+  /* najwyżej 20 pięter: dalej przewijanie */
+  max-height: calc(100dvh - var(--top-h, 56px) - 24px);
+  overflow-y: auto;
+  z-index: 6;
+}
+/* pasek zawinięty, kafelek przy lewej krawędzi okna: lista zaczyna się przy jego lewej krawędzi (stronaListy) */
+.floor-list.floor-list-lewa {
+  right: auto;
+  left: 0;
+}
+.floor-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.floor-item.on,
+.floor-item.on:hover,
+.floor-item.on:focus-visible {
+  background: var(--lamp);
+  color: #1d1a14;
+}
+.floor-n {
+  min-width: 1.6em;
+  font: 700 16px / 1.1 var(--f-sign);
+  font-variant-numeric: tabular-nums;
+}
+.floor-t {
+  font: 500 14px / 1.2 var(--f-body);
+}
+.floor-note {
+  position: absolute;
+  top: calc(100% + 6px);
+  /* na komputerze z lewej strony przycisków mapy (zoom) pod paskiem */
+  right: 64px;
+  z-index: 5;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 24px));
+  margin: 0;
+  padding: 6px 10px;
+  background: rgb(20 22 24 / 0.9);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.3;
+  pointer-events: none;
+}
+@media (max-width: 640px) {
+  .floor-sel {
+    order: -1;
+  }
+  .stat.floor {
+    min-width: 40px;
+    padding: 2px 4px 3px;
+  }
+  /* przyciski mapy są na telefonie nisko, ale lista celów zajmuje całą szerokość pod paskiem (na rogu zasłaniałaby jej
+     licznik), więc podpowiedź idzie pod nią, jak komunikat o przybyszach (--goals-h mierzy main.ts) */
+  .floor-note {
+    right: 0;
+    top: calc(100% + var(--goals-h, 0px) + 13px);
+  }
+}
+
 .modal {
   position: fixed;
   inset: 0;

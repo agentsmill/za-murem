@@ -19,6 +19,7 @@ import {
   setNight,
   signLaw,
 } from '../../src/gov/zarzad.ts';
+import { grajDalej } from '../../src/gov/zwyciestwo.ts';
 import { START_MINUTES, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { applyGov } from '../../src/sim/gov.ts';
 import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
@@ -547,7 +548,8 @@ function firstNight(key: string) {
       if (p.k === 'raport') ackReport(gov);
       else if (p.k === 'uchwala') applyGov(sim.st, w, signLaw(gov, i, p.options.find((o) => o.s === 'ok')?.id ?? null));
       else if (p.k === 'karta') applyGov(sim.st, w, confirmNight(gov, i));
-      else
+      else if (p.k === 'zwyciestwo') grajDalej(gov);
+      else if (p.k === 'wydarzenie')
         applyGov(
           sim.st,
           w,
@@ -560,6 +562,11 @@ function firstNight(key: string) {
             ),
           ),
         );
+      else {
+        // nowy rodzaj okna zarządu bez obsługi tutaj ma paść przy kompilacji (tsc), a nie kręcić pętli w nieskończoność
+        const nic: never = p;
+        throw new Error(`okno zarządu bez obsługi: ${JSON.stringify(nic)}`);
+      }
     }
   }
   return { sim, gov, decisions };

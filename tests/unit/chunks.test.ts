@@ -15,6 +15,7 @@ import {
   type WorkerLike,
   WorkerPainter,
 } from '../../src/render/chunks.ts';
+import { sectionPietra } from '../../src/render/pietro.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
@@ -104,7 +105,8 @@ describe('dane sceny dla workera', () => {
   it('niosą tylko to, czego potrzebuje rysowanie (bez siatek symulacji, nazw i tagów)', () => {
     const cs = chunkSceneOf(przymorze());
     expect(Object.keys(cs.w).sort()).toEqual(['bid', 'buildings', 'size', 'terr', 'trees']);
-    expect(Object.keys(cs.w.buildings[0]).sort()).toEqual(['cls', 'entrances', 'id', 'x0', 'x1', 'y0', 'y1']);
+    // levels idzie dla widoku pięter (wybór budynków z piętrem L), bo styl tnie je do 16
+    expect(Object.keys(cs.w.buildings[0]).sort()).toEqual(['cls', 'entrances', 'id', 'levels', 'x0', 'x1', 'y0', 'y1']);
   });
 });
 
@@ -281,5 +283,57 @@ describe('przerysowanie po zmianie na mapie', () => {
     for (const f of fakes) expect(f.sent.map((m) => m.t)).toEqual(['scene', 'patch', 'draw']);
     fakes[0].finish();
     expect(p.take()).toEqual([expect.objectContaining({ k: 1, s: LOD_NEAR, v: 2 })]);
+  });
+});
+
+describe('piętro w scenie i w łatce (widok pięter, etap 1)', () => {
+  it('scena domyślnie jest na parterze, bez sceny piętra, także po drodze do workera', () => {
+    const sc = przymorze();
+    expect(sc.pietro).toBe(0);
+    expect(sc.pietra).toBeNull();
+    const cs = chunkSceneOf(sc);
+    expect(cs.pietro).toBe(0);
+    expect(cs.pietra).toBeNull();
+    const copy = structuredClone(cs);
+    expect(copy.pietro).toBe(0);
+    expect(copy.pietra).toBeNull();
+    // nowe pola są na wierzchu sceny, bez ruszania kluczy w, które test wyżej przypina
+    expect(Object.keys(cs.w).sort()).toEqual(['bid', 'buildings', 'size', 'terr', 'trees']);
+  });
+
+  it('wyciąg sceny niesie bieżące piętro i scenę piętra', () => {
+    const sc = { ...przymorze(), pietro: 2, pietra: sectionPietra(przymorze().w) };
+    expect(sc.pietra).not.toBeNull();
+    const cs = chunkSceneOf(sc);
+    expect(cs.pietro).toBe(2);
+    expect(cs.pietra).toBe(sc.pietra);
+    expect(structuredClone(cs).pietra).toEqual(sc.pietra);
+  });
+
+  it('łatka niesie piętro i scenę piętra tylko wtedy, gdy zmiana je podaje, i ustawia je na kopii sceny', () => {
+    const sc = przymorze();
+    const pietra = sectionPietra(sc.w)!;
+    const patch = scenePatchOf(sc, { pietro: 3, pietra });
+    expect(patch).toMatchObject({ pietro: 3, pietra });
+    expect(scenePatchOf(sc, { pietro: 0 })).toMatchObject({ pietro: 0 });
+    expect(Object.keys(scenePatchOf(sc, { pietro: 0 }))).not.toContain('pietra');
+    expect(Object.keys(scenePatchOf(sc, { tiles: [5] }))).not.toContain('pietro');
+    expect(Object.keys(scenePatchOf(sc, { tiles: [5] }))).not.toContain('pietra');
+
+    const copy = structuredClone(chunkSceneOf(sc));
+    applyScenePatch(copy, structuredClone(patch));
+    expect(copy.pietro).toBe(3);
+    expect(copy.pietra).toEqual(pietra);
+    // łatka terenu zostawia piętro, jak było
+    applyScenePatch(copy, scenePatchOf(sc, { tiles: [5] }));
+    expect(copy.pietro).toBe(3);
+    expect(copy.pietra).toEqual(pietra);
+    // powrót na parter zmienia tylko numer piętra
+    applyScenePatch(copy, scenePatchOf(sc, { pietro: 0 }));
+    expect(copy.pietro).toBe(0);
+    expect(copy.pietra).toEqual(pietra);
+    // główna scena nie zmieniła się od łatek
+    expect(sc.pietro).toBe(0);
+    expect(sc.pietra).toBeNull();
   });
 });
