@@ -11,6 +11,7 @@ import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { RngState } from '../core/rng.ts';
 import type { Miejsce } from '../world/miasto.ts';
+import type { Strona } from './goscie.ts';
 import type { Cel } from './wyprawy.ts';
 import type { Droga, StanZwyciestwa } from './zwyciestwo.ts';
 
@@ -142,6 +143,50 @@ export interface GovLokator {
   tile: number;
 }
 
+/** Faza wizyty gościa w symulacji (faza grupy to faza mówiącego, gdy żyje, a gdy zginie, następnego żywego):
+    `idzie` (od krawędzi mapy ulicą pod bramę), `brama` (stoją pod bramą i czekają na decyzję zarządu), `w_srodku`
+    (wpuszczeni: przy ognisku, śpią, rano wychodzą; także przyjęci do osiedla jako mieszkańcy i zarząd), `odchodzi`
+    (idą do swojej krawędzi mapy), `zlapany` (kradnącego nocą złapała czuwająca osoba zarządu, stoją i czekają na
+    decyzję), `poszedl` (wszyscy zniknęli za mapą; także spłoszeni przez szwendacza), `nie_doszedl` (nie dotarli pod
+    bramę w 2 godziny gry, odchodzą), `zginal` (nie żyje nikt). Końcowe: `poszedl`, `nie_doszedl`, `zginal`. */
+export type FazaGoscia = 'idzie' | 'brama' | 'w_srodku' | 'odchodzi' | 'zlapany' | 'poszedl' | 'nie_doszedl' | 'zginal';
+
+/** Gość w odczycie dla zarządu (`GovInput.goscie`), jeden wpis na wizytę, po kolei; zakończone wizyty zostają w liście
+    (zarząd liczy, ile już przeczytał: `GovState.goscie.czytane`). `tile`: kafelek mówiącego, a gdy już go nie ma,
+    pierwszego żywego albo ostatni znany kafelek grupy; `pawns`: numery pionków żywych członków grupy, mówiący
+    pierwszy (po `przyjety` to już mieszkańcy albo zarząd); `ukradl`: porcje jedzenia, których z zapasów brakuje przez
+    tę grupę (wzięte i nieoddane), `przyjety`: grupa została w osiedlu (rozkaz `zostan` albo `zarzad`) */
+export interface GovGosc {
+  id: string;
+  faza: FazaGoscia;
+  tile: number;
+  pawns: number[];
+  ukradl: number;
+  przyjety?: boolean;
+}
+
+/** Polecenie zarządu dla gościa (`GovEffects.goscRozkaz`), dotyczy całej grupy:
+    `odejdz` (odchodzi tam, skąd przyszedł; złapany: odchodzi z łupem), `jedzenie` (dostaje porcję przez siatkę i
+    odchodzi; koszt płaci karta przez `fx.stock`, symulacja nie rusza zapasów), `noc` (wchodzi bramą, siedzi przy
+    ognisku, śpi, rano między 6:00 a 8:00 wychodzi), `zostan` (cała grupa zostaje mieszkańcami), `zarzad` (mówiący do
+    zarządu, reszta jak `zostan`), `klamie` (zaznacza kłamcę: nocą o 2:00 idzie po jedzenie), `ugryziony` (osoba
+    o indeksie `ugryziony` z planu dostaje ugryzienie, jak na wyprawie), `puscic` (złapany odchodzi bez łupu, łup
+    zostaje na ziemi, `ukradl` wraca do zera). Polecenia idą kolejno w kolejce symulacji, więc `noc` i `klamie` albo
+    `zostan` i `ugryziony` z jednego wywołania można podać w dowolnej kolejności. */
+export type GoscRozkaz = 'odejdz' | 'jedzenie' | 'noc' | 'zostan' | 'zarzad' | 'klamie' | 'ugryziony' | 'puscic';
+
+/** Plan wizyty dla symulacji (`GovEffects.gosc`): osoby z id `g<n>p<i>` (symulacja nadaje im swoje `s<n>`, żeby nie
+    zderzyły się z osobami zarządu i mieszkańców), wygląd każdej, strona wejścia (kierunek świata w układzie geo; symulacja
+    bierze tę samą stronę siatki mapy, błąd co najwyżej pół ćwiartki, bo świat jest obrócony najwyżej o 45°) i indeks
+    ugryzionej osoby (tryb zombie). Ten sam `id` drugi raz symulacja pomija. */
+export interface PlanGoscia {
+  id: string;
+  osoby: Person[];
+  looks: number[];
+  strona: Strona;
+  ugryziony?: number;
+}
+
 /** los zwłok zmarłego w trybie zombie (`GovInput.dead[].cialo`): leżą i mogą wstać, dobite, nie ma ich na mapie */
 export type Cialo = 'lezy' | 'dobite' | 'brak';
 
@@ -200,6 +245,9 @@ export interface GovInput {
   dead?: { id: string; name: string; cause: string; tick: number; f?: boolean; min?: number; cialo?: Cialo }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
+  /** goście z klocków (src/gov/goscie.ts) w symulacji, po kolei, od najstarszego; lista tylko rośnie. Pole jest (choćby
+      puste) tylko w grze z obcymi (`SimOpts.obcy`), bez niego zarząd nie planuje gości */
+  goscie?: readonly GovGosc[];
   /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
       lokalnej (koło 192 m), posortowane po odległości. Miejsc z mapy lokalnej nie wybiera karta nocy
       (`wybierzCeleNocy`) i nie wysyła się do nich wyprawy (`powodOdmowy`), ale karta miejsca je pokazuje. Bez pola
@@ -312,6 +360,11 @@ export interface GovEffects {
   /** osoba zarządu idzie na kafelek (od strony podwórka, najbliższy osiągalny), stoi tam 10 minut gry i wraca do
       zajęć (`sprawdz`). Tablica powstaje przy pierwszym sprawdzeniu */
   sprawdz?: { id: string; tile: number }[];
+  /** plan wizyty gościa: symulacja wystawia po jednym pionku na osobę ulicą od krawędzi mapy pod bramę (`PlanGoscia`) */
+  gosc?: PlanGoscia;
+  /** polecenia dla gości (całych grup po `id`), wykonywane po kolei od następnego kroku; tablica powstaje przy
+      pierwszym poleceniu */
+  goscRozkaz?: { id: string; co: GoscRozkaz }[];
 }
 
 export interface RaidPlan {

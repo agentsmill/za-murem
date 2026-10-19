@@ -1637,7 +1637,7 @@ export class GameView {
             ? STRANGER_HP
             : p.kind === 'handlarz'
               ? TRADER_HP
-              : p.kind === 'wedrowiec' || p.kind === 'obcy'
+              : p.kind === 'wedrowiec' || p.kind === 'obcy' || p.kind === 'gosc'
                 ? WANDERER_HP
                 : p.kind === 'zbir'
                   ? ZBIR_HP
