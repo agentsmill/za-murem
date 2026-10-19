@@ -61,6 +61,7 @@ npx biome check src tests tools server index.html  # lint zamiast npm run lint (
 npm run build        # typy (tsc z TypeScript 7) + build do dist/ (z dist/v03/)
 npm run bot          # nowa symulacja 45 dni bez przeglądarki [-- ziarno [dni [tłum]]]
 npm run bot -- --mieszkancy         # to samo z zarządem i mieszkańcami siedziby z generatora (tabele z public/data/mieszkancy/)
+npm run bot -- --badania [ziarno [dni]] [--mieszkancy] [--demo=NAZWA] [--jedzenie]  # pomiar tempa badań (sam pomiar zamiast reszty bota): pracownia, technologie, pierwsza zima z badaniami i bez; --jedzenie: zapas jedzenia nie spada, jakby głodu nie było (bot głoduje od dnia 7–10 i badania stoją)
 npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziarno [noce [osoby zarządu 1–5]]] [--demo=przymorze|lanciego|zielonki] [--opal]
 npm run bot:zombie -- --mieszkancy  # tryb zombie z mieszkańcami z generatora (flaga w dowolnym miejscu argumentów)
 npm run bot:zombie:siatka  # miara siatki: bot zombie na trzech osiedlach, z mieszkańcami i bez, w której nocy siatka puszcza pierwszy raz [-- 1-6 [noce]] [--opal]
