@@ -145,7 +145,7 @@ Skutek uboczny: część celów drugiego dnia (przeszukać dom, drewno na drugą
 
 ### Umiejętności (integrator, punkt 8 i akcept punkt 4)
 
-Czas pracy rodzaju z umiejętnością dzieli się przez mnożnik `1 + 0,1 · poziom`: bez umiejętności dzisiejsze tempo (1,0), umiejętność tylko przyspiesza (poziom 2 daje 1,2, poziom 4 daje 1,4). Dzięki temu pierwszy dzień bez umiejętności naprawdę jest bez zmian. Dotyczy ścinania, budowy, łatania, napraw, warsztatu, gotowania i badań; noszenia, szabru i dokładania nie. To samo działa przy poleceniu gracza. Jedna funkcja `tempoPracy(st, p, rodzaj)` w `src/sim/praca.ts` daje mnożnik wszystkim pracom. Liczbę 0,1 może zmienić bot, zasada „bez umiejętności 1” zostaje.
+Czas pracy rodzaju z umiejętnością dzieli się przez mnożnik `1 + 0,1 · poziom`: bez umiejętności dzisiejsze tempo (1,0), umiejętność tylko przyspiesza (poziom 2 daje 1,2, poziom 4 daje 1,4). Mnożnik działa od pierwszego rana, tak samo jak nowe rodzaje (przed nim zawsze 1), więc pierwszy dzień gry naprawdę jest bez zmian także u osób z umiejętnością (moje, po akcepcie: z umiejętnością od początku gotowanie i budowa szły szybciej już pierwszego dnia). Dotyczy ścinania, budowy, łatania, napraw, warsztatu, gotowania i badań; noszenia, szabru i dokładania nie. To samo działa przy poleceniu gracza. Jedna funkcja `tempoPracy(st, p, rodzaj)` w `src/sim/praca.ts` daje mnożnik wszystkim pracom. Liczbę 0,1 może zmienić bot, zasada „bez umiejętności 1” zostaje.
 
 Krzywa jest wspólna z badaniami: gałąź `badania` ma kopię `krzywaUmiejetnosci` (dziś `0,7 + 0,15 · poziom`) i `TEMPO_BAZOWE = 1,2`. Zaproponowałem tamtej sesji nową krzywą i `TEMPO_BAZOWE = 1,0` (badacz z umiejętnością 2 bez zmian, 1,2 punktu na godzinę); odpowiedź wpisuje się tutaj.
 
