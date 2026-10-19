@@ -1207,6 +1207,7 @@ Mateusz rano: lepiej wdrożyć na serwer w projekcie cergo (więcej miejsca i mo
 
 ## Zaparkowane
 - Menu budowy (18.10.2026), po wejściu badań: kłódki z nazwami badań, znaczek „NOWE” i pracownia w zakładce Dom są zrobione na gałęzi `badania` (19.10.2026, wpis w „Zrobione”). Zostają kolejne zakładki (Jedzenie, Prąd, Obrona) razem z budowlami z gospodarki.
+- Badania, z przeglądu całej gałęzi (19.10.2026): „Badać” w nocy nic nie robi (zarząd w nocy nie siada do stołu), a menu pracowni nie wyszarza pozycji i podpowiedź mówi „Zajmie się badaniami.”. Poprawić razem z rodzajem pracy „Badania” przy scaleniu z pracą ludzi: wyszarzyć z powodem „W nocy nikt nie bada.” albo zostawić polecenie na rano. Przy okazji opisać liczby sprzed poprawki nocy w zastrzeżeniach per demo i w zimowej tabeli bez głodu jako „przed poprawką nocy”.
 - Menu budowy, drobiazgi z przeglądu: reset przewinięcia panelu przy otwarciu, przesunięcie `.hint` pod `build-open` jak `.placebar`, nazwa dostępnościowa przycisku ✕ i `aria-controls` zakładek, kolejność reguł `prefers-reduced-motion` na telefonie, asercje angielskiego „Needs research” w testach, Esc i ✕ przez tę samą ścieżkę `onClose`.
 - `siec-menu` w `npm run shots` raz padł pod obciążeniem (kilka sesji naraz): po zajęciu klatki nie było jeszcze znaczników „nasza”, sam scenariusz przechodzi. Dodać czekanie na znaczniki zamiast jednego odczytu (18.10.2026).
 
