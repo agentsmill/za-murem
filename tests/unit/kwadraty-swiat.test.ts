@@ -444,6 +444,39 @@ describe('buildKwadrat: świat obok domu', () => {
     expect(wnetrze).toBe(zewnatrz);
   });
 
+  it('największy obszar, który nie dotyka granicy, dostaje bramę do obszaru dotykającego granicy (nie tylko do największego)', () => {
+    // ogrodzony teren 300 m x 300 m z murem z budynków (90 tys. kafelków) jest większy niż cała reszta kwadratu
+    // (50 tys.), więc to on jest największym obszarem, ale nie dotyka granicy; ulice dookoła dotykają
+    const uklad: Uklad = { c: [52, 21], kat: 0, bok: BOK };
+    const cx = BOK;
+    const mur = [
+      budynek(rect(cx, -153, 312, 6, 0)),
+      budynek(rect(cx, 153, 312, 6, 0)),
+      budynek(rect(cx - 153, 0, 6, 312, 0)),
+      budynek(rect(cx + 153, 0, 6, 312, 0)),
+    ];
+    const w = buildKwadrat(geoZ(mur), { seed: 1, uklad, sx: 1, sy: 0 });
+    const reg = labelRegions(w.blocked, BOK);
+    const wnetrze = reg[POL * BOK + POL];
+    const zewnatrz = reg[20 * BOK + 20];
+    expect(wnetrze).toBeGreaterThanOrEqual(0);
+    expect(zewnatrz).toBeGreaterThanOrEqual(0);
+    expect(wnetrze).toBe(zewnatrz);
+    // brama to kilka kafelków wyciętych w murze (nie na brzegu kwadratu), reszta muru stoi
+    const surowy = rastrujTeren(przygotujGeoKwadratu(geoZ(mur), uklad), BOK, BOK, 0, { skrawki: true });
+    const wyciete: number[] = [];
+    for (let i = 0; i < w.terr.length; i++)
+      if (surowy.terr[i] === T.BUILDING && w.terr[i] !== T.BUILDING) wyciete.push(i);
+    expect(wyciete.length).toBeGreaterThan(0);
+    expect(wyciete.length).toBeLessThan(60);
+    for (const i of wyciete) {
+      expect(w.terr[i]).toBe(T.SIDEWALK);
+      expect(i % BOK).toBeGreaterThan(0);
+      expect(i % BOK).toBeLessThan(BOK - 1);
+    }
+    expect(w.terr.filter((t) => t === T.BUILDING).length).toBeGreaterThan(5000);
+  });
+
   it('prawie pusty kwadrat się buduje: mniej niż 4 budynki, brak budynków, brak czegokolwiek', () => {
     const uklad = ukladTestowy(ZIELONKI);
     // prawdziwy kwadrat z trzema budynkami (pola)
@@ -615,6 +648,10 @@ describe('buildKwadrat: szwy z domem (różne kąty obrotu)', () => {
           if (w.terr[i] !== raw.terr[i]) {
             expect([raw.terr[i], w.terr[i]], `${a.key} ${sx},${sy} kafelek ${i}`).toEqual([T.BUILDING, T.SIDEWALK]);
             expect(w.bid[i]).toBe(-1);
+            // brama nie leży na brzegu kwadratu (tam budynek jest przecięty i ciągnie się dalej u sąsiada)
+            const x = i % BOK;
+            const y = (i - x) / BOK;
+            expect(x > 0 && y > 0 && x < BOK - 1 && y < BOK - 1, `${a.key} ${sx},${sy} brama na brzegu`).toBe(true);
             bramy++;
           }
         expect(bramy).toBeLessThan(400);

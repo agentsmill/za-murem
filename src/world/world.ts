@@ -1043,16 +1043,17 @@ function connectRegions(
         main = r;
         mainN = n;
       }
-    // obszary dotykające brzegu mapy (tylko z granicą)
-    const przyBrzegu = new Set<number>();
+    // cele łączenia: największy obszar, a z granicą obszary dotykające brzegu mapy (uchodzą za połączone przez sąsiedni
+    // kwadrat), a gdy żaden brzegu nie dotyka, największy; obszar poza celami łączy się z najbliższym celem
+    const cele = new Set<number>();
     if (granica)
       for (let k = 0; k < size; k++)
-        for (const i of [k, (size - 1) * size + k, k * size, k * size + size - 1])
-          if (reg[i] >= 0) przyBrzegu.add(reg[i]);
+        for (const i of [k, (size - 1) * size + k, k * size, k * size + size - 1]) if (reg[i] >= 0) cele.add(reg[i]);
+    if (!cele.size) cele.add(main);
     let target = -1;
     let tn = 0;
     for (const [r, n] of counts)
-      if (r !== main && n > tn && n >= Math.max(200, free * 0.005) && !przyBrzegu.has(r)) {
+      if (!cele.has(r) && n > tn && n >= Math.max(200, free * 0.005)) {
         target = r;
         tn = n;
       }
@@ -1071,7 +1072,7 @@ function connectRegions(
       for (let qi = 0; qi < cur.length && found < 0; qi++) {
         const c = cur[qi];
         if (dist[c] !== d) continue;
-        if (reg[c] === main) {
+        if (cele.has(reg[c])) {
           found = c;
           break;
         }
