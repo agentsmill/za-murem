@@ -25,6 +25,11 @@ const atHour = (day: number, h: number) => Math.round(((day - 1) * 24 + h - STAR
 const core = (sim: Sim) => sim.st.pawns.filter((p) => p.kind === 'core');
 const tileOf = (sim: Sim, p: Pawn) => Math.floor(p.y) * sim.w.size + Math.floor(p.x);
 const kozaOf = (st: SimState) => st.things.find((t) => t.kind === 'koza')!;
+/** Zarząd może wychodzić za siatkę bez polecenia (praca ludzi, src/sim/praca.ts): stos drewna leżący poza podwórkiem
+    bezczynni noszą do składu tylko z tym przełącznikiem i tylko za dnia; testy z drewnem na ulicy go włączają. */
+const wychodziZaSiatke = (sim: Sim): void => {
+  for (const p of core(sim)) sim.push({ t: 'zasiatke', ids: [], osoba: p.person, on: true });
+};
 const roomKind = (w: MockWorld, i: number) => w.interior.rooms[w.interior.room[i]]?.kind;
 const woodOn = (st: SimState, size: number, tiles: number[]) =>
   st.things.filter((t) => t.kind === 'drewno' && tiles.includes(t.y * size + t.x)).reduce((s, t) => s + t.n, 0);
@@ -169,6 +174,7 @@ describe('zarząd sam', () => {
     const st = createSim(w, 3, { core: 4 });
     addWood(st, w.buildings[w.hq].entrances[0].out + 4 * w.size, w.size, 4);
     const sim = new Sim(w, st);
+    wychodziZaSiatke(sim);
     // minuta realna: drewno już w składzie albo w kozie, ale jeszcze się nie wypaliło
     for (let k = 0; k < 1200; k++) sim.step();
     const sklad = w.interior.sklad;
@@ -413,6 +419,7 @@ describe('polecenia', () => {
     st.things = st.things.filter((t) => t.kind !== 'koza');
     addWood(st, w.buildings[w.hq].entrances[0].out + 6 * w.size, w.size, 5);
     const sim = new Sim(w, st);
+    wychodziZaSiatke(sim);
     const [p] = core(sim);
     const total = () => st.things.filter((t) => t.kind === 'drewno').reduce((s, t) => s + t.n, 0) + p.carry;
     for (let k = 0; k < 2000 && p.carry === 0; k++) sim.step();
@@ -781,6 +788,7 @@ describe('poprawki z przeglądu kodu', () => {
     addWood(st, pocket, w.size, 3);
     addWood(st, out + 9 * w.size, w.size, 2);
     const sim = new Sim(w2, st);
+    wychodziZaSiatke(sim);
     for (let k = 0; k < 1500; k++) sim.step();
     expect(woodOn(st, w.size, w.interior.sklad)).toBe(2);
   });

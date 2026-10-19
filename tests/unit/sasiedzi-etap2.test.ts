@@ -26,6 +26,7 @@ import {
 } from '../../src/sim/sasiedzi.ts';
 import { FEVER_TICKS, Sim, type SimState } from '../../src/sim/sim.ts';
 import { IN } from '../../src/world/interior.ts';
+import { wylaczAutomat } from './praca-pomoc.ts';
 import { core, demoWorld, doorWhere, knockHouse, meet, newGame, until } from './sasiedzi-pomoc.ts';
 
 const share = (n: number, f: (k: number) => boolean) => [...Array(n).keys()].filter(f).length / n;
@@ -223,6 +224,8 @@ describe('etap 2: nocni goście', () => {
   it('szabrownicy, którzy zostali: spotkanie przy wejściu, „Przegonić” z bronią oddaje ich łup', () => {
     for (let seed = 1; seed <= 8; seed++) {
       const { sim, bid, b, p } = openBlock('zwykly', seed);
+      // dalej stoi w środku: bez nowych rodzajów pracy (dzień 3 i później wolny zarząd sam łatałby siatkę)
+      wylaczAutomat(sim);
       pile(sim, bid, 'czesci', 5);
       const t = nightOf(sim, bid, true, (kto, d) => kto === 'szabrownicy' && zostaja(sim.w.seed, bid, d));
       sim.st.tick = t;

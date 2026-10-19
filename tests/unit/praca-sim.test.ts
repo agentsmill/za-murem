@@ -1,7 +1,8 @@
 /* Szkielet automatu pracy w think() (src/sim/sim.ts, docs/superpowers/specs/2026-10-19-praca-ludzi-design.md, „Kiedy
    pracują”): kolejność po potrzebach (zimno, gasnąca koza, potem rodzaje według priorytetów osoby), przerwania prac
-   podjętych bez polecenia (AUTO_JOBS) i brak pętli „start, przerwanie, start” przy zimnie. Nowe rodzaje (NOWE) nic
-   jeszcze nie robią, więc pierwsza doba bez poleceń ma ten sam skrót stanu co przed pracą ludzi.
+   podjętych bez polecenia (AUTO_JOBS) i brak pętli „start, przerwanie, start” przy zimnie. Nowe rodzaje (NOWE) ruszają
+   dopiero od pierwszego rana (bez poleceń samouczek się nie kończy, więc od dnia 3, 6:00), więc pierwsze doby bez
+   poleceń mają ten sam skrót stanu co przed pracą ludzi; same rodzaje Drwal, Naprawy i Noszenie: praca-rodzaje.test.ts.
    Sceny są małe i deterministyczne: reszta zarządu jest na wyprawie (`away`, stoi w miejscu), badana osoba syta,
    wyspana i ciepła, dopóki test nie powie inaczej. */
 
@@ -296,14 +297,34 @@ describe('polecenie gracza i ustawienia', () => {
     }
   });
 
-  it('gasnąca koza dokłada także osoba ze wszystkimi rodzajami na 0 (jak dziś każdy bezczynny)', () => {
-    const { sim, p } = scena();
-    wylaczWszystko(sim, p);
-    const s = prv(sim);
-    s.addWood(sim.house!.sklad[0], 6);
-    s.koza()!.fuel = BURN_TICKS / 2;
-    s.think(p);
-    expect(jaka(p)).toBe('refuel');
+  /* Rozstrzygnięcie sterującego (zadanie 4): wybór gracza „Ogień: nie robi” wygrywa z dawnym obyczajem, że gasnącą
+     kozę dokłada każdy bezczynny. Zadanie 3 przypięło odwrotnie (dokłada także osoba ze wszystkimi rodzajami na 0);
+     teraz dokłada ten, kto ma Ogień włączony (priorytet większy od 0 albo stałe zajęcie Ogień). */
+  it('gasnąca koza: dokłada ten, kto ma Ogień włączony (priorytet albo stałe zajęcie); wyłączony Ogień znaczy, że nie dokłada', () => {
+    const gasnaca = (ustaw?: (sim: Sim, p: Pawn) => void): string => {
+      const { sim, p } = scena();
+      wylaczWszystko(sim, p);
+      if (ustaw) {
+        ustaw(sim, p);
+        sim.step();
+        odnow(sim, p);
+      }
+      const s = prv(sim);
+      s.addWood(sim.house!.sklad[0], 6);
+      s.koza()!.fuel = BURN_TICKS / 2;
+      s.think(p);
+      return jaka(p);
+    };
+    // wszystkie rodzaje na 0, w tym Ogień: nie dokłada (je, śpi i grzeje się, poza tym stoi)
+    expect(gasnaca()).toBe('-');
+    // Ogień z priorytetem 4 (najmniej ważny, ale włączony): dokłada
+    expect(gasnaca((sim, p) => sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'ogien', prio: 4 }))).toBe(
+      'refuel',
+    );
+    // stałe zajęcie Ogień przy priorytecie 0 w tabeli: włącza ten rodzaj, więc dokłada
+    expect(gasnaca((sim, p) => sim.push({ t: 'stale', ids: [], osoba: p.person, rodzaj: 'ogien' }))).toBe('refuel');
+    // inny rodzaj włączony nie wystarcza: Ogień ma osobny wybór
+    expect(gasnaca((sim, p) => sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'budowa', prio: 1 }))).toBe('-');
   });
 });
 
@@ -356,22 +377,29 @@ describe('przerwania prac podjętych bez polecenia (AUTO_JOBS)', () => {
     expect(przerwana('haul', false, 'pilna', true)).toBe(true);
   });
 
-  it('nocą bezczynny nie zaczyna noszenia drewna zza siatki, z obrębu siatki tak; za dnia niesie jak dotąd', () => {
+  it('nocą bezczynny nie zaczyna noszenia drewna zza siatki, z obrębu siatki tak; za dnia zza siatki tylko z przełącznikiem', () => {
     const noc = () => {
       const sc = scena();
       sc.sim.st.tick = tickO(1, 23);
       sc.p.needs!.rest = 95; // wyspany, żeby nie szedł spać
       return sc;
     };
-    // za siatką: nocą stoi, za dnia niesie (dziś)
+    // za siatką: nocą stoi
     const zaSiatka = noc();
     prv(zaSiatka.sim).addWood(wolnyKafelek(zaSiatka.sim, zaSiatka.p, 'poza'), 6);
     prv(zaSiatka.sim).think(zaSiatka.p);
     expect(jaka(zaSiatka.p)).toBe('-');
+    // za dnia: zadanie 4 zmieniło dzisiejsze startHaul, które brało najbliższą stertę z całego obszaru, także zza bramy;
+    // teraz stertę spoza siatki bierze tylko osoba z przełącznikiem „Może wychodzić za siatkę” (mozeTam)
     const dzien = scena();
     dzien.sim.st.tick = tickO(2, 12);
     const zewnatrz = wolnyKafelek(dzien.sim, dzien.p, 'poza');
     prv(dzien.sim).addWood(zewnatrz, 6);
+    prv(dzien.sim).think(dzien.p);
+    expect(jaka(dzien.p)).toBe('-');
+    dzien.sim.push({ t: 'zasiatke', ids: [], osoba: dzien.p.person, on: true });
+    dzien.sim.step();
+    odnow(dzien.sim, dzien.p);
     prv(dzien.sim).think(dzien.p);
     expect(jaka(dzien.p)).toBe('haul');
     expect(dzien.p.job?.tile).toBe(zewnatrz);
