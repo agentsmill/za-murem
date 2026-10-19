@@ -2,7 +2,7 @@
 
 Pierwszy projekt z `docs/superpowers/specs/2026-10-18-kierunek-rozwoju-design.md` (sekcja „Praca ludzi i rozporządzenia”, punkt 1 kolejności), w zakresie z prośby Mateusza z 19.10.2026, plus werbunek wędrowców i sprawdzenie wspólnego płotu. Rozporządzenia, dyżury klatek i przejmowanie lokatorów idą osobnym projektem (sekcja „Poza zakresem”).
 
-Słowa Mateusza są w cudzysłowie. Decyzje nocnego integratora (sesja „Nocna integracja projektu”, której Mateusz zostawił decyzje na noc z 18 na 19.10.2026) są oznaczone „(integrator)” i spisane w sekcji „Decyzje”, do przejrzenia przez Mateusza rano; jeśli Mateusz powie inaczej, jego słowo wygrywa. Moje propozycje i rozstrzygnięcia są oznaczone „(moje)”.
+Projekt zaakceptował nocny integrator w zastępstwie Mateusza 19.10.2026 po niezależnej recenzji, z dziewięcioma zmianami, które są już wpisane (sekcja „Decyzje”, „Akcept”). Słowa Mateusza są w cudzysłowie. Decyzje nocnego integratora (sesja „Nocna integracja projektu”, której Mateusz zostawił decyzje na noc z 18 na 19.10.2026) są oznaczone „(integrator)” i spisane w sekcji „Decyzje”, do przejrzenia przez Mateusza rano; jeśli Mateusz powie inaczej, jego słowo wygrywa. Moje propozycje i rozstrzygnięcia są oznaczone „(moje)”.
 
 ## Po co
 
@@ -112,7 +112,12 @@ Jeżeli Mateusz miał na myśli co innego (na przykład plan godzinowy osoby), s
 
 ### Progi zapasów (integrator, punkt 4; liczby moje)
 
-W zakładce Praca nad tabelą: „Trzymać w zapasie”. Drewno (domyślnie 30), deski (20), części (10), dzidy (tyle, ilu w zarządzie jest bez broni, bez ustawiania). Zlecenia Drwala i Warsztatu powstają tylko poniżej progu i gasną po jego osiągnięciu, jak rachunki w RimWorldzie „rób, aż będzie X”. Deski z drewna tylko z nadmiaru ponad próg drewna (bot surowców robi dziś tak samo: ponad 20 sztuk). Próg zero wyłącza robienie.
+W zakładce Praca nad tabelą: „Trzymać w zapasie”. Drewno (domyślnie 30), deski (20), części (10), dzidy (w zwykłym trybie domyślnie 0, w trybie zombie tyle, ilu w zarządzie jest bez broni). Zlecenia Drwala i Warsztatu powstają tylko poniżej progu i gasną po jego osiągnięciu, jak rachunki w RimWorldzie „rób, aż będzie X”. Próg zero wyłącza robienie.
+
+Warsztat nie zjada materiału, który ma inne przeznaczenie (integrator, akcept punkt 8):
+- deski z drewna tylko z nadwyżki ponad próg drewna (bot surowców robi dziś tak samo: ponad 20 sztuk);
+- części ze złomu tylko z nadwyżki ponad rezerwę na łaty i plany: złom, którego potrzebują otwarte plany budowy (brak `need − have`) i łaty wszystkich otwartych dziur;
+- dzidy trafiają do magazynu broni (`st.store.arms`), więc zlecenie dzidy liczy „ilu w zarządzie jest bez broni minus dzidy w magazynie” i powstaje tylko wtedy, gdy to więcej niż zero i dzid w magazynie jest mniej niż próg.
 
 Zapas do progu liczy tylko to, co jest w obrębie siatki (podwórko, siedziba, otoczone budynki). Pasek u góry (`snapshot`) liczy też drewno leżące na ulicy, więc bez tego Drwal stanąłby przy „pełnym” zapasie, którego nikt nie wniesie.
 
@@ -120,7 +125,11 @@ Pozostałe rodzaje nie mają progów: Ogień pilnuje kozy, Kuchnia ma `shouldCoo
 
 ### Kiedy pracują
 
-- Potrzeby: sen i jedzenie przed pracą, jak dziś. Ogrzanie zostaje tam, gdzie dziś: po pracy, a pilne zimno (ciepło poniżej 10) przerywa pracę (moje, po przeglądzie). Przy dziewięciu rodzajach pracy ktoś może nie dochodzić do ogrzania; budujący sprawdza to pomiarem „zarząd bez gracza” i jeśli nastrój albo ciepło spadają, przesuwa ogrzanie przed rodzaje z priorytetem 3 i 4.
+- Potrzeby: sen i jedzenie przed pracą, jak dziś.
+- Zimno (integrator, akcept punkt 6): przy cieple poniżej 10 ogrzanie albo dołożenie do kozy idzie przed każdą pracą, także przed stałym zajęciem i budową planów. Dziś `startAnyBuild` tego nie sprawdza: zmarznięta osoba zaczyna budowę, `urgent` ją przerywa, `think()` daje ją znowu, i tak w pętli. To istniejący błąd, poprawiany w tym projekcie, z testem pętli. Przy cieple od 10 do `COLD` ogrzanie zostaje po pracy, jak dziś; jeśli pomiar „zarząd bez gracza” pokaże spadek ciepła albo nastroju, budujący przesuwa je przed rodzaje z priorytetem 3 i 4.
+- Gasnąca koza (moje, z uwag integratora): dołożenie do kozy, w której zostało mniej niż `BURN_TICKS` ognia, idzie przed stałym zajęciem, tak jak dziś przed budową.
+- Przerwania (integrator, akcept punkt 5): każda praca podjęta bez polecenia przerywa się jak prace M2 (`M2_JOBS`: noc, pilna potrzeba, wróg na podwórku). Do zbioru dochodzą `chop`, `patch`, `craft`, `saw`, `haul`, `search` i `carry` (na gałęzi `badania` tak samo `research`). Praca z polecenia przerywa się jak dziś.
+- Tryb zombie (integrator, akcept punkt 5): automat nie łata i nie pracuje przy siatce (cel pracy do 3 m od kafelka siatki), kiedy szwendacz jest bliżej niż 10 m od celu; z polecenia gracz może.
 - Godziny: sama praca za dnia, czyli 6:00–22:00 (`!night()`), jak dziś budowa i prace M2 bez polecenia; nocą tylko koza i kuchnia; polecenie gracza o każdej porze (integrator, punkt 6).
 - Przy wrogu na podwórku, w trybie zombie za siatką i przy pilnych potrzebach wszystko jak dziś: te gałęzie `think()` stoją przed pracą.
 - Polecenie gracza zawsze wygrywa i nie wraca do priorytetów, dopóki się nie skończy (`order: true`).
@@ -130,11 +139,15 @@ Pozostałe rodzaje nie mają progów: Ogień pilnuje kozy, Kuchnia ma `shouldCoo
 
 To, co zarząd robi sam już dziś (koza, kuchnia, noszenie drewna w obrębie siatki, budowa planów), zostaje od początku gry bez zmian. Nowe rodzaje (Drwal, Naprawy, Noszenie, Warsztat, Szaber, Badania) ruszają od pierwszego rana (dzień 2, 6:00) i dopiero po skończonym samouczku (`st.tut.step` równe `TUT_STEPS.length`, albo −1 w świecie bez samouczka). Rozumienie „po celach pierwszego dnia” jako „od pierwszego rana po samouczku” jest moje, bo cele pierwszego dnia (samouczek, drewno na noc, przetrwać noc) kończą się rano.
 
+Wyjście awaryjne (integrator, akcept punkt 7): od dnia 3, 6:00 nowe rodzaje ruszają także bez skończonego samouczka (na przykład gdy gracz nie ściął suchego drzewa). W pomiarze „zarząd bez gracza” bot wydaje jedno polecenie z samouczka (ścięcie suchego drzewa), żeby samouczek się skończył jak u gracza.
+
 Skutek uboczny: część celów drugiego dnia (przeszukać dom, drewno na drugą noc) zarząd może zrobić sam, jeśli gracz zostawi domyślne priorytety. Przyjmuję to: cele drugiego dnia stają się wskazówką, co warto mieć.
 
-### Umiejętności (integrator, punkt 8; liczby moje, do strojenia botem)
+### Umiejętności (integrator, punkt 8 i akcept punkt 4)
 
-Czas pracy rodzaju z umiejętnością dzieli się przez mnożnik `0,7 + 0,15 · poziom` (bez umiejętności 0,7, poziom 2 daje 1,0, poziom 4 daje 1,3). Dotyczy ścinania, budowy, łatania, napraw, warsztatu, gotowania i badań; noszenia, szabru i dokładania nie. To samo działa przy poleceniu gracza. Jedna funkcja `tempoPracy(st, p, rodzaj)` w `src/sim/praca.ts` daje mnożnik wszystkim pracom.
+Czas pracy rodzaju z umiejętnością dzieli się przez mnożnik `1 + 0,1 · poziom`: bez umiejętności dzisiejsze tempo (1,0), umiejętność tylko przyspiesza (poziom 2 daje 1,2, poziom 4 daje 1,4). Dzięki temu pierwszy dzień bez umiejętności naprawdę jest bez zmian. Dotyczy ścinania, budowy, łatania, napraw, warsztatu, gotowania i badań; noszenia, szabru i dokładania nie. To samo działa przy poleceniu gracza. Jedna funkcja `tempoPracy(st, p, rodzaj)` w `src/sim/praca.ts` daje mnożnik wszystkim pracom. Liczbę 0,1 może zmienić bot, zasada „bez umiejętności 1” zostaje.
+
+Krzywa jest wspólna z badaniami: gałąź `badania` ma kopię `krzywaUmiejetnosci` (dziś `0,7 + 0,15 · poziom`) i `TEMPO_BAZOWE = 1,2`. Zaproponowałem tamtej sesji nową krzywą i `TEMPO_BAZOWE = 1,0` (badacz z umiejętnością 2 bez zmian, 1,2 punktu na godzinę); odpowiedź wpisuje się tutaj.
 
 ### Osoby, polecenia i stan (moje)
 
@@ -143,13 +156,18 @@ Czas pracy rodzaju z umiejętnością dzieli się przez mnożnik `0,7 + 0,15 · 
 - Kolizja liczników `s…` to istniejący błąd (przy kolizji `applyGov` nie doda fachowca z wydarzenia, bo `pawnOf` znajdzie tego samego id). Poza tym projektem: zgłoszony integratorowi do osobnej poprawki.
 - Zmiany ustawień idą przez kolejkę poleceń w stanie (`sim.push`), jak inne polecenia, i działają od następnego kroku: priorytet osoby dla rodzaju, stałe zajęcie, „może wychodzić za siatkę”, próg zapasu.
 - Nowe pola stanu są opcjonalne i powstają przy pierwszej zmianie gracza; stan bez nich daje domyślne ustawienia (zasada z CLAUDE.md). Wersja stanu się nie zmienia, bo stary zapis działa bez migracji.
-- Wyszukiwanie zleceń nie może rozdmuchać kosztu kroku przy 12 osobach: `think()` woła się co sekundę na osobę (`THINK_EVERY`), a każdy rodzaj ma tanie „czy w ogóle jest robota” przed szukaniem najbliższej. Budujący mierzy `npm run perf` z 12 osobami w zarządzie.
+- Wyszukiwanie zleceń nie może rozdmuchać kosztu kroku przy 12 osobach: `think()` woła się co sekundę na osobę (`THINK_EVERY`), a każdy rodzaj ma tanie „czy w ogóle jest robota” przed szukaniem najbliższej. Pamięć „czy jest robota” trzyma `Sim` poza `SimState`, jak bufor A* i statystyki, żeby skrót stanu od niej nie zależał. Budujący mierzy `npm run perf` z 12 osobami w zarządzie.
+- „Najbliższe zlecenie” to najmniejsza odległość w liczbach całkowitych (długość drogi albo suma |dx| + |dy|), remis po indeksie zlecenia w stanie. Bez `Math.hypot`, `sin` i `cos` w decyzjach (zasada z dziennika: różne silniki JS mogą dać różne wyniki).
 
 ### Populacja (integrator, punkt 14)
 
 Jedna czysta funkcja `populacja(st)` w `src/sim/snapshot.ts`: zarząd żywy (także na wyprawie) i mieszkańcy żywi, osobno i razem. Bez lokatorów sąsiednich budynków, którzy nie są nasi (także w budynkach otoczonych wspólnym płotem: przyłączanie ich lokatorów to dalszy projekt, `docs/M2-fala-2.md`), i bez gości (wędrowców, handlarza, obcych).
 
-Kontrakt z projektem warunków zwycięstwa (integrator, gałąź `warunki-zwyciestwa`, `docs/superpowers/specs/2026-10-19-warunki-zwyciestwa-design.md`, sekcja „4. Ludnościowa”): `govInput()` w `src/sim/gov.ts` wystawia wynik `populacja(st).razem` w `GovInput` jako `ludnosc` (typ w `src/gov/typy.ts`; atrapy zarządu w `tests/unit/` dostają to pole też). Cel zwycięstwa tam to połowa ludności kwadratu domu z NSP 2021, od 120 do 500 osób, utrzymana 7 dni bez głodu; ten projekt nie liczy celu, tylko daje ludność.
+Kontrakt z projektem warunków zwycięstwa (integrator, gałąź `warunki-zwyciestwa`, `docs/superpowers/specs/2026-10-19-warunki-zwyciestwa-design.md`, sekcja „4. Ludnościowa”; akcept punkt 1): `GovInput.ludnosc` już tam jest (`src/gov/typy.ts`), wypełniane w `govInput()` jako liczba osób zarządu plus mieszkańców, a `ludnoscOf()` w `src/gov/zwyciestwo.ts` ma zapas, gdy pola brak. Ten projekt tylko podmienia to wyrażenie na `populacja(st).razem` i dodaje test, że obie liczby są równe na trzech demach; bez nowego typu i bez pól w atrapach. Tę część buduje się na `pelna-gra` po wejściu ramy zwycięstwa (integrator: tej nocy).
+
+Cel zwycięstwa tam to połowa ludności kwadratu domu z NSP 2021, od 120 do 500 osób, utrzymana 7 dni bez głodu; ten projekt nie liczy celu, tylko daje ludność. Koniec gry „pustką” dalej liczy tylko zarząd (akcept punkt 2). Licznik „7 dni bez głodu” sprawdza dziś tylko zarząd i zostaje tak do projektu gospodarki (akcept punkt 3).
+
+`EventHost.pop()` w wydarzeniach zarządu bierze `ludnoscOf`, jeśli na trzech demach daje tę samą liczbę co dziś (test); jeśli nie, zostaje, a różnica idzie do dziennika (moje, z uwag integratora).
 
 ### Interfejs (moje)
 
@@ -169,7 +187,7 @@ Kontrakt z projektem warunków zwycięstwa (integrator, gałąź `warunki-zwycie
 - Szansa (moje, liczby do strojenia botem): 0,30, +0,20 gdy jedzenia jest co najmniej 2 porcje na osobę w zarządzie, +0,15 gdy jest wolne łóżko, −0,30 gdy w ciągu ostatnich dwóch dób była napaść na wędrowca albo handlarza (`st.obcy.napady`); w zakresie 0,05–0,85. Połowa wędrowców ma swój cel („idzie do rodziny”, z ziarna wędrowca) i szansę o połowę mniejszą, co rozmowa mówi wprost. Zaufania we wzorze nie ma, bo symulacja go nie zna (moje, po przeglądzie; integrator przyjął wzór z zaufaniem, zanim to wyszło). Most zaufania do symulacji zrobi projekt rozporządzeń, bo posłuszeństwo i tak go potrzebuje; wtedy zaufanie może wejść do wzoru.
 - Udane zaproszenie: wędrowiec przechodzi bramą i staje się osobą zarządu (pionek `core` z osobą, jak `addCore`, z jego wyglądem i z miejsca, w którym stoi), z domyślnymi priorytetami, linią w kronice i nastrojem „Nowa osoba w zarządzie” dla reszty. Nieudane: dziękuje, idzie dalej, bez kary.
 - Tryb zombie: co piąty wędrowiec ukrywa ugryzienie, jak gospodarstwa sąsiadów (`UKRYTY_UGRYZIONY`). „Zapytać o rękę” przed zaproszeniem ujawnia je, a przyjęty bez pytania dostaje gorączkę od chwili ugryzienia. Ten sam kod co przy sąsiadach.
-- Limit: zwerbowani idą do zarządu, dopóki ma mniej niż 12 osób (jedna stała, integrator, punkt 12). Przy pełnym zarządzie zaproszenie dalej jest, a zwerbowany zostaje mieszkańcem: dostaje mieszkanie z wolnym łóżkiem albo najmniej zatłoczone, idzie tam pracą `arrive` i żyje planem dnia, tak jak przyjęte gospodarstwo sąsiadów (`przyjmijGospodarstwo`). Menu mówi wtedy, że przyjdzie jako mieszkaniec. W domu jednorodzinnym, gdzie mieszkańcy nie mają gdzie spać, przy pełnym zarządzie zaproszenia nie ma (napis „Nie ma już gdzie spać”), dopóki osobna poprawka uchodźców w domu (Decyzje, punkt 15) nie da mieszkańcom miejsca w domu. Limit dotyczy tylko werbunku: wydarzenia dokładają jak dziś. Zmienia „Poza zakresem” z `docs/superpowers/specs/2026-10-18-wedrowcy-design.md`.
+- Limit: zwerbowani idą do zarządu, dopóki ma mniej niż 12 osób (jedna stała, integrator, punkt 12). Przy pełnym zarządzie zwerbowany zostaje mieszkańcem, ale tylko do wolnego łóżka (akcept punkt 3): dostaje mieszkanie z wolnym łóżkiem, idzie tam pracą `arrive` i żyje planem dnia, jak przyjęte gospodarstwo sąsiadów. Łóżek przybywa z łóżek piętrowych z menu budowy, z zajętych i naprawionych mieszkań (`capOf`). Bez wolnego łóżka opcji zaproszenia nie ma (napis „Nie ma wolnego łóżka”). Menu przy pełnym zarządzie mówi, że przyjdzie jako mieszkaniec. W domu jednorodzinnym mieszkańcy dziś nie mają łóżek ani wstępu (Decyzje, punkt 15), więc tam przy pełnym zarządzie opcji nie ma, aż do osobnej poprawki. Limit dotyczy tylko werbunku: wydarzenia dokładają jak dziś. Zmienia „Poza zakresem” z `docs/superpowers/specs/2026-10-18-wedrowcy-design.md`.
 
 ### Przyrost ma koszt (moje)
 
@@ -190,27 +208,35 @@ Testy w Node (nowe pliki w `tests/unit/`), każdy, który da się zepsuć, spraw
 - pierwszy dzień: przed pierwszym rankiem i przed końcem samouczka nowe rodzaje nic nie robią, koza, kuchnia i budowa jak dziś;
 - próg drewna liczy tylko drewno w obrębie siatki;
 - mnożnik umiejętności: ta sama praca szybciej u osoby z umiejętnością;
-- werbunek: szansa z jedzenia, łóżka, napaści i celu wędrowca; udane zaproszenie robi osobę zarządu z priorytetami i id `w…`; przy pełnym zarządzie zwerbowany zostaje mieszkańcem z łóżkiem; w domu przy pełnym zarządzie opcji nie ma; ukryte ugryzienie w trybie zombie i „Zapytać o rękę”; gra bez rozmów z wędrowcem ma ten sam skrót co bez tej funkcji;
-- `populacja(st)`: zarząd z wyprawą, mieszkańcy, bez sąsiadów i gości;
-- łańcuch wspólnego płotu w symulacji: 10F, potem 10H na Lanciego, obwód szczelny po każdym, zapis i wczytanie z tym samym skrótem;
+- werbunek: szansa z jedzenia, łóżka, napaści i celu wędrowca; udane zaproszenie robi osobę zarządu z priorytetami i id `w…`; przy pełnym zarządzie zwerbowany zostaje mieszkańcem w wolnym łóżku, a bez wolnego łóżka opcji nie ma; w domu przy pełnym zarządzie opcji nie ma; ukryte ugryzienie w trybie zombie i „Zapytać o rękę”; gra bez rozmów z wędrowcem ma ten sam skrót co bez tej funkcji;
+- `populacja(st)`: zarząd z wyprawą, mieszkańcy, bez sąsiadów i gości; `GovInput.ludnosc` równe `populacja(st).razem` na trzech demach;
+- zimno: osoba z ciepłem poniżej 10 przy czekającym planie budowy i przy stałym zajęciu najpierw się grzeje albo dokłada (test, który dziś pada na pętli budowa, przerwanie, budowa);
+- przerwania: każda praca bez polecenia przerywa się nocą, przy pilnej potrzebie i przy wrogu na podwórku; w trybie zombie automat nie łata i nie pracuje przy siatce przy szwendaczu bliżej niż 10 m;
+- wyjście awaryjne samouczka: od dnia 3, 6:00 nowe rodzaje działają bez skończonego samouczka;
+- progi warsztatu: części ze złomu nie zjadają rezerwy na łaty i plany; dzidy tylko dla nieuzbrojonych ponad dzidy w magazynie;
+- łańcuch wspólnego płotu w symulacji, pierwszy w kolejności budowy (uwaga integratora): 10F, potem 10H na Lanciego, obwód szczelny po każdym, zapis i wczytanie z tym samym skrótem;
 - determinizm: ten sam skrót po kilku dobach z pracą, zapis i wczytanie w połowie nie zmieniają przebiegu.
 
 Boty:
-- `npm run bot` i `npm run bot:zombie` dostaną nowe skróty (zarząd sam pracuje). Nowe skróty do dziennika, z porównaniem liczb przed i po (zgony, siatka, drewno, jedzenie), integrator, punkt 10.
+- `npm run bot` i `npm run bot:zombie` dostaną nowe skróty (zarząd sam pracuje). Nowe skróty bazowe do dziennika, z porównaniem liczb przed i po (zgony, siatka, drewno, jedzenie), razem z przypiętymi skrótami w `tests/unit/druzyna-sim.test.ts`, jeśli się zmienią (integrator, punkt 10 i akcept punkt 9).
 - Nowy pomiar „zarząd bez gracza”: trzy doby bez żadnego polecenia poza kartą nocy, na trzech demach i w obu trybach. Ile drewna, desek, części, załatanych dziur i przeszukanych pomieszczeń, ile razy ktoś sam wyszedł za siatkę (ma być 0 bez przełącznika), jak ciepło i nastrój zarządu.
 - `npm run bot:surowce` po zmianie: ile desek i złomu jest po 5 dniach i którego dnia stać na najtańszy wspólny płot na Lanciego. To liczba do projektu kosztu płotu.
 - Werbunek w bocie (z włączoną opcją `obcy`, której `bot.ts` i `bot-zombie.ts` dziś nie włączają): ilu zwerbowanych po 10 dniach przy rozmowie z każdym wędrowcem, ilu do zarządu, ilu jako mieszkańcy; cel (moje) 2–5 do zarządu w 10 dni. Bot drukuje ludność (`populacja(st)`: zarząd, mieszkańcy, razem) na koniec każdego dnia, bo z niej integrator ustawi tempo werbunku pod warunek ludnościowy.
 
-Zrzuty (`npm run shots`, obejrzane w Chromium): panel Pracy na komputerze i telefonie po polsku i po angielsku, karta osoby ze stałym zajęciem i przełącznikiem, menu wędrowca z zaproszeniem, nowa osoba w zarządzie przy bramie. Wydajność: `npm run perf` z 12 osobami w zarządzie, laptop i telefon (CPU 4×), co najmniej jak dziś.
+Zrzuty (`npm run shots`, obejrzane w Chromium): górny pasek na telefonie 390×844 ze wszystkimi przyciskami po scaleniach (Praca, Badania, Mapa, Piętro; uwaga integratora), panel Pracy na komputerze i telefonie po polsku i po angielsku, karta osoby ze stałym zajęciem i przełącznikiem, menu wędrowca z zaproszeniem, nowa osoba w zarządzie przy bramie. Wydajność: `npm run perf` z 12 osobami w zarządzie, laptop i telefon (CPU 4×), co najmniej jak dziś.
 
 Bramka: testy, Biome na `src tests tools server index.html`, build, boty, zrzuty i wydajność jak wyżej, wpis w `docs/POSTEP.md`.
 
 ## Kolejność budowy (moje)
 
-1. Model pracy w symulacji: `src/sim/praca.ts` z rodzajami, priorytetami, stałym zajęciem, progami, „za siatkę”, pierwszym dniem, mnożnikiem umiejętności, poleceniami ustawień; wpięcie w `think()`; `populacja(st)`; testy, boty i nowe skróty.
+0. Test łańcucha wspólnego płotu w symulacji (10F, potem 10H na Lanciego).
+1. Model pracy w symulacji: `src/sim/praca.ts` z rodzajami, priorytetami, stałym zajęciem, progami, „za siatkę”, pierwszym dniem z wyjściem awaryjnym, mnożnikiem umiejętności, przerwaniami, zimnem przed pracą, poleceniami ustawień; wpięcie w `think()`; `populacja(st)`; testy, boty i nowe skróty.
 2. Interfejs: panel Pracy, karta osoby, napisy w obu językach, zrzuty.
 3. Werbunek wędrowców, testy, bot.
-4. Test łańcucha płotu, pomiar kosztu płotu, wydajność, bramka i dziennik.
+4. `GovInput.ludnosc` z `populacja(st)`, po wejściu ramy zwycięstwa do `pelna-gra`.
+5. Pomiar kosztu płotu, wydajność, bramka i dziennik.
+
+Kolejność scalania (akcept punkt 9): gałąź tego projektu wchodzi do `pelna-gra` po gałęziach `badania`, ramy zwycięstwa i pięter etap 1, które mają bramkę „skróty bez zmian”, i dopiero ona ogłasza w dzienniku nowe skróty bazowe.
 
 ## Poza zakresem
 
@@ -240,6 +266,21 @@ Integrator, 19.10.2026 w nocy (do przejrzenia przez Mateusza):
 13. Uchodźców w domu naprawić tutaj; po przeglądzie zmienione w punkcie 15.
 14. Płot przez jezdnię osobnym projektem zaraz po tym (warunek zwycięstwa terytorialnego); jedna funkcja populacji wystawiona w `GovInput` jako `ludnosc` dla warunku ludnościowego, bot drukuje ludność po dniach.
 15. Uchodźcy w domu jednorodzinnym osobną poprawką, poza tym projektem.
+
+Akcept integratora po niezależnej recenzji (19.10.2026, w zastępstwie Mateusza), dziewięć zmian wpisanych wyżej:
+1. `GovInput.ludnosc` już jest na gałęzi ramy zwycięstwa; tu tylko `populacja(st).razem` i test równości.
+2. Pustka dalej liczy tylko zarząd.
+3. Zwerbowany ponad limit tylko do wolnego łóżka. Znana luka: przyjmowane gospodarstwa sąsiadów (`przyjmijGospodarstwo`) dostają mieszkanie najmniej zatłoczone, bez górnej granicy, więc przyrost przez sąsiadów dalej nie ma kosztu łóżka; zostaje do projektu gospodarki albo rozporządzeń. „7 dni bez głodu” sprawdza tylko zarząd.
+4. Bez umiejętności tempo 1, umiejętność tylko przyspiesza (`1 + 0,1 · poziom`), krzywa wspólna z badaniami.
+5. Każda praca bez polecenia przerywa się jak prace M2; w trybie zombie automat nie łata i nie pracuje przy siatce przy szwendaczu blisko.
+6. Ciepło poniżej 10: ogrzanie albo dołożenie przed każdą pracą, z poprawką istniejącej pętli przy budowie.
+7. Wyjście awaryjne samouczka od dnia 3, 6:00; bot wydaje polecenie z samouczka.
+8. Progi dzid i części z rezerwą (sekcja „Progi zapasów”).
+9. Kolejność scalania i ogłoszenie nowych skrótów.
+
+Uwagi integratora rozstrzygnięte przeze mnie: zrzut paska na telefonie po wszystkich scaleniach tak; klawisz P zostaje (M zajęła mapa miasta); `EventHost.pop()` przez `ludnoscOf` tylko przy tej samej liczbie co dziś; dokładanie do gasnącej kozy przed stałym zajęciem tak; najbliższe zlecenie po całkowitej odległości z remisem po indeksie, bez `Math.hypot`; pamięć „czy jest robota” poza `SimState`; test łańcucha płotu na początek.
+
+Pytanie do Mateusza (z uwag integratora, bez wpływu na budowę): czy lokatorzy budynków otoczonych wspólnym płotem mają się liczyć do ludności. Dziś nie są nasi (zostają „u siebie”), więc `populacja(st)` ich nie liczy; przyłączenie ich to dalszy projekt.
 
 Moje rozstrzygnięcia po przeglądzie oczami budującego: wzmacnianie siatki, drzewa na linii obwodu, szaber u lokatorów, cudze drzwi i naprawy w niezajętych mieszkaniach poza automatem; ogrzanie tam, gdzie dziś, z pomiarem; ustawienia na indeksie osoby, zwerbowani z id `w…`; wzór werbunku bez zaufania; próg drewna tylko w obrębie siatki; bot werbunku z opcją `obcy`.
 
