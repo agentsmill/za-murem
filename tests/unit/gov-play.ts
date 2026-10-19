@@ -11,7 +11,11 @@
    Opcja `zwyciestwo` (warunki zwycięstwa, docs/superpowers/specs/2026-10-19-warunki-zwyciestwa-design.md) włącza drogi
    w zarządzie jak gra (`wlaczZwyciestwo`), podaje w każdym wejściu ludność kwadratu domu z 2021 roku
    (`GovInput.ludnosc2021`, w grze z `ludnoscSpisu2021`) i woła `po` po każdym kroku zarządu. Bez opcji zarząd nie ma
-   stanu zwycięstwa i skróty są takie jak przed drogami. */
+   stanu zwycięstwa i skróty są takie jak przed drogami.
+
+   Opcje `mode`, `obcy` i `tylkoSamouczek` (praca ludzi, tools/bot-praca.ts): tryb gry symulacji i zarządu, wędrowcy
+   i handlarz pod bramą, oraz gra, w której gracz wydaje tylko polecenie samouczka (bez drzewa na opał, gdy drewna
+   mało). Bez nich nic się nie zmienia (te same skróty). */
 
 import { raidersOf } from '../../src/gov/noc.ts';
 import type { GovEffects, GovInput, GovState, NightReport, Prompt } from '../../src/gov/typy.ts';
@@ -44,6 +48,7 @@ import {
   trunkOf,
 } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
+import type { GameMode } from '../../src/sim/tryb.ts';
 import type { Miejsce } from '../../src/world/miasto.ts';
 import type { World } from '../../src/world/world.ts';
 import type { Player } from './m2-play.ts';
@@ -118,6 +123,13 @@ export interface PlayOpts {
   /** drogi do zwycięstwa (flaga --zwyciestwo botów): zarząd z `wlaczZwyciestwo`, `ludnosc2021` w wejściu i `po` po każdym
       kroku; bez opcji zarząd nie ma stanu zwycięstwa i gra jak przed drogami */
   zwyciestwo?: ZwyciestwoOpts;
+  /** tryb gry symulacji i zarządu (`createSim` i `newGov`); bez opcji zwykły */
+  mode?: GameMode;
+  /** wędrowcy, handlarz i obce ekipy (opcja `obcy` createSim, jak w grze); bez opcji ich nie ma */
+  obcy?: boolean;
+  /** jedyne polecenie gracza to samouczek (zaznaczenie i ścięcie suchego drzewa); bez drzew na opał, gdy drewna zostaje
+      mało, więc zapasy drewna zależą tylko od tego, co zarząd robi sam (tools/bot-praca.ts) */
+  tylkoSamouczek?: boolean;
 }
 
 /** poranek wartownika po nocy na posterunku (6:00–14:00): najedzenie i siły o 6:00, godzina pierwszego posiłku
@@ -262,9 +274,14 @@ export function playWithGov(
   core = 4,
   opts: PlayOpts = {},
 ): PlayResult {
-  const st = createSim(w, seed, { core, ...(opts.mieszkancy ? { mieszkancy: opts.mieszkancy } : {}) });
+  const st = createSim(w, seed, {
+    core,
+    ...(opts.mieszkancy ? { mieszkancy: opts.mieszkancy } : {}),
+    ...(opts.mode ? { mode: opts.mode } : {}),
+    ...(opts.obcy ? { obcy: true } : {}),
+  });
   const sim = new Sim(w, st);
-  const gov = newGov(seed);
+  const gov = newGov(seed, opts.mode);
   // mapa miasta jak w grze (main.ts): stan miasta w zarządzie od początku, okolica w każdym wejściu
   const miasto = opts.miasto;
   if (miasto) wlaczMiasto(gov);
@@ -445,7 +462,7 @@ export function playWithGov(
       night = null;
     }
     // polecenia, których wymaga gra: za dnia, gdy opału zostaje mało, następne drzewo
-    if (st.tick % (TICKS_PER_SECOND * 10) === 0 && h >= 7 && h < 21) {
+    if (!opts.tylkoSamouczek && st.tick % (TICKS_PER_SECOND * 10) === 0 && h >= 7 && h < 21) {
       const sn = snapshot(st, w).stock;
       const wood = h >= 16 && opts.evening ? sn.woodSklad + sn.woodLoose + sn.woodCarried : sn.wood;
       const want = h >= 16 && opts.evening ? opts.evening : 6;

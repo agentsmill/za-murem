@@ -530,7 +530,7 @@ const m2Runs = (search: boolean) =>
   });
 const range = (a: number[]) => `${f1(mean(a))} (${Math.min(...a)}–${Math.max(...a)})`;
 const m2Line = (name: string, runs: ReturnType<typeof m2Runs>) => {
-  const sum = (k: keyof Omit<M2Log, 'built'>) => f1(mean(runs.map((r) => r.log[k])));
+  const sum = (k: keyof Omit<M2Log, 'built' | 'plans'>) => f1(mean(runs.map((r) => r.log[k])));
   console.log(
     `  ${name}: budowle do końca dnia 2: ${range(runs.map((r) => r.by(2)))}, dnia 3: ${range(runs.map((r) => r.by(3)))}, dnia 5: ${range(runs.map((r) => r.by(5)))}`,
   );

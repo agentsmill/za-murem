@@ -200,6 +200,9 @@ export interface GovInput {
   dead?: { id: string; name: string; cause: string; tick: number; f?: boolean; min?: number; cialo?: Cialo }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
+  /** zwerbowani wędrowcy (id `w…`) od początku gry, po kolei: imię, płeć i dokąd trafili (zarząd albo mieszkaniec);
+      lista tylko rośnie, bez pola: nikt */
+  werbunek?: readonly { first: string; f: boolean; dokad: 'zarzad' | 'mieszkaniec' }[];
   /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
       lokalnej (koło 192 m), posortowane po odległości. Miejsc z mapy lokalnej nie wybiera karta nocy
       (`wybierzCeleNocy`) i nie wysyła się do nich wyprawy (`powodOdmowy`), ale karta miejsca je pokazuje. Bez pola
@@ -590,6 +593,8 @@ export interface GovState {
   pogrzebN?: number;
   /** ile napaści z GovInput.napady osiedle już policzyło (pole od pierwszej napaści) */
   napadN?: number;
+  /** ilu zwerbowanych z GovInput.werbunek zarząd już zapisał w kronice (pole od pierwszego) */
+  werbunekN?: number;
   /** mapa miasta: stan odwiedzonych miejsc; pole od `wlaczMiasto` (opcja `miasto`), bez niego zarząd gra na TARGETS */
   miasto?: StanMiasta;
   /** wyprawy dzienne w drodze; pole od pierwszego wyjścia z mapy miasta */

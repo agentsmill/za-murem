@@ -13,8 +13,10 @@ import { newGov } from '../../src/gov/zarzad.ts';
 import { type Miejsce, naMapieLokalnej, PROMIEN_MAPY_LOKALNEJ } from '../../src/world/miasto.ts';
 import { Atrapa } from './gov-atrapa.ts';
 import { playWithGov } from './gov-play.ts';
+import type { Player } from './m2-play.ts';
 import { kategoriaBraku, miastoPlayer, najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
+import { wylaczAutomat } from './praca-pomoc.ts';
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
 const okolica = okolicaZGeo(demo.geo);
@@ -256,7 +258,22 @@ function graj(seed: number) {
       zle.push('wybrani nie są najzdrowsi');
     wyjscia.push({ dzien: i.day, godzina: i.hour, zle });
   };
-  const r = playWithGov(w, seed, 'zawsze-warta', DNI, 4, { miasto: { okolica, krok, po: gracz.po } });
+  // Karta nocy też wysyła wyprawy do miejsc z okolicy, a ich wizyty trafiają do `miasto.wizyty`, choć log bota liczy
+  // tylko jego wyprawy dzienne. Test zakłada, że wizyty pochodzą z wypraw bota, więc zarząd ma robić tylko to, co
+  // przed pracą ludzi (src/sim/praca.ts): to praca ludzi (drwal, szaber, noszenie) zmienia zapasy i to, kto wieczorem
+  // jest wolny, a od tego zależy, czy karta nocy proponuje wyprawę. Nowo przyjęci do zarządu dostają ustawienia
+  // domyślne, więc automat wyłączamy każdemu, kto dołącza (`wylaczAutomat` raz na początku nie wystarcza).
+  let wZarzadzie = 0;
+  const bezAutomatu: Player = (sim) => {
+    const n = sim.st.pawns.filter((p) => p.kind === 'core').length;
+    if (n === wZarzadzie) return;
+    wZarzadzie = n;
+    wylaczAutomat(sim);
+  };
+  const r = playWithGov(w, seed, 'zawsze-warta', DNI, 4, {
+    miasto: { okolica, krok, po: gracz.po },
+    player: bezAutomatu,
+  });
   return { r, gracz, wyjscia };
 }
 

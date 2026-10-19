@@ -23,6 +23,7 @@ afterEach(() => ustawJezyk('pl'));
 
 const osoba = (extra: Partial<SimPerson> = {}): SimPerson => ({
   pawn: 3,
+  osoba: 4,
   id: 's5',
   name: 'Anna Kowalska',
   first: 'Anna',
@@ -34,6 +35,8 @@ const osoba = (extra: Partial<SimPerson> = {}): SimPerson => ({
   needs: { food: 70, warm: 60, rest: 70, health: 100, safe: 60, mood: 65 },
   moods: [],
   job: null,
+  sam: false,
+  praca: { prio: [1, 3, 3, 3, 3, 3, 3, 3, 0], stale: null, zaSiatke: false },
   doing: 'Stoi.',
   asleep: false,
   inside: false,
