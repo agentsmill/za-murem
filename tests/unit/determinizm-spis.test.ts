@@ -1,5 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import { miejscaWPliku, spis } from '../../tools/determinizm/spis-miejsc.ts';
+
+const tymczasowe: string[] = [];
+afterEach(() => {
+  for (const k of tymczasowe.splice(0)) fs.rmSync(k, { recursive: true, force: true });
+});
+
+/** drzewo plików w katalogu tymczasowym: klucze to ścieżki względem korzenia */
+function drzewo(pliki: Record<string, string>): string {
+  const korzen = fs.mkdtempSync(path.join(os.tmpdir(), 'zm-spis-'));
+  tymczasowe.push(korzen);
+  for (const [sciezka, tresc] of Object.entries(pliki)) {
+    fs.mkdirSync(path.dirname(path.join(korzen, sciezka)), { recursive: true });
+    fs.writeFileSync(path.join(korzen, sciezka), tresc);
+  }
+  return korzen;
+}
 
 describe('spis miejsc, w których silniki JS mogą się rozjechać', () => {
   it('liczy prawdziwe wywołania Math i operator **, a komentarze i napisy pomija', () => {
@@ -23,10 +42,34 @@ describe('spis miejsc, w których silniki JS mogą się rozjechać', () => {
     ]);
   });
 
-  it('w prawdziwym kodzie gry znajduje hypot w symulacji i w budowie świata (nic poza katalogami gry)', () => {
+  it('przeszukuje podane katalogi rekurencyjnie, ścieżki liczy od korzenia, a .d.ts, inne rozszerzenia i inne katalogi pomija', () => {
+    const korzen = drzewo({
+      'src/sim/a.ts': 'export const d = Math.hypot(3, 4);\n',
+      'src/sim/pod/b.ts': 'export const e = (x: number) => x ** 2 + Math.exp(x);\n',
+      'src/sim/typy.d.ts': 'const w = Math.hypot(1, 2);\n',
+      'src/sim/notatki.md': 'Math.hypot(1, 2)\n',
+      'src/world/c.ts': 'const f = Math.atan2(1, 2);\nconst g = Math.sqrt(2);\n',
+      'src/ui/d.ts': 'const z = Math.hypot(1, 1);\n',
+    });
+    const miejsca = spis(korzen, ['src/sim', 'src/world']).sort(
+      (a, b) => a.plik.localeCompare(b.plik) || a.linia - b.linia,
+    );
+    expect(miejsca).toEqual([
+      { plik: 'src/sim/a.ts', linia: 1, co: 'hypot' },
+      { plik: 'src/sim/pod/b.ts', linia: 1, co: '**' },
+      { plik: 'src/sim/pod/b.ts', linia: 1, co: 'exp' },
+      { plik: 'src/world/c.ts', linia: 1, co: 'atan2' },
+    ]);
+  });
+
+  it('katalog z listy, którego nie ma, to błąd, a nie cicha luka w spisie', () => {
+    const korzen = drzewo({ 'src/sim/a.ts': 'export const d = 1;\n' });
+    expect(() => spis(korzen, ['src/sim', 'src/nie-ma'])).toThrow(/ENOENT/);
+  });
+
+  it('bez argumentów przegląda katalogi gry w repozytorium i nie wychodzi poza nie (bez założeń o tym, ile jest tam wywołań)', () => {
     const miejsca = spis();
-    expect(miejsca.filter((m) => m.co === 'hypot' && m.plik.startsWith('src/sim/')).length).toBeGreaterThan(30);
-    expect(miejsca.some((m) => m.co === 'atan2' && m.plik === 'src/world/rotate.ts')).toBe(true);
-    expect(miejsca.every((m) => /^src\/(sim|gov|world|core|content|mieszkancy)\//.test(m.plik))).toBe(true);
+    expect(miejsca.every((m) => /^src\/(sim|gov|world|core|content|mieszkancy)\/.+\.ts$/.test(m.plik))).toBe(true);
+    expect(miejsca.every((m) => Number.isInteger(m.linia) && m.linia >= 1)).toBe(true);
   });
 });

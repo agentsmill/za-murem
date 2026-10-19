@@ -64,11 +64,13 @@ function pliki(katalog: string): string[] {
   });
 }
 
-/** miejsca w katalogach gry, bez testów i narzędzi */
-export function spis(): Miejsce[] {
-  return KATALOGI.flatMap((k) =>
-    pliki(path.join(KORZEN, k)).flatMap((p) =>
-      miejscaWPliku(fs.readFileSync(p, 'utf8'), path.relative(KORZEN, p).replaceAll(path.sep, '/')),
+/** Miejsca w podanych katalogach (domyślnie w katalogach, które liczą grę w tym repozytorium), bez testów i narzędzi.
+    Ścieżki w wyniku są względem `korzen`; katalog z listy, którego nie ma, to błąd (zmiana nazwy katalogu nie może
+    po cichu zrobić dziury w spisie). */
+export function spis(korzen: string = KORZEN, katalogi: readonly string[] = KATALOGI): Miejsce[] {
+  return katalogi.flatMap((k) =>
+    pliki(path.join(korzen, k)).flatMap((p) =>
+      miejscaWPliku(fs.readFileSync(p, 'utf8'), path.relative(korzen, p).replaceAll(path.sep, '/')),
     ),
   );
 }
