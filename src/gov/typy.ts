@@ -189,10 +189,11 @@ export interface GovInput {
       z dziedziny, poszła na drewno. Zarząd dopisuje do kroniki wpisy z tickiem nowszym niż `GovState.czytane`.
       Książki z wydarzenia „książki” tu nie trafiają: wydarzenie ma własny wpis. Bez pola: żadnych. */
   znaleziska?: readonly { tick: number; dom: TechDom; tytul: string; podpalka?: boolean }[];
-  /** polecenia, które przepadły, bo szwendacze przerywały je trzy razy (dziennik symulacji `SimState.przerwane`), po kolei:
-      tick, imię osoby i klucz tego, co robiła (klucz komendy, przy wraku 'wreck:szukaj' albo 'wreck:rozbierz'). Zarząd
-      dopisuje do kroniki wpisy z tickiem nowszym niż `GovState.czytane` (src/gov/znaleziska.ts). Bez pola: żadnych. */
-  przerwane?: readonly { tick: number; imie: string; co: string }[];
+  /** polecenia, które przepadły, bo wróg przerywał je trzy razy (dziennik symulacji `SimState.przerwane`), po kolei:
+      tick, imię osoby, klucz tego, co robiła (klucz komendy, przy wraku 'wreck:szukaj' albo 'wreck:rozbierz') i kto
+      przerwał ostatni raz (`kto`: 'zombie', 'szabrownik' albo 'wrogi' człowiek; bez pola szwendacze). Zarząd dopisuje do
+      kroniki wpisy z tickiem nowszym niż `GovState.czytane` (src/gov/znaleziska.ts). Bez pola: żadnych. */
+  przerwane?: readonly { tick: number; imie: string; co: string; kto?: 'zombie' | 'szabrownik' | 'wrogi' }[];
   /** zbadane technologie (identyfikatory z src/sim/badania.ts); EventHost.tech czyta stąd, bez pola żadna */
   techDone?: readonly string[];
   /** wiedza osady w dziedzinach, ta sama co na tablicy badań (najlepsza osoba zarządu albo lokatora siedziby na

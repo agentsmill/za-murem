@@ -678,6 +678,12 @@ export type PawnKind =
 export const isEnemy = (p: Pick<Pawn, 'kind' | 'wrogi'>): boolean =>
   p.kind === 'szabrownik' || p.kind === 'zombie' || !!p.wrogi;
 
+/** kto przerwał polecenie (do wpisu w kronice): szwendacz, szabrownik albo inny wrogi człowiek (napadnięty handlarz,
+    jego ludzie) */
+export type Napastnik = 'zombie' | 'szabrownik' | 'wrogi';
+export const rodzajNapastnika = (e: Pick<Pawn, 'kind' | 'wrogi'>): Napastnik =>
+  e.kind === 'zombie' ? 'zombie' : e.kind === 'szabrownik' ? 'szabrownik' : 'wrogi';
+
 export interface Pawn {
   id: number;
   kind: PawnKind;
@@ -1043,11 +1049,12 @@ export interface SimState {
   plot?: PlotStan;
   /** handlarz pod bramą (src/sim/handlarz.ts); tylko z opcją obcy albo po poleceniu 'obcy' */
   obcy?: Obcy;
-  /** polecenia, które przepadły po WZNOW_PROBY próbach (szwendacze za każdym razem je przerywały), po kolei, najwyżej
-      PRZERWANE_MAX: tick, imię osoby i klucz tego, co robiła (klucz komendy, przy wraku 'wreck:szukaj' albo
-      'wreck:rozbierz'). Zarząd dopisuje je do kroniki (GovInput.przerwane, src/gov/znaleziska.ts). Pola nie ma, dopóki
-      żadne polecenie nie przepadło, więc stan gry bez takich przerwań się nie zmienia. */
-  przerwane?: { tick: number; imie: string; co: string }[];
+  /** polecenia, które przepadły po WZNOW_PROBY próbach (wróg za każdym razem je przerywał), po kolei, najwyżej
+      PRZERWANE_MAX: tick, imię osoby, klucz tego, co robiła (klucz komendy, przy wraku 'wreck:szukaj' albo
+      'wreck:rozbierz') i kto przerwał ostatni raz (`kto`: od niego zależy słowo we wpisie kroniki). Zarząd dopisuje je do
+      kroniki (GovInput.przerwane, src/gov/znaleziska.ts). Pola nie ma, dopóki żadne polecenie nie przepadło, więc stan
+      gry bez takich przerwań się nie zmienia. */
+  przerwane?: { tick: number; imie: string; co: string; kto: Napastnik }[];
 }
 
 /** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
@@ -2688,9 +2695,14 @@ export class Sim {
   }
 
   /** Samo polecenie dla wskazanych z zarządu (bez samouczka i bez pamiętania): ta droga od gracza i od wznowienia
-      przerwanego polecenia. */
+      przerwanego polecenia. Budowę zakłada od gracza `apply` (orderBuild, także nowy plan), więc `build` tutaj to
+      wznowienie: tylko istniejący plan, taki sam co do rodzaju, miejsca i obrotu, bez zakładania nowego (plan odwołany
+      przez gracza `unbuild` nie powstaje od nowa). */
   private rozkaz(c: Command, pawns: Pawn[]): void {
-    if (c.t === 'move') this.orderMove(pawns, c.to, [], true);
+    if (c.t === 'build') {
+      const plan = this.st.builds.find((b) => b.kind === c.kind && b.x === c.x && b.y === c.y && b.rot === c.rot);
+      if (plan && pawns[0]) this.startBuild(pawns[0], plan);
+    } else if (c.t === 'move') this.orderMove(pawns, c.to, [], true);
     else if (c.t === 'chop') this.orderChop(pawns, c.tree);
     else if (c.t === 'haul') this.orderHaul(pawns, c.thing);
     else if (c.t === 'refuel') this.orderRefuel(pawns, c.thing);
@@ -6428,7 +6440,7 @@ export class Sim {
       (Polecenie.niesie). Kolejne przerwanie tego samego polecenia (drugi szwendacz po wygranej walce) niczego nie
       zmienia, przy ucieczce tylko odświeża czas zagrożenia. Przerwanie w ostatniej próbie (WZNOW_PROBY) kończy
       polecenie wpisem w kronice, a ładunek ląduje tam, gdzie pionek stoi. */
-  private przerwij(p: Pawn, ucieczka: boolean): void {
+  private przerwij(p: Pawn, ucieczka: boolean, wrog?: Pawn): void {
     const pol = p.polecenie;
     if (p.kind !== 'core' || !pol) return;
     const tick = this.st.tick;
@@ -6448,7 +6460,7 @@ export class Sim {
       }
     }
     if (pol.n >= WZNOW_PROBY) {
-      this.porzucPolecenie(p, true);
+      this.porzucPolecenie(p, true, wrog ? rodzajNapastnika(wrog) : 'zombie');
       return;
     }
     pol.od = tick;
@@ -6457,7 +6469,7 @@ export class Sim {
 
   /** Polecenie przepada (nowe polecenie gracza, wygaśnięcie, przerwanie w ostatniej próbie, WZNOW_PROBY); wpis: z wpisem
       w dzienniku dla kroniki zarządu. Zapamiętany ładunek ląduje tam, gdzie pionek stoi. */
-  private porzucPolecenie(p: Pawn, wpis = false): void {
+  private porzucPolecenie(p: Pawn, wpis = false, kto: Napastnik = 'zombie'): void {
     const pol = p.polecenie;
     if (!pol) return;
     if (wpis) {
@@ -6467,6 +6479,7 @@ export class Sim {
         tick: st.tick,
         imie: st.people[p.person]?.first ?? '',
         co: pol.c.t === 'wreck' ? `wreck:${pol.c.how}` : pol.c.t,
+        kto,
       });
       if (dziennik.length > PRZERWANE_MAX) dziennik.splice(0, dziennik.length - PRZERWANE_MAX);
     }
@@ -6529,6 +6542,10 @@ export class Sim {
         return c.door;
       case 'build':
         return c.y * size + c.x;
+      case 'loot':
+        // przeszukanie w cudzym budynku: wróg pod jego drzwiami też wstrzymuje wznowienie (kafelek przed pierwszymi
+        // drzwiami na zewnątrz)
+        return drzwiBudynku(this.w, c.bid).zewn[0]?.out ?? -1;
       default:
         return -1;
     }
@@ -6549,18 +6566,59 @@ export class Sim {
     return false;
   }
 
+  /** Czy cel pracy z ładunkiem nadal jest wolny dla pionka, który ją wznawia: te same sprawdzenia, które robią funkcje
+      zaczynające tę pracę (plan budowy, palenisko, dziura w siatce, uszkodzenie, miejsce na ognisko), żeby przerwanie nie
+      zostawiło dwojga ludzi przy jednej rzeczy (przerwanie zwalnia rezerwacje, a wolny zarząd bierze plan sam). */
+  private celWolny(p: Pawn, j: Job): boolean {
+    const st = this.st;
+    const innyRobi = (t: JobKind) => st.pawns.some((q) => q !== p && q.job?.t === t && q.job.target === j.target);
+    switch (j.t) {
+      case 'build': {
+        const b = st.builds.find((q) => q.id === j.target);
+        return !!b && (b.by < 0 || b.by === p.id);
+      }
+      case 'refuel': {
+        const koza = this.thing(j.target);
+        return !!koza && (koza.by < 0 || koza.by === p.id);
+      }
+      case 'patch': {
+        const dziura = this.holeById(j.target);
+        return !!dziura && dziura.patch <= 0 && !innyRobi('patch');
+      }
+      case 'repair': {
+        const d = st.damage[j.target];
+        return !!d && !d.fixed && !innyRobi('repair');
+      }
+      case 'campfire':
+        return this.siteOk(j.target);
+      default:
+        return true;
+    }
+  }
+
   /** Wznowienie pracy z ładunkiem: ta sama praca w stanie sprzed przerwania, ładunek znowu w rękach, droga do jej
-      miejsca od nowa (praca przy pracy po dojściu zaczyna się od początku: łatanie, wzmacnianie, rozpalanie). false, gdy
-      się nie da (droga, ktoś zajął palenisko): wtedy ładunek ląduje obok (oddajLadunek). */
+      miejsca od nowa (praca przy pracy po dojściu zaczyna się od początku: łatanie, wzmacnianie, rozpalanie) i zajęty od
+      nowa cel (plan budowy, palenisko). false, gdy się nie da (droga, ktoś inny przejął cel): wtedy ładunek ląduje obok
+      (oddajLadunek). Drewno, które pionek już trzyma, idzie przedtem na skład (w siedzibie) albo pod nogi, żeby nie zginęło
+      pod odzyskanym. */
   private rozmroz(p: Pawn, nie: NonNullable<Polecenie['niesie']>): boolean {
     const j: Job = { ...nie.job };
     if (j.phase === 2 && (j.t === 'patch' || j.t === 'brace' || j.t === 'campfire')) j.phase = 1;
-    const koza = j.t === 'refuel' ? this.thing(j.target) : undefined;
-    if (j.t === 'refuel' && (!koza || (koza.by >= 0 && koza.by !== p.id))) return false;
-    if (!this.go(p, j.tile)) return false;
+    if (!this.celWolny(p, j) || !this.go(p, j.tile)) return false;
+    if (p.carry > 0) {
+      if (this.inRoom(this.tileOf(p))) this.stack(p);
+      this.dropCarry(p);
+    }
     p.carry = nie.drewno;
     this.setJob(p, j, true);
-    if (koza) koza.by = p.id;
+    // setJob zwalnia rezerwacje pionka, więc cel zajmuje się dopiero teraz
+    if (j.t === 'build') {
+      const b = this.st.builds.find((q) => q.id === j.target);
+      if (b) b.by = p.id;
+    } else if (j.t === 'refuel') {
+      const koza = this.thing(j.target);
+      if (koza) koza.by = p.id;
+    }
     return true;
   }
 
@@ -7031,7 +7089,7 @@ export class Sim {
     if (!e && !(outdoors && this.yardDanger())) return false;
     if (j?.t === 'stay' && j.target === STAY_HOME && !indoorFoe) return false;
     if (e && !resident && p.weapon && this.armed(p).id !== 'piesci' && (p.needs?.health ?? 0) > 40) {
-      this.przerwij(p, false);
+      this.przerwij(p, false, e);
       this.startFight(p, e.id, false);
       return true;
     }
@@ -7044,7 +7102,7 @@ export class Sim {
         ? this.homeSpot(p)
         : this.shelterSpot(p);
     if (spot < 0 || !this.go(p, spot)) return false;
-    this.przerwij(p, true);
+    this.przerwij(p, true, e);
     const run = this.newJob(resident ? 'stay' : 'go', resident ? STAY_HOME : spot, spot, false);
     run.until = this.st.tick + 600;
     this.setJob(p, run, false);

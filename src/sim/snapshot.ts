@@ -393,7 +393,12 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   const lokatorzy: SimPerson[] = st.pawns
     .filter((p) => (p.kind === 'resident' || p.kind === 'sasiad') && p.person >= 0 && st.people[p.person])
     .map((p) => personOf(st, w, p, st.people[p.person]));
-  const woodCarried = people.reduce((a, p) => a + p.carry, 0);
+  // drewno w rękach zarządu i to, które zdjęto z rąk na czas przerwanego polecenia (Polecenie.niesie, do 3 godzin gry):
+  // jedno i drugie wciąż jest przy człowieku, więc zapasy i karta nocy go nie tracą
+  const woodCarried = st.pawns.reduce(
+    (a, p) => (p.kind === 'core' ? a + p.carry + (p.polecenie?.niesie?.drewno ?? 0) : a),
+    0,
+  );
   const fuel = koza?.fuel ?? 0;
   const hour = hourOf(tick);
   return {

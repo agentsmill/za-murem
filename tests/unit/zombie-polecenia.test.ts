@@ -16,13 +16,17 @@ import { describe, expect, it } from 'vitest';
 import { govUpdate, newGov } from '../../src/gov/zarzad.ts';
 import { tekstPrzerwania } from '../../src/gov/znaleziska.ts';
 import type { WeaponId } from '../../src/sim/bron.ts';
+import { canPlace } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { govInput } from '../../src/sim/gov.ts';
 import { type NeedCtx, startNeeds, stepNeeds } from '../../src/sim/needs.ts';
+import { drzwiBudynku } from '../../src/sim/sasiedzi.ts';
 import {
+  type Command,
   createSim,
   type Pawn,
   POLECENIA_WZNAWIANE,
+  rodzajNapastnika,
   Sim,
   type SimState,
   spawnZombie,
@@ -30,6 +34,7 @@ import {
   WZNOW_PROBY,
   WZNOW_SPOKOJ,
 } from '../../src/sim/sim.ts';
+import { snapshot } from '../../src/sim/snapshot.ts';
 import { mockBlock, trunkTile } from './interior-mock.ts';
 import { demoWorld, doorWhere, newGame, pusto } from './sasiedzi-pomoc.ts';
 
@@ -63,30 +68,37 @@ interface Scena {
   st: SimState;
   sim: Sim;
   a: Pawn;
+  /** drugi z zarządu (bez broni), gdy scena ma ich dwóch */
+  b?: Pawn;
   /** n kroków symulacji, po każdym wymiecione cudze szwendacze */
   krok(n?: number): void;
   /** kroki, aż warunek będzie prawdziwy (najwyżej limit); zwraca, ile zrobiono */
   az(warunek: () => boolean, limit: number): number;
   /** szwendacz d metrów od pionka (po wschodniej stronie, a gdy tam nie da się stanąć, po innej), idzie na ofiarę */
   szwendacz(p: Pawn, d?: number): Pawn;
+  /** szwendacz na podwórku 2–5 m od pionka (wróg w środku: nikt bez polecenia nie wychodzi na dwór) */
+  szwendaczNaPodworku(p: Pawn): Pawn;
   /** zwykłe polecenie rąbania drzewa za siatką, a potem czekanie, aż pionek stanie przy pniu i zacznie rąbać */
   doDrzewa(): void;
 }
 
-/** Jeden pionek zarządu w trybie zombie o 10:06 drugiego dnia, syty, ogrzany i wyspany (żadna potrzeba nie przerwie
-    próby), z podaną bronią. Cudze szwendacze znikają po każdym kroku. */
-function scena(bron: WeaponId | null = 'lom'): Scena {
-  const st = createSim(w, 3, { core: 1, mode: 'zombie' });
-  st.tick = atHour(2, 10.1);
+/** Jeden pionek zarządu (opcja core: dwóch, drugi bez broni) w trybie zombie o 10:06 drugiego dnia albo o podanej
+    godzinie, syty, ogrzany i wyspany (żadna potrzeba nie przerwie próby), z podaną bronią. Cudze szwendacze znikają po
+    każdym kroku. */
+function scena(bron: WeaponId | null = 'lom', opcje: { core?: number; godzina?: number } = {}): Scena {
+  const st = createSim(w, 3, { core: opcje.core ?? 1, mode: 'zombie' });
+  st.tick = atHour(2, opcje.godzina ?? 10.1);
   const sim = new Sim(w, st);
   const swoje = new Set<number>();
   const zamiec = () => {
     st.pawns = st.pawns.filter((p) => p.kind !== 'zombie' || swoje.has(p.id));
   };
   zamiec();
-  const a = st.pawns.find((p) => p.kind === 'core')!;
+  const ludzie = st.pawns.filter((p) => p.kind === 'core');
+  const [a, b] = ludzie;
   a.weapon = bron;
-  Object.assign(a.needs!, { food: 95, warm: 95, rest: 95 });
+  if (b) b.weapon = null;
+  for (const q of ludzie) Object.assign(q.needs!, { food: 95, warm: 95, rest: 95 });
   const krok = (n = 1) => {
     for (let k = 0; k < n; k++) {
       sim.step();
@@ -117,12 +129,23 @@ function scena(bron: WeaponId | null = 'lom'): Scena {
     }
     throw new Error('nie ma gdzie postawić szwendacza');
   };
+  const szwendaczNaPodworku = (p: Pawn) => {
+    for (const t of yard) {
+      const d = Math.hypot((t % size) + 0.5 - p.x, Math.floor(t / size) + 0.5 - p.y);
+      if (d < 2 || d > 5 || !sim.canWalk('zombie', t) || w.interior.room[t] >= 0) continue;
+      const z = spawnZombie(st, w, t, 3);
+      z.job!.phase = 1;
+      swoje.add(z.id);
+      return z;
+    }
+    throw new Error('nie ma gdzie postawić szwendacza na podwórku');
+  };
   const doDrzewa = () => {
     sim.push({ t: 'chop', ids: [a.id], tree: DRZEWO });
     az(() => a.job?.t === 'chop' && a.job.phase === 1, 600);
     expect(a.job?.t).toBe('chop');
   };
-  return { st, sim, a, krok, az, szwendacz, doDrzewa };
+  return { st, sim, a, b, krok, az, szwendacz, szwendaczNaPodworku, doDrzewa };
 }
 
 /** wolny kafelek za siatką 12–16 m od bramy, do którego zarząd dojdzie (miejsce na stertę łupu) */
@@ -247,7 +270,7 @@ describe('A. polecenie gracza przeżywa walkę odruchową', () => {
     expect(s.a.job?.t).toBe('fight');
     expect(s.a.polecenie).toBeUndefined();
     expect(s.st.przerwane).toHaveLength(1);
-    expect(s.st.przerwane![0]).toMatchObject({ imie: s.st.people[s.a.person].first, co: 'chop' });
+    expect(s.st.przerwane![0]).toMatchObject({ imie: s.st.people[s.a.person].first, co: 'chop', kto: 'zombie' });
     s.sim.wound(z, 999);
     s.az(() => inside(tileOf(s.a)), 1200);
     expect(inside(tileOf(s.a))).toBe(true);
@@ -623,5 +646,262 @@ describe('lista zapamiętywanych poleceń i opisy do kroniki', () => {
     // wrak bez odmiany i klucz spoza tabeli
     expect(tekstPrzerwania({ imie: 'Ola', co: 'nie-ma-takiego' }).pl).toBe('Ola przerywa: polecenie (szwendacze).');
     expect(widziane.size).toBeGreaterThan(30);
+  });
+});
+
+/* Poprawki po przeglądzie (Opus): drewno w rękach przy wznowieniu, wznowienie budowy, rezerwacje celu, kto przerwał,
+   drewno zdjęte z rąk w zapasach i cel „szabru” przy drzwiach budynku. */
+
+/** plan ogródka w głębi podwórka (najdalej od siedziby, jak pozwala canPlace) i sterty desek po `ile` sztuk co najmniej
+    `daleko` m od niego, żeby dojście po materiał trwało; zwraca miejsce planu */
+function planISterty(s: Scena, sterty: number, ile: number, daleko: number): { x: number; y: number } {
+  let plan: { x: number; y: number } | undefined;
+  for (const t of [...yard].sort((p, q) => q - p)) {
+    const x = t % size;
+    const y = Math.floor(t / size);
+    if (canPlace(s.st, w, 'ogrodek', x, y, 0).ok) {
+      plan = { x, y };
+      break;
+    }
+  }
+  if (!plan) throw new Error('nie ma miejsca na plan');
+  let ile0 = 0;
+  for (const t of [...yard].sort((p, q) => p - q)) {
+    if (ile0 === sterty) break;
+    const x = t % size;
+    const y = Math.floor(t / size);
+    const zajete = s.st.things.some((q) => x >= q.x && x < q.x + q.w && y >= q.y && y < q.y + q.h);
+    if (Math.hypot(x - plan.x, y - plan.y) < daleko || zajete || !s.sim.canWalk('core', t)) continue;
+    s.st.things.push({
+      id: s.st.nextThing++,
+      kind: 'deski',
+      x,
+      y,
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: ile,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    ile0++;
+  }
+  if (ile0 < sterty) throw new Error('nie ma miejsca na sterty desek');
+  return plan;
+}
+
+/** wszystkie deski w grze: sterty, w rękach (praca i zapamiętany ładunek) i doniesione na plany */
+const deskiRazem = (st: SimState): number => {
+  let n = sztuki(st, 'deski');
+  for (const p of st.pawns) {
+    if (p.job?.what === 'deski') n += p.job.n;
+    if (p.polecenie?.niesie?.job.what === 'deski') n += p.polecenie.niesie.job.n;
+  }
+  for (const b of st.builds) n += b.have.deski ?? 0;
+  return n;
+};
+
+describe('poprawki po przeglądzie: drewno w rękach przy wznowieniu', () => {
+  /** pionek bez broni niesie z ulicy 6 sztuk drewna do składu, szwendacz go spłasza, a on siedzi w siedzibie ranny
+      (nie wznawia), z drewnem zapamiętanym w stanie */
+  function uciekinierZDrewnem() {
+    const s = scena(null);
+    const miejsce = kafelekNaUlicy(s.sim);
+    const stos = {
+      id: s.st.nextThing++,
+      kind: 'drewno',
+      x: miejsce % size,
+      y: Math.floor(miejsce / size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 6,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    };
+    s.st.things.push(stos);
+    s.sim.push({ t: 'haul', ids: [s.a.id], thing: stos.id });
+    s.az(() => s.a.job?.t === 'haul' && s.a.job.phase === 1, 600);
+    expect(s.a.carry).toBe(6);
+    const z = s.szwendacz(s.a, 4);
+    s.az(() => s.a.job?.t === 'go' && !s.a.job.order, 300);
+    expect(s.a.polecenie?.niesie?.drewno).toBe(6);
+    s.sim.wound(z, 999);
+    s.a.needs!.health = 30;
+    s.az(() => inside(tileOf(s.a)) && !s.a.job, 800);
+    s.krok(5);
+    expect(s.a.polecenie?.od).toBeDefined();
+    return s;
+  }
+
+  it('drewno, które pionek już trzyma, nie ginie pod odzyskanym: razem tyle samo przed i po wznowieniu', () => {
+    const s = uciekinierZDrewnem();
+    // pionek stoi w siedzibie z drewnem w rękach (np. po noszeniu do pełnego składu) i właśnie może wrócić do pracy
+    s.a.carry = 3;
+    const razem = () => sztuki(s.st, 'drewno') + s.a.carry + (s.a.polecenie?.niesie?.drewno ?? 0);
+    const przed = razem();
+    s.a.needs!.health = 80;
+    s.a.polecenie!.zag = s.st.tick - 100;
+    s.a.wait = s.st.tick;
+    s.az(() => s.a.job?.t === 'haul', 60);
+    expect(s.a.job?.t).toBe('haul');
+    expect(s.a.job?.phase).toBe(1);
+    // z powrotem w rękach to, co niósł z ulicy, a to, co trzymał, leży na składzie albo obok
+    expect(s.a.carry).toBe(6);
+    expect(razem()).toBe(przed);
+    // po zniesieniu na skład drewno jest na stosie (potem pionek może zająć się kozą i spalić je jako opał: to nie strata)
+    s.az(() => s.a.job?.t !== 'haul', 800);
+    expect(s.a.carry).toBe(0);
+    expect(razem()).toBe(przed);
+  });
+
+  it('drewno zdjęte z rąk na czas przerwania dalej liczy się w zapasach (stock.wood i woodCarried)', () => {
+    const s = scena(null);
+    const miejsce = kafelekNaUlicy(s.sim);
+    const stos = {
+      id: s.st.nextThing++,
+      kind: 'drewno',
+      x: miejsce % size,
+      y: Math.floor(miejsce / size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 6,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    };
+    s.st.things.push(stos);
+    s.sim.push({ t: 'haul', ids: [s.a.id], thing: stos.id });
+    s.az(() => s.a.job?.t === 'haul' && s.a.job.phase === 1, 600);
+    const przed = snapshot(s.st, w).stock;
+    expect(przed.woodCarried).toBe(6);
+    s.szwendacz(s.a, 4);
+    s.az(() => s.a.job?.t === 'go' && !s.a.job.order, 300);
+    expect(s.a.carry).toBe(0);
+    expect(s.a.polecenie?.niesie?.drewno).toBe(6);
+    const po = snapshot(s.st, w).stock;
+    expect(po.woodCarried).toBe(6);
+    expect(po.wood).toBe(przed.wood);
+    expect(po.mats.drewno).toBe(przed.mats.drewno);
+  });
+});
+
+describe('poprawki po przeglądzie: budowa', () => {
+  it('budowa przerwana nocą wygraną walką wraca do tego samego planu (order: true)', () => {
+    const s = scena('lom', { godzina: 22.5 });
+    const miejsce = planISterty(s, 1, 20, 12);
+    s.sim.push({ t: 'build', ids: [s.a.id], kind: 'ogrodek', x: miejsce.x, y: miejsce.y, rot: 0 });
+    // w drodze po deski (faza 0), daleko od celu
+    s.az(() => s.a.job?.t === 'build' && s.a.job.phase === 0 && s.a.path.length - s.a.pi > 4, 60);
+    expect(s.a.job?.t).toBe('build');
+    const plan = s.st.builds[0];
+    expect(plan).toBeDefined();
+    expect(s.a.polecenie?.c).toMatchObject({ t: 'build', kind: 'ogrodek', x: miejsce.x, y: miejsce.y, rot: 0 });
+    const z = s.szwendaczNaPodworku(s.a);
+    s.az(() => s.a.job?.t === 'fight', 300);
+    expect(s.a.job?.t).toBe('fight');
+    s.sim.wound(z, 999);
+    s.krok(5);
+    // nocą nikt sam nie bierze się za plan (startAnyBuild tylko za dnia), więc to wznowienie polecenia
+    expect(s.a.job).toMatchObject({ t: 'build', order: true, target: plan.id });
+    expect(s.a.polecenie?.n).toBe(2);
+    expect(s.st.builds).toHaveLength(1);
+    expect(plan.by).toBe(s.a.id);
+  });
+
+  it('plan, który gracz odwołał w czasie przerwania, nie powstaje od nowa przy wznowieniu', () => {
+    const s = scena('lom', { godzina: 22.5 });
+    const miejsce = planISterty(s, 1, 20, 12);
+    s.sim.push({ t: 'build', ids: [s.a.id], kind: 'ogrodek', x: miejsce.x, y: miejsce.y, rot: 0 });
+    s.az(() => s.a.job?.t === 'build' && s.a.job.phase === 0 && s.a.path.length - s.a.pi > 4, 60);
+    const plan = s.st.builds[0];
+    const z = s.szwendaczNaPodworku(s.a);
+    s.az(() => s.a.job?.t === 'fight', 300);
+    s.sim.push({ t: 'unbuild', ids: [], id: plan.id });
+    s.krok(1);
+    expect(s.st.builds).toHaveLength(0);
+    s.sim.wound(z, 999);
+    s.krok(30);
+    expect(s.st.builds).toHaveLength(0);
+    expect(s.a.job?.t).not.toBe('build');
+    expect(s.a.polecenie).toBeUndefined();
+  });
+
+  it('plan przejęty przez drugiego w czasie przerwania: pierwszy go nie dubluje, a jego ładunek wraca na podwórko', () => {
+    const s = scena(null, { core: 2 });
+    const a = s.a;
+    const b = s.b!;
+    const miejsce = planISterty(s, 2, 14, 8);
+    s.sim.push({ t: 'build', ids: [a.id], kind: 'ogrodek', x: miejsce.x, y: miejsce.y, rot: 0 });
+    s.az(() => a.job?.t === 'build' && a.job.phase === 1 && a.job.n > 0, 1500);
+    expect(a.job?.t).toBe('build');
+    const plan = s.st.builds[0];
+    const niesie = a.job!.n;
+    const z = s.szwendaczNaPodworku(a);
+    s.az(() => a.job?.t === 'go' && !a.job.order, 300);
+    expect(a.polecenie?.niesie?.job).toMatchObject({ t: 'build', what: 'deski', n: niesie });
+    // zwolniona rezerwacja planu: wolny drugi człowiek bierze go za dnia
+    s.sim.wound(z, 999);
+    a.needs!.health = 30;
+    s.az(() => plan.by === b.id, 600);
+    expect(plan.by).toBe(b.id);
+    const przed = deskiRazem(s.st);
+    // pierwszy znowu może iść, ale plan ma już kogoś innego
+    a.needs!.health = 80;
+    a.polecenie!.zag = s.st.tick - 100;
+    a.wait = s.st.tick;
+    let razem = 0;
+    for (let k = 0; k < 300; k++) {
+      s.krok();
+      if (a.job?.t === 'build' && a.job.target === plan.id) razem++;
+    }
+    expect(razem).toBe(0);
+    expect(b.job?.t).toBe('build');
+    expect(plan.by).toBe(b.id);
+    // polecenie przepadło po cichu, a deski pierwszego wróciły: nic nie zginęło
+    expect(a.polecenie).toBeUndefined();
+    expect(s.st.przerwane).toBeUndefined();
+    expect(deskiRazem(s.st)).toBe(przed);
+  });
+});
+
+describe('poprawki po przeglądzie: kto przerwał i cel „szabru”', () => {
+  it('kronika podaje, kto przerwał polecenie: szwendacze, szabrownicy albo napastnicy', () => {
+    expect(rodzajNapastnika({ kind: 'zombie' })).toBe('zombie');
+    expect(rodzajNapastnika({ kind: 'szabrownik' })).toBe('szabrownik');
+    expect(rodzajNapastnika({ kind: 'zbir', wrogi: true })).toBe('wrogi');
+    const tekst = (kto?: 'zombie' | 'szabrownik' | 'wrogi') =>
+      tekstPrzerwania({ imie: 'Ola', co: 'chop', ...(kto ? { kto } : {}) });
+    // bez pola (i dla szwendaczy) jak dotąd
+    expect(tekst()).toEqual({
+      pl: 'Ola przerywa: ścinanie drzewa (szwendacze).',
+      en: 'Ola breaks off: felling a tree (shamblers).',
+    });
+    expect(tekst('zombie')).toEqual(tekst());
+    expect(tekst('szabrownik')).toEqual({
+      pl: 'Ola przerywa: ścinanie drzewa (szabrownicy).',
+      en: 'Ola breaks off: felling a tree (looters).',
+    });
+    expect(tekst('wrogi')).toEqual({
+      pl: 'Ola przerywa: ścinanie drzewa (napastnicy).',
+      en: 'Ola breaks off: felling a tree (attackers).',
+    });
+  });
+
+  it('przeszukanie cudzego pomieszczenia ma cel przy drzwiach budynku, więc wróg pod drzwiami wstrzymuje wznowienie', () => {
+    const lanciego = demoWorld('lanciego');
+    const { bid } = doorWhere(lanciego, 'zombie', (d) => d.s === 'zamkniete' && !d.k);
+    const sim = newGame('lanciego', 'zombie');
+    const cel = (sim as unknown as { celPolecenia(c: Command): number }).celPolecenia({
+      t: 'loot',
+      ids: [1],
+      bid,
+      room: 0,
+    });
+    expect(cel).toBe(drzwiBudynku(lanciego, bid).zewn[0].out);
+    expect(cel).toBeGreaterThanOrEqual(0);
   });
 });
