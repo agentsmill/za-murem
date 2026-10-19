@@ -1005,16 +1005,16 @@ a.btn {
    Na telefonie kafelek jest w pierwszym wierszu paska przy „Mapie”: w drugim (tempo, alarm, budowa, menu) nie ma już
    miejsca, a pierwszy zawija się dopiero przy bardzo wąskim ekranie (360 px z długim zegarem: jeden wiersz więcej) */
 /* Kafelek stoi po prawej, obok „Mapy miasta”, „Budowy” i „Menu”, także gdy pasek się zawinie (polski przy 1440 px:
-   drugi wiersz zaczynał się wtedy od kafelka przy lewej krawędzi). Jego `margin-left: auto` odsuwa całą czwórkę do prawej
-   krawędzi, a „Mapa miasta” i „Budowa” oddają mu swoje auto (miasto.css i #btnBuild wyżej), żeby wolne miejsce nie
-   podzieliło się między nie. Selektor `~`, bo „Mapa miasta” bywa ukryta, a nic nie może stanąć między nią a „Budową”
-   (miasto.css opiera się na #btnMiasto + #btnBuild). Bez flagi kafelek jest ukryty i pasek wygląda jak dawniej. */
+   drugi wiersz zaczynał się wtedy od kafelka przy lewej krawędzi). Jego pole rośnie jak .spacer i przyciska kafelek do
+   prawej krawędzi pola, więc w wierszu bez .spacer (zawinięcie tuż przed kafelkiem) wolne miejsce zabiera ono, a nie
+   `margin-left: auto` „Mapy miasta” z miasto.css, i kafelek zostaje tuż przed nią. Jeśli zawinie się za kafelkiem,
+   „Mapa miasta” sama odsuwa swoją grupę do prawej (jak bez flagi). Nic nie trzeba wstawiać między #btnMiasto
+   i #btnBuild (miasto.css opiera się na #btnMiasto + #btnBuild), a bez flagi kafelek jest ukryty i pasek wygląda jak
+   dawniej. */
 .floor-sel:not([hidden]) {
-  margin-left: auto;
-}
-.floor-sel:not([hidden]) ~ #btnMiasto,
-.floor-sel:not([hidden]) ~ #btnBuild {
-  margin-left: 0;
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: flex-end;
 }
 .floor-anchor {
   position: relative;

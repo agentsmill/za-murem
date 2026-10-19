@@ -9662,7 +9662,7 @@ function pietraShots(): Shot[] {
         return { l: b.left, r: b.right, t: b.top, b: b.bottom, ukryty: getComputedStyle(e).display === 'none' };
       };
       return {
-        kafelek: r('floorSel'),
+        kafelek: r('btnFloor'),
         miasto: r('btnMiasto'),
         budowa: r('btnBuild'),
         menu: r('btnMenu'),
