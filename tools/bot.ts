@@ -61,8 +61,9 @@ import {
   playWithGov,
 } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
-import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
+import { type Player as M2Gracz, type M2Log, m2Player } from '../tests/unit/m2-play.ts';
 import { miastoPlayer, okolicaZGeo } from '../tests/unit/miasto-play.ts';
+import { przelacznik } from '../tests/unit/praca-pomoc.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
 import { pomiarBadan } from './bot-badania.ts';
 import {
@@ -520,9 +521,23 @@ function cover(decisions: Decision[], until: number) {
     gap,
   };
 }
-const m2Runs = (search: boolean) =>
+/** Fala 1 M2 mierzy grę w obrębie siatki: przełącznik „może wychodzić za siatkę” (w trybie zwykłym domyślnie włączony,
+    decyzja Mateusza 19.10.2026) wyłączony każdemu z zarządu, także przyjętym później. Z nim automat sam szabruje
+    i nosi łup zza siatki, więc wariant „bez przeszukiwania” niczego by nie porównywał; `zaSiatke` puszcza grę z nim
+    (linia do wglądu, bez progu). */
+const m2Runs = (search: boolean, zaSiatke = false) =>
   GOV_SEEDS.map((seed) => {
-    const { player, log } = m2Player({ search, furniture: true });
+    const m2 = m2Player({ search, furniture: true });
+    const log = m2.log;
+    let wZarzadzie = -1;
+    const player: M2Gracz = (sim, w, screen, order) => {
+      const core = sim.st.pawns.filter((p) => p.kind === 'core');
+      if (!zaSiatke && core.length !== wZarzadzie) {
+        wZarzadzie = core.length;
+        przelacznik(sim, core, false);
+      }
+      m2.player(sim, w, screen, order);
+    };
     const w = govWorld;
     const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, { player, ...zAdresu(w) });
     return {
@@ -561,6 +576,7 @@ const m2With = m2Runs(true);
 const m2Without = m2Runs(false);
 m2Line('z przeszukiwaniem', m2With);
 m2Line('bez przeszukiwania', m2Without);
+m2Line('z przeszukiwaniem i przełącznikiem „za siatkę” jak w grze (bez progu)', m2Runs(true, true));
 console.log(`  (${Math.round(performance.now() - t2)} ms)`);
 // cel z docs/M2-fala-1.md: przy przeszukiwaniu 2–3 budowle do trzeciego dnia, bez niego nie; decyzja co minutę
 const by3 = m2With.map((r) => r.by(3));
