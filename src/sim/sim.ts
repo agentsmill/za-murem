@@ -4430,8 +4430,9 @@ export class Sim {
 
   /** Noszenie drewna do składu: z rąk albo z najbliższego stosu poza składem. Stos bierze tylko tam, gdzie pionek
       może pracować bez polecenia (`mozeTam`: nasz teren, a za siatką tylko osoba z przełącznikiem i za dnia, bo nocą
-      praca poza nią przerwałaby się w następnej sekundzie) i dojdzie bez wychodzenia z naszego terenu
-      (`dojdzieWDomu`: stos w innej klatce bloku odpada, także nocą), i gdzie nie czai się szwendacz przy siatce. */
+      praca poza nią przerwałaby się w następnej sekundzie) i do którego wolno dojść (`dojdzieWDomu`: stos w innej
+      klatce bloku tylko w trybie zwykłym za dnia, w trybie zombie i nocą odpada), i gdzie nie czai się szwendacz przy
+      siatce. */
   private startHaul(p: Pawn): boolean {
     const size = this.w.size;
     const dest = this.dropTile(p);
@@ -4707,9 +4708,9 @@ export class Sim {
     if (b.by >= 0 && b.by !== p.id) return false;
     // bez polecenia w trybie zombie nie buduje przy siatce (zasieki), kiedy szwendacz jest bliżej niż 10 m od planu
     if (!order && this.zagrozone(b.y * this.w.size + b.x)) return false;
-    // plan w pomieszczeniu z innej klatki bloku (dojście ulicą) albo zasieki bez stanowiska po stronie podwórka: bez
-    // przełącznika nie nosi do nich materiału, którego i tak by nie dowiózł (zasieki stoją na siatce, więc liczy się
-    // stanowisko)
+    // plan w pomieszczeniu z innej klatki bloku (dojście ulicą) w trybie zombie i nocą albo zasieki bez stanowiska po
+    // stronie podwórka: bez przełącznika nie nosi do nich materiału, którego i tak by nie dowiózł (zasieki stoją na
+    // siatce, więc liczy się stanowisko)
     if (!order) {
       const miejsce =
         BUILDS[b.kind].place === 'obwod' ? this.buildStand(p, b) : this.buildCenter(b.kind, b.x, b.y, b.rot);
@@ -4949,8 +4950,8 @@ export class Sim {
   /** Skąd praca bierze materiał (filtr kafelka sterty; undefined: z każdej osiągalnej sterty). Praca z polecenia
       bierze z każdej. Naprawa bez polecenia tylko z naszego terenu; budowa i płot bez polecenia z miejsc, na które
       wolno iść bez polecenia (`mozeTam`: ulica tylko dla osoby z przełącznikiem, za dnia i bez szwendacza przy stercie).
-      Do tego sterta musi leżeć w obszarze osoby (`dojdzieWDomu`): sterta w innej klatce bloku, dostępna tylko ulicą,
-      nie zasłania sterty bliższej w drodze do celu ani nie wyprowadza osoby poza nasz teren. */
+      Do tego do sterty musi być wolno dojść (`dojdzieWDomu`): sterta w innej klatce bloku, dostępna tylko ulicą, w trybie
+      zombie i nocą nie zasłania sterty bliższej w drodze do celu ani nie wyprowadza osoby poza nasz teren. */
   private materialOk(p: Pawn, order: boolean, t: JobKind): ((tile: number) => boolean) | undefined {
     if (order) return undefined;
     if (t === 'repair') return (i) => this.naszTeren(i) && this.dojdzieWDomu(p, i);
@@ -5105,7 +5106,8 @@ export class Sim {
     const naprawy: [number, number][] = [];
     st.damage.forEach((d, k) => {
       if (d.fixed || !st.apts.find((a) => a.apt === d.apt)?.ours || this.zagrozone(d.tile, true)) return;
-      // uszkodzenie w pokoju z innej klatki bloku (dojście ulicą) odpada, zanim policzymy miejsce do pracy
+      // uszkodzenie w pokoju z innej klatki bloku (dojście ulicą) odpada w trybie zombie i nocą, zanim policzymy miejsce
+      // do pracy
       if (!this.dojdzieWDomu(p, d.tile)) return;
       if (st.pawns.some((q) => q.job?.t === 'repair' && q.job.target === k)) return;
       naprawy.push([this.dist2(p, d.tile), k]);
@@ -5265,8 +5267,8 @@ export class Sim {
 
   /** Sterta łupu za siatką do noszenia: najbliższa pionkowi, do CARRY_REACH metrów od kafelka anchor. Z wnętrza
       sąsiedniego budynku (M2 fala 2) cały łup z tego budynku, bo tam nie jest jeszcze nasz. Praca bez polecenia
-      (`!order`) bierze tylko to, co wolno jej wziąć bez polecenia i do czego dojdzie bez wychodzenia z naszego terenu
-      (`mozeSam`), i nie sięga po stertę przy szwendaczu. */
+      (`!order`) bierze tylko to, co wolno jej wziąć bez polecenia i do czego wolno dojść (`mozeSam`), i nie sięga po
+      stertę przy szwendaczu. */
   private lootNear(p: Pawn, anchor: number, order = true): Thing | undefined {
     const size = this.w.size;
     const ax = anchor % size;
@@ -5372,7 +5374,7 @@ export class Sim {
         for (const room of pokoje) {
           if (g.searched.includes(room) || st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room))
             continue;
-          // pokój w innej klatce tego samego bloku (droga ulicą) odpada bez liczenia miejsca i drogi
+          // pokój w innej klatce tego samego bloku (droga ulicą) odpada w trybie zombie i nocą bez liczenia miejsca i drogi
           const posadzka = this.roomTiles[room];
           if (!posadzka.length || !this.dojdzieWDomu(p, posadzka[0])) continue;
           const spot = this.roomSpot(p, room);
@@ -6649,12 +6651,21 @@ export class Sim {
     return this.obszaryNasze;
   }
 
-  /** Czy pionek bez polecenia może wyjść poza nasz teren do tego kafelka (albo przejść po ulicy do innej klatki):
-      tylko osoba z przełącznikiem „może wychodzić za siatkę”, tylko za dnia (nocą nikt bez polecenia nie wychodzi)
-      i, w trybie zombie, tylko gdy nie ma szwendacza bliżej niż 10 m od celu, od samej osoby ani od wyjścia za bramę
-      (rano stado stoi jeszcze pod siatką, a droga do celu prowadzi przez bramę; sam cel bez szwendacza nie wystarcza).
-      To jedyne miejsce reguły „za siatką” (`mozeTam`, `dojdzieWDomu` i `idz` biorą ją stąd). */
+  /** Czy między częściami naszego terenu (inne klatki bloku siedziby, budynki za wspólnym płotem) wolno iść ulicą:
+      w trybie zwykłym za dnia tak. W trybie zombie i nocą droga zostaje na naszym terenie. */
+  private ulicaMiedzyNaszymi(): boolean {
+    return modeOf(this.st) !== 'zombie' && !this.night();
+  }
+
+  /** Czy pionek bez polecenia może wyjść poza nasz teren do tego kafelka (albo przejść po ulicy do innej części
+      naszego terenu). Do kafelka na naszym terenie, który leży w innej jego części (inna klatka bloku), wolno
+      w trybie zwykłym za dnia (`ulicaMiedzyNaszymi`). Poza tym tylko osoba z przełącznikiem „może wychodzić za
+      siatkę”, tylko za dnia (nocą nikt bez polecenia nie wychodzi) i, w trybie zombie, tylko gdy nie ma szwendacza
+      bliżej niż 10 m od celu, od samej osoby ani od wyjścia za bramę (rano stado stoi jeszcze pod siatką, a droga do
+      celu prowadzi przez bramę; sam cel bez szwendacza nie wystarcza). To jedyne miejsce reguły „za siatką”
+      (`mozeTam`, `dojdzieWDomu` i `idz` biorą ją stąd). */
   private mozeWyjsc(p: Pawn, tile: number): boolean {
+    if (this.naszTeren(tile) && this.ulicaMiedzyNaszymi()) return true;
     if (!zaSiatke(this.st, p.person) || this.night()) return false;
     return (
       !this.szwendaczBlisko(tile) &&
@@ -6671,10 +6682,10 @@ export class Sim {
     return this.naszTeren(tile) || this.mozeWyjsc(p, tile);
   }
 
-  /** Czy pionek bez polecenia dojdzie na kafelek, nie wychodząc poza nasz teren: oba kafelki w jednym spójnym obszarze
-      naszego terenu (droga do pokoju w innej klatce tego samego bloku prowadzi ulicą), a jeśli nie, tylko gdy wolno
-      wyjść (`mozeWyjsc`). Osoba poza naszym terenem (wraca do domu) może iść na nasz teren; jej drogę ocenia
-      `sciezkaWDomu`. Praca z polecenia jest poza tą regułą. */
+  /** Czy pionek bez polecenia dojdzie na kafelek: oba kafelki w jednym spójnym obszarze naszego terenu (droga do pokoju
+      w innej klatce tego samego bloku prowadzi ulicą), a jeśli nie, tylko gdy wolno wyjść (`mozeWyjsc`: w trybie
+      zwykłym za dnia na inną część naszego terenu, inaczej przełącznik). Osoba poza naszym terenem (wraca do domu)
+      może iść na nasz teren; jej drogę ocenia `sciezkaWDomu`. Praca z polecenia jest poza tą regułą. */
   private dojdzieWDomu(p: Pawn, tile: number): boolean {
     const reg = this.naszeObszary();
     const od = reg[nearestFree(this.coreBlocked, this.w.size, this.tileOf(p))];
@@ -6682,16 +6693,17 @@ export class Sim {
     return this.mozeWyjsc(p, tile);
   }
 
-  /** Cel i materiał pracy bez polecenia: wolno tam pracować (`mozeTam`) i da się tam dojść bez wychodzenia z naszego
-      terenu albo wolno wyjść (`dojdzieWDomu`). Filtr stert, drzew, pokoi i stanowisk dla wszystkich prac automatu. */
+  /** Cel i materiał pracy bez polecenia: wolno tam pracować (`mozeTam`) i wolno tam dojść (`dojdzieWDomu`). Filtr
+      stert, drzew, pokoi i stanowisk dla wszystkich prac automatu. */
   private mozeSam(p: Pawn, tile: number): boolean {
     return this.mozeTam(p, tile) && this.dojdzieWDomu(p, tile);
   }
 
-  /** Droga na kafelek dla pracy bez polecenia (`go` dla pracy z polecenia): osoba na naszym terenie idzie do celu na
-      nim tylko po nim, nigdy ulicą, nawet gdy ulica byłaby krótsza; do celu poza jej obszarem idzie zwykłą drogą,
-      ale tylko tam, gdzie wolno wyjść (`mozeWyjsc`); osoba poza naszym terenem wraca do domu zwykłą drogą, którą ocenia
-      `sciezkaWDomu`. false, gdy nie da się dojść (stan pionka bez zmian). */
+  /** Droga na kafelek dla pracy bez polecenia (`go` dla pracy z polecenia): osoba na naszym terenie idzie do celu w tej
+      samej jego części tylko po nim, nigdy ulicą, nawet gdy ulica byłaby krótsza; do celu w innej części albo poza
+      naszym terenem idzie zwykłą drogą, ale tylko tam, gdzie wolno (`mozeWyjsc`); osoba poza naszym terenem wraca do
+      domu zwykłą drogą, którą w trybie zombie i nocą ocenia `sciezkaWDomu`. false, gdy nie da się dojść (stan pionka
+      bez zmian). */
   private idz(p: Pawn, tile: number, order: boolean): boolean {
     if (order) return this.go(p, tile);
     const reg = this.naszeObszary();
@@ -6709,7 +6721,8 @@ export class Sim {
       return true;
     }
     if (!this.dojdzieWDomu(p, tile)) return false;
-    if (reg[start] < 0 && this.naszTeren(tile)) return this.go(p, tile) && this.sciezkaWDomu(p);
+    if (reg[start] < 0 && this.naszTeren(tile) && !this.ulicaMiedzyNaszymi())
+      return this.go(p, tile) && this.sciezkaWDomu(p);
     return this.go(p, tile);
   }
 
@@ -7584,7 +7597,7 @@ export class Sim {
   /* ---------- praca za dnia: dzidy, wzmacnianie siatki, alarm ---------- */
 
   /** sterty, które pionek może wziąć: jego albo niczyje (`nasze`: dla pracy bez polecenia tylko z naszego terenu,
-      do których dojdzie bez wychodzenia z niego) */
+      do których wolno dojść) */
   private freeHeaps(p: Pawn, kind: string, nasze = false): Thing[] {
     const size = this.w.size;
     return this.st.things.filter(

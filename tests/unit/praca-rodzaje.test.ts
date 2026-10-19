@@ -483,8 +483,7 @@ describe('naprawy', () => {
   });
 
   it('naprawia uszkodzenie tylko w naszym mieszkaniu, nie wzmacnia siatki', () => {
-    // uszkodzenia są w mieszkaniu z drugiej klatki bloku (dojście ulicą): automat idzie tam tylko z przełącznikiem
-    const { sim, p } = scena({ rodzaje: ['naprawy'], zaSiatke: true });
+    const { sim, p } = scena({ rodzaje: ['naprawy'] });
     const st = sim.st;
     const s = prv(sim);
     for (const h of st.fence!.holes) h.patch = 100; // dziury załatane: zostają uszkodzenia
@@ -1293,8 +1292,7 @@ describe('tempo z umiejętności', () => {
   });
 
   it('naprawa uszkodzenia też dzieli czas przez tempo (bud 2 daje 1,2)', () => {
-    // uszkodzenia są w mieszkaniu z drugiej klatki bloku (dojście ulicą): automat idzie tam tylko z przełącznikiem
-    const { sim, p } = scena({ rodzaje: ['naprawy'], skills: { bud: 2 }, zaSiatke: true });
+    const { sim, p } = scena({ rodzaje: ['naprawy'], skills: { bud: 2 } });
     const st = sim.st;
     const s = prv(sim);
     for (const h of st.fence!.holes) h.patch = 100;

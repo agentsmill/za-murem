@@ -62,6 +62,12 @@ const prv = (sim: Sim): Prywatne => sim as unknown as Prywatne;
 /** tick o godzinie `h` dnia `d` (gra zaczyna o 15:00 pierwszego dnia); zawsze wielokrotność 20 */
 const tickO = (d: number, h: number): number => ((d - 1) * 24 + h - 15) * TICKS_PER_HOUR;
 
+/** Konteksty, w których droga pracy bez polecenia ma zostać na naszym terenie (zombie za dnia, tryb zwykły nocą), i
+    ten, w którym wolno iść ulicą między częściami naszego terenu (tryb zwykły za dnia). */
+const ZOMBIE_DZIEN = { tryb: 'zombie', godzina: 9 } as const;
+const NOC = { tryb: 'zwykly', godzina: 23 } as const;
+const DZIEN = { tryb: 'zwykly', godzina: 9 } as const;
+
 interface Opcje {
   tryb?: GameMode;
   /** gotowa gra zamiast nowej na Lanciego */
@@ -822,9 +828,13 @@ describe('szaber', () => {
     for (const m of a.b.mieszkania) expect(m.stan).toBe('puste');
   });
 
-  it('pokój w innej klatce bloku: automat go nie bierze i nie liczy do niego dróg, polecenie i przełącznik tak', () => {
-    const { sim, p, s } = scena({ key: 'przymorze', rodzaje: ['szaber'] });
+  /** Przymorze: osoba z Szabrem, pokoje siedziby osiągalne bez ulicy już przeszukane (zostają pokoje z drugich klatek
+      bloku, dojście tylko ulicą); w trybie zombie bez szwendaczy. */
+  function zostajaDrugieKlatki(o: Opcje) {
+    const sc = scena({ key: 'przymorze', rodzaje: ['szaber'], ...o });
+    const { sim, p, s } = sc;
     const st = sim.st;
+    st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
     const obszary = s.naszeObszary();
     const od = obszary[s.tileOf(p)];
     expect(od).toBeGreaterThanOrEqual(0);
@@ -838,9 +848,13 @@ describe('szaber', () => {
     );
     expect(wDomu.length).toBeGreaterThan(0);
     expect(daleko.length, 'pokoje osiągalne tylko ulicą').toBeGreaterThan(0);
-    // zostają same pokoje „za ulicą”
     for (const r of wDomu) st.apts.find((x) => x.apt === r.apt)!.searched.push(r.id);
-    const cel = daleko[0].id;
+    return { ...sc, daleko: daleko.map((r) => r.id) };
+  }
+
+  it('pokój w innej klatce bloku w trybie zombie: automat go nie bierze i nie liczy do niego dróg, polecenie i przełącznik tak', () => {
+    const { sim, p, s, daleko } = zostajaDrugieKlatki({ ...ZOMBIE_DZIEN });
+    const cel = daleko[0];
     expect(s.startSearch(p, cel, false)).toBe(false);
     expect(jaka(p)).toBe('-');
     const paths = sim.stats.paths;
@@ -851,40 +865,52 @@ describe('szaber', () => {
     }
     // rodzaj Szaber nie liczy do takich pokoi dróg (pozostałe rodzaje nie mają tu roboty)
     expect(sim.stats.paths).toBe(paths);
-    // z polecenia (i z przełącznikiem) pokój jest do wzięcia
+    // z polecenia pokój jest do wzięcia
     expect(s.startSearch(p, cel, true)).toBe(true);
     expect(p.job?.order).toBe(true);
-    const z = scena({ key: 'przymorze', rodzaje: ['szaber'], zaSiatke: true });
-    for (const r of wDomu) z.sim.st.apts.find((x) => x.apt === r.apt)!.searched.push(r.id);
+    // z przełącznikiem (za dnia, bez szwendaczy przy osobie) też
+    const z = zostajaDrugieKlatki({ ...ZOMBIE_DZIEN, zaSiatke: true });
     z.s.think(z.p);
     expect(jaka(z.p)).toBe('search');
     expect(z.p.job?.order).toBe(false);
   });
 
-  it('droga do pokoju w innej klatce tego samego bloku prowadzi ulicą: bez przełącznika odpada, z przełącznikiem nie', () => {
-    const droga = (zaSiatke: boolean) => {
-      const { sim, p, s } = scena({ key: 'przymorze', rodzaje: ['szaber'], zaSiatke });
-      const lista: { t: JobKind; wychodzi: boolean }[] = [];
-      const org = s as unknown as { setJob: Prywatne['setJob'] };
-      const oryginal = org.setJob.bind(s);
-      vi.spyOn(s as unknown as Prywatne, 'setJob').mockImplementation((pp, j, keep) => {
-        if (pp === p && !j.order && j.t === 'search')
-          lista.push({ t: j.t, wychodzi: pp.path.some((t) => !s.naszTeren(t)) });
+  it('pokój w innej klatce bloku w trybie zwykłym za dnia: automat bierze go bez przełącznika, droga prowadzi ulicą', () => {
+    const { p, s } = zostajaDrugieKlatki({ ...DZIEN });
+    s.think(p);
+    expect(jaka(p)).toBe('search');
+    expect(p.job?.order).toBe(false);
+    expect(
+      p.path.every((t) => s.naszTeren(t)),
+      'droga prowadzi ulicą',
+    ).toBe(false);
+  });
+
+  it('droga do pokoju w innej klatce tego samego bloku: w trybie zombie zostaje na naszym terenie, w zwykłym za dnia idzie ulicą', () => {
+    const droga = (tryb: 'zombie' | 'zwykly') => {
+      const { sim, p, s } = scena({ key: 'przymorze', rodzaje: ['szaber'], tryb });
+      const lista: { wychodzi: boolean }[] = [];
+      const oryginal = s.setJob.bind(s);
+      vi.spyOn(s, 'setJob').mockImplementation((pp, j, keep) => {
+        if (pp === p && !j.order && j.t === 'search') lista.push({ wychodzi: pp.path.some((t) => !s.naszTeren(t)) });
         oryginal(pp, j, keep);
       });
       for (let krok = 0; krok < 12000; krok++) {
-        if (krok % 100 === 0) podkarm(sim);
+        if (krok % 100 === 0) {
+          podkarm(sim);
+          sim.st.pawns = sim.st.pawns.filter((q) => q.kind !== 'zombie');
+        }
         sim.step();
       }
       return { lista, przeszukane: sim.st.apts.reduce((x, g) => x + g.searched.length, 0) };
     };
-    const bez = droga(false);
-    const z = droga(true);
-    expect(bez.lista.length).toBeGreaterThan(0);
-    expect(bez.lista.some((x) => x.wychodzi)).toBe(false);
-    // z przełącznikiem osiągalne są też pokoje przez ulicę
-    expect(z.lista.some((x) => x.wychodzi)).toBe(true);
-    expect(z.przeszukane).toBeGreaterThan(bez.przeszukane);
+    const zombie = droga('zombie');
+    const zwykly = droga('zwykly');
+    expect(zombie.lista.length).toBeGreaterThan(0);
+    expect(zombie.lista.some((x) => x.wychodzi)).toBe(false);
+    // w trybie zwykłym za dnia osiągalne są też pokoje z drugich klatek, przez ulicę
+    expect(zwykly.lista.some((x) => x.wychodzi)).toBe(true);
+    expect(zwykly.przeszukane).toBeGreaterThan(zombie.przeszukane);
   });
 
   it('z lokatorami: tylko klatka, nigdy mieszkania (także te, z których wyszli), stosunek bez zmian', () => {
@@ -1213,19 +1239,31 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
     return trasy;
   }
 
-  /** `krok` kroków gry, w każdym osoba stoi na naszym terenie; zwraca liczbę kroków, w których coś robiła */
-  function ruch(sim: Sim, p: Pawn, krok: number): void {
+  /** `krok` kroków gry. Domyślnie w każdym kroku osoba stoi na naszym terenie; z `wolnoPoza` może go opuszczać (droga
+      ulicą między częściami naszego terenu). Zwraca, czy choć raz była poza nim. W trybie zombie co 50 kroków znikają
+      szwendacze, żeby test mierzył zasadę dróg, a nie spotkanie ze stadem. */
+  function ruch(sim: Sim, p: Pawn, krok: number, wolnoPoza = false): boolean {
     const s = prv(sim);
+    let poza = false;
     for (let k = 0; k < krok; k++) {
-      if (k % 50 === 0) podkarm(sim);
+      if (k % 50 === 0) {
+        podkarm(sim);
+        if (sim.st.mode === 'zombie') sim.st.pawns = sim.st.pawns.filter((q) => q.kind !== 'zombie');
+      }
       sim.step();
-      expect(s.naszTeren(s.tileOf(p)), `krok ${k}: ${jaka(p)}`).toBe(true);
+      const na = s.naszTeren(s.tileOf(p));
+      if (!na) poza = true;
+      if (!wolnoPoza) expect(na, `krok ${k}: ${jaka(p)}`).toBe(true);
     }
+    return poza;
   }
 
-  it('noszenie drewna do składu: stos w drugiej klatce odpada w dzień i w nocy, własny stos jest brany', () => {
-    for (const godzina of [9, 23]) {
-      const { sim, p, s, st } = przymorze({ rodzaje: [], godzina });
+  it('noszenie drewna do składu: w trybie zombie i nocą stos w drugiej klatce odpada, własny stos jest brany po naszym terenie', () => {
+    for (const [nazwa, ctx] of [
+      ['zombie za dnia', ZOMBIE_DZIEN],
+      ['tryb zwykły nocą', NOC],
+    ] as const) {
+      const { sim, p, s, st } = przymorze({ rodzaje: [], ...ctx });
       p.needs!.rest = 95;
       const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
       s.addWood(obca, 6);
@@ -1234,7 +1272,7 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
       for (let k = 0; k < 5; k++) {
         odnow(sim, p);
         s.think(p);
-        expect(jaka(p), `${godzina}:00, próba ${k}`).toBe('-');
+        expect(jaka(p), `${nazwa}, próba ${k}`).toBe('-');
       }
       // bez nowych dróg (stos odpada przed liczeniem drogi) i bez ruszania się z miejsca
       expect(sim.stats.paths - paths).toBe(0);
@@ -1244,16 +1282,43 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
       s.addWood(swoja, 6);
       odnow(sim, p);
       s.think(p);
-      expect(jaka(p), `${godzina}:00 własny stos`).toBe('haul');
-      expect(trasy.at(-1)?.wChwili).toBe(true);
+      expect(jaka(p), `${nazwa}, własny stos`).toBe('haul');
+      expect(
+        p.path.every((t) => s.naszTeren(t)),
+        'droga po naszym terenie',
+      ).toBe(true);
       const stos = st.things.find((t) => t.id === p.job!.target)!;
       expect(stos.y * s.w.size + stos.x).toBe(swoja);
       ruch(sim, p, 600);
     }
   });
 
-  it('łatanie dziury: materiał w drugiej klatce odpada i nie zasłania dalszego materiału na podwórku', () => {
-    const { sim, p, s, st } = przymorze({ rodzaje: ['naprawy'] });
+  it('noszenie drewna do składu: w trybie zwykłym za dnia stos w drugiej klatce jest noszony ulicą i praca się kończy', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: [], ...DZIEN });
+    const { obca } = bliskoDrugiejKlatki(sim, p);
+    s.addWood(obca, 6);
+    const stos = st.things.find((t) => t.kind === 'drewno' && t.y * s.w.size + t.x === obca)!;
+    const _trasy = sledz(sim, p);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('haul');
+    expect(p.job!.target).toBe(stos.id);
+    expect(
+      p.path.every((t) => s.naszTeren(t)),
+      'droga prowadzi ulicą',
+    ).toBe(false);
+    const poza = ruch(sim, p, 1500, true);
+    expect(poza).toBe(true);
+    // drewno zabrane (jednym kursem) i osoba wróciła na nasz teren
+    expect(st.things.includes(stos)).toBe(false);
+    expect(s.naszTeren(s.tileOf(p))).toBe(true);
+  });
+
+  it('łatanie dziury w trybie zombie: materiał w drugiej klatce odpada i nie zasłania dalszego materiału na podwórku', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['naprawy'], ...ZOMBIE_DZIEN });
+    // w trybie zombie dziury są na starcie załatane: jedna otwarta
+    st.fence!.holes[0].patch = 0;
+    s.rebuild();
     expect(st.fence!.holes.some((h) => h.patch <= 0)).toBe(true);
     const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
     const obcaSterta = dodaj(sim, 'deski', 6, obca);
@@ -1265,19 +1330,43 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
     }
     expect(sim.stats.paths - paths).toBe(0);
     const swojaSterta = dodaj(sim, 'deski', 6, swoja);
-    const trasy = sledz(sim, p);
+    const _trasy = sledz(sim, p);
     odnow(sim, p);
     s.think(p);
     expect(jaka(p)).toBe('patch');
     expect(p.job!.from).toBe(swojaSterta.id);
-    expect(trasy.at(-1)?.wChwili).toBe(true);
-    ruch(sim, p, 1500);
+    expect(
+      p.path.every((t) => s.naszTeren(t)),
+      'droga po naszym terenie',
+    ).toBe(true);
+    ruch(sim, p, 700);
     expect(obcaSterta.n).toBe(6);
     expect(st.fence!.holes.some((h) => h.patch > 0)).toBe(true);
   });
 
-  it('budowa: materiał w drugiej klatce odpada, a materiał z podwórka jest noszony drogą po naszym terenie', () => {
-    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'] });
+  it('łatanie dziury w trybie zwykłym za dnia: najbliższy materiał z drugiej klatki jest noszony ulicą', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['naprawy'], ...DZIEN });
+    const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
+    const obcaSterta = dodaj(sim, 'deski', 6, obca);
+    dodaj(sim, 'deski', 6, swoja);
+    const _trasy = sledz(sim, p);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('patch');
+    expect(p.job!.from, 'najbliższa sterta').toBe(obcaSterta.id);
+    expect(
+      p.path.every((t) => s.naszTeren(t)),
+      'droga prowadzi ulicą',
+    ).toBe(false);
+    const dziury = st.fence!.holes.filter((h) => h.patch > 0).length;
+    const poza = ruch(sim, p, 1500, true);
+    expect(poza).toBe(true);
+    expect(st.fence!.holes.filter((h) => h.patch > 0).length).toBeGreaterThan(dziury);
+    expect(obcaSterta.n).toBe(3);
+  });
+
+  it('budowa w trybie zombie: materiał w drugiej klatce odpada, a materiał z podwórka jest noszony po naszym terenie', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'], ...ZOMBIE_DZIEN });
     for (const h of st.fence!.holes) h.patch = 100;
     s.rebuild();
     const plan = planOgrodka(sim);
@@ -1292,24 +1381,50 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
     }
     expect(sim.stats.paths - paths).toBe(0);
     const swojaSterta = dodaj(sim, 'deski', BUILDS.ogrodek.cost.deski!, swoja);
-    const trasy = sledz(sim, p);
+    const _trasy = sledz(sim, p);
     odnow(sim, p);
     s.think(p);
     expect(jaka(p)).toBe('build');
     expect(p.job!.from).toBe(swojaSterta.id);
-    expect(trasy.at(-1)?.wChwili).toBe(true);
+    expect(
+      p.path.every((t) => s.naszTeren(t)),
+      'droga po naszym terenie',
+    ).toBe(true);
     // kolejne kursy (takeFor, praca przy planie) też po naszym terenie, a obca sterta nietknięta
-    ruch(sim, p, 2500);
+    ruch(sim, p, 1800);
     expect(obcaSterta.n).toBe(BUILDS.ogrodek.cost.deski);
     expect(st.builds.includes(plan) || st.things.some((t) => t.kind === 'ogrodek')).toBe(true);
   });
 
-  it('plan budowy w pokoju z drugiej klatki: materiał z podwórka nie jest do niego noszony i porzucany co sekundę', () => {
-    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'] });
+  it('budowa w trybie zwykłym za dnia: materiał z drugiej klatki jest noszony ulicą, plan się kończy', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'], ...DZIEN });
+    for (const h of st.fence!.holes) h.patch = 100;
+    s.rebuild();
+    const plan = planOgrodka(sim);
+    plan.have = {};
+    const { obca } = bliskoDrugiejKlatki(sim, p);
+    const obcaSterta = dodaj(sim, 'deski', BUILDS.ogrodek.cost.deski!, obca);
+    const _trasy = sledz(sim, p);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('build');
+    expect(p.job!.from).toBe(obcaSterta.id);
+    expect(
+      p.path.every((t) => s.naszTeren(t)),
+      'droga prowadzi ulicą',
+    ).toBe(false);
+    const poza = ruch(sim, p, 6000, true);
+    expect(poza).toBe(true);
+    expect(st.builds.includes(plan)).toBe(false);
+    expect(st.things.some((t) => t.kind === 'ogrodek')).toBe(true);
+  });
+
+  it('plan budowy w pokoju z drugiej klatki: w trybie zombie materiał nie jest do niego noszony i porzucany co sekundę', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'], ...ZOMBIE_DZIEN });
     const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
-    st.builds.push({
+    const plan = {
       id: st.nextThing++,
-      kind: 'magazyn',
+      kind: 'magazyn' as const,
       x: obca % sim.w.size,
       y: Math.floor(obca / sim.w.size),
       rot: 0,
@@ -1317,7 +1432,8 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
       have: {},
       work: 0,
       by: -1,
-    });
+    };
+    st.builds.push(plan);
     dodaj(sim, 'deski', 10, swoja);
     dodaj(sim, 'deski', 10, wolneNaPodworku(sim, p, 3)[2]);
     dodaj(sim, 'deski', 10, wolneNaPodworku(sim, p, 3)[1]);
@@ -1331,7 +1447,7 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
     expect(sim.stats.paths - paths).toBe(0);
     ruch(sim, p, 300);
     expect(trasy.filter((x) => x.t === 'build')).toHaveLength(0);
-    // z przełącznikiem (za dnia) plan jest do wzięcia
+    // z przełącznikiem (za dnia, bez szwendaczy) plan jest do wzięcia
     sim.push({ t: 'zasiatke', ids: [], osoba: p.person, on: true });
     sim.step();
     odnow(sim, p);
@@ -1339,8 +1455,34 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
     expect(jaka(p)).toBe('build');
   });
 
-  it('plan wspólnego płotu: brakujący złom w drugiej klatce nie liczy dróg co sekundę i nie zasłania dalszego złomu', () => {
-    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'] });
+  it('plan budowy w pokoju z drugiej klatki: w trybie zwykłym za dnia materiał jest noszony ulicą bez przełącznika', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'], ...DZIEN });
+    const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
+    const plan = {
+      id: st.nextThing++,
+      kind: 'magazyn' as const,
+      x: obca % sim.w.size,
+      y: Math.floor(obca / sim.w.size),
+      rot: 0,
+      need: { deski: 30 },
+      have: {},
+      work: 0,
+      by: -1,
+    };
+    st.builds.push(plan);
+    dodaj(sim, 'deski', 10, swoja);
+    dodaj(sim, 'deski', 10, wolneNaPodworku(sim, p, 3)[2]);
+    dodaj(sim, 'deski', 10, wolneNaPodworku(sim, p, 3)[1]);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('build');
+    const poza = ruch(sim, p, 1500, true);
+    expect(poza).toBe(true);
+    expect(st.builds.find((b) => b.id === plan.id)?.have.deski ?? 0).toBeGreaterThan(0);
+  });
+
+  it('plan wspólnego płotu w trybie zombie: brakujący złom w drugiej klatce nie liczy dróg co sekundę i nie zasłania dalszego złomu', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'], ...ZOMBIE_DZIEN });
     const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
     const [stand] = wolneNaPodworku(sim, p, 1);
     st.plot = {
@@ -1358,19 +1500,76 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
     expect(st.plot.plan!.by).toBe(-1);
     // dalszy złom na podwórku: plan bierze jego, a nie bliższy obcy
     const swojaSterta = dodaj(sim, 'zlom', 8, swoja);
-    const trasy = sledz(sim, p);
+    const _trasy = sledz(sim, p);
     odnow(sim, p);
     s.think(p);
     expect(jaka(p)).toBe('plot');
     expect(p.job!.from).toBe(swojaSterta.id);
-    expect(trasy.at(-1)?.wChwili).toBe(true);
+    expect(
+      p.path.every((t) => s.naszTeren(t)),
+      'droga po naszym terenie',
+    ).toBe(true);
     expect(obcaSterta.n).toBe(8);
   });
 
-  it('naprawa uszkodzenia w mieszkaniu z drugiej klatki: bez przełącznika nie, z przełącznikiem tak', () => {
-    for (const zaSiatke of [false, true]) {
-      const { sim, p, s } = scena({ rodzaje: ['naprawy'], zaSiatke });
+  it('plan wspólnego płotu poza zasadą dróg: złom poza naszym terenem bez przełącznika nie liczy dróg, z przełącznikiem jest brany', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'], ...DZIEN });
+    const [stand] = wolneNaPodworku(sim, p, 1);
+    st.plot = {
+      bids: [],
+      plan: { bid: 0, need: { zlom: 4 }, have: {}, work: 0, total: 100000, by: -1, stand, wariant: 'mieszany' },
+    };
+    const size = s.w.size;
+    const ulica = [...Array(size * size).keys()].find(
+      (i) => !s.naszTeren(i) && !s.coreBlocked[i] && s.reg[i] === s.regionOf(p),
+    )!;
+    dodaj(sim, 'zlom', 8, ulica);
+    const paths = sim.stats.paths;
+    for (let k = 0; k < 10; k++) {
+      odnow(sim, p);
+      s.think(p);
+      expect(jaka(p), `próba ${k}`).toBe('-');
+    }
+    expect(sim.stats.paths - paths, 'dziesięć prób bez ani jednej drogi A*').toBe(0);
+    sim.push({ t: 'zasiatke', ids: [], osoba: p.person, on: true });
+    sim.step();
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('plot');
+  });
+
+  it('plan wspólnego płotu w trybie zwykłym za dnia: najbliższy złom z drugiej klatki jest noszony ulicą', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'], ...DZIEN });
+    const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
+    const [stand] = wolneNaPodworku(sim, p, 1);
+    st.plot = {
+      bids: [],
+      plan: { bid: 0, need: { zlom: 4 }, have: {}, work: 0, total: 100000, by: -1, stand, wariant: 'mieszany' },
+    };
+    const obcaSterta = dodaj(sim, 'zlom', 8, obca);
+    dodaj(sim, 'zlom', 8, swoja);
+    const _trasy = sledz(sim, p);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('plot');
+    expect(p.job!.from).toBe(obcaSterta.id);
+    expect(
+      p.path.every((t) => s.naszTeren(t)),
+      'droga prowadzi ulicą',
+    ).toBe(false);
+    const poza = ruch(sim, p, 1500, true);
+    expect(poza).toBe(true);
+    expect(st.plot.plan!.have.zlom).toBe(4);
+  });
+
+  it('naprawa uszkodzenia w mieszkaniu z drugiej klatki: w trybie zombie nie, w zwykłym za dnia ulicą tak', () => {
+    for (const [nazwa, tryb] of [
+      ['zombie', 'zombie'],
+      ['zwykły', 'zwykly'],
+    ] as const) {
+      const { sim, p, s } = scena({ rodzaje: ['naprawy'], tryb });
       const st = sim.st;
+      st.pawns = st.pawns.filter((q) => q.kind !== 'zombie');
       for (const h of st.fence!.holes) h.patch = 100;
       s.rebuild();
       const kloc = wolneNaPodworku(sim, p, 3);
@@ -1383,14 +1582,13 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
       expect(ob[st.damage[0].tile]).not.toBe(ob[s.tileOf(p)]);
       const { n } = liczStarty(sim, p);
       const paths = sim.stats.paths;
-      for (let k = 0; k < 400; k++) {
-        if (k % 50 === 0) podkarm(sim);
-        sim.step();
-        if (!zaSiatke) expect(s.naszTeren(s.tileOf(p)), `krok ${k}`).toBe(true);
-      }
-      if (zaSiatke) expect(n.repair ?? 0, 'z przełącznikiem').toBeGreaterThan(0);
-      else {
-        expect(n.repair ?? 0, 'bez przełącznika').toBe(0);
+      const poza = ruch(sim, p, tryb === 'zwykly' ? 3000 : 600, tryb === 'zwykly');
+      if (tryb === 'zwykly') {
+        expect(n.repair ?? 0, nazwa).toBeGreaterThan(0);
+        expect(poza, 'droga do drugiej klatki prowadzi ulicą').toBe(true);
+        expect(st.damage.some((d) => d.fixed)).toBe(true);
+      } else {
+        expect(n.repair ?? 0, nazwa).toBe(0);
         // nie liczy dróg do takiego uszkodzenia co sekundę
         expect(sim.stats.paths - paths).toBeLessThanOrEqual(4);
       }
@@ -1426,43 +1624,57 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
     expect(jaka(p)).toBe('haul');
   });
 
-  it('idz i filtr materiału: cel w drugiej klatce bez przełącznika nie, z przełącznikiem tylko za dnia; z ulicy do domu zawsze', () => {
-    const wynik = (zaSiatke: boolean, godzina: number) => {
-      const { sim, p, s } = przymorze({ rodzaje: [], zaSiatke, godzina });
+  it('idz i filtr materiału: zasada dróg w jednym miejscu (tryb, pora, przełącznik), cel poza naszym terenem wciąż z przełącznikiem', () => {
+    // [tryb, godzina, przełącznik, czy wolno do drugiej klatki bloku]
+    const przypadki = [
+      ['zwykly', 9, false, true],
+      ['zwykly', 9, true, true],
+      ['zwykly', 23, false, false],
+      ['zwykly', 23, true, false],
+      ['zombie', 9, false, false],
+      ['zombie', 9, true, true],
+    ] as const;
+    for (const [tryb, godzina, zaSiatke, wolno] of przypadki) {
+      const nazwa = `${tryb} ${godzina}:00, przełącznik ${zaSiatke}`;
+      const { sim, p, s } = przymorze({ rodzaje: [], tryb, godzina, zaSiatke });
       p.needs!.rest = 95;
       const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
       const sciezka = p.path;
       const idzie = s.idz(p, obca, false);
-      return {
-        sim,
-        p,
-        s,
-        obca,
-        swoja,
-        idzie,
-        sciezkaBezZmian: p.path === sciezka,
-        build: s.materialOk(p, false, 'build')!(obca),
-        plot: s.materialOk(p, false, 'plot')!(obca),
-        repair: s.materialOk(p, false, 'repair')!(obca),
-        swojeBuild: s.materialOk(p, false, 'build')!(swoja),
-        swojeRepair: s.materialOk(p, false, 'repair')!(swoja),
-        zPolecenia: s.materialOk(p, true, 'build'),
-      };
-    };
-    const bez = wynik(false, 9);
-    expect([bez.idzie, bez.build, bez.plot, bez.repair]).toEqual([false, false, false, false]);
-    expect(bez.sciezkaBezZmian).toBe(true);
-    expect([bez.swojeBuild, bez.swojeRepair]).toEqual([true, true]);
-    expect(bez.zPolecenia).toBeUndefined();
-    const dzien = wynik(true, 9);
-    expect([dzien.idzie, dzien.build, dzien.plot]).toEqual([true, true, true]);
-    // naprawa bez polecenia bierze tylko z naszego terenu, ale do drugiej klatki z przełącznikiem dojdzie ulicą
-    expect(dzien.repair).toBe(true);
-    // droga do drugiej klatki prowadzi po ulicy (poza naszym terenem), co z przełącznikiem wolno
-    expect(dzien.p.path.some((t) => !dzien.s.naszTeren(t))).toBe(true);
-    const noc = wynik(true, 23);
-    expect([noc.idzie, noc.build, noc.plot, noc.repair]).toEqual([false, false, false, false]);
-    // osoba na ulicy wraca do domu bez przełącznika, także nocą (droga po wejściu na podwórko już z niego nie wychodzi)
+      expect(
+        [idzie, ...(['build', 'plot', 'repair'] as const).map((r) => s.materialOk(p, false, r)!(obca))],
+        nazwa,
+      ).toEqual([wolno, wolno, wolno, wolno]);
+      // własny kafelek zawsze; polecenie bez filtra
+      expect(s.materialOk(p, false, 'build')!(swoja), nazwa).toBe(true);
+      expect(s.materialOk(p, false, 'repair')!(swoja), nazwa).toBe(true);
+      expect(s.materialOk(p, true, 'build'), nazwa).toBeUndefined();
+      if (wolno)
+        expect(
+          p.path.some((t) => !s.naszTeren(t)),
+          `${nazwa}: droga ulicą`,
+        ).toBe(true);
+      else expect(p.path === sciezka, `${nazwa}: droga bez zmian`).toBe(true);
+    }
+    // cel poza naszym terenem (ulica): w trybie zwykłym za dnia też tylko z przełącznikiem, nocą wcale
+    for (const [godzina, zaSiatke, wolno] of [
+      [9, false, false],
+      [9, true, true],
+      [23, true, false],
+    ] as const) {
+      const { sim, p, s } = przymorze({ rodzaje: [], godzina, zaSiatke });
+      p.needs!.rest = 95;
+      const size = s.w.size;
+      const ulica = [...Array(size * size).keys()].find(
+        (i) => !s.naszTeren(i) && !s.coreBlocked[i] && s.reg[i] === s.regionOf(p),
+      )!;
+      odnow(sim, p);
+      expect(s.mozeTam(p, ulica), `${godzina}:00, przełącznik ${zaSiatke}`).toBe(wolno);
+      expect(s.materialOk(p, false, 'build')!(ulica)).toBe(wolno);
+      expect(s.materialOk(p, false, 'repair')!(ulica), 'naprawa tylko z naszego terenu').toBe(false);
+      expect(s.idz(p, ulica, false)).toBe(wolno);
+    }
+    // osoba na ulicy wraca do domu bez przełącznika; nocą droga po wejściu na podwórko już z niego nie wychodzi
     const { sim, p, s } = przymorze({ rodzaje: [], godzina: 23 });
     p.needs!.rest = 95;
     const [dom] = wolneNaPodworku(sim, p, 1);
@@ -1479,12 +1691,17 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
     expect(p.path.slice(wejscie).every((t) => s.naszTeren(t))).toBe(true);
   });
 
-  it('noszenie łupu: stos w budynku z wpisem w st.plot.bids, ale bez korytarza do podwórka, odpada (dojście ulicą)', () => {
+  it('noszenie łupu: stos w budynku z wpisem w st.plot.bids, ale bez korytarza do podwórka, w trybie zombie odpada', () => {
     const a = zBlokiem({ lokatorzy: 'pusto', otoczony: true });
     const { sim, p, s } = a;
+    // blok otwarty w trybie zwykłym (w zombie drzwi są inaczej zamknięte), dalej gra jak w trybie zombie
+    sim.st.mode = 'zombie';
+    s.rebuild();
+    sim.st.pawns = sim.st.pawns.filter((q) => q.kind !== 'zombie');
     sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'szaber', prio: 0 });
     sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'noszenie', prio: 1 });
     sim.step();
+    sim.st.pawns = sim.st.pawns.filter((q) => q.kind !== 'zombie');
     // osoba na podwórku, stos w budynku (nasz teren z wpisu, ale osobny obszar)
     const [stoi] = wolneNaPodworku(sim, p, 1);
     p.x = (stoi % s.w.size) + 0.5;
@@ -1514,6 +1731,46 @@ describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
     // z polecenia stos jest do wzięcia, jak dotąd
     expect(s.lootNear(p, wBudynku, true)).toBe(sterta);
     expect(s.startCarry(p, sterta.id, true)).toBe(true);
+  });
+
+  it('noszenie łupu: ten sam budynek w trybie zwykłym za dnia jest obsługiwany ulicą, łup trafia na podwórko', () => {
+    const a = zBlokiem({ lokatorzy: 'pusto', otoczony: true });
+    const { sim, p, s } = a;
+    sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'szaber', prio: 0 });
+    sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'noszenie', prio: 1 });
+    sim.step();
+    const [stoi] = wolneNaPodworku(sim, p, 1);
+    p.x = (stoi % s.w.size) + 0.5;
+    p.y = Math.floor(stoi / s.w.size) + 0.5;
+    const ob = s.naszeObszary();
+    const w = s.w;
+    const wBudynku = [...Array(w.size * w.size).keys()].find(
+      (t) =>
+        w.bid[t] === a.bid &&
+        !s.coreBlocked[t] &&
+        s.reg[t] === s.regionOf(p) &&
+        ob[t] >= 0 &&
+        ob[t] !== ob[s.tileOf(p)],
+    )!;
+    const sterta = dodaj(sim, 'deski', 8, wBudynku);
+    const naPodworku = () =>
+      sim.st.things
+        .filter((t) => t.kind === 'deski' && s.yardMask[t.y * w.size + t.x] === 1)
+        .reduce((x, t) => x + t.n, 0);
+    const przed = naPodworku();
+    const _trasy = sledz(sim, p);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('carry');
+    expect(p.job!.order).toBe(false);
+    expect(
+      p.path.every((t) => s.naszTeren(t)),
+      'droga ulicą',
+    ).toBe(false);
+    const poza = ruch(sim, p, 3000, true);
+    expect(poza).toBe(true);
+    expect(sim.st.things.includes(sterta)).toBe(false);
+    expect(naPodworku()).toBe(przed + 8);
   });
 });
 
