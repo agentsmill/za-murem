@@ -426,12 +426,13 @@ const M2_JOBS = new Set<JobKind>([
 ]);
 /** Prace spoza fali 1, które zarząd bierze sam w ramach pracy ludzi (src/sim/praca.ts) albo dziś tylko na polecenie:
     ścinanie, łatanie siatki, dzidy i noszenie drewna (naprawy i noszenie łupu to prace M2, więc przerywają się tak
-    samo). Bez polecenia (`!order`) przerywa je to samo co prace M2:
-    pilna potrzeba, noc i wróg na podwórku, kiedy pracujący jest na zewnątrz; `haul` nocą tylko wtedy, gdy kafelek
-    jego sterty leży poza naszym terenem (noszenie na naszym terenie trwa i w nocy). Prace z polecenia przerywają się
-    jak dziś. */
+    samo). Bez polecenia (`!order`) przerywa je to samo co prace M2 bez polecenia:
+    pilna potrzeba, której da się zaradzić (`pilneDoZaradzenia`; `haul` nie z zimna), noc i wróg na podwórku, kiedy
+    pracujący jest na zewnątrz; `haul` nocą tylko wtedy, gdy kafelek jego sterty leży poza naszym terenem (noszenie na
+    naszym terenie trwa i w nocy). Prace z polecenia przerywają się jak dziś. */
 const AUTO_JOBS = new Set<JobKind>(['chop', 'patch', 'craft', 'haul']);
-/** poniżej tego ciepła zimno jest pilne: przerywa prace M2 i AUTO_JOBS, a think() grzeje przed każdą pracą */
+/** poniżej tego ciepła zimno jest pilne: przerywa prace M2 (bez polecenia tylko, gdy da się mu zaradzić)
+    i AUTO_JOBS, a think() grzeje przed każdą pracą */
 const URGENT_WARM = 10;
 /** kurs po materiał: po drodze zbiera kolejne sterty tego samego najwyżej tyle kafelków dalej */
 export const GATHER_NEAR = 8;
@@ -3657,14 +3658,16 @@ export class Sim {
     const st = this.st;
     const tick = st.tick;
     const at = this.tileOf(p) === j.tile;
-    // prace fali 1 ustępują pilnej potrzebie, a te, do których zarząd wziął się sam, także nocy i wrogowi na
-    // podwórku, kiedy pracujący jest na zewnątrz (plan czeka z doniesionym materiałem i postępem pracy); prace
-    // z AUTO_JOBS tak samo, ale tylko bez polecenia (z polecenia przerywa je to, co dziś), a noszenie drewna nocą
-    // tylko spoza siatki
+    // prace fali 1 z polecenia ustępują pilnej potrzebie, a te, do których zarząd wziął się sam, pilnej potrzebie,
+    // której da się zaradzić (`pilneDoZaradzenia`; noszenia drewna zimno nie przerywa), nocy i wrogowi na podwórku,
+    // kiedy pracujący jest na zewnątrz (plan czeka z doniesionym materiałem i postępem pracy); prace z AUTO_JOBS tak
+    // samo, ale tylko bez polecenia (z polecenia przerywa je to, co dziś), a noszenie drewna nocą tylko spoza siatki
     if (
       (M2_JOBS.has(j.t) || (AUTO_JOBS.has(j.t) && !j.order)) &&
       tick % THINK_EVERY === 0 &&
-      (this.urgent(p) || (!j.order && this.nightStops(j)) || this.yieldsToDanger(p))
+      ((j.order ? this.urgent(p) : this.pilneDoZaradzenia(p, j.t !== 'haul')) ||
+        (!j.order && this.nightStops(j)) ||
+        this.yieldsToDanger(p))
     )
       return false;
     switch (j.t) {
@@ -4266,10 +4269,42 @@ export class Sim {
     return h >= 22 || h < 6;
   }
 
-  /** potrzeba, która przerywa czekanie po poleceniu i prace M2 oraz AUTO_JOBS */
+  /** potrzeba, która przerywa czekanie po poleceniu i prace M2 z polecenia (prace bez polecenia: `pilneDoZaradzenia`) */
   private urgent(p: Pawn): boolean {
     const n = p.needs;
     return !!n && (n.warm < URGENT_WARM || n.food < 10 || n.rest < 5);
+  }
+
+  /** Pilna potrzeba (`urgent`), której da się teraz zaradzić: wyczerpanie zawsze (śpi się choćby na podłodze), głód,
+      gdy jest posiłek albo zapasy (`mealFor`), zimno, gdy da się mu zaradzić (`zimnoDoZaradzenia`). Tylko taka blokuje
+      w think() nowe rodzaje pracy i przerywa pracę bez polecenia; pracę z polecenia przerywa `urgent` jak dotąd.
+      Inaczej przy zgasłej kozie bez drewna zmarznięty zarząd stał bez końca (nikt nie rąbał), a plan budowy zaczynał się
+      i przerywał co sekundę. `zimno` fałszywe: zimno się nie liczy (noszenie drewna samo niesie lekarstwo na zimno, więc
+      zimno go nie przerywa). */
+  private pilneDoZaradzenia(p: Pawn, zimno = true): boolean {
+    const n = p.needs;
+    if (!n) return false;
+    if (n.rest < 5) return true;
+    if (n.food < 10 && this.mealFor(p)) return true;
+    return zimno && n.warm < URGENT_WARM && this.zimnoDoZaradzenia(p);
+  }
+
+  /** Czy zimnu osoby da się teraz zaradzić: koza zarządu się pali i jest przy niej miejsce do grzania, albo osoba
+      z włączonym Ogniem ma czym do niej dołożyć (drewno w rękach albo wolna sterta drewna na naszym terenie, do której
+      sama dojdzie: `mozeSam`, bez szwendacza przy siatce), a do kozy coś wejdzie. Drewno za siatką się nie liczy: po nie
+      trzeba wyjść albo je najpierw narąbać, więc wtedy zarząd pracuje dalej. */
+  private zimnoDoZaradzenia(p: Pawn): boolean {
+    const koza = this.koza();
+    if (!koza) return false;
+    if (koza.fuel > 0 && this.warmSpot(p, koza) >= 0) return true;
+    if (!this.ogienWlaczony(p) || this.kozaRoom(koza) < 1) return false;
+    if (p.carry > 0) return true;
+    return !!this.pileFor(p, 'any', -1, (i) => this.naszTeren(i) && this.mozeSam(p, i) && !this.zagrozone(i));
+  }
+
+  /** Czy osoba ma Ogień włączony: priorytet większy od 0 albo stałe zajęcie Ogień (tylko taka dokłada do kozy sama). */
+  private ogienWlaczony(p: Pawn): boolean {
+    return priorytet(this.st, p.person, 'ogien') > 0 || staleZajecie(this.st, p.person) === 'ogien';
   }
 
   /** Bezczynny rdzeń sam: śpi w nocy albo z wyczerpania, je, gdy głodny, a potem po kolei:
@@ -4283,7 +4318,9 @@ export class Sim {
          rana (`automatRusza`) nowe rodzaje (NOWE): naprawy, drwal, noszenie, warsztat, szaber, badania (wolne miejsce
          przy stole pracowni, gdy wybrano badanie; `research` jest w M2_JOBS, więc pilna potrzeba, noc i wróg na podwórku
          przerywają je tak jak inne prace bez polecenia). Nowe rodzaje nie ruszają
-         przy pilnej potrzebie (`urgent` przerwałby je w następnej sekundzie i zerował postęp). Ciepło poniżej COLD
+         przy pilnej potrzebie, której da się zaradzić (`pilneDoZaradzenia` przerwałby je w następnej sekundzie
+         i zerował postęp); zmarznięty przy zgasłej kozie bez drewna na naszym terenie pracuje dalej, więc drwal może
+         narąbać drewna. Ciepło poniżej COLD
          idzie przed nowe rodzaje z priorytetem 3 i 4 (stałe zajęcie liczy się jak 1): szaber i warsztat o domyślnym
          priorytecie trzymałyby osobę przy pracy w zimnych pomieszczeniach do nocy. Nocą tylko ogień (noszenie tylko
          stosów na naszym terenie) i kuchnia;
@@ -4349,11 +4386,10 @@ export class Sim {
     if (this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
     // gasnąca koza i zimno przed każdą pracą (kroki 1 i 2 w opisie think); koziej nie dokłada ten, kto wyłączył Ogień
     const koza = this.koza();
-    const ogien = priorytet(this.st, p.person, 'ogien') > 0 || staleZajecie(this.st, p.person) === 'ogien';
-    if (koza && ogien && koza.fuel < BURN_TICKS && this.startRefuel(p, false, koza)) return;
+    if (koza && this.ogienWlaczony(p) && koza.fuel < BURN_TICKS && this.startRefuel(p, false, koza)) return;
     if (n.warm < URGENT_WARM && this.startWarm(p)) return;
     const rusza = automatRusza(this.st);
-    const pilne = this.urgent(p);
+    const pilne = this.pilneDoZaradzenia(p);
     const noc = this.night();
     const stale = staleZajecie(this.st, p.person);
     let grzal = false;
@@ -4393,7 +4429,9 @@ export class Sim {
       case 'budowa':
         if (this.night()) return false;
         // plan wspólnego płotu (zaczęty przez gracza i przerwany) dokańcza dopiero od pierwszego rana, jak nowe rodzaje
-        return this.startAnyBuild(p) || (automatRusza(this.st) && !this.urgent(p) && this.startPlot(p, false));
+        return (
+          this.startAnyBuild(p) || (automatRusza(this.st) && !this.pilneDoZaradzenia(p) && this.startPlot(p, false))
+        );
       case 'naprawy':
         return this.startNaprawy(p);
       case 'drwal':

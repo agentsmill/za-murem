@@ -242,6 +242,108 @@ describe('zimno przed pracą', () => {
   });
 });
 
+/* Przegląd końcowy (korekta decyzji „nowe rodzaje nie startują przy pilnej potrzebie”): pilna potrzeba blokuje nowe
+   rodzaje i przerywa pracę bez polecenia tylko wtedy, gdy da się jej zaradzić (zimno: koza się pali albo jest drewno do
+   dołożenia na naszym terenie; głód: posiłek albo zapasy). Praca z polecenia przerywa się jak dotąd. */
+describe('pilna potrzeba, której nie da się zaradzić', () => {
+  /** bez drewna (sterty i w rękach) i z zimną kozą */
+  function bezDrewna(sim: Sim): void {
+    sim.st.things = sim.st.things.filter((t) => t.kind !== 'drewno');
+    for (const q of core(sim)) q.carry = 0;
+    prv(sim).koza()!.fuel = 0;
+  }
+
+  it('sonda przeglądu: zmarznięty drwal przy zgasłej kozie bez drewna rąbie, a potem dokłada do kozy', () => {
+    // Lanciego, dzień 2, 6:00 po samouczku, wszyscy z przełącznikiem „za siatkę”, pierwsza osoba ze stałym zajęciem
+    // Drwal, drewna nie ma, koza zgasła, cały zarząd zmarznięty (ciepło 0)
+    const sim = newGame('lanciego', 'zwykly', 5);
+    sim.step();
+    skonczSamouczek(sim);
+    doRana(sim, 2);
+    const ludzie = core(sim);
+    for (const q of ludzie) sim.push({ t: 'zasiatke', ids: [], osoba: q.person, on: true });
+    sim.push({ t: 'stale', ids: [], osoba: ludzie[0].person, rodzaj: 'drwal' });
+    sim.step();
+    bezDrewna(sim);
+    for (const q of ludzie) {
+      odnow(sim, q);
+      q.needs!.warm = 0;
+    }
+    const p = ludzie[0];
+    const koza = prv(sim).koza()!;
+    const kolejno: string[] = [];
+    const zapisz = (): void => {
+      const t = p.job?.t;
+      if (t && kolejno[kolejno.length - 1] !== t) kolejno.push(t);
+    };
+    // w ciągu kwadransa gry drwal idzie rąbać (przed poprawką stał do południa)
+    until(
+      sim,
+      () => {
+        zapisz();
+        return p.job?.t === 'chop';
+      },
+      TICKS_PER_HOUR / 4,
+    );
+    expect(p.job?.t, clockOf(sim.st.tick)).toBe('chop');
+    expect(p.job?.order).toBe(false);
+    // do 7:15 koza znów się pali (ktoś narąbał i dołożył), a do 12:15 drwal po rąbaniu sam do niej dokładał
+    const krok = (): boolean => {
+      zapisz();
+      return false;
+    };
+    until(sim, krok, TICKS_PER_HOUR);
+    expect(koza.fuel, clockOf(sim.st.tick)).toBeGreaterThan(0);
+    until(sim, krok, 5 * TICKS_PER_HOUR);
+    expect(kolejno.indexOf('chop'), kolejno.join(' ')).toBe(0);
+    expect(kolejno.indexOf('refuel'), kolejno.join(' ')).toBeGreaterThan(0);
+  });
+
+  it('ciepło 8, zgasła koza bez drewna i plan budowy: buduje bez pętli start–przerwanie (sonda przeglądu)', () => {
+    const { sim, p } = scena({ plan: true });
+    bezDrewna(sim);
+    p.needs!.warm = 8;
+    // mieszkańcy w domu: liczą się tylko drogi badanej osoby
+    for (const q of sim.st.pawns) if (q.kind === 'resident') q.away = true;
+    const starty = liczStarty(sim, p);
+    const drogi = sim.stats.paths;
+    for (let k = 0; k < 2000; k++) sim.step();
+    // przed poprawką 43 starty budowy w 2000 krokach (a z drogami mieszkańców 56 dróg A*)
+    expect(starty.build ?? 0).toBeLessThanOrEqual(1);
+    expect(sim.stats.paths - drogi).toBeLessThan(5);
+  });
+
+  it('praca z polecenia ustępuje pilnej potrzebie jak dotąd, także gdy nie da się jej zaradzić', () => {
+    const { sim, p, plan } = scena({ plan: true });
+    bezDrewna(sim);
+    p.needs!.warm = 8;
+    sim.push({ t: 'build', ids: [p.id], kind: plan!.kind, x: plan!.x, y: plan!.y, rot: plan!.rot });
+    sim.step();
+    expect(p.job?.t).toBe('build');
+    expect(p.job?.order).toBe(true);
+    until(sim, () => p.job?.t !== 'build' || p.job.order !== true, 2000);
+    // polecenie przerwane przed końcem budowy (plan stoi), osoba bez pracy z polecenia
+    expect(p.job?.order ?? false).toBe(false);
+    expect(sim.st.builds.includes(plan!)).toBe(true);
+  });
+
+  it('głód: praca bez polecenia przerywa się, gdy jest co zjeść, a bez jedzenia trwa', () => {
+    const przerwana = (jedzenie: boolean): boolean => {
+      const { sim, p } = scena();
+      const s = prv(sim);
+      sim.st.tick = tickO(2, 12);
+      if (!jedzenie) sim.st.things = sim.st.things.filter((t) => t.kind !== 'jedzenie' && t.kind !== 'posilek');
+      p.needs!.food = 5;
+      const j = s.newJob('chop', 0, prv(sim).w.size + 1, false, 1);
+      j.until = sim.st.tick + 100000;
+      p.job = j;
+      return !s.work(p, j);
+    };
+    expect(przerwana(true)).toBe(true);
+    expect(przerwana(false)).toBe(false);
+  });
+});
+
 describe('polecenie gracza i ustawienia', () => {
   it('polecenie gracza w trakcie pracy z automatu wygrywa od razu i po końcu wraca automat', () => {
     const { sim, p, plan } = scena({ plan: true, skills: { bud: 4 } });

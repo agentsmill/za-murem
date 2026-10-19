@@ -618,8 +618,13 @@ describe('Tryb zombie: ugryzienie wędrowca', () => {
   });
 });
 
+/* Skróty „jak przed zmianą” w tym pliku to przebieg bez rozmów, czyli bez kodu werbunku w akcji. Pierwszy raz liczone na
+   gałęzi bazowej dc6fdb5 sprzed werbunku; potem przypięte od nowa po scaleniu z `pelna-gra` b49c11c (książki z badań),
+   więc porównują z przebiegiem po scaleniu, a nie z dc6fdb5; i jeszcze raz po poprawkach przeglądu końcowego: zmienia je
+   tylko poprawka pilnej potrzeby (`pilneDoZaradzenia` zamiast `urgent` w think() i work()), bo z nią cofniętą wracają
+   dawne wartości (mock 46266382, a6dda24c, be1d87c6; Przymorze 0384b5e7; Zielonki 2219d72d bez zmian). */
 describe('Gra bez rozmów z wędrowcem', () => {
-  /** gra z obcymi przez trzy doby bez żadnego polecenia; skróty z gałęzi bazowej dc6fdb5 sprzed werbunku */
+  /** gra z obcymi przez trzy doby bez żadnego polecenia (skróty: komentarz nad blokiem) */
   const bez = (world: World, seed: number, opts: Partial<SimOpts>) => {
     const sim = new Sim(world, createSim(world, seed, { obcy: true, ...opts }));
     const widziani = new Set<number>();
@@ -633,11 +638,11 @@ describe('Gra bez rozmów z wędrowcem', () => {
   it('ten sam skrót co przed zmianą, mimo że wędrowcy przychodzą i odchodzą', () => {
     const a = bez(w, 3, { core: 2 });
     expect(a.wedrowcow).toBeGreaterThanOrEqual(3);
-    expect(a.hash).toBe('46266382');
+    expect(a.hash).toBe('1efcc694');
     expect(a.st.obcy!.rozmowa).toBeUndefined();
     expect('werbunek' in a.st.obcy!).toBe(false);
-    expect(bez(w, 7, { core: 4 }).hash).toBe('a6dda24c');
-    expect(bez(w, 3, { core: 4, mode: 'zombie' }).hash).toBe('be1d87c6');
+    expect(bez(w, 7, { core: 4 }).hash).toBe('3c818c59');
+    expect(bez(w, 3, { core: 4, mode: 'zombie' }).hash).toBe('07139a8c');
   });
 
   it('ten sam skrót co przed zmianą na prawdziwych demach (Przymorze, Zielonki)', () => {
@@ -645,7 +650,7 @@ describe('Gra bez rozmów z wędrowcem', () => {
     // różnica wypada w dobie 3 przed 8:00: Szaber (automat pracy ludzi) przeszukuje pomieszczenie, a przeszukanie z
     // gałęzi `badania` losuje książkę i dopisuje do stanu `books` i `bookLog`. Poza tymi polami stan w tym ticku jest
     // ten sam co przed scaleniem; werbunek nic tu nie zmienia (przebieg bez rozmów).
-    expect(bez(swiezy('przymorze'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('0384b5e7');
+    expect(bez(swiezy('przymorze'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('b1cf8d4c');
     expect(bez(swiezy('zielonki'), 5, { core: 4, mode: 'zwykly' }).hash).toBe('2219d72d');
   });
 });
@@ -770,8 +775,8 @@ describe('Wędrowiec czeka po rozmowie', () => {
       for (let k = 0; k < 3 * TICKS_PER_DAY; k++) sim.step();
       return sim.hash();
     };
-    expect(bez(w, 3, { core: 2 })).toBe('46266382');
-    expect(bez(w, 7, { core: 4 })).toBe('a6dda24c');
+    expect(bez(w, 3, { core: 2 })).toBe('1efcc694');
+    expect(bez(w, 7, { core: 4 })).toBe('3c818c59');
   });
 });
 

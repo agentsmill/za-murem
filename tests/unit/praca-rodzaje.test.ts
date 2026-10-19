@@ -839,20 +839,28 @@ describe('determinizm', () => {
 });
 
 describe('pilne potrzeby', () => {
-  it('przy pilnej potrzebie nowe rodzaje nie ruszają (urgent przerwałby je w następnej sekundzie), po niej tak', () => {
+  /* Przegląd końcowy zmienił regułę: nowe rodzaje nie ruszają przy pilnej potrzebie, której da się zaradzić
+     (`pilneDoZaradzenia`: przerwałaby je w następnej sekundzie); bez jedzenia głodny pracuje dalej, zamiast stać. */
+  it('przy pilnej potrzebie, której da się zaradzić, nowe rodzaje nie ruszają; bez jedzenia głodny rąbie', () => {
+    // jest co zjeść: je, nie rąbie
+    const z = scena({ zaSiatke: true, rodzaje: ['drwal'] });
+    z.p.needs!.food = 5;
+    const zStarty = liczStarty(z.sim, z.p);
+    for (let n = 0; n < 200; n++) z.sim.step();
+    expect(zStarty.eat ?? 0).toBeGreaterThan(0);
+    expect(zStarty.chop ?? 0).toBe(0);
+    // głodny, a nie ma co zjeść: potrzeba zostaje pilna, ale zaradzić się jej nie da, więc drwal rąbie
     const { sim, p } = scena({ zaSiatke: true, rodzaje: ['drwal'] });
-    // głodny, a nie ma co zjeść: potrzeba zostaje pilna
     sim.st.things = sim.st.things.filter((t) => t.kind !== 'jedzenie' && t.kind !== 'posilek');
     p.needs!.food = 5;
-    const starty = liczStarty(sim, p);
-    for (let n = 0; n < 200; n++) {
-      p.needs!.food = 5;
-      sim.step();
-    }
-    expect(starty.chop ?? 0).toBe(0);
-    expect(starty.haul ?? 0).toBe(0);
-    p.needs!.food = 90;
-    until(sim, () => p.job?.t === 'chop', 400);
+    until(
+      sim,
+      () => {
+        p.needs!.food = 5;
+        return p.job?.t === 'chop';
+      },
+      400,
+    );
     expect(jaka(p)).toBe('chop');
   });
 });
