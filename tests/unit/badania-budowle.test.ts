@@ -14,8 +14,16 @@ import { rzeczSprite } from '../../src/render/art/pixellab.ts';
 import { GAME_KINDS } from '../../src/render/game.ts';
 import { TECH_BY, TECHS } from '../../src/sim/badania.ts';
 import { BUILDS_EN } from '../../src/sim/budowle.en.ts';
-import { BUILDS, type BuildKind, canPlace, footprint } from '../../src/sim/budowle.ts';
-import { houseOf } from '../../src/sim/house.ts';
+import {
+  BUILDS,
+  type BuildKind,
+  canPlace,
+  footprint,
+  GHOST_KINDS,
+  nearWindow,
+  PLACE_ROOMS,
+} from '../../src/sim/budowle.ts';
+import { houseOf, kozaFront } from '../../src/sim/house.ts';
 import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
 import { allowedAnchors, buildMenu, buildName, placeText } from '../../src/ui/budowa.ts';
 import { thumbPixels } from '../../src/ui/miniatura.ts';
@@ -344,21 +352,69 @@ describe.each(DEMA)(
 
 describe.each(DEMA)('kafelek przed kozą zarządu zostaje wolny: %s', (_nazwa, { w, seed }) => {
   const h = houseOf(w)!;
-  const koza = h.furniture.find((f) => f.kind === 'koza')!;
-  /** kafelek, z którego się obsługuje kozę: strona przeciwna do ściany rot (0 ściana u góry, więc front pod kozą) */
-  const [fx, fy] = [
-    [koza.x, koza.y + koza.h],
-    [koza.x - 1, koza.y],
-    [koza.x, koza.y - 1],
-    [koza.x + koza.w, koza.y],
-  ][koza.rot];
 
-  it('koza z beczki nie staje na froncie kozy zarządu, a miejsce na kozę z beczki zostaje', () => {
+  /** Tu staje pionek, który na prawdziwe polecenie „dołóż” niesie drewno do kozy zarządu (stoi na froncie kozy, o
+      ile front jest wolny, a w świeżej grze jest). Polecenie idzie przez `Sim`, więc liczy go `Sim.frontOf`. */
+  function gdzieStajePionek(): number {
+    const st = createSim(w, seed, { core: 1 });
+    const koza = st.things.find((t) => t.kind === 'koza')!;
+    const sklad = h.sklad[0];
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'drewno',
+      x: sklad % w.size,
+      y: Math.floor(sklad / w.size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 2,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    const sim = new Sim(w, st);
+    const [p] = st.pawns;
+    sim.push({ t: 'refuel', ids: [p.id], thing: koza.id });
+    for (let k = 0; k < 3000 && !(p.job?.t === 'refuel' && p.job.phase === 1); k++) sim.step();
+    expect(p.job?.t, 'pionek niesie drewno do kozy').toBe('refuel');
+    return p.job!.tile;
+  }
+
+  it('canPlace odrzuca dla kozy z beczki dokładnie ten kafelek, na którym staje pionek dokładający do kozy zarządu', () => {
+    const stand = gdzieStajePionek();
     const st = gra(w, seed, 't_kozy');
-    const front = fy * w.size + fx;
+    const wolneRzeczy = (i: number) =>
+      !st.things.some(
+        (t) =>
+          !GHOST_KINDS.has(t.kind) &&
+          i % w.size >= t.x &&
+          i % w.size < t.x + t.w &&
+          Math.floor(i / w.size) >= t.y &&
+          Math.floor(i / w.size) < t.y + t.h,
+      );
+    // wszystkie kafelki, które spełniają pozostałe warunki miejsca „okno” (nasze pomieszczenie właściwego rodzaju,
+    // blisko okna, bez składu, bez rzeczy), policzone niezależnie od canPlace
+    const kandydaci = Array.from(h.room, (_r, i) => i).filter(
+      (i) =>
+        h.room[i] >= 0 &&
+        PLACE_ROOMS.okno!.includes(h.rooms[h.room[i]].kind) &&
+        h.rooms[h.room[i]].apt === h.home &&
+        !w.blocked[i] &&
+        !h.sklad.includes(i) &&
+        nearWindow(h, i, w.size) &&
+        wolneRzeczy(i),
+    );
+    const odrzucone = kandydaci.filter((i) => !canPlace(st, w, 'koza_beczka', ...xy(w, i), 0).ok);
+    expect(odrzucone).toEqual([stand]);
+    expect(kozaFront(h, w.size)).toBe(stand);
+  });
+
+  it('koza z beczki nie staje na froncie kozy zarządu w żadnej rotacji, a miejsce na kozę z beczki zostaje', () => {
+    const st = gra(w, seed, 't_kozy');
+    const [fx, fy] = xy(w, gdzieStajePionek());
     expect(canPlace(st, w, 'koza_beczka', fx, fy, 0).ok, 'front kozy zarządu').toBe(false);
     for (const rot of [0, 1, 2, 3]) expect(canPlace(st, w, 'koza_beczka', fx, fy, rot).ok, `rot ${rot}`).toBe(false);
-    expect(allowedAnchors(st, w, 'koza_beczka', 0)).not.toContain(front);
+    expect(allowedAnchors(st, w, 'koza_beczka', 0)).not.toContain(fy * w.size + fx);
     expect(allowedAnchors(st, w, 'koza_beczka', 0).length).toBeGreaterThan(0);
   });
 });

@@ -2,7 +2,8 @@
    Wnętrze generuje świat (src/world/interior.ts, kontrakt z M1). Tu jest tylko jego kształt strukturalny
    z tymi samymi nazwami pól, żeby symulacja nie zależała od generatora. Wnętrze wynika ze świata i ziarna,
    więc nie trafia do zapisu gry; temperatury pomieszczeń są w stanie (SimState.temps). `heatStep` przyjmuje dodatek do
-   temperatury bazowej pomieszczeń (t_okna), a `kozaFront` wskazuje kafelek przed kozą zarządu, który zostaje wolny dla kozy z beczki (budowle.ts). */
+   temperatury bazowej pomieszczeń (t_okna), a `frontTile` liczy kafelek przed meblem przy ścianie, a `kozaFront` ten przed kozą zarządu, który zostaje wolny dla
+   kozy z beczki (budowle.ts). */
 
 import type { World } from '../world/world.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
@@ -73,15 +74,21 @@ export function inHomeApt(h: HouseLike, i: number): boolean {
   return h.home >= 0 && r >= 0 && h.rooms[r].apt === h.home;
 }
 
-/** kafelek przed kozą zarządu, z którego się ją obsługuje (strona przeciwna do ściany `rot`, tak jak liczy go
-    `frontOf` w symulacji); generator wnętrza trzyma go wolnym, więc budowle go nie zajmują. −1: wnętrze bez kozy
-    zarządu */
+/** Kafelek przed meblem albo rzeczą przy ścianie (koza, kuchenka): strona przeciwna do ściany `rot` (0 góra, 1 prawo,
+    2 dół, 3 lewo), pośrodku boku. Kontrakt wnętrza trzyma go wolnym. To jedyne miejsce, które go liczy: stoi na nim
+    pionek obsługujący mebel (`Sim.frontOf`) i na nim opiera się rezerwacja miejsca w `canPlace` (`kozaFront`). −1 dla
+    `rot` spoza 0–3. */
+export function frontTile(t: { x: number; y: number; w: number; h: number; rot: number }, size: number): number {
+  const cx = t.x + (t.w >> 1);
+  const cy = t.y + (t.h >> 1);
+  return [(t.y + t.h) * size + cx, cy * size + t.x - 1, (t.y - 1) * size + cx, cy * size + t.x + t.w][t.rot] ?? -1;
+}
+
+/** kafelek przed kozą zarządu, z którego się ją obsługuje (`frontTile` jej mebla); generator wnętrza trzyma go wolnym,
+    więc koza z beczki go nie zajmuje. −1: wnętrze bez kozy zarządu */
 export function kozaFront(h: HouseLike, size: number): number {
   const k = h.furniture.find((f) => f.kind === 'koza' && inHomeApt(h, f.y * size + f.x));
-  if (!k) return -1;
-  const cx = k.x + (k.w >> 1);
-  const cy = k.y + (k.h >> 1);
-  return [(k.y + k.h) * size + cx, cy * size + k.x - 1, (k.y - 1) * size + cx, cy * size + k.x + k.w][k.rot];
+  return k ? frontTile(k, size) : -1;
 }
 
 /** kafelki mieszkania zarządu (1): jego pomieszczenia i drzwi, które do nich prowadzą */

@@ -95,6 +95,7 @@ import {
 } from './handlarz.ts';
 import {
   dryTreeOf,
+  frontTile,
   HEAT_EVERY,
   type HouseLike,
   heatBoost,
@@ -3137,12 +3138,9 @@ export class Sim {
       (skład też się nadaje) */
   private frontOf(p: Pawn, t: Thing): number {
     const size = this.w.size;
-    const cx = t.x + (t.w >> 1);
-    const cy = t.y + (t.h >> 1);
-    const front = [(t.y + t.h) * size + cx, cy * size + t.x - 1, (t.y - 1) * size + cx, cy * size + t.x + t.w][t.rot];
+    const front = frontTile(t, size);
     const region = this.regionOf(p);
     const ok =
-      front !== undefined &&
       front >= 0 &&
       front < size * size &&
       !this.coreBlocked[front] &&
