@@ -34,6 +34,7 @@ import {
   trunkOf,
   woodFrom,
 } from '../../src/sim/sim.ts';
+import { snapshot } from '../../src/sim/snapshot.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { wspolnyPlot } from '../../src/world/plot.ts';
@@ -64,6 +65,7 @@ interface Prywatne {
   work(p: Pawn, j: Job): boolean;
   lootNear(p: Pawn, anchor: number, order?: boolean): Thing | undefined;
   startPlot(p: Pawn, order?: boolean): boolean;
+  startChop(p: Pawn, k: number, order: boolean): boolean;
   tileOf(p: Pawn): number;
   exitTile: number;
   coreBlocked: Uint8Array;
@@ -815,6 +817,44 @@ describe('za siatką', () => {
     expect(prv(bez.sim).naszTeren(kafel)).toBe(false);
     bez.sim.st.plot = { bids: [budynek.id] };
     expect(prv(bez.sim).naszTeren(kafel)).toBe(true);
+  });
+});
+
+/* Przegląd końcowy: polecenie gracza na pracę, którą osoba już robi z automatu, nie ginie; ta sama praca staje się pracą
+   z polecenia (`order`), więc działają reguły poleceń (wniesienie drewna po ścięciu za siatką, noc, pilne potrzeby),
+   a karta przestaje pisać „(sam)”. */
+describe('polecenie na pracę, którą osoba już robi sama', () => {
+  it('ścinanie: to samo drzewo z polecenia rąbie dalej bez zaczynania od nowa, a po ścięciu za siatką wnosi drewno', () => {
+    const { sim, p } = scena({ zaSiatke: true, rodzaje: ['drwal'] });
+    const s = prv(sim);
+    // najbliższe drzewo za siatką, przy którym jest miejsce: drwal z przełącznikiem zaczyna je sam
+    let k = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < s.w.trees.length; i++) {
+      if (s.naszTeren(s.trunk[i]) || s.chopSpot(p, i) < 0) continue;
+      const d = s.dist2(p, s.trunk[i]);
+      if (d < bd) {
+        bd = d;
+        k = i;
+      }
+    }
+    expect(s.startChop(p, k, false)).toBe(true);
+    until(sim, () => p.job?.t === 'chop' && p.job.phase === 1, 2000);
+    const j = p.job!;
+    expect(j.target).toBe(k);
+    expect(j.order).toBe(false);
+    const koniec = j.until;
+    sim.push({ t: 'chop', ids: [p.id], tree: k });
+    sim.step();
+    // ta sama praca, ten sam postęp, ale z polecenia
+    expect(p.job).toBe(j);
+    expect(j.order).toBe(true);
+    expect(j.until).toBe(koniec);
+    expect(snapshot(sim.st, s.w).people.find((q) => q.pawn === p.id)!.sam).toBe(false);
+    // po ścięciu za siatką ta sama osoba wnosi drewno (łańcuch ścinania z polecenia)
+    until(sim, () => sim.st.felled.includes(k), 6000);
+    expect(p.job?.t).toBe('haul');
+    expect(p.job?.order).toBe(true);
   });
 });
 

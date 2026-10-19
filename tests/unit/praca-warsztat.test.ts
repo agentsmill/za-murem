@@ -4,7 +4,7 @@ import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { inHomeApt } from '../../src/sim/house.ts';
 import { REPAIR, searchable } from '../../src/sim/mieszkania.ts';
 import { fenceShape, type Hole } from '../../src/sim/perimeter.ts';
-import { progi, RODZAJE, type RodzajPracy } from '../../src/sim/praca.ts';
+import { progi, RODZAJE, type RodzajPracy, ZAPAS_OPALU } from '../../src/sim/praca.ts';
 import { gid, gidRoom, moznaPrzeszukac, wnetrze } from '../../src/sim/sasiedzi.ts';
 import {
   BURN_TICKS,
@@ -488,9 +488,11 @@ describe('warsztat', () => {
     expect(jaka(p)).toBe('-');
   });
 
-  it('drewno z kozy i z ulicy nie idzie na deski, choć próg drewna zero zostawia nadwyżkę w zapasie', () => {
+  /* Przegląd końcowy: próg drewna 0 wyłącza Drwala, ale nie oddaje opału na deski. Deski z drewna są tylko z nadwyżki
+     ponad max(próg drewna, ZAPAS_OPALU), a drewno z ulicy nie jest zapasem. */
+  it('próg drewna 0 nie oddaje opału na deski: nadwyżka liczy się ponad ZAPAS_OPALU, drewno z ulicy się nie liczy', () => {
+    expect(ZAPAS_OPALU).toBe(20);
     const { sim, p, s } = zWarsztatem();
-    // próg drewna 0: cały zapas (3 sztuki w kozie) wygląda na nadwyżkę, ale na deski nie ma czego wziąć z podwórka
     sim.push({ t: 'prog', ids: [], co: 'drewno', n: 0 });
     sim.step();
     odnow(sim, p);
@@ -501,10 +503,18 @@ describe('warsztat', () => {
     expect(s.zapasDrewna()).toBe(3);
     s.think(p);
     expect(jaka(p)).toBe('-');
-    // z drewnem w składzie deska jest
+    // drewno w składzie i na podwórku do zapasu opału: przy progu 0 dawniej szło na deski, teraz nie
     s.addWood(sim.house!.sklad[0], 4);
     s.think(p);
-    expect(jaka(p)).toBe('saw');
+    expect(jaka(p), 'zapas 7').toBe('-');
+    ustawZapas(sim, p, ZAPAS_OPALU + RECIPES.deski.n - 1);
+    s.think(p);
+    expect(jaka(p), `zapas ${ZAPAS_OPALU + RECIPES.deski.n - 1}`).toBe('-');
+    // nadwyżka ponad zapas opału na jedną deskę: deska jest
+    ustawZapas(sim, p, ZAPAS_OPALU + RECIPES.deski.n);
+    s.think(p);
+    expect(jaka(p), `zapas ${ZAPAS_OPALU + RECIPES.deski.n}`).toBe('saw');
+    // próg drewna ponad zapas opału liczy się jak dotąd (próg 30: domyślne przypadki w teście wyżej)
   });
 
   it('deski i części na ulicy nie liczą się do zapasu (zapas to nasz teren)', () => {
@@ -794,6 +804,22 @@ function blokOtoczony() {
   const k = sim.st.sasiedzi!.budynki.findIndex((x) => x.bid === b.id);
   return { sim, p, s: prv(sim), w, bid: b.id, k, b: sim.st.sasiedzi!.budynki[k] };
 }
+
+describe('polecenie na przeszukanie, które osoba już robi sama', () => {
+  it('przeszukanie: polecenie gracza na pokój, który osoba przeszukuje z automatu, robi z tego pracę z polecenia', () => {
+    const { sim, p, s } = scena({ key: 'przymorze', rodzaje: ['szaber'] });
+    s.think(p);
+    expect(jaka(p)).toBe('search');
+    const j = p.job!;
+    expect(j.order).toBe(false);
+    sim.push({ t: 'search', ids: [p.id], room: j.target });
+    sim.step();
+    expect(p.job).toBe(j);
+    expect(j.order).toBe(true);
+    // drugi z zarządu dalej nie dostaje pokoju, który ktoś już przeszukuje
+    expect(s.startSearch(core(sim)[1], j.target, true)).toBe(false);
+  });
+});
 
 describe('szaber', () => {
   it('szaber przeszukuje puste pomieszczenie w otoczonym budynku, nigdy mieszkania z lokatorami ani cudzych drzwi', () => {

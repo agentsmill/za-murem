@@ -1,8 +1,8 @@
 /* Praca ludzi: rodzaje pracy zarządu, priorytety, stałe zajęcie, progi zapasów, tempo z umiejętności i bramka
    pierwszego dnia. Czyste dane i funkcje, bez losowania i bez wartości z sim.ts (z niego tylko typy), więc działają
    w Node bez przeglądarki. Kontrakt:
-   - Ustawienia gracza to `st.praca` (opcjonalne): trzyma tylko zmiany względem domyślnych, klucz osoby to indeks
-     w `st.people`. Funkcje tylko czytają i nigdy nie tworzą pola w stanie, więc stary zapis i gra bez zmian mają ten
+   - Ustawienia gracza to `st.praca` (opcjonalne): trzyma tylko zmiany względem domyślnych (priorytet Badań zawsze, gdy
+     gracz go ustawił, bo domyślny zależy od dziedziny bieżącego badania), klucz osoby to indeks w `st.people`. Funkcje tylko czytają i nigdy nie tworzą pola w stanie, więc stary zapis i gra bez zmian mają ten
      sam skrót co przed pracą ludzi. Zmiany robią polecenia przez `sim.push` (zapis stanu jest w sim.ts).
    - Kolejność rodzajów w `RODZAJE` to kolejność kolumn panelu i rozstrzyga remis priorytetów.
    - Priorytet 0 znaczy „nie robi”, 1 najważniejszy, 4 najmniej ważny. Domyślny wynika z umiejętności zawodu (Badania bez
@@ -108,7 +108,7 @@ export const WPISY: Record<RodzajPracy, WpisRodzaju> = {
   warsztat: { umiejetnosc: (_st, o) => Math.max(poziom(o, 'elek'), poziom(o, 'it')), widoczny: zawsze },
   szaber: { umiejetnosc: () => 0, widoczny: zawsze },
   /* badania (kontrakt z projektu pracy ludzi, sekcja „Rodzaje pracy”): umiejętność to poziom osoby w dziedzinie
-     bieżącego badania (bez badania 0, więc bez wybranego badania domyślny priorytet 3 i nikt nie siada), rodzaj jest
+     bieżącego badania (bez badania 0, więc bez wybranego badania domyślny priorytet 0 i nikt nie siada), rodzaj jest
      widoczny, gdy stoi pracownia albo istnieje stan badań, a zlecenie to wolne miejsce przy stole pracowni */
   badania: {
     umiejetnosc: (st, o) => {
@@ -155,6 +155,10 @@ export function zaSiatke(st: SimState, osoba: number): boolean {
 }
 
 export const PROGI_DOMYSLNE: Progi = { drewno: 30, deski: 20, czesci: 10, dzidy: 0 };
+/** Drewno, którego Warsztat nie piłuje na deski bez względu na próg drewna: zapas opału na jedną noc (koza zjada nocą
+    około 20 sztuk; tyle samo zostawia bot surowców). Deski z drewna są tylko z nadwyżki ponad max(próg drewna, to),
+    więc próg drewna 0 wyłącza Drwala, ale nie oddaje opału na deski. */
+export const ZAPAS_OPALU = 20;
 /** największy próg zapasu: tak przycina polecenie `prog` (`ustawPrace`), a panel Pracy nie pozwala wyjść ponad to */
 export const PROG_MAX = 999;
 /** w trybie zombie zarząd trzyma zapas dzid, bo noc przychodzi ze stadem */

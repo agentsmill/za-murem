@@ -189,6 +189,7 @@ import {
   tempoPracy,
   type UstawieniaOsoby,
   WPISY,
+  ZAPAS_OPALU,
   ZARZAD_MAX,
   zaSiatke,
 } from './praca.ts';
@@ -1849,7 +1850,8 @@ function wZarzadzie(st: SimState, osoba: number): boolean {
 }
 
 /** Ustawienia pracy ludzi z polecenia gracza (`prio`, `stale`, `zasiatke`, `prog`): zapisuje w `st.praca` tylko zmiany
-    względem domyślnych, a ustawienie równe domyślnemu zdejmuje wpis. Złe dane (osoba spoza zarządu, priorytet poza 0–4,
+    względem domyślnych, a ustawienie równe domyślnemu zdejmuje wpis. Wyjątek: priorytet Badań zostaje zapisany zawsze
+    (domyślny zależy od dziedziny bieżącego badania). Złe dane (osoba spoza zarządu, priorytet poza 0–4,
     nieznany rodzaj albo próg, próg nie liczba) są pomijane bez śladu w stanie. */
 function ustawPrace(st: SimState, c: PolecenieUstawien): void {
   if (c.t === 'prog') {
@@ -1867,7 +1869,10 @@ function ustawPrace(st: SimState, c: PolecenieUstawien): void {
     const u = (((st.praca ??= {}).osoby ??= {})[c.osoba] ??= {});
     if (c.t === 'prio') {
       const prio = (u.prio ??= {});
-      if (c.prio === domyslnyPriorytet(st, st.people[c.osoba], c.rodzaj)) delete prio[c.rodzaj];
+      // Badania zostają jawne zawsze: ich domyślny priorytet zależy od dziedziny bieżącego badania i zmienia się w grze,
+      // więc wybór gracza równy dzisiejszemu domyślnemu przepadłby przy zmianie badania
+      if (c.rodzaj !== 'badania' && c.prio === domyslnyPriorytet(st, st.people[c.osoba], c.rodzaj))
+        delete prio[c.rodzaj];
       else prio[c.rodzaj] = c.prio;
     } else if (c.t === 'stale') {
       if (c.rodzaj === null) delete u.stale;
@@ -3113,7 +3118,9 @@ export class Sim {
   }
 
   /** pierwsza osoba ścina, reszta idzie obok drzewa (będzie pod ręką do noszenia); gdy ktoś już ścina
-      to drzewo, rąbie dalej bez zaczynania od nowa, a nowi idą pomóc */
+      to drzewo, rąbie dalej bez zaczynania od nowa, a nowi idą pomóc. Gdy ścinający jest wśród wskazanych, a rąbie sam
+      (z automatu), jego praca staje się pracą z polecenia (`order`): polecenie gracza nie ginie (wniesienie drewna po
+      ścięciu za siatką, reguły nocy i pilnych potrzeb dla poleceń, bez dopisku „(sam)”). */
   private orderChop(pawns: Pawn[], k: number): void {
     if (!(k >= 0 && k < this.w.trees.length)) return;
     if (this.st.felled.includes(k)) {
@@ -3124,6 +3131,7 @@ export class Sim {
     let rest = pawns;
     const chopper = this.st.pawns.find((q) => q.job?.t === 'chop' && q.job.target === k);
     if (chopper) {
+      if (pawns.includes(chopper)) chopper.job!.order = true;
       rest = pawns.filter((q) => q !== chopper);
       taken.push(chopper.job!.tile);
     } else if (this.startChop(pawns[0], k, true)) {
@@ -5360,14 +5368,25 @@ export class Sim {
   }
 
   /** przeszukać pomieszczenie pustego mieszkania albo, w domu jednorodzinnym, domu komitetu (raz; nie gdy ktoś już
-      je przeszukuje); `order` fałszywe: praca zarządu z automatu (Szaber). false, gdy się nie zaczęło. */
+      je przeszukuje); `order` fałszywe: praca zarządu z automatu (Szaber). false, gdy się nie zaczęło. Polecenie na
+      pokój, który ta osoba już przeszukuje sama, robi z tej pracy pracę z polecenia (`podnies`). */
   private startSearch(p: Pawn, room: number, order = true): boolean {
     const g = this.aptOfRoom(room);
     if (!g || !searchable(this.w, g) || g.searched.includes(room)) return false;
-    if (this.st.pawns.some((q) => q.job?.t === 'search' && q.job.target === room)) return false;
+    const robi = this.st.pawns.find((q) => q.job?.t === 'search' && q.job.target === room);
+    if (robi) return order && this.podnies(robi, p);
     const spot = this.roomSpot(p, room);
     if (spot < 0 || !this.idz(p, spot, order, 'szaber')) return false;
     this.setJob(p, this.newJob('search', room, spot, order), false);
+    return true;
+  }
+
+  /** Polecenie gracza na pracę, którą już ktoś robi: gdy to ta sama osoba (`p`), jej praca z automatu staje się pracą
+      z polecenia (`order`, reguły poleceń i bez dopisku „(sam)”), bez zaczynania od nowa; true. Gdy robi ją ktoś inny,
+      nic się nie zmienia; false (jak dotąd: zajęte). */
+  private podnies(robi: Pawn, p: Pawn): boolean {
+    if (robi !== p || !p.job) return false;
+    p.job.order = true;
     return true;
   }
 
@@ -5575,11 +5594,13 @@ export class Sim {
   }
 
   /** naprawić uszkodzenie: materiałów musi być dość (doniesione plus w stertach w zasięgu, bez polecenia tylko
-      na naszym terenie); false, gdy się nie zaczęło */
+      na naszym terenie); false, gdy się nie zaczęło. Polecenie na uszkodzenie, które ta osoba już naprawia sama, robi
+      z tej pracy pracę z polecenia (`podnies`). */
   private startRepair(p: Pawn, k: number, order = true): boolean {
     const d = this.st.damage[k];
     if (!d || d.fixed) return false;
-    if (this.st.pawns.some((q) => q.job?.t === 'repair' && q.job.target === k)) return false;
+    const robi = this.st.pawns.find((q) => q.job?.t === 'repair' && q.job.target === k);
+    if (robi) return order && this.podnies(robi, p);
     const cost = REPAIR[d.kind].cost;
     if (!this.enoughFor(p, cost, d.have, this.materialOk(p, order, 'repair'))) return false;
     const j = this.newJob('repair', k, this.tileOf(p), order);
@@ -6297,16 +6318,15 @@ export class Sim {
   }
 
   /** Warsztat zrobi deski: stoi warsztat, desek (z tymi w robocie) jest mniej niż próg, a drewna w obrębie siatki
-      (`zapasDrewna`: razem z kozą i tym, co niosą) jest ponad próg drewna co najmniej na jedną sztukę, i to drewno
-      leży na naszym terenie. */
+      (`zapasDrewna`: razem z kozą i tym, co niosą) jest ponad próg drewna i ponad zapas opału (`ZAPAS_OPALU`: próg 0
+      wyłącza Drwala, a nie oddaje opału na deski) co najmniej na jedną sztukę, i to drewno leży na naszym terenie. */
   private warsztatDeski(): boolean {
     if (!this.hasBuilt('warsztat')) return false;
     const pr = progi(this.st);
     const deski = RECIPES.deski;
     const wDeskach = this.wRobocie('saw', 'deski');
-    return (
-      this.zapasMat('deski') + wDeskach < pr.deski && this.zapasDrewna() - pr.drewno - wDeskach * deski.n >= deski.n
-    );
+    const zostaje = Math.max(pr.drewno, ZAPAS_OPALU);
+    return this.zapasMat('deski') + wDeskach < pr.deski && this.zapasDrewna() - zostaje - wDeskach * deski.n >= deski.n;
   }
 
   /** Warsztat zrobi części: stoi warsztat, części (z tymi w robocie) jest mniej niż próg, a złomu ponad rezerwę na łaty
@@ -10065,7 +10085,9 @@ export class Sim {
     if (k < 0 || !s!.budynki[k].otwarty) return false;
     const g = gid(k, room);
     if (!this.moznaSzukac(k, room, !order)) return false;
-    if (this.st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === g)) return false;
+    // polecenie na pokój, który ta osoba już przeszukuje sama: praca z polecenia (`podnies`)
+    const robi = this.st.pawns.find((q) => q.job?.t === 'loot' && q.job.target === g);
+    if (robi) return order && this.podnies(robi, p);
     const spot = this.pokojSpot(p, this.kafelkiPokoju(g));
     if (spot < 0 || !this.idz(p, spot, order, 'szaber')) return false;
     this.setJob(p, this.newJob('loot', g, spot, order), false);

@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BUILDS } from '../src/sim/budowle.ts';
 import { clockOf, dayOf, hourOf, TICKS_PER_SECOND } from '../src/sim/clock.ts';
+import { ZAPAS_OPALU } from '../src/sim/praca.ts';
 import type { Command, Sim } from '../src/sim/sim.ts';
 import { snapshot } from '../src/sim/snapshot.ts';
 import { BATCH, RECIPES, wreckStage, wrecksOf, wreckTile } from '../src/sim/surowce.ts';
@@ -26,8 +27,9 @@ const DAYS = Number(process.argv[3]) || 5;
 const SEEDS = [1, 2, 3, 4, 5].map((k) => SEED * 10 + k);
 /** co ile sekund przy ekranie gracz surowców rozgląda się za robotą (jak gracz fali 1) */
 const EVERY = 5;
-/** deski z drewna dopiero ponad taki zapas (koza zjada nocą około 20 sztuk) */
-const WOOD_KEEP = 20;
+/** deski z drewna dopiero ponad taki zapas (koza zjada nocą około 20 sztuk; ta sama liczba, której Warsztat zarządu nie
+    piłuje bez względu na próg drewna) */
+const WOOD_KEEP = ZAPAS_OPALU;
 /** części ze złomu do takiego zapasu */
 const PARTS_WANT = 10;
 /** przy rąbaniu na deski: tniemy drzewa, dopóki desek jest mniej (najdroższa budowla, magazyn, chce 30) */
