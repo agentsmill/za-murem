@@ -7,7 +7,6 @@ import { ambientCount, NEAR } from '../../src/sim/zombie.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
-import { wylaczAutomat } from './praca-pomoc.ts';
 
 const a = ADDRESSES.find((x) => x.key === 'przymorze')!;
 const w = buildWorld(toGeoT(decodedTiles(a), a.lat, a.lon, LOAD_RADIUS), { seed: 1 });
@@ -45,9 +44,6 @@ describe('szwendacze blisko osiedla', () => {
     const st = createSim(w, 1, { core: 4, mode: 'zombie' });
     st.tick = atHour(3, 20.9);
     const sim = new Sim(w, st);
-    // ten test mierzy napór stada na siatkę, a termin grup zależy od losowań całej gry: bezczynny zarząd nie szuka
-    // sam roboty (przeszukiwanie, warsztat), tylko robi to, co robił przed automatem
-    wylaczAutomat(sim);
     const born = new Map<number, number>();
     runTo(sim, atHour(4, 1.5), () => {
       for (const z of zombies(st)) if (!born.has(z.id)) born.set(z.id, fenceDist(z));

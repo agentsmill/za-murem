@@ -38,6 +38,7 @@ import type { GameMode } from '../../src/sim/tryb.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { wspolnyPlot } from '../../src/world/plot.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
+import { graZPlanem, zbudujPlot } from './praca-blok.ts';
 import { skonczSamouczek } from './praca-pomoc.ts';
 import { core, demoWorld, doorWhere, newGame, pusto, until } from './sasiedzi-pomoc.ts';
 
@@ -68,6 +69,8 @@ interface Prywatne {
   coreBlocked: Uint8Array;
   fenceMask: Uint8Array;
   yardMask: Uint8Array;
+  standBy(p: Pawn, tiles: readonly number[], reach: number): number;
+  naszeObszary(): Int32Array;
   reg: Int32Array;
   trunk: Int32Array;
   dry: number;
@@ -480,7 +483,8 @@ describe('naprawy', () => {
   });
 
   it('naprawia uszkodzenie tylko w naszym mieszkaniu, nie wzmacnia siatki', () => {
-    const { sim, p } = scena({ rodzaje: ['naprawy'] });
+    // uszkodzenia są w mieszkaniu z drugiej klatki bloku (dojście ulicą): automat idzie tam tylko z przełącznikiem
+    const { sim, p } = scena({ rodzaje: ['naprawy'], zaSiatke: true });
     const st = sim.st;
     const s = prv(sim);
     for (const h of st.fence!.holes) h.patch = 100; // dziury załatane: zostają uszkodzenia
@@ -508,17 +512,32 @@ describe('naprawy', () => {
 });
 
 describe('noszenie', () => {
-  /** gra na Lanciego z otwartym blokiem bez lokatorów i pracującą osobą; w budynku leży sterta desek */
+  /** gra na Lanciego z otwartym blokiem bez lokatorów i pracującą osobą; w budynku leży sterta desek. Otoczony budynek
+      to prawdziwy wspólny płot (korytarz łączy budynek z podwórkiem), nie sam wpis w `st.plot.bids`: bez korytarza
+      budynek byłby osobnym obszarem naszego terenu, do którego dojście prowadzi ulicą. */
   function zBlokiem(zaSiatke: boolean, otoczony: boolean, godzina = 9, drewno = false) {
-    const w = demoWorld('lanciego');
-    const { bid, door } = doorWhere(w, 'zwykly', (s) => s.s === 'zamkniete' && !s.k, ['blok']);
-    const sim = newGame('lanciego');
-    sim.lokatorzy = pusto(w);
+    let w: World;
+    let sim: Sim;
+    let bid: number;
+    let door = -1;
+    if (otoczony) {
+      const g = graZPlanem(true);
+      zbudujPlot(g);
+      ({ w, sim } = g);
+      bid = g.b.id;
+    } else {
+      w = demoWorld('lanciego');
+      ({ bid, door } = doorWhere(w, 'zwykly', (s) => s.s === 'zamkniete' && !s.k, ['blok']));
+      sim = newGame('lanciego');
+      sim.lokatorzy = pusto(w);
+    }
     const sc = scena({ sim, rodzaje: [], godzina, zaSiatke });
     const { p } = sc;
-    sim.push({ t: 'open', ids: [p.id], door });
-    sim.step();
-    until(sim, () => p.job?.t !== 'door' && p.job?.t !== 'go', 4000);
+    if (!otoczony) {
+      sim.push({ t: 'open', ids: [p.id], door });
+      sim.step();
+      until(sim, () => p.job?.t !== 'door' && p.job?.t !== 'go', 4000);
+    }
     const budynek = sim.st.sasiedzi!.budynki.find((x) => x.bid === bid)!;
     expect(budynek.otwarty).toBe(true);
     odnow(sim, p);
@@ -528,15 +547,18 @@ describe('noszenie', () => {
     sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'noszenie', prio: 1 });
     sim.step();
     odnow(sim, p);
-    if (otoczony) sim.st.plot = { bids: [bid] };
+    if (otoczony) expect(sim.st.plot?.bids).toContain(bid);
     const s = prv(sim);
     const size = s.w.size;
     const ulica = wolnyKafelek(sim, p, 'poza');
+    const obszary = s.naszeObszary();
+    const od = obszary[s.tileOf(p)];
     const i = [...Array(size * size).keys()].find(
       (t) =>
         w.bid[t] === bid &&
         !s.coreBlocked[t] &&
         s.reg[t] === s.regionOf(p) &&
+        (!otoczony || obszary[t] === od) &&
         !sim.st.things.some((x) => x.y * size + x.x === t),
     );
     expect(i, 'kafelek w budynku, do którego da się dojść').toBeDefined();
@@ -944,15 +966,22 @@ describe('tryb zombie', () => {
   });
 });
 
-/** Plan budowy na wolnym miejscu: zasieki na kafelku siatki albo ogródek na podwórku (jak plan z menu budowy). */
+/** Plan budowy na wolnym miejscu: zasieki na kafelku siatki albo ogródek na podwórku (jak plan z menu budowy).
+    Zasieki na kafelku, przy którym jest wolne miejsce po stronie podwórka: bez takiego miejsca stoi się po stronie
+    ulicy, a tam automat bez przełącznika nie wychodzi. */
 function planBudowy(sim: Sim, kind: 'zasieki' | 'ogrodek') {
   const s = prv(sim);
   const w = s.w;
   const kafle = kind === 'zasieki' ? (fenceShape(w)?.tiles ?? []) : (fenceShape(w)?.yard ?? []);
+  const osoba = core(sim)[0];
   let at: { x: number; y: number; rot: number } | null = null;
   for (const rot of [0, 1])
     for (const i of kafle)
-      if (!at && canPlace(sim.st, w, kind, i % w.size, Math.floor(i / w.size), rot).ok)
+      if (
+        !at &&
+        canPlace(sim.st, w, kind, i % w.size, Math.floor(i / w.size), rot).ok &&
+        (kind !== 'zasieki' || s.standBy(osoba, [i], 1) >= 0)
+      )
         at = { x: i % w.size, y: Math.floor(i / w.size), rot };
   if (!at) throw new Error(`brak miejsca na ${kind}`);
   return { at, tile: at.y * w.size + at.x };
@@ -1264,7 +1293,8 @@ describe('tempo z umiejętności', () => {
   });
 
   it('naprawa uszkodzenia też dzieli czas przez tempo (bud 2 daje 1,2)', () => {
-    const { sim, p } = scena({ rodzaje: ['naprawy'], skills: { bud: 2 } });
+    // uszkodzenia są w mieszkaniu z drugiej klatki bloku (dojście ulicą): automat idzie tam tylko z przełącznikiem
+    const { sim, p } = scena({ rodzaje: ['naprawy'], skills: { bud: 2 }, zaSiatke: true });
     const st = sim.st;
     const s = prv(sim);
     for (const h of st.fence!.holes) h.patch = 100;

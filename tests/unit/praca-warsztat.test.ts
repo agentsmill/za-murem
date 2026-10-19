@@ -1,30 +1,14 @@
-/* Rodzaje pracy Warsztat i Szaber, dokańczanie planu wspólnego płotu przez Budowę i tempo z umiejętności dla budowy,
-   warsztatu, dzidy i gotowania (src/sim/sim.ts, docs/superpowers/specs/2026-10-19-praca-ludzi-design.md, „Rodzaje
-   pracy”, „Progi zapasów”, „Umiejętności”). Warsztat robi deski tylko z nadwyżki drewna ponad próg, części tylko
-   z nadwyżki złomu ponad rezerwę na łaty i plany, a dzidy tylko dla nieuzbrojonych ponad dzidy w magazynie; Szaber
-   przeszukuje puste pomieszczenia (siedziba, otoczone budynki, a za siatką tylko przy `mozeTam`) i wraki, nigdy
-   mieszkań z lokatorami i nigdy nie otwiera ani nie wyważa drzwi, a bez przełącznika nie idzie ulicą (pokój w innej
-   klatce tego samego bloku odpada); ciepło poniżej COLD idzie przed nowe rodzaje z priorytetem 3 i 4; Budowa od
-   pierwszego rana dokańcza plan płotu.
-   Sceny jak w praca-rodzaje.test.ts: małe i deterministyczne, reszta zarządu na wyprawie (`away`), badana osoba syta,
-   wyspana i ciepła, rodzaje, których test nie sprawdza, wyłączone. Gra stoi na dniu 2, 9:00 ze skończonym samouczkiem
-   (nowe rodzaje ruszają od pierwszego rana, `automatRusza`). */
-
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { hashString } from '../../src/core/rng.ts';
 import { BUILDS, canPlace } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { searchable } from '../../src/sim/mieszkania.ts';
 import { fenceShape, type Hole } from '../../src/sim/perimeter.ts';
 import { progi, RODZAJE, type RodzajPracy } from '../../src/sim/praca.ts';
-import { gid, gidRoom, kosztPlotu, moznaPrzeszukac, plotDla, wnetrze } from '../../src/sim/sasiedzi.ts';
+import { gid, gidRoom, moznaPrzeszukac, wnetrze } from '../../src/sim/sasiedzi.ts';
 import {
   BURN_TICKS,
   COOK_TICKS,
   CRAFT_TICKS,
-  createSim,
   type Job,
   type JobKind,
   type Pawn,
@@ -34,7 +18,8 @@ import {
 } from '../../src/sim/sim.ts';
 import { RECIPES, wreckStage, wrecksOf, wreckTile } from '../../src/sim/surowce.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
-import { buildWorld, type World } from '../../src/world/world.ts';
+import type { World } from '../../src/world/world.ts';
+import { graZPlanem, zbudujPlot } from './praca-blok.ts';
 import { skonczSamouczek } from './praca-pomoc.ts';
 import { core, demoWorld, doorWhere, newGame, pusto, until, wszyscy } from './sasiedzi-pomoc.ts';
 
@@ -50,6 +35,13 @@ interface Prywatne {
   rezerwaZlomu(): number;
   naszeObszary(): Int32Array;
   startSearch(p: Pawn, room: number, order?: boolean): boolean;
+  startLoot(p: Pawn, bid: number, room: number, order?: boolean): boolean;
+  startCarry(p: Pawn, id: number, order?: boolean): boolean;
+  lootNear(p: Pawn, anchor: number, order?: boolean): Thing | undefined;
+  dojdzieWDomu(p: Pawn, tile: number): boolean;
+  idz(p: Pawn, tile: number, order: boolean): boolean;
+  materialOk(p: Pawn, order: boolean, t: JobKind): ((tile: number) => boolean) | undefined;
+  exitTile: number;
   roomTiles: number[][];
   tileOf(p: Pawn): number;
   release(p: Pawn): void;
@@ -775,52 +767,13 @@ function dostepnePokoje(sim: Sim, p: Pawn, k: number): number[] {
   return pokoje;
 }
 
-function swiezy(key: string): World {
-  const d = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, `../../public/demo/${key}.json`), 'utf8'));
-  return buildWorld(d.geo, { seed: Number.parseInt(hashString(d.addr), 16) || 2051, street: d.street });
-}
-
-/** Lanciego z otwartym Blokiem nr 10F, materiałem na płot na podwórku i planem płotu zaczętym przez gracza (jak
-    w plot.test.ts, tu na demie bez kroku więcej niż potrzeba); `pustyBlok`: lokatorów w budynkach nie ma */
-function graZPlanem(pustyBlok = false) {
-  const w = swiezy('lanciego');
-  const sim = new Sim(w, createSim(w, 5, { core: 4, mode: 'zwykly' }));
-  if (pustyBlok) sim.lokatorzy = pusto(w);
-  const b = w.buildings.find((x) => x.name === 'Blok nr 10F')!;
-  const p = core(sim)[0];
-  p.weapon = 'lom';
-  const door = b.entrances[0].tile;
-  for (const t of ['open', 'force'] as const) {
-    sim.push({ t, ids: [p.id], door });
-    sim.step();
-    until(sim, () => p.job?.t !== 'door', 8000);
-    if (sim.st.sasiedzi?.budynki.find((x) => x.bid === b.id)?.otwarty) break;
-  }
-  const r = plotDla(sim.st, w, b.id);
-  if (!r?.ok) throw new Error('10F bez płotu');
-  const { need } = kosztPlotu(r);
-  const free = w.fence.yard.filter((i) => !w.blocked[i] && !sim.st.things.some((t) => t.y * w.size + t.x === i));
-  let k = 0;
-  for (const [m, n] of Object.entries(need) as [string, number][])
-    for (let left = n + 4; left > 0; left -= 10) dodaj(sim, m, Math.min(10, left), free[k++]);
-  sim.push({ t: 'enclose', ids: [p.id], bid: b.id });
-  sim.step();
-  expect(sim.st.plot?.plan?.bid).toBe(b.id);
-  return { w, sim, b, p, r };
-}
-
 /** Świat ze zbudowanym wspólnym płotem wokół Bloku nr 10F (Lanciego, puste mieszkania): budynek jest już nasz, korytarz
     łączy go z podwórkiem. Gra stoi na dniu 2, 9:00, pierwsza osoba ma tylko Szaber (priorytet 1), reszta zarządu jest na
     wyprawie, pomieszczenia siedziby przeszukane, więc zostaje sam blok. */
 function blokOtoczony() {
   const g = graZPlanem(true);
   const { sim, p, b, w } = g;
-  for (let n = 0; n < 60000 && !sim.st.plot?.bids.includes(b.id); n++) {
-    sim.step();
-    if (n % 100 === 0) podkarm(sim);
-    if (n % 400 === 0 && sim.st.plot?.plan && p.job?.t !== 'plot' && !sim.st.cmds.length)
-      sim.push({ t: 'enclose', ids: [p.id], bid: b.id });
-  }
+  zbudujPlot(g);
   expect(sim.st.plot?.bids).toContain(b.id);
   skonczSamouczek(sim);
   sim.st.tick = tickO(2, 9);
@@ -947,6 +900,27 @@ describe('szaber', () => {
     for (let dzien = 2; dzien < 40 && szaber().length < 3; dzien++) a.sim.st.tick = tickO(dzien, 9);
     expect(szaber().length, 'osiągalne pokoje lokatorów pod ich nieobecność').toBeGreaterThanOrEqual(3);
     const relPrzed = a.b.domy.map((g) => g.rel);
+    // sam start pracy z automatu (startLoot bez polecenia) nie przyjmuje pokoju lokatorów, polecenie gracza tak
+    const lokatorow = szaber()[0];
+    expect(a.s.startLoot(a.p, a.bid, lokatorow, false)).toBe(false);
+    expect(jaka(a.p)).toBe('-');
+    // praca z automatu, której pokój zmienił stan w trakcie, kończy się; ta sama praca z polecenia trwa
+    const plytki = a.sim.kafelkiPokoju(gid(a.k, lokatorow)).filter((i) => a.s.reg[i] === a.s.regionOf(a.p));
+    const na = plytki[0];
+    a.p.x = (na % a.w.size) + 0.5;
+    a.p.y = Math.floor(na / a.w.size) + 0.5;
+    const doKtorejPraca = (order: boolean) => {
+      odnow(a.sim, a.p);
+      const j = a.s.newJob('loot', gid(a.k, lokatorow), na, order);
+      a.p.job = j;
+      return a.s.work(a.p, j);
+    };
+    expect(doKtorejPraca(false)).toBe(false);
+    expect(doKtorejPraca(true)).toBe(true);
+    // z polecenia gracza start też przechodzi (szaber gracza z konsekwencjami po jego stronie)
+    odnow(a.sim, a.p);
+    expect(a.s.startLoot(a.p, a.bid, lokatorow, true)).toBe(true);
+    odnow(a.sim, a.p);
     // osoba stoi w pokoju lokatorów, który jest tuż obok: bierze klatkę, choć mieszkanie lokatorów jest bliżej
     const size = a.w.size;
     const pokoje = szaber();
@@ -1169,6 +1143,435 @@ describe('zimno przed nowymi rodzajami o niskim priorytecie', () => {
     p.needs!.warm = 30;
     s.think(p);
     expect(jaka(p)).toBe('build');
+  });
+});
+
+/* ---------- jedna reguła „za siatką” i „w obrębie naszego terenu” dla prac bez polecenia ---------- */
+
+describe('praca bez polecenia nie wychodzi z naszego terenu', () => {
+  /** Przymorze: gra w dzień (albo w nocy), bez materiałów z początku gry; blok ma drugą klatkę, do której z podwórka
+      dochodzi się tylko ulicą (osobny spójny obszar naszego terenu). */
+  function przymorze(o: Opcje = {}) {
+    const sc = scena({ key: 'przymorze', ...o });
+    const { sim } = sc;
+    sim.st.pawns = sim.st.pawns.filter((q) => q.kind !== 'zombie');
+    sim.st.things = sim.st.things.filter((t) => !['deski', 'zlom', 'czesci', 'drewno'].includes(t.kind));
+    return { ...sc, s: prv(sim), st: sim.st };
+  }
+
+  /** wolne kafelki pokoi siedziby w innym obszarze naszego terenu niż osoba, ale w jej obszarze ruchu (dojście ulicą),
+      od najbliższych osobie */
+  function wInnejKlatce(sim: Sim, p: Pawn, ile = 1): number[] {
+    const s = prv(sim);
+    const ob = s.naszeObszary();
+    const od = ob[s.tileOf(p)];
+    expect(od).toBeGreaterThanOrEqual(0);
+    const size = s.w.size;
+    const zajete = new Set(sim.st.things.map((t) => t.y * size + t.x));
+    const kafle = sim
+      .house!.rooms.flatMap((r) => s.roomTiles[r.id])
+      .filter((t) => ob[t] >= 0 && ob[t] !== od && s.reg[t] === s.regionOf(p) && !zajete.has(t));
+    kafle.sort((a, b) => s.dist2(p, a) - s.dist2(p, b) || a - b);
+    expect(kafle.length, 'drugi obszar naszego terenu osiągalny ulicą').toBeGreaterThanOrEqual(ile);
+    return kafle.slice(0, ile);
+  }
+
+  /** Osoba stoi tuż przy pokoju z drugiej klatki (po stronie podwórka), a daleko od niej leży wolny kafelek podwórka:
+      sterta w drugiej klatce jest bliżej, sterta na podwórku dalej. */
+  function bliskoDrugiejKlatki(sim: Sim, p: Pawn) {
+    const s = prv(sim);
+    const ob = s.naszeObszary();
+    const od = ob[s.tileOf(p)];
+    const [obca] = wInnejKlatce(sim, p);
+    const size = s.w.size;
+    const zajete = new Set(sim.st.things.map((t) => t.y * size + t.x));
+    const swoje: number[] = [];
+    for (let i = 0; i < size * size; i++)
+      if (ob[i] === od && !s.coreBlocked[i] && !zajete.has(i) && s.yardMask[i] === 1) swoje.push(i);
+    const d = (a: number, b: number) =>
+      ((a % size) - (b % size)) ** 2 + (Math.floor(a / size) - Math.floor(b / size)) ** 2;
+    // stanowisko osoby: kafelek podwórka najbliżej obcego pokoju; sterta swoja: najdalszy kafelek podwórka od niej
+    const przy = swoje.reduce((best, i) => (d(i, obca) < d(best, obca) ? i : best), swoje[0]);
+    p.x = (przy % size) + 0.5;
+    p.y = Math.floor(przy / size) + 0.5;
+    odnow(sim, p);
+    const dalej = swoje.reduce((best, i) => (d(i, przy) > d(best, przy) ? i : best), swoje[0]);
+    expect(s.dist2(p, dalej)).toBeGreaterThan(s.dist2(p, obca));
+    return { obca, swoja: dalej };
+  }
+
+  /** zapisuje, czy droga każdej rozpoczętej pracy bez polecenia mieści się w naszym terenie (ścieżka w chwili startu) */
+  function sledz(sim: Sim, p: Pawn) {
+    const s = prv(sim);
+    const trasy: { t: JobKind; wChwili: boolean; from: number; tile: number }[] = [];
+    const org = s.setJob.bind(s);
+    vi.spyOn(s, 'setJob').mockImplementation((pp, j, keep) => {
+      if (pp === p && !j.order)
+        trasy.push({ t: j.t, wChwili: pp.path.every((t) => s.naszTeren(t)), from: j.from, tile: j.tile });
+      org(pp, j, keep);
+    });
+    return trasy;
+  }
+
+  /** `krok` kroków gry, w każdym osoba stoi na naszym terenie; zwraca liczbę kroków, w których coś robiła */
+  function ruch(sim: Sim, p: Pawn, krok: number): void {
+    const s = prv(sim);
+    for (let k = 0; k < krok; k++) {
+      if (k % 50 === 0) podkarm(sim);
+      sim.step();
+      expect(s.naszTeren(s.tileOf(p)), `krok ${k}: ${jaka(p)}`).toBe(true);
+    }
+  }
+
+  it('noszenie drewna do składu: stos w drugiej klatce odpada w dzień i w nocy, własny stos jest brany', () => {
+    for (const godzina of [9, 23]) {
+      const { sim, p, s, st } = przymorze({ rodzaje: [], godzina });
+      p.needs!.rest = 95;
+      const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
+      s.addWood(obca, 6);
+      const trasy = sledz(sim, p);
+      const paths = sim.stats.paths;
+      for (let k = 0; k < 5; k++) {
+        odnow(sim, p);
+        s.think(p);
+        expect(jaka(p), `${godzina}:00, próba ${k}`).toBe('-');
+      }
+      // bez nowych dróg (stos odpada przed liczeniem drogi) i bez ruszania się z miejsca
+      expect(sim.stats.paths - paths).toBe(0);
+      ruch(sim, p, 200);
+      expect(trasy.filter((x) => x.t === 'haul')).toHaveLength(0);
+      // własny stos, choć dalszy: brany, droga w obrębie naszego terenu
+      s.addWood(swoja, 6);
+      odnow(sim, p);
+      s.think(p);
+      expect(jaka(p), `${godzina}:00 własny stos`).toBe('haul');
+      expect(trasy.at(-1)?.wChwili).toBe(true);
+      const stos = st.things.find((t) => t.id === p.job!.target)!;
+      expect(stos.y * s.w.size + stos.x).toBe(swoja);
+      ruch(sim, p, 600);
+    }
+  });
+
+  it('łatanie dziury: materiał w drugiej klatce odpada i nie zasłania dalszego materiału na podwórku', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['naprawy'] });
+    expect(st.fence!.holes.some((h) => h.patch <= 0)).toBe(true);
+    const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
+    const obcaSterta = dodaj(sim, 'deski', 6, obca);
+    const paths = sim.stats.paths;
+    for (let k = 0; k < 5; k++) {
+      odnow(sim, p);
+      s.think(p);
+      expect(jaka(p), `próba ${k}`).toBe('-');
+    }
+    expect(sim.stats.paths - paths).toBe(0);
+    const swojaSterta = dodaj(sim, 'deski', 6, swoja);
+    const trasy = sledz(sim, p);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('patch');
+    expect(p.job!.from).toBe(swojaSterta.id);
+    expect(trasy.at(-1)?.wChwili).toBe(true);
+    ruch(sim, p, 1500);
+    expect(obcaSterta.n).toBe(6);
+    expect(st.fence!.holes.some((h) => h.patch > 0)).toBe(true);
+  });
+
+  it('budowa: materiał w drugiej klatce odpada, a materiał z podwórka jest noszony drogą po naszym terenie', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'] });
+    for (const h of st.fence!.holes) h.patch = 100;
+    s.rebuild();
+    const plan = planOgrodka(sim);
+    plan.have = {};
+    const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
+    const obcaSterta = dodaj(sim, 'deski', BUILDS.ogrodek.cost.deski!, obca);
+    const paths = sim.stats.paths;
+    for (let k = 0; k < 5; k++) {
+      odnow(sim, p);
+      s.think(p);
+      expect(jaka(p), `próba ${k}`).toBe('-');
+    }
+    expect(sim.stats.paths - paths).toBe(0);
+    const swojaSterta = dodaj(sim, 'deski', BUILDS.ogrodek.cost.deski!, swoja);
+    const trasy = sledz(sim, p);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('build');
+    expect(p.job!.from).toBe(swojaSterta.id);
+    expect(trasy.at(-1)?.wChwili).toBe(true);
+    // kolejne kursy (takeFor, praca przy planie) też po naszym terenie, a obca sterta nietknięta
+    ruch(sim, p, 2500);
+    expect(obcaSterta.n).toBe(BUILDS.ogrodek.cost.deski);
+    expect(st.builds.includes(plan) || st.things.some((t) => t.kind === 'ogrodek')).toBe(true);
+  });
+
+  it('plan budowy w pokoju z drugiej klatki: materiał z podwórka nie jest do niego noszony i porzucany co sekundę', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'] });
+    const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
+    st.builds.push({
+      id: st.nextThing++,
+      kind: 'magazyn',
+      x: obca % sim.w.size,
+      y: Math.floor(obca / sim.w.size),
+      rot: 0,
+      need: { deski: 30 },
+      have: {},
+      work: 0,
+      by: -1,
+    });
+    dodaj(sim, 'deski', 10, swoja);
+    dodaj(sim, 'deski', 10, wolneNaPodworku(sim, p, 3)[2]);
+    dodaj(sim, 'deski', 10, wolneNaPodworku(sim, p, 3)[1]);
+    const trasy = sledz(sim, p);
+    const paths = sim.stats.paths;
+    for (let k = 0; k < 10; k++) {
+      odnow(sim, p);
+      s.think(p);
+      expect(jaka(p), `próba ${k}`).toBe('-');
+    }
+    expect(sim.stats.paths - paths).toBe(0);
+    ruch(sim, p, 300);
+    expect(trasy.filter((x) => x.t === 'build')).toHaveLength(0);
+    // z przełącznikiem (za dnia) plan jest do wzięcia
+    sim.push({ t: 'zasiatke', ids: [], osoba: p.person, on: true });
+    sim.step();
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('build');
+  });
+
+  it('plan wspólnego płotu: brakujący złom w drugiej klatce nie liczy dróg co sekundę i nie zasłania dalszego złomu', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: ['budowa'] });
+    const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
+    const [stand] = wolneNaPodworku(sim, p, 1);
+    st.plot = {
+      bids: [],
+      plan: { bid: 0, need: { zlom: 4 }, have: {}, work: 0, total: 100000, by: -1, stand, wariant: 'mieszany' },
+    };
+    const obcaSterta = dodaj(sim, 'zlom', 8, obca);
+    const paths = sim.stats.paths;
+    for (let k = 0; k < 10; k++) {
+      odnow(sim, p);
+      s.think(p);
+      expect(jaka(p), `próba ${k}`).toBe('-');
+    }
+    expect(sim.stats.paths - paths, 'dziesięć prób bez ani jednej drogi A*').toBe(0);
+    expect(st.plot.plan!.by).toBe(-1);
+    // dalszy złom na podwórku: plan bierze jego, a nie bliższy obcy
+    const swojaSterta = dodaj(sim, 'zlom', 8, swoja);
+    const trasy = sledz(sim, p);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('plot');
+    expect(p.job!.from).toBe(swojaSterta.id);
+    expect(trasy.at(-1)?.wChwili).toBe(true);
+    expect(obcaSterta.n).toBe(8);
+  });
+
+  it('naprawa uszkodzenia w mieszkaniu z drugiej klatki: bez przełącznika nie, z przełącznikiem tak', () => {
+    for (const zaSiatke of [false, true]) {
+      const { sim, p, s } = scena({ rodzaje: ['naprawy'], zaSiatke });
+      const st = sim.st;
+      for (const h of st.fence!.holes) h.patch = 100;
+      s.rebuild();
+      const kloc = wolneNaPodworku(sim, p, 3);
+      dodaj(sim, 'zlom', 4, kloc[0]);
+      dodaj(sim, 'czesci', 4, kloc[1]);
+      dodaj(sim, 'deski', 6, kloc[2]);
+      st.apts.find((a) => a.apt === st.damage[0].apt)!.ours = true;
+      const ob = s.naszeObszary();
+      // uszkodzenie leży w innym obszarze naszego terenu niż osoba (Lanciego: druga klatka bloku)
+      expect(ob[st.damage[0].tile]).not.toBe(ob[s.tileOf(p)]);
+      const { n } = liczStarty(sim, p);
+      const paths = sim.stats.paths;
+      for (let k = 0; k < 400; k++) {
+        if (k % 50 === 0) podkarm(sim);
+        sim.step();
+        if (!zaSiatke) expect(s.naszTeren(s.tileOf(p)), `krok ${k}`).toBe(true);
+      }
+      if (zaSiatke) expect(n.repair ?? 0, 'z przełącznikiem').toBeGreaterThan(0);
+      else {
+        expect(n.repair ?? 0, 'bez przełącznika').toBe(0);
+        // nie liczy dróg do takiego uszkodzenia co sekundę
+        expect(sim.stats.paths - paths).toBeLessThanOrEqual(4);
+      }
+    }
+  });
+
+  it('przełącznik nie omija reguły szwendaczy: w trybie zombie przy osobie stos w drugiej klatce odpada, bez szwendacza jest brany ulicą', () => {
+    const { sim, p, s, st } = przymorze({ rodzaje: [], tryb: 'zombie', zaSiatke: true });
+    const { obca } = bliskoDrugiejKlatki(sim, p);
+    s.addWood(obca, 6);
+    // osoba przy siatce, szwendacz za siatką bliżej niż 10 kafelków (nie na podwórku, więc nie alarm)
+    const size = s.w.size;
+    const przy = [...Array(size * size).keys()]
+      .filter((i) => s.yardMask[i] === 1 && !s.coreBlocked[i] && s.reg[i] === s.regionOf(p))
+      .find((i) => [-1, 1, -size, size].some((d) => s.fenceMask[i + d] === 1));
+    expect(przy).toBeDefined();
+    p.x = ((przy as number) % size) + 0.5;
+    p.y = Math.floor((przy as number) / size) + 0.5;
+    const ulica = [...Array(size * size).keys()].find(
+      (i) =>
+        !s.naszTeren(i) && !s.coreBlocked[i] && s.reg[i] === s.regionOf(p) && s.dist2(p, i) > 9 && s.dist2(p, i) < 49,
+    )!;
+    expect(ulica).toBeDefined();
+    const zombie = spawnZombie(st, s.w, ulica, 0);
+    odnow(sim, p);
+    expect(s.dojdzieWDomu(p, obca)).toBe(false);
+    s.think(p);
+    expect(jaka(p)).toBe('-');
+    st.pawns = st.pawns.filter((q) => q !== zombie);
+    odnow(sim, p);
+    expect(s.dojdzieWDomu(p, obca)).toBe(true);
+    s.think(p);
+    expect(jaka(p)).toBe('haul');
+  });
+
+  it('idz i filtr materiału: cel w drugiej klatce bez przełącznika nie, z przełącznikiem tylko za dnia; z ulicy do domu zawsze', () => {
+    const wynik = (zaSiatke: boolean, godzina: number) => {
+      const { sim, p, s } = przymorze({ rodzaje: [], zaSiatke, godzina });
+      p.needs!.rest = 95;
+      const { obca, swoja } = bliskoDrugiejKlatki(sim, p);
+      const sciezka = p.path;
+      const idzie = s.idz(p, obca, false);
+      return {
+        sim,
+        p,
+        s,
+        obca,
+        swoja,
+        idzie,
+        sciezkaBezZmian: p.path === sciezka,
+        build: s.materialOk(p, false, 'build')!(obca),
+        plot: s.materialOk(p, false, 'plot')!(obca),
+        repair: s.materialOk(p, false, 'repair')!(obca),
+        swojeBuild: s.materialOk(p, false, 'build')!(swoja),
+        swojeRepair: s.materialOk(p, false, 'repair')!(swoja),
+        zPolecenia: s.materialOk(p, true, 'build'),
+      };
+    };
+    const bez = wynik(false, 9);
+    expect([bez.idzie, bez.build, bez.plot, bez.repair]).toEqual([false, false, false, false]);
+    expect(bez.sciezkaBezZmian).toBe(true);
+    expect([bez.swojeBuild, bez.swojeRepair]).toEqual([true, true]);
+    expect(bez.zPolecenia).toBeUndefined();
+    const dzien = wynik(true, 9);
+    expect([dzien.idzie, dzien.build, dzien.plot]).toEqual([true, true, true]);
+    // naprawa bez polecenia bierze tylko z naszego terenu, ale do drugiej klatki z przełącznikiem dojdzie ulicą
+    expect(dzien.repair).toBe(true);
+    // droga do drugiej klatki prowadzi po ulicy (poza naszym terenem), co z przełącznikiem wolno
+    expect(dzien.p.path.some((t) => !dzien.s.naszTeren(t))).toBe(true);
+    const noc = wynik(true, 23);
+    expect([noc.idzie, noc.build, noc.plot, noc.repair]).toEqual([false, false, false, false]);
+    // osoba na ulicy wraca do domu bez przełącznika, także nocą (droga po wejściu na podwórko już z niego nie wychodzi)
+    const { sim, p, s } = przymorze({ rodzaje: [], godzina: 23 });
+    p.needs!.rest = 95;
+    const [dom] = wolneNaPodworku(sim, p, 1);
+    const size = s.w.size;
+    const ulica = [...Array(size * size).keys()].find(
+      (i) => !s.naszTeren(i) && !s.coreBlocked[i] && s.reg[i] === s.regionOf(p),
+    )!;
+    p.x = (ulica % size) + 0.5;
+    p.y = Math.floor(ulica / size) + 0.5;
+    odnow(sim, p);
+    expect(s.idz(p, dom, false)).toBe(true);
+    const wejscie = p.path.findIndex((t) => s.naszTeren(t));
+    expect(wejscie).toBeGreaterThan(0);
+    expect(p.path.slice(wejscie).every((t) => s.naszTeren(t))).toBe(true);
+  });
+
+  it('noszenie łupu: stos w budynku z wpisem w st.plot.bids, ale bez korytarza do podwórka, odpada (dojście ulicą)', () => {
+    const a = zBlokiem({ lokatorzy: 'pusto', otoczony: true });
+    const { sim, p, s } = a;
+    sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'szaber', prio: 0 });
+    sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: 'noszenie', prio: 1 });
+    sim.step();
+    // osoba na podwórku, stos w budynku (nasz teren z wpisu, ale osobny obszar)
+    const [stoi] = wolneNaPodworku(sim, p, 1);
+    p.x = (stoi % s.w.size) + 0.5;
+    p.y = Math.floor(stoi / s.w.size) + 0.5;
+    const ob = s.naszeObszary();
+    const w = s.w;
+    const wBudynku = [...Array(w.size * w.size).keys()].find(
+      (t) =>
+        w.bid[t] === a.bid &&
+        !s.coreBlocked[t] &&
+        s.reg[t] === s.regionOf(p) &&
+        ob[t] >= 0 &&
+        ob[t] !== ob[s.tileOf(p)],
+    )!;
+    expect(wBudynku, 'budynek jest osobnym obszarem naszego terenu').toBeDefined();
+    const sterta = dodaj(sim, 'deski', 8, wBudynku);
+    odnow(sim, p);
+    const paths = sim.stats.paths;
+    expect(s.lootNear(p, wBudynku, false)).toBeUndefined();
+    expect(s.startCarry(p, sterta.id, false)).toBe(false);
+    for (let k = 0; k < 5; k++) {
+      odnow(sim, p);
+      s.think(p);
+      expect(jaka(p), `próba ${k}`).toBe('-');
+    }
+    expect(sim.stats.paths - paths).toBe(0);
+    // z polecenia stos jest do wzięcia, jak dotąd
+    expect(s.lootNear(p, wBudynku, true)).toBe(sterta);
+    expect(s.startCarry(p, sterta.id, true)).toBe(true);
+  });
+});
+
+describe('rezerwa na łaty i plany dla dzidy', () => {
+  it('dzida nie zjada materiału na otwartą dziurę ani na plan: tylko ponad rezerwę desek i złomu', () => {
+    // jedna otwarta dziura: rezerwa 3 deski i 3 złomu; dzida to 2 deski i 1 złom
+    for (const [deski, zlom, dzida] of [
+      [4, 4, false],
+      [5, 3, false],
+      [5, 4, true],
+      [8, 9, true],
+    ] as const) {
+      const { sim, p, s, st } = zWarsztatem({ tryb: 'zombie' });
+      st.fence!.holes.forEach((h, k) => {
+        h.patch = k === 0 ? 0 : 100;
+      });
+      s.rebuild();
+      for (const q of core(sim)) q.weapon = null;
+      st.store.arms = [];
+      dodajMat(sim, p, 'deski', deski);
+      dodajMat(sim, p, 'zlom', zlom);
+      // deski i części wyłączone, żeby zostały same dzidy
+      for (const co of ['deski', 'czesci'] as const) sim.push({ t: 'prog', ids: [], co, n: 0 });
+      sim.step();
+      odnow(sim, p);
+      s.think(p);
+      expect(jaka(p), `deski ${deski}, złom ${zlom}`).toBe(dzida ? 'craft' : '-');
+    }
+  });
+
+  it('plan budowy też trzyma rezerwę desek: brakujące deski planu nie idą na dzidę', () => {
+    const { sim, p, s, st } = zWarsztatem({ tryb: 'zombie' });
+    for (const q of core(sim)) q.weapon = null;
+    st.store.arms = [];
+    for (const co of ['deski', 'czesci'] as const) sim.push({ t: 'prog', ids: [], co, n: 0 });
+    sim.step();
+    const [miejsce] = wolneNaPodworku(sim, p, 1);
+    st.builds.push({
+      id: st.nextThing++,
+      kind: 'magazyn',
+      x: miejsce % sim.w.size,
+      y: Math.floor(miejsce / sim.w.size),
+      rot: 0,
+      need: { deski: 30 },
+      have: { deski: 20 },
+      work: 0,
+      by: -1,
+    });
+    dodajMat(sim, p, 'deski', 11);
+    dodajMat(sim, p, 'zlom', 3);
+    odnow(sim, p);
+    // brak 10 desek planu: z 11 zostaje 1, a na dzidę trzeba 2
+    s.think(p);
+    expect(jaka(p)).toBe('-');
+    dodajMat(sim, p, 'deski', 1);
+    odnow(sim, p);
+    s.think(p);
+    expect(jaka(p)).toBe('craft');
   });
 });
 

@@ -2882,7 +2882,7 @@ export class Sim {
       dojdzie. `order`: z polecenia gracza (inaczej z automatu pracy ludzi). */
   private startChop(p: Pawn, k: number, order: boolean): boolean {
     const stand = this.chopSpot(p, k);
-    if (stand < 0 || !this.go(p, stand)) return false;
+    if (stand < 0 || !this.idz(p, stand, order)) return false;
     this.setJob(p, this.newJob('chop', k, stand, order), false);
     return true;
   }
@@ -2913,7 +2913,7 @@ export class Sim {
     let proby = 0;
     for (const [, k] of kandydaci) {
       const stand = this.chopSpot(p, k);
-      if (stand < 0 || !this.mozeTam(p, stand)) continue;
+      if (stand < 0 || !this.mozeSam(p, stand)) continue;
       if (this.startChop(p, k, false)) return true;
       if (++proby >= 2) break;
     }
@@ -3409,7 +3409,7 @@ export class Sim {
         this.takeWood(pile, take);
         p.carry += take;
         const dest = this.dropTile(p);
-        if (dest < 0 || !this.go(p, dest)) return false;
+        if (dest < 0 || !this.idz(p, dest, j.order)) return false;
         j.phase = 1;
         j.target = -1;
         j.tile = dest;
@@ -3609,14 +3609,14 @@ export class Sim {
             // za mało na jednej stercie: następna tego samego materiału
             const next = this.heapFor(p, j.what, PATCH_COST, !j.order);
             const nt = next ? next.y * size + next.x : -1;
-            if (!next || !this.go(p, nt)) return false;
+            if (!next || !this.idz(p, nt, j.order)) return false;
             j.from = next.id;
             j.tile = nt;
             next.by = p.id;
             return true;
           }
           const stand = this.standBy(p, hole.tiles, 1);
-          if (stand < 0 || !this.go(p, stand)) return false;
+          if (stand < 0 || !this.idz(p, stand, j.order)) return false;
           j.phase = 1;
           j.from = -1;
           j.tile = stand;
@@ -4430,20 +4430,21 @@ export class Sim {
 
   /** Noszenie drewna do składu: z rąk albo z najbliższego stosu poza składem. Stos bierze tylko tam, gdzie pionek
       może pracować bez polecenia (`mozeTam`: nasz teren, a za siatką tylko osoba z przełącznikiem i za dnia, bo nocą
-      praca poza nią przerwałaby się w następnej sekundzie) i gdzie nie czai się szwendacz przy siatce. */
+      praca poza nią przerwałaby się w następnej sekundzie) i dojdzie bez wychodzenia z naszego terenu
+      (`dojdzieWDomu`: stos w innej klatce bloku odpada, także nocą), i gdzie nie czai się szwendacz przy siatce. */
   private startHaul(p: Pawn): boolean {
     const size = this.w.size;
     const dest = this.dropTile(p);
     if (dest < 0) return false;
     if (p.carry > 0) {
-      if (!this.go(p, dest)) return false;
+      if (!this.idz(p, dest, false)) return false;
       this.setJob(p, this.newJob('haul', -1, dest, false, 1), true);
       return true;
     }
-    const pile = this.pileFor(p, 'outside', -1, (i) => this.mozeTam(p, i) && !this.zagrozone(i));
+    const pile = this.pileFor(p, 'outside', -1, (i) => this.mozeSam(p, i) && !this.zagrozone(i));
     if (!pile) return false;
     const pt = pile.y * size + pile.x;
-    if (!this.go(p, pt)) return false;
+    if (!this.idz(p, pt, false)) return false;
     this.setJob(p, this.newJob('haul', pile.id, pt, false), true);
     pile.by = p.id;
     return true;
@@ -4526,7 +4527,8 @@ export class Sim {
 
   /** Wolna sterta desek albo złomu najbliżej pionka, do której dojdzie. Łata jest z jednego materiału: kind zawęża
       do niego, a bez kind tylko materiał, którego w osiągalnych stertach starczy na całą łatę. `nasze`: tylko sterty
-      na naszym terenie (automat nie wychodzi po materiał na ulicę). */
+      na naszym terenie, do których da się dojść bez wychodzenia z niego (automat nie wychodzi po materiał na ulicę
+      ani do innej klatki bloku). */
   private heapFor(p: Pawn, kind = '', need = PATCH_COST, nasze = false): Thing | undefined {
     const size = this.w.size;
     const region = this.regionOf(p);
@@ -4536,7 +4538,7 @@ export class Sim {
       (t.by < 0 || t.by === p.id) &&
       this.reg[t.y * size + t.x] === region &&
       !this.uSasiada(t) &&
-      (!nasze || this.naszTeren(t.y * size + t.x));
+      (!nasze || (this.naszTeren(t.y * size + t.x) && this.dojdzieWDomu(p, t.y * size + t.x)));
     const enough = (k: string) => this.st.things.reduce((a, t) => a + (t.kind === k && free(t) ? t.n : 0), 0) >= need;
     let best: Thing | undefined;
     let bd = Number.POSITIVE_INFINITY;
@@ -4558,7 +4560,7 @@ export class Sim {
     if (!heap) return false;
     const size = this.w.size;
     const ht = heap.y * size + heap.x;
-    if (!this.go(p, ht)) return false;
+    if (!this.idz(p, ht, order)) return false;
     const j = this.newJob('patch', hole.id, ht, order);
     j.from = heap.id;
     this.setJob(p, j, false);
@@ -4705,12 +4707,20 @@ export class Sim {
     if (b.by >= 0 && b.by !== p.id) return false;
     // bez polecenia w trybie zombie nie buduje przy siatce (zasieki), kiedy szwendacz jest bliżej niż 10 m od planu
     if (!order && this.zagrozone(b.y * this.w.size + b.x)) return false;
+    // plan w pomieszczeniu z innej klatki bloku (dojście ulicą) albo zasieki bez stanowiska po stronie podwórka: bez
+    // przełącznika nie nosi do nich materiału, którego i tak by nie dowiózł (zasieki stoją na siatce, więc liczy się
+    // stanowisko)
+    if (!order) {
+      const miejsce =
+        BUILDS[b.kind].place === 'obwod' ? this.buildStand(p, b) : this.buildCenter(b.kind, b.x, b.y, b.rot);
+      if (miejsce < 0 || !this.dojdzieWDomu(p, miejsce)) return false;
+    }
     // materiału musi starczyć na całość, inaczej zostaje na planie, którego nikt nie skończy
     if (!this.ready(b) && !this.coverable(p, b, this.materialOk(p, order, 'build'))) return false;
     const j = this.newJob('build', b.id, this.tileOf(p), order);
     if (this.ready(b)) {
       const stand = this.buildStand(p, b);
-      if (stand < 0 || !this.go(p, stand)) return false;
+      if (stand < 0 || !this.idz(p, stand, order)) return false;
       this.setJob(p, j, false);
       j.phase = 2;
       j.tile = stand;
@@ -4938,11 +4948,13 @@ export class Sim {
 
   /** Skąd praca bierze materiał (filtr kafelka sterty; undefined: z każdej osiągalnej sterty). Praca z polecenia
       bierze z każdej. Naprawa bez polecenia tylko z naszego terenu; budowa i płot bez polecenia z miejsc, na które
-      wolno iść bez polecenia (`mozeTam`: ulica tylko dla osoby z przełącznikiem, za dnia i bez szwendacza przy stercie). */
+      wolno iść bez polecenia (`mozeTam`: ulica tylko dla osoby z przełącznikiem, za dnia i bez szwendacza przy stercie).
+      Do tego sterta musi leżeć w obszarze osoby (`dojdzieWDomu`): sterta w innej klatce bloku, dostępna tylko ulicą,
+      nie zasłania sterty bliższej w drodze do celu ani nie wyprowadza osoby poza nasz teren. */
   private materialOk(p: Pawn, order: boolean, t: JobKind): ((tile: number) => boolean) | undefined {
     if (order) return undefined;
-    if (t === 'repair') return (i) => this.naszTeren(i);
-    if (t === 'build' || t === 'plot') return (i) => this.mozeTam(p, i);
+    if (t === 'repair') return (i) => this.naszTeren(i) && this.dojdzieWDomu(p, i);
+    if (t === 'build' || t === 'plot') return (i) => this.mozeSam(p, i);
     return undefined;
   }
 
@@ -5006,7 +5018,7 @@ export class Sim {
       const pile = this.matStack(p, m, this.materialOk(p, j.order, j.t));
       if (!pile) continue;
       const pt = pile.y * this.w.size + pile.x;
-      if (!this.go(p, pt)) continue;
+      if (!this.idz(p, pt, j.order)) continue;
       j.phase = 0;
       j.from = pile.id;
       j.what = m;
@@ -5032,14 +5044,14 @@ export class Sim {
     if (j.n < Math.min(CARRY, need)) {
       const next = this.matStack(p, j.what as Mat, this.materialOk(p, j.order, j.t));
       const at = next ? next.y * this.w.size + next.x : -1;
-      if (next && this.dist2(p, at) <= GATHER_NEAR ** 2 && this.go(p, at)) {
+      if (next && this.dist2(p, at) <= GATHER_NEAR ** 2 && this.idz(p, at, j.order)) {
         j.from = next.id;
         j.tile = at;
         next.by = p.id;
         return true;
       }
     }
-    if (stand < 0 || !this.go(p, stand)) return false;
+    if (stand < 0 || !this.idz(p, stand, j.order)) return false;
     j.phase = 1;
     j.tile = stand;
     return true;
@@ -5059,7 +5071,7 @@ export class Sim {
     // wszystko już doniesione: od razu do pracy (a gdy czegoś brakuje, a do sterty nie ma drogi, nie ma pracy)
     const stand = this.repairStand(p, d);
     const komplet = (Object.entries(cost) as [Mat, number][]).every(([m, v]) => (d.have[m] ?? 0) >= v);
-    if (!komplet || stand < 0 || !this.go(p, stand)) {
+    if (!komplet || stand < 0 || !this.idz(p, stand, order)) {
       p.job = null;
       return false;
     }
@@ -5084,7 +5096,8 @@ export class Sim {
     if (holes.length && this.heapFor(p, '', PATCH_COST, true)) {
       holes.sort((a, b) => this.dist2(p, a.tiles[0]) - this.dist2(p, b.tiles[0]) || a.id - b.id);
       for (const h of holes) {
-        if (this.standBy(p, h.tiles, 1) < 0) continue;
+        const stand = this.standBy(p, h.tiles, 1);
+        if (stand < 0 || !this.dojdzieWDomu(p, stand)) continue;
         if (this.startPatch(p, h, false)) return true;
         break;
       }
@@ -5092,15 +5105,19 @@ export class Sim {
     const naprawy: [number, number][] = [];
     st.damage.forEach((d, k) => {
       if (d.fixed || !st.apts.find((a) => a.apt === d.apt)?.ours || this.zagrozone(d.tile, true)) return;
+      // uszkodzenie w pokoju z innej klatki bloku (dojście ulicą) odpada, zanim policzymy miejsce do pracy
+      if (!this.dojdzieWDomu(p, d.tile)) return;
       if (st.pawns.some((q) => q.job?.t === 'repair' && q.job.target === k)) return;
       naprawy.push([this.dist2(p, d.tile), k]);
     });
     naprawy.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     for (const [, k] of naprawy) {
       const d = st.damage[k];
+      const stand = this.repairStand(p, d);
       if (
         !this.enoughFor(p, REPAIR[d.kind].cost, d.have, this.materialOk(p, false, 'repair')) ||
-        this.repairStand(p, d) < 0
+        stand < 0 ||
+        !this.dojdzieWDomu(p, stand)
       )
         continue;
       return this.startRepair(p, k, false);
@@ -5248,7 +5265,8 @@ export class Sim {
 
   /** Sterta łupu za siatką do noszenia: najbliższa pionkowi, do CARRY_REACH metrów od kafelka anchor. Z wnętrza
       sąsiedniego budynku (M2 fala 2) cały łup z tego budynku, bo tam nie jest jeszcze nasz. Praca bez polecenia
-      (`!order`) bierze tylko to, co wolno jej wziąć bez polecenia (`mozeTam`), i nie sięga po stertę przy szwendaczu. */
+      (`!order`) bierze tylko to, co wolno jej wziąć bez polecenia i do czego dojdzie bez wychodzenia z naszego terenu
+      (`mozeSam`), i nie sięga po stertę przy szwendaczu. */
   private lootNear(p: Pawn, anchor: number, order = true): Thing | undefined {
     const size = this.w.size;
     const ax = anchor % size;
@@ -5263,7 +5281,7 @@ export class Sim {
       if (far && (obcy < 0 || this.w.bid[t.y * size + t.x] !== obcy)) continue;
       const i = t.y * size + t.x;
       if (this.insideAt(i) || this.reg[i] !== region) continue;
-      if (!order && (!this.mozeTam(p, i) || this.zagrozone(i))) continue;
+      if (!order && (!this.mozeSam(p, i) || this.zagrozone(i))) continue;
       const d = this.dist2(p, i);
       if (d < bd || (d === bd && best && t.id < best.id)) {
         bd = d;
@@ -5281,7 +5299,7 @@ export class Sim {
     const next = this.lootNear(p, anchor, j.order);
     if (!next) return false;
     const i = next.y * this.w.size + next.x;
-    if (!this.go(p, i)) return false;
+    if (!this.idz(p, i, j.order)) return false;
     j.t = 'carry';
     j.phase = 0;
     j.target = next.id;
@@ -5296,7 +5314,7 @@ export class Sim {
     const t = this.thing(id);
     if (!t || !this.st.fence || !CARRY_MATS.has(t.kind) || t.n <= 0 || (t.by >= 0 && t.by !== p.id)) return false;
     const i = t.y * this.w.size + t.x;
-    if (this.insideAt(i) || !this.go(p, i)) return false;
+    if (this.insideAt(i) || !this.idz(p, i, order)) return false;
     const j = this.newJob('carry', t.id, i, order);
     j.from = i;
     this.setJob(p, j, false);
@@ -5317,7 +5335,7 @@ export class Sim {
     for (const t of this.st.things) {
       if (!CARRY_MATS.has(t.kind) || t.n <= 0 || t.by >= 0) continue;
       const i = t.y * size + t.x;
-      if (this.insideAt(i) || this.reg[i] !== region || !this.mozeTam(p, i) || this.zagrozone(i)) continue;
+      if (this.insideAt(i) || this.reg[i] !== region || !this.mozeSam(p, i) || this.zagrozone(i)) continue;
       const d = this.dist2(p, i);
       if (d < bd || (d === bd && best && t.id < best.id)) {
         bd = d;
@@ -5413,7 +5431,7 @@ export class Sim {
       j.n = take;
       j.what = t.kind;
       const dest = this.lootSpot(p, t.kind);
-      if (dest < 0 || !this.go(p, dest)) return false;
+      if (dest < 0 || !this.idz(p, dest, j.order)) return false;
       j.phase = 1;
       j.target = -1;
       j.tile = dest;
@@ -5628,13 +5646,27 @@ export class Sim {
     return n;
   }
 
+  /** Rezerwa desek, której automat nie rusza na dzidy: brak desek otwartych planów (`need − have`, także plan
+      wspólnego płotu) i łata (`PATCH_COST`) na każdą otwartą dziurę w siatce (łata jest z desek albo ze złomu, więc
+      rezerwa deski i rezerwa złomu liczą ją obie). */
+  private rezerwaDesek(): number {
+    const st = this.st;
+    let n = 0;
+    for (const b of st.builds) n += Math.max(0, (b.need.deski ?? 0) - (b.have.deski ?? 0));
+    const plan = st.plot?.plan;
+    if (plan) n += Math.max(0, (plan.need.deski ?? 0) - (plan.have.deski ?? 0));
+    for (const h of st.fence?.holes ?? []) if (h.patch <= 0) n += PATCH_COST;
+    return n;
+  }
+
   /** Warsztat (tylko przy postawionym warsztacie), po jednej sztuce na pracę, według progów zapasów:
       - deski z drewna, gdy desek jest mniej niż próg, a drewna w obrębie siatki (`zapasDrewna`: razem z kozą i tym,
         co niosą) ponad próg drewna co najmniej na jedną sztukę, i to drewno leży na naszym terenie;
       - części ze złomu, gdy części jest mniej niż próg, a złomu ponad rezerwę na łaty i plany (`rezerwaZlomu`)
         co najmniej na jedną sztukę;
       - dzida dla nieuzbrojonych, gdy bez broni jest więcej osób niż dzid w magazynie (z tymi w robocie), a dzid
-        jest mniej niż próg, i starczy desek oraz złomu na dzidę.
+        jest mniej niż próg, i starczy na nią desek ponad rezerwę na łaty i plany (`rezerwaDesek`) oraz złomu ponad
+        `rezerwaZlomu`; dzida nie zjada więc materiału na otwartą dziurę ani na plan.
       Prace w toku liczą się jak gotowe, więc dwie osoby przy dwóch warsztatach nie robią ponad próg. Próg 0
       wyłącza robienie. */
   private startWarsztat(p: Pawn): boolean {
@@ -5659,8 +5691,16 @@ export class Sim {
       return true;
     if (pr.dzidy > 0) {
       const bezBroni = st.pawns.filter((q) => q.kind === 'core' && !q.weapon && !this.graveyard.has(q.id)).length;
-      const dzidy = (st.store.arms ?? []).filter((a) => a === 'dzida').length + this.wRobocie('craft');
-      if (bezBroni - dzidy > 0 && dzidy < pr.dzidy && this.startCraft(p, false)) return true;
+      const wDzidach = this.wRobocie('craft');
+      const dzidy = (st.store.arms ?? []).filter((a) => a === 'dzida').length + wDzidach;
+      if (
+        bezBroni - dzidy > 0 &&
+        dzidy < pr.dzidy &&
+        this.zapasMat('deski') - this.rezerwaDesek() - wDzidach * SPEAR_BOARDS >= SPEAR_BOARDS &&
+        this.zapasMat('zlom') - this.rezerwaZlomu() - wDzidach * SPEAR_SCRAP >= SPEAR_SCRAP &&
+        this.startCraft(p, false)
+      )
+        return true;
     }
     return false;
   }
@@ -6609,37 +6649,68 @@ export class Sim {
     return this.obszaryNasze;
   }
 
-  /** Wstępnie: czy pionek dojdzie na kafelek, nie wychodząc poza nasz teren (oba kafelki w jednym spójnym obszarze
-      naszego terenu; droga do pokoju w innej klatce tego samego bloku prowadzi ulicą, więc automat jej nie bierze).
-      Osoba z przełącznikiem „może wychodzić za siatkę” może wszędzie, o reszcie decyduje `mozeTam`. Osoba poza naszym
-      terenem (wraca do domu) przechodzi to sprawdzenie, a drogę ocenia `sciezkaWDomu`. Praca z polecenia jest poza
-      tą regułą. */
-  private dojdzieWDomu(p: Pawn, tile: number): boolean {
-    if (zaSiatke(this.st, p.person)) return true;
-    const reg = this.naszeObszary();
-    const od = reg[nearestFree(this.coreBlocked, this.w.size, this.tileOf(p))];
-    return od < 0 || reg[tile] === od;
+  /** Czy pionek bez polecenia może wyjść poza nasz teren do tego kafelka (albo przejść po ulicy do innej klatki):
+      tylko osoba z przełącznikiem „może wychodzić za siatkę”, tylko za dnia (nocą nikt bez polecenia nie wychodzi)
+      i, w trybie zombie, tylko gdy nie ma szwendacza bliżej niż 10 m od celu, od samej osoby ani od wyjścia za bramę
+      (rano stado stoi jeszcze pod siatką, a droga do celu prowadzi przez bramę; sam cel bez szwendacza nie wystarcza).
+      To jedyne miejsce reguły „za siatką” (`mozeTam`, `dojdzieWDomu` i `idz` biorą ją stąd). */
+  private mozeWyjsc(p: Pawn, tile: number): boolean {
+    if (!zaSiatke(this.st, p.person) || this.night()) return false;
+    return (
+      !this.szwendaczBlisko(tile) &&
+      !this.szwendaczBlisko(this.tileOf(p)) &&
+      !(this.exitTile >= 0 && this.szwendaczBlisko(this.exitTile))
+    );
   }
 
-  /** Droga na kafelek dla pracy bez polecenia (`go` dla pracy z polecenia): osoba na naszym terenie idzie tylko po nim,
-      nigdy ulicą, nawet gdy ulica byłaby krótsza; osoba z przełącznikiem idzie zwykłą drogą; osoba poza naszym terenem
-      idzie do domu zwykłą drogą, którą ocenia `sciezkaWDomu`. false, gdy nie da się dojść (stan pionka bez zmian). */
+  /** Czy pionek bez polecenia może pracować na tym kafelku: na naszym terenie zawsze, poza nim tylko tam, gdzie wolno
+      wyjść (`mozeWyjsc`). To jedno miejsce reguły dla wszystkich zleceń poza naszym terenem. Nasz teren to także
+      każde pomieszczenie siedziby i budynki za wspólnym płotem, nawet gdy dojście do nich prowadzi ulicą:
+      to sprawdza `dojdzieWDomu`. */
+  private mozeTam(p: Pawn, tile: number): boolean {
+    return this.naszTeren(tile) || this.mozeWyjsc(p, tile);
+  }
+
+  /** Czy pionek bez polecenia dojdzie na kafelek, nie wychodząc poza nasz teren: oba kafelki w jednym spójnym obszarze
+      naszego terenu (droga do pokoju w innej klatce tego samego bloku prowadzi ulicą), a jeśli nie, tylko gdy wolno
+      wyjść (`mozeWyjsc`). Osoba poza naszym terenem (wraca do domu) może iść na nasz teren; jej drogę ocenia
+      `sciezkaWDomu`. Praca z polecenia jest poza tą regułą. */
+  private dojdzieWDomu(p: Pawn, tile: number): boolean {
+    const reg = this.naszeObszary();
+    const od = reg[nearestFree(this.coreBlocked, this.w.size, this.tileOf(p))];
+    if (od >= 0 ? reg[tile] === od : this.naszTeren(tile)) return true;
+    return this.mozeWyjsc(p, tile);
+  }
+
+  /** Cel i materiał pracy bez polecenia: wolno tam pracować (`mozeTam`) i da się tam dojść bez wychodzenia z naszego
+      terenu albo wolno wyjść (`dojdzieWDomu`). Filtr stert, drzew, pokoi i stanowisk dla wszystkich prac automatu. */
+  private mozeSam(p: Pawn, tile: number): boolean {
+    return this.mozeTam(p, tile) && this.dojdzieWDomu(p, tile);
+  }
+
+  /** Droga na kafelek dla pracy bez polecenia (`go` dla pracy z polecenia): osoba na naszym terenie idzie do celu na
+      nim tylko po nim, nigdy ulicą, nawet gdy ulica byłaby krótsza; do celu poza jej obszarem idzie zwykłą drogą,
+      ale tylko tam, gdzie wolno wyjść (`mozeWyjsc`); osoba poza naszym terenem wraca do domu zwykłą drogą, którą ocenia
+      `sciezkaWDomu`. false, gdy nie da się dojść (stan pionka bez zmian). */
   private idz(p: Pawn, tile: number, order: boolean): boolean {
-    if (order || zaSiatke(this.st, p.person)) return this.go(p, tile);
+    if (order) return this.go(p, tile);
     const reg = this.naszeObszary();
     const start = nearestFree(this.coreBlocked, this.w.size, this.tileOf(p));
-    if (reg[start] < 0) return this.go(p, tile) && this.sciezkaWDomu(p);
-    if (reg[tile] !== reg[start]) return false;
-    this.stats.paths++;
-    const path = this.pf.find(this.zamknieteNasze!, start, tile);
-    this.stats.nodes += this.pf.expanded;
-    if (!path) {
-      this.stats.failed++;
-      return false;
+    if (reg[start] >= 0 && reg[tile] === reg[start]) {
+      this.stats.paths++;
+      const path = this.pf.find(this.zamknieteNasze!, start, tile);
+      this.stats.nodes += this.pf.expanded;
+      if (!path) {
+        this.stats.failed++;
+        return false;
+      }
+      p.path = path;
+      p.pi = 0;
+      return true;
     }
-    p.path = path;
-    p.pi = 0;
-    return true;
+    if (!this.dojdzieWDomu(p, tile)) return false;
+    if (reg[start] < 0 && this.naszTeren(tile)) return this.go(p, tile) && this.sciezkaWDomu(p);
+    return this.go(p, tile);
   }
 
   /** Po wyznaczeniu zwykłej drogi osobie poza naszym terenem: może na początku iść do domu, ale po wejściu na nasz teren
@@ -6655,21 +6726,6 @@ export class Sim {
       }
     }
     return true;
-  }
-
-  /** Czy pionek bez polecenia może pracować na tym kafelku: na naszym terenie zawsze, za siatką tylko osoba
-      z przełącznikiem, tylko za dnia (nocą nikt bez polecenia nie wychodzi) i, w trybie zombie, tylko gdy nie ma
-      szwendacza bliżej niż 10 m od celu, od samej osoby ani od wyjścia za bramę (rano stado stoi jeszcze pod siatką,
-      a droga do celu prowadzi przez bramę; sam cel bez szwendacza nie wystarcza). To jedno miejsce reguły dla
-      wszystkich zleceń poza naszym terenem. */
-  private mozeTam(p: Pawn, tile: number): boolean {
-    if (this.naszTeren(tile)) return true;
-    if (!zaSiatke(this.st, p.person) || this.night()) return false;
-    return (
-      !this.szwendaczBlisko(tile) &&
-      !this.szwendaczBlisko(this.tileOf(p)) &&
-      !(this.exitTile >= 0 && this.szwendaczBlisko(this.exitTile))
-    );
   }
 
   /** tryb zombie: żywy szwendacz w kwadracie mniejszym niż r kafelków (max(|dx|, |dy|) < r) od kafelka */
@@ -7527,7 +7583,8 @@ export class Sim {
 
   /* ---------- praca za dnia: dzidy, wzmacnianie siatki, alarm ---------- */
 
-  /** sterty, które pionek może wziąć: jego albo niczyje (`nasze`: tylko z naszego terenu, dla pracy bez polecenia) */
+  /** sterty, które pionek może wziąć: jego albo niczyje (`nasze`: dla pracy bez polecenia tylko z naszego terenu,
+      do których dojdzie bez wychodzenia z niego) */
   private freeHeaps(p: Pawn, kind: string, nasze = false): Thing[] {
     const size = this.w.size;
     return this.st.things.filter(
@@ -7536,7 +7593,7 @@ export class Sim {
         t.n > 0 &&
         (t.by < 0 || t.by === p.id) &&
         !this.uSasiada(t) &&
-        (!nasze || this.naszTeren(t.y * size + t.x)),
+        (!nasze || (this.naszTeren(t.y * size + t.x) && this.dojdzieWDomu(p, t.y * size + t.x))),
     );
   }
 
@@ -9106,7 +9163,7 @@ export class Sim {
     const k = s?.budynki.findIndex((b) => b.bid === bid) ?? -1;
     if (k < 0 || !s!.budynki[k].otwarty) return false;
     const g = gid(k, room);
-    if (!this.moznaSzukac(k, room)) return false;
+    if (!this.moznaSzukac(k, room, !order)) return false;
     if (this.st.pawns.some((q) => q.job?.t === 'loot' && q.job.target === g)) return false;
     const spot = this.pokojSpot(p, this.kafelkiPokoju(g));
     if (spot < 0 || !this.idz(p, spot, order)) return false;
@@ -9126,9 +9183,11 @@ export class Sim {
     return this.nearest(p, cand.length ? cand : tiles.filter((i) => this.reg[i] === region));
   }
 
-  /** pomieszczenie sąsiada da się przeszukać (raz; mieszkanie lokatorów tylko pod ich nieobecność) */
-  private moznaSzukac(k: number, room: number): boolean {
-    return moznaPrzeszukac(this.st, this.w, k, room) !== null;
+  /** pomieszczenie sąsiada da się przeszukać (raz; mieszkanie lokatorów tylko pod ich nieobecność); `tylkoPuste`:
+      praca zarządu z automatu nie rusza mieszkań lokatorów, więc tylko wynik `'tak'` */
+  private moznaSzukac(k: number, room: number, tylkoPuste = false): boolean {
+    const m = moznaPrzeszukac(this.st, this.w, k, room);
+    return tylkoPuste ? m === 'tak' : m !== null;
   }
 
   /** przeszukiwanie pokoju sąsiada: czas jak w siedzibie, łup na końcu, potem sam nosi łup na podwórko (noszenie
@@ -9136,7 +9195,8 @@ export class Sim {
   private lootPraca(p: Pawn, j: Job, at: boolean): boolean {
     const k = gidB(j.target);
     const room = gidRoom(j.target);
-    if (!this.moznaSzukac(k, room)) return false;
+    // praca z automatu kończy się, gdy pokój przestał być pusty (lokatorzy wrócili albo wprowadził się ktoś nowy)
+    if (!this.moznaSzukac(k, room, !j.order)) return false;
     if (j.phase === 0) {
       if (!at) return false;
       j.phase = 1;
@@ -9435,11 +9495,7 @@ export class Sim {
       return true;
     }
     this.setJob(p, j, false);
-    if (
-      !this.fetchNext(p, j, plan.need, plan.have) ||
-      (!order && !zaSiatke(this.st, p.person) && !this.sciezkaWDomu(p))
-    ) {
-      this.release(p);
+    if (!this.fetchNext(p, j, plan.need, plan.have)) {
       p.job = null;
       return false;
     }
