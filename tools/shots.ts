@@ -25,6 +25,7 @@ import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
+import { listaShots } from './shots-lista.ts';
 
 const KOD = process.argv.includes('--kod');
 const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
@@ -737,6 +738,9 @@ const SHOTS: Shot[] = [
   // Kwadraty miasta obok domu (etap 1, ?kwadraty=): 3×3 wokół dem, szwy z bliska, narożnik, daleko, mgła „brak danych”, noc,
   // telefon, widok pięter w kwadracie obok, kliknięcie poza domem
   ...kwadratyShots(),
+  // Lista „moich ludzi” (src/ui/lista.ts): układ przy 1440, 1280, 1024 i na telefonie, angielski, tryb zombie, wszystkie
+  // znaczniki stanu, klik i śledzenie kamery, klawisze E i Q, wyprawa, dwanaście osób, przybysze, panel budowy, język
+  ...listaShots(OUT),
   {
     name: 'zombie-dzien',
     query: '',
@@ -3357,13 +3361,15 @@ const SHOTS: Shot[] = [
           throw new Error(`${when}: etykieta ukryta, przy krawędzi albo poza kadrem`);
         if (p.hits.length) throw new Error(`${when}: etykieta zasłania ${p.hits.join(', ')}`);
       };
-      /** kamera na suchym drzewie (jak gracz, który przesunął mapę do celu) */
-      const look = async () => {
-        await page.evaluate(() => {
+      /** kamera na suchym drzewie (jak gracz, który przesunął mapę do celu); `nizej`: o tyle kafelków niżej na ekranie. Na
+          telefonie górę mapy zajmują pasek, cele dnia i lista „moich ludzi”, więc drzewo stoi w wolnej części, a nie pod
+          nimi: etykieta nad dużą koroną inaczej wchodziłaby na listę i szłaby na krawędź ekranu */
+      const look = async (nizej = 0) => {
+        await page.evaluate((nizej) => {
           const zm = window.zm!;
           const t = zm.sim!.w.trees[zm.sim!.w.dryTree];
-          zm.setCam(t.x, t.y - 1, 1.3);
-        });
+          zm.setCam(t.x, t.y - 1 - nizej, 1.3);
+        }, nizej);
         await waitIdle(page);
         await page.waitForTimeout(250);
       };
@@ -3437,7 +3443,7 @@ const SHOTS: Shot[] = [
         await page.setViewportSize({ width: 390, height: 844 });
         await page.goto(`${base}?demo=${key}&speed=0&cam=hq,1.3`);
         await waitIdle(page);
-        await look();
+        await look(2);
         await check(`${key}, telefon`);
         await page.screenshot({ path: path.join(OUT, `m1-etykieta-${key}-telefon.png`) });
       }

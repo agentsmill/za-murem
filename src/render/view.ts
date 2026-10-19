@@ -113,6 +113,7 @@ import { kandydaciTla, kwadratyNaEkranie, ramkaKwadratow, widoczneKawalki } from
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
 import { type KlatkaTekstury, LudzieLayer } from './ludzieLayer.ts';
+import type { LudziePixellab } from './ludziePixellab.ts';
 import { MglaLayer } from './mglaLayer.ts';
 import { sectionPietra } from './pietro.ts';
 import { chunkiParteru, chunkiPietra, przekrojPietra, wnetrzaParteru } from './pietroWidok.ts';
@@ -333,6 +334,11 @@ export class GameView {
   grafika: Grafika | null = null;
   /** postacie z PixelLab (animacje z atlasu ludzie.png) albo null: pionki rysuje kod */
   private ludzie: LudzieLayer | null = null;
+  /** wybór postaci i wersji kolorystycznej, z którego korzysta mapa (null: pionki z kodu); lista ludzi bierze z niego
+      portrety, żeby osoba z listy wyglądała tak jak jej pionek */
+  get postacieLudzi(): LudziePixellab | null {
+    return this.ludzie?.dane ?? null;
+  }
   /** kładzenie się i wstawanie pionków z PixelLab na podłodze (stan tylko w widoku) */
   private przejscia = new PrzejsciaPionkow();
   /** zwłoki powstałe podczas gry (tylko one upadają) i ostatnie kierunki członków zarządu */
