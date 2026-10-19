@@ -154,6 +154,8 @@ describe('karta szwendacz', () => {
       expect(view.id).toBe('szwendacz');
       expect(view.gdzie).toEqual({ x: PRZY.x, y: PRZY.y });
       expect(pending(gov, i)).toMatchObject({ k: 'wydarzenie', id: 'szwendacz', gdzie: { x: PRZY.x, y: PRZY.y } });
+      // wpis kroniki o karcie niesie to samo miejsce (na później, bez widoku)
+      expect(gov.log.at(-1)).toMatchObject({ big: false, gdzie: { x: PRZY.x, y: PRZY.y } });
     }
     for (const hour of [19, 21, 23, 3]) expect(wylosowana(hour).gov.ev.active, `godz. ${hour}`).toBeNull();
     expect(wylosowana(12, { horde: HORDE }).gov.ev.active).toBeNull();
@@ -166,10 +168,18 @@ describe('karta szwendacz', () => {
     expect(eventView(gov, przesunal)?.gdzie).toEqual({ x: 130, y: 90 });
   });
 
-  it('inne karty nie mają miejsca w oknie', () => {
+  it('inne karty nie mają miejsca w oknie ani w kronice', () => {
     const { gov, i } = setup();
     gov.ev.active = { id: 'pies', d: {} };
     expect(eventView(gov, i)).not.toHaveProperty('gdzie');
+    // karta losowana bez nikogo przy siatce: wpis w kronice bez pola gdzie
+    const bez = setup({ horde: HORDE });
+    bez.gov.ev.next = 0;
+    bez.gov.ev.warm = 0;
+    eventTick(bez.gov, bez.i, emptyEffects(), false);
+    expect(bez.gov.ev.active).not.toBeNull();
+    expect(bez.gov.ev.active?.id).not.toBe('szwendacz');
+    expect(bez.gov.log.at(-1)).not.toHaveProperty('gdzie');
   });
 
   it('teksty w obu językach, bez polskich słów po angielsku', () => {

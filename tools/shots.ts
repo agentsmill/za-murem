@@ -2119,6 +2119,171 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // tryb zombie: karta „Szwendacz w siatce” z przyciskiem „Pokaż”; po kliknięciu kamera jedzie na szwendacza
+        // (nad oknem, które zostaje otwarte); zrzut karty przed kliknięciem w wyd-szwendacz-karta.png, końcowy po przejeździe
+        name: 'wyd-szwendacz',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=9&stado=3&cam=hq,1.3`);
+          await waitIdle(page);
+          let id = '';
+          for (let k = 0; k < 150 && id !== 'szwendacz'; k++) {
+            const p = await page.evaluate(() => window.zm!.ff(30));
+            if (!p) continue;
+            id = p === 'wydarzenie' ? await page.evaluate(() => window.zm!.gov!.ev.active?.id ?? '') : '';
+            if (id !== 'szwendacz') await answerFirst(page, p);
+          }
+          if (id !== 'szwendacz') throw new Error('przez 75 godzin gry nie wypadła karta „Szwendacz w siatce”');
+          await waitIdle(page);
+          const przed = await page.evaluate(() => {
+            const zm = window.zm!;
+            const g = zm.gov!.ev.active!.d as { pawn: number };
+            const z = zm.sim!.st.pawns.find((q) => q.id === g.pawn);
+            return { cam: { x: zm.view.cam.x, y: zm.view.cam.y }, zoom: zm.view.cam.zoom, z: z && { x: z.x, y: z.y } };
+          });
+          console.log(
+            `  karta: ${await page.textContent('#sheet .sheet-title')}, szwendacz ${JSON.stringify(przed.z)}`,
+          );
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  przyciski: ${foot.join(' | ')}`);
+          if (foot[0] !== 'event-show:Pokaż') throw new Error(`pierwszy przycisk karty to nie „Pokaż”: ${foot[0]}`);
+          await page.screenshot({ path: path.join(OUT, 'wyd-szwendacz-karta.png') });
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          const po = await page.evaluate(() => {
+            const zm = window.zm!;
+            const open = !document.getElementById('modal')!.hidden;
+            const ev = zm.gov!.ev.active;
+            const z = zm.sim!.st.pawns.find((q) => q.id === (ev?.d as { pawn: number } | undefined)?.pawn);
+            const [sx, sy] = zm.screenOf(z!.x, z!.y);
+            const r = document.getElementById('sheet')!.getBoundingClientRect();
+            const bar = document.getElementById('top')!.getBoundingClientRect().bottom;
+            return {
+              open,
+              ev: ev?.id ?? null,
+              sx,
+              sy,
+              zoom: zm.view.cam.zoom,
+              pod: sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom,
+              widac: sx > 0 && sx < zm.view.width && sy > bar && sy < zm.view.height,
+            };
+          });
+          console.log(
+            `  po „Pokaż”: szwendacz na ekranie (${Math.round(po.sx)}, ${Math.round(po.sy)}), okno ${po.open ? 'otwarte' : 'zamknięte'}, pod oknem ${po.pod}`,
+          );
+          if (!po.open || po.ev !== 'szwendacz') throw new Error('„Pokaż” zamknęło okno karty');
+          if (po.pod || !po.widac) throw new Error('po „Pokaż” szwendacza nie widać: jest pod oknem albo poza ekranem');
+          if (Math.abs(po.zoom - przed.zoom) > 1e-6) throw new Error('„Pokaż” zmienił przybliżenie');
+          await waitIdle(page);
+        },
+      },
+      {
+        // nowa osoba zarządu (karta o chętnym do spółdzielni) czeka za bramą i idzie do siedziby; komunikat z „Pokaż”
+        name: 'wyd-przyjety',
+        query: '',
+        run: async (page, base) => {
+          await game(page, base);
+          let joined = false;
+          for (let k = 0; k < 150 && !joined; k++) {
+            const p = await page.evaluate(() => window.zm!.ff(30));
+            if (!p) continue;
+            const id = p === 'wydarzenie' ? await page.evaluate(() => window.zm!.gov!.ev.active?.id ?? '') : '';
+            await answerFirst(page, p);
+            joined = await page.evaluate(() =>
+              window.zm!.sim!.st.pawns.some((q) => q.kind === 'core' && q.job?.t === 'arrive'),
+            );
+            if (joined) console.log(`  przyjęty kartą „${id}” po ${k + 1} krokach`);
+          }
+          if (!joined) throw new Error('przez 75 godzin gry nikt nie dołączył do zarządu');
+          const text = await page
+            .waitForFunction(
+              () => {
+                const b = document.getElementById('arrive')!;
+                return !b.hidden && (b.textContent ?? '');
+              },
+              null,
+              { timeout: 3000 },
+            )
+            .then((h) => h.jsonValue() as Promise<string>);
+          console.log(`  komunikat: ${text}`);
+          if (!text.includes('1 osoba idzie od bramy') || !text.includes('Pokaż'))
+            throw new Error('nie ma komunikatu o przybyszu z „Pokaż”');
+          const start = await page.evaluate(() => {
+            const zm = window.zm!;
+            const w = zm.sim!.w;
+            const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && q.job?.t === 'arrive')!;
+            const i = Math.floor(p.y) * w.size + Math.floor(p.x);
+            const gate = w.fence.gate;
+            zm.setCam(gate.x + gate.w / 2, gate.y + gate.h / 2, 2.5);
+            return { x: p.x, y: p.y, yard: w.fence.yard.includes(i), building: w.bid[i] >= 0 };
+          });
+          console.log(
+            `  start: (${start.x.toFixed(1)}, ${start.y.toFixed(1)}), na podwórku ${start.yard}, w budynku ${start.building}`,
+          );
+          if (start.yard || start.building) throw new Error('przyjęty nie czeka za bramą');
+          await waitIdle(page);
+          // „Pokaż” przy przybyszu: kamera na nim, przybliżenie bez zmian
+          await page.click('#arriveShow');
+          await page.waitForTimeout(1400);
+          await waitIdle(page);
+          await page.screenshot({ path: path.join(OUT, 'wyd-przyjety-pokaz.png') });
+          // kilka sekund marszu: wzdłuż płotu do bramy, a potem w bramie (zrzut, gdy stoi na kafelkach bramy)
+          await page.evaluate(() => window.zm!.ff(1.5));
+          await frames(page, 2);
+          await page.screenshot({ path: path.join(OUT, 'wyd-przyjety-brama.png') });
+          let wBramie = false;
+          for (let k = 0; k < 60 && !wBramie; k++) {
+            await page.evaluate(() => window.zm!.ff(0.25));
+            wBramie = await page.evaluate(() => {
+              const zm = window.zm!;
+              const w = zm.sim!.w;
+              const g = w.fence.gate;
+              const p = zm.sim!.st.pawns.find((q) => q.kind === 'core' && q.job?.t === 'arrive');
+              if (!p) return false;
+              const w1 = p.x >= g.x && p.x < g.x + g.w && p.y >= g.y && p.y < g.y + g.h;
+              if (w1) zm.setCam(p.x, p.y, 2.5);
+              return w1;
+            });
+          }
+          if (!wBramie) throw new Error('przyjęty nie doszedł do bramy');
+          await frames(page, 2);
+          await page.screenshot({ path: path.join(OUT, 'wyd-przyjety-w-bramie.png') });
+          // po dojściu komunikat znika, a osoba jest po naszej stronie i żyje jak reszta zarządu
+          for (let k = 0; k < 6 && (await page.evaluate(() => !document.getElementById('arrive')!.hidden)); k++) {
+            const p = await page.evaluate(() => window.zm!.ff(5));
+            if (p) throw new Error(`w trakcie przybycia otworzyło się okno: ${p}`);
+          }
+          const end = await page.evaluate(() => {
+            const zm = window.zm!;
+            const w = zm.sim!.w;
+            const st = zm.sim!.st;
+            const pawns = st.pawns.filter((q) => q.kind === 'core');
+            const p = pawns[pawns.length - 1];
+            const i = Math.floor(p.y) * w.size + Math.floor(p.x);
+            return {
+              hidden: document.getElementById('arrive')!.hidden,
+              job: p.job?.t ?? null,
+              yard: w.fence.yard.includes(i) || w.bid[i] >= 0,
+              needs: !!p.needs,
+            };
+          });
+          console.log(`  po dojściu: ${JSON.stringify(end)}`);
+          if (!end.hidden || end.job === 'arrive' || !end.yard) throw new Error('przyjęty nie doszedł do siedziby');
+          // końcowy zrzut: kamera na nim przed drzwiami siedziby
+          await page.evaluate(() => {
+            const zm = window.zm!;
+            const pawns = zm.sim!.st.pawns.filter((q) => q.kind === 'core');
+            const p = pawns[pawns.length - 1];
+            zm.setCam(p.x, p.y, 2.5);
+          });
+          await waitIdle(page);
+        },
+      },
+      {
         name: 'm1-menu',
         query: '',
         run: async (page, base) => {

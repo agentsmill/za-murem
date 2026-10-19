@@ -2,7 +2,8 @@
    Zarząd liczy, symulacja robi: zapasy to rzeczy na mapie (drewno w stosach, zapasy w kuchni, złom w stertach),
    potrzeby i nastroje to pionki, wyprawa wychodzi bramą, warta staje przy siatce, łaty zamykają dziury, a napad
    z planu odgrywają szabrownicy. To, co wymaga przeliczenia przechodniości albo dróg (warta, wyprawa, łaty), idzie
-   przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie.
+   przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie. Nowa osoba zarządu
+   (`fx.join`) i przyjęci mieszkańcy (`fx.residents`) czekają za bramą i dochodzą do siedziby w pracy 'arrive'.
 
    Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to zarząd i mieszkańcy
    siedziby, a `teren.przylaczone` to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu. Trzeci
@@ -329,7 +330,7 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
     }
   }
   // ludzie: najpierw nowi, żeby skutki dla nich trafiły na miejsce
-  for (const p of fx.join) if (!pawnOf(st, p.id)) addCore(st, w, p);
+  for (const p of fx.join) if (!pawnOf(st, p.id)) addCore(st, w, p, true);
   for (const { id, d } of fx.needs) {
     const p = pawnOf(st, id);
     if (!p?.needs) continue;

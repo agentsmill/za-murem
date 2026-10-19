@@ -15,7 +15,7 @@ import { type Tx, tx, txOf } from '../core/jezyk.ts';
 import { pick } from '../core/rng.ts';
 import type { Words, WordsEn } from './miejsce.ts';
 import { M1_LAWS_EN, TARGET_VARIANTS_EN, TARGETS_EN } from './tresc.en.ts';
-import type { GameMode, GovNeeds, GovPerson, GovPlace, LootKey } from './typy.ts';
+import type { GameMode, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
 
 // ---------------------------------------------------------------- uchwały
 
@@ -293,7 +293,7 @@ export interface GEventDef<D = any> {
   w: (h: GovHost) => number;
   make: (h: GovHost) => D | null;
   /** miejsce wydarzenia na mapie w kafelkach (przycisk „Pokaż” w oknie); brak funkcji albo null: karta bez miejsca */
-  gdzie?: (h: GovHost, d: D) => { x: number; y: number } | null;
+  gdzie?: (h: GovHost, d: D) => Punkt | null;
   /** tytuł, tekst i napisy wyborów w obu językach (angielskie z tych samych danych, bez losowania) */
   title: (h: GovHost, d: D) => Tx;
   text: (h: GovHost, d: D) => Tx;

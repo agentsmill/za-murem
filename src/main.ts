@@ -1071,6 +1071,11 @@ function showPrompt(p: Prompt) {
   else if (p.k === 'zwyciestwo') showEpilog(p.droga);
   else
     modal.show(eventSheet(p, words, wordsE), (act, arg) => {
+      // „Pokaż”: kamera jedzie na miejsce z karty, okno zostaje otwarte (jak przy „Pokaż” przy przybyszach)
+      if (act === 'event-show' && p.gdzie) {
+        showAbove(p.gdzie.x * TILE, p.gdzie.y * TILE);
+        return;
+      }
       if (act !== 'event') return;
       applyFx(chooseEvent(g, input(), Number(arg)));
       decided();
@@ -1650,6 +1655,23 @@ let fly: { x0: number; y0: number; z0: number; x1: number; y1: number; z1: numbe
     żeby gracz przeczytał napis, a po przycisku od razu) */
 function flyTo(x: number, y: number, zoom: number, ms: number, wait = 500) {
   fly = { x0: view.cam.x, y0: view.cam.y, z0: view.cam.zoom, x1: x, y1: y, z1: zoom, t0: performance.now() + wait, ms };
+}
+/** Kamera na miejsce (piksele świata) przy otwartym oknie: okno stoi pośrodku mapy i zasłoniłoby to, co ma pokazać, więc
+    miejsce ląduje w środku większego wolnego pasa nad albo pod oknem (a gdy pas jest za wąski, na środku mapy).
+    Przybliżenie bez zmian. */
+function showAbove(x: number, y: number) {
+  const zoom = view.cam.zoom;
+  let sy = view.height / 2;
+  const sheet = $('modal').hidden ? null : $('sheet').getBoundingClientRect();
+  if (sheet) {
+    const bar = $('top').getBoundingClientRect().bottom;
+    const above = { from: bar, to: sheet.top };
+    const below = { from: sheet.bottom, to: view.height };
+    const strip = above.to - above.from >= below.to - below.from ? above : below;
+    if (strip.to - strip.from >= 90) sy = (strip.from + strip.to) / 2;
+  }
+  // kamera stoi tyle poniżej miejsca, ile miejsce ma być nad środkiem ekranu
+  flyTo(x, y + (view.height / 2 - sy) / zoom, zoom, 900, 0);
 }
 function stepFly(now: number) {
   if (!fly) return;

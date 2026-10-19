@@ -26,6 +26,12 @@ export interface GovNeeds {
   mood: number;
 }
 
+/** kafelek mapy w metrach (siatka 1 m; kamera i znaczniki liczą w kafelkach) */
+export interface Punkt {
+  x: number;
+  y: number;
+}
+
 /** osoba z zarządu (jak SimPerson w snapshot.ts) */
 export interface GovPerson {
   pawn: number;
@@ -397,7 +403,7 @@ export type Prompt =
       text: Tx;
       choices: { label: Tx; ok: boolean }[];
       /** miejsce na mapie (kafelki) dla przycisku „Pokaż”; brak: karta nie ma miejsca */
-      gdzie?: { x: number; y: number };
+      gdzie?: Punkt;
     };
 
 // ---------------------------------------------------------------- stan
@@ -507,7 +513,8 @@ export interface GovState {
   later: { day: number; stock: Partial<StockDelta>; line: Tx }[];
   /** decyzje gracza w sekundach przy ekranie (do pomiaru tempa) */
   decisions: { s: number; k: string }[];
-  log: { day: number; clock: string; txt: Tx; big: boolean }[];
+  /** kronika; wpis o karcie z miejscem na mapie niesie to miejsce (`gdzie`, na później: przycisk „Pokaż” w kronice) */
+  log: { day: number; clock: string; txt: Tx; big: boolean; gdzie?: Punkt }[];
   over: EndingId | null;
   /** tryb gry; stary zapis: zwykły */
   mode?: GameMode;

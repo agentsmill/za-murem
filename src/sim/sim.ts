@@ -1561,6 +1561,25 @@ export function dismantlable(st: SimState, w: World, t: Thing): boolean {
 /** wszystkie uszkodzenia mieszkania naprawione */
 export const repaired = (st: SimState, apt: number): boolean => st.damage.every((d) => d.apt !== apt || d.fixed);
 
+/** Kafelki, na których przyjęci czekają za bramą obok siebie: spirala SPREAD wokół `exit` (kafelka za bramą, `exitOf`),
+    bez podwórka, bramy, budynków i przeszkód. Pusta, gdy świat nie ma siatki (exit −1). */
+function waitTiles(w: World, exit: number): number[] {
+  if (exit < 0) return [];
+  const size = w.size;
+  const yard = new Set(fenceShape(w)?.yard ?? []);
+  const gate = gateTiles(w);
+  const wait: number[] = [];
+  for (const [dx, dy] of SPREAD) {
+    const x = (exit % size) + dx;
+    const y = Math.floor(exit / size) + dy;
+    const i = y * size + x;
+    if (x < 0 || y < 0 || x >= size || y >= size || w.blocked[i] || w.bid[i] >= 0 || yard.has(i) || gate.includes(i))
+      continue;
+    wait.push(i);
+  }
+  return wait;
+}
+
 /** Mieszkańcy siedziby (tło) w mieszkaniach połączonych z podwórkiem. Na start po kolei po mieszkaniach, najwyżej do
     st.cap (3–8: po dwóch na mieszkanie i jeden więcej). Przyjęci przez zarząd (arrive, fx.residents) przychodzą zza
     bramy do swojego mieszkania i nie znikają, gdy miejsc brak: mieszkanie z wolnym łóżkiem, a bez niego najmniej
@@ -1576,18 +1595,7 @@ export function addResidents(st: SimState, w: World, n: number, arrive = false):
   const { resident } = composeLayers(w, [], null, st.fence, homeMask(h, size));
   const exit = arrive ? exitOf(w) : -1;
   // przyjęci czekają za bramą obok siebie (nie na jednym kafelku) i ruszają po kolei, gęsiego
-  const yard = new Set(fenceShape(w)?.yard ?? []);
-  const gate = gateTiles(w);
-  const wait: number[] = [];
-  if (exit >= 0)
-    for (const [dx, dy] of SPREAD) {
-      const x = (exit % size) + dx;
-      const y = Math.floor(exit / size) + dy;
-      const i = y * size + x;
-      if (x < 0 || y < 0 || x >= size || y >= size || w.blocked[i] || w.bid[i] >= 0 || yard.has(i) || gate.includes(i))
-        continue;
-      wait.push(i);
-    }
+  const wait = waitTiles(w, exit);
   let added = 0;
   for (let k = 0; k < n; k++) {
     const have = st.pawns.filter((p) => p.kind === 'resident');
@@ -1672,23 +1680,43 @@ function dropPawn(st: SimState, p: Pawn): void {
   st.pawns.splice(st.pawns.indexOf(p), 1);
 }
 
-/** nowa osoba w zarządzie (zdarzenie): staje przed drzwiami siedziby z potrzebami jak po drodze */
-export function addCore(st: SimState, w: World, person: Person): Pawn {
+/** Nowa osoba w zarządzie (zdarzenie) z potrzebami jak po drodze. Bez `arrive` staje przed drzwiami siedziby. Z `arrive`
+    (przyjęcie przez zarząd, `applyGov`) czeka za bramą na kafelku ze spirali SPREAD wokół `exitOf(w)` (nie na kafelku
+    zajętym przez innego pionka) i idzie do drzwi siedziby w pracy 'arrive' (z warstwą zarządu, więc przechodzi przez
+    bramę); po dojściu jest zwykłym członkiem zarządu. Świat bez siatki (brak `exitOf`) zostaje przy dawnym wejściu. */
+export function addCore(st: SimState, w: World, person: Person, arrive = false): Pawn {
   const hq = w.buildings[w.hq];
   const door = hq?.entrances[0]?.out ?? nearestFree(w.blocked, w.size, ((w.size / 2) | 0) * (w.size + 1));
   st.people.push(person);
   const rnd = rngOf(st.rng);
+  const exit = arrive ? exitOf(w) : -1;
+  // czeka obok innych przybyszów, nie na ich kafelku
+  const taken = (i: number) => st.pawns.some((q) => Math.floor(q.y) * w.size + Math.floor(q.x) === i);
+  const wait = exit >= 0 ? (waitTiles(w, exit).find((i) => !taken(i)) ?? exit) : -1;
   const p = newPawn(
     st,
     w,
     'core',
     st.people.length - 1,
-    nearestFree(w.blocked, w.size, door),
+    wait >= 0 ? wait : nearestFree(w.blocked, w.size, door),
     door,
     Math.floor(rnd() * 4),
   );
   p.needs = { food: 50, warm: 50, rest: 60, health: 90, safe: 50, mood: 0 };
   p.needs.mood = 0.25 * 50 + 0.25 * 50 + 0.15 * 60 + 0.15 * 90 + 0.2 * 50;
+  if (wait >= 0)
+    p.job = {
+      t: 'arrive',
+      target: -1,
+      tile: door,
+      phase: 0,
+      from: -1,
+      t0: st.tick,
+      until: st.tick,
+      order: false,
+      n: 0,
+      what: '',
+    };
   st.pawns.push(p);
   return p;
 }

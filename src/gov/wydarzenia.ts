@@ -21,7 +21,7 @@ import { type Tx, tx, txCat } from '../core/jezyk.ts';
 import { rngOf } from '../core/rng.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
 import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
-import type { GovEffects, GovInput, GovPerson, GovState, LootKey, StockKey } from './typy.ts';
+import type { GovEffects, GovInput, GovPerson, GovState, LootKey, Punkt, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
@@ -398,14 +398,15 @@ function show(st: GovState, i: GovInput, fx: GovEffects, ev: ActiveEvent | null)
   st.ev.active = ev;
   st.ev.when = i.screen;
   const def = byId.get(ev.id)!;
-  logGov(st, i, def.title(makeHost(st, i, fx), ev.d), false, fx);
+  const h = makeHost(st, i, fx);
+  logGov(st, i, def.title(h, ev.d), false, fx, def.gdzie?.(h, ev.d));
 }
 
 /** okno bieżącego wydarzenia; `gdzie` (kafelki) tylko dla kart z miejscem na mapie, z niego przycisk „Pokaż” */
 export function eventView(
   st: GovState,
   i: GovInput,
-): { id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[]; gdzie?: { x: number; y: number } } | null {
+): { id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[]; gdzie?: Punkt } | null {
   const ev = st.ev.active;
   const def = ev && byId.get(ev.id);
   if (!ev || !def) return null;
