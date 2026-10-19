@@ -119,7 +119,14 @@ import {
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
-import { nastepnePietro, PODPOWIEDZ_ZARZAD, podpowiedz as podpowiedzPietra, SelektorPieter } from './ui/pietra.ts';
+import {
+  blokujKlik,
+  nastepnePietro,
+  PODPOWIEDZ_ZARZAD,
+  podpowiedz as podpowiedzPietra,
+  przyjmijPietro,
+  SelektorPieter,
+} from './ui/pietra.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
@@ -251,9 +258,15 @@ const selektorPieter = new SelektorPieter(
 /** wybór piętra (lista kafelka, PageUp i PageDown, zm.pietro, powrót na parter): przełącza widok tylko przy zmianie
     piętra, bo `ustawPietro` unieważnia wszystkie kawałki z przekrojem. Scena typowego piętra liczy się raz, przy
     pierwszym wyborze piętra od pierwszego, i idzie do widoku przy każdym takim wyborze; parter dostaje null. Piętro
-    spoza listy (bez ?pietra=1 jest tylko parter) nic nie zmienia. */
+    spoza listy (bez ?pietra=1 jest tylko parter) nic nie zmienia, podobnie wybór w trakcie stawiania budowli
+    (przyjmijPietro). */
 function wybierzPietro(L: number): void {
-  if (!sim || !pietraGry || L === view.pietro || !pietraLista.includes(L)) return;
+  if (
+    !sim ||
+    !pietraGry ||
+    !przyjmijPietro({ lista: pietraLista, obecne: view.pietro, docelowe: L, stawianie: !!placing })
+  )
+    return;
   if (L >= 1) {
     scenaPietra ??= sectionPietra(sim.w);
     if (!scenaPietra) return;
@@ -283,9 +296,10 @@ function podStropem(sx: number, sy: number): boolean {
   return !!sim && view.pietroAktywne() && sim.w.bid[view.tileAt(sx, sy)] >= 0;
 }
 
-/** blokada kliknięcia pod stropem: pokazuje podpowiedź zamiast reakcji; true, gdy klik należy do blokady */
-function zablokowanyKlik(sx: number, sy: number): boolean {
-  if (!podStropem(sx, sy)) return false;
+/** blokada kliknięcia pod stropem: pokazuje podpowiedź zamiast reakcji; true, gdy klik należy do blokady. Bez
+    argumentów blokuje każdy klik w obrys; `widocznyPionek` i `prawy` tylko w obsłudze kliknięcia mapy (blokujKlik) */
+function zablokowanyKlik(sx: number, sy: number, widocznyPionek = false, prawy = false): boolean {
+  if (!blokujKlik({ podStropem: podStropem(sx, sy), prawy, widocznyPionek })) return false;
   say(tr(PODPOWIEDZ_ZARZAD), 2500);
   return true;
 }
@@ -2600,9 +2614,12 @@ const endPointer = (e: PointerEvent) => {
     return;
   }
   const hit = view.pick(sim.st, e.offsetX, e.offsetY);
+  // mieszkaniec z osobą (zarząd miał pierwszeństwo niżej): karta do odczytu, bez zmiany zaznaczenia i bez poleceń
+  const lok = view.pickResident(sim.st, e.offsetX, e.offsetY);
   if (placing && placeClick(e.offsetX, e.offsetY, d.button, d.type, e.shiftKey)) return;
-  // piętro od pierwszego: klik w obrys budynku nie zaznacza, nie rozkazuje i nie otwiera kart (parter jest schowany)
-  if (zablokowanyKlik(e.offsetX, e.offsetY)) return;
+  // piętro od pierwszego: klik w obrys budynku nie rozkazuje i nie otwiera kart (parter jest schowany). Widocznego
+  // pionka (`pick` i `pickResident` oddają tam tylko widocznych) da się kliknąć także przy fasadzie, lewym przyciskiem
+  if (zablokowanyKlik(e.offsetX, e.offsetY, !!(hit || lok), d.button === 2)) return;
   if (d.button === 2) {
     orderAt(e.offsetX, e.offsetY, true);
     return;
@@ -2613,8 +2630,6 @@ const endPointer = (e: PointerEvent) => {
     selectedChanged();
     return;
   }
-  // mieszkaniec z osobą (zarząd miał pierwszeństwo wyżej): karta do odczytu, bez zmiany zaznaczenia i bez poleceń
-  const lok = view.pickResident(sim.st, e.offsetX, e.offsetY);
   if (d.type !== 'mouse') {
     // dotyk: stuknięcie w pusty teren przy otwartej karcie mieszkańca tylko ją zamyka, bez polecenia
     if (residentFocus >= 0 && !lok) {

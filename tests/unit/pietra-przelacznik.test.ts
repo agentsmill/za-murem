@@ -10,7 +10,14 @@ import { IN, sectionOf } from '../../src/render/section.ts';
 import { GameView } from '../../src/render/view.ts';
 import type { Pawn, SimState } from '../../src/sim/sim.ts';
 import { STATYCZNE } from '../../src/ui/jezyk.ts';
-import { nastepnePietro, podpowiedz, pozycjeListy, stronaListy } from '../../src/ui/pietra.ts';
+import {
+  blokujKlik,
+  nastepnePietro,
+  podpowiedz,
+  pozycjeListy,
+  przyjmijPietro,
+  stronaListy,
+} from '../../src/ui/pietra.ts';
 import { demoSwiat } from './pietra-pomoc.ts';
 
 let pamiec: Scene | null = null;
@@ -289,7 +296,7 @@ describe('widoczność wnętrz parteru w widoku (wnetrza, pietroAktywne, pick, p
     ({ id: 1, kind, person: 0, away: false, x, y }) as unknown as Pawn;
   const stan = (p: Pawn) => ({ pawns: [p] }) as unknown as SimState;
 
-  it('pod dachem siedziby lokatora da się kliknąć tylko, gdy widać wnętrza parteru, a zarząd na parterze zawsze', () => {
+  it('pod dachem siedziby lokatora da się kliknąć tylko, gdy widać wnętrza parteru, a zarząd poza przekrojem piętra zawsze', () => {
     const { view, v, sc } = widok();
     const i = sc.section!.cell.indexOf(IN.FLOOR);
     const x = (i % sc.w.size) + 0.5;
@@ -298,20 +305,24 @@ describe('widoczność wnętrz parteru w widoku (wnetrza, pietroAktywne, pick, p
     const lokator = pionek('resident', x, y);
     const kliknij = klik(view, zarzad);
 
+    // parter bez przekroju (z daleka): zarząd jest klikalny jak przed widokiem pięter (pick nie sprawdza tam
+    // widoczności), lokatora pod dachem nie widać (pickResident tak miał od zawsze)
+    expect(kliknij(stan(zarzad)).pick).toBe(zarzad);
+    expect(kliknij(stan(lokator)).lokator).toBeNull();
     // zbliżenie na parterze: widać wnętrze, więc obaj są klikalni
     v.cutOn = true;
     expect(kliknij(stan(zarzad)).pick).toBe(zarzad);
     expect(kliknij(stan(lokator)).lokator).toBe(lokator);
-    // piętro: wnętrze parteru schowane jak pod dachem, nikogo nie widać, więc nie da się go kliknąć
+    // piętro z przekrojem: wnętrze parteru schowane jak pod dachem, nikogo nie widać, więc nie da się go kliknąć
     view.ustawPietro(2, SEC);
     expect(kliknij(stan(zarzad)).pick).toBeNull();
     expect(kliknij(stan(lokator)).lokator).toBeNull();
-    // także z daleka (bez przekroju), bo rysuje się dach albo strop
+    // piętro wybrane, ale oglądane z daleka (bez przekroju): kliknięcia jak na parterze z daleka, jak dziś (blokada
+    // kliknięć w main.ts też idzie za pietroAktywne, więc z daleka nic nie jest blokowane)
     v.cutOn = false;
-    expect(kliknij(stan(zarzad)).pick).toBeNull();
+    expect(kliknij(stan(zarzad)).pick).toBe(zarzad);
     expect(kliknij(stan(lokator)).lokator).toBeNull();
-    // parter z daleka: lokatora pod dachem nie widać (pickResident tak miał od zawsze), a zarząd jest klikalny jak
-    // przed widokiem pięter (pick nie sprawdza tam widoczności)
+    // powrót na parter z daleka
     view.ustawPietro(0, null);
     expect(kliknij(stan(zarzad)).pick).toBe(zarzad);
     expect(kliknij(stan(lokator)).lokator).toBeNull();
@@ -424,6 +435,54 @@ describe('krok o piętro (nastepnePietro)', () => {
   it('lista z samym parterem nigdzie nie prowadzi', () => {
     expect(nastepnePietro([0], 0, 1)).toBe(0);
     expect(nastepnePietro([0], 0, -1)).toBe(0);
+  });
+});
+
+describe('blokada kliknięcia pod stropem (blokujKlik)', () => {
+  it('poza obrysem budynku albo bez przekroju piętra (podStropem fałsz) nic nie jest blokowane', () => {
+    for (const prawy of [false, true])
+      for (const widocznyPionek of [false, true])
+        expect(blokujKlik({ podStropem: false, prawy, widocznyPionek })).toBe(false);
+  });
+
+  it('lewy klik w obrys bez widocznego pionka jest blokowany (karty i zaznaczenie)', () => {
+    expect(blokujKlik({ podStropem: true, prawy: false, widocznyPionek: false })).toBe(true);
+  });
+
+  it('lewy klik w widocznego pionka stojącego przy fasadzie nie jest blokowany, więc da się go zaznaczyć', () => {
+    expect(blokujKlik({ podStropem: true, prawy: false, widocznyPionek: true })).toBe(false);
+  });
+
+  it('prawy przycisk (rozkazy) w obrys jest blokowany także przy widocznym pionku', () => {
+    expect(blokujKlik({ podStropem: true, prawy: true, widocznyPionek: true })).toBe(true);
+    expect(blokujKlik({ podStropem: true, prawy: true, widocznyPionek: false })).toBe(true);
+  });
+});
+
+describe('wybór piętra (przyjmijPietro)', () => {
+  const lista = [0, 1, 2, 3];
+  const o = (docelowe: number, rest: Partial<Parameters<typeof przyjmijPietro>[0]> = {}) => ({
+    lista,
+    obecne: 1,
+    docelowe,
+    stawianie: false,
+    ...rest,
+  });
+
+  it('przyjmuje inne piętro z listy', () => {
+    expect(przyjmijPietro(o(2))).toBe(true);
+    expect(przyjmijPietro(o(0))).toBe(true);
+  });
+
+  it('odrzuca to samo piętro i piętro spoza listy', () => {
+    expect(przyjmijPietro(o(1))).toBe(false);
+    expect(przyjmijPietro(o(7))).toBe(false);
+    expect(przyjmijPietro(o(1, { lista: [0] }))).toBe(false);
+  });
+
+  it('odrzuca każdy wybór w trakcie stawiania budowli, także powrót na parter', () => {
+    expect(przyjmijPietro(o(2, { stawianie: true }))).toBe(false);
+    expect(przyjmijPietro(o(0, { stawianie: true }))).toBe(false);
   });
 });
 

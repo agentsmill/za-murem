@@ -36,11 +36,23 @@ export function chunkiParteru(sc: Pick<ChunkScene, 'w' | 'chunks' | 'section'>):
   return out;
 }
 
+/** Widać wnętrza parteru: przekrój (cutOn) na parterze. Bez alokacji, bo widok pyta o to dla każdego pionka, rzeczy
+    i zwłok w każdej klatce. */
+export function wnetrzaParteru(cutOn: boolean, L: number): boolean {
+  return cutOn && L === 0;
+}
+
+/** Widać przekrój piętra od pierwszego (cutOn: zbliżenie nad sceną z wnętrzem). Bez alokacji, jak wnetrzaParteru. */
+export function przekrojPietra(cutOn: boolean, L: number): boolean {
+  return cutOn && L >= 1;
+}
+
 /**
  * Co pokazuje widok przy przekroju (cutOn: zbliżenie nad sceną z wnętrzem) i wybranym piętrze L:
  * wnetrza — widać osoby, meble, światła i plany we wnętrzach parteru (przekrój na parterze);
  * aktywne — przekrój piętra: na mapie rysuje się piętro, a wnętrza parteru zostają schowane jak pod dachem.
+ * Widok w pętli klatki woła wnetrzaParteru i przekrojPietra (bez obiektu pośredniczącego).
  */
 export function widokPietra(cutOn: boolean, L: number): { wnetrza: boolean; aktywne: boolean } {
-  return { wnetrza: cutOn && L === 0, aktywne: cutOn && L >= 1 };
+  return { wnetrza: wnetrzaParteru(cutOn, L), aktywne: przekrojPietra(cutOn, L) };
 }

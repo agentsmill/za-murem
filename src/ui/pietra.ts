@@ -55,6 +55,26 @@ export function nastepnePietro(lista: readonly number[], obecne: number, krok: 1
   return sasiad ?? Math.min(rosnaco[rosnaco.length - 1], Math.max(rosnaco[0], obecne));
 }
 
+/** Czy klik na piętrze od pierwszego trafia w blokadę „pod stropem”. Blokada dotyczy kliknięć w obrys budynku, którego
+    parter jest schowany (`podStropem`): rozkazy (prawy przycisk) i karty (mieszkania, budynku) tam nie działają. Wyjątek:
+    lewy klik w pionek, który widać (`widocznyPionek`; `pick` i `pickResident` na piętrze oddają tylko widocznych), bo
+    pionek przy fasadzie albo przy wejściu siedziby ma głowę ponad kafelkiem budynku i trzeba go móc zaznaczyć. */
+export function blokujKlik(o: { podStropem: boolean; prawy: boolean; widocznyPionek: boolean }): boolean {
+  return o.podStropem && (o.prawy || !o.widocznyPionek);
+}
+
+/** Czy wybór piętra `docelowe` zostaje przyjęty: tylko inne niż obecne, tylko z listy (bez flagi jest tylko parter)
+    i nie w trakcie stawiania budowli (plan stoi na parterze, a przełączenie piętra schowałoby jego widmo; „Postaw”
+    wraca na parter przed rozpoczęciem planu). */
+export function przyjmijPietro(o: {
+  lista: readonly number[];
+  obecne: number;
+  docelowe: number;
+  stawianie: boolean;
+}): boolean {
+  return !o.stawianie && o.docelowe !== o.obecne && o.lista.includes(o.docelowe);
+}
+
 /** Z której strony kafelka rośnie lista pięter. Zwykle kończy się przy jego prawej krawędzi (kafelek jest w pasku po
     prawej), ale gdy pasek się zawinie (polski przy 1440 px), kafelek stoi na początku drugiego wiersza przy lewej
     krawędzi okna i taka lista wystawałaby poza okno: wtedy zaczyna się przy jego lewej krawędzi. Gdy nie mieści się

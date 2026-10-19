@@ -86,7 +86,7 @@ import {
 import { darknessAt, type Light, lightAt } from './light.ts';
 import { LightLayer } from './lightLayer.ts';
 import { LudzieLayer } from './ludzieLayer.ts';
-import { chunkiParteru, chunkiPietra, widokPietra } from './pietroWidok.ts';
+import { chunkiParteru, chunkiPietra, przekrojPietra, wnetrzaParteru } from './pietroWidok.ts';
 import { type DuchPlotu, duchPlotu } from './plotDuch.ts';
 import { PlotLayer } from './plotLayer.ts';
 import { crowdJitter, FeedWatch, type PoseCtx, type PoseView, poseOf } from './poses.ts';
@@ -332,13 +332,13 @@ export class GameView {
 
   /** czy w tej klatce widać przekrój piętra (od pierwszego) zamiast dachu */
   pietroAktywne(): boolean {
-    return widokPietra(this.cutOn, this.pietroNr).aktywne;
+    return przekrojPietra(this.cutOn, this.pietroNr);
   }
 
   /** czy w tej klatce widać wnętrza parteru: przekrój na parterze. Na piętrze osoby, rzeczy i światła we wnętrzach
       siedziby i otwartych sąsiadów są schowane tak jak pod dachem (underRoof). */
   get wnetrza(): boolean {
-    return widokPietra(this.cutOn, this.pietroNr).wnetrza;
+    return wnetrzaParteru(this.cutOn, this.pietroNr);
   }
 
   get width() {
@@ -1206,17 +1206,13 @@ export class GameView {
     }
   }
 
-  /** pionek pod punktem ekranu (tylko rdzeń). Na parterze bez sprawdzania widoczności, jak zawsze; na piętrze od
-      pierwszego wnętrza parteru są schowane (także z daleka, bo rysuje się dach albo strop), więc ukrytego nie da się
-      kliknąć */
+  /** pionek pod punktem ekranu (tylko rdzeń). Bez przekroju piętra bez sprawdzania widoczności, jak zawsze (parter
+      i piętro wybrane, ale oglądane z daleka); gdy widać przekrój piętra od pierwszego, wnętrza parteru są schowane pod
+      stropem albo dachem, więc ukrytego nie da się kliknąć */
   pick(st: SimState, sx: number, sy: number): Pawn | null {
     const [wx, wy] = this.toWorld(sx, sy);
-    return pawnAt(
-      st.pawns,
-      wx / TILE,
-      wy / TILE,
-      (p) => isBoard(p) && (this.pietroNr === 0 || this.wnetrza || !this.underRoof(p.x, p.y)),
-    );
+    const aktywne = this.pietroAktywne();
+    return pawnAt(st.pawns, wx / TILE, wy / TILE, (p) => isBoard(p) && (!aktywne || !this.underRoof(p.x, p.y)));
   }
 
   /** mieszkaniec siedziby pod punktem ekranu: tylko pionki `resident` z osobą z generatora (person ≥ 0), bo tylko
