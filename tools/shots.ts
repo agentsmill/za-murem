@@ -25,6 +25,7 @@ import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
+import { listaShots } from './shots-lista.ts';
 
 const KOD = process.argv.includes('--kod');
 const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
@@ -698,6 +699,9 @@ const SHOTS: Shot[] = [
   // Kwadraty miasta obok domu (etap 1, ?kwadraty=): 3×3 wokół dem, szwy z bliska, narożnik, daleko, mgła „brak danych”, noc,
   // telefon, widok pięter w kwadracie obok, kliknięcie poza domem
   ...kwadratyShots(),
+  // Lista „moich ludzi” (src/ui/lista.ts): układ przy 1440, 1280, 1024 i na telefonie, angielski, tryb zombie, wszystkie
+  // znaczniki stanu, klik i śledzenie kamery, klawisze E i Q, wyprawa, dwanaście osób, przybysze, panel budowy, język
+  ...listaShots(OUT),
   {
     name: 'zombie-dzien',
     query: '',

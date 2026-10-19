@@ -126,6 +126,7 @@ import {
 } from './ui/imiona.ts';
 import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
+import { ListaLudzi } from './ui/lista.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { MapaMiasta, mapaMiastaSheet } from './ui/miasto.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
@@ -159,6 +160,7 @@ import {
   przyjmijPietro,
   SelektorPieter,
 } from './ui/pietra.ts';
+import { Portrety } from './ui/portrety.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
@@ -399,6 +401,47 @@ let hintUntil = 0;
 let powrotyCzekaja: Tx[] = [];
 const modal = new Modal($('modal'), $('sheet'));
 const ctx = new ContextMenu($('ctx'));
+
+/* ---------- lista „moich ludzi” (src/ui/lista.ts): chipy z portretem i znacznikami stanu; klik zaznacza jak klik w pionka
+   na mapie i wiezie kamerę, drugi klik prowadzi ją za osobą; klawisze E i Q przełączają ludzi ---------- */
+const portrety = new Portrety({
+  ludzie: () => {
+    const dane = view.postacieLudzi;
+    const img = view.grafika?.ludzie?.img;
+    return dane && img ? { dane, img } : null;
+  },
+  pionek: (id) => sim?.st.pawns.find((p) => p.id === id),
+  osoby: () => sim?.st.people ?? [],
+});
+const lista = new ListaLudzi({
+  el: $('lista'),
+  wybrani: selected,
+  wybierz: (pawn, dodaj) => {
+    // jak klik w pionka na mapie; Shift dokłada osobę albo ją zdejmuje
+    if (dodaj && selected.has(pawn)) selected.delete(pawn);
+    else {
+      if (!dodaj) selected.clear();
+      selected.add(pawn);
+    }
+    selectedChanged();
+  },
+  pozycja: (id) => {
+    const p = sim?.st.pawns.find((q) => q.id === id);
+    return p && !p.away ? { x: p.x, y: p.y } : null;
+  },
+  kamera: view.cam,
+  przytnij: () => view.clampCam(),
+  kafelek: TILE,
+  przerwijLot: () => {
+    fly = null;
+  },
+  lotTrwa: () => fly !== null,
+  portret: (id) => portrety.url(id),
+  ponizej: () => {
+    const n = $('arrive');
+    return n.hidden ? null : n;
+  },
+});
 
 /** okno, które jest otwarte, do narysowania od nowa po zmianie języka (ustawiają je funkcje otwierające okna) */
 let sheetAgain: (() => void) | null = null;
@@ -739,6 +782,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   aptFocus = -1;
   budFocus = -1;
   residentFocus = -1;
+  lista.reset();
+  portrety.reset();
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
   gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
@@ -1682,6 +1727,7 @@ function frame(now: number, dtMs: number) {
   if (keys.has('KeyA') || keys.has('ArrowLeft')) view.cam.x -= pan;
   if (keys.has('KeyD') || keys.has('ArrowRight')) view.cam.x += pan;
   view.clampCam();
+  lista.krok(dtMs);
   // stały krok symulacji
   const mult = SPEEDS[speed];
   const dt = Math.min(dtMs, 100) / 1000;
@@ -1803,6 +1849,7 @@ function hud(now: number) {
   odswiezPietra();
   alarmButton(st);
   renderGoals(snap);
+  lista.odswiez(snap.people);
   // przyjęci idą zza bramy: komunikat z przyciskiem „Pokaż”, dopóki ktoś jeszcze idzie
   const coming = arriving(st).length;
   $('arrive').hidden = !coming;
@@ -1987,9 +2034,12 @@ function placeMarker() {
   // komunikat o przybyszach stoi pod paskiem (na telefonie pod listą celów): napis, który na niego wchodzi, idzie pod spód
   const notice = $('arrive');
   const n = notice.hidden ? null : notice.getBoundingClientRect();
+  // lista „moich ludzi” stoi w tym samym miejscu pod paskiem: napis idzie pod nią
+  const l = lista.obrys;
   const under = (left: number) => {
     const t = g && left < g.right ? Math.max(bar, g.bottom) : bar;
-    return n && left < n.right && left + markW > n.left ? Math.max(t, n.bottom) : t;
+    const dalej = n && left < n.right && left + markW > n.left ? Math.max(t, n.bottom) : t;
+    return l && left < l.right && left + markW > l.left ? Math.max(dalej, l.bottom) : dalej;
   };
   let top = under(x0);
   // poza ekranem (punkt, w który celuje ogonek): przy krawędzi ze strzałką, napis wyśrodkowany w cx
@@ -3315,6 +3365,9 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyB') openBuild();
   if (e.code === 'KeyM') openMiasto();
+  // lista ludzi: E następna osoba, Q poprzednia (bez Ctrl, Cmd i Alt: to skróty przeglądarki)
+  if ((e.code === 'KeyE' || e.code === 'KeyQ') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey)
+    lista.przelacz(e.code === 'KeyE' ? 1 : -1);
   // widok pięter: PageUp o piętro wyżej, PageDown niżej
   if (pietraGry && (e.code === 'PageUp' || e.code === 'PageDown')) {
     e.preventDefault();
