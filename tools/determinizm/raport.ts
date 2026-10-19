@@ -32,3 +32,14 @@ export function miejscaZeStosu(stos: string, korzen: string, ile = 3): string[] 
   }
   return wynik;
 }
+
+/** Tabela tekstowa: kolumny wyrównane do najdłuższej komórki, dwie spacje odstępu, bez spacji na końcu wierszy. */
+export function tabelaLinie(wiersze: string[][]): string[] {
+  const szerokosci = wiersze[0].map((_, i) => Math.max(...wiersze.map((w) => [...(w[i] ?? '')].length)));
+  return wiersze.map((w) =>
+    w
+      .map((c, i) => c.padEnd(szerokosci[i]))
+      .join('  ')
+      .trimEnd(),
+  );
+}

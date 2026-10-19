@@ -44,6 +44,8 @@ export interface DanePrzebiegu {
   tryb: 'zwykly' | 'zombie';
   /** ulica z geokodera (nazwa siedziby), jak w demach: public/demo/<klucz>.json */
   street?: string;
+  /** tłum obcych pionków za siatką, tylko do pomiarów (tools/pojemnosc.ts, jak ?perf=N w grze); domyślnie 0 */
+  tlum?: number;
 }
 
 export interface HakiPrzebiegu {
@@ -119,7 +121,7 @@ function przeszukaj(sim: Sim, swiat: World): boolean {
 export function graj(d: DanePrzebiegu, haki: HakiPrzebiegu = {}): WynikGry {
   haki.krok?.(-1);
   const swiat = buildWorld(d.geo, { seed: d.seed, street: d.street });
-  const st = createSim(swiat, d.seed, { core: 4, mode: d.tryb, obcy: true });
+  const st = createSim(swiat, d.seed, { core: 4, mode: d.tryb, obcy: true, ...(d.tlum ? { crowd: d.tlum } : {}) });
   const sim = new Sim(swiat, st);
   const gov = newGov(d.seed, d.tryb);
   const skroty: string[] = [];

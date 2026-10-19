@@ -38,6 +38,15 @@ describe('przebieg gry do porównań silników', () => {
     expect(modeOf(graj({ geo, seed: 12345, godziny: 1, tryb: 'zombie' }).sim.st)).toBe('zombie');
   });
 
+  it('tłum do pomiarów dokłada pionki za siatką, a bez niego skróty zostają takie same', () => {
+    const bez = graj({ geo, seed: 5, godziny: 1, tryb: 'zwykly' });
+    const zero = graj({ geo, seed: 5, godziny: 1, tryb: 'zwykly', tlum: 0 });
+    expect(zero.skroty).toEqual(bez.skroty);
+    const tlum = graj({ geo, seed: 5, godziny: 1, tryb: 'zwykly', tlum: 50 });
+    expect(tlum.sim.st.pawns.length).toBeGreaterThan(bez.sim.st.pawns.length + 40);
+    expect(tlum.skroty).not.toEqual(bez.skroty);
+  });
+
   it('hak krok widzi najpierw budowę świata (krok −1), potem każdy krok symulacji raz i po kolei, a wynik się nie zmienia', () => {
     const bez = przebieg({ geo, seed: 5, godziny: 2, tryb: 'zwykly' });
     const kroki: number[] = [];

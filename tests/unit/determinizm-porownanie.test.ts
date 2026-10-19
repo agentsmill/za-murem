@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BRAK_SKROTU, porownaj, roznicaTablic } from '../../tools/determinizm/porownanie.ts';
-import { kodWyjscia, miejscaZeStosu } from '../../tools/determinizm/raport.ts';
+import { kodWyjscia, miejscaZeStosu, tabelaLinie } from '../../tools/determinizm/raport.ts';
 
 describe('porównanie skrótów z różnych silników', () => {
   it('porownaj znajduje pierwszą rozbieżną godzinę', () => {
@@ -82,5 +82,18 @@ describe('różnica dwóch tablic kafelków', () => {
   it('tablica krótsza od drugiej: brakujące miejsca liczą się jako różnice', () => {
     expect(roznicaTablic([1, 2], [1, 2, 3, 4]).roznych).toBe(2);
     expect(roznicaTablic([], [])).toEqual({ roznych: 0, przyklady: [] });
+  });
+});
+
+describe('tabela tekstowa', () => {
+  it('wyrównuje kolumny do najdłuższej komórki (polskie litery liczą się jako jeden znak) i obcina spacje na końcu', () => {
+    expect(
+      tabelaLinie([
+        ['silnik', 'wersja', 'czas'],
+        ['węzeł', '25.2', '1 s'],
+        ['jsc', '', ''],
+      ]),
+    ).toEqual(['silnik  wersja  czas', 'węzeł   25.2    1 s', 'jsc']);
+    expect(tabelaLinie([['a']])).toEqual(['a']);
   });
 });

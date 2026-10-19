@@ -44,7 +44,7 @@ import {
   zakodujWywolania,
 } from './determinizm/nagrywanie.ts';
 import { porownaj, roznicaTablic } from './determinizm/porownanie.ts';
-import { kodWyjscia, miejscaZeStosu } from './determinizm/raport.ts';
+import { kodWyjscia, miejscaZeStosu, tabelaLinie } from './determinizm/raport.ts';
 import type { Bieg, WynikNogi } from './determinizm/uruchom.ts';
 import { doParametrow, GODZINY_DOMYSLNE, SEED_DOMYSLNE, type Tryb, type Zlecenie } from './determinizm/zlecenie.ts';
 
@@ -394,15 +394,6 @@ if (psujSilnik) console.error(`  samotest: noga ${psujSilnik} zwiększa każdy w
 // ---------------------------------------------------------------------------------------------------------------------
 // raport
 
-function tabelaLinie(wiersze: string[][]): string[] {
-  const szer = wiersze[0].map((_, i) => Math.max(...wiersze.map((w) => [...(w[i] ?? '')].length)));
-  return wiersze.map((w) =>
-    w
-      .map((c, i) => c.padEnd(szer[i]))
-      .join('  ')
-      .trimEnd(),
-  );
-}
 const tabela = (wiersze: string[][]) => {
   for (const l of tabelaLinie(wiersze)) console.log(l);
 };
