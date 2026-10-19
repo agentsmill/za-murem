@@ -12,9 +12,10 @@
    „Wyjście za siatkę bez polecenia” liczy się w krokach co sekundę przy ekranie: osoba z zarządu stoi poza naszym
    terenem (`Sim.naszTerenKafelek`), a jej zajęcie nie jest poleceniem gracza (`job.order === false`) i ma cel poza naszym
    terenem. Ma być 0, bo przełącznik „może wychodzić za siatkę” nikomu nie jest włączony. Osobno, w nawiasie, kroki
-   „ulicą”: osoba bez polecenia idzie ulicą do celu na naszym terenie (w trybie zwykłym za dnia wolno przejść chodnikiem
-   między klatkami siedziby i budynkami za wspólnym płotem); to nie jest wyjście za siatkę. I kroki „walką”: wartownik
-   z karty nocy goni szwendacza za siatką (zajęcie `fight`), czyli obrona, a nie praca z automatu.
+   „ulicą”: zajęcie bez polecenia, w którym osoba stoi poza naszym terenem, a cel leży na naszym; to nie jest wyjście
+   za siatkę. W dobie 2 jest po jednym takim kroku w większości przebiegów, ten sam krok jest w bazie bez automatu, więc
+   to artefakt klasyfikatora, a nie robota automatu; przyczyny nie ustalono (dziennik, wpis o pracy ludzi). I kroki
+   „walką”: wartownik z karty nocy goni szwendacza za siatką (zajęcie `fight`), czyli obrona, a nie praca z automatu.
    Łaty: załatane dziury od początku gry; „auto” to dziury, które załatał zarząd sam (zajęcie `patch` bez polecenia
    w poprzedniej sekundzie), „inne” to łaty z wydarzeń zarządu („Załatać przed nocą”), w trybie zombie też przy starcie.
    Z flagą --przelacznik każdy z zarządu ma od początku włączone „może wychodzić za siatkę” (do porównania, ile daje

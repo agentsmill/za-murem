@@ -92,6 +92,7 @@ Badania (integrator, punkt 2): kolumna ukryta, dopóki gałąź `badania` sesji 
 - Gałąź `badania` wystawia w `sim.ts` metodę `startResearch(p): boolean` (wolne miejsce w pracowni, praca `'research'`) i w `src/sim/badania.ts` czyste `badaniaDom(st): Dom | null` (dziedzina bieżącego badania, `null` bez badania) i `badaniaWidoczne(st): boolean` (jest pracownia albo badanie).
 - Kto scala drugi, podpina je w ciało wpisu: `znajdz` to `sim.startResearch(p)`, `umiejetnosc` to `badaniaDom(st)`, `widoczny` to `badaniaWidoczne(st)`. Bez wybranego badania nikt nie siada.
 - Gałąź `badania` ma własną kopię krzywej (`krzywaUmiejetnosci`, od 19.10.2026 `1 + 0,1 · poziom` z `TEMPO_BAZOWE = 1,0`), którą przy scaleniu zastępuje `tempoPoziomu` z tego projektu (bez bramki pierwszego dnia, którą ma `tempoPracy`); cechy z 0.3 (pracowity +10%, leniwy −10%, Mistrz Excela +5%) nakłada raz, w badaniach.
+- Podpięte 19.10.2026 przy scaleniu `pelna-gra` b49c11c do `praca-ludzi` (dziennik, „Praca ludzi i werbunek: budowa”, akapit o scaleniu): wpis ma ciało, `krzywaUmiejetnosci` zastąpiona przez `tempoPoziomu`, a `ileZlecen('badania')` to wolne miejsca przy stole pracowni.
 - Tamta gałąź nie rusza `think()`: bez tego projektu zarząd bada tylko na polecenie. Mieszkańcy znający dziedzinę siadają sami przez zaczep w `plan()`, poza tabelą Pracy (decyzja Mateusza przyjęta w tamtej sesji). Wiersza mieszkańca w tabeli tamta sesja nie potrzebuje.
 - Wspólne miejsca w `sim.ts` to dopiski (`JobKind`, unia poleceń, konstruktor z `??=`), w `snapshot.ts` też; przy scaleniu bierze się oba.
 
