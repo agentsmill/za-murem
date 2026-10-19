@@ -11840,6 +11840,82 @@ function pracaShots(): Shot[] {
     },
   };
 
+  /** Panel otwarty przyciskiem „Praca” (główna droga, a na telefonie jedyna): klik myszą nie zostawia fokusu na przycisku,
+      więc spacja pauzuje grę (a nie przełącza panelu), także po kliknięciu komórki i bez niego; 1–4 ustawiają tempo,
+      priorytet stoi. Z klawiatury (Enter na przycisku) fokus zostaje na przycisku. Tab spoza panelu (Shift+Tab z
+      przycisku zoomu, który stoi za panelem) wchodzi na ostatnią komórkę, a przebudowa DOM przed jakimkolwiek klawiszem
+      w panelu nie zabiera jej fokusu. */
+  const panelFokusPrzycisk: Shot = {
+    name: 'praca-panel-fokus-przycisk',
+    query: '',
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=1&cam=hq,1.3`);
+      await waitIdle(page);
+      await dopelnij(page, 4);
+      const tempo = () => page.evaluate(() => window.zm!.speed());
+      const otwarty = () => page.evaluate(() => window.zm!.pracaPanel().open);
+      const aktywny = () =>
+        page.evaluate(() => {
+          const f = document.activeElement;
+          return f && f !== document.body ? `${f.tagName}#${f.id}${f.getAttribute('data-prio') ?? ''}` : 'body';
+        });
+      if ((await tempo()) !== 1) throw new Error(`gra nie idzie na 1×: tempo ${await tempo()}`);
+      await page.click('#btnPraca');
+      await page.waitForSelector('#pracaPanel [data-prio]');
+      await page.waitForTimeout(300);
+      console.log(`  po kliknięciu „Praca”: fokus ${await aktywny()}, panel ${await otwarty()}`);
+      if ((await aktywny()) === 'BUTTON#btnPraca')
+        throw new Error('przycisk „Praca” zachował fokus po kliknięciu myszą');
+      // spacja zaraz po otwarciu pauzuje grę, panel zostaje otwarty
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 0 || !(await otwarty()))
+        throw new Error(`spacja po otwarciu przyciskiem: tempo ${await tempo()}, panel ${await otwarty()}`);
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 1) throw new Error('druga spacja nie wznowiła gry');
+      // klik komórki, spacja: pauza, panel otwarty, priorytet bez zmian; 2 ustawia tempo
+      const przed = await cyfra(page, 0, 'ogien');
+      await page.click('#pracaPanel [data-prio="0:ogien"]');
+      const po = await cyfra(page, 0, 'ogien');
+      if (przed !== '1' || po !== '2') throw new Error(`klik nie przestawił priorytetu: ${przed} → ${po}`);
+      console.log(`  po kliknięciu komórki: fokus ${await aktywny()}`);
+      await page.keyboard.press('Space');
+      if ((await tempo()) !== 0) throw new Error(`spacja po otwarciu przyciskiem i kliknięciu: tempo ${await tempo()}`);
+      if (!(await otwarty())) throw new Error('spacja zamknęła panel Pracy (kliknęła przycisk „Praca”)');
+      if ((await cyfra(page, 0, 'ogien')) !== '2') throw new Error('spacja zmieniła priorytet komórki');
+      await page.keyboard.press('Space');
+      await page.keyboard.press('2');
+      if ((await tempo()) !== 2) throw new Error(`2 po otwarciu przyciskiem nie ustawiło tempa: ${await tempo()}`);
+      if ((await cyfra(page, 0, 'ogien')) !== '2') throw new Error('2 ustawiło priorytet komórki');
+      await page.keyboard.press('1');
+
+      // Tab spoza panelu: Shift+Tab z przycisku zoomu (stoi w DOM zaraz za panelem) wchodzi na ostatnią komórkę tabeli
+      await page.focus('#zIn');
+      await page.keyboard.press('Shift+Tab');
+      const weszlo = await aktywny();
+      console.log(`  Shift+Tab z #zIn: fokus ${weszlo}`);
+      if (!/^BUTTON#\d+:/.test(weszlo)) throw new Error(`Shift+Tab nie wszedł na komórkę panelu: ${weszlo}`);
+      // przebudowa przed jakimkolwiek klawiszem w panelu (polecenie progu czeka w kolejce, widok się zmienia)
+      await page.evaluate(() => window.zm!.sim!.push({ t: 'prog', ids: [], co: 'drewno', n: 40 }));
+      await page.waitForTimeout(450);
+      if ((await page.textContent('#pracaPanel [data-wart="drewno"]')) !== '40')
+        throw new Error('panel się nie przebudował, scenariusz nic nie sprawdza');
+      const po2 = await aktywny();
+      console.log(`  po przebudowie: fokus ${po2}`);
+      if (po2 !== weszlo) throw new Error(`przebudowa zabrała fokus wprowadzony Tabem: ${weszlo} → ${po2}`);
+
+      // z klawiatury: Enter na przycisku „Praca” otwiera panel i zostawia fokus na przycisku
+      await page.keyboard.press('Escape');
+      if (await otwarty()) throw new Error('Esc nie zamknął panelu');
+      await page.focus('#btnPraca');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('#pracaPanel [data-prio]');
+      console.log(`  Enter na przycisku: fokus ${await aktywny()}, panel ${await otwarty()}`);
+      if (!(await otwarty()) || (await aktywny()) !== 'BUTTON#btnPraca')
+        throw new Error('Enter na przycisku nie otworzył panelu albo zabrał mu fokus');
+      await page.waitForTimeout(150);
+    },
+  };
+
   /** panel Pracy na telefonie 390×844 z dwunastoma osobami: arkusz od dołu na całą szerokość, kolumny po 30 px (tu
       osiem, badań jeszcze nie ma), nagłówek przyklejony, przewijanie w pionie, bez przewijania w bok */
   const panelTelefon = (name: string, lang: 'pl' | 'en'): Shot => ({
@@ -11974,6 +12050,9 @@ function pracaShots(): Shot[] {
       await waitIdle(page);
       await dopelnij(page, 6);
       await otworz(page, true);
+      // stuknięcie w „Praca” nie zostawia fokusu na przycisku
+      if (await page.evaluate(() => document.activeElement?.id === 'btnPraca'))
+        throw new Error('przycisk „Praca” zachował fokus po stuknięciu');
       await page.tap('#pracaPanel [data-zasiatke="1"]');
       await page.waitForTimeout(200);
       const g = await page.evaluate(() => {
@@ -12341,6 +12420,7 @@ function pracaShots(): Shot[] {
     panel('en-praca-panel', 'en'),
     panelZombie,
     panelFokus,
+    panelFokusPrzycisk,
     panelTelefon('praca-panel-telefon', 'pl'),
     panelTelefon('en-praca-panel-telefon', 'en'),
     panelTelefonZombie('praca-panel-telefon-zombie', 'pl'),

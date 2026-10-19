@@ -9,12 +9,15 @@
    do main.ts (`sim.push`), a widok z haka `widok` ma na sobie jeszcze czekające polecenia, więc zmiana jest widać od
    razu także na pauzie.
 
-   Fokus i klawisze gry. Mysz i dotyk nie zostawiają fokusu w panelu: `mousedown` na przycisku nie bierze go od strony,
-   a ten, który go miał, go traci, więc po kliknięciu spacja nadal pauzuje, a 1–4 ustawiają tempo (przycisk w fokusie
-   przejąłby spację jako klik, a komórka cyfry jako priorytet). Fokus jest tylko przy obsłudze z klawiatury (Tab,
-   strzałki): wtedy cyfry 0–4 na komórce ustawiają priorytet wprost, strzałki chodzą po tabeli, spacja i Enter
-   zmieniają o jeden, a przebudowa DOM oddaje fokus temu samemu elementowi. Tę regułę opisuje lead w praca.ts.
-   Bez PixiJS. */
+   Fokus i klawisze gry. Mysz i dotyk nie zostawiają fokusu w panelu ani przy przycisku, którym go otwarto: `mousedown`
+   w panelu nie daje fokusu przyciskowi (klik i tak dojdzie), a każdy element, który go miał (komórka, ale też
+   #btnPraca po kliknięciu „Praca”), go traci, więc po kliknięciu spacja nadal pauzuje, a 1–4 ustawiają tempo
+   (przycisk w fokusie przejąłby spację jako klik, a komórka cyfry jako priorytet; main.ts zostawia spację przyciskom).
+   Fokus jest tylko przy obsłudze z klawiatury (Tab, strzałki): wtedy cyfry 0–4 na komórce ustawiają priorytet wprost,
+   strzałki chodzą po tabeli, spacja i Enter zmieniają o jeden, a przebudowa DOM oddaje fokus temu samemu elementowi.
+   O tym, czy ostatnia obsługa była z klawiatury, decyduje ostatnie zdarzenie na całej stronie (klawisz albo wskaźnik,
+   nasłuch w fazie przechwytywania), więc Tab spoza panelu też liczy się jako klawiatura. Tę regułę opisuje lead
+   w praca.ts. Bez PixiJS. */
 
 import { L } from '../core/jezyk.ts';
 import { PROG_MAX, type Priorytet, type Progi, RODZAJE, type RodzajPracy } from '../sim/praca.ts';
@@ -48,8 +51,8 @@ export class PracaPanel {
   private kol: RodzajPracy | null = null;
   private view: WidokPracy | null = null;
   private key = '';
-  /** ostatnia obsługa w panelu poszła z klawiatury (Tab, strzałki, cyfry): tylko wtedy fokus przeżywa przebudowę;
-      klik myszą albo stuknięcie zdejmują go i zerują flagę */
+  /** ostatnie zdarzenie wejścia na stronie było klawiszem (też Tab spoza panelu): tylko wtedy fokus w panelu przeżywa
+      przebudowę; wskaźnik (mysz, dotyk, pióro) zdejmuje fokus i zeruje flagę */
   private klawiatura = false;
   private readonly el: HTMLElement;
   private readonly app: HTMLElement;
@@ -65,8 +68,23 @@ export class PracaPanel {
       '<header class="bp-head"><b class="bp-kicker"></b><button type="button" class="bp-x" data-act="praca-close">✕</button></header><div class="bp-body"></div>';
     this.kicker = el.querySelector<HTMLElement>('.bp-kicker')!;
     this.body = el.querySelector<HTMLElement>('.bp-body')!;
+    // rodzaj ostatniego wejścia: nasłuch na oknie w fazie przechwytywania, przed obsługą w panelu i w main.ts
+    window.addEventListener(
+      'keydown',
+      () => {
+        this.klawiatura = true;
+      },
+      true,
+    );
+    window.addEventListener(
+      'pointerdown',
+      () => {
+        this.klawiatura = false;
+      },
+      true,
+    );
     el.addEventListener('mousedown', (e) => {
-      // przycisk nie bierze fokusu od myszy (klik i tak dojdzie), a poprzedni fokus w panelu znika
+      // przycisk nie bierze fokusu od myszy (klik i tak dojdzie), a poprzedni fokus znika, także poza panelem
       if ((e.target as HTMLElement).closest('button')) e.preventDefault();
       this.zdejmijFokus();
     });
@@ -126,11 +144,12 @@ export class PracaPanel {
     this.render(v, en);
   }
 
-  /** po obsłudze myszą albo dotykiem w panelu nie zostaje fokus (patrz nagłówek pliku) */
+  /** po obsłudze myszą albo dotykiem w panelu nie zostaje fokus nigdzie: ani w panelu, ani na przycisku „Praca”, którym go
+      otwarto (patrz nagłówek pliku) */
   private zdejmijFokus(): void {
     this.klawiatura = false;
     const f = document.activeElement;
-    if (f instanceof HTMLElement && this.el.contains(f)) f.blur();
+    if (f instanceof HTMLElement && f !== document.body) f.blur();
   }
 
   /** przebudowuje DOM; po obsłudze z klawiatury fokus wraca na ten sam element (po atrybucie), po myszy nie wraca
@@ -214,7 +233,6 @@ export class PracaPanel {
       strzałki chodzą po komórkach; obsłużone nie idą do gry (cyfry zmieniałyby tempo, strzałki przesuwały mapę).
       Spacja i Enter na komórce to zwykły klik przycisku (main.ts zostawia je przyciskom), czyli o jeden dalej. */
   private keys(e: KeyboardEvent): void {
-    this.klawiatura = true;
     const t = e.target as HTMLElement;
     const cell = t.closest<HTMLElement>('[data-prio]');
     if (!cell) return;
