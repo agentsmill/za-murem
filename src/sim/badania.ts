@@ -203,11 +203,13 @@ export function nazwaEry(nr: number): Tx {
 
 /** punkty postępu na godzinę gry dla mnożnika 1 (osoba bez umiejętności daje równo tyle, każdy poziom umiejętności
     dokłada 10%). Wartość z bota z badaniami (tools/bot-badania.ts, 19.10.2026, zadanie 11 planu, przebiegi z mieszkańcami
-    z adresu): przy 1,0 pierwsza technologia była gotowa w dobie po pracowni tylko w 9 z 14 przebiegów (64%), bo jedna
-    osoba zarządu siada za dnia na 13 godzin (7:00–20:00), a najtańsza technologia ma 12 punktów; przy 1,1 w 12–13 z 15
-    (80–87%). Do zimy (dzień 11) 4–6 technologii wychodzi na większości ziaren (10 z 15) tylko w świecie z głodem, czyli
-    z botem jak zwykle; bez głodu jest ich średnio 6,9 i do przedziału wpada 7 z 15. Zależy to od demo: Przymorze
-    (lokatorzy z fachami do badań) bada szybciej, Zielonki (bez lokatorów z osobą) wolniej. Tabele: docs/POSTEP.md. */
+    z adresu): przy 1,0 pierwsza technologia była gotowa w dobie po pracowni tylko w 9 z 14 przebiegów, bo jedna osoba
+    zarządu siada za dnia na 13 godzin (7:00–20:00), a najtańsza technologia ma 12 punktów; przy 1,1 w 11 z 14 (obie próby
+    z głodem i przy pracowni za 16 desek; bez głodu 10 z 14 i 12 z 14), a po obniżeniu pracowni do 14 desek przy 1,1 w
+    12 z 15 (bez głodu 13 z 15). Do zimy (dzień 11) 4–6 technologii wychodzi na większości ziaren (10 z 15) tylko w
+    świecie z głodem, czyli z botem jak zwykle; bez głodu jest ich średnio 6,9 i do przedziału wpada 7 z 15. Zależy to
+    od demo: Przymorze (lokatorzy z fachami do badań) bada szybciej, Zielonki (bez lokatorów z osobą) wolniej. Tabele:
+    docs/POSTEP.md. */
 export const TEMPO_BAZOWE = 1.1;
 
 /** mnożnik tempa pracy według poziomu umiejętności: bez umiejętności dzisiejsze tempo, umiejętność tylko przyspiesza
