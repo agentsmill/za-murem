@@ -69,6 +69,8 @@ import {
   ARGUMENTY,
   BADANIA,
   bezBadan,
+  bezMiasta,
+  bezZwyciestwa,
   ludnoscDema,
   MIASTO,
   MIESZKANCY,
@@ -81,8 +83,11 @@ import {
 
 tylkoZombie('bot', BADANIA);
 bezBadan('bot', true);
-// --badania: sam pomiar tempa badań, bez reszty bota (pierwszy argument to ziarno, drugi liczba dni)
+// --badania: sam pomiar tempa badań, bez reszty bota (pierwszy argument to ziarno, drugi liczba dni); --miasto
+// i --zwyciestwo należą do reszty bota, więc razem z pomiarem kończą się błędem zamiast cicho przepaść
 if (BADANIA) {
+  bezMiasta('bot -- --badania');
+  bezZwyciestwa('bot -- --badania');
   const ziarno = Number(ARGUMENTY[0]);
   await pomiarBadan(ziarno ? [ziarno] : [1, 2, 3, 4, 5], Number(ARGUMENTY[1]) || 21);
   process.exit(0);

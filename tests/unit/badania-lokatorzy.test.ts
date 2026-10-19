@@ -308,6 +308,29 @@ describe('badania: lokator z wiedzą w pracowni', () => {
     expect(biegnij(sim, 4000).weszli.size).toBe(0);
   });
 
+  it('zmiana badania na dziedzinę, w której lokator nic nie umie, podnosi go od stołu (a z wiedzą w nowej zostaje)', () => {
+    const bez = nowa({ osoby: [{ uprawa: 1 }, null, null, null, null] });
+    doStolu(bez.sim, bez.lok[0]);
+    const prog = bez.st.research!.prog.t_konserwy;
+    bez.sim.push({ t: 'research', ids: [], tech: 't_okna' });
+    bez.sim.step();
+    expect(bez.st.research!.cur).toBe('t_okna');
+    // budowa 1: osoba lokatora jej nie zna, więc przy stole nie zostaje, choć jest dopiero 10:00
+    bez.sim.step();
+    expect(maPrace(bez.st)).toEqual([]);
+    expect(biegnij(bez.sim, 2000).siadali.size).toBe(0);
+    expect(bez.st.research!.prog.t_okna ?? 0).toBe(0);
+    expect(bez.st.research!.prog.t_konserwy).toBe(prog);
+
+    // ten sam krok z lokatorem, który zna też budowę: zostaje i bada nowe
+    const z = nowa({ osoby: [{ uprawa: 1, bud: 1 }, null, null, null, null] });
+    doStolu(z.sim, z.lok[0]);
+    z.sim.push({ t: 'research', ids: [], tech: 't_okna' });
+    krokow(z.sim, 10);
+    expect(siedzi(z.lok[0])).toBe(true);
+    expect(z.st.research!.prog.t_okna).toBeGreaterThan(0);
+  });
+
   it('koniec badania podnosi lokatora od stołu, a następnej dziedziny bez wiedzy nie podejmuje', () => {
     const { st, sim, lok } = nowa({ osoby: [{ uprawa: 1 }, null, null, null, null] });
     doStolu(sim, lok[0]);

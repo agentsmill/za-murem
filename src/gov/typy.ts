@@ -124,6 +124,7 @@ export interface GovInput {
   night: boolean;
   outdoor: number;
   kitchen: number | null;
+  /** pali się koza zarządu albo któreś z nowych palenisk naszych mieszkań (koza z beczki, kocioł) */
   kozaLit: boolean;
   people: GovPerson[];
   stock: GovStock;

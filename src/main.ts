@@ -82,7 +82,15 @@ import { NAPISY } from './sim/surowce.ts';
 import { type GameMode, modeOf, parseMode } from './sim/tryb.ts';
 import { TUT_STEPS } from './sim/tutorial.ts';
 import { NAPISY as OBCY, wiescEn } from './sim/wedrowcy.ts';
-import { czyOtworzycSama, odkrycieSheet, skalaPlanszy, tablicaHtml, usiadaPodpowiedz } from './ui/badania.ts';
+import {
+  czyOtworzycSama,
+  czyPokazacOdkrycie,
+  napadTrwa,
+  odkrycieSheet,
+  skalaPlanszy,
+  tablicaHtml,
+  usiadaPodpowiedz,
+} from './ui/badania.ts';
 import {
   allowedAnchors,
   availableOf,
@@ -1398,7 +1406,7 @@ function watchBadania(now: number) {
   if (cur !== null) badaniaByla = false;
   if (!lab || cur !== null || badaniaByla || badaniaOtwarta() || modal.open || now - badaniaT < 250) return;
   badaniaT = now;
-  const napad = (!!st.raid && st.raid.phase < 3) || st.pawns.some((p) => p.kind === 'zombie' && p.job?.phase === 2);
+  const napad = napadTrwa(st);
   // otwarty panel budowy też czeka: samo otwarcie tablicy go zamykało (openBadania), a gracz właśnie z niego wybiera
   const oknoCzeka = placing !== null || buildPanel.open || !gov || !!gov.over || pending(gov, input()) !== null;
   if (
@@ -1456,13 +1464,22 @@ function zapamietajOdkrycia() {
 }
 
 /** Nowe ukończone badanie: karta „Odkrycie” z pauzą, w kolejce okien jak spotkanie z sąsiadami (czeka, aż zamknie się
-    inne okno albo tablica). Karta zastępuje samo otwarcie tablicy po tym badaniu (przycisk „Następne badanie”). */
+    inne okno albo tablica, i aż skończy się napad oraz „Do broni!”). Karta zastępuje samo otwarcie tablicy po tym
+    badaniu (przycisk „Następne badanie”). */
 function watchOdkrycia() {
   if (!sim?.st.research) return;
   const nowe = odkrycia(sim.st).find((o) => o.tick > odkrycieSeen);
   if (!nowe) return;
   badaniaByla = true;
-  if (modal.open || badaniaOtwarta()) return;
+  // czeka na inne okno albo tablicę, a także na koniec napadu i „Do broni!”, tak jak samo otwarcie tablicy
+  if (
+    !czyPokazacOdkrycie({
+      oknoOtwarte: modal.open || badaniaOtwarta(),
+      napad: napadTrwa(sim.st),
+      alarm: alarmOn(sim.st),
+    })
+  )
+    return;
   odkrycieSeen = nowe.tick;
   showOdkrycie(nowe.id);
 }

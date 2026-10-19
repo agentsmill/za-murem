@@ -189,6 +189,12 @@ export function kosztTech(id: string): number {
   return w.cost * KOSZT_ERY[w.era];
 }
 
+/** Punkty badania w tekście dla gracza: koszt w górę, postęp w dół (koszt bywa ułamkiem przez mnożnik ery), żeby nigdzie
+    nie wyszło „25 / 25” przed końcem. Tablica (src/ui/badania.ts) i opis pracy osoby przy stole (src/sim/orders.ts)
+    liczą punkty tą jedną parą, więc ta sama technologia ma wszędzie ten sam koszt (33, a nie raz 33, raz 32,5). */
+export const kosztDoPokazania = (koszt: number): number => Math.ceil(koszt);
+export const postepDoPokazania = (postep: number): number => Math.floor(postep);
+
 /** nazwa technologii w obu językach */
 export function nazwaTech(id: string): Tx {
   return tx(wpis(id).name, NAZWY_TECH_EN[id]);
@@ -204,12 +210,17 @@ export function nazwaEry(nr: number): Tx {
 /** punkty postępu na godzinę gry dla mnożnika 1 (osoba bez umiejętności daje równo tyle, każdy poziom umiejętności
     dokłada 10%). Wartość z bota z badaniami (tools/bot-badania.ts, 19.10.2026, zadanie 11 planu, przebiegi z mieszkańcami
     z adresu): przy 1,0 pierwsza technologia była gotowa w dobie po pracowni tylko w 9 z 14 przebiegów, bo jedna osoba
-    zarządu siada za dnia na 13 godzin (7:00–20:00), a najtańsza technologia ma 12 punktów; przy 1,1 w 11 z 14 (obie próby
-    z głodem i przy pracowni za 16 desek; bez głodu 10 z 14 i 12 z 14), a po obniżeniu pracowni do 14 desek przy 1,1 w
-    12 z 15 (bez głodu 13 z 15). Do zimy (dzień 11) 4–6 technologii wychodzi na większości ziaren (10 z 15) tylko w
-    świecie z głodem, czyli z botem jak zwykle; bez głodu jest ich średnio 6,9 i do przedziału wpada 7 z 15. Zależy to
-    od demo: Przymorze (lokatorzy z fachami do badań) bada szybciej, Zielonki (bez lokatorów z osobą) wolniej. Tabele:
-    docs/POSTEP.md. */
+    zarządu siedzi przy stole tylko za dnia (bot daje polecenie od 7:00 do 20:00, a osoba siedzi do końca badania, do
+    pilnej potrzeby albo do nocy o 22:00, kiedy wstaje także z polecenia), a najtańsza technologia ma 12 punktów; przy
+    1,1 w 11 z 14 (obie próby z głodem i przy pracowni za 16 desek; bez głodu 10 z 14 i 12 z 14), po obniżeniu pracowni
+    do 14 desek w 12 z 15 (bez głodu 13 z 15), tyle samo po poprawce nocy. Do zimy (dzień 11) 4–6 technologii wychodzi
+    na większości ziaren tylko w świecie z głodem, czyli z botem jak zwykle (10 z 15 przed poprawką nocy, 8 z 15 po niej;
+    na ziarnach 6–10 10 z 15 w obu); bez głodu jest ich średnio 6,5–6,9 i do przedziału wpada 7–8 z 15. Zależy to od demo:
+    Przymorze (lokatorzy z fachami do badań) bada szybciej, Zielonki (bez lokatorów z osobą) wolniej. Poprawka nocy
+    obniżyła tempo o około 3% (godziny zarządu przy stole 78 → 76 z głodem i 199 → 193 bez, średnio z 30 przebiegów) i nie
+    zmieniła średniej liczby technologii w dniu 11 (5,3 z głodem, 6,7 → 6,5 bez głodu). Wartości 1,15 i 1,2 sprawdzone
+    na tych 30 przebiegach: udział 4–6 z głodem zostaje 18 z 30 (przed poprawką 20 z 30), a bez głodu spada (11 i 8 z 30
+    wobec 16 przy 1,1), bo Przymorze jest już za szybkie, więc zostaje 1,1. Tabele: docs/POSTEP.md. */
 export const TEMPO_BAZOWE = 1.1;
 
 /** mnożnik tempa pracy według poziomu umiejętności: bez umiejętności dzisiejsze tempo, umiejętność tylko przyspiesza

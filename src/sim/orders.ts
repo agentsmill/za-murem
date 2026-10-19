@@ -15,8 +15,10 @@ import {
   BRAK_MIEJSCA,
   kartka,
   koncowaZbadana,
+  kosztDoPokazania,
   kosztTech,
   nazwaTech,
+  postepDoPokazania,
   siecWlaczona,
   TECH_BY,
   wolneMiejsca,
@@ -870,8 +872,8 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       if (walking) return L('Idzie do pracowni.', 'Heading to the research room.');
       const cur = st.research?.cur;
       if (!cur || !Object.hasOwn(TECH_BY, cur)) return L('Siedzi przy stole.', 'Sitting at the desk.');
-      // koszt bywa ułamkiem (mnożnik ery), więc z jednym miejscem po przecinku, w bieżącym języku
-      const postep = `${Math.floor(st.research?.prog[cur] ?? 0)} / ${liczba(kosztTech(cur), 1, jezyk())}`;
+      // te same punkty co na tablicy: postęp w dół, koszt w górę (koszt bywa ułamkiem przez mnożnik ery)
+      const postep = `${liczba(postepDoPokazania(st.research?.prog[cur] ?? 0), 0, jezyk())} / ${liczba(kosztDoPokazania(kosztTech(cur)), 0, jezyk())}`;
       const nazwa = nazwaTech(cur);
       return L(`Bada: ${nazwa.pl} (${postep})`, `Researching: ${nazwa.en} (${postep})`);
     }

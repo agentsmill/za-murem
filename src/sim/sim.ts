@@ -2107,7 +2107,7 @@ export class Sim {
     if (h) {
       const fires = this.fires();
       this.boost = heatBoost(this.kinds, this.links, fires, this.outdoor());
-      this.light = roomLight(this.kinds.length, this.links, fires);
+      this.light = roomLight(this.kinds.length, this.links, this.lightRooms());
     }
   }
 
@@ -5381,13 +5381,14 @@ export class Sim {
 
   /** Osoba siada do badania: idzie do wolnego miejsca przy stole pracowni (dwa miejsca, każde dla jednej osoby;
       zajęcie pamięta praca, a nie rzecz, bo `Thing.by` mieści jednego). false, gdy nic nie wybrano, badanie stoi
-      bez wiedzy, nie ma pracowni, miejsc brak albo nie da się dojść. order: z polecenia gracza, więc noc pracy nie
-      przerywa. Woła ją też praca ludzi i plan dnia lokatorów. */
+      bez wiedzy, nie ma pracowni, jest noc (po dojściu i tak by wstała: `researchWork`), miejsc brak albo nie da się
+      dojść. order: z polecenia gracza, więc nie ustępuje wrogowi na podwórku, ale pilna potrzeba i noc ją przerywają.
+      Woła ją też praca ludzi i plan dnia lokatorów. */
   startResearch(p: Pawn, order = false): boolean {
     const st = this.st;
     const cur = this.researchTech();
     const desk = this.pracownia();
-    if (!cur || !desk || p.away || kartka(st, cur, modeOf(st)).stan !== 'w_toku') return false;
+    if (!cur || !desk || p.away || this.night() || kartka(st, cur, modeOf(st)).stan !== 'w_toku') return false;
     if (wolneMiejsca(st.pawns, desk.id, [p.id]) < 1) return false;
     const stand = this.beside(p, desk);
     if (stand < 0 || this.taken(p).includes(stand) || !this.go(p, stand)) return false;
@@ -5395,13 +5396,16 @@ export class Sim {
     return true;
   }
 
-  /** praca przy stole: faza 0 dojście i siadanie, faza 1 siedzi (postęp liczy researchTick po kroku). Kończy się, gdy
-      stołu albo wyboru nie ma. */
+  /** Praca przy stole: faza 0 dojście i siadanie, faza 1 siedzi (postęp liczy researchTick po kroku). Kończy się, gdy
+      stołu albo wyboru nie ma i z nastaniem nocy, także praca z polecenia (projekt, „Kto bada”): osoba idzie spać,
+      a rano nie wraca sama, polecenie trzeba dać od nowa. Mieszkaniec wstaje ponadto po swoich godzinach na podwórku
+      i wtedy, gdy zmienione badanie jest z dziedziny, w której jego osoba nic nie umie (zarząd bada też bez
+      umiejętności, mieszkaniec tylko z nią, `labSkill`). */
   private researchWork(p: Pawn, j: Job, at: boolean): boolean {
     const desk = this.thing(j.target);
-    if (desk?.kind !== 'pracownia' || !this.researchTech()) return false;
-    // mieszkaniec bada w swoich godzinach na podwórku, potem wstaje (zarząd siedzi, dopóki mu się nie każe wstać)
-    if (p.kind === 'resident' && !this.residentDay()) return false;
+    const dom = badaniaDom(this.st);
+    if (desk?.kind !== 'pracownia' || dom === null || this.night()) return false;
+    if (p.kind === 'resident' && (!this.residentDay() || !this.labSkill(p, dom))) return false;
     if (j.phase === 1) return true;
     if (!at) return false;
     j.phase = 1;
@@ -7779,8 +7783,9 @@ export class Sim {
     if (!this.house) return;
     const st = this.st;
     const tout = this.outdoor();
-    // pali się to, co paliło się na początku kroku; kocioł zjada tyle ognia, ile wynosi jego waga
+    // pali się to, co paliło się na początku kroku (ciepło i światło); kocioł zjada tyle ognia, ile wynosi jego waga
     const fires = this.fires();
+    const lights = this.lightRooms();
     for (const t of st.things)
       if ((Object.hasOwn(PALENISKA, t.kind) || t.kind === 'ognisko') && t.fuel > 0)
         t.fuel = Math.max(0, t.fuel - HEAT_EVERY * wagaPaleniska(t.kind));
@@ -7804,7 +7809,7 @@ export class Sim {
         t.fuel = 0;
         this.plon(t);
       }
-    this.light = roomLight(this.kinds.length, this.links, fires);
+    this.light = roomLight(this.kinds.length, this.links, lights);
     const hours = HEAT_EVERY / TICKS_PER_HOUR;
     const night = this.nightAround();
     for (const p of st.pawns) {
@@ -7823,8 +7828,8 @@ export class Sim {
     this.tutCheck();
   }
 
-  /** pomieszczenia z palącą się kozą albo kozą z beczki, a przy palącym się kotle wszystkie pomieszczenia naszych
-      mieszkań (kocioł na klatce grzeje je naraz) */
+  /** pomieszczenia, które grzeją palące się paleniska: z kozą albo kozą z beczki, a przy palącym się kotle wszystkie
+      pomieszczenia naszych mieszkań (kocioł na klatce grzeje je naraz). Światło to osobna lista (`lightRooms`). */
   private fires(): number[] {
     const h = this.house!;
     const out: number[] = [];
@@ -7839,6 +7844,20 @@ export class Sim {
     if (kociol) {
       const ours = this.ourApts();
       for (const r of h.rooms) if (r.apt >= 0 && ours.has(r.apt) && !out.includes(r.id)) out.push(r.id);
+    }
+    return out;
+  }
+
+  /** Pomieszczenia, w których świeci palące się palenisko: tylko to, w którym stoi (koza, koza z beczki, kocioł),
+      a nie wszystkie, które grzeje (`fires`): kocioł rozgrzewa nasze mieszkania, ale świeci w swojej klatce albo
+      przedpokoju, więc nocą nie świecą od niego wszystkie okna. */
+  private lightRooms(): number[] {
+    const h = this.house!;
+    const out: number[] = [];
+    for (const t of this.st.things) {
+      if (t.fuel <= 0 || !Object.hasOwn(PALENISKA, t.kind)) continue;
+      const r = h.room[t.y * this.w.size + t.x];
+      if (r >= 0 && !out.includes(r)) out.push(r);
     }
     return out;
   }

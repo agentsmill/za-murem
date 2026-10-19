@@ -74,19 +74,22 @@ export function armOf(weapon: WeaponId | null, ammo: Partial<Record<AmmoKey, num
 /** tick dla minuty gry liczonej od północy pierwszego dnia (jak RaidPlan.at i GovEffects.away) */
 export const tickOfMinute = (m: number): number => Math.round(((m - START_MINUTES) * TICKS_PER_HOUR) / 60);
 
-/** ile palenisk pali drewno nocą, gdy stoją kozy z beczek albo kocioł: koza zarządu 1 plus wagi nowych (kocioł 3); 0,
-    gdy nowych nie ma, wtedy karta liczy jedną kozę po staremu */
-function paleniska(st: SimState): number {
+/** ile palenisk pali drewno nocą, gdy stoją kozy z beczek albo kocioł: koza zarządu 1 (jeśli stoi w jego mieszkaniu)
+    plus wagi nowych (kocioł 3); 0, gdy nowych nie ma, wtedy karta liczy jedną kozę po staremu */
+function paleniska(st: SimState, w: World): number {
   let nowe = 0;
   for (const t of st.things) if (t.kind === 'koza_beczka' || t.kind === 'kociol') nowe += PALENISKA[t.kind];
-  return nowe > 0 ? 1 + nowe : 0;
+  if (nowe === 0) return 0;
+  const h = houseOf(w);
+  const koza = h !== null && st.things.some((t) => t.kind === 'koza' && inHomeApt(h, t.y * w.size + t.x));
+  return (koza ? 1 : 0) + nowe;
 }
 
 /** Odczyt dla zarządu: snapshot w kształcie GovInput. screen: sekundy przy ekranie od startu gry bez pauzy
     (przy 1× to tick / 20; liczy je pętla gry, bo symulacja nie wie o tempie). */
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
   const s = snapshot(st, w);
-  const palenisk = paleniska(st);
+  const palenisk = paleniska(st, w);
   const wieza = st.things.find((t) => t.kind === 'wieza');
   const zombie = modeOf(st) === 'zombie';
   // zbadane technologie z drzewka (identyfikatory spoza niego, np. testowe, kronika pomija) z opisem w obu językach

@@ -35,6 +35,8 @@ export function statsOf(
   const spare = k.woodSklad + k.woodLoose + k.woodCarried;
   const ppl = Math.max(1, s.people.length);
   const kit = s.kitchen;
+  // pasek mówi o samej kozie zarządu (godziny jej ognia), a `kozaLit` obejmuje też nowe paleniska
+  const kozaPali = k.fireHours > 0;
   // dyżur przy kozie (posterunek 'koza' z karty nocy albo z menu kozy)
   const watch = s.people.filter((p) => p.post === 'koza').map((p) => p.name);
   const trust = gov ? Math.round(gov.trust) : null;
@@ -92,16 +94,16 @@ export function statsOf(
         kit === null
           ? L('Siedziba nie ma kuchni z kozą', 'HQ has no kitchen with a stove')
           : L(
-              `W kuchni ${words.zarzad.dk} ${deg(kit)}${s.kozaLit ? `, koza pali się jeszcze ${num(k.fireHours)} h` : ', koza zimna'}`,
-              `${wielka(e.krotko)}’s kitchen: ${deg(kit)}${s.kozaLit ? `, the stove has ${num(k.fireHours)} h of fire left` : ', the stove is cold'}`,
+              `W kuchni ${words.zarzad.dk} ${deg(kit)}${kozaPali ? `, koza pali się jeszcze ${num(k.fireHours)} h` : ', koza zimna'}`,
+              `${wielka(e.krotko)}’s kitchen: ${deg(kit)}${kozaPali ? `, the stove has ${num(k.fireHours)} h of fire left` : ', the stove is cold'}`,
             ),
     },
     {
       id: 'sFire',
-      value: s.kozaLit ? `${num(k.fireHours)} h` : L('zimna', 'cold'),
-      level: !s.kozaLit ? (kit !== null && kit < WARM_ENOUGH ? 'bad' : 'mid') : k.fireHours < 0.5 ? 'mid' : 'ok',
+      value: kozaPali ? `${num(k.fireHours)} h` : L('zimna', 'cold'),
+      level: !kozaPali ? (kit !== null && kit < WARM_ENOUGH ? 'bad' : 'mid') : k.fireHours < 0.5 ? 'mid' : 'ok',
       title: `${
-        s.kozaLit
+        kozaPali
           ? L(
               `Ognia w kozie na ${num(k.fireHours)} h. ${words.Zarzad} sam dokłada, póki jest drewno.`,
               `Fire in the stove for ${num(k.fireHours)} h. ${e.Zarzad} keeps feeding it while there is wood.`,

@@ -119,7 +119,8 @@ describe('bot z badaniami: kolejka budowli', () => {
 
 describe('tempo badań: wartości z pomiaru bota z badaniami', () => {
   // Wartości dobrał pomiar tools/bot-badania.ts z 19.10.2026 (npm run bot -- --badania [--mieszkancy] [--jedzenie]
-  // --demo=NAZWA, ziarna 1–5, Przymorze, Lanciego i Zielonki; tabele w docs/POSTEP.md, wpis o badaniach).
+  // --demo=NAZWA, ziarna 1–5, Przymorze, Lanciego i Zielonki; tabele w docs/POSTEP.md, wpis o badaniach). Po poprawce
+  // nocy (zarząd z polecenia wstaje od stołu o 22:00) pomiar powtórzony na ziarnach 1–10 i z 1,15 oraz 1,2: zostaje 1,1.
   // Zmiana któregokolwiek pociąga za sobą nowy pomiar: ten test ma ją zatrzymać na przeglądzie.
   it('TEMPO_BAZOWE 1,1 i mnożniki ery 1–2 równe 1 i 1,3', () => {
     expect(TEMPO_BAZOWE).toBe(1.1);
@@ -127,7 +128,7 @@ describe('tempo badań: wartości z pomiaru bota z badaniami', () => {
     expect(KOSZT_ERY[2]).toBe(1.3);
   });
 
-  it('najtańsza technologia robi się w mniej niż 13 godzin jednej osoby bez umiejętności (dzienne okno bota 7:00–20:00)', () => {
+  it('najtańsza technologia robi się w mniej niż 13 godzin jednej osoby bez umiejętności (okno polecenia bota 7:00–20:00)', () => {
     const godziny = kosztTech('t_okna') / tempoOsoby({ skills: {}, traits: [] }, 'bud');
     expect(godziny).toBeCloseTo(12 / 1.1, 10);
     expect(godziny).toBeLessThan(13);

@@ -9,9 +9,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
+import { govInput } from '../../src/sim/gov.ts';
 import { commandFor, commandsAt, jobText, refuelFeedback } from '../../src/sim/orders.ts';
 import { BURN_TICKS, createSim, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
+import { statsOf } from '../../src/ui/pasek.ts';
 import { buildWorld } from '../../src/world/world.ts';
 
 const d = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
@@ -198,14 +200,51 @@ describe('snapshot().stock.wood: drewno w ogniu wszystkich palenisk', () => {
     expect(drewno(st)).toBe(2 + 5 + 2);
   });
 
-  it('same nowe paleniska bez kozy zarządu też się liczą, a zapasy z fireHours dalej tylko kozy zarządu', () => {
+  it('same nowe paleniska bez kozy zarządu też się liczą, a godziny ognia (fireHours) dalej tylko kozy zarządu', () => {
     const { st, x0, y0 } = stan(false);
     st.things = st.things.filter((t) => t.kind !== 'koza');
     postaw(st, 'koza_beczka', x0 + 6, y0 + 4, { fuel: BURN_TICKS });
     const s = snapshot(st, w);
     expect(s.stock.wood).toBe(1);
     expect(s.stock.fireHours).toBe(0);
-    expect(s.kozaLit).toBe(false);
+    // ale kuchnia jest ogrzana: dla karty nocy i raportu rano pali się, choć koza zarządu nie
+    expect(s.kozaLit).toBe(true);
+  });
+
+  it('kozaLit jest prawdą, gdy pali się którekolwiek palenisko: koza zarządu, koza z beczki albo kocioł', () => {
+    const { st, x0, y0 } = stan(false);
+    const koza = st.things.find((t) => t.kind === 'koza')!;
+    koza.fuel = 0;
+    expect(snapshot(st, w).kozaLit).toBe(false);
+    const beczka = postaw(st, 'koza_beczka', x0 + 6, y0 + 4, { fuel: 0 });
+    const kociol = postaw(st, 'kociol', x0 + 8, y0 + 4, { fuel: 0 });
+    // zimne nowe paleniska nie zmieniają nic
+    expect(snapshot(st, w).kozaLit).toBe(false);
+    beczka.fuel = 1;
+    expect(snapshot(st, w).kozaLit).toBe(true);
+    beczka.fuel = 0;
+    kociol.fuel = 1;
+    expect(snapshot(st, w).kozaLit).toBe(true);
+    kociol.fuel = 0;
+    koza.fuel = 1;
+    expect(snapshot(st, w).kozaLit).toBe(true);
+    // gra z samą kozą zarządu: dokładnie jak dawniej (ogień > 0)
+    st.things = st.things.filter((t) => t.kind !== 'koza_beczka' && t.kind !== 'kociol');
+    expect(snapshot(st, w).kozaLit).toBe(true);
+    koza.fuel = 0;
+    expect(snapshot(st, w).kozaLit).toBe(false);
+  });
+
+  it('govInput i karta nocy widzą palący się kocioł jako ogrzaną kuchnię (kozaLit), a pasek mówi dalej o samej kozie', () => {
+    const { st, x0, y0 } = stan(false);
+    st.things.find((t) => t.kind === 'koza')!.fuel = 0;
+    postaw(st, 'kociol', x0 + 8, y0 + 4, { fuel: 3 * BURN_TICKS });
+    const s = snapshot(st, w);
+    expect(s.kozaLit).toBe(true);
+    expect(govInput(st, w, 0).kozaLit).toBe(true);
+    const sFire = statsOf(s, null).find((x) => x.id === 'sFire')!;
+    expect(sFire.value).toBe('zimna');
+    expect(sFire.title).toContain('Koza zimna');
   });
 
   it('gra bez nowych palenisk: to samo drewno co dawniej (ogień kozy zarządu w górę)', () => {
