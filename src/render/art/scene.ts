@@ -39,8 +39,8 @@ export interface BStyle {
   mod?: boolean;
 }
 
-/** budynek w zakresie, którego potrzebuje rysowanie kawałków */
-export type ArtBuilding = Pick<WorldBuilding, 'id' | 'cls' | 'x0' | 'y0' | 'x1' | 'y1' | 'entrances'>;
+/** budynek w zakresie, którego potrzebuje rysowanie kawałków (`levels` bez limitu stylu: do wyboru pięter) */
+export type ArtBuilding = Pick<WorldBuilding, 'id' | 'cls' | 'x0' | 'y0' | 'x1' | 'y1' | 'entrances' | 'levels'>;
 
 /** to, czego potrzebuje rysowanie kawałków: bez reszty świata, więc da się to wysłać do workera */
 export interface ChunkScene {
@@ -84,7 +84,16 @@ export function chunkSceneOf(sc: Scene): ChunkScene {
       terr,
       bid,
       trees,
-      buildings: buildings.map(({ id, cls, x0, y0, x1, y1, entrances }) => ({ id, cls, x0, y0, x1, y1, entrances })),
+      buildings: buildings.map(({ id, cls, x0, y0, x1, y1, entrances, levels }) => ({
+        id,
+        cls,
+        x0,
+        y0,
+        x1,
+        y1,
+        entrances,
+        levels,
+      })),
     },
     south: sc.south,
     run: sc.run,

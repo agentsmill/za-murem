@@ -12,14 +12,15 @@ function dolozObrys(out: Set<number>, b: ChunkScene['w']['buildings'][number], n
 
 /**
  * Kawałki mapy z przekrojem piętra L (od 1): każdy kawałek, który dotyka obrysu jakiegokolwiek budynku o więcej niż
- * L kondygnacjach, bo tylko w takim budynku piętro L w ogóle istnieje. Numer kawałka to cy * sc.chunks + cx, jak
- * w slotach widoku. Dla L poniżej 1 zbiór jest pusty: parter ma przekrój tylko w siedzibie i jej otwartych
- * sąsiadach (chunkiParteru).
+ * L kondygnacjach, bo tylko w takim budynku piętro L w ogóle istnieje. Liczy się `levels` budynku, a nie z jego stylu:
+ * styl tnie je do 16 (wysokość fasady), a lista pięter sięga do `levels` − 1 (17 kondygnacji na Przymorzu to piętro
+ * 16). Numer kawałka to cy * sc.chunks + cx, jak w slotach widoku. Dla L poniżej 1 zbiór jest pusty: parter ma
+ * przekrój tylko w siedzibie i jej otwartych sąsiadach (chunkiParteru).
  */
-export function chunkiPietra(sc: Pick<ChunkScene, 'w' | 'styles' | 'chunks'>, L: number): Set<number> {
+export function chunkiPietra(sc: Pick<ChunkScene, 'w' | 'chunks'>, L: number): Set<number> {
   const out = new Set<number>();
   if (L < 1) return out;
-  for (const b of sc.w.buildings) if (sc.styles[b.id].levels > L) dolozObrys(out, b, sc.chunks);
+  for (const b of sc.w.buildings) if (b.levels > L) dolozObrys(out, b, sc.chunks);
   return out;
 }
 

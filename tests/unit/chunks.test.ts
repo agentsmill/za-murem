@@ -105,7 +105,8 @@ describe('dane sceny dla workera', () => {
   it('niosą tylko to, czego potrzebuje rysowanie (bez siatek symulacji, nazw i tagów)', () => {
     const cs = chunkSceneOf(przymorze());
     expect(Object.keys(cs.w).sort()).toEqual(['bid', 'buildings', 'size', 'terr', 'trees']);
-    expect(Object.keys(cs.w.buildings[0]).sort()).toEqual(['cls', 'entrances', 'id', 'x0', 'x1', 'y0', 'y1']);
+    // levels idzie dla widoku pięter (wybór budynków z piętrem L), bo styl tnie je do 16
+    expect(Object.keys(cs.w.buildings[0]).sort()).toEqual(['cls', 'entrances', 'id', 'levels', 'x0', 'x1', 'y0', 'y1']);
   });
 });
 

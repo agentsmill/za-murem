@@ -450,7 +450,8 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
   const step = TILE / s;
   const off = step >> 1;
   // tryb piętra (przekrój, sc.pietro od 1 i scena piętra): zamiast wnętrza siedziby typowe piętro mapy, ale tylko
-  // w budynkach o więcej niż sc.pietro kondygnacjach; niższe rysują się jak bez przekroju, czyli dachem
+  // w budynkach o więcej niż sc.pietro kondygnacjach (levels budynku, bo styl tnie je do 16); niższe rysują się jak
+  // bez przekroju, czyli dachem
   const pietro = cut && sc.pietro >= 1 && sc.pietra ? sc.pietro : 0;
   const sec = pietro ? sc.pietra : cut ? sc.section : null;
   // scena piętra nie ma jednego budynku (building −1): elewację każdego kafelka bierze jego budynek
@@ -475,7 +476,7 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
       // na nich ślady pustego mieszkania i uszkodzenia posadzki (szkody.ts)
       // fasada z budynku kafelka: w przekroju są też otwarte sąsiednie budynki (M2 fala 2)
       const inner: InteriorTile | null =
-        sec && sec.cell[i] !== IN.NONE && (!pietro || (st !== null && st.levels > pietro))
+        sec && sec.cell[i] !== IN.NONE && (!pietro || (bid >= 0 && w.buildings[bid].levels > pietro))
           ? describeTile(sec, i, size, bid >= 0 ? sc.styles[bid].wall : facade)
           : null;
       const dmg = inner ? sec!.damage?.get(i) : undefined;
@@ -568,7 +569,7 @@ export function drawChunk(sc: ChunkScene, cx: number, cy: number, s: number, can
     // otwarty w przekroju: bez maszynowni, kominów i anten (daszki nad wejściami zostają); na piętrze tylko budynki,
     // które mają to piętro, niższe zostają z dachem
     const open =
-      sec !== null && (b.id === sec.building || (!!sec.otwarte?.has(b.id) && (!pietro || st.levels > pietro)));
+      sec !== null && (b.id === sec.building || (!!sec.otwarte?.has(b.id) && (!pietro || b.levels > pietro)));
     // bloki z modułów PixelLab mają dach z samej papy z naklejkami, bez maszynowni, kominów i anten z kodu
     if (!open && b.cls === 'blok' && st.levels >= 5 && !st.mod) {
       for (const e of b.entrances) {

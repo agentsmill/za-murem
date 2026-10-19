@@ -80,6 +80,20 @@ describe('kawałki z przekrojem piętra (chunkiPietra)', () => {
     expect(chunkiPietra(sc, 0).size).toBe(0);
     expect(chunkiPietra(sc, -1).size).toBe(0);
   });
+
+  it('budynek wyższy niż limit stylu fasady (17 kondygnacji na Przymorzu) ma przekrój na ostatnim piętrze z listy', () => {
+    // styleOf tnie levels do 16 (wysokość fasady), a lista pięter sięga do levels - 1, czyli do piętra 16
+    const w = demoSwiat('przymorze', false);
+    const sc = buildScene(w);
+    const b = w.buildings.find((q) => q.levels > 16)!;
+    expect(b.levels).toBe(17);
+    expect(sc.styles[b.id].levels).toBe(16);
+    const zbior = chunkiPietra(sc, 16);
+    expect(zbior.size).toBeGreaterThan(0);
+    for (const k of kawalkiBudynku(sc, b.id)) expect(zbior.has(k)).toBe(true);
+    // nad najwyższym budynkiem nic: piętra 17 nie ma
+    expect(chunkiPietra(sc, 17).size).toBe(0);
+  });
 });
 
 describe('kawałki z przekrojem parteru (chunkiParteru)', () => {

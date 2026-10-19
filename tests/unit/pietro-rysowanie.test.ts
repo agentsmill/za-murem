@@ -457,6 +457,24 @@ describe('kawałek w trybie piętra: budynki niższe niż piętro', () => {
   });
 });
 
+describe('kawałek w trybie piętra: budynek wyższy niż limit stylu fasady', () => {
+  it('17 kondygnacji na Przymorzu: piętro 16 ma wnętrze zamiast dachu, jak każde piętro z listy', () => {
+    // styleOf tnie levels do 16 (wysokość fasady), a lista pięter sięga do levels - 1, czyli do piętra 16
+    const w = demoSwiat('przymorze', false);
+    const b = w.buildings.find((q) => q.levels > 16)!;
+    const pietra = sectionPietra(w)!;
+    const bazowa = buildScene(w);
+    expect(bazowa.styles[b.id].levels).toBe(16);
+    const k: Kawalek = [Math.floor(b.x0 / CHUNK), Math.floor((b.y0 + b.y1) / 2 / CHUNK)];
+    const a = obraz({ ...bazowa, pietro: 16, pietra, art: null }, k, true);
+    const bez = obraz({ ...bazowa, pietro: 0, pietra: null, art: null }, k, false);
+    let inne = 0;
+    for (const { x, y, i } of kafelkiKawalka(k, w.size))
+      if (w.bid[i] === b.id && pietra.cell[i] !== IN.NONE && !takiSam(a, bez, k, x, y)) inne++;
+    expect(inne).toBeGreaterThan(50);
+  });
+});
+
 describe('detale dachów w trybie piętra', () => {
   it('kominy domów znikają tylko tam, gdzie dom ma to piętro: trzy kondygnacje na 2, dach na 3', () => {
     const sc = scenaGry();
