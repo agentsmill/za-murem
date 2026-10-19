@@ -10,10 +10,13 @@
    ZM_CIASTECZKO_SECURE 0: ciasteczko bez Secure (lokalnie po http); domyślnie 1
    ZM_LIMIT_ZAPISU      największy zapis gry w bajtach (domyślnie 3 MiB)
    ZM_LIMIT_KLATEK      najwięcej klatek na konto (domyślnie 60)
-   ZM_PROMIEN_M         najdalej od siedziby drużyny w metrach (domyślnie 600) */
+   ZM_PROMIEN_M         najdalej od siedziby drużyny w metrach (domyślnie 600)
+   ZM_RESTART_H         po tylu godzinach serwer kończy się czysto, a Docker (restart: unless-stopped) podnosi go od
+                        nowa na tej samej bazie; brak albo 0: bez restartu planowego (server/restart.ts) */
 
 import { createServer } from 'node:http';
 import { stworzSerwer } from './app.ts';
+import { godzinyRestartu, planujRestart, zamknijPlynnie } from './restart.ts';
 
 const env = process.env;
 const liczba = (v: string | undefined, d: number) => {
@@ -53,21 +56,19 @@ const sprzatanie = setInterval(() => gra.sprzataj(), 60 * 1000);
 sprzatanie.unref();
 
 let konczy = false;
-const zakoncz = (sygnal: string) => {
+const zakoncz = (powod: string) => {
   if (konczy) return;
   konczy = true;
-  console.log(`Za Murem: ${sygnal}, zamykam serwer.`);
+  console.log(`Za Murem: ${powod}, zamykam serwer.`);
   clearInterval(sprzatanie);
-  serwer.close(() => {
-    gra.zamknij();
-    process.exit(0);
-  });
-  // otwarte połączenia keep-alive nie blokują zamknięcia dłużej niż kilka sekund
-  setTimeout(() => {
-    gra.zamknij();
-    process.exit(0);
-  }, 5000).unref();
-  serwer.closeIdleConnections();
+  // żądania w toku mają kilka sekund, połączenia keep-alive nie blokują zamknięcia (server/restart.ts)
+  zamknijPlynnie(serwer, gra, (kod) => process.exit(kod));
 };
 process.on('SIGTERM', () => zakoncz('SIGTERM'));
 process.on('SIGINT', () => zakoncz('SIGINT'));
+
+// restart planowy: odświeża proces, nic nie kasuje (baza zostaje, Docker podnosi serwer od nowa)
+const restart = godzinyRestartu(env.ZM_RESTART_H);
+if (restart.ostrzezenie) console.error(`Za Murem: ${restart.ostrzezenie}`);
+if (restart.godziny !== null && planujRestart(restart.godziny, zakoncz))
+  console.log(`Za Murem: restart planowy za ${restart.godziny} h`);
