@@ -1,6 +1,12 @@
 /* Treść zarządu w M1 „Pierwsza noc za siatką”: uchwały na pierwsze noce (trzy z 0.3, trzy nowe w tym
    samym tonie), nowe wydarzenia wieczoru i nocy, wybór wydarzeń z 0.3 z porą dnia, cele wypraw.
-   Treść 0.3 zostaje w src/content (pilnuje jej test zgodności), tu są tylko dodatki i wybór. */
+   Treść 0.3 zostaje w src/content (pilnuje jej test zgodności), tu są tylko dodatki i wybór.
+   Pula wydarzeń zależy od trybu gry: `tryby` (brak: oba tryby; sprawdza je `fitsMode` w wydarzenia.ts). `slady` to
+   karta zwykłego trybu, `slady_z` jej wariant zombie (łata albo warta z dzidą, bez „udawać”, które podbijałoby napad
+   szabrowników), a `szwendacz` karta tylko trybu zombie o prawdziwym szwendaczu przy siatce (`GovHost.przy` z
+   GovInput.horde.przy; „Dobić dzidą” wysyła atak osoby z dzidą przez `GovHost.atakuj`). `wedrowiec` ma wagę 0 w obu
+   trybach: opisuje człowieka pod bramą, a nikogo tam nie ma. Karta z miejscem na mapie ma `gdzie`, z którego okno
+   wydarzenia robi przycisk „Pokaż”. */
 
 import { LAW, type LawPath } from '../content/data.ts';
 import type { EventHost } from '../content/events.ts';
@@ -240,6 +246,14 @@ export interface GovHost extends EventHost {
   gateClosed(): boolean;
   /** czy ktoś trzyma dziś wartę */
   guarded(): boolean;
+  /** tryb zombie: szwendacz najbliżej siatki (numer pionka i kafelek), nie dalej niż 3 m od niej; null: nikogo
+      przy siatce albo tryb zwykły */
+  przy(): { pawn: number; x: number; y: number } | null;
+  /** osoba z dzidą, która nie śpi i nie jest na wyprawie; z kilku najzdrowsza, przy remisie pierwsza po numerze; null:
+      nikt nie może dobić przez siatkę */
+  zDzida(): GovPerson | null;
+  /** osoba zarządu atakuje pionek (szwendacza): symulacja wstawia polecenie 'attack' */
+  atakuj(id: string, pawn: number): void;
   /** wpis do kroniki: zdanie w obu językach albo polski wpis z 0.3 (angielski daje EVENTS_EN z warianty.en.ts) */
   log(txt: string | Tx, big?: boolean): void;
   /** skutek na rano: zmiana zapasów i linia do raportu */
@@ -278,6 +292,8 @@ export interface GEventDef<D = any> {
   log?: (h: GovHost) => Record<string, string> | null;
   w: (h: GovHost) => number;
   make: (h: GovHost) => D | null;
+  /** miejsce wydarzenia na mapie w kafelkach (przycisk „Pokaż” w oknie); brak funkcji albo null: karta bez miejsca */
+  gdzie?: (h: GovHost, d: D) => { x: number; y: number } | null;
   /** tytuł, tekst i napisy wyborów w obu językach (angielskie z tych samych danych, bez losowania) */
   title: (h: GovHost, d: D) => Tx;
   text: (h: GovHost, d: D) => Tx;
@@ -478,6 +494,58 @@ export const NEW_EVENTS: GEventDef[] = [
             ),
           );
         },
+      },
+    ],
+  },
+  {
+    // prawdziwy szwendacz przy siatce (GovInput.horde.przy): karta ma jego miejsce na mapie („Pokaż”), a „Dobić dzidą”
+    // wysyła na niego osobę z dzidą. Pora dzień, bo noc ma własne karty o stadzie.
+    id: 'szwendacz',
+    gap: 6,
+    when: ['dzien'],
+    tryby: ['zombie'],
+    w: (h) => (h.przy() ? 1.2 : 0),
+    make: (h) => {
+      const p = h.przy();
+      return p ? { pawn: p.pawn, x: p.x, y: p.y } : null;
+    },
+    // gdzie stoi teraz; gdy odszedł od siatki, tam, gdzie go zobaczono
+    gdzie: (h, d) => {
+      const p = h.przy();
+      return p ? { x: p.x, y: p.y } : { x: d.x, y: d.y };
+    },
+    title: () => tx('Szwendacz w siatce', 'A shambler in the fence'),
+    text: () =>
+      tx(
+        'Szwendacz dotarł do siatki i wisi na niej od dłuższej chwili. Szarpie drut, kiwa łbem i nie odchodzi. Dzieci przykleiły się do okien, a wszyscy pytają, kiedy ktoś z tym coś zrobi.',
+        'A shambler has reached the fence and has been hanging off it for a good while. It tugs at the wire, nods its head and will not go away. The children are glued to the windows, and everyone keeps asking when somebody will do something about it.',
+      ),
+    choices: (h, d) => [
+      {
+        label: tx('Dobić dzidą', 'Finish it off with a spear'),
+        ok: !!h.zDzida(),
+        run: () => {
+          const p = h.zDzida();
+          if (!p) return;
+          // ten, który stoi teraz przy siatce, a gdy już odszedł, ten z karty
+          h.atakuj(p.id, h.przy()?.pawn ?? d.pawn);
+          h.log(
+            tx(
+              `${p.name} ${g(p, 'wziął', 'wzięła')} dzidę i ${g(p, 'poszedł', 'poszła')} do siatki.`,
+              `${p.name} took a spear and went over to the fence.`,
+            ),
+          );
+        },
+      },
+      {
+        label: tx('Zostawić, niech wisi', 'Leave it, let it hang there'),
+        ok: true,
+        run: () => h.needsAll({ safe: -3 }),
+      },
+      {
+        label: tx('Zasłonić kocem, żeby dzieci nie patrzyły', 'Hang a blanket so the children can’t see'),
+        ok: true,
+        run: () => h.mood(1, 0),
       },
     ],
   },

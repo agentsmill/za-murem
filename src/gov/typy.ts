@@ -146,8 +146,17 @@ export interface GovInput {
       zarząd bierze osoby z pracą 'guard' za wartę w nieznanym miejscu */
   guards?: { id: string; post: string }[];
   /** tryb zombie: szwendacze przy siatce (do 12 m), napierający, liczniki od początku gry (zabici, przerwania
-      siatki, ugryzienia) i wielkość stada tej nocy */
-  horde?: { near: number; pressing: number; killed: number; breaches: number; bites: number; tonight: number };
+      siatki, ugryzienia) i wielkość stada tej nocy. `przy`: prawdziwy szwendacz najbliżej siatki, nie dalej niż 3 m
+      od jej kafelka (numer pionka i jego kafelek); remis rozstrzyga niższy numer pionka; bez pola: nikogo przy siatce */
+  horde?: {
+    near: number;
+    pressing: number;
+    killed: number;
+    breaches: number;
+    bites: number;
+    tonight: number;
+    przy?: { pawn: number; x: number; y: number };
+  };
   /** zmarli (zarząd z id, mieszkańcy z pustym id) od początku gry, po kolei; lista tylko rośnie */
   dead?: { id: string; name: string; cause: string; tick: number }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
@@ -244,6 +253,10 @@ export interface GovEffects {
   /** znalezione książki (dziedziny), po jednej na sztukę; symulacja kładzie je na półkę osady (dodajKsiazke), trzecią
       z dziedziny zamienia na drewno; tablica powstaje przy pierwszej książce */
   books?: TechDom[];
+  /** osoba zarządu (id z generatora) atakuje pionek o tym numerze, np. szwendacza przy siatce z karty „Szwendacz”;
+      symulacja wstawia polecenie 'attack' (pionka, którego już nie ma, polecenie pomija). Tablica powstaje przy
+      pierwszym ataku */
+  atak?: { id: string; pawn: number }[];
 }
 
 export interface RaidPlan {
@@ -377,7 +390,15 @@ export type Prompt =
   | { k: 'raport'; report: NightReport }
   | { k: 'uchwala'; day: number; first: boolean; options: LawOption[] }
   | { k: 'karta'; card: NightCard; assign: Record<string, string> }
-  | { k: 'wydarzenie'; id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[] };
+  | {
+      k: 'wydarzenie';
+      id: string;
+      title: Tx;
+      text: Tx;
+      choices: { label: Tx; ok: boolean }[];
+      /** miejsce na mapie (kafelki) dla przycisku „Pokaż”; brak: karta nie ma miejsca */
+      gdzie?: { x: number; y: number };
+    };
 
 // ---------------------------------------------------------------- stan
 

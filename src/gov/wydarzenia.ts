@@ -8,6 +8,9 @@
    pierwszej nocy (siatka, obcy, noc), reszta od drugiego dnia.
    Pule według trybu gry: wydarzenie ma opcjonalne `tryby` (brak: oba tryby), `fitsMode` sprawdza je razem z wykluczeniem
    wydarzeń ulicy w trybie zombie; karty o ludziach, których na mapie nie ma, w zombie nie przychodzą.
+   Karta z miejscem na mapie (`GEventDef.gdzie`) oddaje je w oknie wydarzenia (`eventView`, Prompt.gdzie) dla przycisku
+   „Pokaż”; „Szwendacz w siatce” bierze szwendacza z GovInput.horde.przy (`GovHost.przy`) i może wysłać na niego osobę
+   z dzidą (`GovHost.zDzida`, `atakuj` → GovEffects.atak).
    Badania: technologie (`tech`), wiedza (`know`) i książki (`bookCount`, `addBook`) EventHost bierze z GovInput, czyli
    z symulacji, jak tablica badań; nowa książka idzie do skutków (GovEffects.books), a nie do stanu zarządu. */
 
@@ -290,6 +293,14 @@ export function makeHost(
     },
     gateClosed: () => law(st, 'u_brama') && (i.hour >= 20 || i.hour < 6),
     guarded: () => !!st.night?.confirmed && Object.values(st.night.assign).some((k) => k.startsWith('warta:')),
+    przy: () => (i.horde?.przy ? { ...i.horde.przy } : null),
+    zDzida: () =>
+      [...i.people]
+        .filter((p) => !p.asleep && !p.away && !away.has(p.id) && p.arm === 'dzida')
+        .sort((a, b) => b.needs.health - a.needs.health || (a.id < b.id ? -1 : 1))[0] ?? null,
+    atakuj: (id, pawn) => {
+      (fx.atak ??= []).push({ id, pawn });
+    },
     later: (stock, line) => {
       st.later.push({ day: nd, stock: stock as Partial<Record<LootKey, number>>, line });
     },
@@ -390,19 +401,22 @@ function show(st: GovState, i: GovInput, fx: GovEffects, ev: ActiveEvent | null)
   logGov(st, i, def.title(makeHost(st, i, fx), ev.d), false, fx);
 }
 
+/** okno bieżącego wydarzenia; `gdzie` (kafelki) tylko dla kart z miejscem na mapie, z niego przycisk „Pokaż” */
 export function eventView(
   st: GovState,
   i: GovInput,
-): { id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[] } | null {
+): { id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[]; gdzie?: { x: number; y: number } } | null {
   const ev = st.ev.active;
   const def = ev && byId.get(ev.id);
   if (!ev || !def) return null;
   const h = makeHost(st, i, emptyEffects());
+  const gdzie = def.gdzie?.(h, ev.d);
   return {
     id: ev.id,
     title: def.title(h, ev.d),
     text: def.text(h, ev.d),
     choices: def.choices(h, ev.d).map((c) => ({ label: c.label, ok: c.ok })),
+    ...(gdzie ? { gdzie } : {}),
   };
 }
 

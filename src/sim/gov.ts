@@ -15,7 +15,12 @@
    i książki znalezione w przeszukaniach (bookLog) wchodzą jako `odkrycia` i `znaleziska`, z których zarząd pisze
    kronikę (src/gov/znaleziska.ts); bez badań i książek tych pól nie ma. Kozy z beczek i kocioł
    wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA), a stojąca wieża jako `wieza`, liczba jej miejsc
-   (posterunek karty). */
+   (posterunek karty).
+
+   Tryb zombie: `horde.przy` to prawdziwy szwendacz najbliżej siatki (do 3 m od jej kafelka, `szwendaczPrzySiatce`),
+   z którego karta „Szwendacz” bierze miejsce na mapie; liczone na całkowitych kwadratach odległości kafelków, bez
+   Math.hypot, żeby wynik nie zależał od silnika JS. Skutek `atak` (GovEffects.atak) idzie do kolejki poleceń jako
+   'attack' osoby na pionek, jak rozkaz gracza. */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
@@ -85,6 +90,36 @@ function paleniska(st: SimState, w: World): number {
   return (koza ? 1 : 0) + nowe;
 }
 
+/** ile metrów od kafelka siatki szwendacz jeszcze „stoi przy siatce” (karta „Szwendacz”) */
+export const PRZY_SIATCE = 3;
+
+/** Szwendacz najbliżej siatki, nie dalej niż PRZY_SIATCE od jej kafelka: numer pionka i jego kafelek. Odległość to
+    całkowity kwadrat różnicy kafelków (bez Math.hypot); remis rozstrzyga niższy numer pionka; null: nikogo. */
+export function szwendaczPrzySiatce(st: SimState, w: World): { pawn: number; x: number; y: number } | null {
+  const tiles = fenceShape(w)?.tiles;
+  if (!tiles?.length) return null;
+  const size = w.size;
+  let best: { pawn: number; x: number; y: number } | null = null;
+  let bd = PRZY_SIATCE * PRZY_SIATCE;
+  for (const p of st.pawns) {
+    if (p.kind !== 'zombie') continue;
+    const x = Math.floor(p.x);
+    const y = Math.floor(p.y);
+    let d = Number.POSITIVE_INFINITY;
+    for (const t of tiles) {
+      const dx = (t % size) - x;
+      const dy = Math.floor(t / size) - y;
+      const q = dx * dx + dy * dy;
+      if (q < d) d = q;
+    }
+    if (d < bd || (d === bd && (best === null || p.id < best.pawn))) {
+      best = { pawn: p.id, x, y };
+      bd = d;
+    }
+  }
+  return best;
+}
+
 /** Odczyt dla zarządu: snapshot w kształcie GovInput. screen: sekundy przy ekranie od startu gry bez pauzy
     (przy 1× to tick / 20; liczy je pętla gry, bo symulacja nie wie o tempie). */
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
@@ -92,6 +127,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
   const palenisk = paleniska(st, w);
   const wieza = st.things.find((t) => t.kind === 'wieza');
   const zombie = modeOf(st) === 'zombie';
+  const przy = zombie ? szwendaczPrzySiatce(st, w) : null;
   // zbadane technologie z drzewka (identyfikatory spoza niego, np. testowe, kronika pomija) z opisem w obu językach
   const odkryte = odkrycia(st)
     .filter((o) => Object.hasOwn(TECH_BY, o.id))
@@ -142,6 +178,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
             breaches: st.tally?.breaches ?? 0,
             bites: st.tally?.bites ?? 0,
             tonight: hordeSize(dayOf(st.tick)),
+            ...(przy ? { przy } : {}),
           },
         }
       : {}),
@@ -316,6 +353,11 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   if (fx.away.length) cmd({ t: 'away', ids: ids(fx.away.map((a) => a.id)) });
   if (fx.back.length) cmd({ t: 'back', ids: ids(fx.back) });
   for (const g of fx.guards) cmd({ t: 'guard', ids: ids([g.id]), post: g.post });
+  // osoba zarządu bije wskazanego pionka (szwendacza z karty); osoby, której nie ma, polecenie nie dotyczy
+  for (const a of fx.atak ?? []) {
+    const who = ids([a.id]);
+    if (who.length) cmd({ t: 'attack', ids: who, target: a.pawn });
+  }
   for (const id of fx.leave) removeCore(st, id, w);
   // przyjęci przychodzą zza bramy; nikt nie znika, kto nie ma łóżka, śpi na podłodze
   if (fx.residents > 0) addResidents(st, w, fx.residents, true);
