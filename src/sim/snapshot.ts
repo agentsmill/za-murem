@@ -3,7 +3,12 @@
    z generatora mieszkańców (lokatorzy: tylko do kart w interfejsie), zapasy drewna i jedzenia (drewno razem z ogniem
    we wszystkich paleniskach naszych mieszkań), czas, badania dla tablicy korkowej (`tablica`, src/ui/badania.ts;
    `GovInput.badania` to co innego: odczyt dla ramy zwycięstwa). Czysta funkcja stanu i świata. Zwraca świeże obiekty
-   (zwykły JSON), więc zmiany w wyniku nie ruszają symulacji. */
+   (zwykły JSON), więc zmiany w wyniku nie ruszają symulacji.
+   Praca ludzi (src/sim/praca.ts) w odczycie: każda osoba niesie swój indeks w `st.people` (`osoba`, klucz ustawień),
+   znacznik `sam` (zajęcie, które zaczęła bez polecenia gracza) i ustawienia pracy w kolejności `RODZAJE`
+   (priorytety, stałe zajęcie, przełącznik „za siatkę”); cały odczyt ma progi zapasów i rodzaje widoczne w tej grze.
+   `populacja` liczy ludzi pod zarządem (zarząd, także na wyprawie, i mieszkańcy siedziby, bez sąsiadów i gości):
+   z niej bierze `GovInput.ludnosc` droga ludnościowa do zwycięstwa. */
 
 import type { Dom, TechDom } from '../content/data.ts';
 import { TECH_DOMS } from '../content/data.ts';
@@ -39,6 +44,17 @@ import type { AptGame } from './mieszkania.ts';
 import type { Needs } from './needs.ts';
 import { jobText } from './orders.ts';
 import { durability, fenceShape } from './perimeter.ts';
+import {
+  type Priorytet,
+  type Progi,
+  priorytet,
+  progi,
+  RODZAJE,
+  type RodzajPracy,
+  staleZajecie,
+  WPISY,
+  zaSiatke,
+} from './praca.ts';
 import { LUP_MATS, uSasiada } from './sasiedzi.ts';
 import {
   AMPUTATE_WINDOW,
@@ -58,6 +74,8 @@ import { crowdNear } from './zombie.ts';
 export interface SimPerson {
   /** id pionka: do poleceń dla symulacji */
   pawn: number;
+  /** indeks osoby w `st.people`: klucz ustawień pracy ludzi (polecenia `prio`, `stale`, `zasiatke`) */
+  osoba: number;
   /** id osoby z generatora (s1, s2…) */
   id: string;
   name: string;
@@ -79,6 +97,13 @@ export interface SimPerson {
   moods: Mood[];
   /** bieżąca praca albo null, gdy bezczynny */
   job: JobKind | null;
+  /** Zajęcie bez polecenia gracza: osoba ma pracę (`job`) i zaczęła ją sama (`job.order === false`: praca z automatu,
+      a także sen, posiłek i grzanie się). Bezczynny i wykonujący polecenie mają `false`. */
+  sam: boolean;
+  /** Ustawienia pracy ludzi tej osoby (src/sim/praca.ts): priorytety rodzajów w kolejności `RODZAJE` (0 nie robi,
+      1 najważniejszy, 4 najmniej), stałe zajęcie albo null i przełącznik „może wychodzić za siatkę”. Ustawienia
+      przyjmuje tylko zarząd, więc u mieszkańca z osobą to wartości domyślne. */
+  praca: { prio: Priorytet[]; stale: RodzajPracy | null; zaSiatke: boolean };
   /** opis do karty osoby, np. „Rąbie suche drzewo.” */
   doing: string;
   asleep: boolean;
@@ -200,6 +225,9 @@ export interface SimBadania {
 export interface SimSnapshot {
   /** tryb gry */
   mode: GameMode;
+  /** praca ludzi w tej grze: progi zapasów (domyślne z poprawkami gracza; w trybie zombie dzidy domyślnie 12) i rodzaje pracy,
+      które w niej istnieją, w kolejności `RODZAJE` (kolumny panelu; `badania` dopiero, gdy gra ma badania) */
+  praca: { progi: Progi; widoczne: RodzajPracy[] };
   tick: number;
   day: number;
   hour: number;
@@ -307,6 +335,7 @@ function personOf(st: SimState, w: World, p: Pawn, who: Person): SimPerson {
   const tile = Math.floor(p.y) * size + Math.floor(p.x);
   return {
     pawn: p.id,
+    osoba: p.person,
     id: who.id,
     name: who.name,
     first: who.first,
@@ -321,6 +350,12 @@ function personOf(st: SimState, w: World, p: Pawn, who: Person): SimPerson {
     needs: { ...p.needs! },
     moods: p.moods.map((m) => ({ ...m })),
     job: p.job ? p.job.t : null,
+    sam: !!p.job && p.job.order === false,
+    praca: {
+      prio: RODZAJE.map((r) => priorytet(st, p.person, r)),
+      stale: staleZajecie(st, p.person),
+      zaSiatke: zaSiatke(st, p.person),
+    },
     doing: jobText(st, w, p),
     // śpi w łóżku albo przysypia na warcie
     asleep: (p.job?.t === 'sleep' && p.job.phase === 1) || (p.job?.t === 'guard' && p.job.phase === 4),
@@ -342,6 +377,20 @@ function personOf(st: SimState, w: World, p: Pawn, who: Person): SimPerson {
         : null,
     maimed: !!p.maimed,
   };
+}
+
+/** Ludzie pod naszym zarządem: pionki `core` (także na wyprawie za mapą) i `resident` (mieszkańcy siedziby, z osobą
+    z generatora albo bez). Sąsiedzi z okolicznych budynków, szabrownicy, szwendacze, handlarz, wędrowcy, obce ekipy
+    i tłum się nie liczą. Z tego liczby bierze `GovInput.ludnosc` (droga ludnościowa), więc nie ma drugiego sposobu
+    liczenia ludności. Czysty odczyt. */
+export function populacja(st: SimState): { zarzad: number; mieszkancy: number; razem: number } {
+  let zarzad = 0;
+  let mieszkancy = 0;
+  for (const p of st.pawns) {
+    if (p.kind === 'core') zarzad++;
+    else if (p.kind === 'resident') mieszkancy++;
+  }
+  return { zarzad, mieszkancy, razem: zarzad + mieszkancy };
 }
 
 export function snapshot(st: SimState, w: World): SimSnapshot {
@@ -401,8 +450,10 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   );
   const fuel = koza?.fuel ?? 0;
   const hour = hourOf(tick);
+  const ludnosc = populacja(st);
   return {
     mode: modeOf(st),
+    praca: { progi: progi(st), widoczne: RODZAJE.filter((r) => WPISY[r].widoczny(st)) },
     tick,
     day: dayOf(tick),
     hour,
@@ -456,7 +507,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       // warta przy bramie stoi z lampą
       gateLamp: st.pawns.some((p) => !p.away && p.job?.t === 'guard' && p.job.phase === 1 && p.job.target === 0),
     },
-    residents: st.pawns.filter((p) => p.kind === 'resident').length,
+    residents: ludnosc.mieszkancy,
     cap: st.cap,
     strangers: st.pawns.filter((p) => p.kind === 'szabrownik').length,
     zombies: zombieCounts(st, w),

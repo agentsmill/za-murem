@@ -59,6 +59,9 @@ describe('styk M2 i trybu zombie', () => {
     const yard = f.yard.filter((i) => !w.blocked[i]).sort((a, b) => near(a) - near(b));
     heap(st, 'zlom', yard[3], size, 12);
     const core = st.pawns.find((p) => p.kind === 'core')!;
+    // ciepło i jedzenie w porządku: zimny zarząd (koza wygasa) miałby pracę przerywaną pilną potrzebą, a dalej budowałby
+    // sam tylko w pętli „start, przerwanie” (przy szwendaczu bliżej niż 10 m zarząd bez polecenia przy siatce nie buduje)
+    for (const q of st.pawns) if (q.kind === 'core') Object.assign(q.needs!, { warm: 90, food: 90, rest: 90 });
     sim.push({ t: 'build', ids: [core.id], kind: 'zasieki', x: tile % size, y: Math.floor(tile / size), rot: 0 });
     const t0 = st.tick;
     while (st.tick < t0 + 4 * TICKS_PER_HOUR && !st.things.some((t) => t.kind === 'zasieki')) sim.step();
@@ -119,7 +122,14 @@ describe('styk M2 i trybu zombie', () => {
     const { w, st, sim } = play(1, 2, 9);
     const size = w.size;
     const yard = w.fence!.yard;
-    const spot = yard.find((i) => canPlace(st, w, 'ogrodek', i % size, Math.floor(i / size), 0).ok) as number;
+    // plan dalej niż 4 kafelki od siatki: przy siatce zarząd bez polecenia nie buduje, gdy szwendacz jest bliżej niż 10 m
+    const odSiatki = (i: number) =>
+      w.fence!.tiles.every(
+        (t) => Math.max(Math.abs((t % size) - (i % size)), Math.abs(Math.floor(t / size) - Math.floor(i / size))) > 4,
+      );
+    const spot = yard.find(
+      (i) => odSiatki(i) && canPlace(st, w, 'ogrodek', i % size, Math.floor(i / size), 0).ok,
+    ) as number;
     const sx = spot % size;
     const sy = Math.floor(spot / size);
     sim.push({ t: 'build', ids: [], kind: 'ogrodek', x: sx, y: sy, rot: 0 });

@@ -1,7 +1,11 @@
 /* Wieść się niesie (docs/superpowers/specs/2026-10-18-wedrowcy-design.md): napaść zarządu na obcego kosztuje zaufanie
    i wkurzenie osiedla. Symulacja podaje listę napaści (GovInput.napady), a zarząd liczy nowe po napadN, tak jak zgony
    po deadN: raz na napaść, od razu, z linią w kronice. Pole napadN powstaje dopiero przy pierwszej napaści, więc gra
-   bez napaści ma ten sam stan zarządu. Linia do kroniki i raportu w obu językach (Tx), ze słowami miejsca. */
+   bez napaści ma ten sam stan zarządu. Linia do kroniki i raportu w obu językach (Tx), ze słowami miejsca.
+
+   Tak samo zwerbowani wędrowcy (docs/superpowers/specs/2026-10-19-praca-ludzi-design.md, część B): lista
+   GovInput.werbunek, nowe po werbunekN, jedna linia w kronice na osobę (do zarządu albo jako mieszkaniec). Zaufania
+   i wkurzenia werbunek nie rusza. */
 
 import { type Tx, tx } from '../core/jezyk.ts';
 import { BLOK, placeIn, type WordsEn, wordsEn, wordsOf } from './miejsce.ts';
@@ -44,6 +48,29 @@ export function wiesci(st: GovState, i: GovInput, fx: GovEffects): void {
     if (!c) continue;
     mood(st, c.trust, c.anger);
     const line = WIESC[n.kto](s.Zarzad, s.brama.pod, e);
+    if (st.night?.confirmed) st.night.lines.push(line);
+    logGov(st, i, line, true, fx);
+  }
+}
+
+/** linia do kroniki o zwerbowanym wędrowcu: do zarządu (słowa miejsca) albo jako mieszkaniec */
+export const WERBUNEK = {
+  zarzad: (first: string, s: { dk: string }, e: WordsEn): Tx =>
+    tx(`Z ulicy do ${s.dk} dołącza ${first}.`, `${first} joins ${e.krotko} from the street.`),
+  mieszkaniec: (first: string, f: boolean): Tx =>
+    tx(`${first} zamieszka u nas jako ${f ? 'mieszkanka' : 'mieszkaniec'}.`, `${first} is moving in as a resident.`),
+};
+
+/** nowo zwerbowani z wejścia: po jednej linii w kronice i raporcie nocy, bez wpływu na zaufanie */
+export function przyjeciaZUlicy(st: GovState, i: GovInput, fx: GovEffects): void {
+  const all = i.werbunek ?? [];
+  const from = st.werbunekN ?? 0;
+  if (all.length <= from) return;
+  st.werbunekN = all.length;
+  const s = wordsOf(placeIn(i));
+  const e = wordsEn(placeIn(i));
+  for (const n of all.slice(from)) {
+    const line = n.dokad === 'zarzad' ? WERBUNEK.zarzad(n.first, s.zarzad, e) : WERBUNEK.mieszkaniec(n.first, n.f);
     if (st.night?.confirmed) st.night.lines.push(line);
     logGov(st, i, line, true, fx);
   }

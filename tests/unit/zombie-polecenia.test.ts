@@ -186,8 +186,10 @@ describe('A. polecenie gracza przeżywa walkę odruchową', () => {
     }, 2500);
     expect(s.st.felled.includes(DRZEWO)).toBe(true);
     expect(weszla).toBe(false);
-    // skończona praca kończy polecenie (zwykłe done), nic się już nie wznowi
-    s.az(() => !s.a.job, 200);
+    // skończona praca kończy polecenie (zwykłe done), nic się już nie wznowi; ścięcie na polecenie za siatką kończy się
+    // wniesieniem całego drewna z tego drzewa przez tę samą osobę (praca ludzi), więc polecenie trwa do ostatniego kursu
+    s.az(() => !s.a.job, 4000);
+    expect(s.a.job).toBeNull();
     expect(s.a.polecenie).toBeUndefined();
   });
 
