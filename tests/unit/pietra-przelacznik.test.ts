@@ -10,7 +10,7 @@ import { IN, sectionOf } from '../../src/render/section.ts';
 import { GameView } from '../../src/render/view.ts';
 import type { Pawn, SimState } from '../../src/sim/sim.ts';
 import { STATYCZNE } from '../../src/ui/jezyk.ts';
-import { nastepnePietro, podpowiedz, pozycjeListy } from '../../src/ui/pietra.ts';
+import { nastepnePietro, podpowiedz, pozycjeListy, stronaListy } from '../../src/ui/pietra.ts';
 import { demoSwiat } from './pietra-pomoc.ts';
 
 let pamiec: Scene | null = null;
@@ -410,6 +410,33 @@ describe('krok o piętro (nastepnePietro)', () => {
   it('lista z samym parterem nigdzie nie prowadzi', () => {
     expect(nastepnePietro([0], 0, 1)).toBe(0);
     expect(nastepnePietro([0], 0, -1)).toBe(0);
+  });
+});
+
+describe('strona listy pięter (stronaListy)', () => {
+  const okno = 1440;
+
+  it('kafelek po prawej: lista kończy się przy jego prawej krawędzi', () => {
+    expect(stronaListy({ left: 1369, right: 1421 }, 150, okno)).toBe('prawa');
+  });
+
+  it('pasek zawinięty, kafelek przy lewej krawędzi okna (19 do 71 px): lista zaczyna się przy jego lewej', () => {
+    // dawniej lista z prawą krawędzią przy 71 px wystawała o 79 px poza okno (Przymorze, polski, 1440 px)
+    expect(stronaListy({ left: 19, right: 71 }, 150, okno)).toBe('lewa');
+  });
+
+  it('granica: prawa strona mieści się, gdy po lewej zostaje co najmniej margines', () => {
+    expect(stronaListy({ left: 100, right: 158 }, 150, okno)).toBe('prawa');
+    expect(stronaListy({ left: 100, right: 157 }, 150, okno)).toBe('lewa');
+    expect(stronaListy({ left: 100, right: 150 }, 150, okno, 0)).toBe('prawa');
+  });
+
+  it('telefon 320 px z kafelkiem w rogu: lewa, bo prawa wystawałaby za okno', () => {
+    expect(stronaListy({ left: 8, right: 48 }, 150, 320)).toBe('lewa');
+  });
+
+  it('gdy nie mieści się żadna, zostaje prawa (domyślna)', () => {
+    expect(stronaListy({ left: 20, right: 70 }, 300, 320)).toBe('prawa');
   });
 });
 

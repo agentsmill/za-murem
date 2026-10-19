@@ -1028,6 +1028,11 @@ a.btn {
   overflow-y: auto;
   z-index: 6;
 }
+/* pasek zawinięty, kafelek przy lewej krawędzi okna: lista zaczyna się przy jego lewej krawędzi (stronaListy) */
+.floor-list.floor-list-lewa {
+  right: auto;
+  left: 0;
+}
 .floor-item {
   display: flex;
   align-items: baseline;

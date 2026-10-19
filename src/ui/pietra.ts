@@ -55,6 +55,20 @@ export function nastepnePietro(lista: readonly number[], obecne: number, krok: 1
   return sasiad ?? Math.min(rosnaco[rosnaco.length - 1], Math.max(rosnaco[0], obecne));
 }
 
+/** Z której strony kafelka rośnie lista pięter. Zwykle kończy się przy jego prawej krawędzi (kafelek jest w pasku po
+    prawej), ale gdy pasek się zawinie (polski przy 1440 px), kafelek stoi na początku drugiego wiersza przy lewej
+    krawędzi okna i taka lista wystawałaby poza okno: wtedy zaczyna się przy jego lewej krawędzi. Gdy nie mieści się
+    żadna, zostaje prawa. Pozycje w px okna, `margines` to najmniejszy odstęp od krawędzi okna. */
+export function stronaListy(
+  przycisk: { left: number; right: number },
+  szerokosc: number,
+  okno: number,
+  margines = 8,
+): 'prawa' | 'lewa' {
+  if (przycisk.right - szerokosc >= margines) return 'prawa';
+  return przycisk.left + szerokosc <= okno - margines ? 'lewa' : 'prawa';
+}
+
 // ---------------------------------------------------------------- DOM (tylko przeglądarka)
 
 /** elementy kafelka z index.html: przycisk (z `.stat-k` i `.stat-v`), lista pięter i notka z podpowiedzią */
@@ -148,5 +162,11 @@ export class SelektorPieter {
     this.otwarta = otwarta;
     this.el.list.hidden = !otwarta;
     this.el.btn.setAttribute('aria-expanded', String(otwarta));
+    if (otwarta) {
+      // zmierzone na otwartej liście przy domyślnej (prawej) stronie, bo szerokość zależy od napisów
+      this.el.list.classList.remove('floor-list-lewa');
+      const strona = stronaListy(this.el.btn.getBoundingClientRect(), this.el.list.offsetWidth, innerWidth);
+      this.el.list.classList.toggle('floor-list-lewa', strona === 'lewa');
+    }
   }
 }
