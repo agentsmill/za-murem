@@ -1083,6 +1083,12 @@ Mateusz poprosił o dwa zadania do przemyślenia i przekazania sesjom na Sonneci
 - Plany: `docs/superpowers/plans/2026-10-19-miasto-etap-1-kwadraty-na-mapie.md` (teraz zadania 1–5, rysowanie 6–8 po `m4-pietra`), `docs/superpowers/plans/2026-10-19-miasto-etap-2-chodzenie.md` (teraz tylko `src/sim/kafelki.ts`, reszta po scaleniu badań i pracy ludzi), `docs/superpowers/plans/2026-10-19-mmo-etap-0-fundament.md` (bez zmian w `src/`).
 - Budowa od razu, przez subagentów na Sonnecie w tej sesji (integrator nie może zakładać nowych sesji): gałęzie `miasto-kwadraty` (etap 1, zadania 1–5), `miasto-kafelki` (`src/sim/kafelki.ts`) i `mmo-fundament` (etap 0 gry sieciowej), każda w osobnym drzewie. Wyniki i bramki w kolejnych wpisach.
 
+### Miasto z kwadratów, etap 1, zadania 1–5: kwadraty jako światy (gałąź `miasto-kwadraty` od `noc-integracja` fe13220, lokalnie, nic nie wypchnięte)
+
+Budowa według planu `docs/superpowers/plans/2026-10-19-miasto-etap-1-kwadraty-na-mapie.md`, tylko zadania 1–5 i reguła „dom wygrywa na szwie”. Rysowanie wielu kwadratów, parametr `?kwadraty=` i zrzuty nowych scenariuszy (zadania 6–8) czekają na bazę z gałęzią `m4-pietra`. Wpis dopisuję zadanie po zadaniu, bramka na końcu.
+
+Skróty na starcie (kod `src/` z `noc-integracja` fe13220, przed pierwszą zmianą): `npm run bot` da4b24e0 (koniec) i dad44c81 (po trzech dobach), `npm run bot -- --mieszkancy` 29de5c02 i c368323d, `npm run bot:zombie` 18b03936 (warta z dzidami) i e8b7d9d5 (bez warty), `npm run bot:zombie -- --mieszkancy` 416a0cff i d9c81c1d. `npm test` 2853 zdanych, 1 oczekiwana porażka, 8 pominiętych (151 plików, 55 s). Dema w `public/demo` są świadomie starsze od `toGeoT` (bez `zm:klucz`, `zm:os`, kluczy miejsc i rodzajów punktów; geometria identyczna), więc `tests/unit/kwadraty-dom.test.ts` porównuje z nimi samą geometrię.
+
 ## Następne
 
 - Miasto z kwadratów i gra sieciowa (19.10.2026): gałęzie `miasto-kwadraty`, `miasto-kafelki` i `mmo-fundament` budują subagenci na Sonnecie; scala koordynator po bramce. `ZM_RESTART_H=48` i kopie bazy z compose wejdą z najbliższym wdrożeniem (po OK Mateusza). Mateusz rano: trzy decyzje w „Decyzjach” (zamarzanie światów nieobecnych, kopia bazy poza maszyną, tempo chodzenia po mieście), a przed etapem 1 gry sieciowej prędkość świata, przed etapem 2 miejsce startu drużyny i informacja o danych osobowych.
