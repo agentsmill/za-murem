@@ -1,16 +1,17 @@
-/* Kronika odkryć, znalezionych książek i przepadłych poleceń (docs/superpowers/specs/2026-10-19-badania-design.md, sekcje
-   „Odkrycie” i „Książki”). Symulacja trzyma odkrycia (`research.at`), dziennik znalezisk (`bookLog`) i dziennik poleceń,
-   które przepadły po trzech przerwaniach przez szwendaczy (`przerwane`), a `govInput()` oddaje je zarządowi jako
-   `GovInput.odkrycia`, `znaleziska` i `przerwane`. `znaleziska(st, i)` czyta wpisy z tickiem nowszym niż
-   `GovState.czytane` (pamięć „ostatnio przeczytanego”, pole powstaje przy pierwszym wpisie), po kolei od najstarszego:
-   odkrycie to wpis „Odkrycie: <nazwa>. <działanie>” i zaufanie +1 (raz na odkrycie, jak `mood(S, 1, 0)` w 0.3),
-   książka to wpis „Znaleźli książkę „<tytuł>” (Uprawa +1).” albo, gdy poszła na podpałkę, zdanie o tym, przepadłe
-   polecenie to zwykły wpis „<imię> przerywa: <co> (szwendacze).” (bez zaufania i wkurzenia). Warunek
-   `tick > czytane` zakłada, że zarząd czyta wejście wyłącznie między krokami symulacji (jak robi to pętla w
-   src/main.ts): wpis z tego samego ticku, który pojawiłby się po odczycie, zostałby pominięty na zawsze. Gra bez badań
-   i bez książek nie dostaje tych pól, więc stan zarządu zostaje bez zmian. Zarząd nie importuje src/sim: nazwy i opisy
-   technologii przychodzą w wejściu jako Tx. Teksty (`tekstOdkrycia`, `tekstKsiazki`) czyta też interfejs do podpowiedzi,
-   żeby kronika i podpowiedź mówiły tym samym zdaniem. */
+/* Kronika odkryć, znalezionych książek i przepadłych poleceń (docs/superpowers/specs/2026-10-19-badania-design.md,
+   sekcje „Odkrycie” i „Książki”). Symulacja trzyma odkrycia (`research.at`), dziennik znalezisk (`bookLog`) i dziennik
+   poleceń, które przepadły po trzech przerwaniach przez wroga (`przerwane`, z tym, kto przerwał ostatni raz), a
+   `govInput()` oddaje je zarządowi jako `GovInput.odkrycia`, `znaleziska` i `przerwane`. `znaleziska(st, i)` czyta
+   wpisy z tickiem nowszym niż `GovState.czytane` (pamięć „ostatnio przeczytanego”, pole powstaje przy pierwszym
+   wpisie), po kolei od najstarszego: odkrycie to wpis „Odkrycie: <nazwa>. <działanie>” i zaufanie +1 (raz na odkrycie,
+   jak `mood(S, 1, 0)` w 0.3), książka to wpis „Znaleźli książkę „<tytuł>” (Uprawa +1).” albo, gdy poszła na podpałkę,
+   zdanie o tym, przepadłe polecenie to zwykły wpis „<imię> przerywa: <co> (szwendacze).” (w nawiasie szwendacze,
+   szabrownicy albo napastnicy, wedle tego, kto przerwał; bez zaufania i wkurzenia). Warunek `tick > czytane` zakłada,
+   że zarząd czyta wejście wyłącznie między krokami symulacji (jak robi to pętla w src/main.ts): wpis z tego samego
+   ticku, który pojawiłby się po odczycie, zostałby pominięty na zawsze. Gra bez badań i bez książek nie dostaje tych
+   pól, więc stan zarządu zostaje bez zmian. Zarząd nie importuje src/sim: nazwy i opisy technologii przychodzą w
+   wejściu jako Tx. Teksty (`tekstOdkrycia`, `tekstKsiazki`) czyta też interfejs do podpowiedzi, żeby kronika i
+   podpowiedź mówiły tym samym zdaniem. */
 
 import { DOM_EN } from '../content/data.en.ts';
 import { DOM } from '../content/data.ts';
@@ -63,10 +64,19 @@ const CO_PRZERWALA: Record<string, readonly [string, string]> = {
   shoo: ['przeganianie obcej ekipy', 'driving off a crew'],
 };
 
-/** wpis o przepadłym poleceniu: „<imię> przerywa: <co> (szwendacze).” */
-export function tekstPrzerwania(k: Pick<Przerwane, 'imie' | 'co'>): Tx {
+/** kto przerwał (słowo w nawiasie wpisu): szwendacze, szabrownicy albo wrodzy ludzie */
+const KTO_PRZERWAL: Record<NonNullable<Przerwane['kto']>, readonly [string, string]> = {
+  zombie: ['szwendacze', 'shamblers'],
+  szabrownik: ['szabrownicy', 'looters'],
+  wrogi: ['napastnicy', 'attackers'],
+};
+
+/** wpis o przepadłym poleceniu: „<imię> przerywa: <co> (szwendacze).”; bez `kto` (i dla szwendaczy) szwendacze,
+    szabrownicy i napastnicy mają własne słowo */
+export function tekstPrzerwania(k: Pick<Przerwane, 'imie' | 'co' | 'kto'>): Tx {
   const [pl, en] = CO_PRZERWALA[k.co] ?? ['polecenie', 'the order'];
-  return tx(`${k.imie} przerywa: ${pl} (szwendacze).`, `${k.imie} breaks off: ${en} (shamblers).`);
+  const [kpl, ken] = KTO_PRZERWAL[k.kto ?? 'zombie'] ?? KTO_PRZERWAL.zombie;
+  return tx(`${k.imie} przerywa: ${pl} (${kpl}).`, `${k.imie} breaks off: ${en} (${ken}).`);
 }
 
 /** wpis o odkryciu: „Odkrycie: <nazwa>. <działanie>” */
