@@ -166,9 +166,19 @@ export interface GovInput {
   /** teren: ile budynków wspólny płot dołączył do naszego obwodu; bez pola droga terenu nie ma jak liczyć kamieni */
   teren?: { przylaczone: number };
   /** badania (src/sim/badania.ts): czy stoi pracownia, ile technologii z drzewka jest zbadanych (identyfikatory spoza
-      drzewka się nie liczą), najwyższa era wśród nich (0: nic), czy technologia końcowa jest zbadana i czy sieć jest
-      już włączona (polecenie `siec` w pracowni); bez pola zarząd zakłada grę bez badań. Czyta je rama zwycięstwa. */
-  badania?: { pracownia: boolean; zbadane: number; era: number; koncowa: boolean; siecWlaczona: boolean };
+      drzewka się nie liczą), najwyższa era wśród nich (0: nic), czy zbadana jest technologia końcowa, czyli fabryka
+      bieżącego trybu (`koncowa`), i czy sieć jest już włączona (polecenie `siec` w pracowni); `fabryka`: fabryka
+      uruchomiona (etap 2, po prądzie z projektu gospodarki), dziś żaden odczyt go nie ustawia, a bez niego droga
+      technologii kończy się przed szóstym kamieniem; bez pola `badania` zarząd zakłada grę bez badań. Czyta je rama
+      zwycięstwa (kamienie drogi „Prąd bez miedzi”, razem z `techDone`). */
+  badania?: {
+    pracownia: boolean;
+    zbadane: number;
+    era: number;
+    koncowa: boolean;
+    siecWlaczona: boolean;
+    fabryka?: boolean;
+  };
   /** książki osady według dziedziny, z symulacji (w wiedzy liczą się najwyżej 2 na dziedzinę); bez pola: żadnych */
   books?: Partial<Record<TechDom, number>>;
   /** zbadane technologie z tickiem ukończenia, od najstarszej, z nazwą i działaniem w obu językach; zarząd dopisuje do

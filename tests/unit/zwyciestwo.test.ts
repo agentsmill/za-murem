@@ -3,7 +3,9 @@
    gdy seria pęka), kamień terenu, zdanie „co dalej” i seria poranków w `ocenDrogi`, kolejka epilogów (FIFO, także ze
    starego kształtu stanu z jednym polem `epilog`) w `pending` i „Graj dalej”. Czyste funkcje na wejściu z atrapy
    symulacji (tests/unit/gov-atrapa.ts), bez symulacji i bez sieci. Moduł jest opcją: bez `wlaczZwyciestwo` stan
-   i skróty zarządu zostają jak przed nim. */
+   i skróty zarządu zostają jak przed nim. Wejście z atrapy nie ma odczytu badań (`GovInput.badania`), więc droga
+   technologii jest tu bez odczytu: sześć kamieni w tabeli tekstów i dawne „Wkrótce”; jej kamienie z odczytu, „co dalej”,
+   „Wkrótce” o prądzie i epilog fabryki sprawdza zwyciestwo-technologia.test.ts. */
 
 import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
@@ -125,7 +127,7 @@ describe('ocenDrogi', () => {
     expect(st.zwyciestwo).toBeUndefined();
   });
 
-  it('technologia, lek i cuda mówią „wkrótce”, ludność ma postęp z celem, reszta bez postępu', () => {
+  it('technologia (bez odczytu badań), lek i cuda mówią „wkrótce”, ludność ma postęp z celem, reszta bez postępu', () => {
     const d = ocenDrogi(newGov(1), wej({ ludnosc: 40 }));
     const po = (droga: Droga) => d.find((x) => x.droga === droga)!;
     for (const droga of ['technologia', 'lek', 'cuda'] as const) {
@@ -143,10 +145,11 @@ describe('ocenDrogi', () => {
     const st = wlaczony();
     const po = (droga: Droga) => ocenDrogi(st, wej()).find((x) => x.droga === droga)!;
     // komplet kamieni każdej drogi: ani jedna nie mówi „wkrótce”
-    Object.assign(z(st).kamienie, { technologia: 5, teren: 5, lek: 5, ludnosc: 5, cuda: 3 });
+    Object.assign(z(st).kamienie, { technologia: 6, teren: 5, lek: 5, ludnosc: 5, cuda: 3 });
     for (const d of ocenDrogi(st, wej())) expect(d.wkrotce, d.droga).toBeNull();
     // o jeden kamień mniej: zdanie wraca z dokładnym tekstem, także na terenie, który ma je od pierwszego kamienia
-    Object.assign(z(st).kamienie, { technologia: 4, teren: 4, lek: 4, cuda: 2 });
+    // (technologia bez odczytu badań: wejście z atrapy go nie ma, więc dawny tekst)
+    Object.assign(z(st).kamienie, { technologia: 5, teren: 4, lek: 4, cuda: 2 });
     expect(po('technologia').wkrotce?.pl).toBe('Wkrótce: badania w pracowni i sieć bez miedzi.');
     expect(po('teren').wkrotce?.pl).toBe('Wkrótce: sąsiednie kwadraty i mur.');
     expect(po('lek').wkrotce?.pl).toBe('Wkrótce: dalekie wyprawy po lek.');
@@ -174,8 +177,9 @@ describe('ocenDrogi', () => {
           ['Pracownia postawiona', 'Research room built'],
           ['Pierwsze badanie', 'First research'],
           ['Era 3', 'Era 3'],
-          ['Era 5', 'Era 5'],
           ['Sieć bez miedzi', 'Copper-free grid'],
+          ['Generator fuzji', 'Fusion generator'],
+          ['Fabryka ruszyła', 'The factory is running'],
         ],
       },
       teren: {
@@ -225,6 +229,7 @@ describe('ocenDrogi', () => {
         droga,
       ).toEqual(tabela[droga].kamienie);
     }
+    // wejście z atrapy nie ma odczytu badań: technologia ma dawne „Wkrótce” (z odczytem: zwyciestwo-technologia.test.ts)
     const wkrotce = (droga: Droga) => d.find((x) => x.droga === droga)!.wkrotce;
     expect(wkrotce('technologia')).toEqual({
       pl: 'Wkrótce: badania w pracowni i sieć bez miedzi.',
@@ -369,7 +374,7 @@ describe('„co dalej” i seria poranków w ocenDrogi', () => {
     expect(po(st, wej(), 'teren').dalej).toBeNull();
   });
 
-  it('technologia, lek i cuda nie mają zdania na żadnym etapie: czekają na projekty („Wkrótce”)', () => {
+  it('technologia (bez odczytu badań), lek i cuda nie mają zdania na żadnym etapie: czekają na projekty („Wkrótce”)', () => {
     for (const mode of ['zwykly', 'zombie'] as const)
       for (const droga of ['technologia', 'lek', 'cuda'] as const)
         for (let n = 0; n <= DROGI[droga].kamienie.length; n++) {
@@ -379,16 +384,20 @@ describe('„co dalej” i seria poranków w ocenDrogi', () => {
         }
   });
 
-  it('zdanie „co dalej” i „Wkrótce” nigdy razem, a przebyta droga nie ma żadnego', () => {
+  it('zdanie „co dalej” i „Wkrótce” nigdy razem, a przebyta droga nie ma żadnego (z odczytem badań i bez)', () => {
+    const zBadaniami = wej({
+      badania: { pracownia: false, zbadane: 0, era: 0, koncowa: false, siecWlaczona: false },
+    });
     for (const mode of ['zwykly', 'zombie'] as const)
-      for (const droga of DROGI_PO_KOLEI)
-        for (let n = 0; n <= DROGI[droga].kamienie.length; n++) {
-          const st = wlaczony(mode);
-          z(st).kamienie[droga] = n;
-          const d = po(st, wej(), droga);
-          expect(d.dalej !== null && d.wkrotce !== null, `${droga} ${n}`).toBe(false);
-          if (n === DROGI[droga].kamienie.length) expect([d.dalej, d.wkrotce], `${droga} ${n}`).toEqual([null, null]);
-        }
+      for (const i of [wej(), zBadaniami])
+        for (const droga of DROGI_PO_KOLEI)
+          for (let n = 0; n <= DROGI[droga].kamienie.length; n++) {
+            const st = wlaczony(mode);
+            z(st).kamienie[droga] = n;
+            const d = po(st, i, droga);
+            expect(d.dalej !== null && d.wkrotce !== null, `${droga} ${n}`).toBe(false);
+            if (n === DROGI[droga].kamienie.length) expect([d.dalej, d.wkrotce], `${droga} ${n}`).toEqual([null, null]);
+          }
   });
 
   it('bez stanu zwycięstwa (stary stan) też: pierwsze zdania i seria od zera', () => {

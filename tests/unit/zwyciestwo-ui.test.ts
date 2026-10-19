@@ -4,6 +4,9 @@
    Dwa języki: po polsku teksty z tabeli planu etapu 1, po angielsku te same bez polskiej litery i polskiego słówka.
    Poprawki po recenzji końcowej: zdanie „co dalej” pod następnym kamieniem, drogi z „Wkrótce” bez następnego kamienia,
    ostatnie zdanie epilogu ludności z prawdziwymi liczbami (ludzie dziś, spis 2021, polska liczba mnoga).
+   Droga technologii: wejście z atrapy nie ma odczytu badań, więc jej wiersz ma w większości testów dawne „Wkrótce” i sześć
+   szarych kamieni; wiersz z odczytem (złoty pierwszy kamień ze zdaniem o pracowni, od drugiego kamienia „Wkrótce” o prądzie)
+   ma własne scenariusze w „ekranie dróg”, a epilog fabryki w obu trybach i językach sprawdza zwyciestwo-technologia.test.ts.
    Na końcu przegląd źródeł: każda para `L('…', '…')` i `tx('…', '…')` w module, także z gałęzi, których żaden scenariusz
    nie dotyka. */
 
@@ -126,7 +129,7 @@ describe('ekran dróg (drogiSheet)', () => {
     }
   });
 
-  it('„Wkrótce: …” przy technologii, leku i cudach; teren dopiero po pierwszym kamieniu; ludność go nie ma', () => {
+  it('„Wkrótce: …” przy technologii (bez odczytu badań), leku i cudach; teren dopiero po pierwszym kamieniu; ludność go nie ma', () => {
     const s = drogi(stan(), wej());
     expect(wiersz(s, 'technologia')).toContain('Wkrótce: badania w pracowni i sieć bez miedzi.');
     expect(wiersz(s, 'lek')).toContain('Wkrótce: dalekie wyprawy po lek.');
@@ -185,7 +188,7 @@ describe('ekran dróg (drogiSheet)', () => {
       expect(w, droga).not.toContain('zw-dalej');
     }
     // zaliczone zostają zaliczone, reszta jest dalsza
-    expect(klasyKamieni(wiersz(s, 'technologia'))).toEqual(Array(5).fill('zw-dalszy'));
+    expect(klasyKamieni(wiersz(s, 'technologia'))).toEqual(Array(6).fill('zw-dalszy'));
     expect(klasyKamieni(wiersz(s, 'teren'))).toEqual(['zw-zaliczony', ...Array(4).fill('zw-dalszy')]);
     expect(klasyKamieni(wiersz(s, 'cuda'))).toEqual(['zw-zaliczony', 'zw-dalszy', 'zw-dalszy']);
     // dopisek dla czytnika ekranu mają tylko zaliczone
@@ -195,6 +198,68 @@ describe('ekran dróg (drogiSheet)', () => {
     expect(klasyKamieni(wiersz(grywalne, 'teren'))[0]).toBe('zw-nastepny');
     expect(klasyKamieni(wiersz(grywalne, 'ludnosc'))[0]).toBe('zw-nastepny');
     expect(wiersz(grywalne, 'teren')).toContain('Następny: ');
+  });
+
+  it('technologia z odczytem badań: złoty następny kamień ze zdaniem „co dalej” przy zerze i jednym kamieniu, potem „Wkrótce” o prądzie', () => {
+    const odczyt = wej({ badania: { pracownia: false, zbadane: 0, era: 0, koncowa: false, siecWlaczona: false } });
+    // zero kamieni: pierwszy kamień jest następny i ma zdanie o pracowni, bez „Wkrótce”
+    const start = wiersz(drogi(stan(), odczyt), 'technologia');
+    expect(klasyKamieni(start)).toEqual(['zw-nastepny', ...Array(5).fill('zw-dalszy')]);
+    expect(start).toContain(
+      'Pracownia postawiona</span><span class="zw-dalej">Postawcie pracownię w pokoju waszego mieszkania (Budowa, zakładka Dom).</span>',
+    );
+    expect(start).toContain('Następny: ');
+    expect(start).not.toContain('Wkrótce');
+    // jeden kamień: następny jest „Pierwsze badanie” ze zdaniem o stole pracowni
+    const jeden = wiersz(drogi(stan({ technologia: 1 }), odczyt), 'technologia');
+    expect(klasyKamieni(jeden)).toEqual(['zw-zaliczony', 'zw-nastepny', ...Array(4).fill('zw-dalszy')]);
+    expect(jeden).toContain(
+      'Pierwsze badanie</span><span class="zw-dalej">Posadźcie kogoś przy stole pracowni i wybierzcie kartkę na tablicy badań.</span>',
+    );
+    expect(jeden).not.toContain('Wkrótce');
+    // od dwóch kamieni: „Wkrótce” o prądzie, otwarte kamienie szare, bez „Następny:” i bez zdania „co dalej”
+    for (const n of [2, 3, 4, 5]) {
+      const w = wiersz(drogi(stan({ technologia: n }), odczyt), 'technologia');
+      expect(w, `${n}`).toContain('<p class="zw-wkrotce">Wkrótce: ery 3–6 czekają na prąd z projektu gospodarki.</p>');
+      expect(klasyKamieni(w), `${n}`).toEqual([...Array(n).fill('zw-zaliczony'), ...Array(6 - n).fill('zw-dalszy')]);
+      expect(w, `${n}`).not.toContain('Następny');
+      expect(w, `${n}`).not.toContain('zw-dalej');
+      expect(w, `${n}`).not.toContain('zw-wygrana');
+    }
+    // przebyta do końca: odznaka, wszystkie kamienie zaliczone, ani „Wkrótce”, ani „co dalej”
+    const koniec = wiersz(drogi(stan({ technologia: 6 }), odczyt), 'technologia');
+    expect(koniec).toContain('zw-wygrana');
+    expect(koniec).toContain('>Zwycięstwo<');
+    expect(klasyKamieni(koniec)).toEqual(Array(6).fill('zw-zaliczony'));
+    expect(koniec).not.toContain('Wkrótce');
+    expect(koniec).not.toContain('zw-dalej');
+    // reszta ekranu bez zmian: lek i cuda dalej z „Wkrótce”, pasek tylko przy ludności
+    const ekran = drogi(stan(), odczyt);
+    expect(wiersz(ekran, 'lek')).toContain('Wkrótce: dalekie wyprawy po lek.');
+    expect(wiersz(ekran, 'technologia')).not.toContain('<progress');
+  });
+
+  it('technologia z odczytem badań po angielsku: „co dalej” i „Coming soon” o prądzie, bez polskich słów', () => {
+    ustawJezyk('en');
+    const odczyt = wej({ badania: { pracownia: false, zbadane: 0, era: 0, koncowa: false, siecWlaczona: false } });
+    const start = drogi(stan(), odczyt);
+    expect(wiersz(start, 'technologia')).toContain(
+      'Research room built</span><span class="zw-dalej">Build a research room in a room of your flat (Build, Home tab).</span>',
+    );
+    const jeden = drogi(stan({ technologia: 1 }), odczyt);
+    expect(wiersz(jeden, 'technologia')).toContain(
+      'class="zw-dalej">Sit someone at the research table and pick a card on the research board.<',
+    );
+    const dalej = drogi(stan({ technologia: 3 }), odczyt);
+    expect(wiersz(dalej, 'technologia')).toContain(
+      '<p class="zw-wkrotce">Coming soon: eras 3–6 are waiting for power from the economy project.</p>',
+    );
+    expect(wiersz(dalej, 'technologia')).toContain('Copper-free grid');
+    expect(wiersz(dalej, 'technologia')).toContain('class="sr">Done: <');
+    for (const ekran of [start, jeden, dalej]) {
+      expect(wszystko(ekran)).not.toMatch(POLSKIE);
+      expect(polskieSlowa(wszystko(ekran))).toEqual([]);
+    }
   });
 
   it('pod następnym kamieniem stoi zdanie „co dalej”: próg ludności, siedem poranków z licznikiem, płot dla terenu', () => {
@@ -483,7 +548,8 @@ describe('epilog zwycięstwa (epilogSheet)', () => {
   });
 
   it('droga bez własnego tekstu dostaje tekst zastępczy z nazwą drogi, a ścieżka i statystyki zostają', () => {
-    for (const droga of KOLEJNOSC.filter((d) => d !== 'ludnosc')) {
+    // własny tekst mają ludność i technologia (fabryka, w obu trybach inna)
+    for (const droga of KOLEJNOSC.filter((d) => d !== 'ludnosc' && d !== 'technologia')) {
       const s = epilogSheet(droga, 'porzadek', 'zwykly', STATY);
       expect(s.title, droga).toBe(nazwaDrogi(droga, 'zwykly').pl);
       expect(s.body, droga).toContain(`Droga „${nazwaDrogi(droga, 'zwykly').pl}” przebyta do końca.`);

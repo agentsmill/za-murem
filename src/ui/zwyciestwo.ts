@@ -19,10 +19,13 @@
      droga leku to „Lek”), tekst drogi, po nim zdanie ścieżki uchwał (`GovState.laws.path`: Porządek, Wspólnota, Technokracja,
      a bez ścieżki zdanie neutralne), cztery liczby (dzień, ludzie, zmarli, uchwały) i dwa przyciski: „Graj dalej”
      (`zw-dalej`, główny) i „Nowa gra” (`zw-nowa`). Okno nie zamyka się samo (odpowiedź jest obowiązkowa, jak przy
-     raporcie). Własny tekst ma na razie tylko droga ludnościowa, bo tylko ona może wygrać: dwa zdania o podwórku i trzecie
+     raporcie). Własny tekst mają droga ludnościowa i droga technologii. Ludnościowa: dwa zdania o podwórku i trzecie
      z prawdziwymi liczbami, czyli ilu ludzi mieszka tu dziś (`staty.ludzi`, polska liczba mnoga) i, gdy spis 2021 jest do
      użytku (`staty.spis`), ilu mieszkało w 2021 roku; epilog nie twierdzi, że ludzi jest „połowa” z 2021, bo cel jest
-     przycięty do 120–500. Pozostałe drogi dostają krótki tekst zastępczy z nazwą drogi, a własne dojdą razem z nimi.
+     przycięty do 120–500. Technologii: „Fabryka ruszyła.” i jedno zdanie o fabryce bieżącego trybu, w zwykłej grze
+     o biorobotach, których bakteria nie rusza, w zombie o humanoidalnych żołnierzach, oba z superserwerem (tryb z
+     `GovState.mode`, bez liczb). Pozostałe drogi dostają krótki tekst zastępczy z nazwą drogi, a własne dojdą razem
+     z nimi.
    - `statyEpilogu(st, i)`: liczby do epilogu z odczytu i stanu zarządu: dzień gry, ludzie pod zarządem (tak jak liczy
      droga: `ludnoscOf`), zmarli (zarząd i mieszkańcy, `GovInput.dead`), podpisane uchwały i, gdy `GovInput.ludnosc2021`
      jest liczbą skończoną i dodatnią, spis 2021 (`spis`).
@@ -149,6 +152,20 @@ function zdanieLudzi(staty: StatyEpilogu): Tx {
   );
 }
 
+/** Epilog drogi technologii, zwykła gra: fabryka biorobotów odpornych na bakterię miedzi i superserwer, który liczy, kto
+    pierwszy dostanie prąd. Bez liczb. */
+const FABRYKA_ZWYKLA = tx(
+  'Fabryka ruszyła. Bioroboty, których bakteria nie rusza, kładą nowe linie od waszej bramy przez całe miasto, a superserwer liczy, kto pierwszy dostanie prąd.',
+  'The factory is running. Biorobots the bacterium cannot touch are laying new lines from your gate across the whole city, while the superserver works out who gets power first.',
+);
+
+/** Epilog drogi technologii w trybie zombie: fabryka humanoidalnych żołnierzy, którzy czyszczą miasto ze szwendaczy, i
+    superserwer, który pisze im rozkazy i regulamin. Bez liczb. */
+const FABRYKA_ZOMBIE = tx(
+  'Fabryka ruszyła. Humanoidalni żołnierze wychodzą z bramy i czyszczą miasto ze szwendaczy, kwartał po kwartale, a superserwer pisze im rozkazy i regulamin.',
+  'The factory is running. Humanoid soldiers march out of the gate and clear the city of walkers, block by block, while the superserver writes their orders and their terms of service.',
+);
+
 /** Zdanie końcowe epilogu według ścieżki uchwał (`GovState.laws.path`); `brak` dla gry bez ścieżki. */
 const SCIEZKA: Readonly<Record<'porzadek' | 'wspolnota' | 'tech' | 'brak', Tx>> = {
   porzadek: tx(
@@ -174,10 +191,11 @@ function sciezkaOf(path: LawPath | null): Tx {
   return path === 'porzadek' || path === 'wspolnota' || path === 'tech' ? SCIEZKA[path] : SCIEZKA.brak;
 }
 
-/** Tekst drogi w epilogu: własny (ludność: dwa zdania i zdanie z liczbami ludzi), a bez niego krótki zastępczy z nazwą
-    drogi. */
+/** Tekst drogi w epilogu: własny (ludność: dwa zdania i zdanie z liczbami ludzi; technologia: fabryka bieżącego trybu),
+    a bez niego krótki zastępczy z nazwą drogi. */
 function epilogTekst(droga: Droga, mode: GameMode, staty: StatyEpilogu): Tx {
   if (droga === 'ludnosc') return txCat(PODWORKO, ' ', zdanieLudzi(staty));
+  if (droga === 'technologia') return mode === 'zombie' ? FABRYKA_ZOMBIE : FABRYKA_ZWYKLA;
   const nazwa = nazwaDrogi(droga, mode);
   return tx(`Droga „${nazwa.pl}” przebyta do końca.`, `The road “${nazwa.en}” is complete.`);
 }

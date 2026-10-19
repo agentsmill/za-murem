@@ -6,16 +6,18 @@
    i `fx.log`).
 
    Drogi: `technologia` („Prąd bez miedzi”), `teren` („Za Murem”), `lek`, `ludnosc` („Nowe osiedle”) i `cuda`. Na tym
-   etapie gotowa jest ludnościowa w całości i pierwszy kamień terenu; technologia, lek i cuda czekają na projekty, na
+   etapie gotowa jest ludnościowa w całości, pierwszy kamień terenu i sześć kamieni technologii z odczytu badań (w grze
+   dochodzi ona dziś do drugiego, bo ery 3–6 czekają na prąd z projektu gospodarki); lek i cuda czekają na projekty, na
    których stoją, więc ekran dróg pokazuje przy nich „Wkrótce: …” (`PostepDrogi.wkrotce`), dopóki droga nie jest przebyta
    do końca. Treść dróg (`DROGI`) jest w obu językach (Tx); nazwa drogi leku zależy od trybu gry (`nazwaDrogi`).
 
-   Co dalej (`PostepDrogi.dalej`). Droga, którą da się grać już teraz (ludność w całości, pierwszy kamień terenu), mówi
-   jednym zdaniem, co zrobić, żeby zaliczyć jej następny kamień: ludność „Zbierzcie N osób pod zarządem.” (N to próg
-   kamienia, z polską liczbą mnogą), przy ostatnim kamieniu „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków
-   „(n z 7)”, teren „Otoczcie wspólnym płotem pierwszy sąsiedni budynek.”. Droga z „Wkrótce” i droga przebyta do końca nie
-   mają zdania (`null`), więc „Wkrótce” i „co dalej” nigdy nie występują razem. Licznik poranków jest też liczbami
-   w `PostepDrogi.seria` (`{ dni, z }`, tylko ludność).
+   Co dalej (`PostepDrogi.dalej`). Droga, którą da się grać już teraz (ludność w całości, pierwszy kamień terenu, dwa
+   pierwsze kamienie technologii przy odczycie badań), mówi jednym zdaniem, co zrobić, żeby zaliczyć jej następny kamień:
+   ludność „Zbierzcie N osób pod zarządem.” (N to próg kamienia, z polską liczbą mnogą), przy ostatnim kamieniu
+   „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków „(n z 7)”, teren „Otoczcie wspólnym płotem pierwszy
+   sąsiedni budynek.”, technologia przy zerze „Postawcie pracownię …”, a przy jednym kamieniu „Posadźcie kogoś przy stole
+   pracowni …”. Droga z „Wkrótce” i droga przebyta do końca nie mają zdania (`null`), więc „Wkrótce” i „co dalej” nigdy
+   nie występują razem. Licznik poranków jest też liczbami w `PostepDrogi.seria` (`{ dni, z }`, tylko ludność).
 
    Stan (`GovState.zwyciestwo`, `StanZwyciestwa`) powstaje dopiero po `wlaczZwyciestwo`, tak jak `miasto` po `wlaczMiasto`
    (src/gov/wyprawy.ts): `newGov` go nie ma, `krokZwyciestwa` bez niego nie robi nic, więc skróty zarządu w botach i testach
@@ -29,7 +31,15 @@
    spełnia zawsze początek listy (`spelnione`). `ocenDrogi` czyta zapisane kamienie, więc ekran dróg zgadza się z kroniką.
    - ludność: progi 10, 25 i 50 osób, potem połowa celu (`Math.ceil(cel / 2)`); piąty kamień to licznik 7 poranków;
    - teren: pierwszy kamień, gdy wspólny płot dołączył do naszego obwodu choć jeden budynek (`GovInput.teren`);
-   - technologia, lek, cuda: jeszcze żaden, bo nie ma odczytu; dojdą z projektami, na których stoją.
+   - technologia: sześć kamieni z odczytu badań (`GovInput.badania` i `GovInput.techDone`, `spelnioneTechnologia`):
+     pracownia stoi albo coś już zbadano, pierwsze badanie, era 3, włączona sieć, generator fuzji (`t_fuzja` w `techDone`;
+     w etapie 2 zamiast tego postawiony) i fabryka uruchomiona (`badania.fabryka`, etap 2: dziś nikt go nie ustawia, więc
+     w grze droga kończy się przed szóstym kamieniem). Kamienie idą po kolei: późniejszy warunek bez wcześniejszych nic
+     nie daje. Bez `GovInput.badania` (gra bez badań) droga stoi na zerze i dostaje dawne „Wkrótce: badania w pracowni
+     i sieć bez miedzi.”; z odczytem „Wkrótce” o prądzie z projektu gospodarki pokazuje się od drugiego kamienia, a przy
+     zerze i jednym kamieniu zamiast niego jest „co dalej”. Ery 3–6 są dziś odwrócone, więc kamienie od trzeciego
+     ustawiają tylko testy i `window.zm`;
+   - lek, cuda: jeszcze żaden, bo nie ma odczytu; dojdą z projektami, na których stoją.
 
    Ludność (`ludnoscOf`) to `GovInput.ludnosc` (zarząd i mieszkańcy pod zarządem), a bez pola zarząd i mieszkańcy
    siedziby (`people.length + residents`). Cel (`celLudnosci`) to połowa ludności kwadratu domu z 2021 roku
@@ -105,8 +115,9 @@ export interface PostepDrogi {
       jest już przebyta do końca (okno pokazuje to, co tu dostanie) */
   wkrotce: Tx | null;
   /** jedno zdanie „co dalej” do następnego otwartego kamienia drogi, którą da się grać już teraz (ludność w całości,
-      pierwszy kamień terenu); null: droga ma „Wkrótce” (technologia, lek, cuda, teren po pierwszym kamieniu) albo jest
-      przebyta do końca. Okno pokazuje je pod następnym kamieniem, więc „Wkrótce” i „co dalej” nie występują razem */
+      pierwszy kamień terenu, dwa pierwsze kamienie technologii przy odczycie badań); null: droga ma „Wkrótce” (lek, cuda,
+      teren po pierwszym kamieniu, technologia bez odczytu badań albo od drugiego kamienia) albo jest przebyta do końca.
+      Okno pokazuje je pod następnym kamieniem, więc „Wkrótce” i „co dalej” nie występują razem */
   dalej: Tx | null;
   /** liczby do paska („{ile} z {cel}”) dla drogi, która ma co liczyć; null: bez liczb */
   postep: { ile: number; cel: number } | null;
@@ -131,8 +142,9 @@ export const DROGI: Readonly<Record<Droga, DefDrogi>> = {
       tx('Pracownia postawiona', 'Research room built'),
       tx('Pierwsze badanie', 'First research'),
       tx('Era 3', 'Era 3'),
-      tx('Era 5', 'Era 5'),
       tx('Sieć bez miedzi', 'Copper-free grid'),
+      tx('Generator fuzji', 'Fusion generator'),
+      tx('Fabryka ruszyła', 'The factory is running'),
     ],
   },
   teren: {
@@ -173,7 +185,8 @@ export const DROGI: Readonly<Record<Droga, DefDrogi>> = {
 };
 
 /** „Wkrótce: …” dla dróg bez podstawy; ludność działa w całości i go nie ma, teren pokazuje go dopiero po pierwszym
-    kamieniu, a droga przebyta do końca nigdy (`wkrotceDrogi`). */
+    kamieniu, technologia z odczytem badań dopiero od drugiego zaliczonego kamienia (wtedy `WKROTCE_PRAD`, a to zdanie
+    zostaje dla gry bez odczytu), a droga przebyta do końca nigdy (`wkrotceDrogi`). */
 const WKROTCE: Readonly<Record<Exclude<Droga, 'ludnosc'>, Tx>> = {
   technologia: tx('Wkrótce: badania w pracowni i sieć bez miedzi.', 'Coming soon: research and a copper-free grid.'),
   teren: tx('Wkrótce: sąsiednie kwadraty i mur.', 'Coming soon: neighbouring squares and the wall.'),
@@ -181,11 +194,32 @@ const WKROTCE: Readonly<Record<Exclude<Droga, 'ludnosc'>, Tx>> = {
   cuda: tx('Wkrótce: cuda z późnych badań.', 'Coming soon: wonders from late research.'),
 };
 
+/** „Wkrótce” technologii przy odczycie badań, od drugiego zaliczonego kamienia: ery 3–6 są odwrócone, dopóki projekt
+    gospodarki nie da im prądu (`wkrotceDrogi`). Bez odczytu badań zostaje dawne `WKROTCE.technologia`. */
+const WKROTCE_PRAD = tx(
+  'Wkrótce: ery 3–6 czekają na prąd z projektu gospodarki.',
+  'Coming soon: eras 3–6 are waiting for power from the economy project.',
+);
+
 /** „Co dalej” przy pierwszym kamieniu terenu (reszta terenu to „Wkrótce”, `wkrotceDrogi`) */
 const DALEJ_TEREN = tx(
   'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
   'Put a shared fence round the first building next door.',
 );
+
+/** „Co dalej” technologii przy odczycie badań: numer to liczba zaliczonych kamieni (0: postawić pracownię, 1: posadzić
+    kogoś przy stole i wybrać kartkę). Od drugiego zaliczonego kamienia jest już „Wkrótce” (`wkrotceDrogi`), więc zdań
+    jest tyle, ile kamieni do zdobycia już teraz. */
+const DALEJ_TECHNOLOGIA: readonly Tx[] = [
+  tx(
+    'Postawcie pracownię w pokoju waszego mieszkania (Budowa, zakładka Dom).',
+    'Build a research room in a room of your flat (Build, Home tab).',
+  ),
+  tx(
+    'Posadźcie kogoś przy stole pracowni i wybierzcie kartkę na tablicy badań.',
+    'Sit someone at the research table and pick a card on the research board.',
+  ),
+];
 
 /** drogi w kolejności ekranu */
 const KOLEJNOSC: readonly Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
@@ -204,6 +238,12 @@ const PORANEK = 6;
 const GLOD_PONIZEJ = 25;
 /** zaufanie, przy którym cel się liczy */
 const ZAUFANIE_OD = 50;
+/** identyfikator generatora fuzji w drzewie badań (`TECHS` w src/sim/badania.ts): src/gov nie importuje src/sim, więc
+    napis stoi tu, a jego zgodność z drzewem pilnuje tests/unit/zwyciestwo-technologia.test.ts. W etapie 2 piąty kamień
+    technologii liczy postawiony generator zamiast zbadanej technologii. */
+const ID_GENERATORA = 't_fuzja';
+/** era badań, od której liczy się trzeci kamień technologii („Era 3”) */
+const ERA_KAMIENIA = 3;
 
 /** „Co dalej” dla kamieni ludności przed ostatnim: zebrać `n` osób pod zarządem (polska liczba mnoga: „63 osoby”) */
 const dalejOsoby = (n: number): Tx =>
@@ -264,10 +304,32 @@ const wygrana = (z: { wygrane: { droga: Droga }[] }, droga: Droga): boolean => z
     licznik poranków, nie próg. Przy małym celu połowa bywa niższa od 50, ale kamienie idą po kolei (`spelnione`). */
 const progiLudnosci = (cel: number): number[] => [...PROGI_LUDNOSCI, Math.ceil(cel / 2)];
 
+/** Ile pierwszych kamieni drogi technologii spełnia odczyt badań (kamienie idą po kolei, więc liczy się początek listy):
+    pracownia stoi albo coś już zbadano; zbadano pierwszą technologię; najwyższa era to co najmniej 3; sieć jest
+    włączona; generator fuzji jest zbadany (`t_fuzja` w `techDone`); fabryka jest uruchomiona (`badania.fabryka`,
+    etap 2). Bez odczytu badań 0. Odczyt może spaść (rozbiórka pracowni), a kamienie w stanie i tak nie maleją: pilnuje
+    tego `zalicz`. */
+function spelnioneTechnologia(i: GovInput): number {
+  const b = i.badania;
+  if (!b) return 0;
+  const warunki = [
+    b.pracownia || b.zbadane > 0,
+    b.zbadane >= 1,
+    b.era >= ERA_KAMIENIA,
+    b.siecWlaczona,
+    i.techDone?.includes(ID_GENERATORA) === true,
+    b.fabryka === true,
+  ];
+  let n = 0;
+  while (n < warunki.length && warunki[n]) n++;
+  return n;
+}
+
 /** Ile pierwszych kamieni drogi spełnia sam odczyt (kamienie idą po kolei, więc liczy się początek listy). Piąty kamień
-    ludności nie wchodzi w rachubę, bo daje go licznik poranków; drogi bez odczytu mają 0. */
+    ludności nie wchodzi w rachubę, bo daje go licznik poranków; drogi bez odczytu (lek, cuda) mają 0. */
 function spelnione(droga: Droga, i: GovInput, cel: number): number {
   if (droga === 'teren') return (i.teren?.przylaczone ?? 0) >= 1 ? 1 : 0;
+  if (droga === 'technologia') return spelnioneTechnologia(i);
   if (droga !== 'ludnosc') return 0;
   const ile = ludnoscOf(i);
   const progi = progiLudnosci(cel);
@@ -277,21 +339,27 @@ function spelnione(droga: Droga, i: GovInput, cel: number): number {
 }
 
 /** „Wkrótce” drogi przy `zaliczone` kamieniach: ludność go nie ma, droga przebyta do końca też nie, teren dopiero po
-    pierwszym kamieniu (wcześniej pierwszy kamień jest do zdobycia od razu), reszta zawsze. To jedyne miejsce tej reguły:
-    okno pokazuje to, co dostanie w `PostepDrogi.wkrotce`. */
-function wkrotceDrogi(droga: Droga, zaliczone: number): Tx | null {
+    pierwszym kamieniu (wcześniej pierwszy kamień jest do zdobycia od razu), technologia z odczytem badań (`maBadania`)
+    dopiero od drugiego zaliczonego kamienia, i to z innym zdaniem (`WKROTCE_PRAD`: ery 3–6 czekają na prąd), a bez
+    odczytu zawsze ze starym; reszta zawsze. To jedyne miejsce tej reguły: okno pokazuje to, co dostanie w
+    `PostepDrogi.wkrotce`. */
+function wkrotceDrogi(droga: Droga, zaliczone: number, maBadania: boolean): Tx | null {
   if (droga === 'ludnosc' || zaliczone >= DROGI[droga].kamienie.length) return null;
   if (droga === 'teren' && zaliczone < 1) return null;
+  // z odczytem badań „Wkrótce” zaczyna się tam, gdzie kończą się zdania „co dalej” (po dwóch pierwszych kamieniach)
+  if (droga === 'technologia' && maBadania) return zaliczone < DALEJ_TECHNOLOGIA.length ? null : WKROTCE_PRAD;
   return WKROTCE[droga];
 }
 
 /** „Co dalej” drogi przy `zaliczone` kamieniach: jedno zdanie do następnego otwartego kamienia, ale tylko tam, gdzie da się
     go zdobyć już teraz, czyli gdzie nie ma „Wkrótce” (`wkrotceDrogi` rozstrzyga o tym jako jedyne): ludność w całości
-    (zebrać próg kamienia, a przy ostatnim utrzymać cel przez siedem poranków z licznikiem `dniCelu`) i pierwszy kamień
-    terenu (wspólny płot). Droga przebyta do końca i droga z „Wkrótce” nie mają zdania. */
-function dalejDrogi(droga: Droga, zaliczone: number, cel: number, dniCelu: number): Tx | null {
-  if (zaliczone >= DROGI[droga].kamienie.length || wkrotceDrogi(droga, zaliczone)) return null;
+    (zebrać próg kamienia, a przy ostatnim utrzymać cel przez siedem poranków z licznikiem `dniCelu`), pierwszy kamień
+    terenu (wspólny płot) i dwa pierwsze kamienie technologii przy odczycie badań (postawić pracownię, posadzić kogoś przy
+    stole). Droga przebyta do końca i droga z „Wkrótce” nie mają zdania. */
+function dalejDrogi(droga: Droga, zaliczone: number, cel: number, dniCelu: number, maBadania: boolean): Tx | null {
+  if (zaliczone >= DROGI[droga].kamienie.length || wkrotceDrogi(droga, zaliczone, maBadania)) return null;
   if (droga === 'teren') return DALEJ_TEREN;
+  if (droga === 'technologia') return DALEJ_TECHNOLOGIA[zaliczone] ?? null;
   if (droga !== 'ludnosc') return null;
   const progi = progiLudnosci(cel);
   return zaliczone < progi.length ? dalejOsoby(progi[zaliczone]) : dalejSeria(dniCelu);
@@ -299,12 +367,15 @@ function dalejDrogi(droga: Droga, zaliczone: number, cel: number, dniCelu: numbe
 
 /** Postęp pięciu dróg w kolejności ekranu (technologia, teren, lek, ludność, cuda) z odczytu i stanu zarządu. Czysta:
     nic nie zmienia i niczego nie losuje. `zaliczone` to kamienie zapisane w stanie (0 bez `wlaczZwyciestwo`), a nie
-    chwilowy odczyt, więc kamień raz zaliczony nie znika, gdy ludność spadnie; `postep` i `seria` ma tylko ludność,
-    `dalej` ludność i pierwszy kamień terenu, `wkrotce` pozostałe (nigdy oba naraz). */
+    chwilowy odczyt, więc kamień raz zaliczony nie znika, gdy ludność spadnie albo pracownia zostanie rozebrana; `postep`
+    i `seria` ma tylko ludność, `dalej` ludność, pierwszy kamień terenu i dwa pierwsze kamienie technologii (przy odczycie
+    badań), `wkrotce` pozostałe (nigdy oba naraz). */
 export function ocenDrogi(st: GovState, i: GovInput): PostepDrogi[] {
   const mode = st.mode ?? 'zwykly';
   const cel = celGry(st, i);
   const dniCelu = st.zwyciestwo?.dniCelu ?? 0;
+  // bez odczytu badań (gra bez badań) technologia ma dawne „Wkrótce” i nie mówi „co dalej”
+  const maBadania = i.badania !== undefined;
   return KOLEJNOSC.map((droga) => {
     const def = DROGI[droga];
     const zaliczone = Math.min(st.zwyciestwo?.kamienie[droga] ?? 0, def.kamienie.length);
@@ -313,8 +384,8 @@ export function ocenDrogi(st: GovState, i: GovInput): PostepDrogi[] {
       nazwa: nazwaDrogi(droga, mode),
       kamienie: [...def.kamienie],
       zaliczone,
-      wkrotce: wkrotceDrogi(droga, zaliczone),
-      dalej: dalejDrogi(droga, zaliczone, cel, dniCelu),
+      wkrotce: wkrotceDrogi(droga, zaliczone, maBadania),
+      dalej: dalejDrogi(droga, zaliczone, cel, dniCelu, maBadania),
       postep: droga === 'ludnosc' ? { ile: ludnoscOf(i), cel } : null,
       seria: droga === 'ludnosc' ? { dni: dniCelu, z: DNI_CELU } : null,
     };

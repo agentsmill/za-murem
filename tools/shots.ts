@@ -11420,16 +11420,22 @@ function miastoShots(): Shot[] {
  * (kolejka). Ekran dróg otwiera się z Menu tak jak u gracza, a „Graj dalej” i „Nowa gra” są prawdziwymi kliknięciami; zwycięstwo
  * na żądanie to `zm.wygraj` (tylko do zrzutów, prawdziwe zwycięstwo liczy się dopiero po siedmiu porankach, tym zajmują
  * się testy i `npm run bot -- --zwyciestwo`). Zrzut zapisany na końcu scenariusza pokazuje okno, o które chodzi.
+ * Droga technologii (docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-technologia.md, zadanie 2): na ekranie dróg ma
+ * sześć kamieni i na starcie złoty pierwszy kamień ze zdaniem o pracowni (bez „Wkrótce”: odczyt badań w grze jest zawsze),
+ * po dwóch kamieniach (stan ustawiony wprost, bo ery 3–6 są odwrócone) „Wkrótce” o prądzie z projektu gospodarki, a jej
+ * epilog z fabryką bieżącego trybu ma osobne scenariusze w zwykłej grze i w zombie.
  */
 function zwyciestwoShots(): Shot[] {
   const KOLEJNOSC: readonly Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
   const SAVE = 'za-murem-0.4-zapis';
-  /** zdania „Wkrótce” dosłownie z planu (plan docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-rama.md, sekcja „Teksty”): droga → polski i angielski napis; teren dopiero po pierwszym
-      kamieniu, więc go tu nie ma */
+  /** zdania „Wkrótce” dosłownie z planu (plan docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-rama.md, sekcja „Teksty”):
+      droga → polski i angielski napis; teren dopiero po pierwszym kamieniu, więc go tu nie ma, a technologia (w grze odczyt
+      badań jest zawsze) dopiero od drugiego kamienia, o prądzie z projektu gospodarki (plan docs/superpowers/plans/
+      2026-10-19-warunki-zwyciestwa-technologia.md, zadanie 2); dawne „Wkrótce” technologii jest tylko bez odczytu badań */
   const WKROTCE: Partial<Record<Droga, Tx>> = {
     technologia: {
-      pl: 'Wkrótce: badania w pracowni i sieć bez miedzi.',
-      en: 'Coming soon: research and a copper-free grid.',
+      pl: 'Wkrótce: ery 3–6 czekają na prąd z projektu gospodarki.',
+      en: 'Coming soon: eras 3–6 are waiting for power from the economy project.',
     },
     lek: { pl: 'Wkrótce: dalekie wyprawy po lek.', en: 'Coming soon: long runs for the cure.' },
     cuda: { pl: 'Wkrótce: cuda z późnych badań.', en: 'Coming soon: wonders from late research.' },
@@ -11512,9 +11518,14 @@ function zwyciestwoShots(): Shot[] {
       };
     });
   type EkranDrog = Awaited<ReturnType<typeof ekranDrog>>;
-  /** zdania „co dalej” dosłownie (poprawki po recenzji końcowej etapu 1), na starcie gry: ludność przed pierwszym
-      kamieniem (10 osób) i teren przed pierwszym kamieniem (płot); reszta dróg nie ma zdania */
+  /** zdania „co dalej” dosłownie (poprawki po recenzji końcowej etapu 1 i plan technologii), na starcie gry: technologia
+      przed pierwszym kamieniem (pracownia), ludność przed pierwszym kamieniem (10 osób) i teren przed pierwszym kamieniem
+      (płot); reszta dróg (lek, cuda) nie ma zdania */
   const DALEJ_START: Partial<Record<Droga, Tx>> = {
+    technologia: {
+      pl: 'Postawcie pracownię w pokoju waszego mieszkania (Budowa, zakładka Dom).',
+      en: 'Build a research room in a room of your flat (Build, Home tab).',
+    },
     teren: {
       pl: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
       en: 'Put a shared fence round the first building next door.',
@@ -11583,11 +11594,15 @@ function zwyciestwoShots(): Shot[] {
       }
       const wkrotce = d.wkrotce ? d.wkrotce[lang] : null;
       if (w.wkrotce !== wkrotce) throw blad(`„Wkrótce”: ${w.wkrotce} zamiast ${wkrotce}`);
-      // dosłowne zdania z planu, żeby literówka w DROGI nie przeszła razem z ekranem
-      const wzorWkrotce = WKROTCE[droga]?.[lang] ?? null;
-      if (droga !== 'teren' && droga !== 'ludnosc' && w.wkrotce !== wzorWkrotce)
-        throw blad(`„Wkrótce” inne niż w planie: ${w.wkrotce}`);
       const przebyta = d.zaliczone >= def.kamienie.length;
+      // dosłowne zdania z planu, żeby literówka w DROGI nie przeszła razem z ekranem (teren ma własną regułę, ludność nie ma
+      // „Wkrótce”); technologia mówi „Wkrótce” dopiero od drugiego kamienia (wcześniej jest „co dalej”), a droga przebyta
+      // do końca nie mówi go wcale
+      if (droga !== 'teren' && droga !== 'ludnosc') {
+        const wzorWkrotce =
+          przebyta || (droga === 'technologia' && d.zaliczone < 2) ? null : (WKROTCE[droga]?.[lang] ?? null);
+        if (w.wkrotce !== wzorWkrotce) throw blad(`„Wkrótce” inne niż w planie: ${w.wkrotce}`);
+      }
       if (w.wygrana !== przebyta || (w.odznaka !== null) !== przebyta)
         throw blad(`odznaka zwycięstwa: ${w.odznaka}, droga ${przebyta ? 'przebyta' : 'w toku'}`);
       if (przebyta && w.odznaka !== (lang === 'pl' ? 'Zwycięstwo' : 'Victory')) throw blad(`odznaka „${w.odznaka}”`);
@@ -11708,12 +11723,109 @@ function zwyciestwoShots(): Shot[] {
     pl: 'Zarząd dalej się spiera, czy to już osada, czy jeszcze spółdzielnia.',
     en: 'The board is still arguing whether this is a settlement now or still a housing co-op.',
   };
+  /** epilog drogi technologii dosłownie z planu (docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-technologia.md,
+      zadanie 2), polski i angielski: w zwykłej grze fabryka biorobotów, w zombie fabryka humanoidalnych żołnierzy */
+  const FABRYKA: Record<GameMode, Tx> = {
+    zwykly: {
+      pl: 'Fabryka ruszyła. Bioroboty, których bakteria nie rusza, kładą nowe linie od waszej bramy przez całe miasto, a superserwer liczy, kto pierwszy dostanie prąd.',
+      en: 'The factory is running. Biorobots the bacterium cannot touch are laying new lines from your gate across the whole city, while the superserver works out who gets power first.',
+    },
+    zombie: {
+      pl: 'Fabryka ruszyła. Humanoidalni żołnierze wychodzą z bramy i czyszczą miasto ze szwendaczy, kwartał po kwartale, a superserwer pisze im rozkazy i regulamin.',
+      en: 'The factory is running. Humanoid soldiers march out of the gate and clear the city of walkers, block by block, while the superserver writes their orders and their terms of service.',
+    },
+  };
+  /** Epilog drogi technologii w trybie `mode` (komputer, Przymorze, 3×): zwycięstwo na żądanie otwiera okno „Prąd bez
+      miedzi” ze zdaniem o fabryce tego trybu dosłownie z planu (nie drugiego trybu, nie tekstem zastępczym), zdaniem ścieżki
+      (bez ścieżki: neutralne) i czterema liczbami; w stanie sześć kamieni i jedna wygrana, gra stoi. Zmiana języka przy
+      otwartym oknie daje to samo po angielsku (bez polskich słów), „Graj dalej” oddaje tempo, ekran dróg pokazuje drogę
+      przebytą (odznaka, sześć kamieni zaliczonych, ani „Wkrótce”, ani „co dalej”). Na zrzucie epilog otwarty od nowa. */
+  const epilogTechnologii = async (page: Page, base: string, mode: GameMode) => {
+    await page.goto(`${base}?demo=przymorze${mode === 'zombie' ? '&tryb=zombie' : ''}&speed=2&cam=hq,1.3`);
+    await waitIdle(page);
+    const tryb = await page.evaluate(() => window.zm!.gov!.mode);
+    if (tryb !== mode) throw new Error(`tryb gry „${tryb}” zamiast „${mode}”`);
+    const tempo = await page.evaluate(() => window.zm!.speed());
+    if (tempo !== 2) throw new Error(`tempo przed epilogiem: ${tempo}`);
+    const przed = await stanZw(page);
+    if (!przed || przed.epilogi.length || przed.wygrane.length)
+      throw new Error(`stan na starcie: ${JSON.stringify(przed)}`);
+    const ile = await ludzi(page);
+    const rodzaj = await page.evaluate(() => window.zm!.wygraj('technologia'));
+    if (rodzaj !== 'zwyciestwo') throw new Error(`wygraj(technologia) otworzyło „${rodzaj}”`);
+    await page.waitForSelector('#sheet.zwyciestwo');
+    await dwieKlatki(page);
+    const e = await epilogDom(page);
+    console.log(`  epilog technologii (${mode}): ${e.kicker} / ${e.tytul}: ${e.opowiesc}`);
+    if (e.kicker !== 'Zwycięstwo' || e.tytul !== 'Prąd bez miedzi')
+      throw new Error(`nagłówek: ${e.kicker} / ${e.tytul}`);
+    if (e.opowiesc !== FABRYKA[mode].pl)
+      throw new Error(`tekst drogi w trybie ${mode}:\n  ${e.opowiesc}\nzamiast\n  ${FABRYKA[mode].pl}`);
+    const drugi = FABRYKA[mode === 'zombie' ? 'zwykly' : 'zombie'].pl;
+    if (e.tekst.includes(drugi) || e.tekst.includes('przebyta do końca'))
+      throw new Error(`w epilogu tekst drugiego trybu albo zastępczy: ${e.tekst}`);
+    if (e.sciezka !== SCIEZKA_BRAK.pl) throw new Error(`zdanie ścieżki bez ścieżki: ${e.sciezka}`);
+    const staty = ['Dzień 1', `Ludzi: ${ile}`, 'Zmarli: 0', 'Uchwały: 0'];
+    if (e.staty.join('|') !== staty.join('|'))
+      throw new Error(`liczby epilogu: ${e.staty.join(' | ')} zamiast ${staty.join(' | ')}`);
+    if (e.przyciski.map((p) => `${p.akcja}:${p.tekst}`).join('|') !== 'zw-nowa:Nowa gra|zw-dalej:Graj dalej')
+      throw new Error(`przyciski epilogu: ${JSON.stringify(e.przyciski)}`);
+    naEkranie(e, 'epilog technologii');
+    if (e.tempo !== 0) throw new Error(`gra nie stanęła przy epilogu: tempo ${e.tempo}`);
+    // w stanie sześć kamieni, jedna wygrana, epilog w kolejce
+    const stan = await stanZw(page);
+    if (
+      stan?.epilogi.join() !== 'technologia' ||
+      stan.wygrane.join() !== 'technologia' ||
+      stan.kamienie.technologia !== 6
+    )
+      throw new Error(`stan przy epilogu: ${JSON.stringify(stan)}`);
+    // po angielsku to samo zdanie fabryki tego trybu, bez polskich słów; z powrotem po polsku
+    await zmienJezyk(page, 'en');
+    await page.waitForFunction(() => document.querySelector('#sheet .sheet-kicker')?.textContent === 'Victory');
+    const en = await epilogDom(page);
+    console.log(`  po angielsku: ${en.tytul}: ${en.opowiesc}`);
+    if (en.tytul !== 'Power without copper') throw new Error(`tytuł po angielsku: ${en.tytul}`);
+    if (en.opowiesc !== FABRYKA[mode].en)
+      throw new Error(`tekst drogi po angielsku:\n  ${en.opowiesc}\nzamiast\n  ${FABRYKA[mode].en}`);
+    const obce = polskieLitery(en.tekst, []);
+    if (obce.length) throw new Error(`polskie słowa w epilogu technologii po angielsku: ${obce.join(' ')}`);
+    await zmienJezyk(page, 'pl');
+    await page.waitForFunction(() => document.querySelector('#sheet .sheet-kicker')?.textContent === 'Zwycięstwo');
+    // „Graj dalej”: okno się zamyka, tempo wraca, wygrana i komplet kamieni zostają w stanie, epilog nie wraca
+    await page.click('#sheet [data-act="zw-dalej"]');
+    await zamkniete(page, 'po „Graj dalej”');
+    const po = await page.evaluate(() => window.zm!.speed());
+    if (po !== tempo) throw new Error(`po „Graj dalej” tempo ${po} zamiast ${tempo}`);
+    const dalej = await stanZw(page);
+    if (!dalej || dalej.epilogi.length || dalej.wygrane.join() !== 'technologia' || dalej.kamienie.technologia !== 6)
+      throw new Error(`stan po „Graj dalej”: ${JSON.stringify(dalej)}`);
+    // ekran dróg po zwycięstwie: technologia przebyta (odznaka i sześć kamieni zaliczonych sprawdza sprawdzDrogi), reszta
+    // jak na starcie (teren i ludność ze zdaniem „co dalej”)
+    await otworzDrogi(page);
+    const o = await ekranDrog(page);
+    await sprawdzDrogi(page, o, 'pl', mode, { teren: DALEJ_START.teren!, ludnosc: DALEJ_START.ludnosc! });
+    const droga = o.wiersze[0];
+    if (!droga.wygrana || droga.kamienie.length !== 6 || droga.kamienie.some((k) => k.stan !== 'zaliczony'))
+      throw new Error(`technologia po zwycięstwie: ${JSON.stringify(droga)}`);
+    if (droga.wkrotce !== null || droga.kamienie.some((k) => k.dalej !== null))
+      throw new Error(`przebyta technologia ma „Wkrótce” albo „co dalej”: ${JSON.stringify(droga)}`);
+    await page.keyboard.press('Escape');
+    await zamkniete(page, 'po Esc na ekranie dróg');
+    // zrzut: epilog otwarty od nowa (wygrana nie dubluje się w stanie)
+    if ((await page.evaluate(() => window.zm!.wygraj('technologia'))) !== 'zwyciestwo')
+      throw new Error('epilog nie otworzył się drugi raz');
+    await page.waitForSelector('#sheet.zwyciestwo');
+    if ((await stanZw(page))?.wygrane.length !== 1) throw new Error('wygrana zapisała się drugi raz');
+    await dwieKlatki(page);
+  };
 
   return [
     {
       // ekran dróg z Menu (komputer, polski, Przymorze): przycisk w Menu, pięć wierszy w kolejności ekranu z kamieniami
-      // (zaliczone, następny, reszta), droga ludnościowa z liczbą i paskiem do celu 500 z danych 2021, pozostałe z
-      // „Wkrótce”; gra stoi, dopóki okno otwarte; „Wróć” wraca do Menu, a Esc oddaje grę w tempie sprzed Menu
+      // (zaliczone, następny, reszta), droga ludnościowa z liczbą i paskiem do celu 500 z danych 2021, technologia (sześć
+      // kamieni) i teren ze złotym pierwszym kamieniem i zdaniem „co dalej”, lek i cuda z „Wkrótce”; gra stoi, dopóki
+      // okno otwarte; „Wróć” wraca do Menu, a Esc oddaje grę w tempie sprzed Menu
       name: 'zwyciestwo-drogi',
       query: '',
       run: async (page, base) => {
@@ -11742,12 +11854,17 @@ function zwyciestwoShots(): Shot[] {
         if (o.bok) throw new Error('ekran dróg przewija się w bok');
         if (lud.postep!.cel !== 500) throw new Error(`cel ludności na Przymorzu: ${lud.postep!.cel} zamiast 500`);
         if (lud.postep!.ile < 1) throw new Error(`ludność ${lud.postep!.ile}`);
-        // początek gry: droga terenu bez „Wkrótce” (pierwszy kamień do zdobycia od razu), reszta dróg ma je
-        const teren = o.wiersze[1];
-        if (teren.wkrotce !== null || teren.kamienie[0].stan !== 'nastepny')
-          throw new Error(`teren na starcie: ${JSON.stringify(teren)}`);
-        for (const i of [0, 2, 4])
-          if (!o.wiersze[i].wkrotce) throw new Error(`brak „Wkrótce” przy ${o.wiersze[i].droga}`);
+        // początek gry: technologia (pracownia do postawienia, sześć kamieni) i teren (pierwszy płot) bez „Wkrótce”, bo
+        // pierwszy kamień jest do zdobycia od razu; lek i cuda mają je
+        for (const [k, kamieni] of [
+          [0, 6],
+          [1, 5],
+        ] as const) {
+          const wiersz = o.wiersze[k];
+          if (wiersz.wkrotce !== null || wiersz.kamienie[0].stan !== 'nastepny' || wiersz.kamienie.length !== kamieni)
+            throw new Error(`${wiersz.droga} na starcie: ${JSON.stringify(wiersz)}`);
+        }
+        for (const i of [2, 4]) if (!o.wiersze[i].wkrotce) throw new Error(`brak „Wkrótce” przy ${o.wiersze[i].droga}`);
         // desktop: dwie kolumny kart
         const lewe = new Set(o.wiersze.map((w) => w.prostokat[0]));
         if (lewe.size !== 2) throw new Error(`karty dróg w ${lewe.size} kolumnach zamiast dwóch`);
@@ -11845,8 +11962,10 @@ function zwyciestwoShots(): Shot[] {
         const nazwy = en.wiersze.map((w) => w.nazwa).join(' | ');
         if (nazwy !== 'Power without copper | Za Murem | The premium-tier kill switch | A new estate | Wonders')
           throw new Error(`nazwy dróg po angielsku: ${nazwy}`);
-        if (en.wiersze[0].wkrotce !== 'Coming soon: research and a copper-free grid.')
-          throw new Error(`„Coming soon” przy technologii: ${en.wiersze[0].wkrotce}`);
+        // technologia na starcie: bez „Coming soon” (pierwszy kamień do zdobycia od razu, zdanie „co dalej” sprawdził
+        // `sprawdzDrogi`), sześć kamieni
+        if (en.wiersze[0].wkrotce !== null || en.wiersze[0].kamienie.length !== 6)
+          throw new Error(`technologia na starcie: ${JSON.stringify(en.wiersze[0])}`);
         console.log(`  po angielsku: ${nazwy}; ${en.wiersze[3].liczby}`);
         // zmiana języka przy otwartym oknie: to samo okno po polsku, z tymi samymi stanami kamieni, i z powrotem
         const stany = (o: EkranDrog) => o.wiersze.map((w) => w.kamienie.map((k) => k.stan).join()).join(';');
@@ -11874,7 +11993,7 @@ function zwyciestwoShots(): Shot[] {
     {
       // ostatni kamień ludności z licznikiem poranków (komputer, polski): stan ustawiony wprost, bo prawdziwa seria to
       // kilka dób gry (cztery kamienie, trzy poranki z siedmiu, cel 40 przy 49 ludziach). Pod złotym „Cel przez 7 dni”
-      // stoi zdanie o siedmiu porankach dosłownie z „(3 z 7)”, tylko ono i zdanie o płocie przy terenie; technologia,
+      // stoi zdanie o siedmiu porankach dosłownie z „(3 z 7)”, obok zdań o pracowni (technologia) i o płocie (teren);
       // lek i cuda (z „Wkrótce”) nie mają złotego kamienia ani „Następny:”; `zm.zwyciestwo()` ma serię {3, 7}
       name: 'zwyciestwo-drogi-seria',
       query: '',
@@ -11885,6 +12004,7 @@ function zwyciestwoShots(): Shot[] {
         await otworzDrogi(page);
         const o = await ekranDrog(page);
         const oceny = await sprawdzDrogi(page, o, 'pl', 'zwykly', {
+          technologia: DALEJ_START.technologia!,
           teren: DALEJ_START.teren!,
           ludnosc: dalejSeria(3),
         });
@@ -11895,9 +12015,9 @@ function zwyciestwoShots(): Shot[] {
         if (lud.zaliczone !== 4 || JSON.stringify(lud.seria) !== '{"dni":3,"z":7}')
           throw new Error(`ocena ludności: ${lud.zaliczone} kamieni, seria ${JSON.stringify(lud.seria)}`);
         if (lud.postep!.ile !== ile || lud.postep!.cel !== 40) throw new Error(`pasek: ${JSON.stringify(lud.postep)}`);
-        // złoty następny jest tylko na ludności (ostatni kamień) i na terenie (pierwszy), nigdzie indziej
+        // złoty następny jest tylko na technologii (pierwszy), terenie (pierwszy) i ludności (ostatni), nigdzie indziej
         const zlote = o.wiersze.filter((w) => w.kamienie.some((k) => k.stan === 'nastepny')).map((w) => w.droga);
-        if (zlote.join() !== 'teren,ludnosc') throw new Error(`następny kamień na drogach ${zlote.join()}`);
+        if (zlote.join() !== 'technologia,teren,ludnosc') throw new Error(`następny kamień na drogach ${zlote.join()}`);
         for (const w of o.wiersze.filter((w) => w.wkrotce))
           if (w.kamienie.some((k) => k.stan === 'nastepny' || k.czytnik === 'Następny: '))
             throw new Error(`droga ${w.droga} z „Wkrótce” ma następny kamień`);
@@ -11908,7 +12028,7 @@ function zwyciestwoShots(): Shot[] {
     {
       // to samo po angielsku na telefonie (390×844, stuknięcia): zdanie o siedmiu porankach po angielsku z „(3 of 7)”
       // mieści się w karcie, nie wychodzi poza nią ani w bok, po przewinięciu karty ludności jest w całości nad stopką,
-      // bez polskich liter; drogi z „Coming soon” bez „Next:”
+      // bez polskich liter; lek i cuda (z „Coming soon”) bez „Next:”
       name: 'en-zwyciestwo-drogi-seria-telefon',
       query: '',
       w: 390,
@@ -11920,7 +12040,11 @@ function zwyciestwoShots(): Shot[] {
         await ustawSerie(page, 3);
         await otworzDrogi(page, true);
         const o = await ekranDrog(page);
-        await sprawdzDrogi(page, o, 'en', 'zwykly', { teren: DALEJ_START.teren!, ludnosc: dalejSeria(3) });
+        await sprawdzDrogi(page, o, 'en', 'zwykly', {
+          technologia: DALEJ_START.technologia!,
+          teren: DALEJ_START.teren!,
+          ludnosc: dalejSeria(3),
+        });
         const pl0 = polskieLitery(o.tekst, []);
         if (pl0.length) throw new Error(`polskie słowa w ekranie dróg po angielsku: ${pl0.join(' ')}`);
         if (o.bok) throw new Error('ekran dróg przewija się w bok na telefonie');
@@ -11956,6 +12080,41 @@ function zwyciestwoShots(): Shot[] {
         if (uklad.ucina) throw new Error('zdanie wychodzi poza kartę w bok');
         if (uklad.wiersze > 6) throw new Error(`zdanie ma ${uklad.wiersze} wierszy`);
         await dwieKlatki(page);
+      },
+    },
+    {
+      // technologia z dwoma kamieniami (komputer, polski): pracownia i pierwsze badanie zaliczone, a Wkrótce mówi o prądzie
+      // z projektu gospodarki (tak daleko gracz dochodzi dziś, bo ery 3–6 są odwrócone). Stan ustawiony wprost jak w
+      // `ustawSerie`, kamienie z prawdziwego odczytu sprawdzają testy. Wiersz bez złotego następnego kamienia i bez zdania
+      // „co dalej”, reszta ekranu jak na starcie (teren i ludność ze zdaniem „co dalej”, lek i cuda z „Wkrótce”)
+      name: 'zwyciestwo-drogi-technologia',
+      query: '',
+      run: async (page, base) => {
+        await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3`);
+        await waitIdle(page);
+        await page.evaluate(() => {
+          window.zm!.gov!.zwyciestwo!.kamienie.technologia = 2;
+        });
+        await otworzDrogi(page);
+        const o = await ekranDrog(page);
+        const oceny = await sprawdzDrogi(page, o, 'pl', 'zwykly', {
+          teren: DALEJ_START.teren!,
+          ludnosc: DALEJ_START.ludnosc!,
+        });
+        const t = o.wiersze[0];
+        console.log(
+          `  technologia: ${oceny[0].zaliczone}/${oceny[0].kamienie.length}, ${t.kamienie.map((k) => k.stan).join()}, „${t.wkrotce}”`,
+        );
+        if (oceny[0].zaliczone !== 2 || t.wkrotce !== WKROTCE.technologia!.pl)
+          throw new Error(`technologia z dwoma kamieniami: ${JSON.stringify(t)}`);
+        const stany = t.kamienie.map((k) => k.stan).join();
+        if (stany !== 'zaliczony,zaliczony,dalszy,dalszy,dalszy,dalszy') throw new Error(`stany kamieni: ${stany}`);
+        if (t.kamienie.some((k) => k.dalej !== null || k.czytnik === 'Następny: '))
+          throw new Error(`technologia z „Wkrótce” ma „co dalej” albo następny kamień: ${JSON.stringify(t.kamienie)}`);
+        const zlote = o.wiersze.filter((w) => w.kamienie.some((k) => k.stan === 'nastepny')).map((w) => w.droga);
+        if (zlote.join() !== 'teren,ludnosc') throw new Error(`następny kamień na drogach ${zlote.join()}`);
+        if (o.bok) throw new Error('ekran dróg przewija się w bok');
+        if (o.tempo !== 0) throw new Error(`gra nie stoi przy oknie dróg: tempo ${o.tempo}`);
       },
     },
     {
@@ -12122,6 +12281,21 @@ function zwyciestwoShots(): Shot[] {
       },
     },
     {
+      // epilog drogi technologii w zwykłej grze (komputer, polski, 3×): okno „Prąd bez miedzi” ze zdaniem o biorobotach i
+      // superserwerze dosłownie z planu, sześć kamieni i jedna wygrana w stanie, gra stoi; po angielsku to samo zdanie,
+      // „Graj dalej” oddaje tempo, ekran dróg pokazuje drogę przebytą. Zrzut: epilog otwarty od nowa
+      name: 'zwyciestwo-epilog-technologia',
+      query: '',
+      run: (page, base) => epilogTechnologii(page, base, 'zwykly'),
+    },
+    {
+      // to samo w trybie zombie (?tryb=zombie): zdanie o humanoidalnych żołnierzach, którzy czyszczą miasto ze szwendaczy,
+      // a nie o biorobotach; ekran dróg w zombie ma drogę leku jako „Lek”, technologia bez zmian
+      name: 'zwyciestwo-epilog-technologia-zombie',
+      query: '',
+      run: (page, base) => epilogTechnologii(page, base, 'zombie'),
+    },
+    {
       // dwie drogi wygrywają naraz: dwa epilogi jeden po drugim (kolejka `epilogi`). Pierwszy otwiera `zm.wygraj`, druga
       // droga czeka za nim (okno jest otwarte, więc nic się nie otwiera), „Graj dalej” pokazuje drugi epilog w tym samym
       // trybie pauzy, drugi „Graj dalej” oddaje tempo sprzed epilogów; obie wygrane zostają w stanie, kolejka pusta
@@ -12255,7 +12429,10 @@ function zwyciestwoShots(): Shot[] {
         // na ekranie dróg droga ludnościowa przebyta (odznaka), reszta bez zmian
         await otworzDrogi(page);
         const o = await ekranDrog(page);
-        await sprawdzDrogi(page, o, 'pl', 'zwykly', { teren: DALEJ_START.teren! });
+        await sprawdzDrogi(page, o, 'pl', 'zwykly', {
+          technologia: DALEJ_START.technologia!,
+          teren: DALEJ_START.teren!,
+        });
         if (!o.wiersze[3].wygrana) throw new Error('droga ludnościowa po zwycięstwie bez odznaki');
       },
     },
