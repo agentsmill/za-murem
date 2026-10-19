@@ -1326,7 +1326,7 @@ function hud(now: number) {
     const bud = !apt && budFocus >= 0 ? sim.budynekDoKarty(budFocus) : null;
     card.hidden = !apt && !bud;
     if (apt) setCard(aptCard(apt, touchUI, words, wordsE));
-    else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze, sim.st.plot), touchUI));
+    else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze, sim.st.plot, pietraGry), touchUI));
     return;
   }
   card.hidden = false;
