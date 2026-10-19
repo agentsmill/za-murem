@@ -285,6 +285,29 @@ describe('okna zarządu', () => {
     expect(setNight(gov, p.card.people[0].id, 'warta:brama')).toBe(true);
   });
 
+  it('eventSheet z gdzie ma przycisk event-show przed wyborami, bez gdzie nie ma', () => {
+    const karta: Extract<Prompt, { k: 'wydarzenie' }> = {
+      k: 'wydarzenie',
+      id: 'x',
+      title: { pl: 'Szwendacz', en: 'Walker' },
+      text: { pl: 'Stoi.', en: 'Standing.' },
+      choices: [
+        { label: { pl: 'Tak', en: 'Yes' }, ok: true },
+        { label: { pl: 'Nie', en: 'No' }, ok: true },
+      ],
+    };
+    const bez = eventSheet(karta);
+    expect(bez.foot).not.toContain('event-show');
+    const z = eventSheet({ ...karta, gdzie: { x: 120, y: 80 } });
+    expect(z.foot.match(/data-act="event-show"/g)?.length).toBe(1);
+    expect(z.foot).toContain('Pokaż');
+    // przycisk jest przed wyborami i nie zmienia ich liczby ani numeracji
+    expect(z.foot.indexOf('event-show')).toBeLessThan(z.foot.indexOf('data-act="event"'));
+    expect(z.foot.match(/data-act="event"/g)?.length).toBe(2);
+    expect(z.foot).toContain('data-act="event" data-arg="0"');
+    expect(z.foot).toContain('data-act="event" data-arg="1"');
+  });
+
   it('uchwała, wydarzenie, raport i palenie mebli', () => {
     const { sim, seed } = fresh();
     sim.st.tick = tickAt(19.5);

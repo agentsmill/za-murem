@@ -2,7 +2,9 @@
    policzone raz ze świata, do tego słownik wspólnoty (w domu ulica i komitet ulicy, w bloku spółdzielnia i zarząd)
    i wolne miejsca dla mieszkańców. Z tego zarząd bierze warianty tekstów i warunki wydarzeń; słownik czytają też
    teksty spoza zarządu. Odległości w kwadratach liczb całkowitych, bez Math.hypot, żeby wynik był ten sam w każdej
-   przeglądarce. Ze świata tylko typy: zarząd nie ciągnie za sobą kodu świata ani symulacji. */
+   przeglądarce. Ze świata tylko typy: zarząd nie ciągnie za sobą kodu świata ani symulacji. `stronyOf` liczy ze świata,
+   gdzie przy siatce jest strona garaży i strona najbliższego budynku mieszkalnego (kafelki dla „Sprawdzić” z krzyku
+   i hałasu); wołają ją `govInput` (src/sim/gov.ts) i testy. */
 
 import type { EndingId } from '../content/data.ts';
 import type { World } from '../world/world.ts';
@@ -133,6 +135,63 @@ function describePlace(w: PlaceWorld): GovPlace {
     clinic: within(clinic, CLINIC),
     tower: tower?.kind ?? null,
   };
+}
+
+/** to, czego strony potrzebują ze świata: budynki, siedziba, rozmiar, kafelki nie do przejścia i podwórko siatki */
+export type StronyWorld = Pick<World, 'size' | 'buildings' | 'hq'> & {
+  blocked?: Uint8Array;
+  fence?: Pick<World['fence'], 'yard'>;
+};
+
+/** Kafelek podwórka przy siatce od strony najbliższych garaży (do 150 m od siedziby) i od strony najbliższego budynku
+    mieszkalnego za siatką (blok albo dom do 120 m, bez siedziby i bez `wylaczone`, czyli budynków już otoczonych
+    wspólnym płotem). Budynek to ten o najbliższym środku od środka siedziby (jak w `placeOf`), a kafelek to wolny kafelek
+    podwórka o najbliższym kwadracie odległości od jego środka; remis rozstrzyga niższy numer. Same liczby całkowite,
+    bez Math.hypot. Strony, których świat nie ma, nie występują; bez podwórka obiekt jest pusty. */
+export function stronyOf(w: StronyWorld, wylaczone: ReadonlySet<number> = new Set()): NonNullable<GovInput['strony']> {
+  const yard = w.fence?.yard ?? [];
+  const hq = w.buildings[w.hq];
+  if (!yard.length || !hq) return {};
+  const size = w.size;
+  const mid = (b: World['buildings'][number]): [number, number] => [
+    Math.round((b.x0 + b.x1) / 2),
+    Math.round((b.y0 + b.y1) / 2),
+  ];
+  const [hx, hy] = mid(hq);
+  let garaz: { d: number; at: [number, number] } | null = null;
+  let blok: { d: number; at: [number, number] } | null = null;
+  for (let k = 0; k < w.buildings.length; k++) {
+    if (k === w.hq || wylaczone.has(k)) continue;
+    const b = w.buildings[k];
+    const at = mid(b);
+    const d = (at[0] - hx) ** 2 + (at[1] - hy) ** 2;
+    if (b.cls === 'garaz' && d <= GARAGES * GARAGES && (!garaz || d < garaz.d)) garaz = { d, at };
+    else if ((b.cls === 'blok' || b.cls === 'dom') && d <= NEAR * NEAR && (!blok || d < blok.d)) blok = { d, at };
+  }
+  /** wolny kafelek podwórka najbliższy punktowi */
+  const najblizszy = (at: [number, number]): number => {
+    let best = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of yard) {
+      if (w.blocked?.[t]) continue;
+      const d = ((t % size) - at[0]) ** 2 + (Math.floor(t / size) - at[1]) ** 2;
+      if (d < bd || (d === bd && t < best)) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  };
+  const out: NonNullable<GovInput['strony']> = {};
+  if (garaz) {
+    const t = najblizszy(garaz.at);
+    if (t >= 0) out.garaze = t;
+  }
+  if (blok) {
+    const t = najblizszy(blok.at);
+    if (t >= 0) out.blok = t;
+  }
+  return out;
 }
 
 /** jacy sąsiedzi są w okolicy (w 120 m): bloki, domy albo nikt (null); jedno źródło słów o sąsiadach w wydarzeniach */

@@ -26,6 +26,12 @@ export interface GovNeeds {
   mood: number;
 }
 
+/** kafelek mapy w metrach (siatka 1 m; kamera i znaczniki liczą w kafelkach) */
+export interface Punkt {
+  x: number;
+  y: number;
+}
+
 /** osoba z zarządu (jak SimPerson w snapshot.ts) */
 export interface GovPerson {
   pawn: number;
@@ -80,6 +86,9 @@ export interface GovHole {
   size: number;
   /** nazwa miejsca do tekstów, np. „przy garażach” (po angielsku „by the garages”) */
   name?: Tx;
+  /** kafelki dziury (numery kafelków mapy, rosnąco), skąd karta „Sprawdzić” bierze miejsce, gdy nie zna stron
+      (`GovInput.strony`); symulacja je podaje, atrapy w testach nie muszą */
+  tiles?: number[];
 }
 
 export interface GovFence {
@@ -113,6 +122,29 @@ export interface GovPlace {
   tower: 'wiezowiec' | 'blok' | 'szkola' | 'kosciol' | 'hala' | 'market' | null;
 }
 
+/** mieszkaniec siedziby z osobą z generatora mieszkańców: te pola osoby zarządu co `GovPerson` bez pracy, wojny i warty
+    (lokator nie dostaje poleceń od zarządu), a bez historii, odnośnika i rodziny z generatora (to czyta tylko interfejs) */
+export interface GovLokator {
+  pawn: number;
+  /** id osoby w stanie symulacji (s1, s2…), inne niż id osób zarządu */
+  id: string;
+  name: string;
+  first: string;
+  f: boolean;
+  age: number;
+  prof: string;
+  skills: Partial<Record<Dom, number>>;
+  traits: string[];
+  needs: GovNeeds;
+  asleep: boolean;
+  inside: boolean;
+  /** kafelek mapy, na którym stoi */
+  tile: number;
+}
+
+/** los zwłok zmarłego w trybie zombie (`GovInput.dead[].cialo`): leżą i mogą wstać, dobite, nie ma ich na mapie */
+export type Cialo = 'lezy' | 'dobite' | 'brak';
+
 export interface GovInput {
   /** krok symulacji (ticki) */
   tick: number;
@@ -127,6 +159,9 @@ export interface GovInput {
   /** pali się koza zarządu albo któreś z nowych palenisk naszych mieszkań (koza z beczki, kocioł) */
   kozaLit: boolean;
   people: GovPerson[];
+  /** mieszkańcy siedziby z osobą z generatora mieszkańców (pionki `resident`, bez sąsiadów), w kolejności pionków;
+      bez generatora (opcja `mieszkancy` w createSim) i w ręcznym wejściu testów pola nie ma, a host oddaje pustą listę */
+  lokatorzy?: GovLokator[];
   stock: GovStock;
   /** sekundy przy ekranie od startu gry (bez pauzy); przy tempie 1× to tick / 20 */
   screen: number;
@@ -146,10 +181,23 @@ export interface GovInput {
       zarząd bierze osoby z pracą 'guard' za wartę w nieznanym miejscu */
   guards?: { id: string; post: string }[];
   /** tryb zombie: szwendacze przy siatce (do 12 m), napierający, liczniki od początku gry (zabici, przerwania
-      siatki, ugryzienia) i wielkość stada tej nocy */
-  horde?: { near: number; pressing: number; killed: number; breaches: number; bites: number; tonight: number };
-  /** zmarli (zarząd z id, mieszkańcy z pustym id) od początku gry, po kolei; lista tylko rośnie */
-  dead?: { id: string; name: string; cause: string; tick: number }[];
+      siatki, ugryzienia) i wielkość stada tej nocy. `przy`: prawdziwy szwendacz najbliżej siatki, nie dalej niż 3 m
+      od jej kafelka (numer pionka i jego kafelek); remis rozstrzyga niższy numer pionka; bez pola: nikogo przy siatce */
+  horde?: {
+    near: number;
+    pressing: number;
+    killed: number;
+    breaches: number;
+    bites: number;
+    tonight: number;
+    przy?: { pawn: number; x: number; y: number };
+  };
+  /** zmarli (zarząd z id, mieszkańcy z pustym id) od początku gry, po kolei; lista tylko rośnie. Do pogrzebu (karta
+      `pogrzeb`): `f` to płeć zmarłego i jest tylko wtedy, gdy miał osobę (zarząd albo mieszkaniec z imieniem; mieszkaniec
+      bez osoby nie ma imienia i pogrzebu), `min` to minuta gry zgonu (jak `gameMin`), a `cialo` tylko w trybie zombie: co
+      stało się ze zwłokami. `lezy`: leżą i mogą jeszcze wstać, `dobite`: ktoś je dobił, `brak`: nie ma ich na mapie
+      (wstały albo zmarły poza murem, na wyprawie) */
+  dead?: { id: string; name: string; cause: string; tick: number; f?: boolean; min?: number; cialo?: Cialo }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
   /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
@@ -163,6 +211,12 @@ export interface GovInput {
   /** ilu ludzi mieszkało w kwadracie domu w 2021 roku według NSP; z tego liczy się cel drogi ludnościowej, bez pola
       (albo z liczbą bez sensu) cel to 250 */
   ludnosc2021?: number;
+  /** strony świata dla kart „Krzyk z bloku obok”, „Hałas za garażami” i „Ktoś nie może spać”: kafelek podwórka przy
+      siatce od strony najbliższych garaży (do 150 m od siedziby) i od strony najbliższego budynku mieszkalnego za
+      siatką (do 120 m), numer kafelka jak w `GovHole.tiles` (y * rozmiar + x). `garaze` i `blok` liczy `govInput` raz
+      na kształt siatki; strony, których świat nie ma, nie występują, a bez pola karta bierze największą dziurę (albo
+      nie pozwala sprawdzić). `koza`: wolny kafelek przed kozą zarządu we wnętrzu jego mieszkania, bez kozy brak */
+  strony?: { garaze?: number; blok?: number; koza?: number };
   /** teren: ile budynków wspólny płot dołączył do naszego obwodu; bez pola droga terenu nie ma jak liczyć kamieni */
   teren?: { przylaczone: number };
   /** badania (src/sim/badania.ts): czy stoi pracownia, ile technologii z drzewka jest zbadanych (identyfikatory spoza
@@ -259,6 +313,20 @@ export interface GovEffects {
   /** znalezione książki (dziedziny), po jednej na sztukę; symulacja kładzie je na półkę osady (dodajKsiazke), trzecią
       z dziedziny zamienia na drewno; tablica powstaje przy pierwszej książce */
   books?: TechDom[];
+  /** osoba zarządu (id z generatora) atakuje pionek o tym numerze, np. szwendacza przy siatce z karty „Szwendacz”;
+      symulacja wstawia polecenie 'attack' (pionka, którego już nie ma, polecenie pomija). Tablica powstaje przy
+      pierwszym ataku */
+  atak?: { id: string; pawn: number }[];
+  /** mieszkańcy z osobą (id osoby, jak `GovLokator.id`), którzy przechodzą do zarządu: ten sam pionek i ta sama osoba,
+      rodzaj `core`, potrzeby zostają, a łóżko w mieszkaniu mieszkańców jest wolne od razu, bo zarząd śpi w mieszkaniu
+      siedziby (`awansuj` w src/sim/sim.ts). Tablica powstaje przy pierwszym awansie */
+  awans?: string[];
+  /** osoby (mieszkańcy z osobą i osoby zarządu), które wychodzą bramą: idą do bramy, za bramą ulicą daleko od siatki
+      i znikają, łóżko jest wolne od razu (`wyprowadz`). Tablica powstaje przy pierwszym wyrzuceniu */
+  wyrzuc?: string[];
+  /** osoba zarządu idzie na kafelek (od strony podwórka, najbliższy osiągalny), stoi tam 10 minut gry i wraca do
+      zajęć (`sprawdz`). Tablica powstaje przy pierwszym sprawdzeniu */
+  sprawdz?: { id: string; tile: number }[];
 }
 
 export interface RaidPlan {
@@ -392,7 +460,15 @@ export type Prompt =
   | { k: 'raport'; report: NightReport }
   | { k: 'uchwala'; day: number; first: boolean; options: LawOption[] }
   | { k: 'karta'; card: NightCard; assign: Record<string, string> }
-  | { k: 'wydarzenie'; id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[] };
+  | {
+      k: 'wydarzenie';
+      id: string;
+      title: Tx;
+      text: Tx;
+      choices: { label: Tx; ok: boolean }[];
+      /** miejsce na mapie (kafelki) dla przycisku „Pokaż”; brak: karta nie ma miejsca */
+      gdzie?: Punkt;
+    };
 
 // ---------------------------------------------------------------- stan
 
@@ -501,12 +577,17 @@ export interface GovState {
   later: { day: number; stock: Partial<StockDelta>; line: Tx }[];
   /** decyzje gracza w sekundach przy ekranie (do pomiaru tempa) */
   decisions: { s: number; k: string }[];
-  log: { day: number; clock: string; txt: Tx; big: boolean }[];
+  /** kronika; wpis o karcie z miejscem na mapie niesie to miejsce (`gdzie`, na później: przycisk „Pokaż” w kronice) */
+  log: { day: number; clock: string; txt: Tx; big: boolean; gdzie?: Punkt }[];
   over: EndingId | null;
   /** tryb gry; stary zapis: zwykły */
   mode?: GameMode;
   /** ile zgonów z GovInput.dead zarząd już opłakał */
   deadN?: number;
+  /** ile zgonów z GovInput.dead przeszło przez pogrzeb (karta `pogrzeb`: pokazana albo pominięta, bo zmarły nie miał
+      imienia, minęły ponad dwie doby albo zgon był sprzed zapisu); pole od pierwszego zgonu po tej zmianie, w starym
+      zapisie bez niego liczy się od `deadN` */
+  pogrzebN?: number;
   /** ile napaści z GovInput.napady osiedle już policzyło (pole od pierwszej napaści) */
   napadN?: number;
   /** mapa miasta: stan odwiedzonych miejsc; pole od `wlaczMiasto` (opcja `miasto`), bez niego zarząd gra na TARGETS */

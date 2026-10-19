@@ -813,6 +813,14 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return walking
         ? L('Wychodzi na wyprawę.', 'Heading out on a supply run.')
         : L('Na wyprawie.', 'Out on a supply run.');
+    case 'odejscie':
+      return walking
+        ? L(`Idzie do ${wordsOfWorld(w).brama.d}, żeby odejść.`, `Heading for ${wordsEnOfWorld(w).brama} to leave.`)
+        : L('Odchodzi z osiedla.', 'Leaving the neighbourhood.');
+    case 'sprawdz':
+      return walking
+        ? L('Idzie sprawdzić, co się dzieje.', 'Going to check what is happening.')
+        : L('Rozgląda się i nasłuchuje.', 'Looking around and listening.');
     case 'raid':
       return (
         [

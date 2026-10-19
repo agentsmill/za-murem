@@ -2,7 +2,9 @@
    sieci, polecenia nieodwracalne), menu (z linią o źródłach danych mieszkańców i przyciskiem ekranu dróg do
    zwycięstwa, który rysuje src/ui/zwyciestwo.ts), jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i
    zwracają HTML w czterech częściach
-   (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts.
+   (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts. Okno wydarzenia
+   z miejscem na mapie (`Prompt.gdzie`) ma przed wyborami przycisk „Pokaż” (`event-show`): main.ts jedzie kamerą na
+   miejsce i zostawia okno otwarte.
    Napisy okien są w bieżącym języku (L() przy rysowaniu, Tx w tablicach). Teksty zarządu (Tx albo polski napis ze
    starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. Słowa
    wspólnoty (w domu komitet ulicy, w bloku zarząd spółdzielni) biorą ze słownika miejsca po polsku i po angielsku
@@ -379,7 +381,8 @@ export function eventSheet(
     kicker: L(words.naglowek, e.naglowek),
     title: esc(tr(p.title)),
     body: text,
-    foot: `<div class="choices">${p.choices
+    // karta z miejscem na mapie: „Pokaż” (kamera jedzie na miejsce, okno zostaje) przed wyborami
+    foot: `${p.gdzie ? btn('event-show', L('Pokaż', 'Show'), 'btn ghost') : ''}<div class="choices">${p.choices
       .map((c, k) => btn('event', esc(tr(c.label)), 'btn', String(k), c.ok ? '' : ' disabled'))
       .join('')}</div>`,
   };

@@ -2,12 +2,16 @@
    Zarząd liczy, symulacja robi: zapasy to rzeczy na mapie (drewno w stosach, zapasy w kuchni, złom w stertach),
    potrzeby i nastroje to pionki, wyprawa wychodzi bramą, warta staje przy siatce, łaty zamykają dziury, a napad
    z planu odgrywają szabrownicy. To, co wymaga przeliczenia przechodniości albo dróg (warta, wyprawa, łaty), idzie
-   przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie.
+   przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie. Nowa osoba zarządu
+   (`fx.join`) i przyjęci mieszkańcy (`fx.residents`) czekają za bramą i dochodzą do siedziby w pracy 'arrive'.
 
    Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to zarząd i mieszkańcy
    siedziby, a `teren.przylaczone` to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu. Trzeci
    odczyt, `ludnosc2021` (ilu ludzi mieszkało w kwadracie domu w 2021 roku), jest z tabel mieszkańców, a nie ze stanu
    gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane w src/main.ts).
+
+   Mieszkańcy siedziby z osobą z generatora mieszkańców (pionki `resident`, bez sąsiadów) wchodzą jako `lokatorzy`,
+   w kolejności pionków, z tymi polami osoby, które zarząd czyta (`GovLokator`); bez generatora pola nie ma.
 
    Badania: odczyt niesie też `badania` (pracownia, liczba zbadanych technologii, eraBadan, koncowaZbadana i siecWlaczona
    dla ramy zwycięstwa), książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
@@ -18,12 +22,33 @@
    szwendacz, szabrownik albo wrogi człowiek). Kozy z beczek i kocioł
    wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA), a stojąca wieża jako `wieza`, liczba jej miejsc
    (posterunek karty). W `badania` pole `koncowa` mówi, że zbadana jest fabryka bieżącego trybu (`koncowaZbadana`), a nie
-   sama sieć. */
+   sama sieć.
+
+   Tryb zombie: `horde.przy` to prawdziwy szwendacz najbliżej siatki (do 3 m od jej kafelka, `szwendaczPrzySiatce`),
+   z którego karta „Szwendacz” bierze miejsce na mapie; liczone na całkowitych kwadratach odległości kafelków, bez
+   Math.hypot, żeby wynik nie zależał od silnika JS. Skutek `atak` (GovEffects.atak) idzie do kolejki poleceń jako
+   'attack' osoby na pionek, jak rozkaz gracza.
+
+   Ludzie: `fx.awans` przenosi mieszkańca z osobą do zarządu (ten sam pionek, `awansuj`), `fx.wyrzuc` wyprowadza
+   mieszkańca albo osobę zarządu bramą (`wyprowadz`), `fx.sprawdz` wysyła osobę zarządu na kafelek na 10 minut gry
+   (`sprawdz`); to zwykłe zmiany stanu jak `addCore`, pionek sam dojdzie w kolejnych krokach. Kto wychodzi bramą, dla
+   zarządu przestaje istnieć od razu: nie ma go w `people`, w `lokatorzy` ani w liczbie mieszkańców. `fx.needs` i
+   `fx.moods` trafiają do każdego pionka z tą osobą i potrzebami (zarząd, mieszkaniec); reszta skutków (wyprawa, warta,
+   atak, odejście) tylko do zarządu.
+
+   Strony świata (`strony`): kafelek podwórka przy siatce od strony najbliższych garaży i najbliższego budynku
+   mieszkalnego za siatką (`stronyOf` w src/gov/miejsce.ts), z których karty „Krzyk” i „Hałas” biorą miejsce dla
+   „Sprawdzić”; dziury w siatce niosą swoje kafelki (`GovHole.tiles`), gdy strony nie ma. Do tego `strony.koza`: wolny
+   kafelek przed kozą zarządu, dokąd idzie ktoś z karty „Ktoś nie może spać” (liczony przy każdym odczycie).
+
+   Zmarli (`dead`, `zmarli`): zarząd i mieszkańcy po kolei; do karty „Pogrzeb” każdy wpis niesie płeć `f` (gdy zmarły miał
+   osobę w `st.people`), minutę gry zgonu `min` i w trybie zombie los zwłok `cialo` (leżą, dobite, nie ma ich), liczone ze
+   zwłok na mapie (`Thing.dead`), bez nowych pól w stanie symulacji. */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
-import { placeOf, wordsOfWorld } from '../gov/miejsce.ts';
-import type { Arm, GovEffects, GovInput, LawEffects, RaidResult } from '../gov/typy.ts';
+import { placeOf, stronyOf, wordsOfWorld } from '../gov/miejsce.ts';
+import type { Arm, Cialo, GovEffects, GovInput, GovLokator, LawEffects, RaidResult } from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
 import {
   dodajKsiazke,
@@ -38,13 +63,14 @@ import {
   wiedza,
 } from './badania.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
-import { dayOf, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
-import { houseOf, inHomeApt } from './house.ts';
+import { dayOf, minutesAt, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
+import { frontTile, houseOf, inHomeApt } from './house.ts';
 import { nearestFree } from './path.ts';
 import { fenceShape, gateTiles } from './perimeter.ts';
 import {
   addCore,
   addResidents,
+  awansuj,
   BURNABLE,
   dozeOff,
   infect,
@@ -53,16 +79,20 @@ import {
   type Loot,
   onPlan,
   type Pawn,
+  pionekOsoby,
   planRaid,
   postKey,
   removeCore,
   removeResidents,
   type SimState,
   STACK,
+  sprawdz,
   type Thing,
   takeStock,
+  wyprowadz,
+  Z_OSOBA,
 } from './sim.ts';
-import { snapshot } from './snapshot.ts';
+import { type SimPerson, snapshot } from './snapshot.ts';
 import { modeOf } from './tryb.ts';
 import { hordeSize } from './zombie.ts';
 
@@ -88,13 +118,128 @@ function paleniska(st: SimState, w: World): number {
   return (koza ? 1 : 0) + nowe;
 }
 
+/** ile metrów od kafelka siatki szwendacz jeszcze „stoi przy siatce” (karta „Szwendacz”) */
+export const PRZY_SIATCE = 3;
+
+/** Szwendacz najbliżej siatki, nie dalej niż PRZY_SIATCE od jej kafelka: numer pionka i jego kafelek. Odległość to
+    całkowity kwadrat różnicy kafelków (bez Math.hypot); remis rozstrzyga niższy numer pionka; null: nikogo. */
+export function szwendaczPrzySiatce(st: SimState, w: World): { pawn: number; x: number; y: number } | null {
+  const tiles = fenceShape(w)?.tiles;
+  if (!tiles?.length) return null;
+  const size = w.size;
+  let best: { pawn: number; x: number; y: number } | null = null;
+  let bd = PRZY_SIATCE * PRZY_SIATCE;
+  for (const p of st.pawns) {
+    if (p.kind !== 'zombie') continue;
+    const x = Math.floor(p.x);
+    const y = Math.floor(p.y);
+    let d = Number.POSITIVE_INFINITY;
+    for (const t of tiles) {
+      const dx = (t % size) - x;
+      const dy = Math.floor(t / size) - y;
+      const q = dx * dx + dy * dy;
+      if (q < d) d = q;
+    }
+    if (d < bd || (d === bd && (best === null || p.id < best.pawn))) {
+      best = { pawn: p.id, x, y };
+      bd = d;
+    }
+  }
+  return best;
+}
+
+/** strony świata dla kart „Krzyk” i „Hałas” (`GovInput.strony`), liczone raz na kształt siatki i na zestaw budynków
+    otoczonych wspólnym płotem (jedno i drugie zmienia się rzadko, a obliczenie przechodzi po budynkach i podwórku) */
+const stronyPamiec = new WeakMap<
+  World,
+  { fence: World['fence']; klucz: string; strony: NonNullable<GovInput['strony']> }
+>();
+function strony(st: SimState, w: World): NonNullable<GovInput['strony']> {
+  const otoczone = st.plot?.bids ?? [];
+  const klucz = otoczone.join(',');
+  const c = stronyPamiec.get(w);
+  if (c && c.fence === w.fence && c.klucz === klucz) return c.strony;
+  const wynik = stronyOf(w, new Set(otoczone));
+  stronyPamiec.set(w, { fence: w.fence, klucz, strony: wynik });
+  return wynik;
+}
+
+/** wolny kafelek przy kozie zarządu (przed nią, `frontTile`, który kontrakt wnętrza trzyma wolnym), a gdy zajęty przez
+    mur albo mebel, najbliższy wolny; undefined: zarząd nie ma kozy w swoim mieszkaniu. Nie jest w pamięci stron
+    świata, bo koza może się spalić albo zmienić miejsce. */
+function kafelekKozy(st: SimState, w: World): number | undefined {
+  const h = houseOf(w);
+  const size = w.size;
+  const koza = h ? st.things.find((t) => t.kind === 'koza' && inHomeApt(h, t.y * size + t.x)) : undefined;
+  if (!koza) return undefined;
+  const front = frontTile(koza, size);
+  return front >= 0 && front < size * size && !w.blocked[front]
+    ? front
+    : nearestFree(w.blocked, size, koza.y * size + koza.x);
+}
+
+/** mieszkaniec siedziby dla zarządu: tylko pola `GovLokator` (bez historii, odnośnika, rodziny, nastrojów i pracy) */
+const lokatorZarzadu = (p: SimPerson): GovLokator => ({
+  pawn: p.pawn,
+  id: p.id,
+  name: p.name,
+  first: p.first,
+  f: p.f,
+  age: p.age,
+  prof: p.prof,
+  skills: p.skills,
+  traits: p.traits,
+  needs: p.needs,
+  asleep: p.asleep,
+  inside: p.inside,
+  tile: p.tile,
+});
+
+/** Zmarli z zarządu i mieszkańcy (`GovInput.dead`), po kolei, z tym, czego potrzebuje pogrzeb: płeć `f` zmarłego, który
+    miał osobę w `st.people` (zarząd po id, mieszkaniec z imieniem po imieniu i nazwisku, bo we wpisie zgonu ma puste id;
+    mieszkaniec bez osoby jest „Mieszkańcem” i pola nie ma), minuta gry zgonu `min` i w trybie zombie los zwłok `cialo`
+    (zwłoki z wpisem w `Thing.dead`: z paliwem leżą i mogą wstać, bez paliwa ktoś je dobił; bez zwłok wstały albo zmarły
+    poza murem). Wszystko czytane ze stanu, nic nowego w stanie. */
+function zmarli(st: SimState, zombie: boolean): NonNullable<GovInput['dead']> {
+  const lista = st.dead ?? [];
+  if (!lista.length) return [];
+  const poId = new Map<string, boolean>();
+  const poImieniu = new Map<string, boolean>();
+  for (const o of st.people) {
+    poId.set(o.id, o.f);
+    if (!poImieniu.has(o.name)) poImieniu.set(o.name, o.f);
+  }
+  const zwloki = new Map<number, Thing>();
+  if (zombie) for (const t of st.things) if (t.kind === 'zwloki' && t.dead !== undefined) zwloki.set(t.dead, t);
+  const wynik: NonNullable<GovInput['dead']> = [];
+  lista.forEach((d, k) => {
+    if (d.kind !== 'core' && d.kind !== 'resident') return;
+    const f = d.id ? poId.get(d.id) : poImieniu.get(d.name);
+    const body = zwloki.get(k);
+    const cialo: Cialo = body ? (body.fuel > 0 ? 'lezy' : 'dobite') : 'brak';
+    wynik.push({
+      id: d.id,
+      name: d.name,
+      cause: d.cause,
+      tick: d.tick,
+      ...(f !== undefined ? { f } : {}),
+      min: Math.floor(minutesAt(d.tick)),
+      ...(zombie ? { cialo } : {}),
+    });
+  });
+  return wynik;
+}
+
 /** Odczyt dla zarządu: snapshot w kształcie GovInput. screen: sekundy przy ekranie od startu gry bez pauzy
     (przy 1× to tick / 20; liczy je pętla gry, bo symulacja nie wie o tempie). */
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
   const s = snapshot(st, w);
   const palenisk = paleniska(st, w);
+  const kozaTile = kafelekKozy(st, w);
+  const stronyZKoza = { ...strony(st, w), ...(kozaTile !== undefined ? { koza: kozaTile } : {}) };
   const wieza = st.things.find((t) => t.kind === 'wieza');
   const zombie = modeOf(st) === 'zombie';
+  const przy = zombie ? szwendaczPrzySiatce(st, w) : null;
   // zbadane technologie z drzewka (identyfikatory spoza niego, np. testowe, kronika pomija) z opisem w obu językach
   const odkryte = odkrycia(st)
     .filter((o) => Object.hasOwn(TECH_BY, o.id))
@@ -103,6 +248,19 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
       nazwa: nazwaTech(o.id),
       dzialanie: zombie ? (TECH_BY[o.id].dzialanieZombie ?? TECH_BY[o.id].dzialanie) : TECH_BY[o.id].dzialanie,
     }));
+  // kto wychodzi bramą (wyrzucony, odchodzący), dla zarządu już go nie ma: ani osoby, ani mieszkańca
+  const odchodza = new Set<number>();
+  let odchodzacyMieszkancy = 0;
+  for (const p of st.pawns)
+    if (p.job?.t === 'odejscie') {
+      odchodza.add(p.id);
+      if (p.kind === 'resident') odchodzacyMieszkancy++;
+    }
+  const people = s.people.filter((p) => !odchodza.has(p.pawn));
+  const residents = s.residents - odchodzacyMieszkancy;
+  // mieszkańcy siedziby z osobą; odczyt dla interfejsu ma też lokatorów sąsiadów, których zarząd nie widzi
+  const mieszkancy = new Set(st.pawns.filter((p) => p.kind === 'resident' && !odchodza.has(p.id)).map((p) => p.id));
+  const lokatorzy = s.lokatorzy.filter((l) => mieszkancy.has(l.pawn)).map(lokatorZarzadu);
   return {
     tick: s.tick,
     day: s.day,
@@ -113,7 +271,8 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     outdoor: s.outdoor,
     kitchen: s.kitchen,
     kozaLit: s.kozaLit,
-    people: s.people.map((p) => ({ ...p, arm: armOf(p.weapon, s.stock.ammo), bitten: !!p.bite })),
+    people: people.map((p) => ({ ...p, arm: armOf(p.weapon, s.stock.ammo), bitten: !!p.bite })),
+    ...(lokatorzy.length ? { lokatorzy } : {}),
     stock: {
       wood: s.stock.wood,
       woodSklad: s.stock.woodSklad,
@@ -127,11 +286,12 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     screen,
     fence: s.fence,
     light: s.light,
-    residents: s.residents,
+    residents,
     cap: s.cap,
     burned: s.burned,
     hqName,
     place: placeOf(w),
+    ...(Object.keys(stronyZKoza).length ? { strony: stronyZKoza } : {}),
     // warta, która stoi (z karty, z menu i przy kozie), bez śpiących na posterunku i bez tych na wyprawie
     guards: st.pawns
       .filter((p) => p.kind === 'core' && !p.away && p.job?.t === 'guard' && p.job.phase !== 4)
@@ -145,17 +305,16 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
             breaches: st.tally?.breaches ?? 0,
             bites: st.tally?.bites ?? 0,
             tonight: hordeSize(dayOf(st.tick)),
+            ...(przy ? { przy } : {}),
           },
         }
       : {}),
     ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
-    dead: (st.dead ?? [])
-      .filter((d) => d.kind === 'core' || d.kind === 'resident')
-      .map((d) => ({ id: d.id, name: d.name, cause: d.cause, tick: d.tick })),
+    dead: zmarli(st, zombie),
     // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (tu ich liczba
     // dla dróg), a przyłączone budynki to te, które wspólny płot już dołączył do obwodu (plan w toku się nie liczy).
     // Pole `ludnosc2021` dokłada gra (main.ts)
-    ludnosc: s.people.length + s.residents,
+    ludnosc: people.length + residents,
     teren: { przylaczone: st.plot?.bids.length ?? 0 },
     // badania: jedna wiedza i jedne książki dla tablicy i dla wydarzeń zarządu (src/sim/badania.ts)
     badania: {
@@ -197,6 +356,11 @@ const clamp100 = (v: number) => (v < 0 ? 0 : v > 100 ? 100 : v);
 /** pionek zarządu osoby o id z generatora (s1, s2…) */
 function pawnOf(st: SimState, id: string): Pawn | undefined {
   return st.pawns.find((p) => p.kind === 'core' && st.people[p.person]?.id === id);
+}
+
+/** pionek osoby o id z potrzebami: zarządu, a gdy to nie on, mieszkańca siedziby z osobą (potrzeby i nastroje) */
+function pawnWithNeeds(st: SimState, id: string): Pawn | undefined {
+  return pawnOf(st, id) ?? pionekOsoby(st, id, Z_OSOBA);
 }
 
 /** Rozstrzygnięcie napadu w tym wywołaniu: jawny wynik zarządu (GovEffects.raidResult) dla napadu, który zarząd
@@ -297,9 +461,11 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
     }
   }
   // ludzie: najpierw nowi, żeby skutki dla nich trafiły na miejsce
-  for (const p of fx.join) if (!pawnOf(st, p.id)) addCore(st, w, p);
+  for (const p of fx.join) if (!pawnOf(st, p.id)) addCore(st, w, p, true);
+  // awans mieszkańca przed potrzebami i nastrojami, żeby skutki z tego samego wydarzenia trafiły na jego pionek
+  for (const id of fx.awans ?? []) awansuj(st, w, id);
   for (const { id, d } of fx.needs) {
-    const p = pawnOf(st, id);
+    const p = pawnWithNeeds(st, id);
     if (!p?.needs) continue;
     for (const [k, v] of Object.entries(d) as [keyof typeof d, number][]) {
       if (k === 'mood')
@@ -308,7 +474,7 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
     }
   }
   for (const m of fx.moods) {
-    const p = pawnOf(st, m.id);
+    const p = pawnWithNeeds(st, m.id);
     if (!p) continue;
     const until = st.tick + Math.round(m.hours * TICKS_PER_HOUR);
     const same = p.moods.find((q) => q.why === m.why);
@@ -321,7 +487,15 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   if (fx.away.length) cmd({ t: 'away', ids: ids(fx.away.map((a) => a.id)) });
   if (fx.back.length) cmd({ t: 'back', ids: ids(fx.back) });
   for (const g of fx.guards) cmd({ t: 'guard', ids: ids([g.id]), post: g.post });
+  // osoba zarządu bije wskazanego pionka (szwendacza z karty); osoby, której nie ma, polecenie nie dotyczy
+  for (const a of fx.atak ?? []) {
+    const who = ids([a.id]);
+    if (who.length) cmd({ t: 'attack', ids: who, target: a.pawn });
+  }
   for (const id of fx.leave) removeCore(st, id, w);
+  // wyrzuceni idą do bramy, a sprawdzający na kafelek: pionek sam dojdzie w kolejnych krokach
+  for (const id of fx.wyrzuc ?? []) wyprowadz(st, w, id);
+  for (const s of fx.sprawdz ?? []) sprawdz(st, w, s.id, s.tile);
   // przyjęci przychodzą zza bramy; nikt nie znika, kto nie ma łóżka, śpi na podłodze
   if (fx.residents > 0) addResidents(st, w, fx.residents, true);
   else if (fx.residents < 0) removeResidents(st, -fx.residents);

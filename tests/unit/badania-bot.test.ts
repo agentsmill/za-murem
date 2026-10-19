@@ -35,9 +35,17 @@ describe('bot z badaniami: polityka gracza', () => {
     const lab = z.m2.log.built.find((b) => b.kind === 'pracownia');
     expect(lab).toBeDefined();
     expect(dayOf(lab!.tick)).toBeLessThanOrEqual(4);
-    // pierwszy plan budowy; krótsze budowle z dalszej kolejki (zasieki: 45 minut pracy) mogą stanąć wcześniej, bo ktoś
-    // inny z zarządu stawia je w tym samym czasie
-    expect(z.r.decisions.find((x) => x.text.startsWith('budowa'))?.text).toBe('budowa: Pracownia');
+    // przed pracownią może stanąć tylko to, co nie czeka na zajęte mieszkanie, czyli zasieki na siatce (45 minut
+    // pracy, więc ktoś inny z zarządu stawia je w tym samym czasie): pracownię da się postawić dopiero w zajętym
+    // mieszkaniu, a kiedy to nastąpi, zależy od przebiegu dnia 2 (które wydarzenia zarządu przyszły), więc pierwszy plan
+    // budowy i „pierwsza z całej kolejki” bywają zasiekami, gdy materiałów starcza na oba (kolejka zachowuje zapas na
+    // pracownię, `zaLab`). Wszystko inne (warsztat, ogródek, kuchnia…) czeka na pracownię.
+    const przed = z.m2.log.built.slice(
+      0,
+      z.m2.log.built.findIndex((b) => b.kind === 'pracownia'),
+    );
+    expect(przed.every((b) => b.kind === 'zasieki')).toBe(true);
+    expect(przed.length).toBeLessThanOrEqual(1);
   });
 
   it('wybiera najtańszą kartkę do wzięcia: pierwsza zbadana technologia ma najmniejszy koszt w drzewku', () => {

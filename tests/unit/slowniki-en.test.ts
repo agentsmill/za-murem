@@ -1,5 +1,5 @@
 /* Angielskie słowniki do napisów ze stanu gry: zawody, cechy, dziedziny, zapasy, przyczyny zgonów i powody nastrojów.
-   Powody nastrojów zbieramy literałami ze źródeł (wywołania addMood, moodAll i moods.push), więc nowy powód bez
+   Powody nastrojów zbieramy literałami ze źródeł (wywołania addMood, moodAll, moodOf i moods.push), więc nowy powód bez
    angielskiego wpisu wychodzi tutaj. */
 
 import fs from 'node:fs';
@@ -43,7 +43,7 @@ function moodLiterals(): Map<string, string> {
   const out = new Map<string, string>();
   for (const f of files(SRC)) {
     const src = fs.readFileSync(f, 'utf8');
-    for (const m of src.matchAll(/\b(?:addMood|moodAll|moods\.push)\(/g)) {
+    for (const m of src.matchAll(/\b(?:addMood|moodAll|moodOf|moods\.push)\(/g)) {
       const call = callText(src, m.index + m[0].length - 1);
       for (const lit of call.matchAll(/'([^'\\]+)'/g))
         if (/^[A-ZĄĆĘŁŃÓŚŹŻ]/.test(lit[1])) out.set(lit[1], path.relative(SRC, f));

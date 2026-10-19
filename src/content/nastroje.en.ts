@@ -41,6 +41,9 @@ export const NASTROJE_EN: Readonly<Record<string, string>> = {
   'Wróciłam z łupem': 'I came back with loot',
   'Mamy psa': 'We have a dog',
   'Algorytm się znalazł': 'Algorithm came home',
+  // mieszkaniec nakarmiony z kotła po kradzieży z głodu (karta „Kradzież z piwnicy”, GovHost.moodOf)
+  'Najadł się z kotła': 'Fed from the pot',
+  'Najadła się z kotła': 'Fed from the pot',
 };
 
 /** „Spalili moją wersalkę”: mebel w bierniku z zaimkiem (MINE w src/sim/sim.ts) */
@@ -59,6 +62,9 @@ export function nastrojEn(why: string): string {
   if (exact) return exact;
   const death = /^Śmierć: (.+)$/.exec(why);
   if (death) return `${death[1]} died`;
+  // pogrzeb (karta „Pogrzeb”, GovHost.moodOf): imię w mianowniku, żeby nie trzeba było go odmieniać
+  const farewell = /^Pożegnaliśmy: (.+)$/.exec(why);
+  if (farewell) return `We said goodbye to ${farewell[1]}`;
   const burned = /^Spalili (.+)$/.exec(why);
   if (burned && MOJE_EN[burned[1]]) return `They burned ${MOJE_EN[burned[1]]}`;
   return why;

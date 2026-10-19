@@ -569,12 +569,22 @@ describe('zarząd bez opcji zwycięstwa', () => {
   });
 
   it('cztery doby gry mają te same skróty stanu co przed modułem zwycięstwa', () => {
-    // skróty po zmianie kozy na sztukę na godzinę (WOOD_PER_HOUR 1, 19.10.2026); z dawnymi 2 sztukami były to
-    // 51743a78, 1792dce3 i 7b631d3d
+    // skróty przepięte 19.10.2026 po zmianie puli wydarzeń (pule według trybu, handlarz i wędrowiec z wagą 0):
+    // inna pula to inne losowanie zarządu; przed zmianą były 51743a78, 1792dce3 i 7b631d3d, czyli przebieg sprzed
+    // modułu zwycięstwa. Przepięte drugi raz w zadaniu 6 wydarzeń (karty z sytuacji z mieszkańcami), bo zmiany kart
+    // przesunęły strumień losowania zarządu: kłótnia bierze parę o najniższym nastroju bez losowania, bezsenność
+    // osobę spoza warty przy siatce bez losowania (nocą rzadko jest ktoś taki), kradzież wraca co 48 godzin, odejście
+    // nie dotyczy ostatniej osoby. Trzeci raz w poprawce zadania 6: atrapa ma teraz kafelki dziur i strony świata,
+    // więc „Sprawdzić” z krzyku i hałasu jest w niej dostępne (wcześniej zawsze wyszarzone), a przy tym wchodzi w grę
+    // wstawanie śpiącego. Czwarty raz w drugiej poprawce zadania 6: bezsenność bierze też śpiącego (ciągle się budzi),
+    // a jej wybory wysyłają ludzi do kozy (atrapa ma kafelek przed kozą) albo do siatki; były 32eb97ec, 88a53f7e
+    // i 438e5c9b, potem 1859eee3, 8e1834e7 i 04753f7b, potem 69085683, 00eb9415 i ef1cea9e, potem 7fa6ef50, b2171b99
+    // i 943895c7. Piąty raz po scaleniu z kozą z głową (sztuka drewna na godzinę; tam same skróty kozy były 651e9fe7,
+    // ca868e42 i 829d4a08) i z poprawkami trybu zombie w noc-integracja, 19.10.2026 wieczorem
     const przebiegi = [
-      [1, 'propozycja', '651e9fe7'],
-      [3, 'zawsze-warta', 'ca868e42'],
-      [5, 'losowo', '829d4a08'],
+      [1, 'propozycja', '14943f9b'],
+      [3, 'zawsze-warta', '02636e00'],
+      [5, 'losowo', 'd2f68ad8'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));
