@@ -66,8 +66,11 @@ export function decodedTiles(a: Address, want = WANT): DecodedTile[] {
 }
 
 /* Kwadraty obok domu z kafelków testowych (miasto z kwadratów). Kafelki każdego adresu pokrywają co najmniej ±720 m
-   wokół niego, więc starczają na dom i ośmiu sąsiadów w każdym obrocie układu; dekodowanie czterech kafelków trwa
-   dziesiątki milisekund, więc robimy je raz na proces. Geo liczy się za każdym razem od nowa, bo testy czasem je zmieniają. */
+   wokół niego, więc dane (zapas 318 m wokół środka kwadratu) starczają na dom i ośmiu sąsiadów przy kątach obrotu trzech
+   adresów (najmniejszy zapas na brzegu danych to 45,8 m). Kafelki, które kafelkiKwadratu podaje dla sąsiada, bywają
+   szersze niż te cztery, więc kilka budynków przy brzegu danych (osiem w sąsiadach Przymorza) ma obrys uciętego kafelka
+   i klucz inny niż przy pełnych danych. Dekodowanie czterech kafelków trwa dziesiątki milisekund, więc robimy je raz na
+   proces. Geo liczy się za każdym razem od nowa, bo testy czasem je zmieniają. */
 
 const kafelkiAdresow = new Map<string, DecodedTile[]>();
 /** kafelki adresu zdekodowane raz na proces (tylko do odczytu) */

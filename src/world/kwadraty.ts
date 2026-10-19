@@ -56,11 +56,11 @@ export function ukladZGeo(geo: Geo, bok: number = BOK_KWADRATU): Uklad {
 /** klucz kwadratu: „sx,sy” */
 export const kluczKwadratu = (sx: number, sy: number): string => `${sx},${sy}`;
 
-/** kwadrat z klucza „sx,sy”; zły klucz to błąd */
+/** kwadrat z klucza „sx,sy” w postaci, jaką daje kluczKwadratu (bez zer wiodących, plusa i minus zera); inny klucz to błąd */
 export function zKlucza(k: string): [number, number] {
-  const m = /^(-?\d+),(-?\d+)$/.exec(k);
+  const m = /^(0|-?[1-9]\d*),(0|-?[1-9]\d*)$/.exec(k);
   if (!m) throw new Error(`zły klucz kwadratu: „${k}”`);
-  return [nz(Number(m[1])), nz(Number(m[2]))];
+  return [Number(m[1]), Number(m[2])];
 }
 
 /** Środek kwadratu (sx, sy) w metrach od adresu w układzie NIEobróconym, czyli tym, w którym są współrzędne `Geo`.

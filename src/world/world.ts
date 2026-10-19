@@ -97,6 +97,10 @@ export interface Trzepak {
     polonez; podstawa blokuje przejście) albo sterta śmieci w pustym mieszkaniu siedziby (przechodnia) */
 export type Prop = Trzepak | Heap | Wreck | Smieci;
 
+/** Świat kwadratu obok domu (buildKwadrat) ma te same pola co świat domu, ale bez siedziby: hq i dryTree to −1, fence i
+   interior są puste (interior.cell i room mają długość 0, building i home to −1), props to same wraki, apts i damage są
+   puste. Miejsca (pois), drzewa i wraki mają współrzędne względem środka kwadratu, tak jak świat domu względem swojego.
+   Kod, który zakłada siedzibę (zarząd, render/yard.ts, ui/mieszkania.ts, przekrój wnętrza), dotyczy tylko świata domu. */
 export interface World {
   size: number;
   /** obrót mapy względem północy (radiany) */
@@ -192,7 +196,10 @@ export interface OpcjeRastra {
       budynek ma co najmniej 3 kafelki, czyli reszta leży w sąsiednim kwadracie (projekt: „Skrawek budynku mniejszy niż
       3 kafelki zostaje budynkiem, jeśli cały budynek ma ich więcej”). Kafelki zajęte przez większy budynek nie liczą się
       do mniejszego, jak w oknie, więc przykryty okruch odpada w każdym oknie tak samo. Bez tego (dom) budynek potrzebuje
-      co najmniej 3 kafelków w oknie. Przesunięcie okna ma być całkowite. */
+      co najmniej 3 kafelków w oknie. Przesunięcie okna ma być całkowite.
+      Znany wyjątek szwu z domem („dom wygrywa”): budynek z jednym albo dwoma kafelkami w domu i resztą u sąsiada dom
+      odrzuca (jego świat ma zostać bit w bit taki, jaki jest), a sąsiad zostawia swoją część, więc po stronie domu
+      brakuje tych jednego albo dwóch kafelków przy granicy (test w kwadraty-swiat.test.ts). */
   skrawki?: boolean;
 }
 

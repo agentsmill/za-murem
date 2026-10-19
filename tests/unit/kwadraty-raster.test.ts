@@ -173,11 +173,9 @@ describe('rastrujTeren: reguła skrawków przy granicy okna', () => {
 
   it('sąsiednie okna zgadzają się: skrawek w jednym oknie to ta sama część budynku, której reszta jest w drugim', () => {
     // okno (0, 0) ma kolumnę 7,5 budynku (2 kafelki), okno przesunięte o 16 m w prawo ma kolumnę 8,5 (2 kafelki)
-    for (const skrawki of [true]) {
-      expect(budynkow(geoZ(przy), 0, 0, skrawki).kafelkow).toBe(2);
-      expect(budynkow(geoZ(przy), 16, 0, skrawki).kafelkow).toBe(2);
-      expect(budynkow(geoZ(przy), 8, 0, skrawki).kafelkow).toBe(4);
-    }
+    expect(budynkow(geoZ(przy), 0, 0, true).kafelkow).toBe(2);
+    expect(budynkow(geoZ(przy), 16, 0, true).kafelkow).toBe(2);
+    expect(budynkow(geoZ(przy), 8, 0, true).kafelkow).toBe(4);
     // bez skrawków dwa kafelki w oknie to za mało, a cztery wystarczą
     expect(budynkow(geoZ(przy), 0, 0, false).kafelkow).toBe(0);
     expect(budynkow(geoZ(przy), 16, 0, false).kafelkow).toBe(0);
@@ -217,7 +215,7 @@ describe('rastrujTeren: reguła skrawków przy granicy okna', () => {
     });
   });
 
-  it('bardzo duży budynek z dwoma kafelkami w oknie zostaje bez rastrowania całego okolicznego terenu', () => {
+  it('bardzo duży budynek z jednym kafelkiem w oknie zostaje bez rastrowania całego okolicznego terenu', () => {
     // 600 m na 600 m, w oknie 16×16 tylko jego róg (1 kafelek): zostaje jako skrawek
     const wielki = budynek(prost(7.2, 7.2, 607, 607));
     expect(budynkow(geoZ(wielki), 0, 0, true)).toEqual({ kept: 1, kafelkow: 1 });
@@ -307,6 +305,35 @@ describe('rastrujTeren: szwy na prawdziwych kafelkach', () => {
       }
     }
     expect(kafelkow).toBeGreaterThan(500_000);
+  });
+
+  it('gęste syntetyczne miasto (2500 małych budynków, także nachodzących na siebie): okna schodzą się, a skrawki naprawdę występują', () => {
+    const r = mulberry(21);
+    const budynki: GeoBuilding[] = [];
+    for (let n = 0; n < 2500; n++) {
+      const x = cwiartka(r, 450);
+      const y = cwiartka(r, 450);
+      const w = 1 + Math.floor(r() * 32) / 4;
+      const h = 1 + Math.floor(r() * 32) / 4;
+      budynki.push(budynek(prost(x, y, x + w, y + h)));
+    }
+    const g = geoZ(...budynki);
+    let skrawkow = 0;
+    let pary = 0;
+    for (let n = 0; n < 8; n++) {
+      const ox1 = Math.round((r() * 2 - 1) * 150);
+      const oy1 = Math.round((r() * 2 - 1) * 150);
+      const ox2 = ox1 + Math.round((r() * 2 - 1) * 300);
+      const oy2 = oy1 + Math.round((r() * 2 - 1) * 300);
+      const X = rastrujTeren(g, BOK, ox1, oy1, { skrawki: true });
+      const Y = rastrujTeren(g, BOK, ox2, oy2, { skrawki: true });
+      expect(porownaj(`(${ox1},${oy1}) i (${ox2},${oy2})`, X, ox1, oy1, Y, ox2, oy2)).toEqual([]);
+      // budynki z mniej niż trzema kafelkami w oknie, które zostały jako skrawki
+      skrawkow += X.kept.filter((o) => o.tiles.length < 3).length + Y.kept.filter((o) => o.tiles.length < 3).length;
+      pary++;
+    }
+    expect(pary).toBe(8);
+    expect(skrawkow).toBeGreaterThan(10);
   });
 
   it('porównanie wykrywa różnicę: okno przesunięte o inną liczbę metrów nie schodzi się z oknami sąsiadów', () => {

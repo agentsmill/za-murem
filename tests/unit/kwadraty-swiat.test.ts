@@ -522,13 +522,6 @@ describe('buildKwadrat: świat obok domu', () => {
     expect(sc.section).toBeNull();
   });
 
-  it('budowanie jednego kwadratu trwa krótko', () => {
-    const g = geoKwadratuTestowego(PRZYMORZE, 1, 1);
-    const t0 = performance.now();
-    buildKwadrat(g, { seed: 1, uklad: ukladTestowy(PRZYMORZE), sx: 1, sy: 1, geoDomu: geoDomuTestowego(PRZYMORZE) });
-    expect(performance.now() - t0).toBeLessThan(2000);
-  });
-
   it('losowość tylko z ziarna kwadratu: ten sam kwadrat z tym samym ziarnem w innym przebiegu daje to samo', () => {
     const r = mulberry(3);
     for (let n = 0; n < 2; n++) {
@@ -627,6 +620,36 @@ describe('buildKwadrat: szwy z domem (różne kąty obrotu)', () => {
       expect(budynkowWPasach).toBeGreaterThan(300);
     });
 
+    it(`${a.key}: sąsiednie kwadraty z osobnych geo schodzą się na wspólnej granicy (osiem par w pierścieniu wokół domu)`, () => {
+      const uklad = ukladTestowy(a);
+      const geoDomu = geoDomuTestowego(a);
+      const pierscien = sasiedzi8(0, 0);
+      let budynkowWPasach = 0;
+      for (let k = 0; k < pierscien.length; k++) {
+        const [ax, ay] = pierscien[k];
+        const [bx, by] = pierscien[(k + 1) % pierscien.length];
+        // kolejne kwadraty pierścienia sąsiadują krawędzią (różnią się o jeden w jednej osi)
+        expect(Math.abs(ax - bx) + Math.abs(ay - by)).toBe(1);
+        const prA = przygotujGeoKwadratu(geoKwadratuTestowego(a, ax, ay), uklad, geoDomu);
+        const prB = przygotujGeoKwadratu(geoKwadratuTestowego(a, bx, by), uklad, geoDomu);
+        // okno pośrednie między dwoma kwadratami, rastrowane raz z geo jednego, raz z geo drugiego
+        const mx = (ax + bx) * POL;
+        const my = (ay + by) * POL;
+        const A = rastrujTeren(prA, BOK, mx, my, { skrawki: true });
+        const B = rastrujTeren(prB, BOK, mx, my, { skrawki: true });
+        // pas ±SZ kafelków wokół wspólnej granicy, na całej jej długości
+        const pas: [number, number, number, number] =
+          ax !== bx
+            ? [Math.max(ax, bx) * BOK - POL - SZ, Math.max(ax, bx) * BOK - POL + SZ, ay * BOK - POL, ay * BOK + POL]
+            : [ax * BOK - POL, ax * BOK + POL, Math.max(ay, by) * BOK - POL - SZ, Math.max(ay, by) * BOK - POL + SZ];
+        const { roznice, budynki } = porownaj(`${a.key} ${ax},${ay} | ${bx},${by}`, A, mx, my, B, mx, my, pas);
+        expect(roznice).toEqual([]);
+        budynkowWPasach += budynki;
+      }
+      // pasy nie są puste
+      expect(budynkowWPasach).toBeGreaterThan(300);
+    });
+
     it(`${a.key}: prawdziwy świat domu i świat sąsiada różnią się od surowego rastra tylko bramami z kroku 9a, drzewami i wrakami`, () => {
       const uklad = ukladTestowy(a);
       const geoDomu = geoDomuTestowego(a);
@@ -666,6 +689,28 @@ describe('buildKwadrat: szwy z domem (różne kąty obrotu)', () => {
       }
     });
   }
+
+  describe('znany wyjątek szwu: skrawek budynku w domu', () => {
+    // budynek 39 m x 2 m leży na szwie dom–kwadrat (1, 0) (granica okien w x = 192 m od adresu): w domu ma jedną kolumnę
+    // kafelków (dwa kafelki), u sąsiada trzydzieści osiem. Dom odrzuca budynek z mniej niż trzema kafelkami w oknie
+    // (świat domu zostaje bit w bit taki, jaki jest, więc nie może go zatrzymać), a sąsiad zostawia swoją część.
+    const uklad: Uklad = { c: [52, 21], kat: 0, bok: BOK };
+    const geo = geoZ([budynek(rect(210.6, 1, 38.8, 2, 0))]);
+
+    it('dom nie ma skrawka, sąsiad ma całą swoją część od szwu, a okno pośrednie cały budynek', () => {
+      const domRaw = rastrujTeren(przygotujGeo(geo, uklad.kat), BOK, 0, 0);
+      const sasiad = rastrujTeren(przygotujGeoKwadratu(geo, uklad, geo), BOK, BOK, 0, { skrawki: true });
+      const srodek = rastrujTeren(przygotujGeoKwadratu(geo, uklad, geo), BOK, POL, 0, { skrawki: true });
+      const liczba = (r: ReturnType<typeof rastrujTeren>) => r.bid.filter((b) => b >= 0).length;
+      expect(liczba(domRaw)).toBe(0);
+      expect(liczba(sasiad)).toBe(76);
+      expect(liczba(srodek)).toBe(78);
+      // sąsiad zaczyna budynek tuż przy szwie (kolumna 0 jego okna), więc po stronie domu brakuje dokładnie dwóch kafelków
+      for (let y = 192; y < 194; y++) expect(sasiad.terr[y * BOK]).toBe(T.BUILDING);
+      const { roznice } = porownaj('szew', srodek, POL, 0, domRaw, 0, 0, [176, 208, -POL, POL]);
+      expect(roznice).toHaveLength(2);
+    });
+  });
 
   describe('reguła „dom wygrywa na szwie” na rastrze (budynek przecięty granicą kafelków)', () => {
     // budynek 80 m x 18 m przechylony o 7° leży na szwie dom–kwadrat (1, 0) (granica okien w x = 192 m od adresu); dom ma

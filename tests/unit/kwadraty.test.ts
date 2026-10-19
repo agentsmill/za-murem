@@ -41,7 +41,7 @@ describe('kwadraty: klucze i sąsiedzi', () => {
   });
 
   it('zły klucz to błąd, nie po cichu NaN', () => {
-    for (const zly of ['', 'x', '1', '1,', ',1', '1,2,3', '1.5,2', 'a,b', ' 1,2']) {
+    for (const zly of ['', 'x', '1', '1,', ',1', '1,2,3', '1.5,2', 'a,b', ' 1,2', '01,2', '-0,0', '+1,2', '1,-00']) {
       expect(() => zKlucza(zly)).toThrow();
     }
   });
