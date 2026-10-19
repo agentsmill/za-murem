@@ -12,6 +12,7 @@ import { tr, ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { ERY, kosztTech, nazwaEry, nazwaTech, TECH_BY, TECHS, tempoOsoby } from '../../src/sim/badania.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
+import { jobText } from '../../src/sim/orders.ts';
 import { createSim, type Pawn, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { EN } from '../../src/ui/badania.en.ts';
@@ -170,6 +171,31 @@ describe('tablica badań: odczyt stanu (snapshot().tablica)', () => {
     expect(sn.siedza[0].name).toBe(st.people[a.person].name);
     const oczekiwane = tempoOsoby(st.people[a.person], 'bud') + tempoOsoby(st.people[b2.person], 'bud');
     expect(sn.tempo).toBeCloseTo(oczekiwane, 10);
+  });
+});
+
+describe('tablica badań: koszt w jednej postaci', () => {
+  it('opis pracy osoby przy stole i pasek obsady pokazują ten sam postęp i ten sam koszt (w górę), po polsku i angielsku', () => {
+    const st = stan();
+    // koszt ery 2 to ułamek (25 · 1,3), więc zaokrąglenie ma znaczenie: 32,5 kontra 33
+    expect(kosztTech('t_spawanie') % 1).not.toBe(0);
+    const sim = new Sim(w, st);
+    const [a] = rdzen(st);
+    sim.startResearch(a, true);
+    for (let k = 0; k < 2000 && !(a.job?.t === 'research' && a.job.phase === 1); k++) sim.step();
+    expect(a.job?.phase).toBe(1);
+    st.research!.prog.t_spawanie = 14;
+    for (const lang of ['pl', 'en'] as const) {
+      ustawJezyk(lang);
+      const nazwa = nazwaTech('t_spawanie')[lang];
+      const dopisek = jobText(st, w, a);
+      expect(dopisek).toBe(`${lang === 'pl' ? 'Bada' : 'Researching'}: ${nazwa} (${SPAWANIE})`);
+      const html = tablica(st, 't_spawanie');
+      expect(html.slice(html.indexOf('<footer'))).toContain(SPAWANIE);
+      expect(html.slice(html.indexOf('class="tb-szczegoly'), html.indexOf('<footer'))).toContain(
+        `${lang === 'pl' ? 'Koszt' : 'Cost'} ${Math.ceil(kosztTech('t_spawanie'))}`,
+      );
+    }
   });
 });
 
@@ -403,6 +429,33 @@ describe('tablica badań: szczegóły wybranej kartki', () => {
     expect(sz).toContain('14');
     // (koszt − 14) / (TEMPO_BAZOWE · 1,2 punktu na godzinę), w górę
     expect(sz).toContain(`ok. ${SPAWANIE_H} h gry`);
+  });
+
+  it('czas do końca kartki z innej dziedziny liczy się z tempa obsady w jej dziedzinie, a nie w dziedzinie bieżącego badania', () => {
+    const st = stan();
+    const sim = new Sim(w, st);
+    const [a] = rdzen(st);
+    sim.startResearch(a, true);
+    for (let k = 0; k < 2000 && !(a.job?.t === 'research' && a.job.phase === 1); k++) sim.step();
+    expect(a.job?.phase).toBe(1);
+    // przy stole siedzi s1 (Budowa 2) nad bieżącym t_spawanie; kartka t_zielarstwo to Medycyna, której s1 nie zna
+    const b = snapshot(st, w).tablica!;
+    const o = st.people[a.person];
+    expect(b.tempoDom.bud).toBeCloseTo(tempoOsoby(o, 'bud'), 12);
+    expect(b.tempoDom.med).toBeCloseTo(tempoOsoby(o, 'med'), 12);
+    expect(b.tempoDom.bud).toBeGreaterThan(b.tempoDom.med!);
+    // tempo bieżącego badania to tempo jego dziedziny
+    expect(b.tempo).toBe(b.tempoDom.bud);
+    const godziny = (tempo: number) => Math.ceil(kosztTech('t_zielarstwo') / tempo);
+    // test ma sens tylko wtedy, gdy tempo bieżącego badania dałoby inną liczbę godzin
+    expect(godziny(b.tempoDom.bud!)).not.toBe(godziny(b.tempoDom.med!));
+    const html = tablica(st, 't_zielarstwo');
+    const sz = html.slice(html.indexOf('class="tb-szczegoly'), html.indexOf('<footer'));
+    expect(sz).toContain(`ok. ${godziny(b.tempoDom.med!)} h gry`);
+    expect(sz).not.toContain(`ok. ${godziny(b.tempoDom.bud!)} h gry`);
+    // kartka tej samej dziedziny co bieżące badanie nadal liczy z tempa budowlańca
+    const bud = tablica(st, 't_spawanie');
+    expect(bud.slice(bud.indexOf('class="tb-szczegoly'), bud.indexOf('<footer'))).toContain(`ok. ${SPAWANIE_H} h gry`);
   });
 
   it('bez nikogo przy stole: nie liczy czasu', () => {

@@ -3,7 +3,9 @@
    zarządowi jako `GovInput.odkrycia` i `znaleziska`. `znaleziska(st, i)` czyta wpisy z tickiem nowszym niż
    `GovState.czytane` (pamięć „ostatnio przeczytanego”, pole powstaje przy pierwszym wpisie), po kolei od najstarszego:
    odkrycie to wpis „Odkrycie: <nazwa>. <działanie>” i zaufanie +1 (raz na odkrycie, jak `mood(S, 1, 0)` w 0.3),
-   książka to wpis „Znaleźli książkę „<tytuł>” (Uprawa +1).” albo, gdy poszła na podpałkę, zdanie o tym. Gra bez badań
+   książka to wpis „Znaleźli książkę „<tytuł>” (Uprawa +1).” albo, gdy poszła na podpałkę, zdanie o tym. Warunek
+   `tick > czytane` zakłada, że zarząd czyta wejście wyłącznie między krokami symulacji (jak robi to pętla w
+   src/main.ts): wpis z tego samego ticku, który pojawiłby się po odczycie, zostałby pominięty na zawsze. Gra bez badań
    i bez książek nie dostaje tych pól, więc stan zarządu zostaje bez zmian. Zarząd nie importuje src/sim: nazwy i opisy
    technologii przychodzą w wejściu jako Tx. Teksty (`tekstOdkrycia`, `tekstKsiazki`) czyta też interfejs do podpowiedzi,
    żeby kronika i podpowiedź mówiły tym samym zdaniem. */

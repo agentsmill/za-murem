@@ -11,7 +11,7 @@ import { tr, ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { KOSZT_ERY, kartka, kosztTech, nazwaTech, TECHS, tempoOsoby } from '../../src/sim/badania.ts';
 import { BUILDS, type BuildKind, canPlace, footprint } from '../../src/sim/budowle.ts';
-import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
+import { hourOf, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { jobText } from '../../src/sim/orders.ts';
 import { createSim, type Pawn, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
 import { modeOf } from '../../src/sim/tryb.ts';
@@ -426,20 +426,60 @@ describe('badania: praca zarządu przy stole', () => {
     expect(st.research!.prog.t_okna ?? 0).toBe(0);
   });
 
-  it('praca bez polecenia ustępuje nocy jak inne prace M2, z poleceniem nie', () => {
-    const noc = (order: boolean) => {
-      const { st, sim, prac, ludzie } = nowa();
-      st.tick = Math.round((23 - 15) * TICKS_PER_HOUR);
-      wybierz(sim, 't_okna');
-      const p = ludzie[0];
-      expect(sim.startResearch(p, order)).toBe(true);
-      expect(p.job!.order).toBe(order);
-      expect(p.job!.target).toBe(prac.id);
-      kroki(sim, 400);
-      return siedzi(p);
-    };
-    expect(noc(true)).toBe(true);
-    expect(noc(false)).toBe(false);
+  it('noc kończy badanie także z polecenia: o 22:00 osoba wstaje od stołu i idzie spać, a rano nie wraca sama', () => {
+    const { st, sim, prac, ludzie } = nowa();
+    st.tick = Math.round((21.5 - 15) * TICKS_PER_HOUR);
+    wybierz(sim, 't_okna');
+    const p = ludzie[0];
+    // zmęczona na tyle, że noc ją położy (nocą śpi, kto ma siły poniżej 80)
+    p.needs!.rest = 50;
+    sim.push({ t: 'study', ids: [p.id], thing: prac.id });
+    usiadz(sim, [p]);
+    expect(p.job!.order).toBe(true);
+    expect(hourOf(st.tick)).toBe(21);
+    // do północy tej godziny siedzi z polecenia
+    while (hourOf(st.tick) < 22) {
+      expect(siedzi(p)).toBe(true);
+      sim.step();
+    }
+    // z nastaniem nocy wstaje od stołu (najpóźniej w następnym kroku) i kładzie się spać
+    sim.step();
+    expect(maPrace(st)).toEqual([]);
+    expect(p.job?.t).toBe('sleep');
+    const prog = st.research!.prog.t_okna;
+    expect(prog).toBeGreaterThan(0);
+    // reszta nocy i poranek: postęp stoi, nikt sam nie wraca do stołu (polecenie „Badać” trzeba powtórzyć)
+    while (hourOf(st.tick) !== 9) sim.step();
+    expect(maPrace(st)).toEqual([]);
+    expect(st.research!.prog.t_okna).toBe(prog);
+    expect(st.research!.cur).toBe('t_okna');
+  });
+
+  it('polecenie „Badać” w nocy nikogo nie sadza, a rano ten sam rozkaz działa', () => {
+    const { st, sim, prac, ludzie } = nowa();
+    st.tick = Math.round((23 - 15) * TICKS_PER_HOUR);
+    wybierz(sim, 't_okna');
+    const p = ludzie[0];
+    expect(sim.startResearch(p, true)).toBe(false);
+    sim.push({ t: 'study', ids: [p.id], thing: prac.id });
+    kroki(sim, 300);
+    expect(maPrace(st)).toEqual([]);
+    // rano ten sam rozkaz działa
+    while (hourOf(st.tick) !== 8) sim.step();
+    expect(sim.startResearch(p, true)).toBe(true);
+  });
+
+  it('praca bez polecenia też ustępuje nocy', () => {
+    const { st, sim, ludzie } = nowa();
+    st.tick = Math.round((21.5 - 15) * TICKS_PER_HOUR);
+    wybierz(sim, 't_okna');
+    const p = ludzie[0];
+    expect(sim.startResearch(p, false)).toBe(true);
+    expect(p.job!.order).toBe(false);
+    usiadz(sim, [p]);
+    while (hourOf(st.tick) < 22) sim.step();
+    kroki(sim, 50);
+    expect(siedzi(p)).toBe(false);
   });
 
   it('startResearch odmawia bez wybranego badania, bez pracowni i dla nieobecnego, a stanu nie tworzy', () => {
@@ -492,13 +532,11 @@ describe('badania: praca zarządu przy stole', () => {
     ustawJezyk('en');
     expect(jobText(st, w, p)).toBe(`Researching: ${nazwa.en} (3 / 12)`);
     ustawJezyk('pl');
-    // koszt ułamkowy (era 3 ×1,5) z przecinkiem po polsku
+    // koszt ułamkowy (era 3 ×1,5) w górę, jak na tablicy
     const era3 = TECHS.find((t) => t.era === 3 && kosztTech(t.id) % 1 !== 0)!;
     st.research!.cur = era3.id;
-    st.research!.prog[era3.id] = 14;
-    expect(jobText(st, w, p)).toBe(
-      `Bada: ${tr(nazwaTech(era3.id))} (14 / ${String(kosztTech(era3.id)).replace('.', ',')})`,
-    );
+    st.research!.prog[era3.id] = 14.9;
+    expect(jobText(st, w, p)).toBe(`Bada: ${tr(nazwaTech(era3.id))} (14 / ${Math.ceil(kosztTech(era3.id))})`);
   });
 });
 
@@ -524,12 +562,16 @@ describe('badania: determinizm i zapis', () => {
   };
   const DWIE_DOBY = 2 * 24 * TICKS_PER_HOUR;
 
-  function przebieg(do_: number, zapiszW?: number) {
+  /** `wChwiliZapisu` dostaje grę tuż przed zapisem (na jej stanie, który potem idzie przez JSON) */
+  function przebieg(do_: number, zapiszW?: number, wChwiliZapisu?: (sim: Sim) => void) {
     const { st, sim: s0, prac, ludzie } = nowa();
     const ids = [ludzie[1].id, ludzie[3].id];
     let sim = s0;
     for (let k = 0; k < do_; k++) {
-      if (k === zapiszW) sim = new Sim(w, JSON.parse(JSON.stringify(sim.st)) as SimState);
+      if (k === zapiszW) {
+        wChwiliZapisu?.(sim);
+        sim = new Sim(w, JSON.parse(JSON.stringify(sim.st)) as SimState);
+      }
       sterownik(sim, k, ids, prac.id);
       sim.step();
     }
@@ -546,8 +588,13 @@ describe('badania: determinizm i zapis', () => {
 
   it('zapis i wczytanie w połowie badania nie zmieniają przebiegu', () => {
     const prosto = przebieg(DWIE_DOBY);
-    // 19777 to nie granica doby ani wielokrotność tysiąca: w stanie nie ma poleceń w kolejce
-    const zZapisem = przebieg(DWIE_DOBY, 19777);
+    // 2991 to nie granica doby ani wielokrotność tysiąca (w stanie nie ma poleceń w kolejce), 18:44 pierwszego dnia:
+    // w chwili zapisu badanie trwa, dwie osoby siedzą już przy stole i mają przed sobą jeszcze trzy godziny dnia
+    const zZapisem = przebieg(DWIE_DOBY, 2991, (s) => {
+      expect(s.st.research?.cur ?? null).not.toBeNull();
+      expect(s.st.pawns.filter(siedzi).length).toBeGreaterThanOrEqual(1);
+      expect(hourOf(s.st.tick)).toBeLessThan(22);
+    });
     expect(zZapisem.sim).not.toBe(prosto.sim);
     expect(zZapisem.sim.hash()).toBe(prosto.sim.hash());
   });

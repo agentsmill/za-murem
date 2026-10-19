@@ -24,7 +24,9 @@
    nazwa i działanie technologii, co odblokowuje, przyciski „Postaw <budowla>” (tylko gdy odblokowuje budowlę),
    „Następne badanie” (otwiera tablicę) i „Dalej”; wywołuje ją main.ts ze stanu symulacji jak spotkanie z sąsiadami.
 
-   `czyOtworzycSama` to warunek samego otwarcia tablicy (raz po wyborze, nigdy przy innym oknie, napadzie ani alarmie).
+   `czyOtworzycSama` to warunek samego otwarcia tablicy (raz po wyborze, nigdy przy innym oknie, napadzie ani alarmie),
+   `czyPokazacOdkrycie` taki sam warunek dla karty „Odkrycie” (czeka na inne okna, koniec napadu i „Do broni!”), a
+   `napadTrwa` to napad w toku albo stado pod siatką, wspólne dla obu.
    `usiadaPodpowiedz` to podpowiedź po „Badać”, gdy zaznaczonych jest więcej osób niż wolnych miejsc przy stole.
    Napisy: polskie w L(…) tutaj, angielskie w badania.en.ts; nazwy technologii i er z src/sim/badania.ts, dziedziny
    z DOM i DOM_EN, zawody przez zawodEn. */
@@ -32,10 +34,22 @@
 import { DOM_EN, zawodEn } from '../content/data.en.ts';
 import { DOM, TECH_DOMS, type TechDom } from '../content/data.ts';
 import { L, tr } from '../core/jezyk.ts';
-import { BRAK_MIEJSCA, ERY, type Kartka, nazwaEry, nazwaTech, TECH_BY, TECHS, type TechNowa } from '../sim/badania.ts';
+import {
+  BRAK_MIEJSCA,
+  ERY,
+  type Kartka,
+  kosztDoPokazania,
+  nazwaEry,
+  nazwaTech,
+  postepDoPokazania,
+  TECH_BY,
+  TECHS,
+  type TechNowa,
+} from '../sim/badania.ts';
 import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS, type BuildKind } from '../sim/budowle.ts';
 import { dayOf } from '../sim/clock.ts';
+import type { SimState } from '../sim/sim.ts';
 import type { SimBadania } from '../sim/snapshot.ts';
 import type { GameMode } from '../sim/tryb.ts';
 import { EN } from './badania.en.ts';
@@ -135,10 +149,10 @@ function nazwaBrakujacego(id: string): string {
   return id;
 }
 
-/** punkty do wyświetlenia: postęp w dół, koszt w górę (koszt bywa ułamkiem przez mnożnik ery), żeby kartka nie
-    pokazała „25 / 25” przed końcem */
-const postepTxt = (v: number): string => num(Math.floor(v), 0);
-const kosztTxt = (v: number): string => num(Math.ceil(v), 0);
+/** punkty do wyświetlenia (zaokrąglenie wspólne z opisem pracy osoby przy stole: `kosztDoPokazania` i
+    `postepDoPokazania` z src/sim/badania.ts) */
+const postepTxt = (v: number): string => num(postepDoPokazania(v), 0);
+const kosztTxt = (v: number): string => num(kosztDoPokazania(v), 0);
 
 /** „Ciepło 2, macie 1”: dziedzina, poziom, którego technologia wymaga, i wiedza osady */
 const brakWiedzy = (t: TechNowa, k: Kartka): string =>
@@ -250,15 +264,18 @@ function szczegolyHtml(
     else if (b.cur === t.id) stan = `<p class="tb-d-stan ok">${L('Badamy to teraz.', EN.badaneTeraz)}</p>`;
     koszt = `<p class="tb-d-koszt">${L(`Koszt ${kosztTxt(k.koszt)} pkt, postęp ${postepTxt(k.postep)}.`, EN.koszt(kosztTxt(k.koszt), postepTxt(k.postep)))}`;
     // czas do końca tylko tam, gdzie postęp w ogóle rośnie (kartka do wzięcia albo w toku), z bieżącą obsadą stołu
-    if (k.stan === 'do_wziecia' || k.stan === 'w_toku')
+    // liczoną w dziedzinie tej kartki (ta sama obsada bada szybciej to, na czym zna się lepiej)
+    if (k.stan === 'do_wziecia' || k.stan === 'w_toku') {
+      const tempo = b.tempoDom[t.dom] ?? 0;
       koszt += ` ${
-        b.tempo > 0
+        tempo > 0
           ? L(
-              `Do końca ${kiedy((k.koszt - k.postep) / b.tempo)}, przy obecnej obsadzie.`,
-              EN.czas(kiedy((k.koszt - k.postep) / b.tempo)),
+              `Do końca ${kiedy((k.koszt - k.postep) / tempo)}, przy obecnej obsadzie.`,
+              EN.czas(kiedy((k.koszt - k.postep) / tempo)),
             )
           : L('Nikt nie siedzi przy stole, więc czasu nie da się policzyć.', EN.bezObsady)
       }`;
+    }
     koszt += '</p>';
     if (k.stan === 'do_wziecia') {
       const zmiana = b.cur !== null && b.cur !== t.id;
@@ -380,6 +397,19 @@ export function czyOtworzycSama(o: {
   byla: boolean;
 }): boolean {
   return o.pracownia && o.cur === null && !o.otwarta && !o.oknoCzeka && !o.napad && !o.alarm && !o.byla;
+}
+
+/** Napad w toku (zapowiedziany, za siatką albo rozstrzygany: faza poniżej 3) albo stado napierające na siatkę. Wtedy ani
+    tablica, ani karta „Odkrycie” nie wyskakują same. */
+export function napadTrwa(st: Pick<SimState, 'raid' | 'pawns'>): boolean {
+  return (!!st.raid && st.raid.phase < 3) || st.pawns.some((p) => p.kind === 'zombie' && p.job?.phase === 2);
+}
+
+/** Czy karta „Odkrycie” może się teraz pokazać: nic innego nie jest otwarte (okno zarządu, inna karta, tablica), nie trwa
+    napad ani „Do broni!”, tak jak przy samym otwarciu tablicy (`czyOtworzycSama`). Karta czeka, a gra idzie dalej; po
+    napadzie pokazuje się sama. */
+export function czyPokazacOdkrycie(o: { oknoOtwarte: boolean; napad: boolean; alarm: boolean }): boolean {
+  return !o.oknoOtwarte && !o.napad && !o.alarm;
 }
 
 /** Karta „Odkrycie” po ukończeniu badania `id`: nazwa technologii w tytule, jedno zdanie o tym, co daje (w trybie zombie

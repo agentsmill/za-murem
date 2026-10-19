@@ -19,7 +19,7 @@ import { nazwaTech, SZANSA_KSIAZKI, TECH_BY } from '../../src/sim/badania.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { createSim, Sim, type SimState, type Thing } from '../../src/sim/sim.ts';
-import { odkrycieSheet } from '../../src/ui/badania.ts';
+import { czyOtworzycSama, czyPokazacOdkrycie, napadTrwa, odkrycieSheet } from '../../src/ui/badania.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
 import { NOWE_KEY, wczytajWidziane, zapiszWidziane, zapomnijWidziane } from '../../src/ui/nowe.ts';
 import { buildWorld } from '../../src/world/world.ts';
@@ -133,6 +133,65 @@ describe('odkrycieSheet: karta Odkrycie', () => {
     const s = odkrycieSheet('t_nie_ma');
     expect(s.foot).not.toContain('odkrycie-postaw');
     expect(s.foot).toContain('Dalej');
+  });
+});
+
+describe('kiedy karta Odkrycie się pokazuje (czyPokazacOdkrycie, napadTrwa)', () => {
+  const spokoj = { oknoOtwarte: false, napad: false, alarm: false };
+
+  it('pokazuje się tylko przy spokoju: bez innego okna lub tablicy, bez napadu i bez „Do broni!”', () => {
+    expect(czyPokazacOdkrycie(spokoj)).toBe(true);
+    // czeka na zamknięcie okna albo tablicy (jak dotąd)
+    expect(czyPokazacOdkrycie({ ...spokoj, oknoOtwarte: true })).toBe(false);
+    // czeka też na koniec napadu i „Do broni!”, tak jak samo otwarcie tablicy
+    expect(czyPokazacOdkrycie({ ...spokoj, napad: true })).toBe(false);
+    expect(czyPokazacOdkrycie({ ...spokoj, alarm: true })).toBe(false);
+  });
+
+  it('te same warunki napadu i alarmu co samo otwarcie tablicy', () => {
+    const baza = { pracownia: true, cur: null, otwarta: false, oknoCzeka: false, byla: false };
+    for (const [napad, alarm] of [
+      [false, false],
+      [true, false],
+      [false, true],
+      [true, true],
+    ] as const) {
+      expect(czyPokazacOdkrycie({ oknoOtwarte: false, napad, alarm }), `${napad}/${alarm}`).toBe(
+        czyOtworzycSama({ ...baza, napad, alarm }),
+      );
+    }
+  });
+
+  it('napad trwa od zapowiedzi do rozstrzygnięcia (faza poniżej 3) i gdy szwendacze napierają na siatkę', () => {
+    const st = createSim(w, seed, { core: 2 });
+    expect(napadTrwa(st)).toBe(false);
+    st.raid = {
+      at: 0,
+      post: 'brama',
+      n: 3,
+      attack: 5,
+      phase: 0,
+      outcome: '',
+      gov: false,
+      loot: { wood: 0, supplies: 0, scrap: 0 },
+      took: { wood: 0, supplies: 0, scrap: 0 },
+      from: -1,
+      spot: -1,
+    };
+    for (const faza of [0, 1, 2]) {
+      st.raid.phase = faza;
+      expect(napadTrwa(st), `faza ${faza}`).toBe(true);
+    }
+    st.raid.phase = 3;
+    expect(napadTrwa(st)).toBe(false);
+    st.raid = null;
+    expect(napadTrwa(st)).toBe(false);
+    // szwendacz pod siatką (praca w fazie 2) to napór, w innej fazie nie
+    const szwendacz = { kind: 'zombie', job: { phase: 1 } } as unknown as SimState['pawns'][number];
+    st.pawns.push(szwendacz);
+    expect(napadTrwa(st)).toBe(false);
+    szwendacz.job!.phase = 2;
+    expect(napadTrwa(st)).toBe(true);
   });
 });
 

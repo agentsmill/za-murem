@@ -190,8 +190,11 @@ export interface SimBadania {
   odkrycia: { id: string; tick: number }[];
   /** czy stoi pracownia (po rozbiórce stan badań zostaje, a pracowni nie ma) */
   pracownia: boolean;
-  /** punkty postępu na godzinę gry, które daje obecna obsada stołu w dziedzinie bieżącego badania */
+  /** punkty postępu na godzinę gry, które daje obecna obsada stołu w dziedzinie bieżącego badania (0 bez badania) */
   tempo: number;
+  /** to samo dla każdej dziedziny: tempo obecnej obsady, gdyby badanie było z tej dziedziny (szacunek czasu na kartce
+      innej dziedziny niż bieżące badanie); `tempo` to wpis tej dziedziny, co bieżące badanie */
+  tempoDom: Partial<Record<TechDom, number>>;
 }
 
 export interface SimSnapshot {
@@ -213,6 +216,8 @@ export interface SimSnapshot {
   /** temperatura na zewnątrz i w kuchni zarządu (°C; null, gdy świat nie ma wnętrza) */
   outdoor: number;
   kitchen: number | null;
+  /** pali się koza zarządu albo któreś z nowych palenisk naszych mieszkań (koza z beczki, kocioł): karta nocy i raport
+      poranny nie mają mówić o zimnej kuchni przy palącym się kotle. Ogień samej kozy zarządu to `stock.fireHours`. */
   kozaLit: boolean;
   /** zarząd (pionki rdzenia), w kolejności pionków */
   people: SimPerson[];
@@ -243,19 +248,19 @@ export interface SimSnapshot {
   tablica: SimBadania | null;
 }
 
-/** odczyt badań dla tablicy: stan kartek w trybie gry, obsada stołu i tempo jej pracy */
+/** odczyt badań dla tablicy: stan kartek w trybie gry, obsada stołu i tempo jej pracy (w bieżącej dziedzinie i w każdej) */
 function badaniaOf(st: SimState): SimBadania | null {
   if (!badaniaWidoczne(st)) return null;
   const mode = modeOf(st);
   const dom = badaniaDom(st);
   const siedza: SimBadania['siedza'] = [];
-  let tempo = 0;
+  const tempoDom: Partial<Record<TechDom, number>> = Object.fromEntries(TECH_DOMS.map((d) => [d, 0]));
   for (const p of st.pawns) {
     if (p.job?.t !== 'research' || p.job.phase !== 1) continue;
     const o = st.people[p.person];
     if (!o) continue;
     siedza.push({ id: p.id, name: o.name, prof: o.prof, skill: dom ? (o.skills[dom] ?? 0) : 0 });
-    if (dom) tempo += tempoOsoby(o, dom);
+    for (const d of TECH_DOMS) tempoDom[d] = (tempoDom[d] ?? 0) + tempoOsoby(o, d);
   }
   return {
     cur: st.research?.cur ?? null,
@@ -265,7 +270,8 @@ function badaniaOf(st: SimState): SimBadania | null {
     ksiazki: { ...st.books },
     odkrycia: odkrycia(st),
     pracownia: st.things.some((t) => t.kind === 'pracownia'),
-    tempo,
+    tempo: dom ? (tempoDom[dom] ?? 0) : 0,
+    tempoDom,
   };
 }
 
@@ -357,6 +363,8 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   // drewno w ogniu: koza zarządu (fuel liczone niżej) i nowe paleniska naszych mieszkań (koza z beczki, kocioł według
   // PALENISKA); zbiornik trzyma sztuki jak koza, więc sztuka to BURN_TICKS ognia niezależnie od wagi paleniska
   let woodFire = 0;
+  // pali się któreś z nowych palenisk naszych mieszkań (razem z kozą zarządu daje `kozaLit`)
+  let noweLit = false;
   let supplies = 0;
   let meals = 0;
   let scrap = 0;
@@ -373,7 +381,10 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     else if (t.kind === 'posilek') meals += t.n;
     else if (t.kind === 'zlom') scrap += t.n;
     else if (t.kind === 'deski') boards += t.n;
-    else if (t.kind !== 'koza' && Object.hasOwn(PALENISKA, t.kind)) woodFire += Math.ceil(t.fuel / BURN_TICKS);
+    else if (t.kind !== 'koza' && Object.hasOwn(PALENISKA, t.kind)) {
+      woodFire += Math.ceil(t.fuel / BURN_TICKS);
+      if (t.fuel > 0) noweLit = true;
+    }
   }
   const people: SimPerson[] = st.pawns
     .filter((p) => p.kind === 'core')
@@ -398,7 +409,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     daylight: daylight(tick),
     outdoor: outdoorTemp(st.seed, tick),
     kitchen: kitchen >= 0 ? st.temps[kitchen] : null,
-    kozaLit: fuel > 0,
+    kozaLit: fuel > 0 || noweLit,
     people,
     lokatorzy,
     stock: {

@@ -179,13 +179,35 @@ describe('kocioł: wszystkie pokoje naszych mieszkań, drewno trzy razy szybciej
       bez.sim.step();
     }
     const zysk = (r: number) => z.st.temps[r] - bez.st.temps[r];
-    for (const r of NASZE) {
-      expect(zysk(r), `pokój ${r}`).toBeGreaterThan(4);
-      expect(z.sim.light[r], `światło ${r}`).toBe(1);
-    }
+    for (const r of NASZE) expect(zysk(r), `pokój ${r}`).toBeGreaterThan(4);
     // obcy pokój dostaje ciepło tylko przez klatkę (dwie pary drzwi: ćwierć ocieplenia), więc dużo mniej
     expect(zysk(OBCY_POKOJ)).toBeLessThan(zysk(POKOJ) / 2);
-    expect(z.sim.light[OBCY_POKOJ]).toBeLessThan(1);
+  });
+
+  it('świeci tylko w swoim pomieszczeniu (klatka), przez drzwi w półmroku, a nie w oknach całego mieszkania', () => {
+    const z = gra();
+    rzecz(z.st, 'kociol', ...KOCIOL, { w: 2, fuel: full('kociol') });
+    for (let k = 0; k < 400; k++) z.sim.step();
+    const klatka = house.room[tile(...KOCIOL)];
+    expect(klatka).toBe(0);
+    expect(z.sim.light[klatka]).toBe(1);
+    // drzwi z klatki: przedpokój naszego mieszkania i cudzy pokój w półmroku, reszta naszych pokoi ciemna
+    expect(z.sim.light[PRZEDPOKOJ]).toBe(0.5);
+    expect(z.sim.light[OBCY_POKOJ]).toBe(0.5);
+    for (const r of [POKOJ, KUCHNIA, LAZIENKA]) expect(z.sim.light[r], `światło ${r}`).toBe(0);
+    // a ciepło idzie do wszystkich naszych pokoi mimo to
+    for (const r of NASZE) expect(z.sim.boost[r], `ciepło ${r}`).toBeGreaterThan(0);
+  });
+
+  it('kocioł razem z kozą zarządu: kuchnia też świeci, a grzeją obie rzeczy naraz', () => {
+    const z = gra();
+    kozaZarzadu(z.st).fuel = full('koza');
+    rzecz(z.st, 'kociol', ...KOCIOL, { w: 2, fuel: full('kociol') });
+    for (let k = 0; k < 400; k++) z.sim.step();
+    expect(z.sim.light[KUCHNIA]).toBe(1);
+    expect(z.sim.light[0]).toBe(1);
+    expect(z.sim.light[POKOJ]).toBe(0);
+    expect(z.sim.light[LAZIENKA]).toBe(0);
   });
 
   it('bez ognia w kotle nie grzeje nic', () => {
@@ -334,6 +356,28 @@ describe('karta nocy: nightWood i GovInput.paleniska', () => {
     expect(govInput(g.st, block, 0).paleniska).toBe(2);
     rzecz(g.st, 'kociol', ...KOCIOL, { w: 2 });
     expect(govInput(g.st, block, 0).paleniska).toBe(5);
+  });
+
+  it('govInput liczy tylko paleniska, które stoją: bez kozy zarządu nie dolicza „1”', () => {
+    const g = gra();
+    g.st.things = g.st.things.filter((t) => t.kind !== 'koza');
+    // bez kozy i bez nowych palenisk pola nie ma (karta liczy jedną kozę po staremu)
+    expect(govInput(g.st, block, 0).paleniska).toBeUndefined();
+    rzecz(g.st, 'koza_beczka', ...BECZKA);
+    expect(govInput(g.st, block, 0).paleniska).toBe(1);
+    rzecz(g.st, 'kociol', ...KOCIOL, { w: 2 });
+    expect(govInput(g.st, block, 0).paleniska).toBe(4);
+  });
+
+  it('koza spoza mieszkania zarządu nie jest kozą zarządu i nie liczy się do palenisk', () => {
+    const g = gra();
+    g.st.things = g.st.things.filter((t) => t.kind !== 'koza');
+    // pokój cudzego mieszkania (OBCY_POKOJ) ma kafelek poza mieszkaniem zarządu
+    const obcy = house.rooms.find((r) => r.id === OBCY_POKOJ)!;
+    const i = [...Array(size * size).keys()].find((k) => house.room[k] === obcy.id)!;
+    rzecz(g.st, 'koza', i % size, Math.floor(i / size));
+    rzecz(g.st, 'koza_beczka', ...BECZKA);
+    expect(govInput(g.st, block, 0).paleniska).toBe(1);
   });
 });
 
