@@ -15,7 +15,8 @@
    bieżącego (napisy to `Tx`). Z sim.ts moduł importuje wyłącznie typ `SimState`, żeby sim.ts mógł importować stąd.
    `wiedza` to jedna wiedza osady dla tablicy i zarządu, `kartka` to stan jednej kartki tablicy, `tempoOsoby` to postęp
    na godzinę gry jednej siedzącej osoby. Dodawanie postępu w kroku, pracownia i polecenia `research` i `study` są
-   w `Sim` (src/sim/sim.ts: chooseResearch, startResearch, researchTick), a limit i napisy pracowni w budowle.ts. */
+   w `Sim` (src/sim/sim.ts: chooseResearch, startResearch, researchTick), tak samo plan dnia lokatorów z wiedzą i ich
+   droga do pracowni (plan, labOpen); limit i napisy pracowni w budowle.ts. */
 
 import type { TechDef, TechDom } from '../content/data.ts';
 import { ERAS, TECH } from '../content/data.ts';

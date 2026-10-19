@@ -12,7 +12,7 @@ import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '..
 import { IN, type Interior } from '../world/interior.ts';
 import type { Tree, World } from '../world/world.ts';
 import type { Wreck } from '../world/wrecks.ts';
-import { kartka, kosztTech, TECH_BY, tempoOsoby } from './badania.ts';
+import { badaniaDom, badaniaWidoczne, kartka, kosztTech, TECH_BY, tempoOsoby } from './badania.ts';
 import {
   type AmmoKey,
   hitChance,
@@ -1927,6 +1927,8 @@ export class Sim {
   private readonly mask: Uint8Array | null;
   /** pora wspólnego posiłku: mieszkańcy mogą wejść do mieszkania zarządu, do stołu */
   private mealDoor = false;
+  /** praca w pracowni: mieszkańcy mogą wejść do mieszkania zarządu, do stołu pracowni (liczone w każdym kroku) */
+  private labDoor = false;
   private readonly trunk: Int32Array;
   private readonly links: [number, number][];
   private readonly kinds: RoomKind[];
@@ -2007,6 +2009,7 @@ export class Sim {
     this.reg = new Int32Array(0);
     this.lay = {} as Sim['lay'];
     this.mealDoor = this.mealOpen();
+    this.labDoor = this.labOpen();
     // wnętrza otwartych sąsiednich budynków ze stanu (wczytany zapis) przed pierwszą przechodniością
     if (st.sasiedzi) this.przeliczNakladke();
     this.rebuild();
@@ -2088,9 +2091,9 @@ export class Sim {
   }
 
   /** Przechodniość od nowa: baza ze świata, ścięte drzewa wolne (pień na linii obwodu zostaje), łaty i ogniska
-      zablokowane; zarząd bez otwartych dziur, mieszkańcy dodatkowo bez bramy i mieszkania zarządu, obcy z dziurami,
-      ale bez zamkniętej bramy, tłum jak mieszkańcy. Woła się przy starcie, po ścięciu drzewa, łacie, nowym ognisku
-      i zmianie bramy. */
+      zablokowane; zarząd bez otwartych dziur, mieszkańcy dodatkowo bez bramy i mieszkania zarządu (do wejścia na
+      posiłek albo do pracowni), obcy z dziurami, ale bez zamkniętej bramy, tłum jak mieszkańcy. Woła się przy starcie,
+      po ścięciu drzewa, łacie, nowym ognisku, zmianie bramy i drzwi mieszkania zarządu. */
   private rebuild(): void {
     const size = this.w.size;
     const solid = this.st.things
@@ -2102,7 +2105,7 @@ export class Sim {
       this.st.felled,
       this.trunk,
       this.st.fence,
-      this.mealDoor ? null : this.mask,
+      this.mealDoor || this.labDoor ? null : this.mask,
       solid,
     );
     // wnętrza otwartych sąsiednich budynków: zarząd i obcy (szwendacze, szabrownicy) wchodzą przez otwarte i wyważone
@@ -2237,6 +2240,7 @@ export class Sim {
     // racje liczą posiłki od 6:00; w porze wspólnego posiłku mieszkańcy mogą wejść do stołu zarządu
     if (st.tick % TICKS_PER_HOUR === 0 && hourOf(st.tick) === 6) for (const p of st.pawns) p.ate = 0;
     if (st.tick % (TICKS_PER_HOUR / 2) === 0) this.syncMealDoor();
+    this.syncLabDoor();
     if (st.raid) this.raidTick(st.raid);
     // M2 fala 2: nocni goście w otwartych budynkach o 2:00, napis o 7:00 (tylko gdy zarząd dotknął cudzych drzwi)
     if (st.sasiedzi && st.tick % TICKS_PER_HOUR === 0) {
@@ -2313,12 +2317,11 @@ export class Sim {
         continue;
       }
       if (p.kind === 'core' || p.kind === 'resident') {
-        // wspólny posiłek: mieszkaniec zostawia podwórko albo dom i idzie do stołu
+        // wspólny posiłek: mieszkaniec zostawia podwórko, dom albo stół pracowni i idzie do stołu zarządu
         if (
           p.kind === 'resident' &&
           st.tick % THINK_EVERY === 0 &&
-          p.job?.t === 'stay' &&
-          p.job.target !== STAY_MEAL &&
+          ((p.job?.t === 'stay' && p.job.target !== STAY_MEAL) || p.job?.t === 'research') &&
           this.mealDue(p)
         )
           this.plan(p);
@@ -2559,6 +2562,58 @@ export class Sim {
     if (open === this.mealDoor) return;
     this.mealDoor = open;
     this.rebuild();
+  }
+
+  /** Droga mieszkańców do pracowni, która stoi w mieszkaniu zarządu. Przechodniość mieszkańców ma jedną warstwę, więc
+      mieszkanie otwiera się dla nich wszystkich naraz, ale do stołu siadają tylko ci z wiedzą (`labSkill`). Otwarte
+      w godzinach mieszkańców na podwórku (`residentDay`), gdy stoi pracownia, jest wybrane badanie i któryś z mieszkańców
+      ma w jego dziedzinie umiejętność; poza nimi dopóki ktoś z nich jeszcze tam jest (wychodzi przy otwartych
+      drzwiach, jak spóźniony na obiad), ale tylko w grze, w której są badania (bez nich mieszkanie zostaje, jak było).
+      Wynika wyłącznie ze stanu, więc po wczytaniu zapisu wychodzi tak samo, i dlatego liczy się w każdym kroku, a nie
+      co pół godziny jak pora posiłku: wybór badania, koniec badania i stawianie pracowni wypadają w dowolnym ticku. */
+  private labOpen(): boolean {
+    if (!this.house) return false;
+    const st = this.st;
+    const dom = badaniaDom(st);
+    if (
+      dom !== null &&
+      this.residentDay() &&
+      st.things.some((t) => t.kind === 'pracownia') &&
+      st.pawns.some((p) => this.labSkill(p, dom))
+    )
+      return true;
+    // drzwi mieszkania liczą się do niego: stół pracowni stoi przy drzwiach, więc siedzi się też w progu
+    const mask = this.mask;
+    const size = this.w.size;
+    return (
+      !!mask &&
+      st.pawns.some(
+        (p) =>
+          p.kind === 'resident' &&
+          mask[Math.floor(p.y) * size + Math.floor(p.x)] === 1 &&
+          (p.job === null || p.job.t === 'stay' || p.job.t === 'research'),
+      ) &&
+      badaniaWidoczne(st)
+    );
+  }
+
+  /** drzwi do pracowni dla mieszkańców: przechodniość od nowa tylko przy zmianie */
+  private syncLabDoor(): void {
+    const open = this.labOpen();
+    if (open === this.labDoor) return;
+    this.labDoor = open;
+    this.rebuild();
+  }
+
+  /** godziny mieszkańców na podwórku: od początku pracy (uchwała o zebraniach go przesuwa) do 18:00, nie w nocy */
+  private residentDay(): boolean {
+    const h = hourOf(this.st.tick);
+    return !this.night() && h >= this.st.laws.workStart && h < 18;
+  }
+
+  /** czy mieszkaniec ma osobę z umiejętnością co najmniej 1 w dziedzinie badania; bez osoby, sąsiad i zarząd nie */
+  private labSkill(p: Pawn, dom: TechDom): boolean {
+    return p.kind === 'resident' && p.person >= 0 && (this.st.people[p.person]?.skills[dom] ?? 0) >= 1;
   }
 
   /** pierwsza godzina wspólnego posiłku (13:00–14:00, 19:00–20:00) */
@@ -3860,7 +3915,9 @@ export class Sim {
   }
 
   /** Plan dnia mieszkańca: nocą śpi w swoim mieszkaniu, rano siedzi w domu, od WORK_START do 18:00 pracuje na
-      podwórku (za siatką, nie przełazi dziurami), od 18:00 grzeje się przy ognisku, jeśli się pali, potem wraca do domu. */
+      podwórku (za siatką, nie przełazi dziurami) albo, gdy ma wiedzę w dziedzinie bieżącego badania i przy stole
+      pracowni jest wolne miejsce, bada w pracowni, od 18:00 grzeje się przy ognisku, jeśli się pali, potem wraca
+      do domu. */
   private plan(p: Pawn): void {
     const st = this.st;
     const h = hourOf(st.tick);
@@ -3874,10 +3931,14 @@ export class Sim {
       }
     }
     let kind = STAY_HOME;
-    if (!this.night() && h >= st.laws.workStart && h < 18) kind = STAY_YARD;
+    if (this.residentDay()) kind = STAY_YARD;
     else if (h >= 18 && h < 20 && this.campfire()) kind = STAY_FIRE;
     // wróg na podwórku: nikt tam nie wychodzi
     if (kind !== STAY_HOME && this.yardDanger()) kind = STAY_HOME;
+    // zamiast podwórka: stół pracowni (zajęte miejsca, głód i pora posiłku zostawiają plan jak był)
+    const dom = badaniaDom(st);
+    if (kind === STAY_YARD && dom !== null && this.labSkill(p, dom) && !this.urgent(p) && !this.mealDue(p))
+      if (this.startResearch(p)) return;
     const spot = kind === STAY_YARD ? this.yardSpot(p) : kind === STAY_FIRE ? this.fireSpot(p) : this.homeSpot(p);
     if (spot >= 0 && this.go(p, spot)) {
       const j = this.newJob('stay', kind, spot, false);
@@ -5170,6 +5231,8 @@ export class Sim {
   private researchWork(p: Pawn, j: Job, at: boolean): boolean {
     const desk = this.thing(j.target);
     if (desk?.kind !== 'pracownia' || !this.researchTech()) return false;
+    // mieszkaniec bada w swoich godzinach na podwórku, potem wstaje (zarząd siedzi, dopóki mu się nie każe wstać)
+    if (p.kind === 'resident' && !this.residentDay()) return false;
     if (j.phase === 1) return true;
     if (!at) return false;
     j.phase = 1;
