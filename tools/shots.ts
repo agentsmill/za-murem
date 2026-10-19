@@ -13397,8 +13397,8 @@ function pracaShots(): Shot[] {
   /** Panel otwarty przyciskiem „Praca” (główna droga, a na telefonie jedyna): klik myszą nie zostawia fokusu na przycisku,
       więc spacja pauzuje grę (a nie przełącza panelu), także po kliknięciu komórki i bez niego; 1–4 ustawiają tempo,
       priorytet stoi. Z klawiatury (Enter na przycisku) fokus zostaje na przycisku. Tab spoza panelu (Shift+Tab z
-      przycisku zoomu, który stoi za panelem) wchodzi na ostatnią komórkę, a przebudowa DOM przed jakimkolwiek klawiszem
-      w panelu nie zabiera jej fokusu. */
+      pierwszego chipu listy ludzi, która stoi w DOM za panelem, a bez niej z przycisku zoomu) wchodzi na ostatnią
+      komórkę, a przebudowa DOM przed jakimkolwiek klawiszem w panelu nie zabiera jej fokusu. */
   const panelFokusPrzycisk: Shot = {
     name: 'praca-panel-fokus-przycisk',
     query: '',
@@ -13442,11 +13442,13 @@ function pracaShots(): Shot[] {
       if ((await cyfra(page, 0, 'ogien')) !== '2') throw new Error('2 ustawiło priorytet komórki');
       await page.keyboard.press('1');
 
-      // Tab spoza panelu: Shift+Tab z przycisku zoomu (stoi w DOM zaraz za panelem) wchodzi na ostatnią komórkę tabeli
-      await page.focus('#zIn');
+      // Tab spoza panelu: Shift+Tab z pierwszego chipu listy ludzi (lista stoi w DOM zaraz za panelem, przed przyciskami
+      // zoomu; bez widocznej listy byłby to przycisk zoomu) wchodzi na ostatnią komórkę tabeli
+      const zaPanelem = (await page.$('#lista:not([hidden]) .lp')) ? '#lista .lp' : '#zIn';
+      await page.focus(zaPanelem);
       await page.keyboard.press('Shift+Tab');
       const weszlo = await aktywny();
-      console.log(`  Shift+Tab z #zIn: fokus ${weszlo}`);
+      console.log(`  Shift+Tab z ${zaPanelem}: fokus ${weszlo}`);
       if (!/^BUTTON#\d+:/.test(weszlo)) throw new Error(`Shift+Tab nie wszedł na komórkę panelu: ${weszlo}`);
       // przebudowa przed jakimkolwiek klawiszem w panelu (polecenie progu czeka w kolejce, widok się zmienia)
       await page.evaluate(() => window.zm!.sim!.push({ t: 'prog', ids: [], co: 'drewno', n: 40 }));
