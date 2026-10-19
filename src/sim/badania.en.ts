@@ -2,7 +2,7 @@
    nazwy technologii i er oraz zdania o działaniu technologii w nowej grze, po tych samych kluczach co TECHS i ERY.
    Polskie nazwy 24 technologii z 0.3 i pięciu er biorą się z src/content/data.ts, które zostaje bajt w bajt, więc
    angielskie leżą tutaj. Słowa ze słowniczka docs/SLOWNICZEK-EN.md (koza to „the stove”, siedziba to „HQ”, karta nocy
-   to „Night orders”, ogródek to „vegetable patch”, zasieki to „barricade”). */
+   to „Night orders”, ogródek to „vegetable patch”, zasieki to „barricade”, a barykady z wraków to „Wreck walls”). */
 
 /** nazwa technologii po angielsku, po identyfikatorze (24 z 0.3 w kolejności data.ts i technologia końcowa) */
 export const NAZWY_TECH_EN: Readonly<Record<string, string>> = {
@@ -12,7 +12,7 @@ export const NAZWY_TECH_EN: Readonly<Record<string, string>> = {
   t_zielarstwo: 'Herbalism from the allotments',
   t_wieza: 'Towers from scaffolding',
   t_spawanie: 'Welding with car batteries',
-  t_barykady: 'Barricades from wrecks',
+  t_barykady: 'Wreck walls',
   t_wezel: 'Heating substation start-up',
   t_szklarnia: 'Greenhouses from plastic sheeting',
   t_grzyby: 'Mushrooms in the basements',
@@ -52,7 +52,7 @@ export const DZIALANIE_EN: Readonly<Record<string, string>> = {
   t_zielarstwo: 'A vegetable patch sometimes gives meds at harvest: one med, with a one in three chance.',
   t_wieza: 'A tower in the yard and a new Tower post on the Night orders.',
   t_spawanie: 'The workshop makes parts 1.5× faster.',
-  t_barykady: 'A wreck barricade on a stretch of the fence, sturdier than the plain barricade. Costs mostly scrap.',
+  t_barykady: 'A wreck wall on a stretch of the fence, sturdier than the plain barricade. Costs mostly scrap.',
   t_wezel:
     'A boiler in the HQ stairwell (in a house, the hallway) heats all your flats at once, but burns a lot of wood. The board stokes it on its own.',
   t_szklarnia: 'A greenhouse in the yard: like a vegetable patch, but in winter it yields as it does in autumn.',
@@ -64,6 +64,10 @@ export const DZIALANIE_EN: Readonly<Record<string, string>> = {
 /** technologia bez działania w nowej grze: kartka leży odwrócona, dopóki ktoś nie dopisze działania */
 export const PRAD_EN = 'This needs power.';
 
-/** opis technologii końcowej w trybie zombie: sieć jest cicha, bo hałas ściąga stado (projekt warunków zwycięstwa) */
-export const SIEC_ZOMBIE_EN =
-  'A grid of aluminium, optical fibre and resin-sealed cells that the bacterium will not touch. In this mode it is also silent, because noise draws the herd. This needs power.';
+/** opis technologii końcowej w trybie zwykłym: sieć bez miedzi, której bakteria nie ruszy (cel drzewka) */
+export const SIEC_EN =
+  'A grid of aluminium instead of copper, optical fibre and resin-sealed cells: power the bacterium will not touch.';
+
+/** opis technologii końcowej w trybie zombie: ta sama sieć, a do tego cicha, bo hałas ściąga stado (projekt warunków
+    zwycięstwa) */
+export const SIEC_ZOMBIE_EN = `${SIEC_EN} In this mode it is also silent, because noise draws the herd.`;

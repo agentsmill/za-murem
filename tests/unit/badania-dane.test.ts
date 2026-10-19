@@ -95,8 +95,8 @@ describe('badania: co działa w nowej grze', () => {
     }
   });
 
-  it('technologie bez działania w nowej grze mówią, że trzeba do tego prądu, w obu językach', () => {
-    for (const t of TECHS.filter((x) => !x.dziala)) expect(t.dzialanie, t.id).toEqual(PRAD);
+  it('technologie bez działania w nowej grze, poza końcową, mówią, że trzeba do tego prądu, w obu językach', () => {
+    for (const t of TECHS.filter((x) => !x.dziala && !x.koncowa)) expect(t.dzialanie, t.id).toEqual(PRAD);
     for (const t of TECHS.filter((x) => x.dziala)) expect(t.dzialanie.pl, t.id).not.toBe(PRAD.pl);
   });
 });
@@ -114,11 +114,25 @@ describe('badania: technologia końcowa i ery', () => {
     expect(nazwaTech('t_siec')).toEqual({ pl: 'Sieć bez miedzi', en: 'Copper-free grid' });
   });
 
-  it('tylko technologia końcowa ma osobny opis na tryb zombie, o cichej sieci', () => {
-    for (const t of TECHS.filter((x) => x.id !== 't_siec')) expect(t.dzialanieZombie, t.id).toBeUndefined();
-    const z = TECH_BY.t_siec.dzialanieZombie;
+  it('technologia końcowa opisuje sieć bez miedzi w trybie zwykłym, a jej cichą wersję osobno na tryb zombie', () => {
+    const { dzialanie: d, dzialanieZombie: z } = TECH_BY.t_siec;
+    expect(d.pl).toMatch(/aluminium/);
+    expect(d.pl).toMatch(/światłowod/);
+    expect(d.pl).toMatch(/żywic/);
+    expect(d.en).toMatch(/aluminium/);
+    expect(d.en).toMatch(/fibre/);
+    expect(d.en).toMatch(/resin/);
+    // „Do tego trzeba prądu” pokazuje tablica ze stanu odwróconej kartki, nie opis kartki końcowej
+    expect(d).not.toEqual(PRAD);
+    expect(d.pl).not.toMatch(/cicha/);
+    expect(d.en).not.toMatch(/silent/);
+    expect(z?.pl).toMatch(/aluminium/);
     expect(z?.pl).toMatch(/cicha/);
     expect(z?.en).toMatch(/silent/);
+  });
+
+  it('inne technologie nie mają osobnego opisu na tryb zombie', () => {
+    for (const t of TECHS.filter((x) => x.id !== 't_siec')) expect(t.dzialanieZombie, t.id).toBeUndefined();
   });
 
   it('ery 1–5 mają polskie nazwy z ERAS, a era 6 to „Bez miedzi” / „Without copper”', () => {
@@ -167,6 +181,11 @@ describe('badania: teksty w obu językach', () => {
       expect(t.dzialanie.pl.length, `${t.id} opis pl`).toBeGreaterThan(0);
       expect(t.dzialanie.en.length, `${t.id} opis en`).toBeGreaterThan(0);
     }
+  });
+
+  it('barykady z wraków to po angielsku „Wreck walls”, bo „barricade” ze słowniczka to zasieki', () => {
+    expect(nazwaTech('t_barykady').en).toBe('Wreck walls');
+    expect(TECH_BY.t_barykady.dzialanie.en).not.toMatch(/barricades? of wrecks|wreck barricade/i);
   });
 
   it('każda era ma niepustą nazwę w obu językach', () => {

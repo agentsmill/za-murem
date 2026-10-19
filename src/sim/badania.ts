@@ -7,14 +7,16 @@
    Kontrakt. Moduł to same dane i czyste odczyty: nie ma stanu, losowania ani języka bieżącego (napisy to `Tx`), nie
    importuje budowle.ts ani sim.ts. Budowle są identyfikatorami `BuildKind` jako napisy, bo nowe rodzaje dochodzą
    dopiero z budowlami. Technologia z `dziala: false` nie ma jeszcze działania i na tablicy leży odwrócona; projekt
-   prądu odwraca kartkę z powrotem przez dopisanie działania tutaj. Ery i kolumny tablicy wynikają z `ERY`, nie
-   z liczby 5. Stan badań, pracownia i funkcje stanu kartki dochodzą w kolejnych modułach. */
+   prądu odwraca kartkę z powrotem przez dopisanie działania tutaj. Jej `dzialanie` to „Do tego trzeba prądu.”, poza
+   technologią końcową, która opisuje swoją sieć (dopisek o prądzie pokazuje tablica ze stanu kartki). Ery i kolumny
+   tablicy wynikają z `ERY`, nie z liczby 5. Stan badań, pracownia i funkcje stanu kartki dochodzą w kolejnych
+   modułach. */
 
 import type { TechDef, TechDom } from '../content/data.ts';
 import { ERAS, TECH } from '../content/data.ts';
 import type { Tx } from '../core/jezyk.ts';
 import { tx } from '../core/jezyk.ts';
-import { DZIALANIE_EN, NAZWY_ERY_EN, NAZWY_TECH_EN, PRAD_EN, SIEC_ZOMBIE_EN } from './badania.en.ts';
+import { DZIALANIE_EN, NAZWY_ERY_EN, NAZWY_TECH_EN, PRAD_EN, SIEC_EN, SIEC_ZOMBIE_EN } from './badania.en.ts';
 import type { GameMode } from './tryb.ts';
 
 export interface TechNowa {
@@ -36,7 +38,8 @@ export interface TechNowa {
   /** tryb gry, w którym technologia jest dostępna; brak: oba */
   tryb?: GameMode;
   dzialanie: Tx;
-  /** opis w trybie zombie, jeśli różni się od `dzialanie` (dziś tylko sieć, która w tym trybie jest cicha) */
+  /** opis w trybie zombie, jeśli różni się od `dzialanie` (dziś tylko sieć, która w tym trybie jest cicha); UI w trybie
+      zombie bierze `dzialanieZombie ?? dzialanie` */
   dzialanieZombie?: Tx;
 }
 
@@ -97,10 +100,13 @@ const DZIALAJA: Readonly<Record<string, { odblokowuje?: readonly string[]; pl: s
 
 const PRAD: Tx = tx('Do tego trzeba prądu.', PRAD_EN);
 
-const SIEC_ZOMBIE: Tx = tx(
-  'Sieć z aluminium, światłowodu i ogniw w żywicy, której bakteria nie ruszy. W tym trybie jest też cicha, bo hałas ściąga stado. Do tego trzeba prądu.',
-  SIEC_ZOMBIE_EN,
-);
+const SIEC_PL =
+  'Sieć z aluminium zamiast miedzi, światłowodu i ogniw zalanych żywicą: prąd, którego bakteria nie ruszy.';
+
+/** technologia końcowa opisuje sieć, a nie „Do tego trzeba prądu”: ten dopisek pokazuje tablica ze stanu odwróconej
+    kartki; w trybie zombie ta sama sieć jest dodatkowo cicha (projekt warunków zwycięstwa) */
+const SIEC: Tx = tx(SIEC_PL, SIEC_EN);
+const SIEC_ZOMBIE: Tx = tx(`${SIEC_PL} W tym trybie jest też cicha, bo hałas ściąga stado.`, SIEC_ZOMBIE_EN);
 
 function techNowa(id: string, w: Wpis): TechNowa {
   const d = DZIALAJA[id];
@@ -118,7 +124,9 @@ function techNowa(id: string, w: Wpis): TechNowa {
 
 export const TECHS: readonly TechNowa[] = Object.entries(WPISY).map(
   ([id, w]): TechNowa =>
-    id === ID_KONCOWA ? { ...techNowa(id, w), koncowa: true, dzialanieZombie: SIEC_ZOMBIE } : techNowa(id, w),
+    id === ID_KONCOWA
+      ? { ...techNowa(id, w), koncowa: true, dzialanie: SIEC, dzialanieZombie: SIEC_ZOMBIE }
+      : techNowa(id, w),
 );
 
 export const TECH_BY: Readonly<Record<string, TechNowa>> = Object.fromEntries(TECHS.map((t) => [t.id, t]));
