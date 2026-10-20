@@ -600,13 +600,18 @@ describe('R0: pierwszy dzień to goalsOf w rozdziale', () => {
     expect(cel(g, 'drewno')).toMatchObject({ done: false });
     expect(cel(g, 'drewno').missed).toBeUndefined();
     expect(widok(g).rozdzial!.biezacy?.key).toBe('drewno');
-    // zatwierdzona bez zapasu: przepadło (skreślone, ale policzone jak zrobione), bieżący cel to noc
+    // karta zatwierdzona, a zapas pojawia się dopiero po terminie, zanim ścieżka zdążyła go zobaczyć przed kartą: cel
+    // przepadł (skreślony, ale policzony jak zrobiony), bieżący cel to noc; zaliczyć się po terminie już nie da
     g.gov.night!.confirmed = true;
+    dolozDrewno(g, 10);
+    expect(zapas(g)).toBeGreaterThanOrEqual(NIGHT_WOOD);
     expect(cel(g, 'drewno')).toMatchObject({ done: true, missed: true });
     expect(g.sciezka.przepadle).toEqual(['r0.drewno']);
+    expect(zaliczony(g.sciezka, 'r0.drewno')).toBe(false);
     expect(widok(g).rozdzial!.biezacy?.key).toBe('noc');
-    // zapas, który pojawia się po terminie, przepadłego celu nie ratuje
+    // i dalej: przepadły cel nie wraca, choćby zapasu przybywało
     dolozDrewno(g, 10);
+    for (let k = 0; k < 20; k++) sekunda(g);
     expect(cel(g, 'drewno')).toMatchObject({ done: true, missed: true });
     expect(zaliczony(g.sciezka, 'r0.drewno')).toBe(false);
   });
