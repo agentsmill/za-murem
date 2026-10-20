@@ -22,7 +22,7 @@
    (`planujKarte` w wizyta.ts), a karta otwiera się dopiero pod bramą, z `gid` w danych. Z `gid` tekst czyta żywą grupę
    (`GovHost.grupa`: ilu ludzi stoi, czy mówiący to fachowiec), a wybory sterują jej pionkami zamiast dokładać
    mieszkańców: uchodźcy „Przyjąć wszystkich” to `przyjmijGosci` (mówiący z fachem idzie do zarządu, jak w 0.3 przez
-   `joinPerson`), jedzenie `nakarmGosci`, odprawa `odprawGosci`; influencerka i fachowiec w domu `przyjmijDoZarzadu(0)`;
+   `joinPerson`), jedzenie `nakarmGosci`, odprawa `odprawGosci`; influencerka i fachowiec w domu `przyjmijDoZarzadu`;
    aktywiści „Zaprosić do ciepła” `nocGosci` (rano odchodzą bramą); dzieciaki i sąsiad od tokenów po decyzji
    `odprawGosci`. Przyjęcie całej grupy to jedyne przyjęcie z liczbą: „Przyjąć tylu, ilu się zmieści” z 0.3 odpada, bo
    symulacja przyjmuje albo odprawia całą grupę. Wybory są dostępne tylko, gdy grupa wciąż stoi pod bramą. Karta bez
@@ -211,6 +211,14 @@ export function uchodzcySpec(h: GovHost, d: D): Person | null {
   return !k || k.osoby[0]?.name === d.spec.name ? d.spec : null;
 }
 
+/** W domu pod furtką stoi rodzina, chyba że mówiący fachowiec jest za młody na dzieci (poniżej 28 lat): wtedy `gosc` buduje
+    dorosłych (`wedrowiec`), a tekst mówi o grupie. Tylko karta z grupą pod bramą (`gid`); stara karta z zapisu zawsze
+    o rodzinie, jak w 0.3. */
+export const RODZINA_OD = 28;
+export function uchodzcyGrupa(h: GovHost, d: D): boolean {
+  return dom(h) && zGrupa(d) && !!d.spec && d.spec.age < RODZINA_OD;
+}
+
 /** Wybory karty `uchodzcy` z grupą pod bramą: przyjąć wszystkich (mówiący z fachem idzie do zarządu), nakarmić na drogę
     albo odprawić. „Przyjąć tylu, ilu się zmieści” z 0.3 odpada: grupę przyjmuje się w całości albo wcale, a na podłogę
     kładzie się brakujących (jak w przycisku „Przyjąć wszystkich”). */
@@ -219,7 +227,7 @@ function uchodzcyZGrupa(h: GovHost, d: D): EventChoice[] {
   const n = uchodzcyN(h, d);
   const free = h.free();
   const admit = () => {
-    if (uchodzcySpec(h, d)) h.przyjmijDoZarzadu(0);
+    if (uchodzcySpec(h, d)) h.przyjmijDoZarzadu();
     else h.przyjmijGosci();
     h.mood(1, n > free ? 2 : 0);
     h.log(
@@ -249,6 +257,9 @@ function uchodzcyZGrupa(h: GovHost, d: D): EventChoice[] {
   });
   return out;
 }
+
+/** zdanie o dzieciakach w trybie zombie (karta `dzieci`); po angielsku `DZIECI_ZOMBIE_EN` w warianty.en.ts */
+export const DZIECI_ZOMBIE = 'Wózek terkocze na bruku, a dzieciaki co chwilę oglądają się na ulicę.';
 
 /** skąd ktoś patrzy przez lornetkę: z najwyższego budynku w okolicy */
 const TOWER: Record<string, string> = {
@@ -300,10 +311,13 @@ export const OLD_EVENTS: OldEvent[] = [
       });
       return { osoby, kto: 'dzieci' };
     },
-    text: (h) =>
-      domyObok(h)
+    // w trybie zombie dzieciaki z wózkiem na ulicy to ryzyko, więc jedno zdanie o tym (w 0.3 tekst bez zmian)
+    text: (h, d) => {
+      const baza = domyObok(h)
         ? 'Dzieciaki z sąsiednich domów przyciągnęły taczkę blach i rur z rozbiórki szopy. Chcą coś do jedzenia.'
-        : null,
+        : eventDef('dzieci')!.text(h, d);
+      return h.tryb() === 'zombie' ? `${baza} ${DZIECI_ZOMBIE}` : domyObok(h) ? baza : null;
+    },
     // po wymianie (albo odmowie) dzieciaki idą dalej z wózkiem
     choices: (h, d, base) => (zGrupa(d) ? poDecyzji(h, d, base, () => h.odprawGosci()) : base),
   },
@@ -377,8 +391,10 @@ export const OLD_EVENTS: OldEvent[] = [
     // w trybie zombie sąsiad zza płotu nie handluje tokenami
     tryby: ['zwykly'],
     w: (h, base) => (nikt(h) || !zGosciem(h) ? 0 : base),
+    // sąsiad jest mężczyzną (tekst mówi „sąsiad”, „on”, „him”); ta sama osoba stoi pod bramą jako pionek
+    make: (h) => ({ p: h.makePerson({ f: false }) }),
     // sąsiad z bloku obok (zza płotu) stoi sam pod bramą
-    gosc: (h) => ({ osoby: grupaKarty(h, 'wedrowiec', 1), kto: 'sasiad' }),
+    gosc: (_h, d) => ({ osoby: [d.p], kto: 'sasiad' }),
     text: (h) =>
       domyObok(h)
         ? 'Sąsiad zza płotu chce kupić od was Drewno 5. Płaci tokenami, które według niego zaraz odbiją.'
@@ -453,7 +469,7 @@ export const OLD_EVENTS: OldEvent[] = [
               ...base[0],
               label: dom(h) ? 'Przyjąć do domu' : base[0].label,
               ok: podBrama(h, d),
-              run: () => h.przyjmijDoZarzadu(0),
+              run: () => h.przyjmijDoZarzadu(),
             },
             ...poDecyzji(h, d, base, () => h.odprawGosci()).slice(1),
           ]
@@ -481,13 +497,13 @@ export const OLD_EVENTS: OldEvent[] = [
     // dorośli z jednego osiedla
     gosc: (h, d) => {
       const spec: Person | null = d.spec ?? null;
-      const rodzina = dom(h) && (!spec || spec.age >= 28);
+      const rodzina = dom(h) && (!spec || spec.age >= RODZINA_OD);
       return {
         osoby: grupaKarty(h, rodzina ? 'rodzina' : 'wedrowiec', d.n, spec),
         kto: rodzina ? 'rodzina' : 'wedrowiec',
       };
     },
-    title: (h) => (dom(h) ? 'Rodzina pod furtką' : 'Ludzie pod bramą'),
+    title: (h, d) => (dom(h) ? (uchodzcyGrupa(h, d) ? 'Ludzie pod furtką' : 'Rodzina pod furtką') : 'Ludzie pod bramą'),
     text: (h, d) => {
       const free = h.free();
       const n = uchodzcyN(h, d);
@@ -495,7 +511,7 @@ export const OLD_EVENTS: OldEvent[] = [
       const sp = uchodzcySpec(h, d);
       const spec = sp ? ` Wśród nich jest ${sp.prof.toLowerCase()}, ${sp.name}.` : '';
       if (dom(h))
-        return `Pod furtką stoi rodzina, ${n} ${osob(n)}. Przyszli ${d.from}${d.from.includes(',') ? ',' : ''} i proszą o miejsce. ${free ? `Wolnych łóżek w domu: ${free}.` : 'W domu nie ma wolnych łóżek, spaliby na podłodze w kuchni.'}${spec}`;
+        return `Pod furtką stoi ${uchodzcyGrupa(h, d) ? 'grupa' : 'rodzina'}, ${n} ${osob(n)}. Przyszli ${d.from}${d.from.includes(',') ? ',' : ''} i proszą o miejsce. ${free ? `Wolnych łóżek w domu: ${free}.` : 'W domu nie ma wolnych łóżek, spaliby na podłodze w kuchni.'}${spec}`;
       return `Pod bramą ${many ? 'stoją' : 'stoi'} ${n} ${osob(n)} i ${many ? 'proszą' : 'prosi'} o miejsce. Przyszli ${d.from}. Wolnych miejsc w bloku: ${free}.${spec}`;
     },
     choices: (h, d) => {
@@ -562,6 +578,9 @@ export const OLD_EVENTS: OldEvent[] = [
         : d.lok
           ? `${p.name} z waszej klatki`
           : `${p.name} z budynku ${d.b}`;
+      // sąsiad z furtki (karta z gościem pod bramą) podchodzi i przyznaje się tam, a nie przy kozie, której tu nie ma
+      if (dom(h) && zGrupa(d))
+        return `${who} ${g(p, 'podszedł', 'podeszła')} do ${h.words().brama.d} i ${g(p, 'przyznał', 'przyznała')}, że ${g(p, 'był', 'była')} kiedyś: ${p.prof.toLowerCase()}. Do tej pory ${g(p, 'siedział', 'siedziała')} cicho, bo bał${g(p, '', 'a')} się, że każą ${g(p, 'mu', 'jej')} pracować.`;
       return `${who} ${g(p, 'przyznał', 'przyznała')} ${h.campfire() ? 'przy ognisku' : 'przy kozie'}, że ${g(p, 'był', 'była')} kiedyś: ${p.prof.toLowerCase()}. Do tej pory ${g(p, 'siedział', 'siedziała')} cicho, bo bał${g(p, '', 'a')} się, że każą ${g(p, 'mu', 'jej')} pracować.`;
     },
     // mieszkaniec z klatki przechodzi do zarządu jako ta sama osoba (awans: mieszkańców o jednego mniej bez ruszania
@@ -574,7 +593,7 @@ export const OLD_EVENTS: OldEvent[] = [
               ...base[0],
               ok: podBrama(h, d),
               run: () => {
-                h.przyjmijDoZarzadu(0);
+                h.przyjmijDoZarzadu();
                 h.mood(1, 0);
               },
             },

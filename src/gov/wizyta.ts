@@ -171,9 +171,8 @@ export interface GoscHost {
       i odprawa kończą wizytę, `nocGosci` nie (rano 6–8 goście wychodzą, a `goscTick` pilnuje reszty).
       Cała grupa zostaje w osiedlu jako mieszkańcy (`zostan`). */
   przyjmijGosci(): void;
-  /** osoba o numerze `i` wśród żywych idzie do zarządu, reszta zostaje jak przy `przyjmijGosci` (`zarzad`). Symulacja
-      awansuje dziś tylko mówiącego (pierwszą żywą osobę), więc inny numer niż 0 daje przyjęcie całej grupy. */
-  przyjmijDoZarzadu(i: number): void;
+  /** mówiący (pierwsza żywa osoba grupy) idzie do zarządu, reszta zostaje jak przy `przyjmijGosci` (`zarzad`) */
+  przyjmijDoZarzadu(): void;
   /** grupa odchodzi tam, skąd przyszła (`odejdz`) */
   odprawGosci(): void;
   /** grupa dostaje porcję przez siatkę i odchodzi (`jedzenie`); Jedzenie −n z zapasów */
@@ -255,7 +254,7 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
       return { osoby: widoczny(a.gosc, w).osoby.map(kopiaOsoby), pod: w?.faza === 'brama' };
     },
     przyjmijGosci: () => rozkazWizyty('zostan'),
-    przyjmijDoZarzadu: (k) => rozkazWizyty(k === 0 ? 'zarzad' : 'zostan'),
+    przyjmijDoZarzadu: () => rozkazWizyty('zarzad'),
     odprawGosci: () => rozkazWizyty('odejdz'),
     nakarmGosci: (n) => {
       if (!prowadzona()) return;
@@ -367,7 +366,7 @@ export function planujKarte(
   const rng = rngOf(st.rng);
   const strona = k.strona ?? pick(STRONY, rng);
   const osoby = k.osoby.slice(0, 12).map((p, j): Person => ({ ...kopiaOsoby(p), id: `${id}p${j}`, home: -1 }));
-  const kto: KtoId = k.kto in KTO_KARTY ? KTO_KARTY[k.kto as keyof typeof KTO_KARTY] : (k.kto as KtoId);
+  const kto: KtoId = Object.hasOwn(KTO_KARTY, k.kto) ? KTO_KARTY[k.kto as keyof typeof KTO_KARTY] : (k.kto as KtoId);
   const g: Gosc = {
     id,
     osoby,
@@ -478,7 +477,11 @@ export function goscTick(st: GovState, i: GovInput, fx: GovEffects, zajete: bool
   const ev = wizytaKarty(st.ev.active) !== null ? st.ev.active : null;
   if (!s || !a || a.koniec || !i.goscie) {
     // wizyta skończona (rozkaz, który ją zamyka), gra bez obcych albo karta z zapisu bez wizyty: karty już nic nie robią
-    if (s && a && (a.koniec || !i.goscie)) delete s.aktywny;
+    if (s && a && (a.koniec || !i.goscie)) {
+      // plan, który nie doszedł do bramy (gra bez obcych, zapis wczytany bez nich), zwalnia kartę `once`
+      zwolnijKarte(st, a);
+      delete s.aktywny;
+    }
     if (ev) st.ev.active = null;
     return null;
   }

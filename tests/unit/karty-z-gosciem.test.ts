@@ -258,19 +258,28 @@ describe('uchodzcy: grupa naprawdę pod bramą', () => {
     expect(fb.stock.supplies).toBe(0);
   });
 
-  it('w domu rodzina 2–4 osób z jednym nazwiskiem, pod furtką', () => {
+  it('w domu rodzina 2–4 osób z jednym nazwiskiem, pod furtką; z młodym fachowcem (poniżej 28) to grupa dorosłych i tekst mówi „grupa”', () => {
     const w = new Set<number>();
-    for (let seed = 1; seed <= 12; seed++) {
+    let rodzin = 0;
+    let grup = 0;
+    for (let seed = 1; seed <= 40; seed++) {
       const s = tylko('uchodzcy', { seed, input: { place: zielonki, cap: 0, residents: 0 } });
       const plan = wystaw(s).gosc!;
-      w.add(plan.osoby.length);
-      expect(plan.osoby.length).toBeGreaterThanOrEqual(2);
-      expect(plan.osoby.length).toBeLessThanOrEqual(4);
+      const n = plan.osoby.length;
+      w.add(n);
+      expect(n).toBeGreaterThanOrEqual(2);
+      expect(n).toBeLessThanOrEqual(4);
       tick(s, 'brama');
-      expect(widok(s).text.pl).toContain(`Pod furtką stoi rodzina, ${plan.osoby.length} ${osob(plan.osoby.length)}`);
       const spec = (wizyta(s).dane as { spec: Person | null }).spec;
-      // rodzina (mówiący 28+) ma wspólne nazwisko; z młodym fachowcem to zwykli dorośli
+      const v = widok(s);
       if (!spec || spec.age >= 28) {
+        rodzin++;
+        expect(wizyta(s).gosc.kto).toBe('rodzina');
+        expect(v.title.pl).toBe('Rodzina pod furtką');
+        expect(v.title.en).toBe('A family at the garden gate');
+        expect(v.text.pl).toContain(`Pod furtką stoi rodzina, ${n} ${osob(n)}`);
+        expect(v.text.en).toMatch(/^A family of /);
+        // rodzina ma wspólne nazwisko
         const nazwisko = (p: Person) =>
           p.name
             .slice(p.first.length + 1)
@@ -279,9 +288,22 @@ describe('uchodzcy: grupa naprawdę pod bramą', () => {
         expect(new Set(plan.osoby.map((p) => nazwisko(p).slice(0, 3))).size, plan.osoby.map((p) => p.name).join()).toBe(
           1,
         );
+      } else {
+        grup++;
+        expect(wizyta(s).gosc.kto).toBe('wedrowiec');
+        expect(v.title.pl).toBe('Ludzie pod furtką');
+        expect(v.title.en).toBe('People at the garden gate');
+        expect(v.text.pl).toContain(`Pod furtką stoi grupa, ${n} ${osob(n)}`);
+        expect(v.text.pl).not.toContain('rodzina');
+        expect(v.text.en).toMatch(/^A group of /);
+        expect(v.text.en).not.toContain('family');
+        // liczba etykiet po angielsku ta sama co po polsku (rozjazd wraca do polskich napisów)
+        expect(v.choices.every((c) => c.label.en !== c.label.pl)).toBe(true);
       }
     }
     expect(w.size).toBeGreaterThan(1);
+    expect(rodzin).toBeGreaterThan(0);
+    expect(grup, 'ziarna z młodym fachowcem').toBeGreaterThan(0);
   });
 });
 
@@ -317,6 +339,17 @@ describe('influencer: ta sama osoba na karcie i pod bramą', () => {
     expect(t.gov.goscie!.aktywny).toBeUndefined();
     expect(t.gov.ev.done.influencer).toBeUndefined();
     expect(t.gov.log.at(-1)?.txt.pl).toContain('nie dotarł');
+  });
+
+  it('plan, którego gra bez obcych nie pokazała (zapis wczytany bez obcych), zwalnia kartę once', () => {
+    const s = tylko('influencer');
+    wystaw(s);
+    expect(s.gov.ev.done.influencer).toBe(true);
+    const bez: GovInput = { ...s.i, screen: s.i.screen + 1 };
+    delete (bez as { goscie?: unknown }).goscie;
+    eventTick(s.gov, bez, emptyEffects(), false);
+    expect(s.gov.goscie!.aktywny).toBeUndefined();
+    expect(s.gov.ev.done.influencer).toBeUndefined();
   });
 
   it('w domu przyjmuje się ją do domu', () => {
@@ -405,7 +438,7 @@ describe('dzieci i krypto: po decyzji odchodzą', () => {
     const a = tylko('krypto');
     const plan = wystaw(a).gosc!;
     expect(plan.osoby).toHaveLength(1);
-    expect(plan.osoby[0].age).toBeGreaterThanOrEqual(22);
+    expect(plan.osoby[0].age).toBeGreaterThanOrEqual(18);
     tick(a, 'brama');
     expect(a.gov.ev.active?.id).toBe('krypto');
     const fa = wybierz(a, 'Przyjąć tokeny');
@@ -415,6 +448,23 @@ describe('dzieci i krypto: po decyzji odchodzą', () => {
     const fb = wybierz(b, 'Wyśmiać');
     expect(rozkazy(fb)).toEqual(['odejdz']);
     expect(b.gov.anger).toBeLessThanOrEqual(newGov(3).anger);
+  });
+
+  it('krypto: sąsiad to zawsze mężczyzna, a imię na karcie to imię pionka (20 ziaren)', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const s = tylko('krypto', { seed });
+      const plan = wystaw(s).gosc!;
+      const p = (wizyta(s).dane as { p: Person }).p;
+      expect(plan.osoby[0].f, `ziarno ${seed}`).toBe(false);
+      expect(p.f, `ziarno ${seed}`).toBe(false);
+      expect(plan.osoby[0].name, `ziarno ${seed}`).toBe(p.name);
+      expect(plan.osoby[0]).toMatchObject({ first: p.first, prof: p.prof, age: p.age });
+      tick(s, 'brama');
+      const v = widok(s);
+      expect(v.text.pl).toMatch(/^Sąsiad /);
+      expect(v.text.en).toMatch(/^(The neighbour|A neighbour) .*He’s paying/);
+      expect(v.choices.map((c) => c.label.en)).toContain('Laugh at him');
+    }
   });
 
   it('bez drewna „Przyjąć tokeny” jest niedostępne; wybór poza bramą też', () => {
@@ -432,7 +482,52 @@ describe('dzieci i krypto: po decyzji odchodzą', () => {
 
 // ---------------------------------------------------------------- fachowiec w domu
 
+describe('dzieci w trybie zombie: zdanie o niebezpieczeństwie', () => {
+  it('w zombie wózek terkocze, a dzieciaki oglądają się na ulicę (PL i EN); w zwykłym trybie tego zdania nie ma', () => {
+    for (const mode of ['zwykly', 'zombie'] as const)
+      for (const place of [undefined, zielonki])
+        for (const gid of [true, false]) {
+          const s = tylko('dzieci', { mode, input: place ? { place } : {} });
+          const h = makeHost(s.gov, s.i, emptyEffects());
+          const d = gid ? { gid: 'g1' } : {};
+          const v = { pl: def('dzieci').text(h, d).pl, en: def('dzieci').text(h, d).en };
+          const co = `${mode} ${place ? 'dom' : 'blok'} ${gid ? 'z grupą' : 'bez grupy'}`;
+          if (mode === 'zombie') {
+            expect(v.pl, co).toContain('Wózek terkocze na bruku, a dzieciaki co chwilę oglądają się na ulicę.');
+            expect(v.en, co).toContain(
+              'The trolley rattles on the cobbles, and the kids keep glancing back at the street.',
+            );
+            expect(v.pl, co).toContain('Chcą coś do jedzenia.');
+          } else {
+            expect(v.pl, co).not.toContain('terkocze');
+            expect(v.en, co).not.toContain('rattles');
+          }
+          expect(polskieSlowa(v.en), co).toEqual([]);
+        }
+  });
+});
+
 describe('fachowiec w domu: sąsiad podchodzi do furtki', () => {
+  it('tekst mówi, że sąsiad podszedł do furtki (nie że przyznał się przy kozie), PL i EN', () => {
+    for (const campfire of [false, true]) {
+      const dom = { place: zielonki, residents: 0, hour: 20, light: { campfire, gateLamp: false } };
+      const s = podBrama('fachowiec', { input: dom });
+      const v = widok(s);
+      const d = (s.gov.ev.active!.d as { p: Person }).p;
+      expect(v.text.pl).toContain(d.name);
+      expect(v.text.pl).toMatch(/podszedł do furtki i przyznał|podeszła do furtki i przyznała/);
+      expect(v.text.pl).not.toMatch(/przy kozie|przy ognisku/);
+      expect(v.text.en).toContain('came up to the garden gate and let it slip');
+      expect(v.text.en).not.toMatch(/by the stove|by the campfire/);
+      expect(polskieSlowa(v.text.en, [d.name])).toEqual([]);
+    }
+    // karta bez wizyty (z zapisu) i fachowiec w bloku zostają przy kozie
+    const blok = tylko('fachowiec', { input: { residents: 4, hour: 20 } });
+    const h = makeHost(blok.gov, blok.i, emptyEffects());
+    const dane = def('fachowiec').make(h);
+    expect(def('fachowiec').text(h, dane).pl).toMatch(/przy kozie|przy ognisku/);
+  });
+
   const dom = { place: zielonki, residents: 0, hour: 20 } as const;
 
   it('plan jednej osoby, imię z karty, karta pod furtką; Wciągnąć do roboty to zarzad', () => {
@@ -450,6 +545,18 @@ describe('fachowiec w domu: sąsiad podchodzi do furtki', () => {
     expect(fx.goscRozkaz).toEqual([{ id: 'g1', co: 'zarzad' }]);
     expect(fx.join).toEqual([]);
     expect(fx.residents).toBe(0);
+  });
+
+  it('host: przyjmijDoZarzadu bez parametru wydaje rozkaz zarzad dla prowadzonej wizyty', () => {
+    const s = podBrama('fachowiec', { input: dom });
+    const fx = emptyEffects();
+    const h = makeHost(s.gov, s.i, fx);
+    expect(h.przyjmijDoZarzadu.length).toBe(0);
+    h.przyjmijDoZarzadu();
+    expect(fx.goscRozkaz).toEqual([{ id: 'g1', co: 'zarzad' }]);
+    // po ostatnim rozkazie wizyta nie jest już prowadzona: kolejny nic nie robi
+    h.przyjmijDoZarzadu();
+    expect(fx.goscRozkaz).toHaveLength(1);
   });
 
   it('Niech odpoczywa: sąsiad wraca do siebie (odejdz)', () => {
