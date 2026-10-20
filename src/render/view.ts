@@ -99,6 +99,7 @@ import {
   GAME_KINDS,
   type GameLike,
   gameLights,
+  goscMaxHp,
   HEAPS,
   isBoard,
   isLokator,
@@ -1643,11 +1644,13 @@ export class GameView {
             ? STRANGER_HP
             : p.kind === 'handlarz'
               ? TRADER_HP
-              : p.kind === 'wedrowiec' || p.kind === 'obcy'
-                ? WANDERER_HP
-                : p.kind === 'zbir'
-                  ? ZBIR_HP
-                  : 100;
+              : p.kind === 'gosc'
+                ? goscMaxHp(p)
+                : p.kind === 'wedrowiec' || p.kind === 'obcy'
+                  ? WANDERER_HP
+                  : p.kind === 'zbir'
+                    ? ZBIR_HP
+                    : 100;
       const hp = p.needs ? p.needs.health : (p.hp ?? max);
       const busy =
         p.kind === 'zombie' ||

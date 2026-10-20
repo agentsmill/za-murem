@@ -44,6 +44,13 @@
    „Sprawdzić”; dziury w siatce niosą swoje kafelki (`GovHole.tiles`), gdy strony nie ma. Do tego `strony.koza`: wolny
    kafelek przed kozą zarządu, dokąd idzie ktoś z karty „Ktoś nie może spać” (liczony przy każdym odczycie).
 
+   Goście z klocków (src/sim/gosc.ts): `GovInput.goscie` jest tylko w grze z obcymi (`st.obcy`), choćby puste, i niesie
+   wszystkie wizyty po kolei (`GovGosc`: faza, kafelek mówiącego, żywe pionki i ich indeksy w planie `zywi`, porcje wzięte przez
+   kłamcę, `przyjety`);
+   `fx.gosc` (plan wizyty) i `fx.goscRozkaz` (rozkazy dla grup) idą do kolejki poleceń jako 'gosc' i 'goscrozkaz', więc
+   pionki powstają i ruszają od następnego kroku, a zapis niczego nie gubi. Plan idzie jako kopia osób, bo kolejka jest
+   częścią stanu symulacji, a osoby gościa zostają też w stanie zarządu.
+
    Zmarli (`dead`, `zmarli`): zarząd i mieszkańcy po kolei; do karty „Pogrzeb” każdy wpis niesie płeć `f` (gdy zmarły miał
    osobę w `st.people`), minutę gry zgonu `min` i w trybie zombie los zwłok `cialo` (leżą, dobite, nie ma ich), liczone ze
    zwłok na mapie (`Thing.dead`), bez nowych pól w stanie symulacji. */
@@ -51,7 +58,17 @@
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
 import { nextRandom } from '../core/rng.ts';
 import { placeOf, stronyOf, wordsOfWorld } from '../gov/miejsce.ts';
-import type { Arm, Cialo, GovEffects, GovInput, GovLokator, LawEffects, RaidResult } from '../gov/typy.ts';
+import type {
+  Arm,
+  Cialo,
+  GovEffects,
+  GovGosc,
+  GovInput,
+  GovLokator,
+  LawEffects,
+  PlanGoscia,
+  RaidResult,
+} from '../gov/typy.ts';
 import type { World } from '../world/world.ts';
 import {
   dodajKsiazke,
@@ -81,6 +98,7 @@ import {
   type Laws,
   LIMB,
   type Loot,
+  NOISE_TICKS,
   onPlan,
   type Pawn,
   pionekOsoby,
@@ -234,6 +252,34 @@ function zmarli(st: SimState, zombie: boolean): NonNullable<GovInput['dead']> {
   return wynik;
 }
 
+/** Wizyty gości dla zarządu (`GovInput.goscie`): wszystkie po kolei, z fazą, kafelkiem mówiącego (a gdy już go nie ma,
+    pierwszego żywego albo ostatnim znanym), numerami żywych pionków (mówiący pierwszy) i porcjami wziętymi przez grupę. */
+function goscieOdczyt(st: SimState, w: World): GovGosc[] {
+  return (st.goscie ?? []).map((g) => {
+    // po `poszedl` i `zginal` nikogo już nie ma (zakończone wizyty zostają w liście, więc nie szukamy po próżnicy)
+    const nikogo = g.faza === 'poszedl' || g.faza === 'zginal';
+    // żywi w kolejności planu: pionek i jego indeks w `PlanGoscia.osoby` (symulacja zachowuje kolejność, usuwa zmarłych)
+    const zywi: { k: number; p: Pawn }[] = [];
+    if (!nikogo)
+      g.pawns.forEach((id, k) => {
+        const p = st.pawns.find((q) => q.id === id);
+        if (p) zywi.push({ k, p });
+      });
+    const lider = zywi[0]?.p;
+    const tile = lider ? Math.floor(lider.y) * w.size + Math.floor(lider.x) : g.kafelek;
+    return {
+      id: g.id,
+      faza: g.faza,
+      tile,
+      gdzie: { x: tile % w.size, y: Math.floor(tile / w.size) },
+      pawns: zywi.map((z) => z.p.id),
+      zywi: zywi.map((z) => z.k),
+      ukradl: g.ukradl,
+      ...(g.przyjety ? { przyjety: true } : {}),
+    };
+  });
+}
+
 /** Odczyt dla zarządu: snapshot w kształcie GovInput. screen: sekundy przy ekranie od startu gry bez pauzy
     (przy 1× to tick / 20; liczy je pętla gry, bo symulacja nie wie o tempie). */
 export function govInput(st: SimState, w: World, screen: number, hqName?: string): GovInput {
@@ -311,6 +357,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
       : {}),
     ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
     ...(st.obcy?.werbunek ? { werbunek: zwerbowani(st) } : {}),
+    ...(st.obcy ? { goscie: goscieOdczyt(st, w) } : {}),
     dead: zmarli(st, zombie),
     // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (`populacja`, ta
     // sama liczba, którą czyta EventHost.pop(); kto wychodzi bramą, już się nie liczy), a przyłączone budynki to te, które
@@ -511,6 +558,20 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   // wyrzuceni idą do bramy, a sprawdzający na kafelek: pionek sam dojdzie w kolejnych krokach
   for (const id of fx.wyrzuc ?? []) wyprowadz(st, w, id);
   for (const s of fx.sprawdz ?? []) sprawdz(st, w, s.id, s.tile);
+  // goście z klocków: plan wizyty i rozkazy po kolei, przez kolejkę poleceń (pionki powstają i ruszają od następnego kroku)
+  if (fx.gosc) cmd({ t: 'gosc', ids: [], plan: kopiaPlanu(fx.gosc) });
+  for (const r of fx.goscRozkaz ?? []) cmd({ t: 'goscrozkaz', ids: [], id: r.id, co: r.co });
+  // hałas z zarządu (pościg za gościem w trybie zombie): jak każdy hałas, słychać go przez NOISE_TICKS
+  if (fx.halas) {
+    const noise = (st.noise ??= []);
+    noise.push({
+      x: (fx.halas.tile % w.size) + 0.5,
+      y: Math.floor(fx.halas.tile / w.size) + 0.5,
+      r: fx.halas.r,
+      until: st.tick + NOISE_TICKS,
+    });
+    if (noise.length > 20) noise.shift();
+  }
   // przyjęci przychodzą zza bramy; nikt nie znika, kto nie ma łóżka, śpi na podłodze
   if (fx.residents > 0) addResidents(st, w, fx.residents, true);
   else if (fx.residents < 0) removeResidents(st, -fx.residents);
@@ -549,6 +610,15 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
     const p = pawnOf(st, id);
     if (p) infect(st, p, nextRandom(st.rng) < LIMB);
   }
+}
+
+/** plan wizyty w kolejce poleceń jest kopią: kolejka należy do stanu symulacji, a osoby gościa zostają też w stanie zarządu */
+function kopiaPlanu(p: PlanGoscia): PlanGoscia {
+  return {
+    ...p,
+    osoby: p.osoby.map((o) => ({ ...o, skills: { ...o.skills }, traits: [...o.traits] })),
+    looks: [...p.looks],
+  };
 }
 
 /** pożar od kozy (zdarzenie zarządu): spala najbliższy kozie zarządu mebel, który się pali, i straszy wszystkich */

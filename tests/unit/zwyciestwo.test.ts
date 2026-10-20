@@ -584,11 +584,14 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // a jej wybory wysyłają ludzi do kozy (atrapa ma kafelek przed kozą) albo do siatki; były 32eb97ec, 88a53f7e
     // i 438e5c9b, potem 1859eee3, 8e1834e7 i 04753f7b, potem 69085683, 00eb9415 i ef1cea9e, potem 7fa6ef50, b2171b99
     // i 943895c7. Piąty raz po scaleniu z kozą z głową (sztuka drewna na godzinę; tam same skróty kozy były 651e9fe7,
-    // ca868e42 i 829d4a08) i z poprawkami trybu zombie w noc-integracja, 19.10.2026 wieczorem
+    // ca868e42 i 829d4a08) i z poprawkami trybu zombie w noc-integracja, 19.10.2026 wieczorem (14943f9b, 02636e00
+    // i d2f68ad8). Szósty raz w zadaniu 11 wydarzeń (karty z 0.3 z gościem pod bramą: uchodźcy, influencerka, aktywiści,
+    // dzieciaki, sąsiad od tokenów i fachowiec w domu mają wagę 0 bez GovInput.goscie, a atrapa nie ma obcych), czyli
+    // inna pula, inne losowanie (na samych wydarzeniach 8587c921, 9c2d504c i f064e248); tu po scaleniu obu, 20.10.2026.
     const przebiegi = [
-      [1, 'propozycja', '14943f9b'],
-      [3, 'zawsze-warta', '02636e00'],
-      [5, 'losowo', 'd2f68ad8'],
+      [1, 'propozycja', 'aaa8b716'],
+      [3, 'zawsze-warta', 'd1a8e423'],
+      [5, 'losowo', '76e72ff9'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

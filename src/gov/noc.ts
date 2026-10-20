@@ -28,7 +28,13 @@
    się jak przed wspólną funkcją, z tymi samymi losowaniami w tej samej kolejności i z mnożnikiem za wizyty
    (`GovState.visits`). Cel z miejsca ma zapas: łup po kłopotach przycina się do tego, co zostało w miejscu, i do
    udźwigu, a zabrane, wizyty i dzień ostatniej wizyty idą do `GovState.miasto`. Zależność idzie tylko stąd do
-   wyprawy.ts, nigdy odwrotnie. */
+   wyprawy.ts, nigdy odwrotnie.
+
+   Goście (src/gov/wizyta.ts) dotykają nocy w dwóch miejscach. Wskazówka na miejsce (wiadomość od gościa,
+   `GovState.wskazowki`): `expRisk` mnoży ryzyko tego miejsca przez `WSKAZOWKA_RYZYKO`, a `rozliczWyprawe` łup przez
+   `WSKAZOWKA_LUP` i zużywa wskazówkę. Pościg za gościem wpuszczonym na noc (`poscigNocy`, zwykły tryb): `raidChance`
+   ×1,5 i napad przy bramie tej nocy (`GovState.tonight.poscig`); po zatwierdzeniu karty nocy daje jeszcze jedno losowanie,
+   gdy napad nie przyszedł. Poranny raport dolicza chorych od gościa (`GovState.later[].sick`). */
 
 import { NOTE_HOLD_FIRE_EN } from '../content/napisy-zombie.en.ts';
 import { NOTE_HOLD_FIRE } from '../content/napisy-zombie.ts';
@@ -71,10 +77,14 @@ import {
 import {
   type Cel,
   celZTarget,
+  maWskazowke,
   ograniczLup,
   UDZWIG_NA_OSOBE,
+  WSKAZOWKA_LUP,
+  WSKAZOWKA_RYZYKO,
   wDrodze,
   wlaczMiasto,
+  wskazowka,
   wybierzCeleNocy,
   zostaloZMiejsca,
 } from './wyprawy.ts';
@@ -190,6 +200,8 @@ export function raidChance(st: GovState, i: GovInput): number {
   if (law(st, 'u_warty')) c -= 0.05;
   if (law(st, 'u_brama')) c -= 0.08;
   if (st.tonight.boost === nd) c *= 1.5;
+  // ktoś szedł za gościem wpuszczonym na noc (zwykły tryb): szabrownicy są blisko
+  if (st.tonight.poscig === nd) c *= 1.5;
   return clamp(round2(c), 0.05, 0.85);
 }
 
@@ -281,9 +293,17 @@ function celGrupy(i: GovInput, gr: { target: string; cel?: Cel }): Cel {
   return gr.cel ?? celZTarget(TARGETS.find((x) => x.id === gr.target)!, placeIn(i));
 }
 
-/** ryzyko kłopotów jednej osoby na wyprawie do celu (0,02–0,9); `Cel.ryzyko` bywa większe niż 1, tu jest ucinane */
-export function expRisk(st: GovState, p: GovPerson, cel: Pick<Cel, 'ryzyko'>, together = 1): number {
+/** ryzyko kłopotów jednej osoby na wyprawie do celu (0,02–0,9); `Cel.ryzyko` bywa większe niż 1, tu jest ucinane;
+    z wskazówką na to miejsce (`maWskazowke`) razy `WSKAZOWKA_RYZYKO`, bez zużywania jej */
+export function expRisk(
+  st: GovState,
+  p: GovPerson,
+  cel: Pick<Cel, 'ryzyko'> & Partial<Pick<Cel, 'klucz'>>,
+  together = 1,
+): number {
   let r = cel.ryzyko;
+  // wiadomość od gościa o tym miejscu (wskazówka): karta i podgląd pokazują już mniejsze ryzyko
+  if (maWskazowke(st, cel.klucz)) r *= WSKAZOWKA_RYZYKO;
   if (p.needs.rest < 35) r *= 1.4;
   if (p.needs.health < 50) r *= 1.3;
   if (p.traits.includes('odwazny')) r *= 0.7;
@@ -746,6 +766,8 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
       break;
     }
   }
+  // pościg za gościem wpuszczonym na noc: napad przy bramie (losowanie posterunku wyżej zostaje, żeby ciąg liczb był ten sam)
+  if (st.tonight.poscig === n.day) post = posts.find((p) => p.key === 'brama') ?? post;
   const at = atHour(n.day, RAID_FROM) + Math.floor(rnd(st) * RAID_SPAN);
   // siła losowana od razu: symulacja pokaże tylu szabrowników, ilu przyszło, a rozstrzygnięcie użyje tej samej
   const attack = come ? round1(2 + rnd(st) * (2 + 0.55 * n.day)) : 0;
@@ -788,6 +810,29 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
   if (!auto) decision(st, i, 'karta');
 }
 
+/** Pościg za gościem wpuszczonym na noc (zwykły tryb): zaznacza tę noc (`GovState.tonight.poscig`: szansa napadu ×1,5 i
+    napad przy bramie, co liczą `raidChance` i `confirm`). Gdy karta nocy jest już zatwierdzona, a napad jeszcze nie
+    przyszedł ani się nie rozstrzygnął, daje mu drugą szansę (losowanie z połową szansy sprzed pościgu, razem około ×1,5,
+    z karty i warty jak przy zatwierdzeniu) i wysyła nowy plan przy bramie najwcześniej za 20 minut gry. Ta sama noc
+    drugi raz niczego nie zmienia. */
+export function poscigNocy(st: GovState, i: GovInput, fx: GovEffects): void {
+  const nd = nightDay(i);
+  if (st.tonight.poscig === nd) return;
+  const baza = raidChance(st, i);
+  st.tonight.poscig = nd;
+  const n = st.night;
+  if (!n?.confirmed || n.day !== nd || !n.raid || n.raid.resolved || n.raid.come) return;
+  const extra = clamp(round2(0.5 * baza * deterrence(st, i, watchersOf(i, n.assign))), 0, 0.5);
+  if (rnd(st) >= extra) return;
+  const brama = postsOf(i).find((p) => p.key === 'brama')!;
+  const attack = round1(2 + rnd(st) * (2 + 0.55 * n.day));
+  n.raid.come = true;
+  n.raid.post = brama.key;
+  n.raid.attack = attack;
+  n.raid.at = Math.max(n.raid.at, gameMin(i) + 20);
+  fx.raid = { day: n.day, at: n.raid.at, post: brama.key, where: brama.name, attack, people: raidersOf(attack) };
+}
+
 /** Wynik rozliczenia wyprawy: wpisy raportu (kłopoty albo powrót, potem ewentualne znaleziska), kto oberwał
     i ile łupu przyniesiono w tym rozliczeniu (to samo, co poszło do `fx.stock`). */
 export interface Rozliczenie {
@@ -803,7 +848,8 @@ export interface Rozliczenie {
     Cel z TARGETS (`zapas === null`) liczy wizyty w `st.visits` i dostaje mnożnik `lootMult`. Cel z miejsca dostaje łup
     z przedziałów bez mnożnika, przycięty (`ograniczLup`) do tego, co zostało w miejscu, i do udźwigu `ppl.length` osób;
     zabrane, wizyty i dzień ostatniej wizyty (`i.day`) idą do `st.miasto`, którego rozliczenie samo zakłada, gdy go nie
-    ma. Pusta `ppl` nic nie losuje i nic nie zmienia. */
+    ma. Z wskazówką na to miejsce (wiadomość od gościa, `GovState.wskazowki`) łup rośnie o połowę, a ryzyko maleje
+    o połowę (`expRisk`); wskazówka jest zużywana. Pusta `ppl` nic nie losuje i nic nie zmienia. */
 export function rozliczWyprawe(st: GovState, i: GovInput, fx: GovEffects, cel: Cel, ppl: GovPerson[]): Rozliczenie {
   const lines: Tx[] = [];
   const got = zeroStock();
@@ -811,9 +857,12 @@ export function rozliczWyprawe(st: GovState, i: GovInput, fx: GovEffects, cel: C
   let hurt: Rozliczenie['hurt'] = null;
   const m = lootMult(st, cel);
   if (cel.zapas === null) st.visits[cel.klucz] = (st.visits[cel.klucz] ?? 0) + 1;
+  // wskazówka od gościa na to miejsce: łup ×1,5 (ryzyko ×0,5 liczy już `expRisk`), zużyta po rozliczeniu
+  const wsk = maWskazowke(st, cel.klucz) ? WSKAZOWKA_LUP : 1;
   for (const [k, [a, b]] of Object.entries(cel.lup) as [LootKey, [number, number]][])
-    got[k] = Math.round(rint(st, a, b) * m * (ppl.length > 1 ? 1.6 : 1));
+    got[k] = Math.round(rint(st, a, b) * m * wsk * (ppl.length > 1 ? 1.6 : 1));
   const risk = Math.max(...ppl.map((p) => expRisk(st, p, cel, ppl.length)));
+  wskazowka(st, cel.klucz);
   const trouble = rnd(st) < risk;
   if (trouble) for (const k of Object.keys(got) as LootKey[]) got[k] = Math.floor(got[k] / 2);
   if (cel.zapas !== null) {
@@ -1056,6 +1105,8 @@ function morning(st: GovState, i: GovInput, fx: GovEffects): void {
   const n = st.night!;
   for (const l of st.later.filter((x) => x.day === n.day)) {
     for (const [k, v] of Object.entries(l.stock) as [LootKey, number][]) addStock(i, fx, k, v);
+    // chorzy od gościa: rano ktoś z zarządu zaczyna chorować
+    if (l.sick) fx.sick += l.sick;
     n.lines.push(l.line);
   }
   st.later = st.later.filter((x) => x.day !== n.day);

@@ -183,7 +183,8 @@ describe('przyjęcia według wolnych miejsc', () => {
   });
 
   it('waga spada przy ciasnocie', () => {
-    const w = (free: number) => def('uchodzcy').w(setup({ cap: 5 + free, residents: 5 }).h);
+    // zadanie 11: uchodźcy stają pod bramą jako pionki, więc karta wymaga gry z obcymi (GovInput.goscie)
+    const w = (free: number) => def('uchodzcy').w(setup({ cap: 5 + free, residents: 5, goscie: [] }).h);
     expect(w(5)).toBeGreaterThan(0);
     expect(w(2)).toBeCloseTo(w(5) * 0.5);
     expect(w(0)).toBeCloseTo(w(5) * 0.15);

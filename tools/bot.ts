@@ -424,10 +424,16 @@ for (const [name, list] of [
   console.log(
     `  ${name.padEnd(21)} kuchnia o 6:00 średnio ${f1(mean(k6(list)))}°C (od ${f1(Math.min(...k6(list)))} do ${f1(Math.max(...k6(list)))}), koza paliła się przez ${Math.round(100 * mean(list.map((n) => n.fire)))}% nocy 22–6`,
   );
+// Od poprawki kozy z beczki (a524c0f, kozaStand staje też na kafelku z meblem) wieczorne ładowanie zawsze się udaje:
+// bez dyżuru w kozie ląduje komplet (KOZA_CAP, sztuka pali się godzinę), więc pali się około połowy nocy 22–6 i gaśnie
+// koło 2:00, a różnica rano to wychłodzenie kuchni przez ostatnie cztery godziny, około 3°C (na 15 nocach pula
+// wydarzeń przesuwa ją o kilka dziesiątych). Sprawdzamy więc to, do czego jest dyżur: z nim koza pali się całą noc
+// i rano jest ciepło, bez niego gaśnie przed świtem, a kuchnia o 6:00 jest wyraźnie zimniejsza.
 const warm = mean(k6(withDuty));
 const cold = mean(k6(without));
-if (warm < 18 || cold > warm - 3) {
-  console.log('  BŁĄD: z dyżurem rano nie jest wyraźnie cieplej niż bez niego');
+const ogien = (list: NightLog[]) => mean(list.map((n) => n.fire));
+if (warm < 18 || ogien(withDuty) < 0.9 || ogien(without) > 0.75 || cold > warm - 2) {
+  console.log('  BŁĄD: z dyżurem koza nie pali się całą noc albo rano nie jest wyraźnie cieplej niż bez niego');
   fail = true;
 }
 

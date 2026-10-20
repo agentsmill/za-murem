@@ -20,7 +20,9 @@
    bez werbunku. Odczyt `ileZlecen(r)` liczy czekające zlecenia rodzaju pracy na żądanie, poza stanem.
    Premie ery 1–2 (t_okna, t_konserwy, t_zielarstwo, t_spawanie, t_ambu) i
    paleniska poza kozą zarządu (koza z beczki, kocioł; waga drewna w PALENISKA) działają tylko po zbadaniu albo
-   postawieniu, więc gra bez badań ma te same liczby co przed nimi (src/sim/badania.ts).
+   postawieniu, więc gra bez badań ma te same liczby co przed nimi (src/sim/badania.ts). Do kozy dokłada się z wolnego
+   kafelka obok niej, a gdy meble i budowle zajęły wszystkie, z przechodniego kafelka z meblem (`kozaStand`), żeby koza
+   z beczki w ciasnym pokoju nie została zimna na zawsze.
    Badania: pracownia (stół z dwoma miejscami), polecenia `research` (wybór badania), `study` (zarząd do stołu) i `siec`
    (włączenie sieci po zbadaniu sieci bez miedzi), praca `research` z postępem w `researchTick`, stan `research` i `books`
    (pola powstają przy pierwszym użyciu) oraz plan dnia lokatorów z wiedzą (labOpen). Barykada z wraków stoi na odcinku
@@ -41,12 +43,19 @@
    w zarząd (ten sam pionek), `wyprowadz` posyła mieszkańca albo osobę zarządu pracą `odejscie` do bramy (drogą zarządu),
    dalej ulicą daleko od siatki, gdzie znika, a `sprawdz` posyła osobę zarządu pracą `sprawdz` na kafelek na 10 minut gry
    (od strony podwórka, a kafelek we wnętrzu mieszkania zarządu, np. przed kozą, to wolne miejsce w jego pomieszczeniu).
-   Rozkazy i wróg nie zmieniają `odejscie`; kto wychodzi, nie bierze poleceń. */
+   Rozkazy i wróg nie zmieniają `odejscie`; kto wychodzi, nie bierze poleceń.
+   Goście z klocków zarządu (src/sim/gosc.ts, rodzaj `gosc`, praca `gosc`): plan `fx.gosc` wystawia grupę pionków na
+   ulicy po wskazanej stronie bramy (polecenie 'gosc'), `goscieTick` prowadzi fazy wizyty (idzie, brama, w_srodku, odchodzi,
+   zlapany, końcowe), a pionki chodzą w `goscTick`. Rozkazy `fx.goscRozkaz` (polecenie 'goscrozkaz') odsyłają grupę,
+   wpuszczają ją na noc (ognisko, sen, rano wyjście bramą), przyjmują jako mieszkańców (`zostan`) albo z mówiącym w zarządzie
+   (`zarzad`, `awansuj`); kłamca o 2:00 bierze jedzenie, a czuwająca osoba zarządu go łapie. Goście są ofiarami szwendaczy
+   (`isPrey`), w trybie zombie szwendacz w pobliżu płoszy grupę pod bramą. Nic w tym kodzie nie losuje ze `st.rng`. */
 
 import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
+import type { GoscRozkaz, PlanGoscia } from '../gov/typy.ts';
 import { IN, type Interior } from '../world/interior.ts';
 import type { Tree, World } from '../world/world.ts';
 import type { Wreck } from '../world/wrecks.ts';
@@ -104,6 +113,21 @@ import {
   TICKS_PER_HOUR,
   TICKS_PER_SECOND,
 } from './clock.ts';
+import {
+  GOSC_CZEKA,
+  GOSC_DOJSCIE,
+  GOSC_FROM,
+  GOSC_HP,
+  GOSC_LUP,
+  GOSC_ZASIEG,
+  GOSC_ZBIERZ,
+  GOSC_ZLAPANY_DO,
+  type GoscSim,
+  goscKoniec,
+  najblizszaGodzina,
+  ranoGoscia,
+  startGoscia,
+} from './gosc.ts';
 import {
   AGGRO,
   CALM_TICKS,
@@ -551,13 +575,14 @@ export const SPRAWDZ_TICKS = Math.round(TICKS_PER_HOUR / 6);
 /** obcy, którzy przychodzą i znikają (praca w fazie 4: zniknął) */
 const PASSERS = new Set<PawnKind>(['szabrownik', 'handlarz', 'wedrowiec', 'obcy', 'zbir']);
 /** obcy ludzie: ich śmierć liczy się jak zabity szabrownik (bez żałoby, „Zabiłem człowieka” dla zabójcy) */
-const STRANGER_KINDS = new Set<PawnKind>(['szabrownik', 'handlarz', 'wedrowiec', 'obcy', 'zbir']);
+const STRANGER_KINDS = new Set<PawnKind>(['szabrownik', 'handlarz', 'wedrowiec', 'obcy', 'zbir', 'gosc']);
 const STRANGER_NAMES: Partial<Record<PawnKind, string>> = {
   szabrownik: 'Szabrownik',
   handlarz: 'Handlarz',
   wedrowiec: 'Wędrowiec',
   obcy: 'Obcy',
   zbir: 'Człowiek handlarza',
+  gosc: 'Gość',
 };
 /** bezczynny rdzeń rozgląda się za pracą co sekundę realną */
 const THINK_EVERY = TICKS_PER_SECOND;
@@ -690,7 +715,14 @@ export type JobKind =
       gdzie stoi) i sprawdzenie hałasu (osoba zarządu; target: kafelek z karty, tile: miejsce, na którym stanie, −1 do
       pierwszego kroku pracy; phase 0: idzie, 1: stoi do until) */
   | 'odejscie'
-  | 'sprawdz';
+  | 'sprawdz'
+  /** gość z klocków (kind gosc), poza odejściem: what mówi, co robi i po której stronie bramy jest: 'ulica' (ulicą pod
+      bramę i czeka, warstwa ulicy), 'rdzen' (wpuszczony: idzie i czeka drogą zarządu, bramą), 'spi' (śpi na ziemi
+      przy ognisku, droga zarządu), 'lup' (kradnie jedzenie, droga zarządu), 'stoi' (złapany, stoi i czeka na decyzję);
+      tile: miejsce, do którego idzie.
+      Wychodzi pracą 'odejscie' (z podwórka: faza 0 do wyjścia za bramą; z ulicy: faza 1 do kafelka, z którego przyszedł,
+      what 'ucieczka' przy spłoszeniu). */
+  | 'gosc';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -753,7 +785,9 @@ export interface Job {
 /** zarząd (rdzeń, polecenia), tłum (tylko do pomiaru wydajności, za siatką), mieszkańcy siedziby
     (tło z planem dnia), szabrownicy (obcy z napadu; nazwa jak w liście obcych rysowania, src/render/game.ts),
     szwendacze, lokatorzy sąsiednich budynków (M2 fala 2: pionki tylko w trakcie spotkania i po nim, dopóki zarząd
-    jest w ich budynku), handlarz pod bramą, wędrowcy, obce ekipy i ludzie handlarza (zbir) */
+    jest w ich budynku), handlarz pod bramą, wędrowcy, obce ekipy i ludzie handlarza (zbir) oraz goście z klocków
+    zarządu (gosc, src/sim/gosc.ts: grupa pionków z osobami w state.people, idzie ulicą pod bramę i czeka na decyzję;
+    po przyjęciu zmienia rodzaj na resident albo core) */
 export type PawnKind =
   | 'core'
   | 'crowd'
@@ -764,7 +798,8 @@ export type PawnKind =
   | 'handlarz'
   | 'wedrowiec'
   | 'obcy'
-  | 'zbir';
+  | 'zbir'
+  | 'gosc';
 
 /** wróg: szabrownik, szwendacz albo wrogi człowiek (napadnięty handlarz, ludzie handlarza; do ataku z menu i obrony) */
 export const isEnemy = (p: Pick<Pawn, 'kind' | 'wrogi'>): boolean =>
@@ -987,7 +1022,10 @@ export type Command =
   | { t: 'prio'; ids: number[]; osoba: number; rodzaj: RodzajPracy; prio: Priorytet }
   | { t: 'stale'; ids: number[]; osoba: number; rodzaj: RodzajPracy | null }
   | { t: 'zasiatke'; ids: number[]; osoba: number; on: boolean }
-  | { t: 'prog'; ids: number[]; co: keyof Progi; n: number };
+  | { t: 'prog'; ids: number[]; co: keyof Progi; n: number }
+  /** goście z klocków (ids puste): plan wizyty z zarządu (wystawia grupę pionków) i rozkaz dla grupy po id gościa */
+  | { t: 'gosc'; ids: number[]; plan: PlanGoscia }
+  | { t: 'goscrozkaz'; ids: number[]; id: string; co: GoscRozkaz };
 
 /** polecenia zmieniające `st.praca` */
 type PolecenieUstawien = Extract<Command, { t: 'prio' | 'stale' | 'zasiatke' | 'prog' }>;
@@ -1164,6 +1202,10 @@ export interface SimState {
   /** ustawienia pracy ludzi (src/sim/praca.ts): tylko zmiany gracza względem domyślnych; nie ma go, dopóki gracz
       czegoś nie zmieni, więc gra bez zmian ma ten sam skrót co przed pracą ludzi */
   praca?: PracaStan;
+  /** goście z klocków zarządu (src/sim/gosc.ts), po jednym wpisie na wizytę, od najstarszej; lista tylko rośnie, bo
+      zarząd czyta ją po kolei (zakończone wizyty zostają). Pola nie ma, dopóki zarząd nie wyśle pierwszego planu, więc
+      gra bez gości ma ten sam skrót stanu. */
+  goscie?: GoscSim[];
 }
 
 /** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
@@ -1980,8 +2022,7 @@ export function addCore(st: SimState, w: World, person: Person, arrive = false):
     door,
     Math.floor(rnd() * 4),
   );
-  p.needs = { food: 50, warm: 50, rest: 60, health: 90, safe: 50, mood: 0 };
-  p.needs.mood = 0.25 * 50 + 0.25 * 50 + 0.15 * 60 + 0.15 * 90 + 0.2 * 50;
+  p.needs = potrzebyStartowe(50, 50, 60, 90, 50);
   if (wait >= 0)
     p.job = {
       t: 'arrive',
@@ -2010,13 +2051,14 @@ export function removeCore(st: SimState, id: string, w?: World): boolean {
   return true;
 }
 
-/** Pionki z osobą w state.people i potrzebami: zarząd i mieszkańcy siedziby (gość z klocków dojdzie tu jednym słowem).
+/** Pionki z osobą w state.people i potrzebami: zarząd i mieszkańcy siedziby (gość z klocków ma potrzeby dopiero po
+    przyjęciu albo ugryzieniu, więc skutki na potrzebach i nastrojach dotyczą go, gdy już jest mieszkańcem albo zarządem).
     Skutki zarządu na potrzebach i nastrojach (`applyGov`) trafiają do każdego z nich. */
 export const Z_OSOBA: ReadonlySet<PawnKind> = new Set<PawnKind>(['core', 'resident']);
-/** Kogo zarząd może awansować do siebie (`awansuj`): mieszkańca z osobą; gość z klocków doda tu swój rodzaj. */
-const DO_AWANSU: ReadonlySet<PawnKind> = new Set<PawnKind>(['resident']);
-/** Kto może wyjść bramą (`wyprowadz`): zarząd i mieszkaniec z osobą. */
-const DO_WYJSCIA: ReadonlySet<PawnKind> = new Set<PawnKind>(['core', 'resident']);
+/** Kogo zarząd może awansować do siebie (`awansuj`): mieszkańca z osobą i gościa z klocków („Przyjąć do zarządu”). */
+const DO_AWANSU: ReadonlySet<PawnKind> = new Set<PawnKind>(['resident', 'gosc']);
+/** Kto może wyjść bramą (`wyprowadz`, praca `odejscie`): zarząd, mieszkaniec z osobą i gość. */
+const DO_WYJSCIA: ReadonlySet<PawnKind> = new Set<PawnKind>(['core', 'resident', 'gosc']);
 /** Kto może iść sprawdzić hałas (`sprawdz`): zarząd. */
 const SPRAWDZ_Z: ReadonlySet<PawnKind> = new Set<PawnKind>(['core']);
 
@@ -2032,6 +2074,16 @@ function zwolnijPionka(st: SimState, w: World, p: Pawn): void {
   dropHeld(st, w, p);
 }
 
+/** Potrzeby startowe osoby (najedzenie, ciepło, siły, zdrowie, bezpieczeństwo); nastrój z tych samych wag co w `stepNeeds` */
+const potrzebyStartowe = (food: number, warm: number, rest: number, health: number, safe: number): Needs => ({
+  food,
+  warm,
+  rest,
+  health,
+  safe,
+  mood: 0.25 * food + 0.25 * warm + 0.15 * rest + 0.15 * health + 0.2 * safe,
+});
+
 /** Mieszkaniec z osobą przechodzi do zarządu (zdarzenie „wciągnąć do roboty”): ten sam pionek i ta sama osoba w
     `st.people`, rodzaj `core`, więc od następnego kroku bierze polecenia i sam szuka zajęcia. Potrzeby i nastroje
     zostają, brak potrzeb dostaje domyślne jak w `addCore`; `apt` to −1 (zarząd nie mieszka w mieszkaniu mieszkańców).
@@ -2043,17 +2095,32 @@ export function awansuj(st: SimState, w: World, personId: string): boolean {
   if (!p || p.away || p.job?.t === 'odejscie') return false;
   zwolnijPionka(st, w, p);
   for (const t of st.things) if (t.owner === p.id) t.owner = -1;
+  const gosc = p.kind === 'gosc';
   p.kind = 'core';
   p.apt = -1;
-  if (!p.needs) {
-    p.needs = { food: 50, warm: 50, rest: 60, health: 90, safe: 50, mood: 0 };
-    p.needs.mood = 0.25 * 50 + 0.25 * 50 + 0.15 * 60 + 0.15 * 90 + 0.2 * 50;
-  }
-  p.job = null;
+  p.needs ??= potrzebyStartowe(50, 50, 60, 90, 50);
   p.path = [];
   p.pi = 0;
   p.want = -1;
   p.wait = st.tick;
+  // gość z klocków czeka za bramą albo przy ognisku: idzie do drzwi siedziby pracą przyjścia jak nowa osoba zarządu
+  const door = w.buildings[w.hq]?.entrances[0]?.out ?? -1;
+  p.job =
+    gosc && door >= 0
+      ? {
+          t: 'arrive',
+          target: -1,
+          tile: door,
+          phase: 0,
+          from: -1,
+          t0: st.tick,
+          until: st.tick,
+          order: false,
+          n: 0,
+          what: '',
+        }
+      : null;
+  if (gosc) p.home = door >= 0 ? door : p.home;
   return true;
 }
 
@@ -2740,9 +2807,11 @@ export class Sim {
   /** przechodniość i obszary dla danego rodzaju pionka */
   private layer(kind: PawnKind): { blocked: Uint8Array; reg: Int32Array } {
     if (kind === 'core') return { blocked: this.coreBlocked, reg: this.reg };
-    // handlarz, wędrowcy i obce ekipy chodzą tylko po stronie ulicy, ludzie handlarza jak szabrownicy
+    // handlarz, wędrowcy, obce ekipy i goście chodzą tylko po stronie ulicy, ludzie handlarza jak szabrownicy
     if (kind === 'zbir') return this.lay.szabrownik;
-    return kind === 'handlarz' || kind === 'wedrowiec' || kind === 'obcy' ? this.lay.outside : this.lay[kind];
+    return kind === 'handlarz' || kind === 'wedrowiec' || kind === 'obcy' || kind === 'gosc'
+      ? this.lay.outside
+      : this.lay[kind];
   }
 
   /** warstwa do drogi pionka: szabrownik po stronie ulicy (podchodzi, czeka, ucieka) chodzi tylko tamtędy */
@@ -2755,8 +2824,10 @@ export class Sim {
     // przyjęty w drodze do siedziby przechodzi przez bramę jak zarząd (ktoś mu otwiera)
     if (p.kind === 'resident' && p.job?.t === 'arrive') return this.layer('core');
     // wychodzący: do bramy drogą zarządu, za bramą ulicą jak przechodnie
-    if (p.job?.t === 'odejscie' && (p.kind === 'resident' || p.kind === 'core'))
+    if (p.job?.t === 'odejscie' && DO_WYJSCIA.has(p.kind))
       return p.job.phase === 0 ? this.layer('core') : this.lay.outside;
+    // wpuszczony gość (bramą do ogniska, sen, kradzież) chodzi drogą zarządu, czekający pod bramą ulicą
+    if (p.kind === 'gosc' && p.job?.t === 'gosc' && p.job.what !== 'ulica') return this.layer('core');
     return this.layer(p.kind);
   }
 
@@ -2835,6 +2906,7 @@ export class Sim {
       this.crewClock();
       this.revengeClock();
     }
+    if (st.goscie?.length) this.goscieTick();
     if (st.noise!.length) st.noise = st.noise!.filter((n) => n.until > st.tick);
     if (st.fx!.length) st.fx = st.fx!.filter((f) => f.tick + FX_TICKS > st.tick);
     if (modeOf(st) === 'zombie') {
@@ -2881,6 +2953,11 @@ export class Sim {
       }
       if (p.wrogi) {
         if (this.hostileTick(p)) gone = true;
+        continue;
+      }
+      // goście z klocków: własny krok (grupa decyduje w goscieTick), płoszy ich grupa, nie pojedynczy pionek
+      if (p.kind === 'gosc') {
+        this.goscTick(p);
         continue;
       }
       // tryb zombie: handlarz, ocalały albo ekipa, do których podchodzi szwendacz, uciekają (także w drodze)
@@ -2968,6 +3045,8 @@ export class Sim {
     if (p.kind === 'szabrownik' && (p.hp ?? STRANGER_HP) < FLEE_HP) return 0.6;
     if ((p.kind === 'handlarz' || p.kind === 'wedrowiec' || p.kind === 'obcy') && p.job?.phase === 3) return FLEE_SPEED;
     if (p.kind === 'wedrowiec') return WANDER_SPEED;
+    // goście idą zmęczeni jak wędrowcy, a spłoszeni uciekają
+    if (p.kind === 'gosc') return p.job?.what === 'ucieczka' ? FLEE_SPEED : WANDER_SPEED;
     if (p.kind === 'zombie') return p.job?.phase === 3 ? CHASE_SPEED : ZOMBIE_SPEED;
     return 1;
   }
@@ -3013,6 +3092,14 @@ export class Sim {
 
   private apply(c: Command): void {
     const st = this.st;
+    if (c.t === 'gosc') {
+      this.wystawGoscia(c.plan);
+      return;
+    }
+    if (c.t === 'goscrozkaz') {
+      this.goscRozkaz(c.id, c.co);
+      return;
+    }
     if (c.t === 'gate') {
       this.setGate(c.open);
       return;
@@ -3748,8 +3835,9 @@ export class Sim {
   }
 
   /** wolny kafelek przy rzeczy (mebel stoi na przechodnim kafelku, ale pracuje się obok), osiągalny dla pionka;
-      najchętniej taki, na którym nikt nie stoi, a gdy wszystkie zajęte (kolacja przy stole), to i tak obok */
-  private beside(p: Pawn, t: Thing): number {
+      najchętniej taki, na którym nikt nie stoi, a gdy wszystkie zajęte (kolacja przy stole), to i tak obok.
+      `zMeblami`: liczą się też kafelki z meblem (pionek przechodzi przez meble), na ostatnią okazję */
+  private beside(p: Pawn, t: Thing, zMeblami = false): number {
     const size = this.w.size;
     const region = this.regionOf(p);
     const taken = this.taken(p);
@@ -3759,15 +3847,15 @@ export class Sim {
       for (let x = t.x - 1; x <= t.x + t.w; x++) {
         if (x < 0 || y < 0 || x >= size || y >= size || covers(t, x, y)) continue;
         const i = y * size + x;
-        if (this.coreBlocked[i] || this.reg[i] !== region || this.furnitureAt(x, y)) continue;
+        if (this.coreBlocked[i] || this.reg[i] !== region || (!zMeblami && this.furnitureAt(x, y))) continue;
         (taken.includes(i) ? busy : free).push(i);
       }
     return this.nearest(p, free.length ? free : busy);
   }
 
   /** najbliższy kafelkowi wolny kafelek w tym samym obszarze, bez mebli, pnia i jedzenia: na stos, na który
-      się jeszcze zmieści, albo na pusty */
-  private spotNear(from: number, n: number): number {
+      się jeszcze zmieści, albo na pusty; `stosOk` false: bez stosów drewna (kładziemy coś innego niż drewno) */
+  private spotNear(from: number, n: number, stosOk = true): number {
     const size = this.w.size;
     const at = nearestFree(this.coreBlocked, size, from);
     const ax = at % size;
@@ -3779,7 +3867,7 @@ export class Sim {
       const i = y * size + x;
       if (this.coreBlocked[i] || this.reg[i] !== this.reg[at] || onPlan(this.st, size, i)) continue;
       const pile = this.pileAt(i);
-      if (pile ? pile.n + n <= STACK : !this.thingAt(x, y)) return i;
+      if (pile ? stosOk && pile.n + n <= STACK : !this.thingAt(x, y)) return i;
     }
     return at;
   }
@@ -3834,9 +3922,13 @@ export class Sim {
     return ok ? front : this.beside(p, t);
   }
 
-  /** skąd dokłada: do kozy od frontu, do ogniska z dowolnej strony */
+  /** skąd dokłada: do kozy od frontu, do ogniska z dowolnej strony. Gdy meble i budowle zajęły wszystkie kafelki wokół
+      kozy (koza z beczki w ciasnym pokoju zarządu), staje na przechodnim kafelku z meblem obok niej: bez tego nikt nie
+      miałby skąd dołożyć i palenisko zostałoby zimne na zawsze, choć drewno leży w składzie */
   private kozaStand(p: Pawn, koza: Thing): number {
-    return koza.kind === 'ognisko' ? this.beside(p, koza) : this.frontOf(p, koza);
+    if (koza.kind === 'ognisko') return this.beside(p, koza);
+    const stand = this.frontOf(p, koza);
+    return stand >= 0 ? stand : this.beside(p, koza, true);
   }
 
   /** gdzie się gotuje: kuchenka zarządu z gazem, a bez gazu paląca się koza (undefined: nie da się) */
@@ -4498,11 +4590,12 @@ export class Sim {
         return this.tradeWork(p, j, at);
       case 'rob':
         return this.robWork(p, j, at);
-      // prace obcych mają własne kroki (traderTick, wanderTick, scavengeTick)
+      // prace obcych mają własne kroki (traderTick, wanderTick, scavengeTick, goscTick)
       case 'trader':
       case 'wander':
       case 'scavenge':
       case 'zemsta':
+      case 'gosc':
         return false;
       case 'talk':
         return this.talkWork(p, j, at);
@@ -7474,6 +7567,521 @@ export class Sim {
     return true;
   }
 
+  /* ---------- goście z klocków (src/sim/gosc.ts) ---------- */
+
+  /** Nowa wizyta z planu zarządu (polecenie 'gosc'): po jednym pionku na osobę, osoby trafiają do `st.people` z
+      numerami `s<n>` (id z zarządu, `g<n>p<i>`, zostają tylko w jego stanie). Start to najdalszy kafelek ulicy po
+      wskazanej stronie bramy (`startGoscia`), cel to kafelki obok siebie pod bramą (spirala wokół kafelka za bramą,
+      mówiący na samym środku). Bez losowania. Świat bez bramy albo ulicy: wizyta kończy się od razu jako `nie_doszedl`.
+      Ten sam id drugi raz jest pomijany. */
+  private wystawGoscia(plan: PlanGoscia): void {
+    const st = this.st;
+    const lista = (st.goscie ??= []);
+    if (lista.some((g) => g.id === plan.id)) return;
+    const n = Math.min(12, plan.osoby.length);
+    const g: GoscSim = { id: plan.id, pawns: [], faza: 'idzie', at: st.tick, ukradl: 0, kafelek: -1 };
+    if (plan.ugryziony !== undefined && plan.ugryziony >= 0 && plan.ugryziony < n) g.ugryziony = plan.ugryziony;
+    lista.push(g);
+    const spot = this.outsideOf(gateTiles(this.w))[0];
+    const start =
+      spot === undefined ? -1 : startGoscia(this.lay.outside.blocked, this.w.size, spot, plan.strona, GOSC_FROM);
+    if (n <= 0 || start < 0) {
+      g.faza = 'nie_doszedl';
+      return;
+    }
+    const starts = this.tilesAround(start, n);
+    const waits = this.tilesAround(spot, n);
+    for (let i = 0; i < n; i++) {
+      const o = plan.osoby[i];
+      st.people.push({ ...o, id: `s${st.nextId++}`, skills: { ...o.skills }, traits: [...o.traits] });
+      const at = starts[i] ?? start;
+      const p = newPawn(st, this.w, 'gosc', st.people.length - 1, at, at, plan.looks[i] ?? 4);
+      p.hp = GOSC_HP;
+      p.job = { ...this.newJob('gosc', -1, waits[i] ?? spot, false), what: 'ulica' };
+      st.pawns.push(p);
+      g.pawns.push(p.id);
+      this.go(p, p.job.tile);
+    }
+    g.kafelek = this.tileOf(st.pawns[st.pawns.length - n]);
+  }
+
+  /** żywi członkowie wizyty (jeszcze rodzaju gosc), mówiący pierwszy */
+  private goscCzlonkowie(g: GoscSim): Pawn[] {
+    const out: Pawn[] = [];
+    for (const id of g.pawns) {
+      const p = this.st.pawns.find((q) => q.id === id);
+      if (p && p.kind === 'gosc' && !this.graveyard.has(id)) out.push(p);
+    }
+    return out;
+  }
+
+  /** Decyzje grup, raz na krok: dojście pod bramę, czekanie, noc, kradzież, złapanie, koniec wizyty. Pionki same
+      chodzą (`goscTick`), tu grupa zmienia fazę i wydaje im prace. */
+  private goscieTick(): void {
+    const st = this.st;
+    for (const g of st.goscie!) {
+      if (goscKoniec(g)) continue;
+      const m = this.goscCzlonkowie(g);
+      if (!m.length) {
+        // nikt nie został: zginęli wszyscy albo (część albo wszyscy) odeszli za mapę
+        g.faza = (g.zgin ?? 0) >= g.pawns.length ? 'zginal' : 'poszedl';
+        g.at = st.tick;
+        continue;
+      }
+      g.kafelek = this.tileOf(m[0]);
+      switch (g.faza) {
+        case 'idzie':
+          this.goscIdzie(g, m);
+          break;
+        case 'brama':
+          this.goscBrama(g, m);
+          break;
+        case 'w_srodku':
+          this.goscWSrodku(g, m);
+          break;
+        case 'zlapany':
+          if (st.tick >= (g.rano ?? 0)) this.goscOdejdz(g, m, true);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  /** Marsz pod bramę: gdy mówiący stoi na swoim miejscu, a reszta obok niego (albo od 10 minut gry czeka na nią
+      mówiący), grupa stoi pod bramą. Szwendacz w pobliżu ją płoszy, a po 2 godzinach gry bez dojścia odchodzi. */
+  private goscIdzie(g: GoscSim, m: Pawn[]): void {
+    const st = this.st;
+    if (this.goscPlosz(g, m)) {
+      this.goscUciekaj(g, m);
+      return;
+    }
+    if (st.tick - g.at >= GOSC_DOJSCIE) {
+      g.faza = 'nie_doszedl';
+      g.at = st.tick;
+      this.goscOdeslij(m, false);
+      return;
+    }
+    const na = (p: Pawn) => p.job?.t === 'gosc' && this.tileOf(p) === p.job.tile && p.pi >= p.path.length;
+    // nowy mówiący (poprzedni zginął) liczy dojście od nowa
+    if (na(m[0])) g.przy ??= st.tick;
+    else delete g.przy;
+    if (g.przy === undefined) return;
+    if (m.every(na) || st.tick - g.przy >= GOSC_ZBIERZ) {
+      g.faza = 'brama';
+      g.at = st.tick;
+    }
+  }
+
+  /** Pod bramą: tylko szwendacz albo cierpliwość (GOSC_CZEKA) kończy czekanie, resztę rozstrzyga zarząd rozkazem. */
+  private goscBrama(g: GoscSim, m: Pawn[]): void {
+    const st = this.st;
+    if (this.goscPlosz(g, m)) {
+      this.goscUciekaj(g, m);
+      return;
+    }
+    if (st.tick - g.at >= GOSC_CZEKA) {
+      g.faza = 'odchodzi';
+      g.at = st.tick;
+      this.goscOdeslij(m, false);
+    }
+  }
+
+  /** Tryb zombie: szwendacz do SPOOK_R m od któregoś z grupy płoszy ją (sprawdzane co sekundę, jak u wędrowca) */
+  private goscPlosz(g: GoscSim, m: Pawn[]): boolean {
+    const st = this.st;
+    if (modeOf(st) !== 'zombie' || (st.tick + g.pawns[0]) % THINK_EVERY !== 0) return false;
+    const r2 = SPOOK_R * SPOOK_R;
+    for (const z of st.pawns) {
+      if (z.kind !== 'zombie' || this.graveyard.has(z.id)) continue;
+      for (const p of m) if ((z.x - p.x) ** 2 + (z.y - p.y) ** 2 <= r2) return true;
+    }
+    return false;
+  }
+
+  /** spłoszona grupa ucieka tam, skąd przyszła, szybciej niż idzie */
+  private goscUciekaj(g: GoscSim, m: Pawn[]): void {
+    g.faza = 'odchodzi';
+    g.at = this.st.tick;
+    this.goscOdeslij(m, false, true);
+  }
+
+  /** Członkowie dostają pracę `odejscie` (jak wyrzucony mieszkaniec): z podwórka bramą, a potem ulicą daleko od siatki,
+      z ulicy prosto do kafelka, z którego przyszli. Osoba dostaje `gone`, pionek znika na końcu drogi. */
+  private goscOdeslij(m: readonly Pawn[], zPodworka: boolean, ucieka = false): void {
+    const st = this.st;
+    const brama = zPodworka && this.exitTile >= 0;
+    for (const p of m) {
+      p.path = [];
+      p.pi = 0;
+      p.want = -1;
+      p.wait = st.tick;
+      p.job = {
+        t: 'odejscie',
+        target: -1,
+        tile: brama ? this.exitTile : p.home,
+        phase: brama ? 0 : 1,
+        from: -1,
+        t0: st.tick,
+        until: st.tick + ODEJSCIE_TICKS,
+        order: false,
+        n: 0,
+        what: ucieka ? 'ucieczka' : '',
+      };
+      if (p.person >= 0 && st.people[p.person]) st.people[p.person].gone = true;
+    }
+  }
+
+  /** gość stoi w miejscu (złapany) */
+  private goscStoj(p: Pawn, what: string): void {
+    p.path = [];
+    p.pi = 0;
+    p.job = { ...this.newJob('gosc', -1, this.tileOf(p), false), what };
+  }
+
+  /** Krok pionka gościa: idzie swoją drogą, a gdy stoi, wraca na swoje miejsce (droga od nowa co sekundę), po zmroku
+      kładzie się przy ogniu, rano wstaje. Wychodzący idzie pracą `odejscie`. */
+  private goscTick(p: Pawn): void {
+    if (p.pi < p.path.length) {
+      this.walk(p);
+      return;
+    }
+    const j = p.job;
+    const tick = this.st.tick;
+    if (!j) {
+      this.goscOdeslij([p], false);
+      return;
+    }
+    const at = this.tileOf(p) === j.tile;
+    if (j.t === 'odejscie') {
+      this.odejsciePraca(p, j, at);
+      return;
+    }
+    if (!at) {
+      if (tick >= p.wait) {
+        p.wait = tick + THINK_EVERY;
+        this.go(p, j.tile);
+      }
+      return;
+    }
+    if (j.what === 'rdzen' && this.night()) j.what = 'spi';
+    else if (j.what === 'spi' && !this.night()) j.what = 'rdzen';
+  }
+
+  /** ognisko dla gości: palące się, a gdy takich kilka, najbliższe bramy (remis: pierwsze na liście rzeczy); bez
+      palącego się najbliższe bramy z zimnych; bez ogniska undefined */
+  private goscOgnisko(): Thing | undefined {
+    const size = this.w.size;
+    const brama = gateTiles(this.w)[0] ?? this.exitTile;
+    let best: Thing | undefined;
+    let bl = 2;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.things) {
+      if (t.kind !== 'ognisko') continue;
+      const l = t.fuel > 0 ? 0 : 1;
+      const d = brama < 0 ? 0 : ((t.x % size) - (brama % size)) ** 2 + (t.y - Math.floor(brama / size)) ** 2;
+      if (l < bl || (l === bl && d < bd)) {
+        best = t;
+        bl = l;
+        bd = d;
+      }
+    }
+    return best;
+  }
+
+  /** wolne kafelki podwórka przy ognisku (a bez niego przed drzwiami siedziby), najbliższe pierwsze: tu goście siedzą i
+      śpią; kafelek osiągalny z podwórka, bez mebli i rzeczy */
+  private goscMiejsca(n: number): number[] {
+    const size = this.w.size;
+    const ognisko = this.goscOgnisko();
+    const centrum = ognisko ? ognisko.y * size + ognisko.x : this.door;
+    const ref = this.gateStand[0];
+    const out: number[] = [];
+    if (centrum >= 0 && ref !== undefined) {
+      const region = this.reg[ref];
+      for (const [dx, dy] of SPREAD) {
+        if (out.length >= n) break;
+        const x = (centrum % size) + dx;
+        const y = Math.floor(centrum / size) + dy;
+        if (x < 0 || y < 0 || x >= size || y >= size) continue;
+        const i = y * size + x;
+        if (this.yardMask[i] !== 1 || this.coreBlocked[i] || this.reg[i] !== region || this.thingAt(x, y)) continue;
+        if (!out.includes(i)) out.push(i);
+      }
+    }
+    return out.length ? out : this.gateStand.slice(0, n);
+  }
+
+  /** Wpuszczeni na noc: idą bramą (droga zarządu) do ogniska, po zmroku śpią na ziemi, rano między 6:00 a 8:00
+      wychodzą. Kłamca ma 2:00, kiedy rusza po jedzenie. */
+  private goscWpusc(g: GoscSim, m: Pawn[]): void {
+    const st = this.st;
+    g.faza = 'w_srodku';
+    g.at = st.tick;
+    g.rano = ranoGoscia(st.tick, g.id);
+    g.na2 = najblizszaGodzina(st.tick, 2);
+    delete g.przy;
+    const miejsca = this.goscMiejsca(m.length);
+    m.forEach((p, i) => {
+      p.path = [];
+      p.pi = 0;
+      p.wait = st.tick;
+      p.job = {
+        ...this.newJob('gosc', -1, miejsca[i % Math.max(1, miejsca.length)] ?? this.tileOf(p), false),
+        what: 'rdzen',
+      };
+      this.go(p, p.job.tile);
+    });
+  }
+
+  /** Wpuszczona grupa w nocy: rano wychodzi, kłamca o 2:00 rusza po jedzenie, w trakcie kradzieży idzie jej pilnowanie. */
+  private goscWSrodku(g: GoscSim, m: Pawn[]): void {
+    const tick = this.st.tick;
+    if (g.rano !== undefined && tick >= g.rano) {
+      if (g.krad) g.krad = 'koniec';
+      g.faza = 'odchodzi';
+      g.at = tick;
+      this.goscOdeslij(m, true);
+      return;
+    }
+    if (g.krad === 'idzie' || g.krad === 'wraca') {
+      this.goscKradziez(g, m);
+      return;
+    }
+    if (g.klamie && g.krad === undefined && g.na2 !== undefined && tick >= g.na2) this.goscStartKradziezy(g, m);
+  }
+
+  /** najbliższa pionkowi sterta jedzenia (remis: pierwsza na liście rzeczy), nie z cudzego budynku */
+  private goscSterta(p: Pawn): Thing | undefined {
+    const size = this.w.size;
+    let best: Thing | undefined;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of this.st.things) {
+      if (t.kind !== 'jedzenie' || t.n <= 0 || this.uSasiada(t)) continue;
+      const d = this.dist2(p, t.y * size + t.x);
+      if (d < bd) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** O 2:00 kłamca (mówiący) wstaje i idzie do najbliższej sterty jedzenia; bez jedzenia albo drogi zostaje spać. */
+  private goscStartKradziezy(g: GoscSim, m: Pawn[]): void {
+    const st = this.st;
+    const zl = m[0];
+    const heap = this.goscSterta(zl);
+    if (!heap) {
+      g.krad = 'koniec';
+      return;
+    }
+    const przed = zl.job;
+    zl.job = { ...this.newJob('gosc', -1, this.tileOf(zl), false), what: 'lup' };
+    zl.path = [];
+    zl.pi = 0;
+    zl.wait = st.tick;
+    const stand = this.goalFor(zl, heap.y * this.w.size + heap.x);
+    if (stand < 0 || (stand !== this.tileOf(zl) && !this.routeTo(zl, stand))) {
+      zl.job = przed;
+      g.krad = 'koniec';
+      return;
+    }
+    zl.job.tile = stand;
+    g.krad = 'idzie';
+    g.zl = zl.id;
+    g.cel = heap.id;
+  }
+
+  /** Czuwa ktoś z zarządu, kto nie śpi, w promieniu GOSC_ZASIEG od kradnącego */
+  private goscCzujny(p: Pawn): boolean {
+    const r2 = GOSC_ZASIEG * GOSC_ZASIEG;
+    for (const q of this.st.pawns) {
+      if (q.kind !== 'core' || q.away || this.graveyard.has(q.id)) continue;
+      const j = q.job;
+      if ((j?.t === 'sleep' && j.phase === 1) || (j?.t === 'guard' && j.phase === 4)) continue;
+      if ((q.x - p.x) ** 2 + (q.y - p.y) ** 2 <= r2) return true;
+    }
+    return false;
+  }
+
+  /** Kradzież: kradnący idzie do sterty, bierze do GOSC_LUP porcji (sterta maleje od razu), reszta grupy wstaje i razem
+      wychodzą bramą. Złapany po drodze (tam i z powrotem do wyjścia za bramą) staje, grupa czeka na decyzję. */
+  private goscKradziez(g: GoscSim, m: Pawn[]): void {
+    const st = this.st;
+    const zl = m.find((p) => p.id === g.zl);
+    if (!zl) {
+      g.krad = 'koniec';
+      return;
+    }
+    if (this.goscCzujny(zl)) {
+      g.faza = 'zlapany';
+      g.at = st.tick;
+      g.rano = najblizszaGodzina(st.tick, GOSC_ZLAPANY_DO);
+      g.krad = 'koniec';
+      for (const p of m) this.goscStoj(p, 'stoi');
+      return;
+    }
+    if (g.krad === 'wraca') {
+      // za bramą (faza 1 odejścia) nikt go już nie złapie
+      if (zl.job?.t === 'odejscie' && zl.job.phase === 1) {
+        g.krad = 'koniec';
+        g.faza = 'odchodzi';
+        g.at = st.tick;
+      }
+      return;
+    }
+    const j = zl.job;
+    if (j?.t !== 'gosc') return;
+    if (this.tileOf(zl) !== j.tile) {
+      if (zl.pi >= zl.path.length && st.tick >= zl.wait) {
+        zl.wait = st.tick + THINK_EVERY;
+        this.routeTo(zl, j.tile);
+      }
+      return;
+    }
+    const heap = this.thing(g.cel ?? -1);
+    const k = heap && heap.n > 0 ? Math.min(GOSC_LUP, heap.n) : 0;
+    if (!heap || k === 0) {
+      // sterta zniknęła w międzyczasie: wraca spać
+      g.krad = 'koniec';
+      zl.job = { ...this.newJob('gosc', -1, this.tileOf(zl), false), what: 'rdzen' };
+      return;
+    }
+    heap.n -= k;
+    g.ukradl += k;
+    // łup niesie w worku jak szabrownik: zabity albo złapany zostawia go przez `dropSack`
+    zl.sack = { ...zl.sack, supplies: (zl.sack?.supplies ?? 0) + k };
+    st.things = st.things.filter((t) => !(LOOSE.has(t.kind) && t.kind !== 'pien' && t.n <= 0));
+    g.krad = 'wraca';
+    this.goscOdeslij(m, true);
+  }
+
+  /** Śmierć członka wizyty: licznik zgonów, a gdy zginął kradnący, łup z jego worka upada na ziemię (`die` woła
+      `dropSack`), więc zapasów brakuje o tyle mniej (`ukradl` 0). */
+  private goscZginal(p: Pawn): void {
+    const g = this.st.goscie?.find((x) => x.pawns.includes(p.id));
+    if (!g) return;
+    g.zgin = (g.zgin ?? 0) + 1;
+    if (g.zl === p.id) g.ukradl = 0;
+  }
+
+  /** Odejście na rozkaz: pod bramą i w drodze ulicą z powrotem na swój kafelek, w środku bramą i dalej ulicą. Z
+      `bezLupu` łup z worka kradnącego wraca na ziemię przy nim (`ukradl` 0), bez niego odchodzi z łupem. */
+  private goscOdejdz(g: GoscSim, m: Pawn[], bezLupu: boolean): void {
+    const st = this.st;
+    const w = g.faza;
+    if (w !== 'idzie' && w !== 'brama' && w !== 'w_srodku' && w !== 'zlapany') return;
+    if (bezLupu && g.ukradl > 0) {
+      // łup z worka kradnącego wraca na ziemię przy nim
+      const zl = m.find((p) => p.id === g.zl);
+      if (zl) this.dropSack(zl);
+      g.ukradl = 0;
+    }
+    if (g.krad) g.krad = 'koniec';
+    this.goscOdeslij(m, w === 'w_srodku' || w === 'zlapany');
+    g.faza = 'odchodzi';
+    g.at = st.tick;
+  }
+
+  /** Przyjęcie do osiedla (`zostan`: cała grupa mieszkańcami, `zarzad`: mówiący do zarządu jak przy awansie, reszta
+      mieszkańcami). Pionki zostają tymi samymi pionkami, zmieniają rodzaj; wizyta w symulacji się kończy (`przyjety`). */
+  private goscPrzyjmij(g: GoscSim, m: Pawn[], zarzad: boolean): void {
+    const st = this.st;
+    // kradnący przyjęty z workiem w ręku nie zostaje z cudzym jedzeniem: łup wraca na ziemię przy nim (`ukradl` 0)
+    const zl = m.find((p) => p.id === g.zl);
+    if (zl) this.dropSack(zl);
+    g.ukradl = 0;
+    g.przyjety = zarzad ? 'zarzad' : 'mieszkancy';
+    g.faza = 'w_srodku';
+    g.at = st.tick;
+    if (g.krad) g.krad = 'koniec';
+    const h = this.house;
+    const apts = h ? residentApts(st, this.w, h) : [];
+    let k = 0;
+    for (const p of m) {
+      if (zarzad && p === m[0] && awansuj(st, this.w, st.people[p.person].id)) continue;
+      // jak zaproszony sąsiad (przyjmijGospodarstwo), ale po kolei gęsiego zza bramy
+      p.kind = 'resident';
+      this.goscPotrzeby(p);
+      p.path = [];
+      p.pi = 0;
+      p.want = -1;
+      p.wait = st.tick;
+      p.home = this.osadzMieszkanca(p, apts, k++ * ARRIVE_GAP);
+    }
+  }
+
+  /** potrzeby gościa: powstają dopiero przy przyjęciu albo ugryzieniu (zakażenie i zdrowie ich wymagają) */
+  private goscPotrzeby(p: Pawn): void {
+    p.needs ??= potrzebyStartowe(60, 50, 60, 100, 50);
+  }
+
+  /** ugryziony z planu dostaje zakażenie jak na wyprawie (raz); pionka, którego już nie ma, polecenie nie dotyczy */
+  private goscUgryz(g: GoscSim): void {
+    if (g.ugryziony === undefined || g.ugryzl) return;
+    const id = g.pawns[g.ugryziony];
+    const p = this.st.pawns.find((q) => q.id === id);
+    if (!p || this.graveyard.has(id)) return;
+    g.ugryzl = true;
+    this.goscPotrzeby(p);
+    infect(this.st, p, true);
+  }
+
+  /** Rozkaz zarządu dla grupy (polecenie 'goscrozkaz'). Polecenie, które nie pasuje do fazy (np. `noc` nie pod bramą),
+      nic nie zmienia. `ugryziony` działa zawsze, dopóki żyje ugryziony pionek, także po przyjęciu (kolejność `zostan`
+      i `ugryziony` z jednego wywołania nie ma znaczenia); `klamie` działa do końca albo przyjęcia wizyty (potem nic nie
+      zmienia), przed rozkazem `noc` i po nim tak samo. */
+  private goscRozkaz(id: string, co: GoscRozkaz): void {
+    const g = this.st.goscie?.find((x) => x.id === id);
+    if (!g) return;
+    if (co === 'ugryziony') {
+      this.goscUgryz(g);
+      return;
+    }
+    if (goscKoniec(g)) return;
+    if (co === 'klamie') {
+      g.klamie = true;
+      return;
+    }
+    const m = this.goscCzlonkowie(g);
+    if (!m.length) return;
+    switch (co) {
+      case 'odejdz':
+      case 'jedzenie':
+        this.goscOdejdz(g, m, false);
+        break;
+      case 'puscic':
+        this.goscOdejdz(g, m, true);
+        break;
+      case 'noc':
+        if (g.faza === 'brama') this.goscWpusc(g, m);
+        break;
+      case 'zostan':
+      case 'zarzad':
+        if (g.faza === 'brama' || g.faza === 'w_srodku') this.goscPrzyjmij(g, m, co === 'zarzad');
+        break;
+      case 'dobij':
+        this.goscDobij(g);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Ktoś z zarządu dobił przez siatkę ugryzioną osobę z planu (indeks `ugryziony`), o co prosiła grupa pod bramą:
+      ginie na miejscu, reszta grupy stoi dalej. Tylko pod bramą i tylko żywy pionek tego gościa. */
+  private goscDobij(g: GoscSim): void {
+    if (g.faza !== 'brama' || g.ugryziony === undefined) return;
+    const id = g.pawns[g.ugryziony];
+    const p = this.st.pawns.find((q) => q.id === id);
+    if (p?.kind !== 'gosc' || this.graveyard.has(id)) return;
+    this.wound(p, 1000);
+    // dobity nie wstanie: w trybie zombie zwłoki dostają czas wstania (`fuel`), a dobite go nie mają, jak po `finish`
+    const body = this.graveyard.has(id) ? this.st.things.findLast((t) => t.kind === 'zwloki') : undefined;
+    if (body) body.fuel = 0;
+  }
+
   /** obcy danego rodzaju o tym id, który jeszcze nie ucieka ani nie zniknął */
   private stranger(id: number, kind: PawnKind): Pawn | undefined {
     return this.st.pawns.find((q) => q.id === id && q.kind === kind && (q.job?.phase ?? 4) < 3);
@@ -8181,7 +8789,8 @@ export class Sim {
     if (this.st.pawns.includes(p) && !this.graveyard.has(p.id)) this.hurt(p, dmg, null);
   }
 
-  /** łup zabitego szabrownika zostaje na podwórku według rodzaju i przestaje się liczyć jako skradziony */
+  /** łup zabitego szabrownika (albo gościa, który ukradł jedzenie) zostaje na ziemi według rodzaju i przestaje się liczyć
+      jako skradziony */
   private dropSack(p: Pawn): void {
     const st = this.st;
     const size = this.w.size;
@@ -8195,7 +8804,7 @@ export class Sim {
       if (n <= 0) continue;
       if (kind === 'drewno') this.addWood(this.spotNear(this.tileOf(p), n), n);
       else {
-        const at = this.spotNear(this.tileOf(p), 0);
+        const at = this.spotNear(this.tileOf(p), 0, false);
         const t = st.things.find((q) => q.kind === kind && q.x === at % size && q.y === Math.floor(at / size));
         if (t) t.n += n;
         else {
@@ -8204,7 +8813,8 @@ export class Sim {
           st.things.push(heap);
         }
       }
-      if (st.raid) {
+      // rachunek napadu dotyczy tylko szabrowników (łup gościa z jedzeniem nie jest łupem napadu)
+      if (st.raid && p.kind === 'szabrownik') {
         st.raid.took[k] = Math.max(0, st.raid.took[k] - n);
         st.raid.loot[k] = Math.max(0, st.raid.loot[k] - n);
       }
@@ -8438,6 +9048,7 @@ export class Sim {
     // na wyprawie: umiera poza mapą, bez zwłok i krwi przy bramie
     const away = p.away;
     this.release(p);
+    if (p.kind === 'gosc') this.goscZginal(p);
     if (p.sack) this.dropSack(p);
     if (!away) {
       this.addFx('smierc', p.x, p.y);
@@ -8464,7 +9075,7 @@ export class Sim {
     const name = who?.name ?? STRANGER_NAMES[p.kind] ?? 'Mieszkaniec';
     // kto już wychodził bramą (wyrzucony, odchodzący; poza mapą nie bywa), nie jest już nasz: umiera jak obcy, bez wpisu
     // zmarłych (zarząd nie żałuje), bez żałoby osiedla i bez licznika naszych zgonów; zwłoki jak po obcym
-    const odchodzil = !away && p.job?.t === 'odejscie' && (p.kind === 'core' || p.kind === 'resident');
+    const odchodzil = !away && p.job?.t === 'odejscie' && DO_WYJSCIA.has(p.kind);
     // id tylko dla zarządu: mieszkaniec z osobą ma imię, ale dla zarządu (GovInput.dead) zostaje mieszkańcem
     if (!odchodzil)
       st.dead!.push({ id: p.kind === 'core' ? (who?.id ?? '') : '', name, look: p.look, kind: p.kind, tick, cause });
@@ -8484,7 +9095,8 @@ export class Sim {
     if (modeOf(st) === 'zombie') body.fuel = tick + RISE_TICKS;
     st.things.push(body);
     if (STRANGER_KINDS.has(p.kind) || odchodzil) {
-      st.tally!.killed++;
+      // goście z klocków nie są wrogami: licznik zabitych (raport „Zabitych szwendaczy”) ich nie liczy
+      if (p.kind !== 'gosc') st.tally!.killed++;
       if (by?.needs) this.addMood(by, 'Zabiłem człowieka', -6, TICKS_PER_DAY);
       if (p.kind === 'handlarz') this.traderKilled(p, by);
       return;
@@ -8834,6 +9446,7 @@ export class Sim {
         q.kind === 'sasiad' ||
         q.kind === 'handlarz' ||
         q.kind === 'wedrowiec' ||
+        q.kind === 'gosc' ||
         q.kind === 'obcy') &&
       !q.away &&
       !this.graveyard.has(q.id) &&
@@ -9866,7 +10479,8 @@ export class Sim {
       // chwilowe nastroje wygasają, reszta dodaje się do nastroju z potrzeb
       if (p.moods.length) p.moods = p.moods.filter((m) => m.until > st.tick);
       const bonus = p.moods.reduce((a, m) => a + m.d, 0);
-      if (p.kind === 'resident' || p.kind === 'sasiad') stepSafe(p.needs, this.needCtx(p, tout, night), hours, bonus);
+      if (p.kind === 'resident' || p.kind === 'sasiad' || p.kind === 'gosc')
+        stepSafe(p.needs, this.needCtx(p, tout, night), hours, bonus);
       else stepNeeds(p.needs, this.needCtx(p, tout, night), hours, bonus);
       // gorączka: zdrowie spada liniowo do zera w chwili śmierci
       if (p.bite !== undefined) {
@@ -10726,6 +11340,41 @@ export class Sim {
     return ((a % size) - (b % size)) ** 2 + (Math.floor(a / size) - Math.floor(b / size)) ** 2;
   }
 
+  /** Pionek zostaje mieszkańcem siedziby (zaproszony sąsiad, przyjęty gość): mieszkanie z wolnym łóżkiem albo najmniej
+      zatłoczone (`aptFor`), praca przyjścia do kafelka w tym mieszkaniu (po `gap` ticków, żeby przychodzili gęsiego) i
+      łóżko w tym mieszkaniu, gdy jest wolne. Rodzaj `resident` i potrzeby ustawia wołający. Zwraca kafelek mieszkania
+      (bez mieszkania: drzwi siedziby). */
+  private osadzMieszkanca(q: Pawn, apts: readonly number[], gap: number): number {
+    const st = this.st;
+    const h = this.house;
+    const size = this.w.size;
+    const apt = h ? aptFor(st, h, size, apts) : -1;
+    q.apt = apt;
+    const tiles: number[] = [];
+    if (h && apt >= 0)
+      for (let i = 0; i < size * size; i++) if (aptAt(h, i) === apt && !this.coreBlocked[i]) tiles.push(i);
+    const at = tiles.length ? tiles[q.id % tiles.length] : this.door;
+    q.job = {
+      t: 'arrive',
+      target: apt,
+      tile: at,
+      phase: 0,
+      from: -1,
+      t0: st.tick,
+      until: st.tick + gap,
+      order: false,
+      n: 0,
+      what: '',
+    };
+    const bed = h
+      ? st.things.find(
+          (t) => BEDS.has(t.kind) && !t.broken && t.owner < 0 && apt >= 0 && aptAt(h, t.y * size + t.x) === apt,
+        )
+      : undefined;
+    if (bed) bed.owner = q.id;
+    return at;
+  }
+
   /** Zaproszeni idą do siedziby: ich pionki stają się mieszkańcami z osobami i idą drogą zarządu przez bramę do
       mieszkania z wolnym łóżkiem (albo najmniej zatłoczonego), jak przybysze. Ich mieszkanie zostaje puste z zapasami. */
   private przyjmijGospodarstwo(sp: Spotkanie, g: Gospodarstwo): void {
@@ -10756,7 +11405,6 @@ export class Sim {
       this.schowajLokatorow(sp.b, sp.dom);
       return;
     }
-    const size = this.w.size;
     const apts = residentApts(st, this.w, h);
     // tryb zombie: ukryty ugryziony zostaje, gdy zarząd o niego zapytał, a bez pytania przychodzi z gorączką
     const bitten = g.ugryziony !== undefined ? g.pionki?.[g.ugryziony] : undefined;
@@ -10768,29 +11416,8 @@ export class Sim {
         continue;
       }
       q.kind = 'resident';
-      const apt = aptFor(st, h, size, apts);
-      q.apt = apt;
-      q.needs = { food: 60, warm: 50, rest: 60, health: 100, safe: 50, mood: 0 };
-      q.needs.mood = 0.25 * 60 + 0.25 * 50 + 0.15 * 60 + 0.15 * 100 + 0.2 * 50;
-      const tiles: number[] = [];
-      for (let i = 0; i < size * size; i++) if (apt >= 0 && aptAt(h, i) === apt && !this.coreBlocked[i]) tiles.push(i);
-      const at = tiles.length ? tiles[q.id % tiles.length] : this.door;
-      q.job = {
-        t: 'arrive',
-        target: apt,
-        tile: at,
-        phase: 0,
-        from: -1,
-        t0: st.tick,
-        until: st.tick,
-        order: false,
-        n: 0,
-        what: '',
-      };
-      const bed = st.things.find(
-        (t) => BEDS.has(t.kind) && !t.broken && t.owner < 0 && apt >= 0 && aptAt(h, t.y * size + t.x) === apt,
-      );
-      if (bed) bed.owner = q.id;
+      q.needs = potrzebyStartowe(60, 50, 60, 100, 50);
+      this.osadzMieszkanca(q, apts, 0);
       if (id === bitten) {
         // gorączka od kilku godzin: umrze i wstanie jeszcze tej doby, chyba że ktoś zdąży z amputacją albo go dobije
         infect(st, q, true);
