@@ -673,11 +673,15 @@ export interface GovState {
 /** Wizyta gościa prowadzona przez zarząd: `gosc` (klocki, osoby; ten sam co w planie dla symulacji), `od` (sekunda przy
     ekranie planu), `karta` (karta gościa pod bramą już pokazana), `zl` (karta „Złapany” już pokazana), `obejrzano` (co
     pokazało obejrzenie rąk w trybie zombie), `noc` (wpuszczony na noc: zarząd śledzi wizytę do końca), `kradl` (linia
-    o kradzieży już wpisana), `liniaNocy` (linia o nocy już w raporcie), `koniec` (zarząd wydał ostatni rozkaz, wizyta przestaje być jego sprawą) */
+    o kradzieży już wpisana), `liniaNocy` (linia o nocy już w raporcie), `koniec` (zarząd wydał ostatni rozkaz, wizyta przestaje być jego sprawą),
+    `kartaId` i `dane` (wizyta zaplanowana przez kartę z 0.3 z gościem, `GEventDef.gosc`: id tej karty i jej dane z `make`;
+    pod bramą otwiera się ta karta z danymi i `gid`, a nie karta `gosc`) */
 export interface AktywnyGosc {
   gosc: Gosc;
   od: number;
   karta: boolean;
+  kartaId?: string;
+  dane?: unknown;
   zl?: boolean;
   obejrzano?: 'ugryziony' | 'czysty';
   noc?: boolean;

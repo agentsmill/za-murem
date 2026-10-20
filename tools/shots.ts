@@ -2182,17 +2182,28 @@ const SHOTS: Shot[] = [
         },
       },
       {
-        // nowa osoba zarządu (karta o chętnym do spółdzielni) czeka za bramą i idzie do siedziby; komunikat z „Pokaż”
+        // nowa osoba zarządu (karta o chętnym do spółdzielni) czeka za bramą i idzie do siedziby; komunikat z „Pokaż”.
+        // Od zadania 11 wydarzeń taka osoba to influencerka z karty, która stoi pod bramą jako pionek gościa: pula zarządu
+        // zostaje do tej jednej karty (reszta „niedawno była”), a „Przyjąć do spółdzielni” to rozkaz `zarzad` (awans pionka
+        // spod bramy), który wykonuje się w następnym kroku symulacji
         name: 'wyd-przyjety',
         query: '',
         run: async (page, base) => {
           await game(page, base);
+          await page.evaluate(async () => {
+            const url = '/src/gov/wydarzenia.ts';
+            const m = (await import(/* @vite-ignore */ url)) as { M1_EVENTS: { id: string }[] };
+            const gov = window.zm!.gov!;
+            for (const e of m.M1_EVENTS) if (e.id !== 'influencer') gov.ev.last[e.id] = 1e9;
+          });
           let joined = false;
           for (let k = 0; k < 150 && !joined; k++) {
             const p = await page.evaluate(() => window.zm!.ff(30));
             if (!p) continue;
             const id = p === 'wydarzenie' ? await page.evaluate(() => window.zm!.gov!.ev.active?.id ?? '') : '';
             await answerFirst(page, p);
+            // rozkaz dla pionka gościa idzie przez kolejkę poleceń: kilka kroków, zanim awansuje i ruszy do siedziby
+            await page.evaluate(() => window.zm!.ff(0.25));
             joined = await page.evaluate(() =>
               window.zm!.sim!.st.pawns.some((q) => q.kind === 'core' && q.job?.t === 'arrive'),
             );
@@ -2231,13 +2242,13 @@ const SHOTS: Shot[] = [
           await page.waitForTimeout(1400);
           await waitIdle(page);
           await page.screenshot({ path: path.join(OUT, 'wyd-przyjety-pokaz.png') });
-          // kilka sekund marszu: wzdłuż płotu do bramy, a potem w bramie (zrzut, gdy stoi na kafelkach bramy)
-          await page.evaluate(() => window.zm!.ff(1.5));
+          // marsz: przyjęty stoi przy bramie (pionek spod bramy), więc zrzut „brama” robimy zaraz po „Pokaż”, a potem drobnymi
+          // krokami czekamy, aż stanie na kafelkach bramy (zrzut „w bramie”)
+          await page.evaluate(() => window.zm!.ff(0.1));
           await frames(page, 2);
           await page.screenshot({ path: path.join(OUT, 'wyd-przyjety-brama.png') });
           let wBramie = false;
-          for (let k = 0; k < 60 && !wBramie; k++) {
-            await page.evaluate(() => window.zm!.ff(0.25));
+          for (let k = 0; k < 200 && !wBramie; k++) {
             wBramie = await page.evaluate(() => {
               const zm = window.zm!;
               const w = zm.sim!.w;
@@ -2248,6 +2259,7 @@ const SHOTS: Shot[] = [
               if (w1) zm.setCam(p.x, p.y, 2.5);
               return w1;
             });
+            if (!wBramie) await page.evaluate(() => window.zm!.ff(0.1));
           }
           if (!wBramie) throw new Error('przyjęty nie doszedł do bramy');
           await frames(page, 2);
@@ -2792,6 +2804,105 @@ const SHOTS: Shot[] = [
           await waitIdle(page);
           await frames(page, 3);
           await gosciNarysowani(page, 'na podwórku po „Wpuścić na noc”');
+        },
+      },
+      {
+        // uchodźcy z karty 0.3 jako prawdziwi ludzie pod bramą (Przymorze, obcy włączeni, w puli zarządu tylko ta karta):
+        // zarząd wystawia grupę, ta idzie ulicą pod bramę i dopiero wtedy otwiera się karta z liczbą osób równą liczbie
+        // pionków. Zrzuty: karta (wyd-uchodzcy-karta.png), po „Pokaż” grupa pod bramą (wyd-uchodzcy-brama.png) i po
+        // „Przyjąć wszystkich” goście wchodzą bramą na podwórko jako mieszkańcy (końcowy wyd-uchodzcy.png). Sprite'y gości
+        // sprawdzane przed każdym zrzutem
+        name: 'wyd-uchodzcy',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          // pula: tylko ta karta (reszta „niedawno była”); ścieżka modułu w zmiennej, żeby tsc jej nie rozwiązywał
+          await page.evaluate(async () => {
+            const url = '/src/gov/wydarzenia.ts';
+            const m = (await import(/* @vite-ignore */ url)) as { M1_EVENTS: { id: string }[] };
+            const gov = window.zm!.gov!;
+            for (const e of m.M1_EVENTS) if (e.id !== 'uchodzcy') gov.ev.last[e.id] = 1e9;
+          });
+          const krok = await doKarty(page, 'uchodzcy', 600);
+          await waitIdle(page);
+          const stan = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const gov = zm.gov!;
+            const a = gov.goscie!.aktywny!;
+            const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+            const pionki = st.pawns.filter((p) => p.kind === 'gosc' && wpis.pawns.includes(p.id));
+            const d = gov.ev.active!.d as { gid?: string; spec?: { name: string } | null };
+            return {
+              faza: wpis.faza,
+              pionki: pionki.length,
+              osoby: a.gosc.osoby.length,
+              kartaId: a.kartaId ?? null,
+              gid: d.gid ?? null,
+              id: a.gosc.id,
+              spec: d.spec?.name ?? null,
+              ids: wpis.pawns,
+            };
+          });
+          const tekst = await sheetText(page);
+          console.log(
+            `  karta po ${krok} krokach: ${stan.osoby} osób, ${stan.pionki} pionków, faza ${stan.faza}, fachowiec ${stan.spec ?? 'brak'}`,
+          );
+          console.log(`  ${tekst.replace(/\s+/g, ' ').slice(0, 420)}`);
+          if (stan.faza !== 'brama') throw new Error(`karta uchodźców, ale faza ${stan.faza}`);
+          if (stan.kartaId !== 'uchodzcy' || stan.gid !== stan.id)
+            throw new Error(`karta nie jest kartą wizyty: kartaId ${stan.kartaId}, gid ${stan.gid}`);
+          if (stan.pionki !== stan.osoby || stan.pionki < 4)
+            throw new Error(`karta o ${stan.osoby} osobach, na mapie ${stan.pionki} pionków`);
+          if (!new RegExp(`\\b${stan.pionki} (osoby|osób)\\b`).test(tekst))
+            throw new Error(`w tekście karty nie ma liczby ${stan.pionki}`);
+          await pionkiNarysowane(page, stan.ids, 'uchodźcy pod bramą (karta)');
+          await page.screenshot({ path: path.join(OUT, 'wyd-uchodzcy-karta.png') });
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          await waitIdle(page);
+          await frames(page, 3);
+          await pionkiNarysowane(page, stan.ids, 'uchodźcy po „Pokaż”');
+          await page.screenshot({ path: path.join(OUT, 'wyd-uchodzcy-brama.png') });
+          // wybór: przyjąć wszystkich (z podłogą albo bez); goście wchodzą bramą na podwórko i zostają mieszkańcami
+          await page.click('#sheet .choices [data-act="event"]:has-text("Przyjąć wszystkich")');
+          await waitIdle(page);
+          const wejscie = await page.evaluate((ids) => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const st = sim.st;
+            const yard = new Set(sim.w.fence.yard);
+            const grupa = () => ids.map((id) => st.pawns.find((q) => q.id === id)!);
+            const wDworze = () =>
+              grupa().filter((p) => yard.has(Math.floor(p.y) * sim.w.size + Math.floor(p.x))).length;
+            let k = 0;
+            while (k < 6000 && wDworze() < Math.min(3, ids.length)) {
+              sim.step();
+              k++;
+            }
+            const g = grupa();
+            const cx = g.reduce((a, p) => a + p.x, 0) / g.length;
+            const cy = g.reduce((a, p) => a + p.y, 0) / g.length;
+            zm.setCam(cx, cy, 2.2);
+            return {
+              k,
+              wDworze: wDworze(),
+              rodzaje: g.map((p) => p.kind),
+              prace: g.map((p) => p.job?.t ?? null),
+              koniec: zm.gov!.goscie?.aktywny?.koniec ?? false,
+            };
+          }, stan.ids);
+          console.log(
+            `  po „Przyjąć wszystkich”: ${wejscie.wDworze}/${stan.pionki} na podwórku po ${wejscie.k} krokach, rodzaje ${[...new Set(wejscie.rodzaje)].join('+')}, ostatni rozkaz ${wejscie.koniec ? 'wydany' : 'nie'}`,
+          );
+          if (wejscie.rodzaje.some((r) => r !== 'resident' && r !== 'core'))
+            throw new Error(`goście nie zostali mieszkańcami: ${wejscie.rodzaje.join(',')}`);
+          if (wejscie.wDworze < Math.min(3, stan.pionki)) throw new Error('goście nie weszli bramą na podwórko');
+          if (!wejscie.koniec) throw new Error('zarząd nie zamknął wizyty po przyjęciu');
+          await waitIdle(page);
+          await frames(page, 3);
+          await pionkiNarysowane(page, stan.ids, 'uchodźcy na podwórku po „Przyjąć wszystkich”');
         },
       },
       {
@@ -8410,6 +8521,22 @@ async function gosciNarysowani(page: Page, co: string): Promise<void> {
   console.log(`  ${co} (${r.godzina}): sprite'y gości ${JSON.stringify(r.sprites)}`);
   if (!r.sprites.length) throw new Error(`${co}: nie ma pionków gości`);
   if (r.sprites.some((x) => !x.visible || x.alpha <= 0)) throw new Error(`${co}: gość nie jest narysowany`);
+}
+
+/** Czy pionki o tych numerach są narysowane (sprite w widoku z `visible` i `alpha` > 0), niezależnie od rodzaju: goście
+    pod bramą mają rodzaj `gosc`, a po przyjęciu mieszkańca albo zarządu (te same pionki). Rzuca, gdy któryś jest ukryty. */
+async function pionkiNarysowane(page: Page, ids: number[], co: string): Promise<void> {
+  const r = await page.evaluate((ids) => {
+    const sprites = (window.zm!.view as unknown as { pawnSprites: Map<number, { visible: boolean; alpha: number }> })
+      .pawnSprites;
+    return ids.map((id) => {
+      const sp = sprites.get(id);
+      return { id, visible: !!sp?.visible, alpha: sp ? Math.round(sp.alpha * 100) / 100 : 0 };
+    });
+  }, ids);
+  console.log(`  ${co}: sprite'y ${JSON.stringify(r)}`);
+  if (!r.length) throw new Error(`${co}: nie ma pionków`);
+  if (r.some((x) => !x.visible || x.alpha <= 0)) throw new Error(`${co}: pionek nie jest narysowany`);
 }
 
 /** n klatek przeglądarki */

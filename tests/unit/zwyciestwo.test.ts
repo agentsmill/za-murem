@@ -569,11 +569,15 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // więc „Sprawdzić” z krzyku i hałasu jest w niej dostępne (wcześniej zawsze wyszarzone), a przy tym wchodzi w grę
     // wstawanie śpiącego. Czwarty raz w drugiej poprawce zadania 6: bezsenność bierze też śpiącego (ciągle się budzi),
     // a jej wybory wysyłają ludzi do kozy (atrapa ma kafelek przed kozą) albo do siatki; były 32eb97ec, 88a53f7e
-    // i 438e5c9b, potem 1859eee3, 8e1834e7 i 04753f7b, potem 69085683, 00eb9415 i ef1cea9e
+    // i 438e5c9b, potem 1859eee3, 8e1834e7 i 04753f7b, potem 69085683, 00eb9415 i ef1cea9e. Piąty raz w zadaniu 11
+    // wydarzeń (karty z 0.3 z gościem pod bramą: uchodźcy, influencerka, aktywiści, dzieciaki, sąsiad od tokenów
+    // i fachowiec w domu mają wagę 0 bez GovInput.goscie, a atrapa nie ma obcych), czyli inna pula, inne losowanie;
+    // były 7fa6ef50, b2171b99 i 943895c7. Z wagami przywróconymi na próbę (zGosciem zawsze prawda) wychodzą dokładnie te
+    // dawne skróty, więc poza pulą nic się nie zmieniło.
     const przebiegi = [
-      [1, 'propozycja', '7fa6ef50'],
-      [3, 'zawsze-warta', 'b2171b99'],
-      [5, 'losowo', '943895c7'],
+      [1, 'propozycja', '8587c921'],
+      [3, 'zawsze-warta', '9c2d504c'],
+      [5, 'losowo', 'f064e248'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

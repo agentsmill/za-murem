@@ -40,33 +40,54 @@
    - RODO: nazwy miejsc w tekstach gościa pochodzą z `GovInput.okolica`, czyli z odfiltrowanych przez hosta nazw
      (`nazwaDoOkolicy`); ten moduł niczego nie filtruje i niczego nie omija.
 
+   Karty z 0.3 z gościem (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 3, „Karty z gościem”:
+   `uchodzcy`, `influencer`, `aktywisci`, `dzieci`, `krypto`, w domu `fachowiec`; nakładki w warianty.ts). Karta z
+   `GEventDef.gosc` nie otwiera się od razu: `planujKarte` składa z jej danych grupę (`GoscKarty`), planuje wizytę tą samą
+   drogą co gość z klocków (`wystaw`: wpis `GovState.goscie.aktywny` z `kartaId` i `dane` karty, `fx.gosc`), a `goscTick`
+   otwiera właśnie tę kartę, gdy grupa stoi pod bramą (jedno czekanie na grupę, zamykanie karty, gdy goście odeszli albo
+   zginęli, poranna linia o nocy, wszystko wspólne z kartą `gosc`). Dane otwartej karty dostają `gid` (id wizyty): po nim
+   tekst i wybory czytają żywą grupę (`GoscHost.grupa`, tak jak karta `gosc` czyta `widoczny`), a skutki idą do pionków
+   przez `przyjmijGosci`, `przyjmijDoZarzadu`, `odprawGosci`, `nakarmGosci` i `nocGosci` zamiast dokładać mieszkańców.
+   Karta bez `gid` (z zapisu sprzed wizyt albo gdy `gosc` oddało null) gra po staremu.
+
    Zależności: zarząd nie importuje symulacji, host (`makeHost` w wydarzenia.ts) dostaje metody z `goscHost`. */
 
 import type { Dom } from '../content/data.ts';
 import type { ActiveEvent } from '../content/events.ts';
 import { type Person, g as plec } from '../content/people.ts';
 import { type Tx, tx } from '../core/jezyk.ts';
-import { rngOf } from '../core/rng.ts';
+import { pick, type Rng, rngOf } from '../core/rng.ts';
 import { type Miejsce, naMapieLokalnej } from '../world/miasto.ts';
 import {
   AMUNICJA,
   BRON,
   type Gosc,
   type KontekstGoscia,
+  type KtoId,
   opisMiejsca,
   PROG_FACHU,
+  STRONY,
   skladGoscia,
   stronaMiejsca,
   tekstGoscia,
   tytulGoscia,
   wagaGoscia,
 } from './goscie.ts';
+import { KIERUNEK } from './goscie-teksty.ts';
 import { placeIn, type Words, type WordsEn, wordsEn, wordsOf } from './miejsce.ts';
 import { poscigNocy } from './noc.ts';
-import { type GChoice, type GEventDef, type GovHost, type Pora, TARGETS, targetNameTx } from './tresc.ts';
-import type { FazaGoscia, GameMode, GoscRozkaz, GovEffects, GovGosc, GovInput, GovState } from './typy.ts';
+import {
+  type GChoice,
+  type GEventDef,
+  type GoscKarty,
+  type GovHost,
+  type Pora,
+  TARGETS,
+  targetNameTx,
+} from './tresc.ts';
+import type { AktywnyGosc, FazaGoscia, GameMode, GoscRozkaz, GovEffects, GovGosc, GovInput, GovState } from './typy.ts';
 import { osob, osobyNaPodlodze } from './warianty.ts';
-import { logGov, nightDay } from './wspolne.ts';
+import { addStock, logGov, nightDay } from './wspolne.ts';
 import { celZMiejsca, MAX_OKOLICA_M, zostaloZMiejsca } from './wyprawy.ts';
 
 // ---------------------------------------------------------------- stałe
@@ -91,6 +112,20 @@ const KONCZACE: ReadonlySet<GoscRozkaz> = new Set(['odejdz', 'jedzenie', 'zostan
 export interface DaneGoscia {
   id: string;
 }
+
+/** Id wizyty, do której należy otwarta karta: karty `gosc` i `zlapany` niosą je w `d.id`, karty z 0.3 z gościem w `d.gid`.
+    null: to nie jest karta wizyty (zwykłe wydarzenie, także karta z 0.3 z zapisu sprzed wizyt, bez `gid`). */
+export function wizytaKarty(ev: ActiveEvent | null): string | null {
+  if (!ev) return null;
+  const d = ev.d as { id?: unknown; gid?: unknown } | null | undefined;
+  const id = ev.id === 'gosc' || ev.id === 'zlapany' ? d?.id : d?.gid;
+  return typeof id === 'string' ? id : null;
+}
+
+/** wizyta zaplanowana przez kartę, która nie doszła do bramy: karta z `once` ma wrócić, więc ewidencja jej nie liczy */
+const zwolnijKarte = (st: GovState, a: AktywnyGosc): void => {
+  if (a.kartaId && !a.karta) delete st.ev.done[a.kartaId];
+};
 
 // ---------------------------------------------------------------- host
 
@@ -129,6 +164,28 @@ export interface GoscHost {
   chorobaRano(line: Tx): void;
   /** zapamiętuje, co pokazało obejrzenie rąk */
   obejrzano(v: 'ugryziony' | 'czysty'): void;
+  /** Grupa wizyty o tym id tak, jak widzi ją karta: tylko żywi (kopie osób, mówiący pierwszy) i czy stoją pod bramą
+      (faza `brama`). Dla kart z 0.3 z gościem, które czytają z niej liczbę osób i mówiącego; null: nie ma takiej wizyty. */
+  grupa(id: string): GrupaKarty | null;
+  /** Rozkazy dla grupy prowadzonej wizyty (jedna naraz; bez wizyty albo po ostatnim rozkazie nic nie robią). Przyjęcie
+      i odprawa kończą wizytę, `nocGosci` nie (rano 6–8 goście wychodzą, a `goscTick` pilnuje reszty).
+      Cała grupa zostaje w osiedlu jako mieszkańcy (`zostan`). */
+  przyjmijGosci(): void;
+  /** osoba o numerze `i` wśród żywych idzie do zarządu, reszta zostaje jak przy `przyjmijGosci` (`zarzad`). Symulacja
+      awansuje dziś tylko mówiącego (pierwszą żywą osobę), więc inny numer niż 0 daje przyjęcie całej grupy. */
+  przyjmijDoZarzadu(i: number): void;
+  /** grupa odchodzi tam, skąd przyszła (`odejdz`) */
+  odprawGosci(): void;
+  /** grupa dostaje porcję przez siatkę i odchodzi (`jedzenie`); Jedzenie −n z zapasów */
+  nakarmGosci(n: number): void;
+  /** grupa wchodzi na noc bramą, rano odchodzi (`noc`) */
+  nocGosci(): void;
+}
+
+/** Grupa wizyty dla karty z gościem: żywi w kolejności symulacji (mówiący pierwszy) i czy stoją pod bramą. */
+export interface GrupaKarty {
+  osoby: Person[];
+  pod: boolean;
 }
 
 const kopia = <T>(v: T): T => structuredClone(v);
@@ -139,6 +196,22 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
   const aktywny = (id: string) => {
     const a = st.goscie?.aktywny;
     return a && a.gosc.id === id ? a : null;
+  };
+  /** wizyta, którą zarząd prowadzi i której nie zamknął ostatnim rozkazem */
+  const prowadzona = () => {
+    const a = st.goscie?.aktywny;
+    return a && !a.koniec ? a : null;
+  };
+  const rozkaz = (id: string, co: GoscRozkaz): void => {
+    (fx.goscRozkaz ??= []).push({ id, co });
+    const a = aktywny(id);
+    if (!a) return;
+    if (co === 'noc') a.noc = true;
+    if (KONCZACE.has(co)) a.koniec = true;
+  };
+  const rozkazWizyty = (co: GoscRozkaz): void => {
+    const a = prowadzona();
+    if (a) rozkaz(a.gosc.id, co);
   };
   return {
     tryb: () => st.mode ?? 'zwykly',
@@ -151,13 +224,7 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
       const w = i.goscie?.find((x) => x.id === id);
       return { gosc: kopia(a.gosc), wpis: w ? kopia(w) : null, obejrzano: a.obejrzano ?? null };
     },
-    goscRozkaz: (id, co) => {
-      (fx.goscRozkaz ??= []).push({ id, co });
-      const a = aktywny(id);
-      if (!a) return;
-      if (co === 'noc') a.noc = true;
-      if (KONCZACE.has(co)) a.koniec = true;
-    },
+    goscRozkaz: rozkaz,
     dajBron: (id) => {
       (fx.arms ??= []).push(id);
     },
@@ -181,6 +248,21 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
       const a = st.goscie?.aktywny;
       if (a) a.obejrzano = v;
     },
+    grupa: (id) => {
+      const a = aktywny(id);
+      if (!a) return null;
+      const w = i.goscie?.find((x) => x.id === id) ?? null;
+      return { osoby: widoczny(a.gosc, w).osoby.map(kopiaOsoby), pod: w?.faza === 'brama' };
+    },
+    przyjmijGosci: () => rozkazWizyty('zostan'),
+    przyjmijDoZarzadu: (k) => rozkazWizyty(k === 0 ? 'zarzad' : 'zostan'),
+    odprawGosci: () => rozkazWizyty('odejdz'),
+    nakarmGosci: (n) => {
+      if (!prowadzona()) return;
+      addStock(i, fx, 'supplies', -n);
+      rozkazWizyty('jedzenie');
+    },
+    nocGosci: () => rozkazWizyty('noc'),
   };
 }
 
@@ -224,6 +306,81 @@ function znaneDziedziny(i: GovInput): Set<Dom> {
   return znane;
 }
 
+/** Zapisuje gościa jako aktywnego i oddaje symulacji plan (`fx.gosc`: osoby z id `g<n>p<i>`, wygląd każdej, strona
+    wejścia, ugryziona osoba). Wygląd: jedna liczba z ziarna, kolejne osoby co 5 (5 i 12 są względnie pierwsze, więc w grupie
+    żaden się nie powtórzy). Wspólne dla gościa z klocków i karty z gościem; `karta` to id karty z 0.3 i jej dane. */
+function wystaw(
+  st: GovState,
+  i: GovInput,
+  fx: GovEffects,
+  rng: Rng,
+  g: Gosc,
+  karta?: { id: string; dane: unknown },
+): void {
+  const s = (st.goscie ??= { n: 0, czytane: 0 });
+  const start = Math.floor(rng() * 12);
+  const looks = g.osoby.map((_, k) => 4 + ((start + 5 * k) % 12));
+  s.aktywny = {
+    gosc: g,
+    od: i.screen,
+    karta: false,
+    ...(karta ? { kartaId: karta.id, dane: karta.dane } : {}),
+  };
+  fx.gosc = {
+    id: g.id,
+    osoby: g.osoby.map(kopiaOsoby),
+    looks,
+    strona: g.skad.strona,
+    ...(g.ugryziony !== undefined ? { ugryziony: g.ugryziony } : {}),
+  };
+}
+
+/** archetyp gościa dla roli karty z 0.3 (reszta archetypów to już `KtoId`) */
+const KTO_KARTY: Record<Exclude<GoscKarty['kto'], KtoId>, KtoId> = {
+  sasiad: 'wedrowiec',
+  aktywisci: 'wedrowiec',
+  influencer: 'wedrowiec',
+  dzieci: 'dziecko',
+};
+
+/**
+ * Planuje wizytę dla karty z 0.3 z gościem (`GEventDef.gosc`): grupa z danych karty (`def.gosc`), strona wejścia
+ * z karty albo z ziarna zarządu, plan dla symulacji i wpis aktywnej wizyty z id karty i jej danymi, żeby `goscTick`
+ * otworzył właśnie tę kartę, gdy grupa stanie pod bramą. Gość z takiej karty chce tylko tego, co karta (bez haczyka i bez
+ * rzeczy), więc klocki mają wartości zerowe. false (nic nie zmienione): karta bez gościa tym razem (`gosc` oddało null),
+ * gra bez obcych albo inna wizyta w toku; wtedy karta pokazuje się od razu, po staremu.
+ */
+export function planujKarte(
+  st: GovState,
+  i: GovInput,
+  fx: GovEffects,
+  def: GEventDef,
+  h: GovHost,
+  d: unknown,
+): boolean {
+  if (!def.gosc || !i.goscie || h.goscAktywny()) return false;
+  const k = def.gosc(h, d);
+  if (!k || k.osoby.length === 0) return false;
+  const s = (st.goscie ??= { n: 0, czytane: 0 });
+  s.n++;
+  const id = `g${s.n}`;
+  const rng = rngOf(st.rng);
+  const strona = k.strona ?? pick(STRONY, rng);
+  const osoby = k.osoby.slice(0, 12).map((p, j): Person => ({ ...kopiaOsoby(p), id: `${id}p${j}`, home: -1 }));
+  const kto: KtoId = k.kto in KTO_KARTY ? KTO_KARTY[k.kto as keyof typeof KTO_KARTY] : (k.kto as KtoId);
+  const g: Gosc = {
+    id,
+    osoby,
+    kto,
+    chce: 'nocleg',
+    ma: 'nic',
+    haczyk: 'prawda',
+    skad: { strona, nazwa: KIERUNEK[strona] },
+  };
+  wystaw(st, i, fx, rng, g, { id: def.id, dane: structuredClone(d) });
+  return true;
+}
+
 /** Planuje wizytę: składa gościa z klocków (ziarno zarządu), zapisuje go jako aktywnego i oddaje symulacji plan
     (`fx.gosc`: osoby z id `g<n>p<i>`, wygląd każdej, strona wejścia, ugryziona osoba). Okolica idzie z wejścia bez zmian
     (nazwy już przefiltrowane przez hosta). Karty nie pokazuje: ta przychodzi, gdy grupa stoi pod bramą (`goscTick`). */
@@ -243,17 +400,7 @@ export function planujGoscia(st: GovState, i: GovInput, fx: GovEffects, pora: Po
   };
   const zajete = new Set([...i.people.map((p) => p.first), ...(i.lokatorzy ?? []).map((l) => l.first)]);
   const g = skladGoscia(rng, s.n, ctx, zajete);
-  // wygląd: jedna liczba z ziarna, kolejne osoby co 5 (5 i 12 są względnie pierwsze, więc w grupie żaden się nie powtórzy)
-  const start = Math.floor(rng() * 12);
-  const looks = g.osoby.map((_, k) => 4 + ((start + 5 * k) % 12));
-  s.aktywny = { gosc: g, od: i.screen, karta: false };
-  fx.gosc = {
-    id: g.id,
-    osoby: g.osoby.map(kopiaOsoby),
-    looks,
-    strona: g.skad.strona,
-    ...(g.ugryziony !== undefined ? { ugryziony: g.ugryziony } : {}),
-  };
+  wystaw(st, i, fx, rng, g);
   return g;
 }
 
@@ -328,7 +475,7 @@ const portions = (n: number): string => `${n} ${n === 1 ? 'portion' : 'portions'
 export function goscTick(st: GovState, i: GovInput, fx: GovEffects, zajete: boolean): ActiveEvent | null {
   const s = st.goscie;
   const a = s?.aktywny;
-  const ev = st.ev.active && (st.ev.active.id === 'gosc' || st.ev.active.id === 'zlapany') ? st.ev.active : null;
+  const ev = wizytaKarty(st.ev.active) !== null ? st.ev.active : null;
   if (!s || !a || a.koniec || !i.goscie) {
     // wizyta skończona (rozkaz, który ją zamyka), gra bez obcych albo karta z zapisu bez wizyty: karty już nic nie robią
     if (s && a && (a.koniec || !i.goscie)) delete s.aktywny;
@@ -346,6 +493,7 @@ export function goscTick(st: GovState, i: GovInput, fx: GovEffects, zajete: bool
     // symulacja pokaże wpis w następnym kroku; jeśli nie pokaże, plan przepada
     if (i.screen - a.od > GOSC_ZWLOKA) {
       if (ev) st.ev.active = null;
+      zwolnijKarte(st, a);
       delete s.aktywny;
     }
     return null;
@@ -383,17 +531,19 @@ export function goscTick(st: GovState, i: GovInput, fx: GovEffects, zajete: bool
     else if (a.noc && e.faza === 'zginal') {
       const zgon = nocnyZgon(g);
       logGov(st, i, zgon, true, fx);
-      // do raportu nocy, jeśli ta jeszcze trwa (rano 6–8 gość wychodzi, a raport już poszedł)
-      if (i.hour < 6 || i.hour >= 8) st.later.push({ day: nightDay(i), stock: {}, line: zgon });
+      // do raportu nocy tylko, gdy ta jeszcze trwa (od 20:00 do 6:00): rano 6–8 gość wychodzi, a raport już poszedł, a kto
+      // zginął po południu za bramą, nie trafi do raportu następnej nocy jako „nie przeżył nocy u was”
+      if (i.hour >= 20 || i.hour < 6) st.later.push({ day: nightDay(i), stock: {}, line: zgon });
     }
     if (ev) st.ev.active = null;
+    zwolnijKarte(st, a);
     delete s.aktywny;
     while (s.czytane < i.goscie.length && KONCOWE.has(i.goscie[s.czytane].faza)) s.czytane++;
     return null;
   }
   // karta otwarta, a gość nie stoi już tam, gdzie karta go zakłada (poszedł, zginął, dał się złapać gdzie indziej)
-  if (ev && (ev.d as DaneGoscia | undefined)?.id === g.id) {
-    if (e.faza !== (ev.id === 'gosc' ? 'brama' : 'zlapany')) {
+  if (ev && wizytaKarty(ev) === g.id) {
+    if (e.faza !== (ev.id === 'zlapany' ? 'zlapany' : 'brama')) {
       logGov(st, i, znikniecie(g, e.faza === 'zginal' ? 'zginal' : 'poszedl', slowa, slowaEn), false, fx);
       st.ev.active = null;
     }
@@ -401,6 +551,8 @@ export function goscTick(st: GovState, i: GovInput, fx: GovEffects, zajete: bool
   if (st.ev.active || zajete) return null;
   if (e.faza === 'brama' && !a.karta) {
     a.karta = true;
+    // karta z 0.3 z gościem (zaplanowana przez `planujKarte`) dostaje swoje dane z `gid`, reszta kartę `gosc`
+    if (a.kartaId) return { id: a.kartaId, d: { ...(a.dane as object), gid: g.id } };
     return { id: 'gosc', d: { id: g.id } };
   }
   if (e.faza === 'zlapany' && !a.zl) {

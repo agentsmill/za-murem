@@ -1543,6 +1543,32 @@ describe('linia o nocy z gościem w porannym raporcie', () => {
     expect(zginal).toContain(`${m.osoby[0].name} nie przeżył nocy u was.`);
   });
 
+  it('linia o śmierci gościa idzie do raportu tylko, gdy noc trwa (20:00–6:00): kto wyszedł rano i zginął za dnia, nie wraca do raportu', () => {
+    // zadanie 11, poprawka z przeglądu zadania 10: warunek miał brzmieć „od 20:00 do 6:00”, a nie „nie rano 6–8”
+    const zgon = (hour: number, day = 4): string[] => {
+      const s = stan(reczny({ chce: 'nocleg' }));
+      wybierz(s, 'Wpuścić na noc');
+      s.gov.ev.active = null;
+      // rano wychodzi (6–8), potem ginie o danej godzinie
+      eventTick(s.gov, zFaza(s, 'odchodzi', {}, { day: 4, hour: 7, minute: 10 }), emptyEffects(), false);
+      eventTick(
+        s.gov,
+        zFaza(s, 'zginal', {}, { day, hour, minute: 10, screen: s.i.screen + 50 }),
+        emptyEffects(),
+        false,
+      );
+      // wpis do kroniki jest zawsze, do raportu tylko w nocy
+      expect(
+        s.gov.log.some((l) => l.txt.pl.includes('nie przeżył nocy u was')),
+        `godzina ${hour}`,
+      ).toBe(true);
+      return s.gov.later.filter((l) => l.line.pl.includes('nie przeżył nocy u was')).map((l) => l.line.pl);
+    };
+    for (const hour of [6, 7, 8, 12, 15, 19]) expect(zgon(hour), `godzina ${hour}`).toEqual([]);
+    for (const hour of [20, 22, 23]) expect(zgon(hour), `godzina ${hour}`).toHaveLength(1);
+    expect(zgon(3, 5)).toHaveLength(1);
+  });
+
   it('linia o nocy tylko raz i tylko o 5:00: nie od razu po wyborze, nie w dzień i nie dla odprawionego', () => {
     const s = stan(reczny({ chce: 'nocleg' }));
     wybierz(s, 'Wpuścić na noc');

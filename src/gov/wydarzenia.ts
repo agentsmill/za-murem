@@ -39,7 +39,13 @@
    otwiera karty, tylko planuje wizytę (`planujGoscia` → GovEffects.gosc) i od razu losuje jeszcze raz wśród reszty (plan nie
    zjada odstępu między kartami), a `goscTick` co sekundę przy ekranie pokazuje
    kartę dopiero wtedy, gdy gość stoi pod bramą i nic innego nie czeka na decyzję (tak samo „Złapany”, gdy symulacja złapała
-   kradnącego). Wybór z `GChoice.zostaje` (np. „Obejrzeć ręce”) nie zamyka okna. Host dostaje metody gości z `goscHost`. */
+   kradnącego). Wybór z `GChoice.zostaje` (np. „Obejrzeć ręce”) nie zamyka okna. Host dostaje metody gości z `goscHost`.
+   Karty z 0.3 z gościem (`GEventDef.gosc` z nakładek w warianty.ts: `uchodzcy`, `influencer`, `aktywisci`, `dzieci`,
+   `krypto`, w domu `fachowiec`) idą tą samą drogą: gdy wypadną z puli, `planujKarte` wystawia ich grupę zamiast karty, a
+   karta (z `gid` w danych) otwiera się w `goscTick`, gdy grupa stoi pod bramą. W odróżnieniu od gościa z klocków taka wizyta
+   zajmuje miejsce karty (to stare karty z puli, nie dodatkowe): po planie nie losuje się drugiej, odstęp do następnej
+   liczy się od tego losowania, więc liczba kart na dobę zostaje jak przed wizytami. `gdzie` takiej karty to kafelek grupy
+   (przycisk „Pokaż”). */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -62,7 +68,7 @@ import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Pu
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
-import { GOSC_EVENTS, goscHost, goscTick, planujGoscia } from './wizyta.ts';
+import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte } from './wizyta.ts';
 
 /** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
 const STREET_IDS: ReadonlySet<string> = new Set(STREET_EVENTS.map((e) => e.id));
@@ -148,6 +154,9 @@ export const M1_EVENTS: GEventDef[] = [
       gap: o.gap,
       w: w ? (h) => w(h, d.w(h)) : d.w,
       make: o.make ?? d.make,
+      // karta z gościem: kogo wystawić (nakładka) i gdzie stoi grupa, gdy karta jest otwarta (dane z `gid`)
+      gosc: o.gosc,
+      gdzie: o.gosc ? (h, x) => (x?.gid ? (h.gosc(x.gid)?.wpis?.gdzie ?? null) : null) : undefined,
       title: (h, x) => {
         const pl = title(h, x);
         return tx(pl, en()?.title(h, x) ?? pl);
@@ -573,6 +582,12 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   if (ev?.id === 'gosc') {
     planujGoscia(st, i, fx, pora);
     ev = pickGovEvent(st, h, pora, firstNight(i));
+  } else if (ev) {
+    // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`): wizyta zajmuje miejsce tej karty, więc nie losujemy
+    // drugiej (inaczej każda taka karta dawałaby dwie, jedną od razu i jedną pod bramą). Karta przyjdzie w `goscTick`, gdy
+    // grupa stanie pod bramą; odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) karta idzie od razu.
+    const def = byId.get(ev.id);
+    if (def?.gosc && planujKarte(st, i, fx, def, h, ev.d)) return;
   }
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
   if (!ev) {

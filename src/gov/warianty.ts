@@ -14,13 +14,26 @@
    `odejscie` (Niech idzie) i `klotnia` (przegrany się wyprowadza) wyprowadzają osobę zarządu bramą (`wyrzuc`) zamiast
    ją kasować; `odejscie` nie przychodzi, gdy w zarządzie jest mniej niż dwie osoby, a `klotnia` bierze dwie osoby
    z najniższym nastrojem i tylko gdy obie mają go poniżej 55. Zdanie o stracie w `kradziez` jest przepisane zawsze (0.3
-   ma „… w budynku X Jedzenie 3.” bez znaku przed liczbą): „zapasy z piwnicy w budynku X: jedzenie 3”. */
+   ma „… w budynku X Jedzenie 3.” bez znaku przed liczbą): „zapasy z piwnicy w budynku X: jedzenie 3”.
+
+   Karty z gościem pod bramą (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 3, „Karty z gościem”):
+   `uchodzcy`, `influencer`, `aktywisci`, `dzieci`, `krypto` i w domu `fachowiec` mają `gosc` (kogo wystawić: `GoscKarty`)
+   i wagę 0 bez `GovInput.goscie` (gra bez obcych) oraz przy wizycie w toku. Wypadnięcie takiej karty planuje wizytę
+   (`planujKarte` w wizyta.ts), a karta otwiera się dopiero pod bramą, z `gid` w danych. Z `gid` tekst czyta żywą grupę
+   (`GovHost.grupa`: ilu ludzi stoi, czy mówiący to fachowiec), a wybory sterują jej pionkami zamiast dokładać
+   mieszkańców: uchodźcy „Przyjąć wszystkich” to `przyjmijGosci` (mówiący z fachem idzie do zarządu, jak w 0.3 przez
+   `joinPerson`), jedzenie `nakarmGosci`, odprawa `odprawGosci`; influencerka i fachowiec w domu `przyjmijDoZarzadu(0)`;
+   aktywiści „Zaprosić do ciepła” `nocGosci` (rano odchodzą bramą); dzieciaki i sąsiad od tokenów po decyzji
+   `odprawGosci`. Przyjęcie całej grupy to jedyne przyjęcie z liczbą: „Przyjąć tylu, ilu się zmieści” z 0.3 odpada, bo
+   symulacja przyjmuje albo odprawia całą grupę. Wybory są dostępne tylko, gdy grupa wciąż stoi pod bramą. Karta bez
+   `gid` (z zapisu sprzed wizyt, albo gdy `gosc` oddało null) gra jak w 0.3. */
 
 import { TECH_DOMS } from '../content/data.ts';
 import { type EventChoice, eventDef } from '../content/events.ts';
 import { g, type Person } from '../content/people.ts';
 import { pick, ri } from '../core/rng.ts';
-import type { GovHost, Pora } from './tresc.ts';
+import { type KtoId, osobyGrupy } from './goscie.ts';
+import type { GoscKarty, GovHost, Pora } from './tresc.ts';
 import type { GameMode, GovLokator, GovPerson } from './typy.ts';
 
 // biome-ignore lint/suspicious/noExplicitAny: dane wydarzeń z 0.3 mają różne kształty
@@ -39,6 +52,8 @@ export interface OldEvent {
   w?: (h: GovHost, base: number) => number;
   /** własne dane zamiast make z 0.3 */
   make?: (h: GovHost) => D | null;
+  /** karta, w której ktoś przychodzi pod bramę: kogo wystawić (grupa z danych karty); null: tym razem bez gościa */
+  gosc?: (h: GovHost, d: D) => GoscKarty | null;
   /** null: tytuł albo tekst z 0.3 */
   title?: (h: GovHost, d: D) => string | null;
   text?: (h: GovHost, d: D) => string | null;
@@ -149,6 +164,92 @@ const domyObok = (h: GovHost) => h.neighbours() === 'domy';
 const nikt = (h: GovHost) => h.neighbours() === null;
 const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
 
+// ---------------------------------------------------------------- karty z gościem pod bramą
+
+/** karta z gościem może wypaść: gra z obcymi (`GovInput.goscie`) i zarząd nie prowadzi już innej wizyty */
+const zGosciem = (h: GovHost): boolean => !!h.goscie() && !h.goscAktywny();
+
+/** imiona zajęte w osiedlu (zarząd, mieszkańcy z osobą i podane osoby): grupa z karty ich nie powtarza */
+const imionaZajete = (h: GovHost, ...osoby: (Person | null | undefined)[]): Set<string> =>
+  new Set([...h.alive(), ...h.lokatorzy(), ...osoby.filter((p): p is Person => !!p)].map((p) => p.first));
+
+/** Grupa z karty: `ilu` osób archetypu `kto` (id z licznika, `planujKarte` nadaje właściwe), mówiący z karty, jeśli jest. */
+function grupaKarty(h: GovHost, kto: KtoId, ilu: number, mowiacy?: Person | null): Person[] {
+  let n = 1;
+  return osobyGrupy(h.rng, () => n++, kto, ilu, imionaZajete(h, mowiacy), mowiacy ?? undefined);
+}
+
+/** Karta z gościem pod bramą ma `gid` w danych (id wizyty), karta z zapisu sprzed wizyt albo bez gościa tym razem go nie ma */
+const zGrupa = (d: D): boolean => typeof d?.gid === 'string';
+
+/** czy grupa tej karty wciąż stoi pod bramą (wybory są dostępne tylko wtedy) */
+const podBrama = (h: GovHost, d: D): boolean => !!h.grupa(d.gid)?.pod;
+
+/** Wybory karty z gościem: skutki z 0.3 (`base`), potem rozkaz dla grupy (`po`, numer wyboru); dostępne tylko pod bramą. */
+const poDecyzji = (h: GovHost, d: D, base: EventChoice[], po: (k: number) => void): EventChoice[] => {
+  const pod = podBrama(h, d);
+  return base.map((c, k) => ({
+    ...c,
+    ok: c.ok && pod,
+    run: () => {
+      c.run();
+      po(k);
+    },
+  }));
+};
+
+/** ilu ludzi stoi pod bramą w karcie `uchodzcy`: żywi z grupy (z `gid`), inaczej liczba z danych karty */
+export function uchodzcyN(h: GovHost, d: D): number {
+  const k = zGrupa(d) ? h.grupa(d.gid) : null;
+  return k ? k.osoby.length : d.n;
+}
+
+/** mówiący z fachem w karcie `uchodzcy` (`d.spec`): z grupą tylko, gdy wciąż stoi pierwszy (umarł mówiący, fachowca nie ma) */
+export function uchodzcySpec(h: GovHost, d: D): Person | null {
+  if (!d.spec) return null;
+  const k = zGrupa(d) ? h.grupa(d.gid) : null;
+  return !k || k.osoby[0]?.name === d.spec.name ? d.spec : null;
+}
+
+/** Wybory karty `uchodzcy` z grupą pod bramą: przyjąć wszystkich (mówiący z fachem idzie do zarządu), nakarmić na drogę
+    albo odprawić. „Przyjąć tylu, ilu się zmieści” z 0.3 odpada: grupę przyjmuje się w całości albo wcale, a na podłogę
+    kładzie się brakujących (jak w przycisku „Przyjąć wszystkich”). */
+function uchodzcyZGrupa(h: GovHost, d: D): EventChoice[] {
+  const pod = podBrama(h, d);
+  const n = uchodzcyN(h, d);
+  const free = h.free();
+  const admit = () => {
+    if (uchodzcySpec(h, d)) h.przyjmijDoZarzadu(0);
+    else h.przyjmijGosci();
+    h.mood(1, n > free ? 2 : 0);
+    h.log(
+      `Przyjęliście ${n} ${n === 1 ? 'osobę' : osob(n)} ${d.from}.${n > free ? ` ${osobyNaPodlodze(n - free)} spać na podłodze.` : ''}`,
+      true,
+    );
+  };
+  const out: EventChoice[] = [];
+  if (free >= n) out.push({ label: 'Przyjąć wszystkich', ok: pod, run: admit });
+  out.push({
+    label: 'Dać Jedzenie 3 na drogę',
+    ok: pod && h.res.jedzenie >= 3,
+    run: () => {
+      h.nakarmGosci(3);
+      h.mood(1, 0);
+    },
+  });
+  if (free < n)
+    out.push({ label: `Przyjąć wszystkich (${osobyNaPodlodze(n - free)} spać na podłodze)`, ok: pod, run: admit });
+  out.push({
+    label: 'Odprawić',
+    ok: pod,
+    run: () => {
+      h.odprawGosci();
+      h.mood(-2, -1);
+    },
+  });
+  return out;
+}
+
 /** skąd ktoś patrzy przez lornetkę: z najwyższego budynku w okolicy */
 const TOWER: Record<string, string> = {
   wiezowiec: 'Z dachu wieżowca',
@@ -189,11 +290,22 @@ export const OLD_EVENTS: OldEvent[] = [
   {
     id: 'dzieci',
     when: ['dzien'],
-    w: (h, base) => (nikt(h) ? 0 : base),
+    w: (h, base) => (nikt(h) || !zGosciem(h) ? 0 : base),
+    // dwoje albo troje dzieciaków (9–15 lat, rodzeństwo z jednym nazwiskiem), najstarsze mówi
+    gosc: (h) => {
+      const osoby = grupaKarty(h, 'dziecko', ri(2, 3, h.rng));
+      const wiek = osoby.map(() => ri(9, 15, h.rng)).sort((a, b) => b - a);
+      osoby.forEach((p, k) => {
+        p.age = wiek[k];
+      });
+      return { osoby, kto: 'dzieci' };
+    },
     text: (h) =>
       domyObok(h)
         ? 'Dzieciaki z sąsiednich domów przyciągnęły taczkę blach i rur z rozbiórki szopy. Chcą coś do jedzenia.'
         : null,
+    // po wymianie (albo odmowie) dzieciaki idą dalej z wózkiem
+    choices: (h, d, base) => (zGrupa(d) ? poDecyzji(h, d, base, () => h.odprawGosci()) : base),
   },
   {
     id: 'lodowka',
@@ -264,11 +376,15 @@ export const OLD_EVENTS: OldEvent[] = [
     when: ['dzien'],
     // w trybie zombie sąsiad zza płotu nie handluje tokenami
     tryby: ['zwykly'],
-    w: (h, base) => (nikt(h) ? 0 : base),
+    w: (h, base) => (nikt(h) || !zGosciem(h) ? 0 : base),
+    // sąsiad z bloku obok (zza płotu) stoi sam pod bramą
+    gosc: (h) => ({ osoby: grupaKarty(h, 'wedrowiec', 1), kto: 'sasiad' }),
     text: (h) =>
       domyObok(h)
         ? 'Sąsiad zza płotu chce kupić od was Drewno 5. Płaci tokenami, które według niego zaraz odbiją.'
         : null,
+    // po decyzji (tokeny albo śmiech) sąsiad wraca do siebie
+    choices: (h, d, base) => (zGrupa(d) ? poDecyzji(h, d, base, () => h.odprawGosci()) : base),
   },
   {
     id: 'ksiazki',
@@ -283,44 +399,76 @@ export const OLD_EVENTS: OldEvent[] = [
     when: ['dzien'],
     // protest przy stadzie nie ma sensu
     tryby: ['zwykly'],
+    w: (h, base) => (zGosciem(h) ? base : 0),
+    // czterech aktywistów pod bramą (dorośli, bez wspólnego nazwiska)
+    gosc: (h) => ({ osoby: grupaKarty(h, 'wedrowiec', 4), kto: 'aktywisci' }),
     text: (h) =>
       dom(h)
         ? 'Grupka aktywistów z sąsiedniej ulicy protestuje przeciw dymowi z waszego komina. Sami są zmarznięci na kość.'
         : null,
-    // grzeją się do rana i odchodzą: bez dokwaterowania czterech osób (mniej źródeł przyjęć)
-    choices: (h, _d, base) => [
-      {
-        ...base[0],
-        run: () => {
-          h.mood(1, 0);
-          h.log('Aktywiści grzali się przy kozie do rana i poszli protestować gdzie indziej.');
-        },
-      },
-      ...base.slice(1),
-    ],
+    // grzeją się do rana i odchodzą: bez dokwaterowania czterech osób (mniej źródeł przyjęć). Z grupą pod bramą wchodzą na
+    // noc (brama na kłódkę po 20:00 ich nie wpuści), a rano o 6–8 wychodzą bramą
+    choices: (h, d, base) =>
+      zGrupa(d)
+        ? [
+            {
+              ...base[0],
+              ok: podBrama(h, d) && !h.gateClosed(),
+              run: () => {
+                h.nocGosci();
+                h.mood(1, 0);
+                h.log('Aktywiści weszli do ciepła. Rano pójdą protestować gdzie indziej.');
+              },
+            },
+            ...poDecyzji(h, d, base, () => h.odprawGosci()).slice(1),
+          ]
+        : [
+            {
+              ...base[0],
+              run: () => {
+                h.mood(1, 0);
+                h.log('Aktywiści grzali się przy kozie do rana i poszli protestować gdzie indziej.');
+              },
+            },
+            ...base.slice(1),
+          ],
   },
   {
     id: 'influencer',
     when: ['dzien'],
     // vlog przy stadzie też nie
     tryby: ['zwykly'],
+    w: (h, base) => (zGosciem(h) ? base : 0),
+    // influencerka z karty stoi pod bramą sama: ta sama osoba, to samo imię
+    gosc: (_h, d) => ({ osoby: [d.p], kto: 'influencer' }),
     text: (h, d) =>
       dom(h)
         ? `Pod furtką nagrywa vloga ${d.p.name} z ring lightem na baterie. Mówi, że ma dwa miliony obserwujących. Internetu nie ma od trzech lat.`
         : null,
-    // dołącza do rdzenia i nie liczy się drugi raz jako mieszkanka
-    choices: (h, d, base) => [
-      { ...base[0], label: dom(h) ? 'Przyjąć do domu' : base[0].label, run: () => h.joinPerson(d.p) },
-      ...base.slice(1),
-    ],
+    // dołącza do rdzenia i nie liczy się drugi raz jako mieszkanka; z grupą pod bramą ten sam pionek idzie do zarządu
+    choices: (h, d, base) =>
+      zGrupa(d)
+        ? [
+            {
+              ...base[0],
+              label: dom(h) ? 'Przyjąć do domu' : base[0].label,
+              ok: podBrama(h, d),
+              run: () => h.przyjmijDoZarzadu(0),
+            },
+            ...poDecyzji(h, d, base, () => h.odprawGosci()).slice(1),
+          ]
+        : [
+            { ...base[0], label: dom(h) ? 'Przyjąć do domu' : base[0].label, run: () => h.joinPerson(d.p) },
+            ...base.slice(1),
+          ],
   },
   {
     id: 'uchodzcy',
     when: ['dzien'],
     // w trybie zombie ocaleni przychodzą jako goście (ukryte ugryzienie potrzebuje prawdziwej osoby pod bramą)
     tryby: ['zwykly'],
-    // obcy pod bramą od drugiego dnia; rzadziej, kiedy jest ciasno
-    w: (h) => (h.day() >= 2 ? 0.8 * admitWeight(h.free()) : 0),
+    // obcy pod bramą od drugiego dnia; rzadziej, kiedy jest ciasno; tylko w grze z obcymi, bo ktoś musi stanąć pod bramą
+    w: (h) => (zGosciem(h) && h.day() >= 2 ? 0.8 * admitWeight(h.free()) : 0),
     make: (h) => {
       const house = dom(h);
       return {
@@ -329,16 +477,29 @@ export const OLD_EVENTS: OldEvent[] = [
         spec: h.rng() < 0.3 ? h.makePerson() : null,
       };
     },
+    // n osób z karty; mówiący to fachowiec z karty, gdy jest. W domu to rodzina (o ile mówiący ma wiek na dzieci), w bloku
+    // dorośli z jednego osiedla
+    gosc: (h, d) => {
+      const spec: Person | null = d.spec ?? null;
+      const rodzina = dom(h) && (!spec || spec.age >= 28);
+      return {
+        osoby: grupaKarty(h, rodzina ? 'rodzina' : 'wedrowiec', d.n, spec),
+        kto: rodzina ? 'rodzina' : 'wedrowiec',
+      };
+    },
     title: (h) => (dom(h) ? 'Rodzina pod furtką' : 'Ludzie pod bramą'),
     text: (h, d) => {
       const free = h.free();
-      const many = osob(d.n) === 'osoby';
-      const spec = d.spec ? ` Wśród nich jest ${d.spec.prof.toLowerCase()}, ${d.spec.name}.` : '';
+      const n = uchodzcyN(h, d);
+      const many = osob(n) === 'osoby';
+      const sp = uchodzcySpec(h, d);
+      const spec = sp ? ` Wśród nich jest ${sp.prof.toLowerCase()}, ${sp.name}.` : '';
       if (dom(h))
-        return `Pod furtką stoi rodzina, ${d.n} ${osob(d.n)}. Przyszli ${d.from}${d.from.includes(',') ? ',' : ''} i proszą o miejsce. ${free ? `Wolnych łóżek w domu: ${free}.` : 'W domu nie ma wolnych łóżek, spaliby na podłodze w kuchni.'}${spec}`;
-      return `Pod bramą ${many ? 'stoją' : 'stoi'} ${d.n} ${osob(d.n)} i ${many ? 'proszą' : 'prosi'} o miejsce. Przyszli ${d.from}. Wolnych miejsc w bloku: ${free}.${spec}`;
+        return `Pod furtką stoi rodzina, ${n} ${osob(n)}. Przyszli ${d.from}${d.from.includes(',') ? ',' : ''} i proszą o miejsce. ${free ? `Wolnych łóżek w domu: ${free}.` : 'W domu nie ma wolnych łóżek, spaliby na podłodze w kuchni.'}${spec}`;
+      return `Pod bramą ${many ? 'stoją' : 'stoi'} ${n} ${osob(n)} i ${many ? 'proszą' : 'prosi'} o miejsce. Przyszli ${d.from}. Wolnych miejsc w bloku: ${free}.${spec}`;
     },
     choices: (h, d) => {
+      if (zGrupa(d)) return uchodzcyZGrupa(h, d);
       const free = h.free();
       const admit = (k: number) => () => {
         const joined = d.spec && k > 0 ? 1 : 0;
@@ -378,7 +539,7 @@ export const OLD_EVENTS: OldEvent[] = [
     // w bloku bez nich ktoś z mieszkańców, w domu sąsiad zza płotu; bez nich nie ma komu się przyznać
     w: (h, base) =>
       dom(h)
-        ? h.neighbour()
+        ? h.neighbour() && zGosciem(h)
           ? base
           : 0
         : h.lokatorzy().length
@@ -392,6 +553,8 @@ export const OLD_EVENTS: OldEvent[] = [
       const l = dom(h) ? null : fachowiecZKlatki(h);
       return l ? { p: osobaKarty(l), b: h.hqName(), lok: l.id } : eventDef('fachowiec')!.make(h);
     },
+    // w domu sąsiad zza płotu podchodzi do furtki; w bloku fachowiec jest już w środku (mieszkaniec z klatki albo z 0.3)
+    gosc: (h, d) => (dom(h) && !d.lok ? { osoby: [d.p], kto: 'sasiad' } : null),
     text: (h, d) => {
       const p = d.p;
       const who = dom(h)
@@ -405,28 +568,40 @@ export const OLD_EVENTS: OldEvent[] = [
     // liczby przyjętych); bez niego w bloku mieszkaniec z 0.3 dołącza do zarządu (mieszkańców o jednego mniej), w domu
     // sąsiad dołącza do domowników
     choices: (h, d, base) =>
-      d.lok && !dom(h)
+      zGrupa(d)
         ? [
             {
               ...base[0],
-              ok: !!h.lokator(d.lok),
+              ok: podBrama(h, d),
               run: () => {
-                h.awansuj(d.lok);
+                h.przyjmijDoZarzadu(0);
                 h.mood(1, 0);
               },
             },
-            ...base.slice(1),
+            ...poDecyzji(h, d, base, () => h.odprawGosci()).slice(1),
           ]
-        : [
-            {
-              ...base[0],
-              run: () => {
-                base[0].run();
-                if (!dom(h)) h.removeResident(0);
+        : d.lok && !dom(h)
+          ? [
+              {
+                ...base[0],
+                ok: !!h.lokator(d.lok),
+                run: () => {
+                  h.awansuj(d.lok);
+                  h.mood(1, 0);
+                },
               },
-            },
-            ...base.slice(1),
-          ],
+              ...base.slice(1),
+            ]
+          : [
+              {
+                ...base[0],
+                run: () => {
+                  base[0].run();
+                  if (!dom(h)) h.removeResident(0);
+                },
+              },
+              ...base.slice(1),
+            ],
   },
   {
     id: 'klotnia',

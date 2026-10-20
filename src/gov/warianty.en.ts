@@ -18,6 +18,7 @@ import type { Cost } from '../content/data.ts';
 import { zPrzedimkiem } from '../mieszkancy/szablony.en.ts';
 import { nazwaBudynkuEn } from '../world/classify.en.ts';
 import type { GovHost } from './tresc.ts';
+import { uchodzcyN, uchodzcySpec } from './warianty.ts';
 import { bookEn, costEn, costPlEn, dziedzinaEn, fromEn, TOWER_EN } from './warianty-dane.en.ts';
 
 // biome-ignore lint/suspicious/noExplicitAny: dane wydarzeń z 0.3 mają różne kształty
@@ -217,6 +218,8 @@ const WYDARZENIA: Record<string, EventEn> = {
     log: wpisy({
       'Aktywiści grzali się przy kozie do rana i poszli protestować gdzie indziej.':
         'The activists warmed up by the stove until morning, then went off to protest somewhere else.',
+      'Aktywiści weszli do ciepła. Rano pójdą protestować gdzie indziej.':
+        'The activists came in to get warm. In the morning they’ll go off to protest somewhere else.',
     }),
   },
 
@@ -234,22 +237,28 @@ const WYDARZENIA: Record<string, EventEn> = {
 
   uchodzcy: {
     title: (h) => (dom(h) ? 'A family at the garden gate' : 'People at the gate'),
+    // liczba ludzi i fachowiec jak w nakładce: z grupy pod bramą (karta z `gid`) albo z danych karty
     text: (h, d) => {
       const free = h.free();
+      const n = uchodzcyN(h, d);
+      const sp = uchodzcySpec(h, d);
       const from = fromEn(d.from);
-      const spec = d.spec ? ` Among them: ${d.spec.name}, ${zawod(d.spec.prof)}.` : '';
+      const spec = sp ? ` Among them: ${sp.name}, ${zawod(sp.prof)}.` : '';
       if (dom(h))
-        return `A family of ${slownie(d.n)} is standing at the garden gate. They’ve come ${from} and are asking to be let in. ${free ? `Free beds in the house: ${free}.` : 'There are no free beds in the house, so they would sleep on the kitchen floor.'}${spec}`;
-      return `At the gate, ${ludzie(d.n)} ${d.n === 1 ? 'is' : 'are'} asking to be let in. They’ve come ${from}. Free beds in the block: ${free}.${spec}`;
+        return `A family of ${slownie(n)} is standing at the garden gate. They’ve come ${from} and are asking to be let in. ${free ? `Free beds in the house: ${free}.` : 'There are no free beds in the house, so they would sleep on the kitchen floor.'}${spec}`;
+      return `At the gate, ${ludzie(n)} ${n === 1 ? 'is' : 'are'} asking to be let in. They’ve come ${from}. Free beds in the block: ${free}.${spec}`;
     },
-    // te same warunki co wybory w nakładce: wszyscy albo tylu, ilu się zmieści, jedzenie, wszyscy na podłogę, odprawa
+    // te same warunki co wybory w nakładce: wszyscy albo tylu, ilu się zmieści (bez grupy pod bramą; grupę przyjmuje się
+    // w całości), jedzenie, wszyscy na podłogę, odprawa
     labels: (h, d) => {
       const free = h.free();
+      const n = uchodzcyN(h, d);
+      const grupa = typeof d.gid === 'string';
       const out: string[] = [];
-      if (free >= d.n) out.push('Take everyone in');
-      else if (free > 0) out.push(`Take in as many as fit (${free})`);
+      if (free >= n) out.push('Take everyone in');
+      else if (free > 0 && !grupa) out.push(`Take in as many as fit (${free})`);
       out.push('Give them food for the road (Food 3)');
-      if (free < d.n) out.push(`Take everyone in (${ludzie(d.n - free)} on the floor)`);
+      if (free < n) out.push(`Take everyone in (${ludzie(n - free)} on the floor)`);
       out.push('Send them away');
       return out;
     },

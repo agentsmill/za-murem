@@ -471,7 +471,8 @@ function nazwiskoDla(nazwisko: string, f: boolean): string {
     archetypu: rodzina to partner płci przeciwnej, dzieci 4–15 i czasem dziadek albo babcia (65–85, gdy mówiący ma 40+); dziecko to
     młodsze rodzeństwo; ktoś z ugryzionym bliskim to partner (płci przeciwnej), dziecko albo rodzic; reszta to dorośli. Rodzina, dzieci
     i bliski dzielą nazwisko mówiącego. Imiona się nie powtarzają i nie powtarzają `used`. Identyfikatory osób z `n`
-    jak w `makePerson`. Wielkość grupy podaje wywołujący (1–12), nie tylko `KTO.ilu`: używają tego też karty z gościem. */
+    jak w `makePerson`. Wielkość grupy podaje wywołujący (1–12), nie tylko `KTO.ilu`: używają tego też karty z gościem.
+    Z `mowiacy` (osoba gotowa, np. fachowiec z karty) pierwsza jest ta osoba, a reszta grupy układa się wokół niej. */
 function grupa(
   rng: Rng,
   n: () => number,
@@ -479,8 +480,10 @@ function grupa(
   ilu: number,
   used: ReadonlySet<string>,
   profMowiacego?: Prof,
+  mowiacy?: Person,
 ): Person[] {
   const zajete = new Set(used);
+  if (mowiacy) zajete.add(mowiacy.first);
   const dodaj = (prof: Prof, f?: boolean): Person => {
     const p = makePerson(rng, zajete, n, f === undefined ? { prof } : { prof, f });
     zajete.add(p.first);
@@ -489,9 +492,9 @@ function grupa(
     return p;
   };
   const wiek = KTO[kto].wiek;
-  const prof =
+  const profKto = (): Prof =>
     kto === 'dziecko' ? dziecieProf(wiek[0], wiek[1]) : (profMowiacego ?? wybierzProf(rng, kto, null, new Set()));
-  const mow = dodaj(prof);
+  const mow = mowiacy ?? dodaj(profKto());
   const osoby: Person[] = [mow];
   const wspolneNazwisko = kto === 'rodzina' || kto === 'dziecko' || kto === 'z_ugryzionym';
   const nazwisko = mow.name.slice(mow.first.length + 1);
@@ -511,7 +514,7 @@ function grupa(
         const a = przytnij(mow.age + ri(24, 34, rng), 65, 85);
         p = doroslyProf(a, a);
       } else {
-        p = dziecieProf(4, Math.min(15, mow.age - 20));
+        p = dziecieProf(4, Math.max(5, Math.min(15, mow.age - 20)));
       }
     } else if (kto === 'dziecko') {
       p = dziecieProf(Math.max(4, mow.age - 5), mow.age);
@@ -521,7 +524,7 @@ function grupa(
         p = doroslyProf(a, a);
         f = !mow.f;
       } else if (krewny < 2 / 3) {
-        p = dziecieProf(4, Math.min(15, mow.age - 20));
+        p = dziecieProf(4, Math.max(5, Math.min(15, mow.age - 20)));
       } else {
         const a = przytnij(mow.age + ri(24, 32, rng), 50, 85);
         p = doroslyProf(a, a);
@@ -536,9 +539,18 @@ function grupa(
   return osoby;
 }
 
-/** Osoby grupy dla gościa z klocków i dla kart z gościem (zadanie 11): `ilu` osób archetypu `kto`, pierwsza mówi. */
-export function osobyGrupy(rng: Rng, n: () => number, kto: KtoId, ilu: number, used: ReadonlySet<string>): Person[] {
-  return grupa(rng, n, kto, ilu, used);
+/** Osoby grupy dla gościa z klocków i dla kart z gościem (zadanie 11): `ilu` osób archetypu `kto`, pierwsza mówi. Karta,
+    która ma już mówiącego (fachowiec w grupie uchodźców), podaje go w `mowiacy`: ten sam człowiek stoi pierwszy, a rodzina
+    dzieli jego nazwisko. */
+export function osobyGrupy(
+  rng: Rng,
+  n: () => number,
+  kto: KtoId,
+  ilu: number,
+  used: ReadonlySet<string>,
+  mowiacy?: Person,
+): Person[] {
+  return grupa(rng, n, kto, ilu, used, undefined, mowiacy);
 }
 
 // ---------------------------------------------------------------- skąd
