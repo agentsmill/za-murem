@@ -7,7 +7,7 @@
    w składzie ustawione co do sztuki i klonowanie gry: stan to zwykły JSON, więc gałąź testu startuje z tej samej chwili
    bez ponownego grania dwóch dób. Żadnego losowania poza ziarnem gry; wszystko w Node, bez przeglądarki. */
 
-import { wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
+import { type Words, type WordsEn, wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
 import type { GovState, NightCard, Prompt } from '../../src/gov/typy.ts';
 import { ackReport, chooseEvent, confirmNight, govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
 import { grajDalej } from '../../src/gov/zwyciestwo.ts';
@@ -28,6 +28,7 @@ import {
   type WidokSciezki,
   widokSciezki,
 } from '../../src/ui/sciezka.ts';
+import type { World } from '../../src/world/world.ts';
 import { newGame, core as rdzen } from './sasiedzi-pomoc.ts';
 
 export const DEMA = ['przymorze', 'lanciego', 'zielonki'] as const;
@@ -105,39 +106,60 @@ export const ekran = (st: SimState): number => Math.floor(st.tick / TICKS_PER_SE
 /** wejście zarządu z tej chwili, tak jak buduje je gra */
 export const wejscie = (g: Gra) => govInput(g.sim.st, g.sim.w, ekran(g.sim.st));
 
-/** Odczyt gry dla ścieżki z tej chwili: nowa migawka za każdym razem (odczyt nie pamięta stanu, który test zmienił). */
-export function odczyt(g: Gra, o: { touch?: boolean; zaznaczony?: boolean } = {}): OdczytCelow {
-  const { st, w } = g.sim;
+/** opcje odczytu: dotyk zamiast myszy, zaznaczenie w interfejsie i słowa miejsca (domyślnie z świata gry) */
+export interface OpcjeOdczytu {
+  touch?: boolean;
+  zaznaczony?: boolean;
+  words?: Words;
+  wordsEn?: WordsEn;
+}
+
+/** Odczyt gry dla ścieżki ze stanu symulacji, świata i zarządu (albo jego braku): nowa migawka za każdym razem (odczyt nie
+    pamięta stanu, który test zmienił). Dla testów, które nie grają z zarządem w pętli: stan z `createSim`, atrapa zarządu. */
+export function odczytZ(st: SimState, w: World, gov: GovState | null, o: OpcjeOdczytu = {}): OdczytCelow {
   return {
     st,
     w,
     snap: snapshot(st, w),
-    gov: g.gov,
-    input: wejscie(g),
+    gov,
+    input: gov ? govInput(st, w, ekran(st)) : null,
     touch: o.touch ?? false,
-    words: wordsOfWorld(w),
-    wordsEn: wordsEnOfWorld(w),
+    words: o.words ?? wordsOfWorld(w),
+    wordsEn: o.wordsEn ?? wordsEnOfWorld(w),
     ...(o.zaznaczony !== undefined ? { zaznaczony: o.zaznaczony } : {}),
   };
 }
 
+/** Cele rozdziału R1 (drugi dzień) dla takiego odczytu: stan ścieżki otwarty w R1 od ticku stanu, jeden krok i widok.
+    Każde wywołanie liczy od zera, więc test, który zmienia stan gry między wywołaniami, widzi tylko jego skutki. */
+export function celeR1(st: SimState, w: World, gov: GovState | null, o: OpcjeOdczytu = {}): Cel[] {
+  const odczytGry = odczytZ(st, w, gov, o);
+  const stan = krokSciezki({ ...nowyStanSciezki(), rozdzial: 'r1', od: st.tick }, odczytGry);
+  return widokSciezki(stan, odczytGry).rozdzial?.cele ?? [];
+}
+
+/** Odczyt gry dla ścieżki z tej chwili */
+export function odczyt(g: Gra, o: OpcjeOdczytu = {}): OdczytCelow {
+  return odczytZ(g.sim.st, g.sim.w, g.gov, o);
+}
+
 /** krok ścieżki na odczycie z tej chwili: nowy stan zostaje w grze */
-export function krok(g: Gra, o?: { touch?: boolean; zaznaczony?: boolean }): StanSciezki {
+export function krok(g: Gra, o?: OpcjeOdczytu): StanSciezki {
   g.sciezka = krokSciezki(g.sciezka, odczyt(g, o));
   return g.sciezka;
 }
 
 /** widok okienka celów: stan ścieżki po jednym kroku na bieżącym odczycie (tak jak `renderGoals`) */
-export function widok(g: Gra, o?: { touch?: boolean; zaznaczony?: boolean }): WidokSciezki {
+export function widok(g: Gra, o?: OpcjeOdczytu): WidokSciezki {
   krok(g, o);
   return widokSciezki(g.sciezka, odczyt(g, o));
 }
 
 /** cele widocznego rozdziału po kroku ścieżki (pusta lista, gdy okienko jest schowane) */
-export const cele = (g: Gra, o?: { touch?: boolean; zaznaczony?: boolean }): Cel[] => widok(g, o).rozdzial?.cele ?? [];
+export const cele = (g: Gra, o?: OpcjeOdczytu): Cel[] => widok(g, o).rozdzial?.cele ?? [];
 
 /** cel o danym kluczu z widocznego rozdziału; błąd, gdy go nie ma */
-export function cel(g: Gra, key: string, o?: { touch?: boolean; zaznaczony?: boolean }): Cel {
+export function cel(g: Gra, key: string, o?: OpcjeOdczytu): Cel {
   const c = cele(g, o).find((x) => x.key === key);
   if (!c)
     throw new Error(

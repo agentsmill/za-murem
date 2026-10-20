@@ -5,7 +5,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LAW_CD } from '../../src/content/data.ts';
-import { KOZA_KEY, makeCard, nightAdvice, nightWood, raidersOf, WOOD_PER_HOUR, watchersOf } from '../../src/gov/noc.ts';
+import {
+  CARD_HOUR,
+  KOZA_KEY,
+  makeCard,
+  nightAdvice,
+  nightWood,
+  raidersOf,
+  WOOD_PER_HOUR,
+  watchersOf,
+} from '../../src/gov/noc.ts';
 import { FIRST_LAWS, NEW_EVENTS, OLD_EVENTS, poraOf } from '../../src/gov/tresc.ts';
 import type { GovEffects, GovInput, GovState, NightCard, RaidPlan, RaidResult } from '../../src/gov/typy.ts';
 import { dailyDrift, lawState } from '../../src/gov/uchwaly.ts';
@@ -15,7 +24,7 @@ import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { confirmNight, govUpdate, loadGov, newGov, pending, saveGov, setNight, signLaw } from '../../src/gov/zarzad.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { BURN_TICKS } from '../../src/sim/sim.ts';
-import { DAY2_WOOD } from '../../src/ui/cele.ts';
+import { potrzebaDrewna } from '../../src/ui/sciezka.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { pl } from './po-angielsku.ts';
 
@@ -518,8 +527,14 @@ describe('dyżur przy kozie: karta, rada, raport rano', () => {
   it('zarząd liczy drewno na noc tak, jak pali koza w symulacji', () => {
     // zarząd nie importuje symulacji, więc ta sama liczba żyje w dwóch miejscach
     expect(WOOD_PER_HOUR * BURN_TICKS).toBe(TICKS_PER_HOUR);
-    // cel drugiego dnia: noc 22–6 to osiem godzin palenia
-    expect(DAY2_WOOD).toBe(8 * WOOD_PER_HOUR);
+    // cel drugiego dnia (R1 ścieżki) liczy potrzebę jak karta nocy o 20:00: dziesięć godzin palenia do 6:00 na każde
+    // palenisko, nie osiem godzin nocy 22–6 jak dawny DAY2_WOOD
+    for (const paleniska of [undefined, 1, 2, 3, 5]) {
+      const i = input({ hour: CARD_HOUR, minute: 0, ...(paleniska ? { paleniska } : {}) });
+      expect(potrzebaDrewna(i), `paleniska ${paleniska}`).toBe(nightWood(i).need);
+      expect(potrzebaDrewna(i)).toBe(10 * WOOD_PER_HOUR * (paleniska ?? 1));
+    }
+    expect(potrzebaDrewna(null)).toBe(10 * WOOD_PER_HOUR);
   });
 
   /** pierwsza noc na atrapie: pierwsza osoba czuwa przy kozie, reszta śpi; posts: posterunki jak z symulacji
